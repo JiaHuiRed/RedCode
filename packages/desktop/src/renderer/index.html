@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en" style="background-color: var(--background-base)">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RedCode</title>
+    <link rel="icon" type="image/png" href="./favicon-96x96-v3.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="./favicon-v3.svg" />
+    <link rel="shortcut icon" href="./favicon-v3.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon-v3.png" />
+    <meta name="theme-color" content="#F8F7F7" />
+    <meta property="og:image" content="./social-share.png" />
+    <meta property="twitter:image" content="./social-share.png" />
+    <script id="oc-theme-preload-script" src="./oc-theme-preload.js"></script>
+  </head>
+  <body class="antialiased overscroll-none text-12-regular overflow-hidden">
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root" class="flex flex-col h-dvh"></div>
+    <script src="./index.tsx" type="module"></script>
+    <script>
+    // macOS traffic light buttons for Electron Windows
+    (function() {
+      try {
+        if (!navigator.userAgent.includes('Windows')) return;
+        var css = document.createElement('style');
+        css.textContent =
+          '.rc-tl{width:12px;height:12px;border-radius:50%;border:none;cursor:pointer;padding:0;outline:none;flex-shrink:0;margin:0;-webkit-app-region:no-drag;transition:filter .15s}' +
+          '.rc-tl:hover{filter:brightness(.75)}' +
+          '.rc-tc{background:#ff5f56}' +
+          '.rc-tm{background:#ffbd2e}' +
+          '.rc-tx{background:#27c93f}' +
+          '[data-rc-tl]{display:flex;align-items:center;gap:8px;padding-left:4px;flex-shrink:0}' +
+          '.rc-ver{display:flex;align-items:center;gap:6px;flex-shrink:0;padding-left:8px}' +
+          '.rc-ver span{font-size:11px;color:#888;font-family:SFMono-Regular,Consolas,Liberation Mono,Menlo,monospace}' +
+          '.rc-ver .rc-dot{width:6px;height:6px;border-radius:50%;background:#27c93f}' +
+          '[data-tauri-drag-region]{-webkit-app-region:drag}';
+        document.head.appendChild(css);
+        var inserted = false;
+        var obs = new MutationObserver(function() {
+          if (inserted) return;
+          var tb = document.querySelector('header');
+          if (!tb) return;
+          // Traffic lights bar — flush left
+          var bar = document.createElement('div');
+          bar.setAttribute('data-rc-tl','');
+          bar.innerHTML =
+            '<button class="rc-tl rc-tc" title="关闭"></button>' +
+            '<button class="rc-tl rc-tm" title="最小化"></button>' +
+            '<button class="rc-tl rc-tx" title="最大化"></button>';
+          bar.children[0].onclick = function(){ window.api?.runDesktopMenuAction?.('window.close') };
+          bar.children[1].onclick = function(){ window.api?.runDesktopMenuAction?.('window.minimize') };
+          bar.children[2].onclick = function(){ window.api?.runDesktopMenuAction?.('window.toggleMaximize') };
+          // Version badge
+          var ver = document.createElement('div');
+          ver.className = 'rc-ver';
+          ver.innerHTML = '<span class="rc-dot"></span><span>v0.1.0</span>';
+          // Insert at start of header
+          tb.insertBefore(ver, tb.firstChild);
+          tb.insertBefore(bar, tb.firstChild);
+          // No extra left padding — traffic lights sit at the very left edge
+          tb.style.paddingLeft = '0';
+          // Hide native channel badge
+          var hideBadge = setInterval(function(){
+            var badge = tb.querySelector('[class*="bg-icon-interactive-base"]');
+            if (badge) { badge.style.display = 'none'; clearInterval(hideBadge); }
+          }, 100);
+          inserted = true;
+        });
+        obs.observe(document.body, { childList: true, subtree: true });
+      } catch(e) {}
+    })();
+    </script>
+  </body>
+</html>

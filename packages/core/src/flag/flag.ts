@@ -1,0 +1,70 @@
+﻿import { Config } from "effect"
+
+function truthy(key: string) {
+  const value = process.env[key]?.toLowerCase()
+  return value === "true" || value === "1"
+}
+
+const REDCODE_EXPERIMENTAL = truthy("REDCODE_EXPERIMENTAL")
+const copy = process.env["REDCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT"]
+
+export const Flag = {
+  OTEL_EXPORTER_OTLP_ENDPOINT: process.env["OTEL_EXPORTER_OTLP_ENDPOINT"],
+  OTEL_EXPORTER_OTLP_HEADERS: process.env["OTEL_EXPORTER_OTLP_HEADERS"],
+
+  REDCODE_AUTO_HEAP_SNAPSHOT: truthy("REDCODE_AUTO_HEAP_SNAPSHOT"),
+  REDCODE_GIT_BASH_PATH: process.env["REDCODE_GIT_BASH_PATH"],
+  REDCODE_CONFIG: process.env["REDCODE_CONFIG"],
+  REDCODE_CONFIG_CONTENT: process.env["REDCODE_CONFIG_CONTENT"],
+  REDCODE_DISABLE_AUTOUPDATE: truthy("REDCODE_DISABLE_AUTOUPDATE"),
+  REDCODE_ALWAYS_NOTIFY_UPDATE: truthy("REDCODE_ALWAYS_NOTIFY_UPDATE"),
+  REDCODE_DISABLE_PRUNE: truthy("REDCODE_DISABLE_PRUNE"),
+  REDCODE_DISABLE_TERMINAL_TITLE: truthy("REDCODE_DISABLE_TERMINAL_TITLE"),
+  REDCODE_SHOW_TTFD: truthy("REDCODE_SHOW_TTFD"),
+  REDCODE_DISABLE_AUTOCOMPACT: truthy("REDCODE_DISABLE_AUTOCOMPACT"),
+  REDCODE_DISABLE_MODELS_FETCH: truthy("REDCODE_DISABLE_MODELS_FETCH"),
+  REDCODE_DISABLE_MOUSE: truthy("REDCODE_DISABLE_MOUSE"),
+  REDCODE_FAKE_VCS: process.env["REDCODE_FAKE_VCS"],
+  REDCODE_SERVER_PASSWORD: process.env["REDCODE_SERVER_PASSWORD"],
+  REDCODE_SERVER_USERNAME: process.env["REDCODE_SERVER_USERNAME"],
+
+  // Experimental
+  REDCODE_EXPERIMENTAL_FILEWATCHER: Config.boolean("REDCODE_EXPERIMENTAL_FILEWATCHER").pipe(
+    Config.withDefault(false),
+  ),
+  REDCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: Config.boolean("REDCODE_EXPERIMENTAL_DISABLE_FILEWATCHER").pipe(
+    Config.withDefault(false),
+  ),
+  REDCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT:
+    copy === undefined ? process.platform === "win32" : truthy("REDCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT"),
+  REDCODE_MODELS_URL: process.env["REDCODE_MODELS_URL"],
+  REDCODE_MODELS_PATH: process.env["REDCODE_MODELS_PATH"],
+  REDCODE_DB: process.env["REDCODE_DB"],
+
+  REDCODE_WORKSPACE_ID: process.env["REDCODE_WORKSPACE_ID"],
+  REDCODE_EXPERIMENTAL_WORKSPACES: REDCODE_EXPERIMENTAL || truthy("REDCODE_EXPERIMENTAL_WORKSPACES"),
+
+  // Evaluated at access time (not module load) because tests, the CLI, and
+  // external tooling set these env vars at runtime.
+  get REDCODE_DISABLE_PROJECT_CONFIG() {
+    return truthy("REDCODE_DISABLE_PROJECT_CONFIG")
+  },
+  get REDCODE_TUI_CONFIG() {
+    return process.env["REDCODE_TUI_CONFIG"]
+  },
+  get REDCODE_CONFIG_DIR() {
+    return process.env["REDCODE_CONFIG_DIR"]
+  },
+  get REDCODE_PURE() {
+    return truthy("REDCODE_PURE")
+  },
+  get REDCODE_PERMISSION() {
+    return process.env["REDCODE_PERMISSION"]
+  },
+  get REDCODE_PLUGIN_META_FILE() {
+    return process.env["REDCODE_PLUGIN_META_FILE"]
+  },
+  get REDCODE_CLIENT() {
+    return process.env["REDCODE_CLIENT"] ?? "cli"
+  },
+}
