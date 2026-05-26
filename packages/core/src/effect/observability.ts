@@ -4,7 +4,7 @@ import { OtlpLogger, OtlpSerialization } from "effect/unstable/observability"
 import * as EffectLogger from "./logger"
 import { Flag } from "../flag/flag"
 import { InstallationChannel, InstallationVersion } from "../installation/version"
-import { ensureProcessMetadata } from "../util/RedCode-process"
+import { ensureProcessMetadata } from "../util/redcode-process"
 
 const base = Flag.OTEL_EXPORTER_OTLP_ENDPOINT
 export const enabled = !!base

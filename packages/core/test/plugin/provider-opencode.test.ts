@@ -27,8 +27,8 @@ describe("OpencodePlugin", () => {
             draft.cost = [...paid.cost]
           })
         })
-        expect((yield* catalog.provider.get(ProviderV2.ID.redcode)).options.aisdk.provider.apiKey).toBe("public")
-        expect((yield* catalog.model.get(ProviderV2.ID.redcode, ModelV2.ID.make("paid"))).enabled).toBe(false)
+        expect((yield* catalog.provider.get(ProviderV2.ID.RedCode)).options.aisdk.provider.apiKey).toBe("public")
+        expect((yield* catalog.model.get(ProviderV2.ID.RedCode, ModelV2.ID.make("paid"))).enabled).toBe(false)
       }),
     ),
   )
@@ -48,8 +48,8 @@ describe("OpencodePlugin", () => {
             draft.cost = [...free.cost]
           })
         })
-        expect((yield* catalog.provider.get(ProviderV2.ID.redcode)).options.aisdk.provider.apiKey).toBe("public")
-        expect((yield* catalog.model.get(ProviderV2.ID.redcode, ModelV2.ID.make("free"))).enabled).toBe(true)
+        expect((yield* catalog.provider.get(ProviderV2.ID.RedCode)).options.aisdk.provider.apiKey).toBe("public")
+        expect((yield* catalog.model.get(ProviderV2.ID.RedCode, ModelV2.ID.make("free"))).enabled).toBe(true)
       }),
     ),
   )
@@ -69,8 +69,8 @@ describe("OpencodePlugin", () => {
             draft.cost = [...outputOnly.cost]
           })
         })
-        expect((yield* catalog.provider.get(ProviderV2.ID.redcode)).options.aisdk.provider.apiKey).toBe("public")
-        expect((yield* catalog.model.get(ProviderV2.ID.redcode, ModelV2.ID.make("output-only"))).enabled).toBe(true)
+        expect((yield* catalog.provider.get(ProviderV2.ID.RedCode)).options.aisdk.provider.apiKey).toBe("public")
+        expect((yield* catalog.model.get(ProviderV2.ID.RedCode, ModelV2.ID.make("output-only"))).enabled).toBe(true)
       }),
     ),
   )
@@ -90,8 +90,8 @@ describe("OpencodePlugin", () => {
             draft.cost = [...paid.cost]
           })
         })
-        expect((yield* catalog.provider.get(ProviderV2.ID.redcode)).options.aisdk.provider.apiKey).toBeUndefined()
-        expect((yield* catalog.model.get(ProviderV2.ID.redcode, ModelV2.ID.make("paid"))).enabled).toBe(true)
+        expect((yield* catalog.provider.get(ProviderV2.ID.RedCode)).options.aisdk.provider.apiKey).toBeUndefined()
+        expect((yield* catalog.model.get(ProviderV2.ID.RedCode, ModelV2.ID.make("paid"))).enabled).toBe(true)
       }),
     ),
   )
@@ -113,8 +113,8 @@ describe("OpencodePlugin", () => {
             draft.cost = [...paid.cost]
           })
         })
-        expect((yield* catalog.provider.get(ProviderV2.ID.redcode)).options.aisdk.provider.apiKey).toBeUndefined()
-        expect((yield* catalog.model.get(ProviderV2.ID.redcode, ModelV2.ID.make("paid"))).enabled).toBe(true)
+        expect((yield* catalog.provider.get(ProviderV2.ID.RedCode)).options.aisdk.provider.apiKey).toBeUndefined()
+        expect((yield* catalog.model.get(ProviderV2.ID.RedCode, ModelV2.ID.make("paid"))).enabled).toBe(true)
       }),
     ),
   )
@@ -145,8 +145,8 @@ describe("OpencodePlugin", () => {
             draft.cost = [...paid.cost]
           })
         })
-        expect((yield* catalog.provider.get(ProviderV2.ID.redcode)).options.aisdk.provider.apiKey).toBe("configured")
-        expect((yield* catalog.model.get(ProviderV2.ID.redcode, ModelV2.ID.make("paid"))).enabled).toBe(true)
+        expect((yield* catalog.provider.get(ProviderV2.ID.RedCode)).options.aisdk.provider.apiKey).toBe("configured")
+        expect((yield* catalog.model.get(ProviderV2.ID.RedCode, ModelV2.ID.make("paid"))).enabled).toBe(true)
       }),
     ),
   )
@@ -168,8 +168,8 @@ describe("OpencodePlugin", () => {
             draft.cost = [...paid.cost]
           })
         })
-        expect((yield* catalog.provider.get(ProviderV2.ID.redcode)).options.aisdk.provider.apiKey).toBeUndefined()
-        expect((yield* catalog.model.get(ProviderV2.ID.redcode, ModelV2.ID.make("paid"))).enabled).toBe(true)
+        expect((yield* catalog.provider.get(ProviderV2.ID.RedCode)).options.aisdk.provider.apiKey).toBeUndefined()
+        expect((yield* catalog.model.get(ProviderV2.ID.RedCode, ModelV2.ID.make("paid"))).enabled).toBe(true)
       }),
     ),
   )
@@ -198,7 +198,7 @@ describe("OpencodePlugin", () => {
   it.effect("prefers gpt-5-nano as the redcode small model", () =>
     Effect.gen(function* () {
       const catalog = yield* Catalog.Service
-      const providerID = ProviderV2.ID.redcode
+      const providerID = ProviderV2.ID.RedCode
 
       const load = yield* catalog.loader()
       yield* load((catalog) => {
