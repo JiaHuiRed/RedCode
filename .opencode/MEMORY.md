@@ -40,6 +40,32 @@
 - 未经主人允许，严禁推送 GitHub 或打包 release 版本
 - 改代码前先列改动清单，测试后再提交
 
+## 历史教训（260526 Red）
+
+### 1. bundle 依赖问题
+- 不要把 bundle 复制到陌生路径去跑。Bun 的 inline bundle 含有 AMD 模块的相对路径（如 jsonc-parser 的 `./impl/format`），复制后路径全断
+- 正确做法：让 bundle 留在原位置，依赖天然从原始 `node_modules` 解析
+- 原生模块（`@parcel/watcher`）无法 inline，在 bundle 旁放 minimal shim，不要试图复制整个依赖树
+
+### 2. 一次性修完再启动测试
+- 主人反复说 "全部修完再启动"，不要改一个错误就 rebuild → restart → 等反馈
+- 应该先全面扫描所有问题，批量修完，最后一次启动验证
+
+### 3. 先看错误日志再动手
+- 不要猜问题。sidecar 崩溃看了七八轮才找到 `@parcel/watcher/wrapper` 的 import 错误
+- 第一时间加全局错误捕获（`uncaughtException` / `unhandledRejection`）+ 文件日志
+- 确认 error message 能被主进程收到（`onMessage` 会在 ready 后被 cleanup 移除，需要永久 listener）
+
+### 4. 安装版 vs 免安装版
+- electron-builder 打包后 `resources/icons/` 不会自动随 `files` 配置出现在 ASAR 外
+- `process.resourcesPath/icons/` 需要 `extraResources` 单独声明
+- NSIS 安装器压缩图标会糊，用 `target: ["dir"]` 只生成免安装版
+
+### 5. 更新 README/CHANGELOG 要同步
+- 改了 version 必须同时改 README 顶部版本号和 badge、CHANGELOG 新条目
+- CHANGELOG 用 Keep a Changelog 格式，版本号语义 `0.0.x`
+- 核心功能只写实际可用的，未发布的功能不要列上去
+
 ## 其他
 - 如果有不确定的，先问主人再改
 - 不要擅自生成 exe/二进制文件，除非主人明确要求
