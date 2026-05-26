@@ -14,7 +14,7 @@ import { Spinner } from "@redcode-ai/ui/spinner"
 import { Tooltip } from "@redcode-ai/ui/tooltip"
 import { type Session } from "@redcode-ai/sdk/v2/client"
 import { type LocalProject } from "@/context/layout"
-import { useGlobalSync, useQueryOptions } from "@/context/global-sync"
+import { useServerSync, useQueryOptions } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { pathKey } from "@/utils/path-key"
 import { NewSessionItem, SessionItem, SessionSkeleton } from "./sidebar-items"
@@ -60,7 +60,7 @@ export const WorkspaceDragOverlay = (props: {
   activeWorkspace: Accessor<string | undefined>
   workspaceLabel: (directory: string, branch?: string, projectId?: string) => string
 }): JSX.Element => {
-  const globalSync = useGlobalSync()
+  const globalSync = useServerSync()
   const language = useLanguage()
   const label = createMemo(() => {
     const project = props.sidebarProject()
@@ -299,7 +299,7 @@ export const SortableWorkspace = (props: {
 }): JSX.Element => {
   const navigate = useNavigate()
   const params = useParams()
-  const globalSync = useGlobalSync()
+  const globalSync = useServerSync()
   const queryOptions = useQueryOptions()
   const language = useLanguage()
   const sortable = createSortable(props.directory)
@@ -446,7 +446,7 @@ export const LocalWorkspace = (props: {
   sortNow: Accessor<number>
   mobile?: boolean
 }): JSX.Element => {
-  const globalSync = useGlobalSync()
+  const globalSync = useServerSync()
   const queryOptions = useQueryOptions()
   const language = useLanguage()
   const workspace = createMemo(() => {

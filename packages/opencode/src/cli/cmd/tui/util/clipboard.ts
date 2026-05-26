@@ -100,6 +100,20 @@ export async function read(): Promise<Content | undefined> {
         return { data: imageBuffer.toString("base64"), mime: "image/png" }
       }
     }
+
+    const text = await Process.text(
+      [
+        "powershell.exe",
+        "-NonInteractive",
+        "-NoProfile",
+        "-Command",
+        "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Clipboard",
+      ],
+      { nothrow: true },
+    )
+    if (text.text?.trim()) {
+      return { data: text.text.trim(), mime: "text/plain" }
+    }
   }
 
   if (os === "linux") {

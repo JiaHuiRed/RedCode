@@ -3,7 +3,7 @@ import { batch, createEffect, createMemo, onCleanup } from "solid-js"
 import { useParams } from "@solidjs/router"
 import { createSimpleContext } from "@redcode-ai/ui/context"
 import { useGlobalSDK } from "./global-sdk"
-import { useGlobalSync } from "./global-sync"
+import { useServerSync } from "./server-sync"
 import { usePlatform } from "@/context/platform"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
@@ -110,7 +110,7 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
   init: () => {
     const params = useParams()
     const globalSDK = useGlobalSDK()
-    const globalSync = useGlobalSync()
+    const globalSync = useServerSync()
     const platform = usePlatform()
     const settings = useSettings()
     const language = useLanguage()

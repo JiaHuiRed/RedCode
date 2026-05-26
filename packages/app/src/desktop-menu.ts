@@ -200,20 +200,8 @@ export const DESKTOP_MENU: DesktopMenu[] = [
     id: "help",
     label: "帮助",
     items: [
-      { type: "item", label: "RedCode 文档", href: "https://redcode.dev/docs" },
-      { type: "item", label: "支持论坛", href: "https://discord.com/invite/RedCode" },
+      { type: "item", label: "RedCode 源码", href: "https://github.com/JiaHuiRed/RedCode" },
       { type: "item", label: "导出日志...", command: "logs.export" },
-      { type: "separator" },
-      {
-        type: "item",
-        label: "反馈建议",
-        href: "https://github.com/JiaHuiRed/RedCode/issues/new?template=feature_request.yml",
-      },
-      {
-        type: "item",
-        label: "报告 Bug",
-        href: "https://github.com/JiaHuiRed/RedCode/issues/new?template=bug_report.yml",
-      },
     ],
   },
 ]

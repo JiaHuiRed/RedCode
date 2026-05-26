@@ -8,7 +8,7 @@ import {
   getSessionPrefetchPromise,
   setSessionPrefetch,
 } from "./global-sync/session-prefetch"
-import { useGlobalSync } from "./global-sync"
+import { useServerSync } from "./server-sync"
 import type { Message, OpencodeClient, Part } from "@redcode-ai/sdk/v2/client"
 import { SESSION_CACHE_LIMIT, dropSessionCaches, pickSessionCacheEvictions } from "./global-sync/session-cache"
 import { diffs as list, message as clean } from "@/utils/diffs"
@@ -165,7 +165,7 @@ function setOptimisticRemove(setStore: (...args: unknown[]) => void, input: Opti
 }
 
 export const createDirSyncContext = (client: OpencodeClient, directory: string) => {
-  const globalSync = useGlobalSync()
+  const globalSync = useServerSync()
 
   type Child = ReturnType<(typeof globalSync)["child"]>
   type Setter = Child[1]

@@ -2,7 +2,7 @@
 import { batch, createEffect, createMemo, onCleanup, onMount, type Accessor } from "solid-js"
 import { createSimpleContext } from "@redcode-ai/ui/context"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import { useGlobalSync } from "./global-sync"
+import { useServerSync } from "./server-sync"
 import { useGlobalSDK } from "./global-sdk"
 import { useServer } from "./server"
 import { usePlatform } from "./platform"
@@ -137,7 +137,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
   name: "Layout",
   init: () => {
     const globalSdk = useGlobalSDK()
-    const globalSync = useGlobalSync()
+    const globalSync = useServerSync()
     const server = useServer()
     const platform = usePlatform()
 

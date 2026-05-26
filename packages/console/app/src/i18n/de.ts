@@ -1,4 +1,4 @@
-﻿import type { Dict } from "./en"
+import type { Dict } from "./en"
 import { dict as en } from "./en"
 
 export const dict = {
@@ -653,7 +653,7 @@ export const dict = {
   "workspace.lite.subscription.resetsIn": "Setzt zurück in",
   "workspace.lite.subscription.useBalance": "Nutze dein verfügbares Guthaben, nachdem die Nutzungslimits erreicht sind",
   "workspace.lite.subscription.selectProvider":
-    'Wähle "RedCode Go" als Anbieter in deiner RedCode-Konfiguration, um Go-Modelle zu verwenden.',
+    'Wähle "RedCode Go" als Anbieter in deiner redcode-Konfiguration, um Go-Modelle zu verwenden.',
   "workspace.lite.black.message":
     "Du hast derzeit RedCode Black abonniert oder stehst auf der Warteliste. Bitte kündige zuerst, wenn du zu Go wechseln möchtest.",
   "workspace.lite.other.message":

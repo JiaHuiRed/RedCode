@@ -1,4 +1,4 @@
-﻿import { dict as en } from "./en"
+import { dict as en } from "./en"
 
 export const dict = {
   ...en,
@@ -36,14 +36,14 @@ export const dict = {
   "email.subscribe": "Підписатися",
   "email.success": "Майже готово! Перевірте пошту та підтвердьте адресу",
 
-  "notFound.title": "Не знайдено | RedCode",
+  "notFound.title": "Не знайдено | redcode",
   "notFound.heading": "404 — Сторінку не знайдено",
   "notFound.home": "Головна",
   "notFound.docs": "Документація",
   "notFound.github": "GitHub",
   "notFound.discord": "Discord",
-  "notFound.logoLightAlt": "світлий логотип RedCode",
-  "notFound.logoDarkAlt": "темний логотип RedCode",
+  "notFound.logoLightAlt": "світлий логотип redcode",
+  "notFound.logoDarkAlt": "темний логотип redcode",
 
   "user.logout": "Вийти",
 
@@ -85,21 +85,21 @@ export const dict = {
 
   "home.title": "RedCode | Відкритий AI-агент для кодування",
 
-  "temp.title": "RedCode | AI-агент для кодування, створений для термінала",
+  "temp.title": "redcode | AI-агент для кодування, створений для термінала",
   "temp.hero.title": "AI-агент для кодування, створений для термінала",
-  "temp.zen": "RedCode zen",
+  "temp.zen": "redcode zen",
   "temp.getStarted": "Почати",
   "temp.feature.native.title": "Рідний TUI",
   "temp.feature.native.body": "Чуйний, рідний інтерфейс термінала з темами",
   "temp.feature.zen.beforeLink": "A",
   "temp.feature.zen.link": "добірка моделей",
-  "temp.feature.zen.afterLink": "від RedCode",
+  "temp.feature.zen.afterLink": "від redcode",
   "temp.feature.models.beforeLink": "Підтримує 75+ LLM-провайдерів через",
   "temp.feature.models.afterLink": ", включаючи локальні моделі",
   "temp.screenshot.caption": "RedCode TUI з темою tokyonight",
   "temp.screenshot.alt": "RedCode TUI з темою tokyonight",
-  "temp.logoLightAlt": "світлий логотип RedCode",
-  "temp.logoDarkAlt": "темний логотип RedCode",
+  "temp.logoLightAlt": "світлий логотип redcode",
+  "temp.logoDarkAlt": "темний логотип redcode",
 
   "home.banner.badge": "Нове",
   "home.banner.text": "Десктопний застосунок доступний у бета-версії",
@@ -451,9 +451,9 @@ export const dict = {
   "workspace.newUser.copied": "Скопійовано!",
   "workspace.newUser.step.enableBilling": "Увімкнути оплату",
   "workspace.newUser.step.login.before": "Запустіть",
-  "workspace.newUser.step.login.after": "і виберіть RedCode",
+  "workspace.newUser.step.login.after": "і виберіть redcode",
   "workspace.newUser.step.pasteKey": "Вставте ключ API",
-  "workspace.newUser.step.models.before": "Запустіть RedCode і виконайте",
+  "workspace.newUser.step.models.before": "Запустіть redcode і виконайте",
   "workspace.newUser.step.models.after": "щоб вибрати модель",
 
   "workspace.models.title": "Моделі",
@@ -499,10 +499,10 @@ export const dict = {
   "workspace.cost.subscriptionShort": "підп",
 
   "workspace.keys.title": "Ключі API",
-  "workspace.keys.subtitle": "Керуйте ключами API для доступу до сервісів RedCode.",
+  "workspace.keys.subtitle": "Керуйте ключами API для доступу до сервісів redcode.",
   "workspace.keys.create": "Створити ключ API",
   "workspace.keys.placeholder": "Введіть назву ключа",
-  "workspace.keys.empty": "Створіть ключ API шлюзу RedCode",
+  "workspace.keys.empty": "Створіть ключ API шлюзу redcode",
   "workspace.keys.table.name": "Назва",
   "workspace.keys.table.key": "Ключ",
   "workspace.keys.table.createdBy": "Створено",
@@ -650,7 +650,7 @@ export const dict = {
   "workspace.lite.subscription.monthlyUsage": "Місячне використання",
   "workspace.lite.subscription.resetsIn": "Скидається через",
   "workspace.lite.subscription.useBalance": "Використовуйте доступний баланс після досягнення лімітів",
-  "workspace.lite.subscription.selectProvider": 'Виберіть "RedCode Go" як провайдера в конфігурації RedCode.',
+  "workspace.lite.subscription.selectProvider": 'Виберіть "RedCode Go" як провайдера в конфігурації redcode.',
   "workspace.lite.black.message":
     "Ви вже підписані на RedCode Black або в списку очікування. Спочатку скасуйте підписку, якщо хочете перейти на Go.",
   "workspace.lite.other.message": "Інший учасник цього робочого простору вже підписаний на RedCode Go.",

@@ -1,4 +1,4 @@
-﻿import type { Dict } from "./en"
+import type { Dict } from "./en"
 import { dict as en } from "./en"
 
 export const dict = {
@@ -44,8 +44,8 @@ export const dict = {
   "notFound.docs": "文件",
   "notFound.github": "GitHub",
   "notFound.discord": "Discord",
-  "notFound.logoLightAlt": "RedCode 淺色標誌",
-  "notFound.logoDarkAlt": "RedCode 深色標誌",
+  "notFound.logoLightAlt": "redcode 淺色標誌",
+  "notFound.logoDarkAlt": "redcode 深色標誌",
 
   "user.logout": "登出",
 
@@ -99,8 +99,8 @@ export const dict = {
   "temp.feature.models.afterLink": "支援 75+ 家 LLM 供應商，包括本地模型",
   "temp.screenshot.caption": "使用 tokyonight 主題的 RedCode TUI",
   "temp.screenshot.alt": "使用 tokyonight 主題的 RedCode TUI",
-  "temp.logoLightAlt": "RedCode 淺色標誌",
-  "temp.logoDarkAlt": "RedCode 深色標誌",
+  "temp.logoLightAlt": "redcode 淺色標誌",
+  "temp.logoDarkAlt": "redcode 深色標誌",
 
   "home.banner.badge": "新",
   "home.banner.text": "桌面應用已推出 Beta",
@@ -629,7 +629,7 @@ export const dict = {
   "workspace.lite.subscription.resetsIn": "重置時間：",
   "workspace.lite.subscription.useBalance": "達到使用限制後使用您的可用餘額",
   "workspace.lite.subscription.selectProvider":
-    "在您的 RedCode 設定中選擇「RedCode Go」作為提供商，即可使用 Go 模型。",
+    "在您的 redcode 設定中選擇「RedCode Go」作為提供商，即可使用 Go 模型。",
   "workspace.lite.black.message": "您目前已訂閱 RedCode Black 或在候補名單中。若要切換至 Go，請先取消訂閱。",
   "workspace.lite.other.message": "此工作區中的另一位成員已訂閱 RedCode Go。每個工作區只能有一位成員訂閱。",
   "workspace.lite.promo.description":

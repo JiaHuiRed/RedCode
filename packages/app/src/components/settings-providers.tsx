@@ -7,7 +7,7 @@ import { popularProviders, useProviders } from "@/hooks/use-providers"
 import { createMemo, type Component, For, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useGlobalSDK } from "@/context/global-sdk"
-import { useGlobalSync } from "@/context/global-sync"
+import { useServerSync } from "@/context/server-sync"
 import { DialogConnectProvider } from "./dialog-connect-provider"
 import { DialogSelectProvider } from "./dialog-select-provider"
 import { DialogCustomProvider } from "./dialog-custom-provider"
@@ -31,7 +31,7 @@ export const SettingsProviders: Component = () => {
   const dialog = useDialog()
   const language = useLanguage()
   const globalSDK = useGlobalSDK()
-  const globalSync = useGlobalSync()
+  const globalSync = useServerSync()
   const providers = useProviders()
 
   const connected = createMemo(() => {

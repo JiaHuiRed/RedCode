@@ -4,7 +4,7 @@ import { createSimpleContext } from "@redcode-ai/ui/context"
 import type { PermissionRequest } from "@redcode-ai/sdk/v2/client"
 import { Persist, persisted } from "@/utils/persist"
 import { useGlobalSDK } from "@/context/global-sdk"
-import { useGlobalSync } from "./global-sync"
+import { useServerSync } from "./server-sync"
 import { useParams } from "@solidjs/router"
 import { decode64 } from "@/utils/base64"
 import {
@@ -49,7 +49,7 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
   init: () => {
     const params = useParams()
     const globalSDK = useGlobalSDK()
-    const globalSync = useGlobalSync()
+    const globalSync = useServerSync()
 
     const permissionsEnabled = createMemo(() => {
       const directory = decode64(params.dir)

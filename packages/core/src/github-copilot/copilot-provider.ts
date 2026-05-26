@@ -4,7 +4,7 @@ import { OpenAICompatibleChatLanguageModel } from "./chat/openai-compatible-chat
 import { OpenAIResponsesLanguageModel } from "./responses/openai-responses-language-model"
 
 // Import the version or define it
-const VERSION = "0.1.0"
+const VERSION = "0.2.0"
 
 export type OpenaiCompatibleModelId = string
 

@@ -7,7 +7,7 @@ import { getDirectory, getFilename } from "@redcode-ai/core/util/path"
 import fuzzysort from "fuzzysort"
 import { createMemo, createResource, createSignal } from "solid-js"
 import { useGlobalSDK } from "@/context/global-sdk"
-import { useGlobalSync } from "@/context/global-sync"
+import { useServerSync } from "@/context/server-sync"
 import { useLayout } from "@/context/layout"
 import { useLanguage } from "@/context/language"
 
@@ -246,7 +246,7 @@ function useDirectorySearch(args: {
 }
 
 export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
-  const sync = useGlobalSync()
+  const sync = useServerSync()
   const sdk = useGlobalSDK()
   const layout = useLayout()
   const dialog = useDialog()

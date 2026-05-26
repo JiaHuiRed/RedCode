@@ -34,24 +34,9 @@ export function SubagentFooter() {
     const msg = messages()
     const last = msg.findLast((item): item is AssistantMessage => item.role === "assistant" && item.tokens.output > 0)
     if (!last) return
-
-    const tokens =
-      last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
-    if (tokens <= 0) return
-
-    const model = sync.data.provider.find((item) => item.id === last.providerID)?.models[last.modelID]
-    const pct = model?.limit.context ? `${Math.round((tokens / model.limit.context) * 100)}%` : undefined
-    const cost = session()?.cost ?? 0
-
-    const money = new Intl.NumberFormat("zh-CN", {
-      style: "currency",
-      currency: "CNY",
-    })
-
-    return {
-      context: pct ? `${Locale.number(tokens)} (${pct})` : Locale.number(tokens),
-      cost: cost > 0 ? money.format(cost) : undefined,
-    }
+    if (last.tokens.cache.read <= 0) return
+    const cacheHitPct = Math.round((last.tokens.cache.read / (last.tokens.input + last.tokens.cache.read + last.tokens.cache.write)) * 100)
+    return { cache: `Cache: ${cacheHitPct}%` }
   })
 
   const { theme } = useTheme()
@@ -88,7 +73,7 @@ export function SubagentFooter() {
             <Show when={usage()}>
               {(item) => (
                 <text fg={theme.textMuted} wrapMode="none">
-                  {[item().context, item().cost].filter(Boolean).join(" · ")}
+                  {item().cache}
                 </text>
               )}
             </Show>

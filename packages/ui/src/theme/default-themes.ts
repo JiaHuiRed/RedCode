@@ -36,9 +36,6 @@ import tokyonightThemeJson from "./themes/tokyonight.json"
 import vercelThemeJson from "./themes/vercel.json"
 import vesperThemeJson from "./themes/vesper.json"
 import zenburnThemeJson from "./themes/zenburn.json"
-import creamThemeJson from "./themes/cream.json"
-import eyeGreenThemeJson from "./themes/eye-green.json"
-import deepBlueThemeJson from "./themes/deep-blue.json"
 
 export const oc2Theme = oc2ThemeJson as DesktopTheme
 export const amoledTheme = amoledThemeJson as DesktopTheme
@@ -77,10 +74,6 @@ export const tokyonightTheme = tokyonightThemeJson as DesktopTheme
 export const vercelTheme = vercelThemeJson as DesktopTheme
 export const vesperTheme = vesperThemeJson as DesktopTheme
 export const zenburnTheme = zenburnThemeJson as DesktopTheme
-export const creamTheme = creamThemeJson as DesktopTheme
-export const eyeGreenTheme = eyeGreenThemeJson as DesktopTheme
-export const deepBlueTheme = deepBlueThemeJson as DesktopTheme
-
 export const DEFAULT_THEMES: Record<string, DesktopTheme> = {
   "oc-2": oc2Theme,
   amoled: amoledTheme,
@@ -119,7 +112,4 @@ export const DEFAULT_THEMES: Record<string, DesktopTheme> = {
   vercel: vercelTheme,
   vesper: vesperTheme,
   zenburn: zenburnTheme,
-  cream: creamTheme,
-  "eye-green": eyeGreenTheme,
-  "deep-blue": deepBlueTheme,
 }

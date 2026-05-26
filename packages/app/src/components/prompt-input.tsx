@@ -66,7 +66,7 @@ import { PromptDragOverlay } from "./prompt-input/drag-overlay"
 import { promptPlaceholder } from "./prompt-input/placeholder"
 import { ImagePreview } from "@redcode-ai/ui/image-preview"
 import { useQueries } from "@tanstack/solid-query"
-import { useQueryOptions } from "@/context/global-sync"
+import { useQueryOptions } from "@/context/server-sync"
 import { pathKey } from "@/utils/path-key"
 import { getFilename } from "@redcode-ai/core/util/path"
 

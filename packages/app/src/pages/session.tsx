@@ -34,7 +34,7 @@ import { useLocation, useSearchParams } from "@solidjs/router"
 import { NewSessionDesignView, NewSessionView, SessionHeader } from "@/components/session"
 import { useComments } from "@/context/comments"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
-import { useGlobalSync } from "@/context/global-sync"
+import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { usePrompt } from "@/context/prompt"
@@ -181,7 +181,7 @@ function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
 }
 
 export default function Page() {
-  const globalSync = useGlobalSync()
+  const globalSync = useServerSync()
   const layout = useLayout()
   const local = useLocal()
   const file = useFile()

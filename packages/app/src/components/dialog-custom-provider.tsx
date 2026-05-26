@@ -10,7 +10,7 @@ import { batch, For } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { Link } from "@/components/link"
 import { useGlobalSDK } from "@/context/global-sdk"
-import { useGlobalSync } from "@/context/global-sync"
+import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { type FormState, headerRow, modelRow, validateCustomProvider } from "./dialog-custom-provider-form"
 import { DialogSelectProvider } from "./dialog-select-provider"
@@ -21,7 +21,7 @@ type Props = {
 
 export function DialogCustomProvider(props: Props) {
   const dialog = useDialog()
-  const globalSync = useGlobalSync()
+  const globalSync = useServerSync()
   const globalSDK = useGlobalSDK()
   const language = useLanguage()
 

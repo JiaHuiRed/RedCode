@@ -82,12 +82,13 @@ export default defineConfig({
   renderer: {
     plugins: [appPlugin, sentry],
     publicDir: "../../../app/public",
-    root: ".",
+    root: "src/renderer",
     build: {
       sourcemap: true,
       rollupOptions: {
         input: {
           main: "src/renderer/index.html",
+          loading: "src/renderer/loading.html",
         },
       },
     },

@@ -1,5 +1,5 @@
 ﻿import { Binary } from "@redcode-ai/core/util/binary"
-import { useGlobalSync } from "./global-sync"
+import { useServerSync } from "./server-sync"
 import { useSDK } from "./sdk"
 import type { Message, Part } from "@redcode-ai/sdk/v2/client"
 
@@ -109,7 +109,7 @@ export function applyOptimisticRemove(draft: OptimisticStore, input: OptimisticR
 }
 
 export const useSync = () => {
-  const globalSync = useGlobalSync()
+  const globalSync = useServerSync()
   const sdk = useSDK()
 
   return globalSync.createDirSyncContext(sdk.directory)

@@ -13,13 +13,13 @@ import { createEffect, createMemo, createResource, Match, onCleanup, onMount, Sw
 import { createStore, produce } from "solid-js/store"
 import { Link } from "@/components/link"
 import { useGlobalSDK } from "@/context/global-sdk"
-import { useGlobalSync } from "@/context/global-sync"
+import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { useProviders } from "@/hooks/use-providers"
 
 export function DialogConnectProvider(props: { provider: string }) {
   const dialog = useDialog()
-  const globalSync = useGlobalSync()
+  const globalSync = useServerSync()
   const globalSDK = useGlobalSDK()
   const language = useLanguage()
   const providers = useProviders()

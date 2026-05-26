@@ -1,4 +1,4 @@
-﻿import { dict as en } from "./en"
+import { dict as en } from "./en"
 
 export const dict = {
   ...en,
@@ -36,14 +36,14 @@ export const dict = {
   "email.subscribe": "Subskrybuj",
   "email.success": "Prawie gotowe, sprawdź skrzynkę i potwierdź swój adres e-mail",
 
-  "notFound.title": "Nie znaleziono | RedCode",
+  "notFound.title": "Nie znaleziono | redcode",
   "notFound.heading": "404 - Nie znaleziono strony",
   "notFound.home": "Strona główna",
   "notFound.docs": "Dokumentacja",
   "notFound.github": "GitHub",
   "notFound.discord": "Discord",
-  "notFound.logoLightAlt": "jasne logo RedCode",
-  "notFound.logoDarkAlt": "ciemne logo RedCode",
+  "notFound.logoLightAlt": "jasne logo redcode",
+  "notFound.logoDarkAlt": "ciemne logo redcode",
 
   "user.logout": "Wyloguj się",
 
@@ -84,21 +84,21 @@ export const dict = {
 
   "home.title": "RedCode | Open source'owy agent AI do kodowania",
 
-  "temp.title": "RedCode | Agent AI do kodowania zbudowany dla terminala",
+  "temp.title": "redcode | Agent AI do kodowania zbudowany dla terminala",
   "temp.hero.title": "Agent AI do kodowania zbudowany dla terminala",
-  "temp.zen": "RedCode zen",
+  "temp.zen": "redcode zen",
   "temp.getStarted": "Rozpocznij",
   "temp.feature.native.title": "Natywny TUI",
   "temp.feature.native.body": "Responsywny, natywny, tematyczny interfejs terminala",
   "temp.feature.zen.beforeLink": "A",
   "temp.feature.zen.link": "wyselekcjonowana lista modeli",
-  "temp.feature.zen.afterLink": "dostarczana przez RedCode",
+  "temp.feature.zen.afterLink": "dostarczana przez redcode",
   "temp.feature.models.beforeLink": "Obsługuje 75+ dostawców LLM przez",
   "temp.feature.models.afterLink": ", w tym modele lokalne",
   "temp.screenshot.caption": "RedCode TUI z motywem tokyonight",
   "temp.screenshot.alt": "RedCode TUI z motywem tokyonight",
-  "temp.logoLightAlt": "jasne logo RedCode",
-  "temp.logoDarkAlt": "ciemne logo RedCode",
+  "temp.logoLightAlt": "jasne logo redcode",
+  "temp.logoDarkAlt": "ciemne logo redcode",
 
   "home.banner.badge": "Nowość",
   "home.banner.text": "Aplikacja desktopowa dostępna w wersji beta",
@@ -452,9 +452,9 @@ export const dict = {
   "workspace.newUser.copied": "Skopiowano!",
   "workspace.newUser.step.enableBilling": "Włącz rozliczenia",
   "workspace.newUser.step.login.before": "Uruchom",
-  "workspace.newUser.step.login.after": "i wybierz RedCode",
+  "workspace.newUser.step.login.after": "i wybierz redcode",
   "workspace.newUser.step.pasteKey": "Wklej swój klucz API",
-  "workspace.newUser.step.models.before": "Uruchom RedCode i wpisz",
+  "workspace.newUser.step.models.before": "Uruchom redcode i wpisz",
   "workspace.newUser.step.models.after": "aby wybrać model",
 
   "workspace.models.title": "Modele",
@@ -500,10 +500,10 @@ export const dict = {
   "workspace.cost.subscriptionShort": "sub",
 
   "workspace.keys.title": "Klucze API",
-  "workspace.keys.subtitle": "Zarządzaj kluczami API do usług RedCode.",
+  "workspace.keys.subtitle": "Zarządzaj kluczami API do usług redcode.",
   "workspace.keys.create": "Utwórz klucz API",
   "workspace.keys.placeholder": "Wpisz nazwę klucza",
-  "workspace.keys.empty": "Utwórz klucz API bramy RedCode",
+  "workspace.keys.empty": "Utwórz klucz API bramy redcode",
   "workspace.keys.table.name": "Nazwa",
   "workspace.keys.table.key": "Klucz",
   "workspace.keys.table.createdBy": "Utworzony przez",
@@ -652,7 +652,7 @@ export const dict = {
   "workspace.lite.subscription.resetsIn": "Resetuje się za",
   "workspace.lite.subscription.useBalance": "Użyj dostępnego salda po osiągnięciu limitów użycia",
   "workspace.lite.subscription.selectProvider":
-    'Wybierz "RedCode Go" jako dostawcę w konfiguracji RedCode, aby używać modeli Go.',
+    'Wybierz "RedCode Go" jako dostawcę w konfiguracji redcode, aby używać modeli Go.',
   "workspace.lite.black.message":
     "Obecnie subskrybujesz RedCode Black lub jesteś na liście oczekujących. Jeśli chcesz przejść na Go, najpierw anuluj subskrypcję.",
   "workspace.lite.other.message":

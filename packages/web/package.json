@@ -2,7 +2,7 @@
   "name": "@redcode-ai/web",
   "type": "module",
   "license": "MIT",
-  "version": "1.15.7",
+  "version": "1.15.10",
   "scripts": {
     "dev": "astro dev",
     "dev:remote": "VITE_API_URL=https://api.redcode.dev astro dev",

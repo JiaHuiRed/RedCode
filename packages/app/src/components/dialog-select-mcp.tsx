@@ -6,7 +6,7 @@ import { Dialog } from "@redcode-ai/ui/dialog"
 import { List } from "@redcode-ai/ui/list"
 import { Switch } from "@redcode-ai/ui/switch"
 import { useLanguage } from "@/context/language"
-import { useQueryOptions } from "@/context/global-sync"
+import { useQueryOptions } from "@/context/server-sync"
 import { pathKey } from "@/utils/path-key"
 
 const statusLabels = {

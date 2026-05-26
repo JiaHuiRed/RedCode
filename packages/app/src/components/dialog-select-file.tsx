@@ -10,7 +10,7 @@ import { useNavigate } from "@solidjs/router"
 import { createMemo, createSignal, Match, onCleanup, Show, Switch } from "solid-js"
 import { formatKeybind, useCommand, type CommandOption } from "@/context/command"
 import { useGlobalSDK } from "@/context/global-sdk"
-import { useGlobalSync } from "@/context/global-sync"
+import { useServerSync } from "@/context/server-sync"
 import { useLayout } from "@/context/layout"
 import { useFile } from "@/context/file"
 import { useLanguage } from "@/context/language"
@@ -269,7 +269,7 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
   const dialog = useDialog()
   const navigate = useNavigate()
   const globalSDK = useGlobalSDK()
-  const globalSync = useGlobalSync()
+  const globalSync = useServerSync()
   const { params, tabs, view } = useSessionLayout()
   const filesOnly = () => props.mode === "files"
   const state = { cleanup: undefined as (() => void) | void, committed: false }

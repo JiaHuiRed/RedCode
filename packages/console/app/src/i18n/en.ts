@@ -1,4 +1,4 @@
-﻿export const dict = {
+export const dict = {
   "nav.github": "GitHub",
   "nav.docs": "Docs",
   "nav.changelog": "Changelog",
@@ -35,14 +35,14 @@
   "email.subscribe": "Subscribe",
   "email.success": "Almost done, check your inbox and confirm your email address",
 
-  "notFound.title": "Not Found | RedCode",
+  "notFound.title": "Not Found | redcode",
   "notFound.heading": "404 - Page Not Found",
   "notFound.home": "Home",
   "notFound.docs": "Docs",
   "notFound.github": "GitHub",
   "notFound.discord": "Discord",
-  "notFound.logoLightAlt": "RedCode logo light",
-  "notFound.logoDarkAlt": "RedCode logo dark",
+  "notFound.logoLightAlt": "redcode logo light",
+  "notFound.logoDarkAlt": "redcode logo dark",
 
   "user.logout": "Logout",
 
@@ -84,21 +84,21 @@
 
   "home.title": "RedCode | The open source AI coding agent",
 
-  "temp.title": "RedCode | AI coding agent built for the terminal",
+  "temp.title": "redcode | AI coding agent built for the terminal",
   "temp.hero.title": "The AI coding agent built for the terminal",
-  "temp.zen": "RedCode zen",
+  "temp.zen": "redcode zen",
   "temp.getStarted": "Get Started",
   "temp.feature.native.title": "Native TUI",
   "temp.feature.native.body": "A responsive, native, themeable terminal UI",
   "temp.feature.zen.beforeLink": "A",
   "temp.feature.zen.link": "curated list of models",
-  "temp.feature.zen.afterLink": "provided by RedCode",
+  "temp.feature.zen.afterLink": "provided by redcode",
   "temp.feature.models.beforeLink": "Supports 75+ LLM providers through",
   "temp.feature.models.afterLink": ", including local models",
-  "temp.screenshot.caption": "RedCode TUI with the tokyonight theme",
-  "temp.screenshot.alt": "RedCode TUI with tokyonight theme",
-  "temp.logoLightAlt": "RedCode logo light",
-  "temp.logoDarkAlt": "RedCode logo dark",
+  "temp.screenshot.caption": "redcode TUI with the tokyonight theme",
+  "temp.screenshot.alt": "redcode TUI with tokyonight theme",
+  "temp.logoLightAlt": "redcode logo light",
+  "temp.logoDarkAlt": "redcode logo dark",
 
   "home.banner.badge": "New",
   "home.banner.text": "Desktop app available in beta",
@@ -440,15 +440,15 @@
     "Access models configured for optimal performance - no downgrades or routing to cheaper providers.",
   "workspace.newUser.feature.lockin.title": "No Lock-in",
   "workspace.newUser.feature.lockin.body":
-    "Use Zen with any coding agent, and continue using other providers with RedCode whenever you want.",
+    "Use Zen with any coding agent, and continue using other providers with redcode whenever you want.",
   "workspace.newUser.copyApiKey": "Copy API key",
   "workspace.newUser.copyKey": "Copy Key",
   "workspace.newUser.copied": "Copied!",
   "workspace.newUser.step.enableBilling": "Enable billing",
   "workspace.newUser.step.login.before": "Run",
-  "workspace.newUser.step.login.after": "and select RedCode",
+  "workspace.newUser.step.login.after": "and select redcode",
   "workspace.newUser.step.pasteKey": "Paste your API key",
-  "workspace.newUser.step.models.before": "Start RedCode and run",
+  "workspace.newUser.step.models.before": "Start redcode and run",
   "workspace.newUser.step.models.after": "to select a model",
 
   "workspace.models.title": "Models",
@@ -494,10 +494,10 @@
   "workspace.cost.subscriptionShort": "sub",
 
   "workspace.keys.title": "API Keys",
-  "workspace.keys.subtitle": "Manage your API keys for accessing RedCode services.",
+  "workspace.keys.subtitle": "Manage your API keys for accessing redcode services.",
   "workspace.keys.create": "Create API Key",
   "workspace.keys.placeholder": "Enter key name",
-  "workspace.keys.empty": "Create an RedCode Gateway API key",
+  "workspace.keys.empty": "Create an redcode Gateway API key",
   "workspace.keys.table.name": "Name",
   "workspace.keys.table.key": "Key",
   "workspace.keys.table.createdBy": "Created By",
@@ -646,7 +646,7 @@
   "workspace.lite.subscription.resetsIn": "Resets in",
   "workspace.lite.subscription.useBalance": "Use your available balance after reaching the usage limits",
   "workspace.lite.subscription.selectProvider":
-    'Select "RedCode Go" as the provider in your RedCode configuration to use Go models.',
+    'Select "RedCode Go" as the provider in your redcode configuration to use Go models.',
   "workspace.lite.black.message":
     "You're currently subscribed to RedCode Black or on the waitlist. Please unsubscribe first if you'd like to switch to Go.",
   "workspace.lite.other.message":

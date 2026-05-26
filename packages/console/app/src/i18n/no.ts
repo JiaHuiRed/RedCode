@@ -1,4 +1,4 @@
-﻿import type { Dict } from "./en"
+import type { Dict } from "./en"
 import { dict as en } from "./en"
 
 export const dict = {
@@ -37,14 +37,14 @@ export const dict = {
   "email.subscribe": "Abonner",
   "email.success": "Nesten ferdig - sjekk innboksen din og bekreft e-postadressen",
 
-  "notFound.title": "Ikke funnet | RedCode",
+  "notFound.title": "Ikke funnet | redcode",
   "notFound.heading": "404 - Side ikke funnet",
   "notFound.home": "Hjem",
   "notFound.docs": "Dokumentasjon",
   "notFound.github": "GitHub",
   "notFound.discord": "Discord",
-  "notFound.logoLightAlt": "RedCode logo lys",
-  "notFound.logoDarkAlt": "RedCode logo mørk",
+  "notFound.logoLightAlt": "redcode logo lys",
+  "notFound.logoDarkAlt": "redcode logo mørk",
 
   "user.logout": "Logg ut",
 
@@ -85,21 +85,21 @@ export const dict = {
 
   "home.title": "RedCode | Den åpne kildekode AI-kodingsagenten",
 
-  "temp.title": "RedCode | AI-kodingsagent bygget for terminalen",
+  "temp.title": "redcode | AI-kodingsagent bygget for terminalen",
   "temp.hero.title": "AI-kodingsagenten bygget for terminalen",
-  "temp.zen": "RedCode zen",
+  "temp.zen": "redcode zen",
   "temp.getStarted": "Kom i gang",
   "temp.feature.native.title": "Native TUI",
   "temp.feature.native.body": "Et responsivt, native terminal-brukergrensesnitt som kan temes",
   "temp.feature.zen.beforeLink": "En",
   "temp.feature.zen.link": "kuratert liste over modeller",
-  "temp.feature.zen.afterLink": "levert av RedCode",
+  "temp.feature.zen.afterLink": "levert av redcode",
   "temp.feature.models.beforeLink": "Støtter 75+ LLM-leverandører gjennom",
   "temp.feature.models.afterLink": ", inkludert lokale modeller",
-  "temp.screenshot.caption": "RedCode TUI med tokyonight-tema",
-  "temp.screenshot.alt": "RedCode TUI med tokyonight-tema",
-  "temp.logoLightAlt": "RedCode logo lys",
-  "temp.logoDarkAlt": "RedCode logo mørk",
+  "temp.screenshot.caption": "redcode TUI med tokyonight-tema",
+  "temp.screenshot.alt": "redcode TUI med tokyonight-tema",
+  "temp.logoLightAlt": "redcode logo lys",
+  "temp.logoDarkAlt": "redcode logo mørk",
 
   "home.banner.badge": "Ny",
   "home.banner.text": "Desktop-app tilgjengelig i beta",
@@ -445,15 +445,15 @@ export const dict = {
     "Få tilgang til modeller konfigurert for optimal ytelse – ingen nedgraderinger eller ruting til billigere leverandører.",
   "workspace.newUser.feature.lockin.title": "Ingen innlåsing",
   "workspace.newUser.feature.lockin.body":
-    "Bruk Zen med hvilken som helst kodeagent, og fortsett å bruke andre leverandører med RedCode når du vil.",
+    "Bruk Zen med hvilken som helst kodeagent, og fortsett å bruke andre leverandører med redcode når du vil.",
   "workspace.newUser.copyApiKey": "Kopier API-nøkkel",
   "workspace.newUser.copyKey": "Kopier nøkkel",
   "workspace.newUser.copied": "Kopiert!",
   "workspace.newUser.step.enableBilling": "Aktiver fakturering",
   "workspace.newUser.step.login.before": "Kjør",
-  "workspace.newUser.step.login.after": "og velg RedCode",
+  "workspace.newUser.step.login.after": "og velg redcode",
   "workspace.newUser.step.pasteKey": "Lim inn API-nøkkelen",
-  "workspace.newUser.step.models.before": "Start RedCode og kjør",
+  "workspace.newUser.step.models.before": "Start redcode og kjør",
   "workspace.newUser.step.models.after": "for å velge en modell",
 
   "workspace.models.title": "Modeller",
@@ -499,10 +499,10 @@ export const dict = {
   "workspace.cost.subscriptionShort": "sub",
 
   "workspace.keys.title": "API-nøkler",
-  "workspace.keys.subtitle": "Administrer API-nøklene dine for å få tilgang til RedCode-tjenester.",
+  "workspace.keys.subtitle": "Administrer API-nøklene dine for å få tilgang til redcode-tjenester.",
   "workspace.keys.create": "Opprett API-nøkkel",
   "workspace.keys.placeholder": "Skriv inn navn på nøkkel",
-  "workspace.keys.empty": "Opprett en RedCode Gateway API-nøkkel",
+  "workspace.keys.empty": "Opprett en redcode Gateway API-nøkkel",
   "workspace.keys.table.name": "Navn",
   "workspace.keys.table.key": "Nøkkel",
   "workspace.keys.table.createdBy": "Opprettet av",
@@ -651,7 +651,7 @@ export const dict = {
   "workspace.lite.subscription.resetsIn": "Nullstilles om",
   "workspace.lite.subscription.useBalance": "Bruk din tilgjengelige saldo etter å ha nådd bruksgrensene",
   "workspace.lite.subscription.selectProvider":
-    'Velg "RedCode Go" som leverandør i RedCode-konfigurasjonen din for å bruke Go-modeller.',
+    'Velg "RedCode Go" som leverandør i redcode-konfigurasjonen din for å bruke Go-modeller.',
   "workspace.lite.black.message":
     "Du abonnerer for øyeblikket på RedCode Black eller står på venteliste. Vennligst avslutt abonnementet først hvis du vil bytte til Go.",
   "workspace.lite.other.message":

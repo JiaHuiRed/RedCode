@@ -1,4 +1,4 @@
-﻿import type { Dict } from "./en"
+import type { Dict } from "./en"
 import { dict as en } from "./en"
 
 export const dict = {
@@ -37,14 +37,14 @@ export const dict = {
   "email.subscribe": "Suscribirse",
   "email.success": "Casi listo, revisa tu bandeja de entrada y confirma tu correo",
 
-  "notFound.title": "No encontrado | RedCode",
+  "notFound.title": "No encontrado | redcode",
   "notFound.heading": "404 - Página no encontrada",
   "notFound.home": "Inicio",
   "notFound.docs": "Documentación",
   "notFound.github": "GitHub",
   "notFound.discord": "Discord",
-  "notFound.logoLightAlt": "RedCode logo claro",
-  "notFound.logoDarkAlt": "RedCode logo oscuro",
+  "notFound.logoLightAlt": "redcode logo claro",
+  "notFound.logoDarkAlt": "redcode logo oscuro",
 
   "user.logout": "Cerrar sesión",
 
@@ -85,21 +85,21 @@ export const dict = {
 
   "home.title": "RedCode | El agente de codificación IA de código abierto",
 
-  "temp.title": "RedCode | Agente de codificación IA creado para la terminal",
+  "temp.title": "redcode | Agente de codificación IA creado para la terminal",
   "temp.hero.title": "El agente de codificación IA creado para la terminal",
-  "temp.zen": "RedCode zen",
+  "temp.zen": "redcode zen",
   "temp.getStarted": "Empezar",
   "temp.feature.native.title": "TUI Nativa",
   "temp.feature.native.body": "Una interfaz de terminal responsiva, nativa y personalizable",
   "temp.feature.zen.beforeLink": "Una lista",
   "temp.feature.zen.link": "seleccionada de modelos",
-  "temp.feature.zen.afterLink": "proporcionada por RedCode",
+  "temp.feature.zen.afterLink": "proporcionada por redcode",
   "temp.feature.models.beforeLink": "Soporta más de 75 proveedores de LLM a través de",
   "temp.feature.models.afterLink": ", incluyendo modelos locales",
-  "temp.screenshot.caption": "RedCode TUI con el tema tokyonight",
-  "temp.screenshot.alt": "RedCode TUI con tema tokyonight",
-  "temp.logoLightAlt": "logo de RedCode claro",
-  "temp.logoDarkAlt": "logo de RedCode oscuro",
+  "temp.screenshot.caption": "redcode TUI con el tema tokyonight",
+  "temp.screenshot.alt": "redcode TUI con tema tokyonight",
+  "temp.logoLightAlt": "logo de redcode claro",
+  "temp.logoDarkAlt": "logo de redcode oscuro",
 
   "home.banner.badge": "Nuevo",
   "home.banner.text": "Aplicación de escritorio disponible en beta",
@@ -448,15 +448,15 @@ export const dict = {
     "Accede a modelos configurados para un rendimiento óptimo - sin degradaciones ni enrutamiento a proveedores más baratos.",
   "workspace.newUser.feature.lockin.title": "Sin Bloqueo",
   "workspace.newUser.feature.lockin.body":
-    "Usa Zen con cualquier agente de codificación, y continúa usando otros proveedores con RedCode cuando quieras.",
+    "Usa Zen con cualquier agente de codificación, y continúa usando otros proveedores con redcode cuando quieras.",
   "workspace.newUser.copyApiKey": "Copiar clave API",
   "workspace.newUser.copyKey": "Copiar Clave",
   "workspace.newUser.copied": "¡Copiada!",
   "workspace.newUser.step.enableBilling": "Habilitar facturación",
   "workspace.newUser.step.login.before": "Ejecuta",
-  "workspace.newUser.step.login.after": "y selecciona RedCode",
+  "workspace.newUser.step.login.after": "y selecciona redcode",
   "workspace.newUser.step.pasteKey": "Pega tu clave API",
-  "workspace.newUser.step.models.before": "Inicia RedCode y ejecuta",
+  "workspace.newUser.step.models.before": "Inicia redcode y ejecuta",
   "workspace.newUser.step.models.after": "para seleccionar un modelo",
 
   "workspace.models.title": "Modelos",
@@ -502,10 +502,10 @@ export const dict = {
   "workspace.cost.subscriptionShort": "sub",
 
   "workspace.keys.title": "Claves API",
-  "workspace.keys.subtitle": "Gestiona tus claves API para acceder a los servicios de RedCode.",
+  "workspace.keys.subtitle": "Gestiona tus claves API para acceder a los servicios de redcode.",
   "workspace.keys.create": "Crear Clave API",
   "workspace.keys.placeholder": "Introduce nombre de la clave",
-  "workspace.keys.empty": "Crea una clave API de RedCode Gateway",
+  "workspace.keys.empty": "Crea una clave API de redcode Gateway",
   "workspace.keys.table.name": "Nombre",
   "workspace.keys.table.key": "Clave",
   "workspace.keys.table.createdBy": "Creado Por",
@@ -654,7 +654,7 @@ export const dict = {
   "workspace.lite.subscription.resetsIn": "Se reinicia en",
   "workspace.lite.subscription.useBalance": "Usa tu saldo disponible después de alcanzar los límites de uso",
   "workspace.lite.subscription.selectProvider":
-    'Selecciona "RedCode Go" como proveedor en tu configuración de RedCode para usar los modelos Go.',
+    'Selecciona "RedCode Go" como proveedor en tu configuración de redcode para usar los modelos Go.',
   "workspace.lite.black.message":
     "Actualmente estás suscrito a RedCode Black o estás en la lista de espera. Por favor, cancela la suscripción primero si deseas cambiar a Go.",
   "workspace.lite.other.message":

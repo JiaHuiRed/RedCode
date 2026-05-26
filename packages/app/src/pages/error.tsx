@@ -1,12 +1,10 @@
 ﻿import { TextField } from "@redcode-ai/ui/text-field"
-import * as Sentry from "@sentry/solid"
 import { Logo } from "@redcode-ai/ui/logo"
 import { Button } from "@redcode-ai/ui/button"
-import { Component, createSignal, onMount, Show } from "solid-js"
+import { Component, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { usePlatform } from "@/context/platform"
 import { useLanguage } from "@/context/language"
-import { Icon } from "@redcode-ai/ui/icon"
 
 export type InitError = {
   name: string
@@ -224,8 +222,6 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
   const formattedError = () => formatError(props.error, language.t)
   let recordedFatalError: Promise<void> | undefined
   const [store, setStore] = createStore({
-    checking: false,
-    version: undefined as string | undefined,
     actionError: undefined as string | undefined,
   })
 
@@ -244,33 +240,6 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
   onMount(() => {
     void ensureFatalErrorRecorded().catch(() => undefined)
   })
-
-  async function checkForUpdates() {
-    if (!platform.checkUpdate) return
-    setStore("checking", true)
-    await platform
-      .checkUpdate()
-      .then((result) => {
-        setStore("actionError", undefined)
-        if (result.updateAvailable && result.version) setStore("version", result.version)
-      })
-      .catch((err) => {
-        setStore("actionError", formatError(err, language.t))
-      })
-      .finally(() => {
-        setStore("checking", false)
-      })
-  }
-
-  async function installUpdate() {
-    if (!platform.updateAndRestart) return
-    await platform
-      .updateAndRestart()
-      .then(() => setStore("actionError", undefined))
-      .catch((err) => {
-        setStore("actionError", formatError(err, language.t))
-      })
-  }
 
   async function exportDebugLogs() {
     const exportLogs = platform.exportDebugLogs
@@ -301,69 +270,20 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
           hideLabel
         />
         <div class="flex flex-row items-center justify-center gap-3 flex-wrap max-w-64">
-          <Button size="large" onClick={platform.restart}>
-            {language.t("error.page.action.restart")}
-          </Button>
           <Show when={platform.platform === "desktop" && platform.exportDebugLogs}>
-            <Button size="large" variant="ghost" onClick={exportDebugLogs}>
+            <Button size="large" onClick={exportDebugLogs}>
               {language.t("error.page.action.exportLogs")}
             </Button>
-          </Show>
-          <Show when={Sentry.isEnabled}>
-            {(_) => {
-              const [reported, setReported] = createSignal(false)
-              return (
-                <Button
-                  size="large"
-                  disabled={reported()}
-                  onClick={() => {
-                    Sentry.captureException(props.error)
-                    setReported(true)
-                  }}
-                >
-                  {language.t(reported() ? "error.page.action.reported" : "error.page.action.report")}
-                </Button>
-              )
-            }}
-          </Show>
-          <Show when={platform.checkUpdate}>
-            <Show
-              when={store.version}
-              fallback={
-                <Button size="large" variant="ghost" onClick={checkForUpdates} disabled={store.checking}>
-                  {store.checking
-                    ? language.t("error.page.action.checking")
-                    : language.t("error.page.action.checkUpdates")}
-                </Button>
-              }
-            >
-              <Button size="large" onClick={installUpdate}>
-                {language.t("error.page.action.updateTo", { version: store.version ?? "" })}
-              </Button>
-            </Show>
           </Show>
         </div>
         <Show when={store.actionError}>
           {(message) => <p class="text-xs text-text-danger-base text-center max-w-2xl">{message()}</p>}
         </Show>
-        <div class="flex flex-col items-center gap-2">
-          <div class="flex items-center justify-center gap-1">
-            {language.t("error.page.report.prefix")}
-            <button
-              type="button"
-              class="flex items-center text-text-interactive-base gap-1"
-              onClick={() => platform.openLink("https://redcode.dev/desktop-feedback")}
-            >
-              <div>{language.t("error.page.report.discord")}</div>
-              <Icon name="discord" class="text-text-interactive-base" />
-            </button>
-          </div>
-          <Show when={platform.version}>
-            {(version) => (
-              <p class="text-xs text-text-weak">{language.t("error.page.version", { version: version() })}</p>
-            )}
-          </Show>
-        </div>
+        <Show when={platform.version}>
+          {(version) => (
+            <p class="text-xs text-text-weak">{language.t("error.page.version", { version: version() })}</p>
+          )}
+        </Show>
       </div>
     </div>
   )

@@ -7,7 +7,7 @@ import { HoverCard } from "@redcode-ai/ui/hover-card"
 import { Icon } from "@redcode-ai/ui/icon"
 import { createSortable } from "@thisbeyond/solid-dnd"
 import { useLayout, type LocalProject } from "@/context/layout"
-import { useGlobalSync } from "@/context/global-sync"
+import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { useNotification } from "@/context/notification"
 import { ProjectIcon, SessionItem, type SessionItemProps } from "./sidebar-items"
@@ -274,7 +274,7 @@ export const SortableProject = (props: {
   ctx: ProjectSidebarContext
   sortNow: Accessor<number>
 }): JSX.Element => {
-  const globalSync = useGlobalSync()
+  const globalSync = useServerSync()
   const language = useLanguage()
   const sortable = createSortable(props.project.worktree)
   const selected = createMemo(() => props.ctx.currentProject()?.worktree === props.project.worktree)

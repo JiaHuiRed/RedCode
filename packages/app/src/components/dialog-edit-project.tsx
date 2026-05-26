@@ -7,7 +7,7 @@ import { Icon } from "@redcode-ai/ui/icon"
 import { createMemo, For, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useGlobalSDK } from "@/context/global-sdk"
-import { useGlobalSync } from "@/context/global-sync"
+import { useServerSync } from "@/context/server-sync"
 import { type LocalProject, getAvatarColors } from "@/context/layout"
 import { getFilename } from "@redcode-ai/core/util/path"
 import { Avatar } from "@redcode-ai/ui/avatar"
@@ -19,7 +19,7 @@ const AVATAR_COLOR_KEYS = ["pink", "mint", "orange", "purple", "cyan", "lime"] a
 export function DialogEditProject(props: { project: LocalProject }) {
   const dialog = useDialog()
   const globalSDK = useGlobalSDK()
-  const globalSync = useGlobalSync()
+  const globalSync = useServerSync()
   const language = useLanguage()
 
   const folderName = createMemo(() => getFilename(props.project.worktree))

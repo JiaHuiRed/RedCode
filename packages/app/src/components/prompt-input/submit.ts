@@ -5,7 +5,7 @@ import { Binary } from "@redcode-ai/core/util/binary"
 import { useNavigate, useParams } from "@solidjs/router"
 import { batch, type Accessor } from "solid-js"
 import type { FileSelection } from "@/context/file"
-import { useGlobalSync } from "@/context/global-sync"
+import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useLocal } from "@/context/local"
@@ -38,7 +38,7 @@ export type FollowupDraft = {
 
 type FollowupSendInput = {
   client: ReturnType<typeof useSDK>["client"]
-  globalSync: ReturnType<typeof useGlobalSync>
+  globalSync: ReturnType<typeof useServerSync>
   sync: ReturnType<typeof useSync>
   draft: FollowupDraft
   messageID?: string
@@ -205,7 +205,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const navigate = useNavigate()
   const sdk = useSDK()
   const sync = useSync()
-  const globalSync = useGlobalSync()
+  const globalSync = useServerSync()
   const local = useLocal()
   const permission = usePermission()
   const prompt = usePrompt()

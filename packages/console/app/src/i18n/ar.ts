@@ -1,4 +1,4 @@
-﻿import type { Dict } from "./en"
+import type { Dict } from "./en"
 import { dict as en } from "./en"
 
 export const dict = {
@@ -37,14 +37,14 @@ export const dict = {
   "email.subscribe": "اشتراك",
   "email.success": "تبقّت خطوة واحدة: تحقق من بريدك وأكّد عنوانك",
 
-  "notFound.title": "غير موجود | RedCode",
+  "notFound.title": "غير موجود | redcode",
   "notFound.heading": "404 - الصفحة غير موجودة",
   "notFound.home": "الرئيسية",
   "notFound.docs": "الوثائق",
   "notFound.github": "GitHub",
   "notFound.discord": "Discord",
-  "notFound.logoLightAlt": "شعار RedCode الفاتح",
-  "notFound.logoDarkAlt": "شعار RedCode الداكن",
+  "notFound.logoLightAlt": "شعار redcode الفاتح",
+  "notFound.logoDarkAlt": "شعار redcode الداكن",
 
   "user.logout": "تسجيل الخروج",
 
@@ -85,21 +85,21 @@ export const dict = {
 
   "home.title": "RedCode | وكيل برمجة بالذكاء الاصطناعي مفتوح المصدر",
 
-  "temp.title": "RedCode | وكيل برمجة بالذكاء الاصطناعي مبني للطرفية",
+  "temp.title": "redcode | وكيل برمجة بالذكاء الاصطناعي مبني للطرفية",
   "temp.hero.title": "وكيل البرمجة بالذكاء الاصطناعي المبني للطرفية",
-  "temp.zen": "RedCode zen",
+  "temp.zen": "redcode zen",
   "temp.getStarted": "ابدأ",
   "temp.feature.native.title": "واجهة طرفية أصلية",
   "temp.feature.native.body": "واجهة مستخدم طرفية سريعة الاستجابة، أصلية، وقابلة للتخصيص",
   "temp.feature.zen.beforeLink": "قائمة",
   "temp.feature.zen.link": "منسقة من النماذج",
-  "temp.feature.zen.afterLink": "مقدمة من RedCode",
+  "temp.feature.zen.afterLink": "مقدمة من redcode",
   "temp.feature.models.beforeLink": "يدعم أكثر من 75 مزود LLM من خلال",
   "temp.feature.models.afterLink": "، بما في ذلك النماذج المحلية",
   "temp.screenshot.caption": "واجهة RedCode الطرفية مع سمة tokyonight",
   "temp.screenshot.alt": "واجهة RedCode الطرفية بسمة tokyonight",
-  "temp.logoLightAlt": "شعار RedCode الفاتح",
-  "temp.logoDarkAlt": "شعار RedCode الداكن",
+  "temp.logoLightAlt": "شعار redcode الفاتح",
+  "temp.logoDarkAlt": "شعار redcode الداكن",
 
   "home.banner.badge": "جديد",
   "home.banner.text": "تطبيق سطح المكتب متاح بنسخة تجريبية",
@@ -439,15 +439,15 @@ export const dict = {
     "الوصول إلى النماذج التي تم تكوينها لتحقيق الأداء الأمثل - لا تقليل للجودة أو توجيه إلى موفري خدمة أرخص.",
   "workspace.newUser.feature.lockin.title": "لا قيود على المزود",
   "workspace.newUser.feature.lockin.body":
-    "استخدم Zen مع أي وكيل برمجة، واستمر في استخدام موفرين آخرين مع RedCode وقتما تشاء.",
+    "استخدم Zen مع أي وكيل برمجة، واستمر في استخدام موفرين آخرين مع redcode وقتما تشاء.",
   "workspace.newUser.copyApiKey": "نسخ مفتاح API",
   "workspace.newUser.copyKey": "نسخ المفتاح",
   "workspace.newUser.copied": "تم النسخ!",
   "workspace.newUser.step.enableBilling": "تمكين الفوترة",
   "workspace.newUser.step.login.before": "شغّل",
-  "workspace.newUser.step.login.after": "واختر RedCode",
+  "workspace.newUser.step.login.after": "واختر redcode",
   "workspace.newUser.step.pasteKey": "الصق مفتاح API الخاص بك",
-  "workspace.newUser.step.models.before": "ابدأ RedCode ثم نفّذ",
+  "workspace.newUser.step.models.before": "ابدأ redcode ثم نفّذ",
   "workspace.newUser.step.models.after": "لاختيار نموذج",
 
   "workspace.models.title": "النماذج",
@@ -493,10 +493,10 @@ export const dict = {
   "workspace.cost.subscriptionShort": "اشتراك",
 
   "workspace.keys.title": "مفاتيح API",
-  "workspace.keys.subtitle": "إدارة مفاتيح API الخاصة بك للوصول إلى خدمات RedCode.",
+  "workspace.keys.subtitle": "إدارة مفاتيح API الخاصة بك للوصول إلى خدمات redcode.",
   "workspace.keys.create": "إنشاء مفتاح API",
   "workspace.keys.placeholder": "أدخل اسم المفتاح",
-  "workspace.keys.empty": "أنشئ مفتاح API لبوابة RedCode",
+  "workspace.keys.empty": "أنشئ مفتاح API لبوابة redcode",
   "workspace.keys.table.name": "الاسم",
   "workspace.keys.table.key": "المفتاح",
   "workspace.keys.table.createdBy": "تم الإنشاء بواسطة",
@@ -644,7 +644,7 @@ export const dict = {
   "workspace.lite.subscription.resetsIn": "إعادة تعيين في",
   "workspace.lite.subscription.useBalance": "استخدم رصيدك المتوفر بعد الوصول إلى حدود الاستخدام",
   "workspace.lite.subscription.selectProvider":
-    'اختر "RedCode Go" كمزود في إعدادات RedCode الخاصة بك لاستخدام نماذج Go.',
+    'اختر "RedCode Go" كمزود في إعدادات redcode الخاصة بك لاستخدام نماذج Go.',
   "workspace.lite.black.message":
     "أنت مشترك حاليًا في RedCode Black أو في قائمة الانتظار. يرجى إلغاء الاشتراك أولاً إذا كنت ترغب في التبديل إلى Go.",
   "workspace.lite.other.message":

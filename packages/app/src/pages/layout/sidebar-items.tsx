@@ -7,7 +7,7 @@ import { Tooltip } from "@redcode-ai/ui/tooltip"
 import { getFilename } from "@redcode-ai/core/util/path"
 import { A, useParams } from "@solidjs/router"
 import { type Accessor, createMemo, For, type JSX, Match, Show, Switch } from "solid-js"
-import { useGlobalSync } from "@/context/global-sync"
+import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
 import { useNotification } from "@/context/notification"
@@ -23,7 +23,7 @@ export const ProjectIcon = (props: {
   notify?: boolean
   working?: boolean
 }): JSX.Element => {
-  const globalSync = useGlobalSync()
+  const globalSync = useServerSync()
   const notification = useNotification()
   const permission = usePermission()
   const dirs = createMemo(() => [props.project.worktree, ...(props.project.sandboxes ?? [])])
@@ -146,7 +146,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
   const language = useLanguage()
   const notification = useNotification()
   const permission = usePermission()
-  const globalSync = useGlobalSync()
+  const globalSync = useServerSync()
   const unseenCount = createMemo(() => notification.session.unseenCount(props.session.id))
   const hasError = createMemo(() => notification.session.unseenHasError(props.session.id))
   const [sessionStore] = globalSync.child(props.session.directory)
@@ -210,7 +210,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
       <div
         data-session-id={props.session.id}
         class="group/session relative w-full min-w-0 rounded-md cursor-default pr-3 transition-colors hover:bg-surface-raised-base-hover [&:has(:focus-visible)]:bg-surface-raised-base-hover has-[[data-expanded]]:bg-surface-raised-base-hover has-[.active]:bg-surface-base-active"
-        style={{ "padding-left": `${8 + (props.level ?? 0) * 16}px` }}
+        style={{ "padding-left": `${4 + (props.level ?? 0) * 16}px` }}
       >
         <div class="flex min-w-0 items-center gap-1">
           <div class="min-w-0 flex-1">

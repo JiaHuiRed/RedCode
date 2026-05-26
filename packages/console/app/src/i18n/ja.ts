@@ -1,4 +1,4 @@
-﻿import type { Dict } from "./en"
+import type { Dict } from "./en"
 import { dict as en } from "./en"
 
 export const dict = {
@@ -43,8 +43,8 @@ export const dict = {
   "notFound.docs": "ドキュメント",
   "notFound.github": "GitHub",
   "notFound.discord": "Discord",
-  "notFound.logoLightAlt": "RedCodeのロゴ（ライト）",
-  "notFound.logoDarkAlt": "RedCodeのロゴ（ダーク）",
+  "notFound.logoLightAlt": "redcodeのロゴ（ライト）",
+  "notFound.logoDarkAlt": "redcodeのロゴ（ダーク）",
 
   "user.logout": "ログアウト",
 
@@ -98,8 +98,8 @@ export const dict = {
   "temp.feature.models.afterLink": "を通じて75以上のLLMプロバイダーをサポート",
   "temp.screenshot.caption": "tokyonight テーマを使用した RedCode TUI",
   "temp.screenshot.alt": "tokyonight テーマの RedCode TUI",
-  "temp.logoLightAlt": "RedCodeのロゴ（ライト）",
-  "temp.logoDarkAlt": "RedCodeのロゴ（ダーク）",
+  "temp.logoLightAlt": "redcodeのロゴ（ライト）",
+  "temp.logoDarkAlt": "redcodeのロゴ（ダーク）",
 
   "home.banner.badge": "新着",
   "home.banner.text": "デスクトップアプリのベータ版が利用可能",
@@ -652,7 +652,7 @@ export const dict = {
   "workspace.lite.subscription.resetsIn": "リセットまで",
   "workspace.lite.subscription.useBalance": "利用限度額に達したら利用可能な残高を使用する",
   "workspace.lite.subscription.selectProvider":
-    "Go モデルを使用するには、RedCode の設定で「RedCode Go」をプロバイダーとして選択してください。",
+    "Go モデルを使用するには、redcode の設定で「RedCode Go」をプロバイダーとして選択してください。",
   "workspace.lite.black.message":
     "現在 RedCode Black を購読中、またはウェイティングリストに登録されています。Go に切り替える場合は、先に登録を解除してください。",
   "workspace.lite.other.message":

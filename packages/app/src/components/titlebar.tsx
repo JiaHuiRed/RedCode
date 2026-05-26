@@ -16,7 +16,7 @@ import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { WindowsAppMenu } from "./windows-app-menu"
 import { applyPath, backPath, forwardPath } from "./titlebar-history"
-import { useGlobalSync } from "@/context/global-sync"
+import { useServerSync } from "@/context/server-sync"
 import { decodeDirectory } from "@/pages/directory-layout"
 import { iife } from "@redcode-ai/core/util/iife"
 import { base64Encode } from "@redcode-ai/core/util/encode"
@@ -208,442 +208,276 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
       style={{
         "min-height": minHeight(),
         "padding-left": mac() ? `${84 / zoom()}px` : 0,
-        width: electronWindows() ? `env(titlebar-area-width, calc(100vw - ${windowsControlsWidth()}))` : undefined,
-        "max-width": electronWindows()
-          ? `env(titlebar-area-width, calc(100vw - ${windowsControlsWidth()}))`
-          : undefined,
+        width: electronWindows() ? `env(titlebar-area-width, 100vw)` : undefined,
+        "max-width": electronWindows() ? `env(titlebar-area-width, 100vw)` : undefined,
         "align-self": electronWindows() ? "flex-start" : undefined,
       }}
       data-tauri-drag-region
       onMouseDown={drag}
       onDblClick={maximize}
     >
-      <Switch>
-        <Match when={USE_V2_TITLEBAR}>
-          {(_) => {
-            const globalSync = useGlobalSync()
-            const navigate = useNavigate()
-            const homeMatch = useMatch(() => "/")
-
-            const newSessionHref = () => {
-              if (params.dir) return `/${params.dir}/session`
-
-              const project = layout.projects.list()[0]
-              if (!project) return "/"
-
-              return `/${base64Encode(project.worktree)}/session`
-            }
-
-            type Tab = { dir: string; sessionId: string; href: string }
-
-            const [tabsStore, tabsStoreActions] = iife(() => {
-              const [store, setStore] = createStore<Tab[]>(
-                iife(() => {
-                  if (!params.dir || !params.id) return []
-                  return [
-                    {
-                      dir: decodeDirectory(params.dir) ?? "",
-                      sessionId: params.id,
-                      href: makeSessionHref(params.dir, params.id),
-                    },
-                  ]
-                }),
-              )
-
-              const actions = {
-                addTab: (tab: Tab) => {
-                  setStore(
-                    produce((tabs) => {
-                      if (tabs.some((t) => t.href === tab.href)) return
-
-                      tabs.push(tab)
-                    }),
-                  )
-                },
-                removeTab: (href: string) => {
-                  startTransition(() => {
-                    setStore(
-                      produce((tabs) => {
-                        const index = tabs.findIndex((t) => t.href === href)
-                        if (index === -1) return
-                        tabs.splice(index, 1)
-                        const nextTab = tabs[index] ?? tabs[tabs.length - 1]
-                        if (nextTab) navigate(nextTab.href)
-                        else navigate("/")
-                      }),
-                    )
-                  })
-                },
-              }
-
-              return [store, actions]
-            })
-
-            createEffect(() => {
-              const params = useParams()
-              if (!(params.dir && params.id)) return
-
-              tabsStoreActions.addTab({
-                dir: decodeDirectory(params.dir) ?? "",
-                sessionId: params.id,
-                href: makeSessionHref(params.dir, params.id),
-              })
-            })
-
-            const projects = createMemo(() => layout.projects.list())
-            const projectByID = createMemo(
-              () => new Map(projects().flatMap((project) => (project.id ? [[project.id, project] as const] : []))),
-            )
-
-            const currentSessionTab = () => {
-              if (!params.dir || !params.id) return
-              const href = makeSessionHref(params.dir, params.id)
-              return tabsStore.find((tab) => tab.href === href)
-            }
-
-            const closeCurrentSessionTab = () => {
-              const tab = currentSessionTab()
-              if (!tab) return false
-              tabsStoreActions.removeTab(tab.href)
-              return true
-            }
-
-            const closeNewSessionTab = () => {
-              if (!(params.dir && !params.id)) return false
-              const last = tabsStore[tabsStore.length - 1]
-              if (last) navigate(last.href)
-              else navigate("/")
-              return true
-            }
-
-            makeEventListener(
-              document,
-              "keydown",
-              (event) => {
-                if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
-                if (event.key.toLowerCase() !== "w") return
-                if (!(closeCurrentSessionTab() || closeNewSessionTab())) return
-
-                event.preventDefault()
-                event.stopPropagation()
-              },
-              { capture: true },
-            )
-
-            command.register(() => {
-              const commands = [
-                {
-                  id: `tab.prev`,
-                  category: "tab",
-                  title: "",
-                  keybind: `mod+option+ArrowLeft`,
-                  hidden: true,
-                  onSelect: () => {
-                    let index = tabsStore.findIndex((tab) => tab.href === currentSessionTab()?.href)
-                    if (index === -1) return
-
-                    index -= 1
-                    if (index === -1) index = tabsStore.length - 1
-
-                    const next = tabsStore[index]
-                    if (next) navigate(next.href)
-                  },
-                },
-                {
-                  id: `tab.next`,
-                  category: "tab",
-                  title: "",
-                  keybind: `mod+option+ArrowRight`,
-                  hidden: true,
-                  onSelect: () => {
-                    let index = tabsStore.findIndex((tab) => tab.href === currentSessionTab()?.href)
-                    if (index === -1) return
-
-                    index += 1
-                    if (index === tabsStore.length) index = 0
-
-                    const next = tabsStore[index]
-                    if (next) navigate(next.href)
-                  },
-                },
-                ...Array.from({ length: 9 }, (_, i) => {
-                  const index = i
-                  const number = index + 1
-                  return {
-                    id: `tab.${number}`,
-                    category: "tab",
-                    title: "",
-                    keybind: `mod+${number}`,
-                    disabled: layout.projects.list().length <= index,
-                    hidden: true,
-                    onSelect: () => {
-                      const tab = tabsStore[index]
-                      if (tab) navigate(tab.href)
-                    },
-                  }
-                }),
-              ]
-
-              return commands
-            })
-
-            const tabsEnriched = iife(() => {
-              const base = mapArray(
-                () => tabsStore,
-                (tab) => {
-                  const sync = globalSync.createDirSyncContext(tab.dir)
-                  const session = sync.session.get(tab.sessionId)
-                  return session ? { ...tab, info: session } : null
-                },
-              )
-
-              return () => base().flatMap((s) => (s ? [s] : []))
-            })
-
-            return (
-              <div
-                class="h-full flex-1 flex flex-row items-center gap-1.5 pr-3 py-2"
-                classList={{
-                  "pl-2": mac(),
-                  "pl-4": !mac(),
-                }}
-              >
-                <ChannelIndicator />
-                <Show when={windows() || linux()}>
-                  <WindowsAppMenu command={command} platform={platform} variant="v2" />
-                </Show>
-                <IconButtonV2
-                  variant="ghost-muted"
-                  size="large"
-                  as="a"
-                  href="/"
-                  class="!w-9"
-                  icon={<IconV2 name="grid-plus" />}
-                  state={!!homeMatch() ? "pressed" : undefined}
-                />
-
-                <div class="flex min-w-0 flex-1 flex-row items-center gap-1.5 overflow-hidden">
-                  <div class="flex min-w-0 flex-row items-center gap-1.5 overflow-hidden">
-                    <For each={tabsEnriched()}>
-                      {(tab, i) => (
-                        <>
-                          {i() !== 0 && (
-                            <div class="w-[1.5px] h-3 shrink-0 rounded-full bg-[var(--v2-background-bg-layer-02)]" />
-                          )}
-                          <TabNavItem
-                            href={tab.href}
-                            title={tab.info.title}
-                            project={projectForSession(tab.info, projects(), projectByID())}
-                            directory={tab.dir}
-                            onClose={() => tabsStoreActions.removeTab(tab.href)}
-                            hideClose={tabsEnriched().length < 2}
-                          />
-                        </>
-                      )}
-                    </For>
-                  </div>
-                  <Show
-                    when={creating() && params.dir}
-                    fallback={
-                      <IconButtonV2
-                        type="button"
-                        variant="ghost-muted"
-                        size="large"
-                        class="shrink-0"
-                        icon={<IconV2 name="plus" />}
-                        as="a"
-                        href={newSessionHref()}
-                        aria-label={language.t("command.session.new")}
-                      />
-                    }
-                  >
-                    <NewSessionTabItem
-                      href={`/${params.dir}/session`}
-                      title={language.t("command.session.new")}
-                      onClose={() => navigate(tabsEnriched().at(-1)?.href ?? "/")}
-                    />
-                  </Show>
-                  <div class="min-w-0 flex-1" />
-                </div>
-                <Show when={currentSessionTab()?.dir} keyed>
-                  {(dir) => (
-                    <SDKProvider directory={dir}>
-                      <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
-                        <StatusPopover />
-                      </Tooltip>
-                    </SDKProvider>
-                  )}
-                </Show>
-                <TitlebarUpdatePill update={props.update} />
-                <Show when={windows() && !electronWindows()}>
-                  <div data-tauri-decorum-tb class="flex flex-row" />
-                </Show>
-              </div>
-            )
-          }}
-        </Match>
-        <Match when>
-          <div
-            class="grid h-full min-h-full w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center"
-            style={{ zoom: counterZoom() }}
-          >
-            <div
-              classList={{
-                "flex items-center min-w-0": true,
-                "pl-2": !mac(),
-              }}
-            >
-              <Show when={windows() || linux()}>
-                <WindowsAppMenu command={command} platform={platform} />
-              </Show>
-              <Show when={mac()}>
-                {/*<div class="h-full shrink-0" style={{ width: `${72 / zoom()}px` }} />*/}
-                <div class="xl:hidden w-10 shrink-0 flex items-center justify-center">
-                  <IconButton
-                    icon="menu"
-                    variant="ghost"
-                    class="titlebar-icon rounded-md"
-                    onClick={layout.mobileSidebar.toggle}
-                    aria-label={language.t("sidebar.menu.toggle")}
-                    aria-expanded={layout.mobileSidebar.opened()}
-                  />
-                </div>
-              </Show>
-              <Show when={!mac()}>
-                <div class="xl:hidden w-[48px] shrink-0 flex items-center justify-center">
-                  <IconButton
-                    icon="menu"
-                    variant="ghost"
-                    class="titlebar-icon rounded-md"
-                    onClick={layout.mobileSidebar.toggle}
-                    aria-label={language.t("sidebar.menu.toggle")}
-                    aria-expanded={layout.mobileSidebar.opened()}
-                  />
-                </div>
-              </Show>
-              <div class="flex items-center gap-1 shrink-0">
-                <TooltipKeybind
-                  class={web() ? "hidden xl:flex shrink-0 ml-14" : "hidden xl:flex shrink-0 ml-2"}
-                  placement="bottom"
-                  title={language.t("command.sidebar.toggle")}
-                  keybind={command.keybind("sidebar.toggle")}
-                >
-                  <Button
-                    variant="ghost"
-                    class="group/sidebar-toggle titlebar-icon w-8 h-6 p-0 box-border"
-                    onClick={layout.sidebar.toggle}
-                    aria-label={language.t("command.sidebar.toggle")}
-                    aria-expanded={layout.sidebar.opened()}
-                  >
-                    <Icon size="small" name={layout.sidebar.opened() ? "sidebar-active" : "sidebar"} />
-                  </Button>
-                </TooltipKeybind>
-                <div class="hidden xl:flex items-center shrink-0">
-                  <Show when={params.dir}>
-                    <div
-                      class="flex items-center shrink-0 w-8 mr-1"
-                      aria-hidden={layout.sidebar.opened() ? "true" : undefined}
-                    >
-                      <div
-                        class="transition-opacity"
-                        classList={{
-                          "opacity-100 duration-120 ease-out": !layout.sidebar.opened(),
-                          "opacity-0 duration-120 ease-in delay-0 pointer-events-none": layout.sidebar.opened(),
-                        }}
-                      >
-                        <TooltipKeybind
-                          placement="bottom"
-                          title={language.t("command.session.new")}
-                          keybind={command.keybind("session.new")}
-                          openDelay={2000}
-                        >
-                          <Button
-                            variant="ghost"
-                            icon={creating() ? "new-session-active" : "new-session"}
-                            class="titlebar-icon w-8 h-6 p-0 box-border"
-                            disabled={layout.sidebar.opened()}
-                            tabIndex={layout.sidebar.opened() ? -1 : undefined}
-                            onClick={() => {
-                              if (!params.dir) return
-                              navigate(`/${params.dir}/session`)
-                            }}
-                            aria-label={language.t("command.session.new")}
-                            aria-current={creating() ? "page" : undefined}
-                          />
-                        </TooltipKeybind>
-                      </div>
-                    </div>
-                  </Show>
-                  <div
-                    class="flex items-center shrink-0"
-                    classList={{
-                      "-translate-x-[36px]": layout.sidebar.opened() && !!params.dir,
-                      "duration-180 ease-out": !layout.sidebar.opened(),
-                      "duration-180 ease-in": layout.sidebar.opened(),
-                    }}
-                  >
-                    <Show when={hasProjects() && nav()}>
-                      <div class="flex items-center gap-0 transition-transform">
-                        <Tooltip placement="bottom" value={language.t("common.goBack")} openDelay={2000}>
-                          <Button
-                            variant="ghost"
-                            icon="chevron-left"
-                            class="titlebar-icon w-6 h-6 p-0 box-border"
-                            disabled={!canBack()}
-                            onClick={back}
-                            aria-label={language.t("common.goBack")}
-                          />
-                        </Tooltip>
-                        <Tooltip placement="bottom" value={language.t("common.goForward")} openDelay={2000}>
-                          <Button
-                            variant="ghost"
-                            icon="chevron-right"
-                            class="titlebar-icon w-6 h-6 p-0 box-border"
-                            disabled={!canForward()}
-                            onClick={forward}
-                            aria-label={language.t("common.goForward")}
-                          />
-                        </Tooltip>
-                      </div>
-                    </Show>
-                    <div id="redcode-titlebar-left" class="flex items-center gap-3 min-w-0 px-2" />
-                    <ChannelIndicator />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="min-w-0 flex items-center justify-center pointer-events-none">
-              <div
-                id="redcode-titlebar-center"
-                class="pointer-events-auto min-w-0 flex justify-center w-fit max-w-full"
-              />
-            </div>
-
-            <div
-              classList={{
-                "flex items-center min-w-0 justify-end": true,
-                "pr-2": !windows(),
-              }}
-              data-tauri-drag-region
-              onMouseDown={drag}
-            >
-              <div id="redcode-titlebar-right" class="flex items-center gap-1 shrink-0 justify-end" />
-              <Show when={windows()}>
-                {!tauriApi() && (
-                  <div class="flex items-center gap-[8px] shrink-0 ml-3">
-                    <button class="rc-traffic rc-traffic-close" onClick={() => platform.runDesktopMenuAction?.("window.close")} title="关闭" />
-                    <button class="rc-traffic rc-traffic-minimize" onClick={() => platform.runDesktopMenuAction?.("window.minimize")} title="最小化" />
-                    <button class="rc-traffic rc-traffic-maximize" onClick={() => platform.runDesktopMenuAction?.("window.toggleMaximize")} title="最大化" />
-                  </div>
-                )}
-                <div data-tauri-decorum-tb class="flex flex-row" />
-              </Show>
-            </div>
-          </div>
-        </Match>
-      </Switch>
+      <V2TitlebarContent update={props.update} />
     </header>
+  )
+}
+
+function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
+  const layout = useLayout()
+  const platform = usePlatform()
+  const command = useCommand()
+  const language = useLanguage()
+  const params = useParams()
+  const location = useLocation()
+
+  const mac = createMemo(() => platform.platform === "desktop" && platform.os === "macos")
+  const windows = createMemo(() => platform.platform === "desktop" && platform.os === "windows")
+  const electronWindows = createMemo(() => windows() && !tauriApi())
+  const linux = createMemo(() => platform.platform === "desktop" && platform.os === "linux")
+
+  const creating = createMemo(() => {
+    if (!params.dir) return false
+    if (params.id) return false
+    const parts = location.pathname.replace(/\/+$/, "").split("/")
+    return parts.at(-1) === "session"
+  })
+
+  const globalSync = useServerSync()
+  const navigate = useNavigate()
+  const homeMatch = useMatch(() => "/")
+
+  const newSessionHref = () => {
+    if (params.dir) return `/${params.dir}/session`
+    const project = layout.projects.list()[0]
+    if (!project) return "/"
+    return `/${base64Encode(project.worktree)}/session`
+  }
+
+  type Tab = { dir: string; sessionId: string; href: string }
+
+  const [tabsStore, tabsStoreActions] = iife(() => {
+    const [store, setStore] = createStore<Tab[]>(
+      iife(() => {
+        if (!params.dir || !params.id) return []
+        return [
+          {
+            dir: decodeDirectory(params.dir) ?? "",
+            sessionId: params.id,
+            href: makeSessionHref(params.dir, params.id),
+          },
+        ]
+      }),
+    )
+
+    const actions = {
+      addTab: (tab: Tab) => {
+        setStore(
+          produce((tabs) => {
+            if (tabs.some((t) => t.href === tab.href)) return
+            tabs.push(tab)
+          }),
+        )
+      },
+      removeTab: (href: string) => {
+        startTransition(() => {
+          setStore(
+            produce((tabs) => {
+              const index = tabs.findIndex((t) => t.href === href)
+              if (index === -1) return
+              tabs.splice(index, 1)
+              const nextTab = tabs[index] ?? tabs[tabs.length - 1]
+              if (nextTab) navigate(nextTab.href)
+              else navigate("/")
+            }),
+          )
+        })
+      },
+    }
+
+    return [store, actions]
+  })
+
+  createEffect(() => {
+    if (!(params.dir && params.id)) return
+    tabsStoreActions.addTab({
+      dir: decodeDirectory(params.dir) ?? "",
+      sessionId: params.id,
+      href: makeSessionHref(params.dir, params.id),
+    })
+  })
+
+  const projects = createMemo(() => layout.projects.list())
+  const projectByID = createMemo(
+    () => new Map(projects().flatMap((project) => (project.id ? [[project.id, project] as const] : []))),
+  )
+
+  const currentSessionTab = () => {
+    if (!params.dir || !params.id) return
+    const href = makeSessionHref(params.dir, params.id)
+    return tabsStore.find((tab) => tab.href === href)
+  }
+
+  const closeCurrentSessionTab = () => {
+    const tab = currentSessionTab()
+    if (!tab) return false
+    tabsStoreActions.removeTab(tab.href)
+    return true
+  }
+
+  const closeNewSessionTab = () => {
+    if (!(params.dir && !params.id)) return false
+    const last = tabsStore[tabsStore.length - 1]
+    if (last) navigate(last.href)
+    else navigate("/")
+    return true
+  }
+
+  makeEventListener(
+    document,
+    "keydown",
+    (event) => {
+      if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+      if (event.key.toLowerCase() !== "w") return
+      if (!(closeCurrentSessionTab() || closeNewSessionTab())) return
+      event.preventDefault()
+      event.stopPropagation()
+    },
+    { capture: true },
+  )
+
+  command.register(() => [
+    {
+      id: `tab.prev`,
+      category: "tab",
+      title: "",
+      keybind: `mod+option+ArrowLeft`,
+      hidden: true,
+      onSelect: () => {
+        let index = tabsStore.findIndex((tab) => tab.href === currentSessionTab()?.href)
+        if (index === -1) return
+        index -= 1
+        if (index === -1) index = tabsStore.length - 1
+        const next = tabsStore[index]
+        if (next) navigate(next.href)
+      },
+    },
+    {
+      id: `tab.next`,
+      category: "tab",
+      title: "",
+      keybind: `mod+option+ArrowRight`,
+      hidden: true,
+      onSelect: () => {
+        let index = tabsStore.findIndex((tab) => tab.href === currentSessionTab()?.href)
+        if (index === -1) return
+        index += 1
+        if (index === tabsStore.length) index = 0
+        const next = tabsStore[index]
+        if (next) navigate(next.href)
+      },
+    },
+    ...Array.from({ length: 9 }, (_, i) => ({
+      id: `tab.${i + 1}`,
+      category: "tab",
+      title: "",
+      keybind: `mod+${i + 1}`,
+      disabled: layout.projects.list().length <= i,
+      hidden: true,
+      onSelect: () => {
+        const tab = tabsStore[i]
+        if (tab) navigate(tab.href)
+      },
+    })),
+  ])
+
+  const tabsEnriched = iife(() => {
+    const base = mapArray(
+      () => tabsStore,
+      (tab) => {
+        const sync = globalSync.createDirSyncContext(tab.dir)
+        const session = sync.session.get(tab.sessionId)
+        return session ? { ...tab, info: session } : null
+      },
+    )
+    return () => base().flatMap((s) => (s ? [s] : []))
+  })
+
+  return (
+    <div
+      class="h-full flex-1 flex flex-row items-center gap-1.5 pr-3 py-2"
+      classList={{
+        "pl-2": mac(),
+        "pl-4": !mac(),
+      }}
+    >
+      <Show when={windows() || linux()}>
+        <WindowsAppMenu command={command} platform={platform} variant="v2" />
+      </Show>
+      <IconButtonV2
+        variant="ghost-muted"
+        size="large"
+        as="a"
+        href="/"
+        class="!w-9"
+        icon={<IconV2 name="grid-plus" />}
+        state={!!homeMatch() ? "pressed" : undefined}
+      />
+      <div class="flex min-w-0 flex-1 flex-row items-center gap-1.5 overflow-hidden">
+        <div class="flex min-w-0 flex-row items-center gap-1.5 overflow-hidden">
+          <For each={tabsEnriched()}>
+            {(tab, i) => (
+              <>
+                {i() !== 0 && (
+                  <div class="w-[1.5px] h-3 shrink-0 rounded-full bg-[var(--v2-background-bg-layer-02)]" />
+                )}
+                <TabNavItem
+                  href={tab.href}
+                  title={tab.info.title}
+                  project={projectForSession(tab.info, projects(), projectByID())}
+                  directory={tab.dir}
+                  onClose={() => tabsStoreActions.removeTab(tab.href)}
+                  hideClose={tabsEnriched().length < 2}
+                />
+              </>
+            )}
+          </For>
+        </div>
+        <Show
+          when={creating() && params.dir}
+          fallback={
+            <IconButtonV2
+              type="button"
+              variant="ghost-muted"
+              size="large"
+              class="shrink-0"
+              icon={<IconV2 name="plus" />}
+              as="a"
+              href={newSessionHref()}
+              aria-label={language.t("command.session.new")}
+            />
+          }
+        >
+          <NewSessionTabItem
+            href={`/${params.dir}/session`}
+            title={language.t("command.session.new")}
+            onClose={() => navigate(tabsEnriched().at(-1)?.href ?? "/")}
+          />
+        </Show>
+        <div class="min-w-0 flex-1" />
+      </div>
+      <Show when={currentSessionTab()?.dir} keyed>
+        {(dir) => (
+          <SDKProvider directory={dir}>
+            <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
+              <StatusPopover />
+            </Tooltip>
+          </SDKProvider>
+        )}
+      </Show>
+      <TitlebarUpdatePill update={props.update} />
+      <Show when={windows() && !electronWindows()}>
+        <div data-tauri-decorum-tb class="flex flex-row" />
+      </Show>
+    </div>
   )
 }
 
@@ -762,13 +596,12 @@ function NewSessionTabItem(props: { href: string; title: string; onClose: () => 
 }
 
 function ChannelIndicator() {
+  const platform = usePlatform()
   return (
-    <>
-      {["beta", "dev"].includes(import.meta.env.VITE_REDCODE_CHANNEL) && (
-        <div class="bg-icon-interactive-base text-[#FFF] font-medium px-2 rounded-sm uppercase font-mono">
-          {import.meta.env.VITE_REDCODE_CHANNEL.toUpperCase()}
-        </div>
+    <Show when={platform.version}>
+      {(version) => (
+        <span class="text-[11px] text-v2-text-text-muted shrink-0 select-none">v{version()}</span>
       )}
-    </>
+    </Show>
   )
 }

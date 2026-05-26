@@ -3,7 +3,7 @@ import { createStore } from "solid-js/store"
 import type { PermissionRequest, QuestionRequest, Todo } from "@redcode-ai/sdk/v2"
 import { useParams } from "@solidjs/router"
 import { showToast } from "@redcode-ai/ui/toast"
-import { useGlobalSync } from "@/context/global-sync"
+import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { usePermission } from "@/context/permission"
 import { useSDK } from "@/context/sdk"
@@ -27,7 +27,7 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
   const params = useParams()
   const sdk = useSDK()
   const sync = useSync()
-  const globalSync = useGlobalSync()
+  const globalSync = useServerSync()
   const language = useLanguage()
   const permission = usePermission()
 

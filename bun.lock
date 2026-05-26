@@ -30,7 +30,7 @@
     },
     "packages/app": {
       "name": "@redcode-ai/app",
-      "version": "1.15.7",
+      "version": "1.15.10",
       "dependencies": {
         "@kobalte/core": "catalog:",
         "@redcode-ai/core": "workspace:*",
@@ -194,7 +194,7 @@
     },
     "packages/core": {
       "name": "@redcode-ai/core",
-      "version": "1.15.7",
+      "version": "1.15.10",
       "bin": {
         "redcode": "./bin/redcode",
       },
@@ -255,7 +255,7 @@
     },
     "packages/desktop": {
       "name": "@redcode-ai/desktop",
-      "version": "1.15.7",
+      "version": "0.2.1",
       "dependencies": {
         "@electron/asar": "4.2.0",
         "@zip.js/zip.js": "2.7.62",
@@ -311,7 +311,7 @@
     },
     "packages/effect-drizzle-sqlite": {
       "name": "@redcode-ai/effect-drizzle-sqlite",
-      "version": "1.15.7",
+      "version": "1.15.10",
       "dependencies": {
         "drizzle-orm": "catalog:",
         "effect": "catalog:",
@@ -325,7 +325,7 @@
     },
     "packages/enterprise": {
       "name": "@redcode-ai/enterprise",
-      "version": "1.15.7",
+      "version": "1.15.10",
       "dependencies": {
         "@pierre/diffs": "catalog:",
         "@redcode-ai/core": "workspace:*",
@@ -355,7 +355,7 @@
     },
     "packages/function": {
       "name": "@redcode-ai/function",
-      "version": "1.15.7",
+      "version": "1.15.10",
       "dependencies": {
         "@octokit/auth-app": "8.0.1",
         "@octokit/rest": "catalog:",
@@ -371,7 +371,7 @@
     },
     "packages/http-recorder": {
       "name": "@redcode-ai/http-recorder",
-      "version": "1.15.7",
+      "version": "1.15.10",
       "dependencies": {
         "@effect/platform-node": "catalog:",
         "effect": "catalog:",
@@ -384,7 +384,7 @@
     },
     "packages/llm": {
       "name": "@redcode-ai/llm",
-      "version": "1.15.7",
+      "version": "1.15.10",
       "dependencies": {
         "@smithy/eventstream-codec": "4.2.14",
         "@smithy/util-utf8": "4.2.2",
@@ -402,7 +402,7 @@
     },
     "packages/opencode": {
       "name": "redcode",
-      "version": "1.15.7",
+      "version": "1.15.10",
       "bin": {
         "redcode": "./bin/redcode",
       },
@@ -540,7 +540,7 @@
     },
     "packages/plugin": {
       "name": "@redcode-ai/plugin",
-      "version": "1.15.7",
+      "version": "1.15.10",
       "dependencies": {
         "@redcode-ai/sdk": "workspace:*",
         "effect": "catalog:",
@@ -593,7 +593,7 @@
     },
     "packages/slack": {
       "name": "@redcode-ai/slack",
-      "version": "1.15.7",
+      "version": "1.15.10",
       "dependencies": {
         "@redcode-ai/sdk": "workspace:*",
         "@slack/bolt": "^3.17.1",
@@ -628,7 +628,7 @@
     },
     "packages/ui": {
       "name": "@redcode-ai/ui",
-      "version": "1.15.7",
+      "version": "1.15.10",
       "dependencies": {
         "@kobalte/core": "catalog:",
         "@pierre/diffs": "catalog:",
@@ -677,7 +677,7 @@
     },
     "packages/web": {
       "name": "@redcode-ai/web",
-      "version": "1.15.7",
+      "version": "1.15.10",
       "dependencies": {
         "@astrojs/cloudflare": "12.6.3",
         "@astrojs/markdown-remark": "6.3.1",

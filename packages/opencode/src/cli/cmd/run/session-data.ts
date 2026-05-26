@@ -147,14 +147,23 @@ function formatUsage(
     return undefined
   }
 
+  const cacheHitPct =
+    (tokens?.cache?.read ?? 0) > 0
+      ? Math.round(
+          ((tokens?.cache?.read ?? 0) / ((tokens?.input ?? 0) + (tokens?.cache?.read ?? 0) + (tokens?.cache?.write ?? 0))) *
+            100,
+        )
+      : undefined
+  const cacheStr = cacheHitPct !== undefined ? `Cache: ${cacheHitPct}%` : undefined
+
   const text =
     limit && limit > 0 ? `${Locale.number(total)} (${Math.round((total / limit) * 100)}%)` : Locale.number(total)
 
   if (typeof cost === "number" && cost > 0) {
-    return `${text} · ${money.format(cost)}`
+    return `${cacheStr ? cacheStr + " · " : ""}${text} · ${money.format(cost)}`
   }
 
-  return text
+  return cacheStr ? `${cacheStr} · ${text}` : text
 }
 
 export function formatError(error: {

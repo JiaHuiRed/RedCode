@@ -16,7 +16,7 @@ import { makeEventListener } from "@solid-primitives/event-listener"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { useQuery } from "@tanstack/solid-query"
 import { useLayout, LocalProject } from "@/context/layout"
-import { useGlobalSync } from "@/context/global-sync"
+import { useServerSync } from "@/context/server-sync"
 import { Persist, persisted } from "@/utils/persist"
 import { base64Encode } from "@redcode-ai/core/util/encode"
 import { decode64 } from "@/utils/base64"
@@ -114,7 +114,7 @@ export default function Layout(props: ParentProps) {
 
   const params = useParams()
   const globalSDK = useGlobalSDK()
-  const globalSync = useGlobalSync()
+  const globalSync = useServerSync()
   const layout = useLayout()
   const layoutReady = createMemo(() => layout.ready())
   const platform = usePlatform()
@@ -2118,8 +2118,8 @@ export default function Layout(props: ParentProps) {
         >
           {(project) => (
             <>
-              <div class="shrink-0 pl-1 py-1">
-                <div class="group/project flex items-start justify-between gap-2 py-2 pl-2 pr-0">
+              <div class="shrink-0 py-1">
+                <div class="group/project flex items-start justify-between gap-2 py-2 pl-1 pr-0">
                   <div class="flex flex-col min-w-0">
                     <InlineEditor
                       id={`project:${projectId()}`}
@@ -2355,8 +2355,6 @@ export default function Layout(props: ParentProps) {
       settingsLabel={() => language.t("sidebar.settings")}
       settingsKeybind={() => command.keybind("settings.open")}
       onOpenSettings={openSettings}
-      helpLabel={() => language.t("sidebar.help")}
-      onOpenHelp={() => platform.openLink("https://redcode.dev/desktop-feedback")}
       renderPanel={() =>
         mobile ? <SidebarPanel project={currentProject} mobile /> : <SidebarPanel project={currentProject} merged />
       }

@@ -18,7 +18,7 @@ import type { State, VcsCache } from "./types"
 import { cmp, normalizeAgentList, normalizeProviderList } from "./utils"
 import { formatServerError } from "@/utils/server-errors"
 import { QueryClient, queryOptions } from "@tanstack/solid-query"
-import { loadMcpQuery } from "../global-sync"
+import { loadMcpQuery } from "../server-sync"
 import { NormalizedProviderListResponse } from "@redcode-ai/ui/context"
 
 type GlobalStore = {

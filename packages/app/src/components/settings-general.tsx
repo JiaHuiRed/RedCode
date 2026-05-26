@@ -12,7 +12,7 @@ import { useParams } from "@solidjs/router"
 import { useLanguage } from "@/context/language"
 import { usePermission } from "@/context/permission"
 import { usePlatform, type DisplayBackend } from "@/context/platform"
-import { useGlobalSync } from "@/context/global-sync"
+import { useServerSync } from "@/context/server-sync"
 import { useGlobalSDK } from "@/context/global-sdk"
 import {
   monoDefault,
@@ -175,7 +175,7 @@ export const SettingsGeneral: Component = () => {
 
   const themeOptions = createMemo<ThemeOption[]>(() => theme.ids().map((id) => ({ id, name: theme.name(id) })))
 
-  const globalSync = useGlobalSync()
+  const globalSync = useServerSync()
   const globalSdk = useGlobalSDK()
 
   const [shells] = createResource(
@@ -781,7 +781,6 @@ export const SettingsGeneral: Component = () => {
     </Show>
   )
 
-  console.log(import.meta.env)
   return (
     <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
       <div class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">

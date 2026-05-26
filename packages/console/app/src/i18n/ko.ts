@@ -1,4 +1,4 @@
-﻿import type { Dict } from "./en"
+import type { Dict } from "./en"
 import { dict as en } from "./en"
 
 export const dict = {
@@ -43,8 +43,8 @@ export const dict = {
   "notFound.docs": "문서",
   "notFound.github": "GitHub",
   "notFound.discord": "Discord",
-  "notFound.logoLightAlt": "RedCode 밝은 로고",
-  "notFound.logoDarkAlt": "RedCode 어두운 로고",
+  "notFound.logoLightAlt": "redcode 밝은 로고",
+  "notFound.logoDarkAlt": "redcode 어두운 로고",
 
   "user.logout": "로그아웃",
 
@@ -98,8 +98,8 @@ export const dict = {
   "temp.feature.models.afterLink": "를 통해 75개 이상의 LLM 제공자 지원",
   "temp.screenshot.caption": "tokyonight 테마가 적용된 RedCode TUI",
   "temp.screenshot.alt": "tokyonight 테마가 적용된 RedCode TUI",
-  "temp.logoLightAlt": "RedCode 밝은 로고",
-  "temp.logoDarkAlt": "RedCode 어두운 로고",
+  "temp.logoLightAlt": "redcode 밝은 로고",
+  "temp.logoDarkAlt": "redcode 어두운 로고",
 
   "home.banner.badge": "신규",
   "home.banner.text": "데스크톱 앱 베타 버전 출시",
@@ -644,7 +644,7 @@ export const dict = {
   "workspace.lite.subscription.resetsIn": "초기화까지 남은 시간:",
   "workspace.lite.subscription.useBalance": "사용 한도 도달 후에는 보유 잔액 사용",
   "workspace.lite.subscription.selectProvider":
-    'Go 모델을 사용하려면 RedCode 설정에서 "RedCode Go"를 공급자로 선택하세요.',
+    'Go 모델을 사용하려면 redcode 설정에서 "RedCode Go"를 공급자로 선택하세요.',
   "workspace.lite.black.message":
     "현재 RedCode Black을 구독 중이거나 대기 명단에 등록되어 있습니다. Go로 전환하려면 먼저 구독을 취소해 주세요.",
   "workspace.lite.other.message":

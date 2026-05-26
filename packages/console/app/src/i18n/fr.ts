@@ -1,4 +1,4 @@
-﻿import type { Dict } from "./en"
+import type { Dict } from "./en"
 import { dict as en } from "./en"
 
 export const dict = {
@@ -44,8 +44,8 @@ export const dict = {
   "notFound.docs": "Documentation",
   "notFound.github": "GitHub",
   "notFound.discord": "Discord",
-  "notFound.logoLightAlt": "RedCode logo light",
-  "notFound.logoDarkAlt": "RedCode logo dark",
+  "notFound.logoLightAlt": "redcode logo light",
+  "notFound.logoDarkAlt": "redcode logo dark",
 
   "user.logout": "Se déconnecter",
 
@@ -96,8 +96,8 @@ export const dict = {
   "temp.feature.models.afterLink": ", y compris les modèles locaux",
   "temp.screenshot.caption": "RedCode TUI avec le thème tokyonight",
   "temp.screenshot.alt": "RedCode TUI avec le thème tokyonight",
-  "temp.logoLightAlt": "RedCode logo light",
-  "temp.logoDarkAlt": "RedCode logo dark",
+  "temp.logoLightAlt": "redcode logo light",
+  "temp.logoDarkAlt": "redcode logo dark",
 
   "home.banner.badge": "Nouveau",
   "home.banner.text": "Application desktop disponible en bêta",
@@ -660,7 +660,7 @@ export const dict = {
   "workspace.lite.subscription.useBalance":
     "Utilisez votre solde disponible après avoir atteint les limites d'utilisation",
   "workspace.lite.subscription.selectProvider":
-    'Sélectionnez "RedCode Go" comme fournisseur dans votre configuration RedCode pour utiliser les modèles Go.',
+    'Sélectionnez "RedCode Go" comme fournisseur dans votre configuration redcode pour utiliser les modèles Go.',
   "workspace.lite.black.message":
     "Vous êtes actuellement abonné à RedCode Black ou sur liste d'attente. Veuillez d'abord vous désabonner si vous souhaitez passer à Go.",
   "workspace.lite.other.message":

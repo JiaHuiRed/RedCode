@@ -6,6 +6,55 @@
 
 ---
 
+## [0.2.1] - 2026-05-26
+
+### 新增
+
+- **缓存命中率显示**：TUI 底部栏及 subagent footer 显示 `Cache: XX%` 缓存命中率
+- **Windows 剪贴板粘贴**：添加 PowerShell `Get-Clipboard` 回退，修复 Windows TUI 粘贴问题
+- **标题栏版本号**：`ChannelIndicator` 改为显示 `v{platform.version}`，实时读取 package.json 版本
+- **macOS 交通灯（V2 titlebar）**：dev 构建左上角补齐红黄绿圆点，支持关闭/最小化/最大化
+
+### 变更
+
+- **底部栏去重**：移除右下角冗余的 token 用量和费用显示（右侧面板 context 中已有），仅保留缓存率和快捷键提示
+- **移除帮助按钮**：侧边栏底部及首页帮助按钮均已删除（原跳转外网，无实际用途）
+- **错误页精简**：仅保留「导出日志」按钮，移除重启/Sentry/检查更新/Discord 链接
+- **侧边栏左对齐**：首页 Grid 容器去掉 `mx-auto max-w-[1080px] px-6` 居中约束，项目列表紧贴左边
+- **帮助菜单精简**：只保留「RedCode 源码」（→ GitHub）和「导出日志...」，删除原作者的论坛/反馈/Bug 上报链接
+
+### 修复
+
+- **双交通灯**：`<Match when>` 改为 `<Match when={!USE_V2_TITLEBAR}>` 确保两个 titlebar 分支互斥，消除重复按钮和版本号
+- **标题栏宽度**：无原生边框窗口 `env(titlebar-area-width)` fallback 改为 `100vw`，避免按钮超出可视区域
+
+---
+
+## [0.2.0] - 2026-05-26
+
+### 新增
+
+- **i18n 补全**：三套自定义配色方案（米黄/护眼绿/深蓝）接入 i18n，英文标签 Cream / Eye Green / Deep Blue
+- **标题栏版本号**：`ChannelIndicator` 改为显示 `v{platform.version}`，实时读取 package.json 版本
+- **V2 titlebar 交通灯**：开发构建的 V2 titlebar 补齐左上角红黄绿圆点，与生产版行为一致
+
+### 变更
+
+- **首页简化**：删除 `LegacyHome` 组件，始终使用 `HomeDesign`；移除频道门控逻辑
+- **频道简化**：去掉 dev/beta/prod 分支门控，UI 功能统一走发布版路径
+- **删除无效 UI**：移除首页装饰性 `Branch: dev` 按钮及遗留 `console.log`
+- **移除帮助按钮**：侧边栏底部及首页帮助按钮均已删除（原链接跳转外网，无实际用途）
+- **错误页精简**：仅保留「导出日志」按钮，移除重启、Sentry 上报、检查更新、Discord 链接
+- **侧边栏左对齐**：首页 Grid 容器去掉 `mx-auto max-w-[1080px] px-6` 居中约束，项目列表紧贴左边
+- **标题栏宽度修复**：无原生边框窗口 `env(titlebar-area-width)` fallback 改为 `100vw`，避免按钮超出可视区域
+
+### 修复
+
+- **`refcount.ts` 损坏**：恢复正确的 `createRefCountMap` 实现，修复渲染器白屏
+- **`new-session-layout.ts` 损坏**：恢复正确的 `shouldUseV2NewSessionPage` 实现
+
+---
+
 ## [0.1.0] - 2026-05-24
 
 ### 新增
