@@ -6,6 +6,19 @@
 
 ---
 
+## [0.2.2] - 2026-05-26
+
+### 修复
+
+- **桌面端 sidecar 崩溃**：Bundle 不再复制到 `out/main/`，而是留在 `packages/opencode/dist/node/` 原位置，使 `jsonc-parser` 等依赖能从原始 `node_modules` 解析；添加 `@parcel/watcher` 最小 shim 避免拉入 `micromatch` 依赖链；sidecar 添加 `await new Promise` 保持进程存活
+- **桌面端安装版白屏**：移除 NSIS 安装器目标（`target: ["dir"]`），只生成免安装 `win-unpacked` 版
+- **桌面端任务栏图标缺失**：图标通过 `extraResources` 放到 ASAR 外部，`BrowserWindow` 改用 `nativeImage.createFromPath` 加载
+- **桌面端 sidecar 错误不可见**：添加永久 IPC 错误监听器，sidecar 崩溃日志写入 `%TEMP%\redcode-sidecar-crash.log`
+- **桌面端 loading 灰屏**：`awaitInitialization` 改用原生 `Promise.withResolvers` 替代 Effect `Deferred`，解决跨运行时挂起
+- **桌面端类型错误**：`server-sync.tsx` 参数顺序互换修复、`bootstrapGlobal` 属性名修复、`custom-elements.d.ts` 三斜线指令修复
+
+---
+
 ## [0.2.1] - 2026-05-26
 
 ### 新增
