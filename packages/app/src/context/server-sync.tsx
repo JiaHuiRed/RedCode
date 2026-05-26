@@ -155,7 +155,7 @@ export function createServerSyncContext() {
     queryKey: ["bootstrap"],
     queryFn: async () => {
       await bootstrapGlobal({
-        serverSDK: serverSDK.client,
+        globalSDK: serverSDK.client,
         requestFailedTitle: language.t("common.requestFailed"),
         translate: language.t,
         formatMoreCount: (count) => language.t("common.moreCountSuffix", { count }),
@@ -451,10 +451,13 @@ export const { use: useServerSync, provider: ServerSyncProvider } = createSimple
   name: "ServerSync",
   init: () => {
     const sync = createServerSyncContext()
+    const serverSDK = useServerSDK()
 
     return {
       ...sync,
-      createDirSyncContext: createRefCountMap((dir) => createDirSyncContext(dir, sync)),
+      createDirSyncContext: createRefCountMap((dir) =>
+        createDirSyncContext(serverSDK.createClient({ directory: dir, throwOnError: true }), dir),
+      ),
     }
   },
 })

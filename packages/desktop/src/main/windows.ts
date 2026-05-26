@@ -125,7 +125,7 @@ export function createMainWindow() {
     show: false,
     autoHideMenuBar: true,
     title: "RedCode",
-    icon: iconPath(),
+    icon: nativeImage.createFromPath(iconPath()),
     backgroundColor,
     ...(process.platform === "darwin"
       ? {

@@ -95,6 +95,10 @@ export async function spawnLocalServer(
     exit.resolve(code)
   })
   child.on("error", (error) => options.onStderr?.(`utility process error: ${serializeError(error).message}`))
+  // Permanent listener for runtime errors (survives cleanup after "ready")
+  child.on("message", (message: SidecarMessage) => {
+    if (message.type === "error") options.onStderr?.(`sidecar runtime error: ${message.error.message}`)
+  })
 
   child.stdout?.on("data", (chunk: Buffer) => options.onStdout?.(chunk.toString("utf8").trimEnd()))
   child.stderr?.on("data", (chunk: Buffer) => options.onStderr?.(chunk.toString("utf8").trimEnd()))

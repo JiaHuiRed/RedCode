@@ -1,6 +1,9 @@
 ﻿import { drizzle } from "drizzle-orm/node-sqlite/driver"
 import * as http from "node:http"
 import * as tls from "node:tls"
+import * as fs from "node:fs"
+import * as os from "node:os"
+import * as path from "node:path"
 
 type NodeHttpWithEnvProxy = typeof http & {
   setGlobalProxyFromEnv: () => void
@@ -39,6 +42,20 @@ type Listener = {
 }
 
 const parentPort = getParentPort()
+
+process.on("uncaughtException", (error) => {
+  const msg = `[sidecar-fatal] uncaughtException: ${error.stack ?? error.message}\n`
+  fs.appendFileSync(path.join(os.tmpdir(), "redcode-sidecar-crash.log"), msg)
+  parentPort.postMessage({ type: "error", error: serializeError(error) })
+  setImmediate(() => process.exit(1))
+})
+process.on("unhandledRejection", (reason) => {
+  const msg = `[sidecar-fatal] unhandledRejection: ${reason instanceof Error ? reason.stack : String(reason)}\n`
+  fs.appendFileSync(path.join(os.tmpdir(), "redcode-sidecar-crash.log"), msg)
+  parentPort.postMessage({ type: "error", error: serializeError(reason instanceof Error ? reason : new Error(String(reason))) })
+  setImmediate(() => process.exit(1))
+})
+
 let listener: Listener | undefined
 
 parentPort.on("message", (event) => {
@@ -83,7 +100,11 @@ async function start(command: StartCommand) {
       cors: ["oc://renderer"],
     })
     parentPort.postMessage({ type: "ready" })
+    // Keep the process alive until told otherwise
+    await new Promise<void>(() => {})
   } catch (error) {
+    const msg = `[sidecar-caught] ${error instanceof Error ? error.stack : String(error)}\n`
+    fs.appendFileSync(path.join(os.tmpdir(), "redcode-sidecar-crash.log"), msg)
     parentPort.postMessage({ type: "error", error: serializeError(error) })
     setImmediate(() => process.exit(1))
   }

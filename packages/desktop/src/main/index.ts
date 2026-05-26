@@ -28,7 +28,6 @@ import {
   type SidecarListener,
 } from "./server"
 import {
-  createLoadingWindow,
   createMainWindow,
   registerRendererProtocol,
   setRelaunchHandler,
@@ -218,27 +217,19 @@ const main = Effect.gen(function* () {
     })
   }
 
-  const serverReady = Deferred.makeUnsafe<ServerReadyData>()
   const loadingComplete = Deferred.makeUnsafe<void>()
 
   registerIpcHandlers({
     killSidecar: () => killSidecar(),
-    awaitInitialization: Effect.fnUntraced(
-      function* (sendStep) {
-        sendStep(initStep)
-        const listener = (step: InitStep) => sendStep(step)
-        initEmitter.on("step", listener)
-        try {
-          logger.log("awaiting server ready")
-          const res = yield* Deferred.await(serverReady)
-          logger.log("server ready", { url: res.url })
-          return res
-        } finally {
-          initEmitter.off("step", listener)
-        }
-      },
-      (e) => Effect.runPromise(e),
-    ),
+    awaitInitialization: (sendStep: (step: InitStep) => void) => {
+      sendStep(initStep)
+      const listener = (step: InitStep) => sendStep(step)
+      initEmitter.on("step", listener)
+      logger.log("awaiting server ready")
+      logger.log("server ready", { url })
+      initEmitter.off("step", listener)
+      return Promise.resolve({ url, username: "redcode", password })
+    },
     getWindowConfig: () => ({ updaterEnabled: UPDATER_ENABLED }),
     consumeInitialDeepLinks: () => pendingDeepLinks.splice(0),
     getDefaultServerUrl: () => getDefaultServerUrl(),
@@ -282,8 +273,6 @@ const main = Effect.gen(function* () {
     const base = xdg && xdg.length > 0 ? xdg : join(homedir(), ".local", "share")
     return !existsSync(join(base, "redcode", "redcode.db"))
   })()
-  let overlay: BrowserWindow | null = null
-
   const port = yield* Effect.gen(function* () {
     const fromEnv = process.env.REDCODE_PORT
     if (fromEnv) {
@@ -314,9 +303,8 @@ const main = Effect.gen(function* () {
   const loadingTask = yield* Effect.gen(function* () {
     logger.log("sidecar connection started", { url })
 
-    initEmitter.on("sqlite", (progress: SqliteMigrationProgress) => {
+      initEmitter.on("sqlite", (progress: SqliteMigrationProgress) => {
       setInitStep({ phase: "sqlite_waiting" })
-      if (overlay) sendSqliteMigrationProgress(overlay, progress)
       if (mainWindow) sendSqliteMigrationProgress(mainWindow, progress)
     })
 
@@ -335,11 +323,6 @@ const main = Effect.gen(function* () {
       }),
     )
     server = listener
-    yield* Deferred.succeed(serverReady, {
-      url,
-      username: "redcode",
-      password,
-    })
 
     yield* Effect.promise(() => health.wait).pipe(
       Effect.timeout("30 seconds"),
@@ -375,7 +358,6 @@ const main = Effect.gen(function* () {
     })
   }
 
-  overlay?.close()
 })
 
 Effect.runFork(main)
