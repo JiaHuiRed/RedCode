@@ -69,7 +69,7 @@ function View(props: { api: TuiPluginApi }) {
         <span style={{ fg: theme().text }}>
           <b>RedCode</b>
         </span>{" "}
-        <span>0.2.0</span>
+        <span>0.2.2</span>
       </text>
     </box>
   )
