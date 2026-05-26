@@ -35,9 +35,9 @@
 - 🔌 **多模型支持**：DeepSeek、OpenAI、Anthropic、Google Gemini、Ollama 本地模型等
 - 🛠 **工具系统**：文件读写、代码搜索、终端命令、Web 搜索、MCP 服务器
 - 🤖 **自定义 Agent**：内置 Build、Plan、General 等 Agent，支持自定义
-- 📝 **会话管理**：历史对话保存、分享、恢复
+- 📝 **会话管理**：历史对话保存、恢复
 - 🎨 **终端 UI**：语法高亮、流式输出、文件差异展示
-- 🔗 **IDE 集成**：VS Code 扩展（源码在 `sdks/vscode`，未上架市场，需手动加载）
+- 🖥 **桌面端**：Electron 独立窗口（免安装版 `dist/win-unpacked`）
 
 ---
 
