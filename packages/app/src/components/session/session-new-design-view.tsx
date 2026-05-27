@@ -10,7 +10,7 @@ import { base64Encode } from "@redcode-ai/core/util/encode"
 import { getFilename } from "@redcode-ai/core/util/path"
 import { Icon } from "@redcode-ai/ui/icon"
 import { Select } from "@redcode-ai/ui/select"
-import { Logo } from "@redcode-ai/ui/logo"
+import { WordmarkV2 } from "@redcode-ai/ui/v2/components/wordmark-v2.jsx"
 
 const MAIN_WORKTREE = "main"
 
@@ -42,7 +42,9 @@ export function NewSessionDesignView(props: { worktree: string; children: JSX.El
     <div data-component="session-new-design" class="relative size-full overflow-hidden bg-v2-background-bg-deep">
       <div class="absolute inset-x-0 top-[25.375%] flex justify-center px-6">
         <div class="w-full max-w-[720px]">
-          <Logo class="h-auto w-full text-v2-icon-icon-base" />
+          <div class="text-center">
+            <WordmarkV2 class="text-[72px] leading-none" />
+          </div>
           <div class="mt-8">
             {props.children}
             <div class="mt-3 flex h-7 items-center gap-0 pl-2">

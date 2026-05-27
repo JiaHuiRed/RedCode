@@ -19,6 +19,8 @@
 - **TUI 版本号显示错误**：`build-node.ts` 改从 `packages/desktop/package.json` 读取 RedCode 版本（`0.2.2`），替代原来错误注入的 upstream opencode 版本（`1.15.10`）；需重建 TUI 生效（见下方构建说明）
 - **Desktop HTML 版本徽章**：`out/renderer/index.html` hardcode 版本从 `v0.2.1` 更新为 `v0.2.2`
 - **上游 Logo 残留**：`packages/ui/src/components/logo.tsx` 完全重写，`Mark`（写轮眼 SVG）、`Splash`（旋转动画 SVG）、`Logo`（REDCODE 像素字）全部替换，消除新建会话时出现的 opencode 原版图标和 GitHub Mona GIF
+- **新建会话 Wordmark**：`wordmark-v2.tsx` 从 opencode SVG 路径改为 Space Grotesk 字体文字，RED 柔红色（`#e84057`），居中 72px
+- **桌面端图标全部替换**：`icons/dev/`、`icons/beta/`、`icons/prod/` 全套图标替换为万花筒写轮眼设计
 
 ### 新增
 
