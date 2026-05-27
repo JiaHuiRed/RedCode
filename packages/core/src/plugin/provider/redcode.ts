@@ -1,0 +1,1 @@
+export { OpencodePlugin } from "./opencode"
