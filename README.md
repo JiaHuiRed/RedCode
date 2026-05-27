@@ -1,4 +1,4 @@
-﻿# ⚡ RedCode v0.2.2
+﻿# ⚡ RedCode v0.3.0
 
 <p align="center">
   <img src="packages/web/src/assets/lander/mona-loading.gif" width="80">
@@ -14,7 +14,7 @@
 > **开源 AI 编程助手 — 基于终端的智能编程代理，支持 DeepSeek / OpenAI / Anthropic / Ollama 等多模型。**
 > 作者：Red · 基于 [opencode](https://github.com/anomalyco/opencode) (sst.dev) 二次开发。
 
-[![版本](https://img.shields.io/badge/版本-0.2.2-blue)](CHANGELOG.md)
+[![版本](https://img.shields.io/badge/版本-0.3.0-blue)](CHANGELOG.md)
 [![平台](https://img.shields.io/badge/平台-Windows%2011-0078d4)](https://github.com/JiaHuiRed/RedCode)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)](https://typescriptlang.org)
 [![Bun](https://img.shields.io/badge/Bun-1.3.x-fcf2d0)](https://bun.sh)
