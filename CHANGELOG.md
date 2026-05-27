@@ -6,7 +6,7 @@
 
 ---
 
-## [0.2.2] - 2026-05-26
+## [0.2.2] - 2026-05-27
 
 ### 修复
 
@@ -16,6 +16,50 @@
 - **桌面端 sidecar 错误不可见**：添加永久 IPC 错误监听器，sidecar 崩溃日志写入 `%TEMP%\redcode-sidecar-crash.log`
 - **桌面端 loading 灰屏**：`awaitInitialization` 改用原生 `Promise.withResolvers` 替代 Effect `Deferred`，解决跨运行时挂起
 - **桌面端类型错误**：`server-sync.tsx` 参数顺序互换修复、`bootstrapGlobal` 属性名修复、`custom-elements.d.ts` 三斜线指令修复
+- **TUI 版本号显示错误**：`build-node.ts` 改从 `packages/desktop/package.json` 读取 RedCode 版本（`0.2.2`），替代原来错误注入的 upstream opencode 版本（`1.15.10`）；需重建 TUI 生效（见下方构建说明）
+- **Desktop HTML 版本徽章**：`out/renderer/index.html` hardcode 版本从 `v0.2.1` 更新为 `v0.2.2`
+- **上游 Logo 残留**：`packages/ui/src/components/logo.tsx` 完全重写，`Mark`（写轮眼 SVG）、`Splash`（旋转动画 SVG）、`Logo`（REDCODE 像素字）全部替换，消除新建会话时出现的 opencode 原版图标和 GitHub Mona GIF
+
+### 新增
+
+- **万花筒写轮眼图标**：新增 `packages/desktop/scripts/gen-icon.py`，程序化生成全套 Windows/macOS 图标（负空间法：实心红圆切三个黑色楔形 = 写轮眼三刀片）；输出到 `packages/desktop/icons/`
+
+### 构建说明
+
+**TUI 重建（版本号修复生效）：**
+```bash
+cd packages/opencode
+bun run script/build-node.ts
+```
+版本号在构建时烘焙进产物，之后 TUI 侧边栏底部将显示 `• RedCode 0.2.2`。
+
+**图标重新生成：**
+```bash
+cd packages/desktop
+py scripts/gen-icon.py
+```
+生成后在 electron-builder 配置中引用 `icons/icon.ico` 和 `icons/icon.png`，再重打包 desktop。
+
+### 待修复
+
+**DeepSeek 缓存 Token 费用计算偏高**（`packages/opencode/src/session/session.ts` 约 387–440 行）
+
+**问题根因：** DeepSeek OpenAI 兼容 API 返回 `prompt_cache_hit_tokens`（缓存命中部分），但 Vercel AI SDK `@ai-sdk/openai-compatible` 适配器可能未将其映射到 `cacheReadInputTokens`，导致所有 token 全部按全价 ¥0.27/M 计算，而非命中缓存的 ¥0.07/M，显示费用远高于 DeepSeek 官网账单。
+
+**排查步骤：**
+1. 在 `onFinish` 回调处打印 `usage` 和 `experimental_providerMetadata`，确认 `prompt_cache_hit_tokens` 是否出现
+2. 若在 `experimental_providerMetadata.deepseek` 下，可在提取 usage 时补充：
+   ```ts
+   const meta = (rawResponse as any)?.experimental_providerMetadata
+   const deepseekCacheHit  = meta?.deepseek?.promptCacheHitTokens  ?? 0
+   const deepseekCacheMiss = meta?.deepseek?.promptCacheMissTokens ?? 0
+   if (deepseekCacheHit > 0 || deepseekCacheMiss > 0) {
+     cacheReadInputTokens  = deepseekCacheHit
+     cacheWriteInputTokens = deepseekCacheMiss
+   }
+   ```
+3. 若 AI SDK 完全丢弃该字段，需在 provider 层拦截原始 HTTP 响应，或使用 `@ai-sdk/openai-compatible` 的自定义 `extractUsage` 选项
+4. 确认 `models.dev` 中 DeepSeek 的 `costInfo.cache.read` 已配置正确价格（$0.01/M = ¥0.07/M）
 
 ---
 

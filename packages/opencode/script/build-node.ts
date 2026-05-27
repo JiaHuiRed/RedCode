@@ -7,6 +7,9 @@ const dir = path.resolve(import.meta.dirname, "..")
 process.chdir(dir)
 
 const pkg = await Bun.file("package.json").json()
+// Use the RedCode desktop version (0.x.y) as the displayed version
+const desktopPkg = await Bun.file(path.join(dir, "../desktop/package.json")).json()
+const redcodeVersion: string = desktopPkg.version ?? pkg.version
 
 const migrations = (
   await fs.promises.readdir(path.join(dir, "migration"), { withFileTypes: true })
@@ -53,7 +56,7 @@ const result = await Bun.build({
   sourcemap: "linked",
   naming: "[name].[ext]",
   define: {
-    REDCODE_VERSION: `'${pkg.version}'`,
+    REDCODE_VERSION: `'${redcodeVersion}'`,
     REDCODE_MIGRATIONS: JSON.stringify(migrationData),
   },
   root: dir,

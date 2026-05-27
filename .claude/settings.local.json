@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -rn 0.2.0 D:/AI/RedCode/packages --include=*.html --include=*.json --include=*.ts --include=*.tsx)",
+      "Bash(grep -rn 0.2.0 D:/AI/RedCode/packages/desktop --include=*.html --include=*.js --include=*.json)",
+      "Bash(find D:/AI/RedCode/packages/desktop/out -name *.js)",
+      "Bash(xargs grep:*)",
+      "Bash(find D:/AI/RedCode/packages/desktop/dist/win-unpacked -name *.html)",
+      "Bash(find D:/AI/RedCode/packages/desktop/dist -name *.asar)",
+      "Bash(grep -oP \"\"0.2.[0-9]*\"\" D:/AI/RedCode/packages/desktop/dist/win-unpacked/resources/app.asar)",
+      "Bash(grep -oP 'version\\\\$3=\"\"\"\"[^\"\"\"\"]*\"\"\"\"' D:/AI/RedCode/packages/desktop/out/renderer/assets/main-BF7r819V.js)",
+      "Bash(grep -oP 'version\\\\$[0-9]=[^,;]+' D:/AI/RedCode/packages/desktop/out/renderer/assets/main-BF7r819V.js)",
+      "Bash(find D:/AI/RedCode/packages/opencode -name dev -not -path */node_modules/*)",
+      "Bash(grep -P '^0\\\\.[0-9]+\\\\.[0-9]+$')",
+      "Bash(grep -iv \"comment\\\\|//\")",
+      "Bash(find D:/AI/RedCode/packages/llm -name *.ts)",
+      "Bash(find D:/AI/RedCode/packages -name models.ts -not -path */node_modules/*)",
+      "Bash(python3 -c \"import PIL; print\\(''PIL ok''\\)\")",
+      "Bash(python3 -c \"from PIL import Image; print\\(''Pillow ok''\\)\")",
+      "Bash(bun --version)",
+      "Bash(node -e \"const {createCanvas} = require\\(''canvas''\\); console.log\\(''canvas ok''\\)\")",
+      "Bash(node -e \"require\\(''sharp''\\)\")",
+      "Bash(pip install:*)",
+      "Bash(pip3 install:*)",
+      "Bash(python3 -c \"from PIL import Image; print\\(''PIL ok''\\)\")",
+      "Bash(python -c \"from PIL import Image; print\\(''PIL ok''\\)\")",
+      "Bash(py -c \"from PIL import Image; print\\(''PIL ok''\\)\")",
+      "Bash(python packages/desktop/scripts/gen-icon.py)",
+      "Bash(py scripts/gen-icon.py)",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "mcp__Claude_in_Chrome__navigate",
+      "mcp__Claude_in_Chrome__computer"
+    ]
+  }
+}
