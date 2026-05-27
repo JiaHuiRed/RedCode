@@ -898,12 +898,12 @@ export const protocol = Protocol.make({
   },
   stream: {
     event: Protocol.jsonEvent(OpenAIResponsesEvent),
-    initial: (request) => ({
+    initial: () => ({
       hasFunctionCall: false,
       tools: ToolStream.empty<string>(),
       lifecycle: Lifecycle.initial(),
       reasoningItems: {},
-      store: OpenAIOptions.store(request),
+      store: undefined,
     }),
     step,
     terminal: (event) => TERMINAL_TYPES.has(event.type),

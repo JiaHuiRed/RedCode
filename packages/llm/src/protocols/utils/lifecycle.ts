@@ -34,6 +34,13 @@ export const reasoningDelta = (state: State, events: LLMEvent[], id: string, tex
   return { ...stepped, reasoning: new Set([...stepped.reasoning, id]) }
 }
 
+export const reasoningStart = (state: State, events: LLMEvent[], id: string, providerMetadata?: ProviderMetadata): State => {
+  const stepped = stepStart(state, events)
+  if (stepped.reasoning.has(id)) return stepped
+  events.push(LLMEvent.reasoningStart({ id, providerMetadata }))
+  return { ...stepped, reasoning: new Set([...stepped.reasoning, id]) }
+}
+
 export const reasoningEnd = (
   state: State,
   events: LLMEvent[],

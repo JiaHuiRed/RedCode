@@ -1,5 +1,5 @@
 import { parseDiffFromFile, parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs"
-import { parsePatch } from "diff"
+import { createTwoFilesPatch, parsePatch } from "diff"
 import type { SnapshotFileDiff, VcsFileDiff } from "@redcode-ai/sdk/v2"
 
 type LegacyDiff = {
@@ -21,6 +21,7 @@ export type ViewDiff = {
   additions: number
   deletions: number
   status?: "added" | "deleted" | "modified"
+  patch?: string
   fileDiff: FileDiffMetadata
 }
 
@@ -42,8 +43,14 @@ export function normalize(diff: ReviewDiff): ViewDiff {
     additions: diff.additions,
     deletions: diff.deletions,
     status: diff.status,
+    patch: diff.patch ?? patchFromBeforeAfter(diff as { before?: string; after?: string }, diff.file),
     fileDiff: resolveFileDiff(diff),
   }
+}
+
+function patchFromBeforeAfter(diff: { before?: string; after?: string }, file: string) {
+  if (diff.before === undefined && diff.after === undefined) return
+  return createTwoFilesPatch(file, file, diff.before ?? "", diff.after ?? "")
 }
 
 export function text(diff: ViewDiff, side: "deletions" | "additions") {
