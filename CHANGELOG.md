@@ -21,6 +21,8 @@
 - **上游 Logo 残留**：`packages/ui/src/components/logo.tsx` 完全重写，`Mark`（写轮眼 SVG）、`Splash`（旋转动画 SVG）、`Logo`（REDCODE 像素字）全部替换，消除新建会话时出现的 opencode 原版图标和 GitHub Mona GIF
 - **新建会话 Wordmark**：`wordmark-v2.tsx` 从 opencode SVG 路径改为 Space Grotesk 字体文字，RED 柔红色（`#e84057`），居中 72px
 - **桌面端图标全部替换**：`icons/dev/`、`icons/beta/`、`icons/prod/` 全套图标替换为万花筒写轮眼设计
+- **DeepSeek 缓存 Token 费用计算偏高**：`session.ts` 添加 DeepSeek metadata fallback，从 `experimental_providerMetadata.deepseek.promptCacheHitTokens` / `promptCacheMissTokens` 读取缓存命中/未命中 token 数，修复所有 token 按全价计费的问题
+- **对话框输入框无法粘贴**：`dialog-prompt.tsx` 添加 `onPaste` handler，支持 Ctrl+V 在 API 密钥输入框中粘贴
 
 ### 新增
 
@@ -41,27 +43,6 @@ cd packages/desktop
 py scripts/gen-icon.py
 ```
 生成后在 electron-builder 配置中引用 `icons/icon.ico` 和 `icons/icon.png`，再重打包 desktop。
-
-### 待修复
-
-**DeepSeek 缓存 Token 费用计算偏高**（`packages/opencode/src/session/session.ts` 约 387–440 行）
-
-**问题根因：** DeepSeek OpenAI 兼容 API 返回 `prompt_cache_hit_tokens`（缓存命中部分），但 Vercel AI SDK `@ai-sdk/openai-compatible` 适配器可能未将其映射到 `cacheReadInputTokens`，导致所有 token 全部按全价 ¥0.27/M 计算，而非命中缓存的 ¥0.07/M，显示费用远高于 DeepSeek 官网账单。
-
-**排查步骤：**
-1. 在 `onFinish` 回调处打印 `usage` 和 `experimental_providerMetadata`，确认 `prompt_cache_hit_tokens` 是否出现
-2. 若在 `experimental_providerMetadata.deepseek` 下，可在提取 usage 时补充：
-   ```ts
-   const meta = (rawResponse as any)?.experimental_providerMetadata
-   const deepseekCacheHit  = meta?.deepseek?.promptCacheHitTokens  ?? 0
-   const deepseekCacheMiss = meta?.deepseek?.promptCacheMissTokens ?? 0
-   if (deepseekCacheHit > 0 || deepseekCacheMiss > 0) {
-     cacheReadInputTokens  = deepseekCacheHit
-     cacheWriteInputTokens = deepseekCacheMiss
-   }
-   ```
-3. 若 AI SDK 完全丢弃该字段，需在 provider 层拦截原始 HTTP 响应，或使用 `@ai-sdk/openai-compatible` 的自定义 `extractUsage` 选项
-4. 确认 `models.dev` 中 DeepSeek 的 `costInfo.cache.read` 已配置正确价格（$0.01/M = ¥0.07/M）
 
 ---
 
