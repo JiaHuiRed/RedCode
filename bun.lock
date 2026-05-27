@@ -255,7 +255,7 @@
     },
     "packages/desktop": {
       "name": "@redcode-ai/desktop",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "dependencies": {
         "@electron/asar": "4.2.0",
         "@zip.js/zip.js": "2.7.62",
