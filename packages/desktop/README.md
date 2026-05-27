@@ -1,4 +1,4 @@
-# OpenCode Desktop
+# RedCode Desktop
 
 The OpenCode Desktop app, built with Electron.
 
