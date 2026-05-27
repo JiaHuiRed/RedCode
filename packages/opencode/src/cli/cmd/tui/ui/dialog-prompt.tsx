@@ -1,4 +1,4 @@
-import { TextareaRenderable, TextAttributes } from "@opentui/core"
+import { TextareaRenderable, TextAttributes, PasteEvent, decodePasteBytes } from "@opentui/core"
 import { useTheme } from "../context/theme"
 import { useDialog, type DialogContext } from "./dialog"
 import { Show, createEffect, createSignal, onMount, type JSX } from "solid-js"
@@ -96,6 +96,13 @@ export function DialogPrompt(props: DialogPromptProps) {
           textColor={props.busy ? theme.textMuted : theme.text}
           focusedTextColor={props.busy ? theme.textMuted : theme.text}
           cursorColor={props.busy ? theme.backgroundElement : theme.text}
+          onPaste={(event: PasteEvent) => {
+            event.preventDefault()
+            const text = decodePasteBytes(event.bytes).replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+            if (text && textarea && !textarea.isDestroyed) {
+              textarea.insertText(text)
+            }
+          }}
         />
         <Show when={props.busy}>
           <Spinner color={theme.textMuted}>{props.busyText ?? "Working..."}</Spinner>
