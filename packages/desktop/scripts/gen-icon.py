@@ -5,7 +5,7 @@ Design: black bg, white 勾玉 (magatama), red ring + pupil.
 Colors adjusted: bg slightly lighter, red softer.
 """
 import math, os, io, struct
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw
 
 # ── colors ───────────────────────────────────────────────────────────────────
 RED       = (200,  60,  70, 255)    # softer rose-red (ring + pupil)
@@ -63,7 +63,14 @@ def draw_magatama(draw, cx, cy, R, blade_idx, n=3):
     draw.polygon(pts, fill=WHITE)
 
 def draw_sharingan(size: int) -> Image.Image:
-    S  = size * 4
+    # Higher supersample for small icons to preserve detail after downsample
+    if size <= 32:
+        scale = 16
+    elif size <= 64:
+        scale = 8
+    else:
+        scale = 4
+    S  = size * scale
     cx = cy = S // 2
     R  = int(S * 0.47)
 
@@ -73,11 +80,12 @@ def draw_sharingan(size: int) -> Image.Image:
     # Background circle
     draw.ellipse([cx-R, cy-R, cx+R, cy+R], fill=BG)
 
-    # Red outer ring
+    # Red outer ring (single antialiased stroke via width param)
     ring_w = max(2, int(R * 0.05))
-    for i in range(ring_w):
-        r = R - i
-        draw.ellipse([cx-r, cy-r, cx+r, cy+r], outline=RED)
+    draw.ellipse(
+        [cx-R+ring_w//2, cy-R+ring_w//2, cx+R-ring_w//2, cy+R-ring_w//2],
+        outline=RED, width=ring_w,
+    )
 
     # Three white 勾玉
     for i in range(3):
@@ -87,8 +95,7 @@ def draw_sharingan(size: int) -> Image.Image:
     pupil_r = int(R * 0.09)
     draw.ellipse([cx-pupil_r, cy-pupil_r, cx+pupil_r, cy+pupil_r], fill=RED)
 
-    # Anti-alias + downsample
-    img = img.filter(ImageFilter.GaussianBlur(radius=1.0))
+    # Downsample (LANCZOS gives good anti-aliasing; no extra blur needed)
     img = img.resize((size, size), Image.LANCZOS)
     return img
 
