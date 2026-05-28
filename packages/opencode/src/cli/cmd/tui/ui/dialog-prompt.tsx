@@ -5,6 +5,7 @@ import { Show, createEffect, createSignal, onMount, type JSX } from "solid-js"
 import { Spinner } from "../component/spinner"
 import { useTuiConfig } from "../context/tui-config"
 import { useBindings, useCommandShortcut } from "../keymap"
+import type { CommandContext } from "@opentui/keymap"
 import * as Clipboard from "../util/clipboard"
 
 export type DialogPromptProps = {
@@ -48,7 +49,7 @@ export function DialogPrompt(props: DialogPromptProps) {
         title: "Paste in dialog",
         category: "Dialog",
         hidden: true,
-        run: async (ctx: any) => {
+        run: async (ctx: CommandContext) => {
           ctx.event.preventDefault()
           ctx.event.stopPropagation()
           const content = await Clipboard.read()

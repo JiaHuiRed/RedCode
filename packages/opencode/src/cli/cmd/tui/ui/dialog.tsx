@@ -66,7 +66,7 @@ export function Dialog(
 function init() {
   const [store, setStore] = createStore({
     stack: [] as {
-      element: JSX.Element
+      element: JSX.Element | (() => JSX.Element)
       onClose?: () => void
     }[],
     size: "medium" as "medium" | "large" | "xlarge",
@@ -144,7 +144,7 @@ function init() {
       })
       refocus()
     },
-    replace(input: any, onClose?: () => void) {
+    replace(input: JSX.Element | (() => JSX.Element), onClose?: () => void) {
       if (store.stack.length === 0) {
         focus = renderer.currentFocusedRenderable
         focus?.blur()
@@ -201,7 +201,7 @@ export function DialogProvider(props: ParentProps) {
       >
         <Show when={value.stack.length}>
           <Dialog onClose={() => value.clear()} size={value.size}>
-            {value.stack.at(-1)!.element}
+            {value.stack.at(-1)!.element as any}
           </Dialog>
         </Show>
       </box>

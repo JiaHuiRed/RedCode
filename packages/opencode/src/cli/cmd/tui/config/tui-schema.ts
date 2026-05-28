@@ -5,7 +5,7 @@ import { isRecord } from "@/util/record"
 import { Filesystem } from "@/util/filesystem"
 import { TuiAttentionSoundNames, type TuiAttentionSoundName } from "@redcode-ai/plugin/tui"
 
-export type TuiAttentionSoundPaths = Partial<Record<TuiAttentionSoundName, string>>
+type TuiAttentionSoundPaths = Partial<Record<TuiAttentionSoundName, string>>
 
 export function isAttentionSoundName(value: string): value is TuiAttentionSoundName {
   return TuiAttentionSoundNames.includes(value as TuiAttentionSoundName)
