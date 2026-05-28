@@ -32,6 +32,16 @@ const getBase = (): Configuration => ({
     output: "dist",
     buildResources: "resources",
   },
+  afterAllArtifactBuild: async (context) => {
+    const fs = await import("node:fs/promises")
+    const src = path.join(context.outDir, "win-unpacked")
+    const dst = path.join(context.outDir, "win")
+    try {
+      await fs.rm(dst, { recursive: true, force: true })
+      await fs.rename(src, dst)
+    } catch {}
+    return []
+  },
   files: ["out/**/*", "resources/**/*"],
   extraResources: [
     {

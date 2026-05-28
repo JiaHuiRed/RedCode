@@ -7,9 +7,8 @@ const dir = path.resolve(import.meta.dirname, "..")
 process.chdir(dir)
 
 const pkg = await Bun.file("package.json").json()
-// Use the RedCode desktop version (0.x.y) as the displayed version
-const desktopPkg = await Bun.file(path.join(dir, "../desktop/package.json")).json()
-const redcodeVersion: string = desktopPkg.version ?? pkg.version
+// TUI uses its own version from packages/opencode/package.json (independent from GUI)
+const redcodeVersion: string = pkg.version
 
 const migrations = (
   await fs.promises.readdir(path.join(dir, "migration"), { withFileTypes: true })

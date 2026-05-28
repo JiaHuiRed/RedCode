@@ -4,9 +4,33 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+TUI 与 GUI 独立维护版本号，条目以 `[tui]` / `[gui]` 前缀区分。
+
 ---
 
-## [0.3.1] - 2026-05-28
+## [0.3.2] - 2026-05-28 (gui)
+
+### 新增
+
+- **[gui] 项目右键删除**：首页 (`home.tsx`) 项目列表新增 `ContextMenu`，右键单个项目可删除；旧侧边栏 (`sidebar-project.tsx`) 项目图标右键菜单同样新增"删除"；旧侧边栏展开后项目头部三点 `DropdownMenu` 也补充"删除"项
+- **[gui] 项目删除后端 API**：`Project.remove` Effect 服务方法 + DELETE `/project/:projectID` HTTP 路由 + `Event.Removed` 全局事件广播；SDK (`sdk.gen.ts`) 新增 `project.remove` 客户端方法；前端 `event-reducer.ts` 监听 `project.removed` 自动从列表移除
+- **[gui] 会话归档右键菜单**：`sidebar-items.tsx` 会话项右键菜单加入"归档"选项
+- **[gui] 侧边栏底部收起按钮**：`sidebar-shell.tsx` 加 `onToggleSidebar` prop，左侧 rail 设置按钮上方新增侧边栏切换按钮（旧设计 / prod channel 生效）
+
+### 修复
+
+- **[gui] 原生右键菜单拦截 HTML 菜单**：`main/index.ts` 的 `electron-context-menu` 加 `shouldShowMenu`，限定只在图片/视频上触发，避免压制 Kobalte `ContextMenu` 不出现
+- **[gui] 任务栏 / 标题栏图标糊化**：`scripts/gen-icon.py` 移除 `GaussianBlur(radius=1.0)`，红环改用 `ellipse(width=ring_w)` 单次抗锯齿描边，小尺寸（≤32 / ≤64）超采样倍率提升至 16x / 8x，重新生成全套 PNG/ICO
+- **[gui] 标题栏版本徽章**：`packages/desktop/src/renderer/index.html` 顶部交通灯旁版本徽章更新为 `v0.3.2`
+- **[gui] DeepSeek 费用按 CNY 计价**（3d3b0ce）
+
+### 变更
+
+- **TUI 与 GUI 版本号解耦**：`packages/opencode/script/build-node.ts` 不再从 `packages/desktop/package.json` 读取版本，改读 opencode 自己的 `package.json`；TUI 现可独立递增版本号，互不影响
+
+---
+
+## [0.3.1] - 2026-05-28 (tui)
 
 ### 新增
 

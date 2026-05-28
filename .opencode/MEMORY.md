@@ -70,11 +70,14 @@
 - CHANGELOG 用 Keep a Changelog 格式，版本号语义 `0.0.x`
 - 核心功能只写实际可用的，未发布的功能不要列上去
 
-## 版本号约定（280526 Red）
-- TUI 和 GUI 共用同一个版本号（`packages/opencode` 和 `packages/desktop` 同步）
-- CHANGELOG 用 `[tui]` / `[gui]` 前缀区分改动所属
-- 不分开 README，共用一份文档
-- `packages/desktop/package.json` 是 GUI 版本号，`packages/desktop/src/renderer/index.html` 显示版本徽章
+## 版本号约定（280526 Red，280526 Red 修正）
+- TUI 和 GUI 是独立进程，各自维护版本号
+  - TUI：`packages/opencode/package.json`（当前 `0.3.1`）
+  - GUI：`packages/desktop/package.json`（当前 `0.3.2`）
+- CHANGELOG 用 `[tui]` / `[gui]` 前缀区分改动所属，标题后缀 `(tui)` / `(gui)` 标明所属
+- README 同时标注两个最新版版本号
+- `packages/desktop/src/renderer/index.html` 显示 GUI 版本徽章（顶部交通灯旁）
+- `packages/opencode/script/build-node.ts` 读 opencode 自己的 pkg 注入 `REDCODE_VERSION`，**不要再依赖 desktop 的版本号**
 
 ## 打包工作流（270526 Red）
 - **永远先跑测试/构建，等主人确认没问题后再打包 exe**

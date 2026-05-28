@@ -1,4 +1,4 @@
-﻿# ⚡ RedCode v0.3.0
+﻿# ⚡ RedCode
 
 <p align="center">
   <img src="packages/web/src/assets/lander/mona-loading.gif" width="80">
@@ -13,7 +13,8 @@
 
 > **Open-source AI coding assistant — terminal-based intelligent coding agent.**
 
-[![Version](https://img.shields.io/badge/Version-0.3.0-blue)](https://github.com/JiaHuiRed/RedCode/releases)
+[![TUI](https://img.shields.io/badge/TUI-0.3.1-blue)](CHANGELOG.md)
+[![Desktop](https://img.shields.io/badge/Desktop-0.3.2-0078d4)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2011-lightblue)](https://github.com/JiaHuiRed/RedCode)
 
