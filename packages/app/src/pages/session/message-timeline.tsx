@@ -559,7 +559,6 @@ export function MessageTimeline(props: {
   const [bar, setBar] = createStore({
     ms: pace(640),
   })
-  const [toolOpen, setToolOpen] = createStore<Record<string, boolean | undefined>>({})
 
   let more: HTMLButtonElement | undefined
   let head: HTMLDivElement | undefined
@@ -581,7 +580,6 @@ export function MessageTimeline(props: {
   const isMeasuredBottom = (root: HTMLDivElement) => root.scrollHeight - root.clientHeight - root.scrollTop <= 4
 
   const measureTimeline = () => {
-    virtualizer?.measure()
     anchorMeasuredBottom()
   }
 
@@ -1021,7 +1019,6 @@ export function MessageTimeline(props: {
           busy={
             workingTurn(row().userMessageID) && lastAssistantGroupKey().get(row().userMessageID) === row().group.key
           }
-          onSizeChange={measureTimeline}
         />
       )
     }
@@ -1053,10 +1050,7 @@ export function MessageTimeline(props: {
                 showAssistantCopyPartID={assistantCopyPartID(row().userMessageID)}
                 turnDurationMs={turnDurationMs(row().userMessageID)}
                 defaultOpen={defaultOpen()}
-                toolOpen={toolOpen[part().id] ?? defaultOpen()}
-                onToolOpenChange={(open) => setToolOpen(part().id, open)}
                 deferToolContent={false}
-                virtualizeDiff={false}
               />
             )}
           </Show>

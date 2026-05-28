@@ -73,6 +73,8 @@ function makeQueryOptionsApi(serverSDK: () => OpencodeClient, sdkFor: (dir: Path
 }
 export type QueryOptionsApi = ReturnType<typeof makeQueryOptionsApi>
 
+export type ServerSyncContext = ReturnType<typeof createServerSyncContext>
+
 export function createServerSyncContext() {
   const serverSDK = useServerSDK()
   const language = useLanguage()
