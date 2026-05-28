@@ -61,6 +61,18 @@ export const ProjectApi = HttpApi.make("project")
             description: "Update project properties such as name, icon, and commands.",
           }),
         ),
+        HttpApiEndpoint.delete("remove", `${root}/:projectID`, {
+          params: { projectID: ProjectID },
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Void, "Project removed"),
+          error: [HttpApiError.NotFound],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "project.remove",
+            summary: "Remove project",
+            description: "Permanently remove a project record from the database.",
+          }),
+        ),
       )
       .annotateMerge(
         OpenApi.annotations({

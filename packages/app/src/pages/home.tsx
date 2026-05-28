@@ -3,10 +3,12 @@ import { createMemo, For, Match, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
 import { Spinner } from "@redcode-ai/ui/spinner"
+import { ContextMenu } from "@redcode-ai/ui/context-menu"
 import { Avatar as AvatarV2 } from "@redcode-ai/ui/v2/components/avatar-v2.jsx"
 import { ButtonV2 } from "@redcode-ai/ui/v2/components/button-v2.jsx"
 import { Icon as IconV2 } from "@redcode-ai/ui/v2/components/icon.jsx"
 import { IconButtonV2 } from "@redcode-ai/ui/v2/components/icon-button-v2.jsx"
+import { useGlobalSDK } from "@/context/global-sdk"
 import { getAvatarColors, useLayout, type LocalProject } from "@/context/layout"
 import { useNavigate } from "@solidjs/router"
 import { base64Encode } from "@redcode-ai/core/util/encode"
@@ -55,6 +57,7 @@ function HomeDesign() {
   const navigate = useNavigate()
   const server = useServer()
   const language = useLanguage()
+  const globalSDK = useGlobalSDK()
   const [state, setState] = createStore({ search: "", project: undefined as string | undefined })
 
   const projects = createMemo(() => layout.projects.list())
@@ -165,6 +168,14 @@ function HomeDesign() {
     })
   }
 
+  async function removeProject(project: LocalProject) {
+    if (project.id && project.id !== "global") {
+      await globalSDK.client.project.remove({ projectID: project.id })
+    }
+    layout.projects.close(project.worktree)
+    if (state.project === project.worktree) setState("project", undefined)
+  }
+
   return (
     <div class="grid w-full h-full gap-6 pl-2 pr-6 pb-16 lg:grid-cols-[220px_minmax(0,1fr)]">
       <HomeProjectColumn
@@ -173,6 +184,7 @@ function HomeDesign() {
         selectProject={selectProject}
         chooseProject={() => void chooseProject()}
         openSettings={openSettings}
+        removeProject={(project) => void removeProject(project)}
         language={language}
       />
 
@@ -226,6 +238,7 @@ function HomeProjectColumn(props: {
   selectProject: (directory: string) => void
   chooseProject: () => void
   openSettings: () => void
+  removeProject: (project: LocalProject) => void
   language: ReturnType<typeof useLanguage>
 }) {
   return (
@@ -258,18 +271,34 @@ function HomeProjectColumn(props: {
         >
           <For each={props.projects}>
             {(project) => (
-              <button
-                type="button"
-                data-component="home-project-row"
-                class={HOME_PROJECT_NAV_ROW}
-                classList={{ "bg-v2-overlay-simple-overlay-hover": props.selected === project.worktree }}
-                data-selected={props.selected === project.worktree ? "" : undefined}
-                aria-current={props.selected === project.worktree ? "page" : undefined}
-                onClick={() => props.selectProject(project.worktree)}
-              >
-                <HomeProjectAvatar project={project} />
-                <span>{displayName(project)}</span>
-              </button>
+              <ContextMenu>
+                <ContextMenu.Trigger
+                  as="button"
+                  type="button"
+                  data-component="home-project-row"
+                  data-action="home-project-row"
+                  data-project={base64Encode(project.worktree)}
+                  class={HOME_PROJECT_NAV_ROW}
+                  classList={{ "bg-v2-overlay-simple-overlay-hover": props.selected === project.worktree }}
+                  data-selected={props.selected === project.worktree ? "" : undefined}
+                  aria-current={props.selected === project.worktree ? "page" : undefined}
+                  onClick={() => props.selectProject(project.worktree)}
+                >
+                  <HomeProjectAvatar project={project} />
+                  <span>{displayName(project)}</span>
+                </ContextMenu.Trigger>
+                <ContextMenu.Portal>
+                  <ContextMenu.Content>
+                    <ContextMenu.Item
+                      data-action="home-project-remove"
+                      data-project={base64Encode(project.worktree)}
+                      onSelect={() => props.removeProject(project)}
+                    >
+                      <ContextMenu.ItemLabel>{props.language.t("common.delete")}</ContextMenu.ItemLabel>
+                    </ContextMenu.Item>
+                  </ContextMenu.Content>
+                </ContextMenu.Portal>
+              </ContextMenu>
             )}
           </For>
         </Show>

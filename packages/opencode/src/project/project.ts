@@ -57,6 +57,7 @@ export type Info = Types.DeepMutable<Schema.Schema.Type<typeof Info>>
 
 export const Event = {
   Updated: BusEvent.define("project.updated", Info),
+  Removed: BusEvent.define("project.removed", ProjectID),
 }
 
 type Row = typeof ProjectTable.$inferSelect
@@ -126,6 +127,7 @@ export interface Interface {
   readonly sandboxes: (id: ProjectID) => Effect.Effect<string[]>
   readonly addSandbox: (id: ProjectID, directory: string) => Effect.Effect<void>
   readonly removeSandbox: (id: ProjectID, directory: string) => Effect.Effect<void>
+  readonly remove: (id: ProjectID) => Effect.Effect<void>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Project") {}
@@ -490,6 +492,14 @@ export const layer: Layer.Layer<
       yield* emitUpdated(fromRow(result))
     })
 
+    const remove = Effect.fn("Project.remove")(function* (id: ProjectID) {
+      yield* db((d) => d.delete(ProjectTable).where(eq(ProjectTable.id, id)).run())
+      yield* GlobalBus.emit("event", {
+        type: "global",
+        payload: { type: Event.Removed.type, properties: id },
+      })
+    })
+
     return Service.of({
       init,
       fromDirectory,
@@ -502,6 +512,7 @@ export const layer: Layer.Layer<
       sandboxes,
       addSandbox,
       removeSandbox,
+      remove,
     })
   }),
 )

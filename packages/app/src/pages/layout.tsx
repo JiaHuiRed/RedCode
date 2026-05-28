@@ -1427,6 +1427,13 @@ export default function Layout(props: ParentProps) {
     setWorkspaceName(directory, next, projectId, branch)
   }
 
+  async function removeProject(project: LocalProject) {
+    if (project.id && project.id !== "global") {
+      await globalSDK.client.project.remove({ projectID: project.id })
+    }
+    closeProject(project.worktree)
+  }
+
   function closeProject(directory: string) {
     const list = layout.projects.list()
     const key = pathKey(directory)
@@ -2030,6 +2037,7 @@ export default function Layout(props: ParentProps) {
     navigateToProject,
     openSidebar: () => layout.sidebar.open(),
     closeProject,
+    removeProject,
     showEditProjectDialog,
     toggleProjectWorkspaces,
     workspacesEnabled: (project) => project.vcs === "git" && layout.sidebar.workspaces(project.worktree)(),
@@ -2219,6 +2227,13 @@ export default function Layout(props: ParentProps) {
                         >
                           <DropdownMenu.ItemLabel>{language.t("common.close")}</DropdownMenu.ItemLabel>
                         </DropdownMenu.Item>
+                        <DropdownMenu.Item
+                          data-action="project-remove-menu"
+                          data-project={slug()}
+                          onSelect={() => void removeProject(project)}
+                        >
+                          <DropdownMenu.ItemLabel>{language.t("common.delete")}</DropdownMenu.ItemLabel>
+                        </DropdownMenu.Item>
                       </DropdownMenu.Content>
                     </DropdownMenu.Portal>
                   </DropdownMenu>
@@ -2366,6 +2381,9 @@ export default function Layout(props: ParentProps) {
       settingsLabel={() => language.t("sidebar.settings")}
       settingsKeybind={() => command.keybind("settings.open")}
       onOpenSettings={openSettings}
+      onToggleSidebar={() => layout.sidebar.toggle()}
+      toggleSidebarLabel={() => language.t("command.sidebar.toggle")}
+      toggleSidebarKeybind={() => command.keybind("sidebar.toggle")}
       renderPanel={() =>
         mobile ? <SidebarPanel project={currentProject} mobile /> : <SidebarPanel project={currentProject} merged />
       }
