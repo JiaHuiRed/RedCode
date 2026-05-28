@@ -70,6 +70,12 @@
 - CHANGELOG 用 Keep a Changelog 格式，版本号语义 `0.0.x`
 - 核心功能只写实际可用的，未发布的功能不要列上去
 
+## 版本号约定（280526 Red）
+- TUI 和 GUI 共用同一个版本号（`packages/opencode` 和 `packages/desktop` 同步）
+- CHANGELOG 用 `[tui]` / `[gui]` 前缀区分改动所属
+- 不分开 README，共用一份文档
+- `packages/desktop/package.json` 是 GUI 版本号，`packages/desktop/src/renderer/index.html` 显示版本徽章
+
 ## 打包工作流（270526 Red）
 - **永远先跑测试/构建，等主人确认没问题后再打包 exe**
 - 流程：修改代码 → 构建测试版 → 通知主人测试 → 主人确认OK → 再跑 `package:win`
