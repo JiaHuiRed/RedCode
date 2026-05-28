@@ -617,15 +617,11 @@ function googleThinkingBudgetMax(apiId: string) {
 }
 
 export function variants(model: Provider.Model): Record<string, Record<string, any>> {
-  if (!model.capabilities.reasoning) return {}
+  if (!model.capabilities.reasoning && model.api.npm !== "@ai-sdk/openai-compatible") return {}
 
   const id = model.id.toLowerCase()
   const adaptiveEfforts = anthropicAdaptiveEfforts(model.api.id)
   if (
-    id.includes("deepseek-chat") ||
-    id.includes("deepseek-reasoner") ||
-    id.includes("deepseek-r1") ||
-    id.includes("deepseek-v3") ||
     id.includes("minimax") ||
     id.includes("glm") ||
     id.includes("kimi") ||
