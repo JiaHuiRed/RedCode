@@ -6,13 +6,14 @@ import { Spinner } from "@redcode-ai/ui/spinner"
 import { Tooltip } from "@redcode-ai/ui/tooltip"
 import { getFilename } from "@redcode-ai/core/util/path"
 import { A, useParams } from "@solidjs/router"
-import { type Accessor, createMemo, For, type JSX, Match, Show, Switch } from "solid-js"
+import { type Accessor, createMemo, createSignal, For, type JSX, Match, Show, Switch } from "solid-js"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
 import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
 import { messageAgentColor } from "@/utils/agent"
+import { InlineInput } from "@redcode-ai/ui/inline-input"
 import { sessionTitle } from "@/utils/session-title"
 import { sessionPermissionRequest } from "../session/composer/session-request-tree"
 import { childSessionOnPath, getProjectAvatarSource, hasProjectPermissions } from "./helpers"
@@ -84,6 +85,7 @@ export type SessionItemProps = {
   clearHoverProjectSoon: () => void
   prefetchSession: (session: Session, priority?: "high" | "low") => void
   archiveSession: (session: Session) => Promise<void>
+  renameSession: (session: Session, title: string) => Promise<void>
 }
 
 const SessionRow = (props: {
@@ -100,6 +102,12 @@ const SessionRow = (props: {
   sidebarOpened: Accessor<boolean>
   warmPress: () => void
   warmFocus: () => void
+  isRenaming: Accessor<boolean>
+  renameValue: Accessor<string>
+  inputRef: (el: HTMLInputElement) => void
+  onRenameInput: (value: string) => void
+  onRenameSave: () => void
+  onRenameCancel: () => void
 }): JSX.Element => {
   const title = () => sessionTitle(props.session.title)
 
@@ -109,7 +117,11 @@ const SessionRow = (props: {
       class={`flex items-center gap-2 min-w-0 w-full text-left focus:outline-none ${props.dense ? "py-0.5" : "py-1"}`}
       onPointerDown={props.warmPress}
       onFocus={props.warmFocus}
-      onClick={() => {
+      onClick={(e) => {
+        if (props.isRenaming()) {
+          e.preventDefault()
+          return
+        }
         if (props.sidebarOpened()) return
         props.clearHoverProjectSoon()
       }}
@@ -135,7 +147,29 @@ const SessionRow = (props: {
           </Switch>
         </div>
       </Show>
-      <span class="text-14-regular text-text-strong min-w-0 flex-1 truncate">{title()}</span>
+      <Show
+        when={props.isRenaming()}
+        fallback={<span class="text-14-regular text-text-strong min-w-0 flex-1 truncate">{title()}</span>}
+      >
+        <InlineInput
+          ref={props.inputRef}
+          value={props.renameValue()}
+          onInput={(e) => props.onRenameInput(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            e.stopPropagation()
+            if (e.key === "Enter") {
+              e.preventDefault()
+              props.onRenameSave()
+            }
+            if (e.key === "Escape") {
+              e.preventDefault()
+              props.onRenameCancel()
+            }
+          }}
+          onBlur={props.onRenameSave}
+          class="text-14-regular text-text-strong min-w-0 flex-1"
+        />
+      </Show>
     </A>
   )
 }
@@ -147,6 +181,9 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
   const notification = useNotification()
   const permission = usePermission()
   const globalSync = useServerSync()
+  const [isRenaming, setIsRenaming] = createSignal(false)
+  const [renameValue, setRenameValue] = createSignal("")
+  const [menuOpen, setMenuOpen] = createSignal(false)
   const unseenCount = createMemo(() => notification.session.unseenCount(props.session.id))
   const hasError = createMemo(() => notification.session.unseenHasError(props.session.id))
   const [sessionStore] = globalSync.child(props.session.directory)
@@ -187,6 +224,28 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
     }
   }
 
+  const startRename = () => {
+    setRenameValue(props.session.title)
+    setMenuOpen(false)
+    setIsRenaming(true)
+  }
+
+  const saveRename = async () => {
+    const trimmed = renameValue().trim()
+    if (!trimmed) {
+      setIsRenaming(false)
+      return
+    }
+    setIsRenaming(false)
+    if (trimmed !== props.session.title) {
+      await props.renameSession(props.session, trimmed)
+    }
+  }
+
+  const cancelRename = () => {
+    setIsRenaming(false)
+  }
+
   const item = (
     <SessionRow
       session={props.session}
@@ -202,6 +261,12 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
       sidebarOpened={layout.sidebar.opened}
       warmPress={() => warm(2, "high")}
       warmFocus={() => warm(2, "high")}
+      isRenaming={isRenaming}
+      renameValue={renameValue}
+      inputRef={(el) => el?.focus()}
+      onRenameInput={(value) => setRenameValue(value)}
+      onRenameSave={saveRename}
+      onRenameCancel={cancelRename}
     />
   )
 
@@ -211,9 +276,22 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
         data-session-id={props.session.id}
         class="group/session relative w-full min-w-0 rounded-md cursor-default pr-3 transition-colors hover:bg-surface-raised-base-hover [&:has(:focus-visible)]:bg-surface-raised-base-hover has-[[data-expanded]]:bg-surface-raised-base-hover has-[.active]:bg-surface-base-active"
         style={{ "padding-left": `${4 + (props.level ?? 0) * 16}px` }}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setMenuOpen(true)
+        }}
       >
         <div class="flex min-w-0 items-center gap-1">
-          <div class="min-w-0 flex-1">
+          <div
+            class="min-w-0 flex-1"
+            onDblClick={(e) => {
+              if (tooltip()) return
+              e.stopPropagation()
+              e.preventDefault()
+              startRename()
+            }}
+          >
             <Show
               when={!tooltip()}
               fallback={
@@ -257,6 +335,33 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
             </div>
           </Show>
         </div>
+        <Show when={menuOpen()}>
+          <div
+            class="fixed inset-0 z-50"
+            onClick={() => setMenuOpen(false)}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              setMenuOpen(false)
+            }}
+          />
+        </Show>
+        <Show when={menuOpen()}>
+          <div
+            class="absolute left-full top-0 z-50 min-w-[120px] rounded-lg bg-surface-raised-base p-1 shadow-lg border border-border-base"
+            onClick={() => setMenuOpen(false)}
+          >
+            <button
+              type="button"
+              class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-14-regular text-text-strong hover:bg-surface-raised-base-hover"
+              onClick={(e) => {
+                e.stopPropagation()
+                startRename()
+              }}
+            >
+              {language.t("common.rename")}
+            </button>
+          </div>
+        </Show>
       </div>
       <Show when={currentChild()} keyed>
         {(child) => (

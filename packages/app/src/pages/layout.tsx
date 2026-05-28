@@ -983,6 +983,7 @@ export default function Layout(props: ParentProps) {
       sessionID: session.id,
       time: { archived: Date.now() },
     })
+
     setStore(
       produce((draft) => {
         const match = Binary.search(draft.session, session.id, (s) => s.id)
@@ -996,6 +997,14 @@ export default function Layout(props: ParentProps) {
         navigate(`/${params.dir}/session`)
       }
     }
+  }
+
+  async function renameSession(session: Session, title: string) {
+    await globalSDK.client.session.update({
+      directory: session.directory,
+      sessionID: session.id,
+      title,
+    })
   }
 
   command.register("layout", () => {
@@ -1985,6 +1994,7 @@ export default function Layout(props: ParentProps) {
     clearHoverProjectSoon,
     prefetchSession,
     archiveSession,
+    renameSession,
     workspaceName,
     renameWorkspace,
     editorOpen,
@@ -2031,6 +2041,7 @@ export default function Layout(props: ParentProps) {
       clearHoverProjectSoon,
       prefetchSession,
       archiveSession,
+      renameSession,
     },
   }
 
