@@ -2,6 +2,7 @@ import type { TuiPlugin, TuiPluginApi } from "@redcode-ai/plugin/tui"
 import type { InternalTuiPlugin } from "../../plugin/internal"
 import { createMemo, Show } from "solid-js"
 import { Global } from "@redcode-ai/core/global"
+import { InstallationVersion } from "@redcode-ai/core/installation/version"
 
 const id = "internal:sidebar-footer"
 
@@ -69,7 +70,7 @@ function View(props: { api: TuiPluginApi }) {
         <span style={{ fg: theme().text }}>
           <b>RedCode</b>
         </span>{" "}
-        <span>0.3.0</span>
+        <span>{InstallationVersion}</span>
       </text>
     </box>
   )

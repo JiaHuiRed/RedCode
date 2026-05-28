@@ -494,10 +494,13 @@ export const layer: Layer.Layer<
 
     const remove = Effect.fn("Project.remove")(function* (id: ProjectID) {
       yield* db((d) => d.delete(ProjectTable).where(eq(ProjectTable.id, id)).run())
-      yield* GlobalBus.emit("event", {
-        type: "global",
-        payload: { type: Event.Removed.type, properties: id },
-      })
+      yield* Effect.sync(() =>
+        GlobalBus.emit("event", {
+          directory: "global",
+          project: id,
+          payload: { type: Event.Removed.type, properties: id },
+        }),
+      )
     })
 
     return Service.of({
