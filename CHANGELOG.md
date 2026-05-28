@@ -6,6 +6,23 @@
 
 ---
 
+## [0.3.1] - 2026-05-28
+
+### 新增
+
+- **[tui] 对话框 Ctrl+V 粘贴**：`dialog-prompt.tsx` 添加系统剪贴板读取，作为 bracketed paste fallback；`keybind.ts` 新增 `dialog.prompt.paste` 快捷键绑定
+
+### 修复
+
+- **[tui] DeepSeek 模型变体不可用**：`transform.ts` 移除 DeepSeek 模型 variants 排除列表，`openai-compatible` 类型模型绕过 `reasoning` 能力检查
+
+### 重构
+
+- **[tui] 删除死代码**：移除未使用的 `GoLogo` 组件（`logo.tsx`）、整个 `dialog-tag.tsx` 文件、未引用的 `Descriptions` 和 `TuiAttentionSoundPaths` 导出
+- **[tui] 类型安全提升**：`toast.tsx` `err: any` → `unknown`、`kv.tsx` `defaultValue?: any` → `unknown`、`dialog.tsx` `replace(input: any)` → `JSX.Element`、`dialog-prompt.tsx` `ctx: any` → `CommandContext`、`local.tsx` 反序列化类型标注
+
+---
+
 ## [0.3.0] - 2026-05-27
 
 ### 修复
