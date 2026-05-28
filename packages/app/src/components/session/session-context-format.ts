@@ -1,6 +1,8 @@
 import { DateTime } from "luxon"
 
 export function createSessionContextFormatter(locale: string) {
+  const cny = new Intl.NumberFormat(locale, { style: "currency", currency: "CNY" })
+
   return {
     number(value: number | null | undefined) {
       if (value === undefined) return "—"
@@ -15,6 +17,10 @@ export function createSessionContextFormatter(locale: string) {
     time(value: number | undefined) {
       if (!value) return "—"
       return DateTime.fromMillis(value).setLocale(locale).toLocaleString(DateTime.DATETIME_MED)
+    },
+    cost(value: number | undefined | null) {
+      if (value === undefined || value === null) return "—"
+      return cny.format(value)
     },
   }
 }
