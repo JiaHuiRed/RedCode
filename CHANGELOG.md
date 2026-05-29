@@ -8,11 +8,16 @@ TUI 与 GUI 独立维护版本号，条目以 `[tui]` / `[gui]` 前缀区分。
 
 ---
 
-## [未发布]
+## [0.3.2] - 2026-05-29 (tui)
 
 ### 新增
 
 - **[项目] CodeGraph MCP 代码知识图谱集成**：配置 `@colbymchenry/codegraph` MCP 服务器，自动索引代码结构（38,099 符号节点 / 94,858 关系边），提供 `search`、`context`、`callers`、`callees`、`impact` 等智能代码查询工具，agent 可直接调用无需 grep/glob/read 扫描文件
+
+### 变更
+
+- **[tui] 统一数据库路径**：移除 channel 分库逻辑（`redcode-dev.db` / `redcode-beta.db` 等），所有渠道统一使用 `redcode.db` 主库；删除 `disableChannelDb` 运行时标志
+- **[tui] 斜杠命令中文化**：`/compact`→压缩会话、`/connect`→连接供应商、`/copy`→复制会话记录、`/export`→导出会话记录、`/fork`→分叉会话、`/init`→初始化 AGENTS.md（修复 `app.tsx` 中 `title: "连接 Provider"` 残留英文）
 
 ---
 

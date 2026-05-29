@@ -16,7 +16,6 @@ export class Service extends ConfigService.Service<Service>()("@opencode/Runtime
   pure: bool("REDCODE_PURE"),
   disableDefaultPlugins: bool("REDCODE_DISABLE_DEFAULT_PLUGINS"),
   diffViewer: bool("REDCODE_DIFF_VIEWER"),
-  disableChannelDb: bool("REDCODE_DISABLE_CHANNEL_DB"),
   disableEmbeddedWebUi: bool("REDCODE_DISABLE_EMBEDDED_WEB_UI"),
   disableExternalSkills: bool("REDCODE_DISABLE_EXTERNAL_SKILLS"),
   disableLspDownload: bool("REDCODE_DISABLE_LSP_DOWNLOAD"),

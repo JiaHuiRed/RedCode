@@ -10,7 +10,6 @@ import { NamedError } from "@redcode-ai/core/util/error"
 import path from "path"
 import { readFileSync, readdirSync, existsSync } from "fs"
 import { Flag } from "@redcode-ai/core/flag/flag"
-import { InstallationChannel } from "@redcode-ai/core/installation/version"
 import { EffectBridge } from "@/effect/bridge"
 import { init } from "#db"
 import { Effect, Schema } from "effect"
@@ -23,24 +22,21 @@ export const NotFoundError = NamedError.create("NotFoundError", {
 
 const log = Log.create({ service: "db" })
 
-type DatabaseFlags = Pick<RuntimeFlags.Info, "disableChannelDb" | "skipMigrations">
+type DatabaseFlags = Pick<RuntimeFlags.Info, "skipMigrations">
 
 const readRuntimeFlags = () =>
   Effect.runSync(RuntimeFlags.Service.useSync((flags) => flags).pipe(Effect.provide(RuntimeFlags.defaultLayer)))
 
-export function getChannelPath(flags: Pick<DatabaseFlags, "disableChannelDb"> = readRuntimeFlags()) {
-  if (["latest", "beta", "prod"].includes(InstallationChannel) || flags.disableChannelDb)
-    return path.join(Global.Path.data, "redcode.db")
-  const safe = InstallationChannel.replace(/[^a-zA-Z0-9._-]/g, "-")
-  return path.join(Global.Path.data, `redcode-${safe}.db`)
+export function getChannelPath() {
+  return path.join(Global.Path.data, "redcode.db")
 }
 
-export const getPath = (flags?: Pick<DatabaseFlags, "disableChannelDb">) => {
+export const getPath = (flags?: Pick<DatabaseFlags, "skipMigrations">) => {
   if (Flag.REDCODE_DB) {
     if (Flag.REDCODE_DB === ":memory:" || path.isAbsolute(Flag.REDCODE_DB)) return Flag.REDCODE_DB
     return path.join(Global.Path.data, Flag.REDCODE_DB)
   }
-  return getChannelPath(flags)
+  return getChannelPath()
 }
 
 export type Transaction = SQLiteTransaction<"sync", void>

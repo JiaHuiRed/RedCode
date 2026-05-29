@@ -107,8 +107,9 @@ function parseToolParams(input?: string) {
     try {
       return JSON.parse(trimmed)
     } catch (jsonError) {
-      try {
-        return new Function(`return (${trimmed})`)()
+    try {
+      // 260529 Red JSON.parse 失败时 fallback 为 JS 对字面量解析，仅限 debug --params
+      return new Function(`return (${trimmed})`)()
       } catch (evalError) {
         throw new Error(
           `Failed to parse --params. Use JSON or a JS object literal. JSON error: ${jsonError}. Eval error: ${evalError}.`,

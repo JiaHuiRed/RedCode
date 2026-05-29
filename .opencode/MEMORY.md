@@ -4,12 +4,14 @@
 - 称 **主人**，严禁用 "用户"、"老板"、"亲"、"你" 等称呼
 
 ## 注释风格
-- 格式：`# DDMMYY Red xxx`
-- 例如 Python：`# 260524 Red 添加 provider 动态切换支持`
-- 日期格式：DDMMYY（日日月月年年，不连写）
+- Python/shell：`#YYMMDD Red xxx`
+- TypeScript/JavaScript：`// YYMMDD Red xxx`
+- 例如 TS：`// 260529 Red 添加 provider 动态切换支持`
+- 例如 Python：`# 260529 Red 添加 provider 动态切换支持`
+- 日期格式：YYMMDD（年年月月日日）
 - `Red` 固定名字
 - `xxx` 用中文简洁描述改动内容
-- 不改动已有文件的注释风格
+- 只在非显而易见的约束和意外行为处加注释，不给明显赋值或控制流加注释
 
 ## 项目管理约定
 - 每个项目必须包含 README.md（中文主版，风格参考 RedStudio）

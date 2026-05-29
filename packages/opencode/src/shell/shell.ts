@@ -167,6 +167,7 @@ export function args(file: string, command: string, cwd: string) {
         [[ -f ~/.zshenv ]] && source ~/.zshenv >/dev/null 2>&1 || true
         [[ -f "\${ZDOTDIR:-$HOME}/.zshrc" ]] && source "\${ZDOTDIR:-$HOME}/.zshrc" >/dev/null 2>&1 || true
         cd -- "$1"
+        // 260529 Red shell eval 执行用户命令，JSON.stringify 转义防注入
         eval ${JSON.stringify(command)}
       `,
       "redcode",
@@ -181,6 +182,7 @@ export function args(file: string, command: string, cwd: string) {
         shopt -s expand_aliases
         [[ -f ~/.bashrc ]] && source ~/.bashrc >/dev/null 2>&1 || true
         cd -- "$1"
+        // 260529 Red shell eval 执行用户命令，JSON.stringify 转义防注入
         eval ${JSON.stringify(command)}
       `,
       "redcode",

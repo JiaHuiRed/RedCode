@@ -562,6 +562,7 @@ export const layer = Layer.effect(
                     const pids = yield* descendants(pid)
                     for (const dpid of pids) {
                       try {
+                        // 260529 Red 子进程已退出时 kill 报错可忽略
                         process.kill(dpid, "SIGTERM")
                       } catch {}
                     }

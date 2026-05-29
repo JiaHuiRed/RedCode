@@ -68,6 +68,7 @@ function message(providerID: ProviderID, e: APICallError) {
       if (errMsg && typeof errMsg === "string") {
         return `${msg}: ${errMsg}`
       }
+      // 260529 Red responseBody 非 JSON 或无 message 字段，继续走下方 HTML/原文兜底
     } catch {}
 
     // If responseBody is HTML (e.g. from a gateway or proxy error page),
@@ -92,6 +93,7 @@ function json(input: unknown) {
       const result = JSON.parse(input)
       if (result && typeof result === "object") return result
       return undefined
+      // 260529 Red 非 JSON 字符串直接返回 undefined，由上层处理
     } catch {
       return undefined
     }

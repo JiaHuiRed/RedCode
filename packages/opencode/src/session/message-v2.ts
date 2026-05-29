@@ -1195,6 +1195,7 @@ export function fromError(
             },
           ).toObject()
         }
+      // 260529 Red 反序列化失败时兜底为 Unknown 错误，保留原始 cause
       } catch {}
       return new NamedError.Unknown({ message: JSON.stringify(e) }, { cause: e }).toObject()
   }
