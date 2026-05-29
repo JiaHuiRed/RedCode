@@ -34,7 +34,7 @@
 
 - 💬 **自然语言编程**：用中文描述需求，自动完成代码编写、重构、调试
 - 🔌 **多模型支持**：DeepSeek、OpenAI、Anthropic、Google Gemini、Ollama 本地模型等
-- 🛠 **工具系统**：文件读写、代码搜索、终端命令、Web 搜索、MCP 服务器
+- 🛠 **工具系统**：文件读写、代码搜索、终端命令、Web 搜索、MCP 服务器（内置 [CodeGraph](https://github.com/colbymchenry/codegraph) 代码知识图谱）
 - 🤖 **自定义 Agent**：内置 Build、Plan、General 等 Agent，支持自定义
 - 📝 **会话管理**：历史对话保存、恢复
 - 🎨 **终端 UI**：语法高亮、流式输出、文件差异展示

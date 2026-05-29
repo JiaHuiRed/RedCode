@@ -8,6 +8,14 @@ TUI 与 GUI 独立维护版本号，条目以 `[tui]` / `[gui]` 前缀区分。
 
 ---
 
+## [未发布]
+
+### 新增
+
+- **[项目] CodeGraph MCP 代码知识图谱集成**：配置 `@colbymchenry/codegraph` MCP 服务器，自动索引代码结构（38,099 符号节点 / 94,858 关系边），提供 `search`、`context`、`callers`、`callees`、`impact` 等智能代码查询工具，agent 可直接调用无需 grep/glob/read 扫描文件
+
+---
+
 ## [0.3.3] - 2026-05-29 (gui)
 
 ### 修复

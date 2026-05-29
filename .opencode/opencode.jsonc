@@ -2,7 +2,13 @@
   "$schema": "https://opencode.ai/config.json",
   "provider": {},
   "permission": {},
-  "mcp": {},
+  "mcp": {
+    "codegraph": {
+      "type": "local",
+      "command": ["npx", "-y", "@colbymchenry/codegraph", "serve", "--mcp"],
+      "enabled": true
+    }
+  },
   "tools": {
     "github-triage": false,
     "github-pr-search": false,
