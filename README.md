@@ -48,6 +48,7 @@
 git clone https://github.com/JiaHuiRed/RedCode.git
 cd RedCode
 bun install
+npx -y @colbymchenry/codegraph index  # 首次拉取需建索引（之后自动增量同步）
 bun dev
 ```
 
