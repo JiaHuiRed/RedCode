@@ -193,12 +193,15 @@ export function createChildStoreManager(input: {
             get provider() {
               const EMPTY = { all: new Map(), connected: [], default: {} }
               if (providerQuery.isLoading) return EMPTY
+              // 260529 Red 项目级 provider 查询无数据或为空时回退到全局已连接 providers
+              const projectData = providerQuery.data
               if (
-                (providerQuery.data?.all.size === 0 && input.global.provider.all.size > 0) ||
-                (providerQuery.data?.connected.length === 0 && input.global.provider.connected.length > 0)
+                !projectData ||
+                (projectData.all.size === 0 && input.global.provider.all.size > 0) ||
+                (projectData.connected.length === 0 && input.global.provider.connected.length > 0)
               )
                 return input.global.provider
-              return providerQuery.data ?? EMPTY
+              return projectData ?? EMPTY
             },
             config: {},
             get path() {
