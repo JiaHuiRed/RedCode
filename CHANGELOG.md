@@ -8,6 +8,14 @@ TUI 与 GUI 独立维护版本号，条目以 `[tui]` / `[gui]` 前缀区分。
 
 ---
 
+## [0.3.5] - TBD (gui)
+
+### 新增
+
+- **[gui] 消息朗读按钮**：AI 回复气泡旁新增 🔊 按钮，点击调用 MiMo TTS API（限时免费 `mimo-v2-tts`）朗读回复内容；利用已有的 `notification.tsx` + `sound.ts` 音频基础设施，TTS 音频通过浏览器 `Audio` API 播放；复用现有 provider 配置体系接入 TTS 模型，无需额外 API key
+
+---
+
 ## [0.3.4] - 2026-05-29 (gui)
 
 ### 变更
