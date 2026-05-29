@@ -8,11 +8,20 @@ TUI 与 GUI 独立维护版本号，条目以 `[tui]` / `[gui]` 前缀区分。
 
 ---
 
-## [0.3.5] - TBD (gui)
+## [0.3.6] - TBD (gui)
 
-### 新增
+### 待做
 
 - **[gui] 消息朗读按钮**：AI 回复气泡旁新增 🔊 按钮，点击调用 MiMo TTS API（限时免费 `mimo-v2-tts`）朗读回复内容；利用已有的 `notification.tsx` + `sound.ts` 音频基础设施，TTS 音频通过浏览器 `Audio` API 播放；复用现有 provider 配置体系接入 TTS 模型，无需额外 API key
+
+---
+
+## [0.3.5] - 2026-05-29 (gui)
+
+### 修复
+
+- **[gui] 大会话导致渲染器 OOM/卡死**：compacted 会话的消息查询只返回 compaction summary 之后的消息（`packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts`），避免 GUI 加载大量旧消息导致渲染器内存溢出或无响应
+- **[gui] 初始消息加载量减半**：`initialMessagePageSize` 从 80 降至 40，`historyMessagePageSize` 从 200 降至 80，降低首次渲染压力
 
 ---
 
