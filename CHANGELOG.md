@@ -8,6 +8,17 @@ TUI 与 GUI 独立维护版本号，条目以 `[tui]` / `[gui]` 前缀区分。
 
 ---
 
+## [0.3.3] - 2026-05-29 (gui)
+
+### 修复
+
+- **[gui] 新建会话重复弹出"选择智能体和模型"**：`child-store.ts` 项目级 provider 查询 fallback 条件扩展，当 `connected` 为空但全局有已连接 providers 时自动回退，避免每次新建会话都要求重新配置
+- **[gui] 会话右键重命名菜单缺失**：`sidebar-items.tsx` 手动 `onContextMenu` 实现替换为 Kobalte `ContextMenu` 组件，使用 Portal 渲染避免 overflow 裁剪
+- **[gui] GUI 图标白底**：`yayi_256x256.ico` 用 sharp `unflatten` 去除白色背景，重新打包 ico/png 资源
+- **[gui] DeepSeek 模型变体下拉框不显示**：`transform.ts` 移除 DeepSeek 排除列表，`@ai-sdk/openai-compatible` 类型模型绕过 `reasoning` 能力检查
+
+---
+
 ## [0.3.2] - 2026-05-28 (gui)
 
 ### 新增
