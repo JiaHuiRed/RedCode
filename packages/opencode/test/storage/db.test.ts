@@ -1,4 +1,4 @@
-﻿import { describe, expect } from "bun:test"
+﻿import { describe, expect, it } from "bun:test"
 import path from "path"
 import { Global } from "@redcode-ai/core/global"
 import { Database } from "@/storage/db"
