@@ -22,7 +22,7 @@ const encoder = new TextEncoder()
 const layer = Layer.mergeAll(Project.defaultLayer, CrossSpawnSpawner.defaultLayer)
 const it = testEffect(layer)
 
-function run<A>(fn: (svc: Project.Interface) => Effect.Effect<A>) {
+function run<A, E = never>(fn: (svc: Project.Interface) => Effect.Effect<A, E>) {
   return Effect.gen(function* () {
     const svc = yield* Project.Service
     return yield* fn(svc)

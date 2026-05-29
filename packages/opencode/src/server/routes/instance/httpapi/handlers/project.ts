@@ -2,7 +2,7 @@ import * as InstanceState from "@/effect/instance-state"
 import { Project } from "@/project/project"
 import { ProjectID } from "@/project/schema"
 import { Effect } from "effect"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { markInstanceForReload } from "../lifecycle"
 
@@ -35,7 +35,9 @@ export const projectHandlers = HttpApiBuilder.group(InstanceHttpApi, "project", 
       params: { projectID: ProjectID }
       payload: Project.UpdatePayload
     }) {
-      return yield* svc.update({ ...ctx.payload, projectID: ctx.params.projectID })
+      return yield* svc.update({ ...ctx.payload, projectID: ctx.params.projectID }).pipe(
+        Effect.catchTag("Project.NotFoundError", () => new HttpApiError.NotFound()),
+      )
     })
 
     const remove = Effect.fn("ProjectHttpApi.remove")(function* (ctx: { params: { projectID: ProjectID } }) {

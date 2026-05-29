@@ -34,7 +34,9 @@ export const AgentCommand = effectCmd({
   handler: Effect.fn("Cli.debug.agent")(function* (args) {
     const ctx = yield* InstanceRef
     if (!ctx) return
-    return yield* run(args, ctx)
+    return yield* run(args, ctx).pipe(
+      Effect.catch((e) => fail((e as { message?: string })?.message ?? String(e), 1)),
+    )
   }),
 })
 

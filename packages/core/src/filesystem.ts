@@ -6,6 +6,7 @@ import { lookup } from "mime-types"
 import { Effect, FileSystem, Layer, Schema, Context } from "effect"
 import type { PlatformError } from "effect/PlatformError"
 import { Glob } from "./util/glob"
+import { serviceUse } from "./effect/service-use"
 
 export namespace AppFileSystem {
   export class FileSystemError extends Schema.TaggedErrorClass<FileSystemError>()("FileSystemError", {
@@ -188,6 +189,8 @@ export namespace AppFileSystem {
   )
 
   export const defaultLayer = layer.pipe(Layer.provide(NodeFileSystem.layer))
+
+  export const use = serviceUse(Service)
 
   // Pure helpers that don't need Effect (path manipulation, sync operations)
   export function mimeType(p: string): string {

@@ -61,8 +61,8 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Pl
 const INTERNAL_PLUGINS: PluginInstance[] = [
   CodexAuthPlugin,
   CopilotAuthPlugin,
-  GitlabAuthPlugin,
-  PoeAuthPlugin,
+  GitlabAuthPlugin as unknown as PluginInstance,
+  PoeAuthPlugin as unknown as PluginInstance,
   CloudflareWorkersAuthPlugin,
   CloudflareAIGatewayAuthPlugin,
   AzureAuthPlugin,

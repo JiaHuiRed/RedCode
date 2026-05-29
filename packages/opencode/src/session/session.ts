@@ -385,15 +385,15 @@ export const getUsage = (input: { model: Provider.Model; usage: Usage; metadata?
   const reasoningTokens = safe(input.usage.reasoningTokens ?? 0)
 
   const cacheReadInputTokens = safe(
-    input.usage.cacheReadInputTokens ??
-      // @ts-expect-error — DeepSeek returns prompt_cache_hit_tokens in provider metadata
-      input.metadata?.["deepseek"]?.["promptCacheHitTokens"] ??
-      0,
+    Number(
+      input.usage.cacheReadInputTokens ??
+        input.metadata?.["deepseek"]?.["promptCacheHitTokens"] ??
+        0,
+    ),
   )
   const cacheWriteInputTokens = safe(
     Number(
       input.usage.cacheWriteInputTokens ??
-        // @ts-expect-error — DeepSeek returns prompt_cache_miss_tokens in provider metadata
         input.metadata?.["deepseek"]?.["promptCacheMissTokens"] ??
         input.metadata?.["anthropic"]?.["cacheCreationInputTokens"] ??
         // google-vertex-anthropic returns metadata under "vertex" key

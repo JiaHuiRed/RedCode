@@ -584,7 +584,7 @@ export function Prompt(props: PromptProps) {
         desc: "将会话切换到其他工作区",
         name: "workspace.set",
         category: "Session",
-        enabled: Flag.OPENCODE_EXPERIMENTAL_WORKSPACES,
+        enabled: Flag.REDCODE_EXPERIMENTAL_WORKSPACES,
         slashName: "warp",
         run: () => {
           void openWorkspaceSelect({
