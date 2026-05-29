@@ -13,8 +13,8 @@
 
 > **Open-source AI coding assistant — terminal-based intelligent coding agent.**
 
-[![TUI](https://img.shields.io/badge/TUI-0.3.1-blue)](CHANGELOG.md)
-[![Desktop](https://img.shields.io/badge/Desktop-0.3.2-0078d4)](CHANGELOG.md)
+[![TUI](https://img.shields.io/badge/TUI-0.3.2-blue)](CHANGELOG.md)
+[![Desktop](https://img.shields.io/badge/Desktop-0.3.4-0078d4)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2011-lightblue)](https://github.com/JiaHuiRed/RedCode)
 
@@ -63,7 +63,7 @@ redcode run --model deepseek/deepseek-v4-flash "explain this code"
 
 - 💬 **Natural Language Coding** — describe requirements, auto-complete code
 - 🔌 **Multi-Model Support** — DeepSeek, OpenAI, Anthropic, Ollama, etc.
-- 🛠 **Tool System** — file read/write, code search, terminal commands
+- 🛠 **Tool System** — file read/write, code search, terminal commands, MCP servers (built-in [CodeGraph](https://github.com/colbymchenry/codegraph) code knowledge graph)
 - 🤖 **Custom Agents** — Build, Plan, General agents built-in
 - 🎨 **Terminal UI** — syntax highlighting, streaming output, diff display
 

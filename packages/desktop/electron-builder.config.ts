@@ -36,10 +36,14 @@ const getBase = (): Configuration => ({
     const fs = await import("node:fs/promises")
     const src = path.join(context.outDir, "win-unpacked")
     const dst = path.join(context.outDir, "win")
+    if (src === dst) return []
     try {
       await fs.rm(dst, { recursive: true, force: true })
-      await fs.rename(src, dst)
-    } catch {}
+      await fs.cp(src, dst, { recursive: true })
+      await fs.rm(src, { recursive: true, force: true })
+    } catch (e) {
+      console.warn("[afterAllArtifactBuild] win-unpacked → win rename failed:", e)
+    }
     return []
   },
   files: ["out/**/*", "resources/**/*"],
