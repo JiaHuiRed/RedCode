@@ -1060,7 +1060,7 @@ export default function Layout(props: ParentProps) {
         ? [
             {
               id: "logs.export",
-              title: "Export logs",
+              title: language.t("command.settings.open.exportLogs"),
               category: language.t("command.category.settings"),
               onSelect: () => {
                 void platform.exportDebugLogs?.()

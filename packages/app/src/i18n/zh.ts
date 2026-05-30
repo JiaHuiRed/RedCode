@@ -29,11 +29,17 @@ export const dict = {
 
   "command.project.open": "打开项目",
 
+  "command.project.previous": "上一个项目",
+  "command.project.next": "下一个项目",
+  "command.project.index": "切换到项目 {{index}}",
+
   "command.provider.connect": "连接提供商",
 
   "command.server.switch": "切换服务器",
 
   "command.settings.open": "打开设置",
+
+  "command.settings.open.exportLogs": "导出日志",
 
   "command.session.previous": "上一个会话",
   "command.session.next": "下一个会话",
@@ -926,4 +932,30 @@ export const dict = {
   "error.childStore.persistedProjectIconCreateFailed": "创建持久化项目图标失败",
   "error.childStore.storeCreateFailed": "创建存储失败",
   "terminal.connectionLost.abnormalClose": "WebSocket 异常关闭：{{code}}",
+
+  // 以下为新增缺失的翻译
+  "session.child.backToParent": "返回主会话。",
+  "settings.general.row.showFileTree.title": "文件树",
+  "settings.general.row.showSearch.title": "命令面板",
+  "session.review.noBranchChanges": "暂无分支变更",
+  "settings.general.row.shell.autoDefault": "自动（默认）",
+  "language.uk": "乌克兰语",
+  "settings.general.row.shell.title": "终端 Shell",
+  "settings.general.row.showStatus.title": "服务器状态",
+  "session.child.promptDisabled": "子智能体会话不可直接提示。",
+  "settings.general.row.pinchZoom.title": "触控板缩放",
+  "settings.general.row.showSearch.description": "在桌面标题栏中显示搜索和命令面板按钮",
+  "settings.general.row.showTerminal.title": "终端",
+  "settings.general.row.showNavigation.title": "导航控件",
+  "settings.general.row.showTerminal.description": "在桌面标题栏中显示终端按钮",
+  "sidebar.empty.description": "打开一个项目以开始使用",
+  "settings.general.row.showFileTree.description": "在桌面会话中显示文件树切换和面板",
+  "error.page.action.exportLogs": "导出日志",
+  "settings.general.row.shell.terminalOnly": "仅终端",
+  "settings.general.row.showNavigation.description": "在桌面标题栏中显示前进和后退按钮",
+  "settings.general.section.advanced": "高级",
+  "settings.general.row.pinchZoom.description": "允许触控板捏合和 Ctrl+滚轮手势进行缩放",
+  "settings.general.row.showStatus.description": "在桌面标题栏中显示服务器状态按钮",
+  "sidebar.empty.title": "无已打开项目",
+  "session.review.noUncommittedChanges": "暂无未提交变更",
 } satisfies Partial<Record<Keys, string>>
