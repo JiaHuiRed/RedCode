@@ -25,6 +25,10 @@ TUI 与 GUI 独立维护版本号，条目以 `[tui]` / `[gui]` 前缀区分。
 - **[gui] 新建项目/provider查询失败时回退到全局 provider**：`child-store.ts` 补充 `!projectData` 判断，当项目级 provider 查询返回 `undefined`/`null` 时自动回退到全局已连接 providers，避免要求重新配置
 - **[gui] 中文 i18n 适配**：`zh.ts` 补全 24 条缺失翻译（project 切换、设置页面、错误页等），修复 `layout.tsx` 中 "Export logs" 硬编码英文
 
+### 修复（TUI）
+
+- **[tui] 中文 i18n 适配**：`zh.ts` 补全 24 条缺失翻译，与 GUI 共享同一语言包
+
 ---
 
 ## [0.3.4] - 2026-05-29 (gui)
