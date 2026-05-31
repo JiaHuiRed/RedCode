@@ -140,6 +140,10 @@ export const dict = {
   "ui.message.forkMessage": "分支到新工作階段",
   "ui.message.revertMessage": "重設至此點",
   "ui.message.copyResponse": "複製回覆",
+
+  "ui.message.readAloud": "朗讀回覆",
+
+  "ui.message.stopReadAloud": "停止朗讀",
   "ui.message.copied": "已複製！",
   "ui.message.interrupted": "已中斷",
   "ui.message.queued": "排隊中",

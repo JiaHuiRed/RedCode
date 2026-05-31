@@ -1512,6 +1512,9 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     return isLastTextPart()
   })
   const [copied, setCopied] = createSignal(false)
+  const [ttsLoading, setTtsLoading] = createSignal(false)
+  const [ttsPlaying, setTtsPlaying] = createSignal(false)
+  let ttsAudio: HTMLAudioElement | null = null
 
   const handleCopy = async () => {
     const content = text()
@@ -1521,6 +1524,60 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
       setTimeout(() => setCopied(false), 2000)
     }
   }
+
+  // 260530 Red TTS 朗读按钮：调用 MiMo TTS API 朗读 AI 回复
+  const handleTTS = async () => {
+    if (ttsPlaying()) {
+      if (ttsAudio) {
+        ttsAudio.pause()
+        ttsAudio.currentTime = 0
+      }
+      setTtsPlaying(false)
+      setTtsLoading(false)
+      return
+    }
+
+    const content = text()
+    if (!content) return
+
+    setTtsLoading(true)
+    try {
+      const sdk = (data.store as any).sdk
+      if (!sdk?.client) return
+
+      const response = await fetch(`${sdk.server}/session/tts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: content.slice(0, 5000),
+          modelID: "mimo-v2-tts",
+          providerID: "xiaomi",
+        }),
+      })
+
+      if (!response.ok) throw new Error("TTS request failed")
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      ttsAudio = new Audio(url)
+      ttsAudio.onended = () => {
+        setTtsPlaying(false)
+        URL.revokeObjectURL(url)
+      }
+      ttsAudio.onerror = () => {
+        setTtsPlaying(false)
+        URL.revokeObjectURL(url)
+      }
+      await ttsAudio.play()
+      setTtsPlaying(true)
+    } catch {
+      setTtsPlaying(false)
+    } finally {
+      setTtsLoading(false)
+    }
+  }
+
+  const showTTS = createMemo(() => showCopy() && props.message.role === "assistant")
 
   return (
     <Show when={text()}>
@@ -1546,6 +1603,22 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
                 aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyResponse")}
               />
             </Tooltip>
+            <Show when={showTTS()}>
+              <Tooltip
+                value={ttsPlaying() ? i18n.t("ui.message.stopReadAloud") : i18n.t("ui.message.readAloud")}
+                placement="top"
+                gutter={4}
+              >
+                <IconButton
+                  icon={ttsPlaying() ? "volume" : "volume"}
+                  size="normal"
+                  variant="ghost"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={handleTTS}
+                  aria-label={ttsPlaying() ? i18n.t("ui.message.stopReadAloud") : i18n.t("ui.message.readAloud")}
+                />
+              </Tooltip>
+            </Show>
             <Show when={meta()}>
               <span data-slot="text-part-meta" class="text-12-regular text-text-weak cursor-default">
                 {meta()}
