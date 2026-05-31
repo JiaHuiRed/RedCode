@@ -32,7 +32,8 @@ import {
 const ROUTE = "diff"
 const MIN_SPLIT_WIDTH = 100
 const FILE_TREE_WIDTH = 32
-const PLAIN_TEXT_FILETYPE = "redcode-plain-text"
+const PLAIN_TEXT_FILETYPE = "opencode-plain-text"
+const WORKING_TREE_DIFF_CONTEXT_LINES = 12
 const KV_SHOW_FILE_TREE = "diff_viewer_show_file_tree"
 const KV_SINGLE_PATCH = "diff_viewer_single_patch"
 const KV_VIEW = "diff_viewer_view"
@@ -105,7 +106,7 @@ function DiffViewer(props: { api: TuiPluginApi }) {
     }
 
     const result = await props.api.client.vcs.diff(
-      { mode: "git" },
+      { mode: "git", context: WORKING_TREE_DIFF_CONTEXT_LINES },
       { throwOnError: true },
     )
     return normalizeDiffs(result.data ?? [])
@@ -344,6 +345,16 @@ function DiffViewer(props: { api: TuiPluginApi }) {
     setExpandedFileNodes((expanded) => toggleFileTreeDirectory(fileTree(), expanded, highlightedFileNode()))
   }
 
+  const clickFileTreeRow = (row: FileTreeRow) => {
+    setFocus("files")
+    setHighlighted(row.id)
+    if (row.fileIndex !== undefined) {
+      jumpToFileIndex(row.fileIndex)
+      return
+    }
+    setExpandedFileNodes((expanded) => toggleFileTreeDirectory(fileTree(), expanded, row.id))
+  }
+
   const toggleSelectedFileReviewed = () => {
     const fileIndex =
       focus() === "files"
@@ -367,6 +378,7 @@ function DiffViewer(props: { api: TuiPluginApi }) {
       run() {
         const returnRoute = params()?.returnRoute
         props.api.ui.dialog.clear()
+
         props.api.route.navigate(
           returnRoute?.name ?? "home",
           returnRoute && "params" in returnRoute ? returnRoute.params : undefined,
@@ -693,6 +705,7 @@ function DiffViewer(props: { api: TuiPluginApi }) {
                     selectedFileIndex={selectedFileIndex()}
                     reviewedFileNames={reviewedFileNames()}
                     expandedNodes={expandedFileNodes()}
+                    onRowClick={clickFileTreeRow}
                   />
                 </Show>
 
