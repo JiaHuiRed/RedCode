@@ -1732,6 +1732,7 @@ function GenericTool(props: ToolProps<any>) {
 function InlineTool(props: {
   icon: string
   iconColor?: RGBA
+  color?: RGBA
   complete: any
   pending: string
   spinner?: boolean

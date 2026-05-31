@@ -64,6 +64,7 @@ export interface DialogSelectOption<T = any> {
 export type DialogSelectRef<T> = {
   filter: string
   filtered: DialogSelectOption<T>[]
+  selected: DialogSelectOption<T> | undefined
 }
 
 export function DialogSelect<T>(props: DialogSelectProps<T>) {
@@ -335,6 +336,9 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
     },
     get filtered() {
       return filtered()
+    },
+    get selected() {
+      return filtered()[store.selected]
     },
   }
   props.ref?.(ref)

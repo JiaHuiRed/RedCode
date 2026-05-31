@@ -33,7 +33,6 @@ const ROUTE = "diff"
 const MIN_SPLIT_WIDTH = 100
 const FILE_TREE_WIDTH = 32
 const PLAIN_TEXT_FILETYPE = "opencode-plain-text"
-const WORKING_TREE_DIFF_CONTEXT_LINES = 12
 const KV_SHOW_FILE_TREE = "diff_viewer_show_file_tree"
 const KV_SINGLE_PATCH = "diff_viewer_single_patch"
 const KV_VIEW = "diff_viewer_view"
@@ -106,7 +105,7 @@ function DiffViewer(props: { api: TuiPluginApi }) {
     }
 
     const result = await props.api.client.vcs.diff(
-      { mode: "git", context: WORKING_TREE_DIFF_CONTEXT_LINES },
+      { mode: "git" },
       { throwOnError: true },
     )
     return normalizeDiffs(result.data ?? [])

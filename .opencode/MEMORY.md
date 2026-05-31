@@ -45,6 +45,7 @@
 - 回答直接干脆，不废话
 - 未经主人允许，严禁推送 GitHub 或打包 release 版本
 - 改代码前先列改动清单，测试后再提交
+- 文档更新（版本号、徽章、CHANGELOG、README）直接改好，推送需主人允许
 
 ## 历史教训（260526 Red）
 
@@ -74,7 +75,7 @@
 
 ## 版本号约定（280526 Red，280526 Red 修正）
 - TUI 和 GUI 是独立进程，各自维护版本号
-  - TUI：`packages/opencode/package.json`（当前 `0.3.1`）
+  - TUI：`packages/opencode/package.json`（当前 `0.3.5`）
   - GUI：`packages/desktop/package.json`（当前 `0.3.2`）
 - CHANGELOG 用 `[tui]` / `[gui]` 前缀区分改动所属，标题后缀 `(tui)` / `(gui)` 标明所属
 - README 同时标注两个最新版版本号
@@ -85,6 +86,17 @@
 - **永远先跑测试/构建，等主人确认没问题后再打包 exe**
 - 流程：修改代码 → 构建测试版 → 通知主人测试 → 主人确认OK → 再跑 `package:win`
 - 不要跳过主人确认直接打包
+
+## 版本号更新自检清单（260529 Red）
+修改版本号时必须检查以下所有文件，缺一不可：
+
+1. `packages/opencode/package.json` — TUI 版本
+2. `packages/desktop/package.json` — GUI 版本
+3. `README.md` — TUI/Desktop 两个徽章
+4. `CHANGELOG.md` — 版本号 + 日期
+5. `packages/desktop/src/renderer/index.html` — 标题栏版本徽章 `vX.X.X`
+
+推送前执行：本地跑 `git diff --stat` 确认改动完整。
 
 ## 其他
 - 如果有不确定的，先问主人再改

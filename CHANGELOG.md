@@ -8,6 +8,41 @@ TUI 与 GUI 独立维护版本号，条目以 `[tui]` / `[gui]` 前缀区分。
 
 ---
 
+## [0.3.5] - 2026-05-31 (tui)
+
+### 新增
+
+- **[tui] prompt 输入框自适应 & 可配置高度**：合并上游实现，文本框行数根据内容自动伸缩，支持用户配置最小/最大行数
+
+### 修复
+
+- **[tui] 行内 tool 行换行对齐**：提取 `InlineToolRow` 组件，图标与文字使用 flex 布局，换行后文字正确对齐
+
+---
+
+## [0.3.4] - 2026-05-31 (tui)
+
+### 新增
+
+- **[tui] Shell Mode**：空提示框按 `!` 进入 Shell 模式，直接运行系统命令（通过 `session.shell` 而非发送消息），命令完成后自动退出 Shell 模式
+- **[tui] Session Switcher**：新增 `$session.list` 命令和 `/sessions` 斜杠命令，打开会话切换对话框，支持按项目/状态过滤、消息预览和 diff 摘要
+
+### 修复
+
+- **[tui] Diff Viewer 改进**：合并上游空白状态展示、交互优化、设计重设计等修复；修复文件树中已审查文件的勾选标记 Unicode 乱码
+- **[tui] 测试文件 import 路径修正**：`diff-viewer.test.tsx` 中 `@opencode-ai` → `@redcode-ai`
+
+---
+
+## [0.3.3] - 2026-05-31 (tui)
+
+### 修复
+
+- **[tui] compacted 会话 HTTP API 消息过滤**：消息分页查询自动跳过 compaction summary 之前的旧消息，避免 GUI 加载大量旧消息导致 OOM/卡死。同时在 `packages/opencode` 侧生效，TUI 和 GUI 共享同一服务端
+- **[tui] 测试用例 import 补全**：`db.test.ts` 补全 `it` 的 `bun:test` import，修复测试运行时引用错误
+
+---
+
 ## [0.3.6] - 2026-05-30 (gui)
 
 ### 新增

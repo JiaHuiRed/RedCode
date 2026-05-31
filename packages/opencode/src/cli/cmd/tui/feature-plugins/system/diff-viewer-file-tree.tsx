@@ -158,5 +158,5 @@ function fileTreeRowStatus(row: FileTreeRow, files: readonly FileTreeItem[], rev
   if (row.fileIndex === undefined) return ""
   const status = files[row.fileIndex]?.status
   const marker = status === "modified" ? "M" : status === "added" ? "A" : status === "deleted" ? "D" : "?"
-  return `${reviewed ? "?? : " "}${marker}`.padStart(FILE_TREE_STATUS_WIDTH)
+  return `${reviewed ? "✓ " : "  "}${marker}`.padStart(FILE_TREE_STATUS_WIDTH)
 }
