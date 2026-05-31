@@ -367,7 +367,6 @@ function DiffViewer(props: { api: TuiPluginApi }) {
       run() {
         const returnRoute = params()?.returnRoute
         props.api.ui.dialog.clear()
-
         props.api.route.navigate(
           returnRoute?.name ?? "home",
           returnRoute && "params" in returnRoute ? returnRoute.params : undefined,
