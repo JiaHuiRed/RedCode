@@ -8,8 +8,7 @@
 
 ---
 
-<details open>
-<summary><h2>TUI</h2></summary>
+## TUI
 
 ### [0.3.6] - 2026-06-01
 
@@ -70,10 +69,9 @@
 - 删除死代码：移除未使用的 `GoLogo` 组件（`logo.tsx`）、整个 `dialog-tag.tsx` 文件、未引用的 `Descriptions` 和 `TuiAttentionSoundPaths` 导出
 - 类型安全提升：`toast.tsx` `err: any` → `unknown`、`kv.tsx` `defaultValue?: any` → `unknown`、`dialog.tsx` `replace(input: any)` → `JSX.Element`、`dialog-prompt.tsx` `ctx: any` → `CommandContext`、`local.tsx` 反序列化类型标注
 
-</details>
+---
 
-<details open>
-<summary><h2>GUI</h2></summary>
+## GUI
 
 ### [0.3.8] - 2026-06-01
 
@@ -165,10 +163,9 @@
 - 删除死代码：移除未使用的 `GoLogo` 组件（`logo.tsx`）、整个 `dialog-tag.tsx` 文件、未引用的 `Descriptions` 和 `TuiAttentionSoundPaths` 导出
 - 类型安全提升：`toast.tsx` `err: any` → `unknown`、`kv.tsx` `defaultValue?: any` → `unknown`、`dialog.tsx` `replace(input: any)` → `JSX.Element`、`dialog-prompt.tsx` `ctx: any` → `CommandContext`、`local.tsx` 反序列化类型标注
 
-</details>
+---
 
-<details>
-<summary><h2>共同历史</h2></summary>
+## 共同历史
 
 ### [0.3.0] - 2026-05-27
 
@@ -316,5 +313,3 @@ py scripts/gen-icon.py
 
 - 项目 Fork：基于 opencode (sst.dev) 二次开发
 - 品牌重命名：opencode → RedCode，全面替换包名、URL、环境变量
-
-</details>
