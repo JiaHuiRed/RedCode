@@ -603,6 +603,10 @@ export const layer = Layer.effect(
           for (const file of yield* ConfigPaths.files("redcode", ctx.directory, ctx.worktree).pipe(Effect.orDie)) {
             yield* merge(file, yield* loadFile(file, authEnv), "local")
           }
+          // Also load from opencode.jsonc / opencode.json for MCP config compatibility
+          for (const file of yield* ConfigPaths.files("opencode", ctx.directory, ctx.worktree).pipe(Effect.orDie)) {
+            yield* merge(file, yield* loadFile(file, authEnv), "local")
+          }
         }
 
         result.agent = result.agent || {}
