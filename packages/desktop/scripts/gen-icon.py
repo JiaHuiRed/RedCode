@@ -1,112 +1,37 @@
 #!/usr/bin/env python
 """
-Generate Mangekyou Sharingan icons for RedCode.
-Design: black bg, white 勾玉 (magatama), red ring + pupil.
-Colors adjusted: bg slightly lighter, red softer.
+Generate RedCode icons from Red.ico source.
+Extracts the 256x256 PNG from Red.ico, resizes to all required sizes,
+produces multi-resolution icon.ico, .png, dock.png, StoreLogo, etc.
 """
-import math, os, io, struct
-from PIL import Image, ImageDraw
+import io, os, struct
+from PIL import Image
 
-# ── colors ───────────────────────────────────────────────────────────────────
-RED       = (200,  60,  70, 255)    # softer rose-red (ring + pupil)
-BG        = ( 25,  23,  23, 255)    # slightly lighter than pure black
-WHITE     = (235, 235, 235, 255)    # off-white for magatama
-TRANS     = (  0,   0,   0,   0)
-
-# ── helpers ──────────────────────────────────────────────────────────────────
-def polar(cx, cy, r, deg):
-    rad = math.radians(deg - 90)
-    return (cx + r * math.cos(rad), cy + r * math.sin(rad))
-
-def bezier_pts(p0, p1, p2, p3, steps=20):
-    out = []
-    for i in range(steps):
-        t = i / (steps - 1)
-        u = 1 - t
-        x = u**3*p0[0] + 3*u**2*t*p1[0] + 3*u*t**2*p2[0] + t**3*p3[0]
-        y = u**3*p0[1] + 3*u**2*t*p1[1] + 3*u*t**2*p2[1] + t**3*p3[1]
-        out.append((x, y))
-    return out
-
-def arc_pts(cx, cy, r, a_start, a_end, steps=20):
-    return [polar(cx, cy, r, a_start + (a_end - a_start) * i / (steps - 1))
-            for i in range(steps)]
-
-def draw_magatama(draw, cx, cy, R, blade_idx, n=3):
-    """One 勾玉: round head + curved tail, single continuous shape."""
-    angle = blade_idx * (360 / n)
-
-    head_r = R * 0.47
-    head_cx, head_cy = polar(cx, cy, head_r, angle)
-    head_radius = R * 0.27
-
-    # Tail angles
-    tail_base_outer = angle + 25
-    tail_base_inner = angle - 10
-    tail_tip_angle = angle + 72
-    tail_tip = polar(cx, cy, R * 0.80, tail_tip_angle)
-
-    # Outer edge
-    tail_outer_start = polar(cx, cy, head_radius * 0.95, tail_base_outer)
-    ctrl_outer = polar(cx, cy, R * 0.72, angle + 48)
-    outer_edge = bezier_pts(tail_outer_start, ctrl_outer, ctrl_outer, tail_tip, 18)
-
-    # Inner edge
-    tail_inner_start = polar(cx, cy, head_radius * 0.65, tail_base_inner)
-    ctrl_inner = polar(cx, cy, head_r * 0.55, angle + 38)
-    inner_edge = bezier_pts(tail_tip, ctrl_inner, ctrl_inner, tail_inner_start, 18)
-
-    # Head arc (the round part not covered by tail)
-    head_arc = arc_pts(head_cx, head_cy, head_radius, tail_base_outer, tail_base_inner + 360, 24)
-
-    pts = outer_edge + [tail_tip] + inner_edge + head_arc
-    draw.polygon(pts, fill=WHITE)
-
-def draw_sharingan(size: int) -> Image.Image:
-    # Higher supersample for small icons to preserve detail after downsample
-    if size <= 32:
-        scale = 16
-    elif size <= 64:
-        scale = 8
-    else:
-        scale = 4
-    S  = size * scale
-    cx = cy = S // 2
-    R  = int(S * 0.47)
-
-    img  = Image.new("RGBA", (S, S), TRANS)
-    draw = ImageDraw.Draw(img)
-
-    # Background circle
-    draw.ellipse([cx-R, cy-R, cx+R, cy+R], fill=BG)
-
-    # Red outer ring (single antialiased stroke via width param)
-    ring_w = max(2, int(R * 0.05))
-    draw.ellipse(
-        [cx-R+ring_w//2, cy-R+ring_w//2, cx+R-ring_w//2, cy+R-ring_w//2],
-        outline=RED, width=ring_w,
-    )
-
-    # Three white 勾玉
-    for i in range(3):
-        draw_magatama(draw, cx, cy, R, i)
-
-    # Red center pupil
-    pupil_r = int(R * 0.09)
-    draw.ellipse([cx-pupil_r, cy-pupil_r, cx+pupil_r, cy+pupil_r], fill=RED)
-
-    # Downsample (LANCZOS gives good anti-aliasing; no extra blur needed)
-    img = img.resize((size, size), Image.LANCZOS)
-    return img
-
-# ── generate ─────────────────────────────────────────────────────────────────
-SIZES = [16, 24, 32, 48, 64, 96, 128, 256, 512, 1024]
 ICONS_DIR = os.path.join(os.path.dirname(__file__), "../icons")
-os.makedirs(ICONS_DIR, exist_ok=True)
+SRC_ICO = os.path.join(ICONS_DIR, "Red.ico")
 
-renders = {}
+# Read source 256x256 PNG from Red.ico
+with open(SRC_ICO, "rb") as f:
+    src_bytes = f.read()
+count = struct.unpack_from("<H", src_bytes, 4)[0]
+# Find 256x256 (w=0 means 256)
+png_data = None
+for i in range(count):
+    off = 6 + i * 16
+    w = src_bytes[off]
+    offset = struct.unpack_from("<I", src_bytes, off + 12)[0]
+    size = struct.unpack_from("<I", src_bytes, off + 8)[0]
+    if w == 0:
+        png_data = src_bytes[offset : offset + size]
+        break
+if not png_data:
+    raise RuntimeError("No 256x256 entry found in Red.ico")
+
+src = Image.open(io.BytesIO(png_data)).convert("RGBA")
+
+SIZES = [16, 24, 32, 48, 64, 96, 128, 256, 512, 1024]
+renders = {sz: src.resize((sz, sz), Image.LANCZOS) for sz in SIZES}
 for sz in SIZES:
-    renders[sz] = draw_sharingan(sz)
     print(f"  {sz}x{sz}")
 
 renders[1024].save(os.path.join(ICONS_DIR, "icon.png"))
@@ -119,13 +44,13 @@ for sz, fname in [
     (89,"Square89x89Logo.png"),(107,"Square107x107Logo.png"),(142,"Square142x142Logo.png"),
     (150,"Square150x150Logo.png"),(284,"Square284x284Logo.png"),(310,"Square310x310Logo.png"),
 ]:
-    draw_sharingan(sz).save(os.path.join(ICONS_DIR, fname))
+    src.resize((sz, sz), Image.LANCZOS).save(os.path.join(ICONS_DIR, fname))
 
 renders[512].save(os.path.join(ICONS_DIR, "dock.png"))
-draw_sharingan(50).save(os.path.join(ICONS_DIR, "StoreLogo.png"))
+src.resize((50, 50), Image.LANCZOS).save(os.path.join(ICONS_DIR, "StoreLogo.png"))
 
-# icon.ico
-ico_sizes = [16, 24, 32, 48, 64, 128, 256]
+# ICO — multi-resolution with correct struct format
+ico_sizes = [16, 24, 32, 48, 64, 128, 256, 512, 1024]
 png_blobs = []
 for s in ico_sizes:
     buf = io.BytesIO()
@@ -139,12 +64,12 @@ data = b""
 for s, blob in zip(ico_sizes, png_blobs):
     w = 0 if s >= 256 else s
     h = 0 if s >= 256 else s
-    entries += struct.pack("<BBBBHHIH", w, h, 0, 0, 1, 32, len(blob), data_offset)
+    entries += struct.pack("<BBBBHHII", w, h, 0, 0, 1, 32, len(blob), data_offset)
     data += blob
     data_offset += len(blob)
 
 with open(os.path.join(ICONS_DIR, "icon.ico"), "wb") as f:
     f.write(header + entries + data)
 
-draw_sharingan(180).save(os.path.join(ICONS_DIR, "apple-touch-icon.png"))
+src.resize((180, 180), Image.LANCZOS).save(os.path.join(ICONS_DIR, "apple-touch-icon.png"))
 print("Done.")

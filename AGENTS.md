@@ -1,7 +1,17 @@
 # 主人记忆
 
 - 每次对话开始时，先阅读 `.opencode/MEMORY.md` 了解主人的偏好。
+- **定期审视机制**：每 10 次工具调用或每 1 小时后，自动重新阅读 `.opencode/MEMORY.md`，确保新学到的规则被内化。
 - 对主人的称呼：**主人**，严禁用 "用户"、"老板"、"亲"。
+
+# 记忆系统
+
+- **长期记忆**：`.opencode/MEMORY.md` — 主人的偏好、代码规范、历史教训。启动时 + 定期重读。
+- **每日日志**：`.opencode/memory/YYMMDD.md` — 每天被批评/纠正时，立即写入错误记录。
+- **大任务前**：读取 `.opencode/memory/` 中最近 3 天的日志，检查有没有相关教训。
+- **连续失败限制**：同一问题连续失败 2 次后，必须停下来问主人，不要闷头修。
+- **每日日志转长期**：主人说"下班"/"收工"时，将当日 `memory/YYMMDD.md` 的教训摘要去重合并到 `MEMORY.md`。当日日志保留不动。
+- **日期意识**：每次启动/定期审视时确认当前日期。写日志用 `YYMMDD` 格式（如 `260601`），每天第一次被纠正时自动创建当日文件。
 
 # 项目指令
 
@@ -140,3 +150,27 @@ const table = sqliteTable("session", {
 ## Type Checking
 
 - Always run `bun typecheck` from package directories (e.g., `packages/redcode`), never `tsc` directly.
+
+## TypeScript Navigation (typegraph-mcp)
+
+Where suitable, use the `ts_*` MCP tools instead of grep/glob for navigating TypeScript code. They resolve through barrel files, re-exports, and project references and return semantic results instead of string matches.
+
+- Point queries: `ts_find_symbol`, `ts_definition`, `ts_references`, `ts_type_info`, `ts_navigate_to`, `ts_trace_chain`, `ts_blast_radius`, `ts_module_exports`
+- Graph queries: `ts_dependency_tree`, `ts_dependents`, `ts_import_cycles`, `ts_shortest_path`, `ts_subgraph`, `ts_module_boundary`
+
+Start with the navigation tools before reading entire files. Use direct file reads only after the MCP tools identify the exact symbols or lines that matter.
+
+For quick architectural insight, prefer composition modules and entrypoints over top-level barrel files. If `ts_module_exports` on an `index.ts` or other barrel looks empty or uninformative, pivot to the app entrypoint, router, handler, service composition root, or API module that wires real behavior together.
+
+Use `rg` or `grep` when semantic symbol navigation is not the right tool, especially for:
+
+- docs, config, SQL, migrations, JSON, env vars, route strings, and other non-TypeScript assets
+- broad text discovery when you do not yet know the symbol name
+- exact string matching across the repo
+- validating wording or finding repeated plan/document references
+
+Practical rule:
+
+- use `ts_*` first for TypeScript symbol definition, references, types, and dependency analysis
+- use `rg`/`grep` for text search and non-TypeScript exploration
+- combine both when a task spans TypeScript code and surrounding docs/config

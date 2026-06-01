@@ -1,4 +1,5 @@
 ﻿import { Agent } from "@/agent/agent"
+import { Auth } from "@/auth"
 import { Bus } from "@/bus"
 import { Command } from "@/command"
 import { Permission } from "@/permission"
@@ -61,6 +62,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const summary = yield* SessionSummary.Service
     const bus = yield* Bus.Service
     const scope = yield* Scope.Scope
+    const authSvc = yield* Auth.Service
 
     const list = Effect.fn("SessionHttpApi.list")(function* (ctx: { query: typeof ListQuery.Type }) {
       return yield* session.list({
@@ -434,6 +436,40 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return yield* session.updatePart(payload)
     })
 
+    // 260531 Red TTS 朗读功能 handler
+    const tts = Effect.fn("SessionHttpApi.tts")(function* (ctx: {
+      payload: { text: string; providerID: string; modelID: string }
+    }) {
+      const { text, providerID, modelID } = ctx.payload
+      if (!text) return yield* new HttpApiError.BadRequest({})
+
+      const buffer = yield* Effect.promise(async () => {
+        const auth = Effect.runSync(authSvc.get(providerID))
+        const apiKey = (auth as any)?.key
+        if (!apiKey) throw new Error("No API key for TTS provider")
+
+        const res = await fetch("https://api.xiaomi.com/v1/audio/speech", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: modelID,
+            input: text.slice(0, 5000),
+            voice: "alloy",
+            response_format: "wav",
+          }),
+        })
+        if (!res.ok) throw new Error(`TTS API error: ${res.status}`)
+        return new Uint8Array(await res.arrayBuffer())
+      })
+
+      return HttpServerResponse.uint8Array(buffer, {
+        headers: { "Content-Type": "audio/wav", "Access-Control-Allow-Origin": "*" },
+      })
+    })
+
     return handlers
       .handle("list", list)
       .handle("status", status)
@@ -462,5 +498,6 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("deleteMessage", deleteMessage)
       .handle("deletePart", deletePart)
       .handle("updatePart", updatePart)
+      .handle("tts", tts)
   }),
 )

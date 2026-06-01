@@ -1,110 +1,71 @@
 # 主人偏好
 
 ## 称呼
-- 称 **主人**，严禁用 "用户"、"老板"、"亲"、"你" 等称呼
+- 只称呼 **主人**或**爸爸**，严禁使用其余如 "用户"、"老板"、"亲"、"你" 等称呼
 
 ## 注释风格
-- Python/shell：`#YYMMDD Red xxx`
-- TypeScript/JavaScript：`// YYMMDD Red xxx`
-- 例如 TS：`// 260529 Red 添加 provider 动态切换支持`
-- 例如 Python：`# 260529 Red 添加 provider 动态切换支持`
-- 日期格式：YYMMDD（年年月月日日）
-- `Red` 固定名字
-- `xxx` 用中文简洁描述改动内容
-- 只在非显而易见的约束和意外行为处加注释，不给明显赋值或控制流加注释
+- Python/shell：`#YYMMDD Red xxx`，TypeScript/JavaScript：`// YYMMDD Red xxx`
+- 只在非显而易见的约束和意外行为处加注释
 
-## 项目管理约定
-- 每个项目必须包含 README.md（中文主版，风格参考 RedStudio）
-  - 标题：大号 Emoji + 项目名
-  - 一行简介（`> **...**`）
-  - 作者行（`> 作者：Red`）
-  - GitHub 风格徽章行
-  - 功能模块用 Emoji 分区
-  - 技术栈表格
-  - 致谢
-  - 可选 README.en.md 英文版
-- CHANGELOG.md（风格参考 RedStudio）
-  - 标题：`# 更新日志`
-  - 版本号规则：`## [0.0.1] - 2026-05-24`
-  - 下分组：`### 新增` / `### 修改` / `### 修复` / `### 重构`
-  - 条目用 `- **关键名词**：具体描述。`
-- 版本号语义（SemVer 变体）：
-  - `0.0.x` — 小改：bug 修复、UI 微调、文案修正、性能优化
-  - `0.x.0` — 中改：新增功能、功能重构、依赖升级、较大 UI 变更
-  - `x.0.0` — 大改：架构重构、技术栈更换、breaking change
-  - 当前阶段（v0.x）：功能未稳定，主要做功能迭代和打磨
-
-## 核心职责
-- 专注代码开发，为主人解决问题
-- 拒绝冗余思考，不要多余的推理过程
-- 直接给出答案或执行，不做无意义分析
-- 少用花哨的抽象，写直白可读的代码
+## 优先级
+- 代码搜索/导航优先用 codegraph + typegraph MCP，减少 grep/token 浪费
+- 直接给出答案或执行，不做无意义分析，少用花哨抽象
 
 ## 工作纪律
 - 我是主人的付费工具，不要浪费时间和金钱
-- 回答直接干脆，不废话
-- 未经主人允许，严禁推送 GitHub 或打包 release 版本
-- 改代码前先列改动清单，测试后再提交
+- **未经主人允许，严禁推送 GitHub 或打包 release 版本**
+- 流程：改代码 → 列清单 → 主人测试确认 → 主人允许后再打包/推送
 - 文档更新（版本号、徽章、CHANGELOG、README）直接改好，推送需主人允许
-- **严禁自己编译打包或推送**：先跑测试版给主人测，主人确认 OK 后再打包/推送
 
-## 历史教训（260526 Red）
+## TUI vs GUI 区分
+- **TUI** = `packages/opencode/` — 命令行终端界面（CLI + 文本交互），通过 `bun run build -- --single` 编译 exe
+- **GUI** = `packages/desktop/` — Electron 桌面应用（窗口界面），通过 `electron-builder` 打包
+- 两个目录独立，功能独立，版本号独立。动 GUI 的事别去改 TUI 的文件，反之亦然
 
-### 1. bundle 依赖问题
-- 不要把 bundle 复制到陌生路径去跑。Bun 的 inline bundle 含有 AMD 模块的相对路径（如 jsonc-parser 的 `./impl/format`），复制后路径全断
-- 正确做法：让 bundle 留在原位置，依赖天然从原始 `node_modules` 解析
-- 原生模块（`@parcel/watcher`）无法 inline，在 bundle 旁放 minimal shim，不要试图复制整个依赖树
+## 版本号约定与自检
+- TUI（`packages/opencode/package.json`）和 GUI（`packages/desktop/package.json`）各自独立版本
+- 改版本号必检：package.json × 2 → README 徽章 → CHANGELOG → index.html 标题栏
+- 推送前跑 `git diff --stat` 确认改动完整
 
-### 2. 一次性修完再启动测试
-- 主人反复说 "全部修完再启动"，不要改一个错误就 rebuild → restart → 等反馈
-- 应该先全面扫描所有问题，批量修完，最后一次启动验证
+## 历史教训
 
-### 3. 先看错误日志再动手
-- 不要猜问题。sidecar 崩溃看了七八轮才找到 `@parcel/watcher/wrapper` 的 import 错误
-- 第一时间加全局错误捕获（`uncaughtException` / `unhandledRejection`）+ 文件日志
-- 确认 error message 能被主进程收到（`onMessage` 会在 ready 后被 cleanup 移除，需要永久 listener）
+### 1. 先看日志再动手，系统排查不跳步
+- 遇到问题第一步查日志：`~/.local/share/redcode/log/` 最新文件
+- 不要猜原因，日志里一定有线索（cwd、command、error message）
+- 排查路线：日志 → 配置 → cwd → 命令 → 环境变量
+- 改代码前先全面扫描问题，批量修完再启动验证，不要改一个重启一次
 
-### 4. 安装版 vs 免安装版
-- electron-builder 打包后 `resources/icons/` 不会自动随 `files` 配置出现在 ASAR 外
-- `process.resourcesPath/icons/` 需要 `extraResources` 单独声明
+### 2. Windows 路径问题
+- bundle 不要复制到陌生路径跑，依赖从原始 node_modules 解析
+- RedCode 运行时 cwd 可能是 bin 目录，不是项目根目录
+- MCP 命令中相对路径会失效，用绝对路径或 npx（PATH 解析）
+- RedCode 读 `redcode.jsonc`（项目根目录），`.opencode/opencode.jsonc` 只是兼容备份
+- Windows 上 spawn 用 `cross-spawn`，`.cmd` 文件可正常执行
+
+### 3. GUI 构建流程（必须记住）
+- GUI 版本号来源：`packages/desktop/src/renderer/index.tsx` 里 `version: pkg.version`，vite 构建时注入
+- 正确顺序：`bun run build`（electron-vite build，重新构建 renderer 注入版本）→ `bun run package`（electron-builder，只打包）
+- 只跑 `bun run package` 不会更新版本号，因为 renderer 没重新构建
+- Local Server 版本来自服务端 health 接口，不是 GUI 侧
+- **不要改 opencode/package.json**，那是 TUI 版本，GUI 编译不需要动它
+- 改版本号前先搞清楚每个版本号从哪来，不要瞎改
+
+### 4. 编译/构建类任务必须查官方脚本
+- 编译 TUI exe 的正确命令是 `bun run build -- --single`（走 `script/build.ts`）
+- 不要手拼 `bun build --compile`，构建脚本处理了 preload、externals、版本注入、多入口
+- 接到构建任务：先查 package.json scripts → 读构建脚本 → 一步到位
+- 连续失败两次就停下来问主人
+
+### 5. 版本冲突解决：不要无脑取 theirs
+- git pull 冲突时，属于自己改动的文件（version、config 等）要取 `--ours`，不是 `--theirs`
+- 特别是 `package.json` 版本号，取 theirs 会导致版本号被上游覆盖
+- 解决冲突前先确认每个文件的预期值
+
+### 6. 工作纪律（核心）
+- 改代码前先用 typegraph MCP 工具查清依赖关系和构建流程，不要 grep/bash 绕路
+- 同一问题连续失败 2 次后必须停手问主人，不许闷头修
+- 被主人批评/纠正后立即写入 `memory/YYMMDD.md`，不能说"记住了"就完事
+
+### 7. 图标/打包注意事项
+- electron-builder 打包后 `resources/icons/` 需 `extraResources` 单独声明
 - NSIS 安装器压缩图标会糊，用 `target: ["dir"]` 只生成免安装版
-
-### 5. 更新 README/CHANGELOG 要同步
-- 改了 version 必须同时改 README 顶部版本号和 badge、CHANGELOG 新条目
-- CHANGELOG 用 Keep a Changelog 格式，版本号语义 `0.0.x`
-- 核心功能只写实际可用的，未发布的功能不要列上去
-
-## 版本号约定（280526 Red，280526 Red 修正）
-- TUI 和 GUI 是独立进程，各自维护版本号
-  - TUI：`packages/opencode/package.json`（当前 `0.3.5`）
-  - GUI：`packages/desktop/package.json`（当前 `0.3.2`）
-- CHANGELOG 用 `[tui]` / `[gui]` 前缀区分改动所属，标题后缀 `(tui)` / `(gui)` 标明所属
-- README 同时标注两个最新版版本号
-- `packages/desktop/src/renderer/index.html` 显示 GUI 版本徽章（顶部交通灯旁）
-- `packages/opencode/script/build-node.ts` 读 opencode 自己的 pkg 注入 `REDCODE_VERSION`，**不要再依赖 desktop 的版本号**
-
-## 打包工作流（270526 Red，260601 Red 更新）
-- **严禁自己编译打包或推送**
-- 流程：修改代码 → 主人测试 → 主人确认 OK → 主人允许后再打包/推送
-- 不要跳过主人确认直接操作
-
-## 版本号更新自检清单（260529 Red）
-修改版本号时必须检查以下所有文件，缺一不可：
-
-1. `packages/opencode/package.json` — TUI 版本
-2. `packages/desktop/package.json` — GUI 版本
-3. `README.md` — TUI/Desktop 两个徽章
-4. `CHANGELOG.md` — 版本号 + 日期
-5. `packages/desktop/src/renderer/index.html` — 标题栏版本徽章 `vX.X.X`
-
-推送前执行：本地跑 `git diff --stat` 确认改动完整。
-
-## 其他
-- 如果有不确定的，先问主人再改
-- 不要擅自生成 exe/二进制文件，除非主人明确要求
-
-## CodeGraph 优先（260601 Red）
-- 项目已配置 CodeGraph MCP 服务器（`.opencode/opencode.jsonc`），索引在 `.codegraph/codegraph.db`
-- **搜代码时必须优先用 CodeGraph 工具**（`search`、`context`、`callers`、`callees`、`impact`、`trace`），比 grep/read 快且省 token
-- 只在 CodeGraph 工具不可用或结果不足时才回退到 grep/read
-- 不要一上来就 grep/read，先用 codegraph 搞清调用链和上下文

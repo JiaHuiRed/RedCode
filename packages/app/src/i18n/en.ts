@@ -29,6 +29,7 @@
   "command.provider.connect": "Connect provider",
   "command.server.switch": "Switch server",
   "command.settings.open": "Open settings",
+
   "command.settings.open.exportLogs": "Export logs",
   "command.session.previous": "Previous session",
   "command.session.next": "Next session",
@@ -299,7 +300,6 @@
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "{{enabled}} of {{total}} enabled",
   "dialog.mcp.empty": "No MCPs configured",
-  "dialog.mcp.toggleFailed": "MCP toggle failed",
 
   "dialog.lsp.empty": "LSPs auto-detected from file types",
   "dialog.plugins.empty": "Plugins configured in RedCode.json",
@@ -741,15 +741,6 @@
   "settings.general.section.sounds": "Sound effects",
   "settings.general.section.feed": "Feed",
   "settings.general.section.display": "Display",
-  "settings.general.section.tts": "Text to Speech",
-
-  "settings.general.tts.enabled.title": "Enable TTS read-aloud",
-  "settings.general.tts.enabled.description": "Show the read-aloud button on assistant messages",
-  "settings.general.tts.apiKey.title": "MiMo TTS API Key",
-  "settings.general.tts.apiKey.description": "Your MiMo sk- prefix API key for TTS. Get it from platform.xiaomimimo.com",
-  "settings.general.tts.apiKey.placeholder": "sk-...",
-  "settings.general.tts.voice.title": "Voice",
-  "settings.general.tts.voice.description": "Choose the voice for TTS read-aloud",
 
   "settings.general.row.language.title": "Language",
   "settings.general.row.language.description": "Change the display language for RedCode",

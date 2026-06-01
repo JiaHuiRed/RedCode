@@ -63,6 +63,12 @@ export const SummarizePayload = Schema.Struct({
   modelID: ModelID,
   auto: Schema.optional(Schema.Boolean),
 })
+// 260531 Red TTS 朗读功能 payload
+export const TtsPayload = Schema.Struct({
+  text: Schema.String,
+  providerID: ProviderID,
+  modelID: ModelID,
+})
 export const PromptPayload = Schema.Struct(Struct.omit(SessionPrompt.PromptInput.fields, ["sessionID"]))
 export const CommandPayload = Schema.Struct(Struct.omit(SessionPrompt.CommandInput.fields, ["sessionID"]))
 export const ShellPayload = Schema.Struct(Struct.omit(SessionPrompt.ShellInput.fields, ["sessionID"]))
@@ -98,6 +104,8 @@ export const SessionPaths = {
   deleteMessage: `${root}/:sessionID/message/:messageID`,
   deletePart: `${root}/:sessionID/message/:messageID/part/:partID`,
   updatePart: `${root}/:sessionID/message/:messageID/part/:partID`,
+  // 260531 Red TTS 朗读功能
+  tts: `${root}/tts`,
 } as const
 
 export const SessionApi = HttpApi.make("session")
@@ -307,6 +315,18 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.summarize",
             summary: "Summarize session",
             description: "Generate a concise summary of the session using AI compaction to preserve key information.",
+          }),
+        ),
+        // 260531 Red TTS 朗读功能
+        HttpApiEndpoint.post("tts", SessionPaths.tts, {
+          payload: TtsPayload,
+          success: described(Schema.Uint8Array, "Audio data (wav)"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.tts",
+            summary: "Text to speech",
+            description: "Convert text to speech using the configured TTS model.",
           }),
         ),
         HttpApiEndpoint.post("prompt", SessionPaths.prompt, {
