@@ -46,6 +46,7 @@
 - 未经主人允许，严禁推送 GitHub 或打包 release 版本
 - 改代码前先列改动清单，测试后再提交
 - 文档更新（版本号、徽章、CHANGELOG、README）直接改好，推送需主人允许
+- **严禁自己编译打包或推送**：先跑测试版给主人测，主人确认 OK 后再打包/推送
 
 ## 历史教训（260526 Red）
 
@@ -82,10 +83,10 @@
 - `packages/desktop/src/renderer/index.html` 显示 GUI 版本徽章（顶部交通灯旁）
 - `packages/opencode/script/build-node.ts` 读 opencode 自己的 pkg 注入 `REDCODE_VERSION`，**不要再依赖 desktop 的版本号**
 
-## 打包工作流（270526 Red）
-- **永远先跑测试/构建，等主人确认没问题后再打包 exe**
-- 流程：修改代码 → 构建测试版 → 通知主人测试 → 主人确认OK → 再跑 `package:win`
-- 不要跳过主人确认直接打包
+## 打包工作流（270526 Red，260601 Red 更新）
+- **严禁自己编译打包或推送**
+- 流程：修改代码 → 主人测试 → 主人确认 OK → 主人允许后再打包/推送
+- 不要跳过主人确认直接操作
 
 ## 版本号更新自检清单（260529 Red）
 修改版本号时必须检查以下所有文件，缺一不可：
@@ -101,3 +102,9 @@
 ## 其他
 - 如果有不确定的，先问主人再改
 - 不要擅自生成 exe/二进制文件，除非主人明确要求
+
+## CodeGraph 优先（260601 Red）
+- 项目已配置 CodeGraph MCP 服务器（`.opencode/opencode.jsonc`），索引在 `.codegraph/codegraph.db`
+- **搜代码时必须优先用 CodeGraph 工具**（`search`、`context`、`callers`、`callees`、`impact`、`trace`），比 grep/read 快且省 token
+- 只在 CodeGraph 工具不可用或结果不足时才回退到 grep/read
+- 不要一上来就 grep/read，先用 codegraph 搞清调用链和上下文

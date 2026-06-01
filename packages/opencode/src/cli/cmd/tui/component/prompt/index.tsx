@@ -1,5 +1,6 @@
 ﻿import {
   BoxRenderable,
+  MouseButton,
   RGBA,
   TextareaRenderable,
   MouseEvent,
@@ -41,7 +42,6 @@ import { TuiEvent } from "../../event"
 import { iife } from "@/util/iife"
 import { Locale } from "@/util/locale"
 import { formatDuration } from "@/util/format"
-import { createColors, createFrames } from "../../ui/spinner.ts"
 import { useDialog } from "@tui/ui/dialog"
 import { DialogProvider as DialogProviderConnect } from "../dialog-provider"
 import { DialogAlert } from "../../ui/dialog-alert"
@@ -1422,29 +1422,17 @@ export function Prompt(props: PromptProps) {
     }
   })
 
-  const spinnerDef = createMemo(() => {
-    const agent =
-      status().type !== "idle"
-        ? (local.agent.list().find((a) => a.name === lastUserMessage()?.agent) ?? local.agent.current())
-        : local.agent.current()
-    const color = agent ? local.agent.color(agent.name) : theme.border
-    return {
-      frames: createFrames({
-        color,
-        style: "blocks",
-        inactiveFactor: 0.6,
-        // enableFading: false,
-        minAlpha: 0.3,
-      }),
-      color: createColors({
-        color,
-        style: "blocks",
-        inactiveFactor: 0.6,
-        // enableFading: false,
-        minAlpha: 0.3,
-      }),
+  // 260601 Red 🐲喷🔥 loading动画
+  const dragonFrames = ["🐲", "🐲🔥", "🐲🔥🔥", "🐲🔥🔥🔥", "🐲🔥🔥", "🐲🔥", "🐲"]
+  const dragonColor = (() => {
+    const fireRgba = RGBA.fromHex("#ff4500")
+    const dimFire = RGBA.fromValues(1.0, 0.4, 0.0, 0.3)
+    return (_frameIndex: number, charIndex: number, _totalFrames: number, totalChars: number) => {
+      if (charIndex === 0) return RGBA.fromHex("#ff6600")
+      if (charIndex <= 2) return fireRgba
+      return dimFire
     }
-  })
+  })()
   const maxHeight = createMemo(
     () => tuiConfig.prompt?.max_height ?? Math.max(6, Math.floor(dimensions().height / 3)),
   )
@@ -1538,7 +1526,15 @@ export function Prompt(props: PromptProps) {
                   input.cursorColor = theme.text
                 }, 0)
               }}
-              onMouseDown={(r: MouseEvent) => r.target?.focus()}
+              onMouseDown={(r: MouseEvent) => {
+                if (r.button === MouseButton.RIGHT) {
+                  r.preventDefault()
+                  r.stopPropagation()
+                  keymap.dispatchCommand("prompt.paste")
+                  return
+                }
+                r.target?.focus()
+              }}
               focusedBackgroundColor={theme.backgroundElement}
               cursorColor={props.disabled ? theme.backgroundElement : theme.text}
               syntaxStyle={syntax()}
@@ -1621,7 +1617,7 @@ export function Prompt(props: PromptProps) {
                 <box flexShrink={0} flexDirection="row" gap={1}>
                   <box marginLeft={1}>
                     <Show when={kv.get("animations_enabled", true)} fallback={<text fg={theme.textMuted}>[⋯]</text>}>
-                      <spinner color={spinnerDef().color} frames={spinnerDef().frames} interval={40} />
+                      <spinner color={dragonColor} frames={dragonFrames} interval={120} />
                     </Show>
                   </box>
                   <box flexDirection="row" gap={1} flexShrink={0}>

@@ -1,7 +1,8 @@
 ﻿import type { AssistantMessage } from "@redcode-ai/sdk/v2"
 import type { TuiPlugin, TuiPluginApi } from "@redcode-ai/plugin/tui"
 import type { InternalTuiPlugin } from "../../plugin/internal"
-import { createMemo } from "solid-js"
+import { createMemo, Show } from "solid-js"
+import { InstallationChannel } from "@redcode-ai/core/installation/version"
 
 const id = "internal:sidebar-context"
 
@@ -9,6 +10,20 @@ const money = new Intl.NumberFormat("zh-CN", {
   style: "currency",
   currency: "CNY",
 })
+
+function formatTime(ts: number): string {
+  const d = new Date(ts)
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function formatDuration(updated: number): string {
+  const diff = Date.now() - updated
+  if (diff < 60_000) return "just now"
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
+  return `${Math.floor(diff / 86_400_000)}d ago`
+}
 
 function View(props: { api: TuiPluginApi; session_id: string }) {
   const theme = () => props.api.theme.current
@@ -21,27 +36,82 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     if (!last) {
       return {
         tokens: 0,
+        input: 0,
+        output: 0,
+        reasoning: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
         percent: null,
+        model: null as string | null,
+        provider: null as string | null,
+        messageCount: msg().length,
       }
     }
 
     const tokens =
       last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
-    const model = props.api.state.provider.find((item) => item.id === last.providerID)?.models[last.modelID]
+    const prov = props.api.state.provider.find((item) => item.id === last.providerID)
+    const modelInfo = prov?.models[last.modelID]
+    const modelName = modelInfo?.name ?? last.modelID
     return {
       tokens,
-      percent: model?.limit.context ? Math.round((tokens / model.limit.context) * 100) : null,
+      input: last.tokens.input,
+      output: last.tokens.output,
+      reasoning: last.tokens.reasoning,
+      cacheRead: last.tokens.cache.read,
+      cacheWrite: last.tokens.cache.write,
+      percent: modelInfo?.limit.context ? Math.round((tokens / modelInfo.limit.context) * 100) : null,
+      model: modelName,
+      provider: prov?.name ?? last.providerID,
+      messageCount: msg().length,
     }
+  })
+
+  const created = createMemo(() => session()?.time?.created)
+  const updated = createMemo(() => session()?.time?.updated)
+  const agent = createMemo(() => session()?.agent)
+  const percentLabel = createMemo(() => {
+    const p = state().percent
+    if (p === null) return "?"
+    if (p > 200) return `${p}% ⚠`
+    return `${p}%`
   })
 
   return (
     <box>
-      <text fg={theme().text}>
+      <text fg={theme()?.text}>
         <b>Context</b>
       </text>
-      <text fg={theme().textMuted}>{state().tokens.toLocaleString()} tokens</text>
-      <text fg={theme().textMuted}>{state().percent ?? 0}% used</text>
-      <text fg={theme().textMuted}>{money.format(cost())} spent</text>
+      <Show when={state().provider}>
+        <text fg={theme()?.textMuted}>
+          <span style={{ fg: theme()?.accent }}>●</span> {state().provider}
+        </text>
+      </Show>
+      <Show when={state().model}>
+        <text fg={theme()?.textMuted}>  {state().model}</text>
+      </Show>
+      <text fg={theme()?.textMuted}>{state().tokens.toLocaleString()} tokens · {percentLabel()}</text>
+      <text fg={theme()?.textMuted}>in {state().input.toLocaleString()} · out {state().output.toLocaleString()}</text>
+      <Show when={state().reasoning > 0}>
+        <text fg={theme()?.textMuted}>reason {state().reasoning.toLocaleString()}</text>
+      </Show>
+      <Show when={state().cacheRead > 0 || state().cacheWrite > 0}>
+        <text fg={theme()?.textMuted}>cache {state().cacheRead.toLocaleString()} / {state().cacheWrite.toLocaleString()}</text>
+      </Show>
+      <text fg={theme()?.textMuted}>{money.format(cost())} · {state().messageCount} msgs</text>
+      <Show when={agent()}>
+        <text fg={theme()?.textMuted}>agent {agent()}</text>
+      </Show>
+      <box height={1} />
+      <Show when={created()}>
+        <text fg={theme()?.textMuted}>created {formatTime(created()!)}</text>
+      </Show>
+      <Show when={updated()}>
+        <text fg={theme()?.textMuted}>active {formatDuration(updated()!)}</text>
+      </Show>
+      <Show when={InstallationChannel !== "latest"}>
+        <text fg={theme()?.textMuted}>{props.session_id}</text>
+      </Show>
     </box>
   )
 }

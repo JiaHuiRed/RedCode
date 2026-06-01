@@ -8,6 +8,7 @@ import { Switch } from "@redcode-ai/ui/switch"
 import { useLanguage } from "@/context/language"
 import { useQueryOptions } from "@/context/server-sync"
 import { pathKey } from "@/utils/path-key"
+import { showToast } from "@redcode-ai/ui/toast"
 
 const statusLabels = {
   connected: "mcp.status.connected",
@@ -32,18 +33,19 @@ export const DialogSelectMcp: Component = () => {
 
   const toggle = useMutation(() => ({
     mutationFn: async (name: string) => {
-      const status = sync.data.mcp[name]
-      if (status?.status === "connected") {
+      const current = sync.data.mcp[name]
+      const isConnected = current?.status === "connected"
+      if (isConnected) {
         await sdk.client.mcp.disconnect({ name })
-        return
+      } else {
+        await sdk.client.mcp.connect({ name })
       }
-      if (status?.status === "needs_auth") {
-        await sdk.client.mcp.auth.authenticate({ name })
-        return
-      }
-      await sdk.client.mcp.connect({ name })
     },
     onSuccess: () => queryClient.refetchQueries(queryOptions.mcp(pathKey(sync.directory))),
+    onError: (err) => {
+      queryClient.refetchQueries(queryOptions.mcp(pathKey(sync.directory)))
+      showToast({ variant: "error", title: language.t("dialog.mcp.toggleFailed"), description: String(err) })
+    },
   }))
 
   const enabledCount = createMemo(() => items().filter((i) => i.status === "connected").length)
@@ -95,7 +97,6 @@ export const DialogSelectMcp: Component = () => {
               <div onClick={(e) => e.stopPropagation()}>
                 <Switch
                   checked={enabled()}
-                  disabled={toggle.isPending && toggle.variables === i.name}
                   onChange={() => {
                     if (toggle.isPending) return
                     toggle.mutate(i.name)

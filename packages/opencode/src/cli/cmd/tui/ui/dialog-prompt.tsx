@@ -1,4 +1,4 @@
-import { TextareaRenderable, TextAttributes, PasteEvent, decodePasteBytes } from "@opentui/core"
+import { TextareaRenderable, TextAttributes, PasteEvent, decodePasteBytes, MouseButton, type MouseEvent } from "@opentui/core"
 import { useTheme } from "../context/theme"
 import { useDialog, type DialogContext } from "./dialog"
 import { Show, createEffect, createSignal, onMount, type JSX } from "solid-js"
@@ -117,6 +117,18 @@ export function DialogPrompt(props: DialogPromptProps) {
             const text = decodePasteBytes(event.bytes).replace(/\r\n/g, "\n").replace(/\r/g, "\n")
             if (text && textarea && !textarea.isDestroyed) {
               textarea.insertText(text)
+            }
+          }}
+          onMouseDown={(r: MouseEvent) => {
+            if (r.button === MouseButton.RIGHT) {
+              r.preventDefault()
+              r.stopPropagation()
+              Clipboard.read().then((content) => {
+                if (content?.mime === "text/plain" && textarea && !textarea.isDestroyed) {
+                  textarea.insertText(content.data)
+                }
+              })
+              return
             }
           }}
         />

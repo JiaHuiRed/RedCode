@@ -1,0 +1,19 @@
+{
+  "$schema": "https://redcode.dev/config.json",
+  "mcp": {
+    "codegraph": {
+      "type": "local",
+      "command": ["npx", "-y", "@colbymchenry/codegraph", "serve", "--mcp"],
+      "enabled": true
+    },
+    "typegraph": {
+      "type": "local",
+      "command": ["plugins/typegraph-mcp/node_modules/.bin/tsx", "plugins/typegraph-mcp/server.ts"],
+      "environment": {
+        "TYPEGRAPH_PROJECT_ROOT": ".",
+        "TYPEGRAPH_TSCONFIG": "./tsconfig.json"
+      },
+      "enabled": true
+    }
+  }
+}

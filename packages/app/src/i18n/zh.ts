@@ -317,6 +317,7 @@ export const dict = {
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "已启用 {{enabled}} / {{total}}",
   "dialog.mcp.empty": "未配置 MCPs",
+  "dialog.mcp.toggleFailed": "MCP 切换失败",
 
   "dialog.lsp.empty": "已从文件类型自动检测到 LSPs",
 
