@@ -10,6 +10,7 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useLocal } from "@/context/local"
 import { usePermission } from "@/context/permission"
+import { useProviders } from "@/hooks/use-providers"
 import { type ContextItem, type ImageAttachmentPart, type Prompt, usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
@@ -207,6 +208,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const sync = useSync()
   const globalSync = useServerSync()
   const local = useLocal()
+  const providers = useProviders()
   const permission = usePermission()
   const prompt = usePrompt()
   const layout = useLayout()
@@ -299,6 +301,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return
     }
 
+    // 260529 Red provider/model 数据加载完成前静默返回，避免误触发"请选择智能体和模型"
+    if (!providers.ready() || !local.model.ready()) return
     const currentModel = local.model.current()
     const currentAgent = local.agent.current()
     const variant = local.model.variant.current()
