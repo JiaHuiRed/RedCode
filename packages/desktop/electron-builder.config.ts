@@ -11,13 +11,25 @@ const signScript = path.join(rootDir, "script", "sign-windows.ps1")
 
 async function signWindows(configuration: { path: string }) {
   if (process.platform !== "win32") return
-  if (process.env.GITHUB_ACTIONS !== "true") return
 
-  await execFileAsync(
-    "pwsh",
-    ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", signScript, configuration.path],
-    { cwd: rootDir },
-  )
+  if (process.env.GITHUB_ACTIONS === "true") {
+    await execFileAsync(
+      "pwsh",
+      ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", signScript, configuration.path],
+      { cwd: rootDir },
+    )
+    return
+  }
+
+  try {
+    await execFileAsync("pwsh", [
+      "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass",
+      "-Command",
+      `Set-AuthenticodeSignature -FilePath "${configuration.path}" -Certificate (Get-ChildItem Cert:\\CurrentUser\\My -CodeSigningCert)[0] -TimestampServer http://timestamp.digicert.com -HashAlgorithm SHA256 -Force`,
+    ], { stdio: "pipe" })
+  } catch {
+    // self-signed cert signing failed, still continue
+  }
 }
 
 const channel = (() => {
