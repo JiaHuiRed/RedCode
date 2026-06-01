@@ -8,16 +8,15 @@ TUI 与 GUI 独立维护版本号，条目以 `[tui]` / `[gui]` 前缀区分。
 
 ---
 
-## [0.3.8] - 2026-06-01 (gui/tui)
+## [0.3.8] - 2026-06-01 (gui)
 
 ### 新增
 
-- **[gui/tui] TypeGraph MCP 集成**：新增 `typegraph-mcp` 代码语义导航服务器（14 个工具），支持类型解析、调用链追踪、影响分析、循环依赖检测等，与现有 CodeGraph 互补
-- **[gui] 会话模型/智能体选择修复**：`submit.ts` 将 ready 检查移到取值之前，同时检查 `providers.ready()` 和 `models.ready()`，避免 provider 已加载但 localStorage 持久化数据未就绪时误弹"请选择智能体和模型"toast
-- **[gui] opencode.jsonc 兼容**：服务器配置加载新增 `opencode.jsonc`/`opencode.json` 文件名兼容，MCP 配置放在 `.opencode/opencode.jsonc` 也能正确读取
+- **[gui] TypeGraph MCP 集成**：新增 `typegraph-mcp` 代码语义导航服务器（14 个工具），支持类型解析、调用链追踪、影响分析、循环依赖检测等，与现有 CodeGraph 互补
 
 ### 修复
 
+- **[gui] 会话模型/智能体选择修复**：`submit.ts` 将 ready 检查移到取值之前，同时检查 `providers.ready()` 和 `models.ready()`，避免 provider 已加载但 localStorage 持久化数据未就绪时误弹"请选择智能体和模型"toast
 - **[gui] Windows 打包签名挂起**：`electron-builder.config.ts` 的 `afterAllArtifactBuild` 改用 `fs.cp` + `fs.rm` 替换不可靠的 `fs.rename`；本地打包改用 PowerShell 自签名证书，不再因 signtool.exe 挂起
 
 ---
@@ -42,8 +41,9 @@ TUI 与 GUI 独立维护版本号，条目以 `[tui]` / `[gui]` 前缀区分。
 
 ### 新增
 
-- **[tui] 侧边栏 Context 区块充实**：显示模型名称、token 明细（输入/输出/推理/缓存）、消息数、创建时间和最后活动时间，消除无 todo/files 时的空白区域
+- **[tui] 侧边栏 Context 区块充实**：显示 provider 名、模型名、token 明细（输入/输出/推理/缓存）、消息数、agent 名、创建时间和最后活动时间；未知上下文上限显示 `?`，超过 200% 显示 `⚠` 警告
 - **[tui] Loading 动画替换**：左下角蓝色方块 Knight Rider 动画改为 🐲🔥 喷火龙呼吸动画
+- **[tui] 右键粘贴**：主输入框和对话框输入框支持右键粘贴剪贴板内容
 
 ---
 
