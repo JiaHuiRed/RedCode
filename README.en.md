@@ -14,9 +14,9 @@
 > **Open-source AI coding assistant — terminal-based intelligent coding agent.**
 
 [![TUI](https://img.shields.io/badge/TUI-0.3.2-blue)](CHANGELOG.md)
-[![Desktop](https://img.shields.io/badge/Desktop-0.3.4-0078d4)](CHANGELOG.md)
+[![Desktop](https://img.shields.io/badge/Desktop-0.3.7-0078d4)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-Windows%2011-lightblue)](https://github.com/JiaHuiRed/RedCode)
+[![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-lightblue)](https://github.com/JiaHuiRed/RedCode)
 
 ---
 

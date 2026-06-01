@@ -15,8 +15,8 @@
 > 作者：Red · 基于 [opencode](https://github.com/anomalyco/opencode) (sst.dev) 二次开发。
 
 [![TUI](https://img.shields.io/badge/TUI-0.3.5-blue)](CHANGELOG.md)
-[![Desktop](https://img.shields.io/badge/Desktop-0.3.6-0078d4)](CHANGELOG.md)
-[![平台](https://img.shields.io/badge/平台-Windows%2011-0078d4)](https://github.com/JiaHuiRed/RedCode)
+[![Desktop](https://img.shields.io/badge/Desktop-0.3.7-0078d4)](CHANGELOG.md)
+[![平台](https://img.shields.io/badge/平台-Windows%2010%2F11-0078d4)](https://github.com/JiaHuiRed/RedCode)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)](https://typescriptlang.org)
 [![Bun](https://img.shields.io/badge/Bun-1.3.x-fcf2d0)](https://bun.sh)
 [![AI支持](https://img.shields.io/badge/AI-DeepSeek%20%7C%20OpenAI%20%7C%20Anthropic%20%7C%20Ollama-ff6b35)](https://ollama.com)
