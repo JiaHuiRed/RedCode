@@ -41,11 +41,18 @@ export type NavigateToSessionFn = (sessionID: string) => void
 
 export type SessionHrefFn = (sessionID: string) => string
 
+export type TtsConfig = {
+  apiKey: string
+  voice: string
+  enabled: boolean
+}
+
 export const { use: useData, provider: DataProvider } = createSimpleContext({
   name: "Data",
   init: (props: {
     data: Data
     directory: string
+    ttsConfig?: TtsConfig
     onNavigateToSession?: NavigateToSessionFn
     onSessionHref?: SessionHrefFn
   }) => {
@@ -55,6 +62,9 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
       },
       get directory() {
         return props.directory
+      },
+      get ttsConfig() {
+        return props.ttsConfig
       },
       navigateToSession: props.onNavigateToSession,
       sessionHref: props.onSessionHref,

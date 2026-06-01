@@ -215,7 +215,10 @@ function createGlobalSync() {
     translate: language.t,
     queryOptions: queryOptionsApi,
     global: {
-      provider: globalStore.provider,
+      // 260601 Red fix: use getter so child-store's reactive getter reads the
+      // live globalStore.provider value, not the snapshot from init time
+      // (which is always EMPTY while the global query is still loading).
+      get provider() { return globalStore.provider },
     },
   })
 

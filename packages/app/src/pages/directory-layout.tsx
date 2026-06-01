@@ -7,6 +7,7 @@ import { useLanguage } from "@/context/language"
 import { LocalProvider } from "@/context/local"
 import { SDKProvider } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import { useSettings } from "@/context/settings"
 import { decode64 } from "@/utils/base64"
 import { Schema } from "effect"
 
@@ -15,6 +16,7 @@ function DirectoryDataProvider(props: ParentProps<{ directory: string }>) {
   const navigate = useNavigate()
   const params = useParams()
   const sync = useSync()
+  const settings = useSettings()
   const slug = createMemo(() => base64Encode(props.directory))
 
   createEffect(() => {
@@ -33,6 +35,11 @@ function DirectoryDataProvider(props: ParentProps<{ directory: string }>) {
     <DataProvider
       data={sync.data}
       directory={props.directory}
+      ttsConfig={{
+        apiKey: settings.tts.apiKey(),
+        voice: settings.tts.voice(),
+        enabled: settings.tts.enabled(),
+      }}
       onNavigateToSession={(sessionID: string) => navigate(`/${slug()}/session/${sessionID}`)}
       onSessionHref={(sessionID: string) => `/${slug()}/session/${sessionID}`}
     >

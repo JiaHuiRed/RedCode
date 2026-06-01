@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron"
 import type { ElectronAPI, InitStep, SqliteMigrationProgress } from "./types"
 
 const api: ElectronAPI = {
+  appVersion: process.env.npm_package_version ?? "unknown",
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
   installCli: () => ipcRenderer.invoke("install-cli"),
   awaitInitialization: (onStep) => {

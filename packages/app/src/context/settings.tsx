@@ -18,6 +18,12 @@ export interface SoundSettings {
   errors: string
 }
 
+export interface TtsSettings {
+  apiKey: string
+  voice: string
+  enabled: boolean
+}
+
 export interface Settings {
   general: {
     autoSave: boolean
@@ -48,6 +54,7 @@ export interface Settings {
   }
   notifications: NotificationSettings
   sounds: SoundSettings
+  tts: TtsSettings
 }
 
 export const monoDefault = "System Mono"
@@ -143,6 +150,11 @@ const defaultSettings: Settings = {
     permissions: "staplebops-02",
     errorsEnabled: true,
     errors: "nope-03",
+  },
+  tts: {
+    apiKey: "",
+    voice: "冰糖",
+    enabled: false,
   },
 }
 
@@ -296,6 +308,20 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         errors: withFallback(() => store.notifications?.errors, defaultSettings.notifications.errors),
         setErrors(value: boolean) {
           setStore("notifications", "errors", value)
+        },
+      },
+      tts: {
+        apiKey: withFallback(() => store.tts?.apiKey, defaultSettings.tts.apiKey),
+        setApiKey(value: string) {
+          setStore("tts", "apiKey", value)
+        },
+        voice: withFallback(() => store.tts?.voice, defaultSettings.tts.voice),
+        setVoice(value: string) {
+          setStore("tts", "voice", value)
+        },
+        enabled: withFallback(() => store.tts?.enabled, defaultSettings.tts.enabled),
+        setEnabled(value: boolean) {
+          setStore("tts", "enabled", value)
         },
       },
       sounds: {

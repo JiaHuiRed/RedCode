@@ -29,6 +29,7 @@ export type FatalRendererError = {
 }
 
 export type ElectronAPI = {
+  appVersion: string
   killSidecar: () => Promise<void>
   installCli: () => Promise<string>
   awaitInitialization: (onStep: (step: InitStep) => void) => Promise<ServerReadyData>

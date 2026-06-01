@@ -305,6 +305,15 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           const key = origin()
           if (!key) return
           setStore("lastProject", key, directory)
+          // Bubble active project to top of sidebar list
+          const current = store.projects[key] ?? []
+          const fromIndex = current.findIndex((x) => x.worktree === directory)
+          if (fromIndex > 0) {
+            const result = [...current]
+            const [item] = result.splice(fromIndex, 1)
+            result.unshift(item)
+            setStore("projects", key, result)
+          }
         },
       },
     }

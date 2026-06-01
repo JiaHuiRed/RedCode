@@ -1303,6 +1303,48 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return "Ask anything, / for commands, @ for context..."
   }
 
+  const variantControl = () => (
+    <Show when={variants().length > 1}>
+      <div
+        data-component="prompt-variant-control"
+        style={providersShouldFadeIn() ? { animation: "fade-in 0.3s" } : undefined}
+        class="flex items-center"
+      >
+        <Icon
+          name="brain"
+          size="small"
+          class={
+            local.model.variant.current()
+              ? "text-yellow-400 pointer-events-none shrink-0"
+              : "text-v2-icon-icon-muted pointer-events-none shrink-0"
+          }
+        />
+        <TooltipKeybind
+          placement="top"
+          gutter={4}
+          title={language.t("command.model.variant.cycle")}
+          keybind={command.keybind("model.variant.cycle")}
+        >
+          <Select
+            size="normal"
+            options={variants()}
+            current={local.model.variant.current() ?? "default"}
+            label={(x) => (x === "default" ? language.t("common.default") : x)}
+            onSelect={(value) => {
+              local.model.variant.set(value === "default" ? undefined : value)
+              restoreFocus()
+            }}
+            class={`capitalize max-w-[160px] ${local.model.variant.current() ? "text-yellow-400" : "text-text-base"}`}
+            valueClass="truncate text-13-regular"
+            triggerStyle={control()}
+            triggerProps={{ "data-action": "prompt-model-variant" }}
+            variant="ghost"
+          />
+        </TooltipKeybind>
+      </div>
+    </Show>
+  )
+
   const modelControl = () => (
     <Show when={!providersLoading()}>
       <Show
@@ -1538,6 +1580,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   </div>
                 </Show>
                 {modelControl()}
+                {variantControl()}
               </div>
               <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
                 <IconButton
@@ -1851,35 +1894,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                             </TooltipKeybind>
                           </Show>
                         </div>
-                        <Show when={variants().length > 1}>
-                          <div
-                            data-component="prompt-variant-control"
-                            style={providersShouldFadeIn() ? { animation: "fade-in 0.3s" } : undefined}
-                          >
-                            <TooltipKeybind
-                              placement="top"
-                              gutter={4}
-                              title={language.t("command.model.variant.cycle")}
-                              keybind={command.keybind("model.variant.cycle")}
-                            >
-                              <Select
-                                size="normal"
-                                options={variants()}
-                                current={local.model.variant.current() ?? "default"}
-                                label={(x) => (x === "default" ? language.t("common.default") : x)}
-                                onSelect={(value) => {
-                                  local.model.variant.set(value === "default" ? undefined : value)
-                                  restoreFocus()
-                                }}
-                                class="capitalize max-w-[160px] text-text-base"
-                                valueClass="truncate text-13-regular text-text-base"
-                                triggerStyle={control()}
-                                triggerProps={{ "data-action": "prompt-model-variant" }}
-                                variant="ghost"
-                              />
-                            </TooltipKeybind>
-                          </div>
-                        </Show>
+                        {variantControl()}
                       </Show>
                     </Show>
                   </div>

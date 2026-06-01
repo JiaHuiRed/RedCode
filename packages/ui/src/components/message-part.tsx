@@ -1525,7 +1525,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     }
   }
 
-  // 260530 Red TTS 朗读按钮：调用 MiMo TTS API 朗读 AI 回复
+  // TTS 朗读：调用 MiMo TTS API (mimo-v2.5-tts)
   const handleTTS = async () => {
     if (ttsPlaying()) {
       if (ttsAudio) {
@@ -1537,27 +1537,40 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
       return
     }
 
+    const ttsConfig = data.ttsConfig
+    if (!ttsConfig?.enabled || !ttsConfig.apiKey) return
+
     const content = text()
     if (!content) return
 
     setTtsLoading(true)
     try {
-      const sdk = (data.store as any).sdk
-      if (!sdk?.client) return
-
-      const response = await fetch(`${sdk.server}/session/tts`, {
+      const response = await fetch("https://api.xiaomimimo.com/v1/chat/completions", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "api-key": ttsConfig.apiKey,
+        },
         body: JSON.stringify({
-          text: content.slice(0, 5000),
-          modelID: "mimo-v2-tts",
-          providerID: "xiaomi",
+          model: "mimo-v2.5-tts",
+          messages: [
+            { role: "user", content: "" },
+            { role: "assistant", content: content.slice(0, 5000) },
+          ],
+          audio: { format: "wav", voice: ttsConfig.voice || "冰糖" },
         }),
       })
 
       if (!response.ok) throw new Error("TTS request failed")
 
-      const blob = await response.blob()
+      const json = (await response.json()) as { choices: { message: { audio: { data: string } } }[] }
+      const audioData = json.choices?.[0]?.message?.audio?.data
+      if (!audioData) throw new Error("No audio data in response")
+
+      const bytes = atob(audioData)
+      const buffer = new Uint8Array(bytes.length)
+      for (let i = 0; i < bytes.length; i++) buffer[i] = bytes.charCodeAt(i)
+      const blob = new Blob([buffer], { type: "audio/wav" })
       const url = URL.createObjectURL(blob)
       ttsAudio = new Audio(url)
       ttsAudio.onended = () => {
@@ -1577,7 +1590,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     }
   }
 
-  const showTTS = createMemo(() => showCopy() && props.message.role === "assistant")
+  const showTTS = createMemo(() => showCopy() && props.message.role === "assistant" && !!data.ttsConfig?.enabled)
 
   return (
     <Show when={text()}>

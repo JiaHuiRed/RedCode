@@ -639,6 +639,16 @@ export const dict = {
   "settings.general.section.sounds": "音效",
   "settings.general.section.feed": "动态",
   "settings.general.section.display": "显示",
+  "settings.general.section.tts": "文字转语音",
+
+  "settings.general.tts.enabled.title": "启用朗读功能",
+  "settings.general.tts.enabled.description": "在 AI 回复消息上显示朗读按钮",
+  "settings.general.tts.apiKey.title": "MiMo TTS API Key",
+  "settings.general.tts.apiKey.description": "用于朗读的 MiMo sk- 前缀 API Key，在 platform.xiaomimimo.com 获取",
+  "settings.general.tts.apiKey.placeholder": "sk-...",
+  "settings.general.tts.voice.title": "音色",
+  "settings.general.tts.voice.description": "选择朗读使用的音色",
+
   "settings.general.row.language.title": "语言",
   "settings.general.row.language.description": "更改 RedCode 的显示语言",
   "settings.general.row.appearance.title": "外观",

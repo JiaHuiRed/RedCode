@@ -740,6 +740,15 @@
   "settings.general.section.sounds": "Sound effects",
   "settings.general.section.feed": "Feed",
   "settings.general.section.display": "Display",
+  "settings.general.section.tts": "Text to Speech",
+
+  "settings.general.tts.enabled.title": "Enable TTS read-aloud",
+  "settings.general.tts.enabled.description": "Show the read-aloud button on assistant messages",
+  "settings.general.tts.apiKey.title": "MiMo TTS API Key",
+  "settings.general.tts.apiKey.description": "Your MiMo sk- prefix API key for TTS. Get it from platform.xiaomimimo.com",
+  "settings.general.tts.apiKey.placeholder": "sk-...",
+  "settings.general.tts.voice.title": "Voice",
+  "settings.general.tts.voice.description": "Choose the voice for TTS read-aloud",
 
   "settings.general.row.language.title": "Language",
   "settings.general.row.language.description": "Change the display language for RedCode",

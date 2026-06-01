@@ -120,47 +120,30 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         return yield* SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID }))
       }
 
-      // 260529 Red compacted 会话只返回 compaction summary 之后的消息，避免 GUI 加载过多旧消息导致卡死/OOM
-      let adjustedBefore = ctx.query.before
-      if (!adjustedBefore) {
+      // 260529 Red compacted 会话初始加载只返回 compaction summary 及之后的消息，避免 GUI 加载大量旧消息导致卡死/OOM
+      let compactionAfter: string | undefined
+      if (!ctx.query.before) {
         const sessionID = ctx.params.sessionID
-        // 找最新 compaction part（tail_start_id 存在说明已完成 compact）
-        const compaction = Database.use((db) =>
+        // 找最新已完成的 compaction 用户消息（包含 tail_start_id 不为空的 compaction part）
+        const compactionMsg = Database.use((db) =>
           db
-            .select({ message_id: PartTable.message_id })
-            .from(PartTable)
+            .select({ time_created: MessageTable.time_created, id: MessageTable.id })
+            .from(MessageTable)
+            .innerJoin(PartTable, eq(PartTable.message_id, MessageTable.id))
             .where(
               and(
-                eq(PartTable.session_id, sessionID),
+                eq(MessageTable.session_id, sessionID),
                 sql`json_extract(${PartTable.data}, '$.type') = 'compaction'`,
                 sql`json_extract(${PartTable.data}, '$.tail_start_id') IS NOT NULL`,
               ),
             )
-            .orderBy(desc(PartTable.time_created))
+            .orderBy(desc(MessageTable.time_created))
             .limit(1)
             .get(),
         )
-        if (compaction) {
-          // 找 compaction summary 消息（parentID 在 JSON data 内）
-          const summary = Database.use((db) =>
-            db
-              .select({ time_created: MessageTable.time_created, id: MessageTable.id })
-              .from(MessageTable)
-              .where(
-                and(
-                  eq(MessageTable.session_id, sessionID),
-                  sql`json_extract(${MessageTable.data}, '$.role') = 'assistant'`,
-                  sql`json_extract(${MessageTable.data}, '$.summary') = 1`,
-                  sql`json_extract(${MessageTable.data}, '$.parentID') = ${compaction.message_id}`,
-                ),
-              )
-              .orderBy(desc(MessageTable.time_created))
-              .limit(1)
-              .get(),
-          )
-          if (summary) {
-            adjustedBefore = MessageV2.cursor.encode({ time: summary.time_created, id: summary.id })
-          }
+        if (compactionMsg) {
+          // after = compaction 用户消息 → summary 及之后的所有消息都会被包含
+          compactionAfter = MessageV2.cursor.encode({ time: compactionMsg.time_created, id: compactionMsg.id })
         }
       }
 
@@ -168,7 +151,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         MessageV2.page({
           sessionID: ctx.params.sessionID,
           limit: ctx.query.limit,
-          before: adjustedBefore,
+          before: ctx.query.before,
+          after: compactionAfter,
         }),
       )
       if (!page.cursor) return page.items

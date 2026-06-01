@@ -698,6 +698,76 @@ export const SettingsGeneral: Component = () => {
     </div>
   )
 
+  const TTS_VOICES = [
+    { value: "冰糖", label: "冰糖 (Bīng Táng)" },
+    { value: "茉莉", label: "茉莉 (Mò Lì)" },
+    { value: "苏打", label: "苏打 (Sū Dǎ)" },
+    { value: "白桦", label: "白桦 (Bái Huà)" },
+    { value: "Mia", label: "Mia (EN)" },
+    { value: "Chloe", label: "Chloe (EN)" },
+    { value: "Milo", label: "Milo (EN)" },
+    { value: "Dean", label: "Dean (EN)" },
+  ]
+
+  const TtsSection = () => (
+    <div class="flex flex-col gap-1">
+      <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.tts")}</h3>
+      <SettingsList>
+        <SettingsRow
+          title={language.t("settings.general.tts.enabled.title")}
+          description={language.t("settings.general.tts.enabled.description")}
+        >
+          <div data-action="settings-tts-enabled">
+            <Switch
+              checked={settings.tts.enabled()}
+              onChange={(checked) => settings.tts.setEnabled(checked)}
+            />
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.general.tts.apiKey.title")}
+          description={language.t("settings.general.tts.apiKey.description")}
+        >
+          <div class="w-full sm:w-[280px]">
+            <TextField
+              data-action="settings-tts-api-key"
+              label={language.t("settings.general.tts.apiKey.title")}
+              hideLabel
+              type="password"
+              value={settings.tts.apiKey()}
+              onChange={(value) => settings.tts.setApiKey(value.trim())}
+              placeholder={language.t("settings.general.tts.apiKey.placeholder")}
+              spellcheck={false}
+              autocorrect="off"
+              autocomplete="off"
+              autocapitalize="off"
+              class="text-12-regular"
+            />
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.general.tts.voice.title")}
+          description={language.t("settings.general.tts.voice.description")}
+        >
+          <Select
+            data-action="settings-tts-voice"
+            options={TTS_VOICES}
+            current={TTS_VOICES.find((v) => v.value === settings.tts.voice()) ?? TTS_VOICES[0]}
+            value={(o) => o.value}
+            label={(o) => o.label}
+            onSelect={(option) => option && settings.tts.setVoice(option.value)}
+            variant="secondary"
+            size="small"
+            triggerVariant="settings"
+            triggerStyle={{ "min-width": "180px" }}
+          />
+        </SettingsRow>
+      </SettingsList>
+    </div>
+  )
+
   const UpdatesSection = () => (
     <div class="flex flex-col gap-1">
       <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.updates")}</h3>
@@ -797,6 +867,8 @@ export const SettingsGeneral: Component = () => {
         <NotificationsSection />
 
         <SoundsSection />
+
+        <TtsSection />
 
         <UpdatesSection />
 
