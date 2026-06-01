@@ -16,7 +16,7 @@ import { normalizeServerUrl, ServerConnection, useServer } from "@/context/serve
 import { useSync } from "@/context/sync"
 import { useCheckServerHealth, type ServerHealth } from "@/utils/server-health"
 import { useQueryOptions } from "@/context/server-sync"
-import { pathKey } from "@/utils/path-key"
+import type { PathKey } from "@/utils/path-key"
 
 const pollMs = 10_000
 
@@ -155,7 +155,7 @@ const useMcpToggleMutation = () => {
       }
       await sdk.client.mcp.connect({ name })
     },
-    onSuccess: () => queryClient.refetchQueries(queryOptions.mcp(pathKey(sync.directory))),
+    onSuccess: () => queryClient.refetchQueries(queryOptions.mcp(sync.directory as PathKey)),
     onError: (err) => {
       showToast({
         variant: "error",

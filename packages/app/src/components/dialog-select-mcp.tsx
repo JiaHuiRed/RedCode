@@ -7,7 +7,7 @@ import { List } from "@redcode-ai/ui/list"
 import { Switch } from "@redcode-ai/ui/switch"
 import { useLanguage } from "@/context/language"
 import { useQueryOptions } from "@/context/server-sync"
-import { pathKey } from "@/utils/path-key"
+import type { PathKey } from "@/utils/path-key"
 import { showToast } from "@redcode-ai/ui/toast"
 
 const statusLabels = {
@@ -41,9 +41,9 @@ export const DialogSelectMcp: Component = () => {
         await sdk.client.mcp.connect({ name })
       }
     },
-    onSuccess: () => queryClient.refetchQueries(queryOptions.mcp(pathKey(sync.directory))),
+    onSuccess: () => queryClient.refetchQueries(queryOptions.mcp(sync.directory as PathKey)),
     onError: (err) => {
-      queryClient.refetchQueries(queryOptions.mcp(pathKey(sync.directory)))
+      queryClient.refetchQueries(queryOptions.mcp(sync.directory as PathKey))
       showToast({ variant: "error", title: language.t("dialog.mcp.toggleFailed"), description: String(err) })
     },
   }))
