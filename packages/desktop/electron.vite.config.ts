@@ -106,6 +106,9 @@ export default defineConfig({
     ],
   },
   preload: {
+    define: {
+      "process.env.npm_package_version": JSON.stringify(require("./package.json").version),
+    },
     build: {
       rollupOptions: {
         input: { index: "src/preload/index.ts" },
