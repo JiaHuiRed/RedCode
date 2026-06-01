@@ -27,7 +27,16 @@ export function useProviders() {
     }
     return globalSync.data.provider
   }
+  // 260529 Red provider 数据加载完成前阻止提交，避免误触发"请选择智能体和模型"
+  const ready = () => {
+    if (dir()) {
+      const [projectStore] = globalSync.child(dir())
+      if (!projectStore.provider_ready) return false
+    }
+    return globalSync.data.provider.all.size > 0 || globalSync.data.provider.connected.length > 0
+  }
   return {
+    ready,
     all: () => providers().all,
     default: () => providers().default,
     popular: () =>

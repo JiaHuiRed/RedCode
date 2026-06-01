@@ -1,20 +1,21 @@
 ﻿# ⚡ RedCode
 
 <p align="center">
-  <img src="packages/web/src/assets/lander/mona-loading.gif" width="80">
+  <img src="packages/app/public/mona-loading.gif" width="80">
 </p>
 <pre align="center">
-█████ █████ █████ █████ █████ █████ █████
-█   █ █     █  ██ █     █   █ █  ██ █    
-████  █████ █   █ █     █   █ █   █ █████
-█  ██ █     █   █ █     █   █ █   █ █    
-█   █ █████ █████ █████ █████ █████ █████
+██████ ██████ ██████ ██████ ██████ ██████ ██████
+█   █ █     █  ██  █     █   █ █  ██  █    
+█████  ██████ █   █ █     █   █ █   █  ██████
+█  ██ █     █   █ █     █   █ █   █  █    
+█   █ ██████ ██████ ██████ ██████ ██████ ██████
 </pre>
 
-> **Open-source AI coding assistant — terminal-based intelligent coding agent.**
+> **Open-source AI coding assistant — terminal + desktop dual-mode intelligent coding agent.**
+> Author: Red · Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev).
 
-[![TUI](https://img.shields.io/badge/TUI-0.3.2-blue)](CHANGELOG.md)
-[![Desktop](https://img.shields.io/badge/Desktop-0.3.7-0078d4)](CHANGELOG.md)
+[![TUI](https://img.shields.io/badge/TUI-0.3.8-blue)](CHANGELOG.md)
+[![Desktop](https://img.shields.io/badge/Desktop-0.3.8-0078d4)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-lightblue)](https://github.com/JiaHuiRed/RedCode)
 
@@ -22,59 +23,63 @@
 
 ## ✨ What is this?
 
-RedCode is an AI coding assistant (Coding Agent) that runs in the terminal. It can read your codebase, execute commands, edit files, search code, and complete programming tasks through natural language conversation.
-
-Supports DeepSeek, OpenAI, Anthropic, Google, Ollama and many other model providers.
-
----
-
-## 🚀 Run from Source
-
-```bash
-# Clone
-git clone https://github.com/JiaHuiRed/RedCode.git
-cd RedCode
-
-# Install dependencies
-bun install
-
-# Start
-bun dev
-```
-
----
-
-## 💬 Usage
-
-```bash
-# Start interactive terminal
-redcode
-
-# Run a single task
-redcode run "refactor src/utils.ts"
-
-# Use a specific model
-redcode run --model deepseek/deepseek-v4-flash "explain this code"
-```
+Open-source AI coding assistant with **terminal TUI** and **desktop GUI** interfaces. Reads your codebase, executes commands, edits files, searches code, and completes programming tasks through natural language conversation.
 
 ---
 
 ## 🧩 Features
 
 - 💬 **Natural Language Coding** — describe requirements, auto-complete code
-- 🔌 **Multi-Model Support** — DeepSeek, OpenAI, Anthropic, Ollama, etc.
-- 🛠 **Tool System** — file read/write, code search, terminal commands, MCP servers (built-in [CodeGraph](https://github.com/colbymchenry/codegraph) code knowledge graph)
-- 🤖 **Custom Agents** — Build, Plan, General agents built-in
+- 🔌 **Multi-Model Support** — DeepSeek, OpenAI, Anthropic, Google Gemini, Ollama, etc.
+- 🛠 **Tool System** — file read/write, code search, terminal commands, web search
+- 🤖 **Smart Agents** — Build, Plan, General, Explore agents built-in, custom agents supported
+- 📝 **Session Management** — history save, restore, fork
 - 🎨 **Terminal UI** — syntax highlighting, streaming output, diff display
+- 🖥 **Desktop GUI** — Electron standalone window with full graphical interface
+- 📊 **MCP Servers**:
+  - [CodeGraph](https://github.com/colbymchenry/codegraph) — code knowledge graph (symbols, call chains, impact analysis)
+  - [TypeGraph](https://github.com/guyowen/typegraph-mcp) — TypeScript semantic navigation (type resolution, barrel file traversal, cycle detection)
+- 🔒 **Permission System** — tool call confirmation, auto-approve support
+- 🌍 **Multi-language** — Chinese, English, Japanese, and 18 languages
+- 🗣 **TTS** — MiMo TTS voice reading for AI responses
+
+---
+
+## 🚀 Run from Source
+
+```bash
+git clone https://github.com/JiaHuiRed/RedCode.git
+cd RedCode
+bun install
+
+# Build MCP indexes (first time only)
+npx -y @colbymchenry/codegraph index
+
+# Start TUI (interactive terminal)
+bun dev
+
+# Or start Desktop GUI
+cd packages/desktop && bun run dev
+```
 
 ---
 
 ## ⚙️ Configuration
 
-Config file: `~/.config/redcode/config.json`
+### Config File Locations
 
-```json
+| Location | Purpose |
+|----------|---------|
+| `~/.config/redcode/redcode.json` | Global config |
+| `project_dir/redcode.jsonc` | Project-level config |
+| `project_dir/.opencode/opencode.jsonc` | Legacy format (compatible) |
+
+### Add Custom Provider
+
+```jsonc
+// redcode.jsonc
 {
+  "$schema": "https://redcode.dev/config.json",
   "provider": {
     "my-provider": {
       "type": "openai",
@@ -82,14 +87,56 @@ Config file: `~/.config/redcode/config.json`
       "baseURL": "https://api.example.com/v1"
     }
   },
-  "model": {
-    "my-model": {
-      "provider": "my-provider",
-      "model": "gpt-4o"
+  "model": "my-provider/my-model"
+}
+```
+
+### MCP Server Config
+
+```jsonc
+{
+  "mcp": {
+    "codegraph": {
+      "type": "local",
+      "command": ["npx", "-y", "@colbymchenry/codegraph", "serve", "--mcp"],
+      "enabled": true
+    },
+    "typegraph": {
+      "type": "local",
+      "command": ["npx", "tsx", "path/to/typegraph-mcp/server.ts"],
+      "environment": {
+        "TYPEGRAPH_PROJECT_ROOT": ".",
+        "TYPEGRAPH_TSCONFIG": "./tsconfig.json"
+      },
+      "enabled": true
     }
   }
 }
 ```
+
+---
+
+## 🖥 Desktop GUI
+
+Standalone Electron window with full graphical interface:
+
+- Session list management
+- Sidebar project switching
+- Model/Agent selector
+- Settings panel (Provider config, model management, TTS settings)
+- File diff display
+- Code syntax highlighting
+- MCP server management
+
+### Build
+
+```bash
+cd packages/desktop
+bun run build        # Compile
+bun run package:win  # Package Windows portable
+```
+
+Output: `packages/desktop/dist/win/`
 
 ---
 
@@ -99,15 +146,22 @@ Config file: `~/.config/redcode/config.json`
 |-------|------------|
 | Runtime | Bun |
 | Language | TypeScript |
-| Terminal UI | Ink (React for CLI) |
+| Terminal UI | SolidJS |
+| Desktop GUI | Electron + SolidJS |
 | AI SDK | Vercel AI SDK |
 | Database | SQLite (Drizzle ORM) |
 | Build | Turborepo (monorepo) |
+| MCP | CodeGraph + TypeGraph |
+
+---
+
+## 📋 Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
 ## 💙 Acknowledgments
 
-Fork of [opencode](https://github.com/anomalyco/opencode) by sst.dev.
-
+- Original project: [opencode](https://github.com/anomalyco/opencode) by sst.dev
 - License: MIT
