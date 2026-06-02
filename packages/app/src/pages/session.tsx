@@ -56,6 +56,7 @@ import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { syncSessionModel } from "@/pages/session/session-model-helpers"
 import { SessionSidePanel } from "@/pages/session/session-side-panel"
+import { FileTreePanel } from "@/pages/session/file-tree-panel"
 import { TerminalPanel } from "@/pages/session/terminal-panel"
 import { useSessionCommands } from "@/pages/session/use-session-commands"
 import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
@@ -266,13 +267,15 @@ export default function Page() {
   const isV2NewSessionPage = () => !params.id
   const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened() && !isV2NewSessionPage())
   const desktopFileTreeOpen = createMemo(() => isDesktop() && layout.fileTree.opened() && !isV2NewSessionPage())
-  const desktopSidePanelOpen = createMemo(() => desktopReviewOpen() || desktopFileTreeOpen())
   const sessionPanelWidth = createMemo(() => {
-    if (!desktopSidePanelOpen()) return "100%"
-    if (desktopReviewOpen()) return `${layout.session.width()}px`
-    return `calc(100% - ${layout.fileTree.width()}px)`
+    if (desktopReviewOpen() && desktopFileTreeOpen()) {
+      return `calc(100% - ${layout.fileTree.width()}px - ${layout.session.width()}px)`
+    }
+    if (desktopReviewOpen()) return `calc(100% - ${layout.session.width()}px)`
+    if (desktopFileTreeOpen()) return `calc(100% - ${layout.fileTree.width()}px)`
+    return "100%"
   })
-  const centered = createMemo(() => isDesktop() && !desktopReviewOpen())
+  const centered = createMemo(() => isDesktop() && !desktopReviewOpen() && !desktopFileTreeOpen())
 
   function normalizeTab(tab: string) {
     if (!tab.startsWith("file://")) return tab
@@ -1735,6 +1738,15 @@ export default function Page() {
           </Tabs>
         </Show>
 
+        <FileTreePanel
+          diffsReady={reviewReady}
+          diffs={reviewDiffs}
+          reviewCount={reviewCount}
+          hasReview={hasReview}
+          activeDiff={tree.activeDiff}
+          focusReviewDiff={focusReviewDiff}
+          size={size}
+        />
         <div
           classList={{
             "@container relative shrink-0 flex flex-col min-h-0 h-full bg-background-stronger flex-1 md:flex-none": true,
@@ -1826,14 +1838,7 @@ export default function Page() {
 
         <SessionSidePanel
           canReview={canReview}
-          diffs={reviewDiffs}
-          diffsReady={reviewReady}
-          empty={reviewEmptyText}
-          hasReview={hasReview}
-          reviewCount={reviewCount}
           reviewPanel={reviewPanel}
-          activeDiff={tree.activeDiff}
-          focusReviewDiff={focusReviewDiff}
           reviewSnap={ui.reviewSnap}
           size={size}
         />

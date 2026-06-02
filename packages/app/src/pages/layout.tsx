@@ -89,9 +89,6 @@ import {
   type WorkspaceSidebarContext,
 } from "./layout/sidebar-workspace"
 import { ProjectDragOverlay, SortableProject, type ProjectSidebarContext } from "./layout/sidebar-project"
-import { SidebarContent } from "./layout/sidebar-shell"
-
-const USE_NEW_DESIGN = true
 
 export default function Layout(props: ParentProps) {
   const [store, setStore, , ready] = persisted(
@@ -150,7 +147,7 @@ export default function Layout(props: ParentProps) {
   const currentDir = createMemo(() => route().dir)
 
   const [state, setState] = createStore({
-    autoselect: !initialDirectory && !USE_NEW_DESIGN,
+    autoselect: false,
     busyWorkspaces: {} as Record<string, boolean>,
     hoverProject: undefined as string | undefined,
     scrollSessionKey: undefined as string | undefined,
@@ -1006,13 +1003,6 @@ export default function Layout(props: ParentProps) {
   command.register("layout", () => {
     const commands: CommandOption[] = [
       {
-        id: "sidebar.toggle",
-        title: language.t("command.sidebar.toggle"),
-        category: language.t("command.category.view"),
-        keybind: "mod+b",
-        onSelect: () => layout.sidebar.toggle(),
-      },
-      {
         id: "project.open",
         title: language.t("command.project.open"),
         category: language.t("command.category.project"),
@@ -1830,10 +1820,7 @@ export default function Layout(props: ParentProps) {
   )
 
   createEffect(() => {
-    document.documentElement.style.setProperty(
-      "--dialog-left-margin",
-      USE_NEW_DESIGN ? "0px" : `${layout.sidebar.opened() ? layout.sidebar.width() : 48}px`,
-    )
+    document.documentElement.style.setProperty("--dialog-left-margin", "0px")
   })
 
   const side = createMemo(() => Math.max(layout.sidebar.width(), 244))
@@ -2355,207 +2342,21 @@ export default function Layout(props: ParentProps) {
     )
   }
 
-  const projects = () => layout.projects.list()
-  const projectOverlay = () => <ProjectDragOverlay projects={projects} activeProject={() => store.activeProject} />
-  const sidebarContent = (mobile?: boolean) => (
-    <SidebarContent
-      mobile={mobile}
-      opened={() => layout.sidebar.opened()}
-      aimMove={aim.move}
-      projects={projects}
-      renderProject={(project) => (
-        <SortableProject ctx={projectSidebarCtx} project={project} sortNow={sortNow} mobile={mobile} />
-      )}
-      handleDragStart={handleDragStart}
-      handleDragEnd={handleDragEnd}
-      handleDragOver={handleDragOver}
-      openProjectLabel={language.t("command.project.open")}
-      openProjectKeybind={() => command.keybind("project.open")}
-      onOpenProject={chooseProject}
-      renderProjectOverlay={projectOverlay}
-      settingsLabel={() => language.t("sidebar.settings")}
-      settingsKeybind={() => command.keybind("settings.open")}
-      onOpenSettings={openSettings}
-      onToggleSidebar={() => layout.sidebar.toggle()}
-      toggleSidebarLabel={() => language.t("command.sidebar.toggle")}
-      toggleSidebarKeybind={() => command.keybind("sidebar.toggle")}
-      renderPanel={() =>
-        mobile ? <SidebarPanel project={currentProject} mobile /> : <SidebarPanel project={currentProject} merged />
-      }
-    />
-  )
-
-  if (USE_NEW_DESIGN) {
-    return (
-      <div class="relative bg-v2-background-bg-deep flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text">
-        {autoselecting() ?? ""}
-        <Titlebar update={titlebarUpdate} />
-        <main
-          class="flex-1 min-h-0 min-w-0 overflow-x-hidden flex flex-col items-start contain-strict bg-v2-background-bg-base"
-          classList={{
-            "m-2 mt-0 rounded-[10px] shadow-[var(--v2-elevation-raised)] overflow-hidden": !!params.id || !params.dir,
-          }}
-        >
-          <Show when={!autoselecting.loading} fallback={<div class="size-full" />}>
-            {props.children}
-          </Show>
-        </main>
-        {import.meta.env.DEV && <DebugBar />}
-        <Toast.Region />
-      </div>
-    )
-  }
-
   return (
-    <div class="relative bg-background-base flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text">
+    <div class="relative bg-v2-background-bg-deep flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text">
       {autoselecting() ?? ""}
       <Titlebar update={titlebarUpdate} />
-      <Show when={updateVersion() !== undefined}>
-        <UpdateAvailableToast version={updateVersion() ?? ""} install={installUpdate} language={language} />
-      </Show>
-      <div class="flex-1 min-h-0 min-w-0 flex">
-        <div class="flex-1 min-h-0 relative">
-          <div class="size-full relative overflow-x-hidden">
-            <nav
-              aria-label={language.t("sidebar.nav.projectsAndSessions")}
-              data-component="sidebar-nav-desktop"
-              classList={{
-                "hidden xl:block": true,
-                "absolute inset-y-0 left-0": true,
-                "z-10": true,
-              }}
-              style={{ width: `${side()}px` }}
-              ref={(el) => {
-                setState("nav", el)
-              }}
-              onMouseEnter={() => {
-                disarm()
-              }}
-              onMouseLeave={() => {
-                aim.reset()
-                if (!sidebarHovering()) return
-
-                arm()
-              }}
-            >
-              <div class="@container w-full h-full contain-strict">{sidebarContent()}</div>
-            </nav>
-
-            <Show when={layout.sidebar.opened()}>
-              <div
-                class="hidden xl:block absolute inset-y-0 z-30 w-0 overflow-visible"
-                style={{ left: `${side()}px` }}
-                onPointerDown={() => setState("sizing", true)}
-              >
-                <ResizeHandle
-                  direction="horizontal"
-                  size={layout.sidebar.width()}
-                  min={244}
-                  max={typeof window === "undefined" ? 1000 : window.innerWidth * 0.3 + 64}
-                  onResize={(w) => {
-                    setState("sizing", true)
-                    if (sizet !== undefined) clearTimeout(sizet)
-                    sizet = window.setTimeout(() => setState("sizing", false), 120)
-                    layout.sidebar.resize(w)
-                  }}
-                />
-              </div>
-            </Show>
-
-            <div
-              class="hidden xl:block pointer-events-none absolute top-0 right-0 z-0 border-t border-border-weaker-base"
-              style={{ left: "calc(4rem + 12px)" }}
-            />
-
-            <div class="xl:hidden">
-              <div
-                classList={{
-                  "fixed inset-x-0 top-10 bottom-0 z-40 transition-opacity duration-200": true,
-                  "opacity-100 pointer-events-auto": layout.mobileSidebar.opened(),
-                  "opacity-0 pointer-events-none": !layout.mobileSidebar.opened(),
-                }}
-                onClick={(e) => {
-                  if (e.target === e.currentTarget) layout.mobileSidebar.hide()
-                }}
-              />
-              <nav
-                aria-label={language.t("sidebar.nav.projectsAndSessions")}
-                data-component="sidebar-nav-mobile"
-                classList={{
-                  "@container fixed top-10 bottom-0 left-0 z-50 w-full max-w-[400px] overflow-hidden border-r border-border-weaker-base bg-background-base transition-transform duration-200 ease-out": true,
-                  "translate-x-0": layout.mobileSidebar.opened(),
-                  "-translate-x-full": !layout.mobileSidebar.opened(),
-                }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                {sidebarContent(true)}
-              </nav>
-            </div>
-
-            <div
-              classList={{
-                "absolute inset-0": true,
-                "xl:inset-y-0 xl:right-0 xl:left-[var(--main-left)]": true,
-                "z-20": true,
-                "transition-[left] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[left] motion-reduce:transition-none":
-                  !state.sizing,
-              }}
-              style={{
-                "--main-left": layout.sidebar.opened() ? `${side()}px` : "4rem",
-              }}
-            >
-              <main
-                classList={{
-                  "size-full overflow-x-hidden flex flex-col items-start contain-strict border-t border-border-weak-base bg-background-base xl:border-l xl:rounded-tl-[12px]": true,
-                }}
-              >
-                <Show when={!autoselecting.loading} fallback={<div class="size-full" />}>
-                  {props.children}
-                </Show>
-              </main>
-            </div>
-
-            <div
-              classList={{
-                "hidden xl:flex absolute inset-y-0 left-16 z-30": true,
-                "opacity-100 translate-x-0 pointer-events-auto": state.peeked && !layout.sidebar.opened(),
-                "opacity-0 -translate-x-2 pointer-events-none": !state.peeked || layout.sidebar.opened(),
-                "transition-[opacity,transform] motion-reduce:transition-none": true,
-                "duration-180 ease-out": state.peeked && !layout.sidebar.opened(),
-                "duration-120 ease-in": !state.peeked || layout.sidebar.opened(),
-              }}
-              onMouseMove={disarm}
-              onMouseEnter={() => {
-                disarm()
-                aim.reset()
-              }}
-              onPointerDown={disarm}
-              onMouseLeave={() => {
-                arm()
-              }}
-            >
-              <Show when={peekProject()}>
-                <SidebarPanel project={peekProject} merged={false} />
-              </Show>
-            </div>
-
-            <div
-              classList={{
-                "hidden xl:block pointer-events-none absolute inset-y-0 right-0 z-25 overflow-hidden": true,
-                "opacity-100 translate-x-0": state.peeked && !layout.sidebar.opened(),
-                "opacity-0 -translate-x-2": !state.peeked || layout.sidebar.opened(),
-                "transition-[opacity,transform] motion-reduce:transition-none": true,
-                "duration-180 ease-out": state.peeked && !layout.sidebar.opened(),
-                "duration-120 ease-in": !state.peeked || layout.sidebar.opened(),
-              }}
-              style={{ left: `calc(4rem + ${panel()}px)` }}
-            >
-              <div class="h-full w-px" style={{ "box-shadow": "var(--shadow-sidebar-overlay)" }} />
-            </div>
-          </div>
-        </div>
-        {import.meta.env.DEV && <DebugBar />}
-      </div>
+      <main
+        class="flex-1 min-h-0 min-w-0 overflow-x-hidden flex flex-col items-start contain-strict bg-v2-background-bg-base"
+        classList={{
+          "m-2 mt-0 rounded-[10px] shadow-[var(--v2-elevation-raised)] overflow-hidden": !!params.id || !params.dir,
+        }}
+      >
+        <Show when={!autoselecting.loading} fallback={<div class="size-full" />}>
+          {props.children}
+        </Show>
+      </main>
+      {import.meta.env.DEV && <DebugBar />}
       <Toast.Region />
     </div>
   )

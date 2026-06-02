@@ -10,6 +10,27 @@
 
 ## TUI
 
+### [0.3.10] - 2026-06-02
+
+#### 新增
+
+- **Browser MCP 集成**：新增浏览器自动化 MCP 服务器，支持导航、截图、点击、输入、获取页面内容等操作，可让 AI 直接操控主人的浏览器
+- **jCodeMunch MCP 集成**：新增结构化代码检索服务器（60+ 工具），支持精确符号获取、死代码检测、影响评估、编辑安全预检、AST 模式匹配等，比 grep 省 95% token
+- **TypeGraph MCP 集成**：TypeScript 语义导航服务器（14 个工具），支持类型解析、调用链追踪、barrel 文件穿透、循环依赖检测
+
+#### Browser MCP 使用方式
+
+1. 安装 Chrome 扩展：
+   - 打开 `chrome://extensions/`
+   - 开启"开发者模式"
+   - 点"加载已解压的扩展程序" → 选择 `D:\AI\RedCode\browsermcp-extension`
+2. 点击扩展图标 → Connect（图标显示绿色 "ON" 表示连接成功）
+3. 重启 TUI 生效
+
+可用工具：`browser_navigate`、`browser_go_back`、`browser_go_forward`、`browser_snapshot`、`browser_click`、`browser_type`、`browser_hover`、`browser_select_option`、`browser_press_key`、`browser_wait`、`browser_screenshot`、`browser_get_console_logs`
+
+---
+
 ### [0.3.9] - 2026-06-02
 
 #### 新增
@@ -108,6 +129,25 @@
 ---
 
 ## GUI
+
+### [0.3.13] - 2026-06-02
+
+#### 修复
+
+- **仓鼠位置修复**：将 🐹 从 flex `ml-auto`（最右）移到 TextShimmer"思考中"之后。当 AI 产生 reasoning heading（如 markdown 标题）时，`TextReveal` 展开不再把仓鼠推到右侧角落
+
+#### 重构
+
+- **抽取 `UpdateAvailableToast`**：将文件末尾的 32 行子组件移到 `components/update-available-toast.tsx`，零行为变化
+- **抽取主题常量**：`colorSchemeOrder` / `colorSchemeKey` 纯常量从 `layout.tsx` 抽到 `pages/layout/theme-constants.ts`
+
+#### 布局调整
+
+- **FileTree → 最左、Review → 最右**：新布局为三栏：`[FileTree] [Chat] [Review]`
+  - `FileTreePanel` 从 `SessionSidePanel` 内部分离为独立组件 `pages/session/file-tree-panel.tsx`
+  - `session.tsx` 主 flex 容器改为：`<FileTreePanel />` → `<ChatPanel />` → `<SessionSidePanel />`
+- **删除 V1 sidebar fallback**：`layout.tsx` V1 旧设计（152 行无引用代码）移除，`USE_NEW_DESIGN` 常量删除
+- **删除 `sidebar.toggle` 命令**：V2 设计下 Sidebar 永不显示，对应 Cmd+B 命令移除
 
 ### [0.3.12] - 2026-06-02
 
