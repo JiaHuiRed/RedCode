@@ -159,7 +159,13 @@ function TimelineThinkingRow(props: { reasoningHeading?: string; showReasoningSu
   const language = useLanguage()
 
   return (
-    <div data-slot="session-turn-thinking">
+    <div data-slot="session-turn-thinking" class="flex items-center gap-2">
+      <img
+        src="/mona-loading.gif"
+        alt="loading"
+        class="w-6 h-6 shrink-0"
+        style={{ "image-rendering": "pixelated" }}
+      />
       <TextShimmer text={language.t("ui.sessionTurn.status.thinking")} />
       <Show when={!props.showReasoningSummaries}>
         <TextReveal text={props.reasoningHeading} class="session-turn-thinking-heading" travel={25} duration={700} />

@@ -29,7 +29,28 @@
       "Bash(py scripts/gen-icon.py)",
       "mcp__Claude_in_Chrome__tabs_context_mcp",
       "mcp__Claude_in_Chrome__navigate",
-      "mcp__Claude_in_Chrome__computer"
+      "mcp__Claude_in_Chrome__computer",
+      "Bash(bun run:*)",
+      "Bash(python3 -c \":*)",
+      "Bash(node -e \":*)",
+      "Bash(find D:/AI/RedCode/packages/opencode/src/project -name schema*)",
+      "Bash(find D:/AI/RedCode/node_modules/virtua -name *.d.ts -path *solid*)",
+      "Bash(find D:/AI/RedCode/node_modules/.pnpm -path *virtua* -name *.d.ts)",
+      "Bash(find D:/AI/RedCode/node_modules/.bun/virtua@0.49.1+be3c23352fe29258/node_modules/virtua -name *.d.ts)",
+      "Bash(find D:/AI/RedCode/node_modules/.bun/virtua@0.49.1+be3c23352fe29258/node_modules/virtua/lib/solid -name *.d.ts)",
+      "Bash(bun turbo:*)",
+      "Bash(tee /tmp/typecheck-full2.log)",
+      "Bash(tee /tmp/typecheck-3.log)",
+      "Bash(grep -n \"serviceUse\\\\|export.*serviceUse\" D:/AI/RedCode/packages/opencode/src/effect/*.ts D:/AI/RedCode/packages/core/src/**/*.ts)",
+      "Bash(tee /tmp/typecheck-4.log)",
+      "Bash(tee /tmp/typecheck-5.log)",
+      "Bash(bun x:*)",
+      "Bash(grep '\"\"version\"\"' D:/AI/RedCode/packages/desktop/package.json)",
+      "Bash(grep '\"\"version\"\"' D:/AI/RedCode/packages/opencode/package.json)",
+      "Bash(REDCODE_VERSION=0.3.5 REDCODE_CHANNEL=latest bun run build)",
+      "Bash(grep -r \"tts\\\\|TTS\\\\|mimo\\\\|MiMo\\\\|readAloud\\\\|朗读\\\\|volume\\\\|audio\" D:/AI/RedCode/packages/ --include=*.ts --include=*.tsx -l)",
+      "WebFetch(domain:platform.xiaomimimo.com)",
+      "Bash(grep -n \"^import\\\\|from \"\"drizzle\\\\|{ and, eq, desc\" D:/AI/RedCode/packages/opencode/src/session/message-v2.ts)"
     ]
   }
 }

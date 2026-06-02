@@ -70,10 +70,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   })
   const activeFileTab = tabState.activeFileTab
   const closableTab = tabState.closableTab
-  const shown = () =>
-    platform.platform !== "desktop" ||
-    import.meta.env.VITE_REDCODE_CHANNEL !== "beta" ||
-    settings.general.showFileTree()
+  const shown = () => true
 
   const messages = () => {
     const id = params.id

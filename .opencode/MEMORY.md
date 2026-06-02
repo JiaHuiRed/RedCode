@@ -27,6 +27,7 @@
 - TUI（`packages/opencode/package.json`）和 GUI（`packages/desktop/package.json`）各自独立版本
 - 改版本号必检：package.json × 2 → README 徽章 → CHANGELOG → index.html 标题栏
 - 推送前跑 `git diff --stat` 确认改动完整
+- **三段规则**：小改动 0.0.x、中改动 0.x.0、大改动 x.0.0。**不强制逢十进一**（像 Python 那样可以 0.3.10 → 0.3.16 → 0.3.20）。小改动可以累积到合适的 patch 号再发，不用挤在一个版本里做完所有事
 
 ## 历史教训
 

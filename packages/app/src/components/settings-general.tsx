@@ -874,9 +874,7 @@ export const SettingsGeneral: Component = () => {
 
         <DisplaySection />
 
-        <Show when={desktop() && import.meta.env.VITE_REDCODE_CHANNEL === "beta"}>
-          <AdvancedSection />
-        </Show>
+        <AdvancedSection />
       </div>
     </div>
   )

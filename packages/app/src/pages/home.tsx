@@ -1,5 +1,5 @@
 ﻿import type { Session } from "@redcode-ai/sdk/v2/client"
-import { createMemo, For, Match, Show, Switch } from "solid-js"
+import { createMemo, For, Match, onCleanup, onMount, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
 import { Spinner } from "@redcode-ai/ui/spinner"
@@ -59,6 +59,19 @@ function HomeDesign() {
   const language = useLanguage()
   const globalSDK = useGlobalSDK()
   const [state, setState] = createStore({ search: "", project: undefined as string | undefined })
+  let searchInputRef: HTMLInputElement | undefined
+
+  onMount(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault()
+        searchInputRef?.focus()
+        searchInputRef?.select()
+      }
+    }
+    document.addEventListener("keydown", handler)
+    onCleanup(() => document.removeEventListener("keydown", handler))
+  })
 
   const projects = createMemo(() => layout.projects.list())
   const selectedProject = createMemo(
@@ -193,6 +206,7 @@ function HomeDesign() {
         aria-label={language.t("sidebar.project.recentSessions")}
       >
         <HomeSessionSearch
+          ref={(el) => (searchInputRef = el)}
           value={state.search}
           placeholder={language.t("home.sessions.search.placeholder")}
           onInput={(value) => setState("search", value)}
@@ -203,8 +217,24 @@ function HomeDesign() {
               <Show
                 when={groups().length > 0}
                 fallback={
-                  <div class="flex min-w-0 flex-col gap-4">
-                    <HomeSessionGroupHeader title={language.t("home.sessions.empty")} onNewSession={openNewSession} />
+                  <div class="flex min-w-0 flex-col items-center gap-4 py-12">
+                    <div class="flex size-12 items-center justify-center rounded-full bg-v2-background-bg-deep">
+                      <IconV2 name="edit" size="large" class="text-v2-text-text-muted" />
+                    </div>
+                    <div class="flex flex-col items-center gap-1 text-center">
+                      <div class="text-14-normal font-medium text-v2-text-text-base">{language.t("home.sessions.empty")}</div>
+                      <div class="text-12-regular text-v2-text-text-muted">{language.t("command.session.new")}</div>
+                    </div>
+                    <ButtonV2
+                      data-action="home-new-session-empty"
+                      variant="contrast"
+                      size="normal"
+                      icon="edit"
+                      class="mt-2"
+                      onClick={openNewSession}
+                    >
+                      {language.t("command.session.new")}
+                    </ButtonV2>
                   </div>
                 }
               >
@@ -331,17 +361,24 @@ function HomeProjectAvatar(props: { project: LocalProject }) {
   )
 }
 
-function HomeSessionSearch(props: { value: string; placeholder: string; onInput: (value: string) => void }) {
+function HomeSessionSearch(props: { ref?: (el: HTMLInputElement) => void; value: string; placeholder: string; onInput: (value: string) => void }) {
+  const isMac = navigator.platform.includes("Mac")
+  const modKey = isMac ? "⌘" : "Ctrl"
+  let inputRef: HTMLInputElement | undefined
   return (
     <label class="ml-4 flex h-9 w-[calc(100%_-_48px)] sticky top-0 inset-x-0 items-center gap-2 rounded-[6px] bg-v2-background-bg-deep px-3 py-1 text-v2-icon-icon-muted transition-[background-color,box-shadow] duration-[120ms] ease-in-out focus-within:bg-v2-background-bg-base focus-within:shadow-[0_0_0_0.5px_var(--v2-border-border-focus),var(--v2-elevation-raised)]">
       <IconV2 name="magnifying-glass" size="small" />
       <input
+        ref={(el) => { inputRef = el; props.ref?.(el) }}
         class="min-w-0 flex-1 border-0 bg-transparent text-v2-text-text-base outline-0 [font-weight:440] placeholder:text-v2-text-text-faint"
         value={props.value}
         placeholder={props.placeholder}
         aria-label={props.placeholder}
         onInput={(event) => props.onInput(event.currentTarget.value)}
       />
+      <kbd class="hidden sm:inline-flex items-center gap-0.5 rounded border border-v2-border-border-base px-1.5 py-0.5 text-[10px] font-medium text-v2-text-text-muted tabular-nums">
+        {modKey}+K
+      </kbd>
     </label>
   )
 }

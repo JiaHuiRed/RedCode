@@ -10,10 +10,10 @@
     },
     "typegraph": {
       "type": "local",
-      "command": ["plugins/typegraph-mcp/node_modules/.bin/tsx", "plugins/typegraph-mcp/server.ts"],
+      "command": ["D:\\AI\\RedCode\\plugins\\typegraph-mcp\\node_modules\\.bin\\tsx", "D:\\AI\\RedCode\\plugins\\typegraph-mcp\\server.ts"],
       "environment": {
-        "TYPEGRAPH_PROJECT_ROOT": ".",
-        "TYPEGRAPH_TSCONFIG": "./tsconfig.json"
+        "TYPEGRAPH_PROJECT_ROOT": "D:\\AI\\RedCode",
+        "TYPEGRAPH_TSCONFIG": "D:\\AI\\RedCode\\tsconfig.json"
       },
       "enabled": true
     }

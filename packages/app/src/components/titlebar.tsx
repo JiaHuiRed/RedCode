@@ -51,7 +51,7 @@ const legacyTitlebarHeight = 40
 const v2TitlebarHeight = 44
 const minTitlebarZoom = 0.25
 const windowsControlsBaseWidth = 138 // 3 native Windows caption buttons at 46px each.
-const USE_V2_TITLEBAR = import.meta.env.VITE_REDCODE_CHANNEL !== "prod"
+const USE_V2_TITLEBAR = true
 
 const makeSessionHref = (b64Dir: string, sessionId: string) => `/${b64Dir}/session/${sessionId}`
 
@@ -115,7 +115,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
   const canBack = createMemo(() => history.index > 0)
   const canForward = createMemo(() => history.index < history.stack.length - 1)
   const hasProjects = createMemo(() => layout.projects.list().length > 0)
-  const nav = createMemo(() => import.meta.env.VITE_REDCODE_CHANNEL !== "beta" || settings.general.showNavigation())
+  const nav = createMemo(() => true)
 
   const back = () => {
     const next = backPath(history)
@@ -499,10 +499,6 @@ function TitlebarUpdatePill(props: { update?: TitlebarUpdate }) {
       </button>
     </Show>
   )
-}
-
-function DesktopTitlebarIconButton(props: Parameters<typeof IconButtonV2>[0]) {
-  return
 }
 
 function TabNavItem(props: {
