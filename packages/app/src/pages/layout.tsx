@@ -63,6 +63,7 @@ import { useCommand, type CommandOption } from "@/context/command"
 import { ConstrainDragXAxis, getDraggableId } from "@/utils/solid-dnd"
 import { DebugBar } from "@/components/debug-bar"
 import { Titlebar, type TitlebarUpdate } from "@/components/titlebar"
+import { UpdateAvailableToast } from "@/components/update-available-toast"
 import { useServer } from "@/context/server"
 import { useLanguage, type Locale } from "@/context/language"
 import { pathKey } from "@/utils/path-key"
@@ -73,6 +74,7 @@ import {
   latestRootSession,
   sortedRootSessions,
 } from "./layout/helpers"
+import { colorSchemeKey, colorSchemeOrder } from "./layout/theme-constants"
 import {
   collectNewSessionDeepLinks,
   collectOpenProjectDeepLinks,
@@ -144,12 +146,6 @@ export default function Layout(props: ParentProps) {
     }
   })
   const availableThemeEntries = createMemo(() => theme.ids().map((id) => [id, theme.themes()[id]] as const))
-  const colorSchemeOrder: ColorScheme[] = ["system", "light", "dark"]
-  const colorSchemeKey: Record<ColorScheme, "theme.scheme.system" | "theme.scheme.light" | "theme.scheme.dark"> = {
-    system: "theme.scheme.system",
-    light: "theme.scheme.light",
-    dark: "theme.scheme.dark",
-  }
   const colorSchemeLabel = (scheme: ColorScheme) => language.t(colorSchemeKey[scheme])
   const currentDir = createMemo(() => route().dir)
 
@@ -2565,36 +2561,3 @@ export default function Layout(props: ParentProps) {
   )
 }
 
-function UpdateAvailableToast(props: {
-  version: string
-  install: () => void
-  language: ReturnType<typeof useLanguage>
-}) {
-  let toastId: number | undefined
-
-  onMount(() => {
-    toastId = showToast({
-      persistent: true,
-      icon: "download",
-      title: props.language.t("toast.update.title"),
-      description: props.language.t("toast.update.description", { version: props.version }),
-      actions: [
-        {
-          label: props.language.t("toast.update.action.installRestart"),
-          onClick: props.install,
-        },
-        {
-          label: props.language.t("toast.update.action.notYet"),
-          onClick: "dismiss",
-        },
-      ],
-    })
-  })
-
-  onCleanup(() => {
-    if (toastId === undefined) return
-    toaster.dismiss(toastId)
-  })
-
-  return null
-}
