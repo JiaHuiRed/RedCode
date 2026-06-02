@@ -8,7 +8,11 @@
 - 只在非显而易见的约束和意外行为处加注释
 
 ## 优先级
-- 代码搜索/导航优先用 codegraph + typegraph MCP，减少 grep/token 浪费
+- 代码搜索/导航**必须优先用 MCP 工具**（jCodeMunch > codegraph > typegraph > grep/read）
+  - jCodeMunch：`search_symbols`、`get_symbol_source`、`get_blast_radius`、`check_edit_safe` 等
+  - CodeGraph：`codegraph_search`、`codegraph_trace`、`codegraph_callers` 等
+  - TypeGraph：`ts_find_symbol`、`ts_definition`、`ts_references` 等
+  - 只在 MCP 工具不可用或结果不足时才用 grep/read
 - 直接给出答案或执行，不做无意义分析，少用花哨抽象
 
 ## 工作纪律
@@ -20,8 +24,12 @@
 
 ## TUI vs GUI 区分
 - **TUI** = `packages/opencode/` — 命令行终端界面（CLI + 文本交互），通过 `bun run build -- --single` 编译 exe
+  - UI 框架：OpenTUI（`@opentui/core`、`@opentui/solid`），**不依赖** `@redcode-ai/app`
 - **GUI** = `packages/desktop/` — Electron 桌面应用（窗口界面），通过 `electron-builder` 打包
+  - 渲染层：`packages/app/`（SolidJS），通过 `devDeps` 引用 `"@redcode-ai/app": "workspace:*"`
+  - 布局（v0.3.13）：三栏 `[FileTree] [Chat] [Review]`，FileTree 最左，Review 最右
 - 两个目录独立，功能独立，版本号独立。动 GUI 的事别去改 TUI 的文件，反之亦然
+- **GUI 不能自覆盖**：OpenCode GUI 进程运行时，需主人在 TUI（独立进程）里跑 `bun run build` + `bun run package`
 
 ## 平台范围
 - 此项目只部署在主人的个人电脑（Windows 10/11），**不跨平台**
@@ -76,3 +84,31 @@
 ### 7. 图标/打包注意事项
 - electron-builder 打包后 `resources/icons/` 需 `extraResources` 单独声明
 - NSIS 安装器压缩图标会糊，用 `target: ["dir"]` 只生成免安装版
+
+### 8. 删除代码前必须检查所有引用
+- 删除常量/函数/类型前，用 `search_symbols` 或 `grep` 搜全仓引用
+- 删除后立即 typecheck，不要等提交时才发现漏了引用
+- 典型错误：删了 `USE_NEW_DESIGN` 常量，但 `state.autoselect` 行还有一处引用
+
+### 9. 截图分析：直接问，不要猜
+- 主人发截图时，直接问"截图里 [左1]、[中1]、[中2]、[右1] 分别是什么"
+- 不要自己花 10 轮对话猜列结构，浪费时间
+
+### 10. 重构提取代码：删干净
+- 提取组件/函数到新文件后，确认旧位置完全删除，不留占位符
+- 典型错误：删函数时留了一个 `_Placeholder` 空函数
+
+### 11. Layout 函数结构（v0.3.13 梳理）
+- `pages/layout.tsx`：2600 行，50+ 子方法，复杂度 526
+- V1 fallback（152 行）+ sidebar.toggle 命令已删除（v0.3.13）
+- V2 渲染只保留：`Titlebar` + `main(props.children)` + `DebugBar` + `Toast`
+- 待抽子组件（阶段 1 已完成部分）：UpdateAvailableToast、theme-constants
+- 详细拆分计划见 `.opencode/TODO.md`
+
+### 12. 三栏布局结构（v0.3.13）
+- 最左：`FileTreePanel`（`pages/session/file-tree-panel.tsx`）— FileTree changes/all tabs
+- 中间：Chat（`MessageTimeline` + composer）
+- 最右：`SessionSidePanel`（`pages/session/session-side-panel.tsx`）— Review tab + 打开的文件 tabs
+- FileTree 宽度：`layout.fileTree.width()`，拽拉 `min=200, max=480`
+- Review 宽度：`layout.session.width()`，拽拉 `min=340, max=windowWidth*0.45`
+- chat 宽度：`100% - fileTree宽度 - review宽度`
