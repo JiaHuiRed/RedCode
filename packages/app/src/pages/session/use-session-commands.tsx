@@ -1,4 +1,5 @@
 ﻿import { useNavigate } from "@solidjs/router"
+import { createMemo } from "solid-js"
 import { useCommand, type CommandOption } from "@/context/command"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { previewSelectedLines } from "@redcode-ai/ui/pierre/selection-bridge"
@@ -82,6 +83,46 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     const revert = info()?.revert?.messageID
     if (!revert) return userMessages()
     return userMessages().filter((m) => m.id < revert)
+  }
+
+  // 260602 Red 切 session：当前 project 内的 root session 列表（按 sidebar 排序）
+  const sessionList = createMemo(() => {
+    if (!params.dir) return []
+    const all = (sync.data.session ?? []) as Array<{
+      id: string
+      directory: string
+      parentID?: string
+      time?: { archived?: number; updated?: number; created?: number }
+    }>
+    return all
+      .filter(
+        (s) =>
+          s.directory === params.dir && !s.parentID && !s.time?.archived,
+      )
+      .sort((a, b) => {
+        const now = Date.now()
+        const aUpdated = a.time?.updated ?? a.time?.created ?? 0
+        const bUpdated = b.time?.updated ?? b.time?.created ?? 0
+        const aRecent = aUpdated > now - 60_000
+        const bRecent = bUpdated > now - 60_000
+        if (aRecent && bRecent) return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+        if (aRecent && !bRecent) return -1
+        if (!aRecent && bRecent) return 1
+        return bUpdated - aUpdated
+      })
+  })
+  const currentSessionIndex = createMemo(() => {
+    const id = params.id
+    if (!id) return -1
+    return sessionList().findIndex((s) => s.id === id)
+  })
+  const navigateSessionByOffset = (offset: number) => {
+    const list = sessionList()
+    const idx = currentSessionIndex()
+    if (idx === -1 || list.length === 0) return
+    const next = list[idx + offset]
+    if (!next) return
+    navigate(`/${params.dir}/session/${next.id}`)
   }
 
   const showAllFiles = () => {
@@ -382,6 +423,20 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       keybind: "mod+shift+s",
       slash: "new",
       onSelect: () => navigate(`/${params.dir}/session`),
+    }),
+    sessionCommand({
+      id: "session.previous",
+      title: language.t("command.session.previous"),
+      keybind: "mod+shift+t",
+      disabled: currentSessionIndex() <= 0,
+      onSelect: () => navigateSessionByOffset(-1),
+    }),
+    sessionCommand({
+      id: "session.next",
+      title: language.t("command.session.next"),
+      keybind: "mod+t",
+      disabled: currentSessionIndex() === -1 || currentSessionIndex() >= sessionList().length - 1,
+      onSelect: () => navigateSessionByOffset(1),
     }),
     sessionCommand({
       id: "session.undo",

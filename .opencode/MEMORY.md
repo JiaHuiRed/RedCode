@@ -23,6 +23,11 @@
 - **GUI** = `packages/desktop/` — Electron 桌面应用（窗口界面），通过 `electron-builder` 打包
 - 两个目录独立，功能独立，版本号独立。动 GUI 的事别去改 TUI 的文件，反之亦然
 
+## 平台范围
+- 此项目只部署在主人的个人电脑（Windows 10/11），**不跨平台**
+- 代码里的 `mod`（Mac=Cmd, Windows=Ctrl）和 `cmd`（Mac Cmd）保留跨平台抽象即可，无需为 Windows 改写
+- 物理键盘参考：Windows 用户的"主修饰键" = `Ctrl`；Mac 用户 = `Cmd` (⌘)，键盘上确实存在 ⌘ 键
+
 ## 版本号约定与自检
 - TUI（`packages/opencode/package.json`）和 GUI（`packages/desktop/package.json`）各自独立版本
 - 改版本号必检：package.json × 2 → README 徽章 → CHANGELOG → index.html 标题栏

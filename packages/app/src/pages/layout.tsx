@@ -1151,20 +1151,19 @@ export default function Layout(props: ParentProps) {
       },
     ]
 
-    if (!USE_NEW_DESIGN)
-      Array.from({ length: 9 }, (_, i) => {
-        const index = i
-        const number = index + 1
-        commands.push({
-          id: `project.${number}`,
-          category: language.t("command.category.project"),
-          title: `Open Project {number}`,
-          keybind: `mod+${number}`,
-          disabled: layout.projects.list().length <= index,
-          hidden: true,
-          onSelect: () => navigateToProjectIndex(index),
-        })
+    Array.from({ length: 9 }, (_, i) => {
+      const index = i
+      const number = index + 1
+      commands.push({
+        id: `project.${number}`,
+        category: language.t("command.category.project"),
+        title: language.t("command.project.index", { index: number }),
+        keybind: `mod+${number}`,
+        disabled: layout.projects.list().length <= index,
+        hidden: true,
+        onSelect: () => navigateToProjectIndex(index),
       })
+    })
 
     for (const [id] of availableThemeEntries()) {
       commands.push({

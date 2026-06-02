@@ -226,3 +226,28 @@
     outline-offset: 2px;
   }
 }
+
+@layer utilities {
+  /* 260602 Red 思考中仓鼠动画：左右小跑 + 上下跳动 */
+  @keyframes hamster-run {
+    0% {
+      transform: translate(-3px, 0);
+    }
+    25% {
+      transform: translate(0, -2px);
+    }
+    50% {
+      transform: translate(3px, 0);
+    }
+    75% {
+      transform: translate(0, -2px);
+    }
+    100% {
+      transform: translate(-3px, 0);
+    }
+  }
+  .animate-hamster {
+    animation: hamster-run 1.2s ease-in-out infinite;
+    display: inline-block;
+  }
+}
