@@ -4,6 +4,7 @@
     "codegraph": {
       "type": "local",
       "command": ["npx", "-y", "@colbymchenry/codegraph", "serve", "--mcp"],
+      // 260602 Red 代码知识图谱：符号/调用链/影响分析
       "enabled": true
     },
     "typegraph": {
@@ -13,6 +14,17 @@
         "TYPEGRAPH_PROJECT_ROOT": "D:\\AI\\RedCode",
         "TYPEGRAPH_TSCONFIG": "D:\\AI\\RedCode\\tsconfig.json"
       },
+      // 260602 Red TypeScript 语义导航：类型解析/barrel 文件穿透/循环依赖检测
+      "enabled": true
+    },
+    "jcodemunch": {
+      "type": "local",
+      "command": ["uvx", "jcodemunch-mcp"],
+      "environment": {
+        // 260602 Red AI 摘要暂时禁用，后续可配置 DeepSeek V4 Flash
+        "JCODEMUNCH_USE_AI_SUMMARIES": "false"
+      },
+      // 260602 Red 结构化代码检索：精确符号获取/死代码检测/影响评估/编辑安全预检
       "enabled": true
     }
   }
