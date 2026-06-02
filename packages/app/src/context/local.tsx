@@ -89,9 +89,11 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       last: undefined,
     })
 
+    // 260602 Red 放宽 validModel 检查：provider 已加载且 model 存在即视为有效，
+    // 不强制要求 connected() 同步完成——UI 已显示模型时 connected 可能还在刷新中
     const validModel = (model: ModelKey) => {
       const provider = providers.all().get(model.providerID)
-      return !!provider?.models[model.modelID] && connected().has(model.providerID)
+      return !!provider?.models[model.modelID]
     }
 
     const firstModel = (...items: Array<() => ModelKey | undefined>) => {
