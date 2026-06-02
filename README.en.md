@@ -6,7 +6,7 @@
 <pre align="center">
 ██████ ██████ ██████ ██████ ██████ ██████ ██████
 █   █ █     █  ██  █     █   █ █  ██  █    
-█████  ██████ █   █ █     █   █ █   █  ██████
+██████ ██████ █   █ █     █   █ █   █  ██████
 █  ██ █     █   █ █     █   █ █   █  █    
 █   █ ██████ ██████ ██████ ██████ ██████ ██████
 </pre>
@@ -14,8 +14,8 @@
 > **Open-source AI coding assistant — terminal + desktop dual-mode intelligent coding agent.**
 > Author: Red · Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev).
 
-[![TUI](https://img.shields.io/badge/TUI-0.3.9-blue)](CHANGELOG.md)
-[![Desktop](https://img.shields.io/badge/Desktop-0.3.12-0078d4)](CHANGELOG.md)
+[![TUI](https://img.shields.io/badge/TUI-0.3.10-blue)](CHANGELOG.md)
+[![Desktop](https://img.shields.io/badge/Desktop-0.3.13-0078d4)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-lightblue)](https://github.com/JiaHuiRed/RedCode)
 
@@ -39,9 +39,22 @@ Open-source AI coding assistant with **terminal TUI** and **desktop GUI** interf
 - 📊 **MCP Servers**:
   - [CodeGraph](https://github.com/colbymchenry/codegraph) — code knowledge graph (symbols, call chains, impact analysis)
   - [TypeGraph](https://github.com/guyowen/typegraph-mcp) — TypeScript semantic navigation (type resolution, barrel file traversal, cycle detection)
+  - [jCodeMunch](https://github.com/colbymchenry/jcodemunch) — structured code retrieval (60+ tools: symbol lookup, dead code detection, AST matching)
+  - [Browser MCP](https://github.com/colbymchenry/browsermcp) — browser automation (navigation, screenshots, clicks, input, page content extraction)
 - 🔒 **Permission System** — tool call confirmation, auto-approve support
 - 🌍 **Multi-language** — Chinese, English, Japanese, and 18 languages
 - 🗣 **TTS** — MiMo TTS voice reading for AI responses
+
+---
+
+## 🖥 Desktop GUI (v0.3.13)
+
+- **Three-column layout**: FileTree (left) + Chat (center) + Review (right), independently resizable
+- **Session shortcuts**: `Cmd+T` / `Cmd+Shift+T` to switch context sessions
+- **Project shortcuts**: `Cmd+1` ~ `Cmd+9` to switch projects
+- **Design system**: CSS design tokens (radius, shadows, typography), `text-wrap: balance/pretty`
+- **V2 Titlebar**: Tab-based session management, StatusPopover for token usage
+- **Thinking hamster animation**: 🐹 running animation + Mona cat loading during AI thinking
 
 ---
 
@@ -109,34 +122,15 @@ cd packages/desktop && bun run dev
         "TYPEGRAPH_TSCONFIG": "./tsconfig.json"
       },
       "enabled": true
+    },
+    "jcodemunch": {
+      "type": "local",
+      "command": ["npx", "jcodemunch-mcp"],
+      "enabled": true
     }
   }
 }
 ```
-
----
-
-## 🖥 Desktop GUI
-
-Standalone Electron window with full graphical interface:
-
-- Session list management
-- Sidebar project switching
-- Model/Agent selector
-- Settings panel (Provider config, model management, TTS settings)
-- File diff display
-- Code syntax highlighting
-- MCP server management
-
-### Build
-
-```bash
-cd packages/desktop
-bun run build        # Compile
-bun run package:win  # Package Windows portable
-```
-
-Output: `packages/desktop/dist/win/`
 
 ---
 
@@ -146,12 +140,12 @@ Output: `packages/desktop/dist/win/`
 |-------|------------|
 | Runtime | Bun |
 | Language | TypeScript |
-| Terminal UI | SolidJS |
+| Terminal UI | SolidJS (OpenTUI) |
 | Desktop GUI | Electron + SolidJS |
 | AI SDK | Vercel AI SDK |
 | Database | SQLite (Drizzle ORM) |
 | Build | Turborepo (monorepo) |
-| MCP | CodeGraph + TypeGraph |
+| MCP | CodeGraph + TypeGraph + jCodeMunch + Browser MCP |
 
 ---
 

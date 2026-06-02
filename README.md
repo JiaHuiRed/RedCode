@@ -6,7 +6,7 @@
 <pre align="center">
 ██████ ██████ ██████ ██████ ██████ ██████ ██████
 █   █ █     █  ██  █     █   █ █  ██  █    
-█████  ██████ █   █ █     █   █ █   █  ██████
+██████ ██████ █   █ █     █   █ █   █  ██████
 █  ██ █     █   █ █     █   █ █   █  █    
 █   █ ██████ ██████ ██████ ██████ ██████ ██████
 </pre>
@@ -41,9 +41,22 @@
 - 📊 **MCP 服务器**：
   - [CodeGraph](https://github.com/colbymchenry/codegraph) — 代码知识图谱，符号/调用链/影响分析
   - [TypeGraph](https://github.com/guyowen/typegraph-mcp) — TypeScript 语义导航（类型解析、barrel 文件穿透、循环依赖检测）
+  - [jCodeMunch](https://github.com/colbymchenry/jcodemunch) — 结构化代码检索（60+ 工具：符号获取、死代码检测、AST 匹配）
+  - [Browser MCP](https://github.com/colbymchenry/browsermcp) — 浏览器自动化（导航、截图、点击、输入、获取页面内容）
 - 🔒 **权限系统**：工具调用前确认，支持自动批准
 - 🌍 **多语言**：中文、英文、日文等 18 种语言
 - 🗣 **TTS 朗读**：MiMo TTS 语音朗读 AI 回复
+
+---
+
+## 🖥 桌面 GUI 新特性（v0.3.13）
+
+- **三栏布局**：文件树（左）+ 聊天窗口（中）+ 审查面板（右），可独立拖拽调整宽度
+- **会话快捷键**：`Cmd+T` / `Cmd+Shift+T` 快速切换上下文会话
+- **项目快捷键**：`Cmd+1` ~ `Cmd+9` 快速切换项目
+- **设计系统**：CSS 设计 token（圆角、阴影、排版）、文字排版优化（`text-wrap: balance/pretty`）
+- **V2 Titlebar**：Tab 式会话管理，StatusPopover 显示 token 用量
+- **思考中仓鼠动画**：AI 思考时显示 🐹 小跑动画 + Mona 猫猫 loading
 
 ---
 
@@ -111,34 +124,15 @@ cd packages/desktop && bun run dev
         "TYPEGRAPH_TSCONFIG": "./tsconfig.json"
       },
       "enabled": true
+    },
+    "jcodemunch": {
+      "type": "local",
+      "command": ["npx", "jcodemunch-mcp"],
+      "enabled": true
     }
   }
 }
 ```
-
----
-
-## 🖥 桌面 GUI
-
-独立 Electron 窗口，提供完整图形界面：
-
-- 会话列表管理
-- 侧边栏项目切换
-- 模型/Agent 选择器
-- 设置面板（Provider 配置、模型管理、TTS 设置）
-- 文件差异展示
-- 代码语法高亮
-- MCP 服务器管理
-
-### 打包
-
-```bash
-cd packages/desktop
-bun run build      # 编译
-bun run package:win  # 打包 Windows 免安装版
-```
-
-输出目录：`packages/desktop/dist/win/`
 
 ---
 
@@ -148,12 +142,12 @@ bun run package:win  # 打包 Windows 免安装版
 |----|------|
 | 运行时 | Bun |
 | 语言 | TypeScript |
-| 终端 UI | SolidJS |
+| 终端 UI | SolidJS (OpenTUI) |
 | 桌面 GUI | Electron + SolidJS |
 | AI SDK | Vercel AI SDK |
 | 数据库 | SQLite (Drizzle ORM) |
 | 构建 | Turborepo (monorepo) |
-| MCP | CodeGraph + TypeGraph |
+| MCP | CodeGraph + TypeGraph + jCodeMunch + Browser MCP |
 
 ---
 
