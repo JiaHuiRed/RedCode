@@ -302,17 +302,12 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
 
     // 260529 Red provider/model 数据加载完成前静默返回，避免误触发"请选择智能体和模型"
+    // 260602 Red provider/model 已加载但 current() 仍为空时也静默返回（数据刷新中的临时状态）
     if (!providers.ready() || !local.model.ready()) return
     const currentModel = local.model.current()
     const currentAgent = local.agent.current()
+    if (!currentModel || !currentAgent) return
     const variant = local.model.variant.current()
-    if (!currentModel || !currentAgent) {
-      showToast({
-        title: language.t("prompt.toast.modelAgentRequired.title"),
-        description: language.t("prompt.toast.modelAgentRequired.description"),
-      })
-      return
-    }
 
     input.addToHistory(currentPrompt, mode)
     input.resetHistoryNavigation()
