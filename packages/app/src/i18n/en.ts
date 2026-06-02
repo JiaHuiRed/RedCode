@@ -300,6 +300,7 @@
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "{{enabled}} of {{total}} enabled",
   "dialog.mcp.empty": "No MCPs configured",
+  "dialog.mcp.toggleFailed": "Failed to toggle MCP",
 
   "dialog.lsp.empty": "LSPs auto-detected from file types",
   "dialog.plugins.empty": "Plugins configured in RedCode.json",
@@ -741,6 +742,15 @@
   "settings.general.section.sounds": "Sound effects",
   "settings.general.section.feed": "Feed",
   "settings.general.section.display": "Display",
+  "settings.general.section.tts": "Text to Speech",
+
+  "settings.general.tts.enabled.title": "Enable TTS",
+  "settings.general.tts.enabled.description": "Show a read-aloud button on AI reply messages",
+  "settings.general.tts.apiKey.title": "MiMo TTS API Key",
+  "settings.general.tts.apiKey.description": "MiMo sk- prefix API key for read-aloud, obtained from platform.xiaomimimo.com",
+  "settings.general.tts.apiKey.placeholder": "sk-...",
+  "settings.general.tts.voice.title": "Voice",
+  "settings.general.tts.voice.description": "Choose the voice used for read-aloud",
 
   "settings.general.row.language.title": "Language",
   "settings.general.row.language.description": "Change the display language for RedCode",
