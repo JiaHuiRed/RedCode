@@ -1825,7 +1825,7 @@ export default function Page() {
               <ResizeHandle
                 direction="horizontal"
                 size={layout.session.width()}
-                min={450}
+                      min={340}
                 max={typeof window === "undefined" ? 1000 : window.innerWidth * 0.45}
                 onResize={(width) => {
                   size.touch()
