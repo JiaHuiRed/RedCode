@@ -33,7 +33,14 @@ const IS_PREVIEW = CHANNEL !== "latest"
 
 const VERSION = await (async () => {
   if (env.REDCODE_VERSION) return env.REDCODE_VERSION
-  if (IS_PREVIEW) return `0.0.0-${CHANNEL}-${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "")}`
+  if (IS_PREVIEW) {
+    const localPkgPath = path.resolve(process.cwd(), "package.json")
+    try {
+      const localPkg = await Bun.file(localPkgPath).json()
+      if (typeof localPkg?.version === "string" && localPkg.version) return localPkg.version
+    } catch {}
+    return `0.0.0-${CHANNEL}-${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "")}`
+  }
   const version = await fetch("https://registry.npmjs.org/redcode-ai/latest")
     .then((res) => {
       if (!res.ok) throw new Error(res.statusText)

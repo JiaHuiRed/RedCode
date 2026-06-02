@@ -164,7 +164,7 @@ const targets = singleFlag
     })
   : allTargets
 
-await $`rm -rf dist`
+try { await $`rm -rf dist` } catch {}
 
 const binaries: Record<string, string> = {}
 if (!skipInstall) {
@@ -239,7 +239,7 @@ for (const item of targets) {
     }
   }
 
-  await $`rm -rf ./dist/${name}/bin/tui`
+  try { await $`rm -rf ./dist/${name}/bin/tui` } catch {}
   await Bun.file(`dist/${name}/package.json`).write(
     JSON.stringify(
       {

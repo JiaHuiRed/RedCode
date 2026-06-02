@@ -3,6 +3,8 @@ import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import * as Clipboard from "@tui/util/clipboard"
 import * as Selection from "@tui/util/selection"
 import * as TuiAudio from "@tui/util/audio"
+import * as TuiConsole from "@tui/util/console-hijack"
+import * as Cleanup from "@tui/util/cleanup-registry"
 import { createCliRenderer, MouseButton, type CliRendererConfig } from "@opentui/core"
 import { RouteProvider, useRoute } from "@tui/context/route"
 import {
@@ -13,7 +15,6 @@ import {
   ErrorBoundary,
   createSignal,
   onMount,
-  onCleanup,
   batch,
   Show,
   on,
@@ -176,6 +177,9 @@ export function tui(input: {
   // promise to prevent immediate exit
   // oxlint-disable-next-line no-async-promise-executor -- intentional: async executor used for sequential setup before resolve
   return new Promise<void>(async (resolve) => {
+    // 260602 Red Console劫持：保护TUI渲染
+    TuiConsole.hijack()
+
     const unguard = win32InstallCtrlCGuard()
     win32DisableProcessedInput()
 
@@ -183,10 +187,12 @@ export function tui(input: {
       unguard?.()
       resolve()
     }
+    Cleanup.register(() => offKeymap())
+    Cleanup.register(() => TuiConsole.restore())
+    Cleanup.register(() => TuiPluginRuntime.dispose())
+    Cleanup.register(() => TuiAudio.dispose())
     const onBeforeExit = async () => {
-      offKeymap()
-      await TuiPluginRuntime.dispose()
-      TuiAudio.dispose()
+      await Cleanup.runAll()
     }
 
     const renderer = await createCliRenderer(rendererConfig(input.config))
@@ -327,10 +333,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     },
     { priority: 1 },
   )
-  onCleanup(() => {
-    offSelectionKeys()
-    attention.dispose()
-  })
+  Cleanup.register(() => offSelectionKeys())
 
   // Wire up console copy-to-clipboard via opentui's onCopySelection callback
   renderer.console.onCopySelection = async (text: string) => {
@@ -347,29 +350,32 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     kv.get("paste_summary_enabled", !sync.data.config.experimental?.disable_paste_summary),
   )
 
-  // Update terminal window title based on current route and session
+  // 260602 Red 动态终端标题：StreamingState 驱动
   createEffect(() => {
     if (!terminalTitleEnabled() || Flag.REDCODE_DISABLE_TERMINAL_TITLE) return
 
+    const status = route.data.type === "session" ? sync.data.session_status?.[route.data.sessionID] : undefined
+    const prefix = status?.type === "busy" ? "▶ " : ""
+
     if (route.data.type === "home") {
-      renderer.setTerminalTitle("RedCode")
+      renderer.setTerminalTitle(`${prefix}RedCode`)
       return
     }
 
     if (route.data.type === "session") {
       const session = sync.session.get(route.data.sessionID)
       if (!session || SessionApi.isDefaultTitle(session.title)) {
-        renderer.setTerminalTitle("RedCode")
+        renderer.setTerminalTitle(`${prefix}RedCode`)
         return
       }
 
       const title = session.title.length > 40 ? session.title.slice(0, 37) + "..." : session.title
-      renderer.setTerminalTitle(`OC | ${title}`)
+      renderer.setTerminalTitle(`${prefix}OC | ${title}`)
       return
     }
 
     if (route.data.type === "plugin") {
-      renderer.setTerminalTitle(`OC | ${route.data.id}`)
+      renderer.setTerminalTitle(`${prefix}OC | ${route.data.id}`)
     }
   })
 
