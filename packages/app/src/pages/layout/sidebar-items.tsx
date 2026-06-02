@@ -56,15 +56,20 @@ export const ProjectIcon = (props: {
       <Show when={notify()}>
         <div
           classList={{
-            "absolute top-px right-px size-1.5 rounded-full z-10": true,
-            "bg-surface-warning-strong": hasPermissions(),
-            "bg-icon-critical-base": !hasPermissions() && hasError(),
+            "absolute top-px right-px size-2 rounded-full z-10 ring-2 ring-background-base": true,
+            "bg-surface-warning-strong animate-pulse": hasPermissions(),
+            "bg-icon-critical-base animate-pulse": !hasPermissions() && hasError(),
             "bg-text-interactive-base": !hasPermissions() && !hasError(),
           }}
         />
+        <Show when={unseenCount() > 1}>
+          <div class="absolute -top-0.5 -right-0.5 min-w-3 h-3 px-0.5 rounded-full bg-text-interactive-base z-20 flex items-center justify-center text-[8px] font-semibold leading-none text-text-on-interactive-base tabular-nums">
+            {unseenCount() > 9 ? "9+" : unseenCount()}
+          </div>
+        </Show>
       </Show>
       <Show when={props.working}>
-        <div class="absolute bottom-px right-px size-3 rounded-full bg-background-base z-10 flex items-center justify-center">
+        <div class="absolute bottom-px right-px size-3 rounded-full bg-background-base z-10 flex items-center justify-center ring-1 ring-border-weak-base">
           <Spinner class="size-[9px]" />
         </div>
       </Show>

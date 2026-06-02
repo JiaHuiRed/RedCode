@@ -195,3 +195,34 @@
     }
   }
 }
+
+@layer base {
+  /* 260602 Red Design tokens: 同心圆角 + 分层阴影 + text-wrap */
+  :root {
+    --radius-xs: 4px;
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --radius-2xl: 24px;
+
+    --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05), 0 1px 3px 0 rgb(0 0 0 / 0.08);
+    --shadow-md: 0 2px 4px 0 rgb(0 0 0 / 0.06), 0 4px 8px 0 rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 4px 8px 0 rgb(0 0 0 / 0.08), 0 8px 16px 0 rgb(0 0 0 / 0.12);
+    --shadow-xl: 0 8px 16px 0 rgb(0 0 0 / 0.1), 0 16px 32px 0 rgb(0 0 0 / 0.14);
+  }
+
+  h1, h2, h3, h4 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--v2-border-border-focus, currentColor);
+    outline-offset: 2px;
+  }
+}
