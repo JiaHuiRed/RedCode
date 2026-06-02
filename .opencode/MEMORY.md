@@ -76,3 +76,16 @@
 ### 7. 图标/打包注意事项
 - electron-builder 打包后 `resources/icons/` 需 `extraResources` 单独声明
 - NSIS 安装器压缩图标会糊，用 `target: ["dir"]` 只生成免安装版
+
+### 8. 文档与代码一致性自检（CHANGELOG/README 必查）
+- 写完 CHANGELOG 后必须自验：`git diff <last-tag>..HEAD -- <package>` 看是否真有改动，grep 关键 feature 名确认在源码里
+- 主人手写文档容易过度乐观：把"配了 redcode.jsonc"当"TUI 集成"，把"README 改了"当"功能上线"——必须自动核对
+- 措辞要准：`redcode.jsonc` 加 MCP 配置 = "接入外部 MCP"（依赖外部环境），不是"集成"
+
+### 9. 远端同步不能信口头
+- 主人说"我刚拉了/已经同步"也得自己 `git fetch + log --oneline origin/dev -5` 验一遍
+- 看到 "Already up to date" 才算数；本地 `git status` 不够（可能有 untracked 修改或被 build 动过的 lockfile）
+
+### 10. 跨项目路径硬编码
+- `redcode.jsonc` / `.opencode/opencode.jsonc` 里的 MCP 命令硬编码路径（如 `D:\\AI\\RedCode\\plugins\\...`）必须检查是否匹配实际项目根
+- 主人 D 盘有两个 RedCode：`D:\AI\RedCode` 和 `D:\AI\KLX\RedCode`，写配置时要用项目实际根目录
