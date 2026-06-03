@@ -421,7 +421,7 @@ export const layer = Layer.effect(
       const cwd = yield* InstanceState.directory
 
       // 260603 Red MCP 调试：确认 cwd 和 execPath
-      log.info("connectLocal.debug", { key, cwd, execPath: process.execPath, nodeCwd: process.cwd() })
+      log.info("connectLocal.debug", { key, cwd, execPath: process.execPath, argv0: process.argv[0], nodeCwd: process.cwd() })
 
       // 解析命令参数中的相对路径为绝对路径
       const resolvedArgs = args.map((arg) => {
