@@ -153,7 +153,13 @@ function listTools(key: string, client: MCPClient, timeout: number) {
 }
 
 // Convert MCP tool definition to AI SDK Tool type
-function convertMcpTool(mcpTool: MCPToolDef, client: MCPClient, timeout?: number): Tool {
+function convertMcpTool(
+  mcpTool: MCPToolDef,
+  client: MCPClient,
+  serverName: string,
+  reconnectFn?: () => Promise<void>,
+  timeout?: number,
+): Tool {
   const inputSchema = mcpTool.inputSchema
 
   // Spread first, then override type to ensure it's always "object"
@@ -164,21 +170,30 @@ function convertMcpTool(mcpTool: MCPToolDef, client: MCPClient, timeout?: number
     additionalProperties: false,
   }
 
+  // 260603 Red P1: 工具调用失败自动重连（最多 3 次）
+  const MAX_RETRIES = 3
   return dynamicTool({
     description: mcpTool.description ?? "",
     inputSchema: jsonSchema(schema),
     execute: async (args: unknown) => {
-      return client.callTool(
-        {
-          name: mcpTool.name,
-          arguments: (args || {}) as Record<string, unknown>,
-        },
-        CallToolResultSchema,
-        {
-          resetTimeoutOnProgress: true,
-          timeout,
-        },
-      )
+      let lastError: unknown
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        try {
+          return await client.callTool(
+            { name: mcpTool.name, arguments: (args || {}) as Record<string, unknown> },
+            CallToolResultSchema,
+            { resetTimeoutOnProgress: true, timeout },
+          )
+        } catch (err) {
+          lastError = err
+          log.warn("MCP tool call failed", { server: serverName, tool: mcpTool.name, attempt: attempt + 1 })
+          if (attempt < MAX_RETRIES - 1 && reconnectFn) {
+            try { await reconnectFn() } catch {}
+            await new Promise((r) => setTimeout(r, 1000))
+          }
+        }
+      }
+      throw lastError
     },
   })
 }
@@ -615,6 +630,42 @@ export const layer = Layer.effect(
           }),
         )
 
+        // 260603 Red P0: MCP 健康监控 — 每 30s 检查，连续 3 次失败标记断开
+        const HEALTH_CHECK_INTERVAL = 30_000
+        const MAX_FAILURES = 3
+        const healthFailures = new Map<string, number>()
+
+        yield* Effect.forkScoped(
+          Effect.forever(
+            Effect.gen(function* () {
+              yield* Effect.sleep(HEALTH_CHECK_INTERVAL)
+              const connected = Object.entries(s.clients).filter(
+                ([name]) => s.status[name]?.status === "connected",
+              )
+              for (const [name, client] of connected) {
+                try {
+                  yield* Effect.tryPromise({
+                    try: () => client.request({ method: "tools/list", params: {} }, ListToolsResultSchema),
+                    catch: () => new Error("health check failed"),
+                  })
+                  healthFailures.delete(name)
+                } catch {
+                  const failures = (healthFailures.get(name) ?? 0) + 1
+                  healthFailures.set(name, failures)
+                  log.warn("MCP health check failed", { name, failures })
+                  if (failures >= MAX_FAILURES) {
+                    log.error("MCP server unhealthy, marking disconnected", { name })
+                    healthFailures.delete(name)
+                    yield* closeClient(s, name)
+                    delete s.clients[name]
+                    s.status[name] = { status: "failed", error: "health check failed" }
+                  }
+                }
+              }
+            }),
+          ),
+        )
+
         return s
       }),
     )
@@ -676,6 +727,15 @@ export const layer = Layer.effect(
       return yield* storeClient(s, name, result.mcpClient, result.defs!, mcp.timeout)
     })
 
+    // 260603 Red P0+P1: 自动重连（使用 EffectBridge 不依赖 AppRuntime）
+    const reconnectServer = Effect.fn("MCP.reconnectServer")(function* (name: string) {
+      const cfg = yield* cfgSvc.get()
+      const mcpCfg = cfg.mcp?.[name]
+      if (!mcpCfg || !isMcpConfigured(mcpCfg) || mcpCfg.enabled === false) return
+      log.info("auto-reconnecting MCP server", { name })
+      yield* createAndStore(name, { ...mcpCfg, enabled: true }).pipe(Effect.catch(() => Effect.void))
+    })
+
     const add = Effect.fn("MCP.add")(function* (name: string, mcp: ConfigMCP.Info) {
       yield* createAndStore(name, mcp)
       const s = yield* InstanceState.get(state)
@@ -724,8 +784,13 @@ export const layer = Layer.effect(
             }
 
             const timeout = entry?.timeout ?? defaultTimeout
+            // 260603 Red P1: 用 EffectBridge 避免依赖 AppRuntime
+            const toolBridge = yield* EffectBridge.make()
+            const doReconnect = () => toolBridge.promise(reconnectServer(clientName))
             for (const mcpTool of listed) {
-              result[sanitize(clientName) + "_" + sanitize(mcpTool.name)] = convertMcpTool(mcpTool, client, timeout)
+              result[sanitize(clientName) + "_" + sanitize(mcpTool.name)] = convertMcpTool(
+                mcpTool, client, clientName, doReconnect, timeout,
+              )
             }
           }),
         { concurrency: "unbounded" },
