@@ -10,7 +10,22 @@
 
 ## TUI
 
-### [0.3.10] - 2026-06-02
+### [0.3.11] - 2026-06-03
+
+#### 修复
+
+- **MCP 进程树泄漏（Windows）**：`descendants` 在 Win32 直接返回空数组，导致每次 TUI 退出时子进程（codegraph/typegraph/npx 链）变成僵尸堆积。改为 `taskkill /F /T /PID` 一次杀整棵树，Unix 保持原逻辑
+- **Browser MCP 断连**：server `socket.on("close")` 无条件置 `ws = null`，导致新连接被旧 socket 的 close 事件覆盖破坏。改为 `if (ws === socket)` 条件判断
+
+#### 变更
+
+- **滚动条默认开启**：消息区域右侧滚动条默认显示，支持鼠标点击轨道跳转和拖拽滑块滚动。可通过 `session.toggle.scrollbar` 命令或 `/mcps` 切换
+- **Browser MCP 扩展 v1.0.3**：改用 `chrome.alarms` 保活（每 24s 触发），替代不可靠的 `setTimeout`，解决 Manifest V3 service worker 休眠后断连
+
+#### 配置
+
+- `redcode.jsonc` 新增 browsermcp 配置
+- `.opencode/opencode.jsonc` 新增 browsermcp 配置
 
 #### 新增
 
