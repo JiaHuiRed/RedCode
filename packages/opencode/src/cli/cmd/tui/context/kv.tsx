@@ -32,6 +32,12 @@ export const { use: useKV, provider: KVProvider } = createSimpleContext({
     Flock.withLock(lock, () => Filesystem.readJson<Record<string, any>>(filePath))
       .then((x) => {
         setStore(x)
+        // 260603 Red 一次性迁移：kv_version < 1 时将 scrollbar_visible 从 false 升级为 true
+        const kvVersion = x["kv_version"] ?? 0
+        if (kvVersion < 1) {
+          if (x["scrollbar_visible"] === false) setStore("scrollbar_visible", true)
+          setStore("kv_version", 1)
+        }
       })
       .catch((error) => {
         console.error("Failed to read KV state", { filePath, error })
