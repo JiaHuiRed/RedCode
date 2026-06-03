@@ -20,6 +20,7 @@ import { InstallationVersion } from "@redcode-ai/core/installation/version"
 import { withTimeout } from "@/util/timeout"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import * as path from "path"
+import * as fs from "fs"
 import { McpOAuthProvider, OAUTH_CALLBACK_PATH } from "./oauth-provider"
 import { McpOAuthCallback } from "./oauth-callback"
 import { McpAuth } from "./auth"
@@ -418,10 +419,22 @@ export const layer = Layer.effect(
       mcp: ConfigMCP.Info & { type: "local" },
     ) {
       const [cmd, ...args] = mcp.command
-      const cwd = yield* InstanceState.directory
+      const rawCwd = yield* InstanceState.directory
 
-      // 260603 Red MCP 调试：确认 cwd 和 execPath
-      log.info("connectLocal.debug", { key, cwd, execPath: process.execPath, argv0: process.argv[0], nodeCwd: process.cwd() })
+      // 260603 Red exe cwd 可能不是项目根，向上查找 redcode.jsonc 或 .git
+      let cwd = rawCwd
+      if (!fs.existsSync(path.join(cwd, "redcode.jsonc")) && !fs.existsSync(path.join(cwd, ".git"))) {
+        let dir = cwd
+        while (true) {
+          const parent = path.dirname(dir)
+          if (parent === dir) break
+          dir = parent
+          if (fs.existsSync(path.join(dir, "redcode.jsonc")) || fs.existsSync(path.join(dir, ".git"))) {
+            cwd = dir
+            break
+          }
+        }
+      }
 
       // 解析命令参数中的相对路径为绝对路径
       const resolvedArgs = args.map((arg) => {

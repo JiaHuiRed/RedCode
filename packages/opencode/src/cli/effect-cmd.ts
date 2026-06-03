@@ -9,21 +9,16 @@ import * as path from "node:path"
 
 // 260603 Red exe 从 bin/ 启动时 cwd 不是项目根，从 exe 所在目录向上查找
 function findProjectRoot(startDir: string): string {
-  // 多种方式定位 exe 目录，取第一个有效的
   const candidates = [
     path.dirname(process.execPath),
     path.dirname(process.argv[0]),
     startDir,
   ]
-  const log = (...args: unknown[]) => console.error("[findProjectRoot]", ...args)
-  log("candidates", candidates)
   for (const candidate of candidates) {
     if (!candidate || candidate === path.dirname(candidate)) continue
-    log("trying", candidate)
     let dir = candidate
     while (true) {
       if (fs.existsSync(path.join(dir, "redcode.jsonc")) || fs.existsSync(path.join(dir, ".git"))) {
-        log("found project root:", dir)
         return dir
       }
       const parent = path.dirname(dir)
@@ -31,7 +26,6 @@ function findProjectRoot(startDir: string): string {
       dir = parent
     }
   }
-  log("no project root found, returning startDir:", startDir)
   return startDir
 }
 
