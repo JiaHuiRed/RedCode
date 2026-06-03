@@ -44,8 +44,16 @@ export default {
             output.context.push(`  - ${f}`)
           }
         }
+        output.context.push(
+          "- Key principles: TDD, immutability, security-first",
+          "- Session goals: track current task, preserve decisions, keep error context",
+        )
         output.prompt =
-          "Preserve: current task status, key decisions, changed files, remaining work. Discard: verbose tool output, intermediate exploration, redundant listings."
+          "Preserve: 1) Current task status and progress, 2) Key decisions made, " +
+          "3) Files created/modified with reasons, 4) Error messages that need attention, " +
+          "5) Test results and coverage status, 6) Remaining work items. " +
+          "Discard: verbose tool output, intermediate exploration, redundant file listings, " +
+          "repeated error messages that have already been addressed."
       },
 
       "permission.ask": async (input, output) => {

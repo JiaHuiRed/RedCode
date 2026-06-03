@@ -1,5 +1,6 @@
 {
   "$schema": "https://redcode.dev/config.json",
+  "plugin": ["./.opencode/plugins/ecc-shell-stub.js"],
   "mcp": {
     "codegraph": {
       "type": "local",

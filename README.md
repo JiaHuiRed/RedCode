@@ -15,7 +15,7 @@
 > 作者：Red · 基于 [opencode](https://github.com/anomalyco/opencode) (sst.dev) 二次开发。
 
 [![TUI](https://img.shields.io/badge/TUI-0.3.16-blue)](CHANGELOG.md)
-[![Desktop](https://img.shields.io/badge/Desktop-0.3.14-0078d4)](CHANGELOG.md)
+[![Desktop](https://img.shields.io/badge/Desktop-0.3.15-0078d4)](CHANGELOG.md)
 [![平台](https://img.shields.io/badge/平台-Windows%2010%2F11-0078d4)](https://github.com/JiaHuiRed/RedCode)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)](https://typescriptlang.org)
 [![Bun](https://img.shields.io/badge/Bun-1.3.x-fcf2d0)](https://bun.sh)
@@ -49,7 +49,7 @@
 
 ---
 
-## 🖥 桌面 GUI 新特性（v0.3.14）
+## 🖥 桌面 GUI 新特性（v0.3.15）
 
 - **三栏布局**：文件树（左）+ 聊天窗口（中）+ 审查面板（右），可独立拖拽调整宽度
 - **会话快捷键**：`Cmd+T` / `Cmd+Shift+T` 快速切换上下文会话

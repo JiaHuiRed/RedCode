@@ -1824,7 +1824,7 @@ export default function Page() {
             <div onPointerDown={() => size.start()}>
               <ResizeHandle
                 direction="horizontal"
-                edge="start"
+                invert={true}
                 size={layout.session.width()}
                       min={340}
                 max={typeof window === "undefined" ? 1000 : window.innerWidth * 0.45}

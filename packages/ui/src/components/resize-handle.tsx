@@ -3,6 +3,7 @@ import { splitProps, type JSX } from "solid-js"
 export interface ResizeHandleProps extends Omit<JSX.HTMLAttributes<HTMLDivElement>, "onResize"> {
   direction: "horizontal" | "vertical"
   edge?: "start" | "end"
+  invert?: boolean
   size: number
   min: number
   max: number
@@ -15,6 +16,7 @@ export function ResizeHandle(props: ResizeHandleProps) {
   const [local, rest] = splitProps(props, [
     "direction",
     "edge",
+    "invert",
     "size",
     "min",
     "max",
@@ -45,7 +47,7 @@ export function ResizeHandle(props: ResizeHandleProps) {
           : edge === "start"
             ? start - pos
             : pos - start
-      current = startSize + delta
+      current = startSize + (local.invert ? -delta : delta)
       const clamped = Math.min(local.max, Math.max(local.min, current))
       local.onResize(clamped)
     }
