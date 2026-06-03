@@ -10,6 +10,16 @@
 
 ## TUI
 
+### [0.3.12] - 2026-06-03
+
+#### 新增
+
+- **MCP 健康监控 + 自动重连**：每 30s 检查所有 connected 的 MCP server，连续 3 次失败后标记断开，5s 后自动重连（指数退避 5s→15s→45s，最多 3 次）
+- **MCP 工具调用失败自动重连**：tool call 报错时自动尝试 reconnect 该 server（最多 3 次），重连成功后自动重试原调用
+- **MCP Transport 工厂**：按配置自动选择传输层（`httpUrl` → Streamable HTTP，`url` → SSE，`command` → stdio），支持同 server 多 transport 自动降级
+
+---
+
 ### [0.3.11] - 2026-06-03
 
 #### 修复
