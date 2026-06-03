@@ -79,9 +79,10 @@ type ColorValue = HexColor | RefName | Variant | RGBA
 export type ThemeJson = {
   $schema?: string
   defs?: Record<string, HexColor | RefName>
-  theme: Omit<Record<ThemeColor, ColorValue>, "selectedListItemText" | "backgroundMenu"> & {
+  theme: Omit<Record<ThemeColor, ColorValue>, "selectedListItemText" | "backgroundMenu" | "backgroundMessage"> & {
     selectedListItemText?: ColorValue
     backgroundMenu?: ColorValue
+    backgroundMessage?: ColorValue
     thinkingOpacity?: number
   }
 }
@@ -244,6 +245,13 @@ export function resolveTheme(theme: ThemeJson, mode: "dark" | "light") {
     resolved.backgroundMenu = resolveColor(theme.theme.backgroundMenu)
   } else {
     resolved.backgroundMenu = resolved.backgroundElement
+  }
+
+  // Handle backgroundMessage - optional with fallback to backgroundPanel
+  if (theme.theme.backgroundMessage !== undefined) {
+    resolved.backgroundMessage = resolveColor(theme.theme.backgroundMessage)
+  } else {
+    resolved.backgroundMessage = resolved.backgroundPanel
   }
 
   // Handle thinkingOpacity - optional with default of 0.6

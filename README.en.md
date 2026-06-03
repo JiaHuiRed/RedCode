@@ -14,8 +14,8 @@
 > **Open-source AI coding assistant — terminal + desktop dual-mode intelligent coding agent.**
 > Author: Red · Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev).
 
-[![TUI](https://img.shields.io/badge/TUI-0.3.12-blue)](CHANGELOG.md)
-[![Desktop](https://img.shields.io/badge/Desktop-0.3.13-0078d4)](CHANGELOG.md)
+[![TUI](https://img.shields.io/badge/TUI-0.3.13-blue)](CHANGELOG.md)
+[![Desktop](https://img.shields.io/badge/Desktop-0.3.14-0078d4)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-lightblue)](https://github.com/JiaHuiRed/RedCode)
 
@@ -47,7 +47,7 @@ Open-source AI coding assistant with **terminal TUI** and **desktop GUI** interf
 
 ---
 
-## 🖥 Desktop GUI (v0.3.13)
+## 🖥 Desktop GUI (v0.3.14)
 
 - **Three-column layout**: FileTree (left) + Chat (center) + Review (right), independently resizable
 - **Session shortcuts**: `Cmd+T` / `Cmd+Shift+T` to switch context sessions

@@ -10,6 +10,19 @@
 
 ## TUI
 
+### [0.3.13] - 2026-06-03
+
+#### 新增
+
+- **消息视觉区分**：用户消息添加 `> ` 前缀（agent 色加粗），AI 消息添加 ✦ 前缀（accent 色）
+- **语义色 `backgroundMessage`**：用户消息背景色独立于面板色，后续主题可单独定制
+
+#### 修复
+
+- **Browser MCP 端口冲突**：server 启动时自动检测 9001 端口，被僵尸进程占用时自动 kill 旧进程并重试
+
+---
+
 ### [0.3.12] - 2026-06-03
 
 #### 新增
@@ -156,6 +169,22 @@
 ---
 
 ## GUI
+
+### [0.3.14] - 2026-06-03
+
+#### 新增
+
+- **ECC Plugin 集成**：`.opencode/plugins/ecc-shell-stub.js` 自动加载，提供以下功能：
+  - `shell.env` — 注入 ECC 环境变量
+  - `tool.execute.after` — 自动跟踪文件变更
+  - `experimental.session.compacting` — 上下文压缩时保留关键上下文
+  - `permission.ask` — 自动放行读/格式化/测试等安全操作
+  - `changed-files` tool — 查看当前会话改过的文件
+  - `git-summary` tool — 一条命令返回分支/状态/log/diff
+
+#### 变更
+
+- 版本号升级 0.3.13 → 0.3.14
 
 ### [0.3.13] - 2026-06-02
 

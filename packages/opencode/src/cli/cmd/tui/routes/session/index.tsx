@@ -1344,9 +1344,12 @@ function UserMessage(props: {
             paddingTop={1}
             paddingBottom={1}
             paddingLeft={2}
-            backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
+            backgroundColor={hover() ? theme.backgroundElement : theme.backgroundMessage}
             flexShrink={0}
           >
+            <text fg={color()}>
+              <span style={{ bold: true }}>{"> "}</span>
+            </text>
             <text fg={theme.text}>{text()}</text>
             <Show when={files().length}>
               <box flexDirection="row" paddingBottom={metadataVisible() ? 1 : 0} paddingTop={1} gap={1} flexWrap="wrap">
@@ -1423,6 +1426,9 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
 
   return (
     <>
+      <box flexDirection="row" paddingLeft={1}>
+        <text fg={theme.accent}>{"✦ "}</text>
+      </box>
       <For each={props.parts}>
         {(part, index) => {
           const component = createMemo(() => PART_MAPPING[part.type as keyof typeof PART_MAPPING])

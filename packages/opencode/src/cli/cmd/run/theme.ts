@@ -72,9 +72,10 @@ type Variant = {
 type ColorValue = HexColor | RefName | Variant | RGBA | number
 type ThemeJson = {
   defs?: Record<string, HexColor | RefName>
-  theme: Omit<Record<ThemeColor, ColorValue>, "selectedListItemText" | "backgroundMenu"> & {
+  theme: Omit<Record<ThemeColor, ColorValue>, "selectedListItemText" | "backgroundMenu" | "backgroundMessage"> & {
     selectedListItemText?: ColorValue
     backgroundMenu?: ColorValue
+    backgroundMessage?: ColorValue
     thinkingOpacity?: number
   }
 }
@@ -269,7 +270,7 @@ export function resolveTheme(theme: ThemeJson, pick: "dark" | "light"): TuiTheme
 
   const resolved = Object.fromEntries(
     Object.entries(theme.theme)
-      .filter(([key]) => key !== "selectedListItemText" && key !== "backgroundMenu" && key !== "thinkingOpacity")
+      .filter(([key]) => key !== "selectedListItemText" && key !== "backgroundMenu" && key !== "backgroundMessage" && key !== "thinkingOpacity")
       .map(([key, value]) => [key, resolveColor(value as ColorValue)]),
   ) as Partial<Record<ThemeColor, RGBA>>
 
@@ -281,6 +282,8 @@ export function resolveTheme(theme: ThemeJson, pick: "dark" | "light"): TuiTheme
         : resolveColor(theme.theme.selectedListItemText),
     backgroundMenu:
       theme.theme.backgroundMenu === undefined ? resolved.backgroundElement! : resolveColor(theme.theme.backgroundMenu),
+    backgroundMessage:
+      theme.theme.backgroundMessage === undefined ? resolved.backgroundPanel! : resolveColor(theme.theme.backgroundMessage),
     thinkingOpacity: theme.theme.thinkingOpacity ?? 0.6,
   }
 }
