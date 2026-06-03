@@ -30,3 +30,10 @@ UPCOMING_CHANGELOG.md
 logs/
 *.bun-build
 tsconfig.tsbuildinfo
+
+# typecheck output redirect (used to capture tsgo --noEmit logs)
+typecheck_out.txt
+packages/*/typecheck_out.txt
+
+# codegraph daemon state (runtime, not source)
+.codegraph/

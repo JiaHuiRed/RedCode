@@ -23,7 +23,7 @@
 1. 安装 Chrome 扩展：
    - 打开 `chrome://extensions/`
    - 开启"开发者模式"
-   - 点"加载已解压的扩展程序" → 选择 `D:\AI\RedCode\browsermcp-extension`
+   - 点"加载已解压的扩展程序" → 选择项目内的 `browsermcp-extension` 目录（相对路径，跨电脑/盘符通用）
 2. 点击扩展图标 → Connect（图标显示绿色 "ON" 表示连接成功）
 3. 重启 TUI 生效
 
