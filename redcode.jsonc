@@ -19,7 +19,7 @@
     },
     "jcodemunch": {
       "type": "local",
-      "command": ["uvx", "jcodemunch-mcp"],
+      "command": ["jcodemunch-mcp"],
       "environment": {
         // 260602 Red AI 摘要暂时禁用，后续可配置 DeepSeek V4 Flash
         "JCODEMUNCH_USE_AI_SUMMARIES": "false"
