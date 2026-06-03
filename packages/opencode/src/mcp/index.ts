@@ -496,9 +496,14 @@ export const layer = Layer.effect(
     })
     const cfgSvc = yield* Config.Service
 
-    const descendants = Effect.fnUntraced(
+    const killProcessTree = Effect.fnUntraced(
       function* (pid: number) {
-        if (process.platform === "win32") return [] as number[]
+        if (process.platform === "win32") {
+          yield* spawner.spawn(ChildProcess.make("taskkill", ["/F", "/T", "/PID", String(pid)], { stdin: "ignore" })).pipe(
+            Effect.ignore,
+          )
+          return
+        }
         const pids: number[] = []
         const queue = [pid]
         while (queue.length > 0) {
@@ -514,10 +519,14 @@ export const layer = Layer.effect(
             }
           }
         }
-        return pids
+        for (const dpid of pids) {
+          try {
+            process.kill(dpid, "SIGTERM")
+          } catch {}
+        }
       },
       Effect.scoped,
-      Effect.catch(() => Effect.succeed([] as number[])),
+      Effect.catch(() => Effect.void),
     )
 
     function watch(s: State, name: string, client: MCPClient, bridge: EffectBridge.Shape, timeout?: number) {
@@ -580,13 +589,7 @@ export const layer = Layer.effect(
                 Effect.gen(function* () {
                   const pid = client.transport instanceof StdioClientTransport ? client.transport.pid : null
                   if (typeof pid === "number") {
-                    const pids = yield* descendants(pid)
-                    for (const dpid of pids) {
-                      try {
-                        // 260529 Red 子进程已退出时 kill 报错可忽略
-                        process.kill(dpid, "SIGTERM")
-                      } catch {}
-                    }
+                    yield* killProcessTree(pid)
                   }
                   yield* Effect.tryPromise(() => client.close()).pipe(Effect.ignore)
                 }),
