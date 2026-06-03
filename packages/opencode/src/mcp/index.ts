@@ -19,6 +19,7 @@ import { NamedError } from "@redcode-ai/core/util/error"
 import { InstallationVersion } from "@redcode-ai/core/installation/version"
 import { withTimeout } from "@/util/timeout"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
+import * as path from "path"
 import { McpOAuthProvider, OAUTH_CALLBACK_PATH } from "./oauth-provider"
 import { McpOAuthCallback } from "./oauth-callback"
 import { McpAuth } from "./auth"
@@ -418,15 +419,35 @@ export const layer = Layer.effect(
     ) {
       const [cmd, ...args] = mcp.command
       const cwd = yield* InstanceState.directory
+
+      // 解析命令参数中的相对路径为绝对路径
+      const resolvedArgs = args.map((arg) => {
+        if (arg.startsWith("./") || arg.startsWith("../")) {
+          return path.resolve(cwd, arg)
+        }
+        return arg
+      })
+
+      // 解析环境变量中的相对路径为绝对路径
+      const resolvedEnv: Record<string, string | undefined> = { ...process.env }
+      if (mcp.environment) {
+        for (const [envKey, envValue] of Object.entries(mcp.environment)) {
+          if (typeof envValue === "string" && (envValue.startsWith("./") || envValue.startsWith("../"))) {
+            resolvedEnv[envKey] = path.resolve(cwd, envValue)
+          } else {
+            resolvedEnv[envKey] = envValue
+          }
+        }
+      }
+
       const transport = new StdioClientTransport({
         stderr: "pipe",
         command: cmd,
-        args,
+        args: resolvedArgs,
         cwd,
         env: {
-          ...process.env,
+          ...resolvedEnv,
           ...(cmd === "redcode" ? { BUN_BE_BUN: "1" } : {}),
-          ...mcp.environment,
         },
       })
       transport.stderr?.on("data", (chunk: Buffer) => {
