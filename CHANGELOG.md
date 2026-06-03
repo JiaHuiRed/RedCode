@@ -17,6 +17,14 @@
 - **MCP 懒加载**：启动时不连接 MCP server，第一次调用该 MCP 的 tool 时才按需连接，减少冷启动等待
 - **MCP pending 状态**：侧边栏 MCP 面板显示"Waiting…"等待状态，启动时一目了然
 
+#### 工作流
+
+- **删除文件单独授权**：`apply_patch` 中 `type: "delete"` 的操作需额外弹窗确认，不再是编辑权限附带的
+- **灵魂文件进仓库**：`Gsoul.md` / `Tsoul.md` 从上级目录移入 `.opencode/agents/`，git 跟踪推送，换机自动同步
+- **全局 workspace（`.redcode/`）**：在项目上级创建全局共享目录，包含 AGENTS.md、MEMORY.md、USER.md、souls 等，所有项目共享身份与记忆，不再每项目重复搭建
+- **`build.bat` 版本自检**：编译前自动跑 `check-version-consistency.ts`，版本不一致时阻止编译并提示
+- **权限范围扩展**：`containsPath` 增加上级目录检查，信任与项目同级的兄弟项目
+
 ---
 
 ### [0.3.14] - 2026-06-03
@@ -203,6 +211,17 @@
 #### 变更
 
 - 版本号升级 0.3.13 → 0.3.14
+
+#### 修复
+
+- **审视面板拖拽方向反了**：ResizeHandle `edge` 默认 `"end"` 导致拖拽方向与直觉相反。改为 `edge="start"`，左移变宽、右移变窄
+- **browsermcp-server 端口冲突无法恢复**：ESM 模块内使用 `require("child_process")` 导致端口被占时 kill 逻辑报错。改为顶层 `import` 修复
+
+#### 工作流
+
+- **版本一致性自检脚本**：新增 `script/check-version-consistency.ts`，编译前自动扫描 package.json/README/CHANGELOG/标题栏版本号是否对齐
+- **build-and-package.bat 自动检查**：编译前跑版本自检 + 自动同步灵魂文件到上级目录供其他项目使用
+- **全局 workspace（`.redcode/`）**：AGENTS.md/MEMORY.md/USER.md/souls 移至 `D:\AI\.redcode\`，所有项目共享身份与记忆，build bat 自动同步
 
 ### [0.3.13] - 2026-06-02
 

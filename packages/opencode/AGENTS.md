@@ -133,3 +133,85 @@ Use `Effect.cached` when multiple concurrent callers should share a single in-fl
 Use `EffectBridge` for native or external callbacks (`@parcel/watcher`, `node-pty`, native `fs.watch`, plugin callbacks, etc.) that need to re-enter Effect services with instance/workspace context.
 
 Plain async code should pass explicit context or stay inside an Effect fiber; do not add ambient instance context shims.
+
+# TypeScript style
+
+## General
+
+- Keep things in one function unless composable or reusable
+- Do not extract single-use helpers preemptively
+- Avoid `try`/`catch` where possible
+- Avoid `any` type
+- Use Bun APIs when possible (`Bun.file()`)
+- Rely on type inference; avoid explicit annotations unless needed for exports/clarity
+- Prefer functional array methods (flatMap, filter, map) over for loops; use type guards on filter
+- Reduce total variable count: inline single-use values
+
+```ts
+// Good
+const journal = await Bun.file(path.join(dir, "journal.json")).json()
+// Bad
+const journalPath = path.join(dir, "journal.json")
+const journal = await Bun.file(journalPath).json()
+```
+
+## Destructuring
+
+Avoid unnecessary destructuring. Use dot notation to preserve context.
+
+```ts
+// Good
+obj.a; obj.b
+// Bad
+const { a, b } = obj
+```
+
+## Variables
+
+Prefer `const` over `let`. Use ternaries or early returns instead of reassignment.
+
+## Control flow
+
+Avoid `else`. Prefer early returns.
+
+## Complex logic
+
+Main function reads as happy path; supporting details in small helpers below.
+
+- Keep helpers close to the code they support
+- Extract only when it names a real concept (`requireConfig`, `readMetadata`)
+- Do not return `Effect` from synchronous helpers
+- Prefer `Schema.UnknownFromJsonString` / `Schema.decodeUnknownOption` over manual `JSON.parse` + `Effect.try`
+- Add comments for non-obvious constraints only
+
+## Schema (Drizzle)
+
+Use snake_case so column names don't need string redefinitions.
+
+```ts
+const table = sqliteTable("session", {
+  id: text().primaryKey(),
+  project_id: text().notNull(),
+  created_at: integer().notNull(),
+})
+```
+
+## Testing
+
+- Avoid mocks
+- Test actual implementation, don't duplicate logic
+- Run from package dir, not repo root
+
+## Type checking
+
+- `bun run typecheck` from package dirs, never raw `tsc`
+
+## TypeScript navigation (typegraph-mcp)
+
+Prefer `ts_*` MCP tools over grep/glob for TS code. They resolve barrels/re-exports and return semantic results.
+
+- Point: `ts_find_symbol`, `ts_definition`, `ts_references`, `ts_type_info`, `ts_navigate_to`, `ts_trace_chain`, `ts_blast_radius`, `ts_module_exports`
+- Graph: `ts_dependency_tree`, `ts_dependents`, `ts_import_cycles`, `ts_shortest_path`, `ts_subgraph`, `ts_module_boundary`
+
+Use `rg`/grep for non-TS (docs, config, SQL, JSON) and broad text discovery.
+Use `ts_*` first for TS symbols; combine both when task spans TS + docs/config.

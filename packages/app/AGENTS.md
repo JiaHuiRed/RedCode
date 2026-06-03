@@ -2,13 +2,13 @@
 
 - NEVER try to restart the app, or the server process, EVER.
 
-## Local Dev
+## Commands
 
-- `opencode dev web` proxies `https://app.redcode.dev`, so local UI/CSS changes will not show there.
-- For local UI changes, run the backend and app dev servers separately.
+- `bun run typecheck` (from `packages/app`)
+- Dev: `bun dev -- --port 4444`
 - Backend (from `packages/opencode`): `bun run --conditions=browser ./src/index.ts serve --port 4096`
-- App (from `packages/app`): `bun dev -- --port 4444`
 - Open `http://localhost:4444` to verify UI changes (it targets the backend at `http://localhost:4096`).
+- `opencode dev web` proxies `https://app.redcode.dev`, so local UI/CSS changes will not show there — use local dev above.
 
 ## SolidJS
 

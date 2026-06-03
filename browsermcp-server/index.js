@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
+import { execSync } from "child_process";
 
 const WS_PORT = 9001;
 let ws = null;
@@ -17,7 +18,6 @@ function startWebSocketServer(port, retries = 5, delay = 800) {
       if (err.code === "EADDRINUSE" && retries > 0) {
         console.error(`[BrowserMCP] Port ${port} in use, killing old process (${retries} retries left)...`);
         try {
-          const { execSync } = require("child_process");
           execSync(`netstat -ano | findstr ":${port}" | findstr "LISTENING" >nul 2>nul && for /f "tokens=5" %a in ('netstat -ano ^| findstr ":${port}" ^| findstr "LISTENING"') do taskkill /F /PID %a 2>nul`, { stdio: "ignore", timeout: 3000 });
         } catch {}
         server.close();

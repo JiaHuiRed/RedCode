@@ -214,6 +214,20 @@ export const ApplyPatchTool = Tool.define(
         },
       })
 
+      // 260603 Red Delete operations require explicit confirmation
+      const deletes = fileChanges.filter((c) => c.type === "delete")
+      for (const del of deletes) {
+        yield* ctx.ask({
+          permission: "delete",
+          patterns: [path.relative(instance.worktree, del.filePath).replaceAll("\\", "/")],
+          always: [],
+          metadata: {
+            filepath: del.filePath,
+            diff: del.diff,
+          },
+        })
+      }
+
       // Apply the changes
       const updates: Array<{ file: string; event: "add" | "change" | "unlink" }> = []
 

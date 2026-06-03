@@ -88,18 +88,12 @@ const StatusNeedsClientRegistration = Schema.Struct({
   error: Schema.String,
 }).annotate({ identifier: "MCPStatusNeedsClientRegistration" })
 
-// 260603 Red 懒加载：pending 状态表示未连接
-const StatusPending = Schema.Struct({ status: Schema.Literal("pending") }).annotate({
-  identifier: "MCPStatusPending",
-})
-
 export const Status = Schema.Union([
   StatusConnected,
   StatusDisabled,
   StatusFailed,
   StatusNeedsAuth,
   StatusNeedsClientRegistration,
-  StatusPending,
 ]).annotate({ identifier: "MCPStatus", discriminator: "status" })
 export type Status = Schema.Schema.Type<typeof Status>
 
@@ -603,15 +597,32 @@ export const layer = Layer.effect(
           defs: {},
         }
 
-        // 260603 Red 懒加载：启动不连接 MCP，由 tools() 按需连接
-        for (const [key, mcp] of Object.entries(config)) {
-          if (!isMcpConfigured(mcp)) continue
-          if (mcp.enabled === false) {
-            s.status[key] = { status: "disabled" }
-          } else {
-            s.status[key] = { status: "pending" }
-          }
-        }
+        yield* Effect.forEach(
+          Object.entries(config),
+          ([key, mcp]) =>
+            Effect.gen(function* () {
+              if (!isMcpConfigured(mcp)) {
+                log.error("Ignoring MCP config entry without type", { key })
+                return
+              }
+
+              if (mcp.enabled === false) {
+                s.status[key] = { status: "disabled" }
+                return
+              }
+
+              const result = yield* create(key, mcp).pipe(Effect.catch(() => Effect.void))
+              if (!result) return
+
+              s.status[key] = result.status
+              if (result.mcpClient) {
+                s.clients[key] = result.mcpClient
+                s.defs[key] = result.defs!
+                watch(s, key, result.mcpClient, bridge, mcp.timeout)
+              }
+            }),
+          { concurrency: "unbounded" },
+        )
 
         yield* Effect.addFinalizer(() =>
           Effect.gen(function* () {
@@ -688,7 +699,7 @@ export const layer = Layer.effect(
             for (const [name, mcp] of Object.entries(newMcps)) {
               if (!isMcpConfigured(mcp) || mcp.enabled === false) continue
               if (!s.clients[name]) {
-              yield* createAndStore(name, mcp as unknown as ConfigMCP.Info).pipe(Effect.catch(() => Effect.void))
+                yield* createAndStore(name, mcp).pipe(Effect.catch(() => Effect.void))
               }
             }
           })
@@ -803,26 +814,6 @@ export const layer = Layer.effect(
       const config = cfg.mcp ?? {}
       const defaultTimeout = cfg.experimental?.mcp_timeout
 
-      // 260603 Red 懒加载：按需连接未连接的 MCP server
-      const pendingConnections = Object.entries(config).filter(([name, mcp]) => {
-        if (!isMcpConfigured(mcp) || mcp.enabled === false) return false
-        return s.status[name]?.status !== "connected"
-      })
-
-      if (pendingConnections.length > 0) {
-        log.info("lazy-connecting MCP servers", { servers: pendingConnections.map(([n]) => n) })
-        yield* Effect.forEach(
-          pendingConnections,
-          ([name, mcp]) =>
-            Effect.gen(function* () {
-              const mcpConfig: ConfigMCP.Info = mcp as unknown as ConfigMCP.Info
-              yield* createAndStore(name, mcpConfig).pipe(Effect.catch(() => Effect.void))
-            }),
-          { concurrency: "unbounded" },
-        )
-      }
-
-      // 构建工具列表（从已连接的 client）
       const connectedClients = Object.entries(s.clients).filter(
         ([clientName]) => s.status[clientName]?.status === "connected",
       )
@@ -841,6 +832,7 @@ export const layer = Layer.effect(
             }
 
             const timeout = entry?.timeout ?? defaultTimeout
+            // 260603 Red P1: 用 EffectBridge 避免依赖 AppRuntime
             const toolBridge = yield* EffectBridge.make()
             const doReconnect = () => toolBridge.promise(reconnectServer(clientName))
             for (const mcpTool of listed) {
