@@ -8,8 +8,32 @@ let ws = null;
 let msgId = 0;
 const pending = new Map();
 
+// 260603 Red 端口冲突时杀掉旧进程再重试
+function startWebSocketServer(port, retries = 3) {
+  return new Promise((resolve, reject) => {
+    const server = new WebSocketServer({ port });
+    server.on("listening", () => resolve(server));
+    server.on("error", (err) => {
+      if (err.code === "EADDRINUSE" && retries > 0) {
+        console.error(`[BrowserMCP] Port ${port} in use, killing old process...`);
+        try {
+          const { execSync } = require("child_process");
+          const result = execSync(`netstat -ano | findstr :${port} | findstr LISTENING`, { encoding: "utf8" });
+          const pid = result.trim().split(/\s+/).pop();
+          if (pid && !isNaN(Number(pid))) {
+            execSync(`taskkill /F /PID ${pid}`, { stdio: "ignore" });
+          }
+        } catch {}
+        setTimeout(() => startWebSocketServer(port, retries - 1).then(resolve, reject), 500);
+      } else {
+        reject(err);
+      }
+    });
+  });
+}
+
 // WebSocket server for Chrome extension
-const wss = new WebSocketServer({ port: WS_PORT });
+const wss = await startWebSocketServer(WS_PORT);
 console.error(`[BrowserMCP] WebSocket server listening on port ${WS_PORT}`);
 
 wss.on("connection", (socket) => {
