@@ -1,61 +1,119 @@
 # RedCode 未来版本规划
 
-> 从 ECC（多 AI agent 模式）项目中提取的改进方向。拉取 ECC 后参考这些方向开工。
+> ECC（Everything Claude Code）实际是 OpenCode 的完整 plugin 库（不是 skill 文档集）。
+> 260603 Red 真实情况：ECC 提供 12 agents + 31 commands + 9 plugin hooks + 8 custom tools + 300+ skills，
+> 通过 `.opencode/plugin: ["./plugins"]` 直接加载到任何 OpenCode 项目。RedCode 就是 OpenCode fork，
+> 所以 ECC plugin **可以原样装到 RedCode**（只需把英文 prompt 翻译成中文）。
+>
+> 本规划按"ECC 真能给的"和"需要自己写的"分类，**不再按昨天的错误分类**。
 
 ---
 
-## v0.3.14 — 上下文压力检测
+## 现实约束（260603 探索 ECC 后）
 
-**来源**: ECC 的 Counter hooks 模式
+| 维度 | ECC 实际能力 | 适配 RedCode |
+|------|-------------|--------------|
+| 9 个 plugin hooks | TypeScript 实现，OpenCode plugin API | **直接移植**到 `packages/opencode/.opencode/plugins/`（需确认 RedCode plugin 加载路径） |
+| 8 个 custom tools | TypeScript 实现，复用 `@opencode-ai/plugin/tool` | **直接移植** |
+| 12 agents + 31 commands | YAML/Markdown 配置 + prompt 模板 | **直接用**（需汉化） |
+| 300+ skills | Markdown 文档（最佳实践 + 示例代码） | **挑能用**的看（如 `error-handling`、`strategic-compact`） |
+| RedCode TUI/GUI | 自己代码 | **完全自己写**，ECC 不碰 |
 
-**目标**: 检测 AI 上下文是否接近 token 上限，提前预警或自动压缩
+---
 
-### 实现方向
+## P0 优先级（直接复用 ECC 代码）
 
-1. **ContextPressureCounter Hook** (`use-context-pressure.ts`)
-   ```ts
-   // 监控 token 使用量 vs 上下文限制
-   // 当使用率 > 80% 时发出警告
-   // 当使用率 > 95% 时自动触发压缩
-   function useContextPressure(sessionId: string) {
-     const usage = createMemo(() => ...)
-     const pressure = createMemo(() => usage() / limit())
-     const isWarning = createMemo(() => pressure() > 0.8)
-     const isCritical = createMemo(() => pressure() > 0.95)
-     return { pressure, isWarning, isCritical, usage, limit }
-   }
-   ```
+### v0.3.14 — 引入 ECC plugin（基础接入）
 
-2. **集成到 PromptInput**
-   - 压力指示器：在输入框下方显示进度条
-   - 颜色渐变：绿（<60%）→ 黄（60-80%）→ 红（>80%）
-   - 点击展开详情：显示 token 使用分布（用户/助手/工具/系统）
+**来源**: ECC `.opencode/plugins/ecc-hooks.ts` 完整实现
 
-3. **自动压缩触发**
-   - 当 `isCritical` 为 true 时，自动调用压缩 API
-   - 压缩策略：保留最近 N 条消息 + 系统提示 + 工具定义
-   - 压缩后 toast 通知："上下文已自动压缩，释放了 X tokens"
+**目标**: 把 ECC 的 9 个 hooks + 8 个 tools 接入 RedCode，让 ECC 的能力在 RedCode 立即可用
 
-4. **会话列表显示压力**
-   - Home 页面 session 列表项显示压力指示器
-   - 高压力 session 用红色/黄色标记
+**实现方向**:
 
-### 涉及文件
+1. **复制 plugin 源码到 RedCode**
+   - `packages/opencode/.opencode/plugins/ecc-hooks.ts`（核心 520 行）
+   - `packages/opencode/.opencode/plugins/lib/changed-files-store.ts`（辅助）
+   - `packages/opencode/.opencode/tools/*.ts`（8 个工具）
 
+2. **汉化 ECC 的英文日志/prompt**
+   - `log("info", "[ECC] Formatted: ...")` → `log("info", "[ECC] 已格式化: ...")`
+   - agent prompt 模板汉化（`prompts/agents/*.txt`）
+
+3. **RedCode plugin 加载配置**
+   - `redcode.jsonc` 加 `plugin: [".opencode/plugins"]`
+   - 测试所有 hooks 能正常触发
+
+4. **保留主人风格**
+   - 不引入 ECC 的 `ECC_HOOK_PROFILE` 概念（按主人偏好用最简配置）
+   - 不引入 desktop 通知（macOS 特定，主人用 Windows）
+
+**涉及文件**:
+- `packages/opencode/.opencode/plugins/ecc-hooks.ts`（新，从 D:\AI\ECC 复制）
+- `packages/opencode/.opencode/plugins/lib/changed-files-store.ts`（新）
+- `packages/opencode/.opencode/tools/*.ts`（新，8 个）
+- `redcode.jsonc`（加 plugin 路径）
+- `packages/opencode/.opencode/prompts/agents/*.txt`（汉化）
+
+**收益**:
+- 立即获得 Prettier 自动格式化、TS 类型检查、console.log 审计、PR 创建日志
+- 立即获得 8 个工具（run-tests、check-coverage、security-audit 等）
+- 立即获得 shell.env 注入（PROJECT_ROOT、PACKAGE_MANAGER 自动检测）
+
+---
+
+### v0.3.15 — 上下文压缩策略（基于 strategic-compact）
+
+**来源**: ECC `skills/strategic-compact/SKILL.md` 决策指南表
+
+**目标**: 在 RedCode TUI 端实现智能压缩（不只 hook 提醒，而是真正的"何时压缩"逻辑）
+
+**ECC 给的关键决策表**（直接复用）:
+
+| Phase Transition | Compact? | Why |
+|-----------------|----------|-----|
+| Research → Planning | Yes | 调研上下文冗长，plan 是精炼输出 |
+| Planning → Implementation | Yes | plan 在 TodoWrite 里，腾出空间给代码 |
+| Implementation → Testing | Maybe | 保留测试引用 |
+| Debugging → Next feature | Yes | 调试 trace 污染下一阶段 |
+| Mid-implementation | No | 丢失变量名/路径代价高 |
+| After a failed approach | Yes | 清理死路推理 |
+
+**实现方向**:
+
+1. **CompressionManager** (`packages/opencode/src/context/compression-manager.ts`)
+   - 策略：recent (最近 N 条) / important (token 消耗排序) / semantic (LLM 摘要) / hybrid
+   - 触发：手动（用户点"压缩"按钮） / 自动（token > 90%）/ 预算（剩余 < 10% 强制）
+
+2. **TUI 端压力检测 hook**（基于 ECC 的 `experimental.session.compacting`）
+   - 在 `packages/opencode/src/session/compacting.ts` 接入
+   - 调用 `CompressionManager.compress(messages, strategy)` 而不是默认 compaction
+
+3. **GUI 端压缩提示**（基于 ECC 决策表）
+   - 在 `packages/app/src/components/prompt-input/` 加压力指示器
+   - 颜色：绿(<60%) / 黄(60-80%) / 红(>80%) / 红闪烁(>95%)
+   - 点击展开：显示 token 分布（用户/助手/工具/系统）
+
+**涉及文件**:
+- `packages/opencode/src/context/compression-manager.ts`（新）
+- `packages/opencode/src/session/compacting.ts`（修改，集成 ECC 决策）
+- `packages/app/src/components/prompt-input/pressure-indicator.tsx`（新）
 - `packages/app/src/hooks/use-context-pressure.ts`（新）
-- `packages/app/src/components/prompt-input.tsx`（修改）
-- `packages/app/src/pages/session.tsx`（集成）
-- `packages/app/src/pages/home.tsx`（session 列表显示）
+
+**收益**:
+- 按 ECC 决策表智能压缩（不像 OpenCode 默认那样任意时刻压缩）
+- TUI/GUI 双向都显示压力
+- 减少上下文丢失，提升长会话质量
 
 ---
 
-## v0.3.15 — 5 层 Error Hierarchy
+### v0.3.16 — 5 层 Error Hierarchy（基于 error-handling skill）
 
-**来源**: ECC 的错误处理模式
+**来源**: ECC `skills/error-handling/SKILL.md` 完整 TypeScript 示例（376 行）
 
-**目标**: 统一错误处理，提供更好的用户反馈
+**目标**: 统一 RedCode 错误处理，提供更好用户反馈
 
-### 5 层错误分类
+**5 层错误分类**（直接复用 ECC 模式）:
 
 | 层 | 类型 | 用户行为 | 示例 |
 |----|------|----------|------|
@@ -65,318 +123,130 @@
 | L4 | 模型错误 | 换模型/重试 | Context length exceeded、Model unavailable |
 | L5 | 系统错误 | 联系支持 | 内部服务错误、未知异常 |
 
-### 实现方向
+**实现方向**:
 
-1. **ErrorClassifier** (`utils/error-classifier.ts`)
+1. **复用 ECC 错误类**（直接 copy-paste）
    ```ts
-   function classifyError(error: unknown): ErrorLevel {
-     if (isNetworkError(error)) return { level: 1, retryable: true }
-     if (isAuthError(error)) return { level: 2, retryable: false }
-     if (isQuotaError(error)) return { level: 3, retryable: true, retryAfter: ... }
-     if (isModelError(error)) return { level: 4, retryable: true }
-     return { level: 5, retryable: false }
+   // packages/opencode/src/util/error.ts
+   export class AppError extends Error {
+     constructor(message, public code: string, public statusCode = 500, public details?: unknown) {
+       super(message)
+       this.name = this.constructor.name
+       Object.setPrototypeOf(this, new.target.prototype)
+     }
    }
+   export class NotFoundError extends AppError { ... }
+   export class ValidationError extends AppError { ... }
+   // ... 等等
    ```
 
-2. **ErrorToast 组件**
-   - 根据错误级别显示不同颜色和操作按钮
-   - L1: 黄色 toast + "重试" 按钮
-   - L2: 红色 toast + "检查配置" 按钮
-   - L3: 橙色 toast + "等待 X 分钟" 倒计时
-   - L4: 紫色 toast + "切换模型" 按钮
-   - L5: 红色 toast + "复制错误信息" 按钮
+2. **Result pattern 集成**
+   - `packages/opencode/src/util/result.ts`（新）
+   - 用于 LLM 调用、API 请求、文件操作（失败是常见的场景）
 
-3. **错误恢复策略**
-   - 自动重试：L1 错误最多重试 3 次，间隔递增（1s, 2s, 4s）
-   - 降级处理：L4 错误时自动切换到备用模型（如果配置了）
-   - 用户干预：L2/L3 错误时暂停并提示用户
+3. **withRetry 工具**
+   - `packages/opencode/src/util/retry.ts`（新）
+   - 指数退避 + jitter，L1 网络错误自动重试 3 次
 
-4. **错误日志上报**
-   - L5 错误自动上报到 Sentry（如果配置了）
-   - 错误上下文：session ID、消息 ID、模型、token 使用量
+4. **ErrorToast GUI 组件**
+   - `packages/app/src/components/error-toast.tsx`（新）
+   - 根据 `error.code` 显示不同颜色 + 操作按钮
 
-### 涉及文件
-
-- `packages/app/src/utils/error-classifier.ts`（新）
+**涉及文件**:
+- `packages/opencode/src/util/error.ts`（扩展，加 5 层错误类）
+- `packages/opencode/src/util/result.ts`（新）
+- `packages/opencode/src/util/retry.ts`（新）
 - `packages/app/src/components/error-toast.tsx`（新）
-- `packages/app/src/context/error-recovery.ts`（新）
-- `packages/app/src/hooks/use-error-handler.ts`（新）
 
 ---
 
-## v0.3.16 — Tool Registry 重构
+## P1 优先级（参考 ECC 概念，自己设计）
 
-**来源**: ECC 的工具注册模式（大改）
+### v0.3.17 — Continuous Learning v2（主人 MEMORY.md 的工程化版本）
 
-**目标**: 统一工具定义、发现、调用流程，支持动态工具加载
+**来源**: ECC `skills/continuous-learning-v2/SKILL.md` 概念
 
-### 实现方向
+**目标**: 把主人当前的"被纠正时写 memory/YYMMDD.md"机制工程化
 
-1. **ToolRegistry 中央注册表**
-   ```ts
-   class ToolRegistry {
-     private tools = new Map<string, ToolDefinition>()
-     
-     register(tool: ToolDefinition) { ... }
-     unregister(name: string) { ... }
-     get(name: string) { ... }
-     list(): ToolDefinition[] { ... }
-     byCategory(category: string): ToolDefinition[] { ... }
-   }
-   ```
+**ECC 给的核心概念**（要适配的不是直接复制）:
+- Atomic "instincts"（带 confidence scoring 的小行为单元）
+- PreToolUse/PostToolUse 观察（100% 可靠，比 Stop hook 好）
+- 项目级隔离（React 模式留在 React 项目，Python 模式留在 Python）
+- 演化路径：instinct → 聚类 → skill/command/agent
 
-2. **ToolDefinition 类型**
-   ```ts
-   interface ToolDefinition {
-     name: string
-     category: 'file' | 'search' | 'terminal' | 'web' | 'mcp' | 'custom'
-     description: string
-     parameters: JSONSchema
-     execute: (params: any) => Promise<ToolResult>
-     permissions: PermissionRequirement[]
-     rateLimit?: { maxCalls: number; windowMs: number }
-   }
-   ```
+**与主人现状的差异**:
+- 主人现在用 `MEMORY.md`（人写，AI 读）
+- ECC v2 用 `instincts`（AI 写，AI 读）
+- **建议**：保留人写的 `MEMORY.md`（主人习惯），**叠加** AI 写的 instincts（自动学习）
 
-3. **动态工具发现**
-   - MCP 工具自动注册到 ToolRegistry
-   - 插件工具通过配置文件声明
-   - 运行时可动态加载/卸载工具
+**实现方向**:
 
-4. **工具调用链可视化**
-   - Debug 模式显示工具调用树
-   - 每个工具调用显示耗时、token 消耗
-   - 支持导出调用链为 JSON
+1. **Instinct Store**（AI 自动）
+   - `packages/opencode/.opencode/instincts/` 目录
+   - 每条 instinct 一个 YAML 文件（id/trigger/confidence/domain/source/scope）
+   - 主人被纠正时 AI 自动写一条
 
-### 涉及文件
+2. **MEMORY.md 保留**（人手动）
+   - 继续主人现有的"长篇教训"风格
+   - 让 AI 在写 instinct 后，问"要不要也记到 MEMORY.md"
 
-- `packages/opencode/src/tool/registry.ts`（新）
-- `packages/opencode/src/tool/definition.ts`（新）
-- `packages/app/src/components/debug-bar.tsx`（修改：显示工具调用链）
+3. **项目级 vs 全局**
+   - RedCode 项目的 instinct 留在 RedCode
+   - 跨项目的 instinct 提升到 `~/.config/redcode/instincts/`
+
+4. **演化**（主人命令时）
+   - `/instinct-cluster`：把相关 instinct 聚成 skill
+   - `/instinct-promote`：从项目提升到全局
+
+**涉及文件**:
+- `packages/opencode/.opencode/instincts/.gitkeep`（新目录）
+- `packages/opencode/.opencode/commands/instinct-cluster.md`（新）
+- `packages/opencode/.opencode/commands/instinct-promote.md`（新）
+- 配合主人的 `MEMORY.md` 流程
+
+**风险**: 可能和主人手写 MEMORY.md 重复，需要主人体验后决定是否保留
 
 ---
 
-## v0.3.17 — Prefetch 空闲调度
+## 已废弃（v0.3.14-v0.3.18 旧版本计划）
 
-**来源**: ECC 的 requestIdleCallback 模式
+> 260603 Red 昨天基于错误理解写的规划，已废弃。**不应再按这些做**。
 
-**目标**: 利用浏览器空闲时间预取 session 数据，减少用户等待
-
-### 实现方向
-
-1. **IdleScheduler** (`utils/idle-scheduler.ts`)
-   ```ts
-   function scheduleIdleTask(task: () => void, priority: 'high' | 'medium' | 'low') {
-     if ('requestIdleCallback' in window) {
-       requestIdleCallback(task, { timeout: priority === 'high' ? 1000 : 5000 })
-     } else {
-       setTimeout(task, 0)
-     }
-   }
-   ```
-
-2. **SessionPrefetch 重构**
-   - 当前：立即 prefetch 相邻 session
-   - 重构：利用空闲时间 prefetch
-   - 优先级：当前 session > 相邻 session > 其他 session
-
-3. **预取策略**
-   - 高优先级：当前 session 的下一条消息
-   - 中优先级：相邻 session 的元数据
-   - 低优先级：其他 session 的消息列表
-
-4. **性能监控**
-   - 记录 prefetch 命中率
-   - 记录空闲时间利用率
-   - Home 页面显示 "预取状态" 指示器
-
-### 涉及文件
-
-- `packages/app/src/utils/idle-scheduler.ts`（新）
-- `packages/app/src/context/global-sync/session-prefetch.ts`（修改）
-- `packages/app/src/pages/session.tsx`（修改：集成空闲调度）
+- ~~v0.3.14 上下文压力检测（Counter hooks 模式）~~ → 合并到 v0.3.15
+- ~~v0.3.16 Tool Registry 重构~~ → ECC 没这个能力，**RedCode 自己设计**（推迟）
+- ~~v0.3.17 Prefetch 空闲调度~~ → ECC 没这个能力，**RedCode 自己设计**（推迟）
+- ~~v0.3.18 会话压缩策略~~ → 升级为 v0.3.15
 
 ---
 
-## v0.3.18 — 会话压缩策略
+## 待主人决定
 
-**来源**: ECC 的上下文管理模式
+1. **是否引入 ECC plugin 全文**（v0.3.14）？
+   - 优点：立即获得 ECC 全部能力（hooks/tools/agents/commands）
+   - 缺点：~3000+ 行代码，主人要 review 决定
 
-**目标**: 智能压缩历史会话，保留关键信息
+2. **ECC 汉化策略**？
+   - 完全汉化（prompt + log + 命令）→ 主人用得舒服
+   - 仅 log 汉化（prompt 保持英文）→ 跟 ECC 上游同步
+   - 不汉化（纯英文）→ 最少维护
 
-### 实现方向
-
-1. **压缩策略选择**
-   - 策略 1：保留最近 N 条消息（简单）
-   - 策略 2：保留重要消息（基于 token 消耗排序）
-   - 策略 3：语义压缩（调用 LLM 生成摘要）
-   - 策略 4：混合策略（最近 + 重要 + 摘要）
-
-2. **CompressionManager**
-   ```ts
-   class CompressionManager {
-     async compress(messages: Message[], strategy: CompressionStrategy): Promise<Message[]> {
-       switch (strategy) {
-         case 'recent': return this.compressByRecent(messages, 10)
-         case 'important': return this.compressByImportance(messages, 0.7)
-         case 'semantic': return this.compressBySemantic(messages)
-         case 'hybrid': return this.compressHybrid(messages)
-       }
-     }
-   }
-   ```
-
-3. **压缩触发条件**
-   - 手动触发：用户点击 "压缩上下文" 按钮
-   - 自动触发：token 使用率 > 90%
-   - 预算触发：剩余 token < 10% 时强制压缩
-
-4. **压缩结果展示**
-   - 压缩前后对比：显示 token 节省量
-   - 压缩后摘要：显示保留的关键信息
-   - 撤销支持：压缩后 5 秒内可撤销
-
-### 涉及文件
-
-- `packages/app/src/utils/compression-manager.ts`（新）
-- `packages/app/src/components/compression-dialog.tsx`（新）
-- `packages/app/src/context/session-compression.ts`（新）
-
----
-
-## v0.4.0 — 大版本升级（长期规划）
-
-### 1. 多 Agent 协作
-
-- **Agent 通信协议**: 定义 Agent 间消息格式
-- **任务分发器**: 主 Agent 分配子任务给子 Agent
-- **结果聚合器**: 汇总多个 Agent 的执行结果
-- **冲突解决**: 多 Agent 同时修改文件时的冲突处理
-
-### 2. 插件系统
-
-- **插件发现**: 从 npm/github 发现可用插件
-- **插件安装**: 一键安装插件到本地
-- **插件配置**: 插件配置界面
-- **插件沙箱**: 插件运行在隔离环境中
-
-### 3. 云端同步
-
-- **会话同步**: 多设备间同步会话历史
-- **配置同步**: 同步 provider/model 配置
-- **插件同步**: 同步已安装的插件列表
-- **离线支持**: 断网时本地缓存，联网后同步
-
-### 4. 团队协作
-
-- **共享会话**: 团队成员共享会话历史
-- **代码审查**: AI 辅助代码审查
-- **知识库**: 团队共享的代码知识库
-- **权限管理**: 团队成员权限分级
-
----
-
-## 布局重构（Phase 2/3）
-
-### Phase 2：更激进的清理
-
-- **删除 V1 残留代码**: 已完成（v0.3.13）
-- **清理 sidebar 相关 state**: `layout.context` 中的 `sidebar.opened()` 等状态
-- **简化 autoselect 逻辑**: V2 不再需要，可删除
-
-### Phase 3：Layout 纯化
-
-- **LayoutShell**: 只负责 JSX 结构
-- **LayoutContent**: 所有 hooks 和状态
-- **LayoutFooter**: Toast 区域
-- **LayoutContext**: 共享状态上下文
-
-### Phase 4：性能优化
-
-- **虚拟滚动**: 长 session 列表虚拟滚动
-- **懒加载**: 非活跃 session 懒加载消息
-- **Web Workers**: 将计算密集任务移到 Worker
-- **WASM 加速**: 将 AST 解析等任务用 WASM 实现
-
----
-
-## MCP 扩展
-
-### 1. jCodeMunch 深度集成
-
-- **语义搜索**: 基于 embedding 的代码搜索
-- **死代码检测**: 自动发现未使用的代码
-- **影响分析**: 代码变更影响评估
-- **重构建议**: 基于代码质量的重构建议
-
-### 2. Browser MCP 增强
-
-- **多标签页支持**: 同时操作多个标签页
-- **表单自动填写**: AI 自动填写表单
-- **截图对比**: 自动对比页面变化
-- **性能监控**: 页面加载性能分析
-
-### 3. 自定义 MCP 服务器
-
-- **MCP 服务器模板**: 快速创建自定义 MCP 服务器
-- **MCP 服务器市场**: 发现和分享 MCP 服务器
-- **MCP 服务器测试**: 在线测试 MCP 服务器
-
----
-
-## 测试补全
-
-### 1. 单元测试
-
-- **工具系统**: ToolRegistry、ToolDefinition 测试
-- **错误处理**: ErrorClassifier、ErrorRecovery 测试
-- **压缩策略**: CompressionManager 测试
-- **空闲调度**: IdleScheduler 测试
-
-### 2. 集成测试
-
-- **会话流程**: 创建 → 发送消息 → 接收响应 → 保存
-- **工具调用**: 工具发现 → 权限确认 → 执行 → 结果返回
-- **错误恢复**: 网络错误 → 重试 → 成功/失败
-
-### 3. E2E 测试
-
-- **GUI 流程**: 启动 → 登录 → 创建会话 → 发送消息
-- **TUI 流程**: 启动 → 选择 provider → 发送消息 → 查看结果
-- **MCP 测试**: 启动 MCP 服务器 → 调用工具 → 验证结果
-
----
-
-## 优先级排序
-
-| 优先级 | 版本 | 内容 | 预估工时 |
-|--------|------|------|----------|
-| P0 | v0.3.14 | 上下文压力检测 | 2-3 天 |
-| P0 | v0.3.15 | 5 层 Error Hierarchy | 3-4 天 |
-| P1 | v0.3.16 | Tool Registry 重构 | 5-7 天 |
-| P1 | v0.3.17 | Prefetch 空闲调度 | 2-3 天 |
-| P1 | v0.3.18 | 会话压缩策略 | 3-4 天 |
-| P2 | v0.4.0 | 大版本升级 | 2-3 周 |
-| P2 | Phase 2/3 | Layout 纯化 | 3-5 天 |
-| P2 | MCP 扩展 | 深度集成 | 1-2 周 |
-| P2 | 测试补全 | 测试覆盖 | 1-2 周 |
-
----
-
-## 快速开始
-
-拉取 ECC 后：
-
-1. **阅读 ECC 源码**: 重点关注 `src/hooks/`、`src/utils/`、`src/context/` 目录
-2. **对比 RedCode**: 找出可复用的模式和需要适配的地方
-3. **从 P0 开始**: 先做上下文压力检测和错误处理，这两个改动小、收益大
-4. **逐步推进**: 每个版本独立，不要一次性做太多
+3. **ECC agents 是否引入**？
+   - planner/architect/code-reviewer/tdd-guide 等 12 个
+   - 主人已经手动实现了 v0.3.12 的右键粘贴/侧边栏等（不是 agent 完成）
+   - 引入会让 OpenCode 启动变慢（agent 多）
 
 ---
 
 ## 参考资源
 
 - ECC 项目：`D:\AI\ECC`
+- ECC OpenCode plugin：`D:\AI\ECC\.opencode\`（**真材实料**）
+- ECC hooks 主文件：`D:\AI\ECC\.opencode\plugins\ecc-hooks.ts`（520 行）
+- ECC tools：`D:\AI\ECC\.opencode\tools/*.ts`（8 个）
+- ECC 关键 skills：
+  - `D:\AI\ECC\skills\error-handling\SKILL.md`（直接可用 TS 错误处理代码）
+  - `D:\AI\ECC\skills\strategic-compact\SKILL.md`（压缩决策表）
+  - `D:\AI\ECC\skills\continuous-learning-v2\SKILL.md`（AI 学习系统概念）
+  - `D:\AI\ECC\skills\hookify-rules\SKILL.md`（YAML hook 规则）
 - jCodeMunch 文档：`https://github.com/colbymchenry/jcodemunch`
 - TypeGraph 文档：`https://github.com/guyowen/typegraph-mcp`
-- Browser MCP 文档：`https://github.com/colbymchenry/browsermcp`
