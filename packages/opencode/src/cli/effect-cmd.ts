@@ -4,6 +4,25 @@ import { AppRuntime, type AppServices } from "@/effect/app-runtime"
 import { InstanceStore } from "@/project/instance-store"
 import { InstanceRef } from "@/effect/instance-ref"
 import { cmd, type WithDoubleDash } from "./cmd/cmd"
+import * as fs from "node:fs"
+import * as path from "node:path"
+
+// 260603 Red exe 从 bin/ 启动时 cwd 不是项目根，从 exe 所在目录向上查找
+function findProjectRoot(startDir: string): string {
+  // process.execPath 是 exe 的实际路径，向上查找项目根
+  const exeDir = path.dirname(process.execPath)
+  let dir = exeDir
+  while (true) {
+    if (fs.existsSync(path.join(dir, "redcode.jsonc")) || fs.existsSync(path.join(dir, ".git"))) {
+      return dir
+    }
+    const parent = path.dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  // 回退到 startDir
+  return startDir
+}
 
 /**
  * User-visible command failure. Throw via `fail("...")` from an effectCmd handler
@@ -81,7 +100,7 @@ export const effectCmd = <Args, A>(opts: EffectCmdOpts<Args, A>) =>
         await AppRuntime.runPromise(opts.handler(args))
         return
       }
-      const directory = opts.directory?.(args) ?? process.cwd()
+      const directory = findProjectRoot(opts.directory?.(args) ?? process.cwd())
       const { store, ctx } = await AppRuntime.runPromise(
         InstanceStore.Service.use((store) => store.load({ directory }).pipe(Effect.map((ctx) => ({ store, ctx })))),
       )
