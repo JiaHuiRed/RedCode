@@ -178,11 +178,23 @@ function convertMcpTool(
     execute: async (args: unknown) => {
       let lastError: unknown
       for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-        try {
-          return await client.callTool(
-            { name: mcpTool.name, arguments: (args || {}) as Record<string, unknown> },
-            CallToolResultSchema,
-            { resetTimeoutOnProgress: true, timeout },
+          try {
+            // 260603 Red 进度推送：实时记录 MCP 工具调用进度
+            let progressLog = ""
+            return await client.callTool(
+              { name: mcpTool.name, arguments: (args || {}) as Record<string, unknown> },
+              CallToolResultSchema,
+              {
+                onprogress: (progress) => {
+                  const msg = progress.message ?? `progress ${progress.progress}${progress.total ? "/" + progress.total : ""}`
+                  if (msg !== progressLog) {
+                    progressLog = msg
+                    log.info("MCP tool progress", { server: serverName, tool: mcpTool.name, ...progress })
+                  }
+                },
+                resetTimeoutOnProgress: true,
+                timeout,
+              },
           )
         } catch (err) {
           lastError = err
@@ -665,6 +677,42 @@ export const layer = Layer.effect(
             }),
           ),
         )
+
+        // 260603 Red 配置热重载：watch redcode.jsonc 自动触发 MCP 重连
+        const mcpDir = yield* InstanceState.directory
+        const cfgPath = path.join(mcpDir, "redcode.jsonc")
+        if (fs.existsSync(cfgPath)) {
+          let timer: ReturnType<typeof setTimeout> | null = null
+          const reconcile = Effect.fnUntraced(function* () {
+            const newCfg = yield* cfgSvc.get()
+            const newMcps = newCfg.mcp ?? {}
+            const currentNames = new Set(Object.keys(s.clients))
+
+            for (const name of currentNames) {
+              if (!newMcps[name] || newMcps[name]?.enabled === false) {
+                yield* closeClient(s, name)
+                delete s.clients[name]
+                delete s.defs[name]
+                s.status[name] = { status: "disabled" }
+              }
+            }
+            for (const [name, mcp] of Object.entries(newMcps)) {
+              if (!isMcpConfigured(mcp) || mcp.enabled === false) continue
+              if (!s.clients[name]) {
+                yield* createAndStore(name, mcp).pipe(Effect.catch(() => Effect.void))
+              }
+            }
+          })
+          const changeHandler: fs.WatchListener<string> = () => {
+            if (timer) clearTimeout(timer)
+            timer = setTimeout(async () => {
+              timer = null
+              try { await bridge.promise(reconcile()) } catch {}
+            }, 1000)
+          }
+          const watcher = fs.watch(cfgPath, changeHandler)
+          yield* Effect.addFinalizer(() => Effect.sync(() => watcher.close()))
+        }
 
         return s
       }),
