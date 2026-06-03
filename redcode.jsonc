@@ -9,10 +9,10 @@
     },
     "typegraph": {
       "type": "local",
-      "command": ["D:\\AI\\RedCode\\plugins\\typegraph-mcp\\node_modules\\.bin\\tsx", "D:\\AI\\RedCode\\plugins\\typegraph-mcp\\server.ts"],
+      "command": ["npx", "tsx", "./plugins/typegraph-mcp/server.ts"],
       "environment": {
-        "TYPEGRAPH_PROJECT_ROOT": "D:\\AI\\RedCode",
-        "TYPEGRAPH_TSCONFIG": "D:\\AI\\RedCode\\tsconfig.json"
+        "TYPEGRAPH_PROJECT_ROOT": ".",
+        "TYPEGRAPH_TSCONFIG": "./tsconfig.json"
       },
       // 260602 Red TypeScript 语义导航：类型解析/barrel 文件穿透/循环依赖检测
       "enabled": true

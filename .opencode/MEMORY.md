@@ -98,14 +98,27 @@
 - 提取组件/函数到新文件后，确认旧位置完全删除，不留占位符
 - 典型错误：删函数时留了一个 `_Placeholder` 空函数
 
-### 11. Layout 函数结构（v0.3.13 梳理）
+### 11. 文档与代码一致性自检（CHANGELOG/README 必查）
+- 写完 CHANGELOG 后必须自验：`git diff <last-tag>..HEAD -- <package>` 看是否真有改动，grep 关键 feature 名确认在源码里
+- 主人手写文档容易过度乐观：把"配了 redcode.jsonc"当"TUI 集成"，把"README 改了"当"功能上线"——必须自动核对
+- 措辞要准：`redcode.jsonc` 加 MCP 配置 = "接入外部 MCP"（依赖外部环境），不是"集成"
+
+### 12. 远端同步不能信口头
+- 主人说"我刚拉了/已经同步"也得自己 `git fetch + log --oneline origin/dev -5` 验一遍
+- 看到 "Already up to date" 才算数；本地 `git status` 不够（可能有 untracked 修改或被 build 动过的 lockfile）
+
+### 13. 跨项目路径硬编码
+- `redcode.jsonc` / `.opencode/opencode.jsonc` 里的 MCP 命令硬编码路径（如 `D:\\AI\\RedCode\\plugins\\...`）必须检查是否匹配实际项目根
+- 主人 D 盘有两个 RedCode：`D:\AI\RedCode` 和 `D:\AI\KLX\RedCode`，写配置时要用项目实际根目录
+
+### 14. Layout 函数结构（v0.3.13 梳理）
 - `pages/layout.tsx`：2600 行，50+ 子方法，复杂度 526
 - V1 fallback（152 行）+ sidebar.toggle 命令已删除（v0.3.13）
 - V2 渲染只保留：`Titlebar` + `main(props.children)` + `DebugBar` + `Toast`
 - 待抽子组件（阶段 1 已完成部分）：UpdateAvailableToast、theme-constants
 - 详细拆分计划见 `.opencode/TODO.md`
 
-### 12. 三栏布局结构（v0.3.13）
+### 15. 三栏布局结构（v0.3.13）
 - 最左：`FileTreePanel`（`pages/session/file-tree-panel.tsx`）— FileTree changes/all tabs
 - 中间：Chat（`MessageTimeline` + composer）
 - 最右：`SessionSidePanel`（`pages/session/session-side-panel.tsx`）— Review tab + 打开的文件 tabs
