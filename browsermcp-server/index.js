@@ -8,23 +8,20 @@ let ws = null;
 let msgId = 0;
 const pending = new Map();
 
-// 260603 Red 端口冲突时杀掉旧进程再重试
-function startWebSocketServer(port, retries = 3) {
+// 260603 Red 端口冲突时杀掉旧进程再重试（延长等待）
+function startWebSocketServer(port, retries = 5, delay = 800) {
   return new Promise((resolve, reject) => {
     const server = new WebSocketServer({ port });
     server.on("listening", () => resolve(server));
     server.on("error", (err) => {
       if (err.code === "EADDRINUSE" && retries > 0) {
-        console.error(`[BrowserMCP] Port ${port} in use, killing old process...`);
+        console.error(`[BrowserMCP] Port ${port} in use, killing old process (${retries} retries left)...`);
         try {
           const { execSync } = require("child_process");
-          const result = execSync(`netstat -ano | findstr :${port} | findstr LISTENING`, { encoding: "utf8" });
-          const pid = result.trim().split(/\s+/).pop();
-          if (pid && !isNaN(Number(pid))) {
-            execSync(`taskkill /F /PID ${pid}`, { stdio: "ignore" });
-          }
+          execSync(`netstat -ano | findstr ":${port}" | findstr "LISTENING" >nul 2>nul && for /f "tokens=5" %a in ('netstat -ano ^| findstr ":${port}" ^| findstr "LISTENING"') do taskkill /F /PID %a 2>nul`, { stdio: "ignore", timeout: 3000 });
         } catch {}
-        setTimeout(() => startWebSocketServer(port, retries - 1).then(resolve, reject), 500);
+        server.close();
+        setTimeout(() => startWebSocketServer(port, retries - 1, delay).then(resolve, reject), delay);
       } else {
         reject(err);
       }
