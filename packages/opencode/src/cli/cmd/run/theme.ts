@@ -7,6 +7,7 @@
 // palette if detection fails.
 import { RGBA, SyntaxStyle, type CliRenderer, type ColorInput, type TerminalColors } from "@opentui/core"
 import type { TuiThemeCurrent } from "@redcode-ai/plugin/tui"
+import type { Theme } from "../tui/context/theme"
 import type { EntryKind } from "./types"
 
 type Tone = {
@@ -78,10 +79,6 @@ type ThemeJson = {
     backgroundMessage?: ColorValue
     thinkingOpacity?: number
   }
-}
-
-type SharedSyntaxTheme = TuiThemeCurrent & {
-  _hasSelectedListItemText: boolean
 }
 
 export const transparent = RGBA.fromValues(0, 0, 0, 0)
@@ -590,10 +587,10 @@ export async function resolveRunTheme(renderer: CliRenderer): Promise<RunTheme> 
     const theme = resolveTheme(generateSystem(colors, pick), pick)
     const indexed = indexedPalette(colors, 256)
     const shared = await import("../tui/context/theme")
-    const syntaxTheme: SharedSyntaxTheme = {
+    const syntaxTheme = {
       ...theme,
       _hasSelectedListItemText: true,
-    }
+    } as Theme
     const syntax = shared.generateSyntax(syntaxTheme)
     return map(theme, splashTheme(theme, indexed), syntax, shared.generateSubtleSyntax(syntaxTheme))
   } catch {

@@ -45,8 +45,81 @@ import { useTuiConfig } from "./tui-config"
 import { isRecord } from "@/util/record"
 import type { TuiThemeCurrent } from "@redcode-ai/plugin/tui"
 
-type Theme = TuiThemeCurrent & {
+// 260603 Red 语义颜色分层。47 个扁平属性归为 8 组，组件可用 theme.colors.text.body 等语义路径访问。
+// 旧属性（theme.primary / theme.text）完全兼容，两组实例共享同一 RGBA 对象。
+export type ThemeColors = {
+  text: {
+    primary: RGBA
+    secondary: RGBA
+    accent: RGBA
+    body: RGBA
+    muted: RGBA
+    selected: RGBA
+  }
+  surface: {
+    base: RGBA
+    panel: RGBA
+    element: RGBA
+    menu: RGBA
+    message: RGBA
+  }
+  border: {
+    default: RGBA
+    active: RGBA
+    subtle: RGBA
+  }
+  status: {
+    error: RGBA
+    warning: RGBA
+    success: RGBA
+    info: RGBA
+  }
+  diff: {
+    added: RGBA
+    removed: RGBA
+    context: RGBA
+    hunkHeader: RGBA
+    highlightAdded: RGBA
+    highlightRemoved: RGBA
+    addedBg: RGBA
+    removedBg: RGBA
+    contextBg: RGBA
+    lineNumber: RGBA
+    addedLineNumberBg: RGBA
+    removedLineNumberBg: RGBA
+  }
+  markdown: {
+    text: RGBA
+    heading: RGBA
+    link: RGBA
+    linkText: RGBA
+    code: RGBA
+    blockQuote: RGBA
+    emph: RGBA
+    strong: RGBA
+    horizontalRule: RGBA
+    listItem: RGBA
+    listEnumeration: RGBA
+    image: RGBA
+    imageText: RGBA
+    codeBlock: RGBA
+  }
+  syntax: {
+    comment: RGBA
+    keyword: RGBA
+    function: RGBA
+    variable: RGBA
+    string: RGBA
+    number: RGBA
+    type: RGBA
+    operator: RGBA
+    punctuation: RGBA
+  }
+}
+
+export type Theme = TuiThemeCurrent & {
   _hasSelectedListItemText: boolean
+  colors: ThemeColors
 }
 type ThemeColor = Exclude<keyof TuiThemeCurrent, "thinkingOpacity">
 type SyntaxStyleOverrides = Record<string, { italic?: boolean }>
@@ -197,6 +270,80 @@ export function upsertTheme(name: string, theme: unknown) {
   return true
 }
 
+// 260603 Red 语义颜色分层：从已解析的扁平属性构建语义对象。
+function buildThemeColors(resolved: Partial<Record<ThemeColor, RGBA>>): ThemeColors {
+  const r = resolved as Record<string, RGBA | undefined>
+  return {
+    text: {
+      primary: r.primary!,
+      secondary: r.secondary!,
+      accent: r.accent!,
+      body: r.text!,
+      muted: r.textMuted!,
+      selected: r.selectedListItemText!,
+    },
+    surface: {
+      base: r.background!,
+      panel: r.backgroundPanel!,
+      element: r.backgroundElement!,
+      menu: r.backgroundMenu!,
+      message: r.backgroundMessage!,
+    },
+    border: {
+      default: r.border!,
+      active: r.borderActive!,
+      subtle: r.borderSubtle!,
+    },
+    status: {
+      error: r.error!,
+      warning: r.warning!,
+      success: r.success!,
+      info: r.info!,
+    },
+    diff: {
+      added: r.diffAdded!,
+      removed: r.diffRemoved!,
+      context: r.diffContext!,
+      hunkHeader: r.diffHunkHeader!,
+      highlightAdded: r.diffHighlightAdded!,
+      highlightRemoved: r.diffHighlightRemoved!,
+      addedBg: r.diffAddedBg!,
+      removedBg: r.diffRemovedBg!,
+      contextBg: r.diffContextBg!,
+      lineNumber: r.diffLineNumber!,
+      addedLineNumberBg: r.diffAddedLineNumberBg!,
+      removedLineNumberBg: r.diffRemovedLineNumberBg!,
+    },
+    markdown: {
+      text: r.markdownText!,
+      heading: r.markdownHeading!,
+      link: r.markdownLink!,
+      linkText: r.markdownLinkText!,
+      code: r.markdownCode!,
+      blockQuote: r.markdownBlockQuote!,
+      emph: r.markdownEmph!,
+      strong: r.markdownStrong!,
+      horizontalRule: r.markdownHorizontalRule!,
+      listItem: r.markdownListItem!,
+      listEnumeration: r.markdownListEnumeration!,
+      image: r.markdownImage!,
+      imageText: r.markdownImageText!,
+      codeBlock: r.markdownCodeBlock!,
+    },
+    syntax: {
+      comment: r.syntaxComment!,
+      keyword: r.syntaxKeyword!,
+      function: r.syntaxFunction!,
+      variable: r.syntaxVariable!,
+      string: r.syntaxString!,
+      number: r.syntaxNumber!,
+      type: r.syntaxType!,
+      operator: r.syntaxOperator!,
+      punctuation: r.syntaxPunctuation!,
+    },
+  }
+}
+
 export function resolveTheme(theme: ThemeJson, mode: "dark" | "light") {
   const defs = theme.defs ?? {}
   function resolveColor(c: ColorValue, chain: string[] = []): RGBA {
@@ -224,7 +371,8 @@ export function resolveTheme(theme: ThemeJson, mode: "dark" | "light") {
 
   const resolved = Object.fromEntries(
     Object.entries(theme.theme)
-      .filter(([key]) => key !== "selectedListItemText" && key !== "backgroundMenu" && key !== "thinkingOpacity")
+      // 260603 Red backgroundMessage 在这里排除，避免第一次遍历多解析一次。
+      .filter(([key]) => key !== "selectedListItemText" && key !== "backgroundMenu" && key !== "backgroundMessage" && key !== "thinkingOpacity")
       .map(([key, value]) => {
         return [key, resolveColor(value as ColorValue)]
       }),
@@ -261,6 +409,7 @@ export function resolveTheme(theme: ThemeJson, mode: "dark" | "light") {
     ...resolved,
     _hasSelectedListItemText: hasSelectedListItemText,
     thinkingOpacity,
+    colors: buildThemeColors(resolved), // 260603 Red 语义分层，与扁平属性共存
   } as Theme
 }
 
@@ -448,10 +597,10 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     const subtleSyntax = createMemo(() => generateSubtleSyntax(values()))
 
     return {
-      theme: new Proxy(values(), {
-        get(_target, prop) {
-          // @ts-expect-error
-          return values()[prop]
+      // 260603 Red Proxy 响应式桥接：每次属性读取走 createMemo 拿最新值。
+      theme: new Proxy({} as Theme, {
+        get(_, prop) {
+          return values()[prop as keyof Theme]
         },
       }),
       get selected() {
@@ -528,10 +677,14 @@ export function tint(base: RGBA, overlay: RGBA, alpha: number): RGBA {
 }
 
 export function generateSystem(colors: TerminalColors, mode: "dark" | "light"): ThemeJson {
-  const bg = RGBA.fromHex(colors.defaultBackground ?? colors.palette[0]!)
-  const fg = RGBA.fromHex(colors.defaultForeground ?? colors.palette[7]!)
-  const transparent = RGBA.fromValues(bg.r, bg.g, bg.b, 0)
+  // 260603 Red isDark 必须在 fallbackBg/fallbackFg 之前声明，否则 Temporal Dead Zone 会 ReferenceError。
   const isDark = mode == "dark"
+  const fallbackBg = isDark ? "#1a1b26" : "#ffffff"
+  const fallbackFg = isDark ? "#c0caf5" : "#000000"
+  // palette[0]/[7] 可能为 undefined（终端调色板查询异常时），用硬编码回退兜底。
+  const bg = RGBA.fromHex(colors.defaultBackground ?? colors.palette[0] ?? fallbackBg)
+  const fg = RGBA.fromHex(colors.defaultForeground ?? colors.palette[7] ?? fallbackFg)
+  const transparent = RGBA.fromValues(bg.r, bg.g, bg.b, 0)
 
   const col = (i: number) => {
     const value = colors.palette[i]
