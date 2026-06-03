@@ -28,6 +28,12 @@
       },
       // 260602 Red 结构化代码检索：精确符号获取/死代码检测/影响评估/编辑安全预检
       "enabled": true
+    },
+    "browsermcp": {
+      "type": "local",
+      "command": ["node", "./browsermcp-server/index.js"],
+      // 260603 Red 浏览器自动化：导航/截图/点击/输入/获取页面内容
+      "enabled": true
     }
   },
   "tools": {
