@@ -1,0 +1,8 @@
+{
+  "name": "typegraph-install-oxlint-fixture",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

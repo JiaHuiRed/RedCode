@@ -1,0 +1,53 @@
+{
+  "name": "typegraph-mcp",
+  "version": "0.9.44",
+  "description": "Type-aware codebase navigation for AI coding agents — 14 MCP tools powered by tsserver + oxc",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/guyowen/typegraph-mcp.git"
+  },
+  "packageManager": "npm@11.5.2",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "typegraph-mcp": "./dist/cli.js",
+    "typegraph": "./dist/cli.js"
+  },
+  "files": [
+    "*.ts",
+    "*.json",
+    "README.md",
+    "LICENSE",
+    "package-lock.json",
+    "skills/",
+    "commands/",
+    "hooks/",
+    "scripts/",
+    ".claude-plugin/",
+    ".cursor-plugin/",
+    "gemini-extension.json",
+    "dist/"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "start": "tsx server.ts",
+    "test": "tsx smoke-test.ts && tsx export-surface-test.ts && tsx engine-sync-test.ts && tsx install-oxlint-test.ts",
+    "check": "tsx check.ts"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.0.1",
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "oxc-parser": "^0.114.0",
+    "oxc-resolver": "^11.17.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "tsup": "^8.5.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.8.0"
+  }
+}

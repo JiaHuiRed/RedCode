@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify compiled CLI loads
+        run: node dist/cli.js --help
+
+      - name: Verify compiled modules parse
+        run: node --check dist/server.js && node --check dist/cli.js
+
+  publish:
+    needs: validate
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Bump patch version
+        run: npm version patch --no-git-tag-version
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          NEW_VERSION=$(node -p "require('./package.json').version")
+          git add package.json package-lock.json
+          git commit -m "v${NEW_VERSION} [skip ci]"
+          git tag "v${NEW_VERSION}"
+          git push --follow-tags
+
+      - name: Sync dev with main
+        run: git push --force origin main:dev

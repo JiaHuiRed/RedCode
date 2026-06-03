@@ -1,0 +1,16 @@
+{
+  "name": "typegraph",
+  "version": "1.0.0",
+  "description": "Type-aware TypeScript navigation — 14 MCP tools for go-to-definition, find-references, dependency graphs, cycle detection, and impact analysis",
+  "mcpServers": {
+    "typegraph": {
+      "command": "npx",
+      "args": ["tsx", "${extensionPath}/server.ts"],
+      "cwd": "${extensionPath}",
+      "env": {
+        "TYPEGRAPH_PROJECT_ROOT": ".",
+        "TYPEGRAPH_TSCONFIG": "./tsconfig.json"
+      }
+    }
+  }
+}
