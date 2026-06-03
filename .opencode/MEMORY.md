@@ -22,6 +22,7 @@
 - 流程：问清楚 → 哥哥确认 → 改代码 → 列清单 → 哥哥测试确认 → 哥哥允许后再打包/推送
 - 文档更新（版本号、徽章、CHANGELOG、README）直接改好，推送需哥哥允许
 - **模糊指令严禁自己猜**：哥哥表达模糊时，必须停下来先问清楚，严禁自己继续瞎处理
+- **承认能力边界**：我不是万能的。做不到的事直接说"这个我做不到"，不要硬撑着干然后出 bug。承认边界比逞强可靠
 
 ## TUI vs GUI 区分
 - **TUI** = `packages/opencode/` — 命令行终端界面（CLI + 文本交互），通过 `bun run build -- --single` 编译 exe
@@ -59,6 +60,13 @@
 - Windows 上 spawn 用 `cross-spawn`，`.cmd` 文件可正常执行
 - **修 MCP 路径要在 spawn 层修**（`connectLocal` 里检测 cwd 并向上查找项目根），不要在 CLI 入口层修（`effectCmd` 的 `findProjectRoot` 影响不到 `InstanceState.directory`）
 - **kv 默认值变更必须做版本迁移**，旧用户的缓存值会覆盖新默认值
+- **MCP 进程树泄漏**：Windows 上 `descendants()` 返回空数组，改用 `taskkill /F /T /PID` 杀整棵树
+- **browsermcp 端口冲突**：上一次 TUI 退出时 orphan 进程占着端口，新 TUI 启动失败。server 端加 EADDRINUSE 重试 + `server.close()` 解决
+
+### 3. MCP 模块开发规则
+- `mcp/index.ts` 在 Worker 初始化阶段加载，**不能 import `AppRuntime`**（上层服务此时还没就绪）
+- 跨层调用用 `EffectBridge`（`@/effect/bridge`），不用 `AppRuntime.runPromise`
+- `EffectBridge.make()` 在 `Effect.gen` 块内创建，`bridge.promise()` 在 async 回调中调用 Effect
 
 ### 3. GUI 构建流程（必须记住）
 - GUI 版本号来源：`packages/desktop/src/renderer/index.tsx` 里 `version: pkg.version`，vite 构建时注入
@@ -128,3 +136,25 @@
 - FileTree 宽度：`layout.fileTree.width()`，拽拉 `min=200, max=480`
 - Review 宽度：`layout.session.width()`，拽拉 `min=340, max=windowWidth*0.45`
 - chat 宽度：`100% - fileTree宽度 - review宽度`
+
+# 每日日志格式
+
+`memory/YYMMDD.md` 分两个主体记录：
+
+```
+## 雨琦日记    ← 我（小宋/GUI）的日志
+## 智敏日记    ← 敏敏（TUI）的日志
+```
+
+教训去重合入 MEMORY.md 时也要标来源。
+
+# 版本自检清单
+
+功能/版本完成后收尾前必须列清单打勾：
+
+- [ ] package.json 版本号
+- [ ] README 徽章 + 标题（双语）
+- [ ] CHANGELOG 条目
+- [ ] index.html 标题栏徽章
+- [ ] typecheck 通过
+- [ ] 功能自验
