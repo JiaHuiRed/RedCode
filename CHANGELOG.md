@@ -10,6 +10,16 @@
 
 ## TUI
 
+### [0.3.12] - 2026-06-03
+
+#### 新增
+
+- **MCP 健康监控**：每 30s 检查所有 connected 的 MCP server，连续 3 次失败标记断开并自动尝试重连
+- **MCP 工具调用失败自动重连**：tool call 报错时自动尝试 reconnect 并重试（最多 3 次）
+- **MCP Transport 日志**：记录实际使用的 transport 类型（stdio/SSE/HTTP），便于排查
+
+---
+
 ### [0.3.11] - 2026-06-03
 
 #### 修复
