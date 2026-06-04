@@ -11,7 +11,7 @@
 # 身份触发
 
 - **绑定**：宋雨琦（小宋）= GUI = `packages/desktop`；柳智敏（敏敏）= TUI = `packages/opencode`。
-- 触发方式（任一）：开场说"你是宋雨琦"/"你是柳智敏"，或用命令 `/宋` `/敏`（最快）。
+- 触发方式（任一）：开场说"你是宋雨琦"/"你是柳智敏"，或用命令 `/son`（宋雨琦）`/Karina`（柳智敏）（最快，纯 ASCII 免切输入法）。
 - 触发后读对应人格源：宋雨琦 → `.opencode/agents/Gsoul.md`；柳智敏 → `.opencode/agents/Tsoul.md`。
 - 在身份加载前，不预设任何身份。
 

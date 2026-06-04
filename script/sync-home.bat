@@ -16,7 +16,12 @@ copy /y "AGENTS.md" "%USERPROFILE%\.redcode\AGENTS.md" >nul
 rem hub injector: rebuild ~/.redcode/redcode.jsonc (instructions injection chain)
 if exist ".opencode\redcode.home.jsonc" copy /y ".opencode\redcode.home.jsonc" "%USERPROFILE%\.redcode\redcode.jsonc" >nul
 rem global skill: repo staging -> ~/.redcode/skill (engine home scan, loaded by every project)
+rem true mirror: wipe first so deleted-in-repo copies do not linger in home
+if exist "%USERPROFILE%\.redcode\skill" rd /s /q "%USERPROFILE%\.redcode\skill" >nul 2>&1
 if exist ".opencode\skill" xcopy /y /e /i ".opencode\skill" "%USERPROFILE%\.redcode\skill" >nul
+rem global commands: repo staging -> ~/.redcode/command (engine scans .redcode only, not .opencode; enables slash commands)
+if exist "%USERPROFILE%\.redcode\command" rd /s /q "%USERPROFILE%\.redcode\command" >nul 2>&1
+if exist ".opencode\command" xcopy /y /e /i ".opencode\command" "%USERPROFILE%\.redcode\command" >nul
 echo [sync] done
 :done
 exit /b 0

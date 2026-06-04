@@ -15,7 +15,7 @@
 #### 新增
 
 - **DeepSeek / MiMo 专属系统提示词**：`session/system.ts` 的 `provider()` 新增 `deepseek`/`mimo` 子串匹配，分别返回 `prompt/deepseek.txt`、`prompt/mimo.txt`；主用的 DeepSeek V4 与小米 MiMo-V2.5 不再走 default 提示词
-- **`/宋` `/敏` 人格触发命令**：`.opencode/command/{宋,敏}.md`，对话里一条命令即加载 GUI(宋雨琦)/TUI(柳智敏) 人格，比手打"你是X"更快；命令仅向上下文注入文字、不替换模型提示词（`request.ts` 的 `agent.prompt` 会顶掉 deepseek/mimo 提示词，故不做成 agent）
+- **`/son` `/Karina` 人格触发命令**：`.opencode/command/{son,Karina}.md`，对话里一条命令即加载 GUI(宋雨琦)/TUI(柳智敏) 人格，比手打"你是X"更快；命令仅向上下文注入文字、不替换模型提示词（`request.ts` 的 `agent.prompt` 会顶掉 deepseek/mimo 提示词，故不做成 agent）。命令名用英文纯 ASCII，免切输入法。**修复**：命令此前从未被引擎加载——`config/paths.ts` 只扫 `.redcode` 目录，命令却放在 `.opencode/command/`；`script/sync-home.bat` 之前同步了 skill 却漏了 command。现补同步 `.opencode/command` → `~/.redcode/command`（真镜像：先删后拷），重启后命令真正生效
 
 #### 工作流
 
@@ -24,7 +24,7 @@
 
 #### 文档
 
-- **AGENTS.md 重构**：根 AGENTS.md 身份触发段补充 `/宋` `/敏` 命令与自动注入说明；`packages/{opencode,desktop}/AGENTS.md` 顶部加 breadcrumb（本包=TUI/GUI、对应人格敏敏/小宋），进子目录读文件时自动叠加强化身份
+- **AGENTS.md 重构**：根 AGENTS.md 身份触发段补充 `/son` `/Karina` 命令与自动注入说明；`packages/{opencode,desktop}/AGENTS.md` 顶部加 breadcrumb（本包=TUI/GUI、对应人格敏敏/小宋），进子目录读文件时自动叠加强化身份
 
 ### [0.3.16] - 2026-06-03
 
