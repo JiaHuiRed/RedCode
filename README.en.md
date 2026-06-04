@@ -30,7 +30,7 @@ Open-source AI coding assistant with **terminal TUI** and **desktop GUI** interf
 ## 🧩 Features
 
 - 💬 **Natural Language Coding** — describe requirements, auto-complete code
-- 🔌 **Multi-Model Support** — DeepSeek, OpenAI, Anthropic, Google Gemini, Ollama, etc.
+- 🔌 **Multi-Model Support** — DeepSeek, MiMo, OpenAI, Anthropic, Google Gemini, Ollama, etc.
 - 🛠 **Tool System** — file read/write, code search, terminal commands, web search
 - 🤖 **Smart Agents** — Build, Plan, General, Explore agents built-in, custom agents supported
 - 📝 **Session Management** — history save, restore, fork
@@ -47,14 +47,16 @@ Open-source AI coding assistant with **terminal TUI** and **desktop GUI** interf
 
 ---
 
-## 🖥 Desktop GUI (v0.3.15)
+## 🖥 Desktop GUI
 
 - **Three-column layout**: FileTree (left) + Chat (center) + Review (right), independently resizable
-- **Session shortcuts**: `Cmd+T` / `Cmd+Shift+T` to switch context sessions
+- **V2 Titlebar**: Tab-based session management, StatusPopover for token usage, `Cmd+T` / `Cmd+Shift+T` to switch sessions
 - **Project shortcuts**: `Cmd+1` ~ `Cmd+9` to switch projects
-- **Design system**: CSS design tokens (radius, shadows, typography), `text-wrap: balance/pretty`
-- **V2 Titlebar**: Tab-based session management, StatusPopover for token usage
+- **Semantic color layering**: `theme.colors` grouped by text/surface/border/status/diff/markdown/syntax, customizable themes
+- **ECC plugin integration**: Auto file change tracking, context compression optimization, safe auto-approval
+- **Version auto-injection**: Titlebar version badge auto-injected from `package.json` at build time
 - **Thinking hamster animation**: 🐹 running animation + Mona cat loading during AI thinking
+- **Design system**: CSS design tokens (radius, shadows, typography), `text-wrap: balance/pretty`
 
 ---
 
@@ -83,7 +85,7 @@ cd packages/desktop && bun run dev
 
 | Location | Purpose |
 |----------|---------|
-| `~/.config/redcode/redcode.json` | Global config |
+| `~/.redcode/redcode.jsonc` | Global config (cross-project) |
 | `project_dir/redcode.jsonc` | Project-level config |
 | `project_dir/.opencode/opencode.jsonc` | Legacy format (compatible) |
 

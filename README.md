@@ -32,7 +32,7 @@
 ## 🧩 核心功能
 
 - 💬 **自然语言编程**：用中文描述需求，自动完成代码编写、重构、调试
-- 🔌 **多模型支持**：DeepSeek、OpenAI、Anthropic、Google Gemini、Ollama 本地模型等
+- 🔌 **多模型支持**：DeepSeek、MiMo、OpenAI、Anthropic、Google Gemini、Ollama 本地模型等
 - 🛠 **工具系统**：文件读写、代码搜索、终端命令、Web 搜索
 - 🤖 **智能 Agent**：Build、Plan、General、Explore 等内置 Agent，支持自定义
 - 📝 **会话管理**：历史对话保存、恢复、分支（fork）
@@ -49,14 +49,16 @@
 
 ---
 
-## 🖥 桌面 GUI 新特性（v0.3.15）
+## 🖥 桌面 GUI 新特性
 
 - **三栏布局**：文件树（左）+ 聊天窗口（中）+ 审查面板（右），可独立拖拽调整宽度
-- **会话快捷键**：`Cmd+T` / `Cmd+Shift+T` 快速切换上下文会话
+- **V2 Titlebar**：Tab 式会话管理，StatusPopover 显示 token 用量，`Cmd+T` / `Cmd+Shift+T` 切换会话
 - **项目快捷键**：`Cmd+1` ~ `Cmd+9` 快速切换项目
-- **设计系统**：CSS 设计 token（圆角、阴影、排版）、文字排版优化（`text-wrap: balance/pretty`）
-- **V2 Titlebar**：Tab 式会话管理，StatusPopover 显示 token 用量
+- **语义色分层**：`theme.colors` 按 text/surface/border/status/diff/markdown/syntax 8 组分群，主题可定制
+- **ECC 插件集成**：自动跟踪文件变更、上下文压缩优化、安全操作自动放行
+- **版本号自动注入**：构建时从 `package.json` 自动注入标题栏版本号，杜绝手动遗漏
 - **思考中仓鼠动画**：AI 思考时显示 🐹 小跑动画 + Mona 猫猫 loading
+- **设计系统**：CSS 设计 token（圆角、阴影、排版）、文字排版优化（`text-wrap: balance/pretty`）
 
 ---
 
@@ -85,7 +87,7 @@ cd packages/desktop && bun run dev
 
 | 位置 | 用途 |
 |------|------|
-| `~/.config/redcode/redcode.json` | 全局配置 |
+| `~/.redcode/redcode.jsonc` | 全局配置（跨项目共享） |
 | `项目目录/redcode.jsonc` | 项目级配置 |
 | `项目目录/.opencode/opencode.jsonc` | 兼容配置（旧格式） |
 
