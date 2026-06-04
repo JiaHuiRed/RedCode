@@ -1,0 +1,165 @@
+// 260604 Red Minimal web-search MCP server — only exposes web_search tool
+// DuckDuckGo HTML + Yahoo fallback. Uses PowerShell for HTTP to respect system proxy
+// (Node's / curl.exe bypass Windows proxy and can't reach external hosts on this machine).
+
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+  ErrorCode,
+  McpError,
+} from "@modelcontextprotocol/sdk/types.js";
+import { execSync } from "child_process";
+
+interface SearchResult {
+  title: string;
+  url: string;
+  snippet: string;
+  engine: string;
+}
+
+const CHROME_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+// 260604 Red Use PowerShell to respect Windows system proxy (127.0.0.1:7890).
+// Node's fetch / curl.exe bypass the proxy and fail on this machine.
+function fetchHtml(url: string): string {
+  const ua = CHROME_UA.replace(/'/g, "''");
+  const cmd = `powershell.exe -NoProfile -NonInteractive -Command "try { (Invoke-WebRequest -Uri '${url.replace(/'/g, "''")}' -UserAgent '${ua}' -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop).Content } catch { Write-Error $$_; exit 1 }"`;
+  try {
+    return execSync(cmd, { timeout: 25_000, encoding: "utf-8", windowsHide: true });
+  } catch (e: any) {
+    throw new Error(e.stderr ? String(e.stderr).trim() : String(e.message));
+  }
+}
+
+// ── DuckDuckGo HTML ──────────────────────────────────────────────────
+
+async function searchDdg(query: string): Promise<SearchResult[]> {
+  const html = await fetchHtml(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`);
+  const results: SearchResult[] = [];
+  const blocks = html.split('<div class="results_links results_links_deep');
+  for (const block of blocks) {
+    const a = block.match(/class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/);
+    const s = block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/);
+    if (!a) continue;
+    const url = decodeDdgUrl(a[1]);
+    const title = a[2].replace(/<[^>]*>/g, "").trim();
+    const snippet = s ? s[1].replace(/<[^>]*>/g, "").trim() : "";
+    if (title && url && !results.some((r) => r.url === url))
+      results.push({ title, url, snippet, engine: "duckduckgo" });
+  }
+  return results;
+}
+
+function decodeDdgUrl(raw: string): string {
+  // DuckDuckGo redirect: //duckduckgo.com/l/?uddg=<base64-url>&rut=...
+  const m = raw.match(/[?&]uddg=([^&]+)/);
+  if (m) return decodeURIComponent(m[1]);
+  // Fallback: maybe it's a direct URL with protocol prefix
+  if (raw.startsWith("http")) return raw;
+  return raw.replace(/^\/\//, "https://");
+}
+
+// ── Yahoo (simple fallback) ──────────────────────────────────────────
+
+async function searchYahoo(query: string): Promise<SearchResult[]> {
+  const html = await fetchHtml(`https://search.yahoo.com/search?p=${encodeURIComponent(query)}`);
+  const results: SearchResult[] = [];
+  // Yahoo wraps each result: <div class="dd algo fst"> or <div class="dd algo">
+  const blocks = html.split(/<div class="dd algo[^"]*"/);
+  for (const block of blocks) {
+    const h3a = block.match(/<h3[^>]*>[\s\S]*?<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/);
+    const s = block.match(/<p[^>]*class="[^"]*"[^>]*>([\s\S]*?)<\/p>/);
+    if (!h3a) continue;
+    const url = decodeYahooUrl(h3a[1]);
+    const title = h3a[2].replace(/<[^>]*>/g, "").trim();
+    const snippet = s ? s[1].replace(/<[^>]*>/g, "").trim() : "";
+    if (title && url && !isYahooInternal(url) && !results.some((r) => r.url === url))
+      results.push({ title, url, snippet, engine: "yahoo" });
+  }
+  return results;
+}
+
+function decodeYahooUrl(raw: string): string {
+  // Yahoo redirect uses path segments: /RV=.../RU=<encoded-url>/RK=...
+  const m = raw.match(/\/RU=([^\/]+)/);
+  if (m) {
+    try { return decodeURIComponent(m[1]); } catch { /* ignore */ }
+  }
+  // Also try query-param format
+  const m2 = raw.match(/[?&]RU=([^&]+)/);
+  if (m2) {
+    try { return decodeURIComponent(m2[1]); } catch { /* ignore */ }
+  }
+  // Direct URL (not a Yahoo internal page)
+  if (raw.startsWith("http") && !raw.includes("r.search.yahoo.com") && !raw.includes("scout.yahoo.com")) return raw;
+  return "";
+}
+
+const YAHOO_INTERNAL = /\.(yahoo|yimg)\.com/;
+
+function isYahooInternal(url: string): boolean { return YAHOO_INTERNAL.test(url); }
+
+// ── MCP Server ──────────────────────────────────────────────────────
+
+const server = new Server(
+  { name: "web-search", version: "1.0.0" },
+  { capabilities: { tools: {} } },
+);
+
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: [
+    {
+      name: "web_search",
+      description: "Search the web via DuckDuckGo + Yahoo fallback. No API key needed.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Search query" },
+          count: { type: "number", description: "Results to return (1-50, default 10)" },
+        },
+        required: ["query"],
+      },
+    },
+  ],
+}));
+
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  if (request.params.name !== "web_search")
+    throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${request.params.name}`);
+
+  const query = String(request.params.arguments?.query ?? "");
+  const count = Math.min(Math.max(Number(request.params.arguments?.count) || 10, 1), 50);
+  if (!query.trim()) throw new McpError(ErrorCode.InvalidParams, "query is required");
+
+  let results: SearchResult[] = [];
+  try { results = await searchDdg(query); } catch {
+    try { results = await searchYahoo(query); } catch (e) {
+      throw new McpError(ErrorCode.InternalError, `Search failed: ${(e as Error).message}`);
+    }
+  }
+  if (results.length < 5) {
+    try {
+      for (const r of await searchYahoo(query))
+        if (!results.some((x) => x.url === r.url)) results.push(r);
+    } catch { /* best effort */ }
+  }
+
+  results = results.slice(0, count);
+
+  return {
+    content: [
+      {
+        type: "text",
+        text: results.length
+          ? results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet}`).join("\n\n")
+          : "No results found.",
+      },
+    ],
+  };
+});
+
+const transport = new StdioServerTransport();
+await server.connect(transport);

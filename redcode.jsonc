@@ -37,6 +37,12 @@
       "command": ["node", "./browsermcp-server/index.js"],
       // 260603 Red 浏览器自动化：导航/截图/点击/输入/获取页面内容
       "enabled": true
+    },
+    "web-search": {
+      "type": "local",
+      "command": ["npx", "tsx", "./.opencode/search-server/index.ts"],
+      // 260604 Red 极简网页搜索：DuckDuckGo + Yahoo 兜底，无 API key
+      "enabled": true
     }
   }
 }
