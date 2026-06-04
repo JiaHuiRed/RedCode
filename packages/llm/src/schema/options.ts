@@ -1,7 +1,9 @@
 import { Schema } from "effect"
 import { JsonSchema, ModelID, ProviderID } from "./ids"
-import type { AnyRoute } from "../route/client"
 import { isRecord } from "../utils/record"
+
+// oxlint-disable-next-line typescript-eslint/no-explicit-any
+type AnyRoute = any
 
 export const mergeJsonRecords = (
   ...items: ReadonlyArray<Record<string, unknown> | undefined>
