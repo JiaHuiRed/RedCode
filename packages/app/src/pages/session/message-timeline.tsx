@@ -167,9 +167,12 @@ function TimelineThinkingRow(props: { reasoningHeading?: string; showReasoningSu
         style={{ "image-rendering": "pixelated" }}
       />
       <TextShimmer text={language.t("ui.sessionTurn.status.thinking")} />
-      <span class="text-base leading-none animate-hamster select-none" aria-hidden="true">
-        🐹
-      </span>
+      <img
+        src="/hamster.png"
+        alt=""
+        class="w-5 h-5 animate-hamster select-none shrink-0"
+        aria-hidden="true"
+      />
       <Show when={!props.showReasoningSummaries}>
         <TextReveal text={props.reasoningHeading} class="session-turn-thinking-heading" travel={25} duration={700} />
       </Show>
