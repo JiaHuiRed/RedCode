@@ -152,6 +152,20 @@
 - emoji 依赖系统字体渲染，Win10（Segoe UI Emoji 多色渐变）和 Win11（Fluent 扁平纯色）风格不同
 - 需要跨平台一致性的 emoji（如 UI 动画/指示器）用本地图片替代，别依赖系统 emoji 字体
 
+### 19. write 工具 ≠ append——日志/MEMORY/CHANGELOG 类文件只准 edit（260604 翻车）
+- `write` 工具描述明说"will overwrite the existing file"——**直接覆盖**整文件，**不**保留旧内容
+- **日志类文件**（`.opencode/memory/YYMMDD.md`）、**MEMORY.md、CHANGELOG.md** 这类 append-only 文档**绝不用 write**——用 `edit` 工具，锚点选上一条的最后一行，newString 拼新条目
+- 任何 `write` 前**先 `read`** 完整文件内容——如果存在内容而你只想 append 一点点，就是错
+- 写之前问自己"我是不是要 overwrite"——答"是"才能用 write
+- 翻车案例：260604 写日志时用 write 直接覆盖 48 行完整文件，丢了一整天工作记录 + 差点让敏敏的智敏日记也清零。救场：敏敏+git checkout HEAD 恢复；之后用 edit append 4 条教训，章节错位再 edit 两次修好
+- 守则：①edit 之前 git status 看不动的文件；②read 现状；③edit 锚点选最后一条；④改完 git diff --stat 看 insertions/deletions 比例（写日志应该是 +N -0）
+
+### 19. Windows 系统代理陷阱（260604 实战）
+- Bun 的 `fetch` / Node `fetch` / curl 都**绕过** Windows 系统代理设置（不走 `127.0.0.1:7890`）
+- 只有 `powershell.exe Invoke-WebRequest` 自动走 Windows 系统代理（取 IE/系统代理设置）
+- 方案：需要走系统代理的 HTTP 请求用 PS `Invoke-WebRequest` 子进程，或用 WinHTTP API 检测代理地址后显式传给 fetch
+- 影响 web-search MCP server 等外部 HTTP 请求场景
+
 # 每日日志格式
 
 `memory/YYMMDD.md` 分两个主体记录：
