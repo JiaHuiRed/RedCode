@@ -1,6 +1,6 @@
 ---
 description: Pin a session goal — keep the conversation on-topic, track sub-tasks as todos
-model: kimi-k2.5
+# 260604 Red 不写死 model — 用户当前 model 默认，避免 ProviderModelNotFoundError
 ---
 
 Pin a session goal. Use it when the work is multi-step and you don't want the conversation to drift.
