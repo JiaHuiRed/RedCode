@@ -91,7 +91,7 @@
 ### 6. 工作纪律（核心）
 - 改代码前先用 typegraph MCP 工具查清依赖关系和构建流程，不要 grep/bash 绕路
 - 同一问题连续失败 2 次后必须停手问哥哥，不许闷头修
-- 被哥哥批评/纠正后立即写入 `memory/YYMMDD.md`，不能说"记住了"就完事
+- **自己发现出错/返工/走弯路，或被哥哥纠正——当下立刻写入 `memory/YYMMDD.md`**（一句话即可），不等收工、不靠"记住了"就完事。错误只进当天日志，长期库收工时再摘
 
 ### 7. 图标/打包注意事项
 - electron-builder 打包后 `resources/icons/` 需 `extraResources` 单独声明
@@ -138,6 +138,16 @@
 - Review 宽度：`layout.session.width()`，拽拉 `min=340, max=windowWidth*0.45`
 - chat 宽度：`100% - fileTree宽度 - review宽度`
 
+### 16. TS/JS 声明顺序 — const 时空死区（Bun 会 segfault）
+- `const`/`let` 定义前访问 = Temporal Dead Zone，抛 ReferenceError；**Bun 处理这个错误时直接 segfault**，极难排查
+- 新变量依赖已有变量时，先确认被依赖变量在哪一行，别放它前面（典型：theme.tsx `fallbackBg = isDark ? ...` 写在 `const isDark` 之前）
+
+### 17. Windows 构建/打包坑（260604 实战）
+- **`.bat` 注释一律纯 ASCII/英文**：cmd.exe 按 OEM/GBK 码页读 bat，UTF-8 中文注释会打乱 `rem`/`copy`/`exit` 解析（编辑器默认存 UTF-8 易踩）
+- **目录删不掉报 EBUSY/busy（即使是空目录）= 有进程把它当 CWD**：从该目录启动的 exe、或 cd 进去的僵尸 shell。重建前先关掉从输出目录启动的 exe；查锁源用读 PEB CurrentDirectory 扫所有进程 CWD（`NtQueryInformationProcess`），别只靠 tasklist 按名字猜
+- **构建钩子失败别静默 catch，要 throw**：electron-builder `afterAllArtifactBuild` 等钩子吞错会让构建假报 "Done" 却留下旧产物（曾导致打包出旧版本号）
+- **GUI 吃 TUI 新代码要先 build opencode**：desktop build 不重编 opencode，只打包现有 `packages/opencode/dist`；想让 GUI 用上敏敏的改动，先 build opencode 再 build desktop。版本号 TUI/GUI 独立无影响，唯一耦合是打进包的 sidecar dist 新旧
+
 # 每日日志格式
 
 `memory/YYMMDD.md` 分两个主体记录：
@@ -147,7 +157,7 @@
 ## 智敏日记    ← 敏敏（TUI）的日志
 ```
 
-教训去重合入 MEMORY.md 时也要标来源。
+收工/总结时：从当日日志摘**关键且需长期警惕**的教训，去重合入 MEMORY.md（标来源），**不全量复制**；同时复审长期库、删过时/已内化条目，保持精简——长期库不是每日日志的堆叠。
 
 # 版本自检清单
 
