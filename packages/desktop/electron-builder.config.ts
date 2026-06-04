@@ -50,11 +50,12 @@ const getBase = (): Configuration => ({
     const dst = path.join(context.outDir, "win")
     if (src === dst) return []
     try {
-      await fs.rm(dst, { recursive: true, force: true })
+      await fs.rm(dst, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 })
       await fs.cp(src, dst, { recursive: true })
-      await fs.rm(src, { recursive: true, force: true })
+      await fs.rm(src, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 })
     } catch (e) {
-      console.warn("[afterAllArtifactBuild] win-unpacked → win rename failed:", e)
+      console.error("[afterAllArtifactBuild] win-unpacked → win rename failed:", e)
+      throw e
     }
     return []
   },

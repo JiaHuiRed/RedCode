@@ -1,0 +1,7 @@
+{
+  "$schema": "https://redcode.dev/config.json",
+  // home hub 注入器（源在仓库，build.bat 重建到 ~/.redcode/redcode.jsonc）：
+  // home/.redcode 被引擎无条件扫描（paths.ts:34-38），此处 instructions 由 instruction.ts
+  // 展开 ~/ 并机械注入到每个项目启动上下文，跨盘/跨机有效，不依赖项目位置。
+  "instructions": ["~/.redcode/MEMORY.md", "~/.redcode/USER.md"]
+}
