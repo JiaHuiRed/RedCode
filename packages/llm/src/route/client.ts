@@ -368,13 +368,14 @@ const prepareWith = Effect.fn("LLMClient.prepare")(function* (request: LLMReques
   })
 })
 
-const streamRequestWith = (runtime: TransportRuntime) => (request: LLMRequest) =>
-  Stream.unwrap(
-    Effect.gen(function* () {
-      const compiled = yield* compile(request)
-      return compiled.route.streamPrepared(compiled.prepared, compiled.request, runtime)
-    }),
-  )
+const streamRequestWith = (runtime: TransportRuntime) =>
+  (request: LLMRequest): Stream.Stream<LLMEvent, LLMError> =>
+    Stream.unwrap(
+      Effect.gen(function* () {
+        const compiled = yield* compile(request)
+        return compiled.route.streamPrepared(compiled.prepared, compiled.request, runtime)
+      }),
+    ) as Stream.Stream<LLMEvent, LLMError>
 
 const isToolRunOptions = (input: LLMRequest | ToolRuntime.RunOptions<Tools>): input is ToolRuntime.RunOptions<Tools> =>
   "request" in input && "tools" in input

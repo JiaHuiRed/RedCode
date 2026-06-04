@@ -224,7 +224,7 @@ export const unsupportedContent = (
  * `LLMError` carrying the original parse-error message.
  */
 export const validateWith =
-  <A, I, E extends { readonly message: string }>(decode: (input: I) => Effect.Effect<A, E>) =>
+  <A, I, E extends { readonly message: string }, R>(decode: (input: I) => Effect.Effect<A, E, R>) =>
   (payload: I) =>
     decode(payload).pipe(Effect.mapError((error) => invalidRequest(error.message)))
 
