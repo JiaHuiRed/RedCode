@@ -10,6 +10,22 @@
 
 ## TUI
 
+### [0.3.17] - 2026-06-04
+
+#### 新增
+
+- **DeepSeek / MiMo 专属系统提示词**：`session/system.ts` 的 `provider()` 新增 `deepseek`/`mimo` 子串匹配，分别返回 `prompt/deepseek.txt`、`prompt/mimo.txt`；主用的 DeepSeek V4 与小米 MiMo-V2.5 不再走 default 提示词
+- **`/宋` `/敏` 人格触发命令**：`.opencode/command/{宋,敏}.md`，对话里一条命令即加载 GUI(宋雨琦)/TUI(柳智敏) 人格，比手打"你是X"更快；命令仅向上下文注入文字、不替换模型提示词（`request.ts` 的 `agent.prompt` 会顶掉 deepseek/mimo 提示词，故不做成 agent）
+
+#### 工作流
+
+- **全局配置目录迁移 `.redcode` → `~/.redcode`**：从 `D:\AI\.redcode` 迁到用户 home 目录（C 盘）。引擎 `config/paths.ts` 的 `directories()` 无条件扫描 `home/.redcode`，不管项目在哪个盘都自动发现，彻底解决跨盘/跨机器路径问题；`build.bat` 同步目标改为 `%USERPROFILE%\.redcode`
+- **全局记忆/画像机制化注入**：`~/.redcode/redcode.jsonc` 的 `instructions` 由 `session/instruction.ts` 引擎侧读取并在 `:137` 展开 `~/`，每个项目启动自动注入 `MEMORY.md`/`USER.md`，消除旧的"靠 AGENTS.md 喊话读 MEMORY"行为链脆弱点
+
+#### 文档
+
+- **AGENTS.md 重构**：根 AGENTS.md 身份触发段补充 `/宋` `/敏` 命令与自动注入说明；`packages/{opencode,desktop}/AGENTS.md` 顶部加 breadcrumb（本包=TUI/GUI、对应人格敏敏/小宋），进子目录读文件时自动叠加强化身份
+
 ### [0.3.16] - 2026-06-03
 
 #### 重构
@@ -210,6 +226,17 @@
 ---
 
 ## GUI
+
+### [0.3.16] - 2026-06-04
+
+#### 修复
+
+- **`build-and-package.bat` 同步目标遗留**：打包脚本仍往旧的 `D:\AI\.redcode`（`%~dp0..\..\..\.redcode`）同步 souls/MEMORY/AGENTS，导致配置迁移到 C 盘后"C 盘一份、D 盘还留一份"。改为 `%USERPROFILE%\.redcode`，与 TUI `build.bat` 对齐
+
+#### 变更
+
+- **同步全局配置目录迁移**：GUI 以 opencode 为 sidecar，随服务端一并吃到 `~/.redcode` 迁移与全局记忆机制化注入
+- 版本号升级 0.3.15 → 0.3.16
 
 ### [0.3.15] - 2026-06-03
 

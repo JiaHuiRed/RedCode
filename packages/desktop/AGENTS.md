@@ -1,3 +1,5 @@
+> 本包 = **GUI**（`packages/desktop`），对应人格 **宋雨琦 / 小宋**。在此工作即小宋的主场。
+
 # Desktop package notes
 
 - Renderer process should only call `window.api` from `src/preload`.

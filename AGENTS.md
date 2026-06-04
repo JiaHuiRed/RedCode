@@ -1,19 +1,19 @@
 # 记忆系统
 
 - **项目根判定**：找到包含 `.git` 或 `redcode.jsonc` 的目录即为项目根（下文所有路径均相对项目根）
-- 启动时读 `../.redcode/MEMORY.md`（全局长期记忆）；每换任务重读
-- **全局记忆**：`../.redcode/MEMORY.md` — 教训/偏好/规范
+- **全局记忆/画像自动注入**：`~/.redcode/MEMORY.md`（教训/偏好/规范）与 `~/.redcode/USER.md`（哥哥画像）由 `~/.redcode/redcode.jsonc` 的 `instructions` 在每个项目启动时自动加载，已在上下文中；每换任务直接复用，无需手动读
 - **每日日志**：`.opencode/memory/YYMMDD.md` — 被纠正时追加
 - **大任务前**：读最近 3 天日志
 - **连续失败 2 次** → 停下来问哥哥
-- **"下班"/"收工"** → 当日日志关键教训摘要去重合入 `../.redcode/MEMORY.md`（只留长期有用的，不全量复制）
+- **"下班"/"收工"** → 当日日志关键教训摘要去重合入 `.opencode/MEMORY.md`（源；build.bat 同步到 `~/.redcode/MEMORY.md`。只留长期有用的，不全量复制）
 - **日期格式** `YYMMDD`（如 `260601`）
 
 # 身份触发
 
-- 当被告知"你是宋雨琦"时 → 读 `../.redcode/souls/Gsoul.md` 加载身份（`../` 是相对项目根的上一级）
-- 当被告知"你是柳智敏"时 → 读 `../.redcode/souls/Tsoul.md` 加载身份
-- 在身份加载前，不预设任何身份
+- **绑定**：宋雨琦（小宋）= GUI = `packages/desktop`；柳智敏（敏敏）= TUI = `packages/opencode`。
+- 触发方式（任一）：开场说"你是宋雨琦"/"你是柳智敏"，或用命令 `/宋` `/敏`（最快）。
+- 触发后读对应人格源：宋雨琦 → `.opencode/agents/Gsoul.md`；柳智敏 → `.opencode/agents/Tsoul.md`。
+- 在身份加载前，不预设任何身份。
 
 # 项目路由
 
@@ -28,6 +28,28 @@ RedCode = OpenCode fork：
 | `.opencode/` | 项目配置、skill、command、agent | - |
 
 改所在 package 前先读**根 AGENTS.md + 对应 package 的 AGENTS.md**。两者都生效，scoped 规则覆盖根的代码细节（但记忆/git/路由规则不变）。
+
+# 工作方式
+
+任务循环（每步从简）：
+
+1. **理解** — 读清需求。模糊或不可逆才停下来问哥哥，否则继续（详见 MEMORY.md 工作纪律）。
+2. **定位** — 先用代码检索 MCP（**jCodeMunch > TypeGraph > CodeGraph**，TS 类型感知优先；详见 MEMORY.md），MCP 不可用或不足才退回 grep/glob/read。读到真实代码再动手，别假设。
+3. **改动** — 只做被要求的事，最小改动；不顺手重构、不加没要的抽象/错误处理。改接口要更新所有调用方。
+4. **验证** — 跑对应 package 的 typecheck/test，修好再继续。
+5. **收尾** — 功能/版本完成后按 MEMORY.md 的自检清单逐项打勾。
+
+- 4 步以上的任务先用 todo 拆解，一次只推进一项；琐碎任务直接做。
+- **验证命令从 package 目录跑，别在 repo root 跑 `tsc`**：
+  - 改 TUI → `cd packages/opencode && bun run typecheck`
+  - 改 GUI → `cd packages/desktop && bun run typecheck`
+  - 各 package 的代码风格/构建细节见该 package 的 AGENTS.md
+
+# 版本与文档
+
+- TUI（`packages/opencode/package.json`）与 GUI（`packages/desktop/package.json`）版本号**独立**，互不牵动。
+- 改版本号必同步：`package.json` → README 徽章 → CHANGELOG → `index.html` 标题栏（自检脚本 `script/check-version-consistency.ts`，build.bat 编译前校验）。
+- 文档（版本号/徽章/CHANGELOG/README）可直接改好；**push / 打包 release 需哥哥允许**（详见 MEMORY.md）。
 
 # 项目指令
 

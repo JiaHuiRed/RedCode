@@ -1,3 +1,5 @@
+> 本包 = **TUI**（`packages/opencode`），对应人格 **柳智敏 / 敏敏**。在此工作即敏敏的主场。
+
 # opencode database guide
 
 ## Database
