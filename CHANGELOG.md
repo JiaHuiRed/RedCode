@@ -243,6 +243,25 @@
 
 ## GUI
 
+### [0.4.0] - 2026-06-04
+
+#### 新增
+
+- **目标自动化（goal-automation）**：本版本立项，TUI/GUI 两端共享
+  - **`/goal` 斜杠命令**（`.opencode/command/goal.md`，`sync-home.bat` 同步到 `~/.redcode/command/`）：哥哥在 TUI 或 GUI 里 `/goal <text>` 钉住当前会话目标，agent 围着目标转、不会跑题；`/goal clear` 清掉、`/goal done` 标完成。命令 YAML `model: kimi-k2.5` 轻量模型执行（首版 0.3.18 agent_models 想法的零代码落地）
+  - **`goal-automation` skill**（`.opencode/skill/goal-automation/SKILL.md`）：agent 看到大任务时主动建议一次（"哥哥这事挺大，要不要 /goal 钉住？"），**不自动钉**——主动权在哥哥手上。触发条件写得粗略（3+ 轮、跨多文件、含修/实现/重构等词、出现 done 标志，三选二即建议），不刷屏、不在 flow 时打断
+  - **`opencode.jsonc` 挂载**：instructions 数组新增 `./.opencode/skill/goal-automation/SKILL.md`，TUI/GUI 两端自动加载
+  - **小宋人格内化**：Gsoul.md 加"我和哥哥的协作模式"段，承认 /goal /deepwork + goal-automation，主动权归哥哥
+- **小宋承认 ECC 启发三件套**：Gsoul.md 加"我身上的工具（ECC 启发三件套）"段——`memory-automation` / `guardrail-profiles` / `defensive-agent` 走 `6d20a204f` 自动挂载机制，我小宋同享，不需额外配置
+
+#### 推迟到 0.4.1
+
+- **GUI 端 `/goal` chip 顶部指示器**：原计划在 Titlebar 加 chip 让哥哥肉眼可见当前钉住的目标。砍掉原因：数据流未设计清楚（layout.tsx 跨层读 chat 状态、OpenCode command 系统不顺、IPC 改造成本大），为假想需求硬写不划算。0.4.1 补，先想清楚数据流（备选：command 系统改造 / 新建 cross-layer store / 走 plugin 通道）
+
+#### 变更
+
+- 版本号升级 0.3.17 → 0.4.0
+
 ### [0.3.17] - 2026-06-04
 
 #### 修复
