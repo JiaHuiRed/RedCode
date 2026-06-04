@@ -250,3 +250,27 @@
   - `D:\AI\ECC\skills\hookify-rules\SKILL.md`（YAML hook 规则）
 - jCodeMunch 文档：`https://github.com/colbymchenry/jcodemunch`
 - TypeGraph 文档：`https://github.com/guyowen/typegraph-mcp`
+
+---
+
+## 待处理
+
+### session.tsx 拆分（260603 发现）
+
+**问题**：`packages/app/src/pages/session.tsx` 4000+ 行、400 复杂度，`Page` 函数是 🔴 红色风险
+
+**高风险方法**：
+- `Page`：400 复杂度
+- `handleKeyDown`：27 复杂度
+- `cursor`：14 复杂度
+- `createSessionHistoryLoader`：15 复杂度
+- `fetchOlderMessages`：11 复杂度
+
+**拆分方向**：
+- `createSessionHistoryLoader` → 独立 hook 或 utils
+- `handleKeyDown` → 键盘事件处理模块
+- `cursor` / `navigateMessageByOffset` → 消息导航模块
+- `review*` 方法 → Review 面板模块
+- `composerRegion` → Composer 模块
+
+**优先级**：P2（技术债，不影响功能）

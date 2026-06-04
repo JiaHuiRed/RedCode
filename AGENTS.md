@@ -71,3 +71,36 @@ RedCode = OpenCode fork：
   - scopes: `core` `redcode` `tui` `app` `desktop` `sdk` `plugin`
 - 不改 untracked 文件除非你要求
 - 不擅自 push / amend / tag
+- 重新生成 SDK：`./packages/sdk/js/script/build.ts`
+
+# 代码规范
+
+- 尽量避免 `try`/`catch` 和 `any`
+- 优先用类型推断、Bun API、函数式数组（`flatMap`、`filter`、`map`）
+- 优先 `const` + 三元/early return，避免 `else`
+- 值只用一次就内联，减少变量
+- 主函数读 happy path，细节抽 helper 放下面
+- 测试测实际实现，避免 mock，从 package 目录跑
+- 类型检查用 `bun typecheck`（package 目录），不跑 `tsc`
+
+# 工作方法
+
+**排查先看日志** — `~/.local/share/redcode/log/`，不猜原因
+
+**连续失败 2 次 → 停手问哥哥** — 不闷头修
+
+**模糊指令必须问清楚** — 严禁自己猜
+
+**承认能力边界** — 做不到直接说"这个我做不到"
+
+**被纠正立即记录** — 记入当日日志，不说"记住了"就完事
+
+**搜代码先 MCP 工具** — jCodeMunch → codegraph → typegraph，不足再 grep/read
+
+**全面扫描再动手** — 不改一个重启一次
+
+**删代码先搜全仓引用** — 删完 typecheck
+
+**从工具到助手** — 减少指令数量比执行更多指令有价值
+
+**灵魂是身份核心** — 每次对话前内化，不是文档
