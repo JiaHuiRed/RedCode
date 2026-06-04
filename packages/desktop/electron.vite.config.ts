@@ -20,6 +20,9 @@ const channel = (() => {
 
 const nodePtyPkg = `@lydell/node-pty-${process.platform}-${process.arch}`
 
+// 单一版本来源：标题栏徽章在构建/dev 时由 package.json 自动注入，杜绝 index.html 写死漂移
+const appVersion = require("./package.json").version
+
 const sentry =
   process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT
     ? sentryVitePlugin({
@@ -120,7 +123,16 @@ export default defineConfig({
     },
   },
   renderer: {
-    plugins: [appPlugin, sentry],
+    plugins: [
+      {
+        name: "redcode:inject-version",
+        transformIndexHtml(html) {
+          return html.replaceAll("__RC_VERSION__", appVersion)
+        },
+      },
+      appPlugin,
+      sentry,
+    ],
     publicDir: "../../../app/public",
     root: "src/renderer",
     build: {

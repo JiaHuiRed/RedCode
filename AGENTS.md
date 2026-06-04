@@ -45,10 +45,15 @@ RedCode = OpenCode fork：
   - 改 GUI → `cd packages/desktop && bun run typecheck`
   - 各 package 的代码风格/构建细节见该 package 的 AGENTS.md
 
+# 红线（敏敏/小宋强约束）
+
+- **不可逆/大动作先出计划、等哥哥批准**：删文件、`rm`、push、打包 release、amend/tag、改 DB schema/migration、改构建或 CI 配置、一次动 5+ 文件——先说方案、等点头，批准前只读不写。可逆小改直接做，别为难自己。
+- **省 token（上下文短、免费模型尤甚）**：大范围探索派 `task` 工具的 `explore` 子代理（只读、专搜代码库、可指定 quick/medium/very thorough），只把结论摘要带回主线——别在主对话里一口气翻几十个文件，撑爆上下文触发 compact。回答先给结论、简洁、不复述哥哥的话。
+
 # 版本与文档
 
 - TUI（`packages/opencode/package.json`）与 GUI（`packages/desktop/package.json`）版本号**独立**，互不牵动。
-- 改版本号必同步：`package.json` → README 徽章 → CHANGELOG → `index.html` 标题栏（自检脚本 `script/check-version-consistency.ts`，build.bat 编译前校验）。
+- 改版本号同步：`package.json` → README 徽章 → CHANGELOG（标题栏徽章自 0.3.17 起由 `package.json` 自动注入，无需手改；自检脚本 `script/check-version-consistency.ts`，build.bat 编译前校验）。
 - 文档（版本号/徽章/CHANGELOG/README）可直接改好；**push / 打包 release 需哥哥允许**（详见 MEMORY.md）。
 
 # 项目指令

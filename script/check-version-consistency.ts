@@ -41,7 +41,8 @@ function checkGUI(): VersionInfo {
     pkg: version,
     readme: (readmeZH.includes(`Desktop-${version}`) || readmeZH.includes(`Desktop ${version}`)) ? version : `${version} ✗`,
     changelog: changelog.includes(`[${version}]`) ? version : `${version} ✗`,
-    badge: html.includes(`v${version}`) ? version : `${version} ✗`,
+    // __RC_VERSION__ 占位符 = 构建时自动注入，永远跟随 package.json，视为一致
+    badge: (html.includes("__RC_VERSION__") || html.includes(`v${version}`)) ? version : `${version} ✗`,
   }
 }
 

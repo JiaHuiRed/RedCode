@@ -231,7 +231,8 @@ const createPlatform = (): Platform => {
 
       const notification = new Notification(title, {
         body: description ?? "",
-        icon: "https://redcode.dev/favicon-96x96-v3.png",
+        // 本地打包图标，避免请求未注册的 redcode.dev（DNS 解析失败 → 控制台 ERR_NAME_NOT_RESOLVED）
+        icon: new URL("favicon-96x96-v3.png", document.baseURI).href,
       })
       notification.onclick = () => {
         void window.api.showWindow()
