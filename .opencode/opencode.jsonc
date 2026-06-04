@@ -13,7 +13,9 @@
     // 260604 Red guardrail-profiles — 三档控制 minimal/standard/strict
     "./.opencode/skill/guardrail-profiles/SKILL.md",
     // 260604 Red defensive-agent — FP 过滤/confidence gate/pre-edit 调查
-    "./.opencode/skill/defensive-agent/SKILL.md"
+    "./.opencode/skill/defensive-agent/SKILL.md",
+    // 260604 Red goal-automation — 主动建议 /goal 钉住大任务（GUI 0.4.0）
+    "./.opencode/skill/goal-automation/SKILL.md"
   ],
   "mcp": {
     "codegraph": {
