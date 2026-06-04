@@ -1,20 +1,65 @@
 import { tool } from "@redcode-ai/plugin/tool"
 import { execSync } from "child_process"
+import { readFileSync, readdirSync, existsSync } from "fs"
+import { join } from "path"
 
-// 260603 Red ECC plugin · shell.env + changed-files + compacting + permission + git-summary
+// 260604 Red ECC stub v2 · memory-automation + guardrail-profiles + defensive-agent
 export default {
   id: "ecc-stub",
   server: async (input) => {
     const worktreePath = input.worktree || input.directory
     const editedFiles = new Map()
+    const profile = (process.env.ECC_PROFILE || "standard").toLowerCase()
+
+    // --- memory helpers ---
+    function readRecentMemory(dir) {
+      const memoryDir = join(dir, ".opencode", "memory")
+      if (!existsSync(memoryDir)) return []
+
+      const files = readdirSync(memoryDir)
+        .filter((f) => /^\d{6}\.md$/.test(f))
+        .sort()
+        .reverse()
+        .slice(0, 3)
+
+      return files.flatMap((f) => {
+        try {
+          const content = readFileSync(join(memoryDir, f), "utf-8")
+          const date = f.slice(0, 6)
+          const lines = content
+            .split("\n")
+            .filter((l) => l.includes("教训") || l.includes("教训") || l.includes("总结") || l.startsWith("-"))
+            .slice(0, 5)
+          return lines.map((l) => `[MEMORY ${date}] ${l.replace(/^[#*\-\s]+/, "")}`)
+        } catch {
+          return []
+        }
+      })
+    }
+
+    function readMemoryLong(dir) {
+      const memoryFile = join(dir, ".opencode", "MEMORY.md")
+      if (!existsSync(memoryFile)) return ""
+      try {
+        return readFileSync(memoryFile, "utf-8").split("\n").slice(0, 30).join("\n")
+      } catch {
+        return ""
+      }
+    }
 
     return {
       "shell.env": async (_input, output) => {
+        const memoryLines = readRecentMemory(worktreePath)
+        const longMemory = readMemoryLong(worktreePath)
+
         output.env = {
           ...output.env,
-          ECC_VERSION: "1.0.0-stub",
+          ECC_VERSION: "2.0.0-stub",
           ECC_ACTIVE: "true",
+          ECC_PROFILE: profile,
           PROJECT_ROOT: worktreePath,
+          ...(memoryLines.length > 0 ? { ECC_MEMORY_RECENT: memoryLines.join(" | ") } : {}),
+          ...(longMemory ? { ECC_MEMORY_LONG: longMemory.slice(0, 1500) } : {}),
         }
       },
 
@@ -34,8 +79,8 @@ export default {
 
       "experimental.session.compacting": async (_input, output) => {
         output.context = [
-          "# ECC Stub · context to preserve across compaction",
-          `- Active plugin: ecc-stub (worktree: ${worktreePath})`,
+          "# ECC Stub v2 · context preserved across compaction",
+          `- Active plugin: ecc-stub (profile: ${profile})`,
           `- Changed files: ${editedFiles.size} file(s)`,
         ]
         if (editedFiles.size > 0) {
@@ -45,7 +90,8 @@ export default {
           }
         }
         output.context.push(
-          "- Key principles: TDD, immutability, security-first",
+          `- Guardrail profile: ${profile}`,
+          "- Key principles: minimal edits, defensive design, memory persistence",
           "- Session goals: track current task, preserve decisions, keep error context",
         )
         output.prompt =
@@ -58,12 +104,41 @@ export default {
 
       "permission.ask": async (input, output) => {
         const cmd = typeof input.metadata?.command === "string" ? input.metadata.command : ""
-        if (["read", "glob", "grep", "search", "list"].includes(input.type)) {
+        const type = input.type || ""
+
+        // Read-only ops always allowed
+        if (["read", "glob", "grep", "search", "list"].includes(type)) {
           output.status = "allow"
-        } else if (cmd && /^(npx )?(prettier|biome|black|gofmt|rustfmt)/.test(cmd)) {
+          return
+        }
+
+        // Profile-based guardrail
+        if (profile === "minimal") {
+          // Only block truly destructive ops
+          if (cmd && /^(rm|del|rd|Remove-Item)\b/i.test(cmd)) {
+            output.status = "ask" // never auto-allow deletion
+            return
+          }
+          output.status = "allow"
+          return
+        }
+
+        if (profile === "strict") {
+          output.status = "ask" // everything needs approval
+          return
+        }
+
+        // standard (default) — whitelist
+        if (cmd && /^(npx )?(prettier|biome|black|gofmt|rustfmt)/.test(cmd)) {
           output.status = "allow"
         } else if (cmd && /^(npm test|npx vitest|npx jest|pytest|go test|cargo test)/.test(cmd)) {
           output.status = "allow"
+        } else if (cmd && /^(git status|git diff|git log|git branch)/.test(cmd)) {
+          output.status = "allow"
+        } else if (type === "write" || type === "edit") {
+          output.status = "allow" // edits are fine in standard
+        } else {
+          output.status = "ask"
         }
       },
 

@@ -1,8 +1,20 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["./plugins/ecc-shell-stub.js"],
+  "plugin": [
+    "./plugins/ecc-shell-stub.js",
+    // 260604 Red DCP — 动态上下文裁剪：压缩旧对话/去重/裁剪错误输入
+    "@tarquinen/opencode-dcp"
+  ],
   "provider": {},
   "permission": {},
+  "instructions": [
+    // 260604 Red memory-automation — 启动自动注入/压缩保存/收工提取
+    "./.opencode/skill/memory-automation/SKILL.md",
+    // 260604 Red guardrail-profiles — 三档控制 minimal/standard/strict
+    "./.opencode/skill/guardrail-profiles/SKILL.md",
+    // 260604 Red defensive-agent — FP 过滤/confidence gate/pre-edit 调查
+    "./.opencode/skill/defensive-agent/SKILL.md"
+  ],
   "mcp": {
     "codegraph": {
       "type": "local",

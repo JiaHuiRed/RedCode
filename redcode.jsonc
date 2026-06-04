@@ -1,6 +1,10 @@
 {
   "$schema": "https://redcode.dev/config.json",
-  "plugin": ["./.opencode/plugins/ecc-shell-stub.js"],
+  "plugin": [
+    "./.opencode/plugins/ecc-shell-stub.js",
+    // 260604 Red DCP — 动态上下文裁剪：压缩旧对话/去重/裁剪错误输入
+    "@tarquinen/opencode-dcp"
+  ],
   "mcp": {
     "codegraph": {
       "type": "local",
