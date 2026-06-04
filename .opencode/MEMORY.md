@@ -148,6 +148,18 @@
 - **构建钩子失败别静默 catch，要 throw**：electron-builder `afterAllArtifactBuild` 等钩子吞错会让构建假报 "Done" 却留下旧产物（曾导致打包出旧版本号）
 - **GUI 吃 TUI 新代码要先 build opencode**：desktop build 不重编 opencode，只打包现有 `packages/opencode/dist`；想让 GUI 用上敏敏的改动，先 build opencode 再 build desktop。版本号 TUI/GUI 独立无影响，唯一耦合是打进包的 sidecar dist 新旧
 
+### 18. 跨平台 emoji 渲染差异
+- emoji 依赖系统字体渲染，Win10（Segoe UI Emoji 多色渐变）和 Win11（Fluent 扁平纯色）风格不同
+- 需要跨平台一致性的 emoji（如 UI 动画/指示器）用本地图片替代，别依赖系统 emoji 字体
+
+### 18. 跨平台 emoji 渲染差异
+- emoji 依赖系统字体渲染，Win10（Segoe UI Emoji 多色渐变）和 Win11（Fluent 扁平纯色）风格不同
+- 需要跨平台一致性的 emoji（如 UI 动画/指示器）用本地图片替代，别依赖系统 emoji 字体
+
+### 18. 跨平台 emoji 渲染差异
+- emoji 依赖系统字体渲染，Win10（Segoe UI Emoji 多色渐变）和 Win11（Fluent 扁平纯色）风格不同
+- 需要跨平台一致性的 emoji（如 UI 动画/指示器）用本地图片替代，别依赖系统 emoji 字体
+
 # 每日日志格式
 
 `memory/YYMMDD.md` 分两个主体记录：
