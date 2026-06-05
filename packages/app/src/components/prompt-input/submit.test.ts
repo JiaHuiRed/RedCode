@@ -80,6 +80,7 @@ beforeAll(async () => {
 
   mock.module("@/context/local", () => ({
     useLocal: () => ({
+      ready: () => true,
       model: {
         current: () => ({ id: "model", provider: { id: "provider" } }),
         variant: { current: () => variant },

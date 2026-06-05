@@ -365,6 +365,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       slug: createMemo(() => base64Encode(sdk.directory)),
       model,
       agent,
+      // 260605 Red 统一就绪 gate：providers + models(localStorage 水合) + agent(bootstrap slow 批次)
+      // 三个异步信号全到位才算 ready。submit 据此静默等待，杜绝加载期误弹"请选择智能体和模型"。
+      // 历史教训：guard 此前散落在 submit.ts/use-providers.ts 各处逐个列举依赖，agent 这条腿
+      // 从无就绪信号、又被塞进 slow 批次，每次改 render 路径就复发（已 5 次）。收敛到此一处后，
+      // 新增异步依赖只在这里补条件，不会再漏。
+      ready: () => providers.ready() && model.ready() && sync.data.agent_ready,
       session: {
         reset() {
           setStore("draft", undefined)

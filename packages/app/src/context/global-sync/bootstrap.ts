@@ -229,7 +229,11 @@ export async function bootstrapDirectory(input: {
       () =>
         input.queryClient
           .ensureQueryData(loadAgentsQuery(input.directory, input.sdk))
-          .then((data) => input.setStore("agent", data)),
+          // 260605 Red agent 到位后置 ready，submit gate 据此判断而非靠列表非空猜测
+          .then((data) => {
+            input.setStore("agent", data)
+            input.setStore("agent_ready", true)
+          }),
       () =>
         retry(() => input.sdk.config.get().then((x) => input.setStore("config", reconcile(x.data!, { merge: false })))),
       () => retry(() => input.sdk.session.status().then((x) => input.setStore("session_status", x.data!))),

@@ -166,6 +166,13 @@
 - 方案：需要走系统代理的 HTTP 请求用 PS `Invoke-WebRequest` 子进程，或用 WinHTTP API 检测代理地址后显式传给 fetch
 - 影响 web-search MCP server 等外部 HTTP 请求场景
 
+### 20. "请选择智能体和模型" 误弹 toast（复发 6 次 · 260605 根治）
+- **症状**：底部明明已选 DeepSeek/agent，发送时却弹"请选择智能体和模型"。0.3.3 起单数版本反复出现（0.3.16/0.3.17/0.4.1…），改一次复发一次。
+- **真根因（结构性）**：submit 依赖 providers / models / **agent** 三个异步信号；agent 列表由 `bootstrap.ts` 的 **slow 批次** fire-and-forget 填充，**唯独它从无就绪标志**（provider 有 `provider_ready`、mcp/lsp 也有，agent 没有）。空窗期 `agent.current()` 兜底失败返回 null → 弹 toast。**toast 永远是误报**——`pickAgent` 总兜底 `items[0]`、`defaultModel` 总兜底首个 connected model，不存在"用户真没选"的合法态，null 只可能是没加载完。
+- **为何每逢单数版本复发**：不是版本号的事。单数版本恰好都在改 render 路径（submit.ts / message-timeline.tsx），扰动 SolidJS 挂载/订阅时序、放大 race window，把这个老洞口暴露出来。历次"修复"（加 submit ready、加 child-store fallback、`||→&&`）都只补当时暴露的腿，agent 这条从没被挡。
+- **根治三步**：① `types.ts`/`child-store.ts` 加 `agent_ready` 字段，`bootstrap.ts` agent 加载完的 `.then` 里置真；② `local.tsx` 加统一就绪 gate `ready() = providers.ready() && model.ready() && sync.data.agent_ready`，三信号收敛一处；③ `submit.ts` 改用 `local.ready()`，加载中静默返回，仅 gate 通过仍 null 才提示。
+- **通用教训（小宋/敏敏都记）**：① 多个异步数据源的"能否操作"判断，**别散落各处逐个列举依赖**——一定有人漏一条，收敛成单一 `ready()` 派生信号，加新依赖只改一处。② 凡是 `X: []` 初始、后续异步填充的状态，**配套加 `X_ready` 信号**，别让下游靠"列表非空"猜加载完没完。③ 改 render 路径（组件结构/挂载顺序）后，必须验证依赖异步数据的交互（发送/提交）在数据未就绪的瞬间不报错。④ 误报型提示先问"这个错误态真能合法发生吗"——若答案是否，就该静默等待而非报错。
+
 # 每日日志格式
 
 `memory/YYMMDD.md` 分两个主体记录：

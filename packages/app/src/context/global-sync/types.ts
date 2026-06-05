@@ -33,6 +33,8 @@ export type ProjectMeta = {
 export type State = {
   status: "loading" | "partial" | "complete"
   agent: Agent[]
+  // 260605 Red agent 列表由 bootstrap slow 批次异步填充，加就绪信号供 submit gate 统一判断
+  agent_ready: boolean
   command: Command[]
   project: string
   projectMeta: ProjectMeta | undefined

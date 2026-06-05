@@ -13,6 +13,7 @@ describe("bootstrapDirectory", () => {
     const [store, setStore] = createStore<State>({
       status: "loading",
       agent: [],
+      agent_ready: false,
       command: [],
       project: "",
       projectMeta: undefined,

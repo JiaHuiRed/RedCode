@@ -211,6 +211,7 @@ export function createChildStoreManager(input: {
             },
             status: "complete" as const,
             agent: [],
+            agent_ready: false,
             command: [],
             session: [],
             sessionTotal: 0,
