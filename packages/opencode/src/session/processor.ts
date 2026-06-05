@@ -424,26 +424,45 @@ export const layer = Layer.effect(
             const parts = MessageV2.parts(ctx.assistantMessage.id)
             const recentParts = parts.slice(-DOOM_LOOP_THRESHOLD)
 
-            if (
-              recentParts.length !== DOOM_LOOP_THRESHOLD ||
-              !recentParts.every(
+            // Existing: exact same tool × DOOM_LOOP_THRESHOLD consecutive
+            const exactLoop =
+              recentParts.length === DOOM_LOOP_THRESHOLD &&
+              recentParts.every(
                 (part) =>
                   part.type === "tool" &&
                   part.tool === value.name &&
                   part.state.status !== "pending" &&
                   JSON.stringify(part.state.input) === JSON.stringify(input),
               )
-            ) {
-              return
-            }
+
+            // Extended: cycling pattern (A→B→A→B or A→B→C→A→B→C)
+            const CYCLE_WINDOW = DOOM_LOOP_THRESHOLD * 2
+            const cycleParts = parts.slice(-CYCLE_WINDOW)
+            const cycleLoop =
+              !exactLoop &&
+              cycleParts.length === CYCLE_WINDOW &&
+              cycleParts.every((p) => p.type === "tool" && p.state.status !== "pending") &&
+              [2, 3].some((len) => {
+                if (CYCLE_WINDOW % len !== 0) return false
+                const key = (p: (typeof cycleParts)[number]) =>
+                  p.type === "tool" ? `${p.tool}\0${JSON.stringify(p.state.input)}` : ""
+                const pattern = cycleParts.slice(0, len).map(key)
+                return cycleParts.every((p, i) => key(p) === pattern[i % len])
+              })
+
+            if (!exactLoop && !cycleLoop) return
+
+            const cycleTools = cycleLoop
+              ? [...new Set(cycleParts.flatMap((p) => (p.type === "tool" ? [p.tool] : [])))]
+              : [value.name]
 
             const agent = yield* agents.get(ctx.assistantMessage.agent)
             yield* permission.ask({
               permission: "doom_loop",
-              patterns: [value.name],
+              patterns: cycleTools,
               sessionID: ctx.assistantMessage.sessionID,
               metadata: { tool: value.name, input },
-              always: [value.name],
+              always: cycleTools,
               ruleset: agent.permission,
             })
             return

@@ -1,4 +1,4 @@
-﻿# 更新日志
+# 更新日志
 
 本文件记录 RedCode 的所有重要变更。
 
@@ -9,6 +9,16 @@
 ---
 
 ## TUI
+
+### [0.4.1] - 2026-06-05
+
+#### 修复
+
+- **Compaction 静默化**：之前压缩摘要的完整文本会渲染进对话滚动区，干扰阅读；过滤掉 `mode === "compaction"` 的 assistant 消息，三处同步修改（`pending` memo / `lastAssistant` memo / render Match 条件），标题栏 `—— Compaction ——` 保持不变（`routes/session/index.tsx:204,208,1213`）
+
+#### 优化
+
+- **doom_loop 循环检测扩展**：原判定仅覆盖「同一工具连续 3 次」；新增 `CYCLE_WINDOW = 6` 窗口，检测 A→B→A→B（周期 2）和 A→B→C→A→B→C（周期 3）交替模式，解决 MiMo 等模型在 agentic 任务中反复横跳却绕过阈值的问题（`session/processor.ts:427-458`）
 
 ### [0.4.0] - 2026-06-04
 

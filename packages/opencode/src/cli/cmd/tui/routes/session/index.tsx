@@ -204,11 +204,11 @@ export function Session() {
   const disabled = createMemo(() => permissions().length > 0 || questions().length > 0)
 
   const pending = createMemo(() => {
-    return messages().findLast((x) => x.role === "assistant" && !x.time.completed)?.id
+    return messages().findLast((x) => x.role === "assistant" && x.mode !== "compaction" && !x.time.completed)?.id
   })
 
   const lastAssistant = createMemo(() => {
-    return messages().findLast((x) => x.role === "assistant")
+    return messages().findLast((x) => x.role === "assistant" && x.mode !== "compaction")
   })
 
   const dimensions = useTerminalDimensions()
@@ -1210,7 +1210,7 @@ export function Session() {
                           pending={pending()}
                         />
                       </Match>
-                      <Match when={message.role === "assistant"}>
+                      <Match when={message.role === "assistant" && (message as AssistantMessage).mode !== "compaction"}>
                         <AssistantMessage
                           last={lastAssistant()?.id === message.id}
                           message={message as AssistantMessage}
