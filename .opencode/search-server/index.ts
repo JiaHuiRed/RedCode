@@ -22,11 +22,40 @@ interface SearchResult {
 const CHROME_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
-// 260604 Red Use PowerShell to respect Windows system proxy (127.0.0.1:7890).
-// Node's fetch / curl.exe bypass the proxy and fail on this machine.
+// 260604 Red Use PowerShell for HTTP — respects system proxy when enabled.
+// 260605 Red Auto-detect proxy from registry; when ProxyEnable=1, pass -Proxy to Invoke-WebRequest.
+function getSystemProxy(): string | null {
+  try {
+    const out = execSync(
+      `reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings" /v ProxyEnable`,
+      { timeout: 3000, encoding: "utf-8", windowsHide: true },
+    );
+    if (!out.includes("0x1")) return null; // ProxyEnable != 1
+    const srv = execSync(
+      `reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings" /v ProxyServer`,
+      { timeout: 3000, encoding: "utf-8", windowsHide: true },
+    );
+    // ProxyServer may be "http://127.0.0.1:7890" or "http=...;https=..."
+    const m = srv.match(/ProxyServer\s+REG_SZ\s+(.+)/i);
+    if (!m) return null;
+    const raw = m[1].trim();
+    // If it contains semicolons, pick the first http(s) one
+    if (raw.includes(";")) {
+      const part = raw.split(";").find(s => s.startsWith("http")) ?? raw.split(";")[0];
+      return part?.trim() ?? null;
+    }
+    return raw || null;
+  } catch {
+    return null;
+  }
+}
+
+const CACHED_PROXY = getSystemProxy(); // detect once at startup
+
 function fetchHtml(url: string): string {
   const ua = CHROME_UA.replace(/'/g, "''");
-  const cmd = `powershell.exe -NoProfile -NonInteractive -Command "try { (Invoke-WebRequest -Uri '${url.replace(/'/g, "''")}' -UserAgent '${ua}' -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop).Content } catch { Write-Error $$_; exit 1 }"`;
+  const proxyArg = CACHED_PROXY ? ` -Proxy '${CACHED_PROXY.replace(/'/g, "''")}'` : "";
+  const cmd = `powershell.exe -NoProfile -NonInteractive -Command "try { (Invoke-WebRequest -Uri '${url.replace(/'/g, "''")}' -UserAgent '${ua}' -UseBasicParsing${proxyArg} -TimeoutSec 15 -ErrorAction Stop).Content } catch { Write-Error $$_; exit 1 }"`;
   try {
     return execSync(cmd, { timeout: 25_000, encoding: "utf-8", windowsHide: true });
   } catch (e: any) {
