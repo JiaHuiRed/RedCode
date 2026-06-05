@@ -24,6 +24,11 @@ export interface TtsSettings {
   enabled: boolean
 }
 
+export interface UserProfile {
+  avatar: string
+  displayName: string
+}
+
 export interface Settings {
   general: {
     autoSave: boolean
@@ -55,6 +60,8 @@ export interface Settings {
   notifications: NotificationSettings
   sounds: SoundSettings
   tts: TtsSettings
+  userProfile: UserProfile
+  assistantProfile: UserProfile
 }
 
 export const monoDefault = "System Mono"
@@ -155,6 +162,14 @@ const defaultSettings: Settings = {
     apiKey: "",
     voice: "冰糖",
     enabled: false,
+  },
+  userProfile: {
+    avatar: "",
+    displayName: "",
+  },
+  assistantProfile: {
+    avatar: "",
+    displayName: "RedCode",
   },
 }
 
@@ -351,6 +366,26 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         errors: withFallback(() => store.sounds?.errors, defaultSettings.sounds.errors),
         setErrors(value: string) {
           setStore("sounds", "errors", value)
+        },
+      },
+      userProfile: {
+        avatar: withFallback(() => store.userProfile?.avatar, defaultSettings.userProfile.avatar),
+        setAvatar(value: string) {
+          setStore("userProfile", "avatar", value)
+        },
+        displayName: withFallback(() => store.userProfile?.displayName, defaultSettings.userProfile.displayName),
+        setDisplayName(value: string) {
+          setStore("userProfile", "displayName", value)
+        },
+      },
+      assistantProfile: {
+        avatar: withFallback(() => store.assistantProfile?.avatar, defaultSettings.assistantProfile.avatar),
+        setAvatar(value: string) {
+          setStore("assistantProfile", "avatar", value)
+        },
+        displayName: withFallback(() => store.assistantProfile?.displayName, defaultSettings.assistantProfile.displayName),
+        setDisplayName(value: string) {
+          setStore("assistantProfile", "displayName", value)
         },
       },
     }

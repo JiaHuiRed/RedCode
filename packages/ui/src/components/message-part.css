@@ -115,10 +115,25 @@
   [data-slot="user-message-body"] {
     width: fit-content;
     max-width: min(82%, 64ch);
-    margin-left: auto;
     display: flex;
     flex-direction: column;
     align-items: flex-end;
+  }
+
+  [data-slot="user-message-body-row"] {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: flex-end;
+    gap: 8px;
+    width: 100%;
+  }
+
+  [data-slot="user-message-avatar"] {
+    flex: none;
+    display: flex;
+    align-items: flex-end;
+    padding-bottom: 2px;
   }
 
   [data-slot="user-message-attachments"] + [data-slot="user-message-body"] {
@@ -132,8 +147,10 @@
     overflow: hidden;
     background: var(--surface-base);
     border: 1px solid var(--border-weak-base);
-    padding: 8px 12px;
-    border-radius: 6px;
+    padding: 10px 14px;
+    border-radius: 10px 10px 4px 10px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    transition: border-color 0.15s ease;
 
     [data-highlight="file"] {
       color: var(--syntax-property);

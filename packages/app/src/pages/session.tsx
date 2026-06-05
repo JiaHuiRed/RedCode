@@ -48,9 +48,8 @@ import {
   createOpenReviewFile,
   createSessionTabs,
   createSizing,
-  focusTerminalById,
-  shouldFocusTerminalOnKeyDown,
 } from "@/pages/session/helpers"
+import { createSessionKeyboard } from "@/pages/session/session-keyboard"
 import { MessageTimeline } from "@/pages/session/message-timeline"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { useSessionLayout } from "@/pages/session/session-layout"
@@ -60,6 +59,9 @@ import { FileTreePanel } from "@/pages/session/file-tree-panel"
 import { TerminalPanel } from "@/pages/session/terminal-panel"
 import { useSessionCommands } from "@/pages/session/use-session-commands"
 import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
+import { createSessionHistoryLoader } from "@/pages/session/session-history-loader"
+import { createReviewDiffHelpers } from "@/pages/session/session-review-diff"
+import { createMessageNav } from "@/pages/session/session-message-nav"
 import { Identifier } from "@/utils/id"
 import { diffs as list } from "@/utils/diffs"
 import { Persist, persisted } from "@/utils/persist"
@@ -76,110 +78,6 @@ const emptyFollowups: FollowupItem[] = []
 type ChangeMode = "git" | "branch" | "turn"
 type VcsMode = "git" | "branch"
 const USE_NEW_SESSION_DESIGN = true
-
-type SessionHistoryWindowInput = {
-  sessionID: () => string | undefined
-  loaded: () => number
-  visibleUserMessages: () => UserMessage[]
-  historyMore: () => boolean
-  historyLoading: () => boolean
-  loadMore: (sessionID: string) => Promise<void>
-  userScrolled: () => boolean
-  scroller: () => HTMLDivElement | undefined
-}
-
-function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
-  const historyScrollThreshold = 200
-  let shiftFrame: number | undefined
-
-  const [state, setState] = createStore({
-    shift: false,
-  })
-
-  const userMessages = createMemo(() => input.visibleUserMessages(), emptyUserMessages, {
-    equals: same,
-  })
-
-  const cancelShiftReset = () => {
-    if (shiftFrame === undefined) return
-    cancelAnimationFrame(shiftFrame)
-    shiftFrame = undefined
-  }
-
-  const scheduleShiftReset = () => {
-    cancelShiftReset()
-    shiftFrame = requestAnimationFrame(() => {
-      shiftFrame = undefined
-      setState("shift", false)
-    })
-  }
-
-  const fetchOlderMessages = async () => {
-    const id = input.sessionID()
-    if (!id) return
-    if (!input.historyMore() || input.historyLoading()) return
-
-    // TODO(session-timeline): switch this to core cursor-based part pagination when that API lands.
-    const beforeVisible = input.visibleUserMessages().length
-    let loaded = input.loaded()
-    let growth = 0
-
-    cancelShiftReset()
-    setState("shift", true)
-
-    while (true) {
-      await input.loadMore(id)
-      if (input.sessionID() !== id) return
-
-      const nextLoaded = input.loaded()
-      const raw = nextLoaded - loaded
-      loaded = nextLoaded
-      growth = input.visibleUserMessages().length - beforeVisible
-
-      if (growth > 0) break
-      if (raw <= 0) break
-      if (!input.historyMore()) break
-    }
-
-    if (growth > 0) {
-      scheduleShiftReset()
-      return
-    }
-
-    setState("shift", false)
-  }
-
-  const loadAndReveal = () => fetchOlderMessages()
-
-  const onScrollerScroll = () => {
-    if (!input.userScrolled()) return
-    const el = input.scroller()
-    if (!el) return
-    if (el.scrollTop >= historyScrollThreshold) return
-
-    void fetchOlderMessages()
-  }
-
-  createEffect(
-    on(
-      input.sessionID,
-      () => {
-        cancelShiftReset()
-        setState({ shift: false })
-      },
-      { defer: true },
-    ),
-  )
-
-  onCleanup(cancelShiftReset)
-
-  return {
-    userMessages,
-    shift: () => state.shift,
-    loadAndReveal,
-    onScrollerScroll,
-  }
-}
 
 export default function Page() {
   const globalSync = useServerSync()
@@ -222,6 +120,13 @@ export default function Page() {
   })
 
   const composer = createSessionComposerState()
+
+  const autoScroll = createAutoScroll({
+    working: () => true,
+    overflowAnchor: "dynamic",
+  })
+
+  let resumeScroll = () => {}
 
   const workspaceKey = createMemo(() => params.dir ?? "")
   const workspaceTabs = createMemo(() => layout.tabs(workspaceKey))
@@ -503,62 +408,13 @@ export default function Page() {
     return "main"
   })
 
-  const setActiveMessage = (message: UserMessage | undefined) => {
-    messageMark = scrollMark
-    setStore("messageId", message?.id)
-  }
-
-  const anchor = (id: string) => `message-${id}`
-
-  const cursor = () => {
-    const root = scroller
-    if (!root) return store.messageId
-
-    const box = root.getBoundingClientRect()
-    const line = box.top + 100
-    const list = [...root.querySelectorAll<HTMLElement>("[data-message-id]")]
-      .map((el) => {
-        const id = el.dataset.messageId
-        if (!id) return
-
-        const rect = el.getBoundingClientRect()
-        return { id, top: rect.top, bottom: rect.bottom }
-      })
-      .filter((item): item is { id: string; top: number; bottom: number } => !!item)
-
-    const shown = list.filter((item) => item.bottom > box.top && item.top < box.bottom)
-    const hit = shown.find((item) => item.top <= line && item.bottom >= line)
-    if (hit) return hit.id
-
-    const near = [...shown].sort((a, b) => {
-      const da = Math.abs(a.top - line)
-      const db = Math.abs(b.top - line)
-      if (da !== db) return da - db
-      return a.top - b.top
-    })[0]
-    if (near) return near.id
-
-    return list.filter((item) => item.top <= line).at(-1)?.id ?? list[0]?.id ?? store.messageId
-  }
-
-  function navigateMessageByOffset(offset: number) {
-    const msgs = visibleUserMessages()
-    if (msgs.length === 0) return
-
-    const current = store.messageId && messageMark === scrollMark ? store.messageId : cursor()
-    const base = current ? msgs.findIndex((m) => m.id === current) : msgs.length
-    const currentIndex = base === -1 ? msgs.length : base
-    const targetIndex = currentIndex + offset
-    if (targetIndex < 0 || targetIndex > msgs.length) return
-
-    if (targetIndex === msgs.length) {
-      resumeScroll()
-      return
-    }
-
-    autoScroll.pause()
-    scrollToMessage(msgs[targetIndex], "auto")
-  }
+  const nav = createMessageNav({
+    visibleUserMessages,
+    scroller: () => scroller,
+    autoScroll,
+    resumeScroll: () => resumeScroll(),
+    setStoreMessageId: (id) => setStore("messageId", id),
+  })
 
   function upsert(next: Project) {
     const list = globalSync.data.project
@@ -605,9 +461,6 @@ export default function Page() {
   let scroller: HTMLDivElement | undefined
   let content: HTMLDivElement | undefined
   let revealMessage = (_id: string) => {}
-  let scrollMark = 0
-  let messageMark = 0
-
   const scrollGestureWindowMs = 250
 
   const markScrollGesture = (target?: EventTarget | null) => {
@@ -795,58 +648,15 @@ export default function Page() {
     saveLabel: language.t("common.save"),
   }))
 
-  const isEditableTarget = (target: EventTarget | null | undefined) => {
-    if (!(target instanceof HTMLElement)) return false
-    return /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(target.tagName) || target.isContentEditable
-  }
-
-  const deepActiveElement = () => {
-    let current: Element | null = document.activeElement
-    while (current instanceof HTMLElement && current.shadowRoot?.activeElement) {
-      current = current.shadowRoot.activeElement
-    }
-    return current instanceof HTMLElement ? current : undefined
-  }
-
-  const handleKeyDown = (event: KeyboardEvent) => {
-    const path = event.composedPath()
-    const target = path.find((item): item is HTMLElement => item instanceof HTMLElement)
-    const activeElement = deepActiveElement()
-
-    const protectedTarget = path.some(
-      (item) => item instanceof HTMLElement && item.closest("[data-prevent-autofocus]") !== null,
-    )
-    if (protectedTarget || isEditableTarget(target)) return
-
-    if (activeElement) {
-      const isProtected = activeElement.closest("[data-prevent-autofocus]")
-      const isInput = isEditableTarget(activeElement)
-      if (isProtected || isInput) return
-    }
-    if (dialog.active) return
-
-    if (activeElement === inputRef) {
-      if (event.key === "Escape") inputRef?.blur()
-      return
-    }
-
-    // Prefer the open terminal over the composer when it can take focus
-    if (view().terminal.opened()) {
-      const id = terminal.active()
-      if (id && shouldFocusTerminalOnKeyDown(event) && focusTerminalById(id)) return
-    }
-
-    // Only treat explicit scroll keys as potential "user scroll" gestures.
-    if (event.key === "PageUp" || event.key === "PageDown" || event.key === "Home" || event.key === "End") {
-      markScrollGesture()
-      return
-    }
-
-    if (event.key.length === 1 && event.key !== "Unidentified" && !(event.ctrlKey || event.metaKey)) {
-      if (composer.blocked() || isChildSession()) return
-      inputRef?.focus()
-    }
-  }
+  const { handleKeyDown } = createSessionKeyboard({
+    isDialogActive: () => !!dialog.active,
+    inputRef,
+    getViewTerminalOpened: () => view().terminal.opened(),
+    terminal,
+    composer,
+    isChildSession,
+    onMarkScrollGesture: markScrollGesture,
+  })
 
   createEffect(() => {
     const list = changesOptions()
@@ -901,8 +711,8 @@ export default function Page() {
   }
 
   useSessionCommands({
-    navigateMessageByOffset,
-    setActiveMessage,
+    navigateMessageByOffset: (offset) => nav.navigateMessageByOffset(offset, store.messageId),
+    setActiveMessage: nav.setActiveMessage,
     focusInput,
     review: reviewTab,
   })
@@ -1043,45 +853,13 @@ export default function Page() {
     ),
   )
 
-  const reviewDiffId = (path: string) => {
-    const sum = checksum(path)
-    if (!sum) return
-    return `session-review-diff-${sum}`
-  }
-
-  const reviewDiffTop = (path: string) => {
-    const root = tree.reviewScroll
-    if (!root) return
-
-    const id = reviewDiffId(path)
-    if (!id) return
-
-    const el = document.getElementById(id)
-    if (!(el instanceof HTMLElement)) return
-    if (!root.contains(el)) return
-
-    const a = el.getBoundingClientRect()
-    const b = root.getBoundingClientRect()
-    return a.top - b.top + root.scrollTop
-  }
-
-  const scrollToReviewDiff = (path: string) => {
-    const root = tree.reviewScroll
-    if (!root) return false
-
-    const top = reviewDiffTop(path)
-    if (top === undefined) return false
-
-    view().setScroll("review", { x: root.scrollLeft, y: top })
-    root.scrollTo({ top, behavior: "auto" })
-    return true
-  }
-
-  const focusReviewDiff = (path: string) => {
-    openReviewPanel()
-    view().review.openPath(path)
-    setTree({ activeDiff: path, pendingDiff: path })
-  }
+  const { reviewDiffId, reviewDiffTop, scrollToReviewDiff, focusReviewDiff } = createReviewDiffHelpers({
+    checksum,
+    tree,
+    setTree,
+    view,
+    openReviewPanel,
+  })
 
   createEffect(() => {
     const pending = tree.pendingDiff
@@ -1189,11 +967,6 @@ export default function Page() {
     ),
   )
 
-  const autoScroll = createAutoScroll({
-    working: () => true,
-    overflowAnchor: "dynamic",
-  })
-
   let scrollStateFrame: number | undefined
   let scrollStateTarget: HTMLDivElement | undefined
   let fillFrame: number | undefined
@@ -1226,7 +999,7 @@ export default function Page() {
     })
   }
 
-  const resumeScroll = () => {
+  resumeScroll = () => {
     setStore("messageId", undefined)
     autoScroll.forceScrollToBottom()
     clearMessageHash()
@@ -1258,9 +1031,7 @@ export default function Page() {
     fill()
   }
 
-  const markUserScroll = () => {
-    scrollMark += 1
-  }
+  const markUserScroll = nav.markScroll
 
   createResizeObserver(
     () => content,
@@ -1618,14 +1389,15 @@ export default function Page() {
     currentMessageId: () => store.messageId,
     pendingMessage: () => ui.pendingMessage,
     setPendingMessage: (value) => setUi("pendingMessage", value),
-    setActiveMessage,
+    setActiveMessage: nav.setActiveMessage,
     autoScroll,
     scroller: () => scroller,
-    anchor,
+    anchor: nav.anchor,
     revealMessage: (id) => revealMessage(id),
     scheduleScrollState,
     consumePendingMessage: layout.pendingMessage.consume,
   })
+  nav.setScrollToMessage(scrollToMessage)
 
   createEffect(
     on(
@@ -1785,7 +1557,7 @@ export default function Page() {
                     onAutoScrollHandleScroll={autoScroll.handleScroll}
                     onMarkScrollGesture={markScrollGesture}
                     hasScrollGesture={hasScrollGesture}
-                    onUserScroll={markUserScroll}
+                    onUserScroll={nav.markScroll}
                     onHistoryScroll={historyLoader.onScrollerScroll}
                     onAutoScrollInteraction={autoScroll.handleInteraction}
                     shouldAnchorBottom={() =>
@@ -1801,7 +1573,7 @@ export default function Page() {
                     }}
                     historyShift={historyLoader.shift()}
                     userMessages={historyLoader.userMessages()}
-                    anchor={anchor}
+                    anchor={nav.anchor}
                     setRevealMessage={(fn) => {
                       revealMessage = fn
                     }}

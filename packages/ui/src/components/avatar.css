@@ -33,6 +33,13 @@
   line-height: 1.5rem;
 }
 
+[data-component="avatar"][data-size="medium"] {
+  width: 2.5rem;
+  height: 2.5rem;
+  font-size: 1.25rem;
+  line-height: 2.5rem;
+}
+
 [data-component="avatar"][data-size="large"] {
   width: 2rem;
   height: 2rem;

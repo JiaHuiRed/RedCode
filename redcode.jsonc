@@ -20,6 +20,8 @@
         "TYPEGRAPH_TSCONFIG": "./tsconfig.json"
       },
       // 260602 Red TypeScript 语义导航：类型解析/barrel 文件穿透/循环依赖检测
+      // 260605 Red 增大超时：TypeGraph 实际 3s 启动，但 codegraph 串行占 27s，30s 默认不够
+      "timeout": 60000,
       "enabled": true
     },
     "jcodemunch": {

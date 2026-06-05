@@ -50,7 +50,7 @@ function getSystemProxy(): string | null {
   }
 }
 
-const CACHED_PROXY = getSystemProxy(); // detect once at startup
+const CACHED_PROXY = getSystemProxy()?.replace(/^(?!https?:\/\/)/, "http://"); // detect once at startup, ensure http:// prefix
 
 function fetchHtml(url: string): string {
   const ua = CHROME_UA.replace(/'/g, "''");
@@ -131,6 +131,27 @@ const YAHOO_INTERNAL = /\.(yahoo|yimg)\.com/;
 
 function isYahooInternal(url: string): boolean { return YAHOO_INTERNAL.test(url); }
 
+// ── Google (final fallback) ────────────────────────────────────────
+
+async function searchGoogle(query: string): Promise<SearchResult[]> {
+  const html = await fetchHtml(`https://www.google.com/search?q=${encodeURIComponent(query)}`);
+  const results: SearchResult[] = [];
+  // Google wraps results: <div class="g"> ... <a href="/url?q=..."> ... <h3>title</h3>
+  const blocks = html.split(/<div class="g">/);
+  for (const block of blocks) {
+    const a = block.match(/<a[^>]*href="\/url\?q=([^&"]+)/);
+    const h3 = block.match(/<h3[^>]*>([\s\S]*?)<\/h3>/);
+    const snippet = block.match(/<span[^>]*>([\s\S]*?)<\/span>/);
+    if (!a || !h3) continue;
+    const url = decodeURIComponent(a[1]);
+    const title = h3[1].replace(/<[^>]*>/g, "").trim();
+    const snip = snippet ? snippet[1].replace(/<[^>]*>/g, "").trim() : "";
+    if (title && url && !url.includes("google.com") && !results.some((r) => r.url === url))
+      results.push({ title, url, snippet: snip, engine: "google" });
+  }
+  return results;
+}
+
 // ── MCP Server ──────────────────────────────────────────────────────
 
 const server = new Server(
@@ -142,7 +163,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
       name: "web_search",
-      description: "Search the web via DuckDuckGo + Yahoo fallback. No API key needed.",
+      description: "Search the web via DuckDuckGo + Yahoo + Google fallback. No API key needed.",
       inputSchema: {
         type: "object",
         properties: {
@@ -165,13 +186,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   let results: SearchResult[] = [];
   try { results = await searchDdg(query); } catch {
-    try { results = await searchYahoo(query); } catch (e) {
-      throw new McpError(ErrorCode.InternalError, `Search failed: ${(e as Error).message}`);
+    try { results = await searchYahoo(query); } catch {
+      try { results = await searchGoogle(query); } catch (e) {
+        throw new McpError(ErrorCode.InternalError, `Search failed: ${(e as Error).message}`);
+      }
     }
   }
   if (results.length < 5) {
     try {
       for (const r of await searchYahoo(query))
+        if (!results.some((x) => x.url === r.url)) results.push(r);
+    } catch { /* best effort */ }
+  }
+  if (results.length < 5) {
+    try {
+      for (const r of await searchGoogle(query))
         if (!results.some((x) => x.url === r.url)) results.push(r);
     } catch { /* best effort */ }
   }

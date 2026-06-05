@@ -47,6 +47,7 @@ import { Markdown } from "./markdown"
 import { ImagePreview } from "./image-preview"
 import { getDirectory as _getDirectory, getFilename } from "@redcode-ai/core/util/path"
 import { checksum } from "@redcode-ai/core/util/encode"
+import { Avatar } from "./avatar"
 import { Tooltip } from "./tooltip"
 import { IconButton } from "./icon-button"
 import { Spinner } from "./spinner"
@@ -161,6 +162,10 @@ export interface MessageProps {
   actions?: UserActions
   showAssistantCopyPartID?: string | null
   showReasoningSummaries?: boolean
+  userProfile?: {
+    avatar: string
+    displayName: string
+  }
 }
 
 export type SessionAction = (input: { sessionID: string; messageID: string }) => Promise<void> | void
@@ -837,7 +842,7 @@ export function Message(props: MessageProps) {
     <Switch>
       <Match when={props.message.role === "user" && props.message}>
         {(userMessage) => (
-          <UserMessageDisplay message={userMessage() as UserMessage} parts={props.parts} actions={props.actions} />
+          <UserMessageDisplay message={userMessage() as UserMessage} parts={props.parts} actions={props.actions} userProfile={props.userProfile} />
         )}
       </Match>
       <Match when={props.message.role === "assistant" && props.message}>
@@ -1034,7 +1039,7 @@ export function ContextToolGroup(props: { parts: ToolPart[]; busy?: boolean }) {
   )
 }
 
-export function UserMessageDisplay(props: { message: UserMessage; parts: PartType[]; actions?: UserActions }) {
+export function UserMessageDisplay(props: { message: UserMessage; parts: PartType[]; actions?: UserActions; userProfile?: { avatar: string; displayName: string } }) {
   const data = useData()
   const dialog = useDialog()
   const i18n = useI18n()
@@ -1147,9 +1152,20 @@ export function UserMessageDisplay(props: { message: UserMessage; parts: PartTyp
       </Show>
       <Show when={text()}>
         <>
-          <div data-slot="user-message-body">
-            <div data-slot="user-message-text">
-              <HighlightedText text={text()} references={inlineFiles()} agents={agents()} />
+          <div data-slot="user-message-body-row">
+            <div data-slot="user-message-body">
+              <div data-slot="user-message-text">
+                <HighlightedText text={text()} references={inlineFiles()} agents={agents()} />
+              </div>
+            </div>
+            <div data-slot="user-message-avatar">
+              <Avatar
+                fallback={props.userProfile?.displayName || "U"}
+                src={props.userProfile?.avatar || undefined}
+                size="medium"
+                background="var(--syntax-property)"
+                foreground="var(--text-on-accent)"
+              />
             </div>
           </div>
           <div data-slot="user-message-copy-wrapper">

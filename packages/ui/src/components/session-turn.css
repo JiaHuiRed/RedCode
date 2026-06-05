@@ -88,6 +88,22 @@
     gap: 12px;
   }
 
+  [data-slot="session-turn-assistant-row"] {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  [data-slot="session-turn-assistant-avatar"] {
+    flex: none;
+    display: flex;
+    align-items: flex-start;
+    padding-top: 4px;
+  }
+
   [data-slot="session-turn-diffs"] {
     width: 100%;
     min-width: 0;

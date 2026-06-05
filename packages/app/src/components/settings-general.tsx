@@ -1,6 +1,7 @@
-﻿import { Component, Show, createMemo, createResource, onMount, type JSX } from "solid-js"
+﻿import { Component, Show, createMemo, createResource, createSignal, onMount, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@redcode-ai/ui/button"
+import { Avatar } from "@redcode-ai/ui/avatar"
 import { Icon } from "@redcode-ai/ui/icon"
 import { Select } from "@redcode-ai/ui/select"
 import { Switch } from "@redcode-ai/ui/switch"
@@ -768,6 +769,123 @@ export const SettingsGeneral: Component = () => {
     </div>
   )
 
+  const ProfileSection = () => {
+    let userFileInput: HTMLInputElement | undefined
+    let assistantFileInput: HTMLInputElement | undefined
+    const [userPreview, setUserPreview] = createSignal<string | undefined>(settings.userProfile.avatar() || undefined)
+    const [assistantPreview, setAssistantPreview] = createSignal<string | undefined>(
+      settings.assistantProfile.avatar() || undefined,
+    )
+
+    const handleUserFileSelect = (e: Event) => {
+      const input = e.target as HTMLInputElement
+      const file = input.files?.[0]
+      if (!file) return
+      const reader = new FileReader()
+      reader.onload = () => {
+        const dataUrl = reader.result as string
+        setUserPreview(dataUrl)
+        settings.userProfile.setAvatar(dataUrl)
+      }
+      reader.readAsDataURL(file)
+    }
+
+    const handleUserRemove = () => {
+      setUserPreview(undefined)
+      settings.userProfile.setAvatar("")
+      if (userFileInput) userFileInput.value = ""
+    }
+
+    const handleAssistantFileSelect = (e: Event) => {
+      const input = e.target as HTMLInputElement
+      const file = input.files?.[0]
+      if (!file) return
+      const reader = new FileReader()
+      reader.onload = () => {
+        const dataUrl = reader.result as string
+        setAssistantPreview(dataUrl)
+        settings.assistantProfile.setAvatar(dataUrl)
+      }
+      reader.readAsDataURL(file)
+    }
+
+    const handleAssistantRemove = () => {
+      setAssistantPreview(undefined)
+      settings.assistantProfile.setAvatar("")
+      if (assistantFileInput) assistantFileInput.value = ""
+    }
+
+    return (
+      <div class="flex flex-col gap-3">
+        {/* ── User Profile ── */}
+        <div class="flex flex-col gap-1">
+          <h3 class="text-14-medium text-text-strong pb-2">Profile</h3>
+          <SettingsList>
+            <SettingsRow title="Display Name" description="Your display name shown in messages">
+              <div class="w-full sm:w-[280px]">
+                <TextField
+                  data-action="settings-profile-name"
+                  label="Display Name"
+                  hideLabel
+                  value={settings.userProfile.displayName()}
+                  onChange={(value) => settings.userProfile.setDisplayName(value.trim())}
+                  placeholder="Your name"
+                  spellcheck={false}
+                  autocorrect="off"
+                  class="text-12-regular"
+                />
+              </div>
+            </SettingsRow>
+
+            <SettingsRow title="Avatar" description="Custom avatar for your messages">
+              <div class="flex items-center gap-3">
+                <Avatar
+                  fallback={(settings.userProfile.displayName() || "U")[0] || "U"}
+                  src={userPreview()}
+                  size="medium"
+                  background="var(--syntax-property)"
+                  foreground="var(--text-on-accent)"
+                />
+                <input ref={userFileInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={handleUserFileSelect} class="hidden" />
+                <div class="flex gap-2">
+                  <Button data-action="settings-avatar-upload" variant="secondary" size="small" onClick={() => userFileInput?.click()}>Upload</Button>
+                  <Show when={userPreview()}>
+                    <Button data-action="settings-avatar-remove" variant="ghost" size="small" onClick={handleUserRemove}>Remove</Button>
+                  </Show>
+                </div>
+              </div>
+            </SettingsRow>
+          </SettingsList>
+        </div>
+
+        {/* ── Assistant (RedCode) Profile ── */}
+        <div class="flex flex-col gap-1">
+          <h3 class="text-14-medium text-text-strong pb-2">Assistant Avatar</h3>
+          <SettingsList>
+            <SettingsRow title="Avatar" description="Custom avatar for RedCode assistant messages">
+              <div class="flex items-center gap-3">
+                <Avatar
+                  fallback="R"
+                  src={assistantPreview()}
+                  size="medium"
+                  background="var(--syntax-keyword)"
+                  foreground="var(--text-on-accent)"
+                />
+                <input ref={assistantFileInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={handleAssistantFileSelect} class="hidden" />
+                <div class="flex gap-2">
+                  <Button data-action="settings-assistant-avatar-upload" variant="secondary" size="small" onClick={() => assistantFileInput?.click()}>Upload</Button>
+                  <Show when={assistantPreview()}>
+                    <Button data-action="settings-assistant-avatar-remove" variant="ghost" size="small" onClick={handleAssistantRemove}>Remove</Button>
+                  </Show>
+                </div>
+              </div>
+            </SettingsRow>
+          </SettingsList>
+        </div>
+      </div>
+    )
+  }
+
   const UpdatesSection = () => (
     <div class="flex flex-col gap-1">
       <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.updates")}</h3>
@@ -869,6 +987,8 @@ export const SettingsGeneral: Component = () => {
         <SoundsSection />
 
         <TtsSection />
+
+        <ProfileSection />
 
         <UpdatesSection />
 

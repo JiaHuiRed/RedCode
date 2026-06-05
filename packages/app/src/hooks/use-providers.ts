@@ -33,7 +33,9 @@ export function useProviders() {
       const [projectStore] = globalSync.child(dir())
       if (!projectStore.provider_ready) return false
     }
-    return globalSync.data.provider.all.size > 0 || globalSync.data.provider.connected.length > 0
+    // 260605 Red || → &&：all 和 connected 都加载完才算 ready，
+    // 避免 all 先到但 connected 还空时 defaultModel() 返回 null 误弹 toast。
+    return globalSync.data.provider.all.size > 0 && globalSync.data.provider.connected.length > 0
   }
   return {
     ready,

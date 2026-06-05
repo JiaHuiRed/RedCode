@@ -17,6 +17,7 @@ import { useNavigate } from "@solidjs/router"
 import { useMutation } from "@tanstack/solid-query"
 import { Virtualizer, type VirtualizerHandle } from "virtua/solid"
 import { Accordion } from "@redcode-ai/ui/accordion"
+import { Avatar } from "@redcode-ai/ui/avatar"
 import { Button } from "@redcode-ai/ui/button"
 import { Card } from "@redcode-ai/ui/card"
 import {
@@ -167,12 +168,15 @@ function TimelineThinkingRow(props: { reasoningHeading?: string; showReasoningSu
         style={{ "image-rendering": "pixelated" }}
       />
       <TextShimmer text={language.t("ui.sessionTurn.status.thinking")} />
-      <img
-        src="/hamster.png"
-        alt=""
-        class="w-5 h-5 animate-hamster select-none shrink-0"
-        aria-hidden="true"
-      />
+      <div class="w-5 h-5 shrink-0 flex items-center justify-center overflow-hidden" style="background: var(--surface-base); border-radius: 3px;">
+        <img
+          src="/hamster.png"
+          alt=""
+          class="w-5 h-5 animate-hamster select-none"
+          aria-hidden="true"
+          style="mix-blend-mode: screen;"
+        />
+      </div>
       <Show when={!props.showReasoningSummaries}>
         <TextReveal text={props.reasoningHeading} class="session-turn-thinking-heading" travel={25} duration={700} />
       </Show>
@@ -1157,11 +1161,15 @@ export function MessageTimeline(props: {
               {(message) => (
                 <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
                   <div data-slot="session-turn-message-content" aria-live="off">
-                    <Message
-                      message={message()}
-                      parts={getMsgParts(userMessageRow().userMessageID)}
-                      actions={props.actions}
-                    />
+                      <Message
+                        message={message()}
+                        parts={getMsgParts(userMessageRow().userMessageID)}
+                        actions={props.actions}
+                        userProfile={{
+                          avatar: settings.userProfile.avatar(),
+                          displayName: settings.userProfile.displayName(),
+                        }}
+                      />
                   </div>
                 </div>
               )}
@@ -1190,11 +1198,22 @@ export function MessageTimeline(props: {
         return (
           <TimelineRowFrame row={assistantPartRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-              <div
-                data-slot="session-turn-assistant-content"
-                aria-hidden={workingTurn(assistantPartRow().userMessageID)}
-              >
-                {renderAssistantPartGroup(assistantPartRow)}
+              <div data-slot="session-turn-assistant-row">
+                <div data-slot="session-turn-assistant-avatar">
+                  <Avatar
+                    fallback="R"
+                    src={settings.assistantProfile.avatar() || undefined}
+                    size="medium"
+                    background="var(--syntax-keyword)"
+                    foreground="var(--text-on-accent)"
+                  />
+                </div>
+                <div
+                  data-slot="session-turn-assistant-content"
+                  aria-hidden={workingTurn(assistantPartRow().userMessageID)}
+                >
+                  {renderAssistantPartGroup(assistantPartRow)}
+                </div>
               </div>
             </div>
           </TimelineRowFrame>

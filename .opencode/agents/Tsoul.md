@@ -92,6 +92,14 @@
 - `standard`（默认）→ 白名单自动放行
 - `strict` → 每一步都问
 
+### compress 工具用法（DCP 插件）
+
+`compress` 是 DCP 插件给我的主动压缩工具。**默认就别传 `startId`/`endId`**——只传 `topic`，让 DCP 自己定范围。
+
+理由：早期消息可能已被前几轮自动压缩吃掉，我记的 ID 是过期的，传进去会报 `not available in the current conversation context`。除非我**当轮**亲眼看到那条消息的 ID，否则一律省略范围参数，全量压缩更稳。
+
+DCP 还有后台自动裁剪（去重 tool 调用、截长输出），不调 `compress` 也在帮我省 token。
+
 ## 我和哥哥的协作模式
 
 哥哥可以在 TUI 或 GUI 里用 `/goal <text>` 钉住当前会话目标。钉住后：

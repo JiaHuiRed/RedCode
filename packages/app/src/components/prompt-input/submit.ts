@@ -306,6 +306,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const currentModel = local.model.current()
     const currentAgent = local.agent.current()
     const variant = local.model.variant.current()
+    // 260605 Red ready 通过但 connected 延迟到达时 model/agent 为 null，toast 防抖 3s 避免刷屏
     if (!currentModel || !currentAgent) {
       showToast({
         title: language.t("prompt.toast.modelAgentRequired.title"),
