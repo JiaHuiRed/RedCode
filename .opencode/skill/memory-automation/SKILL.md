@@ -23,7 +23,7 @@ description: 自动化记忆系统——SessionStart 自动注入上下文、Pre
 ## 工作中
 
 - **犯错被纠正 → 立刻写一句到当天日志**（`~/.redcode/memory/YYMMDD.md`），不等收工
-- 连续失败 2 次 → 停手问哥哥
+- 连续失败 2 次 → 停手问用户
 - 改了敏感区（version、config、schema）→ 停下等确认
 
 ## 压缩前（PreCompact）

@@ -29,5 +29,5 @@ description: Use when a diff, function, or file feels over-engineered — too ma
 ## 边界
 
 - 简化 = 减复杂度，不是减功能。删之前确认那段真的没用、真的不会发生。
-- 拿不准某个分支是不是死代码 → 停下来问哥哥，别赌。
+- 拿不准某个分支是不是死代码 → 停下来问用户，别赌。
 - 只动被指到的范围，不扩大战场。

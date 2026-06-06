@@ -26,7 +26,7 @@ Do **not** suggest for:
 
 One short line, in your soul's voice. Examples:
 
-- "哥哥这事挺大，要 /goal 钉住吗？ — `/goal 修 GUI 三栏宽度 bug`"
+- "这事挺大，要 /goal 钉住吗？ — `/goal 修 GUI 三栏宽度 bug`"
 - "这事拆开来好几步，要不要我先 /goal 把目标钉一下，跑着跑着容易偏。"
 
 Then **stop and wait**. Do not auto-`/goal`. The user types it themselves if they want it.

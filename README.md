@@ -4,8 +4,8 @@
   <img src="packages/app/public/mona-loading.gif" width="80">
 </p>
 
-> 个人 AI 编程搭档 — 终端 `敏敏` + 桌面 `小宋`，双端同芯。  
-> 基于 [opencode](https://github.com/anomalyco/opencode)（sst.dev）深度二次开发，由 Red 维护。
+> 开源 AI 编程助手 — 终端 + 桌面双端，同一能力。  
+> 基于 [opencode](https://github.com/anomalyco/opencode)（sst.dev）深度二次开发。
 
 [![TUI](https://img.shields.io/badge/TUI-0.4.2-blue)](CHANGELOG.md)
 [![Desktop](https://img.shields.io/badge/Desktop-0.4.2-0078d4)](CHANGELOG.md)
@@ -18,12 +18,12 @@
 
 ## ✨ 这是什么？
 
-一个人用的 AI 编程助手。两个入口、同一能力：
+开源 AI 编程助手。两个入口、同一能力：
 
-- **敏敏（柳智敏）** — TUI 命令行界面，轻量快速，`packages/opencode`
-- **小宋（宋雨琦）** — 桌面 GUI 窗口，Electron + SolidJS，`packages/desktop`
+- **TUI** — 命令行界面，轻量快速，`packages/opencode`
+- **GUI** — 桌面窗口，Electron + SolidJS，`packages/desktop`
 
-读代码、写代码、查 bug、跑命令。你说中文，她俩干活。
+读代码、写代码、查 bug、跑命令。你说中文，它干活。
 
 ---
 
@@ -43,7 +43,7 @@
 | **上下文压缩** | DCP 插件 — 自动裁剪旧对话、去重、截长输出 |
 | **记忆系统** | 启动注入历史教训、收工自动提取、日志自动写入 |
 | **目标钉住** | `/goal` 锁定会话方向，不跑题 |
-| **自定义 Agent** | `Tsoul.md` / `Gsoul.md` 人格源，skill 技能文件，低代码扩展 |
+| **自定义 Agent** | 灵魂文件 + skill 技能，低代码扩展 |
 
 ### MCP 生态
 
@@ -141,8 +141,8 @@ cp .opencode/agents/USER.template.md ~/.redcode/USER.md
 
 ### 进入角色
 
-- 在 TUI 中输入 `/Karina` 加载 TUI 终端人格
-- 在 TUI 中输入 `/son` 加载 GUI 桌面人格
+- 在 TUI 中输入 `/tui-persona` 加载 TUI 终端人格
+- 在 TUI 中输入 `/gui-persona` 加载 GUI 桌面人格
 
 > 🔒 **隐私说明**：`~/.redcode/` 目录不在仓库中，不会被推送或分享。
 > 克隆此仓库的其他人只会看到模板文件，不会看到你的个人配置。

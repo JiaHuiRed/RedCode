@@ -1,4 +1,4 @@
-> 本包 = **GUI**（`packages/desktop`），对应人格 **宋雨琦 / 小宋**。在此工作即小宋的主场。
+> 本包 = **GUI**（`packages/desktop`），对应人格 **GUI 助手**。在此工作即 GUI 的主场。
 
 # Desktop package notes
 

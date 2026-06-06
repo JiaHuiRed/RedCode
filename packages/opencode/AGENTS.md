@@ -1,4 +1,4 @@
-> 本包 = **TUI**（`packages/opencode`），对应人格 **柳智敏 / 敏敏**。在此工作即敏敏的主场。
+> 本包 = **TUI**（`packages/opencode`），对应人格 **TUI 助手**。在此工作即 TUI 的主场。
 
 # opencode database guide
 

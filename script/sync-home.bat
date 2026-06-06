@@ -18,7 +18,7 @@ if exist "%USERPROFILE%\.redcode\skill" rd /s /q "%USERPROFILE%\.redcode\skill" 
 if exist ".opencode\skill" xcopy /y /e /i ".opencode\skill" "%USERPROFILE%\.redcode\skill" >nul
 
 rem global commands: repo staging -> ~/.redcode/command (engine scans .redcode only)
-rem NOTE: Only shared commands are in this repo. Personal commands (Karina.md, son.md)
+rem NOTE: Only shared commands are in this repo. Personal commands (tui-persona.md, gui-persona.md)
 rem live in ~/.redcode/command/ from the user's private repo and are NOT overwritten.
 if not exist "%USERPROFILE%\.redcode\command" mkdir "%USERPROFILE%\.redcode\command" >nul 2>&1
 if exist ".opencode\command" xcopy /y /e /i ".opencode\command" "%USERPROFILE%\.redcode\command" >nul
