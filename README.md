@@ -68,7 +68,7 @@
 
 ---
 
-## 🚀 运行（源码）
+## 🚀 快速开始
 
 ```bash
 git clone https://github.com/JiaHuiRed/RedCode.git
@@ -78,10 +78,10 @@ bun install
 # 构建 MCP 索引（首次需要）
 npx -y @colbymchenry/codegraph index
 
-# 启动 TUI（敏敏）
+# 启动 TUI
 bun dev
 
-# 或启动桌面 GUI（小宋）
+# 或启动桌面 GUI
 cd packages/desktop && bun run dev
 ```
 
@@ -97,17 +97,72 @@ cd packages/desktop && bun run build && bun run package
 
 ---
 
+## 🎭 第一次使用：配置你的 AI 搭档
+
+RedCode 的灵魂、记忆、用户画像都是 **你个人定制** 的，仓库只提供模板。
+
+### 1. 初始化你的个人目录
+
+```bash
+# 创建 ~/.redcode/（如果不存在）
+mkdir -p ~/.redcode/souls
+mkdir -p ~/.redcode/memory
+
+# 从模板开始
+cp .opencode/agents/Tsoul.md ~/.redcode/souls/Tsoul.md
+cp .opencode/agents/Gsoul.md ~/.redcode/souls/Gsoul.md
+cp .opencode/MEMORY.md ~/.redcode/MEMORY.md
+```
+
+### 2. 自定义人格（灵魂文件）
+
+编辑 `~/.redcode/souls/Tsoul.md`（TUI 终端人格）和 `~/.redcode/souls/Gsoul.md`（GUI 桌面人格），填入你想要的：
+
+- AI 叫什么名字、什么身份？
+- 怎么称呼你、语气是什么样的？
+- 重点帮你做什么？
+- 不该碰什么话题？
+
+### 3. 建立你的工作记忆
+
+编辑 `~/.redcode/MEMORY.md`，记录对你重要的：
+
+- 写作规范和代码风格
+- 工作纪律和红线
+- 技术决策和踩坑笔记
+- 从每日日志提炼的关键教训
+
+### 4. 创建用户画像
+
+```bash
+cp .opencode/agents/USER.template.md ~/.redcode/USER.md
+# 编辑 ~/.redcode/USER.md，告诉 AI 你是谁
+```
+
+### 进入角色
+
+- 在 TUI 中输入 `/Karina` 加载 TUI 终端人格
+- 在 TUI 中输入 `/son` 加载 GUI 桌面人格
+
+> 🔒 **隐私说明**：`~/.redcode/` 目录不在仓库中，不会被推送或分享。
+> 克隆此仓库的其他人只会看到模板文件，不会看到你的个人配置。
+> 如果你在多台电脑上使用，建议单独建一个 **私有仓库** 来同步 `~/.redcode/`。
+
+---
+
 ## ⚙️ 配置
 
 | 文件 | 用途 |
 |------|------|
 | `~/.redcode/redcode.jsonc` | 全局配置（provider / MCP / 权限） |
 | `项目根/redcode.jsonc` | 项目级配置 + instructions（skill 注册） |
-| `~/.redcode/MEMORY.md` | 长期记忆：工作纪律、教训、偏好 |
+| `~/.redcode/MEMORY.md` | 长期记忆（你的工作纪律、教训、偏好） |
 | `~/.redcode/USER.md` | 用户画像 |
-| `.opencode/skill/*/SKILL.md` | 技能文件（自动加载到指令） |
-| `.opencode/agents/Tsoul.md` | 敏敏人格源 |
-| `.opencode/agents/Gsoul.md` | 小宋人格源 |
+| `~/.redcode/souls/Tsoul.md` | TUI 终端人格源 |
+| `~/.redcode/souls/Gsoul.md` | GUI 桌面人格源 |
+| `~/.redcode/memory/` | 每日工作日志（自动记录） |
+| `.opencode/skill/*/SKILL.md` | 社区共享技能文件 |
+| `.opencode/agents/` | 人格模板（新用户从这里开始） |
 
 ### 添加模型 Provider
 

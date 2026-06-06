@@ -37,3 +37,9 @@ packages/*/typecheck_out.txt
 
 # codegraph daemon state (runtime, not source)
 .codegraph/
+
+# Personal files — not shared via public repo
+# These live in ~/.redcode/ and come from the user's private repo
+.opencode/memory/*.md
+.opencode/MEMORY.md
+.opencode/skill/memory-automation/*.json
