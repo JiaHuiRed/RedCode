@@ -11,6 +11,7 @@ import {
   createResource,
   Switch,
   Match,
+  type Accessor,
 } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLocal } from "@/context/local"
@@ -867,6 +868,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const handleInput = () => {
+    clearSendError()
     const rawParts = parseFromDOM()
     const images = imageAttachments()
     const cursorPosition = getCursorPosition(editorRef)
@@ -1094,7 +1096,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return permission.isAutoAccepting(id, sdk.directory)
   })
 
-  const { abort, handleSubmit } = createPromptSubmit({
+  const { abort, handleSubmit, sendError, clearSendError } = createPromptSubmit({
     info,
     imageAttachments,
     commentCount,
@@ -1600,6 +1602,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 />
               </Tooltip>
             </div>
+            <PromptErrorBanner error={sendError} onRetry={handleSubmit} onDismiss={clearSendError} />
           </DockShellForm>
         </Match>
         <Match when>
@@ -1765,6 +1768,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 </div>
               </div>
             </div>
+            <PromptErrorBanner error={sendError} onRetry={handleSubmit} onDismiss={clearSendError} />
           </DockShellForm>
           <Show when={store.mode === "normal" || store.mode === "shell"}>
             <DockTray attach="top">
@@ -1906,5 +1910,35 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         </Match>
       </Switch>
     </div>
+  )
+}
+
+function PromptErrorBanner(props: {
+  error: Accessor<string | null>
+  onRetry: (e: Event) => void
+  onDismiss: () => void
+}) {
+  return (
+    <Show when={props.error()}>
+      <div class="mx-2 mb-2 rounded-lg border border-border-warning-base bg-surface-warning-weak px-3 py-2 text-13-regular text-text-on-warning-strong">
+        <div class="flex items-center gap-2">
+          <span class="flex-1 truncate">{props.error()}</span>
+          <button
+            type="button"
+            onClick={() => props.onRetry(new Event("submit"))}
+            class="shrink-0 rounded px-2 py-0.5 text-13-medium text-text-on-warning-strong hover:bg-surface-warning-base active:bg-surface-warning-strong"
+          >
+            Retry
+          </button>
+          <button
+            type="button"
+            onClick={props.onDismiss}
+            class="shrink-0 size-5 flex items-center justify-center rounded text-text-on-warning-strong hover:bg-surface-warning-base"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+    </Show>
   )
 }

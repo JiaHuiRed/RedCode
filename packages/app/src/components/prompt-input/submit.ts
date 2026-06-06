@@ -3,7 +3,7 @@ import { showToast } from "@redcode-ai/ui/toast"
 import { base64Encode } from "@redcode-ai/core/util/encode"
 import { Binary } from "@redcode-ai/core/util/binary"
 import { useNavigate, useParams } from "@solidjs/router"
-import { batch, type Accessor } from "solid-js"
+import { batch, createSignal, type Accessor } from "solid-js"
 import type { FileSelection } from "@/context/file"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
@@ -213,6 +213,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const language = useLanguage()
   const params = useParams()
 
+  const [sendError, setSendError] = createSignal<string | null>(null)
+
+  const clearSendError = () => setSendError(null)
+
   const errorMessage = (err: unknown) => {
     if (err && typeof err === "object" && "data" in err) {
       const data = (err as { data?: { message?: string } }).data
@@ -287,7 +291,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   }
 
   const handleSubmit = async (event: Event) => {
-    console.log("[YQ] handleSubmit called")
+    clearSendError()
     event.preventDefault()
 
     const currentPrompt = prompt.current()
@@ -590,11 +594,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       removeOptimisticMessage()
       restoreCommentItems(commentItems)
       restoreInput()
+      setSendError(errorMessage(err))
     })
   }
 
   return {
     abort,
     handleSubmit,
+    sendError,
+    clearSendError,
   }
 }

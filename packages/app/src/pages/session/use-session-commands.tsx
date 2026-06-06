@@ -523,6 +523,11 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
             keybind: "mod+\\",
             onSelect: () => layout.fileTree.toggle(),
           }),
+          viewCommand({
+            id: "sidebar.toggle",
+            title: language.t("command.sidebar.toggle"),
+            onSelect: () => layout.sidebar.toggle(),
+          }),
         ]
       : []),
     viewCommand({

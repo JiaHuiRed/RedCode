@@ -394,7 +394,12 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
       (tab) => {
         const sync = globalSync.createDirSyncContext(tab.dir)
         const session = sync.session.get(tab.sessionId)
-        return session ? { ...tab, info: session } : null
+        if (!session) return null
+        return {
+          ...tab,
+          info: session,
+          status: sync.data.session_status[tab.sessionId]?.type,
+        }
       },
     )
     return () => base().flatMap((s) => (s ? [s] : []))
@@ -431,6 +436,7 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
                 <TabNavItem
                   href={tab.href}
                   title={tab.info.title}
+                  status={tab.status}
                   project={projectForSession(tab.info, projects(), projectByID())}
                   directory={tab.dir}
                   onClose={() => tabsStoreActions.removeTab(tab.href)}
@@ -503,6 +509,7 @@ function TitlebarUpdatePill(props: { update?: TitlebarUpdate }) {
 function TabNavItem(props: {
   href: string
   title: string
+  status?: "idle" | "busy" | "retry"
   project?: LocalProject
   directory: string
   hideClose?: boolean
@@ -520,7 +527,15 @@ function TabNavItem(props: {
         class="flex h-full min-w-0 flex-1 flex-row items-center gap-1.5 overflow-hidden text-[13px] font-medium text-v2-text-text-faint group-data-[active='true']:text-v2-text-text-base"
       >
         <ProjectTabAvatar project={props.project} directory={props.directory} />
-        <span class="text-clip">{props.title}</span>
+        <span class="flex items-center gap-1.5 min-w-0">
+          <Show when={props.status === "busy"}>
+            <div class="size-1.5 shrink-0 rounded-full bg-surface-warning-strong animate-pulse" />
+          </Show>
+          <Show when={props.status === "retry"}>
+            <div class="size-1.5 shrink-0 rounded-full bg-surface-critical-strong" />
+          </Show>
+          <span class="truncate">{props.title}</span>
+        </span>
       </a>
 
       <div class="absolute right-0 inset-y-0 flex flex-row items-center pr-1 py-1 w-8 pl-2">
