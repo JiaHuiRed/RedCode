@@ -13,6 +13,9 @@ import { Effect, Layer } from "effect"
 import { Config } from "@/config/config"
 import { Service } from "./bootstrap-service"
 import { Reference } from "@/reference/reference"
+import { AppFileSystem } from "@redcode-ai/core/filesystem"
+import { Global } from "@redcode-ai/core/global"
+import path from "path"
 
 export { Service } from "./bootstrap-service"
 export type { Interface } from "./bootstrap-service"
@@ -34,10 +37,13 @@ export const layer = Layer.effect(
     const shareNext = yield* ShareNext.Service
     const snapshot = yield* Snapshot.Service
     const vcs = yield* Vcs.Service
+    const fs = yield* AppFileSystem.Service
 
     const run = Effect.gen(function* () {
       const ctx = yield* InstanceState.context
       yield* Effect.logInfo("bootstrapping").pipe(Effect.annotateLogs("directory", ctx.directory))
+      // 260606 Red Ensure ~/.redcode/ exists for memory/skills/config storage
+      yield* fs.ensureDir(path.join(Global.Path.home, ".redcode", "memory")).pipe(Effect.catchCause(Effect.logWarning))
       // everything depends on config so eager load it for nice traces
       yield* config.get()
       // Plugin can mutate config so it has to be initialized before anything else.
@@ -69,6 +75,7 @@ export const defaultLayer: Layer.Layer<Service> = layer.pipe(
     ShareNext.defaultLayer,
     Snapshot.defaultLayer,
     Vcs.defaultLayer,
+    AppFileSystem.defaultLayer,
   ]),
 )
 
