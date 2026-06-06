@@ -49,6 +49,16 @@
       "command": ["node", "./browsermcp-server/index.js"],
       // 260603 Red 浏览器自动化：导航/截图/点击/输入/获取页面内容
       "enabled": true
+    },
+    "vision": {
+      "type": "local",
+      "command": ["node", "D:\\AI\\KLX\\vision-mcp-server\\dist\\index.js"],
+      "environment": {
+        "VISION_BASE_URL": "http://localhost:11434/v1/chat/completions",
+        "VISION_MODEL": "qwen3-vl:8b"
+      },
+      // 260605 Red 多模态视觉：分析截图/图片/OCR（需 Ollama 加载 qwen3-vl:8b）
+      "enabled": true
     }
   },
   "tools": {

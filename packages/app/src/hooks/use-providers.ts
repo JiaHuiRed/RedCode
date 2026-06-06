@@ -33,9 +33,11 @@ export function useProviders() {
       const [projectStore] = globalSync.child(dir())
       if (!projectStore.provider_ready) return false
     }
-    // 260605 Red || → &&：all 和 connected 都加载完才算 ready，
-    // 避免 all 先到但 connected 还空时 defaultModel() 返回 null 误弹 toast。
-    return globalSync.data.provider.all.size > 0 && globalSync.data.provider.connected.length > 0
+    // 260605 Red 只检查 all.size（provider 列表是否已加载），不检查 connected.length。
+    // connected 是实时连接状态，受网络/代理影响，若所有 provider 都连不上会导致 ready() 永假，
+    // submit gate 静默卡死。connected 为空的正向提示由 submit.ts 的 currentModel 空值检查
+    // 负责（弹 toast"请选择智能体和模型"），不需要在 ready 层阻塞。
+    return globalSync.data.provider.all.size > 0
   }
   return {
     ready,

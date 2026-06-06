@@ -51,8 +51,12 @@ const clone = (value: State | undefined) => {
   } satisfies State
 }
 
+// 260605 Red gate=false：LocalProvider 的 ready() 会包含 agent_ready，
+// 但 createSimpleContext 的自动 gate 会阻塞所有子组件（包括 FileTree/Header 等不需要
+// agent 的组件）。submit 路径已有 prompt.ready() 守卫，不需要这里全树阻塞。
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
   name: "Local",
+  gate: false,
   init: () => {
     const params = useParams()
     const sdk = useSDK()
@@ -164,6 +168,15 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (validModel(model)) return model
         }
 
+        const first = Object.values(provider.models)[0]
+        if (!first) continue
+        const model = { providerID: provider.id, modelID: first.id }
+        if (validModel(model)) return model
+      }
+      // 260605 Red 没有已连接的 provider 时回退到 all providers，
+      // 避免 ready() 通过了但 defaultModel() 无返回导致 toast"请选择智能体和模型"。
+      // connected 受网络/代理影响可能为空，但 provider 列表本身已加载。
+      for (const [, provider] of providers.all()) {
         const first = Object.values(provider.models)[0]
         if (!first) continue
         const model = { providerID: provider.id, modelID: first.id }
@@ -365,11 +378,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       slug: createMemo(() => base64Encode(sdk.directory)),
       model,
       agent,
-      // 260605 Red 统一就绪 gate：providers + models(localStorage 水合) + agent(bootstrap slow 批次)
-      // 三个异步信号全到位才算 ready。submit 据此静默等待，杜绝加载期误弹"请选择智能体和模型"。
-      // 历史教训：guard 此前散落在 submit.ts/use-providers.ts 各处逐个列举依赖，agent 这条腿
-      // 从无就绪信号、又被塞进 slow 批次，每次改 render 路径就复发（已 5 次）。收敛到此一处后，
-      // 新增异步依赖只在这里补条件，不会再漏。
+      // 260605 Red 统一就绪信号：providers + models(localStorage 水合) + agent(bootstrap slow 批次)
+      // submit/createEffect 据此静默等待，杜绝加载期误弹"请选择智能体和模型"。
+      // 注意：createSimpleContext 的 gate=false，ready 只用作 submit 守卫，不阻塞整个 Session 树。
       ready: () => providers.ready() && model.ready() && sync.data.agent_ready,
       session: {
         reset() {

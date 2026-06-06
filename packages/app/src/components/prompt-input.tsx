@@ -1262,6 +1262,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
     // Note: Shift+Enter is handled earlier, before IME check
     if (event.key === "Enter" && !event.shiftKey) {
+      console.log("[YQ] keydown enter")
       event.preventDefault()
       if (event.repeat) return
       if (

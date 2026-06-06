@@ -287,6 +287,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   }
 
   const handleSubmit = async (event: Event) => {
+    console.log("[YQ] handleSubmit called")
     event.preventDefault()
 
     const currentPrompt = prompt.current()
@@ -299,13 +300,24 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return
     }
 
-    // 260605 Red 统一就绪 gate（providers+models+agent 三信号，见 local.tsx ready）。
-    // 数据加载中静默返回——这是该 toast 历次误弹的唯一根因，杜绝它就杜绝复发。
-    if (!local.ready()) return
+    // 260605 Red 统一就绪 gate：（providers+models+agent 三信号，见 local.tsx ready）。
+    // 加载中静默等待，避免 toast"请选择智能体和模型"误弹。
+    // 注意：三个信号现在都有兜底保证不再永久卡死（providers 只检查 all.size；
+    // agent_ready 有 5s 超时）。数据最终会就绪，用户不会"永远无法发送"。
+    // 260605 Red 用轮询替代单次 return：exe 构建后 ready() 可能加载更慢，单次检查
+    // 会静默丢弃提交。轮询等最多 5 秒，给异步信号充足时间就位。
+    const READY_INTERVAL = 100
+    const READY_TIMEOUT = 5_000
+    const readyStart = Date.now()
+    while (!local.ready() && Date.now() - readyStart < READY_TIMEOUT) {
+      await new Promise<void>((r) => setTimeout(r, READY_INTERVAL))
+    }
     const currentModel = local.model.current()
     const currentAgent = local.agent.current()
     const variant = local.model.variant.current()
-    // gate 已通过仍为 null = 真·无 provider 配置（全新安装未填 key 等极罕见场景），此时才提示
+    // 260605 Red gate 已同步为静默等待而非阻塞整个 Session 树（local.tsx gate=false）。
+    // 经过两个兜底（providers 只看 all.size / agent_ready 5s 超时）后，ready() 一定
+    // 会释放。此处仅作为退化兜底。
     if (!currentModel || !currentAgent) {
       showToast({
         title: language.t("prompt.toast.modelAgentRequired.title"),

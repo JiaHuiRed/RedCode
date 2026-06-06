@@ -226,14 +226,21 @@ export async function bootstrapDirectory(input: {
   ;(async () => {
     const slow = [
       () => Promise.resolve(input.loadSessions(input.directory)),
-      () =>
-        input.queryClient
-          .ensureQueryData(loadAgentsQuery(input.directory, input.sdk))
-          // 260605 Red agent 到位后置 ready，submit gate 据此判断而非靠列表非空猜测
-          .then((data) => {
-            input.setStore("agent", data)
-            input.setStore("agent_ready", true)
-          }),
+      () => {
+        // 260605 Red agent 到位后置 ready。加安全超时：如果 SDK 请求 hang 住（如代理不通），
+        // 5s 后强制置 true，避免 submit gate 永假导致输入框完全无法发送。
+        let settled = false
+        const done = (data: any[]) => {
+          if (settled) return
+          settled = true
+          input.setStore("agent", data)
+          input.setStore("agent_ready", true)
+        }
+        setTimeout(() => done([]), 5_000)
+        return input.queryClient.ensureQueryData(loadAgentsQuery(input.directory, input.sdk))
+          .then((data) => done(data))
+          .catch(() => done([]))
+      },
       () =>
         retry(() => input.sdk.config.get().then((x) => input.setStore("config", reconcile(x.data!, { merge: false })))),
       () => retry(() => input.sdk.session.status().then((x) => input.setStore("session_status", x.data!))),
