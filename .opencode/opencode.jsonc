@@ -53,13 +53,13 @@
     "vision": {
       "type": "local",
       // 多模态视觉：分析截图/图片/OCR，需安装 Ollama + qwen3-vl 模型
-      // 克隆 https://github.com/Loveacup/vision-mcp-server 到项目同级目录
-      "command": ["node", "../vision-mcp-server/dist/index.js"],
+      // 260606 Red 全局命令：npm i -g vision-mcp-server，跨盘不依赖项目根
+      "command": ["vision-mcp-server"],
       "environment": {
         "VISION_BASE_URL": "http://localhost:11434/v1/chat/completions",
         "VISION_MODEL": "qwen3-vl:8b"
       },
-      "enabled": false
+      "enabled": true
     }
   },
   "tools": {
