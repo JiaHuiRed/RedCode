@@ -40,6 +40,9 @@ packages/*/typecheck_out.txt
 
 # Personal files — not shared via public repo
 # These live in ~/.redcode/ and come from the user's private repo
+# (root-level patterns as safety net)
+/MEMORY.md
+/memory/
 .opencode/memory/*.md
 .opencode/MEMORY.md
 .opencode/skill/memory-automation/*.json
