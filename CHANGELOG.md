@@ -57,7 +57,7 @@
 
 #### 工作流
 
-- **全局配置目录迁移 `.redcode` → `~/.redcode`**：从 `D:\AI\.redcode` 迁到用户 home 目录（C 盘）。引擎 `config/paths.ts` 的 `directories()` 无条件扫描 `home/.redcode`，不管项目在哪个盘都自动发现，彻底解决跨盘/跨机器路径问题；`build.bat` 同步目标改为 `%USERPROFILE%\.redcode`
+- **全局配置目录迁移 `.redcode` → `~/.redcode`**：从旧位置迁到用户 home 目录。引擎 `config/paths.ts` 的 `directories()` 无条件扫描 `home/.redcode`，不管项目在哪个盘都自动发现，彻底解决跨盘/跨机器路径问题；`build.bat` 同步目标改为 `%USERPROFILE%\.redcode`
 - **全局记忆/画像机制化注入**：`~/.redcode/redcode.jsonc` 的 `instructions` 由 `session/instruction.ts` 引擎侧读取并在 `:137` 展开 `~/`，每个项目启动自动注入 `MEMORY.md`/`USER.md`，消除旧的"靠 AGENTS.md 喊话读 MEMORY"行为链脆弱点
 
 #### 文档
@@ -326,7 +326,7 @@
 
 #### 修复
 
-- **`build-and-package.bat` 同步目标遗留**：打包脚本仍往旧的 `D:\AI\.redcode`（`%~dp0..\..\..\.redcode`）同步 souls/MEMORY/AGENTS，导致配置迁移到 C 盘后"C 盘一份、D 盘还留一份"。改为 `%USERPROFILE%\.redcode`，与 TUI `build.bat` 对齐
+- **`build-and-package.bat` 同步目标遗留**：打包脚本仍往旧目录同步 souls/MEMORY/AGENTS，导致配置迁移到 C 盘后两处残留。改为 `%USERPROFILE%\.redcode`，与 TUI `build.bat` 对齐
 
 #### 变更
 
@@ -373,7 +373,7 @@
 
 - **版本一致性自检脚本**：新增 `script/check-version-consistency.ts`，编译前自动扫描 package.json/README/CHANGELOG/标题栏版本号是否对齐
 - **build-and-package.bat 自动检查**：编译前跑版本自检 + 自动同步灵魂文件到上级目录供其他项目使用
-- **全局 workspace（`.redcode/`）**：AGENTS.md/MEMORY.md/USER.md/souls 移至 `D:\AI\.redcode\`，所有项目共享身份与记忆，build bat 自动同步
+- **全局 workspace（`.redcode/`）**：AGENTS.md/MEMORY.md/USER.md/souls 移至全局目录，所有项目共享身份与记忆，build bat 自动同步
 
 ### [0.3.13] - 2026-06-02
 
