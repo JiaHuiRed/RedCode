@@ -236,7 +236,12 @@ export async function bootstrapDirectory(input: {
           input.setStore("agent", data)
           input.setStore("agent_ready", true)
         }
-        setTimeout(() => done([]), 5_000)
+        // 260606 Red 安全超时只置 ready 标志，不清空列表、不设 settled。
+        // 后续 SDK 成功响应仍可调用 done(data) 填充列表，避免 toast 误弹。
+        setTimeout(() => {
+          if (settled) return
+          input.setStore("agent_ready", true)
+        }, 5_000)
         return input.queryClient.ensureQueryData(loadAgentsQuery(input.directory, input.sdk))
           .then((data) => done(data))
           .catch(() => done([]))

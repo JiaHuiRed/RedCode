@@ -271,6 +271,10 @@ export function createChildStoreManager(input: {
         })
 
       runWithOwner(input.owner, init)
+      // 260606 Red 确保新建 child store 触发 bootstrap。status 硬编码 "complete"
+      // 不走 status === "loading" 路径，事件路径也可能错过新目录。在 ensureChild
+      // 嵌套调用中 children[key] 已存在，此回调不会重复触发。
+      input.onBootstrap(directory)
     }
     markKey(key)
     const childStore = children[key]
