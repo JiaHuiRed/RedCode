@@ -178,4 +178,49 @@ export function init<P extends Schema.Decoder<unknown>, M extends Metadata>(
   })
 }
 
+/**
+ * Simplified tool factory for tools that don't need custom init logic.
+ * Reduces boilerplate by auto-wrapping execute with Effect.orDie via
+ * the standard define() path.
+ * // 260606 Red Use as Effect.Effect cast to preserve generic Params type
+ * through define(); without it TypeScript narrows Params to Decoder<unknown>
+ *
+ * Usage:
+ * ```ts
+ * export const MyTool = Tool.build({
+ *   id: "my_tool",
+ *   description: DESCRIPTION,
+ *   parameters: Schema.Struct({ ... }),
+ *   execute: (params, ctx) =>
+ *     Effect.gen(function* () {
+ *       // ...
+ *       return { title, metadata, output }
+ *     }),
+ * })
+ * ```
+ */
+export function build<
+  Params extends Schema.Decoder<unknown>,
+  M extends Metadata = Metadata,
+>(
+  config: {
+    id: string
+    description: string
+    parameters: Params
+    execute(
+      args: Schema.Schema.Type<Params>,
+      ctx: Context<M>,
+    ): Effect.Effect<ExecuteResult<M>>
+  },
+): Effect.Effect<Info<Params, M>, never, Truncate.Service | Agent.Service> {
+  return define(
+    config.id,
+    Effect.succeed({
+      description: config.description,
+      parameters: config.parameters,
+      execute: config.execute,
+    }) as Effect.Effect<DefWithoutID<Params, M>, never, never>,
+  )
+}
+
 export * as Tool from "./tool"

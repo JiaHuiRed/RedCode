@@ -69,7 +69,8 @@ export const layer = Layer.effect(
       skills: Effect.fn("SystemPrompt.skills")(function* (agent: Agent.Info) {
         if (Permission.disabled(["skill"], agent.permission).has("skill")) return
 
-        const list = yield* skill.available(agent)
+        const ctx = yield* InstanceState.context
+        const list = yield* skill.available(agent, ctx.directory)
 
         return [
           "Skills provide specialized instructions and workflows for specific tasks.",

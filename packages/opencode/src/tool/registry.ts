@@ -248,6 +248,45 @@ export const layer: Layer.Layer<
           plan: Tool.init(plan),
         })
 
+        // 260606 Red search helper extracted — avoid closure-capturing all()
+        // inside the gen just for the filter lambda
+        const searchToolsSearch = (query: string, all: Tool.Def[]) => {
+          const q = query.toLowerCase()
+          return all.filter(
+            (t) => t.id.toLowerCase().includes(q) || t.description.toLowerCase().includes(q),
+          )
+        }
+
+        // 260606 Red define search_tools inline instead of separate file to avoid
+        // circular import: search_tools needs to query all tools but registry.ts
+        // is the layer that provides ToolRegistry.Service. InstanceState.get(state)
+        // breaks the cycle by reading the state directly at call time.
+        const searchToolsDef: Tool.Def = {
+          id: "search_tools",
+          description: "Search for available tools by name or description. Use this when you don't know the exact tool name or want to discover tools for a specific task.",
+          parameters: Schema.Struct({
+            query: Schema.String.annotate({ description: "Search keywords to find relevant tools" }),
+          }),
+          execute: (params: { query: string }, ctx) =>
+            Effect.gen(function* () {
+              const s = yield* InstanceState.get(state)
+              const all = [...s.builtin, ...s.custom] as Tool.Def[]
+              const matches = searchToolsSearch(params.query, all)
+              const lines = matches.map(
+                (t, i) =>
+                  `${i + 1}. **${t.id}**: ${t.description.length > 120 ? t.description.slice(0, 120) + "..." : t.description}`,
+              )
+              return {
+                title: `Tools matching "${params.query}"`,
+                metadata: { count: matches.length, total: all.length },
+                output:
+                  lines.length > 0
+                    ? [`Found ${matches.length} tool(s) matching "${params.query}":`, "", ...lines].join("\n")
+                    : `No tools found matching "${params.query}". Available tools: ${all.map((t) => t.id).join(", ")}.`,
+              }
+            }).pipe(Effect.orDie),
+        }
+
         return {
           custom,
           builtin: [
@@ -269,6 +308,7 @@ export const layer: Layer.Layer<
             tool.patch,
             ...(flags.experimentalLspTool ? [tool.lsp] : []),
             ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
+            searchToolsDef,
           ],
           task: tool.task,
           read: tool.read,
@@ -286,7 +326,8 @@ export const layer: Layer.Layer<
     })
 
     const describeSkill = Effect.fn("ToolRegistry.describeSkill")(function* (agent: Agent.Info) {
-      const list = yield* skill.available(agent)
+      const ctx = yield* InstanceState.context
+      const list = yield* skill.available(agent, ctx.directory)
       if (list.length === 0) return "No skills are currently available."
       return [
         "Load a specialized skill that provides domain-specific instructions and workflows.",

@@ -38,6 +38,9 @@ export const Info = Schema.Struct({
   description: Schema.optional(Schema.String),
   location: Schema.String,
   content: Schema.String,
+  // 260606 Red 文件路径匹配模式。不为空时，当前目录无匹配文件则隐藏该技能。
+  // 支持 glob 模式，如 "src/**/*.py" 或绝对路径。
+  paths: Schema.optional(Schema.Array(Schema.String)),
 })
 export type Info = Schema.Schema.Type<typeof Info>
 
@@ -49,11 +52,12 @@ const Issue = Schema.StructWithRest(
   [Schema.Record(Schema.String, Schema.Unknown)],
 )
 
-function isSkillFrontmatter(data: unknown): data is { name: string; description?: string } {
+function isSkillFrontmatter(data: unknown): data is { name: string; description?: string; paths?: string[] } {
   return (
     isRecord(data) &&
     typeof data.name === "string" &&
-    (data.description === undefined || typeof data.description === "string")
+    (data.description === undefined || typeof data.description === "string") &&
+    (data.paths === undefined || (Array.isArray(data.paths) && data.paths.every((p) => typeof p === "string")))
   )
 }
 
@@ -88,7 +92,7 @@ export interface Interface {
   readonly get: (name: string) => Effect.Effect<Info | undefined>
   readonly all: () => Effect.Effect<Info[]>
   readonly dirs: () => Effect.Effect<string[]>
-  readonly available: (agent?: Agent.Info) => Effect.Effect<Info[]>
+  readonly available: (agent?: Agent.Info, directory?: string) => Effect.Effect<Info[]>
 }
 
 const add = Effect.fnUntraced(function* (state: State, match: string, bus: Bus.Interface) {
@@ -127,6 +131,7 @@ const add = Effect.fnUntraced(function* (state: State, match: string, bus: Bus.I
     description: md.data.description,
     location: match,
     content: md.content,
+    paths: md.data.paths,
   }
 })
 
@@ -286,11 +291,36 @@ export const layer = Layer.effect(
       return (yield* InstanceState.get(discovered)).dirs
     })
 
-    const available = Effect.fn("Skill.available")(function* (agent?: Agent.Info) {
+    const available = Effect.fn("Skill.available")(function* (agent?: Agent.Info, directory?: string) {
       const s = yield* InstanceState.get(state)
-      const list = Object.values(s.skills).toSorted((a, b) => a.name.localeCompare(b.name))
-      if (!agent) return list
-      return list.filter((skill) => Permission.evaluate("skill", skill.name, agent.permission).action !== "deny")
+      let list = Object.values(s.skills).toSorted((a, b) => a.name.localeCompare(b.name))
+      if (agent) {
+        list = list.filter((skill) => Permission.evaluate("skill", skill.name, agent.permission).action !== "deny")
+      }
+      if (directory) {
+        list = yield* forDirectory(list, directory)
+      }
+      return list
+    })
+
+    const forDirectory = Effect.fn("Skill.forDirectory")(function* (skills: Info[], directory: string) {
+      const result: Info[] = []
+      for (const skill of skills) {
+        if (!skill.paths || skill.paths.length === 0) {
+          result.push(skill)
+          continue
+        }
+        let matched = false
+        for (const pattern of skill.paths) {
+          const matches: string[] = yield* Effect.tryPromise({
+            try: () => Glob.scan(pattern, { cwd: directory, include: "file", absolute: false }),
+            catch: (error) => error,
+          }).pipe(Effect.catch(() => Effect.succeed([] as string[])))
+          if (matches.length > 0) { matched = true; break }
+        }
+        if (matched) result.push(skill)
+      }
+      return result
     })
 
     return Service.of({ get, all, dirs, available })
