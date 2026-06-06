@@ -20,6 +20,26 @@
 
 - **Vision AutoAgent 技能**：DeepSeek 不支持多模态时自动调用 vision MCP (`qwen3-vl:8b`) 分析用户发送的图片，前端只回"分析中..."，不报错、不多耗 token。新建 `.opencode/skill/vision-autoagent/SKILL.md`，`redcode.jsonc` 统一注册所有 skill 至 `instructions` 段
 
+#### 重构
+
+- **双仓分离 — 隐私重构**：灵魂文件 (Tsoul.md/Gsoul.md)、工作记忆 (MEMORY.md)、每日日志 (memory/)、个人命令 (Karina.md/son.md) 全部从仓库移出。仓库仅保留通用模板，实际数据存 `~/.redcode/`。修改涉及：
+  - `.opencode/agents/` → 空白模板，不再含个人人格
+  - `.opencode/MEMORY.md` → 格式模板，清空个人内容
+  - `.opencode/command/` → 重命名为 tui-persona/gui-persona，路径指向 `~/.redcode/souls/`
+  - `AGENTS.md` / `README.md` / packages `AGENTS.md` → 抹掉所有个人身份名
+  - `CHANGELOG.md` / 配置文件 → 清除 `D:\AI\`、`D:\AI\KLX\` 等硬编码路径
+  - `script/sync-home.bat` → 停止同步个人文件，只同步 skill/插件
+  - `skill/memory-automation` / `*` → `哥哥` → `用户`，路径改为 `~/.redcode/`
+  - 全身搜索已确认无个人名/路径/称呼残留
+
+#### 新增
+
+- **启动时自动播种 `~/.redcode/`**：`InstanceBootstrap.run` 中新增 `ensureDir` + 模板复制逻辑。首次启动自动创建 `~/.redcode/{memory,souls}/`，从 `.opencode/agents/` 复制 Tsoul.md/Gsoul.md/USER.template.md/MEMORY.md，已存在的文件不被覆盖。TUI、GUI sidecar、打包 exe 均走同一路径
+
+#### 文档
+
+- **README 精简 + MANUAL.md 用户手册**：README 仅保留核心介绍和快速开始链接；MANUAL.md 从新人视角编写 420 行完整操作指南，覆盖模型配置、MCP 安装、人格系统、记忆系统、权限控制、Skill 扩展、多机同步
+
 ### [0.4.1] - 2026-06-05
 
 #### 修复
