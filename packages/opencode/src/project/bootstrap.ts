@@ -42,8 +42,24 @@ export const layer = Layer.effect(
     const run = Effect.gen(function* () {
       const ctx = yield* InstanceState.context
       yield* Effect.logInfo("bootstrapping").pipe(Effect.annotateLogs("directory", ctx.directory))
-      // 260606 Red Ensure ~/.redcode/ exists for memory/skills/config storage
-      yield* fs.ensureDir(path.join(Global.Path.home, ".redcode", "memory")).pipe(Effect.catchCause(Effect.logWarning))
+      // 260606 Red Seed ~/.redcode/ with default templates on first run
+      const redcodeHome = path.join(Global.Path.home, ".redcode")
+      yield* fs.ensureDir(path.join(redcodeHome, "memory")).pipe(Effect.catchCause(Effect.logWarning))
+      yield* fs.ensureDir(path.join(redcodeHome, "souls")).pipe(Effect.catchCause(Effect.logWarning))
+      const templates: Array<[src: string, dest: string]> = [
+        [".opencode/agents/Tsoul.md", path.join(redcodeHome, "souls", "Tsoul.md")],
+        [".opencode/agents/Gsoul.md", path.join(redcodeHome, "souls", "Gsoul.md")],
+        [".opencode/agents/USER.template.md", path.join(redcodeHome, "USER.md")],
+        [".opencode/MEMORY.md", path.join(redcodeHome, "MEMORY.md")],
+      ]
+      yield* Effect.forEach(templates, ([src, dest]) =>
+        Effect.gen(function* () {
+          const exists = yield* fs.existsSafe(dest)
+          if (exists) return
+          const text = yield* fs.readFileStringSafe(path.join(ctx.directory, src))
+          if (text) yield* fs.writeFileString(dest, text)
+        }).pipe(Effect.catchCause(Effect.logWarning)),
+      )
       // everything depends on config so eager load it for nice traces
       yield* config.get()
       // Plugin can mutate config so it has to be initialized before anything else.
