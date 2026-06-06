@@ -196,8 +196,10 @@
     }
   }
 */
-  /* Explicit light mode via data attribute (overrides OS dark preference) */
-  [data-color-scheme="light"] {
+  /* Light-variant schemes (light, cream, green) */
+  [data-color-scheme="light"],
+  [data-color-scheme="cream"],
+  [data-color-scheme="green"] {
     color-scheme: light;
 
     --v2-background-bg-base: var(--v2-grey-100);
@@ -284,8 +286,59 @@
     --v2-illustration-illustration-layer-03: var(--v2-grey-500);
   }
 
-  /* Explicit dark mode via data attribute (Storybook toggle, runtime JS) */
-  [data-color-scheme="dark"] {
+  /* ── Cream (米黄) — warm paper-like background ── */
+  [data-color-scheme="cream"] {
+    color-scheme: light;
+
+    --v2-background-bg-base: #FEFCF3;
+    --v2-background-bg-deep: #F7F3E8;
+    --v2-background-bg-layer-01: #F7F3E8;
+    --v2-background-bg-layer-02: #EFEADC;
+    --v2-background-bg-layer-03: #E4DECD;
+    --v2-background-bg-inverse: #3C3524;
+    --v2-background-bg-contrast: #2A251A;
+    --v2-background-bg-button-neutral: #FEFCF3;
+
+    --v2-text-text-base: #3C3524;
+    --v2-text-text-muted: #7A7058;
+    --v2-text-text-faint: #A0987F;
+
+    --v2-icon-icon-base: #5C5340;
+    --v2-icon-icon-muted: #A0987F;
+
+    --v2-illustration-illustration-layer-01: #EFEADC;
+    --v2-illustration-illustration-layer-02: #E4DECD;
+    --v2-illustration-illustration-layer-03: #D4CDB8;
+  }
+
+  /* ── Green (护眼绿) — soft eye-protection green ── */
+  [data-color-scheme="green"] {
+    color-scheme: light;
+
+    --v2-background-bg-base: #F2F9F0;
+    --v2-background-bg-deep: #E8F3E4;
+    --v2-background-bg-layer-01: #E8F3E4;
+    --v2-background-bg-layer-02: #DFEDDA;
+    --v2-background-bg-layer-03: #D0E4CA;
+    --v2-background-bg-inverse: #1A3A1A;
+    --v2-background-bg-contrast: #0F2A0F;
+    --v2-background-bg-button-neutral: #F2F9F0;
+
+    --v2-text-text-base: #1C3A1C;
+    --v2-text-text-muted: #4A7A4A;
+    --v2-text-text-faint: #7AA07A;
+
+    --v2-icon-icon-base: #3A5C3A;
+    --v2-icon-icon-muted: #7AA07A;
+
+    --v2-illustration-illustration-layer-01: #DFEDDA;
+    --v2-illustration-illustration-layer-02: #D0E4CA;
+    --v2-illustration-illustration-layer-03: #BDD4B5;
+  }
+
+  /* Dark-variant schemes (dark, deepblue) */
+  [data-color-scheme="dark"],
+  [data-color-scheme="deepblue"] {
     color-scheme: dark;
 
     --v2-background-bg-base: var(--v2-grey-1000);
@@ -370,5 +423,30 @@
     --v2-illustration-illustration-layer-01: var(--v2-grey-900);
     --v2-illustration-illustration-layer-02: var(--v2-grey-800);
     --v2-illustration-illustration-layer-03: var(--v2-grey-700);
+  }
+
+  /* ── Deep Blue (深蓝) — deep navy alternative to pure dark ── */
+  [data-color-scheme="deepblue"] {
+    color-scheme: dark;
+
+    --v2-background-bg-base: #0D111A;
+    --v2-background-bg-deep: #080B12;
+    --v2-background-bg-layer-01: #121724;
+    --v2-background-bg-layer-02: #1A2030;
+    --v2-background-bg-layer-03: #232B3E;
+    --v2-background-bg-inverse: #D0D7E7;
+    --v2-background-bg-contrast: #4A5670;
+    --v2-background-bg-button-neutral: rgba(255, 255, 255, 0.06);
+
+    --v2-text-text-base: #D0D7E7;
+    --v2-text-text-muted: #8B95A8;
+    --v2-text-text-faint: #6B7588;
+
+    --v2-icon-icon-base: #8B95A8;
+    --v2-icon-icon-muted: #6B7588;
+
+    --v2-illustration-illustration-layer-01: #1A2030;
+    --v2-illustration-illustration-layer-02: #232B3E;
+    --v2-illustration-illustration-layer-03: #2E3850;
   }
 }

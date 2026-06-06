@@ -24,6 +24,9 @@ export const dict = {
   "theme.scheme.system": "系統",
   "theme.scheme.light": "淺色",
   "theme.scheme.dark": "深色",
+  "theme.scheme.cream": "米黃",
+  "theme.scheme.green": "護眼綠",
+  "theme.scheme.deepblue": "深藍",
 
   "command.sidebar.toggle": "切換側邊欄",
   "command.project.open": "開啟專案",

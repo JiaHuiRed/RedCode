@@ -20,6 +20,9 @@
   "theme.scheme.system": "System",
   "theme.scheme.light": "Light",
   "theme.scheme.dark": "Dark",
+  "theme.scheme.cream": "Cream",
+  "theme.scheme.green": "Eye Green",
+  "theme.scheme.deepblue": "Deep Blue",
 
   "command.sidebar.toggle": "Toggle sidebar",
   "command.project.open": "Open project",

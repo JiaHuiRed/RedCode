@@ -24,6 +24,9 @@ export const dict = {
   "theme.scheme.system": "系统",
   "theme.scheme.light": "浅色",
   "theme.scheme.dark": "深色",
+  "theme.scheme.cream": "米黄",
+  "theme.scheme.green": "护眼绿",
+  "theme.scheme.deepblue": "深蓝",
 
   "command.sidebar.toggle": "切换侧边栏",
 

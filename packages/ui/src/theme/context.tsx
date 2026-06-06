@@ -6,7 +6,7 @@ import oc2ThemeJson from "./themes/oc-2.json"
 import { resolveThemeVariant, themeToCss } from "./resolve"
 import type { DesktopTheme } from "./types"
 
-export type ColorScheme = "light" | "dark" | "system"
+export type ColorScheme = "light" | "dark" | "system" | "cream" | "green" | "deepblue"
 
 const STORAGE_KEYS = {
   THEME_ID: "redcode-theme-id",
@@ -127,7 +127,7 @@ function getSystemMode(): "light" | "dark" {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
 }
 
-function applyThemeCss(theme: DesktopTheme, themeId: string, mode: "light" | "dark") {
+function applyThemeCss(theme: DesktopTheme, themeId: string, mode: "light" | "dark", schemeAttr: string) {
   const isDark = mode === "dark"
   const variant = isDark ? theme.dark : theme.light
   const tokens = resolveThemeVariant(variant, isDark)
@@ -146,7 +146,7 @@ function applyThemeCss(theme: DesktopTheme, themeId: string, mode: "light" | "da
   document.getElementById("oc-theme-preload")?.remove()
   ensureThemeStyleElement().textContent = fullCss
   document.documentElement.dataset.theme = themeId
-  document.documentElement.dataset.colorScheme = mode
+  document.documentElement.dataset.colorScheme = schemeAttr
 
   // Update theme-color meta tag to match light/dark mode
   const meta = document.querySelector('meta[name="theme-color"]')
@@ -169,8 +169,14 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
   init: (props: { defaultTheme?: string; onThemeApplied?: (theme: DesktopTheme, mode: "light" | "dark") => void }) => {
     const themeId = normalize(read(STORAGE_KEYS.THEME_ID) ?? props.defaultTheme) ?? "oc-2"
     const colorScheme = (read(STORAGE_KEYS.COLOR_SCHEME) as ColorScheme | null) ?? "system"
-    const resolveMode = (scheme: ColorScheme): "light" | "dark" =>
-      scheme === "system" ? getSystemMode() : (scheme as "light" | "dark")
+    const resolveMode = (scheme: ColorScheme): "light" | "dark" => {
+      switch (scheme) {
+        case "system": return getSystemMode()
+        case "dark":
+        case "deepblue": return "dark"
+        default: return "light" // light, cream, green
+      }
+    }
     const mode = resolveMode(colorScheme)
     const [store, setStore] = createStore({
       themes: {
@@ -208,7 +214,8 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     }
 
     const applyTheme = (theme: DesktopTheme, themeId: string, mode: "light" | "dark") => {
-      applyThemeCss(theme, themeId, mode)
+      const schemeAttr = store.colorScheme === "system" ? mode : store.colorScheme
+      applyThemeCss(theme, themeId, mode, schemeAttr)
       props.onThemeApplied?.(theme, mode)
     }
 
@@ -326,10 +333,11 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       previewColorScheme: (scheme: ColorScheme) => {
         setStore("previewScheme", scheme)
         const previewMode = resolveMode(scheme)
+        const schemeAttr = scheme === "system" ? previewMode : scheme
         const id = store.previewThemeId ?? store.themeId
         void load(id).then((theme) => {
           if (!theme || store.previewScheme !== scheme) return
-          applyThemeCss(theme, id, previewMode)
+          applyThemeCss(theme, id, previewMode, schemeAttr)
         })
       },
       commitPreview: () => {
@@ -347,7 +355,8 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         setStore("previewScheme", null)
         void load(store.themeId).then((theme) => {
           if (!theme) return
-          applyThemeCss(theme, store.themeId, store.mode)
+          const schemeAttr = store.colorScheme === "system" ? store.mode : store.colorScheme
+          applyThemeCss(theme, store.themeId, store.mode, schemeAttr)
         })
       },
     }

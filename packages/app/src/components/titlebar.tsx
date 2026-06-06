@@ -157,12 +157,10 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
     if (platform.platform !== "desktop") return
 
     const scheme = theme.colorScheme()
-    const value = scheme === "system" ? null : scheme
-
     const win = currentThemeWindow()
     if (!win?.setTheme) return
 
-    void win.setTheme(value).catch(() => undefined)
+    void win.setTheme(scheme === "system" ? null : theme.mode()).catch(() => undefined)
   })
 
   const interactive = (target: EventTarget | null) => {
@@ -204,6 +202,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
         "shrink-0 relative overflow-hidden flex flex-row": true,
         "h-11 bg-v2-background-bg-deep": USE_V2_TITLEBAR,
         "h-10 bg-background-base": !USE_V2_TITLEBAR,
+        "border-b border-border-weaker-base": true,
       }}
       style={{
         "min-height": minHeight(),

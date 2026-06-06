@@ -257,6 +257,9 @@ export const SettingsGeneral: Component = () => {
     { value: "system", label: language.t("theme.scheme.system") },
     { value: "light", label: language.t("theme.scheme.light") },
     { value: "dark", label: language.t("theme.scheme.dark") },
+    { value: "cream", label: language.t("theme.scheme.cream") },
+    { value: "green", label: language.t("theme.scheme.green") },
+    { value: "deepblue", label: language.t("theme.scheme.deepblue") },
   ])
 
   const languageOptions = createMemo(() =>
