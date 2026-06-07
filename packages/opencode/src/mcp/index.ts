@@ -755,7 +755,12 @@ export const layer = Layer.effect(
       const client = s.clients[name]
       delete s.defs[name]
       if (!client) return Effect.void
-      return Effect.tryPromise(() => client.close()).pipe(Effect.ignore)
+      // 260607 Red 杀进程树：stdio server 不响应 stdin close 会变孤儿（gbrain/browsermcp 等）
+      const pid = client.transport instanceof StdioClientTransport ? client.transport.pid : null
+      return Effect.gen(function* () {
+        yield* Effect.tryPromise(() => client.close()).pipe(Effect.ignore)
+        if (pid) yield* killProcessTree(pid)
+      })
     }
 
     const storeClient = Effect.fnUntraced(function* (

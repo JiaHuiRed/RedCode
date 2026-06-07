@@ -68,7 +68,8 @@
       "type": "local",
       "command": ["gbrain", "serve"],
       "description": "Persistent memory brain (PGLite, local)",
-      "enabled": true
+      "enabled": true,
+      "timeout": 120000
     },
     "su-prememory": {
       "type": "local",
