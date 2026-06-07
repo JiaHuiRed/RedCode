@@ -1,0 +1,16 @@
+{
+  "name": "agent-reach-mcp",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Unified search MCP — GitHub, Twitter(X), Bilibili, Douyin",
+  "scripts": {
+    "start": "bun run src/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.2",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.21"
+  }
+}

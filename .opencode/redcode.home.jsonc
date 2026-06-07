@@ -14,7 +14,8 @@
     "~/.redcode/skill/defensive-agent/SKILL.md",
     "~/.redcode/skill/goal-automation/SKILL.md",
     "~/.redcode/skill/simplify/SKILL.md",
-    "~/.redcode/skill/vision-autoagent/SKILL.md"
+    "~/.redcode/skill/vision-autoagent/SKILL.md",
+    "~/.redcode/skill/diagnose/SKILL.md"
   ],
   "mcp": {
     "codegraph": {
@@ -74,6 +75,19 @@
       "command": ["bun", "./plugins/mcp-su-prememory-local/src/index.ts"],
       "cwd": "$REDCODE_ROOT",
       "description": "Local semantic memory — SQLite+FTS5, no cloud",
+      "enabled": true
+    },
+    "agent-reach": {
+      "type": "local",
+      "command": ["bun", "./plugins/agent-reach-mcp/src/index.ts"],
+      "cwd": "$REDCODE_ROOT",
+      "description": "Unified search — GitHub, Twitter(X), Bilibili, Douyin",
+      "enabled": true
+    },
+    "exa-search": {
+      "type": "remote",
+      "url": "https://mcp.exa.ai/mcp",
+      "description": "AI semantic web search (get free key at https://dashboard.exa.ai/api-keys)",
       "enabled": true
     }
   },

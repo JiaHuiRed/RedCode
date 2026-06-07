@@ -10,6 +10,29 @@
 
 ## TUI
 
+### [0.4.5] - 2026-06-07
+
+#### 新增
+
+- **Agent Reach — 统一搜索 MCP**：新增 `plugins/agent-reach-mcp/`，内置 7 个搜索工具覆盖 4 大平台，一条 MCP 服务器搞定全部搜索需求
+  - `search_github` / `get_github_repo` — 搜仓库、搜 Issue、看详情（通过 `gh` CLI）
+  - `search_twitter` / `get_tweet` — 搜推文、读单条推文（通过 `twitter-cli`，需 Cookie 认证）
+  - `search_bilibili` / `get_bilibili_video` — 搜 B站视频、提取字幕（B站 API + yt-dlp）
+  - `get_douyin_video` — 解析抖音视频信息（通过 yt-dlp Douyin extractor）
+  - `doctor` — 一条命令检查各工具可用性
+- **Exa 语义搜索 MCP**：接入 Exa AI 语义搜索引擎（`type: "remote"`，`https://mcp.exa.ai/mcp`），免费 1000 次/月，覆盖 web search + web fetch
+- **MCP disabledTools 配置**：`ConfigMCP.Local` 新增 `disabledTools` 字段，可在配置层面屏蔽指定 MCP 服务器的多余工具，无需改 RedCode 源码
+  - 应用于 codegraph：隐藏 7 个被 jCodeMunch 替代的冗余工具，仅暴露 `codegraph_explore`
+- **Supermmemory 本地记忆插件**：`plugins/mcp-su-prememory-local/` — 纯本地 SQLite+FTS5 语义记忆 MCP，三种工具（`memory` 记/忘、`recall` 搜、`stats` 统计），数据存 `~/.redcode/supermemory.db`
+- **Diagnose 技能**：`.opencode/skill/diagnose/SKILL.md` — 结构化 bug 诊断工作流（重现 → 缩小范围 → 定位根因 → 修复 → 验证），适配自 @mattpocock/skills
+
+#### 安装/配置
+
+- **Agent Reach 依赖安装**（各平台首次使用前需执行）：
+  - Twitter/X：`uv tool install twitter-cli` 后再 `twitter login`（浏览器提取 Cookie）
+  - B站/抖音：`uv tool install yt-dlp`（视频信息提取）
+  - GitHub：`gh` CLI 预装，`gh auth login` 后可用
+
 ### [0.4.4] - 2026-06-07
 
 #### 新增
