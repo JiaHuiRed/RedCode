@@ -4,7 +4,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod"
 import { execSync } from "child_process"
 
-// 260607 Red Agent Reach MCP — unified search: GitHub, Twitter(X), Bilibili, Douyin
+// 260607 Red Agent Reach MCP — unified search: GitHub, Bilibili, Douyin
 
 function run(cmd: string, timeout = 15000): string {
   try {
@@ -27,7 +27,7 @@ function hasTool(name: string): boolean {
 const server = new McpServer({
   name: "agent-reach-mcp",
   version: "0.1.0",
-  description: "Unified search — GitHub, Twitter(X), Bilibili, Douyin",
+  description: "Unified search — GitHub, Bilibili, Douyin",
 })
 
 // ── doctor ───────────────────────────────────────────────────────
@@ -37,7 +37,6 @@ server.tool(
   async () => {
     const tools = [
       { name: "GitHub (gh)", ok: hasTool("gh") },
-      { name: "Twitter/X (twitter)", ok: hasTool("twitter") },
       { name: "Bilibili (yt-dlp+API)", ok: hasTool("yt-dlp") },
       { name: "Douyin (yt-dlp)", ok: hasTool("yt-dlp") },
     ]
@@ -83,33 +82,7 @@ server.tool(
   },
 )
 
-// ── Twitter ──────────────────────────────────────────────────────
-server.tool(
-  "search_twitter",
-  "Search Twitter/X for tweets matching a query.",
-  {
-    query: z.string().describe("Search query"),
-    limit: z.number().min(1).max(30).optional().default(10),
-  },
-  async ({ query, limit }) => {
-    if (!hasTool("twitter")) throw new Error("twitter-cli not found. Install: pip install twitter-cli")
-    const out = run(`twitter search "${query.replace(/"/g, '\\"')}" --limit ${limit} --json`)
-    return { content: [{ type: "text" as const, text: out || "No results." }] }
-  },
-)
 
-server.tool(
-  "get_tweet",
-  "Read a specific tweet by URL.",
-  {
-    url: z.string().describe("Tweet URL (e.g. https://x.com/username/status/123456)"),
-  },
-  async ({ url }) => {
-    if (!hasTool("twitter")) throw new Error("twitter-cli not found. Install: pip install twitter-cli")
-    const out = run(`twitter tweet "${url}"`)
-    return { content: [{ type: "text" as const, text: out }] }
-  },
-)
 
 // ── Bilibili ─────────────────────────────────────────────────────
 server.tool(

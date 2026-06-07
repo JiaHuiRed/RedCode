@@ -14,9 +14,8 @@
 
 #### 新增
 
-- **Agent Reach — 统一搜索 MCP**：新增 `plugins/agent-reach-mcp/`，内置 7 个搜索工具覆盖 4 大平台，一条 MCP 服务器搞定全部搜索需求
+- **Agent Reach — 统一搜索 MCP**：新增 `plugins/agent-reach-mcp/`，内置 6 个搜索工具覆盖 3 大平台
   - `search_github` / `get_github_repo` — 搜仓库、搜 Issue、看详情（通过 `gh` CLI）
-  - `search_twitter` / `get_tweet` — 搜推文、读单条推文（通过 `twitter-cli`，需 Cookie 认证）
   - `search_bilibili` / `get_bilibili_video` — 搜 B站视频、提取字幕（B站 API + yt-dlp）
   - `get_douyin_video` — 解析抖音视频信息（通过 yt-dlp Douyin extractor）
   - `doctor` — 一条命令检查各工具可用性
@@ -29,7 +28,6 @@
 #### 安装/配置
 
 - **Agent Reach 依赖安装**（各平台首次使用前需执行）：
-  - Twitter/X：`uv tool install twitter-cli` 后再 `twitter login`（浏览器提取 Cookie）
   - B站/抖音：`uv tool install yt-dlp`（视频信息提取）
   - GitHub：`gh` CLI 预装，`gh auth login` 后可用
 

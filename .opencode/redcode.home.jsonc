@@ -81,7 +81,7 @@
       "type": "local",
       "command": ["bun", "./plugins/agent-reach-mcp/src/index.ts"],
       "cwd": "$REDCODE_ROOT",
-      "description": "Unified search — GitHub, Twitter(X), Bilibili, Douyin",
+      "description": "Unified search — GitHub, Bilibili, Douyin",
       "enabled": true
     },
     "exa-search": {
