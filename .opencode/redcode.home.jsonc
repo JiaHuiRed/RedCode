@@ -20,7 +20,8 @@
     "codegraph": {
       "type": "local",
       "command": ["npx", "-y", "@colbymchenry/codegraph", "serve", "--mcp"],
-      "enabled": true
+      "enabled": true,
+      "disabledTools": ["codegraph_search", "codegraph_callers", "codegraph_callees", "codegraph_node", "codegraph_impact", "codegraph_files", "codegraph_status"]
     },
     "typegraph": {
       "type": "local",
@@ -60,6 +61,19 @@
         "VISION_BASE_URL": "http://localhost:11434/v1/chat/completions",
         "VISION_MODEL": "qwen3-vl:8b"
       },
+      "enabled": true
+    },
+    "gbrain": {
+      "type": "local",
+      "command": ["gbrain", "serve"],
+      "description": "Persistent memory brain (PGLite, local)",
+      "enabled": true
+    },
+    "su-prememory": {
+      "type": "local",
+      "command": ["bun", "./plugins/mcp-su-prememory-local/src/index.ts"],
+      "cwd": "$REDCODE_ROOT",
+      "description": "Local semantic memory — SQLite+FTS5, no cloud",
       "enabled": true
     }
   },

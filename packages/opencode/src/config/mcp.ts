@@ -21,6 +21,9 @@ export const Local = Schema.Struct({
   timeout: Schema.optional(PositiveInt).annotate({
     description: "Timeout in ms for MCP server requests. Defaults to 5000 (5 seconds) if not specified.",
   }),
+  disabledTools: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
+    description: "Tool names to hide from this MCP server. Only tools not in this list will be exposed.",
+  }),
 }).annotate({ identifier: "McpLocalConfig" })
 export type Local = Schema.Schema.Type<typeof Local>
 

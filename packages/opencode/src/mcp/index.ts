@@ -868,7 +868,9 @@ export const layer = Layer.effect(
             // 260603 Red P1: 用 EffectBridge 避免依赖 AppRuntime
             const toolBridge = yield* EffectBridge.make()
             const doReconnect = () => toolBridge.promise(reconnectServer(clientName))
+            const disabled = entry?.type === "local" ? entry.disabledTools : undefined
             for (const mcpTool of listed) {
+              if (disabled?.includes(mcpTool.name)) continue
               result[sanitize(clientName) + "_" + sanitize(mcpTool.name)] = convertMcpTool(
                 mcpTool, client, clientName, doReconnect, timeout,
               )
