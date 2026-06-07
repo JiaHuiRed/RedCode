@@ -227,9 +227,7 @@ MCP（Model Context Protocol）让 AI 获得外部能力。安装越多 MCP，AI
 | 服务器 | 用途 | 首次使用前 |
 |--------|------|-----------|
 | **Agent Reach** | 统一搜索：GitHub 仓库/Issue、B站视频和字幕、抖音视频信息 | `gh auth login`（GitHub 功能）|
-| **RedNote MCP** | 小红书：搜索笔记、浏览详情、发布图文 | 首次调用 `login` 工具扫码登录 |
 
-RedNote MCP 使用 Playwright 浏览器自动化，扫码登录后 Cookie 持久化，**你一发指令，AI 就能搜小红书、发笔记**。
 
 ### 4.5 添加自己的 MCP
 
