@@ -7,18 +7,8 @@
   ],
   "provider": {},
   "permission": {},
-  "instructions": [
-    // 260604 Red memory-automation — 启动自动注入/压缩保存/收工提取
-    "./.opencode/skill/memory-automation/SKILL.md",
-    // 260604 Red guardrail-profiles — 三档控制 minimal/standard/strict
-    "./.opencode/skill/guardrail-profiles/SKILL.md",
-    // 260604 Red defensive-agent — FP 过滤/confidence gate/pre-edit 调查
-    "./.opencode/skill/defensive-agent/SKILL.md",
-    // 260604 Red goal-automation — 主动建议 /goal 钉住大任务（GUI 0.4.0）
-    "./.opencode/skill/goal-automation/SKILL.md"
-  ],
-  // 260607 Red MCP 服务器已移至 ~/.redcode/redcode.jsonc（全局生效）
-  //    仅项目级覆盖留在此处
+  // 260607 Red 技能指令已移至 ~/.redcode/redcode.jsonc（全局生效，sync-home.bat 同步）
+  //    项目级指令保留 AGENTS.md/CLAUDE.md 自动发现，skill 统一走全局配置
   "tools": {
     "github-triage": false,
     "github-pr-search": false

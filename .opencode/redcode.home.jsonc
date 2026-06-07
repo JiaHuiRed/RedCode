@@ -5,7 +5,17 @@
   //   - instructions: 自动加载 MEMORY/USER
   //   - mcp: 全局 MCP 服务器（不依赖项目 .opencode/opencode.jsonc）
   //     $REDCODE_ROOT 在运行时自动展开为 RedCode 安装根目录
-  "instructions": ["~/.redcode/MEMORY.md", "~/.redcode/USER.md"],
+  // 260607 Red 技能指令 — 自动加载技能（sync-home.bat 同步到 ~/.redcode/skill/）
+  "instructions": [
+    "~/.redcode/MEMORY.md",
+    "~/.redcode/USER.md",
+    "~/.redcode/skill/memory-automation/SKILL.md",
+    "~/.redcode/skill/guardrail-profiles/SKILL.md",
+    "~/.redcode/skill/defensive-agent/SKILL.md",
+    "~/.redcode/skill/goal-automation/SKILL.md",
+    "~/.redcode/skill/simplify/SKILL.md",
+    "~/.redcode/skill/vision-autoagent/SKILL.md"
+  ],
   "mcp": {
     "codegraph": {
       "type": "local",
