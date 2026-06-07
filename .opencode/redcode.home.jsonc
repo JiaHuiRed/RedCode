@@ -51,8 +51,9 @@
     },
     "web-search": {
       "type": "local",
-      "command": ["npx", "tsx", "./.opencode/search-server/index.ts"],
+      "command": ["node", "./.opencode/search-server/index.js"],
       "cwd": "$REDCODE_ROOT",
+      "timeout": 120000,
       "enabled": true
     },
     "vision": {
