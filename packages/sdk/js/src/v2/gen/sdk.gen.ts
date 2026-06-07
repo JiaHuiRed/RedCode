@@ -3076,7 +3076,7 @@ export class Session2 extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
-      scope?: "project"
+      scope?: "project" | "global"
       path?: string
       roots?: boolean | "true" | "false"
       start?: number

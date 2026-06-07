@@ -1,7 +1,60 @@
 {
   "$schema": "https://redcode.dev/config.json",
-  // home hub 注入器（源在仓库，build.bat 重建到 ~/.redcode/redcode.jsonc）：
-  // home/.redcode 被引擎无条件扫描（paths.ts:34-38），此处 instructions 由 instruction.ts
-  // 展开 ~/ 并机械注入到每个项目启动上下文，跨盘/跨机有效，不依赖项目位置。
-  "instructions": ["~/.redcode/MEMORY.md", "~/.redcode/USER.md"]
+  // 260607 Red 全局注入器 — 由 engine 无条件扫描（paths.ts:34-38），
+  // 启动 RedCode 时自动加载（任何项目目录均生效）：
+  //   - instructions: 自动加载 MEMORY/USER
+  //   - mcp: 全局 MCP 服务器（不依赖项目 .opencode/opencode.jsonc）
+  //     $REDCODE_ROOT 在运行时自动展开为 RedCode 安装根目录
+  "instructions": ["~/.redcode/MEMORY.md", "~/.redcode/USER.md"],
+  "mcp": {
+    "codegraph": {
+      "type": "local",
+      "command": ["npx", "-y", "@colbymchenry/codegraph", "serve", "--mcp"],
+      "enabled": true
+    },
+    "typegraph": {
+      "type": "local",
+      "command": ["npx", "tsx", "./plugins/typegraph-mcp/server.ts"],
+      "cwd": "$REDCODE_ROOT",
+      "environment": {
+        "TYPEGRAPH_PROJECT_ROOT": ".",
+        "TYPEGRAPH_TSCONFIG": "./tsconfig.json"
+      },
+      "timeout": 60000,
+      "enabled": true
+    },
+    "jcodemunch": {
+      "type": "local",
+      "command": ["jcodemunch-mcp"],
+      "environment": {
+        "JCODEMUNCH_USE_AI_SUMMARIES": "false"
+      },
+      "enabled": true
+    },
+    "browsermcp": {
+      "type": "local",
+      "command": ["node", "./browsermcp-server/index.js"],
+      "cwd": "$REDCODE_ROOT",
+      "enabled": true
+    },
+    "web-search": {
+      "type": "local",
+      "command": ["npx", "tsx", "./.opencode/search-server/index.ts"],
+      "cwd": "$REDCODE_ROOT",
+      "enabled": true
+    },
+    "vision": {
+      "type": "local",
+      "command": ["vision-mcp-server"],
+      "environment": {
+        "VISION_BASE_URL": "http://localhost:11434/v1/chat/completions",
+        "VISION_MODEL": "qwen3-vl:8b"
+      },
+      "enabled": true
+    }
+  },
+  "tools": {
+    "github-triage": false,
+    "github-pr-search": false
+  }
 }

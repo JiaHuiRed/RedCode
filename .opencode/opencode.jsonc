@@ -17,51 +17,8 @@
     // 260604 Red goal-automation — 主动建议 /goal 钉住大任务（GUI 0.4.0）
     "./.opencode/skill/goal-automation/SKILL.md"
   ],
-  "mcp": {
-    "codegraph": {
-      "type": "local",
-      "command": ["npx", "-y", "@colbymchenry/codegraph", "serve", "--mcp"],
-      // 260602 Red 代码知识图谱：符号/调用链/影响分析
-      "enabled": true
-    },
-    "typegraph": {
-      "type": "local",
-      "command": ["npx", "tsx", "./plugins/typegraph-mcp/server.ts"],
-      "environment": {
-        "TYPEGRAPH_PROJECT_ROOT": ".",
-        "TYPEGRAPH_TSCONFIG": "./tsconfig.json"
-      },
-      // 260602 Red TypeScript 语义导航：类型解析/barrel 文件穿透/循环依赖检测
-      "enabled": true
-    },
-    "jcodemunch": {
-      "type": "local",
-      "command": ["jcodemunch-mcp"],
-      "environment": {
-        // 260602 Red AI 摘要暂时禁用，后续可配置 DeepSeek V4 Flash
-        "JCODEMUNCH_USE_AI_SUMMARIES": "false"
-      },
-      // 260602 Red 结构化代码检索：精确符号获取/死代码检测/影响评估/编辑安全预检
-      "enabled": true
-    },
-    "browsermcp": {
-      "type": "local",
-      "command": ["node", "./browsermcp-server/index.js"],
-      // 260603 Red 浏览器自动化：导航/截图/点击/输入/获取页面内容
-      "enabled": true
-    },
-    "vision": {
-      "type": "local",
-      // 多模态视觉：分析截图/图片/OCR，需安装 Ollama + qwen3-vl 模型
-      // 260606 Red 全局命令：npm i -g vision-mcp-server，跨盘不依赖项目根
-      "command": ["vision-mcp-server"],
-      "environment": {
-        "VISION_BASE_URL": "http://localhost:11434/v1/chat/completions",
-        "VISION_MODEL": "qwen3-vl:8b"
-      },
-      "enabled": true
-    }
-  },
+  // 260607 Red MCP 服务器已移至 ~/.redcode/redcode.jsonc（全局生效）
+  //    仅项目级覆盖留在此处
   "tools": {
     "github-triage": false,
     "github-pr-search": false

@@ -28,6 +28,7 @@ import { BusEvent } from "../bus/bus-event"
 import { Bus } from "@/bus"
 import { TuiEvent } from "@/cli/cmd/tui/event"
 import open from "open"
+import os from "os"
 import { Effect, Exit, Layer, Option, Context, Schema, Stream } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
@@ -36,6 +37,35 @@ import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 
 const log = Log.create({ service: "mcp" })
 const DEFAULT_TIMEOUT = 30_000
+
+// 260607 Red 从 exe 路径向上找 RedCode 项目根（用于 $REDCODE_ROOT 展开）
+let redcodeRoot: string | undefined
+function findRedcodeRoot(): string {
+  if (redcodeRoot) return redcodeRoot
+  let dir = path.dirname(process.execPath)
+  for (let i = 0; i < 10; i++) {
+    if (fs.existsSync(path.join(dir, "package.json")) &&
+        (fs.existsSync(path.join(dir, "redcode.jsonc")) || fs.existsSync(path.join(dir, ".opencode")))) {
+      redcodeRoot = dir
+      return dir
+    }
+    const parent = path.dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  redcodeRoot = ""
+  return ""
+}
+
+function resolveMcpCwd(mcpCwd: string | undefined, fallback: string): string {
+  if (!mcpCwd) return fallback
+  // Expand $REDCODE_ROOT — 如果找不到安装根目录，回退到 InstanceState.directory
+  const root = findRedcodeRoot()
+  let resolved = root ? mcpCwd.replace(/\$REDCODE_ROOT/g, root) : mcpCwd
+  // Expand ~/
+  if (resolved.startsWith("~/")) resolved = path.join(os.homedir(), resolved.slice(2))
+  return resolved
+}
 
 const TolerantListToolsResultSchema = ListToolsResultSchema.extend({
   tools: ToolSchema.omit({ outputSchema: true }).array(),
@@ -446,19 +476,22 @@ export const layer = Layer.effect(
       mcp: ConfigMCP.Info & { type: "local" },
     ) {
       const [cmd, ...args] = mcp.command
-      const rawCwd = yield* InstanceState.directory
 
-      // 260603 Red exe cwd 可能不是项目根，向上查找 redcode.jsonc 或 .git
-      let cwd = rawCwd
-      if (!fs.existsSync(path.join(cwd, "redcode.jsonc")) && !fs.existsSync(path.join(cwd, ".git"))) {
-        let dir = cwd
-        while (true) {
-          const parent = path.dirname(dir)
-          if (parent === dir) break
-          dir = parent
-          if (fs.existsSync(path.join(dir, "redcode.jsonc")) || fs.existsSync(path.join(dir, ".git"))) {
-            cwd = dir
-            break
+      // 260607 Red cwd：如果 mcp 配置了 cwd，用它（支持 ~/ 和 $REDCODE_ROOT）；
+      // 否则从 InstanceState.directory 向上找项目根
+      const rawCwd = yield* InstanceState.directory
+      let cwd = resolveMcpCwd(mcp.cwd, rawCwd)
+      if (!mcp.cwd) {
+        if (!fs.existsSync(path.join(cwd, "redcode.jsonc")) && !fs.existsSync(path.join(cwd, ".git"))) {
+          let dir = cwd
+          while (true) {
+            const parent = path.dirname(dir)
+            if (parent === dir) break
+            dir = parent
+            if (fs.existsSync(path.join(dir, "redcode.jsonc")) || fs.existsSync(path.join(dir, ".git"))) {
+              cwd = dir
+              break
+            }
           }
         }
       }

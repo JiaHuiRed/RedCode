@@ -114,8 +114,8 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
 
     const fullSyncedSessions = new Set<string>()
 
-    function sessionListQuery(): { scope?: "project"; path?: string } {
-      if (!kv.get("session_directory_filter_enabled", true)) return { scope: "project" }
+    function sessionListQuery(): { scope?: "project" | "global"; path?: string } {
+      if (!kv.get("session_directory_filter_enabled", false)) return { scope: "global" }
       if (!project.data.instance.path.worktree || !project.data.instance.path.directory) return { scope: "project" }
       return {
         path: path

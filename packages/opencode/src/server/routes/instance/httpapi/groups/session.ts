@@ -26,7 +26,7 @@ import { QueryBoolean } from "./query"
 const root = "/session"
 export const ListQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
-  scope: Schema.optional(Schema.Literals(["project"])),
+  scope: Schema.optional(Schema.Literals(["project", "global"])),
   path: Schema.optional(Schema.String),
   roots: Schema.optional(QueryBoolean),
   start: Schema.optional(Schema.NumberFromString),

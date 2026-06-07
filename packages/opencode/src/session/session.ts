@@ -279,7 +279,7 @@ export const MessagesInput = Schema.Struct({
 })
 export type ListInput = {
   directory?: string
-  scope?: "project"
+  scope?: "project" | "global"
   path?: string
   workspaceID?: WorkspaceID
   roots?: boolean
@@ -582,6 +582,17 @@ export const layer: Layer.Layer<
     })
 
     const list = Effect.fn("Session.list")(function* (input?: ListInput) {
+      if (input?.scope === "global") {
+        return Array.from(
+          listGlobal({
+            directory: input.directory,
+            roots: input.roots,
+            start: input.start,
+            search: input.search,
+            limit: input.limit,
+          }),
+        )
+      }
       const ctx = yield* InstanceState.context
       return Array.from(
         listByProject({ projectID: ctx.project.id, experimentalWorkspaces: flags.experimentalWorkspaces, ...input }),

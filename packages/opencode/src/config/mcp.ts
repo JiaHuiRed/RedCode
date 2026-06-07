@@ -6,6 +6,12 @@ export const Local = Schema.Struct({
   command: Schema.mutable(Schema.Array(Schema.String)).annotate({
     description: "Command and arguments to run the MCP server",
   }),
+  cwd: Schema.optional(Schema.String).annotate({
+    description:
+      "Working directory for resolving relative paths in the command and environment. " +
+      "Supports ~/ expansion for the user's home directory. " +
+      "Defaults to the project root of the directory being worked on.",
+  }),
   environment: Schema.optional(Schema.Record(Schema.String, Schema.String)).annotate({
     description: "Environment variables to set when running the MCP server",
   }),
