@@ -402,7 +402,7 @@
     },
     "packages/opencode": {
       "name": "redcode",
-      "version": "0.4.4",
+      "version": "0.4.6",
       "bin": {
         "redcode": "./bin/redcode",
       },
