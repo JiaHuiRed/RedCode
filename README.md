@@ -7,7 +7,7 @@
 > 开源 AI 编程助手 — 终端 TUI + 桌面 GUI 双端，同一能力。
 > 基于 [opencode](https://github.com/anomalyco/opencode)（sst.dev）深度二次开发。
 
-[![TUI](https://img.shields.io/badge/TUI-0.4.5-blue)](CHANGELOG.md)
+[![TUI](https://img.shields.io/badge/TUI-0.4.6-blue)](CHANGELOG.md)
 [![Desktop](https://img.shields.io/badge/Desktop-0.4.4-0078d4)](CHANGELOG.md)
 [![平台](https://img.shields.io/badge/平台-Windows%2010%2F11-0078d4)](https://github.com/JiaHuiRed/RedCode)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)](https://typescriptlang.org)
@@ -27,7 +27,7 @@ AI 编程助手。两个入口、同一能力：
 
 ### 核心能力
 
-代码理解（CodeGraph / TypeGraph / jCodeMunch）· 多模型（DeepSeek / OpenAI / Anthropic / Ollama）· 文件读写编辑 · 终端执行 · Web 搜索 · 浏览器自动化 · 视觉分析 · 会话管理 · 权限门控 · 上下文压缩 · 自动化记忆系统 · 目标管理 · 自定义 AI 人格
+代码理解（CodeGraph / TypeGraph / jCodeMunch）· 多模型（DeepSeek / OpenAI / Anthropic / Ollama）· 文件读写编辑 · 终端执行 · Web 搜索 · 浏览器自动化 · 视觉分析 · 小红书搜索/发帖 · 会话管理 · 权限门控 · 上下文压缩 · 自动化记忆系统 · 目标管理 · 自定义 AI 人格
 
 ---
 

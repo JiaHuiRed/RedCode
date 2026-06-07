@@ -90,6 +90,13 @@
       "url": "https://mcp.exa.ai/mcp",
       "description": "AI semantic web search (get free key at https://dashboard.exa.ai/api-keys)",
       "enabled": true
+    },
+    "rednote": {
+      "type": "local",
+      "command": ["$REDCODE_ROOT\\plugins\\rednote-mcp\\.venv\\Scripts\\rednote-mcp.exe"],
+      "cwd": "$REDCODE_ROOT",
+      "description": "小红书 MCP — 搜索、浏览、发帖（需先扫码登录）",
+      "enabled": true
     }
   },
   "tools": {

@@ -196,61 +196,42 @@ ollama pull qwen2.5-coder:7b
 
 MCP（Model Context Protocol）让 AI 获得外部能力。安装越多 MCP，AI 能做到的事越多。
 
-### 4.1 内置 MCP（开箱即用）
+以下所有 MCP 服务器已在 `~/.redcode/redcode.jsonc` 中预配置好，无需手动编辑配置即可启用。
 
-以下 4 个 MCP 已在项目 `redcode.jsonc` 中配置好，启动即生效：
+### 4.1 代码智能
 
-| 服务器 | 用途 | 是否需要索引 |
-|--------|------|-------------|
-| **CodeGraph** | 代码知识图谱：查找符号定义、调用链、影响分析 | 是（`npx codegraph index`）|
-| **TypeGraph** | TypeScript 语义导航：类型跳转、barrel 穿透、循环依赖检测 | 否 |
-| **jCodeMunch** | 结构化代码检索：60+ 工具（符号查找、死代码、AST 匹配、编辑安全预检）| 推荐（`jcodemunch-mcp index`）|
-| **Web Search** | 网页搜索：DuckDuckGo + Yahoo 兜底，内置服务，零 API Key | 否 |
+| 服务器 | 用途 | 首次使用前 |
+|--------|------|-----------|
+| **CodeGraph** | 代码知识图谱：符号定义、调用链、影响分析 | `npx -y @colbymchenry/codegraph index`（项目代码索引）|
+| **TypeGraph** | TypeScript 语义导航：类型跳转、barrel 穿透、循环依赖检测 | — |
+| **jCodeMunch** | 结构化代码检索：60+ 工具（符号查找、死代码、AST 匹配、编辑安全预检）| `jcodemunch-mcp index`（推荐，启用 AI 摘要）|
 
-### 4.2 可选 MCP
+### 4.2 网络与浏览
 
-#### Browser MCP — 浏览器自动化
+| 服务器 | 用途 | 首次使用前 |
+|--------|------|-----------|
+| **Web Search** | 网页搜索：DuckDuckGo + Yahoo 兜底，内置服务，零 API Key | — |
+| **Browser MCP** | 浏览器自动化：导航、截图、点击、填表 | 克隆仓库到 `plugins/browsermcp-server` 并 `npm install` |
+| **Vision MCP** | 多模态视觉分析：让不支持图片的模型也能看截图 | 安装 Ollama + 拉取 `qwen3-vl:8b` 模型 |
+| **Exa Search** | 语义搜索引擎：AI 驱动的深度网络搜索 | 注册免费 API Key（`dashboard.exa.ai`）|
 
-让 AI 可以导航网页、截图、点击、填写表单。
+### 4.3 记忆与知识
 
-```bash
-# 克隆到项目内
-git clone https://github.com/colbymchenry/browsermcp.git .opencode/browsermcp-server
-cd .opencode/browsermcp-server
-npm install
-```
+| 服务器 | 用途 | 首次使用前 |
+|--------|------|-----------|
+| **gbrain** | 持久化记忆大脑（PGLite 本地存储）| — |
+| **su-prememory** | 本地语义记忆：SQLite+FTS5 全文搜索，纯离线 | — |
 
-在 `redcode.jsonc` 中启用：
+### 4.4 平台搜索与发布
 
-```jsonc
-"browsermcp": {
-  "type": "local",
-  "command": ["node", "./browsermcp-server/index.js"],
-  "enabled": true
-}
-```
+| 服务器 | 用途 | 首次使用前 |
+|--------|------|-----------|
+| **Agent Reach** | 统一搜索：GitHub 仓库/Issue、B站视频和字幕、抖音视频信息 | `gh auth login`（GitHub 功能）|
+| **RedNote MCP** | 小红书：搜索笔记、浏览详情、发布图文 | 首次调用 `login` 工具扫码登录 |
 
-#### Vision MCP — 多模态视觉
+RedNote MCP 使用 Playwright 浏览器自动化，扫码登录后 Cookie 持久化，**你一发指令，AI 就能搜小红书、发笔记**。
 
-让不支持图片的模型（如 DeepSeek）也能分析截图和图片。
-
-前置：安装 [Ollama](https://ollama.com)
-
-```bash
-# 下载视觉模型
-ollama pull qwen3-vl:8b
-
-# 克隆 vision server 到项目同级
-git clone https://github.com/Loveacup/vision-mcp-server.git ../vision-mcp-server
-cd ../vision-mcp-server
-npm install
-```
-
-在 `redcode.jsonc` 中将 vision 的 `enabled` 改为 `true`。
-
-之后你发图给 AI，系统自动调用 vision MCP 分析，模型不支持图片不再是问题。
-
-### 4.3 添加自己的 MCP
+### 4.5 添加自己的 MCP
 
 ```jsonc
 {
@@ -268,7 +249,7 @@ npm install
 }
 ```
 
-本地 MCP 也可以用 `npx`、`uvx` 等工具启动。
+本地 MCP 也可以用 `npx`、`uvx` 等工具启动，或在 `~/.redcode/redcode.jsonc` 中添加永久配置。
 
 ---
 

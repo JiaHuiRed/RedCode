@@ -38,6 +38,9 @@ packages/*/typecheck_out.txt
 # codegraph daemon state (runtime, not source)
 .codegraph/
 
+# Python virtual environments in plugins
+plugins/*/.venv/
+
 # Personal files — not shared via public repo
 # These live in ~/.redcode/ and come from the user's private repo
 # (root-level patterns as safety net)

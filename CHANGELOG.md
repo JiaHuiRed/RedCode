@@ -10,6 +10,23 @@
 
 ## TUI
 
+### [0.4.6] - 2026-06-07
+
+#### 新增
+
+- **RedNote MCP — 小红书插件**：新增 `plugins/rednote-mcp/`，基于 Playwright 浏览器自动化的小红书 MCP 服务器
+  - `post_note` — 发布图文笔记（1–18 图，标题 ≤20 字，正文 ≤1000 字）
+  - `search_notes` — 关键词搜索笔记
+  - `get_note_details` — 获取笔记详情和评论
+  - `get_user_profile` — 获取用户信息
+  - `login` — 扫码登录，Cookie 持久化复用
+  - `set_browser_mode` — 切换有头/无头模式（反爬时开有头）
+- **反爬对抗**：playwright-stealth + 模拟鼠标抖动 + 逐字符键入 + 随机延迟
+
+#### 文档
+
+- **MANUAL.md 大幅更新**：MCP 章节从 4+2 个服务器升级为 11 个，按功能分 4 类表格化呈现，新增 RedNote MCP 说明
+
 ### [0.4.5] - 2026-06-07
 
 #### 新增
