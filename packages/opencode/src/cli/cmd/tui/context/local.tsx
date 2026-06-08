@@ -15,6 +15,32 @@ import { useSDK } from "./sdk"
 import { RGBA } from "@opentui/core"
 import { Filesystem } from "@/util/filesystem"
 
+// 260608 Red 读取显示名称（用户名 + agent 名）
+async function readDisplayNames(): Promise<{ user: string; agent: string }> {
+  const redcodeHome = path.join(Global.Path.home, ".redcode")
+
+  // 读用户名：~/.redcode/USER.md 的 "称呼：" 字段
+  let user = "User"
+  try {
+    const userMd = await Bun.file(path.join(redcodeHome, "USER.md")).text()
+    const match = userMd.match(/\*\*称呼[：:]\*\*\s*(.+)/)
+    if (match) user = match[1].trim()
+  } catch {}
+
+  // 读 agent 名：~/.redcode/souls/Tsoul.md 第一行 "# xxx" 标题
+  let agent = "Assistant"
+  try {
+    const soulMd = await Bun.file(path.join(redcodeHome, "souls", "Tsoul.md")).text()
+    const match = soulMd.match(/^#\s+(.+)/m)
+    if (match) {
+      // 取 "·" 或空格前的部分，如 "柳智敏 · RedCode 灵魂文档" → "柳智敏"
+      agent = match[1].split("·")[0].split(" ")[0].trim()
+    }
+  } catch {}
+
+  return { user, agent }
+}
+
 export function parseModel(model: string) {
   const [providerID, ...rest] = model.split("/")
   return {
@@ -101,6 +127,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         },
       }
     })
+
+    // 260608 Red 显示名称（用户名 + agent 名）
+    const [displayName, setDisplayName] = createStore({
+      user: "User",
+      agent: "Assistant",
+    })
+    readDisplayNames().then((names) => setDisplayName(names))
 
     const model = iife(() => {
       const [modelStore, setModelStore] = createStore<{
@@ -505,6 +538,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       agent,
       mcp,
       session,
+      displayName,
     }
     return result
   },

@@ -10,6 +10,24 @@
 
 ## TUI
 
+### [0.4.7] - 2026-06-08
+
+#### 改进
+
+- **消息前缀动态化**：用户消息和助手消息的前缀从硬编码改为从配置文件读取
+  - 用户名：从 `~/.redcode/USER.md` 的 `称呼：` 字段读取，默认 `User`
+  - Agent 名：从 `~/.redcode/souls/Tsoul.md` 的第一行标题读取，默认 `Assistant`
+  - Agent 配置新增 `displayName` 字段，支持自定义显示名
+- **工具图标升级**：替换朴素 ASCII 图标为更有辨识度的 Unicode 符号
+  - Shell: `$` → `⌘`
+  - Write/Edit: `←` → ``
+  - Read/Question/Skill: `→` → `◉`
+  - Glob/Grep: `✱` → ``
+  - WebFetch/ApplyPatch: `%` → `⊡`
+  - Task: `│` → `⬡`
+  - WebSearch: `◈` → `◎`
+- **消息分隔线**：长对话中消息之间添加 `· · ·` 分隔，提升可读性
+
 ### [0.4.6] - 2026-06-07
 
 #### 新增

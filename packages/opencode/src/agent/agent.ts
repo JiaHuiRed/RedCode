@@ -28,6 +28,7 @@ import { type DeepMutable } from "@redcode-ai/core/schema"
 
 export const Info = Schema.Struct({
   name: Schema.String,
+  displayName: Schema.optional(Schema.String),
   description: Schema.optional(Schema.String),
   mode: Schema.Literals(["subagent", "primary", "all"]),
   native: Schema.optional(Schema.Boolean),
