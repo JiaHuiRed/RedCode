@@ -1571,6 +1571,12 @@ export default function Page() {
               class="absolute inset-0 z-0 pointer-events-none bg-cover bg-center bg-no-repeat"
               style={{ "background-image": `url(${settings.appearance.chatBackground()})` }}
             />
+            {/* 260608 Yuqi 半透明遮罩：压低壁纸亮度确保文字可读，同时过渡到两侧面板的实色背景 */}
+            <div
+              aria-hidden="true"
+              class="absolute inset-0 z-0 pointer-events-none"
+              style={{ background: "rgba(0,0,0,0.4)" }}
+            />
           </Show>
           <div class="relative z-[1] flex-1 min-h-0 overflow-hidden">
             <Switch>

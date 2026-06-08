@@ -1,4 +1,4 @@
-﻿import { createEffect, createMemo, For, mapArray, Match, Show, startTransition, Switch, untrack } from "solid-js"
+﻿import { createEffect, createMemo, For, mapArray, Match, on, Show, startTransition, Switch, untrack } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { useLocation, useMatch, useNavigate, useParams } from "@solidjs/router"
 import { IconButton } from "@redcode-ai/ui/icon-button"
@@ -18,6 +18,7 @@ import { WindowsAppMenu } from "./windows-app-menu"
 import { applyPath, backPath, forwardPath } from "./titlebar-history"
 import { useServerSync } from "@/context/server-sync"
 import { decodeDirectory } from "@/pages/directory-layout"
+import { setActiveMcpDirectory } from "@/context/global-sync/child-store"
 import { iife } from "@redcode-ai/core/util/iife"
 import { base64Encode } from "@redcode-ai/core/util/encode"
 import { Avatar as AvatarV2 } from "@redcode-ai/ui/v2/components/avatar-v2.jsx"
@@ -315,6 +316,21 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
     return tabsStore.find((tab) => tab.href === href)
   }
 
+  // 260608 Yuqi 首页也显示 MCP 状态：当前会话 dir → 第一个 tabs → 第一个项目的目录；都不存在则隐藏
+  const statusDir = createMemo(() => {
+    const fromSession = currentSessionTab()?.dir
+    if (fromSession) return fromSession
+    const fromTabs = tabsStore[0]?.dir
+    if (fromTabs) return fromTabs
+    return projects()[0]?.worktree
+  })
+
+  // 260608 Yuqi 让 statusDir 的目录激活 MCP query，首页也能加载并显示 MCP 列表
+  createEffect(on(statusDir, (dir) => {
+    // 有目录才激活；session.tsx 进项目时也会设一次（不冲突，相同 dir 不会重复 spawn）
+    if (dir) setActiveMcpDirectory(dir)
+  }))
+
   const closeCurrentSessionTab = () => {
     const tab = currentSessionTab()
     if (!tab) return false
@@ -469,7 +485,7 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
         </Show>
         <div class="min-w-0 flex-1" />
       </div>
-      <Show when={currentSessionTab()?.dir} keyed>
+      <Show when={statusDir()} keyed>
         {(dir) => (
           <SDKProvider directory={dir}>
             <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
