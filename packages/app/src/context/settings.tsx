@@ -52,6 +52,8 @@ export interface Settings {
     mono: string
     sans: string
     terminal: string
+    // 260608 Red 0.4.5 微信风聊天背景图：data URL（""=无），全局生效
+    chatBackground: string
   }
   keybinds: Record<string, string>
   permissions: {
@@ -140,6 +142,7 @@ const defaultSettings: Settings = {
     mono: "",
     sans: "",
     terminal: "",
+    chatBackground: "",
   },
   keybinds: {},
   permissions: {
@@ -286,6 +289,13 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         terminalFont: withFallback(() => store.appearance?.terminal, defaultSettings.appearance.terminal),
         setTerminalFont(value: string) {
           setStore("appearance", "terminal", value.trim() ? value : "")
+        },
+        chatBackground: withFallback(
+          () => store.appearance?.chatBackground,
+          defaultSettings.appearance.chatBackground,
+        ),
+        setChatBackground(value: string) {
+          setStore("appearance", "chatBackground", value)
         },
       },
       keybinds: {

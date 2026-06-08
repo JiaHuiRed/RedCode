@@ -475,7 +475,23 @@ export const SettingsGeneral: Component = () => {
     </div>
   )
 
-  const AppearanceSection = () => (
+  const AppearanceSection = () => {
+    // 260608 Red 0.4.5 聊天背景图：复用 avatar 的 FileReader→dataURL→settings 模式
+    let chatBgInput: HTMLInputElement | undefined
+    const handleChatBgSelect = (e: Event) => {
+      const input = e.target as HTMLInputElement
+      const file = input.files?.[0]
+      if (!file) return
+      const reader = new FileReader()
+      reader.onload = () => settings.appearance.setChatBackground(reader.result as string)
+      reader.readAsDataURL(file)
+    }
+    const handleChatBgRemove = () => {
+      settings.appearance.setChatBackground("")
+      if (chatBgInput) chatBgInput.value = ""
+    }
+
+    return (
     <div class="flex flex-col gap-1">
       <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.appearance")}</h3>
 
@@ -601,9 +617,36 @@ export const SettingsGeneral: Component = () => {
             />
           </div>
         </SettingsRow>
+
+        <SettingsRow title="Chat Background" description="Image shown behind the chat window (applies to all chats)">
+          <div class="flex items-center gap-3">
+            <div
+              class="w-10 h-10 rounded-md border border-border-weaker-base bg-cover bg-center bg-background-stronger shrink-0"
+              style={settings.appearance.chatBackground() ? { "background-image": `url(${settings.appearance.chatBackground()})` } : {}}
+            />
+            <input
+              ref={chatBgInput}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              onChange={handleChatBgSelect}
+              class="hidden"
+            />
+            <div class="flex gap-2">
+              <Button data-action="settings-chat-bg-upload" variant="secondary" size="small" onClick={() => chatBgInput?.click()}>
+                Upload
+              </Button>
+              <Show when={settings.appearance.chatBackground()}>
+                <Button data-action="settings-chat-bg-remove" variant="ghost" size="small" onClick={handleChatBgRemove}>
+                  Remove
+                </Button>
+              </Show>
+            </div>
+          </div>
+        </SettingsRow>
       </SettingsList>
     </div>
-  )
+    )
+  }
 
   const NotificationsSection = () => (
     <div class="flex flex-col gap-1">

@@ -168,15 +168,13 @@ function TimelineThinkingRow(props: { reasoningHeading?: string; showReasoningSu
         style={{ "image-rendering": "pixelated" }}
       />
       <TextShimmer text={language.t("ui.sessionTurn.status.thinking")} />
-      <div class="w-5 h-5 shrink-0 flex items-center justify-center overflow-hidden" style="background: var(--surface-base); border-radius: 3px;">
-        <img
-          src="/hamster.png"
-          alt=""
-          class="w-5 h-5 animate-hamster select-none"
-          aria-hidden="true"
-          style="mix-blend-mode: screen;"
-        />
-      </div>
+      <img
+        src="/hamster.png"
+        alt=""
+        class="w-5 h-5 shrink-0 animate-hamster select-none"
+        aria-hidden="true"
+      />
+      {/* 260608 Red 仓鼠改透明底直接平铺：原 mix-blend-mode:screen+深色盒在浅色主题会被洗白 */}
       <Show when={!props.showReasoningSummaries}>
         <TextReveal text={props.reasoningHeading} class="session-turn-thinking-heading" travel={25} duration={700} />
       </Show>

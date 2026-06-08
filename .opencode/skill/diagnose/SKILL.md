@@ -36,7 +36,7 @@ description: 形式化 bug 诊断循环。Reproduce → Hypothesise → Instrume
 
 ### 实在建不了
 
-停下来说清楚。列你都试了什么。问哥哥要：能复现的环境、录制的 artifact（日志 dump、HAR 文件）、或加临时生产端 instrumentation 的许可。
+停下来说清楚。列你都试了什么。问用户要：能复现的环境、录制的 artifact（日志 dump、HAR 文件）、或加临时生产端 instrumentation 的许可。
 
 **没有循环，不进 Phase 2。**
 
@@ -44,7 +44,7 @@ description: 形式化 bug 诊断循环。Reproduce → Hypothesise → Instrume
 
 跑循环，确认 bug 出现。确认三个事：
 
-1. 循环复现的失败模式**和哥哥描述的一致**——复现了错的 bug 就会修错
+1. 循环复现的失败模式**和用户描述的一致**——复现了错的 bug 就会修错
 2. 多次跑都能复现（或非确定性 bug 有足够高的复现率）
 3. 已记录确切症状（错误消息、错误输出、慢的耗时），后续验证修复时能对照
 
@@ -58,7 +58,7 @@ description: 形式化 bug 诊断循环。Reproduce → Hypothesise → Instrume
 
 列不出预测的假设就是感觉，要么扔掉要么细化。
 
-**把排序列表跟哥哥过一遍。** 他可能有领域知识瞬间重新排序（"我们刚部署了 #3 的改动"），或者知道哪些假设已经排除过。这一步成本极低、收益极高。
+**把排序列表跟用户过一遍。** 他可能有领域知识瞬间重新排序（"我们刚部署了 #3 的改动"），或者知道哪些假设已经排除过。这一步成本极低、收益极高。
 
 ## Phase 4 — 探测
 
@@ -107,4 +107,4 @@ description: 形式化 bug 诊断循环。Reproduce → Hypothesise → Instrume
 - **日志第一条**：查 `~/.local/share/redcode/log/` 最新文件，不猜原因
 - **符号定位**：优先 jcodemunch（`search_symbols`、`get_blast_radius`、`get_call_hierarchy`），再 grep
 - **类型检查**：修复后跑 `bun run typecheck`（对应 package 目录），不跑 `tsc`
-- **连续失败 2 次**：停手，整理已知信息，问哥哥——不闷头修
+- **连续失败 2 次**：停手，整理已知信息，问用户——不闷头修

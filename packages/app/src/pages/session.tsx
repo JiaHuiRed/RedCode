@@ -1530,7 +1530,15 @@ export default function Page() {
             width: sessionPanelWidth(),
           }}
         >
-          <div class="flex-1 min-h-0 overflow-hidden">
+          {/* 260608 Red 0.4.5 微信风聊天背景图：绝对定位铺在聊天面板底层，内容自然盖在上面 */}
+          <Show when={settings.appearance.chatBackground()}>
+            <div
+              aria-hidden="true"
+              class="absolute inset-0 z-0 pointer-events-none bg-cover bg-center bg-no-repeat"
+              style={{ "background-image": `url(${settings.appearance.chatBackground()})` }}
+            />
+          </Show>
+          <div class="relative z-[1] flex-1 min-h-0 overflow-hidden">
             <Switch>
               <Match when={params.id && mobileChanges()}>
                 <div class="relative h-full overflow-hidden">
