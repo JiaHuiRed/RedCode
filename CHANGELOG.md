@@ -359,6 +359,7 @@
 #### 清理
 
 - **删除 V2 三栏重构遗留的 V1 侧边栏死代码**：`04a5a1045`（6 月 2 日）将布局从 V1 单栏 rail-sidebar 重构为 V2「文件树｜聊天｜审查」三栏后，丢弃了 V1 侧边栏渲染但留下大量从不挂载的脚手架。本次彻底清理：删除 5 个孤儿文件（`layout/sidebar-{shell,project,workspace,items}.tsx` + `layout/inline-editor.tsx`）；`layout.tsx` 移除级联死代码约 886 行（`SidebarPanel`、workspace/project 两个 context、项目 rail 拖拽 handler、`rename{Session,Project,Workspace}`、`removeProject`、`showEditProjectDialog`、`delete|resetWorkspace`、`DialogDelete|ResetWorkspace`、`closeProject`、`workspaceName`、`workspaceLabel`、`hoverProjectData`、peek 悬停机制、`providers`/`location`/`isBusy`/`sortNow`/`side`/`panel` 等未用声明）。合计净删约 2300 行。`layout.tsx` 内 `return` 前加 `260608` 回滚注释，列明全部删除项，便于按提交回退。typecheck 全绿、`oxlint` 无未用变量
+- **公开库个人痕迹清理（续）**：配合「公开库通用化、个人配置迁私有库」的双仓方向，扫掉 `.opencode/skill/diagnose` 与 `vision-autoagent` 两个技能提示词里残留的「哥哥」→「用户」（沿用 souls/persona 早先通用化的同款先例）。公开库现状：souls 为通用人格（非特定人设）、memory 为空、skill/command 无个人称呼——新人克隆即得干净可用的完整项目，零个人痕迹；个人 souls、记忆、画像、每日日记统归私有 `RedCode-private` 仓，两台机器经其 `pull/push` 同步。CHANGELOG 历史条目内出现的旧称呼按「客观记录」原则保留不改
 
 ### [0.4.4] - 2026-06-06
 
