@@ -244,6 +244,8 @@ export function createServerSyncContext() {
     }
 
     const limit = Math.max(store.limit + SESSION_RECENT_LIMIT, SESSION_RECENT_LIMIT)
+    // 260608 Red 启动计时：首页"加载中"等的就是这个 session.list 往返，测每个目录多久，测完即删
+    const tList = performance.now()
     const promise = queryClient
       .fetchQuery({
         ...queryOptionsApi.sessions(key),
@@ -293,6 +295,7 @@ export function createServerSyncContext() {
 
     sessionLoads.set(key, promise)
     void promise.finally(() => {
+      console.log(`[timing] session.list ${getFilename(directory)}: ${Math.round(performance.now() - tList)}ms`)
       sessionLoads.delete(key)
       children.unpin(key)
     })
@@ -409,6 +412,10 @@ export function createServerSyncContext() {
 
   const projectApi = {
     loadSessions,
+    // 260608 Red 进入项目才连该实例 MCP（首页列项目不连，避免 N×M 并发 spawn 风暴/黑窗）
+    loadMcp(directory: string) {
+      return queryClient.fetchQuery(queryOptionsApi.mcp(directoryKey(directory)))
+    },
     meta(directory: string, patch: ProjectMeta) {
       children.projectMeta(directory, patch)
     },

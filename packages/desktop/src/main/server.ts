@@ -1,6 +1,6 @@
 ﻿import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { app, utilityProcess } from "electron"
+import { app, session, utilityProcess } from "electron"
 import type { Details } from "electron"
 import { DEFAULT_SERVER_URL_KEY, WSL_ENABLED_KEY } from "./constants"
 import { getUserShell, loadShellEnv } from "./shell-env"
@@ -75,7 +75,7 @@ export async function spawnLocalServer(
   const sidecar = join(dirname(fileURLToPath(import.meta.url)), "sidecar.js")
   const child = utilityProcess.fork(sidecar, [], {
     cwd: process.cwd(),
-    env: createSidecarEnv(),
+    env: await createSidecarEnv(),
     serviceName: SIDECAR_SERVICE_NAME,
     stdio: "pipe",
   })
@@ -231,13 +231,38 @@ export async function checkHealth(url: string, password?: string | null): Promis
   }
 }
 
-function createSidecarEnv(): Record<string, string> {
+async function createSidecarEnv(): Promise<Record<string, string>> {
   const env = Object.fromEntries(
     Object.entries(process.env).flatMap(([key, value]) => (value === undefined ? [] : [[key, String(value)]])),
   )
   delete env.DEBUG
   if (process.platform === "linux") delete env.LD_PRELOAD
+  // 260608 Red sidecar 是 Node，只认 HTTP(S)_PROXY 环境变量、不读系统代理；Clash 等只设系统代理 →
+  // sidecar 直连卡死（npm reify @opencode-ai/plugin 拖到 ~37s，冻住首页）。把系统代理注入 env 让其走代理。
+  if (!env.HTTP_PROXY && !env.http_proxy && !env.HTTPS_PROXY && !env.https_proxy) {
+    const proxy = await resolveSystemProxyUrl()
+    if (proxy) {
+      env.HTTP_PROXY = proxy
+      env.HTTPS_PROXY = proxy
+    }
+  }
   return env
+}
+
+// 260608 Red 用 Electron 解析 Windows 系统代理（Clash 设的就是这个），转成 npm/Node 认的 http://host:port
+async function resolveSystemProxyUrl(): Promise<string | undefined> {
+  try {
+    const resolved = await session.defaultSession.resolveProxy("https://registry.npmjs.org")
+    for (const entry of resolved.split(";")) {
+      const part = entry.trim()
+      if (!part || part === "DIRECT") continue
+      const match = part.match(/^(?:PROXY|HTTPS)\s+(\S+)$/i)
+      if (match) return `http://${match[1]}`
+    }
+  } catch {
+    // 解析失败就当无代理、直连，与原行为一致
+  }
+  return undefined
 }
 
 function delay(ms: number) {

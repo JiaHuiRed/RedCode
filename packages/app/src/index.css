@@ -251,3 +251,27 @@
     display: inline-block;
   }
 }
+
+/* 260608 Red 毛玻璃 A：仅当聊天面板设了背景图（祖先带 data-chat-frost）时，用户气泡与输入框
+   改半透明底 + backdrop-filter，透出并模糊背景图 = 真毛玻璃。无背景图不触发（模糊纯色无意义）。
+   不放进 @layer：需越过 Tailwind 的 utilities 层覆盖 bg-* 工具类的 background-color。 */
+[data-chat-frost] [data-component="user-message"] [data-slot="user-message-text"] {
+  background: color-mix(in srgb, var(--surface-base) 55%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* 输入框毛玻璃需要两层：dock 自带不透明 bg-background-stronger 夹在输入框与背景图之间，
+   先把 dock 改半透明+模糊（顺带柔化滚到底部的消息），再让输入框本体半透明+模糊。 */
+[data-chat-frost] [data-component="session-prompt-dock"] {
+  background-color: color-mix(in srgb, var(--background-stronger) 60%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+[data-chat-frost] [data-component="session-composer"],
+[data-chat-frost] [data-component="session-new-composer"] {
+  background-color: color-mix(in srgb, var(--v2-background-bg-base) 60%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}

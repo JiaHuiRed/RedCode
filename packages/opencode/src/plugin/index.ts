@@ -166,7 +166,13 @@ export const layer = Layer.effect(
         if (flags.pure && cfg.plugin_origins?.length) {
           log.info("skipping external plugins in pure mode", { count: cfg.plugin_origins.length })
         }
-        if (plugins.length) yield* config.waitForDependencies()
+        // 260608 Red 依赖装在 npm registry，离线/代理失效会把这步拖到 ~37s 冻死首页（每个请求都过 bootstrap）。
+        // 超时即放行，后台 fiber 继续装、本次插件降级加载，首页不再被网络拖死。
+        if (plugins.length)
+          yield* config.waitForDependencies().pipe(
+            Effect.timeout("15 seconds"),
+            Effect.catch(() => Effect.void),
+          )
 
         const loaded = yield* Effect.promise(() =>
           PluginLoader.loadExternal({

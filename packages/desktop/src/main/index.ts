@@ -317,6 +317,8 @@ const main = Effect.gen(function* () {
     useEnvProxy()
 
     logger.log("spawning sidecar", { url })
+    // 260608 Red 启动计时：spawn→ready、ready→healthy 各占多久，定位首页"加载中"瓶颈，测完即删
+    const tSpawn = performance.now()
     const { listener, health } = yield* Effect.promise(() =>
       spawnLocalServer(hostname, port, password, {
         needsMigration,
@@ -328,6 +330,7 @@ const main = Effect.gen(function* () {
       }),
     )
     server = listener
+    logger.log("[timing] sidecar ready", { ms: Math.round(performance.now() - tSpawn) })
 
     yield* Effect.promise(() => health.wait).pipe(
       Effect.timeout("30 seconds"),
@@ -337,6 +340,7 @@ const main = Effect.gen(function* () {
         }),
       ),
     )
+    logger.log("[timing] sidecar healthy", { ms: Math.round(performance.now() - tSpawn) })
 
     logger.log("loading task finished")
   }).pipe(Effect.forkChild)

@@ -69,12 +69,17 @@ parentPort.on("message", (event) => {
 })
 
 async function start(command: StartCommand) {
+  // 260608 Red 启动计时：定位首页"加载中"卡在 sidecar 哪段（import/migration/listen），测完即删
+  const t0 = performance.now()
+  const mark = (label: string) =>
+    console.error(`[sidecar-timing] ${label}: ${Math.round(performance.now() - t0)}ms`)
   try {
     prepareSidecarEnv(command.password, command.userDataPath)
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
     const { Database, JsonMigration, Log, Server } = await import("virtual:redcode-server")
+    mark("import virtual:redcode-server")
     await Log.init({ level: "WARN" })
 
     if (command.needsMigration) {
@@ -90,6 +95,7 @@ async function start(command: StartCommand) {
         },
       })
       parentPort.postMessage({ type: "sqlite", progress: { type: "Done" } })
+      mark("migration")
     }
 
     listener = await Server.listen({
@@ -99,6 +105,7 @@ async function start(command: StartCommand) {
       password: command.password,
       cors: ["oc://renderer"],
     })
+    mark("Server.listen (ready)")
     parentPort.postMessage({ type: "ready" })
     // Keep the process alive until told otherwise
     await new Promise<void>(() => {})

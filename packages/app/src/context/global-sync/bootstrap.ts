@@ -18,7 +18,6 @@ import type { State, VcsCache } from "./types"
 import { cmp, normalizeAgentList, normalizeProviderList } from "./utils"
 import { formatServerError } from "@/utils/server-errors"
 import { QueryClient, queryOptions } from "@tanstack/solid-query"
-import { loadMcpQuery } from "../server-sync"
 import { NormalizedProviderListResponse } from "@redcode-ai/ui/context"
 
 type GlobalStore = {
@@ -319,7 +318,8 @@ export async function bootstrapDirectory(input: {
           }),
         ),
       () => Promise.resolve(input.loadSessions(input.directory)),
-      () => input.queryClient.fetchQuery(loadMcpQuery(input.directory, input.sdk)),
+      // 260608 Red 进入项目时由 session 页 loadMcp 触发连接，bootstrap 不再预取 MCP，
+      //   避免首页 N 项目 × M server 并发 spawn 风暴/黑窗
       () =>
         input.queryClient.fetchQuery(loadProvidersQuery(input.directory, input.sdk)).catch((err) => {
           const project = getFilename(input.directory)

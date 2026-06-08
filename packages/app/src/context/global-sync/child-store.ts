@@ -1,4 +1,4 @@
-﻿import { createRoot, getOwner, onCleanup, runWithOwner, type Owner } from "solid-js"
+﻿import { createRoot, createSignal, getOwner, onCleanup, runWithOwner, type Owner } from "solid-js"
 import { createStore, type SetStoreFunction, type Store } from "solid-js/store"
 import { Persist, persisted } from "@/utils/persist"
 import type { VcsInfo } from "@redcode-ai/sdk/v2/client"
@@ -18,6 +18,12 @@ import { useQueries } from "@tanstack/solid-query"
 import { QueryOptionsApi } from "../server-sync"
 import { directoryKey, type DirectoryKey } from "./utils"
 import { NormalizedProviderListResponse } from "@redcode-ai/ui/context"
+
+// 260608 Red 当前进入的项目目录；只有它的 MCP query enabled→连接。
+//   首页列项目阶段一律不连（避免 N 项目 × M server 并发 spawn 风暴/黑窗），
+//   进项目时由 session 页 setActiveMcpDirectory 触发该实例自身的 MCP query 拉取（数据直接进 mcpQuery.data，面板可见）。
+const [activeMcpDirectory, setActiveMcpDirectory] = createSignal<string>("")
+export { setActiveMcpDirectory }
 
 export function createChildStoreManager(input: {
   owner: Owner
@@ -177,7 +183,9 @@ export function createChildStoreManager(input: {
           const [pathQuery, mcpQuery, lspQuery, providerQuery] = useQueries(() => ({
             queries: [
               input.queryOptions.path(key),
-              input.queryOptions.mcp(key),
+              // 260608 Red 只有"当前进入的项目"才 enabled→连 MCP；首页其它项目 enabled:false 不连，
+              //   避免 N 项目 × M server 并发 spawn 风暴/黑窗。enabled 读 activeMcpDirectory()→reactive，切项目自动切换。
+              { ...input.queryOptions.mcp(key), enabled: directoryKey(activeMcpDirectory()) === key },
               input.queryOptions.lsp(key),
               input.queryOptions.providers(key),
             ],

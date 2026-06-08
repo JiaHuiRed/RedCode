@@ -29,11 +29,12 @@ import { createAutoScroll } from "@redcode-ai/ui/hooks"
 import { previewSelectedLines } from "@redcode-ai/ui/pierre/selection-bridge"
 import { Button } from "@redcode-ai/ui/button"
 import { showToast } from "@redcode-ai/ui/toast"
-import { checksum } from "@redcode-ai/core/util/encode"
-import { useLocation, useSearchParams } from "@solidjs/router"
+import { base64Encode, checksum } from "@redcode-ai/core/util/encode"
+import { useLocation, useNavigate, useSearchParams } from "@solidjs/router"
 import { NewSessionDesignView, NewSessionView, SessionHeader } from "@/components/session"
 import { useComments } from "@/context/comments"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
+import { setActiveMcpDirectory } from "@/context/global-sync/child-store"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
@@ -95,6 +96,7 @@ export default function Page() {
   const terminal = useTerminal()
   const [searchParams, setSearchParams] = useSearchParams<{ prompt?: string }>()
   const location = useLocation()
+  const navigate = useNavigate()
   const { params, sessionKey, tabs, view } = useSessionLayout()
 
   createEffect(() => {
@@ -130,6 +132,17 @@ export default function Page() {
 
   const workspaceKey = createMemo(() => params.dir ?? "")
   const workspaceTabs = createMemo(() => layout.tabs(workspaceKey))
+
+  // 260608 Red 进入项目才连该实例 MCP（首页列项目阶段不连，避免 N×M 并发 spawn 风暴/黑窗）
+  createEffect(
+    on(
+      () => params.dir,
+      (dir) => {
+        if (!dir) return
+        setActiveMcpDirectory(dir)
+      },
+    ),
+  )
 
   createEffect(
     on(
@@ -1338,7 +1351,26 @@ export default function Page() {
       .map((item) => ({ id: item.id, text: line(item.id) }))
   })
 
-  const actions = { revert }
+  // 260608 Red 逐条分叉：从指定消息派生新会话并跳转（复用 dialog-fork 的逻辑，省去选择对话框）
+  const fork = (input: { sessionID: string; messageID: string }) => {
+    const restored = draft(input.messageID)
+    const dir = base64Encode(sdk.directory)
+    return sdk.client.session
+      .fork({ sessionID: input.sessionID, messageID: input.messageID })
+      .then((forked) => {
+        if (!forked.data) {
+          showToast({ title: language.t("common.requestFailed") })
+          return
+        }
+        prompt.set(restored, undefined, { dir, id: forked.data.id })
+        navigate(`/${dir}/session/${forked.data.id}`)
+      })
+      .catch((err: unknown) => {
+        fail(err)
+      })
+  }
+
+  const actions = { revert, fork }
 
   createEffect(() => {
     const sessionID = params.id
@@ -1529,6 +1561,8 @@ export default function Page() {
           style={{
             width: sessionPanelWidth(),
           }}
+          // 260608 Red 毛玻璃 A 触发钩子：设了聊天背景图才打标记，CSS 据此让气泡/输入框半透明模糊透出背景图
+          data-chat-frost={settings.appearance.chatBackground() ? "" : undefined}
         >
           {/* 260608 Red 0.4.5 微信风聊天背景图：绝对定位铺在聊天面板底层，内容自然盖在上面 */}
           <Show when={settings.appearance.chatBackground()}>

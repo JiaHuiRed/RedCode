@@ -103,7 +103,13 @@ export const layer = Layer.effect(
               add,
               dir: input.dir,
             }),
-        }) as Effect.Effect<ArboristTree, InstallFailedError>
+        }).pipe(
+          // 260608 Red reify 走 npm registry，离线/代理失效会拖到 ~37s；兜底超时让其快速失败，外层照旧按安装失败处理
+          Effect.timeout("20 seconds"),
+          Effect.catch((cause) =>
+            Effect.fail(cause instanceof InstallFailedError ? cause : new InstallFailedError({ cause, add, dir: input.dir })),
+          ),
+        ) as Effect.Effect<ArboristTree, InstallFailedError>
       }).pipe(
         Effect.withSpan("Npm.reify", {
           attributes: input,
