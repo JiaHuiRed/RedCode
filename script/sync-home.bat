@@ -23,5 +23,15 @@ rem live in ~/.redcode/command/ from the user's private repo and are NOT overwri
 if not exist "%USERPROFILE%\.redcode\command" mkdir "%USERPROFILE%\.redcode\command" >nul 2>&1
 if exist ".opencode\command" xcopy /y /e /i ".opencode\command" "%USERPROFILE%\.redcode\command" >nul
 
+rem global scripts: repo staging -> ~/.redcode/scripts (called by slash commands, e.g. /recall)
+rem true mirror: wipe first so deleted-in-repo scripts do not linger in home
+if exist "%USERPROFILE%\.redcode\scripts" rd /s /q "%USERPROFILE%\.redcode\scripts" >nul 2>&1
+if exist ".opencode\scripts" xcopy /y /e /i ".opencode\scripts" "%USERPROFILE%\.redcode\scripts" >nul
+
+rem global plugin: only memory.ts (CORE per-turn injector). Engine scans ~/.redcode/plugin for every project.
+rem Selective copy on purpose: do NOT mirror the whole .opencode\plugins (smoke/stub files stay repo-local).
+if not exist "%USERPROFILE%\.redcode\plugin" mkdir "%USERPROFILE%\.redcode\plugin" >nul 2>&1
+if exist ".opencode\plugins\memory.ts" copy /y ".opencode\plugins\memory.ts" "%USERPROFILE%\.redcode\plugin\memory.ts" >nul
+
 echo [sync] done
 exit /b 0

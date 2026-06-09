@@ -32,11 +32,18 @@ db.exec(`
 `)
 
 // FTS5 full-text index on content
+// 260609 Red trigram 分词器：默认 unicode61 不切中文，trigram 用 3 字窗口对中英混合都友好。
+// IF NOT EXISTS 不会替换已存在的旧分词器表，所以先检测旧表 SQL，非 trigram 就 drop 重建。
+const ftsInfo = db.query("SELECT sql FROM sqlite_master WHERE type='table' AND name='memories_fts'").get() as
+  | { sql: string }
+  | null
+if (ftsInfo && !ftsInfo.sql.includes("trigram")) db.exec("DROP TABLE memories_fts;")
 db.exec(`
   CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
     content,
     content='memories',
-    content_rowid='id'
+    content_rowid='id',
+    tokenize='trigram'
   );
 `)
 
@@ -167,21 +174,40 @@ server.tool(
   },
   async ({ query, limit = 10, project }) => {
     try {
-      const projectFilter = project ? `AND m.project = '${project.replace(/'/g, "''")}'` : ""
-      // FTS5 default tokenizer doesn't handle CJK — use LIKE for all queries
-      const likeSql = `SELECT id, content, project, created_at FROM memories
-       WHERE content LIKE $like ${projectFilter}
-       ORDER BY created_at DESC
-       LIMIT $limit`
-      const rows = db.query(likeSql).all({
-        $like: `%${query}%`,
-        $limit: limit,
-      }) as Array<{
-        id: number
-        content: string
-        project: string
-        created_at: string
-      }>
+      type Row = { id: number; content: string; project: string; created_at: string }
+      const projectFilter = project ? `AND m.project = $project` : ""
+      // 260609 Red trigram 需要 query 至少 3 字符；<3 字符直接走 LIKE。
+      // ≥3 字符先走 FTS5 MATCH（bm25 相关性排序），无命中再回退 LIKE 兜底。
+      const fts =
+        query.length >= 3
+          ? (db
+              .query(
+                `SELECT m.id, m.content, m.project, m.created_at FROM memories_fts f
+                 JOIN memories m ON m.id = f.rowid
+                 WHERE memories_fts MATCH $match ${projectFilter}
+                 ORDER BY bm25(memories_fts) LIMIT $limit`,
+              )
+              .all({
+                $match: `"${query.replace(/"/g, '""')}"`,
+                ...(project ? { $project: project } : {}),
+                $limit: limit,
+              }) as Row[])
+          : []
+
+      const rows =
+        fts.length > 0
+          ? fts
+          : (db
+              .query(
+                `SELECT m.id, m.content, m.project, m.created_at FROM memories m
+                 WHERE m.content LIKE $like ${projectFilter}
+                 ORDER BY m.created_at DESC LIMIT $limit`,
+              )
+              .all({
+                $like: `%${query}%`,
+                ...(project ? { $project: project } : {}),
+                $limit: limit,
+              }) as Row[])
 
       if (rows.length === 0) {
         return {
