@@ -2,7 +2,6 @@
 import type { TuiPlugin, TuiPluginApi } from "@redcode-ai/plugin/tui"
 import type { InternalTuiPlugin } from "../../plugin/internal"
 import { createMemo, Show } from "solid-js"
-import { InstallationChannel } from "@redcode-ai/core/installation/version"
 
 const id = "internal:sidebar-context"
 
@@ -49,6 +48,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     }
 
     const tokens =
+      last.tokens.total ??
       last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
     const prov = props.api.state.provider.find((item) => item.id === last.providerID)
     const modelInfo = prov?.models[last.modelID]
@@ -108,9 +108,6 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       </Show>
       <Show when={updated()}>
         <text fg={theme()?.textMuted}>active {formatDuration(updated()!)}</text>
-      </Show>
-      <Show when={InstallationChannel !== "latest"}>
-        <text fg={theme()?.textMuted}>{props.session_id}</text>
       </Show>
     </box>
   )

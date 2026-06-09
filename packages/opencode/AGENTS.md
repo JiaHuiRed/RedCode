@@ -100,7 +100,22 @@ See `specs/effect/migration.md` for the compact pattern reference and examples.
 - Use branded schemas (`Schema.brand`) for single-value types.
 - Use `Schema.TaggedErrorClass` for typed errors.
 - Use `Schema.Defect` instead of `unknown` for defect-like causes.
+- Use `Schema.Literals(["a", "b"])` for unions of literals (plural), `Schema.Literal(1)` for single literals.
+- Use `Schema.NullOr(X)` for `X | null`; `Schema.optional(X)` for `X?`.
 - In `Effect.gen` / `Effect.fn`, prefer `yield* new MyError(...)` over `yield* Effect.fail(new MyError(...))` for direct early-failure branches.
+
+## Error dispatch / recovery — v4 idioms
+
+- **`Effect.catchReasons(errorTag, cases, orElse?)`** — the v4-canonical way to dispatch on a `Schema.TaggedErrorClass` reason union. Each entry catches one reason `_tag`; the optional `orElse` handles unmatched reasons. NEVER write manual `if (cause.reason instanceof X)` ladders inside a `catch` block — the Effect pipeline gives you exhaustive, type-safe narrowing for free.
+- **`Effect.catchTag(tag, handler)`** — for a single tagged error (e.g. `Effect.catchTag("PlatformError", ...)` to fold a platform error into a service error).
+- **`Effect.catch`** (renamed from v3 `Effect.catchAll`) — for catch-all.
+- **`Effect.die(error)`** — promote a recovered value into a defect that `runPromise` re-throws unchanged. Used in `catchReasons` handlers when the programmatic contract still wants the legacy `Error` class on the throw.
+- **NEVER** `try/catch` inside `Effect.gen` (v4 hard rule). Wrap the sync throw in `Effect.try({ try, catch })` and recover via `Effect.orElseSucceed` / `Effect.catch` instead.
+
+## Generator hygiene
+
+- **`return yield* Effect.fail(...)`** — terminal effects (`Effect.fail`, `Effect.interrupt`, `Effect.die`) must be `return yield*` so TypeScript sees the unreachable-code property. Bare `yield*` of a terminal lets unreachable code accumulate after it.
+- **`Effect.gen({ self: this }, function* () { ... })`** — v4 changed the `self`-bound form. The plain `Effect.gen(function* () { ... })` form is unchanged; only class-method generators bound to `this` need the options object.
 
 ## Runtime vs InstanceState
 
@@ -135,6 +150,33 @@ Use `Effect.cached` when multiple concurrent callers should share a single in-fl
 Use `EffectBridge` for native or external callbacks (`@parcel/watcher`, `node-pty`, native `fs.watch`, plugin callbacks, etc.) that need to re-enter Effect services with instance/workspace context.
 
 Plain async code should pass explicit context or stay inside an Effect fiber; do not add ambient instance context shims.
+
+## Layer naming
+
+- `layerNode` for the production Node.js implementation.
+- `layerOf(value)` for the test layer that returns a pre-supplied value.
+- `layerInMemory(Map)` for filesystem-shaped services backed by an in-memory tree.
+- `layerCapture` for the test layer that records calls into a `Ref` exposed via a sibling `*Capture` service.
+- `layerNoop` for the production layer that has void-return / discard semantics.
+- `layerComposite(backends)` for the slot a future second backend plugs into.
+- Implementation-specific names: `layerOxlint`, `layerHttp`, `layerNdjson(path)`, etc.
+
+## Ambient config
+
+- Env-var reads + cache paths go through `Context.Reference<T>("opencode/X", { defaultValue })`. Tests override via `Layer.succeed(MyRef, ...)`.
+- Secrets (API tokens, signing keys) should prefer `Config.redacted("ENV_NAME")` over `Context.Reference` so they auto-redact in logs / traces. Group with `Config.all({ ... })` at the service constructor when you need several.
+
+## Observability
+
+- Wrap the top-level entry of a multi-step operation in `Effect.withSpan("name", { attributes })`. Attribute keys use dotted namespacing (`inspect.directory`, `inspect.isCi`).
+- Per-service-method spans come from `Effect.fn("Service.method")` — the two compose: top-level `withSpan` is the parent span, every `Service.method` is a child.
+- Production cost is zero when no tracer layer is provided.
+
+## Console / logging
+
+- ALWAYS: `import * as Console from "effect/Console"` and `yield* Console.log(...)` / `Console.warn(...)` / `Console.error(...)` from inside Effect-typed code. Effect's `Console` is a `Context.Reference` whose default sink is `globalThis.console`.
+- NEVER: invent a parallel `Logger` / `LoggerWriter` abstraction. Use Effect's built-in Console.
+- Silent mode is `Effect.provideService(Console.Console, silentConsole)` — no `if (silent) return` check at any call site.
 
 # TypeScript style
 
