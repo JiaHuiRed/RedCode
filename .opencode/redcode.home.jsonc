@@ -18,15 +18,12 @@
     "~/.redcode/skill/diagnose/SKILL.md"
   ],
   "mcp": {
-    "codegraph": {
-      "type": "local",
-      "command": ["npx", "-y", "@colbymchenry/codegraph", "serve", "--mcp"],
-      "enabled": true,
-      "disabledTools": ["codegraph_search", "codegraph_callers", "codegraph_callees", "codegraph_node", "codegraph_impact", "codegraph_files", "codegraph_status"]
-    },
+    // 260609 CC typegraph 精简版：只留 3 个 tsserver 类型工具（type_info/definition/module_exports），
+    // 其余 11 工具 + oxc 图子系统已被 jcodemunch 覆盖故移除。命令改 node 直起 plugin 本地 tsx，
+    // 不再走 npx（npx 在 Windows 被 cmd /c 包装，真正的 node 进程脱离 transport.pid 无法被 taskkill /T 回收 → 进程泄漏）。
     "typegraph": {
       "type": "local",
-      "command": ["npx", "tsx", "./plugins/typegraph-mcp/server.ts"],
+      "command": ["node", "./plugins/typegraph-mcp/node_modules/tsx/dist/cli.mjs", "./plugins/typegraph-mcp/server.ts"],
       "cwd": "$REDCODE_ROOT",
       "environment": {
         "TYPEGRAPH_PROJECT_ROOT": ".",

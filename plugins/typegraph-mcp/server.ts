@@ -3,9 +3,11 @@
  * TypeGraph MCP Server — Type-aware codebase navigation for AI coding agents.
  *
  * Bridges MCP protocol (stdin/stdout) to tsserver (child process pipes).
- * Provides 14 tools for definition, references, type info, symbol search,
- * call chain tracing, blast radius analysis, module export inspection,
- * and module graph queries (dependency trees, cycles, paths, boundaries).
+ * 260609 CC 精简版：只保留 3 个 tsserver 类型工具
+ *   - ts_definition     跳转定义（穿透 import/re-export/barrel/泛型）
+ *   - ts_type_info      获取类型与文档（等同 VS Code hover）
+ *   - ts_module_exports 列出模块导出及解析类型
+ * 其余 11 个工具 + oxc 图子系统已被 jcodemunch 覆盖，整体移除。
  *
  * Usage:
  *   npx tsx server.ts
@@ -21,20 +23,9 @@ import { parseSync } from "oxc-parser";
 import type { ResolverFactory } from "oxc-resolver";
 import { z } from "zod";
 import { TsServerClient, type NavBarItem } from "./tsserver-client.js";
-import {
-  buildGraph,
-  resolveProjectImport,
-  startWatcher,
-  type ModuleGraph,
-} from "./module-graph.js";
-import {
-  dependencyTree,
-  dependents,
-  importCycles,
-  shortestPath,
-  subgraph,
-  moduleBoundary,
-} from "./graph-queries.js";
+// 260609 CC 精简版只保留 createResolver（路径解析，不构建整图）+ resolveProjectImport，
+// 不再引入 buildGraph/startWatcher/graph-queries（图工具已被 jcodemunch 覆盖）。
+import { createResolver, resolveProjectImport } from "./module-graph.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { resolveConfig } from "./config.js";
@@ -49,8 +40,7 @@ const log = (...args: unknown[]) => console.error("[typegraph]", ...args);
 
 const client = new TsServerClient(projectRoot, tsconfigPath);
 
-// Module graph — initialized in main(), used by graph tools
-let moduleGraph: ModuleGraph;
+// 260609 CC 仅保留 resolver（ts_module_exports 解析 re-export 用），不再持有整图
 let moduleResolver: ResolverFactory;
 
 const mcpServer = new McpServer({
@@ -516,34 +506,7 @@ async function getModuleExports(
   );
 }
 
-// ─── Tool 1: ts_find_symbol ─────────────────────────────────────────────────
-
-mcpServer.tool(
-  "ts_find_symbol",
-  "Find a symbol's location in a file by name. Entry point for navigating without exact coordinates.",
-  {
-    file: z.string().describe("File to search in (relative or absolute path)"),
-    symbol: z.string().describe("Symbol name to find"),
-  },
-  async ({ file, symbol }) => {
-    const result = await resolveSymbol(file, symbol);
-    if (!result) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({ error: `Symbol "${symbol}" not found in ${file}` }),
-          },
-        ],
-      };
-    }
-    return {
-      content: [{ type: "text" as const, text: JSON.stringify(result) }],
-    };
-  }
-);
-
-// ─── Tool 2: ts_definition ──────────────────────────────────────────────────
+// ─── Tool: ts_definition ────────────────────────────────────────────────────
 
 mcpServer.tool(
   "ts_definition",
@@ -580,39 +543,7 @@ mcpServer.tool(
   }
 );
 
-// ─── Tool 3: ts_references ──────────────────────────────────────────────────
-
-mcpServer.tool(
-  "ts_references",
-  "Find all references to a symbol. Returns semantic code references only (not string matches). Provide either line+column or symbol name.",
-  locationOrSymbol,
-  async (params) => {
-    const loc = await resolveParams(params);
-    if ("error" in loc) {
-      return { content: [{ type: "text" as const, text: JSON.stringify(loc) }] };
-    }
-
-    const refs = await client.references(loc.file, loc.line, loc.column);
-    const results = refs.map((r) => ({
-      file: r.file,
-      line: r.start.line,
-      column: r.start.offset,
-      preview: r.lineText.trim(),
-      isDefinition: r.isDefinition,
-    }));
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({ references: results, count: results.length }),
-        },
-      ],
-    };
-  }
-);
-
-// ─── Tool 4: ts_type_info ───────────────────────────────────────────────────
+// ─── Tool: ts_type_info ─────────────────────────────────────────────────────
 
 mcpServer.tool(
   "ts_type_info",
@@ -655,196 +586,7 @@ mcpServer.tool(
   }
 );
 
-// ─── Tool 5: ts_navigate_to ─────────────────────────────────────────────────
-
-mcpServer.tool(
-  "ts_navigate_to",
-  "Search for a symbol across the entire project without knowing which file it's in. Returns matching declarations. Optionally provide a file hint to also search that file's navbar (useful for object literal keys like RPC handlers that navto doesn't index).",
-  {
-    symbol: z.string().describe("Symbol name to search for"),
-    file: z
-      .string()
-      .optional()
-      .describe(
-        "Optional file to also search via navbar (covers object literal keys not indexed by navto)"
-      ),
-    maxResults: z
-      .number()
-      .int()
-      .positive()
-      .optional()
-      .default(10)
-      .describe("Maximum results (default 10)"),
-  },
-  async ({ symbol, file, maxResults }) => {
-    const items = await client.navto(symbol, maxResults);
-    const results = items.map((item) => ({
-      file: item.file,
-      line: item.start.line,
-      column: item.start.offset,
-      kind: item.kind,
-      containerName: item.containerName,
-      matchKind: item.matchKind,
-    }));
-
-    // Supplement with navbar search when a file hint is provided.
-    // This covers object literal property keys (e.g. RPC handlers)
-    // that tsserver's navto command doesn't index.
-    if (file) {
-      const navbarHit = await resolveSymbol(file, symbol);
-      if (navbarHit) {
-        const alreadyFound = results.some(
-          (r) => r.file === navbarHit.file && r.line === navbarHit.line
-        );
-        if (!alreadyFound) {
-          results.unshift({
-            file: navbarHit.file,
-            line: navbarHit.line,
-            column: navbarHit.column,
-            kind: navbarHit.kind,
-            containerName: "",
-            matchKind: "navbar",
-          });
-        }
-      }
-    }
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({ results, count: results.length }),
-        },
-      ],
-    };
-  }
-);
-
-// ─── Tool 6: ts_trace_chain ─────────────────────────────────────────────────
-
-mcpServer.tool(
-  "ts_trace_chain",
-  "Automatically follow go-to-definition hops from a symbol, building a call chain from entry point to implementation. Stops when it reaches the bottom or a cycle.",
-  {
-    file: z.string().describe("Starting file"),
-    symbol: z.string().describe("Starting symbol name"),
-    maxHops: z
-      .number()
-      .int()
-      .positive()
-      .optional()
-      .default(5)
-      .describe("Maximum hops to follow (default 5)"),
-  },
-  async ({ file, symbol, maxHops }) => {
-    const start = await resolveSymbol(file, symbol);
-    if (!start) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({ error: `Symbol "${symbol}" not found in ${file}` }),
-          },
-        ],
-      };
-    }
-
-    const chain: Array<{
-      file: string;
-      line: number;
-      column: number;
-      preview: string;
-    }> = [
-      {
-        file: start.file,
-        line: start.line,
-        column: start.column,
-        preview: start.preview,
-      },
-    ];
-
-    let current = { file: start.file, line: start.line, offset: start.column };
-
-    for (let i = 0; i < maxHops; i++) {
-      const defs = await client.definition(current.file, current.line, current.offset);
-      if (defs.length === 0) break;
-
-      const def = defs[0]!;
-      // Stop if we've reached the same location (self-reference)
-      if (def.file === current.file && def.start.line === current.line) break;
-      // Stop if we've entered node_modules (external dependency)
-      if (def.file.includes("node_modules")) break;
-
-      const preview = readPreview(def.file, def.start.line);
-      chain.push({
-        file: def.file,
-        line: def.start.line,
-        column: def.start.offset,
-        preview,
-      });
-
-      current = { file: def.file, line: def.start.line, offset: def.start.offset };
-    }
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({ chain, hops: chain.length - 1 }),
-        },
-      ],
-    };
-  }
-);
-
-// ─── Tool 7: ts_blast_radius ────────────────────────────────────────────────
-
-mcpServer.tool(
-  "ts_blast_radius",
-  "Analyze the impact of changing a symbol. Finds all references, filters to usage sites, and reports affected files.",
-  {
-    file: z.string().describe("File containing the symbol"),
-    symbol: z.string().describe("Symbol to analyze"),
-  },
-  async ({ file, symbol }) => {
-    const start = await resolveSymbol(file, symbol);
-    if (!start) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({ error: `Symbol "${symbol}" not found in ${file}` }),
-          },
-        ],
-      };
-    }
-
-    const refs = await client.references(start.file, start.line, start.column);
-    const callers = refs.filter((r) => !r.isDefinition);
-    const filesAffected = [...new Set(callers.map((r) => r.file))];
-
-    const callerList = callers.map((r) => ({
-      file: r.file,
-      line: r.start.line,
-      preview: r.lineText.trim(),
-    }));
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({
-            directCallers: callers.length,
-            filesAffected,
-            callers: callerList,
-          }),
-        },
-      ],
-    };
-  }
-);
-
-// ─── Tool 8: ts_module_exports ──────────────────────────────────────────────
+// ─── Tool: ts_module_exports ────────────────────────────────────────────────
 
 mcpServer.tool(
   "ts_module_exports",
@@ -886,261 +628,64 @@ mcpServer.tool(
   }
 );
 
-// ─── Graph Tool Helpers ─────────────────────────────────────────────────────
+// ─── Path Helper ────────────────────────────────────────────────────────────
 
-/** Convert an absolute path to project-relative */
+/** Convert an absolute path to project-relative (used by ts_module_exports) */
 function relPath(absPath: string): string {
   return path.relative(normalizedProjectRoot, normalizeExistingPath(absPath));
 }
 
-/** Convert a relative or absolute path to absolute */
-function absPath(file: string): string {
-  return path.isAbsolute(file) ? file : path.resolve(projectRoot, file);
-}
-
-// ─── Tool 9: ts_dependency_tree ─────────────────────────────────────────────
-
-mcpServer.tool(
-  "ts_dependency_tree",
-  "Get the transitive dependency tree (imports) of a file. Shows what a file depends on, directly and transitively.",
-  {
-    file: z.string().describe("File to analyze (relative or absolute path)"),
-    depth: z
-      .number()
-      .int()
-      .positive()
-      .optional()
-      .describe("Max traversal depth (default: unlimited)"),
-    includeTypeOnly: z
-      .boolean()
-      .optional()
-      .default(false)
-      .describe("Include type-only imports (default: false)"),
-  },
-  async ({ file, depth, includeTypeOnly }) => {
-    const result = dependencyTree(moduleGraph, absPath(file), { depth, includeTypeOnly });
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({
-            root: relPath(result.root),
-            nodes: result.nodes,
-            files: result.files.map(relPath),
-          }),
-        },
-      ],
-    };
-  }
-);
-
-// ─── Tool 10: ts_dependents ─────────────────────────────────────────────────
-
-mcpServer.tool(
-  "ts_dependents",
-  "Find all files that depend on (import) a given file, directly and transitively. Groups results by package.",
-  {
-    file: z.string().describe("File to analyze (relative or absolute path)"),
-    depth: z
-      .number()
-      .int()
-      .positive()
-      .optional()
-      .describe("Max traversal depth (default: unlimited)"),
-    includeTypeOnly: z
-      .boolean()
-      .optional()
-      .default(false)
-      .describe("Include type-only imports (default: false)"),
-  },
-  async ({ file, depth, includeTypeOnly }) => {
-    const result = dependents(moduleGraph, absPath(file), { depth, includeTypeOnly });
-    const byPackageRel: Record<string, string[]> = {};
-    for (const [pkg, files] of Object.entries(result.byPackage)) {
-      byPackageRel[pkg] = files.map(relPath);
-    }
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({
-            root: relPath(result.root),
-            nodes: result.nodes,
-            directCount: result.directCount,
-            files: result.files.map(relPath),
-            byPackage: byPackageRel,
-          }),
-        },
-      ],
-    };
-  }
-);
-
-// ─── Tool 11: ts_import_cycles ──────────────────────────────────────────────
-
-mcpServer.tool(
-  "ts_import_cycles",
-  "Detect circular import dependencies in the project. Returns strongly connected components (cycles) in the import graph.",
-  {
-    file: z.string().optional().describe("Filter to cycles containing this file"),
-    package: z.string().optional().describe("Filter to cycles within this directory"),
-  },
-  async ({ file, package: pkg }) => {
-    const result = importCycles(moduleGraph, {
-      file: file ? absPath(file) : undefined,
-      package: pkg ? absPath(pkg) : undefined,
-    });
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({
-            count: result.count,
-            cycles: result.cycles.map((cycle) => cycle.map(relPath)),
-          }),
-        },
-      ],
-    };
-  }
-);
-
-// ─── Tool 12: ts_shortest_path ──────────────────────────────────────────────
-
-mcpServer.tool(
-  "ts_shortest_path",
-  "Find the shortest import path between two files. Shows how one module reaches another through the import graph.",
-  {
-    from: z.string().describe("Source file (relative or absolute path)"),
-    to: z.string().describe("Target file (relative or absolute path)"),
-    includeTypeOnly: z
-      .boolean()
-      .optional()
-      .default(false)
-      .describe("Include type-only imports (default: false)"),
-  },
-  async ({ from, to, includeTypeOnly }) => {
-    const result = shortestPath(moduleGraph, absPath(from), absPath(to), { includeTypeOnly });
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({
-            path: result.path?.map(relPath) ?? null,
-            hops: result.hops,
-            chain: result.chain.map((c) => ({
-              file: relPath(c.file),
-              imports: c.imports,
-            })),
-          }),
-        },
-      ],
-    };
-  }
-);
-
-// ─── Tool 13: ts_subgraph ───────────────────────────────────────────────────
-
-mcpServer.tool(
-  "ts_subgraph",
-  "Extract a subgraph around seed files. Expands by depth hops in the specified direction (imports, dependents, or both).",
-  {
-    files: z.array(z.string()).describe("Seed files to expand from (relative or absolute paths)"),
-    depth: z
-      .number()
-      .int()
-      .positive()
-      .optional()
-      .default(1)
-      .describe("Hops to expand (default: 1)"),
-    direction: z
-      .enum(["imports", "dependents", "both"])
-      .optional()
-      .default("both")
-      .describe("Direction to expand (default: both)"),
-  },
-  async ({ files, depth, direction }) => {
-    const result = subgraph(moduleGraph, files.map(absPath), { depth, direction });
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({
-            nodes: result.nodes.map(relPath),
-            edges: result.edges.map((e) => ({
-              from: relPath(e.from),
-              to: relPath(e.to),
-              specifiers: e.specifiers,
-              isTypeOnly: e.isTypeOnly,
-            })),
-            stats: result.stats,
-          }),
-        },
-      ],
-    };
-  }
-);
-
-// ─── Tool 14: ts_module_boundary ────────────────────────────────────────────
-
-mcpServer.tool(
-  "ts_module_boundary",
-  "Analyze the boundary of a set of files: incoming/outgoing edges, shared dependencies, and an isolation score. Useful for understanding module coupling.",
-  {
-    files: z
-      .array(z.string())
-      .describe("Files defining the module boundary (relative or absolute paths)"),
-  },
-  async ({ files }) => {
-    const result = moduleBoundary(moduleGraph, files.map(absPath));
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({
-            internalEdges: result.internalEdges,
-            incomingEdges: result.incomingEdges.map((e) => ({
-              from: relPath(e.from),
-              to: relPath(e.to),
-              specifiers: e.specifiers,
-            })),
-            outgoingEdges: result.outgoingEdges.map((e) => ({
-              from: relPath(e.from),
-              to: relPath(e.to),
-              specifiers: e.specifiers,
-            })),
-            sharedDependencies: result.sharedDependencies.map(relPath),
-            isolationScore: Math.round(result.isolationScore * 1000) / 1000,
-          }),
-        },
-      ],
-    };
-  }
-);
-
 // ─── Start ───────────────────────────────────────────────────────────────────
 
+// 260609 CC 精简版只需文件级 resolver（解析 re-export 目标），无需构建整图
+const TS_WATCH_EXTENSIONS = new Set([".ts", ".tsx", ".mts", ".cts"]);
+const TS_WATCH_SKIP_DIRS = new Set([
+  "node_modules",
+  "dist",
+  "build",
+  "out",
+  ".wrangler",
+  ".mf",
+  ".git",
+  ".next",
+  ".turbo",
+  "coverage",
+]);
+
+/**
+ * Minimal recursive watcher: keeps tsserver fresh by reloading/closing changed
+ * .ts files. reloadOpenFile no-ops for files tsserver hasn't opened, so this is
+ * safe and cheap — no in-memory graph to maintain.
+ */
+function startReloadWatcher(): void {
+  try {
+    fs.watch(projectRoot, { recursive: true }, (_event, filename) => {
+      if (!filename) return;
+      const rel = filename.toString();
+      const parts = rel.split(/[\\/]/);
+      if (parts.some((p) => TS_WATCH_SKIP_DIRS.has(p))) return;
+      if (!TS_WATCH_EXTENSIONS.has(path.extname(rel))) return;
+
+      const absFile = path.resolve(projectRoot, rel);
+      if (fs.existsSync(absFile)) {
+        client.reloadOpenFile(absFile).catch(() => {});
+      } else {
+        client.closeFile(absFile);
+      }
+    });
+  } catch (err) {
+    log("File watcher unavailable, tsserver freshness relies on reopen:", err);
+  }
+}
+
 async function main() {
-  log("Starting TypeGraph MCP server...");
+  log("Starting TypeGraph MCP server (slim: 3 tsserver tools)...");
   log(`Project root: ${projectRoot}`);
   log(`tsconfig: ${tsconfigPath}`);
 
-  // Start tsserver and build module graph concurrently
-  const [, graphResult] = await Promise.all([
-    client.start(),
-    buildGraph(projectRoot, tsconfigPath),
-  ]);
-
-  moduleGraph = graphResult.graph;
-  moduleResolver = graphResult.resolver;
-  startWatcher(projectRoot, moduleGraph, graphResult.resolver, {
-    onFileUpdated: (filePath) =>
-      client.reloadOpenFile(filePath).catch((err) => {
-        log(`Failed to reload open file ${relPath(filePath)}:`, err);
-      }),
-    onFileDeleted: (filePath) => {
-      client.closeFile(filePath);
-    },
-  });
+  await client.start();
+  moduleResolver = createResolver(projectRoot, tsconfigPath);
+  startReloadWatcher();
 
   const transport = new StdioServerTransport();
   await mcpServer.connect(transport);
