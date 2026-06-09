@@ -364,6 +364,17 @@
 
 ## GUI
 
+### [0.4.6] - 2026-06-09
+
+#### 修复
+
+- **对话页右上角 MCP 状态恒"未配置 MCPs"（根治·读取端）**：TUI 同引擎同配置可见 9 个 MCP 全连，GUI 对话页却永远"未配置"。病根在 `@tanstack/solid-query` 的 `useQueries` 批量 observer——其中一条 query 的 `enabled` 在运行时 `false→true` 翻转时，既不自动 fetch（observer 卡在 `status=pending, fetchStatus=idle`），也不把外部 `fetchQuery` 灌入的缓存暴露给 SolidJS store 的 getter，导致 `sync.data.mcp` 恒读成 `{}`。先前在 `server-sync.tsx` 加 `queryClient.fetchQuery` 主动预热缓存只修了触发端，读取端仍被同一 bug 卡住。**根治**：把 MCP 这条从 `useQueries` 批量里单拎出来成独立 `useQuery`，独立 observer 的 reactive `enabled` 翻转能正确触发并反应缓存；仍只连"当前进入的项目"，首页其它项目不连，N×M spawn 风暴防护不变（`child-store.ts` 拆 `useQuery`、`server-sync.tsx` 缓存预热 effect 保留兜底、`titlebar.tsx`/`session.tsx` 用 `routeDir`/`decodeDirectory` 把 statusDir 与 activeMcpDir 对齐到同一项目 store）
+- **MCP 子进程泄漏致渲染进程 OOM 白屏（根治）**：sidecar 经 `npx tsx server.ts`（npx→tsx→node 三进程链）spawn 的 MCP 孙进程不在任何 job 里，sidecar 一旦被掐死就成孤儿，堆积打满 Windows commit charge（如 38.8/40.8GB）→ 渲染进程报 `oom`（exitCode -536870904）间歇白屏。引擎侧 `mcp/index.ts` 的 `killProcessTree`（`taskkill /F /T`）本身没错，但三条路径让它没机会跑：① dev 热重启（electron-vite 掐主进程，`before-quit`/`will-quit` 不触发、优雅 stop 来不及）② stop 超时回退 `child.kill()` 只杀 sidecar 不级联 ③ sidecar `process.exit(1)` 崩溃 finalizer 不跑。**根治 = 主进程兜底按 sidecar PID 杀整树**：`server.ts` 导出 `killSidecarTree`/`killSidecarTreeSync`（Windows `taskkill /F /T /PID`，趁 sidecar 还活着才杀得动孙进程），stop 超时回退与启动失败回退改杀整树；`index.ts` 记 `sidecarPid` 并装 `process.on('exit'/'SIGINT'/'SIGTERM')` 同步兜底（覆盖 dev 热重启——electron-vite 发的是 SIGTERM/SIGINT 能捕获）。覆盖 dev 重启/退出/超时/崩溃全路径，纯 SIGKILL 除外（需 Windows Job Object，未引原生依赖）
+
+#### 布局调整
+
+- **聊天背景遮罩加深 0.4→0.62**：实测 `rgba(0,0,0,0.4)` 仍偏亮压不住文字，加深半透明遮罩保证对话可读（`session.tsx`）
+
 ### [0.4.5] - 2026-06-08
 
 #### 新增

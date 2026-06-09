@@ -316,8 +316,16 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
     return tabsStore.find((tab) => tab.href === href)
   }
 
-  // 260608 Yuqi 首页也显示 MCP 状态：当前会话 dir → 第一个 tabs → 第一个项目的目录；都不存在则隐藏
+  // 260609 Red 当前路由所在项目目录（params.dir 是 base64，解码成真实路径）。
+  //   新会话页(无 params.id)既无 currentSessionTab 也未必在 tabsStore，必须直接认 params.dir，
+  //   否则 statusDir/activeMcpDir 都会兜底到 projects()[0]——多项目时那是"别的项目"，
+  //   导致 popover 读 A 项目 store、却 enable 了 B 项目的 MCP query，永远对不上→"未配置 MCPs"。
+  const routeDir = createMemo(() => (params.dir ? decodeDirectory(params.dir) : undefined))
+
+  // 260608 Yuqi 首页也显示 MCP 状态：当前路由项目 → 当前会话 dir → 第一个 tabs → 第一个项目的目录；都不存在则隐藏
   const statusDir = createMemo(() => {
+    const fromRoute = routeDir()
+    if (fromRoute) return fromRoute
     const fromSession = currentSessionTab()?.dir
     if (fromSession) return fromSession
     const fromTabs = tabsStore[0]?.dir
@@ -325,9 +333,11 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
     return projects()[0]?.worktree
   })
 
-  // 260608 Yuqi 让 statusDir 的目录激活 MCP query，首页也能加载并显示 MCP 列表
-  createEffect(on(statusDir, (dir) => {
-    // 有目录才激活；session.tsx 进项目时也会设一次（不冲突，相同 dir 不会重复 spawn）
+  // 260609 Red 只在真有进入的项目(routeDir/session/tab)时激活 MCP；首页(无 params.dir)一律不连。
+  //   恢复 0.4.6 延迟连接的"首页不 spawn"语义——首页 routeDir 为空且不取 projects()[0]，落空不连；
+  //   进项目即用 routeDir 与 statusDir 对齐到同一个 store，popover 才能显示真实 MCP 状态。
+  const activeMcpDir = createMemo(() => routeDir() ?? currentSessionTab()?.dir ?? tabsStore[0]?.dir)
+  createEffect(on(activeMcpDir, (dir) => {
     if (dir) setActiveMcpDirectory(dir)
   }))
 

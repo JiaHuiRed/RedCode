@@ -1,7 +1,17 @@
 import type { Config, OpencodeClient, Path, Project, ProviderAuthResponse, Todo } from "@redcode-ai/sdk/v2/client"
 import { showToast } from "@redcode-ai/ui/toast"
 import { getFilename } from "@redcode-ai/core/util/path"
-import { batch, createContext, getOwner, onCleanup, onMount, type ParentProps, untrack, useContext } from "solid-js"
+import {
+  batch,
+  createContext,
+  createEffect,
+  getOwner,
+  onCleanup,
+  onMount,
+  type ParentProps,
+  untrack,
+  useContext,
+} from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import type { InitError } from "../pages/error"
@@ -26,6 +36,7 @@ import { SESSION_RECENT_LIMIT } from "./global-sync/types"
 import { formatServerError } from "@/utils/server-errors"
 import { queryOptions, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/solid-query"
 import { createRefreshQueue } from "./global-sync/queue"
+import { activeMcpDirectory } from "./global-sync/child-store"
 import { directoryKey } from "./global-sync/utils"
 import { PathKey } from "@/utils/path-key"
 import { createDirSyncContext } from "./directory-sync"
@@ -139,6 +150,18 @@ export function createServerSyncContext() {
   onCleanup(() => {
     if (eventFrame !== undefined) cancelAnimationFrame(eventFrame)
     if (eventTimer !== undefined) clearTimeout(eventTimer)
+  })
+
+  // 260609 Red 进入项目时主动拉一次该目录的 MCP 状态。child-store 的 mcpQuery 靠动态 enabled
+  //   false→true 触发拉取，但 @tanstack/solid-query 的 useQueries 对 enabled 翻转不会自动 fetch
+  //   （observer 卡在 status=pending/fetch=idle，对话页恒"未配置 MCP"）。这里用 queryClient.fetchQuery
+  //   按同一 queryKey 灌入缓存，child 的 observer 即可读到——只拉当前激活目录，不引发 N×M 风暴。
+  createEffect(() => {
+    const active = activeMcpDirectory()
+    if (!active) return
+    const key = directoryKey(active)
+    if (!key) return
+    void queryClient.fetchQuery(queryOptionsApi.mcp(key as PathKey))
   })
 
   const setProjects = (next: Project[] | ((draft: Project[]) => Project[])) => {

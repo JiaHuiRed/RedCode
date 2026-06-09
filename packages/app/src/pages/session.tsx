@@ -35,6 +35,7 @@ import { NewSessionDesignView, NewSessionView, SessionHeader } from "@/component
 import { useComments } from "@/context/comments"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
 import { setActiveMcpDirectory } from "@/context/global-sync/child-store"
+import { decodeDirectory } from "./directory-layout"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
@@ -134,12 +135,16 @@ export default function Page() {
   const workspaceTabs = createMemo(() => layout.tabs(workspaceKey))
 
   // 260608 Red 进入项目才连该实例 MCP（首页列项目阶段不连，避免 N×M 并发 spawn 风暴/黑窗）
+  // 260609 Red params.dir 是 base64 编码，必须 decodeDirectory 还原真实路径再 set——
+  //   否则 child-store 的 directoryKey(activeMcpDirectory()) 拿编码串算 key，永不等于真实目录 key，
+  //   MCP query 恒 enabled:false → 对话页"未配置 MCPs"（titlebar 那条用解码后的 tab.dir 才对）。
   createEffect(
     on(
       () => params.dir,
       (dir) => {
         if (!dir) return
-        setActiveMcpDirectory(dir)
+        const decoded = decodeDirectory(dir)
+        if (decoded) setActiveMcpDirectory(decoded)
       },
     ),
   )
@@ -1572,10 +1577,11 @@ export default function Page() {
               style={{ "background-image": `url(${settings.appearance.chatBackground()})` }}
             />
             {/* 260608 Yuqi 半透明遮罩：压低壁纸亮度确保文字可读，同时过渡到两侧面板的实色背景 */}
+            {/* 260609 Yuqi 0.4→0.62：哥哥实测 0.4 仍偏亮压不住文字，加深遮罩保证对话可读 */}
             <div
               aria-hidden="true"
               class="absolute inset-0 z-0 pointer-events-none"
-              style={{ background: "rgba(0,0,0,0.4)" }}
+              style={{ background: "rgba(0,0,0,0.62)" }}
             />
           </Show>
           <div class="relative z-[1] flex-1 min-h-0 overflow-hidden">

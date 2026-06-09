@@ -1,5 +1,6 @@
 ﻿import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { spawn, spawnSync } from "node:child_process"
 import { app, session, utilityProcess } from "electron"
 import type { Details } from "electron"
 import { DEFAULT_SERVER_URL_KEY, WSL_ENABLED_KEY } from "./constants"
@@ -17,7 +18,35 @@ type SidecarMessage =
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
 
-export type SidecarListener = { stop: () => Promise<void> }
+export type SidecarListener = { stop: () => Promise<void>; pid: number | undefined }
+
+// 260609 CC sidecar 的 MCP 孙进程（npx→tsx→node）不在任何 job 里：sidecar 一旦被掐死
+//   （dev 热重启 / stop 超时回退 / 崩溃）就成孤儿，堆积打满 commit charge → 渲染进程 OOM 白屏。
+//   引擎侧 killProcessTree 的 taskkill /F /T 没机会跑（finalizer 不触发），故在主进程兜底：
+//   趁 sidecar 还活着，按其 PID 杀整棵树（/T 连孙进程一起清）。taskkill 必须趁父进程未死才走得下去。
+function killSidecarTreeWith(pid: number | undefined, sync: boolean) {
+  if (typeof pid !== "number") return
+  if (process.platform === "win32") {
+    const args = ["/F", "/T", "/PID", String(pid)]
+    try {
+      if (sync) spawnSync("taskkill", args, { stdio: "ignore", windowsHide: true })
+      else spawn("taskkill", args, { stdio: "ignore", windowsHide: true }).unref()
+    } catch {}
+    return
+  }
+  try {
+    process.kill(pid, "SIGTERM")
+  } catch {}
+}
+
+export function killSidecarTree(pid: number | undefined) {
+  killSidecarTreeWith(pid, false)
+}
+
+// 同步版：仅供主进程 exit/SIGINT/SIGTERM 处理器使用（这些回调里只能跑同步代码）。
+export function killSidecarTreeSync(pid: number | undefined) {
+  killSidecarTreeWith(pid, true)
+}
 
 const SIDECAR_SERVICE_NAME = "redcode server"
 const SIDECAR_START_STALL_TIMEOUT = 60_000
@@ -159,7 +188,10 @@ export async function spawnLocalServer(
       needsMigration: options.needsMigration,
     })
   }).catch((error) => {
-    if (!exited) child.kill()
+    if (!exited) {
+      killSidecarTree(child.pid)
+      child.kill()
+    }
     throw error
   })
 
@@ -195,11 +227,17 @@ export async function spawnLocalServer(
         stopping = Promise.race([
           exit.promise.then(() => undefined),
           delay(SIDECAR_STOP_TIMEOUT).then(() => {
-            if (!exited) child.kill()
+            // 260609 CC 优雅 stop 超时：旧逻辑 child.kill() 只杀 sidecar 自己，MCP 孙进程留下成孤儿。
+            //   趁 sidecar 还在，taskkill /T 杀整树再 kill。
+            if (!exited) {
+              killSidecarTree(child.pid)
+              child.kill()
+            }
           }),
         ])
         return stopping
       },
+      pid: child.pid,
     },
     health: { wait },
   }

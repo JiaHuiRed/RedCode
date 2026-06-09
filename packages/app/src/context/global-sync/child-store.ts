@@ -14,7 +14,7 @@ import {
   type VcsCache,
 } from "./types"
 import { canDisposeDirectory, pickDirectoriesToEvict } from "./eviction"
-import { useQueries } from "@tanstack/solid-query"
+import { useQueries, useQuery } from "@tanstack/solid-query"
 import { QueryOptionsApi } from "../server-sync"
 import { directoryKey, type DirectoryKey } from "./utils"
 import { NormalizedProviderListResponse } from "@redcode-ai/ui/context"
@@ -23,7 +23,7 @@ import { NormalizedProviderListResponse } from "@redcode-ai/ui/context"
 //   首页列项目阶段一律不连（避免 N 项目 × M server 并发 spawn 风暴/黑窗），
 //   进项目时由 session 页 setActiveMcpDirectory 触发该实例自身的 MCP query 拉取（数据直接进 mcpQuery.data，面板可见）。
 const [activeMcpDirectory, setActiveMcpDirectory] = createSignal<string>("")
-export { setActiveMcpDirectory }
+export { setActiveMcpDirectory, activeMcpDirectory }
 
 export function createChildStoreManager(input: {
   owner: Owner
@@ -180,15 +180,22 @@ export function createChildStoreManager(input: {
           const initialMeta = meta[0].value
           const initialIcon = icon[0].value
 
-          const [pathQuery, mcpQuery, lspQuery, providerQuery] = useQueries(() => ({
+          const [pathQuery, lspQuery, providerQuery] = useQueries(() => ({
             queries: [
               input.queryOptions.path(key),
-              // 260608 Red 只有"当前进入的项目"才 enabled→连 MCP；首页其它项目 enabled:false 不连，
-              //   避免 N 项目 × M server 并发 spawn 风暴/黑窗。enabled 读 activeMcpDirectory()→reactive，切项目自动切换。
-              { ...input.queryOptions.mcp(key), enabled: directoryKey(activeMcpDirectory()) === key },
               input.queryOptions.lsp(key),
               input.queryOptions.providers(key),
             ],
+          }))
+
+          // 260609 Red MCP 单列成独立 useQuery，不再混在 useQueries 批量 observer 里。
+          //   useQueries 的批量 observer 对动态 enabled false→true 既不自动 fetch，
+          //   也不把外部 fetchQuery 灌入的缓存暴露给 store getter（对话页恒"未配置 MCP"）。
+          //   独立 useQuery 的 enabled 翻转能正确触发并反应缓存——仍只连当前进入的项目，
+          //   首页其它项目 enabled:false 不连，避免 N 项目 × M server 并发 spawn 风暴/黑窗。
+          const mcpQuery = useQuery(() => ({
+            ...input.queryOptions.mcp(key),
+            enabled: directoryKey(activeMcpDirectory()) === key,
           }))
 
           const child = createStore<State>({

@@ -25,6 +25,7 @@ import {
   setDefaultServerUrl,
   setWslConfig,
   spawnLocalServer,
+  killSidecarTreeSync,
   type SidecarListener,
 } from "./server"
 import {
@@ -54,6 +55,22 @@ const jsCallStackFeature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
 let logger: ReturnType<typeof initLogging>
 let mainWindow: BrowserWindow | null = null
 let server: SidecarListener | null = null
+// 260609 CC sidecar PID 留给 exit/SIGINT/SIGTERM 同步兜底用：dev 热重启时 electron-vite 掐主进程、
+//   before-quit/will-quit 不一定触发，优雅 stop 来不及跑→MCP 孙进程成孤儿。捕到信号即 taskkill /T 整树。
+let sidecarPid: number | undefined
+let sidecarCleanupHooked = false
+
+function hookSidecarCleanup() {
+  if (sidecarCleanupHooked) return
+  sidecarCleanupHooked = true
+  process.on("exit", () => killSidecarTreeSync(sidecarPid))
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.on(signal, () => {
+      killSidecarTreeSync(sidecarPid)
+      process.exit(0)
+    })
+  }
+}
 
 const initEmitter = new EventEmitter()
 let initStep: InitStep = { phase: "server_waiting" }
@@ -86,6 +103,7 @@ async function killSidecar() {
   const current = server
   server = null
   await current.stop()
+  sidecarPid = undefined
 }
 
 function ensureLoopbackNoProxy() {
@@ -163,7 +181,9 @@ const main = Effect.gen(function* () {
 
   ensureLoopbackNoProxy()
   useEnvProxy()
-  app.commandLine.appendSwitch("proxy-bypass-list", "<-loopback>")
+  // 260609 Red 删除 "<-loopback>"：该 token 是「取消 loopback 隐式旁路」=强制 127.0.0.1 走系统代理，
+  //   开代理(如 7890)时渲染进程连本地 sidecar 全被代理截走 → Failed to fetch / 超时 11s。
+  //   Chromium 默认就旁路 loopback，外部请求仍走系统代理，去掉此行即恢复本机回环直连。
   const features = app.commandLine.getSwitchValue("enable-features")
   app.commandLine.appendSwitch("enable-features", features ? `${jsCallStackFeature},${features}` : jsCallStackFeature)
   if (!app.isPackaged) app.commandLine.appendSwitch("remote-debugging-port", "9222")
@@ -330,6 +350,8 @@ const main = Effect.gen(function* () {
       }),
     )
     server = listener
+    sidecarPid = listener.pid
+    hookSidecarCleanup()
     logger.log("[timing] sidecar ready", { ms: Math.round(performance.now() - tSpawn) })
 
     yield* Effect.promise(() => health.wait).pipe(
