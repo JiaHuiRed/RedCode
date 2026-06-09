@@ -43,6 +43,22 @@ function writeOsc52(text: string): void {
   process.stdout.write(sequence)
 }
 
+// Validate decoded image buffer by checking magic bytes (PNG / JPEG / BMP / GIF / WebP)
+function isValidImageBuffer(buf: Buffer): boolean {
+  if (buf.length < 4) return false
+  // PNG: 89 50 4E 47
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return true
+  // JPEG: ff d8 ff
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return true
+  // BMP: 42 4d
+  if (buf[0] === 0x42 && buf[1] === 0x4d) return true
+  // GIF: 47 49 46 38
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return true
+  // WebP: RIFF....WEBP
+  if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46) return true
+  return false
+}
+
 export interface Content {
   data: string
   mime: string
@@ -95,8 +111,11 @@ export async function read(): Promise<Content | undefined> {
       nothrow: true,
     })
     if (base64.text) {
-      const imageBuffer = Buffer.from(base64.text.trim(), "base64")
-      if (imageBuffer.length > 0) {
+      // PowerShell stdout may embed newlines in long base64 strings; strip ALL whitespace to avoid decode corruption
+      const cleaned = base64.text.replace(/\s/g, "")
+      const imageBuffer = Buffer.from(cleaned, "base64")
+      // Validate: PNG starts with \x89PNG, JPEG starts with \xff\xd8\xff — reject garbage
+      if (imageBuffer.length > 0 && isValidImageBuffer(imageBuffer)) {
         return { data: imageBuffer.toString("base64"), mime: "image/png" }
       }
     }
