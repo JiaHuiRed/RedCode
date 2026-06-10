@@ -4,11 +4,13 @@
   <img src="packages/app/public/mona-loading.gif" width="80">
 </p>
 
-> 开源 AI 编程助手 — 终端 TUI + 桌面 GUI 双端，同一能力。
+> **中文母语的桌面 AI 编程助手。** 独立窗口、说中文、接你喜欢的模型（DeepSeek / MiMo / 国产优先）。
+> _A Chinese-native desktop AI coding agent — standalone GUI, speaks your language, plug in any model._
+>
 > 基于 [opencode](https://github.com/anomalyco/opencode)（sst.dev）深度二次开发。
 
-[![TUI](https://img.shields.io/badge/TUI-0.4.12-blue)](CHANGELOG.md)
-[![Desktop](https://img.shields.io/badge/Desktop-0.5.1-0078d4)](CHANGELOG.md)
+[![TUI](https://img.shields.io/badge/TUI-0.4.13-blue)](CHANGELOG.md)
+[![Desktop](https://img.shields.io/badge/Desktop-0.5.2-0078d4)](CHANGELOG.md)
 [![平台](https://img.shields.io/badge/平台-Windows%2010%2F11-0078d4)](https://github.com/JiaHuiRed/RedCode)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)](https://typescriptlang.org)
 [![Bun](https://img.shields.io/badge/Bun-1.3.x-fcf2d0)](https://bun.sh)

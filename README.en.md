@@ -11,11 +11,12 @@
 █   █ ██████ ██████ ██████ ██████ ██████ ██████
 </pre>
 
-> **Open-source AI coding assistant — terminal + desktop dual-mode intelligent coding agent.**
+> **A Chinese-native desktop AI coding agent — standalone GUI, speaks your language, plug in any model (DeepSeek / MiMo / domestic-first).**
+>
 > Author: Red · Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev).
 
-[![TUI](https://img.shields.io/badge/TUI-0.4.12-blue)](CHANGELOG.md)
-[![Desktop](https://img.shields.io/badge/Desktop-0.5.1-0078d4)](CHANGELOG.md)
+[![TUI](https://img.shields.io/badge/TUI-0.4.13-blue)](CHANGELOG.md)
+[![Desktop](https://img.shields.io/badge/Desktop-0.5.2-0078d4)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-lightblue)](https://github.com/JiaHuiRed/RedCode)
 

@@ -10,6 +10,12 @@
 
 ## TUI
 
+### [0.4.13] - 2026-06-10
+
+#### 清理
+
+- **移除提示词中已下线的 CodeGraph 引用**：deepseek / mimo / minimax 三个紧凑提示词的工具优先级段落仍写着 "(3) CodeGraph — knowledge-graph search and call-chain tracing"，但 CodeGraph 已从项目移除（现仅 jCodeMunch + TypeGraph），属死引用；删除该子句，避免模型被引导调用不存在的工具（`session/prompt/{deepseek,mimo,minimax}.txt`）。
+
 ### [0.4.12] - 2026-06-10
 
 #### 修复
@@ -429,6 +435,12 @@
 ---
 
 ## GUI
+
+### [0.5.2] - 2026-06-10
+
+#### 清理
+
+- **包含服务端提示词更新（TUI 0.4.13）**：GUI 以 opencode 为本地 sidecar，提示词在服务端选取并对两端生效；本版随打包吃到「移除 CodeGraph 死引用」的提示词清理，详见 TUI 0.4.13。
 
 ### [0.5.1] - 2026-06-10
 
