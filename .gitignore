@@ -41,6 +41,11 @@ packages/*/typecheck_out.txt
 # Python virtual environments in plugins
 plugins/*/.venv/
 
+# Vendored external tools — independent clones / binaries, used via global CLI (PATH), not by repo path
+# 260610 Red: jcodemunch-mcp 是带 .git 的独立克隆（配置用全局 CLI `jcodemunch-mcp` 不引用此目录）；sqlite-tools 为 sqlite3.exe 二进制
+jcodemunch-mcp/
+sqlite-tools/
+
 # Personal files — not shared via public repo
 # These live in ~/.redcode/ and come from the user's private repo
 # (root-level patterns as safety net)
