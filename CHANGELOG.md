@@ -10,6 +10,19 @@
 
 ## TUI
 
+### [0.4.10] - 2026-06-10
+
+#### 新增
+
+- **`task` 工具 `isolation:"worktree"` 子代理隔离**：子代理可在独立 git worktree（独立工作目录 + 分支）中运行，文件改动不触碰父工作区，用于高风险或并行改动
+  - 新增 `Worktree.createAndWait`（`worktree/index.ts`）：同步建 worktree → populate(`git reset --hard`) → `store.load`，直接返回该实例 `InstanceContext`，**不走 fork/事件总线**，无竞态、错误正常传播
+  - `prompt.ts` 新增 `runIsolated`：用 `Effect.serviceOption(Worktree.Service)` 运行时查找 Worktree（app/server 已在同级 `mergeAll` 提供，共享根实例不分裂），`run` 在隔离实例下跑（`Effect.provideService(InstanceRef, ctx)`），工具 cwd 随之隔离。serviceOption 不入 R 通道 → `SessionPrompt.layer` 依赖不变，零波及面
+  - `task.ts` 新增 `isolation` 参数 + `isolatedOutput`（回报 worktree 目录/分支）；后台子代理与 worktree 隔离互斥（显式报错）
+
+#### 修复
+
+- **worktree 分支前缀品牌归一**：`makeWorktreeInfo` 生成的分支前缀 `opencode/${name}` → `redcode/${name}`（`worktree/index.ts:196`）
+
 ### [0.4.9] - 2026-06-10
 
 #### 新增
@@ -399,6 +412,12 @@
 ---
 
 ## GUI
+
+### [0.4.7] - 2026-06-10
+
+#### 新增
+
+- **包含服务端更新**：随 sidecar 吃到 TUI 0.4.10 的服务端能力——`task` 工具 `isolation:"worktree"` 子代理隔离（子代理在独立 git worktree 中运行，文件改动不触碰父工作区）+ worktree 分支前缀品牌归一 `opencode/`→`redcode/`。GUI 侧无界面改动，重新 build+package 后 sidecar 即生效
 
 ### [0.4.6] - 2026-06-09
 

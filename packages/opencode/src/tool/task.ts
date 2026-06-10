@@ -21,6 +21,11 @@ export interface TaskPromptOps {
   resolvePromptParts(template: string): Effect.Effect<SessionPrompt.PromptInput["parts"]>
   prompt(input: SessionPrompt.PromptInput): Effect.Effect<MessageV2.WithParts>
   loop(input: SessionPrompt.LoopInput): Effect.Effect<MessageV2.WithParts>
+  // 260610 Red 在隔离 worktree 实例下运行 run，返回该 worktree 信息 + run 结果
+  runIsolated<A, E>(
+    input: { name: string; startCommand?: string },
+    run: Effect.Effect<A, E>,
+  ): Effect.Effect<{ worktree: { name: string; directory: string; branch?: string }; result: A }, E>
 }
 
 const id = "task"
@@ -33,6 +38,11 @@ const BACKGROUND_DESCRIPTION = [
   ].join(" "),
 ].join("\n")
 
+const Isolation = Schema.optional(Schema.Literal("worktree")).annotate({
+  description:
+    'When set to "worktree", run the subagent in an isolated git worktree (separate working directory + branch) so its file edits do not touch the parent workspace. Use for risky or parallel changes.',
+})
+
 const BaseParameters = Schema.Struct({
   description: Schema.String.annotate({ description: "A short (3-5 words) description of the task" }),
   prompt: Schema.String.annotate({ description: "The task for the agent to perform" }),
@@ -42,6 +52,7 @@ const BaseParameters = Schema.Struct({
       "This should only be set if you mean to resume a previous task (you can pass a prior task_id and the task will continue the same subagent session as before instead of creating a fresh one)",
   }),
   command: Schema.optional(Schema.String).annotate({ description: "The command that triggered this task" }),
+  isolation: Isolation,
 })
 
 export const Parameters = Schema.Struct({
@@ -56,11 +67,23 @@ export const Parameters = Schema.Struct({
   background: Schema.optional(Schema.Boolean).annotate({
     description: "When true, launch the subagent in the background and return immediately",
   }),
+  isolation: Isolation,
 })
 
 function output(sessionID: SessionID, text: string) {
   return [
     `task_id: ${sessionID} (for resuming to continue this task if needed)`,
+    "",
+    "<task_result>",
+    text,
+    "</task_result>",
+  ].join("\n")
+}
+
+function isolatedOutput(sessionID: SessionID, text: string, worktree: { directory: string; branch?: string }) {
+  return [
+    `task_id: ${sessionID} (for resuming to continue this task if needed)`,
+    `worktree: ${worktree.directory}${worktree.branch ? ` (branch ${worktree.branch})` : ""}`,
     "",
     "<task_result>",
     text,
@@ -122,6 +145,10 @@ export const TaskTool = Tool.define(
         return yield* Effect.fail(
           new Error("Background subagents require REDCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true"),
         )
+      }
+      const isolated = params.isolation === "worktree"
+      if (runInBackground && isolated) {
+        return yield* Effect.fail(new Error("Background subagents cannot be combined with worktree isolation"))
       }
 
       if (!ctx.extra?.bypassAgentCheck) {
@@ -314,6 +341,18 @@ export const TaskTool = Tool.define(
         }),
         () =>
           Effect.gen(function* () {
+            if (isolated) {
+              const { worktree, result: text } = yield* ops.runIsolated({ name: params.description }, runTask())
+              return {
+                title: params.description,
+                metadata: {
+                  ...metadata,
+                  worktree: worktree.directory,
+                  ...(worktree.branch ? { branch: worktree.branch } : {}),
+                },
+                output: isolatedOutput(nextSession.id, text, worktree),
+              }
+            }
             const text = yield* runTask()
             return {
               title: params.description,

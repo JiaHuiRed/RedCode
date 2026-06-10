@@ -1,6 +1,7 @@
 ﻿import { Global } from "@redcode-ai/core/global"
 import { InstanceLayer } from "@/project/instance-layer"
 import { InstanceStore } from "@/project/instance-store"
+import type { InstanceContext } from "@/project/instance-context"
 import { Project } from "@/project/project"
 import { Database } from "@/storage/db"
 import { eq } from "drizzle-orm"
@@ -136,6 +137,8 @@ function failedRemoves(...chunks: string[]) {
 export interface Interface {
   readonly makeWorktreeInfo: (options?: { name?: string; detached?: boolean }) => Effect.Effect<Info, Error>
   readonly createFromInfo: (info: Info, startCommand?: string) => Effect.Effect<void, Error>
+  // 260610 Red 同步创建+落盘+load，返回隔离 worktree 的 InstanceContext（给 task isolation 用，不走 fork/事件总线）
+  readonly createAndWait: (info: Info, startCommand?: string) => Effect.Effect<InstanceContext, Error>
   readonly create: (input?: CreateInput) => Effect.Effect<Info, Error>
   readonly list: () => Effect.Effect<(Omit<Info, "branch"> & { branch?: string })[], Error>
   readonly remove: (input: RemoveInput) => Effect.Effect<boolean, Error>
@@ -190,7 +193,7 @@ export const layer: Layer.Layer<
       const ctx = yield* InstanceState.context
       for (const attempt of Array.from({ length: MAX_NAME_ATTEMPTS }, (_, i) => i)) {
         const name = input.name ? (attempt === 0 ? input.name : `${input.name}-${Slug.create()}`) : Slug.create()
-        const branch = input.detached ? undefined : `opencode/${name}`
+        const branch = input.detached ? undefined : `redcode/${name}` // 260610 Red 品牌：worktree 分支前缀 opencode→redcode
         const directory = pathSvc.join(input.root, name)
 
         if (yield* fs.exists(directory).pipe(Effect.orDie)) continue
@@ -254,13 +257,13 @@ export const layer: Layer.Layer<
           workspace: workspaceID,
           payload: { type: Event.Failed.type, properties: { message } },
         })
-        return
+        return undefined
       }
 
       const booted = yield* store.load({ directory: info.directory }).pipe(
-        Effect.as(true),
+        Effect.map((value): InstanceContext | undefined => value),
         Effect.catch((error) =>
-          Effect.sync(() => {
+          Effect.sync((): InstanceContext | undefined => {
             const message = errorMessage(error)
             log.error("worktree bootstrap failed", { directory: info.directory, message })
             GlobalBus.emit("event", {
@@ -269,11 +272,11 @@ export const layer: Layer.Layer<
               workspace: workspaceID,
               payload: { type: Event.Failed.type, properties: { message } },
             })
-            return false
+            return undefined
           }),
         ),
       )
-      if (!booted) return
+      if (!booted) return undefined
 
       GlobalBus.emit("event", {
         directory: info.directory,
@@ -286,14 +289,23 @@ export const layer: Layer.Layer<
       })
 
       yield* runStartScripts(info.directory, { projectID, extra })
+      return booted
     })
 
     const createFromInfo = Effect.fn("Worktree.createFromInfo")(function* (info: Info, startCommand?: string) {
       yield* setup(info)
       yield* boot(info, startCommand).pipe(
+        Effect.asVoid,
         Effect.catchCause((cause) => Effect.sync(() => log.error("worktree bootstrap failed", { cause }))),
         Effect.forkIn(scope),
       )
+    })
+
+    const createAndWait = Effect.fn("Worktree.createAndWait")(function* (info: Info, startCommand?: string) {
+      yield* setup(info)
+      const instance = yield* boot(info, startCommand)
+      if (!instance) return yield* new CreateFailedError({ message: "Failed to initialize isolated worktree" })
+      return instance
     })
 
     const create = Effect.fn("Worktree.create")(function* (input?: CreateInput) {
@@ -603,7 +615,7 @@ export const layer: Layer.Layer<
       return true
     })
 
-    return Service.of({ makeWorktreeInfo, createFromInfo, create, list, remove, reset })
+    return Service.of({ makeWorktreeInfo, createFromInfo, createAndWait, create, list, remove, reset })
   }),
 )
 

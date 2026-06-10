@@ -93,6 +93,8 @@ function stubOps(opts?: { onPrompt?: (input: SessionPrompt.PromptInput) => void;
         return reply(input, opts?.text ?? "done")
       }),
     loop: (input) => Effect.succeed(reply({ sessionID: input.sessionID, parts: [] }, opts?.text ?? "done")),
+    runIsolated: (input, run) =>
+      Effect.map(run, (result) => ({ worktree: { name: input.name, directory: input.name }, result })),
   }
 }
 
@@ -308,6 +310,8 @@ describe("tool.task", () => {
             return cancelled.promise
           }).pipe(Effect.as(reply(input, "cancelled"))),
         loop: (input) => Effect.succeed(reply({ sessionID: input.sessionID, parts: [] }, "done")),
+        runIsolated: (input, run) =>
+          Effect.map(run, (result) => ({ worktree: { name: input.name, directory: input.name }, result })),
       }
 
       const fiber = yield* def

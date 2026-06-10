@@ -44,6 +44,8 @@ import { Process } from "@/util/process"
 import { Cause, Effect, Exit, Latch, Layer, Option, Scope, Context, Schema, Types } from "effect"
 import * as EffectLogger from "@redcode-ai/core/effect/logger"
 import { InstanceState } from "@/effect/instance-state"
+import { InstanceRef } from "@/effect/instance-ref"
+import { Worktree } from "@/worktree"
 import { TaskTool, type TaskPromptOps } from "@/tool/task"
 import { SessionRunState } from "./run-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -129,8 +131,25 @@ export const layer = Layer.effect(
         resolvePromptParts: (template: string) => resolvePromptParts(template),
         prompt: (input: PromptInput) => prompt(input).pipe(Effect.catch(Effect.die)),
         loop: (input: LoopInput) => loop(input),
+        runIsolated: <A, E>(input: { name: string; startCommand?: string }, run: Effect.Effect<A, E>) =>
+          runIsolated(input, run),
       } satisfies TaskPromptOps
     })
+
+    // 260610 Red task isolation：建隔离 worktree → 拿到其 InstanceContext → run 在该实例下跑（工具 cwd 隔离）
+    // Worktree 用 serviceOption 运行时查找（app/server 已在同级 mergeAll 提供，共享根实例不分裂；无 Worktree 的上下文直接报错）
+    const runIsolated = <A, E>(input: { name: string; startCommand?: string }, run: Effect.Effect<A, E>) =>
+      Effect.gen(function* () {
+        const service = yield* Effect.serviceOption(Worktree.Service)
+        if (Option.isNone(service)) {
+          return yield* Effect.die(new Error("Worktree isolation is not available in this context"))
+        }
+        const wt = service.value
+        const info = yield* wt.makeWorktreeInfo({ name: input.name }).pipe(Effect.catch(Effect.die))
+        const ctx = yield* wt.createAndWait(info, input.startCommand).pipe(Effect.catch(Effect.die))
+        const result = yield* run.pipe(Effect.provideService(InstanceRef, ctx))
+        return { worktree: info, result }
+      })
 
     const cancel = Effect.fn("SessionPrompt.cancel")(function* (sessionID: SessionID) {
       yield* elog.info("cancel", { sessionID })
