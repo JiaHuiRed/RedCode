@@ -554,7 +554,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
                   if ((e.metaKey || e.ctrlKey) && !e.altKey) return
                   if (e.key !== "Enter" || e.shiftKey) return
                   e.preventDefault()
-                  commitCustom()
+                  next()
                 }}
                 onInput={(e) => {
                   customUpdate(e.currentTarget.value)

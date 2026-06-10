@@ -1,0 +1,18 @@
+# 行尾归一：钉死，覆盖各机飘忽的 core.autocrlf，杜绝 sync-home/xcopy 引发的 CRLF 幽灵 diff
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# 二进制：禁止行尾/文本转换
+*.db binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.wasm binary
