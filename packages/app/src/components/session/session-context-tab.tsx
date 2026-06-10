@@ -201,14 +201,7 @@ export function SessionContextTab() {
     { label: "context.stats.reasoningTokens", value: () => formatter().number(ctx()?.reasoning) },
     {
       label: "context.stats.cacheTokens",
-      value: () => {
-        const c = ctx()
-        if (!c || (c.cacheRead <= 0 && c.cacheWrite <= 0)) return "—"
-        const hit = c.cacheHit != null ? ` (${formatter().percent(c.cacheHit)})` : ""
-        return c.cacheWrite
-          ? `${formatter().number(c.cacheRead)} / ${formatter().number(c.cacheWrite)}${hit}`
-          : `${formatter().number(c.cacheRead)}${hit}`
-      },
+      value: () => `${formatter().number(ctx()?.cacheRead)} / ${formatter().number(ctx()?.cacheWrite)}`,
     },
     { label: "context.stats.userMessages", value: () => counts().user.toLocaleString(language.intl()) },
     { label: "context.stats.assistantMessages", value: () => counts().assistant.toLocaleString(language.intl()) },
