@@ -10,6 +10,14 @@
 
 ## TUI
 
+### [0.4.12] - 2026-06-10
+
+#### 修复
+
+- **MCP 客户端创建 failure-safe（移植上游 opencode #31595）**：根因→`create` 抛错被调用点 `Effect.catch(() => Effect.void)` 整个吞掉，服务起不来时连"失败"状态都不记录、直接从状态栏凭空消失；改法→`create` 外层包 `Effect.catchCause`，任何意外抛错收敛成 `status:"failed"` + 错因（`Cause.squash`，仅中断除外），调用点去掉吞错的 catch；文件 `mcp/index.ts` `create` / state forEach 调用点。
+- **MCP 连接失败打可操作日志（移植上游 #31544）**：根因→服务不可用时只在 `connectLocal` 内部记 error，create 层无统一提示；改法→`!mcpClient` 且状态非 connected/disabled 时打 `server unavailable`（带 key/type/status）便于排障；文件 `mcp/index.ts` `create`。
+- **getPrompt / readResource 加超时（移植上游 #31612）**：根因→之前只 tools 调用有超时，prompts/resources 请求无超时可永久挂起；改法→`withClient` 按 配置 timeout → `experimental.mcp_timeout` → `DEFAULT_TIMEOUT`(30s) 顺序取超时并透传给 `client.getPrompt`/`readResource`；文件 `mcp/index.ts` `withClient` / `getPrompt` / `readResource`。
+
 ### [0.4.11] - 2026-06-10
 
 #### 新增
@@ -421,6 +429,12 @@
 ---
 
 ## GUI
+
+### [0.5.1] - 2026-06-10
+
+#### 改进
+
+- **Edit 工具模糊搜索反馈**：`oldString` 精确匹配失败时，自动用 Levenshtein 滑动窗口搜索最接近的匹配块，返回相似度百分比、匹配文本、行号和字符级 diff，帮助 LLM 快速定位并修正 oldString（`packages/opencode/src/tool/edit.ts` 新增 `fuzzyFindBestMatch` / `similarityRatio` / `charDiff`，`edit.txt` 提示词同步更新）
 
 ### [0.5.0] - 2026-06-10
 

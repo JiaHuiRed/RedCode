@@ -167,7 +167,25 @@ export const EditTool = Tool.define(
               const old = convertToLineEnding(normalizeLineEndings(oldString), ending)
               const replacement = convertToLineEnding(normalizeLineEndings(newString), ending)
 
-              const next = Bom.split(replace(contentOld, old, replacement, params.replaceAll))
+              let replaced: string
+              try {
+                replaced = replace(contentOld, old, replacement, params.replaceAll)
+              } catch (err) {
+                if (err instanceof Error && err.message.startsWith("Could not find oldString")) {
+                  const fuzzy = fuzzyFindBestMatch(contentOld, old)
+                  if (fuzzy) {
+                    const pct = Math.round(fuzzy.similarity * 100)
+                    throw new Error(
+                      `Could not find oldString exactly (${pct}% similar match found at line ${fuzzy.startLine}-${fuzzy.endLine}).\n\n` +
+                        `Best matching block:\n${fuzzy.matchedText}\n\n` +
+                        `Diff between your oldString and the match:\n${fuzzy.diff}\n\n` +
+                        `Re-read the file to get the exact text, or adjust oldString to match the above.`,
+                    )
+                  }
+                }
+                throw err
+              }
+              const next = Bom.split(replaced)
               const desiredBom = source.bom || next.bom
               contentNew = next.text
 
@@ -540,6 +558,113 @@ function levenshtein(a: string, b: string): number {
     }
   }
   return matrix[a.length][b.length]
+}
+
+/**
+ * Compute similarity ratio between two strings (0-1, higher = more similar).
+ */
+function similarityRatio(a: string, b: string): number {
+  if (a === b) return 1
+  if (a === "" || b === "") return 0
+  const maxLen = Math.max(a.length, b.length)
+  if (maxLen === 0) return 1
+  return 1 - levenshtein(a, b) / maxLen
+}
+
+/**
+ * Character-level diff between two strings. Returns a compact representation
+ * showing removed and added segments with surrounding context.
+ */
+function charDiff(oldText: string, newText: string): string {
+  const oldLines = oldText.split("\n")
+  const newLines = newText.split("\n")
+  const result: string[] = []
+  const maxLines = Math.max(oldLines.length, newLines.length)
+
+  for (let i = 0; i < maxLines; i++) {
+    const oldLine = oldLines[i]
+    const newLine = newLines[i]
+    if (oldLine === newLine) {
+      result.push(`  ${oldLine}`)
+    } else {
+      if (oldLine !== undefined) result.push(`- ${oldLine}`)
+      if (newLine !== undefined) result.push(`+ ${newLine}`)
+    }
+  }
+  return result.join("\n")
+}
+
+export interface FuzzyMatch {
+  /** The matched text from the file */
+  matchedText: string
+  /** Similarity ratio 0-1 */
+  similarity: number
+  /** 1-based start line in file */
+  startLine: number
+  /** 1-based end line in file */
+  endLine: number
+  /** Character-level diff between search and match */
+  diff: string
+}
+
+/**
+ * Find the closest matching block in content using sliding window + Levenshtein.
+ * Returns the best match above a minimum similarity threshold, or undefined.
+ */
+export function fuzzyFindBestMatch(content: string, search: string): FuzzyMatch | undefined {
+  const contentLines = content.split("\n")
+  const searchLines = search.split("\n")
+
+  // Drop trailing empty line if present (common in paste)
+  if (searchLines[searchLines.length - 1] === "") {
+    searchLines.pop()
+  }
+  if (searchLines.length === 0) return undefined
+
+  const searchBlock = searchLines.join("\n")
+  const searchLen = searchLines.length
+
+  let best: FuzzyMatch | undefined
+  let bestScore = 0
+  const MIN_SIMILARITY = 0.4
+
+  // Sliding window: try every possible start position
+  for (let i = 0; i <= contentLines.length - searchLen; i++) {
+    const window = contentLines.slice(i, i + searchLen).join("\n")
+    const score = similarityRatio(searchBlock, window)
+
+    if (score > bestScore && score >= MIN_SIMILARITY) {
+      bestScore = score
+      best = {
+        matchedText: window,
+        similarity: score,
+        startLine: i + 1,
+        endLine: i + searchLen,
+        diff: charDiff(searchBlock, window),
+      }
+    }
+  }
+
+  // Also try single-line fuzzy for short searches (1-3 lines)
+  if (!best && searchLen <= 3) {
+    for (let i = 0; i < contentLines.length; i++) {
+      for (let j = 0; j < searchLines.length; j++) {
+        const score = similarityRatio(searchLines[j], contentLines[i])
+        if (score > bestScore && score >= MIN_SIMILARITY) {
+          bestScore = score
+          best = {
+            matchedText: contentLines[i],
+            similarity: score,
+            startLine: i + 1,
+            endLine: i + 1,
+            diff: charDiff(searchLines[j], contentLines[i]),
+          }
+        }
+      }
+    }
+  }
+
+  return best
 }
 
 export const SimpleReplacer: Replacer = function* (_content, find) {
