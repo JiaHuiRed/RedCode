@@ -8,7 +8,7 @@
 > 基于 [opencode](https://github.com/anomalyco/opencode)（sst.dev）深度二次开发。
 
 [![TUI](https://img.shields.io/badge/TUI-0.4.10-blue)](CHANGELOG.md)
-[![Desktop](https://img.shields.io/badge/Desktop-0.4.7-0078d4)](CHANGELOG.md)
+[![Desktop](https://img.shields.io/badge/Desktop-0.5.0-0078d4)](CHANGELOG.md)
 [![平台](https://img.shields.io/badge/平台-Windows%2010%2F11-0078d4)](https://github.com/JiaHuiRed/RedCode)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)](https://typescriptlang.org)
 [![Bun](https://img.shields.io/badge/Bun-1.3.x-fcf2d0)](https://bun.sh)
@@ -27,7 +27,7 @@ AI 编程助手。两个入口、同一能力：
 
 ### 核心能力
 
-代码理解（CodeGraph / TypeGraph / jCodeMunch）· 多模型（DeepSeek / OpenAI / Anthropic / Ollama）· 文件读写编辑 · 终端执行 · Web 搜索 · 浏览器自动化 · 视觉分析 · 会话管理 · 权限门控 · 上下文压缩 · 自动化记忆系统 · 目标管理 · 自定义 AI 人格
+代码理解（TypeGraph / jCodeMunch）· 多模型（DeepSeek / OpenAI / Anthropic / Ollama）· 文件读写编辑 · 终端执行 · Web 搜索 · 浏览器自动化 · 视觉分析 · 会话管理 · 权限门控 · 上下文压缩 · 自动化记忆系统 · 目标管理 · 自定义 AI 人格
 
 ---
 
@@ -39,7 +39,6 @@ AI 编程助手。两个入口、同一能力：
 git clone https://github.com/JiaHuiRed/RedCode.git
 cd RedCode
 bun install
-npx -y @colbymchenry/codegraph index    # 首次索引
 
 # 启动 TUI
 bun dev
@@ -51,6 +50,8 @@ cd packages/desktop && bun run dev
 > 第一次启动自动创建 `~/.redcode/` 并播种默认模板，无需手动配置。
 
 ### 编译
+
+> 也可直接双击一键 bat：TUI `packages/opencode/build.bat` / GUI `packages/desktop/build-and-package.bat`。
 
 ```bash
 # TUI 单文件 exe
@@ -68,7 +69,7 @@ cd packages/desktop && bun run build && bun run package
 
 1. 首次设置（配置模型 / AI 人格 / 用户画像 / 工作记忆）
 2. 记忆系统（自动日志 / 长期库 / 启动注入）
-3. MCP 服务器（内置 4 个 + 可选 2 个的安装与配置）
+3. MCP 服务器（9 个预配置服务的安装与启用）
 4. 配置详解（provider / 权限 / 项目级配置）
 5. 内置命令列表
 6. Skill 技能系统说明

@@ -34,9 +34,6 @@ git clone https://github.com/JiaHuiRed/RedCode.git
 cd RedCode
 bun install
 
-# 构建代码索引（首次必须，让 AI 理解你的代码库）
-npx -y @colbymchenry/codegraph index
-
 # 启动 TUI（终端界面）
 bun dev
 
@@ -45,6 +42,9 @@ cd packages/desktop && bun run dev
 ```
 
 ### 编译打包
+
+> 嫌敲命令麻烦？直接双击两个一键 bat 即可：
+> TUI → `packages/opencode/build.bat`；桌面 GUI → `packages/desktop/build-and-package.bat`。
 
 ```bash
 # TUI 单文件 exe（可在无 Bun 环境的机器运行）
@@ -202,7 +202,6 @@ MCP（Model Context Protocol）让 AI 获得外部能力。安装越多 MCP，AI
 
 | 服务器 | 用途 | 首次使用前 |
 |--------|------|-----------|
-| **CodeGraph** | 代码知识图谱：符号定义、调用链、影响分析 | `npx -y @colbymchenry/codegraph index`（项目代码索引）|
 | **TypeGraph** | TypeScript 语义导航：类型跳转、barrel 穿透、循环依赖检测 | — |
 | **jCodeMunch** | 结构化代码检索：60+ 工具（符号查找、死代码、AST 匹配、编辑安全预检）| `jcodemunch-mcp index`（推荐，启用 AI 摘要）|
 

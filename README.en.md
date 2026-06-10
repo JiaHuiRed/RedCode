@@ -15,7 +15,7 @@
 > Author: Red · Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev).
 
 [![TUI](https://img.shields.io/badge/TUI-0.4.10-blue)](CHANGELOG.md)
-[![Desktop](https://img.shields.io/badge/Desktop-0.4.7-0078d4)](CHANGELOG.md)
+[![Desktop](https://img.shields.io/badge/Desktop-0.5.0-0078d4)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-lightblue)](https://github.com/JiaHuiRed/RedCode)
 
@@ -37,7 +37,6 @@ Open-source AI coding assistant with **terminal TUI** and **desktop GUI** interf
 - 🎨 **Terminal UI** — syntax highlighting, streaming output, diff display
 - 🖥 **Desktop GUI** — Electron standalone window with full graphical interface
 - 📊 **MCP Servers**:
-  - [CodeGraph](https://github.com/colbymchenry/codegraph) — code knowledge graph (symbols, call chains, impact analysis)
   - [TypeGraph](https://github.com/guyowen/typegraph-mcp) — TypeScript semantic navigation (type resolution, barrel file traversal, cycle detection)
   - [jCodeMunch](https://github.com/colbymchenry/jcodemunch) — structured code retrieval (60+ tools: symbol lookup, dead code detection, AST matching)
   - [Browser MCP](https://github.com/colbymchenry/browsermcp) — browser automation (navigation, screenshots, clicks, input, page content extraction)
@@ -66,9 +65,6 @@ Open-source AI coding assistant with **terminal TUI** and **desktop GUI** interf
 git clone https://github.com/JiaHuiRed/RedCode.git
 cd RedCode
 bun install
-
-# Build MCP indexes (first time only)
-npx -y @colbymchenry/codegraph index
 
 # Start TUI (interactive terminal)
 bun dev
@@ -111,11 +107,6 @@ cd packages/desktop && bun run dev
 ```jsonc
 {
   "mcp": {
-    "codegraph": {
-      "type": "local",
-      "command": ["npx", "-y", "@colbymchenry/codegraph", "serve", "--mcp"],
-      "enabled": true
-    },
     "typegraph": {
       "type": "local",
       "command": ["npx", "tsx", "path/to/typegraph-mcp/server.ts"],
@@ -147,7 +138,7 @@ cd packages/desktop && bun run dev
 | AI SDK | Vercel AI SDK |
 | Database | SQLite (Drizzle ORM) |
 | Build | Turborepo (monorepo) |
-| MCP | CodeGraph + TypeGraph + jCodeMunch + Browser MCP |
+| MCP | TypeGraph + jCodeMunch + Browser MCP |
 
 ---
 
