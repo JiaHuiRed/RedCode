@@ -10,6 +10,7 @@ import PROMPT_GEMINI from "./prompt/gemini.txt"
 import PROMPT_GPT from "./prompt/gpt.txt"
 import PROMPT_KIMI from "./prompt/kimi.txt"
 import PROMPT_MIMO from "./prompt/mimo.txt"
+import PROMPT_MINIMAX from "./prompt/minimax.txt"
 import PROMPT_CODEX from "./prompt/codex.txt"
 import PROMPT_TRINITY from "./prompt/trinity.txt"
 import type { Provider } from "@/provider/provider"
@@ -32,8 +33,8 @@ export function provider(model: Provider.Model) {
   if (model.api.id.toLowerCase().includes("kimi")) return [PROMPT_KIMI]
   if (model.api.id.toLowerCase().includes("deepseek")) return [PROMPT_DEEPSEEK]
   if (model.api.id.toLowerCase().includes("mimo")) return [PROMPT_MIMO]
-  // 260610 Red minimax(m3 及以后) 复用 mimo 紧凑提示词（内容非模型专属，避免重复文件）
-  if (model.api.id.toLowerCase().includes("minimax")) return [PROMPT_MIMO]
+  // 260610 Red minimax(m3 及以后) 专属提示词 — 与 mimo(小米) 非同厂，独立成文件便于后续单独调优
+  if (model.api.id.toLowerCase().includes("minimax")) return [PROMPT_MINIMAX]
   return [PROMPT_DEFAULT]
 }
 
