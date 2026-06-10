@@ -275,3 +275,34 @@
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
+
+/* 260610 Red 毛玻璃 B：全界面毛玻璃。背景图由根布局整窗铺底（祖先带 data-app-frost），
+   标题栏与主卡片改半透明材质 + backdrop blur，透出并模糊整窗背景图；内部各栏（文件/审查/聊天）
+   去实色底，露出主卡片这层统一磨砂材质，形成「全界面磨砂」。无背景图不触发（模糊纯色无意义）。
+   不放进 @layer：需越过 Tailwind 的 utilities 层覆盖 bg-* 工具类的 background-color。 */
+[data-app-frost] [data-frost-surface="titlebar"] {
+  background-color: color-mix(in srgb, var(--v2-background-bg-deep) 58%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+[data-app-frost] [data-frost-surface="main"] {
+  background-color: color-mix(in srgb, var(--v2-background-bg-base) 55%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+/* 260610 Red 0.5.0 refine#1 亮暗互换：文件栏/审查栏是"外壳"，给更深的磨砂底（透出但压暗背景图），
+   让两侧成为暗色 chrome；聊天区单独走更亮的浅磨砂（见 session.tsx 把暗罩从 0.62 降到 0.18），
+   形成"两侧暗、中间亮"的合理层次，也确保审查栏可见变化（不再是全透显得"没变化"）。 */
+[data-app-frost] #file-tree-panel,
+[data-app-frost] #review-panel {
+  background-color: color-mix(in srgb, var(--v2-background-bg-deep) 72%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+[data-app-frost] #file-tree-panel .bg-background-stronger,
+[data-app-frost] #review-panel .bg-background-base,
+[data-app-frost] #review-panel .bg-background-stronger {
+  background-color: transparent;
+}

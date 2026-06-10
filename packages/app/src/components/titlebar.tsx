@@ -200,11 +200,12 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
   return (
     <header
       classList={{
-        "shrink-0 relative overflow-hidden flex flex-row": true,
+        "shrink-0 relative z-[1] overflow-hidden flex flex-row": true,
         "h-11 bg-v2-background-bg-deep": USE_V2_TITLEBAR,
         "h-10 bg-background-base": !USE_V2_TITLEBAR,
         "border-b border-border-weaker-base": true,
       }}
+      data-frost-surface="titlebar"
       style={{
         "min-height": minHeight(),
         "padding-left": mac() ? `${84 / zoom()}px` : 0,
@@ -340,6 +341,15 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
   createEffect(on(activeMcpDir, (dir) => {
     if (dir) setActiveMcpDirectory(dir)
   }))
+
+  // 260610 Red 方案 A：标题栏状态圆点点击 → 打开右侧面板的 status 标签页（仅在有会话时）
+  const openStatusTab = () => {
+    if (!params.dir || !params.id) return
+    const key = `${params.dir}/${params.id}`
+    layout.view(key).reviewPanel.open()
+    void layout.tabs(key).open("status")
+    layout.tabs(key).setActive("status")
+  }
 
   const closeCurrentSessionTab = () => {
     const tab = currentSessionTab()
@@ -499,7 +509,7 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
         {(dir) => (
           <SDKProvider directory={dir}>
             <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
-              <StatusPopover />
+              <StatusPopover openInPanel={params.dir && params.id ? openStatusTab : undefined} />
             </Tooltip>
           </SDKProvider>
         )}

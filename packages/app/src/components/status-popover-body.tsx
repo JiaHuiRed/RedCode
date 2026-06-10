@@ -166,7 +166,8 @@ const useMcpToggleMutation = () => {
   }))
 }
 
-export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
+// 260610 Red fill：用作右侧面板标签页时宽度自适应、去掉弹层专用阴影/圆角
+export function StatusPopoverBody(props: { shown: Accessor<boolean>; fill?: boolean }) {
   const sync = useSync()
   const server = useServer()
   const platform = usePlatform()
@@ -215,10 +216,20 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
   const pluginEmpty = createMemo(() => pluginEmptyMessage(language.t("dialog.plugins.empty"), "redcode.json"))
 
   return (
-    <div class="flex items-center gap-1 w-[360px] rounded-xl shadow-[var(--shadow-lg-border-base)]">
+    <div
+      classList={{
+        "flex items-center gap-1": true,
+        "w-[360px] rounded-xl shadow-[var(--shadow-lg-border-base)]": !props.fill,
+        "w-full": props.fill,
+      }}
+    >
       <Tabs
         aria-label={language.t("status.popover.ariaLabel")}
-        class="tabs bg-background-strong rounded-xl overflow-hidden"
+        classList={{
+          "tabs overflow-hidden": true,
+          "bg-background-strong rounded-xl": !props.fill,
+          "bg-transparent w-full": props.fill,
+        }}
         data-component="tabs"
         data-active="servers"
         defaultValue="servers"

@@ -491,6 +491,21 @@ export const SettingsGeneral: Component = () => {
       if (chatBgInput) chatBgInput.value = ""
     }
 
+    // 260610 Red 0.5.0 主界面背景图：与聊天背景同模式，独立设置（公司/家里分别换壁纸）
+    let homeBgInput: HTMLInputElement | undefined
+    const handleHomeBgSelect = (e: Event) => {
+      const input = e.target as HTMLInputElement
+      const file = input.files?.[0]
+      if (!file) return
+      const reader = new FileReader()
+      reader.onload = () => settings.appearance.setHomeBackground(reader.result as string)
+      reader.readAsDataURL(file)
+    }
+    const handleHomeBgRemove = () => {
+      settings.appearance.setHomeBackground("")
+      if (homeBgInput) homeBgInput.value = ""
+    }
+
     return (
     <div class="flex flex-col gap-1">
       <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.appearance")}</h3>
@@ -637,6 +652,35 @@ export const SettingsGeneral: Component = () => {
               </Button>
               <Show when={settings.appearance.chatBackground()}>
                 <Button data-action="settings-chat-bg-remove" variant="ghost" size="small" onClick={handleChatBgRemove}>
+                  Remove
+                </Button>
+              </Show>
+            </div>
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          title="Home Background"
+          description="Image shown behind the home / no-session screen (independent from chat background)"
+        >
+          <div class="flex items-center gap-3">
+            <div
+              class="w-10 h-10 rounded-md border border-border-weaker-base bg-cover bg-center bg-background-stronger shrink-0"
+              style={settings.appearance.homeBackground() ? { "background-image": `url(${settings.appearance.homeBackground()})` } : {}}
+            />
+            <input
+              ref={homeBgInput}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              onChange={handleHomeBgSelect}
+              class="hidden"
+            />
+            <div class="flex gap-2">
+              <Button data-action="settings-home-bg-upload" variant="secondary" size="small" onClick={() => homeBgInput?.click()}>
+                Upload
+              </Button>
+              <Show when={settings.appearance.homeBackground()}>
+                <Button data-action="settings-home-bg-remove" variant="ghost" size="small" onClick={handleHomeBgRemove}>
                   Remove
                 </Button>
               </Show>

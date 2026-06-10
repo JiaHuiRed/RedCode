@@ -54,6 +54,8 @@ export interface Settings {
     terminal: string
     // 260608 Red 0.4.5 微信风聊天背景图：data URL（""=无），全局生效
     chatBackground: string
+    // 260610 Red 0.5.0 主界面（首页/无会话）背景图：data URL（""=无），与聊天背景独立，便于公司/家里分别换壁纸
+    homeBackground: string
   }
   keybinds: Record<string, string>
   permissions: {
@@ -143,6 +145,7 @@ const defaultSettings: Settings = {
     sans: "",
     terminal: "",
     chatBackground: "",
+    homeBackground: "",
   },
   keybinds: {},
   permissions: {
@@ -296,6 +299,13 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         ),
         setChatBackground(value: string) {
           setStore("appearance", "chatBackground", value)
+        },
+        homeBackground: withFallback(
+          () => store.appearance?.homeBackground,
+          defaultSettings.appearance.homeBackground,
+        ),
+        setHomeBackground(value: string) {
+          setStore("appearance", "homeBackground", value)
         },
       },
       keybinds: {

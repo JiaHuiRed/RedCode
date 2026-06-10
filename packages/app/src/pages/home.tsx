@@ -272,7 +272,10 @@ function HomeProjectColumn(props: {
   language: ReturnType<typeof useLanguage>
 }) {
   return (
-    <aside class="flex min-w-0 flex-col lg:pt-[52px]" aria-label={props.language.t("home.projects")}>
+    <aside
+      class="flex min-w-0 flex-col lg:pt-[52px] lg:border-r lg:border-v2-border-border-base lg:pr-6"
+      aria-label={props.language.t("home.projects")}
+    >
       <div class="flex h-7 min-w-0 items-center justify-between pl-2">
         <div class={HOME_SECTION_LABEL}>{props.language.t("home.projects")}</div>
         <IconButtonV2

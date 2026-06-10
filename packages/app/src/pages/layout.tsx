@@ -1472,15 +1472,35 @@ export default function Layout(props: ParentProps) {
   //     delete|resetWorkspace/DialogDelete|ResetWorkspace/closeProject/workspaceName/workspaceLabel/
   //     hoverProjectData/peek 机制/inline-editor 解构/providers/location/isBusy/sortNow/side/panel 等
   // 回滚：git revert/checkout 至本次 0.4.5 提交之前即可恢复。
+  // 260610 Red 0.5.0 整窗背景图按视图分流：进会话(params.id)用聊天背景图，首页/无会话用主界面背景图
+  //   —— 哥哥的痛点：主界面满屏壁纸在公司很尴尬，主/聊分开后公司可单独把主界面背景留空或换中性图
+  const appBackground = () =>
+    params.id ? settings.appearance.chatBackground() : settings.appearance.homeBackground()
   return (
-    <div class="relative bg-v2-background-bg-deep flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text">
+    <div
+      class="relative bg-v2-background-bg-deep flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text"
+      // 260610 Red 毛玻璃 B：当前视图设了背景图则整窗打标记，CSS 据此让标题栏/主卡片半透明模糊透出背景图
+      data-app-frost={appBackground() ? "" : undefined}
+    >
+      {/* 260610 Red 背景图升级为整窗铺底：从聊天面板移到根布局，标题栏/文件栏/审查栏共享同一张壁纸做毛玻璃 */}
+      <Show when={appBackground()}>
+        <div
+          aria-hidden="true"
+          class="absolute inset-0 z-0 pointer-events-none bg-cover bg-center bg-no-repeat"
+          style={{ "background-image": `url(${appBackground()})` }}
+        />
+      </Show>
       {autoselecting() ?? ""}
       <Titlebar update={titlebarUpdate} />
       <main
-        class="flex-1 min-h-0 min-w-0 overflow-x-hidden flex flex-col items-start contain-strict bg-v2-background-bg-base"
+        class="relative z-[1] flex-1 min-h-0 min-w-0 overflow-x-hidden flex flex-col items-start contain-strict bg-v2-background-bg-base"
         classList={{
-          "m-2 mt-0 rounded-[10px] shadow-[var(--v2-elevation-raised)] overflow-hidden": !!params.id || !params.dir,
+          // 260610 Red 0.5.0 refine#3：设了背景图时主卡片去掉外边距/圆角/阴影，毛玻璃满贴标题栏不再像"镶嵌进去的一块玻璃"
+          "m-2 mt-0 rounded-[10px] shadow-[var(--v2-elevation-raised)] overflow-hidden":
+            (!!params.id || !params.dir) && !appBackground(),
+          "overflow-hidden": (!!params.id || !params.dir) && !!appBackground(),
         }}
+        data-frost-surface="main"
       >
         <Show when={!autoselecting.loading} fallback={<div class="size-full" />}>
           {props.children}

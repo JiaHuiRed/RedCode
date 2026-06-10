@@ -11,6 +11,7 @@ import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { SessionContextTab, SortableTab, FileVisual } from "@/components/session"
+import { StatusPopoverBody } from "@/components/status-popover-body"
 import { useCommand } from "@/context/command"
 import { useFile, type SelectedLineRange } from "@/context/file"
 import { useLanguage } from "@/context/language"
@@ -201,6 +202,12 @@ export function SessionSidePanel(props: {
                             </div>
                           </Tabs.Trigger>
                         </Show>
+                        {/* 260610 Red 服务器/MCP/LSP/插件状态标签：常驻，由标题栏圆点或点击此处打开 */}
+                        <Tabs.Trigger value="status">
+                          <div class="flex items-center gap-1.5">
+                            <div>{language.t("session.tab.status")}</div>
+                          </div>
+                        </Tabs.Trigger>
                         <SortableProvider ids={openedTabs()}>
                           <For each={openedTabs()}>{(tab) => <SortableTab tab={tab} onTabClose={tabs().close} />}</For>
                         </SortableProvider>
@@ -255,6 +262,15 @@ export function SessionSidePanel(props: {
                         </Show>
                       </Tabs.Content>
                     </Show>
+
+                    {/* 260610 Red status 标签页内容：复用标题栏弹层的 StatusPopoverBody（fill 自适应宽度） */}
+                    <Tabs.Content value="status" class="flex flex-col h-full overflow-hidden contain-strict">
+                      <Show when={activeTab() === "status"}>
+                        <div class="relative pt-2 flex-1 min-h-0 overflow-auto px-2">
+                          <StatusPopoverBody shown={() => true} fill />
+                        </div>
+                      </Show>
+                    </Tabs.Content>
 
                     <Show when={activeFileTab()} keyed>
                       {(tab) => <FileTabContent tab={tab} />}

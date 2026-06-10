@@ -1518,7 +1518,11 @@ export default function Page() {
   )
 
   return (
-    <div class="relative bg-background-base size-full overflow-hidden flex flex-col">
+    <div
+      class="relative size-full overflow-hidden flex flex-col"
+      // 260610 Red 毛玻璃 B：设了聊天背景图则会话页根容器去实色底，露出根布局整窗壁纸做毛玻璃；否则维持原实色
+      classList={{ "bg-background-base": !settings.appearance.chatBackground() }}
+    >
       {sessionSync() ?? ""}
       <SessionHeader />
       <div class="flex-1 min-h-0 flex flex-col md:flex-row">
@@ -1558,7 +1562,9 @@ export default function Page() {
         />
         <div
           classList={{
-            "@container relative shrink-0 flex flex-col min-h-0 h-full bg-background-stronger flex-1 md:flex-none": true,
+            "@container relative shrink-0 flex flex-col min-h-0 h-full flex-1 md:flex-none": true,
+            // 260610 Red 毛玻璃 B：设了背景图则聊天栏去实色底，露出主卡片整窗毛玻璃；无背景图维持原实色
+            "bg-background-stronger": !settings.appearance.chatBackground(),
             "duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
               !size.active() && !ui.reviewSnap,
             "transition-[width]": !isV2NewSessionPage(),
@@ -1569,19 +1575,15 @@ export default function Page() {
           // 260608 Red 毛玻璃 A 触发钩子：设了聊天背景图才打标记，CSS 据此让气泡/输入框半透明模糊透出背景图
           data-chat-frost={settings.appearance.chatBackground() ? "" : undefined}
         >
-          {/* 260608 Red 0.4.5 微信风聊天背景图：绝对定位铺在聊天面板底层，内容自然盖在上面 */}
+          {/* 260610 Red 背景图已上移到根布局整窗铺底（layout.tsx），此处仅保留遮罩压暗保证对话可读 */}
           <Show when={settings.appearance.chatBackground()}>
-            <div
-              aria-hidden="true"
-              class="absolute inset-0 z-0 pointer-events-none bg-cover bg-center bg-no-repeat"
-              style={{ "background-image": `url(${settings.appearance.chatBackground()})` }}
-            />
             {/* 260608 Yuqi 半透明遮罩：压低壁纸亮度确保文字可读，同时过渡到两侧面板的实色背景 */}
             {/* 260609 Yuqi 0.4→0.62：哥哥实测 0.4 仍偏亮压不住文字，加深遮罩保证对话可读 */}
+            {/* 260610 Red 0.5.0 refine#1：0.62→0.3，两侧栏已改深色磨砂当暗壳，聊天区作为更亮的焦点区，弱化暗罩 */}
             <div
               aria-hidden="true"
               class="absolute inset-0 z-0 pointer-events-none"
-              style={{ background: "rgba(0,0,0,0.62)" }}
+              style={{ background: "rgba(0,0,0,0.3)" }}
             />
           </Show>
           <div class="relative z-[1] flex-1 min-h-0 overflow-hidden">
