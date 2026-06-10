@@ -29,7 +29,7 @@ import { Bus } from "@/bus"
 import { TuiEvent } from "@/cli/cmd/tui/event"
 import open from "open"
 import os from "os"
-import { Effect, Exit, Layer, Option, Context, Schema, Stream } from "effect"
+import { Cause, Effect, Exit, Layer, Option, Context, Schema, Stream } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
@@ -546,32 +546,52 @@ export const layer = Layer.effect(
       )
     })
 
-    const create = Effect.fn("MCP.create")(function* (key: string, mcp: ConfigMCP.Info) {
-      if (mcp.enabled === false) {
-        log.info("mcp server disabled", { key })
-        return DISABLED_RESULT
-      }
+    // 260610 Red 移植上游 #31595(failure-safe)+#31544(actionable status)：
+    //   外层 catchCause 让 create 永不 fail——任何意外抛错都收敛成 status:"failed"+错因，
+    //   服务起不来时不再静默消失，状态栏能看到失败原因（之前 create 抛错被调用点 Effect.catch 吞掉=服务凭空消失）
+    const create = Effect.fn("MCP.create")(
+      function* (key: string, mcp: ConfigMCP.Info) {
+        if (mcp.enabled === false) {
+          log.info("mcp server disabled", { key })
+          return DISABLED_RESULT
+        }
 
-      log.info("found", { key, type: mcp.type })
+        log.info("found", { key, type: mcp.type })
 
-      const { client: mcpClient, status } =
-        mcp.type === "remote"
-          ? yield* connectRemote(key, mcp as ConfigMCP.Info & { type: "remote" })
-          : yield* connectLocal(key, mcp as ConfigMCP.Info & { type: "local" })
+        const { client: mcpClient, status } =
+          mcp.type === "remote"
+            ? yield* connectRemote(key, mcp as ConfigMCP.Info & { type: "remote" })
+            : yield* connectLocal(key, mcp as ConfigMCP.Info & { type: "local" })
 
-      if (!mcpClient) {
-        return { status } satisfies CreateResult
-      }
+        if (!mcpClient) {
+          if (status.status !== "connected" && status.status !== "disabled") {
+            log.warn("server unavailable", { key, type: mcp.type, status: status.status })
+          }
+          return { status } satisfies CreateResult
+        }
 
-      const listed = yield* defs(key, mcpClient, mcp.timeout)
-      if (!listed) {
-        yield* Effect.tryPromise(() => mcpClient.close()).pipe(Effect.ignore)
-        return { status: { status: "failed", error: "Failed to get tools" } } satisfies CreateResult
-      }
-
-      log.info("create() successfully created client", { key, toolCount: listed.length })
-      return { mcpClient, status, defs: listed } satisfies CreateResult
-    })
+        return yield* Effect.gen(function* () {
+          const listed = yield* defs(key, mcpClient, mcp.timeout)
+          if (!listed) {
+            return yield* Effect.fail(new Error("Failed to get tools"))
+          }
+          log.info("create() successfully created client", { key, toolCount: listed.length })
+          return { mcpClient, status, defs: listed } satisfies CreateResult
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.tryPromise(() => mcpClient.close()).pipe(Effect.ignore, Effect.andThen(Effect.failCause(cause))),
+          ),
+        )
+      },
+      Effect.map((result): CreateResult => result),
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt
+        const error = Cause.squash(cause)
+        return Effect.succeed<CreateResult>({
+          status: { status: "failed", error: error instanceof Error ? error.message : String(error) },
+        })
+      }),
+    )
     const cfgSvc = yield* Config.Service
 
     const killProcessTree = Effect.fnUntraced(
@@ -646,9 +666,8 @@ export const layer = Layer.effect(
                 return
               }
 
-              const result = yield* create(key, mcp).pipe(Effect.catch(() => Effect.void))
-              if (!result) return
-
+              // 260610 Red 上游 #31595：create 已 failure-safe 永不 fail，去掉吞错的 Effect.catch
+              const result = yield* create(key, mcp)
               s.status[key] = result.status
               if (result.mcpClient) {
                 s.clients[key] = result.mcpClient
@@ -913,7 +932,7 @@ export const layer = Layer.effect(
 
     const withClient = Effect.fnUntraced(function* <A>(
       clientName: string,
-      fn: (client: MCPClient) => Promise<A>,
+      fn: (client: MCPClient, timeout?: number) => Promise<A>,
       label: string,
       meta?: Record<string, unknown>,
     ) {
@@ -923,8 +942,12 @@ export const layer = Layer.effect(
         log.warn(`client not found for ${label}`, { clientName })
         return undefined
       }
+      // 260610 Red 移植上游 #31612：给 getPrompt/readResource 也带上超时（之前无超时可永久挂起）
+      const cfg = yield* cfgSvc.get()
+      const configured = cfg.mcp?.[clientName]
+      const timeout = (configured && isMcpConfigured(configured) ? configured.timeout : undefined) ?? cfg.experimental?.mcp_timeout ?? DEFAULT_TIMEOUT
       return yield* Effect.tryPromise({
-        try: () => fn(client),
+        try: () => fn(client, timeout),
         catch: (e: any) => {
           log.error(`failed to ${label}`, { clientName, ...meta, error: e?.message })
           return e
@@ -937,15 +960,21 @@ export const layer = Layer.effect(
       name: string,
       args?: Record<string, string>,
     ) {
-      return yield* withClient(clientName, (client) => client.getPrompt({ name, arguments: args }), "getPrompt", {
-        promptName: name,
-      })
+      return yield* withClient(
+        clientName,
+        (client, timeout) => client.getPrompt({ name, arguments: args }, { timeout }),
+        "getPrompt",
+        { promptName: name },
+      )
     })
 
     const readResource = Effect.fn("MCP.readResource")(function* (clientName: string, resourceUri: string) {
-      return yield* withClient(clientName, (client) => client.readResource({ uri: resourceUri }), "readResource", {
-        resourceUri,
-      })
+      return yield* withClient(
+        clientName,
+        (client, timeout) => client.readResource({ uri: resourceUri }, { timeout }),
+        "readResource",
+        { resourceUri },
+      )
     })
 
     const getMcpConfig = Effect.fnUntraced(function* (mcpName: string) {
