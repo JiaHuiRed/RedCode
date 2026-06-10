@@ -18,6 +18,9 @@ const operations = [
   "prepareCallHierarchy",
   "incomingCalls",
   "outgoingCalls",
+  "rename",
+  "codeAction",
+  "completion",
 ] as const
 
 export const Parameters = Schema.Struct({
@@ -31,6 +34,9 @@ export const Parameters = Schema.Struct({
   }),
   query: Schema.optional(Schema.String).annotate({
     description: "Search query for workspaceSymbol. Empty string requests all symbols.",
+  }),
+  newName: Schema.optional(Schema.String).annotate({
+    description: "New name for rename operation.",
   }),
 })
 
@@ -99,6 +105,12 @@ export const LspTool = Tool.define(
                 return lsp.incomingCalls(position)
               case "outgoingCalls":
                 return lsp.outgoingCalls(position)
+              case "rename":
+                return lsp.rename(position, args.newName ?? "")
+              case "codeAction":
+                return lsp.codeAction(position)
+              case "completion":
+                return lsp.completion(position)
             }
           })()
 

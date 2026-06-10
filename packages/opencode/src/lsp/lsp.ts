@@ -135,6 +135,9 @@ export interface Interface {
   readonly prepareCallHierarchy: (input: LocInput) => Effect.Effect<any[]>
   readonly incomingCalls: (input: LocInput) => Effect.Effect<any[]>
   readonly outgoingCalls: (input: LocInput) => Effect.Effect<any[]>
+  readonly rename: (input: LocInput, newName: string) => Effect.Effect<any>
+  readonly codeAction: (input: LocInput) => Effect.Effect<any[]>
+  readonly completion: (input: LocInput) => Effect.Effect<any[]>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/LSP") {}
@@ -481,6 +484,46 @@ export const layer = Layer.effect(
       return yield* callHierarchyRequest(input, "callHierarchy/outgoingCalls")
     })
 
+    const rename = Effect.fn("LSP.rename")(function* (input: LocInput, newName: string) {
+      return yield* run(input.file, (client) =>
+        client.connection
+          .sendRequest("textDocument/rename", {
+            textDocument: { uri: pathToFileURL(input.file).href },
+            position: { line: input.line, character: input.character },
+            newName,
+          })
+          .catch(() => null),
+      )
+    })
+
+    const codeAction = Effect.fn("LSP.codeAction")(function* (input: LocInput) {
+      const results = yield* run(input.file, (client) =>
+        client.connection
+          .sendRequest("textDocument/codeAction", {
+            textDocument: { uri: pathToFileURL(input.file).href },
+            range: {
+              start: { line: input.line, character: input.character },
+              end: { line: input.line, character: input.character + 1 },
+            },
+            context: { diagnostics: [] },
+          })
+          .catch(() => []),
+      )
+      return results.flat().filter(Boolean)
+    })
+
+    const completion = Effect.fn("LSP.completion")(function* (input: LocInput) {
+      const results = yield* run(input.file, (client) =>
+        client.connection
+          .sendRequest("textDocument/completion", {
+            textDocument: { uri: pathToFileURL(input.file).href },
+            position: { line: input.line, character: input.character },
+          })
+          .catch(() => []),
+      )
+      return results.flat().filter(Boolean)
+    })
+
     return Service.of({
       init,
       status,
@@ -496,6 +539,9 @@ export const layer = Layer.effect(
       prepareCallHierarchy,
       incomingCalls,
       outgoingCalls,
+      rename,
+      codeAction,
+      completion,
     })
   }),
 )

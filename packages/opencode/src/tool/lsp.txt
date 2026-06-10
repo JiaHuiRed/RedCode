@@ -10,6 +10,9 @@ Supported operations:
 - prepareCallHierarchy: Get call hierarchy item at a position (functions/methods)
 - incomingCalls: Find all functions/methods that call the function at a position
 - outgoingCalls: Find all functions/methods called by the function at a position
+- rename: Rename a symbol across the entire project. Requires newName parameter.
+- codeAction: Get available code actions (quick fixes, refactors) at a position
+- completion: Get completion items (suggestions) at a position
 
 All operations require:
 - filePath: The file to operate on
@@ -18,6 +21,9 @@ All operations require:
 
 workspaceSymbol also accepts:
 - query: A query string to filter symbols by. Empty string requests all symbols.
+
+rename also accepts:
+- newName: The new name for the symbol being renamed.
 
 For workspaceSymbol, filePath is not sent in the LSP workspace/symbol request. It is used by opencode to select and start the matching LSP server.
 
