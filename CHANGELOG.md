@@ -466,6 +466,12 @@
 npm install -g @tarquinen/opencode-dcp
 ```
 
+### [0.5.4] - 2026-06-10
+
+#### 修复
+
+- **缓存 token 分母为 0 问题**：`session-context-tab.tsx` 中 cacheTokens 的 `read / write` 显示在 write=0 时展示 `168,704 / 0` 看起来像除法 bug。改为按缓存命中率展示：`read / write (XX%)`，write=0 时只显示 `read (XX%)`，无缓存活动时 `—`。命中率计算公式 `cacheRead / (input + cacheRead + cacheWrite)`，取自 TUI 已有实现（`prompt/index.tsx:338`）
+
 ### [0.5.3] - 2026-06-10
 
 #### 清理

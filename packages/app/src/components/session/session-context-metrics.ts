@@ -25,6 +25,7 @@ type Context = {
   reasoning: number
   cacheRead: number
   cacheWrite: number
+  cacheHit: number | null
   total: number
   usage: number | null
 }
@@ -71,6 +72,13 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
       reasoning: message.tokens.reasoning,
       cacheRead: message.tokens.cache.read,
       cacheWrite: message.tokens.cache.write,
+      cacheHit: message.tokens.cache.read + message.tokens.cache.write > 0
+        ? Math.round(
+            (message.tokens.cache.read /
+              (message.tokens.input + message.tokens.cache.read + message.tokens.cache.write)) *
+              100,
+          )
+        : null,
       total,
       usage: limit ? Math.round((total / limit) * 100) : null,
     },
