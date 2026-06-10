@@ -10,6 +10,42 @@
 
 ## TUI
 
+### [0.4.9] - 2026-06-10
+
+#### 新增
+
+- **`/subtask` 命令**：后台派发独立子任务，上下文隔离，主对话不被子任务的中间过程污染（`.opencode/command/subtask.md`）
+
+#### 修复
+
+- **提示词路由补全**：`system.ts` 的 `provider()` 之前 deepseek/mimo 模型全部跌回 95 行 verbose `default.txt`；补 deepseek/mimo 分支走各自紧凑提示词
+  - 新增 minimax 分支：`api.id` 含 `minimax`（含 m3 及以后）复用 `PROMPT_MIMO` 紧凑风格（内容非模型专属，复用不造重复文件）
+- **剪贴板贴图**：PowerShell `Get-Clipboard` 的 base64 stdout 会嵌入换行/空白导致解码失败；解码前 `replace(/\s/g, "")` 清洗，并加 magic bytes 校验确认确为图片（`tui/util/clipboard.ts`）
+
+#### 变更
+
+- **提示词品牌名归一**：`anthropic.txt` / `default.txt` / `kimi.txt` 正文里的 `opencode` / `OpenCode` 显示文案统一改为 `RedCode`
+
+### [0.4.8] - 2026-06-10
+
+#### 新增
+
+- **记忆系统全面升级**：长尾教训从"每轮整体注入"改为"按需召回"，大幅省 token
+  - **FTS5 trigram 召回**：`su-prememory` MCP 的 FTS5 分词器从 unicode61 改 trigram，中文可正常召回；带旧表迁移（检测非 trigram 的 `memories_fts` 表即 drop 重建）；`recall` 走 bm25 相关性排序，query <3 字回退 LIKE 兜底（`plugins/mcp-su-prememory-local/src/index.ts`）
+  - **`/recall` 命令**：按关键词从 `MEMORY.md` 召回历史教训，配 `recall-memory.mjs`（node 调用绕开 PowerShell `bun.ps1` 执行策略封禁）
+  - **CORE 块每轮注入**：新增 `memory.ts` 插件，每轮把 `~/.redcode/AGENTS.md` 的 CORE 块追加到 system 末尾（最高 recency），无标记即 no-op，公开仓零个人痕迹
+  - **MEMORY.md 退出整体注入**：`redcode.home.jsonc` 的 `instructions` 去掉 `~/.redcode/MEMORY.md`，改 `/recall` 按需召回，工作铁律由 CORE 块兜底；USER 画像仍自动加载
+  - **会话摘要索引**：新增 `~/.redcode/memory/INDEX.md`，每 session 一条 50–100 token 摘要，SessionStart 优先读索引、需细节再翻全量 `YYMMDD.md`；`memory-automation` skill 已接线（SessionStart 先读 INDEX、Stop 时追加摘要）
+
+#### 修复
+
+- **MCP spawn ENOENT（dev/GUI-sidecar）**：`resolveMcpCwd` 在 `findRedcodeRoot()` 返回空（如 `bun run dev` 下 execPath=bun.exe 向上找不到安装根）时，`$REDCODE_ROOT` 残留字面量 → spawn cwd 指向不存在目录 → ENOENT；改为 `root || fallback`，空根回退到 `InstanceState.directory`（`mcp/index.ts`）
+- **typegraph-mcp 进程泄漏（Windows）**：命令从 `npx` 改 `node` 直起本地 tsx — npx 在 Windows 被 `cmd /c` 包装，真正的 node 子进程脱离 `transport.pid` 无法被 `taskkill /T` 回收 → 进程泄漏；同时工具从 14 个精简到 3 个 tsserver 类型工具（其余被 jcodemunch 覆盖）（`plugins/typegraph-mcp/server.ts`、`redcode.jsonc`）
+
+#### 构建
+
+- **`.gitattributes` 钉死行尾**：统一 LF/CRLF 规则 + 一次性归一，避免跨机器行尾漂移
+
 ### [0.4.7] - 2026-06-08
 
 #### 改进

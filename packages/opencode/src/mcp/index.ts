@@ -61,7 +61,9 @@ function resolveMcpCwd(mcpCwd: string | undefined, fallback: string): string {
   if (!mcpCwd) return fallback
   // Expand $REDCODE_ROOT — 如果找不到安装根目录，回退到 InstanceState.directory
   const root = findRedcodeRoot()
-  let resolved = root ? mcpCwd.replace(/\$REDCODE_ROOT/g, root) : mcpCwd
+  // 260610 CC root 为空时（bun run dev 下 execPath=bun.exe，向上找不到安装根）回退 fallback，
+  // 否则 $REDCODE_ROOT 残留字面量 → spawn cwd 指向不存在目录 → ENOENT
+  let resolved = mcpCwd.replace(/\$REDCODE_ROOT/g, root || fallback)
   // Expand ~/
   if (resolved.startsWith("~/")) resolved = path.join(os.homedir(), resolved.slice(2))
   return resolved

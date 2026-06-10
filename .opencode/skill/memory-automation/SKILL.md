@@ -11,14 +11,14 @@ description: 自动化记忆系统——SessionStart 自动注入上下文、Pre
 
 自动做三件事，不做第四件：
 
-1. **读最近日志**：读 `~/.redcode/memory/` 下最近 3 天的日志（按文件名倒序），摘出关键教训
-2. **读长期库**：读 `~/.redcode/MEMORY.md`，关注工作纪律和偏好
+1. **先读会话索引**：读 `~/.redcode/memory/INDEX.md`（每 session 一条 50–100 token 摘要），摘出相关教训；只有需要某天细节时，再读对应 `YYMMDD.md` 全量日志
+2. **长期库按需召回**：不再整体读 `~/.redcode/MEMORY.md`（已撤出 instructions 注入），改用 `/recall <关键词>` 按需召回历史教训；工作铁律由 `AGENTS.md` 的 CORE 块每轮注入兜底
 3. **注入上下文**：把摘出来的教训放在对话顶部，格式：
    ```
    [MEMORY] YYMMDD: 关键教训摘要
    [MEMORY] YYMMDD: ...
    ```
-4. **不做的事**：不把整个日志文件 dump 进去，只摘警告和教训
+4. **不做的事**：不把整个日志文件或 MEMORY.md dump 进去，只摘警告和教训
 
 ## 工作中
 
@@ -56,16 +56,18 @@ Context 被压缩前，保存当前状态到 `~/.redcode/memory/.session-last.js
 
 1. 从 `~/.redcode/memory/` 当天日志摘**关键且需长期警惕**的教训
 2. 去重合入 `~/.redcode/MEMORY.md`
-3. 删当日日志里已移到长期库的条目
-4. 复审长期库，删过时/已内化条目
+3. 给 `~/.redcode/memory/INDEX.md` 追加本 session 一条 50–100 token 摘要（[Session]/[Lesson]/[Decision]/[Note] 分类）
+4. 删当日日志里已移到长期库的条目
+5. 复审长期库，删过时/已内化条目
 
 ## 记忆结构
 
 ```
 ~/.redcode/memory/
+├── INDEX.md            # 会话摘要索引（每 session 一条，SessionStart 优先读，省 token）
 ├── YYMMDD.md          # 当天日志
 ├── .session-last.json  # 最后压缩时的状态（自动维护，不手动改）
-~/.redcode/MEMORY.md   # 长期库（收工/Stop 时更新）
+~/.redcode/MEMORY.md   # 长期库（收工/Stop 时更新，按需 /recall 召回，不再整体注入）
 ```
 
 ## 边界
