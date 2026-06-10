@@ -23,6 +23,7 @@
   - 循环2 `session.ts ↔ up-migrations/effect-sqlite.ts`：根因 `migrate` 函数定义在 `session.ts` 并 value-import 上游迁移模块；将 `migrate` 提至新建 `sqlite-core/effect/migrate.ts`，`session.ts` 和 `effect-sqlite/migrator.ts` 更新 import 路径
   - 两个循环均为 type-level 边缘 + 单向 value 依赖，现已全破
 - **侧边栏缓存 token 分母为 0**：`sidebar/context.tsx` 中 cache 信息展示 `read / write`，write=0 时显示 `X,XXX / 0`；新增 cacheHit 命中率计算，write=0 时只显示读数值+命中率，与 GUI 侧同修
+- **多模态图片双重 data URL 编码**：`@ai-sdk/openai-compatible` 对 `data` 字段再包一层 `data:...;base64,` 前缀导致图片 base64 损坏；`message-v2.ts` 新增 `stripDataUrlPrefix()` 在传入 AI SDK 前去除 data URL 前缀只保留 raw base64，用户消息和 tool-result media 两处均修（`session/message-v2.ts`）
 
 ### [0.4.13] - 2026-06-10
 

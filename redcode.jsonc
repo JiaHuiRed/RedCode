@@ -1,10 +1,7 @@
 {
   "$schema": "https://redcode.dev/config.json",
-  "plugin": [
-    "./.opencode/plugins/ecc-shell-stub.js",
-    // 260604 Red DCP — 动态上下文裁剪：压缩旧对话/去重/裁剪错误输入
-    "@tarquinen/opencode-dcp"
-  ],
+  // 260610 Red 插件已迁移至全局 ~/.redcode/plugin/，项目级不再重复声明
+  // 260604 Red DCP 插件已通过全局配置加载
   // 260607 Red 技能指令已移至 ~/.redcode/redcode.jsonc（全局生效，sync-home.bat 同步）
   //    项目级指令保留 AGENTS.md/CLAUDE.md 自动发现，skill 统一走全局配置
 }

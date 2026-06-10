@@ -39,6 +39,13 @@ interface FetchDecompressionError extends Error {
 export const SYNTHETIC_ATTACHMENT_PROMPT = "Attached media from tool result:"
 export { isMedia }
 
+/** Strip the data: prefix from a data URL so downstream SDKs don't double-wrap it. */
+function stripDataUrlPrefix(url: string) {
+  if (!url.startsWith("data:")) return url
+  const base64Index = url.indexOf(";base64,")
+  return base64Index >= 0 ? url.slice(base64Index + 8) : url
+}
+
 export const AbortedError = NamedError.create("MessageAbortedError", { message: Schema.String })
 export const StructuredOutputError = NamedError.create("StructuredOutputError", {
   message: Schema.String,
@@ -720,7 +727,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
           } else {
             userMessage.parts.push({
               type: "file",
-              url: part.url,
+              url: stripDataUrlPrefix(part.url),
               mediaType: part.mime,
               filename: part.filename,
             })
@@ -892,7 +899,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
               },
               ...media.map((attachment) => ({
                 type: "file" as const,
-                url: attachment.url,
+                url: stripDataUrlPrefix(attachment.url),
                 mediaType: attachment.mime,
                 filename: attachment.filename,
               })),
