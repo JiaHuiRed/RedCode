@@ -25,6 +25,7 @@ import { ProviderID, type ModelID } from "../provider/schema"
 import { WebSearchTool } from "./websearch"
 import { RepoCloneTool } from "./repo_clone"
 import { RepoOverviewTool } from "./repo_overview"
+import { AstGrepTool } from "./ast_grep"
 import { RepositoryCache } from "@/reference/repository-cache"
 import * as Log from "@redcode-ai/core/util/log"
 import { LspTool } from "./lsp"
@@ -134,6 +135,7 @@ export const layer: Layer.Layer<
     const writetool = yield* WriteTool
     const edit = yield* EditTool
     const greptool = yield* GrepTool
+    const astGreptool = yield* AstGrepTool
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
     const agent = yield* Agent.Service
@@ -232,6 +234,7 @@ export const layer: Layer.Layer<
           read: Tool.init(read),
           glob: Tool.init(globtool),
           grep: Tool.init(greptool),
+          ast_grep: Tool.init(astGreptool),
           edit: Tool.init(edit),
           write: Tool.init(writetool),
           task: Tool.init(task),
@@ -296,6 +299,7 @@ export const layer: Layer.Layer<
             tool.read,
             tool.glob,
             tool.grep,
+            tool.ast_grep,
             tool.edit,
             tool.write,
             tool.task,

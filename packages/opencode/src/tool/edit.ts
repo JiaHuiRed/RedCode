@@ -44,14 +44,43 @@ function lock(filePath: string) {
   return next
 }
 
+function computeFileHash(text: string): string {
+  const normalized = text.replace(/[ \t\r]+(?=\n|$)/g, "")
+  const hash = Bun.hash.xxHash32(normalized, 0) & 0xffff
+  return hash.toString(16).padStart(4, "0").toUpperCase()
+}
+
 export const Parameters = Schema.Struct({
-  filePath: Schema.String.annotate({ description: "The absolute path to the file to modify" }),
-  oldString: Schema.String.annotate({ description: "The text to replace" }),
-  newString: Schema.String.annotate({
-    description: "The text to replace it with (must be different from oldString)",
+  filePath: Schema.optional(Schema.String).annotate({
+    description: "The absolute path to the file to modify",
+  }),
+  oldString: Schema.optional(Schema.String).annotate({
+    description: "The text to replace. Not needed when using `input` (hashline format).",
+  }),
+  newString: Schema.optional(Schema.String).annotate({
+    description: "The replacement text. Not needed when using `input` (hashline format).",
   }),
   replaceAll: Schema.optional(Schema.Boolean).annotate({
     description: "Replace all occurrences of oldString (default false)",
+  }),
+  input: Schema.optional(Schema.String).annotate({
+    description:
+      "Hashline format — a self-contained patch string. Alternative to filePath + oldString + newString.\n\n" +
+      "Format:\n" +
+      "  [path/to/file#TAG]\n" +
+      "  replace N..M:\n" +
+      "  + new content\n" +
+      "  + more content\n" +
+      "  insert before N:\n" +
+      "  + inserted content\n" +
+      "  insert after N:\n" +
+      "  + inserted content\n" +
+      "  delete N..M\n" +
+      "  insert tail:\n" +
+      "  + content at end\n" +
+      "  insert head:\n" +
+      "  + content at start\n\n" +
+      "Body lines start with `+ `. The TAG comes from the Read tool's output header `[path#TAG]`.",
   }),
 })
 
@@ -68,8 +97,16 @@ export const EditTool = Tool.define(
       parameters: Parameters,
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
+          // Hashline mode — self-contained [path#TAG] + operation format
+          if (params.input) {
+            return yield* executeHashline(params.input, ctx, lsp, afs, format, bus)
+          }
+
           if (!params.filePath) {
             throw new Error("filePath is required")
+          }
+          if (params.oldString === undefined || params.newString === undefined) {
+            throw new Error("oldString and newString are required when not using hashline `input`.")
           }
 
           if (params.oldString === params.newString) {
@@ -82,15 +119,19 @@ export const EditTool = Tool.define(
             : path.join(instance.directory, params.filePath)
           yield* assertExternalDirectoryEffect(ctx, filePath)
 
+          // Narrow optional params for TS inside nested callbacks
+          const oldString: string = params.oldString
+          const newString: string = params.newString
+
           let diff = ""
           let contentOld = ""
           let contentNew = ""
           yield* lock(filePath).withPermits(1)(
             Effect.gen(function* () {
-              if (params.oldString === "") {
+              if (oldString === "") {
                 const existed = yield* afs.existsSafe(filePath)
                 const source = existed ? yield* Bom.readFile(afs, filePath) : { bom: false, text: "" }
-                const next = Bom.split(params.newString)
+                const next = Bom.split(newString)
                 const desiredBom = source.bom || next.bom
                 contentOld = source.text
                 contentNew = next.text
@@ -123,8 +164,8 @@ export const EditTool = Tool.define(
               contentOld = source.text
 
               const ending = detectLineEnding(contentOld)
-              const old = convertToLineEnding(normalizeLineEndings(params.oldString), ending)
-              const replacement = convertToLineEnding(normalizeLineEndings(params.newString), ending)
+              const old = convertToLineEnding(normalizeLineEndings(oldString), ending)
+              const replacement = convertToLineEnding(normalizeLineEndings(newString), ending)
 
               const next = Bom.split(replace(contentOld, old, replacement, params.replaceAll))
               const desiredBom = source.bom || next.bom
@@ -209,6 +250,270 @@ export const EditTool = Tool.define(
     }
   }),
 )
+
+// --- Hashline types ---
+
+interface HashlineOp {
+  type: "replace" | "insertBefore" | "insertAfter" | "delete" | "insertHead" | "insertTail"
+  startLine: number
+  endLine?: number
+  body: string[]
+}
+
+interface HashlinePatch {
+  filePath: string
+  expectedHash: string
+  ops: HashlineOp[]
+}
+
+// --- Hashline parser ---
+
+function parseHashline(input: string): HashlinePatch {
+  const lines = input.replace(/\r\n/g, "\n").split("\n")
+  if (lines.length === 0) throw new Error("Invalid hashline format: expected [path#TAG] on first line")
+
+  const headerMatch = lines[0].match(/^\[(.+)#([0-9A-F]{4})\]$/)
+  if (!headerMatch) throw new Error("Invalid hashline format: expected [path#TAG] on first line")
+
+  const filePath = headerMatch[1]
+  const expectedHash = headerMatch[2]
+  const ops: HashlineOp[] = []
+
+  let i = 1
+  while (i < lines.length) {
+    const line = lines[i].trimEnd()
+    i++
+
+    if (line === "" || line.startsWith("***")) continue
+
+    const replaceMatch = line.match(/^replace\s+(\d+)\.\.(\d+):$/)
+    const insertBeforeMatch = line.match(/^insert\s+before\s+(\d+):$/)
+    const insertAfterMatch = line.match(/^insert\s+after\s+(\d+):$/)
+    const deleteMatch = line.match(/^delete\s+(\d+)\.\.(\d+)$/)
+    const insertHeadMatch = line.match(/^insert\s+head:$/)
+    const insertTailMatch = line.match(/^insert\s+tail:$/)
+
+    if (replaceMatch) {
+      const start = parseInt(replaceMatch[1], 10)
+      const end = parseInt(replaceMatch[2], 10)
+      if (start > end) throw new Error(`Invalid replace range: ${start}..${end}`)
+      const body = readBody(lines, i)
+      i += body.length
+      ops.push({ type: "replace", startLine: start, endLine: end, body })
+    } else if (insertBeforeMatch) {
+      const lineNum = parseInt(insertBeforeMatch[1], 10)
+      const body = readBody(lines, i)
+      i += body.length
+      ops.push({ type: "insertBefore", startLine: lineNum, body })
+    } else if (insertAfterMatch) {
+      const lineNum = parseInt(insertAfterMatch[1], 10)
+      const body = readBody(lines, i)
+      i += body.length
+      ops.push({ type: "insertAfter", startLine: lineNum, body })
+    } else if (deleteMatch) {
+      const start = parseInt(deleteMatch[1], 10)
+      const end = parseInt(deleteMatch[2], 10)
+      ops.push({ type: "delete", startLine: start, endLine: end, body: [] })
+    } else if (insertHeadMatch) {
+      const body = readBody(lines, i)
+      i += body.length
+      ops.push({ type: "insertHead", startLine: 1, body })
+    } else if (insertTailMatch) {
+      const body = readBody(lines, i)
+      i += body.length
+      ops.push({ type: "insertTail", startLine: 1, body })
+    }
+  }
+
+  if (ops.length === 0) throw new Error("Invalid hashline format: no operations found")
+  return { filePath, expectedHash, ops }
+}
+
+function readBody(lines: string[], fromIndex: number): string[] {
+  const body: string[] = []
+  for (let j = fromIndex; j < lines.length; j++) {
+    if (lines[j].startsWith("+")) {
+      body.push(lines[j].slice(1))
+    } else if (lines[j] === "") {
+      continue
+    } else {
+      break
+    }
+  }
+  return body
+}
+
+// --- Hashline applier ---
+
+function applyHashlineOps(text: string, ops: HashlineOp[]): string {
+  const lines = text.split("\n")
+  const total = lines.length
+
+  // Sort by anchor line descending so edits don't shift each other's positions
+  const sorted = [...ops].sort((a, b) => {
+    const aIdx = opSortIndex(a, total)
+    const bIdx = opSortIndex(b, total)
+    if (bIdx !== aIdx) return bIdx - aIdx
+    return a.type === "delete" ? 0 : 1
+  })
+
+  for (const op of sorted) {
+    const count = lines.length
+
+    switch (op.type) {
+      case "replace": {
+        const idx = op.startLine - 1
+        if (idx < 0 || op.endLine! > count)
+          throw new Error(`Replace ${op.startLine}..${op.endLine} out of range: file has ${count} lines`)
+        lines.splice(idx, op.endLine! - op.startLine + 1, ...op.body)
+        break
+      }
+      case "delete": {
+        const idx = op.startLine - 1
+        if (idx < 0 || op.endLine! > count)
+          throw new Error(`Delete ${op.startLine}..${op.endLine} out of range: file has ${count} lines`)
+        lines.splice(idx, op.endLine! - op.startLine + 1)
+        break
+      }
+      case "insertBefore": {
+        const idx = op.startLine - 1
+        if (idx < 0 || idx > count)
+          throw new Error(`Insert before ${op.startLine} out of range: file has ${count} lines`)
+        lines.splice(idx, 0, ...op.body)
+        break
+      }
+      case "insertAfter": {
+        const idx = op.startLine
+        if (idx < 0 || idx > count)
+          throw new Error(`Insert after ${op.startLine} out of range: file has ${count} lines`)
+        lines.splice(idx, 0, ...op.body)
+        break
+      }
+      case "insertHead":
+        lines.unshift(...op.body)
+        break
+      case "insertTail":
+        lines.push(...op.body)
+        break
+    }
+  }
+
+  return lines.join("\n")
+}
+
+function opSortIndex(op: HashlineOp, totalLines: number): number {
+  switch (op.type) {
+    case "replace": return op.startLine
+    case "delete": return op.startLine
+    case "insertBefore": return op.startLine
+    case "insertAfter": return op.startLine + 1
+    case "insertHead": return 0
+    case "insertTail": return totalLines + 1
+  }
+}
+
+// --- Hashline executor ---
+
+const executeHashline = (
+  input: string,
+  ctx: Tool.Context,
+  lsp: LSP.Interface,
+  afs: AppFileSystem.Interface,
+  format: Format.Interface,
+  bus: Bus.Interface,
+) =>
+  Effect.gen(function* () {
+    const instance = yield* InstanceState.context
+
+    const { filePath, expectedHash, ops } = parseHashline(input)
+    const resolvedPath = path.isAbsolute(filePath) ? filePath : path.join(instance.directory, filePath)
+    yield* assertExternalDirectoryEffect(ctx, resolvedPath)
+
+    let contentOld = ""
+    let contentNew = ""
+    let diff = ""
+    yield* lock(resolvedPath).withPermits(1)(
+      Effect.gen(function* () {
+        const info = yield* afs.stat(resolvedPath).pipe(Effect.catch(() => Effect.succeed(undefined)))
+        if (!info) throw new Error(`File ${resolvedPath} not found`)
+        if (info.type === "Directory") throw new Error(`Path is a directory, not a file: ${resolvedPath}`)
+
+        const source = yield* Bom.readFile(afs, resolvedPath)
+        contentOld = source.text
+
+        const currentHash = computeFileHash(contentOld)
+        if (currentHash !== expectedHash) {
+          throw new Error(
+            `Hash mismatch: expected [${filePath}#${expectedHash}] but current is [${filePath}#${currentHash}]. Re-read the file to get the current hash.`,
+          )
+        }
+
+        const ending = detectLineEnding(contentOld)
+        contentNew = convertToLineEnding(applyHashlineOps(contentOld, ops), ending)
+
+        const next = Bom.split(contentNew)
+        const desiredBom = source.bom || next.bom
+        contentNew = next.text
+
+        diff = trimDiff(
+          createTwoFilesPatch(
+            resolvedPath,
+            resolvedPath,
+            normalizeLineEndings(contentOld),
+            normalizeLineEndings(contentNew),
+          ),
+        )
+
+        yield* ctx.ask({
+          permission: "edit",
+          patterns: [path.relative(instance.worktree, resolvedPath)],
+          always: ["*"],
+          metadata: { filepath: resolvedPath, diff },
+        })
+
+        yield* afs.writeWithDirs(resolvedPath, Bom.join(contentNew, desiredBom))
+        if (yield* format.file(resolvedPath)) {
+          contentNew = yield* Bom.syncFile(afs, resolvedPath, desiredBom)
+        }
+        yield* bus.publish(File.Event.Edited, { file: resolvedPath })
+        yield* bus.publish(FileWatcher.Event.Updated, { file: resolvedPath, event: "change" })
+
+        diff = trimDiff(
+          createTwoFilesPatch(
+            resolvedPath,
+            resolvedPath,
+            normalizeLineEndings(contentOld),
+            normalizeLineEndings(contentNew),
+          ),
+        )
+      }).pipe(Effect.orDie),
+    )
+
+    let additions = 0
+    let deletions = 0
+    for (const change of diffLines(contentOld, contentNew)) {
+      if (change.added) additions += change.count || 0
+      if (change.removed) deletions += change.count || 0
+    }
+    const filediff: Snapshot.FileDiff = { file: resolvedPath, patch: diff, additions, deletions }
+
+    yield* ctx.metadata({
+      metadata: { diff, filediff, diagnostics: {} },
+    })
+
+    let output = "Edit applied successfully."
+    yield* lsp.touchFile(resolvedPath, "document")
+    const diagnostics = yield* lsp.diagnostics()
+    const normalizedFilePath = AppFileSystem.normalizePath(resolvedPath)
+    const block = LSP.Diagnostic.report(resolvedPath, diagnostics[normalizedFilePath] ?? [])
+    if (block) output += `\n\nLSP errors detected in this file, please fix:\n${block}`
+
+    return {
+      metadata: { diagnostics, diff, filediff },
+      title: `${path.relative(instance.worktree, resolvedPath)}`,
+      output,
+    }
+  })
 
 export type Replacer = (content: string, find: string) => Generator<string, void, unknown>
 
