@@ -4,15 +4,15 @@ import { createDraft, finishDraft, type Draft } from "immer"
 import type { LanguageModelV3 } from "@ai-sdk/provider"
 import { Context, Effect, Exit, Layer, PubSub, Schema, Scope, Stream } from "effect"
 import type { ModelV2 } from "./model"
-import type { AgentV2 } from "./agent"
-import type { Catalog } from "./catalog"
+import type { Info as AgentInfo, ID as AgentID } from "./agent"
+import type { Context as CatalogContext } from "./catalog"
 
 export const ID = Schema.String.pipe(Schema.brand("Plugin.ID"))
 export type ID = typeof ID.Type
 
 type HookSpec = {
   "catalog.transform": {
-    input: Catalog.Context
+    input: CatalogContext
     output: {}
   }
   "account.switched": {
@@ -46,13 +46,13 @@ type HookSpec = {
   "agent.update": {
     input: {}
     output: {
-      agent: AgentV2.Info
+      agent: AgentInfo
       cancel: boolean
     }
   }
   "agent.remove": {
     input: {
-      agent: AgentV2.Info
+      agent: AgentInfo
     }
     output: {
       cancel: boolean
@@ -61,7 +61,7 @@ type HookSpec = {
   "agent.default": {
     input: {}
     output: {
-      agent?: AgentV2.ID
+      agent?: AgentID
     }
   }
 }

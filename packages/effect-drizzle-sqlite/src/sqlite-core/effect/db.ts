@@ -4,6 +4,7 @@ import type { SqlError } from "effect/unstable/sql/SqlError"
 import type { EffectCacheShape } from "drizzle-orm/cache/core/cache-effect"
 import type { MutationOption } from "drizzle-orm/cache/core/cache"
 import type { QueryEffectHKTBase } from "drizzle-orm/effect-core/query-effect"
+import { EffectTransactionRollbackError } from "drizzle-orm/effect-core/errors"
 import { entityKind } from "drizzle-orm/entity"
 import type { TypedQueryBuilder } from "drizzle-orm/query-builders/query-builder"
 import type { AnyRelations, EmptyRelations } from "drizzle-orm/relations"
@@ -24,7 +25,7 @@ import { SQLiteEffectRelationalQueryBuilder } from "./query"
 import { SQLiteEffectRaw } from "./raw"
 import { SQLiteEffectSelectBuilder } from "./select"
 import type { SQLiteEffectSelectBase } from "./select"
-import type { SQLiteEffectSession, SQLiteEffectTransaction } from "./session"
+import type { SQLiteEffectSession } from "./session"
 import { SQLiteEffectUpdateBuilder } from "./update"
 
 export class SQLiteEffectDatabase<
@@ -237,6 +238,26 @@ export class SQLiteEffectDatabase<
     transaction: (tx: SQLiteEffectTransaction<TEffectHKT, TRunResult, TRelations>) => Effect.Effect<A, E, R>,
     config?: SQLiteTransactionConfig,
   ) => Effect.Effect<A, E | SqlError, R> = (tx, config) => this.session.transaction(tx, config)
+}
+
+export abstract class SQLiteEffectTransaction<
+  TEffectHKT extends QueryEffectHKTBase,
+  TRunResult,
+  TRelations extends AnyRelations = EmptyRelations,
+> extends SQLiteEffectDatabase<TEffectHKT, TRunResult, TRelations> {
+  static override readonly [entityKind]: string = "SQLiteEffectTransaction"
+
+  constructor(
+    dialect: SQLiteAsyncDialect,
+    session: SQLiteEffectSession<TEffectHKT, TRunResult, TRelations>,
+    protected relations: TRelations,
+  ) {
+    super(dialect, session, relations)
+  }
+
+  rollback() {
+    return new EffectTransactionRollbackError()
+  }
 }
 
 export type SQLiteEffectWithReplicas<Q> = Q & { $primary: Q; $replicas: Q[] }

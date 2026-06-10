@@ -10,6 +10,19 @@
 
 ## TUI
 
+### [0.4.14] - 2026-06-10
+
+#### 清理
+
+- **core/plugin 类型导入显式化**：`plugin.ts` 对 `agent.ts` / `catalog.ts` 的 `import type` 由 namespace 导入改为直接类型导入（`import type { Info as AgentInfo, ID as AgentID }`），显式标注依赖边界，避免后续误改成 value import 引入真循环。
+
+#### 修复
+
+- **effect-drizzle-sqlite 双循环依赖破除**：
+  - 循环1 `db.ts ↔ session.ts`：根因 `SQLiteEffectTransaction` 类定义在 `session.ts` 但继承自 `db.ts` 的 `SQLiteEffectDatabase`；将 `SQLiteEffectTransaction` 类迁至 `db.ts`，`session.ts` 改用 `import type` 回指，消除 value-level 循环
+  - 循环2 `session.ts ↔ up-migrations/effect-sqlite.ts`：根因 `migrate` 函数定义在 `session.ts` 并 value-import 上游迁移模块；将 `migrate` 提至新建 `sqlite-core/effect/migrate.ts`，`session.ts` 和 `effect-sqlite/migrator.ts` 更新 import 路径
+  - 两个循环均为 type-level 边缘 + 单向 value 依赖，现已全破
+
 ### [0.4.13] - 2026-06-10
 
 #### 清理
@@ -435,6 +448,12 @@
 ---
 
 ## GUI
+
+### [0.5.3] - 2026-06-10
+
+#### 清理
+
+- **layout.tsx 复杂度拆分**：1514 行单文件拆为三个模块：预取系统（247 行，`layout/prefetch.ts`）和通知弹窗（120 行，`layout/notification-toasts.ts`），主组件减至 ~1150 行（-24%）。预取系统为纯逻辑函数+createEffect hook，零 JSX 零信号耦合，可独立测试。
 
 ### [0.5.2] - 2026-06-10
 
