@@ -40,6 +40,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         reasoning: 0,
         cacheRead: 0,
         cacheWrite: 0,
+        cacheHit: null,
         percent: null,
         model: null as string | null,
         provider: null as string | null,
@@ -53,6 +54,8 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     const prov = props.api.state.provider.find((item) => item.id === last.providerID)
     const modelInfo = prov?.models[last.modelID]
     const modelName = modelInfo?.name ?? last.modelID
+    const cacheTotal = last.tokens.input + last.tokens.cache.read + last.tokens.cache.write
+    const cacheHit = cacheTotal > 0 ? Math.round((last.tokens.cache.read / cacheTotal) * 100) : null
     return {
       tokens,
       input: last.tokens.input,
@@ -60,6 +63,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       reasoning: last.tokens.reasoning,
       cacheRead: last.tokens.cache.read,
       cacheWrite: last.tokens.cache.write,
+      cacheHit,
       percent: modelInfo?.limit.context ? Math.round((tokens / modelInfo.limit.context) * 100) : null,
       model: modelName,
       provider: prov?.name ?? last.providerID,
@@ -96,7 +100,9 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         <text fg={theme()?.textMuted}>reason {state().reasoning.toLocaleString()}</text>
       </Show>
       <Show when={state().cacheRead > 0 || state().cacheWrite > 0}>
-        <text fg={theme()?.textMuted}>cache {state().cacheRead.toLocaleString()} / {state().cacheWrite.toLocaleString()}</text>
+        <text fg={theme()?.textMuted}>cache {state().cacheWrite > 0
+          ? `${state().cacheRead.toLocaleString()} / ${state().cacheWrite.toLocaleString()}`
+          : state().cacheRead.toLocaleString()}{state().cacheHit != null ? ` (${state().cacheHit}%)` : ""}</text>
       </Show>
       <text fg={theme()?.textMuted}>{money.format(cost())} · {state().messageCount} msgs</text>
       <Show when={agent()}>

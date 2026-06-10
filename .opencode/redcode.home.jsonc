@@ -16,6 +16,11 @@
     "~/.redcode/skill/vision-autoagent/SKILL.md",
     "~/.redcode/skill/diagnose/SKILL.md"
   ],
+  // 260610 Red 全局插件 — 任何工作区均生效，不再依赖项目 .opencode/opencode.jsonc
+  "plugin": [
+    "~/.redcode/plugin/ecc-shell-stub.js",
+    "@tarquinen/opencode-dcp"
+  ],
   "mcp": {
     // 260609 CC typegraph 精简版：只留 3 个 tsserver 类型工具（type_info/definition/module_exports），
     // 其余 11 工具 + oxc 图子系统已被 jcodemunch 覆盖故移除。命令改 node 直起 plugin 本地 tsx，

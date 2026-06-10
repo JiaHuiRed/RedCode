@@ -22,6 +22,7 @@
   - 循环1 `db.ts ↔ session.ts`：根因 `SQLiteEffectTransaction` 类定义在 `session.ts` 但继承自 `db.ts` 的 `SQLiteEffectDatabase`；将 `SQLiteEffectTransaction` 类迁至 `db.ts`，`session.ts` 改用 `import type` 回指，消除 value-level 循环
   - 循环2 `session.ts ↔ up-migrations/effect-sqlite.ts`：根因 `migrate` 函数定义在 `session.ts` 并 value-import 上游迁移模块；将 `migrate` 提至新建 `sqlite-core/effect/migrate.ts`，`session.ts` 和 `effect-sqlite/migrator.ts` 更新 import 路径
   - 两个循环均为 type-level 边缘 + 单向 value 依赖，现已全破
+- **侧边栏缓存 token 分母为 0**：`sidebar/context.tsx` 中 cache 信息展示 `read / write`，write=0 时显示 `X,XXX / 0`；新增 cacheHit 命中率计算，write=0 时只显示读数值+命中率，与 GUI 侧同修
 
 ### [0.4.13] - 2026-06-10
 
@@ -460,17 +461,15 @@
 - **ecc-shell-stub.js** 复制到 `~/.redcode/plugin/` 目录，作为全局 ECC 三件套（memory-automation / guardrail-profiles / defensive-agent）
 - **@tarquinen/opencode-dcp** 通过 npm 全局安装（v3.1.12），提供动态上下文裁剪功能
 
+ #### 修复
+ 
+ - **缓存 token 分母为 0 问题**：`session-context-tab.tsx` 中 cacheTokens 的 `read / write` 显示在 write=0 时展示 `168,704 / 0` 看起来像除法 bug。改为按缓存命中率展示：`read / write (XX%)`，write=0 时只显示 `read (XX%)`，无缓存活动时 `—`。命中率计算公式 `cacheRead / (input + cacheRead + cacheWrite)`，取自 TUI 已有实现（`prompt/index.tsx:338`）
+ 
 #### 构建说明
 
 ```bash
 npm install -g @tarquinen/opencode-dcp
 ```
-
-### [0.5.4] - 2026-06-10
-
-#### 修复
-
-- **缓存 token 分母为 0 问题**：`session-context-tab.tsx` 中 cacheTokens 的 `read / write` 显示在 write=0 时展示 `168,704 / 0` 看起来像除法 bug。改为按缓存命中率展示：`read / write (XX%)`，write=0 时只显示 `read (XX%)`，无缓存活动时 `—`。命中率计算公式 `cacheRead / (input + cacheRead + cacheWrite)`，取自 TUI 已有实现（`prompt/index.tsx:338`）
 
 ### [0.5.3] - 2026-06-10
 
