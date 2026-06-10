@@ -75,11 +75,18 @@ export default defineConfig({
 
           await fs.mkdir(outDir, { recursive: true })
 
-          // Bundle + wasm
+          // Bundle + wasm + native .node（ast-grep napi 的平台 binding 必须随 node.js 同目录，
+          // 否则 bundle 里相对 require("./ast-grep-napi.win32-x64-msvc-*.node") 在 out/main 找不到→sidecar 崩）
           await fs.cp(path.join(dist, "node.js"), path.join(outDir, "node.js"))
           for (const name of await fs.readdir(dist)) {
-            if (!name.endsWith(".wasm")) continue
-            await fs.writeFile(path.join(outDir, name), await fs.readFile(path.join(dist, name)))
+            if (name.endsWith(".wasm")) {
+              await fs.writeFile(path.join(outDir, name), await fs.readFile(path.join(dist, name)))
+              continue
+            }
+            // 260610 Red 只部署 Windows x64，仅拷当前平台 binding，避免把 6 个跨平台 .node(~40MB) 全打进包
+            if (name.endsWith(".node") && name.includes("win32-x64")) {
+              await fs.writeFile(path.join(outDir, name), await fs.readFile(path.join(dist, name)))
+            }
           }
 
           // jsonc-parser (no deps, needed by bundle as external)
