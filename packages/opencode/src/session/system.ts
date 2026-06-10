@@ -32,6 +32,8 @@ export function provider(model: Provider.Model) {
   if (model.api.id.toLowerCase().includes("kimi")) return [PROMPT_KIMI]
   if (model.api.id.toLowerCase().includes("deepseek")) return [PROMPT_DEEPSEEK]
   if (model.api.id.toLowerCase().includes("mimo")) return [PROMPT_MIMO]
+  // 260610 Red minimax(m3 及以后) 复用 mimo 紧凑提示词（内容非模型专属，避免重复文件）
+  if (model.api.id.toLowerCase().includes("minimax")) return [PROMPT_MIMO]
   return [PROMPT_DEFAULT]
 }
 
