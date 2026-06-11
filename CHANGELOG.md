@@ -23,6 +23,10 @@
 - **AGENTS.md 重写**：新增记忆系统双层架构说明、记忆流动规则（全局→项目/项目→全局）、跨项目工作规则（别的项目发现 RedCode bug 提醒用户回 RedCode 工作区修）、版本更新 checklist（含双语 README 同步）、质量门禁（从 souls 迁入，报告门禁/首次编辑不熟文件/Guardrail 档位/compress 用法/协作模式）
 - **Soul 模板瘦身**：Gsoul.md（140→68 行）/ Tsoul.md（142→64 行），操作规则全部迁入 AGENTS.md（系统级，compact 不丢），souls 只保留人格/语气/说话方式
 
+#### 修复
+
+- **缓存命中率计算修正**：根因→分母 `input + cache.read + cache.write` 中 `input` 已包含 cache tokens（API 返回值语义），cache.read 在分子分母都出现且分母被膨胀，导致命中率永远 ~99%；改法→分母改为 `cache.read + cache.write`（纯缓存命中率），并保留一位小数（`*1000/10`）。涉及 5 处：GUI metrics（`session-context-metrics.ts`）/ TUI sidebar（`sidebar/context.tsx`）/ TUI prompt（`prompt/index.tsx`）/ TUI subagent-footer（`subagent-footer.tsx`）/ CLI run（`session-data.ts`）
+
 ### [0.4.14] - 2026-06-10
 
 #### 清理
@@ -469,6 +473,10 @@
 #### 新增
 
 - **包含服务端更新（TUI 0.4.15）**：双层记忆系统（项目级+全局回退）、新项目自动初始化 `.redcode/`、Soul 自动注入（GUI 模式自动加载小宋人格，无需手动 `/gui-persona`）、AGENTS.md 重写、Soul 模板瘦身
+
+#### 修复
+
+- **缓存命中率计算修正**：分母 `input + cache.read + cache.write` 重复计入导致永远 ~99%→改为 `cache.read + cache.write`，保留一位小数（`session-context-metrics.ts`）
 
 ### [0.5.4] - 2026-06-10
 
