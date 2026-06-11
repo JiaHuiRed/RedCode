@@ -506,6 +506,8 @@
 
 #### 新增
 - **代码审查技能（ce-code-review）**：移植自 EveryInc/compound-engineering-plugin（20.9k stars），14 个人格化审查员，onfidence-gated 去重流水线，P0-P3 严重性分级 + autofix 分类，双模式（交互式自动修复 / mode:agent 仅报告）
+- **opencode-snip 插件**：自动为 git/npm/docker 等命令输出加 snip 前缀，过滤冗余输出，减少 60-90% token 消耗
+- **local-stats 本地编码统计插件**：纯本地编码活动追踪，记录每次 edit/write/read 调用，统计文件变更行数，按天存 JSON 到 `.redcode/stats/`，无需外部 API
 
 #### 修复
 - **DCP 插件配置恢复**：.opencode/redcode.home.jsonc 源模板补回 plugin 字段，修复 build 后 DCP 插件丢失问题
