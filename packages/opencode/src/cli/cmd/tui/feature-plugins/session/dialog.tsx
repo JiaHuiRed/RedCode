@@ -106,7 +106,7 @@ export function SessionSwitcherDialog() {
           if (result.error) {
             toast.show({
               variant: "error",
-              title: "Failed to delete workspace",
+              title: "删除工作区失败",
               message: errorMessage(result.error),
             })
             return false
@@ -273,7 +273,7 @@ export function SessionSwitcherDialog() {
                   } else {
                     toast.show({
                       variant: "error",
-                      title: "Failed to delete session",
+                      title: "删除会话失败",
                       message: errorMessage(result.error),
                     })
                   }
@@ -286,7 +286,7 @@ export function SessionSwitcherDialog() {
                 } else {
                   toast.show({
                     variant: "error",
-                    title: "Failed to delete session",
+                    title: "删除会话失败",
                     message: errorMessage(err),
                   })
                 }

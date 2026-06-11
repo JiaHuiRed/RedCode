@@ -37,7 +37,7 @@ export function DialogExportOptions(props: DialogExportOptionsProps) {
     bindings: [
       {
         key: "tab",
-        desc: "Next export option",
+        desc: "下一个导出选项",
         group: "Dialog",
         cmd: () => {
           const order: Array<"filename" | "thinking" | "toolDetails" | "assistantMetadata" | "openWithoutSaving"> = [
@@ -60,7 +60,7 @@ export function DialogExportOptions(props: DialogExportOptionsProps) {
     bindings: [
       {
         key: "space",
-        desc: "Toggle export option",
+        desc: "切换导出选项",
         group: "Dialog",
         cmd: () => {
           if (store.active === "thinking") setStore("thinking", !store.thinking)

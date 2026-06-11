@@ -249,7 +249,7 @@ function AutoMethod(props: AutoMethodProps) {
           const code =
             props.authorization.instructions.match(/[A-Z0-9]{4}-[A-Z0-9]{4,5}/)?.[0] ?? props.authorization.url
           Clipboard.copy(code)
-            .then(() => toast.show({ message: "Copied to clipboard", variant: "info" }))
+            .then(() => toast.show({ message: "已复制到剪贴板", variant: "info" }))
             .catch(toast.error)
         },
       },

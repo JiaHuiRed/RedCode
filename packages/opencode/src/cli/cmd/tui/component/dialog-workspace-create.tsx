@@ -67,7 +67,7 @@ async function loadWorkspaceAdapters(input: {
     .catch(() => undefined)
   if (res) return res
   input.toast.show({
-    message: "Failed to load workspace adapters",
+    message: "加载工作区适配器失败",
     variant: "error",
   })
 }

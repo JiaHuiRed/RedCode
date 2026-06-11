@@ -456,8 +456,8 @@ export function Session() {
       run: async () => {
         const copy = (url: string) =>
           Clipboard.copy(url)
-            .then(() => toast.show({ message: "Share URL copied to clipboard!", variant: "success" }))
-            .catch(() => toast.show({ message: "Failed to copy URL to clipboard", variant: "error" }))
+            .then(() => toast.show({ message: "分享链接已复制到剪贴板！", variant: "success" }))
+            .catch(() => toast.show({ message: "复制链接到剪贴板失败", variant: "error" }))
         const url = session()?.share?.url
         if (url) {
           await copy(url)
@@ -476,7 +476,7 @@ export function Session() {
           .then((res) => copy(res.data!.share!.url))
           .catch((error) => {
             toast.show({
-              message: error instanceof Error ? error.message : "Failed to share session",
+              message: error instanceof Error ? error.message : "分享会话失败",
               variant: "error",
             })
           })
@@ -577,10 +577,10 @@ export function Session() {
           .unshare({
             sessionID: route.sessionID,
           })
-          .then(() => toast.show({ message: "Session unshared successfully", variant: "success" }))
+          .then(() => toast.show({ message: "已取消会话分享", variant: "success" }))
           .catch((error) => {
             toast.show({
-              message: error instanceof Error ? error.message : "Failed to unshare session",
+              message: error instanceof Error ? error.message : "取消分享失败",
               variant: "error",
             })
           })
@@ -864,7 +864,7 @@ export function Session() {
           (msg) => msg.role === "assistant" && (!revertID || msg.id < revertID),
         )
         if (!lastAssistantMessage) {
-          toast.show({ message: "No assistant messages found", variant: "error" })
+          toast.show({ message: "未找到助手消息", variant: "error" })
           dialog.clear()
           return
         }
@@ -872,7 +872,7 @@ export function Session() {
         const parts = sync.data.part[lastAssistantMessage.id] ?? []
         const textParts = parts.filter((part) => part.type === "text")
         if (textParts.length === 0) {
-          toast.show({ message: "No text parts found in last assistant message", variant: "error" })
+          toast.show({ message: "最近的助手消息中没有文本内容", variant: "error" })
           dialog.clear()
           return
         }
@@ -891,8 +891,8 @@ export function Session() {
         }
 
         Clipboard.copy(text)
-          .then(() => toast.show({ message: "Message copied to clipboard!", variant: "success" }))
-          .catch(() => toast.show({ message: "Failed to copy to clipboard", variant: "error" }))
+          .then(() => toast.show({ message: "消息已复制到剪贴板！", variant: "success" }))
+          .catch(() => toast.show({ message: "复制到剪贴板失败", variant: "error" }))
         dialog.clear()
       },
     },
@@ -919,9 +919,9 @@ export function Session() {
             },
           )
           await Clipboard.copy(transcript)
-          toast.show({ message: "Session transcript copied to clipboard!", variant: "success" })
+          toast.show({ message: "会话记录已复制到剪贴板！", variant: "success" })
         } catch {
-          toast.show({ message: "Failed to copy session transcript", variant: "error" })
+          toast.show({ message: "复制会话记录失败", variant: "error" })
         }
         dialog.clear()
       },
@@ -982,7 +982,7 @@ export function Session() {
             toast.show({ message: `Session exported to ${filename}`, variant: "success" })
           }
         } catch {
-          toast.show({ message: "Failed to export session", variant: "error" })
+          toast.show({ message: "导出会话失败", variant: "error" })
         }
         dialog.clear()
       },

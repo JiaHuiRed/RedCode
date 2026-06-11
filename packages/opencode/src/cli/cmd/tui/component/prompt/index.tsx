@@ -221,7 +221,7 @@ export function Prompt(props: PromptProps) {
       selectWorkspace(undefined)
       setCreatingWorkspace(false)
       toast.show({
-        message: "Creating workspace failed",
+        message: "创建工作区失败",
         variant: "error",
       })
       return
@@ -286,7 +286,7 @@ export function Prompt(props: PromptProps) {
   function promptModelWarning() {
     toast.show({
       variant: "warning",
-      message: "Connect a provider to send prompts",
+      message: "请先连接服务商以发送消息",
       duration: 3000,
     })
     if (sync.data.provider.length === 0) {
@@ -393,7 +393,7 @@ export function Prompt(props: PromptProps) {
   const promptCommands = createMemo(() =>
     [
       {
-        title: "Clear prompt",
+        title: "清空输入",
         name: "prompt.clear",
         category: "Prompt",
         hidden: true,
@@ -403,7 +403,7 @@ export function Prompt(props: PromptProps) {
         },
       },
       {
-        title: "Submit prompt",
+        title: "提交消息",
         name: "prompt.submit",
         category: "Prompt",
         hidden: true,
@@ -416,7 +416,7 @@ export function Prompt(props: PromptProps) {
         },
       },
       {
-        title: "Remove editor context",
+        title: "移除编辑器上下文",
         name: "prompt.editor_context.clear",
         category: "Prompt",
         enabled: Boolean(editorContext()),
@@ -426,7 +426,7 @@ export function Prompt(props: PromptProps) {
         },
       },
       {
-        title: "Paste",
+        title: "粘贴",
         name: "prompt.paste",
         category: "Prompt",
         hidden: true,
@@ -1067,7 +1067,7 @@ export function Prompt(props: PromptProps) {
         console.log("Creating a session failed:", res.error)
 
         toast.show({
-          message: "Creating a session failed. Open console for more details.",
+          message: "创建会话失败，打开控制台查看详情。",
           variant: "error",
         })
 

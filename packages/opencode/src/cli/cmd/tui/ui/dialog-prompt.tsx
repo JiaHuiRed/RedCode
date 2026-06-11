@@ -40,13 +40,13 @@ export function DialogPrompt(props: DialogPromptProps) {
     commands: [
       {
         name: "dialog.prompt.submit",
-        title: "Submit dialog prompt",
+        title: "提交对话输入",
         category: "Dialog",
         run: confirm,
       },
       {
         name: "dialog.prompt.paste",
-        title: "Paste in dialog",
+        title: "在对话框中粘贴",
         category: "Dialog",
         hidden: true,
         run: async (ctx: CommandContext) => {
@@ -107,7 +107,7 @@ export function DialogPrompt(props: DialogPromptProps) {
             setTextareaTarget(val)
           }}
           initialValue={props.value}
-          placeholder={props.placeholder ?? "Enter text"}
+          placeholder={props.placeholder ?? "输入文本"}
           placeholderColor={theme.textMuted}
           textColor={props.busy ? theme.textMuted : theme.text}
           focusedTextColor={props.busy ? theme.textMuted : theme.text}

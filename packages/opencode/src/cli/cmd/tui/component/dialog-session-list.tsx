@@ -93,7 +93,7 @@ export function DialogSessionList() {
           if (result.error) {
             toast.show({
               variant: "error",
-              title: "Failed to delete workspace",
+              title: "删除工作区失败",
               message: errorMessage(result.error),
             })
             return false
@@ -140,7 +140,7 @@ export function DialogSessionList() {
   })
   const quickSwitchFooterHints = createMemo(() => {
     const hint = quickSwitchHint()
-    return hint && local.session.slots().length > 0 ? [{ title: "switch", label: hint }] : []
+    return hint && local.session.slots().length > 0 ? [{ title: "切换", label: hint }] : []
   })
 
   const options = createMemo(() => {
@@ -259,7 +259,7 @@ export function DialogSessionList() {
                   } else {
                     toast.show({
                       variant: "error",
-                      title: "Failed to delete session",
+                      title: "删除会话失败",
                       message: errorMessage(result.error),
                     })
                   }
@@ -272,7 +272,7 @@ export function DialogSessionList() {
                 } else {
                   toast.show({
                     variant: "error",
-                    title: "Failed to delete session",
+                    title: "删除会话失败",
                     message: errorMessage(err),
                   })
                 }

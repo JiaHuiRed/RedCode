@@ -340,7 +340,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     if (!text || text.length === 0) return
 
     await Clipboard.copy(text)
-      .then(() => toast.show({ message: "Copied to clipboard", variant: "info" }))
+      .then(() => toast.show({ message: "已复制到剪贴板", variant: "info" }))
       .catch(toast.error)
 
     renderer.clearSelection()
@@ -416,7 +416,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
           if (result.data?.id) {
             route.navigate({ type: "session", sessionID: result.data.id })
           } else {
-            toast.show({ message: "Failed to fork session", variant: "error" })
+            toast.show({ message: "分叉会话失败", variant: "error" })
           }
         })
       } else {
@@ -436,7 +436,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       if (result.data?.id) {
         route.navigate({ type: "session", sessionID: result.data.id })
       } else {
-        toast.show({ message: "Failed to fork session", variant: "error" })
+        toast.show({ message: "分叉会话失败", variant: "error" })
       }
     })
   })
@@ -491,7 +491,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       ...Array.from({ length: 9 }, (_, i) => ({
         name: `session.quick_switch.${i + 1}`,
-        title: `Switch to session in quick slot ${i + 1}`,
+        title: `切换到快捷槽 ${i + 1} 的会话`,
         category: "Session",
         hidden: true,
         run: () => {
@@ -510,7 +510,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       {
         name: "model.cycle_recent",
-        title: "Model cycle",
+        title: "切换模型",
         category: "Agent",
         hidden: true,
         run: () => {
@@ -519,7 +519,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       {
         name: "model.cycle_recent_reverse",
-        title: "Model cycle reverse",
+        title: "反向切换模型",
         category: "Agent",
         hidden: true,
         run: () => {
@@ -564,7 +564,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       {
         name: "agent.cycle",
-        title: "Agent cycle",
+        title: "切换代理",
         category: "Agent",
         hidden: true,
         run: () => {
@@ -573,7 +573,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       {
         name: "variant.cycle",
-        title: "Variant cycle",
+        title: "切换变体",
         category: "Agent",
         run: () => {
           local.model.variant.cycle()
@@ -591,7 +591,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       {
         name: "agent.cycle.reverse",
-        title: "Agent cycle reverse",
+        title: "反向切换代理",
         category: "Agent",
         hidden: true,
         run: () => {
@@ -706,7 +706,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       {
         name: "app.heap_snapshot",
-        title: "Write heap snapshot",
+        title: "写入堆快照",
         category: "System",
         run: async () => {
           const files = await props.onSnapshot?.()
@@ -720,7 +720,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       {
         name: "terminal.suspend",
-        title: "Suspend terminal",
+        title: "挂起终端",
         category: "System",
         hidden: true,
         enabled: process.platform !== "win32",
@@ -735,7 +735,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       {
         name: "terminal.title.toggle",
-        title: terminalTitleEnabled() ? "Disable terminal title" : "Enable terminal title",
+        title: terminalTitleEnabled() ? "禁用终端标题" : "启用终端标题",
         category: "System",
         run: () => {
           setTerminalTitleEnabled((prev) => {
@@ -749,7 +749,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       {
         name: "app.toggle.animations",
-        title: kv.get("animations_enabled", true) ? "Disable animations" : "Enable animations",
+        title: kv.get("animations_enabled", true) ? "禁用动画" : "启用动画",
         category: "System",
         run: () => {
           kv.set("animations_enabled", !kv.get("animations_enabled", true))
@@ -758,7 +758,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       {
         name: "app.toggle.file_context",
-        title: kv.get("file_context_enabled", true) ? "Disable file context" : "Enable file context",
+        title: kv.get("file_context_enabled", true) ? "禁用文件上下文" : "启用文件上下文",
         category: "System",
         run: () => {
           kv.set("file_context_enabled", !kv.get("file_context_enabled", true))
@@ -767,7 +767,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       {
         name: "app.toggle.diffwrap",
-        title: kv.get("diff_wrap_mode", "word") === "word" ? "Disable diff wrapping" : "Enable diff wrapping",
+        title: kv.get("diff_wrap_mode", "word") === "word" ? "禁用 diff 换行" : "启用 diff 换行",
         category: "System",
         run: () => {
           const current = kv.get("diff_wrap_mode", "word")
@@ -777,7 +777,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       {
         name: "app.toggle.paste_summary",
-        title: pasteSummaryEnabled() ? "Disable paste summary" : "Enable paste summary",
+        title: pasteSummaryEnabled() ? "禁用粘贴摘要" : "启用粘贴摘要",
         category: "System",
         run: () => {
           setPasteSummaryEnabled((prev) => {
@@ -791,8 +791,8 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       {
         name: "app.toggle.session_directory_filter",
         title: kv.get("session_directory_filter_enabled", false)
-          ? "Disable session directory filtering"
-          : "Enable session directory filtering",
+          ? "禁用会话目录过滤"
+          : "启用会话目录过滤",
         category: "System",
         run: async () => {
           kv.set("session_directory_filter_enabled", !kv.get("session_directory_filter_enabled", false))
@@ -850,7 +850,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       route.navigate({ type: "home" })
       toast.show({
         variant: "info",
-        message: "The current session was deleted",
+        message: "当前会话已被删除",
       })
     }
   })
@@ -900,7 +900,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       toast.show({
         variant: "error",
         title: "Update Failed",
-        message: "Update failed",
+        message: "更新失败",
         duration: 10000,
       })
       return

@@ -9,7 +9,7 @@ export function DialogSubagent(props: { sessionID: string }) {
       title="Subagent Actions"
       options={[
         {
-          title: "Open",
+          title: "打开",
           value: "subagent.view",
           description: "the subagent's session",
           onSelect: (dialog) => {
