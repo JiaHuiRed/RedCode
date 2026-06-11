@@ -54,3 +54,6 @@ sqlite-tools/
 .opencode/memory/*.md
 .opencode/MEMORY.md
 .opencode/skill/memory-automation/*.json
+
+# Local stats (runtime data)
+.redcode/stats/
