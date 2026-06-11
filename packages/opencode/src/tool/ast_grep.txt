@@ -1,4 +1,4 @@
-- Structural code search and rewrite using AST patterns (ast-grep)
+- Structural code search and rewrite using AST patterns (ast-grep). Use this INSTEAD of grep when you need structure-aware matching — it understands syntax, not just text.
 - Search mode (default): find AST pattern matches across files with meta-variable capture ($A, $B, $$$)
 - Replace mode: when `replace` param is provided, performs AST-aware find-and-replace preserving code structure
 - AST patterns are more precise than regex: they understand syntax structure, not just text
@@ -9,4 +9,4 @@
 - Supports: TypeScript (.ts), TSX (.tsx/.vue/.svelte), JavaScript (.js/.jsx), HTML (.html), CSS (.css)
 - Language auto-detected from file extension; override with the `language` parameter
 - Use this for refactoring: renaming functions, changing APIs, migrating patterns across the codebase
-- Use this instead of grep when you need structure-aware matching (e.g., find all `console.log` calls, not just the text "console.log")
+- Use this INSTEAD of regex grep for: finding all function/method definitions with specific names, finding all imports from a module, finding try-catch blocks without a finally, checking if a function has a specific decorator, or any search where code structure matters

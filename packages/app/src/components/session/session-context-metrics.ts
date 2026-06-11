@@ -72,9 +72,9 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
       reasoning: message.tokens.reasoning,
       cacheRead: message.tokens.cache.read,
       cacheWrite: message.tokens.cache.write,
-      cacheHit: message.tokens.cache.read + message.tokens.cache.write > 0
+      cacheHit: message.tokens.cache.read > 0
         ? Math.round(
-            (message.tokens.cache.read / (message.tokens.cache.read + message.tokens.cache.write)) * 1000,
+            (message.tokens.cache.read / (message.tokens.input + message.tokens.cache.read + message.tokens.cache.write)) * 1000,
           ) / 10
         : null,
       total,

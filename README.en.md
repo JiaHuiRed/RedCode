@@ -15,7 +15,7 @@
 >
 > Author: Red · Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev).
 
-[![TUI](https://img.shields.io/badge/TUI-0.4.16-blue)](CHANGELOG.md)
+[![TUI](https://img.shields.io/badge/TUI-0.5.0-blue)](CHANGELOG.md)
 [![Desktop](https://img.shields.io/badge/Desktop-0.5.6-0078d4)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-lightblue)](https://github.com/JiaHuiRed/RedCode)
@@ -32,7 +32,7 @@ Open-source AI coding assistant with **terminal TUI** and **desktop GUI** interf
 
 - 💬 **Natural Language Coding** — describe requirements, auto-complete code
 - 🔌 **Multi-Model Support** — DeepSeek, MiMo, OpenAI, Anthropic, Google Gemini, Ollama, etc.
-- 🛠 **Tool System** — file read/write, code search, terminal commands, web search
+- 🛠 **Tool System** — file read/write, code search, git status/diff/log, terminal commands, web search, environment info
 - 🤖 **Smart Agents** — Build, Plan, General, Explore agents built-in, custom agents supported
 - 📝 **Session Management** — history save, restore, fork
 - 🎨 **Terminal UI** — syntax highlighting, streaming output, diff display
