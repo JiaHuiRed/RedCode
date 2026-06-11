@@ -1,11 +1,8 @@
 {
   "$schema": "https://redcode.dev/config.json",
-  // 260607 Red 全局注入（engine 无条件扫描 paths.ts:34-38），
-  // 启动 RedCode 时自动加载（任何项目目录均生效）：
-  //   - instructions: 自动加载 USER 画像（MEMORY 不再整体注入，改 /recall 按需召回 + AGENTS CORE 块每轮注入，省 token）
-  //   - mcp: 全局 MCP 服务器（不依赖项目 .opencode/opencode.jsonc）
-  //     $REDCODE_ROOT 在运行时自动展开为 RedCode 安装根目录
-  // 260607 Red 技能指令：自动加载技能（sync-home.bat 同步至 ~/.redcode/skill/）
+  "plugin": ["@tarquinen/opencode-dcp"],
+  // 260607 Red global inject (engine scans ~/.redcode unconditionally)
+  // 260610 Red MEMORY no longer bulk-injected; use /recall + AGENTS CORE block
   "instructions": [
     "~/.redcode/USER.md",
     "~/.redcode/skill/memory-automation/SKILL.md",
@@ -16,11 +13,10 @@
     "~/.redcode/skill/vision-autoagent/SKILL.md",
     "~/.redcode/skill/diagnose/SKILL.md"
   ],
-  // 260610 Red 全局插件（plugin 已移至 ~/.redcode/redcode.jsonc 全局声明）
+  // 260610 Red global plugin (moved to ~/.redcode/redcode.jsonc)
   "mcp": {
-    // 260609 CC typegraph 精简版：只留 3 个 tsserver 类型工具（type_info/definition/module_exports），
-    // 其余 11 工具 + oxc 图子系统已被 jcodemunch 覆盖故移除。命令改 node 直起 plugin 本地 tsx，
-    // 不再用 npx（npx 用 Windows 的 cmd /c 包装，真正的 node 进程脱离 transport.pid 无法用 taskkill /T 回收 — 进程泄漏）。
+    // 260609 CC typegraph: only 3 tsserver type tools kept (type_info/definition/module_exports)
+    // rest removed — jcodemunch covers them. Uses node directly (not npx) to avoid process leak.
     "typegraph": {
       "type": "local",
       "command": ["node", "./plugins/typegraph-mcp/node_modules/tsx/dist/cli.mjs", "./plugins/typegraph-mcp/server.ts"],

@@ -10,6 +10,20 @@
 
 ## TUI
 
+### [0.4.16] - 2026-06-11
+
+#### 新增
+
+- **敏敏人格主题（Karina）**：新增内置主题 `karina`，冷蓝灰色调（primary `#7eb8da`、accent `#8ba2c6`），完整 dark/light 双模式 47 色，TUI 是敏敏主场（`context/theme/karina.json` + `theme.tsx` 注册）
+
+#### 修复
+
+- **TUI 启动闪退（ConfigJsonError）**：根因→`~/.redcode/redcode.jsonc` 中文注释被 GBK 编码损坏（乱码 `鍏ㄥ眬娉ㄥ叆`），JSONC 解析器在损坏行报 `ColonExpected` 崩溃；改法→源模板 `.opencode/redcode.home.jsonc` 所有注释改纯 ASCII 英文，杜绝 bat/git 编码转换再次破坏
+
+#### 变更
+
+- **TUI 中文适配全面落实**：80+ 条 tips 翻译（`tips-view.tsx`）；toast/dialog 全量中文化（`app.tsx`、`dialog-status.tsx`、`dialog-help.tsx`、`error-component.tsx`、`dialog-select.tsx`、`dialog-alert.tsx`、`dialog-prompt.tsx`、`dialog-export-options.tsx` 等 13+ 文件）；命令面板标题中文化（"切换模型/代理/主题"等）
+
 ### [0.4.15] - 2026-06-11
 
 #### 新增
