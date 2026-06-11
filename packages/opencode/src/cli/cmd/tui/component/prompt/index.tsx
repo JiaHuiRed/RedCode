@@ -335,7 +335,7 @@ export function Prompt(props: PromptProps) {
     const last = msg.findLast((item): item is AssistantMessage => item.role === "assistant" && item.tokens.output > 0)
     if (!last) return
     if (last.tokens.cache.read <= 0) return
-    const cacheHitPct = Math.round((last.tokens.cache.read / (last.tokens.input + last.tokens.cache.read + last.tokens.cache.write)) * 100)
+    const cacheHitPct = Math.round((last.tokens.cache.read / (last.tokens.cache.read + last.tokens.cache.write)) * 1000) / 10
     return { cache: `Cache: ${cacheHitPct}%` }
   })
 

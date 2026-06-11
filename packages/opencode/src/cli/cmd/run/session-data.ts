@@ -148,11 +148,8 @@ function formatUsage(
   }
 
   const cacheHitPct =
-    (tokens?.cache?.read ?? 0) > 0
-      ? Math.round(
-          ((tokens?.cache?.read ?? 0) / ((tokens?.input ?? 0) + (tokens?.cache?.read ?? 0) + (tokens?.cache?.write ?? 0))) *
-            100,
-        )
+    (tokens?.cache?.read ?? 0) > 0 && (tokens?.cache?.read ?? 0) + (tokens?.cache?.write ?? 0) > 0
+      ? Math.round(((tokens?.cache?.read ?? 0) / ((tokens?.cache?.read ?? 0) + (tokens?.cache?.write ?? 0))) * 1000) / 10
       : undefined
   const cacheStr = cacheHitPct !== undefined ? `Cache: ${cacheHitPct}%` : undefined
 
