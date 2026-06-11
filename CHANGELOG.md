@@ -482,6 +482,17 @@
 
 ## GUI
 
+### [0.5.6] - 2026-06-11
+
+#### 新增
+- **代码审查技能（ce-code-review）**：移植自 EveryInc/compound-engineering-plugin（20.9k stars），14 个人格化审查员，onfidence-gated 去重流水线，P0-P3 严重性分级 + autofix 分类，双模式（交互式自动修复 / mode:agent 仅报告）
+
+#### 修复
+- **DCP 插件配置恢复**：.opencode/redcode.home.jsonc 源模板补回 plugin 字段，修复 build 后 DCP 插件丢失问题
+
+#### 变更
+- **移除 /deepwork 引用**：goal-automation skill 中删除未实现的 /deepwork 手动模式段落
+- **技能打磨**：goal-automation / simplify / diagnose 三个技能修复编码损坏，simplify 新增 RedCode 工具链提示
 ### [0.5.5] - 2026-06-11
 
 #### 新增

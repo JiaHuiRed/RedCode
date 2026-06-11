@@ -20,7 +20,7 @@ description: 形式化 bug 诊断循环。Reproduce → Hypothesise → Instrume
 5. **回放录制** — 把真实请求/payload/事件日志存盘，隔离重放
 6. **临时 harness** — 起最小子系统（一个服务 + mock 依赖），单函数调用触发 bug 路径
 7. **属性/fuzz 循环** — bug 是"有时输出不对"就跑 1000 个随机输入找规律
-8. **二分 harness** — bug 出现在两个已知状态之间时，自动化"启动状态 X → 检查"供 `git bisect run`
+8. **二分 harness** — bug 出现在两个已知状态之间时，自动化"启动状态 X → 检查"供 git bisect run
 9. **差分循环** — 同输入跑旧版 vs 新版（或两种配置），diff 输出
 10. **人工辅助脚本** — 最后手段。必须人点的话，用脚本引导操作
 
@@ -70,9 +70,9 @@ description: 形式化 bug 诊断循环。Reproduce → Hypothesise → Instrume
 2. **定向日志** — 在区分假设的边界打日志
 3. **不要"全量打日志再 grep"**
 
-**每条调试日志加唯一前缀**，如 `[DEBUG-db3f]`。修完后一次 grep 清干净。
+**每条调试日志加唯一前缀**，如 [DEBUG-db3f]。修完后一次 grep 清干净。
 
-**性能回归**：日志通常没用。先建立基准测量（计时 harness、`performance.now()`、profiler、查询计划），再二分。先量再修。
+**性能回归**：日志通常没用。先建立基准测量（计时 harness、performance.now()、profiler、查询计划），再二分。先量再修。
 
 ## Phase 5 — 修复 + 回归测试
 
@@ -96,7 +96,7 @@ description: 形式化 bug 诊断循环。Reproduce → Hypothesise → Instrume
 
 - [ ] 原始场景不再复现（重跑 Phase 1 循环）
 - [ ] 回归测试通过（或不存正确接缝已记录）
-- [ ] 所有 `[DEBUG-xxxx]` 探针已删（`grep` 前缀确认）
+- [ ] 所有 [DEBUG-xxxx] 探针已删（grep 前缀确认）
 - [ ] 临时 harness / 原型已删除或移到标记清晰的目录
 - [ ] 正确的假设写在 commit / PR message 里——下次来的人能学
 
@@ -104,7 +104,7 @@ description: 形式化 bug 诊断循环。Reproduce → Hypothesise → Instrume
 
 ## RedCode 专用提示
 
-- **日志第一条**：查 `~/.local/share/redcode/log/` 最新文件，不猜原因
-- **符号定位**：优先 jcodemunch（`search_symbols`、`get_blast_radius`、`get_call_hierarchy`），再 grep
-- **类型检查**：修复后跑 `bun run typecheck`（对应 package 目录），不跑 `tsc`
+- **日志第一条**：查 ~/.local/share/redcode/log/ 最新文件，不猜原因
+- **符号定位**：优先 jcodemunch（search_symbols、get_blast_radius、get_call_hierarchy），再 grep
+- **类型检查**：修复后跑 un run typecheck（对应 package 目录），不跑 	sc
 - **连续失败 2 次**：停手，整理已知信息，问用户——不闷头修
