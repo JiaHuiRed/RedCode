@@ -1,18 +1,53 @@
 # 记忆系统
 
-- **项目根判定**：找到包含 `.git` 或 `redcode.jsonc` 的目录即为项目根（下文所有路径均相对项目根）
-- **全局记忆/画像自动注入**：`~/.redcode/MEMORY.md`（教训/偏好/规范）与 `~/.redcode/USER.md`（用户画像）由 `~/.redcode/redcode.jsonc` 的 `instructions` 在每个项目启动时自动加载，已在上下文中；每换任务直接复用，无需手动读
-- **当日即记（自动触发，别等开口）**：`~/.redcode/memory/YYMMDD.md` — **一旦自己发现出错/返工/走了弯路，或被用户纠正，当下立刻一句话写入当日日志**，不等收工、不靠"记住了"。错误只进当天日志，不直接写长期库。
-- **自检触发点（每次收尾/提交/推送前过一遍）**：
-  1. 改了代码 → CHANGELOG/README 有没有同步更新？
-  2. 改了版本号 → 自检清单 5 项全过了吗？
-  3. 犯了错被纠正 → 当天日志写了没？
-  4. 做了不可逆操作 → 有没有先确认？
-  5. 上下文快满 → 派 explore 子代理而不是自己翻几十个文件？
-- **大任务前**：读最近 3 天日志
-- **连续失败 2 次** → 停下来问用户
-- **"下班"/"收工"/总结** → 从当日日志摘出**关键且需长期警惕**的教训，去重合入 `~/.redcode/MEMORY.md`。**不全量复制**；同时**复审长期库、删过时/已内化条目**，保持精简，防止长期库沦为每日日志的堆叠。
-- **日期格式** `YYMMDD`（如 `260601`）
+## 双层记忆（引擎自动注入，无需手动 /recall）
+
+- **项目级** `<project>/.redcode/MEMORY.md` — 该项目特有的备忘与教训
+  - 新项目首次启动时引擎自动创建空模板（前提：项目根既无 `.opencode/` 也无 `.redcode/`）
+  - 工作中发现的**该项目相关**教训写这里
+- **全局级** `~/.redcode/MEMORY.md` — 跨项目通用的历史教训
+  - 项目级 MEMORY.md 不存在时，引擎自动注入全局级作为兜底
+  - 收工时，有通用价值的教训从项目级反馈到全局级
+
+## 记忆流动
+
+- **全局 → 项目**：新项目首次对话，引擎注入全局 MEMORY.md（教训一次性吃到）
+- **项目 → 项目**：后续对话，引擎注入项目级 `.redcode/MEMORY.md`（轻量，该项目专有）
+- **项目 → 全局**：收工时，有通用价值的教训摘入 `~/.redcode/MEMORY.md`（不全量复制；复审长期库、删过时条目，保持精简）
+
+## 优先级
+
+- `.redcode/MEMORY.md` 为当前权威记忆源
+- `.opencode/MEMORY.md` 是旧系统残留，**不作为权威记忆源**——遇到冲突以 `.redcode/` 版本为准，以全局 AGENTS.md 规则为准
+- `~/.redcode/USER.md`（用户画像）由 `redcode.jsonc` instructions 自动注入，已在上下文
+
+## 当日日志
+
+- `~/.redcode/memory/YYMMDD.md`（日期格式 `YYMMDD`，如 `260611`）
+- **一旦出错/返工/被纠正，当下立刻写入**，不等收工、不靠"记住了"
+- 大任务前：读最近 3 天日志
+
+## 自检触发点（每次收尾/提交/推送前）
+
+1. 改了代码 → CHANGELOG 有没有同步更新？
+2. 改了版本号 → **版本更新 checklist 全过了吗**（见下方「版本与文档」）？
+3. 改了 README.md → **README.en.md 英文版同步改了吗**？（双语必须一起动）
+4. 犯了错被纠正 → 当天日志写了没？
+5. 做了不可逆操作 → 有没有先确认？
+6. 上下文快满 → 派 explore 子代理而不是自己翻几十个文件？
+
+## 跨项目工作规则
+
+- **在别的项目里发现 RedCode 自身的 bug** → 记入当前项目的 `.redcode/MEMORY.md` 或当日日志，**提醒用户"这个问题属于 RedCode，请在 RedCode 工作区开对话修复"**。不要在当前项目 CWD 里改 RedCode 的文件（CHANGELOG/版本号/代码），CWD 不对会导致 commit scope 错、文件路径乱。
+- **在别的项目里改了全局配置**（`~/.redcode/redcode.jsonc`、全局插件等）→ 全局配置可以改（路径是绝对的），但 CHANGELOG 条目属于 RedCode 仓库——**提醒用户"这条变更需要在 RedCode 对话里记录到 CHANGELOG"**。
+- **项目级 `.redcode/MEMORY.md`** 只记该项目的备忘，不记 RedCode 的 bug/改动。
+
+## 收工流程
+
+1. 当日日志 → 摘**关键且需长期警惕**的教训 → 去重写入项目级 `.redcode/MEMORY.md`
+2. 其中**跨项目通用**的 → 同时反馈到全局 `~/.redcode/MEMORY.md`
+3. 复审长期库、删过时/已内化条目，保持精简
+4. **连续失败 2 次** → 停下来问用户
 
 # 身份触发
 
@@ -40,7 +75,7 @@ RedCode = OpenCode fork：
 任务循环（每步从简）：
 
 1. **理解** — 读清需求。模糊或不可逆才停下来问用户，否则继续（详见 MEMORY.md 工作纪律）。
-2. **定位** — 先用代码检索 MCP（**jCodeMunch > TypeGraph > CodeGraph**，TS 类型感知优先；详见 MEMORY.md），MCP 不可用或不足才退回 grep/glob/read。读到真实代码再动手，别假设。
+2. **定位** — 先用代码检索 MCP（**jCodeMunch > TypeGraph**，TS 类型感知优先），MCP 不可用或不足才退回 grep/glob/read。读到真实代码再动手，别假设。
 3. **改动** — 只做被要求的事，最小改动；不顺手重构、不加没要的抽象/错误处理。改接口要更新所有调用方。
 4. **验证** — 跑对应 package 的 typecheck/test，修好再继续。
 5. **收尾** — 功能/版本完成后按 MEMORY.md 的自检清单逐项打勾。
@@ -59,8 +94,14 @@ RedCode = OpenCode fork：
 # 版本与文档
 
 - TUI（`packages/opencode/package.json`）与 GUI（`packages/desktop/package.json`）版本号**独立**，互不牵动。
-- 改版本号同步：`package.json` → README 徽章 → CHANGELOG（标题栏徽章自 0.3.17 起由 `package.json` 自动注入，无需手改；自检脚本 `script/check-version-consistency.ts`，build.bat 编译前校验）。
-- 文档（版本号/徽章/CHANGELOG/README）可直接改好；**push / 打包 release 需用户确认**（由 MEMORY.md 中的规则控制）。
+- **版本更新 checklist（每次改版本号必须全过）**：
+  1. `package.json` — 改版本号（TUI 或 GUI，看改了哪个 package）
+  2. `README.md` — 中文版徽章更新
+  3. `README.en.md` — **英文版徽章同步更新**（容易漏！双语必须一起动）
+  4. `CHANGELOG.md` — 新版本条目（`## TUI` 或 `## GUI` 下）
+  5. 标题栏徽章 — 自动注入（`package.json` → `__RC_VERSION__` 占位符），无需手改
+  6. 自检脚本 — `script/check-version-consistency.ts`，build.bat 编译前校验
+- 文档（版本号/徽章/CHANGELOG/README）可直接改好；**push / 打包 release 需用户确认**。
 
 # 项目指令
 
@@ -95,7 +136,7 @@ RedCode = OpenCode fork：
 
 **被纠正立即记录** — 记入当日日志，不说"记住了"就完事
 
-**搜代码先 MCP 工具** — jCodeMunch → codegraph → typegraph，不足再 grep/read
+**搜代码先 MCP 工具** — jCodeMunch → TypeGraph，不足再 grep/read
 
 **全面扫描再动手** — 不改一个重启一次
 
@@ -104,3 +145,40 @@ RedCode = OpenCode fork：
 **从工具到助手** — 减少指令数量比执行更多指令有价值
 
 **灵魂是身份核心** — 每次对话前内化，不是文档
+
+# 质量门禁（从 souls 提升，compact 不丢）
+
+## 报告门禁（宁漏勿误）
+
+以下情况**不报 bug**：
+- 命名偏好、风格选择、"将来可能会……"
+- 内部函数缺 defensive check（API 边界够了就行）
+- 重复代码 ≤3 行
+
+出 review/report 前问自己 4 个问题：
+1. 可复现的 bug 或可测量的性能问题？
+2. 完整上下文理解了（调用方、数据流）？
+3. 建议不改变现有行为？
+4. 不在上面的误报列表里？
+
+少于 3/4 → 降级 note。少于 2/4 → 扔掉。
+
+## 首次编辑不熟文件
+
+第一次碰的文件，先扫 importers、看数据流、读测试（如果有），再动手。只改注释/CHANGELOG 不查。
+
+## Guardrail 档位（ECC_PROFILE）
+
+- `minimal` → 少确认快干
+- `standard`（默认）→ 白名单自动放行
+- `strict` → 每一步都问
+
+## compress 工具用法（DCP 插件）
+
+`compress` 只传 `topic`，**不传 `startId`/`endId`**——早期消息可能已被自动压缩吃掉，ID 过期会报错。DCP 后台自动裁剪（去重 tool 调用、截长输出）也在省 token。
+
+## 协作模式
+
+- `/goal <text>` — 钉住当前会话目标，子任务自动变 todos，完成打勾，`/goal clear` 清掉、`/goal done` 标完成
+- `goal-automation` skill — 看到大任务时主动建议一次，但主动权在用户
+- `/deepwork` — 更重的入口（先反问、再写 plan、一步步执行），不自动建议

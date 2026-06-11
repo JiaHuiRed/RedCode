@@ -10,6 +10,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { FileWatcher } from "@/file/watcher"
 import { ShareNext } from "@/share/share-next"
 import { Effect, Layer } from "effect"
+import { Flag } from "@redcode-ai/core/flag/flag"
 import { Config } from "@/config/config"
 import { Service } from "./bootstrap-service"
 import { Reference } from "@/reference/reference"
@@ -60,6 +61,20 @@ export const layer = Layer.effect(
           if (text) yield* fs.writeFileString(dest, text)
         }).pipe(Effect.catchCause(Effect.logWarning)),
       )
+      // 260611 Red project-level .redcode/ auto-init with empty MEMORY.md
+      if (!Flag.REDCODE_DISABLE_PROJECT_CONFIG && ctx.worktree !== Global.Path.home) {
+        yield* Effect.gen(function* () {
+          const hasOpencode = yield* fs.existsSafe(path.join(ctx.worktree, ".opencode"))
+          const hasRedcode = yield* fs.existsSafe(path.join(ctx.worktree, ".redcode"))
+          if (hasOpencode || hasRedcode) return
+          const projectRedcode = path.join(ctx.worktree, ".redcode")
+          yield* fs.ensureDir(projectRedcode)
+          yield* fs.writeFileString(
+            path.join(projectRedcode, "MEMORY.md"),
+            "# 项目记忆\n\n> 该项目特有的备忘与教训。通用教训请写入全局 `~/.redcode/MEMORY.md`。\n",
+          )
+        }).pipe(Effect.catchCause(Effect.logWarning))
+      }
       // everything depends on config so eager load it for nice traces
       yield* config.get()
       // Plugin can mutate config so it has to be initialized before anything else.

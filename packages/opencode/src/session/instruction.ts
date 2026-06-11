@@ -131,6 +131,29 @@ export const layer: Layer.Layer<
         }
       }
 
+      // 260611 Red project memory: .redcode/MEMORY.md (project) → ~/.redcode/MEMORY.md (global fallback)
+      {
+        let memoryFound = false
+        if (!Flag.REDCODE_DISABLE_PROJECT_CONFIG) {
+          const projectMemory = path.join(ctx.worktree, ".redcode", "MEMORY.md")
+          if (yield* fs.existsSafe(projectMemory)) {
+            paths.add(path.resolve(projectMemory))
+            memoryFound = true
+          }
+        }
+        if (!memoryFound) {
+          const globalMemory = path.join(global.config, "MEMORY.md")
+          if (yield* fs.existsSafe(globalMemory)) paths.add(path.resolve(globalMemory))
+        }
+      }
+
+      // 260611 Red auto-inject soul based on TUI/GUI mode
+      {
+        const soulFile = flags.client === "desktop" ? "Gsoul.md" : "Tsoul.md"
+        const soulPath = path.join(global.home, ".redcode", "souls", soulFile)
+        if (yield* fs.existsSafe(soulPath)) paths.add(path.resolve(soulPath))
+      }
+
       if (config.instructions) {
         for (const raw of config.instructions) {
           if (raw.startsWith("https://") || raw.startsWith("http://")) continue

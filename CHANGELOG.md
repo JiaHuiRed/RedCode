@@ -10,6 +10,19 @@
 
 ## TUI
 
+### [0.4.15] - 2026-06-11
+
+#### 新增
+
+- **双层记忆系统**：引擎自动注入项目级 `.redcode/MEMORY.md`（项目专有备忘）；项目级不存在时回退全局 `~/.redcode/MEMORY.md`（跨项目通用教训）。解决了之前 MEMORY.md 不自动加载、跨项目教训丢失的问题（`session/instruction.ts` `systemPaths()`）
+- **新项目自动初始化 `.redcode/`**：bootstrap 检测项目根既无 `.opencode/` 也无 `.redcode/` 时，自动创建 `.redcode/MEMORY.md` 空模板，新项目开箱即有项目级记忆（`project/bootstrap.ts`）
+- **Soul 自动注入**：根据 `REDCODE_CLIENT` 环境变量（desktop=GUI / cli=TUI）自动注入对应人格文件（`~/.redcode/souls/Gsoul.md` 或 `Tsoul.md`）为系统级指令，不再需要每次手动 `/gui-persona` 或 `/tui-persona`；系统级注入不受 compact 丢失（`session/instruction.ts` `systemPaths()`）
+
+#### 变更
+
+- **AGENTS.md 重写**：新增记忆系统双层架构说明、记忆流动规则（全局→项目/项目→全局）、跨项目工作规则（别的项目发现 RedCode bug 提醒用户回 RedCode 工作区修）、版本更新 checklist（含双语 README 同步）、质量门禁（从 souls 迁入，报告门禁/首次编辑不熟文件/Guardrail 档位/compress 用法/协作模式）
+- **Soul 模板瘦身**：Gsoul.md（140→68 行）/ Tsoul.md（142→64 行），操作规则全部迁入 AGENTS.md（系统级，compact 不丢），souls 只保留人格/语气/说话方式
+
 ### [0.4.14] - 2026-06-10
 
 #### 清理
@@ -450,6 +463,12 @@
 ---
 
 ## GUI
+
+### [0.5.5] - 2026-06-11
+
+#### 新增
+
+- **包含服务端更新（TUI 0.4.15）**：双层记忆系统（项目级+全局回退）、新项目自动初始化 `.redcode/`、Soul 自动注入（GUI 模式自动加载小宋人格，无需手动 `/gui-persona`）、AGENTS.md 重写、Soul 模板瘦身
 
 ### [0.5.4] - 2026-06-10
 
