@@ -385,7 +385,8 @@
       "Bash(xxd)",
       "Bash(ls /tmp/openhuman/src/openhuman/tokenjuice/vendor/rules/git__*)",
       "Bash(bun add:*)",
-      "Bash(grep '\"\"version\"\"' packages/opencode/package.json packages/desktop/package.json)"
+      "Bash(grep '\"\"version\"\"' packages/opencode/package.json packages/desktop/package.json)",
+      "Bash(sqlite3 \"C:/Users/Administrator/.local/share/redcode/redcode.db\" \"SELECT agent, model, directory, title FROM session WHERE parent_id IS NULL ORDER BY time_updated DESC LIMIT 8;\")"
     ]
   }
 }
