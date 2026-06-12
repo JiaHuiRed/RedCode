@@ -333,16 +333,16 @@ export function Prompt(props: PromptProps) {
     if (!props.sessionID) return
     const msg = sync.data.message[props.sessionID] ?? []
     // 260612 Red session-aggregate cache rate (not last-turn-only which is always ~99%)
-    let sumRead = 0, sumWrite = 0, sumInput = 0
+    // 260614 fix: denominator should only be cache-relevant tokens (read+write), not including fresh input
+    let sumRead = 0, sumWrite = 0
     for (const m of msg) {
       if (m.role === "assistant") {
         sumRead += m.tokens.cache.read
         sumWrite += m.tokens.cache.write
-        sumInput += m.tokens.input
       }
     }
     if (sumRead <= 0) return
-    const cacheDenom = sumInput + sumRead + sumWrite
+    const cacheDenom = sumRead + sumWrite
     const cacheHitPct = Math.round((sumRead / cacheDenom) * 1000) / 10
     return { cache: `Cache: ${cacheHitPct}%` }
   })

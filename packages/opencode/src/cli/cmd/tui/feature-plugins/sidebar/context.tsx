@@ -55,15 +55,15 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     const modelInfo = prov?.models[last.modelID]
     const modelName = modelInfo?.name ?? last.modelID
     // 260612 Red session-aggregate cache rate (not last-turn-only which is always ~99%)
-    let sumRead = 0, sumWrite = 0, sumInput = 0
+    // 260614 fix: denominator should only be cache-relevant tokens (read+write), not including fresh input
+    let sumRead = 0, sumWrite = 0
     for (const m of msg()) {
       if (m.role === "assistant") {
         sumRead += m.tokens.cache.read
         sumWrite += m.tokens.cache.write
-        sumInput += m.tokens.input
       }
     }
-    const cacheDenom = sumInput + sumRead + sumWrite
+    const cacheDenom = sumRead + sumWrite
     const cacheHit = cacheDenom > 0 && sumRead > 0 ? Math.round((sumRead / cacheDenom) * 1000) / 10 : null
     return {
       tokens,
@@ -83,6 +83,14 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const created = createMemo(() => session()?.time?.created)
   const updated = createMemo(() => session()?.time?.updated)
   const agent = createMemo(() => session()?.agent)
+  const cacheHitColor = createMemo(() => {
+    const pct = state().cacheHit
+    if (pct === null) return theme()?.textMuted
+    if (pct >= 80) return theme()?.success
+    if (pct >= 50) return theme()?.warning
+    return theme()?.error
+  })
+
   const percentLabel = createMemo(() => {
     const p = state().percent
     if (p === null) return "?"
@@ -111,7 +119,10 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       <Show when={state().cacheRead > 0 || state().cacheWrite > 0}>
         <text fg={theme()?.textMuted}>cache {state().cacheWrite > 0
           ? `${state().cacheRead.toLocaleString()} / ${state().cacheWrite.toLocaleString()}`
-          : state().cacheRead.toLocaleString()}{state().cacheHit != null ? ` (${state().cacheHit}%)` : ""}</text>
+          : state().cacheRead.toLocaleString()}</text>
+        <Show when={state().cacheHit != null}>
+          <span style={{ fg: cacheHitColor() }}>{` (${state().cacheHit}%)`}</span>
+        </Show>
       </Show>
       <text fg={theme()?.textMuted}>{money.format(cost())} · {state().messageCount} msgs</text>
       <Show when={agent()}>

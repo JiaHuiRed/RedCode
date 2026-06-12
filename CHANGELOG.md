@@ -33,6 +33,17 @@
 
 ---
 
+### [0.5.4] - 2026-06-12
+
+#### 修复
+
+- **缓存命中率分母修正（input 不应计入分母）**：0.5.3 引入的全会话聚合缓存率中，分母使用了 `input + read + write`。但 input tokens 是未命中缓存的 fresh 输入，不应算入 cache 有效请求总数。修正为 `read + write`，使缓存命中率与 API 后台显示的数值一致（如 `read=100K, write=50K, input=200K`，之前算得 `28.6%`，修正后 `66.7%`）。涉及 TUI 侧边栏、底栏、子代理 footer 三处（`sidebar/context.tsx`、`prompt/index.tsx`、`subagent-footer.tsx`）+ GUI 指标面板（`session-context-metrics.ts`）+ CLI run data（`session-data.ts`）
+- **插件 `~` 路径扩展**：`isPathPluginSpec` 和 `resolvePathPluginTarget` 支持 `~`/`~/` 开头的文件路径，自动展开为用户的 home 目录（`src/plugin/shared.ts`）
+
+#### 新增
+
+- **侧边栏缓存命中率区间颜色**：`< 50%` 红色（`error`）、`50%~80%` 黄色（`warning`）、`>= 80%` 绿色（`success`），一眼判断缓存效率（`sidebar/context.tsx`）
+
 ### [0.5.3] - 2026-06-12
 
 #### 新增

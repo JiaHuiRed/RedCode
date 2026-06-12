@@ -73,16 +73,16 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
       cacheRead: message.tokens.cache.read,
       cacheWrite: message.tokens.cache.write,
       // 260612 Red session-aggregate cache rate (not last-turn-only which is always ~99%)
+      // 260613 fix: denominator should only be cache-relevant tokens (read+write), not including fresh input
       cacheHit: (() => {
-        let sumRead = 0, sumWrite = 0, sumInput = 0
+        let sumRead = 0, sumWrite = 0
         for (const m of messages) {
           if (m.role === "assistant") {
             sumRead += m.tokens.cache.read
             sumWrite += m.tokens.cache.write
-            sumInput += m.tokens.input
           }
         }
-        const denom = sumInput + sumRead + sumWrite
+        const denom = sumRead + sumWrite
         return denom > 0 && sumRead > 0 ? Math.round((sumRead / denom) * 1000) / 10 : null
       })(),
       total,

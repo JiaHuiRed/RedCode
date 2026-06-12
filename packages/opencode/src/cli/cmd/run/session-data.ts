@@ -147,9 +147,10 @@ function formatUsage(
     return undefined
   }
 
+  // 260613 fix: denominator should only be cache-relevant tokens (read+write), not including fresh input
   const cacheHitPct =
     (tokens?.cache?.read ?? 0) > 0
-      ? Math.round(((tokens?.cache?.read ?? 0) / ((tokens?.input ?? 0) + (tokens?.cache?.read ?? 0) + (tokens?.cache?.write ?? 0))) * 1000) / 10
+      ? Math.round(((tokens?.cache?.read ?? 0) / ((tokens?.cache?.read ?? 0) + (tokens?.cache?.write ?? 0))) * 1000) / 10
       : undefined
   const cacheStr = cacheHitPct !== undefined ? `Cache: ${cacheHitPct}%` : undefined
 
