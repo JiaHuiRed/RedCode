@@ -54,15 +54,24 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     const prov = props.api.state.provider.find((item) => item.id === last.providerID)
     const modelInfo = prov?.models[last.modelID]
     const modelName = modelInfo?.name ?? last.modelID
-    const cacheDenom = last.tokens.input + last.tokens.cache.read + last.tokens.cache.write
-    const cacheHit = cacheDenom > 0 && last.tokens.cache.read > 0 ? Math.round((last.tokens.cache.read / cacheDenom) * 1000) / 10 : null
+    // 260612 Red session-aggregate cache rate (not last-turn-only which is always ~99%)
+    let sumRead = 0, sumWrite = 0, sumInput = 0
+    for (const m of msg()) {
+      if (m.role === "assistant") {
+        sumRead += m.tokens.cache.read
+        sumWrite += m.tokens.cache.write
+        sumInput += m.tokens.input
+      }
+    }
+    const cacheDenom = sumInput + sumRead + sumWrite
+    const cacheHit = cacheDenom > 0 && sumRead > 0 ? Math.round((sumRead / cacheDenom) * 1000) / 10 : null
     return {
       tokens,
       input: last.tokens.input,
       output: last.tokens.output,
       reasoning: last.tokens.reasoning,
-      cacheRead: last.tokens.cache.read,
-      cacheWrite: last.tokens.cache.write,
+      cacheRead: sumRead,
+      cacheWrite: sumWrite,
       cacheHit,
       percent: modelInfo?.limit.context ? Math.round((tokens / modelInfo.limit.context) * 100) : null,
       model: modelName,

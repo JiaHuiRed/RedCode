@@ -332,11 +332,18 @@ export function Prompt(props: PromptProps) {
   const usage = createMemo(() => {
     if (!props.sessionID) return
     const msg = sync.data.message[props.sessionID] ?? []
-    const last = msg.findLast((item): item is AssistantMessage => item.role === "assistant" && item.tokens.output > 0)
-    if (!last) return
-    if (last.tokens.cache.read <= 0) return
-    const cacheDenom = last.tokens.input + last.tokens.cache.read + last.tokens.cache.write
-    const cacheHitPct = Math.round((last.tokens.cache.read / cacheDenom) * 1000) / 10
+    // 260612 Red session-aggregate cache rate (not last-turn-only which is always ~99%)
+    let sumRead = 0, sumWrite = 0, sumInput = 0
+    for (const m of msg) {
+      if (m.role === "assistant") {
+        sumRead += m.tokens.cache.read
+        sumWrite += m.tokens.cache.write
+        sumInput += m.tokens.input
+      }
+    }
+    if (sumRead <= 0) return
+    const cacheDenom = sumInput + sumRead + sumWrite
+    const cacheHitPct = Math.round((sumRead / cacheDenom) * 1000) / 10
     return { cache: `Cache: ${cacheHitPct}%` }
   })
 

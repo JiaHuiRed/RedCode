@@ -1,7 +1,7 @@
 {
   "$schema": "https://redcode.dev/config.json",
-  // 260612 Red removed npm plugin refs — packages not installed, caused undefined hook → provider crash
-  // "plugin": ["@tarquinen/opencode-dcp", "opencode-snip"],
+  // 260612 Red DCP handles dedup/compress/nudge
+  "plugin": ["@tarquinen/opencode-dcp"],
   // 260607 Red global inject (engine scans ~/.redcode unconditionally)
   // 260610 Red MEMORY no longer bulk-injected; use /recall + AGENTS CORE block
   "instructions": [
@@ -86,6 +86,11 @@
       "description": "AI semantic web search (get free key at https://dashboard.exa.ai/api-keys)",
       "enabled": true
     }
+  },
+  // 260612 Red compaction threshold — engine-level hard ceiling, works alongside DCP as safety net.
+  // DCP handles active compress/dedup/nudge; this catches edge cases where DCP doesn't trigger.
+  "compaction": {
+    "threshold": 150000
   },
   "tools": {
     "github-triage": false,
