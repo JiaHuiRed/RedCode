@@ -10,6 +10,29 @@
 
 ## TUI
 
+### [Unreleased] (0.6.0 — 聊天室 / 虚拟办公室)
+
+> 联合项目：敏敏（TUI）+ 小宋（GUI）共同开发。目标是让用户 + 两个 AI 在同一个聊天室里工作，不再开两个 exe 来回切换传话。
+
+#### 进度
+
+- [x] **ChatRoom + ChatMessage DB schema**：两表（`chat_room` / `chat_message`），sender 支持 `user`/`tui`/`gui`，可选关联 `session_id`，migration 已生成（`src/chat/chat.sql.ts` + `migration/20260612082823_chat_room/`）
+- [x] **Chat Service 层**：`ensureRoom` / `sendMessage` / `getMessages` / `getLastMessage`，同步模块走 Drizzle，typecheck 通过（`src/chat/index.ts`）
+- [ ] **聊天室 ↔ agent exe 同步机制**：exe 如何把消息写入 ChatRoom table、如何轮询/监听新消息
+- [ ] **Chat UI 骨架**（SolidJS `packages/app/`）：三路聊天面板（群聊 + 敏敏私聊 + 小宋私聊）+ 输入框 + 消息列表
+- [ ] **在线状态显示**：通过 session 表最后更新时间检测 agent exe 是否在运行
+- [ ] **@ 路由**：`@敏敏` / `@小宋` 将消息路由到对应 agent 的上下文
+- [ ] **壳应用启动入口**：Electron/SolidJS app 如何启动并加载聊天 UI
+
+#### 设计决策
+
+- **架构**：聊天壳（SolidJS `packages/app/`）+ 两个 agent exe 后台静默 + 共享 SQLite DB 同步
+- **三路聊天**：群聊（三人）、敏敏私聊、小宋私聊，类似微信
+- **Sender ID**："user"|"tui"|"gui"（code），UI 映射为"哥哥"|"敏敏"|"小宋"
+- **数据分离**：ChatMessage 存聊天 UI 消息，agent 工作记录仍在 SessionTable，通过 `session_id` 关联
+
+---
+
 ### [0.5.3] - 2026-06-12
 
 #### 新增
