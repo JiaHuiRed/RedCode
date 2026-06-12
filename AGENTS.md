@@ -85,6 +85,16 @@ RedCode = OpenCode fork：
   - 改 GUI → `cd packages/desktop && bun run typecheck`
   - 各 package 的代码风格/构建细节见该 package 的 AGENTS.md
 
+## 编辑后自动验证（借鉴 RedsWhale LSP 钩子）
+
+**每次 edit 源代码文件后，立即跑验证，不等任务结束。** 详见 `skill/auto-validate/SKILL.md`。
+
+- 改了 `.ts` / `.tsx` / `.rs` → 立即 typecheck
+- 改了测试文件 → 立即跑对应测试
+- 批量改同 package 文件 → 合并验证一次
+- 跨 package 编辑 → 分别验证
+- 连续失败 2 次 → 停手问用户
+
 # 红线（强约束）
 
 - **不可逆/大动作先出计划、等用户批准**：删文件、`rm`、push、打包 release、amend/tag、改 DB schema/migration、改构建或 CI 配置、一次动 5+ 文件——先说方案、等点头，批准前只读不写。可逆小改直接做，别为难自己。
