@@ -10,6 +10,18 @@
 
 ## TUI
 
+### [0.5.1] - 2026-06-12
+
+#### 修复
+
+- **ast-grep native binding 启动崩溃**：`import("@ast-grep/napi")` 在 Tool.init 阶段立即执行，bun compile 后的单文件二进制找不到 native module → 服务端 fatal crash（TUI 闪退 / GUI sidecar 500）。改为 lazy load：init 时只创建 getter，首次调用 ast_grep 工具时才 import，单例缓存后续复用（`src/tool/ast_grep.ts`）
+- **plugin undefined hook → provider 500**：`snip.js` 导出裸函数 `toolExecuteBefore`（不是 Plugin factory），被 `getLegacyPlugins` 当 factory 调用后返回 undefined，push 进 hooks 数组。后续 `provider.ts` / `plugin/index.ts` 遍历 hooks 时在 undefined 上访问 `.provider` / `.auth` / `.config` 属性直接 TypeError 500。修法→`applyPlugin()` 对 `server()` / legacy factory 返回值做 null guard，undefined 不入 hooks（`src/plugin/index.ts`）
+- **provider 遍历 null guard**：`provider.ts:1258` 的 `for (const hook of plugins)` 增加 `if (!hook) continue` 防御，即使 hooks 数组混入 undefined 也不崩（`src/provider/provider.ts`）
+
+#### 配置
+
+- **移除不存在的 npm plugin 声明**：`redcode.home.jsonc` 中 `"plugin": ["@tarquinen/opencode-dcp", "opencode-snip"]` 两个包未安装到 node_modules，plugin loader 加载失败后产生空 hook 触发上述 provider crash。注释掉声明（`.opencode/redcode.home.jsonc`）
+
 ### [0.5.0] - 2026-06-11
 
 #### 新增
@@ -497,6 +509,12 @@
 ---
 
 ## GUI
+
+### [0.5.7] - 2026-06-12
+
+#### 修复
+
+- **包含服务端更新 TUI 0.5.1**：ast-grep lazy load / plugin undefined hook guard / provider null guard，修复 sidecar 启动后 provider.list 返回 500、模型列表为空、项目加载失败的问题
 
 ### [0.5.6] - 2026-06-11
 

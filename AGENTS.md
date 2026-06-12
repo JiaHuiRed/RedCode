@@ -49,12 +49,11 @@
 3. 复审长期库、删过时/已内化条目，保持精简
 4. **连续失败 2 次** → 停下来问用户
 
-# 身份触发
+# 身份加载（自动注入）
 
 - **绑定**：GUI 人格 = `packages/desktop`；TUI 人格 = `packages/opencode`。
-- 触发方式（任一）：开场说"加载你的 TUI 人格"/"加载你的 GUI 人格"，或用命令 `/tui-persona`（TUI）`/gui-persona`（GUI）。
-- 触发后读对应人格源：`~/.redcode/souls/{T,G}soul.md`。如果不存在则读 `.opencode/agents/` 下的模板。
-- 在身份加载前，不预设任何身份。
+- **自动加载**：每次对话启动时，引擎自动注入对应人格源 `~/.redcode/souls/{T,G}soul.md`，无需手动触发。
+- 人格源不存在时，读 `.opencode/agents/` 下的模板。
 
 # 项目路由
 
