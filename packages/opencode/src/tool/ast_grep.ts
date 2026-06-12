@@ -118,7 +118,12 @@ export const AstGrepTool = Tool.define(
     const lsp = yield* LSP.Service
     const format = yield* Format.Service
     const bus = yield* Bus.Service
-    const ag: AstGrepModule = yield* Effect.promise(() => import("@ast-grep/napi"))
+    // 260612 Red lazy load — native binding crashes bun-compiled binary if imported at init
+    let _ag: AstGrepModule | undefined
+    const getAg = () =>
+      _ag
+        ? Effect.succeed(_ag)
+        : Effect.promise(() => import("@ast-grep/napi")).pipe(Effect.tap((m) => (_ag = m)))
 
     const searchInFiles = Effect.fn("AstGrep.search")(function* (
       pattern: string,
@@ -127,6 +132,7 @@ export const AstGrepTool = Tool.define(
       langOverride: string | undefined,
       ctx: Tool.Context,
     ) {
+      const ag = yield* getAg()
       let files: string[]
       const info = yield* fs.stat(dir).pipe(Effect.catch(() => Effect.succeed(undefined)))
       if (!info) return { output: `Path not found: ${dir}`, matches: [] as SearchMatch[] }
@@ -183,6 +189,7 @@ export const AstGrepTool = Tool.define(
       langOverride: string | undefined,
       ctx: Tool.Context,
     ) {
+      const ag = yield* getAg()
       let files: string[]
       const info = yield* fs.stat(dir).pipe(Effect.catch(() => Effect.succeed(undefined)))
       if (!info) return { output: `Path not found: ${dir}`, files: [] as FileEdit[] }

@@ -100,12 +100,14 @@ async function applyPlugin(load: PluginLoader.Loaded, input: PluginInput, hooks:
   const plugin = readV1Plugin(load.mod, load.spec, "server", "detect")
   if (plugin) {
     await resolvePluginId(load.source, load.spec, load.target, readPluginId(plugin.id, load.spec), load.pkg)
-    hooks.push(await (plugin as PluginModule).server(input, load.options))
+    const result = await (plugin as PluginModule).server(input, load.options)
+    if (result) hooks.push(result) // 260612 Red guard: plugin.server() may return undefined
     return
   }
 
   for (const server of getLegacyPlugins(load.mod)) {
-    hooks.push(await server(input, load.options))
+    const result = await server(input, load.options)
+    if (result) hooks.push(result) // 260612 Red guard: legacy plugin factory may return undefined
   }
 }
 

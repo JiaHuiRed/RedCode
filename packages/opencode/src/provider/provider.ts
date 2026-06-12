@@ -1256,6 +1256,7 @@ export const layer = Layer.effect(
         }
 
         for (const hook of plugins) {
+          if (!hook) continue // 260612 Red guard: plugin may return undefined hook
           const p = hook.provider
           const models = p?.models
           if (!p || !models) continue

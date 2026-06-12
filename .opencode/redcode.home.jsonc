@@ -1,6 +1,7 @@
 {
   "$schema": "https://redcode.dev/config.json",
-  "plugin": ["@tarquinen/opencode-dcp", "opencode-snip"],
+  // 260612 Red removed npm plugin refs — packages not installed, caused undefined hook → provider crash
+  // "plugin": ["@tarquinen/opencode-dcp", "opencode-snip"],
   // 260607 Red global inject (engine scans ~/.redcode unconditionally)
   // 260610 Red MEMORY no longer bulk-injected; use /recall + AGENTS CORE block
   "instructions": [
