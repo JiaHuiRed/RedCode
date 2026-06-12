@@ -1,53 +1,53 @@
-ï»¿# âš¡ RedCode
+# ? RedCode
 
 <p align="center">
   <img src="packages/app/public/mona-loading.gif" width="80">
 </p>
 <pre align="center">
-â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ
-â–ˆ   â–ˆ â–ˆ     â–ˆ  â–ˆâ–ˆ  â–ˆ     â–ˆ   â–ˆ â–ˆ  â–ˆâ–ˆ  â–ˆ    
-â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ â–ˆ   â–ˆ â–ˆ     â–ˆ   â–ˆ â–ˆ   â–ˆ  â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ
-â–ˆ  â–ˆâ–ˆ â–ˆ     â–ˆ   â–ˆ â–ˆ     â–ˆ   â–ˆ â–ˆ   â–ˆ  â–ˆ    
-â–ˆ   â–ˆ â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ
+¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€
+¨€   ¨€ ¨€     ¨€  ¨€¨€  ¨€     ¨€   ¨€ ¨€  ¨€¨€  ¨€    
+¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€ ¨€   ¨€ ¨€     ¨€   ¨€ ¨€   ¨€  ¨€¨€¨€¨€¨€¨€
+¨€  ¨€¨€ ¨€     ¨€   ¨€ ¨€     ¨€   ¨€ ¨€   ¨€  ¨€    
+¨€   ¨€ ¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€
 </pre>
 
-> **A Chinese-native desktop AI coding agent â€” standalone GUI, speaks your language, plug in any model (DeepSeek / MiMo / domestic-first).**
+> **A Chinese-native desktop AI coding agent ¡ª standalone GUI, speaks your language, plug in any model (DeepSeek / MiMo / domestic-first).**
 >
-> Author: Red Â· Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev).
+> Author: Red ¡¤ Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev).
 
 [![TUI](https://img.shields.io/badge/TUI-0.5.4-blue)](CHANGELOG.md)
-[![Desktop](https://img.shields.io/badge/Desktop-0.5.8-0078d4)](CHANGELOG.md)
+[![Desktop](https://img.shields.io/badge/Desktop-0.5.9-0078d4)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-lightblue)](https://github.com/JiaHuiRed/RedCode)
 
 ---
 
-## âœ¨ What is this?
+## ? What is this?
 
 Open-source AI coding assistant with **terminal TUI** and **desktop GUI** interfaces. Reads your codebase, executes commands, edits files, searches code, and completes programming tasks through natural language conversation.
 
 ---
 
-## ğŸ§© Features
+## ?? Features
 
-- ğŸ’¬ **Natural Language Coding** â€” describe requirements, auto-complete code
-- ğŸ”Œ **Multi-Model Support** â€” DeepSeek, MiMo, OpenAI, Anthropic, Google Gemini, Ollama, etc.
-- ğŸ›  **Tool System** â€” file read/write, code search, git status/diff/log, terminal commands, web search, environment info
-- ğŸ¤– **Smart Agents** â€” Build, Plan, General, Explore agents built-in, custom agents supported
-- ğŸ“ **Session Management** â€” history save, restore, fork
-- ğŸ¨ **Terminal UI** â€” syntax highlighting, streaming output, diff display
-- ğŸ–¥ **Desktop GUI** â€” Electron standalone window with full graphical interface
-- ğŸ“Š **MCP Servers**:
-  - [TypeGraph](https://github.com/guyowen/typegraph-mcp) â€” TypeScript semantic navigation (type resolution, barrel file traversal, cycle detection)
-  - [jCodeMunch](https://github.com/colbymchenry/jcodemunch) â€” structured code retrieval (60+ tools: symbol lookup, dead code detection, AST matching)
-  - [Browser MCP](https://github.com/colbymchenry/browsermcp) â€” browser automation (navigation, screenshots, clicks, input, page content extraction)
-- ğŸ”’ **Permission System** â€” tool call confirmation, auto-approve support
-- ğŸŒ **Multi-language** â€” Chinese, English, Japanese, and 18 languages
-- ğŸ—£ **TTS** â€” MiMo TTS voice reading for AI responses
+- ?? **Natural Language Coding** ¡ª describe requirements, auto-complete code
+- ?? **Multi-Model Support** ¡ª DeepSeek, MiMo, OpenAI, Anthropic, Google Gemini, Ollama, etc.
+- ?? **Tool System** ¡ª file read/write, code search, git status/diff/log, terminal commands, web search, environment info
+- ?? **Smart Agents** ¡ª Build, Plan, General, Explore agents built-in, custom agents supported
+- ?? **Session Management** ¡ª history save, restore, fork
+- ?? **Terminal UI** ¡ª syntax highlighting, streaming output, diff display
+- ?? **Desktop GUI** ¡ª Electron standalone window with full graphical interface
+- ?? **MCP Servers**:
+  - [TypeGraph](https://github.com/guyowen/typegraph-mcp) ¡ª TypeScript semantic navigation (type resolution, barrel file traversal, cycle detection)
+  - [jCodeMunch](https://github.com/colbymchenry/jcodemunch) ¡ª structured code retrieval (60+ tools: symbol lookup, dead code detection, AST matching)
+  - [Browser MCP](https://github.com/colbymchenry/browsermcp) ¡ª browser automation (navigation, screenshots, clicks, input, page content extraction)
+- ?? **Permission System** ¡ª tool call confirmation, auto-approve support
+- ?? **Multi-language** ¡ª Chinese, English, Japanese, and 18 languages
+- ?? **TTS** ¡ª MiMo TTS voice reading for AI responses
 
 ---
 
-## ğŸ–¥ Desktop GUI
+## ?? Desktop GUI
 
 - **Three-column layout**: FileTree (left) + Chat (center) + Review (right), independently resizable
 - **V2 Titlebar**: Tab-based session management, StatusPopover for token usage, `Cmd+T` / `Cmd+Shift+T` to switch sessions
@@ -55,12 +55,12 @@ Open-source AI coding assistant with **terminal TUI** and **desktop GUI** interf
 - **Semantic color layering**: `theme.colors` grouped by text/surface/border/status/diff/markdown/syntax, customizable themes
 - **ECC plugin integration**: Auto file change tracking, context compression optimization, safe auto-approval
 - **Version auto-injection**: Titlebar version badge auto-injected from `package.json` at build time
-- **Thinking hamster animation**: ğŸ¹ running animation + Mona cat loading during AI thinking
+- **Thinking hamster animation**: ?? running animation + Mona cat loading during AI thinking
 - **Design system**: CSS design tokens (radius, shadows, typography), `text-wrap: balance/pretty`
 
 ---
 
-## ğŸš€ Run from Source
+## ?? Run from Source
 
 ```bash
 git clone https://github.com/JiaHuiRed/RedCode.git
@@ -76,7 +76,7 @@ cd packages/desktop && bun run dev
 
 ---
 
-## âš™ï¸ Configuration
+## ?? Configuration
 
 ### Config File Locations
 
@@ -128,7 +128,7 @@ cd packages/desktop && bun run dev
 
 ---
 
-## ğŸ›  Tech Stack
+## ?? Tech Stack
 
 | Layer | Technology |
 |-------|------------|
@@ -143,13 +143,13 @@ cd packages/desktop && bun run dev
 
 ---
 
-## ğŸ“‹ Changelog
+## ?? Changelog
 
 See [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-## ğŸ’™ Acknowledgments
+## ?? Acknowledgments
 
 - Original project: [opencode](https://github.com/anomalyco/opencode) by sst.dev
 - License: MIT
