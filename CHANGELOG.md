@@ -18,6 +18,10 @@
 - **缓存命中率改为全会话聚合**：之前只取最后一条 assistant 消息的缓存率（≈99%），与 DeepSeek/MiMo 后台显示的 ~95% 不符。改为遍历全部 assistant 消息求和 `read/(input+read+write)`，结果与后台一致。影响 TUI 侧边栏、底栏、子代理 footer 三处显示（`sidebar/context.tsx`、`prompt/index.tsx`、`subagent-footer.tsx`）+ GUI 指标面板（`session-context-metrics.ts`）
 - **anti-deferral 规则**：系统提示词（deepseek/mimo/minimax 三档）+ AGENTS.md 红线 + souls 人格文件均加入禁止"先放着/回头处理"规则，杜绝 code agent 询问是否搁置问题的行为。soul 文件同步删除"要不要…还是…"模板，强化"发现问题就修、做不到直说"（`prompt/{deepseek,mimo,minimax}.txt`、`AGENTS.md`、`.opencode/agents/{Gsoul,Tsoul}.md`）
 
+#### 修复
+
+- **跨会话感知 persona 判断逻辑修正**：cc 原始实现 `directory.includes("dist") ? "小宋/GUI" : "敏敏/TUI"` 逻辑反了——TUI 从 `packages/opencode/dist/...` 启动，应标记为敏敏。修正为 `directory.includes("dist") ? "敏敏/TUI" : "小宋/GUI"`（`src/session/instruction.ts`）
+
 #### 配置
 
 - **DCP + token-compressor 共存确认**：验证两插件 hook 层完全不重叠（DCP: `messages.transform`/`system.transform`/compress 工具；TC: `tool.execute.after`），效果叠加无冲突。DCP 管去重/压缩/nudge，TC 管精细规则截断（`redcode.jsonc`）

@@ -40,7 +40,7 @@ function recentSessionDigest(): string {
       const ago = Math.round((Date.now() / 1000 - (r.time_updated ?? 0)) / 60)
       const agoStr = ago < 60 ? `${ago}m ago` : `${Math.round(ago / 60)}h ago`
       const stats = r.files ? ` (+${r.additions ?? 0}/-${r.deletions ?? 0}, ${r.files} files)` : ""
-      const persona = r.directory?.includes("dist") ? "小宋/GUI" : "敏敏/TUI"
+      const persona = r.directory?.includes("dist") ? "敏敏/TUI" : "小宋/GUI"
       return `- [${agoStr}] [${persona}] ${r.title}${stats}`
     })
     return `# Recent sessions (last 24h)\n\nOther sessions working on this project — check before modifying the same files:\n\n${lines.join("\n")}`
