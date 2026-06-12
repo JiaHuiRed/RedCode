@@ -123,7 +123,14 @@ export const AstGrepTool = Tool.define(
     const getAg = () =>
       _ag
         ? Effect.succeed(_ag)
-        : Effect.promise(() => import("@ast-grep/napi")).pipe(Effect.tap((m) => (_ag = m)))
+        : Effect.gen(function* () {
+            const m = yield* Effect.tryPromise({
+              try: () => import("@ast-grep/napi") as Promise<AstGrepModule>,
+              catch: () => new Error("Failed to load @ast-grep/napi"),
+            })
+            _ag = m
+            return m
+          })
 
     const searchInFiles = Effect.fn("AstGrep.search")(function* (
       pattern: string,
