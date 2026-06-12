@@ -283,6 +283,11 @@ export const Info = Schema.Struct({
       reserved: Schema.optional(NonNegativeInt).annotate({
         description: "Token buffer for compaction. Leaves enough window to avoid overflow during compaction.",
       }),
+      // 260612 Red hard ceiling — trigger compaction when total tokens exceed this, regardless of model declared limit
+      threshold: Schema.optional(NonNegativeInt).annotate({
+        description:
+          "Hard token ceiling for compaction. When total tokens exceed this value, compaction triggers regardless of the model's declared context limit. Replaces DCP's auto-compress role. (default: none — uses model limit)",
+      }),
     }),
   ),
   experimental: Schema.optional(

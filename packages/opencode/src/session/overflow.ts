@@ -28,5 +28,10 @@ export function isOverflow(input: {
 
   const count =
     input.tokens.total || input.tokens.input + input.tokens.output + input.tokens.cache.read + input.tokens.cache.write
+  // 260612 Red hard ceiling: if threshold is set, trigger compaction at that point
+  // regardless of model's (often inflated) declared context limit.
+  // This replaces DCP's auto-compress role after DCP was removed.
+  const threshold = input.cfg.compaction?.threshold
+  if (threshold && count >= threshold) return true
   return count >= usable(input)
 }
