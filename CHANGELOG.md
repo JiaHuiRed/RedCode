@@ -21,6 +21,11 @@
 #### 配置
 
 - **移除不存在的 npm plugin 声明**：`redcode.home.jsonc` 中 `"plugin": ["@tarquinen/opencode-dcp", "opencode-snip"]` 两个包未安装到 node_modules，plugin loader 加载失败后产生空 hook 触发上述 provider crash。注释掉声明（`.opencode/redcode.home.jsonc`）
+- **compaction 参数适配 100 万 token 窗口**：`preserve_recent_tokens` 从 2K-8K 调至 64K，`reserved` 从 20K 调至 50K，`tail_turns` 从 2 调至 3。减少频繁压缩，长对话体验更流畅（`~/.redcode/redcode.jsonc`）
+
+#### 改进
+
+- **编辑后自动验证（auto-validate skill）**：借鉴 RedsWhale 的 LSP post-edit 钩子，新建 `auto-validate` skill——每次 edit 源代码文件后立即触发 typecheck/test，形成紧密反馈循环，不用等到任务结束。AGENTS.md 工作方式章节同步更新（`~/.redcode/skill/auto-validate/SKILL.md` + `AGENTS.md`）
 
 ### [0.5.0] - 2026-06-11
 
