@@ -43,6 +43,8 @@
 #### 新增
 
 - **侧边栏缓存命中率区间颜色**：`< 50%` 红色（`error`）、`50%~80%` 黄色（`warning`）、`>= 80%` 绿色（`success`），一眼判断缓存效率（`sidebar/context.tsx`）
+- **默认主题改为 Karina**：程序首次启动时自动加载 Karina 主题（深蓝钢色调），而非之前的默认 opencode 主题（`theme.tsx`）
+- **侧边栏 Context 面板全面上色**：provider 用 `secondary`、model 用 `primary`、input/output 分 cyan/green 区分、reasoning 用橙色醒目标识、cache read/write 分色显示、费用用 `primary` 高亮、agent 名用 `accent`。告别全灰扁平，花花绿绿一眼可读（`sidebar/context.tsx`）
 
 ### [0.5.3] - 2026-06-12
 

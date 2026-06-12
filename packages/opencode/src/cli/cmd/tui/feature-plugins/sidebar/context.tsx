@@ -105,28 +105,44 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       </text>
       <Show when={state().provider}>
         <text fg={theme()?.textMuted}>
-          <span style={{ fg: theme()?.accent }}>●</span> {state().provider}
+          <span style={{ fg: theme()?.accent }}>●</span> <span style={{ fg: theme()?.secondary }}>{state().provider}</span>
         </text>
       </Show>
       <Show when={state().model}>
-        <text fg={theme()?.textMuted}>  {state().model}</text>
+        <text fg={theme()?.primary}>  {state().model}</text>
       </Show>
-      <text fg={theme()?.textMuted}>{state().tokens.toLocaleString()} tokens · {percentLabel()}</text>
-      <text fg={theme()?.textMuted}>in {state().input.toLocaleString()} · out {state().output.toLocaleString()}</text>
+      <text fg={theme()?.textMuted}>
+        <span style={{ fg: theme()?.text }}>{state().tokens.toLocaleString()}</span> tokens · {percentLabel()}
+      </text>
+      <text fg={theme()?.textMuted}>
+        in <span style={{ fg: theme()?.info }}>{state().input.toLocaleString()}</span> · out <span style={{ fg: theme()?.success }}>{state().output.toLocaleString()}</span>
+      </text>
       <Show when={state().reasoning > 0}>
-        <text fg={theme()?.textMuted}>reason {state().reasoning.toLocaleString()}</text>
+        <text fg={theme()?.textMuted}>
+          reason <span style={{ fg: theme()?.warning }}>{state().reasoning.toLocaleString()}</span>
+        </text>
       </Show>
       <Show when={state().cacheRead > 0 || state().cacheWrite > 0}>
-        <text fg={theme()?.textMuted}>cache {state().cacheWrite > 0
-          ? `${state().cacheRead.toLocaleString()} / ${state().cacheWrite.toLocaleString()}`
-          : state().cacheRead.toLocaleString()}</text>
+        <text fg={theme()?.textMuted}>
+          cache{' '}
+          <Show when={state().cacheWrite > 0} fallback={
+            <span style={{ fg: theme()?.info }}>{state().cacheRead.toLocaleString()}</span>
+          }>
+            <span style={{ fg: theme()?.info }}>{state().cacheRead.toLocaleString()}</span> /{' '}
+            <span style={{ fg: theme()?.primary }}>{state().cacheWrite.toLocaleString()}</span>
+          </Show>
+        </text>
         <Show when={state().cacheHit != null}>
           <span style={{ fg: cacheHitColor() }}>{` (${state().cacheHit}%)`}</span>
         </Show>
       </Show>
-      <text fg={theme()?.textMuted}>{money.format(cost())} · {state().messageCount} msgs</text>
+      <text fg={theme()?.textMuted}>
+        <span style={{ fg: theme()?.primary }}>{money.format(cost())}</span> · {state().messageCount} msgs
+      </text>
       <Show when={agent()}>
-        <text fg={theme()?.textMuted}>agent {agent()}</text>
+        <text fg={theme()?.textMuted}>
+          agent <span style={{ fg: theme()?.accent }}>{agent()}</span>
+        </text>
       </Show>
       <box height={1} />
       <Show when={created()}>
