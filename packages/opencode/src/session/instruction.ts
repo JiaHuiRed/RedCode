@@ -18,7 +18,7 @@ function recentSessionDigest(): string {
   try {
     if (!Database.Client.loaded()) return ""
     const db = Database.Client()
-    const cutoff = Math.floor(Date.now() / 1000) - 24 * 60 * 60
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000
     const rows = db
       .select({
         title: SessionTable.title,
@@ -37,7 +37,7 @@ function recentSessionDigest(): string {
       .all()
     if (!rows.length) return ""
     const lines = rows.map((r) => {
-      const ago = Math.round((Date.now() / 1000 - (r.time_updated ?? 0)) / 60)
+      const ago = Math.round((Date.now() - (r.time_updated ?? 0)) / 1000 / 60)
       const agoStr = ago < 60 ? `${ago}m ago` : `${Math.round(ago / 60)}h ago`
       const stats = r.files ? ` (+${r.additions ?? 0}/-${r.deletions ?? 0}, ${r.files} files)` : ""
       const persona = r.directory?.includes("dist") ? "敏敏/TUI" : "小宋/GUI"
