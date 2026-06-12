@@ -582,6 +582,12 @@
 
 ## GUI
 
+### [0.5.9] - 2026-06-12
+
+#### 修复
+
+- **DeepSeek / MiMo 成本少算缓存未命中（硬编码修复）**：models.dev 远程 API 中 DeepSeek 和 Xiaomi MiMo 所有模型的 `cache_write` 均为 null（→ 0），而这两家没有独立 cache write 价格（缓存未命中 = input 原价）。代码中 `adjustedInput = totalInput - cacheRead - cacheWrite` 把未命中 token 全部分配到 `cache.write` 计费项，但 `cache.write = 0` 导致这些 token **完全不收费**（如 600 miss + 400 hit 场景：实收 $0.00112，应为 $0.0851，差 76 倍）。在 `packages/core/src/plugin/models-dev.ts` 中硬编码 DeepSeek 和 Xiaomi 的自定义 provider 的 `cache.write` = `input`。不影响 Anthropic/OpenAI 等有独立 cache write 价格的 provider（`packages/core/src/plugin/models-dev.ts`）
+
 ### [0.5.8] - 2026-06-12
 
 #### 修复
