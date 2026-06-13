@@ -130,7 +130,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         </text>
       </Show>
       <text fg={theme()?.textMuted}>
-        <span style={{ fg: theme()?.primary }}>{money.format(cost())}</span> · {state().messageCount} msgs
+        <span style={{ fg: theme()?.primary }}>{money.format(cost())}</span> · {`${state().messageCount} msgs`}
       </text>
       <Show when={agent()}>
         <text fg={theme()?.textMuted}>

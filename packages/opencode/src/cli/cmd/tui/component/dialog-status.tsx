@@ -52,7 +52,7 @@ export function DialogStatus() {
       </box>
       <Show when={Object.keys(sync.data.mcp).length > 0} fallback={<text fg={theme.text}>无 MCP 服务器</text>}>
         <box>
-          <text fg={theme.text}>{Object.keys(sync.data.mcp).length} 个 MCP 服务器</text>
+          <text fg={theme.text}>{`${Object.keys(sync.data.mcp).length} 个 MCP 服务器`}</text>
           <For each={Object.entries(sync.data.mcp)}>
             {([key, item]) => (
               <box flexDirection="row" gap={1}>
@@ -95,7 +95,7 @@ export function DialogStatus() {
       </Show>
       {sync.data.lsp.length > 0 && (
         <box>
-          <text fg={theme.text}>{sync.data.lsp.length} 个 LSP 服务器</text>
+          <text fg={theme.text}>{`${sync.data.lsp.length} 个 LSP 服务器`}</text>
           <For each={sync.data.lsp}>
             {(item) => (
               <box flexDirection="row" gap={1}>
@@ -120,7 +120,7 @@ export function DialogStatus() {
       )}
       <Show when={enabledFormatters().length > 0} fallback={<text fg={theme.text}>无格式化器</text>}>
         <box>
-          <text fg={theme.text}>{enabledFormatters().length} 个格式化器</text>
+          <text fg={theme.text}>{`${enabledFormatters().length} 个格式化器`}</text>
           <For each={enabledFormatters()}>
             {(item) => (
               <box flexDirection="row" gap={1}>
@@ -142,7 +142,7 @@ export function DialogStatus() {
       </Show>
       <Show when={plugins().length > 0} fallback={<text fg={theme.text}>无插件</text>}>
         <box>
-          <text fg={theme.text}>{plugins().length} 个插件</text>
+          <text fg={theme.text}>{`${plugins().length} 个插件`}</text>
           <For each={plugins()}>
             {(item) => (
               <box flexDirection="row" gap={1}>

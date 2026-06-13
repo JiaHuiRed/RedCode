@@ -818,7 +818,7 @@ function WebSearch(props: ToolProps) {
   return (
     <InlineTool icon="◈" pending="搜索网页中..." complete={toolComplete(props.part)} part={props.part}>
       {label()} "{stringValue(props.input.query) ?? pendingInput(props.part)}"{" "}
-      <Show when={numberValue(props.metadata.numResults)}>{(results) => <>({results()} results)</>}</Show>
+      <Show when={numberValue(props.metadata.numResults)}>{(results) => <>({`${results()} results`})</>}</Show>
     </InlineTool>
   )
 }
