@@ -21,13 +21,10 @@ export const chatHandlers = HttpApiBuilder.group(InstanceHttpApi, "chat", (handl
       }),
     )
     .handle("messages", ({ params, query }) =>
-      Effect.try({
-        try: () => Chat.getMessages(params.roomId, {
-          limit: query.limit,
-          before: query.before,
-        }),
-        catch: () => [] as Chat.MessageRow[],
-      }),
+      Effect.try(() => Chat.getMessages(params.roomId, {
+        limit: query.limit,
+        before: query.before,
+      })).pipe(Effect.catchAll(() => Effect.succeed([] as Chat.MessageRow[]))),
     )
     .handle("send", ({ params, payload }) =>
       Effect.gen(function* () {
