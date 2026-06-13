@@ -1,5 +1,6 @@
 // 260613 Red chat room — "office" UI shell
-import { createSignal, createResource, For, Show, type Component } from "solid-js"
+import { createSignal, createResource, For, Show } from "solid-js"
+import { useServer } from "@/context/server"
 
 type ContactId = "tui" | "gui" | "group"
 
@@ -27,19 +28,13 @@ interface SessionItem {
   directory: string
 }
 
-interface ChatRoomProps {
-  serverUrl?: string
-  username?: string | null
-  password?: string | null
-}
-
-async function fetchSessions(props: ChatRoomProps): Promise<SessionItem[]> {
-  if (!props.serverUrl) return []
+async function fetchSessions(serverUrl: string, auth?: { username: string; password: string }): Promise<SessionItem[]> {
+  if (!serverUrl) return []
   const headers: Record<string, string> = { "Content-Type": "application/json" }
-  if (props.username && props.password) {
-    headers["Authorization"] = "Basic " + btoa(`${props.username}:${props.password}`)
+  if (auth) {
+    headers["Authorization"] = "Basic " + btoa(`${auth.username}:${auth.password}`)
   }
-  const res = await fetch(`${props.serverUrl}/session`, { headers })
+  const res = await fetch(`${serverUrl}/session`, { headers })
   if (!res.ok) return []
   const data = await res.json()
   return (data ?? []) as SessionItem[]
@@ -57,9 +52,17 @@ function timeAgo(ts: number): string {
   return `${Math.floor(diff / 86400)}天前`
 }
 
-const ChatRoom: Component<ChatRoomProps> = (props) => {
+export default function ChatRoom() {
+  const server = useServer()
   const [active, setActive] = createSignal<ContactId | null>(null)
-  const [sessions, { refetch }] = createResource(() => props, fetchSessions)
+  const http = () => {
+    const c = server.current
+    return c && "http" in c ? c.http : undefined
+  }
+  const [sessions] = createResource(
+    () => http()?.url,
+    (url) => fetchSessions(url, http()?.username && http()?.password ? { username: http()!.username!, password: http()!.password! } : undefined),
+  )
 
   const filteredSessions = () => {
     const all = sessions() ?? []
@@ -179,8 +182,6 @@ const ChatRoom: Component<ChatRoomProps> = (props) => {
     </div>
   )
 }
-
-export default ChatRoom
 
 // -- Inline styles --
 

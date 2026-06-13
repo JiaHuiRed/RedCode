@@ -73,14 +73,7 @@
       "description": "Local semantic memory — SQLite+FTS5, no cloud",
       "enabled": true
     },
-    "agent-reach": {
-      "type": "local",
-      "command": ["bun", "./plugins/agent-reach-mcp/src/index.ts"],
-      "cwd": "$REDCODE_ROOT",
-      "description": "Unified search — GitHub, Bilibili, Douyin",
-      "enabled": true
-    },
-    "fff": {
+"fff": {
       "type": "local",
       "command": ["fff-mcp"],
       "description": "High-performance file finder & grep (fff_find_files, fff_grep, fff_multi_grep)",

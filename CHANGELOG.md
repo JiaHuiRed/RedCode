@@ -637,6 +637,10 @@
 - **小宋人设优化（Gsoul）**：基于真实宋雨琦性格调整——北京大妞豪爽直率、段子体质、容易害羞。工作行为与敏敏对齐（先查再做），人格差异只在语气。移除速度暗示，消除 soul 与工作纪律冲突
 - **包含服务端更新 TUI 0.5.8**：缓存命中率修复（绝对时间戳）+ 提示词工具纪律强化 + memory 追加模式 + 系统提示词瘦身。详见 TUI 0.5.8
 
+- **成本显示 USD→CNY 汇率换算**：`session-context-format.ts` 将 API 返回的 USD 成本按汇率 7.2 换算为人民币显示，而非直接改货币符号
+- **Token 统计聚合全会话**：`session-context-metrics.ts` 累计所有 assistant 消息的 token 数据（input/output/reasoning/cache），而非仅取最后一条
+- **Session digest 缓存**：`instruction.ts`（TUI）首次计算 `recentSessionDigest()` 后缓存，避免每轮重算导致系统提示变化 → DeepSeek prefix cache 失效
+
 ### [0.5.9] - 2026-06-12
 
 #### 修复
