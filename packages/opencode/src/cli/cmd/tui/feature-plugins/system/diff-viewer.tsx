@@ -666,7 +666,7 @@ function DiffViewer(props: { api: TuiPluginApi }) {
           <text fg={theme().textMuted}>{mode() === "last-turn" ? "last turn" : "working tree"}</text>
           <box flexGrow={1} />
           <text fg={theme().textMuted}>
-            {files().length} {files().length === 1 ? "file" : "files"}
+            {`${files().length} ${files().length === 1 ? "file" : "files"}`}
           </text>
         </Panel>
 

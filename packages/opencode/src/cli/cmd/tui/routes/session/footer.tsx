@@ -79,7 +79,7 @@ export function Footer() {
                     <span style={{ fg: theme.success }}>⊙ </span>
                   </Match>
                 </Switch>
-                {mcp()} MCP
+                {`${mcp()} MCP`}
               </text>
             </Show>
             <text fg={theme.textMuted}>/status</text>

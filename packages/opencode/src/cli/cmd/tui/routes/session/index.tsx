@@ -2121,7 +2121,7 @@ function WebSearch(props: ToolProps<typeof WebSearchTool>) {
   return (
             <InlineTool icon="◎" pending="搜索网页中..." complete={props.input.query} part={props.part}>
       {webSearchProviderLabel(metadata().provider)} "{props.input.query}"{" "}
-      <Show when={metadata().numResults}>({metadata().numResults} results)</Show>
+      <Show when={metadata().numResults}>{`(${metadata().numResults} results)`}</Show>
     </InlineTool>
   )
 }
@@ -2379,7 +2379,7 @@ function Question(props: ToolProps<typeof QuestionTool>) {
       </Match>
       <Match when={true}>
         <InlineTool icon="◉" pending="Asking questions..." complete={count()} part={props.part}>
-          Asked {count()} question{count() !== 1 ? "s" : ""}
+          {`Asked ${count()} question${count() !== 1 ? "s" : ""}`}
         </InlineTool>
       </Match>
     </Switch>

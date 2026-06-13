@@ -751,7 +751,7 @@ function Glob(props: ToolProps) {
       <Show when={numberValue(props.metadata.count)}>
         {(count) => (
           <>
-            ({count()} {count() === 1 ? "match" : "matches"})
+            {`(${count()} ${count() === 1 ? "match" : "matches"})`}
           </>
         )}
       </Show>
@@ -797,7 +797,7 @@ function Grep(props: ToolProps) {
       <Show when={numberValue(props.metadata.matches)}>
         {(matches) => (
           <>
-            ({matches()} {matches() === 1 ? "match" : "matches"})
+            {`(${matches()} ${matches() === 1 ? "match" : "matches"})`}
           </>
         )}
       </Show>
@@ -1010,7 +1010,7 @@ function Question(props: ToolProps) {
       </Match>
       <Match when={true}>
         <InlineTool icon="→" pending="Asking questions..." complete={questions().length} part={props.part}>
-          Asked {questions().length} question{questions().length === 1 ? "" : "s"}
+          {`Asked ${questions().length} question${questions().length === 1 ? "" : "s"}`}
         </InlineTool>
       </Match>
     </Switch>
