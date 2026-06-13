@@ -33,6 +33,16 @@
 
 ---
 
+### [0.5.9] - 2026-06-13
+
+#### 优化
+
+- **侧栏 context 面板五彩颜色 + 累计 total**：各 token 指标用红粉紫等鲜艳颜色区分（红色 context/淡紫 total/红 in/绿 out/橙 reason/蓝 cacheRead/紫 cacheWrite/粉 cost），新增 session 累计 total token 行（`sidebar/context.tsx`）
+
+#### 清理
+
+- **Console mail 死代码**：移除未使用的 `Wbr` / `WbrProps` / `SplitString` 组件（`packages/console/mail/emails/components.tsx`）
+
 ### [0.5.8] - 2026-06-13
 
 #### 修复

@@ -10,6 +10,17 @@ const money = new Intl.NumberFormat("zh-CN", {
   currency: "CNY",
 })
 
+const tokenColor = {
+  current: "#ff5252",
+  total: "#ce93d8",
+  input: "#ef5350",
+  output: "#66bb6a",
+  reasoning: "#ff9100",
+  cacheRead: "#40c4ff",
+  cacheWrite: "#ab47bc",
+  cost: "#ff4081",
+}
+
 function formatTime(ts: number): string {
   const d = new Date(ts)
   const pad = (n: number) => String(n).padStart(2, "0")
@@ -45,6 +56,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         model: null as string | null,
         provider: null as string | null,
         messageCount: msg().length,
+        sessionTotal: 0,
       }
     }
 
@@ -58,16 +70,21 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     // 260614 fix: cache hit = read / (read + miss). For DeepSeek, cache.write=0
     // so use cache.miss from metadata directly; fallback to write, then to input for other providers.
     let sumRead = 0, sumMiss = 0, sumWrite = 0, sumInput = 0
+    let sessionTotalInput = 0, sessionTotalOutput = 0, sessionTotalReasoning = 0
     for (const m of msg()) {
       if (m.role === "assistant") {
         sumRead += m.tokens.cache.read
         sumMiss += m.tokens.cache.miss ?? 0
         sumWrite += m.tokens.cache.write
         sumInput += m.tokens.input
+        sessionTotalInput += m.tokens.input
+        sessionTotalOutput += m.tokens.output
+        sessionTotalReasoning += m.tokens.reasoning
       }
     }
     const cacheDenom = sumRead + (sumMiss || sumWrite || sumInput)
     const cacheHit = cacheDenom > 0 && sumRead > 0 ? Math.round((sumRead / cacheDenom) * 1000) / 10 : null
+    const sessionTotal = sessionTotalInput + sessionTotalOutput + sessionTotalReasoning + sumRead + sumWrite
     return {
       tokens,
       input: last.tokens.input,
@@ -80,6 +97,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       model: modelName,
       provider: prov?.name ?? last.providerID,
       messageCount: msg().length,
+      sessionTotal,
     }
   })
 
@@ -108,29 +126,32 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         <text fg={theme()?.primary}>  {state().model}</text>
       </Show>
       <text fg={theme()?.textMuted}>
-        <span style={{ fg: theme()?.text }}>{state().tokens.toLocaleString()}</span> tokens · {percentLabel()}
+        <span style={{ fg: tokenColor.current }}>{state().tokens.toLocaleString()}</span> tokens · {percentLabel()}
       </text>
       <text fg={theme()?.textMuted}>
-        in <span style={{ fg: theme()?.info }}>{state().input.toLocaleString()}</span> · out <span style={{ fg: theme()?.success }}>{state().output.toLocaleString()}</span>
+        Total <span style={{ fg: tokenColor.total }}>{state().sessionTotal.toLocaleString()}</span> tokens
+      </text>
+      <text fg={theme()?.textMuted}>
+        in <span style={{ fg: tokenColor.input }}>{state().input.toLocaleString()}</span> · out <span style={{ fg: tokenColor.output }}>{state().output.toLocaleString()}</span>
       </text>
       <Show when={state().reasoning > 0}>
         <text fg={theme()?.textMuted}>
-          reason <span style={{ fg: theme()?.warning }}>{state().reasoning.toLocaleString()}</span>
+          reason <span style={{ fg: tokenColor.reasoning }}>{state().reasoning.toLocaleString()}</span>
         </text>
       </Show>
       <Show when={state().cacheRead > 0 || state().cacheWrite > 0}>
         <text fg={theme()?.textMuted}>
           cache{' '}
           <Show when={state().cacheWrite > 0} fallback={
-            <span style={{ fg: theme()?.info }}>{state().cacheRead.toLocaleString()}</span>
+            <span style={{ fg: tokenColor.cacheRead }}>{state().cacheRead.toLocaleString()}</span>
           }>
-            <span style={{ fg: theme()?.info }}>{state().cacheRead.toLocaleString()}</span> /{' '}
-            <span style={{ fg: theme()?.primary }}>{state().cacheWrite.toLocaleString()}</span>
+            <span style={{ fg: tokenColor.cacheRead }}>{state().cacheRead.toLocaleString()}</span> /{' '}
+            <span style={{ fg: tokenColor.cacheWrite }}>{state().cacheWrite.toLocaleString()}</span>
           </Show>
         </text>
       </Show>
       <text fg={theme()?.textMuted}>
-        <span style={{ fg: theme()?.primary }}>{money.format(cost())}</span> · {`${state().messageCount} msgs`}
+        <span style={{ fg: tokenColor.cost }}>{money.format(cost())}</span> · {`${state().messageCount} msgs`}
       </text>
       <Show when={agent()}>
         <text fg={theme()?.textMuted}>

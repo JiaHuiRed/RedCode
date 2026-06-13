@@ -9,7 +9,7 @@
 >
 > ���� [opencode](https://github.com/anomalyco/opencode)��sst.dev����ȶ��ο�����
 
-[![TUI](https://img.shields.io/badge/TUI-0.5.8-blue)](CHANGELOG.md)
+[![TUI](https://img.shields.io/badge/TUI-0.5.9-blue)](CHANGELOG.md)
 [![Desktop](https://img.shields.io/badge/Desktop-0.5.10-0078d4)](CHANGELOG.md)
 [![ƽ̨](https://img.shields.io/badge/ƽ̨-Windows%2010%2F11-0078d4)](https://github.com/JiaHuiRed/RedCode)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)](https://typescriptlang.org)
