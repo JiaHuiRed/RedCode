@@ -1763,20 +1763,21 @@ export function Prompt(props: PromptProps) {
                     <Match when={usage()}>
                       {(item) => (
                         <text wrapMode="none">
-                          <text fg={theme.textMuted}>Cache </text>
-                          <text
-                            fg={
-                              item().cacheHitPct >= 80
-                                ? theme.success
-                                : item().cacheHitPct >= 50
-                                  ? theme.warning
-                                  : item().cacheHitPct >= 20
-                                    ? theme.textMuted
-                                    : theme.error
-                            }
+                          <span style={{ fg: theme.textMuted }}>Cache </span>
+                          <span
+                            style={{
+                              fg:
+                                item().cacheHitPct >= 80
+                                  ? theme.success
+                                  : item().cacheHitPct >= 50
+                                    ? theme.warning
+                                    : item().cacheHitPct >= 20
+                                      ? theme.textMuted
+                                      : theme.error,
+                            }}
                           >
                             {`${item().cacheHitPct}%`}
-                          </text>
+                          </span>
                         </text>
                       )}
                     </Match>
