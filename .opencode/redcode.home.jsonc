@@ -11,7 +11,8 @@
     "~/.redcode/skill/goal-automation/SKILL.md",
     "~/.redcode/skill/simplify/SKILL.md",
     "~/.redcode/skill/vision-autoagent/SKILL.md",
-    "~/.redcode/skill/diagnose/SKILL.md"
+    "~/.redcode/skill/diagnose/SKILL.md",
+    "~/.redcode/skill/hot-trends/SKILL.md"
   ],
   // 260610 Red global plugin (moved to ~/.redcode/redcode.jsonc)
   "mcp": {
@@ -85,12 +86,6 @@
       "description": "High-performance file finder & grep (fff_find_files, fff_grep, fff_multi_grep)",
       "enabled": true
     },
-    "exa-search": {
-      "type": "remote",
-      "url": "https://mcp.exa.ai/mcp",
-      "description": "AI semantic web search (get free key at https://dashboard.exa.ai/api-keys)",
-      "enabled": true
-    }
   },
   // 260612 Red compaction threshold — engine-level hard ceiling, works alongside DCP as safety net.
   // DCP handles active compress/dedup/nudge; this catches edge cases where DCP doesn't trigger.
