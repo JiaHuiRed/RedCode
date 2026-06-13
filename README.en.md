@@ -1,19 +1,19 @@
-# ? RedCode
+﻿# ⚡ RedCode
 
 <p align="center">
   <img src="packages/app/public/mona-loading.gif" width="80">
 </p>
 <pre align="center">
-������������ ������������ ������������ ������������ ������������ ������������ ������������
-��   �� ��     ��  ����  ��     ��   �� ��  ����  ��    
-������������ ������������ ��   �� ��     ��   �� ��   ��  ������������
-��  ���� ��     ��   �� ��     ��   �� ��   ��  ��    
-��   �� ������������ ������������ ������������ ������������ ������������ ������������
+██████ ██████ ██████ ██████ ██████ ██████ ██████
+█   █ █     █  ██  █     █   █ █  ██  █
+██████ ██████ █   █ █     █   █ █   █  ██████
+█  ██ █     █   █ █     █   █ █   █  █
+█   █ ██████ ██████ ██████ ██████ ██████ ██████
 </pre>
 
-> **A Chinese-native desktop AI coding agent �� standalone GUI, speaks your language, plug in any model (DeepSeek / MiMo / domestic-first).**
+> **A Chinese-native desktop AI coding agent — standalone GUI, speaks your language, plug in any model (DeepSeek / MiMo / domestic-first).**
 >
-> Author: Red �� Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev).
+> Author: Red · Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev).
 
 [![TUI](https://img.shields.io/badge/TUI-0.6.0-blue)](CHANGELOG.md)
 [![Desktop](https://img.shields.io/badge/Desktop-0.6.0-0078d4)](CHANGELOG.md)
@@ -22,32 +22,32 @@
 
 ---
 
-## ? What is this?
+## ✨ What is this?
 
 Open-source AI coding assistant with **terminal TUI** and **desktop GUI** interfaces. Reads your codebase, executes commands, edits files, searches code, and completes programming tasks through natural language conversation.
 
 ---
 
-## ?? Features
+## 🧩 Features
 
-- ?? **Natural Language Coding** �� describe requirements, auto-complete code
-- ?? **Multi-Model Support** �� DeepSeek, MiMo, OpenAI, Anthropic, Google Gemini, Ollama, etc.
-- ?? **Tool System** �� file read/write, code search, git status/diff/log, terminal commands, web search, environment info
-- ?? **Smart Agents** �� Build, Plan, General, Explore agents built-in, custom agents supported
-- ?? **Session Management** �� history save, restore, fork
-- ?? **Terminal UI** �� syntax highlighting, streaming output, diff display
-- ?? **Desktop GUI** �� Electron standalone window with full graphical interface
-- ?? **MCP Servers**:
-  - [TypeGraph](https://github.com/guyowen/typegraph-mcp) �� TypeScript semantic navigation (type resolution, barrel file traversal, cycle detection)
-  - [jCodeMunch](https://github.com/colbymchenry/jcodemunch) �� structured code retrieval (60+ tools: symbol lookup, dead code detection, AST matching)
-  - [Browser MCP](https://github.com/colbymchenry/browsermcp) �� browser automation (navigation, screenshots, clicks, input, page content extraction)
-- ?? **Permission System** �� tool call confirmation, auto-approve support
-- ?? **Multi-language** �� Chinese, English, Japanese, and 18 languages
-- ?? **TTS** �� MiMo TTS voice reading for AI responses
+- 💬 **Natural Language Coding** — describe requirements, auto-complete code
+- 🔌 **Multi-Model Support** — DeepSeek, MiMo, OpenAI, Anthropic, Google Gemini, Ollama, etc.
+- 🛠 **Tool System** — file read/write, code search, git status/diff/log, terminal commands, web search, environment info
+- 🤖 **Smart Agents** — Build, Plan, General, Explore agents built-in, custom agents supported
+- 📝 **Session Management** — history save, restore, fork
+- 🎨 **Terminal UI** — syntax highlighting, streaming output, diff display
+- 🖥 **Desktop GUI** — Electron standalone window with full graphical interface
+- 📊 **MCP Servers**:
+  - [TypeGraph](https://github.com/guyowen/typegraph-mcp) — TypeScript semantic navigation (type resolution, barrel file traversal, cycle detection)
+  - [jCodeMunch](https://github.com/colbymchenry/jcodemunch) — structured code retrieval (60+ tools: symbol lookup, dead code detection, AST matching)
+  - [Browser MCP](https://github.com/colbymchenry/browsermcp) — browser automation (navigation, screenshots, clicks, input, page content extraction)
+- 🔒 **Permission System** — tool call confirmation, auto-approve support
+- 🌍 **Multi-language** — Chinese, English, Japanese, and 18 languages
+- 🗣 **TTS** — MiMo TTS voice reading for AI responses
 
 ---
 
-## ?? Desktop GUI
+## 🖥 Desktop GUI
 
 - **Three-column layout**: FileTree (left) + Chat (center) + Review (right), independently resizable
 - **V2 Titlebar**: Tab-based session management, StatusPopover for token usage, `Cmd+T` / `Cmd+Shift+T` to switch sessions
@@ -55,12 +55,12 @@ Open-source AI coding assistant with **terminal TUI** and **desktop GUI** interf
 - **Semantic color layering**: `theme.colors` grouped by text/surface/border/status/diff/markdown/syntax, customizable themes
 - **ECC plugin integration**: Auto file change tracking, context compression optimization, safe auto-approval
 - **Version auto-injection**: Titlebar version badge auto-injected from `package.json` at build time
-- **Thinking hamster animation**: ?? running animation + Mona cat loading during AI thinking
+- **Thinking hamster animation**: 🐹 running animation + Mona cat loading during AI thinking
 - **Design system**: CSS design tokens (radius, shadows, typography), `text-wrap: balance/pretty`
 
 ---
 
-## ?? Run from Source
+## 🚀 Run from Source
 
 ```bash
 git clone https://github.com/JiaHuiRed/RedCode.git
@@ -76,7 +76,7 @@ cd packages/desktop && bun run dev
 
 ---
 
-## ?? Configuration
+## ⚙️ Configuration
 
 ### Config File Locations
 
@@ -128,7 +128,7 @@ cd packages/desktop && bun run dev
 
 ---
 
-## ?? Tech Stack
+## 🛠 Tech Stack
 
 | Layer | Technology |
 |-------|------------|
@@ -143,13 +143,13 @@ cd packages/desktop && bun run dev
 
 ---
 
-## ?? Changelog
+## 📋 Changelog
 
 See [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-## ?? Acknowledgments
+## 💙 Acknowledgments
 
 - Original project: [opencode](https://github.com/anomalyco/opencode) by sst.dev
 - License: MIT

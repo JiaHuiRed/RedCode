@@ -1,91 +1,91 @@
-# ? RedCode
+﻿# ⚡ RedCode
 
 <p align="center">
   <img src="packages/app/public/mona-loading.gif" width="80">
 </p>
 
-> **����ĸ������� AI ������֡�** �������ڡ�˵���ġ�����ϲ����ģ�ͣ�DeepSeek / MiMo / �������ȣ���
-> _A Chinese-native desktop AI coding agent �� standalone GUI, speaks your language, plug in any model._
+> **中文母语的桌面 AI 编程助手。** 独立窗口、说中文、接你喜欢的模型（DeepSeek / MiMo / 国产优先）。
+> _A Chinese-native desktop AI coding agent — standalone GUI, speaks your language, plug in any model._
 >
-> ���� [opencode](https://github.com/anomalyco/opencode)��sst.dev����ȶ��ο�����
+> 基于 [opencode](https://github.com/anomalyco/opencode)（sst.dev）深度二次开发。
 
 [![TUI](https://img.shields.io/badge/TUI-0.6.0-blue)](CHANGELOG.md)
 [![Desktop](https://img.shields.io/badge/Desktop-0.6.0-0078d4)](CHANGELOG.md)
-[![ƽ̨](https://img.shields.io/badge/ƽ̨-Windows%2010%2F11-0078d4)](https://github.com/JiaHuiRed/RedCode)
+[![平台](https://img.shields.io/badge/平台-Windows%2010%2F11-0078d4)](https://github.com/JiaHuiRed/RedCode)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)](https://typescriptlang.org)
 [![Bun](https://img.shields.io/badge/Bun-1.3.x-fcf2d0)](https://bun.sh)
-[![����֤](https://img.shields.io/badge/����֤-MIT-lightgrey)](LICENSE)
+[![许可证](https://img.shields.io/badge/许可证-MIT-lightgrey)](LICENSE)
 
 ---
 
-## ? ����ʲô��
+## ✨ 这是什么？
 
-AI ������֡�������ڡ�ͬһ������
+AI 编程助手。两个入口、同一能力：
 
-- **TUI** �� �ն������н��棨`packages/opencode`��
-- **GUI** �� ���洰�ڳ���Electron + SolidJS��`packages/desktop`��
+- **TUI** — 终端命令行界面（`packages/opencode`）
+- **GUI** — 桌面窗口程序，Electron + SolidJS（`packages/desktop`）
 
-�����롢д���롢�� bug���������˵���ģ����ɻ
+读代码、写代码、改 bug、跑命令。你说中文，它干活。
 
-### ��������
+### 核心能力
 
-�������⣨TypeGraph / jCodeMunch���� ��ģ�ͣ�DeepSeek / OpenAI / Anthropic / Ollama���� �ļ���д�༭ �� �ն�ִ�� �� Web ���� �� ������Զ��� �� �Ӿ����� �� �Ự���� �� Ȩ���ſ� �� ������ѹ�� �� �Զ�������ϵͳ �� Ŀ����� �� �Զ��� AI �˸�
+代码理解（TypeGraph / jCodeMunch）· 多模型（DeepSeek / OpenAI / Anthropic / Ollama）· 文件读写编辑 · 终端执行 · Web 搜索 · 浏览器自动化 · 视觉分析 · 会话管理 · 权限门控 · 上下文压缩 · 自动化记忆系统 · 目标管理 · 自定义 AI 人格
 
 ---
 
-## ?? ���ٿ�ʼ
+## 🚀 快速开始
 
-ǰ��Ҫ��[Bun](https://bun.sh) 1.3+
+前置要求：[Bun](https://bun.sh) 1.3+
 
 ```bash
 git clone https://github.com/JiaHuiRed/RedCode.git
 cd RedCode
 bun install
 
-# ���� TUI
+# 启动 TUI
 bun dev
 
-# ���������� GUI
+# 或启动桌面 GUI
 cd packages/desktop && bun run dev
 ```
 
-> ��һ�������Զ����� `~/.redcode/` ������Ĭ��ģ�壬�����ֶ����á�
+> 第一次启动自动创建 `~/.redcode/` 并播种默认模板，无需手动配置。
 
-### ����
+### 编译
 
-> Ҳ��ֱ��˫��һ�� bat��TUI `packages/opencode/build.bat` / GUI `packages/desktop/build-and-package.bat`��
+> 也可直接双击一键 bat：TUI `packages/opencode/build.bat` / GUI `packages/desktop/build-and-package.bat`。
 
 ```bash
-# TUI ���ļ� exe
+# TUI 单文件 exe
 cd packages/opencode && bun run build -- --single
 
-# ���� GUI
+# 桌面 GUI
 cd packages/desktop && bun run build && bun run package
 ```
 
 ---
 
-## ?? �û��ֲ�
+## 📖 用户手册
 
-ȫ������ָ���� **[MANUAL.md](MANUAL.md)**�����ǣ�
+全部操作指南在 **[MANUAL.md](MANUAL.md)**，涵盖：
 
-1. �״����ã�����ģ�� / AI �˸� / �û����� / �������䣩
-2. ����ϵͳ���Զ���־ / ���ڿ� / ����ע�룩
-3. MCP ��������9 ��Ԥ���÷���İ�װ�����ã�
-4. ������⣨provider / Ȩ�� / ��Ŀ�����ã�
-5. ���������б�
-6. Skill ����ϵͳ˵��
-7. ��˽ģ������ͬ������
-
----
-
-## ?? ������־
-
-�� [CHANGELOG.md](CHANGELOG.md)��
+1. 首次设置（配置模型 / AI 人格 / 用户画像 / 工作记忆）
+2. 记忆系统（自动日志 / 长期库 / 启动注入）
+3. MCP 服务器（9 个预配置服务的安装与启用）
+4. 配置详解（provider / 权限 / 项目级配置）
+5. 内置命令列表
+6. Skill 技能系统说明
+7. 隐私模型与多机同步方案
 
 ---
 
-## ?? ��л
+## 📋 更新日志
 
-- ԭ��Ŀ��[opencode](https://github.com/anomalyco/opencode)��sst.dev��
-- ����֤��MIT
+见 [CHANGELOG.md](CHANGELOG.md)。
+
+---
+
+## 💙 致谢
+
+- 原项目：[opencode](https://github.com/anomalyco/opencode)（sst.dev）
+- 许可证：MIT
