@@ -86,13 +86,6 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const created = createMemo(() => session()?.time?.created)
   const updated = createMemo(() => session()?.time?.updated)
   const agent = createMemo(() => session()?.agent)
-  const cacheHitColor = createMemo(() => {
-    const pct = state().cacheHit
-    if (pct === null) return theme()?.textMuted
-    if (pct >= 80) return theme()?.success
-    if (pct >= 50) return theme()?.warning
-    return theme()?.error
-  })
 
   const percentLabel = createMemo(() => {
     const p = state().percent
@@ -135,11 +128,6 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
             <span style={{ fg: theme()?.primary }}>{state().cacheWrite.toLocaleString()}</span>
           </Show>
         </text>
-        <Show when={state().cacheHit != null}>
-          <text>
-            <span style={{ fg: cacheHitColor() }}>{` (${state().cacheHit}%)`}</span>
-          </text>
-        </Show>
       </Show>
       <text fg={theme()?.textMuted}>
         <span style={{ fg: theme()?.primary }}>{money.format(cost())}</span> · {state().messageCount} msgs

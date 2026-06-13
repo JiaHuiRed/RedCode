@@ -347,7 +347,7 @@ export function Prompt(props: PromptProps) {
     if (sumRead <= 0) return
     const cacheDenom = sumRead + (sumMiss || sumWrite || sumInput)
     const cacheHitPct = Math.round((sumRead / cacheDenom) * 1000) / 10
-    return { cache: `Cache: ${cacheHitPct}%` }
+    return { cacheHitPct }
   })
 
   const [store, setStore] = createStore<{
@@ -1762,8 +1762,21 @@ export function Prompt(props: PromptProps) {
                   <Switch>
                     <Match when={usage()}>
                       {(item) => (
-                        <text fg={theme.textMuted} wrapMode="none">
-                          {item().cache}
+                        <text wrapMode="none">
+                          <text fg={theme.textMuted}>Cache </text>
+                          <text
+                            fg={
+                              item().cacheHitPct >= 80
+                                ? theme.success
+                                : item().cacheHitPct >= 50
+                                  ? theme.warning
+                                  : item().cacheHitPct >= 20
+                                    ? theme.textMuted
+                                    : theme.error
+                            }
+                          >
+                            {item().cacheHitPct}%
+                          </text>
                         </text>
                       )}
                     </Match>
