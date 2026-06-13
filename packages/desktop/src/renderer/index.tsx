@@ -394,22 +394,16 @@ render(() => {
             !locale.loading
           }
         >
-          {(_) => {
-            // 260613 Red chat window — render ChatRoom with sidecar connection
-            if (isChatView && ChatRoom) {
-              const data = sidecar()!
-              return <ChatRoom serverUrl={data.url} username={data.username} password={data.password} />
-            }
-            return (
-              <AppInterface
-                defaultServer={defaultServer.latest ?? ServerConnection.Key.make("sidecar")}
-                servers={servers()}
-                router={MemoryRouter}
-              >
-                <Inner />
-              </AppInterface>
-            )
-          }}
+          {(_) => (
+            <AppInterface
+              defaultServer={defaultServer.latest ?? ServerConnection.Key.make("sidecar")}
+              servers={servers()}
+              router={MemoryRouter}
+            >
+              {/* 260613 Red chat window uses server context from AppInterface */}
+              {isChatView && ChatRoom ? <ChatRoom /> : <Inner />}
+            </AppInterface>
+          )}
         </Show>
       </AppBaseProviders>
     </PlatformProvider>
