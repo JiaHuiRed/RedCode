@@ -70,8 +70,22 @@ Context 被压缩前，保存当前状态到 `~/.redcode/memory/.session-last.js
 ~/.redcode/MEMORY.md   # 长期库（收工/Stop 时更新，按需 /recall 召回，不再整体注入）
 ```
 
+## How to append (CRITICAL — no append tool exists)
+
+The `write` tool OVERWRITES the entire file. There is NO append mode. To add content to an existing memory file:
+
+1. `read` the file first to get its full content
+2. Use `edit` to find the LAST line of existing content and replace it with: that last line + your new content appended below
+
+Example — appending a lesson to `260613.md`:
+- `read ~/.redcode/memory/260613.md` → see last line is e.g. `- 教训：xxx`
+- `edit` old_string=`- 教训：xxx` new_string=`- 教训：xxx\n\n### 新增内容\n- 新教训`
+
+NEVER use `write` to create content for a file that already exists — you WILL lose existing content.
+NEVER use bash `echo >>` — Chinese text WILL be garbled on Windows (GBK encoding).
+
 ## 边界
 
-- 只在启动/压缩/收工时操作记忆文件，不占用正常工作的工具调用
-- 日志文件只追加不重写
+- 只在启动/压缩/收工时操作记忆文件，不占用正常工具调用
+- 日志文件只追加不重写（用上面的 read+edit 方法，不用 write 覆盖）
 - session-last.json 只保留最后一次压缩状态，不做历史版本

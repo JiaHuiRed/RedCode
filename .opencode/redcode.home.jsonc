@@ -4,11 +4,10 @@
   "plugin": ["@tarquinen/opencode-dcp"],
   // 260607 Red global inject (engine scans ~/.redcode unconditionally)
   // 260610 Red MEMORY no longer bulk-injected; use /recall + AGENTS CORE block
+  // 260613 Red guardrail-profiles/defensive-agent removed — on-demand via skill trigger, save ~4KB/turn
   "instructions": [
     "~/.redcode/USER.md",
     "~/.redcode/skill/memory-automation/SKILL.md",
-    "~/.redcode/skill/guardrail-profiles/SKILL.md",
-    "~/.redcode/skill/defensive-agent/SKILL.md",
     "~/.redcode/skill/goal-automation/SKILL.md",
     "~/.redcode/skill/simplify/SKILL.md",
     "~/.redcode/skill/vision-autoagent/SKILL.md",
@@ -78,6 +77,12 @@
       "command": ["bun", "./plugins/agent-reach-mcp/src/index.ts"],
       "cwd": "$REDCODE_ROOT",
       "description": "Unified search — GitHub, Bilibili, Douyin",
+      "enabled": true
+    },
+    "fff": {
+      "type": "local",
+      "command": ["fff-mcp"],
+      "description": "High-performance file finder & grep (fff_find_files, fff_grep, fff_multi_grep)",
       "enabled": true
     },
     "exa-search": {

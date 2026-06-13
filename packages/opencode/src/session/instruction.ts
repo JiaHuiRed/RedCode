@@ -37,11 +37,12 @@ function recentSessionDigest(): string {
       .all()
     if (!rows.length) return ""
     const lines = rows.map((r) => {
-      const ago = Math.round((Date.now() - (r.time_updated ?? 0)) / 1000 / 60)
-      const agoStr = ago < 60 ? `${ago}m ago` : `${Math.round(ago / 60)}h ago`
+      // 260613 Red use absolute time to keep system prompt stable for prefix caching
+      const d = new Date(r.time_updated ?? 0)
+      const timeStr = `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
       const stats = r.files ? ` (+${r.additions ?? 0}/-${r.deletions ?? 0}, ${r.files} files)` : ""
       const persona = r.directory?.includes("dist") ? "TUI" : "GUI"
-      return `- [${agoStr}] [${persona}] ${r.title}${stats}`
+      return `- [${timeStr}] [${persona}] ${r.title}${stats}`
     })
     return `# Recent sessions (last 24h)\n\nOther sessions working on this project — check before modifying the same files:\n\n${lines.join("\n")}`
   } catch {
