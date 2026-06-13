@@ -78,7 +78,7 @@ export function SubagentFooter() {
             </text>
             <Show when={subagentInfo().total > 0}>
               <text style={{ fg: theme.textMuted }}>
-                ({subagentInfo().index} of {subagentInfo().total})
+                {`(${subagentInfo().index} of ${subagentInfo().total})`}
               </text>
             </Show>
             <Show when={usage()}>
