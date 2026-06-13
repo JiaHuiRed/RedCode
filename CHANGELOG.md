@@ -37,11 +37,12 @@
 
 #### 优化
 
-- **侧栏 context 面板五彩颜色 + 累计 total**：各 token 指标用红粉紫等鲜艳颜色区分（红色 context/淡紫 total/红 in/绿 out/橙 reason/蓝 cacheRead/紫 cacheWrite/粉 cost），新增 session 累计 total token 行（`sidebar/context.tsx`）
+- **侧栏 context 面板五彩颜色 + 累计 total**：各 token 指标用鲜艳颜色区分（红色 context/淡紫 total/琥珀 in/绿 out/橙 reason/蓝 cacheRead/紫 cacheWrite/粉 cost），新增 session 累计 total token 行（`sidebar/context.tsx`）
 
 #### 修复
 
 - **TUI 侧栏费用 USD 显示为 ¥ 汇率缺失**：models.dev 定价以美元计，但侧栏 `money.format(cost())` 直接用 CNY 格式化，未乘以汇率，实际少显示了很多。添加 `USD_TO_CNY = 7.2` 汇率换算，与 GUI 侧保持一致（`sidebar/context.tsx`）
+- **侧栏 input 与 context 颜色重复**：input 和 context 都用了红色系（`#ef5350` 与 `#ff5252`），视觉上难以区分。input 改为琥珀色 `#ffb300`（`sidebar/context.tsx`）
 
 #### 清理
 

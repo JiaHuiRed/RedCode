@@ -16,7 +16,7 @@ const money = new Intl.NumberFormat("zh-CN", {
 const tokenColor = {
   current: "#ff5252",
   total: "#ce93d8",
-  input: "#ef5350",
+  input: "#ffb300",
   output: "#66bb6a",
   reasoning: "#ff9100",
   cacheRead: "#40c4ff",
