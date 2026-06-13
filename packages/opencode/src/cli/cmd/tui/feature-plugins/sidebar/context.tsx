@@ -5,6 +5,9 @@ import { createMemo, Show } from "solid-js"
 
 const id = "internal:sidebar-context"
 
+// 260613 Red costs are in USD; convert to CNY for display
+const USD_TO_CNY = 7.2
+
 const money = new Intl.NumberFormat("zh-CN", {
   style: "currency",
   currency: "CNY",
@@ -151,7 +154,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         </text>
       </Show>
       <text fg={theme()?.textMuted}>
-        <span style={{ fg: tokenColor.cost }}>{money.format(cost())}</span> · {`${state().messageCount} msgs`}
+        <span style={{ fg: tokenColor.cost }}>{money.format(cost() * USD_TO_CNY)}</span> · {`${state().messageCount} msgs`}
       </text>
       <Show when={agent()}>
         <text fg={theme()?.textMuted}>
