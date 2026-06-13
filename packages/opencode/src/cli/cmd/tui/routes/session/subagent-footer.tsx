@@ -33,16 +33,19 @@ export function SubagentFooter() {
   const usage = createMemo(() => {
     const msg = messages()
     // 260612 Red session-aggregate cache rate
-    // 260614 fix: denominator should only be cache-relevant tokens (read+write), not including fresh input
-    let sumRead = 0, sumWrite = 0
+    // 260614 fix: cache hit = read / (read + miss). DeepSeek write=0 so use cache.miss.
+    // Fallback to input for providers that don't return miss metadata.
+    let sumRead = 0, sumMiss = 0, sumWrite = 0, sumInput = 0
     for (const m of msg) {
       if (m.role === "assistant") {
         sumRead += m.tokens.cache.read
+        sumMiss += m.tokens.cache.miss ?? 0
         sumWrite += m.tokens.cache.write
+        sumInput += m.tokens.input
       }
     }
     if (sumRead <= 0) return
-    const cacheDenom = sumRead + sumWrite
+    const cacheDenom = sumRead + (sumMiss || sumWrite || sumInput)
     const cacheHitPct = Math.round((sumRead / cacheDenom) * 1000) / 10
     return { cache: `Cache: ${cacheHitPct}%` }
   })

@@ -55,15 +55,18 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     const modelInfo = prov?.models[last.modelID]
     const modelName = modelInfo?.name ?? last.modelID
     // 260612 Red session-aggregate cache rate (not last-turn-only which is always ~99%)
-    // 260614 fix: denominator should only be cache-relevant tokens (read+write), not including fresh input
-    let sumRead = 0, sumWrite = 0
+    // 260614 fix: cache hit = read / (read + miss). For DeepSeek, cache.write=0
+    // so use cache.miss from metadata directly; fallback to write, then to input for other providers.
+    let sumRead = 0, sumMiss = 0, sumWrite = 0, sumInput = 0
     for (const m of msg()) {
       if (m.role === "assistant") {
         sumRead += m.tokens.cache.read
+        sumMiss += m.tokens.cache.miss ?? 0
         sumWrite += m.tokens.cache.write
+        sumInput += m.tokens.input
       }
     }
-    const cacheDenom = sumRead + sumWrite
+    const cacheDenom = sumRead + (sumMiss || sumWrite || sumInput)
     const cacheHit = cacheDenom > 0 && sumRead > 0 ? Math.round((sumRead / cacheDenom) * 1000) / 10 : null
     return {
       tokens,
@@ -133,7 +136,9 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
           </Show>
         </text>
         <Show when={state().cacheHit != null}>
-          <span style={{ fg: cacheHitColor() }}>{` (${state().cacheHit}%)`}</span>
+          <text>
+            <span style={{ fg: cacheHitColor() }}>{` (${state().cacheHit}%)`}</span>
+          </text>
         </Show>
       </Show>
       <text fg={theme()?.textMuted}>

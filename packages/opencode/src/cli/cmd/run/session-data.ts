@@ -41,6 +41,7 @@ type Tokens = {
   cache?: {
     read?: number
     write?: number
+    miss?: number
   }
 }
 
@@ -147,10 +148,11 @@ function formatUsage(
     return undefined
   }
 
-  // 260613 fix: denominator should only be cache-relevant tokens (read+write), not including fresh input
+  // 260614 fix: cache hit = read / (read + miss). DeepSeek write=0 so use cache.miss.
+  // Fallback to input for providers that don't return miss metadata.
   const cacheHitPct =
     (tokens?.cache?.read ?? 0) > 0
-      ? Math.round(((tokens?.cache?.read ?? 0) / ((tokens?.cache?.read ?? 0) + (tokens?.cache?.write ?? 0))) * 1000) / 10
+      ? Math.round(((tokens?.cache?.read ?? 0) / ((tokens?.cache?.read ?? 0) + (tokens?.cache?.miss ?? tokens?.cache?.write ?? tokens?.input ?? 0))) * 1000) / 10
       : undefined
   const cacheStr = cacheHitPct !== undefined ? `Cache: ${cacheHitPct}%` : undefined
 
