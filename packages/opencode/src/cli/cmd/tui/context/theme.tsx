@@ -500,7 +500,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
             syncThemes()
           })
           .catch(() => {
-            setStore("active", "opencode")
+            setStore("active", "karina")
           }),
       ]).finally(() => {
         setStore("ready", true)

@@ -40,6 +40,8 @@
 - **缓存命中率 100% bug**：opencode-go 代理不返回 DeepSeek `promptCacheMissTokens` 元数据，导致 `read / (read + 0)` = 100%。改为 miss/write 均为 0 时，用 `input`（实际输入 token）做分母兜底（context.tsx、prompt/index.tsx、subagent-footer.tsx、session-data.ts、session-context-metrics.ts）
 - **`cache.write` 始终为 0**：DeepSeek 走 `@ai-sdk/openai-compatible` 时 `prompt_cache_miss_tokens` 不会被映射到 AI SDK 字段，`metadata.deepseek.promptCacheMissTokens` 始终 undefined。改为通过 `adjustedInputTokens`（AI SDK 报告的缓存调整前输入）推算 miss token，确保 cache 数据完整性与持久化（`session.ts` `getUsage()`）
 - **TextNodeRenderable 裸 number 渲染崩溃（全面修复）**：OpenTUI `<text>` 只接受 string，多处直接渲染 number 导致致命错误。全面审计 TUI 所有 tsx 文件，共 16 处全部改为模板字符串。涉及：底栏 cacheHitPct/mcp count、侧边栏 messageCount/mcp on/bad、session-v2 numResults/questions count/grep count/matches count、dialog-status MCP/LSP/formatter/plugin count、footer permissions/lsp/mcp length、index reverted/diagnostic/webSearch numResults、subagent-footer index/total、diff-viewer files count（`prompt/index.tsx`、`sidebar/context.tsx`、`sidebar/mcp.tsx`、`session-v2.tsx`、`dialog-status.tsx`、`routes/session/footer.tsx`、`routes/session/index.tsx`、`routes/session/subagent-footer.tsx`、`feature-plugins/home/footer.tsx`、`diff-viewer.tsx`）
+- **FFF MCP 配置缺失**：0.5.6 全局目录整合后，`~/.redcode/redcode.jsonc` 的 MCP 段未包含 fff，TUI 找不到该服务器。补回 `~/.redcode/redcode.jsonc` `mcp.fff` 定义（本地 exe，cwd `$REDCODE_ROOT`，60s timeout）
+- **默认主题被 getCustomThemes 错误覆盖为 opencode**：`init()` 中 `getCustomThemes()` 扫描已不存在的 `~/.config/redcode/themes/` 目录后抛错，catch 将其强制设为 `"opencode"`，覆盖了 store 默认的 `"karina"`。改为 fallback 到 `"karina"`（`theme.tsx` catch handler）
 #### 变更
 
 - **侧边栏缓存百分比移至底栏**：侧边栏 `cache X,XXX,XXX (98.5%)` 因 row 宽不足换行，去掉百分比显示，仅保留 token 数字。百分比移到底栏 color-coded 显示（≥80 绿 / ≥50 黄 / ≥20 灰 / <20 红），一眼判断缓存效率（`sidebar/context.tsx`、`prompt/index.tsx`）
