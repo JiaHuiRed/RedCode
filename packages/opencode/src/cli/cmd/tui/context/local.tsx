@@ -33,7 +33,7 @@ async function readDisplayNames(): Promise<{ user: string; agent: string }> {
     const soulMd = await Bun.file(path.join(redcodeHome, "souls", "Tsoul.md")).text()
     const match = soulMd.match(/^#\s+(.+)/m)
     if (match) {
-      // 取 "·" 或空格前的部分，如 "柳智敏 · RedCode 灵魂文档" → "柳智敏"
+      // 取 "·" 或空格前的部分，如 "MyAgent · RedCode 灵魂文档" → "MyAgent"
       agent = match[1].split("·")[0].split(" ")[0].trim()
     }
   } catch {}

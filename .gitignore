@@ -61,5 +61,6 @@ sqlite-tools/
 .opencode/MEMORY.md
 .opencode/skill/memory-automation/*.json
 
-# Local stats (runtime data)
-.redcode/stats/
+# Project-level .redcode/ is runtime-only (engine auto-creates it)
+# All personal config lives in ~/.redcode/ (private repo)
+.redcode/

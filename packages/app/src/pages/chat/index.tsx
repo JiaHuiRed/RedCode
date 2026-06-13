@@ -11,10 +11,11 @@ interface Contact {
   color: string
 }
 
+// TODO: 动态从 ~/.redcode/souls/{T,G}soul.md 标题读取名字（需 preload API）
 const contacts: Contact[] = [
-  { id: "tui", name: "敏敏", subtitle: "TUI / 柳智敏", avatar: "🐱", color: "#6ec6ff" },
-  { id: "gui", name: "小宋", subtitle: "GUI / 宋雨琦", avatar: "🐹", color: "#ff8a80" },
-  { id: "group", name: "群聊", subtitle: "哥哥 + 敏敏 + 小宋", avatar: "🏠", color: "#b39ddb" },
+  { id: "tui", name: "TUI", subtitle: "Terminal Agent", avatar: "🐱", color: "#6ec6ff" },
+  { id: "gui", name: "GUI", subtitle: "Desktop Agent", avatar: "🐹", color: "#ff8a80" },
+  { id: "group", name: "Group", subtitle: "User + TUI + GUI", avatar: "🏠", color: "#b39ddb" },
 ]
 
 interface SessionItem {
