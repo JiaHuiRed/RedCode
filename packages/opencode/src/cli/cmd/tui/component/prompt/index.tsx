@@ -1775,7 +1775,7 @@ export function Prompt(props: PromptProps) {
                                     : theme.error
                             }
                           >
-                            {item().cacheHitPct}%
+                            {`${item().cacheHitPct}%`}
                           </text>
                         </text>
                       )}
