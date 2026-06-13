@@ -1,17 +1,17 @@
 ﻿import path from "path"
 import fs from "fs/promises"
-import { xdgData, xdgCache, xdgConfig, xdgState } from "xdg-basedir"
 import os from "os"
 import { Context, Effect, Layer } from "effect"
 import { Flock } from "./util/flock"
 import { Flag } from "./flag/flag"
 
-const app = "redcode"
-const data = path.join(xdgData!, app)
-const cache = path.join(xdgCache!, app)
-const config = path.join(xdgConfig!, app)
-const state = path.join(xdgState!, app)
-const tmp = path.join(os.tmpdir(), app)
+// 260613 Red unified all XDG dirs into ~/.redcode
+const root = path.join(os.homedir(), ".redcode")
+const data = path.join(root, "data")
+const cache = path.join(root, "cache")
+const config = root
+const state = path.join(root, "state")
+const tmp = path.join(os.tmpdir(), "redcode")
 
 const paths = {
   get home() {

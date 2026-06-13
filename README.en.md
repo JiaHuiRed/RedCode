@@ -4,18 +4,18 @@
   <img src="packages/app/public/mona-loading.gif" width="80">
 </p>
 <pre align="center">
-¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€
-¨€   ¨€ ¨€     ¨€  ¨€¨€  ¨€     ¨€   ¨€ ¨€  ¨€¨€  ¨€    
-¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€ ¨€   ¨€ ¨€     ¨€   ¨€ ¨€   ¨€  ¨€¨€¨€¨€¨€¨€
-¨€  ¨€¨€ ¨€     ¨€   ¨€ ¨€     ¨€   ¨€ ¨€   ¨€  ¨€    
-¨€   ¨€ ¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€ ¨€¨€¨€¨€¨€¨€
+ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+ï¿½ï¿½   ï¿½ï¿½ ï¿½ï¿½     ï¿½ï¿½  ï¿½ï¿½ï¿½ï¿½  ï¿½ï¿½     ï¿½ï¿½   ï¿½ï¿½ ï¿½ï¿½  ï¿½ï¿½ï¿½ï¿½  ï¿½ï¿½    
+ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½   ï¿½ï¿½ ï¿½ï¿½     ï¿½ï¿½   ï¿½ï¿½ ï¿½ï¿½   ï¿½ï¿½  ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+ï¿½ï¿½  ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½     ï¿½ï¿½   ï¿½ï¿½ ï¿½ï¿½     ï¿½ï¿½   ï¿½ï¿½ ï¿½ï¿½   ï¿½ï¿½  ï¿½ï¿½    
+ï¿½ï¿½   ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 </pre>
 
-> **A Chinese-native desktop AI coding agent ¡ª standalone GUI, speaks your language, plug in any model (DeepSeek / MiMo / domestic-first).**
+> **A Chinese-native desktop AI coding agent ï¿½ï¿½ standalone GUI, speaks your language, plug in any model (DeepSeek / MiMo / domestic-first).**
 >
-> Author: Red ¡¤ Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev).
+> Author: Red ï¿½ï¿½ Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev).
 
-[![TUI](https://img.shields.io/badge/TUI-0.5.4-blue)](CHANGELOG.md)
+[![TUI](https://img.shields.io/badge/TUI-0.5.6-blue)](CHANGELOG.md)
 [![Desktop](https://img.shields.io/badge/Desktop-0.5.9-0078d4)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-lightblue)](https://github.com/JiaHuiRed/RedCode)
@@ -30,20 +30,20 @@ Open-source AI coding assistant with **terminal TUI** and **desktop GUI** interf
 
 ## ?? Features
 
-- ?? **Natural Language Coding** ¡ª describe requirements, auto-complete code
-- ?? **Multi-Model Support** ¡ª DeepSeek, MiMo, OpenAI, Anthropic, Google Gemini, Ollama, etc.
-- ?? **Tool System** ¡ª file read/write, code search, git status/diff/log, terminal commands, web search, environment info
-- ?? **Smart Agents** ¡ª Build, Plan, General, Explore agents built-in, custom agents supported
-- ?? **Session Management** ¡ª history save, restore, fork
-- ?? **Terminal UI** ¡ª syntax highlighting, streaming output, diff display
-- ?? **Desktop GUI** ¡ª Electron standalone window with full graphical interface
+- ?? **Natural Language Coding** ï¿½ï¿½ describe requirements, auto-complete code
+- ?? **Multi-Model Support** ï¿½ï¿½ DeepSeek, MiMo, OpenAI, Anthropic, Google Gemini, Ollama, etc.
+- ?? **Tool System** ï¿½ï¿½ file read/write, code search, git status/diff/log, terminal commands, web search, environment info
+- ?? **Smart Agents** ï¿½ï¿½ Build, Plan, General, Explore agents built-in, custom agents supported
+- ?? **Session Management** ï¿½ï¿½ history save, restore, fork
+- ?? **Terminal UI** ï¿½ï¿½ syntax highlighting, streaming output, diff display
+- ?? **Desktop GUI** ï¿½ï¿½ Electron standalone window with full graphical interface
 - ?? **MCP Servers**:
-  - [TypeGraph](https://github.com/guyowen/typegraph-mcp) ¡ª TypeScript semantic navigation (type resolution, barrel file traversal, cycle detection)
-  - [jCodeMunch](https://github.com/colbymchenry/jcodemunch) ¡ª structured code retrieval (60+ tools: symbol lookup, dead code detection, AST matching)
-  - [Browser MCP](https://github.com/colbymchenry/browsermcp) ¡ª browser automation (navigation, screenshots, clicks, input, page content extraction)
-- ?? **Permission System** ¡ª tool call confirmation, auto-approve support
-- ?? **Multi-language** ¡ª Chinese, English, Japanese, and 18 languages
-- ?? **TTS** ¡ª MiMo TTS voice reading for AI responses
+  - [TypeGraph](https://github.com/guyowen/typegraph-mcp) ï¿½ï¿½ TypeScript semantic navigation (type resolution, barrel file traversal, cycle detection)
+  - [jCodeMunch](https://github.com/colbymchenry/jcodemunch) ï¿½ï¿½ structured code retrieval (60+ tools: symbol lookup, dead code detection, AST matching)
+  - [Browser MCP](https://github.com/colbymchenry/browsermcp) ï¿½ï¿½ browser automation (navigation, screenshots, clicks, input, page content extraction)
+- ?? **Permission System** ï¿½ï¿½ tool call confirmation, auto-approve support
+- ?? **Multi-language** ï¿½ï¿½ Chinese, English, Japanese, and 18 languages
+- ?? **TTS** ï¿½ï¿½ MiMo TTS voice reading for AI responses
 
 ---
 

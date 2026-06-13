@@ -33,6 +33,18 @@
 
 ---
 
+### [0.5.6] - 2026-06-13
+
+#### 变更
+
+- **全局目录统一到 `~/.redcode/`**：废弃 XDG 散落的 4 个目录（`~/.config/redcode`、`~/.local/share/redcode`、`~/.local/state/redcode`、`~/.cache/redcode`），全部收归 `~/.redcode/` 下子目录（`data/`=数据库+auth+log、`state/`=会话状态、`cache/`=bin 缓存）。config 直接用 `~/.redcode/` 根目录（已有 redcode.jsonc/souls/skill）。移除 `xdg-basedir` 依赖，不再依赖 XDG 规范。一个目录管所有，private git 统一跟踪（`packages/core/src/global.ts`）
+
+### [0.5.5] - 2026-06-13
+
+#### 修复
+
+- **TUI 侧边栏 Orphan text 崩溃**：`sidebar/context.tsx:136` cacheHit 命中率显示的 `<span>` 裸放在 `<box>` 下，没被 `<text>` 包裹。当 cacheHit 不为 null 时 Ink/SolidJS TUI 抛 Orphan text error 致命崩溃。给 `<span>` 外套 `<text>` 修复。感谢小宋发现并修好 😏
+
 ### [0.5.4] - 2026-06-12
 
 #### 修复

@@ -4,88 +4,88 @@
   <img src="packages/app/public/mona-loading.gif" width="80">
 </p>
 
-> **ÖÐÎÄÄ¸ÓïµÄ×ÀÃæ AI ±à³ÌÖúÊÖ¡£** ¶ÀÁ¢´°¿Ú¡¢ËµÖÐÎÄ¡¢½ÓÄãÏ²»¶µÄÄ£ÐÍ£¨DeepSeek / MiMo / ¹ú²úÓÅÏÈ£©¡£
-> _A Chinese-native desktop AI coding agent ¡ª standalone GUI, speaks your language, plug in any model._
+> **ï¿½ï¿½ï¿½ï¿½Ä¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ AI ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¡ï¿½** ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ú¡ï¿½Ëµï¿½ï¿½ï¿½Ä¡ï¿½ï¿½ï¿½ï¿½ï¿½Ï²ï¿½ï¿½ï¿½ï¿½Ä£ï¿½Í£ï¿½DeepSeek / MiMo / ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È£ï¿½ï¿½ï¿½
+> _A Chinese-native desktop AI coding agent ï¿½ï¿½ standalone GUI, speaks your language, plug in any model._
 >
-> »ùÓÚ [opencode](https://github.com/anomalyco/opencode)£¨sst.dev£©Éî¶È¶þ´Î¿ª·¢¡£
+> ï¿½ï¿½ï¿½ï¿½ [opencode](https://github.com/anomalyco/opencode)ï¿½ï¿½sst.devï¿½ï¿½ï¿½ï¿½È¶ï¿½ï¿½Î¿ï¿½ï¿½ï¿½ï¿½ï¿½
 
-[![TUI](https://img.shields.io/badge/TUI-0.5.4-blue)](CHANGELOG.md)
+[![TUI](https://img.shields.io/badge/TUI-0.5.6-blue)](CHANGELOG.md)
 [![Desktop](https://img.shields.io/badge/Desktop-0.5.9-0078d4)](CHANGELOG.md)
 [![Æ½Ì¨](https://img.shields.io/badge/Æ½Ì¨-Windows%2010%2F11-0078d4)](https://github.com/JiaHuiRed/RedCode)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)](https://typescriptlang.org)
 [![Bun](https://img.shields.io/badge/Bun-1.3.x-fcf2d0)](https://bun.sh)
-[![Ðí¿ÉÖ¤](https://img.shields.io/badge/Ðí¿ÉÖ¤-MIT-lightgrey)](LICENSE)
+[![ï¿½ï¿½ï¿½ï¿½Ö¤](https://img.shields.io/badge/ï¿½ï¿½ï¿½ï¿½Ö¤-MIT-lightgrey)](LICENSE)
 
 ---
 
-## ? ÕâÊÇÊ²Ã´£¿
+## ? ï¿½ï¿½ï¿½ï¿½Ê²Ã´ï¿½ï¿½
 
-AI ±à³ÌÖúÊÖ¡£Á½¸öÈë¿Ú¡¢Í¬Ò»ÄÜÁ¦£º
+AI ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ú¡ï¿½Í¬Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
-- **TUI** ¡ª ÖÕ¶ËÃüÁîÐÐ½çÃæ£¨`packages/opencode`£©
-- **GUI** ¡ª ×ÀÃæ´°¿Ú³ÌÐò£¬Electron + SolidJS£¨`packages/desktop`£©
+- **TUI** ï¿½ï¿½ ï¿½Õ¶ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð½ï¿½ï¿½æ£¨`packages/opencode`ï¿½ï¿½
+- **GUI** ï¿½ï¿½ ï¿½ï¿½ï¿½æ´°ï¿½Ú³ï¿½ï¿½ï¿½Electron + SolidJSï¿½ï¿½`packages/desktop`ï¿½ï¿½
 
-¶Á´úÂë¡¢Ð´´úÂë¡¢¸Ä bug¡¢ÅÜÃüÁî¡£ÄãËµÖÐÎÄ£¬Ëü¸É»î¡£
+ï¿½ï¿½ï¿½ï¿½ï¿½ë¡¢Ð´ï¿½ï¿½ï¿½ë¡¢ï¿½ï¿½ bugï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½î¡£ï¿½ï¿½Ëµï¿½ï¿½ï¿½Ä£ï¿½ï¿½ï¿½ï¿½É»î¡£
 
-### ºËÐÄÄÜÁ¦
+### ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
-´úÂëÀí½â£¨TypeGraph / jCodeMunch£©¡¤ ¶àÄ£ÐÍ£¨DeepSeek / OpenAI / Anthropic / Ollama£©¡¤ ÎÄ¼þ¶ÁÐ´±à¼­ ¡¤ ÖÕ¶ËÖ´ÐÐ ¡¤ Web ËÑË÷ ¡¤ ä¯ÀÀÆ÷×Ô¶¯»¯ ¡¤ ÊÓ¾õ·ÖÎö ¡¤ »á»°¹ÜÀí ¡¤ È¨ÏÞÃÅ¿Ø ¡¤ ÉÏÏÂÎÄÑ¹Ëõ ¡¤ ×Ô¶¯»¯¼ÇÒäÏµÍ³ ¡¤ Ä¿±ê¹ÜÀí ¡¤ ×Ô¶¨Òå AI ÈË¸ñ
+ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½â£¨TypeGraph / jCodeMunchï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½Ä£ï¿½Í£ï¿½DeepSeek / OpenAI / Anthropic / Ollamaï¿½ï¿½ï¿½ï¿½ ï¿½Ä¼ï¿½ï¿½ï¿½Ð´ï¿½à¼­ ï¿½ï¿½ ï¿½Õ¶ï¿½Ö´ï¿½ï¿½ ï¿½ï¿½ Web ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ô¶ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Ó¾ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½á»°ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ È¨ï¿½ï¿½ï¿½Å¿ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ñ¹ï¿½ï¿½ ï¿½ï¿½ ï¿½Ô¶ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ÏµÍ³ ï¿½ï¿½ Ä¿ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½Ô¶ï¿½ï¿½ï¿½ AI ï¿½Ë¸ï¿½
 
 ---
 
-## ?? ¿ìËÙ¿ªÊ¼
+## ?? ï¿½ï¿½ï¿½Ù¿ï¿½Ê¼
 
-Ç°ÖÃÒªÇó£º[Bun](https://bun.sh) 1.3+
+Ç°ï¿½ï¿½Òªï¿½ï¿½[Bun](https://bun.sh) 1.3+
 
 ```bash
 git clone https://github.com/JiaHuiRed/RedCode.git
 cd RedCode
 bun install
 
-# Æô¶¯ TUI
+# ï¿½ï¿½ï¿½ï¿½ TUI
 bun dev
 
-# »òÆô¶¯×ÀÃæ GUI
+# ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ GUI
 cd packages/desktop && bun run dev
 ```
 
-> µÚÒ»´ÎÆô¶¯×Ô¶¯´´½¨ `~/.redcode/` ²¢²¥ÖÖÄ¬ÈÏÄ£°å£¬ÎÞÐèÊÖ¶¯ÅäÖÃ¡£
+> ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ô¶ï¿½ï¿½ï¿½ï¿½ï¿½ `~/.redcode/` ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¬ï¿½ï¿½Ä£ï¿½å£¬ï¿½ï¿½ï¿½ï¿½ï¿½Ö¶ï¿½ï¿½ï¿½ï¿½Ã¡ï¿½
 
-### ±àÒë
+### ï¿½ï¿½ï¿½ï¿½
 
-> Ò²¿ÉÖ±½ÓË«»÷Ò»¼ü bat£ºTUI `packages/opencode/build.bat` / GUI `packages/desktop/build-and-package.bat`¡£
+> Ò²ï¿½ï¿½Ö±ï¿½ï¿½Ë«ï¿½ï¿½Ò»ï¿½ï¿½ batï¿½ï¿½TUI `packages/opencode/build.bat` / GUI `packages/desktop/build-and-package.bat`ï¿½ï¿½
 
 ```bash
-# TUI µ¥ÎÄ¼þ exe
+# TUI ï¿½ï¿½ï¿½Ä¼ï¿½ exe
 cd packages/opencode && bun run build -- --single
 
-# ×ÀÃæ GUI
+# ï¿½ï¿½ï¿½ï¿½ GUI
 cd packages/desktop && bun run build && bun run package
 ```
 
 ---
 
-## ?? ÓÃ»§ÊÖ²á
+## ?? ï¿½Ã»ï¿½ï¿½Ö²ï¿½
 
-È«²¿²Ù×÷Ö¸ÄÏÔÚ **[MANUAL.md](MANUAL.md)**£¬º­¸Ç£º
+È«ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¸ï¿½ï¿½ï¿½ï¿½ **[MANUAL.md](MANUAL.md)**ï¿½ï¿½ï¿½ï¿½ï¿½Ç£ï¿½
 
-1. Ê×´ÎÉèÖÃ£¨ÅäÖÃÄ£ÐÍ / AI ÈË¸ñ / ÓÃ»§»­Ïñ / ¹¤×÷¼ÇÒä£©
-2. ¼ÇÒäÏµÍ³£¨×Ô¶¯ÈÕÖ¾ / ³¤ÆÚ¿â / Æô¶¯×¢Èë£©
-3. MCP ·þÎñÆ÷£¨9 ¸öÔ¤ÅäÖÃ·þÎñµÄ°²×°ÓëÆôÓÃ£©
-4. ÅäÖÃÏê½â£¨provider / È¨ÏÞ / ÏîÄ¿¼¶ÅäÖÃ£©
-5. ÄÚÖÃÃüÁîÁÐ±í
-6. Skill ¼¼ÄÜÏµÍ³ËµÃ÷
-7. ÒþË½Ä£ÐÍÓë¶à»úÍ¬²½·½°¸
-
----
-
-## ?? ¸üÐÂÈÕÖ¾
-
-¼û [CHANGELOG.md](CHANGELOG.md)¡£
+1. ï¿½×´ï¿½ï¿½ï¿½ï¿½Ã£ï¿½ï¿½ï¿½ï¿½ï¿½Ä£ï¿½ï¿½ / AI ï¿½Ë¸ï¿½ / ï¿½Ã»ï¿½ï¿½ï¿½ï¿½ï¿½ / ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ä£©
+2. ï¿½ï¿½ï¿½ï¿½ÏµÍ³ï¿½ï¿½ï¿½Ô¶ï¿½ï¿½ï¿½Ö¾ / ï¿½ï¿½ï¿½Ú¿ï¿½ / ï¿½ï¿½ï¿½ï¿½×¢ï¿½ë£©
+3. MCP ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½9 ï¿½ï¿½Ô¤ï¿½ï¿½ï¿½Ã·ï¿½ï¿½ï¿½Ä°ï¿½×°ï¿½ï¿½ï¿½ï¿½ï¿½Ã£ï¿½
+4. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½â£¨provider / È¨ï¿½ï¿½ / ï¿½ï¿½Ä¿ï¿½ï¿½ï¿½ï¿½ï¿½Ã£ï¿½
+5. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð±ï¿½
+6. Skill ï¿½ï¿½ï¿½ï¿½ÏµÍ³Ëµï¿½ï¿½
+7. ï¿½ï¿½Ë½Ä£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í¬ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
 ---
 
-## ?? ÖÂÐ»
+## ?? ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¾
 
-- Ô­ÏîÄ¿£º[opencode](https://github.com/anomalyco/opencode)£¨sst.dev£©
-- Ðí¿ÉÖ¤£ºMIT
+ï¿½ï¿½ [CHANGELOG.md](CHANGELOG.md)ï¿½ï¿½
+
+---
+
+## ?? ï¿½ï¿½Ð»
+
+- Ô­ï¿½ï¿½Ä¿ï¿½ï¿½[opencode](https://github.com/anomalyco/opencode)ï¿½ï¿½sst.devï¿½ï¿½
+- ï¿½ï¿½ï¿½ï¿½Ö¤ï¿½ï¿½MIT
