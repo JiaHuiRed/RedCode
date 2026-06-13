@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./desktop-menu": "./src/desktop-menu.ts",
     "./vite": "./vite.js",
+    "./pages/chat": "./src/pages/chat/index.tsx",
     "./index.css": "./src/index.css"
   },
   "scripts": {

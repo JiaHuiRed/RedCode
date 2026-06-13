@@ -24,6 +24,12 @@ target
 .scripts
 .direnv/
 
+# Claude Code local settings (per-machine, not shared)
+.claude/settings.local.json
+
+# Lock file (auto-regenerated, version drift across machines)
+bun.lock
+
 # Local dev files
 opencode-dev
 UPCOMING_CHANGELOG.md

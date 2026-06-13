@@ -208,6 +208,75 @@ export function createLoadingWindow() {
   return win
 }
 
+// 260613 Red chat window — second BrowserWindow for the "office" chat room
+let chatWindow: BrowserWindow | null = null
+
+export function createChatWindow() {
+  if (chatWindow && !chatWindow.isDestroyed()) {
+    chatWindow.show()
+    chatWindow.focus()
+    return chatWindow
+  }
+
+  const mode = tone()
+  const win = new BrowserWindow({
+    width: 420,
+    height: 700,
+    minWidth: 360,
+    minHeight: 500,
+    show: false,
+    autoHideMenuBar: true,
+    title: "RedCode Office",
+    icon: nativeImage.createFromPath(iconPath()),
+    backgroundColor,
+    ...(process.platform === "darwin"
+      ? {
+          titleBarStyle: "hidden" as const,
+          trafficLightPosition: { x: 12, y: 14 },
+        }
+      : {}),
+    ...(process.platform === "win32"
+      ? {
+          frame: false,
+          titleBarStyle: "hidden" as const,
+        }
+      : {}),
+    webPreferences: {
+      preload: join(root, "../preload/index.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  })
+
+  allowRendererPermissions(win)
+  wireWindowRecovery(win, "chat")
+
+  win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    const { responseHeaders = {} } = details
+    addRendererHeaders(details.url, responseHeaders)
+    callback({ responseHeaders })
+  })
+
+  loadWindow(win, "index.html?view=chat")
+  wireZoom(win)
+
+  win.once("ready-to-show", () => {
+    win.show()
+  })
+
+  win.on("closed", () => {
+    chatWindow = null
+  })
+
+  chatWindow = win
+  return win
+}
+
+export function getChatWindow() {
+  return chatWindow && !chatWindow.isDestroyed() ? chatWindow : null
+}
+
 export function registerRendererProtocol() {
   if (protocol.isProtocolHandled(rendererProtocol)) return
 

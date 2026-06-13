@@ -49,6 +49,7 @@ import { ErrorPage } from "./pages/error"
 import { useCheckServerHealth } from "./utils/server-health"
 
 const HomeRoute = lazy(() => import("@/pages/home"))
+const ChatRoute = lazy(() => import("@/pages/chat"))
 const Session = lazy(() => import("@/pages/session"))
 
 const SessionRoute = Object.assign(
@@ -313,6 +314,7 @@ export function AppInterface(props: {
                   root={(routerProps) => <RouterRoot appChildren={props.children}>{routerProps.children}</RouterRoot>}
                 >
                   <Route path="/" component={HomeRoute} />
+                  <Route path="/chat" component={ChatRoute} />
                   <Route path="/:dir" component={DirectoryLayout}>
                     <Route path="/" component={() => <Navigate href="session" />} />
                     <Route path="/session/:id?" component={SessionRoute} />
