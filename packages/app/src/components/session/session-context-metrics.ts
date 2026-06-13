@@ -56,7 +56,18 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
   const provider = providers.find((item) => item.id === message.providerID)
   const model = provider?.models[message.modelID]
   const limit = model?.limit.context
-  const total = tokenTotal(message)
+
+  // Aggregate across all assistant messages (not just the last one)
+  const agg = { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 }
+  for (const m of messages) {
+    if (m.role !== "assistant") continue
+    agg.input += m.tokens.input ?? 0
+    agg.output += m.tokens.output ?? 0
+    agg.reasoning += m.tokens.reasoning ?? 0
+    agg.cacheRead += m.tokens.cache.read ?? 0
+    agg.cacheWrite += m.tokens.cache.write ?? 0
+  }
+  const total = agg.input + agg.output + agg.reasoning + agg.cacheRead + agg.cacheWrite
 
   return {
     totalCost,
@@ -67,11 +78,11 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
       providerLabel: provider?.name ?? message.providerID,
       modelLabel: model?.name ?? message.modelID,
       limit,
-      input: message.tokens.input,
-      output: message.tokens.output,
-      reasoning: message.tokens.reasoning,
-      cacheRead: message.tokens.cache.read,
-      cacheWrite: message.tokens.cache.write,
+      input: agg.input,
+      output: agg.output,
+      reasoning: agg.reasoning,
+      cacheRead: agg.cacheRead,
+      cacheWrite: agg.cacheWrite,
       // 260612 Red session-aggregate cache rate (not last-turn-only which is always ~99%)
       // 260613 fix: denominator should only be cache-relevant tokens (read+write), not including fresh input
       // 260615 fix: fallback to input for providers that don't return write/cache-miss metadata

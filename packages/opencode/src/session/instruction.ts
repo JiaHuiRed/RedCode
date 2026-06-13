@@ -114,6 +114,11 @@ export const layer: Layer.Layer<
       ),
     )
 
+    // 260613 Red cache digest once per session to keep system prompt stable for prefix caching.
+    // Recomputing every turn changes time_updated/title/stats → invalidates DeepSeek prefix cache
+    // → all conversation messages after the mismatch point become uncached → hit rate drops over time.
+    let cachedDigest: string | null = null
+
     const relative = Effect.fnUntraced(function* (instruction: string) {
       const ctx = yield* InstanceState.context
       if (!Flag.REDCODE_DISABLE_PROJECT_CONFIG) {
@@ -223,11 +228,12 @@ export const layer: Layer.Layer<
       const files = yield* Effect.forEach(Array.from(paths), read, { concurrency: 8 })
       const remote = yield* Effect.forEach(urls, fetch, { concurrency: 4 })
 
-      const digest = recentSessionDigest()
+      // 260613 Red compute digest only once — see cachedDigest comment above
+      if (cachedDigest === null) cachedDigest = recentSessionDigest()
       return [
         ...Array.from(paths).flatMap((item, i) => (files[i] ? [`Instructions from: ${item}\n${files[i]}`] : [])),
         ...urls.flatMap((item, i) => (remote[i] ? [`Instructions from: ${item}\n${remote[i]}`] : [])),
-        ...(digest ? [digest] : []),
+        ...(cachedDigest ? [cachedDigest] : []),
       ]
     })
 

@@ -1,6 +1,8 @@
 import { DateTime } from "luxon"
 
 export function createSessionContextFormatter(locale: string) {
+  // 260613 Red costs are in USD; convert to CNY for display
+  const USD_TO_CNY = 7.2
   const cny = new Intl.NumberFormat(locale, { style: "currency", currency: "CNY" })
 
   return {
@@ -20,7 +22,7 @@ export function createSessionContextFormatter(locale: string) {
     },
     cost(value: number | undefined | null) {
       if (value === undefined || value === null) return "—"
-      return cny.format(value)
+      return cny.format(value * USD_TO_CNY)
     },
   }
 }
