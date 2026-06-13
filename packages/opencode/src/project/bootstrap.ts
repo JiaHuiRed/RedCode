@@ -61,6 +61,32 @@ export const layer = Layer.effect(
           if (text) yield* fs.writeFileString(dest, text)
         }).pipe(Effect.catchCause(Effect.logWarning)),
       )
+      // 260613 Red Seed skills from .opencode/skill/ to ~/.redcode/skill/ (skip existing)
+      yield* Effect.gen(function* () {
+        const srcSkillDir = path.join(ctx.directory, ".opencode", "skill")
+        const destSkillDir = path.join(redcodeHome, "skill")
+        const srcExists = yield* fs.existsSafe(srcSkillDir)
+        if (!srcExists) return
+        yield* fs.ensureDir(destSkillDir)
+        const entries = yield* Effect.tryPromise(() =>
+          import("fs/promises").then((fsp) => fsp.readdir(srcSkillDir, { withFileTypes: true })),
+        )
+        for (const entry of entries) {
+          if (!entry.isDirectory()) continue
+          const destDir = path.join(destSkillDir, entry.name)
+          const exists = yield* fs.existsSafe(destDir)
+          if (exists) continue
+          // copy entire skill directory
+          const skillFiles = yield* Effect.tryPromise(() =>
+            import("fs/promises").then((fsp) => fsp.readdir(path.join(srcSkillDir, entry.name))),
+          )
+          yield* fs.ensureDir(destDir)
+          for (const file of skillFiles) {
+            const text = yield* fs.readFileStringSafe(path.join(srcSkillDir, entry.name, file))
+            if (text) yield* fs.writeFileString(path.join(destDir, file), text)
+          }
+        }
+      }).pipe(Effect.catchCause(Effect.logWarning))
       // 260611 Red project-level .redcode/ auto-init with empty MEMORY.md
       if (!Flag.REDCODE_DISABLE_PROJECT_CONFIG && ctx.worktree !== Global.Path.home) {
         yield* Effect.gen(function* () {
