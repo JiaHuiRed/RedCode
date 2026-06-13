@@ -10,26 +10,30 @@
 
 ## TUI
 
-### [Unreleased] (0.6.0 — 聊天室 / 虚拟办公室)
+### [0.6.0] - 2026-06-13
 
-> 联合项目：敏敏（TUI）+ 小宋（GUI）共同开发。目标是让用户 + 两个 AI 在同一个聊天室里工作，不再开两个 exe 来回切换传话。
+> RedCode Office — 虚拟办公室 / 聊天室。敏敏 + 小宋 + 哥哥在同一个界面里协作，不再开三个 exe 来回切换。
 
-#### 进度
+#### 新增
 
-- [x] **ChatRoom + ChatMessage DB schema**：两表（`chat_room` / `chat_message`），sender 支持 `user`/`tui`/`gui`，可选关联 `session_id`，migration 已生成（`src/chat/chat.sql.ts` + `migration/20260612082823_chat_room/`）
-- [x] **Chat Service 层**：`ensureRoom` / `sendMessage` / `getMessages` / `getLastMessage`，同步模块走 Drizzle，typecheck 通过（`src/chat/index.ts`）
-- [ ] **聊天室 ↔ agent exe 同步机制**：exe 如何把消息写入 ChatRoom table、如何轮询/监听新消息
-- [ ] **Chat UI 骨架**（SolidJS `packages/app/`）：三路聊天面板（群聊 + 敏敏私聊 + 小宋私聊）+ 输入框 + 消息列表
-- [ ] **在线状态显示**：通过 session 表最后更新时间检测 agent exe 是否在运行
-- [ ] **@ 路由**：`@敏敏` / `@小宋` 将消息路由到对应 agent 的上下文
-- [ ] **壳应用启动入口**：Electron/SolidJS app 如何启动并加载聊天 UI
+- **RedCode Office 聊天室 UI**：标题栏新增聊天气泡按钮（`chat-bubble` 图标），点击进入 `/chat` 路由，填满整个窗口区域（`titlebar.tsx` + `layout.tsx` + `pages/chat/index.tsx`）
+- **聊天室侧栏 session 列表**：左侧按 TUI(敏敏)/GUI(小宋)/Group(办公室) 三个头像分组，点击展示该 agent 的所有 session 历史，按 `directory.includes("dist")` 区分 TUI/GUI（`pages/chat/index.tsx`）
+- **ChatRoom + ChatMessage DB schema**：两表（`chat_room` / `chat_message`），sender 支持 `user`/`tui`/`gui`，可选关联 `session_id`（`src/chat/chat.sql.ts` + `migration/20260612082823_chat_room/`）
+- **Chat Service 层**：`ensureRoom` / `sendMessage` / `getMessages` / `getLastMessage`，同步 Drizzle 模块（`src/chat/index.ts`）
+- **Chat HTTP API**：Effect HttpApi 三端点 — `POST /chat/room/:roomId`(ensureRoom)、`GET /chat/room/:roomId/message`(messages)、`POST /chat/room/:roomId/message`(send)，send 自动 ensureRoom（`groups/chat.ts` + `handlers/chat.ts`）
+- **办公室群聊**：`/chat` 页面的 Group 联系人可发送/接收消息，走 `chat_message` 表，3 秒轮询
 
-#### 设计决策
+#### 变更
 
-- **架构**：聊天壳（SolidJS `packages/app/`）+ 两个 agent exe 后台静默 + 共享 SQLite DB 同步
-- **三路聊天**：群聊（三人）、敏敏私聊、小宋私聊，类似微信
-- **Sender ID**："user"|"tui"|"gui"（code），UI 映射为"哥哥"|"敏敏"|"小宋"
-- **数据分离**：ChatMessage 存聊天 UI 消息，agent 工作记录仍在 SessionTable，通过 `session_id` 关联
+- **移除跨会话感知（recentSessionDigest）**：不再每轮往系统提示词注入最近 10 条 session 摘要，省 ~500 token/轮。协作改由聊天室实现（`instruction.ts`）
+
+#### TODO（未完成）
+
+- [ ] **点击 session 查看对话详情**：选中 session 后在右侧渲染该 session 的完整消息气泡
+- [ ] **聊天室 ↔ agent 同步机制**：办公室发消息后 agent 自动接收并执行
+- [ ] **@ 路由**：`@敏敏` / `@小宋` 将消息路由到对应 agent
+- [ ] **在线状态显示**：通过 session 表最后更新时间检测 agent 是否在运行
+- [ ] **UI 对齐小宋主题**：毛玻璃/自定义背景图/头像复用小宋现有设计语言
 
 ---
 
@@ -644,6 +648,30 @@
 ---
 
 ## GUI
+
+### [0.6.0] - 2026-06-13
+
+> RedCode Office — 虚拟办公室入口，从小宋界面一键进入，统一管理敏敏/小宋的所有 session。
+
+#### 新增
+
+- **RedCode Office 入口**：标题栏新增聊天气泡按钮（`chat-bubble` 图标），点击进入 `/chat` 路由，全窗口展示办公室界面（`titlebar.tsx` + `icon.tsx`）
+- **办公室布局适配**：`/chat` 路由自动切换 `items-stretch` 填满窗口，跳过常规 session 的圆角/边距样式（`layout.tsx`）
+- **session 历史列表**：左侧 TUI/GUI/Group 三个联系人，点击展示对应 agent 的 session 列表，支持模型名称和时间显示（`pages/chat/index.tsx`）
+
+#### 变更
+
+- **移除跨会话感知注入**：随 TUI 侧 `recentSessionDigest` 移除，不再每轮注入 ~500 token 的 session 摘要（服务端变更）
+- **包含服务端更新 TUI 0.6.0**：ChatRoom DB schema + Chat HTTP API + recentSessionDigest 移除。详见 TUI 0.6.0
+
+#### TODO（未完成）
+
+- [ ] **点击 session 查看对话详情**：选中 session 后在右侧渲染完整消息气泡
+- [ ] **UI 对齐小宋主题**：毛玻璃/自定义背景图/头像复用现有设计语言
+- [ ] **聊天室 ↔ agent 同步**：办公室发消息后 agent 自动接收并执行
+- [ ] **@ 路由**：`@敏敏` / `@小宋` 消息路由到对应 agent
+
+---
 
 ### [0.5.10] - 2026-06-13
 

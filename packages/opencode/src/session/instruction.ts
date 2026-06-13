@@ -8,47 +8,10 @@ import { Flag } from "@redcode-ai/core/flag/flag"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { withTransientReadRetry } from "@/util/effect-http-client"
 import { Global } from "@redcode-ai/core/global"
-import { Database, desc, gte, isNull, and } from "@/storage/db"
-import { SessionTable } from "./session.sql"
 import type { MessageV2 } from "./message-v2"
 import type { MessageID } from "./schema"
 
-// 260612 Red cross-session awareness: inject recent session summaries so personas know what others did
-function recentSessionDigest(): string {
-  try {
-    if (!Database.Client.loaded()) return ""
-    const db = Database.Client()
-    const cutoff = Date.now() - 24 * 60 * 60 * 1000
-    const rows = db
-      .select({
-        title: SessionTable.title,
-        agent: SessionTable.agent,
-        model: SessionTable.model,
-        directory: SessionTable.directory,
-        time_updated: SessionTable.time_updated,
-        additions: SessionTable.summary_additions,
-        deletions: SessionTable.summary_deletions,
-        files: SessionTable.summary_files,
-      })
-      .from(SessionTable)
-      .where(and(gte(SessionTable.time_updated, cutoff), isNull(SessionTable.parent_id)))
-      .orderBy(desc(SessionTable.time_updated))
-      .limit(10)
-      .all()
-    if (!rows.length) return ""
-    const lines = rows.map((r) => {
-      // 260613 Red use absolute time to keep system prompt stable for prefix caching
-      const d = new Date(r.time_updated ?? 0)
-      const timeStr = `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
-      const stats = r.files ? ` (+${r.additions ?? 0}/-${r.deletions ?? 0}, ${r.files} files)` : ""
-      const persona = r.directory?.includes("dist") ? "TUI" : "GUI"
-      return `- [${timeStr}] [${persona}] ${r.title}${stats}`
-    })
-    return `# Recent sessions (last 24h)\n\nOther sessions working on this project — check before modifying the same files:\n\n${lines.join("\n")}`
-  } catch {
-    return ""
-  }
-}
+// 260613 Red removed recentSessionDigest — replaced by chat room, was token-heavy
 
 const files = (disableClaudeCodePrompt: boolean) => [
   "AGENTS.md",
@@ -117,7 +80,6 @@ export const layer: Layer.Layer<
     // 260613 Red cache digest once per session to keep system prompt stable for prefix caching.
     // Recomputing every turn changes time_updated/title/stats → invalidates DeepSeek prefix cache
     // → all conversation messages after the mismatch point become uncached → hit rate drops over time.
-    let cachedDigest: string | null = null
 
     const relative = Effect.fnUntraced(function* (instruction: string) {
       const ctx = yield* InstanceState.context
@@ -228,12 +190,9 @@ export const layer: Layer.Layer<
       const files = yield* Effect.forEach(Array.from(paths), read, { concurrency: 8 })
       const remote = yield* Effect.forEach(urls, fetch, { concurrency: 4 })
 
-      // 260613 Red compute digest only once — see cachedDigest comment above
-      if (cachedDigest === null) cachedDigest = recentSessionDigest()
       return [
         ...Array.from(paths).flatMap((item, i) => (files[i] ? [`Instructions from: ${item}\n${files[i]}`] : [])),
         ...urls.flatMap((item, i) => (remote[i] ? [`Instructions from: ${item}\n${remote[i]}`] : [])),
-        ...(cachedDigest ? [cachedDigest] : []),
       ]
     })
 

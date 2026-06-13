@@ -37,6 +37,11 @@ const icons = {
     viewBox: "0 0 16 16",
     body: `<path d="M4.25 11.75L11.75 4.25M11.75 11.75L4.25 4.25" stroke="currentColor"/>`,
   },
+  // 260613 Red chat room entry icon
+  "chat-bubble": {
+    viewBox: "0 0 16 16",
+    body: `<path d="M2.5 3A1.5 1.5 0 0 1 4 1.5h8A1.5 1.5 0 0 1 13.5 3v6A1.5 1.5 0 0 1 12 10.5H6L3.5 13V10.5H4A1.5 1.5 0 0 1 2.5 9V3Z" stroke="currentColor" fill="none"/><circle cx="6" cy="6" r=".75" fill="currentColor"/><circle cx="8" cy="6" r=".75" fill="currentColor"/><circle cx="10" cy="6" r=".75" fill="currentColor"/>`,
+  },
 }
 
 const spriteID = "redcode-v2-icon-sprite"

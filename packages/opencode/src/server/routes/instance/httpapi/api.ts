@@ -2,6 +2,7 @@
 import { HttpApi } from "effect/unstable/httpapi"
 import { BusEvent } from "@/bus/bus-event"
 import { SyncEvent } from "@/sync"
+import { ChatApi } from "./groups/chat"
 import { ConfigApi } from "./groups/config"
 import { ControlApi } from "./groups/control"
 import { EventApi } from "./groups/event"
@@ -34,6 +35,7 @@ export const RootHttpApi = HttpApi.make("redcode-root")
   .middleware(Authorization)
 
 export const InstanceHttpApi = HttpApi.make("redcode-instance")
+  .addHttpApi(ChatApi)
   .addHttpApi(ConfigApi)
   .addHttpApi(ExperimentalApi)
   .addHttpApi(FileApi)

@@ -22,9 +22,9 @@ const contacts: Contact[] = [
 interface SessionItem {
   id: string
   title: string
-  time_updated: number
-  agent: string
-  model: string
+  time: { created: number; updated: number }
+  agent?: string
+  model?: { id: string; providerID: string }
   directory: string
 }
 
@@ -40,16 +40,17 @@ async function fetchSessions(serverUrl: string, auth?: { username: string; passw
   return (data ?? []) as SessionItem[]
 }
 
-function isGuiSession(s: SessionItem) {
+// 260613 Red dist = TUI (敏敏从 dist/ 启动), 非 dist = GUI
+function isTuiSession(s: SessionItem) {
   return s.directory?.includes("dist")
 }
 
 function timeAgo(ts: number): string {
-  const diff = Math.floor(Date.now() / 1000 - ts)
-  if (diff < 60) return "刚刚"
-  if (diff < 3600) return `${Math.floor(diff / 60)}分钟前`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}小时前`
-  return `${Math.floor(diff / 86400)}天前`
+  const diff = Date.now() - ts
+  if (diff < 60_000) return "刚刚"
+  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}分钟前`
+  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}小时前`
+  return `${Math.floor(diff / 86400_000)}天前`
 }
 
 export default function ChatRoom() {
@@ -67,8 +68,8 @@ export default function ChatRoom() {
   const filteredSessions = () => {
     const all = sessions() ?? []
     const id = active()
-    if (id === "tui") return all.filter((s) => !isGuiSession(s) && !s.directory?.includes("chat"))
-    if (id === "gui") return all.filter((s) => isGuiSession(s))
+    if (id === "tui") return all.filter((s) => isTuiSession(s))
+    if (id === "gui") return all.filter((s) => !isTuiSession(s))
     if (id === "group") return all // group shows all
     return []
   }
@@ -164,8 +165,8 @@ export default function ChatRoom() {
                                 {session.title || "未命名对话"}
                               </div>
                               <div style={styles.sessionMeta}>
-                                <span>{session.model?.split("/").pop() ?? ""}</span>
-                                <span>{timeAgo(session.time_updated)}</span>
+                                <span>{session.model?.id?.split("/").pop() ?? ""}</span>
+                                <span>{timeAgo(session.time?.updated || session.time?.created || 0)}</span>
                               </div>
                             </div>
                           )}
