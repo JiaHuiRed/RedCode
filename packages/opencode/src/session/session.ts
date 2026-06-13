@@ -172,10 +172,11 @@ const Tokens = Schema.Struct({
   cache: Schema.Struct({
     read: Schema.Finite,
     write: Schema.Finite,
+    miss: Schema.optional(Schema.Finite),
   }),
 })
 
-const EmptyTokens = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
+const EmptyTokens = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } }
 
 const Share = Schema.Struct({
   url: Schema.String,
@@ -412,6 +413,12 @@ export const getUsage = (input: { model: Provider.Model; usage: Usage; metadata?
   // tokens to get the non-cached input count for separate cost calculation.
   const adjustedInputTokens = safe(inputTokens - cacheReadInputTokens - cacheWriteInputTokens)
 
+  // miss = total prompt - cache hit - cache write. For DeepSeek (write=0),
+  // miss equals adjustedInputTokens (the fresh/non-cached tokens).
+  // The old metadata path (metadata.deepseek.promptCacheMissTokens) is unused
+  // because @ai-sdk/openai-compatible doesn't populate deepseek metadata.
+  const cacheMissInputTokens = adjustedInputTokens
+
   const total = input.usage.totalTokens
 
   const tokens = {
@@ -422,6 +429,7 @@ export const getUsage = (input: { model: Provider.Model; usage: Usage; metadata?
     cache: {
       write: cacheWriteInputTokens,
       read: cacheReadInputTokens,
+      miss: cacheMissInputTokens,
     },
   }
 

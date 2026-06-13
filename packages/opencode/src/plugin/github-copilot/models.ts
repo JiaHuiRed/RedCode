@@ -1,4 +1,4 @@
-﻿import type { Model } from "@redcode-ai/sdk/v2"
+import type { Model } from "@redcode-ai/sdk/v2"
 import { Schema } from "effect"
 
 export const schema = Schema.Struct({
@@ -101,7 +101,7 @@ function build(key: string, remote: Item, url: string, prev?: Model): Model {
     cost: {
       input: 0,
       output: 0,
-      cache: { read: 0, write: 0 },
+      cache: { read: 0, write: 0, miss: 0 },
     },
     options: prev?.options ?? {},
     headers: prev?.headers ?? {},

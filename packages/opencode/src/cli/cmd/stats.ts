@@ -18,6 +18,7 @@ interface SessionStats {
     cache: {
       read: number
       write: number
+      miss: number
     }
   }
   toolUsage: Record<string, number>
@@ -31,6 +32,7 @@ interface SessionStats {
         cache: {
           read: number
           write: number
+          miss: number
         }
       }
       cost: number
@@ -131,6 +133,7 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
       cache: {
         read: 0,
         write: 0,
+        miss: 0,
       },
     },
     toolUsage: {},
@@ -168,7 +171,7 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
           .pipe(Effect.catchIf(NotFoundError.isInstance, () => Effect.succeed([])))
 
         const sessionCost = session.cost ?? 0
-        const sessionTokens = session.tokens ?? { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
+        const sessionTokens = session.tokens ?? { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } }
         let sessionToolUsage: Record<string, number> = {}
         let sessionModelUsage: Record<
           string,
@@ -248,7 +251,7 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
       if (!stats.modelUsage[model]) {
         stats.modelUsage[model] = {
           messages: 0,
-          tokens: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+          tokens: { input: 0, output: 0, cache: { read: 0, write: 0, miss: 0 } },
           cost: 0,
         }
       }

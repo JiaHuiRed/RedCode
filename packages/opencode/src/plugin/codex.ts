@@ -1,4 +1,4 @@
-﻿import type { Hooks, PluginInput } from "@redcode-ai/plugin"
+import type { Hooks, PluginInput } from "@redcode-ai/plugin"
 import * as Log from "@redcode-ai/core/util/log"
 import { InstallationVersion } from "@redcode-ai/core/installation/version"
 import { OAUTH_DUMMY_KEY } from "../auth"
@@ -392,7 +392,7 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
                 cost: {
                   input: 0,
                   output: 0,
-                  cache: { read: 0, write: 0 },
+                  cache: { read: 0, write: 0, miss: 0 },
                 },
                 limit: model.id.includes("gpt-5.5")
                   ? {

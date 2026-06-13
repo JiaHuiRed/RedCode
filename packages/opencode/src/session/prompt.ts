@@ -1,4 +1,4 @@
-﻿import path from "path"
+import path from "path"
 import os from "os"
 import { SessionID, MessageID, PartID } from "./schema"
 import { MessageV2 } from "./message-v2"
@@ -136,8 +136,8 @@ export const layer = Layer.effect(
       } satisfies TaskPromptOps
     })
 
-    // 260610 Red task isolation：建隔离 worktree → 拿到其 InstanceContext → run 在该实例下跑（工具 cwd 隔离）
-    // Worktree 用 serviceOption 运行时查找（app/server 已在同级 mergeAll 提供，共享根实例不分裂；无 Worktree 的上下文直接报错）
+    // 260610 Red task isolation�������� worktree �� �õ��� InstanceContext �� run �ڸ�ʵ�����ܣ����� cwd ���룩
+    // Worktree �� serviceOption ����ʱ���ң�app/server ����ͬ�� mergeAll �ṩ��������ʵ�������ѣ��� Worktree ��������ֱ�ӱ�����
     const runIsolated = <A, E>(input: { name: string; startCommand?: string }, run: Effect.Effect<A, E>) =>
       Effect.gen(function* () {
         const service = yield* Effect.serviceOption(Worktree.Service)
@@ -337,7 +337,7 @@ export const layer = Layer.effect(
         variant: lastUser.model.variant,
         path: { cwd: ctx.directory, root: ctx.worktree },
         cost: 0,
-        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
         modelID: taskModel.id,
         providerID: taskModel.providerID,
         time: { created: Date.now() },
@@ -1278,7 +1278,7 @@ export const layer = Layer.effect(
           )
           // Some providers return "stop" even when the assistant message contains tool calls.
           // Keep the loop running so tool results can be sent back to the model.
-          // Skip provider-executed tool parts — those were fully handled within the
+          // Skip provider-executed tool parts �� those were fully handled within the
           // provider's stream (e.g. DWS Agent Platform) and don't need a re-loop.
           const hasToolCalls =
             lastAssistantMsg?.parts.some((part) => part.type === "tool" && !part.metadata?.providerExecuted) ?? false
@@ -1726,7 +1726,7 @@ export const CommandInput = Schema.Struct({
   arguments: Schema.String,
   command: Schema.String,
   variant: Schema.optional(Schema.String),
-  // Inlined (no identifier annotation) to keep the original SDK output — the
+  // Inlined (no identifier annotation) to keep the original SDK output �� the
   // PromptInput call site below references FilePartInput by ref via the
   // Schema export in message-v2.ts.
   parts: Schema.optional(

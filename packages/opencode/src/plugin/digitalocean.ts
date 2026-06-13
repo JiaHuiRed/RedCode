@@ -1,4 +1,4 @@
-﻿import type { Hooks, PluginInput } from "@redcode-ai/plugin"
+import type { Hooks, PluginInput } from "@redcode-ai/plugin"
 import type { Model } from "@redcode-ai/sdk/v2"
 import * as Log from "@redcode-ai/core/util/log"
 import { InstallationVersion } from "@redcode-ai/core/installation/version"
@@ -274,7 +274,7 @@ function routerModel(router: RouterEntry, providerID: string): Model {
     status: "active",
     headers: {},
     options: {},
-    cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+    cost: { input: 0, output: 0, cache: { read: 0, write: 0, miss: 0 } },
     limit: { context: 128_000, output: 8_192 },
     capabilities: {
       temperature: true,

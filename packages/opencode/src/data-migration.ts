@@ -1,4 +1,4 @@
-﻿import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer } from "effect"
 import { Database } from "./storage/db"
 import { DataMigrationTable } from "./data-migration.sql"
 import * as Log from "@redcode-ai/core/util/log"
@@ -26,7 +26,7 @@ export const layer = Layer.effect(
         run: Effect.gen(function* () {
           type Usage = {
             cost: number
-            tokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
+            tokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number; miss: number } }
           }
 
           for (let cursor: SessionID | undefined, page = 1; ; page++) {
@@ -49,7 +49,7 @@ export const layer = Layer.effect(
                   const usageBySession = new Map<SessionID, Usage>(
                     sessions.map((session) => [
                       session.id,
-                      { cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } },
+                      { cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } } },
                     ]),
                   )
 

@@ -108,7 +108,7 @@ function parseToolParams(input?: string) {
       return JSON.parse(trimmed)
     } catch (jsonError) {
     try {
-      // 260529 Red JSON.parse 失败时 fallback 为 JS 对字面量解析，仅限 debug --params
+      // 260529 Red JSON.parse 失败�?fallback �?JS 对字面量解析，仅�?debug --params
       return new Function(`return (${trimmed})`)()
       } catch (evalError) {
         throw new Error(

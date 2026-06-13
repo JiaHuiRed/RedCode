@@ -462,6 +462,7 @@ export type AssistantMessage = {
     cache: {
       read: number
       write: number
+      miss?: number
     }
   }
   structured?: unknown
@@ -664,6 +665,7 @@ export type StepFinishPart = {
     cache: {
       read: number
       write: number
+      miss?: number
     }
   }
 }
@@ -766,6 +768,7 @@ export type Session = {
     cache: {
       read: number
       write: number
+      miss?: number
     }
   }
   share?: {
@@ -1356,6 +1359,7 @@ export type Model = {
     cache: {
       read: number
       write: number
+      miss?: number
     }
     tiers?: Array<{
       input: number
@@ -1496,6 +1500,7 @@ export type GlobalSession = {
     cache: {
       read: number
       write: number
+      miss?: number
     }
   }
   share?: {
@@ -3305,6 +3310,7 @@ export type ModelV2Info = {
     cache: {
       read: number
       write: number
+      miss?: number
     }
   }>
   status: "alpha" | "beta" | "deprecated" | "active"
@@ -3402,6 +3408,7 @@ export type SessionInfo = {
     cache: {
       read: number
       write: number
+      miss?: number
     }
   }
   time: {
@@ -3589,6 +3596,7 @@ export type SessionMessageAssistant = {
     cache: {
       read: number
       write: number
+      miss?: number
     }
   }
   error?: SessionErrorUnknown
@@ -3782,6 +3790,7 @@ export type ModelV2Info1 = {
     cache: {
       read: number
       write: number
+      miss?: number
     }
   }>
   status: "alpha" | "beta" | "deprecated" | "active"
