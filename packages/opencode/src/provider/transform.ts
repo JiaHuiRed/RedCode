@@ -402,23 +402,32 @@ const MIME_EXT: Record<string, string> = {
 /** Save an unsupported media part to a temp file so vision MCP can read it later. */
 function savePartToTemp(part: unknown): string | null {
   const p = part as Record<string, unknown>
+
+  // Extract MIME: ImagePart uses mimeType; FilePart uses mediaType
   const mime = p.type === "image"
-    ? String(p.image).split(";")[0].replace("data:", "")
+    ? String(p.mimeType || "")
     : String(p.mediaType || "")
   const ext = MIME_EXT[mime] || "bin"
 
-  const base64Data = p.type === "image"
-    ? (() => {
-        const s = String(p.image)
-        const m = s.match(/^data:[^;]+;base64,(.*)$/)
-        return m ? m[1] : s
-      })()
-    : String(p.url || "")
+  // Extract raw data: FilePart uses "data" (AI SDK v4); ImagePart uses "image"
+  const raw = p.type === "image" ? p.image : (p.data ?? p.url)
+  if (raw == null) return null
 
-  if (!base64Data) return null
+  let buffer: Buffer
+  if (typeof raw === "string") {
+    // String: data URL ("data:image/png;base64,...") or raw base64
+    const m = raw.match(/^data:[^;]+;base64,(.*)$/)
+    buffer = Buffer.from(m ? m[1] : raw, "base64")
+  } else if (raw instanceof Uint8Array || raw instanceof ArrayBuffer) {
+    buffer = Buffer.from(raw instanceof ArrayBuffer ? new Uint8Array(raw) : raw)
+  } else {
+    return null
+  }
+
+  if (buffer.length === 0) return null
   const filepath = join(tmpdir(), `redcode-vision-${Date.now()}.${ext}`)
   try {
-    writeFileSync(filepath, Buffer.from(base64Data, "base64"))
+    writeFileSync(filepath, buffer)
     return filepath
   } catch {
     return null
@@ -446,7 +455,9 @@ function unsupportedParts(msgs: ModelMessage[], model: Provider.Model): ModelMes
         }
       }
 
-      const mime = part.type === "image" ? String(part.image).split(";")[0].replace("data:", "") : part.mediaType
+      const mime = part.type === "image"
+        ? (String((part as unknown as Record<string, unknown>).mimeType || ""))
+        : part.mediaType
       const filename = part.type === "file" ? part.filename : undefined
       const modality = mimeToModality(mime)
       if (!modality) return part
