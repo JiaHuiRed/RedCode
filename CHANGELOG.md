@@ -40,9 +40,9 @@
 ### [0.6.1] - 2026-06-14
 
 #### 修复
-
-- **粘贴图片被 LLM 拒绝后 vision MCP 找不到文件**：非多模态模型（DeepSeek）提交图片时，`unsupportedParts()` 只替换 base64 data URL 为错误文本，从不落盘。现改为在抛弃前将 base64 解码写入 `%TEMP%/redcode-vision-{timestamp}.{ext}`，并在错误文本追加 `TEMP_FILE:<path>` 供 vision-autoagent 直接读取（`provider/transform.ts`）
-- **vision-autoagent SKILL.md 缺少 TEMP_FILE 路径优先检查**：新增第 2 步——从错误消息中提取 `TEMP_FILE:` 路径直接调用 vision MCP，不再盲目按文件名搜索（`~/.redcode/skill/vision-autoagent/SKILL.md`）
+ - **粘贴图片被 LLM 拒绝后 vision MCP 找不到文件**：非多模态模型（DeepSeek）提交图片时，`unsupportedParts()` 只替换 base64 data URL 为错误文本，从不落盘。现改为在抛弃前将 base64 解码写入 `%TEMP%/redcode-vision-{timestamp}.{ext}`，并在错误文本追加 `TEMP_FILE:<path>` 供 vision-autoagent 直接读取（`provider/transform.ts`）
+ - **修复数据字段名错误**：`savePartToTemp` 最初读取 `FilePart.url`（始终 undefined），AI SDK v4 FilePart 实际使用 `data` 字段。同时 `ImagePart.image` 可能是 `Buffer`/`Uint8Array`，非纯 base64 字符串，现已原生处理二进制数据。修完后图片正确落盘，`TEMP_FILE:` 路径正常输出（`provider/transform.ts`）
+ - **vision-autoagent SKILL.md 缺少 TEMP_FILE 路径优先检查**：新增第 2 步——从错误消息中提取 `TEMP_FILE:` 路径直接调用 vision MCP，不再盲目按文件名搜索（`~/.redcode/skill/vision-autoagent/SKILL.md`）
 
 ---
 
