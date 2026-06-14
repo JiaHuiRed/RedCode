@@ -3,6 +3,9 @@ import { mergeDeep, unique } from "remeda"
 import type { JSONSchema7 } from "@ai-sdk/provider"
 import type * as Provider from "./provider"
 import type * as ModelsDev from "@redcode-ai/core/models-dev"
+import { writeFileSync } from "fs"
+import { join } from "path"
+import { tmpdir } from "os"
 import { iife } from "@/util/iife"
 
 type Modality = NonNullable<ModelsDev.Model["modalities"]>["input"][number]
@@ -388,6 +391,40 @@ function applyCaching(msgs: ModelMessage[], model: Provider.Model): ModelMessage
   return msgs
 }
 
+const MIME_EXT: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+  "image/bmp": "bmp",
+}
+
+/** Save an unsupported media part to a temp file so vision MCP can read it later. */
+function savePartToTemp(part: unknown): string | null {
+  const p = part as Record<string, unknown>
+  const mime = p.type === "image"
+    ? String(p.image).split(";")[0].replace("data:", "")
+    : String(p.mediaType || "")
+  const ext = MIME_EXT[mime] || "bin"
+
+  const base64Data = p.type === "image"
+    ? (() => {
+        const s = String(p.image)
+        const m = s.match(/^data:[^;]+;base64,(.*)$/)
+        return m ? m[1] : s
+      })()
+    : String(p.url || "")
+
+  if (!base64Data) return null
+  const filepath = join(tmpdir(), `redcode-vision-${Date.now()}.${ext}`)
+  try {
+    writeFileSync(filepath, Buffer.from(base64Data, "base64"))
+    return filepath
+  } catch {
+    return null
+  }
+}
+
 function unsupportedParts(msgs: ModelMessage[], model: Provider.Model): ModelMessage[] {
   return msgs.map((msg) => {
     if (msg.role !== "user" || !Array.isArray(msg.content)) return msg
@@ -416,9 +453,11 @@ function unsupportedParts(msgs: ModelMessage[], model: Provider.Model): ModelMes
       if (model.capabilities.input[modality]) return part
 
       const name = filename ? `"${filename}"` : modality
+      const savedPath = savePartToTemp(part)
+      const pathHint = savedPath ? ` TEMP_FILE:${savedPath}` : ""
       return {
         type: "text" as const,
-        text: `ERROR: Cannot read ${name} (this model does not support ${modality} input). Inform the user.`,
+        text: `ERROR: Cannot read ${name} (this model does not support ${modality} input). Inform the user.${pathHint}`,
       }
     })
 

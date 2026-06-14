@@ -9,7 +9,7 @@
 >
 > 基于 [opencode](https://github.com/anomalyco/opencode)（sst.dev）深度二次开发。
 
-[![TUI](https://img.shields.io/badge/TUI-0.6.0-blue)](CHANGELOG.md)
+[![TUI](https://img.shields.io/badge/TUI-0.6.1-blue)](CHANGELOG.md)
 [![Desktop](https://img.shields.io/badge/Desktop-0.6.0-0078d4)](CHANGELOG.md)
 [![平台](https://img.shields.io/badge/平台-Windows%2010%2F11-0078d4)](https://github.com/JiaHuiRed/RedCode)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)](https://typescriptlang.org)
