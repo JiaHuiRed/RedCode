@@ -16,7 +16,9 @@
 
 #### 布局调整
 
-- **侧栏分区分隔线**：MCP / LSP / Todo / Modified Files 每个 section 顶部加淡色 `─` 水平线，视觉层次更清晰（`sidebar/{mcp,lsp,todo,files}.tsx`）
+- **侧栏圆角边框**：整体加 `rounded` 圆角框（`╭╮╰╯`）+ 暗色边框色，品牌版本号嵌入底部边框线 `bottomTitle`，不再占独立行（`session/sidebar.tsx`）
+- **侧栏 section 内嵌标题**：手写 `─` 分隔线改 `border={["top"]} + title`，标题嵌在分隔线里（`─ MCP 7/9 ─`、`─ LSP 2 ─`、`─ Todo 3/5 ─`、`─ Files 4 ─`），折叠箭头 `▼▶` → `▾▸`（`sidebar/{mcp,lsp,todo,files}.tsx`）
+- **对话框圆角边框**：弹窗外框加 `rounded` 圆角框 + 暗色边框色，更有层次感（`ui/dialog.tsx`）
 - **MCP 错误醒目化**：failed / needs_auth / needs_client_registration 条目前缀从 `•` 改 `⚠`，名字和状态文字着 error 红色，一眼可辨（`sidebar/mcp.tsx`）
 - **底栏信息优化**：MCP 改紧凑格式 `⊙ MCP 7/9 ⚠2`（连接/总数+错误数）；末尾加 `^p cmd  ^x +` 快捷键提示；LSP 无连接时隐藏（`session/footer.tsx`）
 - **侧栏品牌修正**：底部 `OpenCode` → `RedCode`（`session/sidebar.tsx`）
