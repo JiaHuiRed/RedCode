@@ -30,6 +30,8 @@ function View(props: { api: TuiPluginApi }) {
   return (
     <Show when={list().length > 0}>
       <box>
+        {/* 260615 Red section separator */}
+        <text fg={theme().borderSubtle ?? theme().textMuted}>{"─".repeat(36)}</text>
         <box flexDirection="row" gap={1} onMouseDown={() => list().length > 2 && setOpen((x) => !x)}>
           <Show when={list().length > 2}>
             <text fg={theme().text}>{open() ? "▼" : "▶"}</text>
@@ -46,33 +48,37 @@ function View(props: { api: TuiPluginApi }) {
         </box>
         <Show when={list().length <= 2 || open()}>
           <For each={list()}>
-            {(item) => (
-              <box flexDirection="row" gap={1}>
-                <text
-                  flexShrink={0}
-                  style={{
-                    fg: dot(item.status),
-                  }}
-                >
-                  •
-                </text>
-                <text fg={theme().text} wrapMode="word">
-                  {item.name}{" "}
-                  <span style={{ fg: theme().textMuted }}>
-                    <Switch fallback={item.status}>
-                      <Match when={item.status === "connected"}>Connected</Match>
-                      <Match when={(item.status as string) === "pending"}>Waiting…</Match>
-                      <Match when={item.status === "failed"}>
-                        <i>{item.error}</i>
-                      </Match>
-                      <Match when={item.status === "disabled"}>Disabled</Match>
-                      <Match when={item.status === "needs_auth"}>Needs auth</Match>
-                      <Match when={item.status === "needs_client_registration"}>Needs client ID</Match>
-                    </Switch>
-                  </span>
-                </text>
-              </box>
-            )}
+            {(item) => {
+              // 260615 Red MCP error items: ⚠ prefix + name in error color for visibility
+              const isBad = () => item.status === "failed" || item.status === "needs_auth" || item.status === "needs_client_registration"
+              return (
+                <box flexDirection="row" gap={1}>
+                  <text
+                    flexShrink={0}
+                    style={{
+                      fg: dot(item.status),
+                    }}
+                  >
+                    {isBad() ? "⚠" : "•"}
+                  </text>
+                  <text fg={isBad() ? theme().error : theme().text} wrapMode="word">
+                    {item.name}{" "}
+                    <span style={{ fg: isBad() ? theme().error : theme().textMuted }}>
+                      <Switch fallback={item.status}>
+                        <Match when={item.status === "connected"}>Connected</Match>
+                        <Match when={(item.status as string) === "pending"}>Waiting…</Match>
+                        <Match when={item.status === "failed"}>
+                          <i>{item.error}</i>
+                        </Match>
+                        <Match when={item.status === "disabled"}>Disabled</Match>
+                        <Match when={item.status === "needs_auth"}>Needs auth</Match>
+                        <Match when={item.status === "needs_client_registration"}>Needs client ID</Match>
+                      </Switch>
+                    </span>
+                  </text>
+                </box>
+              )
+            }}
           </For>
         </Show>
       </box>

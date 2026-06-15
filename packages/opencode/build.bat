@@ -5,7 +5,7 @@ if %errorlevel% neq 0 (
     exit /b %errorlevel%
 )
 cd /d "%~dp0"
-call bun run build -- --single 2>&1
+call bun run build 2>&1
 if %errorlevel% neq 0 (
     pause
     exit /b %errorlevel%

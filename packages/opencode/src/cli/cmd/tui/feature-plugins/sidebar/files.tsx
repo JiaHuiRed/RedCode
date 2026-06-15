@@ -12,6 +12,8 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   return (
     <Show when={list().length > 0}>
       <box>
+        {/* 260615 Red section separator */}
+        <text fg={theme().borderSubtle ?? theme().textMuted}>{"─".repeat(36)}</text>
         <box flexDirection="row" gap={1} onMouseDown={() => list().length > 2 && setOpen((x) => !x)}>
           <Show when={list().length > 2}>
             <text fg={theme().text}>{open() ? "▼" : "▶"}</text>

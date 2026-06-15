@@ -47,7 +47,7 @@
     // 260615 Semgrep — 代码安全扫描 (本地模式, 无需 token)
     "semgrep": {
       "type": "local",
-      "command": ["uvx", "semgrep-mcp"],
+      "command": ["semgrep-mcp"],
       "enabled": true
     },
     "browsermcp": {
@@ -86,6 +86,8 @@
       "enabled": true
     },
   },
+  // 260615 Red enable built-in LSP servers (auto-detect by file extension)
+  "lsp": true,
   // 260612 Red compaction threshold — engine-level hard ceiling, works alongside DCP as safety net.
   // DCP handles active compress/dedup/nudge; this catches edge cases where DCP doesn't trigger.
   "compaction": {

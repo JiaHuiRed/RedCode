@@ -47,9 +47,6 @@ const migrations = await Promise.all(
 )
 console.log(`Loaded ${migrations.length} migrations`)
 
-const singleFlag = process.argv.includes("--single")
-const baselineFlag = process.argv.includes("--baseline")
-const skipInstall = process.argv.includes("--skip-install")
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
 const plugin = createSolidTransformPlugin()
 const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
@@ -80,191 +77,86 @@ const createEmbeddedWebUIBundle = async () => {
 
 const embeddedFileMap = skipEmbedWebUi ? null : await createEmbeddedWebUIBundle()
 
-const allTargets: {
-  os: string
-  arch: "arm64" | "x64"
-  abi?: "musl"
-  avx2?: false
-}[] = [
-  {
-    os: "linux",
-    arch: "arm64",
-  },
-  {
-    os: "linux",
-    arch: "x64",
-  },
-  {
-    os: "linux",
-    arch: "x64",
-    avx2: false,
-  },
-  {
-    os: "linux",
-    arch: "arm64",
-    abi: "musl",
-  },
-  {
-    os: "linux",
-    arch: "x64",
-    abi: "musl",
-  },
-  {
-    os: "linux",
-    arch: "x64",
-    abi: "musl",
-    avx2: false,
-  },
-  {
-    os: "darwin",
-    arch: "arm64",
-  },
-  {
-    os: "darwin",
-    arch: "x64",
-  },
-  {
-    os: "darwin",
-    arch: "x64",
-    avx2: false,
-  },
-  {
-    os: "win32",
-    arch: "arm64",
-  },
-  {
-    os: "win32",
-    arch: "x64",
-  },
-  {
-    os: "win32",
-    arch: "x64",
-    avx2: false,
-  },
-]
-
-const targets = singleFlag
-  ? allTargets.filter((item) => {
-      if (item.os !== process.platform || item.arch !== process.arch) {
-        return false
-      }
-
-      // When building for the current platform, prefer a single native binary by default.
-      // Baseline binaries require additional Bun artifacts and can be flaky to download.
-      if (item.avx2 === false) {
-        return baselineFlag
-      }
-
-      // also skip abi-specific builds for the same reason
-      if (item.abi !== undefined) {
-        return false
-      }
-
-      return true
-    })
-  : allTargets
-
 try { await $`rm -rf dist` } catch {}
 
 const binaries: Record<string, string> = {}
-if (!skipInstall) {
-  await $`bun install --os="*" --cpu="*" @opentui/core@${pkg.dependencies["@opentui/core"]}`
-  await $`bun install --os="*" --cpu="*" @parcel/watcher@${pkg.dependencies["@parcel/watcher"]}`
-}
-for (const item of targets) {
-  const name = [
-    pkg.name,
-    // changing to win32 flags npm for some reason
-    item.os === "win32" ? "windows" : item.os,
-    item.arch,
-    item.avx2 === false ? "baseline" : undefined,
-    item.abi === undefined ? undefined : item.abi,
-  ]
-    .filter(Boolean)
-    .join("-")
-  console.log(`building ${name}`)
-  await $`mkdir -p dist/${name}/bin`
+// 260615 Red Windows-only single target
+const name = `${pkg.name}-windows-x64`
+console.log(`building ${name}`)
+await $`mkdir -p dist/${name}/bin`
 
-  const localPath = path.resolve(dir, "node_modules/@opentui/core/parser.worker.js")
-  const rootPath = path.resolve(dir, "../../node_modules/@opentui/core/parser.worker.js")
-  const parserWorker = fs.realpathSync(fs.existsSync(localPath) ? localPath : rootPath)
-  const workerPath = "./src/cli/cmd/tui/worker.ts"
+const localPath = path.resolve(dir, "node_modules/@opentui/core/parser.worker.js")
+const rootPath = path.resolve(dir, "../../node_modules/@opentui/core/parser.worker.js")
+const parserWorker = fs.realpathSync(fs.existsSync(localPath) ? localPath : rootPath)
+const workerPath = "./src/cli/cmd/tui/worker.ts"
 
-  // Use platform-specific bunfs root path based on target OS
-  const bunfsRoot = item.os === "win32" ? "B:/~BUN/root/" : "/$bunfs/root/"
-  const workerRelativePath = path.relative(dir, parserWorker).replaceAll("\\", "/")
+const bunfsRoot = "B:/~BUN/root/"
+const workerRelativePath = path.relative(dir, parserWorker).replaceAll("\\", "/")
 
-  await Bun.build({
-    conditions: ["browser"],
-    tsconfig: "./tsconfig.json",
-    plugins: [plugin],
-    external: ["node-gyp", "@ast-grep/napi"],
-    format: "esm",
-    minify: true,
-    sourcemap: sourcemapsFlag ? "linked" : "none",
-    splitting: true,
-    compile: {
-      autoloadBunfig: false,
-      autoloadDotenv: false,
-      autoloadTsconfig: true,
-      autoloadPackageJson: true,
-      target: name.replace(pkg.name, "bun") as any,
-      outfile: `dist/${name}/bin/redcode`,
-      execArgv: [`--user-agent=redcode/${Script.version}`, "--use-system-ca", "--"],
-      windows: {},
-    },
-    files: embeddedFileMap ? { "redcode-web-ui.gen.ts": embeddedFileMap } : {},
-    entrypoints: ["./src/index.ts", parserWorker, workerPath, ...(embeddedFileMap ? ["redcode-web-ui.gen.ts"] : [])],
-    define: {
-      REDCODE_VERSION: `'${Script.version}'`,
-      REDCODE_MIGRATIONS: JSON.stringify(migrations),
-      REDCODE_MODELS_DEV: generated.modelsData,
-      OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + workerRelativePath,
-      REDCODE_WORKER_PATH: workerPath,
-      REDCODE_CHANNEL: `'${Script.channel}'`,
-      REDCODE_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "",
-    },
-  })
+await Bun.build({
+  conditions: ["browser"],
+  tsconfig: "./tsconfig.json",
+  plugins: [plugin],
+  external: ["node-gyp", "@ast-grep/napi"],
+  format: "esm",
+  minify: true,
+  sourcemap: sourcemapsFlag ? "linked" : "none",
+  splitting: true,
+  compile: {
+    autoloadBunfig: false,
+    autoloadDotenv: false,
+    autoloadTsconfig: true,
+    autoloadPackageJson: true,
+    target: "bun-windows-x64" as any,
+    outfile: `dist/${name}/bin/redcode`,
+    execArgv: [`--user-agent=redcode/${Script.version}`, "--use-system-ca", "--"],
+    windows: {},
+  },
+  files: embeddedFileMap ? { "redcode-web-ui.gen.ts": embeddedFileMap } : {},
+  entrypoints: ["./src/index.ts", parserWorker, workerPath, ...(embeddedFileMap ? ["redcode-web-ui.gen.ts"] : [])],
+  define: {
+    REDCODE_VERSION: `'${Script.version}'`,
+    REDCODE_MIGRATIONS: JSON.stringify(migrations),
+    REDCODE_MODELS_DEV: generated.modelsData,
+    OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + workerRelativePath,
+    REDCODE_WORKER_PATH: workerPath,
+    REDCODE_CHANNEL: `'${Script.channel}'`,
+    REDCODE_LIBC: "",
+  },
+})
 
-  // Smoke test: only run if binary is for current platform
-  if (item.os === process.platform && item.arch === process.arch && !item.abi) {
-    const binaryPath = `dist/${name}/bin/redcode`
-    console.log(`Running smoke test: ${binaryPath} --version`)
-    try {
-      const versionOutput = await $`${binaryPath} --version`.text()
-      console.log(`Smoke test passed: ${versionOutput.trim()}`)
-    } catch (e) {
-      console.error(`Smoke test failed for ${name}:`, e)
-      process.exit(1)
-    }
+// Smoke test
+{
+  const binaryPath = `dist/${name}/bin/redcode`
+  console.log(`Running smoke test: ${binaryPath} --version`)
+  try {
+    const versionOutput = await $`${binaryPath} --version`.text()
+    console.log(`Smoke test passed: ${versionOutput.trim()}`)
+  } catch (e) {
+    console.error(`Smoke test failed for ${name}:`, e)
+    process.exit(1)
   }
-
-  try { await $`rm -rf ./dist/${name}/bin/tui` } catch {}
-  await Bun.file(`dist/${name}/package.json`).write(
-    JSON.stringify(
-      {
-        name,
-        version: Script.version,
-        preferUnplugged: true,
-        os: [item.os],
-        cpu: [item.arch],
-      },
-      null,
-      2,
-    ),
-  )
-  binaries[name] = Script.version
 }
+
+try { await $`rm -rf ./dist/${name}/bin/tui` } catch {}
+await Bun.file(`dist/${name}/package.json`).write(
+  JSON.stringify(
+    {
+      name,
+      version: Script.version,
+      preferUnplugged: true,
+      os: ["win32"],
+      cpu: ["x64"],
+    },
+    null,
+    2,
+  ),
+)
+binaries[name] = Script.version
 
 if (Script.release) {
-  for (const key of Object.keys(binaries)) {
-    if (key.includes("linux")) {
-      await $`tar -czf ../../${key}.tar.gz *`.cwd(`dist/${key}/bin`)
-    } else {
-      await $`zip -r ../../${key}.zip *`.cwd(`dist/${key}/bin`)
-    }
-  }
-  await $`gh release upload v${Script.version} ./dist/*.zip ./dist/*.tar.gz --clobber --repo ${process.env.GH_REPO}`
+  await $`zip -r ../../${name}.zip *`.cwd(`dist/${name}/bin`)
+  await $`gh release upload v${Script.version} ./dist/*.zip --clobber --repo ${process.env.GH_REPO}`
 }
 
 export { binaries }

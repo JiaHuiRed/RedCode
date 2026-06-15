@@ -10,6 +10,27 @@
 
 ## TUI
 
+### [0.6.3] - 2026-06-15
+
+> TUI 视觉优化 + 构建简化 — 侧栏分隔线/MCP 错误醒目/底栏紧凑化/品牌修正；build.ts 砍掉跨平台根治 ghostty-web 504；启用内置 LSP。
+
+#### 布局调整
+
+- **侧栏分区分隔线**：MCP / LSP / Todo / Modified Files 每个 section 顶部加淡色 `─` 水平线，视觉层次更清晰（`sidebar/{mcp,lsp,todo,files}.tsx`）
+- **MCP 错误醒目化**：failed / needs_auth / needs_client_registration 条目前缀从 `•` 改 `⚠`，名字和状态文字着 error 红色，一眼可辨（`sidebar/mcp.tsx`）
+- **底栏信息优化**：MCP 改紧凑格式 `⊙ MCP 7/9 ⚠2`（连接/总数+错误数）；末尾加 `^p cmd  ^x +` 快捷键提示；LSP 无连接时隐藏（`session/footer.tsx`）
+- **侧栏品牌修正**：底部 `OpenCode` → `RedCode`（`session/sidebar.tsx`）
+
+#### 配置
+
+- **启用内置 LSP**：`redcode.jsonc` 加 `"lsp": true`，内置 38 种 LSP server 按文件扩展名自动探测启动（TypeScript/Go/Rust/Python 等），侧栏显示连接状态（`redcode.jsonc` + `.opencode/redcode.home.jsonc`）
+
+#### 构建
+
+- **build.ts 简化为 Windows 单平台**：移除 12 个跨平台 target（linux/darwin/musl/baseline）和 `--single`/`--baseline`/`--skip-install` flag，不再需要 `bun install --os="*"` 全平台原生依赖解析——根治 ghostty-web GitHub API 504 导致编译失败的问题（`script/build.ts` + `build.bat`）
+
+---
+
 ### [0.6.2] - 2026-06-15
 
 > 工作流稳定性 + MCP 生态扩展 — 把"搜代码先 MCP""不确定先停下问"从必漂的提示词软约束，下沉到插件 hook 硬层；新接入 MarkItDown/Semgrep/DBHub，修复 jcodemunch Win 编码崩溃。
@@ -28,10 +49,20 @@
 - **敏敏称谓不稳（用"你"不叫"哥哥"）**：根因是人格 few-shot 示例的回答里一个称谓都没有（对照另一人格每条都带），模型照着示例学会了不叫。6 句示例全部补上称谓 + 新增"我的工作习惯"段植入 MCP 优先（`~/.redcode/souls/Tsoul.md`）
 - **jcodemunch Windows GBK stderr 崩溃**：`run_stdio_server()` 往 stderr 打印含 💀 emoji 的 banner，Windows 控制台默认 GBK 编码无法转义，stdio 初始化失败。配置加 `PYTHONIOENCODING=utf-8` 解决（`~/.redcode/redcode.jsonc`）
 - **mcp SDK 版本冲突**：semgrep 1.166.0 依赖 `mcp` SDK ≥1.27.0（新增 `transport_security` 模块），而 markitdown 锁的版本太低。统一将 mcp SDK 升级至 1.27.2（pip install -U mcp）
+- **DeepSeek/MiMo 计费改用官方 CNY 定价**：models.dev USD 值经汇率换算存在精度损失；现 `models-dev.ts` 对已知模型直接注入官方 ¥/M 价格（Flash: input=1/output=2/cache=0.02，Pro: input=3/output=6/cache=0.025），`provider.ts` 同步覆盖。TUI 侧 `sidebar/context.tsx` 按 providerID 判断币种，CNY 直显/USD 按 6.76 换算
 
 #### 清理
 
 - **移除损坏的 gbrain MCP**：gbrain 二进制 bin 元数据损坏（装自已清理的 `Temp/gbrain-clone`）导致长期"老断"，且其核心"存/查记忆"功能被轻量本地的 su-prememory（SQLite+FTS5）完全覆盖。从配置移除，数据目录备份至 `~/.gbrain.bak`，卸载 bun 全局包（`.opencode/redcode.home.jsonc`）
+
+---
+
+### [0.6.1] - 2026-06-14
+
+#### 修复
+ - **粘贴图片被 LLM 拒绝后 vision MCP 找不到文件**：非多模态模型（DeepSeek）提交图片时，`unsupportedParts()` 只替换 base64 data URL 为错误文本，从不落盘。现改为在抛弃前将 base64 解码写入 `%TEMP%/redcode-vision-{timestamp}.{ext}`，并在错误文本追加 `TEMP_FILE:<path>` 供 vision-autoagent 直接读取（`provider/transform.ts`）
+ - **修复数据字段名错误**：`savePartToTemp` 最初读取 `FilePart.url`（始终 undefined），AI SDK v4 FilePart 实际使用 `data` 字段。同时 `ImagePart.image` 可能是 `Buffer`/`Uint8Array`，非纯 base64 字符串，现已原生处理二进制数据。修完后图片正确落盘，`TEMP_FILE:` 路径正常输出（`provider/transform.ts`）
+ - **vision-autoagent SKILL.md 缺少 TEMP_FILE 路径优先检查**：新增第 2 步——从错误消息中提取 `TEMP_FILE:` 路径直接调用 vision MCP，不再盲目按文件名搜索（`~/.redcode/skill/vision-autoagent/SKILL.md`）
 
 ---
 
@@ -52,22 +83,7 @@
 
 - **移除跨会话感知（recentSessionDigest）**：不再每轮往系统提示词注入最近 10 条 session 摘要，省 ~500 token/轮。协作改由聊天室实现（`instruction.ts`）
 
-#### TODO（未完成）
-
-- [ ] **点击 session 查看对话详情**：选中 session 后在右侧渲染该 session 的完整消息气泡
-- [ ] **聊天室 ↔ agent 同步机制**：办公室发消息后 agent 自动接收并执行
-- [ ] **@ 路由**：`@敏敏` / `@小宋` 将消息路由到对应 agent
-- [ ] **在线状态显示**：通过 session 表最后更新时间检测 agent 是否在运行
-- [ ] **UI 对齐小宋主题**：毛玻璃/自定义背景图/头像复用小宋现有设计语言
-
----
-
-### [0.6.1] - 2026-06-14
-
-#### 修复
- - **粘贴图片被 LLM 拒绝后 vision MCP 找不到文件**：非多模态模型（DeepSeek）提交图片时，`unsupportedParts()` 只替换 base64 data URL 为错误文本，从不落盘。现改为在抛弃前将 base64 解码写入 `%TEMP%/redcode-vision-{timestamp}.{ext}`，并在错误文本追加 `TEMP_FILE:<path>` 供 vision-autoagent 直接读取（`provider/transform.ts`）
- - **修复数据字段名错误**：`savePartToTemp` 最初读取 `FilePart.url`（始终 undefined），AI SDK v4 FilePart 实际使用 `data` 字段。同时 `ImagePart.image` 可能是 `Buffer`/`Uint8Array`，非纯 base64 字符串，现已原生处理二进制数据。修完后图片正确落盘，`TEMP_FILE:` 路径正常输出（`provider/transform.ts`）
- - **vision-autoagent SKILL.md 缺少 TEMP_FILE 路径优先检查**：新增第 2 步——从错误消息中提取 `TEMP_FILE:` 路径直接调用 vision MCP，不再盲目按文件名搜索（`~/.redcode/skill/vision-autoagent/SKILL.md`）
+> **Office 后续计划（0.6.3+）**：点击 session 查看对话详情 / 聊天室 ↔ agent 同步机制 / `@敏敏`/`@小宋` 路由 / 在线状态显示 / UI 对齐小宋主题（毛玻璃/背景图/头像）
 
 ---
 
@@ -683,6 +699,22 @@
 
 ## GUI
 
+### [0.6.1] - 2026-06-15
+
+> Plan 面板 + Kanban 看板 + CNY 官方定价 — 侧栏新增 Plan 标签实时追踪 todo 进度，主页新增看板视图按状态分列管理会话，DeepSeek/MiMo 计费改用官方人民币定价不再汇率换算。
+
+#### 新增
+
+- **Plan 面板（侧栏标签页）**：侧栏新增常驻 Plan 标签，展示当前会话完整 todo 计划——进度条 + 百分比 + 进行中/已完成/待处理统计 + 全列表（状态指示器：脉冲圆点=进行中、勾号=已完成、空心圆=待处理），空状态有引导提示（`session-plan-tab.tsx` + `session-side-panel.tsx` + `helpers.ts`）
+- **Kanban 看板（主页视图切换）**：主页搜索栏右侧新增列表/看板切换按钮（`menu`/`grid-plus` 图标），看板三列：工作中（Spinner）/ 需关注（权限/错误/未读）/ 空闲，卡片显示会话标题+项目名+状态指示器（`home-kanban.tsx` + `home.tsx`）
+
+#### 修复
+
+- **DeepSeek/MiMo 计费改用官方 CNY 定价**：之前取 models.dev USD 值 ×7.2 换算，存在汇率过时（实际 6.76）和双重转换精度损失；现在 `models-dev.ts` + `provider.ts` 对已知模型直接注入官方 ¥/M 价格（Flash: input=1/output=2/cache=0.02，Pro: input=3/output=6/cache=0.025），GUI 侧 `session-context-metrics.ts` 按 providerID 判断币种，`session-context-format.ts` CNY 直显/USD 按 6.76 换算
+- **USD→CNY 汇率更新**：`session-context-format.ts` 汇率从 7.2 更正为 6.76（2026-06 实际汇率），TUI 侧 `sidebar/context.tsx` 同步更新
+
+---
+
 ### [0.6.0] - 2026-06-13
 
 > RedCode Office — 虚拟办公室入口，从小宋界面一键进入，统一管理敏敏/小宋的所有 session。
@@ -698,12 +730,7 @@
 - **移除跨会话感知注入**：随 TUI 侧 `recentSessionDigest` 移除，不再每轮注入 ~500 token 的 session 摘要（服务端变更）
 - **包含服务端更新 TUI 0.6.0**：ChatRoom DB schema + Chat HTTP API + recentSessionDigest 移除。详见 TUI 0.6.0
 
-#### TODO（未完成）
-
-- [ ] **点击 session 查看对话详情**：选中 session 后在右侧渲染完整消息气泡
-- [ ] **UI 对齐小宋主题**：毛玻璃/自定义背景图/头像复用现有设计语言
-- [ ] **聊天室 ↔ agent 同步**：办公室发消息后 agent 自动接收并执行
-- [ ] **@ 路由**：`@敏敏` / `@小宋` 消息路由到对应 agent
+> **Office 后续计划（0.6.3+）**：点击 session 查看对话详情 / UI 对齐小宋主题（毛玻璃/背景图/头像）/ 聊天室 ↔ agent 同步 / `@敏敏`/`@小宋` 路由
 
 ---
 
