@@ -59,13 +59,6 @@
       },
       "enabled": true
     },
-    "gbrain": {
-      "type": "local",
-      "command": ["gbrain", "serve"],
-      "description": "Persistent memory brain (PGLite, local)",
-      "enabled": true,
-      "timeout": 120000
-    },
     "su-prememory": {
       "type": "local",
       "command": ["bun", "./plugins/mcp-su-prememory-local/src/index.ts"],
