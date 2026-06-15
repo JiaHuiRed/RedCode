@@ -28,11 +28,16 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
         backgroundColor={theme.backgroundPanel}
         width={42}
         height="100%"
-        paddingTop={1}
-        paddingBottom={1}
-        paddingLeft={2}
-        paddingRight={2}
+        paddingTop={0}
+        paddingBottom={0}
+        paddingLeft={1}
+        paddingRight={1}
         position={props.overlay ? "absolute" : "relative"}
+        border
+        borderStyle="rounded"
+        borderColor={theme.borderSubtle ?? theme.border}
+        bottomTitle={` RedCode ${InstallationVersion} `}
+        bottomTitleAlignment="center"
       >
         <scrollbox
           flexGrow={1}
@@ -85,17 +90,8 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
           </box>
         </scrollbox>
 
-        <box flexShrink={0} gap={1} paddingTop={1}>
-          <TuiPluginRuntime.Slot name="sidebar_footer" mode="single_winner" session_id={props.sessionID}>
-            <text fg={theme.textMuted}>
-              <span style={{ fg: theme.success }}>•</span>{" "}
-              <span style={{ fg: theme.text }}>
-                <b>RedCode</b>
-              </span>{" "}
-              <span>{InstallationVersion}</span>
-            </text>
-          </TuiPluginRuntime.Slot>
-        </box>
+        {/* 260615 Red sidebar_footer slot kept for plugin extensibility */}
+        <TuiPluginRuntime.Slot name="sidebar_footer" mode="single_winner" session_id={props.sessionID} />
       </box>
     </Show>
   )

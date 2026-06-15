@@ -29,22 +29,18 @@ function View(props: { api: TuiPluginApi }) {
 
   return (
     <Show when={list().length > 0}>
-      <box>
-        {/* 260615 Red section separator */}
-        <text fg={theme().borderSubtle ?? theme().textMuted}>{"─".repeat(36)}</text>
+      {/* 260615 Red section with border title */}
+      <box
+        border={["top"]}
+        borderColor={theme().borderSubtle ?? theme().textMuted}
+        title={` MCP ${on()}/${list().length}${bad() > 0 ? ` \u26a0${bad()}` : ""} `}
+        titleAlignment="left"
+        paddingTop={0}
+      >
         <box flexDirection="row" gap={1} onMouseDown={() => list().length > 2 && setOpen((x) => !x)}>
           <Show when={list().length > 2}>
-            <text fg={theme().text}>{open() ? "▼" : "▶"}</text>
+            <text fg={theme().textMuted}>{open() ? "▾" : "▸"}</text>
           </Show>
-          <text fg={theme().text}>
-            <b>MCP</b>
-            <Show when={!open()}>
-              <span style={{ fg: theme().textMuted }}>
-                {" "}
-                {`(${on()} active${bad() > 0 ? `, ${bad()} error${bad() > 1 ? "s" : ""}` : ""})`}
-              </span>
-            </Show>
-          </text>
         </box>
         <Show when={list().length <= 2 || open()}>
           <For each={list()}>

@@ -1,4 +1,4 @@
-﻿import type { TuiPlugin, TuiPluginApi } from "@redcode-ai/plugin/tui"
+import type { TuiPlugin, TuiPluginApi } from "@redcode-ai/plugin/tui"
 import type { InternalTuiPlugin } from "../../plugin/internal"
 import { createMemo, For, Show, createSignal } from "solid-js"
 
@@ -11,16 +11,18 @@ function View(props: { api: TuiPluginApi }) {
   const off = createMemo(() => !props.api.state.config.lsp)
 
   return (
-    <box>
-      {/* 260615 Red section separator */}
-      <text fg={theme().borderSubtle ?? theme().textMuted}>{"─".repeat(36)}</text>
+    // 260615 Red section with border title
+    <box
+      border={["top"]}
+      borderColor={theme().borderSubtle ?? theme().textMuted}
+      title={` LSP ${list().length > 0 ? list().length : off() ? "off" : ""} `}
+      titleAlignment="left"
+      paddingTop={0}
+    >
       <box flexDirection="row" gap={1} onMouseDown={() => list().length > 2 && setOpen((x) => !x)}>
         <Show when={list().length > 2}>
-          <text fg={theme().text}>{open() ? "▼" : "▶"}</text>
+          <text fg={theme().textMuted}>{open() ? "▾" : "▸"}</text>
         </Show>
-        <text fg={theme().text}>
-          <b>LSP</b>
-        </text>
       </box>
       <Show when={list().length <= 2 || open()}>
         <Show when={list().length === 0}>
