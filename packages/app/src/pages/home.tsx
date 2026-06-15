@@ -26,6 +26,7 @@ import { sessionTitle } from "@/utils/session-title"
 import { pathKey } from "@/utils/path-key"
 import { messageAgentColor } from "@/utils/agent"
 import { sessionPermissionRequest } from "@/pages/session/composer/session-request-tree"
+import { HomeKanban } from "@/pages/home-kanban"
 
 const HOME_SESSION_LIMIT = 15
 const HOME_ROW =
@@ -58,7 +59,7 @@ function HomeDesign() {
   const server = useServer()
   const language = useLanguage()
   const globalSDK = useGlobalSDK()
-  const [state, setState] = createStore({ search: "", project: undefined as string | undefined })
+  const [state, setState] = createStore({ search: "", project: undefined as string | undefined, view: "list" as "list" | "kanban" })
   let searchInputRef: HTMLInputElement | undefined
 
   onMount(() => {
@@ -205,57 +206,89 @@ function HomeDesign() {
         class="min-w-0 flex-1 flex flex-col overflow-y-hidden pt-12"
         aria-label={language.t("sidebar.project.recentSessions")}
       >
-        <HomeSessionSearch
-          ref={(el) => (searchInputRef = el)}
-          value={state.search}
-          placeholder={language.t("home.sessions.search.placeholder")}
-          onInput={(value) => setState("search", value)}
-        />
-        <div class="mt-3 overflow-auto flex-1">
-          <div class="pt-3 flex flex-col gap-6">
-            <Show when={!sessionLoad.isLoading} fallback={<HomeSessionSkeleton label={language.t("common.loading")} />}>
-              <Show
-                when={groups().length > 0}
-                fallback={
-                  <div class="flex min-w-0 flex-col items-center gap-4 py-12">
-                    <div class="flex size-12 items-center justify-center rounded-full bg-v2-background-bg-deep">
-                      <IconV2 name="edit" size="large" class="text-v2-text-text-muted" />
-                    </div>
-                    <div class="flex flex-col items-center gap-1 text-center">
-                      <div class="text-14-normal font-medium text-v2-text-text-base">{language.t("home.sessions.empty")}</div>
-                      <div class="text-12-regular text-v2-text-text-muted">{language.t("command.session.new")}</div>
-                    </div>
-                    <ButtonV2
-                      data-action="home-new-session-empty"
-                      variant="contrast"
-                      size="normal"
-                      icon="edit"
-                      class="mt-2"
-                      onClick={openNewSession}
-                    >
-                      {language.t("command.session.new")}
-                    </ButtonV2>
-                  </div>
-                }
-              >
-                <For each={groups()}>
-                  {(group, index) => (
-                    <div class="flex min-w-0 flex-col gap-4">
-                      <HomeSessionGroupHeader
-                        title={group.title}
-                        onNewSession={index() === 0 ? openNewSession : undefined}
-                      />
-                      <div class="flex min-w-0 flex-col gap-px">
-                        <For each={group.sessions}>
-                          {(record) => <HomeSessionRow record={record} openSession={openSession} />}
-                        </For>
-                      </div>
-                    </div>
-                  )}
-                </For>
-              </Show>
-            </Show>
+        {/* 260615 Red 搜索栏 + 列表/看板视图切换 */}
+        <div class="flex items-center gap-2 pr-2">
+          <HomeSessionSearch
+            ref={(el) => (searchInputRef = el)}
+            value={state.search}
+            placeholder={language.t("home.sessions.search.placeholder")}
+            onInput={(value) => setState("search", value)}
+          />
+          <div class="flex shrink-0 gap-0.5 rounded-[6px] bg-v2-background-bg-deep p-0.5">
+            <IconButtonV2
+              data-action="home-view-list"
+              variant={state.view === "list" ? "contrast" : "ghost-muted"}
+              size="large"
+              icon={<IconV2 name="menu" size="small" />}
+              onClick={() => setState("view", "list")}
+              aria-label={language.t("home.view.list")}
+              aria-pressed={state.view === "list"}
+              class="size-7"
+            />
+            <IconButtonV2
+              data-action="home-view-kanban"
+              variant={state.view === "kanban" ? "contrast" : "ghost-muted"}
+              size="large"
+              icon={<IconV2 name="grid-plus" size="small" />}
+              onClick={() => setState("view", "kanban")}
+              aria-label={language.t("home.view.kanban")}
+              aria-pressed={state.view === "kanban"}
+              class="size-7"
+            />
           </div>
+        </div>
+        <div class="mt-3 overflow-auto flex-1">
+          <Show when={!sessionLoad.isLoading} fallback={<HomeSessionSkeleton label={language.t("common.loading")} />}>
+            <Show
+              when={records().length > 0}
+              fallback={
+                <div class="flex min-w-0 flex-col items-center gap-4 py-12">
+                  <div class="flex size-12 items-center justify-center rounded-full bg-v2-background-bg-deep">
+                    <IconV2 name="edit" size="large" class="text-v2-text-text-muted" />
+                  </div>
+                  <div class="flex flex-col items-center gap-1 text-center">
+                    <div class="text-14-normal font-medium text-v2-text-text-base">{language.t("home.sessions.empty")}</div>
+                    <div class="text-12-regular text-v2-text-text-muted">{language.t("command.session.new")}</div>
+                  </div>
+                  <ButtonV2
+                    data-action="home-new-session-empty"
+                    variant="contrast"
+                    size="normal"
+                    icon="edit"
+                    class="mt-2"
+                    onClick={openNewSession}
+                  >
+                    {language.t("command.session.new")}
+                  </ButtonV2>
+                </div>
+              }
+            >
+              <Switch>
+                <Match when={state.view === "kanban"}>
+                  <HomeKanban records={records()} openSession={openSession} />
+                </Match>
+                <Match when={state.view === "list"}>
+                  <div class="pt-3 flex flex-col gap-6">
+                    <For each={groups()}>
+                      {(group, index) => (
+                        <div class="flex min-w-0 flex-col gap-4">
+                          <HomeSessionGroupHeader
+                            title={group.title}
+                            onNewSession={index() === 0 ? openNewSession : undefined}
+                          />
+                          <div class="flex min-w-0 flex-col gap-px">
+                            <For each={group.sessions}>
+                              {(record) => <HomeSessionRow record={record} openSession={openSession} />}
+                            </For>
+                          </div>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Match>
+              </Switch>
+            </Show>
+          </Show>
         </div>
       </section>
     </div>

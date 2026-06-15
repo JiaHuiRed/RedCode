@@ -32,7 +32,8 @@ export const createSessionTabs = (input: TabsInput) => {
         .all()
         .flatMap((tab) => {
           // 260610 Red status 与 context/review 同属特殊标签，不当文件标签渲染
-          if (tab === "context" || tab === "review" || tab === "status") return []
+          // 260615 Red plan 同属特殊标签
+          if (tab === "context" || tab === "review" || tab === "status" || tab === "plan") return []
           const value = input.pathFromTab(tab) ? input.normalizeTab(tab) : tab
           if (seen.has(value)) return []
           seen.add(value)
@@ -46,6 +47,7 @@ export const createSessionTabs = (input: TabsInput) => {
     const active = input.tabs().active()
     if (active === "context") return active
     if (active === "status") return active // 260610 Red 服务器/MCP/LSP/插件状态标签
+    if (active === "plan") return active // 260615 Red Plan 面板
     if (active === "review" && review()) return active
     if (active && input.pathFromTab(active)) return input.normalizeTab(active)
 

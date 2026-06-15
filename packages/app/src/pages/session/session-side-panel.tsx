@@ -10,7 +10,7 @@ import type { DragEvent } from "@thisbeyond/solid-dnd"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { SessionContextUsage } from "@/components/session-context-usage"
-import { SessionContextTab, SortableTab, FileVisual } from "@/components/session"
+import { SessionContextTab, SessionPlanTab, SortableTab, FileVisual } from "@/components/session"
 import { StatusPopoverBody } from "@/components/status-popover-body"
 import { useCommand } from "@/context/command"
 import { useFile, type SelectedLineRange } from "@/context/file"
@@ -208,6 +208,12 @@ export function SessionSidePanel(props: {
                             <div>{language.t("session.tab.status")}</div>
                           </div>
                         </Tabs.Trigger>
+                        {/* 260615 Red Plan 标签：展示当前会话 todo 计划进度 */}
+                        <Tabs.Trigger value="plan">
+                          <div class="flex items-center gap-1.5">
+                            <div>{language.t("session.tab.plan")}</div>
+                          </div>
+                        </Tabs.Trigger>
                         <SortableProvider ids={openedTabs()}>
                           <For each={openedTabs()}>{(tab) => <SortableTab tab={tab} onTabClose={tabs().close} />}</For>
                         </SortableProvider>
@@ -268,6 +274,15 @@ export function SessionSidePanel(props: {
                       <Show when={activeTab() === "status"}>
                         <div class="relative pt-2 flex-1 min-h-0 overflow-auto px-2">
                           <StatusPopoverBody shown={() => true} fill />
+                        </div>
+                      </Show>
+                    </Tabs.Content>
+
+                    {/* 260615 Red Plan 标签页内容 */}
+                    <Tabs.Content value="plan" class="flex flex-col h-full overflow-hidden contain-strict">
+                      <Show when={activeTab() === "plan"}>
+                        <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
+                          <SessionPlanTab />
                         </div>
                       </Show>
                     </Tabs.Content>
