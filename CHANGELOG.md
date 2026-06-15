@@ -10,6 +10,17 @@
 
 ## TUI
 
+### [0.6.5] - 2026-06-15
+
+> Office 多 agent 群聊后端 — 用户在群聊发消息，服务端自动派 TUI + GUI 两个 agent 顺序回复，打通跨 persona 协作。
+
+#### 新增
+
+- **Office 群聊多 agent 编排**：群聊 `office` 房间收到用户消息后，后台 fork 异步派发——TUI(敏敏) 先响应、GUI(小宋) 看到 TUI 回复后再响应，两条回复回写 chat room。各持独立持久化 session（`Office Group — TUI`/`GUI`）维持各自上下文，每 agent 注入专属 persona 系统提示词（TUI=后端/架构、GUI=前端/UI）（`server/routes/instance/httpapi/handlers/chat.ts`）。
+- **主 agent 群聊感知**：主 agent（非子代理）系统提示词注入 office 群聊最近 10 条消息，知晓协作指令与对方进度，子代理不注入省 token（`session/prompt.ts`）。
+
+---
+
 ### [0.6.4] - 2026-06-15
 
 > MCP 生态扩充 — 进程管理 + SQLite 查询两个本地插件，配套工具优先级引导。
@@ -715,6 +726,20 @@
 ---
 
 ## GUI
+
+### [0.6.2] - 2026-06-15
+
+> Office 群聊界面 — Group 联系人变身真实群聊（消息气泡 + 输入框 + 发送），可在办公室直接协调敏敏和小宋一起干活。
+
+#### 新增
+
+- **Office Group 群聊 UI**：点 Group 联系人从「会话列表」变为真实群聊界面——消息气泡按 sender 区分（User 右对齐紫蓝、TUI/GUI 左对齐+头像）、底部输入框（Enter 发送/Shift+Enter 换行）、3 秒轮询刷新、自动滚底、agent 处理中显示「TUI & GUI are thinking...」指示器（`pages/chat/index.tsx`）
+
+#### 修复
+
+- **会话列表跨目录可见**：`fetchSessions` 改用 `scope=global` 可见 TUI+GUI 全部目录的会话；`isTuiSession` 判断从脆弱的 `includes("dist")` 改为路径匹配（`/dist`、`redcode`、`/opencode`，归一化斜杠+小写）（`pages/chat/index.tsx`）
+
+---
 
 ### [0.6.1] - 2026-06-15
 
