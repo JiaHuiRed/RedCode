@@ -57,6 +57,7 @@ import { AgentAttachment, FileAttachment, ReferenceAttachment, Source } from "@r
 import { Reference } from "@/reference/reference"
 import * as DateTime from "effect/DateTime"
 import { eq } from "@/storage/db"
+import { Chat } from "@/chat"
 import * as Database from "@/storage/db"
 import { SessionTable } from "./session.sql"
 import { referencePromptMetadata, referenceTextPart } from "./prompt/reference"
@@ -66,6 +67,29 @@ import { LLMEvent } from "@redcode-ai/llm"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
+
+// 260615 Red inject recent office group chat messages into primary agent context
+function groupChatContext(): string | undefined {
+  try {
+    const messages = Chat.getMessages("office", { limit: 10 })
+    if (!messages || messages.length === 0) return undefined
+    const lines = messages.reverse().map((m) => {
+      const time = new Date(m.time_created).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      const sender = m.sender === "user" ? "User" : m.sender === "tui" ? "TUI(敏敏)" : "GUI(小宋)"
+      return `[${time}] ${sender}: ${m.text ?? ""}`
+    })
+    return [
+      "<office-group-chat>",
+      "Recent messages from the Office group chat (shared coordination channel between User, TUI agent, and GUI agent).",
+      "Be aware of these messages — they may contain coordination instructions from the user or status updates from the other agent.",
+      "",
+      ...lines,
+      "</office-group-chat>",
+    ].join("\n")
+  } catch {
+    return undefined
+  }
+}
 
 const decodeMessageInfo = Schema.decodeUnknownExit(MessageV2.Info)
 const decodeMessagePart = Schema.decodeUnknownExit(MessageV2.Part)
@@ -1442,6 +1466,11 @@ export const layer = Layer.effect(
               MessageV2.toModelMessagesEffect(msgs, model),
             ])
             const system = [...env, ...instructions, ...(skills ? [skills] : [])]
+            // 260615 Red inject group chat context for primary agents only
+            if (!session.parentID) {
+              const chatCtx = groupChatContext()
+              if (chatCtx) system.push(chatCtx)
+            }
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
             const result = yield* handle.process({

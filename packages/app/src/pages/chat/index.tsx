@@ -1,5 +1,6 @@
 // 260613 Red chat room — "office" UI shell
-import { createSignal, createResource, For, Show } from "solid-js"
+// 260615 Red group chat messaging UI
+import { createSignal, createResource, createEffect, For, Show, on, onCleanup } from "solid-js"
 import { useServer } from "@/context/server"
 
 type ContactId = "tui" | "gui" | "group"
@@ -12,11 +13,10 @@ interface Contact {
   color: string
 }
 
-// TODO: 动态从 ~/.redcode/souls/{T,G}soul.md 标题读取名字（需 preload API）
 const contacts: Contact[] = [
-  { id: "tui", name: "TUI", subtitle: "Terminal Agent", avatar: "🐱", color: "#6ec6ff" },
-  { id: "gui", name: "GUI", subtitle: "Desktop Agent", avatar: "🐹", color: "#ff8a80" },
-  { id: "group", name: "Group", subtitle: "User + TUI + GUI", avatar: "🏠", color: "#b39ddb" },
+  { id: "tui", name: "TUI", subtitle: "Terminal Agent", avatar: "\u{1F431}", color: "#6ec6ff" },
+  { id: "gui", name: "GUI", subtitle: "Desktop Agent", avatar: "\u{1F439}", color: "#ff8a80" },
+  { id: "group", name: "Group", subtitle: "User + TUI + GUI", avatar: "\u{1F3E0}", color: "#b39ddb" },
 ]
 
 interface SessionItem {
@@ -28,29 +28,221 @@ interface SessionItem {
   directory: string
 }
 
-async function fetchSessions(serverUrl: string, auth?: { username: string; password: string }): Promise<SessionItem[]> {
-  if (!serverUrl) return []
+// 260615 Red group chat message from DB
+interface ChatMessage {
+  id: string
+  room_id: string
+  sender: "user" | "tui" | "gui"
+  text: string | null
+  content_type: string
+  session_id: string | null
+  time_created: number
+}
+
+function makeHeaders(http?: { url: string; username?: string; password?: string }) {
   const headers: Record<string, string> = { "Content-Type": "application/json" }
-  if (auth) {
-    headers["Authorization"] = "Basic " + btoa(`${auth.username}:${auth.password}`)
+  if (http?.username && http?.password) {
+    headers["Authorization"] = "Basic " + btoa(`${http.username}:${http.password}`)
   }
-  const res = await fetch(`${serverUrl}/session`, { headers })
+  return headers
+}
+
+async function fetchSessions(http: { url: string; username?: string; password?: string }): Promise<SessionItem[]> {
+  if (!http.url) return []
+  // 260615 Red scope=global to see sessions from all directories (TUI + GUI)
+  const res = await fetch(`${http.url}/session?scope=global`, { headers: makeHeaders(http) })
   if (!res.ok) return []
   const data = await res.json()
   return (data ?? []) as SessionItem[]
 }
 
-// 260613 Red dist = TUI (敏敏从 dist/ 启动), 非 dist = GUI
+// 260615 Red fetch group chat messages
+async function fetchGroupMessages(http: { url: string; username?: string; password?: string }): Promise<ChatMessage[]> {
+  const roomId = "office"
+  // 260615 Red ensure room exists first
+  await fetch(`${http.url}/chat/room/${roomId}`, {
+    method: "POST",
+    headers: makeHeaders(http),
+    body: JSON.stringify({ type: "group" }),
+  })
+  const res = await fetch(`${http.url}/chat/room/${roomId}/message?limit=100`, {
+    headers: makeHeaders(http),
+  })
+  if (!res.ok) return []
+  const data = await res.json()
+  return ((data ?? []) as ChatMessage[]).reverse()
+}
+
+// 260615 Red send message to group chat
+async function sendGroupMessage(http: { url: string; username?: string; password?: string }, text: string) {
+  const roomId = "office"
+  const res = await fetch(`${http.url}/chat/room/${roomId}/message`, {
+    method: "POST",
+    headers: makeHeaders(http),
+    body: JSON.stringify({ roomId, sender: "user", text }),
+  })
+  return res.ok
+}
+
+// 260615 Red TUI runs from compiled binary (dist/) or as redcode.exe
 function isTuiSession(s: SessionItem) {
-  return s.directory?.includes("dist")
+  if (!s.directory) return false
+  const d = s.directory.replace(/\\/g, "/").toLowerCase()
+  return d.includes("/dist") || d.includes("redcode") || d.endsWith("/opencode")
 }
 
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts
-  if (diff < 60_000) return "刚刚"
-  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}分钟前`
-  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}小时前`
-  return `${Math.floor(diff / 86400_000)}天前`
+  if (diff < 60_000) return "\u{521A}\u{521A}"
+  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}\u{5206}\u{949F}\u{524D}`
+  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}\u{5C0F}\u{65F6}\u{524D}`
+  return `${Math.floor(diff / 86400_000)}\u{5929}\u{524D}`
+}
+
+const senderMeta: Record<string, { avatar: string; name: string; color: string }> = {
+  user: { avatar: "\u{1F464}", name: "You", color: "#a5d6a7" },
+  tui: { avatar: "\u{1F431}", name: "TUI", color: "#6ec6ff" },
+  gui: { avatar: "\u{1F439}", name: "GUI", color: "#ff8a80" },
+}
+
+// 260615 Red Group chat view component
+function GroupChatView(props: { http: { url: string; username?: string; password?: string } }) {
+  const [input, setInput] = createSignal("")
+  const [sending, setSending] = createSignal(false)
+  const [pollTick, setPollTick] = createSignal(0)
+  let messagesEnd: HTMLDivElement | undefined
+  let inputRef: HTMLTextAreaElement | undefined
+
+  const [messages, { refetch }] = createResource(
+    () => [props.http, pollTick()] as const,
+    () => fetchGroupMessages(props.http),
+  )
+
+  // 260615 Red auto-poll every 3s
+  const timer = setInterval(() => setPollTick((n) => n + 1), 3000)
+  onCleanup(() => clearInterval(timer))
+
+  // 260615 Red auto-scroll to bottom on new messages
+  createEffect(
+    on(
+      () => messages(),
+      () => {
+        setTimeout(() => messagesEnd?.scrollIntoView({ behavior: "smooth" }), 50)
+      },
+    ),
+  )
+
+  async function handleSend() {
+    const text = input().trim()
+    if (!text || sending()) return
+    setSending(true)
+    const ok = await sendGroupMessage(props.http, text)
+    setSending(false)
+    if (ok) {
+      setInput("")
+      refetch()
+      inputRef?.focus()
+    }
+  }
+
+  function handleKeyDown(e: KeyboardEvent) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  }
+
+  return (
+    <>
+      <div style={styles.chatBody}>
+        <Show when={!messages.loading || (messages() && messages()!.length > 0)} fallback={<div style={styles.placeholder}>Loading...</div>}>
+          <Show when={(messages() ?? []).length > 0} fallback={<div style={styles.placeholder}>Group chat is empty. Send a message to start coordinating!</div>}>
+            <For each={messages()}>
+              {(msg) => {
+                const meta = () => senderMeta[msg.sender] ?? senderMeta.user
+                const isUser = () => msg.sender === "user"
+                return (
+                  <div
+                    style={{
+                      display: "flex",
+                      "flex-direction": isUser() ? "row-reverse" : "row",
+                      "align-items": "flex-start",
+                      gap: "8px",
+                      padding: "6px 12px",
+                      "margin-bottom": "2px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "30px",
+                        height: "30px",
+                        "border-radius": "50%",
+                        "background-color": meta().color + "33",
+                        border: `2px solid ${meta().color}`,
+                        display: "flex",
+                        "align-items": "center",
+                        "justify-content": "center",
+                        "font-size": "14px",
+                        "flex-shrink": "0",
+                      }}
+                    >
+                      {meta().avatar}
+                    </div>
+                    <div style={{ "max-width": "70%", "min-width": "0" }}>
+                      <div
+                        style={{
+                          "font-size": "11px",
+                          opacity: "0.5",
+                          "margin-bottom": "2px",
+                          "text-align": isUser() ? "right" : "left",
+                        }}
+                      >
+                        {meta().name}
+                        <span style={{ "margin-left": "6px" }}>
+                          {new Date(msg.time_created).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          "background-color": isUser() ? "rgba(100, 100, 200, 0.25)" : "rgba(255, 255, 255, 0.08)",
+                          padding: "8px 12px",
+                          "border-radius": isUser() ? "14px 4px 14px 14px" : "4px 14px 14px 14px",
+                          "font-size": "13px",
+                          "line-height": "1.5",
+                          "white-space": "pre-wrap",
+                          "word-break": "break-word",
+                        }}
+                      >
+                        {msg.text ?? ""}
+                      </div>
+                    </div>
+                  </div>
+                )
+              }}
+            </For>
+          </Show>
+        </Show>
+        <div ref={messagesEnd} />
+      </div>
+
+      {/* 260615 Red input bar */}
+      <div style={styles.inputBar}>
+        <textarea
+          ref={inputRef}
+          value={input()}
+          onInput={(e) => setInput(e.currentTarget.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Type a message... (Enter to send, Shift+Enter for newline)"
+          rows={1}
+          style={styles.inputField}
+          disabled={sending()}
+        />
+        <button style={styles.sendBtn} onClick={handleSend} disabled={sending() || !input().trim()}>
+          {sending() ? "..." : "Send"}
+        </button>
+      </div>
+    </>
+  )
 }
 
 export default function ChatRoom() {
@@ -61,8 +253,8 @@ export default function ChatRoom() {
     return c && "http" in c ? c.http : undefined
   }
   const [sessions] = createResource(
-    () => http()?.url,
-    (url) => fetchSessions(url, http()?.username && http()?.password ? { username: http()!.username!, password: http()!.password! } : undefined),
+    () => http(),
+    (h) => fetchSessions(h),
   )
 
   const filteredSessions = () => {
@@ -70,9 +262,11 @@ export default function ChatRoom() {
     const id = active()
     if (id === "tui") return all.filter((s) => isTuiSession(s))
     if (id === "gui") return all.filter((s) => !isTuiSession(s))
-    if (id === "group") return all // group shows all
     return []
   }
+
+  // 260615 Red determine if showing group chat vs session list
+  const isGroup = () => active() === "group"
 
   return (
     <div style={styles.container}>
@@ -116,9 +310,9 @@ export default function ChatRoom() {
             when={active()}
             fallback={
               <div style={styles.empty}>
-                <div style={styles.emptyIcon}>🏢</div>
+                <div style={styles.emptyIcon}>{"\u{1F3E2}"}</div>
                 <div style={styles.emptyText}>RedCode Office</div>
-                <div style={styles.emptyHint}>点击左侧头像开始对话</div>
+                <div style={styles.emptyHint}>{"\u{70B9}\u{51FB}\u{5DE6}\u{4FA7}\u{5934}\u{50CF}\u{5F00}\u{59CB}\u{5BF9}\u{8BDD}"}</div>
               </div>
             }
           >
@@ -138,42 +332,51 @@ export default function ChatRoom() {
                     </div>
                     <span style={styles.chatTitle}>{contact().name}</span>
                     <span style={styles.chatSubtitle}>{contact().subtitle}</span>
-                    <div style={{ "margin-left": "auto" }}>
-                      <button
-                        style={styles.newBtn}
-                        onClick={() => {/* TODO: create new session */}}
-                      >
-                        + 新对话
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Session list */}
-                  <div style={styles.chatBody}>
-                    <Show when={!sessions.loading} fallback={<div style={styles.placeholder}>加载中...</div>}>
-                      <Show
-                        when={filteredSessions().length > 0}
-                        fallback={<div style={styles.placeholder}>暂无对话</div>}
-                      >
-                        <For each={filteredSessions()}>
-                          {(session) => (
-                            <div
-                              style={styles.sessionItem}
-                              onClick={() => {/* TODO: open session chat view */}}
-                            >
-                              <div style={styles.sessionTitle}>
-                                {session.title || "未命名对话"}
-                              </div>
-                              <div style={styles.sessionMeta}>
-                                <span>{session.model?.id?.split("/").pop() ?? ""}</span>
-                                <span>{timeAgo(session.time?.updated || session.time?.created || 0)}</span>
-                              </div>
-                            </div>
-                          )}
-                        </For>
-                      </Show>
+                    <Show when={!isGroup()}>
+                      <div style={{ "margin-left": "auto" }}>
+                        <button
+                          style={styles.newBtn}
+                          onClick={() => {/* TODO: create new session */}}
+                        >
+                          + {"\u{65B0}\u{5BF9}\u{8BDD}"}
+                        </button>
+                      </div>
                     </Show>
                   </div>
+
+                  {/* 260615 Red group = chat view, others = session list */}
+                  <Show
+                    when={isGroup() && http()}
+                    fallback={
+                      <div style={styles.chatBody}>
+                        <Show when={!sessions.loading} fallback={<div style={styles.placeholder}>{"\u{52A0}\u{8F7D}\u{4E2D}"}...</div>}>
+                          <Show
+                            when={filteredSessions().length > 0}
+                            fallback={<div style={styles.placeholder}>{"\u{6682}\u{65E0}\u{5BF9}\u{8BDD}"}</div>}
+                          >
+                            <For each={filteredSessions()}>
+                              {(session) => (
+                                <div
+                                  style={styles.sessionItem}
+                                  onClick={() => {/* TODO: open session chat view */}}
+                                >
+                                  <div style={styles.sessionTitle}>
+                                    {session.title || "\u{672A}\u{547D}\u{540D}\u{5BF9}\u{8BDD}"}
+                                  </div>
+                                  <div style={styles.sessionMeta}>
+                                    <span>{session.model?.id?.split("/").pop() ?? ""}</span>
+                                    <span>{timeAgo(session.time?.updated || session.time?.created || 0)}</span>
+                                  </div>
+                                </div>
+                              )}
+                            </For>
+                          </Show>
+                        </Show>
+                      </div>
+                    }
+                  >
+                    <GroupChatView http={http()!} />
+                  </Show>
                 </div>
               )
             }}
@@ -372,5 +575,41 @@ const styles = {
     "justify-content": "space-between",
     "font-size": "11px",
     opacity: "0.45",
+  } as const,
+  // 260615 Red group chat input styles
+  inputBar: {
+    display: "flex",
+    "align-items": "flex-end",
+    gap: "8px",
+    padding: "10px 12px",
+    "border-top": "1px solid var(--color-border, #2a2a4a)",
+    "background-color": "var(--color-surface, #16213e)",
+    "flex-shrink": "0",
+  } as const,
+  inputField: {
+    flex: "1",
+    background: "rgba(255, 255, 255, 0.06)",
+    border: "1px solid rgba(255, 255, 255, 0.12)",
+    "border-radius": "10px",
+    color: "inherit",
+    padding: "8px 12px",
+    "font-size": "13px",
+    "font-family": "inherit",
+    resize: "none",
+    "min-height": "20px",
+    "max-height": "120px",
+    outline: "none",
+  } as const,
+  sendBtn: {
+    background: "rgba(100, 100, 200, 0.4)",
+    border: "1px solid rgba(100, 100, 200, 0.6)",
+    color: "inherit",
+    padding: "8px 16px",
+    "border-radius": "10px",
+    cursor: "pointer",
+    "font-size": "13px",
+    "font-weight": "600",
+    "flex-shrink": "0",
+    transition: "opacity 0.15s",
   } as const,
 } as const
