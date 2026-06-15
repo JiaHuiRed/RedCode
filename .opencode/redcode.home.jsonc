@@ -47,7 +47,7 @@
     // 260615 Semgrep — 代码安全扫描 (本地模式, 无需 token)
     "semgrep": {
       "type": "local",
-      "command": ["semgrep-mcp"],
+      "command": ["semgrep", "mcp"],
       "enabled": true
     },
     "browsermcp": {
