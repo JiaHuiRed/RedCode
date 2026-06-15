@@ -44,11 +44,11 @@
       "command": ["markitdown-mcp"],
       "enabled": true
     },
-    // 260615 Semgrep — 代码安全扫描 (本地模式, 无需 token)
+    // 260615 Semgrep — 代码安全扫描 (需要连接 semgrep.dev, 当前网络环境连不上)
     "semgrep": {
       "type": "local",
       "command": ["semgrep", "mcp"],
-      "enabled": true
+      "enabled": false
     },
     "browsermcp": {
       "type": "local",
@@ -79,10 +79,26 @@
       "description": "Local semantic memory — SQLite+FTS5, no cloud",
       "enabled": true
     },
-"fff": {
+    "mcp-process-mgmt": {
+      "type": "local",
+      "command": ["bun", "./plugins/mcp-process-mgmt/src/index.ts"],
+      "cwd": "$REDCODE_ROOT",
+      "description": "管理交互式/长驻 shell 会话（REPL、dev server、需 stdin 的进程）：start_process 起会话、send_input 写 stdin、read_process_output 读输出、stop_process 终止。一次性命令仍用 bash。",
+      "enabled": true
+    },
+    "fff": {
       "type": "local",
       "command": ["fff-mcp"],
       "description": "High-performance file finder & grep (fff_find_files, fff_grep, fff_multi_grep)",
+      "enabled": true
+    },
+    // 260615 sqlite-query — query SQLite databases via native node:sqlite
+    "sqlite-query": {
+      "type": "local",
+      "command": ["bun", "./plugins/mcp-sqlite-query/src/index.ts"],
+      "cwd": "$REDCODE_ROOT",
+      "description": "查 SQLite 库优先用本工具而非 bash sqlite3——结构化返回、免 shell 转义。sqlite_query 执行 SQL、sqlite_schema 看表结构。",
+      "timeout": 30000,
       "enabled": true
     },
   },

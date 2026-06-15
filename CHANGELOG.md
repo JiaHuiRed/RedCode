@@ -10,6 +10,21 @@
 
 ## TUI
 
+### [0.6.4] - 2026-06-15
+
+> MCP 生态扩充 — 进程管理 + SQLite 查询两个本地插件，配套工具优先级引导。
+
+#### 新增
+
+- **`mcp-process-mgmt` MCP 服务器**：从 DesktopCommanderMCP 提取进程管理核心，精简为独立 MCP 插件（`plugins/mcp-process-mgmt/`）。提供 6 个工具：`start_process`（启动 shell 或执行命令）、`send_input`（写入 stdin）、`read_process_output`（分页读取输出）、`wait_for_prompt`（等待 REPL 提示符）、`list_processes`（列出活跃 session）、`stop_process`（强制终止）。依赖从 25+ 个减至 2 个（`@modelcontextprotocol/sdk` + `zod`），适配 Windows `cmd.exe`。
+- **`mcp-sqlite-query` MCP 服务器**：基于原生 `node:sqlite` 的轻量查询插件（`plugins/mcp-sqlite-query/`），提供 `sqlite_query`（执行 SQL）、`sqlite_schema`（查表结构）两个工具，结构化返回、免 shell 转义。
+
+#### 优化
+
+- **MCP 工具优先级引导**：`mcp-gate.js` 提醒文案补充 `get_call_hierarchy`（调用链）、`get_blast_radius`（改动影响面）、`get_symbol_source`（取定义源码）三个 grep 物理做不到的能力，引导改代码前先摸清依赖；新增两个 MCP 的 `description` 标注使用时机（sqlite 优先于 `bash sqlite3`、process-mgmt 仅管交互/长驻进程），让模型按场景自选（`.opencode/redcode.home.jsonc`）。
+
+---
+
 ### [0.6.3] - 2026-06-15
 
 > TUI 视觉优化 + 构建简化 — 侧栏分隔线/MCP 错误醒目/底栏紧凑化/品牌修正；build.ts 砍掉跨平台根治 ghostty-web 504；启用内置 LSP。
