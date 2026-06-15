@@ -5,8 +5,9 @@ import { createMemo, Show } from "solid-js"
 
 const id = "internal:sidebar-context"
 
-// 260613 Red costs are in USD; convert to CNY for display
-const USD_TO_CNY = 7.2
+// 260615 Red: DeepSeek/Xiaomi costs are already in CNY (official pricing), only USD providers need conversion
+const USD_TO_CNY = 6.76
+const CNY_PROVIDERS = new Set(["deepseek", "xiaomi"])
 
 const money = new Intl.NumberFormat("zh-CN", {
   style: "currency",
@@ -58,6 +59,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         percent: null,
         model: null as string | null,
         provider: null as string | null,
+        providerID: null as string | null,
         messageCount: msg().length,
         sessionTotal: 0,
       }
@@ -99,6 +101,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       percent: modelInfo?.limit.context ? Math.round((tokens / modelInfo.limit.context) * 100) : null,
       model: modelName,
       provider: prov?.name ?? last.providerID,
+      providerID: last.providerID,
       messageCount: msg().length,
       sessionTotal,
     }
@@ -154,7 +157,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         </text>
       </Show>
       <text fg={theme()?.textMuted}>
-        <span style={{ fg: tokenColor.cost }}>{money.format(cost() * USD_TO_CNY)}</span> · {`${state().messageCount} msgs`}
+        <span style={{ fg: tokenColor.cost }}>{money.format(CNY_PROVIDERS.has(state().providerID ?? "") ? cost() : cost() * USD_TO_CNY)}</span> · {`${state().messageCount} msgs`}
       </text>
       <Show when={agent()}>
         <text fg={theme()?.textMuted}>

@@ -901,6 +901,8 @@ const ProviderCost = Schema.Struct({
   input: Schema.Finite,
   output: Schema.Finite,
   cache: ProviderCacheCost,
+  // 260615 Red: "CNY" = official RMB pricing (DeepSeek/Xiaomi), skip USD→CNY conversion in display
+  currency: optionalOmitUndefined(Schema.Literals(["USD", "CNY"])),
   tiers: optionalOmitUndefined(Schema.Array(ProviderCostTier)),
   experimentalOver200K: optionalOmitUndefined(
     Schema.Struct({
@@ -1283,6 +1285,24 @@ export const layer = Layer.effect(
           })
         }
 
+        // 260615 Red: Official CNY pricing for Chinese providers (¥ per million tokens).
+        // DeepSeek: https://api-docs.deepseek.com/zh-cn/quick_start/pricing
+        // Xiaomi MiMo: https://mimo.mi.com/docs/zh-CN/price/pay-as-you-go
+        const CNY_COST_FLASH = { input: 1, output: 2, cache: { read: 0.02, write: 1 } }
+        const CNY_COST_PRO = { input: 3, output: 6, cache: { read: 0.025, write: 3 } }
+        const CNY_PRICING: Record<string, Record<string, typeof CNY_COST_FLASH>> = {
+          deepseek: {
+            "deepseek-v4-flash": CNY_COST_FLASH,
+            "deepseek-v4-pro": CNY_COST_PRO,
+          },
+          xiaomi: {
+            "mimo-v2.5": CNY_COST_FLASH,
+            "mimo-v2.5-pro": CNY_COST_PRO,
+            "mimo-v2-omni": CNY_COST_FLASH,
+            "mimo-v2-pro": CNY_COST_PRO,
+          },
+        }
+
         // extend database from config
         for (const [providerID, provider] of configProviders) {
           const existing = database[providerID]
@@ -1348,14 +1368,22 @@ export const layer = Layer.effect(
                     ? { field: "reasoning_content" }
                     : false),
               },
-              cost: {
-                input: model?.cost?.input ?? existingModel?.cost?.input ?? 0,
-                output: model?.cost?.output ?? existingModel?.cost?.output ?? 0,
-                cache: {
-                  read: model?.cost?.cache_read ?? existingModel?.cost?.cache.read ?? 0,
-                  write: model?.cost?.cache_write ?? existingModel?.cost?.cache.write ?? 0,
-                },
-              },
+              cost: iife(() => {
+                // 260615 Red: DeepSeek/Xiaomi use official CNY pricing (¥/M tokens)
+                // instead of models.dev USD values that lose precision through double conversion.
+                // Pricing source: https://api-docs.deepseek.com/zh-cn/quick_start/pricing
+                //                 https://mimo.mi.com/docs/zh-CN/price/pay-as-you-go
+                const cnyCost = CNY_PRICING[providerID]?.[modelID] ?? CNY_PRICING[providerID]?.[apiID]
+                if (cnyCost) return { ...cnyCost, currency: "CNY" as const }
+                return {
+                  input: model?.cost?.input ?? existingModel?.cost?.input ?? 0,
+                  output: model?.cost?.output ?? existingModel?.cost?.output ?? 0,
+                  cache: {
+                    read: model?.cost?.cache_read ?? existingModel?.cost?.cache.read ?? 0,
+                    write: model?.cost?.cache_write ?? existingModel?.cost?.cache.write ?? 0,
+                  },
+                }
+              }),
               options: mergeDeep(existingModel?.options ?? {}, model.options ?? {}),
               limit: {
                 context: model.limit?.context ?? existingModel?.limit?.context ?? 0,

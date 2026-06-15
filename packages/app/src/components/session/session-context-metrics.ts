@@ -32,6 +32,8 @@ type Context = {
 
 type Metrics = {
   totalCost: number
+  // 260615 Red: "CNY" when session uses DeepSeek/Xiaomi (official RMB pricing), "USD" otherwise
+  costCurrency: "USD" | "CNY"
   context: Context | undefined
 }
 
@@ -48,10 +50,13 @@ const lastAssistantWithTokens = (messages: Message[]) => {
   }
 }
 
+// 260615 Red: providers with official CNY pricing — cost values are already in ¥, no USD→CNY conversion needed
+const CNY_PROVIDERS = new Set(["deepseek", "xiaomi"])
+
 const build = (messages: Message[] = [], providers: Provider[] = []): Metrics => {
   const totalCost = messages.reduce((sum, msg) => sum + (msg.role === "assistant" ? msg.cost : 0), 0)
   const message = lastAssistantWithTokens(messages)
-  if (!message) return { totalCost, context: undefined }
+  if (!message) return { totalCost, costCurrency: "USD", context: undefined }
 
   const provider = providers.find((item) => item.id === message.providerID)
   const model = provider?.models[message.modelID]
@@ -71,6 +76,7 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
 
   return {
     totalCost,
+    costCurrency: CNY_PROVIDERS.has(message.providerID) ? "CNY" as const : "USD" as const,
     context: {
       message,
       provider,

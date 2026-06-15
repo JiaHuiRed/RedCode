@@ -98,12 +98,31 @@ export const ModelsDevPlugin = PluginV2.define({
               }
               draft.variants = variants(model)
               draft.time.released = released(model.release_date)
-              draft.cost = cost(model.cost)
-              // DeepSeek / MiMo (Xiaomi): 没有独立 cache write 价格，命不中都按 input 原价算
-              if (item.id === "deepseek" || item.id === "xiaomi") {
-                for (const tier of draft.cost) {
-                  if (tier.cache.write === 0 && tier.input > 0) {
-                    tier.cache.write = tier.input
+              // 260615 Red: DeepSeek/Xiaomi use official CNY pricing (¥/M tokens).
+              // Override models.dev USD values to avoid double-conversion precision loss.
+              const cnyLookup: Record<string, Record<string, { input: number; output: number; cache: { read: number; write: number } }>> = {
+                deepseek: {
+                  "deepseek-v4-flash": { input: 1, output: 2, cache: { read: 0.02, write: 1 } },
+                  "deepseek-v4-pro": { input: 3, output: 6, cache: { read: 0.025, write: 3 } },
+                },
+                xiaomi: {
+                  "mimo-v2.5": { input: 1, output: 2, cache: { read: 0.02, write: 1 } },
+                  "mimo-v2.5-pro": { input: 3, output: 6, cache: { read: 0.025, write: 3 } },
+                  "mimo-v2-omni": { input: 1, output: 2, cache: { read: 0.02, write: 1 } },
+                  "mimo-v2-pro": { input: 3, output: 6, cache: { read: 0.025, write: 3 } },
+                },
+              }
+              const cnyCost = cnyLookup[item.id]?.[model.id]
+              if (cnyCost) {
+                draft.cost = [cnyCost]
+              } else {
+                draft.cost = cost(model.cost)
+                // DeepSeek / MiMo (Xiaomi): 没有独立 cache write 价格，命不中都按 input 原价算
+                if (item.id === "deepseek" || item.id === "xiaomi") {
+                  for (const tier of draft.cost) {
+                    if (tier.cache.write === 0 && tier.input > 0) {
+                      tier.cache.write = tier.input
+                    }
                   }
                 }
               }

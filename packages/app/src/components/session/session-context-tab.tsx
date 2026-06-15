@@ -129,7 +129,8 @@ export function SessionContextTab() {
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
 
   const cost = createMemo(() => {
-    return formatter().cost(metrics().totalCost)
+    const m = metrics()
+    return formatter().cost(m.totalCost, m.costCurrency)
   })
 
   const counts = createMemo(() => {
