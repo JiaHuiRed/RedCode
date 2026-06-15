@@ -109,9 +109,11 @@ const senderMeta: Record<string, { avatar: string; name: string; color: string }
 function GroupChatView(props: { http: { url: string; username?: string; password?: string } }) {
   const [input, setInput] = createSignal("")
   const [sending, setSending] = createSignal(false)
+  const [waiting, setWaiting] = createSignal(false)
   const [pollTick, setPollTick] = createSignal(0)
   let messagesEnd: HTMLDivElement | undefined
   let inputRef: HTMLTextAreaElement | undefined
+  let lastUserMsgTime = 0
 
   const [messages, { refetch }] = createResource(
     () => [props.http, pollTick()] as const,
@@ -132,6 +134,19 @@ function GroupChatView(props: { http: { url: string; username?: string; password
     ),
   )
 
+  // 260615 Red detect when agents have responded (stop waiting indicator)
+  createEffect(
+    on(
+      () => messages(),
+      () => {
+        if (!waiting()) return
+        const msgs = messages() ?? []
+        const hasAgentReply = msgs.some((m) => m.sender !== "user" && m.time_created > lastUserMsgTime)
+        if (hasAgentReply) setWaiting(false)
+      },
+    ),
+  )
+
   async function handleSend() {
     const text = input().trim()
     if (!text || sending()) return
@@ -140,6 +155,8 @@ function GroupChatView(props: { http: { url: string; username?: string; password
     setSending(false)
     if (ok) {
       setInput("")
+      lastUserMsgTime = Date.now()
+      setWaiting(true)
       refetch()
       inputRef?.focus()
     }
@@ -221,6 +238,12 @@ function GroupChatView(props: { http: { url: string; username?: string; password
               }}
             </For>
           </Show>
+        </Show>
+        {/* 260615 Red typing indicator while agents are processing */}
+        <Show when={waiting()}>
+          <div style={{ padding: "8px 12px", opacity: "0.5", "font-size": "12px", "font-style": "italic" }}>
+            {"\u{1F431}"} TUI & {"\u{1F439}"} GUI are thinking...
+          </div>
         </Show>
         <div ref={messagesEnd} />
       </div>
