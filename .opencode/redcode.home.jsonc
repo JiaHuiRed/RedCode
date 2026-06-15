@@ -33,8 +33,21 @@
       "type": "local",
       "command": ["jcodemunch-mcp"],
       "environment": {
-        "JCODEMUNCH_USE_AI_SUMMARIES": "false"
+        "JCODEMUNCH_USE_AI_SUMMARIES": "false",
+        "PYTHONIOENCODING": "utf-8"
       },
+      "enabled": true
+    },
+    // 260615 Microsoft MarkItDown — 文件转 Markdown 供 LLM 使用
+    "markitdown": {
+      "type": "local",
+      "command": ["markitdown-mcp"],
+      "enabled": true
+    },
+    // 260615 Semgrep — 代码安全扫描 (本地模式, 无需 token)
+    "semgrep": {
+      "type": "local",
+      "command": ["uvx", "semgrep-mcp"],
       "enabled": true
     },
     "browsermcp": {
