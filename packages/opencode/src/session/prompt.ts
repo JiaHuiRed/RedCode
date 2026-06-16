@@ -1,5 +1,6 @@
 import path from "path"
 import os from "os"
+import { readFileSync } from "fs"
 import { SessionID, MessageID, PartID } from "./schema"
 import { MessageV2 } from "./message-v2"
 import * as Log from "@redcode-ai/core/util/log"
@@ -67,6 +68,22 @@ import { LLMEvent } from "@redcode-ai/llm"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
+
+// 260616 Red 会话标题来源前缀：从 soul 第一行 "# 名字 · ..." 提取人格名（不写死，
+// 通用 RedCode 无此 soul / 非标准格式则 fallback TUI/GUI），让会话列表一眼区分
+// 是哪个 agent（TUI=敏敏 / GUI=小宋）起的会话。client="desktop" 即 GUI，其余视作 TUI。
+function sessionSourceLabel(client: string): string {
+  const isGui = client === "desktop"
+  const fallback = isGui ? "GUI" : "TUI"
+  try {
+    const soulFile = isGui ? "Gsoul.md" : "Tsoul.md"
+    const firstLine = readFileSync(path.join(os.homedir(), ".redcode", "souls", soulFile), "utf8").split("\n")[0] ?? ""
+    const matched = firstLine.match(/^#\s*(.+?)\s*·/)
+    return matched?.[1]?.trim() || fallback
+  } catch {
+    return fallback
+  }
+}
 
 // 260615 Red inject recent office group chat messages into primary agent context
 function groupChatContext(): string | undefined {
@@ -332,7 +349,9 @@ export const layer = Layer.effect(
         .map((line) => line.trim())
         .find((line) => line.length > 0)
       if (!cleaned) return
-      const t = cleaned.length > 100 ? cleaned.substring(0, 97) + "..." : cleaned
+      // 260616 Red 标题加来源前缀，区分 TUI(敏敏)/GUI(小宋) 的会话
+      const withPrefix = `[${sessionSourceLabel(flags.client)}] ${cleaned}`
+      const t = withPrefix.length > 100 ? withPrefix.substring(0, 97) + "..." : withPrefix
       yield* sessions
         .setTitle({ sessionID: input.session.id, title: t })
         .pipe(Effect.catchCause((cause) => elog.error("failed to generate title", { error: Cause.squash(cause) })))

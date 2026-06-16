@@ -59,7 +59,8 @@ function HomeDesign() {
   const server = useServer()
   const language = useLanguage()
   const globalSDK = useGlobalSDK()
-  const [state, setState] = createStore({ search: "", project: undefined as string | undefined, view: "list" as "list" | "kanban" })
+  // 260616 Red 默认进看板视图（工作中/需关注/空闲），更直观；可切回列表
+  const [state, setState] = createStore({ search: "", project: undefined as string | undefined, view: "kanban" as "list" | "kanban" })
   let searchInputRef: HTMLInputElement | undefined
 
   onMount(() => {

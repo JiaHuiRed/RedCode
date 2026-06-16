@@ -10,6 +10,16 @@
 
 ## TUI
 
+### [0.6.7] - 2026-06-16
+
+> 会话标题加来源前缀 — 自动命名时标注 `[人格名/TUI/GUI]`，会话列表一眼区分是哪个 agent 起的。
+
+#### 新增
+
+- **会话标题来源前缀**：session 第一句话自动生成标题时加来源前缀——从对应 soul 文档第一行 `# 名字 · ...` 提取人格名（GUI→`[宋雨琦]`、TUI→`[柳智敏]`），通用 RedCode 无 soul / 非标准格式自动 fallback `[GUI]`/`[TUI]`（不写死人格名）。解决 Office 多会话分不清是 TUI(敏敏) 还是 GUI(小宋) 起的痛点。client 经 `REDCODE_CLIENT` 区分（desktop=GUI，其余=TUI），与 soul 注入同源（`session/prompt.ts` 的 `title()` + 新增 `sessionSourceLabel` helper）。
+
+---
+
 ### [0.6.6] - 2026-06-16
 
 > 修复 read/edit 读文件崩溃 — `Bun.hash` 在 GUI 的 Node sidecar 里 undefined，导致小宋读任何文本文件都报 `Bun is not defined`。
@@ -737,6 +747,20 @@
 ---
 
 ## GUI
+
+### [0.6.3] - 2026-06-16
+
+> 主页默认看板视图 + Gsoul 褪 AI 味 — 进入主页直接看工作中/需关注/空闲三列看板；人格文档清理 AI 腔。
+
+#### 变更
+
+- **主页默认看板视图**：进入主页默认显示看板（工作中/需关注/空闲三列），状态一目了然，不再默认会话列表；右上角按钮仍可切回列表（`pages/home.tsx` view 默认值 `list`→`kanban`）。
+
+#### 改版
+
+- **Gsoul 褪 AI 味**：全篇 5+ 处二元对比句式（"不X,但Y"/"不是X,是Y"）改为直接陈述；删懒极端（"谁都绑不住"→"谁也拦不住"）；工作习惯段精简 40%（MCP 优先细则已移至 AGENTS.md）。-31/+24 行，净减 7 行（`~/.redcode/souls/Gsoul.md`）。
+
+---
 
 ### [0.6.2] - 2026-06-15
 
