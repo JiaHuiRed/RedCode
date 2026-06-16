@@ -96,6 +96,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       output: last.tokens.output,
       reasoning: last.tokens.reasoning,
       cacheRead: sumRead,
+      cacheMiss: sumMiss,
       cacheWrite: sumWrite,
       cacheHit,
       percent: modelInfo?.limit.context ? Math.round((tokens / modelInfo.limit.context) * 100) : null,

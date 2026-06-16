@@ -347,7 +347,8 @@ export function Prompt(props: PromptProps) {
     if (sumRead <= 0) return
     const cacheDenom = sumRead + (sumMiss || sumWrite || sumInput)
     const cacheHitPct = Math.round((sumRead / cacheDenom) * 1000) / 10
-    return { cacheHitPct }
+    const cacheMissPct = Math.round(((cacheDenom - sumRead) / cacheDenom) * 1000) / 10
+    return { cacheHitPct, cacheMissPct }
   })
 
   const [store, setStore] = createStore<{
@@ -1763,7 +1764,7 @@ export function Prompt(props: PromptProps) {
                     <Match when={usage()}>
                       {(item) => (
                         <text wrapMode="none">
-                          <span style={{ fg: theme.textMuted }}>Cache </span>
+                          <span style={{ fg: theme.textMuted }}>Cache hit </span>
                           <span
                             style={{
                               fg:
@@ -1771,13 +1772,19 @@ export function Prompt(props: PromptProps) {
                                   ? theme.success
                                   : item().cacheHitPct >= 50
                                     ? theme.warning
-                                    : item().cacheHitPct >= 20
-                                      ? theme.textMuted
-                                      : theme.error,
+                                    : theme.error,
                             }}
                           >
                             {`${item().cacheHitPct}%`}
                           </span>
+                          <Show when={item().cacheMissPct > 0}>
+                            <span style={{ fg: theme.textMuted }}>
+                              {' · miss '}
+                            </span>
+                            <span style={{ fg: theme.textMuted }}>
+                              {`${item().cacheMissPct}%`}
+                            </span>
+                          </Show>
                         </text>
                       )}
                     </Match>

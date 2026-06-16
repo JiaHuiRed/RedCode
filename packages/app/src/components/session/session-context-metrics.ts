@@ -93,15 +93,16 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
       // 260613 fix: denominator should only be cache-relevant tokens (read+write), not including fresh input
       // 260615 fix: fallback to input for providers that don't return write/cache-miss metadata
       cacheHit: (() => {
-        let sumRead = 0, sumWrite = 0, sumInput = 0
+        let sumRead = 0, sumMiss = 0, sumWrite = 0, sumInput = 0
         for (const m of messages) {
           if (m.role === "assistant") {
             sumRead += m.tokens.cache.read
+            sumMiss += m.tokens.cache.miss ?? 0
             sumWrite += m.tokens.cache.write
             sumInput += m.tokens.input
           }
         }
-        const denom = sumRead + (sumWrite || sumInput)
+        const denom = sumRead + (sumMiss || sumWrite || sumInput)
         return denom > 0 && sumRead > 0 ? Math.round((sumRead / denom) * 1000) / 10 : null
       })(),
       total,
