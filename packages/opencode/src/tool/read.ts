@@ -11,6 +11,7 @@ import { Instruction } from "../session/instruction"
 import { isPdfAttachment, sniffAttachmentMime } from "@/util/media"
 import { Reference } from "@/reference/reference"
 import * as Bom from "@/util/bom"
+import { Hash } from "@redcode-ai/core/util/hash"
 
 const DEFAULT_READ_LIMIT = 2000
 const MAX_LINE_LENGTH = 2000
@@ -19,12 +20,6 @@ const MAX_BYTES = 50 * 1024
 const MAX_BYTES_LABEL = `${MAX_BYTES / 1024} KB`
 const SAMPLE_BYTES = 4096
 const SUPPORTED_IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"])
-
-function computeFileHash(text: string): string {
-  const normalized = text.replace(/[ \t\r]+(?=\n|$)/g, "")
-  const hash = Bun.hash.xxHash32(normalized, 0) & 0xffff
-  return hash.toString(16).padStart(4, "0").toUpperCase()
-}
 
 class ReadStop extends Schema.TaggedErrorClass<ReadStop>()("ReadStop", {}) {}
 
@@ -307,7 +302,7 @@ export const ReadTool = Tool.define(
       }
 
       const source = yield* Bom.readFile(fs, filepath)
-      const fileTag = computeFileHash(source.text)
+      const fileTag = Hash.fileTag(source.text)
 
       let output = [`<path>${filepath}</path>`, `<type>file</type>`, `[${filepath}#${fileTag}]`, "<content>\n"].join("\n")
       output += file.raw.map((line, i) => `${i + file.offset}: ${line}`).join("\n")

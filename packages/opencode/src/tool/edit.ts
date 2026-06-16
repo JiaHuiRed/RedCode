@@ -17,6 +17,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { Snapshot } from "@/snapshot"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
+import { Hash } from "@redcode-ai/core/util/hash"
 import * as Bom from "@/util/bom"
 
 function normalizeLineEndings(text: string): string {
@@ -42,12 +43,6 @@ function lock(filePath: string) {
   const next = Semaphore.makeUnsafe(1)
   locks.set(resolvedFilePath, next)
   return next
-}
-
-function computeFileHash(text: string): string {
-  const normalized = text.replace(/[ \t\r]+(?=\n|$)/g, "")
-  const hash = Bun.hash.xxHash32(normalized, 0) & 0xffff
-  return hash.toString(16).padStart(4, "0").toUpperCase()
 }
 
 export const Parameters = Schema.Struct({
@@ -459,7 +454,7 @@ const executeHashline = (
         const source = yield* Bom.readFile(afs, resolvedPath)
         contentOld = source.text
 
-        const currentHash = computeFileHash(contentOld)
+        const currentHash = Hash.fileTag(contentOld)
         if (currentHash !== expectedHash) {
           throw new Error(
             `Hash mismatch: expected [${filePath}#${expectedHash}] but current is [${filePath}#${currentHash}]. Re-read the file to get the current hash.`,

@@ -10,6 +10,17 @@
 
 ## TUI
 
+### [0.6.6] - 2026-06-16
+
+> 修复 read/edit 读文件崩溃 — `Bun.hash` 在 GUI 的 Node sidecar 里 undefined，导致小宋读任何文本文件都报 `Bun is not defined`。
+
+#### 修复
+
+- **read/edit 文件指纹跨运行时崩溃**：6-10 引入 hashline 编辑时，`read.ts`/`edit.ts` 各自用 `Bun.hash.xxHash32` 算文件指纹 `[path#TAG]`。TUI 是 `bun --compile` 二进制（有 `Bun` 全局）正常，但 **GUI 的 sidecar 跑在 Electron 的 Node 运行时**（`process.parentPort` + `node:` 模块，无 `Bun` 全局）——读任何文本文件都在 `computeFileHash` 抛 `ReferenceError: Bun is not defined`，与文件编码无关。修法：抽出 `Hash.fileTag()`（`core/util/hash.ts`，改用 `node:crypto` 的 sha1 取前 16bit），read 产 tag、edit 校验 currentHash 共用同一跨运行时实现，删除两处重复的 `computeFileHash`。输出仍为 4 位大写 hex，碰撞空间不变（`tool/read.ts`、`tool/edit.ts`、`core/util/hash.ts`）。
+- **markitdown MCP 服务器连接失败**：`~/.redcode/redcode.jsonc` 中 markitdown 的 `command` 错写为 `["markitdown-mcp-npx"]`，但实际安装的可执行文件是 `markitdown-mcp`（通过 `pip install markitdown-mcp` 安装在 Python Scripts 目录）。修正命令名称即可恢复连接（`~/.redcode/redcode.jsonc`）。
+
+---
+
 ### [0.6.5] - 2026-06-15
 
 > Office 多 agent 群聊后端 — 用户在群聊发消息，服务端自动派 TUI + GUI 两个 agent 顺序回复，打通跨 persona 协作。
