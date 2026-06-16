@@ -145,8 +145,8 @@
     white-space: pre-wrap;
     word-break: break-word;
     overflow: hidden;
-    background: var(--surface-base);
-    border: 1px solid var(--border-weak-base);
+    background: color-mix(in srgb, var(--syntax-property) 8%, var(--surface-base));
+    border: 1px solid color-mix(in srgb, var(--syntax-property) 25%, var(--border-weak-base));
     border-left: 2px solid var(--syntax-property);
     padding: 10px 14px;
     border-radius: 10px 10px 4px 10px;

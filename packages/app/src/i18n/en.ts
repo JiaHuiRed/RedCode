@@ -394,7 +394,7 @@
   "context.stats.inputTokens": "Input Tokens",
   "context.stats.outputTokens": "Output Tokens",
   "context.stats.reasoningTokens": "Reasoning Tokens",
-  "context.stats.cacheTokens": "Cache Tokens (read/write)",
+  "context.stats.cacheTokens": "Cache Hit",
   "context.stats.userMessages": "User Messages",
   "context.stats.assistantMessages": "Assistant Messages",
   "context.stats.totalCost": "Total Cost",

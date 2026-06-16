@@ -396,7 +396,7 @@ export const dict = {
   "context.stats.inputTokens": "输入 token",
   "context.stats.outputTokens": "输出 token",
   "context.stats.reasoningTokens": "推理 token",
-  "context.stats.cacheTokens": "缓存 token（读/写）",
+  "context.stats.cacheTokens": "Cache Hit",
   "context.stats.userMessages": "用户消息",
   "context.stats.assistantMessages": "助手消息",
   "context.stats.totalCost": "总成本",

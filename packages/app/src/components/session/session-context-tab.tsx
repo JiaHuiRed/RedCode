@@ -193,14 +193,14 @@ export function SessionContextTab() {
 
   const stats = [
     { label: "context.stats.session", value: () => info()?.title ?? params.id ?? "—" },
-    { label: "context.stats.messages", value: () => counts().all.toLocaleString(language.intl()), color: "var(--syntax-success)" },
+    { label: "context.stats.messages", value: () => counts().all.toLocaleString(language.intl()), color: "var(--syntax-warning)" },
     { label: "context.stats.provider", value: providerLabel, color: "var(--syntax-info)" },
     { label: "context.stats.model", value: modelLabel, color: "var(--syntax-info)" },
     { label: "context.stats.limit", value: () => formatter().number(ctx()?.limit) },
     { label: "context.stats.totalTokens", value: () => formatter().number(ctx()?.total), color: "var(--syntax-success)" },
     { label: "context.stats.usage", value: () => formatter().percent(ctx()?.usage), color: "var(--syntax-warning)" },
-    { label: "context.stats.inputTokens", value: () => formatter().number(ctx()?.input), color: "var(--syntax-success)" },
-    { label: "context.stats.outputTokens", value: () => formatter().number(ctx()?.output), color: "var(--syntax-success)" },
+    { label: "context.stats.inputTokens", value: () => formatter().number(ctx()?.input), color: "var(--syntax-info)" },
+    { label: "context.stats.outputTokens", value: () => formatter().number(ctx()?.output), color: "var(--syntax-property)" },
     { label: "context.stats.reasoningTokens", value: () => formatter().number(ctx()?.reasoning), color: "var(--syntax-warning)" },
     {
       label: "context.stats.cacheTokens",
@@ -214,8 +214,8 @@ export function SessionContextTab() {
       },
       color: "var(--syntax-info)",
     },
-    { label: "context.stats.userMessages", value: () => counts().user.toLocaleString(language.intl()), color: "var(--syntax-property)" },
-    { label: "context.stats.assistantMessages", value: () => counts().assistant.toLocaleString(language.intl()), color: "var(--syntax-property)" },
+    { label: "context.stats.userMessages", value: () => counts().user.toLocaleString(language.intl()), color: "var(--syntax-success)" },
+    { label: "context.stats.assistantMessages", value: () => counts().assistant.toLocaleString(language.intl()), color: "var(--syntax-info)" },
     { label: "context.stats.totalCost", value: cost, color: "var(--syntax-critical)" },
     { label: "context.stats.sessionCreated", value: () => formatter().time(info()?.time.created) },
     { label: "context.stats.lastActivity", value: () => formatter().time(ctx()?.message.time.created) },
