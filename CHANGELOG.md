@@ -10,6 +10,24 @@
 
 ## TUI
 
+### [0.6.10] - 2026-06-16
+
+> 文档大扫除 + skill 触发词优化 + bump-version skill。
+
+#### 修复
+
+- **MANUAL.md 多处过时**：Browser MCP 标记已禁用；灵魂文件描述改为"自动注入+命令可选"；skill 表从 6 个扩充到 12 个并加触发词列；自定义 skill 说明改为 frontmatter 自动发现（不再需要注册 instructions）（`MANUAL.md`）。
+- **README.en.md 过时**：Browser MCP 标记已禁用；配置路径从 `.opencode/opencode.jsonc` 改为 `.redcode/redcode.jsonc`（`README.en.md`）。
+- **AGENTS.md 引用不存在的 skill**：`skill/auto-validate/SKILL.md` 已删除，改为内联说明（`AGENTS.md`）。
+- **vision-autoagent 缺 frontmatter**：公开仓模板补 name + description，否则引擎无法发现（`.opencode/skill/vision-autoagent/SKILL.md`）。
+
+#### 变更
+
+- **Skill 触发词口语化**：所有 skill 的 description 加入中文口语触发短语（"帮我看看代码""查bug""太复杂了""小心点"等）；stop-slop/yuqi-slop 消歧为英文/中文分流。
+- **新增 bump-version skill**："升版""bump""更新版本"触发，自动化 package.json→README 双语徽章→CHANGELOG→commit 全链（`~/.redcode/skill/bump-version/SKILL.md`）。
+
+---
+
 ### [0.6.9] - 2026-06-16
 
 > session 记录 client 字段 + Karina 主题配色优化。

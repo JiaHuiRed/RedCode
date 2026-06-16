@@ -15,7 +15,7 @@
 >
 > Author: Red · Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev).
 
-[![TUI](https://img.shields.io/badge/TUI-0.6.9-blue)](CHANGELOG.md)
+[![TUI](https://img.shields.io/badge/TUI-0.6.10-blue)](CHANGELOG.md)
 [![Desktop](https://img.shields.io/badge/Desktop-0.6.4-0078d4)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-lightblue)](https://github.com/JiaHuiRed/RedCode)
@@ -40,7 +40,7 @@ Open-source AI coding assistant with **terminal TUI** and **desktop GUI** interf
 - 📊 **MCP Servers**:
   - [TypeGraph](https://github.com/guyowen/typegraph-mcp) — TypeScript semantic navigation (type resolution, barrel file traversal, cycle detection)
   - [jCodeMunch](https://github.com/colbymchenry/jcodemunch) — structured code retrieval (60+ tools: symbol lookup, dead code detection, AST matching)
-  - [Browser MCP](https://github.com/colbymchenry/browsermcp) — browser automation (navigation, screenshots, clicks, input, page content extraction)
+  - ~~Browser MCP~~ — browser automation (disabled, stability issues)
 - 🔒 **Permission System** — tool call confirmation, auto-approve support
 - 🌍 **Multi-language** — Chinese, English, Japanese, and 18 languages
 - 🗣 **TTS** — MiMo TTS voice reading for AI responses
@@ -84,7 +84,7 @@ cd packages/desktop && bun run dev
 |----------|---------|
 | `~/.redcode/redcode.jsonc` | Global config (cross-project) |
 | `project_dir/redcode.jsonc` | Project-level config |
-| `project_dir/.opencode/opencode.jsonc` | Legacy format (compatible) |
+| `project_dir/.redcode/redcode.jsonc` | Project-level config |
 
 ### Add Custom Provider
 

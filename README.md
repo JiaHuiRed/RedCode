@@ -9,7 +9,7 @@
 >
 > 基于 [opencode](https://github.com/anomalyco/opencode)（sst.dev）深度二次开发。
 
-[![TUI](https://img.shields.io/badge/TUI-0.6.9-blue)](CHANGELOG.md)
+[![TUI](https://img.shields.io/badge/TUI-0.6.10-blue)](CHANGELOG.md)
 [![Desktop](https://img.shields.io/badge/Desktop-0.6.4-0078d4)](CHANGELOG.md)
 [![平台](https://img.shields.io/badge/平台-Windows%2010%2F11-0078d4)](https://github.com/JiaHuiRed/RedCode)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)](https://typescriptlang.org)
@@ -71,7 +71,7 @@ cd packages/desktop && bun run build && bun run package
 
 1. 首次设置（配置模型 / AI 人格 / 用户画像 / 工作记忆）
 2. 记忆系统（自动日志 / 长期库 / 启动注入）
-3. MCP 服务器（9 个预配置服务的安装与启用）
+3. MCP 服务器（预配置服务的安装与启用）
 4. 配置详解（provider / 权限 / 项目级配置）
 5. 内置命令列表
 6. Skill 技能系统说明

@@ -210,7 +210,7 @@ MCP（Model Context Protocol）让 AI 获得外部能力。安装越多 MCP，AI
 | 服务器 | 用途 | 首次使用前 |
 |--------|------|-----------|
 | **Web Search** | 网页搜索：DuckDuckGo + Yahoo 兜底，内置服务，零 API Key | — |
-| **Browser MCP** | 浏览器自动化：导航、截图、点击、填表 | 克隆仓库到 `plugins/browsermcp-server` 并 `npm install` |
+| ~~Browser MCP~~ | 浏览器自动化（已禁用，稳定性不足） | — |
 | **Vision MCP** | 多模态视觉分析：让不支持图片的模型也能看截图 | 安装 Ollama + 拉取 `qwen3-vl:8b` 模型 |
 | **Exa Search** | 语义搜索引擎：AI 驱动的深度网络搜索 | 注册免费 API Key（`dashboard.exa.ai`）|
 
@@ -257,7 +257,7 @@ MCP（Model Context Protocol）让 AI 获得外部能力。安装越多 MCP，AI
 人格系统分两层：
 
 1. **用户画像** (`~/.redcode/USER.md`) — 关于你是谁，自动注入每次对话
-2. **灵魂文件** (`~/.redcode/souls/*.md`) — AI 的性格设定，需通过命令触发加载
+2. **灵魂文件** (`~/.redcode/souls/*.md`) — AI 的性格设定，每次对话启动时按客户端类型自动注入（TUI→Tsoul.md，GUI→Gsoul.md）；也可通过 `/tui-persona` `/gui-persona` 命令手动加载
 
 ### 5.2 加载人格
 
@@ -385,26 +385,37 @@ Skill 是扩展 AI 行为的机制——本质上是注入给 AI 的指令文件
 
 ### 9.1 内置 Skill
 
-| Skill | 作用 |
-|-------|------|
-| **memory-automation** | 自动记忆系统（日志/长期库/启动注入）|
-| **guardrail-profiles** | 三档权限控制（minimal / standard / strict）|
-| **defensive-agent** | 防止 AI 假阳性报告、无意义修改 |
-| **goal-automation** | 检测大任务并建议钉住目标 |
-| **vision-autoagent** | 收到图片时自动调 vision MCP 分析 |
-| **simplify** | 检测过度工程，建议精简 |
+| Skill | 作用 | 触发词 |
+|-------|------|--------|
+| **memory-automation** | 自动记忆系统（日志/长期库/启动注入）| "收工""保存记忆" |
+| **bump-version** | 一键升版（package.json→徽章→CHANGELOG→commit）| "升版""bump""更新版本" |
+| **ce-code-review** | 结构化多维度代码审查 | "帮我看看代码""review一下" |
+| **diagnose** | 形式化 bug 诊断循环 | "查bug""排查一下""debug" |
+| **guardrail-profiles** | 三档权限控制（minimal / standard / strict）| "快干""严格模式" |
+| **defensive-agent** | 防止 AI 假阳性报告、无意义修改 | "小心点""别乱改" |
+| **goal-automation** | 检测大任务并建议钉住目标 | 自动检测 |
+| **vision-autoagent** | 收到图片时自动调 vision MCP 分析 | 自动触发 |
+| **simplify** | 检测过度工程，建议精简 | "太复杂了""精简一下" |
+| **red-scribe** | 按 Red 的写作风格输出 | "按我的风格写""red风格" |
+| **yuqi-slop** | 中文去 AI 味 | "去AI味""褪AI味" |
+| **stop-slop** | 英文去 AI 味 | "英文去AI味" |
 
 ### 9.2 添加自定义 Skill
 
 ```bash
-# 创建 skill 文件
-mkdir -p .opencode/skill/my-rules
-$EDITOR .opencode/skill/my-rules/SKILL.md
+# 在 ~/.redcode/skill/ 下创建目录和 SKILL.md
+mkdir -p ~/.redcode/skill/my-rules
+$EDITOR ~/.redcode/skill/my-rules/SKILL.md
 ```
 
-内容自由，示例：
+SKILL.md 需要 YAML frontmatter（`name` + `description`），引擎靠 description 语义匹配自动触发：
 
 ```markdown
+---
+name: my-rules
+description: 我的编码规范。用户说"按规范来""检查规范"时触发。
+---
+
 # 我的编码规范
 
 - 所有函数必须有 TypeScript 类型注解
@@ -413,15 +424,7 @@ $EDITOR .opencode/skill/my-rules/SKILL.md
 - 行尾不要分号
 ```
 
-在 `redcode.jsonc` 中注册：
-
-```jsonc
-"instructions": [
-  "./.opencode/skill/my-rules/SKILL.md"
-]
-```
-
-重启对话后生效。可以注册多个 skill，全部生效。
+**无需在 `redcode.jsonc` 中注册**——引擎自动扫描 `~/.redcode/skill/` 下所有 `SKILL.md`，重启对话即生效。
 
 ---
 

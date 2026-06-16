@@ -1,3 +1,8 @@
+---
+name: vision-autoagent
+description: 图片自动分析——模型不支持多模态时自动调 vision MCP 看图。用户发截图、发图片、或出现"不支持图片"报错时自动触发，无需手动调用。
+---
+
 # 视觉自动分析 (Vision AutoAgent)
 
 当用户发送图片时，当前模型（DeepSeek）不支持多模态，会报错。此时需自动调用 vision MCP 工具分析图片并回复用户。
