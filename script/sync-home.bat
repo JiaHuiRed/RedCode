@@ -12,10 +12,11 @@ echo [sync] shared config/skills to %USERPROFILE%\.redcode
 rem hub injector: rebuild ~/.redcode/redcode.jsonc (instructions injection chain)
 if exist ".opencode\redcode.home.jsonc" copy /y ".opencode\redcode.home.jsonc" "%USERPROFILE%\.redcode\redcode.jsonc" >nul
 
-rem global skill: repo staging -> ~/.redcode/skill (engine home scan, loaded by every project)
-rem true mirror: wipe first so deleted-in-repo copies do not linger in home
-if exist "%USERPROFILE%\.redcode\skill" rd /s /q "%USERPROFILE%\.redcode\skill" >nul 2>&1
-if exist ".opencode\skill" xcopy /y /e /i ".opencode\skill" "%USERPROFILE%\.redcode\skill" >nul
+rem global skill: home/.redcode/skill is the WORKING SOURCE OF TRUTH (personas write skills there,
+rem tracked by the private repo). Repo staging only SEEDS skills MISSING in home - never wipe,
+rem never overwrite - so local/private edits are never clobbered by an older repo copy on rebuild.
+if not exist "%USERPROFILE%\.redcode\skill" mkdir "%USERPROFILE%\.redcode\skill" >nul 2>&1
+if exist ".opencode\skill" for /d %%S in (.opencode\skill\*) do if not exist "%USERPROFILE%\.redcode\skill\%%~nxS" xcopy /e /i /q /y "%%S" "%USERPROFILE%\.redcode\skill\%%~nxS\" >nul
 
 rem global commands: repo staging -> ~/.redcode/command (engine scans .redcode only)
 rem NOTE: Only shared commands are in this repo. Personal commands (tui-persona.md, gui-persona.md)
