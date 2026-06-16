@@ -42,6 +42,8 @@ export const SessionTable = sqliteTable(
     revert: text({ mode: "json" }).$type<{ messageID: MessageID; partID?: PartID; snapshot?: string; diff?: string }>(),
     permission: text({ mode: "json" }).$type<Permission.Ruleset>(),
     agent: text(),
+    // 260616 Red 记录创建会话的客户端类型(desktop/tui)，用于 Office 群聊 TUI/GUI 分类
+    client: text(),
     model: text({ mode: "json" }).$type<{
       id: string
       providerID: string

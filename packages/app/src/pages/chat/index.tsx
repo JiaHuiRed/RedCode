@@ -26,6 +26,7 @@ interface SessionItem {
   agent?: string
   model?: { id: string; providerID: string }
   directory: string
+  client?: string
 }
 
 // 260615 Red group chat message from DB
@@ -84,11 +85,17 @@ async function sendGroupMessage(http: { url: string; username?: string; password
   return res.ok
 }
 
-// 260615 Red TUI runs from compiled binary (dist/) or as redcode.exe
+// 260616 Red 用 session.client 字段精确区分 TUI/GUI（B 方案根治）
+// client="desktop" → GUI，client="cli"/其他 → TUI，老会话无 client 走标题前缀 fallback
 function isTuiSession(s: SessionItem) {
-  if (!s.directory) return false
-  const d = s.directory.replace(/\\/g, "/").toLowerCase()
-  return d.includes("/dist") || d.includes("redcode") || d.endsWith("/opencode")
+  if (s.client) return s.client !== "desktop"
+  // fallback: 标题前缀 [宋雨琦]/[GUI] = GUI，其余默认 TUI
+  const m = s.title.match(/^\[(.+?)\]/)
+  if (m) {
+    const label = m[1]
+    if (label === "GUI" || label === "\u5B8B\u96E8\u7426") return false
+  }
+  return true
 }
 
 function timeAgo(ts: number): string {

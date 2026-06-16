@@ -80,6 +80,7 @@ export function fromRow(row: SessionRow): Info {
     parentID: row.parent_id ?? undefined,
     title: row.title,
     agent: row.agent ?? undefined,
+    client: row.client ?? undefined,
     model: row.model
       ? {
           id: ModelID.make(row.model.id),
@@ -122,6 +123,7 @@ export function toRow(info: Info) {
     path: info.path,
     title: info.title,
     agent: info.agent,
+    client: info.client,
     model: info.model,
     version: info.version,
     share_url: info.share?.url,
@@ -220,6 +222,7 @@ export const Info = Schema.Struct({
   share: optionalOmitUndefined(Share),
   title: Schema.String,
   agent: optionalOmitUndefined(Schema.String),
+  client: optionalOmitUndefined(Schema.String),
   model: optionalOmitUndefined(Model),
   version: Schema.String,
   time: Time,
@@ -558,6 +561,7 @@ export const layer: Layer.Layer<
         parentID: input.parentID,
         title: input.title ?? createDefaultTitle(!!input.parentID),
         agent: input.agent,
+        client: flags.client,
         model: input.model,
         permission: input.permission ? [...input.permission] : undefined,
         cost: 0,
