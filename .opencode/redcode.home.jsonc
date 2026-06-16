@@ -36,12 +36,14 @@
         "JCODEMUNCH_USE_AI_SUMMARIES": "false",
         "PYTHONIOENCODING": "utf-8"
       },
+      "description": "代码符号检索/仓库理解首选——找定义、调用链、改动影响面比 grep 准（search_symbols/get_repo_map/get_call_hierarchy/get_blast_radius/get_symbol_source 等）。改代码前先用它摸清依赖，grep/read 兜底。",
       "enabled": true
     },
     // 260615 Microsoft MarkItDown — 文件转 Markdown 供 LLM 使用
     "markitdown": {
       "type": "local",
       "command": ["markitdown-mcp"],
+      "description": "把 Office/PDF 等非纯文本文档转 Markdown 供 LLM 读——read 读不了的二进制文档（.docx/.xlsx/.pptx/.pdf）用它提取文本；纯文本/代码仍用 read。",
       "enabled": true
     },
     // 260615 Semgrep — 代码安全扫描 (需要连接 semgrep.dev, 当前网络环境连不上)
@@ -50,16 +52,19 @@
       "command": ["semgrep", "mcp"],
       "enabled": false
     },
+    // 260616 Red browsermcp 默认关，需网页自动化时改 enabled:true（先装并连浏览器扩展）
     "browsermcp": {
       "type": "local",
       "command": ["node", "./browsermcp-server/index.js"],
       "cwd": "$REDCODE_ROOT",
-      "enabled": true
+      "description": "浏览器自动化（操作网页/抓动态页面）——需先装并连接浏览器扩展。默认关闭，用时改 enabled:true。",
+      "enabled": false
     },
     "web-search": {
       "type": "local",
       "command": ["node", "./.opencode/search-server/index.js"],
       "cwd": "$REDCODE_ROOT",
+      "description": "联网搜实时信息——知识截止后的新事物、最新文档/版本、外部事实查证时用；本地代码问题用 jcodemunch/grep，不要搜网。",
       "timeout": 120000,
       "enabled": true
     },
@@ -70,6 +75,7 @@
         "VISION_BASE_URL": "http://localhost:11434/v1/chat/completions",
         "VISION_MODEL": "qwen3-vl:8b"
       },
+      "description": "图像理解——当前模型非多模态、需看截图/图片内容时用（走本地 qwen3-vl）；纯文本任务不用。",
       "enabled": true
     },
     "su-prememory": {
