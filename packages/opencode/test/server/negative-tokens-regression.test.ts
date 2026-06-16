@@ -41,7 +41,7 @@ function seedNegativeTokenSession() {
       type: "step-finish",
       reason: "stop",
       cost: 0,
-      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
     })
 
     // Bypass the schema with a direct SQL update to install the
@@ -54,7 +54,7 @@ function seedNegativeTokenSession() {
             type: "step-finish",
             reason: "stop",
             cost: 0,
-            tokens: { input: 0, output: -42, reasoning: 0, cache: { read: 0, write: 0 } },
+            tokens: { input: 0, output: -42, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
           } as never,
         })
         .where(eq(PartTable.id, partID))

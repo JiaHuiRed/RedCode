@@ -137,7 +137,7 @@ describe("step-finish token propagation via Bus event", () => {
           input: 500,
           output: 800,
           reasoning: 200,
-          cache: { read: 100, write: 50 },
+          cache: { read: 100, write: 50, miss: 0 },
         }
 
         const partInput = {

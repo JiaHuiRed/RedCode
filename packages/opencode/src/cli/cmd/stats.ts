@@ -177,7 +177,7 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
           string,
           {
             messages: number
-            tokens: { input: number; output: number; cache: { read: number; write: number } }
+            tokens: { input: number; output: number; cache: { read: number; write: number; miss: number } }
             cost: number
           }
         > = {}
@@ -188,7 +188,7 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
             if (!sessionModelUsage[modelKey]) {
               sessionModelUsage[modelKey] = {
                 messages: 0,
-                tokens: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+                tokens: { input: 0, output: 0, cache: { read: 0, write: 0, miss: 0 } },
                 cost: 0,
               }
             }

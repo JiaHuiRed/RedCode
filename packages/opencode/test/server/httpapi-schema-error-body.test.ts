@@ -39,7 +39,7 @@ const seedCorruptStepFinishPart = Effect.gen(function* () {
     type: "step-finish",
     reason: "stop",
     cost: 0,
-    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
   })
   // Schema.Finite still rejects NaN at encode: exact mirror of the corrupt row
   // that broke the user's session in the OMO/Windows bug.
@@ -52,7 +52,7 @@ const seedCorruptStepFinishPart = Effect.gen(function* () {
             type: "step-finish",
             reason: "stop",
             cost: 0,
-            tokens: { input: 0, output: NaN, reasoning: 0, cache: { read: 0, write: 0 } },
+            tokens: { input: 0, output: NaN, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
           } as never, // drizzle's .set() can't narrow the discriminated union
         })
         .where(eq(PartTable.id, partID))

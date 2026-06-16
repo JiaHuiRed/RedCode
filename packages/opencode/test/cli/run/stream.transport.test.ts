@@ -211,6 +211,7 @@ function assistantMessage(input: { sessionID: string; id: string; parts: Session
         cache: {
           read: 0,
           write: 0,
+          miss: 0,
         },
       },
     },

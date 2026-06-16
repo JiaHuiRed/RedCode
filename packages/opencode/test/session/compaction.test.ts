@@ -72,7 +72,7 @@ function createModel(opts: {
       input: opts.input,
       output: opts.output,
     },
-    cost: opts.cost ?? { input: 0, output: 0, cache: { read: 0, write: 0 } },
+    cost: opts.cost ?? { input: 0, output: 0, cache: { read: 0, write: 0, miss: 0 } },
     capabilities: {
       toolcall: true,
       attachment: false,
@@ -124,7 +124,7 @@ function createAssistantMessage(sessionID: SessionID, parentID: MessageID, root:
         output: 0,
         input: 0,
         reasoning: 0,
-        cache: { read: 0, write: 0 },
+        cache: { read: 0, write: 0, miss: 0 },
       },
       modelID: ref.modelID,
       providerID: ref.providerID,
@@ -150,7 +150,7 @@ function createSummaryAssistantMessage(sessionID: SessionID, parentID: MessageID
           output: 0,
           input: 0,
           reasoning: 0,
-          cache: { read: 0, write: 0 },
+          cache: { read: 0, write: 0, miss: 0 },
         },
         modelID: ref.modelID,
         providerID: ref.providerID,
@@ -381,7 +381,7 @@ describe("session.compaction.isOverflow", () => {
       Effect.gen(function* () {
         const compact = yield* SessionCompaction.Service
         const model = createModel({ context: 100_000, output: 32_000 })
-        const tokens = { input: 75_000, output: 5_000, reasoning: 0, cache: { read: 0, write: 0 } }
+        const tokens = { input: 75_000, output: 5_000, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } }
         expect(yield* compact.isOverflow({ tokens, model })).toBe(true)
       }),
     ),
@@ -393,7 +393,7 @@ describe("session.compaction.isOverflow", () => {
       Effect.gen(function* () {
         const compact = yield* SessionCompaction.Service
         const model = createModel({ context: 200_000, output: 32_000 })
-        const tokens = { input: 100_000, output: 10_000, reasoning: 0, cache: { read: 0, write: 0 } }
+        const tokens = { input: 100_000, output: 10_000, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } }
         expect(yield* compact.isOverflow({ tokens, model })).toBe(false)
       }),
     ),
@@ -405,7 +405,7 @@ describe("session.compaction.isOverflow", () => {
       Effect.gen(function* () {
         const compact = yield* SessionCompaction.Service
         const model = createModel({ context: 100_000, output: 32_000 })
-        const tokens = { input: 60_000, output: 10_000, reasoning: 0, cache: { read: 10_000, write: 0 } }
+        const tokens = { input: 60_000, output: 10_000, reasoning: 0, cache: { read: 10_000, write: 0, miss: 0 } }
         expect(yield* compact.isOverflow({ tokens, model })).toBe(true)
       }),
     ),
@@ -417,7 +417,7 @@ describe("session.compaction.isOverflow", () => {
       Effect.gen(function* () {
         const compact = yield* SessionCompaction.Service
         const model = createModel({ context: 400_000, input: 272_000, output: 128_000 })
-        const tokens = { input: 271_000, output: 1_000, reasoning: 0, cache: { read: 2_000, write: 0 } }
+        const tokens = { input: 271_000, output: 1_000, reasoning: 0, cache: { read: 2_000, write: 0, miss: 0 } }
         expect(yield* compact.isOverflow({ tokens, model })).toBe(true)
       }),
     ),
@@ -429,7 +429,7 @@ describe("session.compaction.isOverflow", () => {
       Effect.gen(function* () {
         const compact = yield* SessionCompaction.Service
         const model = createModel({ context: 400_000, input: 272_000, output: 128_000 })
-        const tokens = { input: 200_000, output: 20_000, reasoning: 0, cache: { read: 10_000, write: 0 } }
+        const tokens = { input: 200_000, output: 20_000, reasoning: 0, cache: { read: 10_000, write: 0, miss: 0 } }
         expect(yield* compact.isOverflow({ tokens, model })).toBe(false)
       }),
     ),
@@ -441,7 +441,7 @@ describe("session.compaction.isOverflow", () => {
       Effect.gen(function* () {
         const compact = yield* SessionCompaction.Service
         const model = createModel({ context: 200_000, input: 120_000, output: 10_000 })
-        const tokens = { input: 50_000, output: 9_999, reasoning: 0, cache: { read: 0, write: 0 } }
+        const tokens = { input: 50_000, output: 9_999, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } }
         expect(yield* compact.isOverflow({ tokens, model })).toBe(false)
       }),
     ),
@@ -470,8 +470,8 @@ describe("session.compaction.isOverflow", () => {
         // We've used 198K tokens total. Only 2K under the input limit.
         // On the next turn, the full conversation (198K) becomes input,
         // plus the model needs room to generate output — this WILL overflow.
-        const tokens = { input: 180_000, output: 15_000, reasoning: 0, cache: { read: 3_000, write: 0 } }
-        // count = 180K + 3K + 15K = 198K
+const tokens = { input: 180_000, output: 15_000, reasoning: 0, cache: { read: 3_000, write: 0, miss: 0 } }
+        // count = 198K
         // usable = limit.input = 200K (no output subtracted!)
         // 198K > 200K = false → no compaction triggered
 
@@ -482,7 +482,7 @@ describe("session.compaction.isOverflow", () => {
         // Compaction MUST trigger here.
         expect(yield* compact.isOverflow({ tokens, model })).toBe(true)
       }),
-    ),
+    )
   )
 
   it.live(
@@ -494,7 +494,7 @@ describe("session.compaction.isOverflow", () => {
         const model = createModel({ context: 200_000, output: 32_000 })
 
         // Same token usage as above
-        const tokens = { input: 180_000, output: 15_000, reasoning: 0, cache: { read: 3_000, write: 0 } }
+        const tokens = { input: 180_000, output: 15_000, reasoning: 0, cache: { read: 3_000, write: 0, miss: 0 } }
         // count = 198K
         // usable = context - output = 200K - 32K = 168K
         // 198K > 168K = true → compaction correctly triggered
@@ -515,7 +515,7 @@ describe("session.compaction.isOverflow", () => {
         const withoutInputLimit = createModel({ context: 200_000, output: 32_000 })
 
         // 170K total tokens — well above context-output (168K) but below input limit (200K)
-        const tokens = { input: 166_000, output: 10_000, reasoning: 0, cache: { read: 5_000, write: 0 } }
+        const tokens = { input: 166_000, output: 10_000, reasoning: 0, cache: { read: 5_000, write: 0, miss: 0 } }
 
         const withLimit = yield* compact.isOverflow({ tokens, model: withInputLimit })
         const withoutLimit = yield* compact.isOverflow({ tokens, model: withoutInputLimit })
@@ -533,7 +533,7 @@ describe("session.compaction.isOverflow", () => {
       Effect.gen(function* () {
         const compact = yield* SessionCompaction.Service
         const model = createModel({ context: 0, output: 32_000 })
-        const tokens = { input: 100_000, output: 10_000, reasoning: 0, cache: { read: 0, write: 0 } }
+        const tokens = { input: 100_000, output: 10_000, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } }
         expect(yield* compact.isOverflow({ tokens, model })).toBe(false)
       }),
     ),
@@ -546,7 +546,7 @@ describe("session.compaction.isOverflow", () => {
         Effect.gen(function* () {
           const compact = yield* SessionCompaction.Service
           const model = createModel({ context: 100_000, output: 32_000 })
-          const tokens = { input: 75_000, output: 5_000, reasoning: 0, cache: { read: 0, write: 0 } }
+          const tokens = { input: 75_000, output: 5_000, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } }
           expect(yield* compact.isOverflow({ tokens, model })).toBe(false)
         }),
       {
@@ -635,7 +635,7 @@ describe("session.compaction.prune", () => {
               output: 0,
               input: 0,
               reasoning: 0,
-              cache: { read: 0, write: 0 },
+              cache: { read: 0, write: 0, miss: 0 },
             },
             modelID: ref.modelID,
             providerID: ref.providerID,
@@ -731,7 +731,7 @@ describe("session.compaction.prune", () => {
             output: 0,
             input: 0,
             reasoning: 0,
-            cache: { read: 0, write: 0 },
+            cache: { read: 0, write: 0, miss: 0 },
           },
           modelID: ref.modelID,
           providerID: ref.providerID,

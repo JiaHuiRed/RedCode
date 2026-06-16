@@ -63,6 +63,7 @@ function assistantMessage(id: string, parts: Message["parts"]): Message {
         cache: {
           read: 0,
           write: 0,
+          miss: 0,
         },
       },
     },

@@ -158,7 +158,7 @@ const assistant = Effect.fn("TestSession.assistant")(function* (
       input: 0,
       output: 0,
       reasoning: 0,
-      cache: { read: 0, write: 0 },
+      cache: { read: 0, write: 0, miss: 0 },
     },
     modelID: ref.modelID,
     providerID: ref.providerID,

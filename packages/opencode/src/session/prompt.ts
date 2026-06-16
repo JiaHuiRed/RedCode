@@ -598,7 +598,7 @@ export const layer = Layer.effect(
               path: { cwd: ctx.directory, root: ctx.worktree },
               time: { created: Date.now() },
               role: "assistant",
-              tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+              tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
               modelID: model.modelID,
               providerID: model.providerID,
             }
@@ -1399,7 +1399,7 @@ export const layer = Layer.effect(
             variant: lastUser.model.variant,
             path: { cwd: ctx.directory, root: ctx.worktree },
             cost: 0,
-            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
             modelID: model.id,
             providerID: model.providerID,
             time: { created: Date.now() },

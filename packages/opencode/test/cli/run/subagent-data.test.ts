@@ -173,6 +173,7 @@ function childMessage(input: {
         cache: {
           read: 0,
           write: 0,
+          miss: 0,
         },
       },
       finish: "stop",

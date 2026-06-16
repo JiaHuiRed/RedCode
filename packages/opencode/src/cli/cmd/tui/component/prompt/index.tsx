@@ -1781,7 +1781,16 @@ export function Prompt(props: PromptProps) {
                             <span style={{ fg: theme.textMuted }}>
                               {' · miss '}
                             </span>
-                            <span style={{ fg: theme.textMuted }}>
+                            <span
+                              style={{
+                                fg:
+                                  item().cacheMissPct <= 20
+                                    ? theme.success
+                                    : item().cacheMissPct <= 50
+                                      ? theme.warning
+                                      : theme.error,
+                              }}
+                            >
                               {`${item().cacheMissPct}%`}
                             </span>
                           </Show>

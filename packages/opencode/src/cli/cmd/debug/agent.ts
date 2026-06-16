@@ -154,7 +154,7 @@ const createToolContext = Effect.fn("Cli.debug.agent.createToolContext")(functio
       root: ctx.worktree,
     },
     cost: 0,
-    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
   }
   yield* sessionSvc.updateMessage(message)
 

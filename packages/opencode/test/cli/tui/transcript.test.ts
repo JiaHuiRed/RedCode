@@ -79,7 +79,7 @@ describe("transcript", () => {
       parentID: "msg_parent",
       path: { cwd: "/test", root: "/test" },
       cost: 0.001,
-      tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
+      tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
       time: { created: 1000000, completed: 1005400 },
     }
 
@@ -289,7 +289,7 @@ describe("transcript", () => {
         parentID: "msg_parent",
         path: { cwd: "/test", root: "/test" },
         cost: 0.001,
-        tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
+        tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
         time: { created: 1000000, completed: 1005400 },
       }
       const parts: Part[] = [{ id: "p1", sessionID: "ses_123", messageID: "msg_123", type: "text", text: "Hi there" }]
@@ -330,7 +330,7 @@ describe("transcript", () => {
             parentID: "msg_1",
             path: { cwd: "/test", root: "/test" },
             cost: 0.001,
-            tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
+            tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
             time: { created: 1000000000100, completed: 1000000000600 },
           },
           parts: [{ id: "p2", sessionID: "ses_abc123", messageID: "msg_2", type: "text" as const, text: "Hi!" }],
@@ -373,7 +373,7 @@ describe("transcript", () => {
             parentID: "msg_0",
             path: { cwd: "/test", root: "/test" },
             cost: 0.001,
-            tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
+            tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
             time: { created: 1000000000100, completed: 1000000000600 },
           },
           parts: [{ id: "p1", sessionID: "ses_abc123", messageID: "msg_1", type: "text" as const, text: "Response" }],
@@ -408,7 +408,7 @@ describe("transcript", () => {
             parentID: "msg_0",
             path: { cwd: "/test", root: "/test" },
             cost: 0.001,
-            tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
+            tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
             time: { created: 1000000000100, completed: 1000000000600 },
           },
           parts: [{ id: "p1", sessionID: "ses_abc123", messageID: "msg_1", type: "text" as const, text: "Response" }],

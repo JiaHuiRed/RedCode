@@ -400,7 +400,7 @@ const seed = Effect.fn("test.seed")(function* (sessionID: SessionID, opts?: { fi
     agent: "build",
     cost: 0,
     path: { cwd: "/tmp", root: "/tmp" },
-    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
     modelID: ref.modelID,
     providerID: ref.providerID,
     time: { created: Date.now() },

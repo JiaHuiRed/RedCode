@@ -10,6 +10,20 @@
 
 ## TUI
 
+### [0.6.11] - 2026-06-16
+
+> 缓存 miss 颜色显示 + type 级联修复。
+
+#### 新增
+
+- **缓存 miss 颜色显示**：miss 率 ≤20% 绿色（正常），≤50% 黄色（警告），>50% 红色（偏高）；与 cache hit 颜色阈值对称反转，miss 越低颜色越安全（`tui/component/prompt/index.tsx`）。
+
+#### 修复
+
+- **cache miss 字段缺失导致 typecheck 级联失败**：`types.gen.ts` 新增 `miss` 字段后，所有未含 `miss` 的 cache 类型定义报 TS 错误。根治：在核心 Schema (`message-v2.ts`) 的 `Assistant` 和 `StepFinishPart` cache 定义中补充 `miss: Schema.Finite`，确保所有派生类型自动包含 `miss`；同步修正 6 个 fixture/token 默认对象及 9 个测试文件中的对应类型（`session/message-v2.ts`、`session/prompt.ts`、`session/compaction.ts`、`cli/cmd/debug/agent.ts`、`cli/cmd/stats.ts`）。
+
+---
+
 ### [0.6.10] - 2026-06-16
 
 > 文档大扫除 + skill 触发词优化 + bump-version skill。
