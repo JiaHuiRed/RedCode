@@ -20,6 +20,8 @@
     "darkGreen": "#7ec9a0",
     "darkCyan": "#6dcbd3",
     "darkYellow": "#c9b87c",
+    "karinaMagenta": "#8d0079",
+    "karinaYellow": "#efd500",
     "lightStep1": "#f5f7fa",
     "lightStep2": "#edf0f5",
     "lightStep3": "#e4e8ee",
@@ -154,48 +156,48 @@
       "light": "lightStep12"
     },
     "markdownHeading": {
-      "dark": "darkAccent",
-      "light": "lightAccent"
+      "dark": "karinaYellow",
+      "light": "lightStep10"
     },
     "markdownLink": {
-      "dark": "darkStep9",
-      "light": "lightStep9"
-    },
-    "markdownLinkText": {
       "dark": "darkCyan",
       "light": "lightCyan"
+    },
+    "markdownLinkText": {
+      "dark": "darkSecondary",
+      "light": "lightSecondary"
     },
     "markdownCode": {
       "dark": "darkGreen",
       "light": "lightGreen"
     },
     "markdownBlockQuote": {
-      "dark": "darkYellow",
-      "light": "lightYellow"
+      "dark": "darkStep12",
+      "light": "lightStep12"
     },
     "markdownEmph": {
-      "dark": "darkYellow",
-      "light": "lightYellow"
+      "dark": "darkStep12",
+      "light": "lightStep12"
     },
     "markdownStrong": {
-      "dark": "darkOrange",
-      "light": "lightOrange"
+      "dark": "darkStep12",
+      "light": "lightStep12"
     },
     "markdownHorizontalRule": {
-      "dark": "darkStep11",
-      "light": "lightStep11"
+      "dark": "darkStep7",
+      "light": "lightStep7"
     },
     "markdownListItem": {
-      "dark": "darkStep9",
-      "light": "lightStep9"
+      "dark": "darkStep12",
+      "light": "lightStep12"
     },
     "markdownListEnumeration": {
-      "dark": "darkCyan",
-      "light": "lightCyan"
+      "dark": "karinaMagenta",
+      "light": "lightYellow"
     },
     "markdownImage": {
-      "dark": "darkStep9",
-      "light": "lightStep9"
+      "dark": "darkSecondary",
+      "light": "lightSecondary"
     },
     "markdownImageText": {
       "dark": "darkCyan",
@@ -210,12 +212,12 @@
       "light": "lightStep11"
     },
     "syntaxKeyword": {
-      "dark": "darkAccent",
-      "light": "lightAccent"
+      "dark": "karinaMagenta",
+      "light": "lightStep10"
     },
     "syntaxFunction": {
-      "dark": "darkStep9",
-      "light": "lightStep9"
+      "dark": "darkCyan",
+      "light": "lightCyan"
     },
     "syntaxVariable": {
       "dark": "darkRed",
@@ -226,16 +228,16 @@
       "light": "lightGreen"
     },
     "syntaxNumber": {
+      "dark": "karinaYellow",
+      "light": "lightYellow"
+    },
+    "syntaxType": {
       "dark": "darkOrange",
       "light": "lightOrange"
     },
-    "syntaxType": {
-      "dark": "darkYellow",
-      "light": "lightYellow"
-    },
     "syntaxOperator": {
-      "dark": "darkCyan",
-      "light": "lightCyan"
+      "dark": "darkSecondary",
+      "light": "lightSecondary"
     },
     "syntaxPunctuation": {
       "dark": "darkStep12",
