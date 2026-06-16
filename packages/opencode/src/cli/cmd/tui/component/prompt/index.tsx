@@ -346,8 +346,8 @@ export function Prompt(props: PromptProps) {
     }
     if (sumRead <= 0) return
     const cacheDenom = sumRead + (sumMiss || sumWrite || sumInput)
-    const cacheHitPct = Math.round((sumRead / cacheDenom) * 1000) / 10
-    const cacheMissPct = Math.round(((cacheDenom - sumRead) / cacheDenom) * 1000) / 10
+    const cacheHitPct = Math.round((sumRead / cacheDenom) * 10000) / 100
+    const cacheMissPct = Math.round(((cacheDenom - sumRead) / cacheDenom) * 10000) / 100
     return { cacheHitPct, cacheMissPct }
   })
 

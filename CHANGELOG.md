@@ -21,6 +21,7 @@
 #### 改进
 
 - **Karina 主题配色**：新增柳智敏应援色（品红 `#8d0079`、黄色 `#efd500`），标题→金色、链接→青色、链接文字→蓝色、行内代码→绿色、代码块语法高亮→多色、列表序号→品红。清理 opentui 不支持的条目（斜体/加粗/引用/列表项文字无 TextMate scope，设为基底白色避免误导）（`theme/karina.json`）。
+- **缓存命中率显示精确到两位小数**：TUI 输入框下方 `Cache hit 98.50% · miss 1.50%` 从一位改为两位小数（`tui/component/prompt/index.tsx`）。
 
 ---
 
@@ -781,6 +782,8 @@
 - **头像放大 20%**：消息列表中用户和助手头像从 40px 放大至 48px，更清晰易辨（`avatar.css`）。
 - **上下文面板彩色统计**：Context 标签页 16 项统计指标按类型着色——绿色（token 数）、黄色（使用率/推理）、青色（provider/模型/缓存）、品红（消息数）、红色（费用），一目了然（`session-context-tab.tsx`）。
 - **聊天气泡多色左边框**：用户气泡保持品红左边框，助手回复加青色左边框，工具调用组加黄色左边框，bash 输出加绿色左边框——四种颜色区分四种内容类型（`session-turn.css`、`message-part.css`）。
+- **缓存命中率显示精确到两位小数**：侧栏缓存命中率从一位改为两位小数，更精确反映实际缓存效能（`session-context-metrics.ts`、`session-context-format.ts`）。
+- **缓存命中率计算修正**：深层套 `cache.miss` 元数据而非回退 `sumInput`，避免分母多算缓存命中导致命中率偏低（`session-context-metrics.ts`）。
 
 ---
 

@@ -103,7 +103,7 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
           }
         }
         const denom = sumRead + (sumMiss || sumWrite || sumInput)
-        return denom > 0 && sumRead > 0 ? Math.round((sumRead / denom) * 1000) / 10 : null
+        return denom > 0 && sumRead > 0 ? Math.round((sumRead / denom) * 10000) / 100 : null
       })(),
       total,
       usage: limit ? Math.round((total / limit) * 100) : null,
