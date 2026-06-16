@@ -140,6 +140,13 @@ export const EditTool = Tool.define(
                     diff,
                   },
                 })
+                {
+                  const garbled = Bom.detectGarbled(contentNew)
+                  if (garbled)
+                    return yield* Effect.fail(
+                      new Error(`拒绝写入 ${filePath}：${garbled}。多半是用错误编码读取后写回，请用 read 重读原文(UTF-8)，勿写回乱码。`),
+                    )
+                }
                 yield* afs.writeWithDirs(filePath, Bom.join(contentNew, desiredBom))
                 if (yield* format.file(filePath)) {
                   contentNew = yield* Bom.syncFile(afs, filePath, desiredBom)
@@ -202,6 +209,13 @@ export const EditTool = Tool.define(
                 },
               })
 
+              {
+                const garbled = Bom.detectGarbled(contentNew)
+                if (garbled)
+                  return yield* Effect.fail(
+                    new Error(`拒绝写入 ${filePath}：${garbled}。多半是用错误编码读取后写回，请用 read 重读原文(UTF-8)，勿写回乱码。`),
+                  )
+              }
               yield* afs.writeWithDirs(filePath, Bom.join(contentNew, desiredBom))
               if (yield* format.file(filePath)) {
                 contentNew = yield* Bom.syncFile(afs, filePath, desiredBom)
@@ -484,6 +498,13 @@ const executeHashline = (
           metadata: { filepath: resolvedPath, diff },
         })
 
+        {
+          const garbled = Bom.detectGarbled(contentNew)
+          if (garbled)
+            return yield* Effect.fail(
+              new Error(`拒绝写入 ${resolvedPath}：${garbled}。多半是用错误编码读取后写回，请用 read 重读原文(UTF-8)，勿写回乱码。`),
+            )
+        }
         yield* afs.writeWithDirs(resolvedPath, Bom.join(contentNew, desiredBom))
         if (yield* format.file(resolvedPath)) {
           contentNew = yield* Bom.syncFile(afs, resolvedPath, desiredBom)

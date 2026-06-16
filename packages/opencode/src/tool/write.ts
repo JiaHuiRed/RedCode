@@ -50,6 +50,15 @@ export const WriteTool = Tool.define(
           const contentOld = source.text
           const contentNew = next.text
 
+          // 260616 Red 乱码护栏：拒绝把乱码内容写入文件（GBK 错解 UTF-8 的 PUA/替换符）
+          const garbled = Bom.detectGarbled(contentNew)
+          if (garbled)
+            return yield* Effect.fail(
+              new Error(
+                `拒绝写入 ${filepath}：${garbled}。多半是用了错误编码(如 GBK)读取后又写回。请用 read 工具重新读取原文（UTF-8），不要把乱码内容写回。`,
+              ),
+            )
+
           const diff = trimDiff(createTwoFilesPatch(filepath, filepath, contentOld, contentNew))
           yield* ctx.ask({
             permission: "edit",
