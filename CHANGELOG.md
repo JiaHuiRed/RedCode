@@ -10,6 +10,16 @@
 
 ## TUI
 
+### [0.6.9] - 2026-06-16
+
+> session 记录 client 字段 — 根治 Office 群聊 TUI/GUI 分类误判。
+
+#### 修复
+
+- **Office 群聊会话分类误判**：`isTuiSession()` 原用 `directory.includes("redcode")` 判断，项目路径 `D:\AI\RedCode` 恒匹配导致所有会话都归 TUI。根治：session 创建时写入 `client` 字段（`flags.client`：desktop=GUI，cli=TUI），前端优先读 client 精确分类；老会话无 client 走标题前缀 `[宋雨琦]`/`[GUI]` fallback（`session/session.ts`、`session/session.sql.ts`、`app/pages/chat/index.tsx`、migration `20260616065539_session_client`）。
+
+---
+
 ### [0.6.8] - 2026-06-16
 
 > 写入侧乱码护栏 — write/edit 写入前检测私用区字符/替换符，拦住"把文件写成乱码"。
