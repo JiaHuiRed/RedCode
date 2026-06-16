@@ -73,7 +73,7 @@
       "command": ["vision-mcp-server"],
       "environment": {
         "VISION_BASE_URL": "http://localhost:11434/v1/chat/completions",
-        "VISION_MODEL": "qwen3-vl:8b"
+        "VISION_MODEL": "minicpm-v4.5:q5_K_M"
       },
       "description": "图像理解——当前模型非多模态、需看截图/图片内容时用（走本地 qwen3-vl）；纯文本任务不用。",
       "enabled": true
