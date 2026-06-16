@@ -34,10 +34,10 @@
 }
 
 [data-component="avatar"][data-size="medium"] {
-  width: 2.5rem;
-  height: 2.5rem;
-  font-size: 1.25rem;
-  line-height: 2.5rem;
+  width: 3rem;
+  height: 3rem;
+  font-size: 1.5rem;
+  line-height: 3rem;
 }
 
 [data-component="avatar"][data-size="large"] {

@@ -147,6 +147,7 @@
     overflow: hidden;
     background: var(--surface-base);
     border: 1px solid var(--border-weak-base);
+    border-left: 2px solid var(--syntax-property);
     padding: 10px 14px;
     border-radius: 10px 10px 4px 10px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
@@ -375,6 +376,7 @@
 [data-component="bash-output"] {
   width: 100%;
   border: 1px solid var(--border-weak-base);
+  border-left: 2px solid var(--syntax-success);
   border-radius: 6px;
   background: transparent;
   position: relative;
@@ -665,6 +667,8 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  border-left: 2px solid var(--syntax-warning);
+  margin-left: 2px;
 
   [data-slot="context-tool-group-item"] {
     min-width: 0;

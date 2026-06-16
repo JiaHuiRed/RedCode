@@ -98,6 +98,8 @@
     flex-direction: column;
     align-self: stretch;
     gap: 12px;
+    border-left: 2px solid var(--syntax-info);
+    padding-left: 12px;
   }
 
   [data-slot="session-turn-assistant-row"] {

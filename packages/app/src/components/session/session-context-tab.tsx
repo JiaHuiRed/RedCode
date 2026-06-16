@@ -26,11 +26,13 @@ const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
   other: "var(--syntax-comment)",
 }
 
-function Stat(props: { label: string; value: JSX.Element }) {
+function Stat(props: { label: string; value: JSX.Element; color?: string }) {
   return (
     <div class="flex flex-col gap-1">
       <div class="text-12-regular text-text-weak">{props.label}</div>
-      <div class="text-12-medium text-text-strong">{props.value}</div>
+      <div class="text-12-medium" style={{ color: props.color ?? "var(--text-strong)" }}>
+        {props.value}
+      </div>
     </div>
   )
 }
@@ -191,15 +193,15 @@ export function SessionContextTab() {
 
   const stats = [
     { label: "context.stats.session", value: () => info()?.title ?? params.id ?? "—" },
-    { label: "context.stats.messages", value: () => counts().all.toLocaleString(language.intl()) },
-    { label: "context.stats.provider", value: providerLabel },
-    { label: "context.stats.model", value: modelLabel },
+    { label: "context.stats.messages", value: () => counts().all.toLocaleString(language.intl()), color: "var(--syntax-success)" },
+    { label: "context.stats.provider", value: providerLabel, color: "var(--syntax-info)" },
+    { label: "context.stats.model", value: modelLabel, color: "var(--syntax-info)" },
     { label: "context.stats.limit", value: () => formatter().number(ctx()?.limit) },
-    { label: "context.stats.totalTokens", value: () => formatter().number(ctx()?.total) },
-    { label: "context.stats.usage", value: () => formatter().percent(ctx()?.usage) },
-    { label: "context.stats.inputTokens", value: () => formatter().number(ctx()?.input) },
-    { label: "context.stats.outputTokens", value: () => formatter().number(ctx()?.output) },
-    { label: "context.stats.reasoningTokens", value: () => formatter().number(ctx()?.reasoning) },
+    { label: "context.stats.totalTokens", value: () => formatter().number(ctx()?.total), color: "var(--syntax-success)" },
+    { label: "context.stats.usage", value: () => formatter().percent(ctx()?.usage), color: "var(--syntax-warning)" },
+    { label: "context.stats.inputTokens", value: () => formatter().number(ctx()?.input), color: "var(--syntax-success)" },
+    { label: "context.stats.outputTokens", value: () => formatter().number(ctx()?.output), color: "var(--syntax-success)" },
+    { label: "context.stats.reasoningTokens", value: () => formatter().number(ctx()?.reasoning), color: "var(--syntax-warning)" },
     {
       label: "context.stats.cacheTokens",
       value: () => {
@@ -210,13 +212,14 @@ export function SessionContextTab() {
           ? `${formatter().number(c.cacheRead)} / ${formatter().number(c.cacheWrite)}${hit}`
           : `${formatter().number(c.cacheRead)}${hit}`
       },
+      color: "var(--syntax-info)",
     },
-    { label: "context.stats.userMessages", value: () => counts().user.toLocaleString(language.intl()) },
-    { label: "context.stats.assistantMessages", value: () => counts().assistant.toLocaleString(language.intl()) },
-    { label: "context.stats.totalCost", value: cost },
+    { label: "context.stats.userMessages", value: () => counts().user.toLocaleString(language.intl()), color: "var(--syntax-property)" },
+    { label: "context.stats.assistantMessages", value: () => counts().assistant.toLocaleString(language.intl()), color: "var(--syntax-property)" },
+    { label: "context.stats.totalCost", value: cost, color: "var(--syntax-critical)" },
     { label: "context.stats.sessionCreated", value: () => formatter().time(info()?.time.created) },
     { label: "context.stats.lastActivity", value: () => formatter().time(ctx()?.message.time.created) },
-  ] satisfies { label: string; value: () => JSX.Element }[]
+  ] satisfies { label: string; value: () => JSX.Element; color?: string }[]
 
   let scroll: HTMLDivElement | undefined
   let frame: number | undefined
@@ -279,7 +282,13 @@ export function SessionContextTab() {
       <div class="px-6 pt-4 pb-10 flex flex-col gap-10">
         <div class="grid grid-cols-1 @[32rem]:grid-cols-2 gap-4">
           <For each={stats}>
-            {(stat) => <Stat label={language.t(stat.label as Parameters<typeof language.t>[0])} value={stat.value()} />}
+            {(stat) => (
+              <Stat
+                label={language.t(stat.label as Parameters<typeof language.t>[0])}
+                value={stat.value()}
+                color={stat.color}
+              />
+            )}
           </For>
         </div>
 
