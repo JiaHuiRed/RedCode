@@ -54,12 +54,14 @@ Context 被压缩前，保存当前状态到 `~/.redcode/memory/.session-last.js
 
 ## 收工/结束时（Stop）
 
+**0. 先同步再动手**：`cd ~/.redcode && git pull --rebase` 拿最新记忆（别的会话/另一台机器可能刚推过），基于最新版再编辑，避免覆盖别人刚写的。
+
 1. 从 `~/.redcode/memory/` 当天日志摘**关键且需长期警惕**的教训
 2. 去重合入 `~/.redcode/MEMORY.md`
 3. 给 `~/.redcode/memory/INDEX.md` 追加本 session 一条 50–100 token 摘要（[Session]/[Lesson]/[Decision]/[Note] 分类）
 4. 删当日日志里已移到长期库的条目
 5. 复审长期库，删过时/已内化条目
-6. **推送私仓**：`cd ~/.redcode && git add -A && git commit -m "..." && git push`，确保今天沉淀的记忆入库。做完这步才算真正收工。**注意：只在所有记忆文件操作确认无误后推送，不要中途推送。**
+6. **推送私仓**：先 `git status` 核验，**只精确 add 记忆文件**：`cd ~/.redcode && git add MEMORY.md memory/ && git commit -m "..." && git push`，确保今天沉淀的记忆入库。做完这步才算真正收工。**绝不用 `git add -A`/`git add .`——共享工作树里 git 不分谁改的，`-A` 会把别的会话（CC/敏敏/小宋）未提交的改动一起吞进你的 commit。其他文件（souls/skill/redcode.jsonc 等）由改动它们的场景各自精确提交。只在记忆文件确认无误后推送，不中途推送。push 若被远端拒绝（远端有新提交），`git pull --rebase` 合并后重推，绝不 force push。**
 
 ## 记忆结构
 
