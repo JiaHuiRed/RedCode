@@ -59,6 +59,7 @@ Context 被压缩前，保存当前状态到 `~/.redcode/memory/.session-last.js
 3. 给 `~/.redcode/memory/INDEX.md` 追加本 session 一条 50–100 token 摘要（[Session]/[Lesson]/[Decision]/[Note] 分类）
 4. 删当日日志里已移到长期库的条目
 5. 复审长期库，删过时/已内化条目
+6. **推送私仓**：`cd ~/.redcode && git add -A && git commit -m "..." && git push`，确保今天沉淀的记忆入库。做完这步才算真正收工。**注意：只在所有记忆文件操作确认无误后推送，不要中途推送。**
 
 ## 记忆结构
 
