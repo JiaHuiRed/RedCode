@@ -10,11 +10,11 @@
 > 基于 [opencode](https://github.com/anomalyco/opencode)（sst.dev）深度二次开发。
 
 [![TUI](https://badgen.net/badge/TUI/0.6.11/blue)](CHANGELOG.md)
-[![Desktop](https://badgen.net/badge/Desktop/0.6.6/0078d4)](CHANGELOG.md)
-[![平台](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-Windows%2010%2F11-0078d4)](https://github.com/JiaHuiRed/RedCode)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)](https://typescriptlang.org)
-[![Bun](https://img.shields.io/badge/Bun-1.3.x-fcf2d0)](https://bun.sh)
-[![许可证](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-lightgrey)](LICENSE)
+[![Desktop](https://badgen.net/badge/Desktop/0.6.6/purple)](CHANGELOG.md)
+[![平台](https://badgen.net/badge/平台/Windows%2010%2F11/green)](https://github.com/JiaHuiRed/RedCode)
+[![TypeScript](https://badgen.net/badge/TypeScript/5.x/3178c6)](https://typescriptlang.org)
+[![Bun](https://badgen.net/badge/Bun/1.3.x/fb6e19)](https://bun.sh)
+[![许可证](https://badgen.net/badge/许可证/MIT/grey)](LICENSE)
 
 ---
 
