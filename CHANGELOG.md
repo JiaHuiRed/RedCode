@@ -10,6 +10,16 @@
 
 ## TUI
 
+### [0.6.12] - 2026-06-17
+
+> LLM 依赖循环修复 — 提取 route 工具函数消除 packages/llm 菱形依赖。
+
+#### 重构
+
+- **LLM route 工具函数提取**：将 `route/client.ts` 中 `eventError`、`encodeJson`、`validateWith` 三个工具函数提取到 `route/errors.ts`，切断 client→protocols/shared 反向导入路径，消除 `packages/llm/src` 内 14 文件菱形依赖循环（`packages/llm/src/route/errors.ts`、`packages/llm/src/route/client.ts`）。
+
+---
+
 ### [0.6.11] - 2026-06-16
 
 > 缓存 miss 颜色显示 + type 级联修复。
