@@ -9,7 +9,7 @@ import type { Transport, TransportRuntime } from "./transport"
 import { WebSocketExecutor } from "./transport"
 import type { Protocol } from "./protocol"
 import { applyCachePolicy } from "../cache-policy"
-import * as ProviderShared from "../protocols/shared"
+import { eventError, encodeJson, validateWith } from "./errors"
 import * as ToolRuntime from "../tool-runtime"
 import type { Tools } from "../tool"
 import type { LLMError, LLMEvent, PreparedRequestOf, ProtocolID, ProviderOptions } from "../schema"
@@ -217,7 +217,7 @@ export interface MakeTransportInput<Body, Prepared, Frame, Event, State> {
 const streamError = (route: string, message: string, cause: Cause.Cause<unknown>) => {
   const failed = cause.reasons.find(Cause.isFailReason)?.error
   if (failed instanceof LLMErrorClass) return failed
-  return ProviderShared.eventError(route, message, Cause.pretty(cause))
+  return eventError(route, message, Cause.pretty(cause))
 }
 
 function makeFromTransport<Body, Prepared, Frame, Event, State>(
@@ -229,10 +229,10 @@ function makeFromTransport<Body, Prepared, Frame, Event, State>(
   const decodeEvent = (route: string) => (frame: Frame) =>
     decodeEventEffect(frame).pipe(
       Effect.mapError(() =>
-        ProviderShared.eventError(
+        eventError(
           input.id,
           `Invalid ${route} stream event`,
-          typeof frame === "string" ? frame : ProviderShared.encodeJson(frame),
+          typeof frame === "string" ? frame : encodeJson(frame),
         ),
       ),
     )
@@ -344,7 +344,7 @@ const compile = Effect.fn("LLM.compile")(function* (request: LLMRequest) {
 
   const body = yield* route.body
     .from(resolved)
-    .pipe(Effect.flatMap(ProviderShared.validateWith(Schema.decodeUnknownEffect(route.body.schema))))
+    .pipe(Effect.flatMap(validateWith(Schema.decodeUnknownEffect(route.body.schema))))
   const prepared = yield* route.prepareTransport(body, resolved)
 
   return {
