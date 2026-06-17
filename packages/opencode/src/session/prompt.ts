@@ -85,17 +85,26 @@ function sessionSourceLabel(client: string): string {
   }
 }
 
-// 260615 Red inject recent office group chat messages into primary agent context
-function groupChatContext(): string | undefined {
+// 260617 Red session-level caches: snapshot once per session to stabilize system prompt for prefix caching.
+// Without caching, instruction.system() re-reads disk every turn — any file change (MEMORY.md, AGENTS.md,
+// skill files) mutates the system prompt and invalidates DeepSeek prefix cache mid-session.
+let _systemCache: { sessionID: string; skills: string | undefined; env: string[]; instructions: string[] } | undefined
+// 260617 Red cache type allows undefined text (empty chat room — still cache to avoid DB query every turn)
+let _chatCtxCache: { sessionID: string; text: string | undefined } | undefined
+function groupChatContext(sessionID: string): string | undefined {
+  if (_chatCtxCache?.sessionID === sessionID) return _chatCtxCache.text
   try {
     const messages = Chat.getMessages("office", { limit: 10 })
-    if (!messages || messages.length === 0) return undefined
+    if (!messages || messages.length === 0) {
+      _chatCtxCache = { sessionID, text: undefined } // 260617 Red cache empty result too
+      return undefined
+    }
     const lines = messages.reverse().map((m) => {
       const time = new Date(m.time_created).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
       const sender = m.sender === "user" ? "User" : m.sender === "tui" ? "TUI(敏敏)" : "GUI(小宋)"
       return `[${time}] ${sender}: ${m.text ?? ""}`
     })
-    return [
+    const text = [
       "<office-group-chat>",
       "Recent messages from the Office group chat (shared coordination channel between User, TUI agent, and GUI agent).",
       "Be aware of these messages — they may contain coordination instructions from the user or status updates from the other agent.",
@@ -103,6 +112,8 @@ function groupChatContext(): string | undefined {
       ...lines,
       "</office-group-chat>",
     ].join("\n")
+    _chatCtxCache = { sessionID, text }
+    return text
   } catch {
     return undefined
   }
@@ -1478,16 +1489,27 @@ export const layer = Layer.effect(
 
             yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
+            // 260617 Red cache instruction+skills+env per session to stabilize system prompt for prefix caching.
+            // instruction.system() re-reads all instruction files from disk every turn — if any file
+            // changes mid-session (agent edits MEMORY.md, AGENTS.md, etc.), the system prompt mutates
+            // and DeepSeek prefix cache is invalidated, causing cache hit to cliff-drop.
+            const cachedSystem = _systemCache?.sessionID === sessionID
+              ? _systemCache
+              : undefined
             const [skills, env, instructions, modelMsgs] = yield* Effect.all([
-              sys.skills(agent),
-              sys.environment(model),
-              instruction.system().pipe(Effect.orDie),
+              cachedSystem ? Effect.succeed(cachedSystem.skills) : sys.skills(agent),
+              cachedSystem ? Effect.succeed(cachedSystem.env) : sys.environment(model),
+              cachedSystem ? Effect.succeed(cachedSystem.instructions) : instruction.system().pipe(Effect.orDie),
               MessageV2.toModelMessagesEffect(msgs, model),
             ])
+            if (!cachedSystem) {
+              _systemCache = { sessionID, skills, env, instructions }
+            }
             const system = [...env, ...instructions, ...(skills ? [skills] : [])]
             // 260615 Red inject group chat context for primary agents only
+            // 260617 Red pass sessionID for cache key — snapshot once per session, not per turn
             if (!session.parentID) {
-              const chatCtx = groupChatContext()
+              const chatCtx = groupChatContext(sessionID)
               if (chatCtx) system.push(chatCtx)
             }
             const format = lastUser.format ?? { type: "text" as const }
