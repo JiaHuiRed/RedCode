@@ -39,7 +39,7 @@ function checkGUI(): VersionInfo {
   const html = read("packages/desktop/src/renderer/index.html")
   return {
     pkg: version,
-    readme: (readmeZH.includes(`Desktop-${version}`) || readmeZH.includes(`Desktop ${version}`)) ? version : `${version} ✗`,
+    readme: (readmeZH.includes(`Desktop/${version}`) || readmeZH.includes(`Desktop-${version}`) || readmeZH.includes(`Desktop ${version}`)) ? version : `${version} ✗`,
     changelog: changelog.includes(`[${version}]`) ? version : `${version} ✗`,
     // __RC_VERSION__ 占位符 = 构建时自动注入，永远跟随 package.json，视为一致
     badge: (html.includes("__RC_VERSION__") || html.includes(`v${version}`)) ? version : `${version} ✗`,
@@ -53,7 +53,7 @@ function checkTUI(): VersionInfo {
   const changelog = read("CHANGELOG.md")
   return {
     pkg: version,
-    readme: (readmeZH.includes(`TUI-${version}`) || readmeZH.includes(`TUI ${version}`)) ? version : `${version} ✗`,
+    readme: (readmeZH.includes(`TUI/${version}`) || readmeZH.includes(`TUI-${version}`) || readmeZH.includes(`TUI ${version}`)) ? version : `${version} ✗`,
     changelog: changelog.includes(`[${version}]`) ? version : `${version} ✗`,
     badge: "N/A",
   }
