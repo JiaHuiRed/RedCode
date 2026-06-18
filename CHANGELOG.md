@@ -10,6 +10,16 @@
 
 ## TUI
 
+### [0.6.14] - 2026-06-18
+
+> DCP 消息钉住 — 阻止 DCP 累积修改破坏 DeepSeek 前缀缓存。
+
+#### 修复
+
+- **DCP 累积修改致前缀缓存命中率下降**：DCP 的 `experimental.chat.messages.transform` 每轮对旧消息做累积修改（工具输出裁剪 `prune` 增量增长、压缩提示 `nudge` 锚点漂移、消息 ID 标签 `priority` 随裁剪变化），导致 DeepSeek 前缀从修改点起整段缓存 miss。经济账：裁剪省 ~$0.0005/轮，缓存 miss 多花 ~$0.01/轮，损失是收益的 20 倍。新增 `_msgPinCache`：DCP 转换后按 `msg.info.id` 缓存每条消息的 `parts`，后续轮次直接恢复缓存版本，前缀在整个 session 内保持字节一致。切换 session 自动清空（`packages/opencode/src/session/prompt.ts`）。
+
+---
+
 ### [0.6.13] - 2026-06-18
 
 > DeepSeek 前缀缓存退化修复 — _systemCache / _chatCtxCache 重建，命中率从 70% 恢复到 98%。

@@ -91,6 +91,11 @@ function sessionSourceLabel(client: string): string {
 let _systemCache: { sessionID: string; skills: string | undefined; env: string[]; instructions: string[] } | undefined
 // 260617 Red cache type allows undefined text (empty chat room — still cache to avoid DB query every turn)
 let _chatCtxCache: { sessionID: string; text: string | undefined } | undefined
+// 260618 Red post-DCP message pinning: cache each message's transformed parts after plugin transforms.
+// DCP's cumulative operations (prune, nudge injection, ID tags with shifting priorities) modify old messages
+// differently each turn, breaking prefix cache. By pinning the first-transformed version, the prefix stays
+// byte-identical across turns. Cost analysis: prefix cache savings (~$0.01/turn) >> DCP prune savings (~$0.0005/turn).
+let _msgPinCache: { sessionID: string; messages: Map<string, unknown[]> } | undefined
 function groupChatContext(sessionID: string): string | undefined {
   if (_chatCtxCache?.sessionID === sessionID) return _chatCtxCache.text
   try {
@@ -1488,6 +1493,24 @@ export const layer = Layer.effect(
             }
 
             yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
+
+            // 260618 Red pin post-DCP message content for prefix cache stability.
+            // DCP modifies old messages cumulatively (prune grows, nudge anchors shift, priority tags change).
+            // By restoring already-sent messages from cache, the prefix stays identical across turns.
+            {
+              if (!_msgPinCache || _msgPinCache.sessionID !== sessionID) {
+                _msgPinCache = { sessionID, messages: new Map() }
+              }
+              for (const msg of msgs) {
+                const mid = msg.info.id
+                const cached = _msgPinCache.messages.get(mid)
+                if (cached) {
+                  msg.parts = cached as typeof msg.parts
+                } else {
+                  _msgPinCache.messages.set(mid, structuredClone(msg.parts))
+                }
+              }
+            }
 
             // 260617 Red cache instruction+skills+env per session to stabilize system prompt for prefix caching.
             // instruction.system() re-reads all instruction files from disk every turn — if any file
