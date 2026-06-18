@@ -57,7 +57,7 @@
       "drizzle-kit": "1.0.0-rc.2",
       "drizzle-orm": "1.0.0-rc.2",
       "effect": "4.0.0-beta.66",
-      "ai": "6.0.168",
+      "ai": "6.0.208",
       "cross-spawn": "7.0.6",
       "hono": "4.10.7",
       "hono-openapi": "1.1.2",
@@ -70,7 +70,7 @@
       "semver": "7.7.4",
       "typescript": "5.8.2",
       "@typescript/native-preview": "7.0.0-dev.20251207.1",
-      "zod": "4.1.8",
+      "zod": "4.4.3",
       "remeda": "2.26.0",
       "shiki": "3.20.0",
       "solid-list": "0.3.0",
@@ -82,7 +82,7 @@
       "@solidjs/start": "https://pkg.pr.new/@solidjs/start@dfb2020",
       "@sentry/solid": "10.36.0",
       "@sentry/vite-plugin": "4.6.0",
-      "solid-js": "1.9.10",
+      "solid-js": "1.9.13",
       "vite-plugin-solid": "2.11.10",
       "@lydell/node-pty": "1.2.0-beta.10"
     }
