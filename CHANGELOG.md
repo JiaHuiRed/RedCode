@@ -10,6 +10,20 @@
 
 ## TUI
 
+### [0.6.13] - 2026-06-18
+
+> DeepSeek 前缀缓存退化修复 — _systemCache / _chatCtxCache 重建，命中率从 70% 恢复到 98%。
+
+#### 修复
+
+- **DeepSeek 前缀缓存退化**：Commit 7ee58bfcb 新增的 `_systemCache` / `_chatCtxCache` 缓存层被工作树回退约 30 行变更，导致 `instruction.system()` 每轮重读磁盘、`groupChatContext()` 每轮重查数据库，DeepSeek 前缀缓存命中率从 95%+ 骤降至 60-70%。通过 `git checkout HEAD` 恢复缓存逻辑；`groupChatContext()` 接受 sessionID 作为缓存键（`packages/opencode/src/session/prompt.ts`）。
+
+#### 优化
+
+- **依赖安全升级**：root catalog（solid-js 1.9.10→1.9.13、zod 4.1.8→4.4.3、ai 6.0.168→6.0.208）、opencode（immer 11.1.4→11.1.8、glob 13.0.5→13.0.6、@opentelemetry/api 1.9.0→1.9.1、@modelcontextprotocol/sdk 1.27.1→1.29.0）、desktop（electron 42.2.0→42.4.1），typecheck 全部通过。
+
+---
+
 ### [0.6.12] - 2026-06-17
 
 > LLM 依赖循环修复 — 提取 route 工具函数消除 packages/llm 菱形依赖。
