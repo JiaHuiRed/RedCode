@@ -1,7 +1,7 @@
 {
   "name": "@redcode-ai/desktop",
   "private": true,
-  "version": "0.6.6",
+  "version": "0.6.7",
   "type": "module",
   "license": "MIT",
   "homepage": "https://redcode.dev",
@@ -50,7 +50,7 @@
     "@types/node": "catalog:",
     "@typescript/native-preview": "catalog:",
     "@valibot/to-json-schema": "1.6.0",
-    "electron": "42.2.0",
+    "electron": "42.4.1",
     "electron-builder": "^26",
     "electron-vite": "^5",
     "solid-js": "catalog:",

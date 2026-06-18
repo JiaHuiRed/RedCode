@@ -98,6 +98,22 @@
     flex-direction: column;
     align-self: stretch;
     gap: 12px;
+    position: relative;
+
+    /* 气泡样式 — 粉色，iMessage 风格圆角（左侧来源） */
+    background: color-mix(in srgb, #f8a4d0 16%, var(--surface-base));
+    border: 1px solid color-mix(in srgb, #f8a4d0 25%, var(--border-weak-base));
+    border-left: 2.5px solid color-mix(in srgb, #f8a4d0 55%, var(--border-weak-base));
+    border-radius: 4px 20px 20px 20px;
+    padding: 10px 14px;
+    box-shadow: 0 1px 4px rgba(248, 164, 208, 0.08);
+
+    /* 工具输出在气泡内时去掉自身边框，避免双重边框 */
+    [data-component="bash-output"],
+    [data-component="tool-output"] {
+      border-color: transparent;
+      background: transparent;
+    }
   }
 
   [data-slot="session-turn-assistant-row"] {

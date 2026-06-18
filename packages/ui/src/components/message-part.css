@@ -145,13 +145,15 @@
     white-space: pre-wrap;
     word-break: break-word;
     overflow: hidden;
-    background: color-mix(in srgb, var(--syntax-property) 8%, var(--surface-base));
-    border: 1px solid color-mix(in srgb, var(--syntax-property) 25%, var(--border-weak-base));
-    border-left: 2px solid var(--syntax-property);
+    position: relative;
+    /* 气泡样式 — 粉色，iMessage 风格圆角 */
+    background: color-mix(in srgb, #f8a4d0 16%, var(--surface-base));
+    border: 1px solid color-mix(in srgb, #f8a4d0 25%, var(--border-weak-base));
+    border-right: 2.5px solid color-mix(in srgb, #f8a4d0 55%, var(--border-weak-base));
     padding: 10px 14px;
-    border-radius: 10px 10px 4px 10px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-    transition: border-color 0.15s ease;
+    border-radius: 20px 20px 4px 20px;
+    box-shadow: 0 1px 4px rgba(248, 164, 208, 0.08);
+    transition: border-color 0.15s ease, box-shadow 0.2s ease;
 
     [data-highlight="file"] {
       color: var(--syntax-property);
@@ -227,7 +229,7 @@
 
 [data-component="text-part"] {
   width: 100%;
-  margin-top: 24px;
+  margin-top: 12px;
 
   [data-slot="text-part-body"] {
     margin-top: 0;
