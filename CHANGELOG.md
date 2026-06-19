@@ -10,6 +10,17 @@
 
 ## TUI
 
+### [0.6.15] - 2026-06-20
+
+> bun compile 模块重复实例化致前缀缓存失效修复 + MCP 孤儿进程泄漏修复。
+
+#### 修复
+
+- **DeepSeek 前缀缓存 bun compile 退化**：`bun compile --single` 下 `prompt.ts` 模块可能被实例化多次，导致模块级 `let` 缓存变量（`_systemCache`、`_chatCtxCache`、`_msgPinCache`）多副本不同步，系统提示词每轮字节级变化，前缀缓存命中率从 98% 骤降至 ~50%。迁移至 `globalThis.__rc_prompt_caches` 容器，绕过 bun compile 模块隔离，前缀在 session 内保持字节一致（`packages/opencode/src/session/prompt.ts`）。
+- **MCP 孤儿进程泄漏（Windows）**：`connectLocal()` spawn 子进程后若连接失败，`transport.close()` → `process.kill()` 在 Windows 编译 exe 下不可靠，子进程成孤儿持续占锁/端口。`reconcile()` 热加载 1s 防抖看到失败重试 spawn 新进程，多次 config 写入 → 8+ 副本同时运行。修复：connect 前捕获 `transport.pid`，catch 分支调 `killProcessTree` 杀整棵树；新增 `creating` Set 防重入守卫（`packages/opencode/src/mcp/index.ts`）。
+
+---
+
 ### [0.6.14] - 2026-06-18
 
 > DCP 消息钉住 — 阻止 DCP 累积修改破坏 DeepSeek 前缀缓存。
@@ -838,6 +849,16 @@
 ---
 
 ## GUI
+
+### [0.6.8] - 2026-06-20
+
+> ELECTRON_MIRROR 镜像配置 — Windows electron-builder 下载失败修复。
+
+#### 新增
+
+- **Windows electron-builder 下载镜像**：国内网络 electron-builder 从 GitHub 下载 electron 42.x 经常超时/失败。在 `packages/desktop/package.json` 所有含 `electron-builder` 的 scripts 前 prepend `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`，确保 Windows 构建走国内镜像加速（`packages/desktop/package.json`）。
+
+---
 
 ### [0.6.7] - 2026-06-18
 
