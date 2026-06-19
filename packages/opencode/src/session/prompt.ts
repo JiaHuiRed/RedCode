@@ -88,20 +88,19 @@ function sessionSourceLabel(client: string): string {
 // 260617 Red session-level caches: snapshot once per session to stabilize system prompt for prefix caching.
 // Without caching, instruction.system() re-reads disk every turn — any file change (MEMORY.md, AGENTS.md,
 // skill files) mutates the system prompt and invalidates DeepSeek prefix cache mid-session.
-let _systemCache: { sessionID: string; skills: string | undefined; env: string[]; instructions: string[] } | undefined
-// 260617 Red cache type allows undefined text (empty chat room — still cache to avoid DB query every turn)
-let _chatCtxCache: { sessionID: string; text: string | undefined } | undefined
-// 260618 Red post-DCP message pinning: cache each message's transformed parts after plugin transforms.
-// DCP's cumulative operations (prune, nudge injection, ID tags with shifting priorities) modify old messages
-// differently each turn, breaking prefix cache. By pinning the first-transformed version, the prefix stays
-// byte-identical across turns. Cost analysis: prefix cache savings (~$0.01/turn) >> DCP prune savings (~$0.0005/turn).
-let _msgPinCache: { sessionID: string; messages: Map<string, unknown[]> } | undefined
+// 260620 Red use globalThis for cache storage — bun compile may instantiate module multiple times,
+// causing module-level `let` to be duplicated across instances. globalThis ensures single shared cache.
+const _caches = (globalThis as any).__rc_prompt_caches ??= {
+  system: undefined as { sessionID: string; skills: string | undefined; env: string[]; instructions: string[] } | undefined,
+  chatCtx: undefined as { sessionID: string; text: string | undefined } | undefined,
+  msgPin: undefined as { sessionID: string; messages: Map<string, unknown[]> } | undefined,
+}
 function groupChatContext(sessionID: string): string | undefined {
-  if (_chatCtxCache?.sessionID === sessionID) return _chatCtxCache.text
+  if (_caches.chatCtx?.sessionID === sessionID) return _caches.chatCtx.text
   try {
     const messages = Chat.getMessages("office", { limit: 10 })
     if (!messages || messages.length === 0) {
-      _chatCtxCache = { sessionID, text: undefined } // 260617 Red cache empty result too
+      _caches.chatCtx = { sessionID, text: undefined } // 260617 Red cache empty result too
       return undefined
     }
     const lines = messages.reverse().map((m) => {
@@ -117,7 +116,7 @@ function groupChatContext(sessionID: string): string | undefined {
       ...lines,
       "</office-group-chat>",
     ].join("\n")
-    _chatCtxCache = { sessionID, text }
+    _caches.chatCtx = { sessionID, text }
     return text
   } catch {
     return undefined
@@ -1498,16 +1497,19 @@ export const layer = Layer.effect(
             // DCP modifies old messages cumulatively (prune grows, nudge anchors shift, priority tags change).
             // By restoring already-sent messages from cache, the prefix stays identical across turns.
             {
-              if (!_msgPinCache || _msgPinCache.sessionID !== sessionID) {
-                _msgPinCache = { sessionID, messages: new Map() }
+              if (!_caches.msgPin || _caches.msgPin.sessionID !== sessionID) {
+                _caches.msgPin = { sessionID, messages: new Map() }
               }
+              let pinned = 0, cached = 0
               for (const msg of msgs) {
                 const mid = msg.info.id
-                const cached = _msgPinCache.messages.get(mid)
-                if (cached) {
-                  msg.parts = cached as typeof msg.parts
+                const parts = _caches.msgPin.messages.get(mid)
+                if (parts) {
+                  msg.parts = parts as typeof msg.parts
+                  pinned++
                 } else {
-                  _msgPinCache.messages.set(mid, structuredClone(msg.parts))
+                  _caches.msgPin.messages.set(mid, structuredClone(msg.parts))
+                  cached++
                 }
               }
             }
@@ -1516,8 +1518,8 @@ export const layer = Layer.effect(
             // instruction.system() re-reads all instruction files from disk every turn — if any file
             // changes mid-session (agent edits MEMORY.md, AGENTS.md, etc.), the system prompt mutates
             // and DeepSeek prefix cache is invalidated, causing cache hit to cliff-drop.
-            const cachedSystem = _systemCache?.sessionID === sessionID
-              ? _systemCache
+            const cachedSystem = _caches.system?.sessionID === sessionID
+              ? _caches.system
               : undefined
             const [skills, env, instructions, modelMsgs] = yield* Effect.all([
               cachedSystem ? Effect.succeed(cachedSystem.skills) : sys.skills(agent),
@@ -1526,7 +1528,7 @@ export const layer = Layer.effect(
               MessageV2.toModelMessagesEffect(msgs, model),
             ])
             if (!cachedSystem) {
-              _systemCache = { sessionID, skills, env, instructions }
+              _caches.system = { sessionID, skills, env, instructions }
             }
             const system = [...env, ...instructions, ...(skills ? [skills] : [])]
             // 260615 Red inject group chat context for primary agents only

@@ -294,6 +294,7 @@ interface State {
   status: Record<string, Status>
   clients: Record<string, MCPClient>
   defs: Record<string, MCPToolDef[]>
+  creating: Set<string>
 }
 
 export interface Interface {
@@ -528,6 +529,10 @@ export const layer = Layer.effect(
           ...(cmd === "redcode" ? { BUN_BE_BUN: "1" } : {}),
         },
       })
+      // 260620 Red capture PID immediately — StdioClientTransport spawns in constructor,
+      // but t.close() in acquireUseRelease release handler uses process.kill() which is
+      // unreliable on Windows for compiled exes. We need the PID to killProcessTree on failure.
+      const spawnedPid = transport.pid
       transport.stderr?.on("data", (chunk: Buffer) => {
         log.info(`mcp stderr: ${chunk.toString()}`, { key })
       })
@@ -541,7 +546,14 @@ export const layer = Layer.effect(
         Effect.catch((error): Effect.Effect<{ client: MCPClient | undefined; status: Status }> => {
           const msg = error instanceof Error ? error.message : String(error)
           log.error("local mcp startup failed", { key, command: mcp.command, cwd, error: msg })
-          return Effect.succeed({ client: undefined, status: { status: "failed", error: msg } })
+          // 260620 Red kill orphaned process — without this, failed MCP servers become
+          // orphans that accumulate on every reconnect/reconcile cycle (8+ copies observed).
+          if (spawnedPid) {
+            return killProcessTree(spawnedPid).pipe(
+              Effect.andThen(Effect.succeed({ client: undefined, status: { status: "failed" as const, error: msg } })),
+            )
+          }
+          return Effect.succeed({ client: undefined, status: { status: "failed" as const, error: msg } })
         }),
       )
     })
@@ -650,6 +662,7 @@ export const layer = Layer.effect(
           status: {},
           clients: {},
           defs: {},
+          creating: new Set(),
         }
 
         yield* Effect.forEach(
@@ -822,16 +835,25 @@ export const layer = Layer.effect(
 
     const createAndStore = Effect.fn("MCP.createAndStore")(function* (name: string, mcp: ConfigMCP.Info) {
       const s = yield* InstanceState.get(state)
-      const result = yield* create(name, mcp)
-
-      s.status[name] = result.status
-      if (!result.mcpClient) {
-        yield* closeClient(s, name)
-        delete s.clients[name]
-        return result.status
+      // 260620 Red prevent concurrent creation — without this guard, rapid reconcile/reconnect
+      // calls spawn multiple processes for the same server before the first finishes connecting.
+      if (s.creating.has(name)) {
+        log.debug("createAndStore skipped — already creating", { name })
+        return s.status[name] ?? { status: "failed" as const, error: "creation in progress" }
       }
-
-      return yield* storeClient(s, name, result.mcpClient, result.defs!, mcp.timeout)
+      s.creating.add(name)
+      try {
+        const result = yield* create(name, mcp)
+        s.status[name] = result.status
+        if (!result.mcpClient) {
+          yield* closeClient(s, name)
+          delete s.clients[name]
+          return result.status
+        }
+        return yield* storeClient(s, name, result.mcpClient, result.defs!, mcp.timeout)
+      } finally {
+        s.creating.delete(name)
+      }
     })
 
     // 260603 Red P0+P1: 自动重连（使用 EffectBridge 不依赖 AppRuntime）
