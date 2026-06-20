@@ -850,6 +850,16 @@
 
 ## GUI
 
+### [0.6.9] - 2026-06-20
+
+> 移除冗余嵌套 QueryProvider — 简化 context 树。
+
+#### 重构
+
+- **移除重复 QueryProvider**：`AppInterface` 内部嵌套了一层 `<QueryProvider>`，其所有子节点（`GlobalSDKProvider`、`ServerSDKProvider`、`ServerSyncProvider` 及全部页面组件）已在 `AppBaseProviders` 中被外层 QueryProvider 包裹，内层 `new QueryClient()` 的 cache 域完全冗余。删除后所有 TanStack Query 调用自然落入外层 cache，行为一致（`packages/app/src/app.tsx`）。
+
+---
+
 ### [0.6.8] - 2026-06-20
 
 > ELECTRON_MIRROR 镜像配置 — Windows electron-builder 下载失败修复。

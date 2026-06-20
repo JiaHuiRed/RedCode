@@ -305,10 +305,9 @@ export function AppInterface(props: {
     >
       <ConnectionGate disableHealthCheck={props.disableHealthCheck}>
         <ServerKey>
-          <QueryProvider>
-            <GlobalSDKProvider>
-              <ServerSDKProvider>
-              <ServerSyncProvider>
+          <GlobalSDKProvider>
+            <ServerSDKProvider>
+            <ServerSyncProvider>
                 <Dynamic
                   component={props.router ?? Router}
                   root={(routerProps) => <RouterRoot appChildren={props.children}>{routerProps.children}</RouterRoot>}
@@ -320,10 +319,9 @@ export function AppInterface(props: {
                     <Route path="/session/:id?" component={SessionRoute} />
                   </Route>
                 </Dynamic>
-              </ServerSyncProvider>
-              </ServerSDKProvider>
-            </GlobalSDKProvider>
-          </QueryProvider>
+            </ServerSyncProvider>
+            </ServerSDKProvider>
+          </GlobalSDKProvider>
         </ServerKey>
       </ConnectionGate>
     </ServerProvider>

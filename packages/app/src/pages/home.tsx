@@ -215,6 +215,17 @@ function HomeDesign() {
             placeholder={language.t("home.sessions.search.placeholder")}
             onInput={(value) => setState("search", value)}
           />
+          <Show when={state.view === "kanban"}>
+            <IconButtonV2
+              data-action="home-new-session-kanban"
+              variant="ghost-muted"
+              size="large"
+              icon={<IconV2 name="plus" />}
+              onClick={openNewSession}
+              aria-label={language.t("command.session.new")}
+              class="size-7"
+            />
+          </Show>
           <div class="flex shrink-0 gap-0.5 rounded-[6px] bg-v2-background-bg-deep p-0.5">
             <IconButtonV2
               data-action="home-view-list"
