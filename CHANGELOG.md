@@ -10,6 +10,17 @@
 
 ## TUI
 
+### [0.6.17] - 2026-06-21
+
+> Web UI 启动时从 API 种子项目列表，嵌入式 UI dev 模式加载修复。
+
+#### 修复
+
+- **Web UI 首次加载无项目**：手机/浏览器首次打开 Web UI 时，`server.projects.list()` 为空（无 localStorage 种子），页面只显示空白 loading。新增 `createEffect` 在启动时从 `globalSync.data.project` API 数据中写入项目列表，判断 `worktree.includes("redcode-test")` 跳过测试项目，做到首次加载立即可看（`packages/app/src/context/layout.tsx`）。
+- **嵌入式 UI dev 模式 500 错误**：`serveUIEffect` 使用 bare import `import("redcode-web-ui.gen.ts")`，bun 从调用方模块目录（`src/server/shared/`）解析不到 gen 文件，退到 upstream proxy `https://app.redcode.dev` 又不可达，全请求返回 500。改为 bare import 失败后 fallback 到 CWD 相对路径加载，dev 模式下恢复正常（`packages/opencode/src/server/shared/ui.ts`）。
+
+---
+
 ### [0.6.16] - 2026-06-20
 
 > MCP 工具列表缓存优先加载 — 启动时立即可用，不等待 MCP server 就绪。

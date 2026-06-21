@@ -521,6 +521,22 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       }
     })
 
+    // 260621 Red 从 API 种子本地项目列表，解决手机/浏览器首次加载空问题
+    createEffect(() => {
+        if (server.projects.list().length > 0) return
+        const apiProjects = globalSync.data.project
+        if (!apiProjects || apiProjects.length === 0) return
+
+        batch(() => {
+            for (const p of apiProjects) {
+                if (!p.worktree || p.worktree.includes("redcode-test")) continue
+                const root = rootFor(p.worktree)
+                if (server.projects.list().some((x) => x.worktree === root)) continue
+                server.projects.open(root)
+            }
+        })
+    })
+
     let sessionFrame: number | undefined
     let sessionTimer: number | undefined
 
