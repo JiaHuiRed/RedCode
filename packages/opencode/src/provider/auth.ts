@@ -1,4 +1,4 @@
-﻿import type { AuthOAuthResult, Hooks } from "@redcode-ai/plugin"
+import type { AuthOAuthResult, Hooks } from "@redcode-ai/plugin"
 import { serviceUse } from "@/effect/service-use"
 import { Auth } from "@/auth"
 import { InstanceState } from "@/effect/instance-state"

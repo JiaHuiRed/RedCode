@@ -19,6 +19,7 @@ import { NamedError } from "@redcode-ai/core/util/error"
 import { InstallationVersion } from "@redcode-ai/core/installation/version"
 import { withTimeout } from "@/util/timeout"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
+import { Global } from "@redcode-ai/core/global"
 import * as path from "path"
 import * as fs from "fs"
 import { McpOAuthProvider, OAUTH_CALLBACK_PATH } from "./oauth-provider"
@@ -37,6 +38,29 @@ import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 
 const log = Log.create({ service: "mcp" })
 const DEFAULT_TIMEOUT = 30_000
+
+// --- MCP tool disk cache (cache-first: show tools before startup completes) ---
+const MCP_TOOLS_CACHE_DIR = path.join(Global.Path.cache, "mcp-tools")
+
+function mcpToolsCachePath(serverName: string) {
+  return path.join(MCP_TOOLS_CACHE_DIR, `${sanitize(serverName)}.json`)
+}
+
+function writeMcpToolsCache(serverName: string, tools: MCPToolDef[]) {
+  try {
+    fs.mkdirSync(MCP_TOOLS_CACHE_DIR, { recursive: true })
+    fs.writeFileSync(mcpToolsCachePath(serverName), JSON.stringify({ tools, cachedAt: Date.now() }), "utf-8")
+  } catch {}
+}
+
+function readMcpToolsCache(serverName: string): MCPToolDef[] | undefined {
+  try {
+    const raw = fs.readFileSync(mcpToolsCachePath(serverName), "utf-8")
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed?.tools)) return parsed.tools as MCPToolDef[]
+  } catch {}
+  return undefined
+}
 
 // 260607 Red 从 exe 路径向上找 RedCode 项目根（用于 $REDCODE_ROOT 展开）
 let redcodeRoot: string | undefined
@@ -238,6 +262,24 @@ function convertMcpTool(
         }
       }
       throw lastError
+    },
+  })
+}
+
+// Convert cached MCP tool definition to a disconnected stub (server not yet connected)
+function convertMcpToolCached(mcpTool: MCPToolDef, serverName: string): Tool {
+  const inputSchema = mcpTool.inputSchema
+  const schema: JSONSchema7 = {
+    ...(inputSchema as JSONSchema7),
+    type: "object",
+    properties: (inputSchema.properties ?? {}) as JSONSchema7["properties"],
+    additionalProperties: false,
+  }
+  return dynamicTool({
+    description: `${mcpTool.description ?? ""} [cached — ${serverName} is not connected]`,
+    inputSchema: jsonSchema(schema),
+    execute: async () => {
+      throw new Error(`MCP server "${serverName}" is not connected. Tools from disk cache are read-only.`)
     },
   })
 }
@@ -588,6 +630,7 @@ export const layer = Layer.effect(
             return yield* Effect.fail(new Error("Failed to get tools"))
           }
           log.info("create() successfully created client", { key, toolCount: listed.length })
+          writeMcpToolsCache(key, listed)
           return { mcpClient, status, defs: listed } satisfies CreateResult
         }).pipe(
           Effect.catchCause((cause) =>
@@ -926,6 +969,27 @@ export const layer = Layer.effect(
           }),
         { concurrency: "unbounded" },
       )
+
+      // 260620 Red cache-first: servers still starting/failed — fall back to disk cache
+      const connectedNames = new Set(connectedClients.map(([n]) => n))
+      for (const [serverName, cfgEntry] of Object.entries(config)) {
+        if (!isMcpConfigured(cfgEntry) || cfgEntry.enabled === false) continue
+        if (connectedNames.has(serverName)) continue
+
+        const cached = readMcpToolsCache(serverName)
+        if (!cached || cached.length === 0) continue
+
+        log.info("using cached tools for MCP server", { serverName, toolCount: cached.length })
+        const entry = cfgEntry
+        const disabled = entry.type === "local" ? entry.disabledTools : undefined
+        for (const mcpTool of cached) {
+          if (disabled?.includes(mcpTool.name)) continue
+          result[sanitize(serverName) + "_" + sanitize(mcpTool.name)] = convertMcpToolCached(
+            mcpTool, serverName,
+          )
+        }
+      }
+
       return result
     })
 
