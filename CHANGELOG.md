@@ -10,13 +10,22 @@
 
 ## TUI
 
-### [0.6.19] - 2026-06-25
+### [0.6.20] - 2026-06-22
 
-> GLM/Qwen 提示词路由 + DCP compress 优先级 + build.bat 跳过 WebUI 重打包 + X-Routed-Via 路由溯源。
+> X-Routed-Via 路由溯源 — 显示 FreeLLMAPI 等 OpenAI-compatible 服务的实际路由来源。
 
 #### 新增
 
-- **X-Routed-Via 路由溯源**：捕获 LLM 响应头中的 `_routed_via` 字段（FreeLLMAPI/OpenAI-compatible 路由标识），存入 `Finish` 事件并在会话页脚显示路由来源（`packages/opencode/src/session/llm.ts`、`packages/opencode/src/cli/cmd/run/footer.view.tsx`）。
+- **X-Routed-Via 路由溯源**：捕获 LLM 响应头中的 `_routed_via` 字段（FreeLLMAPI 路由标识），存入 `Finish` 事件并在会话页脚显示路由来源（`packages/opencode/src/session/llm.ts`、`packages/opencode/src/cli/cmd/run/footer.view.tsx`）。
+
+---
+
+### [0.6.19] - 2026-06-25
+
+> GLM/Qwen 提示词路由 + DCP compress 优先级 + build.bat 跳过 WebUI 重打包。
+
+#### 新增
+
 - **GLM/Qwen 提示词路由**：新增 `glm.txt` 强模型提示词（含 sibling-check/架构思维/trade-off 三条额外要求），`system.ts` 匹配 `glm`/`qwen` model ID 路由到精炼档，不再走 default 兜底（`packages/opencode/src/session/system.ts`、`packages/opencode/src/session/prompt/glm.txt`）。
 
 #### 优化
