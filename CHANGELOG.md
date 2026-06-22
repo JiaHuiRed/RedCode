@@ -10,6 +10,16 @@
 
 ## TUI
 
+### [0.6.18] - 2026-06-22
+
+> 新增 memory-auto-capture 插件 — 自动捕获被批评/被表扬/项目决策到每日日志。
+
+#### 新增
+
+- **memory-auto-capture 插件**：监听 `chat.message` 和 `experimental.session.compacting` 钩子，检测到用户批评、表扬、决策或要求记住时，自动追加到 `~/.redcode/memory/YYMMDD.md`，解决 agent 选择性遗忘问题（`~/.redcode/plugin/memory-auto-capture.ts`）。
+
+---
+
 ### [0.6.17] - 2026-06-21
 
 > Web UI 启动时从 API 种子项目列表，嵌入式 UI dev 模式加载修复。
