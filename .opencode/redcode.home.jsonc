@@ -135,11 +135,22 @@
         "auto": { "name": "Auto Route" }
       }
     },
+    // 260622 阶跃星辰普通API（走余额）
     "step-plan": {
-      "name": "Step Plan",
+      "name": "阶跃星辰",
       "options": {
         "baseURL": "https://api.stepfun.com/v1",
-        "apiKey": "freellmapi-3af8381d8dc0813d51d7865598ceff9138af18cc3bd3d960"
+        "apiKey": "5LD8KOXu9M4vwqFrrcvrQxGtWStJ2aSQxqPgaiXlZIi1cFtzpDVswHHrq63UHV7Jc"
+      },
+      "models": {
+        "step-3.7-flash": { "name": "Step 3.7 Flash" }
+      }
+    },
+    // 260622 阶跃星辰 Plan 模式（覆盖内置 stepfun provider）
+    "stepfun": {
+      "api": "https://api.stepfun.com/step_plan/v1",
+      "options": {
+        "apiKey": "5LD8KOXu9M4vwqFrrcvrQxGtWStJ2aSQxqPgaiXlZIi1cFtzpDVswHHrq63UHV7Jc"
       },
       "models": {
         "step-3.7-flash": { "name": "Step 3.7 Flash" }
