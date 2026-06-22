@@ -100,13 +100,13 @@
     gap: 12px;
     position: relative;
 
-    /* 气泡样式 — 粉色，iMessage 风格圆角（左侧来源） */
-    background: color-mix(in srgb, #f8a4d0 16%, var(--surface-base));
-    border: 1px solid color-mix(in srgb, #f8a4d0 25%, var(--border-weak-base));
-    border-left: 2.5px solid color-mix(in srgb, #f8a4d0 55%, var(--border-weak-base));
+    /* 气泡样式 — 淡蓝紫，iMessage 风格圆角（左侧来源） */
+    background: rgba(168, 180, 240, 0.12);
+    border: 1px solid rgba(168, 180, 240, 0.22);
+    border-left: 2.5px solid rgba(168, 180, 240, 0.40);
     border-radius: 4px 20px 20px 20px;
     padding: 10px 14px;
-    box-shadow: 0 1px 4px rgba(248, 164, 208, 0.08);
+    box-shadow: 0 2px 6px rgba(168, 180, 240, 0.10);
 
     /* 工具输出在气泡内时去掉自身边框，避免双重边框 */
     [data-component="bash-output"],
