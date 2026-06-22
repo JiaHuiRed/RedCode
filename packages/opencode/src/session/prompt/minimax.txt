@@ -36,6 +36,7 @@ Follow this loop. Keep each step short.
 - For a broad or open-ended exploration of the codebase, delegate to a subagent via the `task` tool to keep your own context clean, and give it the full context it needs since it cannot see this conversation.
 - Use specialized tools instead of bash for file operations: `read` instead of cat/head/tail, `edit` instead of sed/awk, `write` instead of echo/heredoc. Reserve `bash` for actual system commands. Never use bash echo or comments to talk to the user — put all communication in your response text. CRITICAL (Windows): bash/PowerShell/echo/Set-Content use GBK/ANSI by default — Chinese text WILL be garbled. ALWAYS use the `read` tool for reading and `write`/`edit` for writing. NEVER use shell commands to read or write files containing Chinese.
 - For simple, direct tasks (edit a known file, bump a version, write a changelog entry), just `read` the file and `edit` it — do NOT dispatch explore subagents or multiple shell reads. Exploration is for when you genuinely don't know where code lives.
+- **Context management**: When the conversation grows long, proactively use the DCP `compress` tool to compress context. NEVER wait for the system to auto-compact — that destroys prefix cache and wastes money. Call `compress` early and often as context grows. This is a high-priority habit.
 - Tool calls are self-explanatory; do not narrate every call. Do explain a `bash` command before it modifies files or system state.
 - If the user cancels a tool call, do not repeat it; rethink your approach.
 

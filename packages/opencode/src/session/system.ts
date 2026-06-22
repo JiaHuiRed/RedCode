@@ -13,6 +13,7 @@ import PROMPT_MIMO from "./prompt/mimo.txt"
 import PROMPT_MINIMAX from "./prompt/minimax.txt"
 import PROMPT_CODEX from "./prompt/codex.txt"
 import PROMPT_TRINITY from "./prompt/trinity.txt"
+import PROMPT_GLM from "./prompt/glm.txt"
 import type { Provider } from "@/provider/provider"
 import type { Agent } from "@/agent/agent"
 import { Permission } from "@/permission"
@@ -35,6 +36,8 @@ export function provider(model: Provider.Model) {
   if (model.api.id.toLowerCase().includes("mimo")) return [PROMPT_MIMO]
   // 260610 Red minimax(m3 及以后) 专属提示词 — 与 mimo(小米) 非同厂，独立成文件便于后续单独调优
   if (model.api.id.toLowerCase().includes("minimax")) return [PROMPT_MINIMAX]
+  // 260625 Red GLM(智谱) + Qwen(通义) — 准一线，复用精炼档
+  if (model.api.id.toLowerCase().includes("glm") || model.api.id.toLowerCase().includes("qwen")) return [PROMPT_GLM]
   return [PROMPT_DEFAULT]
 }
 
