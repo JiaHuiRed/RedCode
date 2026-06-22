@@ -12,11 +12,15 @@
 
 ### [0.6.20] - 2026-06-22
 
-> X-Routed-Via 路由溯源 — 显示 FreeLLMAPI 等 OpenAI-compatible 服务的实际路由来源。
+> X-Routed-Via 路由溯源 + build.bat 不再清空自定义 provider 配置。
 
 #### 新增
 
 - **X-Routed-Via 路由溯源**：捕获 LLM 响应头中的 `_routed_via` 字段（FreeLLMAPI 路由标识），存入 `Finish` 事件并在会话页脚显示路由来源（`packages/opencode/src/session/llm.ts`、`packages/opencode/src/cli/cmd/run/footer.view.tsx`）。
+
+#### 修复
+
+- **build.bat 不再清空自定义 provider 配置**：`build.bat` 会调 `sync-home.bat` 用仓库模板覆盖 `~/.redcode/redcode.jsonc`，导致 FreeLLMAPI 等自定义 provider 每次重编后丢失。修复方法：把 FreeLLMAPI 和 Step Plan provider 配置写入 `.opencode/redcode.home.jsonc` 模板，重编后不再丢失（`.opencode/redcode.home.jsonc`）。
 
 ---
 
