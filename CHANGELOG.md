@@ -10,6 +10,21 @@
 
 ## TUI
 
+### [0.6.19] - 2026-06-25
+
+> GLM/Qwen 提示词路由 + DCP compress 优先级 + build.bat 跳过 WebUI 重打包。
+
+#### 新增
+
+- **GLM/Qwen 提示词路由**：新增 `glm.txt` 强模型提示词（含 sibling-check/架构思维/trade-off 三条额外要求），`system.ts` 匹配 `glm`/`qwen` model ID 路由到精炼档，不再走 default 兜底（`packages/opencode/src/session/system.ts`、`packages/opencode/src/session/prompt/glm.txt`）。
+
+#### 优化
+
+- **DCP compress 优先级写入提示词**：deepseek/mimo/minimax 三个主力提示词新增"主动用 DCP compress，不等系统 auto-compact"指引，减少 compaction 触发导致的前缀缓存 miss（`packages/opencode/src/session/prompt/{deepseek,mimo,minimax}.txt`）。
+- **build.bat 默认跳过 WebUI 嵌入**：日常编译用 `build.bat`（跳过 SPA 打包），需要完整嵌入时用 `build.bat full`，编译速度大幅提升（`packages/opencode/build.bat`）。
+
+---
+
 ### [0.6.18] - 2026-06-22
 
 > 新增 memory-auto-capture 插件 — 自动捕获被批评/被表扬/项目决策到每日日志。
