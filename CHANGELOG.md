@@ -22,6 +22,10 @@
 
 - **build.bat 不再清空自定义 provider 配置**：`build.bat` 会调 `sync-home.bat` 用仓库模板覆盖 `~/.redcode/redcode.jsonc`，导致 FreeLLMAPI 等自定义 provider 每次重编后丢失。修复方法：把 FreeLLMAPI 和 Step Plan provider 配置写入 `.opencode/redcode.home.jsonc` 模板，重编后不再丢失（`.opencode/redcode.home.jsonc`）。
 
+#### 配置
+
+- **阶跃星辰 Step Plan 接入**：新增两个 provider 配置到 `~/.redcode/redcode.jsonc`——`step-plan`（普通 API `api.stepfun.com/v1`，走余额）和 `stepfun`（Plan 模式 `api.stepfun.com/step_plan/v1`），模型 `step-3.7-flash`，用用户自有 key 鉴权。FreeLLMAPI 路由中已有的免费 `stepfun-step-3.7-flash` 保持不变（`~/.redcode/redcode.jsonc`）。
+
 ---
 
 ### [0.6.19] - 2026-06-25
