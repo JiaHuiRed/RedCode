@@ -881,7 +881,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       tabs(sessionKey: string | Accessor<string>) {
         const key = createSessionKeyReader(sessionKey, ensureKey)
         const path = createMemo(() => sessionPath(key()))
-        const tabs = createMemo(() => store.sessionTabs[key()] ?? { all: [] })
+        const tabs = createMemo(() => store.sessionTabs[key()] ?? { all: ["context"] })
         const normalize = (tab: string) => normalizeSessionTab(path(), tab)
         const normalizeAll = (all: string[]) => normalizeSessionTabList(path(), all)
         return {

@@ -1318,11 +1318,16 @@ export function MessageTimeline(props: {
             }}
             data-session-title
             classList={{
-              "sticky top-0 z-30 bg-[linear-gradient(to_bottom,var(--background-stronger)_48px,transparent)]": true,
+              "sticky top-0 z-30": true,
               "w-full": true,
               "pb-4": true,
               "pl-2 pr-3 md:pl-4 md:pr-3": true,
               "md:max-w-200 md:mx-auto 2xl:max-w-[1000px]": props.centered,
+            }}
+            style={{
+              "background-color": "rgba(18, 18, 18, 0.15)",
+              "backdrop-filter": "blur(4px)",
+              "-webkit-backdrop-filter": "blur(4px)",
             }}
           >
             <Show when={workingStatus() !== "hidden" && settings.general.showSessionProgressBar()}>
