@@ -11787,6 +11787,9 @@
           },
           "finish": {
             "type": "string"
+          },
+          "routedVia": {
+            "type": "string"
           }
         },
         "required": [

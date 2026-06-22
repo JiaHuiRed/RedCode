@@ -518,6 +518,17 @@ export function RunFooterView(props: RunFooterViewProps) {
                       >
                         {props.state().model}
                       </text>
+                      <Show when={props.state().routedVia}>
+                        <text
+                          id="run-direct-footer-routed-via"
+                          fg={theme().muted}
+                          wrapMode="none"
+                          truncate
+                          flexShrink={0}
+                        >
+                          {"· "}{props.state().routedVia}
+                        </text>
+                      </Show>
                     </Show>
                   </box>
                 </Show>

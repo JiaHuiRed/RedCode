@@ -356,6 +356,11 @@ const live: Layer.Layer<
             // Adapter seam: both runtimes expose the same LLMEvent stream. Native
             // already returns one; AI SDK streams are converted here.
             const state = LLMAISDK.adapterState()
+            // Capture X-Routed-Via from the HTTP response headers before the
+            // stream begins. The response Promise resolves when headers arrive,
+            // which happens before any fullStream events.
+            const meta = yield* Effect.promise(() => result.result.response)
+            state.routedVia = meta.headers?.["X-Routed-Via"]
             return Stream.fromAsyncIterable(result.result.fullStream, (e) =>
               e instanceof Error ? e : new Error(String(e)),
             ).pipe(

@@ -859,6 +859,13 @@ export function reduceSessionData(input: SessionDataInput): SessionDataOutput {
       }
     }
 
+    if (info.routedVia) {
+      next = {
+        ...next,
+        routedVia: info.routedVia,
+      }
+    }
+
     if (typeof info.id === "string" && info.error && !isAbort(info.error) && !data.ids.has(msgErr(info.id))) {
       data.ids.add(msgErr(info.id))
       commits.push({

@@ -82,6 +82,7 @@ export type FooterState = {
   first: boolean
   interrupt: number
   exit: number
+  routedVia?: string
 }
 
 // A partial update to FooterState. The footer merges this onto the current state.

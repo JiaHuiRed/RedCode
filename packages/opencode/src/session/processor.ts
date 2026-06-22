@@ -703,6 +703,7 @@ export const layer = Layer.effect(
             return
 
           case "finish":
+            if (value.routedVia) ctx.assistantMessage.routedVia = value.routedVia
             return
         }
       })

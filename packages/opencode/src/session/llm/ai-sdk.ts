@@ -14,6 +14,7 @@ export function adapterState() {
     currentTextID: undefined as string | undefined,
     currentReasoningID: undefined as string | undefined,
     toolNames: {} as Record<string, string>,
+    routedVia: undefined as string | undefined,
   }
 }
 
@@ -86,6 +87,7 @@ export function toLLMEvents(
             reason: finishReason(event.finishReason),
             usage: usage(event.totalUsage),
             providerMetadata: "providerMetadata" in event ? providerMetadata(event.providerMetadata) : undefined,
+            routedVia: state.routedVia,
           }),
         ]
         // Reset so the adapter can be reused for a follow-up stream without leaking
