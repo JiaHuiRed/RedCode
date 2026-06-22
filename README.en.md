@@ -16,7 +16,7 @@
 > Author: Red · Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev).
 [![TUI](https://badgen.net/badge/TUI/0.6.20/blue)](CHANGELOG.md)
 
-[![Desktop](https://badgen.net/badge/Desktop/0.6.9/purple)](CHANGELOG.md)
+[![Desktop](https://badgen.net/badge/Desktop/0.6.10/purple)](CHANGELOG.md)
 [![License](https://badgen.net/badge/License/MIT/grey)](LICENSE)
 [![Platform](https://badgen.net/badge/Platform/Windows%2010%2F11/green)](https://github.com/JiaHuiRed/RedCode)
 
@@ -139,7 +139,7 @@ cd packages/desktop && bun run dev
 | AI SDK | Vercel AI SDK |
 | Database | SQLite (Drizzle ORM) |
 | Build | Turborepo (monorepo) |
-| MCP | TypeGraph + jCodeMunch + Browser MCP |
+| MCP | TypeGraph + jCodeMunch |
 
 ---
 
