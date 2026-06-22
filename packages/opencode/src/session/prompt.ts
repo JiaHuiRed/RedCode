@@ -9,7 +9,7 @@ import * as Session from "./session"
 import { Agent } from "../agent/agent"
 import { Provider } from "@/provider/provider"
 import { ModelID, ProviderID } from "../provider/schema"
-import { type Tool as AITool, tool, jsonSchema } from "ai"
+import { type Tool as AITool, tool, jsonSchema, type ModelMessage } from "ai"
 import type { JSONSchema7 } from "@ai-sdk/provider"
 import { SessionCompaction } from "./compaction"
 import { Bus } from "../bus"
@@ -94,6 +94,7 @@ const _caches = (globalThis as any).__rc_prompt_caches ??= {
   system: undefined as { sessionID: string; skills: string | undefined; env: string[]; instructions: string[] } | undefined,
   chatCtx: undefined as { sessionID: string; text: string | undefined } | undefined,
   msgPin: undefined as { sessionID: string; messages: Map<string, unknown[]> } | undefined,
+  modelMsgs: undefined as { sessionID: string; messages: ModelMessage[] } | undefined,
 }
 function groupChatContext(sessionID: string): string | undefined {
   if (_caches.chatCtx?.sessionID === sessionID) return _caches.chatCtx.text
@@ -1530,6 +1531,18 @@ export const layer = Layer.effect(
             if (!cachedSystem) {
               _caches.system = { sessionID, skills, env, instructions }
             }
+            // 260621 Red cache final model messages for prefix stability.
+            // Even after msgPinCache stabilizes parts, DCP transform or AI SDK conversion
+            // may introduce subtle non-determinism. By reusing previously-sent model messages
+            // for the stable prefix, we guarantee identical bytes across turns.
+            let stabilizedMsgs = modelMsgs
+            if (_caches.modelMsgs?.sessionID === sessionID) {
+              const prevLen = _caches.modelMsgs.messages.length
+              if (prevLen > 0 && prevLen < modelMsgs.length) {
+                stabilizedMsgs = [..._caches.modelMsgs.messages, ...modelMsgs.slice(prevLen)]
+              }
+            }
+            _caches.modelMsgs = { sessionID, messages: [...stabilizedMsgs] }
             const system = [...env, ...instructions, ...(skills ? [skills] : [])]
             // 260615 Red inject group chat context for primary agents only
             // 260617 Red pass sessionID for cache key — snapshot once per session, not per turn
@@ -1546,7 +1559,7 @@ export const layer = Layer.effect(
               sessionID,
               parentSessionID: session.parentID,
               system,
-              messages: [...modelMsgs, ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : [])],
+              messages: [...stabilizedMsgs, ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : [])],
               tools,
               model,
               toolChoice: format.type === "json_schema" ? "required" : undefined,

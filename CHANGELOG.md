@@ -10,6 +10,25 @@
 
 ## TUI
 
+### [0.6.21] - 2026-06-22
+
+> 修复 DeepSeek prefix cache 命中率随对话增长持续下降的问题，新增 LAN 访问支持。
+
+#### 修复
+
+- **DeepSeek prefix cache 命中率 cliff-drop**：DCP compaction 后 `cache_read` 从 139K 骤降到 52K 且持续冻结。根因是每次 turn 生成 model messages 时 DCP transform 和 AI SDK 转换链引入微小非确定性，导致 prefix bytes 逐轮变化。修复分两层——① 将 `toModelMessagesEffect` 的 `UIMessage[]` 构建抽成同步纯函数 `toUIMessages()`，消除 `Effect.fnUntraced` 内部的调度非确定性；② 新增 `_caches.modelMsgs` 缓存层，每轮发完 model messages 后快照，下一轮用缓存版本替换旧消息前缀，保证发往模型的 bytes 完全一致（`packages/opencode/src/session/message-v2.ts`、`packages/opencode/src/session/prompt.ts`）。
+
+#### 新增
+
+- **LAN 访问支持**：`redcode run` 新增 `--hostname` 参数，设 `0.0.0.0` 可监听所有网口，手机/平板可浏览器直连做临时 GUI（`packages/opencode/src/cli/cmd/run.ts`）。
+
+#### 重构
+
+- **`toModelMessagesEffect` 拆分**：同步纯函数 `toUIMessages()` 输出 `{ messages: UIMessage[], tools }`，使转换步骤可独立复用和测试（`packages/opencode/src/session/message-v2.ts`）。
+- **build.bat 清理**：移除无效的 `full` 分支参数解析逻辑（`packages/opencode/build.bat`）。
+
+---
+
 ### [0.6.20] - 2026-06-22
 
 > X-Routed-Via 路由溯源 + build.bat 不再清空自定义 provider 配置。

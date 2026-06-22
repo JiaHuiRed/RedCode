@@ -14,11 +14,13 @@
 import type { Argv } from "yargs"
 import path from "path"
 import { pathToFileURL } from "url"
+import { networkInterfaces } from "os"
 import { Effect } from "effect"
 import { UI } from "../ui"
 import { effectCmd } from "../effect-cmd"
 import { ServerAuth } from "@/server/auth"
 import { EOL } from "os"
+import { Server } from "@/server/server"
 import { Filesystem } from "@/util/filesystem"
 import { createOpencodeClient, type OpencodeClient, type ToolPart } from "@redcode-ai/sdk/v2"
 import { Agent } from "@/agent/agent"
@@ -209,6 +211,10 @@ export const RunCommand = effectCmd({
       .option("port", {
         type: "number",
         describe: "port for the local server (defaults to random port if no value provided)",
+      })
+      .option("hostname", {
+        type: "string",
+        describe: "hostname to listen on (default: 127.0.0.1); use 0.0.0.0 for LAN access",
       })
       .option("variant", {
         type: "string",
@@ -837,6 +843,38 @@ export const RunCommand = effectCmd({
           const request = new Request(input, init)
           return Server.Default().app.fetch(request)
         }) as typeof globalThis.fetch
+
+        // Start TCP server if network options are explicitly set
+        const hostname = args.hostname ?? "127.0.0.1"
+        const port = args.port ?? 0
+        if (hostname !== "127.0.0.1" || port !== 0) {
+          try {
+            const listener = await Server.listen({ hostname, port })
+            UI.empty()
+            if (hostname === "0.0.0.0") {
+              UI.println(UI.Style.TEXT_INFO_BOLD + "  Local access:   ", UI.Style.TEXT_NORMAL, `http://localhost:${listener.port}`)
+              const nets = networkInterfaces()
+              const ips: string[] = []
+              for (const name of Object.keys(nets)) {
+                const net = nets[name]
+                if (!net) continue
+                for (const info of net) {
+                  if (info.internal || info.family !== "IPv4") continue
+                  if (info.address.startsWith("172.")) continue
+                  ips.push(info.address)
+                }
+              }
+              for (const ip of ips) {
+                UI.println(UI.Style.TEXT_INFO_BOLD + "  Network access: ", UI.Style.TEXT_NORMAL, `http://${ip}:${listener.port}`)
+              }
+            } else {
+              UI.println(UI.Style.TEXT_INFO_BOLD + "  Server:         ", UI.Style.TEXT_NORMAL, `http://${hostname}:${listener.port}`)
+            }
+            UI.empty()
+          } catch (error) {
+            UI.println(UI.Style.TEXT_WARNING_BOLD + "!  Failed to start TCP server:", String(error))
+          }
+        }
 
         try {
           return await runInteractiveLocalMode({

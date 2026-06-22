@@ -641,11 +641,16 @@ function providerMeta(metadata: Record<string, any> | undefined) {
   return Object.keys(rest).length > 0 ? rest : undefined
 }
 
-export const toModelMessagesEffect = Effect.fnUntraced(function* (
+export interface UIMessagesWithTools {
+  messages: UIMessage[]
+  tools: Record<string, { toModelOutput(modelOutput: { toolCallId: string; input: unknown; output: unknown }): unknown }>
+}
+
+export function toUIMessages(
   input: WithParts[],
   model: Provider.Model,
   options?: { stripMedia?: boolean; toolOutputMaxChars?: number },
-) {
+): UIMessagesWithTools {
   const result: UIMessage[] = []
   const toolNames = new Set<string>()
   // Track media from tool results that need to be injected as user messages
@@ -670,8 +675,8 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
     return false
   }
 
-  const toModelOutput = (options: { toolCallId: string; input: unknown; output: unknown }) => {
-    const output = options.output
+  const toModelOutput = (opts: { toolCallId: string; input: unknown; output: unknown }) => {
+    const output = opts.output
     if (typeof output === "string") {
       return { type: "text", value: output }
     }
@@ -913,11 +918,21 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
     }
   }
 
-  const tools = Object.fromEntries(Array.from(toolNames).map((toolName) => [toolName, { toModelOutput }]))
+  return {
+    messages: result,
+    tools: Object.fromEntries(Array.from(toolNames).map((toolName) => [toolName, { toModelOutput }])),
+  }
+}
 
+export const toModelMessagesEffect = Effect.fnUntraced(function* (
+  input: WithParts[],
+  model: Provider.Model,
+  options?: { stripMedia?: boolean; toolOutputMaxChars?: number },
+) {
+  const { messages, tools } = toUIMessages(input, model, options)
   return yield* Effect.promise(() =>
     convertToModelMessages(
-      result.filter((msg) => msg.parts.some((part) => part.type !== "step-start")),
+      messages.filter((msg) => msg.parts.some((part) => part.type !== "step-start")),
       {
         //@ts-expect-error (convertToModelMessages expects a ToolSet but only actually needs tools[name]?.toModelOutput)
         tools,
