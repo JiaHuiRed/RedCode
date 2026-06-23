@@ -12,7 +12,7 @@
 
 ### [0.6.22] - 2026-06-23
 
-> 补全 DeepSeek prefix cache 稳定性修复（MCP 工具排序 + tool key 排序 + system-reminder 注入时序）；AGENTS.md 新增纠正行为规范与注释格式规范。
+> 补全 DeepSeek prefix cache 稳定性修复（MCP 工具排序 + tool key 排序 + system-reminder 注入时序）；AGENTS.md 新增纠正行为规范与注释格式规范；`/recall` 语义搜索增强。
 
 #### 修复
 
@@ -24,6 +24,10 @@
 #### 变更
 
 - **AGENTS.md**：新增"被纠正 → 先动手再开口"规则（被用户纠正后下一条回复必须以行动开头）+ 注释格式规范 `// YYMMDD Red xxx`。
+
+#### 新增
+
+- **`/recall` 语义搜索**：双路召回——关键词打分 + Ollama embedding cosine similarity 加权融合。有 Ollama 时自动启用语义路（`nomic-embed-text`），无 Ollama 时静默降级为纯关键词。支持 `--index` 预计算 embedding 缓存，MEMORY.md 变更后自动重建（`.opencode/scripts/recall-memory.mjs`）。
 
 ---
 
