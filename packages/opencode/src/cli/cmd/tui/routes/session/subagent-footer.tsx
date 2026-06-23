@@ -33,7 +33,7 @@ export function SubagentFooter() {
   const usage = createMemo(() => {
     const msg = messages()
     // 260612 Red session-aggregate cache rate
-    // 260614 fix: cache hit = read / (read + miss). DeepSeek write=0 so use cache.miss.
+    // 260614 Red fix: cache hit = read / (read + miss). DeepSeek write=0 so use cache.miss.
     // Fallback to input for providers that don't return miss metadata.
     let sumRead = 0, sumMiss = 0, sumWrite = 0, sumInput = 0
     for (const m of msg) {

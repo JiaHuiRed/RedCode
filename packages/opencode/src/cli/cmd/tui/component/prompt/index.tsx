@@ -333,7 +333,7 @@ export function Prompt(props: PromptProps) {
     if (!props.sessionID) return
     const msg = sync.data.message[props.sessionID] ?? []
     // 260612 Red session-aggregate cache rate (not last-turn-only which is always ~99%)
-    // 260614 fix: cache hit = read / (read + miss). DeepSeek write=0 so use cache.miss.
+    // 260614 Red fix: cache hit = read / (read + miss). DeepSeek write=0 so use cache.miss.
     // Fallback to input for providers that don't return miss metadata.
     let sumRead = 0, sumMiss = 0, sumWrite = 0, sumInput = 0
     for (const m of msg) {

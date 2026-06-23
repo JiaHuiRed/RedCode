@@ -85,7 +85,7 @@ function resolveMcpCwd(mcpCwd: string | undefined, fallback: string): string {
   if (!mcpCwd) return fallback
   // Expand $REDCODE_ROOT — 如果找不到安装根目录，回退到 InstanceState.directory
   const root = findRedcodeRoot()
-  // 260610 CC root 为空时（bun run dev 下 execPath=bun.exe，向上找不到安装根）回退 fallback，
+  // 260610 Red root 为空时（bun run dev 下 execPath=bun.exe，向上找不到安装根）回退 fallback，
   // 否则 $REDCODE_ROOT 残留字面量 → spawn cwd 指向不存在目录 → ENOENT
   let resolved = mcpCwd.replace(/\$REDCODE_ROOT/g, root || fallback)
   // Expand ~/
@@ -967,7 +967,8 @@ export const layer = Layer.effect(
               )
             }
           }),
-        { concurrency: "unbounded" },
+        // 260623 Red sequential to stabilize tool insertion order for DeepSeek prefix cache
+        { concurrency: 1 },
       )
 
       // 260620 Red cache-first: servers still starting/failed — fall back to disk cache

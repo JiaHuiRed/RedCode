@@ -10,6 +10,23 @@
 
 ## TUI
 
+### [0.6.22] - 2026-06-23
+
+> 补全 DeepSeek prefix cache 稳定性修复（MCP 工具排序 + tool key 排序 + system-reminder 注入时序）；AGENTS.md 新增纠正行为规范与注释格式规范。
+
+#### 修复
+
+- **MCP 工具顺序非确定性**：`Effect.forEach` 并发查询多个 MCP server 导致 tool 插入顺序随响应时序变化，破坏 prefix cache。改为顺序执行（`packages/opencode/src/mcp/index.ts`）。
+- **Tool key 序列化顺序不稳定**：内建工具与 MCP 工具混合后 key 顺序不固定。resolve 后按 key 字母排序，保证 JSON 序列化 bytes 稳定（`packages/opencode/src/session/prompt.ts`）。
+- **system-reminder 注入被 msgPin 缓存覆盖**：step>1 时对 user message parts 的 `<system-reminder>` 包裹在 msgPin 之前执行，缓存恢复后包裹丢失。改为在 modelMsgs 稳定化之后作为独立 user message 追加，不污染缓存前缀（`packages/opencode/src/session/prompt.ts`）。
+- **注释格式不合规**：4 处 `// 260614 fix:` 缺 `Red` 标签、1 处 `// 260610 CC` 统一修正为 `// YYMMDD Red` 格式。
+
+#### 变更
+
+- **AGENTS.md**：新增"被纠正 → 先动手再开口"规则（被用户纠正后下一条回复必须以行动开头）+ 注释格式规范 `// YYMMDD Red xxx`。
+
+---
+
 ### [0.6.21] - 2026-06-22
 
 > 修复 DeepSeek prefix cache 命中率随对话增长持续下降的问题，新增 LAN 访问支持。

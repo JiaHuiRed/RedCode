@@ -148,7 +148,7 @@ function formatUsage(
     return undefined
   }
 
-  // 260614 fix: cache hit = read / (read + miss). DeepSeek write=0 so use cache.miss.
+  // 260614 Red fix: cache hit = read / (read + miss). DeepSeek write=0 so use cache.miss.
   // Fallback to input for providers that don't return miss metadata.
   const cacheHitPct =
     (tokens?.cache?.read ?? 0) > 0

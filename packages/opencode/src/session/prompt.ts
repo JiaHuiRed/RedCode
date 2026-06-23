@@ -1471,24 +1471,27 @@ export const layer = Layer.effect(
               })
             }
 
+            // 260623 Red sort tool keys for deterministic serialization → stable DeepSeek prefix cache
+            const sortedTools: typeof tools = {}
+            for (const k of Object.keys(tools).sort()) sortedTools[k] = tools[k]
+
             if (step === 1)
               yield* summary.summarize({ sessionID, messageID: lastUser.id }).pipe(Effect.ignore, Effect.forkIn(scope))
 
+            // 260623 Red collect user reminder text for step>1 injection (old approach mutated
+            // p.text before msgPin, which silently restored the un-wrapped cached version).
+            let userReminderText: string | undefined
             if (step > 1 && lastFinished) {
+              const parts: string[] = []
               for (const m of msgs) {
                 if (m.info.role !== "user" || m.info.id <= lastFinished.id) continue
                 for (const p of m.parts) {
                   if (p.type !== "text" || p.ignored || p.synthetic) continue
-                  if (!p.text.trim()) continue
-                  p.text = [
-                    "<system-reminder>",
-                    "The user sent the following message:",
-                    p.text,
-                    "",
-                    "Please address this message and continue with your tasks.",
-                    "</system-reminder>",
-                  ].join("\n")
+                  if (p.text.trim()) parts.push(p.text)
                 }
+              }
+              if (parts.length > 0) {
+                userReminderText = `<system-reminder>\nThe user sent the following message:\n${parts.join("\n")}\n\nPlease address this message and continue with your tasks.\n</system-reminder>`
               }
             }
 
@@ -1559,8 +1562,14 @@ export const layer = Layer.effect(
               sessionID,
               parentSessionID: session.parentID,
               system,
-              messages: [...stabilizedMsgs, ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : [])],
-              tools,
+              // 260623 Red inject user reminder AFTER stabilized prefix (not before msgPin)
+              // so it doesn't mutate cached messages yet still reaches the model on step>1.
+              messages: [
+                ...stabilizedMsgs,
+                ...(userReminderText ? [{ role: "user" as const, content: userReminderText }] : []),
+                ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : []),
+              ],
+              tools: sortedTools,
               model,
               toolChoice: format.type === "json_schema" ? "required" : undefined,
             })
