@@ -10,6 +10,15 @@
 
 ## TUI
 
+### [0.6.23] - 2026-06-23
+
+> 系统提示词统一升级：deepseek/glm/mimo/minimax 全面增强，新增 Step 路由。融合 CC 最佳实践。
+
+#### 变更
+
+- **系统提示词全面增强**：以 deepseek.txt 为基准，融合 Claude Code 最佳实践，统一升级 6 个模型提示词（deepseek/glm/mimo/minimax/step）。新增"探索性问题不动手"、"如实汇报结果"规则；mimo/minimax 补齐 FIX SIBLINGS / THINK ARCHITECTURALLY / SURFACE TRADE-OFFS 三条规则。
+- **Step 路由新建**：新增 `step.txt` + `system.ts` 路由（匹配 `step-`），Step 3.7 Flash 不再走旧 opencode default 提示词。
+
 ### [0.6.22] - 2026-06-23
 
 > 补全 DeepSeek prefix cache 稳定性修复（MCP 工具排序 + tool key 排序 + system-reminder 注入时序）；AGENTS.md 新增纠正行为规范与注释格式规范；`/recall` 语义搜索增强。

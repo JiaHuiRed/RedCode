@@ -14,6 +14,7 @@ import PROMPT_MINIMAX from "./prompt/minimax.txt"
 import PROMPT_CODEX from "./prompt/codex.txt"
 import PROMPT_TRINITY from "./prompt/trinity.txt"
 import PROMPT_GLM from "./prompt/glm.txt"
+import PROMPT_STEP from "./prompt/step.txt"
 import type { Provider } from "@/provider/provider"
 import type { Agent } from "@/agent/agent"
 import { Permission } from "@/permission"
@@ -38,6 +39,8 @@ export function provider(model: Provider.Model) {
   if (model.api.id.toLowerCase().includes("minimax")) return [PROMPT_MINIMAX]
   // 260625 Red GLM(智谱) + Qwen(通义) — 准一线，复用精炼档
   if (model.api.id.toLowerCase().includes("glm") || model.api.id.toLowerCase().includes("qwen")) return [PROMPT_GLM]
+  // 260623 Red Step(阶跃星辰)
+  if (model.api.id.toLowerCase().includes("step")) return [PROMPT_STEP]
   return [PROMPT_DEFAULT]
 }
 
