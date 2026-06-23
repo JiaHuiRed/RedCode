@@ -141,7 +141,6 @@ export const DESKTOP_MENU: DesktopMenu[] = [
     id: "view",
     label: "视图",
     items: [
-      { type: "item", label: "切换侧边栏", command: "sidebar.toggle", accelerator: { macos: "Cmd+B" } },
       { type: "item", label: "切换终端", command: "terminal.toggle", accelerator: { macos: "Ctrl+`" } },
       { type: "item", label: "切换文件树", command: "fileTree.toggle" },
       { type: "separator" },

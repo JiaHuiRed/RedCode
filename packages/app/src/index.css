@@ -306,3 +306,15 @@
 [data-app-frost] #review-panel .bg-background-stronger {
   background-color: transparent;
 }
+/* 260623 Red tabs.css 用 #review-panel &[data-variant][data-orientation] 嵌套选择器，
+   特异度高达 (1,4,0)，普通选择器覆盖不了，必须用 !important 打穿。 */
+[data-app-frost] #review-panel [data-component="tabs"],
+[data-app-frost] #review-panel [data-slot="tabs-list"],
+[data-app-frost] #review-panel [data-slot="tabs-list"] > .sticky,
+[data-app-frost] #review-panel [data-slot="tabs-content"] {
+  background-color: transparent !important;
+}
+/* tabs-list > .sticky::before 有渐变背景也要清掉 */
+[data-app-frost] #review-panel [data-slot="tabs-list"] > .sticky::before {
+  background: transparent !important;
+}

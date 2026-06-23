@@ -963,6 +963,17 @@
 
 ## GUI
 
+### [0.6.11] - 2026-06-23
+
+> 审视面板毛玻璃穿透 + 清理已废弃侧边栏入口。
+
+#### 修复
+
+- **审视面板磨砂效果失效**：右侧审视面板虽已有 `backdrop-filter: blur` 规则，但 `tabs.css` 通过 `#review-panel &[data-variant][data-orientation]` 嵌套选择器（特异度 1,4,0）设置实色 `background-color`，覆盖了外层磨砂透明规则。改用 `!important` 强制清透 tabs 根、tabs-list、`.sticky` 按钮区、tabs-content 的背景色，并清除 `.sticky::before` 渐变遮罩（`index.css`）。
+- **已废弃"切换侧边栏"残留入口**：侧边栏功能早已移除，但菜单栏视图菜单和命令面板中仍保留 `sidebar.toggle` 条目，点击无反应。移除菜单项（`desktop-menu.ts`）和命令注册（`use-session-commands.tsx`）。
+
+---
+
 ### [0.6.10] - 2026-06-22
 
 > 气泡配色分化 + 会话标题栏毛玻璃 + 审视面板默认打开上下文。
