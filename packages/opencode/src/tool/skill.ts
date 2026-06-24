@@ -1,5 +1,5 @@
 import path from "path"
-import { pathToFileURL } from "url"
+
 import { Effect, Schema } from "effect"
 import * as Stream from "effect/Stream"
 import { Ripgrep } from "../file/ripgrep"
@@ -37,7 +37,8 @@ export const SkillTool = Tool.define(
           })
 
           const dir = path.dirname(info.location)
-          const base = pathToFileURL(dir).href
+          // 260624 Red 上游 bugfix: 直接用文件系统路径，file:// URL 在 Windows 上模型容易搞混
+          const base = dir
           const limit = 10
           const files = yield* rg.files({ cwd: dir, follow: false, hidden: true, signal: ctx.abort }).pipe(
             Stream.filter((file) => !file.includes("SKILL.md")),

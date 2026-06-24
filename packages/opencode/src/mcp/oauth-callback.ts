@@ -161,7 +161,8 @@ export async function ensureRunning(redirectUri?: string): Promise<void> {
 
   server = createServer(handleRequest)
   await new Promise<void>((resolve, reject) => {
-    server!.listen(currentPort, () => {
+    // 260624 Red 上游 bugfix: 显式绑定 IPv4 回环地址，防止监听所有接口
+    server!.listen(currentPort, "127.0.0.1", () => {
       log.info("oauth callback server started", { port: currentPort, path: currentPath })
       resolve()
     })
