@@ -10,6 +10,17 @@
 
 ## TUI
 
+### [0.6.24] - 2026-06-24
+
+> 修复流式输出阻塞 + Windows 僵尸子进程泄漏。
+
+#### 修复
+
+- **AI SDK 流式输出阻塞**：`result.result.response` 实际在整个流完成后才 resolve（非 HTTP 头阶段），`await` 它会阻塞 `fullStream` 消费，网络异常时直接触发 `NoOutputGeneratedError`。改为 fire-and-forget 异步捕获 `X-Routed-Via`，不阻塞流（`packages/opencode/src/session/llm.ts`）。
+- **Windows 僵尸子进程**：`cross-spawn-spawner.ts` 在 Windows 上直接 `return Effect.void` 跳过了非零退出码的子进程树清理，导致 `Start-Process`/`cmd /c start` 等启动的子进程变僵尸、内存持续增长。移除 Windows 提前返回，统一走 kill group 逻辑（`packages/core/src/cross-spawn-spawner.ts`）。
+
+---
+
 ### [0.6.23] - 2026-06-23
 
 > 系统提示词统一升级：deepseek/glm/mimo/minimax 全面增强，新增 Step 路由。融合 CC 最佳实践。
@@ -962,6 +973,17 @@
 ---
 
 ## GUI
+
+### [0.6.12] - 2026-06-24
+
+> 原生右键菜单深色化 + 中文化。
+
+#### 优化
+
+- **原生右键菜单深色主题**：强制 `nativeTheme.themeSource = "dark"`，原生右键菜单（图片/视频）不再显示白色系统菜单，与 app 深色风格一致（`packages/desktop/src/main/index.ts`）。
+- **原生右键菜单中文化**：`electron-context-menu` 增加 `labels` 中文映射（图片另存为、复制图片等），隐藏多余的"全选"（`packages/desktop/src/main/index.ts`）。
+
+---
 
 ### [0.6.11] - 2026-06-23
 

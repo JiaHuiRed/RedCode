@@ -7,7 +7,7 @@ import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
-import { app, BrowserWindow } from "electron"
+import { app, BrowserWindow, nativeTheme } from "electron"
 
 import contextMenu from "electron-context-menu"
 
@@ -127,11 +127,31 @@ function ensureLoopbackNoProxy() {
 }
 
 const main = Effect.gen(function* () {
+  // 260624 Red 强制深色主题，让原生右键菜单跟 app 风格一致
+  nativeTheme.themeSource = "dark"
+
+  // 260624 Red 原生右键菜单中文化（仅图片/视频触发）
   contextMenu({
     showSaveImageAs: true,
     showLookUpSelection: false,
     showSearchWithGoogle: false,
+    showSelectAll: false,
     shouldShowMenu: (_, params) => params.mediaType === "image" || params.mediaType === "video",
+    labels: {
+      saveImageAs: "图片另存为…",
+      copyImage: "复制图片",
+      copyImageAddress: "复制图片地址",
+      saveLinkAs: "链接另存为…",
+      copyLink: "复制链接",
+      copy: "复制",
+      cut: "剪切",
+      paste: "粘贴",
+      selectAll: "全选",
+      saveImage: "保存图片",
+      saveVideo: "保存视频",
+      copyVideoAddress: "复制视频地址",
+      inspect: "检查元素",
+    },
   })
 
   // on macOS apps run in `/` which can cause issues with ripgrep

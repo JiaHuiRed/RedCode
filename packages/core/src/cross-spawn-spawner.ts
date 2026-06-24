@@ -382,7 +382,8 @@ export const make = Effect.gen(function* () {
               const kill = timeout(proc, command, command.options)
               if (done) {
                 const [code] = yield* Deferred.await(signal)
-                if (process.platform === "win32") return yield* Effect.void
+                // 260624 Red Windows 也需要在非零退出码时清理子进程树，
+                // 否则 Start-Process/cmd /c start 等启动的子进程会变僵尸
                 if (code !== 0 && Predicate.isNotNull(code)) return yield* Effect.ignore(kill(killGroup))
                 return yield* Effect.void
               }

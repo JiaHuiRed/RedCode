@@ -356,11 +356,14 @@ const live: Layer.Layer<
             // Adapter seam: both runtimes expose the same LLMEvent stream. Native
             // already returns one; AI SDK streams are converted here.
             const state = LLMAISDK.adapterState()
-            // Capture X-Routed-Via from the HTTP response headers before the
-            // stream begins. The response Promise resolves when headers arrive,
-            // which happens before any fullStream events.
-            const meta = yield* Effect.promise(() => result.result.response)
-            state.routedVia = meta.headers?.["X-Routed-Via"]
+            // 260624 Red AI SDK 的 .response 等整个流完成才 resolve（不是 HTTP 头），
+            // 之前 await 它会阻塞流式输出并在网络异常时导致 NoOutputGeneratedError。
+            // 改为异步捕获，不阻塞 fullStream 消费。
+            result.result.response
+              .then((meta) => {
+                state.routedVia = meta.headers?.["X-Routed-Via"]
+              })
+              .catch(() => {})
             return Stream.fromAsyncIterable(result.result.fullStream, (e) =>
               e instanceof Error ? e : new Error(String(e)),
             ).pipe(
