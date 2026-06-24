@@ -9,6 +9,18 @@
 ---
 
 ## TUI
+### [0.6.25] - 2026-06-24
+
+> 移植上游 4 项 bugfix：快照子目录路径、MCP 结构化错误、skill 路径格式、OAuth 安全加固。
+
+#### 修复
+
+- **快照子目录路径**（上游 `dcf7b4e`）：`git add`/`git rm` 的 `--pathspec-from-file` 输入加 `:(top,literal)` 前缀，子目录下路径正确相对 worktree root 解析（`snapshot/index.ts`）。
+- **MCP 结构化错误保留**（上游 `c17b955`）：`toolResultText` 对 `content` 类型提取纯文本而非 JSON dump 整个结构，模型能直接读到错误信息（`llm/protocols/shared.ts`）。
+- **Skill 路径格式**（上游 `246d40d`）：skill base directory 由 `file://` URL 改为文件系统路径，避免 Windows 上 `file:///D:/...` 格式让模型困惑（`tool/skill.ts`）。
+- **OAuth 回调绑定**（上游 `af31e97`）：MCP OAuth callback server 显式绑定 `127.0.0.1`，防止意外监听所有网络接口（`mcp/oauth-callback.ts`）。
+
+---
 
 ### [0.6.24] - 2026-06-24
 
@@ -696,7 +708,6 @@
 - **Effect v4 类型适配**：`Tool.build()` 需要 `as Effect.Effect<DefWithoutID>` 断言以保持泛型参数推断；搜索工具使用 `InstanceState.get(state)` 而非 `ToolRegistry.Service` 避免层内循环依赖
 
 ---
-
 
 ### [0.4.2] - 2026-06-06
 
