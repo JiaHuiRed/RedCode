@@ -134,9 +134,15 @@ export const mediaDataUrl = (part: MediaPart) =>
 
 export const trimBaseUrl = (value: string) => value.replace(/\/+$/, "")
 
+// 260624 Red 上游 bugfix: content 类型提取纯文本，保留结构化错误信息
 export const toolResultText = (part: ToolResultPart) => {
   if (part.result.type === "text" || part.result.type === "error") return String(part.result.value)
-  if (part.result.type === "content") return encodeJson(part.result.value)
+  if (part.result.type === "content") {
+    const texts = part.result.value
+      .filter((c): c is { type: "text"; text: string } => c.type === "text")
+      .map((c) => c.text)
+    return texts.length ? texts.join("\n") : encodeJson(part.result.value)
+  }
   return encodeJson(part.result.value)
 }
 

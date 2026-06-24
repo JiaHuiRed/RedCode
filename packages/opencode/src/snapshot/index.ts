@@ -85,6 +85,8 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
           const args = (cmd: string[]) => ["--git-dir", state.gitdir, "--work-tree", state.worktree, ...cmd]
 
           const feed = (list: string[]) => list.join("\0") + "\0"
+          // 260624 Red 上游 bugfix: pathspec-from-file 场景加 :(top,literal) 前缀，子目录下路径相对 worktree root 解析
+          const feedPathspec = (list: string[]) => list.map((p) => ":(top,literal)" + p).join("\0") + "\0"
 
           const git = Effect.fnUntraced(
             function* (cmd: string[], opts?: { cwd?: string; env?: Record<string, string>; stdin?: string }) {
@@ -139,7 +141,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
               ],
               {
                 cwd: state.directory,
-                stdin: feed(files),
+                stdin: feedPathspec(files),
               },
             )
           })
@@ -150,7 +152,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
               [...cfg, ...args(["add", "--all", "--sparse", "--pathspec-from-file=-", "--pathspec-file-nul"])],
               {
                 cwd: state.directory,
-                stdin: feed(files),
+                stdin: feedPathspec(files),
               },
             )
             if (result.code === 0) return
