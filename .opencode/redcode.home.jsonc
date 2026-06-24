@@ -107,6 +107,18 @@
       "timeout": 30000,
       "enabled": true
     },
+
+    "horizon": {
+      "type": "local",
+      "command": ["C:\Users\Administrator\AppData\Local\Programs\Python\Python314\python.exe", "-m", "src.mcp.server"],
+      "cwd": "D:\AI\Red\Horizon",
+      "environment": {
+        "PYTHONIOENCODING": "utf-8"
+      },
+      "description": "Horizon — AI 日报 pipeline（RSS 抓取 + StepFun 打分 + 日报生成）。hz_run_pipeline 一键出结果，hz_fetch_items/hz_score_items 分别调用。",
+      "timeout": 600000,
+      "enabled": true
+    },
   },
   // 260615 Red enable built-in LSP servers (auto-detect by file extension)
   "lsp": true,
