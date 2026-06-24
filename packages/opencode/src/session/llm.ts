@@ -359,7 +359,7 @@ const live: Layer.Layer<
             // 260624 Red AI SDK 的 .response 等整个流完成才 resolve（不是 HTTP 头），
             // 之前 await 它会阻塞流式输出并在网络异常时导致 NoOutputGeneratedError。
             // 改为异步捕获，不阻塞 fullStream 消费。
-            result.result.response
+            Promise.resolve(result.result.response)
               .then((meta) => {
                 state.routedVia = meta.headers?.["X-Routed-Via"]
               })
