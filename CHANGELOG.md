@@ -16,6 +16,7 @@
 #### 新增
 
 - **Horizon MCP 配置**：在 `.opencode/redcode.home.jsonc` 和 `~/.redcode/redcode.jsonc` 添加 `horizon` MCP server 配置，调用本地 `D:\AI\Red\Horizon\src\mcp\server.py` 提供 `hz_run_pipeline` 等工具。
+- **MCP resource template listing**（上游 `c6cc13e`）：新增 `resourceTemplates` 接口，支持发现 MCP server 的参数化资源模板。
 - **ai-daily skill 升级**：skill 触发后自动调用 Horizon MCP 运行完整 pipeline（fetch → score → filter → enrich → summarize），替代原有 webfetch/web_search 聚合方式。
 
 ---

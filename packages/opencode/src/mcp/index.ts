@@ -160,6 +160,8 @@ const pendingOAuthTransports = new Map<string, TransportWithAuth>()
 // Prompt cache types
 type PromptInfo = Awaited<ReturnType<MCPClient["listPrompts"]>>["prompts"][number]
 type ResourceInfo = Awaited<ReturnType<MCPClient["listResources"]>>["resources"][number]
+// 260624 Red 上游移植: MCP resource template listing
+type ResourceTemplateInfo = Awaited<ReturnType<MCPClient["listResourceTemplates"]>>["resourceTemplates"][number]
 type McpEntry = NonNullable<Config.Info["mcp"]>[string]
 
 function isMcpConfigured(entry: McpEntry): entry is ConfigMCP.Info {
@@ -345,6 +347,7 @@ export interface Interface {
   readonly tools: () => Effect.Effect<Record<string, Tool>>
   readonly prompts: () => Effect.Effect<Record<string, PromptInfo & { client: string }>>
   readonly resources: () => Effect.Effect<Record<string, ResourceInfo & { client: string }>>
+  readonly resourceTemplates: () => Effect.Effect<Record<string, ResourceTemplateInfo & { client: string }>>
   readonly add: (name: string, mcp: ConfigMCP.Info) => Effect.Effect<{ status: Record<string, Status> | Status }>
   readonly connect: (name: string) => Effect.Effect<void>
   readonly disconnect: (name: string) => Effect.Effect<void>
@@ -1017,6 +1020,12 @@ export const layer = Layer.effect(
       return yield* collectFromConnected(s, (c) => c.listResources().then((r) => r.resources), "resources")
     })
 
+    // 260624 Red 上游移植: MCP resource template listing
+    const resourceTemplates = Effect.fn("MCP.resourceTemplates")(function* () {
+      const s = yield* InstanceState.get(state)
+      return yield* collectFromConnected(s, (c) => c.listResourceTemplates().then((r) => r.resourceTemplates), "resourceTemplates")
+    })
+
     const withClient = Effect.fnUntraced(function* <A>(
       clientName: string,
       fn: (client: MCPClient, timeout?: number) => Promise<A>,
@@ -1247,6 +1256,7 @@ export const layer = Layer.effect(
       tools,
       prompts,
       resources,
+      resourceTemplates,
       add,
       connect,
       disconnect,
