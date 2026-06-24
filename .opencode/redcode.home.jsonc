@@ -1,10 +1,6 @@
 {
   "$schema": "https://redcode.dev/config.json",
-  // 260612 Red DCP handles dedup/compress/nudge
   "plugin": ["@tarquinen/opencode-dcp"],
-  // 260607 Red global inject (engine scans ~/.redcode unconditionally)
-  // 260610 Red MEMORY no longer bulk-injected; use /recall + AGENTS CORE block
-  // 260613 Red guardrail-profiles/defensive-agent removed — on-demand via skill trigger, save ~4KB/turn
   "instructions": [
     "~/.redcode/USER.md",
     "~/.redcode/skill/memory-automation/SKILL.md",
@@ -14,45 +10,33 @@
     "~/.redcode/skill/diagnose/SKILL.md",
     "~/.redcode/skill/hot-trends/SKILL.md"
   ],
-  // 260610 Red global plugin (moved to ~/.redcode/redcode.jsonc)
   "mcp": {
-    // 260609 CC typegraph: only 3 tsserver type tools kept (type_info/definition/module_exports)
-    // rest removed — jcodemunch covers them. Uses node directly (not npx) to avoid process leak.
     "typegraph": {
       "type": "local",
       "command": ["node", "./plugins/typegraph-mcp/node_modules/tsx/dist/cli.mjs", "./plugins/typegraph-mcp/server.ts"],
       "cwd": "$REDCODE_ROOT",
-      "environment": {
-        "TYPEGRAPH_PROJECT_ROOT": ".",
-        "TYPEGRAPH_TSCONFIG": "./tsconfig.json"
-      },
+      "environment": { "TYPEGRAPH_PROJECT_ROOT": ".", "TYPEGRAPH_TSCONFIG": "./tsconfig.json" },
       "timeout": 60000,
       "enabled": true
     },
     "jcodemunch": {
       "type": "local",
       "command": ["jcodemunch-mcp"],
-      "environment": {
-        "JCODEMUNCH_USE_AI_SUMMARIES": "false",
-        "PYTHONIOENCODING": "utf-8"
-      },
+      "environment": { "JCODEMUNCH_USE_AI_SUMMARIES": "false", "PYTHONIOENCODING": "utf-8" },
       "description": "代码符号检索/仓库理解首选——找定义、调用链、改动影响面比 grep 准（search_symbols/get_repo_map/get_call_hierarchy/get_blast_radius/get_symbol_source 等）。改代码前先用它摸清依赖，grep/read 兜底。",
       "enabled": true
     },
-    // 260615 Microsoft MarkItDown — 文件转 Markdown 供 LLM 使用
     "markitdown": {
       "type": "local",
       "command": ["markitdown-mcp"],
       "description": "把 Office/PDF 等非纯文本文档转 Markdown 供 LLM 读——read 读不了的二进制文档（.docx/.xlsx/.pptx/.pdf）用它提取文本；纯文本/代码仍用 read。",
       "enabled": true
     },
-    // 260615 Semgrep — 代码安全扫描 (需要连接 semgrep.dev, 当前网络环境连不上)
     "semgrep": {
       "type": "local",
       "command": ["semgrep", "mcp"],
       "enabled": false
     },
-    // 260616 Red browsermcp 默认关，需网页自动化时改 enabled:true（先装并连浏览器扩展）
     "browsermcp": {
       "type": "local",
       "command": ["node", "./browsermcp-server/index.js"],
@@ -71,10 +55,7 @@
     "vision": {
       "type": "local",
       "command": ["vision-mcp-server"],
-      "environment": {
-        "VISION_BASE_URL": "http://localhost:11434/v1/chat/completions",
-        "VISION_MODEL": "minicpm-v4.5:q5_K_M"
-      },
+      "environment": { "VISION_BASE_URL": "http://localhost:11434/v1/chat/completions", "VISION_MODEL": "minicpm-v4.5:q5_K_M" },
       "description": "图像理解——当前模型非多模态、需看截图/图片内容时用（走本地 qwen3-vl）；纯文本任务不用。",
       "enabled": true
     },
@@ -98,7 +79,6 @@
       "description": "High-performance file finder & grep (fff_find_files, fff_grep, fff_multi_grep)",
       "enabled": true
     },
-    // 260615 sqlite-query — query SQLite databases via native node:sqlite
     "sqlite-query": {
       "type": "local",
       "command": ["bun", "./plugins/mcp-sqlite-query/src/index.ts"],
@@ -107,39 +87,23 @@
       "timeout": 30000,
       "enabled": true
     },
-
     "horizon": {
       "type": "local",
-      "command": ["C:\Users\Administrator\AppData\Local\Programs\Python\Python314\python.exe", "-m", "src.mcp.server"],
-      "cwd": "D:\AI\Red\Horizon",
-      "environment": {
-        "PYTHONIOENCODING": "utf-8"
-      },
+      "command": ["C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python314\\python.exe", "-m", "src.mcp.server"],
+      "cwd": "D:\\AI\\Red\\Horizon",
+      "environment": { "PYTHONIOENCODING": "utf-8" },
       "description": "Horizon — AI 日报 pipeline（RSS 抓取 + StepFun 打分 + 日报生成）。hz_run_pipeline 一键出结果，hz_fetch_items/hz_score_items 分别调用。",
       "timeout": 600000,
       "enabled": true
-    },
+    }
   },
-  // 260615 Red enable built-in LSP servers (auto-detect by file extension)
   "lsp": true,
-  // 260612 Red compaction threshold — engine-level hard ceiling, works alongside DCP as safety net.
-  // DCP handles active compress/dedup/nudge; this catches edge cases where DCP doesn't trigger.
-  "compaction": {
-    "threshold": 150000
-  },
-  "tools": {
-    "github-triage": false,
-    "github-pr-search": false
-  },
-  // 260622 Red FreeLLMAPI — 白嫖免费额度
-  // 260622 阶跃星辰 Step Plan
+  "compaction": { "threshold": 150000 },
+  "tools": { "github-triage": false, "github-pr-search": false },
   "provider": {
     "opencode": {
       "name": "FreeLLMAPI",
-      "options": {
-        "baseURL": "http://localhost:3001/v1",
-        "apiKey": "freellmapi-3af8381d8dc0813d51d7865598ceff9138af18cc3bd3d960"
-      },
+      "options": { "baseURL": "http://localhost:3001/v1", "apiKey": "freellmapi-3af8381d8dc0813d51d7865598ceff9138af18cc3bd3d960" },
       "models": {
         "stepfun-step-3.7-flash": { "name": "StepFun 3.7 Flash" },
         "poolside-laguna-m.1": { "name": "Poolside Laguna M.1" },
@@ -147,26 +111,15 @@
         "auto": { "name": "Auto Route" }
       }
     },
-    // 260622 阶跃星辰普通API（走余额）
     "step-plan": {
-      "name": "阶跃星辰",
-      "options": {
-        "baseURL": "https://api.stepfun.com/v1",
-        "apiKey": "5LD8KOXu9M4vwqFrrcvrQxGtWStJ2aSQxqPgaiXlZIi1cFtzpDVswHHrq63UHV7Jc"
-      },
-      "models": {
-        "step-3.7-flash": { "name": "Step 3.7 Flash" }
-      }
+      "name": "StepPlan",
+      "options": { "baseURL": "https://api.stepfun.com/v1", "apiKey": "5LD8KOXu9M4vwqFrrcvrQxGtWStJ2aSQxqPgaiXlZIi1cFtzpDVswHHrq63UHV7Jc" },
+      "models": { "step-3.7-flash": { "name": "Step 3.7 Flash" } }
     },
-    // 260622 阶跃星辰 Plan 模式（覆盖内置 stepfun provider）
     "stepfun": {
       "api": "https://api.stepfun.com/step_plan/v1",
-      "options": {
-        "apiKey": "5LD8KOXu9M4vwqFrrcvrQxGtWStJ2aSQxqPgaiXlZIi1cFtzpDVswHHrq63UHV7Jc"
-      },
-      "models": {
-        "step-3.7-flash": { "name": "Step 3.7 Flash" }
-      }
+      "options": { "apiKey": "5LD8KOXu9M4vwqFrrcvrQxGtWStJ2aSQxqPgaiXlZIi1cFtzpDVswHHrq63UHV7Jc" },
+      "models": { "step-3.7-flash": { "name": "Step 3.7 Flash" } }
     }
   }
 }
