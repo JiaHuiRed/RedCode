@@ -9,6 +9,16 @@
 ---
 
 ## TUI
+### [0.6.28] - 2026-06-25
+
+> 修复流式重试时的 part 重复：断流重试会从头重跑，旧的失败 part 未清理导致消息里 text/reasoning/tool/step 重复。
+
+#### 修复
+
+- **流式重试 part 清理**：进入每个 step 前快照已有 part，重试时删掉失败那次新建的全部 part，并丢弃在途追踪（`currentText`/`reasoningMap`/`toolcalls`），避免重复内容落库（`session/processor.ts`）。
+
+---
+
 ### [0.6.27] - 2026-06-25
 
 > 修复 PTY 子进程泄漏（Windows 僵尸进程）+ sync-home 配置覆盖问题。

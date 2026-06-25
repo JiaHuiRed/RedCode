@@ -802,10 +802,26 @@ export const layer = Layer.effect(
         ctx.needsCompaction = false
         ctx.shouldBreak = (yield* config.get()).experimental?.continue_loop_on_deny !== true
 
+        // 260625 Red 基线快照：进入本 step 前已存在的 part。重试时据此删掉失败那次新建的所有 part。
+        // 一次 process() = 一个 step = 一条流（见 prompt.ts），断流必发生在 step-finish 之前，
+        // 故失败那次不会改 message.cost/tokens，无需回滚计费；仅需清掉它落库的 part 与在途追踪。
+        const baseline = new Set(MessageV2.parts(ctx.assistantMessage.id).map((p) => p.id))
         return yield* Effect.gen(function* () {
           yield* Effect.gen(function* () {
+            // 重试前清理上一次失败遗留的 part：从头重跑会重新生成全部内容，
+            // 不删旧 part 会造成消息里 text/reasoning/tool/step 重复。首次进入时无新增，自然 no-op。
+            for (const part of MessageV2.parts(ctx.assistantMessage.id)) {
+              if (baseline.has(part.id)) continue
+              yield* session.removePart({
+                sessionID: ctx.sessionID,
+                messageID: ctx.assistantMessage.id,
+                partID: part.id,
+              })
+            }
+            // 丢弃在途追踪，避免 cleanup 触碰已删除的 part（readToolCall 对已删 part 返回 null 而跳过）。
             ctx.currentText = undefined
             ctx.reasoningMap = {}
+            ctx.toolcalls = {}
             yield* status.set(ctx.sessionID, { type: "busy" })
             const stream = llm.stream(streamInput)
 
