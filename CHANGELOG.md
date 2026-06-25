@@ -9,6 +9,17 @@
 ---
 
 ## TUI
+### [0.6.29] - 2026-06-25
+
+> 修复人格自我误认（GUI 被说成 TUI）与多模态误判：基础提示词写死 "CLI agent" 让模型把界面认错，env 又缺客户端事实。
+
+#### 修复
+
+- **提示词去 CLI 化**：13 个 `prompt/*.txt` 开头 `interactive CLI agent/tool` 统一改为 `interactive code agent`，消除"敏敏 TUI / 小宋 GUI 都不涉及 CLI"的语义偏差。
+- **env 注入客户端类型**：`<env>` 块新增 `Client: RedCode Desktop GUI / Terminal TUI`（取 `flags.client`），给模型权威的客户端事实，避免把 GUI 误判成 TUI（`session/system.ts`）。
+
+---
+
 ### [0.6.28] - 2026-06-25
 
 > 修复流式重试时的 part 重复：断流重试会从头重跑，旧的失败 part 未清理导致消息里 text/reasoning/tool/step 重复。
