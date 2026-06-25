@@ -4,6 +4,7 @@ import type { Agent } from "../../src/agent/agent"
 import { NamedError } from "@redcode-ai/core/util/error"
 import { Skill } from "../../src/skill"
 import { Permission } from "../../src/permission"
+import { RuntimeFlags } from "../../src/effect/runtime-flags"
 import { SystemPrompt } from "../../src/session/system"
 import { testEffect } from "../lib/effect"
 
@@ -53,6 +54,7 @@ const it = testEffect(
         }),
       ),
     ),
+    Layer.provide(RuntimeFlags.layer()),
   ),
 )
 
