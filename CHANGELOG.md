@@ -9,6 +9,17 @@
 ---
 
 ## TUI
+### [0.6.27] - 2026-06-25
+
+> 修复 PTY 子进程泄漏（Windows 僵尸进程）+ sync-home 配置覆盖问题。
+
+#### 修复
+
+- **PTY 子进程泄漏**：Windows 上 PTY teardown 改用 `taskkill /T` 杀整棵进程树，防止 shell 子进程（node/python 等）残留成僵尸占满内存（`pty/index.ts`）。
+- **sync-home 配置覆盖**：`sync-home.bat` 不再盲目 `copy /y` 覆盖 `~/.redcode/redcode.jsonc`，改为 JSONC 感知的深度合并——用户已有 key 保留，模板新增 key 自动补入（新增 `script/merge-home-config.ts`）。
+
+---
+
 ### [0.6.26] - 2026-06-24
 
 > 接入 Horizon MCP（AI 日报 pipeline），同步配置到 home 文件，更新 ai-daily skill。

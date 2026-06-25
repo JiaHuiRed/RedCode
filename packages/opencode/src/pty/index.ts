@@ -3,6 +3,7 @@ import { Bus } from "@/bus"
 import { Config } from "@/config/config"
 import { InstanceState } from "@/effect/instance-state"
 import { EffectBridge } from "@/effect/bridge"
+import { spawn as cpSpawn } from "child_process"
 import { lazy } from "@redcode-ai/core/util/lazy"
 import { Plugin } from "@/plugin"
 import { Shell } from "@/shell/shell"
@@ -118,9 +119,18 @@ export const layer = Layer.effect(
     const bus = yield* Bus.Service
     const plugin = yield* Plugin.Service
 
+    // 260625 Red fix: Windows 上用 taskkill /T 杀整棵进程树，防止 shell 子进程泄漏
     function teardown(session: Active) {
       try {
-        session.process.kill()
+        const pid = session.process.pid
+        if (process.platform === "win32" && pid) {
+          cpSpawn("taskkill", ["/pid", String(pid), "/f", "/t"], {
+            stdio: "ignore",
+            windowsHide: true,
+          })
+        } else {
+          session.process.kill()
+        }
       } catch {}
       for (const [sub, ws] of session.subscribers.entries()) {
         try {

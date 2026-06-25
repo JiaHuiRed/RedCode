@@ -9,8 +9,8 @@ if %errorlevel% neq 0 exit /b %errorlevel%
 if not exist "%USERPROFILE%\.redcode" mkdir "%USERPROFILE%\.redcode" >nul 2>&1
 echo [sync] shared config/skills to %USERPROFILE%\.redcode
 
-rem hub injector: rebuild ~/.redcode/redcode.jsonc (instructions injection chain)
-if exist ".opencode\redcode.home.jsonc" copy /y ".opencode\redcode.home.jsonc" "%USERPROFILE%\.redcode\redcode.jsonc" >nul
+rem hub injector: merge template into ~/.redcode/redcode.jsonc (user keys preserved, new template keys added)
+call bun run script/merge-home-config.ts
 
 rem global skill: home/.redcode/skill is the WORKING SOURCE OF TRUTH (personas write skills there,
 rem tracked by the private repo). Repo staging only SEEDS skills MISSING in home - never wipe,
