@@ -117,8 +117,7 @@
       "models": { "step-3.7-flash": { "name": "Step 3.7 Flash" } }
     },
     "stepfun": {
-      "api": "https://api.stepfun.com/step_plan/v1",
-      "options": { "apiKey": "5LD8KOXu9M4vwqFrrcvrQxGtWStJ2aSQxqPgaiXlZIi1cFtzpDVswHHrq63UHV7Jc" },
+      "options": { "baseURL": "https://api.stepfun.com/step_plan/v1", "apiKey": "5LD8KOXu9M4vwqFrrcvrQxGtWStJ2aSQxqPgaiXlZIi1cFtzpDVswHHrq63UHV7Jc" },
       "models": { "step-3.7-flash": { "name": "Step 3.7 Flash" } }
     }
   }

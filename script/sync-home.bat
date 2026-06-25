@@ -19,10 +19,10 @@ if not exist "%USERPROFILE%\.redcode\skill" mkdir "%USERPROFILE%\.redcode\skill"
 if exist ".opencode\skill" for /d %%S in (.opencode\skill\*) do if not exist "%USERPROFILE%\.redcode\skill\%%~nxS" xcopy /e /i /q /y "%%S" "%USERPROFILE%\.redcode\skill\%%~nxS\" >nul
 
 rem global commands: repo staging -> ~/.redcode/command (engine scans .redcode only)
-rem NOTE: Only shared commands are in this repo. Personal commands (tui-persona.md, gui-persona.md)
-rem live in ~/.redcode/command/ from the user's private repo and are NOT overwritten.
+rem Seed-only: copy each file only if it does NOT already exist in home.
+rem Private-repo edits (persona commands etc.) are never overwritten.
 if not exist "%USERPROFILE%\.redcode\command" mkdir "%USERPROFILE%\.redcode\command" >nul 2>&1
-if exist ".opencode\command" xcopy /y /e /i ".opencode\command" "%USERPROFILE%\.redcode\command" >nul
+if exist ".opencode\command" for %%F in (.opencode\command\*) do if not exist "%USERPROFILE%\.redcode\command\%%~nxF" copy /y "%%F" "%USERPROFILE%\.redcode\command\%%~nxF" >nul
 
 rem global scripts: repo staging -> ~/.redcode/scripts (called by slash commands, e.g. /recall)
 rem true mirror: wipe first so deleted-in-repo scripts do not linger in home

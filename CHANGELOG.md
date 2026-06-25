@@ -9,6 +9,18 @@
 ---
 
 ## TUI
+### [0.6.30] - 2026-06-25
+
+> sync-home 防覆盖加固：command/ 改为只铺缺失（不再盲覆盖私仓 persona 命令），merge-home-config 写入时保留 JSONC 注释。
+
+#### 修复
+
+- **command/ 同步改为 seed-only**：`sync-home.bat` 中 `xcopy /y` 替换为逐文件 `if not exist` 检查，私仓编辑的 persona 命令不再被公仓模板覆盖。
+- **merge-home-config 保留注释**：新增 JSONC-aware patcher（`patchNewKeys`），合并模板新键时直接原文插入而非 `JSON.stringify` 重写，`// YYMMDD Red` 日期注释不再被剥。
+- **模板 stepfun 端点修正**：`.opencode/redcode.home.jsonc` 的 stepfun 从无效的顶层 `api` 字段改为 `options.baseURL`，防止合并时向私仓重复注入已删除的 `api` 键。
+
+---
+
 ### [0.6.29] - 2026-06-25
 
 > 修复人格自我误认（GUI 被说成 TUI）与多模态误判：基础提示词写死 "CLI agent" 让模型把界面认错，env 又缺客户端事实。
