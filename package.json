@@ -9,7 +9,6 @@
     "dev": "bun run --cwd packages/opencode --conditions=browser src/index.ts",
     "dev:desktop": "bun --cwd packages/desktop dev",
     "dev:web": "bun --cwd packages/app dev",
-    "dev:console": "ulimit -n 10240 2>/dev/null; bun run --cwd packages/console/app dev",
     "dev:storybook": "bun --cwd packages/storybook storybook",
     "lint": "oxlint",
     "typecheck": "bun turbo typecheck",
@@ -23,7 +22,6 @@
   "workspaces": {
     "packages": [
       "packages/*",
-      "packages/console/*",
       "packages/sdk/js",
       "packages/slack"
     ],
