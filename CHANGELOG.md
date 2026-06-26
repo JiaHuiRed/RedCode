@@ -9,6 +9,16 @@
 ---
 
 ## TUI
+### [0.6.32] - 2026-06-26
+
+> 移除上游 SaaS 控制台包，减重 ~35MB。
+
+#### 变更
+
+- **移除 `packages/console/`**：上游 opencode 云控制台 web app，RedCode 不走 SaaS 路线，零内部引用，删除后瘦身 521 文件 / 35MB，`package.json` 同步清理 workspace 条目与 `dev:console` 脚本。
+
+---
+
 ### [0.6.31] - 2026-06-26
 
 > 修复自定义 provider 下引擎压缩永不触发：context 未知时也按 threshold 硬上限压缩，DCP 不再无限催不执行。
