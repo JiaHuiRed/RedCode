@@ -9,6 +9,16 @@
 ---
 
 ## TUI
+### [0.6.31] - 2026-06-26
+
+> 修复自定义 provider 下引擎压缩永不触发：context 未知时也按 threshold 硬上限压缩，DCP 不再无限催不执行。
+
+#### 修复
+
+- **overflow.ts 阈值守卫顺序修正**：`isOverflow()` 中 `compaction.threshold` 检查提到 `model.limit.context === 0` 守卫之前。自定义 provider（models.dev 无条目、config 未声明 limit）会兜底为 `context:0`，旧顺序在阈值检查前就早退，等于对这类 provider 关掉了压缩——DCP 一直 nudge 但引擎永不 compaction，撑到中断。现在 context 未知也照样按硬上限触发，符合该逻辑原本注释声明的意图。
+
+---
+
 ### [0.6.30] - 2026-06-25
 
 > sync-home 防覆盖加固：command/ 改为只铺缺失（不再盲覆盖私仓 persona 命令），merge-home-config 写入时保留 JSONC 注释。
