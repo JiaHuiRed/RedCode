@@ -965,6 +965,7 @@ export const dict = {
   "settings.general.row.showFileTree.title": "文件树",
   "settings.general.row.showSearch.title": "命令面板",
   "session.review.noBranchChanges": "暂无分支变更",
+  "settings.general.row.shell.description": "选择终端使用的 Shell。所选 Shell 同时用于 Agent 工具调用。",
   "settings.general.row.shell.autoDefault": "自动（默认）",
   "language.uk": "乌克兰语",
   "settings.general.row.shell.title": "终端 Shell",
