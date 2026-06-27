@@ -160,6 +160,8 @@ export const Info = Schema.Struct({
   }),
   // User-facing plugin config is stored as Specs; provenance gets attached later while configs are merged.
   plugin: Schema.optional(Schema.mutable(Schema.Array(ConfigPlugin.Spec))),
+  // 260627 Red plugin-specific config passthrough（DCP 等插件自行消费，schema 不校验内部结构）
+  dcp: Schema.optional(Schema.Unknown),
   share: Schema.optional(Schema.Literals(["manual", "auto", "disabled"])).annotate({
     description:
       "Control sharing behavior:'manual' allows manual sharing via commands, 'auto' enables automatic sharing, 'disabled' disables all sharing",

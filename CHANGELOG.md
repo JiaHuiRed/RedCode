@@ -9,6 +9,17 @@
 ---
 
 ## TUI
+### [0.6.34] - 2026-06-27
+
+> 修复 DCP nudge 配置导致的启动崩溃 + schema passthrough。
+
+#### 修复
+
+- **`dcp` key 导致 ConfigInvalidError 启动崩溃**：`redcode.jsonc` 加入 `"dcp"` 字段后，`config/parse.ts:topLevelExtraKeys` 将其识别为未知 key 并抛 `ConfigInvalidError`，进程无法启动。在 `config/config.ts` 的 `Info` schema 中新增 `dcp: Schema.optional(Schema.Unknown)` passthrough，插件 config 由插件自行校验，不影响主 schema（`packages/opencode/src/config/config.ts`）。
+- **DCP nudge 配置恢复**：`nudgeForce: "strong"`（user 角色消息）+ `iterationNudgeThreshold: 10`（10 轮提前触发）重新写入 `~/.redcode/redcode.jsonc`。
+
+---
+
 ### [0.6.33] - 2026-06-27
 
 > StepFun prefix cache 命中率修复 + DCP nudge 增强。
