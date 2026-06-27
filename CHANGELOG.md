@@ -9,6 +9,20 @@
 ---
 
 ## TUI
+### [0.6.33] - 2026-06-27
+
+> StepFun prefix cache 命中率修复 + DCP nudge 增强。
+
+#### 修复
+
+- **StepFun prefix cache 命中率偏低**：`stepfun` / `step-plan` provider 缺少 `promptCacheKey`，导致 Step 3.7 Flash 跨调用缓存命中率仅 63~82%，远低于 DeepSeek/MiMo 的 94~97%。在 `transform.ts` 的 `promptCacheKey` 条件中补入两个 providerID，实测命中率上升至 88%+（`packages/opencode/src/provider/transform.ts`）。
+
+#### 变更
+
+- **DCP compress nudge 增强**：`nudgeForce` 从 `"soft"`（assistant 消息，易被忽视）改为 `"strong"`（user 消息，服从性更高）；`iterationNudgeThreshold` 从默认 15 降至 10，提前触发提醒（`~/.redcode/redcode.jsonc`）。
+
+---
+
 ### [0.6.32] - 2026-06-26
 
 > 移除上游 SaaS 控制台包，减重 ~35MB。

@@ -1139,7 +1139,13 @@ export function options(input: {
     }
   }
 
-  if (input.model.providerID === "openai" || input.providerOptions?.setCacheKey) {
+  // 260627 Red: stepfun/step-plan 加 promptCacheKey，稳定前缀缓存（同 openai/venice/openrouter）
+  if (
+    input.model.providerID === "openai" ||
+    input.model.providerID === "stepfun" ||
+    input.model.providerID === "step-plan" ||
+    input.providerOptions?.setCacheKey
+  ) {
     result["promptCacheKey"] = input.sessionID
   }
 
