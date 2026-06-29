@@ -91,13 +91,11 @@ function sessionSourceLabel(client: string): string {
 // skill files) mutates the system prompt and invalidates DeepSeek prefix cache mid-session.
 // 260620 Red use globalThis for cache storage — bun compile may instantiate module multiple times,
 // causing module-level `let` to be duplicated across instances. globalThis ensures single shared cache.
-// 260629 Red cache key includes modelKey (providerID:modelID) — switching models within a session
-// must rebuild the system prompt and model messages; otherwise Step gets DeepSeek's cached prompt.
 const _caches = (globalThis as any).__rc_prompt_caches ??= {
-  system: undefined as { sessionID: string; modelKey: string; skills: string | undefined; env: string[]; instructions: string[] } | undefined,
+  system: undefined as { sessionID: string; skills: string | undefined; env: string[]; instructions: string[] } | undefined,
   chatCtx: undefined as { sessionID: string; text: string | undefined } | undefined,
   msgPin: undefined as { sessionID: string; messages: Map<string, unknown[]> } | undefined,
-  modelMsgs: undefined as { sessionID: string; modelKey: string; messages: ModelMessage[] } | undefined,
+  modelMsgs: undefined as { sessionID: string; messages: ModelMessage[] } | undefined,
 }
 function groupChatContext(sessionID: string): string | undefined {
   if (_caches.chatCtx?.sessionID === sessionID) return _caches.chatCtx.text
@@ -1525,9 +1523,7 @@ export const layer = Layer.effect(
             // instruction.system() re-reads all instruction files from disk every turn — if any file
             // changes mid-session (agent edits MEMORY.md, AGENTS.md, etc.), the system prompt mutates
             // and DeepSeek prefix cache is invalidated, causing cache hit to cliff-drop.
-            // 260629 Red modelKey added — model switch within same session must rebuild system prompt
-            const modelKey = `${model.providerID}:${model.id}`
-            const cachedSystem = _caches.system?.sessionID === sessionID && _caches.system?.modelKey === modelKey
+            const cachedSystem = _caches.system?.sessionID === sessionID
               ? _caches.system
               : undefined
             const [skills, env, instructions, modelMsgs] = yield* Effect.all([
@@ -1537,21 +1533,17 @@ export const layer = Layer.effect(
               MessageV2.toModelMessagesEffect(msgs, model),
             ])
             if (!cachedSystem) {
-              _caches.system = { sessionID, modelKey, skills, env, instructions }
+              _caches.system = { sessionID, skills, env, instructions }
             }
             // 260621 Red cache final model messages for prefix stability.
-            // Even after msgPinCache stabilizes parts, DCP transform or AI SDK conversion
-            // may introduce subtle non-determinism. By reusing previously-sent model messages
-            // for the stable prefix, we guarantee identical bytes across turns.
-            // 260629 Red modelKey: model switch invalidates message cache too (different capability gating)
             let stabilizedMsgs = modelMsgs
-            if (_caches.modelMsgs?.sessionID === sessionID && _caches.modelMsgs?.modelKey === modelKey) {
+            if (_caches.modelMsgs?.sessionID === sessionID) {
               const prevLen = _caches.modelMsgs.messages.length
               if (prevLen > 0 && prevLen < modelMsgs.length) {
                 stabilizedMsgs = [..._caches.modelMsgs.messages, ...modelMsgs.slice(prevLen)]
               }
             }
-            _caches.modelMsgs = { sessionID, modelKey, messages: [...stabilizedMsgs] }
+            _caches.modelMsgs = { sessionID, messages: [...stabilizedMsgs] }
             const system = [...env, ...instructions, ...(skills ? [skills] : [])]
             // 260629 Red inject per-session canary marker for prompt-injection detection.
             // Looks like an internal debug line; if it ever appears in model output, terminate the session.

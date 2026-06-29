@@ -776,7 +776,8 @@ export const layer = Layer.effect(
         ctx.toolcalls = {}
         ctx.assistantMessage.time.completed = Date.now()
         yield* session.updateMessage(ctx.assistantMessage)
-        Canary.clear(ctx.sessionID)
+        // 260629 Red DO NOT clear canary here — clearing regenerates the token next turn,
+        // mutating the system prompt suffix and breaking DeepSeek prefix cache every turn.
       })
 
       const halt = Effect.fn("SessionProcessor.halt")(function* (e: unknown) {
