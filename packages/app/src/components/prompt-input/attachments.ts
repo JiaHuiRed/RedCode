@@ -7,8 +7,6 @@ import { uuid } from "@/utils/uuid"
 import { getCursorPosition } from "./editor-dom"
 import { attachmentMime } from "./files"
 import { normalizePaste, pasteMode } from "./paste"
-import path from "path"
-import { mkdir } from "fs/promises"
 
 function dataUrl(file: File, mime: string) {
   return new Promise<string>((resolve) => {
@@ -34,6 +32,7 @@ type PromptAttachmentsInput = {
   focusEditor: () => void
   addPart: (part: ContentPart) => boolean
   readClipboardImage?: () => Promise<File | null>
+  writeAttachment?: (sessionDir: string, filename: string, data: Uint8Array) => Promise<string>
   sessionDirectory?: string
 }
 
@@ -61,15 +60,12 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     const url = await dataUrl(file, mime)
     if (!url) return false
 
+    // 260629 Red: 落盘到 .attachments/，让 build-request-parts 走 file:// URL 而非 base64 dataUrl
     let attachmentPath: string | undefined
-    if (input.sessionDirectory) {
-      const dir = path.join(input.sessionDirectory, ".attachments")
-      await mkdir(dir, { recursive: true })
+    if (input.sessionDirectory && input.writeAttachment) {
       const ext = mime.split("/")[1]?.split("+")[0] || "bin"
       const filename = `${uuid()}.${ext}`
-      const filepath = path.join(dir, filename)
-      await Bun.write(filepath, Buffer.from(await file.arrayBuffer()))
-      attachmentPath = filepath
+      attachmentPath = await input.writeAttachment(input.sessionDirectory, filename, new Uint8Array(await file.arrayBuffer()))
     }
 
     const attachment: ImageAttachmentPart = {

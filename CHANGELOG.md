@@ -9,6 +9,16 @@
 ---
 
 ## TUI
+### [0.6.35] - 2026-06-29
+
+> 修复同 session 切换模型时系统提示缓存错用前一模型的缓存。
+
+#### 修复
+
+- **模型切换缓存键修复**：`_caches.system` 和 `_caches.modelMsgs` 的缓存键由单一 `sessionID` 改为 `sessionID + modelKey（providerID:modelID）`。切换模型后系统提示重新构建，避免新模型沿用旧模型的 system prompt、图片能力判断失效、模型自我认知错乱等问题（`packages/opencode/src/session/prompt.ts`）。
+
+---
+
 ### [0.6.34] - 2026-06-27
 
 > 修复 DCP nudge 配置导致的启动崩溃 + schema passthrough。
@@ -1085,6 +1095,17 @@
 ---
 
 ## GUI
+
+### [0.6.13] - 2026-06-29
+
+> 图片附件落盘 + 修复 dev 模式 fs/promises 浏览器兼容报错。
+
+#### 新功能 / 修复
+
+- **图片附件持久化 IPC**：粘贴/拖拽图片后通过 `write-attachment` IPC handler 写入 `sessionDir/.attachments/{uuid}.ext`，`build-request-parts.ts` 以 `file://` URL 路径替代 base64 dataUrl 传给后端，减少内存占用（`packages/desktop/src/main/ipc.ts` → `preload/types.ts` → `preload/index.ts` → `renderer/index.tsx` → `platform.tsx` → `prompt-input.tsx` → `attachments.ts`）。
+- **dev 模式浏览器兼容修复**：`attachments.ts` 移除 `import path from "path"`、`import { mkdir } from "fs/promises"` 及 `Bun.write()` 调用（Vite 打包时 externalize 报错），改为可选 `writeAttachment` IPC 回调，web 平台优雅降级。
+
+---
 
 ### [0.6.12] - 2026-06-24
 

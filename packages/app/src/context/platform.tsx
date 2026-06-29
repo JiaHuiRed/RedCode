@@ -108,6 +108,9 @@ export type Platform = {
   /** Read image from clipboard (desktop only) */
   readClipboardImage?(): Promise<File | null>
 
+  /** Write an image attachment to sessionDir/.attachments/ (desktop only) */
+  writeAttachment?(sessionDir: string, filename: string, data: Uint8Array): Promise<string>
+
   /** Export collected diagnostic logs (desktop only) */
   exportDebugLogs?(): Promise<string>
 

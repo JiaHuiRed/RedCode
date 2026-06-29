@@ -1072,6 +1072,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     },
     addPart,
     readClipboardImage: platform.readClipboardImage,
+    writeAttachment: platform.writeAttachment,
     sessionDirectory: sdk.directory,
   })
 

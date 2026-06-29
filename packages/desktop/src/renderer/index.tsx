@@ -293,6 +293,9 @@ const createPlatform = (): Platform => {
         type: "image/png",
       })
     },
+
+    writeAttachment: (sessionDir, filename, data) =>
+      window.api.writeAttachment(sessionDir, filename, data),
   }
 }
 
