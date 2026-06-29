@@ -7,6 +7,8 @@ import { uuid } from "@/utils/uuid"
 import { getCursorPosition } from "./editor-dom"
 import { attachmentMime } from "./files"
 import { normalizePaste, pasteMode } from "./paste"
+import path from "path"
+import { mkdir } from "fs/promises"
 
 function dataUrl(file: File, mime: string) {
   return new Promise<string>((resolve) => {
@@ -32,6 +34,7 @@ type PromptAttachmentsInput = {
   focusEditor: () => void
   addPart: (part: ContentPart) => boolean
   readClipboardImage?: () => Promise<File | null>
+  sessionDirectory?: string
 }
 
 export function createPromptAttachments(input: PromptAttachmentsInput) {
@@ -58,12 +61,24 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     const url = await dataUrl(file, mime)
     if (!url) return false
 
+    let attachmentPath: string | undefined
+    if (input.sessionDirectory) {
+      const dir = path.join(input.sessionDirectory, ".attachments")
+      await mkdir(dir, { recursive: true })
+      const ext = mime.split("/")[1]?.split("+")[0] || "bin"
+      const filename = `${uuid()}.${ext}`
+      const filepath = path.join(dir, filename)
+      await Bun.write(filepath, Buffer.from(await file.arrayBuffer()))
+      attachmentPath = filepath
+    }
+
     const attachment: ImageAttachmentPart = {
       type: "image",
       id: uuid(),
       filename: file.name,
       mime,
       dataUrl: url,
+      path: attachmentPath,
     }
     const cursor = prompt.cursor() ?? getCursorPosition(editor)
     prompt.set([...prompt.current(), attachment], cursor)

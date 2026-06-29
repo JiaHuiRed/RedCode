@@ -15,6 +15,7 @@ import { SessionCompaction } from "./compaction"
 import { Bus } from "../bus"
 import { SystemPrompt } from "./system"
 import { Instruction } from "./instruction"
+import { get as getCanary, check as checkCanary } from "./canary"
 import { Plugin } from "../plugin"
 import MAX_STEPS from "../session/prompt/max-steps.txt"
 import { ToolRegistry } from "@/tool/registry"
@@ -1547,6 +1548,10 @@ export const layer = Layer.effect(
             }
             _caches.modelMsgs = { sessionID, messages: [...stabilizedMsgs] }
             const system = [...env, ...instructions, ...(skills ? [skills] : [])]
+            // 260629 Red inject per-session canary marker for prompt-injection detection.
+            // Looks like an internal debug line; if it ever appears in model output, terminate the session.
+            const canaryToken = getCanary(sessionID)
+            system.push(`Session marker: ${canaryToken}`)
             // 260615 Red inject group chat context for primary agents only
             // 260617 Red pass sessionID for cache key — snapshot once per session, not per turn
             if (!session.parentID) {

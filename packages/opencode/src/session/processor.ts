@@ -16,6 +16,7 @@ import type { SessionID } from "./schema"
 import { SessionRetry } from "./retry"
 import { SessionStatus } from "./status"
 import { SessionSummary } from "./summary"
+import { Canary } from "./canary"
 import type { Provider } from "@/provider/provider"
 import { Question } from "@/question"
 import { errorMessage } from "@/util/error"
@@ -421,6 +422,12 @@ export const layer = Layer.effect(
                 : value.providerMetadata,
             }))
 
+            // 260629 Red canary leak check in tool-call arguments.
+            if (Canary.check(JSON.stringify(input), ctx.sessionID)) {
+              slog.error("canary.leak", { sessionID: ctx.sessionID, source: "tool-call", tool: value.name })
+              throw new Error("Session terminated: canary token leaked in tool call input")
+            }
+
             const parts = MessageV2.parts(ctx.assistantMessage.id)
             const recentParts = parts.slice(-DOOM_LOOP_THRESHOLD)
 
@@ -697,9 +704,12 @@ export const layer = Layer.effect(
               const end = Date.now()
               ctx.currentText.time = { start: ctx.currentText.time?.start ?? end, end }
             }
-            if (value.providerMetadata) ctx.currentText.metadata = value.providerMetadata
-            yield* session.updatePart(ctx.currentText)
-            ctx.currentText = undefined
+            // 260629 Red canary leak check: if the model echoed the session marker,
+            // it likely revealed the system prompt — terminate immediately.
+            if (Canary.check(ctx.currentText.text, ctx.sessionID)) {
+              slog.error("canary.leak", { sessionID: ctx.sessionID, source: "text" })
+              throw new Error("Session terminated: canary token leaked in assistant output")
+            }
             return
 
           case "finish":
@@ -766,6 +776,7 @@ export const layer = Layer.effect(
         ctx.toolcalls = {}
         ctx.assistantMessage.time.completed = Date.now()
         yield* session.updateMessage(ctx.assistantMessage)
+        Canary.clear(ctx.sessionID)
       })
 
       const halt = Effect.fn("SessionProcessor.halt")(function* (e: unknown) {
