@@ -9,6 +9,16 @@
 ---
 
 ## TUI
+### [0.6.36] - 2026-06-29
+
+> 修复 DeepSeek prefix cache 命中率断崖下跌——0.6.35 引入的 canary 重置 + modelKey 缓存键。
+
+#### 修复
+
+- **DeepSeek prefix cache 命中率从 95%+ 暴跌至 45%**：根因有二。一是 canary token 每轮被 `Canary.clear(ctx.sessionID)` 清空后重生成新值，system prompt 尾部字节每轮不同，DeepSeek 严格 prefix cache 无法匹配尾部。二是 `_caches.system` / `_caches.modelMsgs` 缓存键加上 `modelKey` 后，同一模型在不同路径下引用不同对象时 key 不匹配，缓存频繁失效。修复：删除 `processor.ts` 中的 `Canary.clear(ctx.sessionID)`，回归 `sessionID` 单键缓存（`packages/opencode/src/session/processor.ts`、`packages/opencode/src/session/prompt.ts`）。
+
+---
+
 ### [0.6.35] - 2026-06-29
 
 > 修复同 session 切换模型时系统提示缓存错用前一模型的缓存。
