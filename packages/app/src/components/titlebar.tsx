@@ -245,7 +245,6 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
   const globalSync = useServerSync()
   const navigate = useNavigate()
   const homeMatch = useMatch(() => "/")
-  const chatMatch = useMatch(() => "/chat") // 260613 Red
 
   const newSessionHref = () => {
     if (params.dir) return `/${params.dir}/session`
@@ -461,16 +460,6 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
         class="!w-9"
         icon={<IconV2 name="grid-plus" />}
         state={!!homeMatch() ? "pressed" : undefined}
-      />
-      {/* 260613 Red chat room entry */}
-      <IconButtonV2
-        variant="ghost-muted"
-        size="large"
-        as="a"
-        href="/chat"
-        class="!w-9"
-        icon={<IconV2 name="chat-bubble" />}
-        state={chatMatch() ? "pressed" : undefined}
       />
       <div class="flex min-w-0 flex-1 flex-row items-center gap-1.5 overflow-hidden">
         <div class="flex min-w-0 flex-row items-center gap-1.5 overflow-hidden">

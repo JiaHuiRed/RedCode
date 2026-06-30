@@ -59,7 +59,6 @@ import { AgentAttachment, FileAttachment, ReferenceAttachment, Source } from "@r
 import { Reference } from "@/reference/reference"
 import * as DateTime from "effect/DateTime"
 import { eq } from "@/storage/db"
-import { Chat } from "@/chat"
 import * as Database from "@/storage/db"
 import { SessionTable } from "./session.sql"
 import { referencePromptMetadata, referenceTextPart } from "./prompt/reference"
@@ -93,38 +92,9 @@ function sessionSourceLabel(client: string): string {
 // causing module-level `let` to be duplicated across instances. globalThis ensures single shared cache.
 const _caches = (globalThis as any).__rc_prompt_caches ??= {
   system: undefined as { sessionID: string; skills: string | undefined; env: string[]; instructions: string[] } | undefined,
-  chatCtx: undefined as { sessionID: string; text: string | undefined } | undefined,
   msgPin: undefined as { sessionID: string; messages: Map<string, unknown[]> } | undefined,
   modelMsgs: undefined as { sessionID: string; messages: ModelMessage[] } | undefined,
 }
-function groupChatContext(sessionID: string): string | undefined {
-  if (_caches.chatCtx?.sessionID === sessionID) return _caches.chatCtx.text
-  try {
-    const messages = Chat.getMessages("office", { limit: 10 })
-    if (!messages || messages.length === 0) {
-      _caches.chatCtx = { sessionID, text: undefined } // 260617 Red cache empty result too
-      return undefined
-    }
-    const lines = messages.reverse().map((m) => {
-      const time = new Date(m.time_created).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-      const sender = m.sender === "user" ? "User" : m.sender === "tui" ? "TUI(敏敏)" : "GUI(小宋)"
-      return `[${time}] ${sender}: ${m.text ?? ""}`
-    })
-    const text = [
-      "<office-group-chat>",
-      "Recent messages from the Office group chat (shared coordination channel between User, TUI agent, and GUI agent).",
-      "Be aware of these messages — they may contain coordination instructions from the user or status updates from the other agent.",
-      "",
-      ...lines,
-      "</office-group-chat>",
-    ].join("\n")
-    _caches.chatCtx = { sessionID, text }
-    return text
-  } catch {
-    return undefined
-  }
-}
-
 const decodeMessageInfo = Schema.decodeUnknownExit(MessageV2.Info)
 const decodeMessagePart = Schema.decodeUnknownExit(MessageV2.Part)
 
@@ -1549,12 +1519,6 @@ export const layer = Layer.effect(
             // Looks like an internal debug line; if it ever appears in model output, terminate the session.
             const canaryToken = getCanary(sessionID)
             system.push(`Session marker: ${canaryToken}`)
-            // 260615 Red inject group chat context for primary agents only
-            // 260617 Red pass sessionID for cache key — snapshot once per session, not per turn
-            if (!session.parentID) {
-              const chatCtx = groupChatContext(sessionID)
-              if (chatCtx) system.push(chatCtx)
-            }
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
             const result = yield* handle.process({

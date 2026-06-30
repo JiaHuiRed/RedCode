@@ -9,6 +9,16 @@
 ---
 
 ## TUI
+### [0.6.38] - 2026-06-30
+
+> 移除未使用的 Office 聊天室功能 — 顺带消除一个 prefix cache 不稳定源。
+
+#### 移除
+
+- **Office 群聊/聊天室功能下线**：该功能自上线从未实际使用，且 `groupChatContext()` 把群聊消息注入系统提示词的 canary marker 之后——群聊内容一变就改写 system prompt 尾部、打断 DeepSeek 严格 prefix cache（历史日志多次记录命中率下跌与此相关）。后端删除 `src/chat/` 服务与 SQL schema、server `chat` 路由组与 handler、`prompt.ts` 的群聊注入与 `_caches.chatCtx` 缓存（`packages/opencode/src/session/prompt.ts`、`src/server/routes/instance/httpapi/{api,server,handlers/chat,groups/chat}.ts`）。前端 UI 与桌面第二窗口见 GUI 0.6.14。已应用的 migration 与 `session.client` 列作为历史保留，不影响运行。
+
+---
+
 ### [0.6.37] - 2026-06-30
 
 > 还原 canary commit 误删的 text-part 落盘逻辑。
@@ -1115,6 +1125,16 @@
 ---
 
 ## GUI
+
+### [0.6.14] - 2026-06-30
+
+> 移除 Office 聊天室 UI 与桌面第二窗口。
+
+#### 移除
+
+- **聊天室界面下线**：删除 `pages/chat/` 页面、标题栏聊天气泡入口、`/chat` 路由与 `layout.tsx` 的 chatMatch 布局分支；桌面端移除第二个 BrowserWindow（`createChatWindow`/`getChatWindow`/open-chat-window IPC/preload `openChatWindow`/renderer `isChatView`，连带清理无用 `lazy` import）。配合后端 TUI 0.6.38 一并下线（`packages/app`、`packages/desktop`）。
+
+---
 
 ### [0.6.13] - 2026-06-29
 

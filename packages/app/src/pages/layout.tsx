@@ -95,7 +95,6 @@ export default function Layout(props: ParentProps) {
   let dialogDead = false
 
   const params = useParams()
-  const chatMatch = useMatch(() => "/chat") // 260613 Red
   const globalSDK = useGlobalSDK()
   const globalSync = useServerSync()
   const layout = useLayout()
@@ -1152,12 +1151,10 @@ export default function Layout(props: ParentProps) {
       <main
         class="relative z-[1] flex-1 min-h-0 min-w-0 overflow-x-hidden flex flex-col contain-strict bg-v2-background-bg-base"
         classList={{
-          // 260613 Red chat room fills entire main area
-          "items-stretch": !!chatMatch(),
-          "items-start": !chatMatch(),
+          "items-start": true,
           // 260610 Red 0.5.0 refine#3：设了背景图时主卡片去掉外边距/圆角/阴影，毛玻璃满贴标题栏不再像"镶嵌进去的一块玻璃"
           "m-2 mt-0 rounded-[10px] shadow-[var(--v2-elevation-raised)] overflow-hidden":
-            !chatMatch() && (!!params.id || !params.dir) && !appBackground(),
+            (!!params.id || !params.dir) && !appBackground(),
           "overflow-hidden": (!!params.id || !params.dir) && !!appBackground(),
         }}
         data-frost-surface="main"

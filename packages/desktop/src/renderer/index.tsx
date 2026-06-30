@@ -17,7 +17,7 @@ import {
 import * as Sentry from "@sentry/solid"
 import type { AsyncStorage } from "@solid-primitives/storage"
 import { MemoryRouter } from "@solidjs/router"
-import { createEffect, createResource, lazy, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createResource, onCleanup, onMount, Show } from "solid-js"
 import { render } from "solid-js/web"
 import pkg from "../../package.json"
 import { initI18n, t } from "./i18n"
@@ -305,9 +305,6 @@ window.api.onMenuCommand((id) => {
 })
 listenForDeepLinks()
 
-// 260613 Red detect chat window mode
-const isChatView = new URLSearchParams(location.search).get("view") === "chat"
-const ChatRoom = isChatView ? lazy(() => import("@redcode-ai/app/pages/chat")) : null
 
 render(() => {
   const platform = createPlatform()
@@ -403,8 +400,7 @@ render(() => {
               servers={servers()}
               router={MemoryRouter}
             >
-              {/* 260613 Red chat window uses server context from AppInterface */}
-              {isChatView && ChatRoom ? <ChatRoom /> : <Inner />}
+              <Inner />
             </AppInterface>
           )}
         </Show>
