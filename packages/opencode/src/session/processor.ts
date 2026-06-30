@@ -710,6 +710,12 @@ export const layer = Layer.effect(
               slog.error("canary.leak", { sessionID: ctx.sessionID, source: "text" })
               throw new Error("Session terminated: canary token leaked in assistant output")
             }
+            // 260630 Red restore text-part finalize accidentally dropped by canary commit 1220d25af:
+            // persist final (plugin-transformed) text + text-end providerMetadata, then reset currentText.
+            // Without this, interleaved text→tool→text within one step lost the first part's final text.
+            if (value.providerMetadata) ctx.currentText.metadata = value.providerMetadata
+            yield* session.updatePart(ctx.currentText)
+            ctx.currentText = undefined
             return
 
           case "finish":

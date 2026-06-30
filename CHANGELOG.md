@@ -9,6 +9,16 @@
 ---
 
 ## TUI
+### [0.6.37] - 2026-06-30
+
+> 还原 canary commit 误删的 text-part 落盘逻辑。
+
+#### 修复
+
+- **交错 text→tool→text 丢失首段文本**：canary commit `1220d25af` 在 `text-end` 分支误删了 3 行 text-part 最终化逻辑（持久化 plugin 转换后的最终文本 + providerMetadata、重置 `currentText`），导致一个 step 内 text→tool→text 交错时第一段文本不落盘直接丢失。现在在 canary 泄漏检查之后还原这三行（`packages/opencode/src/session/processor.ts`）。
+
+---
+
 ### [0.6.36] - 2026-06-29
 
 > 修复 DeepSeek prefix cache 命中率断崖下跌——0.6.35 引入的 canary 重置 + modelKey 缓存键。
