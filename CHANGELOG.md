@@ -9,6 +9,16 @@
 ---
 
 ## TUI
+### [0.6.39] - 2026-06-30
+
+> 清理 prefix-cache 诊断代码 — 调查结论：客户端逐 turn 字节完全稳定，唯一 cache break 来自 auto-compaction 重写消息（结构性开销，非 bug）。
+
+#### 移除
+
+- **prefix-cache hash 诊断日志**：0.6.38 部署后插桩 119 turn 分析，仅 compaction（153→26 blocks）触发 1 次 `cacheBreak=YES`，其余全为 `growth-only`。确认客户端 prompt 构建字节级稳定，诊断代码功成身退（`packages/opencode/src/session/prompt.ts`）。
+
+---
+
 ### [0.6.38] - 2026-06-30
 
 > 移除未使用的 Office 聊天室功能 — 顺带消除一个 prefix cache 不稳定源。
