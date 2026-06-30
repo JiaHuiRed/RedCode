@@ -16,7 +16,7 @@
 #### 重构
 
 - **server handler 不再直接读表**：`handlers/session.ts` 此前用裸 Drizzle ORM 查询 `MessageTable`/`PartTable` 找最近一条 compaction 消息（GUI 初始加载跳过旧消息用），绕过了 `Session.Service` 抽象、handler 与表结构耦合。新增 `Session.Service.latestCompactionCursor()` 把这段 SQL 收归 session 层，handler 删去 `Database`/`MessageTable`/`PartTable`/drizzle-orm 全部直接引用，性能不变（仍是单次索引查询）（`packages/opencode/src/session/session.ts`、`src/server/routes/instance/httpapi/handlers/session.ts`）。
-- **prompt.ts 拆分启动**：1866 行巨型文件开始按职责拆分，首批提取 `getModel`/`currentModel`/`sessionSourceLabel` 到 `prompt/shared.ts`（工厂函数 + 显式依赖注入模式），后续 createUserMessage / runLoop / shell / command 将陆续迁出（`packages/opencode/src/session/prompt.ts`、`prompt/shared.ts`）。
+- **prompt.ts 拆分启动**：1866 行巨型文件开始按职责拆分，首批提取 `getModel`/`currentModel`/`sessionSourceLabel` 到 `prompt/shared.ts`，`shellImpl`（用户终端命令落库为 tool part，约 155 行）提取到 `prompt/shell.ts`，均采用工厂函数 + 显式依赖注入模式（`makeShared`/`makeShell`），后续 createUserMessage / runLoop / command 将陆续迁出（`packages/opencode/src/session/prompt.ts`、`prompt/shared.ts`、`prompt/shell.ts`）。
 
 ---
 
