@@ -15,13 +15,14 @@ import { and } from "drizzle-orm"
 import { gte } from "drizzle-orm"
 import { isNull } from "drizzle-orm"
 import { desc } from "drizzle-orm"
+import { sql } from "drizzle-orm"
 import { like } from "drizzle-orm"
 import { inArray } from "drizzle-orm"
 import { lt } from "drizzle-orm"
 import { or } from "drizzle-orm"
 import { SyncEvent } from "../sync"
 import type { SQL } from "drizzle-orm"
-import { PartTable, SessionTable } from "./session.sql"
+import { MessageTable, PartTable, SessionTable } from "./session.sql"
 import { ProjectTable } from "../project/project.sql"
 import { Storage } from "@/storage/storage"
 import * as Log from "@redcode-ai/core/util/log"
@@ -514,6 +515,8 @@ export interface Interface {
     sessionID: SessionID,
     predicate: (msg: MessageV2.WithParts) => boolean,
   ) => Effect.Effect<Option.Option<MessageV2.WithParts>, NotFound>
+  /** Returns a base64url cursor pointing just before the latest compaction message, or undefined if none exists. */
+  readonly latestCompactionCursor: (sessionID: SessionID) => Effect.Effect<string | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Session") {}
@@ -866,6 +869,30 @@ export const layer: Layer.Layer<
       return Option.none<MessageV2.WithParts>()
     })
 
+    // 260630 Red P1-a: compacted 会话 GUI 初始加载跳过旧消息的游标（从 server handler 收归）
+    const latestCompactionCursor: Interface["latestCompactionCursor"] = Effect.fn(
+      "Session.latestCompactionCursor",
+    )(function* (sessionID) {
+      const row = Database.use((db) =>
+        db
+          .select({ time_created: MessageTable.time_created, id: MessageTable.id })
+          .from(MessageTable)
+          .innerJoin(PartTable, eq(PartTable.message_id, MessageTable.id))
+          .where(
+            and(
+              eq(MessageTable.session_id, sessionID),
+              sql`json_extract(${PartTable.data}, '$.type') = 'compaction'`,
+              sql`json_extract(${PartTable.data}, '$.tail_start_id') IS NOT NULL`,
+            ),
+          )
+          .orderBy(desc(MessageTable.time_created))
+          .limit(1)
+          .get(),
+      )
+      if (!row) return undefined
+      return MessageV2.cursor.encode({ id: row.id, time: row.time_created })
+    })
+
     return Service.of({
       list,
       create,
@@ -889,6 +916,7 @@ export const layer: Layer.Layer<
       getPart,
       updatePartDelta,
       findMessage,
+      latestCompactionCursor,
     })
   }),
 )

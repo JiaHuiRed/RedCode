@@ -1,6 +1,5 @@
 import path from "path"
 import os from "os"
-import { readFileSync } from "fs"
 import { SessionID, MessageID, PartID } from "./schema"
 import { MessageV2 } from "./message-v2"
 import * as Log from "@redcode-ai/core/util/log"
@@ -62,6 +61,7 @@ import { eq } from "@/storage/db"
 import * as Database from "@/storage/db"
 import { SessionTable } from "./session.sql"
 import { referencePromptMetadata, referenceTextPart } from "./prompt/reference"
+import { sessionSourceLabel, makeShared } from "./prompt/shared"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@redcode-ai/llm"
@@ -72,18 +72,7 @@ globalThis.AI_SDK_LOG_WARNINGS = false
 // 260616 Red 会话标题来源前缀：从 soul 第一行 "# 名字 · ..." 提取人格名（不写死，
 // 通用 RedCode 无此 soul / 非标准格式则 fallback TUI/GUI），让会话列表一眼区分
 // 是哪个 agent（TUI=敏敏 / GUI=小宋）起的会话。client="desktop" 即 GUI，其余视作 TUI。
-function sessionSourceLabel(client: string): string {
-  const isGui = client === "desktop"
-  const fallback = isGui ? "GUI" : "TUI"
-  try {
-    const soulFile = isGui ? "Gsoul.md" : "Tsoul.md"
-    const firstLine = readFileSync(path.join(os.homedir(), ".redcode", "souls", soulFile), "utf8").split("\n")[0] ?? ""
-    const matched = firstLine.match(/^#\s*(.+?)\s*·/)
-    return matched?.[1]?.trim() || fallback
-  } catch {
-    return fallback
-  }
-}
+// 260630 Red P1-b: sessionSourceLabel moved to prompt/shared.ts
 
 // 260617 Red session-level caches: snapshot once per session to stabilize system prompt for prefix caching.
 // Without caching, instruction.system() re-reads disk every turn — any file change (MEMORY.md, AGENTS.md,
@@ -696,43 +685,8 @@ export const layer = Layer.effect(
       )
     })
 
-    const getModel = Effect.fn("SessionPrompt.getModel")(function* (
-      providerID: ProviderID,
-      modelID: ModelID,
-      sessionID: SessionID,
-    ) {
-      const exit = yield* provider.getModel(providerID, modelID).pipe(Effect.exit)
-      if (Exit.isSuccess(exit)) return exit.value
-      const err = Cause.squash(exit.cause)
-      if (Provider.ModelNotFoundError.isInstance(err)) {
-        const hint = err.suggestions?.length ? ` Did you mean: ${err.suggestions.join(", ")}?` : ""
-        yield* bus.publish(Session.Event.Error, {
-          sessionID,
-          error: new NamedError.Unknown({
-            message: `Model not found: ${err.providerID}/${err.modelID}.${hint}`,
-          }).toObject(),
-        })
-      }
-      return yield* Effect.die(err)
-    })
-
-    const currentModel = Effect.fnUntraced(function* (sessionID: SessionID) {
-      const current = Database.use((db) =>
-        db.select({ model: SessionTable.model }).from(SessionTable).where(eq(SessionTable.id, sessionID)).get(),
-      )
-      if (current?.model) {
-        return {
-          providerID: ProviderID.make(current.model.providerID),
-          modelID: ModelID.make(current.model.id),
-          ...(current.model.variant && current.model.variant !== "default" ? { variant: current.model.variant } : {}),
-        }
-      }
-      const match = yield* sessions
-        .findMessage(sessionID, (m) => m.info.role === "user" && !!m.info.model)
-        .pipe(Effect.orDie)
-      if (Option.isSome(match) && match.value.info.role === "user") return match.value.info.model
-      return yield* provider.defaultModel().pipe(Effect.orDie)
-    })
+    // 260630 Red P1-b: getModel + currentModel moved to prompt/shared.ts
+    const { getModel, currentModel } = makeShared({ provider, bus, sessions })
 
     const createUserMessage = Effect.fn("SessionPrompt.createUserMessage")(function* (input: PromptInput) {
       const agentName = input.agent

@@ -9,6 +9,17 @@
 ---
 
 ## TUI
+### [0.6.40] - 2026-06-30
+
+> 第三方 code review 收尾 P1：handler 裸 SQL 收归 Session.Service，prompt.ts 启动拆分。
+
+#### 重构
+
+- **server handler 不再直接读表**：`handlers/session.ts` 此前用裸 Drizzle ORM 查询 `MessageTable`/`PartTable` 找最近一条 compaction 消息（GUI 初始加载跳过旧消息用），绕过了 `Session.Service` 抽象、handler 与表结构耦合。新增 `Session.Service.latestCompactionCursor()` 把这段 SQL 收归 session 层，handler 删去 `Database`/`MessageTable`/`PartTable`/drizzle-orm 全部直接引用，性能不变（仍是单次索引查询）（`packages/opencode/src/session/session.ts`、`src/server/routes/instance/httpapi/handlers/session.ts`）。
+- **prompt.ts 拆分启动**：1866 行巨型文件开始按职责拆分，首批提取 `getModel`/`currentModel`/`sessionSourceLabel` 到 `prompt/shared.ts`（工厂函数 + 显式依赖注入模式），后续 createUserMessage / runLoop / shell / command 将陆续迁出（`packages/opencode/src/session/prompt.ts`、`prompt/shared.ts`）。
+
+---
+
 ### [0.6.39] - 2026-06-30
 
 > 清理 prefix-cache 诊断代码 — 调查结论：客户端逐 turn 字节完全稳定，唯一 cache break 来自 auto-compaction 重写消息（结构性开销，非 bug）。
@@ -1135,6 +1146,16 @@
 ---
 
 ## GUI
+
+### [0.6.15] - 2026-06-30
+
+> 第三方 code review P0 安全修复：附件写入路径遍历防御。
+
+#### 安全
+
+- **write-attachment 防御路径遍历**：主进程 IPC handler 此前直接 `join(sessionDir, ".attachments", filename)` 写文件，未校验 renderer 传入的 `filename`。虽然正常路径用 `uuid().ext` 构造无风险，但主进程作为特权端不应信任 renderer 输入。改用 `resolve` 并校验最终路径仍在 `.attachments/` 内，越界即抛错（`packages/desktop/src/main/ipc.ts`）。
+
+---
 
 ### [0.6.14] - 2026-06-30
 

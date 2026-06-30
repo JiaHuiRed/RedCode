@@ -20,9 +20,6 @@ import { Cause, Effect, Option, Schema, Scope } from "effect"
 import * as Stream from "effect/Stream"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder, HttpApiError, HttpApiSchema } from "effect/unstable/httpapi"
-import { Database } from "@/storage/db"
-import { MessageTable, PartTable } from "@/session/session.sql"
-import { and, eq, desc, gt, lt, or, sql } from "drizzle-orm"
 import { InstanceHttpApi } from "../api"
 import {
   CommandPayload,
@@ -122,32 +119,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         return yield* SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID }))
       }
 
-      // 260529 Red compacted 会话初始加载只返回 compaction summary 及之后的消息，避免 GUI 加载大量旧消息导致卡死/OOM
-      let compactionAfter: string | undefined
-      if (!ctx.query.before) {
-        const sessionID = ctx.params.sessionID
-        // 找最新已完成的 compaction 用户消息（包含 tail_start_id 不为空的 compaction part）
-        const compactionMsg = Database.use((db) =>
-          db
-            .select({ time_created: MessageTable.time_created, id: MessageTable.id })
-            .from(MessageTable)
-            .innerJoin(PartTable, eq(PartTable.message_id, MessageTable.id))
-            .where(
-              and(
-                eq(MessageTable.session_id, sessionID),
-                sql`json_extract(${PartTable.data}, '$.type') = 'compaction'`,
-                sql`json_extract(${PartTable.data}, '$.tail_start_id') IS NOT NULL`,
-              ),
-            )
-            .orderBy(desc(MessageTable.time_created))
-            .limit(1)
-            .get(),
-        )
-        if (compactionMsg) {
-          // after = compaction 用户消息 → summary 及之后的所有消息都会被包含
-          compactionAfter = MessageV2.cursor.encode({ time: compactionMsg.time_created, id: compactionMsg.id })
-        }
-      }
+      // 260529 Red compacted 会话初始加载只返回 compaction summary 及之后的消息
+      const compactionAfter = ctx.query.before
+        ? undefined
+        : yield* session.latestCompactionCursor(ctx.params.sessionID)
 
       const page = yield* SessionError.mapStorageNotFound(
         MessageV2.page({
