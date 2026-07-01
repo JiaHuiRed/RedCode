@@ -1,5 +1,6 @@
 import { Effect, Schema } from "effect"
 import * as Tool from "./tool"
+import DESCRIPTION_READ from "./todoread.txt"
 import DESCRIPTION_WRITE from "./todowrite.txt"
 import { Todo } from "../session/todo"
 
@@ -53,5 +54,46 @@ export const TodoWriteTool = Tool.define<typeof Parameters, Metadata, Todo.Servi
           }
         }),
     } satisfies Tool.DefWithoutID<typeof Parameters, Metadata>
+  }),
+)
+
+const ReadParams = Schema.Struct({})
+
+type ReadMetadata = {
+  todos: Todo.Info[]
+  summary: string
+}
+
+export const TodoReadTool = Tool.define<typeof ReadParams, ReadMetadata, Todo.Service>(
+  "todoread",
+  Effect.gen(function* () {
+    const todo = yield* Todo.Service
+
+    return {
+      description: DESCRIPTION_READ,
+      parameters: ReadParams,
+      execute: (_params: Schema.Schema.Type<typeof ReadParams>, ctx: Tool.Context<ReadMetadata>) =>
+        Effect.gen(function* () {
+          yield* ctx.ask({
+            permission: "todowrite",
+            patterns: ["*"],
+            always: ["*"],
+            metadata: {},
+          })
+
+          const todos = yield* todo.get(ctx.sessionID)
+          const total = todos.length
+          const done = todos.filter((t) => t.status === "completed").length
+          const active = todos.filter((t) => t.status === "in_progress").length
+          const pending = todos.filter((t) => t.status === "pending").length
+          const summary = `${total} total · ${done} done · ${active} active · ${pending} pending`
+
+          return {
+            title: `${total} todos`,
+            output: JSON.stringify(todos, null, 2),
+            metadata: { todos, summary },
+          }
+        }),
+    } satisfies Tool.DefWithoutID<typeof ReadParams, ReadMetadata>
   }),
 )

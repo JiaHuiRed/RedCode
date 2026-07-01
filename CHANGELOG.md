@@ -9,6 +9,14 @@
 ---
 
 ## TUI
+### [0.7.3] - 2026-07-01
+
+> 新增 `todoread` 工具，支持 compress 后重新读取 todo 状态，避免丢失上下文后重复已完成工作。
+
+#### 新增
+
+- **`todoread` 只读工具**：从 SQLite 持久化读回当前会话的 todo 列表，返回完整状态 + 摘要行（`N total · M done · A active · P pending`）。权限复用 `todowrite` 通道。在 `compress` 后调用可恢复已完成/待办认知，不再因摘要遗漏而重复已做完的步骤。
+
 ### [0.7.2] - 2026-07-01
 
 > 修复隔离 worktree 子代理用完不释放实例，导致子进程/内存持续累积（GUI 长驻 sidecar 尤其明显）。
