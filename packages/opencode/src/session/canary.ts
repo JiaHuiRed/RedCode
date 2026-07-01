@@ -2,8 +2,12 @@
 // A per-session random string injected into the system prompt as an
 // unremarkable "Session marker" line. If it ever appears in model output
 // (assistant text or tool-call arguments), the session is terminated.
-
-const store = new Map<string, string>()
+// 260701 Red use globalThis for store — bun compile may instantiate this module
+// multiple times (same root cause as prompt.ts's _caches, fixed 5127c0643/260620).
+// A duplicated module-level `const store` starts empty, so get() mints a NEW
+// random token for a session that already has one, mutating the injected
+// "Session marker" line and breaking DeepSeek prefix cache on that turn.
+const store: Map<string, string> = ((globalThis as any).__rc_canary_store ??= new Map<string, string>())
 
 function randomHex(bytes: number): string {
   const buf = new Uint8Array(bytes)

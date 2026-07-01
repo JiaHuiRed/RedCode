@@ -9,6 +9,14 @@
 ---
 
 ## TUI
+### [0.6.43] - 2026-07-01
+
+> 修复 canary token 模块级 store 在 bun compile 下可能重复实例化，导致 prefix cache 命中率卡在 95%（此前巅峰 98%）。
+
+#### 修复
+
+- **canary token store 改用 globalThis**：`canary.ts`（260629 引入）的 token store 用裸模块级 `const store = new Map()`，与 6/20 已修过的 `prompt.ts` `_caches` 是同一类坑——bun compile 可能重复实例化模块，重复实例的 Map 是空的，`Canary.get(sessionID)` 会误判成新 session、铸造新随机 token，导致注入 system prompt 的 "Session marker" 那行每 turn 变化，打断 DeepSeek 的 prefix cache。改为 `globalThis` 兜底存储，与 `prompt.ts` 缓存同一套模式（`packages/opencode/src/session/canary.ts`）。
+
 ### [0.6.42] - 2026-07-01
 
 > 修复压缩切断 tool 配对导致的 DeepSeek 400 断会话。
