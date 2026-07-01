@@ -9,6 +9,15 @@
 ---
 
 ## TUI
+### [0.7.1] - 2026-07-01
+
+> 0.7.0 首页美化的后续微调：footer 文案改英文、Logo idle 扫光调到肉眼可见并改为蓝色调。
+
+#### 修复
+
+- **footer 统计条文案**：`缓存 xx%` 改成 `cache hit xx%`（`feature-plugins/home/footer.tsx`）。
+- **首页 Logo 启用 idle 扫光**：`buildIdleState`/`shimmerConfig` 这套呼吸扫光此前从未被启用过（`<Logo />` 一直不带 `idle`），首页加 `idle` 后发现幅度是给点击 burst 余韵设计的，常驻场景太淡——放大 `haloAmp`/`ambientAmp`/`primaryMix`，并把高光目标色从纯白 `PEAK` 换成偏白的饱和 `primary` 蓝（`idlePeak`），扫光经过时读出的是明显蓝色而不是泛白。同时把 idle 态 tick 频率从 60fps 降到静止时约 14fps（点击 burst/ring 特效仍满帧率），避免首页常驻页面拖 CPU（`component/logo.tsx`）。
+
 ### [0.7.0] - 2026-07-01
 
 > 首页视觉美化：去掉一部分上游 opencode 观感，加了三处点缀——星空背景、footer 统计条、提示语呼吸点。

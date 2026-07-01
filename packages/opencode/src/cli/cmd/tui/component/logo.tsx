@@ -33,6 +33,8 @@ type ShimmerConfig = {
   originY: number
 }
 
+// 260701 Red 原参数是给点击 burst 之后的极短暂余韵设计的，常驻 idle 场景下几乎看不出——
+// 加大 halo/primary/ambient 幅度让扫光在首页静置时也能被肉眼察觉
 const shimmerConfig: ShimmerConfig = {
   period: 4600,
   rings: 2,
@@ -43,16 +45,16 @@ const shimmerConfig: ShimmerConfig = {
   softAmp: 1.6,
   tail: 5,
   tailAmp: 0.64,
-  haloWidth: 4.3,
+  haloWidth: 5.6,
   haloOffset: 0.6,
-  haloAmp: 0.16,
+  haloAmp: 0.34,
   breathBase: 0.04,
   noise: 0.1,
-  ambientAmp: 0.36,
+  ambientAmp: 0.55,
   ambientCenter: 0.5,
   ambientWidth: 0.34,
   shadowMix: 0.1,
-  primaryMix: 0.3,
+  primaryMix: 0.7,
   originX: 4.5,
   originY: 13.5,
 }
@@ -561,13 +563,17 @@ export function Logo(props: { shape?: LogoShape; ink?: RGBA; idle?: boolean } = 
   const [glow, setGlow] = createSignal<Glow>()
   const [now, setNow] = createSignal(0)
   let box: BoxRenderable | undefined
-  let timer: ReturnType<typeof setInterval> | undefined
+  let timer: ReturnType<typeof setTimeout> | undefined
 
   const stop = () => {
     if (!timer) return
-    clearInterval(timer)
+    clearTimeout(timer)
     timer = undefined
   }
+
+  // 260701 Red idle 呼吸扫光只在“没有交互态”时才降频（~14fps），点击后的
+  // burst/ring 特效仍走满帧率，兼顾首页常驻观感和省 CPU
+  const busy = () => rings().length > 0 || !!hold() || !!release() || !!glow()
 
   const tick = () => {
     const t = performance.now()
@@ -592,9 +598,16 @@ export function Logo(props: { shape?: LogoShape; ink?: RGBA; idle?: boolean } = 
     stop()
   }
 
+  const schedule = () => {
+    timer = setTimeout(() => {
+      tick()
+      if (timer !== undefined) schedule()
+    }, busy() ? 16 : 70)
+  }
+
   const start = () => {
     if (timer) return
-    timer = setInterval(tick, 16)
+    schedule()
   }
 
   onCleanup(() => {
@@ -688,6 +701,9 @@ export function Logo(props: { shape?: LogoShape; ink?: RGBA; idle?: boolean } = 
     state: IdleState | undefined,
   ): JSX.Element[] => {
     const shadow = tint(theme.background, ink, 0.25)
+    // 260701 Red idle 扫光的高光原本冲到纯白 PEAK，会把蓝色冲淡成"更亮的白"而不是"蓝"——
+    // 换成 primary 偏白的饱和蓝，扫光经过时读起来才是明显的蓝色而不是泛白
+    const idlePeak = tint(theme.primary, PEAK, 0.3)
     const attrs = bold ? TextAttributes.BOLD : undefined
 
     return Array.from(line).map((char, i) => {
@@ -708,12 +724,12 @@ export function Logo(props: { shape?: LogoShape; ink?: RGBA; idle?: boolean } = 
       const peakMixBot = charLit ? Math.min(1, pulseBot.peak) : 0
       const primaryMixTop = charLit ? Math.min(1, pulseTop.primary) : 0
       const primaryMixBot = charLit ? Math.min(1, pulseBot.primary) : 0
-      // Layer primary tint first, then white peak on top — so the halo/tail pulls toward primary,
-      // while the bright core stays pure white
+      // Layer primary tint first, then blue-white peak on top — so the halo/tail pulls toward primary,
+      // and the bright core stays a saturated blue instead of washing out to plain white
       const inkTopTint = primaryMixTop > 0 ? tint(ink, theme.primary, primaryMixTop) : ink
       const inkBotTint = primaryMixBot > 0 ? tint(ink, theme.primary, primaryMixBot) : ink
-      const inkTop = peakMixTop > 0 ? tint(inkTopTint, PEAK, peakMixTop) : inkTopTint
-      const inkBot = peakMixBot > 0 ? tint(inkBotTint, PEAK, peakMixBot) : inkBotTint
+      const inkTop = peakMixTop > 0 ? tint(inkTopTint, idlePeak, peakMixTop) : inkTopTint
+      const inkBot = peakMixBot > 0 ? tint(inkBotTint, idlePeak, peakMixBot) : inkBotTint
       // For the non-peak-aware brightness channels, use the average of top/bot
       const pulse = {
         glow: (pulseTop.glow + pulseBot.glow) / 2,
@@ -723,7 +739,7 @@ export function Logo(props: { shape?: LogoShape; ink?: RGBA; idle?: boolean } = 
       const peakMix = charLit ? Math.min(1, pulse.peak) : 0
       const primaryMix = charLit ? Math.min(1, pulse.primary) : 0
       const inkPrimary = primaryMix > 0 ? tint(ink, theme.primary, primaryMix) : ink
-      const inkTinted = peakMix > 0 ? tint(inkPrimary, PEAK, peakMix) : inkPrimary
+      const inkTinted = peakMix > 0 ? tint(inkPrimary, idlePeak, peakMix) : inkPrimary
       const shadowMixCfg = state?.cfg.shadowMix ?? shimmerConfig.shadowMix
       const shadowMixTop = Math.min(1, pulseTop.peak * shadowMixCfg)
       const shadowMixBot = Math.min(1, pulseBot.peak * shadowMixCfg)

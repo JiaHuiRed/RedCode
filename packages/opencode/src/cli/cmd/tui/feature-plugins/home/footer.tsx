@@ -82,7 +82,7 @@ function Stats(props: { api: TuiPluginApi }) {
       <box flexDirection="row" gap={1} flexShrink={0}>
         <text fg={theme().textMuted}>{money.format(stats().costCNY)}</text>
         <Show when={stats().hitPct !== null}>
-          <text fg={theme().textMuted}>· 缓存 {stats().hitPct}%</text>
+          <text fg={theme().textMuted}>· cache hit {stats().hitPct}%</text>
         </Show>
       </box>
     </Show>
