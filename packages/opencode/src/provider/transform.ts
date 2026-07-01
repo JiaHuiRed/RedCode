@@ -125,6 +125,32 @@ function normalizeMessages(
     }
   })
 
+  // 260701 Red 防御：压缩（DCP 插件的 compress / core compaction）可能切断 tool_call/tool_result
+  // 配对，留下没有前置 tool_calls 的孤儿 tool 消息 → DeepSeek 等 provider 报
+  // "Messages with role 'tool' must be a response to a preceding message with 'tool_calls'"，
+  // 会话直接断。孤儿会一直赖在历史里直到某次 collapse 才消失，不能靠碰运气。发送前扫描：丢弃
+  // 无前置配对 tool_call 的 tool-result，整条 tool 消息若无剩余则删除。放在所有 provider 专用块
+  // 之前，因为 deepseek/interleaved 分支会提前 return。
+  // 注意：只处理"result 无 call"（哥哥实测的报错方向）；反向的"call 无 result"暂未观测到，未处理。
+  {
+    const seenCallIds = new Set<string>()
+    msgs = msgs.flatMap((msg) => {
+      if (msg.role === "assistant" && Array.isArray(msg.content)) {
+        for (const part of msg.content) {
+          if (part.type === "tool-call") seenCallIds.add(part.toolCallId)
+        }
+        return [msg]
+      }
+      if (msg.role === "tool" && Array.isArray(msg.content)) {
+        const kept = msg.content.filter((part) => part.type !== "tool-result" || seenCallIds.has(part.toolCallId))
+        if (kept.length === 0) return []
+        msg.content = kept
+        return [msg]
+      }
+      return [msg]
+    })
+  }
+
   // Anthropic rejects messages with empty content - filter out empty string messages
   // and remove empty text/reasoning parts from array content
   if (model.api.npm === "@ai-sdk/anthropic") {

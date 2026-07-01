@@ -9,6 +9,14 @@
 ---
 
 ## TUI
+### [0.6.42] - 2026-07-01
+
+> 修复压缩切断 tool 配对导致的 DeepSeek 400 断会话。
+
+#### 修复
+
+- **孤儿 tool-result 兜底**：上下文压缩（DCP 插件的 compress / core compaction）可能切断 `tool_call`/`tool_result` 配对，留下没有前置 `tool_calls` 的孤儿 tool 消息，发给 DeepSeek 等 OpenAI 兼容 provider 时报 `Messages with role 'tool' must be a response to a preceding message with 'tool_calls'`，会话直接卡死（孤儿会赖在历史里直到某次 collapse 才消失）。在 `normalizeMessages` 初始 sanitize 之后、所有 provider 专用块之前（deepseek/interleaved 分支会提前 return，必须前置）加入发送前扫描：丢弃无前置配对 `tool_call` 的 tool-result，整条 tool 消息若无剩余则删除（`packages/opencode/src/provider/transform.ts`）。
+
 ### [0.6.41] - 2026-06-30
 
 > 第三方 code review 收尾 P1-b 续：prompt.ts 继续拆分，shellImpl 迁出。
