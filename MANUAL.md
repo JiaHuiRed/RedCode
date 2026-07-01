@@ -371,9 +371,16 @@ export ECC_PROFILE=strict
 | `/goal done` | 标为完成，自动归档教训 |
 | `/tui-persona` | 加载 TUI 灵魂人格 |
 | `/gui-persona` | 加载 GUI 灵魂人格 |
+| `/recall <关键词>` | 按关键词从 `MEMORY.md` 语义召回历史教训 |
+| `/subtask <任务>` | 派后台子任务，上下文隔离不污染当前会话 |
 | `/commit` | 按 conventional commit 格式提交代码 |
 | `/changelog` | 生成 CHANGELOG.md 条目 |
 | `/issues` | 查看或创建 GitHub issues |
+| `/learn` | 从当前会话提取非显而易见的教训写入 AGENTS.md |
+| `/translate` | 把改动的英文文档/UI 文案翻译成其他语言 |
+| `/rmslop` | 清理本分支引入的 AI 代码痕迹（多余注释/防御性代码等）|
+| `/spellcheck` | 检查改动的 Markdown 文件拼写和语法 |
+| `/ai-deps` | 排查 AI SDK 依赖可升级的 minor/patch 版本 |
 
 命令文件位于 `.opencode/command/` 和 `~/.redcode/command/`，纯文本，可以自己添加或修改。
 
@@ -395,6 +402,7 @@ Skill 是扩展 AI 行为的机制——本质上是注入给 AI 的指令文件
 | **defensive-agent** | 防止 AI 假阳性报告、无意义修改 | "小心点""别乱改" |
 | **goal-automation** | 检测大任务并建议钉住目标 | 自动检测 |
 | **vision-autoagent** | 收到图片时自动调 vision MCP 分析 | 自动触发 |
+| **frontend-design** | 生成 macOS 风格的高质量前端界面，避免 AI 通用观感 | "做个页面""写个组件" |
 | **simplify** | 检测过度工程，建议精简 | "太复杂了""精简一下" |
 | **red-scribe** | 按 Red 的写作风格输出 | "按我的风格写""red风格" |
 | **yuqi-slop** | 中文去 AI 味 | "去AI味""褪AI味" |
