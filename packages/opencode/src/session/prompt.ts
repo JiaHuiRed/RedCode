@@ -46,6 +46,7 @@ import { Cause, Effect, Exit, Latch, Layer, Option, Scope, Context, Schema, Type
 import * as EffectLogger from "@redcode-ai/core/effect/logger"
 import { InstanceState } from "@/effect/instance-state"
 import { InstanceRef } from "@/effect/instance-ref"
+import { InstanceStore } from "@/project/instance-store"
 import { Worktree } from "@/worktree"
 import { TaskTool, type TaskPromptOps } from "@/tool/task"
 import { SessionRunState } from "./run-state"
@@ -165,7 +166,11 @@ export const layer = Layer.effect(
         const wt = service.value
         const info = yield* wt.makeWorktreeInfo({ name: input.name }).pipe(Effect.catch(Effect.die))
         const ctx = yield* wt.createAndWait(info, input.startCommand).pipe(Effect.catch(Effect.die))
-        const result = yield* run.pipe(Effect.provideService(InstanceRef, ctx))
+        // 260701 Red 隔离 worktree 用完必须释放 InstanceStore 缓存，否则该 worktree 的 LSP 等子进程
+        // 会在 InstanceStore（capacity: Infinity）里永久累积——GUI sidecar 长驻进程尤其明显
+        const store = yield* Effect.serviceOption(InstanceStore.Service)
+        const disposeCtx = Option.isSome(store) ? store.value.dispose(ctx) : Effect.void
+        const result = yield* run.pipe(Effect.provideService(InstanceRef, ctx), Effect.ensuring(disposeCtx))
         return { worktree: info, result }
       })
 

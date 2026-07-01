@@ -9,6 +9,14 @@
 ---
 
 ## TUI
+### [0.7.2] - 2026-07-01
+
+> 修复隔离 worktree 子代理用完不释放实例，导致子进程/内存持续累积（GUI 长驻 sidecar 尤其明显）。
+
+#### 修复
+
+- **隔离 worktree 子代理泄漏 `InstanceStore` 实例**：`session/prompt.ts` 的 `runIsolated`（`task` 工具 `isolation:"worktree"` 用）创建隔离 worktree 的 `InstanceContext` 后，任务跑完从未释放，而 `InstanceStore` 缓存 `capacity: Infinity`，只能靠显式 dispose 清理——每次隔离子代理都会在内存里永久累积一份该 worktree 的 LSP server 等子进程。TUI 因 server 进程随每次 CLI 调用重启，泄漏会随会话结束自然清空；GUI 的 sidecar 是 Electron 整个 app 生命周期只起一个长驻进程，泄漏无限累积，表现为任务管理器里两三百个子进程、内存持续升高。修复：`runIsolated` 用 `Effect.ensuring` 包裹任务执行，无论成功/失败/中断都调用 `InstanceStore.dispose(ctx)` 释放隔离实例（`session/prompt.ts`）。
+
 ### [0.7.1] - 2026-07-01
 
 > 0.7.0 首页美化的后续微调：footer 文案改英文、Logo idle 扫光调到肉眼可见并改为蓝色调。
