@@ -546,6 +546,12 @@
   "home.kanban.attention": "Attention",
   "home.kanban.idle": "Idle",
   "home.kanban.empty": "No sessions",
+  "home.stats.cacheHit": "Cache hit",
+  "home.stats.cost": "Cost",
+  "home.stats.tokens.read": "Read",
+  "home.stats.tokens.write": "Write",
+  "home.stats.tokens.miss": "Miss",
+  "home.stats.tokens.output": "Output",
 
   "session.tab.session": "Session",
   "session.tab.review": "Review",

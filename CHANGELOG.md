@@ -1171,6 +1171,17 @@
 
 ## GUI
 
+### [0.6.16] - 2026-07-01
+
+> 首页左下角新增跨 session 看板：缓存命中率环形图 + 累计花费。
+
+#### 新增
+
+- **首页看板 `HomeStatsPanel`**：聚合当前项目下所有 session（含子 agent worktree session）已 denormalize 好的 `cost`/`tokens` 汇总列，纯客户端 reduce，无需新起 server/IPC 通路。展示缓存命中率环形图（read/write/miss/output 四段）+ 累计花费（统一折算 ¥）。极小占比分段加最小可视弧长兜底，避免被反锯齿吃掉（`packages/app/src/pages/home-stats.tsx`）。
+- `session-context-metrics.ts` 导出 `CNY_PROVIDERS` 供看板复用；`zh.ts`/`en.ts` 新增 `home.stats.*` 词条。
+
+---
+
 ### [0.6.15] - 2026-06-30
 
 > 第三方 code review P0 安全修复：附件写入路径遍历防御。

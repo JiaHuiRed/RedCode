@@ -27,6 +27,7 @@ import { pathKey } from "@/utils/path-key"
 import { messageAgentColor } from "@/utils/agent"
 import { sessionPermissionRequest } from "@/pages/session/composer/session-request-tree"
 import { HomeKanban } from "@/pages/home-kanban"
+import { HomeStatsPanel } from "@/pages/home-stats"
 
 const HOME_SESSION_LIMIT = 15
 const HOME_ROW =
@@ -122,6 +123,16 @@ function HomeDesign() {
       .slice(0, HOME_SESSION_LIMIT),
   )
   const groups = createMemo(() => groupSessions(records(), language))
+  // 260701 Red 首页左下角看板用：跟 records() 不一样，不做 15 条截断、不排除子 session
+  // （子 agent worktree session 也有独立 cost/tokens，不算进去总花费会偏低）。
+  const statsSessions = createMemo(() =>
+    projectDirectories().flatMap((directory) => {
+      const store = sync.child(directory, { bootstrap: false })[0]
+      return (store.session ?? []).filter(
+        (session) => pathKey(session.directory) === pathKey(directory) && !session.time?.archived,
+      )
+    }),
+  )
 
   function selectProject(directory: string) {
     if (!projects().some((project) => project.worktree === directory)) return
@@ -201,6 +212,7 @@ function HomeDesign() {
         openSettings={openSettings}
         removeProject={(project) => void removeProject(project)}
         language={language}
+        statsSessions={statsSessions()}
       />
 
       <section
@@ -315,6 +327,7 @@ function HomeProjectColumn(props: {
   openSettings: () => void
   removeProject: (project: LocalProject) => void
   language: ReturnType<typeof useLanguage>
+  statsSessions: Session[]
 }) {
   return (
     <aside
@@ -381,6 +394,7 @@ function HomeProjectColumn(props: {
           </For>
         </Show>
       </div>
+      <HomeStatsPanel sessions={props.statsSessions} />
       <div class="mt-4 flex min-w-0 flex-col gap-1">
         <button
           type="button"

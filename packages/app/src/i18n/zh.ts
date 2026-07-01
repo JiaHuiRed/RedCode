@@ -522,6 +522,12 @@ export const dict = {
   "home.kanban.attention": "需关注",
   "home.kanban.idle": "空闲",
   "home.kanban.empty": "暂无会话",
+  "home.stats.cacheHit": "缓存命中",
+  "home.stats.cost": "花费",
+  "home.stats.tokens.read": "命中",
+  "home.stats.tokens.write": "写入",
+  "home.stats.tokens.miss": "未命中",
+  "home.stats.tokens.output": "输出",
 
   "session.tab.session": "会话",
   "session.tab.review": "审查",
