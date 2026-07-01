@@ -1,7 +1,11 @@
 import type { TuiPluginApi } from "@redcode-ai/plugin/tui"
-import { createMemo, For, type Accessor } from "solid-js"
-import { DEFAULT_THEMES, useTheme } from "@tui/context/theme"
+import { createMemo, createSignal, For, onCleanup, onMount, type Accessor } from "solid-js"
+import { DEFAULT_THEMES, tint, useTheme } from "@tui/context/theme"
 import { useCommandShortcut } from "../../keymap"
+
+// 260701 Red 提示语前的圆点加一点呼吸感点缀，低频定时器（不追求流畅度，省 CPU）
+const BREATH_PERIOD = 1800
+const BREATH_TICK_MS = 120
 
 const themeCount = Object.keys(DEFAULT_THEMES).length
 
@@ -147,9 +151,23 @@ export function Tips(props: { api: TuiPluginApi; connected?: boolean }) {
     return NO_MODELS_PARTS
   }, NO_MODELS_PARTS)
 
+  const [breath, setBreath] = createSignal(0)
+  let timer: ReturnType<typeof setInterval> | undefined
+  onMount(() => {
+    const start = performance.now()
+    timer = setInterval(() => {
+      const t = (performance.now() - start) / BREATH_PERIOD
+      setBreath(0.5 + 0.5 * Math.sin(t * Math.PI * 2))
+    }, BREATH_TICK_MS)
+  })
+  onCleanup(() => {
+    if (timer) clearInterval(timer)
+  })
+  const dotColor = createMemo(() => tint(theme.background, theme.warning, 0.55 + breath() * 0.45))
+
   return (
     <box flexDirection="row" maxWidth="100%">
-      <text flexShrink={0} style={{ fg: theme.warning }}>
+      <text flexShrink={0} style={{ fg: dotColor() }}>
         ● 提示{" "}
       </text>
       <text flexShrink={1} wrapMode="word">

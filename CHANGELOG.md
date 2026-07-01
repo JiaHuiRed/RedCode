@@ -9,6 +9,16 @@
 ---
 
 ## TUI
+### [0.7.0] - 2026-07-01
+
+> 首页视觉美化：去掉一部分上游 opencode 观感，加了三处点缀——星空背景、footer 统计条、提示语呼吸点。
+
+#### 新增
+
+- **首页星空背景**：新增 `component/starfield.tsx` + `starfield-render.ts`，基于 `FrameBufferRenderable` 铺一层稀疏光点，位置/字符/闪烁相位由坐标哈希确定性生成，挂在 Logo 后面（`routes/home.tsx`）。手动低频 `requestRender`（~700ms 一次）代替常驻 60fps `live` 循环，呼应 Logo 组件默认不空闲动画、省 CPU/电量的既有设计取向。
+- **首页 footer 统计条**：`home_footer` 插件（`feature-plugins/home/footer.tsx`）新增花费 + 缓存命中率，跨 session 聚合 `sync.data.session` 的 `cost`/`tokens`（落库时已 denormalize，纯本地 reduce，无新请求）。
+- **提示语呼吸点**：`home_bottom` 的提示语前缀圆点（`feature-plugins/home/tips-view.tsx`）加低频呼吸色变，用 `tint()` 在 `background`/`warning` 间插值。
+
 ### [0.6.43] - 2026-07-01
 
 > 修复 canary token 模块级 store 在 bun compile 下可能重复实例化，导致 prefix cache 命中率卡在 95%（此前巅峰 98%）。

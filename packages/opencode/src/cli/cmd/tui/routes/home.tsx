@@ -1,6 +1,7 @@
 import { Prompt, type PromptRef } from "@tui/component/prompt"
 import { createEffect, createMemo, createSignal, onMount } from "solid-js"
 import { Logo } from "../component/logo"
+import { Starfield } from "../component/starfield"
 import { useSync } from "../context/sync"
 import { Toast } from "../ui/toast"
 import { useArgs } from "../context/args"
@@ -67,7 +68,10 @@ export function Home() {
 
   return (
     <>
-      <box flexGrow={1} alignItems="center" paddingLeft={2} paddingRight={2}>
+      <box position="absolute" top={0} left={0} right={0} bottom={0} zIndex={0}>
+        <Starfield />
+      </box>
+      <box flexGrow={1} alignItems="center" paddingLeft={2} paddingRight={2} zIndex={1}>
         <box flexGrow={1} minHeight={0} />
         <box height={4} minHeight={0} flexShrink={1} />
         <box flexShrink={0}>
@@ -85,7 +89,7 @@ export function Home() {
         <box flexGrow={1} minHeight={0} />
         <Toast />
       </box>
-      <box width="100%" flexShrink={0}>
+      <box width="100%" flexShrink={0} zIndex={1}>
         <TuiPluginRuntime.Slot name="home_footer" mode="single_winner" />
       </box>
     </>
