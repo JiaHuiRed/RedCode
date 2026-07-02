@@ -33,6 +33,7 @@ import { assign, expandPastedTextPlaceholders } from "./part"
 import { usePromptStash } from "./stash"
 import { DialogStash } from "../dialog-stash"
 import { type AutocompleteRef, Autocomplete } from "./autocomplete"
+import { ShortcutsTicker } from "./shortcuts-ticker"
 import { useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
 import * as Editor from "@tui/util/editor"
 import { useExit } from "../../context/exit"
@@ -1749,7 +1750,7 @@ export function Prompt(props: PromptProps) {
                 </box>
               )}
             </Match>
-            <Match when={true}>{props.hint ?? <text />}</Match>
+            <Match when={true}>{props.hint ?? <ShortcutsTicker />}</Match>
           </Switch>
           <Show when={status().type !== "retry"}>
             <box gap={2} flexDirection="row">
