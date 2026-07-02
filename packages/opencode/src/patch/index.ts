@@ -10,8 +10,6 @@ export const PatchSchema = Schema.Struct({
   patchText: Schema.String.annotate({ description: "The full patch text that describes all changes to be made" }),
 })
 
-export type PatchParams = Schema.Schema.Type<typeof PatchSchema>
-
 // Core types matching the Rust implementation
 export interface ApplyPatchArgs {
   patch: string

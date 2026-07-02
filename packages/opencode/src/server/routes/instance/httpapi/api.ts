@@ -57,6 +57,3 @@ export const RedCodeHttpApi = HttpApi.make("redcode")
   .addHttpApi(InstanceHttpApi)
   .addHttpApi(PtyConnectApi)
   .annotate(HttpApi.AdditionalSchemas, [EventSchema, ...SyncEventSchemas])
-
-export type RootHttpApiType = typeof RootHttpApi
-export type InstanceHttpApiType = typeof InstanceHttpApi
