@@ -55,7 +55,7 @@ import { Vcs } from "@/project/vcs"
 import { Worktree } from "@/worktree"
 import { Workspace } from "@/control-plane/workspace"
 import { CorsConfig, isAllowedCorsOrigin, type CorsOptions } from "@/server/cors"
-import { serveUIEffect } from "@/server/shared/ui"
+import { serveUIEffect, tuiTerminalHtml, TUI_CSP } from "@/server/shared/ui"
 import { ServerAuth } from "@/server/auth"
 import { InstanceHttpApi, RootHttpApi } from "./api"
 import { PublicApi } from "./public"
@@ -163,11 +163,36 @@ const docRoute = HttpRouter.use((router) => router.add("GET", "/doc", () => Effe
   Layer.provide(authOnlyRouterLayer),
 )
 
+// 260703 Red: root "/" serves TUI web terminal (xterm.js + PTY),
+// all other unmatched paths fall through to original GUI/proxy
 const uiRoute = HttpRouter.use((router) =>
   Effect.gen(function* () {
     const fs = yield* AppFileSystem.Service
     const client = yield* HttpClient.HttpClient
     const flags = yield* RuntimeFlags.Service
+
+    // 260703 Red TUI terminal page at root
+    yield* router.add("GET", "/", () =>
+      Effect.succeed((() => {
+        try {
+          const cwd = process.cwd().replaceAll("\\", "/")
+          // dev mode: 用 dist 里已构建的二进制；生产环境用 process.argv[0]
+          const bin = (() => {
+            const distBin = cwd + "/dist/redcode-windows-x64/bin/redcode.exe"
+            try { require("fs").accessSync(distBin.replaceAll("/", "\\")); return distBin } catch {}
+            return (process.argv[0] || "redcode").replaceAll("\\", "/")
+          })()
+          const html = tuiTerminalHtml().split("__REDCODE_DIR__").join(cwd).split("__REDCODE_BIN__").join(bin)
+          return HttpServerResponse.text(html, {
+            headers: new Headers({ "content-type": "text/html; charset=utf-8", "content-security-policy": TUI_CSP }),
+          })
+        } catch {
+          return HttpServerResponse.text("TUI HTML not found", { status: 500 })
+        }
+      })()),
+    )
+
+    // Other paths: original GUI fallback
     yield* router.add("*", "/*", (request) =>
       serveUIEffect(request, { fs, client, disableEmbeddedWebUi: flags.disableEmbeddedWebUi }),
     )

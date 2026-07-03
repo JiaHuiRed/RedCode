@@ -9,6 +9,15 @@
 ---
 
 ## TUI
+### [0.7.5] - 2026-07-03
+
+> `redcode web` 根路径改为 xterm.js + PTY 的 TUI web 终端，手机浏览器可直接操作 RedCode TUI。
+
+#### 新增
+
+- **TUI Web Terminal**：`redcode web` 的 `GET /` 不再代理 GUI web app，改为返回内联 HTML 页面（`tui-terminal.html`），用 xterm.js (CDN) + 现有 PTY WebSocket 直接在浏览器中 spawn 并操作 `redcode.exe` TUI 实例。支持窗口自适应 resize、移动端防双击缩放。其他路径仍 fallback 到原有 GUI 代理。
+- **`tuiTerminalHtml()` + `TUI_CSP`**：`ui.ts` 新增 TUI HTML 模板读取函数和专用 CSP 策略（允许 jsdelivr CDN）。服务端用 `split().join()` 注入 `__REDCODE_DIR__` 和 `__REDCODE_BIN__` 占位符，避免 Windows 反斜杠被 `String.replace()` 吞掉。
+
 ### [0.7.4] - 2026-07-02
 
 > 输入框下方空白区加常用快捷键滚动提示。

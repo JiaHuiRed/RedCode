@@ -2,10 +2,29 @@
 import { Effect, Stream } from "effect"
 import { HttpBody, HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { createHash } from "node:crypto"
+import fs from "node:fs"
 import path from "node:path"
 import { ProxyUtil } from "../proxy-util"
 
 let embeddedUIPromise: Promise<Record<string, string> | null> | undefined
+
+// 260703 Red TUI web terminal HTML (inline, replaces GUI app for `redcode web`)
+let _tuiHtml: string | undefined
+export const TUI_CSP =
+  "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; connect-src * ws: wss:; font-src 'self' data: https://cdn.jsdelivr.net; img-src 'self' data:"
+
+export function tuiTerminalHtml() {
+  if (_tuiHtml) return _tuiHtml
+  const htmlPath = path.join(__dirname, "tui-terminal.html")
+  try {
+    _tuiHtml = fs.readFileSync(htmlPath, "utf-8")
+  } catch {
+    // dev mode: resolve relative to source
+    const devPath = path.resolve(import.meta.dirname ?? __dirname, "tui-terminal.html")
+    _tuiHtml = fs.readFileSync(devPath, "utf-8")
+  }
+  return _tuiHtml
+}
 
 export const UI_UPSTREAM = new URL("https://app.redcode.dev")
 
@@ -88,13 +107,14 @@ export function serveUIEffect(
   services: { fs: AppFileSystem.Interface; client: HttpClient.HttpClient; disableEmbeddedWebUi: boolean },
 ) {
   return Effect.gen(function* () {
-    const embeddedWebUI = yield* Effect.promise(() => embeddedUI(services.disableEmbeddedWebUi))
-    const path = new URL(request.url, "http://localhost").pathname
+    const reqPath = new URL(request.url, "http://localhost").pathname
 
-    if (embeddedWebUI) return yield* serveEmbeddedUIEffect(path, services.fs, embeddedWebUI)
+    const embeddedWebUI = yield* Effect.promise(() => embeddedUI(services.disableEmbeddedWebUi))
+
+    if (embeddedWebUI) return yield* serveEmbeddedUIEffect(reqPath, services.fs, embeddedWebUI)
 
     const response = yield* services.client.execute(
-      HttpClientRequest.make(request.method)(upstreamURL(path), {
+      HttpClientRequest.make(request.method)(upstreamURL(reqPath), {
         headers: ProxyUtil.headers(request.headers, { host: UI_UPSTREAM.host }),
         body: requestBody(request),
       }),
