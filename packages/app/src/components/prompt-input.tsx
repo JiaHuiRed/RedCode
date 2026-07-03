@@ -1487,7 +1487,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             <PromptImageAttachments
               attachments={imageAttachments()}
               onOpen={(attachment) =>
-                dialog.show(() => <ImagePreview src={attachment.dataUrl} alt={attachment.filename} />)
+                dialog.show(() => {
+                  const imgs = imageAttachments().map((a) => ({ src: a.dataUrl, alt: a.filename }))
+                  const idx = imageAttachments().findIndex((a) => a.id === attachment.id)
+                  return <ImagePreview images={imgs} initialIndex={Math.max(0, idx)} />
+                })
               }
               onRemove={removeAttachment}
               removeLabel={language.t("prompt.attachment.remove")}
@@ -1639,7 +1643,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             <PromptImageAttachments
               attachments={imageAttachments()}
               onOpen={(attachment) =>
-                dialog.show(() => <ImagePreview src={attachment.dataUrl} alt={attachment.filename} />)
+                dialog.show(() => {
+                  const imgs = imageAttachments().map((a) => ({ src: a.dataUrl, alt: a.filename }))
+                  const idx = imageAttachments().findIndex((a) => a.id === attachment.id)
+                  return <ImagePreview images={imgs} initialIndex={Math.max(0, idx)} />
+                })
               }
               onRemove={removeAttachment}
               removeLabel={language.t("prompt.attachment.remove")}

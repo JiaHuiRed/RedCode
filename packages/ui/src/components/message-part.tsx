@@ -1087,8 +1087,16 @@ export function UserMessageDisplay(props: { message: UserMessage; parts: PartTyp
 
   const metaTail = stamp
 
+  // 260703 Red 多图预览支持左右切换
   const openImagePreview = (url: string, alt?: string) => {
-    dialog.show(() => <ImagePreview src={url} alt={alt} />)
+    const imageFiles = attachments().filter((f) => kind(f) === "image")
+    if (imageFiles.length > 1) {
+      const imgs = imageFiles.map((f) => ({ src: f.url, alt: f.filename }))
+      const idx = imageFiles.findIndex((f) => f.url === url)
+      dialog.show(() => <ImagePreview images={imgs} initialIndex={Math.max(0, idx)} />)
+    } else {
+      dialog.show(() => <ImagePreview src={url} alt={alt} />)
+    }
   }
 
   const handleCopy = async () => {
