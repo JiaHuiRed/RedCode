@@ -39,7 +39,7 @@ Open-source AI coding assistant with **terminal TUI** and **desktop GUI** interf
 - 🖥 **Desktop GUI** — Electron standalone window with full graphical interface
 - 📊 **MCP Servers**:
   - [TypeGraph](https://github.com/guyowen/typegraph-mcp) — TypeScript semantic navigation (type resolution, barrel file traversal, cycle detection)
-  - [jCodeMunch](https://github.com/colbymchenry/jcodemunch) — structured code retrieval (60+ tools: symbol lookup, dead code detection, AST matching)
+  - [jCodeMunch](https://github.com/jgravelle/jcodemunch-mcp) — structured code retrieval (60+ tools: symbol lookup, dead code detection, AST matching)
   - ~~Browser MCP~~ — browser automation (disabled, stability issues)
 - 🔒 **Permission System** — tool call confirmation, auto-approve support
 - 🌍 **Multi-language** — Chinese, English, Japanese, and 18 languages
@@ -119,7 +119,8 @@ cd packages/desktop && bun run dev
     },
     "jcodemunch": {
       "type": "local",
-      "command": ["npx", "jcodemunch-mcp"],
+      // Python package — install with `pip install jcodemunch-mcp` (pipx / uvx also work)
+      "command": ["jcodemunch-mcp"],
       "enabled": true
     }
   }
