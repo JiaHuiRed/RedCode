@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect"
 import * as Tool from "./tool"
 import { Question } from "../question"
-import DESCRIPTION from "./question.txt"
+import DESCRIPTION from "./question.md"
 
 export const Parameters = Schema.Struct({
   questions: Schema.mutable(Schema.Array(Question.Prompt)).annotate({ description: "Questions to ask" }),

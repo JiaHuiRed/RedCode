@@ -1,5 +1,5 @@
 ﻿import * as Tool from "./tool"
-import DESCRIPTION from "./task_status.txt"
+import DESCRIPTION from "./task_status.md"
 import { BackgroundJob } from "@/background/job"
 import { Session } from "@/session/session"
 import { MessageV2 } from "@/session/message-v2"

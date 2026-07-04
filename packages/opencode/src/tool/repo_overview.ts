@@ -3,7 +3,7 @@ import { Effect, Schema } from "effect"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Git } from "@/git"
 import { assertExternalDirectoryEffect } from "./external-directory"
-import DESCRIPTION from "./repo_overview.txt"
+import DESCRIPTION from "./repo_overview.md"
 import * as Tool from "./tool"
 import { parseRepositoryReference, repositoryCachePath } from "@/util/repository"
 import { InstanceState } from "@/effect/instance-state"
@@ -52,7 +52,7 @@ const DEPENDENCY_FILES = [
   "bun.lockb",
   "pnpm-lock.yaml",
   "yarn.lock",
-  "requirements.txt",
+  "requirements.md",
   "pyproject.toml",
   "go.mod",
   "Cargo.toml",
@@ -73,7 +73,7 @@ function packageManager(files: Set<string>) {
 function ecosystems(files: Set<string>) {
   return [
     ...(files.has("package.json") ? ["Node.js"] : []),
-    ...(files.has("pyproject.toml") || files.has("requirements.txt") ? ["Python"] : []),
+    ...(files.has("pyproject.toml") || files.has("requirements.md") ? ["Python"] : []),
     ...(files.has("go.mod") ? ["Go"] : []),
     ...(files.has("Cargo.toml") ? ["Rust"] : []),
     ...(files.has("Gemfile") ? ["Ruby"] : []),

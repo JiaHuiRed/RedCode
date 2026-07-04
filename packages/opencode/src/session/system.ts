@@ -2,19 +2,20 @@
 
 import { InstanceState } from "@/effect/instance-state"
 
-import PROMPT_ANTHROPIC from "./prompt/anthropic.txt"
-import PROMPT_DEFAULT from "./prompt/default.txt"
-import PROMPT_BEAST from "./prompt/beast.txt"
-import PROMPT_DEEPSEEK from "./prompt/deepseek.txt"
-import PROMPT_GEMINI from "./prompt/gemini.txt"
-import PROMPT_GPT from "./prompt/gpt.txt"
-import PROMPT_KIMI from "./prompt/kimi.txt"
-import PROMPT_MIMO from "./prompt/mimo.txt"
-import PROMPT_MINIMAX from "./prompt/minimax.txt"
-import PROMPT_CODEX from "./prompt/codex.txt"
-import PROMPT_TRINITY from "./prompt/trinity.txt"
-import PROMPT_GLM from "./prompt/glm.txt"
-import PROMPT_STEP from "./prompt/step.txt"
+import PROMPT_ANTHROPIC from "./prompt/anthropic.md"
+import PROMPT_DEFAULT from "./prompt/default.md"
+import PROMPT_BEAST from "./prompt/beast.md"
+import PROMPT_DEEPSEEK from "./prompt/deepseek.md"
+import PROMPT_GEMINI from "./prompt/gemini.md"
+import PROMPT_GPT from "./prompt/gpt.md"
+import PROMPT_KIMI from "./prompt/kimi.md"
+import PROMPT_MIMO from "./prompt/mimo.md"
+import PROMPT_MINIMAX from "./prompt/minimax.md"
+import PROMPT_CODEX from "./prompt/codex.md"
+import PROMPT_TRINITY from "./prompt/trinity.md"
+import PROMPT_GLM from "./prompt/glm.md"
+import PROMPT_STEP from "./prompt/step.md"
+import PROMPT_OLLAMA from "./prompt/ollama.md"
 import type { Provider } from "@/provider/provider"
 import type { Agent } from "@/agent/agent"
 import { Permission } from "@/permission"
@@ -38,6 +39,9 @@ export function provider(model: Provider.Model) {
   if (model.api.id.toLowerCase().includes("mimo")) return [PROMPT_MIMO]
   // 260610 Red minimax(m3 及以后) 专属提示词 — 与 mimo(小米) 非同厂，独立成文件便于后续单独调优
   if (model.api.id.toLowerCase().includes("minimax")) return [PROMPT_MINIMAX]
+  // 260704 Red ollama 本地模型 — 精简提示词，适配有限上下文窗口
+  // providerID 含 ollama 或 model.id 含 ":latest"/":Xb" 等 ollama 命名特征
+  if (model.providerID.toLowerCase().includes("ollama")) return [PROMPT_OLLAMA]
   // 260625 Red GLM(智谱) + Qwen(通义) — 准一线，复用精炼档
   if (model.api.id.toLowerCase().includes("glm") || model.api.id.toLowerCase().includes("qwen")) return [PROMPT_GLM]
   // 260623 Red Step(阶跃星辰)

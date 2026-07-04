@@ -5,7 +5,7 @@ import * as Stream from "effect/Stream"
 import { Ripgrep } from "../file/ripgrep"
 import { Skill } from "../skill"
 import * as Tool from "./tool"
-import DESCRIPTION from "./skill.txt"
+import DESCRIPTION from "./skill.md"
 
 export const Parameters = Schema.Struct({
   name: Schema.String.annotate({ description: "The name of the skill from available_skills" }),

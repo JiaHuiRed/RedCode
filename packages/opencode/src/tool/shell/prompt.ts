@@ -1,5 +1,5 @@
 ﻿import { Schema } from "effect"
-import DESCRIPTION from "./shell.txt"
+import DESCRIPTION from "./shell.md"
 import { PositiveInt } from "@redcode-ai/core/schema"
 import { Global } from "@redcode-ai/core/global"
 import { ShellID } from "./id"
@@ -91,7 +91,7 @@ function bashCommandSection(chain: string, limits: Limits) {
    - For example, before running "mkdir foo/bar", first use \`ls foo\` to check that "foo" exists and is the intended parent directory
 
 2. Command Execution:
-   - Always quote file paths that contain spaces with double quotes (e.g., rm "path with spaces/file.txt")
+   - Always quote file paths that contain spaces with double quotes (e.g., rm "path with spaces/file.md")
    - Examples of proper quoting:
      - mkdir "/Users/name/My Documents" (correct)
      - mkdir /Users/name/My Documents (incorrect - will fail)
@@ -137,7 +137,7 @@ Before executing the command, please follow these steps:
    - For example, before creating \`foo${pathSep}bar\`, first use \`Test-Path -LiteralPath "foo"\` to check that \`foo\` exists and is the intended parent directory
 
 2. Command Execution:
-   - Always quote file paths that contain spaces with double quotes (e.g., Remove-Item -LiteralPath "path with spaces${pathSep}file.txt")
+   - Always quote file paths that contain spaces with double quotes (e.g., Remove-Item -LiteralPath "path with spaces${pathSep}file.md")
    - Examples of proper quoting:
      - New-Item -ItemType Directory -Path "My Documents" (correct)
      - New-Item -ItemType Directory -Path My Documents (incorrect - path is split)
@@ -187,7 +187,7 @@ Before executing the command, please follow these steps:
    - For example, before creating \`foo\\bar\`, first use \`if exist "foo\\" dir "foo"\` to check that \`foo\` exists and is the intended parent directory
 
 2. Command Execution:
-   - Always quote file paths that contain spaces with double quotes (e.g., del "path with spaces\\file.txt")
+   - Always quote file paths that contain spaces with double quotes (e.g., del "path with spaces\\file.md")
    - Examples of proper quoting:
      - mkdir "My Documents" (correct)
      - mkdir My Documents (incorrect - path is split)

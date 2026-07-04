@@ -1,5 +1,5 @@
 ﻿import * as Tool from "./tool"
-import DESCRIPTION from "./task.txt"
+import DESCRIPTION from "./task.md"
 import { ToolJsonSchema } from "./json-schema"
 import { BackgroundJob } from "@/background/job"
 import { Bus } from "@/bus"

@@ -7,7 +7,7 @@ import { MessageV2 } from "../session/message-v2"
 import { Provider } from "@/provider/provider"
 import { InstanceState } from "@/effect/instance-state"
 import { MessageID, PartID } from "../session/schema"
-import EXIT_DESCRIPTION from "./plan-exit.txt"
+import EXIT_DESCRIPTION from "./plan-exit.md"
 
 export const Parameters = Schema.Struct({})
 

@@ -7,9 +7,9 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { PartID } from "./schema"
 import { MessageV2 } from "./message-v2"
 import * as Session from "./session"
-import PROMPT_PLAN from "./prompt/plan.txt"
-import BUILD_SWITCH from "./prompt/build-switch.txt"
-import PLAN_MODE from "./prompt/plan-mode.txt"
+import PROMPT_PLAN from "./prompt/plan.md"
+import BUILD_SWITCH from "./prompt/build-switch.md"
+import PLAN_MODE from "./prompt/plan-mode.md"
 
 export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
   messages: MessageV2.WithParts[]

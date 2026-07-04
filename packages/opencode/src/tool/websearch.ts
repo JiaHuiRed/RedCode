@@ -2,7 +2,7 @@
 import { HttpClient } from "effect/unstable/http"
 import * as Tool from "./tool"
 import * as McpWebSearch from "./mcp-websearch"
-import DESCRIPTION from "./websearch.txt"
+import DESCRIPTION from "./websearch.md"
 import { checksum } from "@redcode-ai/core/util/encode"
 import { InstallationVersion } from "@redcode-ai/core/installation/version"
 import { RuntimeFlags } from "@/effect/runtime-flags"
