@@ -407,6 +407,27 @@ function createGlobalSync() {
     }
   })
 
+  // 260704 Red 定期轮询 session_status 作为 WebSocket 事件丢失的 fallback
+  // 解决模型已完成但 GUI 一直卡在"思考中"的问题
+  const statusPollTimer = setInterval(() => {
+    for (const [key, pair] of Object.entries(children.children)) {
+      if (!pair) continue
+      const [store, setStore] = pair
+      const hasBusy = Object.values(store.session_status).some(
+        (s) => s && s.type !== "idle",
+      )
+      if (!hasBusy) continue
+      const sdk = sdkFor(key)
+      sdk.session
+        .status()
+        .then((x) => {
+          if (x.data) setStore("session_status", reconcile(x.data))
+        })
+        .catch(() => {})
+    }
+  }, 5_000)
+  onCleanup(() => clearInterval(statusPollTimer))
+
   const projectApi = {
     loadSessions,
     meta(directory: string, patch: ProjectMeta) {

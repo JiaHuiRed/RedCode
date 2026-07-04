@@ -9,6 +9,15 @@
 ---
 
 ## TUI
+### [0.7.6] - 2026-07-04
+
+> 修复删除 session 报 404、GUI 卡在"思考中"不恢复。
+
+#### 修复
+
+- **删除 session 404**：`session.remove()` 先 `get(sessionID)` 校验存在性，级联删除子 session 或重复删除时若目标已不存在会抛 `NotFoundError` → HTTP 404。改为 `catchTag("NotFoundError")` 静默返回，已删即成功（`session/session.ts`）。
+- **GUI "思考中"永久卡住**：`session_status` 仅在 bootstrap 时轮询一次，之后完全依赖 WebSocket 事件推送。网络抖动或事件丢失会导致 busy→idle 转换永远不到达前端，表现为模型已完成但界面一直显示"思考中"。新增 5 秒间隔轮询 fallback：仅当存在 busy session 时才发请求，idle 时零开销（`global-sync.tsx`）。
+
 ### [0.7.5] - 2026-07-03
 
 > `redcode web` 根路径改为 xterm.js + PTY 的 TUI web 终端，手机浏览器可直接操作 RedCode TUI。
@@ -1222,6 +1231,14 @@
 ---
 
 ## GUI
+
+### [0.6.18] - 2026-07-04
+
+> 同 TUI 0.7.6：session 删除 404 修复 + 思考中卡住 fallback 轮询。
+
+#### 修复
+
+- 同 TUI 0.7.6 changelog（共享代码）。
 
 ### [0.6.17] - 2026-07-03
 

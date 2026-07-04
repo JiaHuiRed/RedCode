@@ -626,7 +626,11 @@ export const layer: Layer.Layer<
     })
 
     const remove: Interface["remove"] = Effect.fnUntraced(function* (sessionID: SessionID) {
-      const session = yield* get(sessionID)
+      // 260704 Red 删除不存在的 session 时静默返回，避免级联删除或重复删除时 404
+      const session = yield* get(sessionID).pipe(
+        Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)),
+      )
+      if (!session) return
       try {
         // `remove` needs to work in all cases, such as broken sessions that
         // run cleanup without instance state.
