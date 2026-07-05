@@ -307,6 +307,10 @@ const live: Layer.Layer<
           abortSignal: input.abort,
           headers: prepared.headers,
           maxRetries: input.retries ?? 0,
+          // 260705 Red system 在 messages 里使用 {role: "system"} 是为了保持
+          // HTTP 请求体结构稳定 → 云端 prefix cache key 不变 → 缓存命中率稳定。
+          // AI SDK 6.x 检测到 system role 会 console.warn，显式置 true 关掉告警。
+          allowSystemInMessages: true,
           messages: prepared.messages,
           model: wrapLanguageModel({
             model: language,

@@ -412,15 +412,20 @@ export const getUsage = (input: { model: Provider.Model; usage: Usage; metadata?
     ),
   )
 
+  // DeepSeek API may return cached_tokens > prompt_tokens (KV cache aggregate vs
+  // per-request prompt), which makes adjustedInputTokens collapse to 0 and misses
+  // all input billing. Cap cacheRead to inputTokens so the math stays valid.
+  const cappedCacheRead = Math.min(cacheReadInputTokens, inputTokens)
+
   // AI SDK v6 normalized inputTokens to include cached tokens across all providers
   // (including Anthropic/Bedrock which previously excluded them). Always subtract cache
   // tokens to get the non-cached input count for separate cost calculation.
-  const adjustedInputTokens = safe(inputTokens - cacheReadInputTokens - cacheWriteInputTokens)
+  const adjustedInputTokens = safe(inputTokens - cappedCacheRead - cacheWriteInputTokens)
 
   // miss = total prompt - cache hit - cache write. For DeepSeek (write=0),
   // miss equals adjustedInputTokens (the fresh/non-cached tokens).
-  // The old metadata path (metadata.deepseek.promptCacheMissTokens) is unused
-  // because @ai-sdk/openai-compatible doesn't populate deepseek metadata.
+  // DeepSeek cache read tokens are now handled upstream in ai-sdk.ts via
+  // raw.prompt_cache_hit_tokens from the AI SDK usage response.
   const cacheMissInputTokens = adjustedInputTokens
 
   const total = input.usage.totalTokens
@@ -450,7 +455,9 @@ export const getUsage = (input: { model: Provider.Model; usage: Usage; metadata?
       new Decimal(0)
         .add(new Decimal(tokens.input).mul(costInfo?.input ?? 0).div(1_000_000))
         .add(new Decimal(tokens.output).mul(costInfo?.output ?? 0).div(1_000_000))
-        .add(new Decimal(tokens.cache.read).mul(costInfo?.cache?.read ?? 0).div(1_000_000))
+        // Use cappedCacheRead in cost calculation to avoid overcharging when
+        // cacheRead > inputTokens (DeepSeek KV cache aggregate reporting).
+        .add(new Decimal(cappedCacheRead).mul(costInfo?.cache?.read ?? 0).div(1_000_000))
         .add(new Decimal(tokens.cache.write).mul(costInfo?.cache?.write ?? 0).div(1_000_000))
         // TODO: update models.dev to have better pricing model, for now:
         // charge reasoning tokens at the same rate as output tokens
