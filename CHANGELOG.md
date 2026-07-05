@@ -9,6 +9,22 @@
 ---
 
 ## TUI
+### [0.7.8] - 2026-07-05
+
+> 修复 `@opentui/keymap` 双份类型冲突 + 首页项目分区选择器。
+
+#### 修复
+
+- **`@opentui/keymap` PKG 重复导致 TS 类型错误**：`@opencode-ai/plugin` 内置的 `@opentui/keymap` 与 TUI 依赖的版本虽文件全等，但 Bun content-addressable 存储为不同 hash（`0d7da94b` vs `77dde1de`），TypeScript 视为不同类型，`#private` 字段不兼容报错。将两个 junction 统一指向 `77dde1de`（`node_modules/.bun/`）。
+
+#### 新增
+
+- **首页项目分区选择器**：TUI 首页新增交互式 workspace 选择器，展示项目/分区列表，支持快速切换工作区（`project-selector.ts`、`api.tsx`、`command-shim.ts`、`thread.ts`）。
+
+#### 移除
+
+- **NVIDIA BILLING-INVOKE-ORIGIN header**：去掉 `provider.ts` 中发送给 NVIDIA 的 `X-BILLING-INVOKE-ORIGIN: RedCode` 头，该头导致第三方托管模型（如 `z-ai/glm-5.2`）返回 404。
+
 ### [0.7.7] - 2026-07-04
 
 > 提示词文件 .txt→.md 格式升级 + 新增 ollama 本地模型专属提示词。

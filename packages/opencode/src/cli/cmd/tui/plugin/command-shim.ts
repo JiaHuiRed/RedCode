@@ -1,5 +1,6 @@
 ﻿// Legacy `api.command` bridge for v1 plugins; remove in v2.
 import type { TuiCommand, TuiPluginApi } from "@redcode-ai/plugin/tui"
+import type { OpenTuiKeymap } from "../keymap"
 import { TuiKeybind } from "../config/keybind"
 import type { DialogContext } from "../ui/dialog"
 
@@ -83,7 +84,7 @@ function toBindings(commands: TuiCommand[], keybinds: LegacyKeybinds) {
 }
 
 export function createCommandShim(
-  keymap: TuiPluginApi["keymap"],
+  keymap: OpenTuiKeymap,
   dialog: CommandShimDialog,
   keybinds: LegacyKeybinds,
 ): TuiPluginApi["command"] {

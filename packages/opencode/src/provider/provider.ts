@@ -442,7 +442,6 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
           headers: {
             "HTTP-Referer": "https://redcode.dev/",
             "X-Title": "redcode",
-            "X-BILLING-INVOKE-ORIGIN": "RedCode",
           },
         },
       }),

@@ -4,6 +4,7 @@ import { type rpc } from "./worker"
 import path from "path"
 import { fileURLToPath } from "url"
 import { UI } from "@/cli/ui"
+import { ProjectSelector } from "@/cli/project-selector"
 import * as Log from "@redcode-ai/core/util/log"
 import { errorMessage } from "@/util/error"
 import { withTimeout } from "@/util/timeout"
@@ -125,6 +126,12 @@ export const TuiThreadCommand = cmd({
         UI.error("--fork requires --continue or --session")
         process.exitCode = 1
         return
+      }
+
+      // If no explicit project path, show interactive project selector
+      if (!args.project) {
+        const selected = await ProjectSelector.selectProjectInteractive()
+        if (selected) args.project = selected
       }
 
       // Resolve relative --project paths from PWD, then use the real cwd after
