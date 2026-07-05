@@ -30,6 +30,9 @@ function usage(part: MessageV2.Part | (typeof PartTable.$inferSelect)["data"]): 
 }
 
 function applyUsage(db: TxOrDb, sessionID: Session.Info["id"], value: Usage, sign = 1) {
+  console.log(
+    `[Cost] applyUsage session=${sessionID} sign=${sign} delta_cost=${value.cost * sign} delta_in=${value.tokens.input * sign} delta_out=${value.tokens.output * sign} delta_cache=${value.tokens.cache.read * sign} delta_reasoning=${value.tokens.reasoning * sign}`,
+  )
   db.update(SessionTable)
     .set({
       cost: sql`${SessionTable.cost} + ${value.cost * sign}`,

@@ -450,22 +450,25 @@ export const getUsage = (input: { model: Provider.Model; usage: Usage; metadata?
     (input.model.cost?.experimentalOver200K && contextTokens > 200_000
       ? input.model.cost.experimentalOver200K
       : input.model.cost)
-  return {
-    cost: safe(
-      new Decimal(0)
-        .add(new Decimal(tokens.input).mul(costInfo?.input ?? 0).div(1_000_000))
-        .add(new Decimal(tokens.output).mul(costInfo?.output ?? 0).div(1_000_000))
-        // Use cappedCacheRead in cost calculation to avoid overcharging when
-        // cacheRead > inputTokens (DeepSeek KV cache aggregate reporting).
-        .add(new Decimal(cappedCacheRead).mul(costInfo?.cache?.read ?? 0).div(1_000_000))
-        .add(new Decimal(tokens.cache.write).mul(costInfo?.cache?.write ?? 0).div(1_000_000))
-        // TODO: update models.dev to have better pricing model, for now:
-        // charge reasoning tokens at the same rate as output tokens
-        .add(new Decimal(tokens.reasoning).mul(costInfo?.output ?? 0).div(1_000_000))
-        .toNumber(),
-    ),
-    tokens,
-  }
+  const cost = safe(
+    new Decimal(0)
+      .add(new Decimal(tokens.input).mul(costInfo?.input ?? 0).div(1_000_000))
+      .add(new Decimal(tokens.output).mul(costInfo?.output ?? 0).div(1_000_000))
+      // Use cappedCacheRead in cost calculation to avoid overcharging when
+      // cacheRead > inputTokens (DeepSeek KV cache aggregate reporting).
+      .add(new Decimal(cappedCacheRead).mul(costInfo?.cache?.read ?? 0).div(1_000_000))
+      .add(new Decimal(tokens.cache.write).mul(costInfo?.cache?.write ?? 0).div(1_000_000))
+      // TODO: update models.dev to have better pricing model, for now:
+      // charge reasoning tokens at the same rate as output tokens
+      .add(new Decimal(tokens.reasoning).mul(costInfo?.output ?? 0).div(1_000_000))
+      .toNumber(),
+  )
+
+  console.log(
+    `[Cost] model=${input.model.providerID}/${input.model.id} rate_in=${costInfo?.input}/M rate_out=${costInfo?.output}/M rate_cache=${costInfo?.cache?.read}/M | raw_in=${inputTokens} raw_cache=${cacheReadInputTokens} capped_cache=${cappedCacheRead} adjusted_in=${adjustedInputTokens} out=${outputTokens} reasoning=${reasoningTokens} total=${total} → cost=${cost}`,
+  )
+
+  return { cost, tokens }
 }
 
 export class BusyError extends Schema.TaggedErrorClass<BusyError>()("SessionBusyError", {
