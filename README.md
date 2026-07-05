@@ -9,7 +9,7 @@
 >
 > 基于 [opencode](https://github.com/anomalyco/opencode)（sst.dev）深度二次开发。
 
-[![TUI](https://badgen.net/badge/TUI/0.7.8/blue)](CHANGELOG.md)
+[![TUI](https://badgen.net/badge/TUI/0.7.9/blue)](CHANGELOG.md)
 [![Desktop](https://badgen.net/badge/Desktop/0.6.21/purple)](CHANGELOG.md)
 [![平台](https://badgen.net/badge/平台/Windows%2010%2F11/green)](https://github.com/JiaHuiRed/RedCode)
 [![TypeScript](https://badgen.net/badge/TypeScript/5.x/3178c6)](https://typescriptlang.org)
@@ -88,4 +88,5 @@ cd packages/desktop && bun run build && bun run package
 ## 💙 致谢
 
 - 原项目：[opencode](https://github.com/anomalyco/opencode)（sst.dev）
+- 代码检索能力由 [jcodemunch-mcp](https://github.com/jgravelle/jcodemunch-mcp) 提供驱动
 - 许可证：MIT

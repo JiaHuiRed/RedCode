@@ -9,6 +9,15 @@
 ---
 
 ## TUI
+### [0.7.9] - 2026-07-05
+
+> 修复 DeepSeek V4 Flash 成本少报（~7x 低估）。
+
+#### 修复
+
+- **DeepSeek V4 Flash 成本计算少报**：`getUsage()` 中 `adjustedInputTokens = inputTokens - cacheReadInputTokens`，DeepSeek 返回 `cached_tokens > prompt_tokens`（比例 1.5x–20x），导致非缓存 input 未被计费，仅输出计费。将 `cacheReadInputTokens` cap 在 `inputTokens` 范围内（`session.ts:418`），同时修正 `ai-sdk.ts` 中 DeepSeek `prompt_cache_hit_tokens` 解析。
+
+---
 ### [0.7.8] - 2026-07-05
 
 > 修复 `@opentui/keymap` 双份类型冲突 + 首页项目分区选择器。

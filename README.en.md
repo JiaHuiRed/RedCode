@@ -14,7 +14,7 @@
 > **A Chinese-native desktop AI coding agent — standalone GUI, speaks your language, plug in any model (DeepSeek / MiMo / domestic-first).**
 >
 > Author: Red · Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev).
-[![TUI](https://badgen.net/badge/TUI/0.7.8/blue)](CHANGELOG.md)
+[![TUI](https://badgen.net/badge/TUI/0.7.9/blue)](CHANGELOG.md)
 
 [![Desktop](https://badgen.net/badge/Desktop/0.6.21/purple)](CHANGELOG.md)
 [![License](https://badgen.net/badge/License/MIT/grey)](LICENSE)
@@ -152,4 +152,5 @@ See [CHANGELOG.md](CHANGELOG.md).
 ## 💙 Acknowledgments
 
 - Original project: [opencode](https://github.com/anomalyco/opencode) by sst.dev
+- Code search powered by [jcodemunch-mcp](https://github.com/jgravelle/jcodemunch-mcp)
 - License: MIT
