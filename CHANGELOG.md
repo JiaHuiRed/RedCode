@@ -9,6 +9,14 @@
 ---
 
 ## TUI
+### [0.7.10] - 2026-07-05
+
+> 修复 DeepSeek 成本少报（miss 部分按 cache_hit 计费）。
+
+#### 修复
+
+- **DeepSeek cache miss 计费少报**：`ai-sdk.ts` 未从 `raw` 提取 `prompt_cache_miss_tokens`，`cacheWriteInputTokens` 始终为 0。同时 `getUsage` 的 cap 未考虑 cache write 部分，当 `prompt_cache_hit_tokens > prompt_tokens` 时多余部分被 cap 吃掉，本应按 ¥1/M 计费的 miss 部分被按 ¥0.02/M 计费。双修：ai-sdk.ts 补充 miss tokens 提取（`deepSeekCacheWrite`）；session.ts cap 改用 `inputTokens - cacheWriteInputTokens` 为基准。
+
 ### [0.7.9] - 2026-07-05
 
 > 修复 DeepSeek V4 Flash 成本少报（~7x 低估）。

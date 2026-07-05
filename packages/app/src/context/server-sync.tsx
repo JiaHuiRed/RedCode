@@ -144,6 +144,9 @@ export function createServerSyncContext() {
 
   let bootedAt = 0
   let bootingRoot = false
+  // 260705 Red: server.connected 冷却，断连重连后 15s 内不重复触发全量刷新
+  let lastConnectedRefresh = 0
+  const CONNECTED_REFRESH_COOLDOWN_MS = 15_000
   let eventFrame: number | undefined
   let eventTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -381,6 +384,9 @@ export function createServerSyncContext() {
       })
       if (event.type === "server.connected" || event.type === "global.disposed") {
         if (recent) return
+        const now = Date.now()
+        if (now - lastConnectedRefresh < CONNECTED_REFRESH_COOLDOWN_MS) return
+        lastConnectedRefresh = now
         for (const directory of Object.keys(children.children)) {
           queue.push(directory)
         }

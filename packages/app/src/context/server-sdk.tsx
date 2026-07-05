@@ -39,7 +39,6 @@ function createServerSdkContext(server: ServerConnection.Any) {
   type Queued = { directory: string; payload: Event }
   const FLUSH_FRAME_MS = 16
   const STREAM_YIELD_MS = 8
-  const RECONNECT_DELAY_MS = 250
 
   let queue: Queued[] = []
   let buffer: Queued[] = []
@@ -100,7 +99,8 @@ function createServerSdkContext(server: ServerConnection.Any) {
   let attempt: AbortController | undefined
   let run: Promise<void> | undefined
   let started = false
-  const HEARTBEAT_TIMEOUT_MS = 15_000
+  // 260705 Red: 30s 给渲染阻塞留余量，防止 GPU/渲染忙时心跳超时断连
+  const HEARTBEAT_TIMEOUT_MS = 30_000
   let lastEventAt = Date.now()
   let heartbeat: ReturnType<typeof setTimeout> | undefined
   let heartbeatGen = 0
@@ -119,6 +119,11 @@ function createServerSdkContext(server: ServerConnection.Any) {
     clearTimeout(heartbeat)
     heartbeat = undefined
   }
+
+  // 260705 Red: 指数退避重连，256ms→512ms→1s→2s(cap)，减少断连环的刷新风暴
+  const RECONNECT_BASE_MS = 256
+  const RECONNECT_MAX_MS = 2000
+  let reconnectDelay = RECONNECT_BASE_MS
 
   const start = () => {
     if (started) return run
@@ -146,6 +151,7 @@ function createServerSdkContext(server: ServerConnection.Any) {
               })
             },
           })
+          reconnectDelay = RECONNECT_BASE_MS
           let yielded = Date.now()
           resetHeartbeat()
           for await (const event of events.stream) {
@@ -194,7 +200,8 @@ function createServerSdkContext(server: ServerConnection.Any) {
         }
 
         if (abort.signal.aborted || !started) return
-        await wait(RECONNECT_DELAY_MS)
+        await wait(Math.min(reconnectDelay, RECONNECT_MAX_MS))
+        reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS)
       }
     })().finally(() => {
       run = undefined

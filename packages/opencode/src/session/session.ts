@@ -414,12 +414,13 @@ export const getUsage = (input: { model: Provider.Model; usage: Usage; metadata?
 
   // DeepSeek API may return cached_tokens > prompt_tokens (KV cache aggregate vs
   // per-request prompt), which makes adjustedInputTokens collapse to 0 and misses
-  // all input billing. Cap cacheRead to inputTokens so the math stays valid.
-  const cappedCacheRead = Math.min(cacheReadInputTokens, inputTokens)
+  // all input billing. Cap cacheRead to the remaining input after cache write,
+  // so the sum of both never exceeds inputTokens.
+  // 260705 Red: use inputTokens - cacheWriteInputTokens as cap so that when
+  // prompt_cache_miss_tokens is correctly populated from raw, the cap is accurate.
+  const adjustedCacheCap = Math.max(0, inputTokens - cacheWriteInputTokens)
+  const cappedCacheRead = Math.min(cacheReadInputTokens, adjustedCacheCap)
 
-  // AI SDK v6 normalized inputTokens to include cached tokens across all providers
-  // (including Anthropic/Bedrock which previously excluded them). Always subtract cache
-  // tokens to get the non-cached input count for separate cost calculation.
   const adjustedInputTokens = safe(inputTokens - cappedCacheRead - cacheWriteInputTokens)
 
   // miss = total prompt - cache hit - cache write. For DeepSeek (write=0),

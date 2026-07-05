@@ -39,17 +39,19 @@ function usage(value: unknown) {
     outputTokenDetails?: { reasoningTokens?: number }
     raw?: Record<string, unknown>
   }
-  // DeepSeek returns prompt_cache_hit_tokens at usage top level,
+  // DeepSeek returns prompt_cache_hit_tokens and prompt_cache_miss_tokens at usage top level,
   // but @ai-sdk/openai-compatible only reads prompt_tokens_details.cached_tokens.
   // The AI SDK preserves the original response as raw, so we check it as fallback.
+  // 260705 Red: also extract prompt_cache_miss_tokens for correct cache write billing.
   const deepSeekCacheRead = item.raw?.prompt_cache_hit_tokens as number | undefined
+  const deepSeekCacheWrite = item.raw?.prompt_cache_miss_tokens as number | undefined
   const entries = Object.entries({
     inputTokens: item.inputTokens,
     outputTokens: item.outputTokens,
     totalTokens: item.totalTokens,
     reasoningTokens: item.outputTokenDetails?.reasoningTokens ?? item.reasoningTokens,
     cacheReadInputTokens: deepSeekCacheRead ?? item.inputTokenDetails?.cacheReadTokens ?? item.cachedInputTokens,
-    cacheWriteInputTokens: item.inputTokenDetails?.cacheWriteTokens,
+    cacheWriteInputTokens: deepSeekCacheWrite ?? item.inputTokenDetails?.cacheWriteTokens,
   }).filter((entry) => entry[1] !== undefined)
   return entries.length === 0 ? undefined : Object.fromEntries(entries)
 }

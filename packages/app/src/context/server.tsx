@@ -154,6 +154,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     function startHealthPolling(conn: ServerConnection.Any) {
       let alive = true
       let busy = false
+      // 260705 Red: 连续失败才标 unhealthy，防瞬断 flicker
+      let failedCount = 0
+      const FAIL_THRESHOLD = 2
 
       const run = () => {
         if (busy) return
@@ -161,6 +164,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         void check(conn)
           .then((next) => {
             if (!alive) return
+            if (next) {
+              failedCount = 0
+            } else {
+              failedCount++
+              if (failedCount < FAIL_THRESHOLD) return
+            }
             setState("healthy", next)
           })
           .finally(() => {
