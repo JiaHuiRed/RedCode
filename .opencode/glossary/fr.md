@@ -2,12 +2,12 @@
 
 ## Sources
 
-- PR #9821: https://github.com/JiaHuiRed/RedCode/pull/9821
+- PR #9821: https://github.com/anomalyco/opencode/pull/9821
 
 ## Do Not Translate (Locale Additions)
 
-- `OpenCode` (preserve casing in prose; keep `opencode` only in commands, package names, paths, or code)
-- `OpenCode CLI`
+- `RedCode` (preserve casing in prose; keep `opencode` only in commands, package names, paths, or code)
+- `RedCode CLI`
 - `CLI`, `TUI`, `MCP`, `OAuth`
 - Commands, flags, file paths, and code literals (keep exactly as written)
 

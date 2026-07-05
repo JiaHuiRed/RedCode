@@ -21,7 +21,7 @@
     },
     "jcodemunch": {
       "type": "local",
-      "command": ["jcodemunch-mcp"],
+      "command": ["uvx", "jcodemunch-mcp"],
       "environment": { "JCODEMUNCH_USE_AI_SUMMARIES": "false", "PYTHONIOENCODING": "utf-8" },
       "description": "代码符号检索/仓库理解首选——找定义、调用链、改动影响面比 grep 准（search_symbols/get_repo_map/get_call_hierarchy/get_blast_radius/get_symbol_source 等）。改代码前先用它摸清依赖，grep/read 兜底。",
       "enabled": true

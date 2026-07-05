@@ -1,7 +1,7 @@
 {
   "name": "@redcode-ai/desktop",
   "private": true,
-  "version": "0.6.20",
+  "version": "0.6.21",
   "type": "module",
   "license": "MIT",
   "homepage": "https://redcode.dev",

@@ -2,11 +2,11 @@
 
 ## Sources
 
-- PR #15835: https://github.com/JiaHuiRed/RedCode/pull/15835
+- PR #15835: https://github.com/anomalyco/opencode/pull/15835
 
 ## Do Not Translate (Locale Additions)
 
-- `OpenCode` (preserve casing in prose, docs, and UI copy)
+- `RedCode` (preserve casing in prose, docs, and UI copy)
 - Keep lowercase `opencode` in commands, package names, paths, URLs, and other exact identifiers
 - `<TAB>` stays the literal key token in code blocks; use `Tab` for the nearby explanatory label in prose
 - Commands, flags, file paths, and code literals (keep exactly as written)
@@ -27,7 +27,7 @@ These are PR-backed wording preferences and may evolve.
 
 - Prefer natural Turkish phrasing over literal translation
 - Merge broken sentence fragments into one clear sentence when the source is a single thought
-- Keep product naming consistent: `OpenCode` in prose, `opencode` only for exact technical identifiers
+- Keep product naming consistent: `RedCode` in prose, `opencode` only for exact technical identifiers
 - When an English technical term is intentionally kept, add a short Turkish clarification only if it improves readability
 
 ## Avoid

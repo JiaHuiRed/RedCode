@@ -1260,6 +1260,20 @@
 
 ## GUI
 
+### [0.6.21] - 2026-07-05
+
+> 文档全仓扫描清理：修复 jcodemunch README 链接/命令、GitHub Action README OpenCode→RedCode 品牌重命名、glossary PR 引用改指上游。
+
+#### 修复
+
+- **jcodemunch README 错误**：链接 `colbymchenry/jcodemunch` → `jgravelle/jcodemunch-mcp`，安装命令 `npx` → `uvx`（`README.en.md`）。
+- **GitHub Action README 品牌遗留**：`opencode` → `RedCode`、`/opencode` → `/redcode`、`/oc` → `/rc`、mock owner `sst`→`JiaHuiRed`（`github/README.md`）。
+- **glossary PR 引用指向错误仓库**：`JiaHuiRed/RedCode/pull/XXXXX` → `anomalyco/opencode/pull/XXXXX`，产品名 `OpenCode`→`RedCode`（`.opencode/glossary/*.md` 17 文件）。
+
+#### 文档
+
+- **`packages/web/README.md`**：替换 Starlight 脚手架模板为 RedCode 文档站说明。
+
 ### [0.6.20] - 2026-07-05
 
 > 修复 GUI streaming 期间每 token 全量重跑 markdown 解析导致主线程过载、心跳超时断连。
