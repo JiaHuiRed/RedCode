@@ -109,15 +109,19 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
     const HEARTBEAT_TIMEOUT_MS = 15_000
     let lastEventAt = Date.now()
     let heartbeat: ReturnType<typeof setTimeout> | undefined
+    let heartbeatGen = 0
     const resetHeartbeat = () => {
       lastEventAt = Date.now()
+      const gen = ++heartbeatGen
       if (heartbeat) clearTimeout(heartbeat)
       heartbeat = setTimeout(() => {
+        if (gen !== heartbeatGen) return
         attempt?.abort()
       }, HEARTBEAT_TIMEOUT_MS)
     }
     const clearHeartbeat = () => {
       if (!heartbeat) return
+      heartbeatGen++
       clearTimeout(heartbeat)
       heartbeat = undefined
     }

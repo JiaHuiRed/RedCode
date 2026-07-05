@@ -1244,6 +1244,18 @@
 
 ## GUI
 
+### [0.6.19] - 2026-07-05
+
+> 修复 SSE 心跳计时器竞态导致连接被误杀、事件丢失、GUI 数分钟才出字。
+
+#### 修复
+
+- **SSE 心跳 `clearTimeout` 竞态**：`resetHeartbeat()` 中 `clearTimeout` 在 timer callback 已被事件循环入队后无效，stale callback 执行 `attempt?.abort()` 误杀当前健康连接 → `reader.cancel()` 丢弃缓冲区中未读事件 → 250ms 重连间隔期间 GlobalBus 事件也丢失。模型深度思考 >15s 后恢复输出时尤其容易触发，延迟乘数累积可达分钟级。
+  - 增加 `heartbeatGen` generation counter：每个 timer 捕获当前 gen，callback 运行前检查 `gen !== heartbeatGen`，旧 callback 直接 return 不 abort（`server-sdk.tsx`、`global-sdk.tsx`）。
+  - `clearHeartbeat()` 同步递增 gen，确保 `stop()` 和 `finally` 块中的清理也能兜住 stale callback。
+
+---
+
 ### [0.6.18] - 2026-07-04
 
 > 同 TUI 0.7.6：session 删除 404 修复 + 思考中卡住 fallback 轮询。

@@ -1,4 +1,4 @@
-﻿# ⚡ RedCode
+# ⚡ RedCode
 
 <p align="center">
   <img src="packages/app/public/mona-loading.gif" width="80">
@@ -9,8 +9,8 @@
 >
 > 基于 [opencode](https://github.com/anomalyco/opencode)（sst.dev）深度二次开发。
 
-[![TUI](https://badgen.net/badge/TUI/0.7.6/blue)](CHANGELOG.md)
-[![Desktop](https://badgen.net/badge/Desktop/0.6.18/purple)](CHANGELOG.md)
+[![TUI](https://badgen.net/badge/TUI/0.7.7/blue)](CHANGELOG.md)
+[![Desktop](https://badgen.net/badge/Desktop/0.6.19/purple)](CHANGELOG.md)
 [![平台](https://badgen.net/badge/平台/Windows%2010%2F11/green)](https://github.com/JiaHuiRed/RedCode)
 [![TypeScript](https://badgen.net/badge/TypeScript/5.x/3178c6)](https://typescriptlang.org)
 [![Bun](https://badgen.net/badge/Bun/1.3.x/fb6e19)](https://bun.sh)
