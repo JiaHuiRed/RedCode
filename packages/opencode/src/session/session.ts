@@ -464,10 +464,6 @@ export const getUsage = (input: { model: Provider.Model; usage: Usage; metadata?
       .toNumber(),
   )
 
-  console.log(
-    `[Cost] model=${input.model.providerID}/${input.model.id} rate_in=${costInfo?.input}/M rate_out=${costInfo?.output}/M rate_cache=${costInfo?.cache?.read}/M | raw_in=${inputTokens} raw_cache=${cacheReadInputTokens} capped_cache=${cappedCacheRead} adjusted_in=${adjustedInputTokens} out=${outputTokens} reasoning=${reasoningTokens} total=${total} → cost=${cost}`,
-  )
-
   return { cost, tokens }
 }
 
