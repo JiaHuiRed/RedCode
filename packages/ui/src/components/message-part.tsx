@@ -269,9 +269,37 @@ function PacedMarkdown(props: { text: string; cacheKey: string; streaming: boole
     () => props.streaming,
   )
 
+  // 260705 Red: throttle markdown updates during streaming — each paced tick triggers
+  // a full marked.parse + Shiki highlight + morphdom, which becomes O(n²) as text grows.
+  // Throttle to ~300ms so the event loop stays responsive for heartbeats.
+  const [mdText, setMdText] = createSignal("")
+  let mdTimer: ReturnType<typeof setTimeout> | undefined
+  let mdLast = 0
+  createEffect(() => {
+    const t = value()
+    if (!props.streaming) {
+      clearTimeout(mdTimer)
+      mdTimer = undefined
+      setMdText(t)
+      return
+    }
+    const now = Date.now()
+    if (now - mdLast >= 300) {
+      mdLast = now
+      setMdText(t)
+    } else if (!mdTimer) {
+      mdTimer = setTimeout(() => {
+        mdTimer = undefined
+        mdLast = Date.now()
+        setMdText(value())
+      }, 300 - (now - mdLast))
+    }
+  })
+  onCleanup(() => clearTimeout(mdTimer))
+
   return (
     <Show when={value()}>
-      <Markdown text={value()} cacheKey={props.cacheKey} streaming={props.streaming} />
+      <Markdown text={mdText()} cacheKey={props.cacheKey} streaming={props.streaming} />
     </Show>
   )
 }

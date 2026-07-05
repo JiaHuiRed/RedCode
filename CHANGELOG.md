@@ -1244,6 +1244,14 @@
 
 ## GUI
 
+### [0.6.20] - 2026-07-05
+
+> 修复 GUI streaming 期间每 token 全量重跑 markdown 解析导致主线程过载、心跳超时断连。
+
+#### 修复
+
+- **GUI streaming 卡死/重连**：`message.part.delta` 每 token 更新 store → `createPacedValue` 每 24ms 释放 chunk → `Markdown` 全量重跑 `marked.parse()` + Shiki 高亮 + `DOMPurify.sanitize()` + `morphdom()`。文本越长 O(n²)，3000 字符时每次 ~100ms → 主线程过载 → 15s 心跳超时 → SSE 断连显示"重试中"。`PacedMarkdown` 加 300ms 节流，streaming 期间 markdown 重解析频率从 ~125 次降到 ~10 次（`packages/ui/src/components/message-part.tsx`）。
+
 ### [0.6.19] - 2026-07-05
 
 > 修复 SSE 心跳计时器竞态导致连接被误杀、事件丢失、GUI 数分钟才出字。
