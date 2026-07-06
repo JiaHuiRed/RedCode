@@ -534,6 +534,7 @@ describe("applyDirectoryEvent", () => {
       loadLsp() {
         lspLoads += 1
       },
+      isPinned: true,
     })
 
     applyDirectoryEvent({
@@ -551,5 +552,24 @@ describe("applyDirectoryEvent", () => {
 
     expect(pushes).toEqual(["/tmp"])
     expect(lspLoads).toBe(1)
+  })
+
+  test("does not re-bootstrap unpinned (not currently open) directories on disposal", () => {
+    const [store, setStore] = createStore(baseState())
+    const pushes: string[] = []
+
+    applyDirectoryEvent({
+      event: { type: "server.instance.disposed" },
+      store,
+      setStore,
+      push(directory) {
+        pushes.push(directory)
+      },
+      directory: "/some/old/project",
+      loadLsp() {},
+      isPinned: false,
+    })
+
+    expect(pushes).toEqual([])
   })
 })

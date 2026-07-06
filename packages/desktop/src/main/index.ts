@@ -1,4 +1,5 @@
 ﻿import { randomUUID } from "node:crypto"
+import { execFile } from "node:child_process"
 import { EventEmitter } from "node:events"
 import { existsSync, mkdirSync, rmSync } from "node:fs"
 import * as http from "node:http"
@@ -6,7 +7,7 @@ import { createServer } from "node:net"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
-import type { Event } from "electron"
+import type { Event, ProcessMetric } from "electron"
 import { app, BrowserWindow, nativeTheme } from "electron"
 
 import contextMenu from "electron-context-menu"
@@ -55,6 +56,93 @@ const jsCallStackFeature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
 let logger: ReturnType<typeof initLogging>
 let mainWindow: BrowserWindow | null = null
 let server: SidecarListener | null = null
+// 260706 Red 排查 GUI 内存诊断：定期把 app.getAppMetrics() 按进程类型/PID 打到日志里，
+//   下次复现"打开对话飙到 7G"时能直接看是哪个真实进程（渲染/utility/GPU）在涨，而不是靠猜。
+let metricsInterval: NodeJS.Timeout | undefined
+const METRICS_INTERVAL_MS = 15_000
+
+function formatMetric(metric: ProcessMetric) {
+  return {
+    type: metric.type,
+    pid: metric.pid,
+    name: metric.name,
+    memoryMB: Math.round(metric.memory.workingSetSize / 1024),
+    cpuPercent: Math.round(metric.cpu.percentCPUUsage * 100) / 100,
+  }
+}
+
+function startMetricsLogging() {
+  if (metricsInterval) return
+  metricsInterval = setInterval(() => {
+    const metrics = app.getAppMetrics().map(formatMetric)
+    const totalMB = metrics.reduce((sum, m) => sum + m.memoryMB, 0)
+    writeLog("metrics", "process memory snapshot", { totalMB, metrics })
+    if (sidecarPid) void querySidecarProcessTree(sidecarPid)
+  }, METRICS_INTERVAL_MS)
+  metricsInterval.unref()
+}
+
+function stopMetricsLogging() {
+  if (!metricsInterval) return
+  clearInterval(metricsInterval)
+  metricsInterval = undefined
+}
+
+// 260706 Red app.getAppMetrics() 只看 Electron 自己 fork 的进程，sidecar 内部再用原生
+//   child_process 拉起来的 MCP server（node/python/uv/bun）它完全看不见——之前那版日志
+//   totalMB 从没破 1.2G 就是因为漏了这块。这里用 PowerShell CIM 拿全量进程表（含
+//   ParentProcessId），在 JS 里递归找出 sidecarPid 的全部子孙进程并按 WorkingSetSize 求和，
+//   才能看到 MCP 子进程树真实吃了多少、具体是哪个 server 的进程名。
+type CimProcess = { ProcessId: number; ParentProcessId: number; Name: string; WorkingSetSize: string }
+
+function querySidecarProcessTree(rootPid: number): Promise<void> {
+  return new Promise((resolve) => {
+    const script =
+      "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,WorkingSetSize | ConvertTo-Json -Compress"
+    execFile(
+      "powershell",
+      ["-NoProfile", "-NonInteractive", "-Command", script],
+      { windowsHide: true, maxBuffer: 16 * 1024 * 1024 },
+      (error, stdout) => {
+        if (error) {
+          writeLog("metrics", "sidecar process tree query failed", { error: error.message }, "warn")
+          resolve()
+          return
+        }
+        try {
+          const rows: CimProcess[] = JSON.parse(stdout)
+          const byParent = new Map<number, CimProcess[]>()
+          for (const row of rows) {
+            const list = byParent.get(row.ParentProcessId) ?? []
+            list.push(row)
+            byParent.set(row.ParentProcessId, list)
+          }
+          const descendants: { pid: number; name: string; memoryMB: number }[] = []
+          const stack = [...(byParent.get(rootPid) ?? [])]
+          while (stack.length > 0) {
+            const proc = stack.pop()!
+            descendants.push({
+              pid: proc.ProcessId,
+              name: proc.Name,
+              memoryMB: Math.round(Number(proc.WorkingSetSize) / 1024 / 1024),
+            })
+            stack.push(...(byParent.get(proc.ProcessId) ?? []))
+          }
+          const totalMB = descendants.reduce((sum, p) => sum + p.memoryMB, 0)
+          writeLog("metrics", "sidecar descendant process tree", { rootPid, totalMB, descendants })
+        } catch (parseError) {
+          writeLog(
+            "metrics",
+            "sidecar process tree parse failed",
+            { error: parseError instanceof Error ? parseError.message : String(parseError) },
+            "warn",
+          )
+        }
+        resolve()
+      },
+    )
+  })
+}
 // 260609 CC sidecar PID 留给 exit/SIGINT/SIGTERM 同步兜底用：dev 热重启时 electron-vite 掐主进程、
 //   before-quit/will-quit 不一定触发，优雅 stop 来不及跑→MCP 孙进程成孤儿。捕到信号即 taskkill /T 整树。
 let sidecarPid: number | undefined
@@ -234,6 +322,7 @@ const main = Effect.gen(function* () {
   })
 
   app.on("before-quit", () => {
+    stopMetricsLogging()
     void killSidecar()
   })
 
@@ -391,6 +480,7 @@ const main = Effect.gen(function* () {
   setInitStep({ phase: "done" })
 
   mainWindow = createMainWindow()
+  startMetricsLogging()
   if (mainWindow) {
     createMenu({
       trigger: (id) => {

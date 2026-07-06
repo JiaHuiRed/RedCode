@@ -156,15 +156,21 @@ export function createServerSyncContext() {
   })
 
   // 260609 Red 进入项目时主动拉一次该目录的 MCP 状态。child-store 的 mcpQuery 靠动态 enabled
-  //   false→true 触发拉取，但 @tanstack/solid-query 的 useQueries 对 enabled 翻转不会自动 fetch
+  //   false→true 触发拉取，但 @tanstack/solid-query 的 useQuery 对 enabled 翻转不会自动 fetch
   //   （observer 卡在 status=pending/fetch=idle，对话页恒"未配置 MCP"）。这里用 queryClient.fetchQuery
   //   按同一 queryKey 灌入缓存，child 的 observer 即可读到——只拉当前激活目录，不引发 N×M 风暴。
+  // 260706 Red path/lsp/provider 同理补上——这三个之前在 child-store 里无条件 useQueries，
+  //   打首页 Kanban 就把所有项目的 instance 路由都点了一遍，永久拉起各自 LSP/watcher 子进程。
+  //   现在跟 mcp 一样 gate 在 activeMcpDirectory，这里补 fetchQuery 才能在真正进入项目时连上。
   createEffect(() => {
     const active = activeMcpDirectory()
     if (!active) return
-    const key = directoryKey(active)
+    const key = directoryKey(active) as PathKey
     if (!key) return
-    void queryClient.fetchQuery(queryOptionsApi.mcp(key as PathKey))
+    void queryClient.fetchQuery(queryOptionsApi.mcp(key))
+    void queryClient.fetchQuery(queryOptionsApi.path(key))
+    void queryClient.fetchQuery(queryOptionsApi.lsp(key))
+    void queryClient.fetchQuery(queryOptionsApi.providers(key))
   })
 
   const setProjects = (next: Project[] | ((draft: Project[]) => Project[])) => {
@@ -240,6 +246,10 @@ export function createServerSyncContext() {
       sdkCache.delete(key)
       clearProviderRev(key)
       clearSessionPrefetchDirectory(key)
+      // 260706 Red 目录淘汰只清了客户端缓存，服务端 InstanceState(MCP/LSP/watcher 整套
+      //   子进程)从没人告诉它可以关——常驻 GUI 碰过的每个目录都会永久攒一份子进程树。
+      //   这里补调现成的 /instance/dispose，忽略失败（实例可能已经不在了）。
+      void serverSDK.client.instance.dispose({ directory }).catch(() => {})
     },
     translate: language.t,
     queryOptions: queryOptionsApi,
@@ -387,7 +397,11 @@ export function createServerSyncContext() {
         const now = Date.now()
         if (now - lastConnectedRefresh < CONNECTED_REFRESH_COOLDOWN_MS) return
         lastConnectedRefresh = now
+        // 260706 Red 只刷新当前打开的目录（pinned），别把历史所有项目一起拉起 MCP——
+        //   之前无条件遍历 children.children 导致重连时把用户碰过的每个项目的整套
+        //   MCP server 都启动一遍（实测 9 个历史项目 × 10 个 server），是内存暴涨主因。
         for (const directory of Object.keys(children.children)) {
+          if (!children.pinned(directory)) continue
           queue.push(directory)
         }
       }
@@ -409,6 +423,8 @@ export function createServerSyncContext() {
       loadLsp: () => {
         void queryClient.fetchQuery(queryOptionsApi.lsp(key))
       },
+      // 260706 Red server.instance.disposed 只对当前 pinned 目录重新 bootstrap，见 event-reducer.ts 注释
+      isPinned: children.pinned(key),
     })
   })
 

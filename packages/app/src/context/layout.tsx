@@ -545,11 +545,15 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         sessionFrame = undefined
         sessionTimer = window.setTimeout(() => {
           sessionTimer = undefined
-          void Promise.all(
-            server.projects.list().map((project) => {
-              return globalSync.project.loadSessions(project.worktree)
-            }),
-          )
+          // 260706 Red 这里原本对 server.projects.list() 里每个历史项目都 loadSessions，
+          //   每个未加载目录的 session.list 请求都会经 instance-context 中间件触发整套
+          //   InstanceStore.load()→bootstrap.run()→plugin.init()，即把该目录的完整 MCP
+          //   server 群拉起来——9 个历史项目 = 9 份 MCP 进程树同时起，实测就是打开 GUI
+          //   直接 200+ 进程/7.8G 的真正根因。首页(home.tsx)对当前选中项目已有自己的
+          //   按需 loadSessions，这里只需预热"最近一个"项目即可，其余交给用户实际点开时
+          //   按需加载。
+          const last = server.projects.last()
+          if (last) void globalSync.project.loadSessions(last)
         }, 0)
       })
     })

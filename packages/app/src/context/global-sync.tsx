@@ -211,6 +211,10 @@ function createGlobalSync() {
       sdkCache.delete(key)
       clearProviderRev(key)
       clearSessionPrefetchDirectory(key)
+      // 260706 Red 目录淘汰只清了客户端缓存，服务端 InstanceState(MCP/LSP/watcher 整套
+      //   子进程)从没人告诉它可以关——常驻 GUI 碰过的每个目录都会永久攒一份子进程树。
+      //   这里补调现成的 /instance/dispose，忽略失败（实例可能已经不在了）。
+      void globalSDK.client.instance.dispose({ directory }).catch(() => {})
     },
     translate: language.t,
     queryOptions: queryOptionsApi,
@@ -355,7 +359,10 @@ function createGlobalSync() {
       })
       if (event.type === "server.connected" || event.type === "global.disposed") {
         if (recent) return
+        // 260706 Red 同 server-sync.tsx：只刷新 pinned（当前打开）的目录，避免重连时
+        //   把历史所有项目的整套 MCP server 全部拉起，是内存暴涨主因。
         for (const directory of Object.keys(children.children)) {
+          if (!children.pinned(directory)) continue
           queue.push(directory)
         }
       }
@@ -377,6 +384,8 @@ function createGlobalSync() {
       loadLsp: () => {
         void queryClient.fetchQuery(queryOptionsApi.lsp(key))
       },
+      // 260706 Red server.instance.disposed 只对当前 pinned 目录重新 bootstrap，见 event-reducer.ts 注释
+      isPinned: children.pinned(key),
     })
   })
 

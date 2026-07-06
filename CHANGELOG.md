@@ -8,6 +8,34 @@
 
 ---
 
+## 待办
+
+### Electron → Tauri 迁移评估（性能/开销）— 2026-07-06 提出，尚未开始
+
+背景：0.6.23 修复的是应用层 bug（GUI 启动对所有历史项目全量拉起 MCP），**不是 Electron 框架本身的开销问题**——迁移 Tauri 不会自动解决这类 bug（同样的 sidecar/MCP 生成逻辑在 Tauri 下会原样复现）。下面的评估只针对"框架固定开销"这一块，不代表迁移能解决当前已知的所有内存问题。
+
+**预期收益（真实但有限）**：
+- 用系统自带 WebView2（Windows）代替内置 Chromium：去掉 Electron 常驻的 Browser(~190MB)+GPU(~110MB)+Network Service(~55MB) 三个进程，idle 基线内存预计从 ~500MB-1GB 降到 ~50-150MB。
+- 打包体积：Electron 产物约 227MB → Tauri 通常 10-20MB（不含 opencode server sidecar 本体）。
+- 启动速度：省掉 Chromium 冷启动，预计快数百 ms。
+
+**Tauri 解决不了的**：
+- MCP/LSP 子进程膨胀是 opencode server（sidecar）自身 `InstanceStore`/`bootstrap.run()` 的逻辑，跟前端框架无关，迁移后原样保留（除非把 0.6.23 这类修复同步移植）。
+- sidecar 架构需要改：现在 `sidecar.ts` 用 Electron `utilityProcess`（Node runtime）内联跑 opencode server；Tauri 没有对应的 Node utilityProcess，需要用 Tauri 的 `shell`/`command` API 把 opencode server 当独立子进程拉起（其实跟 `packages/opencode/dist/*.exe` 现有的独立可执行模式更接近，可能比现在 Electron 内联方式更干净）。
+
+**迁移成本盘点**（`packages/desktop/src/main/` 现状，需要重写/桥接的部分）：
+- IPC（`ipc.ts` + preload）→ Tauri `invoke`/`emit` 命令体系，全量重写。
+- 原生菜单/右键菜单（`menu.ts`、`electron-context-menu`）→ Tauri menu API，中文菜单项需重新实现。
+- 自动更新（`updater.ts`）→ Tauri updater 插件，签名/渠道机制不同，需重新配置。
+- 崩溃报告（Crashpad）→ Tauri 无内置等价物，需接第三方（如 sentry-tauri）或放弃。
+- 深链接（`redcode://`）、协议注册、单实例锁（`requestSingleInstanceLock`）→ Tauri 都有对应能力，需重新接线。
+- WSL 集成（`apps.ts` 的 `checkAppExists`/`wslPath`/`resolveAppPath`）、系统证书桥接等 Windows 专属逻辑 → 需要 Rust 或 sidecar 脚本重做。
+- `packages/app`（渲染层，SolidJS + Vite）本身跟 Electron/Tauri 无关，改动量小，是迁移里最不用担心的部分。
+
+**建议**：先在独立分支做最小 PoC（只跑通 sidecar 拉起 + 窗口显示 + 单实例锁），实测 idle 内存/进程数对比现有 Electron 版本，再决定是否值得投入主进程全量重写。
+
+---
+
 ## TUI
 ### [0.7.11] - 2026-07-06
 
@@ -1287,6 +1315,22 @@
 ---
 
 ## GUI
+
+### [0.6.23] - 2026-07-06
+
+> 修复 GUI 打开即 200+ 进程 / 5-7GB 内存暴涨（历史项目全量拉起 MCP）。
+
+#### 修复
+
+- **[核心] 首页启动对所有历史项目全量 loadSessions 触发 MCP 风暴**：`layout.tsx` 启动时无条件对 `server.projects.list()` 里每一个开过的历史项目并行 `loadSessions`；`session.list` 走 instance 路由中间件（`instance-context.ts`）无条件 `InstanceStore.load()`，未加载目录直接触发 `bootstrap.run()→plugin.init()` 拉起整套 MCP server。实测 9 个历史项目 × 完整 MCP roster，`app.getAppMetrics()` 抓到 sidecar 子进程树 15 秒内从 0MB 飙到 7882MB / 200+ 进程。改为只预热 `server.projects.last()`（最近一个项目），其余交给用户实际打开项目时按需加载。
+- **首页 Kanban 对所有项目无条件拉起 path/lsp/provider query**：`child-store.ts` 中这三个 query 原本走批量 `useQueries` 无条件触发，改为同 mcpQuery 一样只在 `activeMcpDirectory` 命中时才 `enabled`（`server-sync.tsx` 补 `fetchQuery` 兜底 enabled 翻转不自动 fetch 的问题）。
+- **重连/全局 disposed 事件对所有历史目录重新拉起 MCP**：`server-sync.tsx`/`global-sync.tsx` 的 `server.connected`/`global.disposed` 批量 fanout 循环原本无条件遍历 `children.children`，改为只刷新 `pinned`（当前打开）的目录。
+- **`server.instance.disposed` 单目录事件无冷却重新 bootstrap**：`event-reducer.ts` 新增 15s 冷却 + `isPinned` 门控，防止服务端连续 dispose 同一目录时客户端跟着无限重连、重建整套 MCP。
+- **目录淘汰只清客户端缓存，服务端子进程永不回收**：`onDispose` 补调 `/instance/dispose`，目录从 GUI 淘汰时同步通知服务端关闭该目录的 MCP/LSP/watcher。
+
+#### 新增
+
+- **进程内存诊断日志**：`desktop/src/main/index.ts` 每 15s 把 `app.getAppMetrics()` + sidecar 全量子孙进程树（PowerShell CIM 查询，含 MCP 的 node/bun/python 子进程）写入日志；本次问题定位靠此直接抓到实证。
 
 ### [0.6.22] - 2026-07-06
 

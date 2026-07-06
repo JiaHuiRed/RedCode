@@ -18,6 +18,13 @@ import { diffs as list, message as clean } from "@/utils/diffs"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 
+// 260706 Red server.instance.disposed 之前无冷却地直接 push(directory) 重新 bootstrap——
+//   如果服务端因为某种原因反复 dispose 同一个目录的 instance（比如后台 npm 安装超时触发的
+//   reload），这里会跟着无限重连，每次都把该目录整套 MCP server 重新拉起一遍，实测抓到
+//   进程树每 1-5 秒完整重生一次。加冷却，同一目录短时间内只允许重新 bootstrap 一次。
+const DISPOSED_REFRESH_COOLDOWN_MS = 15_000
+const lastDisposedRefresh = new Map<string, number>()
+
 export function applyGlobalEvent(input: {
   event: { type: string; properties?: unknown }
   project: Project[]
@@ -112,10 +119,21 @@ export function applyDirectoryEvent(input: {
   loadLsp: () => void
   vcsCache?: VcsCache
   setSessionTodo?: (sessionID: string, todos: Todo[] | undefined) => void
+  isPinned?: boolean
 }) {
   const event = input.event
   switch (event.type) {
     case "server.instance.disposed": {
+      // 260706 Red 只对当前打开（pinned）的目录重新 bootstrap——
+      //   之前不管目录是否 pinned 都 push，只要 children.children 里还有记录（历史碰过的
+      //   目录都在），服务端一波 disposed 事件打过来，每个历史目录各自过一次冷却检查
+      //   （首次调用 last=0 必过）就各自拉起一整套 MCP server，实测就是内存分批跳涨
+      //   （600MB→2G→4G→6G，一个历史目录一跳）的真正原因。
+      if (!input.isPinned) return
+      const now = Date.now()
+      const last = lastDisposedRefresh.get(input.directory) ?? 0
+      if (now - last < DISPOSED_REFRESH_COOLDOWN_MS) return
+      lastDisposedRefresh.set(input.directory, now)
       input.push(input.directory)
       return
     }

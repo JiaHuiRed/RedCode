@@ -14,14 +14,15 @@ import {
   type VcsCache,
 } from "./types"
 import { canDisposeDirectory, pickDirectoriesToEvict } from "./eviction"
-import { useQueries, useQuery } from "@tanstack/solid-query"
+import { useQuery } from "@tanstack/solid-query"
 import { QueryOptionsApi } from "../server-sync"
 import { directoryKey, type DirectoryKey } from "./utils"
 import { NormalizedProviderListResponse } from "@redcode-ai/ui/context"
 
-// 260608 Red 当前进入的项目目录；只有它的 MCP query enabled→连接。
-//   首页列项目阶段一律不连（避免 N 项目 × M server 并发 spawn 风暴/黑窗），
-//   进项目时由 session 页 setActiveMcpDirectory 触发该实例自身的 MCP query 拉取（数据直接进 mcpQuery.data，面板可见）。
+// 260608 Red 当前进入的项目目录；只有它的 mcp/path/lsp/provider query enabled→连接
+//   （260706 扩到后三者，见下方 useQuery 注释）。首页列项目阶段一律不连
+//   （避免 N 项目 × M server 并发 spawn 风暴/黑窗——含 InstanceStore.load() 拉起的 LSP 子进程），
+//   进项目时由 session 页 setActiveMcpDirectory 触发这些 query 拉取（数据直接进各自 query.data，面板可见）。
 const [activeMcpDirectory, setActiveMcpDirectory] = createSignal<string>("")
 export { setActiveMcpDirectory, activeMcpDirectory }
 
@@ -180,12 +181,23 @@ export function createChildStoreManager(input: {
           const initialMeta = meta[0].value
           const initialIcon = icon[0].value
 
-          const [pathQuery, lspQuery, providerQuery] = useQueries(() => ({
-            queries: [
-              input.queryOptions.path(key),
-              input.queryOptions.lsp(key),
-              input.queryOptions.providers(key),
-            ],
+          // 260706 Red path/lsp/provider 同 MCP 一样单列成独立 useQuery，不再混在 useQueries
+          //   批量 observer 里，理由同下方 260609 那条注释。更关键的是：/path /lsp /provider
+          //   三个端点都走 instance 路由，任何一个请求都会触发 InstanceStore.load() 拉起该目录
+          //   整套 LSP/watcher/VCS 子进程（capacity: Infinity，永不自动回收）。首页 Kanban 对
+          //   所有项目的所有 session 记录都建 child store，之前这三个 query 无条件发出，等于
+          //   打开首页不开任何对话就把所有项目的 LSP 全点着——只 gate mcpQuery 是不够的。
+          const pathQuery = useQuery(() => ({
+            ...input.queryOptions.path(key),
+            enabled: directoryKey(activeMcpDirectory()) === key,
+          }))
+          const lspQuery = useQuery(() => ({
+            ...input.queryOptions.lsp(key),
+            enabled: directoryKey(activeMcpDirectory()) === key,
+          }))
+          const providerQuery = useQuery(() => ({
+            ...input.queryOptions.providers(key),
+            enabled: directoryKey(activeMcpDirectory()) === key,
           }))
 
           // 260609 Red MCP 单列成独立 useQuery，不再混在 useQueries 批量 observer 里。
