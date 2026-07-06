@@ -1277,6 +1277,14 @@
 
 ## GUI
 
+### [0.6.22] - 2026-07-06
+
+> 补齐 global-sdk SSE 事件流的心跳 + 重连修复，与 server-sdk 保持一致。
+
+#### 修复
+
+- **global-sdk SSE 心跳/重连未同步修复**：0.6.19 仅修复了 `server-sdk.tsx` 的心跳竞态和重连策略，`global-sdk.tsx` 遗漏——心跳超时仍为 15s（应 30s）、重连仍为固定 250ms（应指数退避 256ms→2s）。深度思考超 15s 时 global-sdk 误判断连 → 固定 250ms 疯狂重连 → 刷新风暴 → 输出延迟数分钟。补齐：心跳 30s + 指数退避 + 成功重置（`global-sdk.tsx`）。
+
 ### [0.6.21] - 2026-07-05
 
 > 文档全仓扫描清理：修复 jcodemunch README 链接/命令、GitHub Action README OpenCode→RedCode 品牌重命名、glossary PR 引用改指上游。

@@ -45,7 +45,11 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
     type Queued = { directory: string; payload: Event }
     const FLUSH_FRAME_MS = 16
     const STREAM_YIELD_MS = 8
-    const RECONNECT_DELAY_MS = 250
+
+    // 260706 Red: 指数退避重连，与 server-sdk 保持一致，防止断连环刷新风暴
+    const RECONNECT_BASE_MS = 256
+    const RECONNECT_MAX_MS = 2000
+    let reconnectDelay = RECONNECT_BASE_MS
 
     let queue: Queued[] = []
     let buffer: Queued[] = []
@@ -106,7 +110,8 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
     let attempt: AbortController | undefined
     let run: Promise<void> | undefined
     let started = false
-    const HEARTBEAT_TIMEOUT_MS = 15_000
+    // 260706 Red: 30s 与 server-sdk 保持一致，防止深度思考时误判断连
+    const HEARTBEAT_TIMEOUT_MS = 30_000
     let lastEventAt = Date.now()
     let heartbeat: ReturnType<typeof setTimeout> | undefined
     let heartbeatGen = 0
@@ -152,6 +157,7 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
                 })
               },
             })
+            reconnectDelay = RECONNECT_BASE_MS
             let yielded = Date.now()
             resetHeartbeat()
             for await (const event of events.stream) {
@@ -200,7 +206,8 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
           }
 
           if (abort.signal.aborted || !started) return
-          await wait(RECONNECT_DELAY_MS)
+          await wait(Math.min(reconnectDelay, RECONNECT_MAX_MS))
+          reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS)
         }
       })().finally(() => {
         run = undefined
