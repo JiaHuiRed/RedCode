@@ -37,6 +37,14 @@
 ---
 
 ## TUI
+### [0.7.12] - 2026-07-06
+
+> Sidecar Event Loop 阻塞导致 GUI 断连 + 状态灯误报 Healthy + 输出一阵一阵慢。
+
+#### 修复
+
+- **Sidecar Event Loop 被同步操作长时间阻塞**（`message-v2.ts`、`prompt.ts`）：Agent 每步之间，`toModelMessagesEffect` 同步遍历历史消息、`structuredClone(msg.parts)` 深拷贝、`JSON.stringify(msgs)` token 估算连续执行，Event Loop 被阻塞 2–10s。期间 `Stream.tick("10 seconds")` 心跳发不出 → SSE 超时 abort（30s→90s 后仍可被堵超 30s 的步打断）、`/global/health` 健康检查 3s 超时→粉红 dot、AI 输出事件堆积→输出卡顿。在 `toUIMessages()` 后和 msgPin 循环每 10 条消息加 `yield* Effect.yieldNow`，让 Event Loop 在同步批处理间喘口气，处理积压的心跳和健康检查。
+
 ### [0.7.11] - 2026-07-06
 
 > 修复 GUI 成本显示偏低（tokens 覆盖 + 子代理成本未汇总）+ 前缀缓存命中率无法收敛到 97%+。
@@ -1315,6 +1323,15 @@
 ---
 
 ## GUI
+
+### [0.6.24] - 2026-07-06
+
+> 修复健康检查 3s 超时误报 unhealthy + SSE 心跳超时 30s→90s 配合 sidecar Event Loop 阻塞。
+
+#### 修复
+
+- **健康检查 `/global/health` 超时太短导致粉红 dot**（`server-health.ts`）：sidecar 繁忙时健康检查 3s 超时、连续 2 次失败即标 unhealthy，状态灯从绿变粉红。`defaultTimeoutMs` 3000→30000，给重型步骤间足够余量。
+- **SSE 心跳超时 30s→90s**（`global-sdk.tsx`、`server-sdk.tsx`）：配合 sidecar Event Loop 阻塞时长，90s 防止深度阻塞时的误断连。超时前保持连接存活，断链采用指数退避重连。
 
 ### [0.6.23] - 2026-07-06
 

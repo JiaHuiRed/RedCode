@@ -1327,6 +1327,10 @@ export const layer = Layer.effect(
                   _caches.msgPin.messages.set(mid, structuredClone(msg.parts))
                   cached++
                 }
+                // 260706 Red: periodic yield so event loop can serve heartbeat + health check
+                if ((pinned + cached) % 10 === 0) {
+                  yield* Effect.yieldNow
+                }
               }
             }
 

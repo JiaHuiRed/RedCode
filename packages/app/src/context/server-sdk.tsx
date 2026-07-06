@@ -99,8 +99,8 @@ function createServerSdkContext(server: ServerConnection.Any) {
   let attempt: AbortController | undefined
   let run: Promise<void> | undefined
   let started = false
-  // 260705 Red: 30s 给渲染阻塞留余量，防止 GPU/渲染忙时心跳超时断连
-  const HEARTBEAT_TIMEOUT_MS = 30_000
+  // 260706 Red: 90s — 实测 sidecar event loop 阻塞可 >30s（重请求处理），导致 Stream.tick 心跳延迟
+  const HEARTBEAT_TIMEOUT_MS = 90_000
   let lastEventAt = Date.now()
   let heartbeat: ReturnType<typeof setTimeout> | undefined
   let heartbeatGen = 0
@@ -200,6 +200,15 @@ function createServerSdkContext(server: ServerConnection.Any) {
         }
 
         if (abort.signal.aborted || !started) return
+
+        // 260706 Red: 记录断连原因
+        const sinceLastEvent = Date.now() - lastEventAt
+        console.warn("[server-sdk] stream ended, reconnecting", {
+          url: server.http.url,
+          sinceLastEventMs: sinceLastEvent,
+          exceededHeartbeat: sinceLastEvent > HEARTBEAT_TIMEOUT_MS,
+        })
+
         await wait(Math.min(reconnectDelay, RECONNECT_MAX_MS))
         reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS)
       }

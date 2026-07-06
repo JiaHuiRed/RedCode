@@ -930,6 +930,8 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
   options?: { stripMedia?: boolean; toolOutputMaxChars?: number },
 ) {
   const { messages, tools } = toUIMessages(input, model, options)
+  // 260706 Red: yield here so event loop can serve heartbeat + health check before next sync work
+  yield* Effect.yieldNow
   return yield* Effect.promise(() =>
     convertToModelMessages(
       messages.filter((msg) => msg.parts.some((part) => part.type !== "step-start")),

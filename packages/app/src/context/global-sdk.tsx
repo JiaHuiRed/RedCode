@@ -110,8 +110,8 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
     let attempt: AbortController | undefined
     let run: Promise<void> | undefined
     let started = false
-    // 260706 Red: 30s 与 server-sdk 保持一致，防止深度思考时误判断连
-    const HEARTBEAT_TIMEOUT_MS = 30_000
+    // 260706 Red: 90s — 实测 sidecar 在处理重请求时 event loop 可能阻塞 >30s，导致 Stream.tick 心跳无法按时发送
+    const HEARTBEAT_TIMEOUT_MS = 90_000
     let lastEventAt = Date.now()
     let heartbeat: ReturnType<typeof setTimeout> | undefined
     let heartbeatGen = 0
@@ -203,6 +203,16 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
             abort.signal.removeEventListener("abort", onAbort)
             attempt = undefined
             clearHeartbeat()
+          }
+
+          // 260706 Red: 记录断连原因，区分正常结束 vs 心跳超时 vs 网络错误
+          if (!abort.signal.aborted && started) {
+            const sinceLastEvent = Date.now() - lastEventAt
+            console.warn("[global-sdk] stream ended, reconnecting", {
+              url: currentServer.http.url,
+              sinceLastEventMs: sinceLastEvent,
+              exceededHeartbeat: sinceLastEvent > HEARTBEAT_TIMEOUT_MS,
+            })
           }
 
           if (abort.signal.aborted || !started) return
