@@ -9,6 +9,17 @@
 ---
 
 ## TUI
+### [0.7.11] - 2026-07-06
+
+> 修复 GUI 成本显示偏低（tokens 覆盖 + 子代理成本未汇总）+ 前缀缓存命中率无法收敛到 97%+。
+
+#### 修复
+
+- **message tokens 覆盖 bug**（`processor.ts`）：多 step assistant 消息的 `tokens` 字段用 `=` 覆盖而非 `+=` 累加，导致只保留最后一个 step 的数据。GUI 上下文面板据此汇总的缓存命中率被严重低估。改为与 `cost` 一致的逐字段累加。
+- **子代理成本未汇总**（`session-context-tab.tsx`、`session-context-usage.tsx`）：Task 工具创建的子 session LLM 成本未纳入父 session 面板"总成本"显示，导致金额偏低数倍。新增 `childCost` memo 遍历子 session 消息汇总。
+- **MCP 工具描述缓存/连接不一致**（`mcp/index.ts`）：`convertMcpToolCached` 曾追加 `[cached — not connected]` 后缀，MCP 服务器重连时描述变化打断前缀缓存。改为与 `convertMcpTool` 字节级一致，断线提示挪到 `execute()` 抛错。
+- **工具定义未缓存致前缀缓存命中率上不去**（`prompt.ts`）：`describeSkill()` 每步调 `Glob.scan()` 扫磁盘、`describeTask()` 每步读 agent 列表，是 system/messages/tools 三大前缀组件中唯一未做 per-session 缓存的。build agent 创建文件匹配 skill path 模式时 Skill 工具描述变化 → 工具 schema JSON 变化 → 整个前缀缓存失效。新增 `_caches.tools` 第一步缓存所有工具 description + inputSchema，后续步骤用缓存覆盖。
+
 ### [0.7.10] - 2026-07-05
 
 > 修复 DeepSeek 成本少报（miss 部分按 cache_hit 计费）。

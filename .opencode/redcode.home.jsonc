@@ -32,11 +32,6 @@
       "description": "把 Office/PDF 等非纯文本文档转 Markdown 供 LLM 读——read 读不了的二进制文档（.docx/.xlsx/.pptx/.pdf）用它提取文本；纯文本/代码仍用 read。",
       "enabled": true
     },
-    "semgrep": {
-      "type": "local",
-      "command": ["semgrep", "mcp"],
-      "enabled": false
-    },
     "browsermcp": {
       "type": "local",
       "command": ["node", "./browsermcp-server/index.js"],

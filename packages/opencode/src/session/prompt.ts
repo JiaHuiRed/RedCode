@@ -85,6 +85,10 @@ const _caches = (globalThis as any).__rc_prompt_caches ??= {
   system: undefined as { sessionID: string; skills: string | undefined; env: string[]; instructions: string[] } | undefined,
   msgPin: undefined as { sessionID: string; messages: Map<string, unknown[]> } | undefined,
   modelMsgs: undefined as { sessionID: string; messages: ModelMessage[] } | undefined,
+  // 260706 Red cache tool definitions (description+inputSchema) for prefix stability.
+  // describeSkill()/describeTask() rebuild tool descriptions from disk every step via Glob.scan;
+  // if skill/agent lists change mid-session the tool schema JSON mutates → prefix cache breaks.
+  tools: undefined as { sessionID: string; defs: Map<string, { description: string; inputSchema: unknown }> } | undefined,
 }
 const decodeMessageInfo = Schema.decodeUnknownExit(MessageV2.Info)
 const decodeMessagePart = Schema.decodeUnknownExit(MessageV2.Part)
@@ -1260,6 +1264,28 @@ export const layer = Layer.effect(
             // 260623 Red sort tool keys for deterministic serialization → stable DeepSeek prefix cache
             const sortedTools: typeof tools = {}
             for (const k of Object.keys(tools).sort()) sortedTools[k] = tools[k]
+
+            // 260706 Red cache tool definitions for prefix stability.
+            // registry.tools() calls describeSkill()/describeTask() every step, which read from disk
+            // (Glob.scan for skill path patterns) and agent state. If a build agent creates files
+            // matching skill patterns, the Skill tool description changes → tool schema JSON mutates →
+            // entire prefix cache breaks from the tool definitions onward (thousands of tokens).
+            // Fix: pin descriptions + schemas from the first step, overlay on subsequent steps.
+            if (_caches.tools?.sessionID === sessionID) {
+              for (const [k, t] of Object.entries(sortedTools)) {
+                const cached = _caches.tools.defs.get(k)
+                if (cached) {
+                  ;(t as any).description = cached.description
+                  ;(t as any).inputSchema = cached.inputSchema
+                }
+              }
+            } else {
+              const defs = new Map<string, { description: string; inputSchema: unknown }>()
+              for (const [k, t] of Object.entries(sortedTools)) {
+                defs.set(k, { description: (t as any).description, inputSchema: (t as any).inputSchema })
+              }
+              _caches.tools = { sessionID, defs }
+            }
 
             if (step === 1)
               yield* summary.summarize({ sessionID, messageID: lastUser.id }).pipe(Effect.ignore, Effect.forkIn(scope))

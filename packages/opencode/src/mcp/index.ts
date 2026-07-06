@@ -278,7 +278,11 @@ function convertMcpToolCached(mcpTool: MCPToolDef, serverName: string): Tool {
     additionalProperties: false,
   }
   return dynamicTool({
-    description: `${mcpTool.description ?? ""} [cached — ${serverName} is not connected]`,
+    // 260706 Red: description 必须与 convertMcpTool 保持字节级一致——MCP 连接状态在 session 内
+    // 抖动（断线重连/慢启动）时，同一工具会在 connected/cached 两个转换函数间切换，若 description
+    // 文案不同则 tool schema JSON 变化，打断 DeepSeek 前缀缓存（miss 从新增内容级变成整前缀级）。
+    // "not connected" 提示改放 execute() 抛出的 Error 里，反正断线时调用工具本就会失败。
+    description: mcpTool.description ?? "",
     inputSchema: jsonSchema(schema),
     execute: async () => {
       throw new Error(`MCP server "${serverName}" is not connected. Tools from disk cache are read-only.`)

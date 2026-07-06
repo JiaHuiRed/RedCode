@@ -130,9 +130,27 @@ export function SessionContextTab() {
   const ctx = createMemo(() => metrics().context)
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
 
+  // 260706 Red: 子代理(Task/Agent 工具)创建的子 session 的 LLM 调用成本在 DeepSeek 平台真实计费，
+  // 但原 metrics 只统计父 session 自身消息——面板显示"总成本"严重偏低。
+  // 通过 SSE 全局事件流同步到 store 的子 session 消息汇总其 cost 一并显示。
+  const childCost = createMemo(() => {
+    const id = params.id
+    if (!id) return 0
+    let total = 0
+    for (const s of sync.data.session) {
+      if (s.parentID !== id) continue
+      const msgs = sync.data.message[s.id]
+      if (!msgs) continue
+      for (const m of msgs) {
+        if (m.role === "assistant") total += m.cost
+      }
+    }
+    return total
+  })
+
   const cost = createMemo(() => {
     const m = metrics()
-    return formatter().cost(m.totalCost, m.costCurrency)
+    return formatter().cost(m.totalCost + childCost(), m.costCurrency)
   })
 
   const counts = createMemo(() => {

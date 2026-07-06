@@ -49,9 +49,24 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
 
   const metrics = createMemo(() => getSessionContextMetrics(messages(), [...providers.all().values()]))
   const context = createMemo(() => metrics().context)
+  // 260706 Red: 子代理 cost 汇总（与 session-context-tab 保持一致）
+  const childCost = createMemo(() => {
+    const id = params.id
+    if (!id) return 0
+    let total = 0
+    for (const s of sync.data.session) {
+      if (s.parentID !== id) continue
+      const msgs = sync.data.message[s.id]
+      if (!msgs) continue
+      for (const m of msgs) {
+        if (m.role === "assistant") total += m.cost
+      }
+    }
+    return total
+  })
   const cost = createMemo(() => {
     const m = metrics()
-    return formatter().cost(m.totalCost, m.costCurrency)
+    return formatter().cost(m.totalCost + childCost(), m.costCurrency)
   })
 
   const openContext = () => {

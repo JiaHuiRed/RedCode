@@ -601,7 +601,22 @@ export const layer = Layer.effect(
             }
             ctx.assistantMessage.finish = value.reason
             ctx.assistantMessage.cost += usage.cost
-            ctx.assistantMessage.tokens = usage.tokens
+            // 260706 Red: 消息级 tokens 必须像 cost 一样跨 step 累加——一次 assistant 消息可能含多个
+            // agentic step（每次工具调用往返算一个 step），此前直接覆盖导致只保留最后一个 step 的数据，
+            // 早期 step 的 tokens/cache 读写数字全部丢失。GUI 上下文面板据此汇总缓存命中率，
+            // 会和真实累加的 cost 对不上账（cost 正确但 tokens/缓存命中率被严重低估）。
+            const prevTokens = ctx.assistantMessage.tokens
+            ctx.assistantMessage.tokens = {
+              total: (prevTokens.total ?? 0) + (usage.tokens.total ?? 0),
+              input: prevTokens.input + usage.tokens.input,
+              output: prevTokens.output + usage.tokens.output,
+              reasoning: prevTokens.reasoning + usage.tokens.reasoning,
+              cache: {
+                read: prevTokens.cache.read + usage.tokens.cache.read,
+                write: prevTokens.cache.write + usage.tokens.cache.write,
+                miss: (prevTokens.cache.miss ?? 0) + (usage.tokens.cache.miss ?? 0),
+              },
+            }
             yield* session.updatePart({
               id: PartID.ascending(),
               reason: value.reason,
