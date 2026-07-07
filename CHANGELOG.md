@@ -37,6 +37,19 @@
 ---
 
 ## TUI
+### [0.7.15] - 2026-07-07
+
+> 新增 `redcode doctor` 诊断命令 + 修复 Windows 下 MCP stdio 子进程导致进程无法退出。
+
+#### 新增
+
+- **`redcode doctor` 诊断命令**（`src/cli/cmd/doctor.ts`、`src/index.ts`）：新增 `doctor` 子命令，对 TUI 运行环境做 6 项快速自检（version / config / providers / plugins / mcp / database），`--json` 可输出机器可读结果。命令注册在 CLI 入口，`instance: false` 已移除，走正常 project instance 上下文。
+
+#### 修复
+
+- **Windows 下 MCP stdio 子进程阻塞进程退出**（`src/mcp/index.ts`）：Windows 上 `StdioClientTransport.close()` 等待的 `close` 事件在 console 子进程场景下可能永远不触发，导致 `redcode doctor` 等一次性命令执行后进程挂起不退出。在 `win32` 平台对 `StdioClientTransport` 的 `close()` 做 override，先 `killProcessTree(pid)` 强制清理子进程树，再调用原始 close。
+- **dispose 无超时保护可无限挂起**（`src/effect/instance-registry.ts`）：`disposeInstance()` 原来直接 `Promise.allSettled` 跑完所有 disposers，任一个卡住就会让整个命令 hang 住。新增 5 秒 `Promise.race` 超时，超时后直接返回，防止单点 disposer 拖垮整个退出流程。
+
 ### [0.7.14] - 2026-07-07
 
 > 修复 DeepSeek 计费金额偏低 + 缓存命中率虚高（99% 显示 vs 官方结算 ~96%）。

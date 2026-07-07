@@ -36,6 +36,7 @@ import { JsonMigration } from "@/storage/json-migration"
 import { Database } from "@/storage/db"
 import { errorMessage } from "./util/error"
 import { PluginCommand } from "./cli/cmd/plug"
+import { DoctorCommand } from "./cli/cmd/doctor"
 import { Heap } from "./cli/heap"
 import { drizzle } from "drizzle-orm/bun-sqlite"
 import { ensureProcessMetadata } from "@redcode-ai/core/util/redcode-process"
@@ -178,6 +179,7 @@ const cli = yargs(args)
   .command(SessionCommand)
   .command(PluginCommand)
   .command(DbCommand)
+  .command(DoctorCommand)
   .fail((msg, err) => {
     if (
       msg?.startsWith("Unknown argument") ||

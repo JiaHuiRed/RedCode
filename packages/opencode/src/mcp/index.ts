@@ -900,6 +900,23 @@ export const layer = Layer.effect(
           delete s.clients[name]
           return result.status
         }
+        // 260707 Red Windows: StdioClientTransport.close() waits for a 'close' event that
+        // may never fire on Windows (SIGTERM/SIGKILL unreliable for console processes),
+        // leaving the stdio subprocess alive and blocking process exit. Override close()
+        // to killProcessTree first, then attempt the original close.
+        if (process.platform === "win32") {
+          const transport = result.mcpClient.transport
+          if (transport instanceof StdioClientTransport) {
+            const originalClose = transport.close.bind(transport)
+            transport.close = async () => {
+              const pid = transport.pid
+              if (pid) {
+                try { await Effect.runPromise(killProcessTree(pid)) } catch {}
+              }
+              try { await originalClose() } catch {}
+            }
+          }
+        }
         return yield* storeClient(s, name, result.mcpClient, result.defs!, mcp.timeout)
       } finally {
         s.creating.delete(name)
