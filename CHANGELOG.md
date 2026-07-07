@@ -37,6 +37,15 @@
 ---
 
 ## TUI
+### [0.7.14] - 2026-07-07
+
+> 修复 DeepSeek 计费金额偏低 + 缓存命中率虚高（99% 显示 vs 官方结算 ~96%）。
+
+#### 修复
+
+- **[核心] DeepSeek/Xiaomi 官方 CNY 定价只在 `config.provider` 声明时才生效**（`provider.ts`）：CNY 价格表 patch 原来写在"用 config 扩展 models.dev 数据库"的循环里，只对 `redcode.jsonc` 里手写声明过的 provider 生效——纯靠 `auth login` 自动发现（不在 config 声明）的 DeepSeek 完全没打上官方 CNY 价目，直接落回 models.dev 的默认 USD 量级价格（`cache.write:0`），而 UI 侧一直假设"deepseek/xiaomi 的 cost 已经是 CNY"直接显示，导致实际花费被严重低估。改为对 models.dev 数据库无条件 patch，不再依赖用户是否在 config 里声明该 provider。
+- **缓存命中率公式 `sumMiss || sumWrite || sumInput` 的"三选一"掩盖了实际未命中量**（`prompt/index.tsx`、`sidebar/context.tsx`）：DeepSeek 的真实 miss/新鲜 token 有时会因为 SDK 响应用的是哪个原始 metadata 字段，被 `session.ts` 的缓存上限兜底逻辑错记进 `cache.write` 而非 `cache.miss`（`tokens.cache.miss` 按构造恒等于 `tokens.input`，与 `write` 从不重叠计数），旧公式用 `||` 优先取 `sumMiss`，正好选中了被"抽空"的那个残缺值，命中率虚高到 99%。改为 `sumRead + sumMiss + sumWrite` 直接求和，不再二选一漏记。
+
 ### [0.7.13] - 2026-07-07
 
 > 补全 sidecar Event Loop 阻塞的最后一个死角：`toUIMessages` 循环内部本身没有让出点。
@@ -1331,6 +1340,18 @@
 ---
 
 ## GUI
+
+### [0.6.26] - 2026-07-07
+
+> 同步 TUI 0.7.14 的缓存命中率公式修复到 GUI 侧（侧栏面板 + 首页看板环形图）+ 应用图标底色处理。
+
+#### 修复
+
+- **缓存命中率"三选一"公式漏记未命中量**（`session-context-metrics.ts`、`home-stats.tsx`）：与 TUI 侧同一根因（DeepSeek 真实 miss token 有时被记进 `cache.write` 而非 `cache.miss`），旧公式 `miss || write || input` 只取一个来源，命中率虚高。改为 `read + miss + write` 直接求和。
+
+#### 变更
+
+- **应用图标源图 `恶龙露比.ico` 去白底**：原图 alpha 通道全不透明，但 RGB 里带有编辑器"透明预览棋盘格"被烤死成实际像素的痕迹（浅灰/白交替）。按颜色阈值区分背景（灰白无色偏）与肚皮（暖白/奶油色，B 通道明显偏低）后抠图，背景变真透明，肚皮/牙齿/眼睛高光等浅色细节保留不受影响。
 
 ### [0.6.25] - 2026-07-07
 

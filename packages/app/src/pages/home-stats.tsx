@@ -45,8 +45,12 @@ function aggregateHomeStats(sessions: Session[]): HomeStats {
     input += t.input ?? 0
   }
 
+  // 260707 Red fix: same either/or fallback bug as session-context-metrics.ts — miss tokens can be
+  // mislabeled into cache.write for DeepSeek depending on which raw metadata field the SDK response
+  // populated. miss and write never double-count the same tokens (cache.miss === tokens.input by
+  // construction), so sum all three instead of picking one and silently dropping the rest.
   const miss = cacheMiss || input
-  const denom = cacheRead + (miss || cacheWrite || input)
+  const denom = cacheRead + miss + cacheWrite
   const cacheHitPct = denom > 0 && cacheRead > 0 ? Math.round((cacheRead / denom) * 10000) / 100 : null
 
   return { costCNY, cacheRead, cacheWrite, cacheMiss: miss, output, cacheHitPct }

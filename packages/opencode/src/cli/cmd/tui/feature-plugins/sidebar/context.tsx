@@ -72,22 +72,27 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     const modelInfo = prov?.models[last.modelID]
     const modelName = modelInfo?.name ?? last.modelID
     // 260612 Red session-aggregate cache rate (not last-turn-only which is always ~99%)
-    // 260614 Red fix: cache hit = read / (read + miss). For DeepSeek, cache.write=0
+    // 260614 Red: cache hit = read / (read + miss). For DeepSeek, cache.write=0
     // so use cache.miss from metadata directly; fallback to write, then to input for other providers.
-    let sumRead = 0, sumMiss = 0, sumWrite = 0, sumInput = 0
+    // 260707 Red fix: session.ts's DeepSeek cache-cap fallback (260705) can route the real
+    // miss/fresh tokens into cache.write instead of cache.miss depending on which raw metadata
+    // field the SDK response populated for a given step. miss and write never double-count the
+    // same tokens (tokens.cache.miss === tokens.input by construction in session.ts), so summing
+    // read+miss+write gives the true total instead of an either/or pick that silently drops
+    // whichever bucket the buggy path skipped — this was inflating hit% (e.g. 99% vs the real ~96%).
+    let sumRead = 0, sumMiss = 0, sumWrite = 0
     let sessionTotalInput = 0, sessionTotalOutput = 0, sessionTotalReasoning = 0
     for (const m of msg()) {
       if (m.role === "assistant") {
         sumRead += m.tokens.cache.read
         sumMiss += m.tokens.cache.miss ?? 0
         sumWrite += m.tokens.cache.write
-        sumInput += m.tokens.input
         sessionTotalInput += m.tokens.input
         sessionTotalOutput += m.tokens.output
         sessionTotalReasoning += m.tokens.reasoning
       }
     }
-    const cacheDenom = sumRead + (sumMiss || sumWrite || sumInput)
+    const cacheDenom = sumRead + sumMiss + sumWrite
     const cacheHit = cacheDenom > 0 && sumRead > 0 ? Math.round((sumRead / cacheDenom) * 1000) / 10 : null
     const sessionTotal = sessionTotalInput + sessionTotalOutput + sessionTotalReasoning + sumRead + sumWrite
     return {

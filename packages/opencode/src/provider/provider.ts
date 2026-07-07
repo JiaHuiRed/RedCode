@@ -1208,6 +1208,40 @@ export const layer = Layer.effect(
         const catalog = mapValues(modelsDev, fromModelsDevProvider)
         const database = mapValues(catalog, toPublicInfo)
 
+        // 260615 Red: Official CNY pricing for Chinese providers (¥ per million tokens).
+        // DeepSeek: https://api-docs.deepseek.com/zh-cn/quick_start/pricing
+        // Xiaomi MiMo: https://mimo.mi.com/docs/zh-CN/price/pay-as-you-go
+        const CNY_COST_FLASH = { input: 1, output: 2, cache: { read: 0.02, write: 1 } }
+        const CNY_COST_PRO = { input: 3, output: 6, cache: { read: 0.025, write: 3 } }
+        const CNY_PRICING: Record<string, Record<string, typeof CNY_COST_FLASH>> = {
+          deepseek: {
+            "deepseek-v4-flash": CNY_COST_FLASH,
+            "deepseek-v4-pro": CNY_COST_PRO,
+          },
+          xiaomi: {
+            "mimo-v2.5": CNY_COST_FLASH,
+            "mimo-v2.5-pro": CNY_COST_PRO,
+            "mimo-v2-omni": CNY_COST_FLASH,
+            "mimo-v2-pro": CNY_COST_PRO,
+          },
+        }
+        // 260707 Red: apply CNY pricing directly on the models.dev-sourced database,
+        // independent of whether the user declares "deepseek"/"xiaomi" under config.provider.
+        // Previously this override only ran inside the "extend database from config" loop
+        // below, which iterates cfg.provider entries — providers set up purely via `auth login`
+        // (no config.provider block) never got patched and silently fell back to models.dev's
+        // USD-scale pricing while the UI (session-context-metrics.ts/context.tsx) still assumed
+        // "deepseek/xiaomi cost is already CNY", displaying the raw USD number as if it were ¥.
+        for (const [providerID, models] of Object.entries(CNY_PRICING)) {
+          const provider = database[providerID as ProviderID]
+          if (!provider) continue
+          for (const [modelID, cnyCost] of Object.entries(models)) {
+            const model = provider.models[modelID]
+            if (!model) continue
+            model.cost = { ...cnyCost, currency: "CNY" as const }
+          }
+        }
+
         const providers: Record<ProviderID, Info> = {} as Record<ProviderID, Info>
         const languages = new Map<string, LanguageModelV3>()
         const modelLoaders: {
@@ -1282,24 +1316,6 @@ export const layer = Layer.effect(
               ]),
             )
           })
-        }
-
-        // 260615 Red: Official CNY pricing for Chinese providers (¥ per million tokens).
-        // DeepSeek: https://api-docs.deepseek.com/zh-cn/quick_start/pricing
-        // Xiaomi MiMo: https://mimo.mi.com/docs/zh-CN/price/pay-as-you-go
-        const CNY_COST_FLASH = { input: 1, output: 2, cache: { read: 0.02, write: 1 } }
-        const CNY_COST_PRO = { input: 3, output: 6, cache: { read: 0.025, write: 3 } }
-        const CNY_PRICING: Record<string, Record<string, typeof CNY_COST_FLASH>> = {
-          deepseek: {
-            "deepseek-v4-flash": CNY_COST_FLASH,
-            "deepseek-v4-pro": CNY_COST_PRO,
-          },
-          xiaomi: {
-            "mimo-v2.5": CNY_COST_FLASH,
-            "mimo-v2.5-pro": CNY_COST_PRO,
-            "mimo-v2-omni": CNY_COST_FLASH,
-            "mimo-v2-pro": CNY_COST_PRO,
-          },
         }
 
         // extend database from config

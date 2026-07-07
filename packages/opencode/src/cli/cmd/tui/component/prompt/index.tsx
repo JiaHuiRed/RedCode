@@ -334,19 +334,23 @@ export function Prompt(props: PromptProps) {
     if (!props.sessionID) return
     const msg = sync.data.message[props.sessionID] ?? []
     // 260612 Red session-aggregate cache rate (not last-turn-only which is always ~99%)
-    // 260614 Red fix: cache hit = read / (read + miss). DeepSeek write=0 so use cache.miss.
-    // Fallback to input for providers that don't return miss metadata.
-    let sumRead = 0, sumMiss = 0, sumWrite = 0, sumInput = 0
+    // 260614 Red: cache hit = read / (read + miss). DeepSeek write=0 so use cache.miss.
+    // 260707 Red fix: session.ts's DeepSeek cache-cap fallback (260705) can route the real
+    // miss/fresh tokens into cache.write instead of cache.miss depending on which raw metadata
+    // field the SDK response populated for a given step. miss and write never double-count the
+    // same tokens (tokens.cache.miss === tokens.input by construction in session.ts), so summing
+    // read+miss+write gives the true total instead of an either/or pick that silently drops
+    // whichever bucket the buggy path skipped — this was inflating hit% (e.g. 99% vs the real ~96%).
+    let sumRead = 0, sumMiss = 0, sumWrite = 0
     for (const m of msg) {
       if (m.role === "assistant") {
         sumRead += m.tokens.cache.read
         sumMiss += m.tokens.cache.miss ?? 0
         sumWrite += m.tokens.cache.write
-        sumInput += m.tokens.input
       }
     }
     if (sumRead <= 0) return
-    const cacheDenom = sumRead + (sumMiss || sumWrite || sumInput)
+    const cacheDenom = sumRead + sumMiss + sumWrite
     const cacheHitPct = Math.round((sumRead / cacheDenom) * 10000) / 100
     const cacheMissPct = Math.round(((cacheDenom - sumRead) / cacheDenom) * 10000) / 100
     return { cacheHitPct, cacheMissPct }

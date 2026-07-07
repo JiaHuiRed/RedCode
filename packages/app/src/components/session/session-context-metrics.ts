@@ -92,18 +92,22 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
       cacheWrite: agg.cacheWrite,
       // 260612 Red session-aggregate cache rate (not last-turn-only which is always ~99%)
       // 260613 fix: denominator should only be cache-relevant tokens (read+write), not including fresh input
-      // 260615 fix: fallback to input for providers that don't return write/cache-miss metadata
+      // 260707 Red fix: session.ts's DeepSeek cache-cap fallback can route the real miss/fresh
+      // tokens into cache.write instead of cache.miss depending on which raw metadata field the
+      // SDK response populated for a given step. miss and write never double-count the same tokens
+      // (tokens.cache.miss === tokens.input by construction in session.ts), so summing read+miss+write
+      // gives the true total instead of an either/or pick that silently drops whichever bucket the
+      // buggy path skipped — this was inflating hit% (e.g. 99% vs the real ~96%).
       cacheHit: (() => {
-        let sumRead = 0, sumMiss = 0, sumWrite = 0, sumInput = 0
+        let sumRead = 0, sumMiss = 0, sumWrite = 0
         for (const m of messages) {
           if (m.role === "assistant") {
             sumRead += m.tokens.cache.read
             sumMiss += m.tokens.cache.miss ?? 0
             sumWrite += m.tokens.cache.write
-            sumInput += m.tokens.input
           }
         }
-        const denom = sumRead + (sumMiss || sumWrite || sumInput)
+        const denom = sumRead + sumMiss + sumWrite
         return denom > 0 && sumRead > 0 ? Math.round((sumRead / denom) * 10000) / 100 : null
       })(),
       total,
