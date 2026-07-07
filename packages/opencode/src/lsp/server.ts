@@ -113,6 +113,9 @@ export const Typescript: Info = {
     return {
       process: proc,
       initialization: {
+        // 260707 Red 大 TS monorepo 下 tsserver 无内存上限会涨到 2.5G+（实测吃掉小宋绝大部分内存）。
+        // maxTsServerMemory 会转成 tsserver 的 --max-old-space-size，超限时 typescript-language-server 自动重启它。
+        maxTsServerMemory: 2048,
         tsserver: {
           path: tsserver,
         },

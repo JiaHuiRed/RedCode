@@ -8,35 +8,17 @@
 
 ---
 
-## 待办
-
-### Electron → Tauri 迁移评估（性能/开销）— 2026-07-06 提出，尚未开始
-
-背景：0.6.23 修复的是应用层 bug（GUI 启动对所有历史项目全量拉起 MCP），**不是 Electron 框架本身的开销问题**——迁移 Tauri 不会自动解决这类 bug（同样的 sidecar/MCP 生成逻辑在 Tauri 下会原样复现）。下面的评估只针对"框架固定开销"这一块，不代表迁移能解决当前已知的所有内存问题。
-
-**预期收益（真实但有限）**：
-- 用系统自带 WebView2（Windows）代替内置 Chromium：去掉 Electron 常驻的 Browser(~190MB)+GPU(~110MB)+Network Service(~55MB) 三个进程，idle 基线内存预计从 ~500MB-1GB 降到 ~50-150MB。
-- 打包体积：Electron 产物约 227MB → Tauri 通常 10-20MB（不含 opencode server sidecar 本体）。
-- 启动速度：省掉 Chromium 冷启动，预计快数百 ms。
-
-**Tauri 解决不了的**：
-- MCP/LSP 子进程膨胀是 opencode server（sidecar）自身 `InstanceStore`/`bootstrap.run()` 的逻辑，跟前端框架无关，迁移后原样保留（除非把 0.6.23 这类修复同步移植）。
-- sidecar 架构需要改：现在 `sidecar.ts` 用 Electron `utilityProcess`（Node runtime）内联跑 opencode server；Tauri 没有对应的 Node utilityProcess，需要用 Tauri 的 `shell`/`command` API 把 opencode server 当独立子进程拉起（其实跟 `packages/opencode/dist/*.exe` 现有的独立可执行模式更接近，可能比现在 Electron 内联方式更干净）。
-
-**迁移成本盘点**（`packages/desktop/src/main/` 现状，需要重写/桥接的部分）：
-- IPC（`ipc.ts` + preload）→ Tauri `invoke`/`emit` 命令体系，全量重写。
-- 原生菜单/右键菜单（`menu.ts`、`electron-context-menu`）→ Tauri menu API，中文菜单项需重新实现。
-- 自动更新（`updater.ts`）→ Tauri updater 插件，签名/渠道机制不同，需重新配置。
-- 崩溃报告（Crashpad）→ Tauri 无内置等价物，需接第三方（如 sentry-tauri）或放弃。
-- 深链接（`redcode://`）、协议注册、单实例锁（`requestSingleInstanceLock`）→ Tauri 都有对应能力，需重新接线。
-- WSL 集成（`apps.ts` 的 `checkAppExists`/`wslPath`/`resolveAppPath`）、系统证书桥接等 Windows 专属逻辑 → 需要 Rust 或 sidecar 脚本重做。
-- `packages/app`（渲染层，SolidJS + Vite）本身跟 Electron/Tauri 无关，改动量小，是迁移里最不用担心的部分。
-
-**建议**：先在独立分支做最小 PoC（只跑通 sidecar 拉起 + 窗口显示 + 单实例锁），实测 idle 内存/进程数对比现有 Electron 版本，再决定是否值得投入主进程全量重写。
-
 ---
 
 ## TUI
+### [0.7.16] - 2026-07-07
+
+> 修复 LSP 的 tsserver 无内存上限、大 TS monorepo 下涨到 2.5G+ 吃掉 GUI 绝大部分内存。
+
+#### 修复
+
+- **[核心] TypeScript LSP 的 tsserver 无内存上限**（`lsp/server.ts`）：排查"小宋跑任务吃 2.5G 内存"时按父进程树实测，真凶既不是 Electron（renderer 仅 ~530MB）也不是 sidecar 本体（仅 ~276MB），而是 RedCode 内置 LSP 启动的 `typescript-language-server` 再 fork 出的 `tsserver.js`——它默认没有 `--max-old-space-size` 上限，在本仓这种大 TS monorepo 上把整个类型图加载进内存后一路涨到 2508MB，被任务管理器显示成一个"独立"的 Node.js JavaScript Runtime，之前一直被误判为 sidecar/消息缓存。给 `Typescript.spawn` 的 `initializationOptions` 加 `maxTsServerMemory: 2048`，typescript-language-server 会将其转成 tsserver 的 `--max-old-space-size` 并在超限时自动重启 tsserver，内存不再无限增长。
+
 ### [0.7.15] - 2026-07-07
 
 > 新增 `redcode doctor` 诊断命令 + 修复 Windows 下 MCP stdio 子进程导致进程无法退出。
@@ -1353,6 +1335,14 @@
 ---
 
 ## GUI
+
+### [0.6.27] - 2026-07-07
+
+> 同步引擎 tsserver 内存上限修复（实测为小宋内存主要来源），desktop 重新打包生效。
+
+#### 修复
+
+- **tsserver 无内存上限致小宋跑任务吃 2.5G+ 内存**（引擎 `lsp/server.ts`，随 desktop 重打包生效）：内存实测真凶是 LSP 启动的 tsserver（非 Electron 框架、非 sidecar 本体、非消息缓存）。引擎侧已加 `maxTsServerMemory: 2048` 上限（详见 TUI 0.7.16），超限自动重启 tsserver；GUI 随本次 desktop 重打包带上该修复。
 
 ### [0.6.26] - 2026-07-07
 
