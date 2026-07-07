@@ -1211,6 +1211,7 @@ export const layer = Layer.effect(
         // 260615 Red: Official CNY pricing for Chinese providers (¥ per million tokens).
         // DeepSeek: https://api-docs.deepseek.com/zh-cn/quick_start/pricing
         // Xiaomi MiMo: https://mimo.mi.com/docs/zh-CN/price/pay-as-you-go
+        // StepFun: https://platform.stepfun.com/docs/pricing
         const CNY_COST_FLASH = { input: 1, output: 2, cache: { read: 0.02, write: 1 } }
         const CNY_COST_PRO = { input: 3, output: 6, cache: { read: 0.025, write: 3 } }
         const CNY_PRICING: Record<string, Record<string, typeof CNY_COST_FLASH>> = {
@@ -1223,6 +1224,9 @@ export const layer = Layer.effect(
             "mimo-v2.5-pro": CNY_COST_PRO,
             "mimo-v2-omni": CNY_COST_FLASH,
             "mimo-v2-pro": CNY_COST_PRO,
+          },
+          stepfun: {
+            "step-3.7-flash": { input: 1.35, output: 8.1, cache: { read: 0.27, write: 1.35 } },
           },
         }
         // 260707 Red: apply CNY pricing directly on the models.dev-sourced database,

@@ -216,6 +216,9 @@ export const layer = Layer.effect(
               },
             },
           }),
+        ).pipe(
+          Effect.timeout("30 seconds"),
+          Effect.catch(() => Effect.succeed([])),
         )
         for (const load of loaded) {
           if (!load) continue

@@ -4,6 +4,10 @@ import type { InstanceContext } from "@/project/instance-context"
 import { InstanceRef, WorkspaceRef } from "./instance-ref"
 import { registerDisposer } from "./instance-registry"
 import { WorkspaceContext } from "@/control-plane/workspace-context"
+import { ProjectID } from "@/project/schema"
+import type { Project } from "@/project/project"
+import { Global } from "@redcode-ai/core/global"
+import path from "node:path"
 
 const TypeId = "~opencode/InstanceState"
 
@@ -12,9 +16,28 @@ export interface InstanceState<A, E = never, R = never> {
   readonly cache: ScopedCache.ScopedCache<string, A, E, R>
 }
 
+const fallbackContext = (): InstanceContext => {
+  const cwd = process.cwd()
+  const now = Date.now()
+  return {
+    directory: cwd,
+    worktree: cwd,
+    project: {
+      id: ProjectID.make(path.basename(cwd) || "fallback"),
+      worktree: cwd,
+      time: {
+        created: now,
+        updated: now,
+        initialized: now,
+      },
+      sandboxes: [],
+    } as Project.Info,
+  }
+}
+
 export const context = Effect.gen(function* () {
   const ctx = yield* InstanceRef
-  if (!ctx) return yield* Effect.die(new Error("InstanceRef not provided"))
+  if (!ctx) return fallbackContext()
   return ctx
 })
 

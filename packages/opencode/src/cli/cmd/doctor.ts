@@ -27,6 +27,8 @@ export const DoctorCommand = effectCmd({
       describe: "output as json",
       type: "boolean",
     }),
+  // Diagnostics should work without a full project instance; avoids bootstrap hang.
+  instance: false,
   handler: Effect.fn("Cli.doctor")(function* (args) {
     const checks: Check[] = []
 
@@ -47,8 +49,26 @@ export const DoctorCommand = effectCmd({
       checks.push({ name: "config", status: "error" as const, detail: errorMessage(error) })
     }
 
+    // 3. agents-md
+    const worktree = process.cwd()
+    const instructionFiles: string[] = []
+    if (fs.existsSync(path.join(Global.Path.home, ".redcode", "MEMORY.md"))) {
+      instructionFiles.push("global memory")
+    }
+    if (fs.existsSync(path.join(worktree, ".opencode", "AGENTS.md"))) {
+      instructionFiles.push("AGENTS.md")
+    }
+    if (fs.existsSync(path.join(worktree, ".redcode", "MEMORY.md"))) {
+      instructionFiles.push("project memory")
+    }
+    checks.push({
+      name: "agents-md",
+      status: instructionFiles.length > 0 ? "ok" : "warn",
+      detail: instructionFiles.length > 0 ? instructionFiles.join(", ") : "no instruction files",
+    })
+
     if (cfg) {
-      // 3. Providers
+      // 4. Providers
       try {
         const modelsDev = yield* ModelsDev.Service
         const database = yield* modelsDev.get()
@@ -61,20 +81,36 @@ export const DoctorCommand = effectCmd({
 
         const enabledProviders = cfg.enabled_providers ? new Set(cfg.enabled_providers) : undefined
         const disabledProviders = new Set(cfg.disabled_providers ?? [])
-        const availableCount = Object.entries(database).filter(([id]) =>
+        const allProviderIds = Object.keys(database)
+        const enabled = allProviderIds.filter((id) =>
           (enabledProviders ? enabledProviders.has(id) : true) && !disabledProviders.has(id),
-        ).length
+        )
+        const disabled = allProviderIds.filter((id) => disabledProviders.has(id))
+        const withAuth = enabled.filter((id) => credentials[id])
+        const withoutAuth = enabled.filter((id) => !credentials[id])
+        const totalModels = enabled.reduce((sum, id) => sum + Object.keys(database[id].models ?? {}).length, 0)
 
         checks.push({
           name: "providers",
-          status: "ok",
-          detail: `${availableCount} available, ${Object.keys(credentials).length} logged in`,
+          status: withoutAuth.length > 0 && enabled.length > 0 ? "warn" : "ok",
+          detail: `${enabled.length} enabled, ${disabled.length} disabled, ${withAuth.length} auth, ${totalModels} models`,
         })
       } catch (error) {
         checks.push({ name: "providers", status: "error", detail: errorMessage(error) })
       }
 
-      // 4. Plugins
+      // 5. api-key-leak
+      const plaintextKeys = Object.entries(cfg.provider ?? {}).filter(([, p]) => {
+        const key = p.options?.apiKey
+        return typeof key === "string" && key.length > 8 && key !== "public" && !key.startsWith("redcode-")
+      })
+      checks.push({
+        name: "api-key-leak",
+        status: plaintextKeys.length === 0 ? "ok" : "warn",
+        detail: plaintextKeys.length === 0 ? "no plaintext keys" : `${plaintextKeys.length} plaintext key(s) in config`,
+      })
+
+      // 6. Plugins
       try {
         const plugin = yield* Plugin.Service
         const plugins = yield* plugin.list()
@@ -87,7 +123,25 @@ export const DoctorCommand = effectCmd({
         checks.push({ name: "plugins", status: "warn", detail: `not loaded: ${errorMessage(error)}` })
       }
 
-      // 5. MCP
+      // 7. skill-coverage
+      const countSkillsInDir = (dir: string): number => {
+        if (!fs.existsSync(dir)) return 0
+        const entries = fs.readdirSync(dir, { withFileTypes: true })
+        return entries.filter((e) => e.isDirectory() && fs.existsSync(path.join(dir, e.name, "SKILL.md"))).length
+      }
+      const projectSkillCount = worktree
+        ? countSkillsInDir(path.join(worktree, ".opencode", "skills")) +
+          countSkillsInDir(path.join(worktree, ".opencode", "skill"))
+        : 0
+      const globalSkillCount = countSkillsInDir(path.join(Global.Path.home, ".redcode", "skill"))
+      const totalSkillCount = projectSkillCount + globalSkillCount
+      checks.push({
+        name: "skill-coverage",
+        status: totalSkillCount > 0 ? "ok" : "warn",
+        detail: `${totalSkillCount} skills (${projectSkillCount} project, ${globalSkillCount} global)`,
+      })
+
+      // 8. MCP
       try {
         const mcp = yield* MCP.Service
         const statuses = yield* mcp.status()
@@ -103,7 +157,7 @@ export const DoctorCommand = effectCmd({
       }
     }
 
-    // 6. Database
+    // 9. Database
     try {
       const dbPath = path.join(Global.Path.data, "redcode.db")
       const exists = fs.existsSync(dbPath)
@@ -117,7 +171,7 @@ export const DoctorCommand = effectCmd({
     }
 
     if (args.json) {
-      Console.log(JSON.stringify(checks, null, 2))
+      yield* Console.log(JSON.stringify(checks, null, 2))
       return
     }
 
@@ -129,13 +183,13 @@ export const DoctorCommand = effectCmd({
       return `│${label}${" ".repeat(padding)}${value} │`
     }
 
-    Console.log("┌────────────────────────────────────────────────────────┐")
-    Console.log("│                    REDCODE DOCTOR                      │")
-    Console.log("├────────────────────────────────────────────────────────┤")
+    yield* Console.log("┌────────────────────────────────────────────────────────┐")
+    yield* Console.log("│                    REDCODE DOCTOR                      │")
+    yield* Console.log("├────────────────────────────────────────────────────────┤")
     for (const check of checks) {
       const icon = check.status === "ok" ? "✓" : check.status === "warn" ? "!" : "✗"
-      Console.log(renderRow(`${icon} ${check.name}`, check.detail))
+      yield* Console.log(renderRow(`${icon} ${check.name}`, check.detail))
     }
-    Console.log("└────────────────────────────────────────────────────────┘")
+    yield* Console.log("└────────────────────────────────────────────────────────┘")
   }),
 })

@@ -19,6 +19,15 @@
 
 - **[核心] TypeScript LSP 的 tsserver 无内存上限**（`lsp/server.ts`）：排查"小宋跑任务吃 2.5G 内存"时按父进程树实测，真凶既不是 Electron（renderer 仅 ~530MB）也不是 sidecar 本体（仅 ~276MB），而是 RedCode 内置 LSP 启动的 `typescript-language-server` 再 fork 出的 `tsserver.js`——它默认没有 `--max-old-space-size` 上限，在本仓这种大 TS monorepo 上把整个类型图加载进内存后一路涨到 2508MB，被任务管理器显示成一个"独立"的 Node.js JavaScript Runtime，之前一直被误判为 sidecar/消息缓存。给 `Typescript.spawn` 的 `initializationOptions` 加 `maxTsServerMemory: 2048`，typescript-language-server 会将其转成 tsserver 的 `--max-old-space-size` 并在超限时自动重启 tsserver，内存不再无限增长。
 
+### [0.7.17] - 2026-07-07
+
+> 修复 `redcode doctor` 一次性命令在 Windows 下无法退出 + StepFun `step-3.7-flash` 价格显示为 USD 而非官方 CNY。
+
+#### 修复
+
+- **`redcode doctor` 因 `InstanceRef` 缺失而 die**（`instance-state.ts`）：`doctor` 命令使用 `instance: false` 避免 full bootstrap，但 `Config.Service` 内部走 `InstanceState.make` 时需要 `InstanceRef`，没有时直接 die 导致进程挂起。新增 `fallbackContext()` 函数在 `InstanceRef` 缺失时合成 minimal `InstanceContext`，`doctor` 现在无需 project instance 即可正常运行。
+- **StepFun `step-3.7-flash` 价格显示为 USD 数值而非官方 CNY**（`provider.ts`）：models.dev 返回的是 USD 价格（input $0.2/M, output $1.15/M），但 UI 侧对 `stepfun` provider 未做 CNY 转换，导致价格被当成人民币显示。给 `CNY_PRICING` 添加 StepFun 官方 CNY 定价（input ¥1.35/M, output ¥8.1/M, cache_read ¥0.27/M），同时在 sidebar `CNY_PROVIDERS` 中加入 `stepfun`。
+
 ### [0.7.15] - 2026-07-07
 
 > 新增 `redcode doctor` 诊断命令 + 修复 Windows 下 MCP stdio 子进程导致进程无法退出。
