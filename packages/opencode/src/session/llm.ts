@@ -312,7 +312,6 @@ const live: Layer.Layer<
           // AI SDK 6.x 检测到 system role 会 console.warn，显式置 true 关掉告警。
           // 260707 Red: 上一版误删了下面这行当"stale"，但装的 ai 包类型确实没导出这个
           // 属性（node_modules/ai/dist/*.d.ts 里 grep 不到），删掉就 typecheck 报错，加回来。
-          // @ts-expect-error — AI SDK 6.x 类型未导出此属性，运行时有效
           allowSystemInMessages: true,
           messages: prepared.messages,
           model: wrapLanguageModel({
@@ -403,3 +402,4 @@ export const defaultLayer = Layer.suspend(() =>
 export const hasToolCalls = LLMRequestPrep.hasToolCalls
 
 export * as LLM from "./llm"
+
