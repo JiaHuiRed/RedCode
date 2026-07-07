@@ -50,8 +50,7 @@
     "vision": {
       "type": "local",
       "command": ["vision-mcp-server"],
-      "environment": { "VISION_BASE_URL": "http://localhost:11434/v1/chat/completions", "VISION_MODEL": "minicpm-v4.5:q5_K_M" },
-      "description": "图像理解——当前模型非多模态、需看截图/图片内容时用（走本地 qwen3-vl）；纯文本任务不用。",
+      "description": "图像理解——当前模型非多模态、需看截图/图片内容时用（走本地 minicpm-v4.5）；纯文本任务不用。",
       "enabled": true
     },
     "su-prememory": {
@@ -92,7 +91,8 @@
       "enabled": true
     }
   },
-  "lsp": true,
+  "disabled_providers": ["ollama-cloud"],
+  "small_model": "ollama/ornith:9b-q8_0",
   "compaction": { "threshold": 150000 },
   "tools": { "github-triage": false, "github-pr-search": false },
   "provider": {
@@ -114,6 +114,34 @@
     "stepfun": {
       "options": { "baseURL": "https://api.stepfun.com/step_plan/v1", "apiKey": "5LD8KOXu9M4vwqFrrcvrQxGtWStJ2aSQxqPgaiXlZIi1cFtzpDVswHHrq63UHV7Jc" },
       "models": { "step-3.7-flash": { "name": "Step 3.7 Flash" } }
+    },
+    "ollama": {
+      "options": { "baseURL": "http://localhost:11434/v1" },
+      "models": {
+        "ornith:35b-q4_K_M": {
+          "name": "Ornith 35B",
+          "temperature": true,
+          "reasoning": true,
+          "tool_call": true,
+          "limit": { "context": 131072, "output": 131072 }
+        },
+        "ornith:9b-q8_0": {
+          "name": "Ornith 9B",
+          "temperature": true,
+          "reasoning": true,
+          "tool_call": true,
+          "limit": { "context": 131072, "output": 131072 }
+        },
+        "minicpm-v4.5:q5_K_M": {
+          "name": "MiniCPM V4.5",
+          "temperature": true,
+          "reasoning": false,
+          "tool_call": false,
+          "attachment": true,
+          "modalities": { "input": ["text", "image"], "output": ["text"] },
+          "limit": { "context": 131072, "output": 131072 }
+        }
+      }
     }
   }
 }

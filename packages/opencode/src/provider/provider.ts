@@ -1071,6 +1071,12 @@ function cost(c: ModelsDev.Model["cost"]): Model["cost"] {
   return result
 }
 
+ // 260707 Red: models.dev / OpenRouter occasionally report stale context windows.
+ // Hard overrides for models whose real context is larger than what the registry returns.
+ const CONTEXT_OVERRIDES: Record<string, number> = {
+   "THUDM/GLM-4-9B-0414": 128_000,
+ }
+
 function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model): Model {
   const base: Model = {
     id: ModelID.make(model.id),
@@ -1086,11 +1092,11 @@ function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model
     headers: {},
     options: {},
     cost: cost(model.cost),
-    limit: {
-      context: model.limit.context,
-      input: model.limit.input,
-      output: model.limit.output,
-    },
+     limit: {
+       context: CONTEXT_OVERRIDES[model.id] ?? model.limit.context,
+       input: model.limit.input,
+       output: model.limit.output,
+     },
     capabilities: {
       temperature: model.temperature ?? false,
       reasoning: model.reasoning ?? false,

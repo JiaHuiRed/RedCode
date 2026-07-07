@@ -1293,6 +1293,28 @@ test("models.dev normalization fills required response fields", () => {
   expect(model.release_date).toBe("")
 })
 
+ test("models.dev normalization applies context override for stale registry data", () => {
+   const provider = {
+     id: "openrouter",
+     name: "OpenRouter",
+     env: [],
+     models: {
+       "THUDM/GLM-4-9B-0414": {
+         id: "THUDM/GLM-4-9B-0414",
+         name: "GLM 4 9B 0414",
+         family: "glm",
+         cost: { input: 0.2, output: 0.2 },
+         limit: { context: 8192, input: 8192, output: 8000 },
+       },
+     },
+   } as unknown as ModelsDev.Provider
+
+   const model = Provider.fromModelsDevProvider(provider).models["THUDM/GLM-4-9B-0414"]
+   expect(model.limit.context).toBe(128_000)
+   expect(model.limit.input).toBe(8192)
+   expect(model.limit.output).toBe(8000)
+ })
+
 it.instance("model variants are generated for reasoning models", () =>
   Effect.gen(function* () {
     yield* set("ANTHROPIC_API_KEY", "test-api-key")
