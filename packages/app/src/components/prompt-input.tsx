@@ -48,6 +48,7 @@ import { usePlatform } from "@/context/platform"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { createTextFragment, getCursorPosition, setCursorPosition, setRangeEdge } from "./prompt-input/editor-dom"
+import { findHistorySuggestion } from "./prompt-input/suggestion"
 import { createPromptAttachments } from "./prompt-input/attachments"
 import { ACCEPTED_FILE_TYPES } from "./prompt-input/files"
 import {
@@ -555,6 +556,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const handleBlur = () => {
     closePopover()
     setComposing(false)
+    clearGhost()
   }
 
   const handleCompositionStart = () => {
@@ -567,6 +569,56 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       if (composing()) return
       reconcile(prompt.current().filter((part) => part.type !== "image"))
     })
+  }
+
+  // 260707 Red ghost 补全（历史前缀 inline 建议，fish/zsh-autosuggestions 风格）：
+  // 在文末光标之后插入不可编辑、不计长度的灰字节点；→/End/Tab 接受，任意输入清除。
+  const clearGhost = () => {
+    editorRef?.querySelectorAll("[data-ghost]").forEach((el) => el.remove())
+  }
+
+  const ghostSuffix = () => editorRef?.querySelector("[data-ghost]")?.textContent ?? ""
+
+  const applyGhost = (suffix: string) => {
+    clearGhost()
+    if (!suffix) return
+    const span = document.createElement("span")
+    span.dataset.ghost = "true"
+    span.setAttribute("contenteditable", "false")
+    span.className = "opacity-40 pointer-events-none select-none"
+    span.textContent = suffix
+    editorRef.appendChild(span)
+  }
+
+  const updateGhost = () => {
+    clearGhost()
+    if (store.mode !== "normal" || store.popover || store.historyIndex >= 0 || composing()) return
+    const parts = prompt.current().filter((part) => part.type !== "image")
+    if (parts.some((part) => part.type !== "text")) return
+    const text = parts.map((part) => ("content" in part ? part.content : "")).join("")
+    if (!text || text.includes("\n")) return
+    const { collapsed, cursorPosition } = getCaretState()
+    if (!collapsed || cursorPosition !== text.length) return
+    const suffix = findHistorySuggestion(history.entries, text)
+    if (suffix) applyGhost(suffix)
+  }
+
+  const acceptGhost = () => {
+    const suffix = ghostSuffix()
+    if (!suffix) return false
+    clearGhost()
+    const text = prompt
+      .current()
+      .filter((part) => part.type !== "image")
+      .map((part) => ("content" in part ? part.content : ""))
+      .join("")
+    const full = text + suffix
+    mirror.input = true
+    prompt.set([{ type: "text", content: full, start: 0, end: full.length }], full.length)
+    setEditorText(full)
+    setCursorPosition(editorRef, full.length)
+    resetHistoryNavigation()
+    return true
   }
 
   const agentList = createMemo(() =>
@@ -708,6 +760,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       }
       if (node.nodeType !== Node.ELEMENT_NODE) return false
       const el = node as HTMLElement
+      if (el.dataset.ghost === "true") return true
       if (el.dataset.type === "file") return true
       if (el.dataset.type === "agent") return true
       return el.tagName === "BR"
@@ -832,6 +885,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       if (node.nodeType !== Node.ELEMENT_NODE) return
 
       const el = node as HTMLElement
+      if (el.dataset.ghost === "true") return
       if (el.dataset.type === "file") {
         flushText()
         pushFile(el)
@@ -869,6 +923,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const handleInput = () => {
     clearSendError()
+    clearGhost()
     const rawParts = parseFromDOM()
     const images = imageAttachments()
     const cursorPosition = getCursorPosition(editorRef)
@@ -915,6 +970,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
     mirror.input = true
     prompt.set([...rawParts, ...images], cursorPosition)
+    updateGhost()
     queueScroll()
   }
 
@@ -1244,6 +1300,21 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         event.preventDefault()
       }
       return
+    }
+
+    // 260707 Red ghost 补全接受：→/End/Tab，仅当无 popover、光标塌缩落在文末且有 ghost 时。
+    if (!store.popover && (event.key === "ArrowRight" || event.key === "End" || event.key === "Tab")) {
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+        // fall through
+      } else if (ghostSuffix()) {
+        const { collapsed, cursorPosition, textLength } = getCaretState()
+        if (collapsed && cursorPosition === textLength) {
+          if (acceptGhost()) {
+            event.preventDefault()
+            return
+          }
+        }
+      }
     }
 
     if (event.key === "ArrowUp" || event.key === "ArrowDown") {

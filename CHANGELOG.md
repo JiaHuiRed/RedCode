@@ -1336,6 +1336,14 @@
 
 ## GUI
 
+### [0.6.28] - 2026-07-07
+
+> 输入框历史前缀 ghost 补全（fish/zsh-autosuggestions 风格）。
+
+#### 新增
+
+- **输入框 ghost 联想补全**（`prompt-input.tsx`、`prompt-input/editor-dom.ts`、新增 `prompt-input/suggestion.ts`）：正常模式下从最近历史里找第一条「纯文本、以当前输入为前缀、且更长」的记录，把超出部分作为灰字 ghost 内联显示在光标之后；`→`/`End`/`Tab` 接受，继续输入即刷新/清除。ghost 是不可编辑节点，光标长度记 0、不进 DOM 解析、不进提交，不影响 @ 文件/子代理 pill、换行、历史导航与 IME。
+
 ### [0.6.27] - 2026-07-07
 
 > 同步引擎 tsserver 内存上限修复（实测为小宋内存主要来源），desktop 重新打包生效。

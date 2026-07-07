@@ -27,12 +27,19 @@ export function createTextFragment(content: string): DocumentFragment {
   return fragment
 }
 
+// 260707 Red ghost 补全节点（inline 历史建议）不计入文本长度/光标偏移，光标永远落在它之前。
+function isGhostNode(node: Node): boolean {
+  return node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).dataset.ghost === "true"
+}
+
 export function getNodeLength(node: Node): number {
+  if (isGhostNode(node)) return 0
   if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).tagName === "BR") return 1
   return (node.textContent ?? "").replace(/\u200B/g, "").length
 }
 
 export function getTextLength(node: Node): number {
+  if (isGhostNode(node)) return 0
   if (node.nodeType === Node.TEXT_NODE) return (node.textContent ?? "").replace(/\u200B/g, "").length
   if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).tagName === "BR") return 1
   let length = 0
