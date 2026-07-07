@@ -86,10 +86,19 @@ function HomeDesign() {
     return [project.worktree, ...(project.sandboxes ?? [])]
   })
   const search = createMemo(() => state.search.trim())
+  // 260707 Red loadSessions() 对每个目录都是真实 session.list HTTP 请求——服务端
+  //   instance-context 中间件对任何带 directory 的路由都会触发该目录整套 InstanceStore.load()
+  //   (MCP/LSP/watcher 全起)，client 端的 {bootstrap:false} 只影响本地是否连 query，拦不住这个。
+  //   之前对 projectDirectories()（含全部 sandboxes/worktree）一次性 Promise.all 全部 loadSessions，
+  //   等于选中项目有几个 sandbox 就同时拉起几套完整 MCP/LSP 进程树——这是"打开即多目录内存/
+  //   进程风暴"里独立于 enrich()/titlebar 之外的第三个真正源头。首页只需要主 worktree 的
+  //   session 保证可见；sandbox 的 session 只在真被用户展开/进入时才应该真正 bootstrap，
+  //   这里改为只主动加载主 worktree，sandbox 一律 peek 只读缓存，不强制拉起。
   const sessionLoad = useQuery(() => ({
-    queryKey: ["home", "sessions", ...projectDirectories()] as const,
+    queryKey: ["home", "sessions", selectedProject()?.worktree] as const,
     queryFn: async () => {
-      await Promise.all(projectDirectories().map((directory) => sync.project.loadSessions(directory)))
+      const project = selectedProject()
+      if (project) await sync.project.loadSessions(project.worktree)
       return null
     },
   }))

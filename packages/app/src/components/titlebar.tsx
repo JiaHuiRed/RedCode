@@ -428,13 +428,17 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
     const base = mapArray(
       () => tabsStore,
       (tab) => {
-        const sync = globalSync.createDirSyncContext(tab.dir)
-        const session = sync.session.get(tab.sessionId)
+        // 260707 Red createDirSyncContext 内部走 child()（bootstrap:true + pinForOwner），
+        //   titlebar 对每个恢复的 tab 都建一份——每个 tab 目录都被强制整套 bootstrap 且
+        //   永久 pin 住（titlebar 常驻不销毁），是"打开即多目录内存/进程风暴"的真正源头之一。
+        //   这里只是要显示 title/status，peek 只读 store 即可，不需要话务/diff/todo 全套同步。
+        const [store] = globalSync.peek(tab.dir, { bootstrap: false })
+        const session = store.session.find((s) => s.id === tab.sessionId)
         if (!session) return null
         return {
           ...tab,
           info: session,
-          status: sync.data.session_status[tab.sessionId]?.type,
+          status: store.session_status[tab.sessionId]?.type,
         }
       },
     )

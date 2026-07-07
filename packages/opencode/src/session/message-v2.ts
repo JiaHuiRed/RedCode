@@ -646,11 +646,11 @@ export interface UIMessagesWithTools {
   tools: Record<string, { toModelOutput(modelOutput: { toolCallId: string; input: unknown; output: unknown }): unknown }>
 }
 
-export function toUIMessages(
+export const toUIMessages = Effect.fn("Message.toUIMessages")(function* (
   input: WithParts[],
   model: Provider.Model,
   options?: { stripMedia?: boolean; toolOutputMaxChars?: number },
-): UIMessagesWithTools {
+) {
   const result: UIMessage[] = []
   const toolNames = new Set<string>()
   // Track media from tool results that need to be injected as user messages
@@ -709,7 +709,14 @@ export function toUIMessages(
     return { type: "json", value: output as never }
   }
 
+  let processed = 0
   for (const msg of input) {
+    // 260707 Red toUIMessages 同步遍历全部历史消息（含 truncateToolOutput 等重活），
+    //   长会话下这个循环本身是一次性同步跑完、中间没有任何让出点——之前 260706 的
+    //   yieldNow 只加在循环外（调用前后/msgPin 里），拦不住这个循环内部本身的阻塞。
+    //   每处理 10 条消息让一次 Event Loop，避免长会话时心跳/健康检查被这里堵住。
+    processed++
+    if (processed % 10 === 0) yield* Effect.yieldNow
     if (msg.parts.length === 0) continue
 
     if (msg.info.role === "user") {
@@ -922,14 +929,14 @@ export function toUIMessages(
     messages: result,
     tools: Object.fromEntries(Array.from(toolNames).map((toolName) => [toolName, { toModelOutput }])),
   }
-}
+})
 
 export const toModelMessagesEffect = Effect.fnUntraced(function* (
   input: WithParts[],
   model: Provider.Model,
   options?: { stripMedia?: boolean; toolOutputMaxChars?: number },
 ) {
-  const { messages, tools } = toUIMessages(input, model, options)
+  const { messages, tools } = yield* toUIMessages(input, model, options)
   // 260706 Red: yield here so event loop can serve heartbeat + health check before next sync work
   yield* Effect.yieldNow
   return yield* Effect.promise(() =>

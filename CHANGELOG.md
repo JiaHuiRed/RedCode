@@ -37,6 +37,14 @@
 ---
 
 ## TUI
+### [0.7.13] - 2026-07-07
+
+> 补全 sidecar Event Loop 阻塞的最后一个死角：`toUIMessages` 循环内部本身没有让出点。
+
+#### 修复
+
+- **`toUIMessages()` 同步遍历全部历史消息、循环内部零让出**（`message-v2.ts`）：0.7.12 的 `yieldNow` 只加在循环外（`toModelMessagesEffect` 调用前后、msgPin 里），拦不住 `toUIMessages` 这个 `for (const msg of input)` 循环本身——长会话下它一次性同步跑完（含 `truncateToolOutput` 等重活），Event Loop 仍被这一段独占，心跳/健康检查照样被堵。将 `toUIMessages` 从普通同步函数改为 `Effect.fn` 生成器，循环内每处理 10 条消息 `yield* Effect.yieldNow`，让批处理中途也能喘气；同步更新唯一调用点 `toModelMessagesEffect` 改为 `yield*`。
+
 ### [0.7.12] - 2026-07-06
 
 > Sidecar Event Loop 阻塞导致 GUI 断连 + 状态灯误报 Healthy + 输出一阵一阵慢。
@@ -1323,6 +1331,24 @@
 ---
 
 ## GUI
+
+### [0.6.25] - 2026-07-07
+
+> 根治"打开即多目录内存/进程风暴"的三个真正源头（0.6.23 只堵住了首页 loadSessions 那一路）+ 更换应用图标为恶龙露比。
+
+#### 修复
+
+- **[核心] `bootstrap` 触发判断恒假 → 任何一次 `{bootstrap:false}` 首触都永久锁死目录**（`child-store.ts`）：旧逻辑用 `childStore.status === "loading"` 决定是否二次 bootstrap，但 `status` 永远硬编码 `"complete"`，判断恒假——导致 `enrich()`/recentProjects 等对全部历史项目的 `{bootstrap:false}` 遍历一旦首次创建 store，就抢占了触发权，之后用户真正进入项目（`{bootstrap:true}`）反而不再触发。改用显式 `bootstrapped: Set` 记录，bootstrap 触发与 store 创建彻底解耦：只在"从未真正 bootstrap 过"且调用方要 bootstrap 时触发且仅一次。
+- **`enrich()` 用 `child()` 把每个历史项目永久 pin 住**（`layout.tsx`）：`child()` 无条件 `pinForOwner`，而 `enrich()` 跑在 layout 根 owner 里永不 cleanup，等于把每个历史项目永久 pin——0.6.23"重连只刷新 pinned 目录"的过滤形同虚设，还是会把全部历史项目重新 bootstrap。改为 `peek()`（只读、不 pin）。
+- **titlebar 对每个恢复的 tab `createDirSyncContext` → 整套 bootstrap + 永久 pin**（`titlebar.tsx`）：`createDirSyncContext` 内部走 `child()`（`bootstrap:true` + pinForOwner），titlebar 常驻不销毁，每个 tab 目录都被强制拉起整套 MCP/LSP 且永久 pin。titlebar 只需显示 title/status，改为 `peek({bootstrap:false})` 只读 store。
+- **首页对选中项目的全部 sandbox 一次性 `loadSessions`**（`home.tsx`）：`loadSessions` 是真实 `session.list` HTTP，服务端 instance-context 中间件对任何带 directory 的路由都会触发该目录整套 `InstanceStore.load()`（client 端 `{bootstrap:false}` 拦不住服务端）。旧代码对 `projectDirectories()`（含全部 sandboxes）`Promise.all` 全量拉起，有几个 sandbox 就同时起几套完整进程树。改为只主动加载主 worktree 的 session，sandbox 只在真被展开/进入时才 bootstrap。
+- **启动时对 N 个历史项目自动配色 → 逐一 `project.update` 触发服务端 bootstrap**（`layout.tsx`）：`project.update` 走 instance-context 中间件，每个 directory 都触发 `InstanceStore.load()`。改为统一走 `projectMeta`（bootstrap:false）只在本地缓存颜色，用户真正进入项目时再由正常流程同步到服务端。
+- **`projectMeta()`/`projectIcon()` 写入触发整套 bootstrap**（`child-store.ts`）：元数据/图标写入本不需要拉起 MCP/LSP/watcher，改为 `ensureChild(dir, { bootstrap: false })`。
+- **`dialog-select-directory` 用 `child()` 锁住历史目录**（`dialog-select-directory.tsx`）：同 enrich，改 `peek({bootstrap:false})` 避免 pinForOwner 永久锁住历史项目致重连重新 bootstrap。
+
+#### 变更
+
+- **应用图标更换为恶龙露比**（`icons/{dev,beta,prod}/icon.ico`）：任务栏图标 + 安装包/文件夹图标统一。源图内部为单帧非正方形 PNG，已重打为 16/24/32/48/64/128/256 七帧多分辨率正方形 ico，满足 electron-builder 与 Windows 任务栏要求。
 
 ### [0.6.24] - 2026-07-06
 

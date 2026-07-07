@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "version": "0.7.12",
+  "version": "0.7.13",
   "name": "redcode",
   "type": "module",
   "license": "MIT",

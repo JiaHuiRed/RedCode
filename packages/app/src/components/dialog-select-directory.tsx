@@ -286,7 +286,9 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
       let at = 0
       const dirs = [project.worktree, ...(project.sandboxes ?? [])]
       for (const directory of dirs) {
-        const sessions = sync.child(directory, { bootstrap: false })[0].session
+        // 260707 Red 同 layout.tsx enrich()：用 peek 避免 child() 的 pinForOwner
+        // 永久锁住历史项目目录，致重连刷新把它们全部重新 bootstrap
+        const sessions = sync.peek(directory, { bootstrap: false })[0].session
         for (const session of sessions) {
           if (session.time.archived) continue
           const updated = session.time.updated ?? session.time.created

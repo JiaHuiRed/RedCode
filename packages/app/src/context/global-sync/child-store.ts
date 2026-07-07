@@ -46,6 +46,12 @@ export function createChildStoreManager(input: {
   const pins = new Map<string, number>()
   const ownerPins = new WeakMap<object, Set<string>>()
   const disposers = new Map<string, () => void>()
+  // 260707 Red 记录已真正触发过 bootstrap 的目录。之前用 childStore.status === "loading"
+  //   做二次触发判断，但 status 永远硬编码 "complete"，判断恒假——导致任何一次
+  //   {bootstrap:false} 首触（如 enrich()/recentProjects 对全部历史项目遍历）都会
+  //   永久锁死该目录，后续哪怕带 {bootstrap:true} 真正进入项目也不再触发。
+  //   改用显式 Set 记录，仅在"从未真正 bootstrap 过"且调用方要 bootstrap 时触发。
+  const bootstrapped = new Set<string>()
 
   const markKey = (key: DirectoryKey) => {
     if (!key) return
@@ -117,6 +123,7 @@ export function createChildStoreManager(input: {
     metaCache.delete(key)
     iconCache.delete(key)
     lifecycle.delete(key)
+    bootstrapped.delete(key)
     const dispose = disposers.get(key)
     if (dispose) {
       dispose()
@@ -144,7 +151,7 @@ export function createChildStoreManager(input: {
     }
   }
 
-  function ensureChild(directory: string) {
+  function ensureChild(directory: string, options: ChildOptions = {}) {
     const key = directoryKey(directory)
     if (!key) console.error("No directory provided")
     if (!children[key]) {
@@ -298,41 +305,37 @@ export function createChildStoreManager(input: {
         })
 
       runWithOwner(input.owner, init)
-      // 260606 Red 确保新建 child store 触发 bootstrap。status 硬编码 "complete"
-      // 不走 status === "loading" 路径，事件路径也可能错过新目录。在 ensureChild
-      // 嵌套调用中 children[key] 已存在，此回调不会重复触发。
-      input.onBootstrap(directory)
     }
     markKey(key)
     const childStore = children[key]
     if (!childStore) throw new Error(input.translate("error.childStore.storeCreateFailed"))
+    // 260707 Red bootstrap 触发与 store 创建解耦：只要调用方要 bootstrap(默认 true)
+    // 且该目录从未真正 bootstrap 过，就触发，且仅触发一次——不管这是不是首次创建 store。
+    // 这样 enrich()/recentProjects 等 {bootstrap:false} 的遍历不会抢占触发权，
+    // 之后用户真正进入项目时(默认 true 或显式 true)依然能正常拉起。
+    const shouldBootstrap = options.bootstrap ?? true
+    if (shouldBootstrap && !bootstrapped.has(key)) {
+      bootstrapped.add(key)
+      input.onBootstrap(directory)
+    }
     return childStore
   }
 
   function child(directory: string, options: ChildOptions = {}) {
     const key = directoryKey(directory)
-    const childStore = ensureChild(directory)
+    const childStore = ensureChild(directory, options)
     pinForOwner(key)
-    const shouldBootstrap = options.bootstrap ?? true
-    if (shouldBootstrap && childStore[0].status === "loading") {
-      input.onBootstrap(directory)
-    }
     return childStore
   }
 
   function peek(directory: string, options: ChildOptions = {}) {
-    const key = directoryKey(directory)
-    const childStore = ensureChild(directory)
-    const shouldBootstrap = options.bootstrap ?? true
-    if (shouldBootstrap && childStore[0].status === "loading") {
-      input.onBootstrap(directory)
-    }
-    return childStore
+    return ensureChild(directory, options)
   }
 
   function projectMeta(directory: string, patch: ProjectMeta) {
     const key = directoryKey(directory)
-    const [store, setStore] = ensureChild(directory)
+    // 260707 Red 元数据写入不需要拉起整套 MCP/LSP/watcher，用 bootstrap:false
+    const [store, setStore] = ensureChild(directory, { bootstrap: false })
     const cached = metaCache.get(key)
     if (!cached) return
     const previous = store.projectMeta ?? {}
@@ -350,7 +353,8 @@ export function createChildStoreManager(input: {
 
   function projectIcon(directory: string, value: string | undefined) {
     const key = directoryKey(directory)
-    const [store, setStore] = ensureChild(directory)
+    // 260707 Red 图标写入不需要拉起整套 MCP/LSP/watcher，用 bootstrap:false
+    const [store, setStore] = ensureChild(directory, { bootstrap: false })
     const cached = iconCache.get(key)
     if (!cached) return
     if (store.icon === value) return

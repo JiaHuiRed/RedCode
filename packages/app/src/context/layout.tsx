@@ -386,7 +386,10 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
     }
 
     function enrich(project: { worktree: string; expanded: boolean }) {
-      const [childStore] = globalSync.child(project.worktree, { bootstrap: false })
+      // 260707 Red 用 peek 而非 child：child() 无条件 pinForOwner，enrich() 跑在
+      // layout 根 owner 里永不 cleanup，等于把每个历史项目永久 pin 住——
+      // 重连时"只刷新 pinned 目录"的过滤形同虚设，还是会把全部历史项目重新 bootstrap 一遍。
+      const [childStore] = globalSync.peek(project.worktree, { bootstrap: false })
       const projectID = childStore.project
       const metadata = projectID
         ? globalSync.data.project.find((x) => x.id === projectID)
@@ -508,16 +511,12 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         if (requested === color) continue
         colorRequested.set(worktree, color)
 
-        if (project.id === "global") {
-          globalSync.project.meta(worktree, { icon: { color } })
-          continue
-        }
-
-        void globalSdk.client.project
-          .update({ projectID: project.id, directory: worktree, icon: { color } })
-          .catch(() => {
-            if (colorRequested.get(worktree) === color) colorRequested.delete(worktree)
-          })
+        // 260707 Red project.update 走 instance-context 中间件 → 每个 directory 都触发
+        //   InstanceStore.load() 整套 MCP/LSP/watcher bootstrap，启动时对 N 个历史项目
+        //   逐一自动配色等于把 N 套进程树全拉起——是内存飙升的真正根因之一。
+        //   改为统一走 projectMeta（已改为 bootstrap:false），只在本地缓存颜色，
+        //   用户真正进入项目时再由正常 bootstrap 流程同步到服务端。
+        globalSync.project.meta(worktree, { icon: { color } })
       }
     })
 
