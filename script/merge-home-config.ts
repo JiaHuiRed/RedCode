@@ -218,6 +218,21 @@ function insertEntry(text: string, objPos: number, key: string, value: unknown):
   const info = lastEntryInfo(text, objPos, closePos)
   if (!info) return text
 
+  // 260708 Red single-line object ({ ... } all on one line): `cl` (start of the
+  // closing brace's line) sits BEFORE the last value, so the multi-line math below
+  // produces text.slice(info.end, cl) === "" and text.slice(cl) re-duplicates the
+  // whole line while dropping the closing brace — corrupting the file. Insert the
+  // new entry inline right after the last value instead.
+  if (!text.slice(info.end, closePos).includes("\n")) {
+    const inline = JSON.stringify(key) + ": " + JSON.stringify(value)
+    if (info.hasComma) {
+      let c = info.end
+      while (c < closePos && text[c] !== ",") c++
+      return text.slice(0, c + 1) + " " + inline + "," + text.slice(c + 1)
+    }
+    return text.slice(0, info.end) + ", " + inline + text.slice(info.end)
+  }
+
   if (info.hasComma) {
     // Trailing comma exists — just insert entry before } line
     return text.slice(0, cl) + entry + text.slice(cl)

@@ -579,7 +579,7 @@ export const layer = Layer.effect(
         yield* bus.publish(Event.Compacted, { sessionID: input.sessionID })
       }
       return result
-    })
+    }) as Interface["process"]
 
     const create = Effect.fn("SessionCompaction.create")(function* (input: {
       sessionID: SessionID

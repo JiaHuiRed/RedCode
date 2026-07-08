@@ -18,6 +18,7 @@ import { SessionStatus } from "./status"
 import { SessionSummary } from "./summary"
 import { Canary } from "./canary"
 import type { Provider } from "@/provider/provider"
+import { Snippet } from "./snippet"
 import { Question } from "@/question"
 import { errorMessage } from "@/util/error"
 import * as Log from "@redcode-ai/core/util/log"
@@ -50,7 +51,7 @@ export interface Handle {
       attachments?: MessageV2.FilePart[]
     },
   ) => Effect.Effect<void>
-  readonly process: (streamInput: LLM.StreamInput) => Effect.Effect<Result>
+  readonly process: (streamInput: LLM.StreamInput) => Effect.Effect<Result, never, Snippet.Service>
 }
 
 type Input = {
@@ -102,6 +103,8 @@ export const layer = Layer.effect(
     const image = yield* Image.Service
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
+    // 260708 Red acquire snippet service at construction so cleanup captures it (keeps Handle.process R = never)
+    const snippetService = yield* Snippet.Service
 
     const create = Effect.fn("SessionProcessor.create")(function* (input: Input) {
       // Pre-capture snapshot before the LLM stream starts. The AI SDK
@@ -946,6 +949,8 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Config.defaultLayer),
     Layer.provide(RuntimeFlags.defaultLayer),
     Layer.provide(EventV2Bridge.defaultLayer),
+    // 260708 Red wire Snippet.Service required by cleanup's snippet clear
+    Layer.provide(Snippet.defaultLayer),
   ),
 )
 

@@ -304,31 +304,45 @@ export const layer = Layer.effect(
 
       const ag = yield* agents.get("title")
       if (!ag) return
+      const mainModel = yield* provider.getModel(input.providerID, input.modelID)
       const mdl = ag.model
         ? yield* provider.getModel(ag.model.providerID, ag.model.modelID)
-        : ((yield* provider.getSmallModel(input.providerID)) ??
-          (yield* provider.getModel(input.providerID, input.modelID)))
-      const msgs = onlySubtasks
-        ? [{ role: "user" as const, content: subtasks.map((p) => p.prompt).join("\n") }]
-        : yield* MessageV2.toModelMessagesEffect(context, mdl)
-      const text = yield* llm
-        .stream({
-          agent: ag,
-          user: firstInfo,
-          system: [],
-          small: true,
-          tools: {},
-          model: mdl,
-          sessionID: input.session.id,
-          retries: 2,
-          messages: [{ role: "user", content: "Generate a title for this conversation:\n" }, ...msgs],
+        : ((yield* provider.getSmallModel(input.providerID)) ?? mainModel)
+      // 260708 Red 取名单流抽成 helper，便于 small_model（如本地 ollama）掉线时回退主模型
+      const generate = (model: Provider.Model) =>
+        Effect.gen(function* () {
+          const msgs = onlySubtasks
+            ? [{ role: "user" as const, content: subtasks.map((p) => p.prompt).join("\n") }]
+            : yield* MessageV2.toModelMessagesEffect(context, model)
+          return yield* llm
+            .stream({
+              agent: ag,
+              user: firstInfo,
+              system: [],
+              small: true,
+              tools: {},
+              model,
+              sessionID: input.session.id,
+              retries: 2,
+              messages: [{ role: "user", content: "Generate a title for this conversation:\n" }, ...msgs],
+            })
+            .pipe(Stream.filter(LLMEvent.is.textDelta), Stream.map((e) => e.text), Stream.mkString)
         })
-        .pipe(
-          Stream.filter(LLMEvent.is.textDelta),
-          Stream.map((e) => e.text),
-          Stream.mkString,
-          Effect.orDie,
-        )
+      const isMain = mdl.providerID === mainModel.providerID && mdl.id === mainModel.id
+      // 260708 Red small_model 取名失败（如 ollama 掉线 ConnectionRefused）不再整条 orDie，回退主模型重试一次
+      const text = yield* generate(mdl).pipe(
+        Effect.catch((error) =>
+          isMain
+            ? Effect.die(error)
+            : Effect.gen(function* () {
+                yield* elog.warn("title small_model failed, falling back to main model", {
+                  small: `${mdl.providerID}/${mdl.id}`,
+                  main: `${mainModel.providerID}/${mainModel.id}`,
+                })
+                return yield* generate(mainModel).pipe(Effect.orDie)
+              }),
+        ),
+      )
       const cleaned = text
         .replace(/<think>[\s\S]*?<\/think>\s*/g, "")
         .split("\n")
@@ -1104,7 +1118,7 @@ export const layer = Layer.effect(
       throw new Error("Impossible")
     })
 
-    const runLoop: (sessionID: SessionID) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.run")(
+    const runLoop = Effect.fn("SessionPrompt.run")(
       function* (sessionID: SessionID) {
         const ctx = yield* InstanceState.context
         const slog = elog.with({ sessionID })

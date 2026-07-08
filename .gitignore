@@ -64,3 +64,11 @@ sqlite-tools/
 # Project-level .redcode/ is runtime-only (engine auto-creates it)
 # All personal config lives in ~/.redcode/ (private repo)
 .redcode/
+
+# 260708 Red build-generated + throwaway CLI-output dumps (were untracked, avoid accidental commit)
+redcode-web-ui.gen.ts
+packages/opencode/doctor_*.log
+packages/opencode/doctor_*.txt
+packages/opencode/help_output.txt
+packages/opencode/models_output.txt
+packages/opencode/models_test.txt

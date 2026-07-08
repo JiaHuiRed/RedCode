@@ -1689,11 +1689,15 @@ export const layer = Layer.effect(
             }
           }
 
+          // 260708 Red TEMP diag: bracket the actual network fetch to locate the ~50s stall.
+          const _tfetch = Date.now()
+          log.info("DIAG fetch begin", { providerID: model.providerID })
           const res = await fetchFn(input, {
             ...opts,
             // @ts-ignore see here: https://github.com/oven-sh/bun/issues/16682
             timeout: false,
           })
+          log.info("DIAG fetch headers", { providerID: model.providerID, ms: Date.now() - _tfetch, status: (res as any)?.status })
 
           if (!chunkAbortCtl) return res
           return wrapSSE(res, chunkTimeout, chunkAbortCtl)

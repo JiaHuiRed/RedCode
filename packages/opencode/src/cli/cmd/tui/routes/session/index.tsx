@@ -7,6 +7,7 @@
   For,
   Match,
   on,
+  onCleanup,
   onMount,
   Show,
   Switch,
@@ -1409,6 +1410,23 @@ function UserMessage(props: {
   )
 }
 
+// 260708 Red TTFT 等待可见化：assistant 消息已建、但首个 part（reasoning/text/tool）还没到达
+// 之间的这段空窗，实时显示已等待秒数。DeepSeek high 档服务端 reasoning 可长达 1-2 分钟不吐字，
+// 这段既不计入 reasoning duration（part.time.start 从首个 reasoning delta 才起算）也无任何反馈，
+// 界面全静止看着像卡死——这里补上实时计时，让「漫长等待」可见。
+function WaitingForModel(props: { start: number }) {
+  const { theme } = useTheme()
+  const [now, setNow] = createSignal(Date.now())
+  const timer = setInterval(() => setNow(Date.now()), 1000)
+  onCleanup(() => clearInterval(timer))
+  const elapsed = createMemo(() => Locale.duration(Math.max(0, now() - props.start)))
+  return (
+    <box paddingLeft={3} marginTop={1} flexShrink={0}>
+      <Spinner color={theme.textMuted}>{"等待模型响应 · " + elapsed()}</Spinner>
+    </box>
+  )
+}
+
 function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; last: boolean }) {
   const ctx = use()
   const local = useLocal()
@@ -1451,6 +1469,9 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
           )
         }}
       </For>
+      <Show when={props.parts.length === 0 && !props.message.time.completed && !props.message.error}>
+        <WaitingForModel start={props.message.time.created} />
+      </Show>
       <Show when={props.parts.some((x) => x.type === "tool" && x.tool === "task")}>
         <box paddingTop={1} paddingLeft={3}>
           <text fg={theme.text}>

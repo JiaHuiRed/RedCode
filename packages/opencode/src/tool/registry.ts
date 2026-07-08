@@ -55,9 +55,11 @@ import { Git } from "@/git"
 import { Skill } from "../skill"
 import { Permission } from "@/permission"
 import { Reference } from "@/reference/reference"
-import { BackgroundJob } from "@/background/job"
+import { BackgroundJob } from "../background/job"
 import { SessionStatus } from "@/session/status"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { SnippetTool } from "./snippet"
+import { Snippet } from "@/session/snippet"
 
 const log = Log.create({ service: "tool.registry" })
 
@@ -84,33 +86,7 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/ToolRegistry") {}
 
-export const layer: Layer.Layer<
-  Service,
-  never,
-  | Config.Service
-  | Plugin.Service
-  | Question.Service
-  | Todo.Service
-  | Agent.Service
-  | Skill.Service
-  | Session.Service
-  | SessionStatus.Service
-  | BackgroundJob.Service
-  | Provider.Service
-  | Git.Service
-  | RepositoryCache.Service
-  | Reference.Service
-  | LSP.Service
-  | Instruction.Service
-  | AppFileSystem.Service
-  | Bus.Service
-  | HttpClient.HttpClient
-  | ChildProcessSpawner
-  | Ripgrep.Service
-  | Format.Service
-  | Truncate.Service
-  | RuntimeFlags.Service
-> = Layer.effect(
+export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const config = yield* Config.Service
@@ -143,6 +119,7 @@ export const layer: Layer.Layer<
     const envtool = yield* EnvTool
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
+    const snippet = yield* SnippetTool
     const agent = yield* Agent.Service
 
     const state = yield* InstanceState.make<State>(
@@ -244,6 +221,7 @@ export const layer: Layer.Layer<
           env: Tool.init(envtool),
           edit: Tool.init(edit),
           write: Tool.init(writetool),
+          snippet: Tool.init(snippet),
           task: Tool.init(task),
           task_status: Tool.init(taskStatus),
           fetch: Tool.init(webfetch),
@@ -304,8 +282,9 @@ export const layer: Layer.Layer<
             tool.invalid,
             ...(questionEnabled ? [tool.question] : []),
             tool.shell,
-            tool.read,
-            tool.glob,
+          tool.read,
+          tool.snippet,
+          tool.glob,
             tool.grep,
             tool.ast_grep,
             tool.git,
@@ -452,8 +431,8 @@ export const defaultLayer = Layer.suspend(() =>
       Layer.provide(FetchHttpClient.layer),
       Layer.provide(Format.defaultLayer),
       Layer.provide(CrossSpawnSpawner.defaultLayer),
-      Layer.provide(Ripgrep.defaultLayer),
-      Layer.provide(Truncate.defaultLayer),
+      // 260708 Red wire Snippet.Service required by SnippetTool (merged to stay under pipe's 20-arg overload limit)
+      Layer.provide(Layer.mergeAll(Ripgrep.defaultLayer, Truncate.defaultLayer, Snippet.defaultLayer)),
     )
     .pipe(Layer.provide(RuntimeFlags.defaultLayer)),
 )
