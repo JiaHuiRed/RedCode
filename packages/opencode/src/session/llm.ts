@@ -321,15 +321,12 @@ const live: Layer.Layer<
                 specificationVersion: "v3" as const,
                 async transformParams(args) {
                   if (args.type === "stream") {
-                    // 260708 Red TEMP diag: time ProviderTransform.message to locate the ~50s stall.
-                    const _tpre = Date.now()
                     // @ts-expect-error
                     args.params.prompt = ProviderTransform.message(
                       args.params.prompt,
                       input.model,
                       prepared.messageTransformOptions,
                     )
-                    l.info("DIAG transformParams.message", { ms: Date.now() - _tpre })
                   }
                   return args.params
                 },

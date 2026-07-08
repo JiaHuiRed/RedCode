@@ -193,6 +193,19 @@ export function Session() {
       .toSorted((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
   })
   const messages = createMemo(() => sync.data.message[route.sessionID] ?? [])
+
+  // 260708 Red TUI 消息级 windowing — 只渲染最近 N 条，屏外不进 yoga 树
+  const MSG_WINDOW_DEFAULT = 50
+  const MSG_WINDOW_STEP = 50
+  const [messageWindowSize, setMessageWindowSize] = createSignal(MSG_WINDOW_DEFAULT)
+  const windowedMessages = createMemo(() => {
+    const all = messages()
+    const win = messageWindowSize()
+    if (all.length <= win) return all
+    return all.slice(-win)
+  })
+  const hiddenMessageCount = createMemo(() => Math.max(0, messages().length - messageWindowSize()))
+
   const permissions = createMemo(() => {
     if (session()?.parentID) return []
     return children().flatMap((x) => sync.data.permission[x.id] ?? [])
@@ -391,7 +404,12 @@ export function Session() {
     const targetID = findNextVisibleMessage(direction)
 
     if (!targetID) {
-      scroll.scrollBy(direction === "next" ? scroll.height : -scroll.height)
+      // 260708 Red — going "prev" at top of window? load more messages
+      if (direction === "prev" && hiddenMessageCount() > 0) {
+        setMessageWindowSize((s) => s + MSG_WINDOW_STEP)
+      } else {
+        scroll.scrollBy(direction === "next" ? scroll.height : -scroll.height)
+      }
       dialog.clear()
       return
     }
@@ -406,6 +424,28 @@ export function Session() {
       if (!scroll || scroll.isDestroyed) return
       scroll.scrollTo(scroll.scrollHeight)
     }, 50)
+  }
+
+  // 260708 Red scroll to message by ID, expanding window if target is hidden
+  function scrollToMessageByID(messageID: string) {
+    // check if target is in current window
+    let child = scroll.getChildren().find((c) => c.id === messageID)
+    if (!child) {
+      // target is outside window — find its index in all messages and expand
+      const all = messages()
+      const idx = all.findIndex((m) => m.id === messageID)
+      if (idx >= 0) {
+        const needed = all.length - idx
+        setMessageWindowSize(Math.max(messageWindowSize(), needed))
+        // wait for re-render then scroll
+        setTimeout(() => {
+          child = scroll.getChildren().find((c) => c.id === messageID)
+          if (child) scroll.scrollBy(child.y - scroll.y - 1)
+        }, 50)
+        return
+      }
+    }
+    if (child) scroll.scrollBy(child.y - scroll.y - 1)
   }
 
   const local = useLocal()
@@ -505,12 +545,7 @@ export function Session() {
       run: () => {
         dialog.replace(() => (
           <DialogTimeline
-            onMove={(messageID) => {
-              const child = scroll.getChildren().find((child) => {
-                return child.id === messageID
-              })
-              if (child) scroll.scrollBy(child.y - scroll.y - 1)
-            }}
+            onMove={(messageID) => scrollToMessageByID(messageID)}
             sessionID={route.sessionID}
             setPrompt={(promptInfo) => prompt?.set(promptInfo)}
           />
@@ -529,10 +564,7 @@ export function Session() {
           <DialogForkFromTimeline
             onMove={(messageID) => {
               if (!messageID) return
-              const child = scroll.getChildren().find((child) => {
-                return child.id === messageID
-              })
-              if (child) scroll.scrollBy(child.y - scroll.y - 1)
+              scrollToMessageByID(messageID)
             }}
             sessionID={route.sessionID}
           />
@@ -736,6 +768,10 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        // 260708 Red — load more messages when scrolled near top
+        if (scroll.scrollTop <= scroll.height && hiddenMessageCount() > 0) {
+          setMessageWindowSize((s) => s + MSG_WINDOW_STEP)
+        }
         scroll.scrollBy(-scroll.height / 2)
         dialog.clear()
       },
@@ -776,6 +812,10 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        // 260708 Red — load more messages when scrolled near top
+        if (scroll.scrollTop <= scroll.height && hiddenMessageCount() > 0) {
+          setMessageWindowSize((s) => s + MSG_WINDOW_STEP)
+        }
         scroll.scrollBy(-scroll.height / 4)
         dialog.clear()
       },
@@ -796,6 +836,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        setMessageWindowSize(messages().length) // 260708 Red expand window to show all
         scroll.scrollTo(0)
         dialog.clear()
       },
@@ -832,10 +873,7 @@ export function Session() {
           )
 
           if (hasValidTextPart) {
-            const child = scroll.getChildren().find((child) => {
-              return child.id === message.id
-            })
-            if (child) scroll.scrollBy(child.y - scroll.y - 1)
+            scrollToMessageByID(message.id)
             break
           }
         }
@@ -1082,8 +1120,11 @@ export function Session() {
     }
   })
 
-  // snap to bottom when session changes
-  createEffect(on(() => route.sessionID, toBottom))
+  // snap to bottom and reset message window when session changes
+  createEffect(on(() => route.sessionID, () => {
+    setMessageWindowSize(MSG_WINDOW_DEFAULT)
+    toBottom()
+  }))
 
   return (
     <PathFormatterProvider path={session()?.directory}>
@@ -1127,7 +1168,14 @@ export function Session() {
                 scrollAcceleration={scrollAcceleration()}
               >
                 <box height={1} />
-                <For each={messages()}>
+                <Show when={hiddenMessageCount() > 0}>
+                  <box height={1} justifyContent="center">
+                    <text fg={theme.textMuted}>
+                      {`↑ ${hiddenMessageCount()} earlier messages · Ctrl+Home to load all`}
+                    </text>
+                  </box>
+                </Show>
+                <For each={windowedMessages()}>
                   {(message, index) => (
                     <>
                       <Switch>
@@ -1220,7 +1268,7 @@ export function Session() {
                         />
                       </Match>
                     </Switch>
-                    <Show when={index() < messages().length - 1}>
+                    <Show when={index() < windowedMessages().length - 1}>
                       <box height={1}>
                         <text fg={theme.borderSubtle}>{"· · ·"}</text>
                       </box>

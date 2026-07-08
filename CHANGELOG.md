@@ -11,6 +11,15 @@
 ---
 
 ## TUI
+### [0.7.18] - 2026-07-08
+
+> TUI 消息列表 windowing——长会话（400+ 消息）输入不再卡顿，清理 DIAG 探针。
+
+#### 修复
+
+- **[核心] TUI 消息列表无虚拟化，长会话输入卡顿**（`routes/session/index.tsx`）：`<For each={messages()}>` 全量挂载全部消息（如 422 条），每条内含 tool/reasoning/text part 全部建成 opentui renderable，opentui 每次按键触发 yoga `calculateLayout` O(总节点) 全树布局，数百节点时每次敲字重算→输入回显延迟 1 秒+。改为消息级 windowing：默认只渲染最近 50 条消息（`MSG_WINDOW_DEFAULT=50`），滚动到顶部自动加载更多（`MSG_WINDOW_STEP=50`），Ctrl+Home 展开全部。屏外消息不进 yoga 树、不建组件——同时省下布局+组件+绘制开销。所有导航（Page Up/Half Page Up/Previous Message/Timeline/Fork/Jump to Last User Message）均适配 windowing，自动展开窗口定位目标消息。切换会话时重置窗口大小。
+- **清理 DIAG 探针**（`provider.ts`、`llm.ts`）：删除 260708 排查用的临时 fetch begin/headers 计时日志和 transformParams 计时日志。
+
 ### [0.7.16] - 2026-07-07
 
 > 修复 LSP 的 tsserver 无内存上限、大 TS monorepo 下涨到 2.5G+ 吃掉 GUI 绝大部分内存。
