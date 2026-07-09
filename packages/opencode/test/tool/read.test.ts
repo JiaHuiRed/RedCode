@@ -19,6 +19,7 @@ import { disposeAllInstances, provideInstance, TestInstance, tmpdirScoped } from
 import { testEffect } from "../lib/effect"
 import { Reference } from "@/reference/reference"
 import { RepositoryCache } from "@/reference/repository-cache"
+import { Snippet } from "@/session/snippet"
 
 const FIXTURES_DIR = path.join(import.meta.dir, "fixtures")
 
@@ -51,6 +52,7 @@ const readLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
     CrossSpawnSpawner.defaultLayer,
     Instruction.defaultLayer,
     LSP.defaultLayer,
+    Snippet.defaultLayer,
     referenceLayer(flags),
     Truncate.defaultLayer,
   )

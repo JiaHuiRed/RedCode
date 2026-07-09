@@ -51,7 +51,8 @@ export interface Handle {
       attachments?: MessageV2.FilePart[]
     },
   ) => Effect.Effect<void>
-  readonly process: (streamInput: LLM.StreamInput) => Effect.Effect<Result, never, Snippet.Service>
+  // 260709 Red fix: Snippet.Service 在 construction 时获取（line 107），process 不再泄漏到 R channel
+  readonly process: (streamInput: LLM.StreamInput) => Effect.Effect<Result>
 }
 
 type Input = {

@@ -31,6 +31,7 @@ import { SyncEvent } from "@/sync"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { LLMEvent, Usage } from "@redcode-ai/llm"
+import { Snippet } from "@/session/snippet"
 
 void Log.init({ print: false })
 
@@ -244,7 +245,7 @@ const env = Layer.mergeAll(
 
 const it = testEffect(env)
 
-const compactionEnv = Layer.mergeAll(SessionNs.defaultLayer, CrossSpawnSpawner.defaultLayer)
+const compactionEnv = Layer.mergeAll(SessionNs.defaultLayer, CrossSpawnSpawner.defaultLayer, Snippet.defaultLayer)
 const itCompaction = testEffect(compactionEnv)
 
 type CompactionProcessOptions = {

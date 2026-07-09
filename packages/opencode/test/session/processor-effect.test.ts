@@ -29,6 +29,7 @@ import { raw, reply, TestLLMServer } from "../lib/llm-server"
 import { SyncEvent } from "@/sync"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
+import { Snippet } from "@/session/snippet"
 
 void Log.init({ print: false })
 
@@ -184,6 +185,7 @@ const deps = Layer.mergeAll(
   status,
   SyncEvent.defaultLayer,
   EventV2Bridge.defaultLayer,
+  Snippet.defaultLayer,
 ).pipe(Layer.provideMerge(infra))
 const env = Layer.mergeAll(
   TestLLMServer.layer,

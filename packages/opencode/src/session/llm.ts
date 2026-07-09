@@ -310,8 +310,8 @@ const live: Layer.Layer<
           // 260705 Red system 在 messages 里使用 {role: "system"} 是为了保持
           // HTTP 请求体结构稳定 → 云端 prefix cache key 不变 → 缓存命中率稳定。
           // AI SDK 6.x 检测到 system role 会 console.warn，显式置 true 关掉告警。
-          // 260707 Red: 上一版误删了下面这行当"stale"，但装的 ai 包类型确实没导出这个
-          // 属性（node_modules/ai/dist/*.d.ts 里 grep 不到），删掉就 typecheck 报错，加回来。
+          // 260707 Red: ai 包类型不导出此属性但运行时需要（关 system role 告警）
+          // @ts-expect-error ai SDK types don't export allowSystemInMessages
           allowSystemInMessages: true,
           messages: prepared.messages,
           model: wrapLanguageModel({
