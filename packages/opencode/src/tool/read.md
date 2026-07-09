@@ -12,3 +12,4 @@ Usage:
 - Call this tool in parallel when you know there are multiple files you want to read.
 - Avoid tiny repeated slices (30 line chunks). If you need more context, read a larger window.
 - This tool can read image files and PDFs and return them as file attachments.
+- For supported languages (TS/JS, Python, Go, Rust), the output includes a `<snippets>` section listing detected symbols (functions, classes, etc.) with snippet IDs. Use the `snippet` tool with a snippet ID to re-read just that symbol without reading the whole file again.

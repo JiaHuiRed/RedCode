@@ -11,6 +11,16 @@
 ---
 
 ## TUI
+### [0.7.20] - 2026-07-09
+
+> Snippet 系统接入——read 工具自动提取符号并注册 snippet，支持按 snippet ID 精准重读代码片段。
+
+#### 新增
+
+- **Snippet 系统完整接入**（`read.ts`、`session/snippet.ts`、`tool/snippet.ts`）：read 工具读取 TS/JS/Python/Go/Rust 文件时，用正则提取顶层符号（函数/类/接口/类型等），注册为 snippet 并在输出末尾附 `<snippets>` 索引。模型可用 `snippet` 工具按 ID 精准重读某个函数/类，不必重读整个文件，省上下文窗口。灵感来自 deepcode-cli 的 snippet 编辑系统。
+- **snippet 工具增强**：去掉无用的 `filePath` 参数；输出带行号前缀和 `[path#TAG]` header，可直接配合 edit hashline 格式使用。
+- **snippet service 修复**：`get()` 改为跨所有 messageID 搜索（原按 messageID 分桶，read 和 snippet 工具的 messageID 不同导致永远查不到）。
+
 ### [0.7.19] - 2026-07-09
 
 > 修复 snapshot Myers diff 冻死事件循环（采样分析器实测 59s），清理排查探针。

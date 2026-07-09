@@ -12,6 +12,7 @@ import { isPdfAttachment, sniffAttachmentMime } from "@/util/media"
 import { Reference } from "@/reference/reference"
 import * as Bom from "@/util/bom"
 import { Hash } from "@redcode-ai/core/util/hash"
+import { Service as SnippetService, type Snippet } from "@/session/snippet"
 
 const DEFAULT_READ_LIMIT = 2000
 const MAX_LINE_LENGTH = 2000
@@ -22,6 +23,54 @@ const SAMPLE_BYTES = 4096
 const SUPPORTED_IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"])
 
 class ReadStop extends Schema.TaggedErrorClass<ReadStop>()("ReadStop", {}) {}
+
+// 260709 Red snippet 符号提取：正则扫描常见语言的顶层声明，返回 { name, startLine } 列表。
+// 不依赖 LSP，快且普适。只提取顶层符号（行首或仅缩进 export）。
+const SYMBOL_PATTERNS: Array<{ re: RegExp; exts: Set<string> }> = [
+  // TS/JS: function, class, interface, type, enum, const/let/var (顶层)
+  {
+    re: /^(?:export\s+)?(?:default\s+)?(?:abstract\s+)?(?:async\s+)?(?:function\*?\s+(\w+)|class\s+(\w+)|interface\s+(\w+)|type\s+(\w+)\s*[=<{]|enum\s+(\w+)|(?:const|let|var)\s+(\w+)\s*[=:])/,
+    exts: new Set([".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"]),
+  },
+  // Python: def, class
+  {
+    re: /^(?:async\s+)?(?:def\s+(\w+)|class\s+(\w+))/,
+    exts: new Set([".py", ".pyi"]),
+  },
+  // Go: func, type
+  {
+    re: /^(?:func\s+(?:\(\w+\s+\*?\w+\)\s+)?(\w+)|type\s+(\w+)\s)/,
+    exts: new Set([".go"]),
+  },
+  // Rust: fn, struct, enum, trait, impl
+  {
+    re: /^(?:pub(?:\(crate\))?\s+)?(?:async\s+)?(?:fn\s+(\w+)|struct\s+(\w+)|enum\s+(\w+)|trait\s+(\w+)|impl(?:<[^>]*>)?\s+(\w+))/,
+    exts: new Set([".rs"]),
+  },
+]
+
+interface ExtractedSymbol {
+  name: string
+  line: number // 1-indexed
+}
+
+function extractSymbols(lines: string[], ext: string): ExtractedSymbol[] {
+  const results: ExtractedSymbol[] = []
+  const seen = new Set<string>()
+  for (const { re, exts } of SYMBOL_PATTERNS) {
+    if (!exts.has(ext)) continue
+    for (let i = 0; i < lines.length; i++) {
+      const m = re.exec(lines[i])
+      if (!m) continue
+      const name = m.slice(1).find(Boolean)
+      if (!name || seen.has(name)) continue
+      seen.add(name)
+      results.push({ name, line: i + 1 })
+    }
+    break // 只匹配第一个适用的语言模式
+  }
+  return results
+}
 
 // `offset` and `limit` were originally `z.coerce.number()` — the runtime
 // coercion was useful when the tool was called from a shell but serves no
@@ -45,6 +94,7 @@ export const ReadTool = Tool.define(
     const instruction = yield* Instruction.Service
     const lsp = yield* LSP.Service
     const reference = yield* Reference.Service
+    const snippetService = yield* SnippetService
     const scope = yield* Scope.Scope
 
     const miss = Effect.fn("ReadTool.miss")(function* (filepath: string) {
@@ -318,6 +368,28 @@ export const ReadTool = Tool.define(
         output += `\n\n(End of file - total ${file.count} lines)`
       }
       output += "\n</content>"
+
+      // 260709 Red snippet 注册：从读到的行提取符号，注册为 snippet，附索引到输出
+      const ext = path.extname(filepath).toLowerCase()
+      const symbols = extractSymbols(file.raw, ext)
+      if (symbols.length > 0) {
+        const snippets: Snippet[] = symbols.map((sym, idx) => {
+          const nextStart = idx + 1 < symbols.length ? symbols[idx + 1].line - 1 : file.raw.length
+          const startLine = sym.line + (file.offset - 1)
+          const endLine = nextStart + (file.offset - 1)
+          return {
+            id: `${sym.name}_L${startLine}`,
+            name: sym.name,
+            file: filepath,
+            startLine,
+            endLine,
+          }
+        })
+        yield* Effect.forEach(snippets, (s) => snippetService.register(ctx.messageID, s))
+        output += "\n<snippets>\n"
+        output += snippets.map((s) => `  ${s.id}  L${s.startLine}-${s.endLine}  ${s.name}`).join("\n")
+        output += "\n</snippets>"
+      }
 
       yield* warm(filepath)
 

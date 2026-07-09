@@ -9,10 +9,8 @@ import { Service as SnippetService } from "@/session/snippet"
 import * as Bom from "@/util/bom"
 import DESCRIPTION from "./snippet.md"
 
+// 260709 Red snippet tool：按 snippetId 查找并返回代码片段内容，带行号前缀和 fileTag。
 export const Parameters = Schema.Struct({
-  filePath: Schema.String.annotate({
-    description: "The absolute path to the file",
-  }),
   snippetId: Schema.String.annotate({
     description: "The snippet ID returned by the Read tool (e.g. 'AgentRunner_L12')",
   }),
@@ -38,12 +36,21 @@ export const SnippetTool = Tool.define(
           }
 
           const source = yield* Bom.readFile(afs, snippet.file)
+          const fileTag = Hash.fileTag(source.text)
           const lines = source.text.split("\n")
-          const content = lines.slice(snippet.startLine - 1, snippet.endLine).join("\n")
+          const slice = lines.slice(snippet.startLine - 1, snippet.endLine)
+          const numbered = slice.map((line, i) => `${i + snippet.startLine}: ${line}`).join("\n")
+          const relPath = path.relative(instance.worktree, snippet.file)
 
           return {
-            title: `${snippet.name} (${snippet.startLine}-${snippet.endLine})`,
-            output: content,
+            title: `${relPath}: ${snippet.name} (${snippet.startLine}-${snippet.endLine})`,
+            output: [
+              `<path>${snippet.file}</path>`,
+              `[${snippet.file}#${fileTag}]`,
+              `<content>`,
+              numbered,
+              `</content>`,
+            ].join("\n"),
             metadata: { snippet },
           }
         }).pipe(Effect.orDie),
