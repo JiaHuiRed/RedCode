@@ -552,6 +552,12 @@
   "home.stats.tokens.write": "Write",
   "home.stats.tokens.miss": "Miss",
   "home.stats.tokens.output": "Output",
+  "home.shortcuts.search": "Search",
+  "home.shortcuts.newSession": "New session",
+  "home.shortcuts.switchSession": "Switch session",
+  "home.shortcuts.fileTree": "File tree",
+  "home.shortcuts.settings": "Settings",
+  "home.shortcuts.commandPalette": "Command palette",
 
   "session.tab.session": "Session",
   "session.tab.review": "Review",

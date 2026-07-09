@@ -528,6 +528,12 @@ export const dict = {
   "home.stats.tokens.write": "写入",
   "home.stats.tokens.miss": "未命中",
   "home.stats.tokens.output": "输出",
+  "home.shortcuts.search": "搜索",
+  "home.shortcuts.newSession": "新会话",
+  "home.shortcuts.switchSession": "切换会话",
+  "home.shortcuts.fileTree": "文件树",
+  "home.shortcuts.settings": "设置",
+  "home.shortcuts.commandPalette": "命令面板",
 
   "session.tab.session": "会话",
   "session.tab.review": "审查",

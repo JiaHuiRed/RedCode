@@ -212,7 +212,7 @@ function HomeDesign() {
   }
 
   return (
-    <div class="grid w-full h-full gap-6 pl-2 pr-6 pb-16 lg:grid-cols-[220px_minmax(0,1fr)]">
+    <div class="grid w-full h-full gap-x-6 pl-2 pr-6 pb-2 lg:grid-cols-[220px_minmax(0,1fr)] grid-rows-[1fr_auto]">
       <HomeProjectColumn
         projects={projects()}
         selected={selectedProject()?.worktree}
@@ -324,6 +324,37 @@ function HomeDesign() {
           </Show>
         </div>
       </section>
+      {/* 260709 Red 首页底部快捷键提示条 */}
+      <HomeShortcutBar />
+    </div>
+  )
+}
+
+// 260709 Red 首页底部快捷键提示条：展示常用快捷键，帮用户发现功能
+function HomeShortcutBar() {
+  const language = useLanguage()
+  const isMac = navigator.platform.includes("Mac")
+  const mod = isMac ? "⌘" : "Ctrl"
+  const shortcuts = [
+    { keys: `${mod}+K`, label: language.t("home.shortcuts.search") },
+    { keys: `${mod}+N`, label: language.t("home.shortcuts.newSession") },
+    { keys: `Alt+↑↓`, label: language.t("home.shortcuts.switchSession") },
+    { keys: `${mod}+\\`, label: language.t("home.shortcuts.fileTree") },
+    { keys: `${mod}+,`, label: language.t("home.shortcuts.settings") },
+    { keys: `${mod}+P`, label: language.t("home.shortcuts.commandPalette") },
+  ]
+  return (
+    <div class="col-span-full flex items-center justify-center gap-6 px-4 py-3 text-[11px] text-v2-text-text-faint [font-weight:440]">
+      <For each={shortcuts}>
+        {(item) => (
+          <span class="flex items-center gap-1.5">
+            <kbd class="inline-flex items-center rounded border border-v2-border-border-base px-1.5 py-0.5 text-[10px] font-medium tabular-nums">
+              {item.keys}
+            </kbd>
+            <span>{item.label}</span>
+          </span>
+        )}
+      </For>
     </div>
   )
 }
@@ -355,7 +386,8 @@ function HomeProjectColumn(props: {
           aria-label={props.language.t("home.project.add")}
         />
       </div>
-      <div class="mt-4 flex max-h-[min(572px,calc(100vh_-_300px))] min-w-0 flex-col gap-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {/* 260709 Red 项目列表占据剩余空间，flex-1 + min-h-0 让列表自适应高度 */}
+      <div class="mt-4 flex flex-1 min-h-0 min-w-0 flex-col gap-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <Show
           when={props.projects.length > 0}
           fallback={
@@ -403,16 +435,19 @@ function HomeProjectColumn(props: {
           </For>
         </Show>
       </div>
-      <HomeStatsPanel sessions={props.statsSessions} />
-      <div class="mt-4 flex min-w-0 flex-col gap-1">
-        <button
-          type="button"
-          class={`${HOME_PROJECT_NAV_ROW} text-v2-text-text-faint [&>[data-slot=icon-svg]]:text-v2-icon-icon-muted`}
-          onClick={props.openSettings}
-        >
-          <IconV2 name="settings-gear" size="small" />
-          <span>{props.language.t("sidebar.settings")}</span>
-        </button>
+      {/* 260709 Red 左栏底部吸底：StatsPanel + 设置按钮固定在左栏最下方，不随项目列表滚动 */}
+      <div class="mt-auto shrink-0">
+        <HomeStatsPanel sessions={props.statsSessions} />
+        <div class="mt-2 flex min-w-0 flex-col gap-1">
+          <button
+            type="button"
+            class={`${HOME_PROJECT_NAV_ROW} text-v2-text-text-faint [&>[data-slot=icon-svg]]:text-v2-icon-icon-muted`}
+            onClick={props.openSettings}
+          >
+            <IconV2 name="settings-gear" size="small" />
+            <span>{props.language.t("sidebar.settings")}</span>
+          </button>
+        </div>
       </div>
     </aside>
   )
