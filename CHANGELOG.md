@@ -11,6 +11,15 @@
 ---
 
 ## TUI
+### [0.7.19] - 2026-07-09
+
+> 修复 snapshot Myers diff 冻死事件循环（采样分析器实测 59s），清理排查探针。
+
+#### 修复
+
+- **[核心] snapshot structuredPatch 冻死事件循环**（`snapshot/index.ts`）：`patch()` 调用 diff 库的 `structuredPatch`（Myers O(ND) 差分），对大文件或病态编辑距离无护栏，采样分析器实测单次调用卡 59s（6274/6278 samples）冻死主线程，流式 delta 在冻结期间缓冲、解冻后 burst 涌出——即敏敏"等几十秒→整段话一瞬间刷出"的根因。加 256KB 大小护栏（超限跳过全量 patch）+ 2s timeout 兜底，验证 blockedMs 从 49398~70962ms → 消失。
+- **清理 TEMP 诊断探针**（`provider.ts`、`llm.ts`、`message-v2.ts`）：删除 260709 排查用的事件循环卡顿探针、JSC 采样分析器、fetch 计时、transformParams 计时、toModelMessages 计时。
+
 ### [0.7.18] - 2026-07-08
 
 > TUI 消息列表 windowing——长会话（400+ 消息）输入不再卡顿，清理 DIAG 探针。

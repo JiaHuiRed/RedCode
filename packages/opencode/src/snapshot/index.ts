@@ -687,8 +687,18 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                 }
 
                 const step = 100
-                const patch = (file: string, before: string, after: string) =>
-                  formatPatch(structuredPatch(file, file, before, after, "", "", { context: Number.MAX_SAFE_INTEGER }))
+                // 260709 Red 防 Myers diff 爆炸：大文件跳过全量 patch（add/del 计数仍来自 git numstat），
+                // 小文件也加 timeout 兜底，避免病态编辑距离冻死事件循环（采样分析器实测此处曾卡 59s）。
+                const MAX_DIFF_BYTES = 256 * 1024
+                const DIFF_TIMEOUT_MS = 2000
+                const patch = (file: string, before: string, after: string) => {
+                  if (before.length + after.length > MAX_DIFF_BYTES) return ""
+                  const sp = structuredPatch(file, file, before, after, "", "", {
+                    context: Number.MAX_SAFE_INTEGER,
+                    timeout: DIFF_TIMEOUT_MS,
+                  })
+                  return sp ? formatPatch(sp) : ""
+                }
 
                 for (let i = 0; i < rows.length; i += step) {
                   const run = rows.slice(i, i + step)
