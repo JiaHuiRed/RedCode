@@ -7,7 +7,16 @@ import { Todo } from "../session/todo"
 // Todo.Info is still a zod schema (session/todo.ts). Inline the field shape
 // here rather than referencing its `.shape` — the LLM-visible JSON Schema is
 // identical, and it removes the last zod dependency from this tool.
+// 260710 Red id/parent_id 可选：不填=旧的纯扁平列表；填了=可表达层级子任务
 const TodoItem = Schema.Struct({
+  id: Schema.optional(
+    Schema.String.annotate({
+      description: "Stable id for this item, e.g. '1' or '2.1'. Needed to nest sub-tasks under it via parent_id.",
+    }),
+  ),
+  parent_id: Schema.optional(
+    Schema.String.annotate({ description: "id of the parent item, to nest this item as its sub-task." }),
+  ),
   content: Schema.String.annotate({ description: "Brief description of the task" }),
   status: Schema.String.annotate({
     description: "Current status of the task: pending, in_progress, completed, cancelled",

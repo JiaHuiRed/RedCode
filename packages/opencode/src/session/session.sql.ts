@@ -99,6 +99,9 @@ export const TodoTable = sqliteTable(
       .$type<SessionID>()
       .notNull()
       .references(() => SessionTable.id, { onDelete: "cascade" }),
+    // 260710 Red 层级子任务：id/parent_id 可选，模型不填时保持旧的纯扁平列表行为
+    id: text(),
+    parent_id: text(),
     content: text().notNull(),
     status: text().notNull(),
     priority: text().notNull(),

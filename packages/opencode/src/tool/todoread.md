@@ -12,4 +12,4 @@ Read the current task list for this session from persistent storage. Returns the
 - For non-todo related state queries (use other tools)
 
 ## Output
-Returns the complete list of todos with fields: `content`, `status` (pending/in_progress/completed/cancelled), and `priority` (high/medium/low). Includes a summary line showing total, done, active, and pending counts.
+Returns the complete list of todos with fields: `content`, `status` (pending/in_progress/completed/cancelled), `priority` (high/medium/low), and optional `id`/`parent_id` for nested sub-tasks. Includes a summary line showing total, done, active, and pending counts.

@@ -3,13 +3,14 @@ import { useTheme } from "../context/theme"
 export interface TodoItemProps {
   status: string
   content: string
+  depth?: number
 }
 
 export function TodoItem(props: TodoItemProps) {
   const { theme } = useTheme()
 
   return (
-    <box flexDirection="row" gap={0}>
+    <box flexDirection="row" gap={0} marginLeft={(props.depth ?? 0) * 2}>
       <text
         flexShrink={0}
         style={{

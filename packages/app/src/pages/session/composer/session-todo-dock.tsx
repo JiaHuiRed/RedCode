@@ -196,10 +196,28 @@ export function SessionTodoDock(props: {
   )
 }
 
+// 260710 Red 层级子任务：按 parent_id 链条算缩进层级，防环/防越界兜个上限
+const MAX_TODO_DEPTH = 5
+function todoDepth(todo: Todo, byId: Map<string, Todo>) {
+  let depth = 0
+  let current = todo
+  const seen = new Set<string>()
+  while (current.parent_id && depth < MAX_TODO_DEPTH) {
+    if (current.id && seen.has(current.id)) break
+    if (current.id) seen.add(current.id)
+    const parent = byId.get(current.parent_id)
+    if (!parent) break
+    depth++
+    current = parent
+  }
+  return depth
+}
+
 function TodoList(props: { todos: Todo[] }) {
   const [store, setStore] = createStore({
     stuck: false,
   })
+  const byId = createMemo(() => new Map(props.todos.filter((t) => t.id).map((t) => [t.id as string, t])))
 
   return (
     <div class="relative">
@@ -222,6 +240,7 @@ function TodoList(props: { todos: Todo[] }) {
               style={{
                 "--checkbox-align": "flex-start",
                 "--checkbox-offset": "1px",
+                "margin-left": `${todoDepth(todo(), byId()) * 16}px`,
                 transition: "opacity 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1))",
                 opacity: todo().status === "pending" ? "0.94" : "1",
               }}

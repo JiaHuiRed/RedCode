@@ -318,6 +318,14 @@ export type QuestionRejected = {
 
 export type Todo = {
   /**
+   * Stable id for this item, e.g. '1' or '2.1'. Needed to nest sub-tasks under it via parent_id.
+   */
+  id?: string
+  /**
+   * id of the parent item, to nest this item as its sub-task.
+   */
+  parent_id?: string
+  /**
    * Brief description of the task
    */
   content: string

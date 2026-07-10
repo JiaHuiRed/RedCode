@@ -8,6 +8,15 @@ import { asc } from "drizzle-orm"
 import { TodoTable } from "./session.sql"
 
 export const Info = Schema.Struct({
+  // 260710 Red 层级子任务：id/parent_id 可选，兼容旧的纯扁平列表调用方
+  id: Schema.optional(
+    Schema.String.annotate({
+      description: "Stable id for this item, e.g. '1' or '2.1'. Needed to nest sub-tasks under it via parent_id.",
+    }),
+  ),
+  parent_id: Schema.optional(
+    Schema.String.annotate({ description: "id of the parent item, to nest this item as its sub-task." }),
+  ),
   content: Schema.String.annotate({ description: "Brief description of the task" }),
   status: Schema.String.annotate({
     description: "Current status of the task: pending, in_progress, completed, cancelled",
@@ -47,6 +56,8 @@ export const layer = Layer.effect(
             .values(
               input.todos.map((todo, position) => ({
                 session_id: input.sessionID,
+                id: todo.id ?? null,
+                parent_id: todo.parent_id ?? null,
                 content: todo.content,
                 status: todo.status,
                 priority: todo.priority,
@@ -66,6 +77,8 @@ export const layer = Layer.effect(
         ),
       )
       return rows.map((row) => ({
+        id: row.id ?? undefined,
+        parent_id: row.parent_id ?? undefined,
         content: row.content,
         status: row.status,
         priority: row.priority,

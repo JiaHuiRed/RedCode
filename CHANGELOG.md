@@ -11,6 +11,16 @@
 ---
 
 ## TUI
+### [0.7.21] - 2026-07-10
+
+> Todo 层级子任务——`id`/`parent_id` 可选字段，模型可表达子任务嵌套，TUI/GUI 侧栏与 composer 均按层级缩进渲染。
+
+#### 新增
+
+- **Todo 层级子任务**（`session/todo.ts`、`tool/todo.ts`、`session.sql.ts`、迁移 `20260710070135_add_todo_hierarchy`）：Todo 结构新增可选 `id`/`parent_id` 字段，模型可给任务标 id（如 `"2"`）并让子任务用 `parent_id` 指向它（如 `"2.1"`）表达层级；不填则完全等同旧的纯扁平列表，向后兼容。TUI 侧栏（`sidebar/todo.tsx`）、GUI composer（`session-todo-dock.tsx`）均按 `parent_id` 链条计算缩进层级渲染，防环/防越界兜底深度上限 5 层。
+- **`TodoItem` 组件支持 `depth`**（`component/todo-item.tsx`）：新增可选 `depth` prop 控制缩进。
+- **plugin SDK `TuiSidebarTodoItem` 补字段**（`plugin/src/tui.ts`）：追加 `id`/`parent_id`，插件可读取层级信息。
+
 ### [0.7.20] - 2026-07-09
 
 > Snippet 系统接入——read 工具自动提取符号并注册 snippet，支持按 snippet ID 精准重读代码片段。
@@ -1372,6 +1382,14 @@
 ---
 
 ## GUI
+
+### [0.7.3] - 2026-07-10
+
+> Todo 层级子任务 GUI 侧适配——composer 待办面板按层级缩进渲染。
+
+#### 新增
+
+- **Todo 层级子任务缩进渲染**（`session-todo-dock.tsx`）：随引擎侧新增的 `id`/`parent_id` 层级字段，composer 待办面板按 `parent_id` 链条计算缩进层级显示子任务，防环/防越界兜底深度上限 5 层。
 
 ### [0.7.2] - 2026-07-10
 

@@ -29,6 +29,10 @@ Skip when:
 - Preserve user-provided commands verbatim (flags, args, order)
 - Items should be specific and actionable; break large work into smaller steps
 
+## Hierarchy (optional)
+Give an item an `id` (e.g. `"1"`, `"2"`) to reference it as a parent. Give a sub-task a `parent_id` matching that id to nest it (e.g. `"2.1"`, `"2.2"`) — free-form strings, not enforced numbering. Always resend the full list on every call, ids and all; there is no partial update.
+Skip `id`/`parent_id` entirely for a flat list — this is the default and most tasks don't need nesting.
+
 ## Examples
 
 Use it:
