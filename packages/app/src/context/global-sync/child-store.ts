@@ -271,7 +271,9 @@ export function createChildStoreManager(input: {
               return lspQuery.isLoading ? [] : (lspQuery.data ?? [])
             },
             vcs: vcsStore.value,
-            limit: 5,
+            // 260710 Red 默认从 5 提到 64：首页 HOME_SESSION_LIMIT=64，旧值 5 导致
+            // trimSessions 截断后首页最多只显示 5 条 session。session 是轻量元数据，64 不影响内存。
+            limit: 64,
             message: {},
             part: {},
             part_text_accum_delta: {},

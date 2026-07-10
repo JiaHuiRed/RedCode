@@ -1,6 +1,7 @@
 import type { Session } from "@redcode-ai/sdk/v2/client"
 import { createMemo, For, Show } from "solid-js"
 import { Spinner } from "@redcode-ai/ui/spinner"
+import { ContextMenu } from "@redcode-ai/ui/context-menu"
 import { Icon as IconV2 } from "@redcode-ai/ui/v2/components/icon.jsx"
 import { useServerSync } from "@/context/server-sync"
 import { useNotification } from "@/context/notification"
@@ -26,6 +27,7 @@ type KanbanColumn = {
 export function HomeKanban(props: {
   records: KanbanRecord[]
   openSession: (session: Session) => void
+  onArchive: (session: Session) => void
 }) {
   const globalSync = useServerSync()
   const notification = useNotification()
@@ -105,6 +107,7 @@ export function HomeKanban(props: {
                       record={record}
                       columnId={column.id}
                       onClick={() => props.openSession(record.session)}
+                      onArchive={() => props.onArchive(record.session)}
                     />
                   )}
                 </For>
@@ -121,37 +124,50 @@ function KanbanCard(props: {
   record: KanbanRecord
   columnId: KanbanColumn["id"]
   onClick: () => void
+  onArchive: () => void
 }) {
   const globalSync = useServerSync()
+  const language = useLanguage()
   const [store] = globalSync.child(props.record.session.directory, { bootstrap: false })
   const title = createMemo(() => sessionTitle(props.record.session.title) || props.record.session.id)
   const tint = createMemo(() => messageAgentColor(store.message[props.record.session.id], store.agent))
 
   return (
-    <button
-      type="button"
-      data-component="kanban-card"
-      class="flex flex-col gap-1.5 rounded-[8px] border border-v2-border-border-base bg-v2-background-bg-base px-3 py-2.5 text-left transition-colors duration-[120ms] ease-in-out hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none cursor-default"
-      onClick={props.onClick}
-    >
-      <div class="flex items-center gap-2 min-w-0 w-full">
-        <Show when={props.columnId === "working"}>
-          <div class="shrink-0" style={{ color: tint() ?? "var(--icon-interactive-base)" }}>
-            <Spinner class="size-[14px]" />
-          </div>
+    // 260710 Red 看板卡片右键菜单：归档
+    <ContextMenu>
+      <ContextMenu.Trigger
+        as="button"
+        type="button"
+        data-component="kanban-card"
+        class="flex flex-col gap-1.5 rounded-[8px] border border-v2-border-border-base bg-v2-background-bg-base px-3 py-2.5 text-left transition-colors duration-[120ms] ease-in-out hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none cursor-default"
+        onClick={props.onClick}
+      >
+        <div class="flex items-center gap-2 min-w-0 w-full">
+          <Show when={props.columnId === "working"}>
+            <div class="shrink-0" style={{ color: tint() ?? "var(--icon-interactive-base)" }}>
+              <Spinner class="size-[14px]" />
+            </div>
+          </Show>
+          <Show when={props.columnId === "attention"}>
+            <div class="size-1.5 shrink-0 rounded-full bg-surface-warning-strong" />
+          </Show>
+          <span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-base [font-weight:530] text-[13px]">
+            {title()}
+          </span>
+        </div>
+        <Show when={props.record.projectName}>
+          <span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-muted [font-weight:440] text-[11px]">
+            {props.record.projectName}
+          </span>
         </Show>
-        <Show when={props.columnId === "attention"}>
-          <div class="size-1.5 shrink-0 rounded-full bg-surface-warning-strong" />
-        </Show>
-        <span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-base [font-weight:530] text-[13px]">
-          {title()}
-        </span>
-      </div>
-      <Show when={props.record.projectName}>
-        <span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-muted [font-weight:440] text-[11px]">
-          {props.record.projectName}
-        </span>
-      </Show>
-    </button>
+      </ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content>
+          <ContextMenu.Item onSelect={props.onArchive}>
+            <ContextMenu.ItemLabel>{language.t("command.session.archive")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu>
   )
 }

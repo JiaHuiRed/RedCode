@@ -29,7 +29,8 @@ import { sessionPermissionRequest } from "@/pages/session/composer/session-reque
 import { HomeKanban } from "@/pages/home-kanban"
 import { HomeStatsPanel } from "@/pages/home-stats"
 
-const HOME_SESSION_LIMIT = 15
+// 260710 Red 上游从 15 提到 64，修复"只显示 5 个会话"
+const HOME_SESSION_LIMIT = 64
 const HOME_ROW =
   "flex min-w-0 w-full shrink-0 cursor-default items-center rounded-[6px] border-0 bg-transparent text-left [font-weight:530] text-v2-text-text-muted transition-colors duration-[120ms] ease-in-out hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none"
 const HOME_PROJECT_NAV_ROW = `${HOME_ROW} h-8 gap-1.5 px-2 [&>span]:min-w-0 [&>span]:overflow-hidden [&>span]:text-ellipsis [&>span]:whitespace-nowrap`
@@ -211,6 +212,11 @@ function HomeDesign() {
     if (state.project === project.worktree) setState("project", undefined)
   }
 
+  // 260710 Red 归档会话：标记 archived 时间戳，isRootVisibleSession 自动过滤
+  async function archiveSession(session: Session) {
+    await globalSDK.client.session.update({ sessionID: session.id, time: { archived: Date.now() } })
+  }
+
   return (
     <div class="grid w-full h-full gap-x-6 pl-2 pr-6 pb-2 lg:grid-cols-[220px_minmax(0,1fr)] grid-rows-[1fr_auto]">
       <HomeProjectColumn
@@ -298,7 +304,7 @@ function HomeDesign() {
             >
               <Switch>
                 <Match when={state.view === "kanban"}>
-                  <HomeKanban records={records()} openSession={openSession} />
+                  <HomeKanban records={records()} openSession={openSession} onArchive={archiveSession} />
                 </Match>
                 <Match when={state.view === "list"}>
                   <div class="pt-3 flex flex-col gap-6">
@@ -311,7 +317,7 @@ function HomeDesign() {
                           />
                           <div class="flex min-w-0 flex-col gap-px">
                             <For each={group.sessions}>
-                              {(record) => <HomeSessionRow record={record} openSession={openSession} />}
+                              {(record) => <HomeSessionRow record={record} openSession={openSession} onArchive={archiveSession} />}
                             </For>
                           </div>
                         </div>
@@ -369,6 +375,7 @@ function HomeProjectColumn(props: {
   language: ReturnType<typeof useLanguage>
   statsSessions: Session[]
 }) {
+  const platform = usePlatform()
   return (
     <aside
       class="flex min-w-0 flex-col lg:pt-[52px] lg:border-r lg:border-v2-border-border-base lg:pr-6"
@@ -421,6 +428,14 @@ function HomeProjectColumn(props: {
                 </ContextMenu.Trigger>
                 <ContextMenu.Portal>
                   <ContextMenu.Content>
+                    {/* 260710 Red 在文件管理器中打开项目目录 */}
+                    <ContextMenu.Item
+                      data-action="home-project-reveal"
+                      data-project={base64Encode(project.worktree)}
+                      onSelect={() => platform.openPath?.(project.worktree)}
+                    >
+                      <ContextMenu.ItemLabel>{props.language.t("home.project.revealInExplorer")}</ContextMenu.ItemLabel>
+                    </ContextMenu.Item>
                     <ContextMenu.Item
                       data-action="home-project-remove"
                       data-project={base64Encode(project.worktree)}
@@ -512,10 +527,15 @@ function HomeSessionGroupHeader(props: { title: string; onNewSession?: () => voi
   )
 }
 
-function HomeSessionRow(props: { record: HomeSessionRecord; openSession: (session: Session) => void }) {
+function HomeSessionRow(props: {
+  record: HomeSessionRecord
+  openSession: (session: Session) => void
+  onArchive: (session: Session) => void
+}) {
   const globalSync = useServerSync()
   const notification = useNotification()
   const permission = usePermission()
+  const language = useLanguage()
   const [sessionStore] = globalSync.child(props.record.session.directory, { bootstrap: false })
   const title = createMemo(() => sessionTitle(props.record.session.title) || props.record.session.id)
   const unseenCount = createMemo(() => notification.session.unseenCount(props.record.session.id))
@@ -534,44 +554,55 @@ function HomeSessionRow(props: { record: HomeSessionRecord; openSession: (sessio
   const showStatus = createMemo(() => isWorking() || hasPermissions() || hasError() || unseenCount() > 0)
 
   return (
-    <button
-      type="button"
-      data-component="home-session-row"
-      class={`${HOME_ROW} h-10 gap-2 px-6 py-3 pl-4`}
-      onClick={() => props.openSession(props.record.session)}
-    >
-      <Show when={showStatus()}>
-        <div
-          class="flex size-4 shrink-0 items-center justify-center"
-          style={{ color: tint() ?? "var(--icon-interactive-base)" }}
-        >
-          <Switch>
-            <Match when={isWorking()}>
-              <Spinner class="size-[15px]" />
-            </Match>
-            <Match when={hasPermissions()}>
-              <div class="size-1.5 rounded-full bg-surface-warning-strong" />
-            </Match>
-            <Match when={hasError()}>
-              <div class="size-1.5 rounded-full bg-text-diff-delete-base" />
-            </Match>
-            <Match when={unseenCount() > 0}>
-              <div class="size-1.5 rounded-full bg-text-interactive-base" />
-            </Match>
-          </Switch>
-        </div>
-      </Show>
-      <span
-        class={`min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-base [font-weight:530] ${props.record.projectName ? "max-w-[min(70%,480px)] flex-[0_1_auto]" : "flex-[1_1_auto]"}`}
+    // 260710 Red 会话右键菜单：归档
+    <ContextMenu>
+      <ContextMenu.Trigger
+        as="button"
+        type="button"
+        data-component="home-session-row"
+        class={`${HOME_ROW} h-10 gap-2 px-6 py-3 pl-4`}
+        onClick={() => props.openSession(props.record.session)}
       >
-        {title()}
-      </span>
-      <Show when={props.record.projectName}>
-        <span class="min-w-0 flex-[1_1_auto] overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-muted [font-weight:440]">
-          {props.record.projectName}
+        <Show when={showStatus()}>
+          <div
+            class="flex size-4 shrink-0 items-center justify-center"
+            style={{ color: tint() ?? "var(--icon-interactive-base)" }}
+          >
+            <Switch>
+              <Match when={isWorking()}>
+                <Spinner class="size-[15px]" />
+              </Match>
+              <Match when={hasPermissions()}>
+                <div class="size-1.5 rounded-full bg-surface-warning-strong" />
+              </Match>
+              <Match when={hasError()}>
+                <div class="size-1.5 rounded-full bg-text-diff-delete-base" />
+              </Match>
+              <Match when={unseenCount() > 0}>
+                <div class="size-1.5 rounded-full bg-text-interactive-base" />
+              </Match>
+            </Switch>
+          </div>
+        </Show>
+        <span
+          class={`min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-base [font-weight:530] ${props.record.projectName ? "max-w-[min(70%,480px)] flex-[0_1_auto]" : "flex-[1_1_auto]"}`}
+        >
+          {title()}
         </span>
-      </Show>
-    </button>
+        <Show when={props.record.projectName}>
+          <span class="min-w-0 flex-[1_1_auto] overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-muted [font-weight:440]">
+            {props.record.projectName}
+          </span>
+        </Show>
+      </ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content>
+          <ContextMenu.Item onSelect={() => props.onArchive(props.record.session)}>
+            <ContextMenu.ItemLabel>{language.t("command.session.archive")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu>
   )
 }
 

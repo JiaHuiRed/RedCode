@@ -67,6 +67,7 @@ import { makeShell } from "./prompt/shell"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@redcode-ai/llm"
+import { LoopRecoveryTracker, RECOVERY_PROMPTS } from "./text-loop-detection"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -1125,6 +1126,9 @@ export const layer = Layer.effect(
         let structured: unknown
         let step = 0
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+        // 260710 Red 跨 step 文本重复检测（loop recovery）
+        const loopTracker = new LoopRecoveryTracker()
+        let loopRecoveryPrompt: string | undefined
 
         while (true) {
           yield* status.set(sessionID, { type: "busy" })
@@ -1392,12 +1396,16 @@ export const layer = Layer.effect(
               messages: [
                 ...stabilizedMsgs,
                 ...(userReminderText ? [{ role: "user" as const, content: userReminderText }] : []),
+                // 260710 Red loop recovery prompt 注入（跨 step 重复检测触发）
+                ...(loopRecoveryPrompt ? [{ role: "user" as const, content: loopRecoveryPrompt }] : []),
                 ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : []),
               ],
               tools: sortedTools,
               model,
               toolChoice: format.type === "json_schema" ? "required" : undefined,
             })
+            // 260710 Red 注入后清空，下一轮只在 loopTracker 再次触发时才重新设置
+            loopRecoveryPrompt = undefined
 
             if (structured !== undefined) {
               handle.message.structured = structured
@@ -1419,6 +1427,25 @@ export const layer = Layer.effect(
             }
 
             if (result === "stop") return "break" as const
+
+            // 260710 Red 跨 step loop recovery：检查本轮文本输出是否与前几轮高度相似
+            {
+              const textParts = MessageV2.parts(handle.message.id).filter((p): p is MessageV2.TextPart => p.type === "text")
+              const fullText = textParts.map((p) => p.text).join("\n")
+              if (fullText.length > 0) {
+                const level = loopTracker.record(fullText)
+                if (level) {
+                  yield* slog.warn("text.loop.recovery", { level, textLen: fullText.length })
+                  yield* bus.publish(Session.Event.LoopDetected, { sessionID, type: level, textLen: fullText.length })
+                  if (level === "stop") {
+                    return "break" as const
+                  }
+                  // nudge / replan: 在下一轮注入恢复提示
+                  loopRecoveryPrompt = RECOVERY_PROMPTS[level]
+                }
+              }
+            }
+
             if (result === "compact") {
               yield* compaction.create({
                 sessionID,

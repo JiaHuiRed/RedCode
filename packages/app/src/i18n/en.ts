@@ -519,6 +519,8 @@
   "error.chain.configInvalid": "Config file at {{path}} is invalid",
   "error.chain.configInvalidWithMessage": "Config file at {{path}} is invalid: {{message}}",
 
+  "notification.loopDetected.title": "Repetitive output detected",
+  "notification.loopDetected.description": "The model was repeating itself ({{type}}). Auto-recovery applied.",
   "notification.permission.title": "Permission required",
   "notification.permission.description": "{{sessionTitle}} in {{projectName}} needs permission",
   "notification.question.title": "Question",
@@ -535,6 +537,7 @@
   "home.title": "Home",
   "home.projects": "Projects",
   "home.project.add": "Add project",
+  "home.project.revealInExplorer": "Reveal in file manager",
   "home.sessions.search.placeholder": "Search sessions",
   "home.sessions.empty": "No sessions found",
   "home.sessions.group.today": "Today",

@@ -65,6 +65,18 @@ export function createSDKNotificationToasts(deps: {
         return
       }
 
+      // 260710 Red 文本重复检测 toast
+      if (e.details?.type === "session.loop_detected") {
+        const props = e.details.properties as { sessionID: string; type: string; textLen: number }
+        const typeLabel = props.type === "ngram" ? "N-gram" : props.type
+        showToast({
+          icon: "shield" as any,
+          title: language.t("notification.loopDetected.title"),
+          description: language.t("notification.loopDetected.description", { type: typeLabel }),
+        })
+        return
+      }
+
       if (e.details?.type !== "permission.asked" && e.details?.type !== "question.asked") return
       const title =
         e.details.type === "permission.asked"

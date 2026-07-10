@@ -19,6 +19,8 @@ function mimeToModality(mime: string): Modality | undefined {
 }
 
 export const OUTPUT_TOKEN_MAX = 32_000
+// 260710 Red MiMo 模型支持超长输出（MiMo-V2.5 等），给予更高上限
+export const MIMO_OUTPUT_TOKEN_MAX = 100_000
 
 export function sanitizeSurrogates(content: string) {
   return content.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD")
@@ -1343,7 +1345,14 @@ export function providerOptions(model: Provider.Model, options: { [x: string]: a
 }
 
 export function maxOutputTokens(model: Provider.Model, outputTokenMax = OUTPUT_TOKEN_MAX): number {
-  return Math.min(model.limit.output, outputTokenMax) || outputTokenMax
+  // 260710 Red MiMo 模型用更高的 output token 上限
+  const effective = isMimoModel(model) ? Math.max(outputTokenMax, MIMO_OUTPUT_TOKEN_MAX) : outputTokenMax
+  return Math.min(model.limit.output, effective) || effective
+}
+
+function isMimoModel(model: Provider.Model): boolean {
+  const id = model.api.id.toLowerCase()
+  return id.includes("mimo")
 }
 
 export function schema(model: Provider.Model, schema: JSONSchema7): JSONSchema7 {

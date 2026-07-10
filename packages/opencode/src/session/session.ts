@@ -371,6 +371,15 @@ export const Event = {
       error: MessageV2.Assistant.fields.error,
     }),
   ),
+  // 260710 Red 文本重复检测事件：通知 GUI 弹 toast
+  LoopDetected: BusEvent.define(
+    "session.loop_detected",
+    Schema.Struct({
+      sessionID: SessionID,
+      type: Schema.Literal("ngram", "nudge", "replan", "stop"),
+      textLen: Schema.Number,
+    }),
+  ),
 }
 
 export function plan(input: { slug: string; time: { created: number } }, instance: InstanceContext) {

@@ -30,6 +30,7 @@ import { ProviderV2 } from "@redcode-ai/core/provider"
 import * as DateTime from "effect/DateTime"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Usage, type LLMEvent } from "@redcode-ai/llm"
+import { NgramDetector, RECOVERY_PROMPTS } from "./text-loop-detection"
 
 const DOOM_LOOP_THRESHOLD = 3
 const log = Log.create({ service: "session.processor" })
@@ -81,6 +82,9 @@ interface ProcessorContext extends Input {
   needsCompaction: boolean
   currentText: MessageV2.TextPart | undefined
   reasoningMap: Record<string, MessageV2.ReasoningPart>
+  // 260710 Red n-gram 文本重复检测（单 step 内）
+  ngramDetector: NgramDetector
+  ngramTripped: boolean
 }
 
 type StreamEvent = LLMEvent
@@ -123,6 +127,9 @@ export const layer = Layer.effect(
         needsCompaction: false,
         currentText: undefined,
         reasoningMap: {},
+        // 260710 Red n-gram 文本重复检测
+        ngramDetector: new NgramDetector(),
+        ngramTripped: false,
       }
       let aborted = false
       const slog = log.clone().tag("session.id", input.sessionID).tag("messageID", input.assistantMessage.id)
@@ -662,6 +669,9 @@ export const layer = Layer.effect(
           }
 
           case "text-start":
+            // 260710 Red 每个新 text part 重置 n-gram 检测器
+            ctx.ngramDetector.reset()
+            ctx.ngramTripped = false
             if (!ctx.assistantMessage.summary) {
               // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
               if (flags.experimentalEventSystem) {
@@ -694,6 +704,18 @@ export const layer = Layer.effect(
               field: "text",
               delta: value.text,
             })
+            // 260710 Red n-gram 重复检测：流式 delta 累积，发现重复立即中断
+            if (!ctx.ngramTripped && ctx.ngramDetector.feed(value.text)) {
+              ctx.ngramTripped = true
+              slog.warn("ngram.repeat", { sessionID: ctx.sessionID, textLen: ctx.currentText.text.length })
+              yield* bus.publish(Session.Event.LoopDetected, {
+                sessionID: ctx.sessionID,
+                type: "ngram" as const,
+                textLen: ctx.currentText.text.length,
+              })
+              ctx.currentText.text += "\n\n" + RECOVERY_PROMPTS.stop
+              ctx.shouldBreak = true
+            }
             return
 
           case "text-end":

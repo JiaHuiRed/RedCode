@@ -496,6 +496,8 @@ export const dict = {
   "error.chain.configInvalid": "配置文件 {{path}} 无效",
   "error.chain.configInvalidWithMessage": "配置文件 {{path}} 无效：{{message}}",
 
+  "notification.loopDetected.title": "检测到重复输出",
+  "notification.loopDetected.description": "模型正在重复输出（{{type}}），已自动干预",
   "notification.permission.title": "需要权限",
   "notification.permission.description": "{{sessionTitle}}（{{projectName}}）需要权限",
   "notification.question.title": "问题",
@@ -511,6 +513,7 @@ export const dict = {
   "home.title": "主页",
   "home.projects": "项目",
   "home.project.add": "添加项目",
+  "home.project.revealInExplorer": "在文件管理器中打开",
   "home.sessions.search.placeholder": "搜索会话",
   "home.sessions.empty": "未找到会话",
   "home.sessions.group.today": "今天",
