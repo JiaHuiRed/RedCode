@@ -921,6 +921,7 @@ export type GlobalEvent = {
     | SyncEventSessionNextCompactionStarted
     | SyncEventSessionNextCompactionDelta
     | SyncEventSessionNextCompactionEnded
+    | EventSessionLoopDetected
 }
 
 /**

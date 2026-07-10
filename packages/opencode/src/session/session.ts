@@ -376,7 +376,7 @@ export const Event = {
     "session.loop_detected",
     Schema.Struct({
       sessionID: SessionID,
-      type: Schema.Literal("ngram", "nudge", "replan", "stop"),
+      type: Schema.Literals(["ngram", "nudge", "replan", "stop"]),
       textLen: Schema.Number,
     }),
   ),
