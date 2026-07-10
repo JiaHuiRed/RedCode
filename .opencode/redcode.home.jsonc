@@ -87,25 +87,6 @@
   "compaction": { "threshold": 150000 },
   "tools": { "github-triage": false, "github-pr-search": false },
   "provider": {
-    "opencode": {
-      "name": "FreeLLMAPI",
-      "options": { "baseURL": "http://localhost:3001/v1", "apiKey": "freellmapi-3af8381d8dc0813d51d7865598ceff9138af18cc3bd3d960" },
-      "models": {
-        "stepfun-step-3.7-flash": { "name": "StepFun 3.7 Flash" },
-        "poolside-laguna-m.1": { "name": "Poolside Laguna M.1" },
-        "gpt-oss-20b": { "name": "GPT-OSS 20B" },
-        "auto": { "name": "Auto Route" }
-      }
-    },
-    "step-plan": {
-      "name": "StepPlan",
-      "options": { "baseURL": "https://api.stepfun.com/v1", "apiKey": "5LD8KOXu9M4vwqFrrcvrQxGtWStJ2aSQxqPgaiXlZIi1cFtzpDVswHHrq63UHV7Jc" },
-      "models": { "step-3.7-flash": { "name": "Step 3.7 Flash" } }
-    },
-    "stepfun": {
-      "options": { "baseURL": "https://api.stepfun.com/step_plan/v1", "apiKey": "5LD8KOXu9M4vwqFrrcvrQxGtWStJ2aSQxqPgaiXlZIi1cFtzpDVswHHrq63UHV7Jc" },
-      "models": { "step-3.7-flash": { "name": "Step 3.7 Flash" } }
-    },
     "ollama": {
       "options": { "baseURL": "http://localhost:11434/v1" },
       "models": {
