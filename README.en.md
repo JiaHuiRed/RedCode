@@ -24,39 +24,16 @@
 
 ## ✨ What is this?
 
-Open-source AI coding assistant with **terminal TUI** and **desktop GUI** interfaces. Reads your codebase, executes commands, edits files, searches code, and completes programming tasks through natural language conversation.
+AI coding assistant, two entry points, one engine:
 
----
+- **TUI** — terminal interface (`packages/opencode`)
+- **GUI** — desktop window, Electron + SolidJS (`packages/desktop`)
 
-## 🧩 Features
+Reads code, writes code, fixes bugs, runs commands. You speak Chinese (or any language), it does the work.
 
-- 💬 **Natural Language Coding** — describe requirements, auto-complete code
-- 🔌 **Multi-Model Support** — DeepSeek, MiMo, OpenAI, Anthropic, Google Gemini, Ollama, etc.
-- 🛠 **Tool System** — file read/write, code search, git status/diff/log, terminal commands, web search, environment info
-- 🤖 **Smart Agents** — Build, Plan, General, Explore agents built-in, custom agents supported
-- 📝 **Session Management** — history save, restore, fork
-- 🎨 **Terminal UI** — syntax highlighting, streaming output, diff display
-- 🖥 **Desktop GUI** — Electron standalone window with full graphical interface
-- 📊 **MCP Servers**:
-  - [TypeGraph](https://github.com/guyowen/typegraph-mcp) — TypeScript semantic navigation (type resolution, barrel file traversal, cycle detection)
-  - [jCodeMunch](https://github.com/jgravelle/jcodemunch-mcp) — structured code retrieval (60+ tools: symbol lookup, dead code detection, AST matching)
-  - ~~Browser MCP~~ — browser automation (disabled, stability issues)
-- 🔒 **Permission System** — tool call confirmation, auto-approve support
-- 🌍 **Multi-language** — Chinese, English, Japanese, and 18 languages
-- 🗣 **TTS** — MiMo TTS voice reading for AI responses
+### Core capabilities
 
----
-
-## 🖥 Desktop GUI
-
-- **Three-column layout**: FileTree (left) + Chat (center) + Review (right), independently resizable
-- **V2 Titlebar**: Tab-based session management, StatusPopover for token usage, `Cmd+T` / `Cmd+Shift+T` to switch sessions
-- **Project shortcuts**: `Cmd+1` ~ `Cmd+9` to switch projects
-- **Semantic color layering**: `theme.colors` grouped by text/surface/border/status/diff/markdown/syntax, customizable themes
-- **ECC plugin integration**: Auto file change tracking, context compression optimization, safe auto-approval
-- **Version auto-injection**: Titlebar version badge auto-injected from `package.json` at build time
-- **Thinking hamster animation**: 🐹 running animation + Mona cat loading during AI thinking
-- **Design system**: CSS design tokens (radius, shadows, typography), `text-wrap: balance/pretty`
+Code understanding (TypeGraph / jCodeMunch) · Multi-model (DeepSeek / OpenAI / Anthropic / Ollama) · File read/write/edit · Terminal execution · Web search · Vision analysis · Session management · Permission gating · Context compaction · Automated memory system · Goal tracking · Skill system · Anti-repeat loop detection · Custom AI personas
 
 ---
 

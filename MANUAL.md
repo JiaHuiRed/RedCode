@@ -180,13 +180,19 @@ ollama pull qwen2.5-coder:7b
 # 在 redcode.jsonc 中配置
 {
   "provider": {
-    "local": {
-      "type": "openai",
-      "apiKey": "ollama",
-      "baseURL": "http://localhost:11434/v1"
+    "ollama": {
+      "options": { "baseURL": "http://localhost:11434/v1" },
+      "models": {
+        "qwen2.5-coder:7b": {
+          "name": "Qwen2.5 Coder 7B",
+          "temperature": true,
+          "tool_call": true,
+          "limit": { "context": 32768, "output": 8192 }
+        }
+      }
     }
   },
-  "model": "local/qwen2.5-coder:7b"
+  "model": "ollama/qwen2.5-coder:7b"
 }
 ```
 
@@ -205,28 +211,30 @@ MCP（Model Context Protocol）让 AI 获得外部能力。安装越多 MCP，AI
 | **TypeGraph** | TypeScript 语义导航：类型跳转、barrel 穿透、循环依赖检测 | — |
 | **jCodeMunch** | 结构化代码检索：60+ 工具（符号查找、死代码、AST 匹配、编辑安全预检）| `jcodemunch-mcp index`（推荐，启用 AI 摘要）|
 
-### 4.2 网络与浏览
+### 4.2 文件与文档
+
+| 服务器 | 用途 | 首次使用前 |
+|--------|------|-----------|
+| **markitdown** | 二进制文档转 Markdown：`.docx`/`.xlsx`/`.pptx`/`.pdf` 等 read 读不了的文件用它提取文本 | — |
+| **fff** | 高性能文件查找/grep（`fff_find_files`/`fff_grep`/`fff_multi_grep`）| — |
+| **sqlite-query** | 结构化查询 SQLite 数据库，免 shell 转义 | — |
+
+### 4.3 网络与视觉
 
 | 服务器 | 用途 | 首次使用前 |
 |--------|------|-----------|
 | **Web Search** | 网页搜索：DuckDuckGo + Yahoo 兜底，内置服务，零 API Key | — |
-| ~~Browser MCP~~ | 浏览器自动化（已禁用，稳定性不足） | — |
-| **Vision MCP** | 多模态视觉分析：让不支持图片的模型也能看截图 | 安装 Ollama + 拉取 `qwen3-vl:8b` 模型 |
-| **Exa Search** | 语义搜索引擎：AI 驱动的深度网络搜索 | 注册免费 API Key（`dashboard.exa.ai`）|
+| ~~Browser MCP~~ | 浏览器自动化（默认关闭，稳定性不足，需要时手动 `enabled: true`）| 装并连接浏览器扩展 |
+| **Vision MCP** | 多模态视觉分析：让不支持图片的模型也能看截图 | 安装 Ollama + 拉取本地视觉模型（如 minicpm-v4.5，通过 `VISION_MODEL` 环境变量指定）|
 
-### 4.3 记忆与知识
+### 4.4 记忆与进程
 
 | 服务器 | 用途 | 首次使用前 |
 |--------|------|-----------|
-| **gbrain** | 持久化记忆大脑（PGLite 本地存储）| — |
 | **su-prememory** | 本地语义记忆：SQLite+FTS5 全文搜索，纯离线 | — |
+| **mcp-process-mgmt** | 管理交互式/长驻 shell 会话（REPL、dev server 等需要 stdin 的进程）| — |
 
-### 4.4 平台搜索与发布
-
-| 服务器 | 用途 | 首次使用前 |
-|--------|------|-----------|
-| **Agent Reach** | 统一搜索：GitHub 仓库/Issue、B站视频和字幕、抖音视频信息 | `gh auth login`（GitHub 功能）|
-
+> 曾预配置过的 **gbrain**（记忆）、**Exa Search**（语义搜索）、**Agent Reach**（B站/抖音/GitHub 统一搜索）已从默认模板移除（gbrain 元数据损坏且功能被 su-prememory 覆盖；Exa 与 Web Search 冗余）。Agent Reach 代码仍在仓库 `plugins/agent-reach-mcp/`，需要时可参考 4.5 手动加回配置。
 
 ### 4.5 添加自己的 MCP
 
@@ -356,7 +364,7 @@ export ECC_PROFILE=strict
 
 ### 7.3 添加自定义 MCP
 
-见 [第 4.3 节](#43-添加自己的-mcp)。
+见 [第 4.5 节](#45-添加自己的-mcp)。
 
 ---
 
@@ -395,7 +403,6 @@ Skill 是扩展 AI 行为的机制——本质上是注入给 AI 的指令文件
 | Skill | 作用 | 触发词 |
 |-------|------|--------|
 | **memory-automation** | 自动记忆系统（日志/长期库/启动注入）| "收工""保存记忆" |
-| **bump-version** | 一键升版（package.json→徽章→CHANGELOG→commit）| "升版""bump""更新版本" |
 | **ce-code-review** | 结构化多维度代码审查 | "帮我看看代码""review一下" |
 | **diagnose** | 形式化 bug 诊断循环 | "查bug""排查一下""debug" |
 | **guardrail-profiles** | 三档权限控制（minimal / standard / strict）| "快干""严格模式" |

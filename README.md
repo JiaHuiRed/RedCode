@@ -29,7 +29,7 @@ AI 编程助手。两个入口、同一能力：
 
 ### 核心能力
 
-代码理解（TypeGraph / jCodeMunch）· 多模型（DeepSeek / OpenAI / Anthropic / Ollama）· 文件读写编辑 · 终端执行 · Web 搜索 · 浏览器自动化 · 视觉分析 · 会话管理 · 权限门控 · 上下文压缩 · 自动化记忆系统 · 目标管理 · 自定义 AI 人格
+代码理解（TypeGraph / jCodeMunch）· 多模型（DeepSeek / OpenAI / Anthropic / Ollama）· 文件读写编辑 · 终端执行 · Web 搜索 · 视觉分析 · 会话管理 · 权限门控 · 上下文压缩 · 自动化记忆系统 · 目标管理 · Skill 技能系统 · 防重复循环检测 · 自定义 AI 人格
 
 ---
 
