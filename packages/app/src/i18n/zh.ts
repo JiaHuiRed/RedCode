@@ -537,6 +537,10 @@ export const dict = {
   "home.shortcuts.fileTree": "文件树",
   "home.shortcuts.settings": "设置",
   "home.shortcuts.commandPalette": "命令面板",
+  "home.shortcuts.openProject": "打开项目",
+  "home.shortcuts.archiveSession": "归档会话",
+  "home.shortcuts.cycleTheme": "切换主题",
+  "home.shortcuts.switchProject": "切换项目",
 
   "session.tab.session": "会话",
   "session.tab.review": "审查",

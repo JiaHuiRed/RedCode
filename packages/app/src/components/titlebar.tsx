@@ -273,7 +273,13 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
       addTab: (tab: Tab) => {
         setStore(
           produce((tabs) => {
-            if (tabs.some((t) => t.href === tab.href)) return
+            // 260710 Red 用 sessionId 去重（不只靠 href），避免同一会话从不同 dir 编码进入时产生重复标签
+            const existing = tabs.findIndex((t) => t.sessionId === tab.sessionId)
+            if (existing !== -1) {
+              tabs[existing].href = tab.href
+              tabs[existing].dir = tab.dir
+              return
+            }
             tabs.push(tab)
           }),
         )

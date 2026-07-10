@@ -336,7 +336,7 @@ function HomeDesign() {
   )
 }
 
-// 260709 Red 首页底部快捷键提示条：展示常用快捷键，帮用户发现功能
+// 260710 Red 首页底部：随机 tips + 快捷键提示条
 function HomeShortcutBar() {
   const language = useLanguage()
   const isMac = navigator.platform.includes("Mac")
@@ -345,25 +345,90 @@ function HomeShortcutBar() {
     { keys: `${mod}+K`, label: language.t("home.shortcuts.search") },
     { keys: `${mod}+N`, label: language.t("home.shortcuts.newSession") },
     { keys: `Alt+↑↓`, label: language.t("home.shortcuts.switchSession") },
+    { keys: `${mod}+Alt+↑↓`, label: language.t("home.shortcuts.switchProject") },
+    { keys: `${mod}+O`, label: language.t("home.shortcuts.openProject") },
     { keys: `${mod}+\\`, label: language.t("home.shortcuts.fileTree") },
     { keys: `${mod}+,`, label: language.t("home.shortcuts.settings") },
     { keys: `${mod}+P`, label: language.t("home.shortcuts.commandPalette") },
+    { keys: `${mod}+Shift+T`, label: language.t("home.shortcuts.cycleTheme") },
+    { keys: `${mod}+Shift+⌫`, label: language.t("home.shortcuts.archiveSession") },
   ]
+  const tip = HOME_TIPS[Math.floor(Math.random() * HOME_TIPS.length)]
   return (
-    <div class="col-span-full flex items-center justify-center gap-6 px-4 py-3 text-[11px] text-v2-text-text-muted [font-weight:440]">
-      <For each={shortcuts}>
-        {(item) => (
-          <span class="flex items-center gap-1.5">
-            <kbd class="inline-flex items-center rounded border border-v2-border-border-strong px-1.5 py-0.5 text-[10px] font-medium tabular-nums">
-              {item.keys}
-            </kbd>
-            <span>{item.label}</span>
-          </span>
-        )}
-      </For>
+    <div class="col-span-full flex flex-col items-center gap-1.5 px-4 py-3">
+      <span class="text-[14px] [font-weight:440] italic" style={{ color: "#4ade8099" }}>
+        {tip}
+      </span>
+      <div class="flex items-center justify-center gap-6 text-[13px] [font-weight:440]" style={{ color: "#4ade80cc" }}>
+        <For each={shortcuts}>
+          {(item) => (
+            <span class="flex items-center gap-1">
+              <span class="text-[12px] [font-weight:530]">{item.keys}</span>
+              <span>{item.label}</span>
+            </span>
+          )}
+        </For>
+      </div>
     </div>
   )
 }
+
+// 260710 Red 首页随机 tips：操作技巧、谚语、彩蛋
+const HOME_TIPS = [
+  // ── 操作技巧 ──
+  "右键会话可以归档，保持首页清爽",
+  "Ctrl+Shift+T 可以快速切换主题配色",
+  "Alt+↑↓ 快速在会话间跳转，不用回首页",
+  "Ctrl+Alt+↑↓ 切换项目，多项目工作流必备",
+  "Ctrl+O 可以打开新项目文件夹",
+  "试试看板视图，一眼看清哪些会话在工作",
+  "Shift+Alt+↑↓ 跳转到有未读消息的会话",
+  "Ctrl+Shift+Backspace 快速归档当前会话",
+  "用 /recall 可以召回之前的记忆",
+  "给模型发图片，它能看懂截图和设计稿",
+  "会话标题是自动生成的，取名靠的是本地小模型",
+  "MCP 工具可以让模型直接操作浏览器、数据库等",
+  "代码写累了？Ctrl+Shift+S 换个配色方案换换心情",
+  "首页项目右键可以直接打开文件管理器",
+  "Ctrl+P 打开命令面板，所有功能一搜即达",
+  "Ctrl+K 全局搜索，找会话、找文件、找命令",
+  "Ctrl+\\ 打开文件树，快速浏览项目结构",
+  "Ctrl+N 新建会话，开启一段新对话",
+  "Ctrl+1~9 快速切换到对应序号的项目",
+  "模型支持多轮对话，可以不断追问和修正",
+  "可以同时开多个会话，让模型并行处理不同任务",
+  "Worktree 模式可以让模型在独立分支上工作，不影响主线",
+  "在设置里可以自定义提示音，权限请求时播放提醒",
+  "支持拖拽文件到输入框，直接发送给模型",
+  // ── 编程智慧 ──
+  "好的 prompt = 好的结果。描述越清晰，模型越精准",
+  "把大任务拆成小步骤，模型会完成得更好",
+  "遇到模型重复输出？RedCode 有自动检测和恢复机制",
+  "写代码如烹小鲜，急不得",
+  "最好的代码是不需要写的代码",
+  "先让它跑起来，再让它跑得好",
+  "重构的最佳时机是写完的下一秒",
+  "注释不是写给机器看的，是写给六个月后的自己",
+  "代码审查不是找茬，是互相学习",
+  "Bug 不是写出来的，是设计出来的",
+  "过早优化是万恶之源",
+  "复制粘贴两次以上，就该提取函数了",
+  "写测试不是浪费时间，是节省未来的时间",
+  "好的命名胜过好的注释",
+  "每个函数只做一件事，做好它",
+  "如果你不能向一个五岁小孩解释清楚，说明你自己也没懂",
+  "调试是两倍难度的编程，所以代码别写太聪明",
+  "今天的 TODO 是明天的 tech debt",
+  "代码是写给人看的，顺便能在机器上运行",
+  // ── 名人名言 ──
+  "Talk is cheap. Show me the code. — Linus Torvalds",
+  "Simplicity is the ultimate sophistication. — Leonardo da Vinci",
+  "任何足够先进的技术，都与魔法无异。 — Arthur C. Clarke",
+  "程序必须是为了给人看而写，顺便能在机器上运行。 — Abelson & Sussman",
+  "完成比完美更重要。 — Sheryl Sandberg",
+  "The best way to predict the future is to invent it. — Alan Kay",
+  "Measuring programming progress by lines of code is like measuring aircraft building progress by weight. — Bill Gates",
+]
 
 function HomeProjectColumn(props: {
   projects: LocalProject[]

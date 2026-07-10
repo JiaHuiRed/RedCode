@@ -561,6 +561,10 @@
   "home.shortcuts.fileTree": "File tree",
   "home.shortcuts.settings": "Settings",
   "home.shortcuts.commandPalette": "Command palette",
+  "home.shortcuts.openProject": "Open project",
+  "home.shortcuts.archiveSession": "Archive session",
+  "home.shortcuts.cycleTheme": "Cycle theme",
+  "home.shortcuts.switchProject": "Switch project",
 
   "session.tab.session": "Session",
   "session.tab.review": "Review",
