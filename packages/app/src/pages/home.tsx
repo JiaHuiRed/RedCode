@@ -350,11 +350,11 @@ function HomeShortcutBar() {
     { keys: `${mod}+P`, label: language.t("home.shortcuts.commandPalette") },
   ]
   return (
-    <div class="col-span-full flex items-center justify-center gap-6 px-4 py-3 text-[11px] text-v2-text-text-faint [font-weight:440]">
+    <div class="col-span-full flex items-center justify-center gap-6 px-4 py-3 text-[11px] text-v2-text-text-muted [font-weight:440]">
       <For each={shortcuts}>
         {(item) => (
           <span class="flex items-center gap-1.5">
-            <kbd class="inline-flex items-center rounded border border-v2-border-border-base px-1.5 py-0.5 text-[10px] font-medium tabular-nums">
+            <kbd class="inline-flex items-center rounded border border-v2-border-border-strong px-1.5 py-0.5 text-[10px] font-medium tabular-nums">
               {item.keys}
             </kbd>
             <span>{item.label}</span>

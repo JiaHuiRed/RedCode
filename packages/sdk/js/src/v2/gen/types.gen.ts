@@ -82,6 +82,7 @@ export type Event =
   | EventAccountAdded
   | EventAccountRemoved
   | EventAccountSwitched
+  | EventSessionLoopDetected
 
 export type OAuth = {
   type: "oauth"
@@ -8191,3 +8192,14 @@ export type PtyConnectResponses = {
 }
 
 export type PtyConnectResponse = PtyConnectResponses[keyof PtyConnectResponses]
+
+// 260710 Red 文本重复检测事件
+export type EventSessionLoopDetected = {
+  id: string
+  type: "session.loop_detected"
+  properties: {
+    sessionID: string
+    type: "ngram" | "nudge" | "replan" | "stop"
+    textLen: number
+  }
+}

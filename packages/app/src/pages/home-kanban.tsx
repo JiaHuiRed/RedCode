@@ -1,4 +1,5 @@
 import type { Session } from "@redcode-ai/sdk/v2/client"
+import { DateTime } from "luxon"
 import { createMemo, For, Show } from "solid-js"
 import { Spinner } from "@redcode-ai/ui/spinner"
 import { ContextMenu } from "@redcode-ai/ui/context-menu"
@@ -84,7 +85,7 @@ export function HomeKanban(props: {
     <div class="flex gap-4 min-h-0 overflow-x-auto overflow-y-hidden flex-1 px-4 pb-4">
       <For each={columns()}>
         {(column) => (
-          <div class="flex flex-col min-w-[220px] max-w-[320px] flex-1 gap-3">
+          <div class="flex flex-col min-w-[220px] flex-1 gap-3">
             <div class="flex items-center gap-2 px-2 h-7 shrink-0">
               <div class="size-2 rounded-full" style={{ "background-color": columnColor(column.id) }} />
               <span class="text-v2-text-text-muted [font-weight:530] text-[13px]">{columnLabel(column.id)}</span>
@@ -92,7 +93,8 @@ export function HomeKanban(props: {
                 <span class="text-v2-text-text-faint text-[11px] [font-weight:440]">{column.records.length}</span>
               </Show>
             </div>
-            <div class="flex flex-col gap-2 overflow-y-auto flex-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {/* 260710 Red 空闲列会话多时两列网格展示，充分利用右侧空间 */}
+            <div class={`overflow-y-auto flex-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${column.records.length > 6 ? "grid grid-cols-2 gap-2 auto-rows-min content-start" : "flex flex-col gap-2"}`}>
               <Show
                 when={column.records.length > 0}
                 fallback={
@@ -131,6 +133,15 @@ function KanbanCard(props: {
   const [store] = globalSync.child(props.record.session.directory, { bootstrap: false })
   const title = createMemo(() => sessionTitle(props.record.session.title) || props.record.session.id)
   const tint = createMemo(() => messageAgentColor(store.message[props.record.session.id], store.agent))
+  // 260710 Red 看板卡片显示会话日期
+  const dateLabel = createMemo(() => {
+    const ts = props.record.session.time.updated ?? props.record.session.time.created
+    const dt = DateTime.fromMillis(ts)
+    const now = DateTime.local()
+    if (dt.hasSame(now, "day")) return language.t("home.sessions.group.today")
+    if (dt.hasSame(now.minus({ days: 1 }), "day")) return language.t("home.sessions.group.yesterday")
+    return dt.toFormat("MM-dd")
+  })
 
   return (
     // 260710 Red 看板卡片右键菜单：归档
@@ -155,11 +166,16 @@ function KanbanCard(props: {
             {title()}
           </span>
         </div>
-        <Show when={props.record.projectName}>
-          <span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-muted [font-weight:440] text-[11px]">
-            {props.record.projectName}
+        <div class="flex items-center gap-1 min-w-0 w-full">
+          <Show when={props.record.projectName}>
+            <span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-muted [font-weight:440] text-[11px]">
+              {props.record.projectName}
+            </span>
+          </Show>
+          <span class="ml-auto shrink-0 text-v2-text-text-faint [font-weight:400] text-[10px]">
+            {dateLabel()}
           </span>
-        </Show>
+        </div>
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content>
