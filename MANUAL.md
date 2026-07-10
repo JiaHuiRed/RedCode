@@ -234,7 +234,7 @@ MCP（Model Context Protocol）让 AI 获得外部能力。安装越多 MCP，AI
 | **su-prememory** | 本地语义记忆：SQLite+FTS5 全文搜索，纯离线 | — |
 | **mcp-process-mgmt** | 管理交互式/长驻 shell 会话（REPL、dev server 等需要 stdin 的进程）| — |
 
-> 曾预配置过的 **gbrain**（记忆）、**Exa Search**（语义搜索）、**Agent Reach**（B站/抖音/GitHub 统一搜索）已从默认模板移除（gbrain 元数据损坏且功能被 su-prememory 覆盖；Exa 与 Web Search 冗余）。Agent Reach 代码仍在仓库 `plugins/agent-reach-mcp/`，需要时可参考 4.5 手动加回配置。
+> 曾预配置过的 **gbrain**（记忆）、**Exa Search**（语义搜索）、**Agent Reach**（B站/抖音/GitHub 统一搜索）已彻底移除（gbrain 元数据损坏且功能被 su-prememory 覆盖；Exa 与 Web Search 冗余；Agent Reach 实际使用率过低，插件源码已删除）。
 
 ### 4.5 添加自己的 MCP
 

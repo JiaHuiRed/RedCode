@@ -7,8 +7,7 @@
     "~/.redcode/skill/goal-automation/SKILL.md",
     "~/.redcode/skill/simplify/SKILL.md",
     "~/.redcode/skill/vision-autoagent/SKILL.md",
-    "~/.redcode/skill/diagnose/SKILL.md",
-    "~/.redcode/skill/hot-trends/SKILL.md"
+    "~/.redcode/skill/diagnose/SKILL.md"
   ],
   "mcp": {
     "typegraph": {
