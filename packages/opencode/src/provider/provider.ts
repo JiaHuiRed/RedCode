@@ -1225,6 +1225,10 @@ export const layer = Layer.effect(
             "deepseek-v4-flash": CNY_COST_FLASH,
             "deepseek-v4-pro": CNY_COST_PRO,
           },
+          "opencode-go": {
+            "deepseek-v4-flash": CNY_COST_FLASH,
+            "deepseek-v4-pro": CNY_COST_PRO,
+          },
           xiaomi: {
             "mimo-v2.5": CNY_COST_FLASH,
             "mimo-v2.5-pro": CNY_COST_PRO,

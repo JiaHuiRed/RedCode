@@ -9,7 +9,7 @@ const id = "internal:home-footer"
 // 260701 Red DeepSeek/Xiaomi 报价本身是 CNY，其余按官方汇率折算成 ¥ 统一展示
 // （与 GUI 侧 session-context-format.ts 的 USD_TO_CNY 保持一致）
 const USD_TO_CNY = 6.76
-const CNY_PROVIDERS = new Set(["deepseek", "xiaomi"])
+const CNY_PROVIDERS = new Set(["deepseek", "xiaomi", "opencode-go"])
 const money = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" })
 
 function Directory(props: { api: TuiPluginApi }) {

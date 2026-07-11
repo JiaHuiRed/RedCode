@@ -52,7 +52,7 @@ const lastAssistantWithTokens = (messages: Message[]) => {
 
 // 260615 Red: providers with official CNY pricing — cost values are already in ¥, no USD→CNY conversion needed
 // 260701 Red exported for reuse by home-stats.tsx (cross-session cost aggregation)
-export const CNY_PROVIDERS = new Set(["deepseek", "xiaomi"])
+export const CNY_PROVIDERS = new Set(["deepseek", "xiaomi", "opencode-go"])
 
 const build = (messages: Message[] = [], providers: Provider[] = []): Metrics => {
   const totalCost = messages.reduce((sum, msg) => sum + (msg.role === "assistant" ? msg.cost : 0), 0)

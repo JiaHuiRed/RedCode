@@ -11,6 +11,14 @@
 ---
 
 ## TUI
+### [0.7.22] - 2026-07-11
+
+> `opencode-go` provider 补全官方 CNY 定价——DeepSeek/MiMo 通过 `opencode-go` 接入时价格用 ¥1/M 而非 models.dev USD 价目。
+
+#### 修复
+
+- **`opencode-go` provider CNY 定价缺失**（`provider.ts`）：数据库分析发现 11 个 session 的 `providerID` 为 `opencode-go`（通过 `auth login` 自动发现配置），此 ID 不在 `CNY_PRICING` map 中（仅含 `deepseek`/`xiaomi`/`stepfun`），计算成本回退到 models.dev 的 USD 默认价。在 `CNY_PRICING` 新增 `opencode-go` 条目，deepseek-v4-flash / pro 共享官方 CNY 价目（¥1/M input, ¥2/M output）。同步补全 `CNY_PROVIDERS`（`sidebar/context.tsx`、`home/footer.tsx`、GUI `session-context-metrics.ts`），确保 UI 正确识别成本币种。
+
 ### [0.7.21] - 2026-07-10
 
 > Todo 层级子任务——`id`/`parent_id` 可选字段，模型可表达子任务嵌套，TUI/GUI 侧栏与 composer 均按层级缩进渲染。
