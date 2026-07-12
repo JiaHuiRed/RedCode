@@ -1,7 +1,7 @@
 import { readdirSync, existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { Schema } from "effect"
-import yaml from "js-yaml"
+import * as yaml from "js-yaml"
 import { ProfileTypes } from "./types"
 import type { RawProfile } from "./types"
 
