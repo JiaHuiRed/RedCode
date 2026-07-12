@@ -17,6 +17,32 @@ import { DialogSelectProvider } from "./dialog-select-provider"
 
 type Props = {
   back?: "providers" | "close"
+  editProviderID?: string
+}
+
+function initFormFromConfig(providerID: string, config: Record<string, unknown>): FormState {
+  const options = config.options as Record<string, unknown> | undefined
+  const models = Object.entries((config.models as Record<string, Record<string, unknown>>) ?? {}).map(
+    ([id, model]) => ({
+      ...modelRow(),
+      id,
+      name: (model.name as string) ?? "",
+    }),
+  )
+  const headers = Object.entries((options?.headers as Record<string, string>) ?? {}).map(([key, value]) => ({
+    ...headerRow(),
+    key,
+    value,
+  }))
+  return {
+    providerID,
+    name: (config.name as string) ?? providerID,
+    baseURL: (options?.baseURL as string) ?? "",
+    apiKey: "",
+    models: models.length ? models : [modelRow()],
+    headers: headers.length ? headers : [headerRow()],
+    err: {},
+  }
 }
 
 export function DialogCustomProvider(props: Props) {
@@ -25,7 +51,7 @@ export function DialogCustomProvider(props: Props) {
   const globalSDK = useGlobalSDK()
   const language = useLanguage()
 
-  const [form, setForm] = createStore<FormState>({
+  const defaultFormState: FormState = {
     providerID: "",
     name: "",
     baseURL: "",
@@ -33,7 +59,13 @@ export function DialogCustomProvider(props: Props) {
     models: [modelRow()],
     headers: [headerRow()],
     err: {},
-  })
+  }
+  const initForm = (() => {
+    if (!props.editProviderID) return defaultFormState
+    const existing = globalSync.data.config.provider?.[props.editProviderID]
+    return existing ? initFormFromConfig(props.editProviderID, existing) : defaultFormState
+  })()
+  const [form, setForm] = createStore<FormState>(initForm)
 
   const goBack = () => {
     if (props.back === "close") {
@@ -107,6 +139,7 @@ export function DialogCustomProvider(props: Props) {
       t: language.t,
       disabledProviders: globalSync.data.config.disabled_providers ?? [],
       existingProviderIDs: new Set(globalSync.data.provider.all.keys()),
+      editProviderID: props.editProviderID,
     })
     batch(() => {
       setForm("err", output.err)
@@ -131,8 +164,23 @@ export function DialogCustomProvider(props: Props) {
         })
       }
 
+      // Merge with existing config to preserve extra fields (limits, flags, etc.)
+      const existing = globalSync.data.config.provider?.[result.providerID]
+
       await globalSync.updateConfig({
-        provider: { [result.providerID]: result.config },
+        provider: {
+          [result.providerID]: {
+            ...existing,
+            ...result.config,
+            options: { ...existing?.options, ...result.config.options },
+            models: Object.fromEntries(
+              Object.entries(result.config.models).map(([id, m]) => [
+                id,
+                { ...existing?.models?.[id], ...m },
+              ]),
+            ),
+          },
+        },
         disabled_providers: nextDisabled,
       })
       return result
@@ -177,7 +225,11 @@ export function DialogCustomProvider(props: Props) {
       <div class="flex flex-col gap-6 px-2.5 pb-3 overflow-y-auto max-h-[60vh]">
         <div class="px-2.5 flex gap-4 items-center">
           <ProviderIcon id="synthetic" class="size-5 shrink-0 icon-strong-base" />
-          <div class="text-16-medium text-text-strong">{language.t("provider.custom.title")}</div>
+          <div class="text-16-medium text-text-strong">
+            {props.editProviderID
+              ? `${language.t("common.edit")} - ${props.editProviderID}`
+              : language.t("provider.custom.title")}
+          </div>
         </div>
 
         <form onSubmit={save} class="px-2.5 pb-6 flex flex-col gap-6">
@@ -199,6 +251,7 @@ export function DialogCustomProvider(props: Props) {
               onChange={(v) => setField("providerID", v)}
               validationState={form.err.providerID ? "invalid" : undefined}
               error={form.err.providerID}
+              disabled={!!props.editProviderID}
             />
             <TextField
               label={language.t("provider.custom.field.name.label")}
@@ -320,7 +373,11 @@ export function DialogCustomProvider(props: Props) {
             variant="primary"
             disabled={saveMutation.isPending}
           >
-            {saveMutation.isPending ? language.t("common.saving") : language.t("common.submit")}
+            {saveMutation.isPending
+              ? language.t("common.saving")
+              : props.editProviderID
+                ? language.t("common.edit")
+                : language.t("common.submit")}
           </Button>
         </form>
       </div>

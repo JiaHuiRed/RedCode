@@ -16,7 +16,7 @@
 > Author: Red · Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev).
 [![TUI](https://badgen.net/badge/TUI/0.7.22/blue)](CHANGELOG.md)
 
-[![Desktop](https://badgen.net/badge/Desktop/0.7.3/purple)](CHANGELOG.md)
+[![Desktop](https://badgen.net/badge/Desktop/0.7.4/purple)](CHANGELOG.md)
 [![License](https://badgen.net/badge/License/MIT/grey)](LICENSE)
 [![Platform](https://badgen.net/badge/Platform/Windows%2010%2F11/green)](https://github.com/JiaHuiRed/RedCode)
 

@@ -71,6 +71,11 @@ export const SettingsProviders: Component = () => {
 
   const canDisconnect = (item: ProviderItem) => source(item) !== "env"
 
+  const isEditable = (item: ProviderItem) => {
+    const s = source(item)
+    return s === "config" || s === "custom"
+  }
+
   const note = (id: string) => PROVIDER_NOTES.find((item) => item.match(id))?.key
 
   const isConfigCustom = (providerID: string) => {
@@ -162,9 +167,20 @@ export const SettingsProviders: Component = () => {
                         </span>
                       }
                     >
-                      <Button size="large" variant="ghost" onClick={() => void disconnect(item.id, item.name)}>
-                        {language.t("common.disconnect")}
-                      </Button>
+                      <div class="flex items-center gap-2">
+                        <Show when={isEditable(item)}>
+                          <Button
+                            size="large"
+                            variant="secondary"
+                            onClick={() => dialog.show(() => <DialogCustomProvider back="close" editProviderID={item.id} />)}
+                          >
+                            {language.t("common.edit")}
+                          </Button>
+                        </Show>
+                        <Button size="large" variant="ghost" onClick={() => void disconnect(item.id, item.name)}>
+                          {language.t("common.disconnect")}
+                        </Button>
+                      </div>
                     </Show>
                   </div>
                 )}

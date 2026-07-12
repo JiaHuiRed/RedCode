@@ -1391,6 +1391,18 @@
 
 ## GUI
 
+### [0.7.4] - 2026-07-12
+
+> 已连接自定义 provider 支持编辑——ovh/ollama 等 config/custom 源提供商可自行修改模型/endpoint，无需找 agent。
+
+#### 新增
+
+- **已连接自定义 provider 编辑**（`dialog-custom-provider.tsx`、`dialog-custom-provider-form.ts`、`settings-providers.tsx`）：`settings-providers.tsx` 对 `source=config/custom` 的已连接提供商显示"编辑"按钮，点击打开 `DialogCustomProvider` 并以 `editProviderID` prop 进入编辑模式。表单预填现有配置（models/headers/baseURL/name/apiKey），providerID 字段禁用防改。保存时合并现有模型配置保留 limits/flags/capabilities 等额外字段，不覆盖未涉及的属性，实现无损编辑。
+
+#### 变更
+
+- **本地模型 qwen3.5 context 修正**（`redcode.home.jsonc`）：qwen3.5:9b-q8_0 的 context 限制从 262144 下调为 163840，匹配模型实际支持的最大上下文窗口。
+
 ### [0.7.3] - 2026-07-10
 
 > Todo 层级子任务 GUI 侧适配——composer 待办面板按层级缩进渲染。
