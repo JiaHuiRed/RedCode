@@ -50,9 +50,9 @@
       "type": "local",
       "command": ["vision-mcp-server"],
       "env": {
-        "VISION_MODEL": "minicpm-v4.5:q5_K_M"
+        "VISION_MODEL": "minicpm-v4.6:f16"
       },
-      "description": "图像理解——当前模型非多模态、需看截图/图片内容时用（走本地 minicpm-v4.5）；纯文本任务不用。",
+      "description": "图像理解——当前模型非多模态、需看截图/图片内容时用（走本地 minicpm-v4.6:f16，比 v4.5 快 8x）；纯文本任务不用。",
       "enabled": true
     },
     "su-prememory": {
@@ -108,6 +108,15 @@
         },
         "minicpm-v4.5:q5_K_M": {
           "name": "MiniCPM V4.5",
+          "temperature": false,
+          "reasoning": false,
+          "tool_call": false,
+          "attachment": true,
+          "modalities": { "input": ["text", "image"], "output": ["text"] },
+          "limit": { "context": 131072, "output": 131072 }
+        },
+        "minicpm-v4.6:f16": {
+          "name": "MiniCPM V4.6 (轻量)",
           "temperature": false,
           "reasoning": false,
           "tool_call": false,

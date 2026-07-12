@@ -496,7 +496,7 @@ function unsupportedParts(msgs: ModelMessage[], model: Provider.Model): ModelMes
       const pathHint = savedPath ? ` TEMP_FILE:${savedPath}` : ""
       return {
         type: "text" as const,
-        text: `ERROR: Cannot read ${name} (this model does not support ${modality} input). Inform the user.${pathHint}`,
+        text: `ERROR: Cannot read ${name} (this model does not support ${modality} input). Use vision_analyze_image tool.${pathHint}`,
       }
     })
 

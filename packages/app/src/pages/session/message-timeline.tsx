@@ -1108,7 +1108,9 @@ export function MessageTimeline(props: {
   }
 
   const renderTimelineRow = (row: Accessor<TimelineRow.TimelineRow>) => {
-    switch (row()._tag) {
+    const r = row()
+    if (!r) return null
+    switch (r._tag) {
       case "CommentStrip": {
         const commentStripRow = row as Accessor<TimelineRowByTag<"CommentStrip">>
         const comments = createMemo(() =>

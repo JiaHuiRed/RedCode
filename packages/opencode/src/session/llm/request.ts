@@ -15,6 +15,10 @@ import { mergeDeep } from "remeda"
 
 const USER_AGENT = `opencode/${InstallationVersion}`
 
+// 260712 Red subagent role declaration — prepended to system prompt when agent.mode === "subagent"
+const SUBAGENT_ROLE =
+  "You are a subagent on a delegated task. Complete the assigned work and report your results. Do not ask the user questions — the parent agent has provided all context."
+
 type PrepareInput = {
   readonly user: MessageV2.User
   readonly sessionID: string
@@ -53,9 +57,11 @@ const mergeOptions = (target: Record<string, any>, source: Record<string, any> |
 
 export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: PrepareInput) {
   const isOpenaiOauth = input.provider.id === "openai" && input.auth?.type === "oauth"
+  const agentPrompt = input.agent.prompt ?? SystemPrompt.provider(input.model)
+  const agentPrefix = input.agent.mode === "subagent" ? SUBAGENT_ROLE + "\n\n" : ""
   const system = [
     [
-      ...(input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(input.model)),
+      agentPrefix + agentPrompt,
       ...input.system,
       ...(input.user.system ? [input.user.system] : []),
     ]
