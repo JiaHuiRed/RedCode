@@ -11,6 +11,15 @@
 ---
 
 ## TUI
+### [0.7.23] - 2026-07-12
+
+> YAML agent profiles——声明式子代理定义，支持 `extends` 继承 + `tools` 白名单自动转 Permission。
+
+#### 新增
+
+- **YAML agent profiles**（`agent/profile/` + `agent.ts`）：新增 `src/agent/profile/` 模块，支持用 YAML 文件声明式定义 agent。内置默认 profiles（`agent.yaml`/`general.yaml`/`explore.yaml`），用户可在项目 `.opencode/profiles/` 下自定义。支持 `extends` 继承链避免重复定义，`tools` 字段白名单自动映射为 Permission 规则集（子代理自动 deny 未列出工具）。零 system prompt 缓存影响——所有缓存键基于 sessionID，agent.prompt 不在任何缓存键中，扩展来源不同但同一文本的 LLM 请求字节序列完全相同。
+- **`js-yaml` 依赖**：新增 `js-yaml` + `@types/js-yaml`。
+
 ### [0.7.22] - 2026-07-11
 
 > `opencode-go` provider 补全官方 CNY 定价——DeepSeek/MiMo 通过 `opencode-go` 接入时价格用 ¥1/M 而非 models.dev USD 价目。

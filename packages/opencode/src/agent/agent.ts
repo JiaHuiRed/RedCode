@@ -14,6 +14,7 @@ import PROMPT_SCOUT from "./prompt/scout.md"
 import PROMPT_SUMMARY from "./prompt/summary.md"
 import PROMPT_TITLE from "./prompt/title.md"
 import { Permission } from "@/permission"
+import { Profile } from "./profile"
 import { mergeDeep, pipe, sortBy, values } from "remeda"
 import { Global } from "@redcode-ai/core/global"
 import path from "path"
@@ -279,6 +280,42 @@ export const layer = Layer.effect(
             ),
             prompt: PROMPT_SUMMARY,
           },
+        }
+
+        // Load YAML agent profiles (default + user .opencode/profiles/)
+        for (const [name, profile] of Profile.ProfileResolve.resolve(new Map(Profile.ProfileLoad.loadAll(ctx.worktree)))) {
+          const existing = agents[name]
+          if (existing) {
+            agents[name] = {
+              ...existing,
+              description: profile.description ?? existing.description,
+              prompt: profile.prompt ?? existing.prompt,
+              mode: profile.mode,
+              permission: Permission.merge(
+                defaults,
+                Permission.fromConfig(
+                  Profile.ProfileTypes.toolsToPermissionConfig(profile.tools, profile.mode, profile.permission),
+                ),
+                user,
+              ),
+            }
+          } else {
+            agents[name] = {
+              name: profile.name,
+              description: profile.description,
+              prompt: profile.prompt,
+              mode: profile.mode,
+              permission: Permission.merge(
+                defaults,
+                Permission.fromConfig(
+                  Profile.ProfileTypes.toolsToPermissionConfig(profile.tools, profile.mode, profile.permission),
+                ),
+                user,
+              ),
+              options: {},
+              native: false,
+            }
+          }
         }
 
         for (const [key, value] of Object.entries(cfg.agent ?? {})) {
