@@ -1,3 +1,5 @@
+ import { DEFAULT_PROMPT, type Prompt } from "@/context/prompt"
+import { promptLength } from "./history"
 const MAX_BREAKS = 200
 
 export function createTextFragment(content: string): DocumentFragment {
@@ -153,3 +155,103 @@ export function setRangeEdge(parent: HTMLElement, range: Range, edge: "start" | 
     remaining -= length
   }
 }
+
+export function parseFromDOM(editorRef: HTMLElement): Prompt {
+  const parts: Prompt = []
+  let position = 0
+  let buffer = ""
+
+  const flushText = () => {
+    let content = buffer
+    if (content.includes("\r")) content = content.replace(/\r\n?/g, "\n")
+    if (content.includes("\u200B")) content = content.replace(/\u200B/g, "")
+    buffer = ""
+    if (!content) return
+    parts.push({ type: "text", content, start: position, end: position + content.length })
+    position += content.length
+  }
+
+  const pushFile = (file: HTMLElement) => {
+    const content = file.textContent ?? ""
+    parts.push({
+      type: "file",
+      path: file.dataset.path!,
+      content,
+      start: position,
+      end: position + content.length,
+    })
+    position += content.length
+  }
+
+  const pushAgent = (agent: HTMLElement) => {
+    const content = agent.textContent ?? ""
+    parts.push({
+      type: "agent",
+      name: agent.dataset.name!,
+      content,
+      start: position,
+      end: position + content.length,
+    })
+    position += content.length
+  }
+
+  const visit = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      buffer += node.textContent ?? ""
+      return
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return
+
+    const el = node as HTMLElement
+    if (el.dataset.ghost === "true") return
+    if (el.dataset.type === "file") {
+      flushText()
+      pushFile(el)
+      return
+    }
+    if (el.dataset.type === "agent") {
+      flushText()
+      pushAgent(el)
+      return
+    }
+    if (el.tagName === "BR") {
+      buffer += "\n"
+      return
+    }
+
+    for (const child of Array.from(el.childNodes)) {
+      visit(child)
+    }
+  }
+
+  const children = Array.from(editorRef.childNodes)
+  children.forEach((child, index) => {
+    const isBlock = child.nodeType === Node.ELEMENT_NODE && ["DIV", "P"].includes((child as HTMLElement).tagName)
+    visit(child)
+    if (isBlock && index < children.length - 1) {
+      buffer += "\n"
+    }
+  })
+
+  flushText()
+
+   if (parts.length === 0) parts.push(...DEFAULT_PROMPT)
+   return parts
+ }
+
+ export function getCaretState(editorRef: HTMLElement, prompt: () => Prompt) {
+   const selection = window.getSelection()
+   const textLength = promptLength(prompt())
+   if (!selection || selection.rangeCount === 0) {
+     return { collapsed: false, cursorPosition: 0, textLength }
+   }
+   const anchorNode = selection.anchorNode
+   if (!anchorNode || !editorRef.contains(anchorNode)) {
+     return { collapsed: false, cursorPosition: 0, textLength }
+   }
+   return {
+     collapsed: selection.isCollapsed,
+     cursorPosition: getCursorPosition(editorRef),
+     textLength,
+   }
+ }
