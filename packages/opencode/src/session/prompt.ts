@@ -107,6 +107,22 @@ const STRUCTURED_OUTPUT_SYSTEM_PROMPT = `IMPORTANT: The user has requested struc
 const log = Log.create({ service: "session.prompt" })
 const elog = EffectLogger.create({ service: "session.prompt" })
 
+// 260715 Red TEMP diag: 排查"会话变大后卡顿"疑似复发，独立漂移探针不预设阻塞点在哪
+// （只测漂移，不猜是谁卡的——跟 message-v2.ts 里 toModelMessagesEffect 的拆分计时交叉验证）。
+// 复现后看 blockedMs 是否和 message-v2.ts 的 TEMP DIAG 日志时间对得上；定位完两处一起删。
+{
+  let __rc_evloop_last = performance.now()
+  const __rc_evloop_timer = setInterval(() => {
+    const now = performance.now()
+    const drift = now - __rc_evloop_last - 200
+    __rc_evloop_last = now
+    if (drift > 300) {
+      log.warn("TEMP DIAG evloop drift", { blockedMs: Math.round(drift) })
+    }
+  }, 200)
+  __rc_evloop_timer.unref?.()
+}
+
 export interface Interface {
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
   readonly prompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts, Image.Error>

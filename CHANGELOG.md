@@ -11,6 +11,18 @@
 ---
 
 ## TUI
+### [0.7.24] - 2026-07-15
+
+> 修复 YAML agent profile 的 subagent 权限通配符误伤 MCP 工具和 DCP compress——子代理静默失去 MCP 访问，压缩权限被误判 deny 导致卡住不压缩也不继续。
+
+#### 修复
+
+- **[核心] subagent `"*": deny` 误伤 MCP/插件权限**（`agent/profile/types.ts`）：0.7.23 引入的 `toolsToPermissionConfig()` 给所有 `mode: subagent` 的 profile 加了裸通配符 `config["*"] = "deny"`，但 `toolPermissionMap` 只登记内置工具名，jCodeMunch/TypeGraph 等 MCP 工具、DCP 插件自己的 `compress` 工具永远不可能出现在 YAML `tools:` 白名单里被重新 allow 回来，导致所有 subagent 静默失去 MCP 访问；DCP 侧 `resolveEffectiveCompressPermission` 复用同一条通配规则，把 compress 权限误判为 deny——上下文超限时 nudge 仍会提示"必须立即压缩"，但工具本身不可用，表现为卡住不压缩也不继续干活。改为只对 `toolPermissionMap` 已登记的内置工具类别做默认拒绝，其余权限键落回原有 defaults/user 判定。
+
+#### 诊断
+
+- **事件循环阻塞探针（TEMP，待删）**（`session/message-v2.ts`、`session/prompt.ts`）：0.7.19 修的 snapshot `structuredPatch` 冻主线程问题疑似以另一种形式复发（长会话侧出现阻塞），重新加了独立漂移探针（不预设阻塞点）+ `toModelMessagesEffect` 拆分计时排查。目前 `toModelMessagesEffect` 侧探针从未触发，说明这次瓶颈不在 message 转换链路，定位到具体源头后随手删除。
+
 ### [0.7.23] - 2026-07-12
 
 > YAML agent profiles——声明式子代理定义，支持 `extends` 继承 + `tools` 白名单自动转 Permission。
@@ -1399,6 +1411,18 @@
 ---
 
 ## GUI
+
+### [0.7.5] - 2026-07-15
+
+> Session Context 面板配色优化 + 部分数据提示——统计项颜色区分度不足、会话历史懒加载导致数字可能不完整两处体验问题。
+
+#### 优化
+
+- **Context 统计面板配色**（`session-context-tab.tsx`）：16 项统计里此前大量复用同一 `--syntax-*` token（4 项同色、3 项同色，另 4 项无色），视觉上难以区分。改为按固定顺序分配 8 种 token，同色的两处在网格里横向、纵向（含窄边栏塌成单列时）都不相邻，标题类字段（会话名/创建时间）保留中性色。
+
+#### 修复
+
+- **Context 统计可能只反映部分已加载消息**（`session-context-tab.tsx`、`i18n/{en,zh,zht}.ts`）：会话消息懒加载（`directory-sync.ts` 初始只拉 40 条，滚动加载更多每次 +80 条），但"总 token / Cache Hit"等统计是对 `sync.data.message` 当前已加载的部分求和，刚打开长会话时数字会明显偏低且命中率失真，且面板上没有任何提示。检测到 `sync.session.history.more(id)` 为真时，在统计区顶部显示"仅统计已加载 N 条消息，向上滚动加载完整历史后更准确"提示，不强制自动补全加载（避免长会话卡顿）。
 
 ### [0.7.4] - 2026-07-12
 

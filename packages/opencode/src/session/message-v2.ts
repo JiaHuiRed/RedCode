@@ -29,6 +29,10 @@ import { MessageError } from "./message-error"
 import { AuthError, OutputLengthError } from "./message-error"
 export { AuthError, OutputLengthError } from "./message-error"
 
+// 260715 Red TEMP diag: 排查"会话变大后卡顿"疑似复发，拆分 toUIMessages vs
+// convertToModelMessages（第三方 ai 包、零让出点）各自耗时，定位完删除。
+const __diagElog = EffectLogger.create({ service: "session.message-v2.diag" })
+
 /** Error shape thrown by Bun's fetch() when gzip/br decompression fails mid-stream */
 interface FetchDecompressionError extends Error {
   code: "ZlibError"
@@ -936,10 +940,13 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
   model: Provider.Model,
   options?: { stripMedia?: boolean; toolOutputMaxChars?: number },
 ) {
+  // 260715 Red TEMP diag
+  const __diagT0 = performance.now()
   const { messages, tools } = yield* toUIMessages(input, model, options)
+  const __diagT1 = performance.now()
   // 260706 Red: yield here so event loop can serve heartbeat + health check before next sync work
   yield* Effect.yieldNow
-  return yield* Effect.promise(() =>
+  const result = yield* Effect.promise(() =>
     convertToModelMessages(
       messages.filter((msg) => msg.parts.some((part) => part.type !== "step-start")),
       {
@@ -948,6 +955,21 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
       },
     ),
   )
+  // 260715 Red TEMP diag: 只在总耗时超阈值时打印，避免刷屏；partsCount 用现成数据不额外计算
+  const __diagT2 = performance.now()
+  const __diagTotal = __diagT2 - __diagT0
+  if (__diagTotal > 200) {
+    let partsCount = 0
+    for (const m of messages) partsCount += m.parts.length
+    yield* __diagElog.warn("TEMP DIAG toModelMessagesEffect slow", {
+      msgCount: input.length,
+      partsCount,
+      toUIMessagesMs: Math.round(__diagT1 - __diagT0),
+      convertToModelMessagesMs: Math.round(__diagT2 - __diagT1),
+      totalMs: Math.round(__diagTotal),
+    })
+  }
+  return result
 })
 
 export function toModelMessages(

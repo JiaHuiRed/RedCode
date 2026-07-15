@@ -378,6 +378,7 @@ export const dict = {
   "context.stats.totalCost": "總成本",
   "context.stats.sessionCreated": "建立時間",
   "context.stats.lastActivity": "最後活動",
+  "context.stats.partial": "以上數字僅統計已載入的 {{count}} 則訊息，向上捲動聊天記錄載入完整歷史後會更準確。",
 
   "context.usage.tokens": "Token",
   "context.usage.usage": "使用量",

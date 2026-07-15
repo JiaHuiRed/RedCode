@@ -402,6 +402,7 @@ export const dict = {
   "context.stats.totalCost": "总成本",
   "context.stats.sessionCreated": "创建时间",
   "context.stats.lastActivity": "最后活动",
+  "context.stats.partial": "以上数字只统计了已加载的 {{count}} 条消息，向上滚动聊天记录加载完整历史后会更准确。",
   "context.usage.tokens": "Token",
   "context.usage.usage": "使用率",
   "context.usage.cost": "成本",

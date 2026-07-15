@@ -173,6 +173,16 @@ export function SessionContextTab() {
     return trimmed
   })
 
+  // 260715 Red: chat history loads lazily (40 msgs initial, +80 per scroll-up page — see
+  // directory-sync.ts), but these stats sum whatever's currently in sync.data.message. Right
+  // after opening a long session only a recent slice is loaded, so totals/cache-hit silently
+  // undercount until the user scrolls to the top. Surface that instead of pretending it's exact.
+  const hasMoreHistory = createMemo(() => {
+    const id = params.id
+    if (!id) return false
+    return sync.session.history.more(id)
+  })
+
   const providerLabel = createMemo(() => {
     const c = ctx()
     if (!c) return "—"
@@ -209,15 +219,17 @@ export function SessionContextTab() {
     return language.t("context.breakdown.other")
   }
 
+  // 260715 Red: 每项固定分到不同的 --syntax-* token（同色的两处在网格里横向/纵向都不相邻，
+  // 单列塌陷时也按数组序错开），标题类字段（会话名/创建时间）留中性色，其余全部上色。
   const stats = [
     { label: "context.stats.session", value: () => info()?.title ?? params.id ?? "—" },
-    { label: "context.stats.messages", value: () => counts().all.toLocaleString(language.intl()), color: "var(--syntax-warning)" },
+    { label: "context.stats.messages", value: () => counts().all.toLocaleString(language.intl()), color: "var(--syntax-primitive)" },
     { label: "context.stats.provider", value: providerLabel, color: "var(--syntax-info)" },
-    { label: "context.stats.model", value: modelLabel, color: "var(--syntax-info)" },
-    { label: "context.stats.limit", value: () => formatter().number(ctx()?.limit) },
+    { label: "context.stats.model", value: modelLabel, color: "var(--syntax-property)" },
+    { label: "context.stats.limit", value: () => formatter().number(ctx()?.limit), color: "var(--syntax-type)" },
     { label: "context.stats.totalTokens", value: () => formatter().number(ctx()?.total), color: "var(--syntax-success)" },
     { label: "context.stats.usage", value: () => formatter().percent(ctx()?.usage), color: "var(--syntax-warning)" },
-    { label: "context.stats.inputTokens", value: () => formatter().number(ctx()?.input), color: "var(--syntax-info)" },
+    { label: "context.stats.inputTokens", value: () => formatter().number(ctx()?.input), color: "var(--syntax-string)" },
     { label: "context.stats.outputTokens", value: () => formatter().number(ctx()?.output), color: "var(--syntax-property)" },
     { label: "context.stats.reasoningTokens", value: () => formatter().number(ctx()?.reasoning), color: "var(--syntax-warning)" },
     {
@@ -233,10 +245,10 @@ export function SessionContextTab() {
       color: "var(--syntax-info)",
     },
     { label: "context.stats.userMessages", value: () => counts().user.toLocaleString(language.intl()), color: "var(--syntax-success)" },
-    { label: "context.stats.assistantMessages", value: () => counts().assistant.toLocaleString(language.intl()), color: "var(--syntax-info)" },
+    { label: "context.stats.assistantMessages", value: () => counts().assistant.toLocaleString(language.intl()), color: "var(--syntax-type)" },
     { label: "context.stats.totalCost", value: cost, color: "var(--syntax-critical)" },
     { label: "context.stats.sessionCreated", value: () => formatter().time(info()?.time.created) },
-    { label: "context.stats.lastActivity", value: () => formatter().time(ctx()?.message.time.created) },
+    { label: "context.stats.lastActivity", value: () => formatter().time(ctx()?.message.time.created), color: "var(--syntax-string)" },
   ] satisfies { label: string; value: () => JSX.Element; color?: string }[]
 
   let scroll: HTMLDivElement | undefined
@@ -298,6 +310,14 @@ export function SessionContextTab() {
       onScroll={handleScroll}
     >
       <div class="px-6 pt-4 pb-10 flex flex-col gap-10">
+        <Show when={hasMoreHistory()}>
+          <div class="flex items-start gap-2 border border-border-base rounded-md bg-surface-base px-3 py-2">
+            <Icon name="warning" size="small" class="shrink-0 mt-0.5" style={{ color: "var(--syntax-warning)" }} />
+            <div class="text-11-regular text-text-weak">
+              {language.t("context.stats.partial", { count: counts().all.toLocaleString(language.intl()) })}
+            </div>
+          </div>
+        </Show>
         <div class="grid grid-cols-1 @[32rem]:grid-cols-2 gap-4">
           <For each={stats}>
             {(stat) => (

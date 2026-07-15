@@ -400,6 +400,7 @@
   "context.stats.totalCost": "Total Cost",
   "context.stats.sessionCreated": "Session Created",
   "context.stats.lastActivity": "Last Activity",
+  "context.stats.partial": "Totals reflect only the {{count}} messages loaded so far — scroll up in the chat to load full history for accurate numbers.",
 
   "context.usage.tokens": "Tokens",
   "context.usage.usage": "Usage",

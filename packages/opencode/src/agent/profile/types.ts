@@ -51,9 +51,16 @@ export function toolsToPermissionConfig(
 ): Record<string, PermissionRule> {
   const config: Record<string, PermissionRule> = {}
 
-  // Subagents deny unlisted tools by default
+  // 260715 Red: subagents deny unlisted *known* tools by default. A bare "*" here
+  // used to also deny every MCP/plugin permission key (jCodeMunch, TypeGraph,
+  // DCP's own "compress"), since those aren't in toolPermissionMap and can never
+  // appear in a profile's tools: list — silently blocking MCP for every subagent
+  // and stalling DCP (compress denied but its context-limit nudge still fires).
+  // Only deny the tool categories this map actually knows about.
   if (mode === "subagent") {
-    config["*"] = "deny"
+    for (const key of new Set(Object.values(toolPermissionMap))) {
+      config[key] = "deny"
+    }
     config.question = "deny"
     config.doom_loop = "deny"
   }
