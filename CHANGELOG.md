@@ -11,6 +11,21 @@
 ---
 
 ## TUI
+### [0.7.25] - 2026-07-16
+
+> 长会话卡顿排查收尾：漂移探针坐实"没坐实"（>2000万 token 会话跑下来未复现明显卡顿），顺手清了几处一直在刷屏的日志噪音 + 一个装错的本地 MCP。
+
+#### 修复
+
+- **`@opencode-ai/plugin` 后台安装失败无限重试刷屏**（`config/config.ts`）：每次 `Config.load()` 都会对同一个必然失败（网络/registry 问题）的目录重新触发一次安装并打 warn，长会话里每隔几分钟到二十几分钟复发一次。按目录记住上次失败时间，10 分钟冷却期内跳过重试，冷却期外照常重试——网络恢复后仍能自愈，不是一次性拉黑。
+- **MCP 工具调用重试无退避、吞掉真实报错**（`mcp/index.ts`）：3 次重试间隔固定 1 秒，对瞬时网络抖动太急；且失败日志只打了 `attempt` 序号，没打实际错误信息，完全没法诊断。改成指数退避（1s/2s）+ 补上 `err.message`。
+- **MCP `prompts`/`resources` 未实现被当 ERROR 打**（`mcp/index.ts`）：不少小型 MCP server（typegraph/sqlite-query/su-prememory/mcp-process-mgmt 等）本来就没实现这几个可选 capability，服务器如实回了 `MethodNotFound`（-32601），代码却无脑当故障打 `log.error`，每次连接/重连都刷一遍。识别该错误码后降级为 debug，真错误照常 error。
+- **vision MCP 装错了本地 server**（`.opencode/redcode.home.jsonc`）：`command` 是裸命令 `"vision-mcp-server"`，PATH 解析到全局 npm 装的旧版本，硬要求 `MODELSCOPE_TOKEN`、没有本地 Ollama 兜底，启动直接报错退出。上次 0.7.23 之前切到 `minicpm-v4.6:f16` 时其实已经新建了 `plugins/vision-mcp-local/index.js`（默认走本地 Ollama），只是撞名了没把 `command` 改过去，一直在调错的那个。改成显式指向新脚本。
+
+#### 诊断
+
+- **事件循环阻塞探针（TEMP，保留）**（`session/message-v2.ts`、`session/prompt.ts`、`session/tools.ts`、新增 `session/diag.ts`）：0.7.24 加的漂移探针补上了工具归因（`active` 字段——阻塞发生时若有内置工具/MCP 工具/DCP compress 正在跑会标出来）和 `heapMB`/`rssMB`，用来交叉验证是不是 DCP 同步 tokenizer 或缓存膨胀在捣鬼。实测 2000+ 万 token 的长会话里探针触发的漂移都在 300~950ms 量级，且从未抓到 DCP compress 处于 `active` 状态，`toModelMessagesEffect` 侧探针也从未触发——本次没能坐实一个具体阻塞源，但也没再复现 0.7.19/0.7.24 描述的那种明显卡顿。探针继续保留在代码里（不删），供以后复发时直接看日志，不用重新埋点。
+
 ### [0.7.24] - 2026-07-15
 
 > 修复 YAML agent profile 的 subagent 权限通配符误伤 MCP 工具和 DCP compress——子代理静默失去 MCP 访问，压缩权限被误判 deny 导致卡住不压缩也不继续。

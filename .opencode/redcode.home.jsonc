@@ -48,7 +48,10 @@
     },
     "vision": {
       "type": "local",
-      "command": ["vision-mcp-server"],
+      // 260716 Red 之前是裸命令 "vision-mcp-server"，PATH 解析到全局 npm 装的旧版本
+      // （硬要求 MODELSCOPE_TOKEN，没有本地 Ollama 兜底），跟本次 minicpm-v4.6:f16 切换
+      // 新增的 plugins/vision-mcp-local/index.js 撞名但不是同一个东西，导致启动直接报错退出
+      "command": ["node", "./plugins/vision-mcp-local/index.js"],
       "env": {
         "VISION_MODEL": "minicpm-v4.6:f16"
       },
