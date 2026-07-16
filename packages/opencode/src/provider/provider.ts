@@ -1238,6 +1238,9 @@ export const layer = Layer.effect(
           stepfun: {
             "step-3.7-flash": { input: 1.35, output: 8.1, cache: { read: 0.27, write: 1.35 } },
           },
+          zhipuai: {
+            "glm-5.2": { input: 8, output: 28, cache: { read: 2, write: 8 } },
+          },
         }
         // 260707 Red: apply CNY pricing directly on the models.dev-sourced database,
         // independent of whether the user declares "deepseek"/"xiaomi" under config.provider.
