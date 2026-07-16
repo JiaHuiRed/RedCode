@@ -1,23 +1,23 @@
-﻿import { Agent } from "@/agent/agent"
-import { Provider } from "@/provider/provider"
-import { ProviderTransform } from "@/provider/transform"
-import { MCP } from "@/mcp"
-import { Permission } from "@/permission"
-import { Tool } from "@/tool/tool"
-import { ToolJsonSchema } from "@/tool/json-schema"
-import { ToolRegistry } from "@/tool/registry"
-import { Truncate } from "@/tool/truncate"
-import { ModelID } from "@/provider/schema"
-import { Plugin } from "@/plugin"
-import type { TaskPromptOps } from "@/tool/task"
-import { type Tool as AITool, tool, jsonSchema, type ToolExecutionOptions, asSchema } from "ai"
-import { Effect } from "effect"
-import { MessageV2 } from "./message-v2"
-import * as Session from "./session"
-import { SessionProcessor } from "./processor"
-import { PartID } from "./schema"
-import * as Log from "@redcode-ai/core/util/log"
-import { EffectBridge } from "@/effect/bridge"
+﻿ import { Agent } from "@/agent/agent"
+ import { Provider } from "@/provider/provider"
+ import { ProviderTransform } from "@/provider/transform"
+ import { MCP } from "@/mcp"
+ import { Permission } from "@/permission"
+ import { Tool } from "@/tool/tool"
+ import { ToolJsonSchema } from "@/tool/json-schema"
+ import { ToolRegistry } from "@/tool/registry"
+ import { Truncate } from "@/tool/truncate"
+ import { ModelID } from "@/provider/schema"
+ import { Plugin } from "@/plugin"
+ import type { TaskPromptOps } from "@/tool/task"
+ import { type Tool as AITool, tool, jsonSchema, type ToolExecutionOptions, asSchema } from "ai"
+ import { Effect } from "effect"
+ import { MessageV2 } from "./message-v2"
+ import * as Session from "./session"
+ import { SessionProcessor } from "./processor"
+ import { PartID } from "./schema"
+ import * as Log from "@redcode-ai/core/util/log"
+ import { EffectBridge } from "@/effect/bridge"
 
 const log = Log.create({ service: "session.tools" })
 
@@ -122,8 +122,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     const schema = yield* Effect.promise(() => Promise.resolve(asSchema(item.inputSchema).jsonSchema))
     const transformed = ProviderTransform.schema(input.model, schema)
     item.inputSchema = jsonSchema(transformed)
-    item.execute = (args, opts) =>
-      run.promise(
+    item.execute = (args, opts) => {
+      return run.promise(
         Effect.gen(function* () {
           const ctx = context(args, opts)
           yield* plugin.trigger(
@@ -197,8 +197,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             yield* input.processor.completeToolCall(opts.toolCallId, output)
           }
           return output
-        }),
+          }),
       )
+    }
     tools[key] = item
   }
 
