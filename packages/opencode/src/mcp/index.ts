@@ -11,6 +11,8 @@ import {
   ToolSchema,
   type Tool as MCPToolDef,
   ToolListChangedNotificationSchema,
+  ErrorCode,
+  McpError,
 } from "@modelcontextprotocol/sdk/types.js"
 import { Config } from "@/config/config"
 import { ConfigMCP } from "../config/mcp"
@@ -256,10 +258,18 @@ function convertMcpTool(
           )
         } catch (err) {
           lastError = err
-          log.warn("MCP tool call failed", { server: serverName, tool: mcpTool.name, attempt: attempt + 1 })
-          if (attempt < MAX_RETRIES - 1 && reconnectFn) {
-            try { await reconnectFn() } catch {}
-            await new Promise((r) => setTimeout(r, 1000))
+          log.warn("MCP tool call failed", {
+            server: serverName,
+            tool: mcpTool.name,
+            attempt: attempt + 1,
+            error: err instanceof Error ? err.message : String(err),
+          })
+          if (attempt < MAX_RETRIES - 1) {
+            if (reconnectFn) {
+              try { await reconnectFn() } catch {}
+            }
+            // 260716 Red 指数退避（1s/2s）：网络型瞬时故障给更多恢复时间，别在同一秒内连打三炮
+            await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt))
           }
         }
       }
@@ -308,7 +318,13 @@ function fetchFromClient<T extends { name: string }>(
   return Effect.tryPromise({
     try: () => listFn(client),
     catch: (e: any) => {
-      log.error(`failed to get ${label}`, { clientName, error: e.message })
+      // 260716 Red MethodNotFound = 该 server 本就没实现这个可选 capability（prompts/resources
+      // 等 MCP 规范允许不支持），不是真故障；每次连接都当 ERROR 打印纯属刷屏，降级成 debug
+      if (e instanceof McpError && e.code === ErrorCode.MethodNotFound) {
+        log.debug(`${label} not supported by server`, { clientName })
+      } else {
+        log.error(`failed to get ${label}`, { clientName, error: e.message })
+      }
       return e
     },
   }).pipe(

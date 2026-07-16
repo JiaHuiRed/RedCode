@@ -46,6 +46,12 @@ import { withTransientReadRetry } from "@/util/effect-http-client"
 
 const log = Log.create({ service: "config" })
 
+// 260716 Red @opencode-ai/plugin 装不上时（网络/registry 问题）每次 Config.load
+// 都会重新触发一次同样必然失败的安装并打 warn，长会话里反复刷屏。按目录记住上次
+// 失败时间，冷却期内跳过重试和日志，冷却期外照常重试——网络恢复后仍能自愈。
+const depInstallFailureAt = new Map<string, number>()
+const DEP_INSTALL_RETRY_COOLDOWN_MS = 10 * 60 * 1000
+
 // Custom merge function that concatenates array fields instead of replacing them
 // Keep remeda's deep conditional merge type out of hot config-loading paths; TS profiling showed it dominates here.
 function mergeConfig(target: Info, source: Info): Info {
@@ -642,28 +648,36 @@ export const layer = Layer.effect(
 
           yield* ensureGitignore(dir).pipe(Effect.orDie)
 
-          const dep = yield* npmSvc
-            .install(dir, {
-              add: [
-                {
-                  name: "@opencode-ai/plugin",
-                  version: InstallationLocal ? undefined : InstallationVersion,
-                },
-              ],
-            })
-            .pipe(
-              Effect.exit,
-              Effect.tap((exit) =>
-                Exit.isFailure(exit)
-                  ? Effect.sync(() => {
-                      log.warn("background dependency install failed", { dir, error: String(exit.cause) })
-                    })
-                  : Effect.void,
-              ),
-              Effect.asVoid,
-              Effect.forkDetach,
-            )
-          deps.push(dep)
+          const lastFailure = depInstallFailureAt.get(dir)
+          if (lastFailure !== undefined && Date.now() - lastFailure < DEP_INSTALL_RETRY_COOLDOWN_MS) {
+            log.debug("skipping background dependency install, still in cooldown after last failure", { dir })
+          } else {
+            const dep = yield* npmSvc
+              .install(dir, {
+                add: [
+                  {
+                    name: "@opencode-ai/plugin",
+                    version: InstallationLocal ? undefined : InstallationVersion,
+                  },
+                ],
+              })
+              .pipe(
+                Effect.exit,
+                Effect.tap((exit) =>
+                  Exit.isFailure(exit)
+                    ? Effect.sync(() => {
+                        depInstallFailureAt.set(dir, Date.now())
+                        log.warn("background dependency install failed", { dir, error: String(exit.cause) })
+                      })
+                    : Effect.sync(() => {
+                        depInstallFailureAt.delete(dir)
+                      }),
+                ),
+                Effect.asVoid,
+                Effect.forkDetach,
+              )
+            deps.push(dep)
+          }
 
           result.command = mergeDeep(result.command ?? {}, yield* Effect.promise(() => ConfigCommand.load(dir)))
           result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.load(dir)))
