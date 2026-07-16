@@ -24,7 +24,11 @@
 
 #### 诊断
 
-- **事件循环阻塞探针（TEMP，保留）**（`session/message-v2.ts`、`session/prompt.ts`、`session/tools.ts`、新增 `session/diag.ts`）：0.7.24 加的漂移探针补上了工具归因（`active` 字段——阻塞发生时若有内置工具/MCP 工具/DCP compress 正在跑会标出来）和 `heapMB`/`rssMB`，用来交叉验证是不是 DCP 同步 tokenizer 或缓存膨胀在捣鬼。实测 2000+ 万 token 的长会话里探针触发的漂移都在 300~950ms 量级，且从未抓到 DCP compress 处于 `active` 状态，`toModelMessagesEffect` 侧探针也从未触发——本次没能坐实一个具体阻塞源，但也没再复现 0.7.19/0.7.24 描述的那种明显卡顿。探针继续保留在代码里（不删），供以后复发时直接看日志，不用重新埋点。
+- **事件循环阻塞探针（TEMP，保留）**（`session/message-v2.ts`、`session/prompt.ts`、`session/tools.ts`、新增 `session/diag.ts`）：0.7.24 加的漂移探针补上了工具归因（`active` 字段——阻塞发生时若有内置工具/MCP 工具/DCP compress 正在跑会标出来）和 `heapMB`/`rssMB`，用来交叉验证是不是 DCP 同步 tokenizer 或缓存膨胀在捣鬼。实测 2000+ 万 token 的长会话里探针触发的漂移都在 300~950ms 量级，且从未抓到 DCP compress 处于 `active` 状态，`toModelMessagesEffect` 侧探针也从未触发——本次没能坐实一个具体阻塞源，但也没再复现 0.7.19/0.7.24 描述的那种明显卡顿。探针**故意保留**，不是忘了删，方便下次直接看日志复诊：
+  - **看哪**：`~/.redcode/data/log/` 下当次会话的时间戳日志（或 `dev.log`），搜 `TEMP DIAG evloop drift` 和 `toModelMessagesEffect slow`。
+  - **字段怎么看**：`blockedMs` 是这次事件循环阻塞了多久（>300ms 才会打）；`active` 是阻塞时正在跑的工具+已耗时（如 `compress:2481ms`），空着说明阻塞时没有工具在跑，嫌疑转向 GC/缓存；`heapMB`/`rssMB` 是当时的堆/常驻内存，持续走高要怀疑 `msgPin`/`modelMsgs` 缓存膨胀（见 `session/prompt.ts` 里 `_caches`）。
+  - **复发了怎么办**：把 `blockedMs`、`active`、`heapMB` 三者按时间对齐看——`active` 有值就是那个工具的问题；`active` 空但 `heapMB` 持续走高就是缓存/GC；两者都不像就再加埋点。
+  - **确认没事了想删**：三个源文件里搜 `260716 Red TEMP diag` 逐处删掉，再删 `session/diag.ts`，跟 6f7e7f2 那次删法一样。
 
 ### [0.7.24] - 2026-07-15
 
