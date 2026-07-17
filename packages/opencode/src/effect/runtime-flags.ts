@@ -2,6 +2,7 @@
 import { ConfigService } from "@/effect/config-service"
 
 const bool = (name: string) => Config.boolean(name).pipe(Config.withDefault(false))
+const boolDefaultTrue = (name: string) => Config.boolean(name).pipe(Config.withDefault(true))
 const positiveInteger = (name: string) =>
   Config.number(name).pipe(
     Config.map((value) => (Number.isInteger(value) && value > 0 ? value : undefined)),
@@ -40,7 +41,9 @@ export class Service extends ConfigService.Service<Service>()("@opencode/Runtime
   enableExperimentalModels: bool("REDCODE_ENABLE_EXPERIMENTAL_MODELS"),
   enableQuestionTool: bool("REDCODE_ENABLE_QUESTION_TOOL"),
   experimentalScout: enabledByExperimental("REDCODE_EXPERIMENTAL_SCOUT"),
-  experimentalBackgroundSubagents: enabledByExperimental("REDCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS"),
+  // 260717 Red 默认开启：非后台模式下派发子代理会一直占着 session busy 直到子代理跑完，
+  // 主界面全程没法交互，等于白设计了后台任务这条路。设 REDCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=false 可退回旧行为。
+  experimentalBackgroundSubagents: boolDefaultTrue("REDCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS"),
   experimentalLspTy: bool("REDCODE_EXPERIMENTAL_LSP_TY"),
   experimentalLspTool: enabledByExperimental("REDCODE_EXPERIMENTAL_LSP_TOOL"),
   experimentalOxfmt: enabledByExperimental("REDCODE_EXPERIMENTAL_OXFMT"),

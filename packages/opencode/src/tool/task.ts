@@ -33,8 +33,13 @@ const BACKGROUND_DESCRIPTION = [
   "",
   "",
   [
-    "Background mode: background=true launches the subagent asynchronously.",
-    "Use task_status(task_id=..., wait=false) to poll, or wait=true to block until done.",
+    "Background mode: background=true launches the subagent asynchronously and returns immediately instead of blocking.",
+    "Without it, the ENTIRE session — including the user's ability to send new messages — is frozen until the subagent's",
+    "full run finishes, even for a simple exploration task. Prefer background=true by default for any task whose result",
+    "you don't need for your very next step: dispatching one chunk of a larger exploration/research job at a time across",
+    "several turns, work the user didn't ask you to wait on, or anything where you or the user might want to keep talking",
+    "while it runs. Only use the blocking (non-background) form when your next action genuinely depends on that specific",
+    "result. Use task_status(task_id=..., wait=false) to poll, or wait=true to block until done, once you actually need it.",
   ].join(" "),
 ].join("\n")
 

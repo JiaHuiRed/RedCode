@@ -11,6 +11,23 @@
 ---
 
 ## TUI
+### [0.7.27] - 2026-07-17
+
+> 后台子代理默认开启——派发子代理不再冻住主界面；配套修好模型不知道该用它的提示词缺口；顺手根治了 registry/task 测试套件的间歇性超时。
+
+#### 功能
+
+- **`experimentalBackgroundSubagents` 默认开启**（`effect/runtime-flags.ts`）：非后台模式下 `task` 工具会同步等子代理跑完整个 session 才返回，而 `session/prompt.ts` 的主循环在此期间一直把 session 标记 busy——主界面全程没法交互，等于白设计了后台派发这条路。现在默认打开（`background: true` 参数和配套的 `task_status` 轮询工具默认就在模型可见的工具 schema 里），设 `REDCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=false` 可退回旧的全阻塞行为。
+
+#### 修复
+
+- **模型不知道该用后台模式**（`tool/task.ts`）：开关打开后实测（RedMon 项目，DeepSeek V4 Flash）连续派发两个 explore 子代理，主 session 分别被冻住约 54 秒和 100 秒——查日志（`~/.redcode/data/log/dev.log`）确认 `task_status` 工具确实已注册、开关是真的生效了，但模型从没传 `background: true`。根因是 `BACKGROUND_DESCRIPTION` 只讲了"怎么用"，没讲"什么时候该用"，而 `task.md` 唯一相关的指引（单条消息并发起多个 agent）跟"陆续派、派完还想接着聊"这种场景对不上。改写 `BACKGROUND_DESCRIPTION`，明确告诉模型：只要下一步动作不直接依赖这次结果，默认优先 `background=true`。改完实测生效。
+
+#### 测试
+
+- **`registry.test.ts`/`task.test.ts` 间歇性超时根治**：原怀疑是 LSP/git/ripgrep 二进制发现拖慢（实际都在 `InstanceState.make()` 后惰性触发，测不到），真正原因是 `Plugin.defaultLayer` 每个测试都重建一遍，会真的动态 import server 模块、跑全部内置 auth 插件，且只要 config 里 `plugin_origins` 非空就调 `config.waitForDependencies()`——这是真实的 npm 依赖校验，读的是机器上真实的 `~/.redcode/redcode.json`，内部超时 15 秒，实测每个测试白白卡 3.5-4.2 秒，正好卡在 bun test 默认 5 秒超时边缘，导致每次挂的测试都不一样。9 个内置 auth 插件都不注册 `tool` hook，用一个 no-op `Plugin.Service` 换掉即可，测试关心的注册/过滤逻辑不受影响。`registry.test.ts` 单文件耗时从 44-63 秒（常伴超时）降到稳定 5-8 秒。`task.test.ts` 因为用的是打包好的 `ToolRegistry.defaultLayer` 没法单独换其中一个依赖，照着 `tool/registry.ts` 源码原样重建了一份组合、只换 Plugin，需要留意：以后 `defaultLayer` 的真实组合变了，这份手抄副本得跟着手动同步。
+- 同时补了几个原本隐式依赖旧默认值（`experimentalBackgroundSubagents: false`）的测试断言，改成显式传 `noBackground` 测试层，不再依赖环境默认值。
+
 ### [0.7.26] - 2026-07-17
 
 > DCP 压缩与原生 compaction 双重触发修复；依赖漏洞排查（87→65，critical 清零）；新增每日依赖审计 + npm provenance + 容器化隔离指南。

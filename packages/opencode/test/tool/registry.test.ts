@@ -46,11 +46,33 @@ type RegistryLayerOptions = {
   plugin?: Layer.Layer<Plugin.Service>
 }
 
+// Plugin.defaultLayer does real work that these tests don't need: it dynamically
+// imports the whole server module, invokes every built-in auth plugin, and -
+// critically - calls `config.waitForDependencies()` for any `plugin_origins`
+// found in config (real npm dependency resolution/verification against
+// whatever redcode.json a developer's machine happens to have, including the
+// real global ~/.redcode config). That last part is unbounded (a 15s internal
+// timeout) and was the dominant source of this file's flakiness: on a machine
+// with real plugins configured globally, building this layer could silently
+// stall for several seconds per test, right at the edge of bun:test's default
+// 5000ms timeout. None of the built-in auth plugins register `tool` hooks, so
+// registry tests (which only care about tool registration/filtering, not
+// plugin auth/loading behavior) don't lose any coverage by using a no-op here.
+const noopPluginLayer = Layer.succeed(
+  Plugin.Service,
+  Plugin.Service.of({
+    init: () => Effect.void,
+    trigger: ((_name: unknown, _input: unknown, output: unknown) =>
+      Effect.succeed(output)) as Plugin.Interface["trigger"],
+    list: () => Effect.succeed([]),
+  }),
+)
+
 const registryLayer = (opts: RegistryLayerOptions = {}) =>
   ToolRegistry.layer
     .pipe(
       Layer.provide(configLayer),
-      Layer.provide(opts.plugin ?? Plugin.defaultLayer),
+      Layer.provide(opts.plugin ?? noopPluginLayer),
       Layer.provide(Question.defaultLayer),
       Layer.provide(Todo.defaultLayer),
       Layer.provide(Skill.defaultLayer),
@@ -102,6 +124,11 @@ const scout = testEffect(
 const background = testEffect(
   Layer.mergeAll(registryLayer({ flags: { experimentalBackgroundSubagents: true } }), node, Agent.defaultLayer),
 )
+// experimentalBackgroundSubagents now defaults to true, so tests asserting the
+// disabled-state behavior need to pin it off explicitly rather than rely on `it`.
+const noBackground = testEffect(
+  Layer.mergeAll(registryLayer({ flags: { experimentalBackgroundSubagents: false } }), node, Agent.defaultLayer),
+)
 const withBrokenPlugin = testEffect(
   Layer.mergeAll(registryLayer({ plugin: brokenPluginLayer }), node, Agent.defaultLayer),
 )
@@ -131,7 +158,7 @@ describe("tool.registry", () => {
     }),
   )
 
-  it.instance("hides task_status unless experimental background subagents are enabled", () =>
+  noBackground.instance("hides task_status unless experimental background subagents are enabled", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
       const ids = yield* registry.ids()
@@ -140,7 +167,7 @@ describe("tool.registry", () => {
     }),
   )
 
-  it.instance("hides task background parameter unless experimental background subagents are enabled", () =>
+  noBackground.instance("hides task background parameter unless experimental background subagents are enabled", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
       const agent = yield* Agent.Service

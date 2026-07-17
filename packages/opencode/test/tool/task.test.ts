@@ -1,17 +1,32 @@
 ﻿import { afterEach, describe, expect } from "bun:test"
 import { Effect, Exit, Fiber, Layer } from "effect"
 import { Agent } from "../../src/agent/agent"
+import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { BackgroundJob } from "@/background/job"
 import { Bus } from "@/bus"
 import { Config } from "@/config/config"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
+import { FetchHttpClient } from "effect/unstable/http"
+import { Format } from "@/format"
+import { Git } from "@/git"
+import { Instruction } from "@/session/instruction"
+import { LSP } from "@/lsp/lsp"
+import { Plugin } from "@/plugin"
+import { Question } from "@/question"
+import { Reference } from "@/reference/reference"
+import { RepositoryCache } from "@/reference/repository-cache"
+import { Ripgrep } from "@/file/ripgrep"
 import { Session } from "@/session/session"
 import { MessageV2 } from "../../src/session/message-v2"
 import type { SessionPrompt } from "../../src/session/prompt"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
+import { Skill } from "@/skill"
+import { Snippet } from "@/session/snippet"
+import { Todo } from "@/session/todo"
 import { ModelID, ProviderID } from "../../src/provider/schema"
+import { Provider } from "@/provider/provider"
 import { TaskTool, type TaskPromptOps } from "../../src/tool/task"
 import { Truncate } from "@/tool/truncate"
 import { ToolRegistry } from "@/tool/registry"
@@ -28,6 +43,52 @@ const ref = {
   modelID: ModelID.make("test-model"),
 }
 
+// Plugin.defaultLayer does real work these tests don't need: it dynamically
+// imports the whole server module, invokes every built-in auth plugin, and -
+// critically - calls `config.waitForDependencies()` for any `plugin_origins`
+// found in config (real npm dependency resolution/verification against
+// whatever redcode.json the machine running the test happens to have,
+// including a real global ~/.redcode config). That call has only a 15s
+// internal timeout, and was a dominant source of this file's flakiness: on a
+// machine with real plugins configured globally, building ToolRegistry's
+// layer could silently stall for several seconds per test, right at the edge
+// of bun:test's default 5000ms timeout. None of the built-in auth plugins
+// register `tool` hooks, so a no-op Plugin.Service costs these tests nothing.
+const noopPluginLayer = Layer.succeed(
+  Plugin.Service,
+  Plugin.Service.of({
+    init: () => Effect.void,
+    trigger: ((_name: unknown, _input: unknown, output: unknown) =>
+      Effect.succeed(output)) as Plugin.Interface["trigger"],
+    list: () => Effect.succeed([]),
+  }),
+)
+
+// Mirrors ToolRegistry.defaultLayer's composition (see src/tool/registry.ts)
+// with the real Plugin.defaultLayer swapped for the no-op above.
+const toolRegistryLayer = ToolRegistry.layer.pipe(
+  Layer.provide(Config.defaultLayer),
+  Layer.provide(noopPluginLayer),
+  Layer.provide(Question.defaultLayer),
+  Layer.provide(Todo.defaultLayer),
+  Layer.provide(Skill.defaultLayer),
+  Layer.provide(Agent.defaultLayer),
+  Layer.provide(Session.defaultLayer),
+  Layer.provide(Layer.mergeAll(SessionStatus.defaultLayer, BackgroundJob.defaultLayer)),
+  Layer.provide(Provider.defaultLayer),
+  Layer.provide(Layer.mergeAll(Git.defaultLayer, RepositoryCache.defaultLayer)),
+  Layer.provide(Reference.defaultLayer),
+  Layer.provide(LSP.defaultLayer),
+  Layer.provide(Instruction.defaultLayer),
+  Layer.provide(AppFileSystem.defaultLayer),
+  Layer.provide(Bus.layer),
+  Layer.provide(FetchHttpClient.layer),
+  Layer.provide(Format.defaultLayer),
+  Layer.provide(CrossSpawnSpawner.defaultLayer),
+  Layer.provide(Layer.mergeAll(Ripgrep.defaultLayer, Truncate.defaultLayer, Snippet.defaultLayer)),
+  Layer.provide(RuntimeFlags.defaultLayer),
+)
+
 const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
   Layer.mergeAll(
     Agent.defaultLayer,
@@ -39,12 +100,17 @@ const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
     SessionRunState.defaultLayer,
     SessionStatus.defaultLayer,
     Truncate.defaultLayer,
-    ToolRegistry.defaultLayer,
+    toolRegistryLayer,
     RuntimeFlags.layer(flags),
   )
 
 const it = testEffect(layer())
 const background = testEffect(layer({ experimentalBackgroundSubagents: true }))
+// Description-content tests below assert on the task tool's subagent listing, not on
+// background mode — pin the flag off so they don't pay task_status's extra registry
+// init cost (was pushing them past the default per-test timeout once background mode
+// became the default, see effect/runtime-flags.ts).
+const noBackground = testEffect(layer({ experimentalBackgroundSubagents: false }))
 
 function defer<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
@@ -129,7 +195,7 @@ function reply(input: SessionPrompt.PromptInput, text: string): MessageV2.WithPa
 }
 
 describe("tool.task", () => {
-  it.instance(
+  noBackground.instance(
     "description sorts subagents by name and is stable across calls",
     () =>
       Effect.gen(function* () {
@@ -171,7 +237,7 @@ describe("tool.task", () => {
     },
   )
 
-  it.instance(
+  noBackground.instance(
     "description hides denied subagents for the caller",
     () =>
       Effect.gen(function* () {
@@ -451,7 +517,7 @@ describe("tool.task", () => {
     },
   )
 
-  it.instance("rejects background execution when the experiment is disabled", () =>
+  noBackground.instance("rejects background execution when the experiment is disabled", () =>
     Effect.gen(function* () {
       const { chat, assistant } = yield* seed()
       const tool = yield* TaskTool
