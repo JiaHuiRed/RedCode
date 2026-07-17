@@ -577,6 +577,7 @@ export const layer = Layer.effect(
           })
         }
         yield* bus.publish(Event.Compacted, { sessionID: input.sessionID })
+        yield* plugin.trigger("compact.post", { sessionID: input.sessionID }, {}).pipe(Effect.catch(() => Effect.void))
       }
       return result
     }) as Interface["process"]

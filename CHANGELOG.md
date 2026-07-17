@@ -11,6 +11,17 @@
 ---
 
 ## TUI
+### [0.7.29] - 2026-07-17
+
+> 事件钩子系统类型修复——stash 中的钩子代码（compact.post、session.start/end、user.prompt.submit、session.stop、tool.execute 三阶段）通过 typecheck。
+
+#### 修复
+
+- **`Effect.catchAll` → `Effect.catch`**（`session/compaction.ts`、`session/prompt.ts`、`session/session.ts`、`session/tools.ts`）：Effect v4 beta 移除了 `catchAll`，统一改用 `Effect.catch`，涉及 8 个调用点。
+- **钩子函数泄漏 Plugin.Service**（`session/prompt.ts`、`session/session.ts`）：`cancel()`/`prompt()`/`createNext()`/`remove()` 内直接 `yield* Plugin.Service` 向 `Interface` 类型函数的 requirements 中泄漏了 Plugin 依赖。已改为闭包捕获或 `Effect.serviceOption` 模式，与 `permission/index.ts:181` 一致。
+- **Model schema 字段名**（`session/session.ts`）：`modelID` → `id`，对齐 Model 类型定义。
+- **task.test.ts 类型适配**（`test/tool/task.test.ts`）：no-op Plugin 层加入 `Layer.mergeAll`，测试 Effect 能获取 Plugin.Service。
+
 ### [0.7.28] - 2026-07-17
 
 > 0.7.27 长会话压测通过——1000 万+ token 会话验证后台子代理默认开启改动，缓存命中率、DCP 触发时机、子代理后台交互均未发现问题。

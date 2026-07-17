@@ -3,6 +3,7 @@ import DESCRIPTION from "./task.md"
 import { ToolJsonSchema } from "./json-schema"
 import { BackgroundJob } from "@/background/job"
 import { Bus } from "@/bus"
+import { Plugin } from "@/plugin"
 import { Session } from "@/session/session"
 import { SessionID, MessageID } from "../session/schema"
 import { MessageV2 } from "../session/message-v2"
@@ -139,6 +140,7 @@ export const TaskTool = Tool.define(
     const scope = yield* Scope.Scope
     const status = yield* SessionStatus.Service
     const flags = yield* RuntimeFlags.Service
+    const plugin = yield* Plugin.Service
 
     const run = Effect.fn("TaskTool.execute")(function* (
       params: Schema.Schema.Type<typeof Parameters>,
@@ -200,6 +202,13 @@ export const TaskTool = Tool.define(
           ],
         }))
 
+      yield* plugin.trigger("subagent.start", {
+        sessionID: nextSession.id,
+        parentSessionID: ctx.sessionID,
+        agent: next.name,
+        title: params.description,
+      }, {}).pipe(Effect.catch(() => Effect.void))
+
       const msg = yield* MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }).pipe(Effect.orDie)
       if (msg.info.role !== "assistant") return yield* Effect.fail(new Error("Not an assistant message"))
 
@@ -240,7 +249,14 @@ export const TaskTool = Tool.define(
           },
           parts,
         })
-        return result.parts.findLast((item) => item.type === "text")?.text ?? ""
+        const text = result.parts.findLast((item) => item.type === "text")?.text ?? ""
+        yield* plugin.trigger("subagent.stop", {
+          sessionID: nextSession.id,
+          parentSessionID: ctx.sessionID,
+          agent: next.name,
+          output: text,
+        }, {}).pipe(Effect.catch(() => Effect.void))
+        return text
       })
 
       const resumeWhenIdle: (input: { userID: MessageID; state: "completed" | "error" }) => Effect.Effect<void> =

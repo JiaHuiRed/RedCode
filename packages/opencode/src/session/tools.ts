@@ -107,7 +107,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
               { args },
             )
-            const result = yield* item.execute(args, ctx)
+            const result = yield* item.execute(args, ctx).pipe(
+              Effect.tapError((error) =>
+                plugin.trigger("tool.execute.failure", {
+                  tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID, args, error: String(error),
+              }, {}).pipe(Effect.catch(() => Effect.void)),
+            ),
+          )
             const output = {
               ...result,
               attachments: result.attachments?.map((attachment) => ({
@@ -177,6 +183,11 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                 "message.id": input.processor.message.id,
               },
             }),
+            Effect.tapError((error) =>
+              plugin.trigger("tool.execute.failure", {
+                tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId, args, error: String(error),
+              }, {}).pipe(Effect.catch(() => Effect.void)),
+            ),
           )
           yield* plugin.trigger(
             "tool.execute.after",

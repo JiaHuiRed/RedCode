@@ -76,6 +76,91 @@ type HookSpec = {
       reason?: string
     }
   }
+  "session.start": {
+    input: {
+      sessionID: string
+      agent?: string
+      model?: { providerID: string; modelID: string }
+    }
+    output: {}
+  }
+  "session.end": {
+    input: {
+      sessionID: string
+      reason?: string
+    }
+    output: {}
+  }
+  "session.stop": {
+    input: {
+      sessionID: string
+      reason?: string
+    }
+    output: {}
+  }
+  "user.prompt.submit": {
+    input: {
+      sessionID: string
+      text: string
+    }
+    output: {}
+  }
+  "tool.execute.failure": {
+    input: {
+      toolID: string
+      args: Record<string, unknown>
+      error: string
+      sessionID: string
+    }
+    output: {}
+  }
+  "permission.denied": {
+    input: {
+      permission: string
+      pattern: string
+      metadata: string
+      sessionID: string
+    }
+    output: {
+      overridden?: boolean
+    }
+  }
+  "compact.post": {
+    input: {
+      sessionID: string
+    }
+    output: {}
+  }
+  "subagent.start": {
+    input: {
+      sessionID: string
+      parentSessionID: string
+      agent: string
+      title?: string
+    }
+    output: {}
+  }
+  "subagent.stop": {
+    input: {
+      sessionID: string
+      parentSessionID: string
+      agent: string
+      output?: string
+      error?: string
+    }
+    output: {}
+  }
+  "notification": {
+    input: {
+      sessionID?: string
+      title?: string
+      message: string
+      type: "info" | "warning" | "error" | "success"
+    }
+    output: {
+      suppressed?: boolean
+    }
+  }
 }
 
 export type Hooks = {

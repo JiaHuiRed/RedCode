@@ -91,6 +91,7 @@ const toolRegistryLayer = ToolRegistry.layer.pipe(
 
 const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
   Layer.mergeAll(
+    noopPluginLayer,
     Agent.defaultLayer,
     BackgroundJob.defaultLayer,
     Bus.defaultLayer,

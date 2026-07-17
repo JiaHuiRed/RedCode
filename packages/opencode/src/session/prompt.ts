@@ -214,6 +214,9 @@ export const layer = Layer.effect(
     const cancel = Effect.fn("SessionPrompt.cancel")(function* (sessionID: SessionID) {
       yield* elog.info("cancel", { sessionID })
       yield* state.cancel(sessionID)
+      yield* plugin.trigger("session.stop", { sessionID }, {}).pipe(
+        Effect.catch(() => Effect.void),
+      )
     })
 
     const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(function* (template: string) {
@@ -1140,6 +1143,14 @@ export const layer = Layer.effect(
       }
 
       if (input.noReply === true) return message
+
+      yield* plugin.trigger("user.prompt.submit", {
+        sessionID: input.sessionID,
+        text: message.parts.find((p) => p.type === "text")?.text ?? "",
+      }, {}).pipe(
+        Effect.catch(() => Effect.void),
+      )
+
       return yield* loop({ sessionID: input.sessionID })
     })
 

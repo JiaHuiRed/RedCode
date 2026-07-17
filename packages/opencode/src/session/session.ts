@@ -37,6 +37,7 @@ import { ModelID, ProviderID } from "@/provider/schema"
 
 import type { Provider } from "@/provider/provider"
 import { Permission } from "@/permission"
+import { Plugin } from "@/plugin"
 import { Global } from "@redcode-ai/core/global"
 import { Effect, Layer, Option, Context, Schema, Types } from "effect"
 import { NonNegativeInt, optionalOmitUndefined } from "@redcode-ai/core/schema"
@@ -593,6 +594,16 @@ export const layer: Layer.Layer<
       log.info("created", result)
 
       yield* sync.run(Event.Created, { sessionID: result.id, info: result })
+      const pluginOpt = yield* Effect.serviceOption(Plugin.Service)
+      if (Option.isSome(pluginOpt)) {
+        yield* pluginOpt.value.trigger("session.start", {
+          sessionID: result.id,
+          agent: result.agent,
+          model: result.model ? { providerID: result.model.providerID, modelID: result.model.id } : undefined,
+        }, {}).pipe(
+          Effect.catch(() => Effect.void),
+        )
+      }
 
       if (!flags.experimentalWorkspaces) {
         // This only exist for backwards compatibility. We should not be
@@ -662,6 +673,12 @@ export const layer: Layer.Layer<
         }
 
         yield* sync.run(Event.Deleted, { sessionID, info: session }, { publish: hasInstance })
+        const pluginOpt = yield* Effect.serviceOption(Plugin.Service)
+        if (Option.isSome(pluginOpt)) {
+          yield* pluginOpt.value.trigger("session.end", { sessionID, reason: "removed" }, {}).pipe(
+            Effect.catch(() => Effect.void),
+          )
+        }
         yield* sync.remove(sessionID)
       } catch (e) {
         log.error(e)

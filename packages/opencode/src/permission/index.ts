@@ -9,10 +9,11 @@ import { Database } from "@/storage/db"
 import { eq } from "drizzle-orm"
 import * as Log from "@redcode-ai/core/util/log"
 import { Wildcard } from "@redcode-ai/core/util/wildcard"
-import { Deferred, Effect, Layer, Schema, Context } from "effect"
+import { Deferred, Effect, Layer, Schema, Context, Option } from "effect"
 import os from "os"
 import { PermissionV2 } from "@redcode-ai/core/permission"
 import { PermissionID } from "./schema"
+import { Plugin } from "@/plugin"
 
 const log = Log.create({ service: "permission" })
 
@@ -177,6 +178,15 @@ export const layer = Layer.effect(
         const rule = evaluate(request.permission, pattern, ruleset, approved)
         log.info("evaluated", { permission: request.permission, pattern, action: rule })
         if (rule.action === "deny") {
+          const pluginOpt = yield* Effect.serviceOption(Plugin.Service)
+          if (Option.isSome(pluginOpt)) {
+            yield* pluginOpt.value.trigger("permission.denied", {
+              permission: request.permission,
+              pattern,
+              metadata: JSON.stringify(request.metadata ?? {}),
+              sessionID: request.sessionID ?? "",
+            }, {}).pipe(Effect.catch(() => Effect.void))
+          }
           return yield* new DeniedError({
             ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),
           })

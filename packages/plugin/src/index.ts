@@ -266,6 +266,76 @@ export interface Hooks {
     input: { tool: string; sessionID: string; callID: string; args: any },
     output: { denied: boolean; reason?: string },
   ) => Promise<void>
+  /**
+   * Called when a session is created
+   */
+  "session.start"?: (
+    input: { sessionID: string; agent?: string; model?: { providerID: string; modelID: string } },
+    output: {},
+  ) => Promise<void>
+  /**
+   * Called when a session is removed
+   */
+  "session.end"?: (
+    input: { sessionID: string; reason?: string },
+    output: {},
+  ) => Promise<void>
+  /**
+   * Called when a session is stopped/aborted
+   */
+  "session.stop"?: (
+    input: { sessionID: string; reason?: string },
+    output: {},
+  ) => Promise<void>
+  /**
+   * Called when a user submits a prompt
+   */
+  "user.prompt.submit"?: (
+    input: { sessionID: string; text: string },
+    output: {},
+  ) => Promise<void>
+  /**
+   * Called when a tool execution fails
+   */
+  "tool.execute.failure"?: (
+    input: { tool: string; sessionID: string; callID: string; args: any; error: string },
+    output: {},
+  ) => Promise<void>
+  /**
+   * Called when permission is denied for a tool
+   */
+  "permission.denied"?: (
+    input: { permission: string; pattern: string; metadata: any; sessionID: string },
+    output: { overridden?: boolean },
+  ) => Promise<void>
+  /**
+   * Called after session compaction completes
+   */
+  "compact.post"?: (
+    input: { sessionID: string },
+    output: {},
+  ) => Promise<void>
+  /**
+   * Called when a subagent is created
+   */
+  "subagent.start"?: (
+    input: { sessionID: string; parentSessionID: string; agent: string; title?: string },
+    output: {},
+  ) => Promise<void>
+  /**
+   * Called when a subagent finishes
+   */
+  "subagent.stop"?: (
+    input: { sessionID: string; parentSessionID: string; agent: string; output?: string; error?: string },
+    output: {},
+  ) => Promise<void>
+  /**
+   * Called for TUI/OS notifications
+   */
+  "notification"?: (
+    input: { sessionID?: string; title?: string; message: string; type: "info" | "warning" | "error" | "success" },
+    output: { suppressed?: boolean },
+  ) => Promise<void>
   "tool.execute.before"?: (
     input: { tool: string; sessionID: string; callID: string },
     output: { args: any },
