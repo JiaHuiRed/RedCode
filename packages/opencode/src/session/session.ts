@@ -635,6 +635,17 @@ export const layer: Layer.Layer<
           }),
         )
       }
+      if (input?.scope !== "project" && input?.directory) {
+        return Array.from(
+          listGlobal({
+            directory: input.directory,
+            roots: input.roots,
+            start: input.start,
+            search: input.search,
+            limit: input.limit,
+          }),
+        )
+      }
       const ctx = yield* InstanceState.context
       return Array.from(
         listByProject({ projectID: ctx.project.id, experimentalWorkspaces: flags.experimentalWorkspaces, ...input }),

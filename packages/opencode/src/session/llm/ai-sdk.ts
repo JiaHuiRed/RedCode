@@ -45,13 +45,22 @@ function usage(value: unknown) {
   // 260705 Red: also extract prompt_cache_miss_tokens for correct cache write billing.
   const deepSeekCacheRead = item.raw?.prompt_cache_hit_tokens as number | undefined
   const deepSeekCacheWrite = item.raw?.prompt_cache_miss_tokens as number | undefined
+  // 260714 Red: raw prompt_cache_hit_tokens can be cumulative KV-cache size, not per-request.
+  // Only use it as lowest-priority fallback if it's reasonable (≤ inputTokens for one request).
+  const maxCacheRead = item.inputTokens ?? Infinity
+  const safeDeepSeekCacheRead = deepSeekCacheRead && deepSeekCacheRead <= maxCacheRead
+    ? deepSeekCacheRead
+    : undefined
+  const safeDeepSeekCacheWrite = deepSeekCacheWrite && deepSeekCacheWrite <= maxCacheRead
+    ? deepSeekCacheWrite
+    : undefined
   const entries = Object.entries({
     inputTokens: item.inputTokens,
     outputTokens: item.outputTokens,
     totalTokens: item.totalTokens,
     reasoningTokens: item.outputTokenDetails?.reasoningTokens ?? item.reasoningTokens,
-    cacheReadInputTokens: deepSeekCacheRead ?? item.inputTokenDetails?.cacheReadTokens ?? item.cachedInputTokens,
-    cacheWriteInputTokens: deepSeekCacheWrite ?? item.inputTokenDetails?.cacheWriteTokens,
+    cacheReadInputTokens: item.inputTokenDetails?.cacheReadTokens ?? item.cachedInputTokens ?? safeDeepSeekCacheRead,
+    cacheWriteInputTokens: safeDeepSeekCacheWrite ?? item.inputTokenDetails?.cacheWriteTokens,
   }).filter((entry) => entry[1] !== undefined)
   return entries.length === 0 ? undefined : Object.fromEntries(entries)
 }

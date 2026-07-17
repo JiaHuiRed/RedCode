@@ -1,4 +1,5 @@
 import { WorkspaceID } from "@/control-plane/schema"
+import { WorkspaceRouteContext } from "../../middleware/workspace-routing"
 import { SessionV2 } from "@/v2/session"
 import { DateTime, Effect, Option, Schema } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
@@ -106,8 +107,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "v2.session
           if (hasCursorRoutingMismatch(ctx.query, decoded))
             return yield* new InvalidCursorError({ message: "Cursor does not match requested directory or workspace" })
           const order = decoded?.order ?? ctx.query.order ?? "desc"
+          const routeCtx = yield* WorkspaceRouteContext
           const filters = decoded ?? {
-            directory: ctx.query.directory,
+            directory: ctx.query.directory ?? routeCtx.directory,
             path: ctx.query.path,
             workspaceID: yield* decodeWorkspaceID(ctx.query.workspace),
             roots: ctx.query.roots,

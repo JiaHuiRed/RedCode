@@ -12,7 +12,8 @@ import {
   UnknownError,
 } from "../../errors"
 import { V2Authorization } from "../../middleware/authorization"
-import { WorkspaceRoutingQuery, WorkspaceRoutingQueryFields } from "../../middleware/workspace-routing"
+import { InstanceContextMiddleware } from "../../middleware/instance-context"
+import { WorkspaceRoutingMiddleware, WorkspaceRoutingQuery, WorkspaceRoutingQueryFields } from "../../middleware/workspace-routing"
 import { QueryBoolean } from "../query"
 
 export const SessionsQuery = Schema.Struct({
@@ -124,4 +125,6 @@ export const SessionGroup = HttpApiGroup.make("v2.session")
       description: "Experimental v2 routes.",
     }),
   )
+  .middleware(InstanceContextMiddleware)
+  .middleware(WorkspaceRoutingMiddleware)
   .middleware(V2Authorization)
