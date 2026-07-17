@@ -11,6 +11,30 @@
 ---
 
 ## TUI
+### [0.7.26] - 2026-07-17
+
+> DCP 压缩与原生 compaction 双重触发修复；依赖漏洞排查（87→65，critical 清零）；新增每日依赖审计 + npm provenance + 容器化隔离指南。
+
+#### 修复
+
+- **DCP compress 与原生 compaction 双重触发**（`session/prompt.ts`）：DCP 的 `compress-range`/`compress-message` 工具调用要等下一次请求发出才真正生效地缩减上下文，但那一轮刚结束时 `lastFinished.tokens` 报的还是压缩前的用量——下一步循环立刻拿这个旧数字判断 `isOverflow`，原生阈值 compaction 跟着又触发一次。两套系统本是分工（DCP 在 50k-100k 区间做任务边界感知的主动压缩，原生 150k 阈值只是兜底），不是要合并成一个。加了 `EXTERNAL_COMPRESS_TOOLS` 检查：刚结束那一轮如果有已完成的 DCP compress 工具调用，这一轮跳过阈值检查，等下一次真实请求体现出压缩效果后再评估。
+
+#### 安全
+
+- **`dompurify` XSS 系列漏洞修复**（`packages/ui/package.json`）：`3.3.1 → 3.4.12`。排查确认 `markdown.tsx` 里 LLM 回复/reasoning/glob-grep 工具输出统统经 `DOMPurify.sanitize()` 渲染进 app/desktop 聊天界面，且代码用到了 `addHook`/`USE_PROFILES`，正好踩中这批漏洞点名的两种用法——是真实可达路径，不是理论风险。
+- **清理两个死依赖**：`packages/opencode` 里从未被任何源码引用的孤儿 `minimatch` pin（装的是漏洞版本 10.0.3，排查确认没有代码路径真正用到它），以及自 v0.1.0 起从未被 import 过的 `@aws-sdk/client-s3`（critical 级 `fast-xml-parser` 漏洞正是靠它才"存在"于依赖树里，实际零可达路径）。两个都直接删除。
+- **`bun audit` 复查**：87 → 65 个漏洞，critical 1 → 0。剩余的集中在自建官网/企业后端（`packages/web`/`packages/enterprise`，不随产品分发）和 dev-only 工具链，按正常节奏处理即可。
+
+#### 构建 / 文档
+
+- **每日依赖审计**（新增 `.github/workflows/audit.yml`）：daily cron 跑 `bun audit --audit-level=moderate`，之前完全没有自动化在盯这个。
+- **npm 发布重新启用 provenance**（`publish.yml`）：`NPM_CONFIG_PROVENANCE` 一直是 `false`，workflow 早就有 `id-token: write` 权限，基础设施齐了只是没打开。
+- **容器化隔离指南**（新增 `packages/opencode/docs/containerization.md`）：`SECURITY.md` 原来那句"自己找 Docker/VM"扩成两个今天就能用的方案（用仓库自带 `packages/opencode/Dockerfile` 打镜像跑、VM 隔离要点），外加一个"只把工具调用路进沙箱"的设计方向说明（未实现，只是把形状写清楚）。
+
+#### 诊断
+
+- **evloop drift 排查修正**（`session/prompt.ts`、`session/diag.ts`）：之前怀疑 DCP `buildPriorityMap` 每轮全量重新分词是长会话卡顿的元凶——查证后发现不成立，该函数被 `compress.mode !== "message"` gate 挡住，当前配置（`mode: "range"`）下根本不会执行这条路径。翻了 `~/.redcode/data/log/` 里现存的全部 16 条 `TEMP DIAG evloop drift` 记录，`heapMB` 全部在 70-155 区间，均出现在进程启动阶段，与多个 MCP server（尤其远程的）连接、插件加载、后台 npm install 超时强相关——跟 DCP、跟长会话都对不上。是否与 0.7.25 描述的 2000 万+ token 长会话卡顿是同一个问题，还是那批日志已经轮转清掉、这是另一个独立问题，尚未确认。
+
 ### [0.7.25] - 2026-07-16
 
 > 长会话卡顿排查收尾：漂移探针坐实"没坐实"（>2000万 token 会话跑下来未复现明显卡顿），顺手清了几处一直在刷屏的日志噪音 + 一个装错的本地 MCP。

@@ -100,7 +100,6 @@
     "turbo": "2.8.13"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "3.933.0",
     "@redcode-ai/plugin": "workspace:*",
     "@redcode-ai/script": "workspace:*",
     "@redcode-ai/sdk": "workspace:*",

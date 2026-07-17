@@ -485,7 +485,7 @@ jobs:
           AUR_KEY: ${{ secrets.AUR_KEY }}
           GITHUB_TOKEN: ${{ steps.committer.outputs.token }}
           GH_REPO: ${{ needs.version.outputs.repo }}
-          NPM_CONFIG_PROVENANCE: false
+          NPM_CONFIG_PROVENANCE: true
           LATEST_YML_DIR: /tmp/latest-yml
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}

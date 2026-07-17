@@ -16,7 +16,7 @@ RedCode is an AI-powered coding assistant that runs locally on your machine. It 
 
 RedCode does **not** sandbox the agent. The permission system exists as a UX feature to help users stay aware of what actions the agent is taking - it prompts for confirmation before executing commands, writing files, etc. However, it is not designed to provide security isolation.
 
-If you need true isolation, run RedCode inside a Docker container or VM.
+If you need true isolation, run RedCode inside a Docker container or VM - see [containerization.md](packages/opencode/docs/containerization.md) for concrete recipes and their trade-offs (in short: both protect your host, neither protects API keys you pass into the sandbox from a compromised session).
 
 ### Trust Model
 

@@ -106,6 +106,13 @@ IMPORTANT:
 
 const STRUCTURED_OUTPUT_SYSTEM_PROMPT = `IMPORTANT: The user has requested structured output. You MUST use the StructuredOutput tool to provide your final response. Do NOT respond with plain text - you MUST call the StructuredOutput tool with your answer formatted according to the schema.`
 
+// 260717 Red external compaction plugins (e.g. DCP) run their compress tool mid-turn,
+// but the reduction only shows up on the *next* outbound request - the turn that just
+// called it still reports its pre-compression token usage. Skip one auto-compaction
+// check after one of these completes so native compaction doesn't double-fire on that
+// stale count; if the plugin's compression wasn't enough, the next real check catches it.
+const EXTERNAL_COMPRESS_TOOLS = new Set(["compress-range", "compress-message"])
+
 const log = Log.create({ service: "session.prompt" })
 const elog = EffectLogger.create({ service: "session.prompt" })
 
@@ -1214,9 +1221,17 @@ export const layer = Layer.effect(
             continue
           }
 
+          const lastFinishedMsg = lastFinished && msgs.findLast((msg) => msg.info.id === lastFinished.id)
+          const justRanExternalCompress =
+            lastFinishedMsg?.parts.some(
+              (part) =>
+                part.type === "tool" && part.state.status === "completed" && EXTERNAL_COMPRESS_TOOLS.has(part.tool),
+            ) ?? false
+
           if (
             lastFinished &&
             lastFinished.summary !== true &&
+            !justRanExternalCompress &&
             (yield* compaction.isOverflow({ tokens: lastFinished.tokens, model }))
           ) {
             yield* compaction.create({ sessionID, agent: lastUser.agent, model: lastUser.model, auto: true })
