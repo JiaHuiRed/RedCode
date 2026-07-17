@@ -40,6 +40,9 @@ const channel = (() => {
 
 const getBase = (): Configuration => ({
   artifactName: "redcode-desktop-${os}-${arch}.${ext}",
+  // 260717 Red RedCode 是中文母语产品，之前没设这个，Electron 默认把全部 55 种
+  // Chromium UI 语言的 .pak 都打进包（~48MB 纯浪费）。只保留用得上的。
+  electronLanguages: ["zh-CN", "en-US"],
   directories: {
     output: "dist",
     buildResources: "resources",

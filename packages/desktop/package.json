@@ -1,7 +1,7 @@
 {
   "name": "@redcode-ai/desktop",
   "private": true,
-  "version": "0.7.6",
+  "version": "0.7.7",
   "type": "module",
   "license": "MIT",
   "homepage": "https://redcode.dev",
@@ -26,8 +26,6 @@
   "dependencies": {
     "@electron/asar": "4.2.0",
     "@zip.js/zip.js": "2.7.62",
-    "drizzle-orm": "catalog:",
-    "effect": "catalog:",
     "electron-context-menu": "4.1.2",
     "electron-log": "^5",
     "electron-store": "^10",
@@ -38,6 +36,8 @@
   "devDependencies": {
     "@actions/artifact": "4.0.0",
     "@lydell/node-pty": "catalog:",
+    "drizzle-orm": "catalog:",
+    "effect": "catalog:",
     "@redcode-ai/app": "workspace:*",
     "@redcode-ai/ui": "workspace:*",
     "@sentry/solid": "catalog:",

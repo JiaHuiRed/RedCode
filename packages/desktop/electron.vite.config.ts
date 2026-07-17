@@ -50,7 +50,11 @@ export default defineConfig({
         input: { index: "src/main/index.ts", sidecar: "src/main/sidecar.ts" },
         external: [],
       },
-      externalizeDeps: { include: [nodePtyPkg] },
+      // 260717 Red effect/drizzle-orm 是纯 JS（无原生绑定），electron-vite 默认把
+      // package.json "dependencies" 里所有包当外部依赖处理，导致这俩没走 Rollup
+      // tree-shake，整个 node_modules 源码原样打进 asar（effect 36MB + drizzle-orm
+      // 19MB）。排除掉让它们正常参与打包压缩。
+      externalizeDeps: { include: [nodePtyPkg], exclude: ["effect", "drizzle-orm"] },
     },
     plugins: [
       {

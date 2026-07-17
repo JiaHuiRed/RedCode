@@ -1485,6 +1485,20 @@
 
 ## GUI
 
+### [0.7.7] - 2026-07-17
+
+> 打包体积瘦身——语言包只留中英文、effect/drizzle-orm 不再原始打包，安装目录 500M → 405M；顺带查清楚主 exe 232M 是原装 Electron 本身的体积，不是能优化的地方。
+
+#### 优化
+
+- **语言包裁剪**（`electron-builder.config.ts`）：Electron 默认把 Chromium 支持的全部 55 种 UI 语言 `.pak` 打进包，RedCode 是中文母语产品用不上这么多。加 `electronLanguages: ["zh-CN", "en-US"]`，实测 48M → 1.2M。
+- **effect/drizzle-orm 不再原始打包**（`electron.vite.config.ts`、`package.json`）：这两个纯 JS 包（无原生绑定）之前被 electron-vite 默认外部化，没走 Rollup tree-shake，整个 node_modules 源码原样塞进 `app.asar`。排除掉外部化名单让它们正常打包压缩，并从 `dependencies` 挪到 `devDependencies`（打包后已不需要以 node_modules 形式随包分发）。实测 `app.asar` 139M → 90M。完整走了一遍 `electron-builder --win` 打包 + 实际启动验证：sidecar（用 drizzle-orm）、主进程（用 effect）均正常初始化，`server ready` 收尾无异常。
+- 以上两项合计：`dist/win` 500M → **405M**（-19%）。
+
+#### 诊断
+
+- **主 exe 232M 排查——不是 RedCode 的问题**：把 electron-builder 缓存里的原版 Electron 42.4.1 zip 解出来直接对比，官方原装 `electron.exe` 就是 232,313,344 字节，RedCode 打包后的 `RedCode Dev.exe` 是 232,421,376 字节——只差 108KB（图标/版本信息资源），RedCode 自己的代码资源一点没往这个文件里加。这个体积是 Electron 42.x 把 Chromium/V8 引擎主体直接编进主 exe（而非拆成独立 dll）决定的，不是配置能调的，唯一杠杆是换更小的 Electron 大版本——不建议为这十几 MB 去动它。
+
 ### [0.7.6] - 2026-07-17
 
 > 补记两笔已经上线但一直没进版本号的改动：智谱/阶跃 CNY 计价显示、聊天渲染的 dompurify 安全修复。
