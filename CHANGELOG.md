@@ -15,6 +15,11 @@
 
 > 0.7.27 长会话压测通过——1000 万+ token 会话验证后台子代理默认开启改动，缓存命中率、DCP 触发时机、子代理后台交互均未发现问题。
 
+#### 功能
+
+- **PreToolUse 阻塞钩子系统**（`packages/core/src/plugin.ts`、`packages/opencode/src/session/tools.ts`、`packages/plugin/src/index.ts`）：新增 `"tool.use.pre"` 挂载点，在 AI SDK 执行 `execute` 回调之前拦截。钩子可以设置 `output.denied = true` 阻断工具调用，工具永不执行。内部 `HookSpec` 和外部插件 SDK `Hooks` 接口同步对齐。fail-open 设计：钩子崩溃不影响工具执行，无钩子注册时行为零变化。
+- **内置 safe-shell 守卫插件**（`packages/opencode/src/plugin/safe-shell.ts`）：自动注册 `"tool.use.pre"` 钩子，拦截 `bash` 工具的危险命令。覆盖：根文件系统删除（`rm -rf /`）、直接磁盘写入（`dd`/`mkfs`/`fdisk`/`mkswap`）、fork 炸弹（`:(){`）、系统命令（`shutdown`/`reboot`/`poweroff`/`halt`）。无配置、无需主动触发，默认全量生效。模型尝试危险命令时直接返回 blocked 结果。
+
 #### 诊断
 
 - **0.7.27 压测确认**：针对 0.7.27 的 `experimentalBackgroundSubagents` 默认开启、`task.ts` 后台模式提示词强化、以及此前的 DCP/原生 compaction 双重触发修复，用户实测跑了一轮 1000 万+ token 的长会话。三个此前重点关注的方面——上下文缓存命中率、DCP compress 触发时机是否仍会与原生 compaction 打架、子代理后台派发后主界面交互是否顺畅——均未复现问题。无代码改动，仅记录验证结果。

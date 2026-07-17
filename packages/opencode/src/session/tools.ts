@@ -89,6 +89,19 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         return run.promise(
           Effect.gen(function* () {
             const ctx = context(args, options)
+            // 260717 Red pre-tool-use: 前置拦截钩子
+            const preToolUse = yield* plugin.trigger(
+              "tool.use.pre",
+              { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID, args },
+              { denied: false as boolean, reason: undefined as string | undefined },
+            )
+            if (preToolUse.denied) {
+              return {
+                title: "Blocked",
+                output: `Tool "${item.id}" was blocked by hook.${preToolUse.reason ? ` Reason: ${preToolUse.reason}` : ""}`,
+                metadata: { blocked: true },
+              } as any
+            }
             yield* plugin.trigger(
               "tool.execute.before",
               { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
@@ -132,12 +145,26 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       Diag.toolStart(opts.toolCallId, key)
       return run.promise(
         Effect.gen(function* () {
-          const ctx = context(args, opts)
-          yield* plugin.trigger(
-            "tool.execute.before",
-            { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId },
-            { args },
-          )
+            const ctx = context(args, opts)
+            // 260717 Red pre-tool-use: 前置拦截钩子
+            const preToolUse = yield* plugin.trigger(
+              "tool.use.pre",
+              { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId, args },
+              { denied: false as boolean, reason: undefined as string | undefined },
+            )
+            if (preToolUse.denied) {
+              return {
+                title: "Blocked",
+                output: `Tool "${key}" was blocked by hook.${preToolUse.reason ? ` Reason: ${preToolUse.reason}` : ""}`,
+                metadata: { blocked: true },
+                content: [],
+              } as any
+            }
+            yield* plugin.trigger(
+              "tool.execute.before",
+              { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId },
+              { args },
+            )
           const result: Awaited<ReturnType<NonNullable<typeof execute>>> = yield* Effect.gen(function* () {
             yield* ctx.ask({ permission: key, metadata: {}, patterns: ["*"], always: ["*"] })
             return yield* Effect.promise(() => execute(args, opts))

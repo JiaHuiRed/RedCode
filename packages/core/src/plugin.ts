@@ -64,6 +64,18 @@ type HookSpec = {
       agent?: AgentID
     }
   }
+  "tool.use.pre": {
+    input: {
+      toolID: string
+      args: Record<string, unknown>
+      sessionID: string
+      agent: string
+    }
+    output: {
+      denied: boolean
+      reason?: string
+    }
+  }
 }
 
 export type Hooks = {

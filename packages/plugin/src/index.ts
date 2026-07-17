@@ -262,6 +262,10 @@ export interface Hooks {
     input: { command: string; sessionID: string; arguments: string },
     output: { parts: Part[] },
   ) => Promise<void>
+  "tool.use.pre"?: (
+    input: { tool: string; sessionID: string; callID: string; args: any },
+    output: { denied: boolean; reason?: string },
+  ) => Promise<void>
   "tool.execute.before"?: (
     input: { tool: string; sessionID: string; callID: string },
     output: { args: any },
