@@ -1480,6 +1480,18 @@
 
 ## GUI
 
+### [0.7.6] - 2026-07-17
+
+> 补记两笔已经上线但一直没进版本号的改动：智谱/阶跃 CNY 计价显示、聊天渲染的 dompurify 安全修复。
+
+#### 修复
+
+- **CNY 计价遗漏智谱/阶跃**（`session-context-metrics.ts`）：`CNY_PROVIDERS` 只登记了 `deepseek`/`xiaomi`/`opencode-go`，通过 `stepfun`/`zhipuai` 接入的模型费用按 USD 价目误折算，费用显示偏差。加入这两个 provider（同步的 TUI 侧 `home/footer.tsx` 改动已经在更早的 TUI 版本里，这次只补 GUI 这一半）。
+
+#### 安全
+
+- **`dompurify` XSS 系列漏洞修复**（`packages/ui`，TUI 0.7.26 已记录）：`packages/ui` 是 app/desktop 共用的组件库，`markdown.tsx` 里 LLM 回复/reasoning 内容经 `DOMPurify.sanitize()` 渲染进聊天界面——GUI 侧同样吃这个补丁，`3.3.1 → 3.4.12`，之前只记在了 TUI 变更里，这次补上 GUI 记录。
+
 ### [0.7.5] - 2026-07-15
 
 > Session Context 面板配色优化 + 部分数据提示——统计项颜色区分度不足、会话历史懒加载导致数字可能不完整两处体验问题。
