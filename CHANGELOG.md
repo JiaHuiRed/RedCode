@@ -11,6 +11,18 @@
 ---
 
 ## TUI
+### [0.7.30] - 2026-07-17
+
+> GUI session list 跨 project 显示——不传 scope 时有 directory 就走 listGlobal，不限 project_id。
+
+#### 修复
+
+- **GUI 其他项目会话显示为空**（`session/session.ts`）：`Session.list()` 在不传 scope 时强制加 `project_id` 条件，GUI 的 `loadSessions` 只传 directory 不传 scope，其他项目的 session 被 project_id 过滤排掉。修法：scope 未指定且有 directory 时走 `listGlobal`，直接按 directory 过滤，不限制 project_id。
+- **ai-sdk.ts raw cache tokens 累积保护**（`session/llm/ai-sdk.ts`）：DeepSeek 返回的 `prompt_cache_hit_tokens` 可能是累积 KV-cache 大小而非单次请求值，加 `safeDeepSeekCacheRead` 兜底过滤。`prompt_cache_miss_tokens` 同理。
+- **transform.ts mistral typo**（`provider/transform.ts`）：`toLocaleLowerCase` → `toLowerCase`。
+- **v2 session handler middleware**（`server/routes/.../v2/session.ts`）：添加 `InstanceContextMiddleware` + `WorkspaceRoutingMiddleware`，directory fallback 从路由上下文读取。
+
+---
 ### [0.7.29] - 2026-07-17
 
 > 事件钩子系统类型修复——stash 中的钩子代码（compact.post、session.start/end、user.prompt.submit、session.stop、tool.execute 三阶段）通过 typecheck。
