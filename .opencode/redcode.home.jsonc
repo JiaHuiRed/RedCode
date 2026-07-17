@@ -52,7 +52,7 @@
       // （硬要求 MODELSCOPE_TOKEN，没有本地 Ollama 兜底），跟本次 minicpm-v4.6:f16 切换
       // 新增的 plugins/vision-mcp-local/index.js 撞名但不是同一个东西，导致启动直接报错退出
       "command": ["node", "./plugins/vision-mcp-local/index.js"],
-      "env": {
+      "environment": {
         "VISION_MODEL": "minicpm-v4.6:f16"
       },
       "description": "图像理解——当前模型非多模态、需看截图/图片内容时用（走本地 minicpm-v4.6:f16，比 v4.5 快 8x）；纯文本任务不用。",
