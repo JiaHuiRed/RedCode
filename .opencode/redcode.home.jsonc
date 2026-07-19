@@ -48,14 +48,12 @@
     },
     "vision": {
       "type": "local",
-      // 260716 Red 之前是裸命令 "vision-mcp-server"，PATH 解析到全局 npm 装的旧版本
-      // （硬要求 MODELSCOPE_TOKEN，没有本地 Ollama 兜底），跟本次 minicpm-v4.6:f16 切换
-      // 新增的 plugins/vision-mcp-local/index.js 撞名但不是同一个东西，导致启动直接报错退出
-      "command": ["node", "./plugins/vision-mcp-local/index.js"],
+      // 260718 Red vision-mcp-server 全局安装版已自带 Ollama 兜底，command 直接用裸命令即可
+      "command": ["vision-mcp-server"],
       "environment": {
         "VISION_MODEL": "minicpm-v4.6:f16"
       },
-      "description": "图像理解——当前模型非多模态、需看截图/图片内容时用（走本地 minicpm-v4.6:f16，比 v4.5 快 8x）；纯文本任务不用。",
+      "description": "图像理解——当前模型非多模态、需看截图/图片内容时用（走本地 Ollama minicpm-v4.6:f16）；纯文本任务不用。",
       "enabled": true
     },
     "su-prememory": {
@@ -92,6 +90,21 @@
   "compaction": { "threshold": 150000 },
   "tools": { "github-triage": false, "github-pr-search": false },
   "provider": {
+    "anthropic": {
+      "options": {
+        "baseURL": "https://api.chhlink.xyz",
+        "apiKey": "sk-4fb1e5192a5d9ab7ef42e8f9a6e1b80d0578fdf0e0d2c08debd662da3091580b"
+      },
+      "models": {
+        "claude-sonnet-4-20250514": {
+          "name": "Claude Sonnet 4",
+          "temperature": true,
+          "reasoning": true,
+          "tool_call": true,
+          "limit": { "context": 200000, "output": 65536 }
+        }
+      }
+    },
     "ollama": {
       "options": { "baseURL": "http://localhost:11434/v1" },
       "models": {

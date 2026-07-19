@@ -46,10 +46,9 @@ export const createSessionTabs = (input: TabsInput) => {
   const activeTab = createMemo(() => {
     const active = input.tabs().active()
     if (active === "context") return active
-    if (active === "status") return active // 260610 Red 服务器/MCP/LSP/插件状态标签
-    if (active === "plan") return active // 260615 Red Plan 面板
     if (active === "review" && review()) return active
     if (active && input.pathFromTab(active)) return input.normalizeTab(active)
+    if (active && active !== "review") return active
 
     const first = openedTabs()[0]
     if (first) return first

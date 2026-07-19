@@ -1512,6 +1512,10 @@
 
 - **版本发布**：GUI 版本升级至 `0.7.8`，同步更新版本徽章与发布记录。
 
+#### 修复
+
+- **点击 Status tab 不丢失 Context tab**（`packages/app/src/pages/session/helpers.ts`）：`activeTab()` memo 没有兜底处理非文件标签（`status`、`plan` 等）。当 `tabs().active() === "status"` 时，path 检查失败直接回退到 `openedTabs()[0]`，导致 tab 被切到文件标签、context 面板隐藏。修法：在 path 检查之后加 `if (active && active !== "review") return active`，对所有非文件标签直接返回原值。同时删掉了此前逐条硬编码的 `"status"`/`"plan"` 分支，统一为泛化兜底。
+
 ### [0.7.7] - 2026-07-17
 
 > 打包体积瘦身——语言包只留中英文、effect/drizzle-orm 不再原始打包，安装目录 500M → 405M；顺带查清楚主 exe 232M 是原装 Electron 本身的体积，不是能优化的地方。
