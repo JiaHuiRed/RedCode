@@ -80,6 +80,12 @@ export async function selectProjectInteractive(): Promise<string | undefined> {
     stdout.write("\x1b[?25h")
     if (renderedLines > 0) stdout.write("\x1b[" + renderedLines + "A\x1b[J")
     try { stdin.setRawMode(wasRaw) } catch {}
+    // Discard any bytes buffered during the selector's lifetime (stray
+    // keystrokes, or a terminal capability-query reply in flight) so they
+    // don't leak into the next stdin reader — the main TUI's own capability
+    // negotiation, which would otherwise misparse them.
+    let leftover
+    while ((leftover = stdin.read()) !== null) {}
     stdin.pause()
   }
 

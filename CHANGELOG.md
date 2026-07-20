@@ -24,6 +24,7 @@
 
 - **FreeLLMAPI 反复重现**（`.opencode/redcode.home.jsonc`、`~/.redcode/redcode.jsonc`）：根因是 `merge-home-config.ts`（`sync-home.bat` → `build.bat` 调用链）每次合并模板时，因 FreeLLMAPI 曾在 `redcode.home.jsonc` 模板中存在，用户手动删除后模板又会补回（`deepMergeUserWins` 的"用户没有的键就加"逻辑）。修法：从模板彻底移除 `opencode` provider 段，用户配置中删除并加入 `disabled_providers` 双重保险。
 - **Anthropic 供应商 URL 缺 `/v1`**（`.opencode/redcode.home.jsonc`、`~/.redcode/redcode.jsonc`）：`baseURL` 从 `https://api.chhlink.xyz` 补为 `https://api.chhlink.xyz/v1`，模型从 `claude-sonnet-4-20250514` 更正为 `gpt-5-chat-latest`（实为 Codex GPT 模型代理）。
+- **Workspace selector 退出后残留 stdin 污染主 TUI 渲染**（`cli/project-selector.ts`）：裸执行编译产物（不带目录参数，走新加的交互式 workspace selector）时，选择器退出的 `cleanup()` 只恢复了终端模式，没有清空选择过程中残留在 stdin 缓冲区里的字节（额外按键、或尚未到达的终端能力探测响应）；这些残留字节会漏给紧接着启动的主 TUI 自身的终端能力协商逻辑，导致协商失败——症状是默认色文字（ASCII logo、中文快捷键标签、输入框里已输入的文字）整体不可见，强调色（耗时数字、状态图标）仍正常显示。通过 `redcode.cmd`（自动带目录参数，跳过 selector）启动不触发。修法：`cleanup()` 里显式 `while ((leftover = stdin.read()) !== null) {}` 排空残留字节，再执行 `stdin.pause()`。
 
 #### 安全
 
