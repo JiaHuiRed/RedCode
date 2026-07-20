@@ -1429,6 +1429,11 @@ export const layer = Layer.effect(
             }
             _caches.modelMsgs = { sessionID, messages: [...stabilizedMsgs] }
             const system = [...env, ...instructions, ...(skills ? [skills] : [])]
+            // 260718 Red today's date lives here, not in the cached <env> block above - this
+            // section runs fresh every turn (unlike env/instructions/skills, which are cached per
+            // session), so only this small tail invalidates the provider's prefix cache once a day
+            // instead of everything from <env> onward.
+            system.push(`Today's date: ${new Date().toDateString()}`)
             // 260629 Red inject per-session canary marker for prompt-injection detection.
             // Looks like an internal debug line; if it ever appears in model output, terminate the session.
             const canaryToken = getCanary(sessionID)

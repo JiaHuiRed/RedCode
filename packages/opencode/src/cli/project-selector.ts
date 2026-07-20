@@ -1,14 +1,16 @@
 import path from "path"
+import fs from "fs"
 import { Database } from "@/storage/db"
 import { ProjectTable } from "@/project/project.sql"
 import { Style } from "./ui"
+
+const NEW_DIR_SENTINEL = "__new_project_directory__"
+const { TEXT_HIGHLIGHT_BOLD, TEXT_DIM, TEXT_NORMAL, TEXT_WARNING, TEXT_SUCCESS, TEXT_DANGER } = Style
 
 interface ProjectEntry {
   worktree: string
   name: string
 }
-
-const { TEXT_HIGHLIGHT_BOLD, TEXT_DIM, TEXT_NORMAL, TEXT_WARNING, TEXT_SUCCESS } = Style
 
 function loadProjects(): ProjectEntry[] {
   try {
@@ -49,7 +51,11 @@ export async function selectProjectInteractive(): Promise<string | undefined> {
     name: "↳ " + path.basename(currentDir) + " (current)",
   }
 
-  const items: ProjectEntry[] = [currentEntry, ...allProjects]
+  const items: ProjectEntry[] = [
+    currentEntry,
+    ...allProjects,
+    { worktree: NEW_DIR_SENTINEL, name: "Open a different directory..." },
+  ]
   if (items.length <= 1) return undefined
 
   const wasRaw = stdin.isRaw
@@ -61,6 +67,11 @@ export async function selectProjectInteractive(): Promise<string | undefined> {
   let selected = 0
   let renderedLines = 0
   let cleanupDone = false
+
+  // Path input mode state
+  let pathInputMode = false
+  let pathBuffer = ""
+  let pathError = ""
 
   const cleanup = () => {
     if (cleanupDone) return
@@ -87,35 +98,56 @@ export async function selectProjectInteractive(): Promise<string | undefined> {
     const maxVisible = Math.min(filtered.length, height - 6)
     const scrollOffset = Math.max(0, Math.min(selected - Math.floor(maxVisible / 2), filtered.length - maxVisible))
 
-    let content = ""
+    const buf: string[] = []
 
     // Title
-    content += "\n"
-    content += TEXT_HIGHLIGHT_BOLD + "  Select a workspace" + TEXT_NORMAL + "\n\n"
+    buf.push("")
+    buf.push(TEXT_HIGHLIGHT_BOLD + "  Select a workspace" + TEXT_NORMAL)
+    buf.push("")
 
-    // Filter
-    const filterPrompt = filter
-      ? "  " + TEXT_WARNING + "🔍" + TEXT_NORMAL + " " + filter
-      : "  " + TEXT_DIM + "  type to filter projects…" + TEXT_NORMAL
-    content += filterPrompt + "\n\n"
-
-    // List
-    const visible = filtered.slice(scrollOffset, scrollOffset + maxVisible)
-    for (let i = 0; i < visible.length; i++) {
-      const entry = visible[i]!
-      const isSel = i + scrollOffset === selected
-      const prefix = isSel ? "  " + TEXT_SUCCESS + "▸" + TEXT_NORMAL + " " : "    "
-      const label = isSel ? TEXT_NORMAL + entry.name : TEXT_DIM + entry.name
-      const w = truncate(entry.worktree, 50)
-
-      content += prefix + label + "\n"
-      if (isSel) {
-        content += "     " + TEXT_DIM + w + TEXT_NORMAL + "\n"
+    if (pathInputMode) {
+      // Path input UI
+      const cursor = pathBuffer.length ? "" : TEXT_DIM
+      const prefix = "  " + TEXT_WARNING + "📁" + TEXT_NORMAL + " "
+      buf.push(prefix + cursor + pathBuffer + TEXT_NORMAL + "█")
+      if (pathError) {
+        buf.push("  " + TEXT_DANGER + pathError + TEXT_NORMAL)
+        buf.push("  " + TEXT_DIM + "Press any key to try again, Esc to cancel" + TEXT_NORMAL)
+      } else {
+        buf.push("")
+        buf.push(TEXT_DIM + "  Enter a directory path  ·  Enter confirm  ·  Esc cancel" + TEXT_NORMAL)
       }
+    } else {
+      // Filter
+      const filterPrompt = filter
+        ? "  " + TEXT_WARNING + "🔍" + TEXT_NORMAL + " " + filter
+        : "  " + TEXT_DIM + "  type to filter projects…" + TEXT_NORMAL
+      buf.push(filterPrompt)
+      buf.push("")
+
+      // List
+      const visible = filtered.slice(scrollOffset, scrollOffset + maxVisible)
+      for (let i = 0; i < visible.length; i++) {
+        const entry = visible[i]!
+        const isSel = i + scrollOffset === selected
+        const prefix = isSel ? "  " + TEXT_SUCCESS + "▸" + TEXT_NORMAL + " " : "    "
+        const label = isSel ? TEXT_NORMAL + entry.name : TEXT_DIM + entry.name
+
+        if (entry.worktree === NEW_DIR_SENTINEL) {
+          buf.push(prefix + label)
+        } else {
+          const w = truncate(entry.worktree, 50)
+          buf.push(prefix + label)
+          if (isSel) buf.push("     " + TEXT_DIM + w + TEXT_NORMAL)
+        }
+      }
+
+      // Footer
+      buf.push("")
+      buf.push(TEXT_DIM + "  ↑↓ navigate · type filter · Enter select · Esc cancel" + TEXT_NORMAL)
     }
 
-    // Footer
-    content += "\n" + TEXT_DIM + "  ↑↓ navigate · type filter · Enter select · Esc cancel" + TEXT_NORMAL + "\n"
+    const content = buf.join("\n")
 
     if (renderedLines > 0) {
       stdout.write("\x1b[" + renderedLines + "A\x1b[J")
@@ -127,16 +159,92 @@ export async function selectProjectInteractive(): Promise<string | undefined> {
   }
 
   return new Promise<string | undefined>((resolve) => {
+    const enterPathInput = () => {
+      pathInputMode = true
+      pathBuffer = ""
+      pathError = ""
+      selected = 0
+      render()
+    }
+
+    const submitPath = (): boolean => {
+      const resolved = path.resolve(pathBuffer.trim())
+      try {
+        if (!fs.statSync(resolved).isDirectory()) {
+          pathError = "Not a directory: " + resolved
+          render()
+          return false
+        }
+      } catch {
+        pathError = "Directory not found: " + resolved
+        render()
+        return false
+      }
+      cleanup()
+      resolve(resolved)
+      return true
+    }
+
     render()
 
     stdin.on("data", (data: Buffer) => {
       if (cleanupDone) return
       const key = data.toString()
 
+      if (pathInputMode) {
+        // === Path input mode ===
+
+        // Enter — submit
+        if (key === "\r" || key === "\n") {
+          if (submitPath()) return
+          return
+        }
+
+        // Escape — go back to list
+        if (key === "\x1b") {
+          pathInputMode = false
+          pathError = ""
+          render()
+          return
+        }
+
+        // Ctrl+C — cancel
+        if (key === "\u0003") {
+          cleanup()
+          resolve(undefined)
+          return
+        }
+
+        // Backspace
+        if (key === "\x7f" || key === "\b") {
+          pathBuffer = pathBuffer.slice(0, -1)
+          pathError = ""
+          render()
+          return
+        }
+
+        // Printable
+        if (key.length === 1 && key.charCodeAt(0) >= 32) {
+          pathBuffer += key
+          pathError = ""
+          render()
+          return
+        }
+
+        return
+      }
+
+      // === List navigation mode ===
+
       // Enter
       if (key === "\r" || key === "\n") {
         const filtered = getFiltered()
-        const result = filtered.length > 0 ? filtered[selected]?.worktree : undefined
+        const entry = filtered.length > 0 ? filtered[selected] : undefined
+        if (entry?.worktree === NEW_DIR_SENTINEL) {
+          enterPathInput()
+          return
+        }
+        const result = entry?.worktree
         cleanup()
         resolve(result)
         return

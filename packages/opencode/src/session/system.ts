@@ -76,7 +76,12 @@ export const layer = Layer.effect(
             `  Workspace root folder: ${ctx.worktree}`,
             `  Is directory a git repo: ${ctx.project.vcs === "git" ? "yes" : "no"}`,
             `  Platform: ${process.platform}`,
-            `  Today's date: ${new Date().toDateString()}`,
+            // 260718 Red today's date deliberately NOT here - this whole block is cached per
+            // session (see prompt.ts _caches.system) and sits ahead of AGENTS.md/MEMORY.md/skills
+            // in the final prompt string. A date here would flip once every 24h and, since providers
+            // prefix-match for prompt caching, invalidate every stable byte that follows it too.
+            // Today's date is appended fresh every turn near the end of the prompt instead
+            // (session/prompt.ts, next to the canary marker) so only that small tail busts daily.
             `</env>`,
           ].join("\n"),
         ]

@@ -11,6 +11,32 @@
 ---
 
 ## TUI
+### [0.7.31] - 2026-07-20
+
+> 永久移除 FreeLLMAPI 供应商 + Anthropic URL 修正 + workspace selector 支持外部新目录 + 模板安全加固。
+
+#### 新功能
+
+- **Workspace selector 支持打开新项目目录**（`cli/project-selector.ts`）：列表底部新增"Open a different directory..."选项，选中后进入路径输入模式，Enter 确认 Esc 返回，支持启动 RedCode 于任意未注册的工作目录。
+- **RedCode 注册到 PATH**：创建 `~/.bun/bin/redcode.cmd` 批处理入口，任意终端输入 `redcode` 即从当前目录启动。
+
+#### 修复
+
+- **FreeLLMAPI 反复重现**（`.opencode/redcode.home.jsonc`、`~/.redcode/redcode.jsonc`）：根因是 `merge-home-config.ts`（`sync-home.bat` → `build.bat` 调用链）每次合并模板时，因 FreeLLMAPI 曾在 `redcode.home.jsonc` 模板中存在，用户手动删除后模板又会补回（`deepMergeUserWins` 的"用户没有的键就加"逻辑）。修法：从模板彻底移除 `opencode` provider 段，用户配置中删除并加入 `disabled_providers` 双重保险。
+- **Anthropic 供应商 URL 缺 `/v1`**（`.opencode/redcode.home.jsonc`、`~/.redcode/redcode.jsonc`）：`baseURL` 从 `https://api.chhlink.xyz` 补为 `https://api.chhlink.xyz/v1`，模型从 `claude-sonnet-4-20250514` 更正为 `gpt-5-chat-latest`（实为 Codex GPT 模型代理）。
+
+#### 安全
+
+- **模板凭证清理**（`.opencode/redcode.home.jsonc`）：移除公仓模板中的真实 API key，替换为占位符 `sk-your-key-here`。私有配置 `~/.redcode/redcode.jsonc` 保留真实 key，sync 机制不受影响。
+- **Gitleaks 秘密扫描接入 CI**（`.github/workflows/test.yml`）：新增 `gitleaks` job，每次 push/PR 自动检测密钥泄露，避免凭证误提交公仓。
+
+#### 优化
+
+- **模型能力标记**（`session/system.ts`）：DeepSeek V4 Flash/Pro 补充 `tool_call+reasoning+temperature` 标记、上下文窗口对齐 1M；Step 3.7 Flash 补充 `tool_call+temperature`、上下文窗口对齐 256K。
+- **Compaction 阈值提升**：`compaction.threshold` 从 150000 → 400000，适配 1M 上下文窗口，减少不必要的压缩。
+- **Today's date 位置优化**（`session/prompt.ts`、`session/system.ts`）：date 从缓存的 `<env>` 头部移至每次刷新的小段尾部，减少 provider prefix cache 每日失效开销。
+
+---
 ### [0.7.30] - 2026-07-17
 
 > GUI session list 跨 project 显示——不传 scope 时有 directory 就走 listGlobal，不限 project_id。
