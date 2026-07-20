@@ -42,6 +42,26 @@ export function win32DisableProcessedInput() {
 }
 
 /**
+ * Force opentui's wcwidth-based character width calculation.
+ *
+ * On Windows, opentui's terminal-capability query (which decides between its
+ * "unicode" and "wcwidth" width methods) doesn't reliably resolve before the
+ * renderer paints — most consistently reproduced from a `bun build --compile`
+ * binary launched with no CLI project arg (which runs the interactive
+ * workspace selector first). When it falls back to "unicode" width, CJK
+ * glyphs and box-drawing characters get mismeasured: default-themed text
+ * (logo, i18n shortcut labels, prompt input) renders invisible while
+ * explicitly accent-colored text is unaffected. Forcing wcwidth sidesteps
+ * the flaky negotiation entirely. Confirmed via `OPENTUI_FORCE_WCWIDTH=1`
+ * manual repro; see CHANGELOG [0.7.31] follow-up entry.
+ */
+export function win32ForceWcwidth() {
+  if (process.platform !== "win32") return
+  if (process.env.OPENTUI_FORCE_WCWIDTH !== undefined) return
+  process.env.OPENTUI_FORCE_WCWIDTH = "1"
+}
+
+/**
  * Discard any queued console input (mouse events, key presses, etc.).
  */
 export function win32FlushInputBuffer() {

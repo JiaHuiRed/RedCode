@@ -24,7 +24,7 @@
 
 - **FreeLLMAPI 反复重现**（`.opencode/redcode.home.jsonc`、`~/.redcode/redcode.jsonc`）：根因是 `merge-home-config.ts`（`sync-home.bat` → `build.bat` 调用链）每次合并模板时，因 FreeLLMAPI 曾在 `redcode.home.jsonc` 模板中存在，用户手动删除后模板又会补回（`deepMergeUserWins` 的"用户没有的键就加"逻辑）。修法：从模板彻底移除 `opencode` provider 段，用户配置中删除并加入 `disabled_providers` 双重保险。
 - **Anthropic 供应商 URL 缺 `/v1`**（`.opencode/redcode.home.jsonc`、`~/.redcode/redcode.jsonc`）：`baseURL` 从 `https://api.chhlink.xyz` 补为 `https://api.chhlink.xyz/v1`，模型从 `claude-sonnet-4-20250514` 更正为 `gpt-5-chat-latest`（实为 Codex GPT 模型代理）。
-- **Workspace selector 退出后残留 stdin 污染主 TUI 渲染**（`cli/project-selector.ts`）：裸执行编译产物（不带目录参数，走新加的交互式 workspace selector）时，选择器退出的 `cleanup()` 只恢复了终端模式，没有清空选择过程中残留在 stdin 缓冲区里的字节（额外按键、或尚未到达的终端能力探测响应）；这些残留字节会漏给紧接着启动的主 TUI 自身的终端能力协商逻辑，导致协商失败——症状是默认色文字（ASCII logo、中文快捷键标签、输入框里已输入的文字）整体不可见，强调色（耗时数字、状态图标）仍正常显示。通过 `redcode.cmd`（自动带目录参数，跳过 selector）启动不触发。修法：`cleanup()` 里显式 `while ((leftover = stdin.read()) !== null) {}` 排空残留字节，再执行 `stdin.pause()`。
+- **编译版 exe 里默认色文字整体不可见**（`cli/cmd/tui/win32.ts`、`cli/cmd/tui/app.tsx`）：`bun build --compile` 出来的独立 exe（`dist/redcode-windows-x64/bin/redcode.exe`，非 `redcode.cmd`/`bun run dev` 解释执行路径）启动时，opentui 的终端能力探测经常来不及在超时窗口内完成，`capabilities.unicode` 摊在保守默认值上，导致宽字符/图标宽度按 "unicode" 而非 "wcwidth" 测量——症状是默认主题色文字（ASCII logo、中文快捷键标签、输入框已输入内容）整体不可见，强调色（耗时数字、状态图标）不受影响。用 `OPENTUI_FORCE_WCWIDTH=1` 手动测试确认终端本身没问题，纯粹是探测没做成。根因在闭源原生库内部，改不了；修法：新增 `win32ForceWcwidth()`，Windows 下默认直接设置 `OPENTUI_FORCE_WCWIDTH=1`（用户已显式设置时不覆盖），彻底绕开这段探测。附带给 `cli/project-selector.ts` 的 `cleanup()` 加了 stdin 排空（`while ((leftover = stdin.read()) !== null) {}`）防止选择器退出时残留按键漏给下一个 reader，这是防御性加固，不是本问题的根因。
 
 #### 安全
 
