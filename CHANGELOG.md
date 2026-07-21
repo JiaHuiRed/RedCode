@@ -13,7 +13,7 @@
 ## TUI
 ### [0.7.31] - 2026-07-20
 
-> 永久移除 FreeLLMAPI 供应商 + Anthropic URL 修正 + workspace selector 支持外部新目录 + 模板安全加固。
+> 永久移除 FreeLLMAPI 供应商 + Anthropic URL 修正 + workspace selector 支持外部新目录 + 模板安全加固。（发布次日修复：selector 重构引入的冷启动渲染回归、路径输入不支持粘贴，见下方修复条目。）
 
 #### 新功能
 
@@ -25,11 +25,11 @@
 - **FreeLLMAPI 反复重现**（`.opencode/redcode.home.jsonc`、`~/.redcode/redcode.jsonc`）：根因是 `merge-home-config.ts`（`sync-home.bat` → `build.bat` 调用链）每次合并模板时，因 FreeLLMAPI 曾在 `redcode.home.jsonc` 模板中存在，用户手动删除后模板又会补回（`deepMergeUserWins` 的"用户没有的键就加"逻辑）。修法：从模板彻底移除 `opencode` provider 段，用户配置中删除并加入 `disabled_providers` 双重保险。
 - **Anthropic 供应商 URL 缺 `/v1`**（`.opencode/redcode.home.jsonc`、`~/.redcode/redcode.jsonc`）：`baseURL` 从 `https://api.chhlink.xyz` 补为 `https://api.chhlink.xyz/v1`，模型从 `claude-sonnet-4-20250514` 更正为 `gpt-5-chat-latest`（实为 Codex GPT 模型代理）。
 - **编译版 exe 冷启动（Explorer 双击 / 全新终端窗口）下文字不可见，中文尤甚**（`cli/project-selector.ts`）：根因是 workspace selector 这次改动里，`render()` 把手动拼接的 `content += ... + "\n"` 换成了 `buf: string[]` 数组 + `buf.join("\n")`——`join` 不会在最后一个元素后面补分隔符，导致新版本比旧版本**少了一个末尾换行**。这直接影响紧接着的 `renderedLines = content.split("\n").length`：每次少算一行，选择器每次重绘、以及退出时用 `"\x1b[" + renderedLines + "A\x1b[J"` 收尾的光标回退量都跟着错位一格，把一个位置错误的光标状态交给了紧接着启动的主 TUI，赶上它自己的终端能力探测（`capabilities.unicode`/`rgb`/`explicit_width`）跟这个错位的光标产生冲突，导致探测失败、宽字符/默认色文字整体画不出来——中文首当其冲，因为宽字符对光标列位置最敏感。通过逐段二分（0.7.30 baseline 上只叠加本文件改动 → 复现；只叠 stdin 排空 → 不解决；再叠这个末尾换行 → 问题消失）精确定位，非猜测。修法：`const content = buf.join("\n") + "\n"`，一个字符。用已开着的终端敲 `redcode` 命令不受影响，因为那条路径从不冷启动。`cleanup()` 里的 stdin 排空作为防御性加固保留，但确认不是本问题根因。**同时移除**之前基于"能力协商随机失败"这个错误猜测加的三个强制开关（`win32ForceTerminalCapabilities()`：`OPENTUI_FORCE_WCWIDTH`/`OPENTUI_FORCE_EXPLICIT_WIDTH`/`COLORTERM`）——对照测试证明它们不是中性兜底而是有害：同样带换行修复的构建，无强制开关正常、带强制开关复现渲染损坏；且手动单测 `OPENTUI_FORCE_EXPLICIT_WIDTH=1` 时 logo 整个消失，强制 CPR 显式宽度测量在冷启动控制台上本身就是不可靠路径，强制开启反而制造了它想防的问题。教训记录在案：症状驱动的"修复"在真根因找到后必须重新验证是否该保留，而不是默认叠着。opentui 本身与此问题无关（已验证），跟下面的版本升级是两件独立的事。
-- **Workspace 路径输入模式不支持粘贴**（`cli/project-selector.ts`）：新增的"Open a different directory..."路径输入框，`stdin` 的 `data` 事件里粘贴内容是作为一整块（`key.length > 1`）到达的，而输入判断写的是 `key.length === 1`，导致粘贴的路径被原样丢弃、只能逐字手敲。修法：改成只要不是转义序列开头就按可打印内容处理（过滤掉控制字符），单字符键入和整段粘贴统一走这条路径。
+- **Workspace 路径输入模式不支持粘贴**（`cli/project-selector.ts`）：新增的"Open a different directory..."路径输入框，`stdin` 的 `data` 事件里粘贴内容是作为一整块（`key.length > 1`）到达的，而输入判断写的是 `key.length === 1`，导致粘贴的路径被原样丢弃、只能逐字手敲。修法：改成只要不是转义序列开头就按可打印内容处理（过滤掉控制字符），单字符键入和整段粘贴统一走这条路径。修复后已用 ConPTY 驱动编译版 exe 做过端到端验证：冷启动 → 列表导航 → 进入路径输入 → 整段粘贴回显 → 确认后主 TUI 于目标目录启动，全链路通过。
 
 #### 已评估、延后
 
-- **opentui 0.2.15 → 0.4.3 升级**：`@opencode-ai/plugin`（第三方 auth 插件带入的传递依赖）已经要求 `@opentui/core >= 0.4.3`，版本长期不对齐有重演 [0.7.8] 那次"同一个包不同 content-addressable hash 导致 TS `#private` 字段类型不兼容"的风险，值得做。也顺带评估了把 `build.ts` 里 tree-sitter worker 的嵌入方式改成跟上游 anomalyco/opencode 一致的做法（不把 `parser.worker.js` 真实路径塞进 `Bun.build` 的 `entrypoints`，改成 `Bun.file(...).text()` 读成字符串后以虚拟文件名通过 `files` 选项嵌入——原写法在 opentui >=0.4.5 上会撞见一个已知未修复的编译产物崩溃，[anomalyco/opentui#1275](https://github.com/anomalyco/opentui/issues/1275)）。**这次没有落地**：升级后叠加上面那个 workspace selector 修复重新测试，冷启动渲染问题仍有概率复现，无法在当前时间窗口内排除是 0.4.3 内部改动（native yoga-layout 替换、子节点身份识别逻辑等）重新引入了时序敏感性，因此退回 0.2.15，避免把一个没验证扎实的依赖变更和已确认的关键修复捆在一起提交。opentui 升级 + `build.ts` 改造本身是独立、值得做的事，留到有完整测试窗口时单独进行；相关调研结论保留供下次参考。
+- **opentui 0.2.15 → 0.4.3 升级**：`@opencode-ai/plugin`（第三方 auth 插件带入的传递依赖）已经要求 `@opentui/core >= 0.4.3`，版本长期不对齐有重演 [0.7.8] 那次"同一个包不同 content-addressable hash 导致 TS `#private` 字段类型不兼容"的风险，值得做。也顺带评估了把 `build.ts` 里 tree-sitter worker 的嵌入方式改成跟上游 anomalyco/opencode 一致的做法（不把 `parser.worker.js` 真实路径塞进 `Bun.build` 的 `entrypoints`，改成 `Bun.file(...).text()` 读成字符串后以虚拟文件名通过 `files` 选项嵌入——原写法在 opentui >=0.4.5 上会撞见一个已知未修复的编译产物崩溃，[anomalyco/opentui#1275](https://github.com/anomalyco/opentui/issues/1275)）。**这次没有落地**：当时升级后重测冷启动仍复现渲染问题，一度归因为"无法排除 0.4.3 重新引入时序敏感性"——事后查明那次测试构建里还带着后来被证明有害并已移除的三个强制环境变量（见上方冷启动修复条目），失败大概率是它们造成的，与 0.4.3 本身无关。但 0.4.3 至今没有在"无强制开关"的干净状态下重测过，因此维持 0.2.15 不动，留待有完整测试窗口时单独升级验证；升级路径、`build.ts` 改造方案、#1275 规避方法均已调研完毕，下次可直接执行。
 
 #### 安全
 

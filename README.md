@@ -57,11 +57,13 @@ cd packages/desktop && bun run dev
 
 ```bash
 # TUI 单文件 exe
-cd packages/opencode && bun run build -- --single
+cd packages/opencode && bun run build
 
 # 桌面 GUI
 cd packages/desktop && bun run build && bun run package
 ```
+
+> TUI 编译产物：`packages/opencode/dist/redcode-windows-x64/bin/redcode.exe`，可直接双击运行——无参数启动会先显示工作区选择器，支持从已注册项目中选择，或经"Open a different directory..."手输/粘贴任意目录路径（0.7.31 起）。
 
 ---
 

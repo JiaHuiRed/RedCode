@@ -51,6 +51,14 @@ bun dev
 cd packages/desktop && bun run dev
 ```
 
+### Build (Windows single-file exe)
+
+```bash
+cd packages/opencode && bun run build
+```
+
+Output: `packages/opencode/dist/redcode-windows-x64/bin/redcode.exe` — double-click to run. A bare launch (no directory argument) opens a workspace selector: pick a registered project, or use "Open a different directory..." to type or paste any path (since 0.7.31).
+
 ---
 
 ## ⚙️ Configuration
