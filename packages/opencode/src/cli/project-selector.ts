@@ -153,7 +153,14 @@ export async function selectProjectInteractive(): Promise<string | undefined> {
       buf.push(TEXT_DIM + "  ↑↓ navigate · type filter · Enter select · Esc cancel" + TEXT_NORMAL)
     }
 
-    const content = buf.join("\n")
+    // buf.join has no trailing separator, unlike the old `content +=`
+    // string-building this replaced — every push above ends its own line, so
+    // without this the last line is missing its terminating "\n". That threw
+    // off `renderedLines` (below) by one, which throws off the next
+    // redraw's/cleanup's "\x1b[NA" cursor-up math, corrupting the terminal's
+    // cursor state handed off to the main TUI's own capability negotiation
+    // right after — see CHANGELOG [0.7.31] follow-up entry.
+    const content = buf.join("\n") + "\n"
 
     if (renderedLines > 0) {
       stdout.write("\x1b[" + renderedLines + "A\x1b[J")
@@ -229,12 +236,18 @@ export async function selectProjectInteractive(): Promise<string | undefined> {
           return
         }
 
-        // Printable
-        if (key.length === 1 && key.charCodeAt(0) >= 32) {
-          pathBuffer += key
-          pathError = ""
-          render()
-          return
+        // Printable, including multi-char bursts from a paste (arrives as one
+        // stdin chunk, not one keystroke at a time — a plain length===1 check
+        // silently drops it).
+        if (key.length >= 1 && !key.startsWith("\x1b")) {
+          // oxlint-disable-next-line no-control-regex -- intentional: stripping raw control bytes from pasted text
+          const printable = key.replace(/[\x00-\x1f\x7f]/g, "")
+          if (printable) {
+            pathBuffer += printable
+            pathError = ""
+            render()
+            return
+          }
         }
 
         return
