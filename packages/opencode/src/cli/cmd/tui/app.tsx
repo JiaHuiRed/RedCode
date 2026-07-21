@@ -19,7 +19,7 @@ import {
   Show,
   on,
 } from "solid-js"
-import { win32DisableProcessedInput, win32InstallCtrlCGuard, win32ForceTerminalCapabilities } from "./win32"
+import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
 import { Flag } from "@redcode-ai/core/flag/flag"
 import semver from "semver"
 import { DialogProvider, useDialog } from "@tui/ui/dialog"
@@ -182,7 +182,6 @@ export function tui(input: {
 
     const unguard = win32InstallCtrlCGuard()
     win32DisableProcessedInput()
-    win32ForceTerminalCapabilities()
 
     const onExit = async () => {
       unguard?.()
