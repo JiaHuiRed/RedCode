@@ -73,8 +73,23 @@ renderer 侧调用点集中在 `src/renderer/index.tsx`（39 处）+ `titlebar.t
 ## 7. 尚未验证 / 待确认
 
 - 阶段一的握手时序修复没在原型里跑通（环境不稳定，且属于 RedCode 自己的 SolidJS 信号时序，非 Tauri 问题）——真正做时优先解决。
-- `tauri build` 的最终产物体积没实测（预期壳 <10MB + sidecar `redcode.exe` 126MB；sidecar 本身也可考虑用 baseline 版或进一步瘦身）。
+- ~~`tauri build` 的最终产物体积没实测~~ **已实测（2026-07-21），见 §7.1。**
 - updater 端到端（生成→签名→自动更新）没验证。
+
+### 7.1 产物体积实测（2026-07-21）
+
+真实构建，非估算：最小 Tauri 壳（release，LTO+strip，`opt-level=s`）+ 完整嵌入当前 `packages/desktop/out/renderer`（47M 真实 SolidJS/Tailwind 产物）+ 当天编译的真实 `redcode.exe`（0.7.31，138MB）作为 externalBin sidecar，跑通 `cargo tauri build` 出 NSIS 安装包。
+
+| 产物 | 体积 | 说明 |
+|---|---|---|
+| Tauri 壳体裸 exe | **14.52 MB**（13.85 MiB） | `target/release/redcode-tauri-proto.exe`，已含嵌入的 47M 前端资源（压缩后） |
+| sidecar `redcode.exe` | 144.74 MB（138.03 MiB） | 当天 0.7.31 真实构建，比 §7 原估算 126MB 略大 |
+| **两文件合计（壳+sidecar 落地体积）** | **159.26 MB** | 对应 Electron 当前单文件 `RedCode Dev.exe` 232.42 MB —— **减少约 31.5%** |
+| NSIS 安装包（LZMA 压缩后，用户实际下载体积） | 47.81 MB（45.59 MiB） | sidecar 是 Bun 编译产物、内含大量可压缩的 JS/文本，压缩比约 3.6x |
+
+**结论**：壳体积比 §1 估算的“个位数 MB”略高但仍然极小（14.5MB vs Electron 232MB 里 Chromium/V8 占的大头），**真正的体积瓶颈是 sidecar 本身（138MB，自身架构决定，与 Electron/Tauri 选型无关）**。如果要进一步压缩，方向是瘦身 `redcode.exe`（baseline target、精简依赖），而不是继续抠 Tauri 壳。安装包（用户下载体积）从 Electron 的 232MB 降到 47.8MB，是更直观的可感知收益。
+
+方法留痕：sidecar 复用了当时已在跑的另一会话编译产物（`packages/opencode/dist/redcode-windows-x64/bin/redcode.exe`，该文件被运行中进程锁定，构建脚本重新编译会 EPERM，故直接拷贝复用，未触碰该进程）。Tauri 侧工程本身是本次会话在 scratchpad 新建的一次性最小工程（仅 `tauri-plugin-shell`，无真实 IPC），测完即弃，不在仓库内。
 
 ---
 
