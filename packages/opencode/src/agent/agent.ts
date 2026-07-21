@@ -167,6 +167,22 @@ export const layer = Layer.effect(
             mode: "primary",
             native: true,
           },
+          redmind: {
+            name: "redmind",
+            description:
+              "RedMind — 心有 Red，行前先问。常规操作（读、写、搜索）自动执行，bash 等敏感操作征得同意后再动手。",
+            options: {},
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                question: "allow",
+                bash: "ask",
+              }),
+              user,
+            ),
+            mode: "primary",
+            native: true,
+          },
           general: {
             name: "general",
             description: `General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel.`,

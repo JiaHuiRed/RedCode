@@ -1,15 +1,14 @@
 # ⚡ RedCode
 
 <p align="center">
-  <img src="packages/app/public/mona-loading.gif" width="80">
+  <img src="docs/assets/screenshot.png" width="720" alt="RedCode TUI 截图" style="border-radius: 8px;">
 </p>
 
-> **中文母语的桌面 AI 编程助手。** 独立窗口、说中文、接你喜欢的模型（DeepSeek / MiMo / 国产优先）。
-> _A Chinese-native desktop AI coding agent — standalone GUI, speaks your language, plug in any model._
+> **中文母语的 AI 编程助手。** 终端（TUI）或桌面（GUI），说中文，插你喜欢的模型——DeepSeek、OpenAI、Anthropic、Ollama，国产优先。
 >
-> 基于 [opencode](https://github.com/anomalyco/opencode)（sst.dev）深度二次开发。
+> 基于 [opencode](https://github.com/anomalyco/opencode)（sst.dev）深度二次开发，侧重**前缀缓存优化、多模型适配、中文体验和稳定性**。
 
-[![TUI](https://badgen.net/badge/TUI/0.7.31/blue)](CHANGELOG.md)
+[![TUI](https://badgen.net/badge/TUI/0.7.32/blue)](CHANGELOG.md)
 [![Desktop](https://badgen.net/badge/Desktop/0.7.8/purple)](CHANGELOG.md)
 [![平台](https://badgen.net/badge/平台/Windows%2010%2F11/green)](https://github.com/JiaHuiRed/RedCode)
 [![TypeScript](https://badgen.net/badge/TypeScript/5.x/3178c6)](https://typescriptlang.org)
@@ -20,7 +19,7 @@
 
 ## ✨ 这是什么？
 
-AI 编程助手。两个入口、同一能力：
+AI 编程助手。两个入口、同一引擎：
 
 - **TUI** — 终端命令行界面（`packages/opencode`）
 - **GUI** — 桌面窗口程序，Electron + SolidJS（`packages/desktop`）
@@ -29,7 +28,17 @@ AI 编程助手。两个入口、同一能力：
 
 ### 核心能力
 
-代码理解（TypeGraph / jCodeMunch）· 多模型（DeepSeek / OpenAI / Anthropic / Ollama）· 文件读写编辑 · 终端执行 · Web 搜索 · 视觉分析 · 会话管理 · 权限门控 · 上下文压缩 · 自动化记忆系统 · 目标管理 · Skill 技能系统 · 防重复循环检测 · 自定义 AI 人格
+代码理解（jCodeMunch / TypeGraph）· 多模型（DeepSeek / OpenAI / Anthropic / Ollama）· 文件读写编辑 · 终端执行 · Web 搜索 · 视觉分析 · 会话管理 · 权限门控 · 上下文压缩 · 自动化记忆系统 · 目标管理 · Skill 技能系统 · 防重复循环检测 · 自定义 AI 人格
+
+### 为什么是 RedCode？
+
+| 对比上游 OpenCode | RedCode |
+|---|---|
+| 缓存命中率 | **97%+**（多层 prefix cache 保鲜：msgPin → modelMsgs cache → tools cache → system cache） |
+| 模型计价 | 支持 DeepSeek cache 计价阶梯（cache miss/write/hit 独立计费），修复上游 `cacheReadInputTokens` 为 0 的计价漏报 |
+| 中文体验 | 完整中文文档、中文 UI、中英文双语 README |
+| 稳定性 | Event Loop 阻塞探测、sidecar 心跳独立监控、DCP 压缩后桶压避免双重 compaction |
+| 国产模型优先 | 零配置支持 DeepSeek、GLM、Qwen、MiniMax、Zhipu，以及 NVIDIA 等第三方托管 |
 
 ---
 

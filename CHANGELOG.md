@@ -11,6 +11,20 @@
 ---
 
 ## TUI
+### [0.7.32] - 2026-07-21
+
+> 新增 RedMind agent 模式——心有 Red 行前先问（bash 操作弹框确认），日常读写自动放行。README 中英文版重构：替换 hero 图为启动截图，新增与上游 OpenCode 的对照表。权限审计完成，bash 列为高危权限。
+
+#### 新功能
+
+- **RedMind agent 模式**（`agent/agent.ts`）：介于 build（权限全放）与 plan（只能写计划）之间的折中模式。常规操作（read/edit/grep/glob/webfetch/websearch）自动执行，bash 等系统命令弹框征询同意后再执行。
+- **`default_agent` 配置生效**：用户 `~/.redcode/redcode.jsonc` 设 `default_agent: "redmind"` 后新会话默认使用 RedMind。
+
+#### 文档
+
+- **README 重构**（`README.md` / `README.en.md`）：替换启动截图为 hero 大图（`docs/assets/screenshot.png`），新增"为什么是 RedCode？"对照表突出 97%+ 缓存命中率、DeepSeek 计价修复、中文体验、稳定性、国产模型适配。
+- **权限审计**：审查全部 16 个权限项，`bash` 列为唯一高危全放权限，`external_directory` / `repo_clone` 已有封锁无需额外处理。
+
 ### [0.7.31] - 2026-07-20
 
 > 永久移除 FreeLLMAPI 供应商 + Anthropic URL 修正 + workspace selector 支持外部新目录 + 模板安全加固。（发布次日修复：selector 重构引入的冷启动渲染回归、路径输入不支持粘贴，见下方修复条目。）

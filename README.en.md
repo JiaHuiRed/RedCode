@@ -1,21 +1,14 @@
 ﻿# ⚡ RedCode
 
 <p align="center">
-  <img src="packages/app/public/mona-loading.gif" width="80">
+  <img src="docs/assets/screenshot.png" width="720" alt="RedCode TUI screenshot" style="border-radius: 8px;">
 </p>
-<pre align="center">
-██████ ██████ ██████ ██████ ██████ ██████ ██████
-█   █ █     █  ██  █     █   █ █  ██  █
-██████ ██████ █   █ █     █   █ █   █  ██████
-█  ██ █     █   █ █     █   █ █   █  █
-█   █ ██████ ██████ ██████ ██████ ██████ ██████
-</pre>
 
-> **A Chinese-native desktop AI coding agent — standalone GUI, speaks your language, plug in any model (DeepSeek / MiMo / domestic-first).**
+> **A Chinese-native AI coding agent.** TUI (terminal) or GUI (desktop), speaks your language, plug in any model — DeepSeek, OpenAI, Anthropic, Ollama, domestic-first.
 >
-> Author: Red · Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev).
-[![TUI](https://badgen.net/badge/TUI/0.7.31/blue)](CHANGELOG.md)
+> Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev), with deep enhancements in **prefix cache optimization, multi-model pricing, Chinese UX, and runtime stability**.
 
+[![TUI](https://badgen.net/badge/TUI/0.7.32/blue)](CHANGELOG.md)
 [![Desktop](https://badgen.net/badge/Desktop/0.7.8/purple)](CHANGELOG.md)
 [![License](https://badgen.net/badge/License/MIT/grey)](LICENSE)
 [![Platform](https://badgen.net/badge/Platform/Windows%2010%2F11/green)](https://github.com/JiaHuiRed/RedCode)
@@ -33,7 +26,17 @@ Reads code, writes code, fixes bugs, runs commands. You speak Chinese (or any la
 
 ### Core capabilities
 
-Code understanding (TypeGraph / jCodeMunch) · Multi-model (DeepSeek / OpenAI / Anthropic / Ollama) · File read/write/edit · Terminal execution · Web search · Vision analysis · Session management · Permission gating · Context compaction · Automated memory system · Goal tracking · Skill system · Anti-repeat loop detection · Custom AI personas
+Code understanding (jCodeMunch / TypeGraph) · Multi-model (DeepSeek / OpenAI / Anthropic / Ollama) · File read/write/edit · Terminal execution · Web search · Vision analysis · Session management · Permission gating · Context compaction · Automated memory system · Goal tracking · Skill system · Anti-repeat loop detection · Custom AI personas
+
+### Why RedCode?
+
+| vs upstream OpenCode | RedCode |
+|---|---|
+| Cache hit rate | **97%+** (multi-layer prefix cache: msgPin → modelMsgs cache → tools cache → system cache) |
+| Model pricing | Full DeepSeek cache billing tiers (miss/write/hit), fixes upstream `cacheReadInputTokens=0` under-report |
+| Chinese UX | Full Chinese docs, Chinese UI, bilingual README |
+| Stability | Event loop drift detection, independent sidecar health monitoring, DCP double-compaction guard |
+| Domestic models first | Zero-config for DeepSeek, GLM, Qwen, MiniMax, Zhipu, plus NVIDIA-hosted third-party |
 
 ---
 
