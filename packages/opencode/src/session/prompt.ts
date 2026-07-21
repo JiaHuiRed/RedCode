@@ -31,6 +31,7 @@ import { ConfigMarkdown } from "@/config/markdown"
 import { SessionSummary } from "./summary"
 import { NamedError } from "@redcode-ai/core/util/error"
 import { SessionProcessor } from "./processor"
+import * as PrefixShape from "./prefix-shape"
 import { Tool } from "@/tool/tool"
 import { Permission } from "@/permission"
 import { SessionStatus } from "./status"
@@ -1440,6 +1441,14 @@ export const layer = Layer.effect(
             system.push(`Session marker: ${canaryToken}`)
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
+            // 260721 Red prefix shape diagnostic: detect system/tool change mid-session
+            {
+              const shape = PrefixShape.capture(system, sortedTools as Record<string, unknown>)
+              const diag = PrefixShape.diagnose(shape, sessionID)
+              if (diag.changed) {
+                log.warn("prefix cache changed", { reasons: diag.reasons, step })
+              }
+            }
             const result = yield* handle.process({
               user: lastUser,
               agent,
