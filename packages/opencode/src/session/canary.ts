@@ -1,7 +1,8 @@
 // 260629 Red canary token for prompt-injection detection.
-// A per-session marker injected into the system prompt as an unremarkable
-// "Session marker" line. If it ever appears in model output (assistant text
-// or tool-call arguments), the session is terminated.
+// A per-session marker injected into the system prompt with an explicit
+// "never repeat this" instruction (see session/prompt.ts). If it ever
+// appears in model output (assistant text or tool-call arguments), the
+// session is terminated.
 // 260708 Red token is now DETERMINISTICALLY derived from a persistent secret +
 // sessionID (hmac), so it stays identical across server restarts. The old
 // random-per-mint token lived only in process memory: home's local server

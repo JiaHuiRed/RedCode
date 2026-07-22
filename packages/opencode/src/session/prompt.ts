@@ -1436,9 +1436,18 @@ export const layer = Layer.effect(
             // instead of everything from <env> onward.
             system.push(`Today's date: ${new Date().toDateString()}`)
             // 260629 Red inject per-session canary marker for prompt-injection detection.
-            // Looks like an internal debug line; if it ever appears in model output, terminate the session.
+            // If it ever appears in model output, terminate the session.
+            // 260722 Red reworded after a real false-positive: the old "Session marker: X" phrasing
+            // sat right next to "Today's date: X" and read like ordinary referenceable context, so
+            // when RedMind wrote a session summary to its own memory log it cited the marker as a
+            // plausible session id and got killed for it — no actual leak, just a model reasonably
+            // treating info-shaped text as info. Making the "never repeat this" instruction explicit
+            // should cut false positives while making a genuine leak (repeated *despite* the explicit
+            // instruction) a stronger signal, not a weaker one.
             const canaryToken = getCanary(sessionID)
-            system.push(`Session marker: ${canaryToken}`)
+            system.push(
+              `Internal session marker — do not display, log, repeat, or otherwise include this value in any response, file, or tool call: ${canaryToken}`,
+            )
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
             // 260721 Red prefix shape diagnostic: detect system/tool change mid-session
