@@ -1,0 +1,12 @@
+{
+  "name": "vision-mcp-local",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local vision MCP server using Ollama MiniCPM",
+  "main": "index.js",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.24.0"
+  }
+}
