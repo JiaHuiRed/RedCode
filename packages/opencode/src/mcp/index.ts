@@ -66,21 +66,34 @@ function readMcpToolsCache(serverName: string): MCPToolDef[] | undefined {
 
 // 260607 Red 从 exe 路径向上找 RedCode 项目根（用于 $REDCODE_ROOT 展开）
 let redcodeRoot: string | undefined
-function findRedcodeRoot(): string {
-  if (redcodeRoot) return redcodeRoot
-  let dir = path.dirname(process.execPath)
+function isRedcodeRootDir(dir: string): boolean {
+  return (
+    fs.existsSync(path.join(dir, "package.json")) &&
+    (fs.existsSync(path.join(dir, "redcode.jsonc")) || fs.existsSync(path.join(dir, ".opencode")))
+  )
+}
+function walkUpForRedcodeRoot(start: string): string {
+  let dir = start
   for (let i = 0; i < 10; i++) {
-    if (fs.existsSync(path.join(dir, "package.json")) &&
-        (fs.existsSync(path.join(dir, "redcode.jsonc")) || fs.existsSync(path.join(dir, ".opencode")))) {
-      redcodeRoot = dir
-      return dir
-    }
+    if (isRedcodeRootDir(dir)) return dir
     const parent = path.dirname(dir)
     if (parent === dir) break
     dir = parent
   }
-  redcodeRoot = ""
   return ""
+}
+function findRedcodeRoot(): string {
+  if (redcodeRoot) return redcodeRoot
+  // 编译产物：从 exe 路径向上找安装根
+  let found = walkUpForRedcodeRoot(path.dirname(process.execPath))
+  // 260722 Red `bun run dev` 下 execPath=bun.exe，向上永远找不到安装根，此前直接判空回退到
+  // InstanceState.directory（当前打开的目标项目目录，跟 RedCode 自己完全无关）——
+  // 导致 $REDCODE_ROOT 展开成别的项目路径，relative 的 mcp command 全部 ENOENT/Module not found。
+  // 用 import.meta.dirname（源码文件自身位置）再向上找一次；编译产物里这是虚拟 bunfs 路径，
+  // fs.existsSync 天然查不到，安全地继续走原有 fallback，不影响编译场景。
+  if (!found) found = walkUpForRedcodeRoot(import.meta.dirname)
+  redcodeRoot = found
+  return found
 }
 
 function resolveMcpCwd(mcpCwd: string | undefined, fallback: string): string {
