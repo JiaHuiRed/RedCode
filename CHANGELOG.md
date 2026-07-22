@@ -11,6 +11,15 @@
 ---
 
 ## TUI
+### [0.7.33] - 2026-07-22
+
+> 两处根因修复：`bun run dev` 下本地 MCP 的 `$REDCODE_ROOT` 会展开成当前打开的项目目录而不是 RedCode 自身安装根，导致依赖它的本地 MCP 全部连接失败；项目 id 解析失败时全部共享同一个 `global` sentinel 行，导致工作区列表里的项目会被后打开的另一个项目静默挤掉。
+
+#### 修复
+
+- **本地 MCP 因 `$REDCODE_ROOT` 解析错误而连接失败**（`mcp/index.ts`）：`findRedcodeRoot()` 只从 `process.execPath` 向上找安装根，`bun run dev` 下 execPath 是 `bun.exe`，永远找不到，于是静默回退到 `InstanceState.directory`（当前打开的目标项目，而非 RedCode 自身）。配了 `cwd: "$REDCODE_ROOT"` + 相对路径命令的本地 MCP（如内置的进程管理、SQLite 查询等）因此在错误目录里找不到脚本文件，报 `Module not found` / `MCP error -32000`。之前配置整体解析不了（见下条）时这个 bug 一直被掩盖，配置修好后才第一次暴露。修法：找不到时追加一次基于 `import.meta.dirname`（源码文件自身位置）的向上查找，编译产物场景下这是虚拟 bunfs 路径、安全地查不到、不影响原有分支。
+- **项目 id 解析失败时共享同一个 `global` 行，工作区列表互相挤掉**（`project/project.ts`）：`Project.fromDirectory` 在"找到 git 仓库但算不出内容哈希 id"的几种情况下（没有 git 二进制、`git rev-parse --git-common-dir` 失败、还没有根提交——比如 rollback/reset 过程中）统一落到 `ProjectID.global` 这个唯一 sentinel。`ProjectTable` upsert 以 id 为冲突键，所有命中这个兜底的目录共享一行，谁最后打开谁的 `worktree` 就把上一个目录挤没了，表现为"项目从工作区选择器里消失"。真机复现：给该函数临时加调试日志（已撤销）定位到具体分支，并在测试过程中亲眼抓到共享行被另一个无关目录实时覆写。修法：改成按目录绝对路径算一个稳定的 fallback id，让每个解析失败的目录有自己独立的行，不再互相踢；同时把已有的"global → 真实 id 时迁移会话"逻辑，扩展到覆盖新的 path-fallback id，避免会话散落。真正意义上"完全没有 `.git`"的分支不变，继续用字面量 `global`（`file/index.ts` 里 HOME 目录的专属语义依赖这个）。
+
 ### [0.7.32] - 2026-07-21
 
 > 新增 RedMind agent 模式——心有 Red 行前先问（bash 操作弹框确认），日常读写自动放行。README 中英文版重构：替换 hero 图为启动截图，新增与上游 OpenCode 的对照表。权限审计完成，bash 列为高危权限。
