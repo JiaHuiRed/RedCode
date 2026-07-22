@@ -1,4 +1,5 @@
-﻿import { and } from "drizzle-orm"
+﻿import crypto from "crypto"
+import { and, or } from "drizzle-orm"
 import { Database } from "@/storage/db"
 import { eq } from "drizzle-orm"
 import { ProjectTable } from "./project.sql"
@@ -186,6 +187,20 @@ export const layer: Layer.Layer<
       return pathSvc.resolve(cwd, name)
     }
 
+    // 260722 Red 一个 git 仓库存在、但算不出内容哈希 id（没有 git 二进制/git-common-dir 失败/
+    // 还没有根提交，比如 rollback 中途）时，此前一律落到 ProjectID.global 这个唯一 sentinel——
+    // 所有"识别不出稳定 id"的目录共享同一行，谁最后写谁的 worktree 就把上一个挤没了
+    // （dossier 项目复现过：早上 rollback 期间 HEAD 状态不稳，id 解析失败落进 global，
+    // 之后随便一个别的无 git 目录一开就把它挤掉，选择器里"消失"）。
+    // 按目录绝对路径算一个稳定 fallback id，让每个识别失败的目录有自己独立的坑位，不再互相踢。
+    // 不改真正意义上的"完全没有 .git"分支（第一层 !dotgit）——那个是 file/index.ts:351 里
+    // HOME 目录的专属语义（ctx.project.id === "global"），继续用字面量 "global" sentinel。
+    const pathFallbackId = (dir: string): ProjectID => {
+      const normalized = pathSvc.resolve(dir).replace(/\\/g, "/").toLowerCase()
+      const digest = crypto.createHash("sha256").update(normalized).digest("hex").slice(0, 16)
+      return ProjectID.make(`path-${digest}`)
+    }
+
     const scope = yield* Scope.Scope
 
     const readCachedProjectId = Effect.fnUntraced(function* (dir: string) {
@@ -221,7 +236,7 @@ export const layer: Layer.Layer<
 
         if (!gitBinary) {
           return {
-            id: id ?? ProjectID.global,
+            id: id ?? pathFallbackId(sandbox),
             worktree: sandbox,
             sandbox,
             vcs: fakeVcs,
@@ -231,7 +246,7 @@ export const layer: Layer.Layer<
         const commonDir = yield* git(["rev-parse", "--git-common-dir"], { cwd: sandbox })
         if (commonDir.code !== 0) {
           return {
-            id: id ?? ProjectID.global,
+            id: id ?? pathFallbackId(sandbox),
             worktree: sandbox,
             sandbox,
             vcs: fakeVcs,
@@ -261,7 +276,7 @@ export const layer: Layer.Layer<
         }
 
         if (!id) {
-          return { id: ProjectID.global, worktree: sandbox, sandbox, vcs: "git" as const }
+          return { id: pathFallbackId(sandbox), worktree: sandbox, sandbox, vcs: "git" as const }
         }
 
         const topLevel = yield* git(["rev-parse", "--show-toplevel"], { cwd: sandbox })
@@ -346,11 +361,22 @@ export const layer: Layer.Layer<
       )
 
       if (data.id !== ProjectID.global) {
+        // 260722 Red 除了原有的 global sentinel 迁移，也把之前落在这个目录专属
+        // path-fallback id（见 pathFallbackId）下的会话一并迁过来——同一个目录之前
+        // 因为瞬时 id 解析失败、这次解析成功了，不该让会话散落在两个 id 下。
         yield* db((d) =>
           d
             .update(SessionTable)
             .set({ project_id: data.id })
-            .where(and(eq(SessionTable.project_id, ProjectID.global), eq(SessionTable.directory, data.worktree)))
+            .where(
+              and(
+                or(
+                  eq(SessionTable.project_id, ProjectID.global),
+                  eq(SessionTable.project_id, pathFallbackId(data.worktree)),
+                ),
+                eq(SessionTable.directory, data.worktree),
+              ),
+            )
             .run(),
         )
       }
