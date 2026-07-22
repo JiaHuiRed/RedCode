@@ -627,8 +627,18 @@ export interface FuzzyMatch {
  * Find the closest matching block in content using sliding window + Levenshtein.
  * Returns the best match above a minimum similarity threshold, or undefined.
  */
+// 260722 Red fuzzyFindBestMatch 之前对整份文件做滑动窗口 + O(n*m) Levenshtein 逐窗口
+// 比较，不管文件多大都会跑。真机复现：Build 模式对 RedMon 24666 行/506KB 的
+// data/species.json 做一次编辑，exact match 没对上、掉进这条 fuzzy 兜底，直接把整个
+// 单线程事件循环锁死 6.5 分钟（esc/输入全无响应，跟 agent 模式无关——这段代码是所有
+// agent 共用的 edit 工具本体，不是权限/UI 层的问题）。大文件直接跳过 fuzzy 兜底，退回
+// "没找到"让模型用精确匹配重试，好过锁死整个进程。
+const FUZZY_MAX_CONTENT_LINES = 3000
+
 export function fuzzyFindBestMatch(content: string, search: string): FuzzyMatch | undefined {
   const contentLines = content.split("\n")
+  if (contentLines.length > FUZZY_MAX_CONTENT_LINES) return undefined
+
   const searchLines = search.split("\n")
 
   // Drop trailing empty line if present (common in paste)
@@ -761,6 +771,15 @@ export const BlockAnchorReplacer: Replacer = function* (content, find) {
 
   // Return immediately if no candidates
   if (candidates.length === 0) {
+    return
+  }
+
+  // 260722 Red 锚点行(search block 首/尾行)在大文件里太常见(比如 JSON 里的 "}," )时，
+  // candidates 会炸到成百上千个，每个还要挨个跑逐行 Levenshtein 打分——同一类"O(n*m)
+  // 无上限"问题(见 fuzzyFindBestMatch 那条注释)。锚点行匹配这么多次本身就说明它们不
+  // 是有效锚点，直接放弃比精确打分更安全。
+  const BLOCK_ANCHOR_MAX_CANDIDATES = 50
+  if (candidates.length > BLOCK_ANCHOR_MAX_CANDIDATES) {
     return
   }
 
