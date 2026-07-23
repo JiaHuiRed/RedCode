@@ -1572,6 +1572,20 @@
 
 ## GUI
 
+### [0.7.9] - 2026-07-23
+
+> Electron → Tauri 迁移正式开工——可行性/体积/首屏握手时序此前已在原型里验证完毕，今天新增第一批真实（非原型、非 stub）代码。
+
+#### 新增
+
+- **Tauri 迁移骨架 + sidecar 首屏握手**（`packages/desktop/src-tauri/`）：新增真实 Tauri 项目骨架（`Cargo.toml`/`tauri.conf.json`/`capabilities`），实现 `await_initialization`/`get_default_server_url` 两个 command——前者真实拉起编译好的 sidecar exe、解析 stdout 拿到监听地址后才 resolve（不是猜时序的桩），后者老实返回 `null`。用真实 0.7.34 sidecar exe 端到端验证过：真实 URL、真实随机密码鉴权（curl 验证无认证 401/正确密码 200/错误密码 401）。目前是独立于现有 Electron 应用的并行基础设施，尚未接入实际打包/开发流程，不影响当前已发布 Electron 版的行为。
+- **sidecar 环境注入**：随机 `REDCODE_SERVER_PASSWORD`/`REDCODE_SERVER_USERNAME`、loopback `NO_PROXY`/`no_proxy` 合并，spawn 时通过 `.env()` 注入子进程。
+
+#### 诊断
+
+- **系统证书/env 代理这块没法从 Tauri 侧移植**：Electron sidecar 的 `useSystemCertificates()`/`useEnvProxy()` 是进程内 Node API 调用（`tls.setDefaultCACertificates`/`http.setGlobalProxyFromEnv`），只有"进程内 fork JS 文件"这种执行模式能调；Tauri sidecar 是独立编译的 exe，Rust 侧没有等价的进程内钩子，编译版 CLI 自身的 `serve` 启动流程也从没调用过等价逻辑——这是裸跑 CLI 本来就有的缺口，不是 Tauri 迁移引入的新问题，真要修得改 CLI 自己的启动引导，留待以后。
+- **打包后 `$REDCODE_ROOT` 本地 MCP 解析，Electron 现在也有同样的坑**：迁移设计文档原以为"Electron dist 产物已经在 sidecar 旁边放了 package.json"就够，实测 `electron-builder.config.ts` 的 `files`/`extraResources` 根本没把 `plugins/`、`.opencode/search-server/` 等本地 MCP 实际依赖的文件打进安装包——这几个 `$REDCODE_ROOT` 相关本地 MCP 在真实装好的 Electron 版里现在也连不上，只是一直没人在真装好的环境里跑 `redcode mcp list` 验证过，没暴露。开发模式下（`src-tauri/` 本身嵌在 monorepo 目录树里，向上 5 层必然能找到仓库根）没有这个问题，已用 `redcode mcp list` 实测全部 `$REDCODE_ROOT` 相关 MCP 显示 connected 确认。
+
 ### [0.7.8] - 2026-07-19
 
 - **版本发布**：GUI 版本升级至 `0.7.8`，同步更新版本徽章与发布记录。

@@ -27,3 +27,8 @@ out/
 resources/opencode-cli*
 resources/icons
 resources/*.metainfo.xml
+
+# Tauri: sidecar binary is copied in by a build step, not committed; gen/ is
+# tauri-cli-regenerated schema/ACL output
+src-tauri/binaries
+src-tauri/gen
