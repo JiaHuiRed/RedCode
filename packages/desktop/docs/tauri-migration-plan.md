@@ -17,7 +17,7 @@
 | **sidecar 架构** | ✅ 可行 | `redcode.exe serve --port 6183` 被 Tauri `externalBin` 拉起，`curl http://127.0.0.1:6183/` 返回 200，两次复现 |
 | **渲染层兼容性** | ✅ 像素级还原 | 整个 SolidJS bundle、Tailwind、字体、错误边界组件在 WebView2 里零 CSS/字体/渲染问题 |
 | **IPC 桥** | ⚠️ 需重写，规模明确 | preload 暴露 55 个方法（见 §3），renderer 实际用到 39 个；几十行桩就能让页面跑起来 |
-| **首屏 server 握手** | ⚠️ 时序，非 Tauri 限制 | `main-CQ_dqgNI.js:59198` 的 `GlobalSDKProvider` 在 `server.key` 已置位但 `server.current` 列表未就绪时抛 "No server available"——纯前端信号时序竞争，真实 IPC（近同步 invoke）走的路径不同，�CB桩用独立 Promise 才触发 |
+| **首屏 server 握手** | ✅ 已解决（见 §7.2） | 根因是两个 IPC 桩（`await-initialization`/`get-default-server-url`）时序不对，不是 Tauri 限制、不用改 renderer。真实 command 严格按 sidecar 就绪时序 resolve 后，`<Show>` 门槛正常放行，`GlobalSDKProvider` 不再抛 "No server available" |
 
 **关键判断**：风险最大的两块（sidecar 能不能跑、WebView2 渲不渲染得出来）都已拿到实证。剩下是工作量明确、可拆解的桥接层重写，不是探索性风险。
 
@@ -72,7 +72,7 @@ renderer 侧调用点集中在 `src/renderer/index.tsx`（39 处）+ `titlebar.t
 
 ## 7. 尚未验证 / 待确认
 
-- 阶段一的握手时序修复没在原型里跑通（环境不稳定，且属于 RedCode 自己的 SolidJS 信号时序，非 Tauri 问题）——真正做时优先解决。
+- ~~阶段一的握手时序修复没在原型里跑通~~ **已实测跑通（2026-07-23），见 §7.2。**
 - ~~`tauri build` 的最终产物体积没实测~~ **已实测（2026-07-21），见 §7.1。**
 - updater 端到端（生成→签名→自动更新）没验证。
 
@@ -90,6 +90,23 @@ renderer 侧调用点集中在 `src/renderer/index.tsx`（39 处）+ `titlebar.t
 **结论**：壳体积比 §1 估算的“个位数 MB”略高但仍然极小（14.5MB vs Electron 232MB 里 Chromium/V8 占的大头），**真正的体积瓶颈是 sidecar 本身（138MB，自身架构决定，与 Electron/Tauri 选型无关）**。如果要进一步压缩，方向是瘦身 `redcode.exe`（baseline target、精简依赖），而不是继续抠 Tauri 壳。安装包（用户下载体积）从 Electron 的 232MB 降到 47.8MB，是更直观的可感知收益。
 
 方法留痕：sidecar 复用了当时已在跑的另一会话编译产物（`packages/opencode/dist/redcode-windows-x64/bin/redcode.exe`，该文件被运行中进程锁定，构建脚本重新编译会 EPERM，故直接拷贝复用，未触碰该进程）。Tauri 侧工程本身是本次会话在 scratchpad 新建的一次性最小工程（仅 `tauri-plugin-shell`，无真实 IPC），测完即弃，不在仓库内。
+
+### 7.2 首屏握手时序 —— 已跑通（2026-07-23）
+
+在 §7.1 那个原型基础上，这次把 `await-initialization`/`get-default-server-url` 换成两个真实 Tauri command（不再是猜时序的桩）：
+
+- `await_initialization`：真的 `tauri-plugin-shell` 拉起 `redcode serve`，解析 stdout 的 `listening on http://...` 拿到真实 url，**resolve 严格晚于 sidecar 真正就绪**，不再有"两个独立 Promise 抢跑"的问题。
+- `get_default_server_url`：老实返回 `None`（对应 `null`），不为了"看着有个 server"瞎填。
+
+结果：真实 renderer bundle（未做任何魔改）从 `GlobalSDKProvider` 的 `"No server available"` 硬崩，变成完整渲染出项目列表、会话卡片、缓存/花费统计——`<Show when={!defaultServer.loading && !sidecar.loading && ...}>` 这道已有的门槛本身没问题，之前卡住纯粹是因为两个 IPC 桩实现的时序不对。**结论：§4.1 那条坑的修法（"command 尽早/严格 resolve，getDefaultServerUrl 老实返回 null"）验证有效，不需要改 renderer 侧任何代码。**
+
+顺带在同一轮原型里发现并修好三个配套问题（都属于"照抄 Electron 语义"范畴，不是新坑）：
+
+1. **窗口装饰重复**：Tauri 窗口默认原生装饰 + renderer 自己画的 macOS 风格红黄绿标题栏叠在一起。Electron 侧 Windows 下已经是 `frame: false` + `titleBarStyle: "hidden"`（`main/windows.ts:136-140`），Tauri 对应项是 `decorations: false`，一行配置解决。
+2. **窗口控制按钮被 ACL 拦截**：`window.close()/.minimize()/.toggleMaximize()` 这类核心窗口命令直接从前端 invoke 时会被 Tauri v2 权限系统拦（`Command plugin:window|minimize not allowed by ACL`），报错是 unhandledrejection、界面上完全无提示，容易误判成"没绑定"。需要 `src-tauri/capabilities/*.json` 显式声明 `core:window:allow-close/minimize/toggle-maximize`。自定义 `#[tauri::command]`（比如 `await_initialization`）不受此限——只有前端直接调 Tauri 核心/插件命令才要过 ACL。
+3. **`window.api.storeGet/Set` 桩必须是真实持久化，不能偷懒**：desktop 侧侧边栏"最近打开的工作区"列表是从这层持久化状态读的，不是直接照抄 `/project` 接口的返回（那个接口本身没问题，全量数据都在）。用一个 JSON 文件桩实现（一个 store name 一个文件）验证后，侧边栏行为符合预期——新目录只有实际在 app 里打开过的才会被记住并跨重启保留。**这确认了 §3-A 档"IPC 直译"里 store 那六个方法不能简化成假的 no-op，得是真持久化**，正式实现建议直接上 §2 表格里定的 `tauri-plugin-store`。
+
+**一个没修、但确认是部署方式问题不是产品问题的发现**：这次原型的 sidecar 二进制放在临时 scratch 目录（不在真实安装目录结构里），`findRedcodeRoot()`（`mcp/index.ts`，今天早些时候为 `$REDCODE_ROOT` 修的那个函数）两条兜底路径都找不到 RedCode 安装根，回退到"当前项目目录"——这次因为原型里当前项目恰好就是 `E:\AI\RedCode` 本身，所有本地 MCP 意外地全部连接成功，掩盖了问题。换成任何其他项目目录，这个巧合就没了，本地 MCP 会重现今天早上修过的同一个坑。**真正装包时不会有这个问题**——现有 Electron dist 产物本身就在 sidecar 旁边放了一份 `package.json`（`build.ts` 里 `dist/${name}/package.json`），`findRedcodeRoot()` 的 exe 路径向上找分支能正常命中；Tauri 打包时只要复刻同样的目录结构（sidecar 与 `package.json`/`.opencode` 同级）就没有这问题，纯粹是这次图快搭的 scratch 原型没还原完整安装布局。
 
 ---
 
