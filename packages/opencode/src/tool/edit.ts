@@ -1042,6 +1042,15 @@ export const TrimmedBoundaryReplacer: Replacer = function* (content, find) {
   }
 }
 
+// 260724 Red 跟 fuzzyFindBestMatch/BlockAnchorReplacer 同一批 260722 修复漏掉的兄弟函数——
+// 结构完全一样的"锚点行(首/尾行)扫描"，同样在大文件里锚点行常见(JSON 里的 "}," )时会退化成
+// O(n²)：外层每个锚点命中都触发一次内层全文件扫描 + 内联相似度打分，且这里没有像
+// BlockAnchorReplacer 那样的候选数量上限。真机复现：还是这份 RedMon 24666 行/506KB 的
+// data/species.json，260722 修完 fuzzy/BlockAnchor 两处之后，这条路径仍然把事件循环
+// 卡死了 18.7 分钟(日志 blockedMs=1123864)。跟另外两处一样，大文件直接跳过这个 best-effort
+// 兜底，退回"没找到"，好过锁死整个进程。
+const CONTEXT_AWARE_MAX_CONTENT_LINES = 3000
+
 export const ContextAwareReplacer: Replacer = function* (content, find) {
   const findLines = find.split("\n")
   if (findLines.length < 3) {
@@ -1055,6 +1064,7 @@ export const ContextAwareReplacer: Replacer = function* (content, find) {
   }
 
   const contentLines = content.split("\n")
+  if (contentLines.length > CONTEXT_AWARE_MAX_CONTENT_LINES) return
 
   // Extract first and last lines as context anchors
   const firstLine = findLines[0].trim()
