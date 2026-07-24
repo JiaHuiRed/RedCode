@@ -11,6 +11,20 @@
 ---
 
 ## TUI
+### [0.7.35] - 2026-07-24
+
+> 补上 0.7.34 那批修复漏掉的 5 个 replacer + 一个 pid 校验加固,顺带输入框括号自动补全。
+
+#### 修复
+
+- **`edit.ts` 剩余 5 个 replacer 补行数上限**（`LineTrimmedReplacer`/`WhitespaceNormalizedReplacer`/`IndentationFlexibleReplacer`/`EscapeNormalizedReplacer`/`TrimmedBoundaryReplacer`）：跟 0.7.34 修的 `fuzzyFindBestMatch`/`BlockAnchorReplacer` 同一类风险（不调用 levenshtein，风险更低，但对大文件仍是无上限的逐行扫描），统一按 3000 行封顶,不等第四次真出事故再补。
+- **`ContextAwareReplacer` 补行数上限**：0.7.34 那批修复漏掉的兄弟函数,结构跟 `BlockAnchorReplacer` 一样但没上限——同一份 RedMon `data/species.json` 又把事件循环卡死了 18.7 分钟（`blockedMs=1123864`）,现已按同样模式加 `CONTEXT_AWARE_MAX_CONTENT_LINES=3000` 修复。
+- **杀进程前拒绝退化 pid**（`core/cross-spawn-spawner.ts`、`desktop/main/server.ts`）：`taskkill`/`process.kill` 之前加校验,拒绝 `undefined`/`≤1`/调用者自己的 pid——Unix 侧原本把 `-pid` 传给 `process.kill` 做进程组广播,pid≤1 时会变成"杀自己的组"或"广播给调用者有权限信号的所有进程"。
+
+#### 新增
+
+- **输入框内 `(` 自动补全**（`cli/cmd/tui/component/prompt/index.tsx`）：光标处输入 `(` 自动补全成 `()` 并把光标留在括号中间。
+
 ### [0.7.34] - 2026-07-22
 
 > 两处修复:大文件编辑时精确匹配失败会掉进不设上限的模糊匹配兜底,阻塞单线程事件循环数分钟、键盘UI全无响应;canary 防注入标记措辞太像"给你用的信息",导致模型往自己的 memory 日志写会话总结时引用它而被误杀会话。
