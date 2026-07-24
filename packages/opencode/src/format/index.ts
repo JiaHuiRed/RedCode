@@ -97,6 +97,14 @@ export const layer = Layer.effect(
                     stdout: "ignore",
                     stderr: "ignore",
                   }),
+                  // 260724 Red 这个 spawn 之前没有超时——外部格式化程序（prettier/biome/...）
+                  // 在超大文件上卡住/异常慢时，整个 edit 工具调用会无限期挂起，跟今天修的
+                  // edit.ts 那几个 O(n²) replacer 是同一类"无上限外部操作"问题，只是这次是
+                  // 子进程 spawn 卡住而不是 JS 同步循环卡住（所以不会触发 evloop drift 诊断——
+                  // Node/Bun 事件循环本身没被占用，只是这次 await 永远不返回）。git/index.ts
+                  // 等其他 appProcess.run 调用点也没设超时，是更大范围的同类缺口，这里先按
+                  // 实际撞到的这一个修。
+                  { timeout: "30 seconds" },
                 )
                 .pipe(
                   Effect.catch((error) =>
