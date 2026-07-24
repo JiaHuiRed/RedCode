@@ -1502,9 +1502,7 @@ export function Prompt(props: PromptProps) {
                 if (e.name === "(" && !e.ctrl && !e.meta && input && !input.isDestroyed) {
                   e.preventDefault()
                   input.insertText("()")
-                  if (input.cursorOffset > 0) {
-                    input.cursorOffset--
-                  }
+                  input.moveCursorLeft()
                 }
               }}
               onSubmit={() => {
