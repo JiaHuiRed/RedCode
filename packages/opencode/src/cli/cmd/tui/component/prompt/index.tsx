@@ -1506,30 +1506,30 @@ export function Prompt(props: PromptProps) {
                   e.preventDefault()
                   return
                 }
-                if (!e.ctrl && !e.meta && input && !input.isDestroyed && e.name) {
-                  // 260725 Red Full-width bracket — IME auto-closes; track expected closing char
-                  if (fullWidthPairs[e.name]) {
-                    expectedClose = fullWidthPairs[e.name]
-                    return
-                  }
-                  // Half-width brackets — keyboard sends one char at a time
-                  if (e.name === "(" || e.name === "[" || e.name === "{") {
-                    const close = { "(": ")", "[": "]", "{": "}" }[e.name]
-                    e.preventDefault()
-                    input.insertText(e.name + close)
-                    input.moveCursorLeft()
-                  } else if (e.name === '"' || e.name === "'") {
-                    e.preventDefault()
-                    const nextChar = input.getTextRange(input.cursorOffset, input.cursorOffset + 1)
-                    const close = { '"': '"', "'": "'" }[e.name]
-                    if (nextChar === close) {
-                      input.moveCursorRight()
-                    } else {
-                      input.insertText(e.name + close)
-                      input.moveCursorLeft()
-                    }
-                  }
-                }
+                 if (!e.ctrl && !e.meta && input && !input.isDestroyed && e.name) {
+                   // 260725 Red Full-width bracket — IME auto-closes; track expected closing char
+                   if (fullWidthPairs[e.name]) {
+                     expectedClose = fullWidthPairs[e.name]
+                     return
+                   }
+                   // Half-width brackets — keyboard sends one char at a time
+                   if (e.name === "(" || e.name === "[" || e.name === "{") {
+                     const close = { "(": ")", "[": "]", "{": "}" }[e.name]
+                     e.preventDefault()
+                     input.insertText(e.name + close)
+                     input.moveCursorLeft()
+                   } else if (e.name === '"' || e.name === "'") {
+                     e.preventDefault()
+                     const nextChar = input.getTextRange(input.cursorOffset, input.cursorOffset + 1)
+                     const close = { '"': '"', "'": "'" }[e.name]
+                     if (nextChar === close) {
+                       input.moveCursorRight()
+                     } else {
+                       input.insertText(e.name + close)
+                       input.moveCursorLeft()
+                     }
+                   }
+                 }
               }}
               onSubmit={() => {
                 // IME: double-defer so the last composed character (e.g. Korean
