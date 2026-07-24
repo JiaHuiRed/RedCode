@@ -1494,10 +1494,17 @@ export function Prompt(props: PromptProps) {
                 setCursorVersion((value) => value + 1)
               }}
               onCursorChange={() => setCursorVersion((value) => value + 1)}
-              onKeyDown={(e: { preventDefault(): void }) => {
+              onKeyDown={(e: { preventDefault(): void; name?: string; ctrl?: boolean; meta?: boolean }) => {
                 if (props.disabled) {
                   e.preventDefault()
                   return
+                }
+                if (e.name === "(" && !e.ctrl && !e.meta && input && !input.isDestroyed) {
+                  e.preventDefault()
+                  input.insertText("()")
+                  if (input.cursorOffset > 0) {
+                    input.cursorOffset--
+                  }
                 }
               }}
               onSubmit={() => {
