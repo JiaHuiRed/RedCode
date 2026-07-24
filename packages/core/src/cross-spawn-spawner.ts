@@ -292,9 +292,19 @@ export const make = Effect.gen(function* () {
     proc: NodeChildProcess.ChildProcess,
     signal: NodeJS.Signals,
   ) => {
+    // 260724 Red 参照今天对比 grok-build 时看到的 ProcessGroupId 校验思路：杀之前拒绝退化
+    // pid，而不是指望调用方永远传对。Unix 分支把 -pid 传给 process.kill 做进程组广播——
+    // pid<=1 时 -pid 会变成 0（信号调用者自己的组）或 -1（POSIX 语义下广播给调用者有权限
+    // 信号的所有进程），blast radius 比"杀错一个进程"大得多；pid===自己的 pid 则是把自己
+    // 杀掉。三种都在这里一次性拒绝，而不是分别在两个平台分支里各判一次。
+    const pid = proc.pid
+    if (typeof pid !== "number" || pid <= 1 || pid === globalThis.process.pid) {
+      return Effect.fail(toPlatformError("kill", new Error(`refusing to kill degenerate pid ${pid}`), command))
+    }
+
     if (globalThis.process.platform === "win32") {
       return Effect.callback<void, PlatformError.PlatformError>((resume) => {
-        NodeChildProcess.exec(`taskkill /pid ${proc.pid} /T /F`, { windowsHide: true }, (err) => {
+        NodeChildProcess.exec(`taskkill /pid ${pid} /T /F`, { windowsHide: true }, (err) => {
           if (err) return resume(Effect.fail(toPlatformError("kill", toError(err), command)))
           resume(Effect.void)
         })
@@ -303,7 +313,7 @@ export const make = Effect.gen(function* () {
 
     return Effect.try({
       try: () => {
-        globalThis.process.kill(-proc.pid!, signal)
+        globalThis.process.kill(-pid, signal)
       },
       catch: (err) => toPlatformError("kill", toError(err), command),
     })

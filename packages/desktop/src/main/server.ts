@@ -26,6 +26,9 @@ export type SidecarListener = { stop: () => Promise<void>; pid: number | undefin
 //   趁 sidecar 还活着，按其 PID 杀整棵树（/T 连孙进程一起清）。taskkill 必须趁父进程未死才走得下去。
 function killSidecarTreeWith(pid: number | undefined, sync: boolean) {
   if (typeof pid !== "number") return
+  // 260724 Red 拒绝杀退化目标（同 core/cross-spawn-spawner.ts 今天的改动）：sidecarPid 万一
+  // 因为某个 bug 被记错成主进程自己的 pid，/T /F 会把整个 Electron 主进程连自己一起带走。
+  if (pid <= 1 || pid === process.pid) return
   if (process.platform === "win32") {
     const args = ["/F", "/T", "/PID", String(pid)]
     try {

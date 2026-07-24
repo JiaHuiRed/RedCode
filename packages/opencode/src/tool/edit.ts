@@ -697,8 +697,16 @@ export const SimpleReplacer: Replacer = function* (_content, find) {
   yield find
 }
 
+// 260724 Red 补今天 grok-build 对比研究提前发现的坑：下面这 5 个 replacer 都不调用
+// levenshtein，风险比 fuzzy/BlockAnchor/ContextAware 那三个低——但形状一样，都是对整份
+// content 按行位置逐一扫描 + 每个位置 slice/join/transform 一次，没有行数上限时在
+// species.json 这种上万行文件上仍然是不必要的开销。参照已有三处修复的模式，统一按内容
+// 行数封顶，跳过这个 best-effort 兜底、退回"没找到"，而不是等真出一次卡死事故再补。
+const LINE_SCAN_MAX_CONTENT_LINES = 3000
+
 export const LineTrimmedReplacer: Replacer = function* (content, find) {
   const originalLines = content.split("\n")
+  if (originalLines.length > LINE_SCAN_MAX_CONTENT_LINES) return
   const searchLines = find.split("\n")
 
   if (searchLines[searchLines.length - 1] === "") {
@@ -887,6 +895,7 @@ export const WhitespaceNormalizedReplacer: Replacer = function* (content, find) 
 
   // Handle single line matches
   const lines = content.split("\n")
+  if (lines.length > LINE_SCAN_MAX_CONTENT_LINES) return
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     if (normalizeWhitespace(line) === normalizedFind) {
@@ -943,6 +952,7 @@ export const IndentationFlexibleReplacer: Replacer = function* (content, find) {
 
   const normalizedFind = removeIndentation(find)
   const contentLines = content.split("\n")
+  if (contentLines.length > LINE_SCAN_MAX_CONTENT_LINES) return
   const findLines = find.split("\n")
 
   for (let i = 0; i <= contentLines.length - findLines.length; i++) {
@@ -990,6 +1000,7 @@ export const EscapeNormalizedReplacer: Replacer = function* (content, find) {
 
   // Also try finding escaped versions in content that match unescaped find
   const lines = content.split("\n")
+  if (lines.length > LINE_SCAN_MAX_CONTENT_LINES) return
   const findLines = unescapedFind.split("\n")
 
   for (let i = 0; i <= lines.length - findLines.length; i++) {
@@ -1031,6 +1042,7 @@ export const TrimmedBoundaryReplacer: Replacer = function* (content, find) {
 
   // Also try finding blocks where trimmed content matches
   const lines = content.split("\n")
+  if (lines.length > LINE_SCAN_MAX_CONTENT_LINES) return
   const findLines = find.split("\n")
 
   for (let i = 0; i <= lines.length - findLines.length; i++) {
