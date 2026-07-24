@@ -11,6 +11,14 @@
 ---
 
 ## TUI
+### [0.7.36] - 2026-07-24
+
+> 0.7.35 修完 edit.ts 那批之后，同一份 RedMon 文件又在完全不同的地方卡死——这次没有 evloop drift 报警，因为卡的不是 CPU，是一个没设超时的子进程 spawn。
+
+#### 修复
+
+- **格式化子进程加超时**（`format/index.ts`）：编辑后调用外部格式化程序（prettier/biome 等）的 `appProcess.run()` 之前完全没有超时,格式化程序在超大文件上卡住/异常慢时整个回合无限期挂起,且不会触发 evloop drift 诊断（事件循环本身没被占用,只是 await 永远不 resolve,这是跟 0.7.35 那批 CPU 型卡死不一样的信号）。加了 30 秒超时,复用已有的 `Effect.catch` 容错路径。`git/index.ts`/`worktree/index.ts`/`snapshot/index.ts`/`installation/index.ts` 有同样的缺口,这次只修了实际撞上的这一个。
+
 ### [0.7.35] - 2026-07-24
 
 > 补上 0.7.34 那批修复漏掉的 5 个 replacer + 一个 pid 校验加固,顺带输入框括号自动补全。
