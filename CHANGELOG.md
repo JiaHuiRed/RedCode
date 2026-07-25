@@ -11,6 +11,21 @@
 ---
 
 ## TUI
+### [0.7.37] - 2026-07-25
+
+> 中文 IME 括号自动跳入内部 + doom_loop 放宽到仅报错触发 + guardrail 工具分类与工作流规范更新。
+
+#### 修复
+
+- **中文 IME 自动闭合括号光标定位**（`prompt/index.tsx`）：onKeyDown 记录预期闭括号，onContentChange 检测 `value.endsWith(expectedClose)` 后 `moveCursorLeft()`，不额外插入字符。覆盖 `（）【】《》「」「"”’`。
+- **doom_loop 放宽到仅工具报错触发**（`processor.ts`）：exactLoop 和 cycleLoop 均加 `.some()` 要求至少一个工具 `status === "error"` 才触发，正常完成的工具不再误拦。
+
+#### 其他
+
+- **guardrail 工具分类更新**（`guardrail-profiles/SKILL.md`）：明确"连续失败=工具 status error"不是连续工具调用；read/glob/grep/env 调高风险感知；各类工具放行。
+
+---
+
 ### [0.7.36] - 2026-07-24
 
 > 0.7.35 修完 edit.ts 那批之后，同一份 RedMon 文件又在完全不同的地方卡死——这次没有 evloop drift 报警，因为卡的不是 CPU，是一个没设超时的子进程 spawn。
