@@ -107,6 +107,7 @@ export const layer = Layer.effect(
 
         const defaults = Permission.fromConfig({
           "*": "allow",
+          destructive: "ask",
           doom_loop: "ask",
           external_directory: {
             "*": "ask",

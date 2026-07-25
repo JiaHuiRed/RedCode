@@ -75,6 +75,7 @@ type Scan = {
   dirs: Set<string>
   patterns: Set<string>
   always: Set<string>
+  destructive: boolean
 }
 
 type Chunk = {
@@ -279,7 +280,7 @@ const ask = Effect.fn("ShellTool.ask")(function* (ctx: Tool.Context, scan: Scan)
 
   if (scan.patterns.size === 0) return
   yield* ctx.ask({
-    permission: ShellID.ToolID,
+    permission: scan.destructive ? "destructive" : ShellID.ToolID,
     patterns: Array.from(scan.patterns),
     always: Array.from(scan.always),
     metadata: {},
@@ -382,6 +383,7 @@ export const ShellTool = Tool.define(
         dirs: new Set<string>(),
         patterns: new Set<string>(),
         always: new Set<string>(),
+        destructive: false,
       }
       const shellKind = ShellID.toKind(Shell.name(shell))
 
@@ -391,6 +393,7 @@ export const ShellTool = Tool.define(
         const cmd = ps || shellKind === "cmd" ? tokens[0]?.toLowerCase() : tokens[0]
 
         if (cmd && (FILES.has(cmd) || (shellKind === "cmd" && CMD_FILES.has(cmd)))) {
+          scan.destructive = true
           for (const arg of pathArgs(command, ps, shellKind === "cmd")) {
             const resolved = yield* argPath(arg, cwd, ps, shell)
             log.info("resolved path", { arg, resolved })
