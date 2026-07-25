@@ -1499,10 +1499,24 @@ export function Prompt(props: PromptProps) {
                   e.preventDefault()
                   return
                 }
-                if (e.name === "(" && !e.ctrl && !e.meta && input && !input.isDestroyed) {
-                  e.preventDefault()
-                  input.insertText("()")
-                  input.moveCursorLeft()
+                if (!e.ctrl && !e.meta && input && !input.isDestroyed) {
+                  const pair = { "(": ")", "[": "]", "{": "}", "（": "）", "【": "】", "《": "》", "「": "」" } as Record<string, string>
+                  const close = pair[e.name!]
+                  if (close) {
+                    e.preventDefault()
+                    input.insertText(e.name! + close)
+                    input.moveCursorLeft()
+                  } else if (e.name === '"' || e.name === "'" || e.name === "“" || e.name === "‘") {
+                    e.preventDefault()
+                    const nextChar = input.getTextRange(input.cursorOffset, input.cursorOffset + 1)
+                    const closeQuote = { '"': '"', "'": "'", "“": "”", "‘": "’" } as Record<string, string>
+                    if (nextChar === closeQuote[e.name]) {
+                      input.moveCursorRight()
+                    } else {
+                      input.insertText(e.name + closeQuote[e.name])
+                      input.moveCursorLeft()
+                    }
+                  }
                 }
               }}
               onSubmit={() => {
