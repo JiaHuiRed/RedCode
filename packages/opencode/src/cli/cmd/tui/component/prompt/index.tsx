@@ -134,6 +134,8 @@ export function Prompt(props: PromptProps) {
   let input: TextareaRenderable
   let anchor: BoxRenderable
   const [inputTarget, setInputTarget] = createSignal<TextareaRenderable | undefined>()
+  const fullWidthPairs: Record<string, string> = { "（": "）", "【": "】", "《": "》", "「": "」", "“": "”", "‘": "’" }
+  let expectedClose: string | undefined
 
   const leader = useLeaderActive()
   const local = useLocal()
@@ -1492,6 +1494,11 @@ export function Prompt(props: PromptProps) {
                 auto()?.onInput(value)
                 syncExtmarksWithPromptParts()
                 setCursorVersion((value) => value + 1)
+                // 260725 Red IME full-width brackets: detect when IME commits the pair, move cursor inside
+                if (expectedClose && value.endsWith(expectedClose)) {
+                  expectedClose = undefined
+                  input.moveCursorLeft()
+                }
               }}
               onCursorChange={() => setCursorVersion((value) => value + 1)}
               onKeyDown={(e: { preventDefault(): void; name?: string; ctrl?: boolean; meta?: boolean }) => {
@@ -1499,21 +1506,26 @@ export function Prompt(props: PromptProps) {
                   e.preventDefault()
                   return
                 }
-                if (!e.ctrl && !e.meta && input && !input.isDestroyed) {
-                  const pair = { "(": ")", "[": "]", "{": "}", "（": "）", "【": "】", "《": "》", "「": "」" } as Record<string, string>
-                  const close = pair[e.name!]
-                  if (close) {
+                if (!e.ctrl && !e.meta && input && !input.isDestroyed && e.name) {
+                  // 260725 Red Full-width bracket — IME auto-closes; track expected closing char
+                  if (fullWidthPairs[e.name]) {
+                    expectedClose = fullWidthPairs[e.name]
+                    return
+                  }
+                  // Half-width brackets — keyboard sends one char at a time
+                  if (e.name === "(" || e.name === "[" || e.name === "{") {
+                    const close = { "(": ")", "[": "]", "{": "}" }[e.name]
                     e.preventDefault()
-                    input.insertText(e.name! + close)
+                    input.insertText(e.name + close)
                     input.moveCursorLeft()
-                  } else if (e.name === '"' || e.name === "'" || e.name === "“" || e.name === "‘") {
+                  } else if (e.name === '"' || e.name === "'") {
                     e.preventDefault()
                     const nextChar = input.getTextRange(input.cursorOffset, input.cursorOffset + 1)
-                    const closeQuote = { '"': '"', "'": "'", "“": "”", "‘": "’" } as Record<string, string>
-                    if (nextChar === closeQuote[e.name]) {
+                    const close = { '"': '"', "'": "'" }[e.name]
+                    if (nextChar === close) {
                       input.moveCursorRight()
                     } else {
-                      input.insertText(e.name + closeQuote[e.name])
+                      input.insertText(e.name + close)
                       input.moveCursorLeft()
                     }
                   }
