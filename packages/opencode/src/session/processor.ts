@@ -451,7 +451,9 @@ export const layer = Layer.effect(
                   part.tool === value.name &&
                   part.state.status !== "pending" &&
                   JSON.stringify(part.state.input) === JSON.stringify(input),
-              )
+              ) &&
+              // 260725 Only trigger when at least one tool actually errored
+              recentParts.some((part) => part.type === "tool" && part.state.status === "error")
 
             // Extended: cycling pattern (A→B→A→B or A→B→C→A→B→C)
             const CYCLE_WINDOW = DOOM_LOOP_THRESHOLD * 2
@@ -460,6 +462,8 @@ export const layer = Layer.effect(
               !exactLoop &&
               cycleParts.length === CYCLE_WINDOW &&
               cycleParts.every((p) => p.type === "tool" && p.state.status !== "pending") &&
+              // 260725 Only trigger when at least one tool actually errored
+              cycleParts.some((p) => p.type === "tool" && p.state.status === "error") &&
               [2, 3].some((len) => {
                 if (CYCLE_WINDOW % len !== 0) return false
                 const key = (p: (typeof cycleParts)[number]) =>
