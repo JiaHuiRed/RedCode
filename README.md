@@ -22,13 +22,13 @@
 AI 编程助手。两个入口、同一引擎：
 
 - **TUI** — 终端命令行界面（`packages/opencode`）
-- **GUI** — 桌面窗口程序，Electron + SolidJS（`packages/desktop`）
+- **GUI** — 桌面窗口程序，Electron 或 Tauri（`packages/desktop`）
 
 读代码、写代码、改 bug、跑命令。你说中文，它干活。
 
 ### 核心能力
 
-代码理解（jCodeMunch / TypeGraph）· 多模型（DeepSeek / OpenAI / Anthropic / Ollama）· 文件读写编辑 · 终端执行 · Web 搜索 · 视觉分析 · 会话管理 · 权限门控 · 上下文压缩 · 自动化记忆系统 · 目标管理 · Skill 技能系统 · 防重复循环检测 · 自定义 AI 人格
+代码理解（jCodeMunch / TypeGraph）· 多模型（DeepSeek / OpenAI / Anthropic / Ollama）· 文件读写编辑 · 终端执行 · Web 搜索 · 视觉分析 · 会话管理 · 权限门控与防护环（guardrail/doom_loop 检测）· 上下文压缩 · 自动化记忆系统 · 目标管理 · Skill 技能系统 · 防重复循环检测 · 自定义 AI 人格
 
 ### 为什么是 RedCode？
 

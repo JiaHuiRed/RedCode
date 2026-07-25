@@ -133,7 +133,7 @@ AI 每次启动对话时自动读取此文件。
 
 ### 2.3 自定义 AI 人格
 
-灵魂文件定义 AI 的性格、语气和行为边界。TUI 和 GUI 可以有不同的灵魂：
+灵魂文件定义 AI 的性格设定。灵魂文件定义 AI 的性格、语气和行为边界。TUI 和 GUI 可以有不同的灵魂：
 
 ```bash
 $EDITOR ~/.redcode/souls/Tsoul.md   # TUI 终端人格
@@ -148,7 +148,7 @@ $EDITOR ~/.redcode/souls/Gsoul.md   # GUI 桌面人格
 - 重点帮你做什么
 - 不该碰的话题
 
-写好之后，在对话中输入 `/tui-persona` 加载 TUI 人格，或 `/gui-persona` 加载 GUI 人格。
+**人格自动加载**：每次启动对话时，引擎自动按客户端类型注入对应人格（TUI→Tsoul.md，GUI→Gsoul.md），无需手动命令。也可在对话中输入 `/tui-persona` 或 `/gui-persona` 手动切换。
 
 ---
 
@@ -158,9 +158,11 @@ $EDITOR ~/.redcode/souls/Gsoul.md   # GUI 桌面人格
 
 | type | API 格式 | 适用 |
 |------|---------|------|
-| `openai` | OpenAI 兼容 | DeepSeek、Moonshot、Ollama、Groq 等 |
+| `openai` | OpenAI 兼容 | DeepSeek、Moonshot、Ollama、Groq、Step、Codex 等 |
 | `anthropic` | Anthropic 原生 | Claude |
 | `google` | Gemini 原生 | Google Gemini |
+| `glm` | GLM 原生 | Zhipu GLM |
+| `minimax` | MiniMax 原生 | MiniMax
 
 ### 3.2 切换模型
 
@@ -288,39 +290,40 @@ MCP（Model Context Protocol）让 AI 获得外部能力。安装越多 MCP，AI
 
 ### 6.1 概述
 
-RedCode 内置自动化记忆系统（skill `memory-automation`），全程自动运作，无需手动操作。
+RedCode 内置自动化记忆系统（skill `memory-automation`），在启动/压缩/收工时自动运作。
 
 ### 6.2 每日日志
 
-当 AI 在工作中发现错误被纠正、或走了弯路时，自动写入当天日志：
+当 AI 在工作中出错被纠正、做了关键决策或发现踩坑时，自动写入当天日志：
 
 ```
-~/.redcode/memory/260606.md
+~/.redcode/memory/<YYMMDD>.md
 ```
 
 日志格式自由，一句话即可。例如：
 
 ```markdown
 ## 260606
-- 改了 redcode.jsonc 后忘记 typecheck，被 CI 拦截
+- 改了 redcode.jsonc 后忘记 typecheck，被拦截
 ```
 
 ### 6.3 长期库
 
-收工或标记任务完成（`/goal done`）时，AI 自动：
+收工时，AI 自动：
 
-1. 从当日日志中摘出关键教训
-2. 去重合并到 `~/.redcode/MEMORY.md`
-3. 删除日志中已移入长期库的条目
-4. 定期复审清理过时条目
+1. 从当天日志筛选**跨项目通用**的教训
+2. 过三道门禁（跨项目通用？高复发高代价？未被已有规则覆盖？）
+3. 三 YES 才入全局库 `~/.redcode/MEMORY.md`，否则留项目级 `.redcode/MEMORY.md` 或日志
+
+日志原文保留不删。
 
 ### 6.4 启动注入
 
-每次新对话启动时，AI 自动读取：
+每次新对话启动时，AI 自动注入：
 
-- 最近 3 天的日志 → 了解近期工作
-- `~/.redcode/MEMORY.md` → 遵守已总结的教训
-- `~/.redcode/USER.md` → 按你的偏好交互
+- **项目级** `.redcode/MEMORY.md`（当前项目专有）
+- **全局级** `~/.redcode/MEMORY.md`（跨项目通用教训，项目级不存在时兜底）
+- `~/.redcode/USER.md`（按你的偏好交互）
 
 ### 6.5 关闭记忆
 
@@ -344,6 +347,10 @@ RedCode 内置自动化记忆系统（skill `memory-automation`），全程自�
 
 ### 7.2 权限门控
 
+权限有两层：**行为指令层**（guardrail profile，AI 自我约束）和**代码强制层**（doom_loop 检测，服务端拦截）。
+
+#### 行为指令层（ECC_PROFILE）
+
 通过环境变量 `ECC_PROFILE` 控制 AI 的自主程度：
 
 ```bash
@@ -361,6 +368,20 @@ export ECC_PROFILE=strict
 | 跨文件编辑 | 自动 | 确认 | 确认 |
 | Shell 命令 | 自动 | 白名单确认 | 逐个确认 |
 | 删文件 / push / 改名 | 确认 | 确认 | 确认 |
+| 连续失败（仅限工具报错）| 3 次停 | 2 次停 | 1 次停 |
+
+#### 代码强制层（doom_loop 检测）
+
+位于 `processor.ts`，自动检测两种模式：
+
+1. **精确重复**：同一工具+同一输入连续 3 次，且至少一次报错（`status === "error"`）
+2. **周期循环**：6 步内形成 A→B→A→B 或 A→B→C→A→B→C 模式，且至少一次报错
+
+检测触发时向用户提示确认，防止 AI 无意识空转。默认配置 `doom_loop: "ask"`。
+
+#### "连续失败"定义
+
+"失败" = 工具返回 `status: "error"`（报错/崩溃），不是单纯的 edit/bash/write 调用次数。验证命令（typecheck、read、grep、glob）插在改动之间不算连续。
 
 ### 7.3 添加自定义 MCP
 
@@ -414,6 +435,11 @@ Skill 是扩展 AI 行为的机制——本质上是注入给 AI 的指令文件
 | **red-scribe** | 按 Red 的写作风格输出 | "按我的风格写""red风格" |
 | **yuqi-slop** | 中文去 AI 味 | "去AI味""褪AI味" |
 | **stop-slop** | 英文去 AI 味 | "英文去AI味" |
+| **new-project** | 新项目脚手架 | "新项目""搭个项目" |
+| **species-design** | RedMon 精灵设计 | "设计精灵""新精灵" |
+| **ai-daily** | AI 热点日报 | "日报""今天ai新闻" |
+| **game-daily** | 游戏热点日报 | "游戏日报""游戏新闻" |
+| **bump-version** | 一键升版 | "升版""bump""放版" |
 
 ### 9.2 添加自定义 Skill
 

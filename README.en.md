@@ -20,7 +20,7 @@
 AI coding assistant, two entry points, one engine:
 
 - **TUI** — terminal interface (`packages/opencode`)
-- **GUI** — desktop window, Electron + SolidJS (`packages/desktop`)
+- **GUI** — desktop window, Electron or Tauri (`packages/desktop`)
 
 Reads code, writes code, fixes bugs, runs commands. You speak Chinese (or any language), it does the work.
 
