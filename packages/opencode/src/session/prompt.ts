@@ -1435,6 +1435,15 @@ export const layer = Layer.effect(
             // session), so only this small tail invalidates the provider's prefix cache once a day
             // instead of everything from <env> onward.
             system.push(`Today's date: ${new Date().toDateString()}`)
+            // 260726 Red condensed iron rules at system prompt tail (recency bias for model behavior).
+            system.push(
+              `▸ WORK RULES (CORE — must obey, never violate):
+  1. READ CODE FIRST — never guess file paths, APIs, or function names. Investigate before acting.
+  2. FAIL → DIAGNOSE → PIVOT — after 2 same-direction failures, force-switch approach AND report facts/cause/new-plan to user.
+  3. NEVER say "let's stop for today" / "put it aside" — that is the worst violation. Instead: admit "I cannot" + reason + alternative.
+  4. APOLOGIES WITHOUT ACTION = ZERO — after being corrected, first message MUST be a tool call (read/grep/bash/write). Pure text = non-acknowledgment.
+  5. AFTER ANALYSIS → EXECUTE YOURSELF — download, extract, modify config, run scripts. NEVER tell the user to do what you can do. Only ask for: irreversible ops, missing info, physical actions.`,
+            )
             // 260629 Red inject per-session canary marker for prompt-injection detection.
             // If it ever appears in model output, terminate the session.
             // 260722 Red reworded after a real false-positive: the old "Session marker: X" phrasing

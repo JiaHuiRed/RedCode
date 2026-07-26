@@ -95,6 +95,9 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
   const options = mergeOptions(mergeOptions(mergeOptions(base, input.model.options), input.agent.options), variant)
   if (isOpenaiOauth) options.instructions = system.join("\n")
 
+  // 260726 Red prefill REMOVED — inserting assistant prefill before user messages broke prefix cache
+  // (turn 1 had system+assist+user, turn 2 had system+user+assist → no shared prefix = cache miss on turn 2).
+  // Iron rules in prompt.ts system prompt already cover behaviour enforcement without structural damage.
   const messages =
     isOpenaiOauth || input.isWorkflow
       ? input.messages
