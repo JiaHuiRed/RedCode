@@ -24,7 +24,10 @@ const CHROME_UA =
 
 // 260604 Red Use PowerShell for HTTP — respects system proxy when enabled.
 // 260605 Red Auto-detect proxy from registry; when ProxyEnable=1, pass -Proxy to Invoke-WebRequest.
+// 260726 Red Also check HTTP_PROXY env var (set in MCP config) as fallback.
 function getSystemProxy(): string | null {
+  // Process env takes priority — MCP config may set HTTP_PROXY even when registry is disabled
+  if (process.env.HTTP_PROXY) return process.env.HTTP_PROXY;
   try {
     const out = execSync(
       `reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings" /v ProxyEnable`,
