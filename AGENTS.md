@@ -175,6 +175,8 @@ RedCode = OpenCode fork：
 - Commit: conventional commit `type(scope): summary`
   - types: `feat` `fix` `docs` `chore` `refactor` `test`
   - scopes: `core` `redcode` `tui` `app` `desktop` `sdk` `plugin`
+- **AI agent commit 前缀**：AI 代理（非人类）执行的 commit，在常规 commit 格式前加 `[Karina] ` 或 `[YuQi] ` 前缀标识执行人。人类自己的 commit 不加前缀。
+  - 示例：`[Karina] feat(tui): 模型专属提示词优化`
 - 不改 untracked 文件除非你要求
 - 不擅自 push / amend / tag
 - 重新生成 SDK：`./packages/sdk/js/script/build.ts`
