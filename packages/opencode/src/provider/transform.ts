@@ -558,7 +558,12 @@ export function temperature(model: Provider.Model) {
   if (id.includes("gemini")) return 1.0
   if (id.includes("glm-4.6")) return 1.0
   if (id.includes("glm-4.7")) return 1.0
+  if (id.includes("glm-5.2")) return 1.0
   if (id.includes("minimax-m2")) return 1.0
+  if (id.includes("kimi-k3")) {
+    // kimi-k3 is thinking-native, higher temperature for reasoning diversity
+    return 1.0
+  }
   if (id.includes("kimi-k2")) {
     // kimi-k2-thinking & kimi-k2.5 && kimi-k2p5 && kimi-k2-5
     if (["thinking", "k2.", "k2p", "k2-5"].some((s) => id.includes(s))) {
@@ -1197,7 +1202,7 @@ export function options(input: {
   // Enable thinking by default for kimi models using anthropic SDK
   if (
     (input.model.api.npm === "@ai-sdk/anthropic" || input.model.api.npm === "@ai-sdk/google-vertex/anthropic") &&
-    (modelId.includes("k2p") || modelId.includes("kimi-k2.") || modelId.includes("kimi-k2p"))
+    (modelId.includes("kimi-k3") || modelId.includes("k2p") || modelId.includes("kimi-k2.") || modelId.includes("kimi-k2p"))
   ) {
     result["thinking"] = {
       type: "enabled",
