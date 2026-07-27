@@ -92,6 +92,8 @@ const live: Layer.Layer<
         providerID: input.model.providerID,
       })
 
+      const tResolveStart = performance.now()
+
       const [language, cfg, item, info] = yield* Effect.all(
         [
           provider.getLanguage(input.model),
@@ -102,6 +104,15 @@ const live: Layer.Layer<
         { concurrency: "unbounded" },
       )
 
+      const tResolveEnd = performance.now()
+      // 260727 Red 每次请求记录 resolve/prep 耗时到日志，排查 LLM 延迟时区分本地管线与服务端耗时
+      l.info("llm.setup", {
+        phase: "resolve",
+        providerID: input.model.providerID,
+        modelID: input.model.id,
+        ms: Math.round(tResolveEnd - tResolveStart),
+      })
+
       const isWorkflow = language instanceof GitLabWorkflowLanguageModel
       const prepared = yield* LLMRequestPrep.prepare({
         ...input,
@@ -110,6 +121,14 @@ const live: Layer.Layer<
         plugin,
         flags,
         isWorkflow,
+      })
+
+      const tPrepEnd = performance.now()
+      l.info("llm.setup", {
+        phase: "prep",
+        providerID: input.model.providerID,
+        modelID: input.model.id,
+        ms: Math.round(tPrepEnd - tResolveEnd),
       })
 
       // Wire up toolExecutor for DWS workflow models so that tool calls

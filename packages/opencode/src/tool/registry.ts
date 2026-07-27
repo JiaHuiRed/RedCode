@@ -355,6 +355,8 @@ export const layer = Layer.effect(
     })
 
     const tools: Interface["tools"] = Effect.fn("ToolRegistry.tools")(function* (input) {
+      const ctx = yield* InstanceState.context
+      const s = yield* InstanceState.get(state)
       const filtered = (yield* all()).filter((tool) => {
         if (tool.id === WebSearchTool.id) {
           return webSearchEnabled(input.providerID, { exa: flags.enableExa, parallel: flags.enableParallel })
@@ -368,7 +370,7 @@ export const layer = Layer.effect(
         return true
       })
 
-      return yield* Effect.forEach(
+      const result = yield* Effect.forEach(
         filtered,
         Effect.fnUntraced(function* (tool: Tool.Def) {
           using _ = log.time(tool.id)
@@ -399,6 +401,8 @@ export const layer = Layer.effect(
         }),
         { concurrency: "unbounded" },
       )
+
+      return result
     })
 
     const named: Interface["named"] = Effect.fn("ToolRegistry.named")(function* () {

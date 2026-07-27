@@ -308,11 +308,10 @@ export const layer = Layer.effect(
               prompt: profile.prompt ?? existing.prompt,
               mode: profile.mode,
               permission: Permission.merge(
-                defaults,
+                existing.permission,
                 Permission.fromConfig(
                   Profile.ProfileTypes.toolsToPermissionConfig(profile.tools, profile.mode, profile.permission),
                 ),
-                user,
               ),
             }
           } else {

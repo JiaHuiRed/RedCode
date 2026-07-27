@@ -18,8 +18,6 @@
  import { PartID } from "./schema"
  import * as Log from "@redcode-ai/core/util/log"
  import { EffectBridge } from "@/effect/bridge"
-// 260716 Red TEMP diag: evloop 漂移归因，定位完删除
-import * as Diag from "./diag"
 
 const log = Log.create({ service: "session.tools" })
 
@@ -84,8 +82,6 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       description: item.description,
       inputSchema: jsonSchema(schema),
       execute(args, options) {
-        // 260716 Red TEMP diag: evloop 漂移归因
-        Diag.toolStart(options.toolCallId, item.id)
         return run.promise(
           Effect.gen(function* () {
             const ctx = context(args, options)
@@ -132,8 +128,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               yield* input.processor.completeToolCall(options.toolCallId, output)
             }
             return output
-            // 260716 Red TEMP diag: ensuring 兜住中断/异常路径的登记清理
-          }).pipe(Effect.ensuring(Effect.sync(() => Diag.toolEnd(options.toolCallId)))),
+          }),
         )
       },
     })
@@ -147,8 +142,6 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     const transformed = ProviderTransform.schema(input.model, schema)
     item.inputSchema = jsonSchema(transformed)
     item.execute = (args, opts) => {
-      // 260716 Red TEMP diag: evloop 漂移归因
-      Diag.toolStart(opts.toolCallId, key)
       return run.promise(
         Effect.gen(function* () {
             const ctx = context(args, opts)
@@ -242,8 +235,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             yield* input.processor.completeToolCall(opts.toolCallId, output)
           }
           return output
-          // 260716 Red TEMP diag: ensuring 兜住中断/异常路径的登记清理
-          }).pipe(Effect.ensuring(Effect.sync(() => Diag.toolEnd(opts.toolCallId)))),
+          }),
+
       )
     }
     tools[key] = item

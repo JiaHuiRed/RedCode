@@ -69,8 +69,6 @@ import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@redcode-ai/llm"
 import { LoopRecoveryTracker, RECOVERY_PROMPTS } from "./text-loop-detection"
-// 260716 Red TEMP diag: evloop 漂移归因，定位完删除
-import * as Diag from "./diag"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -116,29 +114,6 @@ const EXTERNAL_COMPRESS_TOOLS = new Set(["compress-range", "compress-message"])
 
 const log = Log.create({ service: "session.prompt" })
 const elog = EffectLogger.create({ service: "session.prompt" })
-
-// 260715 Red TEMP diag: 排查"会话变大后卡顿"疑似复发，独立漂移探针不预设阻塞点在哪
-// （只测漂移，不猜是谁卡的——跟 message-v2.ts 里 toModelMessagesEffect 的拆分计时交叉验证）。
-// 复现后看 blockedMs 是否和 message-v2.ts 的 TEMP DIAG 日志时间对得上；定位完两处一起删。
-{
-  let __rc_evloop_last = performance.now()
-  const __rc_evloop_timer = setInterval(() => {
-    const now = performance.now()
-    const drift = now - __rc_evloop_last - 200
-    __rc_evloop_last = now
-    if (drift > 300) {
-      // 260716 Red TEMP diag: active=阻塞期间在跑的工具(含 DCP compress), heapMB=GC 假说交叉验证
-      const mem = process.memoryUsage()
-      log.warn("TEMP DIAG evloop drift", {
-        blockedMs: Math.round(drift),
-        active: Diag.activeTools(),
-        heapMB: Math.round(mem.heapUsed / 1048576),
-        rssMB: Math.round(mem.rss / 1048576),
-      })
-    }
-  }, 200)
-  __rc_evloop_timer.unref?.()
-}
 
 export interface Interface {
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
