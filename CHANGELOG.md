@@ -11,6 +11,24 @@
 ---
 
 ## TUI
+### [0.7.38] - 2026-07-27
+
+> LLM 延迟排查结案 + 清理 TEMP 诊断代码 + profile 权限合并修复。
+
+#### 新增
+
+- **`llm.setup` 计时日志**（`session/llm.ts`）：每次 LLM 请求记录 resolve 和 prep 阶段耗时到 `~/.redcode/data/log/*.log`，用于区分本地管线延迟与服务端延迟。实测 resolve 1-35ms、prep 1-11ms，瓶颈确认在 provider 服务端。
+
+#### 修复
+
+- **Profile 覆盖时权限重复合并**（`agent/agent.ts`）：YAML profile 覆盖已有 agent 时，旧代码把 `defaults` 和 `user` 重复 merge 而非在 `existing.permission` 上叠加，导致权限规则顺序错乱。改为 `Permission.merge(existing.permission, profilePerms)`。
+
+#### 变更
+
+- **清理 TEMP 诊断代码**：删除 `session/diag.ts`，移除 `prompt.ts` 的 evloop 漂移探针、`message-v2.ts` 的 toModelMessagesEffect 耗时探针、`tools.ts` 的 Diag.toolStart/End 调用——LLM 延迟排查已结案，不再需要。
+
+---
+
 ### [0.7.37] - 2026-07-25
 
 > 中文 IME 括号自动跳入内部 + doom_loop 放宽到仅报错触发 + guardrail 工具分类与工作流规范更新。
