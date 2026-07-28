@@ -481,7 +481,7 @@ description: 我的编码规范。用户说"按规范来""检查规范"时触发
 ├── MEMORY.md         ← 模板   ├── MEMORY.md       ← 你的记忆
 ├── skill/                     ├── USER.md         ← 你的画像
 ├── command/                   ├── memory/         ← 你的日志
-└── plugins/                   └── sessions/       ← 会话数据
+└── plugins/                   └── data/           ← 会话 DB / 日志 / 快照
 ```
 
 - 仓库**仅包含模板和共享配置**，没有任何你的个人数据
@@ -495,8 +495,16 @@ description: 我的编码规范。用户说"按规范来""检查规范"时触发
 ```bash
 # 第一台电脑：初始化私有仓
 cd ~/.redcode
-# 创建 .gitignore 排除无需同步的目录
-echo -e "sessions/\nnode_modules/\n" > .gitignore
+# 创建 .gitignore 排除机器本地数据
+# 重要：data/ 里有 redcode.db（会话数据库）和 auth.json（各家 provider 的密钥），
+# 必须排除，否则会连同密钥一起推到远端仓库
+@'
+data/
+cache/
+state/
+locks/
+node_modules/
+'@ | Set-Content -Encoding utf8 .gitignore
 git init && git add -A && git commit -m "init"
 # 在 GitHub 创建一个 Private 仓库
 git remote add origin https://github.com/你的用户名/redcode-private.git

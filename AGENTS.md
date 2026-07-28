@@ -153,7 +153,7 @@ RedCode = OpenCode fork：
 ## 其他红线
 
 - **不可逆/大动作先出计划、等用户批准**：删文件、`rm`、push、打包 release、amend/tag、改 DB schema/migration、改构建或 CI 配置、一次动 5+ 文件——先说方案、等点头，批准前只读不写。可逆小改直接做，别为难自己。
-- **省 token（上下文短、免费模型尤甚）**：大范围探索派 `task` 工具的 `explore` 子代理（只读、专搜代码库、可指定 quick/medium/very thorough），只把结论摘要带回主线——别在主对话里一口气翻几十个文件，撑爆上下文触发 compact。回答先给结论、简洁、不复述用户的话。
+- **省 token（上下文短、免费模型尤甚）**：大范围探索派 `task` 工具的 `explore` 子代理（只读、专搜代码库；搜索深度写进 prompt 文字里，不是参数），只把结论摘要带回主线——别在主对话里一口气翻几十个文件，撑爆上下文触发 compact。回答先给结论、简洁、不复述用户的话。
 - **改/删文件前必加载 diagnose skill**：涉及修改、删除、创建文件的操作（包括写日志），先加载 diagnose skill，走完 Phase 1（建反馈循环/交叉验证）→ Phase 3（假设排序确认）→ Phase 6（完成后复盘），确认无误再动手，动手后验证结果。
 
 # 版本与文档
@@ -193,7 +193,7 @@ RedCode = OpenCode fork：
 
 # 工作方法
 
-**排查先看日志** — `~/.local/share/redcode/log/`，不猜原因
+**排查先看日志** — `~/.redcode/data/log/`，不猜原因
 
 **连续失败 2 次 → 停手诊断换方案（见铁律二）** — 不闷头修，不原地打转
 
@@ -252,4 +252,3 @@ RedCode = OpenCode fork：
 
 - `/goal <text>` — 钉住当前会话目标，子任务自动变 todos，完成打勾，`/goal clear` 清掉、`/goal done` 标完成
 - `goal-automation` skill — 看到大任务时主动建议一次，但主动权在用户
-- `/deepwork` — 更重的入口（先反问、再写 plan、一步步执行），不自动建议
