@@ -18,6 +18,7 @@ import { Filesystem } from "@/util/filesystem"
 import { disposeAllInstances, provideInstance, TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { Reference } from "@/reference/reference"
+import { Hash } from "@redcode-ai/core/util/hash"
 import { RepositoryCache } from "@/reference/repository-cache"
 import { Snippet } from "@/session/snippet"
 
@@ -367,35 +368,71 @@ describe("tool.read truncation", () => {
     }),
   )
 
-  it.instance("stops streaming after the byte cap", () =>
+  // 260728 Karina 这个用例原来只断言"总字节数 < 全文一半"，而当时 read 是用 fs.readFile
+  // （不经过这里的 stream 计数）把整个文件读进内存算 fileTag 的 —— 全文其实一直在读，
+  // 只是没被计数器看见。现在改成按每趟流分别计数，把两件事分开钉住：
+  //   第 1 趟（收集要展示的行）必须在字节上限处停住；
+  //   第 2 趟（补算指纹）才读全文 —— tag 必须覆盖全文，edit 用全文算 currentHash 校验陈旧度。
+  const streamBytes = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    Effect.gen(function* () {
+      const fs = yield* AppFileSystem.Service
+      const passes: number[] = []
+      const result = yield* effect.pipe(
+        Effect.provideService(
+          AppFileSystem.Service,
+          AppFileSystem.Service.of({
+            ...fs,
+            stream: (file, options) => {
+              const index = passes.push(0) - 1
+              return fs.stream(file, options).pipe(
+                Stream.tap((chunk) =>
+                  Effect.sync(() => {
+                    passes[index] += chunk.length
+                  }),
+                ),
+              )
+            },
+          }),
+        ),
+      )
+      return { result, passes }
+    })
+
+  it.instance("stops collecting after the byte cap, hashes in a separate pass", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
       const filepath = path.join(test.directory, "huge.txt")
       const content = `${"x".repeat(80)}\n`.repeat(50_000)
       yield* put(filepath, content)
+      const total = Buffer.byteLength(content, "utf-8")
 
-      const fs = yield* AppFileSystem.Service
-      const counter = { bytes: 0 }
-      const result = yield* run({ filePath: filepath }).pipe(
-        Effect.provideService(
-          AppFileSystem.Service,
-          AppFileSystem.Service.of({
-            ...fs,
-            stream: (file, options) =>
-              fs.stream(file, options).pipe(
-                Stream.tap((chunk) =>
-                  Effect.sync(() => {
-                    counter.bytes += chunk.length
-                  }),
-                ),
-              ),
-          }),
-        ),
-      )
+      const { result, passes } = yield* streamBytes(run({ filePath: filepath }))
 
       expect(result.metadata.truncated).toBe(true)
       expect(result.output).toContain("Output capped at")
-      expect(counter.bytes).toBeLessThan(Buffer.byteLength(content, "utf-8") / 2)
+      expect(passes).toHaveLength(2)
+      expect(passes[0]).toBeLessThan(total / 2)
+      expect(passes[1]).toBe(total)
+      // 截断了也必须是全文指纹，否则 edit 的陈旧校验会次次 mismatch
+      expect(result.output).toContain(`#${Hash.fileTag(content)}]`)
+    }),
+  )
+
+  it.instance("reads an untruncated file exactly once", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "small.txt")
+      const content = "line one  \nline two\t\nline three\n"
+      yield* put(filepath, content)
+
+      const { result, passes } = yield* streamBytes(run({ filePath: filepath }))
+
+      expect(result.metadata.truncated).toBe(false)
+      // 没截断 ⇒ 收集那趟已经流过全文，指纹顺路算出来，不再多读一遍
+      expect(passes).toHaveLength(1)
+      expect(passes[0]).toBe(Buffer.byteLength(content, "utf-8"))
+      // 行尾有空白，正好覆盖 fileTag 的归一化路径
+      expect(result.output).toContain(`#${Hash.fileTag(content)}]`)
     }),
   )
 

@@ -10,7 +10,6 @@ import { assertExternalDirectoryEffect } from "./external-directory"
 import { Instruction } from "../session/instruction"
 import { isPdfAttachment, sniffAttachmentMime } from "@/util/media"
 import { Reference } from "@/reference/reference"
-import * as Bom from "@/util/bom"
 import { Hash } from "@redcode-ai/core/util/hash"
 import { Service as SnippetService, type Snippet } from "@/session/snippet"
 
@@ -168,8 +167,16 @@ export const ReadTool = Tool.define(
       // line of the upstream splitLines pipeline) and use a tagged error to stop the
       // upstream file stream as soon as the byte cap is reached.
       const decoder = new TextDecoder("utf-8")
+      // 260728 Karina 顺路把文件指纹算了：只要这趟流没被 ReadStop 掐断，读到的就是全文，
+      // 指纹直接可用，省掉此前为了 4 个字符的 tag 再把整个文件全量读进内存一遍那趟。
+      // 被掐断时指纹只覆盖了前半截，作废，由调用方走 fingerprint() 重算。
+      const hasher = Hash.fileTagStream()
       yield* fs.stream(filepath).pipe(
-        Stream.map((bytes) => decoder.decode(bytes, { stream: true })),
+        Stream.map((bytes) => {
+          const text = decoder.decode(bytes, { stream: true })
+          hasher.update(text)
+          return text
+        }),
         Stream.splitLines,
         Stream.runForEach((text) =>
           Effect.gen(function* () {
@@ -199,7 +206,30 @@ export const ReadTool = Tool.define(
         Effect.catchTag("ReadStop", () => Effect.void),
       )
 
-      return { raw, count: flags.count, cut: flags.cut, more: flags.more, offset: opts.offset }
+      if (!flags.done) hasher.update(decoder.decode())
+      return {
+        raw,
+        count: flags.count,
+        cut: flags.cut,
+        more: flags.more,
+        offset: opts.offset,
+        tag: flags.done ? undefined : hasher.digest(),
+      }
+    })
+
+    // 260728 Karina 流式补算文件指纹，只在 lines() 提前掐断时才用得上。
+    // 此前 read 无条件走 Bom.readFile + Hash.fileTag，为了 4 个字符的 tag 把整个文件读进
+    // 内存再全量解码一遍，把 lines() 的 50KB/2000 行截断白白抵消（300MB 日志照样吃满内存）。
+    // tag 必须覆盖全文 —— edit 用全文算 currentHash 校验陈旧度 —— 所以这趟读省不掉，但可以不驻留。
+    // TextDecoder 默认 ignoreBOM=false 会自动吃掉 BOM，与 Bom.readFile 的 split() 一致。
+    const fingerprint = Effect.fn("ReadTool.fingerprint")(function* (filepath: string) {
+      const decoder = new TextDecoder("utf-8")
+      const hasher = Hash.fileTagStream()
+      yield* fs
+        .stream(filepath)
+        .pipe(Stream.runForEach((bytes) => Effect.sync(() => hasher.update(decoder.decode(bytes, { stream: true })))))
+      hasher.update(decoder.decode())
+      return hasher.digest()
     })
 
     const isBinaryFile = (filepath: string, bytes: Uint8Array) => {
@@ -351,8 +381,7 @@ export const ReadTool = Tool.define(
         )
       }
 
-      const source = yield* Bom.readFile(fs, filepath)
-      const fileTag = Hash.fileTag(source.text)
+      const fileTag = file.tag ?? (yield* fingerprint(filepath))
 
       let output = [`<path>${filepath}</path>`, `<type>file</type>`, `[${filepath}#${fileTag}]`, "<content>\n"].join("\n")
       output += file.raw.map((line, i) => `${i + file.offset}: ${line}`).join("\n")
