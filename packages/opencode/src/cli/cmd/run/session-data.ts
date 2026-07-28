@@ -196,6 +196,10 @@ function msgErr(id: string): string {
   return `msg:${id}:error`
 }
 
+function msgCut(id: string): string {
+  return `msg:${id}:truncated`
+}
+
 function patch(patch?: FooterPatch, view?: FooterView): FooterOutput | undefined {
   if (!patch && !view) {
     return undefined
@@ -871,6 +875,19 @@ export function reduceSessionData(input: SessionDataInput): SessionDataOutput {
       commits.push({
         kind: "error",
         text: formatError(info.error),
+        phase: "start",
+        source: "system",
+        messageID: info.id,
+      })
+    }
+
+    // 260728 Karina finish="length" = 撞到输出 token 上限被砍断。此前它和 "stop" 完全同路，
+    // 脚本化调用（redcode run）拿到的是一段悄悄被截短的输出，无从察觉。
+    if (typeof info.id === "string" && info.finish === "length" && !data.ids.has(msgCut(info.id))) {
+      data.ids.add(msgCut(info.id))
+      commits.push({
+        kind: "system",
+        text: "输出被截断（达到 token 上限）",
         phase: "start",
         source: "system",
         messageID: info.id,

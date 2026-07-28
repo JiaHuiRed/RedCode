@@ -1564,6 +1564,12 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
               <Show when={props.message.error?.name === "MessageAbortedError"}>
                 <span style={{ fg: theme.textMuted }}> · interrupted</span>
               </Show>
+              {/* 260728 Karina finish="length" 是模型撞到输出 token 上限被砍断。此前它和 "stop"
+                  走同一条路，界面上和正常说完的回复长得一模一样 —— 话说到一半就结束，
+                  用户无从判断是说完了还是被截了。用 warning 色标出来。 */}
+              <Show when={props.message.finish === "length"}>
+                <span style={{ fg: theme.warning }}> · 输出被截断（达到 token 上限）</span>
+              </Show>
             </text>
           </box>
         </Match>

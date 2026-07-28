@@ -571,6 +571,33 @@ describe("run session data", () => {
     expect(next).toEqual([])
   })
 
+  // 260728 Karina finish="length" 是模型撞到输出 token 上限被砍断。此前它和 "stop" 完全同路，
+  // 脚本化调用拿到的是一段悄悄被截短的输出，无从察觉。
+  test("surfaces a truncated assistant message", () => {
+    const out = reduce(createSessionData(), assistant("msg-1", { finish: "length" }))
+
+    expect(out.commits).toEqual([
+      expect.objectContaining({
+        kind: "system",
+        text: "输出被截断（达到 token 上限）",
+        messageID: "msg-1",
+      }),
+    ])
+  })
+
+  test("does not repeat the truncation notice on later updates", () => {
+    const data = createSessionData()
+    expect(reduce(data, assistant("msg-1", { finish: "length" })).commits).toHaveLength(1)
+    expect(reduce(data, assistant("msg-1", { finish: "length" })).commits).toEqual([])
+  })
+
+  test("does not flag a normally finished message", () => {
+    for (const finish of ["stop", "tool-calls", undefined]) {
+      const out = reduce(createSessionData(), assistant("msg-1", finish ? { finish } : {}))
+      expect(out.commits).toEqual([])
+    }
+  })
+
   test("surfaces session errors as error commits", () => {
     const out = reduce(createSessionData(), {
       type: "session.error",

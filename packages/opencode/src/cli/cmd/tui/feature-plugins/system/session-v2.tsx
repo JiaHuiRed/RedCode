@@ -359,6 +359,11 @@ function AssistantMessage(props: {
             <Show when={duration()}>
               <span style={{ fg: theme.textMuted }}> · {Locale.duration(duration())}</span>
             </Show>
+            {/* 260728 Karina 见 routes/session/index.tsx 同处注释：finish="length" 是撞到输出
+                上限被砍断，不标出来的话和正常说完无法区分 */}
+            <Show when={props.message.finish === "length"}>
+              <span style={{ fg: theme.warning }}> · 输出被截断（达到 token 上限）</span>
+            </Show>
           </text>
         </box>
       </Show>
