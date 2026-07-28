@@ -69,12 +69,35 @@ exports[`tool parameters JSON Schema (wire shape) edit 1`] = `
       "description": "The absolute path to the file to modify",
       "type": "string",
     },
+    "input": {
+      "description": 
+"Hashline format — a self-contained patch string. Alternative to filePath + oldString + newString.
+
+Format:
+  [path/to/file#TAG]
+  replace N..M:
+  + new content
+  + more content
+  insert before N:
+  + inserted content
+  insert after N:
+  + inserted content
+  delete N..M
+  insert tail:
+  + content at end
+  insert head:
+  + content at start
+
+Body lines start with \`+ \`. The TAG comes from the Read tool's output header \`[path#TAG]\`."
+,
+      "type": "string",
+    },
     "newString": {
-      "description": "The text to replace it with (must be different from oldString)",
+      "description": "The replacement text. Not needed when using \`input\` (hashline format).",
       "type": "string",
     },
     "oldString": {
-      "description": "The text to replace",
+      "description": "The text to replace. Not needed when using \`input\` (hashline format).",
       "type": "string",
     },
     "replaceAll": {
@@ -82,11 +105,6 @@ exports[`tool parameters JSON Schema (wire shape) edit 1`] = `
       "type": "boolean",
     },
   },
-  "required": [
-    "filePath",
-    "oldString",
-    "newString",
-  ],
   "type": "object",
 }
 `;
@@ -174,6 +192,10 @@ exports[`tool parameters JSON Schema (wire shape) lsp 1`] = `
       "minimum": 1,
       "type": "integer",
     },
+    "newName": {
+      "description": "New name for rename operation.",
+      "type": "string",
+    },
     "operation": {
       "description": "The LSP operation to perform",
       "enum": [
@@ -186,6 +208,9 @@ exports[`tool parameters JSON Schema (wire shape) lsp 1`] = `
         "prepareCallHierarchy",
         "incomingCalls",
         "outgoingCalls",
+        "rename",
+        "codeAction",
+        "completion",
       ],
       "type": "string",
     },
@@ -331,6 +356,13 @@ exports[`tool parameters JSON Schema (wire shape) task 1`] = `
       "description": "A short (3-5 words) description of the task",
       "type": "string",
     },
+    "isolation": {
+      "description": "When set to "worktree", run the subagent in an isolated git worktree (separate working directory + branch) so its file edits do not touch the parent workspace. Use for risky or parallel changes.",
+      "enum": [
+        "worktree",
+      ],
+      "type": "string",
+    },
     "prompt": {
       "description": "The task for the agent to perform",
       "type": "string",
@@ -363,6 +395,14 @@ exports[`tool parameters JSON Schema (wire shape) todo 1`] = `
         "properties": {
           "content": {
             "description": "Brief description of the task",
+            "type": "string",
+          },
+          "id": {
+            "description": "Stable id for this item, e.g. '1' or '2.1'. Needed to nest sub-tasks under it via parent_id.",
+            "type": "string",
+          },
+          "parent_id": {
+            "description": "id of the parent item, to nest this item as its sub-task.",
             "type": "string",
           },
           "priority": {
