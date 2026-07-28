@@ -28,9 +28,9 @@ jobs:
       matrix:
         settings:
           - name: linux
-            host: blacksmith-4vcpu-ubuntu-2404
+            host: ubuntu-latest
           - name: windows
-            host: blacksmith-4vcpu-windows-2025
+            host: windows-latest
     runs-on: ${{ matrix.settings.host }}
     defaults:
       run:
@@ -100,9 +100,9 @@ jobs:
       matrix:
         settings:
           - name: linux
-            host: blacksmith-4vcpu-ubuntu-2404
+            host: ubuntu-latest
           - name: windows
-            host: blacksmith-4vcpu-windows-2025
+            host: windows-latest
     runs-on: ${{ matrix.settings.host }}
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
@@ -175,6 +175,10 @@ jobs:
           fetch-depth: 0
 
       - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@7a6d2945581e2dba6210b1c8ca5bcbf3b7843abb # v2.1.1
+        # 260728 Karina 原来钉的 7a6d2945 在上游仓库里根本不存在，CI 每次都是
+        # "Unable to resolve action ... unable to find version"，3 秒失败 ——
+        # 这个密钥扫描从 e5bc984（260720）加进来那天起就没真正跑过一次。
+        # 重钉到 v2 标签当前指向的真实 commit。
+        uses: gitleaks/gitleaks-action@dcedce43c6f43de0b836d1fe38946645c9c638dc # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
