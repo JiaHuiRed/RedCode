@@ -27,8 +27,9 @@ jobs:
       fail-fast: false
       matrix:
         settings:
-          - name: linux
-            host: ubuntu-latest
+          # 260728 Karina 本 fork 只面向 Windows 10/11，Linux 半边砍掉（原来是
+          # linux + windows 双跑）。上游 opencode 是跨平台项目，这个 matrix 是从
+          # 那儿继承的，对本仓来说一半的 job 是纯噪音。
           - name: windows
             host: windows-latest
     runs-on: ${{ matrix.settings.host }}
@@ -99,8 +100,7 @@ jobs:
       fail-fast: false
       matrix:
         settings:
-          - name: linux
-            host: ubuntu-latest
+          # 260728 Karina 同上，e2e 也只跑 Windows
           - name: windows
             host: windows-latest
     runs-on: ${{ matrix.settings.host }}

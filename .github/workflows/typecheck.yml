@@ -9,7 +9,9 @@ on:
 
 jobs:
   typecheck:
-    runs-on: ubuntu-latest
+    # 260728 Karina 本 fork 只面向 Windows 10/11，CI 一律在 Windows 上跑，
+    # 免得平台差异（路径、大小写、行尾）在本地和 CI 之间对不上账
+    runs-on: windows-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
