@@ -107,6 +107,8 @@ export type Row = Match["data"]
 export interface SearchResult {
   items: Item[]
   partial: boolean
+  /** 命中数触到 maxMatches，后面的匹配没有收集 */
+  capped: boolean
 }
 
 export interface FilesInput {
@@ -122,7 +124,10 @@ export interface SearchInput {
   cwd: string
   pattern: string
   glob?: string[]
+  /** 传给 rg 的 --max-count，注意这是"每个文件"的上限，不封顶总量 */
   limit?: number
+  /** 总命中数上限（跨文件）。超出后不再解析、不再驻留，但仍会把 stdout 读完 */
+  maxMatches?: number
   follow?: boolean
   file?: string[]
   signal?: AbortSignal
@@ -385,14 +390,31 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | ChildPro
           Effect.gen(function* () {
             const handle = yield* spawner.spawn(yield* command(input.cwd, searchArgs(input)))
 
+            // 260728 Karina 总量封顶。此前这里无条件 runCollect 全部命中：一个宽 pattern
+            // 在大仓能把上百万个解析后的 match 对象（每条带最长 2000 字符的整行）堆进内存，
+            // 而调用方转头就截断到 100 条。
+            // 注意不能用 Stream.take 提前终止：下面还在等 handle.exitCode，一旦不再读 stdout，
+            // rg 会阻塞在写满的管道上永远不退出。所以照读不误，只是超过上限后不解析、不驻留。
+            const cap = input.maxMatches ?? Number.POSITIVE_INFINITY
+            let matched = 0
+            let capped = false
+
             const [items, stderr, code] = yield* Effect.all(
               [
                 Stream.decodeText(handle.stdout).pipe(
                   Stream.splitLines,
                   Stream.filter((line) => line.length > 0),
+                  // 已经确认超限就别再花 JSON.parse 的钱了
+                  Stream.filter(() => !capped),
                   Stream.mapEffect(parse),
                   Stream.filter((item): item is Match => item.type === "match"),
                   Stream.map((item) => row(item.data)),
+                  Stream.filter(() => {
+                    matched += 1
+                    if (matched <= cap) return true
+                    capped = true
+                    return false
+                  }),
                   Stream.runCollect,
                   Effect.map((chunk) => [...chunk]),
                 ),
@@ -409,6 +431,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | ChildPro
             return {
               items: code === 1 ? [] : items,
               partial: code === 2,
+              capped,
             }
           }),
         )

@@ -10,6 +10,10 @@ import * as Tool from "./tool"
 import { Reference } from "@/reference/reference"
 
 const MAX_LINE_LENGTH = 2000
+// 260728 Karina 只展示 100 条，却曾把全部命中收进内存再排序。宽 pattern 在大仓能堆出
+// 上百万条（每条带整行文本），加上后面要给每个命中文件 stat 一次拿 mtime 排序，
+// stat 次数同样无上限。5000 给 mtime 排序留足候选池，又把内存和 stat 都封住。
+const MAX_MATCHES = 5000
 
 export const Parameters = Schema.Struct({
   pattern: Schema.String.annotate({ description: "The regex pattern to search for in file contents" }),
@@ -35,7 +39,7 @@ export const GrepTool = Tool.define(
         Effect.gen(function* () {
           const empty = {
             title: params.pattern,
-            metadata: { matches: 0, truncated: false },
+            metadata: { matches: 0, truncated: false, capped: false },
             output: "No files found",
           }
           if (!params.pattern) {
@@ -74,6 +78,7 @@ export const GrepTool = Tool.define(
             pattern: params.pattern,
             glob: params.include ? [params.include] : undefined,
             file,
+            maxMatches: MAX_MATCHES,
             signal: ctx.abort,
           })
           if (result.items.length === 0) return empty
@@ -116,7 +121,8 @@ export const GrepTool = Tool.define(
           if (final.length === 0) return empty
 
           const total = matches.length
-          const output = [`Found ${total} matches${truncated ? ` (showing first ${limit})` : ""}`]
+          const found = result.capped ? `${total}+` : `${total}`
+          const output = [`Found ${found} matches${truncated ? ` (showing first ${limit})` : ""}`]
 
           let current = ""
           for (const match of final) {
@@ -137,6 +143,13 @@ export const GrepTool = Tool.define(
             )
           }
 
+          if (result.capped) {
+            output.push("")
+            output.push(
+              `(Match collection stopped at ${MAX_MATCHES}; there are more. Ranking by modification time only considered those. Use a more specific path or pattern.)`,
+            )
+          }
+
           if (result.partial) {
             output.push("")
             output.push("(Some paths were inaccessible and skipped)")
@@ -147,6 +160,7 @@ export const GrepTool = Tool.define(
             metadata: {
               matches: total,
               truncated,
+              capped: result.capped,
             },
             output: output.join("\n"),
           }

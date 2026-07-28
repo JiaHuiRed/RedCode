@@ -109,6 +109,34 @@ describe("file.ripgrep", () => {
     }),
   )
 
+  // 260728 Karina maxMatches 封顶：此前 search 无条件把全部命中收进内存，调用方转头截断到 100 条。
+  // 注意实现上不能用 Stream.take 提前终止 —— 那样 rg 会阻塞在写满的管道上不退出，exitCode 永不返回，
+  // 所以这里也顺带确认 capped 的情况下整个调用仍能正常返回。
+  it.live("search caps collected matches at maxMatches", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdir((dir) => write(path.join(dir, "many.ts"), "const needle = 1\n".repeat(200)))
+
+      const capped = yield* Ripgrep.use.search({ cwd: dir, pattern: "needle", maxMatches: 10 })
+      expect(capped.items).toHaveLength(10)
+      expect(capped.capped).toBe(true)
+      expect(capped.partial).toBe(false)
+
+      const full = yield* Ripgrep.use.search({ cwd: dir, pattern: "needle" })
+      expect(full.items).toHaveLength(200)
+      expect(full.capped).toBe(false)
+    }),
+  )
+
+  it.live("search does not flag capped when matches fit exactly", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdir((dir) => write(path.join(dir, "few.ts"), "const needle = 1\n".repeat(5)))
+
+      const result = yield* Ripgrep.use.search({ cwd: dir, pattern: "needle", maxMatches: 5 })
+      expect(result.items).toHaveLength(5)
+      expect(result.capped).toBe(false)
+    }),
+  )
+
   it.live("search returns matched rows with glob filter", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdir((dir) =>
