@@ -227,7 +227,7 @@ MCP（Model Context Protocol）让 AI 获得外部能力。安装越多 MCP，AI
 | 服务器 | 用途 | 首次使用前 |
 |--------|------|-----------|
 | **TypeGraph** | TypeScript 语义导航：类型跳转、barrel 穿透、循环依赖检测 | — |
-| **jCodeMunch** | 结构化代码检索：60+ 工具（符号查找、死代码、AST 匹配、编辑安全预检）| `jcodemunch-mcp index`（推荐，启用 AI 摘要）|
+| **jCodeMunch** | 结构化代码检索：60+ 工具（符号查找、死代码、AST 匹配、编辑安全预检）| `jcodemunch-mcp index`（本仓配置里 `JCODEMUNCH_USE_AI_SUMMARIES` 为 `false`，索引更快；需要 AI 摘要再自行打开）|
 
 ### 4.2 文件与文档
 
@@ -243,7 +243,7 @@ MCP（Model Context Protocol）让 AI 获得外部能力。安装越多 MCP，AI
 |--------|------|-----------|
 | **Web Search** | 网页搜索：DuckDuckGo + Yahoo 兜底，内置服务，零 API Key | — |
 | ~~Browser MCP~~ | 浏览器自动化（默认关闭，稳定性不足，需要时手动 `enabled: true`）| 装并连接浏览器扩展 |
-| **Vision MCP** | 多模态视觉分析：让不支持图片的模型也能看截图 | 安装 Ollama + 拉取本地视觉模型（如 minicpm-v4.5，通过 `VISION_MODEL` 环境变量指定）|
+| **Vision MCP** | 多模态视觉分析：让不支持图片的模型也能看截图 | 安装 Ollama + 拉取本地视觉模型（本仓配置为 `minicpm-v4.6:f16`，通过 `VISION_MODEL` 环境变量指定）|
 
 ### 4.4 记忆与进程
 
@@ -355,6 +355,7 @@ RedCode 内置自动化记忆系统（skill `memory-automation`），在启动/�
 |------|--------|------|
 | `~/.redcode/redcode.jsonc` | **全局** — 所有项目 | 通用 provider、MCP、权限规则 |
 | 项目根 `redcode.jsonc` | **项目级** | 覆盖或补充全局配置 |
+| 项目内 `.redcode/redcode.jsonc` | **项目级** | 同上；会从当前目录逐级向上查找到 worktree 根，适合放在子目录里做局部覆盖 |
 | `~/.redcode/MEMORY.md` | 长期记忆 | AI 自动读写 |
 | `~/.redcode/USER.md` | 用户画像 | AI 启动时自动读取 |
 | `~/.redcode/souls/*.md` | 灵魂文件 | 通过 `/tui-persona` 等命令触发 |
@@ -451,11 +452,19 @@ Skill 是扩展 AI 行为的机制——本质上是注入给 AI 的指令文件
 | **red-scribe** | 按 Red 的写作风格输出 | "按我的风格写""red风格" |
 | **yuqi-slop** | 中文去 AI 味 | "去AI味""褪AI味" |
 | **stop-slop** | 英文去 AI 味 | "英文去AI味" |
-| **new-project** | 新项目脚手架 | "新项目""搭个项目" |
-| **species-design** | RedMon 精灵设计 | "设计精灵""新精灵" |
-| **ai-daily** | AI 热点日报 | "日报""今天ai新闻" |
-| **game-daily** | 游戏热点日报 | "游戏日报""游戏新闻" |
-| **bump-version** | 一键升版 | "升版""bump""放版" |
+
+以上 12 个随仓库分发（`.opencode/skill/`），克隆即有，首次启动会播种到 `~/.redcode/skill/`。
+
+下面这些只存在于维护者本机的 `~/.redcode/skill/`，**不在仓库里**，克隆的人不会有——列在这里是说明个人库可以怎么扩展：
+
+| Skill | 作用 | 触发词 |
+|-------|------|--------|
+| new-project | 新项目脚手架 | "新项目""搭个项目" |
+| species-design | RedMon 精灵设计 | "设计精灵""新精灵" |
+| ai-daily | AI 热点日报 | "日报""今天ai新闻" |
+| game-daily | 游戏热点日报 | "游戏日报""游戏新闻" |
+| bump-version | 一键升版 | "升版""bump""放版" |
+| tdd-flow | TDD 流程 | "tdd""先写测试" |
 
 ### 9.2 添加自定义 Skill
 
