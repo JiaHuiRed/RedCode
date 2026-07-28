@@ -3,6 +3,7 @@ import { Cause, Effect, Exit } from "effect"
 import path from "path"
 import fs from "fs/promises"
 import { Filesystem } from "@/util/filesystem"
+import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { File } from "../../src/file"
 import { InstanceState } from "../../src/effect/instance-state"
 import { containsPath } from "../../src/project/instance-context"
@@ -50,6 +51,29 @@ describe("Filesystem.contains", () => {
       expect(Filesystem.contains("/project", "/projectfile")).toBe(false)
     }),
   )
+
+  // 260728 Karina 跨盘回归。Windows 上 path.relative 在两侧不同盘时返回的是目标的
+  // 绝对路径（"C:\Windows\win.ini"），而绝对路径不以 ".." 开头 —— 修复前
+  // contains("E:\project", "C:\Windows\win.ini") 判 true，也就是项目只要不在系统盘，
+  // 另一个盘上的任何文件都算"项目内"，external_directory 授权永远不会问。
+  // 两份实现（core 的 AppFileSystem 和 opencode 的 Filesystem）都要钉住。
+  if (process.platform === "win32") {
+    it.effect("blocks paths on a different drive", () =>
+      Effect.sync(() => {
+        for (const contains of [Filesystem.contains, AppFileSystem.contains]) {
+          expect(contains("E:\\project", "C:\\Windows\\win.ini")).toBe(false)
+          expect(contains("E:\\project", "C:\\Users\\Administrator\\.ssh\\id_rsa")).toBe(false)
+          expect(contains("C:\\project", "E:\\project\\src\\file.ts")).toBe(false)
+          // 同盘仍然照常判定，盘符大小写不敏感
+          expect(contains("c:\\project", "C:\\project\\src")).toBe(true)
+        }
+        for (const overlaps of [Filesystem.overlaps, AppFileSystem.overlaps]) {
+          expect(overlaps("E:\\project", "C:\\Users\\Administrator")).toBe(false)
+          expect(overlaps("C:\\project", "C:\\project\\src")).toBe(true)
+        }
+      }),
+    )
+  }
 })
 
 /*

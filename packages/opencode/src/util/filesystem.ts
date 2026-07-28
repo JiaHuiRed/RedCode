@@ -1,7 +1,7 @@
 ﻿import { chmod, mkdir, readFile, stat as statFile, writeFile } from "fs/promises"
 import { createWriteStream, existsSync, statSync } from "fs"
 import { realpathSync } from "fs"
-import { dirname, isAbsolute, join, relative, resolve as pathResolve, win32 } from "path"
+import { dirname, isAbsolute, join, parse, relative, resolve as pathResolve, win32 } from "path"
 import { Readable } from "stream"
 import { pipeline } from "stream/promises"
 import { Glob } from "@redcode-ai/core/util/glob"
@@ -162,14 +162,26 @@ export function windowsPath(p: string): string {
       .replace(/^\/mnt\/([a-zA-Z])(?:\/|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
   )
 }
+// 260728 Karina 见 packages/core/src/filesystem.ts 同名函数的注释：Windows 上跨盘时
+// path.relative 返回绝对路径，不以 ".." 开头，导致另一个盘的任何路径都判成"在项目内"。
+function sameRoot(a: string, b: string) {
+  return parse(a).root.toLowerCase() === parse(b).root.toLowerCase()
+}
+
 export function overlaps(a: string, b: string) {
-  const relA = relative(a, b)
-  const relB = relative(b, a)
+  const from = pathResolve(a)
+  const to = pathResolve(b)
+  if (!sameRoot(from, to)) return false
+  const relA = relative(from, to)
+  const relB = relative(to, from)
   return !relA || !relA.startsWith("..") || !relB || !relB.startsWith("..")
 }
 
 export function contains(parent: string, child: string) {
-  return !relative(parent, child).startsWith("..")
+  const from = pathResolve(parent)
+  const to = pathResolve(child)
+  if (!sameRoot(from, to)) return false
+  return !relative(from, to).startsWith("..")
 }
 
 export async function findUp(

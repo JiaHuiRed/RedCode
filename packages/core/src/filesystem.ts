@@ -1,5 +1,5 @@
 ﻿import { NodeFileSystem } from "@effect/platform-node"
-import { dirname, join, relative, resolve as pathResolve } from "path"
+import { dirname, join, parse, relative, resolve as pathResolve } from "path"
 import { realpathSync } from "fs"
 import * as NFS from "fs/promises"
 import { lookup } from "mime-types"
@@ -235,13 +235,30 @@ export namespace AppFileSystem {
       .replace(/^\/mnt\/([a-zA-Z])(?:\/|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
   }
 
+  // 260728 Karina Windows 上 path.relative 在两侧不在同一个盘（或不同 UNC 共享）时，
+  // 返回的是目标的绝对路径而不是 ".." 串 —— 而绝对路径不以 ".." 开头。于是
+  //   relative("E:\AI\RedCode", "C:\Windows\win.ini") === "C:\Windows\win.ini"
+  //   contains(...) === true
+  // 项目只要不在系统盘，另一个盘上的任何路径都被判成"在项目内"，
+  // external_directory 授权就永远不会问 —— 这是实打实的授权绕过，不只是测试挂。
+  // 所以先比根（盘符 / UNC 共享），不同直接判否，再走原来的 relative 逻辑。
+  function sameRoot(a: string, b: string) {
+    return parse(a).root.toLowerCase() === parse(b).root.toLowerCase()
+  }
+
   export function overlaps(a: string, b: string) {
-    const relA = relative(a, b)
-    const relB = relative(b, a)
+    const from = pathResolve(a)
+    const to = pathResolve(b)
+    if (!sameRoot(from, to)) return false
+    const relA = relative(from, to)
+    const relB = relative(to, from)
     return !relA || !relA.startsWith("..") || !relB || !relB.startsWith("..")
   }
 
   export function contains(parent: string, child: string) {
-    return !relative(parent, child).startsWith("..")
+    const from = pathResolve(parent)
+    const to = pathResolve(child)
+    if (!sameRoot(from, to)) return false
+    return !relative(from, to).startsWith("..")
   }
 }
