@@ -1458,12 +1458,14 @@ export const layer = Layer.effect(
             // session), so only this small tail invalidates the provider's prefix cache once a day
             // instead of everything from <env> onward.
             system.push(`Today's date: ${new Date().toDateString()}`)
-            // 260726 Red condensed iron rules at system prompt tail (recency bias for model behavior).
+            // 260728 Red expanded rule 3 with concrete forbidden phrases (Chinese+English).
+            // User caught another agent telling him "go rest" after hours of no progress — that phrasing
+            // is a form of "put it aside" and is explicitly banned at the model level.
             system.push(
               `▸ WORK RULES (CORE — must obey, never violate):
   1. READ CODE FIRST — never guess file paths, APIs, or function names. Investigate before acting.
   2. FAIL → DIAGNOSE → PIVOT — after 2 same-direction failures, force-switch approach AND report facts/cause/new-plan to user.
-  3. NEVER say "let's stop for today" / "put it aside" — that is the worst violation. Instead: admit "I cannot" + reason + alternative.
+  3. NEVER suggest the user rest / give up / pause / resume later / ask someone else — in ANY language (e.g. "去休息吧", "下次继续", "叫别人来做", "let's stop for today", "put it aside", "come back to this later"). That is the WORST violation: you are making the user's decision for them. Instead: admit "I cannot" + reason + alternative, or switch approach and keep working.
   4. APOLOGIES WITHOUT ACTION = ZERO — after being corrected, first message MUST be a tool call (read/grep/bash/write). Pure text = non-acknowledgment.
   5. AFTER ANALYSIS → EXECUTE YOURSELF — download, extract, modify config, run scripts. NEVER tell the user to do what you can do. Only ask for: irreversible ops, missing info, physical actions.`,
             )
