@@ -19,7 +19,7 @@ test("example", async () => {
 ### Options
 
 - `git?: boolean` - Initialize a git repo with a root commit
-- `config?: Partial<Config.Info>` - Write an `opencode.json` config file
+- `config?: Partial<Config.Info>` - Write a `redcode.json` config file
 - `init?: (dir: string) => Promise<T>` - Custom setup function, returns value accessible as `tmp.extra`
 - `dispose?: (dir: string) => Promise<T>` - Custom cleanup function
 
@@ -76,7 +76,7 @@ await using tmp = await tmpdir({
 
 ### Notes
 
-- Directories are created in the system temp folder with prefix `opencode-test-`
+- Directories are created in the system temp folder with prefix `redcode-test-`
 - Use `await using` for automatic cleanup when the variable goes out of scope
 - Paths are sanitized to strip null bytes (defensive fix for CI environments)
 
@@ -128,7 +128,7 @@ import { TestInstance } from "../fixture/fixture"
 it.instance("uses the temp directory", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
-    expect(test.directory).toContain("opencode-test-")
+    expect(test.directory).toContain("redcode-test-")
   }),
 )
 ```
@@ -162,7 +162,7 @@ This is much shorter than stubbing every method with `Effect.void` / `Effect.suc
 
 ### The Anti-Pattern
 
-Using `Effect.sleep(N)` or `setTimeout` as a "wait for the forked fiber to be ready" hack races the scheduler. The forked fiber may not have reached the synchronization point within `N` ms on a slow CI host, and the test fails intermittently. See PR #27622 for a concrete flake that fell out of this exact pattern.
+Using `Effect.sleep(N)` or `setTimeout` as a "wait for the forked fiber to be ready" hack races the scheduler. The forked fiber may not have reached the synchronization point within `N` ms on a slow CI host, and the test fails intermittently.
 
 ### The Fix
 

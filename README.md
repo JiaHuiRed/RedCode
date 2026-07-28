@@ -22,7 +22,7 @@
 AI 编程助手。两个入口、同一引擎：
 
 - **TUI** — 终端命令行界面（`packages/opencode`）
-- **GUI** — 桌面窗口程序，Electron 或 Tauri（`packages/desktop`）
+- **GUI** — 桌面窗口程序，Electron（`packages/desktop`；Tauri 迁移进行中，尚未可构建）
 
 读代码、写代码、改 bug、跑命令。你说中文，它干活。
 

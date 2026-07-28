@@ -80,35 +80,49 @@ RedCode 支持多种模型。首次启动后，你需要至少配置一个 provi
 {
   "provider": {
     "deepseek": {
-      "type": "openai",
-      "apiKey": "sk-xxxxxxxx",
-      "baseURL": "https://api.deepseek.com/v1"
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "apiKey": "sk-xxxxxxxx",
+        "baseURL": "https://api.deepseek.com/v1"
+      }
     }
   },
   "model": "deepseek/deepseek-chat"
 }
 ```
 
-支持的 provider type：`openai`（兼容 OpenAI 格式）、`anthropic`、`google`、`ollama` 等。
+**注意两点**（写错了不会报错，只会静默失效）：
 
-参考配置示例：
+- **没有 `type` 字段**。决定用哪个协议适配器的是 `npm`。
+- **`apiKey` / `baseURL` 必须嵌在 `options` 里**，不能放在 provider 顶层。多余的键会被静默丢弃，结果是一个没有凭据的 provider，且不产生任何报错。
+
+provider 顶层可用的键只有：`npm`、`options`、`models`、`name`、`api`、`env`、`id`、`whitelist`、`blacklist`（定义见 `packages/opencode/src/config/provider.ts`）。
+
+常用的 `npm` 适配器：
+
+| 适配器 | 适用 |
+|---|---|
+| `@ai-sdk/openai-compatible` | 绝大多数第三方/自建服务（DeepSeek、GLM、MiniMax、各类中转、Ollama 的 `/v1`） |
+| `@ai-sdk/anthropic` | Anthropic 官方 API |
+| `@ai-sdk/google` | Google Gemini 官方 API |
+
+参考配置示例（本地 Ollama，省略 `npm` 时默认按 OpenAI 兼容处理）：
 
 ```jsonc
 {
   "provider": {
-    "my-openai": {
-      "type": "openai",
-      "apiKey": "sk-xxx"
-    },
-    "my-ollama": {
-      "type": "openai",
-      "apiKey": "ollama",
-      "baseURL": "http://localhost:11434/v1"
+    "ollama": {
+      "options": { "baseURL": "http://localhost:11434/v1" },
+      "models": {
+        "qwen3.5:9b-q8_0": { "name": "Qwen3.5 9B" }
+      }
     }
   },
-  "model": "my-openai/gpt-4o"
+  "model": "ollama/qwen3.5:9b-q8_0"
 }
 ```
+
+> 仓库里的 `.opencode/redcode.home.jsonc` 是一份可直接参照的真实配置模板。
 
 ### 2.2 创建用户画像
 
@@ -154,15 +168,17 @@ $EDITOR ~/.redcode/souls/Gsoul.md   # GUI 桌面人格
 
 ## 3. 配置模型
 
-### 3.1 Provider 类型
+### 3.1 选哪个适配器（`npm`）
 
-| type | API 格式 | 适用 |
+配置里没有 "provider 类型" 这个概念——决定走哪套协议的是 `npm` 字段，填的是 AI SDK 适配器包名。
+
+| `npm` | API 格式 | 适用 |
 |------|---------|------|
-| `openai` | OpenAI 兼容 | DeepSeek、Moonshot、Ollama、Groq、Step、Codex 等 |
-| `anthropic` | Anthropic 原生 | Claude |
-| `google` | Gemini 原生 | Google Gemini |
-| `glm` | GLM 原生 | Zhipu GLM |
-| `minimax` | MiniMax 原生 | MiniMax
+| `@ai-sdk/openai-compatible` | OpenAI 兼容 | DeepSeek、Moonshot、Ollama、Groq、Step、GLM、MiniMax、各类中转 |
+| `@ai-sdk/anthropic` | Anthropic 原生 | Claude 官方 API |
+| `@ai-sdk/google` | Gemini 原生 | Google Gemini 官方 API |
+
+绝大多数国内服务和自建服务都提供 OpenAI 兼容端点，用第一行即可——GLM、MiniMax 也在此列，它们不需要专门的适配器。省略 `npm` 时按 OpenAI 兼容处理。
 
 ### 3.2 切换模型
 

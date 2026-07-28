@@ -14,9 +14,11 @@
 ## Development server
 
 - Running `bun dev` from `packages/opencode` starts the live interactive TUI. Do not run it as a blocking foreground command when you need to inspect the result.
-- Start it in `tmux` instead: `tmux new-session -d -s opencode-dev 'bun dev'`.
-- Capture the current TUI output with: `tmux capture-pane -pt opencode-dev`.
-- Stop the session explicitly when done: `tmux kill-session -t opencode-dev`.
+- This is a Windows-only fork — there is no `tmux`. Use the `mcp-process-mgmt` MCP server instead
+  (`start_process` / `read_process_output` / `stop_process`), which exists precisely for interactive
+  and long-running shell sessions.
+- If you must drive the TUI programmatically (keystrokes, selector navigation), the harness has to run
+  under `node`, not `bun` — `pty.write()` throws under Bun.
 
 # Module shape
 

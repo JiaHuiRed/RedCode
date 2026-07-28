@@ -8,7 +8,8 @@ This package vendors a Drizzle Effect SQLite adapter for this repo.
 - Concrete SQLite clients such as `@effect/sql-sqlite-bun` belong in tests or examples unless this package intentionally adds a driver-specific helper.
 - Preserve Drizzle adapter naming and behavior where possible so this can be replaced by upstream `drizzle-orm/effect-sqlite` later.
 - If touching copied Drizzle internals, compare with current `drizzle-orm@1.0.0-rc.2` declarations and runtime JS.
-- If touching Effect APIs, verify against `/Users/kit/code/open-source/effect-smol`.
+- If touching Effect APIs, verify against the installed `effect@4.0.0-beta.66` under `node_modules/.bun/`
+  (the pinned catalog version), not against upstream docs — this is a beta line and the API moves.
 
 Useful entry points:
 
