@@ -85,7 +85,9 @@ Use this skill.
         expect(requests[0].always).toContain("tool-skill")
         expect(result.metadata.dir).toBe(skill)
         expect(result.output).toContain(`<skill_content name="tool-skill">`)
-        expect(result.output).toContain(`Base directory for this skill: ${pathToFileURL(skill).href}`)
+        // 260728 Karina 12994ea（260624）有意撤掉了上游的 pathToFileURL：file:// URL 在
+        // Windows 上模型容易搞混，改成直接给文件系统路径。测试一直没跟着改。
+        expect(result.output).toContain(`Base directory for this skill: ${skill}`)
         expect(result.output).toContain(`<file>${file}</file>`)
       }),
     ),

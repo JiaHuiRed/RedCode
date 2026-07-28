@@ -137,7 +137,11 @@ describe("tool.apply_patch freeform", () => {
           expect(result.output).not.toContain("\\")
         }
         expect(result.metadata.diff).toContain("Index:")
-        expect(calls.length).toBe(1)
+        // 260728 Karina 9dfcde5（260603）起，每个被删除的文件会再单独要一次 "delete" 授权
+        // （apply_patch.ts:217-229）。这个 patch 删了一个文件，所以是 2 次：先整体的
+        // apply_patch，再逐个删除确认。测试一直停在 1。
+        expect(calls.length).toBe(2)
+        expect(calls.map((call) => call.permission)).toEqual(["edit", "delete"])
 
         // Verify permission metadata includes files array for UI rendering
         const permissionCall = calls[0]
