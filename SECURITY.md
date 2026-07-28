@@ -1,10 +1,8 @@
 # Security
 
-## IMPORTANT
-
-We do not accept AI generated security reports. We receive a large number of
-these and we absolutely do not have the resources to review them all. If you
-submit one that will be an automatic ban from the project.
+RedCode is a single-maintainer personal fork of [opencode](https://github.com/anomalyco/opencode),
+developed and tested only on Windows 10/11. What follows describes how the tool actually behaves —
+it is not a support commitment.
 
 ## Threat Model
 
@@ -39,4 +37,8 @@ If you need true isolation, run RedCode inside a Docker container or VM - see [c
 
 ### Reporting a Vulnerability
 
-If you find a security vulnerability in RedCode, please report it by creating a GitHub issue with the label `security` or reaching out to the maintainers directly.
+Open a GitHub issue at [JiaHuiRed/RedCode](https://github.com/JiaHuiRed/RedCode/issues). There is one
+maintainer and no triage automation, so response time varies.
+
+If the issue affects **upstream opencode** rather than this fork specifically, report it there instead —
+that is where it can actually be fixed for everyone.

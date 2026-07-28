@@ -48,7 +48,8 @@ cd packages/desktop && bun run dev
 
 ```bash
 # TUI 单文件 exe（可在无 Bun 环境的机器运行）
-cd packages/opencode && bun run build -- --single
+# 产物本来就是 Windows 单目标，无需额外开关
+cd packages/opencode && bun run build
 
 # 桌面 GUI
 cd packages/desktop && bun run build && bun run package

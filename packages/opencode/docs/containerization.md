@@ -18,7 +18,7 @@ the binary first:
 
 ```bash
 cd packages/opencode
-bun run build -- --single   # produces dist/opencode-<platform>/bin/opencode
+bun run build   # produces dist/redcode-windows-x64/bin/redcode.exe
 docker build -f Dockerfile -t redcode-sandbox ..
 ```
 
