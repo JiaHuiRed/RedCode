@@ -31,6 +31,7 @@ import * as DateTime from "effect/DateTime"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Usage, type LLMEvent } from "@redcode-ai/llm"
 import { NgramDetector, RECOVERY_PROMPTS } from "./text-loop-detection"
+import * as XmlToolCall from "./xml-tool-call"
 
 const DOOM_LOOP_THRESHOLD = 3
 const log = Log.create({ service: "session.processor" })
@@ -54,6 +55,8 @@ export interface Handle {
   ) => Effect.Effect<void>
   // 260709 Red fix: Snippet.Service 在 construction 时获取（line 107），process 不再泄漏到 R channel
   readonly process: (streamInput: LLM.StreamInput) => Effect.Effect<Result>
+  // 260728 Red 上一次 process() 从正文/思考链里打捞出的文本态工具调用（见 xml-tool-call.ts）
+  readonly salvagedToolCalls: readonly XmlToolCall.ParsedCall[]
 }
 
 type Input = {
@@ -85,6 +88,9 @@ interface ProcessorContext extends Input {
   // 260710 Red n-gram 文本重复检测（单 step 内）
   ngramDetector: NgramDetector
   ngramTripped: boolean
+  // 260728 Red 文本态工具调用打捞：本 step 注册的工具名（防误判）+ 打捞结果
+  toolNames: ReadonlySet<string>
+  salvaged: XmlToolCall.ParsedCall[]
 }
 
 type StreamEvent = LLMEvent
@@ -130,6 +136,9 @@ export const layer = Layer.effect(
         // 260710 Red n-gram 文本重复检测
         ngramDetector: new NgramDetector(),
         ngramTripped: false,
+        // 260728 Red 文本态工具调用打捞
+        toolNames: new Set<string>(),
+        salvaged: [],
       }
       let aborted = false
       const slog = log.clone().tag("session.id", input.sessionID).tag("messageID", input.assistantMessage.id)
@@ -222,8 +231,27 @@ export const layer = Layer.effect(
         return true
       })
 
+      // 260728 Red 文本态工具调用打捞：认出 XML、从可见文本里摘掉、记到 ctx 上。
+      // 只在 part 收尾时跑一次（不在 delta 上跑）——标签可能跨 delta 边界，半截的认不出来。
+      // 返回 true 表示有命中，调用方据此决定是否要改写 part。
+      const salvageToolCalls = (part: { text: string }, source: "text" | "reasoning") => {
+        const result = XmlToolCall.detect(part.text, ctx.toolNames)
+        if (result.calls.length === 0) return false
+        ctx.salvaged.push(...result.calls)
+        part.text = result.stripped
+        slog.warn("toolcall.text_form", {
+          sessionID: ctx.sessionID,
+          source,
+          model: ctx.model.id,
+          tools: result.calls.map((call) => call.name),
+        })
+        return true
+      }
+
       const finishReasoning = Effect.fn("SessionProcessor.finishReasoning")(function* (reasoningID: string) {
         if (!(reasoningID in ctx.reasoningMap)) return
+        // 260728 Red 泄漏落 reasoning 通道的情况占实测 6/14，这里也要摘
+        salvageToolCalls(ctx.reasoningMap[reasoningID], "reasoning")
         // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
         if (flags.experimentalEventSystem) {
           yield* events.publish(SessionEvent.Reasoning.Ended, {
@@ -724,6 +752,9 @@ export const layer = Layer.effect(
 
           case "text-end":
             if (!ctx.currentText) return
+            // 260728 Red 先摘掉文本态工具调用，再交给 plugin / canary / 落库，
+            // 三者看到的都应该是干净正文
+            salvageToolCalls(ctx.currentText, "text")
             // oxlint-disable-next-line no-self-assign -- reactivity trigger
             ctx.currentText.text = ctx.currentText.text
             ctx.currentText.text = (yield* plugin.trigger(
@@ -864,6 +895,10 @@ export const layer = Layer.effect(
         slog.info("process")
         ctx.needsCompaction = false
         ctx.shouldBreak = (yield* config.get()).experimental?.continue_loop_on_deny !== true
+        // 260728 Red 打捞只认本 step 真实注册的工具名，避免把讨论/日志里出现的
+        // <tool_call> 字样当成真调用摘掉
+        ctx.toolNames = new Set(Object.keys(streamInput.tools ?? {}))
+        ctx.salvaged = []
 
         // 260625 Red 基线快照：进入本 step 前已存在的 part。重试时据此删掉失败那次新建的所有 part。
         // 一次 process() = 一个 step = 一条流（见 prompt.ts），断流必发生在 step-finish 之前，
@@ -885,6 +920,8 @@ export const layer = Layer.effect(
             ctx.currentText = undefined
             ctx.reasoningMap = {}
             ctx.toolcalls = {}
+            // 260728 Red 重试会从头重跑，上一次打捞的结果一并作废
+            ctx.salvaged = []
             yield* status.set(ctx.sessionID, { type: "busy" })
             const stream = llm.stream(streamInput)
 
@@ -950,6 +987,9 @@ export const layer = Layer.effect(
       return {
         get message() {
           return ctx.assistantMessage
+        },
+        get salvagedToolCalls() {
+          return ctx.salvaged
         },
         updateToolCall,
         completeToolCall,

@@ -69,9 +69,15 @@ import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@redcode-ai/llm"
 import { LoopRecoveryTracker, RECOVERY_PROMPTS } from "./text-loop-detection"
+import * as XmlToolCall from "./xml-tool-call"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
+
+// 260728 Red 一轮对话里最多为「工具调用写成了 XML 文本」纠正几次（见 session/xml-tool-call.ts）。
+// 实测这是 step-3.7-flash 的偶发抽风，一次纠正基本就回到原生通道；给 2 次是容错，
+// 再多就是陪模型烧 token 打转了。
+const MAX_SALVAGE_RECOVERIES = 2
 
 // 260616 Red 会话标题来源前缀：从 soul 第一行 "# 名字 · ..." 提取人格名（不写死，
 // 通用 RedCode 无此 soul / 非标准格式则 fallback TUI/GUI），让会话列表一眼区分
@@ -1148,6 +1154,13 @@ export const layer = Layer.effect(
         // 260710 Red 跨 step 文本重复检测（loop recovery）
         const loopTracker = new LoopRecoveryTracker()
         let loopRecoveryPrompt: string | undefined
+        // 260728 Red step-3.7-flash 偶发通道退化的两条兜底（见 xml-tool-call.ts）：
+        // forceContinue —— 打捞到文本态工具调用后，强制多跑一轮让模型用原生通道重发；
+        // reasoningOnlyRetried —— 整轮只有思考没有正文时纠正一次，只纠正一次防死循环。
+        // 两者都必须封顶：模型可能一轮接一轮地重犯，无上限就是死循环。
+        let forceContinue = false
+        let reasoningOnlyRetried = false
+        let salvageRecoveries = 0
 
         while (true) {
           yield* status.set(sessionID, { type: "busy" })
@@ -1173,11 +1186,46 @@ export const layer = Layer.effect(
             lastAssistant?.finish &&
             !["tool-calls"].includes(lastAssistant.finish) &&
             !hasToolCalls &&
-            lastUser.id < lastAssistant.id
+            lastUser.id < lastAssistant.id &&
+            // 260728 Red 打捞到文本态工具调用时不走正常退出，强制再跑一轮（下面 A 处设置）
+            !forceContinue
           ) {
-            yield* slog.info("exiting loop")
-            break
+            // 260728 Red B：整轮只产出了思考，既无正文也无工具调用 —— 用户看到的是一片空白，
+            // 看起来跟被打断/卡死一模一样。实测 step-3.7-flash 约 0.6% 的轮次会这样
+            // （deepseek-v4-flash 0.15%、gpt-5.6-luna 0%）。
+            const reasoning = (lastAssistantMsg?.parts ?? []).filter(
+              (part): part is MessageV2.ReasoningPart => part.type === "reasoning" && part.text.trim().length > 0,
+            )
+            const hasVisibleText = (lastAssistantMsg?.parts ?? []).some(
+              (part) => part.type === "text" && part.text.trim().length > 0,
+            )
+            const reasoningOnly = !lastAssistant.summary && reasoning.length > 0 && !hasVisibleText
+
+            if (reasoningOnly && !reasoningOnlyRetried) {
+              // 先给模型一次机会把话说到正文通道里，比直接把思考链当答案端出去干净
+              reasoningOnlyRetried = true
+              loopRecoveryPrompt = XmlToolCall.REASONING_ONLY_PROMPT
+              yield* slog.warn("reasoning.only", { step, model: lastUser.model.modelID })
+            } else {
+              if (reasoningOnly) {
+                // 纠正过一次仍然只有思考 —— 别再烧 token 了，把思考内容提升成可见正文，
+                // 至少让用户看得到东西，而不是对着空白猜是不是卡死了
+                yield* slog.warn("reasoning.only.promoted", { step, model: lastUser.model.modelID })
+                const now = Date.now()
+                yield* sessions.updatePart({
+                  id: PartID.ascending(),
+                  messageID: lastAssistant.id,
+                  sessionID,
+                  type: "text",
+                  text: reasoning.map((part) => part.text).join("\n\n"),
+                  time: { start: now, end: now },
+                })
+              }
+              yield* slog.info("exiting loop")
+              break
+            }
           }
+          forceContinue = false
 
           step++
           if (step === 1)
@@ -1501,6 +1549,40 @@ export const layer = Layer.effect(
                   // nudge / replan: 在下一轮注入恢复提示
                   loopRecoveryPrompt = RECOVERY_PROMPTS[level]
                 }
+              }
+            }
+
+            // 260728 Red A：本轮把工具调用写成了 XML 文本（processor 已从可见正文里摘掉）。
+            // 那次调用根本没执行，就这么退出等于整轮白跑 —— 把解析结果回灌给模型，
+            // 强制续跑一轮让它用原生 tool-call 通道重发。
+            // 不在这里直接执行打捞出的调用：默认 ai-sdk 运行时里工具由 streamText 内部执行，
+            // 凭空合成 tool-call 事件会造出永不 settle 的 running part，还绕过 permission.ask。
+            if (handle.salvagedToolCalls.length > 0) {
+              const tools = handle.salvagedToolCalls.map((call) => call.name)
+              if (salvageRecoveries < MAX_SALVAGE_RECOVERIES) {
+                salvageRecoveries++
+                yield* slog.warn("toolcall.text_form.recover", {
+                  step,
+                  tools,
+                  attempt: salvageRecoveries,
+                  model: lastUser.model.modelID,
+                })
+                loopRecoveryPrompt = XmlToolCall.recoveryPrompt(handle.salvagedToolCalls)
+                forceContinue = true
+              } else {
+                // 纠正过 MAX_SALVAGE_RECOVERIES 次还在重犯，再续跑就是烧 token 陪它打转。
+                // 放它正常收尾——XML 已经被摘干净，用户至少不会对着一坨标签，
+                // 但必须留一句可见说明，否则看起来就是模型无缘无故什么都没做。
+                yield* slog.error("toolcall.text_form.exhausted", { step, tools, model: lastUser.model.modelID })
+                const now = Date.now()
+                yield* sessions.updatePart({
+                  id: PartID.ascending(),
+                  messageID: handle.message.id,
+                  sessionID,
+                  type: "text",
+                  text: `[RedCode] 模型连续 ${MAX_SALVAGE_RECOVERIES + 1} 次把工具调用写成了文本而不是真正发起调用（${tools.join("、")}），这些调用都没有执行。已停止自动重试，请重发一次或换个模型。`,
+                  time: { start: now, end: now },
+                })
               }
             }
 

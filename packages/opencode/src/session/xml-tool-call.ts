@@ -1,0 +1,132 @@
+// 260728 Red 文本态工具调用打捞（step-3.7-flash 偶发退化）
+//
+// 症状：模型该走原生 tool_calls 通道时，改成把 Qwen/Hermes 式 XML 当普通文本吐出来：
+//   <tool_call>
+//   <function=bash>
+//   <parameter=command>
+//   ls -la
+//   </parameter>
+//   </function>
+//   </tool_call>
+// 这种调用永远不会被执行，本轮直接白跑，用户只看到一坨标签。
+//
+// 实测（redcode.db 近 14 天）：14 次泄漏 100% 来自 step-3.7-flash，
+// deepseek-v4-flash(4608 条)/gpt-5.6-luna(902 条)/kimi-k3(103 条) 全为 0。
+// 落 reasoning part 还是 text part 纯看模型断在哪个通道（6/14 vs 8/14），
+// 所以「空回复」和「标签泄漏」是同一个根因的两个面。
+//
+// 本模块只负责“认出来 + 摘干净”，不负责执行 —— 默认 ai-sdk 运行时里工具是
+// streamText 内部执行的，processor 拿到的只是事件流。凭空合成 tool-call 事件
+// 会造出永远不会 settle 的 running part，还绕过 permission.ask。
+// 正确做法是把解析结果回灌给模型，让它用原生通道重发一次（见 prompt.ts）。
+
+export interface ParsedCall {
+  readonly name: string
+  readonly params: Record<string, string>
+}
+
+export interface DetectResult {
+  readonly calls: ParsedCall[]
+  /** 摘掉 XML 之后的正文；无命中时与入参同一个字符串 */
+  readonly stripped: string
+}
+
+const EMPTY: DetectResult["calls"] = []
+
+const FUNCTION_OPEN = /<function=([A-Za-z0-9_.-]{1,64})>/g
+const PARAMETER = /<parameter=([A-Za-z0-9_.-]{1,64})>([\s\S]*?)<\/parameter>/g
+
+/** 去掉紧贴标签的一对换行，其余空白（缩进、代码块内的空行）原样保留 */
+function trimValue(raw: string): string {
+  return raw.replace(/^\r?\n/, "").replace(/\r?\n$/, "")
+}
+
+/**
+ * 从一段文本里认出文本态工具调用。
+ *
+ * @param known 已注册的工具名集合。只有名字对得上的才算命中 —— 这是主要的误判防线：
+ *              讨论这个 bug 本身、或粘贴别处日志时，正文里同样会出现 <tool_call> 字样。
+ *              传 undefined 表示不做名字校验（仅供单测用）。
+ */
+export function detect(text: string, known?: ReadonlySet<string>): DetectResult {
+  // 快路径：绝大多数轮次不含这些标签，不要为此扫全文
+  if (!text.includes("<function=")) return { calls: EMPTY, stripped: text }
+
+  const calls: ParsedCall[] = []
+  const cuts: Array<[number, number]> = []
+
+  FUNCTION_OPEN.lastIndex = 0
+  for (let open = FUNCTION_OPEN.exec(text); open !== null; open = FUNCTION_OPEN.exec(text)) {
+    const name = open[1]
+    if (known && !known.has(name)) continue
+
+    // 函数体到 </function> 为止；模型被截断时可能根本没有闭合标签，此时吃到末尾
+    const bodyStart = open.index + open[0].length
+    const closeAt = text.indexOf("</function>", bodyStart)
+    const bodyEnd = closeAt === -1 ? text.length : closeAt
+    const body = text.slice(bodyStart, bodyEnd)
+
+    const params: Record<string, string> = {}
+    PARAMETER.lastIndex = 0
+    for (let p = PARAMETER.exec(body); p !== null; p = PARAMETER.exec(body)) {
+      params[p[1]] = trimValue(p[2])
+    }
+
+    calls.push({ name, params })
+
+    // 摘除范围：连同外层 <tool_call>/</tool_call> 包裹一起摘掉，不然会剩下孤儿标签。
+    // 外层包裹是可选的 —— 实测两种形态都出现过。
+    let cutStart = open.index
+    const before = text.slice(0, open.index)
+    const wrapOpen = before.lastIndexOf("<tool_call>")
+    // 只有紧邻（中间除空白外没有别的内容）才认作本次调用的包裹
+    if (wrapOpen !== -1 && before.slice(wrapOpen + "<tool_call>".length).trim() === "") cutStart = wrapOpen
+
+    let cutEnd = closeAt === -1 ? text.length : closeAt + "</function>".length
+    const after = text.slice(cutEnd)
+    const wrapClose = after.indexOf("</tool_call>")
+    if (wrapClose !== -1 && after.slice(0, wrapClose).trim() === "") cutEnd += wrapClose + "</tool_call>".length
+
+    cuts.push([cutStart, cutEnd])
+    FUNCTION_OPEN.lastIndex = cutEnd
+  }
+
+  if (calls.length === 0) return { calls: EMPTY, stripped: text }
+
+  let stripped = ""
+  let cursor = 0
+  for (const [start, end] of cuts) {
+    stripped += text.slice(cursor, start)
+    cursor = end
+  }
+  stripped += text.slice(cursor)
+
+  return { calls, stripped: stripped.replace(/\n{3,}/g, "\n\n").trim() }
+}
+
+/** 回灌给模型的纠正提示：告诉它刚才那次调用没生效，并把解析结果原样还给它 */
+export function recoveryPrompt(calls: readonly ParsedCall[]): string {
+  const rendered = calls
+    .map((call) => {
+      const args = Object.entries(call.params)
+        .map(([key, value]) => `  ${key}: ${value.length > 200 ? value.slice(0, 200) + "…(truncated)" : value}`)
+        .join("\n")
+      return `- ${call.name}\n${args || "  (no parameters)"}`
+    })
+    .join("\n")
+  return [
+    "[System notice] Your previous turn emitted tool call(s) as literal XML text instead of using the native tool-call channel.",
+    "Text-form tool calls are NOT executed — that turn had no effect.",
+    "",
+    "Parsed from your output:",
+    rendered,
+    "",
+    "Re-issue these call(s) now using the native tool-call mechanism. Do not write <tool_call>, <function=...> or <parameter=...> tags in your message text.",
+  ].join("\n")
+}
+
+/** 本轮只产出了思考、没有正文也没有工具调用时的纠正提示 */
+export const REASONING_ONLY_PROMPT = [
+  "[System notice] Your previous turn produced reasoning only — no user-visible message and no tool call, so the user saw an empty response.",
+  "Write your answer in the normal response channel now. If you intended to call a tool, call it.",
+].join("\n")

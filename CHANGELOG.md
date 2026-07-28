@@ -26,6 +26,12 @@
 - **JSON 解析失败变成 defect 打死会话**（`core/filesystem.ts`）：`readJson` 用裸 `JSON.parse`，语法错误抛出的是 defect 而非 typed error，调用方的 `Effect.catch` 兜不住——`models-dev.ts` 的降级路径形同虚设，defect 一路炸到 HTTP 中间件变成 `UnknownError`。用户的 `~/.redcode/cache/models.json` 坏一个字节就会每次对话直接死。改用 `Effect.try` 包装。
 - **`cd`/`cat`/`dir` 被当成破坏性命令**（`tool/shell.ts`）：`FILES`/`CMD_FILES` 回答的是"命令带不带路径参数"（驱动 external_directory 扫描），被直接复用为破坏性判定，导致纯导航和只读命令弹最重的那档授权。拆出独立的 `DESTRUCTIVE` 表。
 - **输出被 token 上限截断时无提示**（TUI 消息页脚、`cli/cmd/run`）：`finish="length"` 与 `"stop"` 走同一条路，被砍断的回复在界面上和正常说完完全一样。页脚加 warning 色标记，`redcode run` 发 system 提示。
+- **工具调用被写成 XML 文本，整轮白跑**（新增 `session/xml-tool-call.ts`，接在 `session/processor.ts`、`session/prompt.ts`）：模型偶发不走原生 tool_calls 通道，改把 `<tool_call><function=名字><parameter=键>值</parameter></function></tool_call>` 当普通正文吐出来。这种调用永远不会被执行，用户只看到一坨标签，本轮无任何效果。现在在 part 收尾时认出并从可见正文里摘掉，把解析结果回灌给模型强制续跑一轮，让它用原生通道重发；最多纠正 2 次，仍不改则留一句可见说明收尾。只认本 step 真实注册的工具名，避免把讨论/日志里出现的同款标签误摘。不直接执行打捞出的调用——默认 ai-sdk 运行时里工具由 `streamText` 内部执行，凭空合成 tool-call 事件会造出永不 settle 的 running part 并绕过 `permission.ask`。
+- **整轮只产出思考、正文为空**（`session/prompt.ts`）：同一个根因的另一面——模型该切正文通道时继续往 `reasoning_content` 里吐，界面上表现为空回复，和被打断/卡死完全无法区分（内容其实在折叠的"已思考"里）。现在检测到"有思考、无正文、无工具调用"时先纠正一次，仍然为空则把思考内容提升成可见正文，不再让用户对着空白猜。
+
+  以上两条以 `~/.redcode/data/redcode.db` 近 14 天实测定位（运行时日志不含原始流内容，只能查 DB）：XML 泄漏 14 次 100% 出自 `step-3.7-flash`，同期 `deepseek-v4-flash`(4608 条)、`gpt-5.6-luna`(902 条)、`kimi-k3`(103 条) 均为 0；泄漏落 reasoning part 还是 text part 纯看模型断在哪个通道（6/14 vs 8/14）。"只有思考"轮次 step 约 0.6%、deepseek 0.15%、luna 0%。两条修复都不依赖对成因的假设，因此不限定模型生效。
+
+  一并评估过给 step 系压低采样温度（`provider/transform.ts` 的 `temperature()` 原本返回 `undefined`，用服务端默认），**已放弃**：模型吐 Hermes 式 XML 是回退到另一套训练分布，那个模式在部分上下文里本身就是高概率，降温未必压得住；而 0.3 对 code agent 足够激进，会推高退化重复的风险——拿一个没验证的缓解手段去换一个已有 n-gram 检测器在对付的风险，不划算。
 
 #### 性能
 
