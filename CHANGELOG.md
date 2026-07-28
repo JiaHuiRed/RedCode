@@ -11,6 +11,40 @@
 ---
 
 ## TUI
+### [0.7.39] - 2026-07-28
+
+> 两处授权绕过 + PowerShell 中文乱码 + 三处性能热点；CI 自 fork 起从未真正运行，本次修复并收敛到 Windows。
+
+#### 安全
+
+- **跨盘路径被判成"在项目内"**（`core/filesystem.ts`、`opencode/util/filesystem.ts`）：Windows 上 `path.relative` 在两侧不同盘时返回的是目标的绝对路径，而绝对路径不以 `..` 开头，于是 `contains("E:\proj", "C:\Windows\win.ini")` 返回 true。项目只要不在系统盘，另一个盘上的任何路径都被当成项目内部，`external_directory` 授权永远不会触发。`contains`/`overlaps` 改为先比较盘符根（大小写不敏感），不同直接判否。自 fork 点从上游继承，单盘机器上不会暴露。
+- **无条件信任项目父目录**（`project/instance-context.ts`）：`containsPath` 除 directory/worktree 外还信任 `dirname(worktree)`，等于把整个父目录划进项目内——repo 在 `C:\Users\you\project` 就静默信任整个 `C:\Users\you`（`.ssh`/`.aws` 都在里面），且因判定为"项目内"而完全不触发授权提示。改为显式白名单，用现成的 `permission.external_directory` 规则表配置。
+
+#### 修复
+
+- **PowerShell 5.1 输出被按 UTF-8 解码**（`tool/shell.ts`）：子进程输出用 `Stream.decodeText`（UTF-8）解，而 Windows PowerShell 默认按系统 ANSI 代码页写 stdout/stderr——中文 Windows 上是 GBK(936)。任何带中文的命令输出和 PowerShell 自身报错进到工具输出全是乱码。`-Command` 前置 `[Console]::OutputEncoding` 与 `$OutputEncoding` 赋值。
+- **JSON 解析失败变成 defect 打死会话**（`core/filesystem.ts`）：`readJson` 用裸 `JSON.parse`，语法错误抛出的是 defect 而非 typed error，调用方的 `Effect.catch` 兜不住——`models-dev.ts` 的降级路径形同虚设，defect 一路炸到 HTTP 中间件变成 `UnknownError`。用户的 `~/.redcode/cache/models.json` 坏一个字节就会每次对话直接死。改用 `Effect.try` 包装。
+- **`cd`/`cat`/`dir` 被当成破坏性命令**（`tool/shell.ts`）：`FILES`/`CMD_FILES` 回答的是"命令带不带路径参数"（驱动 external_directory 扫描），被直接复用为破坏性判定，导致纯导航和只读命令弹最重的那档授权。拆出独立的 `DESTRUCTIVE` 表。
+- **输出被 token 上限截断时无提示**（TUI 消息页脚、`cli/cmd/run`）：`finish="length"` 与 `"stop"` 走同一条路，被砍断的回复在界面上和正常说完完全一样。页脚加 warning 色标记，`redcode run` 发 system 提示。
+
+#### 性能
+
+- **`@` 文件补全每敲一个键全仓扫描一次**（`file/index.ts`）：`ensure()` 在 await 完 `Effect.cached` 后立刻重建它，缓存只能命中一次，等于每次按键都跑完整 `rg --files`（无 maxDepth/无条数上限）再重建祖先目录表。改为按实例的 TTL 缓存 + 信号量串行化。
+- **`read` 为 4 个字符的 tag 把整个文件读进内存**（`tool/read.ts`）：流式读取刚做完 50KB 截断，紧接着又全量读一遍算 `fileTag`。改为流式增量哈希，摘要不变、内存有界。
+- **`grep` 把全部命中收进内存后才截断到 100 条**（`tool/grep.ts`、`file/ripgrep.ts`）：无 limit 全量 `runCollect`，且在截断前先对所有命中路径 stat 排序。加上限并在超限时提示收窄 pattern。
+
+#### 构建
+
+- **CI 自 fork 起从未真正运行**：`runs-on` 指向上游的第三方 runner 服务 blacksmith，本仓无对应账号，job 一直排队到 24 小时上限被掐；07-20 加入的 gitleaks 因 action commit 不存在而 3 秒失败，才让整个 run 开始显红。换成 GitHub 托管 runner 并重钉 gitleaks。
+- **CI 收敛到 Windows**：本 fork 只面向 Windows 10/11，`test`/`typecheck` 砍掉 Linux 半边；清掉 23 个上游遗留 workflow（发行渠道、文档站、社区机器人、beta 频道、自动生成提交）。其中 `publish.yml` 的构建 job 全带 `if: github.repository == 'anomalyco/opencode'`，在本仓恒为 false，本仓至今 0 个 release。
+
+#### 诊断
+
+- **Windows 上的命令超时从未被测到**（`test/tool/shell.test.ts`）：三个 abort 用例写的是 `echo started && sleep 60`，`&&` 在 Windows PowerShell 5.1 里是语法错误，命令直接解析失败，超时机制零覆盖。改用 `;` 后确认机制本身正常。
+- **测试基线**：`test/tool`+`test/file`+`test/util` 失败数 38 → 3。除上述修复外，重录了停在 fork 点的 tool parameters 快照（4 次有意变更未跟进），并让 `apply_patch`/`skill` 用例跟上两处 fork 行为改动。
+
+---
+
 ### [0.7.38] - 2026-07-27
 
 > LLM 延迟排查结案 + 清理 TEMP 诊断代码 + profile 权限合并修复。
