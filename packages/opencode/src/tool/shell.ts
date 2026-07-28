@@ -63,6 +63,34 @@ const CMD_FILES = new Set([
   "rmdir",
   "type",
 ])
+
+// 260728 Karina FILES/CMD_FILES 回答的是"这个命令带不带路径参数"（驱动 external_directory
+// 扫描），此前被直接当成"这个命令有没有破坏性"用了，于是 cd / cat / dir / type /
+// get-content / set-location 这些只读和导航命令全被标成 destructive，弹的是最重的那种授权。
+// 破坏性单独一张表：只收会删除、覆盖、改权限的，创建类（mkdir/new-item/touch）和
+// 纯读取、纯导航都不算。
+const DESTRUCTIVE = new Set([
+  "rm",
+  "cp",
+  "mv",
+  "chmod",
+  "chown",
+  "set-content",
+  "add-content",
+  "copy-item",
+  "move-item",
+  "remove-item",
+  "rename-item",
+  // cmd
+  "copy",
+  "del",
+  "erase",
+  "move",
+  "rd",
+  "ren",
+  "rename",
+  "rmdir",
+])
 const FLAGS = new Set(["-destination", "-literalpath", "-path"])
 const SWITCHES = new Set(["-confirm", "-debug", "-force", "-nonewline", "-recurse", "-verbose", "-whatif"])
 
@@ -393,7 +421,7 @@ export const ShellTool = Tool.define(
         const cmd = ps || shellKind === "cmd" ? tokens[0]?.toLowerCase() : tokens[0]
 
         if (cmd && (FILES.has(cmd) || (shellKind === "cmd" && CMD_FILES.has(cmd)))) {
-          scan.destructive = true
+          if (DESTRUCTIVE.has(cmd)) scan.destructive = true
           for (const arg of pathArgs(command, ps, shellKind === "cmd")) {
             const resolved = yield* argPath(arg, cwd, ps, shell)
             log.info("resolved path", { arg, resolved })

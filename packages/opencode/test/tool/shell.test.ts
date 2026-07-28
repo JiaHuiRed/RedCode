@@ -304,10 +304,12 @@ describe("tool.shell permissions", () => {
                   capture(requests, err),
                 ),
               ).toMatchObject({ message: err.message })
-              const bashReq = requests.find((r) => r.permission === "bash")
-              expect(bashReq).toBeDefined()
-              expect(bashReq!.always).toContain("Remove-Item *")
-              expect(bashReq!.always).not.toContain("Remove-Item -Recurse *")
+              // 260728 Karina Remove-Item 属于破坏性命令，权限走的是 "destructive"（62f7c76 起）。
+              // 这个用例要验的是 always 模式取 cmdlet 前缀、不带开关，和标签本身无关。
+              const req = requests.find((r) => r.permission === "destructive")
+              expect(req).toBeDefined()
+              expect(req!.always).toContain("Remove-Item *")
+              expect(req!.always).not.toContain("Remove-Item -Recurse *")
             }),
           )
         }),
