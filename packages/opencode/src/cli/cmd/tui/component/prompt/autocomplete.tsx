@@ -21,6 +21,7 @@ import { useBindings, useCommandSlashes, useOpencodeModeStack } from "../../keym
 import { Reference } from "@/reference/reference"
 import { ConfigReference } from "@/config/reference"
 import { displayCharAt, mentionTriggerIndex } from "@/cli/cmd/prompt-display"
+import { createDebouncedSignal } from "@tui/util/signal"
 
 function removeLineRange(input: string) {
   const hashIndex = input.lastIndexOf("#")
@@ -150,7 +151,9 @@ export function Autocomplete(props: {
   // On keypress those can be briefly out of sync, so filter() may return an empty/partial string.
   // Copy it into search in an effect because effects run after reactive updates have been rendered and painted
   // so the input has settled and all consumers read the same stable value.
-  const [search, setSearch] = createSignal("")
+  // 260728 Karina 去抖：search() 驱动两个 createResource（文件补全 / reference 补全），
+  // 逐字符触发等于连打一串请求。100ms 压在感知阈值内，又能把一次连续输入收敛成一两次查询。
+  const [search, setSearch] = createDebouncedSignal("", 100)
   createEffect(() => {
     const next = filter()
     setSearch(next ? next : "")
