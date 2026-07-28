@@ -1069,7 +1069,7 @@ describe("tool.shell abort", () => {
         projectRoot,
         Effect.gen(function* () {
           const result = yield* run({
-            command: `echo started && sleep 60`,
+            command: `echo started; sleep 60`,
             description: "Timeout test",
             timeout: 500,
           })
@@ -1088,7 +1088,7 @@ describe("tool.shell abort", () => {
         projectRoot,
         Effect.gen(function* () {
           const result = yield* run({
-            command: `echo started && sleep 60`,
+            command: `echo started; sleep 60`,
             description: "Default timeout test",
           })
           expect(result.output).toContain("started")
@@ -1135,7 +1135,7 @@ describe("tool.shell abort", () => {
         const updates: string[] = []
         const result = yield* run(
           {
-            command: `echo first && sleep 0.1 && echo second`,
+            command: `echo first; sleep 0.1; echo second`,
             description: "Streaming test",
           },
           {
