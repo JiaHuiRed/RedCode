@@ -315,9 +315,17 @@ const ask = Effect.fn("ShellTool.ask")(function* (ctx: Tool.Context, scan: Scan)
   })
 })
 
+// 260728 Karina 输出按 UTF-8 解（shell.ts 里 Stream.decodeText 默认就是 UTF-8），但
+// Windows PowerShell 5.1 默认按系统 ANSI 代码页写 stdout/stderr —— 中文 Windows 上是
+// GBK(936)。结果任何带中文的输出、以及 PowerShell 自己的报错信息，到工具输出里全是乱码，
+// 模型读到的就是 "����λ�� ��:1 �ַ�"。发现于 shell abort 测试的报错内容。
+// clipboard.ts:129 早就单独这么干过一次，这里补上通用的：进命令前先把控制台输出编码
+// 和 $OutputEncoding 都置成 UTF-8。$OutputEncoding 管的是管道传给下游原生程序的编码。
+const PS_UTF8 = "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [Console]::OutputEncoding; "
+
 function cmd(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv) {
   if (process.platform === "win32" && Shell.ps(shell)) {
-    return ChildProcess.make(shell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command], {
+    return ChildProcess.make(shell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + command], {
       cwd,
       env,
       stdin: "ignore",
