@@ -4,7 +4,7 @@ import { InstanceState } from "@/effect/instance-state"
 
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Git } from "@/git"
-import { Effect, Layer, Context, Schema, Scope, Semaphore } from "effect"
+import { Effect, Layer, Context, Schema, Scope } from "effect"
 import * as Stream from "effect/Stream"
 import { formatPatch, structuredPatch } from "diff"
 import fuzzysort from "fuzzysort"
@@ -308,16 +308,8 @@ const sortHiddenLast = (items: string[], prefer: boolean) => {
   return [...visible, ...hiddenItems]
 }
 
-// 260728 Karina 全仓扫描按实例缓存 SCAN_TTL 毫秒。原先 ensure() 在 await 完 cachedScan
-// 之后立刻重建它，缓存只能命中一次，等于 @ 文件补全每敲一个键就跑一遍完整 rg --files
-// （无 maxDepth/无条数上限）再重建祖先目录表。TTL 内直接复用，过期后由 lock 串行化，
-// 保证并发的 search() 只触发一次扫描。
-const SCAN_TTL = 5_000
-
 interface State {
   cache: Entry
-  scanned: number
-  lock: Semaphore.Semaphore
 }
 
 export interface Interface {
@@ -349,8 +341,6 @@ export const layer = Layer.effect(
       Effect.fn("File.state")(() =>
         Effect.succeed({
           cache: { files: [], dirs: [] } as Entry,
-          scanned: 0,
-          lock: Semaphore.makeUnsafe(1),
         }),
       ),
     )
@@ -409,17 +399,17 @@ export const layer = Layer.effect(
       s.cache = next
     })
 
+    // 260728 Karina 这个"用完立刻重建"不是写漏了，是刻意的，别再当成坏掉的缓存去优化：
+    // Effect.cached 在这里只承担并发去重（同时到达的 search() 共享同一趟扫描），
+    // 扫完立刻重建则保证下一次 search() 重新扫盘。search() 必须反映调用时刻的磁盘状态 ——
+    // 刚被创建的文件要能立刻 @ 到，test/file/index.test.ts 的
+    // "search refreshes after init when files change" 钉的就是这条。
+    // 代价是每次 search() 一趟完整 rg --files；连打时的放大交给 autocomplete 侧的去抖来收。
+    let cachedScan = yield* Effect.cached(scan().pipe(Effect.catchCause(() => Effect.void)))
+
     const ensure = Effect.fn("File.ensure")(function* () {
-      const s = yield* InstanceState.get(state)
-      if (Date.now() - s.scanned < SCAN_TTL) return
-      yield* s.lock.withPermits(1)(
-        Effect.gen(function* () {
-          // 排队等锁的这段时间里可能已被别的 fiber 扫完了
-          if (Date.now() - s.scanned < SCAN_TTL) return
-          yield* scan().pipe(Effect.catchCause(() => Effect.void))
-          s.scanned = Date.now()
-        }),
-      )
+      yield* cachedScan
+      cachedScan = yield* Effect.cached(scan().pipe(Effect.catchCause(() => Effect.void)))
     })
 
     const gitText = Effect.fnUntraced(function* (args: string[]) {
