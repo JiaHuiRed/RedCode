@@ -80,9 +80,17 @@ export namespace AppFileSystem {
         })
       })
 
+      // 260728 Karina 这里原本是裸 JSON.parse：文件内容不合法时抛出的是 defect 而不是
+      // typed error，调用方的 Effect.catch 兜不住（比如 models-dev.ts 那句
+      // `readJson(...).pipe(Effect.catch(() => undefined))` 的降级路径就形同虚设）。
+      // 结果是用户的 ~/.redcode/cache/models.json 只要坏一个字节，defect 一路炸到
+      // HTTP 错误中间件，变成 UnknownError，每次对话都直接死。
       const readJson = Effect.fn("FileSystem.readJson")(function* (path: string) {
         const text = yield* fs.readFileString(path)
-        return JSON.parse(text)
+        return yield* Effect.try({
+          try: () => JSON.parse(text),
+          catch: (cause) => new FileSystemError({ method: "readJson", cause }),
+        })
       })
 
       const writeJson = Effect.fn("FileSystem.writeJson")(function* (path: string, data: unknown, mode?: number) {
