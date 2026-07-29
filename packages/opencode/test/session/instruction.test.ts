@@ -237,6 +237,66 @@ describe("Instruction.system", () => {
   )
 })
 
+// 260729 Red MEMORY.md 此前零覆盖 —— 正因如此，"项目级存在就完全不加载全局那份"这个
+// 静默缺陷从 260611 加进去起一直没被发现。两者语义正交（全局=跨项目通用坑，项目=本项目
+// 特有问题+进度），必须共存。
+describe("Instruction.system MEMORY.md", () => {
+  // 断言"该在的在、顺序对"，不断言总条数 —— 环境里可能还有别的指令文件被带进来，
+  // 数总数会让测试因无关原因假失败（既有的两条 Instruction.system 测试正是这么挂的）。
+  it.live("全局与项目 MEMORY.md 同时存在时两份都加载，全局在前", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpWithFiles({ "MEMORY.md": "# Global Memory" })
+      const projectTmp = yield* tmpWithFiles({ ".redcode/MEMORY.md": "# Project Memory" })
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const paths = yield* svc.systemPaths()
+        expect(paths.has(path.join(globalTmp, "MEMORY.md"))).toBe(true)
+        expect(paths.has(path.join(projectTmp, ".redcode", "MEMORY.md"))).toBe(true)
+
+        const rules = yield* svc.system()
+        const globalAt = rules.findIndex((r) => r.includes("# Global Memory"))
+        const projectAt = rules.findIndex((r) => r.includes("# Project Memory"))
+        expect(globalAt).toBeGreaterThanOrEqual(0)
+        expect(projectAt).toBeGreaterThanOrEqual(0)
+        expect(globalAt).toBeLessThan(projectAt)
+        expect(rules[globalAt]).toBe(`Instructions from: ${path.join(globalTmp, "MEMORY.md")}\n# Global Memory`)
+        expect(rules[projectAt]).toBe(
+          `Instructions from: ${path.join(projectTmp, ".redcode", "MEMORY.md")}\n# Project Memory`,
+        )
+      }).pipe(provideInstance(projectTmp), provideInstruction({ home: globalTmp, config: globalTmp }))
+    }),
+  )
+
+  it.live("只有全局 MEMORY.md 时照常加载", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpWithFiles({ "MEMORY.md": "# Global Memory" })
+      const projectTmp = yield* tmpdirScoped()
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const paths = yield* svc.systemPaths()
+        expect(paths.has(path.join(globalTmp, "MEMORY.md"))).toBe(true)
+        expect((yield* svc.system()).some((r) => r.includes("# Global Memory"))).toBe(true)
+      }).pipe(provideInstance(projectTmp), provideInstruction({ home: globalTmp, config: globalTmp }))
+    }),
+  )
+
+  it.live("只有项目 MEMORY.md 时照常加载", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpdirScoped()
+      const projectTmp = yield* tmpWithFiles({ ".redcode/MEMORY.md": "# Project Memory" })
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const paths = yield* svc.systemPaths()
+        expect(paths.has(path.join(projectTmp, ".redcode", "MEMORY.md"))).toBe(true)
+        expect((yield* svc.system()).some((r) => r.includes("# Project Memory"))).toBe(true)
+      }).pipe(provideInstance(projectTmp), provideInstruction({ home: globalTmp, config: globalTmp }))
+    }),
+  )
+})
+
 describe("Instruction.systemPaths global config", () => {
   it.live("uses Global.Service config AGENTS.md", () =>
     Effect.gen(function* () {

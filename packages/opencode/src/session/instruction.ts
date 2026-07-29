@@ -138,18 +138,27 @@ export const layer: Layer.Layer<
       }
 
       // 260611 Red project memory: .redcode/MEMORY.md (project) → ~/.redcode/MEMORY.md (global fallback)
+      // 260729 Red 改成叠加，不再互斥。原先项目级存在就完全不加载全局那份，但两者语义正交：
+      //   全局 = 跨项目、跨会话踩过的通用坑；项目 = 本项目特有问题 + 工作进度。
+      //   互斥的后果是静默的——只写在全局的规则，在任何有 .redcode/MEMORY.md 的项目里
+      //   结构性缺席，而且从会话里完全看不出来（实测本机全局 19KB、RedCode 项目级 7KB，
+      //   在 RedCode 里那 19KB 一个字都没进过 prompt）。
+      // 顺序：全局在前、项目在后 —— 通用规则打底，项目特有的写在后面，既符合"具体覆盖一般"
+      //   的阅读直觉，也让更常变动的那份靠近尾部，少动前面已缓存的前缀。
+      // paths 是 Set 且存的是 resolve 后的绝对路径，万一两者指向同一个文件会自动去重。
       {
-        let memoryFound = false
+        const globalMemory = path.join(global.config, "MEMORY.md")
+        if (yield* fs.existsSafe(globalMemory)) paths.add(path.resolve(globalMemory))
+
         if (!Flag.REDCODE_DISABLE_PROJECT_CONFIG) {
-          const projectMemory = path.join(ctx.worktree, ".redcode", "MEMORY.md")
-          if (yield* fs.existsSafe(projectMemory)) {
-            paths.add(path.resolve(projectMemory))
-            memoryFound = true
-          }
-        }
-        if (!memoryFound) {
-          const globalMemory = path.join(global.config, "MEMORY.md")
-          if (yield* fs.existsSafe(globalMemory)) paths.add(path.resolve(globalMemory))
+          // 260729 Red 不能直接用 ctx.worktree —— 目录不是 git 仓库时它是文件系统根 "/"，
+          // path.join("/", ".redcode", "MEMORY.md") 会算成 <当前盘>:\.redcode\MEMORY.md。
+          // 后果是双向的：读会去盘符根读，写也会写到盘符根。本机 C:/D:/E: 三个盘根下都留着
+          // 一整套被 scaffold 出来的 .redcode/（MEMORY.md + .gitignore + package.json +
+          // node_modules），就是这么来的。非 git 项目退回 ctx.directory 作为项目根。
+          const root = ctx.worktree && ctx.worktree !== path.parse(ctx.worktree).root ? ctx.worktree : ctx.directory
+          const projectMemory = path.join(root, ".redcode", "MEMORY.md")
+          if (yield* fs.existsSafe(projectMemory)) paths.add(path.resolve(projectMemory))
         }
       }
 
