@@ -1,5 +1,6 @@
 import path from "path"
 import os from "os"
+import { execFileSync } from "child_process"
 import { fileURLToPath } from "url"
 
 const __filename = fileURLToPath(import.meta.url)
@@ -20,13 +21,45 @@ const modelsUrl = process.env.REDCODE_MODELS_URL || "https://models.dev"
 // 显式指定了 REDCODE_MODELS_URL 就不回退：那份缓存是默认源的，混用等于拿错数据。
 const CACHE_FILE = path.join(os.homedir(), ".redcode", "cache", "models.json") // 同 core/src/global.ts
 
+// 260729 Red 自动沿用 git 的代理配置。上面那条注释说的"只给 git 配过代理的机器 build 必挂"
+// 是本机的实际状态，而让用户每次构建都记得 set HTTPS_PROXY 是不现实的。既然 git 已经配好了
+// 能用的代理，直接拿来用：bun 的 fetch 支持 { proxy } 选项，不依赖环境变量。
+// 只读不写，不碰用户的 git 配置。
+function gitProxy(): string | undefined {
+  for (const key of ["https.proxy", "http.proxy"]) {
+    try {
+      const value = execFileSync("git", ["config", "--get", key], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim()
+      if (value) return value
+    } catch {
+      // 没配这一项，或者根本没有 git —— 都不是错误，继续试下一个
+    }
+  }
+  return undefined
+}
+
+// 代理路径实测慢（本机走 7897 拉这 1.2MB 要 20s 上下），给足超时，别让它半路断掉又回退到缓存
+const FETCH_TIMEOUT_MS = 90_000
+
+async function fetchModels(url: string): Promise<string> {
+  try {
+    return await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }).then((x) => x.text())
+  } catch (error) {
+    // HTTPS_PROXY/HTTP_PROXY 已设时 bun 会自动走，走到这儿说明要么没设、要么设了也不通。
+    // 此时再试一次 git 配的代理 —— 这是绝大多数"push 能通 build 不通"机器的解。
+    const proxy = gitProxy()
+    if (!proxy) throw error
+    console.log(`  models.dev 直连失败，改走 git 配置的代理 ${proxy} 重试…`)
+    return await fetch(url, { proxy, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }).then((x) => x.text())
+  }
+}
+
 async function load(): Promise<string> {
   if (process.env.MODELS_DEV_API_JSON) {
     return await Bun.file(process.env.MODELS_DEV_API_JSON).text()
   }
 
   try {
-    return await fetch(`${modelsUrl}/api.json`).then((x) => x.text())
+    return await fetchModels(`${modelsUrl}/api.json`)
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
 

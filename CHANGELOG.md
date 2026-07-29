@@ -33,6 +33,7 @@
 
 #### 修复
 
+- **构建时 models.dev 拉不动，每次都退到过期缓存**（`script/generate.ts`）：0.7.39 加的缓存回退虽然让构建不再直接失败，但每次都刷一屏 stale 警告，治标不治本。根因是 git 有自己的 `http.proxy` 配置而 bun 的 `fetch` 只认 `HTTPS_PROXY` 环境变量——同一台机器上 push 能通、build 不通，而指望每次构建都记得 `set HTTPS_PROXY` 并不现实。现在直连失败后自动读取 `git config --get https.proxy`（回退 `http.proxy`）并用 bun fetch 的 `proxy` 选项重试；只读不写，不碰用户的 git 配置。同时给两次请求都加了 90 秒超时——代理路径实测拉这 1.2MB 要 20 秒上下，超时太短会半路断掉又白白退回缓存。缓存回退与那三个不回退的条件（自定义源 / CI / 无缓存）保持不变，作为最后一道防线。
 - **`isMimoModel` 裸取 `model.api.id` 会抛**（`provider/transform.ts`）：`model.api` 并非在所有构造路径上都存在，而它经由 `maxOutputTokens` → `overflow.usable` → `isOverflow` 位于压缩判定的主路径上，抛在这里等于整条压缩链断掉。加空值保护并回退到 `model.id`。`compaction.test.ts` 里 8 条 `isOverflow` 用例长期失败的原因就是这个，不是断言写错——该文件从 23 pass / 28 fail 变为 31 pass / 20 fail。
 
 ---
