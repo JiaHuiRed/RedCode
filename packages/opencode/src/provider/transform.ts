@@ -598,14 +598,29 @@ const WIDELY_SUPPORTED_EFFORTS = ["low", "medium", "high"]
 // max 是官方默认值，所以不选任何变体时的行为就等于 max。
 const GLM_EFFORTS = ["none", "high", "max"]
 
-/** 从模型 id 里解出 GLM 版本号；认不出来返回 undefined */
-function glmVersion(...ids: (string | undefined)[]): number | undefined {
+// grok-4.5（xAI 官方文档）：reasoning_effort 取值 low/medium/high，默认 high，**无法禁用推理**，
+// 所以不给 none 档。另注：该文档说 presence_penalty / frequency_penalty / stop 不能与推理模型
+// 同用，否则整个请求报错 —— RedCode 目前不发这三个参数（只有 schema 定义和协议层映射，
+// 没有赋值点），若将来有人加上，grok 会第一个炸。
+const GROK_EFFORTS = WIDELY_SUPPORTED_EFFORTS
+// kimi-k3（Moonshot 官方文档）：始终开启思考，reasoning_effort 取值 low/high/max，默认 max。
+// 注意档位集合与 grok 不同（有 max、无 medium），别图省事共用一张表。
+const KIMI_K3_EFFORTS = ["low", "high", "max"]
+
+const GLM_RE = /glm-(\d+)(?:\.(\d+))?/
+const GROK_RE = /grok-(\d+)(?:\.(\d+))?/
+const KIMI_RE = /kimi-k(\d+)(?:\.(\d+))?/
+
+/** 从模型 id 里解出版本号（major.minor 记作 major + minor/100）；认不出来返回 undefined */
+function modelVersion(re: RegExp, ...ids: (string | undefined)[]): number | undefined {
   for (const raw of ids) {
-    const m = raw?.toLowerCase().match(/glm-(\d+)(?:\.(\d+))?/)
+    const m = raw?.toLowerCase().match(re)
     if (m) return Number(m[1]) + Number(m[2] ?? 0) / 100
   }
   return undefined
 }
+
+const glmVersion = (...ids: (string | undefined)[]) => modelVersion(GLM_RE, ...ids)
 
 /** GLM-5.2 及以上才支持 reasoning_effort。注意 glm-5-turbo / glm-5v-turbo 都是 5.0，不算。 */
 function glmSupportsEffort(...ids: (string | undefined)[]): boolean {
@@ -740,14 +755,14 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
   // 此前无差别排除整个 glm 家族，导致 5.2 明明支持却在页脚看不到任何档位。
   if (id.includes("glm")) return glmSupportsEffort(id, model.api.id) ? effortVariants(GLM_EFFORTS) : {}
 
-  if (
-    id.includes("minimax") ||
-    id.includes("kimi") ||
-    id.includes("k2p") ||
-    id.includes("qwen") ||
-    id.includes("big-pickle")
-  )
-    return {}
+  // 260729 Red kimi-k3 起支持 reasoning_effort（Moonshot 官方文档）。k2 系列只有思考开关，
+  // 没有强度维度，继续排除 —— 所以按版本判定而不是整个 kimi 家族一刀切。
+  if (id.includes("kimi")) {
+    const v = modelVersion(KIMI_RE, id, model.api.id)
+    return v !== undefined && v >= 3 ? effortVariants(KIMI_K3_EFFORTS) : {}
+  }
+
+  if (id.includes("minimax") || id.includes("k2p") || id.includes("qwen") || id.includes("big-pickle")) return {}
 
   // see: https://docs.x.ai/docs/guides/reasoning#control-how-hard-the-model-thinks
   if (id.includes("grok") && id.includes("grok-3-mini")) {
@@ -762,7 +777,12 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
       high: { reasoningEffort: "high" },
     }
   }
-  if (id.includes("grok")) return {}
+  // 260729 Red grok-4.5 起支持 reasoning_effort（xAI 官方文档）。此前整个 grok 家族除
+  // grok-3-mini 外一律无档位，4.5 明明支持却在页脚看不到。
+  if (id.includes("grok")) {
+    const v = modelVersion(GROK_RE, id, model.api.id)
+    return v !== undefined && v >= 4.05 ? effortVariants(GROK_EFFORTS) : {}
+  }
 
   switch (model.api.npm) {
     case "@openrouter/ai-sdk-provider":

@@ -48,9 +48,51 @@ describe("GLM 推理强度变体", () => {
   })
 
   test("其余仍在排除表里的模型不受影响", () => {
-    for (const id of ["kimi-k3", "qwen3-coder", "minimax-m2"]) {
+    for (const id of ["qwen3-coder", "minimax-m2"]) {
       expect(variantsOf(id)).toEqual([])
     }
+  })
+})
+
+// xAI 官方文档：grok-4.5 支持 reasoning_effort，取值 low/medium/high，默认 high，无法禁用推理
+describe("grok 推理强度变体", () => {
+  test("grok-4.5 给出 low/medium/high", () => {
+    expect(variantsOf("grok-4.5")).toEqual(["low", "medium", "high"])
+  })
+
+  test("不给 none —— 官方明确无法禁用推理", () => {
+    expect(variantsOf("grok-4.5")).not.toContain("none")
+  })
+
+  test("4.5 以下不给档位（除 grok-3-mini 走它自己的分支）", () => {
+    for (const id of ["grok-4", "grok-4.2", "grok-4.3", "grok-3"]) {
+      expect(variantsOf(id)).toEqual([])
+    }
+  })
+
+  test("grok-3-mini 保持原有 low/high 两档，未被波及", () => {
+    expect(variantsOf("grok-3-mini")).toEqual(["low", "high"])
+  })
+
+  test("更高版本自动跟上", () => {
+    expect(variantsOf("grok-5")).toEqual(["low", "medium", "high"])
+  })
+})
+
+// Moonshot 官方文档：K3 始终开启思考，reasoning_effort 取值 low/high/max，默认 max
+describe("kimi 推理强度变体", () => {
+  test("kimi-k3 给出 low/high/max —— 有 max 无 medium，与 grok 那套不同", () => {
+    expect(variantsOf("kimi-k3")).toEqual(["low", "high", "max"])
+  })
+
+  test("k2 系列只有思考开关、无强度维度，仍不给档位", () => {
+    for (const id of ["kimi-k2", "kimi-k2.5", "kimi-k2-thinking"]) {
+      expect(variantsOf(id)).toEqual([])
+    }
+  })
+
+  test("更高版本自动跟上", () => {
+    expect(variantsOf("kimi-k4")).toEqual(["low", "high", "max"])
   })
 })
 
