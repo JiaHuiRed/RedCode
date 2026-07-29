@@ -1280,14 +1280,6 @@ export const layer = Layer.effect(
           }
         }
 
-        // 260729 Red: models.dev 把 deepseek-v4-flash 标成了 reasoning: false，
-        // 但官方 API 明明支持 reasoning_effort；同 provider 的 deepseek-v4-pro 是 true，
-        // 导致 Flash 在页脚看不到任何推理强度选项。这里强制修正。
-        const deepseekFlash = database.deepseek?.models["deepseek-v4-flash"]
-        if (deepseekFlash && !deepseekFlash.capabilities.reasoning) {
-          deepseekFlash.capabilities.reasoning = true
-        }
-
         const providers: Record<ProviderID, Info> = {} as Record<ProviderID, Info>
         const languages = new Map<string, LanguageModelV3>()
         const modelLoaders: {
@@ -1336,6 +1328,14 @@ export const layer = Layer.effect(
           return true
         }
 
+        // 260729 Red: models.dev 把 deepseek-v4-flash 标成了 reasoning: false，
+        // 但官方 API 明明支持 reasoning_effort；同 provider 的 deepseek-v4-pro 是 true，
+        // 导致 Flash 在页脚看不到任何推理强度选项。这里强制修正。
+        const deepseekFlash = database.deepseek?.models["deepseek-v4-flash"]
+        if (deepseekFlash && !deepseekFlash.capabilities.reasoning) {
+          deepseekFlash.capabilities.reasoning = true
+        }
+
         for (const hook of plugins) {
           if (!hook) continue // 260612 Red guard: plugin may return undefined hook
           const p = hook.provider
@@ -1362,6 +1362,14 @@ export const layer = Layer.effect(
               ]),
             )
           })
+        }
+
+        // 260729 Red: models.dev 把 deepseek-v4-flash 标成了 reasoning: false，
+        // 但官方 API 明明支持 reasoning_effort；同 provider 的 deepseek-v4-pro 是 true，
+        // 导致 Flash 在页脚看不到任何推理强度选项。这里强制修正。
+        const deepseekFlash = database.deepseek?.models["deepseek-v4-flash"]
+        if (deepseekFlash && !deepseekFlash.capabilities.reasoning) {
+          deepseekFlash.capabilities.reasoning = true
         }
 
         // extend database from config
