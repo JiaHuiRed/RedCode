@@ -15,7 +15,7 @@ import { ModelID, ProviderID } from "@/provider/schema"
 import { Effect, Layer, Context, Schema } from "effect"
 import * as DateTime from "effect/DateTime"
 import { InstanceState } from "@/effect/instance-state"
-import { isOverflow as overflow, usable } from "./overflow"
+import { isOverflow as overflow, level as overflowLevel, usable, type Level } from "./overflow"
 import { serviceUse } from "@/effect/service-use"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -184,11 +184,17 @@ function splitTurn(input: {
 }
 
 export interface Interface {
+  /** 当前用量落在哪一档：ok / soft（只提示）/ prune（廉价裁剪）/ compact（真压缩） */
+  readonly level: (input: {
+    tokens: MessageV2.Assistant["tokens"]
+    model: Provider.Model
+  }) => Effect.Effect<Level>
   readonly isOverflow: (input: {
     tokens: MessageV2.Assistant["tokens"]
     model: Provider.Model
   }) => Effect.Effect<boolean>
-  readonly prune: (input: { sessionID: SessionID }) => Effect.Effect<void>
+  /** 返回本次实际释放的估算 token 数与被裁剪的 tool part 数；未启用或不足阈值时为 0 */
+  readonly prune: (input: { sessionID: SessionID }) => Effect.Effect<{ tokens: number; parts: number }>
   readonly process: (input: {
     parentID: MessageID
     messages: MessageV2.WithParts[]
@@ -227,6 +233,19 @@ export const layer = Layer.effect(
       model: Provider.Model
     }) {
       return overflow({
+        cfg: yield* config.get(),
+        tokens: input.tokens,
+        model: input.model,
+        outputTokenMax: flags.outputTokenMax,
+      })
+    })
+
+    // 260729 Red 分级阈值查询（见 overflow.ts）：调用方据此在真正压缩之前先上廉价手段
+    const level = Effect.fn("SessionCompaction.level")(function* (input: {
+      tokens: MessageV2.Assistant["tokens"]
+      model: Provider.Model
+    }) {
+      return overflowLevel({
         cfg: yield* config.get(),
         tokens: input.tokens,
         model: input.model,
@@ -297,13 +316,13 @@ export const layer = Layer.effect(
     // calls, then erases output of older tool calls to free context space
     const prune = Effect.fn("SessionCompaction.prune")(function* (input: { sessionID: SessionID }) {
       const cfg = yield* config.get()
-      if (!cfg.compaction?.prune) return
+      if (!cfg.compaction?.prune) return { tokens: 0, parts: 0 }
       log.info("pruning")
 
       const msgs = yield* session
         .messages({ sessionID: input.sessionID })
         .pipe(Effect.catchIf(NotFoundError.isInstance, () => Effect.succeed(undefined)))
-      if (!msgs) return
+      if (!msgs) return { tokens: 0, parts: 0 }
 
       let total = 0
       let pruned = 0
@@ -330,15 +349,17 @@ export const layer = Layer.effect(
       }
 
       log.info("found", { pruned, total })
-      if (pruned > PRUNE_MINIMUM) {
-        for (const part of toPrune) {
-          if (part.state.status === "completed") {
-            part.state.time.compacted = Date.now()
-            yield* session.updatePart(part)
-          }
+      if (pruned <= PRUNE_MINIMUM) return { tokens: 0, parts: 0 }
+      for (const part of toPrune) {
+        if (part.state.status === "completed") {
+          part.state.time.compacted = Date.now()
+          yield* session.updatePart(part)
         }
-        log.info("pruned", { count: toPrune.length })
       }
+      log.info("pruned", { count: toPrune.length })
+      // 260729 Red 报告实际释放量 —— 调用方据此判断"光 prune 就够了"，从而跳过这轮付费的
+      // summarize 调用（见 prompt.ts 的 compact 分支）。原先返回 void，省下来多少无从得知。
+      return { tokens: pruned, parts: toPrune.length }
     })
 
     const processCompaction = Effect.fn("SessionCompaction.process")(function* (input: {
@@ -616,6 +637,7 @@ export const layer = Layer.effect(
 
     return Service.of({
       isOverflow,
+      level,
       prune,
       process: processCompaction,
       create,

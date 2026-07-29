@@ -70,6 +70,7 @@ import { SessionTools } from "./tools"
 import { LLMEvent } from "@redcode-ai/llm"
 import { LoopRecoveryTracker, RECOVERY_PROMPTS } from "./text-loop-detection"
 import * as XmlToolCall from "./xml-tool-call"
+import * as ReasoningLanguage from "./reasoning-language"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -1161,6 +1162,8 @@ export const layer = Layer.effect(
         let forceContinue = false
         let reasoningOnlyRetried = false
         let salvageRecoveries = 0
+        // 260729 Red soft 档提示每个会话只发一次，别每轮刷屏
+        let softContextNoticed = false
 
         while (true) {
           yield* status.set(sessionID, { type: "busy" })
@@ -1400,6 +1403,19 @@ export const layer = Layer.effect(
               }
             }
 
+            // 260729 Red 可见思考语言约束（见 session/reasoning-language.ts）。
+            // 取用户最后一轮自己写的文本做判定 —— 跳过 synthetic/ignored（那些是 RedCode 注入的，
+            // 不代表用户在说什么语言）。整块作为 transient user turn 注入，绝不进 system prompt：
+            // 这是可随时切换的偏好，进了稳定前缀就会每次改设置都打掉 prefix cache。
+            const latestUserMsg = msgs.findLast((m) => m.info.role === "user")
+            const reasoningSource = latestUserMsg?.parts
+              .filter((p) => p.type === "text" && !p.ignored && !p.synthetic)
+              .map((p) => (p.type === "text" ? p.text : ""))
+              .join("\n")
+            const reasoningLanguagePrompt = ReasoningLanguage.block(
+              ReasoningLanguage.resolve((yield* config.get()).reasoning_language, reasoningSource),
+            )
+
             yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
             // 260618 Red pin post-DCP message content for prefix cache stability.
@@ -1487,9 +1503,17 @@ export const layer = Layer.effect(
             // 260721 Red prefix shape diagnostic: detect system/tool change mid-session
             {
               const shape = PrefixShape.capture(system, sortedTools as Record<string, unknown>)
-              const diag = PrefixShape.diagnose(shape, sessionID)
+              const diag = PrefixShape.diagnose(shape, sessionID, sortedTools as Record<string, unknown>)
               if (diag.changed) {
-                log.warn("prefix cache changed", { reasons: diag.reasons, step })
+                // 260729 Red 带上工具 schema 的 token 成本：前缀被打掉时最该知道的就是
+                // "谁在吃预算"。topCosts 只在 tools 真的变了时才算。
+                log.warn("prefix cache changed", {
+                  reasons: diag.reasons,
+                  step,
+                  toolCount: diag.toolCount,
+                  toolSchemaTokens: diag.toolSchemaTokens,
+                  ...(diag.topCosts ? { topCosts: diag.topCosts.map((c) => `${c.name}=${c.tokens}`).join(" ") } : {}),
+                })
               }
             }
             const result = yield* handle.process({
@@ -1506,6 +1530,8 @@ export const layer = Layer.effect(
                 ...(userReminderText ? [{ role: "user" as const, content: userReminderText }] : []),
                 // 260710 Red loop recovery prompt 注入（跨 step 重复检测触发）
                 ...(loopRecoveryPrompt ? [{ role: "user" as const, content: loopRecoveryPrompt }] : []),
+                // 260729 Red 可见思考语言约束，紧贴生成点注入（第一个 reasoning 段会锚定整轮）
+                ...(reasoningLanguagePrompt ? [{ role: "user" as const, content: reasoningLanguagePrompt }] : []),
                 ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : []),
               ],
               tools: sortedTools,
@@ -1588,14 +1614,60 @@ export const layer = Layer.effect(
               }
             }
 
+            // 260729 Red 分级阈值：在真正触发压缩之前先上廉价手段（见 overflow.ts）。
+            // soft 档刻意什么都不做，只记一条 —— 在这里做任何重写都是白白炸掉 prefix cache。
+            if (result !== "compact" && !handle.message.summary) {
+              const tier = yield* compaction
+                .level({ tokens: handle.message.tokens, model })
+                .pipe(Effect.catch(() => Effect.succeed("ok" as const)))
+              if (tier === "soft" && !softContextNoticed) {
+                softContextNoticed = true
+                yield* slog.info("context.soft", { step, note: "保留缓存前缀，暂不做任何重写" })
+              }
+              if (tier === "prune") {
+                const freed = yield* compaction
+                  .prune({ sessionID })
+                  .pipe(Effect.catch(() => Effect.succeed({ tokens: 0, parts: 0 })))
+                if (freed.tokens > 0) {
+                  yield* slog.info("context.prune", { step, freedTokens: freed.tokens, prunedParts: freed.parts })
+                }
+              }
+            }
+
             if (result === "compact") {
-              yield* compaction.create({
-                sessionID,
-                agent: lastUser.agent,
-                model: lastUser.model,
-                auto: true,
-                overflow: !handle.message.finish,
-              })
+              // 260729 Red prune 先于 summarize（取自 DeepSeek-Reasonix 的 compact.go）：
+              // 摘要压缩是一次付费的模型调用，而且会重写前缀、把 prefix cache 整个打掉。
+              // 裁剪陈旧工具输出只是本地改写，代价接近零。所以先 prune，如果光这一步就把
+              // 用量压回阈值以下，这一轮的 summarize 直接跳过 —— 省一次调用，也少一次缓存重置。
+              // 溢出（!finish，模型是被上下文顶断的）时不做这个判断：那种情况必须真压。
+              const overflow = !handle.message.finish
+              const freed = yield* compaction.prune({ sessionID }).pipe(
+                Effect.catch(() => Effect.succeed({ tokens: 0, parts: 0 })),
+              )
+              let skip = false
+              if (!overflow && freed.tokens > 0) {
+                const tokens = handle.message.tokens
+                const before = tokens.total || tokens.input + tokens.output + tokens.cache.read + tokens.cache.write
+                const after = Math.max(0, before - freed.tokens)
+                skip = !(yield* compaction.isOverflow({
+                  tokens: { ...tokens, total: after, cache: { read: 0, write: 0 }, input: after, output: 0 },
+                  model,
+                }))
+              }
+              if (skip) {
+                yield* slog.info("compaction.skipped_after_prune", {
+                  freedTokens: freed.tokens,
+                  prunedParts: freed.parts,
+                })
+              } else {
+                yield* compaction.create({
+                  sessionID,
+                  agent: lastUser.agent,
+                  model: lastUser.model,
+                  auto: true,
+                  overflow,
+                })
+              }
             }
             return "continue" as const
           }).pipe(

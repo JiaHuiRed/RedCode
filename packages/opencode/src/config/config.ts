@@ -298,6 +298,13 @@ export const Info = Schema.Struct({
       }),
     }),
   ),
+  // 260729 Red 可见思考文本的语言（见 session/reasoning-language.ts）。auto = 用户这轮说中文
+  // 就要求中文思考，英文/拿不准则不注入（保持旧行为）。刻意做成 user-turn 注入而非 system
+  // prompt，改设置不会打掉 prefix cache。
+  reasoning_language: Schema.optional(Schema.Literals(["auto", "zh", "en"])).annotate({
+    description:
+      "Language for visible reasoning/thinking text: 'auto' (match the user's language, default), 'zh', or 'en'. Does not affect the final answer's language.",
+  }),
   experimental: Schema.optional(
     Schema.Struct({
       disable_paste_summary: Schema.optional(Schema.Boolean),

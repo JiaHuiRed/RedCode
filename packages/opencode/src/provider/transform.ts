@@ -1351,7 +1351,11 @@ export function maxOutputTokens(model: Provider.Model, outputTokenMax = OUTPUT_T
 }
 
 function isMimoModel(model: Provider.Model): boolean {
-  const id = model.api.id.toLowerCase()
+  // 260729 Red 空值保护：`model.api` 并非在所有构造路径上都存在，裸取 `.id` 会抛
+  // "undefined is not an object"。它经由 maxOutputTokens → overflow.usable → isOverflow
+  // 位于压缩判定的主路径上，抛在这里等于整条压缩链断掉。compaction 那 8 条 isOverflow
+  // 测试长期挂的就是这个，不是断言写错。
+  const id = model.api?.id?.toLowerCase() ?? model.id?.toLowerCase() ?? ""
   return id.includes("mimo")
 }
 

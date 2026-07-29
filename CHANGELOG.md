@@ -11,6 +11,32 @@
 ---
 
 ## TUI
+### [0.8.0] - 2026-07-29
+
+> 围绕前缀缓存的一批改造，外加可见思考语言约束。设计取自 [DeepSeek-Reasonix](https://github.com/esengine/DeepSeek-Reasonix) 的 `compact.go` / `reasoning_language.go` / `cache_shape.go`（该项目同为面向 DeepSeek 的 agent，`prefix-shape.ts` 早前也借鉴过它）。
+
+#### 新增
+
+- **可见思考文本的语言约束**（新增 `session/reasoning-language.ts`）：DeepSeek / step 等模型即使面对纯中文提问，`reasoning_content` 也常整段用英文写，界面上"已思考"是英文、正文是中文，割裂得厉害。新增配置 `reasoning_language: "auto" | "zh" | "en"`，默认 `auto`。三处设计都不是随手定的：
+  - **命令式措辞**，不是"偏好/建议"。软措辞在"中文提问里嵌了英文日志/代码"时会丢掉**第一个** reasoning 段，而第一段会锚定整轮——provider 会把先前的 reasoning 回传给模型，第一段丢了整轮就回不来。
+  - **注入 user turn，不进 system prompt**。这是用户可随时切换的偏好，放进稳定前缀等于每次改设置都打掉整个 prefix cache。
+  - **auto 模式保守**：剥掉代码块与 RedCode 自己注入的包装块后再数汉字，英文和拿不准的一律不注入，保持旧行为。
+- **逐工具 schema token 成本诊断**（`session/prefix-shape.ts`）：工具 schema 每轮都在前缀里付费，某个 MCP server 挂上来就可能悄悄吃掉几千 token，此前完全不可见。`prefix cache changed` 的日志现在带上 `toolCount` / `toolSchemaTokens`，并在 tools 确实变化时列出最贵的 5 个工具。逐工具成本只在 tools 变了时才算，不是每轮都序列化。
+
+#### 变更
+
+- **压缩改为分级，廉价手段先上**（`session/overflow.ts`、`session/compaction.ts`、`session/prompt.ts`）：原先是单一二值判定——没溢出什么都不做，一溢出就直接摘要压缩。但摘要压缩是**前缀缓存重置点**：重写历史、打掉整个 prefix cache，还要付一次模型调用，单阈值意味着它总是来得突然且已无便宜手段可用。现在分三档（比例相对 `usable()`，即扣掉输出预留之后的可用窗口）：
+  - `soft`(0.6) — 只记一条提示，**刻意不做任何重写**，在这里动前缀是白白炸掉缓存
+  - `prune`(0.8) — 裁剪陈旧工具输出，纯本地改写，不花钱不调模型
+  - `compact` — 真正的摘要压缩，**触发点与改造前完全一致**（`count >= usable`），刻意不动，避免改变既有压缩时机
+- **prune 先于 summarize**（`session/prompt.ts`、`session/compaction.ts`）：压缩触发时先裁剪陈旧工具输出，若光这一步就把用量压回阈值以下，则**跳过这一轮付费的 summarize 调用**——省一次模型调用，也少一次缓存重置。溢出（模型被上下文顶断）时不做此判断，那种情况必须真压。`compaction.prune` 相应从返回 `void` 改为返回 `{ tokens, parts }`。
+
+#### 修复
+
+- **`isMimoModel` 裸取 `model.api.id` 会抛**（`provider/transform.ts`）：`model.api` 并非在所有构造路径上都存在，而它经由 `maxOutputTokens` → `overflow.usable` → `isOverflow` 位于压缩判定的主路径上，抛在这里等于整条压缩链断掉。加空值保护并回退到 `model.id`。`compaction.test.ts` 里 8 条 `isOverflow` 用例长期失败的原因就是这个，不是断言写错——该文件从 23 pass / 28 fail 变为 31 pass / 20 fail。
+
+---
+
 ### [0.7.39] - 2026-07-28
 
 > 两处授权绕过 + PowerShell 中文乱码 + 三处性能热点；CI 自 fork 起从未真正运行，本次修复并收敛到 Windows。
