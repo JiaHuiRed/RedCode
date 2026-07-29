@@ -16,6 +16,11 @@
   <body class="antialiased overscroll-none text-12-regular overflow-hidden">
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root" class="flex flex-col h-dvh"></div>
+    <!-- 260729 Red 必须排在 index.tsx 之前：Tauri 没有 preload 这一层，window.api 得由
+         这里建起来。index.tsx 在模块顶层就无条件调用 window.api.consumeInitialDeepLinks()，
+         晚一步就是模块级 TypeError + 白屏。module 脚本按文档顺序执行，且该文件用了顶层
+         await，后续脚本会等它评估完成。Electron 下它检测不到 Tauri 会原样返回，不覆盖 preload。 -->
+    <script src="./tauri-api-shim.ts" type="module"></script>
     <script src="./index.tsx" type="module"></script>
     <script>
     // macOS traffic light buttons for Electron Windows
