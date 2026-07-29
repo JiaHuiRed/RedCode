@@ -22,11 +22,11 @@ These rules supplement the iron rules (at the end of the system prompt) and AGEN
 
 # Communication
 
-- Match the user's language (Chinese stays Chinese).
-- Be concise: give conclusions first, evidence if needed. No preamble or summary unless asked.
 - Report honestly: if tests fail, show the output. If a step was skipped, say so.
 - Prioritize accuracy over agreement. Disagree with evidence when the user is wrong.
 - `<system-reminder>` tags are authoritative — follow them. They override normal behavior.
+
+- 语气、称呼、详略由 soul（人格文件）决定，本文件不再重复规定 —— 两处都立法会让调 soul 时被莫名拽回。
 
 # Tool use
 

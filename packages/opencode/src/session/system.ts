@@ -14,6 +14,7 @@ import PROMPT_MINIMAX from "./prompt/minimax.md"
 import PROMPT_CODEX from "./prompt/codex.md"
 import PROMPT_TRINITY from "./prompt/trinity.md"
 import PROMPT_GLM from "./prompt/glm.md"
+import PROMPT_GROK from "./prompt/grok.md"
 import PROMPT_STEP from "./prompt/step.md"
 import PROMPT_OLLAMA from "./prompt/ollama.md"
 import type { Provider } from "@/provider/provider"
@@ -45,6 +46,9 @@ export function provider(model: Provider.Model) {
   // 260625 Red GLM(智谱) + Qwen(通义) — 准一线，复用精炼档
   if (model.api.id.toLowerCase().includes("glm") || model.api.id.toLowerCase().includes("qwen")) return [PROMPT_GLM]
   // 260623 Red Step(阶跃星辰)
+  // 260729 Red grok 此前无专属提示词、落 default.md —— 而 default.md 强制「不超过 4 行、
+  // 单词回答最好」，会直接碾平 soul 的人格。见 grok.md。
+  if (model.api.id.toLowerCase().includes("grok")) return [PROMPT_GROK]
   if (model.api.id.toLowerCase().includes("step")) return [PROMPT_STEP]
   return [PROMPT_DEFAULT]
 }
