@@ -43,6 +43,7 @@
 
 - **CI 自 fork 起从未真正运行**：`runs-on` 指向上游的第三方 runner 服务 blacksmith，本仓无对应账号，job 一直排队到 24 小时上限被掐；07-20 加入的 gitleaks 因 action commit 不存在而 3 秒失败，才让整个 run 开始显红。换成 GitHub 托管 runner 并重钉 gitleaks。
 - **CI 收敛到 Windows**：本 fork 只面向 Windows 10/11，`test`/`typecheck` 砍掉 Linux 半边；清掉 23 个上游遗留 workflow（发行渠道、文档站、社区机器人、beta 频道、自动生成提交）。其中 `publish.yml` 的构建 job 全带 `if: github.repository == 'anomalyco/opencode'`，在本仓恒为 false，本仓至今 0 个 release。
+- **models.dev 连不上就整个构建失败**（`script/generate.ts`）：build 时裸 `fetch("https://models.dev/api.json")`，把快照烤进二进制。国内直连该域名无响应（实测 12s 超时），而 git 的 `http.proxy` 配置对 bun 的 `fetch` 无效——它只认 `HTTPS_PROXY`/`HTTP_PROXY` 环境变量，于是只给 git 配过代理的机器上 push 能通、build 必挂，报错 `ConnectionRefused` 完全看不出是代理问题。现在 fetch 失败时回退到本地缓存 `~/.redcode/cache/models.json`，**并打显眼 warning**（含缓存年龄）——悄悄用过期快照等于悄悄发布带旧定价/旧上下文上限/旧能力位的版本。回退只在「默认源 + 非 CI + 缓存存在」三条同时成立时发生：设了 `REDCODE_MODELS_URL` 不回退（缓存属于另一个源），CI 里不回退（发版构建不许静默用陈旧数据），无缓存则报错并提示 `HTTPS_PROXY` 与 `MODELS_DEV_API_JSON` 两条出路。
 
 #### 诊断
 
