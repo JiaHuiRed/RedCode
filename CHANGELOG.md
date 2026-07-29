@@ -11,6 +11,25 @@
 ---
 
 ## TUI
+### [0.8.1] - 2026-07-29
+
+> 0.8.0 构建产物之后落的一批修复。其中「reasoning 语言约束被 DCP 注入消息挡掉」是 0.8.0 自己引入的功能当天就被证伪——功能在二进制里，但从未生效。
+
+#### 修复
+
+- **reasoning 语言约束整条静默失效**（`session/reasoning-language.ts`、`session/prompt.ts`）：线上实测（会话 `ses_0536c…`）用户说的是「怎么了敏敏」，模型思考却整段英文 `"The user asked 怎么了敏敏…"`，而运行的二进制确实包含 0.8.0 的语言约束。根因是取语言判定来源时直接用了「最后一条 `role==="user"` 的消息」——但 DCP 的压缩通知（`▣ DCP | -148.1K removed…`）同样是 user 角色，只是文本 part 标了 `ignored`。于是流程变成「取到通知 → 过滤掉 ignored 的 part → 只剩空串 → 判为 auto → 不注入」。过滤本身没错，错在选消息。改为从后往前找第一条真的含用户自撰文本的消息，跳过纯注入消息；判定逻辑一并从 `prompt.ts` 的循环体里提到模块中，原先既没测试也没法测，现补 6 条（含照着线上真实消息序列构造的那条）。
+- **`stepfun-step-plan` 费用恒为 ¥0.00**（`provider/provider.ts`）：models.dev 里 `step-3.7-flash` 有四个 provider 条目，两个 "Step Plan" 的 `cost` 字段直接是 `null`，而 `CNY_PRICING` 只覆盖了 `stepfun` 一个键。实测近 30 天 `stepfun` 6596 轮累计 ¥286.29、`stepfun-step-plan` 1882 轮累计 ¥0.00，而最近 400 条消息里 351 条走的正是后者——当前全部开销都没被记账。按阶跃官方定价补上（1M tokens：输入未命中 1.35 元、命中 0.27 元、输出 8.1 元）。未补 `stepfun-ai-step-plan`（Global）：海外站按美元计价，套人民币表会把币种搞错，比不显示更糟。
+
+#### 变更
+
+- **`step.md` 补上三条针对实测毛病的约束**（`session/prompt/step.md`）：此前该提示词规则齐整但完全没有覆盖 step 自己的两个高发问题，等于"能用提示词管住却没管"。新增：① 只用原生 tool-call 通道，禁止把 `<tool_call>`/`<function=…>`/`<parameter=…>` 当正文写出来（实测 14 次 XML 泄漏 100% 出自 step）；② 不许把答案留在思考通道里——思考默认折叠，只有思考没有正文的一轮跟崩溃无法区分（step 此类轮次 0.6%，是 deepseek 的 4 倍）；③ "简洁"不等于"不说话"，一句也比零句强（实测 step 平均思考 3553 字、正文仅 144 字）。是代码层兜底（`xml-tool-call.ts` 的打捞与 reasoning-only 纠正）之外的第一道防线，互补而非替代。
+
+#### 性能
+
+- **构建取数配了代理就优先走代理**（`script/generate.ts`）：0.8.0 的做法是先试直连、失败再退代理。但"git 里配了代理"本身就是"这台机器要靠代理出网"的强信号，先试直连只是白等一次超时（本机直连 12 秒无响应，且这是常态）。改为有代理配置就先走代理、不通再退直连；没配代理的机器行为不变。实测构建取数从 24.0 秒降到 4.8 秒，省下的全是等直连超时的时间。
+
+---
+
 ### [0.8.0] - 2026-07-29
 
 > 围绕前缀缓存的一批改造，外加可见思考语言约束。设计取自 [DeepSeek-Reasonix](https://github.com/esengine/DeepSeek-Reasonix) 的 `compact.go` / `reasoning_language.go` / `cache_shape.go`（该项目同为面向 DeepSeek 的 agent，`prefix-shape.ts` 早前也借鉴过它）。
@@ -25,7 +44,6 @@
 
 #### 变更
 
-- **`step.md` 补上三条针对实测毛病的约束**（`session/prompt/step.md`）：此前该提示词规则齐整但完全没有覆盖 step 自己的两个高发问题，等于"能用提示词管住却没管"。新增：① 只用原生 tool-call 通道，禁止把 `<tool_call>`/`<function=…>`/`<parameter=…>` 当正文写出来（今天实测 14 次 XML 泄漏 100% 出自 step）；② 不许把答案留在思考通道里——思考默认折叠，只有思考没有正文的一轮跟崩溃无法区分（step 此类轮次 0.6%，是 deepseek 的 4 倍）；③ "简洁"不等于"不说话"，一句也比零句强（实测 step 平均思考 3553 字、正文仅 144 字）。全部为代码层兜底（`xml-tool-call.ts` 的打捞与 reasoning-only 纠正）之外的第一道防线，两者互补而非替代。
 - **压缩改为分级，廉价手段先上**（`session/overflow.ts`、`session/compaction.ts`、`session/prompt.ts`）：原先是单一二值判定——没溢出什么都不做，一溢出就直接摘要压缩。但摘要压缩是**前缀缓存重置点**：重写历史、打掉整个 prefix cache，还要付一次模型调用，单阈值意味着它总是来得突然且已无便宜手段可用。现在分三档（比例相对 `usable()`，即扣掉输出预留之后的可用窗口）：
   - `soft`(0.6) — 只记一条提示，**刻意不做任何重写**，在这里动前缀是白白炸掉缓存
   - `prune`(0.8) — 裁剪陈旧工具输出，纯本地改写，不花钱不调模型
@@ -38,7 +56,7 @@
 - **grok-4.5 / kimi-k3 同样支持推理强度却没有档位**（`provider/transform.ts`）：与 GLM 同一张排除表的问题。依据两家官方文档——xAI：grok-4.5 支持 `reasoning_effort`，取值 `low`/`medium`/`high`，默认 `high`，**无法禁用推理**（故不提供 `none` 档）；Moonshot：K3 始终开启思考，取值 `low`/`high`/`max`，默认 `max`。两者档位集合不同（一个有 `medium`、一个有 `max`），各用各的表。均按版本号判定：`grok-3-mini` 保持原有分支不受影响，`grok-4`/`4.2`/`4.3` 与 `kimi-k2` 系列继续无档位，更高版本自动跟上。
   经会话库验证聚合层确实转发该参数：`opencode-go/deepseek-v4-flash` 三档的平均 reasoning token 为 default 133 / high 202 / max 311，单调递增，样本 4608 轮——同一条聚合路径上参数生效，不是摆设。
 - **GLM 挂在聚合供应商下时拿不到 `thinking` 参数**（`provider/transform.ts`）：注入条件原先只认 `providerID` 含 `zai`/`zhipuai`，但同一个 GLM 也可能挂在别的聚合商下（如 `opencode-go/glm-5.2`），那条路径既无档位又无 `thinking`，完全靠上游默认值。判据改为按模型本身识别，原有 zai/zhipuai 路径不变。
-- **构建时 models.dev 拉不动，每次都退到过期缓存**（`script/generate.ts`）：0.7.39 加的缓存回退虽然让构建不再直接失败，但每次都刷一屏 stale 警告，治标不治本。根因是 git 有自己的 `http.proxy` 配置而 bun 的 `fetch` 只认 `HTTPS_PROXY` 环境变量——同一台机器上 push 能通、build 不通，而指望每次构建都记得 `set HTTPS_PROXY` 并不现实。现在自动读取 `git config --get https.proxy`（回退 `http.proxy`）并用 bun fetch 的 `proxy` 选项拉取；只读不写，不碰用户的 git 配置。**配了代理就优先走代理**——"git 里配了代理"本身就是"这台机器要靠代理出网"的强信号，先试直连只是白等一次超时（实测构建耗时从 24 秒降到 4.8 秒，省下的全是等直连超时的时间）；代理不通时再退回直连。没配代理的机器行为不变。同时给两次请求都加了 90 秒超时——代理路径实测拉这 1.2MB 要 20 秒上下，超时太短会半路断掉又白白退回缓存。缓存回退与那三个不回退的条件（自定义源 / CI / 无缓存）保持不变，作为最后一道防线。
+- **构建时 models.dev 拉不动，每次都退到过期缓存**（`script/generate.ts`）：0.7.39 加的缓存回退虽然让构建不再直接失败，但每次都刷一屏 stale 警告，治标不治本。根因是 git 有自己的 `http.proxy` 配置而 bun 的 `fetch` 只认 `HTTPS_PROXY` 环境变量——同一台机器上 push 能通、build 不通，而指望每次构建都记得 `set HTTPS_PROXY` 并不现实。现在直连失败后自动读取 `git config --get https.proxy`（回退 `http.proxy`）并用 bun fetch 的 `proxy` 选项重试；只读不写，不碰用户的 git 配置。同时给两次请求都加了 90 秒超时——代理路径实测拉这 1.2MB 要 20 秒上下，超时太短会半路断掉又白白退回缓存。缓存回退与那三个不回退的条件（自定义源 / CI / 无缓存）保持不变，作为最后一道防线。
 - **`isMimoModel` 裸取 `model.api.id` 会抛**（`provider/transform.ts`）：`model.api` 并非在所有构造路径上都存在，而它经由 `maxOutputTokens` → `overflow.usable` → `isOverflow` 位于压缩判定的主路径上，抛在这里等于整条压缩链断掉。加空值保护并回退到 `model.id`。`compaction.test.ts` 里 8 条 `isOverflow` 用例长期失败的原因就是这个，不是断言写错——该文件从 23 pass / 28 fail 变为 31 pass / 20 fail。
 
 ---
