@@ -1235,7 +1235,16 @@ export const layer = Layer.effect(
             "mimo-v2-omni": CNY_COST_FLASH,
             "mimo-v2-pro": CNY_COST_PRO,
           },
+          // 260729 Red 阶跃官方定价（1M tokens）：输入缓存未命中 1.35 元、缓存命中 0.27 元、
+          // 输出 8.1 元。同一个 step-3.7-flash 在 models.dev 里有四个国内/海外 provider 条目，
+          // 其中两个 "Step Plan" 条目 cost 直接是 null —— 用它们的会话费用恒为 ¥0.00
+          // （实测 stepfun-step-plan 1882 轮累计 ¥0，而 stepfun 6596 轮 ¥286.29）。
+          // 这里补上 China 版 Step Plan。**没有**补 stepfun-ai-step-plan（Global）：
+          // 海外站按美元计价，套一张人民币表会把币种搞错，比不显示更糟。
           stepfun: {
+            "step-3.7-flash": { input: 1.35, output: 8.1, cache: { read: 0.27, write: 1.35 } },
+          },
+          "stepfun-step-plan": {
             "step-3.7-flash": { input: 1.35, output: 8.1, cache: { read: 0.27, write: 1.35 } },
           },
           zhipuai: {
