@@ -589,6 +589,32 @@ export function topK(model: Provider.Model) {
 }
 
 const WIDELY_SUPPORTED_EFFORTS = ["low", "medium", "high"]
+
+// 260729 Red GLM 的思考控制分两代（依据智谱官方「核心参数说明」）：
+//   · thinking.type —— GLM-4.5 及以上都有，二值 enabled/disabled，默认 enabled
+//   · reasoning_effort —— **仅 GLM-5.2 及以上支持**
+// 且 5.2 的 7 个取值里有一半是别名：none/minimal 都是放弃思考，low/medium 都映射成 high，
+// xhigh 映射成 max。全摆出来是骗人的——用户选了 low 实际吃到的是 high。只暴露三档真实行为。
+// max 是官方默认值，所以不选任何变体时的行为就等于 max。
+const GLM_EFFORTS = ["none", "high", "max"]
+
+/** 从模型 id 里解出 GLM 版本号；认不出来返回 undefined */
+function glmVersion(...ids: (string | undefined)[]): number | undefined {
+  for (const raw of ids) {
+    const m = raw?.toLowerCase().match(/glm-(\d+)(?:\.(\d+))?/)
+    if (m) return Number(m[1]) + Number(m[2] ?? 0) / 100
+  }
+  return undefined
+}
+
+/** GLM-5.2 及以上才支持 reasoning_effort。注意 glm-5-turbo / glm-5v-turbo 都是 5.0，不算。 */
+function glmSupportsEffort(...ids: (string | undefined)[]): boolean {
+  const v = glmVersion(...ids)
+  return v !== undefined && v >= 5.02
+}
+
+const effortVariants = (efforts: string[]) =>
+  Object.fromEntries(efforts.map((effort) => [effort, { reasoningEffort: effort }]))
 const OPENAI_EFFORTS = ["none", "minimal", ...WIDELY_SUPPORTED_EFFORTS, "xhigh"]
 const OPENAI_GPT5_1_EFFORTS = ["none", ...WIDELY_SUPPORTED_EFFORTS]
 const OPENAI_GPT5_2_PLUS_EFFORTS = [...OPENAI_GPT5_1_EFFORTS, "xhigh"]
@@ -708,9 +734,14 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
     }
   }
   const adaptiveEfforts = anthropicAdaptiveEfforts(model.api.id)
+
+  // 260729 Red GLM 从排除表移出：reasoning_effort 在 GLM-5.2 起是官方支持的（见 GLM_EFFORTS
+  // 上方注释）。5.1 及以下仍然只有 thinking 二值开关，没有"想多深"这个维度，继续不给变体。
+  // 此前无差别排除整个 glm 家族，导致 5.2 明明支持却在页脚看不到任何档位。
+  if (id.includes("glm")) return glmSupportsEffort(id, model.api.id) ? effortVariants(GLM_EFFORTS) : {}
+
   if (
     id.includes("minimax") ||
-    id.includes("glm") ||
     id.includes("kimi") ||
     id.includes("k2p") ||
     id.includes("qwen") ||
@@ -1157,8 +1188,13 @@ export function options(input: {
     result["chat_template_args"] = { enable_thinking: true }
   }
 
+  // 260729 Red 判据从 provider 名改为模型本身。原先只认 providerID 含 zai/zhipuai 的路径，
+  // 但同样的 GLM 也可能挂在别的聚合供应商下（本机就是 opencode-go/glm-5.2），那条路径既拿不到
+  // thinking 参数、也没有档位，完全靠上游默认值，RedCode 这边一个字都没说。
+  // 官方文档：thinking.type 是 GLM-4.5 及以上都有的开关，默认 enabled。
   if (
-    ["zai", "zhipuai"].some((id) => input.model.providerID.includes(id)) &&
+    (glmVersion(input.model.id, input.model.api.id) !== undefined ||
+      ["zai", "zhipuai"].some((id) => input.model.providerID.includes(id))) &&
     input.model.api.npm === "@ai-sdk/openai-compatible"
   ) {
     result["thinking"] = {
