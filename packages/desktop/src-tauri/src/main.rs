@@ -232,11 +232,129 @@ fn set_wsl_config(app: AppHandle, config: WslConfig) -> Result<(), String> {
     store.save().map_err(|e| e.to_string())
 }
 
+// ─── 260729 Red task #4 续：A 档剩余的纯数据 invoke ────────────────────────
+// 逐条对照 Electron 侧实现移植，不是照着方法名猜语义。未移植的四个（parse-markdown、
+// export-debug-logs、record-fatal-renderer-error、install-cli）需要额外决策——分别是
+// markdown crate 的行为对齐、日志落盘路径、CLI 安装位置——留到后续，不在这里半猜着写。
+
+#[tauri::command]
+fn app_version(app: AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+/// 对应 ipc.ts:190 的 `BrowserWindow.getAllWindows().length`
+#[tauri::command]
+fn get_window_count(app: AppHandle) -> usize {
+    app.webview_windows().len()
+}
+
+#[derive(Serialize)]
+struct WindowConfig {
+    #[serde(rename = "updaterEnabled")]
+    updater_enabled: bool,
+}
+
+/// Electron 侧是 `{ updaterEnabled: app.isPackaged && CHANNEL !== "dev" }`（constants.ts:11）。
+/// Tauri 这边更新器尚未移植（任务 #8），因此诚实返回 false —— 报 true 会让前端显示一个
+/// 点了没反应的「检查更新」入口。等 #8 做完再改成真实判定。
+#[tauri::command]
+fn get_window_config() -> WindowConfig {
+    WindowConfig { updater_enabled: false }
+}
+
+/// Electron 侧本来就是空实现（index.ts:373-374：`async () => null` / `async () => undefined`），
+/// 是 Linux 时代 X11/Wayland 后端切换的遗留。原样保留空语义，不要自作主张补内容。
+#[tauri::command]
+fn get_display_backend() -> Option<String> {
+    None
+}
+
+#[tauri::command]
+fn set_display_backend() {}
+
+/// apps.ts:14-18：win32 与 linux 一律 true，只有 macOS 才真去查 /Applications。
+/// 本项目只面向 Windows，故恒为 true —— 与 Electron 在 Windows 上的行为完全一致。
+#[tauri::command]
+fn check_app_exists() -> bool {
+    true
+}
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// 建一个不弹控制台黑框的子进程。Tauri 是 GUI 子系统，不加这个标志每次 shell-out
+/// 都会闪一下窗口。
+fn quiet_command(program: &str) -> std::process::Command {
+    let mut cmd = std::process::Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
+/// apps.ts:57-70 的 resolveWindowsAppPath：`where <app>`，优先取 .exe。
+/// 已知缺口：Electron 版在只找到 .cmd/.bat 时会读文件内容、解析里面的 `%~dp0` 再拼出真实
+/// exe 路径（apps.ts:75-100）。那段逻辑依赖 npm shim 的具体写法，移植前需要先确认现在还有
+/// 哪些调用方真的依赖它；此处退化为「没有 .exe 就返回第一条命中」，行为差异记在这里而不是
+/// 假装完整。
+#[tauri::command]
+fn resolve_app_path(app_name: String) -> Option<String> {
+    let output = quiet_command("where").arg(&app_name).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let paths: Vec<&str> = stdout.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+    paths
+        .iter()
+        .find(|p| p.to_lowercase().ends_with(".exe"))
+        .or_else(|| paths.first())
+        .map(|p| p.to_string())
+}
+
+/// apps.ts:25-40 的 wslPath。`~` 开头要走 `sh -lc` 让 shell 展开 $HOME，否则 wslpath
+/// 会把字面量 `~` 当成路径的一部分 —— 这个分支不是可有可无的兼容代码。
+#[tauri::command]
+fn wsl_path(path: String, mode: Option<String>) -> Result<String, String> {
+    let flag = if mode.as_deref() == Some("windows") { "-w" } else { "-u" };
+    let output = if let Some(suffix) = path.strip_prefix('~') {
+        let escaped = suffix.replace('"', "\\\"");
+        quiet_command("wsl")
+            .args(["-e", "sh", "-lc", &format!("wslpath {flag} \"$HOME{escaped}\"")])
+            .output()
+    } else {
+        quiet_command("wsl").args(["-e", "wslpath", flag, &path]).output()
+    }
+    .map_err(|e| format!("Failed to run wslpath: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Failed to run wslpath: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// windows.ts:48-54：Electron 只是把颜色存进模块变量，供之后建窗时使用，并不会立刻重绘。
+/// 这里同样只存进托管状态，语义保持一致。
+struct BackgroundColor(Mutex<Option<String>>);
+
+#[tauri::command]
+fn set_background_color(state: tauri::State<'_, BackgroundColor>, color: String) {
+    if let Ok(mut guard) = state.0.lock() {
+        *guard = Some(color);
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .manage(SidecarState(Mutex::new(None)))
+        .manage(BackgroundColor(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             await_initialization,
             get_default_server_url,
@@ -248,7 +366,16 @@ fn main() {
             store_delete,
             store_clear,
             store_keys,
-            store_length
+            store_length,
+            app_version,
+            get_window_count,
+            get_window_config,
+            get_display_backend,
+            set_display_backend,
+            check_app_exists,
+            resolve_app_path,
+            wsl_path,
+            set_background_color
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
