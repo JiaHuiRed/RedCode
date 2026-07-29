@@ -111,3 +111,39 @@ renderer 侧调用点集中在 `src/renderer/index.tsx`（39 处）+ `titlebar.t
 ---
 
 **原型残留**：可行性验证的 Tauri 工程在临时 scratchpad 目录（非仓库），会话结束即弃。本文是唯一需要保留的产出。
+
+---
+
+## 8. A 档收尾结论（2026-07-29）
+
+A 档 22 项里 19 项已移植（见 `src-tauri/src/main.rs`）。剩下 3 项经核实**都不该照着方法名直译**，逐条记录原因，免得下次又被当成"待办"重新拾起来：
+
+### 8.1 `install-cli` —— Electron 里就是坏的，无可移植
+
+`preload/index.ts:7` 声明了 `ipcRenderer.invoke("install-cli")`，`renderer/cli.ts:7` 也在调，但**全仓库不存在 `ipcMain.handle("install-cli", …)`**。也就是说这条 IPC 从写下来那天起就必然 reject，只是 `renderer/cli.ts` 用 try/catch 包住、弹了个失败 alert，所以没人注意到。
+
+结论：Tauri 侧不实现。要真做"安装 CLI"功能，得先决定安装位置与 PATH 写入策略，那是新功能不是移植。
+
+### 8.2 `parse-markdown` —— 不该跨进程，应该留在渲染进程
+
+Electron 侧（`main/markdown.ts`）用的是 JS 库 `marked` 加一个自定义 link renderer（给外链加 `class="external-link" target="_blank" rel="noopener noreferrer"`）。
+
+移植到 Rust 意味着换一个 markdown crate（comrak / pulldown-cmark），**GFM 边缘行为必然与 `marked` 有出入**，而它的输出直接进 UI。为了一个纯字符串变换去赌解析器行为一致，收益为负。
+
+而且 `marked` 本来就是 `packages/desktop` 自己的 JS 依赖（`package.json:34`），渲染进程完全可以直接 import。当初放进主进程是 Electron 时代的惯性，不是必要。
+
+结论：Tauri 侧不实现该 command。等写 `window.api` shim 时，`parseMarkdownCommand` 直接在 shim 的 JS 里调 `marked`，不走 invoke。
+
+### 8.3 `export-debug-logs` —— 需要先定 zip 方案，暂缓
+
+`logging.ts:57` 把若干日志目录打包成 zip 落到下载目录。Rust 侧要引 zip crate（`zip` / `async_zip`），并决定是否保留 Electron 那套 `XDG_DATA_HOME` 兜底路径收集逻辑（`logging.ts:153-154`）。工作量不大但需要选型，未做。
+
+`record-fatal-renderer-error` 已移植（写 `app_log_dir()/<启动时间戳>/renderer.log`），未连带移植 `initLogging`/`initCrashReporter`/netLog —— 那几个依赖 Electron 的 crashReporter 与 net-log，Tauri 无对等物，需要单独设计。
+
+### 8.4 真正的下一个阻塞：`window.api` shim 尚不存在
+
+目前 `src-tauri` 已有 **28 个 command**，但仓库里**没有任何 JS 侧的 `window.api` → `invoke()` 桥接**（`grep -rl "@tauri-apps/api|__TAURI__" packages/desktop/src` 无结果）。原型里那份 shim 活在临时目录、从未提交。
+
+也就是说：这 28 个 command 目前**一个都不可达**，渲染进程在 Tauri 下仍然起不来（`window.api` 未定义时 `renderer/index.tsx` 模块顶层就会崩，见 §1）。
+
+这比 A 档剩下那几项重要得多，应作为下一步，优先于任务 #6。

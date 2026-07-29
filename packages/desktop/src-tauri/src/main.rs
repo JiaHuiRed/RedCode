@@ -472,6 +472,53 @@ fn write_attachment(session_dir: String, filename: String, data: Vec<u8>) -> Res
     Ok(target.to_string_lossy().into_owned())
 }
 
+/// ipc.ts:80 → logging.ts 的 `writeLog("renderer", …, "error")`。
+/// Electron 把日志写在 `userData/logs/<启动时间戳>/`，一个进程一个目录。这里用 Tauri 的
+/// `app_log_dir()`（Windows 上是 %APPDATA%/<identifier>/logs），同样按启动时间戳分目录 ——
+/// 目录名格式沿用 logging.ts:108 的 `toISOString()` 去掉 `-:` 的写法，便于两边日志对照。
+///
+/// 仅移植「渲染进程致命错误」这一条写入路径。logging.ts 里还有 initLogging/initCrashReporter/
+/// netLog 等整套，那些依赖 Electron 的 crashReporter 与 net-log，Tauri 侧没有对等物，
+/// 需要单独设计，不在本次范围。
+#[tauri::command]
+fn record_fatal_renderer_error(app: AppHandle, error: serde_json::Value) -> Result<(), String> {
+    use std::io::Write;
+    let dir = app
+        .path()
+        .app_log_dir()
+        .map_err(|e| e.to_string())?
+        .join(fatal_log_run_stamp());
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let line = format!(
+        "[{}] fatal renderer error {}\n",
+        fatal_log_timestamp(),
+        serde_json::to_string(&error).unwrap_or_else(|_| "<unserializable>".into())
+    );
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("renderer.log"))
+        .map_err(|e| e.to_string())?;
+    file.write_all(line.as_bytes()).map_err(|e| e.to_string())
+}
+
+/// 进程启动时间戳，整个进程生命周期内固定 —— 与 Electron 侧「一次启动一个目录」对齐
+fn fatal_log_run_stamp() -> String {
+    use std::sync::OnceLock;
+    static STAMP: OnceLock<String> = OnceLock::new();
+    STAMP.get_or_init(fatal_log_timestamp).clone()
+}
+
+fn fatal_log_timestamp() -> String {
+    // 不引 chrono：只需要一个单调可排序的串，用 UNIX 秒即可。Electron 侧是 ISO 去分隔符，
+    // 形式不同但用途相同（排序 + 唯一），日志目录不需要跨端逐字节一致。
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("{secs}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -558,7 +605,8 @@ fn main() {
             open_link,
             open_path,
             show_notification,
-            write_attachment
+            write_attachment,
+            record_fatal_renderer_error
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
