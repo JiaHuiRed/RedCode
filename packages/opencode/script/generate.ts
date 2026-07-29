@@ -40,16 +40,22 @@ function gitProxy(): string | undefined {
 // 代理路径实测慢（本机走 7897 拉这 1.2MB 要 20s 上下），给足超时，别让它半路断掉又回退到缓存
 const FETCH_TIMEOUT_MS = 90_000
 
+// 260729 Red 配了 git 代理就**优先走代理**，而不是先试直连。
+// "git 里配了代理"本身就是"这台机器要靠代理出网"的强信号——先试直连只是白等一次超时
+// （本机实测直连 12 秒无响应，而且这是常态，能直连才是少数情况）。
+// 没配代理的机器行为不变：直连，失败即失败。
 async function fetchModels(url: string): Promise<string> {
+  const proxy = gitProxy()
+  const direct = () => fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }).then((x) => x.text())
+  if (!proxy) return await direct()
+
   try {
-    return await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }).then((x) => x.text())
-  } catch (error) {
-    // HTTPS_PROXY/HTTP_PROXY 已设时 bun 会自动走，走到这儿说明要么没设、要么设了也不通。
-    // 此时再试一次 git 配的代理 —— 这是绝大多数"push 能通 build 不通"机器的解。
-    const proxy = gitProxy()
-    if (!proxy) throw error
-    console.log(`  models.dev 直连失败，改走 git 配置的代理 ${proxy} 重试…`)
+    console.log(`  经 git 配置的代理拉取 models.dev（${proxy}）…`)
     return await fetch(url, { proxy, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }).then((x) => x.text())
+  } catch (error) {
+    // 代理配着但没开、或代理自己出不去网时，再退回直连试一次
+    console.log(`  代理不通（${error instanceof Error ? error.message : String(error)}），改试直连…`)
+    return await direct()
   }
 }
 
