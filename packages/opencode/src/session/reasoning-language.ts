@@ -93,3 +93,36 @@ export function resolve(configured: string | undefined, source: string | undefin
   if (mode !== "auto") return mode
   return infer(source)
 }
+
+interface MessageLike {
+  readonly info: { readonly role: string }
+  readonly parts: ReadonlyArray<{
+    readonly type: string
+    readonly text?: string
+    readonly ignored?: boolean
+    readonly synthetic?: boolean
+  }>
+}
+
+/**
+ * 从消息列表里取出「用户自己最后写的那段话」，用于语言判定。
+ *
+ * 260729 修：原先在 prompt.ts 里直接取最后一条 role==="user" 的消息，实测是错的 ——
+ * DCP 压缩通知（`▣ DCP | -148.1K removed…`）同样是 user 角色，只是文本 part 标了
+ * ignored。取到它、再过滤掉 ignored 的 part，就只剩空串，判定退化成 auto，整条约束
+ * 静默失效（会话 ses_0536c…：用户说的是「怎么了敏敏」，思考却整段英文）。
+ * 正确做法是从后往前找**第一条真的含用户自撰文本**的消息，跳过纯注入消息。
+ */
+export function sourceFrom(msgs: ReadonlyArray<MessageLike>): string | undefined {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const msg = msgs[i]
+    if (msg.info.role !== "user") continue
+    const text = msg.parts
+      .filter((p) => p.type === "text" && !p.ignored && !p.synthetic)
+      .map((p) => p.text ?? "")
+      .join("\n")
+      .trim()
+    if (text) return text
+  }
+  return undefined
+}

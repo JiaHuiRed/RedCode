@@ -1407,13 +1407,11 @@ export const layer = Layer.effect(
             // 取用户最后一轮自己写的文本做判定 —— 跳过 synthetic/ignored（那些是 RedCode 注入的，
             // 不代表用户在说什么语言）。整块作为 transient user turn 注入，绝不进 system prompt：
             // 这是可随时切换的偏好，进了稳定前缀就会每次改设置都打掉 prefix cache。
-            const latestUserMsg = msgs.findLast((m) => m.info.role === "user")
-            const reasoningSource = latestUserMsg?.parts
-              .filter((p) => p.type === "text" && !p.ignored && !p.synthetic)
-              .map((p) => (p.type === "text" ? p.text : ""))
-              .join("\n")
             const reasoningLanguagePrompt = ReasoningLanguage.block(
-              ReasoningLanguage.resolve((yield* config.get()).reasoning_language, reasoningSource),
+              ReasoningLanguage.resolve(
+                (yield* config.get()).reasoning_language,
+                ReasoningLanguage.sourceFrom(msgs),
+              ),
             )
 
             yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
