@@ -3,6 +3,9 @@
 use serde::Serialize;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
+use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_store::StoreExt;
@@ -349,10 +352,183 @@ fn set_background_color(state: tauri::State<'_, BackgroundColor>, color: String)
     }
 }
 
+// ─── 260729 Red task #5：B 档 IPC（走 Tauri 插件） ────────────────────────
+// 对照 main/ipc.ts:112-190 移植。返回值形状必须和 Electron 完全一致，前端那 39 处调用点
+// 没打算改：取消一律返回 null，multiple 时返回数组、否则返回单个字符串。
+// 未在本批移植：read-clipboard-image（Electron 返回 PNG 字节，Tauri 拿到的是裸 RGBA，
+// 需要引入 PNG 编码器，编码选型单独决定）、updater 三件套（本就是任务 #8）。
+
+#[derive(serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct PickerOpts {
+    multiple: Option<bool>,
+    title: Option<String>,
+    default_path: Option<String>,
+    extensions: Option<Vec<String>>,
+}
+
+fn picker_builder(app: &AppHandle, opts: &PickerOpts, fallback_title: &str) -> tauri_plugin_dialog::FileDialogBuilder<tauri::Wry> {
+    let mut builder = app.dialog().file().set_title(opts.title.as_deref().unwrap_or(fallback_title));
+    if let Some(dir) = opts.default_path.as_deref() {
+        builder = builder.set_directory(dir);
+    }
+    if let Some(exts) = opts.extensions.as_ref() {
+        if !exts.is_empty() {
+            let refs: Vec<&str> = exts.iter().map(|s| s.as_str()).collect();
+            builder = builder.add_filter("Supported", &refs);
+        }
+    }
+    builder
+}
+
+/// ipc.ts:112 —— 取消返回 null；multiple 时返回数组
+#[tauri::command]
+fn open_directory_picker(app: AppHandle, opts: Option<PickerOpts>) -> serde_json::Value {
+    let opts = opts.unwrap_or_default();
+    let builder = picker_builder(&app, &opts, "Choose a folder");
+    if opts.multiple.unwrap_or(false) {
+        match builder.blocking_pick_folders() {
+            Some(paths) => serde_json::json!(paths.iter().map(|p| p.to_string()).collect::<Vec<_>>()),
+            None => serde_json::Value::Null,
+        }
+    } else {
+        match builder.blocking_pick_folder() {
+            Some(path) => serde_json::json!(path.to_string()),
+            None => serde_json::Value::Null,
+        }
+    }
+}
+
+/// ipc.ts:125
+#[tauri::command]
+fn open_file_picker(app: AppHandle, opts: Option<PickerOpts>) -> serde_json::Value {
+    let opts = opts.unwrap_or_default();
+    let builder = picker_builder(&app, &opts, "Choose a file");
+    if opts.multiple.unwrap_or(false) {
+        match builder.blocking_pick_files() {
+            Some(paths) => serde_json::json!(paths.iter().map(|p| p.to_string()).collect::<Vec<_>>()),
+            None => serde_json::Value::Null,
+        }
+    } else {
+        match builder.blocking_pick_file() {
+            Some(path) => serde_json::json!(path.to_string()),
+            None => serde_json::Value::Null,
+        }
+    }
+}
+
+/// ipc.ts:142
+#[tauri::command]
+fn save_file_picker(app: AppHandle, opts: Option<PickerOpts>) -> Option<String> {
+    let opts = opts.unwrap_or_default();
+    picker_builder(&app, &opts, "Save file")
+        .blocking_save_file()
+        .map(|p| p.to_string())
+}
+
+/// ipc.ts:153 —— Electron 用的是 ipcMain.on（fire-and-forget），这里同样不回传结果
+#[tauri::command]
+fn open_link(app: AppHandle, url: String) {
+    let _ = app.opener().open_url(url, None::<&str>);
+}
+
+/// ipc.ts:157 —— 带 app 参数时用指定程序打开
+#[tauri::command]
+fn open_path(app: AppHandle, path: String, app_name: Option<String>) -> Result<(), String> {
+    app.opener().open_path(path, app_name.as_deref()).map_err(|e| e.to_string())
+}
+
+/// ipc.ts:186
+#[tauri::command]
+fn show_notification(app: AppHandle, title: String, body: Option<String>) {
+    let mut builder = app.notification().builder().title(title);
+    if let Some(body) = body {
+        builder = builder.body(body);
+    }
+    let _ = builder.show();
+}
+
+/// ipc.ts:175 —— 保存图片附件到 <sessionDir>/.attachments/。
+/// **路径遍历防御必须一起移植**：0.6.30 加的那道 `filepath.startsWith(dir + sep)` 校验，
+/// 挡的是 filename 里带 `../` 把文件写到 .attachments 之外。这里用 canonicalize 后比较前缀
+/// 实现同样语义 —— 注意要先建目录再 canonicalize，否则不存在的路径解析会失败。
+#[tauri::command]
+fn write_attachment(session_dir: String, filename: String, data: Vec<u8>) -> Result<String, String> {
+    let dir = std::path::Path::new(&session_dir).join(".attachments");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let root = dir.canonicalize().map_err(|e| e.to_string())?;
+
+    let target = root.join(&filename);
+    // 父目录必须仍在 .attachments 内。文件本身还不存在，所以 canonicalize 它的父目录。
+    let parent = target.parent().ok_or_else(|| format!("Invalid attachment filename: {filename}"))?;
+    let parent = parent
+        .canonicalize()
+        .map_err(|_| format!("Invalid attachment filename: {filename}"))?;
+    if !parent.starts_with(&root) {
+        return Err(format!("Invalid attachment filename: {filename}"));
+    }
+
+    std::fs::write(&target, &data).map_err(|e| e.to_string())?;
+    Ok(target.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmpdir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("redcode-attach-test-{tag}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn writes_into_attachments_dir() {
+        let session = tmpdir("ok");
+        let path = write_attachment(session.to_string_lossy().into_owned(), "a.png".into(), vec![1, 2, 3]).unwrap();
+        assert!(path.contains(".attachments"));
+        assert_eq!(std::fs::read(&path).unwrap(), vec![1, 2, 3]);
+    }
+
+    // 这条是本命令唯一的安全属性：filename 里带 ../ 不能把文件写到 .attachments 之外。
+    // Electron 侧 0.6.30 加的 startsWith(dir + sep) 校验就是干这个的，移植必须带过来。
+    #[test]
+    fn rejects_path_traversal() {
+        let session = tmpdir("traversal");
+        for evil in ["../escaped.png", "..\\escaped.png", "sub/../../escaped.png"] {
+            let result = write_attachment(session.to_string_lossy().into_owned(), evil.into(), vec![9]);
+            assert!(result.is_err(), "应当拒绝: {evil}");
+        }
+        // 逃逸目标确实没被创建
+        assert!(!session.join("escaped.png").exists());
+    }
+
+    #[test]
+    fn rejects_absolute_path_filename() {
+        let session = tmpdir("abs");
+        let evil = std::env::temp_dir().join("redcode-abs-escape.png");
+        let _ = std::fs::remove_file(&evil);
+        let result = write_attachment(session.to_string_lossy().into_owned(), evil.to_string_lossy().into_owned(), vec![9]);
+        assert!(result.is_err(), "绝对路径应当被拒绝");
+        assert!(!evil.exists());
+    }
+
+    #[test]
+    fn merge_loopback_no_proxy_keeps_existing() {
+        let merged = merge_loopback_no_proxy(Some("example.com".into()));
+        assert!(merged.contains("example.com"));
+        assert!(merged.contains("127.0.0.1"));
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(SidecarState(Mutex::new(None)))
         .manage(BackgroundColor(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
@@ -375,7 +551,14 @@ fn main() {
             check_app_exists,
             resolve_app_path,
             wsl_path,
-            set_background_color
+            set_background_color,
+            open_directory_picker,
+            open_file_picker,
+            save_file_picker,
+            open_link,
+            open_path,
+            show_notification,
+            write_attachment
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
