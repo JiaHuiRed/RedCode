@@ -146,6 +146,8 @@ export const EditTool = Tool.define(
                     return yield* Effect.fail(
                       new Error(`拒绝写入 ${filePath}：${garbled}。多半是用错误编码读取后写回，请用 read 重读原文(UTF-8)，勿写回乱码。`),
                     )
+                  const bloat = Bom.detectCrBloat(contentNew, contentOld)
+                  if (bloat) return yield* Effect.fail(new Error(`拒绝写入 ${filePath}：${bloat}。这是行尾转换 bug，请报告。`))
                 }
                 yield* afs.writeWithDirs(filePath, Bom.join(contentNew, desiredBom))
                 if (yield* format.file(filePath)) {
@@ -215,6 +217,8 @@ export const EditTool = Tool.define(
                   return yield* Effect.fail(
                     new Error(`拒绝写入 ${filePath}：${garbled}。多半是用错误编码读取后写回，请用 read 重读原文(UTF-8)，勿写回乱码。`),
                   )
+                const bloat = Bom.detectCrBloat(contentNew, contentOld)
+                if (bloat) return yield* Effect.fail(new Error(`拒绝写入 ${filePath}：${bloat}。这是行尾转换 bug，请报告。`))
               }
               yield* afs.writeWithDirs(filePath, Bom.join(contentNew, desiredBom))
               if (yield* format.file(filePath)) {
@@ -360,7 +364,10 @@ function readBody(lines: string[], fromIndex: number): string[] {
   const body: string[] = []
   for (let j = fromIndex; j < lines.length; j++) {
     if (lines[j].startsWith("+")) {
-      body.push(lines[j].slice(1))
+      // 前缀是 `+ `（加号 + 一个空格，见 edit.md）。此前只切掉 `+`，那个分隔用的空格
+      // 被当成内容写进了文件 —— hashline 写过的每一行都比邻居多一个前导空格。
+      // `+foo`（不带空格）也照样接受，切完还是 `foo`。
+      body.push(lines[j].replace(/^\+ ?/, ""))
     } else if (lines[j] === "") {
       continue
     } else {
@@ -376,12 +383,17 @@ function applyHashlineOps(text: string, ops: HashlineOp[]): string {
   const lines = text.split("\n")
   const total = lines.length
 
-  // Sort by anchor line descending so edits don't shift each other's positions
+  // Sort by anchor line descending so edits don't shift each other's positions.
+  // 260730 Karina 同锚点时 delete 必须排在 insert 前面：`insert after 2` + `delete 3..3`
+  // 两条都锚在 idx 3，先插后删的话删掉的正是刚插进去的那行。原来的比较器
+  // (`a.type === "delete" ? 0 : 1`) 不满足反对称性 —— 对 (delete, insert) 和
+  // (insert, delete) 都不返回相反符号，实际顺序全看 sort 实现，等于没排。
+  const deleteFirst = (op: HashlineOp) => (op.type === "delete" ? 0 : 1)
   const sorted = [...ops].sort((a, b) => {
     const aIdx = opSortIndex(a, total)
     const bIdx = opSortIndex(b, total)
     if (bIdx !== aIdx) return bIdx - aIdx
-    return a.type === "delete" ? 0 : 1
+    return deleteFirst(a) - deleteFirst(b)
   })
 
   for (const op of sorted) {
@@ -475,8 +487,13 @@ const executeHashline = (
           )
         }
 
+        // 260730 Karina 必须先归一化成 LF 再交给 applyHashlineOps —— contentOld 是原样
+        // 读进来的，CRLF 文件里行尾本来就是 `\r\n`，applyHashlineOps 只按 `\n` 切再按 `\n`
+        // 拼，`\r` 原封不动留在行尾；下面 convertToLineEnding 再转一次就变成 `\r\r\n`，
+        // 每行后面多一个空行，每编辑一次翻一倍。经典 oldString 路径（见上）一直是先
+        // normalize 再转的，只有 hashline 这条漏了。
         const ending = detectLineEnding(contentOld)
-        contentNew = convertToLineEnding(applyHashlineOps(contentOld, ops), ending)
+        contentNew = convertToLineEnding(applyHashlineOps(normalizeLineEndings(contentOld), ops), ending)
 
         const next = Bom.split(contentNew)
         const desiredBom = source.bom || next.bom
@@ -504,6 +521,8 @@ const executeHashline = (
             return yield* Effect.fail(
               new Error(`拒绝写入 ${resolvedPath}：${garbled}。多半是用错误编码读取后写回，请用 read 重读原文(UTF-8)，勿写回乱码。`),
             )
+          const bloat = Bom.detectCrBloat(contentNew, contentOld)
+          if (bloat) return yield* Effect.fail(new Error(`拒绝写入 ${resolvedPath}：${bloat}。这是行尾转换 bug，请报告。`))
         }
         yield* afs.writeWithDirs(resolvedPath, Bom.join(contentNew, desiredBom))
         if (yield* format.file(resolvedPath)) {

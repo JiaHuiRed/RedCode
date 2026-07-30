@@ -6,6 +6,7 @@ import { EditTool } from "../../src/tool/edit"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { LSP } from "@/lsp/lsp"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
+import { Hash } from "@redcode-ai/core/util/hash"
 import { Format } from "../../src/format"
 import { Agent } from "../../src/agent/agent"
 import { Bus } from "../../src/bus"
@@ -480,6 +481,133 @@ describe("tool.edit", () => {
         })
         expect(output).toBe(normalize(blockNew + "\n" + blockNew + "\n", "\r\n"))
         expectCrlf(output)
+      }),
+    )
+  })
+
+  describe("hashline", () => {
+    const patch = (filepath: string, content: string, ...ops: string[]) =>
+      [`[${filepath}#${Hash.fileTag(content)}]`, ...ops].join("\n")
+
+    const lines = ["<html>", "  <body>", "    <p>hi</p>", "  </body>", "</html>"]
+
+    // 物理行数 —— .NET/Get-Content/编辑器的口径，裸 \r 也算换行。
+    // 只按 \n 数是发现不了 \r\r\n 膨胀的（工具自己当初就是这么瞎的）。
+    const physicalLines = (content: string) => content.split(/\r\n|\r|\n/).length
+
+    it.instance("CRLF 文件编辑后不产生 \\r\\r\\n，物理行数不翻倍", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "page.txt")
+        const content = lines.join("\r\n")
+        yield* put(filepath, content)
+
+        yield* run({ input: patch(filepath, content, "replace 3..3:", "+     <p>hello</p>") })
+
+        const after = yield* loadRaw(filepath)
+        expect(after).not.toContain("\r\r")
+        expect(physicalLines(after)).toBe(lines.length)
+        expect(after).toBe(["<html>", "  <body>", "    <p>hello</p>", "  </body>", "</html>"].join("\r\n"))
+      }),
+    )
+
+    it.instance("CRLF 文件连续编辑三次仍不膨胀", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "page.txt")
+        yield* put(filepath, lines.join("\r\n"))
+
+        for (const n of [1, 2, 3]) {
+          const current = yield* loadRaw(filepath)
+          yield* run({ input: patch(filepath, current, "replace 3..3:", `+     <p>v${n}</p>`) })
+        }
+
+        const after = yield* loadRaw(filepath)
+        expect(after).not.toContain("\r\r")
+        expect(physicalLines(after)).toBe(lines.length)
+        expect(after).toBe(["<html>", "  <body>", "    <p>v3</p>", "  </body>", "</html>"].join("\r\n"))
+      }),
+    )
+
+    it.instance("LF 文件保持 LF", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "page.txt")
+        const content = lines.join("\n")
+        yield* put(filepath, content)
+
+        yield* run({ input: patch(filepath, content, "replace 3..3:", "+     <p>hello</p>") })
+
+        const after = yield* loadRaw(filepath)
+        expect(after).not.toContain("\r")
+        expect(after).toBe(["<html>", "  <body>", "    <p>hello</p>", "  </body>", "</html>"].join("\n"))
+      }),
+    )
+
+    it.instance("`+ ` 前缀只吃掉分隔空格，不给内容加前导空格", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "code.txt")
+        const content = "function a() {\n  return 1\n}\n"
+        yield* put(filepath, content)
+
+        yield* run({ input: patch(filepath, content, "replace 2..2:", "+   return 2") })
+
+        expect(yield* load(filepath)).toBe("function a() {\n  return 2\n}\n")
+      }),
+    )
+
+    it.instance("`+` 后不带空格也照样接受，空的 `+` 就是空行", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "code.txt")
+        const content = "a\nb\nc\n"
+        yield* put(filepath, content)
+
+        yield* run({ input: patch(filepath, content, "replace 2..2:", "+B", "+", "+B2") })
+
+        expect(yield* load(filepath)).toBe("a\nB\n\nB2\nc\n")
+      }),
+    )
+
+    it.instance("CRLF 文件上的 insert/delete 同样不膨胀", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "page.txt")
+        const content = ["a", "b", "c"].join("\r\n")
+        yield* put(filepath, content)
+
+        yield* run({
+          input: patch(
+            filepath,
+            content,
+            "insert head:",
+            "+ head",
+            "insert after 2:",
+            "+ after-b",
+            "delete 3..3",
+            "insert tail:",
+            "+ tail",
+          ),
+        })
+
+        const after = yield* loadRaw(filepath)
+        expect(after).not.toContain("\r\r")
+        expect(after).toBe(["head", "a", "b", "after-b", "tail"].join("\r\n"))
+      }),
+    )
+
+    it.instance("hash 不匹配时报错且一个字节都不写", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "page.txt")
+        const content = lines.join("\r\n")
+        yield* put(filepath, content)
+
+        const err = yield* fail({ input: `[${filepath}#0000]\nreplace 3..3:\n+ nope` })
+
+        expect(err.message).toContain("Hash mismatch")
+        expect(yield* loadRaw(filepath)).toBe(content)
       }),
     )
   })

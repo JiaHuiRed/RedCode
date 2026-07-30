@@ -323,9 +323,26 @@ const ask = Effect.fn("ShellTool.ask")(function* (ctx: Tool.Context, scan: Scan)
 // 和 $OutputEncoding 都置成 UTF-8。$OutputEncoding 管的是管道传给下游原生程序的编码。
 const PS_UTF8 = "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [Console]::OutputEncoding; "
 
+// 260730 Karina 上面那行只管输出，读侧还漏着：Get-Content 在 Windows PowerShell 5.1
+// 里默认按系统 ANSI 代码页解码（中文 Windows = GBK 936），读一个 UTF-8 中文文件进来
+// 就已经是乱码了 —— "中文测试" 读成 "涓枃娴嬭瘯"。之后不管怎么写回都是在写乱码，
+// 写入侧的 detectGarbled 护栏也拦不住（PUA/FFFD 占比不够）。07-30 dossier 的
+// index.html 就是这么被 Get-Content + WriteAllLines 毁掉的。
+//
+// 只改读侧：5.1 里给写侧 cmdlet 指定 utf8 会强制写出 BOM，代价大于收益；写文件本来就
+// 该走 write/edit 工具（shell/prompt.ts 已经这么要求）。显式带了 -Encoding 的命令不受
+// 影响（PSDefaultParameterValues 只在参数缺省时生效），Env:/Function: 等非文件系统
+// provider 实测也不报错。PS 7+ 本来就是 UTF-8，这几行是无害的空操作。
+const PS_READ_UTF8 = [
+  "$PSDefaultParameterValues['Get-Content:Encoding']='utf8'",
+  "$PSDefaultParameterValues['Import-Csv:Encoding']='utf8'",
+  "$PSDefaultParameterValues['Select-String:Encoding']='utf8'",
+  "",
+].join("; ")
+
 function cmd(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv) {
   if (process.platform === "win32" && Shell.ps(shell)) {
-    return ChildProcess.make(shell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + command], {
+    return ChildProcess.make(shell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + PS_READ_UTF8 + command], {
       cwd,
       env,
       stdin: "ignore",

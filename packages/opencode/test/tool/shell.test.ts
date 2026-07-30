@@ -3,6 +3,7 @@ import { Cause, Effect, Exit, Layer } from "effect"
 import type * as Scope from "effect/Scope"
 import os from "os"
 import path from "path"
+import fs from "fs/promises"
 import { Config } from "@/config/config"
 import { Shell } from "../../src/shell/shell"
 import { ShellTool } from "../../src/tool/shell"
@@ -281,6 +282,35 @@ describe("tool.shell permissions", () => {
           }),
         ),
       ),
+    )
+  }
+
+  // 260730 Karina 回归测试：Windows PowerShell 5.1 的 Get-Content 默认按系统 ANSI 代码页
+  // 解码，中文 Windows 上读 UTF-8 文件直接读成乱码（"中文测试" → "涓枃娴嬭瘯"），
+  // 之后写回去就把原文毁了。shell.ts 里的 PS_READ_UTF8 把读侧默认编码钉成 UTF-8。
+  for (const item of ps) {
+    it.live(`Get-Content 按 UTF-8 读中文文件而不是系统代码页 [${item.label}]`, () =>
+      withShell(
+        item,
+        Effect.gen(function* () {
+          const tmp = yield* tmpdirScoped()
+          yield* runIn(
+            tmp,
+            Effect.gen(function* () {
+              const target = path.join(tmp, "chinese.txt")
+              yield* Effect.promise(() => fs.writeFile(target, "中文测试 UTF-8 内容\n", "utf8"))
+              const result = yield* run({
+                command: `Get-Content '${target.replaceAll("'", "''")}'`,
+                description: "Read a UTF-8 Chinese file",
+              })
+              expect(result.output).toContain("中文测试")
+              expect(result.output).not.toContain("�")
+            }),
+          )
+        }),
+      ),
+      // 这条要真的把 powershell.exe 拉起来，冷启动就要 5s 上下，默认超时不够
+      30_000,
     )
   }
 

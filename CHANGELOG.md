@@ -11,6 +11,27 @@
 ---
 
 ## TUI
+### [0.8.2] - 2026-07-30
+
+> edit 的 hashline 模式对 CRLF 文件每编辑一次就把行数翻一倍——自 6-10 引入起一直存在，因为对工具自己完全隐形（read 看不见、文件指纹也洗得掉），只有拿外部工具数行才会暴露。同一批还修了 hashline 的另外两个 bug 和 PowerShell 读侧编码。
+
+#### 修复
+
+- **edit hashline 对 CRLF 文件每编辑一次行数翻一倍**（`tool/edit.ts`）：`applyHashlineOps` 只按 `\n` 切行再按 `\n` 拼，CRLF 文件的 `\r` 原样留在行尾，紧接着 `convertToLineEnding` 又做一次 LF→CRLF 转换，行尾就成了 `\r\r\n`。裸 `\r` 在 .NET / `Get-Content` / 编辑器 / 浏览器眼里都算换行，于是每行后面凭空多一个空行。实测 `dossier/templates/index.html` 三次成功的 hashline 编辑后，6905 行变成 27707 行（≈ 4×6905）。这个损坏对工具自己完全隐形：`read` 和 `applyHashlineOps` 都只按 `\n` 切行，看到的还是 6905 行；`Hash.fileTag` 的 `/[ \t\r]+(?=\n|$)/` 又把多出来的 `\r` 洗掉，tag 也不变，所以 edit 既不报错也不失配。修法是交给 `applyHashlineOps` 前先 `normalizeLineEndings` —— 经典 `oldString/newString` 路径一直是先归一化再转的，只有 hashline 这条漏了。hashline 此前**零测试覆盖**，本次补 7 条（CRLF 单次/连续三次、LF、insert/delete、hash 失配不写盘）。
+- **edit hashline 给写入的每一行多加一个前导空格**（`tool/edit.ts`）：`edit.md` 明写 body 行前缀是 `+ `（加号 + 一个空格），但 `readBody` 只 `slice(1)` 切掉加号，那个分隔用的空格被当成内容写进了文件。在有格式化器的语言里被 format 抹平了，所以一直没暴露；`index.html` 里则留下实证——hashline 写过的行是 3 空格缩进，邻居是 2 空格。改为 `/^\+ ?/`，`+foo`（不带空格）也照样接受。
+- **edit hashline 同锚点时 insert 会被 delete 吃掉**（`tool/edit.ts`）：op 排序的比较器写成 `a.type === "delete" ? 0 : 1`，对 `(delete, insert)` 和 `(insert, delete)` 不返回相反符号，不满足反对称性，实际顺序全看 `sort` 的实现。`insert after 2` + `delete 3..3` 两条都锚在 idx 3，先插后删删掉的正是刚插进去的那行。改成 `deleteFirst(a) - deleteFirst(b)`。
+- **写入侧新增行尾回车膨胀护栏**（`util/bom.ts`、`tool/edit.ts`、`tool/write.ts`）：上面那个 bug 能潜伏一个多月，就因为它绕过了所有既有检查。新增 `Bom.detectCrBloat()`，与 `detectGarbled` 并列接在 edit 三个写入点 + write 一个写入点上，发现新增的 `\r\r\n` 就拒绝写入。只在"新内容比原文多"时拦——否则已经损坏的文件连用 edit 修都修不了。8 条测试。
+- **PowerShell 读文件仍按系统代码页解码**（`tool/shell.ts`）：0.7.x 加的 `PS_UTF8` 只把**输出**编码钉成了 UTF-8，读侧一直漏着——Windows PowerShell 5.1 的 `Get-Content` 默认按系统 ANSI 代码页解码，中文 Windows 上读 UTF-8 文件直接读成乱码（本机实测 "中文测试" 读成 "涓枃娴嬭瘯"）。内容在读的那一步就已经毁了，之后不管怎么写回都是在写乱码，写入侧的 `detectGarbled` 护栏也拦不住（PUA/FFFD 占比够不上阈值）。给 `Get-Content`/`Import-Csv`/`Select-String` 补上 `$PSDefaultParameterValues` 的 UTF-8 默认值；实测 `Env:`/`Function:` 等非文件系统 provider 不报错、`-Raw` 正常、显式 `-Encoding` 仍然优先。**写侧故意没动**：5.1 里给 `Set-Content`/`Out-File` 指定 utf8 会强制写 BOM，给 .py/.json/.html 加 BOM 是拿一个 bug 换另一个；写文件本来就该走 write/edit 工具。
+- **提示词/工具说明文字漏进可见正文**（新增 `session/instruction-echo.ts`、`session/processor.ts`）：DCP compress 工具的说明整段进了正文（`Rules:` / `- Do not invent IDs.` / `BATCHING` / `THE FORMAT OF COMPRESS` 加一段 JSON schema）。`xml-tool-call.ts` 管不住它——那边靠 `<function=` 子串触发，这里一个尖括号标签都没有。分两类处理：A 类是我们自己注入的包装块（`<system-reminder>`、`<reasoning-language>`、`[System notice]`），有明确起止、模型复述永远是错的，整块剥掉；B 类是工具说明/JSON schema，没有闭合标签、边界靠猜，只做行级判定，要求连续 3 行以上像 schema 且命中强特征标题才切。宁可漏切不可错切——错切会吃掉真正的回答，比留着泄漏更糟。11 条测试。
+- **「刚才用户让我做 xx」——用户其实一个字都没发**（`session/prompt.ts`）：`userReminderText` 的边界写成 `m.info.id > lastFinished.id`，而 `lastFinished` 来自 `MessageV2.latest()`、当前这条 assistant 消息整轮都不算 finished，于是它一直钉在上一轮。结果"开启本轮的那条用户消息"永远满足条件，被当成"中途新到的"每一步重新注入一次——20 步的回合模型会被告知 19 次「用户发话了，请处理」。本意只是捕捉回合**中途**新到的消息，边界改为本轮起点，并对已提醒过的消息去重。与此前查到的 DCP 以 user 角色注入消息是两个独立来源，叠在一起才让现象那么明显。
+
+#### 变更
+
+- **语气交还 soul；新增 `grok.md`**（`session/prompt/*.md`、`session/system.ts`）：语气/称呼/详略本该是 soul 独占的领域，per-model 提示词也立法会让调 soul 时被莫名拽回。从实际在用的 6 份里删掉 `Match the user's language` 与 `Be concise: …` 两类规定，各自保留机制性条款（诚实报告失败、`<system-reminder>` 权威、准确优先于附和）。真正的问题在 `default.md`——第 19 行强制「回答不超过 4 行、单词回答最好」，那才是会碾平人格的规定；但它是所有未匹配模型的兜底，不宜为 grok 单独改，故新增 `grok.md` 并在 `system.ts` 里前置匹配。内容按 xAI **API 文档**核实到的真实特性写（grok-4.5 无法禁用推理、effort 默认 high），没有硬塞泄漏的消费级产品提示词。
+- **shipped 模板里也删掉 anthropic 块**（`.opencode/redcode.home.jsonc`）：`~/.redcode/redcode.jsonc` 里删过一次，当天就又出现——根因是这份 shipped 模板还留着同一个块，同步时反向覆盖 live 配置。与 0.7.25 vision-mcp 是同类坑：配置改动往往要同时落在 live 文件和 shipped 模板两处。该块三重无效：apiKey 是占位符、`ANTHROPIC_API_KEY` 未设、唯一模型 `gpt-5-chat-latest` 实测请求 404。
+
+---
+
 ### [0.8.1] - 2026-07-29
 
 > 0.8.0 构建产物之后落的一批修复。其中「reasoning 语言约束被 DCP 注入消息挡掉」是 0.8.0 自己引入的功能当天就被证伪——功能在二进制里，但从未生效。

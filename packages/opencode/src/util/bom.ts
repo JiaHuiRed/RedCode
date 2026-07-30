@@ -40,6 +40,21 @@ export function detectGarbled(text: string): string | undefined {
   return undefined
 }
 
+// 260730 Karina 行尾回车膨胀护栏：CRLF 文件被二次做 LF→CRLF 转换会产出 `\r\r\n`。
+// 这类损坏对工具自己完全隐形 —— read 和 hashline 都只按 `\n` 切行，行数不变；
+// Hash.fileTag 又把行尾 `[ \t\r]+` 洗掉，tag 也不变。但 .NET/Get-Content/编辑器/
+// 浏览器都把裸 `\r` 当换行，于是每行后面凭空多一个空行，编辑一次翻一倍。
+// （edit.ts hashline 路径就这么把一个 6905 行的 index.html 连翻到 27707 行。）
+// 只在"新内容比原内容多"时拦截，否则已经损坏的文件连用 edit 修都修不了。
+export function detectCrBloat(next: string, prev = ""): string | undefined {
+  const count = (text: string) => text.match(/\r\r+\n/g)?.length ?? 0
+  const after = count(next)
+  if (after === 0) return undefined
+  const before = count(prev)
+  if (after <= before) return undefined
+  return `内容含 ${after} 处行尾多余回车符(\\r\\r\\n，原文 ${before} 处)，写入后每行后面会多出一个空行`
+}
+
 export const syncFile = Effect.fn("Bom.syncFile")(function* (
   fs: AppFileSystem.Interface,
   filePath: string,

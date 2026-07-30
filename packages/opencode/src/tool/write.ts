@@ -59,6 +59,13 @@ export const WriteTool = Tool.define(
               ),
             )
 
+          // 260730 Karina 行尾回车膨胀护栏：`\r\r\n` 在编辑器/浏览器眼里是两个换行
+          const bloat = Bom.detectCrBloat(contentNew, contentOld)
+          if (bloat)
+            return yield* Effect.fail(
+              new Error(`拒绝写入 ${filepath}：${bloat}。请去掉多余的 \\r，或用 read 重读原文后再写。`),
+            )
+
           const diff = trimDiff(createTwoFilesPatch(filepath, filepath, contentOld, contentNew))
           yield* ctx.ask({
             permission: "edit",
