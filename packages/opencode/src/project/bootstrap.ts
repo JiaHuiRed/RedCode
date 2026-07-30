@@ -50,7 +50,8 @@ export const layer = Layer.effect(
       const templates: Array<[src: string, dest: string]> = [
         [".opencode/agents/Tsoul.md", path.join(redcodeHome, "souls", "Tsoul.md")],
         [".opencode/agents/Gsoul.md", path.join(redcodeHome, "souls", "Gsoul.md")],
-        [".opencode/agents/USER.template.md", path.join(redcodeHome, "USER.md")],
+        // 260730 Karina 不再播种 USER.md：用户画像基本被 souls/*.md 覆盖，
+        // 每轮多一道加载不值。称呼改用 config 的 username 字段。
         [".opencode/MEMORY.md", path.join(redcodeHome, "MEMORY.md")],
       ]
       yield* Effect.forEach(templates, ([src, dest]) =>

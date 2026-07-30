@@ -15,30 +15,19 @@ import { useSDK } from "./sdk"
 import { RGBA } from "@opentui/core"
 import { Filesystem } from "@/util/filesystem"
 
-// 260608 Red 读取显示名称（用户名 + agent 名）
-async function readDisplayNames(): Promise<{ user: string; agent: string }> {
-  const redcodeHome = path.join(Global.Path.home, ".redcode")
-
-  // 读用户名：~/.redcode/USER.md 的 "称呼：" 字段
-  let user = "User"
-  try {
-    const userMd = await Bun.file(path.join(redcodeHome, "USER.md")).text()
-    const match = userMd.match(/\*\*称呼[：:]\*\*\s*(.+)/)
-    if (match) user = match[1].trim()
-  } catch {}
-
+// 260608 Red 读取 agent 显示名
+// 260730 Karina 用户名不再从 ~/.redcode/USER.md 的 "称呼：" 字段解析 —— USER.md 已下线，
+// 内容基本被 souls/Tsoul.md、souls/Gsoul.md 覆盖。用户名改读 config.username（本来就有
+// 这个字段，见 config.ts，缺省会退到系统用户名），比解析一份 markdown 里的粗体字段稳。
+async function readAgentName(): Promise<string> {
   // 读 agent 名：~/.redcode/souls/Tsoul.md 第一行 "# xxx" 标题
-  let agent = "Assistant"
   try {
-    const soulMd = await Bun.file(path.join(redcodeHome, "souls", "Tsoul.md")).text()
+    const soulMd = await Bun.file(path.join(Global.Path.home, ".redcode", "souls", "Tsoul.md")).text()
     const match = soulMd.match(/^#\s+(.+)/m)
-    if (match) {
-      // 取 "·" 或空格前的部分，如 "MyAgent · RedCode 灵魂文档" → "MyAgent"
-      agent = match[1].split("·")[0].split(" ")[0].trim()
-    }
+    // 取 "·" 或空格前的部分，如 "MyAgent · RedCode 灵魂文档" → "MyAgent"
+    if (match) return match[1].split("·")[0].split(" ")[0].trim()
   } catch {}
-
-  return { user, agent }
+  return "Assistant"
 }
 
 export function parseModel(model: string) {
@@ -133,7 +122,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       user: "User",
       agent: "Assistant",
     })
-    readDisplayNames().then((names) => setDisplayName(names))
+    readAgentName().then((agent) => setDisplayName("agent", agent))
+    createEffect(() => setDisplayName("user", sync.data.config.username || "User"))
 
     const model = iife(() => {
       const [modelStore, setModelStore] = createStore<{

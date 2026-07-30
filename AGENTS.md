@@ -40,7 +40,7 @@
 
 - `.redcode/MEMORY.md` 为当前权威记忆源
 - `.opencode/MEMORY.md` 是旧系统残留，**不作为权威记忆源**——遇到冲突以 `.redcode/` 版本为准，以全局 AGENTS.md 规则为准
-- `~/.redcode/USER.md`（用户画像）由 `redcode.jsonc` instructions 自动注入，已在上下文
+- 用户画像不再单独维护 —— 称呼、语气、协作方式都写在 `~/.redcode/souls/*.md` 里（USER.md 已于 0.8.2 下线）
 
 ## 当日日志
 

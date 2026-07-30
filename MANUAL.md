@@ -125,26 +125,16 @@ provider 顶层可用的键只有：`npm`、`options`、`models`、`name`、`api
 
 > 仓库里的 `.opencode/redcode.home.jsonc` 是一份可直接参照的真实配置模板。
 
-### 2.2 创建用户画像
+### 2.2 设置称呼
 
-告诉 AI 你的基本信息和偏好：
+对话里 AI 怎么称呼你，由 `redcode.jsonc` 的 `username` 字段决定（不填则用系统用户名）：
 
-```bash
-$EDITOR ~/.redcode/USER.md
+```jsonc
+{ "username": "哥哥" }
 ```
 
-参考内容：
-
-```markdown
-# 关于我
-
-- 称呼：叫我 Xiao
-- 语言：中文（简体）
-- 我是后端开发者，主要用 Go 和 TypeScript
-- 偏好简洁的回答，先给结论
-```
-
-AI 每次启动对话时自动读取此文件。
+至于 AI 的性格、语气、怎么跟你协作，全部写在灵魂文件里（见 5.1）。0.8.2 之前这些散在
+`~/.redcode/USER.md`，与灵魂文件大量重复，已下线；老用户那份文件留着不会再被加载，可以自行删除。
 
 ### 2.3 自定义 AI 人格
 
@@ -283,8 +273,9 @@ MCP（Model Context Protocol）让 AI 获得外部能力。安装越多 MCP，AI
 
 人格系统分两层：
 
-1. **用户画像** (`~/.redcode/USER.md`) — 关于你是谁，自动注入每次对话
-2. **灵魂文件** (`~/.redcode/souls/*.md`) — AI 的性格设定，每次对话启动时按客户端类型自动注入（TUI→Tsoul.md，GUI→Gsoul.md）；也可通过 `/tui-persona` `/gui-persona` 命令手动加载
+**灵魂文件** (`~/.redcode/souls/*.md`) — AI 的性格设定，也包括它怎么称呼你、怎么跟你协作。每次对话启动时按客户端类型自动注入（TUI→Tsoul.md，GUI→Gsoul.md）；也可通过 `/tui-persona` `/gui-persona` 命令手动加载。
+
+> 0.8.2 之前还有一层 `~/.redcode/USER.md`（用户画像），内容与灵魂文件大量重复，每轮白吃一道加载，已下线。
 
 ### 5.2 加载人格
 
@@ -340,7 +331,6 @@ RedCode 内置自动化记忆系统（skill `memory-automation`），在启动/�
 
 - **项目级** `.redcode/MEMORY.md`（当前项目专有）
 - **全局级** `~/.redcode/MEMORY.md`（跨项目通用教训，项目级不存在时兜底）
-- `~/.redcode/USER.md`（按你的偏好交互）
 
 ### 6.5 关闭记忆
 
@@ -358,7 +348,6 @@ RedCode 内置自动化记忆系统（skill `memory-automation`），在启动/�
 | 项目根 `redcode.jsonc` | **项目级** | 覆盖或补充全局配置 |
 | 项目内 `.redcode/redcode.jsonc` | **项目级** | 同上；会从当前目录逐级向上查找到 worktree 根，适合放在子目录里做局部覆盖 |
 | `~/.redcode/MEMORY.md` | 长期记忆 | AI 自动读写 |
-| `~/.redcode/USER.md` | 用户画像 | AI 启动时自动读取 |
 | `~/.redcode/souls/*.md` | 灵魂文件 | 通过 `/tui-persona` 等命令触发 |
 
 > 配置合并规则：项目级覆盖全局级，instructions 数组拼接而非替换。
@@ -505,8 +494,8 @@ description: 我的编码规范。用户说"按规范来""检查规范"时触发
 ├── agents/Tsoul.md  ← 模板    ├── souls/Tsoul.md  ← 你的版本
 ├── agents/Gsoul.md   ← 模板   ├── souls/Gsoul.md  ← 你的版本
 ├── MEMORY.md         ← 模板   ├── MEMORY.md       ← 你的记忆
-├── skill/                     ├── USER.md         ← 你的画像
-├── command/                   ├── memory/         ← 你的日志
+├── skill/                     ├── memory/         ← 你的日志
+├── command/
 └── plugins/                   └── data/           ← 会话 DB / 日志 / 快照
 ```
 

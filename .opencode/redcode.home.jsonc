@@ -5,7 +5,10 @@
   // skill、又整篇塞在这里常驻系统提示词，双重注册白吃了 ~2800 token/次对话。这几个
   // 不需要"每次都自动触发"（不像 memory-automation），改成只留 skill 发现路径——
   // 系统提示词里只放名字+描述，模型需要时自己调 skill 工具加载全文。
-  "instructions": ["~/.redcode/USER.md", "~/.redcode/skill/memory-automation/SKILL.md"],
+  // 260730 Karina USER.md 下线：用户画像基本被 souls/*.md 覆盖，留着只是每轮多一道加载。
+  // TUI 标签上的称呼改由 config 的 username 字段提供（缺省退到系统用户名）。
+  // 这份 shipped 模板必须跟 live 配置一起改 —— 只改 live 的话同步时会被模板反向覆盖回来。
+  "instructions": ["~/.redcode/skill/memory-automation/SKILL.md"],
   "mcp": {
     "typegraph": {
       "type": "local",
