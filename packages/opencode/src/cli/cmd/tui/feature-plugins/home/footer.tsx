@@ -8,8 +8,14 @@ const id = "internal:home-footer"
 
 // 260701 Red DeepSeek/Xiaomi 报价本身是 CNY，其余按官方汇率折算成 ¥ 统一展示
 // （与 GUI 侧 session-context-format.ts 的 USD_TO_CNY 保持一致）
+//
+// 260730 Karina 币种判定从"硬编码 providerID 名单"改成读 model.cost.currency。
+// 原来这里维护了一份精确匹配的集合 `["deepseek","xiaomi","stepfun","zhipuai","opencode-go"]`，
+// 而 provider.ts 的 CNY_PRICING 是另一份名单 —— 同一件事在两处各存一份，加 provider 必漏。
+// 实测漏的就是 `stepfun-step-plan`：它的 cost 本来就是人民币（0.8.1 刚补的定价），
+// 却因为不在这个集合里被当美元又乘了一次 6.76，¥7.50 显示成 ¥50.73。
+// provider.ts:1267 落定价时已经写了 `currency: "CNY"`，直接读它就不会再漏。
 const USD_TO_CNY = 6.76
-const CNY_PROVIDERS = new Set(["deepseek", "xiaomi", "stepfun", "zhipuai", "opencode-go"])
 const money = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" })
 
 function Directory(props: { api: TuiPluginApi }) {
@@ -58,14 +64,25 @@ function Stats(props: { api: TuiPluginApi }) {
   const theme = () => props.api.theme.current
   const sync = useSync()
   const stats = createMemo(() => {
+    // 币种以 model.cost.currency 为准 —— provider.ts 套 CNY_PRICING 时写的就是这个字段。
+    // 查不到（provider 未加载、模型已下架）时按"不折算"处理：多乘一次 6.76 会把 ¥7.50
+    // 显示成 ¥50.73，这种虚高比少算更唬人，宁可少算。
+    // currency 是可选字段（provider.ts:904），models.dev 来的报价没有它 —— 只有我们套
+    // CNY_PRICING 时才写 "CNY"。所以判定是 `=== "CNY"` 才不折算，其余按美元折。
+    const isCny = (model?: { providerID?: string; modelID?: string }) => {
+      if (!model?.providerID || !model?.modelID) return true
+      const entry = sync.data.provider.find((p) => p.id === model.providerID)?.models[model.modelID]
+      if (!entry) return true
+      return (entry.cost as { currency?: string } | undefined)?.currency === "CNY"
+    }
+
     let costCNY = 0
     let read = 0
     let miss = 0
     let write = 0
     for (const s of sync.data.session) {
       const cost = s.cost ?? 0
-      const isCNY = s.model?.providerID ? CNY_PROVIDERS.has(s.model.providerID) : true
-      costCNY += isCNY ? cost : cost * USD_TO_CNY
+      costCNY += isCny(s.model) ? cost : cost * USD_TO_CNY
       const t = s.tokens
       if (!t) continue
       read += t.cache.read ?? 0

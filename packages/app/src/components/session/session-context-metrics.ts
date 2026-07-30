@@ -52,7 +52,21 @@ const lastAssistantWithTokens = (messages: Message[]) => {
 
 // 260615 Red: providers with official CNY pricing — cost values are already in ¥, no USD→CNY conversion needed
 // 260701 Red exported for reuse by home-stats.tsx (cross-session cost aggregation)
-export const CNY_PROVIDERS = new Set(["deepseek", "xiaomi", "stepfun", "zhipuai", "opencode-go"])
+//
+// 260730 Karina 这份名单的权威来源是 provider.ts 的 CNY_PRICING —— 那边加了 provider
+// 这里不同步就会把人民币金额当美元再乘一次 6.76。实测漏的就是 `stepfun-step-plan`
+// （0.8.1 刚给它补了人民币定价）：库里 ¥7.50 被显示成 ¥50.73。
+// TUI 侧（feature-plugins/home/footer.tsx）已改成直接读 `model.cost.currency`，不再维护名单；
+// 这里暂时保留名单是因为 home-stats.tsx 只拿得到 session、拿不到 provider 的 model 报价。
+// **CNY_PRICING 增删条目时必须同步改这里。**
+export const CNY_PROVIDERS = new Set([
+  "deepseek",
+  "xiaomi",
+  "stepfun",
+  "stepfun-step-plan",
+  "zhipuai",
+  "opencode-go",
+])
 
 const build = (messages: Message[] = [], providers: Provider[] = []): Metrics => {
   const totalCost = messages.reduce((sum, msg) => sum + (msg.role === "assistant" ? msg.cost : 0), 0)
