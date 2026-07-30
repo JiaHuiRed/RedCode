@@ -87,22 +87,11 @@
   "compaction": { "threshold": 400000 },
   "tools": { "github-triage": false, "github-pr-search": false },
   "provider": {
-     "anthropic": {
-       "npm": "@ai-sdk/openai-compatible",
-       "options": {
-         // 260720 Red 实际指向 Codex GPT 模型代理，非 Anthropic 官方 API
-         "baseURL": "https://api.chhlink.xyz/v1",
-         "apiKey": "sk-your-key-here"
-       },
-       "models": {
-         "gpt-5-chat-latest": {
-           "name": "Codex GPT-5 Chat",
-           "temperature": true,
-           "tool_call": true,
-           "limit": { "context": 200000, "output": 65536 }
-         }
-       }
-     },
+    // 260729 Red 删除 anthropic 块。它有三重无效：apiKey 是占位符、ANTHROPIC_API_KEY 未设、
+    // 唯一的模型 gpt-5-chat-latest 经实测根本不存在（请求 404，见 codex 块注释）。
+    // 更要紧的是：只删 live 的 ~/.redcode/redcode.jsonc 不够 —— 本模板会在同步时把它写回去，
+    // 今天就实际发生了一次（删完当天又出现在 live 文件的 git diff 里）。同类坑 0.7.25
+    // 的 vision-mcp 已经栽过一次，两处必须一起删。
     "ollama": {
       "options": { "baseURL": "http://localhost:11434/v1" },
       "models": {
