@@ -90,3 +90,85 @@ describe("xml-tool-call.recoveryPrompt", () => {
     expect(prompt.length).toBeLessThan(1000)
   })
 })
+
+// 260730 Karina 第二种形状：<工具名><args><参数名>…</参数名></args></工具名>。
+// step-3.7-flash 07-30 实测吐的是这种，而旧逻辑快路径只认 <function=，第一行就短路返回，
+// 既没打捞也没摘除 —— 原始 XML 留在正文里，本轮零个 tool part 却是 finish:stop，
+// 看起来就像"它自己停了"。库里那轮的构成：step-start reasoning(778) text(261) step-finish。
+describe("detect —— <args> 形状", () => {
+  const KNOWN = new Set(["edit", "read", "bash"])
+
+  test("★线上原样：<edit><args>…，参数值里还带别的标签", () => {
+    // 取自 redcode.db 那一轮的正文
+    const text = [
+      "这样改动最小。",
+      "",
+      "<edit>",
+      "  <args>",
+      "    <filePath>C:\\work\\project\\templates\\index.html</filePath>",
+      `    <oldString>    + '</tr></thead><tbody id="acct-tbody">';</oldString>`,
+      `    <newString>    + '</tr></thead><tbody class="cr-tbody" id="acct-tbody">';</newString>`,
+      "  </args>",
+      "</edit>",
+    ].join("\n")
+
+    const out = detect(text, KNOWN)
+    expect(out.calls).toHaveLength(1)
+    expect(out.calls[0].name).toBe("edit")
+    expect(out.calls[0].params.filePath).toBe("C:\\work\\project\\templates\\index.html")
+    // 反向引用切得准：值里的 </tr></thead> 不该把 oldString 提前截断
+    expect(out.calls[0].params.oldString).toContain(`</tr></thead><tbody id="acct-tbody">`)
+    expect(out.calls[0].params.newString).toContain("cr-tbody")
+    // 正文里的 XML 要摘干净，只剩人话
+    expect(out.stripped).toBe("这样改动最小。")
+  })
+
+  test("工具名对不上不认（主要误判防线）", () => {
+    const text = "<article>\n  <args>\n    <x>1</x>\n  </args>\n</article>"
+    expect(detect(text, KNOWN).calls).toHaveLength(0)
+    expect(detect(text, KNOWN).stripped).toBe(text)
+  })
+
+  test("光有工具名、后面不是 <args> 不认", () => {
+    const text = "讨论一下 <edit> 这个标签该怎么用。"
+    expect(detect(text, KNOWN).calls).toHaveLength(0)
+    expect(detect(text, KNOWN).stripped).toBe(text)
+  })
+
+  test("被截断没有闭合标签也能捞出来", () => {
+    const text = "<edit>\n  <args>\n    <filePath>a.ts</filePath>"
+    const out = detect(text, KNOWN)
+    expect(out.calls).toHaveLength(1)
+    expect(out.calls[0].params.filePath).toBe("a.ts")
+  })
+
+  test("同一段正文里两种形状混着出现，都要捞到且摘干净", () => {
+    const text = [
+      "先读再改：",
+      "<function=read>",
+      "<parameter=filePath>a.ts</parameter>",
+      "</function>",
+      "然后",
+      "<edit>",
+      "  <args>",
+      "    <filePath>a.ts</filePath>",
+      "  </args>",
+      "</edit>",
+      "完成。",
+    ].join("\n")
+
+    const out = detect(text, KNOWN)
+    expect(out.calls.map((c) => c.name)).toEqual(["read", "edit"])
+    expect(out.stripped).not.toContain("<function=")
+    expect(out.stripped).not.toContain("<args>")
+    expect(out.stripped).toContain("先读再改")
+    expect(out.stripped).toContain("完成。")
+  })
+
+  test("两种标签都没有时走快路径，原样返回同一个字符串", () => {
+    const text = "普通回复，没有任何标签。"
+    const out = detect(text, KNOWN)
+    expect(out.calls).toHaveLength(0)
+    expect(out.stripped).toBe(text)
+  })
+})
