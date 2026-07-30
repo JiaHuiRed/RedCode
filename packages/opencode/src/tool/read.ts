@@ -11,6 +11,7 @@ import { Instruction } from "../session/instruction"
 import { isPdfAttachment, sniffAttachmentMime } from "@/util/media"
 import { Reference } from "@/reference/reference"
 import { Hash } from "@redcode-ai/core/util/hash"
+import * as Bom from "@/util/bom"
 import { Service as SnippetService, type Snippet } from "@/session/snippet"
 
 const DEFAULT_READ_LIMIT = 2000
@@ -18,7 +19,10 @@ const MAX_LINE_LENGTH = 2000
 const MAX_LINE_SUFFIX = `... (line truncated to ${MAX_LINE_LENGTH} chars)`
 const MAX_BYTES = 50 * 1024
 const MAX_BYTES_LABEL = `${MAX_BYTES / 1024} KB`
-const SAMPLE_BYTES = 4096
+// 这份采样同时用于 mime 嗅探、二进制判定和编码嗅探。必须与 Bom.SNIFF_BYTES 相等 ——
+// edit 那边用 Bom.decode 按同样长度嗅同样的头部，两边不等就会在非 UTF-8 文件上对不上
+// tag。bom.test.ts 有一条测试钉住这个等式。
+const SAMPLE_BYTES = Bom.SNIFF_BYTES
 const SUPPORTED_IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"])
 
 class ReadStop extends Schema.TaggedErrorClass<ReadStop>()("ReadStop", {}) {}
@@ -156,7 +160,10 @@ export const ReadTool = Tool.define(
       )
     })
 
-    const lines = Effect.fn("ReadTool.lines")(function* (filepath: string, opts: { limit: number; offset: number }) {
+    const lines = Effect.fn("ReadTool.lines")(function* (
+      filepath: string,
+      opts: { limit: number; offset: number; encoding: string },
+    ) {
       const start = opts.offset - 1
       const raw: string[] = []
       const flags = { bytes: 0, count: 0, cut: false, more: false, done: false }
@@ -166,7 +173,7 @@ export const ReadTool = Tool.define(
       // avoid Stream.runForEachWhile (it currently swallows the final unterminated
       // line of the upstream splitLines pipeline) and use a tagged error to stop the
       // upstream file stream as soon as the byte cap is reached.
-      const decoder = new TextDecoder("utf-8")
+      const decoder = new TextDecoder(opts.encoding)
       // 260728 Karina 顺路把文件指纹算了：只要这趟流没被 ReadStop 掐断，读到的就是全文，
       // 指纹直接可用，省掉此前为了 4 个字符的 tag 再把整个文件全量读进内存一遍那趟。
       // 被掐断时指纹只覆盖了前半截，作废，由调用方走 fingerprint() 重算。
@@ -222,8 +229,8 @@ export const ReadTool = Tool.define(
     // 内存再全量解码一遍，把 lines() 的 50KB/2000 行截断白白抵消（300MB 日志照样吃满内存）。
     // tag 必须覆盖全文 —— edit 用全文算 currentHash 校验陈旧度 —— 所以这趟读省不掉，但可以不驻留。
     // TextDecoder 默认 ignoreBOM=false 会自动吃掉 BOM，与 Bom.readFile 的 split() 一致。
-    const fingerprint = Effect.fn("ReadTool.fingerprint")(function* (filepath: string) {
-      const decoder = new TextDecoder("utf-8")
+    const fingerprint = Effect.fn("ReadTool.fingerprint")(function* (filepath: string, encoding: string) {
+      const decoder = new TextDecoder(encoding)
       const hasher = Hash.fileTagStream()
       yield* fs
         .stream(filepath)
@@ -374,14 +381,22 @@ export const ReadTool = Tool.define(
         return yield* Effect.fail(new Error(`Cannot read binary file: ${filepath}`))
       }
 
-      const file = yield* lines(filepath, { limit: params.limit ?? DEFAULT_READ_LIMIT, offset: params.offset || 1 })
+      // 260730 Karina 编码检测：拿上面那份采样嗅一次，整趟流和补算指纹都用它。
+      // 判定规则与 Bom.sniff 共用 —— read 产 [path#TAG]、edit 用 Bom.decode 算
+      // currentHash，两边解码方式只要不一致，非 UTF-8 文件就会次次 hash mismatch。
+      const encoding = Bom.sniff(sample)
+      const file = yield* lines(filepath, {
+        limit: params.limit ?? DEFAULT_READ_LIMIT,
+        offset: params.offset || 1,
+        encoding,
+      })
       if (file.count < file.offset && !(file.count === 0 && file.offset === 1)) {
         return yield* Effect.fail(
           new Error(`Offset ${file.offset} is out of range for this file (${file.count} lines)`),
         )
       }
 
-      const fileTag = file.tag ?? (yield* fingerprint(filepath))
+      const fileTag = file.tag ?? (yield* fingerprint(filepath, encoding))
 
       let output = [`<path>${filepath}</path>`, `<type>file</type>`, `[${filepath}#${fileTag}]`, "<content>\n"].join("\n")
       output += file.raw.map((line, i) => `${i + file.offset}: ${line}`).join("\n")

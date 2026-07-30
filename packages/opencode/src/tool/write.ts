@@ -44,11 +44,20 @@ export const WriteTool = Tool.define(
           yield* assertExternalDirectoryEffect(ctx, filepath)
 
           const exists = yield* fs.existsSafe(filepath)
-          const source = exists ? yield* Bom.readFile(fs, filepath) : { bom: false, text: "" }
+          const source = exists ? yield* Bom.readFile(fs, filepath) : { bom: false, text: "", encoding: "utf-8" }
           const next = Bom.split(params.content)
           const desiredBom = source.bom || next.bom
           const contentOld = source.text
           const contentNew = next.text
+
+          // 260730 Karina 编码护栏：非 UTF-8 的原文一律不写回，否则等于悄悄转编码
+          const changed = exists ? Bom.detectEncodingChange(source.encoding) : undefined
+          if (changed)
+            return yield* Effect.fail(
+              new Error(
+                `拒绝写入 ${filepath}：${changed}。若确实要转成 UTF-8，请先明确告知用户并由其确认；只想改内容就换用能保留原编码的方式。`,
+              ),
+            )
 
           // 260616 Red 乱码护栏：拒绝把乱码内容写入文件（GBK 错解 UTF-8 的 PUA/替换符）
           const garbled = Bom.detectGarbled(contentNew)

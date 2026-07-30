@@ -231,6 +231,10 @@ export const AstGrepTool = Tool.define(
           const nodes = root.root().findAll(config) as SgNode[]
           if (nodes.length === 0) continue
 
+          // 260730 Karina 非 UTF-8 的文件不改：下面 writeWithDirs 只会写 UTF-8，
+          // 改了就等于悄悄把人家的 GBK 文件转了编码。搜索那条路径不受影响，只读不写。
+          if (Bom.detectEncodingChange(source.encoding)) continue
+
           const edits = nodes.map((n: SgNode) => n.replace(expandReplaceTemplate(replacement, n)))
           const modified = root.root().commitEdits(edits)
           if (modified !== source.text) {

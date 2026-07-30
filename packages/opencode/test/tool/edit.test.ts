@@ -7,6 +7,7 @@ import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { LSP } from "@/lsp/lsp"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Hash } from "@redcode-ai/core/util/hash"
+import * as Bom from "@/util/bom"
 import { Format } from "../../src/format"
 import { Agent } from "../../src/agent/agent"
 import { Bus } from "../../src/bus"
@@ -608,6 +609,65 @@ describe("tool.edit", () => {
 
         expect(err.message).toContain("Hash mismatch")
         expect(yield* loadRaw(filepath)).toBe(content)
+      }),
+    )
+  })
+
+  // 260730 Karina read 侧加了编码检测之后，GBK 文件读出来是干净中文，detectGarbled
+  // 那道墙（满屏 FFFD → 拒写）就自动失效了。不补这道就成了「悄悄把用户的 GBK 文件
+  // 转成 UTF-8」—— 我们只有解码能力没有编码能力，所以拒绝而不是往回转。
+  describe("编码护栏", () => {
+    // GBK 编码的两行：「中文测试内容」「第二行：项目报表」
+    const GBK = new Uint8Array([
+      0xd6, 0xd0, 0xce, 0xc4, 0xb2, 0xe2, 0xca, 0xd4, 0xc4, 0xda, 0xc8, 0xdd, 0x0a, 0xb5, 0xda,
+      0xb6, 0xfe, 0xd0, 0xd0, 0xa3, 0xba, 0xcf, 0xee, 0xc4, 0xbf, 0xb1, 0xa8, 0xb1, 0xed, 0x0a,
+    ])
+
+    const putBytes = Effect.fn("EditToolTest.putBytes")(function* (p: string, bytes: Uint8Array) {
+      const afs = yield* AppFileSystem.Service
+      yield* afs.writeWithDirs(p, bytes)
+    })
+
+    it.instance("拒绝把 GBK 文件写回成 UTF-8（经典路径），且原文一字节未动", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "gbk.txt")
+        yield* putBytes(filepath, GBK)
+
+        const err = yield* fail({ filePath: filepath, oldString: "中文测试内容", newString: "改过的内容" })
+
+        expect(err.message).toContain("不是 UTF-8")
+        const after = yield* Effect.promise(() => fs.readFile(filepath))
+        expect(new Uint8Array(after)).toEqual(GBK)
+      }),
+    )
+
+    it.instance("拒绝把 GBK 文件写回成 UTF-8（hashline 路径）", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "gbk.txt")
+        yield* putBytes(filepath, GBK)
+
+        // tag 用检测后的文本算 —— 与 read 产出的一致，所以不会先撞上 hash mismatch，
+        // 能真正走到编码护栏这一步
+        const tag = Hash.fileTag(Bom.decode(GBK).text)
+        const err = yield* fail({ input: `[${filepath}#${tag}]\nreplace 1..1:\n+ 改过的内容` })
+
+        expect(err.message).toContain("不是 UTF-8")
+        const after = yield* Effect.promise(() => fs.readFile(filepath))
+        expect(new Uint8Array(after)).toEqual(GBK)
+      }),
+    )
+
+    it.instance("UTF-8 文件不受影响", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "utf8.txt")
+        yield* put(filepath, "中文测试内容\n")
+
+        yield* run({ filePath: filepath, oldString: "中文测试内容", newString: "改过的内容" })
+
+        expect(yield* load(filepath)).toBe("改过的内容\n")
       }),
     )
   })

@@ -125,7 +125,9 @@ export const EditTool = Tool.define(
             Effect.gen(function* () {
               if (oldString === "") {
                 const existed = yield* afs.existsSafe(filePath)
-                const source = existed ? yield* Bom.readFile(afs, filePath) : { bom: false, text: "" }
+                const source = existed
+                  ? yield* Bom.readFile(afs, filePath)
+                  : { bom: false, text: "", encoding: "utf-8" }
                 const next = Bom.split(newString)
                 const desiredBom = source.bom || next.bom
                 contentOld = source.text
@@ -141,6 +143,11 @@ export const EditTool = Tool.define(
                   },
                 })
                 {
+                  const changed = existed ? Bom.detectEncodingChange(source.encoding) : undefined
+                  if (changed)
+                    return yield* Effect.fail(
+                      new Error(`拒绝写入 ${filePath}：${changed}。要转编码请先跟用户确认，只改内容就换用能保留原编码的方式。`),
+                    )
                   const garbled = Bom.detectGarbled(contentNew)
                   if (garbled)
                     return yield* Effect.fail(
@@ -212,6 +219,11 @@ export const EditTool = Tool.define(
               })
 
               {
+                const changed = Bom.detectEncodingChange(source.encoding)
+                if (changed)
+                  return yield* Effect.fail(
+                    new Error(`拒绝写入 ${filePath}：${changed}。要转编码请先跟用户确认，只改内容就换用能保留原编码的方式。`),
+                  )
                 const garbled = Bom.detectGarbled(contentNew)
                 if (garbled)
                   return yield* Effect.fail(
@@ -516,6 +528,11 @@ const executeHashline = (
         })
 
         {
+          const changed = Bom.detectEncodingChange(source.encoding)
+          if (changed)
+            return yield* Effect.fail(
+              new Error(`拒绝写入 ${resolvedPath}：${changed}。要转编码请先跟用户确认，只改内容就换用能保留原编码的方式。`),
+            )
           const garbled = Bom.detectGarbled(contentNew)
           if (garbled)
             return yield* Effect.fail(

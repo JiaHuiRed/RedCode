@@ -19,6 +19,7 @@ import { disposeAllInstances, provideInstance, TestInstance, tmpdirScoped } from
 import { testEffect } from "../lib/effect"
 import { Reference } from "@/reference/reference"
 import { Hash } from "@redcode-ai/core/util/hash"
+import * as Bom from "@/util/bom"
 import { RepositoryCache } from "@/reference/repository-cache"
 import { Snippet } from "@/session/snippet"
 
@@ -662,6 +663,58 @@ describe("tool.read binary detection", () => {
 
       const err = yield* fail(dir, { filePath: path.join(dir, "module.wasm") })
       expect(err.message).toContain("Cannot read binary file")
+    }),
+  )
+})
+
+// 260730 Karina 读取侧编码检测。这两条锁的是 read 与 edit 的一致性：read 产
+// [path#TAG]、edit 用 Bom.decode 算 currentHash 校验陈旧度，两边必须按同一条规则
+// 嗅同一段头部，否则非 UTF-8 文件会次次 hash mismatch。read 是流式的、拿不到全文，
+// 所以规则定成"只嗅头部 SNIFF_BYTES 字节"，两边才对得上。
+describe("tool.read 编码检测", () => {
+  // GBK 编码的两行：「中文测试内容」「第二行：项目报表」
+  const GBK = new Uint8Array([
+    0xd6, 0xd0, 0xce, 0xc4, 0xb2, 0xe2, 0xca, 0xd4, 0xc4, 0xda, 0xc8, 0xdd, 0x0a, 0xb5, 0xda,
+    0xb6, 0xfe, 0xd0, 0xd0, 0xa3, 0xba, 0xcf, 0xee, 0xc4, 0xbf, 0xb1, 0xa8, 0xb1, 0xed, 0x0a,
+  ])
+
+  it.instance("GBK 文件按 GBK 解，不再满屏 U+FFFD", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "gbk.txt")
+      yield* put(filepath, GBK)
+
+      const result = yield* run({ filePath: filepath })
+
+      expect(result.output).toContain("中文测试内容")
+      expect(result.output).toContain("第二行：项目报表")
+      expect(result.output).not.toContain("�")
+    }),
+  )
+
+  it.instance("GBK 文件的 tag 与 edit 侧 Bom.decode 算出来的一致", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "gbk.txt")
+      yield* put(filepath, GBK)
+
+      const result = yield* run({ filePath: filepath })
+
+      expect(result.output).toContain(`#${Hash.fileTag(Bom.decode(GBK).text)}]`)
+    }),
+  )
+
+  it.instance("UTF-8 文件的 tag 不受检测改动影响", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "utf8.txt")
+      const content = "中文测试内容\n第二行：项目报表\n"
+      yield* put(filepath, content)
+
+      const result = yield* run({ filePath: filepath })
+
+      expect(result.output).toContain("中文测试内容")
+      expect(result.output).toContain(`#${Hash.fileTag(content)}]`)
     }),
   )
 })

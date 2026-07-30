@@ -113,6 +113,10 @@ export const ApplyPatchTool = Tool.define(
             }
 
             const source = yield* Bom.readFile(afs, filePath)
+            // 260730 Karina 非 UTF-8 的原文不写回：下面只会写 UTF-8，写了就等于悄悄转编码
+            const changed = Bom.detectEncodingChange(source.encoding)
+            if (changed)
+              return yield* Effect.fail(new Error(`apply_patch verification failed: ${filePath} ${changed}`))
             const oldContent = source.text
             let newContent = oldContent
             let bom = source.bom
