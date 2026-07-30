@@ -1427,11 +1427,12 @@ export const layer = Layer.effect(
             // 取用户最后一轮自己写的文本做判定 —— 跳过 synthetic/ignored（那些是 RedCode 注入的，
             // 不代表用户在说什么语言）。整块作为 transient user turn 注入，绝不进 system prompt：
             // 这是可随时切换的偏好，进了稳定前缀就会每次改设置都打掉 prefix cache。
+            // 260730 Karina 同一个块里再加一条称呼约束：soul/per-model 提示词只管住了正文，
+            // 一进思考通道模型就退回 "the user"。称呼取 config.username。
+            const reasoningCfg = yield* config.get()
             const reasoningLanguagePrompt = ReasoningLanguage.block(
-              ReasoningLanguage.resolve(
-                (yield* config.get()).reasoning_language,
-                ReasoningLanguage.sourceFrom(msgs),
-              ),
+              ReasoningLanguage.resolve(reasoningCfg.reasoning_language, ReasoningLanguage.sourceFrom(msgs)),
+              ReasoningLanguage.addressFrom(reasoningCfg.username),
             )
 
             yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })

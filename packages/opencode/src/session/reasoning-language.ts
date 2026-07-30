@@ -17,6 +17,8 @@
 //  3. **auto 模式保守**。只在能明确判定用户在说中文时才注入；英文和拿不准的一律不注入，
 //     保持原有行为不变。宁可漏，不可错——错误注入会让英文用户的思考链变成中文。
 
+import os from "os"
+
 export type Mode = "auto" | "zh" | "en"
 
 export function normalize(value: string | undefined): Mode {
@@ -34,27 +36,65 @@ export function normalize(value: string | undefined): Mode {
   }
 }
 
-const ZH_BLOCK =
-  "<reasoning-language>\n" +
+const ZH_LANGUAGE =
   "必须使用简体中文书写全部可见思考/推理文本：从第一个字开始就用中文，并在整轮内保持中文，" +
   "即使系统提示词、工具说明、工具输出或引用的代码是英文。" +
   "代码、标识符、文件路径、shell 命令和未翻译的技术术语保持原文。" +
-  "此要求只约束可见思考文本，不影响最终回答的语言。\n" +
-  "</reasoning-language>"
+  "此要求只约束可见思考文本，不影响最终回答的语言。"
 
-const EN_BLOCK =
-  "<reasoning-language>\n" +
+const EN_LANGUAGE =
   "Write all visible reasoning/thinking text in English, from the first word onward, " +
   "and keep it English for the whole turn. Keep code, identifiers, file paths, shell commands " +
   "and untranslated technical terms as-is. This constrains visible reasoning only; " +
-  "it does not affect the language of the final answer.\n" +
-  "</reasoning-language>"
+  "it does not affect the language of the final answer."
 
-/** 返回要注入的块；auto 或无法判定时返回 undefined（不注入） */
-export function block(mode: Mode): string | undefined {
-  if (mode === "zh") return ZH_BLOCK
-  if (mode === "en") return EN_BLOCK
-  return undefined
+// 260730 Karina 称呼约束。语气/称呼设定（soul、per-model 提示词）全都只管住了正文 ——
+// 模型把"人格"理解成输出风格，一进思考通道就退回默认的第三人称 "the user"/"用户"，
+// 正文喊"哥哥"、思考里写 "The user wants me to..."，割裂得很明显。
+// 修法跟语言约束同源：必须显式点明"这条也管可见思考文本"，并且用命令式措辞。
+const zhAddress = (name: string) =>
+  `在可见思考文本里同样称呼用户为「${name}」，与正文保持一致；` +
+  `不要用「用户」「the user」「这位用户」之类的第三人称指代，从第一句思考开始就这么称呼。`
+
+const enAddress = (name: string) =>
+  `In visible reasoning text, address the user as "${name}", the same as in your reply. ` +
+  `Never refer to them as "the user" or any other third-person placeholder — do this from the first sentence of reasoning onward.`
+
+/**
+ * 返回要注入的块；语言与称呼两条约束共用一个块，省一个 user turn。
+ *
+ * 标签沿用历史的 `<reasoning-language>` 而不是改成更贴切的名字：
+ * `instruction-echo.ts` 的 A 类剥离和下面 STRIP 都按这个标签匹配，改名要同步三处，
+ * 换来的只是名字好看一点，不值得冒漏剥的风险。
+ *
+ * mode 为 auto（判定不出用户在说什么语言）时不注入语言约束，但称呼约束照样要注入 ——
+ * 这两件事的触发条件本来就不同：称呼只取决于用户有没有设过 username。
+ */
+export function block(mode: Mode, address?: string): string | undefined {
+  const rules: string[] = []
+  if (mode === "zh") rules.push(ZH_LANGUAGE)
+  if (mode === "en") rules.push(EN_LANGUAGE)
+  // 正常调用方会先过 addressFrom()，这里再兜一次空白串：注入「称呼用户为『   』」比不注入更糟
+  const name = address?.trim()
+  if (name) rules.push(mode === "zh" ? zhAddress(name) : enAddress(name))
+  if (rules.length === 0) return undefined
+  return `<reasoning-language>\n${rules.join("\n")}\n</reasoning-language>`
+}
+
+/**
+ * 从 config.username 取思考里该用的称呼。
+ *
+ * config 在读取时会把空缺的 username 填成系统用户名（config.ts 里 `if (!result.username)`），
+ * 所以这里必须把"等于系统用户名"当成没设过 —— 否则会注入「称呼用户为 Administrator」，
+ * 比不注入更糟。
+ */
+export function addressFrom(username: string | undefined): string | undefined {
+  const name = username?.trim()
+  if (!name) return undefined
+  try {
+    if (name === os.userInfo().username) return undefined
+  } catch {}
+  return name
 }
 
 // 剥掉不代表"用户在用什么语言说话"的内容：RedCode 注入的包装块、粘贴的文件/代码。

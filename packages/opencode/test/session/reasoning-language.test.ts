@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { block, infer, normalize, resolve, sourceFrom } from "../../src/session/reasoning-language"
+import os from "os"
+import { addressFrom, block, infer, normalize, resolve, sourceFrom } from "../../src/session/reasoning-language"
 
 // 构造消息的小工具：parts 里 [文本, 是否 ignored]
 const msg = (role: string, ...parts: Array<[string, boolean?]>) => ({
@@ -124,5 +125,52 @@ describe("reasoning-language.resolve + block", () => {
     const b = block("en")!
     expect(b).toContain("from the first word onward")
     expect(b).toContain("does not affect the language of the final answer")
+  })
+})
+
+// 260730 Karina 称呼约束。soul / per-model 提示词只管住了正文 —— 模型把人格理解成输出
+// 风格，一进思考通道就退回 "The user wants me to..."，正文喊哥哥、思考里叫 the user。
+describe("reasoning-language 称呼约束", () => {
+  test("中文模式：语言与称呼两条合在同一个块里，只占一个 user turn", () => {
+    const b = block("zh", "哥哥")!
+    expect(b).toContain("必须使用简体中文")
+    expect(b).toContain("称呼用户为「哥哥」")
+    expect(b).toContain("不要用「用户」「the user」")
+    expect((b.match(/<reasoning-language>/g) ?? []).length).toBe(1)
+  })
+
+  test("英文模式用英文措辞，但称呼本身原样保留", () => {
+    const b = block("en", "哥哥")!
+    expect(b).toContain("from the first word onward")
+    expect(b).toContain('address the user as "哥哥"')
+    expect(b).toContain('Never refer to them as "the user"')
+  })
+
+  test("★auto 判不出语言时，称呼约束照样注入 —— 两条的触发条件本来就不同", () => {
+    const b = block("auto", "哥哥")!
+    expect(b).toContain("<reasoning-language>")
+    expect(b).toContain('address the user as "哥哥"')
+    // 语言约束不该混进来
+    expect(b).not.toContain("必须使用简体中文")
+    expect(b).not.toContain("from the first word onward")
+  })
+
+  test("既没语言约束也没称呼时才返回 undefined", () => {
+    expect(block("auto")).toBeUndefined()
+    expect(block("auto", undefined)).toBeUndefined()
+    expect(block("auto", "   ")).toBeUndefined()
+  })
+
+  test("★等于系统用户名视为没设过 —— config 会把空缺填成系统用户名", () => {
+    // 不这么判就会注入「称呼用户为 Administrator」，比不注入更糟
+    expect(addressFrom(os.userInfo().username)).toBeUndefined()
+    expect(addressFrom(undefined)).toBeUndefined()
+    expect(addressFrom("")).toBeUndefined()
+    expect(addressFrom("  ")).toBeUndefined()
+  })
+
+  test("显式设过的称呼原样取出，两侧空白去掉", () => {
+    expect(addressFrom("哥哥")).toBe("哥哥")
+    expect(addressFrom("  Red  ")).toBe("Red")
   })
 })

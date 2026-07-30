@@ -31,6 +31,8 @@
 
 - **`USER.md` 下线**（`.opencode/redcode.home.jsonc`、`project/bootstrap.ts`、`cli/cmd/tui/context/local.tsx`、删除 `.opencode/agents/USER.template.md`）：这份"用户画像"由 `redcode.jsonc` 的 `instructions` 每轮注入，但内容基本被 `souls/Tsoul.md`、`souls/Gsoul.md` 覆盖了——称呼"哥哥"、语气要求、根因优先、连败两次停手、诚实说做不到，soul 里都写着，等于同一件事说两遍、每轮白吃一道加载。唯一真正只有它有的是 TUI 对话标签上的称呼（`local.tsx` 去解析 `**称呼：**` 这个粗体字段），改读 config 已有的 `username` 字段（缺省退到系统用户名），比解析 markdown 稳。shipped 模板与 live 配置**同时**改——只改 live 的话同步时会被模板反向覆盖回来（0.7.25 vision-mcp、本版 anthropic 块都栽过这个坑）。老用户的 `~/.redcode/USER.md` 不会被删除，只是不再加载。
 
+- **可见思考里的称呼**（`session/reasoning-language.ts`、`session/prompt.ts`）：soul 和 per-model 提示词只管住了正文——模型把"人格"理解成输出风格，一进思考通道就退回默认的第三人称，正文喊"哥哥"、思考里写 `The user wants me to...`。修法与 0.8.0 那条语言约束同源：必须显式点明"这条同样约束可见思考文本"，且用命令式措辞。称呼取 `config.username`，与两条语言约束合在同一个 `<reasoning-language>` 块里注入，不多占 user turn。触发条件比语言那条宽——`auto`（判不出用户在说什么语言）时不注入语言约束，但称呼照样注入。`username` 缺省会被 config 填成系统用户名，等于系统用户名时视作没设过，否则会注入"称呼用户为 Administrator"，比不注入更糟。7 条测试。
+
 - **语气交还 soul；新增 `grok.md`**（`session/prompt/*.md`、`session/system.ts`）：语气/称呼/详略本该是 soul 独占的领域，per-model 提示词也立法会让调 soul 时被莫名拽回。从实际在用的 6 份里删掉 `Match the user's language` 与 `Be concise: …` 两类规定，各自保留机制性条款（诚实报告失败、`<system-reminder>` 权威、准确优先于附和）。真正的问题在 `default.md`——第 19 行强制「回答不超过 4 行、单词回答最好」，那才是会碾平人格的规定；但它是所有未匹配模型的兜底，不宜为 grok 单独改，故新增 `grok.md` 并在 `system.ts` 里前置匹配。内容按 xAI **API 文档**核实到的真实特性写（grok-4.5 无法禁用推理、effort 默认 high），没有硬塞泄漏的消费级产品提示词。
 - **shipped 模板里也删掉 anthropic 块**（`.opencode/redcode.home.jsonc`）：`~/.redcode/redcode.jsonc` 里删过一次，当天就又出现——根因是这份 shipped 模板还留着同一个块，同步时反向覆盖 live 配置。与 0.7.25 vision-mcp 是同类坑：配置改动往往要同时落在 live 文件和 shipped 模板两处。该块三重无效：apiKey 是占位符、`ANTHROPIC_API_KEY` 未设、唯一模型 `gpt-5-chat-latest` 实测请求 404。
 
