@@ -91,6 +91,45 @@ const DESTRUCTIVE = new Set([
   "rename",
   "rmdir",
 ])
+// 260730 Karina git 写操作纳入 destructive 门。上面那张表只收文件操作命令，git 一个字
+// 都没有 —— 于是 `cp` 会弹授权，`git push --force`、`git reset --hard`、`git clean -fd`
+// 反而静默执行。哥哥 07-30 在某项目里被自作主张 commit 了一次，就是从这个口子过去的
+// （AGENTS.md 的红线写的是"不擅自 push / amend / tag"，连 commit 都没覆盖，而且那只是
+// 提示词，本来也没有强制力）。
+//
+// 用**白名单反向判定**：只读子命令放行，其余一律进授权门。不用"危险子命令黑名单"是因为
+// 黑名单漏一个就是静默执行，白名单漏一个只是多问一次 —— 今天一整天的教训都是"静默的
+// 损坏最贵"。stash / remote / config / tag 故意不放进白名单：它们都有会改状态的用法，
+// 按子命令一刀切分不开，宁可多问一次。
+const GIT_READONLY = new Set([
+  "status", "log", "diff", "show", "blame", "describe", "shortlog", "whatchanged",
+  "rev-parse", "rev-list", "ls-files", "ls-remote", "ls-tree", "cat-file", "for-each-ref",
+  "name-rev", "merge-base", "symbolic-ref", "count-objects", "check-ignore", "grep",
+  "version", "help", "fetch",
+])
+// git 自己的全局开关里这几个要吃掉后面一个参数，否则会把参数当成子命令
+const GIT_VALUE_FLAGS = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"])
+// `git branch` 裸用是列分支（agent 高频，别拦），带这些开关才是改动
+const GIT_BRANCH_WRITE = new Set([
+  "-d", "-D", "--delete", "-m", "-M", "--move", "-c", "-C", "--copy",
+  "-f", "--force", "-u", "--set-upstream-to", "--unset-upstream", "--edit-description",
+])
+
+function destructiveGit(tokens: string[]): boolean {
+  for (let i = 1; i < tokens.length; i++) {
+    const token = tokens[i]
+    if (GIT_VALUE_FLAGS.has(token)) {
+      i++
+      continue
+    }
+    if (token.startsWith("-")) continue
+    const sub = token.toLowerCase()
+    if (sub === "branch") return tokens.slice(i + 1).some((t) => GIT_BRANCH_WRITE.has(t))
+    return !GIT_READONLY.has(sub)
+  }
+  return false // 光一个 `git`，等于打印用法
+}
+
 const FLAGS = new Set(["-destination", "-literalpath", "-path"])
 const SWITCHES = new Set(["-confirm", "-debug", "-force", "-nonewline", "-recurse", "-verbose", "-whatif"])
 
@@ -439,11 +478,16 @@ export const ShellTool = Tool.define(
         destructive: false,
       }
       const shellKind = ShellID.toKind(Shell.name(shell))
+      let seen = 0
 
       for (const node of commands(root)) {
+        seen++
         const command = parts(node)
         const tokens = command.map((item) => item.text)
         const cmd = ps || shellKind === "cmd" ? tokens[0]?.toLowerCase() : tokens[0]
+
+        // git 不在 FILES 里，单独判：写操作走 destructive 门，只读子命令照常放行
+        if (cmd === "git" && destructiveGit(tokens)) scan.destructive = true
 
         if (cmd && (FILES.has(cmd) || (shellKind === "cmd" && CMD_FILES.has(cmd)))) {
           if (DESTRUCTIVE.has(cmd)) scan.destructive = true
@@ -459,6 +503,25 @@ export const ShellTool = Tool.define(
         if (tokens.length && (!cmd || !CWD.has(cmd))) {
           scan.patterns.add(source(node))
           scan.always.add(BashArity.prefix(tokens).join(" ") + " *")
+        }
+      }
+
+      // 260730 Karina 一个命令都解析不出来时不能静默放行。ask() 里 `patterns.size === 0`
+      // 就直接 return，本意是给 cd 这类纯导航命令留口子（它们被 CWD 拦在 patterns 之外），
+      // 但 tree-sitter 解析失败时 patterns 同样是空的 —— 于是**任何解析不了的写法都绕过了
+      // 整个授权门**。实测 PowerShell 下 `git checkout -- .` 就解析不出命令节点，一路直接执行。
+      // 解析不出来 = 不知道它要干什么，那就更该问。回退成拿整条原始命令去要授权。
+      if (seen === 0) {
+        const raw = source(root).trim()
+        if (raw) {
+          scan.patterns.add(raw)
+          scan.always.add(raw)
+          // 结构解析不出来，至少按空白切一遍跑同样的破坏性判定 —— 否则 `git checkout -- .`
+          // 这种真该拦的命令，会因为"解析失败"反而降级成最轻的授权。
+          const tokens = raw.split(/\s+/)
+          const first = ps || shellKind === "cmd" ? tokens[0]?.toLowerCase() : tokens[0]
+          if (first === "git" && destructiveGit(tokens)) scan.destructive = true
+          if (first && DESTRUCTIVE.has(first)) scan.destructive = true
         }
       }
 

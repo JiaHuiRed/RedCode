@@ -285,6 +285,60 @@ describe("tool.shell permissions", () => {
     )
   }
 
+  // 260730 Karina git 写操作纳入 destructive 授权门。此前 DESTRUCTIVE 只收文件操作命令，
+  // git 一个字都没有 —— `cp` 会弹授权，`git push --force` / `git reset --hard` / `git commit`
+  // 反而静默执行。白名单反向判定：只读子命令放行，其余进门（黑名单漏一个就是静默执行，
+  // 白名单漏一个只是多问一次）。
+  each("git 只读子命令不进 destructive 门", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          for (const command of ["git status", "git log --oneline -5", "git diff HEAD", "git rev-parse HEAD", "git branch", "git branch --show-current", "git fetch"]) {
+            const err = new Error("stop after permission")
+            const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+            yield* fail({ command, description: "read-only git" }, capture(requests, err))
+            expect(requests.some((r) => r.permission === "destructive")).toBe(false)
+          }
+        }),
+      )
+    }),
+  )
+
+  each("git 写操作进 destructive 门", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          for (const command of [
+            "git commit -m x",
+            "git push",
+            "git push --force",
+            "git reset --hard HEAD~1",
+            "git clean -fd",
+            "git checkout -- .",
+            "git restore .",
+            "git rebase main",
+            "git branch -D feature",
+            "git tag v1",
+            "git stash drop",
+            "git -C /somewhere push",
+          ]) {
+            const err = new Error("stop after permission")
+            const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+            yield* fail({ command, description: "write git" }, capture(requests, err))
+            expect({ command, gated: requests.some((r) => r.permission === "destructive") }).toEqual({
+              command,
+              gated: true,
+            })
+          }
+        }),
+      )
+    }),
+  )
+
   // 260730 Karina 回归测试：Windows PowerShell 5.1 的 Get-Content 默认按系统 ANSI 代码页
   // 解码，中文 Windows 上读 UTF-8 文件直接读成乱码（"中文测试" → "涓枃娴嬭瘯"），
   // 之后写回去就把原文毁了。shell.ts 里的 PS_READ_UTF8 把读侧默认编码钉成 UTF-8。
