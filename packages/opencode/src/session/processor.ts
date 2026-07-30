@@ -32,6 +32,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Usage, type LLMEvent } from "@redcode-ai/llm"
 import { NgramDetector, RECOVERY_PROMPTS } from "./text-loop-detection"
 import * as XmlToolCall from "./xml-tool-call"
+import * as InstructionEcho from "./instruction-echo"
 
 const DOOM_LOOP_THRESHOLD = 3
 const log = Log.create({ service: "session.processor" })
@@ -248,10 +249,27 @@ export const layer = Layer.effect(
         return true
       }
 
+      // 260729 Red 剥掉被复述出来的注入指令（见 instruction-echo.ts）。
+      // 与上面的 XML 打捞同一条缝、同一类病：模型把"给它看的"当成"要输出的"。
+      // 但这里不需要打捞什么 —— 复述出来的指令没有任何执行价值，摘掉即可。
+      const stripInstructionEcho = (part: { text: string }, source: "text" | "reasoning") => {
+        const result = InstructionEcho.detect(part.text)
+        if (result.kinds.length === 0) return false
+        part.text = result.stripped
+        slog.warn("instruction.echo", {
+          sessionID: ctx.sessionID,
+          source,
+          model: ctx.model.id,
+          kinds: result.kinds.join(","),
+        })
+        return true
+      }
+
       const finishReasoning = Effect.fn("SessionProcessor.finishReasoning")(function* (reasoningID: string) {
         if (!(reasoningID in ctx.reasoningMap)) return
         // 260728 Red 泄漏落 reasoning 通道的情况占实测 6/14，这里也要摘
         salvageToolCalls(ctx.reasoningMap[reasoningID], "reasoning")
+        stripInstructionEcho(ctx.reasoningMap[reasoningID], "reasoning")
         // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
         if (flags.experimentalEventSystem) {
           yield* events.publish(SessionEvent.Reasoning.Ended, {
@@ -755,6 +773,7 @@ export const layer = Layer.effect(
             // 260728 Red 先摘掉文本态工具调用，再交给 plugin / canary / 落库，
             // 三者看到的都应该是干净正文
             salvageToolCalls(ctx.currentText, "text")
+            stripInstructionEcho(ctx.currentText, "text")
             // oxlint-disable-next-line no-self-assign -- reactivity trigger
             ctx.currentText.text = ctx.currentText.text
             ctx.currentText.text = (yield* plugin.trigger(

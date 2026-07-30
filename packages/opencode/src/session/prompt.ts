@@ -1164,6 +1164,10 @@ export const layer = Layer.effect(
         let salvageRecoveries = 0
         // 260729 Red soft 档提示每个会话只发一次，别每轮刷屏
         let softContextNoticed = false
+        // 260729 Red 本轮起点的用户消息 id + 已提醒过的消息 id。用来区分「开启本轮的那条」
+        // 和「回合中途新到的」—— 只有后者才该提醒，且只提醒一次（详见下方注入处的注释）。
+        let turnStartUserID: MessageID | undefined
+        const remindedUserIDs = new Set<MessageID>()
 
         while (true) {
           yield* status.set(sessionID, { type: "busy" })
@@ -1388,15 +1392,31 @@ export const layer = Layer.effect(
 
             // 260623 Red collect user reminder text for step>1 injection (old approach mutated
             // p.text before msgPin, which silently restored the un-wrapped cached version).
+            // 260729 Red 修两处，症状是模型思考链里反复出现「刚才用户让我做 xx，我继续干」
+            // 而用户其实一个字都没发：
+            //
+            // 1) 边界用错。原来的条件是 `m.info.id > lastFinished.id`，但 lastFinished 来自
+            //    MessageV2.latest()，而**当前这条 assistant 消息整轮都不算 finished**，所以它
+            //    一直钉在上一轮。于是"开启本轮的那条用户消息"永远满足这个条件，被当成"中途新
+            //    到的消息"每一步重新提醒一次 —— 20 步的回合模型会被告知 19 次「用户发话了，
+            //    请处理」。本意只是想捕捉回合**中途**新到的消息，边界应该是本轮起点那条，
+            //    而不是上一轮的结束点。
+            // 2) 没有去重。同一条消息即使确实是中途新到的，也只该提醒一次 —— 它本身就在
+            //    msgs 里，模型看得到，反复强调只会让它以为又来了一条新指令。
+            if (turnStartUserID === undefined) turnStartUserID = lastUser.id
             let userReminderText: string | undefined
-            if (step > 1 && lastFinished) {
+            if (step > 1) {
               const parts: string[] = []
               for (const m of msgs) {
-                if (m.info.role !== "user" || m.info.id <= lastFinished.id) continue
-                for (const p of m.parts) {
-                  if (p.type !== "text" || p.ignored || p.synthetic) continue
-                  if (p.text.trim()) parts.push(p.text)
-                }
+                if (m.info.role !== "user" || m.info.id <= turnStartUserID) continue
+                if (remindedUserIDs.has(m.info.id)) continue
+                const text = m.parts
+                  .filter((p) => p.type === "text" && !p.ignored && !p.synthetic)
+                  .map((p) => (p.type === "text" ? p.text : ""))
+                  .filter((t) => t.trim())
+                if (text.length === 0) continue
+                parts.push(...text)
+                remindedUserIDs.add(m.info.id)
               }
               if (parts.length > 0) {
                 userReminderText = `<system-reminder>\nThe user sent the following message:\n${parts.join("\n")}\n\nPlease address this message and continue with your tasks.\n</system-reminder>`
