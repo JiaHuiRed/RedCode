@@ -1755,6 +1755,15 @@
 ---
 
 ## GUI
+### [0.7.10] - 2026-07-31
+
+> 输入框补上主 agent 切换控件 —— 此前 GUI 只能停在 build，plan / redmind 在界面上选不到。
+
+#### 新增
+
+- **输入框主 agent 切换控件**（`packages/app/src/components/prompt-input.tsx`）：工具栏此前只渲染 `modelControl()` 和 `variantControl()` 两个控件，没有任何切换主 agent 的入口，于是永远停在 `local.agent.list()[0]`（`build`）。底层其实早就是通的——`local.agent` 的 `list`/`current`/`set` 在 `@` 提及子代理时就在用，`agent.cycle` / `agent.cycle.reverse` 命令也早就注册了（`use-session-commands.tsx`，有快捷键、命令面板里能调），i18n 的 `command.agent.cycle` 各语言齐全，缺的只是这个可见控件。照 `variantControl` 的结构补一个 `agentControl`，放在模型控件左边，`list().length > 1` 才显示，tooltip 复用已有的命令与快捷键。顺带说明：用户反馈的"`/agent` 没效果"是同一件事的另一面——`agent.cycle` 是命令面板的命令 id，不是输入框里的斜杠命令，在输入框打 `/agent` 本来就不会触发。
+
+---
 
 ### [0.7.9] - 2026-07-23
 
