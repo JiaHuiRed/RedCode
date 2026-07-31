@@ -1312,6 +1312,45 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return "Ask anything, / for commands, @ for context..."
   }
 
+  // 260731 Karina GUI 输入框一直没有主 agent 切换入口 —— 工具栏只有模型和推理强度两个
+  // 控件，于是永远停在 local.agent.list()[0]（build），plan / redmind 在界面上选不到。
+  // 底层早就是通的：local.agent 的 list/current/set 在 @提及子代理时就在用，
+  // agent.cycle 命令也早注册了（use-session-commands.tsx）、有快捷键、命令面板里能调，
+  // 缺的只是这个可见控件。照 variantControl 的样式做，保持一排控件观感一致。
+  const agentControl = () => (
+    <Show when={local.agent.list().length > 1}>
+      <div
+        data-component="prompt-agent-control"
+        style={providersShouldFadeIn() ? { animation: "fade-in 0.3s" } : undefined}
+        class="flex items-center"
+      >
+        <Icon name="sliders" size="small" class="text-v2-icon-icon-muted pointer-events-none shrink-0" />
+        <TooltipKeybind
+          placement="top"
+          gutter={4}
+          title={language.t("command.agent.cycle")}
+          keybind={command.keybind("agent.cycle")}
+        >
+          <Select
+            size="normal"
+            options={local.agent.list().map((item) => item.name)}
+            current={local.agent.current()?.name ?? ""}
+            label={(x) => x}
+            onSelect={(value) => {
+              local.agent.set(value)
+              restoreFocus()
+            }}
+            class="capitalize max-w-[160px] text-text-base"
+            valueClass="truncate text-13-regular"
+            triggerStyle={control()}
+            triggerProps={{ "data-action": "prompt-agent" }}
+            variant="ghost"
+          />
+        </TooltipKeybind>
+      </div>
+    </Show>
+  )
+
   const variantControl = () => (
     <Show when={variants().length > 1}>
       <div
@@ -1588,6 +1627,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     />
                   </div>
                 </Show>
+                {agentControl()}
                 {modelControl()}
                 {variantControl()}
               </div>
