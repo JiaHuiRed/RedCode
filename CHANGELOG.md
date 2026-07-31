@@ -23,6 +23,8 @@
 
 - **destructive 授权门漏掉进程/系统级命令**（`tool/shell.ts`）：破坏性判定原先挂在 `FILES`（文件命令）分支里，只覆盖文件操作 + git 写操作（260730 白名单反向判定），`taskkill`、`Stop-Process`、`shutdown`、`Stop-Computer`、`Restart-Computer`、`Clear-Content`、`reg`、`format`、`format-volume`、`diskpart`、`sc`、`schtasks`、`vssadmin`、`bcdedit` 共 14 个进程/系统级高危命令在 redmind 下会静默执行。判定逻辑拆成独立行（`if (cmd && DESTRUCTIVE.has(cmd)) scan.destructive = true`，不再依赖 FILES 分支），DESTRUCTIVE 表补齐这些命令——`reg`/`sc`/`schtasks`/`vssadmin`/`bcdedit` 有只读用法（query/list/enum），但 agent 极少用它们做只读诊断，整命令进门宁可多问一次。PowerShell/cmd 的命令名已先行小写化，bash 分支不受影响。
 
+- **所有 `.md` 提示词/工具描述在导入时被转成 HTML 送进模型**（`session/system.ts` 等 27 个文件、51 处导入）：Bun 的内置 `.md` loader 把 markdown 转成 HTML，编译产物里存的就是 `` var qI=`<p>You are RedCode, an interactive code agent…` ``。实测 `# Tone and style` → `<h1>Tone and style</h1>`、`- ctrl+p…` → `<li>ctrl+p…</li>`、`` `file_path:line_number` `` → `<code>…</code>`；`anthropic.md` 8197 字节进、8638 字节出。仓库里没注册任何 `.md` loader，是 Bun 默认行为，多半是某次升级后静默变的；`src/markdown.d.ts` 声明的是 `const content: string`，HTML 也是 string，类型检查从不报。**后果**：每份提示词多约 5% 体积的标签，精心调过的 markdown 结构落到模型眼里全是 HTML——之前调提示词排版的工作有一部分是白做的。**修法**：导入处加 `with { type: "text" }`，实测拿到一字节不差的原文。**执行**：按 0.8.3 待办的建议分两步走——先改 `system.ts` 里 15 个 per-model 提示词（anthropic/default/beast/deepseek/gemini/gpt/kimi/mimo/minimax/codex/trinity/glm/grok/step/ollama），验证 typecheck + bun build 产物均拿到原文（8197 字节、无 `<h1>`）后，再推平其余 35 处工具描述导入。全仓 51 处（含 skill/index.ts 原本就带 `with` 的 1 处）无一遗漏。typecheck exit=0，编译产物验证原文。
+
 ---
 ### [0.8.3] - 2026-07-31
 
@@ -35,7 +37,7 @@
 
 #### 待办（已定位，未修）
 
-- **所有 `.md` 提示词在导入时被转成 HTML 送进模型**（`session/system.ts` 等 28 个文件、共 51 处 `.md` 导入）：Bun 的内置 `.md` loader 把 markdown 转成 HTML，编译产物里存的就是 `` var qI=`<p>You are RedCode, an interactive code agent…` ``。实测 `# Tone and style` → `<h1>Tone and style</h1>`、`- ctrl+p…` → `<li>ctrl+p…</li>`、`` `file_path:line_number` `` → `<code>…</code>`；`anthropic.md` 8197 字节进、8638 字节出。仓库里没有注册任何 `.md` loader，是 Bun 默认行为，多半是某次升级后静默变的；`src/markdown.d.ts` 声明的是 `const content: string`，HTML 也是 string，所以类型检查从来不报。**后果**：每份提示词多约 5% 体积的标签，而且精心调过的 markdown 结构落到模型眼里全是 HTML——这几天调提示词排版的工作有一部分是白做的。**修法已验证**：导入处加 `with { type: "text" }`，实测拿回的是一字节不差的原文（8197）。**未修的原因**：会让所有模型的系统提示词同时变形，血量太大，本版刚因为一把梭的提示词改动出过事（见上面撤除注入那条），不适合再来一次。**建议分两步**：先只改 `system.ts` 里 15 个 per-model 提示词的导入，跑一轮观察行为；确认无异常再推平其余 36 处工具描述。
+- **所有 `.md` 提示词在导入时被转成 HTML 送进模型**：~~Bun 的内置 `.md` loader 把 markdown 转成 HTML，编译产物里存的就是 `` var qI=`<p>You are RedCode, an interactive code agent…` ``；`anthropic.md` 8197 字节进、8638 字节出；`src/markdown.d.ts` 声明 `const content: string`，HTML 也是 string，类型检查从不报。修法已验证：导入处加 `with { type: "text" }` 拿到一字节不差的原文。当时未修：会让所有模型的系统提示词同时变形，血量太大。~~ **已于 0.8.4 修复**（`94bbd92`）：全仓 51 处导入全部加 `with { type: "text" }`，见 0.8.4 修复节。
 
 #### 变更
 
