@@ -1262,6 +1262,14 @@ export const layer = Layer.effect(
             "gpt-5.6-sol": { input: 10, output: 30, cache: { read: 2.5, write: 10 } },
             "gpt-5.6-terra": { input: 13.5, output: 81, cache: { read: 3.375, write: 13.5 } },
           },
+         // 260731 Red 火山方舟官方定价（元/百万 tokens）：doubao-seed-2.1-turbo 输入 3.00、
+         // 缓存读 0.60、输出 15.00；doubao-seed-2.1-pro 输入 6.00、缓存读 1.20、输出 30.00。
+         // volcengine-ark 不在 models.dev（纯 config 自定义 provider），不套这张表 cost 全 0
+         // （config 循环兜底 0，费用会显示 ¥0.00）。cache write 按惯例 = input。
+         "volcengine-ark": {
+           "Doubao-Seed-2.1-turbo": { input: 3, output: 15, cache: { read: 0.6, write: 3 } },
+           "Doubao-Seed-2.1-pro": { input: 6, output: 30, cache: { read: 1.2, write: 6 } },
+         },
         }
         // 260707 Red: apply CNY pricing directly on the models.dev-sourced database,
         // independent of whether the user declares "deepseek"/"xiaomi" under config.provider.
