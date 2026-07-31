@@ -22,6 +22,8 @@ import type { Agent } from "@/agent/agent"
 import { Permission } from "@/permission"
 import { Skill } from "@/skill"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { Config } from "@/config/config"
+import { addressFrom } from "./reasoning-language"
 
 export function provider(model: Provider.Model) {
   if (model.api.id.includes("gpt-4") || model.api.id.includes("o1") || model.api.id.includes("o3"))
@@ -66,10 +68,12 @@ export const layer = Layer.effect(
     const skill = yield* Skill.Service
     // 260625 Red 取 client 标识注入 env：基础提示词写死 "code agent"，没有客户端事实模型会把 GUI 误判成 TUI。
     const flags = yield* RuntimeFlags.Service
+    const config = yield* Config.Service
 
     return Service.of({
       environment: Effect.fn("SystemPrompt.environment")(function* (model: Provider.Model) {
         const ctx = yield* InstanceState.context
+        const address = addressFrom((yield* config.get()).username)
         return [
           [
             `You are powered by the model named ${model.api.id}. The exact model ID is ${model.providerID}/${model.api.id}`,
@@ -87,6 +91,24 @@ export const layer = Layer.effect(
             // Today's date is appended fresh every turn near the end of the prompt instead
             // (session/prompt.ts, next to the canary marker) so only that small tail busts daily.
             `</env>`,
+            // 260731 Red 正文称呼。2661b06 下线 USER.md 时把称呼来源指定为 config.username，
+            // 但当时唯一的消费者是每步注入的 <reasoning-language> 块 —— 那条已于本日撤除
+            // （原因见 session/prompt.ts），username 就此悬空、实际没人读。这里把它接回来。
+            //
+            // 位置是刻意选的：跟着 env 块走，随 _caches.system 一次性缓存，**不占用户回合、
+            // 不每步重复**。被撤除的那条正是栽在这两点上 —— 每步一条 role:"user" 让模型
+            // 以为用户一直在说话。
+            //
+            // 措辞也是刻意的：只说正文，并明确写出"不约束思考"。原来那句「与正文保持一致…
+            // 从第一句思考开始就这么称呼」等于让模型把思考写成正文，通道纪律弱的模型照做了，
+            // 于是话都说进了思考里。soul 里其实已经规定了称呼，这里只是补一道正文层的兜底 ——
+            // 实测 soul 说了「叫哥哥」，正文仍会冒出"再给你结论"。
+            ...(address
+              ? [
+                  ``,
+                  `在正文回复里称呼用户为「${address}」，尽量用这个称呼而不是「你」。此条只约束正文，不约束思考过程。`,
+                ]
+              : []),
           ].join("\n"),
         ]
       }),
@@ -109,6 +131,11 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(Skill.defaultLayer), Layer.provide(RuntimeFlags.defaultLayer))
+export const defaultLayer = layer.pipe(
+  Layer.provide(Skill.defaultLayer),
+  Layer.provide(RuntimeFlags.defaultLayer),
+  // 260731 Red env 块要读 config.username 做正文称呼，见 environment()
+  Layer.provide(Config.defaultLayer),
+)
 
 export * as SystemPrompt from "./system"
