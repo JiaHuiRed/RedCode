@@ -1,6 +1,7 @@
 ﻿import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import type { Agent } from "../../src/agent/agent"
+import { Config } from "../../src/config/config"
 import { NamedError } from "@redcode-ai/core/util/error"
 import { Skill } from "../../src/skill"
 import { Permission } from "../../src/permission"
@@ -55,6 +56,8 @@ const it = testEffect(
       ),
     ),
     Layer.provide(RuntimeFlags.layer()),
+    // 260731 Red SystemPrompt.layer 自 558aa66 起依赖 Config.Service（正文称呼），测试没跟上
+    Layer.provide(Config.defaultLayer),
   ),
 )
 
