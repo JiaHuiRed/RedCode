@@ -75,6 +75,9 @@ export type PromptProps = {
   hint?: JSX.Element
   right?: JSX.Element
   showPlaceholder?: boolean
+  // 260731 Red 空输入时文本区占几行。默认 1（会话页里输入框该让位给对话内容），
+  // 首页传 2 —— 那里输入框是画面主体，1 行显得扁。
+  minHeight?: number
   placeholders?: {
     normal?: string[]
     shell?: string[]
@@ -1486,7 +1489,7 @@ export function Prompt(props: PromptProps) {
               placeholderColor={theme.textMuted}
               textColor={leader() ? theme.textMuted : theme.text}
               focusedTextColor={leader() ? theme.textMuted : theme.text}
-              minHeight={1}
+              minHeight={props.minHeight ?? 1}
               maxHeight={maxHeight()}
               onContentChange={() => {
                 const value = input.plainText
