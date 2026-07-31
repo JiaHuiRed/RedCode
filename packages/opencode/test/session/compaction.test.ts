@@ -904,7 +904,13 @@ describe("session.compaction.process", () => {
         metadata: { compaction_continue: true },
       })
       if (last?.parts[0]?.type === "text") {
-        expect(last.parts[0].text).toContain("Continue if you have next steps")
+        const text = last.parts[0].text
+        // 260730 Karina 这条以 role:"user" 落库，模型分不出不是用户说的（线上实测会连着
+        // 编出「用户说"继续"」「用户说"先commit再测"」）。文案必须自报家门 + 带锚点。
+        expect(text).toContain("[System notice]")
+        expect(text).toContain("NOT sent by the user")
+        expect(text).toContain("Continue only if concrete steps remain")
+        expect(text).not.toContain("Continue if you have next steps, or stop and ask")
       }
     }),
   )
@@ -1101,7 +1107,7 @@ describe("session.compaction.process", () => {
           (msg) =>
             msg.info.role === "user" &&
             msg.parts.some(
-              (part) => part.type === "text" && part.synthetic && part.text.includes("Continue if you have next steps"),
+              (part) => part.type === "text" && part.synthetic && part.text.includes("[System notice]"),
             ),
         ),
       ).toBe(false)

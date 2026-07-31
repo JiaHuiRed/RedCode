@@ -554,11 +554,42 @@ export const layer = Layer.effect(
               agent: userMessage.agent,
               model: userMessage.model,
             })
-            const text =
-              (input.overflow
-                ? "The previous request exceeded the provider's size limit due to large media attachments. The conversation was compacted and media files were removed from context. If the user was asking about attached images or files, explain that the attachments were too large to process and suggest they try again with smaller or fewer files.\n\n"
-                : "") +
-              "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed."
+            // 260730 Karina 这条续跑消息以 role:"user" 落库，模型分不出它不是用户说的。
+            // 线上实测（ses_04e354872ffe…，07-30 08:44:45 那条）：注入后连着四步思考写的是
+            //   「用户说"继续"」→「用户要求继续做下一步」→「用户要求"继续"，说明他认可前面的
+            //   改动方向」→「用户说"先commit再测"」
+            // 最后那句用户一个字都没发过 —— 它先把这条当成用户发言，再顺着编出后续指令。
+            //
+            // role 保持 user 不动：对话必须以 user 轮结尾才能续跑，中途插 system 消息各家
+            // provider 支持度不一。改的是**文案**，三件事：
+            //   1. 开头就声明这不是用户发言（[System notice] 前缀与 xml-tool-call /
+            //      text-loop-detection 的注入保持一致，instruction-echo 也照这个前缀剥离复述）
+            //   2. 带上本轮的原始请求做锚点 —— 压缩会把"用户到底要什么"摘没，只留一句含糊的
+            //      "continue"，模型就会从摘要里最显眼的旧状态接着跑
+            //   3. 明确"已完成的工作在摘要里，别重头再来"，并且默认倾向汇报而不是继续
+            const anchor = (() => {
+              for (let i = input.messages.length - 1; i >= 0; i--) {
+                const m = input.messages[i]
+                if (m.info.role !== "user") continue
+                const own = m.parts
+                  .filter((p) => p.type === "text" && !p.synthetic && !p.ignored)
+                  .map((p) => (p.type === "text" ? p.text : ""))
+                  .join("\n")
+                  .trim()
+                if (own) return own.length > 600 ? own.slice(0, 600) + "…" : own
+              }
+              return undefined
+            })()
+            const text = [
+              "[System notice] This message was NOT sent by the user — the user has said nothing since your last turn. The conversation was automatically compacted because it grew too long; this is the follow-up prompt.",
+              input.overflow
+                ? "The previous request exceeded the provider's size limit due to large media attachments. Media files were removed from context. If the user was asking about attached images or files, explain that the attachments were too large to process and suggest they try again with smaller or fewer files."
+                : "",
+              anchor ? "The user's actual request for this turn was:\n" + anchor : "",
+              "The summary above already records what you completed so far. Do not restart from the beginning, and do not treat this notice as a new instruction. If the work is already done, report the result to the user and stop. Continue only if concrete steps remain.",
+            ]
+              .filter(Boolean)
+              .join("\n\n")
             yield* session.updatePart({
               id: PartID.ascending(),
               messageID: continueMsg.id,
