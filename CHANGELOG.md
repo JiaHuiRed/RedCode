@@ -11,6 +11,19 @@
 ---
 
 ## TUI
+### [0.8.4] - 2026-07-31
+
+> redmind 品牌名修正（Redmind → RedMind），destructive 授权门补全进程/系统级高危命令——此前只拦文件操作和 git 写操作，`taskkill`/`shutdown` 这类命令会静默执行。
+
+#### 新增
+
+- **redmind 显示名改驼峰式 RedMind**（`agent/agent.ts`、`cli/cmd/tui/component/prompt/index.tsx`、`cli/cmd/tui/component/dialog-agent.tsx`）：输入框和切换 agent 对话框原来走 `Locale.titlecase(name)`，`redmind` 被渲染成 "Redmind"。启用 schema 里本来就有的 `displayName` 字段（此前没有任何 agent 用过），redmind 声明 `displayName: "RedMind"`，显示层统一 `displayName ?? titlecase(name)`，build/plan 等其余 agent 显示不变。
+
+#### 修复
+
+- **destructive 授权门漏掉进程/系统级命令**（`tool/shell.ts`）：破坏性判定原先挂在 `FILES`（文件命令）分支里，只覆盖文件操作 + git 写操作（260730 白名单反向判定），`taskkill`、`Stop-Process`、`shutdown`、`Stop-Computer`、`Restart-Computer`、`Clear-Content`、`reg`、`format`、`format-volume`、`diskpart`、`sc`、`schtasks`、`vssadmin`、`bcdedit` 共 14 个进程/系统级高危命令在 redmind 下会静默执行。判定逻辑拆成独立行（`if (cmd && DESTRUCTIVE.has(cmd)) scan.destructive = true`，不再依赖 FILES 分支），DESTRUCTIVE 表补齐这些命令——`reg`/`sc`/`schtasks`/`vssadmin`/`bcdedit` 有只读用法（query/list/enum），但 agent 极少用它们做只读诊断，整命令进门宁可多问一次。PowerShell/cmd 的命令名已先行小写化，bash 分支不受影响。
+
+---
 ### [0.8.3] - 2026-07-31
 
 > 0.8.0/0.8.2 为了治 step-3.7-flash 的通道纪律，往每一步注入了一条「可见思考的语言 + 称呼」约束。这一版把它整条撤了——实测它是「模型以为用户一直在催」「把答复写进思考链、不展开根本看不见」「无人发话时反复做无用功」三个现象的共同来源，比它要修的那个偶发 XML 泄漏严重得多。同批还有首页视觉调整。

@@ -56,6 +56,10 @@ plugins/*/.venv/
 jcodemunch-mcp/
 sqlite-tools/
 
+# 260731 Red fff 搜索插件源码 + markitdown 临时 clone（均不参与本仓构建，untracked 噪音）
+plugins/fff/
+markitdown-temp/
+
 # Personal files — not shared via public repo
 # These live in ~/.redcode/ and come from the user's private repo
 # (root-level patterns as safety net)
