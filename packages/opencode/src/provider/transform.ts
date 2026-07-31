@@ -21,6 +21,9 @@ function mimeToModality(mime: string): Modality | undefined {
 export const OUTPUT_TOKEN_MAX = 32_000
 // 260710 Red MiMo 模型支持超长输出（MiMo-V2.5 等），给予更高上限
 export const MIMO_OUTPUT_TOKEN_MAX = 100_000
+// 260801 Red DeepSeek V4 Flash 思考链长（max 档 311 avg，长尾远超），正文被 32K 共享预算挤断
+// max_tokens 覆盖 reasoning_content + content 总和；模型自身 output 384K，提到 64K 防截断
+export const DEEPSEEK_V4_FLASH_OUTPUT_TOKEN_MAX = 64_000
 
 export function sanitizeSurrogates(content: string) {
   return content.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD")
@@ -1416,7 +1419,12 @@ export function providerOptions(model: Provider.Model, options: { [x: string]: a
 
 export function maxOutputTokens(model: Provider.Model, outputTokenMax = OUTPUT_TOKEN_MAX): number {
   // 260710 Red MiMo 模型用更高的 output token 上限
-  const effective = isMimoModel(model) ? Math.max(outputTokenMax, MIMO_OUTPUT_TOKEN_MAX) : outputTokenMax
+  // 260801 Red v4Flash 思考链长，正文被 32K 共享预算挤断，同样放宽到 64K
+  const effective = isMimoModel(model)
+    ? Math.max(outputTokenMax, MIMO_OUTPUT_TOKEN_MAX)
+    : isDeepSeekV4FlashModel(model)
+      ? Math.max(outputTokenMax, DEEPSEEK_V4_FLASH_OUTPUT_TOKEN_MAX)
+      : outputTokenMax
   return Math.min(model.limit.output, effective) || effective
 }
 
@@ -1427,6 +1435,13 @@ function isMimoModel(model: Provider.Model): boolean {
   // 测试长期挂的就是这个，不是断言写错。
   const id = model.api?.id?.toLowerCase() ?? model.id?.toLowerCase() ?? ""
   return id.includes("mimo")
+}
+
+function isDeepSeekV4FlashModel(model: Provider.Model): boolean {
+  // 260801 Red 覆盖家族变体：deepseek-v4-flash / deepseek/deepseek-v4-flash /
+  // deepseek-v4-flash-free / deepseek-v4-flash-think / empiriolabs/deepseek-v4-flash-el
+  const id = model.api?.id?.toLowerCase() ?? model.id?.toLowerCase() ?? ""
+  return id.includes("deepseek-v4-flash")
 }
 
 export function schema(model: Provider.Model, schema: JSONSchema7): JSONSchema7 {
