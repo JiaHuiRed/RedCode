@@ -1250,6 +1250,18 @@ export const layer = Layer.effect(
           zhipuai: {
             "glm-5.2": { input: 8, output: 28, cache: { read: 2, write: 8 } },
           },
+          // 260731 Karina openox 走 openox.tech/v1，报价按价格页折算人民币（汇率 6.75）：
+          // Luna 今日降价 80% → 0.20/1.20 USD → 1.35/8.1 CNY；Terra 降价 20% → 2.00/12.00 USD → 13.5/81 CNY；
+          // Sol 未变；5.4/5.4-mini/5.5 沿用既有配置值。cache read = input/4、write = input（与配置一致）。
+          // 不套这张表的话，配置里的 ¥ 会被 UI 当美元再乘一次 6.75（footer/sidebar 双重折算）。
+          openox: {
+            "gpt-5.4": { input: 7.5, output: 22.5, cache: { read: 1.5, write: 7.5 } },
+            "gpt-5.4-mini": { input: 3, output: 12, cache: { read: 0.75, write: 3 } },
+            "gpt-5.5": { input: 15, output: 45, cache: { read: 3.75, write: 15 } },
+            "gpt-5.6-luna": { input: 1.35, output: 8.1, cache: { read: 0.3375, write: 1.35 } },
+            "gpt-5.6-sol": { input: 10, output: 30, cache: { read: 2.5, write: 10 } },
+            "gpt-5.6-terra": { input: 13.5, output: 81, cache: { read: 3.375, write: 13.5 } },
+          },
         }
         // 260707 Red: apply CNY pricing directly on the models.dev-sourced database,
         // independent of whether the user declares "deepseek"/"xiaomi" under config.provider.
