@@ -40,7 +40,13 @@ export abstract class NamedError extends Error {
         public readonly data: Data,
         options?: ErrorOptions,
       ) {
-        super(name, options)
+        // 260731 Karina 原本无条件 super(name)，于是 Error.message 永远等于错误类名，
+        // data 里辛苦拼出来的 message 一个字都到不了日志。线上实测：配置里多了一个
+        // 本端 schema 不认识的键，日志只有 "ConfigInvalidError: ConfigInvalidError"，
+        // 键名、文件路径全在 data.issues 里躺着，排查只能靠猜。
+        // 带了 message 字段的就用它，没带的行为不变（仍是类名）。
+        const detail = (data as { message?: unknown } | undefined)?.message
+        super(typeof detail === "string" && detail ? detail : name, options)
         this.name = name
       }
 
