@@ -1815,6 +1815,12 @@
 
 ---
 
+> GUI 的 agent 切换下拉把 redmind 显示成 "Redmind"——TUI 侧 0.8.x 已用 displayName 修正，web 渲染层漏了，这次统一走 `displayName ?? name`。
+
+#### 修复
+
+- **agent 下拉与 @ 提及显示名修正**（`packages/app/src/components/prompt-input.tsx`）：GUI 输入框的 agent 切换控件下拉 `options`/`current` 直接渲染 `agent.name`（id 全小写 "redmind"），叠上 `capitalize` CSS 首字母大写后显示成 "Redmind"，与 TUI 已修正的 `displayName: "RedMind"` 不一致。修法：Select 改为传 agent 对象数组（SDK `Agent` 类型本就带 `displayName?`），`value={(a) => a.name}` 用 id 做键、`label={(a) => a.displayName ?? a.name}` 做显示名，`onSelect` 收到对象后取 `item.name` 回写；@ 自动补全的 `display` 同样改 `displayName ?? name`（`name` 字段仍用于匹配与插入，保持 id 小写）。build/plan 等无 displayName 的 agent 显示不变（capitalize 继续负责首字母大写）。
+
 ### [0.7.9] - 2026-07-23
 
 > Electron → Tauri 迁移正式开工——可行性/体积/首屏握手时序此前已在原型里验证完毕，今天新增第一批真实（非原型、非 stub）代码。

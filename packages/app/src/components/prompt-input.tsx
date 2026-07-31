@@ -641,7 +641,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const agentList = createMemo(() =>
     sync.data.agent
       .filter((agent) => !agent.hidden && agent.mode !== "primary")
-      .map((agent): AtOption => ({ type: "agent", name: agent.name, display: agent.name })),
+      .map(
+        (agent): AtOption => ({ type: "agent", name: agent.name, display: agent.displayName ?? agent.name }),
+      ),
   )
   const agentNames = createMemo(() => local.agent.list().map((agent) => agent.name))
 
@@ -1333,12 +1335,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         >
           <Select
             size="normal"
-            options={local.agent.list().map((item) => item.name)}
-            current={local.agent.current()?.name ?? ""}
-            label={(x) => x}
-            onSelect={(value) => {
-              local.agent.set(value)
-              restoreFocus()
+            options={local.agent.list()}
+            current={local.agent.current()}
+            value={(item) => item.name}
+            label={(item) => item.displayName ?? item.name}
+            onSelect={(item) => {
+              if (item) {
+                local.agent.set(item.name)
+                restoreFocus()
+              }
             }}
             class="capitalize max-w-[160px] text-text-base"
             valueClass="truncate text-13-regular"
