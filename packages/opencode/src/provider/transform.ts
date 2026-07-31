@@ -1223,6 +1223,20 @@ export function options(input: {
     }
   }
 
+  // 260731 Red: 火山方舟 Doubao-Seed 系列（2.1 等）默认不返回独立思考字段——思考内容
+  // 直接混进 content 正文，RedCode 端认不出 reasoning part，思考与正文完全摊在一起。
+  // 实测：请求 body 加 thinking: {type: "enabled"} 后，思考走独立 reasoning_content 字段，
+  // AI SDK openai-compatible 识别成 reasoning part → UI 自动折叠成「已思考」。
+  // 判据用模型名（同 GLM 教训：挂聚合供应商下也生效），不用 providerID。
+  if (
+    input.model.api.id.toLowerCase().includes("doubao") &&
+    input.model.api.npm === "@ai-sdk/openai-compatible"
+  ) {
+    result["thinking"] = {
+      type: "enabled",
+    }
+  }
+
   // 260627 Red: stepfun/step-plan 加 promptCacheKey，稳定前缀缓存（同 openai/venice/openrouter）
   if (
     input.model.providerID === "openai" ||

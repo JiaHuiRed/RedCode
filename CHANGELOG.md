@@ -19,12 +19,15 @@
 
 - **redmind 显示名改驼峰式 RedMind**（`agent/agent.ts`、`cli/cmd/tui/component/prompt/index.tsx`、`cli/cmd/tui/component/dialog-agent.tsx`）：输入框和切换 agent 对话框原来走 `Locale.titlecase(name)`，`redmind` 被渲染成 "Redmind"。启用 schema 里本来就有的 `displayName` 字段（此前没有任何 agent 用过），redmind 声明 `displayName: "RedMind"`，显示层统一 `displayName ?? titlecase(name)`，build/plan 等其余 agent 显示不变。
 
+- **火山引擎 Doubao 新增专属提示词**（`session/prompt/doubao.md`、`session/system.ts`）：Doubao-Seed 系列此前落 `default.md` 兜底，那句「不超过 4 行、单词回答最好」会把强模型的输出能力压扁，和 grok 是同款坑（0.8.3 已给 grok 补过）。新增 `doubao.md` 参照 `deepseek.md` 的精炼结构，补全五条铁律、Engineering judgment、Windows GBK 环境事实、Task management、并行工具调用等，且保留 soul 人格房规（语气/称呼/详略不双立法）。匹配走 `providerID` 包含 `"volcengine"` 判断，支持火山方舟所有 Doubao 模型。
 #### 修复
 
 - **destructive 授权门漏掉进程/系统级命令**（`tool/shell.ts`）：破坏性判定原先挂在 `FILES`（文件命令）分支里，只覆盖文件操作 + git 写操作（260730 白名单反向判定），`taskkill`、`Stop-Process`、`shutdown`、`Stop-Computer`、`Restart-Computer`、`Clear-Content`、`reg`、`format`、`format-volume`、`diskpart`、`sc`、`schtasks`、`vssadmin`、`bcdedit` 共 14 个进程/系统级高危命令在 redmind 下会静默执行。判定逻辑拆成独立行（`if (cmd && DESTRUCTIVE.has(cmd)) scan.destructive = true`，不再依赖 FILES 分支），DESTRUCTIVE 表补齐这些命令——`reg`/`sc`/`schtasks`/`vssadmin`/`bcdedit` 有只读用法（query/list/enum），但 agent 极少用它们做只读诊断，整命令进门宁可多问一次。PowerShell/cmd 的命令名已先行小写化，bash 分支不受影响。
 
 - **所有 `.md` 提示词/工具描述在导入时被转成 HTML 送进模型**（`session/system.ts` 等 27 个文件、51 处导入）：Bun 的内置 `.md` loader 把 markdown 转成 HTML，编译产物里存的就是 `` var qI=`<p>You are RedCode, an interactive code agent…` ``。实测 `# Tone and style` → `<h1>Tone and style</h1>`、`- ctrl+p…` → `<li>ctrl+p…</li>`、`` `file_path:line_number` `` → `<code>…</code>`；`anthropic.md` 8197 字节进、8638 字节出。仓库里没注册任何 `.md` loader，是 Bun 默认行为，多半是某次升级后静默变的；`src/markdown.d.ts` 声明的是 `const content: string`，HTML 也是 string，类型检查从不报。**后果**：每份提示词多约 5% 体积的标签，精心调过的 markdown 结构落到模型眼里全是 HTML——之前调提示词排版的工作有一部分是白做的。**修法**：导入处加 `with { type: "text" }`，实测拿到一字节不差的原文。**执行**：按 0.8.3 待办的建议分两步走——先改 `system.ts` 里 15 个 per-model 提示词（anthropic/default/beast/deepseek/gemini/gpt/kimi/mimo/minimax/codex/trinity/glm/grok/step/ollama），验证 typecheck + bun build 产物均拿到原文（8197 字节、无 `<h1>`）后，再推平其余 35 处工具描述导入。全仓 51 处（含 skill/index.ts 原本就带 `with` 的 1 处）无一遗漏。typecheck exit=0，编译产物验证原文。
 
+
+- **火山引擎 volcengine-ark 手动补 CNY 定价**（`provider/provider.ts`）：火山方舟是国产 provider 且不在 models.dev（纯 config 自定义 provider），`CNY_PRICING` 表里没它 → config 循环 cost 兜底全 0 → 费用恒显示 ¥0.00（stepfun-step-plan 同款坑，0.8.1 修过）。按官方定价补 Doubao-Seed-2.1-turbo（输入 ¥3.00、缓存读 ¥0.60、输出 ¥15.00）和 Doubao-Seed-2.1-pro（¥6.00/¥1.20/¥30.00），cache write 按惯例 = input。国产 provider checklist（历史教训 #62）：新增时必须同步 `CNY_PRICING`（服务端 cost 落库）和显示层币种判断——volcengine 走 `model.cost.currency`（`provider.ts` 设 `currency: "CNY"`），显示层读 cost.currency 不需要另加名单。
 ---
 ### [0.8.3] - 2026-07-31
 
