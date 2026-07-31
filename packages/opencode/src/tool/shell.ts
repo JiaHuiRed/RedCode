@@ -70,26 +70,45 @@ const CMD_FILES = new Set([
 // 破坏性单独一张表：只收会删除、覆盖、改权限的，创建类（mkdir/new-item/touch）和
 // 纯读取、纯导航都不算。
 const DESTRUCTIVE = new Set([
-  "rm",
-  "cp",
-  "mv",
-  "chmod",
-  "chown",
-  "set-content",
-  "add-content",
-  "copy-item",
-  "move-item",
-  "remove-item",
-  "rename-item",
-  // cmd
-  "copy",
-  "del",
-  "erase",
-  "move",
-  "rd",
-  "ren",
-  "rename",
-  "rmdir",
+ "rm",
+ "cp",
+ "mv",
+ "chmod",
+ "chown",
+ "set-content",
+ "add-content",
+ "copy-item",
+ "move-item",
+ "remove-item",
+ "rename-item",
+ // cmd
+ "copy",
+ "del",
+ "erase",
+ "move",
+ "rd",
+ "ren",
+ "rename",
+ "rmdir",
+ // 260731 Red 进程/系统级破坏命令。文件操作表和 git 门都管不到它们：
+ // taskkill 杀进程、shutdown 关机、clear-content 清空文件（内容没了文件还在）、
+ // reg delete / format / diskpart / sc delete / schtasks / vssadmin / bcdedit
+ // 都是系统级改动，agent 不该静默执行。reg/sc/schtasks/vssadmin/bcdedit 有只读
+ // 用法（query/list/enum），但 agent 极少用它们做只读诊断，整命令进门宁可多问。
+ "taskkill",
+ "stop-process",
+ "shutdown",
+ "stop-computer",
+ "restart-computer",
+ "clear-content",
+ "reg",
+ "format",
+ "format-volume",
+ "diskpart",
+ "sc",
+ "schtasks",
+ "vssadmin",
+ "bcdedit",
 ])
 // 260730 Karina git 写操作纳入 destructive 门。上面那张表只收文件操作命令，git 一个字
 // 都没有 —— 于是 `cp` 会弹授权，`git push --force`、`git reset --hard`、`git clean -fd`
@@ -486,19 +505,22 @@ export const ShellTool = Tool.define(
         const tokens = command.map((item) => item.text)
         const cmd = ps || shellKind === "cmd" ? tokens[0]?.toLowerCase() : tokens[0]
 
-        // git 不在 FILES 里，单独判：写操作走 destructive 门，只读子命令照常放行
-        if (cmd === "git" && destructiveGit(tokens)) scan.destructive = true
+       // git 不在 FILES 里，单独判：写操作走 destructive 门，只读子命令照常放行
+       if (cmd === "git" && destructiveGit(tokens)) scan.destructive = true
 
-        if (cmd && (FILES.has(cmd) || (shellKind === "cmd" && CMD_FILES.has(cmd)))) {
-          if (DESTRUCTIVE.has(cmd)) scan.destructive = true
-          for (const arg of pathArgs(command, ps, shellKind === "cmd")) {
-            const resolved = yield* argPath(arg, cwd, ps, shell)
-            log.info("resolved path", { arg, resolved })
-            if (!resolved || containsPath(resolved, instance)) continue
-            const dir = (yield* fs.isDir(resolved)) ? resolved : path.dirname(resolved)
-            scan.dirs.add(dir)
-          }
-        }
+       // 260731 Red destructive 判定独立于 FILES：文件命令之外还有进程/系统级命令
+       // （taskkill/shutdown/reg 等）也要进授权门，不能只挂在 FILES 分支里。
+       if (cmd && DESTRUCTIVE.has(cmd)) scan.destructive = true
+
+       if (cmd && (FILES.has(cmd) || (shellKind === "cmd" && CMD_FILES.has(cmd)))) {
+         for (const arg of pathArgs(command, ps, shellKind === "cmd")) {
+           const resolved = yield* argPath(arg, cwd, ps, shell)
+           log.info("resolved path", { arg, resolved })
+           if (!resolved || containsPath(resolved, instance)) continue
+           const dir = (yield* fs.isDir(resolved)) ? resolved : path.dirname(resolved)
+           scan.dirs.add(dir)
+         }
+       }
 
         if (tokens.length && (!cmd || !CWD.has(cmd))) {
           scan.patterns.add(source(node))

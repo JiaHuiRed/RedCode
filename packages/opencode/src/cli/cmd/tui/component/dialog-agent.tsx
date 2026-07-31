@@ -11,7 +11,7 @@ export function DialogAgent() {
     local.agent.list().map((item) => {
       return {
         value: item.name,
-        title: item.name,
+       title: item.displayName ?? item.name,
         description: item.native ? "native" : item.description,
       }
     }),

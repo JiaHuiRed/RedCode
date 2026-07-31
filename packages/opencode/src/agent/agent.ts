@@ -168,10 +168,11 @@ export const layer = Layer.effect(
             mode: "primary",
             native: true,
           },
-          redmind: {
-            name: "redmind",
-            description:
-              "RedMind — 心有 Red，行前先问。常规操作（读、写、搜索）自动执行，bash 等敏感操作征得同意后再动手。",
+         redmind: {
+           name: "redmind",
+           displayName: "RedMind",
+           description:
+             "RedMind — 心有 Red，行前先问。常规操作（读、写、搜索）自动执行，bash 等敏感操作征得同意后再动手。",
             options: {},
             permission: Permission.merge(
               defaults,
