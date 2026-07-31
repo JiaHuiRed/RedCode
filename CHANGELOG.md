@@ -11,7 +11,18 @@
 ---
 
 ## TUI
-### [0.8.4] - 2026-07-31
+### [0.8.5] - 2026-08-01
+
+> DeepSeek V4 Flash 输出上限提到 64K——max_tokens 覆盖 reasoning_content + content 总和，思考链一长正文就被 32K 共享预算挤断，多次中断的根因。同批把 Windsurf 式主动记忆条款写进 system 尾部，遇持久事件不等收工立刻落盘。
+
+#### 修复
+
+- **DeepSeek V4 Flash 输出上限 32K → 64K**（`provider/transform.ts`）：`max_tokens` 覆盖思考链 + 正文总和，V4 Flash 开 max 档思考时（平均 311、长尾远超）正文被 32K 硬顶挤断，导致输出中断。新增常量 `DEEPSEEK_V4_FLASH_OUTPUT_TOKEN_MAX = 64_000`，`maxOutputTokens()` 三分支（MiMo 100K / v4Flash 64K / 其余 32K），新增 `isDeepSeekV4FlashModel()` 按 api.id 含 `deepseek-v4-flash` 判定，覆盖 `-free`/`-think`/`empiriolabs` 家族变体。模型自身 output 上限 384K，64K 是保守余量，后续再断可一行提到 100K。
+
+#### 新增
+
+- **Windsurf 式主动记忆条款**（`session/prompt.ts`）：上下文会被压缩，两层 MEMORY.md 是连接下一个会话的唯一桥梁——之前只靠 AGENTS.md 的记忆规则触发，遵守率低。在 system 尾部铁律之后、canary 之前插入静态条款：遇用户决策/项目坑/被纠正/架构选择立即写入、无需用户许可；`read + edit` 追加、禁用 `write` 覆盖；只有跨项目通用教训才进全局。纯静态文本插在 canary 之前，前缀缓存零影响。
+---
 
 > redmind 品牌名修正（Redmind → RedMind），destructive 授权门补全进程/系统级高危命令——此前只拦文件操作和 git 写操作，`taskkill`/`shutdown` 这类命令会静默执行。
 
