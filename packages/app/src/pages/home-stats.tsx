@@ -10,7 +10,8 @@ import { createSessionContextFormatter } from "@/components/session/session-cont
 import { useLanguage } from "@/context/language"
 
 // 260615 与 session-context-format.ts 的 USD_TO_CNY 保持一致，把跨模型花费统一折算成 ¥ 展示
-const USD_TO_CNY = 6.76
+// 260731 Karina 汇率 6.76 → 6.75（哥哥给定）
+const USD_TO_CNY = 6.75
 
 type HomeStats = {
   costCNY: number

@@ -66,6 +66,7 @@ export const CNY_PROVIDERS = new Set([
   "stepfun-step-plan",
   "zhipuai",
   "opencode-go",
+  "openox", // 260731 Karina openox 报价是人民币（见 provider.ts CNY_PRICING）
 ])
 
 const build = (messages: Message[] = [], providers: Provider[] = []): Metrics => {
