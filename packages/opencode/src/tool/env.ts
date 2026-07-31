@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect"
 import * as Tool from "./tool"
 import os from "os"
-import DESCRIPTION from "./env.md"
+import DESCRIPTION from "./env.md" with { type: "text" }
 import { InstanceState } from "@/effect/instance-state"
 
 const Categories = Schema.Literals(["all", "platform", "paths", "memory", "cpu"])

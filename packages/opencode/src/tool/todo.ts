@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect"
 import * as Tool from "./tool"
-import DESCRIPTION_READ from "./todoread.md"
-import DESCRIPTION_WRITE from "./todowrite.md"
+import DESCRIPTION_READ from "./todoread.md" with { type: "text" }
+import DESCRIPTION_WRITE from "./todowrite.md" with { type: "text" }
 import { Todo } from "../session/todo"
 
 // Todo.Info is still a zod schema (session/todo.ts). Inline the field shape

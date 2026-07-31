@@ -5,7 +5,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Ripgrep } from "../file/ripgrep"
 import { assertExternalDirectoryEffect } from "./external-directory"
-import DESCRIPTION from "./grep.md"
+import DESCRIPTION from "./grep.md" with { type: "text" }
 import * as Tool from "./tool"
 import { Reference } from "@/reference/reference"
 

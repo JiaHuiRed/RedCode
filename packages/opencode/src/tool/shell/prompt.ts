@@ -1,5 +1,5 @@
 ﻿import { Schema } from "effect"
-import DESCRIPTION from "./shell.md"
+import DESCRIPTION from "./shell.md" with { type: "text" }
 import { PositiveInt } from "@redcode-ai/core/schema"
 import { Global } from "@redcode-ai/core/global"
 import { ShellID } from "./id"

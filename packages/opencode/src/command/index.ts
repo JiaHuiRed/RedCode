@@ -7,8 +7,8 @@ import { Effect, Layer, Context, Schema } from "effect"
 import { Config } from "@/config/config"
 import { MCP } from "../mcp"
 import { Skill } from "../skill"
-import PROMPT_INITIALIZE from "./template/initialize.md"
-import PROMPT_REVIEW from "./template/review.md"
+import PROMPT_INITIALIZE from "./template/initialize.md" with { type: "text" }
+import PROMPT_REVIEW from "./template/review.md" with { type: "text" }
 
 type State = {
   commands: Record<string, Info>

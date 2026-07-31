@@ -7,7 +7,7 @@ import { InstanceState } from "@/effect/instance-state"
 import type { Snippet } from "@/session/snippet"
 import { Service as SnippetService } from "@/session/snippet"
 import * as Bom from "@/util/bom"
-import DESCRIPTION from "./snippet.md"
+import DESCRIPTION from "./snippet.md" with { type: "text" }
 
 // 260709 Red snippet tool：按 snippetId 查找并返回代码片段内容，带行号前缀和 fileTag。
 export const Parameters = Schema.Struct({

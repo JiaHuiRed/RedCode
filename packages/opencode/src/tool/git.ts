@@ -2,7 +2,7 @@ import { Effect, Schema } from "effect"
 import * as Tool from "./tool"
 import { Git } from "@/git"
 import { InstanceState } from "@/effect/instance-state"
-import DESCRIPTION from "./git.md"
+import DESCRIPTION from "./git.md" with { type: "text" }
 
 export const Parameters = Schema.Struct({
   operation: Schema.Literals(["status", "diff", "log", "show", "branch", "stash_list"]).annotate({

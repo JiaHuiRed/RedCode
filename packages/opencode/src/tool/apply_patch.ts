@@ -10,7 +10,7 @@ import { assertExternalDirectoryEffect } from "./external-directory"
 import { trimDiff } from "./edit"
 import { LSP } from "@/lsp/lsp"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
-import DESCRIPTION from "./apply_patch.md"
+import DESCRIPTION from "./apply_patch.md" with { type: "text" }
 import { File } from "../file"
 import { Format } from "../format"
 import * as Bom from "@/util/bom"

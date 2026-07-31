@@ -2,21 +2,21 @@
 
 import { InstanceState } from "@/effect/instance-state"
 
-import PROMPT_ANTHROPIC from "./prompt/anthropic.md"
-import PROMPT_DEFAULT from "./prompt/default.md"
-import PROMPT_BEAST from "./prompt/beast.md"
-import PROMPT_DEEPSEEK from "./prompt/deepseek.md"
-import PROMPT_GEMINI from "./prompt/gemini.md"
-import PROMPT_GPT from "./prompt/gpt.md"
-import PROMPT_KIMI from "./prompt/kimi.md"
-import PROMPT_MIMO from "./prompt/mimo.md"
-import PROMPT_MINIMAX from "./prompt/minimax.md"
-import PROMPT_CODEX from "./prompt/codex.md"
-import PROMPT_TRINITY from "./prompt/trinity.md"
-import PROMPT_GLM from "./prompt/glm.md"
-import PROMPT_GROK from "./prompt/grok.md"
-import PROMPT_STEP from "./prompt/step.md"
-import PROMPT_OLLAMA from "./prompt/ollama.md"
+import PROMPT_ANTHROPIC from "./prompt/anthropic.md" with { type: "text" }
+import PROMPT_DEFAULT from "./prompt/default.md" with { type: "text" }
+import PROMPT_BEAST from "./prompt/beast.md" with { type: "text" }
+import PROMPT_DEEPSEEK from "./prompt/deepseek.md" with { type: "text" }
+import PROMPT_GEMINI from "./prompt/gemini.md" with { type: "text" }
+import PROMPT_GPT from "./prompt/gpt.md" with { type: "text" }
+import PROMPT_KIMI from "./prompt/kimi.md" with { type: "text" }
+import PROMPT_MIMO from "./prompt/mimo.md" with { type: "text" }
+import PROMPT_MINIMAX from "./prompt/minimax.md" with { type: "text" }
+import PROMPT_CODEX from "./prompt/codex.md" with { type: "text" }
+import PROMPT_TRINITY from "./prompt/trinity.md" with { type: "text" }
+import PROMPT_GLM from "./prompt/glm.md" with { type: "text" }
+import PROMPT_GROK from "./prompt/grok.md" with { type: "text" }
+import PROMPT_STEP from "./prompt/step.md" with { type: "text" }
+import PROMPT_OLLAMA from "./prompt/ollama.md" with { type: "text" }
 import type { Provider } from "@/provider/provider"
 import type { Agent } from "@/agent/agent"
 import { Permission } from "@/permission"

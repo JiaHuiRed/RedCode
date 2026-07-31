@@ -4,7 +4,7 @@ import { Effect } from "effect"
 import * as Tool from "./tool"
 import { LSP } from "@/lsp/lsp"
 import { createTwoFilesPatch } from "diff"
-import DESCRIPTION from "./write.md"
+import DESCRIPTION from "./write.md" with { type: "text" }
 import { Bus } from "../bus"
 import { File } from "../file"
 import { FileWatcher } from "../file/watcher"

@@ -3,7 +3,7 @@ import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { Parser } from "htmlparser2"
 import * as Tool from "./tool"
 import TurndownService from "turndown"
-import DESCRIPTION from "./webfetch.md"
+import DESCRIPTION from "./webfetch.md" with { type: "text" }
 import { isImageAttachment } from "@/util/media"
 
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024 // 5MB

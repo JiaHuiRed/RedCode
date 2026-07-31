@@ -3,7 +3,7 @@ import { Effect, Schema } from "effect"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Git } from "@/git"
 import { assertExternalDirectoryEffect } from "./external-directory"
-import DESCRIPTION from "./repo_overview.md"
+import DESCRIPTION from "./repo_overview.md" with { type: "text" }
 import * as Tool from "./tool"
 import { parseRepositoryReference, repositoryCachePath } from "@/util/repository"
 import { InstanceState } from "@/effect/instance-state"

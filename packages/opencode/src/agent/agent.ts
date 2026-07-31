@@ -7,12 +7,12 @@ import { Truncate } from "@/tool/truncate"
 import { Auth } from "../auth"
 import { ProviderTransform } from "@/provider/transform"
 
-import PROMPT_GENERATE from "./generate.md"
-import PROMPT_COMPACTION from "./prompt/compaction.md"
-import PROMPT_EXPLORE from "./prompt/explore.md"
-import PROMPT_SCOUT from "./prompt/scout.md"
-import PROMPT_SUMMARY from "./prompt/summary.md"
-import PROMPT_TITLE from "./prompt/title.md"
+import PROMPT_GENERATE from "./generate.md" with { type: "text" }
+import PROMPT_COMPACTION from "./prompt/compaction.md" with { type: "text" }
+import PROMPT_EXPLORE from "./prompt/explore.md" with { type: "text" }
+import PROMPT_SCOUT from "./prompt/scout.md" with { type: "text" }
+import PROMPT_SUMMARY from "./prompt/summary.md" with { type: "text" }
+import PROMPT_TITLE from "./prompt/title.md" with { type: "text" }
 import { Permission } from "@/permission"
 import { Profile } from "./profile"
 import { mergeDeep, pipe, sortBy, values } from "remeda"

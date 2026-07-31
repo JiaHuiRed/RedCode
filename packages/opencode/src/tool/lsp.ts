@@ -2,7 +2,7 @@
 import * as Tool from "./tool"
 import path from "path"
 import { LSP } from "@/lsp/lsp"
-import DESCRIPTION from "./lsp.md"
+import DESCRIPTION from "./lsp.md" with { type: "text" }
 import { InstanceState } from "@/effect/instance-state"
 import { pathToFileURL } from "url"
 import { assertExternalDirectoryEffect } from "./external-directory"

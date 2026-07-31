@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect"
-import DESCRIPTION from "./repo_clone.md"
+import DESCRIPTION from "./repo_clone.md" with { type: "text" }
 import * as Tool from "./tool"
 import { repositoryCachePath } from "@/util/repository"
 import { RepositoryCache } from "@/reference/repository-cache"
