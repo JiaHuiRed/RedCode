@@ -2,7 +2,7 @@ import { BoxRenderable, MouseButton, MouseEvent, RGBA, TextAttributes } from "@o
 import { useRenderer } from "@opentui/solid"
 import { For, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import { useTheme, tint } from "@tui/context/theme"
-import { go, logo } from "@/cli/logo"
+import { logo } from "@/cli/logo"
 
 export type LogoShape = {
   left: string[]
@@ -29,8 +29,11 @@ type ShimmerConfig = {
   ambientWidth: number
   shadowMix: number
   primaryMix: number
-  originX: number
-  originY: number
+  // 260731 Red 扫光原点从绝对格改成相对整块 logo 的比例。原来写死 4.5 / 13.5 是照
+  // 41×10（像素行）那版量出来的，换成大号字形（55×14）后原点会落在字里而不是左下角外，
+  // 扫光方向整个变掉。改成比例后同一套参数对任何 shape 都成立。
+  originXRatio: number
+  originYRatio: number
 }
 
 // 260701 Red 原参数是给点击 burst 之后的极短暂余韵设计的，常驻 idle 场景下几乎看不出——
@@ -55,8 +58,10 @@ const shimmerConfig: ShimmerConfig = {
   ambientWidth: 0.34,
   shadowMix: 0.1,
   primaryMix: 0.7,
-  originX: 4.5,
-  originY: 13.5,
+  // 原值 4.5 / 13.5 相对 41 列 × 10 像素行：横向约 11%（偏左），纵向 135%（在 logo 下方之外），
+  // 即扫光自左下角外扫入。保留这个几何关系。
+  originXRatio: 4.5 / 41,
+  originYRatio: 13.5 / 10,
 }
 
 // Shadow markers (rendered chars in parens):
@@ -305,7 +310,6 @@ function build(shape: LogoShape): LogoContext {
 }
 
 const DEFAULT = build(logo)
-const GO = build(go)
 
 function shimmer(x: number, y: number, frame: Frame, ctx: LogoContext) {
   return frame.list.reduce((best, item) => {
@@ -451,8 +455,8 @@ function idle(
   state: IdleState,
 ): { glow: number; peak: number; primary: number } {
   const cfg = state.cfg
-  const dx = x + 0.5 - cfg.originX
-  const dy = pixelY - cfg.originY
+  const dx = x + 0.5 - state.originX
+  const dy = pixelY - state.originY
   const dist = Math.hypot(dx, dy)
   const angle = Math.atan2(dy, dx)
   const wob1 = noise(x * 0.32, pixelY * 0.25, frame.t * 0.0005) - 0.5
@@ -509,6 +513,9 @@ function bloom(x: number, y: number, frame: Frame, ctx: LogoContext) {
 
 type IdleState = {
   cfg: ShimmerConfig
+  /** originXRatio/originYRatio 解出的实际原点，随 shape 尺寸变化 */
+  originX: number
+  originY: number
   reach: number
   rings: number
   active: Array<{
@@ -522,6 +529,8 @@ function buildIdleState(t: number, ctx: LogoContext): IdleState {
   const cfg = shimmerConfig
   const w = ctx.FULL[0]?.length ?? 1
   const h = ctx.FULL.length * 2
+  const originX = cfg.originXRatio * w
+  const originY = cfg.originYRatio * h
   const corners: [number, number][] = [
     [0, 0],
     [w, 0],
@@ -530,7 +539,7 @@ function buildIdleState(t: number, ctx: LogoContext): IdleState {
   ]
   let maxCorner = 0
   for (const [cx, cy] of corners) {
-    const d = Math.hypot(cx - cfg.originX, cy - cfg.originY)
+    const d = Math.hypot(cx - originX, cy - originY)
     if (d > maxCorner) maxCorner = d
   }
   const reach = maxCorner + cfg.tail * 2
@@ -550,7 +559,7 @@ function buildIdleState(t: number, ctx: LogoContext): IdleState {
       ambient: Math.abs(d) < 1 ? (1 - d * d) ** 2 * cfg.ambientAmp : 0,
     })
   }
-  return { cfg, reach, rings, active }
+  return { cfg, originX, originY, reach, rings, active }
 }
 
 export function Logo(props: { shape?: LogoShape; ink?: RGBA; idle?: boolean } = {}) {

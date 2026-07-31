@@ -3,10 +3,13 @@ import type { InternalTuiPlugin } from "../../plugin/internal"
 import { createMemo, Show } from "solid-js"
 import { Tips } from "./tips-view"
 import { useBindings } from "../../keymap"
+import { usePromptMaxWidth } from "@tui/component/prompt/width"
 
 const id = "internal:home-tips"
 
 function View(props: { api: TuiPluginApi; hidden: boolean; show: boolean; connected: boolean }) {
+  // 260731 Red 跟输入框共用宽度上限，此前这里写死 75，配了 tui.prompt.max_width 就对不齐
+  const maxWidth = usePromptMaxWidth()
   useBindings(() => ({
     commands: [
       {
@@ -24,7 +27,7 @@ function View(props: { api: TuiPluginApi; hidden: boolean; show: boolean; connec
   }))
 
   return (
-    <box width="100%" maxWidth={75} alignItems="center" paddingTop={3} flexShrink={1}>
+    <box width="100%" maxWidth={maxWidth()} alignItems="center" paddingTop={3} flexShrink={1}>
       <Show when={props.show}>
         <Tips api={props.api} connected={props.connected} />
       </Show>
