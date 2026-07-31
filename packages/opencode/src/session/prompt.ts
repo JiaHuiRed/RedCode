@@ -1509,6 +1509,14 @@ export const layer = Layer.effect(
   4. APOLOGIES WITHOUT ACTION = ZERO — after being corrected, first message MUST be a tool call (read/grep/bash/write). Pure text = non-acknowledgment.
   5. AFTER ANALYSIS → EXECUTE YOURSELF — download, extract, modify config, run scripts. NEVER tell the user to do what you can do. Only ask for: irreversible ops, missing info, physical actions.`,
             )
+            // 260801 Red Windsurf-inspired memory clause: write now, not later.
+            // Context gets compacted; the two MEMORY.md files are the only bridge to the next session.
+            system.push(
+              `▸ MEMORY (WRITE NOW, NOT LATER):
+ 1. You have persistent memory (project \`.redcode/MEMORY.md\` + global \`~/.redcode/MEMORY.md\`). On any durable event — user decision, project-specific pitfall, being corrected, architecture choice — write it down IMMEDIATELY, never wait for wrap-up. No user permission needed.
+ 2. Context WILL be compacted; memory is the only bridge to the next session. Anything that survives only in this conversation is lost. Write liberally.
+ 3. Append via read + edit, NEVER write (write overwrites the file). Project file for this project's facts; only cross-project, reusable lessons go to global.`,
+            )
             // 260629 Red inject per-session canary marker for prompt-injection detection.
             // If it ever appears in model output, terminate the session.
             // 260722 Red reworded after a real false-positive: the old "Session marker: X" phrasing
