@@ -41,6 +41,10 @@ tsconfig.tsbuildinfo
 typecheck_out.txt
 packages/*/typecheck_out.txt
 
+# 260731 Red `test:ci` 的 junit 落点。此前只有 packages/opencode 自己 ignore 了它，
+# app/ui 是因为本地没跑过 test:ci 才碰巧没暴露 —— 提到根上覆盖所有包
+packages/*/.artifacts/
+
 # codegraph daemon state (runtime, not source)
 .codegraph/
 

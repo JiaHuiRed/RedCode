@@ -147,3 +147,48 @@ Electron 侧（`main/markdown.ts`）用的是 JS 库 `marked` 加一个自定义
 也就是说：这 28 个 command 目前**一个都不可达**，渲染进程在 Tauri 下仍然起不来（`window.api` 未定义时 `renderer/index.tsx` 模块顶层就会崩，见 §1）。
 
 这比 A 档剩下那几项重要得多，应作为下一步，优先于任务 #6。
+
+## 9. 跨语言边界的漂移防护（2026-07-31）
+
+§8.4 描述的阻塞已解除（shim 于 07-29 落地）。本节记录随后补上的**契约层**——
+shim 用 `ElectronAPI` 类型守住了 TS 那一半，但 `invoke("store_get", { name, key })`
+里的命令名与参数名是字符串字面量，Rust 侧改名、改参数、漏登记 `generate_handler![]`，
+编译器全都看不见，只在用户点下去时报 `Command not found`。
+
+### 9.1 生成物（编译期）
+
+`scripts/gen-tauri-commands.ts` 解析 `src-tauri/src/main.rs`，生成
+`src/renderer/tauri-commands.generated.ts`：
+
+- `TauriCommandArgs` —— 每个 command 的 payload 键名与类型（snake_case → camelCase，
+  与 Tauri v2 的默认转换一致；`AppHandle`/`State` 等注入参数不计入）
+- `TauriCommandResult` —— resolve 出来的类型（`Result<T, E>` 取 `T`，`Err` 走 reject）
+- `TAURI_COMMANDS` —— `generate_handler![]` 里登记过、因而真正可调用的名字
+
+shim 里唯一允许直接碰 `invoke` 的是 `call()` 包装，其余调用全部经它，于是命令名/参数名/
+返回类型三者的漂移都变成编译错误。已实测：把 `resolve_app_path` 的参数改名后
+`tsgo -b` 报 `'appName' does not exist in type '{ applicationName: string }'`。
+
+生成器遇到映射不了的 Rust 类型直接抛错，不吐 `any` —— 一个错的类型比没有类型更糟。
+
+命令：`bun --cwd packages/desktop run gen:tauri-commands`（加 `-- --check` 只校验不写入）。
+
+### 9.2 契约测试（编译器看不见的那一半）
+
+`src/renderer/tauri-command-contract.test.ts`：
+
+1. 生成物与 `main.rs` 同步（等价于 `--check`，CI 走 `bun turbo test:ci` 这条路）
+2. 每个 `#[tauri::command]` 都登记在 `generate_handler![]`，反之亦然
+3. **返回集合的 command 不得把集合包在 `Option` 里** —— `Vec<T>` 序列化必是数组，
+   `Option<Vec<T>>` 会给前端 `null`，`.map()` 当场炸。目前唯一返回集合的 `store_keys`
+   已是 `unwrap_or_default()`；这条规矩是给任务 #6/#7/#8 后续落地的 command 立的
+4. 返回 `unknown`（`serde_json::Value`）的 command 必须在清单内——目前只有两个 picker，
+   它们的 `string | string[] | null` 形状约定来自 Electron 侧既有契约，只活在注释里
+5. 没有绕过 `call()` 的裸 `invoke("字面量")`，也没有「Rust 实现了但前端忘了接」的孤儿
+
+### 9.3 顺带修好的
+
+`packages/desktop` 此前**没有 test 脚本**，`src/main/shell-env.test.ts` 与
+`src/renderer/html.test.ts` 从写下那天起就没在 CI 跑过。现已接上 `test` / `test:ci`
+（turbo 的通用 `test:ci` 任务会自动带上），并加了 `bun-preload.ts` 给 `electron` 做替身
+—— `bun test` 里没有 Electron 运行时，`import { crashReporter }` 会让整条 import 链塌掉。
