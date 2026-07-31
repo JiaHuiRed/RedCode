@@ -70,7 +70,6 @@ import { SessionTools } from "./tools"
 import { LLMEvent } from "@redcode-ai/llm"
 import { LoopRecoveryTracker, RECOVERY_PROMPTS } from "./text-loop-detection"
 import * as XmlToolCall from "./xml-tool-call"
-import * as ReasoningLanguage from "./reasoning-language"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -1423,17 +1422,23 @@ export const layer = Layer.effect(
               }
             }
 
-            // 260729 Red 可见思考语言约束（见 session/reasoning-language.ts）。
-            // 取用户最后一轮自己写的文本做判定 —— 跳过 synthetic/ignored（那些是 RedCode 注入的，
-            // 不代表用户在说什么语言）。整块作为 transient user turn 注入，绝不进 system prompt：
-            // 这是可随时切换的偏好，进了稳定前缀就会每次改设置都打掉 prefix cache。
-            // 260730 Karina 同一个块里再加一条称呼约束：soul/per-model 提示词只管住了正文，
-            // 一进思考通道模型就退回 "the user"。称呼取 config.username。
-            const reasoningCfg = yield* config.get()
-            const reasoningLanguagePrompt = ReasoningLanguage.block(
-              ReasoningLanguage.resolve(reasoningCfg.reasoning_language, ReasoningLanguage.sourceFrom(msgs)),
-              ReasoningLanguage.addressFrom(reasoningCfg.username),
-            )
+            // 260731 Red 可见思考的语言/称呼约束注入已撤除。它是 07-29/07-30 为了修 step-3.7-flash 的通道纪律加的，
+            // 结果造出了比原问题严重得多的三个新毛病，实测于 ses_04916ea36ffe（step-3.7-flash）：
+            //
+            // 1) **每一步都以 role:"user" 注入**（下面 messages 数组里，无 step 门槛）。对模型来说
+            //    对话永远停在"用户刚说完话"，于是它每一步都重新推导用户意图而不是继续干活 ——
+            //    9 分钟无人发话的窗口里跑了 154 次工具调用，其中只有 62 个不同：同一个
+            //    redcode.jsonc 读了 16 次、改了 8 次，同样 4 个 md 各读 4 次。
+            // 2) 称呼约束原文是「与正文保持一致…从第一句思考开始就这么称呼」——
+            //    等于明确要求模型把思考写成正文。一个本就分不清通道的模型照做了：
+            //    93 轮里只有 5 轮有正文，却有 46 段思考在直接对用户说话。
+            // 3) 开关挂错了地方。语言约束看 config.reasoning_language，称呼约束却只看
+            //    config.username —— 而 username 是 TUI 标签的显示设置。用户撤掉
+            //    reasoning_language 之后注入照常，根本关不掉。
+            //
+            // reasoning-language.ts 与 instruction-echo.ts 的 STRIP 都保留：历史会话里已经
+            // 存了大量被复述的 <reasoning-language> 块，剥离逻辑还得继续管它们。
+            // 要重新启用得先解决两件事：不占用 role:"user"，且每回合最多注一次。
 
             yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
@@ -1549,8 +1554,8 @@ export const layer = Layer.effect(
                 ...(userReminderText ? [{ role: "user" as const, content: userReminderText }] : []),
                 // 260710 Red loop recovery prompt 注入（跨 step 重复检测触发）
                 ...(loopRecoveryPrompt ? [{ role: "user" as const, content: loopRecoveryPrompt }] : []),
-                // 260729 Red 可见思考语言约束，紧贴生成点注入（第一个 reasoning 段会锚定整轮）
-                ...(reasoningLanguagePrompt ? [{ role: "user" as const, content: reasoningLanguagePrompt }] : []),
+                // 260731 Red 原本这里还有第三条注入：每步一条 <reasoning-language> 的 user turn。
+                // 已撤除，原因见本文件上方「可见思考的语言/称呼约束注入已撤除」那段注释。
                 ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : []),
               ],
               tools: sortedTools,
