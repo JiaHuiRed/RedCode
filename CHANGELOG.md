@@ -11,6 +11,18 @@
 ---
 
 ## TUI
+### [0.8.6] - 2026-08-01
+
+> Goal 功能从「半实装」补成完整闭环：钉目标 → 系统提示词注入 → 会话空闲自动续跑（防跑飞三闸门）→ token 记账收尾。同批把标题生成从本地小模型切回当前会话主模型——额度管够，不再受 small_model 掉线拖累。
+
+#### 新增
+
+- **Goal 自动续跑完整实装**（`config/config.ts`、`session/goal-continuation.ts`、`session/prompt.ts`、`effect/app-runtime.ts`、`.opencode/command/goal.md`）：此前 goal 只有数据层 + 工具层（goal_set/done/clear 已注册），接线全断——system 无注入、无开关、无续跑。本次补齐四件：① config 新增 `experimental.goal_auto_continue`（默认关）与 `goal_token_budget`（默认 20 万 tokens）两个开关；② `goal-continuation.ts` 新服务订阅 `SessionStatus.Event.Idle`（run-state onIdle 与 processor 错误路径都会发），`maybeContinue` 七步闸门——开关开、goal active、turn_count < 20、距上次 ≥30s、预算超限时注入收尾 prompt + `mark("budget_limited")`、用户插话即停（对比最新 user 消息 id 与上次 steering 记录）、通过则注入 synthetic steering 消息 + `tick` + `ops.loop` fork 续跑（仿 task.ts resumeWhenIdle 模式）；③ prompt.ts 三处——每步累计 `usageTokens`、runLoop 收尾 `goal.addUsage`（无 goal 行时 UPDATE no-op 零成本）、system 在 MEMORY 条款后 canary 前注入 `<goal>` 块（只 bust 尾部缓存不动前缀大块）；④ AppLayer mergeAll 挂 `GoalContinuation.defaultLayer`。`/goal` 命令同步升级：引导模型调 goal_set/goal_done/goal_clear 工具落库，不再"自己记着"。
+
+#### 变更
+
+- **标题生成改用当前会话主模型**（`session/prompt.ts` ensureTitle）：此前标题走 `small_model`（本地 ollama/qwen3.5）兜底主模型，qwen 掉线会失败重试。哥哥拍板"额度管够"——直接 `provider.getModel(input.providerID, input.modelID)` 主模型生成，删除 getSmallModel fallback 分支与 isMain 判断，失败直接 orDie。
+---
 ### [0.8.5] - 2026-08-01
 
 > DeepSeek V4 Flash 输出上限提到 64K——max_tokens 覆盖 reasoning_content + content 总和，思考链一长正文就被 32K 共享预算挤断，多次中断的根因。同批把 Windsurf 式主动记忆条款写进 system 尾部，遇持久事件不等收工立刻落盘。
