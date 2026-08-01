@@ -24,6 +24,7 @@ import { Question } from "@/question"
 import { Permission } from "@/permission"
 import { Todo } from "@/session/todo"
 import { Session } from "@/session/session"
+import { Goal } from "@/session/goal"
 import { SessionStatus } from "@/session/status"
 import { SessionRunState } from "@/session/run-state"
 import { SessionProcessor } from "@/session/processor"
@@ -99,6 +100,8 @@ export const AppLayer = Layer.mergeAll(
   McpAuth.defaultLayer,
   Command.defaultLayer,
   Truncate.defaultLayer,
+  Todo.defaultLayer,
+  ToolRegistry.defaultLayer,
   ToolRegistry.defaultLayer,
   Format.defaultLayer,
   Project.defaultLayer,

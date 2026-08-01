@@ -1,4 +1,4 @@
-﻿import { PlanExitTool } from "./plan"
+import { PlanExitTool } from "./plan"
 import { Session } from "@/session/session"
 import { QuestionTool } from "./question"
 import { ShellTool } from "./shell"
@@ -9,6 +9,7 @@ import { ReadTool } from "./read"
 import { TaskTool } from "./task"
 import { TaskStatusTool } from "./task_status"
 import { TodoWriteTool, TodoReadTool } from "./todo"
+import { GoalSetTool, GoalDoneTool, GoalClearTool } from "./goal"
 import { WebFetchTool } from "./webfetch"
 import { WriteTool } from "./write"
 import { InvalidTool } from "./invalid"
@@ -103,6 +104,9 @@ export const layer = Layer.effect(
     const question = yield* QuestionTool
     const todo = yield* TodoWriteTool
     const todoread = yield* TodoReadTool
+    const goalSet = yield* GoalSetTool
+    const goalDone = yield* GoalDoneTool
+    const goalClear = yield* GoalClearTool
     const lsptool = yield* LspTool
     const plan = yield* PlanExitTool
     const webfetch = yield* WebFetchTool
@@ -227,6 +231,9 @@ export const layer = Layer.effect(
           fetch: Tool.init(webfetch),
           todo: Tool.init(todo),
           todoread: Tool.init(todoread),
+          goal_set: Tool.init(goalSet),
+          goal_done: Tool.init(goalDone),
+          goal_clear: Tool.init(goalClear),
           search: Tool.init(websearch),
           repo_clone: Tool.init(repoClone),
           repo_overview: Tool.init(repoOverview),
@@ -296,6 +303,9 @@ export const layer = Layer.effect(
             tool.fetch,
             tool.todo,
             tool.todoread,
+            tool.goal_set,
+            tool.goal_done,
+            tool.goal_clear,
             tool.search,
             ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
             tool.skill,
@@ -518,3 +528,5 @@ function isJsonSchemaObject(value: unknown): value is Record<string, unknown> {
 }
 
 export * as ToolRegistry from "./registry"
+
+

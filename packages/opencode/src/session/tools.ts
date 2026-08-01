@@ -11,13 +11,14 @@
  import { Plugin } from "@/plugin"
  import type { TaskPromptOps } from "@/tool/task"
  import { type Tool as AITool, tool, jsonSchema, type ToolExecutionOptions, asSchema } from "ai"
- import { Effect } from "effect"
- import { MessageV2 } from "./message-v2"
- import * as Session from "./session"
- import { SessionProcessor } from "./processor"
- import { PartID } from "./schema"
- import * as Log from "@redcode-ai/core/util/log"
- import { EffectBridge } from "@/effect/bridge"
+import { Effect } from "effect"
+import { MessageV2 } from "./message-v2"
+import * as Session from "./session"
+import { SessionProcessor } from "./processor"
+import { PartID } from "./schema"
+import * as Log from "@redcode-ai/core/util/log"
+import { EffectBridge } from "@/effect/bridge"
+import { Goal } from "./goal"
 
 const log = Log.create({ service: "session.tools" })
 
@@ -29,6 +30,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   bypassAgentCheck: boolean
   messages: MessageV2.WithParts[]
   promptOps: TaskPromptOps
+  goal: Goal.Interface
 }) {
   using _ = log.time("resolveTools")
   const tools: Record<string, AITool> = {}
@@ -44,7 +46,12 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     abort: options.abortSignal!,
     messageID: input.processor.message.id,
     callID: options.toolCallId,
-    extra: { model: input.model, bypassAgentCheck: input.bypassAgentCheck, promptOps: input.promptOps },
+    extra: {
+      model: input.model,
+      bypassAgentCheck: input.bypassAgentCheck,
+      promptOps: input.promptOps,
+      goal: input.goal,
+    },
     agent: input.agent.name,
     messages: input.messages,
     metadata: (val) =>
