@@ -415,6 +415,7 @@ type TuiAttentionConfigView = {
   volume: number
   sound_pack: string
   sounds: Partial<Record<TuiAttentionSoundName, string>>
+  bell: boolean
 }
 
 type TuiConfigView = Pick<PluginConfig, "$schema" | "theme" | "plugin"> &

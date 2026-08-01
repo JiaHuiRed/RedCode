@@ -30,6 +30,7 @@ export function createTuiResolvedConfig(input: ResolvedInput = {}): TuiConfig.Re
       volume: 0.4,
       sound_pack: "redcode.default",
       sounds: {},
+      bell: true,
       ...input.attention,
     },
     keybinds: createTuiResolvedKeybinds(keybinds),

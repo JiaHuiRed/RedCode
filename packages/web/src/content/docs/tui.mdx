@@ -407,6 +407,7 @@ The TUI can request attention for questions, permissions, session errors, and co
 - `enabled` - Enable all attention notifications and sounds. Defaults to `false`.
 - `notifications` - Allow terminal-mediated desktop notifications when attention is enabled. Defaults to `true`.
 - `sound` - Allow attention sounds when attention is enabled. Defaults to `true`.
+- `bell` - On Windows, emit a BEL character (flash the taskbar icon when the terminal is unfocused) together with the notification. Pair with Windows Terminal `bellStyle: "taskbar"` for a WhatsApp-style taskbar flash. Defaults to `true`.
 - `volume` - Default sound volume from `0` to `1`. Defaults to `0.4`.
 - `sound_pack` - Sound pack ID to use. Defaults to `opencode.default`.
 - `sounds` - Override sound files for `default`, `question`, `permission`, `error`, `done`, or `subagent_done`. Paths can be absolute, `file://` URLs, or relative to `tui.json`.

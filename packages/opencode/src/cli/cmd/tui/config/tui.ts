@@ -43,6 +43,7 @@ export type Resolved = Omit<Info, "attention" | "keybinds" | "leader_timeout"> &
     volume: number
     sound_pack: string
     sounds: Partial<Record<TuiAttentionSoundName, string>>
+    bell: boolean
   }
   keybinds: TuiKeybind.BindingLookupView
   leader_timeout: number
@@ -247,6 +248,7 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
       volume: acc.result.attention?.volume ?? 0.4,
       sound_pack: acc.result.attention?.sound_pack ?? "redcode.default",
       sounds: acc.result.attention?.sounds ?? {},
+      bell: acc.result.attention?.bell ?? true,
     },
     keybinds: createBindingLookup(TuiKeybind.toBindingConfig(parsedKeybinds), {
       commandMap: TuiKeybind.CommandMap,

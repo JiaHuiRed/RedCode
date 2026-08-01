@@ -31,6 +31,8 @@
 - **redmind 显示名改驼峰式 RedMind**（`agent/agent.ts`、`cli/cmd/tui/component/prompt/index.tsx`、`cli/cmd/tui/component/dialog-agent.tsx`）：输入框和切换 agent 对话框原来走 `Locale.titlecase(name)`，`redmind` 被渲染成 "Redmind"。启用 schema 里本来就有的 `displayName` 字段（此前没有任何 agent 用过），redmind 声明 `displayName: "RedMind"`，显示层统一 `displayName ?? titlecase(name)`，build/plan 等其余 agent 显示不变。
 
 - **火山引擎 Doubao 新增专属提示词**（`session/prompt/doubao.md`、`session/system.ts`）：Doubao-Seed 系列此前落 `default.md` 兜底，那句「不超过 4 行、单词回答最好」会把强模型的输出能力压扁，和 grok 是同款坑（0.8.3 已给 grok 补过）。新增 `doubao.md` 参照 `deepseek.md` 的精炼结构，补全五条铁律、Engineering judgment、Windows GBK 环境事实、Task management、并行工具调用等，且保留 soul 人格房规（语气/称呼/详略不双立法）。匹配走 `providerID` 包含 `"volcengine"` 判断，支持火山方舟所有 Doubao 模型。
+
+- **attention 新增任务栏闪烁提醒**（`cli/cmd/tui/attention.ts`、`cli/cmd/tui/config/tui-schema.ts`、`cli/cmd/tui/config/tui.ts`）：打游戏/离开时不知道 agent 在等权限或任务已完成。Windows 下通知触发（失焦 + 非 subagent）时输出 BEL（`\x07`），配合 Windows Terminal `bellStyle: "taskbar"` 让任务栏图标像微信一样闪烁；BEL 是控制字符不占格子、不干扰 OpenTUI 渲染缓冲，console-hijack 不劫持 stdout 所以通道干净。新增 `attention.bell` 配置开关（默认开，`attention.enabled` 默认仍为关）。
 #### 修复
 
 - **destructive 授权门漏掉进程/系统级命令**（`tool/shell.ts`）：破坏性判定原先挂在 `FILES`（文件命令）分支里，只覆盖文件操作 + git 写操作（260730 白名单反向判定），`taskkill`、`Stop-Process`、`shutdown`、`Stop-Computer`、`Restart-Computer`、`Clear-Content`、`reg`、`format`、`format-volume`、`diskpart`、`sc`、`schtasks`、`vssadmin`、`bcdedit` 共 14 个进程/系统级高危命令在 redmind 下会静默执行。判定逻辑拆成独立行（`if (cmd && DESTRUCTIVE.has(cmd)) scan.destructive = true`，不再依赖 FILES 分支），DESTRUCTIVE 表补齐这些命令——`reg`/`sc`/`schtasks`/`vssadmin`/`bcdedit` 有只读用法（query/list/enum），但 agent 极少用它们做只读诊断，整命令进门宁可多问一次。PowerShell/cmd 的命令名已先行小写化，bash 分支不受影响。

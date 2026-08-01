@@ -59,6 +59,9 @@ export const Attention = Schema.Struct({
   volume: Schema.optional(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(1))),
   sound_pack: Schema.optional(Schema.String),
   sounds: Schema.optional(TuiAttentionSounds),
+  bell: Schema.optional(Schema.Boolean).annotate({
+    description: "Flash the terminal taskbar icon (Windows) via BEL when attention is needed while unfocused",
+  }),
 }).annotate({ description: "Attention notification and sound settings" })
 
 const PromptSize = Schema.Int.check(Schema.isGreaterThan(0))

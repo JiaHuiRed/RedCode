@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test"
+﻿import { describe, expect, spyOn, test } from "bun:test"
 import type { AudioPlayOptions, AudioSound } from "@opentui/core"
 import { createTuiAttention } from "@/cli/cmd/tui/attention"
 import type { TuiConfig } from "@/cli/cmd/tui/config/tui"
@@ -91,6 +91,7 @@ function config(attention: Partial<AttentionConfig["attention"]> = {}): Attentio
       volume: 0.4,
       sound_pack: "redcode.default",
       sounds: {},
+      bell: true,
       ...attention,
     },
   }
@@ -136,6 +137,57 @@ describe("createTuiAttention", () => {
       sound: true,
     })
     expect(audio.playCalls).toBe(1)
+  })
+
+  test("emits BEL bell on win32 when blurred, independent of notifications switch", async () => {
+    const writeSpy = spyOn(process.stdout, "write")
+    try {
+      const renderer = new FakeRenderer()
+      const audio = new FakeAudioEngine()
+      const attention = createTuiAttention({
+        renderer,
+        config: config({ notifications: false, sound: false }),
+        audio,
+      })
+      renderer.emit("blur")
+      expect(await attention.notify({ message: "blurred" })).toEqual({
+        ok: true,
+        notification: false,
+        sound: false,
+      })
+      expect(writeSpy).toHaveBeenCalledWith("\x07")
+
+      // focused: no bell
+      writeSpy.mockClear()
+      renderer.emit("focus")
+      await attention.notify({ message: "focused" })
+      expect(writeSpy).not.toHaveBeenCalledWith("\x07")
+
+      // subagent (notification: false): no bell
+      writeSpy.mockClear()
+      renderer.emit("blur")
+      await attention.notify({ message: "subagent", notification: false })
+      expect(writeSpy).not.toHaveBeenCalledWith("\x07")
+    } finally {
+      writeSpy.mockRestore()
+    }
+  })
+
+  test("does not emit bell when attention.bell is disabled", async () => {
+    const writeSpy = spyOn(process.stdout, "write")
+    try {
+      const renderer = new FakeRenderer()
+      const attention = createTuiAttention({
+        renderer,
+        config: config({ bell: false, sound: false }),
+        audio: new FakeAudioEngine(),
+      })
+      renderer.emit("blur")
+      await attention.notify({ message: "blurred" })
+      expect(writeSpy).not.toHaveBeenCalledWith("\x07")
+    } finally {
+      writeSpy.mockRestore()
+    }
   })
 
   test("supports focused-only requests", async () => {
@@ -435,7 +487,7 @@ describe("createTuiAttention", () => {
     const audio = new FakeAudioEngine()
     renderer.notificationThrows = true
     audio.rejectLoad = true
-    const attention = createTuiAttention({ renderer, config: config(), audio })
+    const attention = createTuiAttention({ renderer, config: config({ bell: false }), audio })
     renderer.emit("blur")
 
     expect(await attention.notify({ message: "hello", sound: true })).toEqual({

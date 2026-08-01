@@ -143,6 +143,7 @@ it.instance("resolves attention config defaults and overrides", () =>
         volume: 0.4,
         sound_pack: "redcode.default",
         sounds: {},
+        bell: true,
       })
 
       yield* fs.writeJson(path.join(test.directory, "tui.json"), {
@@ -173,6 +174,7 @@ it.instance("resolves attention config defaults and overrides", () =>
           error: path.join(test.directory, "error.mp3"),
           subagent_done: path.join(test.directory, "subagent-done.mp3"),
         },
+        bell: true,
       })
     }),
   ),

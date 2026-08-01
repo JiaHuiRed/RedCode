@@ -194,23 +194,41 @@ export function createTuiAttention(input: {
               }
             })()
           : false
-        const volume = soundVolume(request, input.config)
-        const requestedSound = typeof request.sound === "object" ? request.sound : undefined
-        const soundSkip = volume === undefined ? undefined : focusSkip(requestedSound?.when ?? "always", focus)
-        const soundName =
-          requestedSound?.name && isAttentionSoundName(requestedSound.name) ? requestedSound.name : "default"
-        const sound = volume === undefined || soundSkip ? false : await playSound(soundName, volume)
+       // 260801 Red 任务栏闪烁：Windows 下失焦时输出 BEL（\x07），配合 WT 的
+       // bellStyle: "taskbar" 让任务栏图标闪烁，哥哥打游戏时能注意到"需要看一眼"。
+       // BEL 是控制字符，终端不渲染不占格子，不会干扰 OpenTUI 渲染缓冲。
+       // 条件独立于 notifications/sound 开关：仅受 attention.bell 控制 + 非 subagent + 失焦判断。
+       let bell = false
+       if (
+         process.platform === "win32" &&
+         input.config.attention.bell &&
+         request.notification !== false &&
+         !notificationSkip
+       ) {
+         try {
+           process.stdout.write("\x07")
+           bell = true
+         } catch (error) {
+           log.debug("failed to write attention bell", { error })
+         }
+       }
+       const volume = soundVolume(request, input.config)
+       const requestedSound = typeof request.sound === "object" ? request.sound : undefined
+       const soundSkip = volume === undefined ? undefined : focusSkip(requestedSound?.when ?? "always", focus)
+       const soundName =
+         requestedSound?.name && isAttentionSoundName(requestedSound.name) ? requestedSound.name : "default"
+       const sound = volume === undefined || soundSkip ? false : await playSound(soundName, volume)
 
-        if (!notification && !sound) {
-          if (notificationRequested && notificationSkip) return skipped(notificationSkip)
-          if (soundSkip) return skipped(soundSkip)
-        }
+       if (!notification && !sound) {
+         if (notificationRequested && notificationSkip) return skipped(notificationSkip)
+         if (soundSkip) return skipped(soundSkip)
+       }
 
-        return {
-          ok: notification || sound,
-          notification,
-          sound,
-        }
+       return {
+         ok: notification || sound || bell,
+         notification,
+         sound,
+       }
       } catch (error) {
         log.debug("failed to handle attention notification", { error })
         return {
