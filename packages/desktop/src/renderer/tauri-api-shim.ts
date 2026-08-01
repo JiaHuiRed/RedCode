@@ -89,6 +89,8 @@ async function install() {
     writeAttachment: (sessionDir, filename, data) =>
       call("write_attachment", { sessionDir, filename, data: Array.from(data) }),
     showNotification: (title, body) => void call("show_notification", { title, body: body ?? null }),
+    // 260801 Red 任务栏闪烁：Tauri 侧暂无对应命令，noop 保持类型一致
+    flashFrame: () => {},
     setBackgroundColor: (color) => call("set_background_color", { color }),
     recordFatalRendererError: (error) => call("record_fatal_renderer_error", { error }),
 

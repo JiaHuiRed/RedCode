@@ -228,6 +228,8 @@ const createPlatform = (): Platform => {
     notify: async (title, description, href) => {
       const focused = await window.api.getWindowFocused().catch(() => document.hasFocus())
       if (focused) return
+      // 260801 Red 任务栏闪烁：所有通知（turn-complete/error/permission/question）汇聚于此一处生效
+      window.api.flashFrame(true)
 
       const notification = new Notification(title, {
         body: description ?? "",

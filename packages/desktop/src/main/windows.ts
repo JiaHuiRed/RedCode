@@ -170,6 +170,9 @@ export function createMainWindow() {
     win.show()
   })
 
+  // 260801 Red 任务栏闪烁：窗口重新聚焦即停闪
+  win.on("focus", () => win.flashFrame(false))
+
   return win
 }
 

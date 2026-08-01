@@ -187,6 +187,12 @@ export function registerIpcHandlers(deps: Deps) {
     new Notification({ title, body }).show()
   })
 
+  // 260801 Red 任务栏闪烁：失焦才闪（与 get-window-focused 同款 fromWebContents 模式）
+  ipcMain.on("flash-frame", (event: IpcMainEvent, flash?: boolean) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win && !win.isFocused()) win.flashFrame(flash !== false)
+  })
+
   ipcMain.handle("get-window-count", () => BrowserWindow.getAllWindows().length)
 
   ipcMain.handle("get-window-focused", (event: IpcMainInvokeEvent) => {

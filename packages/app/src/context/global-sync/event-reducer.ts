@@ -1,4 +1,5 @@
 ﻿import { Binary } from "@redcode-ai/core/util/binary"
+import { batch } from "solid-js"
 import { produce, reconcile, type SetStoreFunction, type Store } from "solid-js/store"
 import type {
   Message,
@@ -17,6 +18,12 @@ import { dropSessionCaches } from "./session-cache"
 import { diffs as list, message as clean } from "@/utils/diffs"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
+
+// 260801 Red GUI 每会话消息上限（仿 TUI sync.tsx:272-280 的 100 条 shift）：
+//   GUI store 无界增长，三千万 token 级长会话把全部消息+parts 常驻内存，
+//   且 messageAgentColor/cleanupDroppedSessionCaches 每次事件全量扫描。
+//   历史消息可经 directory-sync 的 cursor 分页（loadMore）随时回拉，截断只影响内存缓存。
+const MAX_MESSAGES_PER_SESSION = 100
 
 // 260706 Red server.instance.disposed 之前无冷却地直接 push(directory) 重新 bootstrap——
 //   如果服务端因为某种原因反复 dispose 同一个目录的 instance（比如后台 npm 安装超时触发的
@@ -232,6 +239,26 @@ export function applyDirectoryEvent(input: {
           draft.splice(result.index, 0, info)
         }),
       )
+      // 260801 Red 每会话消息上限：插入后超出即丢最旧消息 + 其 parts（仿 TUI sync.tsx:271-289）
+      const updated = input.store.message[info.sessionID]
+      if (updated.length > MAX_MESSAGES_PER_SESSION) {
+        const oldest = updated[0]
+        batch(() => {
+          input.setStore(
+            "message",
+            info.sessionID,
+            produce((draft) => {
+              draft.shift()
+            }),
+          )
+          input.setStore(
+            "part",
+            produce((draft) => {
+              delete draft[oldest.id]
+            }),
+          )
+        })
+      }
       break
     }
     case "message.removed": {
@@ -311,7 +338,8 @@ export function applyDirectoryEvent(input: {
       if (!parts) break
       const result = Binary.search(parts, props.partID, (p) => p.id)
       if (!result.found) break
-      input.setStore("part_text_accum_delta", props.partID, (existing) => (existing ?? "") + props.delta)
+      // 260801 Red 每 delta 单次写入：TUI 对照（sync.tsx:327-343）只更新 part[field]，
+      //   readPartText(accum, part) 在 accum 缺失时 fallback part.text，双写冗余且 O(n²)
       input.setStore(
         "part",
         props.messageID,
