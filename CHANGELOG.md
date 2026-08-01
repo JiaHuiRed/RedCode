@@ -1819,6 +1819,17 @@
 ---
 
 ## GUI
+### [0.7.12] - 2026-08-01
+
+> 流式渲染与缓存清理两条热路径继续瘦身——版本指纹不再每次全量拼接，缓存清理不再每次全量扫描。
+
+#### 修复
+
+- **流式版本指纹改增量缓存，消灭每 16ms 全量字符串拼接**（`packages/app/src/pages/session/message-timeline.tsx`）：`activeAssistantContentVersion` 原是每次 delta 都把 active 消息的全部 parts（含工具输出）拼成一个大指纹字符串（O(轮次文本)），长输出下随 flush 频率累积 O(n²) 分配。改为增量版本号——per-part 签名 `Map` 比对，只有签名变化的 part 才重算并递增版本号，未变 part 仅 `Map.get` 比较；消费方（auto-scroll 的 `on` 依赖）只比较值变化、不读内容，语义不变。缓存超 1000 条才做一次清理（删除不在当前活跃集合的签名），正常路径零额外分配。
+- **缓存清理懒化：无裁剪无孤儿时 O(1) 短路**（`packages/app/src/context/global-sync/event-reducer.ts`）：`cleanupDroppedSessionCaches` 原先每次 `session.created`/`session.updated` 都全量扫描 6 类 store 键 + 全部 parts（40-session 缓存 × 千条消息 = 数万条目/事件），为的是兜底清理被 trim 出列表的会话残留缓存。现在调用点先用 trim 前后长度差判断是否真发生裁剪，另加 `pendingOrphanSessions` 打点——`message.updated` 插入时若 session 已不在列表（被 trim 会话的消息事件仍在推送）就标记；两条件都不成立则直接跳过全扫，成立才走原逻辑并清空打点。孤儿兜底语义不变（测试覆盖 part-only orphan 场景）。
+
+---
+
 ### [0.7.11] - 2026-08-01
 
 > 长会话卡顿两个结构性根因修复（每 delta 双写字符串累加、无消息上限）+ 任务栏闪烁提醒。
