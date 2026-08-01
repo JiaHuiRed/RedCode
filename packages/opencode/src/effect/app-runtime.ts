@@ -1,4 +1,4 @@
-﻿import { Layer, ManagedRuntime } from "effect"
+import { Layer, ManagedRuntime } from "effect"
 import { attach } from "./run-service"
 import * as Observability from "@redcode-ai/core/effect/observability"
 
@@ -25,6 +25,7 @@ import { Permission } from "@/permission"
 import { Todo } from "@/session/todo"
 import { Session } from "@/session/session"
 import { Goal } from "@/session/goal"
+import { GoalContinuation } from "@/session/goal-continuation"
 import { SessionStatus } from "@/session/status"
 import { SessionRunState } from "@/session/run-state"
 import { SessionProcessor } from "@/session/processor"
@@ -93,6 +94,7 @@ export const AppLayer = Layer.mergeAll(
   SessionRevert.defaultLayer,
   SessionSummary.defaultLayer,
   SessionPrompt.defaultLayer,
+  GoalContinuation.defaultLayer,
   Instruction.defaultLayer,
   LLM.defaultLayer,
   LSP.defaultLayer,

@@ -321,6 +321,12 @@ export const Info = Schema.Struct({
       mcp_timeout: Schema.optional(PositiveInt).annotate({
         description: "Timeout in milliseconds for model context protocol (MCP) requests",
       }),
+      goal_auto_continue: Schema.optional(Schema.Boolean).annotate({
+        description: "Automatically continue the agent loop while a goal is active (default off)",
+      }),
+      goal_token_budget: Schema.optional(PositiveInt).annotate({
+        description: "Token budget for a goal before it is marked budget_limited",
+      }),
     }),
   ),
 }).annotate({ identifier: "Config" })

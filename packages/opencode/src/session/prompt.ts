@@ -1134,6 +1134,8 @@ export const layer = Layer.effect(
         const slog = elog.with({ sessionID })
         let structured: unknown
         let step = 0
+        // 260801 Red Goal token 记账：runLoop 全程累计，收尾写回 goal.tokens_used
+        let usageTokens = 0
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
         // 260710 Red 跨 step 文本重复检测（loop recovery）
         const loopTracker = new LoopRecoveryTracker()
@@ -1502,6 +1504,15 @@ export const layer = Layer.effect(
  2. Context WILL be compacted; memory is the only bridge to the next session. Anything that survives only in this conversation is lost. Write liberally.
  3. Append via read + edit, NEVER write (write overwrites the file). Project file for this project's facts; only cross-project, reusable lessons go to global.`,
             )
+            // 260801 Red active goal 注入：钉住目标时让模型持续推进，完成调 goal_done 收尾。
+            // 放 memory 条款后 canary 前——goal 状态变化只 bust 尾部缓存，不影响前缀大块。
+            const activeGoal = yield* goal.get(sessionID)
+            if (activeGoal?.status === "active") {
+              system.push(
+                `▸ ACTIVE GOAL (pinned by the user — keep working toward it; call goal_done when finished):
+<goal>${activeGoal.text}</goal>`,
+              )
+            }
             // 260629 Red inject per-session canary marker for prompt-injection detection.
             // If it ever appears in model output, terminate the session.
             // 260722 Red reworded after a real false-positive: the old "Session marker: X" phrasing
@@ -1557,6 +1568,8 @@ export const layer = Layer.effect(
             })
             // 260710 Red 注入后清空，下一轮只在 loopTracker 再次触发时才重新设置
             loopRecoveryPrompt = undefined
+            // 260801 Red Goal token 记账：累计本步 tokens（无 goal 时无开销）
+            usageTokens += handle.message.tokens?.total ?? 0
 
             if (structured !== undefined) {
               handle.message.structured = structured
@@ -1696,6 +1709,8 @@ export const layer = Layer.effect(
         }
 
         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
+        // 260801 Red Goal token 记账：无 active goal 时 UPDATE no-op，零成本
+        yield* goal.addUsage({ sessionID, tokens: usageTokens }).pipe(Effect.ignore)
         return yield* lastAssistant(sessionID)
       },
     )
