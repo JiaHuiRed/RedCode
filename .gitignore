@@ -80,3 +80,6 @@ packages/opencode/doctor_*.txt
 packages/opencode/help_output.txt
 packages/opencode/models_output.txt
 packages/opencode/models_test.txt
+
+# 260801 Red session attachment screenshots (runtime data, not source)
+.attachments/
