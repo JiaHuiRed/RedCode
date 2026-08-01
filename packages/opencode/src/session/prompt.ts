@@ -67,6 +67,7 @@ import { sessionSourceLabel, makeShared } from "./prompt/shared"
 import { makeShell } from "./prompt/shell"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
+import { Goal } from "./goal"
 import { LLMEvent } from "@redcode-ai/llm"
 import { LoopRecoveryTracker, RECOVERY_PROMPTS } from "./text-loop-detection"
 import * as XmlToolCall from "./xml-tool-call"
@@ -151,6 +152,7 @@ export const layer = Layer.effect(
     const lsp = yield* LSP.Service
     const registry = yield* ToolRegistry.Service
     const truncate = yield* Truncate.Service
+    const goal = yield* Goal.Service
     const image = yield* Image.Service
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
     const scope = yield* Scope.Scope
@@ -322,11 +324,8 @@ export const layer = Layer.effect(
 
       const ag = yield* agents.get("title")
       if (!ag) return
+      // 260801 Red 标题直接用当前会话主模型生成（哥哥拍板，额度管够，不再走 small_model 本地小模型）
       const mainModel = yield* provider.getModel(input.providerID, input.modelID)
-      const mdl = ag.model
-        ? yield* provider.getModel(ag.model.providerID, ag.model.modelID)
-        : ((yield* provider.getSmallModel(input.providerID)) ?? mainModel)
-      // 260708 Red 取名单流抽成 helper，便于 small_model（如本地 ollama）掉线时回退主模型
       const generate = (model: Provider.Model) =>
         Effect.gen(function* () {
           const msgs = onlySubtasks
@@ -337,7 +336,6 @@ export const layer = Layer.effect(
               agent: ag,
               user: firstInfo,
               system: [],
-              small: true,
               tools: {},
               model,
               sessionID: input.session.id,
@@ -346,21 +344,7 @@ export const layer = Layer.effect(
             })
             .pipe(Stream.filter(LLMEvent.is.textDelta), Stream.map((e) => e.text), Stream.mkString)
         })
-      const isMain = mdl.providerID === mainModel.providerID && mdl.id === mainModel.id
-      // 260708 Red small_model 取名失败（如 ollama 掉线 ConnectionRefused）不再整条 orDie，回退主模型重试一次
-      const text = yield* generate(mdl).pipe(
-        Effect.catch((error) =>
-          isMain
-            ? Effect.die(error)
-            : Effect.gen(function* () {
-                yield* elog.warn("title small_model failed, falling back to main model", {
-                  small: `${mdl.providerID}/${mdl.id}`,
-                  main: `${mainModel.providerID}/${mainModel.id}`,
-                })
-                return yield* generate(mainModel).pipe(Effect.orDie)
-              }),
-        ),
-      )
+      const text = yield* generate(mainModel).pipe(Effect.orDie)
       const cleaned = text
         .replace(/<think>[\s\S]*?<\/think>\s*/g, "")
         .split("\n")
@@ -1343,6 +1327,7 @@ export const layer = Layer.effect(
               bypassAgentCheck,
               messages: msgs,
               promptOps,
+              goal,
             }).pipe(
               Effect.provideService(Plugin.Service, plugin),
               Effect.provideService(Permission.Service, permission),
@@ -1887,6 +1872,7 @@ export const defaultLayer = Layer.suspend(() =>
         Bus.layer,
         CrossSpawnSpawner.defaultLayer,
         RuntimeFlags.defaultLayer,
+        Goal.defaultLayer,
       ),
     ),
   ),
