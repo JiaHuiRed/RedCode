@@ -473,27 +473,51 @@ export function MessageTimeline(props: {
     if (!id) return emptyAssistantMessages
     return assistantMessagesByParent().get(id) ?? emptyAssistantMessages
   })
-  const activeAssistantContentVersion = createMemo(() =>
-    activeAssistantMessages()
-      .flatMap((message) => [
-        `${message.id}:${message.time.completed ?? ""}:${message.error?.name ?? ""}`,
-        ...getMsgParts(message.id).map((part) => {
-          if (part.type === "text" || part.type === "reasoning") return `${part.id}:${part.type}:${part.text.length}`
-          if (part.type === "tool") {
-            const metadata = "metadata" in part.state ? part.state.metadata : undefined
-            const output =
-              "output" in part.state && typeof part.state.output === "string" ? part.state.output.length : 0
-            const metadataOutput =
-              metadata && typeof metadata === "object" && "output" in metadata && typeof metadata.output === "string"
-                ? metadata.output.length
-                : 0
-            return `${part.id}:${part.tool}:${part.state.status}:${output}:${metadataOutput}`
-          }
-          return `${part.id}:${part.type}`
-        }),
-      ])
-      .join("|"),
-  )
+  // 260801 Red 0.7.12：增量版本号替代全量指纹拼接——per-part 签名 Map 比对，只对变化的 part 递增版本号，
+  // 避免流式期间每 16ms 全量模板字符串 + join（原 O(parts) 字符串分配）。消费方（500 行 on 依赖）只比较值变化不读内容。
+  let assistantContentVersion = 0
+  const partSignatures = new Map<string, string>()
+  const messageSignatures = new Map<string, string>()
+  const activeAssistantContentVersion = createMemo(() => {
+    let seenParts: Set<string> | undefined
+    const needsCleanup = partSignatures.size > 1000
+    if (needsCleanup) seenParts = new Set()
+    for (const message of activeAssistantMessages()) {
+      const messageSignature = `${message.id}:${message.time.completed ?? ""}:${message.error?.name ?? ""}`
+      if (messageSignatures.get(message.id) !== messageSignature) {
+        messageSignatures.set(message.id, messageSignature)
+        assistantContentVersion++
+      }
+      for (const part of getMsgParts(message.id)) {
+        seenParts?.add(part.id)
+        let signature: string
+        if (part.type === "text" || part.type === "reasoning") {
+          signature = `${part.id}:${part.type}:${part.text.length}`
+        } else if (part.type === "tool") {
+          const metadata = "metadata" in part.state ? part.state.metadata : undefined
+          const output =
+            "output" in part.state && typeof part.state.output === "string" ? part.state.output.length : 0
+          const metadataOutput =
+            metadata && typeof metadata === "object" && "output" in metadata && typeof metadata.output === "string"
+              ? metadata.output.length
+              : 0
+          signature = `${part.id}:${part.tool}:${part.state.status}:${output}:${metadataOutput}`
+        } else {
+          signature = `${part.id}:${part.type}`
+        }
+        if (partSignatures.get(part.id) !== signature) {
+          partSignatures.set(part.id, signature)
+          assistantContentVersion++
+        }
+      }
+    }
+    if (seenParts) {
+      for (const id of partSignatures.keys()) {
+        if (!seenParts.has(id)) partSignatures.delete(id)
+      }
+    }
+    return assistantContentVersion
+  })
 
   createEffect(
     on(

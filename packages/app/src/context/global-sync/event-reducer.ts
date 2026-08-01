@@ -32,6 +32,12 @@ const MAX_MESSAGES_PER_SESSION = 100
 const DISPOSED_REFRESH_COOLDOWN_MS = 15_000
 const lastDisposedRefresh = new Map<string, number>()
 
+// 260801 Red 0.7.12 懒化：记录自上次清理以来插入的孤儿缓存 session——
+//   被 trim 出 session 列表的会话，服务端仍会推它的 message 事件（message.updated 不看
+//   session 是否在列表直接插入 store），这些孤儿只能靠全扫缓存 key 兜底清理。
+//   打点后 session.created/updated 时若无裁剪也无孤儿，可 O(1) 跳过全扫。
+const pendingOrphanSessions = new Set<string>()
+
 export function applyGlobalEvent(input: {
   event: { type: string; properties?: unknown }
   project: Project[]
@@ -155,7 +161,12 @@ export function applyDirectoryEvent(input: {
       next.splice(result.index, 0, info)
       const trimmed = trimSessions(next, { limit: input.store.limit, permission: input.store.permission })
       input.setStore("session", reconcile(trimmed, { key: "id" }))
-      cleanupDroppedSessionCaches(input.store, input.setStore, trimmed, input.setSessionTodo)
+      // 260801 Red 0.7.12 懒化：trim 未删 session（next.length === trimmed.length）且无孤儿消息打点时，
+      //   cleanupDroppedSessionCaches 必然无事可做，跳过其全 parts 扫描（40-session × 千条消息 = 数万条目/事件）
+      if (next.length !== trimmed.length || pendingOrphanSessions.size > 0) {
+        cleanupDroppedSessionCaches(input.store, input.setStore, trimmed, input.setSessionTodo)
+        pendingOrphanSessions.clear()
+      }
       if (!info.parentID) input.setStore("sessionTotal", (value) => value + 1)
       break
     }
@@ -185,7 +196,11 @@ export function applyDirectoryEvent(input: {
       next.splice(result.index, 0, info)
       const trimmed = trimSessions(next, { limit: input.store.limit, permission: input.store.permission })
       input.setStore("session", reconcile(trimmed, { key: "id" }))
-      cleanupDroppedSessionCaches(input.store, input.setStore, trimmed, input.setSessionTodo)
+      // 260801 Red 0.7.12 懒化（同 session.created，见上）
+      if (next.length !== trimmed.length || pendingOrphanSessions.size > 0) {
+        cleanupDroppedSessionCaches(input.store, input.setStore, trimmed, input.setSessionTodo)
+        pendingOrphanSessions.clear()
+      }
       break
     }
     case "session.deleted": {
@@ -239,6 +254,11 @@ export function applyDirectoryEvent(input: {
           draft.splice(result.index, 0, info)
         }),
       )
+      // 260801 Red 0.7.12 懒化打点：session 已不在列表时插入消息 = 孤儿缓存产生，
+      //   标记后下次 session.created/updated 全扫清理（否则依赖无界增长的孤儿兜底）
+      if (!Binary.search(input.store.session, info.sessionID, (s) => s.id).found) {
+        pendingOrphanSessions.add(info.sessionID)
+      }
       // 260801 Red 每会话消息上限：插入后超出即丢最旧消息 + 其 parts（仿 TUI sync.tsx:271-289）
       const updated = input.store.message[info.sessionID]
       if (updated.length > MAX_MESSAGES_PER_SESSION) {
