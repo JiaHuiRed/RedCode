@@ -1819,6 +1819,20 @@
 ---
 
 ## GUI
+### [0.7.11] - 2026-08-01
+
+> 长会话卡顿两个结构性根因修复（每 delta 双写字符串累加、无消息上限）+ 任务栏闪烁提醒。
+
+#### 修复
+
+- **每 delta 单次写入，消灭 O(n²) 字符串累加**（`packages/app/src/context/global-sync/event-reducer.ts`）：`message.part.delta` 同时写 `part_text_accum_delta` 和 `part[].text` 两份拷贝，每次 delta 都 O(当前全文) 复制，长流式输出（三千万 token 级会话）下总成本 O(n²)。TUI 对照（`packages/opencode/src/cli/cmd/tui/context/sync.tsx:327-343`）只写一份；`readPartText`（`packages/ui/src/components/message-part-text.ts`）在 accum 缺失时本就 fallback `part.text`，删掉 accum 写入行为不变。
+- **每会话消息上限 100 条**（同上文件 `message.updated` case）：GUI store 无界保留全部消息+parts，超长会话使内存与全量扫描（`messageAgentColor`、`cleanupDroppedSessionCaches`）无界增长。仿 TUI 的 100 条 shift（`sync.tsx:271-289`）丢最旧消息及其 parts；历史消息靠 `directory-sync` 的 cursor 分页（`loadMore`）随时回拉，截断只影响内存缓存，不影响滚动查看。
+
+#### 新增
+
+- **任务栏闪烁提醒**（`packages/desktop/` 五处链路）：仿 TUI `attention.bell` 的微信式提醒——`platform.notify` 失焦触发时 `window.api.flashFrame(true)`（`renderer/index.tsx`），经 preload `flash-frame` 通道（`preload/index.ts`、`preload/types.ts`）到 main 进程 `BrowserWindow.fromWebContents` + `isFocused()` 守卫（`main/ipc.ts`），窗口聚焦自动停闪（`main/windows.ts`）；Tauri shim noop 占位（`renderer/tauri-api-shim.ts`）。桌面端所有通知（turn-complete/error/permission/question）汇聚于 `platform.notify` 一处生效。
+
+---
 ### [0.7.10] - 2026-07-31
 
 > 输入框补上主 agent 切换控件 —— 此前 GUI 只能停在 build，plan / redmind 在界面上选不到。
