@@ -1271,6 +1271,12 @@ export const layer = Layer.effect(
            "Doubao-Seed-2.1-pro": { input: 6, output: 30, cache: { read: 1.2, write: 6 } },
          },
         }
+        // 260802 Red: 已知多模态模型列表——models.dev API 可能不声明 modalities，
+        // 但实际支持图片输入。强制覆盖 capabilities.input.image = true，
+        // 避免 transform.ts unsupportedParts() 误触发 vision MCP。
+        const VISION_CAPABLE_MODELS: Record<string, string[]> = {
+          xiaomi: ["mimo-v2-omni"],
+        }
         // 260707 Red: apply CNY pricing directly on the models.dev-sourced database,
         // independent of whether the user declares "deepseek"/"xiaomi" under config.provider.
         // Previously this override only ran inside the "extend database from config" loop
@@ -1285,6 +1291,16 @@ export const layer = Layer.effect(
             const model = provider.models[modelID]
             if (!model) continue
             model.cost = { ...cnyCost, currency: "CNY" as const }
+          }
+        }
+        // 260802 Red: apply vision capability overrides for known multimodal models
+        for (const [providerID, modelIDs] of Object.entries(VISION_CAPABLE_MODELS)) {
+          const provider = database[providerID as ProviderID]
+          if (!provider) continue
+          for (const modelID of modelIDs) {
+            const model = provider.models[modelID]
+            if (!model) continue
+            model.capabilities.input.image = true
           }
         }
 

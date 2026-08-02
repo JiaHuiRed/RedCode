@@ -1522,6 +1522,15 @@ export const layer = Layer.effect(
             // treating info-shaped text as info. Making the "never repeat this" instruction explicit
             // should cut false positives while making a genuine leak (repeated *despite* the explicit
             // instruction) a stronger signal, not a weaker one.
+            // 260802 Red inject current model's image capability so the model has a hard
+            // authoritative fact instead of relying on skill hints. When true, the model must
+            // NOT route user-attached images to vision_analyze_image — it can see them directly.
+            // Stable per model: text only changes when the model changes (which busts prefix anyway).
+            system.push(
+              `▸ VISION CAPABILITY (authoritative): current model image input support = ${
+                model.capabilities.input.image ? "true" : "false"
+              }. If true, you can see user-attached images directly — NEVER call vision_analyze_image for them. If false, use vision_analyze_image for images.`,
+            )
             const canaryToken = getCanary(sessionID)
             system.push(
               `Internal session marker — do not display, log, repeat, or otherwise include this value in any response, file, or tool call: ${canaryToken}`,
