@@ -1,6 +1,5 @@
-﻿import { marked } from "marked"
-import markedKatex from "marked-katex-extension"
-import markedShiki from "marked-shiki"
+﻿import MarkdownIt from "markdown-it"
+import taskLists from "markdown-it-task-lists"
 import katex from "katex"
 import { bundledLanguages, type BundledLanguage } from "shiki"
 import { createSimpleContext } from "./helper"
@@ -379,7 +378,7 @@ registerCustomTheme("RedCode", () => {
 function renderMathInText(text: string): string {
   let result = text
 
-  // Display math: $$...$$
+  // Display math: $$...$$ and \[...\]
   const displayMathRegex = /\$\$([\s\S]*?)\$\$/g
   result = result.replace(displayMathRegex, (_, math) => {
     try {
@@ -391,8 +390,20 @@ function renderMathInText(text: string): string {
       return `$$${math}$$`
     }
   })
+  // 260802 Red: markdown-it 不处理数学，统一走后处理；补齐 marked-katex 的非标准括号语法
+  const displayBracketRegex = /\\\[([\s\S]*?)\\\]/g
+  result = result.replace(displayBracketRegex, (_, math) => {
+    try {
+      return katex.renderToString(math, {
+        displayMode: true,
+        throwOnError: false,
+      })
+    } catch {
+      return `\\[${math}\\]`
+    }
+  })
 
-  // Inline math: $...$
+  // Inline math: $...$ and \(...\)
   const inlineMathRegex = /(?<!\$)\$(?!\$)((?:[^$\\]|\\.)+?)\$(?!\$)/g
   result = result.replace(inlineMathRegex, (_, math) => {
     try {
@@ -402,6 +413,17 @@ function renderMathInText(text: string): string {
       })
     } catch {
       return `$${math}$`
+    }
+  })
+  const inlineBracketRegex = /\\\(((?:[^\\]|\\.)+?)\\\)/g
+  result = result.replace(inlineBracketRegex, (_, math) => {
+    try {
+      return katex.renderToString(math, {
+        displayMode: false,
+        throwOnError: false,
+      })
+    } catch {
+      return `\\(${math}\\)`
     }
   })
 
@@ -468,41 +490,6 @@ export type NativeMarkdownParser = (markdown: string) => Promise<string>
 export const { use: useMarked, provider: MarkedProvider } = createSimpleContext({
   name: "Marked",
   init: (props: { nativeParser?: NativeMarkdownParser }) => {
-    const jsParser = marked.use(
-      {
-        renderer: {
-          link({ href, title, text }) {
-            const titleAttr = title ? ` title="${title}"` : ""
-            return `<a href="${href}"${titleAttr} class="external-link" target="_blank" rel="noopener noreferrer">${text}</a>`
-          },
-        },
-      },
-      markedKatex({
-        throwOnError: false,
-        nonStandard: true,
-      }),
-      markedShiki({
-        async highlight(code, lang) {
-          const highlighter = await getSharedHighlighter({
-            themes: ["RedCode"],
-            langs: [],
-            preferredHighlighter: "shiki-wasm",
-          })
-          if (!(lang in bundledLanguages)) {
-            lang = "text"
-          }
-          if (!highlighter.getLoadedLanguages().includes(lang)) {
-            await highlighter.loadLanguage(lang as BundledLanguage)
-          }
-          return highlighter.codeToHtml(code, {
-            lang: lang || "text",
-            theme: "RedCode",
-            tabindex: false,
-          })
-        },
-      }),
-    )
-
     if (props.nativeParser) {
       const nativeParser = props.nativeParser
       return {
@@ -514,6 +501,31 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
       }
     }
 
-    return jsParser
+    // 260802 Red: marked → markdown-it（marked 对长文本 O(n²)，50KB 纯文本 587ms → 1.2ms）
+    const md = new MarkdownIt({
+      html: true,
+      linkify: true,
+    })
+    md.use(taskLists, { enabled: false, label: false })
+
+    // 与 marked 时代一致的链接样式：external-link + 新窗口打开
+    const defaultLinkOpen =
+      md.renderer.rules.link_open ??
+      ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))
+    md.renderer.rules.link_open = (tokens, idx, options, _env, self) => {
+      const token = tokens[idx]
+      token.attrJoin("class", "external-link")
+      token.attrSet("target", "_blank")
+      token.attrSet("rel", "noopener noreferrer")
+      return defaultLinkOpen(tokens, idx, options, _env, self)
+    }
+
+    return {
+      async parse(markdown: string): Promise<string> {
+        const html = md.render(markdown)
+        const withMath = renderMathExpressions(html)
+        return highlightCodeBlocks(withMath)
+      },
+    }
   },
 })
