@@ -105,6 +105,22 @@ function fadeColor(color: RGBA, alpha: number) {
   return RGBA.fromValues(color.r, color.g, color.b, color.a * alpha)
 }
 
+// 260802 Red: 五档缓存色阶（与侧边栏 tokenColor 同款 Material 色板），miss 用 100-pct 对称映射
+function cacheTierColor(pct: number, miss = false): RGBA {
+  const score = miss ? 100 - pct : pct
+  const hex =
+    score >= 95
+      ? "#66bb6a"
+      : score >= 90
+        ? "#ce93d8"
+        : score >= 80
+          ? "#40c4ff"
+          : score >= 60
+            ? "#ffb300"
+            : "#ff5252"
+  return RGBA.fromHex(hex)
+}
+
 function hasEditorRangeSelection(selection: EditorSelection["ranges"][number]) {
   return (
     selection.selection.start.line !== selection.selection.end.line ||
@@ -1806,12 +1822,7 @@ export function Prompt(props: PromptProps) {
                           <span style={{ fg: theme.textMuted }}>Cache hit </span>
                           <span
                             style={{
-                              fg:
-                                item().cacheHitPct >= 80
-                                  ? theme.success
-                                  : item().cacheHitPct >= 50
-                                    ? theme.warning
-                                    : theme.error,
+                              fg: cacheTierColor(item().cacheHitPct),
                             }}
                           >
                             {`${item().cacheHitPct}%`}
@@ -1822,12 +1833,7 @@ export function Prompt(props: PromptProps) {
                             </span>
                             <span
                               style={{
-                                fg:
-                                  item().cacheMissPct <= 20
-                                    ? theme.success
-                                    : item().cacheMissPct <= 50
-                                      ? theme.warning
-                                      : theme.error,
+                                fg: cacheTierColor(item().cacheMissPct, true),
                               }}
                             >
                               {`${item().cacheMissPct}%`}
