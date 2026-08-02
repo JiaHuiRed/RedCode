@@ -1,6 +1,6 @@
 ﻿import { Effect, Stream } from "effect"
 import os from "os"
-import { createWriteStream } from "node:fs"
+import { createWriteStream, mkdirSync } from "node:fs"
 import * as Tool from "./tool"
 import path from "path"
 import * as Log from "@redcode-ai/core/util/log"
@@ -742,7 +742,12 @@ export const ShellTool = Tool.define(
         const shell = Shell.acceptable(cfg.shell)
         const name = Shell.name(shell)
         const limits = yield* trunc.limits()
-        const prompt = ShellPrompt.render(name, process.platform, limits)
+        // 260803 Red workspace temp: point ${tmp} at the workspace's own
+        // .redcode/temp instead of the global C-drive temp dir
+        const instanceCtx = yield* InstanceState.context
+        const tmpDir = path.join(instanceCtx.directory, ".redcode", "temp")
+        mkdirSync(tmpDir, { recursive: true })
+        const prompt = ShellPrompt.render(name, process.platform, limits, tmpDir)
         log.info("shell tool using shell", { shell })
 
         return {

@@ -98,6 +98,9 @@ export const layer = Layer.effect(
         const whitelistedDirs = [
           Truncate.GLOB,
           path.join(Global.Path.tmp, "*"),
+          // 260803 Red workspace temp: keep the global C-drive temp whitelisted
+          // for internal files, but also allow the workspace-local temp dir
+          path.join(ctx.directory, ".redcode", "temp", "*"),
           ...skillDirs.map((dir) => path.join(dir, "*")),
         ]
         const readonlyExternalDirectory = {
