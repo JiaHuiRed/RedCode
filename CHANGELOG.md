@@ -1819,6 +1819,17 @@
 ---
 
 ## GUI
+
+### [0.7.13] - 2026-08-02
+
+> 渲染热路径从 marked 换 markdown-it——marked 的 lexer/parse 在长文本上是 O(n²) 退化（50KB 纯文本 462ms），markdown-it 线性扩展到 1.2ms（489x），流式长输出每 tick 数百 ms 的卡顿根因被拔掉。
+
+#### 性能
+
+- **markdown 解析器 marked → markdown-it 14**（`packages/ui/`）：marked 在 10KB→50KB 纯文本上 lexer+parse 从 25ms 劣化到 462ms（5x 文本 → 18x 时间，O(n²)），叠加流式渲染每 tick 全量 parse+sanitize（`markdown-stream.ts` 每 tick `marked.lexer(全文)`），长输出下正是 3000 万 token 级会话卡顿的根因。换 markdown-it 14.3.0：50KB 混合文本 parse 5.1ms（96x）、流式 30 tick 10ms vs 2439ms（244x），线性扩展无 O(n²)。改动：`context/marked.tsx` 重写 init（`html:true` + `linkify:true` + taskLists 插件补偿 checkbox + link_open renderer 定制 external-link，四种数学语法 `$`/`$$`/`\\(`/`\\[` 全兼容）；`markdown-stream.ts` 换 `md.parse()` tokenize（未闭合 fence 判断改为 token 序列以 `fence` 结尾 + `fence.map[0]` 行号精确切片，行为与旧版一致，4 测试全过）；`useMarked().parse` 接口不变，`markdown.tsx` 零改动。全量回归：ui typecheck + 21 测试 pass、app/desktop typecheck pass；性能复测流式 60 tick 最终 50KB = 126ms（2.1ms/tick）vs 旧 marked 理论 35s（279x），分块拼接与全量渲染输出一致。
+
+---
+
 ### [0.7.12] - 2026-08-01
 
 > 流式渲染与缓存清理两条热路径继续瘦身——版本指纹不再每次全量拼接，缓存清理不再每次全量扫描。
