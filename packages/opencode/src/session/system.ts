@@ -18,6 +18,7 @@ import PROMPT_GROK from "./prompt/grok.md" with { type: "text" }
 import PROMPT_STEP from "./prompt/step.md" with { type: "text" }
 import PROMPT_OLLAMA from "./prompt/ollama.md" with { type: "text" }
 import PROMPT_DOUBAO from "./prompt/doubao.md" with { type: "text" }
+import PROMPT_SENSENOVA from "./prompt/sensenova.md" with { type: "text" }
 import type { Provider } from "@/provider/provider"
 import type { Agent } from "@/agent/agent"
 import { Permission } from "@/permission"
@@ -55,6 +56,10 @@ export function provider(model: Provider.Model) {
   // 260731 Red 火山方舟 Doubao Seed 系列专属提示词（不落 default.md 那套"不超过 4 行"的限制）
   if (model.providerID.toLowerCase().includes("volcengine")) return [PROMPT_DOUBAO]
   if (model.api.id.toLowerCase().includes("step")) return [PROMPT_STEP]
+  // 260802 Red sensenova 自家模型（flash-lite / u1-fast 等）——不落 default.md 那套
+  // 「不超过 4 行、单词回答最好」的旧限制。deepseek/glm 模型已在上面命中各自专属，
+  // 不会走到这里。
+  if (model.providerID.toLowerCase().includes("sensenova")) return [PROMPT_SENSENOVA]
   return [PROMPT_DEFAULT]
 }
 
