@@ -1136,6 +1136,19 @@ export function latest(msgs: WithParts[]) {
   return { user, assistant, finished, tasks }
 }
 
+/** Extract a Node/Bun style error code (e.g. ECONNRESET) from the error or its cause chain. 260802 Red */
+function errorCode(e: unknown): string | undefined {
+  const err = e as { code?: unknown; cause?: unknown } | undefined
+  const code = err?.code
+  if (typeof code === "string") return code
+  const cause = err?.cause
+  if (cause && typeof cause === "object" && "code" in cause) {
+    const causeCode = (cause as { code?: unknown }).code
+    if (typeof causeCode === "string") return causeCode
+  }
+  return undefined
+}
+
 export function fromError(
   e: unknown,
   ctx: { providerID: ProviderID; aborted?: boolean },
@@ -1158,13 +1171,13 @@ export function fromError(
         },
         { cause: e },
       ).toObject()
-    case (e as SystemError)?.code === "ECONNRESET":
+    case errorCode(e) === "ECONNRESET":
       return new APIError(
         {
           message: "Connection reset by server",
           isRetryable: true,
           metadata: {
-            code: (e as SystemError).code ?? "",
+            code: errorCode(e) ?? "",
             syscall: (e as SystemError).syscall ?? "",
             message: (e as SystemError).message ?? "",
           },
