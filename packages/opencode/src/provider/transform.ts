@@ -910,7 +910,10 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
     // https://docs.venice.ai/overview/guides/reasoning-models#reasoning-effort
     case "@ai-sdk/openai-compatible":
       const efforts = [...WIDELY_SUPPORTED_EFFORTS]
-      if (model.api.id.toLowerCase().includes("deepseek-v4")) {
+      // 260802 Red: max 档只属于 DeepSeek 官方 API（deepseek-v4-pro 官方支持）。
+      // 第三方 openai-compatible 上游（如 sensenova 的 deepseek-v4-flash）只认
+      // low/medium/high/xhigh/none，带 max 会 400 报错，必须按 providerID 区分。
+      if (model.providerID === "deepseek" && model.api.id.toLowerCase().includes("deepseek-v4")) {
         efforts.push("max")
       }
       return Object.fromEntries(efforts.map((effort) => [effort, { reasoningEffort: effort }]))
