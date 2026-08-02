@@ -11,6 +11,18 @@
 ---
 
 ## TUI
+### [0.8.7] - 2026-08-03
+
+> shell 工具的临时文件不再落 C 盘 `Temp\redcode`，改到每个工作区自己的 `.redcode/temp`——测试文件、下载物、临时脚本都在工作区里，系统盘垃圾不再累积。同批把 4 个 defaultAgent 测试对齐 fork 后的真实行为（05890af 默认 agent 改 redmind + 92ab606 引入 primary agent profile）。
+
+#### 新增
+
+- **shell 临时文件改工作区管理**（`tool/shell.ts`、`tool/shell/prompt.ts`、`agent/agent.ts`、`tool/shell/shell.md`）：提示词里的 `${tmp}` 从全局 `Global.Path.tmp`（Windows 上 = `C:\Users\...\AppData\Local\Temp\redcode`）改为 `<workspace>/.redcode/temp`——shell init 闭包里 `yield* InstanceState.context` 拿当前工作区 directory，`mkdirSync` 自动创建；权限白名单 `whitelistedDirs` 同步加 `path.join(ctx.directory, ".redcode", "temp", "*")`。`.redcode/` 已在 gitignore，temp 不进 git。全局 `Global.Path.tmp` 保留给进程内部临时文件（vision 图片、剪贴板 png、editor md、jdtls data），C 盘旧文件暂不清。
+
+#### 修复
+
+- **defaultAgent 4 个测试对齐 fork 行为**（`test/agent/agent.test.ts`）：05890af（260725）把默认 agent 从 build 改为 redmind 且 `list()` 将 redmind 排第一；92ab606（260712）YAML profile 功能引入了 primary "agent"（字母序最前）。无配置默认断言改为 redmind；"只禁 build+redmind 后默认 plan"改为需再禁 agent；"全禁抛错"补禁 agent。41 pass 0 fail。
+---
 ### [0.8.6] - 2026-08-01
 
 > Goal 功能从「半实装」补成完整闭环：钉目标 → 系统提示词注入 → 会话空闲自动续跑（防跑飞三闸门）→ token 记账收尾。同批把标题生成从本地小模型切回当前会话主模型——额度管够，不再受 small_model 掉线拖累。
