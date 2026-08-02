@@ -99,12 +99,21 @@ it.instance("explore agent denies edit and write", () =>
 
 it.instance("explore agent asks for external directories and allows whitelisted external paths", () =>
   Effect.gen(function* () {
+    const test = yield* TestInstance
     const explore = yield* load((svc) => svc.get("explore"))
     expect(explore).toBeDefined()
     expect(Permission.evaluate("external_directory", "/some/other/path", explore!.permission).action).toBe("ask")
     expect(Permission.evaluate("external_directory", Truncate.GLOB, explore!.permission).action).toBe("allow")
     expect(
       Permission.evaluate("external_directory", path.join(Global.Path.tmp, "agent-work"), explore!.permission).action,
+    ).toBe("allow")
+    // 260803 Red workspace temp is whitelisted alongside the global tmp dir
+    expect(
+      Permission.evaluate(
+        "external_directory",
+        path.join(test.directory, ".redcode", "temp", "agent-work"),
+        explore!.permission,
+      ).action,
     ).toBe("allow")
   }),
 )
@@ -539,9 +548,18 @@ it.instance(
 
 it.instance("global tmp directory children are allowed for external_directory", () =>
   Effect.gen(function* () {
+    const test = yield* TestInstance
     const build = yield* load((svc) => svc.get("build"))
     expect(
       Permission.evaluate("external_directory", path.join(Global.Path.tmp, "scratch"), build!.permission).action,
+    ).toBe("allow")
+    // 260803 Red workspace temp is whitelisted alongside the global tmp dir
+    expect(
+      Permission.evaluate(
+        "external_directory",
+        path.join(test.directory, ".redcode", "temp", "scratch"),
+        build!.permission,
+      ).action,
     ).toBe("allow")
     expect(Permission.evaluate("external_directory", "/some/other/path", build!.permission).action).toBe("ask")
   }),
@@ -623,17 +641,17 @@ description: Permission skill.
   { git: true },
 )
 
-it.instance("defaultAgent returns build when no default_agent config", () =>
+it.instance("defaultAgent returns redmind when no default_agent config", () =>
   Effect.gen(function* () {
     const agent = yield* load((svc) => svc.defaultAgent())
-    expect(agent).toBe("build")
+    expect(agent).toBe("redmind")
   }),
 )
 
-it.instance("defaultInfo returns resolved build agent when no default_agent config", () =>
+it.instance("defaultInfo returns resolved redmind agent when no default_agent config", () =>
   Effect.gen(function* () {
     const agent = yield* load((svc) => svc.defaultInfo())
-    expect(agent.name).toBe("build")
+    expect(agent.name).toBe("redmind")
     expect(agent.mode).toBe("primary")
   }),
 )
@@ -702,17 +720,20 @@ it.instance(
 )
 
 it.instance(
-  "defaultAgent returns plan when build is disabled and default_agent not set",
+  "defaultAgent returns plan when build, redmind and agent are disabled and default_agent not set",
   () =>
     Effect.gen(function* () {
       const agent = yield* load((svc) => svc.defaultAgent())
-      // build is disabled, so it should return plan (next primary agent)
+      // build, redmind and the default agent profile are disabled,
+      // so it should return plan (next primary agent)
       expect(agent).toBe("plan")
     }),
   {
     config: {
       agent: {
         build: { disable: true },
+        redmind: { disable: true },
+        agent: { disable: true },
       },
     },
   },
@@ -726,6 +747,8 @@ it.instance(
       agent: {
         build: { disable: true },
         plan: { disable: true },
+        redmind: { disable: true },
+        agent: { disable: true },
       },
     },
   },
