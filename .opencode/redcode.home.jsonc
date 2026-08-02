@@ -89,9 +89,55 @@
   "small_model": "ollama/qwen3.5:9b-q8_0",
   "compaction": { "threshold": 400000 },
   "tools": { "github-triage": false, "github-pr-search": false },
-  "provider": {
-    // 260729 Red 删除 anthropic 块。它有三重无效：apiKey 是占位符、ANTHROPIC_API_KEY 未设、
-    // 唯一的模型 gpt-5-chat-latest 经实测根本不存在（请求 404，见 codex 块注释）。
+ "provider": {
+   // 260802 Red 接入 SenseNova：tokenplan 套餐定价全 0。apiKey 走 {env:} 占位符，
+   // 值由用户级环境变量 SENSENOVA_API_KEY 提供（setx 设置，配置同步模板时不会泄漏明文 key）。
+   // 本模板会反向覆盖 live 配置，两处必须保持一致。
+   "sensenova": {
+     "npm": "@ai-sdk/openai-compatible",
+     "name": "SenseNova",
+     "options": {
+       "baseURL": "https://token.sensenova.cn/v1",
+       "apiKey": "{env:SENSENOVA_API_KEY}"
+     },
+     "models": {
+       "sensenova-6.7-flash-lite": {
+         "name": "SenseNova 6.7 Flash Lite (多模态)",
+         "temperature": true,
+         "reasoning": true,
+         "tool_call": true,
+         "attachment": true,
+         "modalities": { "input": ["text", "image"], "output": ["text"] },
+         "limit": { "context": 262144, "output": 65536 }
+       },
+       "deepseek-v4-flash": {
+         "name": "DeepSeek V4 Flash (SenseNova)",
+         "temperature": true,
+         "reasoning": true,
+         "tool_call": true,
+         "modalities": { "input": ["text"], "output": ["text"] },
+         "limit": { "context": 1048576, "output": 65536 }
+       },
+       "glm-5.2": {
+         "name": "GLM 5.2 (SenseNova)",
+         "temperature": true,
+         "reasoning": true,
+         "tool_call": true,
+         "modalities": { "input": ["text"], "output": ["text"] },
+         "limit": { "context": 1048576, "output": 131072 }
+       },
+       "sensenova-u1-fast": {
+         "name": "SenseNova U1 Fast (文生图)",
+         "temperature": true,
+         "reasoning": true,
+         "tool_call": true,
+         "modalities": { "input": ["text"], "output": ["image"] },
+         "limit": { "context": 262144, "output": 65536 }
+       }
+     }
+   },
+   // 260729 Red 删除 anthropic 块。它有三重无效：apiKey 是占位符、ANTHROPIC_API_KEY 未设、
+   // 唯一的模型 gpt-5-chat-latest 经实测根本不存在（请求 404，见 codex 块注释）。
     // 更要紧的是：只删 live 的 ~/.redcode/redcode.jsonc 不够 —— 本模板会在同步时把它写回去，
     // 今天就实际发生了一次（删完当天又出现在 live 文件的 git diff 里）。同类坑 0.7.25
     // 的 vision-mcp 已经栽过一次，两处必须一起删。
