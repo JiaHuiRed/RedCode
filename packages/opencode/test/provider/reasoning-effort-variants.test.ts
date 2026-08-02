@@ -121,25 +121,33 @@ describe("GLM thinking 参数注入", () => {
 })
 
 
-// 260802 Red: max 档只属于 DeepSeek 官方 API。第三方 openai-compatible 上游
-// （如 sensenova 的 deepseek-v4-flash）只认 low/medium/high/xhigh/none，带 max 会 400。
-describe("deepseek-v4 走 openai-compatible 的档位", () => {
- const ds = (id: string, providerID: string) =>
-   ({
-     id,
-     providerID,
-     api: { id, npm: "@ai-sdk/openai-compatible" },
-     capabilities: { reasoning: true, temperature: true },
-     limit: { context: 1_000_000, output: 64_000 },
-   }) as unknown as Provider.Model
+  // 260802 Red: deepseek-v4 系列最强档按 provider 区分——官方 DeepSeek API 与
+  // opencode-go 聚合供应商支持 max；sensenova 只认 low/medium/high/xhigh/none，
+  // 用 xhigh 代替 max 作最强档。
+  describe("deepseek-v4 走 openai-compatible 的档位", () => {
+    const ds = (id: string, providerID: string) =>
+      ({
+        id,
+        providerID,
+        api: { id, npm: "@ai-sdk/openai-compatible" },
+        capabilities: { reasoning: true, temperature: true },
+        limit: { context: 1_000_000, output: 64_000 },
+      }) as Provider.Model
 
- test("官方 deepseek provider 保留 max 档", () => {
-   const v = ProviderTransform.variants(ds("deepseek-v4-pro", "deepseek"))
-   expect(v["max"]).toEqual({ reasoningEffort: "max" })
- })
+    test("官方 deepseek 的 deepseek-v4-pro 保留 max 档", () => {
+      const v = ProviderTransform.variants(ds("deepseek-v4-pro", "deepseek"))
+      expect(v["max"]).toEqual({ reasoningEffort: "max" })
+    })
 
- test("sensenova 的 deepseek-v4-flash 不暴露 max（API 只认 low/medium/high/xhigh/none）", () => {
-   const v = ProviderTransform.variants(ds("deepseek-v4-flash", "sensenova"))
-   expect(Object.keys(v)).toEqual(["low", "medium", "high"])
- })
+    test("opencode-go 聚合供应商的 deepseek-v4 也保留 max 档", () => {
+      const v = ProviderTransform.variants(ds("deepseek-v4-flash", "opencode-go"))
+      expect(v["max"]).toEqual({ reasoningEffort: "max" })
+    })
+
+    test("sensenova 的 deepseek-v4-flash 用 xhigh 代替 max（API 只认 low/medium/high/xhigh/none）", () => {
+      const v = ProviderTransform.variants(ds("deepseek-v4-flash", "sensenova"))
+      expect(Object.keys(v)).toEqual(["low", "medium", "high", "xhigh"])
+      expect(v["xhigh"]).toEqual({ reasoningEffort: "xhigh" })
+      expect(v["max"]).toBeUndefined()
+    })
 })
