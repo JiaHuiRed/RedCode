@@ -45,11 +45,13 @@ const SCHEMA_LINE = [
   /^\s*[-*]\s+(Do not|Pick|IDs must|Use only|Never|Always)\b/, // - Do not invent IDs.
   /^\s*(RULES|BATCHING|THE FORMAT OF [A-Z ]+|OUTPUT FORMAT|IMPORTANT NOTES)\s*:?\s*$/, // 全大写指令段标题
   /^\s*Rules:\s*$/,
+  /^\s*Compressed block description:/, // DCP compress 工具的输出泄漏
 ]
 // 至少要有一条"强特征"才认，避免把普通 JSON 讨论误判
 const SCHEMA_STRONG = [
   /^\s*(RULES|BATCHING|THE FORMAT OF [A-Z ]+|OUTPUT FORMAT)\s*:?\s*$/,
   /^\s*[-*]\s+(Do not invent|IDs must exist|Pick startId)/,
+  /^\s*Compressed block description:/, // DCP compress 工具的输出泄漏
 ]
 const MIN_RUN = 3 // 连续 3 行以上才切
 
@@ -96,6 +98,7 @@ export function detect(text: string): EchoResult {
     text.includes("Rules:") ||
     text.includes("BATCHING") ||
     text.includes("THE FORMAT OF") ||
+    text.includes("Compressed block description:") ||
     /"\w+"\s*:\s*(string|number|boolean)\b/.test(text)
   if (!suspicious) return { kinds: EMPTY, stripped: text }
 
