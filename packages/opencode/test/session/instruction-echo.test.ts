@@ -31,6 +31,20 @@ describe("A 类：自己注入的包装块整块剥离", () => {
     expect(r.stripped).toBe("好，开始。")
   })
 
+  test("DCP 的 dcp-message-id 元数据标签被复述 —— 剥掉（260803 实测形态）", () => {
+    const t = "搞定，重编后生效。\n<dcp-message-id>m0364</dcp-message-id>"
+    const r = detect(t)
+    expect(r.kinds).toContain("dcp-message-id")
+    expect(r.stripped).toBe("搞定，重编后生效。")
+  })
+
+  test("DCP 的 dcp-system-reminder 元数据标签被复述 —— 剥掉", () => {
+    const t = "已修复。\n<dcp-system-reminder>\n注意压缩\n</dcp-system-reminder>"
+    const r = detect(t)
+    expect(r.kinds).toContain("dcp-system-reminder")
+    expect(r.stripped).toBe("已修复。")
+  })
+
   test("[System notice] 被复述 —— 剥掉该段", () => {
     const t = "[System notice] Your previous turn produced reasoning only.\nWrite your answer now.\n\n这是真正的回答。"
     const r = detect(t)

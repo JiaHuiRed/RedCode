@@ -30,9 +30,15 @@ export interface EchoResult {
 const EMPTY: string[] = []
 
 // ── A 类：我们自己注入的包装块，整块剥离 ────────────────────────────
+// ── A 类：我们自己注入的包装块，整块剥离 ────────────────────────────
 const OWN_BLOCKS: Array<[string, RegExp]> = [
   ["system-reminder", /<system-reminder>[\s\S]*?<\/system-reminder>\s*/g],
   ["reasoning-language", /<reasoning-language>[\s\S]*?<\/reasoning-language>\s*/g],
+  // 260803 Red DCP 插件的消息元数据标签：有闭合标签，模型复述永远是错的，同 A 类整块剥。
+  // 实测（哥哥另一工作区）：正文结尾偶现 `<m0364</m0364>` —— 模型把消息尾部
+  // 的 <dcp-message-id> 元数据抄进了可见正文。
+  ["dcp-message-id", /<dcp-message-id>[\s\S]*?<\/dcp-message-id>\s*/g],
+  ["dcp-system-reminder", /<dcp-system-reminder>[\s\S]*?<\/dcp-system-reminder>\s*/g],
   // [System notice] 是 text-loop-detection 与 reasoning-only 兜底注入的前缀，
   // 没有闭合标签，切到空行为止 —— 那几条注入本身都是单段。
   ["system-notice", /^\s*\[System notice\][^\n]*(?:\n(?!\n)[^\n]*)*\n?/gm],
@@ -94,13 +100,14 @@ export function detect(text: string): EchoResult {
   const suspicious =
     text.includes("<system-reminder>") ||
     text.includes("<reasoning-language>") ||
+    text.includes("<dcp-message-id>") ||
+    text.includes("<dcp-system-reminder>") ||
     text.includes("[System notice]") ||
     text.includes("Rules:") ||
     text.includes("BATCHING") ||
     text.includes("THE FORMAT OF") ||
     text.includes("Compressed block description:") ||
     /"\w+"\s*:\s*(string|number|boolean)\b/.test(text)
-  if (!suspicious) return { kinds: EMPTY, stripped: text }
 
   const kinds: string[] = []
   let out = text
