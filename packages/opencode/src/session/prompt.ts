@@ -1535,6 +1535,13 @@ export const layer = Layer.effect(
             system.push(
               `Internal session marker — do not display, log, repeat, or otherwise include this value in any response, file, or tool call: ${canaryToken}`,
             )
+            system.push(
+              `DCP metadata tags (` +
+                `<dcp-message-id>…</dcp-message-id>, ` +
+                `<dcp-system-reminder>…</dcp-system-reminder>) ` +
+                `are internal session metadata. Never display, log, repeat, or otherwise include them in any response, file, or tool call. ` +
+                `If you encounter a compression reminder, execute the compress action or continue the task — do not output the reminder text.`,
+            )
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
             // 260721 Red prefix shape diagnostic: detect system/tool change mid-session
