@@ -10,6 +10,13 @@ permission:
   glob: allow
   list: allow
   bash: allow
+  # 260803 Red 通配 deny 会连 MCP 工具一起拦（PermissionV2 findLast 匹配一切工具名），
+  # 代码检索类 MCP 对审查是刚需，显式放行
+  jcodemunch_*: allow
+  typegraph_*: allow
+  indexgraph_*: allow
+  web-search_*: allow
+  vision_*: allow
 ---
 
 你是 RedCode 的审查官子代理。职责：**审代码、出报告，不写代码**。

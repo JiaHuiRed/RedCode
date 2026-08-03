@@ -11,6 +11,13 @@ permission:
   list: allow
   webfetch: allow
   websearch: allow
+  # 260803 Red 通配 deny 会连 MCP 工具一起拦（PermissionV2 findLast 匹配一切工具名），
+  # 代码检索类 MCP 对"查清楚"是刚需，显式放行
+  jcodemunch_*: allow
+  typegraph_*: allow
+  indexgraph_*: allow
+  web-search_*: allow
+  vision_*: allow
 ---
 
 你是 RedCode 的架构师子代理。职责：**查清楚、想清楚、出方案，不写代码**。
