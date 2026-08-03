@@ -832,19 +832,34 @@ function Write(props: ToolProps) {
   const { theme, syntax } = useTheme()
   const filePath = createMemo(() => stringValue(props.input.filePath) ?? "")
   const content = createMemo(() => stringValue(props.input.content) ?? "")
+  const ft = createMemo(() => filetype(filePath()))
   return (
     <Switch>
       <Match when={content() && props.part.state.status === "completed"}>
         <BlockTool title={"# Wrote " + normalizePath(filePath())} part={props.part}>
-          <line_number fg={theme.textMuted} minWidth={3} paddingRight={1}>
-            <code
-              conceal={false}
-              fg={theme.text}
-              filetype={filetype(filePath())}
+          {/* 260803 Red markdown 文件用渲染视图（** → 粗体），其余保持源码视图 */}
+          <Show
+            when={ft() === "markdown"}
+            fallback={
+              <line_number fg={theme.textMuted} minWidth={3} paddingRight={1}>
+                <code
+                  conceal={false}
+                  fg={theme.text}
+                  filetype={ft()}
+                  syntaxStyle={syntax()}
+                  content={content()}
+                />
+              </line_number>
+            }
+          >
+            <markdown
               syntaxStyle={syntax()}
               content={content()}
+              conceal={true}
+              fg={theme.text}
+              bg={theme.background}
             />
-          </line_number>
+          </Show>
           <Diagnostics diagnostics={props.metadata.diagnostics} filePath={filePath()} />
         </BlockTool>
       </Match>

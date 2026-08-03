@@ -2099,20 +2099,35 @@ function Write(props: ToolProps<typeof WriteTool>) {
     if (!props.input.content) return ""
     return props.input.content
   })
+  const ft = createMemo(() => filetype(props.input.filePath!))
 
   return (
     <Switch>
       <Match when={props.metadata.diagnostics !== undefined}>
         <BlockTool title={"# Wrote " + pathFormatter.format(props.input.filePath)} part={props.part}>
-          <line_number fg={theme.textMuted} minWidth={3} paddingRight={1}>
-            <code
-              conceal={false}
-              fg={theme.text}
-              filetype={filetype(props.input.filePath!)}
+          {/* 260803 Red markdown 文件用渲染视图（** → 粗体），其余保持源码视图 */}
+          <Show
+            when={ft() === "markdown"}
+            fallback={
+              <line_number fg={theme.textMuted} minWidth={3} paddingRight={1}>
+                <code
+                  conceal={false}
+                  fg={theme.text}
+                  filetype={ft()}
+                  syntaxStyle={syntax()}
+                  content={code()}
+                />
+              </line_number>
+            }
+          >
+            <markdown
               syntaxStyle={syntax()}
               content={code()}
+              conceal={true}
+              fg={theme.text}
+              bg={theme.background}
             />
-          </line_number>
+          </Show>
           <Diagnostics diagnostics={props.metadata.diagnostics} filePath={props.input.filePath ?? ""} />
         </BlockTool>
       </Match>
