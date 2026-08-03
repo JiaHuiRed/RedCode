@@ -198,7 +198,10 @@ export function tui(input: {
     const renderer = await createCliRenderer(rendererConfig(input.config))
     // Prewarm palette before ThemeProvider mounts so `system` theme avoids a first-paint fallback flash.
     void renderer.getPalette({ size: 16 }).catch(() => undefined)
-    const mode = (await renderer.waitForThemeMode(1000)) ?? "dark"
+    // 260803 Red startup: don't block first render on the theme probe. The native
+    // DA/OSC query chain runs on its own; late results reach ThemeProvider via
+    // THEME_MODE events (and its init reads renderer.themeMode synchronously).
+    const mode = renderer.themeMode ?? "dark"
 
     const keymap = createDefaultOpenTuiKeymap(renderer)
     const offKeymap = registerOpencodeKeymap(keymap, renderer, input.config)
