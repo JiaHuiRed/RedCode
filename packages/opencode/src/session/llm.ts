@@ -3,7 +3,7 @@ import { serviceUse } from "@/effect/service-use"
 import * as Log from "@redcode-ai/core/util/log"
 import { Context, Effect, Layer } from "effect"
 import * as Stream from "effect/Stream"
-import { streamText, wrapLanguageModel, type ModelMessage, type Tool } from "ai"
+import { streamText, wrapLanguageModel, type AssistantContent, type ModelMessage, type Tool } from "ai"
 import type { LLMEvent } from "@redcode-ai/llm"
 import { LLMClient, RequestExecutor, WebSocketExecutor } from "@redcode-ai/llm/route"
 import type { LLMClientService } from "@redcode-ai/llm/route"
@@ -286,9 +286,10 @@ const live: Layer.Layer<
       )
       // Default runtime path: AI SDK owns provider execution and tool dispatch;
       // LLMAISDK.toLLMEvents below normalizes fullStream parts for the processor.
-      return {
-        type: "ai-sdk" as const,
-        result: streamText({
+      // 260803 Red DeepSeek 截断续写：max_tokens 撞顶（finish_reason=length）时，
+      // withContinuation 会把已生成内容作为 assistant 前缀自动发起续写请求。
+      const streamOnce = (msgs: ModelMessage[]) =>
+        streamText({
           onError(error) {
             l.error("stream error", {
               error,
@@ -331,7 +332,7 @@ const live: Layer.Layer<
           // AI SDK 6.x 检测到 system role 会 console.warn，显式置 true 关掉告警。
            // 260711 Red 全局共用的 {role: "system"} 模式，保持 HTTP 请求体结构稳定
            allowSystemInMessages: true,
-           messages: prepared.messages,
+          messages: msgs,
           model: wrapLanguageModel({
             model: language,
             middleware: [
@@ -360,7 +361,10 @@ const live: Layer.Layer<
               sessionId: input.sessionID,
             },
           },
-        }),
+        })
+      return {
+        type: "ai-sdk" as const,
+        result: withContinuation(streamOnce, prepared.messages, input.model),
       }
     })
 
@@ -416,6 +420,70 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(RuntimeFlags.defaultLayer),
   ),
 )
+
+// 260803 Red DeepSeek 截断续写。DeepSeek 长思考链 + 长正文容易撞 max_tokens 上限
+// （finish_reason=length），输出被硬切。这里把已生成的 text/reasoning 作为 assistant
+// 消息回传，自动发起下一轮请求续写，直到完整输出或达到续写次数上限。
+// 只对 DeepSeek 家族生效；工具调用轮不续写（截断的工具调用交给 XML 打捞防线）。
+const MAX_CONTINUATIONS = 2
+
+export function isDeepSeekModel(model: Provider.Model): boolean {
+  const id = model.api?.id?.toLowerCase() ?? model.id?.toLowerCase() ?? ""
+  return id.includes("deepseek")
+}
+
+export function withContinuation(
+  build: (msgs: ModelMessage[]) => ReturnType<typeof streamText>,
+  messages: ModelMessage[],
+  model: Provider.Model,
+): Awaited<ReturnType<typeof streamText>> {
+  if (!isDeepSeekModel(model)) return build(messages)
+
+  const first = build(messages)
+  const fullStream = (async function* () {
+    let msgs = messages
+    for (let round = 0; round <= MAX_CONTINUATIONS; round++) {
+      const result = round === 0 ? first : build(msgs)
+      const texts: string[] = []
+      const reasoning: string[] = []
+      let sawToolCall = false
+      let finishedWithLength = false
+      for await (const event of result.fullStream) {
+        switch (event.type) {
+          case "text-delta":
+            texts.push(event.text)
+            break
+          case "reasoning-delta":
+            reasoning.push(event.text)
+            break
+          case "tool-input-start":
+          case "tool-call":
+            sawToolCall = true
+            break
+          case "finish":
+            finishedWithLength = event.finishReason === "length"
+            break
+        }
+        yield event
+      }
+      if (!finishedWithLength || sawToolCall || round === MAX_CONTINUATIONS) return
+      if (!texts.length && !reasoning.length) return
+      log.info("llm.continuation", {
+        model: model.id,
+        round: round + 1,
+        textLen: texts.join("").length,
+        reasoningLen: reasoning.join("").length,
+      })
+      const content: AssistantContent = []
+      if (reasoning.length) content.push({ type: "reasoning", text: reasoning.join("") })
+      if (texts.length) content.push({ type: "text", text: texts.join("") })
+      msgs = [...msgs, { role: "assistant", content }]
+    }
+  })()
+  // 消费方只用 AsyncIterable 语义（for await / Stream.fromAsyncIterable），
+  // 自定义 generator 不实现 ReadableStream 方法，属故意 cast。
+  return { ...first, fullStream: fullStream as unknown as typeof first.fullStream }
+}
 
 export const hasToolCalls = LLMRequestPrep.hasToolCalls
 

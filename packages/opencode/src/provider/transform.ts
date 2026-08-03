@@ -23,7 +23,8 @@ export const OUTPUT_TOKEN_MAX = 32_000
 export const MIMO_OUTPUT_TOKEN_MAX = 100_000
 // 260801 Red DeepSeek V4 Flash 思考链长（max 档 311 avg，长尾远超），正文被 32K 共享预算挤断
 // max_tokens 覆盖 reasoning_content + content 总和；模型自身 output 384K，提到 64K 防截断
-export const DEEPSEEK_V4_FLASH_OUTPUT_TOKEN_MAX = 64_000
+// 260803 Red 上限调回 50K 试跑：截断由 llm.ts 续写机制兜底，输出 token 成本随之下降
+export const DEEPSEEK_V4_FLASH_OUTPUT_TOKEN_MAX = 50_000
 
 export function sanitizeSurrogates(content: string) {
   return content.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD")
