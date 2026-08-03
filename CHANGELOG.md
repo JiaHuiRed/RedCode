@@ -11,6 +11,15 @@
 ---
 
 ## TUI
+### [0.8.10] - 2026-08-03
+
+> Continuation Enforcement 插件（借鉴 oh-my-claudecode）：agent 回合结束（session.idle）时查 todo，有未完成任务就注入一条 synthetic 提醒消息让它继续。提醒不硬拦，三道闸门防骚扰——用户主动 stop 后 15s 冷却、距上次提醒至少 30s、每会话最多提醒 3 次。
+
+#### 新增
+
+- **续跑提醒插件**（`.opencode/plugins/continuation-enforcement.ts`）：监听 `session.idle` 事件 → `client.session.todo` 查未完成任务（pending/in_progress）→ 注入 `synthetic: true` 的提醒消息（列前 3 项 + 总数）触发 agent 继续。`session.stop` 冷却期（15s）内不提醒，避免打扰用户主动打断；`session.end` 清理状态。默认开启（`.opencode/plugins/` 自动加载）。
+---
+
 ### [0.8.9] - 2026-08-03
 
 > DCP 元数据标签双防线（提示词禁止 + 输出剥离）堵住正文泄漏；子代理四角色体系上线（architect/fixer/reviewer 三个新角色，按角色路由模型与权限）；子代理权限放行 MCP 检索工具，四角色都能用 jCodeMunch/TypeGraph 查代码。
