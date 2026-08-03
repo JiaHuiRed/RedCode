@@ -11,6 +11,20 @@
 ---
 
 ## TUI
+### [0.8.9] - 2026-08-03
+
+> DCP 元数据标签双防线（提示词禁止 + 输出剥离）堵住正文泄漏；子代理四角色体系上线（architect/fixer/reviewer 三个新角色，按角色路由模型与权限）；子代理权限放行 MCP 检索工具，四角色都能用 jCodeMunch/TypeGraph 查代码。
+
+#### 新增
+
+- **四角色子代理体系**（`.opencode/agents/architect.md`、`fixer.md`、`reviewer.md`）：在内置 explore（检索）基础上新增 architect（只读，出方案/架构设计）、fixer（读写，直接实现）、reviewer（只读，severity 分级审查报告，commit 永远用户拍板）。按角色路由模型：explore=opencode-go/mimo-v2.5（原生多模态识图）、architect/fixer=opencode-go/deepseek-v4-flash（聚合商额度多）、reviewer=step_plan/step-3.7-flash。
+- **子代理放行 MCP 检索工具**（`agent/profile/types.ts` 权限体系）：markdown agent frontmatter 的 `"*": deny` 通配会把 MCP 工具（jcodemunch_*/typegraph_*/indexgraph_*/web-search_*/vision_*）一起禁用，三个新角色和内置 explore 均补 `: allow` 放行——子代理现在能用代码检索 MCP。
+
+#### 修复
+
+- **DCP 元数据标签正文泄漏双防线**（`session/instruction-echo.ts`、`session/prompt.ts`）：模型偶发把 `<dcp-message-id>`/`<dcp-system-reminder>` 元数据标签抄进可见正文（实测 `<m0364</m0364>`、整段压缩提醒）。提示词层明确禁止输出标签、遇压缩提醒继续任务；输出层 instruction-echo 快路径 + A 类整块剥离兜底。测试 +2 条。
+---
+
 ### [0.8.8] - 2026-08-03
 
 > Write 工具显示 .md 文件内容时改用渲染视图——`**文字**` 直接显示粗体、星号隐藏，不再是一眼 TXT。其余语言保持源码视图不动。
