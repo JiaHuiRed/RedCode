@@ -196,7 +196,7 @@ export const Info = Schema.Struct({
       "Default agent to use when none is specified. Must be a primary agent. Falls back to 'build' if not set or if the specified agent is invalid.",
   }),
   username: Schema.optional(Schema.String).annotate({
-    description: "Custom username to display in conversations instead of system username",
+    description: "Custom username to display in conversations instead of the machine hostname",
   }),
   mode: Schema.optional(
     Schema.StructWithRest(
@@ -800,7 +800,7 @@ export const layer = Layer.effect(
           result.permission = mergeDeep(perms, result.permission ?? {})
         }
 
-        if (!result.username) result.username = os.userInfo().username
+        if (!result.username) result.username = os.hostname() // 260803 Red 兜底用电脑名而非系统用户名（administrator 太丑）
 
         if (result.autoshare === true && !result.share) {
           result.share = "auto"

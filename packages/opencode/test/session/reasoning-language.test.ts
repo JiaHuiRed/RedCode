@@ -161,9 +161,10 @@ describe("reasoning-language 称呼约束", () => {
     expect(block("auto", "   ")).toBeUndefined()
   })
 
-  test("★等于系统用户名视为没设过 —— config 会把空缺填成系统用户名", () => {
+  test("★等于系统用户名或电脑名视为没设过 —— config 会把空缺填成电脑名", () => {
     // 不这么判就会注入「称呼用户为 Administrator」，比不注入更糟
     expect(addressFrom(os.userInfo().username)).toBeUndefined()
+    expect(addressFrom(os.hostname())).toBeUndefined()
     expect(addressFrom(undefined)).toBeUndefined()
     expect(addressFrom("")).toBeUndefined()
     expect(addressFrom("  ")).toBeUndefined()

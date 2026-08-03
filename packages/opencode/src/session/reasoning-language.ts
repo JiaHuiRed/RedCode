@@ -84,15 +84,16 @@ export function block(mode: Mode, address?: string): string | undefined {
 /**
  * 从 config.username 取思考里该用的称呼。
  *
- * config 在读取时会把空缺的 username 填成系统用户名（config.ts 里 `if (!result.username)`），
- * 所以这里必须把"等于系统用户名"当成没设过 —— 否则会注入「称呼用户为 Administrator」，
+ * config 在读取时会把空缺的 username 填成电脑名（config.ts 里 `if (!result.username)`），
+ * 所以这里必须把"等于系统用户名或电脑名"当成没设过 —— 否则会注入「称呼用户为 Administrator」，
  * 比不注入更糟。
  */
 export function addressFrom(username: string | undefined): string | undefined {
   const name = username?.trim()
   if (!name) return undefined
   try {
-    if (name === os.userInfo().username) return undefined
+    // 260803 Red username 兜底从系统用户名改为电脑名，判据同步排除 hostname
+    if (name === os.userInfo().username || name === os.hostname()) return undefined
   } catch {}
   return name
 }
