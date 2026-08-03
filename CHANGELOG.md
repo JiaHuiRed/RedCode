@@ -11,6 +11,15 @@
 ---
 
 ## TUI
+### [0.8.8] - 2026-08-03
+
+> Write 工具显示 .md 文件内容时改用渲染视图——`**文字**` 直接显示粗体、星号隐藏，不再是一眼 TXT。其余语言保持源码视图不动。
+
+#### 变更
+
+- **Write 工具 markdown 渲染视图**（`cli/cmd/tui/routes/session/index.tsx`、`cli/cmd/tui/feature-plugins/system/session-v2.tsx`）：Write 组件对 `filetype === "markdown"` 的文件内容改用 OpenTUI `<markdown>` 组件（MarkdownRenderable，marked 块级解析 + inline 渲染，conceal=true 隐藏 ** 显示粗体），其余文件保持 `<code conceal={false}>` 源码视图。Edit 的 diff 组件不支持 markdown 渲染视图，保持原样。
+---
+
 ### [0.8.7] - 2026-08-03
 
 > shell 工具的临时文件不再落 C 盘 `Temp\redcode`，改到每个工作区自己的 `.redcode/temp`——测试文件、下载物、临时脚本都在工作区里，系统盘垃圾不再累积。同批把 4 个 defaultAgent 测试对齐 fork 后的真实行为（05890af 默认 agent 改 redmind + 92ab606 引入 primary agent profile）。
