@@ -11,12 +11,17 @@ export function adapterState() {
     step: 0,
     text: 0,
     reasoning: 0,
+    textBytes: 0,
+    reasoningBytes: 0,
     currentTextID: undefined as string | undefined,
     currentReasoningID: undefined as string | undefined,
     toolNames: {} as Record<string, string>,
     routedVia: undefined as string | undefined,
   }
 }
+
+// 260803 Red byte counters feed the interrupted-stream usage estimate in llm.ts.
+const byteLength = (text: string) => new TextEncoder().encode(text).length
 
 function finishReason(value: string | undefined): FinishReason {
   return Schema.is(FinishReason)(value) ? value : "unknown"
@@ -124,13 +129,16 @@ export function toLLMEvents(
       })
 
     case "text-delta":
-      return Effect.succeed([
-        LLMEvent.textDelta({
-          id: currentTextID(state, event.id),
-          text: event.text,
-          providerMetadata: providerMetadata(event.providerMetadata),
-        }),
-      ])
+      return Effect.sync(() => {
+        state.textBytes += byteLength(event.text)
+        return [
+          LLMEvent.textDelta({
+            id: currentTextID(state, event.id),
+            text: event.text,
+            providerMetadata: providerMetadata(event.providerMetadata),
+          }),
+        ]
+      })
 
     case "text-end":
       return Effect.sync(() => {
@@ -156,13 +164,16 @@ export function toLLMEvents(
       })
 
     case "reasoning-delta":
-      return Effect.succeed([
-        LLMEvent.reasoningDelta({
-          id: currentReasoningID(state, event.id),
-          text: event.text,
-          providerMetadata: providerMetadata(event.providerMetadata),
-        }),
-      ])
+      return Effect.sync(() => {
+        state.reasoningBytes += byteLength(event.text)
+        return [
+          LLMEvent.reasoningDelta({
+            id: currentReasoningID(state, event.id),
+            text: event.text,
+            providerMetadata: providerMetadata(event.providerMetadata),
+          }),
+        ]
+      })
 
     case "reasoning-end":
       return Effect.sync(() => {

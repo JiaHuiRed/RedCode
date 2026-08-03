@@ -1,11 +1,12 @@
 import { describe, expect } from "bun:test"
-import { Effect, Schema, Stream } from "effect"
+import { Cause, Effect, Schema, Stream } from "effect"
 import { GenerationOptions, LLM, LLMEvent, LLMRequest, LLMResponse, ToolChoice } from "../src"
 import { Auth, LLMClient } from "../src/route"
 import * as AnthropicMessages from "../src/protocols/anthropic-messages"
 import * as OpenAIChat from "../src/protocols/openai-chat"
 import { tool, ToolFailure, type ToolExecuteContext } from "../src/tool"
 import { ToolRuntime } from "../src/tool-runtime"
+import { LLMError, TransportReason } from "../src/schema/errors"
 import { it } from "./lib/effect"
 import * as TestToolRuntime from "./lib/tool-runtime"
 import { dynamicResponse, scriptedResponses } from "./lib/http"
@@ -555,6 +556,69 @@ describe("LLMClient tools", () => {
         },
       ])
       expect(LLMResponse.text({ events })).toBe("Done.")
+    }),
+  )
+
+  it.effect("emits an estimated step-finish when the model stream fails mid-stream", () =>
+    Effect.gen(function* () {
+      const seen: LLMEvent[] = []
+      const outcome = yield* ToolRuntime.stream({
+        request: baseRequest,
+        tools: {},
+        stream: () =>
+          Stream.fromIterable<LLMEvent>([
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.textDelta({ id: "text_1", text: "Hello world" }),
+            LLMEvent.reasoningDelta({ id: "reason_1", text: "thinking" }),
+          ]).pipe(
+            Stream.concat(
+              Stream.failCause(
+                Cause.fail(
+                  new LLMError({
+                    module: "test",
+                    method: "stream",
+                    reason: new TransportReason({ message: "connection reset" }),
+                  }),
+                ),
+              ),
+            ),
+          ),
+      }).pipe(
+        Stream.tap((event) => Effect.sync(() => seen.push(event))),
+        Stream.runCollect,
+        Effect.catchCause(() => Effect.succeed(undefined)),
+      )
+
+      expect(outcome).toBeUndefined()
+      const estimated = seen.find(LLMEvent.is.stepFinish)
+      expect(estimated).toMatchObject({ type: "step-finish", index: 0, reason: "unknown" })
+      expect(estimated?.usage).toMatchObject({
+        outputTokens: 5, // ceil(11/4) + ceil(8/4)
+        reasoningTokens: 2, // ceil(8/4)
+        totalTokens: 5,
+      })
+    }),
+  )
+
+  it.effect("passes interruption through without an estimated step-finish", () =>
+    Effect.gen(function* () {
+      const seen: LLMEvent[] = []
+      const outcome = yield* ToolRuntime.stream({
+        request: baseRequest,
+        tools: {},
+        stream: () =>
+          Stream.fromIterable<LLMEvent>([
+            LLMEvent.stepStart({ index: 0 }),
+            LLMEvent.textDelta({ id: "text_1", text: "Hello world" }),
+          ]).pipe(Stream.concat(Stream.failCause(Cause.interrupt()))),
+      }).pipe(
+        Stream.tap((event) => Effect.sync(() => seen.push(event))),
+        Stream.runCollect,
+        Effect.catchCause(() => Effect.succeed(undefined)),
+      )
+
+      expect(outcome).toBeUndefined()
+      expect(seen.filter(LLMEvent.is.stepFinish)).toHaveLength(0)
     }),
   )
 

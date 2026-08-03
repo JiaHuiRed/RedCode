@@ -1,4 +1,5 @@
 import { Effect, Stream } from "effect"
+import * as Cause from "effect/Cause"
 import type { Concurrency } from "effect/Types"
 import {
   type ContentPart,
@@ -95,6 +96,17 @@ export const stream = <T extends Tools>(options: StreamOptions<T>): Stream.Strea
           .pipe(Stream.map((event) => indexStep(event, step)))
           .pipe(Stream.tap((event) => Effect.sync(() => accumulate(state, event))))
           .pipe(Stream.filter((event) => event.type !== "finish"))
+          // 260803 Red consumption protection: mid-stream failure loses the provider
+          // usage chunk, so the caller would bill zero for a large aborted response.
+          // Emit an estimated step-finish (only when output was produced) before the
+          // original failure propagates. Interruption passes through untouched.
+          .pipe(
+            Stream.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause)
+                ? Stream.failCause(cause)
+                : estimatedFinish(state, step).pipe(Stream.concat(Stream.failCause(cause))),
+            ),
+          )
 
         const continuation = Stream.unwrap(
           Effect.gen(function* () {
@@ -275,6 +287,41 @@ const appendStreamingText = (
     return
   }
   state.assistantContent.push({ type, text, providerMetadata })
+}
+
+// 260803 Red consumption protection: estimate usage from the accumulated text /
+// reasoning bytes when the model stream fails before the provider usage chunk.
+// ~4 bytes per token (Reasonix-style estimate), never lowering already-known
+// usage from earlier steps of a multi-round tool loop.
+const estimatedFinish = (state: StepState, step: number): Stream.Stream<LLMEvent, never> => {
+  let textBytes = 0
+  let reasoningBytes = 0
+  const encoder = new TextEncoder()
+  for (const part of state.assistantContent) {
+    if (part.type === "text") textBytes += encoder.encode(part.text).length
+    if (part.type === "reasoning") reasoningBytes += encoder.encode(part.text).length
+  }
+  const textTokens = Math.ceil(textBytes / 4)
+  const reasoningTokens = Math.ceil(reasoningBytes / 4)
+  const completion = textTokens + reasoningTokens
+  if (completion === 0) return Stream.empty
+  const known = state.usage
+  return Stream.make(
+    LLMEvent.stepFinish({
+      index: step,
+      reason: "unknown",
+      usage: new Usage({
+        inputTokens: known?.inputTokens,
+        nonCachedInputTokens: known?.nonCachedInputTokens,
+        cacheReadInputTokens: known?.cacheReadInputTokens,
+        cacheWriteInputTokens: known?.cacheWriteInputTokens,
+        outputTokens: Math.max(known?.outputTokens ?? 0, completion),
+        reasoningTokens: reasoningBytes > 0 ? Math.max(known?.reasoningTokens ?? 0, reasoningTokens) : known?.reasoningTokens,
+        totalTokens: Math.max(known?.totalTokens ?? 0, (known?.inputTokens ?? 0) + completion),
+        providerMetadata: known?.providerMetadata,
+      }),
+    }),
+  )
 }
 
 const dispatch = (

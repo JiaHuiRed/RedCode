@@ -3,8 +3,9 @@ import { serviceUse } from "@/effect/service-use"
 import * as Log from "@redcode-ai/core/util/log"
 import { Context, Effect, Layer } from "effect"
 import * as Stream from "effect/Stream"
+import * as Cause from "effect/Cause"
 import { streamText, wrapLanguageModel, type AssistantContent, type ModelMessage, type Tool } from "ai"
-import type { LLMEvent } from "@redcode-ai/llm"
+import { LLMEvent, Usage } from "@redcode-ai/llm"
 import { LLMClient, RequestExecutor, WebSocketExecutor } from "@redcode-ai/llm/route"
 import type { LLMClientService } from "@redcode-ai/llm/route"
 import { GitLabWorkflowLanguageModel } from "gitlab-ai-provider"
@@ -397,6 +398,17 @@ const live: Layer.Layer<
             ).pipe(
               Stream.mapEffect((event) => LLMAISDK.toLLMEvents(state, event)),
               Stream.flatMap((events) => Stream.fromIterable(events)),
+              // 260803 Red consumption protection: when the stream dies mid-flight the
+              // provider usage chunk never arrives, so the session would bill zero cost
+              // for a large aborted response. Emit an estimated step-finish before the
+              // original failure propagates (processor taps it and books usage, then
+              // halt runs as usual). Interruption passes through untouched so the
+              // processor's onInterrupt -> abort path is preserved.
+              Stream.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause)
+                  ? Stream.failCause(cause)
+                  : Stream.fromIterable(estimatedFinishEvents(state)).pipe(Stream.concat(Stream.failCause(cause))),
+              ),
             )
           }),
         ),
@@ -420,6 +432,30 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(RuntimeFlags.defaultLayer),
   ),
 )
+
+// 260803 Red consumption protection: estimate usage from streamed bytes when the
+// stream fails before the provider usage chunk arrives. Reasonix-style estimate:
+// ~4 bytes per token (see packages/llm/src/schema/events.ts visibleOutputTokens).
+// Only emitted when output was actually produced — header-time failures estimate 0.
+const estimatedFinishEvents = (
+  state: ReturnType<typeof LLMAISDK.adapterState>,
+): ReadonlyArray<LLMEvent> => {
+  const textTokens = Math.ceil(state.textBytes / 4)
+  const reasoningTokens = Math.ceil(state.reasoningBytes / 4)
+  const completion = textTokens + reasoningTokens
+  if (completion === 0) return []
+  return [
+    LLMEvent.stepFinish({
+      index: state.step,
+      reason: "unknown",
+      usage: new Usage({
+        outputTokens: completion,
+        reasoningTokens: state.reasoningBytes > 0 ? reasoningTokens : undefined,
+        totalTokens: completion,
+      }),
+    }),
+  ]
+}
 
 // 260803 Red DeepSeek 截断续写。DeepSeek 长思考链 + 长正文容易撞 max_tokens 上限
 // （finish_reason=length），输出被硬切。这里把已生成的 text/reasoning 作为 assistant
