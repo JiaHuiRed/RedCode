@@ -1,4 +1,5 @@
-﻿import MarkdownIt from "markdown-it"
+﻿/// <reference path="./markdown-it-task-lists.d.ts" />
+import MarkdownIt from "markdown-it"
 import taskLists from "markdown-it-task-lists"
 import katex from "katex"
 import { bundledLanguages, type BundledLanguage } from "shiki"
