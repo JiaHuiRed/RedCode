@@ -1154,6 +1154,12 @@ export const layer = Layer.effect(
         // 和「回合中途新到的」—— 只有后者才该提醒，且只提醒一次（详见下方注入处的注释）。
         let turnStartUserID: MessageID | undefined
         const remindedUserIDs = new Set<MessageID>()
+       // 260803 Red 连续相同工具调用 >= 8 次触发 stall nudge（与 Reasonix todo stall 8 轮对齐）
+       const STALL_NUDGE_THRESHOLD = 8
+       // 260803 Red stall nudge：本轮工具调用连续重复（无报错空转）检测。
+       // 与 DOOM_LOOP（连续 3 次相同 + 至少一个报错 → 弹窗）互补：这里管"每次都成功但原地打转"。
+       // 每回合最多注入一次（防 260731 role:user 注入教训重演）。
+       let stallNudged = false
 
         while (true) {
           yield* status.set(sessionID, { type: "busy" })
@@ -1410,6 +1416,30 @@ export const layer = Layer.effect(
               }
             }
 
+           // 260803 Red stall nudge：本轮（turnStartUserID 之后）的 assistant 消息里，从后往前数
+           // 连续相同的工具调用（fp = tool + JSON.stringify(input)）。遇到不同的 fp 就停止——
+           // 说明 agent 换过方向，不算空转。>= STALL_NUDGE_THRESHOLD 次则注入 nudge 提醒换思路。
+           let stallNudgeText: string | undefined
+           if (step > 1 && !stallNudged) {
+             let lastFp: string | undefined
+             let repeats = 0
+             outer: for (let i = msgs.length - 1; i >= 0; i--) {
+               const m = msgs[i]
+               if (m.info.role !== "assistant" || m.info.id <= turnStartUserID) continue
+               for (const p of [...m.parts].reverse()) {
+                if (p.type !== "tool" || p.state.status === "pending") continue
+                const fp = `${p.tool}\0${JSON.stringify(p.state.input ?? null)}`
+                 if (lastFp === undefined) lastFp = fp
+                 else if (fp !== lastFp) break outer
+                 repeats++
+               }
+             }
+             if (repeats >= STALL_NUDGE_THRESHOLD) {
+               stallNudgeText = `<system-reminder>\nThe last ${repeats} tool calls are identical and made no progress. Reassess your approach instead of repeating the same tool call.\n</system-reminder>`
+               stallNudged = true
+             }
+           }
+
             // 260731 Red 可见思考的语言/称呼约束注入已撤除。它是 07-29/07-30 为了修 step-3.7-flash 的通道纪律加的，
             // 结果造出了比原问题严重得多的三个新毛病，实测于 ses_04916ea36ffe（step-3.7-flash）：
             //
@@ -1633,6 +1663,8 @@ export const layer = Layer.effect(
                 ...(userReminderText ? [{ role: "user" as const, content: userReminderText }] : []),
                 // 260710 Red loop recovery prompt 注入（跨 step 重复检测触发）
                 ...(loopRecoveryPrompt ? [{ role: "user" as const, content: loopRecoveryPrompt }] : []),
+                // 260803 Red stall nudge 注入（连续相同工具调用空转提醒，每回合最多一次）
+                ...(stallNudgeText ? [{ role: "user" as const, content: stallNudgeText }] : []),
                 // 260731 Red 原本这里还有第三条注入：每步一条 <reasoning-language> 的 user turn。
                 // 已撤除，原因见本文件上方「可见思考的语言/称呼约束注入已撤除」那段注释。
                 ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : []),
