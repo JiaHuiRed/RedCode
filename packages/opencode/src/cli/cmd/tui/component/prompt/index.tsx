@@ -399,7 +399,16 @@ export function Prompt(props: PromptProps) {
     for (let i = turns.length - 2; i >= 0 && turns[i].read === last?.read && last.read > 0; i--) flat++
     const stalled = flat >= 2 && (last?.bad ?? 0) > 3000
 
-    return { cacheHitPct, cacheMissPct, turnHitPct, stalled }
+    // 260804 Red 会话全历史命中率：上面两个都是从 sync.data.message 算的，只覆盖客户端
+    // 当前持有的消息（重启归零）；这个取会话记录上的累计 token，落在 DB 里、跨重启不丢，
+    // 才是真正的"这个会话到目前为止"。会话记录没有 cache.miss 字段，tokens.input 就是
+    // 那一项（session.ts 里 tokens.cache.miss === tokens.input by construction）。
+    const record = sync.data.session.find((s) => s.id === props.sessionID)?.tokens
+    const lifeRead = record?.cache.read ?? 0
+    const lifeDenom = lifeRead + (record?.input ?? 0) + (record?.cache.write ?? 0)
+    const lifeHitPct = lifeDenom > 0 && lifeRead > 0 ? Math.round((lifeRead / lifeDenom) * 10000) / 100 : undefined
+
+    return { cacheHitPct, cacheMissPct, turnHitPct, stalled, lifeHitPct }
   })
 
   const [store, setStore] = createStore<{
@@ -1844,21 +1853,28 @@ export function Prompt(props: PromptProps) {
                     <Match when={usage()}>
                       {(item) => (
                         <text wrapMode="none">
-                          {/* 260804 Red 原来这里是 "Cache hit X% · miss Y%"，而 miss 恒等于
-                              100−hit，纯冗余。换成"本轮 + 本次连接"：本轮值才有诊断力（缓存
-                              卡住时两轮内就掉下来），累计值标明统计范围是本次连接而非本会话。 */}
+                          {/* 260804 Red 原来是 "Cache hit X% · miss Y%"，miss 恒等于 100−hit、纯冗余。
+                              换成三个真正不同的量：
+                                turn — 最近一次请求（唯一有诊断力的：缓存被钉住时两轮内就掉下来）
+                                conn — 本次连接以来（sync.data.message 范围，重启归零）
+                                hit  — 会话全历史（取会话记录上的累计 token，跨重启不丢）
+                              颜色仍走原来的 cacheTierColor 档位。 */}
                           <Show when={item().stalled}>
                             <span style={{ fg: theme.error }}>{"⚠ "}</span>
                           </Show>
-                          <span style={{ fg: theme.textMuted }}>Cache 本轮 </span>
+                          <span style={{ fg: theme.textMuted }}>cache turn </span>
                           <Show when={item().turnHitPct !== undefined} fallback={<span>—</span>}>
                             <span style={{ fg: cacheTierColor(item().turnHitPct!) }}>{`${item().turnHitPct}%`}</span>
                           </Show>
                           <Show when={item().stalled}>
-                            <span style={{ fg: theme.error }}>{" 缓存未延伸"}</span>
+                            <span style={{ fg: theme.error }}>{" stalled"}</span>
                           </Show>
-                          <span style={{ fg: theme.textMuted }}>{" · 本次连接 "}</span>
+                          <span style={{ fg: theme.textMuted }}>{" · conn "}</span>
                           <span style={{ fg: cacheTierColor(item().cacheHitPct) }}>{`${item().cacheHitPct}%`}</span>
+                          <Show when={item().lifeHitPct !== undefined}>
+                            <span style={{ fg: theme.textMuted }}>{" · hit "}</span>
+                            <span style={{ fg: cacheTierColor(item().lifeHitPct!) }}>{`${item().lifeHitPct}%`}</span>
+                          </Show>
                         </text>
                       )}
                     </Match>
