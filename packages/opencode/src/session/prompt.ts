@@ -1641,13 +1641,19 @@ export const layer = Layer.effect(
                 }
               }
 
-              fs.appendFileSync(
-                "E:/AI/RedCode/.redcode/temp/prefix-debug.log",
-                `${new Date().toISOString()} ses=${sessionID} model=${model.providerID}/${model.id}` +
-                  ` sysLen=${system.length} sysHash=${h(system.join(""))} n=${fp.length}` +
-                  ` reminder=${userReminderText?.length ?? 0}` +
-                  (detail.length ? `\n${detail.join("\n")}\n${fp.join("\n")}\n---\n` : `\n`),
-              )
+             // 260804 Red 修复：原硬编码 E:/AI/RedCode/... 路径在无 E 盘机器上 appendFileSync
+             // 直接抛 ENOENT，整个 prompt 构造崩溃 → 请求发不出去 → UI 永远"等待模型响应"。
+             // 探针日志是进程内部临时文件，归 os.tmpdir()（Global.Path.tmp 同语义）；
+             // try/catch 兜底保证日志写失败绝不阻塞请求主流程。
+             try {
+               fs.appendFileSync(
+                 path.join(os.tmpdir(), "redcode-prefix-debug.log"),
+                 `${new Date().toISOString()} ses=${sessionID} model=${model.providerID}/${model.id}` +
+                   ` sysLen=${system.length} sysHash=${h(system.join(""))} n=${fp.length}` +
+                   ` reminder=${userReminderText?.length ?? 0}` +
+                   (detail.length ? `\n${detail.join("\n")}\n${fp.join("\n")}\n---\n` : `\n`),
+               )
+             } catch {}
             }
             const result = yield* handle.process({
               user: lastUser,
