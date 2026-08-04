@@ -3,7 +3,8 @@ import { mergeDeep, unique } from "remeda"
 import type { JSONSchema7 } from "@ai-sdk/provider"
 import type * as Provider from "./provider"
 import type * as ModelsDev from "@redcode-ai/core/models-dev"
-import { writeFileSync } from "fs"
+import { existsSync, writeFileSync } from "fs"
+import { createHash } from "crypto"
 import { join } from "path"
 import { tmpdir } from "os"
 import { iife } from "@/util/iife"
@@ -457,9 +458,27 @@ function savePartToTemp(part: unknown): string | null {
   }
 
   if (buffer.length === 0) return null
-  const filepath = join(tmpdir(), `redcode-vision-${Date.now()}.${ext}`)
+  // 260804 Red 文件名必须由**内容**决定，不能用 Date.now()。
+  //
+  // 这个路径会原样进请求体：不支持图片的模型（如 deepseek-v4-flash）走 unsupportedParts()，
+  // 历史里每张图都被换成 `ERROR: Cannot read … TEMP_FILE:<这个路径>` 的占位文本。用时间戳
+  // 就意味着**同一张历史图片每一轮都生成不同的文本**，而它在消息列表里位置固定 ——
+  // 于是从那条消息往后的所有内容每轮全部失配，provider 的前缀缓存被永久钉死在它前面。
+  //
+  // 线上实测（ses_035a2d2e3ffe / ses_0357643d8ffe，08-04）：相邻两次请求逐条比对，第一处
+  // 差异恒定落在那条含图的 user 消息上，长度分毫不差、只有时间戳数字在变
+  // （…-1785809543199.png → …-1785809578133.png）。表现是 read 钉死在某个值（97k/110k/114k
+  // 就是那条消息之前的长度）、write 每轮重写、命中率线性下滑到 50% 左右，且不会自愈。
+  // 能收图的模型（step-3.7-flash）不进这段代码，所以从来不复现 —— 这正是"切到 DeepSeek
+  // 就开始掉"的真正原因，与 DCP、上下文大小、供应商都无关。
+  //
+  // 改用内容哈希后：同一张图恒定映射到同一路径，请求体逐字节稳定，缓存前缀得以延伸。
+  // 顺带去掉了每轮往 temp 目录扔一个新文件的垃圾。
+  const digest = createHash("sha256").update(buffer).digest("hex").slice(0, 16)
+  const filepath = join(tmpdir(), `redcode-vision-${digest}.${ext}`)
   try {
-    writeFileSync(filepath, buffer)
+    // 已经落过盘就不重复写 —— 内容相同，路径也相同
+    if (!existsSync(filepath)) writeFileSync(filepath, buffer)
     return filepath
   } catch {
     return null
