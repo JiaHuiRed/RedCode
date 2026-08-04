@@ -1567,6 +1567,58 @@ export const layer = Layer.effect(
                 })
               }
             }
+            // 260804 Red debug probe v4 — 诊断完成后整块删除。
+            //
+            // 在 Karina 的 v3（逐条指纹）上补两件缺的东西：
+            //   1) **sessionID**。v3 的日志是单个全局文件且不记会话，多会话并发时无法分辨
+            //      「n 从 99 掉到 91」到底是消息真被移出了列表，还是两个会话交替写入。
+            //      本次排查就在这里差点得出错误结论——最后靠「旧 exe 不含探针、只有 dev 跑的
+            //      那个会话在写」才排除掉，那属于运气，不能指望下次也这么巧。
+            //   2) **自动分歧检测**。缓存前缀冻结的充要条件是「上一轮已发送的内容这一轮变了」，
+            //      所以这里留住上一轮的指纹，逐条比对，只在真的断裂时才输出明细。
+            //      健康轮次只写一行，日志不会爆，也不必等复现——挂着，出问题那一轮自己会说话。
+            //
+            // 指纹取全量 content 而不是 v3 的前 5000 字符：尾部被截掉的差异正是最容易漏的那种。
+            {
+              const crypto = require("node:crypto") as typeof import("node:crypto")
+              const fs = require("node:fs") as typeof import("node:fs")
+              const h = (s: string) => crypto.createHash("sha256").update(s).digest("hex").slice(0, 8)
+              const store = ((globalThis as any).__prefixProbe ??= new Map<string, string[]>())
+              const fp = stabilizedMsgs.map((m, i) => {
+                const c = typeof m.content === "string" ? m.content : JSON.stringify(m.content)
+                return `${i}:${m.role}:${c.length}:${h(c)}`
+              })
+              const prev = store.get(sessionID) as string[] | undefined
+              store.set(sessionID, fp)
+
+              const detail: string[] = []
+              if (prev) {
+                if (fp.length < prev.length) detail.push(`  ⚠ 消息条数减少：${prev.length} -> ${fp.length}`)
+                const common = Math.min(prev.length, fp.length)
+                let at = -1
+                for (let i = 0; i < common; i++) {
+                  if (prev[i] === fp[i]) continue
+                  at = i
+                  break
+                }
+                if (at >= 0) {
+                  // 这一条就是缓存前缀的断点：它之前的内容可复用，它和它之后的必须重新写缓存
+                  detail.push(`  ⚠ 前缀在第 ${at} 条断裂（共 ${fp.length} 条）`)
+                  detail.push(`      上一轮 ${prev[at]}`)
+                  detail.push(`      这一轮 ${fp[at]}`)
+                  const tail = prev.slice(at).filter((x) => !fp.includes(x)).length
+                  detail.push(`      断点之后上一轮有 ${tail} 条在本轮找不到同样的指纹`)
+                }
+              }
+
+              fs.appendFileSync(
+                "E:/AI/RedCode/.redcode/temp/prefix-debug.log",
+                `${new Date().toISOString()} ses=${sessionID} model=${model.providerID}/${model.id}` +
+                  ` sysLen=${system.length} sysHash=${h(system.join(""))} n=${fp.length}` +
+                  ` reminder=${userReminderText?.length ?? 0}` +
+                  (detail.length ? `\n${detail.join("\n")}\n${fp.join("\n")}\n---\n` : `\n`),
+              )
+            }
             const result = yield* handle.process({
               user: lastUser,
               agent,
