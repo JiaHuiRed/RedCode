@@ -106,6 +106,37 @@ function fadeColor(color: RGBA, alpha: number) {
 }
 
 // 260802 Red: 五档缓存色阶（与侧边栏 tokenColor 同款 Material 色板），miss 用 100-pct 对称映射
+/** 260804 Red 状态栏用的紧凑 token 计数：715k / 1.2M，一格放得下 */
+function compactTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`
+  if (n >= 1_000) return `${Math.round(n / 1_000)}k`
+  return String(n)
+}
+
+// 260804 Red 累计未命中 token 的色阶，复用 cacheTierColor 的同一套配色。
+//
+// **这一格是花费量级的读数，不做告警用**：绝对 miss 随会话长度单调增长，跑一天的健康
+// 会话必然比跑十分钟的坏会话数字大。"现在是不是出问题了"归 `⚠ stalled` 管，那个判据
+// 与会话长短无关。
+//
+// 阈值按本仓实际用量推的，不是拍脑袋：单会话最长约 30M token、常态 15~20M，
+// 缓存命中正常在 97~99%。于是
+//     常态  15~20M × (1−97%~99%) →  150k ~ 600k
+//     最长  30M    × (1−97%)     →  900k          ← 理论健康上限
+// 健康区间就是 150k~900k。08-04 实测：健康长会话 715k（hit 96.1%）落在区间内，
+// 而缓存被钉死的那几个是 3.0M / 7.5M / 10.3M / 11.2M，高出一个数量级。
+const MISS_TIERS: Array<[limit: number, hex: string]> = [
+  [200_000, "#66bb6a"], // 短会话，或命中率极高
+  [400_000, "#ce93d8"],
+  [800_000, "#40c4ff"], // 常态会话落这一档：实测 22.9M 总量 / 97.9% 命中 → miss 483k
+  [1_500_000, "#ffb300"], // 超出理论健康上限（30M × 3% = 900k）
+  [Infinity, "#ff5252"], // 数量级异常
+]
+
+function missTierColor(tokens: number): RGBA {
+  return RGBA.fromHex(MISS_TIERS.find(([limit]) => tokens < limit)![1])
+}
+
 function cacheTierColor(pct: number, miss = false): RGBA {
   const score = miss ? 100 - pct : pct
   const hex =
@@ -405,10 +436,14 @@ export function Prompt(props: PromptProps) {
     // 那一项（session.ts 里 tokens.cache.miss === tokens.input by construction）。
     const record = sync.data.session.find((s) => s.id === props.sessionID)?.tokens
     const lifeRead = record?.cache.read ?? 0
-    const lifeDenom = lifeRead + (record?.input ?? 0) + (record?.cache.write ?? 0)
+    // 260804 Red 累计未命中**按 token 数**给，不给百分比 —— 百分比恒等于 100−hit，
+    // 加上去是纯冗余（原来的 "Cache hit X% · miss Y%" 就是这个毛病）。token 数则相反：
+    // 它是从百分比反推不出来的（要知道总量），而且直接对应账单上按全价计费的那部分。
+    const lifeMiss = (record?.input ?? 0) + (record?.cache.write ?? 0)
+    const lifeDenom = lifeRead + lifeMiss
     const lifeHitPct = lifeDenom > 0 && lifeRead > 0 ? Math.round((lifeRead / lifeDenom) * 10000) / 100 : undefined
 
-    return { cacheHitPct, cacheMissPct, turnHitPct, stalled, lifeHitPct }
+    return { cacheHitPct, cacheMissPct, turnHitPct, stalled, lifeHitPct, lifeMiss }
   })
 
   const [store, setStore] = createStore<{
@@ -1874,6 +1909,15 @@ export function Prompt(props: PromptProps) {
                           <Show when={item().lifeHitPct !== undefined}>
                             <span style={{ fg: theme.textMuted }}>{" · hit "}</span>
                             <span style={{ fg: cacheTierColor(item().lifeHitPct!) }}>{`${item().lifeHitPct}%`}</span>
+                            <Show when={item().lifeMiss > 0}>
+                              <span style={{ fg: theme.textMuted }}>{" · miss "}</span>
+                              {/* 未命中给 token 数而非百分比：百分比恒等于 100−hit、无新信息，
+                                  token 数才对应账单上按全价计费的那部分。色阶按数量级走，
+                                  见 MISS_TIERS。 */}
+                              <span style={{ fg: missTierColor(item().lifeMiss) }}>
+                                {compactTokens(item().lifeMiss)}
+                              </span>
+                            </Show>
                           </Show>
                         </text>
                       )}
