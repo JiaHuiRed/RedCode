@@ -113,29 +113,14 @@ function compactTokens(n: number): string {
   return String(n)
 }
 
-// 260804 Red 累计未命中 token 的色阶，复用 cacheTierColor 的同一套配色。
+// 260804 Red 累计 miss token 格的颜色直接复用 cacheTierColor 的命中率五档
+// （与相邻的 hit 格同色）：颜色反映**会话累计命中率**的健康度，数值仍是
+// 累计 miss 的 token 数。
 //
-// **这一格是花费量级的读数，不做告警用**：绝对 miss 随会话长度单调增长，跑一天的健康
-// 会话必然比跑十分钟的坏会话数字大。"现在是不是出问题了"归 `⚠ stalled` 管，那个判据
-// 与会话长短无关。
-//
-// 阈值按本仓实际用量推的，不是拍脑袋：单会话最长约 30M token、常态 15~20M，
-// 缓存命中正常在 97~99%。于是
-//     常态  15~20M × (1−97%~99%) →  150k ~ 600k
-//     最长  30M    × (1−97%)     →  900k          ← 理论健康上限
-// 健康区间就是 150k~900k。08-04 实测：健康长会话 715k（hit 96.1%）落在区间内，
-// 而缓存被钉死的那几个是 3.0M / 7.5M / 10.3M / 11.2M，高出一个数量级。
-const MISS_TIERS: Array<[limit: number, hex: string]> = [
-  [200_000, "#66bb6a"], // 短会话，或命中率极高
-  [400_000, "#ce93d8"],
-  [800_000, "#40c4ff"], // 常态会话落这一档：实测 22.9M 总量 / 97.9% 命中 → miss 483k
-  [1_500_000, "#ffb300"], // 超出理论健康上限（30M × 3% = 900k）
-  [Infinity, "#ff5252"], // 数量级异常
-]
-
-function missTierColor(tokens: number): RGBA {
-  return RGBA.fromHex(MISS_TIERS.find(([limit]) => tokens < limit)![1])
-}
+// 260804 之前是按 miss 绝对数量分档（MISS_TIERS），不严谨：绝对 miss 随会话
+// 长度单调增长，前期命中率低时 miss 涨得快，很快顶到黄/红；后期命中率回升到
+// 99% 也因数量已大而颜色不再变化。颜色应表达"缓存健康度"而非"累计花费"，
+// 故改由 lifeHitPct 分档——命中率高即绿/紫，掉下来才黄/红。
 
 function cacheTierColor(pct: number, miss = false): RGBA {
   const score = miss ? 100 - pct : pct
@@ -1897,24 +1882,24 @@ export function Prompt(props: PromptProps) {
                           <Show when={item().stalled}>
                             <span style={{ fg: theme.error }}>{"⚠ "}</span>
                           </Show>
-                          <span style={{ fg: theme.textMuted }}>cache turn </span>
+                          <span style={{ fg: theme.textMuted }}>Cache Turn </span>
                           <Show when={item().turnHitPct !== undefined} fallback={<span>—</span>}>
                             <span style={{ fg: cacheTierColor(item().turnHitPct!) }}>{`${item().turnHitPct}%`}</span>
                           </Show>
                           <Show when={item().stalled}>
                             <span style={{ fg: theme.error }}>{" stalled"}</span>
                           </Show>
-                          <span style={{ fg: theme.textMuted }}>{" · conn "}</span>
+                          <span style={{ fg: theme.textMuted }}>{" · Conn "}</span>
                           <span style={{ fg: cacheTierColor(item().cacheHitPct) }}>{`${item().cacheHitPct}%`}</span>
                           <Show when={item().lifeHitPct !== undefined}>
-                            <span style={{ fg: theme.textMuted }}>{" · hit "}</span>
+                            <span style={{ fg: theme.textMuted }}>{" · Hit "}</span>
                             <span style={{ fg: cacheTierColor(item().lifeHitPct!) }}>{`${item().lifeHitPct}%`}</span>
                             <Show when={item().lifeMiss > 0}>
-                              <span style={{ fg: theme.textMuted }}>{" · miss "}</span>
+                              <span style={{ fg: theme.textMuted }}>{" · Miss "}</span>
                               {/* 未命中给 token 数而非百分比：百分比恒等于 100−hit、无新信息，
-                                  token 数才对应账单上按全价计费的那部分。色阶按数量级走，
-                                  见 MISS_TIERS。 */}
-                              <span style={{ fg: missTierColor(item().lifeMiss) }}>
+                                  token 数才对应账单上按全价计费的那部分。颜色按会话累计
+                                  命中率走（与 hit 格同色），见 cacheTierColor。 */}
+                              <span style={{ fg: cacheTierColor(item().lifeHitPct!) }}>
                                 {compactTokens(item().lifeMiss)}
                               </span>
                             </Show>
