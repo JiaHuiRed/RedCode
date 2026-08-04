@@ -362,19 +362,44 @@ export function Prompt(props: PromptProps) {
     // same tokens (tokens.cache.miss === tokens.input by construction in session.ts), so summing
     // read+miss+write gives the true total instead of an either/or pick that silently drops
     // whichever bucket the buggy path skipped — this was inflating hit% (e.g. 99% vs the real ~96%).
+    // 260804 Red 这个累计值的统计范围是 **sync.data.message 里现有的消息**，也就是
+    // "本次连接以来"，不是本会话全历史 —— 重启客户端就归零重算。界面上原来只写
+    // "Cache hit"，会被理解成会话累计；实测因此误判过一整天，所以标签改成写明范围。
     let sumRead = 0, sumMiss = 0, sumWrite = 0
+    // 逐轮序列，用来算本轮值和"缓存有没有停止延伸"
+    const turns: Array<{ read: number; bad: number }> = []
     for (const m of msg) {
       if (m.role === "assistant") {
-        sumRead += m.tokens.cache.read
+        const read = m.tokens.cache.read
+        const bad = (m.tokens.cache.miss ?? 0) + m.tokens.cache.write
+        sumRead += read
         sumMiss += m.tokens.cache.miss ?? 0
         sumWrite += m.tokens.cache.write
+        if (read + bad > 0) turns.push({ read, bad })
       }
     }
     if (sumRead <= 0) return
     const cacheDenom = sumRead + sumMiss + sumWrite
     const cacheHitPct = Math.round((sumRead / cacheDenom) * 10000) / 100
     const cacheMissPct = Math.round(((cacheDenom - sumRead) / cacheDenom) * 10000) / 100
-    return { cacheHitPct, cacheMissPct }
+
+    // 260804 Red 本轮命中率 + 冻结判据。
+    //
+    // 累计值对"缓存卡住"这件事几乎没有诊断力：它是全窗口平均，冻结要几十轮才看得出来，
+    // 恢复后又要上百轮才爬回去，中间还会因为单轮波动误报。真正的判据是**本轮 read 有没有
+    // 在长**——正常时每轮递增，卡住时纹丝不动而 write/miss 每轮重新付一遍。
+    //
+    // 08-04 实测的那个 bug（vision 临时文件名带 Date.now()，每轮改写一条历史消息，
+    // 把 provider 前缀缓存永久钉死）就是这个形态：read 连续几十轮停在 97k/110k/114k，
+    // write 每轮 55~84k，命中率线性跌到 50% 且不自愈。判据取"连续 3 轮 read 完全不变
+    // 且本轮未命中 > 3k"——按这条扫历史数据，三次冻结全部命中，健康轮次零误报。
+    const last = turns[turns.length - 1]
+    const turnHitPct = last ? Math.round((last.read / (last.read + last.bad)) * 10000) / 100 : undefined
+    let flat = 0
+    for (let i = turns.length - 2; i >= 0 && turns[i].read === last?.read && last.read > 0; i--) flat++
+    const stalled = flat >= 2 && (last?.bad ?? 0) > 3000
+
+    return { cacheHitPct, cacheMissPct, turnHitPct, stalled }
   })
 
   const [store, setStore] = createStore<{
@@ -1819,26 +1844,21 @@ export function Prompt(props: PromptProps) {
                     <Match when={usage()}>
                       {(item) => (
                         <text wrapMode="none">
-                          <span style={{ fg: theme.textMuted }}>Cache hit </span>
-                          <span
-                            style={{
-                              fg: cacheTierColor(item().cacheHitPct),
-                            }}
-                          >
-                            {`${item().cacheHitPct}%`}
-                          </span>
-                          <Show when={item().cacheMissPct > 0}>
-                            <span style={{ fg: theme.textMuted }}>
-                              {' · miss '}
-                            </span>
-                            <span
-                              style={{
-                                fg: cacheTierColor(item().cacheMissPct, true),
-                              }}
-                            >
-                              {`${item().cacheMissPct}%`}
-                            </span>
+                          {/* 260804 Red 原来这里是 "Cache hit X% · miss Y%"，而 miss 恒等于
+                              100−hit，纯冗余。换成"本轮 + 本次连接"：本轮值才有诊断力（缓存
+                              卡住时两轮内就掉下来），累计值标明统计范围是本次连接而非本会话。 */}
+                          <Show when={item().stalled}>
+                            <span style={{ fg: theme.error }}>{"⚠ "}</span>
                           </Show>
+                          <span style={{ fg: theme.textMuted }}>Cache 本轮 </span>
+                          <Show when={item().turnHitPct !== undefined} fallback={<span>—</span>}>
+                            <span style={{ fg: cacheTierColor(item().turnHitPct!) }}>{`${item().turnHitPct}%`}</span>
+                          </Show>
+                          <Show when={item().stalled}>
+                            <span style={{ fg: theme.error }}>{" 缓存未延伸"}</span>
+                          </Show>
+                          <span style={{ fg: theme.textMuted }}>{" · 本次连接 "}</span>
+                          <span style={{ fg: cacheTierColor(item().cacheHitPct) }}>{`${item().cacheHitPct}%`}</span>
                         </text>
                       )}
                     </Match>
