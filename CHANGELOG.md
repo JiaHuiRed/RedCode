@@ -11,6 +11,20 @@
 ---
 
 ## TUI
+### [0.8.11] - 2026-08-04
+
+> 缓存命中率"切模型后一路跌到 50% 且不自愈"的根因查清了：不支持图片输入的模型（deepseek-v4-flash）会把历史里每张图替换成一段占位文本，而占位文本里带着 `Date.now()` 生成的临时文件名——同一张历史图片每一轮都生成不同的字符串，它在消息列表里位置又固定，于是从那条消息往后的所有内容每轮全部失配，provider 的前缀缓存被永久钉死。近 10 天光这一条就白白重写约 35M token。同批把状态栏的缓存指标换成三个真正不同的量，并让"缓存停止延伸"自己报警。
+
+#### 修复
+
+- **vision 临时文件名改用内容哈希**（`provider/transform.ts`）：不收图的模型走 `unsupportedParts()`，历史里每张图被替换成 `ERROR: Cannot read … TEMP_FILE:<路径>`，而该路径此前是 `redcode-vision-${Date.now()}.png`。**把冻结期的真实请求体从错误日志里抽出来逐条 diff**，相邻两次请求的第一处差异**恒定**落在那条含图的 user 消息上，长度分毫不差、只有时间戳数字在变（`ses_035a2d2e3ffe` 第 101 条 user 952 字符 `…-1785809543199.png → …-1785809578133.png`；`ses_0357643d8ffe` 第 1 条 361 字符同理）。表现为 read 钉死在某个值（97k/110k/114k，就是那条消息之前的长度）、write 每轮全量重写、命中率线性跌到 50% 上下且不自愈。对照实验（同一客户端、同两个供应商、同样的切换动作）：**零图片会话** 3M token、切两次模型、上下文过 100k —— 全程 99%+ 不冻；**有图会话修复前** 切回 deepseek 第 2 轮 66% 此后一路跌；**修复后** 第 2 轮 99.8%、write 248/279/476。能收图的模型（step-3.7-flash）不进这段代码，所以从来不复现——这正是"切到 DeepSeek 就开始掉"的真正原因。排查中曾误判为切模型本身、DCP、供应商差异、DeepSeek 服务端抽风、服务过载、上下文过大、缓存容量天花板，七个假设逐一被数据推翻，均与本问题无关。改用内容哈希后同一张图恒定映射到同一路径，请求体逐字节稳定；顺带不再每轮往 temp 目录扔新文件（已存在就跳过写入，被清理掉会自动重写）。
+- **prompt 缓存键加 modelKey**（`session/prompt.ts`）：`_caches.modelMsgs` / `_caches.system` 原来只按 sessionID 做键，而 `toUIMessages` 对"由其他模型生成的消息"会剥 `providerMetadata`、降级 reasoning——同一条消息的序列化形态是跟当前模型走的。切模型后缓存仍按 sessionID 命中，发出去的就成了"旧模型风格的缓存对象 + 新模型风格的新消息"拼成的混合前缀，目标 provider 从没见过，只能全量重建。6/29 曾加过同款被连带 revert（主犯是 `Canary.clear`，已修），本次重新落地。
+
+#### 变更
+
+- **状态栏缓存指标改成三个**（`cli/cmd/tui/component/prompt/index.tsx`）：原来是 `Cache hit X% · miss Y%`，而 miss 恒等于 100−hit、纯冗余；且累计值对"缓存卡住"几乎没有诊断力——它是全窗口平均，卡住要几十轮才看得出来，恢复后要上百轮才爬回去。现在是 `cache turn 99.5% · conn 96.1% · hit 96.1%`：**turn** 是最近一次请求（唯一有诊断力的，缓存被钉住时两轮内就掉到 60~80%）；**conn** 是本次连接以来（`sync.data.message` 范围，重启归零、受历史回填进度影响）；**hit** 是会话全历史（取会话记录上的累计 token，跨重启不丢，不会被客户端状态骗）。conn 与 hit 在历史加载完之后通常相同，只在重启后回填未完成的那段时间分开——08-04 排查时界面显示 94.3% 而全历史实为 95.9%，就是这个窗口造成的误判。另加自动告警：**连续 3 轮 read 完全不变且本轮未命中 > 3k → 标红 `⚠ stalled`**，这正是前缀缓存被钉死的充要形态。拿当天真实数据回放该判据：四个冻结过的会话分别告警 48/179/39/21 轮，健康会话 207 轮**零误报**。颜色档位仍走原来的 `cacheTierColor`。
+- **`default_agent` 补上，内置的 `agent` profile 禁用**（`.opencode/redcode.home.jsonc`）：默认 agent 一直是 `build` 而不是 redmind，原因是 `default_agent` 这个键从来没设过（`config.ts` 注释写明没设就 fallback 到 `build`）。切换列表里那个多余的 `agent`（description 与 `build` 完全相同）删不掉，是因为它来自随包发行的内置 profile `src/agent/profile/default/agent.yaml`——加载器 `ProfileLoad.loadAll` 会同时读内置 default 目录和用户的 `.opencode/profiles/`，从配置里删条目没用、每次启动都会被重新造出来，只能用 `disable`（`agent.ts` 的配置循环跑在 profile 加载之后，会直接 delete 掉它）。模板里只放 `agent.agent.disable` 一项、不重写整段，避免覆盖 live 配置里 explore 的 MCP 放行规则。
+
 ### [0.8.10] - 2026-08-03
 
 > Continuation Enforcement 插件（借鉴 oh-my-claudecode）：agent 回合结束（session.idle）时查 todo，有未完成任务就注入一条 synthetic 提醒消息让它继续。提醒不硬拦，三道闸门防骚扰——用户主动 stop 后 15s 冷却、距上次提醒至少 30s、每会话最多提醒 3 次。
