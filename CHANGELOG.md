@@ -1878,6 +1878,21 @@
 
 ## GUI
 
+### [0.7.14] - 2026-08-05
+
+> 上下文面板补上会话 ID 与单次缓存命中率——出问题的会话一眼锁定，缓存被钉死时两轮内现形；顺带把面板 18 个字段的颜色全部重排，消除 6 对同色字段。
+
+#### 新增
+
+- **会话 ID 字段**（`packages/app/src/components/session/session-context-tab.tsx`）：`context.stats.sessionID` 插在「会话」「消息数」之间，显示完整 `ses_xxx` 长串——TUI 状态栏早就有，GUI 此前一直缺，出问题时没法快速对位到具体会话。
+- **单次缓存命中率字段**（`session-context-metrics.ts`、`session-context-tab.tsx`）：`turnHitPct` 取最近一轮请求的 read/(read+miss+write)，插在 Cache Hit（累计值）右侧，两者刚好看齐。缓存被钉死时单次值两轮内就掉到 60~80%，累计值却还没动——这正是 0.8.11 排查时验证过的诊断窗口。判据对齐 TUI 4d596f3：连续 ≥2 轮 read 持平且未命中 >3k 判定 `stalled`，此时字段显示 `xx% · 缓存未延伸` 并标红。
+
+#### 优化
+
+- **上下文面板字段配色重排**（`session-context-tab.tsx`）：原 18 字段有 6 对同色（model/output 都粉、usage/reasoning 都黄、totalTokens/userMessages 都绿、limit/assistantMessages 都黄绿、inputTokens/lastActivity 都青绿、provider/cacheTokens 都青），暗色主题下几乎看不出区分。逐字段分配 `--syntax-*` token，相邻（网格横向/纵向）互不撞色，避开 `--syntax-constant` 与 `--syntax-info` 暗色同值（#93e9f6）的坑。
+
+---
+
 ### [0.7.13] - 2026-08-02
 
 > 渲染热路径从 marked 换 markdown-it——marked 的 lexer/parse 在长文本上是 O(n²) 退化（50KB 纯文本 462ms），markdown-it 线性扩展到 1.2ms（489x），流式长输出每 tick 数百 ms 的卡顿根因被拔掉。
