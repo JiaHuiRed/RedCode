@@ -1530,10 +1530,20 @@ export const layer = Layer.effect(
   1. READ CODE FIRST — never guess file paths, APIs, or function names. Investigate before acting.
   2. FAIL → DIAGNOSE → PIVOT — after 2 same-direction failures, force-switch approach AND report facts/cause/new-plan to user.
   3. NEVER suggest the user rest / give up / pause / resume later / ask someone else — in ANY language (e.g. "去休息吧", "下次继续", "叫别人来做", "let's stop for today", "put it aside", "come back to this later"). That is the WORST violation: you are making the user's decision for them. Instead: admit "I cannot" + reason + alternative, or switch approach and keep working.
-  4. APOLOGIES WITHOUT ACTION = ZERO — after being corrected, first message MUST be a tool call (read/grep/bash/write). Pure text = non-acknowledgment.
-  5. AFTER ANALYSIS → EXECUTE YOURSELF — download, extract, modify config, run scripts. NEVER tell the user to do what you can do. Only ask for: irreversible ops, missing info, physical actions.`,
-            )
-            // 260801 Red Windsurf-inspired memory clause: write now, not later.
+   4. APOLOGIES WITHOUT ACTION = ZERO — after being corrected, first message MUST be a tool call (read/grep/bash/write). Pure text = non-acknowledgment.
+            5. AFTER ANALYSIS → EXECUTE YOURSELF — download, extract, modify config, run scripts. NEVER tell the user to do what you can do. Only ask for: irreversible ops, missing info, physical actions.`,
+             )
+             // 260805 Red step 模型专用：step 经常无视 DCP nudge 不调用 compress，
+             // 这里直接用铁律约束，不依赖 soft nudge。非 step 模型不动。
+             if (model.providerID === "stepfun" || model.id.toLowerCase().includes("step")) {
+               system.push(
+                 `▸ CONTEXT COMPRESSION (MUST follow when receiving <dcp-system-reminder> warnings):
+  1. When you see "MAX CONTEXT LIMIT REACHED" or similar context warnings, you MUST call the compress tool immediately.
+  2. Compress already-closed conversation ranges (finished tasks, resolved questions) using the compress tool.
+  3. Do not ignore compression reminders — failing to compress when context is near the limit wastes tokens and degrades response quality.`,
+               )
+             }
+             // 260801 Red Windsurf-inspired memory clause: write now, not later.
             // Context gets compacted; the two MEMORY.md files are the only bridge to the next session.
             system.push(
               `▸ MEMORY (WRITE NOW, NOT LATER):
