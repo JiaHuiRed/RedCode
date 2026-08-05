@@ -155,20 +155,6 @@
     "ollama": {
       "options": { "baseURL": "http://localhost:11434/v1" },
       "models": {
-        "ornith:35b-q4_K_M": {
-          "name": "Ornith 35B",
-          "temperature": true,
-          "reasoning": true,
-          "tool_call": true,
-          "limit": { "context": 131072, "output": 131072 }
-        },
-        "ornith:9b-q8_0": {
-          "name": "Ornith 9B",
-          "temperature": true,
-          "reasoning": true,
-          "tool_call": true,
-          "limit": { "context": 131072, "output": 131072 }
-        },
         "minicpm-v4.5:q5_K_M": {
           "name": "MiniCPM V4.5",
           "temperature": false,
