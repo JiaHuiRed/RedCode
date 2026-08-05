@@ -110,7 +110,9 @@ await Bun.build({
     target: "bun-windows-x64" as any,
     outfile: `dist/${name}/bin/redcode`,
     execArgv: [`--user-agent=redcode/${Script.version}`, "--use-system-ca", "--"],
-    windows: {},
+    windows: {
+      icon: path.resolve(dir, "../desktop/小鲸鱼.ico"),
+    },
   },
   files: embeddedFileMap ? { "redcode-web-ui.gen.ts": embeddedFileMap } : {},
   entrypoints: ["./src/index.ts", parserWorker, workerPath, ...(embeddedFileMap ? ["redcode-web-ui.gen.ts"] : [])],
