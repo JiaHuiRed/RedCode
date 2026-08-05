@@ -72,7 +72,8 @@ export const layer = Layer.effect(
       // references/ 子目录当文件读，抛错被外层 catchCause 整段吞掉，字母序排在
       // red-scribe 之后的 skill 全部不播种（实测 13 个只落 7 个，静默无提示）。
       yield* Effect.gen(function* () {
-        const srcSkillDir = path.join(ctx.directory, ".opencode", "skill")
+        // 260805 源目录 .opencode -> seed（本仓的暂存/种子目录改名，见 script/sync-home.bat）
+        const srcSkillDir = path.join(ctx.directory, "seed", "skill")
         const destSkillDir = path.join(redcodeHome, "skill")
         const srcExists = yield* fs.existsSafe(srcSkillDir)
         if (!srcExists) return

@@ -1,7 +1,9 @@
 # Switch vision-mcp-server between minicpm-v4.6:f16 (fast) and minicpm-v4.5:q5_K_M (detailed)
 param([switch]$v45)
 
-$configFile = "D:\AI\KLX\RedCode\.opencode\redcode.home.jsonc"
+# 260805 原先写死 D:\AI\KLX\RedCode\.opencode\redcode.home.jsonc —— 该路径只在某一台机器上
+# 存在，换台机器直接报错（与 9b4db72 的探针硬编码同一类地雷）。改成相对脚本自身定位仓库根。
+$configFile = Join-Path (Split-Path $PSScriptRoot -Parent) "seed\redcode.home.jsonc"
 $content = [System.IO.File]::ReadAllText($configFile, [System.Text.UTF8Encoding]::new($false))
 
 $currentMatch = [regex]::Match($content, 'VISION_MODEL":\s*"([^"]+)"')

@@ -20,5 +20,5 @@
 
 ## Browser Automation
 
-Use the `browsermcp` MCP server (configured in `.opencode/redcode.home.jsonc`, disabled by default —
+Use the `browsermcp` MCP server (configured in `seed/redcode.home.jsonc`, disabled by default —
 enable it there when you need it). There is no `agent-browser` CLI in this repo.

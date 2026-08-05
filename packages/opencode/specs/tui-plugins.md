@@ -538,7 +538,7 @@ The plugin manager is exposed as a command with title `Plugins` and value `plugi
 
 ## Current in-repo examples
 
-- Local smoke plugin: `.opencode/plugins/tui-smoke.tsx`
-- Local vim plugin: `.opencode/plugins/tui-vim.tsx`
-- Local smoke config: `.opencode/tui.json`
-- Local smoke theme: `.opencode/plugins/smoke-theme.json`
+- Local smoke plugin: `seed/plugins/tui-smoke.tsx`
+- Local vim plugin: `seed/plugins/tui-vim.tsx`
+- Local smoke config: `seed/tui.json`
+- Local smoke theme: `seed/plugins/smoke-theme.json`

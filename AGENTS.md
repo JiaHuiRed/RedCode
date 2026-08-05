@@ -39,7 +39,7 @@
 ## 优先级
 
 - `.redcode/MEMORY.md` 为当前权威记忆源
-- `.opencode/MEMORY.md` 是旧系统残留，**不作为权威记忆源**——遇到冲突以 `.redcode/` 版本为准，以全局 AGENTS.md 规则为准
+- 旧系统残留的 `.opencode/MEMORY.md` 已于 260805 移入 `packages/opencode/src/project/template/`（仅作首启播种模板），**不再是记忆源**——权威记忆只有 `.redcode/MEMORY.md` 与全局 AGENTS.md
 - 用户画像不再单独维护 —— 称呼、语气、协作方式都写在 `~/.redcode/souls/*.md` 里（USER.md 已于 0.8.2 下线）
 
 ## 当日日志
@@ -104,7 +104,7 @@
 
 - **绑定**：GUI 人格 = `packages/desktop`；TUI 人格 = `packages/opencode`。
 - **自动加载**：每次对话启动时，引擎自动注入对应人格源 `~/.redcode/souls/{T,G}soul.md`，无需手动触发。
-- 人格源不存在时，读 `.opencode/agents/` 下的模板。
+- 人格源不存在时，引擎首启会用**内嵌进二进制**的模板播种（`packages/opencode/src/project/template/{T,G}soul.md`）。
 
 # 项目路由
 
@@ -116,7 +116,7 @@ RedCode = OpenCode fork：
 | `packages/desktop/` | **GUI** — Electron、main/renderer、sidecar | `packages/desktop/AGENTS.md` |
 | `packages/app/` | **SolidJS Web UI** — 组件、路由、i18n | `packages/app/AGENTS.md` |
 | `packages/plugin/` | Plugin SDK 类型定义 | - |
-| `.opencode/` | 项目配置、skill、command、agent | - |
+| `seed/` | **种子/暂存目录**（原 `.opencode/`，260805 改名）——skill、command、agent、配置模板。引擎**不**加载它，由 `script/sync-home.bat` 播种到 `~/.redcode/` 才生效 | - |
 
 改所在 package 前先读**根 AGENTS.md + 对应 package 的 AGENTS.md**。两者都生效，scoped 规则覆盖根的代码细节（但记忆/git/路由规则不变）。
 

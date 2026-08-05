@@ -47,7 +47,7 @@
     },
     "web-search": {
       "type": "local",
-      "command": ["node", "./.opencode/search-server/index.js"],
+      "command": ["node", "./seed/search-server/index.js"],
       "cwd": "$REDCODE_ROOT",
       "description": "联网搜实时信息——知识截止后的新事物、最新文档/版本、外部事实查证时用；本地代码问题用 jcodemunch/grep，不要搜网。",
       "timeout": 120000,

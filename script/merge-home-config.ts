@@ -9,7 +9,8 @@ import { join } from "path"
 import { homedir } from "os"
 
 const repoRoot = join(import.meta.dirname, "..")
-const templatePath = join(repoRoot, ".opencode", "redcode.home.jsonc")
+// 260805 模板目录 .opencode -> seed（它从来不是项目配置，引擎只扫 .redcode）
+const templatePath = join(repoRoot, "seed", "redcode.home.jsonc")
 const homePath = join(homedir(), ".redcode", "redcode.jsonc")
 
 // ---- JSONC strip (comments + trailing commas) --------------------------------

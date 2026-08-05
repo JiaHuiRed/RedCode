@@ -1,4 +1,4 @@
-This is a plugin to simulate a remote environment locally. Add this to `.opencode/opencode.jsonc`:
+This is a plugin to simulate a remote environment locally. Add this to `redcode.jsonc` in the repo root (the old `.opencode/opencode.jsonc` was never loaded — config discovery only walks `<ancestor>/redcode.json(c)` and `<ancestor>/.redcode/`):
 
 ```json
   "plugin": ["../packages/opencode/src/control-plane/dev/debug-workspace-plugin.ts"],

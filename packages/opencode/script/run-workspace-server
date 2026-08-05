@@ -5,7 +5,7 @@
 // debugger easier
 //
 // *Important*: make sure you add the debug workspace plugin first.
-// In `.opencode/opencode.jsonc` in the root of this project add:
+// In `redcode.jsonc` in the root of this project add (note: `.opencode/opencode.jsonc` was never actually loaded):
 //
 // "plugin": ["../packages/opencode/src/control-plane/dev/debug-workspace-plugin.ts"]
 //

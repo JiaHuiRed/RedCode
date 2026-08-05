@@ -65,9 +65,9 @@ markitdown-temp/
 # (root-level patterns as safety net)
 /MEMORY.md
 /memory/
-.opencode/memory/*.md
-.opencode/MEMORY.md
-.opencode/skill/memory-automation/*.json
+seed/memory/*.md
+seed/MEMORY.md
+seed/skill/memory-automation/*.json
 
 # Project-level .redcode/ is runtime-only (engine auto-creates it)
 # All personal config lives in ~/.redcode/ (private repo)

@@ -123,7 +123,7 @@ provider 顶层可用的键只有：`npm`、`options`、`models`、`name`、`api
 }
 ```
 
-> 仓库里的 `.opencode/redcode.home.jsonc` 是一份可直接参照的真实配置模板。
+> 仓库里的 `seed/redcode.home.jsonc` 是一份可直接参照的真实配置模板。
 
 ### 2.2 设置称呼
 
@@ -288,7 +288,7 @@ MCP（Model Context Protocol）让 AI 获得外部能力。安装越多 MCP，AI
 
 ### 5.3 人格文件模板
 
-灵魂文件从 `.opencode/agents/{T,G}soul.md` 自动播种到 `~/.redcode/souls/`。你可以随意修改。
+灵魂文件由引擎首次启动时自动播种到 `~/.redcode/souls/`（模板已内嵌进二进制，装在哪儿都能播）。你可以随意修改。
 
 如果不想要人格功能，不执行上述命令即可，AI 保持默认行为。
 
@@ -418,7 +418,7 @@ export ECC_PROFILE=strict
 | `/spellcheck` | 检查改动的 Markdown 文件拼写和语法 |
 | `/ai-deps` | 排查 AI SDK 依赖可升级的 minor/patch 版本 |
 
-命令文件位于 `.opencode/command/` 和 `~/.redcode/command/`，纯文本，可以自己添加或修改。
+命令文件位于 `seed/command/` 和 `~/.redcode/command/`，纯文本，可以自己添加或修改。
 
 ---
 
@@ -443,7 +443,7 @@ Skill 是扩展 AI 行为的机制——本质上是注入给 AI 的指令文件
 | **yuqi-slop** | 中文去 AI 味 | "去AI味""褪AI味" |
 | **stop-slop** | 英文去 AI 味 | "英文去AI味" |
 
-以上 12 个随仓库分发（`.opencode/skill/`），克隆即有，首次启动会播种到 `~/.redcode/skill/`。
+以上 12 个随仓库分发（`seed/skill/`），克隆即有，首次启动会播种到 `~/.redcode/skill/`。
 
 下面这些只存在于维护者本机的 `~/.redcode/skill/`，**不在仓库里**，克隆的人不会有——列在这里是说明个人库可以怎么扩展：
 
@@ -490,13 +490,15 @@ description: 我的编码规范。用户说"按规范来""检查规范"时触发
 
 ```
 仓库（公开）                   用户本地（私有）
-.opencode/                    ~/.redcode/
-├── agents/Tsoul.md  ← 模板    ├── souls/Tsoul.md  ← 你的版本
-├── agents/Gsoul.md   ← 模板   ├── souls/Gsoul.md  ← 你的版本
-├── MEMORY.md         ← 模板   ├── MEMORY.md       ← 你的记忆
-├── skill/                     ├── memory/         ← 你的日志
-├── command/
-└── plugins/                   └── data/           ← 会话 DB / 日志 / 快照
+seed/                          ~/.redcode/
+├── skill/           ← 种子     ├── souls/{T,G}soul.md ← 你的人格（首启由内嵌模板播种）
+├── command/         ← 种子     ├── MEMORY.md       ← 你的记忆
+├── agents/          ← 种子     ├── memory/         ← 你的日志
+├── scripts/         ← 种子     ├── skill/ command/ agent/
+└── redcode.home.jsonc ← 配置模板 └── data/           ← 会话 DB / 日志 / 快照
+
+（seed/ 里的东西引擎不直接加载，由 script/sync-home.bat 播种到 ~/.redcode/ 才生效；
+　人格与 MEMORY 模板已内嵌进二进制，见 packages/opencode/src/project/template/）
 ```
 
 - 仓库**仅包含模板和共享配置**，没有任何你的个人数据
