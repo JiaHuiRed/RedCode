@@ -71,8 +71,13 @@ function isRedcodeRootDir(dir: string): boolean {
     fs.existsSync(path.join(dir, "package.json")) &&
     // 260805 Red 补 .redcode：纯 .redcode 的项目原本探不到根，$REDCODE_ROOT 只能落 fallback，
     // 相对路径的 mcp command 随之全部 ENOENT。.opencode 保留兼容既有项目。
+    // 260805 Red 修正：.redcode 目录也可能是 npm 包（packages/opencode/.redcode 实况：package.json
+    // + node_modules + stats），若只判目录存在，monorepo 的 package 子目录会被误判为安装根，
+    // $REDCODE_ROOT 展开错位 → 全部相对路径 MCP 启动失败。工作区 .redcode 必含引擎首启
+    // 自动创建的项目记忆 MEMORY.md，用它区分"工作区"与"npm 包目录"。
     (fs.existsSync(path.join(dir, "redcode.jsonc")) ||
-      fs.existsSync(path.join(dir, ".redcode")) ||
+      (fs.existsSync(path.join(dir, ".redcode")) &&
+        fs.existsSync(path.join(dir, ".redcode", "MEMORY.md"))) ||
       fs.existsSync(path.join(dir, ".opencode")))
   )
 }
