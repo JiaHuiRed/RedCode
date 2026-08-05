@@ -649,7 +649,10 @@ async function getCustomThemes() {
     Global.Path.config,
     ...(await Array.fromAsync(
       Filesystem.up({
-        targets: [".opencode"],
+        // 260805 Red 补 .redcode：主题安装器（tui/plugin/runtime.ts）写的是
+        // <项目>/.redcode/themes，而这里只找 .opencode，项目级装的主题永远发现不了。
+        // .opencode 保留兼容既有项目。
+        targets: [".redcode", ".opencode"],
         start: process.cwd(),
       }),
     )),

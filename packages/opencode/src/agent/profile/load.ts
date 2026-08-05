@@ -35,7 +35,13 @@ function loadFromDir(dir: string): [string, RawProfile][] {
 /** Load all raw profiles from both default and user directories */
 export function loadAll(userDir?: string): [string, RawProfile][] {
   const defaults = loadFromDir(DEFAULT_PROFILE_DIR)
-  const user = userDir ? loadFromDir(path.join(userDir, ".opencode", "profiles")) : []
+  // 260805 Red 主目录改 .redcode（配置发现链只认它），.opencode 保留兼容既有项目
+  const user = userDir
+    ? [
+        ...loadFromDir(path.join(userDir, ".redcode", "profiles")),
+        ...loadFromDir(path.join(userDir, ".opencode", "profiles")),
+      ]
+    : []
   return [...defaults, ...user]
 }
 

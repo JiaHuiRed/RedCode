@@ -1,23 +1,7 @@
-export const docsLocale = [
-  "ar",
-  "bs",
-  "da",
-  "de",
-  "es",
-  "fr",
-  "it",
-  "ja",
-  "ko",
-  "nb",
-  "pl",
-  "pt-br",
-  "ru",
-  "th",
-  "tr",
-  "uk",
-  "zh-cn",
-  "zh-tw",
-] as const
+// 260805 Red 文档语种收敛为中日英三种（root=英文 / ja / zh-cn）。
+// 原先 18 种全部来自上游 opencode，无人维护、每次改文档都要同步 18 份。
+// 其余语言的访客按下面的匹配规则回落到最接近的一种，最终兜底 root。
+export const docsLocale = ["ja", "zh-cn"] as const
 
 export type DocsLocale = (typeof docsLocale)[number]
 
@@ -26,49 +10,18 @@ export const locale = ["root", ...docsLocale] as const
 export type Locale = (typeof locale)[number]
 
 export const localeAlias = {
-  ar: "ar",
-  br: "pt-br",
-  bs: "bs",
-  da: "da",
-  de: "de",
   en: "root",
-  es: "es",
-  fr: "fr",
-  it: "it",
   ja: "ja",
-  ko: "ko",
-  nb: "nb",
-  nn: "nb",
-  no: "nb",
-  pl: "pl",
-  pt: "pt-br",
-  "pt-br": "pt-br",
   root: "root",
-  ru: "ru",
-  th: "th",
-  tr: "tr",
-  uk: "uk",
   zh: "zh-cn",
   "zh-cn": "zh-cn",
-  zht: "zh-tw",
-  "zh-tw": "zh-tw",
+  // 繁中不再单独出文档，统一回落简体
+  zht: "zh-cn",
+  "zh-tw": "zh-cn",
 } as const satisfies Record<string, Locale>
 
 const starts = [
-  ["ko", "ko"],
-  ["bs", "bs"],
-  ["de", "de"],
-  ["es", "es"],
-  ["fr", "fr"],
-  ["it", "it"],
-  ["da", "da"],
   ["ja", "ja"],
-  ["pl", "pl"],
-  ["ru", "ru"],
-  ["uk", "uk"],
-  ["ar", "ar"],
-  ["th", "th"],
-  ["tr", "tr"],
   ["en", "root"],
 ] as const
 
@@ -99,19 +52,12 @@ export function matchLocale(input: string) {
   const value = parse(input)
   if (!value) return null
 
-  if (value.startsWith("zh")) {
-    if (value.includes("hant") || value.includes("-tw") || value.includes("-hk") || value.includes("-mo")) {
-      return "zh-tw"
-    }
-    return "zh-cn"
-  }
+  // 简繁一律走 zh-cn
+  if (value.startsWith("zh")) return "zh-cn"
 
   if (value in localeAlias) {
     return localeAlias[value as keyof typeof localeAlias]
   }
-
-  if (value.startsWith("pt")) return "pt-br"
-  if (value.startsWith("no") || value.startsWith("nb") || value.startsWith("nn")) return "nb"
 
   return starts.find((item) => value.startsWith(item[0]))?.[1] ?? null
 }

@@ -55,7 +55,13 @@ export const DoctorCommand = effectCmd({
     if (fs.existsSync(path.join(Global.Path.home, ".redcode", "MEMORY.md"))) {
       instructionFiles.push("global memory")
     }
-    if (fs.existsSync(path.join(worktree, ".opencode", "AGENTS.md"))) {
+    // 260805 Red 补 .redcode/ 与项目根的 AGENTS.md：原本只看 .opencode/，
+    // 现在的项目多半根本没这个目录，诊断恒报 "no instruction files"
+    if (
+      fs.existsSync(path.join(worktree, "AGENTS.md")) ||
+      fs.existsSync(path.join(worktree, ".redcode", "AGENTS.md")) ||
+      fs.existsSync(path.join(worktree, ".opencode", "AGENTS.md"))
+    ) {
       instructionFiles.push("AGENTS.md")
     }
     if (fs.existsSync(path.join(worktree, ".redcode", "MEMORY.md"))) {
@@ -129,8 +135,12 @@ export const DoctorCommand = effectCmd({
         const entries = fs.readdirSync(dir, { withFileTypes: true })
         return entries.filter((e) => e.isDirectory() && fs.existsSync(path.join(dir, e.name, "SKILL.md"))).length
       }
+      // 260805 Red 补 .redcode/skill(s)：配置发现链只认 .redcode，
+      // 项目级技能装在那儿，原本一个都统计不到
       const projectSkillCount = worktree
-        ? countSkillsInDir(path.join(worktree, ".opencode", "skills")) +
+        ? countSkillsInDir(path.join(worktree, ".redcode", "skills")) +
+          countSkillsInDir(path.join(worktree, ".redcode", "skill")) +
+          countSkillsInDir(path.join(worktree, ".opencode", "skills")) +
           countSkillsInDir(path.join(worktree, ".opencode", "skill"))
         : 0
       const globalSkillCount = countSkillsInDir(path.join(Global.Path.home, ".redcode", "skill"))

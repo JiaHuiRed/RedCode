@@ -69,7 +69,11 @@ let redcodeRoot: string | undefined
 function isRedcodeRootDir(dir: string): boolean {
   return (
     fs.existsSync(path.join(dir, "package.json")) &&
-    (fs.existsSync(path.join(dir, "redcode.jsonc")) || fs.existsSync(path.join(dir, ".opencode")))
+    // 260805 Red 补 .redcode：纯 .redcode 的项目原本探不到根，$REDCODE_ROOT 只能落 fallback，
+    // 相对路径的 mcp command 随之全部 ENOENT。.opencode 保留兼容既有项目。
+    (fs.existsSync(path.join(dir, "redcode.jsonc")) ||
+      fs.existsSync(path.join(dir, ".redcode")) ||
+      fs.existsSync(path.join(dir, ".opencode")))
   )
 }
 function walkUpForRedcodeRoot(start: string): string {

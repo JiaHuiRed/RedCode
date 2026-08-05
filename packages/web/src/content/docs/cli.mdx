@@ -1,30 +1,30 @@
 ---
 title: CLI
-description: OpenCode CLI options and commands.
+description: RedCode CLI options and commands.
 ---
 
 import { Tabs, TabItem } from "@astrojs/starlight/components"
 
-The OpenCode CLI by default starts the [TUI](/docs/tui) when run without any arguments.
+The RedCode CLI by default starts the [TUI](/docs/tui) when run without any arguments.
 
 ```bash
-opencode
+redcode
 ```
 
-But it also accepts commands as documented on this page. This allows you to interact with OpenCode programmatically.
+But it also accepts commands as documented on this page. This allows you to interact with RedCode programmatically.
 
 ```bash
-opencode run "Explain how closures work in JavaScript"
+redcode run "Explain how closures work in JavaScript"
 ```
 
 ---
 
 ### tui
 
-Start the OpenCode terminal user interface.
+Start the RedCode terminal user interface.
 
 ```bash
-opencode [project]
+redcode [project]
 ```
 
 #### Flags
@@ -47,16 +47,16 @@ opencode [project]
 
 ## Commands
 
-The OpenCode CLI also has the following commands.
+The RedCode CLI also has the following commands.
 
 ---
 
 ### agent
 
-Manage agents for OpenCode.
+Manage agents for RedCode.
 
 ```bash
-opencode agent [command]
+redcode agent [command]
 ```
 
 ---
@@ -66,7 +66,7 @@ opencode agent [command]
 Create a new agent with custom configuration.
 
 ```bash
-opencode agent create
+redcode agent create
 ```
 
 This command will guide you through creating a new agent with a custom system prompt and permission configuration. Anything you don't allow is denied in the generated agent's frontmatter.
@@ -75,7 +75,7 @@ This command will guide you through creating a new agent with a custom system pr
 
 | Flag                                        | Short | Description                                                                                                                                                                                                                |
 | ------------------------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <nobr><code>{"--path"}</code></nobr>        |       | Directory to write the agent file to (defaults to global or `.opencode/agent` based on the prompt)                                                                                                                         |
+| <nobr><code>{"--path"}</code></nobr>        |       | Directory to write the agent file to (defaults to global or `.redcode/agent` based on the prompt)                                                                                                                         |
 | <nobr><code>{"--description"}</code></nobr> |       | What the agent should do                                                                                                                                                                                                   |
 | <nobr><code>{"--mode"}</code></nobr>        |       | Agent mode: `all`, `primary`, or `subagent`                                                                                                                                                                                |
 | <nobr><code>{"--permissions"}</code></nobr> |       | Comma-separated list of permissions to allow (default: all). Available: `bash`, `read`, `edit`, `glob`, `grep`, `webfetch`, `task`, `todowrite`, `websearch`, `lsp`, `skill`. Anything omitted is denied. Alias: `--tools` |
@@ -90,27 +90,27 @@ Passing all of `--path`, `--description`, `--mode`, and `--permissions` runs the
 List all available agents.
 
 ```bash
-opencode agent list
+redcode agent list
 ```
 
 ---
 
 ### attach
 
-Attach a terminal to an already running OpenCode backend server started via `serve` or `web` commands.
+Attach a terminal to an already running RedCode backend server started via `serve` or `web` commands.
 
 ```bash
-opencode attach [url]
+redcode attach [url]
 ```
 
-This allows using the TUI with a remote OpenCode backend. For example:
+This allows using the TUI with a remote RedCode backend. For example:
 
 ```bash
 # Start the backend server for web/mobile access
-opencode web --port 4096 --hostname 0.0.0.0
+redcode web --port 4096 --hostname 0.0.0.0
 
 # In another terminal, attach the TUI to the running backend
-opencode attach http://10.20.30.40:4096
+redcode attach http://10.20.30.40:4096
 ```
 
 #### Flags
@@ -122,7 +122,7 @@ opencode attach http://10.20.30.40:4096
 | <nobr><code>{"--session"}</code></nobr>  | `-s`  | Session ID to continue                                                     |
 | <nobr><code>{"--fork"}</code></nobr>     |       | Fork the session when continuing (use with `--continue` or `--session`)    |
 | <nobr><code>{"--password"}</code></nobr> | `-p`  | Basic auth password (defaults to `OPENCODE_SERVER_PASSWORD`)               |
-| <nobr><code>{"--username"}</code></nobr> | `-u`  | Basic auth username (defaults to `OPENCODE_SERVER_USERNAME` or `opencode`) |
+| <nobr><code>{"--username"}</code></nobr> | `-u`  | Basic auth username (defaults to `OPENCODE_SERVER_USERNAME` or `redcode`) |
 
 ---
 
@@ -131,20 +131,20 @@ opencode attach http://10.20.30.40:4096
 Command to manage credentials and login for providers.
 
 ```bash
-opencode auth [command]
+redcode auth [command]
 ```
 
 ---
 
 #### login
 
-OpenCode is powered by the provider list at [Models.dev](https://models.dev), so you can use `opencode auth login` to configure API keys for any provider you'd like to use. This is stored in `~/.local/share/opencode/auth.json`.
+RedCode is powered by the provider list at [Models.dev](https://models.dev), so you can use `redcode auth login` to configure API keys for any provider you'd like to use. This is stored in `~/.local/share/redcode/auth.json`.
 
 ```bash
-opencode auth login
+redcode auth login
 ```
 
-When OpenCode starts up it loads the providers from the credentials file. And if there are any keys defined in your environments or a `.env` file in your project.
+When RedCode starts up it loads the providers from the credentials file. And if there are any keys defined in your environments or a `.env` file in your project.
 
 ##### Flags
 
@@ -160,13 +160,13 @@ When OpenCode starts up it loads the providers from the credentials file. And if
 Lists all the authenticated providers as stored in the credentials file.
 
 ```bash
-opencode auth list
+redcode auth list
 ```
 
 Or the short version.
 
 ```bash
-opencode auth ls
+redcode auth ls
 ```
 
 ---
@@ -176,7 +176,7 @@ opencode auth ls
 Logs you out of a provider by clearing it from the credentials file.
 
 ```bash
-opencode auth logout
+redcode auth logout
 ```
 
 ---
@@ -186,7 +186,7 @@ opencode auth logout
 Manage the GitHub agent for repository automation.
 
 ```bash
-opencode github [command]
+redcode github [command]
 ```
 
 ---
@@ -196,7 +196,7 @@ opencode github [command]
 Install the GitHub agent in your repository.
 
 ```bash
-opencode github install
+redcode github install
 ```
 
 This sets up the necessary GitHub Actions workflow and guides you through the configuration process. [Learn more](/docs/github).
@@ -208,7 +208,7 @@ This sets up the necessary GitHub Actions workflow and guides you through the co
 Run the GitHub agent. This is typically used in GitHub Actions.
 
 ```bash
-opencode github run
+redcode github run
 ```
 
 ##### Flags
@@ -225,7 +225,7 @@ opencode github run
 Manage Model Context Protocol servers.
 
 ```bash
-opencode mcp [command]
+redcode mcp [command]
 ```
 
 ---
@@ -235,7 +235,7 @@ opencode mcp [command]
 Add an MCP server to your configuration.
 
 ```bash
-opencode mcp add
+redcode mcp add
 ```
 
 This command will guide you through adding either a local or remote MCP server.
@@ -247,13 +247,13 @@ This command will guide you through adding either a local or remote MCP server.
 List all configured MCP servers and their connection status.
 
 ```bash
-opencode mcp list
+redcode mcp list
 ```
 
 Or use the short version.
 
 ```bash
-opencode mcp ls
+redcode mcp ls
 ```
 
 ---
@@ -263,7 +263,7 @@ opencode mcp ls
 Authenticate with an OAuth-enabled MCP server.
 
 ```bash
-opencode mcp auth [name]
+redcode mcp auth [name]
 ```
 
 If you don't provide a server name, you'll be prompted to select from available OAuth-capable servers.
@@ -271,13 +271,13 @@ If you don't provide a server name, you'll be prompted to select from available 
 You can also list OAuth-capable servers and their authentication status.
 
 ```bash
-opencode mcp auth list
+redcode mcp auth list
 ```
 
 Or use the short version.
 
 ```bash
-opencode mcp auth ls
+redcode mcp auth ls
 ```
 
 ---
@@ -287,7 +287,7 @@ opencode mcp auth ls
 Remove OAuth credentials for an MCP server.
 
 ```bash
-opencode mcp logout [name]
+redcode mcp logout [name]
 ```
 
 ---
@@ -297,7 +297,7 @@ opencode mcp logout [name]
 Debug OAuth connection issues for an MCP server.
 
 ```bash
-opencode mcp debug <name>
+redcode mcp debug <name>
 ```
 
 ---
@@ -307,7 +307,7 @@ opencode mcp debug <name>
 List all available models from configured providers.
 
 ```bash
-opencode models [provider]
+redcode models [provider]
 ```
 
 This command displays all models available across your configured providers in the format `provider/model`.
@@ -317,7 +317,7 @@ This is useful for figuring out the exact model name to use in [your config](/do
 You can optionally pass a provider ID to filter models by that provider.
 
 ```bash
-opencode models anthropic
+redcode models anthropic
 ```
 
 #### Flags
@@ -327,36 +327,36 @@ opencode models anthropic
 | <nobr><code>{"--refresh"}</code></nobr> | Refresh the models cache from models.dev                     |
 | <nobr><code>{"--verbose"}</code></nobr> | Use more verbose model output (includes metadata like costs) |
 
-Use the `--refresh` flag to update the cached model list. This is useful when new models have been added to a provider and you want to see them in OpenCode.
+Use the `--refresh` flag to update the cached model list. This is useful when new models have been added to a provider and you want to see them in RedCode.
 
 ```bash
-opencode models --refresh
+redcode models --refresh
 ```
 
 ---
 
 ### run
 
-Run opencode in non-interactive mode by passing a prompt directly.
+Run redcode in non-interactive mode by passing a prompt directly.
 
 ```bash
-opencode run [message..]
+redcode run [message..]
 ```
 
 This is useful for scripting, automation, or when you want a quick answer without launching the full TUI. For example.
 
-```bash "opencode run"
-opencode run Explain the use of context in Go
+```bash "redcode run"
+redcode run Explain the use of context in Go
 ```
 
-You can also attach to a running `opencode serve` instance to avoid MCP server cold boot times on every run:
+You can also attach to a running `redcode serve` instance to avoid MCP server cold boot times on every run:
 
 ```bash
 # Start a headless server in one terminal
-opencode serve
+redcode serve
 
 # In another terminal, run commands that attach to it
-opencode run --attach http://localhost:4096 "Explain async/await in JavaScript"
+redcode run --attach http://localhost:4096 "Explain async/await in JavaScript"
 ```
 
 #### Flags
@@ -373,9 +373,9 @@ opencode run --attach http://localhost:4096 "Explain async/await in JavaScript"
 | <nobr><code>{"--file"}</code></nobr>                         | `-f`  | File(s) to attach to message                                               |
 | <nobr><code>{"--format"}</code></nobr>                       |       | Format: default (formatted) or json (raw JSON events)                      |
 | <nobr><code>{"--title"}</code></nobr>                        |       | Title for the session (uses truncated prompt if no value provided)         |
-| <nobr><code>{"--attach"}</code></nobr>                       |       | Attach to a running opencode server (e.g., http://localhost:4096)          |
+| <nobr><code>{"--attach"}</code></nobr>                       |       | Attach to a running redcode server (e.g., http://localhost:4096)          |
 | <nobr><code>{"--password"}</code></nobr>                     | `-p`  | Basic auth password (defaults to `OPENCODE_SERVER_PASSWORD`)               |
-| <nobr><code>{"--username"}</code></nobr>                     | `-u`  | Basic auth username (defaults to `OPENCODE_SERVER_USERNAME` or `opencode`) |
+| <nobr><code>{"--username"}</code></nobr>                     | `-u`  | Basic auth username (defaults to `OPENCODE_SERVER_USERNAME` or `redcode`) |
 | <nobr><code>{"--dir"}</code></nobr>                          |       | Directory to run in, or path on the remote server when attaching           |
 | <nobr><code>{"--port"}</code></nobr>                         |       | Port for the local server (defaults to random port)                        |
 | <nobr><code>{"--variant"}</code></nobr>                      |       | Model variant (provider-specific reasoning effort)                         |
@@ -386,13 +386,13 @@ opencode run --attach http://localhost:4096 "Explain async/await in JavaScript"
 
 ### serve
 
-Start a headless OpenCode server for API access. Check out the [server docs](/docs/server) for the full HTTP interface.
+Start a headless RedCode server for API access. Check out the [server docs](/docs/server) for the full HTTP interface.
 
 ```bash
-opencode serve
+redcode serve
 ```
 
-This starts an HTTP server that provides API access to opencode functionality without the TUI interface. Set `OPENCODE_SERVER_PASSWORD` to enable HTTP basic auth (username defaults to `opencode`).
+This starts an HTTP server that provides API access to redcode functionality without the TUI interface. Set `OPENCODE_SERVER_PASSWORD` to enable HTTP basic auth (username defaults to `redcode`).
 
 #### Flags
 
@@ -408,20 +408,20 @@ This starts an HTTP server that provides API access to opencode functionality wi
 
 ### session
 
-Manage OpenCode sessions.
+Manage RedCode sessions.
 
 ```bash
-opencode session [command]
+redcode session [command]
 ```
 
 ---
 
 #### list
 
-List all OpenCode sessions.
+List all RedCode sessions.
 
 ```bash
-opencode session list
+redcode session list
 ```
 
 ##### Flags
@@ -435,20 +435,20 @@ opencode session list
 
 #### delete
 
-Delete an OpenCode session.
+Delete an RedCode session.
 
 ```bash
-opencode session delete <sessionID>
+redcode session delete <sessionID>
 ```
 
 ---
 
 ### stats
 
-Show token usage and cost statistics for your OpenCode sessions.
+Show token usage and cost statistics for your RedCode sessions.
 
 ```bash
-opencode stats
+redcode stats
 ```
 
 #### Flags
@@ -467,7 +467,7 @@ opencode stats
 Export session data as JSON.
 
 ```bash
-opencode export [sessionID]
+redcode export [sessionID]
 ```
 
 If you don't provide a session ID, you'll be prompted to select from available sessions.
@@ -482,30 +482,30 @@ If you don't provide a session ID, you'll be prompted to select from available s
 
 ### import
 
-Import session data from a JSON file or OpenCode share URL.
+Import session data from a JSON file or RedCode share URL.
 
 ```bash
-opencode import <file>
+redcode import <file>
 ```
 
-You can import from a local file or an OpenCode share URL.
+You can import from a local file or an RedCode share URL.
 
 ```bash
-opencode import session.json
-opencode import https://opncd.ai/s/abc123
+redcode import session.json
+redcode import https://opncd.ai/s/abc123
 ```
 
 ---
 
 ### web
 
-Start a headless OpenCode server with a web interface.
+Start a headless RedCode server with a web interface.
 
 ```bash
-opencode web
+redcode web
 ```
 
-This starts an HTTP server and opens a web browser to access OpenCode through a web interface. Set `OPENCODE_SERVER_PASSWORD` to enable HTTP basic auth (username defaults to `opencode`).
+This starts an HTTP server and opens a web browser to access RedCode through a web interface. Set `OPENCODE_SERVER_PASSWORD` to enable HTTP basic auth (username defaults to `redcode`).
 
 #### Flags
 
@@ -524,7 +524,7 @@ This starts an HTTP server and opens a web browser to access OpenCode through a 
 Start an ACP (Agent Client Protocol) server.
 
 ```bash
-opencode acp
+redcode acp
 ```
 
 This command starts an ACP server that communicates via stdin/stdout using nd-JSON.
@@ -547,13 +547,13 @@ This command starts an ACP server that communicates via stdin/stdout using nd-JS
 Install a plugin and update your config.
 
 ```bash
-opencode plugin <module>
+redcode plugin <module>
 ```
 
 Or use the alias.
 
 ```bash
-opencode plug <module>
+redcode plug <module>
 ```
 
 #### Flags
@@ -567,10 +567,10 @@ opencode plug <module>
 
 ### pr
 
-Fetch and checkout a GitHub PR branch, then run OpenCode.
+Fetch and checkout a GitHub PR branch, then run RedCode.
 
 ```bash
-opencode pr <number>
+redcode pr <number>
 ```
 
 ---
@@ -580,7 +580,7 @@ opencode pr <number>
 Database tools.
 
 ```bash
-opencode db [query]
+redcode db [query]
 ```
 
 #### Flags
@@ -596,7 +596,7 @@ opencode db [query]
 Print the database path.
 
 ```bash
-opencode db path
+redcode db path
 ```
 
 ---
@@ -606,17 +606,17 @@ opencode db path
 Debugging and troubleshooting tools.
 
 ```bash
-opencode debug [command]
+redcode debug [command]
 ```
 
 ---
 
 ### uninstall
 
-Uninstall OpenCode and remove all related files.
+Uninstall RedCode and remove all related files.
 
 ```bash
-opencode uninstall
+redcode uninstall
 ```
 
 #### Flags
@@ -632,22 +632,22 @@ opencode uninstall
 
 ### upgrade
 
-Updates opencode to the latest version or a specific version.
+Updates redcode to the latest version or a specific version.
 
 ```bash
-opencode upgrade [target]
+redcode upgrade [target]
 ```
 
 To upgrade to the latest version.
 
 ```bash
-opencode upgrade
+redcode upgrade
 ```
 
 To upgrade to a specific version.
 
 ```bash
-opencode upgrade v0.1.48
+redcode upgrade v0.1.48
 ```
 
 #### Flags
@@ -660,7 +660,7 @@ opencode upgrade v0.1.48
 
 ## Global Flags
 
-The opencode CLI takes the following global flags.
+The redcode CLI takes the following global flags.
 
 | Flag                                       | Short | Description                          |
 | ------------------------------------------ | ----- | ------------------------------------ |
@@ -674,7 +674,7 @@ The opencode CLI takes the following global flags.
 
 ## Environment variables
 
-OpenCode can be configured using environment variables.
+RedCode can be configured using environment variables.
 
 | Variable                              | Type    | Description                                       |
 | ------------------------------------- | ------- | ------------------------------------------------- |
@@ -701,7 +701,7 @@ OpenCode can be configured using environment variables.
 | `OPENCODE_CLIENT`                     | string  | Client identifier (defaults to `cli`)             |
 | `OPENCODE_ENABLE_EXA`                 | boolean | Enable Exa web search tools                       |
 | `OPENCODE_SERVER_PASSWORD`            | string  | Enable basic auth for `serve`/`web`               |
-| `OPENCODE_SERVER_USERNAME`            | string  | Override basic auth username (default `opencode`) |
+| `OPENCODE_SERVER_USERNAME`            | string  | Override basic auth username (default `redcode`) |
 | `OPENCODE_MODELS_URL`                 | string  | Custom URL for fetching models configuration      |
 
 ---
