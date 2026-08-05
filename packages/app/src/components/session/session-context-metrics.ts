@@ -26,6 +26,9 @@ type Context = {
   cacheRead: number
   cacheWrite: number
   cacheHit: number | null
+  // 260805 Red 单次交互命中率 + 缓存冻结判据（对齐 TUI 4d596f3 状态栏实现）
+  turnHitPct: number | null
+  stalled: boolean
   total: number
   usage: number | null
 }
@@ -80,6 +83,8 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
 
   // Aggregate across all assistant messages (not just the last one)
   const agg = { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 }
+  // 260805 Red 逐轮 read/bad 序列，供 turnHitPct 与 stalled 判据使用
+  const turns: Array<{ read: number; bad: number }> = []
   for (const m of messages) {
     if (m.role !== "assistant") continue
     agg.input += m.tokens.input ?? 0
@@ -87,8 +92,12 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
     agg.reasoning += m.tokens.reasoning ?? 0
     agg.cacheRead += m.tokens.cache.read ?? 0
     agg.cacheWrite += m.tokens.cache.write ?? 0
+    const read = m.tokens.cache.read ?? 0
+    const bad = (m.tokens.cache.miss ?? 0) + (m.tokens.cache.write ?? 0)
+    if (read + bad > 0) turns.push({ read, bad })
   }
   const total = agg.input + agg.output + agg.reasoning + agg.cacheRead + agg.cacheWrite
+  const lastTurn = turns[turns.length - 1]
 
   return {
     totalCost,
@@ -124,6 +133,17 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
         }
         const denom = sumRead + sumMiss + sumWrite
         return denom > 0 && sumRead > 0 ? Math.round((sumRead / denom) * 10000) / 100 : null
+      })(),
+      // 260805 Red 单次交互（最近一轮请求）命中率 + 缓存冻结判据，对齐 TUI 4d596f3。
+      // 累计值对"缓存卡住"几乎没有诊断力（全窗口平均，冻结几十轮才看得出）；真正的判据
+      // 是**本轮 read 有没有在长**——正常每轮递增，卡住时纹丝不动而 write/miss 每轮重付。
+      // stalled：连续 3 轮 read 完全不变且本轮未命中 > 3k = 前缀缓存被钉死。
+      turnHitPct: lastTurn ? Math.round((lastTurn.read / (lastTurn.read + lastTurn.bad)) * 10000) / 100 : null,
+      stalled: (() => {
+        if (!lastTurn || lastTurn.read <= 0) return false
+        let flat = 0
+        for (let i = turns.length - 2; i >= 0 && turns[i].read === lastTurn.read; i--) flat++
+        return flat >= 2 && lastTurn.bad > 3000
       })(),
       total,
       usage: limit ? Math.round((total / limit) * 100) : null,

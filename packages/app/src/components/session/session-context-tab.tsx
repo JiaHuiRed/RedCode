@@ -221,11 +221,14 @@ export function SessionContextTab() {
 
   // 260715 Red: 每项固定分到不同的 --syntax-* token（同色的两处在网格里横向/纵向都不相邻，
   // 单列塌陷时也按数组序错开），标题类字段（会话名/创建时间）留中性色，其余全部上色。
+  // 260805 Red 每项固定分到不同的 --syntax-* token（同色的两处在网格里横向/纵向都不相邻，
+  // 单列塌陷时也按数组序错开），标题类字段（会话名/创建时间）留中性色，其余全部上色。
   const stats = [
     { label: "context.stats.session", value: () => info()?.title ?? params.id ?? "—" },
+    { label: "context.stats.sessionID", value: () => params.id ?? "—", color: "var(--syntax-property)" },
     { label: "context.stats.messages", value: () => counts().all.toLocaleString(language.intl()), color: "var(--syntax-primitive)" },
     { label: "context.stats.provider", value: providerLabel, color: "var(--syntax-info)" },
-    { label: "context.stats.model", value: modelLabel, color: "var(--syntax-property)" },
+    { label: "context.stats.model", value: modelLabel, color: "var(--syntax-string)" },
     { label: "context.stats.limit", value: () => formatter().number(ctx()?.limit), color: "var(--syntax-type)" },
     { label: "context.stats.totalTokens", value: () => formatter().number(ctx()?.total), color: "var(--syntax-success)" },
     { label: "context.stats.usage", value: () => formatter().percent(ctx()?.usage), color: "var(--syntax-warning)" },
@@ -244,11 +247,24 @@ export function SessionContextTab() {
       },
       color: "var(--syntax-info)",
     },
+    // 260805 Red 单次交互命中率：最近一轮请求的缓存命中率，缓存被钉死时它两轮内就掉
+    // 到 60~80%，而旁边累计值（cacheTokens 那格）那时候还没动。stalled 时标红告警。
+    {
+      label: "context.stats.turnCacheHit",
+      value: () => {
+        const c = ctx()
+        if (c?.turnHitPct == null) return "—"
+        return c.stalled
+          ? `${formatter().percent(c.turnHitPct)} · 缓存未延伸`
+          : `${formatter().percent(c.turnHitPct)}`
+      },
+      color: "var(--syntax-critical)",
+    },
     { label: "context.stats.userMessages", value: () => counts().user.toLocaleString(language.intl()), color: "var(--syntax-success)" },
     { label: "context.stats.assistantMessages", value: () => counts().assistant.toLocaleString(language.intl()), color: "var(--syntax-type)" },
     { label: "context.stats.totalCost", value: cost, color: "var(--syntax-critical)" },
     { label: "context.stats.sessionCreated", value: () => formatter().time(info()?.time.created) },
-    { label: "context.stats.lastActivity", value: () => formatter().time(ctx()?.message.time.created), color: "var(--syntax-string)" },
+    { label: "context.stats.lastActivity", value: () => formatter().time(ctx()?.message.time.created), color: "var(--syntax-constant)" },
   ] satisfies { label: string; value: () => JSX.Element; color?: string }[]
 
   let scroll: HTMLDivElement | undefined
