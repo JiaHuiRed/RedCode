@@ -11,6 +11,34 @@
 ---
 
 ## TUI
+### [0.8.12] - 2026-08-05
+
+> 起因是"同一份配置在公司和家里来回改、改完另一台必炸"的死循环，追下去发现根子不在同步本身，而在一份文件里混了机器无关与机器相关两类值。修法是加一层永不上传的本地覆盖层。顺着这条线做了一次仓库自查，捞出四个**从落地那天起就没生效过**的功能——三个子代理、自定义主题、装在仓库外时的模板播种、一半的 skill 播种——它们的共同点是失败时完全静默，没有任何报错。
+
+#### 新增
+
+- **机器本地覆盖层 `~/.redcode/redcode.local.json(c)`**（`config/config.ts`）：在全局配置链末尾加载，同名键覆盖同步来的主文件，其余键照常继承；不进 `globalConfigFile()` 候选，所以引擎写配置仍落在主文件上，本地层只由人手写、由私有仓 gitignore。绝对路径、按显存挑的模型档位这类值放这里，两台机器互不干扰。**实现时踩到的坑**：配置文件有两处加载点，`loadGlobal` 之后 directories 循环还会对每个 `.redcode` 目录把 `redcode.json(c)` 再读一遍且时序更靠后，只改前者的话同步层会把本地层重新盖回去——现象是"本地层独有的键生效、同名键静默失效"，两处都要列。
+- **architect / fixer / reviewer 三个子代理真正生效**（`script/sync-home.bat`）：这三个 `.md` 自 0.8.10 落地起就躺在暂存目录里，而 agent 的 `.md` 发现只发生在 `.redcode` 目录内，`Filesystem.up` 匹配的是 `<祖先>/.redcode` 目录本身、不会下潜进去——`agent list` 里一直查无此人，四角色实际只有 explore 那一角在跑。现由 sync-home 播种到 `~/.redcode/agent/`，`agent list` 已确认三者以 subagent 出现。
+
+#### 修复
+
+- **首启模板改编译期内嵌**（`project/bootstrap.ts`）：souls 与 MEMORY 模板原先从 `ctx.directory/.opencode/` 读盘，装在仓库外的二进制（拿 release 的常态）找不到源文件，播种静默失败、`souls/` 永远是空的——而模板正文还写着"首次启动时自动播种"。三份模板移进 `packages/opencode/src/project/template/` 并以 text 导入 inline，任何安装位置都能播。
+- **skill 播种不再中途截断**（`project/bootstrap.ts`）：原先用非递归 `readdir` 把 `references/` 子目录当文件读，抛错被外层 `catchCause` 整段吞掉，字母序排在 `red-scribe` 之后的 skill 全部不播种（实测 12 个只落 7 个，无任何提示）。改整目录递归拷贝 + 逐个 skill 隔离错误。
+- **项目级自定义主题从来发现不了**（`tui/context/theme.tsx`）：主题发现只向上找 `.opencode/themes`，而主题安装器写的是 `<项目>/.redcode/themes`，装了也读不到。另外 `mytheme.json` 带 UTF-8 BOM，`readJson` 直接抛错被上层吞掉，表现为"没有这个主题"。
+- **首页提示指错路**（`tui/feature-plugins/home/tips-view.tsx`）：5 条提示教用户往 `.opencode/{commands,agents,tools,plugins,themes}/` 放文件，但配置发现链只扫 `.redcode`。
+- **`$REDCODE_ROOT` 在纯 `.redcode` 项目里落到 fallback**（`mcp/index.ts`）：项目根探测只认 `redcode.jsonc` 或 `.opencode` 目录，补上 `.redcode`。
+- **`doctor` 统计不到项目级技能与指令**（`cli/cmd/doctor.ts`）：只看 `.opencode/` 下的 `AGENTS.md` 与 `skill(s)`，补 `.redcode/` 与项目根 `AGENTS.md`。
+- **YAML agent profile 目录**（`agent/profile/load.ts`）：补 `.redcode/profiles` 为主，`.opencode/profiles` 保留兼容。
+- **文档站构建修复**：`packages/web/src/content/i18n/*.json` 全带 UTF-8 BOM，starlight 的 `JSON.parse` 直接抛错，整站构建挂掉（该问题早于本次改动）。
+- **`script/switch-vision-model.ps1` 硬编码机器路径**：写死的 `D:\AI\KLX\RedCode\...` 只在某一台机器上存在，改为相对脚本自身定位仓库根。
+
+#### 变更
+
+- **`.opencode/` 更名 `seed/`**：这个目录从来不是"项目配置"——引擎只扫 `.redcode`，它下面的东西必须被 `sync-home` 拷进 `~/.redcode` 才生效，本质是种子/暂存区，改名让名字说实话。**没有改成 `.redcode/`**，那样会把 65 个惰性文件一次性激活：`plugins/memory.ts` 会与全局同名插件重复加载（CORE 块每轮注入两遍）、冒烟测试插件被当正式插件、13 个 command 与全局重复。
+- **全仓 1036 个被跟踪文件去 UTF-8 BOM**（ts 768 / tsx 165 / json 81 / md 17 / js 2 / css 2 / yml 1）。打包器吃得下 BOM，只有运行时 `readJson`/`JSON.parse` 那条路会炸，所以症状永远是"功能静默失效"。`.bat` 与 `.ps1` 刻意不动——PowerShell 5.1 靠 BOM 判定 UTF-8。
+- **文档语种收敛为中日英**（root / ja / zh-cn）：原 18 种全部来自上游、无人维护，改一处文档要同步 18 份。其余语言按匹配规则回落，简繁统一走 zh-cn。三语文档内 3269 处路径与品牌名定向重写（`~/.config/opencode` → `~/.redcode`、`opencode.json(c)` → `redcode.json(c)`、`opencode.ai` → `redcode.dev` 等），并以三层保护避开上游包名、第三方 URL 与连字符复合词。
+- **删除 Ornith 模型定义**：很早以前用的本地模型。按既往教训，模板与 live 配置两处必须同时删，否则 sync-home 会在下次构建时把它写回来。
+
 ### [0.8.11] - 2026-08-04
 
 > 缓存命中率"切模型后一路跌到 50% 且不自愈"的根因查清了：不支持图片输入的模型（deepseek-v4-flash）会把历史里每张图替换成一段占位文本，而占位文本里带着 `Date.now()` 生成的临时文件名——同一张历史图片每一轮都生成不同的字符串，它在消息列表里位置又固定，于是从那条消息往后的所有内容每轮全部失配，provider 的前缀缓存被永久钉死。近 10 天光这一条就白白重写约 35M token。同批把状态栏的缓存指标换成三个真正不同的量，并让"缓存停止延伸"自己报警。

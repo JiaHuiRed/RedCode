@@ -8,7 +8,7 @@
 >
 > 基于 [opencode](https://github.com/anomalyco/opencode)（sst.dev）深度二次开发，侧重**前缀缓存优化、多模型适配、中文体验和稳定性**。
 
-[![TUI](https://badgen.net/badge/TUI/0.8.11/blue)](CHANGELOG.md)
+[![TUI](https://badgen.net/badge/TUI/0.8.12/blue)](CHANGELOG.md)
 [![Desktop](https://badgen.net/badge/Desktop/0.7.14/purple)](CHANGELOG.md)
 [![平台](https://badgen.net/badge/平台/Windows%2010%2F11/green)](https://github.com/JiaHuiRed/RedCode)
 [![TypeScript](https://badgen.net/badge/TypeScript/5.x/3178c6)](https://typescriptlang.org)
@@ -28,7 +28,7 @@ AI 编程助手。两个入口、同一引擎：
 
 ### 核心能力
 
-代码理解（jCodeMunch / TypeGraph）· 多模型（DeepSeek / OpenAI / Anthropic / Ollama）· 文件读写编辑 · 终端执行 · Web 搜索 · 视觉分析 · 会话管理 · 权限门控与防护环（guardrail/doom_loop 检测）· 上下文压缩 · 自动化记忆系统 · 目标管理 · Skill 技能系统 · 防重复循环检测 · 自定义 AI 人格
+代码理解（jCodeMunch / TypeGraph）· 多模型（DeepSeek / OpenAI / Anthropic / Ollama）· 文件读写编辑 · 终端执行 · Web 搜索 · 视觉分析 · 会话管理 · 权限门控与防护环（guardrail/doom_loop 检测）· 上下文压缩 · 自动化记忆系统 · 目标管理 · Skill 技能系统 · 四角色子代理（explore / architect / fixer / reviewer，可按角色分配不同模型）· 防重复循环检测 · 自定义 AI 人格
 
 ### 为什么是 RedCode？
 
@@ -39,6 +39,7 @@ AI 编程助手。两个入口、同一引擎：
 | 中文体验 | 完整中文文档、中文 UI、中英文双语 README |
 | 稳定性 | Event Loop 阻塞探测、sidecar 心跳独立监控、DCP 压缩后桶压避免双重 compaction |
 | 国产模型优先 | 零配置支持 DeepSeek、GLM、Qwen、MiniMax、Zhipu，以及 NVIDIA 等第三方托管 |
+| 多机同步 | 机器本地覆盖层 `redcode.local.jsonc`：绝对路径、按显存挑的模型档位下沉到本机，同步的配置只留机器无关内容 |
 
 ---
 
@@ -80,13 +81,10 @@ cd packages/desktop && bun run build && bun run package
 
 全部操作指南在 **[MANUAL.md](MANUAL.md)**，涵盖：
 
-1. 首次设置（配置模型 / AI 人格 / 用户画像 / 工作记忆）
-2. 记忆系统（自动日志 / 长期库 / 启动注入）
-3. MCP 服务器（预配置服务的安装与启用）
-4. 配置详解（provider / 权限 / 项目级配置）
-5. 内置命令列表
-6. Skill 技能系统说明
-7. 隐私模型与多机同步方案
+1. 快速启动 · 2. 首次设置（模型 / 称呼 / AI 人格）· 3. 配置模型（适配器 / 切换 / 本地 Ollama）
+4. MCP 服务器（预配置服务的启用）· 5. AI 人格系统 · 6. 记忆系统（自动日志 / 长期库 / 启动注入）
+7. 配置详解（配置层次 / 权限门控 / 自定义 MCP）· 8. 内置命令 · 9. Skill 技能系统
+10. 隐私与多机同步——含**机器本地覆盖层**，解决"同一份配置在两台机器上来回改"的死循环
 
 ---
 

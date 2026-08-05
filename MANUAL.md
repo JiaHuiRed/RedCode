@@ -59,10 +59,10 @@ cd packages/desktop && bun run build && bun run package
 
 第一次启动时，系统自动：
 
-1. 创建 `~/.redcode/` 目录（存放全局配置和记忆）
-2. 创建 `~/.redcode/memory/` 和 `~/.redcode/souls/`
-3. 从项目模板文件播种到上述目录（如果目标不存在）
-4. 加载所有 MCP 服务器和 skill 技能
+1. 创建 `~/.redcode/` 目录（存放全局配置和记忆），以及 `memory/`、`souls/` 子目录
+2. 播种人格与记忆模板到 `souls/{T,G}soul.md`、`MEMORY.md`——这三份模板**编译时内嵌在二进制里**，所以无论 exe 装在哪儿都能播（已存在的文件不会被覆盖）
+3. 若当前目录是 RedCode 仓库的克隆，额外把 `seed/skill/` 下的技能播种到 `~/.redcode/skill/`（同样只补不覆盖）；拿 release 二进制直接用的话这一步跳过，技能可自行放进 `~/.redcode/skill/`
+4. 加载配置、MCP 服务器与 skill 技能
 5. 启动 TUI/GUI 界面
 
 **你已经可以开始聊天了。** 但要想发挥全部能力，继续往下看。
@@ -342,15 +342,26 @@ RedCode 内置自动化记忆系统（skill `memory-automation`），在启动/�
 
 ### 7.1 配置文件层次
 
+按加载顺序排列，**后加载的覆盖先加载的**：
+
 | 文件 | 作用域 | 说明 |
 |------|--------|------|
 | `~/.redcode/redcode.jsonc` | **全局** — 所有项目 | 通用 provider、MCP、权限规则 |
+| `~/.redcode/redcode.local.jsonc` | **全局 · 仅本机** | 机器本地覆盖层，优先级高于上一行。放绝对路径、按显存挑的模型档位这类因机而异的值；多机同步时把它 gitignore 掉，见 [10.2](#102-多机同步) |
 | 项目根 `redcode.jsonc` | **项目级** | 覆盖或补充全局配置 |
-| 项目内 `.redcode/redcode.jsonc` | **项目级** | 同上；会从当前目录逐级向上查找到 worktree 根，适合放在子目录里做局部覆盖 |
-| `~/.redcode/MEMORY.md` | 长期记忆 | AI 自动读写 |
-| `~/.redcode/souls/*.md` | 灵魂文件 | 通过 `/tui-persona` 等命令触发 |
+| 项目内 `.redcode/redcode.jsonc` | **项目级** | 同上；会从当前目录逐级向上查找到 worktree 根，适合放在子目录里做局部覆盖。同目录下的 `redcode.local.jsonc` 同样生效且优先级更高 |
 
-> 配置合并规则：项目级覆盖全局级，instructions 数组拼接而非替换。
+其余全局资源（不是配置文件，但同样从 `~/.redcode/` 读）：
+
+| 路径 | 内容 |
+|------|------|
+| `~/.redcode/MEMORY.md` | 长期记忆，AI 自动读写 |
+| `~/.redcode/souls/*.md` | 灵魂文件（人格），启动时按 TUI/GUI 自动注入 |
+| `~/.redcode/skill/` `command/` `agent/` | 全局技能、斜杠指令、子代理定义（`agent/` 与 `agents/` 两种目录名都认） |
+| `~/.redcode/plugin/` `themes/` | 全局插件与自定义主题 |
+
+> 配置合并规则：深合并，项目级覆盖全局级，`instructions` 数组拼接而非替换。
+> 注意 `redcode.local.*` 只由人手写——引擎自身写回配置（例如在界面里切主题）落在 `redcode.jsonc`，不会污染本地层。
 
 ### 7.2 权限门控
 
@@ -544,6 +555,35 @@ cd ~/.redcode && git push
 cd RedCode && git pull
 cd ~/.redcode && git pull
 ```
+
+#### 机器本地覆盖层（避免两台机器来回改）
+
+同步 `~/.redcode/` 会遇到一个必然的问题：配置里有些值**天生因机而异**——某个 MCP 的绝对安装路径、按显存挑的本地模型档位、只有一台机器装了的服务。它们一旦写进被同步的 `redcode.jsonc`，就会进入死循环：这台机改好推上去，另一台拉下来直接报错（路径不存在，MCP 启动失败）；在另一台改回来，轮到这台报错。
+
+解法是把这类值下沉到 `~/.redcode/redcode.local.jsonc`，它加载在 `redcode.jsonc` 之后、优先级更高，且不进版本库：
+
+```jsonc
+// ~/.redcode/redcode.local.jsonc —— 只在这台机器上生效
+{
+  "$schema": "https://redcode.dev/config.json",
+  "mcp": {
+    "indexgraph": {
+      "type": "local",
+      "command": ["node", "D:/AI/IndexGraph/mcp-server.js"], // 换台机器路径就不同
+      "enabled": true
+    }
+  }
+}
+```
+
+在 `~/.redcode/.gitignore` 里加上：
+
+```
+redcode.local.json
+redcode.local.jsonc
+```
+
+判断标准很简单：**这个值换台机器还成立吗？** 不成立就放本地层。同步文件里只留机器无关的东西——provider、权限规则、以及用 `$REDCODE_ROOT` 表达的相对路径命令。
 
 ### 10.3 跨平台注意事项
 

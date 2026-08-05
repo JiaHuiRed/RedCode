@@ -8,7 +8,7 @@
 >
 > Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev), with deep enhancements in **prefix cache optimization, multi-model pricing, Chinese UX, and runtime stability**.
 
-[![TUI](https://badgen.net/badge/TUI/0.8.11/blue)](CHANGELOG.md)
+[![TUI](https://badgen.net/badge/TUI/0.8.12/blue)](CHANGELOG.md)
 [![Desktop](https://badgen.net/badge/Desktop/0.7.14/purple)](CHANGELOG.md)
 [![License](https://badgen.net/badge/License/MIT/grey)](LICENSE)
 [![Platform](https://badgen.net/badge/Platform/Windows%2010%2F11/green)](https://github.com/JiaHuiRed/RedCode)
@@ -26,7 +26,7 @@ Reads code, writes code, fixes bugs, runs commands. You speak Chinese (or any la
 
 ### Core capabilities
 
-Code understanding (jCodeMunch / TypeGraph) · Multi-model (DeepSeek / OpenAI / Anthropic / Ollama) · File read/write/edit · Terminal execution · Web search · Vision analysis · Session management · Permission gating · Context compaction · Automated memory system · Goal tracking · Skill system · Anti-repeat loop detection · Custom AI personas
+Code understanding (jCodeMunch / TypeGraph) · Multi-model (DeepSeek / OpenAI / Anthropic / Ollama) · File read/write/edit · Terminal execution · Web search · Vision analysis · Session management · Permission gating · Context compaction · Automated memory system · Goal tracking · Skill system · Four-role subagents (explore / architect / fixer / reviewer, each assignable its own model) · Anti-repeat loop detection · Custom AI personas
 
 ### Why RedCode?
 
@@ -37,6 +37,7 @@ Code understanding (jCodeMunch / TypeGraph) · Multi-model (DeepSeek / OpenAI / 
 | Chinese UX | Full Chinese docs, Chinese UI, bilingual README |
 | Stability | Event loop drift detection, independent sidecar health monitoring, DCP double-compaction guard |
 | Domestic models first | Zero-config for DeepSeek, GLM, Qwen, MiniMax, Zhipu, plus NVIDIA-hosted third-party |
+| Multi-machine sync | Machine-local override layer `redcode.local.jsonc` — absolute paths and VRAM-dependent model tiers stay on the machine, so the synced config holds only machine-neutral settings |
 
 ---
 
@@ -68,11 +69,14 @@ Output: `packages/opencode/dist/redcode-windows-x64/bin/redcode.exe` — double-
 
 ### Config File Locations
 
+Listed in load order — **later entries override earlier ones**:
+
 | Location | Purpose |
 |----------|---------|
 | `~/.redcode/redcode.jsonc` | Global config (cross-project) |
+| `~/.redcode/redcode.local.jsonc` | Machine-local overrides — absolute paths, VRAM-dependent model tiers, machine-only MCP servers. Keep it out of version control when syncing `~/.redcode/` across machines |
 | `project_dir/redcode.jsonc` | Project-level config |
-| `project_dir/.redcode/redcode.jsonc` | Project-level config |
+| `project_dir/.redcode/redcode.jsonc` | Project-level config (`redcode.local.jsonc` works here too, same precedence rule) |
 
 ### Add Custom Provider
 
