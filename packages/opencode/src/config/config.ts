@@ -481,6 +481,13 @@ export const layer = Layer.effect(
       result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "config.json"), env))
       result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "redcode.json"), env))
       result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "redcode.jsonc"), env))
+      // 260805 Red 机器本地覆盖层。~/.redcode 整体在多台机器间同步（私有仓），但绝对路径、
+      // 按显存挑的模型档位这类值天生因机而异，写进同步文件就会两边来回改：这台机改完推上去，
+      // 另一台拉下来即报错，改回去又轮到这台报错。本层最后加载 → 优先级最高，且**不**进
+      // globalConfigFile() 的候选列表，所以引擎写配置仍落在同步的主文件上，这里只由人手写、
+      // 由私仓 gitignore 掉，永不上传。
+      result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "redcode.local.json"), env))
+      result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "redcode.local.jsonc"), env))
 
       const legacy = path.join(Global.Path.config, "config")
       if (existsSync(legacy)) {
@@ -649,7 +656,11 @@ export const layer = Layer.effect(
 
         for (const dir of directories) {
           if (dir.endsWith(".redcode") || dir === Flag.REDCODE_CONFIG_DIR) {
-            for (const file of ["redcode.json", "redcode.jsonc"]) {
+            // 260805 Red 本地覆盖层必须也列在这里：这个循环对每个 .redcode 目录（含家目录
+            // 自身）会把 redcode.json(c) 再读一遍，时序在 loadGlobal 之后。只在 loadGlobal
+            // 里加 redcode.local.* 的话，同步层会在这里把本地层重新盖回去（实测：本地层
+            // 独有的键生效、同名键失效）。顺序保持"本地在后"，项目级 .redcode 同样适用。
+            for (const file of ["redcode.json", "redcode.jsonc", "redcode.local.json", "redcode.local.jsonc"]) {
               const source = path.join(dir, file)
               log.debug(`loading config from ${source}`)
               yield* merge(source, yield* loadFile(source, authEnv))
