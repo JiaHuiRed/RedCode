@@ -53,20 +53,20 @@
       "timeout": 120000,
       "enabled": true
     },
-   "vision": {
-     "type": "local",
-     // 260804 Red 指回工作区本地插件：4eda2a8 误配公司 fork 绝对路径
-     // D:\AI\vision-mcp-server（本机不存在）致 MCP 启动失败；插件走 Ollama
-     // 原生 /api/generate，模型用本机实测最优的 minicpm-v4.6:f16。
-     "command": ["node", "./plugins/vision-mcp-local/index.js"],
-     "cwd": "$REDCODE_ROOT",
-     "environment": {
-       "VISION_BASE_URL": "http://localhost:11434",
-       "VISION_MODEL": "minicpm-v4.6:f16"
-     },
-     "description": "图像理解——当前模型非多模态、需看截图/图片内容时用（走本地 Ollama minicpm-v4.6:f16）；纯文本任务不用。",
-     "enabled": true
-   },
+    "vision": {
+      "type": "local",
+      // 260804 Red 指回工作区本地插件：4eda2a8 误配公司 fork 绝对路径
+      // D:\AI\vision-mcp-server（本机不存在）致 MCP 启动失败；插件走 Ollama
+      // 原生 /api/generate，模型用本机实测最优的 minicpm-v4.6:f16。
+      "command": ["node", "./plugins/vision-mcp-local/index.js"],
+      "cwd": "$REDCODE_ROOT",
+      "environment": {
+        "VISION_BASE_URL": "http://localhost:11434",
+        "VISION_MODEL": "minicpm-v4.6:f16"
+      },
+      "description": "图像理解——当前模型非多模态、需看截图/图片内容时用（走本地 Ollama minicpm-v4.6:f16）；纯文本任务不用。",
+      "enabled": true
+    },
     "su-prememory": {
       "type": "local",
       "command": ["bun", "./plugins/mcp-su-prememory-local/src/index.ts"],

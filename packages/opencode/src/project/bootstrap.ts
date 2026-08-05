@@ -17,6 +17,9 @@ import { Reference } from "@/reference/reference"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Global } from "@redcode-ai/core/global"
 import path from "path"
+import TEMPLATE_TSOUL from "./template/Tsoul.md" with { type: "text" }
+import TEMPLATE_GSOUL from "./template/Gsoul.md" with { type: "text" }
+import TEMPLATE_MEMORY from "./template/MEMORY.md" with { type: "text" }
 
 export { Service } from "./bootstrap-service"
 export type { Interface } from "./bootstrap-service"
@@ -44,25 +47,30 @@ export const layer = Layer.effect(
       const ctx = yield* InstanceState.context
       yield* Effect.logInfo("bootstrapping").pipe(Effect.annotateLogs("directory", ctx.directory))
       // 260606 Red Seed ~/.redcode/ with default templates on first run
+      // 260805 Red 模板改内嵌（编译期 inline），不再从 ctx.directory/.opencode/ 读盘：
+      // 装在仓库外的二进制（陌生人拿 release 的常态）找不到源文件，播种静默失败，
+      // souls/ 永远是空的——而模板正文还写着「首次启动时自动播种」。
       const redcodeHome = path.join(Global.Path.home, ".redcode")
       yield* fs.ensureDir(path.join(redcodeHome, "memory")).pipe(Effect.catchCause(Effect.logWarning))
       yield* fs.ensureDir(path.join(redcodeHome, "souls")).pipe(Effect.catchCause(Effect.logWarning))
-      const templates: Array<[src: string, dest: string]> = [
-        [".opencode/agents/Tsoul.md", path.join(redcodeHome, "souls", "Tsoul.md")],
-        [".opencode/agents/Gsoul.md", path.join(redcodeHome, "souls", "Gsoul.md")],
+      const templates: Array<[content: string, dest: string]> = [
+        [TEMPLATE_TSOUL, path.join(redcodeHome, "souls", "Tsoul.md")],
+        [TEMPLATE_GSOUL, path.join(redcodeHome, "souls", "Gsoul.md")],
         // 260730 Karina 不再播种 USER.md：用户画像基本被 souls/*.md 覆盖，
         // 每轮多一道加载不值。称呼改用 config 的 username 字段。
-        [".opencode/MEMORY.md", path.join(redcodeHome, "MEMORY.md")],
+        [TEMPLATE_MEMORY, path.join(redcodeHome, "MEMORY.md")],
       ]
-      yield* Effect.forEach(templates, ([src, dest]) =>
+      yield* Effect.forEach(templates, ([content, dest]) =>
         Effect.gen(function* () {
           const exists = yield* fs.existsSafe(dest)
           if (exists) return
-          const text = yield* fs.readFileStringSafe(path.join(ctx.directory, src))
-          if (text) yield* fs.writeFileString(dest, text)
+          if (content) yield* fs.writeFileString(dest, content)
         }).pipe(Effect.catchCause(Effect.logWarning)),
       )
       // 260613 Red Seed skills from .opencode/skill/ to ~/.redcode/skill/ (skip existing)
+      // 260805 Red 改整目录递归拷贝 + 逐个 skill 隔离错误：原先非递归 readdir 把
+      // references/ 子目录当文件读，抛错被外层 catchCause 整段吞掉，字母序排在
+      // red-scribe 之后的 skill 全部不播种（实测 13 个只落 7 个，静默无提示）。
       yield* Effect.gen(function* () {
         const srcSkillDir = path.join(ctx.directory, ".opencode", "skill")
         const destSkillDir = path.join(redcodeHome, "skill")
@@ -72,21 +80,21 @@ export const layer = Layer.effect(
         const entries = yield* Effect.tryPromise(() =>
           import("fs/promises").then((fsp) => fsp.readdir(srcSkillDir, { withFileTypes: true })),
         )
-        for (const entry of entries) {
-          if (!entry.isDirectory()) continue
-          const destDir = path.join(destSkillDir, entry.name)
-          const exists = yield* fs.existsSafe(destDir)
-          if (exists) continue
-          // copy entire skill directory
-          const skillFiles = yield* Effect.tryPromise(() =>
-            import("fs/promises").then((fsp) => fsp.readdir(path.join(srcSkillDir, entry.name))),
-          )
-          yield* fs.ensureDir(destDir)
-          for (const file of skillFiles) {
-            const text = yield* fs.readFileStringSafe(path.join(srcSkillDir, entry.name, file))
-            if (text) yield* fs.writeFileString(path.join(destDir, file), text)
-          }
-        }
+        yield* Effect.forEach(
+          entries.filter((entry) => entry.isDirectory()),
+          (entry) =>
+            Effect.gen(function* () {
+              const destDir = path.join(destSkillDir, entry.name)
+              const exists = yield* fs.existsSafe(destDir)
+              if (exists) return
+              yield* Effect.tryPromise(() =>
+                import("fs/promises").then((fsp) =>
+                  fsp.cp(path.join(srcSkillDir, entry.name), destDir, { recursive: true }),
+                ),
+              )
+            }).pipe(Effect.catchCause(Effect.logWarning)),
+          { discard: true },
+        )
       }).pipe(Effect.catchCause(Effect.logWarning))
       // 260611 Red project-level .redcode/ auto-init with empty MEMORY.md
       if (!Flag.REDCODE_DISABLE_PROJECT_CONFIG && ctx.worktree !== Global.Path.home) {
