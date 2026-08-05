@@ -1,4 +1,4 @@
-﻿import { SessionMessage } from "@redcode-ai/core/session-message"
+import { SessionMessage } from "@redcode-ai/core/session-message"
 import { SessionV2 } from "@/v2/session"
 import { Effect, Schema } from "effect"
 import * as DateTime from "effect/DateTime"

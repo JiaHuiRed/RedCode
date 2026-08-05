@@ -1,4 +1,4 @@
-﻿import { Context, Effect, FileSystem, Layer, Schema } from "effect"
+import { Context, Effect, FileSystem, Layer, Schema } from "effect"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { secretFindings, SecretFindingSchema, type SecretFinding } from "./redaction"

@@ -1,4 +1,4 @@
-﻿import { EOL } from "os"
+import { EOL } from "os"
 import { Project } from "@/project/project"
 import * as Log from "@redcode-ai/core/util/log"
 import { cmd } from "../cmd"

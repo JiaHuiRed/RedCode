@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "github",
   "module": "index.ts",
   "type": "module",

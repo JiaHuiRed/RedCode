@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import type { Prompt } from "@/context/prompt"
 import { buildRequestParts } from "./build-request-parts"
 

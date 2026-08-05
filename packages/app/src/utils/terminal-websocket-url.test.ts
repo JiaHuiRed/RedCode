@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { terminalWebSocketURL } from "./terminal-websocket-url"
 
 describe("terminalWebSocketURL", () => {

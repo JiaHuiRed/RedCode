@@ -1,4 +1,4 @@
-﻿import { afterEach, describe, expect } from "bun:test"
+import { afterEach, describe, expect } from "bun:test"
 import { Effect, Exit, Fiber, Layer } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"

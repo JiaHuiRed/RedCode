@@ -1,4 +1,4 @@
-﻿import { $ } from "bun"
+import { $ } from "bun"
 import * as Observability from "@redcode-ai/core/effect/observability"
 import * as fs from "fs/promises"
 import os from "os"

@@ -1,4 +1,4 @@
-﻿import { describe, expect } from "bun:test"
+import { describe, expect } from "bun:test"
 import { Deferred, Effect, Layer } from "effect"
 import { Project } from "@/project/project"
 import { Session as SessionNs } from "@/session/session"

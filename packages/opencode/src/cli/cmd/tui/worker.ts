@@ -1,4 +1,4 @@
-﻿import { Installation } from "@/installation"
+import { Installation } from "@/installation"
 import { Server } from "@/server/server"
 import * as Log from "@redcode-ai/core/util/log"
 import { InstanceRuntime } from "@/project/instance-runtime"

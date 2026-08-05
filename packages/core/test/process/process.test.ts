@@ -1,4 +1,4 @@
-﻿import { describe, expect } from "bun:test"
+import { describe, expect } from "bun:test"
 import { realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { Effect, Exit, Stream } from "effect"

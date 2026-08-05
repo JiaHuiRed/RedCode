@@ -1,4 +1,4 @@
-﻿{
+{
   "$schema": "https://v2-8-13.turborepo.dev/schema.json",
   "globalEnv": ["CI", "REDCODE_DISABLE_SHARE"],
   "globalPassThroughEnv": ["CI", "REDCODE_DISABLE_SHARE"],

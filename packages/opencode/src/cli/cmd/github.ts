@@ -1,4 +1,4 @@
-﻿import path from "path"
+import path from "path"
 import { exec } from "child_process"
 import { Filesystem } from "@/util/filesystem"
 import * as prompts from "@clack/prompts"

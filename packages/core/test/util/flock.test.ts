@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import { spawn } from "child_process"
 import path from "path"

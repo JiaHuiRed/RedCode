@@ -1,4 +1,4 @@
-﻿import { NodeHttpServer, NodeServices } from "@effect/platform-node"
+import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { NamedError } from "@redcode-ai/core/util/error"
 import { describe, expect } from "bun:test"
 import { ConfigError } from "../../src/config/error"

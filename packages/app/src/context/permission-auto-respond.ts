@@ -1,4 +1,4 @@
-﻿import { base64Encode } from "@redcode-ai/core/util/encode"
+import { base64Encode } from "@redcode-ai/core/util/encode"
 
 export function acceptKey(sessionID: string, directory?: string) {
   if (!directory) return sessionID

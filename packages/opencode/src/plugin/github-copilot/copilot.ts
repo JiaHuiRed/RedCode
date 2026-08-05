@@ -1,4 +1,4 @@
-﻿import type { Hooks, PluginInput } from "@redcode-ai/plugin"
+import type { Hooks, PluginInput } from "@redcode-ai/plugin"
 import type { Model } from "@redcode-ai/sdk/v2"
 import { InstallationVersion } from "@redcode-ai/core/installation/version"
 import { iife } from "@/util/iife"

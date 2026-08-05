@@ -1,4 +1,4 @@
-﻿import { withAlpha } from "@redcode-ai/ui/theme/color"
+import { withAlpha } from "@redcode-ai/ui/theme/color"
 import { useTheme } from "@redcode-ai/ui/theme/context"
 import { resolveThemeVariant } from "@redcode-ai/ui/theme/resolve"
 import type { HexColor } from "@redcode-ai/ui/theme/types"

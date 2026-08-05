@@ -1,4 +1,4 @@
-﻿import * as Log from "@redcode-ai/core/util/log"
+import * as Log from "@redcode-ai/core/util/log"
 import { serviceUse } from "@/effect/service-use"
 import path from "path"
 import { pathToFileURL } from "url"

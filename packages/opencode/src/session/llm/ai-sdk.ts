@@ -1,4 +1,4 @@
-﻿import { FinishReason, LLMEvent, ProviderMetadata, ToolResultValue } from "@redcode-ai/llm"
+import { FinishReason, LLMEvent, ProviderMetadata, ToolResultValue } from "@redcode-ai/llm"
 import { Effect, Schema } from "effect"
 import { type streamText } from "ai"
 import { errorMessage } from "@/util/error"

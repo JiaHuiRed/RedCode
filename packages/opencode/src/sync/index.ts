@@ -1,4 +1,4 @@
-﻿// Legacy sync event system. It should stay unaware of core EventV2 execution;
+// Legacy sync event system. It should stay unaware of core EventV2 execution;
 // the only temporary V2 coupling here is exposing versioned core event schemas
 // in effectPayloads() so existing HTTP/SDK schema generation remains stable.
 // Remove that registry read when event schemas are generated from core directly.

@@ -1,4 +1,4 @@
-﻿import { createStore, produce } from "solid-js/store"
+import { createStore, produce } from "solid-js/store"
 import { batch, createEffect, createMemo, onCleanup, onMount, type Accessor } from "solid-js"
 import { createSimpleContext } from "@redcode-ai/ui/context"
 import { makeEventListener } from "@solid-primitives/event-listener"

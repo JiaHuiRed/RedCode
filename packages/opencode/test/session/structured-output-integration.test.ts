@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
 import { Session } from "@/session/session"
 import { SessionPrompt } from "../../src/session/prompt"

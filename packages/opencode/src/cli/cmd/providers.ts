@@ -1,4 +1,4 @@
-﻿import { Auth } from "../../auth"
+import { Auth } from "../../auth"
 import { cmd } from "./cmd"
 import { CliError, effectCmd, fail } from "../effect-cmd"
 import { UI } from "../ui"

@@ -1,4 +1,4 @@
-﻿import type { WorkspaceID } from "@/control-plane/schema"
+import type { WorkspaceID } from "@/control-plane/schema"
 import { Flag } from "@redcode-ai/core/flag/flag"
 import { Effect, Scope } from "effect"
 

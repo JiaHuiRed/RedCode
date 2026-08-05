@@ -1,4 +1,4 @@
-﻿// RunFooter -- the mutable control surface for direct interactive mode.
+// RunFooter -- the mutable control surface for direct interactive mode.
 //
 // In the split-footer architecture, scrollback is immutable (append-only)
 // and the footer is the only region that can repaint. RunFooter owns both

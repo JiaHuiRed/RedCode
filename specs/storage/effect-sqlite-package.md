@@ -1,4 +1,4 @@
-﻿# Effect Drizzle SQLite Package
+# Effect Drizzle SQLite Package
 
 ## Goal
 

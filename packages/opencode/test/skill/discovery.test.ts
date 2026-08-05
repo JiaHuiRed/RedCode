@@ -1,4 +1,4 @@
-﻿import { describe, expect, beforeAll, afterAll } from "bun:test"
+import { describe, expect, beforeAll, afterAll } from "bun:test"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Effect, Layer } from "effect"
 import { Discovery } from "../../src/skill/discovery"

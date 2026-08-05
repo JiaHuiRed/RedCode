@@ -1,4 +1,4 @@
-﻿export * as ConfigCommand from "./command"
+export * as ConfigCommand from "./command"
 
 import path from "path"
 import * as Log from "@redcode-ai/core/util/log"

@@ -1,4 +1,4 @@
-﻿const words = [
+const words = [
   "alpha",
   "bravo",
   "charlie",

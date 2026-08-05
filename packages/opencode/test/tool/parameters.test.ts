@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Result, Schema } from "effect"
 import { ToolJsonSchema } from "../../src/tool/json-schema"
 

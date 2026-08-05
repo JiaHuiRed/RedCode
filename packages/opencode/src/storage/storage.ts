@@ -1,4 +1,4 @@
-﻿import * as Log from "@redcode-ai/core/util/log"
+import * as Log from "@redcode-ai/core/util/log"
 import path from "path"
 import { Global } from "@redcode-ai/core/global"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"

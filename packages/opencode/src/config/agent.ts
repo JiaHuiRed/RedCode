@@ -1,4 +1,4 @@
-﻿export * as ConfigAgent from "./agent"
+export * as ConfigAgent from "./agent"
 
 import path from "path"
 import { Exit, Schema, SchemaGetter } from "effect"

@@ -1,4 +1,4 @@
-﻿import { $ } from "bun"
+import { $ } from "bun"
 
 await $`bun ./scripts/copy-icons.ts ${process.env.REDCODE_CHANNEL ?? "dev"}`
 

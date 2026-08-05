@@ -1,4 +1,4 @@
-﻿import * as i18n from "@solid-primitives/i18n"
+import * as i18n from "@solid-primitives/i18n"
 
 import { dict as desktopEn } from "./en"
 import { dict as desktopZh } from "./zh"

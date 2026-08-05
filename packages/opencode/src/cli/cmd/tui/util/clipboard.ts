@@ -1,4 +1,4 @@
-﻿import { platform, release } from "os"
+import { platform, release } from "os"
 import { lazy } from "../../../../util/lazy.js"
 import { tmpdir } from "os"
 import path from "path"

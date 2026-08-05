@@ -1,4 +1,4 @@
-﻿export const dict = {
+export const dict = {
   "ui.sessionReview.title": "セッションの変更",
   "ui.sessionReview.title.lastTurn": "前回ターンの変更",
   "ui.sessionReview.diffStyle.unified": "Unified",

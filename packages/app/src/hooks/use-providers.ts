@@ -1,4 +1,4 @@
-﻿import { useServerSync } from "@/context/server-sync"
+import { useServerSync } from "@/context/server-sync"
 import { decode64 } from "@/utils/base64"
 import { useParams } from "@solidjs/router"
 import { Iterable, pipe } from "effect"

@@ -1,4 +1,4 @@
-﻿# LLM Package Guide
+# LLM Package Guide
 
 ## Effect
 

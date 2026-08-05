@@ -1,4 +1,4 @@
-﻿import { Pty } from "@/pty"
+import { Pty } from "@/pty"
 import { PtyTicket } from "@/pty/ticket"
 import { PtyID } from "@/pty/schema"
 import { Schema } from "effect"

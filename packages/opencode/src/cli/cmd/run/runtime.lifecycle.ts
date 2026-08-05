@@ -1,4 +1,4 @@
-﻿// Lifecycle management for the split-footer renderer.
+// Lifecycle management for the split-footer renderer.
 //
 // Creates the OpenTUI CliRenderer in split-footer mode, resolves the theme
 // from the terminal palette, writes the entry splash to scrollback, and

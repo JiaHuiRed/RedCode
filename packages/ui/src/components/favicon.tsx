@@ -1,4 +1,4 @@
-﻿import { Link, Meta } from "@solidjs/meta"
+import { Link, Meta } from "@solidjs/meta"
 
 export const Favicon = () => {
   return (

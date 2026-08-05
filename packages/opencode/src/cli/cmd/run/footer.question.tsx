@@ -1,4 +1,4 @@
-﻿// Question UI body for the direct-mode footer.
+// Question UI body for the direct-mode footer.
 //
 // Renders inside the footer when the reducer pushes a FooterView of type
 // "question". Supports single-question and multi-question flows:

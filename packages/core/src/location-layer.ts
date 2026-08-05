@@ -1,4 +1,4 @@
-﻿import { Layer, LayerMap } from "effect"
+import { Layer, LayerMap } from "effect"
 import { Location } from "./location"
 import { Catalog } from "./catalog"
 import { PluginBoot } from "./plugin/boot"

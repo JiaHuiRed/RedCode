@@ -1,4 +1,4 @@
-﻿import { Context, Effect } from "effect"
+import { Context, Effect } from "effect"
 
 export interface Interface {
   readonly run: Effect.Effect<void>

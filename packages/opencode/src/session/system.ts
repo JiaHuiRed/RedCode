@@ -1,4 +1,4 @@
-﻿import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer } from "effect"
 
 import { InstanceState } from "@/effect/instance-state"
 

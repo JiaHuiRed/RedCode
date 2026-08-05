@@ -1,4 +1,4 @@
-﻿// Shared provider config for tests that need redcode to talk to a fake LLM
+// Shared provider config for tests that need redcode to talk to a fake LLM
 // over a real HTTP endpoint. Registers a single provider `test` with a single
 // model `test-model` (i.e. `--model test/test-model`), pointed at the URL the
 // caller supplies (typically a TestLLMServer instance).

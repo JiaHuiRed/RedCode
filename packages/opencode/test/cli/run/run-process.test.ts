@@ -1,4 +1,4 @@
-﻿// Subprocess integration tests for `redcode run` (non-interactive mode).
+// Subprocess integration tests for `redcode run` (non-interactive mode).
 // These exercise the real CLI binary against a TestLLMServer running in the
 // same process. See `test/lib/cli-process.ts` for the harness — each test uses
 // `redcode.run(message, opts?)` to spawn `bun src/index.ts run ...` with

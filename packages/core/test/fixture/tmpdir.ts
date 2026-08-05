@@ -1,4 +1,4 @@
-﻿import fs from "fs/promises"
+import fs from "fs/promises"
 import { tmpdir as osTmpdir } from "os"
 import path from "path"
 

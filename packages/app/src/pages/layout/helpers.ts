@@ -1,4 +1,4 @@
-﻿import { getFilename } from "@redcode-ai/core/util/path"
+import { getFilename } from "@redcode-ai/core/util/path"
 import { type Session } from "@redcode-ai/sdk/v2/client"
 import { pathKey } from "@/utils/path-key"
 

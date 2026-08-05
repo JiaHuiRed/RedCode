@@ -1,4 +1,4 @@
-﻿import { Effect, Option, Schema, Scope, Stream } from "effect"
+import { Effect, Option, Schema, Scope, Stream } from "effect"
 import { NonNegativeInt } from "@redcode-ai/core/schema"
 import * as path from "path"
 import * as Tool from "./tool"

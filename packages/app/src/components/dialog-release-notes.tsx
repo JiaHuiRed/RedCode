@@ -1,4 +1,4 @@
-﻿import { createSignal } from "solid-js"
+import { createSignal } from "solid-js"
 import { Dialog } from "@redcode-ai/ui/dialog"
 import { Button } from "@redcode-ai/ui/button"
 import { useDialog } from "@redcode-ai/ui/context/dialog"

@@ -1,4 +1,4 @@
-﻿import { BrowserWindow, Menu, shell } from "electron"
+import { BrowserWindow, Menu, shell } from "electron"
 import type { MenuItemConstructorOptions } from "electron"
 import {
   DESKTOP_MENU,

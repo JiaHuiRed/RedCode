@@ -1,4 +1,4 @@
-﻿import { NodeFileSystem } from "@effect/platform-node"
+import { NodeFileSystem } from "@effect/platform-node"
 import { expect } from "bun:test"
 import { tool } from "ai"
 import { Cause, Effect, Exit, Fiber, Layer } from "effect"

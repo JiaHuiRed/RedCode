@@ -1,4 +1,4 @@
-﻿import { Agent } from "@/agent/agent"
+import { Agent } from "@/agent/agent"
 import { Command } from "@/command"
 import { Format } from "@/format"
 import { LSP } from "@/lsp/lsp"

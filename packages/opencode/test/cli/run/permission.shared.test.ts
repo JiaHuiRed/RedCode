@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import type { PermissionRequest } from "@redcode-ai/sdk/v2"
 import {
   createPermissionBodyState,

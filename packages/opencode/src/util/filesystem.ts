@@ -1,4 +1,4 @@
-﻿import { chmod, mkdir, readFile, stat as statFile, writeFile } from "fs/promises"
+import { chmod, mkdir, readFile, stat as statFile, writeFile } from "fs/promises"
 import { createWriteStream, existsSync, statSync } from "fs"
 import { realpathSync } from "fs"
 import { dirname, isAbsolute, join, parse, relative, resolve as pathResolve, win32 } from "path"

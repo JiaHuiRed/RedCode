@@ -1,4 +1,4 @@
-﻿import path from "path"
+import path from "path"
 import { createContext, useContext, type ParentProps } from "solid-js"
 import { Global } from "@redcode-ai/core/global"
 

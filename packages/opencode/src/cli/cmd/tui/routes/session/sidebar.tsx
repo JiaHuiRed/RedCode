@@ -1,4 +1,4 @@
-﻿import { useProject } from "@tui/context/project"
+import { useProject } from "@tui/context/project"
 import { useSync } from "@tui/context/sync"
 import { createMemo, Show } from "solid-js"
 import { useTheme } from "../../context/theme"

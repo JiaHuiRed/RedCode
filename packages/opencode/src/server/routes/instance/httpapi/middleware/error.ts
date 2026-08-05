@@ -1,4 +1,4 @@
-﻿import { NamedError } from "@redcode-ai/core/util/error"
+import { NamedError } from "@redcode-ai/core/util/error"
 import * as Log from "@redcode-ai/core/util/log"
 import { Cause, Effect } from "effect"
 import { HttpRouter, HttpServerError, HttpServerRespondable, HttpServerResponse } from "effect/unstable/http"

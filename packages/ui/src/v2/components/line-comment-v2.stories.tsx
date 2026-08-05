@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 import { createSignal } from "solid-js"
 import { LineCommentEditorV2, LineCommentV2, LineCommentV2OverflowIcon } from "./line-comment-v2"
 

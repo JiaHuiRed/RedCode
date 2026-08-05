@@ -1,4 +1,4 @@
-﻿import crypto from "crypto"
+import crypto from "crypto"
 import { and, or } from "drizzle-orm"
 import { Database } from "@/storage/db"
 import { eq } from "drizzle-orm"

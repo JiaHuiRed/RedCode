@@ -1,4 +1,4 @@
-﻿export * as ProviderV2 from "./provider"
+export * as ProviderV2 from "./provider"
 
 import { withStatics } from "./schema"
 import { Schema } from "effect"

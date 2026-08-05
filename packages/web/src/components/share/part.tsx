@@ -1,4 +1,4 @@
-﻿import map from "lang-map"
+import map from "lang-map"
 import { DateTime } from "luxon"
 import { For, Show, Match, Switch, type JSX, createMemo, createSignal, type ParentProps } from "solid-js"
 import {

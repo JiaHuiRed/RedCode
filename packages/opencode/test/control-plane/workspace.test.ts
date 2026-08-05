@@ -1,4 +1,4 @@
-﻿import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { $ } from "bun"
 import fs from "node:fs/promises"
 import Http from "node:http"

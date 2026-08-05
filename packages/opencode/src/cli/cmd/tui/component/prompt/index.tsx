@@ -1,4 +1,4 @@
-﻿import {
+import {
   BoxRenderable,
   MouseButton,
   RGBA,

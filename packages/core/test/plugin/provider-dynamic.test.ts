@@ -1,4 +1,4 @@
-﻿import { Npm } from "@redcode-ai/core/npm"
+import { Npm } from "@redcode-ai/core/npm"
 import { describe, expect } from "bun:test"
 import { Cause, Effect, Layer, Option } from "effect"
 import fs from "fs/promises"

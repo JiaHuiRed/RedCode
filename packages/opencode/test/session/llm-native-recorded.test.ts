@@ -1,4 +1,4 @@
-﻿import { NodeFileSystem } from "@effect/platform-node"
+import { NodeFileSystem } from "@effect/platform-node"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { ModelsDev } from "@redcode-ai/core/models-dev"
 import { HttpRecorder, Redactor } from "@redcode-ai/http-recorder"

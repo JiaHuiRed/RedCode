@@ -1,4 +1,4 @@
-﻿import { Effect, Layer, Logger } from "effect"
+import { Effect, Layer, Logger } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 import { OtlpLogger, OtlpSerialization } from "effect/unstable/observability"
 import * as EffectLogger from "./logger"

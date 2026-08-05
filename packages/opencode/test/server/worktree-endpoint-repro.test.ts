@@ -1,4 +1,4 @@
-﻿import { describe, expect } from "bun:test"
+import { describe, expect } from "bun:test"
 import { Effect, Layer, Queue } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import { Flag } from "@redcode-ai/core/flag/flag"

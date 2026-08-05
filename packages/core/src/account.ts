@@ -1,4 +1,4 @@
-﻿import path from "path"
+import path from "path"
 import { Effect, Layer, Option, Schema, Context, SynchronizedRef } from "effect"
 import { Identifier } from "./util/identifier"
 import { NonNegativeInt, withStatics } from "./schema"

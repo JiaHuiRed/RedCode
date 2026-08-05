@@ -1,4 +1,4 @@
-﻿import { describe, expect } from "bun:test"
+import { describe, expect } from "bun:test"
 import { Effect } from "effect"
 import { PluginV2 } from "@redcode-ai/core/plugin"
 import { TogetherAIPlugin } from "@redcode-ai/core/plugin/provider/togetherai"

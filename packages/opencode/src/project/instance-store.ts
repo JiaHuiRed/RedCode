@@ -1,4 +1,4 @@
-﻿import { GlobalBus } from "@/bus/global"
+import { GlobalBus } from "@/bus/global"
 import { serviceUse } from "@/effect/service-use"
 import { WorkspaceContext } from "@/control-plane/workspace-context"
 import { InstanceRef } from "@/effect/instance-ref"

@@ -1,4 +1,4 @@
-﻿import { createRoot, createSignal, getOwner, onCleanup, runWithOwner, type Owner } from "solid-js"
+import { createRoot, createSignal, getOwner, onCleanup, runWithOwner, type Owner } from "solid-js"
 import { createStore, type SetStoreFunction, type Store } from "solid-js/store"
 import { Persist, persisted } from "@/utils/persist"
 import type { VcsInfo } from "@redcode-ai/sdk/v2/client"

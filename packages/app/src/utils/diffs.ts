@@ -1,4 +1,4 @@
-﻿import type { SnapshotFileDiff, VcsFileDiff } from "@redcode-ai/sdk/v2"
+import type { SnapshotFileDiff, VcsFileDiff } from "@redcode-ai/sdk/v2"
 import type { Message } from "@redcode-ai/sdk/v2/client"
 
 type Diff = SnapshotFileDiff | VcsFileDiff

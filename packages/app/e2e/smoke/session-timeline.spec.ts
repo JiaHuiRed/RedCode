@@ -1,4 +1,4 @@
-﻿import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page } from "@playwright/test"
 import { base64Encode } from "@redcode-ai/core/util/encode"
 import { fixture, pageMessages } from "./session-timeline.fixture"
 import { trackPageErrors, expectNoSmokeErrors } from "../utils/errors"

@@ -1,4 +1,4 @@
-﻿import { BusEvent } from "@/bus/bus-event"
+import { BusEvent } from "@/bus/bus-event"
 import { SessionID } from "@/session/schema"
 import { PositiveInt } from "@redcode-ai/core/schema"
 import { Effect, Schema } from "effect"

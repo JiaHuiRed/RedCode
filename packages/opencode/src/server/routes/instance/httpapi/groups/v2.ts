@@ -1,4 +1,4 @@
-﻿import { HttpApi, OpenApi } from "effect/unstable/httpapi"
+import { HttpApi, OpenApi } from "effect/unstable/httpapi"
 import { MessageGroup } from "./v2/message"
 import { ModelGroup } from "./v2/model"
 import { ProviderGroup } from "./v2/provider"

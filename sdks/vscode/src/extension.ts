@@ -1,4 +1,4 @@
-﻿export function deactivate() {}
+export function deactivate() {}
 
 import * as vscode from "vscode"
 

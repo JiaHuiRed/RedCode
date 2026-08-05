@@ -1,4 +1,4 @@
-﻿export * as AgentV2 from "./agent"
+export * as AgentV2 from "./agent"
 
 import { Context, Effect, HashMap, Layer, Option, Order, pipe, Schema, Array } from "effect"
 import { produce, type Draft } from "immer"

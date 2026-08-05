@@ -1,4 +1,4 @@
-﻿import { NodeHttpServer } from "@effect/platform-node"
+import { NodeHttpServer } from "@effect/platform-node"
 import { Session } from "@/session/session"
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"

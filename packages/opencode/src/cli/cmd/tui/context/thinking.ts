@@ -1,4 +1,4 @@
-﻿import { createMemo, type Setter } from "solid-js"
+import { createMemo, type Setter } from "solid-js"
 import { useKV } from "./kv"
 
 export type 思考中Mode = "show" | "hide"

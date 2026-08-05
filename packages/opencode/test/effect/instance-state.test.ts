@@ -1,4 +1,4 @@
-﻿import { expect } from "bun:test"
+import { expect } from "bun:test"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 import { $ } from "bun"
 import { Context, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"

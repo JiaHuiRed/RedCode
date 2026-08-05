@@ -1,4 +1,4 @@
-﻿/** @jsxImportSource @opentui/solid */
+/** @jsxImportSource @opentui/solid */
 /**
  * Reproducer for #26560 — TUI crashes with
  *   `TypeError: undefined is not an object (evaluating 'f.data.map')`

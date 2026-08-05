@@ -1,4 +1,4 @@
-﻿export * as PluginV2 from "./plugin"
+export * as PluginV2 from "./plugin"
 
 import { createDraft, finishDraft, type Draft } from "immer"
 import type { LanguageModelV3 } from "@ai-sdk/provider"

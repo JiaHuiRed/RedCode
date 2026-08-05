@@ -1,4 +1,4 @@
-﻿import { dirname, join } from "node:path"
+import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { spawn, spawnSync } from "node:child_process"
 import { app, session, utilityProcess } from "electron"

@@ -1,4 +1,4 @@
-﻿import { useFilteredList } from "@redcode-ai/ui/hooks"
+import { useFilteredList } from "@redcode-ai/ui/hooks"
 import { ProviderIcon } from "@redcode-ai/ui/provider-icon"
 import { Switch } from "@redcode-ai/ui/switch"
 import { Icon } from "@redcode-ai/ui/icon"

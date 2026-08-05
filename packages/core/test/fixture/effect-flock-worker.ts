@@ -1,4 +1,4 @@
-﻿import fs from "fs/promises"
+import fs from "fs/promises"
 import os from "os"
 import { Effect, Layer } from "effect"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"

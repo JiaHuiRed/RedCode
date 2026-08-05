@@ -1,4 +1,4 @@
-﻿import { domain } from "./stage"
+import { domain } from "./stage"
 import { EMAILOCTOPUS_API_KEY } from "./app"
 import { SECRET } from "./secret"
 

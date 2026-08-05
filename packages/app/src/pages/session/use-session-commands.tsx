@@ -1,4 +1,4 @@
-﻿import { useNavigate } from "@solidjs/router"
+import { useNavigate } from "@solidjs/router"
 import { createMemo } from "solid-js"
 import { useCommand, type CommandOption } from "@/context/command"
 import { useDialog } from "@redcode-ai/ui/context/dialog"

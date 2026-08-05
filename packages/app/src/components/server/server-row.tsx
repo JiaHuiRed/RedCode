@@ -1,4 +1,4 @@
-﻿import { Tooltip } from "@redcode-ai/ui/tooltip"
+import { Tooltip } from "@redcode-ai/ui/tooltip"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import {
   children,

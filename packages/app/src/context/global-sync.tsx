@@ -1,4 +1,4 @@
-﻿import type { Config, OpencodeClient, Path, Project, ProviderAuthResponse, Todo } from "@redcode-ai/sdk/v2/client"
+import type { Config, OpencodeClient, Path, Project, ProviderAuthResponse, Todo } from "@redcode-ai/sdk/v2/client"
 import { showToast } from "@redcode-ai/ui/toast"
 import { getFilename } from "@redcode-ai/core/util/path"
 import { batch, createContext, getOwner, onCleanup, onMount, type ParentProps, untrack, useContext } from "solid-js"

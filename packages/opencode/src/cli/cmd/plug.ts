@@ -1,4 +1,4 @@
-﻿import { intro, log, outro, spinner } from "@clack/prompts"
+import { intro, log, outro, spinner } from "@clack/prompts"
 import { Effect } from "effect"
 
 import { ConfigPaths } from "@/config/paths"

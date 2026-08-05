@@ -1,4 +1,4 @@
-﻿import { Config } from "@/config/config"
+import { Config } from "@/config/config"
 import { Provider } from "@/provider/provider"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { Authorization } from "../middleware/authorization"

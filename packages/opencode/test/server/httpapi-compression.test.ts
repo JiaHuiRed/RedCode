@@ -1,4 +1,4 @@
-﻿import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { gunzipSync, inflateSync } from "node:zlib"
 import * as Log from "@redcode-ai/core/util/log"
 import { Server } from "../../src/server/server"

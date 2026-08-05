@@ -1,4 +1,4 @@
-﻿import { Permission } from "@/permission"
+import { Permission } from "@/permission"
 import { PermissionID } from "@/permission/schema"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { Session } from "@/session/session"

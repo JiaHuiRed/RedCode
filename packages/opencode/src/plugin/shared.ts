@@ -1,4 +1,4 @@
-﻿import os from "os"
+import os from "os"
 import path from "path"
 import { fileURLToPath, pathToFileURL } from "url"
 import npa from "npm-package-arg"

@@ -1,4 +1,4 @@
-﻿import { Global } from "@redcode-ai/core/global"
+import { Global } from "@redcode-ai/core/global"
 import { InstanceLayer } from "@/project/instance-layer"
 import { InstanceStore } from "@/project/instance-store"
 import type { InstanceContext } from "@/project/instance-context"

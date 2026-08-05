@@ -1,4 +1,4 @@
-﻿import { describe, expect } from "bun:test"
+import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import { AISDK } from "@redcode-ai/core/aisdk"
 import { ModelV2 } from "@redcode-ai/core/model"

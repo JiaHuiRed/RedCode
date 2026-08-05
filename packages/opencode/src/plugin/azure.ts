@@ -1,4 +1,4 @@
-﻿import type { Hooks, PluginInput } from "@redcode-ai/plugin"
+import type { Hooks, PluginInput } from "@redcode-ai/plugin"
 
 export async function AzureAuthPlugin(_input: PluginInput): Promise<Hooks> {
   const prompts = []

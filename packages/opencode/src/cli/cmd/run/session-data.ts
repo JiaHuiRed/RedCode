@@ -1,4 +1,4 @@
-﻿// Core reducer for direct interactive mode.
+// Core reducer for direct interactive mode.
 //
 // Takes raw SDK events and produces two outputs:
 //   - StreamCommit[]: append-only scrollback entries (text, tool, error, etc.)

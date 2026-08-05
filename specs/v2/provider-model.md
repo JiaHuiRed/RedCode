@@ -1,4 +1,4 @@
-﻿# Provider and Model Catalog
+# Provider and Model Catalog
 
 ## Provider Schema
 

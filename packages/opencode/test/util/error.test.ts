@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { NamedError } from "@redcode-ai/core/util/error"
 import { errorData, errorFormat, errorMessage } from "../../src/util/error"
 import { MessageError } from "../../src/session/message-error"

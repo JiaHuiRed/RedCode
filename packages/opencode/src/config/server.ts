@@ -1,4 +1,4 @@
-﻿import { Schema } from "effect"
+import { Schema } from "effect"
 import { PositiveInt } from "@redcode-ai/core/schema"
 
 export const Server = Schema.Struct({

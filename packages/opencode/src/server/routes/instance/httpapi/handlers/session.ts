@@ -1,4 +1,4 @@
-﻿import { Agent } from "@/agent/agent"
+import { Agent } from "@/agent/agent"
 import { Auth } from "@/auth"
 import { Bus } from "@/bus"
 import { Command } from "@/command"

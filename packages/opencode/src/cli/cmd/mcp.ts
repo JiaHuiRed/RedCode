@@ -1,4 +1,4 @@
-﻿import { cmd } from "./cmd"
+import { cmd } from "./cmd"
 import { effectCmd } from "../effect-cmd"
 import { Cause } from "effect"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"

@@ -1,4 +1,4 @@
-﻿import { beforeAll, describe, expect, mock, test } from "bun:test"
+import { beforeAll, describe, expect, mock, test } from "bun:test"
 
 let shouldListRoot: typeof import("./file-tree").shouldListRoot
 let shouldListExpanded: typeof import("./file-tree").shouldListExpanded

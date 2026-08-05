@@ -1,4 +1,4 @@
-﻿import { Flag } from "@redcode-ai/core/flag/flag"
+import { Flag } from "@redcode-ai/core/flag/flag"
 import { Effect } from "effect"
 import path from "path"
 

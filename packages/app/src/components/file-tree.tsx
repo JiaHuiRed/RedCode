@@ -1,4 +1,4 @@
-﻿import { useFile } from "@/context/file"
+import { useFile } from "@/context/file"
 import { encodeFilePath } from "@/context/file/path"
 import { Collapsible } from "@redcode-ai/ui/collapsible"
 import { FileIcon } from "@redcode-ai/ui/file-icon"

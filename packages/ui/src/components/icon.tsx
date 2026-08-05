@@ -1,4 +1,4 @@
-﻿import { onMount, splitProps, type ComponentProps } from "solid-js"
+import { onMount, splitProps, type ComponentProps } from "solid-js"
 
 const icons = {
   "align-right": `<path d="M12.292 6.04167L16.2503 9.99998L12.292 13.9583M2.91699 9.99998H15.6253M17.0837 3.75V16.25" stroke="currentColor" stroke-linecap="square"/>`,

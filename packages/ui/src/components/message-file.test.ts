@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import type { FilePart } from "@redcode-ai/sdk/v2"
 import { attached, inline, kind } from "./message-file"
 

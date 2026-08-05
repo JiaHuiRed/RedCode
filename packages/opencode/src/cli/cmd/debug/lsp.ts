@@ -1,4 +1,4 @@
-﻿import { LSP } from "@/lsp/lsp"
+import { LSP } from "@/lsp/lsp"
 import { Effect } from "effect"
 import { effectCmd } from "../../effect-cmd"
 import { cmd } from "../cmd"

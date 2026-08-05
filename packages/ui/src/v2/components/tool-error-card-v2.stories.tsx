@@ -1,4 +1,4 @@
-﻿import { createSignal } from "solid-js"
+import { createSignal } from "solid-js"
 import { ButtonV2 } from "./button-v2"
 import { ToolErrorCardV2, type ToolErrorCardV2Props } from "./tool-error-card-v2"
 

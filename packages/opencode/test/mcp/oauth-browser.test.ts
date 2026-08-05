@@ -1,4 +1,4 @@
-﻿import { expect, mock, beforeEach } from "bun:test"
+import { expect, mock, beforeEach } from "bun:test"
 import { EventEmitter } from "events"
 import { Deferred, Effect, Layer, Option } from "effect"
 import { awaitWithTimeout, testEffect } from "../lib/effect"

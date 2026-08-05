@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { posix } from "path"
 import { configEntryNameFromPath } from "@/config/entry-name"
 

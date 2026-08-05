@@ -1,4 +1,4 @@
-﻿import path from "path"
+import path from "path"
 import { Effect, Schema } from "effect"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Git } from "@/git"

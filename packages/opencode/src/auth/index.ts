@@ -1,4 +1,4 @@
-﻿import path from "path"
+import path from "path"
 import { Effect, Layer, Record, Result, Schema, Context } from "effect"
 import { NonNegativeInt } from "@redcode-ai/core/schema"
 import { Global } from "@redcode-ai/core/global"

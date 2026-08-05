@@ -1,4 +1,4 @@
-﻿import { SqliteClient } from "@effect/sql-sqlite-bun"
+import { SqliteClient } from "@effect/sql-sqlite-bun"
 import { eq } from "drizzle-orm"
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core"
 import * as Context from "effect/Context"

@@ -1,4 +1,4 @@
-﻿import path from "path"
+import path from "path"
 import { Effect, Layer, Context } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { Config } from "@/config/config"

@@ -1,4 +1,4 @@
-﻿import { EOL } from "os"
+import { EOL } from "os"
 import { Effect, Option } from "effect"
 import { Catalog } from "@redcode-ai/core/catalog"
 import { LocationServiceMap } from "@redcode-ai/core/location-layer"

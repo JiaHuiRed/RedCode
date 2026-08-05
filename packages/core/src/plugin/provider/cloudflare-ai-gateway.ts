@@ -1,4 +1,4 @@
-﻿import os from "os"
+import os from "os"
 import { InstallationVersion } from "../../installation/version"
 import { Effect, Option, Schema } from "effect"
 import { PluginV2 } from "../../plugin"

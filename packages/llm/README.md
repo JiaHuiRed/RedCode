@@ -1,4 +1,4 @@
-﻿# @redcode-ai/llm
+# @redcode-ai/llm
 
 Schema-first LLM core for opencode. One typed request, response, event, and tool language; provider quirks live in adapters, not in calling code.
 

@@ -1,4 +1,4 @@
-﻿import { afterEach, describe, expect } from "bun:test"
+import { afterEach, describe, expect } from "bun:test"
 import { Effect } from "effect"
 import { eq } from "drizzle-orm"
 import * as Database from "@/storage/db"

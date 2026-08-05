@@ -1,4 +1,4 @@
-﻿// Subprocess test harness for the redcode CLI. Spawns the real binary against
+// Subprocess test harness for the redcode CLI. Spawns the real binary against
 // a TestLLMServer running in-process at a random port, with full env isolation.
 //
 // This is the missing test tier: in-process tests can't catch bugs that span

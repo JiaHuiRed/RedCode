@@ -1,4 +1,4 @@
-﻿# TODO
+# TODO
 
 ok we need to work towards a launch of v2 so we can get out of this rebuild phase
 

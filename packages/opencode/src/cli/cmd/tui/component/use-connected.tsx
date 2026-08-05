@@ -1,4 +1,4 @@
-﻿import { createMemo } from "solid-js"
+import { createMemo } from "solid-js"
 import { useSync } from "@tui/context/sync"
 
 export function useConnected() {

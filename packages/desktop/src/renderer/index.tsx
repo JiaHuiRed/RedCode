@@ -1,4 +1,4 @@
-﻿// @refresh reload
+// @refresh reload
 
 import {
   ACCEPTED_FILE_EXTENSIONS,

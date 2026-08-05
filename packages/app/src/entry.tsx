@@ -1,4 +1,4 @@
-﻿// @refresh reload
+// @refresh reload
 
 import * as Sentry from "@sentry/solid"
 import { render } from "solid-js/web"

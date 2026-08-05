@@ -1,4 +1,4 @@
-﻿// Pure state machine for the question UI.
+// Pure state machine for the question UI.
 //
 // Supports both single-question and multi-question flows. Single questions
 // submit immediately on selection. Multi-question flows use tabs and a

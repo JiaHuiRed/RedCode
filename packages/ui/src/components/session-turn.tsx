@@ -1,4 +1,4 @@
-﻿import {
+import {
   AssistantMessage,
   type SnapshotFileDiff,
   Message as MessageType,

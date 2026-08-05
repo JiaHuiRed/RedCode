@@ -1,4 +1,4 @@
-﻿import { Message, Model, Part, Session, SessionStatus, SnapshotFileDiff, UserMessage } from "@redcode-ai/sdk/v2"
+import { Message, Model, Part, Session, SessionStatus, SnapshotFileDiff, UserMessage } from "@redcode-ai/sdk/v2"
 import { SessionTurn } from "@redcode-ai/ui/session-turn"
 import { SessionReview } from "@redcode-ai/ui/session-review"
 import { DataProvider } from "@redcode-ai/ui/context"

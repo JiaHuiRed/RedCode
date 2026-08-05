@@ -1,4 +1,4 @@
-﻿import { readFileSync } from "node:fs"
+import { readFileSync } from "node:fs"
 import solidPlugin from "vite-plugin-solid"
 import tailwindcss from "@tailwindcss/vite"
 import { fileURLToPath } from "url"

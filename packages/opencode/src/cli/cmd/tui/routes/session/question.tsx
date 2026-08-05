@@ -1,4 +1,4 @@
-﻿import { createStore } from "solid-js/store"
+import { createStore } from "solid-js/store"
 import { createMemo, createSignal, For, Show } from "solid-js"
 import { useRenderer } from "@opentui/solid"
 import type { TextareaRenderable } from "@opentui/core"

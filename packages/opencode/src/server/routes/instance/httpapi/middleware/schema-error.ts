@@ -1,4 +1,4 @@
-﻿import { Effect } from "effect"
+import { Effect } from "effect"
 import { HttpServerResponse } from "effect/unstable/http"
 import { HttpApiMiddleware } from "effect/unstable/httpapi"
 import * as Log from "@redcode-ai/core/util/log"

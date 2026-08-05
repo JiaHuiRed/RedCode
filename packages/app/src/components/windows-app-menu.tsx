@@ -1,4 +1,4 @@
-﻿import { Show, type JSX } from "solid-js"
+import { Show, type JSX } from "solid-js"
 import { DropdownMenu } from "@redcode-ai/ui/dropdown-menu"
 import { Icon } from "@redcode-ai/ui/icon"
 import { IconButton } from "@redcode-ai/ui/icon-button"

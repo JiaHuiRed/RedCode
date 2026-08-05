@@ -1,4 +1,4 @@
-﻿import { afterEach, describe, expect } from "bun:test"
+import { afterEach, describe, expect } from "bun:test"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { parsePatch } from "diff"
 import { Deferred, Effect, Layer } from "effect"

@@ -1,4 +1,4 @@
-﻿import { App } from "@slack/bolt"
+import { App } from "@slack/bolt"
 import { createOpencode, type ToolPart } from "@redcode-ai/sdk"
 
 const app = new App({

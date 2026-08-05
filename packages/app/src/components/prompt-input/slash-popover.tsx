@@ -1,4 +1,4 @@
-﻿import { Component, For, Match, Show, Switch } from "solid-js"
+import { Component, For, Match, Show, Switch } from "solid-js"
 import { FileIcon } from "@redcode-ai/ui/file-icon"
 import { Icon } from "@redcode-ai/ui/icon"
 import { getDirectory, getFilename } from "@redcode-ai/core/util/path"

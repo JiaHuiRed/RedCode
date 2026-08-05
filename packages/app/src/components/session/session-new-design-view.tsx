@@ -1,4 +1,4 @@
-﻿import type { JSX } from "solid-js"
+import type { JSX } from "solid-js"
 import { createMemo } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { useServerSync } from "@/context/server-sync"

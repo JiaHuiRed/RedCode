@@ -1,4 +1,4 @@
-﻿import path from "path"
+import path from "path"
 import { Effect } from "effect"
 import { Agent } from "@/agent/agent"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"

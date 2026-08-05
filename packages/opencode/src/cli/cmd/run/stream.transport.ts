@@ -1,4 +1,4 @@
-﻿// Global event subscription and prompt turn coordination.
+// Global event subscription and prompt turn coordination.
 //
 // Creates a long-lived global event stream subscription and feeds relevant
 // events for the current session tree through the reducers. The reducers

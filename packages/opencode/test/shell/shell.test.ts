@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import path from "path"
 import { Shell } from "../../src/shell/shell"
 import { Filesystem } from "@/util/filesystem"

@@ -1,4 +1,4 @@
-﻿import { For, Show } from "solid-js"
+import { For, Show } from "solid-js"
 import type { PermissionRequest } from "@redcode-ai/sdk/v2"
 import { Button } from "@redcode-ai/ui/button"
 import { DockPrompt } from "@redcode-ai/ui/dock-prompt"

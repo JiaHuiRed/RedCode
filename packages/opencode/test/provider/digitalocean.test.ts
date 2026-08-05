@@ -1,4 +1,4 @@
-﻿import { expect } from "bun:test"
+import { expect } from "bun:test"
 import { Provider } from "../../src/provider/provider"
 import { ProviderID } from "../../src/provider/schema"
 import { Effect } from "effect"

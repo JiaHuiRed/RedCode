@@ -1,4 +1,4 @@
-﻿export * as ConfigManaged from "./managed"
+export * as ConfigManaged from "./managed"
 
 import { existsSync } from "fs"
 import os from "os"

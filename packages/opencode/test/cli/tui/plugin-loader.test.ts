@@ -1,4 +1,4 @@
-﻿import { beforeAll, describe, expect, spyOn, test } from "bun:test"
+import { beforeAll, describe, expect, spyOn, test } from "bun:test"
 import fs from "fs/promises"
 import path from "path"
 import { pathToFileURL } from "url"

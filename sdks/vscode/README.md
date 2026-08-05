@@ -1,4 +1,4 @@
-﻿# opencode VS Code Extension
+# opencode VS Code Extension
 
 A Visual Studio Code extension that integrates [redcode](https://redcode.dev) directly into your development workflow.
 

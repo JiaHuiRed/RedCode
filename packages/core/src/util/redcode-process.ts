@@ -1,4 +1,4 @@
-﻿export const REDCODE_RUN_ID = "REDCODE_RUN_ID"
+export const REDCODE_RUN_ID = "REDCODE_RUN_ID"
 export const REDCODE_PROCESS_ROLE = "REDCODE_PROCESS_ROLE"
 
 export function ensureRunID() {

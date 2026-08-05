@@ -1,4 +1,4 @@
-﻿import path from "path"
+import path from "path"
 import { Context, Effect, Layer, Schema } from "effect"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Flock } from "@redcode-ai/core/util/flock"

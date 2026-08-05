@@ -1,4 +1,4 @@
-﻿import path from "path"
+import path from "path"
 import { serviceUse } from "@/effect/service-use"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Cause, Context, Effect, Fiber, Layer, Queue, Schema, Stream } from "effect"

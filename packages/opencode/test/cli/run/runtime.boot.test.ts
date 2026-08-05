@@ -1,4 +1,4 @@
-﻿import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { OpencodeClient, type Provider } from "@redcode-ai/sdk/v2"
 import { TuiConfig, type Resolved } from "@/cli/cmd/tui/config/tui"
 import { formatBindings } from "@/cli/cmd/run/keymap.shared"

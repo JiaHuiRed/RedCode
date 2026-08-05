@@ -1,4 +1,4 @@
-﻿import { Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { Parser } from "htmlparser2"
 import * as Tool from "./tool"

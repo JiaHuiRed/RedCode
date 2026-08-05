@@ -1,4 +1,4 @@
-﻿import { describe, expect } from "bun:test"
+import { describe, expect } from "bun:test"
 import { createGroq } from "@ai-sdk/groq"
 import { Effect, Layer } from "effect"
 import { AISDK } from "@redcode-ai/core/aisdk"

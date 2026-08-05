@@ -1,4 +1,4 @@
-﻿# Locale Glossaries
+# Locale Glossaries
 
 Use this folder for locale-specific translation guidance that supplements `.opencode/agent/translator.md`.
 

@@ -1,4 +1,4 @@
-﻿import { test, type TestOptions } from "bun:test"
+import { test, type TestOptions } from "bun:test"
 import { Cause, Duration, Effect, Exit, Layer } from "effect"
 import * as Scope from "effect/Scope"
 import * as TestClock from "effect/testing/TestClock"

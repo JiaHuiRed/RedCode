@@ -1,4 +1,4 @@
-﻿import { getFilename } from "@redcode-ai/core/util/path"
+import { getFilename } from "@redcode-ai/core/util/path"
 import { type AgentPartInput, type FilePartInput, type Part, type TextPartInput } from "@redcode-ai/sdk/v2/client"
 import type { FileSelection } from "@/context/file"
 import { encodeFilePath } from "@/context/file/path"

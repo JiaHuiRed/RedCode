@@ -1,4 +1,4 @@
-﻿import type { SQLiteBunDatabase } from "drizzle-orm/bun-sqlite"
+import type { SQLiteBunDatabase } from "drizzle-orm/bun-sqlite"
 import type { NodeSQLiteDatabase } from "drizzle-orm/node-sqlite"
 import { Global } from "@redcode-ai/core/global"
 import * as Log from "@redcode-ai/core/util/log"

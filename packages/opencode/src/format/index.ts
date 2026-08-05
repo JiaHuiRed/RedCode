@@ -1,4 +1,4 @@
-﻿import { Effect, Layer, Context, Schema } from "effect"
+import { Effect, Layer, Context, Schema } from "effect"
 import { serviceUse } from "@/effect/service-use"
 import { ChildProcess } from "effect/unstable/process"
 import { AppProcess } from "@redcode-ai/core/process"

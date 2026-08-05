@@ -1,4 +1,4 @@
-﻿import { Component, createMemo } from "solid-js"
+import { Component, createMemo } from "solid-js"
 import { useNavigate, useParams } from "@solidjs/router"
 import { useSync } from "@/context/sync"
 import { useSDK } from "@/context/sdk"

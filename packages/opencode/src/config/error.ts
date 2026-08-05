@@ -1,4 +1,4 @@
-﻿export * as ConfigError from "./error"
+export * as ConfigError from "./error"
 
 import { NamedError } from "@redcode-ai/core/util/error"
 import { Schema } from "effect"

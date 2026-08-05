@@ -1,4 +1,4 @@
-﻿import { afterEach, describe, expect } from "bun:test"
+import { afterEach, describe, expect } from "bun:test"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
 import { Cause, Effect, Exit, Layer } from "effect"

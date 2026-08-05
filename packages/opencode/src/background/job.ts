@@ -1,4 +1,4 @@
-﻿import { InstanceState } from "@/effect/instance-state"
+import { InstanceState } from "@/effect/instance-state"
 import { Identifier } from "@/id/id"
 import { Cause, Clock, Context, Deferred, Effect, Fiber, Layer, Scope, SynchronizedRef } from "effect"
 

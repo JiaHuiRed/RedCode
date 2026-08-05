@@ -1,4 +1,4 @@
-﻿import { Bus } from "@/bus"
+import { Bus } from "@/bus"
 import { BusEvent } from "@/bus/bus-event"
 import { ConfigPermission } from "@/config/permission"
 import { InstanceState } from "@/effect/instance-state"

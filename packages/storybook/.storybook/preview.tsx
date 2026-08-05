@@ -1,4 +1,4 @@
-﻿import "@redcode-ai/ui/styles/tailwind"
+import "@redcode-ai/ui/styles/tailwind"
 
 import { createEffect, onCleanup, onMount } from "solid-js"
 import addonA11y from "@storybook/addon-a11y"

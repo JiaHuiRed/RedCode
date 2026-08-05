@@ -1,4 +1,4 @@
-﻿# RedCode GitHub Action
+# RedCode GitHub Action
 
 A GitHub Action that integrates [RedCode](https://redcode.dev) directly into your GitHub workflow.
 

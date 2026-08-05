@@ -1,4 +1,4 @@
-﻿import { test, expect } from "bun:test"
+import { test, expect } from "bun:test"
 import os from "os"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import { Bus } from "../../src/bus"

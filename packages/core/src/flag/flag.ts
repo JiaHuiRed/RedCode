@@ -1,4 +1,4 @@
-﻿import { Config } from "effect"
+import { Config } from "effect"
 
 function truthy(key: string) {
   const value = process.env[key]?.toLowerCase()

@@ -1,4 +1,4 @@
-﻿import { describe, expect } from "bun:test"
+import { describe, expect } from "bun:test"
 import path from "path"
 import { realpath } from "fs/promises"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"

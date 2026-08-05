@@ -1,4 +1,4 @@
-﻿import { drizzle } from "drizzle-orm/node-sqlite/driver"
+import { drizzle } from "drizzle-orm/node-sqlite/driver"
 import * as http from "node:http"
 import * as tls from "node:tls"
 import * as fs from "node:fs"

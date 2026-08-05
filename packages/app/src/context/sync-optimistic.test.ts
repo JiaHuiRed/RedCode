@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import type { Message, Part } from "@redcode-ai/sdk/v2/client"
 import { applyOptimisticAdd, applyOptimisticRemove, mergeOptimisticPage } from "./sync"
 

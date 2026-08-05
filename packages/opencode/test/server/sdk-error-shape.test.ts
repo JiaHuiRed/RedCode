@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Regression tests for the SDK error shape — the v2 SDK's `throwOnError: true`
  * path used to throw raw values (empty strings or POJOs from JSON-decoded
  * error bodies). The TUI catches those and `e.message`/`e.stack` are

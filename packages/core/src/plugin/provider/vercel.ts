@@ -1,4 +1,4 @@
-﻿import { Effect } from "effect"
+import { Effect } from "effect"
 import { PluginV2 } from "../../plugin"
 
 export const VercelPlugin = PluginV2.define({

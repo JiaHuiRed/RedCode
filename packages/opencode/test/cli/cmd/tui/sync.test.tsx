@@ -1,4 +1,4 @@
-﻿/** @jsxImportSource @opentui/solid */
+/** @jsxImportSource @opentui/solid */
 import { describe, expect, test } from "bun:test"
 import { Global } from "@redcode-ai/core/global"
 import { tmpdir } from "../../../fixture/fixture"

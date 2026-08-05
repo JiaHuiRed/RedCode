@@ -1,4 +1,4 @@
-﻿import type { Auth } from "@/auth"
+import type { Auth } from "@/auth"
 import type { Provider } from "@/provider/provider"
 import { ProviderTransform } from "@/provider/transform"
 import { errorMessage } from "@/util/error"

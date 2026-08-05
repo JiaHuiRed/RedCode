@@ -1,4 +1,4 @@
-﻿import { afterEach, describe, expect } from "bun:test"
+import { afterEach, describe, expect } from "bun:test"
 import path from "path"
 import { Server } from "../../src/server/server"
 import * as Log from "@redcode-ai/core/util/log"

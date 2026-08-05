@@ -1,4 +1,4 @@
-﻿import { ConfigProvider, Effect, Layer } from "effect"
+import { ConfigProvider, Effect, Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import { parse } from "./assertions"
 import { runtime, type Runtime } from "./runtime"

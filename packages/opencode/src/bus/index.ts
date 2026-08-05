@@ -1,4 +1,4 @@
-﻿import { Effect, Exit, Layer, PubSub, Scope, Context, Stream, Schema } from "effect"
+import { Effect, Exit, Layer, PubSub, Scope, Context, Stream, Schema } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import * as Log from "@redcode-ai/core/util/log"
 import { BusEvent } from "./bus-event"

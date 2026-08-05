@@ -1,4 +1,4 @@
-﻿import { AuthOptions, type ProviderAuthOption } from "../route/auth-options"
+import { AuthOptions, type ProviderAuthOption } from "../route/auth-options"
 import type { RouteDefaultsInput } from "../route/client"
 import { ProviderID, type ModelID } from "../schema"
 import * as OpenAIChat from "../protocols/openai-chat"

@@ -1,4 +1,4 @@
-﻿export {}
+export {}
 // TODO: UNCOMMENT WHEN GITLAB SUPPORT IS COMPLETED
 //
 //

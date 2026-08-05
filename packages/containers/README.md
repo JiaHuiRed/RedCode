@@ -1,4 +1,4 @@
-﻿# CI containers
+# CI containers
 
 Prebuilt images intended to speed up GitHub Actions jobs by baking in
 large, slow-to-install dependencies. These are designed for Linux jobs

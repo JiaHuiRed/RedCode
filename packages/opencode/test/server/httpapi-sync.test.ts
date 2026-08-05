@@ -1,4 +1,4 @@
-﻿import { afterEach, describe, expect, mock, spyOn } from "bun:test"
+import { afterEach, describe, expect, mock, spyOn } from "bun:test"
 import { Context, Effect } from "effect"
 import { Flag } from "@redcode-ai/core/flag/flag"
 import { Server } from "../../src/server/server"

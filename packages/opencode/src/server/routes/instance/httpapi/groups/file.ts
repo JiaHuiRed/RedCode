@@ -1,4 +1,4 @@
-﻿import { File } from "@/file"
+import { File } from "@/file"
 import { Ripgrep } from "@/file/ripgrep"
 import { LSP } from "@/lsp/lsp"
 import { Schema } from "effect"

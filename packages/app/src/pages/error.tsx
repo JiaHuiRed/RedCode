@@ -1,4 +1,4 @@
-﻿import { TextField } from "@redcode-ai/ui/text-field"
+import { TextField } from "@redcode-ai/ui/text-field"
 import { Logo } from "@redcode-ai/ui/logo"
 import { Button } from "@redcode-ai/ui/button"
 import { Component, onMount, Show } from "solid-js"

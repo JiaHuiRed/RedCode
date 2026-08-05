@@ -1,4 +1,4 @@
-﻿import type { Project, UserMessage } from "@redcode-ai/sdk/v2"
+import type { Project, UserMessage } from "@redcode-ai/sdk/v2"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { createQuery, skipToken, useMutation, useQueryClient } from "@tanstack/solid-query"
 import {

@@ -1,4 +1,4 @@
-﻿import { MCP } from "@/mcp"
+import { MCP } from "@/mcp"
 import { ConfigMCP } from "@/config/mcp"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"

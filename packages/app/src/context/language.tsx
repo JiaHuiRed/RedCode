@@ -1,4 +1,4 @@
-﻿import * as i18n from "@solid-primitives/i18n"
+import * as i18n from "@solid-primitives/i18n"
 import { createEffect, createMemo, createResource } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "@redcode-ai/ui/context"

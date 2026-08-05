@@ -1,4 +1,4 @@
-﻿/** @jsxImportSource @opentui/solid */
+/** @jsxImportSource @opentui/solid */
 import { describe, expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
 import type { Event, GlobalEvent } from "@redcode-ai/sdk/v2"

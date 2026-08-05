@@ -1,4 +1,4 @@
-﻿import type { Hooks, PluginInput } from "@redcode-ai/plugin"
+import type { Hooks, PluginInput } from "@redcode-ai/plugin"
 import * as Log from "@redcode-ai/core/util/log"
 import { OAUTH_DUMMY_KEY } from "../auth"
 import { createServer } from "http"

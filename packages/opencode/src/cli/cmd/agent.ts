@@ -1,4 +1,4 @@
-﻿import { cmd } from "./cmd"
+import { cmd } from "./cmd"
 import * as prompts from "@clack/prompts"
 import { UI } from "../ui"
 import { Global } from "@redcode-ai/core/global"

@@ -1,4 +1,4 @@
-﻿import { expect, test } from "bun:test"
+import { expect, test } from "bun:test"
 import * as DateTime from "effect/DateTime"
 import { SessionID } from "../../src/session/schema"
 import { EventV2 } from "@redcode-ai/core/event"

@@ -1,4 +1,4 @@
-﻿import type { ChildProcessWithoutNullStreams } from "child_process"
+import type { ChildProcessWithoutNullStreams } from "child_process"
 import path from "path"
 import os from "os"
 import { Global } from "@redcode-ai/core/global"

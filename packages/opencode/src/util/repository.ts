@@ -1,4 +1,4 @@
-﻿import path from "path"
+import path from "path"
 import { fileURLToPath } from "url"
 import { Global } from "@redcode-ai/core/global"
 

@@ -1,4 +1,4 @@
-﻿import { app } from "electron"
+import { app } from "electron"
 
 type Channel = "dev" | "beta" | "prod"
 const raw = import.meta.env.REDCODE_CHANNEL

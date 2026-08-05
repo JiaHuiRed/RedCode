@@ -1,4 +1,4 @@
-﻿import path from "path"
+import path from "path"
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { NpmConfig } from "@redcode-ai/core/npm-config"

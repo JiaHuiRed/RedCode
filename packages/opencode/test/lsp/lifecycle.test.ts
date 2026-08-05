@@ -1,4 +1,4 @@
-﻿import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test"
 import path from "path"
 import { Effect, Layer } from "effect"
 import { LSP } from "@/lsp/lsp"

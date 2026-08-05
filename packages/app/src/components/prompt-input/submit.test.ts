@@ -1,4 +1,4 @@
-﻿import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
+import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import type { Prompt } from "@/context/prompt"
 
 let createPromptSubmit: typeof import("./submit").createPromptSubmit

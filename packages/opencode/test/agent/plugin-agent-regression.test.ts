@@ -1,4 +1,4 @@
-﻿import { expect } from "bun:test"
+import { expect } from "bun:test"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"

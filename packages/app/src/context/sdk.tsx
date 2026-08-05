@@ -1,4 +1,4 @@
-﻿import { createSimpleContext } from "@redcode-ai/ui/context"
+import { createSimpleContext } from "@redcode-ai/ui/context"
 import { useGlobalSDK } from "./global-sdk"
 
 export const { use: useSDK, provider: SDKProvider } = createSimpleContext({

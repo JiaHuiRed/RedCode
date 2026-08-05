@@ -1,4 +1,4 @@
-﻿export * as TuiKeybind from "./keybind"
+export * as TuiKeybind from "./keybind"
 
 import type { KeyEvent, Renderable } from "@opentui/core"
 import type { Binding } from "@opentui/keymap"

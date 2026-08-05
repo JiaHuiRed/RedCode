@@ -1,4 +1,4 @@
-﻿import { type SQLiteBunDatabase } from "drizzle-orm/bun-sqlite"
+import { type SQLiteBunDatabase } from "drizzle-orm/bun-sqlite"
 import { migrate } from "drizzle-orm/bun-sqlite/migrator"
 import { type SQLiteTransaction } from "drizzle-orm/sqlite-core"
 export * from "drizzle-orm"

@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 
 import { isNushell, mergeShellEnv, parseShellEnv, resolveUserShell } from "./shell-env"
 

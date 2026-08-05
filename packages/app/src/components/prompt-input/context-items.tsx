@@ -1,4 +1,4 @@
-﻿import { Component, For, Show } from "solid-js"
+import { Component, For, Show } from "solid-js"
 import { FileIcon } from "@redcode-ai/ui/file-icon"
 import { IconButton } from "@redcode-ai/ui/icon-button"
 import { Tooltip } from "@redcode-ai/ui/tooltip"

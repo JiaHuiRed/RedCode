@@ -1,4 +1,4 @@
-﻿import { Platform, usePlatform } from "@/context/platform"
+import { Platform, usePlatform } from "@/context/platform"
 import { makePersisted, type AsyncStorage, type SyncStorage } from "@solid-primitives/storage"
 import { checksum } from "@redcode-ai/core/util/encode"
 import { createResource, type Accessor } from "solid-js"

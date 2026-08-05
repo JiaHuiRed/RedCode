@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 
 import { RedCode } from "@redcode-ai/core"
 import { ReadTool } from "@redcode-ai/core/tools"

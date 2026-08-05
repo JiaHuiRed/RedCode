@@ -1,4 +1,4 @@
-﻿import path from "path"
+import path from "path"
 import { describe, expect } from "bun:test"
 import { produce } from "immer"
 import { Effect, Fiber, Layer, Option, Stream } from "effect"

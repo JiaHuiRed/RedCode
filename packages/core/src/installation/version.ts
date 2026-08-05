@@ -1,4 +1,4 @@
-﻿declare global {
+declare global {
   const REDCODE_VERSION: string
   const REDCODE_CHANNEL: string
 }

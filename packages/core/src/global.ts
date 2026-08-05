@@ -1,4 +1,4 @@
-﻿import path from "path"
+import path from "path"
 import fs from "fs/promises"
 import os from "os"
 import { Context, Effect, Layer } from "effect"

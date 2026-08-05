@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import type { Event } from "@redcode-ai/sdk/v2"
 import { entryBody } from "@/cli/cmd/run/entry.body"
 import {

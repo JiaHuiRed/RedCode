@@ -1,4 +1,4 @@
-﻿import path from "path"
+import path from "path"
 import { Effect, Context, Layer, Scope } from "effect"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Global } from "@redcode-ai/core/global"

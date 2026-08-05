@@ -1,4 +1,4 @@
-﻿import { Npm } from "@redcode-ai/core/npm"
+import { Npm } from "@redcode-ai/core/npm"
 import { Effect, Layer } from "effect"
 
 export const noop = Layer.mock(Npm.Service)({

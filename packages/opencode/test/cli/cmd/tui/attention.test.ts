@@ -1,4 +1,4 @@
-﻿import { describe, expect, spyOn, test } from "bun:test"
+import { describe, expect, spyOn, test } from "bun:test"
 import type { AudioPlayOptions, AudioSound } from "@opentui/core"
 import { createTuiAttention } from "@/cli/cmd/tui/attention"
 import type { TuiConfig } from "@/cli/cmd/tui/config/tui"

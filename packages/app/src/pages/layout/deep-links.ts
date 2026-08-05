@@ -1,4 +1,4 @@
-﻿export const deepLinkEvent = "RedCode:deep-link"
+export const deepLinkEvent = "RedCode:deep-link"
 
 const parseUrl = (input: string) => {
   if (!input.startsWith("RedCode://")) return

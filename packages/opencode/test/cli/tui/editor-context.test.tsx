@@ -1,4 +1,4 @@
-﻿import { mkdir, writeFile } from "node:fs/promises"
+import { mkdir, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { afterEach, expect, spyOn, test } from "bun:test"

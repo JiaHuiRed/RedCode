@@ -1,4 +1,4 @@
-﻿import { describe, expect, mock } from "bun:test"
+import { describe, expect, mock } from "bun:test"
 import { Effect } from "effect"
 import { PluginV2 } from "@redcode-ai/core/plugin"
 import { GatewayPlugin } from "@redcode-ai/core/plugin/provider/gateway"

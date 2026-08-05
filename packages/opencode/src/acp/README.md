@@ -1,4 +1,4 @@
-﻿# ACP (Agent Client Protocol) Implementation
+# ACP (Agent Client Protocol) Implementation
 
 This directory contains a clean, protocol-compliant implementation of the [Agent Client Protocol](https://agentclientprotocol.com/) for opencode.
 

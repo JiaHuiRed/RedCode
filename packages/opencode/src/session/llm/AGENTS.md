@@ -1,4 +1,4 @@
-﻿# Session LLM Runtime Boundaries
+# Session LLM Runtime Boundaries
 
 `../llm.ts` is the opencode session LLM service. It owns opencode concerns: auth, config, model/provider resolution, plugins, permissions, telemetry headers, and runtime selection. It is the only file in this area that should know about the full session request shape.
 

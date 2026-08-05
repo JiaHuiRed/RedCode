@@ -1,4 +1,4 @@
-﻿import { expect } from "bun:test"
+import { expect } from "bun:test"
 import { Effect } from "effect"
 import fs from "fs/promises"
 import path from "path"

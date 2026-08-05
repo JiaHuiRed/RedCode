@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bun
+#!/usr/bin/env bun
 import * as path from "path"
 import * as ts from "typescript"
 

@@ -1,4 +1,4 @@
-﻿import { Message, Model, Part, Session, SnapshotFileDiff } from "@redcode-ai/sdk/v2"
+import { Message, Model, Part, Session, SnapshotFileDiff } from "@redcode-ai/sdk/v2"
 import { iife } from "@redcode-ai/core/util/iife"
 import z from "zod"
 import { Storage } from "./storage"

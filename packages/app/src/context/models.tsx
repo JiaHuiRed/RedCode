@@ -1,4 +1,4 @@
-﻿import { createMemo } from "solid-js"
+import { createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
 import { DateTime } from "luxon"
 import { filter, firstBy, flat, groupBy, mapValues, pipe, uniqueBy, values } from "remeda"

@@ -1,4 +1,4 @@
-﻿import { createEffect, onCleanup, type JSX } from "solid-js"
+import { createEffect, onCleanup, type JSX } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import type { SnapshotFileDiff, VcsFileDiff } from "@redcode-ai/sdk/v2"
 import { SessionReview } from "@redcode-ai/ui/session-review"

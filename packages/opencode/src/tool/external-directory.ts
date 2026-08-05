@@ -1,4 +1,4 @@
-﻿import path from "path"
+import path from "path"
 import { Effect } from "effect"
 import * as EffectLogger from "@redcode-ai/core/effect/logger"
 import { InstanceState } from "@/effect/instance-state"

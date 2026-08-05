@@ -1,4 +1,4 @@
-﻿/** @jsxImportSource @opentui/solid */
+/** @jsxImportSource @opentui/solid */
 import { expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
 import { createSignal } from "solid-js"

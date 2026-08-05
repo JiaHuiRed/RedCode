@@ -1,4 +1,4 @@
-﻿// Diagnostic suite for /event SSE delivery.
+// Diagnostic suite for /event SSE delivery.
 //
 // Each test isolates ONE variable in the publisher chain while keeping the
 // subscriber path constant (in-process HttpApi via Server.Default reading the

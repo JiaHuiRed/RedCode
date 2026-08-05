@@ -1,4 +1,4 @@
-﻿import { Binary } from "@redcode-ai/core/util/binary"
+import { Binary } from "@redcode-ai/core/util/binary"
 import { batch } from "solid-js"
 import { produce, reconcile, type SetStoreFunction, type Store } from "solid-js/store"
 import type {

@@ -1,4 +1,4 @@
-﻿// Help-text snapshots for every CLI command + key subcommand. Catches
+// Help-text snapshots for every CLI command + key subcommand. Catches
 // accidental flag removals, renames, and reordering in a single sweep —
 // any change to the user-visible CLI surface shows up here as a diff.
 //

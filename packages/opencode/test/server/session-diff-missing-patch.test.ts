@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Regression test for the same bug class as #26574 (sibling of #26566 and
  * #26553). The Desktop app calls GET /session/<id>/diff; before #26574
  * the response was Schema-encoded against `Snapshot.FileDiff` with

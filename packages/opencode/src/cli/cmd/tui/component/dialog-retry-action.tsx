@@ -1,4 +1,4 @@
-﻿import { RGBA, TextAttributes } from "@opentui/core"
+import { RGBA, TextAttributes } from "@opentui/core"
 import open from "open"
 import { createSignal } from "solid-js"
 import { selectedForeground, useTheme } from "@tui/context/theme"

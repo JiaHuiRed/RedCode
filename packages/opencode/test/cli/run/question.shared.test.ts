@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import type { QuestionRequest } from "@redcode-ai/sdk/v2"
 import {
   createQuestionBodyState,

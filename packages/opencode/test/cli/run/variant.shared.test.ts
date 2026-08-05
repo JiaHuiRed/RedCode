@@ -1,4 +1,4 @@
-﻿import path from "path"
+import path from "path"
 import { NodeFileSystem } from "@effect/platform-node"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { describe, expect, test } from "bun:test"

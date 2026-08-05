@@ -1,4 +1,4 @@
-﻿import yargs from "yargs"
+import yargs from "yargs"
 import { TuiThreadCommand } from "./cli/cmd/tui/thread"
 import { InstallationVersion } from "@redcode-ai/core/installation/version"
 import { hideBin } from "yargs/helpers"

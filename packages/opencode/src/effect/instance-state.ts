@@ -1,4 +1,4 @@
-﻿import { Effect, ScopedCache, Scope } from "effect"
+import { Effect, ScopedCache, Scope } from "effect"
 import * as EffectLogger from "@redcode-ai/core/effect/logger"
 import type { InstanceContext } from "@/project/instance-context"
 import { InstanceRef, WorkspaceRef } from "./instance-ref"

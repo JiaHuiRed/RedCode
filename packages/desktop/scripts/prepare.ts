@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bun
+#!/usr/bin/env bun
 import { Script } from "@redcode-ai/script"
 
 await import("./prebuild")

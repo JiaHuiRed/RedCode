@@ -1,4 +1,4 @@
-﻿import { SECRET } from "./secret"
+import { SECRET } from "./secret"
 import { shortDomain } from "./stage"
 
 const storage = new sst.cloudflare.Bucket("EnterpriseStorage")

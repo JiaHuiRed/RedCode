@@ -1,4 +1,4 @@
-﻿/** @jsxImportSource @opentui/solid */
+/** @jsxImportSource @opentui/solid */
 import { TextareaRenderable } from "@opentui/core"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { testRender, useRenderer } from "@opentui/solid"

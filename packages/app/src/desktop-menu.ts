@@ -1,4 +1,4 @@
-﻿export type DesktopMenuPlatform = "macos" | "windows"
+export type DesktopMenuPlatform = "macos" | "windows"
 
 export type DesktopMenuAction =
   | "app.checkForUpdates"

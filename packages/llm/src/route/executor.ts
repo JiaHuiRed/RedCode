@@ -1,4 +1,4 @@
-﻿import { Cause, Context, Effect, Layer, Random } from "effect"
+import { Cause, Context, Effect, Layer, Random } from "effect"
 import {
   FetchHttpClient,
   Headers,

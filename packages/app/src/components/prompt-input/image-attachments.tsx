@@ -1,4 +1,4 @@
-﻿import { Component, For, Show } from "solid-js"
+import { Component, For, Show } from "solid-js"
 import { Icon } from "@redcode-ai/ui/icon"
 import { Tooltip } from "@redcode-ai/ui/tooltip"
 import type { ImageAttachmentPart } from "@/context/prompt"

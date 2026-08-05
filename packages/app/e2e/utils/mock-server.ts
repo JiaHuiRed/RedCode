@@ -1,4 +1,4 @@
-﻿import type { Page, Route } from "@playwright/test"
+import type { Page, Route } from "@playwright/test"
 
 const emptyList = new Set([
   "/skill",

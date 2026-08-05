@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Reproducer for redcode issue #26514:
  *
  * In Plan Mode (the `plan` agent), the main agent's edit/write tools are

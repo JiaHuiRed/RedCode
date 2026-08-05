@@ -1,4 +1,4 @@
-﻿import { beforeEach, describe, expect, test } from "bun:test"
+import { beforeEach, describe, expect, test } from "bun:test"
 
 const src = await Bun.file(new URL("../public/oc-theme-preload.js", import.meta.url)).text()
 

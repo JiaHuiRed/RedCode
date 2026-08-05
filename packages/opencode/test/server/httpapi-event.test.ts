@@ -1,4 +1,4 @@
-﻿import { afterEach, describe, expect } from "bun:test"
+import { afterEach, describe, expect } from "bun:test"
 import { Effect, Schema } from "effect"
 import * as Log from "@redcode-ai/core/util/log"
 import { Bus } from "../../src/bus"

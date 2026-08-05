@@ -1,4 +1,4 @@
-﻿import { Global } from "@redcode-ai/core/global"
+import { Global } from "@redcode-ai/core/global"
 import { Filesystem } from "@/util/filesystem"
 import { Flock } from "@redcode-ai/core/util/flock"
 import { rename, rm } from "fs/promises"

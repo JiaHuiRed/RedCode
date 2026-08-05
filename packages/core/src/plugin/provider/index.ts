@@ -1,4 +1,4 @@
-﻿import { AlibabaPlugin } from "./alibaba"
+import { AlibabaPlugin } from "./alibaba"
 import { AmazonBedrockPlugin } from "./amazon-bedrock"
 import { AnthropicPlugin } from "./anthropic"
 import { AzureCognitiveServicesPlugin, AzurePlugin } from "./azure"

@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bun
+#!/usr/bin/env bun
 
 const repo = "JiaHuiRed/redcode"
 const days = 60

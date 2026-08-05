@@ -1,4 +1,4 @@
-﻿import type { Message, Session } from "@redcode-ai/sdk/v2/client"
+import type { Message, Session } from "@redcode-ai/sdk/v2/client"
 import { showToast } from "@redcode-ai/ui/toast"
 import { base64Encode } from "@redcode-ai/core/util/encode"
 import { Binary } from "@redcode-ai/core/util/binary"

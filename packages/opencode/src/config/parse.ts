@@ -1,4 +1,4 @@
-﻿export * as ConfigParse from "./parse"
+export * as ConfigParse from "./parse"
 
 import { type ParseError as JsoncParseError, parse as parseJsoncImpl, printParseErrorCode } from "jsonc-parser"
 import { Cause, Exit, Schema as EffectSchema, SchemaIssue } from "effect"

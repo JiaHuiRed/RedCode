@@ -1,4 +1,4 @@
-﻿// Subprocess integration tests for `redcode acp`. ACP is a JSON-RPC
+// Subprocess integration tests for `redcode acp`. ACP is a JSON-RPC
 // protocol spoken over stdin/stdout (not HTTP) — see src/acp/README.md.
 // This is the only test tier that exercises the full pipe of bun startup →
 // server boot → ACP agent init → stdio framing → graceful shutdown.

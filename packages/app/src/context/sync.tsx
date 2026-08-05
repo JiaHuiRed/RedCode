@@ -1,4 +1,4 @@
-﻿import { Binary } from "@redcode-ai/core/util/binary"
+import { Binary } from "@redcode-ai/core/util/binary"
 import { useServerSync } from "./server-sync"
 import { useSDK } from "./sdk"
 import type { Message, Part } from "@redcode-ai/sdk/v2/client"

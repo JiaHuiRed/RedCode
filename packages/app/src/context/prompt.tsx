@@ -1,4 +1,4 @@
-﻿import { createSimpleContext } from "@redcode-ai/ui/context"
+import { createSimpleContext } from "@redcode-ai/ui/context"
 import { checksum } from "@redcode-ai/core/util/encode"
 import { useParams } from "@solidjs/router"
 import { batch, createMemo, createRoot, getOwner, onCleanup } from "solid-js"

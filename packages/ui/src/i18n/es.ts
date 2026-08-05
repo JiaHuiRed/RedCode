@@ -1,4 +1,4 @@
-﻿export const dict = {
+export const dict = {
   "ui.sessionReview.title": "Cambios de la sesión",
   "ui.sessionReview.title.lastTurn": "Cambios del último turno",
   "ui.sessionReview.diffStyle.unified": "Unificado",

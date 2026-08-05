@@ -1,4 +1,4 @@
-﻿import { describe, expect, mock } from "bun:test"
+import { describe, expect, mock } from "bun:test"
 import { Effect, Layer } from "effect"
 import { AccountV2 } from "@redcode-ai/core/account"
 import { Catalog } from "@redcode-ai/core/catalog"

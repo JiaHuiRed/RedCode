@@ -1,4 +1,4 @@
-﻿import { createConnection } from "net"
+import { createConnection } from "net"
 import { createServer } from "http"
 import * as Log from "@redcode-ai/core/util/log"
 import { OAUTH_CALLBACK_PORT, OAUTH_CALLBACK_PATH, parseRedirectUri } from "./oauth-provider"

@@ -1,4 +1,4 @@
-﻿import { Layer, ManagedRuntime } from "effect"
+import { Layer, ManagedRuntime } from "effect"
 
 import { Plugin } from "@/plugin"
 import { LSP } from "@/lsp/lsp"

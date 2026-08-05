@@ -1,4 +1,4 @@
-﻿import { Slug } from "@redcode-ai/core/util/slug"
+import { Slug } from "@redcode-ai/core/util/slug"
 import { serviceUse } from "@/effect/service-use"
 import path from "path"
 import { BackgroundJob } from "@/background/job"

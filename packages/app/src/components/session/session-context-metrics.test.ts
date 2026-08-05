@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import type { Message } from "@redcode-ai/sdk/v2/client"
 import { getSessionContextMetrics } from "./session-context-metrics"
 

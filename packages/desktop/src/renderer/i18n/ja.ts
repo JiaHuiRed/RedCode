@@ -1,4 +1,4 @@
-﻿export const dict = {
+export const dict = {
   "desktop.menu.checkForUpdates": "アップデートを確認...",
   "desktop.menu.installCli": "CLI をインストール...",
   "desktop.menu.reloadWebview": "Webview を再読み込み",

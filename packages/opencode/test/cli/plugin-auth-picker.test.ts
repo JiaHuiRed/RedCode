@@ -1,4 +1,4 @@
-﻿import { test, expect, describe } from "bun:test"
+import { test, expect, describe } from "bun:test"
 import { resolvePluginProviders } from "../../src/cli/cmd/providers"
 import type { Hooks } from "@redcode-ai/plugin"
 

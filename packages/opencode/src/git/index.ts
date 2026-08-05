@@ -1,4 +1,4 @@
-﻿import { AppProcess } from "@redcode-ai/core/process"
+import { AppProcess } from "@redcode-ai/core/process"
 import { Effect, Layer, Context, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 

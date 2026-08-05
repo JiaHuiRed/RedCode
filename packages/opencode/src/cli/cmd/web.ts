@@ -1,4 +1,4 @@
-﻿import { Effect } from "effect"
+import { Effect } from "effect"
 import { Server } from "../../server/server"
 import { UI } from "../ui"
 import { effectCmd } from "../effect-cmd"

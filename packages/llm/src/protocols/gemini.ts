@@ -1,4 +1,4 @@
-﻿import { Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Route } from "../route/client"
 import { Auth } from "../route/auth"
 import { Endpoint } from "../route/endpoint"

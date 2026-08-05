@@ -1,4 +1,4 @@
-﻿import path from "path"
+import path from "path"
 import { serviceUse } from "@/effect/service-use"
 import { Global } from "@redcode-ai/core/global"
 import { Effect, Layer, Context, Option, Schema } from "effect"

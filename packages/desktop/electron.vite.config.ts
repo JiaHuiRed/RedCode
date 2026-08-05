@@ -1,4 +1,4 @@
-﻿import { defineConfig } from "electron-vite"
+import { defineConfig } from "electron-vite"
 import { sentryVitePlugin } from "@sentry/vite-plugin"
 import appPlugin from "@redcode-ai/app/vite"
 import { fileURLToPath } from "node:url"

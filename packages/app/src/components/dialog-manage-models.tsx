@@ -1,4 +1,4 @@
-﻿import { Dialog } from "@redcode-ai/ui/dialog"
+import { Dialog } from "@redcode-ai/ui/dialog"
 import { List } from "@redcode-ai/ui/list"
 import { Switch } from "@redcode-ai/ui/switch"
 import { Tooltip } from "@redcode-ai/ui/tooltip"

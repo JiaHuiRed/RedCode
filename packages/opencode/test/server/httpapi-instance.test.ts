@@ -1,4 +1,4 @@
-﻿import { NodeHttpServer, NodeServices } from "@effect/platform-node"
+import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { Flag } from "@redcode-ai/core/flag/flag"
 import { describe, expect } from "bun:test"
 import { Config, Context, Effect, FileSystem, Layer, Path } from "effect"

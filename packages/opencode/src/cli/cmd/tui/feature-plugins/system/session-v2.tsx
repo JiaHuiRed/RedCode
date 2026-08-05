@@ -1,4 +1,4 @@
-﻿import type { TuiPlugin, TuiPluginApi } from "@redcode-ai/plugin/tui"
+import type { TuiPlugin, TuiPluginApi } from "@redcode-ai/plugin/tui"
 import type { InternalTuiPlugin } from "../../plugin/internal"
 import { useSyncV2 } from "@tui/context/sync-v2"
 import { SplitBorder } from "@tui/component/border"

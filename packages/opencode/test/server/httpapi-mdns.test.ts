@@ -1,4 +1,4 @@
-﻿import { afterEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, describe, expect, mock, test } from "bun:test"
 import { Flag } from "@redcode-ai/core/flag/flag"
 import * as Log from "@redcode-ai/core/util/log"
 import { withTimeout } from "../../src/util/timeout"

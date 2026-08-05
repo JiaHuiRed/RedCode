@@ -1,4 +1,4 @@
-﻿import { afterEach, expect } from "bun:test"
+import { afterEach, expect } from "bun:test"
 import { Cause, Effect, Exit, Fiber, Layer, Queue } from "effect"
 import { Question } from "../../src/question"
 import { InstanceRef } from "../../src/effect/instance-ref"

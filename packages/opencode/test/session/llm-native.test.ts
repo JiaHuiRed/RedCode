@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { ToolFailure } from "@redcode-ai/llm"
 import { LLMClient, RequestExecutor, WebSocketExecutor } from "@redcode-ai/llm/route"
 import { jsonSchema, tool, type ModelMessage, type Tool } from "ai"

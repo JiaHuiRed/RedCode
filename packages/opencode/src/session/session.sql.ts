@@ -1,4 +1,4 @@
-﻿import { sqliteTable, text, integer, index, primaryKey, real } from "drizzle-orm/sqlite-core"
+import { sqliteTable, text, integer, index, primaryKey, real } from "drizzle-orm/sqlite-core"
 import { ProjectTable } from "../project/project.sql"
 import type { MessageV2 } from "./message-v2"
 import type { SessionMessage } from "@redcode-ai/core/session-message"

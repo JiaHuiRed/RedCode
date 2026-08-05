@@ -1,4 +1,4 @@
-﻿import { createOpencodeClient, createOpencodeServer } from "@redcode-ai/sdk"
+import { createOpencodeClient, createOpencodeServer } from "@redcode-ai/sdk"
 import { pathToFileURL } from "bun"
 
 const server = await createOpencodeServer()

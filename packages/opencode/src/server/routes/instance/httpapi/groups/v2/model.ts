@@ -1,4 +1,4 @@
-﻿import { ModelV2 } from "@redcode-ai/core/model"
+import { ModelV2 } from "@redcode-ai/core/model"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { ServiceUnavailableError } from "../../errors"

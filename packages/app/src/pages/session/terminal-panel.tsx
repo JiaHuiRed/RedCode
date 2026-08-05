@@ -1,4 +1,4 @@
-﻿import { For, Show, createEffect, createMemo, on, onCleanup, onMount } from "solid-js"
+import { For, Show, createEffect, createMemo, on, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { Tabs } from "@redcode-ai/ui/tabs"

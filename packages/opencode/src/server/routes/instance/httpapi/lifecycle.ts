@@ -1,4 +1,4 @@
-﻿import { EffectBridge } from "@/effect/bridge"
+import { EffectBridge } from "@/effect/bridge"
 import type { InstanceContext } from "@/project/instance-context"
 import { InstanceStore } from "@/project/instance-store"
 import * as Log from "@redcode-ai/core/util/log"

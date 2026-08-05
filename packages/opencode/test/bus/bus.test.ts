@@ -1,4 +1,4 @@
-﻿import { afterEach, describe, expect } from "bun:test"
+import { afterEach, describe, expect } from "bun:test"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 import { Deferred, Effect, Layer, Schema } from "effect"
 import { Bus } from "../../src/bus"

@@ -1,4 +1,4 @@
-﻿import { ConfigPlugin } from "@/config/plugin"
+import { ConfigPlugin } from "@/config/plugin"
 import { TuiKeybind } from "./keybind"
 import { Schema } from "effect"
 import { isRecord } from "@/util/record"

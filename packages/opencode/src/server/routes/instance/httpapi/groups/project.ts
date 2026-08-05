@@ -1,4 +1,4 @@
-﻿import { Project } from "@/project/project"
+import { Project } from "@/project/project"
 import { ProjectID } from "@/project/schema"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"

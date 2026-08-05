@@ -1,4 +1,4 @@
-﻿// Subprocess integration tests for `redcode serve`. Spawns the real CLI in
+// Subprocess integration tests for `redcode serve`. Spawns the real CLI in
 // headless mode and exercises it over HTTP — this is the only test tier that
 // catches bugs spanning argv → server boot → routing → instance loading.
 //

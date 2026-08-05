@@ -1,4 +1,4 @@
-﻿import type { EditorTraits } from "@opentui/core"
+import type { EditorTraits } from "@opentui/core"
 
 export type PromptMode = "normal" | "shell"
 

@@ -1,4 +1,4 @@
-﻿import { describe, test, expect } from "bun:test"
+import { describe, test, expect } from "bun:test"
 import path from "path"
 import fs from "fs/promises"
 import { Glob } from "@redcode-ai/core/util/glob"

@@ -1,4 +1,4 @@
-﻿const kinds = ["bash", "pwsh", "powershell", "cmd"] as const
+const kinds = ["bash", "pwsh", "powershell", "cmd"] as const
 export type Kind = (typeof kinds)[number]
 
 const shellKinds = new Set<string>(kinds)

@@ -1,4 +1,4 @@
-﻿import path from "path"
+import path from "path"
 import { writeHeapSnapshot } from "node:v8"
 import { Flag } from "@redcode-ai/core/flag/flag"
 import { Global } from "@redcode-ai/core/global"

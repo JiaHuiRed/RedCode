@@ -1,4 +1,4 @@
-﻿/// <reference path="../env.d.ts" />
+/// <reference path="../env.d.ts" />
 import { tool } from "@redcode-ai/plugin"
 async function githubFetch(endpoint: string, options: RequestInit = {}) {
   const response = await fetch(`https://api.github.com${endpoint}`, {

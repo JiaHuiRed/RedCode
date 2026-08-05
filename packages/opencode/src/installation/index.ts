@@ -1,4 +1,4 @@
-﻿import { Effect, Layer, Schema, Context, Stream } from "effect"
+import { Effect, Layer, Schema, Context, Stream } from "effect"
 import { serviceUse } from "@/effect/service-use"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { withTransientReadRetry } from "@/util/effect-http-client"

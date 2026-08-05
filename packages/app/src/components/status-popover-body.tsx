@@ -1,4 +1,4 @@
-﻿import { Button } from "@redcode-ai/ui/button"
+import { Button } from "@redcode-ai/ui/button"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { Icon } from "@redcode-ai/ui/icon"
 import { Switch } from "@redcode-ai/ui/switch"

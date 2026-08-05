@@ -1,4 +1,4 @@
-﻿// Model variant resolution and persistence.
+// Model variant resolution and persistence.
 //
 // Variants are provider-specific reasoning effort levels (e.g., "high", "max").
 // Resolution priority: CLI --variant flag > saved preference > session history.

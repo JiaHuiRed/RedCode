@@ -1,4 +1,4 @@
-﻿import { WorkerPoolManager } from "@pierre/diffs/worker"
+import { WorkerPoolManager } from "@pierre/diffs/worker"
 import ShikiWorkerUrl from "@pierre/diffs/worker/worker.js?worker&url"
 
 export type WorkerPoolStyle = "unified" | "split"

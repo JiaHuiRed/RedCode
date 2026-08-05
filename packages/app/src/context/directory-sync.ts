@@ -1,4 +1,4 @@
-﻿import { batch, createMemo } from "solid-js"
+import { batch, createMemo } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { Binary } from "@redcode-ai/core/util/binary"
 import { retry } from "@redcode-ai/core/util/retry"

@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { resolveServerList, ServerConnection } from "./server"
 
 describe("resolveServerList", () => {

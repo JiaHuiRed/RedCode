@@ -1,4 +1,4 @@
-﻿import { Catalog } from "@redcode-ai/core/catalog"
+import { Catalog } from "@redcode-ai/core/catalog"
 import { PluginBoot } from "@redcode-ai/core/plugin/boot"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"

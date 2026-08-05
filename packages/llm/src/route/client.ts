@@ -1,4 +1,4 @@
-﻿import { Cause, Context, Effect, Layer, Schema, Stream } from "effect"
+import { Cause, Context, Effect, Layer, Schema, Stream } from "effect"
 import * as Option from "effect/Option"
 import { Auth, type Auth as AuthDef } from "./auth"
 import { Endpoint, type EndpointPatch } from "./endpoint"

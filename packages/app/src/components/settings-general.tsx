@@ -1,4 +1,4 @@
-﻿import { Component, Show, createMemo, createResource, createSignal, onMount, type JSX } from "solid-js"
+import { Component, Show, createMemo, createResource, createSignal, onMount, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@redcode-ai/ui/button"
 import { Avatar } from "@redcode-ai/ui/avatar"

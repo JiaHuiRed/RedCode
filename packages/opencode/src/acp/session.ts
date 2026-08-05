@@ -1,4 +1,4 @@
-﻿import { RequestError, type McpServer } from "@agentclientprotocol/sdk"
+import { RequestError, type McpServer } from "@agentclientprotocol/sdk"
 import type { ACPSessionState } from "./types"
 import * as Log from "@redcode-ai/core/util/log"
 import type { OpencodeClient } from "@redcode-ai/sdk/v2"

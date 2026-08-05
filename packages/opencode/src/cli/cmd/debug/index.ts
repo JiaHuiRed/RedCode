@@ -1,4 +1,4 @@
-﻿import { Global } from "@redcode-ai/core/global"
+import { Global } from "@redcode-ai/core/global"
 import { InstallationVersion } from "@redcode-ai/core/installation/version"
 import { Flag } from "@redcode-ai/core/flag/flag"
 import os from "os"

@@ -1,4 +1,4 @@
-﻿import type { HttpRecorder } from "@redcode-ai/http-recorder"
+import type { HttpRecorder } from "@redcode-ai/http-recorder"
 import { describe } from "bun:test"
 import { Effect } from "effect"
 import type { Model } from "../src"

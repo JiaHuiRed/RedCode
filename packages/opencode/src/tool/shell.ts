@@ -1,4 +1,4 @@
-﻿import { Effect, Stream } from "effect"
+import { Effect, Stream } from "effect"
 import os from "os"
 import { createWriteStream, mkdirSync } from "node:fs"
 import * as Tool from "./tool"

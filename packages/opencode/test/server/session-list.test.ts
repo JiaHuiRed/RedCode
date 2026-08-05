@@ -1,4 +1,4 @@
-﻿import { afterEach, describe, expect } from "bun:test"
+import { afterEach, describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import { Session as SessionNs } from "@/session/session"
 import * as Log from "@redcode-ai/core/util/log"

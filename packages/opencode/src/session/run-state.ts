@@ -1,4 +1,4 @@
-﻿import { InstanceState } from "@/effect/instance-state"
+import { InstanceState } from "@/effect/instance-state"
 import { Runner } from "@/effect/runner"
 import { BackgroundJob } from "@/background/job"
 import { Effect, Latch, Layer, Scope, Context } from "effect"

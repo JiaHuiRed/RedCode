@@ -1,4 +1,4 @@
-﻿import windowState from "electron-window-state"
+import windowState from "electron-window-state"
 import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol } from "electron"
 import { existsSync } from "node:fs"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"

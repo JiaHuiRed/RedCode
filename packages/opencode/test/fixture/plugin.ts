@@ -1,4 +1,4 @@
-﻿import { mkdir } from "fs/promises"
+import { mkdir } from "fs/promises"
 import path from "path"
 
 export async function markPluginDependenciesReady(dir: string) {

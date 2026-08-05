@@ -1,4 +1,4 @@
-﻿export const dict = {
+export const dict = {
   "desktop.menu.checkForUpdates": "Sprawdź aktualizacje...",
   "desktop.menu.installCli": "Zainstaluj CLI...",
   "desktop.menu.reloadWebview": "Przeładuj Webview",

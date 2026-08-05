@@ -1,4 +1,4 @@
-﻿import { afterEach, describe, expect } from "bun:test"
+import { afterEach, describe, expect } from "bun:test"
 import path from "path"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"

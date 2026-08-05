@@ -1,4 +1,4 @@
-﻿import { Config } from "@/config/config"
+import { Config } from "@/config/config"
 import { BusEvent } from "@/bus/bus-event"
 import { SyncEvent } from "@/sync"
 import "@/server/event"

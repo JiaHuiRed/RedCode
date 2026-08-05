@@ -1,4 +1,4 @@
-﻿import { expect, mock, beforeEach } from "bun:test"
+import { expect, mock, beforeEach } from "bun:test"
 import { Effect, Layer } from "effect"
 import { testEffect } from "../lib/effect"
 

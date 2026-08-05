@@ -1,4 +1,4 @@
-﻿import { parseCommentNote, readCommentMetadata } from "@/utils/comment-note"
+import { parseCommentNote, readCommentMetadata } from "@/utils/comment-note"
 import { AssistantMessage, Part, SessionStatus, SnapshotFileDiff, UserMessage } from "@redcode-ai/sdk/v2"
 import { groupParts, PartGroup, renderable } from "@redcode-ai/ui/message-part"
 import { Data, Equal } from "effect"

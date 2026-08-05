@@ -1,4 +1,4 @@
-﻿import { expect, test } from "bun:test"
+import { expect, test } from "bun:test"
 
 const { DEFAULT_THEMES, allThemes, addTheme, hasTheme, resolveTheme } = await import(
   "../../../src/cli/cmd/tui/context/theme"

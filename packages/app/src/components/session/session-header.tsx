@@ -1,4 +1,4 @@
-﻿import { AppIcon } from "@redcode-ai/ui/app-icon"
+import { AppIcon } from "@redcode-ai/ui/app-icon"
 import { Button } from "@redcode-ai/ui/button"
 import { DropdownMenu } from "@redcode-ai/ui/dropdown-menu"
 import { Icon } from "@redcode-ai/ui/icon"

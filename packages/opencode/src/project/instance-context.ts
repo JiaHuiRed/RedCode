@@ -1,4 +1,4 @@
-﻿import { LocalContext } from "@/util/local-context"
+import { LocalContext } from "@/util/local-context"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import type * as Project from "./project"
 

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * End-to-end exerciser for the Effect HttpApi routes.
  *
  * The goal is not to be a normal unit test file. This is a route-coverage harness:

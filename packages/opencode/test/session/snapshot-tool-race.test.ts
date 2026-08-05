@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Reproducer for snapshot race condition with instant tool execution.
  *
  * When the mock LLM returns a tool call response instantly, the AI SDK

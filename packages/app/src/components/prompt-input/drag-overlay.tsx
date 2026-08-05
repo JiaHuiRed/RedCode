@@ -1,4 +1,4 @@
-﻿import { Component, Show } from "solid-js"
+import { Component, Show } from "solid-js"
 import { Icon } from "@redcode-ai/ui/icon"
 
 type PromptDragOverlayProps = {

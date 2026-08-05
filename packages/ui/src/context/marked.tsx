@@ -1,4 +1,4 @@
-﻿/// <reference path="./markdown-it-task-lists.d.ts" />
+/// <reference path="./markdown-it-task-lists.d.ts" />
 import MarkdownIt from "markdown-it"
 import taskLists from "markdown-it-task-lists"
 import katex from "katex"

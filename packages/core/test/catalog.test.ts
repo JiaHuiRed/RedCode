@@ -1,4 +1,4 @@
-﻿import { describe, expect } from "bun:test"
+import { describe, expect } from "bun:test"
 import { DateTime, Effect, Layer, Option } from "effect"
 import { Catalog } from "@redcode-ai/core/catalog"
 import { EventV2 } from "@redcode-ai/core/event"

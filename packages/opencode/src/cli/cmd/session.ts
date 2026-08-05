@@ -1,4 +1,4 @@
-﻿import type { Argv } from "yargs"
+import type { Argv } from "yargs"
 import { Effect } from "effect"
 import { cmd } from "./cmd"
 import { effectCmd, fail } from "../effect-cmd"

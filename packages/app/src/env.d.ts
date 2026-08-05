@@ -1,4 +1,4 @@
-﻿interface ImportMetaEnv {
+interface ImportMetaEnv {
   readonly VITE_REDCODE_SERVER_HOST: string
   readonly VITE_REDCODE_SERVER_PORT: string
   readonly VITE_REDCODE_CHANNEL?: "dev" | "beta" | "prod"

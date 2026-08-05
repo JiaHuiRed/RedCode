@@ -1,4 +1,4 @@
-﻿import path from "path"
+import path from "path"
 import { Global } from "@redcode-ai/core/global"
 import { Filesystem } from "@/util/filesystem"
 import { onMount } from "solid-js"

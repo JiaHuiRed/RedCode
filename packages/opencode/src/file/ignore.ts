@@ -1,4 +1,4 @@
-﻿import { Glob } from "@redcode-ai/core/util/glob"
+import { Glob } from "@redcode-ai/core/util/glob"
 
 const FOLDERS = new Set([
   "node_modules",

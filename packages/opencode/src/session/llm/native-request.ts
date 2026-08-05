@@ -1,4 +1,4 @@
-﻿import type { JsonSchema, LLMRequest, ProviderMetadata } from "@redcode-ai/llm"
+import type { JsonSchema, LLMRequest, ProviderMetadata } from "@redcode-ai/llm"
 import { LLM, Message, SystemPart, ToolCallPart, ToolDefinition, ToolResultPart } from "@redcode-ai/llm"
 import {
   AmazonBedrock,

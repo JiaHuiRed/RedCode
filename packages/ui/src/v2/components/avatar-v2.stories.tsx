@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 import { Avatar } from "./avatar-v2"
 
 const docs = `### Overview

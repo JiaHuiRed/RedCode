@@ -1,4 +1,4 @@
-﻿export * as ConfigAttachment from "./attachment"
+export * as ConfigAttachment from "./attachment"
 
 import { Schema } from "effect"
 import { PositiveInt } from "@redcode-ai/core/schema"

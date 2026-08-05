@@ -1,4 +1,4 @@
-﻿import whichPkg from "which"
+import whichPkg from "which"
 import path from "path"
 import { Global } from "@redcode-ai/core/global"
 

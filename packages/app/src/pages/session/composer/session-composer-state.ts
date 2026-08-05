@@ -1,4 +1,4 @@
-﻿import { createEffect, createMemo, on, onCleanup } from "solid-js"
+import { createEffect, createMemo, on, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { PermissionRequest, QuestionRequest, Todo } from "@redcode-ai/sdk/v2"
 import { useParams } from "@solidjs/router"

@@ -1,4 +1,4 @@
-﻿import { execFile } from "node:child_process"
+import { execFile } from "node:child_process"
 import { mkdir, writeFile } from "node:fs/promises"
 import { join, resolve, sep } from "node:path"
 import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, shell } from "electron"

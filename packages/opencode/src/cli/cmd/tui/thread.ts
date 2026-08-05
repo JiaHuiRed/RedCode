@@ -1,4 +1,4 @@
-﻿import { cmd } from "@/cli/cmd/cmd"
+import { cmd } from "@/cli/cmd/cmd"
 import { Rpc } from "@/util/rpc"
 import { type rpc } from "./worker"
 import path from "path"

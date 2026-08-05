@@ -1,4 +1,4 @@
-﻿import { useMarked } from "../context/marked"
+import { useMarked } from "../context/marked"
 import { useI18n } from "../context/i18n"
 import DOMPurify from "dompurify"
 import morphdom from "morphdom"

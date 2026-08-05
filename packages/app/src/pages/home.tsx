@@ -1,4 +1,4 @@
-﻿import type { Session } from "@redcode-ai/sdk/v2/client"
+import type { Session } from "@redcode-ai/sdk/v2/client"
 import { createMemo, For, Match, onCleanup, onMount, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"

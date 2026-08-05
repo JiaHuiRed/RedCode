@@ -1,4 +1,4 @@
-﻿import "./init-projectors"
+import "./init-projectors"
 
 import { NodeHttpServer } from "@effect/platform-node"
 import * as Log from "@redcode-ai/core/util/log"

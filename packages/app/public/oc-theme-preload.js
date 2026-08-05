@@ -1,4 +1,4 @@
-﻿;(function () {
+;(function () {
   var key = "redcode-theme-id"
   var themeId = localStorage.getItem(key) || "oc-2"
 

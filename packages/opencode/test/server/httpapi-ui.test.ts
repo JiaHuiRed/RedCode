@@ -1,4 +1,4 @@
-﻿import { createHash } from "node:crypto"
+import { createHash } from "node:crypto"
 import { describe, expect } from "bun:test"
 import { Flag } from "@redcode-ai/core/flag/flag"
 import * as Log from "@redcode-ai/core/util/log"

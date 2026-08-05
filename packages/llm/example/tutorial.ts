@@ -1,4 +1,4 @@
-﻿import { Config, Effect, Formatter, Layer, Schema, Stream } from "effect"
+import { Config, Effect, Formatter, Layer, Schema, Stream } from "effect"
 import { LLM, LLMClient, ProviderID, Tool } from "@redcode-ai/llm"
 import { Route, Auth, Endpoint, Framing, Protocol, RequestExecutor, WebSocketExecutor } from "@redcode-ai/llm/route"
 import { OpenAI } from "@redcode-ai/llm/providers"

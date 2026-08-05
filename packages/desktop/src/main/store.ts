@@ -1,4 +1,4 @@
-﻿import Store from "electron-store"
+import Store from "electron-store"
 import { app } from "electron"
 
 import { SETTINGS_STORE } from "./constants"

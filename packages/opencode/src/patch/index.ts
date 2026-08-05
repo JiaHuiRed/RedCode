@@ -1,4 +1,4 @@
-﻿import { Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import * as path from "path"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import * as Log from "@redcode-ai/core/util/log"

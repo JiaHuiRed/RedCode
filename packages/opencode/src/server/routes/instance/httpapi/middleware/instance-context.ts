@@ -1,4 +1,4 @@
-﻿import { InstanceRef, WorkspaceRef } from "@/effect/instance-ref"
+import { InstanceRef, WorkspaceRef } from "@/effect/instance-ref"
 import { InstanceStore } from "@/project/instance-store"
 import { Effect, Layer } from "effect"
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http"

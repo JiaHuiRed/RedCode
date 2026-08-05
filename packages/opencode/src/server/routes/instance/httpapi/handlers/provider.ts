@@ -1,4 +1,4 @@
-﻿import { ProviderAuth } from "@/provider/auth"
+import { ProviderAuth } from "@/provider/auth"
 import { Config } from "@/config/config"
 import { ModelsDev } from "@redcode-ai/core/models-dev"
 import { Provider } from "@/provider/provider"

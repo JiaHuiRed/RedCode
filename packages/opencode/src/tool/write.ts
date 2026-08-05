@@ -1,4 +1,4 @@
-﻿import { Schema } from "effect"
+import { Schema } from "effect"
 import * as path from "path"
 import { Effect } from "effect"
 import * as Tool from "./tool"

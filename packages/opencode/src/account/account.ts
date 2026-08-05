@@ -1,4 +1,4 @@
-﻿import { Cache, Clock, Duration, Effect, Layer, Option, Schema, SchemaGetter, Context } from "effect"
+import { Cache, Clock, Duration, Effect, Layer, Option, Schema, SchemaGetter, Context } from "effect"
 import { serviceUse } from "@/effect/service-use"
 import {
   FetchHttpClient,

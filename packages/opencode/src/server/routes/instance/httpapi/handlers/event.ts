@@ -1,4 +1,4 @@
-﻿import { Bus } from "@/bus"
+import { Bus } from "@/bus"
 import * as Log from "@redcode-ai/core/util/log"
 import { Effect } from "effect"
 import * as Stream from "effect/Stream"

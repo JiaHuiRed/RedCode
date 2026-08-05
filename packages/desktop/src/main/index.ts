@@ -1,4 +1,4 @@
-﻿import { randomUUID } from "node:crypto"
+import { randomUUID } from "node:crypto"
 import { execFile } from "node:child_process"
 import { EventEmitter } from "node:events"
 import { existsSync, mkdirSync, rmSync } from "node:fs"

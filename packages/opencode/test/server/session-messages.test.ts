@@ -1,4 +1,4 @@
-﻿import { afterEach, describe, expect } from "bun:test"
+import { afterEach, describe, expect } from "bun:test"
 import { Effect } from "effect"
 import { Server } from "../../src/server/server"
 import { Session as SessionNs } from "@/session/session"

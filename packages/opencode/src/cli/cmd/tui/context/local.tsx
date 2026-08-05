@@ -1,4 +1,4 @@
-﻿import { createStore } from "solid-js/store"
+import { createStore } from "solid-js/store"
 import { createSimpleContext } from "./helper"
 import { batch, createEffect, createMemo } from "solid-js"
 import { useSync } from "@tui/context/sync"

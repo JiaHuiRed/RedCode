@@ -1,4 +1,4 @@
-﻿export * as AISDK from "./aisdk"
+export * as AISDK from "./aisdk"
 
 import type { LanguageModelV3 } from "@ai-sdk/provider"
 import { Cause, Context, Effect, Layer, Schema } from "effect"

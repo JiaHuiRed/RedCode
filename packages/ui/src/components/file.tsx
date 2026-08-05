@@ -1,4 +1,4 @@
-﻿import { sampledChecksum } from "@redcode-ai/core/util/encode"
+import { sampledChecksum } from "@redcode-ai/core/util/encode"
 import {
   DEFAULT_VIRTUAL_FILE_METRICS,
   type DiffLineAnnotation,

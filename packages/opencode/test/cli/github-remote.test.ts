@@ -1,4 +1,4 @@
-﻿import { test, expect } from "bun:test"
+import { test, expect } from "bun:test"
 import { parseGitHubRemote } from "../../src/cli/cmd/github"
 
 test("parses https URL with .git suffix", () => {

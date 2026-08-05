@@ -1,4 +1,4 @@
-﻿import { Config } from "@/config/config"
+import { Config } from "@/config/config"
 import { serviceUse } from "@/effect/service-use"
 import { Provider } from "@/provider/provider"
 import { ModelID, ProviderID } from "../provider/schema"

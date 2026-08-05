@@ -1,4 +1,4 @@
-﻿import { Effect } from "effect"
+import { Effect } from "effect"
 import { ModelV2 } from "../../model"
 import { PluginV2 } from "../../plugin"
 

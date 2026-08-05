@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { ProxyUtil } from "../../src/server/proxy-util"
 
 describe("ProxyUtil", () => {

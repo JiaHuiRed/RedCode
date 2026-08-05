@@ -1,4 +1,4 @@
-﻿import { Config, Context, Effect, Layer } from "effect"
+import { Config, Context, Effect, Layer } from "effect"
 
 type ConfigMap = Record<string, Config.Config<unknown>>
 

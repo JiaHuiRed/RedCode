@@ -1,4 +1,4 @@
-﻿import { Npm } from "@redcode-ai/core/npm"
+import { Npm } from "@redcode-ai/core/npm"
 import type { InstanceContext } from "../project/instance-context"
 import { Filesystem } from "@/util/filesystem"
 import { Process } from "@/util/process"

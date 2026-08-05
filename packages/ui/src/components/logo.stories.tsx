@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 import * as mod from "./logo"
 
 const docs = `### Overview

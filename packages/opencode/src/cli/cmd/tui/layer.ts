@@ -1,4 +1,4 @@
-﻿import { Layer } from "effect"
+import { Layer } from "effect"
 import { TuiConfig } from "./config/tui"
 import { Npm } from "@redcode-ai/core/npm"
 import { Observability } from "@redcode-ai/core/effect/observability"

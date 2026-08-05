@@ -1,4 +1,4 @@
-﻿import { useSDK } from "@/context/sdk"
+import { useSDK } from "@/context/sdk"
 import { Persist, persisted } from "@/utils/persist"
 import { SessionStatus } from "@redcode-ai/sdk/v2"
 import { onCleanup } from "solid-js"

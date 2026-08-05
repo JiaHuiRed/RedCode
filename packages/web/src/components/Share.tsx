@@ -1,4 +1,4 @@
-﻿import { For, Show, onMount, Suspense, onCleanup, createMemo, createSignal, SuspenseList } from "solid-js"
+import { For, Show, onMount, Suspense, onCleanup, createMemo, createSignal, SuspenseList } from "solid-js"
 import { DateTime } from "luxon"
 import { createStore, reconcile } from "solid-js/store"
 import { IconArrowDown } from "./icons"

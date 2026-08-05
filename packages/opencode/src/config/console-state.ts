@@ -1,4 +1,4 @@
-﻿import { Schema } from "effect"
+import { Schema } from "effect"
 import { NonNegativeInt } from "@redcode-ai/core/schema"
 
 export class ConsoleState extends Schema.Class<ConsoleState>("ConsoleState")({

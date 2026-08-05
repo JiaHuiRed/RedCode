@@ -1,4 +1,4 @@
-﻿import path from "path"
+import path from "path"
 import { execFileSync } from "child_process"
 import { Context, Duration, Effect, Layer, Option, Schedule, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"

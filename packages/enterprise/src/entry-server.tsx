@@ -1,4 +1,4 @@
-﻿// @refresh reload
+// @refresh reload
 import { createHandler, StartServer } from "@solidjs/start/server"
 import { getRequestEvent } from "solid-js/web"
 

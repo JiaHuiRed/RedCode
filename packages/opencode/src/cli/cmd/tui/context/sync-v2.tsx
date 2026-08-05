@@ -1,4 +1,4 @@
-﻿import { useEvent } from "@tui/context/event"
+import { useEvent } from "@tui/context/event"
 import type {
   SessionMessage,
   SessionMessageAssistant,

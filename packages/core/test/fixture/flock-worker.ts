@@ -1,4 +1,4 @@
-﻿import fs from "fs/promises"
+import fs from "fs/promises"
 import { Flock } from "@redcode-ai/core/util/flock"
 
 type Msg = {

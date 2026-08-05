@@ -1,4 +1,4 @@
-﻿import { TextAttributes } from "@opentui/core"
+import { TextAttributes } from "@opentui/core"
 import { useKeyboard } from "@opentui/solid"
 import type { VcsFileStatus } from "@redcode-ai/sdk/v2"
 import { createMemo, For } from "solid-js"

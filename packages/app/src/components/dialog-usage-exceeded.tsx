@@ -1,4 +1,4 @@
-﻿import { usePlatform } from "@/context/platform"
+import { usePlatform } from "@/context/platform"
 import { Button } from "@redcode-ai/ui/button"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { Dialog } from "@redcode-ai/ui/dialog"

@@ -1,4 +1,4 @@
-﻿import { createSimpleContext } from "@redcode-ai/ui/context"
+import { createSimpleContext } from "@redcode-ai/ui/context"
 import { base64Encode } from "@redcode-ai/core/util/encode"
 import { useParams } from "@solidjs/router"
 import { batch, createEffect, createMemo } from "solid-js"

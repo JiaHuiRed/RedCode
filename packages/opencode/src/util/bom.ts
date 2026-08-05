@@ -1,4 +1,4 @@
-﻿import { Effect } from "effect"
+import { Effect } from "effect"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 
 const BOM_CODE = 0xfeff

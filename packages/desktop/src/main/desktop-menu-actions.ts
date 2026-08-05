@@ -1,4 +1,4 @@
-﻿import { BrowserWindow } from "electron"
+import { BrowserWindow } from "electron"
 import type { DesktopMenuAction } from "@redcode-ai/app/desktop-menu"
 import { createMainWindow, updateTitlebar } from "./windows"
 

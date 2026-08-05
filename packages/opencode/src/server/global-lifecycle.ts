@@ -1,4 +1,4 @@
-﻿import { GlobalBus } from "@/bus/global"
+import { GlobalBus } from "@/bus/global"
 import { InstanceStore } from "@/project/instance-store"
 import * as Log from "@redcode-ai/core/util/log"
 import { Effect } from "effect"

@@ -1,4 +1,4 @@
-﻿import { describe, expect, spyOn } from "bun:test"
+import { describe, expect, spyOn } from "bun:test"
 import path from "path"
 import { Deferred, Effect, Layer } from "effect"
 import { Bus } from "@/bus"

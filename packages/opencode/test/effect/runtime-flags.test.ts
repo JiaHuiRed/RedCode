@@ -1,4 +1,4 @@
-﻿import { describe, expect } from "bun:test"
+import { describe, expect } from "bun:test"
 import { ConfigProvider, Effect, Layer } from "effect"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
 import { it } from "../lib/effect"

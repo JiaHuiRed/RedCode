@@ -1,4 +1,4 @@
-﻿export * as PluginBoot from "./boot"
+export * as PluginBoot from "./boot"
 
 import { Context, Deferred, Effect, Layer } from "effect"
 import { AccountV2 } from "../account"

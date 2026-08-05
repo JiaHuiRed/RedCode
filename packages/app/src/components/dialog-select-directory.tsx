@@ -1,4 +1,4 @@
-﻿import { useDialog } from "@redcode-ai/ui/context/dialog"
+import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { Dialog } from "@redcode-ai/ui/dialog"
 import { FileIcon } from "@redcode-ai/ui/file-icon"
 import { List } from "@redcode-ai/ui/list"

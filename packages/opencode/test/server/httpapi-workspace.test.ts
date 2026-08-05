@@ -1,4 +1,4 @@
-﻿import { afterEach, describe, expect, mock } from "bun:test"
+import { afterEach, describe, expect, mock } from "bun:test"
 import { NodeServices } from "@effect/platform-node"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"

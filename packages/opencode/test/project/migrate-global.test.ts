@@ -1,4 +1,4 @@
-﻿import { describe, expect } from "bun:test"
+import { describe, expect } from "bun:test"
 import { Project } from "@/project/project"
 import { Database } from "@/storage/db"
 import { eq } from "drizzle-orm"

@@ -1,4 +1,4 @@
-﻿import { Schema } from "effect"
+import { Schema } from "effect"
 import { EventV2 } from "@redcode-ai/core/event"
 
 export type Definition<Type extends string = string, Properties extends Schema.Top = Schema.Top> = {

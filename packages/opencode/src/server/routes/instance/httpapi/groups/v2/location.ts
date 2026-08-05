@@ -1,4 +1,4 @@
-﻿import { Catalog } from "@redcode-ai/core/catalog"
+import { Catalog } from "@redcode-ai/core/catalog"
 import { Location } from "@redcode-ai/core/location"
 import { LocationServiceMap } from "@redcode-ai/core/location-layer"
 import { PluginBoot } from "@redcode-ai/core/plugin/boot"

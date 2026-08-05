@@ -1,4 +1,4 @@
-﻿// Permission UI body for the direct-mode footer.
+// Permission UI body for the direct-mode footer.
 //
 // Renders inside the footer when the reducer pushes a FooterView of type
 // "permission". Uses a three-stage state machine (permission.shared.ts):

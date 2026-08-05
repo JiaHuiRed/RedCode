@@ -1,4 +1,4 @@
-﻿export * as PtyTicket from "./ticket"
+export * as PtyTicket from "./ticket"
 
 import { WorkspaceID } from "@/control-plane/schema"
 import { InstanceRef, WorkspaceRef } from "@/effect/instance-ref"

@@ -1,4 +1,4 @@
-﻿import { SessionID } from "@/session/schema"
+import { SessionID } from "@/session/schema"
 import { SessionMessage } from "@redcode-ai/core/session-message"
 import { Prompt } from "@redcode-ai/core/session-prompt"
 import { SessionV2 } from "@/v2/session"

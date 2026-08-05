@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
 import { ProjectID } from "../../src/project/schema"
 import { MessageID, SessionID } from "../../src/session/schema"

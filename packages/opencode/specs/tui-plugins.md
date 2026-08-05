@@ -1,4 +1,4 @@
-﻿# TUI plugins
+# TUI plugins
 
 Technical reference for the current TUI plugin system.
 

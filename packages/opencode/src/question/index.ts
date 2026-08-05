@@ -1,4 +1,4 @@
-﻿import { Deferred, Effect, Layer, Schema, Context } from "effect"
+import { Deferred, Effect, Layer, Schema, Context } from "effect"
 import { Bus } from "@/bus"
 import { BusEvent } from "@/bus/bus-event"
 import { InstanceState } from "@/effect/instance-state"

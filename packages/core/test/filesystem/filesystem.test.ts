@@ -1,4 +1,4 @@
-﻿import { describe, test, expect } from "bun:test"
+import { describe, test, expect } from "bun:test"
 import { Effect, Layer, FileSystem } from "effect"
 import { NodeFileSystem } from "@effect/platform-node"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"

@@ -1,4 +1,4 @@
-﻿import { Button } from "@redcode-ai/ui/button"
+import { Button } from "@redcode-ai/ui/button"
 import { Icon } from "@redcode-ai/ui/icon"
 import { Popover } from "@redcode-ai/ui/popover"
 import { Suspense, createMemo, createSignal, lazy, Show } from "solid-js"

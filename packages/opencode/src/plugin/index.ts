@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   Hooks,
   PluginInput,
   Plugin as PluginInstance,

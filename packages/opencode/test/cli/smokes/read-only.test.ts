@@ -1,4 +1,4 @@
-﻿// Tier-A smoke tests for read-only commands. Each test asserts only that the
+// Tier-A smoke tests for read-only commands. Each test asserts only that the
 // command exits 0 and produces *some* output in the isolated harness env.
 //
 // These are not behavioral tests — they're the cheapest possible signal that

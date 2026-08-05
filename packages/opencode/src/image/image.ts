@@ -1,4 +1,4 @@
-﻿import { Config } from "@/config/config"
+import { Config } from "@/config/config"
 import type { MessageV2 } from "@/session/message-v2"
 import * as Log from "@redcode-ai/core/util/log"
 import photonWasm from "@silvia-odwyer/photon-node/photon_rs_bg.wasm" with { type: "file" }

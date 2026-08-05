@@ -1,4 +1,4 @@
-﻿import type { Argv, InferredOptionTypes } from "yargs"
+import type { Argv, InferredOptionTypes } from "yargs"
 import { Config } from "@/config/config"
 import { Effect } from "effect"
 

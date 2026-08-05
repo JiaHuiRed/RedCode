@@ -1,4 +1,4 @@
-﻿import { describe, expect } from "bun:test"
+import { describe, expect } from "bun:test"
 import { Effect } from "effect"
 import { Session } from "@/session/session"
 import * as Log from "@redcode-ai/core/util/log"

@@ -1,4 +1,4 @@
-﻿import { Provider } from "@/provider/provider"
+import { Provider } from "@/provider/provider"
 import { serviceUse } from "@/effect/service-use"
 import * as Log from "@redcode-ai/core/util/log"
 import { Context, Effect, Layer } from "effect"

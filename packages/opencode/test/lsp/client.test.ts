@@ -1,4 +1,4 @@
-﻿import { beforeEach, describe, expect, test } from "bun:test"
+import { beforeEach, describe, expect, test } from "bun:test"
 import path from "path"
 import { pathToFileURL } from "url"
 import { tmpdir, withTestInstance } from "../fixture/fixture"

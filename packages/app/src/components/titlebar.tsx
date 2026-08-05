@@ -1,4 +1,4 @@
-﻿import { createEffect, createMemo, For, mapArray, Match, on, Show, startTransition, Switch, untrack } from "solid-js"
+import { createEffect, createMemo, For, mapArray, Match, on, Show, startTransition, Switch, untrack } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { useLocation, useMatch, useNavigate, useParams } from "@solidjs/router"
 import { IconButton } from "@redcode-ai/ui/icon-button"

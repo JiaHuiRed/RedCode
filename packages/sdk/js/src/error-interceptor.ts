@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Wrap whatever the generated client decoded from a non-2xx error body
  * into a real `Error` so downstream formatters (TUI, plugins) get a
  * useful `.message` instead of `[object Object]` or blank. The original

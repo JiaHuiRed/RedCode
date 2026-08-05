@@ -1,4 +1,4 @@
-﻿import { SECRET } from "./secret"
+import { SECRET } from "./secret"
 import { domain } from "./stage"
 
 const description = "Managed by SST (Don't edit in Honeycomb UI)"

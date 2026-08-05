@@ -1,4 +1,4 @@
-﻿export const lineCommentStyles = `
+export const lineCommentStyles = `
 [data-annotation-slot] {
   padding: 12px;
   box-sizing: border-box;

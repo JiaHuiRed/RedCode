@@ -1,4 +1,4 @@
-﻿import { Workspace } from "@/control-plane/workspace"
+import { Workspace } from "@/control-plane/workspace"
 import * as InstanceState from "@/effect/instance-state"
 import { Session } from "@/session/session"
 import { Database } from "@/storage/db"

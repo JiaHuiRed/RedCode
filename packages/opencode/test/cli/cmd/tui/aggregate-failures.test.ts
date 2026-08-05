@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Regression test for the TUI bootstrap aggregation helper. Replaces the
  * pre-fix Promise.all behavior where the first rejection drowned every
  * sibling endpoint's failure as an unhandled rejection.

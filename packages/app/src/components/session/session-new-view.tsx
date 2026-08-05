@@ -1,4 +1,4 @@
-﻿import { Show, createMemo } from "solid-js"
+import { Show, createMemo } from "solid-js"
 import { DateTime } from "luxon"
 import { useSync } from "@/context/sync"
 import { useSDK } from "@/context/sdk"

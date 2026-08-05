@@ -1,4 +1,4 @@
-﻿import type { DesktopTheme, ResolvedTheme } from "./types"
+import type { DesktopTheme, ResolvedTheme } from "./types"
 import { resolveThemeVariant, themeToCss } from "./resolve"
 
 let activeTheme: DesktopTheme | null = null

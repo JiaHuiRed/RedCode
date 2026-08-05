@@ -1,4 +1,4 @@
-﻿import { Context, Schema } from "effect"
+import { Context, Schema } from "effect"
 
 export * as Location from "./location"
 

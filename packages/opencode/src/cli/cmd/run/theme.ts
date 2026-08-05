@@ -1,4 +1,4 @@
-﻿// Theme resolution for direct interactive mode.
+// Theme resolution for direct interactive mode.
 //
 // Derives scrollback and footer colors from the terminal's actual palette.
 // resolveRunTheme() queries the renderer for the terminal's palette,

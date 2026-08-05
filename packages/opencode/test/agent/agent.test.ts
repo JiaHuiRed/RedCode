@@ -1,4 +1,4 @@
-﻿import { afterEach, expect } from "bun:test"
+import { afterEach, expect } from "bun:test"
 import { Cause, Effect, Exit, Layer } from "effect"
 import path from "path"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"

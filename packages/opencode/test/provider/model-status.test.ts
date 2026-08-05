@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
 import { ConfigProvider } from "@/config/provider"
 import { CatalogModelStatus, ModelStatus } from "@/provider/model-status"

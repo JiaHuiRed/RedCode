@@ -1,4 +1,4 @@
-﻿import "@/index.css"
+import "@/index.css"
 import * as Sentry from "@sentry/solid"
 import { I18nProvider } from "@redcode-ai/ui/context"
 import { DialogProvider } from "@redcode-ai/ui/context/dialog"

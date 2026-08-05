@@ -1,4 +1,4 @@
-﻿import type { Auth } from "@/auth"
+import type { Auth } from "@/auth"
 import type { RuntimeFlags } from "@/effect/runtime-flags"
 import { InstanceState } from "@/effect/instance-state"
 import { Permission } from "@/permission"

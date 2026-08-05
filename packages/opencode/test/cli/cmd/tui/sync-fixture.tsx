@@ -1,4 +1,4 @@
-﻿/** @jsxImportSource @opentui/solid */
+/** @jsxImportSource @opentui/solid */
 import { testRender } from "@opentui/solid"
 import { onMount } from "solid-js"
 import { ArgsProvider } from "../../../../src/cli/cmd/tui/context/args"

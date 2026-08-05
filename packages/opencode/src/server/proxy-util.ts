@@ -1,4 +1,4 @@
-﻿const hop = new Set([
+const hop = new Set([
   "connection",
   "keep-alive",
   "proxy-authenticate",

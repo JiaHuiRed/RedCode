@@ -1,4 +1,4 @@
-﻿import { OpenApi } from "effect/unstable/httpapi"
+import { OpenApi } from "effect/unstable/httpapi"
 import { RedCodeHttpApi } from "./api"
 import { QueryBooleanOpenApi } from "./groups/query"
 

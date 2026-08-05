@@ -1,4 +1,4 @@
-﻿import {
+import {
   RequestError,
   type Agent as ACPAgent,
   type AgentSideConnection,

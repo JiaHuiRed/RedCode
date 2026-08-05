@@ -1,4 +1,4 @@
-﻿export * as LayerMapExample from "./layer-map.example"
+export * as LayerMapExample from "./layer-map.example"
 
 import { Context, Effect, Layer, LayerMap } from "effect"
 import { Npm } from "../npm"

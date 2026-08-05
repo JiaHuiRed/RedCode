@@ -1,4 +1,4 @@
-﻿// Retained streaming append logic for direct-mode scrollback.
+// Retained streaming append logic for direct-mode scrollback.
 //
 // Static entries are rendered through `scrollback.writer.tsx`. This file only
 // keeps the retained-surface machinery needed for streaming assistant,

@@ -1,4 +1,4 @@
-﻿import { SessionID } from "@/session/schema"
+import { SessionID } from "@/session/schema"
 import { SessionMessage } from "@redcode-ai/core/session-message"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"

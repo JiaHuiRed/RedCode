@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 
 // Regression test for the prompt submit race in
 // packages/redcode/src/cli/cmd/tui/component/prompt/index.tsx (`submit`).

@@ -1,4 +1,4 @@
-﻿import { app } from "electron"
+import { app } from "electron"
 import log from "electron-log/main.js"
 import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"

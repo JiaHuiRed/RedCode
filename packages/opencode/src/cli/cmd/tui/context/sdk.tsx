@@ -1,4 +1,4 @@
-﻿import { createOpencodeClient } from "@redcode-ai/sdk/v2"
+import { createOpencodeClient } from "@redcode-ai/sdk/v2"
 import type { GlobalEvent } from "@redcode-ai/sdk/v2"
 import { createSimpleContext } from "./helper"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"

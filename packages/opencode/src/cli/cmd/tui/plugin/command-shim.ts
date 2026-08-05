@@ -1,4 +1,4 @@
-﻿// Legacy `api.command` bridge for v1 plugins; remove in v2.
+// Legacy `api.command` bridge for v1 plugins; remove in v2.
 import type { TuiCommand, TuiPluginApi } from "@redcode-ai/plugin/tui"
 import type { OpenTuiKeymap } from "../keymap"
 import { TuiKeybind } from "../config/keybind"

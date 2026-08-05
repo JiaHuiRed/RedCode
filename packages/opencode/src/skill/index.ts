@@ -1,4 +1,4 @@
-﻿import path from "path"
+import path from "path"
 import { pathToFileURL } from "url"
 import { Effect, Layer, Context, Schema } from "effect"
 import { NamedError } from "@redcode-ai/core/util/error"

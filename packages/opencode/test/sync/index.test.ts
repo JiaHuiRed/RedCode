@@ -1,4 +1,4 @@
-﻿import { describe, expect, beforeEach, afterAll } from "bun:test"
+import { describe, expect, beforeEach, afterAll } from "bun:test"
 import { provideTmpdirInstance } from "../fixture/fixture"
 import { Deferred, Effect, Layer, Schema } from "effect"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"

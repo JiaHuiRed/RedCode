@@ -1,4 +1,4 @@
-﻿import { describe, test, expect } from "bun:test"
+import { describe, test, expect } from "bun:test"
 import { Effect } from "effect"
 import { Permission } from "../src/permission"
 import { Config } from "@/config/config"

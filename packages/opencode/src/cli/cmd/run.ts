@@ -1,4 +1,4 @@
-﻿// CLI entry point for `redcode run`.
+// CLI entry point for `redcode run`.
 //
 // Handles three modes:
 //   1. Non-interactive (default): sends a single prompt, streams events to

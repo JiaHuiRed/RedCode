@@ -1,4 +1,4 @@
-﻿import { Database } from "bun:sqlite"
+import { Database } from "bun:sqlite"
 import { mkdir, symlink } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"

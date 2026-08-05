@@ -1,4 +1,4 @@
-﻿import { INVALID_SPAN_CONTEXT, context, trace, SpanStatusCode, type Span } from "@opentelemetry/api"
+import { INVALID_SPAN_CONTEXT, context, trace, SpanStatusCode, type Span } from "@opentelemetry/api"
 import { Effect, ManagedRuntime } from "effect"
 import { memoMap } from "@redcode-ai/core/effect/memo-map"
 import { Observability } from "@redcode-ai/core/effect/observability"

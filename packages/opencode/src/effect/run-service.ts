@@ -1,4 +1,4 @@
-﻿import { Effect, Fiber, Layer, ManagedRuntime } from "effect"
+import { Effect, Fiber, Layer, ManagedRuntime } from "effect"
 import * as Context from "effect/Context"
 import { InstanceRef, WorkspaceRef } from "./instance-ref"
 import * as Observability from "@redcode-ai/core/effect/observability"

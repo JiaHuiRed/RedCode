@@ -1,4 +1,4 @@
-﻿import { createStore, reconcile } from "solid-js/store"
+import { createStore, reconcile } from "solid-js/store"
 import { batch, createEffect, createMemo, onCleanup } from "solid-js"
 import { useParams } from "@solidjs/router"
 import { createSimpleContext } from "@redcode-ai/ui/context"

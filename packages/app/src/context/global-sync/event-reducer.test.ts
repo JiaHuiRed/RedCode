@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import type { Message, Part, PermissionRequest, Project, QuestionRequest, Session } from "@redcode-ai/sdk/v2/client"
 import { createStore } from "solid-js/store"
 import type { State } from "./types"

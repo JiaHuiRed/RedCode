@@ -1,4 +1,4 @@
-﻿import { Accordion } from "./accordion"
+import { Accordion } from "./accordion"
 import { Button } from "./button"
 import { DropdownMenu } from "./dropdown-menu"
 import { RadioGroup } from "./radio-group"

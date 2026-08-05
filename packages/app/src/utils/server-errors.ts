@@ -1,4 +1,4 @@
-﻿export type ConfigInvalidError = {
+export type ConfigInvalidError = {
   name: "ConfigInvalidError"
   data: {
     path?: string

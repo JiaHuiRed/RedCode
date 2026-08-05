@@ -1,4 +1,4 @@
-﻿import { useFilteredList } from "@redcode-ai/ui/hooks"
+import { useFilteredList } from "@redcode-ai/ui/hooks"
 import { useSpring } from "@redcode-ai/ui/motion-spring"
 import {
   createEffect,

@@ -1,4 +1,4 @@
-﻿import { Question } from "@/question"
+import { Question } from "@/question"
 import { QuestionID } from "@/question/schema"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"

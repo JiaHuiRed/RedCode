@@ -1,4 +1,4 @@
-﻿# zh-cn Glossary
+# zh-cn Glossary
 
 ## Sources
 

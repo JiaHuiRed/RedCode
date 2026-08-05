@@ -1,4 +1,4 @@
-﻿import { NodeHttpServer, NodeServices } from "@effect/platform-node"
+import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import Http from "node:http"
 import { describe, expect } from "bun:test"
 import { Context, Effect, Layer, Queue } from "effect"

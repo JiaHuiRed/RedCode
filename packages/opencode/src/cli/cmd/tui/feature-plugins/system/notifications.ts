@@ -1,4 +1,4 @@
-﻿import type { Event } from "@redcode-ai/sdk/v2"
+import type { Event } from "@redcode-ai/sdk/v2"
 import type { TuiAttentionSoundName, TuiPlugin, TuiPluginApi } from "@redcode-ai/plugin/tui"
 import type { InternalTuiPlugin } from "../../plugin/internal"
 

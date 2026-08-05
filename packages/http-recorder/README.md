@@ -1,4 +1,4 @@
-﻿# @redcode-ai/http-recorder
+# @redcode-ai/http-recorder
 
 Record and replay HTTP and WebSocket traffic for Effect's `HttpClient`. Tests
 exercise real request shapes against deterministic, version-controlled

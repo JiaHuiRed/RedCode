@@ -1,4 +1,4 @@
-﻿import { Permission } from "@/permission"
+import { Permission } from "@/permission"
 import { PermissionID } from "@/permission/schema"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"

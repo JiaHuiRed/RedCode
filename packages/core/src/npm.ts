@@ -1,4 +1,4 @@
-﻿export * as Npm from "./npm"
+export * as Npm from "./npm"
 
 import path from "path"
 import npa from "npm-package-arg"

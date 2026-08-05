@@ -1,4 +1,4 @@
-﻿import { defineConfig, PluginOption } from "vite"
+import { defineConfig, PluginOption } from "vite"
 import { solidStart } from "@solidjs/start/config"
 import { nitro } from "nitro/vite"
 import tailwindcss from "@tailwindcss/vite"

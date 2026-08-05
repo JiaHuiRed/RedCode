@@ -1,4 +1,4 @@
-﻿import { beforeAll, describe, expect, mock, test } from "bun:test"
+import { beforeAll, describe, expect, mock, test } from "bun:test"
 
 type ServerKey = Parameters<typeof import("./terminal").getTerminalServerScope>[1]
 

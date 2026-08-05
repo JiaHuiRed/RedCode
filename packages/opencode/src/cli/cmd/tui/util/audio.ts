@@ -1,4 +1,4 @@
-﻿import { Audio, type AudioErrorContext, type AudioPlayOptions, type AudioSound, type AudioVoice } from "@opentui/core"
+import { Audio, type AudioErrorContext, type AudioPlayOptions, type AudioSound, type AudioVoice } from "@opentui/core"
 import * as Log from "@redcode-ai/core/util/log"
 
 const log = Log.create({ service: "tui.audio" })

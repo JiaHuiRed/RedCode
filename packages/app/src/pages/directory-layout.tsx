@@ -1,4 +1,4 @@
-﻿import { DataProvider } from "@redcode-ai/ui/context"
+import { DataProvider } from "@redcode-ai/ui/context"
 import { showToast } from "@redcode-ai/ui/toast"
 import { base64Encode } from "@redcode-ai/core/util/encode"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"

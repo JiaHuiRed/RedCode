@@ -1,4 +1,4 @@
-﻿import { Schema, Struct } from "effect"
+import { Schema, Struct } from "effect"
 import { ProjectID } from "@/project/schema"
 import type { InstanceContext } from "@/project/instance-context"
 import { WorkspaceID } from "./schema"

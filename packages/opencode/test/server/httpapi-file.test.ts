@@ -1,4 +1,4 @@
-﻿import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { Context } from "effect"
 import path from "path"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"

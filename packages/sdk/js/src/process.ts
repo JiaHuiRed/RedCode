@@ -1,4 +1,4 @@
-﻿import { type ChildProcess, spawnSync } from "node:child_process"
+import { type ChildProcess, spawnSync } from "node:child_process"
 
 // Duplicated from `packages/redcode/src/util/process.ts` because the SDK cannot
 // import `redcode` without creating a cycle (`redcode` depends on `@redcode-ai/sdk`).

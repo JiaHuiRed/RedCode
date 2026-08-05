@@ -1,4 +1,4 @@
-﻿import * as Log from "@redcode-ai/core/util/log"
+import * as Log from "@redcode-ai/core/util/log"
 import { Effect } from "effect"
 import { effectCmd } from "../effect-cmd"
 import { AgentSideConnection, ndJsonStream } from "@agentclientprotocol/sdk"

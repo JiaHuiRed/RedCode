@@ -1,4 +1,4 @@
-﻿name: "RedCode GitHub Action"
+name: "RedCode GitHub Action"
 description: "Run RedCode in GitHub Actions workflows"
 branding:
   icon: "code"

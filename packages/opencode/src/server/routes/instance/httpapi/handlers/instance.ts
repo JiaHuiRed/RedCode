@@ -1,4 +1,4 @@
-﻿import { Agent } from "@/agent/agent"
+import { Agent } from "@/agent/agent"
 import { Command } from "@/command"
 import * as InstanceState from "@/effect/instance-state"
 import { Format } from "@/format"

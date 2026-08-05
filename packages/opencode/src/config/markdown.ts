@@ -1,4 +1,4 @@
-﻿import { NamedError } from "@redcode-ai/core/util/error"
+import { NamedError } from "@redcode-ai/core/util/error"
 import matter from "gray-matter"
 import { Schema } from "effect"
 import { Filesystem } from "@/util/filesystem"

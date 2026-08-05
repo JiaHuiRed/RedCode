@@ -1,4 +1,4 @@
-﻿import type { Todo } from "@redcode-ai/sdk/v2"
+import type { Todo } from "@redcode-ai/sdk/v2"
 import { AnimatedNumber } from "@redcode-ai/ui/animated-number"
 import { Checkbox } from "@redcode-ai/ui/checkbox"
 import { DockTray } from "@redcode-ai/ui/dock-surface"

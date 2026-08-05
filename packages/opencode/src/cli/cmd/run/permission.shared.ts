@@ -1,4 +1,4 @@
-﻿// Pure state machine for the permission UI.
+// Pure state machine for the permission UI.
 //
 // Lives outside the JSX component so it can be tested independently. The
 // machine has three stages:

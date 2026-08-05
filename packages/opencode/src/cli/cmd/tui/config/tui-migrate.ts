@@ -1,4 +1,4 @@
-﻿import path from "path"
+import path from "path"
 import { type ParseError as JsoncParseError, applyEdits, modify, parse as parseJsonc } from "jsonc-parser"
 import { unique } from "remeda"
 import { Option, Schema } from "effect"

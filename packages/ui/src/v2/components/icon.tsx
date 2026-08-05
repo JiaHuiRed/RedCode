@@ -1,4 +1,4 @@
-﻿import { onMount, type ComponentProps, splitProps } from "solid-js"
+import { onMount, type ComponentProps, splitProps } from "solid-js"
 
 const icons = {
   edit: {

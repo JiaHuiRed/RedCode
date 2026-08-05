@@ -1,4 +1,4 @@
-﻿import type { FileSelection } from "@/context/file"
+import type { FileSelection } from "@/context/file"
 
 export type PromptComment = {
   path: string
