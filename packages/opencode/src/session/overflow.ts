@@ -35,6 +35,25 @@ export const RATIOS = { soft: 0.6, prune: 0.8 } as const
 
 export type Level = "ok" | "soft" | "prune" | "compact"
 
+/**
+ * 真正会触发全量摘要的那个点。
+ *
+ * 260806 Red 分级比例原先乘在 usable() 上，但 isOverflow 是「threshold 或 usable，谁先到
+ * 谁触发」。配了硬顶且硬顶远低于窗口时（实况：threshold=400k，deepseek-v4-flash 的
+ * usable≈950k），soft/prune 落在 570k/760k —— 全都在 400k 之后，便宜档一次都不会触发，
+ * 每次压缩都是直接全量摘要重写（打掉前缀缓存 + 多付一次模型调用），与 260729 设计这三档
+ * 的意图正好相反。比例改乘在两者的较小值上：deepseek 变成 240k/320k/400k，step-3.7-flash
+ * （usable≈224k，硬顶够不着）一个数都不变。
+ */
+export function ceiling(input: { cfg: Config.Info; model: Provider.Model; outputTokenMax?: number }) {
+  const limit = usable(input)
+  const threshold = input.cfg.compaction?.threshold
+  if (!threshold) return limit
+  // usable 为 0 = 窗口未知（自定义 provider），此时硬顶是唯一依据
+  if (limit <= 0) return threshold
+  return Math.min(threshold, limit)
+}
+
 /** 当前用量落在哪一档。compact 档与 isOverflow 完全等价。 */
 export function level(input: {
   cfg: Config.Info
@@ -44,7 +63,7 @@ export function level(input: {
 }): Level {
   if (isOverflow(input)) return "compact"
   if (input.cfg.compaction?.auto === false) return "ok"
-  const limit = usable(input)
+  const limit = ceiling(input)
   if (limit <= 0) return "ok"
   const count = tokenCount(input.tokens)
   if (count >= limit * RATIOS.prune) return "prune"
