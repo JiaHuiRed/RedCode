@@ -598,6 +598,10 @@ export function topP(model: Provider.Model) {
   if (["minimax-m2", "gemini", "kimi-k2.5", "kimi-k2p5", "kimi-k2-5"].some((s) => id.includes(s))) {
     return 0.95
   }
+  // 260806 Red 对齐 DeepSeek 官方 V4-Flash-0731 公告里跑基准所用的采样配置
+  // （max 档 + temperature=1.0 + top_p=0.95）。温度刻意不写：DeepSeek 服务端默认就是 1.0，
+  // 显式重复一遍只会多带一个参数，官方哪天调默认反而跟不上；差异只在 top_p（默认 1.0）。
+  if (isDeepSeekV4FlashModel(model)) return 0.95
   return undefined
 }
 
