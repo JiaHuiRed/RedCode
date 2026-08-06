@@ -69,22 +69,28 @@ let redcodeRoot: string | undefined
 function isRedcodeRootDir(dir: string): boolean {
   return (
     fs.existsSync(path.join(dir, "package.json")) &&
-    // 260805 Red 补 .redcode：纯 .redcode 的项目原本探不到根，$REDCODE_ROOT 只能落 fallback，
-    // 相对路径的 mcp command 随之全部 ENOENT。.opencode 保留兼容既有项目。
-    // 260805 Red 修正：.redcode 目录也可能是 npm 包（packages/opencode/.redcode 实况：package.json
-    // + node_modules + stats），若只判目录存在，monorepo 的 package 子目录会被误判为安装根，
-    // $REDCODE_ROOT 展开错位 → 全部相对路径 MCP 启动失败。工作区 .redcode 必含引擎首启
-    // 自动创建的项目记忆 MEMORY.md，用它区分"工作区"与"npm 包目录"。
+    // 260806 Red 撤掉 260805 加的 .redcode 分支 —— 方向从一开始就错了。$REDCODE_ROOT 要找的是
+    // **RedCode 自身的安装/源码根**（用来展开 ./plugins、./seed 这类相对命令），而 .redcode/
+    // 是引擎给**每个被打开的项目**自动创建的目录，家目录同样有一份。结果是：只要 exe 路径向上
+    // 经过家目录，家目录就被认成安装根，cwd 落到 C:\Users\<user>，全部相对路径 MCP ENOENT
+    // （260806 实测：typegraph/sqlite-query/su-prememory/process-mgmt/vision/web-search 全挂）。
+    // 补 MEMORY.md 判定也拦不住，因为家目录的 .redcode/MEMORY.md 本来就存在。
+    // 标记只认安装根独有的东西：源码根的 redcode.jsonc、种子目录 seed/（原 .opencode）。
     (fs.existsSync(path.join(dir, "redcode.jsonc")) ||
-      (fs.existsSync(path.join(dir, ".redcode")) &&
-        fs.existsSync(path.join(dir, ".redcode", "MEMORY.md"))) ||
+      fs.existsSync(path.join(dir, "seed", "redcode.home.jsonc")) ||
       fs.existsSync(path.join(dir, ".opencode")))
   )
+}
+
+// 家目录永远不是安装根：它必然含 .redcode/ 与（多数机器上的）package.json，一旦被认成根，
+// $REDCODE_ROOT 会展开到用户主目录，相对路径的 mcp command 全部失败。
+function isHomeDir(dir: string): boolean {
+  return path.resolve(dir) === path.resolve(os.homedir())
 }
 function walkUpForRedcodeRoot(start: string): string {
   let dir = start
   for (let i = 0; i < 10; i++) {
-    if (isRedcodeRootDir(dir)) return dir
+    if (!isHomeDir(dir) && isRedcodeRootDir(dir)) return dir
     const parent = path.dirname(dir)
     if (parent === dir) break
     dir = parent
