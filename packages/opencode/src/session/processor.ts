@@ -485,8 +485,14 @@ export const layer = Layer.effect(
               throw new Error("Session terminated: canary token leaked in tool call input")
             }
 
-            const parts = MessageV2.parts(ctx.assistantMessage.id)
+            // 260806 Red 取样范围从「当前助手消息内部」改为「本会话最近的 tool 分片（跨消息）」。
+            // step-3.7-flash 实测会把同一个工具调用逐步重发 3–8 次，每步各是一条独立助手消息、
+            // 每条只含一个 tool 分片，旧取样在单条消息内永远凑不满阈值，检测器一次都没触发过。
+            const parts = MessageV2.recentToolParts(ctx.sessionID, DOOM_LOOP_THRESHOLD * 2)
             const recentParts = parts.slice(-DOOM_LOOP_THRESHOLD)
+
+            const outputKey = (part: (typeof recentParts)[number]) =>
+              part.type === "tool" && part.state.status === "completed" ? JSON.stringify(part.state.output ?? "") : null
 
             // Existing: exact same tool × DOOM_LOOP_THRESHOLD consecutive
             const exactLoop =
@@ -498,8 +504,15 @@ export const layer = Layer.effect(
                   part.state.status !== "pending" &&
                   JSON.stringify(part.state.input) === JSON.stringify(input),
               ) &&
-              // 260725 Only trigger when at least one tool actually errored
-              recentParts.some((part) => part.type === "tool" && part.state.status === "error")
+              // 260725 至少一次报错 —— 原判据保留
+              (recentParts.some((part) => part.type === "tool" && part.state.status === "error") ||
+                // 260806 Red 新增：同工具 + 同输入 + **同输出**连续 3 次，即使全部成功也算空转
+                // （模型收到结果仍原样重发；实测 grep/read 各重复 4–8 次，输出每次一模一样）。
+                // 要求输出也相同，是为了不误伤轮询类调用——那种每次输出都在变。
+                (() => {
+                  const outs = recentParts.map(outputKey)
+                  return outs[0] !== null && outs.every((o) => o === outs[0])
+                })())
 
             // Extended: cycling pattern (A→B→A→B or A→B→C→A→B→C)
             const CYCLE_WINDOW = DOOM_LOOP_THRESHOLD * 2

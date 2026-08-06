@@ -1039,6 +1039,31 @@ export function parts(message_id: MessageID) {
   )
 }
 
+// 260806 Red 会话级最近工具分片（按时间正序返回）。空转检测原本只看当前助手消息内部的
+// 分片，但 step 类模型的重复是「每步各生成一条独立助手消息、每条里只有一个 tool 分片」，
+// 单条消息内永远凑不满阈值 → 检测器从未触发。这里跨消息取样，并跳过 step-start/reasoning
+// 等中间分片，只留 tool。
+export function recentToolParts(session_id: SessionID, limit: number) {
+  const rows = Database.use((db) =>
+    db
+      .select()
+      .from(PartTable)
+      .where(eq(PartTable.session_id, session_id))
+      .orderBy(desc(PartTable.id))
+      // 每步除 tool 外还会写 step-start/step-finish/reasoning，多取几倍再过滤
+      .limit(limit * 8)
+      .all(),
+  )
+  const out: Part[] = []
+  for (const row of rows) {
+    const part = { ...row.data, id: row.id, sessionID: row.session_id, messageID: row.message_id } as Part
+    if (part.type !== "tool") continue
+    out.push(part)
+    if (out.length >= limit) break
+  }
+  return out.reverse()
+}
+
 export const get = Effect.fn("MessageV2.get")(function* (input: { sessionID: SessionID; messageID: MessageID }) {
   const row = Database.use((db) =>
     db
