@@ -192,3 +192,80 @@ shim 里唯一允许直接碰 `invoke` 的是 `call()` 包装，其余调用全�
 `src/renderer/html.test.ts` 从写下那天起就没在 CI 跑过。现已接上 `test` / `test:ci`
 （turbo 的通用 `test:ci` 任务会自动带上），并加了 `bun-preload.ts` 给 `electron` 做替身
 —— `bun test` 里没有 Electron 运行时，`import { crashReporter }` 会让整条 import 链塌掉。
+
+## 10. 任务 #6 调研：C 档事件通道 + 窗口控制（2026-08-07）
+
+> 调研产出，**未实施**。范围 = §3-C 全量：六个事件通道、zoom、窗口控制、sidecar 生命周期、titlebar。
+> 结论先行：迁移进度**不需要改 sidecar**（CLI 已有 stderr 协议，见 §10.2）；事件契约照 §9 范式扩展生成器即可；
+> `kill-sidecar` 被现有代码堵死了一半（child 句柄被丢弃，见 §10.3）。
+
+### 10.1 六个通道的真实语义（对照源码盘点）
+
+| 事件 | payload | 产生方 | 目标 | renderer 消费点 | 订阅语义 |
+|---|---|---|---|---|---|
+| `init-step` | `InitStep`（`phase` 三态 union） | `await-initialization` 处理器内（ipc.ts:52-55） | 调用窗口（event.sender） | loading.tsx:28；index.tsx:329（onStep 是 noop） | **随 invoke 生命周期**：preload 在 invoke 前订阅、settle 后退订（preload/index.ts:8-14） |
+| `sqlite-migration-progress` | `{type:"InProgress",value:0-100} \| {type:"Done"}` | sidecar 迁移回调 → index.ts:442 | mainWindow | loading.tsx:37 | on/off 对 |
+| `menu-command` | `string`（菜单项 id） | 菜单 trigger → index.ts:488 | 聚焦窗口 ?? mainWindow | index.tsx:305 | on/off 对 |
+| `deep-link` | `string[]` | emitDeepLinks（index.ts:177-181） | mainWindow | index.tsx:70 | on/off 对；首启走 pendingDeepLinks + `consume-initial-deep-links` |
+| `pinch-zoom-enabled-changed` | `boolean` | setPinchZoomEnabled（windows.ts:93-101） | **广播全窗口** | webview-zoom.ts:57 | on/off 对 |
+| `zoom-factor-changed` | `number` | updateZoom（windows.ts:433-436） | 本窗口 | webview-zoom.ts:48 | on/off 对 |
+
+生产者分三批：sidecar 启动流（#6 自产）、zoom 子系统（#6 一起做）、menu / deep-link（**生产者在 #7**，#6 先把通道与契约立好，#7 只补 emit 调用点）。
+
+### 10.2 最大简化：sqlite 迁移进度不需要动 sidecar
+
+Electron 的进度信道是 utilityProcess postMessage（sidecar.ts:86-98 的 `{type:"sqlite"}`），编译版 exe 没有这条信道——但**不需要**：CLI 入口 `packages/opencode/src/index.ts:120-154` 本来就自带首启迁移，且 **stderr 非 TTY 时打印机器可读协议**：每个百分比一行 `sqlite-migration:<整数>`、结束一行 `sqlite-migration:done`。tauri-plugin-shell spawn 出来的 sidecar，stderr 恰好非 TTY。
+
+- `needsMigration` 判定也不需要 Rust 复刻——CLI 自己查 marker（`Global.Path.data/redcode.db` 不存在才迁移）。Electron main 那份判定（index.ts:403-409，XDG_DATA_HOME 兜底路径）是 desktop 特有包装，Tauri 侧整个不要
+- main.rs:161-185 的事件循环目前把 `CommandEvent::Stderr` 落进 `_ => {}` 丢弃，补一个分支解析即可
+- 时序与 Electron 一致：迁移输出在 stdout `listening on` 之前，`sqlite_waiting → done` 的相位序自然成立
+
+### 10.3 落地设计
+
+**await_initialization（main.rs:135）改造为事件流水线：**
+
+1. 入口 emit `init-step {phase:"server_waiting"}`
+2. stderr 首次匹配 `^sqlite-migration:` → emit `init-step {phase:"sqlite_waiting"}`；每行 `sqlite-migration:N` → emit `sqlite-migration-progress {InProgress, value:N}`；`done` 行 → `{Done}`
+3. stdout `listening on` → emit `init-step {phase:"done"}`，resolve
+4. SidecarState 缓存命中的后续调用直接返回、不补发事件——与 Electron 语义一致（第二个调用方 index.tsx:329 的 onStep 本来就是 noop）
+
+**zoom 子系统（Rust 状态为权威源）：**
+
+- **Tauri 只有 `WebviewWindow::set_zoom`，没有 getter** → factor 必须 Rust 自持（`ZoomState(Mutex<f64>)`，初始 1.0）——反而比 Electron 简单（Electron 是 webContents 持有、main 读回）
+- `set_zoom_factor`：clamp 0.2..10（两侧常量本就一致：windows.ts:41-42 与 webview-zoom.ts:26-27）→ `set_zoom()` → 存状态 → emit `zoom-factor-changed`
+- `set_pinch_zoom_enabled`：写 settings store（键 `pinchZoomEnabled`，constants.ts:10）→ emit 广播 → 关闭且 factor≠1 时重置为 1（照 windows.ts:98）
+- 手势与快捷键**全在 renderer**（webview-zoom.ts：ctrl+wheel 捏合、ctrl+±/0），Rust 不参与；Electron wireZoom 的原生 `zoom-changed` 分支（windows.ts:417）在 Tauri 无对应 API，舍弃——renderer 路径已覆盖全部实际用法
+- ⚠ 实现时验证：WebView2 原生 ctrl+wheel / ctrl+± zoom 是否被 Tauri 默认禁用；没禁的话存在绕过 Rust 状态的第二条 zoom 路径，需在建窗时关闭
+
+**窗口控制（对照 ipc.ts:186-236）：**
+
+- `get_window_focused` / `set_window_focus` / `show_window`：command 注入 `window: WebviewWindow` 参数（等价 `fromWebContents(event.sender)`），调 `is_focused()` / `set_focus()` / `show()`
+- `flash_frame`：Tauri 对应物是 `request_user_attention(Informational)`，同样带失焦 guard（照 ipc.ts:191-194）——shim 里现在的静默 noop（tauri-api-shim.ts:93）可以顺手转正
+- `relaunch`：先杀 sidecar 树再 `tauri-plugin-process` restart（对齐 index.ts:493-497 菜单版的顺序，**不是** ipc.ts:213 的裸 relaunch——裸版靠 Electron will-quit 钩子兜底杀 sidecar，Tauri 没有这层）
+- `kill_sidecar`：**main.rs:150 目前把 child 句柄丢了（`_child`）**，必须把 `CommandChild`（至少 pid）存进 SidecarState 才能实现；且必须**树杀**——sidecar 还会 spawn MCP 子进程，Windows 上 `taskkill /F /T /PID`（照 server.ts 的 killSidecarTree；`descendants()` 在 Windows 返回空数组是已知坑）
+- `set_titlebar`：Electron 侧是 Windows 原生 titleBarOverlay 调色（windows.ts:83-91）；Tauri 侧 decorations:false + renderer 自绘标题栏（§7.2-1），**没有原生 overlay 可调 → no-op command**，如实注释
+- `loading_window_complete`：绑定 Electron 的独立 loading 窗口流程。提案：Tauri 走单窗口方案、不复刻 loading.html 独立窗口——首屏等待由 index.tsx 已有的 `<Show>` 门槛承担（§7.2 实测正常放行），此命令 no-op；若阶段三决定复刻双窗口再改
+
+新增 command 合计 12 个（zoom 四件、窗口五件含 flash_frame、kill_sidecar、set_titlebar、loading_window_complete），28 → 40。
+
+### 10.4 契约层扩展（照 §9 范式给事件立约）
+
+- **Rust 侧唯一事实源**：main.rs 事件区（生成器目前只读 MAIN_RS 单文件，事件区先放 main.rs，拆 events.rs 需同步改生成器——暂不），每个事件一个单行 emit helper：
+  ```rust
+  pub fn emit_init_step(app: &AppHandle, payload: InitStep) { let _ = app.emit("init-step", &payload); }
+  ```
+  生成器解析 fn 名 + payload 类型 + `emit("...")` 字符串字面量，并校验「fn 名去掉 `emit_` 后的 kebab == 字面量」——名字漂移在生成期就炸
+- **生成器新增 serde tagged enum 支持**（现在只认 struct）：`InitStep` = `#[serde(tag="phase", rename_all="snake_case")]` 三个 unit variant；`SqliteMigrationProgress` = `#[serde(tag="type")]` 的 `InProgress{value:u32}` / `Done`——序列化形状与 preload/types.ts:3,11 的 union 完全一致（用契约测试断言 serde_json 输出）。untagged / tuple variant 直接抛错，不吐 any
+- **生成物新增** `TauriEventPayloads` + `TAURI_EVENTS`；事件名沿用 Electron 的 kebab-case 原名（Tauri 事件名合法字符 `[a-zA-Z0-9-/:_]`，兼容）
+- **shim 新增 `on()` 包装** = 全文件唯一允许碰 `listen` 的地方（对偶 `call()` 之于 `invoke`）。两个 JS 侧陷阱：
+  1. `listen()` 返回 `Promise<UnlistenFn>`，而 ElectronAPI 的 on* 契约要**同步**返回退订函数 → 包装内 `promise.then(un => un())`
+  2. **listen 注册是异步的，`ipcRenderer.on` 是同步的**——awaitInitialization 必须先 `await` init-step 的注册完成再 invoke，否则漏掉早期 step；shim 写法：await listen → invoke → finally 退订（复刻 preload/index.ts:8-14 的作用域语义）
+- **契约测试增补**：① 事件名唯一且字符集合法 ② shim 无绕过 `on()` 的裸 `listen("字面量")` ③ `TAURI_EVENTS` 每项在 shim 有消费点 ④ enum 序列化形状 == preload/types.ts 的 union。暂不做「每个事件都有 Rust 生产者调用点」检查——menu-command / deep-link 的 emit 调用点 #7 才出现，记欠账
+- **广播 vs 定向**：现阶段单窗口，统一 `app.emit` 广播 + 模块级 `listen`（Tauri 文档默认配对）。Electron 语义里 zoom / menu 是 per-window 定向、pinch 是广播——真做多窗口（desktop-menu-actions.ts:23 的 new-window 动作）时换 `emit_to` + `getCurrentWebviewWindow().listen`，届时需两窗口原型实测 v2 的 target 匹配规则，先记在这不赌记忆
+
+### 10.5 #6 的验收面
+
+- shim 六个事件订阅全部接真（`noopUnsubscribe` 清零）、awaitInitialization 的 onStep 真实回调
+- `notPorted` 从 18 处调用降到 7（剩 #7 的 runDesktopMenuAction、#8 的 updater 三件套、readClipboardImage、exportDebugLogs、installCli）
+- 契约测试全绿 + `gen:tauri-commands --check` 通过
+- 手工验证：首启（删 marker 后）loading 进度条走完整 `server_waiting → sqlite_waiting → done`；ctrl+wheel 捏合缩放且重启后 pinch 开关记忆生效
