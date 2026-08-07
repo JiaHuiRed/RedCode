@@ -11,6 +11,32 @@
 ---
 
 ## TUI
+### [0.8.13] - 2026-08-07
+
+> 两条主线：AI SDK v6→v7 整族迁移（21 个包，从调研到合并当天闭环，含记账三档实测比对）；以及一批"只有换个环境才炸"的暗雷——空转检测从未生效、$REDCODE_ROOT 把家目录认成安装根、1M 窗口下分级压缩全部失效、弹窗遮罩吃掉中文。
+
+#### 重大
+
+- **AI SDK v6 → v7 整族迁移**（`ai` 6.0.208 → 7.0.50 + `@ai-sdk/*` 全族 21 包，版本按 bunfig `minimumReleaseAge` 供应链门槛选发布满 3 天的）。61 个导入点全数处理：copilot 工具工厂改名、类型放宽 V4|V3 联合（vendored copilot 不必重写）、`ToolExecutionOptions` 补必填 `context`、telemetry 摘除 `tracer`/`metadata`（OTel 拆去 `@ai-sdk/otel`，span 输出待接）、流分片补 `reasoning-file`/`tool-approval-response`/`custom`。**记账实测无偏移**：`usage()` 映射器因历史上的双形态防御式写法（v7 details → v6 顶层 → DeepSeek raw 三级兜底）零改动通过；真实 DeepSeek 会话对照 dev 基线，cache read/write/cost 三档全部在流。测试面 94/2 与 dev 基线持平，还顺带修好了 dev 上挂着的 bedrock pdf 用例。`patches/@ai-sdk%2Fxai@3.0.82.patch` 清债删除（4.x 已原生支持 PDF input_file）。
+- **vision 附件路径两处 v7 适配**（`session/message-v2.ts`，测试炸出的真雷，不修则运行时静默失败）：工具结果附件分片 `"media"` → `"file-data"`（v7 并入 file 族，旧形态直接被拒收）；bedrock 搬移路径撤销 `stripDataUrlPrefix`——v6 时代剥 `data:` 前缀防 SDK 双重包裹，v7 语义反转为走真 `new URL()` 解析，裸 base64 抛 `ERR_INVALID_URL`，改为 data: URL 原样保留、裸 base64 补包。
+
+#### 修复
+
+- **空转检测从未生效过**（`session/processor.ts`、`message-v2.ts`）：step-3.7-flash 实测把同一工具调用逐步重发 3–8 次刷屏。旧判据取样只看当前助手消息内部分片，而这类重复每步各是一条独立消息、单条内永远凑不满阈值——**全库 15.6 万个工具分片回放，旧判据历史触发 0 次**。改为会话级跨消息取样，并放宽"必须有报错"为"有报错或同工具+同输入+同输出"（输出相同防轮询误伤）。回放新判据 31 次、占比 0.02%，两个问题会话分别命中 1/7 次。
+- **`$REDCODE_ROOT` 把用户家目录认成安装根**（`mcp/index.ts`，260805 引入的回归）：`.redcode/` 是引擎给每个项目自动建的目录、家目录也有一份，exe 路径向上经过家目录即被误判 → 六个相对路径 MCP 全部 ENOENT。撤销 `.redcode` 分支判定，标记只认安装根独有物，另加家目录一票否决。附带纠正：此前"源码 bun 跑时 MCP 连不上是 execPath 固有限制"的判断是错的，就是本 bug。
+- **1M 窗口模型的分级压缩便宜档全部失效**（`session/overflow.ts`）：分级比例乘在 usable 上，但硬顶 threshold=400k 先到——deepseek/mimo 的 soft(570k)/prune(760k) 永远在硬顶之后，每次压缩都直接全量摘要重写（打掉前缀缓存+多付一次调用）。比例改乘 `min(threshold, usable)`：deepseek 变 240k/320k/400k，step（硬顶够不着）一个数不变。
+- **弹窗遮罩吃掉背景中文**（`tui/ui/dialog.tsx`、`routes/session/index.tsx`）：半透明黑遮罩（alpha 150/70）经 opentui 原生层合成时，双宽字符续格被当空白覆盖，CJK 整段消失而 ASCII 仅变暗。遮罩改全透明，用户实测确认修复；代价是弹窗背后不再变暗。
+- **postinstall 删 junction 在 Windows 上 EFAULT**（`script/fix-keymap-junction.ts`）：`rmSync` 删目录型 junction 走不通，后果是任何 `bun install/update` 整体失败回滚、升级看似"没生效"。改 unlink 失败退 rmdir，只摘链接不碰目标。后续又补两刀：目标实例 hash 改运行时探测（solid-js 升级即换 hash，钉死必崩 TUI）；悬空 junction 下 `existsSync` 顺链接说谎导致 EEXIST，改 lstat 判链接本身。
+- **DCP compress 铁律注入**（step 模型专用，`session/prompt.ts`）：step 常无视 soft nudge 不调 compress，直接铁律约束。（小宋 0a9d51a）
+
+#### 变更
+
+- **deepseek-v4-flash 下发 `top_p=0.95`**（`provider/transform.ts`）：对齐官方 V4-Flash-0731 公告的基准采样配置；温度不写（服务端默认即 1.0）。此前 deepseek/step 在分派表一条不中，两参数整个不出现在请求里。
+- **`prompt/deepseek.md` 按一线水平重校**：新增 Output channels（推演留思考通道、可见回复只放结论——治思维链漏正文，该通道 08-05/06 漏正文率 9.5%→33%、同期 step/mimo 为 0%）与 Corrections 两节；补篇幅纪律（长度跟问题不跟工作量、show don't tell、不写兜底收尾）、代码风格随文、结果不重取；全文统一为"粗体判据+一句展开"要点体例——依据用户实测：v4Flash-0731 规则遵守变强，提示词越结构化表现越好。
+- **低风险依赖批量升级**：prettier/turbo/oxlint/glob/sst、DCP 3.1.14、MCP SDK 1.30、solid-js/hono/@tsconfig/bun/opentui-spinner（catalog）、app 侧 solid 全家。注意 `bun update --latest` 在本仓不可用——会把 `catalog:` 间接引用替换成硬版本并把 workspace 依赖提升到根。
+- **openrouter 移入 disabled_providers**：已不使用；不删仓库代码（上游维护中，删了每次同步都要处理冲突）。
+- 落地 `docs/ai-sdk-v7-migration.md` 迁移调研全文（影响面、61 点分类、验证矩阵）。
+
 ### [0.8.12] - 2026-08-05
 
 > 起因是"同一份配置在公司和家里来回改、改完另一台必炸"的死循环，追下去发现根子不在同步本身，而在一份文件里混了机器无关与机器相关两类值。修法是加一层永不上传的本地覆盖层。顺着这条线做了一次仓库自查，捞出四个**从落地那天起就没生效过**的功能——三个子代理、自定义主题、装在仓库外时的模板播种、一半的 skill 播种——它们的共同点是失败时完全静默，没有任何报错。
