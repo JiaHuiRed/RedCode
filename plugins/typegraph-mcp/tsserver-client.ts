@@ -124,8 +124,15 @@ export class TsServerClient {
     if (this.child) return;
 
     // Resolve tsserver from the TARGET project's node_modules, not the MCP server's
-    const require = createRequire(path.resolve(this.projectRoot, "package.json"));
-    const tsserverPath = require.resolve("typescript/lib/tsserver.js");
+    let tsserverPath: string;
+    try {
+      tsserverPath = createRequire(path.resolve(this.projectRoot, "package.json")).resolve(
+        "typescript/lib/tsserver.js"
+      );
+    } catch {
+      // 260807 Red fallback：目标项目 TS7（tsgo）已移除 tsserver，回退本 server 自带 TS5.9
+      tsserverPath = createRequire(import.meta.url).resolve("typescript/lib/tsserver.js");
+    }
 
     log(`Spawning tsserver: ${tsserverPath}`);
     log(`Project root: ${this.projectRoot}`);
