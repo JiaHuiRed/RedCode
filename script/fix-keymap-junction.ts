@@ -28,30 +28,46 @@ const ROOT = resolve(import.meta.dir, "..")
 // solid-js 实例一致 —— 那就是当前 peer 上下文的正解。多个匹配取版本最高的 0.2.x。
 function detectTargetInstance(): string {
   const bunDir = join(ROOT, "node_modules", ".bun")
-  // realpathSync 一步到位：readlink 返回的是相对路径，手工 resolve 必须先拼所在目录，容易错
-  const rootSolidReal = realpathSync(join(ROOT, "node_modules", "solid-js"))
-  const candidates: Array<{ dir: string; version: string }> = []
+  const all: Array<{ dir: string; version: string; solidReal?: string }> = []
   for (const name of readdirSync(bunDir)) {
     if (!name.startsWith("@opentui+keymap@")) continue
     const inst = join(bunDir, name, "node_modules", "@opentui", "keymap")
     if (!existsSync(inst)) continue
-    const solidLink = join(bunDir, name, "node_modules", "solid-js")
-    if (!existsSync(solidLink)) continue
-    let solidReal: string
+    let solidReal: string | undefined
     try {
-      solidReal = realpathSync(solidLink)
-    } catch {
-      continue
-    }
-    if (solidReal !== rootSolidReal) continue
-    candidates.push({ dir: inst, version: name.slice("@opentui+keymap@".length).split("+")[0]! })
+      // realpathSync 一步到位：readlink 返回相对路径，手工 resolve 必须先拼所在目录，容易错
+      solidReal = realpathSync(join(bunDir, name, "node_modules", "solid-js"))
+    } catch {}
+    all.push({ dir: inst, version: name.slice("@opentui+keymap@".length).split("+")[0]!, solidReal })
   }
-  if (!candidates.length) throw new Error("[fix-keymap] no keymap instance matches the workspace solid-js — run bun install first")
+  if (!all.length) throw new Error("[fix-keymap] no keymap instance found — run bun install first")
+
+  // 单实例无需消歧（全新 worktree 常态）。多实例时按 solid 同源筛：
+  // 锚点依次试根/opencode 的 node_modules/solid-js（bun 的提升布局因树而异，
+  // worktree 实测没有根级 solid-js），都没有则退到 .bun 里唯一的 solid 实例。
+  let pool = all
+  if (all.length > 1) {
+    let anchor: string | undefined
+    for (const p of [join(ROOT, "node_modules", "solid-js"), join(ROOT, "packages", "opencode", "node_modules", "solid-js")]) {
+      try {
+        anchor = realpathSync(p)
+        break
+      } catch {}
+    }
+    if (!anchor) {
+      const solids = readdirSync(bunDir).filter((n) => n.startsWith("solid-js@"))
+      if (solids.length === 1) anchor = realpathSync(join(bunDir, solids[0]!, "node_modules", "solid-js"))
+    }
+    if (anchor) {
+      const matched = all.filter((c) => c.solidReal === anchor)
+      if (matched.length) pool = matched
+    }
+  }
   // 版本排序取最高的 0.2.x（catalog 钉的是 0.2.15；0.4.x 是并存的未启用实例）
-  const wanted = candidates.filter((c) => c.version.startsWith("0.2."))
-  const pool = wanted.length ? wanted : candidates
-  pool.sort((a, b) => b.version.localeCompare(a.version, undefined, { numeric: true }))
-  return pool[0]!.dir
+  const wanted = pool.filter((c) => c.version.startsWith("0.2."))
+  const final = wanted.length ? wanted : pool
+  final.sort((a, b) => b.version.localeCompare(a.version, undefined, { numeric: true }))
+  return final[0]!.dir
 }
 
 const TARGET_INSTANCE = detectTargetInstance()
@@ -62,10 +78,20 @@ const LINKS = [
   join(ROOT, "packages/plugin/node_modules/@opentui/keymap"),
 ]
 
+// 260806 Red 悬空 junction 陷阱：existsSync 会**顺着链接**判断，目标不存在时返回 false，
+// 于是删除分支被跳过、symlinkSync 直接 EEXIST。全新 worktree 首装时必踩（旧 solid 实例
+// 不存在，postinstall 建出的 junction 天生悬空）。判断"链接本身在不在"必须用 lstat。
+function linkStat(p: string) {
+  try {
+    return lstatSync(p)
+  } catch {
+    return undefined
+  }
+}
+
 function isJunctionToTarget(p: string): boolean {
-  if (!existsSync(p)) return false
-  const st = lstatSync(p)
-  if (!st.isSymbolicLink()) return false
+  const st = linkStat(p)
+  if (!st?.isSymbolicLink()) return false
   return resolve(readlinkSync(p)) === resolve(TARGET_INSTANCE)
 }
 
@@ -76,8 +102,9 @@ for (const link of LINKS) {
     continue
   }
   const bak = `${link}.bak`
-  if (existsSync(link)) {
-    if (lstatSync(link).isSymbolicLink()) {
+  const st = linkStat(link)
+  if (st) {
+    if (st.isSymbolicLink()) {
       // 指向错误实例的 junction → 摘掉链接本身，重建
       // 260806 Red rmSync(link) 在 Windows 上删目录型 junction 会 EFAULT（bun 1.3.14 实测），
       // postinstall 因此整个失败 → 任何 bun install/update 都写不进 package.json（升依赖时撞到）。
