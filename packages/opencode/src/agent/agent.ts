@@ -460,12 +460,9 @@ export const layer = Layer.effect(
         const isOpenaiOauth = model.providerID === "openai" && authInfo?.type === "oauth"
 
         const params = {
+          // 260807 Red v7: tracer 不再是 TelemetryOptions 的属性（拆去 @ai-sdk/otel），同 session/llm.ts
           experimental_telemetry: {
             isEnabled: cfg.experimental?.openTelemetry,
-            tracer,
-            metadata: {
-              userId: cfg.username ?? "unknown",
-            },
           },
           temperature: 0.3,
           messages: [

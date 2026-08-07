@@ -8,7 +8,7 @@ import { Npm } from "@redcode-ai/core/npm"
 import { Hash } from "@redcode-ai/core/util/hash"
 import { Plugin } from "../plugin"
 import { serviceUse } from "@/effect/service-use"
-import { type LanguageModelV3 } from "@ai-sdk/provider"
+import { type LanguageModelV3, type LanguageModelV4 } from "@ai-sdk/provider"
 import * as ModelsDev from "@redcode-ai/core/models-dev"
 import { Auth } from "../auth"
 import { Env } from "../env"
@@ -92,8 +92,12 @@ function googleVertexAnthropicBaseURL(project: string | undefined, location: str
   return `https://aiplatform.${location}.rep.googleapis.com/v1/projects/${project}/locations/${location}/publishers/anthropic/models`
 }
 
+// 260807 Red v7：官方 provider 全部产出 V4 模型，而 vendored 的 copilot（core 侧）仍是 V3。
+// ai@7 的 LanguageModel 本身就是 V4|V3|V2 联合，streamText 两者都收，所以这里放宽为联合
+// 而不是强推 V4 —— copilot 不必重写。
+type BundledLanguageModel = LanguageModelV4 | LanguageModelV3
 type BundledSDK = {
-  languageModel(modelId: string): LanguageModelV3
+  languageModel(modelId: string): BundledLanguageModel
 }
 
 const BUNDLED_PROVIDERS: Record<string, () => Promise<(opts: any) => BundledSDK>> = {
@@ -1016,7 +1020,7 @@ export interface Interface {
   readonly list: () => Effect.Effect<Record<ProviderID, Info>>
   readonly getProvider: (providerID: ProviderID) => Effect.Effect<Info>
   readonly getModel: (providerID: ProviderID, modelID: ModelID) => Effect.Effect<Model, ModelNotFoundError>
-  readonly getLanguage: (model: Model) => Effect.Effect<LanguageModelV3, ModelNotFoundError>
+  readonly getLanguage: (model: Model) => Effect.Effect<BundledLanguageModel, ModelNotFoundError>
   readonly closest: (
     providerID: ProviderID,
     query: string[],
@@ -1026,7 +1030,7 @@ export interface Interface {
 }
 
 interface State {
-  models: Map<string, LanguageModelV3>
+  models: Map<string, BundledLanguageModel>
   providers: Record<ProviderID, Info>
   catalog: Record<ProviderID, Info>
   sdk: Map<string, BundledSDK>
@@ -1305,7 +1309,7 @@ export const layer = Layer.effect(
         }
 
         const providers: Record<ProviderID, Info> = {} as Record<ProviderID, Info>
-        const languages = new Map<string, LanguageModelV3>()
+        const languages = new Map<string, BundledLanguageModel>()
         const modelLoaders: {
           [providerID: string]: CustomModelLoader
         } = {}
