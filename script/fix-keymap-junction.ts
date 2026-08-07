@@ -3,7 +3,7 @@
 // peer 解析上下文不同，会实例化成两个 hash 目录（opencode→77dde1de，
 // plugin→0d7da94b），TS 类型（#private 成员）互不兼容导致 typecheck 挂。
 // 统一两个 workspace 位置都指向 77dde1de 实例。幂等，可反复执行。
-import { existsSync, lstatSync, readlinkSync, renameSync, rmSync, symlinkSync } from "node:fs"
+import { existsSync, lstatSync, readlinkSync, renameSync, rmdirSync, rmSync, symlinkSync, unlinkSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 
 const ROOT = resolve(import.meta.dir, "..")
@@ -34,8 +34,16 @@ for (const link of LINKS) {
   const bak = `${link}.bak`
   if (existsSync(link)) {
     if (lstatSync(link).isSymbolicLink()) {
-      // 指向错误实例的 junction → 删掉重建
-      rmSync(link)
+      // 指向错误实例的 junction → 摘掉链接本身，重建
+      // 260806 Red rmSync(link) 在 Windows 上删目录型 junction 会 EFAULT（bun 1.3.14 实测），
+      // postinstall 因此整个失败 → 任何 bun install/update 都写不进 package.json（升依赖时撞到）。
+      // 先试 unlink（POSIX 符号链接），失败再退 rmdir（Windows junction），两者都只摘链接不碰目标。
+      // 绝不能改成 rmSync(link, { recursive: true })：那会顺着 junction 把目标实例的内容一并删掉。
+      try {
+        unlinkSync(link)
+      } catch {
+        rmdirSync(link)
+      }
     } else if (existsSync(bak)) {
       // 真实目录 + 已有 .bak → 直接删目录（bun install 可再生成）
       rmSync(link, { recursive: true })
