@@ -39,12 +39,13 @@
       "description": "把 Office/PDF 等非纯文本文档转 Markdown 供 LLM 读——read 读不了的二进制文档（.docx/.xlsx/.pptx/.pdf）用它提取文本；纯文本/代码仍用 read。",
       "enabled": true
     },
-    "browsermcp": {
+    "webqa": {
       "type": "local",
-      "command": ["node", "./browsermcp-server/index.js"],
+      "command": ["node", "./webqa-server/index.js"],
       "cwd": "$REDCODE_ROOT",
-      "description": "浏览器自动化（操作网页/抓动态页面）——需先装并连接浏览器扩展。默认关闭，用时改 enabled:true。",
-      "enabled": false
+      "description": "浏览器视觉验证（Playwright headless）——webqa_screenshot 截图、webqa_interact 驱动点击/输入/eval，截图落 Temp\\webqa，审图派多模态子代理（mimo-v2.5）read 图片。替代旧 browsermcp（需浏览器扩展+手动 Connect，已移除）。",
+      "timeout": 120000,
+      "enabled": true
     },
     "web-search": {
       "type": "local",
