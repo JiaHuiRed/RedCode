@@ -48,9 +48,11 @@ anthropic / google / bedrock / mistral / cohere / groq 等十余个包在本机�
 只有两个工厂函数改了名，分布在 6 个工具文件里：
 
 ```
-createProviderToolFactory                 → createProviderDefinedToolFactory
-createProviderToolFactoryWithOutputSchema → createProviderDefinedToolFactoryWithOutputSchema
+createProviderDefinedToolFactory        → createProviderToolFactory
+createProviderDefinedToolFactoryWithOutputSchema → createProviderToolFactoryWithOutputSchema
 ```
+
+> 260807 修正：此表方向曾写反（写成 v6 无 Defined → v7 加 Defined）。实测 provider-utils 4.0.21~4.0.30 全部只导出**无 Defined** 的 `createProviderToolFactory(WithOutputSchema)`，v6→v7 是**去掉** Defined。对应 4 个工具文件（local-shell/image-generation/code-interpreter/file-search）已在 260807 改回无 Defined 版本。
 
 Copilot 在本机同样从不加载，typecheck 过即可，无需流量验证。
 
