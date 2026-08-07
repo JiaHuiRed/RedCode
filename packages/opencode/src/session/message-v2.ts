@@ -695,7 +695,9 @@ export const toUIMessages = Effect.fn("Message.toUIMessages")(function* (
         value: [
           ...(outputObject.text ? [{ type: "text", text: outputObject.text }] : []),
           ...attachments.map((attachment) => ({
-            type: "media",
+            // 260807 Red v7: 工具结果内容的 "media" 变体并入 file 族，内联 base64 用 "file-data"
+            // （data 字段是纯 base64；"file" 变体收 URL，会把 base64 当 URL 解析直接抛错）
+            type: "file-data",
             mediaType: attachment.mime,
             data: iife(() => {
               const commaIndex = attachment.url.indexOf(",")
@@ -914,7 +916,14 @@ export const toUIMessages = Effect.fn("Message.toUIMessages")(function* (
               },
               ...media.map((attachment) => ({
                 type: "file" as const,
-                url: stripDataUrlPrefix(attachment.url),
+                // 260807 Red v7: convertToModelMessages 对 file part 的 url 做真 new URL() 解析，
+                // 裸 base64 直接抛 ERR_INVALID_URL。v6 时代 stripDataUrlPrefix 防的是 SDK 双重包裹，
+                // v7 语义反转：data: URL 保留原样，裸 base64 补包成 data: URL。
+                url: attachment.url.startsWith("data:")
+                  ? attachment.url
+                  : /^[a-z][a-z0-9+.-]*:/i.test(attachment.url)
+                    ? attachment.url
+                    : `data:${attachment.mime};base64,${attachment.url}`,
                 mediaType: attachment.mime,
                 filename: attachment.filename,
               })),

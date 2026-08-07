@@ -307,7 +307,7 @@ describe("session.message-v2.toModelMessage", () => {
             type: "file",
             mediaType: "image/png",
             filename: "img.png",
-            data: "https://example.com/img.png",
+            data: { type: "url", url: new URL("https://example.com/img.png") },
           },
           { type: "text", text: "What did we do so far?" },
           { type: "text", text: "The following tool was executed by the user" },
@@ -398,7 +398,8 @@ describe("session.message-v2.toModelMessage", () => {
               type: "content",
               value: [
                 { type: "text", text: "ok" },
-                { type: "media", mediaType: "image/png", data: "Zm9v" },
+                // 260807 Red v7: 工具结果内容的 "media" 变体并入 file 族，内联 base64 用 "file-data"
+                { type: "file-data", mediaType: "image/png", data: "Zm9v" },
               ],
             },
             providerOptions: { openai: { tool: "meta" } },
@@ -485,7 +486,7 @@ describe("session.message-v2.toModelMessage", () => {
         type: "content",
         value: [
           { type: "text", text: "Image read successfully" },
-          { type: "media", mediaType: "image/jpeg", data: jpeg },
+          { type: "file-data", mediaType: "image/jpeg", data: jpeg },
         ],
       },
     })
@@ -591,7 +592,7 @@ describe("session.message-v2.toModelMessage", () => {
             type: "file",
             mediaType: "application/pdf",
             filename: "example.pdf",
-            data: `data:application/pdf;base64,${pdf}`,
+            data: { type: "url", url: new URL(`data:application/pdf;base64,${pdf}`) },
           },
         ],
       },

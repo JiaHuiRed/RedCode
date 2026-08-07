@@ -14,7 +14,9 @@ import type { Provider } from "@/provider/provider"
 import { isRecord } from "@/util/record"
 
 type ToolInput = {
-  readonly description?: string
+  // 260807 Red v7: Tool.description 可以是函数（按 runtimeContext 动态生成），联合进类型；
+  // 静态描述之外的形态在 tools() 里置空处理，与 native-runtime.ts 同策略。
+  readonly description?: string | ((options: never) => string)
   readonly inputSchema?: unknown
 }
 
@@ -127,7 +129,7 @@ const tools = (input: Record<string, ToolInput> | undefined): ToolDefinition[] =
   Object.entries(input ?? {}).map(([name, item]) =>
     ToolDefinition.make({
       name,
-      description: item.description ?? "",
+      description: typeof item.description === "string" ? item.description : "",
       inputSchema: schema(item.inputSchema),
     }),
   )

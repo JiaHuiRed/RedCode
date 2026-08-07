@@ -226,6 +226,7 @@ describe("structured-output.createStructuredOutputTool", () => {
       toolCallId: "test-call-id",
       messages: [],
       abortSignal: undefined as any,
+        context: {},
     })
 
     expect(capturedOutput).toEqual(testArgs)
@@ -307,6 +308,7 @@ describe("structured-output.createStructuredOutputTool", () => {
         toolCallId: "test-call-id",
         messages: [],
         abortSignal: undefined as any,
+        context: {},
       },
     )
 
@@ -346,6 +348,7 @@ describe("structured-output.createStructuredOutputTool", () => {
         toolCallId: "test-call-id",
         messages: [],
         abortSignal: undefined as any,
+        context: {},
       },
     )
 
