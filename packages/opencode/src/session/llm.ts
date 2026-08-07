@@ -153,6 +153,8 @@ const live: Layer.Layer<
               toolCallId: _requestID,
               messages: input.messages,
               abortSignal: input.abort,
+              // 260807 Red v7: ToolExecutionOptions 新增必填 context（runtimeContext 载体），本仓不用，给空对象
+              context: {},
             })
             const output = typeof result === "string" ? result : (result?.output ?? JSON.stringify(result))
             return {
@@ -353,14 +355,15 @@ const live: Layer.Layer<
               },
             ],
           }),
+          // 260807 Red v7: TelemetryOptions 不再收 tracer —— OpenTelemetry 整体拆到 @ai-sdk/otel，
+          // tracer 改为传给 OpenTelemetry 集成的构造函数并 registerTelemetry() 注册。当前
+          // experimental.openTelemetry 开关只保留 isEnabled 语义；span 输出待接 @ai-sdk/otel
+          // （见 docs/ai-sdk-v7-migration.md B 档 telemetry 条）。telemetryTracer 的会话标注
+          // 逻辑随 tracer 一起悬置。
+          // metadata 属性同样被移除（自定义标注改走集成层的 InferTelemetryEvent）
           experimental_telemetry: {
             isEnabled: cfg.experimental?.openTelemetry,
             functionId: "session.llm",
-            tracer: telemetryTracer,
-            metadata: {
-              userId: cfg.username ?? "unknown",
-              sessionId: input.sessionID,
-            },
           },
         })
       return {

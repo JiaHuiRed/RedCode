@@ -121,9 +121,11 @@ export function nativeTools(tools: Record<string, Tool>, input: Pick<StreamInput
       // Tool execution remains redcode-owned. The native runtime only adapts
       // the @redcode-ai/llm tool call back into the AI SDK Tool.execute shape.
       nativeTool({
-        description: item.description ?? "",
+        // 260807 Red v7: Tool.description 可以是函数（按 runtimeContext 动态生成）。本仓工具
+        // 全是静态描述，函数形态直接置空——真遇到再说，不给它编造 context 去求值。
+        description: typeof item.description === "string" ? item.description : "",
         jsonSchema: nativeSchema(item.inputSchema),
-        execute: (args: unknown, ctx) =>
+        execute: (args: unknown, ctx: any) =>
           Effect.tryPromise({
             try: () => {
               if (!item.execute) throw new Error(`Tool has no execute handler: ${name}`)
@@ -131,6 +133,8 @@ export function nativeTools(tools: Record<string, Tool>, input: Pick<StreamInput
                 toolCallId: ctx?.id ?? name,
                 messages: input.messages,
                 abortSignal: input.abort,
+                // 260807 Red v7: ToolExecutionOptions 必填 context，本仓不用 runtimeContext
+                context: {},
               })
             },
             catch: (error) => new ToolFailure({ message: errorMessage(error), error }),

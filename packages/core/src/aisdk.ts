@@ -1,6 +1,6 @@
 export * as AISDK from "./aisdk"
 
-import type { LanguageModelV3 } from "@ai-sdk/provider"
+import type { LanguageModelV3, LanguageModelV4 } from "@ai-sdk/provider"
 import { Cause, Context, Effect, Layer, Schema } from "effect"
 import { ModelV2 } from "./model"
 import { PluginV2 } from "./plugin"
@@ -108,7 +108,7 @@ function initError(providerID: ProviderV2.ID) {
 }
 
 export interface Interface {
-  readonly language: (model: ModelV2.Info) => Effect.Effect<LanguageModelV3, InitError>
+  readonly language: (model: ModelV2.Info) => Effect.Effect<LanguageModelV4 | LanguageModelV3, InitError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@RedCode/v2/AISDK") {}
@@ -117,7 +117,7 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const plugin = yield* PluginV2.Service
-    const languages = new Map<string, LanguageModelV3>()
+    const languages = new Map<string, LanguageModelV4 | LanguageModelV3>()
     const sdks = new Map<string, SDK>()
 
     return Service.of({

@@ -270,6 +270,11 @@ export function toLLMEvents(
     case "raw":
     case "tool-output-denied":
     case "tool-approval-request":
+    // 260807 Red v7 新增分片：reasoning-file（模型产出的推理附件）/ tool-approval-response /
+    // custom。本仓事件语言暂无对应载体，与 source/file 同策略忽略，不进 LLMEvent。
+    case "reasoning-file":
+    case "tool-approval-response":
+    case "custom":
       return Effect.succeed([])
 
     default: {
