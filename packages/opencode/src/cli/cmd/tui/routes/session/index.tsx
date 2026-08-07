@@ -1326,7 +1326,8 @@ export function Session() {
                   right={0}
                   bottom={0}
                   alignItems="flex-end"
-                  backgroundColor={RGBA.fromInts(0, 0, 0, 70)}
+                  // 260806 Red 同 ui/dialog.tsx：半透明遮罩会让背景里的 CJK 整段消失，改全透明
+                  backgroundColor={RGBA.fromInts(0, 0, 0, 0)}
                 >
                   <Sidebar sessionID={route.sessionID} />
                 </box>

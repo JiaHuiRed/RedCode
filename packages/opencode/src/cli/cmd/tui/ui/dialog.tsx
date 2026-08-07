@@ -45,7 +45,12 @@ export function Dialog(
       paddingTop={dimensions().height / 4}
       left={0}
       top={0}
-      backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
+      // 260806 Red 遮罩改全透明：半透明黑（原 alpha 150）铺满全屏时，背景里的 CJK 整段消失，
+      // 而单宽的 ASCII 只是被压暗仍在。合成在 opentui 原生层（@opentui/core-win32-x64），
+      // 推断是 alpha 混合按单元格处理、双宽字符的续格被当空白覆盖掉。同文件里那些 alpha=0 的
+      // 行背景不会触发（弹窗内部的中文渲染正常），所以取 0 而不是删掉整个属性。
+      // 代价：弹窗背后的正文不再变暗。想找回变暗效果，得先等 opentui 修好宽字符合成。
+      backgroundColor={RGBA.fromInts(0, 0, 0, 0)}
     >
       <box
         onMouseUp={(e: { stopPropagation(): void }) => {
