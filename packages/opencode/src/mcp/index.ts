@@ -241,9 +241,11 @@ function listTools(key: string, client: MCPClient, timeout: number) {
 }
 
 // Convert MCP tool definition to AI SDK Tool type
+// 260807 Red: client 参数改为 getClient 闭包——断线重连（reconnectServer→storeClient）会换新 client，
+// 旧实现 execute 捕获当时的 client 引用，超时重连后仍指向已 close 的旧 client → 重试永远 Not connected。
 function convertMcpTool(
   mcpTool: MCPToolDef,
-  client: MCPClient,
+  getClient: () => MCPClient | undefined,
   serverName: string,
   reconnectFn?: () => Promise<void>,
   timeout?: number,
@@ -267,6 +269,11 @@ function convertMcpTool(
       let lastError: unknown
       for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
           try {
+            // 260807 Red: 每次调用从 clients 表取最新 client（s.clients[name] 由 storeClient 更新）
+            const client = getClient()
+            if (!client) {
+              throw new Error(`MCP server "${serverName}" is not connected`)
+            }
             // 260603 Red 进度推送：实时记录 MCP 工具调用进度
             let progressLog = ""
             return await client.callTool(
@@ -1012,7 +1019,7 @@ export const layer = Layer.effect(
 
       yield* Effect.forEach(
         connectedClients,
-        ([clientName, client]) =>
+        ([clientName]) =>
           Effect.gen(function* () {
             const mcpConfig = config[clientName]
             const entry = mcpConfig && isMcpConfigured(mcpConfig) ? mcpConfig : undefined
@@ -1031,7 +1038,8 @@ export const layer = Layer.effect(
             for (const mcpTool of listed) {
               if (disabled?.includes(mcpTool.name)) continue
               result[sanitize(clientName) + "_" + sanitize(mcpTool.name)] = convertMcpTool(
-                mcpTool, client, clientName, doReconnect, timeout,
+                // 260807 Red: 传 getClient 闭包而非 client 引用——s.clients[name] 重连后由 storeClient 换新
+                mcpTool, () => s.clients[clientName], clientName, doReconnect, timeout,
               )
             }
           }),
