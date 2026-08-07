@@ -309,7 +309,7 @@ export function AppInterface(props: {
             <ServerSyncProvider>
                 <Dynamic
                   component={props.router ?? Router}
-                  root={(routerProps) => <RouterRoot appChildren={props.children}>{routerProps.children}</RouterRoot>}
+                  root={(routerProps: BaseRouterProps) => <RouterRoot appChildren={props.children}>{routerProps.children as JSX.Element}</RouterRoot>}
                 >
                   <Route path="/" component={HomeRoute} />
                   <Route path="/:dir" component={DirectoryLayout}>
