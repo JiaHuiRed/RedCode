@@ -28,6 +28,7 @@
 - **弹窗遮罩吃掉背景中文**（`tui/ui/dialog.tsx`、`routes/session/index.tsx`）：半透明黑遮罩（alpha 150/70）经 opentui 原生层合成时，双宽字符续格被当空白覆盖，CJK 整段消失而 ASCII 仅变暗。遮罩改全透明，用户实测确认修复；代价是弹窗背后不再变暗。
 - **postinstall 删 junction 在 Windows 上 EFAULT**（`script/fix-keymap-junction.ts`）：`rmSync` 删目录型 junction 走不通，后果是任何 `bun install/update` 整体失败回滚、升级看似"没生效"。改 unlink 失败退 rmdir，只摘链接不碰目标。后续又补两刀：目标实例 hash 改运行时探测（solid-js 升级即换 hash，钉死必崩 TUI）；悬空 junction 下 `existsSync` 顺链接说谎导致 EEXIST，改 lstat 判链接本身。
 - **DCP compress 铁律注入**（step 模型专用，`session/prompt.ts`）：step 常无视 soft nudge 不调 compress，直接铁律约束。（小宋 0a9d51a）
+- **typegraph-mcp 兼容 TS7**（`plugins/typegraph-mcp/tsserver-client.ts`，commit 0aad824）：根 TypeScript 升 7.0.2（tsgo Go 原生版）后彻底移除 tsserver，typegraph-mcp 按设计从目标项目根解析 `typescript/lib/tsserver.js` 命中 TS7 报 `ERR_PACKAGE_PATH_NOT_EXPORTED`、server 启动即崩（侧边栏 -32000 断连）。改为 try/catch 回退：先试目标项目 TS（保留原设计意图），解析失败回退 MCP server 自带 typescript@5.9.3。官方 MCP SDK 实测：tsserver ready、ts_definition/ts_type_info/ts_module_exports 三工具在线。
 
 #### 变更
 
@@ -36,6 +37,13 @@
 - **低风险依赖批量升级**：prettier/turbo/oxlint/glob/sst、DCP 3.1.14、MCP SDK 1.30、solid-js/hono/@tsconfig/bun/opentui-spinner（catalog）、app 侧 solid 全家。注意 `bun update --latest` 在本仓不可用——会把 `catalog:` 间接引用替换成硬版本并把 workspace 依赖提升到根。
 - **openrouter 移入 disabled_providers**：已不使用；不删仓库代码（上游维护中，删了每次同步都要处理冲突）。
 - 落地 `docs/ai-sdk-v7-migration.md` 迁移调研全文（影响面、61 点分类、验证矩阵）。
+- **`redcode` 终端入口改跑编译产物，checkout 路径改探测**（`~/.redcode/bin/redcode.cmd`，私仓 `d8de0fd`）：此前 shim 跑的是 `bun run ./src/index.ts`，两个后果——① 源码树有并发会话在改，别人半成品的编辑会直接让日常入口起不来 ② 纯启动 3.3s。改跑 `dist/redcode-windows-x64/bin/redcode.exe` 后 **0.75s**。同批修掉一个伪装成"命令不存在"的 bug：shim 无条件把 cwd 塞成第一个位置参数，于是在任何 git 仓库里 `redcode doctor` 实际是 `index.ts <cwd> doctor`，默认命令 `[project]` 吃掉第一个位置参数、`doctor` 沦为多余的第二个 → yargs **打印帮助并 exit 0**，看起来像"这命令不存在"或"版本太旧"（我第一次就误判成后者）。现改为首参是裸词（子命令或显式路径）就不注入，无参或纯旗标才注入。checkout 路径解析三级：`REDCODE_HOME`（**独占**，其内没编译就跑其源码，绝不回落到别的 checkout 的 exe——那等于悄悄换代码库）→ 探测已知位置 → 都没有则回退源码并在 stderr 明说。另外不再 `cd` 到 `packages/opencode`，保住调用方 cwd，`doctor` 因此能正确认出 project memory。
+
+#### 待办
+
+- **Playwright 前端视觉验证闭环（"看见"方案，回家继续）**：给 RedCode 补"截图 → 多模态审图 → 反馈回主力模型"的浏览器验证闭环（主力 DeepSeek 无多模态，审图仿子代理：mimo-v2.5 或 vision MCP 兜底）。260807 已验证最小闭环：Edge headless 截图（`--headless=new --no-first-run --no-default-browser-check` + 独立 user-data-dir，零依赖）+ vision MCP 审图（minicpm-v4.6:q8_0 能准确读出布局/配色/文字/进度条宽度；12px 小字是精度边界）。下一步：Playwright 交互闭环（点击/输入/多尺寸，需装浏览器二进制 ~100MB）。
+- **另一台机器的 `redcode.cmd` 仍是旧版（回家处理）**：上面那条 shim 修复只落在公司这台的 `~/.bun/bin/redcode.cmd`。家里那台同样有"git 仓库内所有子命令被位置参数吞掉"的问题，也同样写死了 checkout 路径。修复版已随私仓同步到 `~/.redcode/bin/redcode.cmd`，拉下来覆盖 `~/.bun/bin/redcode.cmd` 即可。若该机 checkout 不在探测列表内（`E:\AI\RedCode` / `D:\AI\RedCode` / `D:\AI\KLX\RedCode` / `C:\AI\RedCode`），设 `REDCODE_HOME` 或在 shim 里加一行 `call :probe "<路径>"`。
+- **shim 有两份拷贝、会漂移（回家定方案）**：PATH 上的 `~/.bun/bin/redcode.cmd` 与私仓里的 `~/.redcode/bin/redcode.cmd` 是两个独立文件，改一处不会同步另一处——与 0.8.12 那条"同一份配置两台机器来回改"是同类问题，只是换了个载体。根治方案：把 PATH 上那份改成一行转发 `"%USERPROFILE%\.redcode\bin\redcode.cmd" %*`，逻辑只剩一份、跟着 git 走；代价是日常入口从此依赖 `~/.redcode` 目录可用（该目录正在 git 操作中途时有风险）。未做，等拍板。
 
 ### [0.8.12] - 2026-08-05
 
