@@ -24,6 +24,11 @@ export const Local = Schema.Struct({
   disabledTools: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
     description: "Tool names to hide from this MCP server. Only tools not in this list will be exposed.",
   }),
+  tools: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
+    description:
+      "Whitelist: only these tool names are injected into the prompt. Omit to expose all tools. " +
+      "Empty array hides every tool (server stays connected but contributes nothing).",
+  }),
 }).annotate({ identifier: "McpLocalConfig" })
 export type Local = Schema.Schema.Type<typeof Local>
 
@@ -59,6 +64,11 @@ export const Remote = Schema.Struct({
   }),
   timeout: Schema.optional(PositiveInt).annotate({
     description: "Timeout in ms for MCP server requests. Defaults to 5000 (5 seconds) if not specified.",
+  }),
+  tools: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
+    description:
+      "Whitelist: only these tool names are injected into the prompt. Omit to expose all tools. " +
+      "Empty array hides every tool (server stays connected but contributes nothing).",
   }),
 }).annotate({ identifier: "McpRemoteConfig" })
 export type Remote = Schema.Schema.Type<typeof Remote>

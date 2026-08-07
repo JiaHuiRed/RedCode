@@ -1035,7 +1035,10 @@ export const layer = Layer.effect(
             const toolBridge = yield* EffectBridge.make()
             const doReconnect = () => toolBridge.promise(reconnectServer(clientName))
             const disabled = entry?.type === "local" ? entry.disabledTools : undefined
+            // 260807 Red: tools 白名单——只注入列出的工具，省略则全量（prefix 成本控制）
+            const allow = entry?.tools
             for (const mcpTool of listed) {
+              if (allow && !allow.includes(mcpTool.name)) continue
               if (disabled?.includes(mcpTool.name)) continue
               result[sanitize(clientName) + "_" + sanitize(mcpTool.name)] = convertMcpTool(
                 // 260807 Red: 传 getClient 闭包而非 client 引用——s.clients[name] 重连后由 storeClient 换新
@@ -1059,7 +1062,10 @@ export const layer = Layer.effect(
         log.info("using cached tools for MCP server", { serverName, toolCount: cached.length })
         const entry = cfgEntry
         const disabled = entry.type === "local" ? entry.disabledTools : undefined
+        // 260807 Red: 与 live 路径同规则，白名单过滤后落盘工具
+        const allow = entry.tools
         for (const mcpTool of cached) {
+          if (allow && !allow.includes(mcpTool.name)) continue
           if (disabled?.includes(mcpTool.name)) continue
           result[sanitize(serverName) + "_" + sanitize(mcpTool.name)] = convertMcpToolCached(
             mcpTool, serverName,

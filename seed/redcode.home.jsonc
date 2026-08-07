@@ -23,6 +23,7 @@
       "cwd": "$REDCODE_ROOT",
       "environment": { "TYPEGRAPH_PROJECT_ROOT": ".", "TYPEGRAPH_TSCONFIG": "./tsconfig.json" },
       "timeout": 60000,
+      "tools": ["ts_type_info"],
       "enabled": true
     },
     "jcodemunch": {
@@ -65,6 +66,9 @@
         "VISION_TIMEOUT_MS": "120000"
       },
       "description": "图像理解——当前模型非多模态、需看截图/图片内容时用（本地 Ollama minicpm-v4.6:q8_0）；纯文本任务不用。",
+      // 260807 Karina: 白名单只注入 analyze_image + compare_images（30 天实际调用统计），
+      // ocr_image / analyze_video 零调用不进前缀，要用时改回全量或加进数组
+      "tools": ["analyze_image", "compare_images"],
       "enabled": true
     },
     "su-prememory": {
@@ -72,6 +76,8 @@
       "command": ["bun", "./plugins/mcp-su-prememory-local/src/index.ts"],
       "cwd": "$REDCODE_ROOT",
       "description": "Local semantic memory — SQLite+FTS5, no cloud",
+      // 260807 Karina: 30 天零调用，白名单留空 = 连接但不注入任何工具
+      "tools": [],
       "enabled": true
     },
     "mcp-process-mgmt": {
