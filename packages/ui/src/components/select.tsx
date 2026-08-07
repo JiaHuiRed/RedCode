@@ -90,7 +90,10 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
       data-trigger-style={local.triggerVariant}
       placement={local.triggerVariant === "settings" ? "bottom-end" : "bottom-start"}
       gutter={4}
-      value={local.current}
+      // 260807 Red: Kobalte Select 的 value 契约是 Option[]（index-30251fee.d.ts:79），
+      // 传单个值会在打开下拉时 selectedKeys 求值 .map 崩 → 下拉渲染空。
+      // 包成数组修复；onChange 侧同样收到数组，取 [0] 还原单值语义（见 onChange）。
+      value={local.current == null ? undefined : [local.current]}
       options={grouped()}
       optionValue={(x) => (local.value ? local.value(x) : (x as string))}
       optionTextValue={(x) => (local.label ? local.label(x) : (x as string))}
@@ -124,7 +127,9 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
         </Kobalte.Item>
       )}
       onChange={(v) => {
-        local.onSelect?.(v ?? undefined)
+        // 260807 Red: Kobalte onChange 传 Option[]（单选=[option]），取 [0] 还原单值。
+        // 类型 cast：Kobalte 类型契约写单选 T|null（index-30251fee.d.ts:260）但运行时给数组（7ZVQULJJ.js:297-302）
+        local.onSelect?.((v as T[] | null)?.[0] ?? undefined)
         stop()
       }}
       onOpenChange={(open) => {

@@ -1954,6 +1954,7 @@
 #### 修复
 
 - **GUI sidecar 周期性崩溃根治**（`packages/desktop/src/main/server.ts`）：移除 `REDCODE_EXPERIMENTAL_FILEWATCHER: "true"` 环境注入——@parcel/watcher-win32-x64 原生模块在 sidecar 常驻文件监听下触发 V8 Invalid handle abort（异常码 0x9E44，JS 层 uncaughtException 拦不住），表现为 GUI 运行约 20 分钟后 sidecar 退出、界面全面 Failed to fetch；TUI 从不加载 watcher（flag 默认 false）故从未崩溃。副作用：GUI 失去文件监听（experimental 功能，影响小）。
+- **输入框 agent / 模型下拉渲染空修复**（`packages/ui/src/components/select.tsx`）：Kobalte Select 运行时契约要求 `value` 为数组（`value.map()` 无条件调用）、`onChange` 收到匹配 option 数组——原实现传单值，打开下拉时 selectedKeys 求值抛 TypeError 致下拉空、无法选择。修复 = value 包数组（空值传 undefined）+ onChange 取 `[0]`。涉及 agentControl（RedMind/build/plan 切换）与 variantControl（模型档位）全部 Select 调用点，对外语义不变。
 
 ---
 
