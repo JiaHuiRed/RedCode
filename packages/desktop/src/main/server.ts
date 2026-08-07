@@ -92,7 +92,10 @@ export function preferAppEnv(userDataPath: string) {
   Object.assign(process.env, {
     ...(shell ? loadShellEnv(shell) : null),
     REDCODE_EXPERIMENTAL_ICON_DISCOVERY: "true",
-    REDCODE_EXPERIMENTAL_FILEWATCHER: "true",
+    // 260807 Red: 移除 FILEWATCHER 注入——@parcel/watcher 原生模块
+    // 在 GUI sidecar 常驻触发 V8 Invalid handle abort（0x9E44），
+    // 表现为运行约 20 分钟后 sidecar 崩溃、GUI 全面 Failed to fetch。
+    // TUI 默认不加载 watcher，从未崩溃；GUI 失去文件监听为可接受副作用。
     REDCODE_CLIENT: "desktop",
     XDG_STATE_HOME: process.env.XDG_STATE_HOME ?? userDataPath,
   })

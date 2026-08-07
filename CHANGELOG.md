@@ -1951,6 +1951,10 @@
 - **依赖批量升级**：低风险补丁/次版本批量升级，AI SDK v7 生态对齐（21 包 61 导入点随 TUI 0.8.13 迁移）。
 - **全仓 UTF-8 BOM 清理**（`packages/app`、`packages/desktop`）：1036 个被跟踪文件去除 BOM，消除跨平台差异。
 
+#### 修复
+
+- **GUI sidecar 周期性崩溃根治**（`packages/desktop/src/main/server.ts`）：移除 `REDCODE_EXPERIMENTAL_FILEWATCHER: "true"` 环境注入——@parcel/watcher-win32-x64 原生模块在 sidecar 常驻文件监听下触发 V8 Invalid handle abort（异常码 0x9E44，JS 层 uncaughtException 拦不住），表现为 GUI 运行约 20 分钟后 sidecar 退出、界面全面 Failed to fetch；TUI 从不加载 watcher（flag 默认 false）故从未崩溃。副作用：GUI 失去文件监听（experimental 功能，影响小）。
+
 ---
 
 ### [0.7.14] - 2026-08-05
