@@ -8,7 +8,7 @@
   "scripts": {
     "setup:recording-env": "bun run script/setup-recording-env.ts",
     "test": "bun test --timeout 30000",
-    "typecheck": "tsgo --noEmit"
+    "typecheck": "tsc --noEmit"
   },
   "exports": {
     ".": "./src/index.ts",
@@ -39,8 +39,7 @@
     "@effect/platform-node": "catalog:",
     "@redcode-ai/http-recorder": "workspace:*",
     "@tsconfig/bun": "catalog:",
-    "@types/bun": "catalog:",
-    "@typescript/native-preview": "catalog:"
+    "@types/bun": "catalog:"
   },
   "dependencies": {
     "@smithy/eventstream-codec": "4.2.14",

@@ -10,7 +10,7 @@
     "email": "red@redcode.dev"
   },
   "scripts": {
-    "typecheck": "tsgo -b",
+    "typecheck": "tsc -b",
     "test": "bun test --preload ./bun-preload.ts src",
     "test:ci": "mkdir -p .artifacts/unit && bun test --preload ./bun-preload.ts src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "gen:tauri-commands": "bun ./scripts/gen-tauri-commands.ts",
@@ -52,14 +52,13 @@
     "@solidjs/router": "0.15.4",
     "@types/bun": "catalog:",
     "@types/node": "catalog:",
-    "@typescript/native-preview": "catalog:",
     "@valibot/to-json-schema": "1.6.0",
     "electron": "42.4.1",
     "electron-builder": "^26",
     "electron-vite": "^5",
     "solid-js": "catalog:",
     "sury": "11.0.0-alpha.4",
-    "typescript": "~5.6.2",
+    "typescript": "catalog:",
     "vite": "catalog:",
     "zod-openapi": "5.4.6"
   },
