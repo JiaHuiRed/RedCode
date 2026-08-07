@@ -3,15 +3,59 @@
 // peer 解析上下文不同，会实例化成两个 hash 目录（opencode→77dde1de，
 // plugin→0d7da94b），TS 类型（#private 成员）互不兼容导致 typecheck 挂。
 // 统一两个 workspace 位置都指向 77dde1de 实例。幂等，可反复执行。
-import { existsSync, lstatSync, readlinkSync, renameSync, rmdirSync, rmSync, symlinkSync, unlinkSync } from "node:fs"
+import {
+  existsSync,
+  lstatSync,
+  readdirSync,
+  readlinkSync,
+  realpathSync,
+  renameSync,
+  rmdirSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+} from "node:fs"
 import { dirname, join, resolve } from "node:path"
 
 const ROOT = resolve(import.meta.dir, "..")
-// bun 的 keymap 实例目录（77dde1de 为 TUI/opencode 解析的实例）
-const TARGET_INSTANCE = join(
-  ROOT,
-  "node_modules/.bun/@opentui+keymap@0.2.15+77dde1de2a06b7f4/node_modules/@opentui/keymap",
-)
+
+// 260806 Red 目标实例不再写死 hash，改为运行时探测。
+// 教训：hash 后缀是 bun 按 peer 解析上下文算的，260806 只是把 catalog 的 solid-js
+// 1.9.13→1.9.14，keymap 就实例化出了新 hash（45062d8c），而这里还钉着旧的
+// 77dde1de（绑 1.9.13）。两份 solid 不同源 → createContext 身份对不上 →
+// 终端跑源码的 TUI 启动即崩 "Keymap not found"（编译产物不受影响，依赖已打包）。
+// 探测规则：在 .bun 里找 keymap 实例，其内嵌 solid-js 链接与仓库根解析到的
+// solid-js 实例一致 —— 那就是当前 peer 上下文的正解。多个匹配取版本最高的 0.2.x。
+function detectTargetInstance(): string {
+  const bunDir = join(ROOT, "node_modules", ".bun")
+  // realpathSync 一步到位：readlink 返回的是相对路径，手工 resolve 必须先拼所在目录，容易错
+  const rootSolidReal = realpathSync(join(ROOT, "node_modules", "solid-js"))
+  const candidates: Array<{ dir: string; version: string }> = []
+  for (const name of readdirSync(bunDir)) {
+    if (!name.startsWith("@opentui+keymap@")) continue
+    const inst = join(bunDir, name, "node_modules", "@opentui", "keymap")
+    if (!existsSync(inst)) continue
+    const solidLink = join(bunDir, name, "node_modules", "solid-js")
+    if (!existsSync(solidLink)) continue
+    let solidReal: string
+    try {
+      solidReal = realpathSync(solidLink)
+    } catch {
+      continue
+    }
+    if (solidReal !== rootSolidReal) continue
+    candidates.push({ dir: inst, version: name.slice("@opentui+keymap@".length).split("+")[0]! })
+  }
+  if (!candidates.length) throw new Error("[fix-keymap] no keymap instance matches the workspace solid-js — run bun install first")
+  // 版本排序取最高的 0.2.x（catalog 钉的是 0.2.15；0.4.x 是并存的未启用实例）
+  const wanted = candidates.filter((c) => c.version.startsWith("0.2."))
+  const pool = wanted.length ? wanted : candidates
+  pool.sort((a, b) => b.version.localeCompare(a.version, undefined, { numeric: true }))
+  return pool[0]!.dir
+}
+
+const TARGET_INSTANCE = detectTargetInstance()
+console.log(`[fix-keymap] target: ${TARGET_INSTANCE.replace(ROOT, "<root>")}`)
 // 需要统一指向的位置：opencode（运行时）与 plugin（SDK 类型链）
 const LINKS = [
   join(ROOT, "packages/opencode/node_modules/@opentui/keymap"),
