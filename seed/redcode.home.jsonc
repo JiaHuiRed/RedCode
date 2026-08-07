@@ -55,16 +55,16 @@
     },
     "vision": {
       "type": "local",
-      // 260804 Red 指回工作区本地插件：4eda2a8 误配公司 fork 绝对路径
-      // D:\AI\vision-mcp-server（本机不存在）致 MCP 启动失败；插件走 Ollama
-      // 原生 /api/generate，模型用本机实测最优的 minicpm-v4.6:f16。
-      "command": ["node", "./plugins/vision-mcp-local/index.js"],
-      "cwd": "$REDCODE_ROOT",
+      // 260807 Karina 切到重写后的新 server（D:\AI\vision-mcp-server）：4 工具、走 OpenAI 兼容
+      // /v1/chat/completions、q8_0、120s 超时。旧插件 plugins/vision-mcp-local 的 fetch 无超时保护，
+      // Ollama 慢时被 SDK 60s 掐断，且重连后工具闭包引用旧 client 报 Not connected（GA 会话实测）。
+      "command": ["node", "D:/AI/vision-mcp-server/dist/index.js"],
       "environment": {
-        "VISION_BASE_URL": "http://localhost:11434",
-        "VISION_MODEL": "minicpm-v4.6:f16"
+        "VISION_BASE_URL": "http://localhost:11434/v1/chat/completions",
+        "VISION_MODEL": "minicpm-v4.6:q8_0",
+        "VISION_TIMEOUT_MS": "120000"
       },
-      "description": "图像理解——当前模型非多模态、需看截图/图片内容时用（走本地 Ollama minicpm-v4.6:f16）；纯文本任务不用。",
+      "description": "图像理解——当前模型非多模态、需看截图/图片内容时用（本地 Ollama minicpm-v4.6:q8_0）；纯文本任务不用。",
       "enabled": true
     },
     "su-prememory": {
