@@ -221,6 +221,10 @@ export const layer = Layer.effect(
                 websearch: "allow",
                 read: "allow",
                 external_directory: readonlyExternalDirectory,
+                // 260808 Red 索引/类型查询放行——探索子代理此前只能 grep/read 硬读，
+                // 白白浪费效率与 token（jcodemunch 索引命中即可跳过原文件读取）
+                "jcodemunch_*": "allow",
+                "typegraph_*": "allow",
               }),
               user,
             ),
@@ -249,6 +253,9 @@ export const layer = Layer.effect(
                         ...readonlyExternalDirectory,
                         [path.join(Global.Path.repos, "*")]: "allow",
                       },
+                      // 260808 Red 同上：scout 也走索引优先
+                      "jcodemunch_*": "allow",
+                      "typegraph_*": "allow",
                     }),
                     user,
                   ),
