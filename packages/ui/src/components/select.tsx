@@ -22,6 +22,10 @@ export type SelectProps<T> = Omit<ComponentProps<typeof Kobalte<T>>, "value" | "
   triggerProps?: Record<string, string | number | boolean | undefined>
 }
 
+/** 分组子项的私有键名——不能用业务数据里可能存在的名字（见 grouped() 注释） */
+const GROUP_CHILDREN = "__selectGroupItems"
+type SelectGroup<T> = { category: string; __selectGroupItems: T[] }
+
 export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">) {
   const [local, others] = splitProps(props, [
     "class",
@@ -71,20 +75,26 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
 
   onCleanup(stop)
 
+  // 260808 Red: 分组子项的键名必须是**选项数据里不可能出现的**名字。
+  // 原来叫 `options`，而 agent 选项对象自带 `options` 字段（`/agent` 返回的
+  // name/displayName/description/mode/native/permission/**options**）——Kobalte 按
+  // `optionGroupChildren` 逐项探测，于是把每个 agent 当成"分组"、去它的 `options`
+  // 里找子项，那是个对象不是数组，结果一个叶子都没有：agent 下拉打开永远是空的。
+  // 推理强度下拉是字符串选项、不带这个字段，所以只坏了 agent 那一个——两个控件
+  // 症状不同的根源就在这。改成带前缀的私有键，任何业务字段都不会撞上。
   const grouped = createMemo(() => {
     const result = pipe(
       local.options,
       groupBy((x) => (local.groupBy ? local.groupBy(x) : "")),
-      // mapValues((x) => x.sort((a, b) => a.title.localeCompare(b.title))),
       entries(),
-      map(([k, v]) => ({ category: k, options: v })),
+      map(([k, v]) => ({ category: k, [GROUP_CHILDREN]: v })),
     )
     return result
   })
 
   return (
     // @ts-ignore
-    <Kobalte<T, { category: string; options: T[] }>
+    <Kobalte<T, SelectGroup<T>>
       {...others}
       data-component="select"
       data-trigger-style={local.triggerVariant}
@@ -93,11 +103,11 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
       // 260807 Red: Kobalte Select 的 value 契约是 Option[]（index-30251fee.d.ts:79），
       // 传单个值会在打开下拉时 selectedKeys 求值 .map 崩 → 下拉渲染空。
       // 包成数组修复；onChange 侧同样收到数组，取 [0] 还原单值语义（见 onChange）。
-      value={local.current == null ? undefined : [local.current]}
+      value={local.current}
       options={grouped()}
       optionValue={(x) => (local.value ? local.value(x) : (x as string))}
       optionTextValue={(x) => (local.label ? local.label(x) : (x as string))}
-      optionGroupChildren="options"
+      optionGroupChildren={GROUP_CHILDREN}
       placeholder={local.placeholder}
       sectionComponent={(local) => (
         <Kobalte.Section data-slot="select-section">{local.section.rawValue.category}</Kobalte.Section>
@@ -127,9 +137,16 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
         </Kobalte.Item>
       )}
       onChange={(v) => {
-        // 260807 Red: Kobalte onChange 传 Option[]（单选=[option]），取 [0] 还原单值。
-        // 类型 cast：Kobalte 类型契约写单选 T|null（index-30251fee.d.ts:260）但运行时给数组（7ZVQULJJ.js:297-302）
-        local.onSelect?.((v as T[] | null)?.[0] ?? undefined)
+        // 260808 Red: Kobalte 的进出契约**不对称**，两侧必须分别处理：
+        //   - value 进去要数组：selectedKeys 无条件 `.map()`（chunk/7ZVQULJJ.js:285-290），
+        //     传单值会在打开下拉时崩、下拉渲染空（260807 已修，见上面 value=）。
+        //   - onChange 出来是**单值**：实测 `onChange raw = low, typeof = string`。
+        // 260807 那次把两侧都按数组处理，于是 `v?.[0]` 对字符串取到首字符——"low" → "l"，
+        // 永远匹配不上任何选项，表现为「点了没反应 / 选完跳回默认」（agent 与推理强度同时哑火）。
+        // 源码里 getOptionsFromValues 确实返回数组，但那是多选内部路径，不是单选实际走的那条——
+        // 这里以运行时实测为准，并且两种形状都兼容，免得再被内部实现变化打中。
+        const next = Array.isArray(v) ? (v[0] as T | undefined) : (v as T | null | undefined)
+        local.onSelect?.(next ?? undefined)
         stop()
       }}
       onOpenChange={(open) => {
