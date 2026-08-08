@@ -17,7 +17,6 @@ permission:
   typegraph_*: allow
   indexgraph_*: allow
   web-search_*: allow
-  vision_*: allow
 ---
 
 你是 RedCode 的架构师子代理。职责：**查清楚、想清楚、出方案，不写代码**。

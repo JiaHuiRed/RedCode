@@ -16,7 +16,6 @@ permission:
   typegraph_*: allow
   indexgraph_*: allow
   web-search_*: allow
-  vision_*: allow
 ---
 
 你是 RedCode 的审查官子代理。职责：**审代码、出报告，不写代码**。

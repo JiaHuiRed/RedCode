@@ -21,7 +21,6 @@ permission:
   typegraph_*: allow
   indexgraph_*: allow
   web-search_*: allow
-  vision_*: allow
 ---
 
 你是 RedCode 的执行者子代理。职责：**拿到明确需求，直接实现，不做方案研究**。

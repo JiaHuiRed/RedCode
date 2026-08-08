@@ -55,23 +55,11 @@
       "timeout": 120000,
       "enabled": true
     },
-    "vision": {
-      "type": "local",
-      // 260807 Karina 切到重写后的新 server（D:\AI\vision-mcp-server）：4 工具、走 OpenAI 兼容
-      // /v1/chat/completions、q8_0、120s 超时。旧插件 plugins/vision-mcp-local 的 fetch 无超时保护，
-      // Ollama 慢时被 SDK 60s 掐断，且重连后工具闭包引用旧 client 报 Not connected（GA 会话实测）。
-      "command": ["node", "D:/AI/vision-mcp-server/dist/index.js"],
-      "environment": {
-        "VISION_BASE_URL": "http://localhost:11434/v1/chat/completions",
-        "VISION_MODEL": "minicpm-v4.6:q8_0",
-        "VISION_TIMEOUT_MS": "120000"
-      },
-      "description": "图像理解——当前模型非多模态、需看截图/图片内容时用（本地 Ollama minicpm-v4.6:q8_0）；纯文本任务不用。",
-      // 260807 Karina: 白名单只注入 analyze_image + compare_images（30 天实际调用统计），
-      // ocr_image / analyze_video 零调用不进前缀，要用时改回全量或加进数组
-      "tools": ["analyze_image", "compare_images"],
-      "enabled": true
-    },
+    // 260807 哥哥拍板：vision MCP 整体退役，识图统一走多模态子代理（task 派 explore，
+    // mimo-v2.5 原生多模态，用 read 直接读图）。理由不是它坏了，是本地 minicpm 精度有
+    // 上限、还要占显存与 Ollama 宿主内存，而派子代理看一次图只要几分钱，成本不构成理由。
+    // 配套改动：prompt.ts 的 VISION CAPABILITY 权威注入、skill/vision-autoagent、
+    // 三个子代理的 vision_* 放行均已同步。别再把这个块加回来。
     "su-prememory": {
       "type": "local",
       "command": ["bun", "./plugins/mcp-su-prememory-local/src/index.ts"],

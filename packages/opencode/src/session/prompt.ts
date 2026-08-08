@@ -1571,12 +1571,15 @@ export const layer = Layer.effect(
             // instruction) a stronger signal, not a weaker one.
             // 260802 Red inject current model's image capability so the model has a hard
             // authoritative fact instead of relying on skill hints. When true, the model must
-            // NOT route user-attached images to vision_analyze_image — it can see them directly.
+            // not route user-attached images anywhere else — it can see them directly.
+            // 260807 哥哥拍板：本地 vision MCP 整体退役，识图统一走多模态子代理。本地
+            // minicpm 精度有上限、还要占显存和 Ollama 宿主内存；派子代理看一次图只要几分钱，
+            // 成本不构成理由。这条是权威事实，模型不该再去找任何 vision_* 工具。
             // Stable per model: text only changes when the model changes (which busts prefix anyway).
             system.push(
               `▸ VISION CAPABILITY (authoritative): current model image input support = ${
                 model.capabilities.input.image ? "true" : "false"
-              }. If true, you can see user-attached images directly — NEVER call vision_analyze_image for them. If false, use vision_analyze_image for images.`,
+              }. If true, you can see user-attached images directly — just look at them. If false, dispatch a multimodal subagent (task tool, \`explore\` agent) with the image's absolute path and have it read the file and describe what you need; there is no vision MCP tool — never look for one.`,
             )
             const canaryToken = getCanary(sessionID)
             system.push(
