@@ -80,6 +80,63 @@ type Turn = {
   end: number
   id: MessageID
 }
+// 260808 Red 文件清单（Pi 借鉴第 3 项）：压缩摘要附真实 read/modified 文件路径，
+// 机械提取而非让模型凭记忆写 Relevant Files；跨压缩增量累积（标签解析回滚）。
+const READ_TOOLS = new Set(["read"])
+const WRITE_TOOLS = new Set(["edit", "write", "apply_patch"])
+
+export function filePathsFrom(part: MessageV2.ToolPart): string[] {
+  const input = part.state.input as Record<string, unknown>
+  if (typeof input?.filePath === "string") return [input.filePath]
+  if (part.tool === "apply_patch" && Array.isArray(input?.hunks)) {
+    return input.hunks.flatMap((hunk) =>
+      typeof (hunk as Record<string, unknown>)?.filePath === "string"
+        ? [(hunk as Record<string, unknown>).filePath as string]
+        : [],
+    )
+  }
+  return []
+}
+
+export function collectFiles(messages: MessageV2.WithParts[]) {
+  const read: string[] = []
+  const modified: string[] = []
+  for (const msg of messages) {
+    for (const part of msg.parts) {
+      if (part.type !== "tool" || part.state.status !== "completed") continue
+      const paths = filePathsFrom(part)
+      if (!paths.length) continue
+      const target = READ_TOOLS.has(part.tool) ? read : WRITE_TOOLS.has(part.tool) ? modified : undefined
+      if (target) target.push(...paths)
+    }
+  }
+  return { read: dedupe(read), modified: dedupe(modified) }
+}
+
+export function dedupe(paths: string[]) {
+  return [...new Set(paths)]
+}
+
+export function parseFileTags(text: string) {
+  const extract = (tag: string) =>
+    dedupe(
+      (text.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`))?.[1] ?? "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean),
+    )
+  return { read: extract("read-files"), modified: extract("modified-files") }
+}
+
+export function appendFileTags(summary: string, files: { read: string[]; modified: string[] }) {
+  const tags = [
+    files.read.length ? `<read-files>\n${files.read.join("\n")}\n</read-files>` : "",
+    files.modified.length ? `<modified-files>\n${files.modified.join("\n")}\n</modified-files>` : "",
+  ]
+    .filter(Boolean)
+    .join("\n")
+  return tags ? `${summary}\n\n${tags}` : summary
+}
 
 type Tail = {
   start: number
@@ -620,6 +677,29 @@ export const layer = Layer.effect(
             parts: [],
           },
         )
+        // 260808 Red 文件清单追加（Pi 借鉴第 3 项）：机械提取被压缩消息里真实 read/write
+        // 过的文件，与上次摘要标签合并后 append 到摘要文本 —— 压缩后模型不用重新探索
+        // 已读文件，也不依赖模型在 Relevant Files 里凭记忆写路径。
+        const priorFiles = parseFileTags(previousSummary ?? "")
+        const fresh = collectFiles(selected.head)
+        const files = {
+          read: dedupe([...priorFiles.read, ...fresh.read]),
+          modified: dedupe([...priorFiles.modified, ...fresh.modified]),
+        }
+        if (files.read.length || files.modified.length) {
+          const tagged = appendFileTags(summary ?? "", files)
+          const parts =
+            (yield* session.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)).find(
+              (item) => item.info.id === msg.id,
+            )?.parts ?? []
+          const textPart = parts.findLast((part) => part.type === "text" && !!part.text.trim())
+          if (textPart && textPart.type === "text") {
+            yield* session.updatePart({
+              ...textPart,
+              text: tagged,
+            })
+          }
+        }
         if (flags.experimentalEventSystem) {
           yield* events.publish(SessionEvent.Compaction.Ended, {
             sessionID: input.sessionID,

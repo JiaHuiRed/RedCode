@@ -7,7 +7,7 @@ import { Config } from "@/config/config"
 import { Image } from "@/image/image"
 import { Agent } from "../../src/agent/agent"
 import { LLM } from "../../src/session/llm"
-import { SessionCompaction } from "../../src/session/compaction"
+import { SessionCompaction, appendFileTags, collectFiles, parseFileTags } from "../../src/session/compaction"
 import { Token } from "@/util/token"
 import * as Log from "@redcode-ai/core/util/log"
 import { Permission } from "../../src/permission"
@@ -1792,5 +1792,56 @@ describe("SessionNs.getUsage", () => {
     expect(result.tokens.input).toBe(500)
     expect(result.tokens.cache.read).toBe(200)
     expect(result.tokens.cache.write).toBe(300)
+  })
+})
+
+// 260808 Red 文件清单纯函数（Pi 借鉴第 3 项）——独立于 flaky 的 process 集成环境
+describe("compaction file tags", () => {
+  const mkTool = (tool: string, input: Record<string, unknown>, status: string = "completed") =>
+    ({
+      type: "tool",
+      tool,
+      state: { status, input },
+    }) as MessageV2.ToolPart
+
+  const mkMsg = (parts: MessageV2.ToolPart[]) =>
+    ({
+      info: { role: "assistant" },
+      parts,
+    }) as MessageV2.WithParts
+
+  test("collectFiles extracts read/modified paths, skips failed and unknown tools", () => {
+    const messages = [
+      mkMsg([
+        mkTool("read", { filePath: "src/a.ts" }),
+        mkTool("read", { filePath: "src/a.ts" }),
+        mkTool("read", { filePath: "src/b.ts" }, "error"),
+        mkTool("edit", { filePath: "src/c.ts" }),
+        mkTool("write", { filePath: "src/d.ts" }),
+        mkTool("apply_patch", { hunks: [{ filePath: "src/e.ts" }, { filePath: "src/c.ts" }] }),
+        mkTool("bash", { command: "ls" }),
+      ]),
+    ]
+    const files = collectFiles(messages)
+    expect(files.read).toEqual(["src/a.ts"])
+    expect(files.modified).toEqual(["src/c.ts", "src/d.ts", "src/e.ts"])
+  })
+
+  test("parseFileTags parses both tags and dedupes", () => {
+    const text =
+      "# Summary\n<read-files>\nsrc/a.ts\nsrc/b.ts\nsrc/a.ts\n</read-files>\n<modified-files>\nsrc/c.ts\n</modified-files>"
+    expect(parseFileTags(text)).toEqual({ read: ["src/a.ts", "src/b.ts"], modified: ["src/c.ts"] })
+    expect(parseFileTags("# Summary only")).toEqual({ read: [], modified: [] })
+  })
+
+  test("appendFileTags appends only when files exist", () => {
+    expect(appendFileTags("summary", { read: [], modified: [] })).toBe("summary")
+    const tagged = appendFileTags("summary", { read: ["src/a.ts"], modified: ["src/c.ts"] })
+    expect(tagged).toBe("summary\n\n<read-files>\nsrc/a.ts\n</read-files>\n<modified-files>\nsrc/c.ts\n</modified-files>")
+  })
+
+  test("round trip: append then parse returns the same files", () => {
+    const files = { read: ["src/a.ts", "src/b.ts"], modified: ["src/c.ts"] }
+    expect(parseFileTags(appendFileTags("summary", files))).toEqual(files)
   })
 })
