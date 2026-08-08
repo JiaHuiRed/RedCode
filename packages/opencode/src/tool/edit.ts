@@ -740,6 +740,53 @@ export const SimpleReplacer: Replacer = function* (_content, find) {
 // 行数封顶，跳过这个 best-effort 兜底、退回"没找到"，而不是等真出一次卡死事故再补。
 const LINE_SCAN_MAX_CONTENT_LINES = 3000
 
+
+// 260808 Red 学习 Pi (badlogic) 的 normalizeForFuzzyMatch：模型经常因智能引号、Unicode
+// 破折号、特殊空格、全角字符与文件实际字符的细微差异导致精确匹配失败。这里做逐字符
+// 1:1 归一化（NFKC + 引号/破折号/空格归 ASCII），保证 norm 与原文等长，偏移直接可映射
+// 回原文——所以 yield 的永远是原文子串，替换只影响匹配区，不像 Pi 的 contentForReplacement
+// 会把匹配区外的字符也洗成 ASCII。
+export function normalizeUnicodeChar(ch: string): string {
+  const nfkc = ch.normalize("NFKC")
+  // 展开型（ligature 如 ﬁ→fi）：保留原字符，维持 norm 与原文等长（1:1 偏移映射）
+  if (nfkc.length !== 1) return ch
+  // 智能引号 → ASCII 引号（NFKC 不覆盖）
+  if (nfkc === "\u2018" || nfkc === "\u2019" || nfkc === "\u201A" || nfkc === "\u201B") return "'"
+  if (nfkc === "\u201C" || nfkc === "\u201D" || nfkc === "\u201E" || nfkc === "\u201F") return '"'
+  // Unicode 破折号/减号 → ASCII hyphen
+  if (nfkc >= "\u2010" && nfkc <= "\u2015") return "-"
+  if (nfkc === "\u2212") return "-"
+  // 特殊空格 → 普通空格（U+3000 全角空格 NFKC 已转，这里补 NBSP 等）
+  if (nfkc === "\u00A0" || (nfkc >= "\u2002" && nfkc <= "\u200A") || nfkc === "\u202F" || nfkc === "\u205F" || nfkc === "\u3000") return " "
+  return nfkc
+}
+
+export function normalizeUnicode(text: string): string {
+  let norm = ""
+  for (let i = 0; i < text.length; i++) {
+    norm += normalizeUnicodeChar(text[i])
+  }
+  return norm
+}
+
+export const UnicodeNormalizedReplacer: Replacer = function* (content, find) {
+  if (content.split("\n").length > LINE_SCAN_MAX_CONTENT_LINES) return
+  const normContent = normalizeUnicode(content)
+  const normFind = normalizeUnicode(find)
+  // 两侧都无需归一化时，归一化匹配与精确匹配等价，SimpleReplacer 已覆盖——顺便也挡住
+  // 纯 ASCII 文件 + ASCII find（绝大多数）的零收益扫描。任一侧有差异都要继续：
+  // content 含全角/特殊空格而 find 是 ASCII，或反之，都是模型的典型失败模式。
+  if (normContent === content && normFind === find) return
+
+  let startIndex = 0
+  while (true) {
+    const index = normContent.indexOf(normFind, startIndex)
+    if (index === -1) break
+    // norm 与原文等长逐字符对应，同一区间直接取原文子串
+    yield content.substring(index, index + normFind.length)
+    startIndex = index + normFind.length
+  }
+}
 export const LineTrimmedReplacer: Replacer = function* (content, find) {
   const originalLines = content.split("\n")
   if (originalLines.length > LINE_SCAN_MAX_CONTENT_LINES) return
@@ -1203,6 +1250,7 @@ export function replace(content: string, oldString: string, newString: string, r
 
   for (const replacer of [
     SimpleReplacer,
+    UnicodeNormalizedReplacer,
     LineTrimmedReplacer,
     BlockAnchorReplacer,
     WhitespaceNormalizedReplacer,

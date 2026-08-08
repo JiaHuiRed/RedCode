@@ -719,3 +719,93 @@ describe("tool.edit", () => {
     )
   })
 })
+
+
+  // 260808 Red UnicodeNormalizedReplacer：模型写的 oldString 常与文件实际字符有细微
+  // 差异（智能引号/全角字符/特殊空格/Unicode 破折号），精确匹配失败后应归一化降级命中。
+  // 与 Pi 的 contentForReplacement 不同：只替换匹配区，匹配区外的字符保持原样。
+  describe("unicode fuzzy matching", () => {
+    it.instance("matches smart double quotes against ASCII quotes", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "quotes.txt")
+        yield* put(filepath, 'const s = "it\'s fine";')
+
+        yield* run({ filePath: filepath, oldString: "\u201Cit\u2019s fine\u201D", newString: "\u201Cit\u2019s ok\u201D" })
+
+        expect(yield* load(filepath)).toBe('const s = \u201Cit\u2019s ok\u201D;')
+      }),
+    )
+
+    it.instance("matches smart single quotes against ASCII quotes", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "quotes.txt")
+        yield* put(filepath, "const s = 'it's fine';")
+
+        yield* run({ filePath: filepath, oldString: "\u2018it\u2019s fine\u2019", newString: "ok" })
+
+        expect(yield* load(filepath)).toBe("const s = ok;")
+      }),
+    )
+
+    it.instance("matches full-width chars (Chinese scene) against half-width", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "cn.txt")
+        yield* put(filepath, "console.log\uFF08\u4E2D\u6587\uFF09")
+
+        yield* run({ filePath: filepath, oldString: "(\u4E2D\u6587)", newString: "(CN)" })
+
+        expect(yield* load(filepath)).toBe("console.log(CN)")
+      }),
+    )
+
+    it.instance("matches NBSP against regular space", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "nbsp.txt")
+        yield* put(filepath, "const a = 1\u00A0+ 2;")
+
+        yield* run({ filePath: filepath, oldString: "1 + 2", newString: "3" })
+
+        expect(yield* load(filepath)).toBe("const a = 3;")
+      }),
+    )
+
+    it.instance("matches unicode dash against ASCII hyphen", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "dash.txt")
+        yield* put(filepath, "const b = a\u2014b;")
+
+        yield* run({ filePath: filepath, oldString: "a-b", newString: "ab" })
+
+        expect(yield* load(filepath)).toBe("const b = ab;")
+      }),
+    )
+
+    it.instance("replaceAll replaces every unicode-equivalent occurrence", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "multi.txt")
+        yield* put(filepath, 'const x = "a" + "a";')
+
+        yield* run({ filePath: filepath, oldString: "\u201Ca\u201D", newString: "Q", replaceAll: true })
+
+        expect(yield* load(filepath)).toBe("const x = Q + Q;")
+      }),
+    )
+
+    it.instance("only replaces the matched region, leaves other chars untouched", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "preserve.txt")
+        yield* put(filepath, "'keep' \"target\" 'keep'")
+
+        yield* run({ filePath: filepath, oldString: "\u201Ctarget\u201D", newString: "TARGET" })
+
+        expect(yield* load(filepath)).toBe("'keep' TARGET 'keep'")
+      }),
+    )
+  })
