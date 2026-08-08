@@ -772,8 +772,13 @@ export function Prompt(props: PromptProps) {
   })
 
   createEffect(() => {
+    // 260808 Red: disabled 也要让出焦点。权限/提问弹窗期间输入框现在**保持挂载可见**
+    // （见 routes/session/index.tsx 的 visible 备注：卸载会连正在打的字一起销毁），
+    // 但它不能继续占着焦点——权限弹窗的选项键里有 `h`/`l` 这种纯字母键，而本组件
+    // onKeyDown/onPaste 在 disabled 时是 preventDefault 直接吞掉，占着焦点会让弹窗
+    // 整个没法操作。让出焦点后按键落到弹窗，输入框只负责把内容留在原地。
     if (!input || input.isDestroyed) return
-    if (props.visible === false || dialog.stack.length > 0) {
+    if (props.visible === false || props.disabled || dialog.stack.length > 0) {
       if (input.focused) input.blur()
       return
     }

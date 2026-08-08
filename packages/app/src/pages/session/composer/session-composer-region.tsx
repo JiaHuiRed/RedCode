@@ -60,7 +60,12 @@ export function SessionComposerRegion(props: {
   const info = createMemo(() => (route.params.id ? sync.session.get(route.params.id) : undefined))
   const parentID = createMemo(() => info()?.parentID)
   const child = createMemo(() => !!parentID())
-  const showComposer = createMemo(() => !props.state.blocked() || child())
+  // 260808 Red: 输入框不再随权限/提问弹窗卸载。原来是 `!blocked() || child()`，
+  // 弹窗一出现整个 <PromptInput> 被卸载，正在编辑的内容随组件销毁——用户打到一半
+  // 被冲掉，且必须先处理弹窗才能继续打。GUI 的弹窗是鼠标点按钮，与输入没有按键冲突
+  // （TUI 不同，那边选项键含 h/l，所以 TUI 只保内容、仍禁输入），因此这里直接常驻，
+  // 弹窗期间照常打字。
+  const showComposer = createMemo(() => true)
 
   const previewPrompt = () =>
     prompt
@@ -260,21 +265,22 @@ export function SessionComposerRegion(props: {
               <Show
                 when={child()}
                 fallback={
-                  <Show when={!props.state.blocked()}>
-                    <PromptInput
-                      variant={props.placement === "inline" ? "new-session" : undefined}
-                      ref={props.inputRef}
-                      newSessionWorktree={props.newSessionWorktree}
-                      onNewSessionWorktreeChange={props.onNewSessionWorktreeChange}
-                      onNewSessionWorktreeReset={props.onNewSessionWorktreeReset}
-                      edit={props.followup?.edit}
-                      onEditLoaded={props.followup?.onEditLoaded}
-                      shouldQueue={props.followup?.queue}
-                      onQueue={props.followup?.onQueue}
-                      onAbort={props.followup?.onAbort}
-                      onSubmit={props.onSubmit}
-                    />
-                  </Show>
+                  // 260808 Red: 这里原本还套了一层 <Show when={!blocked()}>，权限/提问弹窗
+                  // 一出现就把 PromptInput 卸载、连同正在编辑的内容一起销毁。已去掉——
+                  // 弹窗期间输入框常驻，随便打字（GUI 弹窗是点按钮，没有按键冲突）。
+                  <PromptInput
+                    variant={props.placement === "inline" ? "new-session" : undefined}
+                    ref={props.inputRef}
+                    newSessionWorktree={props.newSessionWorktree}
+                    onNewSessionWorktreeChange={props.onNewSessionWorktreeChange}
+                    onNewSessionWorktreeReset={props.onNewSessionWorktreeReset}
+                    edit={props.followup?.edit}
+                    onEditLoaded={props.followup?.onEditLoaded}
+                    shouldQueue={props.followup?.queue}
+                    onQueue={props.followup?.onQueue}
+                    onAbort={props.followup?.onAbort}
+                    onSubmit={props.onSubmit}
+                  />
                 }
               >
                 <div

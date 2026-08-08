@@ -214,7 +214,14 @@ export function Session() {
     if (session()?.parentID) return []
     return children().flatMap((x) => sync.data.question[x.id] ?? [])
   })
-  const visible = createMemo(() => !session()?.parentID && permissions().length === 0 && questions().length === 0)
+  // 260808 Red: visible 只判断"是不是子代理会话"，不再把权限/提问算进来。
+  // 原来算进来的后果：弹窗一出现 visible 变 false，外层 <Show when={visible()}> 把整个
+  // <Prompt> 卸载，编辑器缓冲区随组件销毁——正在打的字直接没了，处理完权限还得重打。
+  // 而 Prompt 本就有完整的 disabled 模式（光标灰化、按键与粘贴门控），设计意图就是
+  // "留在原地但不可输入"，只是被外层卸载抢先，那条路从来没被走到过。
+  // 现在：弹窗期间输入框保持挂载可见、内容留住，disabled 挡住输入，焦点让给弹窗
+  // （让焦点这步在 component/prompt/index.tsx 的 focus effect 里）。
+  const visible = createMemo(() => !session()?.parentID)
   const disabled = createMemo(() => permissions().length > 0 || questions().length > 0)
 
   const pending = createMemo(() => {

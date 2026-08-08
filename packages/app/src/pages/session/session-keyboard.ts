@@ -61,7 +61,10 @@ export function createSessionKeyboard(input: SessionKeyboardInput) {
     }
 
     if (event.key.length === 1 && event.key !== "Unidentified" && !(event.ctrlKey || event.metaKey)) {
-      if (input.composer.blocked() || input.isChildSession()) return
+      // 260808 Red: 去掉 blocked() 判断。它原本配合"弹窗期间卸载输入框"的行为，
+      // 现在输入框在权限/提问弹窗期间常驻，敲字就该照常聚焦过去；留着会让人
+      // 打了字却没有任何反应。子会话仍然不接管（那边本来就没有输入框）。
+      if (input.isChildSession()) return
       input.inputRef?.focus()
     }
   }
