@@ -642,7 +642,9 @@ export function MessageTimeline(props: {
         return
       }
 
-      bottomAnchorFrames = working() ? 12 : bottomAnchorFrames - 1
+      // 260808 Red 去掉 working 续命：内容更新已由 createEffect 重新 schedule（重置 90 帧预算），
+      // 流式期间每帧续 12 会让 rAF 永不停止、每帧强制 scrollTop 重排，模型思考间隙也在白跑
+      bottomAnchorFrames -= 1
       if (bottomAnchorFrames <= 0) return
       bottomAnchorFrame = requestAnimationFrame(tick)
     }
