@@ -519,7 +519,10 @@ function unsupportedParts(msgs: ModelMessage[], model: Provider.Model): ModelMes
       const pathHint = savedPath ? ` TEMP_FILE:${savedPath}` : ""
       return {
         type: "text" as const,
-        text: `ERROR: Cannot read ${name} (this model does not support ${modality} input). Use vision_analyze_image tool.${pathHint}`,
+        // 260808 Red：原文案是 "Use vision_analyze_image tool."，但 vision MCP 已于 260807
+        // 整体退役（见 96c7da9），这里指了个不存在的工具——模型照做只会白白试错一轮。
+        // 改为指向多模态子代理，与 prompt.ts 的 VISION CAPABILITY 权威注入口径一致。
+        text: `ERROR: Cannot read ${name} (this model does not support ${modality} input). Dispatch a multimodal subagent (task tool, \`explore\` agent) and have it read the file at the path below.${pathHint}`,
       }
     })
 

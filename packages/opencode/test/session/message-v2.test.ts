@@ -316,6 +316,40 @@ describe("session.message-v2.toModelMessage", () => {
     ])
   })
 
+  // 260808 Red 回归：用户手动附件（粘贴/拖入）走 data: URL，必须原样保留。
+  // 曾经这里调 stripDataUrlPrefix 把前缀剥掉留下裸 base64，而 v7 的
+  // convertToModelMessages 对 file part 做真 new URL() 解析 → ERR_INVALID_URL，
+  // 于是 prompt 构造直接抛异常、请求根本发不出去，UI 永远停在"等待模型响应"
+  // （实测 ses_020d51950ffe…，日志里只有一条 service=server error="<整串 base64>"
+  // cannot be parsed as a URL，token 全 0）。同一个坑 v7 迁移时修过工具结果附件那条，
+  // 用户附件这条漏了——所以两条路径各来一个用例钉住。
+  test("keeps data: URLs intact for user-attached media (v7 new URL() contract)", async () => {
+    const messageID = "m-data-url"
+    const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=="
+
+    const input: MessageV2.WithParts[] = [
+      {
+        info: userInfo(messageID),
+        parts: [
+          { ...basePart(messageID, "p1"), type: "text", text: "看这个" },
+          {
+            ...basePart(messageID, "p2"),
+            type: "file",
+            mime: "image/png",
+            filename: "clipboard",
+            url: png,
+          },
+        ] as MessageV2.Part[],
+      },
+    ]
+
+    const result = await MessageV2.toModelMessages(input, model)
+    const file = (result[0]!.content as any[]).find((part) => part.type === "file")
+    // 关键断言：拿到的必须仍是可被 new URL() 解析的 data: URL，而不是裸 base64
+    expect(String(file.data.url ?? file.data)).toStartWith("data:image/png;base64,")
+    expect(() => new URL(String(file.data.url ?? file.data))).not.toThrow()
+  })
+
   test("converts assistant tool completion into tool-call + tool-result messages with attachments", async () => {
     const userID = "m-user"
     const assistantID = "m-assistant"

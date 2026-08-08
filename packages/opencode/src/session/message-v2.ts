@@ -39,11 +39,25 @@ interface FetchDecompressionError extends Error {
 export const SYNTHETIC_ATTACHMENT_PROMPT = "Attached media from tool result:"
 export { isMedia }
 
-/** Strip the data: prefix from a data URL so downstream SDKs don't double-wrap it. */
-function stripDataUrlPrefix(url: string) {
-  if (!url.startsWith("data:")) return url
-  const base64Index = url.indexOf(";base64,")
-  return base64Index >= 0 ? url.slice(base64Index + 8) : url
+/**
+ * 把附件 url 规整成 AI SDK v7 能接受的形态。
+ *
+ * 260808 Red：v7 的 convertToModelMessages 对 file part 的 url 做**真 `new URL()` 解析**，
+ * 裸 base64 直接抛 `ERR_INVALID_URL`。v6 时代恰恰相反——那时要用 stripDataUrlPrefix 把
+ * `data:` 前缀剥掉，防 SDK 双重包裹；v7 语义反转后，那个剥前缀的动作从"必需"变成了"致命"。
+ *
+ * v7 迁移当时只改了工具结果附件那条路径，**用户手动粘贴/拖入的附件这条漏了**，于是：
+ * 会话里一旦有用户附的图，每轮 prompt 构造就抛异常 → 请求根本发不出去 → UI 永远停在
+ * "等待模型响应"，且日志只有一条 `service=server error="<整串 base64>" cannot be parsed as a URL`，
+ * token 全 0、message.time.completed 恒为 null。同供应商同模型的无图会话完全正常，
+ * 所以看起来像"供应商抽风"（实测 ses_020d51950ffe…，08-08）。
+ *
+ * 规则：已带 scheme（data:/http(s):/file: 等）的原样保留，裸 base64 补包成 data: URL。
+ */
+function toModelFileUrl(url: string, mime: string) {
+  if (url.startsWith("data:")) return url
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return url
+  return `data:${mime};base64,${url}`
 }
 
 export const AbortedError = NamedError.create("MessageAbortedError", { message: Schema.String })
@@ -744,7 +758,9 @@ export const toUIMessages = Effect.fn("Message.toUIMessages")(function* (
           } else {
             userMessage.parts.push({
               type: "file",
-              url: stripDataUrlPrefix(part.url),
+              // 260808 Red：原来是 stripDataUrlPrefix(part.url)，剥掉 data: 前缀留下裸 base64——
+              // 在 v7 下必抛 ERR_INVALID_URL（见 toModelFileUrl 注释）。这条是用户手动附件的路径。
+              url: toModelFileUrl(part.url, part.mime),
               mediaType: part.mime,
               filename: part.filename,
             })
@@ -916,14 +932,9 @@ export const toUIMessages = Effect.fn("Message.toUIMessages")(function* (
               },
               ...media.map((attachment) => ({
                 type: "file" as const,
-                // 260807 Red v7: convertToModelMessages 对 file part 的 url 做真 new URL() 解析，
-                // 裸 base64 直接抛 ERR_INVALID_URL。v6 时代 stripDataUrlPrefix 防的是 SDK 双重包裹，
-                // v7 语义反转：data: URL 保留原样，裸 base64 补包成 data: URL。
-                url: attachment.url.startsWith("data:")
-                  ? attachment.url
-                  : /^[a-z][a-z0-9+.-]*:/i.test(attachment.url)
-                    ? attachment.url
-                    : `data:${attachment.mime};base64,${attachment.url}`,
+                // 260807 Red v7 适配（工具结果附件这条路径）；260808 抽成共用的
+                // toModelFileUrl —— 当时同样的规整只写在这里，用户手动附件那条漏了。
+                url: toModelFileUrl(attachment.url, attachment.mime),
                 mediaType: attachment.mime,
                 filename: attachment.filename,
               })),
