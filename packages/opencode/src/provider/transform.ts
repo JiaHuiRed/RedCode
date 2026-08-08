@@ -971,14 +971,30 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
     case "venice-ai-sdk-provider":
     // https://docs.venice.ai/overview/guides/reasoning-models#reasoning-effort
     case "@ai-sdk/openai-compatible":
-      const efforts = [...WIDELY_SUPPORTED_EFFORTS]
       // 260802 Red: deepseek-v4 系列的最强档按 provider 区分——官方 DeepSeek API 与
       // opencode-go 聚合供应商都支持 max；sensenova 只认 low/medium/high/xhigh/none，
       // 带 max 会 400 报错，用 xhigh 代替 max 作最强档。
-      if (model.api.id.toLowerCase().includes("deepseek-v4")) {
-        efforts.push(model.providerID === "sensenova" ? "xhigh" : "max")
+      //
+      // 260808 Red: deepseek 档位改按**官方文档**给，不再复用 WIDELY_SUPPORTED_EFFORTS。
+      // https://api-docs.deepseek.com/zh-cn/guides/thinking_mode 现在明确只有 low/high/max
+      // ——**medium 已被移除**（该基座集是从上游 opencode 一路继承下来的，没跟过 DeepSeek 的变更）。
+      // 为什么必须动：opencode-go 网关**不校验**这个参数，实测 low/medium/high/max/xhigh/none
+      // 六个值全返回 200，选错不会报错，只会静默按别的档跑。同一道题各档实测思考 token：
+      // low 240 / medium 133 / high 134 / max 164 —— medium 与 high 只差 1 个 token，
+      // 基本可以判定 medium 被静默映射成了 high（单次采样，非严格结论，但方向明确）。
+      // 摆一个官方已删、实际等同 high 的档位出来，就是 GLM 那段注释说的"骗人"。
+      // sensenova 那条保持原样：它是中转、档位集合本就与官方不同（有 medium/xhigh、无 max），
+      // 手头没有该 provider 的凭据可复测，不在没有证据的情况下改动它。
+      if (id.includes("deepseek") || model.api.id.toLowerCase().includes("deepseek")) {
+        // 非 v4 一律不给档位。DeepSeek 官方现在**只剩 v4 系列**（deepseek-chat 等 260807 前后
+        // 已下线），所以这条实际是给陈旧模型目录兜底的防线，不是活跃路径——也正因为没人再用，
+        // `variants > deepseek returns empty object` 这个用例一直红着也没人管。
+        if (!model.api.id.toLowerCase().includes("deepseek-v4")) return {}
+        return effortVariants(
+          model.providerID === "sensenova" ? [...WIDELY_SUPPORTED_EFFORTS, "xhigh"] : ["low", "high", "max"],
+        )
       }
-      return Object.fromEntries(efforts.map((effort) => [effort, { reasoningEffort: effort }]))
+      return effortVariants(WIDELY_SUPPORTED_EFFORTS)
 
     case "@ai-sdk/azure":
       // https://v5.ai-sdk.dev/providers/ai-sdk-providers/azure
