@@ -187,3 +187,16 @@ export const REASONING_ONLY_PROMPT = [
   "[System notice] Your previous turn produced reasoning only — no user-visible message and no tool call, so the user saw an empty response.",
   "Write your answer in the normal response channel now. If you intended to call a tool, call it.",
 ].join("\n")
+
+/**
+ * 本轮**什么都没产出**（无思考、无正文、无工具调用）时的纠正提示。
+ *
+ * 260808 Red：与 REASONING_ONLY 是两回事。那个至少还有思考可以提升成正文；这个连思考
+ * 都没有，分片只剩 `step-start → text(长度 0) → step-finish`，finish 却是 "stop"、无报错。
+ * 循环把它当正常收尾直接 break，用户看到的就是"跑着跑着莫名其妙停了"（实测
+ * ses_020e2ecaaffe…，deepseek-v4-flash，18 个输出 token、3.9s）。
+ */
+export const EMPTY_TURN_PROMPT = [
+  "[System notice] Your previous turn produced nothing at all — no message, no reasoning, no tool call. The user saw the session stop with no output.",
+  "Continue now: either answer in the normal response channel, or call the tool you intended to call.",
+].join("\n")
