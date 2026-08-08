@@ -238,12 +238,6 @@ RedCode = OpenCode fork：
 
 第一次碰的文件，先扫 importers、看数据流、读测试（如果有），再动手。只改注释/CHANGELOG 不查。
 
-## Guardrail 档位（ECC_PROFILE）
-
-- `minimal` → 少确认快干
-- `standard`（默认）→ 白名单自动放行
-- `strict` → 每一步都问
-
 ## compress 工具用法（DCP 插件）
 
 `compress` 只传 `topic`，**不传 `startId`/`endId`**——早期消息可能已被自动压缩吃掉，ID 过期会报错。DCP 后台自动裁剪（去重 tool 调用、截长输出）也在省 token。

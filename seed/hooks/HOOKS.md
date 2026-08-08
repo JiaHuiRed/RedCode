@@ -39,7 +39,7 @@ ECC 有 hook 系统，OpenCode 没有原生 hooks。这里定义 RedCode 的 hoo
 
 ## Plugin 自动处理的部分
 
-- `shell.env` → 注入 ECC_VERSION / ECC_PROFILE / ECC_MEMORY_RECENT / ECC_MEMORY_LONG
+- `shell.env` → 注入 ECC_VERSION / ECC_MEMORY_RECENT / ECC_MEMORY_LONG
 - `tool.execute.after` → 追踪 edited files
 - `experimental.session.compacting` → 保存变更文件列表到压缩后上下文
 - `permission.ask` → 根据 profile 自动批准/拒绝

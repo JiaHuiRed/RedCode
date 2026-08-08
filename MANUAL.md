@@ -365,28 +365,7 @@ RedCode 内置自动化记忆系统（skill `memory-automation`），在启动/�
 
 ### 7.2 权限门控
 
-权限有两层：**行为指令层**（guardrail profile，AI 自我约束）和**代码强制层**（doom_loop 检测，服务端拦截）。
-
-#### 行为指令层（ECC_PROFILE）
-
-通过环境变量 `ECC_PROFILE` 控制 AI 的自主程度：
-
-```bash
-# Windows (PowerShell)
-$env:ECC_PROFILE="minimal"
-
-# macOS / Linux
-export ECC_PROFILE=strict
-```
-
-| 操作 | minimal | standard（默认） | strict |
-|------|---------|-----------------|--------|
-| 搜索/读取 | 自动 | 自动 | 自动 |
-| 单文件编辑 | 自动 | 自动 | 确认 |
-| 跨文件编辑 | 自动 | 确认 | 确认 |
-| Shell 命令 | 自动 | 白名单确认 | 逐个确认 |
-| 删文件 / push / 改名 | 确认 | 确认 | 确认 |
-| 连续失败（仅限工具报错）| 3 次停 | 2 次停 | 1 次停 |
+权限门控由**代码强制层**（doom_loop 检测，服务端拦截）兜底，配合各 agent 的 PermissionV2 规则（见 `~/.redcode/agent/` 定义）工作。行为指令层（ECC_PROFILE guardrail）已于 260808 退役。
 
 #### 代码强制层（doom_loop 检测）
 
@@ -396,10 +375,6 @@ export ECC_PROFILE=strict
 2. **周期循环**：6 步内形成 A→B→A→B 或 A→B→C→A→B→C 模式，且至少一次报错
 
 检测触发时向用户提示确认，防止 AI 无意识空转。默认配置 `doom_loop: "ask"`。
-
-#### "连续失败"定义
-
-"失败" = 工具返回 `status: "error"`（报错/崩溃），不是单纯的 edit/bash/write 调用次数。验证命令（typecheck、read、grep、glob）插在改动之间不算连续。
 
 ### 7.3 添加自定义 MCP
 
@@ -444,7 +419,6 @@ Skill 是扩展 AI 行为的机制——本质上是注入给 AI 的指令文件
 | **memory-automation** | 自动记忆系统（日志/长期库/启动注入）| "收工""保存记忆" |
 | **ce-code-review** | 结构化多维度代码审查 | "帮我看看代码""review一下" |
 | **diagnose** | 形式化 bug 诊断循环 | "查bug""排查一下""debug" |
-| **guardrail-profiles** | 三档权限控制（minimal / standard / strict）| "快干""严格模式" |
 | **defensive-agent** | 防止 AI 假阳性报告、无意义修改 | "小心点""别乱改" |
 | **goal-automation** | 检测大任务并建议钉住目标 | 自动检测 |
 | **vision-autoagent** | 收到图片时自动调 vision MCP 分析 | 自动触发 |
@@ -454,7 +428,7 @@ Skill 是扩展 AI 行为的机制——本质上是注入给 AI 的指令文件
 | **yuqi-slop** | 中文去 AI 味 | "去AI味""褪AI味" |
 | **stop-slop** | 英文去 AI 味 | "英文去AI味" |
 
-以上 12 个随仓库分发（`seed/skill/`），克隆即有，首次启动会播种到 `~/.redcode/skill/`。
+以上 11 个随仓库分发（`seed/skill/`），克隆即有，首次启动会播种到 `~/.redcode/skill/`。
 
 下面这些只存在于维护者本机的 `~/.redcode/skill/`，**不在仓库里**，克隆的人不会有——列在这里是说明个人库可以怎么扩展：
 
