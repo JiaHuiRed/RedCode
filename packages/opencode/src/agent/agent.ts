@@ -176,6 +176,12 @@ export const layer = Layer.effect(
            displayName: "RedMind",
            description:
              "RedMind — 心有 Red，行前先问。常规操作（读、写、搜索）自动执行，bash 等敏感操作征得同意后再动手。",
+            // 260808 Red：显式给红色。没写 color 的 agent 走「按可见顺序取调色板」
+            // （tui/context/local.tsx 的 colors()：secondary/accent/success/warning/
+            // primary/error/info），索引一撞就同色 —— 实测 redmind 与 build 都落成蓝色，
+            // 光看输入框左边线分不出当前是哪个 agent（plan 是青色、能区分）。
+            // RedMind 是默认 agent 又是 RedCode 的门面，钉死成红色最省事也最好认。
+            color: "error",
             options: {},
             permission: Permission.merge(
               defaults,
