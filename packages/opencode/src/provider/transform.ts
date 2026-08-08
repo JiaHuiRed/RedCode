@@ -432,7 +432,22 @@ const MIME_EXT: Record<string, string> = {
   "image/bmp": "bmp",
 }
 
-/** Save an unsupported media part to a temp file so vision MCP can read it later. */
+/**
+ * 拆开 AI SDK v7 给 file/image part 载荷加的那层包装。
+ * v7: `{ type: "url", url: URL }`（data: URL 里带 base64）或 `{ data: <bytes> }`；
+ * v4/v6: 直接就是 string / Uint8Array / ArrayBuffer，原样返回。
+ */
+function unwrapV7Payload(value: unknown): unknown {
+  if (value == null) return value
+  if (typeof value === "string" || value instanceof Uint8Array || value instanceof ArrayBuffer) return value
+  if (typeof value !== "object") return value
+  const v = value as Record<string, unknown>
+  if (v.type === "url" && v.url != null) return String(v.url)
+  if (v.data != null) return v.data
+  return value
+}
+
+/** Save an unsupported media part to a temp file so a subagent can read it later. */
 function savePartToTemp(part: unknown): string | null {
   const p = part as Record<string, unknown>
 
@@ -443,14 +458,30 @@ function savePartToTemp(part: unknown): string | null {
   const ext = MIME_EXT[mime] || "bin"
 
   // Extract raw data: FilePart uses "data" (AI SDK v4); ImagePart uses "image"
-  const raw = p.type === "image" ? p.image : (p.data ?? p.url)
+  //
+  // 260808 Red：v7 把 file part 的载荷包了一层——实测形态是
+  //   { type: "file", mediaType, filename, data: { type: "url", url: URL } }
+  // 既没有顶层 `url` 字段，`data` 也不再是字符串/字节，而是个对象（URL 里才是
+  // 那串 data:image/png;base64,…）。旧代码三个分支都不匹配，直接落到 `return null`：
+  // 图片**根本没写进临时目录**，于是占位文本里没有 TEMP_FILE 路径，模型被告知
+  // "去读下面那个路径"却看不到路径，只能自己去 prompt-history.jsonl 里刨 base64
+  // 手动解码（实测发生过，慢且脆）。这里先把 v7 的包装拆开再走原有解码。
+  const rawInput = p.type === "image" ? p.image : (p.data ?? p.url)
+  const raw = unwrapV7Payload(rawInput)
   if (raw == null) return null
 
   let buffer: Buffer
   if (typeof raw === "string") {
     // String: data URL ("data:image/png;base64,...") or raw base64
     const m = raw.match(/^data:[^;]+;base64,(.*)$/)
-    buffer = Buffer.from(m ? m[1] : raw, "base64")
+    if (m) {
+      buffer = Buffer.from(m[1], "base64")
+    } else if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) {
+      // 远程 URL（http/https/file…）：这里是同步路径，不去网络取；交给下游按 URL 处理
+      return null
+    } else {
+      buffer = Buffer.from(raw, "base64")
+    }
   } else if (raw instanceof Uint8Array || raw instanceof ArrayBuffer) {
     buffer = Buffer.from(raw instanceof ArrayBuffer ? new Uint8Array(raw) : raw)
   } else {
@@ -516,13 +547,17 @@ function unsupportedParts(msgs: ModelMessage[], model: Provider.Model): ModelMes
 
       const name = filename ? `"${filename}"` : modality
       const savedPath = savePartToTemp(part)
-      const pathHint = savedPath ? ` TEMP_FILE:${savedPath}` : ""
+      // 260808 Red：文案必须跟着"有没有落盘成功"走。原来无条件写 "…at the path below"
+      // 再拼一个可能为空的 pathHint —— 落盘失败时就成了"让我读下面的路径"但下面什么都没有，
+      // 模型只能自己去 prompt-history.jsonl 里刨 base64 手动解码（实测发生过，慢且脆）。
+      // 另：原文案是 "Use vision_analyze_image tool."，而 vision MCP 已于 96c7da9 整体退役，
+      // 指的是个不存在的工具；现统一指向多模态子代理，与 prompt.ts 的权威注入口径一致。
+      const instruction = savedPath
+        ? `Dispatch a multimodal subagent (task tool, \`explore\` agent) and have it read this file: ${savedPath}`
+        : `Ask the user to re-send it as a file path, or switch to a model with ${modality} input — the attachment could not be written to disk, so there is no path to read.`
       return {
         type: "text" as const,
-        // 260808 Red：原文案是 "Use vision_analyze_image tool."，但 vision MCP 已于 260807
-        // 整体退役（见 96c7da9），这里指了个不存在的工具——模型照做只会白白试错一轮。
-        // 改为指向多模态子代理，与 prompt.ts 的 VISION CAPABILITY 权威注入口径一致。
-        text: `ERROR: Cannot read ${name} (this model does not support ${modality} input). Dispatch a multimodal subagent (task tool, \`explore\` agent) and have it read the file at the path below.${pathHint}`,
+        text: `ERROR: Cannot read ${name} (this model does not support ${modality} input). ${instruction}`,
       }
     })
 

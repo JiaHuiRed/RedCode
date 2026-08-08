@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { existsSync, readFileSync } from "node:fs"
 import { APICallError } from "ai"
 import { MessageV2 } from "../../src/session/message-v2"
 import { ProviderTransform } from "@/provider/transform"
@@ -1687,5 +1688,51 @@ describe("session.message-v2.latest", () => {
     expect(state.user?.id).toBe(NEW_COMPACTION_USER)
     expect(state.tasks).toHaveLength(1)
     expect(state.tasks[0]).toMatchObject({ type: "compaction", auto: true })
+  })
+})
+
+describe("ProviderTransform.unsupportedParts - 附件落盘", () => {
+  // 260808 Red 回归：不支持图片的模型收到用户附件时，必须把图片写进临时目录、
+  // 并在占位文本里给出**真实可读的路径**。
+  //
+  // 曾经断在两处：① v7 把 file part 载荷包成 `data: { type:"url", url: URL }`，
+  // savePartToTemp 只认字符串/字节，三个分支都不匹配直接 return null —— 图片根本没落盘；
+  // ② 文案却无条件写 "…at the path below" 再拼一个空的 pathHint，于是模型被告知
+  // "去读下面那个路径"但下面什么都没有，只能自己去 prompt-history.jsonl 刨 base64
+  // 手动解码。两处都修了，这个用例把"路径存在且文件可读"钉死。
+  const PNG =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+  test("图片写入临时文件，占位文本给出真实路径", async () => {
+    const mid = "m-attach"
+    const msgs = await MessageV2.toModelMessages(
+      [
+        {
+          info: userInfo(mid),
+          parts: [
+            {
+              ...basePart(mid, "p1"),
+              type: "file",
+              mime: "image/png",
+              filename: "clipboard",
+              url: `data:image/png;base64,${PNG}`,
+            },
+          ] as MessageV2.Part[],
+        },
+      ],
+      model,
+    )
+
+    const out = ProviderTransform.message(msgs, model, {})
+    const text = (out[0]!.content as any[]).find((part: any) => part.type === "text")?.text ?? ""
+
+    const match = text.match(/read this file: (.+)$/)
+    expect(match).not.toBeNull()
+    const filepath = match![1]!
+    expect(existsSync(filepath)).toBe(true)
+    // 落盘的必须是原图字节，不是空文件或占位
+    expect(readFileSync(filepath)).toEqual(Buffer.from(PNG, "base64"))
+    // 文件名按内容哈希，同一张图恒定同一路径（前缀缓存依赖这点，见 260804）
+    expect(filepath).toMatch(/redcode-vision-[0-9a-f]{16}\.png$/)
   })
 })
