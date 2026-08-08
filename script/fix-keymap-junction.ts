@@ -26,21 +26,30 @@ const ROOT = resolve(import.meta.dir, "..")
 // 终端跑源码的 TUI 启动即崩 "Keymap not found"（编译产物不受影响，依赖已打包）。
 // 探测规则：在 .bun 里找 keymap 实例，其内嵌 solid-js 链接与仓库根解析到的
 // solid-js 实例一致 —— 那就是当前 peer 上下文的正解。多个匹配取版本最高的 0.2.x。
-function detectTargetInstance(): string {
-  const bunDir = join(ROOT, "node_modules", ".bun")
-  const all: Array<{ dir: string; version: string; solidReal?: string }> = []
-  for (const name of readdirSync(bunDir)) {
-    if (!name.startsWith("@opentui+keymap@")) continue
-    const inst = join(bunDir, name, "node_modules", "@opentui", "keymap")
-    if (!existsSync(inst)) continue
-    let solidReal: string | undefined
-    try {
-      // realpathSync 一步到位：readlink 返回相对路径，手工 resolve 必须先拼所在目录，容易错
-      solidReal = realpathSync(join(bunDir, name, "node_modules", "solid-js"))
-    } catch {}
-    all.push({ dir: inst, version: name.slice("@opentui+keymap@".length).split("+")[0]!, solidReal })
-  }
-  if (!all.length) throw new Error("[fix-keymap] no keymap instance found — run bun install first")
+function detectTargetInstance(): string | undefined {
+ const bunDir = join(ROOT, "node_modules", ".bun")
+ // 260808 Red hoisted 布局（CI `bun install --linker hoisted`）没有 .bun 目录，
+ // keymap 单实例平铺在 node_modules/@opentui/keymap，不存在双实例问题 → 跳过
+ if (!existsSync(bunDir)) {
+   console.log("[fix-keymap] no .bun dir (hoisted layout) — keymap is single instance, skip")
+   return undefined
+ }
+ const all: Array<{ dir: string; version: string; solidReal?: string }> = []
+ for (const name of readdirSync(bunDir)) {
+   if (!name.startsWith("@opentui+keymap@")) continue
+   const inst = join(bunDir, name, "node_modules", "@opentui", "keymap")
+   if (!existsSync(inst)) continue
+   let solidReal: string | undefined
+   try {
+     // realpathSync 一步到位：readlink 返回相对路径，手工 resolve 必须先拼所在目录，容易错
+     solidReal = realpathSync(join(bunDir, name, "node_modules", "solid-js"))
+   } catch {}
+   all.push({ dir: inst, version: name.slice("@opentui+keymap@".length).split("+")[0]!, solidReal })
+ }
+ if (!all.length) {
+   console.log("[fix-keymap] no keymap instance under .bun — nothing to fix, skip")
+   return undefined
+ }
 
   // 单实例无需消歧（全新 worktree 常态）。多实例时按 solid 同源筛：
   // 锚点依次试根/opencode 的 node_modules/solid-js（bun 的提升布局因树而异，
@@ -71,6 +80,7 @@ function detectTargetInstance(): string {
 }
 
 const TARGET_INSTANCE = detectTargetInstance()
+if (TARGET_INSTANCE === undefined) process.exit(0)
 console.log(`[fix-keymap] target: ${TARGET_INSTANCE.replace(ROOT, "<root>")}`)
 // 需要统一指向的位置：opencode（运行时）与 plugin（SDK 类型链）
 const LINKS = [
