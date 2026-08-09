@@ -395,7 +395,7 @@ export const dict = {
   "context.stats.outputTokens": "Output Tokens",
   "context.stats.reasoningTokens": "Reasoning Tokens",
   "context.stats.sessionID": "Session ID",
-  "context.stats.cacheTokens": "Cache Hit",
+  "context.stats.cacheTokens": "Cache Tokens (read/write)",
   "context.stats.turnCacheHit": "Last Turn Cache Hit",
   "context.stats.userMessages": "User Messages",
   "context.stats.assistantMessages": "Assistant Messages",
