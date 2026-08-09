@@ -1,0 +1,9 @@
+diff --git a/package.json b/package.json
+index 0a2f9c1..9e8d2b4 100644
+--- a/package.json
++++ b/package.json
+@@ -90,3 +90,3 @@
+   "peerDependencies": {
+-    "typescript": ">=5.5.3"
++    "typescript": ">=5.5.3 <7.0.0"
+   },
