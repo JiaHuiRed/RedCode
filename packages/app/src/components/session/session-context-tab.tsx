@@ -223,6 +223,8 @@ export function SessionContextTab() {
   // 单列塌陷时也按数组序错开），标题类字段（会话名/创建时间）留中性色，其余全部上色。
   // 260805 Red 每项固定分到不同的 --syntax-* token（同色的两处在网格里横向/纵向都不相邻，
   // 单列塌陷时也按数组序错开），标题类字段（会话名/创建时间）留中性色，其余全部上色。
+  // 260809 Red 输入 token 为 0 时用中性色——浅色主题下 syntax-string 是橙红，零值看着像报错
+  const inputTokensColor = createMemo(() => (ctx()?.input ? "var(--syntax-string)" : undefined))
   const stats = [
     { label: "context.stats.session", value: () => info()?.title ?? params.id ?? "—" },
     { label: "context.stats.sessionID", value: () => params.id ?? "—", color: "var(--syntax-property)" },
@@ -232,7 +234,7 @@ export function SessionContextTab() {
     { label: "context.stats.limit", value: () => formatter().number(ctx()?.limit), color: "var(--syntax-type)" },
     { label: "context.stats.totalTokens", value: () => formatter().number(ctx()?.total), color: "var(--syntax-success)" },
     { label: "context.stats.usage", value: () => formatter().percent(ctx()?.usage), color: "var(--syntax-warning)" },
-    { label: "context.stats.inputTokens", value: () => formatter().number(ctx()?.input), color: "var(--syntax-string)" },
+    { label: "context.stats.inputTokens", value: () => formatter().number(ctx()?.input), color: inputTokensColor() },
     { label: "context.stats.outputTokens", value: () => formatter().number(ctx()?.output), color: "var(--syntax-property)" },
     { label: "context.stats.reasoningTokens", value: () => formatter().number(ctx()?.reasoning), color: "var(--syntax-warning)" },
     {
