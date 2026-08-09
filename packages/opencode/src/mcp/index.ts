@@ -448,7 +448,18 @@ export const layer = Layer.effect(
           Effect.tryPromise({
             try: () => {
               const client = new Client({ name: "redcode", version: InstallationVersion })
-              return withTimeout(client.connect(t), timeout).then(() => client)
+              return withTimeout(client.connect(t), timeout).then(() => {
+                // 260809 Red: MCP SDK send() 在 stdin backpressure（write 返回 false）时挂
+                // once('drain')，子代理并行调用 MCP 工具会堆积 drain listener 超过默认上限，
+                // Bun 触发 MaxListenersExceededWarning 并把整个 WriteStream 对象 inspect dump
+                // 到 stderr，经 Worker stderr 继承污染 TUI 全屏（复现 .redcode/temp/repro-mcp-e2e.ts）。
+                // _process 在 start() 后才存在，故在 connect 完成后设置。解除上限治本；
+                // 兜底拦截在 worker.ts 的 process.on("warning")。
+                if (t instanceof StdioClientTransport) {
+                  ;(t as unknown as { _process: { stdin: NodeJS.WritableStream } })._process.stdin.setMaxListeners(0)
+                }
+                return client
+              })
             },
             catch: (e) => (e instanceof Error ? e : new Error(String(e))),
           }),

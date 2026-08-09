@@ -39,6 +39,18 @@ process.on("uncaughtException", (e) => {
   })
 })
 
+// 260809 Red: Bun 的 MaxListenersExceededWarning 会把 emitter 整个对象 inspect dump
+// 到 stderr（几十行属性），经 Worker stderr 继承打到终端，TUI 全屏渲染被污染
+// （MCP stdin backpressure 并发堆积 drain listener 触发，复现 .redcode/temp/repro-drain-warning.ts）。
+// 监听 warning 后 Bun 不再自动打印，只记日志不打屏。治本在 mcp/index.ts 的 setMaxListeners(0)。
+process.on("warning", (warning) => {
+  if (warning instanceof Error && warning.name === "MaxListenersExceededWarning") {
+    Log.Default.warn("MaxListenersExceededWarning suppressed (screen protection)", {
+      message: warning.message,
+    })
+  }
+})
+
 // Subscribe to global events and forward them via RPC
 GlobalBus.on("event", (event) => {
   Rpc.emit("global.event", event)

@@ -11,6 +11,14 @@
 ---
 
 ## TUI
+### [0.8.14] - 2026-08-09
+
+> 单点修复：MCP 并发调用时 Bun 的 MaxListenersExceededWarning 把整个 stream 对象 dump 进 stderr、污染 TUI 全屏渲染。
+
+#### 修复
+
+- **MCP 并发调用污染 TUI 屏幕**（`mcp/index.ts`、`cli/cmd/tui/worker.ts`）：子代理并行调 MCP 工具时，SDK `send()` 在 stdin backpressure（write 返回 false）下挂 `once('drain')`，listener 堆积超上限后 Bun 触发 `MaxListenersExceededWarning`——Bun 的警告输出会把 emitter 整个 WriteStream 对象 inspect dump 成几十行属性打到 stderr，经 Worker stderr 继承落到终端，与 TUI 渲染 buffer 交错（消息区出现 `_eventsCount: NaN`、`open: [Function: open]` 等对象属性、侧边栏文字错位）。双层修复：① 治本——`connectTransport` 连接成功后对 stdio transport 的 stdin 设 `setMaxListeners(0)` 解除上限（重连也覆盖，`_process` 在 `start()` 后才存在故挂 connect 后）；② 兜底——worker 进程监听 `warning` 事件，`MaxListenersExceededWarning` 只记日志不打屏。复现脚本实测：无修复必现警告 dump，有修复零输出。
+
 ### [0.8.13] - 2026-08-07
 
 > 两条主线：AI SDK v6→v7 整族迁移（21 个包，从调研到合并当天闭环，含记账三档实测比对）；以及一批"只有换个环境才炸"的暗雷——空转检测从未生效、$REDCODE_ROOT 把家目录认成安装根、1M 窗口下分级压缩全部失效、弹窗遮罩吃掉中文。
