@@ -1952,6 +1952,25 @@
 
 ## GUI
 
+### [0.7.16] - 2026-08-09
+
+> 上下文面板可选中复制；输入 token 零值误导配色与缓存标签歧义两处数据展示修正；首页侧栏底色与主区区分。
+
+#### 新增
+
+- **上下文面板支持选取复制**（`packages/app/src/components/session/session-context-tab.tsx`）：整窗 `select-none` 下，统计值（含会话 ID）与 system prompt 文本块显式 `select-text`——此前会话 ID 无法选中复制，出问题时没法快速对位到具体会话。
+
+#### 修复
+
+- **输入 token 零值误导色**（`session-context-tab.tsx`）：浅色主题下 `--syntax-string` 是橙红，输入 token 为 0 时数值像报错；零值改回中性色（`--text-strong`），非零才用强调色。
+- **缓存标签补读/写说明**（`packages/app/src/i18n/en.ts`、`zh.ts`）：en/zh 的 Cache Hit 标签不带单位说明，`452,224 / 101,643 (81.65%)` 两个数字含义不明（其余 16 语言本就带读/写说明）；对齐为 `Cache Tokens (read/write)` / `缓存令牌（读/写）`。
+
+#### 优化
+
+- **首页侧栏底色与主区区分**（`packages/app/src/pages/home.tsx`）：侧栏与主区同为纯白、仅靠 1px 分割线区分；侧栏补 `layer-02` 底色（浅色主题 #EEEEEE），保留分割线，导航区与内容区一眼可分。
+
+---
+
 ### [0.7.15] - 2026-08-07
 
 > 桌面端依赖链随 TUI 0.8.13 的 AI SDK v7 整族迁移升级——TypeScript 7.0.2 正式版（退役 tsgo 预览包）、低风险依赖批量升级、全仓 UTF-8 BOM 清理。

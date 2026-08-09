@@ -9,7 +9,7 @@
 > Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev), with deep enhancements in **prefix cache optimization, multi-model pricing, Chinese UX, and runtime stability**.
 
 [![TUI](https://badgen.net/badge/TUI/0.8.14/blue)](CHANGELOG.md)
-[![Desktop](https://badgen.net/badge/Desktop/0.7.15/purple)](CHANGELOG.md)
+[![Desktop](https://badgen.net/badge/Desktop/0.7.16/purple)](CHANGELOG.md)
 [![License](https://badgen.net/badge/License/MIT/grey)](LICENSE)
 [![Platform](https://badgen.net/badge/Platform/Windows%2010%2F11/green)](https://github.com/JiaHuiRed/RedCode)
 
