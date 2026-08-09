@@ -73,7 +73,7 @@
       "type": "local",
       "command": ["bun", "./plugins/mcp-process-mgmt/src/index.ts"],
       "cwd": "$REDCODE_ROOT",
-      "description": "管理交互式/长驻 shell 会话（REPL、dev server、需 stdin 的进程）：start_process 起会话、send_input 写 stdin、read_process_output 读输出、stop_process 终止。一次性命令仍用 bash。",
+      "description": "管理交互式/长驻 shell 会话（REPL、dev server、需 stdin 的进程）：start_process 起 pipe 会话，pty_spawn 起真 PTY 会话（交互式程序首选）；send_input/pty_write 写输入（pty_write 支持 \\x03 等转义序列），read_process_output/pty_read 读输出（pty_read 增量读 + ANSI 剥除 + regex 过滤），stop_process/pty_kill 终止，pty_wait 等退出。一次性命令仍用 bash。",
       "enabled": true
     },
     "fff": {

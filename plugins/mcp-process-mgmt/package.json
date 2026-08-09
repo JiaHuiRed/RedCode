@@ -8,9 +8,11 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.2",
+    "bun-pty": "0.4.10",
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@types/bun": "^1.2.21"
+    "@types/bun": "^1.2.21",
+    "@types/node": "^26.2.0"
   }
 }
