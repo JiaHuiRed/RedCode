@@ -74,6 +74,21 @@ describe("xml-tool-call.detect", () => {
     const result = detect(text, TOOLS)
     expect(result.stripped).toBe("前面\n\n后面")
   })
+
+  test("孤儿结束标签尾巴被摘除（260809 实测 deepseek-v4-flash）", () => {
+    // 取自 m0215（TUI 渲染问题排查会话）：正文末尾粘 </parameter></invoke></tool_calls>
+    const text = "现在剩下的就是 PTY 功能 commit，哥哥点头我就提交。\n\n\n\n</parameter>\n</invoke>\n</tool_calls>"
+    const result = detect(text, TOOLS)
+    expect(result.calls).toEqual([])
+    expect(result.stripped).toBe("现在剩下的就是 PTY 功能 commit，哥哥点头我就提交。")
+  })
+
+  test("正文里讨论孤儿标签不误伤（少一个标签/不在尾部/前面无空行）", () => {
+    const text = "就是这三行嘛：\n</parameter>\n</invoke>\n</tool_calls>"
+    const result = detect(text, TOOLS)
+    expect(result.calls).toEqual([])
+    expect(result.stripped).toBe(text)
+  })
 })
 
 describe("xml-tool-call.recoveryPrompt", () => {

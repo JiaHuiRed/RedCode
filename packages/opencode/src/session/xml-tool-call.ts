@@ -54,6 +54,16 @@ const ARGS_OPEN = /<([A-Za-z0-9_.-]{1,64})>\s*<args>/g
 // 靠"闭合标签必须同名"才能非贪婪地切在正确位置。
 const ARG_FIELD = /<([A-Za-z0-9_.-]{1,64})>([\s\S]*?)<\/\1>/g
 
+// 260809 Red 第三种形状：孤儿结束标签尾巴。deepseek-v4-flash 实测（TUI 渲染排查会话）
+// 在正文末尾粘 </parameter></invoke></tool_calls> —— Qwen/Hermes 形态的结束标签残留，
+// 无开头无内容，旧快路径不认所以原样泄漏给用户。
+// 防线：三连齐全 + 前面至少两个换行 + 必须贴消息尾部，缺一不摘（防正文讨论 XML 误伤）。
+const ORPHAN_CLOSE = /\n{2,}<\/parameter>\s*<\/invoke>\s*<\/tool_calls>\s*$/g
+
+function stripOrphanClose(text: string): string {
+  return text.replace(ORPHAN_CLOSE, "")
+}
+
 /** 去掉紧贴标签的一对换行，其余空白（缩进、代码块内的空行）原样保留 */
 function trimValue(raw: string): string {
   return raw.replace(/^\r?\n/, "").replace(/\r?\n$/, "")
@@ -70,7 +80,8 @@ export function detect(text: string, known?: ReadonlySet<string>): DetectResult 
   // 快路径：绝大多数轮次不含这些标签，不要为此扫全文
   const hasFunctionForm = text.includes("<function=")
   const hasArgsForm = text.includes("<args>")
-  if (!hasFunctionForm && !hasArgsForm) return { calls: EMPTY, stripped: text }
+  const hasOrphanForm = text.includes("</tool_calls>")
+  if (!hasFunctionForm && !hasArgsForm && !hasOrphanForm) return { calls: EMPTY, stripped: text }
 
   const calls: ParsedCall[] = []
   const cuts: Array<[number, number]> = []
@@ -141,7 +152,9 @@ export function detect(text: string, known?: ReadonlySet<string>): DetectResult 
     ARGS_OPEN.lastIndex = cutEnd
   }
 
-  if (calls.length === 0) return { calls: EMPTY, stripped: text }
+  if (calls.length === 0) {
+    return { calls: EMPTY, stripped: stripOrphanClose(text).replace(/\n{3,}/g, "\n\n").trim() }
+  }
 
   // 两种形状各自扫了一遍全文，cuts 不再天然有序，摘除前必须排序并跳过重叠区间
   cuts.sort((a, b) => a[0] - b[0])
@@ -158,7 +171,7 @@ export function detect(text: string, known?: ReadonlySet<string>): DetectResult 
   }
   stripped += text.slice(cursor)
 
-  return { calls, stripped: stripped.replace(/\n{3,}/g, "\n\n").trim() }
+  return { calls, stripped: stripOrphanClose(stripped).replace(/\n{3,}/g, "\n\n").trim() }
 }
 
 /** 回灌给模型的纠正提示：告诉它刚才那次调用没生效，并把解析结果原样还给它 */

@@ -236,10 +236,11 @@ export const layer = Layer.effect(
       // 只在 part 收尾时跑一次（不在 delta 上跑）——标签可能跨 delta 边界，半截的认不出来。
       // 返回 true 表示有命中，调用方据此决定是否要改写 part。
       const salvageToolCalls = (part: { text: string }, source: "text" | "reasoning") => {
-        const result = XmlToolCall.detect(part.text, ctx.toolNames)
-        if (result.calls.length === 0) return false
-        ctx.salvaged.push(...result.calls)
+        const original = part.text
+        const result = XmlToolCall.detect(original, ctx.toolNames)
         part.text = result.stripped
+        if (result.calls.length === 0) return part.text !== original
+        ctx.salvaged.push(...result.calls)
         slog.warn("toolcall.text_form", {
           sessionID: ctx.sessionID,
           source,

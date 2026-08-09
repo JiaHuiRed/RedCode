@@ -13,11 +13,12 @@
 ## TUI
 ### [0.8.14] - 2026-08-09
 
-> 单点修复：MCP 并发调用时 Bun 的 MaxListenersExceededWarning 把整个 stream 对象 dump 进 stderr、污染 TUI 全屏渲染。
+> 两个屏幕污染类修复：MCP 并发调用时 Bun 的 MaxListenersExceededWarning 把 stream 对象 dump 进 stderr；模型在正文末尾粘孤儿 XML 工具调用结束标签。
 
 #### 修复
 
 - **MCP 并发调用污染 TUI 屏幕**（`mcp/index.ts`、`cli/cmd/tui/worker.ts`）：子代理并行调 MCP 工具时，SDK `send()` 在 stdin backpressure（write 返回 false）下挂 `once('drain')`，listener 堆积超上限后 Bun 触发 `MaxListenersExceededWarning`——Bun 的警告输出会把 emitter 整个 WriteStream 对象 inspect dump 成几十行属性打到 stderr，经 Worker stderr 继承落到终端，与 TUI 渲染 buffer 交错（消息区出现 `_eventsCount: NaN`、`open: [Function: open]` 等对象属性、侧边栏文字错位）。双层修复：① 治本——`connectTransport` 连接成功后对 stdio transport 的 stdin 设 `setMaxListeners(0)` 解除上限（重连也覆盖，`_process` 在 `start()` 后才存在故挂 connect 后）；② 兜底——worker 进程监听 `warning` 事件，`MaxListenersExceededWarning` 只记日志不打屏。复现脚本实测：无修复必现警告 dump，有修复零输出。
+- **孤儿 XML 工具调用结束标签泄漏**（`session/xml-tool-call.ts`、`session/processor.ts`）：deepseek-v4-flash 实测在正文末尾粘 `</parameter></invoke></tool_calls>`（Qwen/Hermes 形态结束标签残留，无开头无内容），旧快路径只认 `<function=`/`<args>` 所以原样泄漏给用户。新增第三种形态识别：三连标签齐全 + 前面至少两个换行 + 必须贴消息尾部才摘除（防正文讨论 XML 误伤）；`salvageToolCalls` 改为无条件应用 stripped（calls 为空但剥离有变化时也生效）。新增 2 条测试，19/19 全绿。
 
 ### [0.8.13] - 2026-08-07
 
