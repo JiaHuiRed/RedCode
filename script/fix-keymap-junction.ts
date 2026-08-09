@@ -51,27 +51,35 @@ function detectTargetInstance(): string | undefined {
    return undefined
  }
 
-  // 单实例无需消歧（全新 worktree 常态）。多实例时按 solid 同源筛：
-  // 锚点依次试根/opencode 的 node_modules/solid-js（bun 的提升布局因树而异，
-  // worktree 实测没有根级 solid-js），都没有则退到 .bun 里唯一的 solid 实例。
-  let pool = all
-  if (all.length > 1) {
-    let anchor: string | undefined
-    for (const p of [join(ROOT, "node_modules", "solid-js"), join(ROOT, "packages", "opencode", "node_modules", "solid-js")]) {
-      try {
-        anchor = realpathSync(p)
-        break
-      } catch {}
-    }
-    if (!anchor) {
-      const solids = readdirSync(bunDir).filter((n) => n.startsWith("solid-js@"))
-      if (solids.length === 1) anchor = realpathSync(join(bunDir, solids[0]!, "node_modules", "solid-js"))
-    }
-    if (anchor) {
-      const matched = all.filter((c) => c.solidReal === anchor)
-      if (matched.length) pool = matched
-    }
-  }
+ // 单实例无需消歧（全新 worktree 常态）。多实例时按 solid 同源筛：
+ // 锚点依次试根/opencode 的 node_modules/solid-js（bun 的提升布局因树而异，
+ // worktree 实测没有根级 solid-js），都没有则退到 .bun 里唯一的 solid 实例。
+ // 260809 Red 锚点必须真实命中 .bun 实例才算数：hoisted 布局残留的根级真实
+ // 目录（realpathSync 返回自身路径）匹配不到任何实例，误判为「有锚点」会
+ // 让 matched 空、退化到 all[0] 选错实例 → junction 指向错误 solid → 运行时
+ // createContext 身份对不上 → TUI 启动即崩 "Keymap not found"。
+ let pool = all
+ if (all.length > 1) {
+   let anchor: string | undefined
+   for (const p of [join(ROOT, "node_modules", "solid-js"), join(ROOT, "packages", "opencode", "node_modules", "solid-js")]) {
+     try {
+       const real = realpathSync(p)
+       // 只有能匹配到至少一个 .bun 实例的锚点才有效，否则继续试下一个
+       if (all.some((c) => c.solidReal === real)) {
+         anchor = real
+         break
+       }
+     } catch {}
+   }
+   if (!anchor) {
+     const solids = readdirSync(bunDir).filter((n) => n.startsWith("solid-js@"))
+     if (solids.length === 1) anchor = realpathSync(join(bunDir, solids[0]!, "node_modules", "solid-js"))
+   }
+   if (anchor) {
+     const matched = all.filter((c) => c.solidReal === anchor)
+     if (matched.length) pool = matched
+   }
+ }
   // 版本排序取最高的 0.2.x（catalog 钉的是 0.2.15；0.4.x 是并存的未启用实例）
   const wanted = pool.filter((c) => c.version.startsWith("0.2."))
   const final = wanted.length ? wanted : pool
