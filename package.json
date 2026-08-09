@@ -128,8 +128,8 @@
     "@opentui/core": "catalog:",
     "@opentui/keymap": "catalog:",
     "@opentui/solid": "catalog:",
-    "@types/bun": "catalog:",
-    "@types/node": "catalog:"
+    "@types/node": "catalog:",
+    "@effect/platform-node-shared": "4.0.0-beta.66"
   },
   "patchedDependencies": {
     "@npmcli/agent@4.0.0": "patches/@npmcli%2Fagent@4.0.0.patch",
