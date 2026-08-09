@@ -25,7 +25,7 @@
     "@tsconfig/node22": "catalog:",
     "@types/cross-spawn": "catalog:",
     "@types/node": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "5.9.3"
   },
   "dependencies": {
     "cross-spawn": "catalog:"

@@ -26,6 +26,7 @@ export type Event =
   | EventQuestionReplied
   | EventQuestionRejected
   | EventTodoUpdated
+  | EventGoalUpdated
   | EventSessionStatus
   | EventSessionIdle
   | EventMcpToolsChanged
@@ -338,6 +339,16 @@ export type Todo = {
    * Priority level of the task: high, medium, low
    */
   priority: string
+}
+
+export type Goal = {
+  /**
+   * The pinned session goal
+   */
+  text: string
+  status: "active" | "done" | "cleared" | "blocked" | "budget_limited"
+  tokens_used: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  turn_count: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
 }
 
 export type SessionStatus =
@@ -842,6 +853,7 @@ export type GlobalEvent = {
     | EventQuestionReplied
     | EventQuestionRejected
     | EventTodoUpdated
+    | EventGoalUpdated
     | EventSessionStatus
     | EventSessionIdle
     | EventMcpToolsChanged
@@ -1149,6 +1161,7 @@ export type McpLocalConfig = {
   enabled?: boolean
   timeout?: number
   disabledTools?: Array<string>
+  tools?: Array<string>
 }
 
 export type McpOAuthConfig = {
@@ -1177,6 +1190,7 @@ export type McpRemoteConfig = {
    */
   oauth?: McpOAuthConfig | false
   timeout?: number
+  tools?: Array<string>
 }
 
 /**
@@ -1326,6 +1340,7 @@ export type Config = {
     reserved?: number
     threshold?: number
   }
+  reasoning_language?: "auto" | "zh" | "en"
   experimental?: {
     disable_paste_summary?: boolean
     batch_tool?: boolean
@@ -1333,6 +1348,8 @@ export type Config = {
     primary_tools?: Array<string>
     continue_loop_on_deny?: boolean
     mcp_timeout?: number
+    goal_auto_continue?: boolean
+    goal_token_budget?: number
   }
 }
 
@@ -1709,11 +1726,7 @@ export type McpStatusNeedsClientRegistration = {
 }
 
 export type McpStatus =
-  | McpStatusConnected
-  | McpStatusDisabled
-  | McpStatusFailed
-  | McpStatusNeedsAuth
-  | McpStatusNeedsClientRegistration
+  McpStatusConnected | McpStatusDisabled | McpStatusFailed | McpStatusNeedsAuth | McpStatusNeedsClientRegistration
 
 export type McpUnsupportedOAuthError = {
   error: string
@@ -1967,6 +1980,16 @@ export type WorkspaceWarpError = {
   data: {
     message: string
   }
+}
+
+export type Goal1 = {
+  /**
+   * The pinned session goal
+   */
+  text: string
+  status: "active" | "done" | "cleared" | "blocked" | "budget_limited"
+  tokens_used: number | "NaN" | "Infinity" | "-Infinity"
+  turn_count: number | "NaN" | "Infinity" | "-Infinity"
 }
 
 export type SyncEventMessageUpdated = {
@@ -2647,6 +2670,15 @@ export type EventTodoUpdated = {
   properties: {
     sessionID: string
     todos: Array<Todo>
+  }
+}
+
+export type EventGoalUpdated = {
+  id: string
+  type: "goal.updated"
+  properties: {
+    sessionID: string
+    goal?: Goal
   }
 }
 
