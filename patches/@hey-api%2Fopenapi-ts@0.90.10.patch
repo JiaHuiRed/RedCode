@@ -1,9 +1,17 @@
 diff --git a/package.json b/package.json
-index 0a2f9c1..9e8d2b4 100644
+index d24bc55..f22f5f1 100644
 --- a/package.json
 +++ b/package.json
-@@ -90,3 +90,3 @@
-   "peerDependencies": {
+@@ -85,10 +85,8 @@
+     "commander": "14.0.2",
+     "open": "11.0.0",
+     "semver": "7.7.3",
+-    "@hey-api/types": "0.1.2"
+-  },
+-  "peerDependencies": {
 -    "typescript": ">=5.5.3"
++    "@hey-api/types": "0.1.2",
 +    "typescript": ">=5.5.3 <7.0.0"
    },
+   "devDependencies": {
+     "@angular/common": "19.2.17",
