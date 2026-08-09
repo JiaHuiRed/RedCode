@@ -20,7 +20,7 @@
 AI coding assistant, two entry points, one engine:
 
 - **TUI** — terminal interface (`packages/opencode`)
-- **GUI** — desktop window, Electron (`packages/desktop`; a Tauri migration is in progress, not yet buildable)
+- **GUI** — desktop window, Electron (`packages/desktop`; Tauri migration in progress — `src-tauri/` scaffolding is in place, build pipeline not yet wired)
 
 Reads code, writes code, fixes bugs, runs commands. You speak Chinese (or any language), it does the work.
 
@@ -28,16 +28,13 @@ Reads code, writes code, fixes bugs, runs commands. You speak Chinese (or any la
 
 Code understanding (jCodeMunch / TypeGraph) · Multi-model (DeepSeek / OpenAI / Anthropic / Ollama) · File read/write/edit · Terminal execution · Web search · Vision analysis · Session management · Permission gating · Context compaction · Automated memory system · Goal tracking · Skill system · Four-role subagents (explore / architect / fixer / reviewer, each assignable its own model) · Anti-repeat loop detection · Custom AI personas
 
-### Why RedCode?
+### Highlights
 
-| vs upstream OpenCode | RedCode |
-|---|---|
-| Cache hit rate | **97%+** (multi-layer prefix cache: msgPin → modelMsgs cache → tools cache → system cache) |
-| Model pricing | Full DeepSeek cache billing tiers (miss/write/hit), fixes upstream `cacheReadInputTokens=0` under-report |
-| Chinese UX | Full Chinese docs, Chinese UI, bilingual README |
-| Stability | Event loop drift detection, independent sidecar health monitoring, DCP double-compaction guard |
-| Domestic models first | Zero-config for DeepSeek, GLM, Qwen, MiniMax, Zhipu, plus NVIDIA-hosted third-party |
-| Multi-machine sync | Machine-local override layer `redcode.local.jsonc` — absolute paths and VRAM-dependent model tiers stay on the machine, so the synced config holds only machine-neutral settings |
+- **Prefix cache freshness**: multi-layer caching (msgPin → modelMsgs → tools → system) keeps input cost low
+- **Model pricing**: full DeepSeek cache billing tiers, fixes upstream `cacheReadInputTokens=0` under-report
+- **Chinese UX**: full Chinese docs, Chinese UI
+- **Domestic models first**: zero-config for DeepSeek, GLM, Qwen, MiniMax, Zhipu
+- **Multi-machine sync**: machine-local override layer `redcode.local.jsonc` keeps synced configs machine-neutral
 
 ---
 
@@ -61,7 +58,7 @@ cd packages/desktop && bun run dev
 cd packages/opencode && bun run build
 ```
 
-Output: `packages/opencode/dist/redcode-windows-x64/bin/redcode.exe` — double-click to run. A bare launch (no directory argument) opens a workspace selector: pick a registered project, or use "Open a different directory..." to type or paste any path (since 0.7.31).
+Output: `packages/opencode/dist/redcode-windows-x64/bin/redcode.exe` — double-click to run. A bare launch (no directory argument) opens a workspace selector: pick a registered project, or use "Open a different directory..." to type or paste any path.
 
 ---
 

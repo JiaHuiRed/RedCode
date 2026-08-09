@@ -59,7 +59,7 @@ cd packages/desktop && bun run build && bun run package
 
 第一次启动时，系统自动：
 
-1. 创建 `~/.redcode/` 目录（存放全局配置和记忆），以及 `memory/`、`souls/` 子目录
+1. 创建 `~/.redcode/` 目录（存放全局配置和记忆），以及 `souls/` 子目录（`memory/` 只作归档，不再写入）
 2. 播种人格与记忆模板到 `souls/{T,G}soul.md`、`MEMORY.md`——这三份模板**编译时内嵌在二进制里**，所以无论 exe 装在哪儿都能播（已存在的文件不会被覆盖）
 3. 若当前目录是 RedCode 仓库的克隆，额外把 `seed/skill/` 下的技能播种到 `~/.redcode/skill/`（同样只补不覆盖）；拿 release 二进制直接用的话这一步跳过，技能可自行放进 `~/.redcode/skill/`
 4. 加载配置、MCP 服务器与 skill 技能
@@ -233,8 +233,7 @@ MCP（Model Context Protocol）让 AI 获得外部能力。安装越多 MCP，AI
 | 服务器 | 用途 | 首次使用前 |
 |--------|------|-----------|
 | **Web Search** | 网页搜索：DuckDuckGo + Yahoo 兜底，内置服务，零 API Key | — |
-| ~~Browser MCP~~ | 浏览器自动化（默认关闭，稳定性不足，需要时手动 `enabled: true`）| 装并连接浏览器扩展 |
-| **Vision MCP** | 多模态视觉分析：让不支持图片的模型也能看截图 | 安装 Ollama + 拉取本地视觉模型（本仓配置为 `minicpm-v4.6:f16`，通过 `VISION_MODEL` 环境变量指定）|
+| **webqa** | 浏览器自动化（Playwright）：截图、点击、填表、断言，做 Web 前端验证闭环 | — |
 
 ### 4.4 记忆与进程
 
@@ -300,37 +299,29 @@ MCP（Model Context Protocol）让 AI 获得外部能力。安装越多 MCP，AI
 
 RedCode 内置自动化记忆系统（skill `memory-automation`），在启动/压缩/收工时自动运作。
 
-### 6.2 每日日志
+RedCode 内置自动化记忆系统（skill `memory-automation`），在启动/收工时自动运作，分两层：
 
-当 AI 在工作中出错被纠正、做了关键决策或发现踩坑时，自动写入当天日志：
+- **项目级** `.redcode/MEMORY.md`——当前项目专有的进度、决策与踩坑
+- **全局级** `~/.redcode/MEMORY.md`——跨项目通用的历史教训
 
-```
-~/.redcode/memory/<YYMMDD>.md
-```
+两层同时注入（全局在前、项目在后），不是二选一。
 
-日志格式自由，一句话即可。例如：
+> 早期版本还有一层当日日志（`~/.redcode/memory/YYMMDD.md`），260729 起退役——实测几乎无人主动读、写入质量也不稳定，历史文件保留可查，不再写入。
 
-```markdown
-## 260606
-- 改了 redcode.jsonc 后忘记 typecheck，被拦截
-```
-
-### 6.3 长期库
+### 6.3 教训提炼
 
 收工时，AI 自动：
 
-1. 从当天日志筛选**跨项目通用**的教训
-2. 过三道门禁（跨项目通用？高复发高代价？未被已有规则覆盖？）
-3. 三 YES 才入全局库 `~/.redcode/MEMORY.md`，否则留项目级 `.redcode/MEMORY.md` 或日志
+1. 审视当前项目的 `.redcode/MEMORY.md`，删掉已完成、过时的进度段，保留经验教训
+2. 把**跨项目通用**的教训摘入全局 `~/.redcode/MEMORY.md`
+3. 每条过三道门禁（换项目仍成立？忘了会再踩且修复贵？未被 AGENTS.md/skill 覆盖？）
 
-日志原文保留不删。
+全局记忆每轮都要付 token，只留值得长期持有的条目。
 
-### 6.4 启动注入
+每次新对话启动时，AI 自动注入两份记忆：
 
-每次新对话启动时，AI 自动注入：
-
-- **项目级** `.redcode/MEMORY.md`（当前项目专有）
-- **全局级** `~/.redcode/MEMORY.md`（跨项目通用教训，项目级不存在时兜底）
+- **全局级** `~/.redcode/MEMORY.md`（通用教训，在前）
+- **项目级** `.redcode/MEMORY.md`（项目专有，在后，覆盖一般）
 
 ### 6.5 关闭记忆
 
@@ -421,7 +412,7 @@ Skill 是扩展 AI 行为的机制——本质上是注入给 AI 的指令文件
 | **diagnose** | 形式化 bug 诊断循环 | "查bug""排查一下""debug" |
 | **defensive-agent** | 防止 AI 假阳性报告、无意义修改 | "小心点""别乱改" |
 | **goal-automation** | 检测大任务并建议钉住目标 | 自动检测 |
-| **vision-autoagent** | 收到图片时自动调 vision MCP 分析 | 自动触发 |
+| **vision-autoagent** | 模型不支持图片时，派多模态子代理读图（260807 起取代本地 Vision MCP）| 自动触发 |
 | **frontend-design** | 生成 macOS 风格的高质量前端界面，避免 AI 通用观感 | "做个页面""写个组件" |
 | **simplify** | 检测过度工程，建议精简 | "太复杂了""精简一下" |
 | **red-scribe** | 按 Red 的写作风格输出 | "按我的风格写""red风格" |
@@ -478,7 +469,7 @@ description: 我的编码规范。用户说"按规范来""检查规范"时触发
 seed/                          ~/.redcode/
 ├── skill/           ← 种子     ├── souls/{T,G}soul.md ← 你的人格（首启由内嵌模板播种）
 ├── command/         ← 种子     ├── MEMORY.md       ← 你的记忆
-├── agents/          ← 种子     ├── memory/         ← 你的日志
+├── agents/          ← 种子     ├── memory/         ← 日志归档（只读）
 ├── scripts/         ← 种子     ├── skill/ command/ agent/
 └── redcode.home.jsonc ← 配置模板 └── data/           ← 会话 DB / 日志 / 快照
 
