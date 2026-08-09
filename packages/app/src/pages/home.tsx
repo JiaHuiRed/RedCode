@@ -443,7 +443,7 @@ function HomeProjectColumn(props: {
   const platform = usePlatform()
   return (
     <aside
-      class="flex min-w-0 flex-col lg:pt-[52px] lg:border-r lg:border-v2-border-border-base lg:pr-6"
+      class="flex min-w-0 flex-col lg:pt-[52px] lg:border-r lg:border-v2-border-border-base lg:bg-v2-background-bg-layer-02 lg:pr-6"
       aria-label={props.language.t("home.projects")}
     >
       <div class="flex h-7 min-w-0 items-center justify-between pl-2">
