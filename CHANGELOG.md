@@ -11,6 +11,20 @@
 ---
 
 ## TUI
+### [0.8.15] - 2026-08-10
+
+> 全仓审计红级五连修：DCP 插件其实从未被加载（修复 + resolver 防复发）、write/edit 补"写前已读"守卫、hook 触发路径补超时隔离、env 工具关掉密钥外泄闭环 + 工具表按 agent 权限过滤、"始终允许"落库不再重启全忘。
+
+#### 修复
+
+- **DCP 插件 server 端从未被宿主加载**（`plugin/shared.ts`、`plugin/loader.ts` + DCP 仓 31f7361/f3a0469）：DCP `exports["./server"]` 指向从未构建的 `dist/index.js`，resolver 命中 exports 即返回不验文件存在，import 必败、整个插件放弃——`./tui` 指向真实源文件所以 `/dcp` 面板照常在，掩盖了压缩 hook 全灭（8/9 的 5 项改造从未生效，日志实锤 `failed to load plugin`）。三层修：① resolver 认 `"bun"` 条件导出（Bun 宿主直载 .ts 源码，桌面 sidecar 是 Electron/Node 24 走 `import` 指向的构建产物——类型擦除不解析无扩展名相对导入，只能吃 dist）；② exports/main 声明的入口逐个验存在性，全缺失降级到目录 index，坏声明不再炸整个插件；③ DCP 侧压缩通知默认改 toast，根治通知以 user 角色伪装进会话（260729 sourceFrom 退化的病根）。修后实测新日志 failed to load plugin 归零。
+- **write/edit 无"写前已读"守卫**（新增 `file/time.ts`，接入 read/write/edit）：此前不校验文件是否被本会话 read 过、也不比对改动时间——IDE 手改、git 操作、并行 subagent 落盘的内容会被 agent 拿旧文整个推平（上游 FileTime.assert 未随 fork 带过来，hashline 路径反而有 hash 校验，说明只是主路径漏了）。read 记录 (会话, 路径)→mtime，写前断言"读过且 mtime 未变"，写后用自产 mtime 刷新；比对口径用 mtime 而非上游的读取墙钟——外部拷贝的"未来 mtime"文件不误报，还能抓到 mtime 倒退的原样恢复。hashline 已有 TAG 内容哈希（更强）不重复断言。守卫用例 ×6。
+- **hook 触发路径无超时无隔离**（`plugin/index.ts`）：`Plugin.trigger` 逐 hook 裸 `Effect.promise`——插件 hook 抛异常=defect 整轮报废，await 卡住=agent 永久挂起（`tool.use.pre` 挂在每次工具调用前）；同文件加载路径早有超时+tryPromise 防御，唯独触发路径漏了。补 30s 超时 + fail-open 记日志（safe-shell 等否决语义走 output.denied 不靠 throw，不受影响）；bus 事件分发的 floating promise 同步补 catch；hookOwner WeakMap 旁挂归属，失败日志能报出是哪个插件。
+- **env 工具无权限门 + 工具表不按 agent 权限过滤**（`tool/env.ts`、`tool/registry.ts`）：env 是全仓唯一无 ctx.ask 的取值通道，`vars` 直接回显 ANTHROPIC_API_KEY 等密钥进上下文，配合 fetch 一次提示词注入即可完成外泄闭环；且 registry.tools() 拿 agent 只用于生成描述，`permission.env="deny"`（含 `tools:{x:false}` 转译）对不调 ask 的工具完全失效，被禁工具照样进模型工具表白白诱导调用（plan agent 的 edit/write）。env 顶部单闸门罩住 vars/category 两分支（pattern=变量名）；registry 用 core 现成的 `Permission.disabled` 剔除无条件全 deny 的工具，带 pattern 例外的（bash 全禁放行 `git *`）保留给执行期逐次把关。
+- **权限"始终允许"从不落库**（`permission/index.ts`）：有表、有读、有加载，唯独没有写入方（全仓唯一写入是一次性 json 迁移）——每次重启所有 always 重问一遍，且无从分辨是 bug 还是设计。reply=always 时按 (permission, pattern) 去重后 upsert PermissionTable。
+
+---
+
 ### [0.8.14] - 2026-08-09
 
 > 两个屏幕污染类修复：MCP 并发调用时 Bun 的 MaxListenersExceededWarning 把 stream 对象 dump 进 stderr；模型在正文末尾粘孤儿 XML 工具调用结束标签。
@@ -1951,6 +1965,21 @@
 ---
 
 ## GUI
+
+### [0.7.17] - 2026-08-10
+
+> 语种裁剪 18 → 中/日/英三语（净 -1.6 万行，ja 缺口一次补平，parity 全键集把关）；v2 组件库 262 处 token 死引用整批修复（焦点环/浮层背景复活）；首页提示条脱离硬编码荧光绿。
+
+#### 变更
+
+- **语种裁剪 18 → 中/日/英三语**（`packages/app/src/i18n/`、`packages/ui/src/i18n/`、`context/language.tsx`）：其余 15 语维护成本高且长期漏翻（每语相对 en 缺 84 key，日/德/法用户首屏整片回退英文），整体下架——app 与 ui 两层各删 15 个语言文件，净 -16320 行。Locale 类型/加载器/浏览器语言探测收缩到三语；历史配置里的 zht 在 normalizeLocale 优雅降级到 zh（zh-Hant 浏览器探测同落简中），其余已下架语种回退 en。存量缺口一次补平：app/ja 补 83 键（home 全屏、计划页、审查空态、TTS 与桌面设置行）、ui/zh 补 6 键、ui/ja 补 8 键；三语词典同步清掉已下架语种的 language.* 标签键。`parity.test` 从"手挑 2 个键"升级为全键集 diff（en 基准，zh/ja 缺键或孤儿键都红，app/ui 两层一起管），漏翻从此挡在 CI。
+
+#### 修复
+
+- **v2 组件库 262 处 CSS 变量缺 `--v2-` 前缀**（`packages/ui/src/v2/components/`，22 个文件）：token 定义是 `--v2-text-text-base` 一族，组件里却写着无前缀的 `var(--text-text-base)`——全是死引用：outline 的 undefined var 无 fallback 直接失效（checkbox/radio/switch/select/input/textarea/segmented-control 焦点环全灭，真实 input 是 clip 隐藏元素，全局兜底救不回）、tooltip/menu/toast 背景透明穿底、muted/faint 文案层级消失。桌面端暂只用了前缀正确的 4 个组件所以未爆，Storybook 里这批组件此前就是坏的。脚本化整批改写（改前验证零局部定义冲突、改后验证零残留）；新增 `token-refs.test` 钉死"定义过的 token 禁止无前缀引用"，进 ui 包既有 bun test 链路防复发。
+- **首页 tips/快捷键条硬编码荧光绿**（`packages/app/src/pages/home.tsx`）：`#4ade80` 带 60%/80% alpha 直写 style，浅色三主题（light/cream/green）下与近白底对比度约 1.5:1 基本不可读。改 `text-v2-state-fg-success` 语义 token（明 green-800/暗 green-500，两侧主题都有定义），绿色系人格化味道保留且随主题走；快捷键行补 flex-wrap，窄窗从溢出裁切变正常换行。
+
+---
 
 ### [0.7.16] - 2026-08-09
 
