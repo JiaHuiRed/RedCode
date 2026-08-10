@@ -262,6 +262,23 @@ export const layer = Layer.effect(
         })
       }
 
+      // 260810 cc audit R6: "始终允许"此前只 push 内存数组从不回写——state 初始化时明明
+      // 从 PermissionTable 读 approved（有表、有读、有加载），唯独没有写入方（全仓唯一
+      // 写入是一次性 json 迁移），重启后所有 always 全部重问，且用户无从分辨是设计还是
+      // bug。这里按 (permission, pattern) 去重后整表 upsert；action 取末条与 evaluate 的
+      // findLast 语义一致。
+      const ctx = yield* InstanceState.context
+      const deduped = new Map<string, Rule>()
+      for (const rule of approved) deduped.set(`${rule.permission} ${rule.pattern}`, rule)
+      const data = [...deduped.values()]
+      Database.use((db) =>
+        db
+          .insert(PermissionTable)
+          .values({ project_id: ctx.project.id, data })
+          .onConflictDoUpdate({ target: PermissionTable.project_id, set: { data } })
+          .run(),
+      )
+
       for (const [id, item] of pending.entries()) {
         if (item.info.sessionID !== existing.info.sessionID) continue
         const ok = item.info.patterns.every(

@@ -10,6 +10,10 @@ import { InstanceStore } from "../../src/project/instance-store"
 import { TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { MessageID, SessionID } from "../../src/session/schema"
+import { Database } from "@/storage/db"
+import { PermissionTable } from "@/session/session.sql"
+import { InstanceState } from "@/effect/instance-state"
+import { eq } from "drizzle-orm"
 
 const bus = Bus.layer
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
@@ -645,6 +649,61 @@ it.instance(
 
       yield* rejectAll()
       yield* Fiber.await(fiber)
+    }),
+  { git: true },
+)
+
+// 260810 cc audit R6: "始终允许"要落 PermissionTable，重启后不再全部重问
+it.instance(
+  "reply always - persists approved rules to permission table",
+  () =>
+    Effect.gen(function* () {
+      const fiber = yield* ask({
+        sessionID: SessionID.make("session_persist"),
+        permission: "bash",
+        patterns: ["ls"],
+        metadata: {},
+        always: ["ls"],
+        tool: {
+          messageID: MessageID.make("msg_test"),
+          callID: "call_test",
+        },
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+
+      const items = yield* waitForPending(1)
+      yield* reply({ requestID: items[0].id, reply: "always" })
+      yield* Fiber.await(fiber)
+
+      const ctx = yield* InstanceState.context
+      const row = Database.use((db) =>
+        db.select().from(PermissionTable).where(eq(PermissionTable.project_id, ctx.project.id)).get(),
+      )
+      expect(row?.data).toContainEqual({ permission: "bash", pattern: "ls", action: "allow" })
+
+      // 再来一次 always（不同 pattern），验证 upsert 与去重
+      const fiber2 = yield* ask({
+        sessionID: SessionID.make("session_persist"),
+        permission: "bash",
+        patterns: ["pwd"],
+        metadata: {},
+        always: ["pwd"],
+        tool: {
+          messageID: MessageID.make("msg_test2"),
+          callID: "call_test2",
+        },
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+      const items2 = yield* waitForPending(1)
+      yield* reply({ requestID: items2[0].id, reply: "always" })
+      yield* Fiber.await(fiber2)
+
+      const row2 = Database.use((db) =>
+        db.select().from(PermissionTable).where(eq(PermissionTable.project_id, ctx.project.id)).get(),
+      )
+      expect(row2?.data).toContainEqual({ permission: "bash", pattern: "ls", action: "allow" })
+      expect(row2?.data).toContainEqual({ permission: "bash", pattern: "pwd", action: "allow" })
+      expect(row2?.data.filter((rule) => rule.pattern === "ls")).toHaveLength(1)
     }),
   { git: true },
 )
