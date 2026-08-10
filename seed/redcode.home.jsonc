@@ -1,6 +1,8 @@
 {
   "$schema": "https://redcode.dev/config.json",
-  "plugin": ["E:/AI/RedCode-dcp"],
+  // 260809 Red plugin 路径拆到 redcode.local.jsonc（机器相关，不进同步模板）。
+  // 两边各自在本地层维护：E 盘机写 E:/AI/RedCode-dcp，D 盘机写 D:/AI/KLX/Qiu/RedCode-dcp。
+  // 本模板不留硬编码路径，避免 pull 后覆盖对方的 live 配置。
   // 260718 Red goal-automation/simplify/vision-autoagent/diagnose 之前既是可懒加载的
   // skill、又整篇塞在这里常驻系统提示词，双重注册白吃了 ~2800 token/次对话。这几个
   // 不需要"每次都自动触发"（不像 memory-automation），改成只留 skill 发现路径——
