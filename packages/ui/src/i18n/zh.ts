@@ -172,4 +172,11 @@ export const dict = {
   "ui.toolErrorCard.copyError": "复制错误",
   "ui.message.duration.seconds": "{{count}}秒",
   "ui.message.duration.minutesSeconds": "{{minutes}}分 {{seconds}}秒",
+  // 260810 cc 语种裁剪后补齐 zh 相对 en 的缺口
+  "ui.sessionReview.title.git": "Git 变更",
+  "ui.sessionReview.title.branch": "分支变更",
+  "ui.sessionTurn.diffs.changed": "已变更",
+  "ui.sessionTurn.diffs.showAll": "显示全部",
+  "ui.sessionTurn.diffs.showLess": "收起",
+  "ui.sessionTurn.diffs.more": "还有 {{count}} 个文件",
 } satisfies Partial<Record<Keys, string>>

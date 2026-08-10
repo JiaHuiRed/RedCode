@@ -164,4 +164,13 @@ export const dict = {
   "ui.toolErrorCard.copyError": "エラーをコピー",
   "ui.message.duration.seconds": "{{count}}秒",
   "ui.message.duration.minutesSeconds": "{{minutes}}分 {{seconds}}秒",
+  // 260810 cc 语种裁剪后补齐 ja 相对 en 的缺口
+  "ui.sessionReview.title.git": "Git の変更",
+  "ui.sessionReview.title.branch": "ブランチの変更",
+  "ui.sessionTurn.diffs.changed": "変更あり",
+  "ui.sessionTurn.diffs.showAll": "すべて表示",
+  "ui.sessionTurn.diffs.showLess": "折りたたむ",
+  "ui.sessionTurn.diffs.more": "他 {{count}} ファイル",
+  "ui.message.readAloud": "読み上げ",
+  "ui.message.stopReadAloud": "読み上げを停止",
 }

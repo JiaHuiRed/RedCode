@@ -6,25 +6,9 @@ import { Persist, persisted } from "@/utils/persist"
 import { dict as en } from "@/i18n/en"
 import { dict as uiEn } from "@redcode-ai/ui/i18n/en"
 
-export type Locale =
-  | "en"
-  | "zh"
-  | "zht"
-  | "ko"
-  | "de"
-  | "es"
-  | "fr"
-  | "da"
-  | "ja"
-  | "pl"
-  | "ru"
-  | "uk"
-  | "ar"
-  | "no"
-  | "br"
-  | "th"
-  | "bs"
-  | "tr"
+// 260810 cc 语种裁剪：18 语 → 中/日/英三语（哥哥拍板）。其余语种维护成本高且长期
+// 漏翻（每语缺 84 key），整体下架；历史配置里的 zht 在 normalizeLocale 降级到 zh。
+export type Locale = "en" | "zh" | "ja"
 
 type RawDictionary = typeof en & typeof uiEn
 type Dictionary = i18n.Flatten<RawDictionary>
@@ -34,67 +18,18 @@ function cookie(locale: Locale) {
   return `oc_locale=${encodeURIComponent(locale)}; Path=/; Max-Age=31536000; SameSite=Lax`
 }
 
-const LOCALES: readonly Locale[] = [
-  "en",
-  "zh",
-  "zht",
-  "ko",
-  "de",
-  "es",
-  "fr",
-  "da",
-  "ja",
-  "pl",
-  "ru",
-  "uk",
-  "bs",
-  "ar",
-  "no",
-  "br",
-  "th",
-  "tr",
-]
+const LOCALES: readonly Locale[] = ["en", "zh", "ja"]
 
 const INTL: Record<Locale, string> = {
   en: "en",
   zh: "zh-Hans",
-  zht: "zh-Hant",
-  ko: "ko",
-  de: "de",
-  es: "es",
-  fr: "fr",
-  da: "da",
   ja: "ja",
-  pl: "pl",
-  ru: "ru",
-  uk: "uk",
-  ar: "ar",
-  no: "nb-NO",
-  br: "pt-BR",
-  th: "th",
-  bs: "bs",
-  tr: "tr",
 }
 
 const LABEL_KEY: Record<Locale, keyof Dictionary> = {
   en: "language.en",
   zh: "language.zh",
-  zht: "language.zht",
-  ko: "language.ko",
-  de: "language.de",
-  es: "language.es",
-  fr: "language.fr",
-  da: "language.da",
   ja: "language.ja",
-  pl: "language.pl",
-  ru: "language.ru",
-  uk: "language.uk",
-  ar: "language.ar",
-  no: "language.no",
-  br: "language.br",
-  th: "language.th",
-  bs: "language.bs",
-  tr: "language.tr",
 }
 
 const base = i18n.flatten({ ...en, ...uiEn })
@@ -105,22 +40,7 @@ const merge = (app: Promise<Source>, ui: Promise<Source>) =>
 
 const loaders: Record<Exclude<Locale, "en">, () => Promise<Dictionary>> = {
   zh: () => merge(import("@/i18n/zh"), import("@redcode-ai/ui/i18n/zh")),
-  zht: () => merge(import("@/i18n/zht"), import("@redcode-ai/ui/i18n/zht")),
-  ko: () => merge(import("@/i18n/ko"), import("@redcode-ai/ui/i18n/ko")),
-  de: () => merge(import("@/i18n/de"), import("@redcode-ai/ui/i18n/de")),
-  es: () => merge(import("@/i18n/es"), import("@redcode-ai/ui/i18n/es")),
-  fr: () => merge(import("@/i18n/fr"), import("@redcode-ai/ui/i18n/fr")),
-  da: () => merge(import("@/i18n/da"), import("@redcode-ai/ui/i18n/da")),
   ja: () => merge(import("@/i18n/ja"), import("@redcode-ai/ui/i18n/ja")),
-  pl: () => merge(import("@/i18n/pl"), import("@redcode-ai/ui/i18n/pl")),
-  ru: () => merge(import("@/i18n/ru"), import("@redcode-ai/ui/i18n/ru")),
-  uk: () => merge(import("@/i18n/uk"), import("@redcode-ai/ui/i18n/uk")),
-  ar: () => merge(import("@/i18n/ar"), import("@redcode-ai/ui/i18n/ar")),
-  no: () => merge(import("@/i18n/no"), import("@redcode-ai/ui/i18n/no")),
-  br: () => merge(import("@/i18n/br"), import("@redcode-ai/ui/i18n/br")),
-  th: () => merge(import("@/i18n/th"), import("@redcode-ai/ui/i18n/th")),
-  bs: () => merge(import("@/i18n/bs"), import("@redcode-ai/ui/i18n/bs")),
-  tr: () => merge(import("@/i18n/tr"), import("@redcode-ai/ui/i18n/tr")),
 }
 
 function loadDict(locale: Locale) {
@@ -140,26 +60,8 @@ export function loadLocaleDict(locale: Locale) {
 
 const localeMatchers: Array<{ locale: Locale; match: (language: string) => boolean }> = [
   { locale: "en", match: (language) => language.startsWith("en") },
-  { locale: "zht", match: (language) => language.startsWith("zh") && language.includes("hant") },
   { locale: "zh", match: (language) => language.startsWith("zh") },
-  { locale: "ko", match: (language) => language.startsWith("ko") },
-  { locale: "de", match: (language) => language.startsWith("de") },
-  { locale: "es", match: (language) => language.startsWith("es") },
-  { locale: "fr", match: (language) => language.startsWith("fr") },
-  { locale: "da", match: (language) => language.startsWith("da") },
   { locale: "ja", match: (language) => language.startsWith("ja") },
-  { locale: "pl", match: (language) => language.startsWith("pl") },
-  { locale: "ru", match: (language) => language.startsWith("ru") },
-  { locale: "uk", match: (language) => language.startsWith("uk") },
-  { locale: "ar", match: (language) => language.startsWith("ar") },
-  {
-    locale: "no",
-    match: (language) => language.startsWith("no") || language.startsWith("nb") || language.startsWith("nn"),
-  },
-  { locale: "br", match: (language) => language.startsWith("pt") },
-  { locale: "th", match: (language) => language.startsWith("th") },
-  { locale: "bs", match: (language) => language.startsWith("bs") },
-  { locale: "tr", match: (language) => language.startsWith("tr") },
 ]
 
 function detectLocale(): Locale {
@@ -177,6 +79,8 @@ function detectLocale(): Locale {
 }
 
 export function normalizeLocale(value: string): Locale {
+  // 历史配置里的繁中降级到简中，其余已下架语种回退英文
+  if (value === "zht") return "zh"
   return LOCALES.includes(value as Locale) ? (value as Locale) : "en"
 }
 
