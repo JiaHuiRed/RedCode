@@ -25,6 +25,17 @@ export const EnvTool = Tool.define(
       Effect.gen(function* () {
         const instance = yield* InstanceState.context
 
+        // 260810 cc audit R3: env 此前是全仓唯一无权限门的取值通道——vars 可直接回显
+        // ANTHROPIC_API_KEY 等密钥进对话上下文，一次提示词注入即可完成外泄闭环；
+        // category=paths 同样吐 PATH/HOME 等值。顶部单闸门罩住两个分支，按请求的
+        // 变量名（或 category）出 pattern，agent 级 permission.env="deny" 从此真正生效。
+        yield* ctx.ask({
+          permission: "env",
+          patterns: params.vars && params.vars.length > 0 ? [...params.vars] : [params.category ?? "all"],
+          always: ["*"],
+          metadata: {},
+        })
+
         if (params.vars && params.vars.length > 0) {
           const lines: string[] = []
           for (const key of params.vars) {

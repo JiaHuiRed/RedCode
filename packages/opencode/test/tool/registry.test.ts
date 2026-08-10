@@ -193,6 +193,59 @@ describe("tool.registry", () => {
     }),
   )
 
+  // 260810 cc audit R3: tools() 按 agent 权限过滤——全 deny 下架，pattern 例外保留
+  it.instance("filters tools denied by agent permission", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agent = yield* Agent.Service
+      const build = yield* agent.get("build")
+      if (!build) throw new Error("build agent not found")
+      const model = { providerID: ProviderID.redcode, modelID: ModelID.make("test") }
+
+      // Agent.Info.permission 是 Ruleset（构造时已由 fromConfig 转换），追加规则=末条优先
+      const withRules = (...rules: Array<{ permission: string; pattern: string; action: "allow" | "deny" | "ask" }>) =>
+        ({ ...build, permission: [...build.permission, ...rules] })
+
+      const baseline = yield* registry.tools({ ...model, agent: build })
+      expect(baseline.some((tool) => tool.id === "env")).toBe(true)
+      expect(baseline.some((tool) => tool.id === "edit")).toBe(true)
+      expect(baseline.some((tool) => tool.id === "bash")).toBe(true)
+
+      // 单键无条件 deny → 工具下架
+      const envDenied = yield* registry.tools({
+        ...model,
+        agent: withRules({ permission: "env", pattern: "*", action: "deny" }),
+      })
+      expect(envDenied.some((tool) => tool.id === "env")).toBe(false)
+      expect(envDenied.some((tool) => tool.id === "bash")).toBe(true)
+
+      // edit 权限键统管 edit/write/apply_patch（与 tools:{write:false} 的转译口径一致）
+      const editDenied = yield* registry.tools({
+        ...model,
+        agent: withRules({ permission: "edit", pattern: "*", action: "deny" }),
+      })
+      expect(editDenied.some((tool) => tool.id === "edit")).toBe(false)
+      expect(editDenied.some((tool) => tool.id === "write")).toBe(false)
+      expect(editDenied.some((tool) => tool.id === "apply_patch")).toBe(false)
+
+      // 末条规则带 pattern 例外 → 不下架，交给执行期 ask
+      const bashScoped = yield* registry.tools({
+        ...model,
+        agent: withRules(
+          { permission: "bash", pattern: "*", action: "deny" },
+          { permission: "bash", pattern: "git *", action: "allow" },
+        ),
+      })
+      expect(bashScoped.some((tool) => tool.id === "bash")).toBe(true)
+
+      const bashDenied = yield* registry.tools({
+        ...model,
+        agent: withRules({ permission: "bash", pattern: "*", action: "deny" }),
+      })
+      expect(bashDenied.some((tool) => tool.id === "bash")).toBe(false)
+    }),
+  )
+
   it.instance("loads tools from .redcode/tool (singular)", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance

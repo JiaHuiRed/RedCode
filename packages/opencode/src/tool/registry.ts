@@ -367,7 +367,23 @@ export const layer = Layer.effect(
     const tools: Interface["tools"] = Effect.fn("ToolRegistry.tools")(function* (input) {
       const ctx = yield* InstanceState.context
       const s = yield* InstanceState.get(state)
-      const filtered = (yield* all()).filter((tool) => {
+
+      // 260810 cc audit R3: tools() 此前拿 agent 只用于生成 task/skill 描述，不按权限过滤——
+      // permission.env="deny"（含 tools:{x:false} 的转译）对不调 ctx.ask 的工具完全失效，
+      // 且被禁工具照样进模型工具表，白白占 token 并诱导模型走死路（如 plan agent 的
+      // edit/write）。agent.permission 在 Agent 构造时已是 Ruleset，用 core 现成的
+      // Permission.disabled（生效规则=findLast 末条优先，仅 pattern:"*" 的 deny 下架；
+      // write/edit/apply_patch 合并走 "edit" 键）剔除；带 pattern 例外的
+      // （如 bash 全禁但放行 "git *"）保留给执行期 ctx.ask 逐次把关。
+      const candidates = yield* all()
+      const deniedTools = Permission.disabled(
+        candidates.map((tool) => tool.id),
+        input.agent.permission ?? [],
+      )
+
+      const filtered = candidates.filter((tool) => {
+        if (deniedTools.has(tool.id)) return false
+
         if (tool.id === WebSearchTool.id) {
           return webSearchEnabled(input.providerID, { exa: flags.enableExa, parallel: flags.enableParallel })
         }
