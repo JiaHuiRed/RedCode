@@ -43,9 +43,9 @@
   transition: transform 140ms ease-out;
 
   border-radius: 8px;
-  color: var(--text-text-base);
-  background: var(--background-bg-layer-01);
-  box-shadow: var(--elevation-floating);
+  color: var(--v2-text-text-base);
+  background: var(--v2-background-bg-layer-01);
+  box-shadow: var(--v2-elevation-floating);
 
   &[data-opened] {
     animation: toastV2PopIn 140ms ease-out;
@@ -73,7 +73,7 @@
     min-height: 20px;
 
     [data-component="icon"] {
-      color: var(--text-text-base);
+      color: var(--v2-text-text-base);
       width: 16px;
       height: 16px;
       display: inline-flex;
@@ -109,7 +109,7 @@
   }
 
   [data-slot="toast-v2-title"] {
-    color: var(--text-text-base);
+    color: var(--v2-text-text-base);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -124,7 +124,7 @@
   }
 
   [data-slot="toast-v2-description"] {
-    color: var(--text-text-muted);
+    color: var(--v2-text-text-muted);
     text-wrap-style: pretty;
     overflow-wrap: anywhere;
     word-break: break-word;

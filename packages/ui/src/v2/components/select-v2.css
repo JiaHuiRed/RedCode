@@ -46,8 +46,8 @@
   border-radius: 6px;
   outline: 1px solid transparent;
   outline-offset: 0;
-  background: linear-gradient(180deg, var(--alpha-light-2) 0%, var(--alpha-light-0) 100%), var(--background-bg-base);
-  box-shadow: var(--elevation-button-neutral);
+  background: linear-gradient(180deg, var(--v2-alpha-light-2) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-base);
+  box-shadow: var(--v2-elevation-button-neutral);
   flex: none;
   align-self: stretch;
   transition:
@@ -65,18 +65,18 @@
     [data-expanded]
   ) {
   background:
-    linear-gradient(0deg, var(--overlay-simple-overlay-hover), var(--overlay-simple-overlay-hover)),
-    linear-gradient(180deg, var(--alpha-light-2) 0%, var(--alpha-light-0) 100%), var(--background-bg-base);
+    linear-gradient(0deg, var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)),
+    linear-gradient(180deg, var(--v2-alpha-light-2) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-base);
 }
 
 [data-component="select-v2"]:where(:focus-within):not([data-disabled], [data-invalid]),
 [data-component="select-v2"]:where([data-expanded]):not([data-disabled], [data-invalid]) {
-  outline-color: var(--border-border-focus);
+  outline-color: var(--v2-border-border-focus);
   box-shadow: none;
 }
 
 [data-component="select-v2"]:where([data-invalid]):not([data-disabled]) {
-  outline-color: var(--state-fg-danger);
+  outline-color: var(--v2-state-fg-danger);
   box-shadow: none;
 }
 
@@ -116,13 +116,13 @@
   font-size: 13px;
   line-height: 1;
   letter-spacing: -0.04px;
-  color: var(--text-text-base);
+  color: var(--v2-text-text-base);
   font-variation-settings: "slnt" 0;
   cursor: default;
 }
 
 [data-component="select-v2"] [data-slot="select-v2-value-text"][data-placeholder-shown] {
-  color: var(--text-text-faint);
+  color: var(--v2-text-text-faint);
 }
 
 [data-component="select-v2"][data-numeric] [data-slot="select-v2-value-text"] {
@@ -130,7 +130,7 @@
 }
 
 [data-component="select-v2"]:where([data-invalid]):not([data-disabled]) [data-slot="select-v2-value-text"] {
-  color: var(--state-fg-danger);
+  color: var(--v2-state-fg-danger);
 }
 
 [data-component="select-v2"] [data-slot="select-v2-chevron"] {
@@ -147,7 +147,7 @@
   border: 0;
   border-radius: 4px;
   background: transparent;
-  color: var(--icon-icon-muted);
+  color: var(--v2-icon-icon-muted);
   pointer-events: none;
 }
 
