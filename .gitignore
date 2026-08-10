@@ -83,3 +83,6 @@ packages/opencode/models_test.txt
 
 # 260801 Red session attachment screenshots (runtime data, not source)
 .attachments/
+
+# 260810 cc OpenTUI FFI 调试日志（运行时产物，落在仓库根）
+ffi_otui_*.log
