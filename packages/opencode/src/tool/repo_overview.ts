@@ -108,9 +108,7 @@ export const RepoOverviewTool = Tool.define<typeof Parameters, Metadata, AppFile
       params: Schema.Schema.Type<typeof Parameters>,
     ) {
       if (params.path) {
-        const full = path.isAbsolute(params.path)
-          ? params.path
-          : path.resolve(yield* InstanceState.directory, params.path)
+        const full = AppFileSystem.resolveFrom(yield* InstanceState.directory, params.path)
         return { path: full, repository: params.repository }
       }
 
