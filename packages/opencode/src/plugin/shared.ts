@@ -69,10 +69,14 @@ function isAbsolutePath(raw: string) {
   return path.isAbsolute(raw) || /^[A-Za-z]:[\\/]/.test(raw)
 }
 
+// 260810 cc: 认 "bun" 条件导出——源码插件（如 DCP）可让 Bun 直载 .ts 入口，
+// 而 Node 宿主（桌面 sidecar 无 TS 转译）继续走 "import" 指向的构建产物。
+const EXPORT_CONDITIONS = typeof Bun === "undefined" ? ["import", "default"] : ["bun", "import", "default"]
+
 function extractExportValue(value: unknown): string | undefined {
   if (typeof value === "string") return value
   if (!isRecord(value)) return undefined
-  for (const key of ["import", "default"]) {
+  for (const key of EXPORT_CONDITIONS) {
     const nested = value[key]
     if (typeof nested === "string") return nested
   }
@@ -97,21 +101,26 @@ function resolvePackageFile(spec: string, raw: string, kind: string, pkg: Plugin
   return next
 }
 
-function resolvePackagePath(spec: string, raw: string, kind: PluginKind, pkg: PluginPackage) {
-  return pathToFileURL(resolvePackageFile(spec, raw, kind, pkg)).href
-}
-
-function resolvePackageEntrypoint(spec: string, kind: PluginKind, pkg: PluginPackage) {
+// 260810 cc: exports/main 声明的入口可能在磁盘上不存在（例如源码插件从未构建 dist/），
+// 命中即返回会让 import 阶段整个插件报废。这里逐个候选验存在性，全部缺失则交还给
+// resolvePluginEntrypoint 的目录 index 降级路径。
+async function resolvePackageEntrypoint(spec: string, kind: PluginKind, pkg: PluginPackage) {
+  const candidates: string[] = []
   const exports = pkg.json.exports
   if (isRecord(exports)) {
     const raw = extractExportValue(exports[`./${kind}`])
-    if (raw) return resolvePackagePath(spec, raw, kind, pkg)
+    if (raw) candidates.push(raw)
   }
 
-  if (kind !== "server") return
-  const main = packageMain(pkg)
-  if (!main) return
-  return resolvePackagePath(spec, main, kind, pkg)
+  if (kind === "server") {
+    const main = packageMain(pkg)
+    if (main) candidates.push(main)
+  }
+
+  for (const raw of candidates) {
+    const file = resolvePackageFile(spec, raw, kind, pkg)
+    if (await Filesystem.exists(file)) return pathToFileURL(file).href
+  }
 }
 
 function targetPath(target: string) {
@@ -140,7 +149,7 @@ async function resolvePluginEntrypoint(spec: string, target: string, kind: Plugi
     pkg ?? (source === "npm" ? await readPluginPackage(target) : await readPluginPackage(target).catch(() => undefined))
   if (!hit) return target
 
-  const entry = resolvePackageEntrypoint(spec, kind, hit)
+  const entry = await resolvePackageEntrypoint(spec, kind, hit)
   if (entry) return entry
 
   const dir = await resolveTargetDirectory(target)

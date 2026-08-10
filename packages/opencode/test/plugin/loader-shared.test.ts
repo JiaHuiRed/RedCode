@@ -469,6 +469,118 @@ describe("plugin.loader.shared", () => {
     ),
   )
 
+  // 260810 cc: exports 声明的入口在磁盘上不存在时（如源码插件从未构建 dist/），
+  // 应降级到目录 index 而不是拿死路径 import 炸掉整个插件。
+  it.live("falls back to directory index when exports server entry is missing on disk", () =>
+    withTmp(
+      async (dir) => {
+        const mod = path.join(dir, "src-plugin")
+        const mark = path.join(dir, "fallback-called.txt")
+        await fs.mkdir(mod, { recursive: true })
+
+        await Bun.write(
+          path.join(mod, "package.json"),
+          JSON.stringify(
+            {
+              name: "src-plugin",
+              type: "module",
+              main: "./dist/index.js",
+              exports: { "./server": { import: "./dist/index.js" } },
+            },
+            null,
+            2,
+          ),
+        )
+        await Bun.write(
+          path.join(mod, "index.ts"),
+          [
+            "export default {",
+            '  id: "demo.src-fallback",',
+            "  server: async () => {",
+            `    await Bun.write(${JSON.stringify(mark)}, "called")`,
+            "    return {}",
+            "  },",
+            "}",
+            "",
+          ].join("\n"),
+        )
+
+        await Bun.write(
+          path.join(dir, "redcode.json"),
+          JSON.stringify({ plugin: [pathToFileURL(mod).href] }, null, 2),
+        )
+
+        return { mark }
+      },
+      (tmp) =>
+        Effect.gen(function* () {
+          yield* load(tmp.path)
+          expect(yield* Effect.promise(() => Bun.file(tmp.extra.mark).text())).toBe("called")
+        }),
+    ),
+  )
+
+  it.live("prefers bun export condition over import for server entry", () =>
+    withTmp(
+      async (dir) => {
+        const mod = path.join(dir, "cond-plugin")
+        const mark = path.join(dir, "cond-called.txt")
+        await fs.mkdir(path.join(mod, "dist"), { recursive: true })
+
+        await Bun.write(
+          path.join(mod, "package.json"),
+          JSON.stringify(
+            {
+              name: "cond-plugin",
+              type: "module",
+              exports: { "./server": { bun: "./index.ts", import: "./dist/index.js" } },
+            },
+            null,
+            2,
+          ),
+        )
+        await Bun.write(
+          path.join(mod, "index.ts"),
+          [
+            "export default {",
+            '  id: "demo.cond",',
+            "  server: async () => {",
+            `    await Bun.write(${JSON.stringify(mark)}, "bun")`,
+            "    return {}",
+            "  },",
+            "}",
+            "",
+          ].join("\n"),
+        )
+        await Bun.write(
+          path.join(mod, "dist", "index.js"),
+          [
+            "export default {",
+            '  id: "demo.cond",',
+            "  server: async () => {",
+            `    await Bun.write(${JSON.stringify(mark)}, "import")`,
+            "    return {}",
+            "  },",
+            "}",
+            "",
+          ].join("\n"),
+        )
+
+        await Bun.write(
+          path.join(dir, "redcode.json"),
+          JSON.stringify({ plugin: [pathToFileURL(mod).href] }, null, 2),
+        )
+
+        return { mark }
+      },
+      (tmp) =>
+        Effect.gen(function* () {
+          yield* load(tmp.path)
+          expect(yield* Effect.promise(() => Bun.file(tmp.extra.mark).text())).toBe("bun")
+        }),
+    ),
+  )
+
   it.live("does not use npm package exports dot for server entry", () =>
     withTmp(
       async (dir) => {
