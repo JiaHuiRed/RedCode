@@ -91,6 +91,37 @@
       "description": "查 SQLite 库优先用本工具而非 bash sqlite3——结构化返回、免 shell 转义。sqlite_query 执行 SQL、sqlite_schema 看表结构。",
       "timeout": 30000,
       "enabled": true
+    },
+    "chrome-devtools": {
+      "type": "local",
+      "command": ["node", "C:/Users/Administrator/AppData/Roaming/npm/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js", "--headless"],
+      "description": "Chrome DevTools 调试（ChromeDevTools 官方 MCP）——读 console 日志/network 请求/DOM 状态/性能数据，前端调试拿实据而非截图猜。headless 无头跑；要连已开的 Chrome 实例把 --headless 换成 -u http://127.0.0.1:9222。",
+      "timeout": 120000,
+      "tools": [
+        "navigate_page",
+        "list_pages",
+        "select_page",
+        "new_page",
+        "close_page",
+        "list_console_messages",
+        "get_console_message",
+        "list_network_requests",
+        "get_network_request",
+        "evaluate_script",
+        "click",
+        "fill",
+        "take_screenshot",
+        "wait_for"
+      ],
+      "enabled": true
+    },
+    "github": {
+      "type": "remote",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": { "X-MCP-Toolsets": "default,actions" },
+      "description": "GitHub 官方 MCP（github/github-mcp-server 远程托管）——PR/issue/仓库/用户 + CI Actions 工具集。首次连接走 OAuth 浏览器授权，无需 PAT。工具集用 X-MCP-Toolsets 控制（default,actions），避免全量 60+ 工具撑爆前缀。",
+      "timeout": 60000,
+      "enabled": true
     }
   },
   "disabled_providers": ["ollama-cloud", "opencode"],
