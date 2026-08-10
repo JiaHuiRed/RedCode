@@ -354,12 +354,15 @@ function HomeShortcutBar() {
     { keys: `${mod}+Shift+⌫`, label: language.t("home.shortcuts.archiveSession") },
   ]
   const tip = HOME_TIPS[Math.floor(Math.random() * HOME_TIPS.length)]
+  // 260810 cc audit R9: 原硬编码 #4ade80 带 60%/80% alpha，浅色三主题（light/cream/green)
+  // 下对比度约 1.5:1 基本不可读；改语义 token（明 green-800/暗 green-500）保住绿色系
+  // 人格化设计且随主题走。快捷键行补 flex-wrap，窄窗不再溢出裁切。
   return (
     <div class="col-span-full flex flex-col items-center gap-1.5 px-4 py-3">
-      <span class="text-[14px] [font-weight:440] italic" style={{ color: "#4ade8099" }}>
+      <span class="text-[14px] [font-weight:440] italic text-v2-state-fg-success">
         {tip}
       </span>
-      <div class="flex items-center justify-center gap-6 text-[13px] [font-weight:440]" style={{ color: "#4ade80cc" }}>
+      <div class="flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-[13px] [font-weight:440] text-v2-state-fg-success">
         <For each={shortcuts}>
           {(item) => (
             <span class="flex items-center gap-1">
