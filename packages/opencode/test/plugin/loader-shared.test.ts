@@ -33,7 +33,11 @@ function withTmp<T, A, E, R>(
   })
 }
 
-function load(dir: string, flags?: Parameters<typeof RuntimeFlags.layer>[0]) {
+function load(
+  dir: string,
+  flags?: Parameters<typeof RuntimeFlags.layer>[0],
+  use?: (plugin: Plugin.Interface) => Effect.Effect<unknown>,
+) {
   const source = path.join(dir, "redcode.json")
   return Effect.gen(function* () {
     const config = yield* Effect.promise(
@@ -43,6 +47,7 @@ function load(dir: string, flags?: Parameters<typeof RuntimeFlags.layer>[0]) {
     return yield* Effect.gen(function* () {
       const plugin = yield* Plugin.Service
       yield* plugin.list()
+      if (use) yield* use(plugin)
     }).pipe(
       Effect.provide(
         Plugin.layer.pipe(
@@ -768,6 +773,62 @@ describe("plugin.loader.shared", () => {
           } finally {
             install.mockRestore()
           }
+        }),
+    ),
+  )
+
+  // 260810 cc audit R5: 触发路径 fail-open——hook 抛异常被吞掉记日志，后续 hook 照常执行
+  it.live("continues trigger chain when a plugin hook throws", () =>
+    withTmp(
+      async (dir) => {
+        const throws = path.join(dir, "throws-hook.ts")
+        const ok = path.join(dir, "ok-hook.ts")
+        await Bun.write(
+          throws,
+          [
+            "export default {",
+            '  id: "demo.hook.throws",',
+            "  server: async () => ({",
+            '    "tool.use.pre": async () => {',
+            '      throw new Error("hook exploded")',
+            "    },",
+            "  }),",
+            "}",
+            "",
+          ].join("\n"),
+        )
+        await Bun.write(
+          ok,
+          [
+            "export default {",
+            '  id: "demo.hook.ok",',
+            "  server: async () => ({",
+            '    "tool.use.pre": async (_input: unknown, output: Record<string, unknown>) => {',
+            "      output.touched = true",
+            "    },",
+            "  }),",
+            "}",
+            "",
+          ].join("\n"),
+        )
+
+        await Bun.write(
+          path.join(dir, "redcode.json"),
+          JSON.stringify({ plugin: [pathToFileURL(throws).href, pathToFileURL(ok).href] }, null, 2),
+        )
+      },
+      (tmp) =>
+        Effect.gen(function* () {
+          const output: Record<string, unknown> = {}
+          yield* load(tmp.path, undefined, (plugin) =>
+            plugin.trigger(
+              "tool.use.pre",
+              { tool: "bash", sessionID: "ses_x", callID: "c", args: {} } as never,
+              output as never,
+            ),
+          )
+          // 抛错插件排在前面：没被吞掉的话整条链 defect，走不到第二个 hook
+          expect(output.touched).toBe(true)
         }),
     ),
   )

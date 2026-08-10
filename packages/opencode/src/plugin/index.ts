@@ -72,6 +72,10 @@ const INTERNAL_PLUGINS: PluginInstance[] = [
   XaiAuthPlugin,
 ]
 
+// 260810 cc audit R5: hook 失败/超时日志要能报出是哪个插件——Hooks 对象本身无名，
+// 注册时在这里旁挂归属（内置插件用函数名，外置用 spec），零侵入 State 形状。
+const hookOwner = new WeakMap<Hooks, string>()
+
 function isServerPlugin(value: unknown): value is PluginInstance {
   return typeof value === "function"
 }
@@ -103,13 +107,21 @@ async function applyPlugin(load: PluginLoader.Loaded, input: PluginInput, hooks:
   if (plugin) {
     await resolvePluginId(load.source, load.spec, load.target, readPluginId(plugin.id, load.spec), load.pkg)
     const result = await (plugin as PluginModule).server(input, load.options)
-    if (result) hooks.push(result) // 260612 Red guard: plugin.server() may return undefined
+    if (result) {
+      // 260612 Red guard: plugin.server() may return undefined
+      hookOwner.set(result, load.spec)
+      hooks.push(result)
+    }
     return
   }
 
   for (const server of getLegacyPlugins(load.mod)) {
     const result = await server(input, load.options)
-    if (result) hooks.push(result) // 260612 Red guard: legacy plugin factory may return undefined
+    if (result) {
+      // 260612 Red guard: legacy plugin factory may return undefined
+      hookOwner.set(result, load.spec)
+      hooks.push(result)
+    }
   }
 }
 
@@ -163,7 +175,10 @@ export const layer = Layer.effect(
               log.error("failed to load internal plugin", { name: plugin.name, error: err })
             },
           }).pipe(Effect.option)
-          if (init._tag === "Some") hooks.push(init.value)
+          if (init._tag === "Some") {
+            hookOwner.set(init.value, plugin.name)
+            hooks.push(init.value)
+          }
         }
 
         const plugins = flags.pure ? [] : (cfg.plugin_origins ?? [])
@@ -262,7 +277,24 @@ export const layer = Layer.effect(
           Stream.runForEach((input) =>
             Effect.sync(() => {
               for (const hook of hooks) {
-                void hook["event"]?.({ event: input as any })
+                const fn = hook["event"]
+                if (!fn) continue
+                // 260810 cc audit 绿#16: 此前 void 掉的 promise 无 catch，任一插件 event
+                // handler 拒绝就变成定位不到来源的 unhandledRejection；同步 throw 还会
+                // 打死整条订阅 fiber。吞掉记日志，带插件归属。
+                try {
+                  void Promise.resolve(fn({ event: input as any })).catch((err) =>
+                    log.error("plugin event hook failed", {
+                      plugin: hookOwner.get(hook) ?? "unknown",
+                      error: errorMessage(err) || String(err),
+                    }),
+                  )
+                } catch (err) {
+                  log.error("plugin event hook failed", {
+                    plugin: hookOwner.get(hook) ?? "unknown",
+                    error: errorMessage(err) || String(err),
+                  })
+                }
               }
             }),
           ),
@@ -283,7 +315,26 @@ export const layer = Layer.effect(
       for (const hook of s.hooks) {
         const fn = hook[name] as any
         if (!fn) continue
-        yield* Effect.promise(async () => fn(input, output))
+        // 260810 cc audit R5: 此前是裸 Effect.promise——插件 hook 抛异常=defect 整轮报废，
+        // await 卡住=agent 永久挂起（tool.use.pre 挂在每次工具调用前）。对齐同文件加载
+        // 路径的防御口径：超时放行 + 异常吞掉记日志（fail-open；safe-shell 等否决语义走
+        // output 字段改写，不靠 throw，不受影响）。超时只是不再等它，底层 promise 会继续
+        // 跑完，不截断插件的副作用。
+        yield* Effect.tryPromise({
+          try: () => Promise.resolve(fn(input, output)),
+          catch: (err) => err,
+        }).pipe(
+          Effect.timeout("30 seconds"),
+          Effect.catch((err) =>
+            Effect.sync(() =>
+              log.error("plugin hook failed", {
+                hook: name,
+                plugin: hookOwner.get(hook) ?? "unknown",
+                error: errorMessage(err) || String(err),
+              }),
+            ),
+          ),
+        )
       }
       return output
     })
