@@ -7,6 +7,7 @@ import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { disposeAllInstances, provideInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
+import type { Interface as PluginService } from "../../src/plugin/index"
 
 const { Plugin } = await import("../../src/plugin/index")
 const { PluginLoader } = await import("../../src/plugin/loader")
@@ -36,7 +37,7 @@ function withTmp<T, A, E, R>(
 function load(
   dir: string,
   flags?: Parameters<typeof RuntimeFlags.layer>[0],
-  use?: (plugin: Plugin.Interface) => Effect.Effect<unknown>,
+  use?: (plugin: PluginService) => Effect.Effect<unknown>,
 ) {
   const source = path.join(dir, "redcode.json")
   return Effect.gen(function* () {
