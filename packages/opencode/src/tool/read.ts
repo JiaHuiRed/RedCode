@@ -292,10 +292,11 @@ export const ReadTool = Tool.define(
       ctx: Tool.Context,
     ) {
       const instance = yield* InstanceState.context
-      let filepath = params.filePath
-      if (!path.isAbsolute(filepath)) {
-        filepath = path.resolve(instance.directory, filepath)
-      }
+      // 260810 cc: 必须无条件以 instance.directory 为基准 resolve —— Windows 上
+      // "\users\foo" 这类有根无盘符路径 isAbsolute 为 true，若原样放行，下面
+      // normalizePath 的 path.resolve 会按 process.cwd() 补盘符；仓库与目标不同盘
+      // （如仓库在 E:、temp 在 C:）时就补错盘。resolve 对全绝对路径是原样透传，不影响。
+      let filepath = path.resolve(instance.directory, params.filePath)
       if (process.platform === "win32") {
         filepath = AppFileSystem.normalizePath(filepath)
       }
