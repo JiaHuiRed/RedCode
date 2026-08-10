@@ -20,5 +20,6 @@
 
 ## Browser Automation
 
-Use the `browsermcp` MCP server (configured in `seed/redcode.home.jsonc`, disabled by default —
-enable it there when you need it). There is no `agent-browser` CLI in this repo.
+Use the `webqa` MCP server (configured in `seed/redcode.home.jsonc`, enabled by default):
+`webqa_screenshot` 截图、`webqa_interact` 驱动点击/输入/eval（Playwright headless）。
+旧 `browsermcp` 已移除，There is no `agent-browser` CLI in this repo.
