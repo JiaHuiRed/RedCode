@@ -13,6 +13,7 @@ import { Reference } from "@/reference/reference"
 import { Hash } from "@redcode-ai/core/util/hash"
 import * as Bom from "@/util/bom"
 import { Service as SnippetService, type Snippet } from "@/session/snippet"
+import { FileTime } from "@/file/time"
 
 const DEFAULT_READ_LIMIT = 2000
 const MAX_LINE_LENGTH = 2000
@@ -358,6 +359,7 @@ export const ReadTool = Tool.define(
 
       if (isImage || isPdfAttachment(mime)) {
         const bytes = yield* fs.readFile(filepath)
+        yield* FileTime.record(ctx.sessionID, filepath)
         const msg = isPdfAttachment(mime) ? "PDF read successfully" : "Image read successfully"
         return {
           title,
@@ -397,6 +399,8 @@ export const ReadTool = Tool.define(
       }
 
       const fileTag = file.tag ?? (yield* fingerprint(filepath, encoding))
+      // 260810 cc audit R2: 记录本会话读过此文件（含当前 mtime），write/edit 写前据此断言
+      yield* FileTime.record(ctx.sessionID, filepath)
 
       let output = [`<path>${filepath}</path>`, `<type>file</type>`, `[${filepath}#${fileTag}]`, "<content>\n"].join("\n")
       output += file.raw.map((line, i) => `${i + file.offset}: ${line}`).join("\n")

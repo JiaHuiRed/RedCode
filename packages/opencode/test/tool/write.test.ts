@@ -14,6 +14,7 @@ import { SessionID, MessageID } from "../../src/session/schema"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
+import { FileTime } from "@/file/time"
 
 const ctx = {
   sessionID: SessionID.make("ses_test-write-session"),
@@ -53,6 +54,12 @@ const run = Effect.fn("WriteToolTest.run")(function* (
 ) {
   const tool = yield* init()
   return yield* tool.execute(args, next)
+})
+
+// 260810 cc: write 现在有"写前已读"守卫（FileTime），测试铺的既有文件视同已读
+const seed = Effect.fn("WriteToolTest.seed")(function* (p: string, content: string) {
+  yield* Effect.promise(() => fs.writeFile(p, content, "utf-8"))
+  yield* FileTime.record(ctx.sessionID, p)
 })
 
 describe("tool.write", () => {
@@ -98,7 +105,7 @@ describe("tool.write", () => {
       Effect.gen(function* () {
         const test = yield* TestInstance
         const filepath = path.join(test.directory, "existing.txt")
-        yield* Effect.promise(() => fs.writeFile(filepath, "old content", "utf-8"))
+        yield* seed(filepath, "old content")
         const result = yield* run({ filePath: filepath, content: "new content" })
 
         expect(result.output).toContain("Wrote file successfully")
@@ -114,7 +121,7 @@ describe("tool.write", () => {
         const test = yield* TestInstance
         const filepath = path.join(test.directory, "existing.cs")
         const bom = String.fromCharCode(0xfeff)
-        yield* Effect.promise(() => fs.writeFile(filepath, `${bom}using System;\n`, "utf-8"))
+        yield* seed(filepath, `${bom}using System;\n`)
 
         yield* run({ filePath: filepath, content: "using Up;\n" })
 
@@ -131,7 +138,7 @@ describe("tool.write", () => {
           const test = yield* TestInstance
           const filepath = path.join(test.directory, "formatted.cs")
           const bom = String.fromCharCode(0xfeff)
-          yield* Effect.promise(() => fs.writeFile(filepath, `${bom}using System;\n`, "utf-8"))
+          yield* seed(filepath, `${bom}using System;\n`)
 
           yield* run({ filePath: filepath, content: "using Up;\n" })
 
@@ -160,7 +167,7 @@ describe("tool.write", () => {
       Effect.gen(function* () {
         const test = yield* TestInstance
         const filepath = path.join(test.directory, "file.txt")
-        yield* Effect.promise(() => fs.writeFile(filepath, "old", "utf-8"))
+        yield* seed(filepath, "old")
         const result = yield* run({ filePath: filepath, content: "new" })
 
         expect(result.metadata).toHaveProperty("filepath", filepath)
@@ -248,12 +255,58 @@ describe("tool.write", () => {
     )
   })
 
+  // 260810 cc audit R2: 写前已读守卫（FileTime）
+  describe("写前已读守卫", () => {
+    it.instance("拒绝覆写本会话从未 read 过的文件", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "unread.txt")
+        // 绕过 seed()（它会记录已读），模拟外部落盘的文件
+        yield* Effect.promise(() => fs.writeFile(filepath, "external content", "utf-8"))
+
+        const exit = yield* run({ filePath: filepath, content: "stomp" }).pipe(Effect.exit)
+        expect(exit._tag).toBe("Failure")
+
+        const content = yield* Effect.promise(() => fs.readFile(filepath, "utf-8"))
+        expect(content).toBe("external content")
+      }),
+    )
+
+    it.instance("拒绝覆写读后被外部改动过的文件", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "stale.txt")
+        yield* seed(filepath, "original")
+        const past = new Date(Date.now() - 5000)
+        yield* Effect.promise(() => fs.utimes(filepath, past, past))
+
+        const exit = yield* run({ filePath: filepath, content: "stomp" }).pipe(Effect.exit)
+        expect(exit._tag).toBe("Failure")
+
+        const content = yield* Effect.promise(() => fs.readFile(filepath, "utf-8"))
+        expect(content).toBe("original")
+      }),
+    )
+
+    it.instance("工具自己创建的文件可连续覆写", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "rewrite.txt")
+        yield* run({ filePath: filepath, content: "one" })
+        yield* run({ filePath: filepath, content: "two" })
+
+        const content = yield* Effect.promise(() => fs.readFile(filepath, "utf-8"))
+        expect(content).toBe("two")
+      }),
+    )
+  })
+
   describe("error handling", () => {
     it.instance("throws error when OS denies write access", () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
         const readonlyPath = path.join(test.directory, "readonly.txt")
-        yield* Effect.promise(() => fs.writeFile(readonlyPath, "test", "utf-8"))
+        yield* seed(readonlyPath, "test")
         yield* Effect.promise(() => fs.chmod(readonlyPath, 0o444))
         const exit = yield* run({ filePath: readonlyPath, content: "new content" }).pipe(Effect.exit)
         expect(exit._tag).toBe("Failure")

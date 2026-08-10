@@ -16,6 +16,7 @@ import { SessionID, MessageID } from "../../src/session/schema"
 import * as Tool from "../../src/tool/tool"
 import { testEffect } from "../lib/effect"
 import { FileWatcher } from "../../src/file/watcher"
+import { FileTime } from "@/file/time"
 
 const ctx = {
   sessionID: SessionID.make("ses_test-edit-session"),
@@ -68,6 +69,8 @@ const fail = Effect.fn("EditToolTest.fail")(function* (args: Tool.InferParameter
 const put = Effect.fn("EditToolTest.put")(function* (p: string, content: string) {
   const fs = yield* AppFileSystem.Service
   yield* fs.writeWithDirs(p, content)
+  // 260810 cc: edit 现在有"写前已读"守卫（FileTime），测试铺的文件视同已读
+  yield* FileTime.record(ctx.sessionID, p)
 })
 
 const load = Effect.fn("EditToolTest.load")(function* (p: string) {
@@ -93,6 +96,53 @@ const onceBus = Effect.fn("EditToolTest.onceBus")(function* (def: typeof FileWat
 })
 
 describe("tool.edit", () => {
+  // 260810 cc audit R2: 写前已读守卫（FileTime）
+  describe("写前已读守卫", () => {
+    it.instance("拒绝编辑本会话从未 read 过的文件", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "unread.txt")
+        // 绕过 put()（它会记录已读），模拟外部落盘的文件
+        yield* Effect.promise(() => fs.writeFile(filepath, "content", "utf-8"))
+
+        const err = yield* fail({ filePath: filepath, oldString: "content", newString: "changed" })
+        expect(err.message).toContain("read tool")
+
+        // 空 oldString 的整文件覆写路径同样被拦
+        const err2 = yield* fail({ filePath: filepath, oldString: "", newString: "changed" })
+        expect(err2.message).toContain("read tool")
+        expect(yield* load(filepath)).toBe("content")
+      }),
+    )
+
+    it.instance("拒绝编辑读后被外部改动过的文件", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "stale.txt")
+        yield* put(filepath, "original")
+        // 模拟外部改动：mtime 拨到过去，保证与记录值不等（不依赖时钟精度，
+        // 也不在磁盘上留未来时间戳）
+        const past = new Date(Date.now() - 5000)
+        yield* Effect.promise(() => fs.utimes(filepath, past, past))
+
+        const err = yield* fail({ filePath: filepath, oldString: "original", newString: "changed" })
+        expect(err.message).toContain("modified externally")
+        expect(yield* load(filepath)).toBe("original")
+      }),
+    )
+
+    it.instance("工具自己的写入会刷新记录，连续编辑不误报", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "twice.txt")
+        yield* put(filepath, "one")
+        yield* run({ filePath: filepath, oldString: "one", newString: "two" })
+        yield* run({ filePath: filepath, oldString: "two", newString: "three" })
+        expect(yield* load(filepath)).toBe("three")
+      }),
+    )
+  })
+
   describe("creating new files", () => {
     it.instance("creates new file when oldString is empty", () =>
       Effect.gen(function* () {
@@ -626,6 +676,7 @@ describe("tool.edit", () => {
     const putBytes = Effect.fn("EditToolTest.putBytes")(function* (p: string, bytes: Uint8Array) {
       const afs = yield* AppFileSystem.Service
       yield* afs.writeWithDirs(p, bytes)
+      yield* FileTime.record(ctx.sessionID, p)
     })
 
     it.instance("拒绝把 GBK 文件写回成 UTF-8（经典路径），且原文一字节未动", () =>

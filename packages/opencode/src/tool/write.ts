@@ -14,6 +14,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { trimDiff } from "./edit"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import * as Bom from "@/util/bom"
+import { FileTime } from "@/file/time"
 
 const MAX_PROJECT_DIAGNOSTICS_FILES = 5
 
@@ -44,6 +45,9 @@ export const WriteTool = Tool.define(
           yield* assertExternalDirectoryEffect(ctx, filepath)
 
           const exists = yield* fs.existsSafe(filepath)
+          // 260810 cc audit R2: 覆盖已有文件前必须本会话 read 过且此后无外部改动，
+          // 防止拿旧内容把 IDE 手改/并行会话的落盘整个推平。新建文件不设限。
+          if (exists) yield* FileTime.assert(ctx.sessionID, filepath)
           const source = exists ? yield* Bom.readFile(fs, filepath) : { bom: false, text: "", encoding: "utf-8" }
           const next = Bom.split(params.content)
           const desiredBom = source.bom || next.bom
@@ -90,6 +94,7 @@ export const WriteTool = Tool.define(
           if (yield* format.file(filepath)) {
             yield* Bom.syncFile(fs, filepath, desiredBom)
           }
+          yield* FileTime.record(ctx.sessionID, filepath)
           yield* bus.publish(File.Event.Edited, { file: filepath })
           yield* bus.publish(FileWatcher.Event.Updated, {
             file: filepath,

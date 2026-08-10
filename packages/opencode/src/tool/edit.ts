@@ -19,6 +19,7 @@ import { assertExternalDirectoryEffect } from "./external-directory"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Hash } from "@redcode-ai/core/util/hash"
 import * as Bom from "@/util/bom"
+import { FileTime } from "@/file/time"
 
 function normalizeLineEndings(text: string): string {
   return text.replaceAll("\r\n", "\n")
@@ -125,6 +126,8 @@ export const EditTool = Tool.define(
             Effect.gen(function* () {
               if (oldString === "") {
                 const existed = yield* afs.existsSafe(filePath)
+                // 260810 cc audit R2: 空 oldString 覆写已有文件 = 整文件推平，同 write 一样上写前已读守卫
+                if (existed) yield* FileTime.assert(ctx.sessionID, filePath)
                 const source = existed
                   ? yield* Bom.readFile(afs, filePath)
                   : { bom: false, text: "", encoding: "utf-8" }
@@ -160,6 +163,7 @@ export const EditTool = Tool.define(
                 if (yield* format.file(filePath)) {
                   contentNew = yield* Bom.syncFile(afs, filePath, desiredBom)
                 }
+                yield* FileTime.record(ctx.sessionID, filePath)
                 yield* bus.publish(File.Event.Edited, { file: filePath })
                 yield* bus.publish(FileWatcher.Event.Updated, {
                   file: filePath,
@@ -171,6 +175,8 @@ export const EditTool = Tool.define(
               const info = yield* afs.stat(filePath).pipe(Effect.catch(() => Effect.succeed(undefined)))
               if (!info) throw new Error(`File ${filePath} not found`)
               if (info.type === "Directory") throw new Error(`Path is a directory, not a file: ${filePath}`)
+              // 260810 cc audit R2: 写前已读守卫（见 file/time.ts）
+              yield* FileTime.assert(ctx.sessionID, filePath)
               const source = yield* Bom.readFile(afs, filePath)
               contentOld = source.text
 
@@ -236,6 +242,7 @@ export const EditTool = Tool.define(
               if (yield* format.file(filePath)) {
                 contentNew = yield* Bom.syncFile(afs, filePath, desiredBom)
               }
+              yield* FileTime.record(ctx.sessionID, filePath)
               yield* bus.publish(File.Event.Edited, { file: filePath })
               yield* bus.publish(FileWatcher.Event.Updated, {
                 file: filePath,
@@ -545,6 +552,9 @@ const executeHashline = (
         if (yield* format.file(resolvedPath)) {
           contentNew = yield* Bom.syncFile(afs, resolvedPath, desiredBom)
         }
+        // 260810 cc audit R2: hashline 有 TAG 内容哈希校验（比 mtime 更强），不重复上
+        // FileTime.assert；但写完要刷新记录，否则后续经典路径编辑会被误判为外部改动。
+        yield* FileTime.record(ctx.sessionID, resolvedPath)
         yield* bus.publish(File.Event.Edited, { file: resolvedPath })
         yield* bus.publish(FileWatcher.Event.Updated, { file: resolvedPath, event: "change" })
 
