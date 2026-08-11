@@ -1985,6 +1985,27 @@
 
 ## GUI
 
+### [0.7.18] - 2026-08-11
+
+> 思考过程实时计时（分辨供应商慢 vs 界面卡）；流式期间跳过 Shiki 高亮结束补全（长代码块不再掉帧）；权限弹窗三键键盘快捷键（Ctrl+Enter 允许一次 / Ctrl+Shift+Enter 始终允许 / Esc 拒绝）；首页侧边栏延伸到底、浅色面板化与动态 AI tips；深色主题下快捷键标签透明化。
+
+#### 新增
+
+- **思考过程实时计时**（`message-timeline.tsx`、`message-timeline.data.ts`、`message-part.tsx`）：思考中动画行右侧 1s 实时秒表（起点 = reasoning part 的 `time.start`，取不到回退行创建时刻，等首 token 的排队时间也算），推理内容块右上角总耗时标签（`time.end - time.start`）。数据层零改动——后端 processor 本就写 `ReasoningPart.time.start/end`；计时格式与 TUI 状态栏同款（`12ms`/`12.3s`/`1m 23s`）。
+- **权限弹窗键盘快捷键**（`session-permission-dock.tsx`）：window 级 keydown——Ctrl/Cmd+Enter 允许一次、Ctrl/Cmd+Shift+Enter 始终允许、Esc 拒绝；响应中忽略防连按，打字中也能触发（焦点在输入框不冒泡到弹窗，故用全局监听）；按钮旁加 Keybind 提示（Esc / Ctrl+Shift+Enter / Ctrl+Enter，mac 下显示 ⌘）。
+- **首页动态 AI tips**（`home.tsx`、`/experimental/generate` 端点）：底部 tips 不再固定随机——每 20 分钟用当前模型生成一条（≤25 字中文俏皮话），请求失败静默回落本地 50+ 条静态库。
+- **首页侧边栏延伸到底 + 浅色面板**（`home.tsx`）：侧边栏 `row-span-full` 贯通窗口底；底色 layer-02 → layer-01（grey-300 → grey-200 微白，五主题协调，等价会话文件树面板），恢复细边框分隔。
+
+#### 优化
+
+- **流式期间跳过 Shiki 代码高亮**（`marked.tsx`、`markdown.tsx`）：流式时每 300ms 全量 markdown→Shiki→morphdom 是长代码块掉帧主因——流式期间 `highlightCodeBlocks(skip)` 只出单色文本，`streaming` 翻 false 后一次性补全高亮；最终显示与之前完全一致。
+
+#### 修复
+
+- **深色主题下快捷键标签突兀**（`session-permission-dock.tsx`、`keybind.css`）：v1 Keybind 的 `surface-base` 半透明底 + 白描边在深色 dock 上成亮斑——按钮内改 `!shadow-none !bg-transparent` 只留文字；思考计时标签同样去掉 `bg-background-stronger` 底色，与气泡同透明。
+
+---
+
 ### [0.7.17] - 2026-08-10
 
 > 语种裁剪 18 → 中/日/英三语（净 -1.6 万行，ja 缺口一次补平，parity 全键集把关）；v2 组件库 262 处 token 死引用整批修复（焦点环/浮层背景复活）；首页提示条脱离硬编码荧光绿。
