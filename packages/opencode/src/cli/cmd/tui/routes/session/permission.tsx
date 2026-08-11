@@ -122,6 +122,34 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
 
   const session = createMemo(() => sync.data.session.find((s) => s.id === props.request.sessionID))
 
+  // 260811 Red 权限弹窗键盘快捷键（复用 GUI 方案，参照雨琦 915556e）：
+  // Enter = 允许一次，Ctrl+Shift+Enter = 始终允许（先进确认页），Esc 已由 Prompt escapeKey 处理
+  // 三个动作都有专属快捷键，主弹窗不再需要左右选择+Enter 确认（enterAction="once"）
+  // 只在主 permission 阶段生效，always/reject 确认页内不响应
+  const allowAlways = () => {
+    if (store.stage !== "permission") return
+    setStore("stage", "always")
+  }
+  useBindings(() => ({
+    mode: OPENCODE_BASE_MODE,
+    commands: [
+      {
+        name: "permission.prompt.allow.always",
+        title: "Allow always",
+        category: "Permission",
+        run: allowAlways,
+      },
+    ],
+    bindings: [
+      {
+        key: "ctrl+shift+return",
+        desc: "Allow always",
+        group: "Permission",
+        cmd: allowAlways,
+      },
+    ],
+  }))
+
   const input = createMemo(() => {
     const tool = props.request.tool
     if (!tool) return {}
@@ -408,6 +436,8 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
               options={{ once: "Allow once", always: "Allow always", reject: "Reject" }}
               escapeKey="reject"
               fullscreen
+              enterAction="once"
+              hint={"enter allow once · ctrl+shift+enter allow always · esc reject"}
               onSelect={(option) => {
                 if (option === "always") {
                   setStore("stage", "always")
@@ -529,6 +559,9 @@ function Prompt<const T extends Record<string, string>>(props: {
   options: T
   escapeKey?: keyof T
   fullscreen?: boolean
+  hint?: string
+  // 260811 Red 有值时 Enter 直接执行该动作，不注册左右选择（三个动作都有专属快捷键时用）
+  enterAction?: keyof T
   onSelect: (option: keyof T) => void
 }) {
   const { theme } = useTheme()
@@ -565,51 +598,55 @@ function Prompt<const T extends Record<string, string>>(props: {
       },
     ],
     bindings: [
-      {
-        key: "left",
-        desc: "Previous permission option",
-        group: "Permission",
-        cmd: () => {
-          const idx = keys.indexOf(store.selected)
-          const next = keys[(idx - 1 + keys.length) % keys.length]
-          setStore("selected", next)
-        },
-      },
-      {
-        key: "h",
-        desc: "Previous permission option",
-        group: "Permission",
-        cmd: () => {
-          const idx = keys.indexOf(store.selected)
-          const next = keys[(idx - 1 + keys.length) % keys.length]
-          setStore("selected", next)
-        },
-      },
-      {
-        key: "right",
-        desc: "Next permission option",
-        group: "Permission",
-        cmd: () => {
-          const idx = keys.indexOf(store.selected)
-          const next = keys[(idx + 1) % keys.length]
-          setStore("selected", next)
-        },
-      },
-      {
-        key: "l",
-        desc: "Next permission option",
-        group: "Permission",
-        cmd: () => {
-          const idx = keys.indexOf(store.selected)
-          const next = keys[(idx + 1) % keys.length]
-          setStore("selected", next)
-        },
-      },
+      ...(props.enterAction
+        ? []
+        : [
+            {
+              key: "left",
+              desc: "Previous permission option",
+              group: "Permission",
+              cmd: () => {
+                const idx = keys.indexOf(store.selected)
+                const next = keys[(idx - 1 + keys.length) % keys.length]
+                setStore("selected", next)
+              },
+            },
+            {
+              key: "h",
+              desc: "Previous permission option",
+              group: "Permission",
+              cmd: () => {
+                const idx = keys.indexOf(store.selected)
+                const next = keys[(idx - 1 + keys.length) % keys.length]
+                setStore("selected", next)
+              },
+            },
+            {
+              key: "right",
+              desc: "Next permission option",
+              group: "Permission",
+              cmd: () => {
+                const idx = keys.indexOf(store.selected)
+                const next = keys[(idx + 1) % keys.length]
+                setStore("selected", next)
+              },
+            },
+            {
+              key: "l",
+              desc: "Next permission option",
+              group: "Permission",
+              cmd: () => {
+                const idx = keys.indexOf(store.selected)
+                const next = keys[(idx + 1) % keys.length]
+                setStore("selected", next)
+              },
+            },
+          ]),
       {
         key: "return",
-        desc: "选择权限选项",
+        desc: "确认权限选项",
         group: "Permission",
-        cmd: () => props.onSelect(store.selected),
+        cmd: () => props.onSelect(props.enterAction ?? store.selected),
       },
       ...(props.escapeKey
         ? [
@@ -700,12 +737,19 @@ function Prompt<const T extends Record<string, string>>(props: {
               {fullscreenHint()} <span style={{ fg: theme.textMuted }}>{hint()}</span>
             </text>
           </Show>
-          <text fg={theme.text}>
-            {"⇆"} <span style={{ fg: theme.textMuted }}>select</span>
-          </text>
-          <text fg={theme.text}>
-            enter <span style={{ fg: theme.textMuted }}>confirm</span>
-          </text>
+          <Show when={!props.enterAction}>
+            <text fg={theme.text}>
+              {"⇆"} <span style={{ fg: theme.textMuted }}>select</span>
+            </text>
+          </Show>
+          <Show when={!props.enterAction}>
+            <text fg={theme.text}>
+              enter <span style={{ fg: theme.textMuted }}>confirm</span>
+            </text>
+          </Show>
+          <Show when={props.hint}>
+            <text fg={theme.text}>{props.hint}</text>
+          </Show>
         </box>
       </box>
     </box>
