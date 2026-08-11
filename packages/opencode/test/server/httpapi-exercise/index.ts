@@ -177,6 +177,17 @@ const scenarios: Scenario[] = [
       },
       "status",
     ),
+  // 260811 cc audit R13: 门禁转正时 coverage 模式报出的两条无场景路由之一。
+  // 每个场景跑完默认 resetDatabase()，删当前项目不影响后续场景。
+  http.protected
+    .delete("/project/{projectID}", "project.remove")
+    .mutating()
+    .seeded((ctx) => ctx.project())
+    .at((ctx) => ({
+      path: route("/project/{projectID}", { projectID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .status(204, undefined, "status"),
   http.protected
     .post("/project/git/init", "project.initGit")
     .mutating()
@@ -811,6 +822,16 @@ const scenarios: Scenario[] = [
         check((yield* ctx.sessionGet(ctx.state.id)) === undefined, "deleted session should not remain in storage")
       }),
     ),
+  // 260811 cc audit R13: 无场景路由之二。走空文本 400 校验路径——确定性、零网络、
+  // 不依赖 TTS provider 的 API key（真实合成路径要外呼 xiaomi API，CI 里不可测）。
+  http.protected
+    .post("/session/tts", "session.tts.emptyText")
+    .at((ctx) => ({
+      path: "/session/tts",
+      headers: ctx.headers(),
+      body: { text: "", providerID: "sensenova", modelID: "mimo-tts" },
+    }))
+    .status(400),
   http.protected
     .get("/session/{sessionID}/children", "session.children")
     .seeded((ctx) =>

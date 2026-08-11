@@ -44,7 +44,7 @@ function runAuth(scenario: ActiveScenario) {
   return Effect.gen(function* () {
     const result = yield* callAuthProbe(scenario, "missing")
     if (scenario.auth === "protected") {
-      if (result.status !== 401) throw new Error(`auth expected 401, got ${result.status}`)
+      if (result.status !== 401) throw new Error(`auth expected 401, got ${result.status}: ${result.text.slice(0, 400)}`)
       const authed = yield* callAuthProbe(scenario, "valid")
       if (authed.status === 401) throw new Error("auth rejected valid credentials")
       return

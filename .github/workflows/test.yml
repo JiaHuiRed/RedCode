@@ -69,8 +69,10 @@ jobs:
         env:
           OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
 
+      # 260811 cc audit R13: 原条件 runner.os == 'Linux'，但 matrix 只剩 Windows——
+      # 三条 --fail-on-missing 门禁在 CI 里从未执行过（假门禁）。摘掉条件转正，
+      # 转正前本地 Windows 实跑：coverage 报出 2 条无场景路由已补齐，三模式全绿。
       - name: Run HttpApi exerciser gates
-        if: runner.os == 'Linux'
         working-directory: packages/opencode
         run: bun run test:httpapi
 

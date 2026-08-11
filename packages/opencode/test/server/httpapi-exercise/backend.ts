@@ -26,7 +26,11 @@ export function callAuthProbe(scenario: ActiveScenario, credentials: "missing" |
           toAuthProbeRequest(scenario, credentials, controller.signal),
         ),
       ).then((response) => capture(response, scenario.capture)),
-      Bun.sleep(1_000).then(() => {
+      // 260811 cc audit R13: 1s 对"裸路由链的冷首请求"太紧——/event 与 /pty/connect 是
+      // instanceRouterLayer 的唯一场景，层的惰性构建冷启动可超 1s，abort 把请求打成空 500
+      // （实测：暖机后或放宽超时后同请求稳定 401）。竞速守的是响应头就绪而非流结束，
+      // 暖机路径无感；10s 只在真卡死时才等满，CI 慢机上必要。
+      Bun.sleep(10_000).then(() => {
         controller.abort("auth probe timed out")
         return {
           status: 0,
