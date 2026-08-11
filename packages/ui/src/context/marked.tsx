@@ -446,7 +446,8 @@ function renderMathExpressions(html: string): string {
     .join("")
 }
 
-async function highlightCodeBlocks(html: string): Promise<string> {
+async function highlightCodeBlocks(html: string, skip: boolean): Promise<string> {
+  if (skip) return html
   const codeBlockRegex = /<pre><code(?:\s+class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g
   const matches = [...html.matchAll(codeBlockRegex)]
   if (matches.length === 0) return html
@@ -488,16 +489,21 @@ async function highlightCodeBlocks(html: string): Promise<string> {
 
 export type NativeMarkdownParser = (markdown: string) => Promise<string>
 
+export type MarkdownParseOptions = {
+  // 260811 Red 流式期间跳过 Shiki 高亮（方案 1），结束后补全，避免每 300ms 全量 codeToHtml
+  highlight?: boolean
+}
+
 export const { use: useMarked, provider: MarkedProvider } = createSimpleContext({
   name: "Marked",
   init: (props: { nativeParser?: NativeMarkdownParser }) => {
     if (props.nativeParser) {
       const nativeParser = props.nativeParser
       return {
-        async parse(markdown: string): Promise<string> {
+        async parse(markdown: string, opts?: MarkdownParseOptions): Promise<string> {
           const html = await nativeParser(markdown)
           const withMath = renderMathExpressions(html)
-          return highlightCodeBlocks(withMath)
+          return highlightCodeBlocks(withMath, opts?.highlight === false)
         },
       }
     }
@@ -521,12 +527,12 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
       return defaultLinkOpen(tokens, idx, options, _env, self)
     }
 
-    return {
-      async parse(markdown: string): Promise<string> {
-        const html = md.render(markdown)
-        const withMath = renderMathExpressions(html)
-        return highlightCodeBlocks(withMath)
-      },
-    }
+      return {
+        async parse(markdown: string, opts?: MarkdownParseOptions): Promise<string> {
+          const html = md.render(markdown)
+          const withMath = renderMathExpressions(html)
+          return highlightCodeBlocks(withMath, opts?.highlight === false)
+        },
+      }
   },
 })

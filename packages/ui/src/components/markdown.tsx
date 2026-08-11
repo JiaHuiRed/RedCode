@@ -275,7 +275,7 @@ export function Markdown(
             }
           }
 
-          const next = await Promise.resolve(marked.parse(block.src))
+          const next = await Promise.resolve(marked.parse(block.src, { highlight: !src.streaming }))
           const safe = sanitize(next)
           if (key && hash) touch(key, { hash, html: safe })
           return safe
