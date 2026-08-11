@@ -295,6 +295,12 @@ export const ReadTool = Tool.define(
       let filepath = params.filePath
       if (!path.isAbsolute(filepath)) {
         filepath = path.resolve(instance.directory, filepath)
+      } else if (process.platform === "win32" && !/^[A-Za-z]:/.test(filepath) && !filepath.startsWith("\\\\")) {
+        // 260811 cc: Windows 盘符缺失的"根相对"路径（/users/foo）——isAbsolute 判 true，
+        // 但真正落在哪个盘取决于进程 cwd；这类路径应锚定实例目录所在盘（path.resolve
+        // 会取 base 的盘符），否则仓库不在 C 盘的机器必然 File not found。CI runner 的
+        // cwd 恰在 C 盘，一直掩盖着这个岔。UNC (\\server\share) 不受影响。
+        filepath = path.resolve(instance.directory, filepath)
       }
       if (process.platform === "win32") {
         filepath = AppFileSystem.normalizePath(filepath)
