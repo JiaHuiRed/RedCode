@@ -415,6 +415,44 @@ function modelFrom(body: unknown) {
   return body.model
 }
 
+// 260811 cc：非流式（stream:false）回包。此前本服务器只会发 SSE，而 `generateText`
+// （/experimental/generate 走的就是它）发的是 stream:false、期望 JSON body，
+// 于是 ai-sdk 拿 "data: {...}" 去 JSON.parse 直接炸成 500。这里把已排队的 SSE
+// 分片摊平成一个 chat.completion，队列 API（llmText 等）对两种调用方式都能用。
+function completion(item: Sse) {
+  let content = ""
+  let reasoning = ""
+  let finish = "stop"
+  let usage: unknown
+  for (const line of [...item.head, ...item.tail]) {
+    const choice = (line as any)?.choices?.[0]
+    if (!choice) continue
+    if (typeof choice.delta?.content === "string") content += choice.delta.content
+    if (typeof choice.delta?.reasoning_content === "string") reasoning += choice.delta.reasoning_content
+    if (typeof choice.finish_reason === "string") finish = choice.finish_reason
+    if ((line as any).usage) usage = (line as any).usage
+  }
+  return HttpServerResponse.text(
+    JSON.stringify({
+      id: "chatcmpl-test",
+      object: "chat.completion",
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: "assistant",
+            content,
+            ...(reasoning ? { reasoning_content: reasoning } : {}),
+          },
+          finish_reason: finish,
+        },
+      ],
+      ...(usage ? { usage } : {}),
+    }),
+    { status: 200, contentType: "application/json" },
+  )
+}
+
 function send(item: Sse) {
   const head = bytes(item.head)
   const tail = bytes([...item.tail, ...(item.hang || item.error ? [] : [done])])
@@ -665,11 +703,15 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
         const req = yield* HttpServerRequest.HttpServerRequest
         const body = yield* req.json.pipe(Effect.orElseSucceed(() => ({})))
         const current = hit(req.originalUrl, body)
+        // 只有显式 stream:true 才回 SSE。generateText（/experimental/generate 用的）
+        // 是**省略** stream 字段而不是写 false，所以不能按 `!== false` 判。
+        const streaming = (body as { stream?: unknown })?.stream === true
         if (isTitleRequest(body)) {
           hits = [...hits, current]
           yield* notify()
           const auto: Sse = { type: "sse", head: [role()], tail: [textLine("E2E Title"), finishLine("stop")] }
           if (mode === "responses") return send(responses(auto, modelFrom(body)))
+          if (!streaming) return completion(auto)
           return send(auto)
         }
         const next = pull(current)
@@ -678,12 +720,14 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
           yield* notify()
           const auto: Sse = { type: "sse", head: [role()], tail: [textLine("ok"), finishLine("stop")] }
           if (mode === "responses") return send(responses(auto, modelFrom(body)))
+          if (!streaming) return completion(auto)
           return send(auto)
         }
         hits = [...hits, current]
         yield* notify()
         if (next.type !== "sse") return fail(next)
         if (mode === "responses") return send(responses(next, modelFrom(body)))
+        if (!streaming) return completion(next)
         if (next.reset) {
           yield* reset(next)
           return HttpServerResponse.empty()

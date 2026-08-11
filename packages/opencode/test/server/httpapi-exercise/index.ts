@@ -195,7 +195,14 @@ const scenarios: Scenario[] = [
       path: route("/project/{projectID}", { projectID: ctx.state.id }),
       headers: ctx.headers(),
     }))
-    .status(204, undefined, "status"),
+    // 260811 cc 更正：昨天按 REST 习惯写了 204，实际契约是 200。Effect 的 HttpApi 里
+    // 光用 Schema.Void 不会变成 204——204 要显式 HttpApiSchema.NoContent（见
+    // effect/dist/unstable/httpapi/HttpApiSchema.js 的 NoContent = Empty(204)），
+    // 而 groups/project.ts 用的是 described(Schema.Void, ...) → 默认 200 空体。
+    // 这条是我昨天误记"全绿"的来源：auth 模式只探 401 不校验状态码、coverage 模式
+    // 根本不执行，只有 effect 模式跑行为，而我当时没盯 effect 的输出。
+    // 要改成 204 就得动路由声明与生成的 SDK，属契约变更，GUI 已按 200 出货，不动。
+    .status(200, undefined, "status"),
   http.protected
     .post("/project/git/init", "project.initGit")
     .mutating()
@@ -537,6 +544,22 @@ const scenarios: Scenario[] = [
         yield* ctx.worktreeRemove(ctx.state.directory)
       }),
     ),
+  // 260811 cc audit R13：coverage 模式报出的无场景路由（f3557e5 新增的裸 LLM 端点）。
+  // handler 走 provider.getLanguage + generateText，所以必须挂 TestLLMServer，
+  // 否则会真去外呼。model 显式给 test/test-model，不依赖 defaultModel 的解析结果。
+  http.protected
+    .post("/experimental/generate", "experimental.generate")
+    .withLlm()
+    .seeded((ctx) => ctx.llmText("generated text"))
+    .at((ctx) => ({
+      path: "/experimental/generate",
+      headers: ctx.headers(),
+      body: { prompt: "say hi", model: { providerID: "test", modelID: "test-model" } },
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(typeof body.text === "string", "generate should return text")
+    }),
   http.protected
     .get("/experimental/session", "experimental.session.list")
     .at((ctx) => ({ path: "/experimental/session?roots=false&archived=false", headers: ctx.headers() }))
