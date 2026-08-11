@@ -1132,6 +1132,9 @@ export type ProviderConfig = {
       headers?: {
         [key: string]: string
       }
+      tools?: {
+        [key: string]: boolean
+      }
       /**
        * Variant-specific configuration
        */
@@ -1572,6 +1575,18 @@ export type McpResource = {
   description?: string
   mimeType?: string
   client: string
+}
+
+export type GeneratePayload = {
+  prompt: string
+  model?: {
+    providerID: string
+    modelID: string
+  }
+}
+
+export type GenerateResponse = {
+  text: string
 }
 
 export type Symbol = {
@@ -4586,6 +4601,38 @@ export type ExperimentalResourceListResponses = {
 
 export type ExperimentalResourceListResponse =
   ExperimentalResourceListResponses[keyof ExperimentalResourceListResponses]
+
+export type ExperimentalGenerateData = {
+  body?: GeneratePayload
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/generate"
+}
+
+export type ExperimentalGenerateErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * InternalServerError
+   */
+  500: EffectHttpApiErrorInternalServerError
+}
+
+export type ExperimentalGenerateError = ExperimentalGenerateErrors[keyof ExperimentalGenerateErrors]
+
+export type ExperimentalGenerateResponses = {
+  /**
+   * Generated text
+   */
+  200: GenerateResponse
+}
+
+export type ExperimentalGenerateResponse = ExperimentalGenerateResponses[keyof ExperimentalGenerateResponses]
 
 export type FindTextData = {
   body?: never

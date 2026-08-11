@@ -4,15 +4,23 @@ import { Config } from "@/config/config"
 import { InstanceState } from "@/effect/instance-state"
 import { MCP } from "@/mcp"
 import { Project } from "@/project/project"
+import { Provider } from "@/provider/provider"
 import { Session } from "@/session/session"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { ToolRegistry } from "@/tool/registry"
 import { Worktree } from "@/worktree"
+import { generateText } from "ai"
 import { Effect, Option } from "effect"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
-import { ConsoleSwitchPayload, SessionListQuery, ToolListQuery, WorktreeApiError } from "../groups/experimental"
+import {
+  ConsoleSwitchPayload,
+  GeneratePayload,
+  SessionListQuery,
+  ToolListQuery,
+  WorktreeApiError,
+} from "../groups/experimental"
 
 function mapWorktreeError<A, R>(self: Effect.Effect<A, Worktree.Error, R>) {
   return self.pipe(
@@ -27,6 +35,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     const config = yield* Config.Service
     const mcp = yield* MCP.Service
     const project = yield* Project.Service
+    const provider = yield* Provider.Service
     const registry = yield* ToolRegistry.Service
     const worktreeSvc = yield* Worktree.Service
 
@@ -151,6 +160,25 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       return yield* mcp.resources()
     })
 
+    // 260811 Red 首页动态 tips：裸 LLM 生成，缺省用最近使用的模型
+    const generate = Effect.fn("ExperimentalHttpApi.generate")(function* (ctx: {
+      payload: typeof GeneratePayload.Type
+    }) {
+      return yield* Effect.gen(function* () {
+        const model = ctx.payload.model ?? (yield* provider.defaultModel())
+        const resolved = yield* provider.getModel(model.providerID, model.modelID)
+        const language = yield* provider.getLanguage(resolved)
+        const text = yield* Effect.promise(() =>
+          generateText({
+            model: language,
+            temperature: 0.8,
+            messages: [{ role: "user", content: ctx.payload.prompt }],
+          }).then((r) => r.text),
+        )
+        return { text }
+      }).pipe(Effect.catch(() => Effect.fail(new HttpApiError.InternalServerError({}))))
+    })
+
     return handlers
       .handle("console", getConsole)
       .handle("consoleOrgs", listConsoleOrgs)
@@ -163,5 +191,6 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       .handle("worktreeReset", worktreeReset)
       .handle("session", session)
       .handle("resource", resource)
+      .handle("generate", generate)
   }),
 )

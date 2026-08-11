@@ -53,6 +53,21 @@ export const ToolListQuery = Schema.Struct({
   model: ModelID,
 })
 
+// 260811 Red 首页动态 tips：裸 LLM 生成端点，不绑定 session
+export const GeneratePayload = Schema.Struct({
+  prompt: Schema.String,
+  model: Schema.optional(
+    Schema.Struct({
+      providerID: ProviderID,
+      modelID: ModelID,
+    }),
+  ),
+}).annotate({ identifier: "GeneratePayload" })
+
+const GenerateResponse = Schema.Struct({
+  text: Schema.String,
+}).annotate({ identifier: "GenerateResponse" })
+
 const WorktreeList = Schema.Array(Schema.String)
 const WorktreeErrorName = Schema.Union([
   Schema.Literal("WorktreeNotGitError"),
@@ -90,6 +105,7 @@ export const ExperimentalPaths = {
   worktreeReset: "/experimental/worktree/reset",
   session: "/experimental/session",
   resource: "/experimental/resource",
+  generate: "/experimental/generate",
 } as const
 
 export const ExperimentalApi = HttpApi.make("experimental")
@@ -221,6 +237,19 @@ export const ExperimentalApi = HttpApi.make("experimental")
             identifier: "experimental.resource.list",
             summary: "Get MCP resources",
             description: "Get all available MCP resources from connected servers. Optionally filter by name.",
+          }),
+        ),
+        HttpApiEndpoint.post("generate", ExperimentalPaths.generate, {
+          query: WorkspaceRoutingQuery,
+          payload: GeneratePayload,
+          success: described(GenerateResponse, "Generated text"),
+          error: HttpApiError.InternalServerError,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "experimental.generate",
+            summary: "Generate text with a model",
+            description:
+              "Generate a short piece of text using the current model or a specified model. Used by the home screen for dynamic tips.",
           }),
         ),
       )
