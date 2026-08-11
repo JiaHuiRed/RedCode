@@ -11,6 +11,25 @@
 ---
 
 ## TUI
+### [0.8.16] - 2026-08-11
+
+> 审计收尾日：msgPin 与 prune 停战（compact 边界分代结算，缓存优先）；HttpApi 假门禁转正并当场修掉门禁自己的冷启动竞速缺陷；两个静默失效的依赖补丁分道处置；apply_patch 补写前守卫；edit 锁表止漏；read 跨盘路径岔修复。
+
+#### 修复
+
+- **msgPin 与 prune 停战——compact 边界分代结算**（`session/prompt.ts`、新增 `session/prompt-caches.ts`）：overflow 三档的 prune(0.8) 给陈旧工具输出打 compacted 标记，而 msgPin 每轮用首次快照把旧消息钉回去——标记永远到不了模型可见的 prompt，三档实际只剩两档，每次都掉进最贵的全量摘要；"prune 释放够了就跳过 summarize"吃的还是虚报释放量。缓存优先落分代结算：平时 prune 只记账（标记入库、prompt 仍钉死快照、日志改口 `context.prune.marked` 不再谎报），compact 边界（缓存反正要重建）`settlePromptCaches` 丢弃 msgPin/modelMsgs——prune 标记与 DCP 累积改写一并生效、快照双份内存同步释放；跳过 summarize 的判断从此诚实。配套开启 `compaction.prune`（此前开关未开 = prune 档"配置关 + 被钉"双重空转）。
+- **HttpApi 门禁转正 + 探测冷启动竞速**（`.github/workflows/test.yml`、`test/server/httpapi-exercise/`）：门禁 `if: runner.os == 'Linux'` 但 matrix 只剩 Windows，三条 `--fail-on-missing` 从未执行。转正时 coverage 报出 2 条无场景路由（`DELETE /project/{projectID}`、`POST /session/tts`）补齐；auth 模式首跑即暴露存量缺陷——/event 与 /pty/connect 无凭据探测稳定 500，定位为探测 1s 竞速对"裸路由链冷首请求"太紧（instanceRouterLayer 惰性构建超 1s 被 abort 打成空 500，其余 148 条都走已暖链），放宽 10s；runner 断言失败附响应体。本地三模式 150 场景全绿。
+- **apply_patch 补"写前已读"守卫**（`tool/apply_patch.ts`）：gpt 系模型的写路径此前裸奔。断言全放校验阶段——任一文件过期整个 patch 一字不落盘（all-or-nothing）；update/delete/add-撞已有文件三径全覆盖，写后统一刷新 FileTime。
+- **edit 文件锁表引用计数**（`tool/edit.ts`）：原 locks Map 只增不减，长驻 server 每编辑一个新文件永久泄漏一个 Semaphore。改 acquireUseRelease + 引用计数，最后使用者释放时删条目（不能"用完即删"——第二等待者仍挂旧信号量时第三者新建会失去互斥）；`fileLockCount()` 供测试断言回收归零。
+- **read 修 Windows 盘符缺失路径跨盘岔**（`tool/read.ts`）：`/users/foo` 这类"根相对"路径 `isAbsolute` 判 true 跳过实例目录锚定，被按进程 cwd 的盘解析——仓库在 E 盘必 File not found，CI runner 的 C 盘 cwd 掩盖多年（read.test 的 Windows 归一化用例因此常年本地红）。现锚定实例目录所在盘，UNC 不受影响。
+- **两个静默失效的依赖补丁分道处置**（`patches/`）：patchedDependencies 声明的 `solid-js@1.9.10`/`@npmcli/agent@4.0.0` 与实装 1.9.14/4.0.2 对不上，bun 静默不应用。solid-js 退役（实证 1.9.13+ 上游已逐字合入 #2046 transition 修复）；@npmcli/agent 对 4.0.2 重制（上游仍未修 `get proxy()` 返回 URL 对象，该包经 make-fetch-happen 服务 npm 拉取链路，代理环境刚需）。
+
+#### 变更
+
+- **chrome-devtools MCP 路径拆到本地层**（`seed/redcode.home.jsonc`）：命令是 npm 全局安装的绝对路径（含用户名/盘符），换机必 ENOENT——与 DCP 插件路径同类"因机而异"值，下沉 `redcode.local.jsonc`；同批的 github MCP 是远程 URL 机器无关，留在模板。
+
+---
+
 ### [0.8.15] - 2026-08-10
 
 > 全仓审计红级五连修：DCP 插件其实从未被加载（修复 + resolver 防复发）、write/edit 补"写前已读"守卫、hook 触发路径补超时隔离、env 工具关掉密钥外泄闭环 + 工具表按 agent 权限过滤、"始终允许"落库不再重启全忘。
