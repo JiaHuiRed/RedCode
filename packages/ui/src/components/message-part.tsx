@@ -1767,7 +1767,7 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
         <Show when={elapsed()}>
           <span
             data-slot="reasoning-duration"
-            class="absolute right-0 top-0 z-10 rounded-[4px] bg-background-stronger px-1.5 py-0.5 text-11-regular text-text-weak tabular-nums"
+            class="absolute right-0 top-0 z-10 px-1.5 py-0.5 text-11-regular text-text-weak tabular-nums"
           >
             {elapsed()}
           </span>

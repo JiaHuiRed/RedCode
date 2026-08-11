@@ -3,6 +3,7 @@ import type { PermissionRequest } from "@redcode-ai/sdk/v2"
 import { Button } from "@redcode-ai/ui/button"
 import { DockPrompt } from "@redcode-ai/ui/dock-prompt"
 import { Icon } from "@redcode-ai/ui/icon"
+import { Keybind } from "@redcode-ai/ui/keybind"
 import { useLanguage } from "@/context/language"
 
 export function SessionPermissionDock(props: {
@@ -11,6 +12,8 @@ export function SessionPermissionDock(props: {
   onDecide: (response: "once" | "always" | "reject") => void
 }) {
   const language = useLanguage()
+  const isMac = navigator.platform.includes("Mac")
+  const modLabel = () => (isMac ? "⌘" : "Ctrl")
 
   // 260811 Red 权限弹窗键盘快捷键（哥哥需求，参照 Claude）：
   // Ctrl/Cmd+Enter = 允许一次，Ctrl/Cmd+Shift+Enter = 始终允许，Esc = 拒绝
@@ -62,6 +65,7 @@ export function SessionPermissionDock(props: {
           <div data-slot="permission-footer-actions">
             <Button variant="ghost" size="normal" onClick={() => props.onDecide("reject")} disabled={props.responding}>
               {language.t("ui.permission.deny")}
+              <Keybind>Esc</Keybind>
             </Button>
             <Button
               variant="secondary"
@@ -70,9 +74,11 @@ export function SessionPermissionDock(props: {
               disabled={props.responding}
             >
               {language.t("ui.permission.allowAlways")}
+              <Keybind>{modLabel()}+Shift+Enter</Keybind>
             </Button>
             <Button variant="primary" size="normal" onClick={() => props.onDecide("once")} disabled={props.responding}>
               {language.t("ui.permission.allowOnce")}
+              <Keybind>{modLabel()}+Enter</Keybind>
             </Button>
           </div>
         </>

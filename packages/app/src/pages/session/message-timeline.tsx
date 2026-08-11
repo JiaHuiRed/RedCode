@@ -198,7 +198,7 @@ function TimelineThinkingRow(props: {
       <Show when={elapsed()}>
         <span
           data-slot="thinking-duration"
-          class="ml-auto shrink-0 rounded-[4px] bg-background-stronger px-1.5 py-0.5 text-11-regular text-text-weak tabular-nums"
+          class="ml-auto shrink-0 px-1.5 py-0.5 text-11-regular text-text-weak tabular-nums"
         >
           {elapsed()}
         </span>

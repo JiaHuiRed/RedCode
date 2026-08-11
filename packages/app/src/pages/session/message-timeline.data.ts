@@ -208,11 +208,14 @@ export namespace Timeline {
         .flatMap((message) => getMessageParts(message.id))
         .map((part) => (part.type === "reasoning" && part.text ? reasoningHeading(part.text) : undefined))
         .find((value): value is string => !!value)
-      // 260811 Red 思考计时：取首个 reasoning part 的 time.start 作为秒表起点
-      const startedAt = assistantMessages
-        .flatMap((message) => getMessageParts(message.id))
-        .map((part) => (part.type === "reasoning" && part.time ? part.time.start : undefined))
-        .find((value): value is number => typeof value === "number")
+      // 260811 Red 思考计时：优先取首个 reasoning part 的 time.start（reasoning-start 事件已写）；
+      // 行创建时 reasoning part 可能还没建立（busy 在 reasoning-start 之前就置位），回退到行创建时刻，
+      // 这样供应商排队等首 token 的等待也算进秒表
+      const startedAt =
+        assistantMessages
+          .flatMap((message) => getMessageParts(message.id))
+          .map((part) => (part.type === "reasoning" && part.time ? part.time.start : undefined))
+          .find((value): value is number => typeof value === "number") ?? Date.now()
 
       rows.push(
         new TimelineRow.Thinking({
