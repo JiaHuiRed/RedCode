@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js"
+import { For, onCleanup, onMount, Show } from "solid-js"
 import type { PermissionRequest } from "@redcode-ai/sdk/v2"
 import { Button } from "@redcode-ai/ui/button"
 import { DockPrompt } from "@redcode-ai/ui/dock-prompt"
@@ -11,6 +11,32 @@ export function SessionPermissionDock(props: {
   onDecide: (response: "once" | "always" | "reject") => void
 }) {
   const language = useLanguage()
+
+  // 260811 Red 权限弹窗键盘快捷键（哥哥需求，参照 Claude）：
+  // Ctrl/Cmd+Enter = 允许一次，Ctrl/Cmd+Shift+Enter = 始终允许，Esc = 拒绝
+  // 用 window 级监听而非 DockPrompt onKeyDown：焦点可能在输入框（哥哥「正在打字时也能按」），
+  // dock 内 onKeyDown 只在弹窗自身捕获，输入框内按键不会冒泡到
+  onMount(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (props.responding) return
+      const mod = event.ctrlKey || event.metaKey
+      if (event.key === "Escape") {
+        event.preventDefault()
+        event.stopPropagation()
+        props.onDecide("reject")
+      } else if (mod && event.key === "Enter" && event.shiftKey) {
+        event.preventDefault()
+        event.stopPropagation()
+        props.onDecide("always")
+      } else if (mod && event.key === "Enter") {
+        event.preventDefault()
+        event.stopPropagation()
+        props.onDecide("once")
+      }
+    }
+    window.addEventListener("keydown", onKeyDown)
+    onCleanup(() => window.removeEventListener("keydown", onKeyDown))
+  })
 
   const toolDescription = () => {
     const key = `settings.permissions.tool.${props.request.permission}.description`
