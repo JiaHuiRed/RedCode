@@ -55,6 +55,8 @@ export namespace TimelineRow {
   export class Thinking extends Data.TaggedClass("Thinking")<{
     userMessageID: string
     reasoningHeading?: string
+    // 260811 Red 思考计时：首个 reasoning part 的 time.start，用于动画行实时秒表
+    startedAt?: number
   }> {}
   export class DiffSummary extends Data.TaggedClass("DiffSummary")<{
     userMessageID: string
@@ -206,11 +208,17 @@ export namespace Timeline {
         .flatMap((message) => getMessageParts(message.id))
         .map((part) => (part.type === "reasoning" && part.text ? reasoningHeading(part.text) : undefined))
         .find((value): value is string => !!value)
+      // 260811 Red 思考计时：取首个 reasoning part 的 time.start 作为秒表起点
+      const startedAt = assistantMessages
+        .flatMap((message) => getMessageParts(message.id))
+        .map((part) => (part.type === "reasoning" && part.time ? part.time.start : undefined))
+        .find((value): value is number => typeof value === "number")
 
       rows.push(
         new TimelineRow.Thinking({
           userMessageID: userMessage.id,
           reasoningHeading: heading,
+          startedAt,
         }),
       )
     }

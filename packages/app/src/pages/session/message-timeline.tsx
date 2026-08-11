@@ -6,6 +6,7 @@ import {
   Index,
   on,
   onCleanup,
+  onMount,
   Show,
   mapArray,
   type Accessor,
@@ -26,6 +27,7 @@ import {
   MessageDivider,
   Part as MessagePart,
   partDefaultOpen,
+  formatReasoningDuration,
   type UserActions,
 } from "@redcode-ai/ui/message-part"
 import { DiffChanges } from "@redcode-ai/ui/diff-changes"
@@ -156,8 +158,23 @@ const markBoundaryGesture = (input: {
   }
 }
 
-function TimelineThinkingRow(props: { reasoningHeading?: string; showReasoningSummaries: boolean }) {
+function TimelineThinkingRow(props: {
+  reasoningHeading?: string
+  showReasoningSummaries: boolean
+  startedAt?: number
+}) {
   const language = useLanguage()
+  // 260811 Red 思考计时：动画行右侧实时秒表，起点为首个 reasoning part 的 time.start
+  const [now, setNow] = createSignal(Date.now())
+  onMount(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    onCleanup(() => clearInterval(timer))
+  })
+  const elapsed = createMemo(() => {
+    const start = props.startedAt
+    if (!start) return
+    return formatReasoningDuration(Math.max(0, now() - start))
+  })
 
   return (
     <div data-slot="session-turn-thinking" class="flex items-center gap-2">
@@ -177,6 +194,14 @@ function TimelineThinkingRow(props: { reasoningHeading?: string; showReasoningSu
       {/* 260608 Red 仓鼠改透明底直接平铺：原 mix-blend-mode:screen+深色盒在浅色主题会被洗白 */}
       <Show when={!props.showReasoningSummaries}>
         <TextReveal text={props.reasoningHeading} class="session-turn-thinking-heading" travel={25} duration={700} />
+      </Show>
+      <Show when={elapsed()}>
+        <span
+          data-slot="thinking-duration"
+          class="ml-auto shrink-0 rounded-[4px] bg-background-stronger px-1.5 py-0.5 text-11-regular text-text-weak tabular-nums"
+        >
+          {elapsed()}
+        </span>
       </Show>
     </div>
   )
@@ -1253,6 +1278,7 @@ export function MessageTimeline(props: {
               <TimelineThinkingRow
                 reasoningHeading={thinkingRow().reasoningHeading}
                 showReasoningSummaries={settings.general.showReasoningSummaries()}
+                startedAt={thinkingRow().startedAt}
               />
             </div>
           </TimelineRowFrame>

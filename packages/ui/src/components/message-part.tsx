@@ -1727,6 +1727,20 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   )
 }
 
+// 260811 Red 思考计时：格式化毫秒耗时（与 TUI util/locale.ts:39-59 同款规则）
+export function formatReasoningDuration(input: number) {
+  if (input < 1000) return `${input}ms`
+  if (input < 60000) return `${(input / 1000).toFixed(1)}s`
+  if (input < 3600000) {
+    const minutes = Math.floor(input / 60000)
+    const seconds = Math.floor((input % 60000) / 1000)
+    return `${minutes}m ${seconds}s`
+  }
+  const hours = Math.floor(input / 3600000)
+  const minutes = Math.floor((input % 3600000) / 60000)
+  return `${hours}h ${minutes}m`
+}
+
 PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   const data = useData()
   const part = () => props.part as ReasoningPart
@@ -1734,10 +1748,30 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
     () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
   )
   const text = () => readPartText(data.store.part_text_accum_delta, part())
+  // 260811 Red 思考计时：流式期间每秒刷新已用时，结束后定格 end-start
+  const [now, setNow] = createSignal(Date.now())
+  onMount(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    onCleanup(() => clearInterval(timer))
+  })
+  const elapsed = createMemo(() => {
+    const t = part().time
+    if (!t) return
+    const end = t.end ?? now()
+    return formatReasoningDuration(Math.max(0, end - t.start))
+  })
 
   return (
     <Show when={text()}>
-      <div data-component="reasoning-part" data-timeline-part-id={part().id}>
+      <div data-component="reasoning-part" data-timeline-part-id={part().id} class="relative">
+        <Show when={elapsed()}>
+          <span
+            data-slot="reasoning-duration"
+            class="absolute right-0 top-0 z-10 rounded-[4px] bg-background-stronger px-1.5 py-0.5 text-11-regular text-text-weak tabular-nums"
+          >
+            {elapsed()}
+          </span>
+        </Show>
         <Show when={streaming()} fallback={<Markdown text={text()} cacheKey={part().id} streaming={false} />}>
           <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
         </Show>
