@@ -34,16 +34,35 @@ function convertToLineEnding(text: string, ending: "\n" | "\r\n"): string {
   return text.replaceAll("\n", "\r\n")
 }
 
-const locks = new Map<string, Semaphore.Semaphore>()
+// 260811 cc audit R2 附注修复：原 locks Map 只增不减——长驻 server 每编辑一个新文件
+// 泄漏一个 Semaphore。改引用计数：最后一个使用者释放时删条目。不能"用完即删"——
+// 若第二个等待者仍挂在旧信号量上时第三个进来新建信号量，二三之间就失去互斥。
+const locks = new Map<string, { semaphore: Semaphore.Semaphore; users: number }>()
 
-function lock(filePath: string) {
-  const resolvedFilePath = AppFileSystem.resolve(filePath)
-  const hit = locks.get(resolvedFilePath)
-  if (hit) return hit
+// 测试用：断言编辑结束后锁表回收干净
+export function fileLockCount() {
+  return locks.size
+}
 
-  const next = Semaphore.makeUnsafe(1)
-  locks.set(resolvedFilePath, next)
-  return next
+function withFileLock<A, E, R>(filePath: string, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> {
+  const key = AppFileSystem.resolve(filePath)
+  return Effect.acquireUseRelease(
+    Effect.sync(() => {
+      let entry = locks.get(key)
+      if (!entry) {
+        entry = { semaphore: Semaphore.makeUnsafe(1), users: 0 }
+        locks.set(key, entry)
+      }
+      entry.users++
+      return entry
+    }),
+    (entry) => entry.semaphore.withPermits(1)(effect),
+    (entry) =>
+      Effect.sync(() => {
+        entry.users--
+        if (entry.users === 0) locks.delete(key)
+      }),
+  )
 }
 
 export const Parameters = Schema.Struct({
@@ -122,7 +141,7 @@ export const EditTool = Tool.define(
           let diff = ""
           let contentOld = ""
           let contentNew = ""
-          yield* lock(filePath).withPermits(1)(
+          yield* withFileLock(filePath,
             Effect.gen(function* () {
               if (oldString === "") {
                 const existed = yield* afs.existsSafe(filePath)
@@ -490,7 +509,7 @@ const executeHashline = (
     let contentOld = ""
     let contentNew = ""
     let diff = ""
-    yield* lock(resolvedPath).withPermits(1)(
+    yield* withFileLock(resolvedPath,
       Effect.gen(function* () {
         const info = yield* afs.stat(resolvedPath).pipe(Effect.catch(() => Effect.succeed(undefined)))
         if (!info) throw new Error(`File ${resolvedPath} not found`)

@@ -2,7 +2,7 @@ import { afterEach, describe, expect } from "bun:test"
 import path from "path"
 import fs from "fs/promises"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect"
-import { EditTool } from "../../src/tool/edit"
+import { EditTool, fileLockCount } from "../../src/tool/edit"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { LSP } from "@/lsp/lsp"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
@@ -139,6 +139,24 @@ describe("tool.edit", () => {
         yield* run({ filePath: filepath, oldString: "one", newString: "two" })
         yield* run({ filePath: filepath, oldString: "two", newString: "three" })
         expect(yield* load(filepath)).toBe("three")
+      }),
+    )
+  })
+
+  // 260811 cc: 文件锁表引用计数回收——此前每碰一个新文件永久泄漏一个 Semaphore
+  describe("文件锁回收", () => {
+    it.instance("编辑结束后锁表清空", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const a = path.join(test.directory, "lock-a.txt")
+        const b = path.join(test.directory, "lock-b.txt")
+        yield* put(a, "aa")
+        yield* put(b, "bb")
+        yield* run({ filePath: a, oldString: "aa", newString: "a2" })
+        yield* run({ filePath: b, oldString: "bb", newString: "b2" })
+        // 失败路径同样要回收
+        yield* fail({ filePath: a, oldString: "不存在的内容", newString: "x" })
+        expect(fileLockCount()).toBe(0)
       }),
     )
   })
