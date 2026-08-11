@@ -1,5 +1,6 @@
 import { Flag } from "@redcode-ai/core/flag/flag"
 import { Effect } from "effect"
+import { copyFileSync, existsSync, mkdirSync } from "fs"
 import os from "os"
 import path from "path"
 
@@ -29,6 +30,18 @@ process.env.REDCODE_DISABLE_SHARE = "true"
 // 对不齐就会出现"服务端写别处、断言读隔离目录"的假绿（本文件历史上正是如此）。
 export const exerciseConfigDirectory = path.join(exerciseHome, ".redcode")
 export const exerciseDataDirectory = path.join(exerciseConfigDirectory, "data")
+
+// 工具二进制缓存单独放行：隔离后 Global.Path.bin 是空的，而 ripgrep 的查找顺序是
+// PATH → Path.bin → 去 GitHub 下载。本机 PATH 里没有 rg，于是 find.files/find.text
+// 两个场景每跑一次就下一个 4MB 二进制，30s 超时打红。这里从真实缓存**单向复制**一份
+// （只读真实目录，绝不写回），配置/数据的隔离不受影响；缓存缺失就退回下载，CI 上行为不变。
+const realBin = path.join(os.homedir(), ".redcode", "cache", "bin")
+const isolatedBin = path.join(exerciseConfigDirectory, "cache", "bin")
+const rg = process.platform === "win32" ? "rg.exe" : "rg"
+if (existsSync(path.join(realBin, rg))) {
+  mkdirSync(isolatedBin, { recursive: true })
+  copyFileSync(path.join(realBin, rg), path.join(isolatedBin, rg))
+}
 
 const preserveExerciseDatabase = !!process.env.REDCODE_HTTPAPI_EXERCISE_DB
 export const exerciseDatabasePath =
