@@ -92,29 +92,9 @@
       "timeout": 30000,
       "enabled": true
     },
-    "chrome-devtools": {
-      "type": "local",
-      "command": ["node", "C:/Users/Administrator/AppData/Roaming/npm/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js", "--headless"],
-      "description": "Chrome DevTools 调试（ChromeDevTools 官方 MCP）——读 console 日志/network 请求/DOM 状态/性能数据，前端调试拿实据而非截图猜。headless 无头跑；要连已开的 Chrome 实例把 --headless 换成 -u http://127.0.0.1:9222。",
-      "timeout": 120000,
-      "tools": [
-        "navigate_page",
-        "list_pages",
-        "select_page",
-        "new_page",
-        "close_page",
-        "list_console_messages",
-        "get_console_message",
-        "list_network_requests",
-        "get_network_request",
-        "evaluate_script",
-        "click",
-        "fill",
-        "take_screenshot",
-        "wait_for"
-      ],
-      "enabled": true
-    },
+    // chrome-devtools MCP 挪到本地层 redcode.local.jsonc（260811 cc）：命令是
+    // npm 全局安装的绝对路径（C:/Users/<用户名>/AppData/Roaming/npm/...），换机
+    // 必 ENOENT，与 DCP 插件路径同一类"因机而异"的值。配置样例见该文件。
     "github": {
       "type": "remote",
       "url": "https://api.githubcopilot.com/mcp/",
