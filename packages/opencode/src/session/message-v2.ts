@@ -477,6 +477,10 @@ export const Assistant = Schema.Struct({
   role: Schema.Literal("assistant"),
   time: Schema.Struct({
     created: NonNegativeInt,
+    // 260811 cc TTFT 埋点：第一个流式分片到达的时刻。此前只有 created/completed，
+    // 排队+预填+解码三段全糊在一起，"首次交互慢"到底慢在哪无从分辨。
+    // created→firstChunk = 等第一个字（排队/预填），firstChunk→completed = 吐字（解码）。
+    firstChunk: Schema.optional(NonNegativeInt),
     completed: Schema.optional(NonNegativeInt),
   }),
   error: Schema.optional(AssistantErrorSchema),

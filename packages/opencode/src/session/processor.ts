@@ -362,6 +362,16 @@ export const layer = Layer.effect(
       const toolInput = (value: unknown): Record<string, any> => (isRecord(value) ? value : { value })
 
       const handleEvent = Effect.fnUntraced(function* (value: StreamEvent) {
+        // 260811 cc TTFT 埋点：记下第一个流式分片到达的时刻。放在 switch 之前，任何类型的
+        // 首个事件都算数（reasoning-start 往往先于 text-start 到达）。只写一次，不被后续分片覆盖；
+        // 重试不重置 created，所以重试场景下这里量到的是"用户视角的等待"（含前几次失败的耗时），
+        // 这正是要回答"首次交互为什么慢"时该看的口径。
+        if (ctx.assistantMessage.time.firstChunk === undefined) {
+          ctx.assistantMessage.time.firstChunk = Date.now()
+          slog.info("llm.ttft", {
+            ms: ctx.assistantMessage.time.firstChunk - ctx.assistantMessage.time.created,
+          })
+        }
         switch (value.type) {
           case "reasoning-start":
             if (value.id in ctx.reasoningMap) return
