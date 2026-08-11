@@ -92,6 +92,10 @@ interface ProcessorContext extends Input {
   // 260728 Red 文本态工具调用打捞：本 step 注册的工具名（防误判）+ 打捞结果
   toolNames: ReadonlySet<string>
   salvaged: XmlToolCall.ParsedCall[]
+  // 260811 cc TTFT：首个分片时刻。必须挂在 ctx 上而不是 assistantMessage.time 上——
+  // 消息对象在事件之间会被替换成新对象，写在它上面的守卫会失效、导致重复记录（实测同一条
+  // 消息打了 4 次、ms 递增，落库的是最后一次，把 TTFT 高估了几秒）。
+  firstChunkAt: number | undefined
 }
 
 type StreamEvent = LLMEvent
@@ -133,6 +137,7 @@ export const layer = Layer.effect(
         blocked: false,
         needsCompaction: false,
         currentText: undefined,
+        firstChunkAt: undefined,
         reasoningMap: {},
         // 260710 Red n-gram 文本重复检测
         ngramDetector: new NgramDetector(),
@@ -366,12 +371,12 @@ export const layer = Layer.effect(
         // 首个事件都算数（reasoning-start 往往先于 text-start 到达）。只写一次，不被后续分片覆盖；
         // 重试不重置 created，所以重试场景下这里量到的是"用户视角的等待"（含前几次失败的耗时），
         // 这正是要回答"首次交互为什么慢"时该看的口径。
-        if (ctx.assistantMessage.time.firstChunk === undefined) {
-          ctx.assistantMessage.time.firstChunk = Date.now()
-          slog.info("llm.ttft", {
-            ms: ctx.assistantMessage.time.firstChunk - ctx.assistantMessage.time.created,
-          })
+        if (ctx.firstChunkAt === undefined) {
+          ctx.firstChunkAt = Date.now()
+          slog.info("llm.ttft", { ms: ctx.firstChunkAt - ctx.assistantMessage.time.created })
         }
+        // 每次都写回：消息对象可能被换成新的，只写一次会丢；值取自 ctx 所以不会漂移
+        ctx.assistantMessage.time.firstChunk = ctx.firstChunkAt
         switch (value.type) {
           case "reasoning-start":
             if (value.id in ctx.reasoningMap) return
