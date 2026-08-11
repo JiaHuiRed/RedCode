@@ -81,6 +81,10 @@ globalThis.AI_SDK_LOG_WARNINGS = false
 // 再多就是陪模型烧 token 打转了。
 const MAX_SALVAGE_RECOVERIES = 2
 
+// 260811 cc audit Y2：agent 未配置 steps 时的单轮步数硬顶。300 步按每步 10-30s 算
+// 已是 1.5-2.5 小时的连续自主运行，正常任务远达不到；达到即视为失控打转，强制落地。
+const DEFAULT_MAX_STEPS = 300
+
 // 260616 Red 会话标题来源前缀：从 soul 第一行 "# 名字 · ..." 提取人格名（不写死，
 // 通用 RedCode 无此 soul / 非标准格式则 fallback TUI/GUI），让会话列表一眼区分
 // 是哪个 agent（TUI=敏敏 / GUI=小宋）起的会话。client="desktop" 即 GUI，其余视作 TUI。
@@ -395,17 +399,18 @@ export const layer = Layer.effect(
           time: { start: Date.now() },
         },
       })
-      const taskArgs = {
+      let taskArgs = {
         prompt: task.prompt,
         description: task.description,
         subagent_type: task.agent,
         command: task.command,
       }
-      yield* plugin.trigger(
+      // 260811 cc audit Y5：返回值此前被丢弃，插件对 args 的整体改写无效（同 tools.ts）
+      taskArgs = (yield* plugin.trigger(
         "tool.execute.before",
         { tool: TaskTool.id, sessionID, callID: part.id },
         { args: taskArgs },
-      )
+      )).args
 
       const taskAgent = yield* agents.get(task.agent)
       if (!taskAgent) {
@@ -1300,8 +1305,27 @@ export const layer = Layer.effect(
             yield* bus.publish(Session.Event.Error, { sessionID, error: error.toObject() })
             throw error
           }
-          const maxSteps = agent.steps ?? Infinity
+          // 260811 cc audit Y2：此前默认 Infinity 且 isLastStep 只注入一段提示词、不中断——
+          // "每次都成功但原地打转"的循环可以烧 token 烧到手动 abort（stall nudge 与
+          // doom_loop 都只管"重复相同调用"，管不住不重复的打转）。默认给硬顶：
+          // step === maxSteps 时先按老路注入 MAX_STEPS 让模型收尾，仍不收就强制落地。
+          const maxSteps = agent.steps ?? DEFAULT_MAX_STEPS
           const isLastStep = step >= maxSteps
+          if (step > maxSteps) {
+            yield* slog.warn("max.steps", { step, maxSteps, agent: agent.name })
+            if (lastAssistant) {
+              const now = Date.now()
+              yield* sessions.updatePart({
+                id: PartID.ascending(),
+                messageID: lastAssistant.id,
+                sessionID,
+                type: "text",
+                text: `（已达到单轮步数上限 ${maxSteps}，强制收束。任务若未完成，直接续发消息即可继续；上限可用 agent 配置的 steps 调整。）`,
+                time: { start: now, end: now },
+              })
+            }
+            break
+          }
           msgs = yield* SessionReminders.apply({ messages: msgs, agent, session }).pipe(
             Effect.provideService(RuntimeFlags.Service, flags),
             Effect.provideService(AppFileSystem.Service, fsys),

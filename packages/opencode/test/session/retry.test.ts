@@ -71,15 +71,18 @@ describe("session.retry.delay", () => {
     expect(SessionRetry.delay(1, error)).toBe(2000)
   })
 
-  test("uses retry-after values even when exceeding 10 minutes with headers", () => {
+  // 260811 cc audit Y1：行为变更——retry-after 不再照单全收。此前上限是 2^31-1
+  // （≈24.8 天），retry-after: 604800 会让会话静默睡一周；现在一律钳到
+  // RETRY_MAX_DELAY（10 分钟），更长的等待交给 RETRY_MAX_ATTEMPTS 尽早放弃。
+  test("honors retry-after below the cap, clamps above it", () => {
     const error = apiError({ "retry-after": "50" })
     expect(SessionRetry.delay(1, error)).toBe(50000)
 
     const longError = apiError({ "retry-after-ms": "700000" })
-    expect(SessionRetry.delay(1, longError)).toBe(700000)
+    expect(SessionRetry.delay(1, longError)).toBe(SessionRetry.RETRY_MAX_DELAY)
   })
 
-  test("caps oversized header delays to the runtime timer limit", () => {
+  test("caps oversized header delays to RETRY_MAX_DELAY", () => {
     const error = apiError({ "retry-after-ms": "999999999999" })
     expect(SessionRetry.delay(1, error)).toBe(SessionRetry.RETRY_MAX_DELAY)
   })
@@ -111,6 +114,40 @@ describe("session.retry.delay", () => {
           type: "retry",
           attempt: 2,
           message: "boom",
+        })
+      }),
+    ),
+  )
+
+  // 260811 cc audit Y1：重试封顶——第 RETRY_MAX_ATTEMPTS+1 次失败不再排下一次等待
+  it.live("policy gives up after RETRY_MAX_ATTEMPTS", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const sessionID = SessionID.make("session-retry-cap-test")
+        const error = apiError({ "retry-after-ms": "0" })
+        const status = yield* SessionStatus.Service
+
+        const step = yield* Schedule.toStepWithMetadata(
+          SessionRetry.policy({
+            provider: "test",
+            parse: Schema.decodeUnknownSync(MessageV2.APIError.Schema),
+            set: (info) =>
+              status.set(sessionID, {
+                type: "retry",
+                attempt: info.attempt,
+                message: info.message,
+                next: info.next,
+              }),
+          }),
+        )
+        for (let i = 0; i < SessionRetry.RETRY_MAX_ATTEMPTS; i++) {
+          yield* step(error)
+        }
+        const exit = yield* Effect.exit(step(error))
+        expect(exit._tag).toBe("Failure")
+        expect(yield* status.get(sessionID)).toMatchObject({
+          type: "retry",
+          attempt: SessionRetry.RETRY_MAX_ATTEMPTS,
         })
       }),
     ),

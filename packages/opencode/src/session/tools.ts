@@ -105,11 +105,14 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                 metadata: { blocked: true },
               } as any
             }
-            yield* plugin.trigger(
+            // 260811 cc audit Y5：返回值此前被丢弃，插件 SDK 承诺的 output.args 改写
+            // （整体赋值写法）完全无效，只有原地 mutate 碰巧生效。接住返回值让两种写法都成立。
+            const beforeHook = yield* plugin.trigger(
               "tool.execute.before",
               { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
               { args },
             )
+            args = beforeHook.args
             const result = yield* item.execute(args, ctx).pipe(
               Effect.tapError((error) =>
                 plugin.trigger("tool.execute.failure", {
@@ -166,11 +169,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                 content: [],
               } as any
             }
-            yield* plugin.trigger(
+            // 260811 cc audit Y5：同上，MCP 路径的 args 改写同样要接住返回值
+            const beforeHook = yield* plugin.trigger(
               "tool.execute.before",
               { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId },
               { args },
             )
+            args = beforeHook.args
           const result: Awaited<ReturnType<NonNullable<typeof execute>>> = yield* Effect.gen(function* () {
             yield* ctx.ask({ permission: key, metadata: {}, patterns: ["*"], always: ["*"] })
             return yield* Effect.promise(() => execute(args, opts))

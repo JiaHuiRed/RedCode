@@ -25,7 +25,13 @@ export type Retryable = {
 export const RETRY_INITIAL_DELAY = 2000
 export const RETRY_BACKOFF_FACTOR = 2
 export const RETRY_MAX_DELAY_NO_HEADERS = 30_000 // 30 seconds
-export const RETRY_MAX_DELAY = 2_147_483_647 // max 32-bit signed integer for setTimeout
+// 260811 cc audit Y1：原值 2^31-1（≈24.8 天）意味着 retry-after: 604800 这类头会让
+// 会话静默睡一周。上限收到 10 分钟：更长的 retry-after 说明短期内重试无意义，
+// 与 RETRY_MAX_ATTEMPTS 合并后最坏总等待约 100 分钟即放弃。
+export const RETRY_MAX_DELAY = 600_000
+// 260811 cc audit Y1：重试原先无次数上限——5xx 无条件可重试叠加请求体自身问题导致的
+// 稳定 500，就是永不放弃的死循环，用户只能看 attempt 往上爬。
+export const RETRY_MAX_ATTEMPTS = 10
 
 function cap(ms: number) {
   return Math.min(ms, RETRY_MAX_DELAY)
@@ -182,6 +188,7 @@ export function policy(opts: {
       const error = opts.parse(meta.input)
       const retry = retryable(error, opts.provider)
       if (!retry) return Cause.done(meta.attempt)
+      if (meta.attempt > RETRY_MAX_ATTEMPTS) return Cause.done(meta.attempt)
       return Effect.gen(function* () {
         const wait = delay(meta.attempt, MessageV2.APIError.isInstance(error) ? error : undefined)
         const now = yield* Clock.currentTimeMillis
