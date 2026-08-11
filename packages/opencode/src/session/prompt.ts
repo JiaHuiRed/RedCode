@@ -2,6 +2,7 @@ import path from "path"
 import os from "os"
 import { SessionID, MessageID, PartID } from "./schema"
 import { MessageV2 } from "./message-v2"
+import { PromptCaches, settlePromptCaches } from "./prompt-caches"
 import * as Log from "@redcode-ai/core/util/log"
 import { SessionRevert } from "./revert"
 import * as Session from "./session"
@@ -85,21 +86,9 @@ const MAX_SALVAGE_RECOVERIES = 2
 // 是哪个 agent（TUI=敏敏 / GUI=小宋）起的会话。client="desktop" 即 GUI，其余视作 TUI。
 // 260630 Red P1-b: sessionSourceLabel moved to prompt/shared.ts
 
-// 260617 Red session-level caches: snapshot once per session to stabilize system prompt for prefix caching.
-// Without caching, instruction.system() re-reads disk every turn — any file change (MEMORY.md, AGENTS.md,
-// skill files) mutates the system prompt and invalidates DeepSeek prefix cache mid-session.
-// 260620 Red use globalThis for cache storage — bun compile may instantiate module multiple times,
-// causing module-level `let` to be duplicated across instances. globalThis ensures single shared cache.
-const _caches = (globalThis as any).__rc_prompt_caches ??= {
-  system: undefined as { sessionID: string; modelKey: string; skills: string | undefined; env: string[]; instructions: string[] } | undefined,
-  msgPin: undefined as { sessionID: string; messages: Map<string, unknown[]> } | undefined,
-  modelMsgs: undefined as { sessionID: string; modelKey: string; messages: ModelMessage[] } | undefined,
-  // 260706 Red cache tool definitions (description+inputSchema) for prefix stability.
-  // describeSkill()/describeTask() rebuild tool descriptions from disk every step via Glob.scan;
-  // if skill/agent lists change mid-session the tool schema JSON mutates → prefix cache breaks.
-  // 260804 Red tools cache is model-agnostic (descriptions come from disk, not model) — no modelKey.
-  tools: undefined as { sessionID: string; defs: Map<string, { description: string; inputSchema: unknown }> } | undefined,
-}
+// 260811 cc audit R4: 缓存本体与"分代结算"抽到 prompt-caches.ts（compact 边界结算
+// 需要在会话循环多点调用，独立模块避免循环依赖）。语义不变：钉死已发送消息保前缀缓存。
+const _caches = PromptCaches
 const decodeMessageInfo = Schema.decodeUnknownExit(MessageV2.Info)
 const decodeMessagePart = Schema.decodeUnknownExit(MessageV2.Part)
 
@@ -1278,6 +1267,10 @@ export const layer = Layer.effect(
               auto: task.auto,
               overflow: task.overflow,
             })
+            // 260811 cc audit R4 分代结算：摘要已落库、前缀缓存反正要重建——此刻丢弃
+            // msgPin/modelMsgs，让累积的 prune 标记与 DCP 改写随下一轮一并生效，
+            // 快照双份内存同步释放。
+            settlePromptCaches(sessionID, "compaction")
             if (result === "stop") break
             continue
           }
@@ -1812,7 +1805,15 @@ export const layer = Layer.effect(
                   .prune({ sessionID })
                   .pipe(Effect.catch(() => Effect.succeed({ tokens: 0, parts: 0 })))
                 if (freed.tokens > 0) {
-                  yield* slog.info("context.prune", { step, freedTokens: freed.tokens, prunedParts: freed.parts })
+                  // 260811 cc audit R4: 此档只记账不结算——标记已入库，但 msgPin 仍钉着
+                  // 首次快照，模型端 prompt 不变（缓存优先）。真正生效在 compact 边界
+                  // 的 settlePromptCaches，日志措辞别再谎报"已释放"。
+                  yield* slog.info("context.prune.marked", {
+                    step,
+                    markedTokens: freed.tokens,
+                    markedParts: freed.parts,
+                    note: "记账托管，结算于 compact 边界；期间前缀维持钉死",
+                  })
                 }
               }
             }
@@ -1842,6 +1843,11 @@ export const layer = Layer.effect(
                   freedTokens: freed.tokens,
                   prunedParts: freed.parts,
                 })
+                // 260811 cc audit R4: 跳过 summarize 的判断依据是 prune 的释放量，那释放
+                // 必须真发生——此前 msgPin 会把标记钉回去，freed 是虚报（"跳过压缩→实际
+                // 没降→下轮再超限"）。既然已到 compact 边界，缓存重建成本本来就要付：
+                // 立即结算，让 prune 落地、跳过判断从此诚实。
+                settlePromptCaches(sessionID, "prune-sufficient")
               } else {
                 yield* compaction.create({
                   sessionID,
