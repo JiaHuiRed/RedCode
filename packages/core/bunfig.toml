@@ -1,0 +1,5 @@
+[test]
+# 260811 cc audit Y8 续：preload 必须在任何 src 导入前设好 REDCODE_TEST_HOME，
+# 否则 core 的测试会拿真实 ~/.redcode 当配置/缓存目录（models.test.ts 会删真实
+# cache/models.json）。opencode 包早有同款，core 补齐。
+preload = ["./test/preload.ts"]

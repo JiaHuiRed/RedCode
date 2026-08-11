@@ -17,9 +17,13 @@
  * - `.json(...)` / `.jsonEffect(...)` assert response shape and optional side effects.
  * - `.mutating()` tells the runner to reset isolated state after destructive routes.
  */
+// 必须是第一条 import：environment 的副作用（REDCODE_TEST_HOME / REDCODE_DB 等）要在
+// 任何模块拉起 core/global 之前生效。ESM 只求值一次，下面那条具名 import 不会重复执行。
+import "./environment"
 import { Effect } from "effect"
 import { OpenApi } from "effect/unstable/httpapi"
 import { TestLLMServer } from "../../lib/llm-server"
+import os from "os"
 import path from "path"
 import { array, boolean, check, isRecord, message, object, stable } from "./assertions"
 import { controlledPtyInput, http, route } from "./dsl"
@@ -67,11 +71,14 @@ const scenarios: Scenario[] = [
   http.protected
     .patch("/global/config", "global.config.update")
     .global()
+    // 260811 cc：seed 的值必须与 patch 的值不同。此前两处都写 "httpapi-global"，
+    // 于是最后那条"写进隔离配置文件"的断言光靠 seed 就能通过——服务端把配置写到
+    // 别处（真实 ~/.redcode）也照样绿。这正是隔离失效多日没被发现的原因。
     .seeded(() =>
       Effect.promise(() =>
         Bun.write(
           path.join(exerciseConfigDirectory, "redcode.jsonc"),
-          JSON.stringify({ username: "httpapi-global" }, null, 2),
+          JSON.stringify({ username: "httpapi-seed" }, null, 2),
         ),
       ),
     )
@@ -86,6 +93,7 @@ const scenarios: Scenario[] = [
             Bun.file(path.join(exerciseConfigDirectory, "redcode.jsonc")).text(),
           )
           check(text.includes('"username": "httpapi-global"'), "global config update should write isolated config file")
+          check(!text.includes("httpapi-seed"), "global config update should overwrite the seeded value in place")
         }),
       "status",
     ),
@@ -1364,8 +1372,28 @@ const llmScenarios = new Set([
   "session.summarize",
 ])
 
+// 260811 cc audit Y8 绊线：门禁会 PATCH 全局配置、写 auth.json、跑 dispose，一旦隔离失效
+// 就是直接改开发者的 live 配置（08-11 实祸：username 被写进 ~/.redcode/redcode.jsonc，
+// 本地层的 provider.ollama 被回写全局层）。隔离靠 environment.ts 的 REDCODE_TEST_HOME，
+// 那是个"设错了也不会有人喊"的东西——所以在跑任何场景前先自证一次。
+const assertIsolated = Effect.gen(function* () {
+  const { Global } = yield* Effect.promise(() => import("@redcode-ai/core/global"))
+  const real = path.join(os.homedir(), ".redcode")
+  const same = (dir: string) => dir.toLowerCase() === real.toLowerCase() || dir.toLowerCase().startsWith(real.toLowerCase() + path.sep)
+  for (const [key, value] of Object.entries(Global.Path)) {
+    if (typeof value !== "string" || !same(value)) continue
+    return yield* Effect.fail(
+      new Error(
+        `refusing to run: Global.Path.${key} resolves to the real config dir (${value}). ` +
+          `The exerciser mutates global config/auth — check REDCODE_TEST_HOME in test/server/httpapi-exercise/environment.ts.`,
+      ),
+    )
+  }
+})
+
 const main = Effect.gen(function* () {
   yield* Effect.addFinalizer(() => cleanupExercisePaths)
+  yield* assertIsolated
   const options = parseOptions(Bun.argv.slice(2))
   const modules = yield* Effect.promise(() => runtime())
   const effectRoutes = routeKeys(OpenApi.fromApi(modules.PublicApi))

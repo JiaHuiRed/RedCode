@@ -1,23 +1,39 @@
 import { Flag } from "@redcode-ai/core/flag/flag"
 import { Effect } from "effect"
+import os from "os"
 import path from "path"
 
+// 260811 cc audit Y8 续：本文件此前只设 XDG_*，而 RedCode 自 260613 统一到 ~/.redcode
+// 之后，源码里没有任何一处读 XDG_* —— 门禁的"隔离"从那天起就是装饰，Global.Path.config
+// 实际解析到开发者真实的 ~/.redcode。08-11 实证：门禁把 username:"httpapi-global" 写进了
+// 用户 live 配置，还把本地层的 provider.ollama 回写全局层（updateGlobal 整文件覆写合并结果）。
+// 真正生效的隔离变量是 REDCODE_TEST_HOME（core/global.ts 的 home 从它派生）。
+// XDG_* 保留：DCP 插件有自己的 XDG 解析，它认这几个。
 const preserveExerciseGlobalRoot = !!process.env.REDCODE_HTTPAPI_EXERCISE_GLOBAL
 export const exerciseGlobalRoot =
   process.env.REDCODE_HTTPAPI_EXERCISE_GLOBAL ??
-  path.join(process.env.TMPDIR ?? "/tmp", `redcode-httpapi-global-${process.pid}`)
+  // 原来写死 "/tmp"：Windows 上解析成"当前盘根目录\tmp"，仓库在 E 盘时落到 E:\tmp
+  // （跨盘路径 bug 家族的又一例，同 f2bdd49）。
+  path.join(process.env.TMPDIR ?? os.tmpdir(), `redcode-httpapi-global-${process.pid}`)
+
+const exerciseHome = path.join(exerciseGlobalRoot, "home")
+process.env.REDCODE_TEST_HOME = exerciseHome
 process.env.XDG_DATA_HOME = path.join(exerciseGlobalRoot, "data")
 process.env.XDG_CONFIG_HOME = path.join(exerciseGlobalRoot, "config")
 process.env.XDG_STATE_HOME = path.join(exerciseGlobalRoot, "state")
 process.env.XDG_CACHE_HOME = path.join(exerciseGlobalRoot, "cache")
 process.env.REDCODE_DISABLE_SHARE = "true"
-export const exerciseConfigDirectory = path.join(exerciseGlobalRoot, "config", "redcode")
-export const exerciseDataDirectory = path.join(exerciseGlobalRoot, "data", "redcode")
+
+// 与 core/global.ts 的布局对齐：home/.redcode 是配置根，data 在其下。
+// 场景断言直接读这两个目录，所以它们必须和服务端真正写入的路径是同一处——
+// 对不齐就会出现"服务端写别处、断言读隔离目录"的假绿（本文件历史上正是如此）。
+export const exerciseConfigDirectory = path.join(exerciseHome, ".redcode")
+export const exerciseDataDirectory = path.join(exerciseConfigDirectory, "data")
 
 const preserveExerciseDatabase = !!process.env.REDCODE_HTTPAPI_EXERCISE_DB
 export const exerciseDatabasePath =
   process.env.REDCODE_HTTPAPI_EXERCISE_DB ??
-  path.join(process.env.TMPDIR ?? "/tmp", `redcode-httpapi-exercise-${process.pid}.db`)
+  path.join(process.env.TMPDIR ?? os.tmpdir(), `redcode-httpapi-exercise-${process.pid}.db`)
 process.env.REDCODE_DB = exerciseDatabasePath
 Flag.REDCODE_DB = exerciseDatabasePath
 
