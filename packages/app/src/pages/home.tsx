@@ -1,5 +1,5 @@
 import type { Session } from "@redcode-ai/sdk/v2/client"
-import { createMemo, For, Match, onCleanup, onMount, Show, Switch } from "solid-js"
+import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
 import { Spinner } from "@redcode-ai/ui/spinner"
@@ -337,8 +337,14 @@ function HomeDesign() {
 }
 
 // 260710 Red 首页底部：随机 tips + 快捷键提示条
+// 260811 Red 只占内容列（lg:col-start-2），侧边栏跨两行延伸到底
+// 260811 Red 动态 tips：用当前模型每 20 分钟生成一条，失败静默回落本地库
+const DYNAMIC_TIP_INTERVAL_MS = 20 * 60 * 1000
+const DYNAMIC_TIP_PROMPT =
+  "你是 RedCode 的贴心助手。请生成一条简短的 RedCode 使用技巧或编程智慧：中文、不超过 25 字、俏皮接地气、不要引号、不要 emoji、不要解释，只输出一句话。"
 function HomeShortcutBar() {
   const language = useLanguage()
+  const globalSDK = useGlobalSDK()
   const isMac = navigator.platform.includes("Mac")
   const mod = isMac ? "⌘" : "Ctrl"
   const shortcuts = [
@@ -353,14 +359,34 @@ function HomeShortcutBar() {
     { keys: `${mod}+Shift+T`, label: language.t("home.shortcuts.cycleTheme") },
     { keys: `${mod}+Shift+⌫`, label: language.t("home.shortcuts.archiveSession") },
   ]
-  const tip = HOME_TIPS[Math.floor(Math.random() * HOME_TIPS.length)]
+  const [dynamicTip, setDynamicTip] = createSignal<string | undefined>()
+  const tip = createMemo(
+    () => dynamicTip() ?? HOME_TIPS[Math.floor(Math.random() * HOME_TIPS.length)],
+  )
+  // 260811 Red 每 20 分钟向 /experimental/generate 要一条新提示，失败保持现有
+  onMount(() => {
+    const refresh = async () => {
+      try {
+        const result = await globalSDK.client.experimental.generate({
+          generatePayload: { prompt: DYNAMIC_TIP_PROMPT },
+        })
+        const text = result.data?.text?.trim()
+        if (text) setDynamicTip(text)
+      } catch {
+        // 生成失败保持现有 tip，不打扰
+      }
+    }
+    void refresh()
+    const timer = setInterval(refresh, DYNAMIC_TIP_INTERVAL_MS)
+    onCleanup(() => clearInterval(timer))
+  })
   // 260810 cc audit R9: 原硬编码 #4ade80 带 60%/80% alpha，浅色三主题（light/cream/green)
   // 下对比度约 1.5:1 基本不可读；改语义 token（明 green-800/暗 green-500）保住绿色系
   // 人格化设计且随主题走。快捷键行补 flex-wrap，窄窗不再溢出裁切。
   return (
-    <div class="col-span-full flex flex-col items-center gap-1.5 px-4 py-3">
+    <div class="col-span-full lg:col-start-2 flex flex-col items-center gap-1.5 px-4 py-3">
       <span class="text-[14px] [font-weight:440] italic text-v2-state-fg-success">
-        {tip}
+        {tip()}
       </span>
       <div class="flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-[13px] [font-weight:440] text-v2-state-fg-success">
         <For each={shortcuts}>
@@ -446,7 +472,7 @@ function HomeProjectColumn(props: {
   const platform = usePlatform()
   return (
     <aside
-      class="flex min-w-0 flex-col lg:pt-[52px] lg:border-r lg:border-v2-border-border-base lg:bg-v2-background-bg-layer-02 lg:pr-6"
+      class="flex min-w-0 flex-col lg:row-span-full lg:pt-[52px] lg:border-r lg:border-v2-border-border-base lg:bg-v2-background-bg-layer-01 lg:pr-6"
       aria-label={props.language.t("home.projects")}
     >
       <div class="flex h-7 min-w-0 items-center justify-between pl-2">
