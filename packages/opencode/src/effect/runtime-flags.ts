@@ -53,6 +53,9 @@ export class Service extends ConfigService.Service<Service>()("@opencode/Runtime
   experimentalIconDiscovery: enabledByExperimental("REDCODE_EXPERIMENTAL_ICON_DISCOVERY"),
   outputTokenMax: positiveInteger("REDCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX"),
   bashDefaultTimeoutMs: positiveInteger("REDCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS"),
+  // 260811 cc audit Y3：shell timeout 此前只拒负数没有上限，模型幻觉 timeout:86400000
+  // 就真等一天。默认钳到 10 分钟，特殊场景用该变量放宽。
+  bashMaxTimeoutMs: positiveInteger("REDCODE_EXPERIMENTAL_BASH_MAX_TIMEOUT_MS"),
   experimentalNativeLlm: enabledByExperimental("REDCODE_EXPERIMENTAL_NATIVE_LLM"),
   client: Config.string("REDCODE_CLIENT").pipe(Config.withDefault("cli")),
 }) {}

@@ -381,8 +381,17 @@ export const layer = Layer.effect(
         input.agent.permission ?? [],
       )
 
+      // 260811 cc audit Y4：apply_patch vs edit/write 此前只靠 modelID.includes("gpt-")
+      // 字符串猜测——自定义网关/别名模型名带 "gpt-" 就整个失去 edit/write，真 GPT 被
+      // 别名则拿不到 apply_patch，且无任何提示。给显式出口：provider.<id>.models.<id>.tools
+      // 的布尔表按 tool.id 直接定夺（agent 级 deny 仍然最高优先），猜测降级为无配置时的兜底。
+      const modelTools = (yield* config.get()).provider?.[input.providerID]?.models?.[input.modelID]?.tools
+
       const filtered = candidates.filter((tool) => {
         if (deniedTools.has(tool.id)) return false
+
+        const explicit = modelTools?.[tool.id]
+        if (explicit !== undefined) return explicit
 
         if (tool.id === WebSearchTool.id) {
           return webSearchEnabled(input.providerID, { exa: flags.enableExa, parallel: flags.enableParallel })

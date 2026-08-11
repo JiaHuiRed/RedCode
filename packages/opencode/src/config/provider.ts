@@ -55,6 +55,10 @@ export const Model = Schema.Struct({
   ),
   options: Schema.optional(Schema.Record(Schema.String, Schema.Any)),
   headers: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)).annotate({
+    description:
+      "Explicitly enable/disable tools for this model (e.g. {\"apply_patch\": true, \"edit\": false}). Overrides the built-in model-family heuristic that picks apply_patch vs edit/write by model id. Keyed by the model's API id.",
+  }),
   variants: Schema.optional(
     Schema.Record(
       Schema.String,
