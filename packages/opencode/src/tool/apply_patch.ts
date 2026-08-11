@@ -14,6 +14,7 @@ import DESCRIPTION from "./apply_patch.md" with { type: "text" }
 import { File } from "../file"
 import { Format } from "../format"
 import * as Bom from "@/util/bom"
+import { FileTime } from "@/file/time"
 
 export const Parameters = Schema.Struct({
   patchText: Schema.String.annotate({ description: "The full patch text that describes all changes to be made" }),
@@ -75,6 +76,11 @@ export const ApplyPatchTool = Tool.define(
 
         switch (hunk.type) {
           case "add": {
+            // 260811 cc audit R2 补遗：apply_patch 是 gpt 系模型的写路径，与 write/edit 同款
+            // "写前已读"守卫（见 file/time.ts）。断言全部放校验阶段——任一文件过期则整个
+            // patch 一个字都不落盘，保住 all-or-nothing。add 撞上已有文件即整文件覆盖，
+            // 语义同 write，须先读过。
+            if (yield* afs.existsSafe(filePath)) yield* FileTime.assert(ctx.sessionID, filePath)
             const oldContent = ""
             const newContent =
               hunk.contents.length === 0 || hunk.contents.endsWith("\n") ? hunk.contents : `${hunk.contents}\n`
@@ -112,6 +118,7 @@ export const ApplyPatchTool = Tool.define(
               )
             }
 
+            yield* FileTime.assert(ctx.sessionID, filePath)
             const source = yield* Bom.readFile(afs, filePath)
             // 260730 Karina 非 UTF-8 的原文不写回：下面只会写 UTF-8，写了就等于悄悄转编码
             const changed = Bom.detectEncodingChange(source.encoding)
@@ -163,6 +170,8 @@ export const ApplyPatchTool = Tool.define(
           }
 
           case "delete": {
+            // 删除同样要求本会话读过且未被外部改动——删错版本比写错更不可逆
+            yield* FileTime.assert(ctx.sessionID, filePath)
             const source = yield* Bom.readFile(afs, filePath).pipe(
               Effect.catch((error) =>
                 Effect.fail(
@@ -271,6 +280,7 @@ export const ApplyPatchTool = Tool.define(
           if (yield* format.file(edited)) {
             yield* Bom.syncFile(afs, edited, change.bom)
           }
+          yield* FileTime.record(ctx.sessionID, edited)
           yield* bus.publish(File.Event.Edited, { file: edited })
         }
       }

@@ -12,6 +12,7 @@ import { Truncate } from "@/tool/truncate"
 import { TestInstance } from "../fixture/fixture"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { testEffect } from "../lib/effect"
+import { FileTime } from "@/file/time"
 
 const it = testEffect(
   Layer.mergeAll(
@@ -77,7 +78,11 @@ const makeCtx = () => {
 }
 
 const readText = (filepath: string) => Effect.promise(() => fs.readFile(filepath, "utf-8"))
-const writeText = (filepath: string, content: string) => Effect.promise(() => fs.writeFile(filepath, content, "utf-8"))
+// 260811 cc: apply_patch 现在有"写前已读"守卫（FileTime），测试铺的文件视同已读
+const writeText = (filepath: string, content: string) =>
+  Effect.promise(() => fs.writeFile(filepath, content, "utf-8")).pipe(
+    Effect.andThen(FileTime.record(baseCtx.sessionID, filepath)),
+  )
 const makeDir = (dir: string) => Effect.promise(() => fs.mkdir(dir, { recursive: true }))
 
 const expectFailure = <A, E, R>(effect: Effect.Effect<A, E, R>, message?: string) =>
@@ -205,6 +210,28 @@ describe("tool.apply_patch freeform", () => {
       yield* execute({ patchText }, ctx)
 
       expect(yield* readText(target)).toBe("line1\nchanged2\nline3\nchanged4\n")
+    }),
+  )
+
+  // 260811 cc audit R2 补遗：写前已读守卫（FileTime）铺到 apply_patch
+  it.instance("rejects patch touching an unread file and writes nothing (all-or-nothing)", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const { ctx } = makeCtx()
+      const read = path.join(test.directory, "read.txt")
+      const unread = path.join(test.directory, "unread.txt")
+      yield* writeText(read, "ok\n")
+      // 绕过 writeText（它会记录已读），模拟外部落盘的文件
+      yield* Effect.promise(() => fs.writeFile(unread, "external\n", "utf-8"))
+
+      const patchText =
+        "*** Begin Patch\n*** Update File: read.txt\n@@\n-ok\n+changed\n@@\n*** Update File: unread.txt\n@@\n-external\n+stomped\n@@\n*** End Patch"
+
+      yield* expectFailure(execute({ patchText }, ctx), "must read file")
+
+      // 校验阶段整体拦截：连已读的那个文件也不该被写
+      expect(yield* readText(read)).toBe("ok\n")
+      expect(yield* readText(unread)).toBe("external\n")
     }),
   )
 
