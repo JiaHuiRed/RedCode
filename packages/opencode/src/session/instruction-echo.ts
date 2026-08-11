@@ -44,6 +44,41 @@ const OWN_BLOCKS: Array<[string, RegExp]> = [
   ["system-notice", /^\s*\[System notice\][^\n]*(?:\n(?!\n)[^\n]*)*\n?/gm],
 ]
 
+// ── C 类：DCP turn-nudge 指令被复述（260810 哥哥 G:\Game 会话实测）──
+// DCP 每轮注入 system prompt 的 nudge（"Evaluate the conversation for
+// compressible ranges..."）。deepseek-v4-flash 把它复述进正文，且是
+// 转述改写版（cleanly closed→closed、direction has shifted→getting
+// long、Do not repeat, quote, or echo→Do not amplify or repeat），所以
+// B 类的行级特征匹配不上。锚点句逐字稳定，从锚点剥到块的合理结尾。
+// 误切防护：锚点句是 DCP 独有措辞，用户正常讨论压缩不会这么写。
+const NUDGE_ANCHOR = /^\s*Evaluate the conversation for compressible ranges\.?\s*$/m
+// 块终止：Keep active context uncompressed. 之后还有 NO_REPEAT 变体行
+// （"Do not output the reminder text" 等），一起剥掉
+const NUDGE_END = /^\s*Keep active context uncompressed\.?\s*$/m
+
+function stripDcpNudge(text: string): { text: string; hit: boolean } {
+  const anchor = text.search(NUDGE_ANCHOR)
+  if (anchor === -1) return { text, hit: false }
+  // 从锚点行行首开始（search 返回行首，但保险起见回退到本行开头）
+  const lineStart = text.lastIndexOf("\n", anchor) + 1
+  // 找终止行：优先 Keep active context uncompressed.，再往后吞 NO_REPEAT 变体行
+  let endMatch = text.search(NUDGE_END)
+  if (endMatch === -1) {
+    // 没有完整块（可能是改写丢失了某句）—— 从锚点剥到文尾
+    return { text: text.slice(0, lineStart).replace(/\s+$/, ""), hit: true }
+  }
+  let blockEnd = text.indexOf("\n", endMatch)
+  if (blockEnd === -1) blockEnd = text.length
+  // 吞掉其后紧跟的 NO_REPEAT 变体行（允许中间空行）
+  const rest = text.slice(blockEnd)
+  const repeatMatch = rest.match(/^\s*\n?(\s*Do not (amplify|repeat|quote|echo)[^\n]*)/)
+  if (repeatMatch) {
+    blockEnd += repeatMatch[0].length
+  }
+  const stripped = text.slice(0, lineStart) + text.slice(blockEnd)
+  return { text: stripped.replace(/\s+$/, ""), hit: true }
+}
+
 // ── B 类：工具说明 / schema 的行级特征 ──────────────────────────────
 // 单行判定，用于识别"连续成片"的泄漏；单独一行命中不足以判定。
 const SCHEMA_LINE = [
@@ -100,13 +135,14 @@ export function detect(text: string): EchoResult {
   const suspicious =
     text.includes("<system-reminder>") ||
     text.includes("<reasoning-language>") ||
-    text.includes("<dcp-message-id>") ||
-    text.includes("<dcp-system-reminder>") ||
+    text.includes("") ||
+    text.includes("") ||
     text.includes("[System notice]") ||
     text.includes("Rules:") ||
     text.includes("BATCHING") ||
     text.includes("THE FORMAT OF") ||
     text.includes("Compressed block description:") ||
+    text.includes("compressible ranges") || // DCP turn-nudge 复述（260810）
     /"\w+"\s*:\s*(string|number|boolean)\b/.test(text)
 
   const kinds: string[] = []
@@ -118,6 +154,11 @@ export function detect(text: string): EchoResult {
       out = out.replace(re, "")
       kinds.push(kind)
     }
+  }
+  const nudge = stripDcpNudge(out)
+  if (nudge.hit) {
+    out = nudge.text
+    kinds.push("dcp-nudge")
   }
   const schema = stripSchemaRuns(out)
   if (schema.hit) {
