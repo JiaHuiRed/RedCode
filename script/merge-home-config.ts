@@ -12,6 +12,12 @@ const repoRoot = join(import.meta.dirname, "..")
 // 260805 模板目录 .opencode -> seed（它从来不是项目配置，引擎只扫 .redcode）
 const templatePath = join(repoRoot, "seed", "redcode.home.jsonc")
 const homePath = join(homedir(), ".redcode", "redcode.jsonc")
+// 260812 cc 本地层（机器覆盖层，私仓 gitignore）。引擎按 config.ts:489-490 的顺序加载这两个
+// 文件，本脚本只关心"键在不在"，用来遮蔽模板：见 deepMergeUserWins 的第三参数。
+const localPaths = [
+  join(homedir(), ".redcode", "redcode.local.json"),
+  join(homedir(), ".redcode", "redcode.local.jsonc"),
+]
 
 // ---- JSONC strip (comments + trailing commas) --------------------------------
 
@@ -49,22 +55,46 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v)
 }
 
+// 260812 cc `local` 是本地层遮蔽：本地层里已有的键，视同"用户已经有了"，模板不得再把它
+// 补回同步文件 redcode.jsonc。没有这一层，任何**下沉到本地层**的键都会在下一次
+// sync-home 时被下面"用户没有的键就加"的逻辑复活——键从 redcode.jsonc 移走后就变成
+// "用户没有"，模板于是补回，看起来就像"本地层被提升进同步层"。provider.ollama 与
+// small_model 260811/260812 两次回潮都是这么来的；同一根因 260713 的 FreeLLMAPI 已经栽过
+// 一次（见 CHANGELOG）。整棵子树归本地层所有，模板也不再往里滴新子键。
 function deepMergeUserWins(
   user: Record<string, unknown>,
   template: Record<string, unknown>,
+  local: Record<string, unknown> = {},
 ): Record<string, unknown> {
   const merged = { ...user }
   for (const key of Object.keys(template)) {
     if (!(key in merged)) {
+      if (key in local) continue
       merged[key] = template[key]
     } else if (isPlainObject(merged[key]) && isPlainObject(template[key])) {
       merged[key] = deepMergeUserWins(
         merged[key] as Record<string, unknown>,
         template[key] as Record<string, unknown>,
+        isPlainObject(local[key]) ? (local[key] as Record<string, unknown>) : {},
       )
     }
   }
   return merged
+}
+
+// 读出本地层的键形状用于遮蔽。只取并集，值无所谓——判断只看 `key in local`。
+function readLocalShadow(): Record<string, unknown> {
+  let shadow: Record<string, unknown> = {}
+  for (const file of localPaths) {
+    if (!existsSync(file)) continue
+    try {
+      shadow = deepMergeUserWins(shadow, parseJsonc(readFileSync(file, "utf-8")))
+    } catch (err) {
+      // 本地层语法坏了不该阻断同步，但必须喊出来：静默退回空遮蔽 = 悄悄恢复回潮 bug。
+      console.warn(`[merge-config] 本地层解析失败，本轮不做遮蔽: ${file}`, err instanceof Error ? err.message : err)
+    }
+  }
+  return shadow
 }
 
 // ---- JSONC-aware patching (insert new keys without stripping comments) --------
@@ -278,7 +308,7 @@ if (!existsSync(homePath)) {
 const rawUser = readFileSync(homePath, "utf-8")
 const template = parseJsonc(readFileSync(templatePath, "utf-8"))
 const user = parseJsonc(rawUser)
-const merged = deepMergeUserWins(user, template)
+const merged = deepMergeUserWins(user, template, readLocalShadow())
 
 if (JSON.stringify(user) === JSON.stringify(merged)) {
   console.log("[merge-config] no changes needed")
