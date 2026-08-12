@@ -218,7 +218,7 @@ function HomeDesign() {
   }
 
   return (
-    <div class="grid w-full h-full gap-x-6 pl-2 pr-6 pb-2 lg:grid-cols-[220px_minmax(0,1fr)] grid-rows-[1fr_auto]">
+    <div class="grid w-full h-full gap-x-6 pr-6 lg:grid-cols-[220px_minmax(0,1fr)] grid-rows-[1fr_auto]">
       <HomeProjectColumn
         projects={projects()}
         selected={selectedProject()?.worktree}
@@ -384,7 +384,7 @@ function HomeShortcutBar() {
   // 下对比度约 1.5:1 基本不可读；改语义 token（明 green-800/暗 green-500）保住绿色系
   // 人格化设计且随主题走。快捷键行补 flex-wrap，窄窗不再溢出裁切。
   return (
-    <div class="col-span-full lg:col-start-2 flex flex-col items-center gap-1.5 px-4 py-3">
+    <div class="col-span-full lg:col-start-2 flex flex-col items-center gap-1.5 px-4 pt-3 pb-5">
       <span class="text-[14px] [font-weight:440] italic text-v2-state-fg-success">
         {tip()}
       </span>
@@ -473,6 +473,7 @@ function HomeProjectColumn(props: {
   return (
     <aside
       class="flex min-w-0 flex-col lg:row-span-full lg:pt-[52px] lg:border-r lg:border-v2-border-border-base lg:bg-v2-background-bg-layer-01 lg:pr-6"
+      data-frost-surface="home-sidebar"
       aria-label={props.language.t("home.projects")}
     >
       <div class="flex h-7 min-w-0 items-center justify-between pl-2">

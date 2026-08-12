@@ -254,9 +254,15 @@
 
 /* 260608 Red 毛玻璃 A：仅当聊天面板设了背景图（祖先带 data-chat-frost）时，用户气泡与输入框
    改半透明底 + backdrop-filter，透出并模糊背景图 = 真毛玻璃。无背景图不触发（模糊纯色无意义）。
-   不放进 @layer：需越过 Tailwind 的 utilities 层覆盖 bg-* 工具类的 background-color。 */
+   不放进 @layer：需越过 Tailwind 的 utilities 层覆盖 bg-* 工具类的 background-color。
+   260812 Red 底色掺粉：外层 55% 透明保磨砂透壁纸，内层 70% 深灰 + 30% 粉调出粉色系深底，
+   与粉色边框/柔光统一，不再是一块纯深灰。 */
 [data-chat-frost] [data-component="user-message"] [data-slot="user-message-text"] {
-  background: color-mix(in srgb, var(--surface-base) 55%, transparent);
+  background: color-mix(
+    in srgb,
+    color-mix(in srgb, rgba(248, 164, 208, 0.45), var(--surface-base) 70%) 55%,
+    transparent
+  );
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
@@ -298,6 +304,14 @@
 [data-app-frost] #file-tree-panel,
 [data-app-frost] #review-panel {
   background-color: color-mix(in srgb, var(--v2-background-bg-deep) 72%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+/* 260812 Red home 侧边栏毛玻璃：主界面壁纸铺底时，侧边栏改半透明+模糊透出壁纸，
+   与聊天界面同款配方，去掉 dark 下纯色 layer-01 的深闷感。不放进 @layer：需越过 Tailwind utilities 层。 */
+[data-app-frost] [data-frost-surface="home-sidebar"] {
+  background-color: color-mix(in srgb, var(--v2-background-bg-layer-01) 55%, transparent);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
 }
