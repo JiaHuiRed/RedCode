@@ -89,6 +89,8 @@ interface ProcessorContext extends Input {
   // 260710 Red n-gram 文本重复检测（单 step 内）
   ngramDetector: NgramDetector
   ngramTripped: boolean
+  // 260812 cc DCP reminder 泄露流式拦截：已触发标志（防同一段多次剥离）
+  leakTripped: boolean
   // 260728 Red 文本态工具调用打捞：本 step 注册的工具名（防误判）+ 打捞结果
   toolNames: ReadonlySet<string>
   salvaged: XmlToolCall.ParsedCall[]
@@ -142,6 +144,7 @@ export const layer = Layer.effect(
         // 260710 Red n-gram 文本重复检测
         ngramDetector: new NgramDetector(),
         ngramTripped: false,
+        leakTripped: false,
         // 260728 Red 文本态工具调用打捞
         toolNames: new Set<string>(),
         salvaged: [],
@@ -751,6 +754,7 @@ export const layer = Layer.effect(
             // 260710 Red 每个新 text part 重置 n-gram 检测器
             ctx.ngramDetector.reset()
             ctx.ngramTripped = false
+            ctx.leakTripped = false
             if (!ctx.assistantMessage.summary) {
               // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
               if (flags.experimentalEventSystem) {
@@ -793,6 +797,16 @@ export const layer = Layer.effect(
                 textLen: ctx.currentText.text.length,
               })
               ctx.currentText.text += "\n\n" + RECOVERY_PROMPTS.stop
+              ctx.shouldBreak = true
+            }
+            // 260812 cc DCP reminder 泄露流式拦截：累积文本出现泄露锚点立即中断+剥离。
+            // 泄露是消息尾部的复述循环（GUI 实测无限刷屏），发现即止损——已推送的 delta
+            // 无法撤回，但剥离后的文本会落库，且不再继续输出。ngram 拦不住它（复述并非
+            // 逐字重复，是同一段语义反复）。
+            if (!ctx.leakTripped && InstructionEcho.hasLeakAnchor(ctx.currentText.text)) {
+              ctx.leakTripped = true
+              slog.warn("leak.dcp-reminder", { sessionID: ctx.sessionID, textLen: ctx.currentText.text.length })
+              ctx.currentText.text = InstructionEcho.detect(ctx.currentText.text).stripped
               ctx.shouldBreak = true
             }
             return

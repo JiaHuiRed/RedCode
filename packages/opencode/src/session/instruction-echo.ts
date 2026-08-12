@@ -27,6 +27,12 @@ export interface EchoResult {
   readonly stripped: string
 }
 
+// 260812 cc 流式拦截用：DCP reminder 泄露锚点（processor.ts text-delta 路径每段检查，
+// 命中即中断+剥离，防止 GUI 无限刷屏）。泄露是消息尾部复述循环，锚点出现=已泄露。
+export function hasLeakAnchor(text: string): boolean {
+  return text.includes("compressible ranges") || text.includes("This is a system reminder injected")
+}
+
 const EMPTY: string[] = []
 
 // ── A 类：我们自己注入的包装块，整块剥离 ────────────────────────────
@@ -55,28 +61,40 @@ const NUDGE_ANCHOR = /^\s*Evaluate the conversation for compressible ranges\.?\s
 // 块终止：Keep active context uncompressed. 之后还有 NO_REPEAT 变体行
 // （"Do not output the reminder text" 等），一起剥掉
 const NUDGE_END = /^\s*Keep active context uncompressed\.?\s*$/m
+// 260812 cc DCP reminder 复述循环变体：deepseek-v4-flash 把另一种 reminder 措辞
+// （"This is a system reminder injected to help you manage context. The conversation
+// is running long..."）原样复述且陷入无限重复（哥哥 GUI 实测，同段文本重复 N 次）。
+// 与 NUDGE_ANCHOR 一样是 DCP 独有措辞，用户正文不会这么写；命中即剥到文尾——
+// 这种形态一旦出现就是模型陷入复述循环，锚点后面只会是更多重复。
+const REMINDER_ANCHOR = /^\s*This is a system reminder injected to help you manage context\.?\s*/m
+
+function stripReminderLoop(text: string): { text: string; hit: boolean } {
+  const anchor = text.search(REMINDER_ANCHOR)
+  if (anchor === -1) return { text, hit: false }
+  const lineStart = text.lastIndexOf("\n", anchor) + 1
+  return { text: text.slice(0, lineStart).replace(/\s+$/, ""), hit: true }
+}
 
 function stripDcpNudge(text: string): { text: string; hit: boolean } {
   const anchor = text.search(NUDGE_ANCHOR)
   if (anchor === -1) return { text, hit: false }
   // 从锚点行行首开始（search 返回行首，但保险起见回退到本行开头）
   const lineStart = text.lastIndexOf("\n", anchor) + 1
-  // 找终止行：优先 Keep active context uncompressed.，再往后吞 NO_REPEAT 变体行
-  let endMatch = text.search(NUDGE_END)
-  if (endMatch === -1) {
-    // 没有完整块（可能是改写丢失了某句）—— 从锚点剥到文尾
-    return { text: text.slice(0, lineStart).replace(/\s+$/, ""), hit: true }
+  // 260812 cc 统一剥到文尾：DCP nudge 泄露是"消息尾部复述循环"形态——模型输出快结束时
+  // 陷入对 reminder 的复述，锚点之后全是改写变体/重复行（NO_REPEAT 变体、execute the
+  // compress action 续行、小写 do not 变体…），行级正则永远吞不干净（实测留尾巴）。
+  // 正文必然在锚点之前，剥到文尾零误伤；endMatch 分支保留只为兼容旧测试。
+  const endMatch = text.search(NUDGE_END)
+  if (endMatch !== -1) {
+    // 保险：若 END 之后有明显正文段落（\n\n 后非指令行），只剥到 END 后指令行为止
+    const after = text.slice(endMatch)
+    const body = after.match(/\n\n([A-Z\u4e00-\u9fff][^\n]{10,})/)
+    if (body) {
+      const end = after.indexOf(body[1])
+      if (end > 0) return { text: (text.slice(0, lineStart) + after.slice(0, end)).replace(/\s+$/, ""), hit: true }
+    }
   }
-  let blockEnd = text.indexOf("\n", endMatch)
-  if (blockEnd === -1) blockEnd = text.length
-  // 吞掉其后紧跟的 NO_REPEAT 变体行（允许中间空行）
-  const rest = text.slice(blockEnd)
-  const repeatMatch = rest.match(/^\s*\n?(\s*Do not (amplify|repeat|quote|echo)[^\n]*)/)
-  if (repeatMatch) {
-    blockEnd += repeatMatch[0].length
-  }
-  const stripped = text.slice(0, lineStart) + text.slice(blockEnd)
-  return { text: stripped.replace(/\s+$/, ""), hit: true }
+  return { text: text.slice(0, lineStart).replace(/\s+$/, ""), hit: true }
 }
 
 // ── B 类：工具说明 / schema 的行级特征 ──────────────────────────────
@@ -130,8 +148,7 @@ function stripSchemaRuns(text: string): { text: string; hit: boolean } {
  * 检测并剥离模型复述出来的注入指令。
  * 快路径：正文里没有任何可疑标记时直接返回原串，不做逐行扫描。
  */
-export function detect(text: string): EchoResult {
-  if (!text) return { kinds: EMPTY, stripped: text }
+export function detect(text: string): EchoResult {  if (!text) return { kinds: EMPTY, stripped: text }
   const suspicious =
     text.includes("<system-reminder>") ||
     text.includes("<reasoning-language>") ||
@@ -143,6 +160,7 @@ export function detect(text: string): EchoResult {
     text.includes("THE FORMAT OF") ||
     text.includes("Compressed block description:") ||
     text.includes("compressible ranges") || // DCP turn-nudge 复述（260810）
+    text.includes("This is a system reminder injected") || // DCP reminder 复述循环（260812）
     /"\w+"\s*:\s*(string|number|boolean)\b/.test(text)
 
   const kinds: string[] = []
@@ -154,6 +172,11 @@ export function detect(text: string): EchoResult {
       out = out.replace(re, "")
       kinds.push(kind)
     }
+  }
+  const reminder = stripReminderLoop(out)
+  if (reminder.hit) {
+    out = reminder.text
+    kinds.push("dcp-reminder")
   }
   const nudge = stripDcpNudge(out)
   if (nudge.hit) {
