@@ -893,15 +893,13 @@ export const layer = Layer.effect(
                 ]
               }
 
+              // 260812 Red 图片/二进制不合成 "Called the Read tool" 回显文本：
+              // 该文本让同一张图在模型上下文里出现两个路径（.attachments 原路径 +
+              // unsupportedParts 的内容哈希 temp 路径），不支持图片的模型分不清是同一张，
+              // 会把两个路径都写进子代理 prompt 导致读图翻倍（实测 ses_00c1cb26affe）。
+              // 文本文件（text/plain）分支保留回显，那里有实际语义。
               return [
                 ...(referenceContext ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }] : []),
-                {
-                  messageID: info.id,
-                  sessionID: input.sessionID,
-                  type: "text",
-                  synthetic: true,
-                  text: `Called the Read tool with the following input: {"filePath":"${filepath}"}`,
-                },
                 {
                   id: part.id,
                   messageID: info.id,
