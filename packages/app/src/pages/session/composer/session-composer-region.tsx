@@ -151,7 +151,10 @@ export function SessionComposerRegion(props: {
       data-component="session-prompt-dock"
       classList={{
         "w-full flex flex-col justify-center items-center pointer-events-none": true,
-        "shrink-0 pb-3 bg-background-stronger": props.placement !== "inline",
+        // 260812 Red 去掉 bg-background-stronger：dock 整条底色就是"输入框外多余颜色"的根源——
+        // 输入框两侧/底部透出主题底色（Yuqi=紫条、浅色主题=灰条），哥哥指出输入框外不该有任何
+        // 底色，应直接透出聊天背景。index.css 毛玻璃 A 的 dock 背景规则已同步删除。
+        "shrink-0 pb-3": props.placement !== "inline",
       }}
     >
       <div

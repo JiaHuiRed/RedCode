@@ -267,17 +267,12 @@
   -webkit-backdrop-filter: blur(12px);
 }
 
-/* 输入框毛玻璃需要两层：dock 自带不透明 bg-background-stronger 夹在输入框与背景图之间，
-   先把 dock 改半透明+模糊（顺带柔化滚到底部的消息），再让输入框本体半透明+模糊。 */
-[data-chat-frost] [data-component="session-prompt-dock"] {
-  background-color: color-mix(in srgb, var(--background-stronger) 60%, transparent);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-}
-
+/* 输入框毛玻璃：dock 不再铺底色（260812 Red 去掉 bg-background-stronger 后此处同删——
+   输入框外不该有任何多余底色，直接透出聊天背景；blur 由 main 的毛玻璃 B 统一承担），
+   仅输入框本体（composer）半透明+模糊。 */
 [data-chat-frost] [data-component="session-composer"],
 [data-chat-frost] [data-component="session-new-composer"] {
-  background-color: color-mix(in srgb, var(--v2-background-bg-base) 60%, transparent);
+  background-color: color-mix(in srgb, var(--v2-background-bg-base) 50%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
