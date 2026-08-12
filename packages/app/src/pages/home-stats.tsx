@@ -152,13 +152,13 @@ export function HomeStatsPanel(props: { sessions: Session[] }) {
           <div class="relative flex shrink-0 items-center justify-center">
             <StatsRing stats={stats()} />
             <span class="absolute text-[10px] font-medium text-v2-text-text-base tabular-nums">
-              {stats().cacheHitPct !== null ? `${Math.round(stats().cacheHitPct!)}%` : "—"}
+              {stats().cacheHitPct !== null ? `${stats().cacheHitPct!.toFixed(2)}%` : "—"}
             </span>
           </div>
         </Tooltip>
         <div class="flex min-w-0 flex-col gap-0.5">
           <span class="text-11-regular text-v2-text-text-muted">
-            {language.t("home.stats.cacheHit")} {stats().cacheHitPct !== null ? `${Math.round(stats().cacheHitPct!)}%` : "—"}
+            {language.t("home.stats.cacheHit")} {stats().cacheHitPct !== null ? `${stats().cacheHitPct!.toFixed(2)}%` : "—"}
           </span>
           <span class="text-12-regular text-v2-text-text-base [font-weight:530] tabular-nums">
             {language.t("home.stats.cost")} {formatter().cost(stats().costCNY, "CNY")}
