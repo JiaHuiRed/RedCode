@@ -13,7 +13,8 @@
   "scripts": {
     "typecheck": "tsc -b",
     "start": "vite",
-    "dev": "vite",
+    "dev": "bun run script/dev.ts",
+    "dev:web": "vite",
     "build": "vite build",
     "serve": "vite preview",
     "test": "bun run test:unit",
