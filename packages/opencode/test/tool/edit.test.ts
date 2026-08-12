@@ -1,8 +1,8 @@
-import { afterEach, describe, expect } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import path from "path"
 import fs from "fs/promises"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect"
-import { EditTool, fileLockCount } from "../../src/tool/edit"
+import { EditTool, fileLockCount, replace } from "../../src/tool/edit"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { LSP } from "@/lsp/lsp"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
@@ -878,3 +878,43 @@ describe("tool.edit", () => {
       }),
     )
   })
+
+ describe("BlockAnchorReplacer 区间吞并回归", () => {
+   // 260812 事故：app.py 3599→1803 行，edit 吞掉两个同形 except 结尾之间的 1800 行。
+   test("oldString 尾行锚点在首锚点块内缺失时，不吞两锚点间的巨大区间", () => {
+     const middle = Array.from(
+       { length: 30 },
+       (_, i) => `@app.route("/api/${i}")\ndef api_${i}():\n    return "ok"`,
+     ).join("\n")
+     const content = [
+       "def qpf_import_template():",
+       "    try:",
+       "        pass",
+       "    except Exception as e:",
+       '        logger.error(f"模板导入失败: {e}")',
+       "",
+       middle,
+       "def import_parse_capital_report():",
+       "    try:",
+       "        pass",
+       "    except Exception as e:",
+       '        logger.error(f"报表导入失败: {e}")',
+       '        return jsonify({"success": False, "message": str(e)})',
+     ].join("\n")
+
+     // 完整 3 行在文件里精确出现 0 次：qpf 块缺 return 尾行，capital 块中间行不同
+     const oldString = [
+       "except Exception as e:",
+       '        logger.error(f"模板导入失败: {e}")',
+       '        return jsonify({"success": False, "message": str(e)})',
+     ].join("\n")
+
+     const result = replace(content, oldString, "REPLACED")
+     // 事故行为：qpf 锚点扫到 capital 的 return，30 个中间函数全被吞成一段 REPLACED。
+     // 修复后：巨大候选被行数检查挡住，最多只替换相似块本身，中间内容必须原样保留。
+     expect(result).toContain('def api_15():')
+     expect(result).toContain('@app.route("/api/29")')
+     expect(result).toContain('logger.error(f"模板导入失败: {e}")')
+     expect(result).toContain("REPLACED")
+   })
+ })

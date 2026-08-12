@@ -617,7 +617,9 @@ const executeHashline = (
 export type Replacer = (content: string, find: string) => Generator<string, void, unknown>
 
 // Similarity thresholds for block anchor fallback matching
-const SINGLE_CANDIDATE_SIMILARITY_THRESHOLD = 0.0
+// 260812 Red: 单候选阈值 0.0 → 0.3。0.0 意味着中间行完全不同的候选（similarity 恰为 0）也接受，
+// 配合下面的行数一致检查后，中间行全比，0.3 才是"近似块"的合理门槛。
+const SINGLE_CANDIDATE_SIMILARITY_THRESHOLD = 0.3
 const MULTIPLE_CANDIDATES_SIMILARITY_THRESHOLD = 0.3
 
 /**
@@ -873,22 +875,27 @@ export const BlockAnchorReplacer: Replacer = function* (content, find) {
   const lastLineSearch = searchLines[searchLines.length - 1].trim()
   const searchBlockSize = searchLines.length
 
-  // Collect all candidate positions where both anchors match
-  const candidates: Array<{ startLine: number; endLine: number }> = []
-  for (let i = 0; i < originalLines.length; i++) {
-    if (originalLines[i].trim() !== firstLineSearch) {
-      continue
-    }
+ // Collect all candidate positions where both anchors match
+ const candidates: Array<{ startLine: number; endLine: number }> = []
+ for (let i = 0; i < originalLines.length; i++) {
+   if (originalLines[i].trim() !== firstLineSearch) {
+     continue
+   }
 
-    // Look for the matching last line after this first line
-    for (let j = i + 2; j < originalLines.length; j++) {
-      if (originalLines[j].trim() === lastLineSearch) {
-        candidates.push({ startLine: i, endLine: j })
-        break // Only match the first occurrence of the last line
-      }
-    }
-  }
-
+   // Look for the matching last line after this first line
+   for (let j = i + 2; j < originalLines.length; j++) {
+     if (originalLines[j].trim() === lastLineSearch) {
+       // 260812 Red: 候选行数必须与 oldString 一致，否则"首锚点行 → 其后第一个尾锚点行"
+       // 在尾锚点于本块内缺失时会跨越多个函数，构造出吞掉整段代码的巨大伪候选
+       // （app.py 事故：except 结尾 3 行 oldString，尾行 return jsonify 不在 qpf 块内，
+       // 扫到 1800 行后 capital 块的 return 才匹配，records/stats/users 整段被吞）。
+       // 行数不符时继续找下一个尾锚点，不急着 break。
+       if (j - i + 1 !== searchBlockSize) continue
+       candidates.push({ startLine: i, endLine: j })
+       break // Only match the first occurrence of the last line
+     }
+   }
+ }
   // Return immediately if no candidates
   if (candidates.length === 0) {
     return
