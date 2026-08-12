@@ -46,7 +46,7 @@
   },
   "dark": {
     "palette": {
-      "neutral": "#2e1c26",
+      "neutral": "#422838",
       "ink": "#f2e4ea",
       "primary": "#f2a5c9",
       "accent": "#c4a0e8",
@@ -58,7 +58,7 @@
       "diffDelete": "#e06c85"
     },
     "overrides": {
-      "text-weak": "#9a8894",
+      "text-weak": "#c4aab4",
       "syntax-comment": "#9a8894",
       "syntax-keyword": "#c9a0e8",
       "syntax-string": "#8fd8b0",
