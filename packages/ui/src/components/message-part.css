@@ -136,6 +136,12 @@
     padding-bottom: 2px;
   }
 
+  /* 260812 Red 聊天头像加大到 64px（哥哥拍板），只作用于消息气泡 */
+  [data-slot="user-message-avatar"] [data-component="avatar"] {
+    width: 4rem;
+    height: 4rem;
+  }
+
   [data-slot="user-message-attachments"] + [data-slot="user-message-body"] {
     margin-top: 8px;
   }
