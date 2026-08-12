@@ -105,12 +105,14 @@ const SCHEMA_LINE = [
   /^\s*(RULES|BATCHING|THE FORMAT OF [A-Z ]+|OUTPUT FORMAT|IMPORTANT NOTES)\s*:?\s*$/, // 全大写指令段标题
   /^\s*Rules:\s*$/,
   /^\s*Compressed block description:/, // DCP compress 工具的输出泄漏
+  /^\s*Compressed block context:/, // 260812 实测变体：compress 工具说明的 context 段也被复述
 ]
 // 至少要有一条"强特征"才认，避免把普通 JSON 讨论误判
 const SCHEMA_STRONG = [
   /^\s*(RULES|BATCHING|THE FORMAT OF [A-Z ]+|OUTPUT FORMAT)\s*:?\s*$/,
   /^\s*[-*]\s+(Do not invent|IDs must exist|Pick startId)/,
   /^\s*Compressed block description:/, // DCP compress 工具的输出泄漏
+  /^\s*Compressed block context:/, // 260812 实测变体
 ]
 const MIN_RUN = 3 // 连续 3 行以上才切
 
