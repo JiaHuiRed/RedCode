@@ -1,5 +1,13 @@
 {
   "$schema": "https://redcode.dev/config.json",
+  // 260812 cc 本模板 = 新机器的播种源，落到 ~/.redcode/redcode.jsonc（同步层）。
+  // 同步层放"两台机器确实共用的基础"；机器自己新加的 MCP / 供应商写
+  // ~/.redcode/redcode.local.jsonc（本地层，私仓 gitignore，不推 GitHub），
+  // 确认另一台也要用了才提升进同步层。所以**本模板只收共用项**，
+  // 任何含绝对路径、按显存挑的档位、只有某台机装了的东西，一律不进这里。
+  // merge-home-config 会把本地层已有的键当"用户已有"跳过，不再补回同步层
+  // （260812 修，此前下沉的键每次 build 都被打回，见 script/merge-home-config.ts）。
+  //
   // 260809 Red plugin 路径拆到 redcode.local.jsonc（机器相关，不进同步模板）。
   // 两边各自在本地层维护：E 盘机写 E:/AI/RedCode-dcp，D 盘机写 D:/AI/KLX/Qiu/RedCode-dcp。
   // 本模板不留硬编码路径，避免 pull 后覆盖对方的 live 配置。
