@@ -515,6 +515,16 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
     })
     md.use(taskLists, { enabled: false, label: false })
 
+    // 260812 Red: 剥离命名空间 XML 标签残留（如 </antml:thinking_mode>），
+    // markdown-it 不识别带冒号的标签名，会当普通文本原文显示 → 界面上"思考标签泄露"。
+    // 只处理含冒号的命名空间标签（不影响标准 HTML），反引号 code 内的引用保留。
+    const NAMESPACED_TAG = /<\/?[a-zA-Z][a-zA-Z0-9]*:[a-zA-Z0-9_.-]+(?:\s+[^>]*)?\/?>/g
+    const stripNamespacedTags = (text: string) =>
+      text
+        .split("`")
+        .map((seg, i) => (i % 2 === 1 ? seg : seg.replace(NAMESPACED_TAG, "")))
+        .join("`")
+
     // 与 marked 时代一致的链接样式：external-link + 新窗口打开
     const defaultLinkOpen =
       md.renderer.rules.link_open ??
@@ -529,7 +539,7 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
 
       return {
         async parse(markdown: string, opts?: MarkdownParseOptions): Promise<string> {
-          const html = md.render(markdown)
+          const html = md.render(stripNamespacedTags(markdown))
           const withMath = renderMathExpressions(html)
           return highlightCodeBlocks(withMath, opts?.highlight === false)
         },
