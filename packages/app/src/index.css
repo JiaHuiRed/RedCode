@@ -309,9 +309,15 @@
 }
 
 /* 260812 Red home 侧边栏毛玻璃：主界面壁纸铺底时，侧边栏改半透明+模糊透出壁纸，
-   与聊天界面同款配方，去掉 dark 下纯色 layer-01 的深闷感。不放进 @layer：需越过 Tailwind utilities 层。 */
+   与聊天界面同款配方，去掉 dark 下纯色 layer-01 的深闷感。不放进 @layer：需越过 Tailwind utilities 层。
+   260812 Red 掺淡蓝：内层 70% layer-01 + 30% 蓝紫（与 assistant 气泡同色系 168,180,240），
+   外层 55% 透明保磨砂，dark 下由纯深灰变深蓝灰。 */
 [data-app-frost] [data-frost-surface="home-sidebar"] {
-  background-color: color-mix(in srgb, var(--v2-background-bg-layer-01) 55%, transparent);
+  background-color: color-mix(
+    in srgb,
+    color-mix(in srgb, rgba(168, 180, 240, 0.45), var(--v2-background-bg-layer-01) 70%) 55%,
+    transparent
+  );
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
 }
