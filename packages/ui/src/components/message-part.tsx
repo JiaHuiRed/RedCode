@@ -189,116 +189,53 @@ export type PartComponent = Component<MessagePartProps>
 
 export const PART_MAPPING: Record<string, PartComponent | undefined> = {}
 
-const TEXT_RENDER_PACE_MS = 24
-const TEXT_RENDER_SNAP = /[\s.,!?;:)\]]/
-
-function step(size: number) {
-  if (size <= 12) return 2
-  if (size <= 48) return 4
-  if (size <= 96) return 8
-  return Math.min(24, Math.ceil(size / 8))
-}
-
-function next(text: string, start: number) {
-  const end = Math.min(text.length, start + step(text.length - start))
-  const max = Math.min(text.length, end + 8)
-  for (let i = end; i < max; i++) {
-    if (TEXT_RENDER_SNAP.test(text[i] ?? "")) return i + 1
-  }
-  return end
-}
-
-function createPacedValue(getValue: () => string, live?: () => boolean) {
-  const [value, setValue] = createSignal(getValue())
-  let shown = getValue()
-  let timeout: ReturnType<typeof setTimeout> | undefined
-
-  const clear = () => {
-    if (!timeout) return
-    clearTimeout(timeout)
-    timeout = undefined
-  }
-
-  const sync = (text: string) => {
-    shown = text
-    setValue(text)
-  }
-
-  const run = () => {
-    timeout = undefined
-    const text = getValue()
-    if (!live?.()) {
-      sync(text)
-      return
-    }
-    if (!text.startsWith(shown) || text.length <= shown.length) {
-      sync(text)
-      return
-    }
-    const end = next(text, shown.length)
-    sync(text.slice(0, end))
-    if (end < text.length) timeout = setTimeout(run, TEXT_RENDER_PACE_MS)
-  }
-
-  createEffect(() => {
-    const text = getValue()
-    if (!live?.()) {
-      clear()
-      sync(text)
-      return
-    }
-    if (!text.startsWith(shown) || text.length < shown.length) {
-      clear()
-      sync(text)
-      return
-    }
-    if (text.length === shown.length || timeout) return
-    timeout = setTimeout(run, TEXT_RENDER_PACE_MS)
-  })
-
-  onCleanup(() => {
-    clear()
-  })
-
-  return value
-}
 
 function PacedMarkdown(props: { text: string; cacheKey: string; streaming: boolean }) {
-  const value = createPacedValue(
-    () => props.text,
-    () => props.streaming,
-  )
-
-  // 260705 Red: throttle markdown updates during streaming — each paced tick triggers
-  // a full marked.parse + Shiki highlight + morphdom, which becomes O(n²) as text grows.
-  // Throttle to ~300ms so the event loop stays responsive for heartbeats.
-  const [mdText, setMdText] = createSignal("")
+  // 260812 Red 直刷 + 自适应节流：
+  // 1) 砍掉 24ms 打字机 reveal —— 本地小模型已弃用（5080 上 50+ token/s 逐字追不上，
+  //    DeepSeek/Step 快模型 200+ token/s 下中间层纯白跑），streaming 时直接渲染最新全文
+  // 2) 间隔自适应：固定 120ms 在渲染耗时 >120ms 的文本上会"渲染追渲染"占死主线程
+  //    （实测症状：UI 冻结 + 憋一大段后一次蹦出）。每轮提交后 rAF 探测渲染耗时，
+  //    间隔 = max(120, 耗时×1.5)，渲染越快越流畅、越慢越自动降频，永不占死。
+  // 260705 原注释保留：each paced tick triggers a full parse + Shiki highlight + morphdom,
+  // which becomes O(n²) as text grows. Throttle so the event loop stays responsive.
+  const [mdText, setMdText] = createSignal(props.text)
   let mdTimer: ReturnType<typeof setTimeout> | undefined
   let mdLast = 0
+  let renderMs = 0
   createEffect(() => {
-    const t = value()
+    const t = props.text
     if (!props.streaming) {
       clearTimeout(mdTimer)
       mdTimer = undefined
       setMdText(t)
       return
     }
-    const now = Date.now()
-    if (now - mdLast >= 300) {
+    const now = performance.now()
+    const interval = Math.max(120, renderMs * 1.5)
+    if (now - mdLast >= interval) {
+      const start = now
       mdLast = now
       setMdText(t)
+      requestAnimationFrame(() => {
+        renderMs = performance.now() - start
+      })
     } else if (!mdTimer) {
       mdTimer = setTimeout(() => {
         mdTimer = undefined
-        mdLast = Date.now()
-        setMdText(value())
-      }, 300 - (now - mdLast))
+        const start = performance.now()
+        mdLast = start
+        setMdText(props.text)
+        requestAnimationFrame(() => {
+          renderMs = performance.now() - start
+        })
+      }, interval - (now - mdLast))
     }
   })
   onCleanup(() => clearTimeout(mdTimer))
 
   return (
-    <Show when={value()}>
+    <Show when={props.text}>
       <Markdown text={mdText()} cacheKey={props.cacheKey} streaming={props.streaming} />
     </Show>
   )
