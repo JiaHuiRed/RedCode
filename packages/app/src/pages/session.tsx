@@ -1519,6 +1519,7 @@ export default function Page() {
 
   return (
     <div
+      id="session-root"
       class="relative size-full overflow-hidden flex flex-col"
       // 260610 Red 毛玻璃 B：设了聊天背景图则会话页根容器去实色底，露出根布局整窗壁纸做毛玻璃；否则维持原实色
       classList={{ "bg-background-base": !settings.appearance.chatBackground() }}
@@ -1561,6 +1562,7 @@ export default function Page() {
           size={size}
         />
         <div
+          id="session-chat-panel"
           classList={{
             "@container relative shrink-0 flex flex-col min-h-0 h-full flex-1 md:flex-none": true,
             // 260610 Red 毛玻璃 B：设了背景图则聊天栏去实色底，露出主卡片整窗毛玻璃；无背景图维持原实色

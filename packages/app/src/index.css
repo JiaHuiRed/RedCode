@@ -321,6 +321,15 @@
 [data-app-frost] #review-panel .bg-background-stronger {
   background-color: transparent;
 }
+/* 260813 Red 会话区对齐毛玻璃 B：全局壁纸存在时会话区去实色底，透出主卡片磨砂，与文件树/审查栏一致。
+   session-root 的 bg-background-base 和 session-chat-panel 的 bg-background-stronger 都要清掉。
+   data-chat-frost 仍由 chatBackground() 单独控制（毛玻璃 A 只管气泡/输入框）。 */
+[data-app-frost] #session-root {
+  background-color: transparent;
+}
+[data-app-frost] #session-chat-panel {
+  background-color: transparent;
+}
 /* 260623 Red tabs.css 用 #review-panel &[data-variant][data-orientation] 嵌套选择器，
    特异度高达 (1,4,0)，普通选择器覆盖不了，必须用 !important 打穿。 */
 [data-app-frost] #review-panel [data-component="tabs"],
