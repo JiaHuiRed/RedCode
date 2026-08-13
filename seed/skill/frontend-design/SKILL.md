@@ -1,6 +1,6 @@
 ---
 name: frontend-design
-description: Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, or applications. Generates creative, polished code that avoids generic AI aesthetics. Default aesthetic direction is macOS/Apple-inspired unless the user specifies otherwise.
+description: 高设计质量的前端界面——构建 web 组件/页面/应用时触发，产出去 AI 味的生产级创意代码。默认 macOS/Apple 审美，用户另有指定则从之。也含逆向分析（截图→设计系统→代码）。
 ---
 
 # Frontend Design
@@ -42,6 +42,111 @@ Choose a clear conceptual direction and execute it with precision. Bold maximali
 - **Spatial Composition**: Thoughtful layouts. Grid-breaking elements where appropriate. Generous negative space OR controlled density
 - **Backgrounds & Visual Details**: Create atmosphere and depth. Gradient meshes, noise textures, geometric patterns, layered transparencies, dramatic shadows — use what fits the vision
 
+## 从截图提取设计规范（逆向分析）
+
+当用户上传网页/应用截图并要求「按这个风格做」「提取设计规范」「参考这个图」时，切换到逆向分析模式：
+
+1. **直接看图**：用当前模型的图片理解能力分析截图，不依赖外部 API 或脚本
+2. **提取设计系统**：输出结构化的配色、排版、组件特征
+3. **结合正向设计流程**：把提取结果当作 `frontend-design` 的输入，生成代码
+
+### 分析维度
+
+按以下顺序提取，每个维度给出可直接使用的结论：
+
+| 维度 | 提取内容 | 输出格式 |
+|------|---------|---------|
+| **Vibe & Style** | 整体风格关键词（3 个）+ 情绪描述 | `Swiss Style / Bento Grid / Glassmorphism` |
+| **Color Palette** | Primary / Secondary / Background / Accent 的 Hex + Tailwind 近似类名 | 色值数组 |
+| **Typography** | 字体类型 + 标题/正文字重 + 行高比例 | 字体系统描述 |
+| **Component Styling** | 圆角、阴影层级、边框特征 | Tailwind 类名 + 像素值 |
+| **Spatial Layout** | 间距规律、网格密度、卡片排列方式 | 布局模式描述 |
+
+### 输出格式
+
+分析完成后，给出两部分输出：
+
+**第一部分：设计系统数据**
+```json
+{
+  "style_name": "从截图推断的风格名称",
+  "colors": [
+    {"role": "primary", "hex": "#...", "tailwind": "..."},
+    {"role": "secondary", "hex": "#...", "tailwind": "..."},
+    {"role": "background", "hex": "#...", "tailwind": "..."},
+    {"role": "accent", "hex": "#...", "tailwind": "..."}
+  ],
+  "typography": "字体类型 + 字重/行高描述",
+  "components": "圆角/阴影/边框特征描述",
+  "layout": "间距规律 + 网格/排列方式"
+}
+```
+
+**第二部分：可直接使用的 Coding Prompt**
+写一段粘贴即用的提示词，包含提取到的所有设计规范，用于指导生成类似风格的组件/页面。
+
+### 与正向设计的衔接
+
+提取结果出来后，直接进入正向设计流程：
+1. 用户确认/调整提取的设计系统
+2. 按 `frontend-design` 的规范生成代码
+3. 保持与截图一致的风格，同时遵守本 skill 的完成标准 checklist
+
+## 从项目提取设计语言（DESIGN.md 模式）
+
+当用户要求沉淀现有项目/页面的设计规范（"写个 DESIGN.md""提取这个项目的设计语言""给后续改动统一风格"），或项目里没有设计文档、后续改动需要一致性时，切换本模式。
+
+### 证据源（按优先级）
+
+| 源 | 前提 | 能证明 | 不能证明 |
+|---|---|---|---|
+| 仓库源码 | 本地有代码 | token 名、组件归属、明确规范 | — |
+| 参考图 | 用户提供喜欢的界面截图 | 跨图重复出现的可观察模式 | 精确 token 值、内部命名 |
+| URL 实测 | 只有线上页面 | 渲染结果与 computed 值 | token 名、设计意图 |
+
+源码优先；参考图/URL 只写"可观察模式"，不编造 token 名与精确值。
+
+### 仓库模式证据链
+
+按顺序追踪，只信被渲染链路实际引用的源（import/继承/渲染，名称相似不算连接）：
+
+1. 现有 DESIGN.md / 仓库内设计文档
+2. token、theme、CSS 变量、全局样式
+3. 共享组件及其变体
+4. 代表路由与渲染消费者
+5. 局部实现
+
+### 证据纪律（宁缺毋滥）
+
+- 只记录统治设计语言的层（颜色/排版/间距/圆角/阴影的体系与决策），不复制散落值
+- 重复 ≠ 意图，局部样式 ≠ 设计决策
+- 参考图/URL 的每个结论需三个证明：可见或可度量 + 跨图/跨页重现 + 改变实现选择；缺一即 omit
+- 不确定的值写角色描述不写数值；不确定的规则不写
+
+### 参考图 → 审美偏好
+
+用户发多张"我觉得好看"的界面时，提取**交集**：跨大多数图重复出现的特征（配色倾向、排版密度、圆角/阴影风格、动效气质）是稳定偏好，单张出现的一次性灵感。把偏好提炼成一段 taste 描述，写入 skill 的默认审美段或项目 DESIGN.md，让后续构建默认贴近用户口味。
+
+### 输出：项目根 DESIGN.md
+
+frontmatter 放精确 token 值，正文放设计决策与 Do's/Don'ts：
+
+```yaml
+---
+name: <项目名>
+description: <一句话定位>
+colors: { ... }
+typography: { ... }
+rounded: { ... }
+spacing: { ... }
+---
+```
+
+正文按需取节：Overview → Colors → Themes → Typography → Layout → Elevation & Depth → Shapes → Components → Do's and Don'ts。只写有证据支撑的节。
+
+- 不改产品源码，只写 DESIGN.md
+- 更新旧文档时先对比历史版，被接受的历史决策保留，除非新证据推翻
+
 ## Anti-Patterns (NEVER Do These)
 
 - Overused font families (Inter, Roboto, Arial as primary display font)
@@ -49,5 +154,30 @@ Choose a clear conceptual direction and execute it with precision. Bold maximali
 - Predictable card grid layouts with identical spacing everywhere
 - Cookie-cutter design that lacks context-specific character
 - Converging on the same "safe" choices (Space Grotesk, etc.) across different projects
+
+## 完成标准
+
+设计交付前确认以下 checklist 全过，缺一不可。
+
+**设计意图达成**：
+- [ ] 选定的 aesthetic direction 在最终实现中可辨认（不是"好看"就完事，要能说清为什么选这个方向）
+- [ ] 用户指定的风格要求（如有）已满足，不是默认 macOS 风格
+
+**代码层面**：
+- [ ] 所有 interactive 元素可键盘访问（focus 样式可见）
+- [ ] 响应式断点有实际内容，不是空壳
+- [ ] 没有 anti-patterns 列表里的任何一项（紫色渐变、Inter/Roboto 主字体、嵌套卡片等）
+- [ ] 动画只用 `transform/opacity`，不动画布局属性
+
+**可维护性**：
+- [ ] CSS 变量命名与设计意图一致（颜色/间距/字号有体系）
+- [ ] 没有魔法数字散落各处（重复的 `8px`、`rgba(0,0,0,0.04)` 等应收进变量）
+- [ ] 文件结构清晰，一个组件 = 一个文件（不跨文件找样式）
+
+**边界遵守**：
+- [ ] 没有顺手加用户没要的功能
+- [ ] 没有改触发范围外的文件
+
+---
 
 Match implementation complexity to the aesthetic vision. Maximalist designs need elaborate code. Minimalist designs need restraint, precision, and careful attention to spacing, typography, and subtle details.
