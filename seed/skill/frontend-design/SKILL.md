@@ -127,6 +127,12 @@ Choose a clear conceptual direction and execute it with precision. Bold maximali
 
 用户发多张"我觉得好看"的界面时，提取**交集**：跨大多数图重复出现的特征（配色倾向、排版密度、圆角/阴影风格、动效气质）是稳定偏好，单张出现的一次性灵感。把偏好提炼成一段 taste 描述，写入 skill 的默认审美段或项目 DESIGN.md，让后续构建默认贴近用户口味。
 
+### 当前审美偏好档案（260813 起积累）
+
+以下条目来自用户明确表达的好感，等参考图到位后取交集完善成完整 taste 档案：
+
+- **#1 物理质感的深度交互**：卡片 hover 浮起——`translateY(-4~-8px)` + `scale(1.02~1.05)` + 阴影升档（Material elevation / lift on hover），过渡 150-250ms ease-out，hover 移出时阴影回落略快制造回弹感
+
 ### 输出：项目根 DESIGN.md
 
 frontmatter 放精确 token 值，正文放设计决策与 Do's/Don'ts：
