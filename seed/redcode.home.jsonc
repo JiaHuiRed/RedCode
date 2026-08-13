@@ -36,12 +36,33 @@
       "tools": ["ts_type_info"],
       "enabled": true
     },
+    // 260813 cc tools 白名单（与 live 同改）：三个月调用统计 16/19 个用过，砍掉零调用的
+    // index_file/set_tool_tier/announce_model；description 修正旧版工具名（get_repo_map 等
+    // 已不存在）。⚠ #103：块结构必须完整（type/command 必填），tools 是内嵌白名单。
     "jcodemunch": {
       "type": "local",
       "command": ["uvx", "jcodemunch-mcp"],
       "environment": { "JCODEMUNCH_USE_AI_SUMMARIES": "false", "PYTHONIOENCODING": "utf-8" },
-      "description": "代码符号检索/仓库理解首选——找定义、调用链、改动影响面比 grep 准（search_symbols/get_repo_map/get_call_hierarchy/get_blast_radius/get_symbol_source 等）。改代码前先用它摸清依赖，grep/read 兜底。",
-      "enabled": true
+      "description": "代码符号检索/仓库理解首选——找定义、调用链、改动影响面比 grep 准（search_symbols/search_text/get_symbol_source/get_file_outline/find_references/find_importers 等）。改代码前先用它摸清依赖，grep/read 兜底。",
+      "enabled": true,
+      "tools": [
+        "index_repo",
+        "index_folder",
+        "list_repos",
+        "resolve_repo",
+        "get_file_tree",
+        "get_file_outline",
+        "get_symbol_source",
+        "get_file_content",
+        "search_symbols",
+        "search_text",
+        "get_repo_outline",
+        "find_importers",
+        "find_references",
+        "get_context_bundle",
+        "get_ranked_context",
+        "assemble_task_context"
+      ]
     },
     "markitdown": {
       "type": "local",
