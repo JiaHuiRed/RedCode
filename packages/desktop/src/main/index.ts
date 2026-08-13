@@ -194,6 +194,61 @@ async function killSidecar() {
   sidecarPid = undefined
 }
 
+// 260813 cc sidecar 猝死自愈。死因层出不穷（FILEWATCHER V8 崩已修一种；今晨又见
+// "事件循环静默排空 exit 0"），与其逐个追死因，不如保证"死了必复活"：同端口同密码
+// 重拉，渲染层 SSE 重连循环（server-sdk/global-sdk 自带退避重试）会自动接上——此前
+// onExit 只打一行日志，渲染层 Failed to fetch 无限刷屏永不自愈。
+// 判别"猝死 vs 有意停"：killSidecar() 先把 server 置 null 再 stop —— exit 事件到达时
+// server 仍指着死者 = 猝死；已是 null = 有意停，不复活。quitting 兜底退出窗口期。
+let quitting = false
+let respawnAttempts = 0
+let sidecarSpawnCfg: { hostname: string; port: number; password: string; userDataPath: string } | undefined
+const RESPAWN_DELAYS_MS = [1000, 3000, 10000]
+
+function handleSidecarExit(code: number) {
+  writeLog("utility", "sidecar exited", { code }, "warn")
+  if (quitting || !server || !sidecarSpawnCfg) return
+  server = null
+  sidecarPid = undefined
+  void respawnSidecar(code)
+}
+
+async function respawnSidecar(code: number) {
+  const cfg = sidecarSpawnCfg
+  if (!cfg) return
+  const attempt = respawnAttempts++
+  if (attempt >= RESPAWN_DELAYS_MS.length) {
+    // 连续三次都没活过健康检查，别无限拉尸体——留日志请人来看
+    writeLog("utility", "sidecar respawn giving up", { code, attempts: attempt }, "error")
+    return
+  }
+  const delayMs = RESPAWN_DELAYS_MS[attempt]
+  writeLog("utility", "sidecar respawn scheduled", { code, attempt: attempt + 1, delayMs }, "warn")
+  await new Promise((resolve) => setTimeout(resolve, delayMs))
+  if (quitting || server) return
+  try {
+    const { listener, health } = await spawnLocalServer(cfg.hostname, cfg.port, cfg.password, {
+      needsMigration: false,
+      userDataPath: cfg.userDataPath,
+      onStdout: (message) => writeLog("server", "stdout", { message }),
+      onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
+      onExit: handleSidecarExit,
+    })
+    server = listener
+    sidecarPid = listener.pid
+    const healthy = await Promise.race([
+      health.wait.then(() => true),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 30_000)),
+    ])
+    // 只有真过了健康检查才清零重试计数——否则"起来又死"会无限循环
+    if (healthy) respawnAttempts = 0
+    writeLog("utility", "sidecar respawned", { pid: listener.pid, healthy }, "warn")
+  } catch (error) {
+    writeLog("utility", "sidecar respawn failed", { error: String(error) }, "error")
+    void respawnSidecar(code)
+  }
+}
+
 function ensureLoopbackNoProxy() {
   const loopback = ["127.0.0.1", "localhost", "::1"]
   const upsert = (key: string) => {
@@ -322,11 +377,13 @@ const main = Effect.gen(function* () {
   })
 
   app.on("before-quit", () => {
+    quitting = true
     stopMetricsLogging()
     void killSidecar()
   })
 
   app.on("will-quit", () => {
+    quitting = true
     void killSidecar()
   })
 
@@ -339,6 +396,7 @@ const main = Effect.gen(function* () {
   })
 
   setRelaunchHandler(() => {
+    quitting = true
     void killSidecar().finally(() => {
       app.relaunch()
       app.exit(0)
@@ -347,6 +405,7 @@ const main = Effect.gen(function* () {
 
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.on(signal, () => {
+      quitting = true
       void killSidecar().finally(() => app.exit(0))
     })
   }
@@ -448,6 +507,8 @@ const main = Effect.gen(function* () {
     logger.log("spawning sidecar", { url })
     // 260608 Red 启动计时：spawn→ready、ready→healthy 各占多久，定位首页"加载中"瓶颈，测完即删
     const tSpawn = performance.now()
+    // 260813 cc 存一份 spawn 参数供猝死自愈重拉（同端口同密码，渲染层免感知）
+    sidecarSpawnCfg = { hostname, port, password, userDataPath: app.getPath("userData") }
     const { listener, health } = yield* Effect.promise(() =>
       spawnLocalServer(hostname, port, password, {
         needsMigration,
@@ -455,7 +516,7 @@ const main = Effect.gen(function* () {
         onSqliteProgress: (progress) => initEmitter.emit("sqlite", progress),
         onStdout: (message) => writeLog("server", "stdout", { message }),
         onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
-        onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),
+        onExit: handleSidecarExit,
       }),
     )
     server = listener
