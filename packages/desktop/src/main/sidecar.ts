@@ -55,6 +55,22 @@ process.on("unhandledRejection", (reason) => {
   parentPort.postMessage({ type: "error", error: serializeError(reason instanceof Error ? reason : new Error(String(reason))) })
   setImmediate(() => process.exit(1))
 })
+// 260813 cc "code 0 静默蒸发"取证钩子。start() 里那句保活注释是错觉——
+// `await new Promise(() => {})` 不产生 active handle，真正撑住事件循环的是 listener 的
+// listen socket。listener 一旦被意外关闭，事件循环排空 → Node 自然 exit 0：不走上面任何
+// exit(1) 路径，crash log 全空（260813 实证：sidecar 10:58 无声退出，主进程只看到
+// exited {code:0}，死无对证）。beforeExit 只在自然排空时触发——process.exit() 不触发，
+// 所以合法的 stop()/exit(1) 都不会误报；在这里留遗言 + 通知主进程，下次再死必有现场。
+process.on("beforeExit", (code) => {
+  try {
+    const resources = (process as { getActiveResourcesInfo?: () => string[] }).getActiveResourcesInfo?.() ?? []
+    const msg =
+      `[sidecar-fatal] event loop drained (beforeExit code=${code}) ` +
+      `listener=${listener ? "alive" : "gone"} resources=${JSON.stringify(resources)}\n`
+    fs.appendFileSync(path.join(os.tmpdir(), "redcode-sidecar-crash.log"), msg)
+    parentPort.postMessage({ type: "error", error: serializeError(new Error(msg.trim())) })
+  } catch {}
+})
 
 let listener: Listener | undefined
 
