@@ -679,6 +679,75 @@ describe("tool.edit", () => {
         expect(yield* loadRaw(filepath)).toBe(content)
       }),
     )
+
+    // 260813 cc 静默失效家族。全局 #87/#88 已复现 5~6 次「报成功但文件没动」「多操作
+    // 只生效一部分」，根因都在 parseHashline：while 循环没有 else 分支，任何不匹配
+    // 六个操作正则的行被直接丢弃；ops 非空就不报错，于是漏掉的那条无声无息。
+    it.instance("无法识别的操作头必须报错，不能静默丢弃", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "h-badop.txt")
+        const content = "a\nb\nc\nd"
+        yield* put(filepath, content)
+        // `replace 2:` 少了 `..M` —— 正是 #82 记录过的单行 replace 写法
+        const err = yield* fail({ input: patch(filepath, content, "replace 2:", "+ CHANGED") })
+        expect(err.message).toContain("replace 2:")
+        expect(yield* load(filepath)).toBe(content)
+      }),
+    )
+
+    it.instance("多操作中有一条写错时整体拒绝，不许只应用能解析的那些", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "h-partial.txt")
+        const content = "a\nb\nc\nd"
+        yield* put(filepath, content)
+        // 第一条合法，第二条漏了冒号
+        const err = yield* fail({
+          input: patch(filepath, content, "replace 1..1:", "+ A", "insert after 3", "+ X"),
+        })
+        expect(err.message).toContain("insert after 3")
+        // 全有或全无：合法的那条也不许落盘
+        expect(yield* load(filepath)).toBe(content)
+      }),
+    )
+
+    it.instance("操作体为空（正文漏了 + 前缀）必须报错，不能静默不改", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "h-emptybody.txt")
+        const content = "a\nb\nc"
+        yield* put(filepath, content)
+        // 正文没有 `+` 前缀 → readBody 收到空数组 → 插入 0 行，此前静默"成功"
+        const err = yield* fail({ input: patch(filepath, content, "insert after 2:", "NEW LINE") })
+        expect(err.message).toContain("insert after 2:")
+        expect(yield* load(filepath)).toBe(content)
+      }),
+    )
+
+    it.instance("补丁结果与原文完全一致时必须报错，不能报成功", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "h-noop.txt")
+        const content = "a\nb\nc"
+        yield* put(filepath, content)
+        // 拿原样内容替换原样内容——经典路径有 "No changes to apply" 守卫，hashline 没有
+        const err = yield* fail({ input: patch(filepath, content, "replace 2..2:", "+ b") })
+        expect(err.message).toContain("No changes to apply")
+        expect(yield* load(filepath)).toBe(content)
+      }),
+    )
+
+    it.instance("delete 允许整体行数减少，不误判为无变化", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "h-del.txt")
+        const content = "a\nb\nc"
+        yield* put(filepath, content)
+        yield* run({ input: patch(filepath, content, "delete 2..2") })
+        expect(yield* load(filepath)).toBe("a\nc")
+      }),
+    )
   })
 
   // 260730 Karina read 侧加了编码检测之后，GBK 文件读出来是干净中文，detectGarbled
@@ -879,42 +948,42 @@ describe("tool.edit", () => {
     )
   })
 
- describe("BlockAnchorReplacer 区间吞并回归", () => {
-   // 260812 事故：app.py 3599→1803 行，edit 吞掉两个同形 except 结尾之间的 1800 行。
-   test("oldString 尾行锚点在首锚点块内缺失时，不吞两锚点间的巨大区间", () => {
-     const middle = Array.from(
-       { length: 30 },
-       (_, i) => `@app.route("/api/${i}")\ndef api_${i}():\n    return "ok"`,
-     ).join("\n")
-     const content = [
-       "def qpf_import_template():",
-       "    try:",
-       "        pass",
-       "    except Exception as e:",
-       '        logger.error(f"模板导入失败: {e}")',
-       "",
-       middle,
-       "def import_parse_capital_report():",
-       "    try:",
-       "        pass",
-       "    except Exception as e:",
-       '        logger.error(f"报表导入失败: {e}")',
-       '        return jsonify({"success": False, "message": str(e)})',
-     ].join("\n")
+  describe("BlockAnchorReplacer 区间吞并回归", () => {
+    // 260812 事故：app.py 3599→1803 行，edit 吞掉两个同形 except 结尾之间的 1800 行。
+    test("oldString 尾行锚点在首锚点块内缺失时，不吞两锚点间的巨大区间", () => {
+      const middle = Array.from(
+        { length: 30 },
+        (_, i) => `@app.route("/api/${i}")\ndef api_${i}():\n    return "ok"`,
+      ).join("\n")
+      const content = [
+        "def qpf_import_template():",
+        "    try:",
+        "        pass",
+        "    except Exception as e:",
+        '        logger.error(f"模板导入失败: {e}")',
+        "",
+        middle,
+        "def import_parse_capital_report():",
+        "    try:",
+        "        pass",
+        "    except Exception as e:",
+        '        logger.error(f"报表导入失败: {e}")',
+        '        return jsonify({"success": False, "message": str(e)})',
+      ].join("\n")
 
-     // 完整 3 行在文件里精确出现 0 次：qpf 块缺 return 尾行，capital 块中间行不同
-     const oldString = [
-       "except Exception as e:",
-       '        logger.error(f"模板导入失败: {e}")',
-       '        return jsonify({"success": False, "message": str(e)})',
-     ].join("\n")
+      // 完整 3 行在文件里精确出现 0 次：qpf 块缺 return 尾行，capital 块中间行不同
+      const oldString = [
+        "except Exception as e:",
+        '        logger.error(f"模板导入失败: {e}")',
+        '        return jsonify({"success": False, "message": str(e)})',
+      ].join("\n")
 
-     const result = replace(content, oldString, "REPLACED")
-     // 事故行为：qpf 锚点扫到 capital 的 return，30 个中间函数全被吞成一段 REPLACED。
-     // 修复后：巨大候选被行数检查挡住，最多只替换相似块本身，中间内容必须原样保留。
-     expect(result).toContain('def api_15():')
-     expect(result).toContain('@app.route("/api/29")')
-     expect(result).toContain('logger.error(f"模板导入失败: {e}")')
-     expect(result).toContain("REPLACED")
-   })
- })
+      const result = replace(content, oldString, "REPLACED")
+      // 事故行为：qpf 锚点扫到 capital 的 return，30 个中间函数全被吞成一段 REPLACED。
+      // 修复后：巨大候选被行数检查挡住，最多只替换相似块本身，中间内容必须原样保留。
+      expect(result).toContain('def api_15():')
+      expect(result).toContain('@app.route("/api/29")')
+      expect(result).toContain('logger.error(f"模板导入失败: {e}")')
+      expect(result).toContain("REPLACED")
+    })
+  })

@@ -362,23 +362,37 @@ function parseHashline(input: string): HashlinePatch {
     const insertHeadMatch = line.match(/^insert\s+head:$/)
     const insertTailMatch = line.match(/^insert\s+tail:$/)
 
+    // 260813 cc 正文为空 = 这条操作什么都不干。此前静默通过：模型漏写 `+ ` 前缀时
+    // readBody 返回空数组，splice 插入 0 行，工具照常报成功而文件一字未动
+    // （全局 #88「insert after / insert tail 报成功但文件没动」的两次复现之一）。
+    // delete 天生无正文，不在此列。
+    const requireBody = (body: string[], header: string) => {
+      if (body.length === 0)
+        throw new Error(
+          `Hashline op "${header}" has an empty body. ` +
+            `Body lines must start with "+ " (e.g. "+ new content"). ` +
+            `Lines without the "+" prefix are not treated as content.`,
+        )
+      return body
+    }
+
     if (replaceMatch) {
       const start = parseInt(replaceMatch[1], 10)
       const end = parseInt(replaceMatch[2], 10)
       if (start > end) throw new Error(`Invalid replace range: ${start}..${end}`)
       const body = readBody(lines, i)
       i += body.length
-      ops.push({ type: "replace", startLine: start, endLine: end, body })
+      ops.push({ type: "replace", startLine: start, endLine: end, body: requireBody(body, line) })
     } else if (insertBeforeMatch) {
       const lineNum = parseInt(insertBeforeMatch[1], 10)
       const body = readBody(lines, i)
       i += body.length
-      ops.push({ type: "insertBefore", startLine: lineNum, body })
+      ops.push({ type: "insertBefore", startLine: lineNum, body: requireBody(body, line) })
     } else if (insertAfterMatch) {
       const lineNum = parseInt(insertAfterMatch[1], 10)
       const body = readBody(lines, i)
       i += body.length
-      ops.push({ type: "insertAfter", startLine: lineNum, body })
+      ops.push({ type: "insertAfter", startLine: lineNum, body: requireBody(body, line) })
     } else if (deleteMatch) {
       const start = parseInt(deleteMatch[1], 10)
       const end = parseInt(deleteMatch[2], 10)
@@ -386,11 +400,22 @@ function parseHashline(input: string): HashlinePatch {
     } else if (insertHeadMatch) {
       const body = readBody(lines, i)
       i += body.length
-      ops.push({ type: "insertHead", startLine: 1, body })
+      ops.push({ type: "insertHead", startLine: 1, body: requireBody(body, line) })
     } else if (insertTailMatch) {
       const body = readBody(lines, i)
       i += body.length
-      ops.push({ type: "insertTail", startLine: 1, body })
+      ops.push({ type: "insertTail", startLine: 1, body: requireBody(body, line) })
+    } else {
+      // 260813 cc 这里原本没有 else —— 认不出的行被直接丢弃，只要还有**别的**操作能解析，
+      // ops 就非空、不报错，漏掉的那条无声无息。这是全局 #87「多操作部分静默失效」与
+      // #82「单行 `replace N:` 报成功却没改」的共同根因（累计复现 5~6 次）。
+      // 现在一律报错并回显原行，模型能据此自纠。
+      throw new Error(
+        `Unrecognized hashline operation: "${line}". ` +
+          `Expected one of: "replace N..M:", "insert before N:", "insert after N:", ` +
+          `"delete N..M", "insert head:", "insert tail:". ` +
+          `Note "replace N:" (single line without ..M) is not valid — use "replace N..N:".`,
+      )
     }
   }
 
@@ -531,7 +556,18 @@ const executeHashline = (
         // 每行后面多一个空行，每编辑一次翻一倍。经典 oldString 路径（见上）一直是先
         // normalize 再转的，只有 hashline 这条漏了。
         const ending = detectLineEnding(contentOld)
-        contentNew = convertToLineEnding(applyHashlineOps(normalizeLineEndings(contentOld), ops), ending)
+        const normalizedOld = normalizeLineEndings(contentOld)
+        const appliedNew = applyHashlineOps(normalizedOld, ops)
+        // 260813 cc 补上经典路径早就有的那道守卫（见上方 "No changes to apply"）。
+        // hashline 此前缺这一道：补丁跑完内容与原文逐字相同也照常报成功、照常写盘，
+        // 模型据此以为改动生效了 —— 全局 #88「报成功但文件没动」的另一半。
+        if (appliedNew === normalizedOld) {
+          throw new Error(
+            "No changes to apply: the patch produced content identical to the current file. " +
+              "Re-read the file and check the line numbers — the target lines may already contain your intended text.",
+          )
+        }
+        contentNew = convertToLineEnding(appliedNew, ending)
 
         const next = Bom.split(contentNew)
         const desiredBom = source.bom || next.bom
