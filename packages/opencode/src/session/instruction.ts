@@ -1,5 +1,6 @@
 import path from "path"
 import { Effect, Layer, Context } from "effect"
+import * as Console from "effect/Console"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { Config } from "@/config/config"
 import { InstanceState } from "@/effect/instance-state"
@@ -199,10 +200,27 @@ export const layer: Layer.Layer<
       const files = yield* Effect.forEach(Array.from(paths), read, { concurrency: 8 })
       const remote = yield* Effect.forEach(urls, fetch, { concurrency: 4 })
 
-      return [
+      const parts = [
         ...Array.from(paths).flatMap((item, i) => (files[i] ? [`Instructions from: ${item}\n${files[i]}`] : [])),
         ...urls.flatMap((item, i) => (remote[i] ? [`Instructions from: ${item}\n${remote[i]}`] : [])),
       ]
+
+      // 260813 Red 前缀注入预算：逐来源统计大小，总量超限时告警并点名最肥来源。
+      // 不截断——截断会丢指令（漏掉铁律比前缀长更糟），告警只是把膨胀暴露出来，
+      // 让"哪段在悄悄变肥"可定位（配合 prompt.ts 的 sysLen 日志看整体趋势）。
+      const budgetChars = 64 * 1024
+      const totalChars = parts.reduce((sum, p) => sum + p.length, 0)
+      if (totalChars > budgetChars) {
+        const top = parts
+          .map((p) => ({ chars: p.length, src: p.slice(0, 80).split("\n")[0] }))
+          .toSorted((a, b) => b.chars - a.chars)
+          .slice(0, 5)
+        yield* Console.warn(
+          `Instruction prefix over budget: ${totalChars} chars (~${Math.ceil(totalChars / 3)} tok) > ${budgetChars}`,
+        )
+        for (const t of top) yield* Console.warn(`  ${t.chars} chars: ${t.src}`)
+      }
+      return parts
     })
 
     const find = Effect.fn("Instruction.find")(function* (dir: string) {

@@ -433,6 +433,24 @@ export const layer = Layer.effect(
       const userMessage = parent.info
       const compactionPart = parent.parts.find((part): part is MessageV2.CompactionPart => part.type === "compaction")
 
+      // 260813 Red compaction 前后 token 统计：assistant 消息的 tokens 字段是模型侧真实消耗，
+      // 加总即"压缩前上下文有多大"；压缩完成后再算一次 after 回填 part，UI 分割线展示对比。
+      const sumTokens = (msgs: MessageV2.WithParts[]) =>
+        msgs.reduce(
+          (sum, m) =>
+            m.info.role === "assistant"
+              ? sum +
+                (m.info.tokens.input ?? 0) +
+                (m.info.tokens.output ?? 0) +
+                (m.info.tokens.reasoning ?? 0) +
+                (m.info.tokens.cache.read ?? 0) +
+                (m.info.tokens.cache.write ?? 0) +
+                (m.info.tokens.cache.miss ?? 0)
+              : sum,
+          0,
+        )
+      const tokensBefore = sumTokens(input.messages)
+
       let messages = input.messages
       let replay:
         | {
@@ -707,6 +725,20 @@ export const layer = Layer.effect(
             text: summary ?? "",
             include: selected.tail_start_id,
           })
+        }
+        // 260813 Red 回填 compaction 前后 token，供 UI 分割线展示对比。
+        // 注意展开旧 compactionPart 会覆盖掉前面已更新的 tail_start_id，必须带回来。
+        if (compactionPart) {
+          const after = yield* session.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
+          const tokensAfter = sumTokens(after)
+          if (compactionPart.tokens_before !== tokensBefore || compactionPart.tokens_after !== tokensAfter) {
+            yield* session.updatePart({
+              ...compactionPart,
+              tail_start_id: selected.tail_start_id ?? compactionPart.tail_start_id,
+              tokens_before: tokensBefore,
+              tokens_after: tokensAfter,
+            })
+          }
         }
         yield* bus.publish(Event.Compacted, { sessionID: input.sessionID })
         yield* plugin.trigger("compact.post", { sessionID: input.sessionID }, {}).pipe(Effect.catch(() => Effect.void))

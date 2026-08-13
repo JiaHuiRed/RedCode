@@ -30,6 +30,7 @@ import type {
   Part,
   Provider,
   ToolPart,
+  CompactionPart,
   UserMessage,
   TextPart,
   ReasoningPart,
@@ -1387,6 +1388,19 @@ function UserMessage(props: {
 
   const compaction = createMemo(() => props.parts.find((x) => x.type === "compaction"))
 
+  // 260813 Red compaction 分割线带 token 对比：part 由后端 process 回填 tokens_before/after。
+  // SDK 的 Part 类型是 OpenAPI 生成的（无这两个字段），这里用本地扩展接口断言读取。
+  const compactionTitle = createMemo(() => {
+    const part = compaction()
+    if (!part || part.type !== "compaction") return " Compaction "
+    const withTokens = part as CompactionPart & { tokens_before?: number; tokens_after?: number }
+    const fmt = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : `${n}`)
+    if (withTokens.tokens_before !== undefined && withTokens.tokens_after !== undefined)
+      return ` Compaction ${fmt(withTokens.tokens_before)} → ${fmt(withTokens.tokens_after)} `
+    if (withTokens.tokens_before !== undefined) return ` Compaction ${fmt(withTokens.tokens_before)} → … `
+    return " Compaction "
+  })
+
   return (
     <>
       <Show when={text()}>
@@ -1457,7 +1471,7 @@ function UserMessage(props: {
         <box
           marginTop={1}
           border={["top"]}
-          title=" Compaction "
+          title={compactionTitle()}
           titleAlignment="center"
           borderColor={theme.borderActive}
         />
