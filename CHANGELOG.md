@@ -1985,6 +1985,17 @@
 
 ## GUI
 
+### [0.7.20] - 2026-08-13
+
+> sidecar 猝死自愈：死了必留遗言、死了自动复活。GUI 断连不再需要重启整个应用——260813 上午实证 sidecar 静默 exit 0 后渲染层 `Failed to fetch` 无限刷屏、永不恢复，这次从两头堵死。
+
+#### 修复
+
+- **sidecar 静默蒸发不再死无对证**（`packages/desktop/src/main/sidecar.ts`）：实证死法是 exit code 0 干净退出，`uncaughtException`/`unhandledRejection`/`catch` 三条 `exit(1)` 路径全空、crash log 一行不留，主进程只看到 `sidecar exited { code: 0 }`。根因土壤在保活写法——`start()` 里 `await new Promise(() => {})` **不产生 active handle**，真正撑住进程的是 listener 的 listen socket；listener 一旦被意外关闭，事件循环排空，Node 自然 exit 0。新增 `beforeExit` 钩子：只在自然排空时触发（`process.exit()` 不触发，故合法 `stop()` 与 `exit(1)` 均不误报），落 crash log 记录 `listener` 存活状态 + `getActiveResourcesInfo()`，并 postMessage 通知主进程。
+- **sidecar 猝死自动重拉**（`packages/desktop/src/main/index.ts`）：此前 `onExit` 只写一行日志，渲染层 SSE 重连循环（`app/src/context/{global,server}-sdk.tsx` 自带退避重试）敲不到人，只能刷 `Failed to fetch` 到用户手动重启。新增 `handleSidecarExit`/`respawnSidecar`——用启动时留存的**同 hostname/port/password** 重拉，auth 与 URL 不变，渲染层无需改动即自动接上；退避 1s/3s/10s 三次封顶，未通过健康检查不清零重试计数（防「起来又死」无限拉尸体），封顶后留 error 日志。猝死判别靠 `killSidecar()` 先置 `server = null` 再 `stop()`——exit 到达时 `server` 仍指向死者才算猝死；`before-quit`/`will-quit`/`relaunch`/信号四处置 `quitting` 标志兜底退出窗口期。
+
+---
+
 ### [0.7.19] - 2026-08-12
 
 > 首页侧边栏毛玻璃满铺透壁纸（底色掺淡蓝，与助手气泡同色系）；用户气泡底色改粉色系磨砂（设聊天壁纸时不再是纯深灰）；流式文字渲染砍掉 24ms 打字机层改自适应节流（快模型不再白跑中间层、慢渲染自动降频不占死主线程）；主界面缓存命中率显示保留两位小数。
