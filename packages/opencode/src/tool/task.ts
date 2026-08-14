@@ -158,6 +158,24 @@ export const TaskTool = Tool.define(
         return yield* Effect.fail(new Error("Background subagents cannot be combined with worktree isolation"))
       }
 
+      // 沿 parentID 链上溯算嵌套深度，超限直接拒绝——放在权限询问之前，别先弹窗再报错
+      const parent = yield* sessions.get(ctx.sessionID)
+      {
+        let current = parent
+        let depth = 0
+        while (current.parentID) {
+          depth++
+          current = yield* sessions.get(current.parentID)
+        }
+        if (depth >= (cfg.subagent_depth ?? 1)) {
+          return yield* Effect.fail(
+            new Error(
+              `Subagent depth limit reached (${cfg.subagent_depth ?? 1}). Increase "subagent_depth" to allow nested subagents.`,
+            ),
+          )
+        }
+      }
+
       if (!ctx.extra?.bypassAgentCheck) {
         yield* ctx.ask({
           permission: id,
@@ -179,7 +197,6 @@ export const TaskTool = Tool.define(
       const session = taskID
         ? yield* sessions.get(SessionID.make(taskID)).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
         : undefined
-      const parent = yield* sessions.get(ctx.sessionID)
       const parentAgent = parent.agent
         ? yield* agent.get(parent.agent).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
         : undefined

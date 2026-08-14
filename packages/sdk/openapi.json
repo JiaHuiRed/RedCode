@@ -11174,6 +11174,27 @@
         "required": ["name", "data"],
         "additionalProperties": false
       },
+      "ContentFilterError": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": ["ContentFilterError"]
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": ["message"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["name", "data"],
+        "additionalProperties": false
+      },
       "APIError": {
         "type": "object",
         "properties": {
@@ -11708,6 +11729,9 @@
               },
               {
                 "$ref": "#/components/schemas/ContextOverflowError"
+              },
+              {
+                "$ref": "#/components/schemas/ContentFilterError"
               },
               {
                 "$ref": "#/components/schemas/APIError"
@@ -18301,6 +18325,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/ContextOverflowError"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ContentFilterError"
                   },
                   {
                     "$ref": "#/components/schemas/APIError"

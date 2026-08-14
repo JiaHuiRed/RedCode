@@ -1748,6 +1748,16 @@ export const layer = Layer.effect(
 
             const finished = handle.message.finish && !["tool-calls", "unknown"].includes(handle.message.finish)
             if (finished && !handle.message.error) {
+              // 内容过滤中止（如 Anthropic stop_reason: refusal）可能一个字都没输出，
+              // 不当错误处理的话会话直接静默转 idle，用户什么都看不到
+              if (handle.message.finish === "content-filter") {
+                handle.message.error = new MessageV2.ContentFilterError({
+                  message: "The response was blocked by the provider's content filter",
+                }).toObject()
+                yield* sessions.updateMessage(handle.message)
+                yield* bus.publish(Session.Event.Error, { sessionID, error: handle.message.error })
+                return "break" as const
+              }
               if (format.type === "json_schema") {
                 handle.message.error = new MessageV2.StructuredOutputError({
                   message: "Model did not produce structured output",

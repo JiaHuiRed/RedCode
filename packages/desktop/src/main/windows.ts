@@ -1,10 +1,11 @@
 import windowState from "electron-window-state"
-import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol } from "electron"
+import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol, shell } from "electron"
 import { existsSync } from "node:fs"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
 import { PINCH_ZOOM_ENABLED_KEY } from "./constants"
+import { resolveExternalURL } from "./external-url"
 import { exportDebugLogs, write as writeLog } from "./logging"
 import { getStore } from "./store"
 import { createUnresponsiveSampler } from "./unresponsive"
@@ -149,6 +150,7 @@ export function createMainWindow() {
 
   allowRendererPermissions(win)
   wireWindowRecovery(win, "main")
+  wireNavigationPolicy(win)
 
   win.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
     const { requestHeaders } = details
@@ -242,6 +244,29 @@ export function registerRendererProtocol() {
 
     writeLog("protocol", "fetch error", { url: request.url, path: decoded }, "error")
     return new Response("Not found", { status: 404 })
+  })
+}
+
+export function openExternalURL(value: string) {
+  const url = resolveExternalURL(value)
+  if (!url) {
+    writeLog("window", "blocked external target", { url: value }, "warn")
+    return
+  }
+  void shell.openExternal(url)
+}
+
+// markdown 链接全部带 target=_blank，Electron 默认会为它们弹裸 BrowserWindow；
+// 一律 deny 并转系统浏览器。will-navigate 只放行应用自身 URL（reload 场景）。
+function wireNavigationPolicy(win: BrowserWindow) {
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (!isRendererUrl(url)) openExternalURL(url)
+    return { action: "deny" }
+  })
+  win.webContents.on("will-navigate", (event, url) => {
+    if (isRendererUrl(url)) return
+    event.preventDefault()
+    openExternalURL(url)
   })
 }
 
