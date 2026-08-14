@@ -3317,6 +3317,7 @@ export class Session2 extends HeyApiClient {
       time?: {
         archived?: number
       }
+      unarchive?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3331,6 +3332,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "title" },
             { in: "body", key: "permission" },
             { in: "body", key: "time" },
+            { in: "body", key: "unarchive" },
           ],
         },
       ],

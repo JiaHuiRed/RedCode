@@ -51,6 +51,12 @@ export const UpdatePayload = Schema.Struct({
       archived: Schema.optional(Session.ArchivedTimestamp),
     }),
   ),
+  // 260814 Red 取消归档（清掉 time_archived，会话回到正常列表）。
+  // 为什么是独立布尔字段而不是 `time.archived: null`：OpenAPI 生成器会把 payload 位置的
+  // 联合类型压成单一类型——`Schema.NullOr(...)` 与显式 `Schema.Union([X, Schema.Null])`
+  // 实测都只生成 `type: number`（同一构造在 component schema 里却正常出 anyOf），
+  // 于是 SDK 类型不接受 null、GUI 编译不过。独立字段能干净地穿过 codegen。
+  unarchive: Schema.optional(Schema.Boolean),
 })
 export const ForkPayload = Schema.Struct(Struct.omit(Session.ForkInput.fields, ["sessionID"]))
 export const InitPayload = Schema.Struct({

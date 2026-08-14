@@ -69,6 +69,29 @@ describe("session.listGlobal", () => {
     { git: true },
   )
 
+  // 260814 Red 取消归档：setArchived 传 null 清掉时间戳，会话回到默认列表。
+  // 归档此前是单向的（HTTP payload 只能传数字、服务层签名不收 null），这条守住往返闭环。
+  it.instance(
+    "restores an archived session when archived time is cleared",
+    () =>
+      Effect.gen(function* () {
+        const session = yield* withSession({ title: "unarchive-session" })
+
+        yield* SessionNs.Service.use((s) => s.setArchived({ sessionID: session.id, time: Date.now() }))
+        const hidden = yield* Effect.sync(() => [...SessionNs.listGlobal({ limit: 200 })])
+        expect(hidden.map((s) => s.id)).not.toContain(session.id)
+
+        yield* SessionNs.Service.use((s) => s.setArchived({ sessionID: session.id, time: null }))
+
+        const visible = yield* Effect.sync(() => [...SessionNs.listGlobal({ limit: 200 })])
+        expect(visible.map((s) => s.id)).toContain(session.id)
+
+        const restored = yield* SessionNs.Service.use((s) => s.get(session.id))
+        expect(restored.time.archived).toBeUndefined()
+      }),
+    { git: true },
+  )
+
   it.instance(
     "supports cursor pagination",
     () =>

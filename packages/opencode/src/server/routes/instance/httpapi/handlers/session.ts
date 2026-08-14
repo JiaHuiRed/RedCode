@@ -199,7 +199,11 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           permission: Permission.merge(current.permission ?? [], ctx.payload.permission),
         })
       }
-      if (ctx.payload.time?.archived !== undefined) {
+      // 260814 Red unarchive 优先于 time.archived：两者同时传属调用方矛盾，取"取消"更安全
+      // （撤销可再归档，反之会让用户以为没生效）。setArchived 的 time: null = 清掉时间戳。
+      if (ctx.payload.unarchive) {
+        yield* session.setArchived({ sessionID: ctx.params.sessionID, time: null })
+      } else if (ctx.payload.time?.archived !== undefined) {
         yield* session.setArchived({ sessionID: ctx.params.sessionID, time: ctx.payload.time.archived })
       }
       return yield* requireSession(ctx.params.sessionID)

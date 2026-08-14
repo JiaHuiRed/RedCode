@@ -6329,6 +6329,7 @@ export type SessionUpdateData = {
     time?: {
       archived?: number
     }
+    unarchive?: boolean
   }
   path: {
     sessionID: string

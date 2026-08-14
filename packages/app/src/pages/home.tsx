@@ -62,7 +62,15 @@ function HomeDesign() {
   const language = useLanguage()
   const globalSDK = useGlobalSDK()
   // 260616 Red 默认进看板视图（工作中/需关注/空闲），更直观；可切回列表
-  const [state, setState] = createStore({ search: "", project: undefined as string | undefined, view: "kanban" as "list" | "kanban" })
+  // 260814 Red archived：归档只是打 time_archived 时间戳 + 列表默认过滤（session.ts 的 list），
+  //   数据一个字节都不删。此前 GUI 只有"归档"没有"看已归档/取消归档"，归档等于单向消失——
+  //   实测 432 个会话里只归档过 1 个。这里补齐可见性与撤销。
+  const [state, setState] = createStore({
+    search: "",
+    project: undefined as string | undefined,
+    view: "kanban" as "list" | "kanban",
+    archived: false,
+  })
   let searchInputRef: HTMLInputElement | undefined
 
   onMount(() => {
@@ -104,15 +112,37 @@ function HomeDesign() {
     },
   }))
 
+  // 260814 Red 已归档会话不进 sync store（global-sync 拉取时就滤掉了），只能单独取。
+  //   archived:true 的语义是"不加 IS NULL 过滤"即**包含**归档，所以这里再筛出真正带
+  //   time.archived 的那些。仅在开关打开时请求，关掉不产生任何额外负载。
+  const archivedLoad = useQuery(() => ({
+    queryKey: ["home", "archived", selectedProject()?.worktree, state.archived] as const,
+    enabled: state.archived,
+    queryFn: async () => {
+      const project = selectedProject()
+      if (!project) return [] as Session[]
+      const res = await globalSDK.client.experimental.session.list({
+        directory: project.worktree,
+        roots: true,
+        archived: true,
+        limit: HOME_SESSION_LIMIT,
+      })
+      return ((res.data ?? []) as Session[]).filter((s) => !!s.time?.archived)
+    },
+  }))
+
   const projectByID = createMemo(
     () => new Map(projects().flatMap((project) => (project.id ? [[project.id, project] as const] : []))),
   )
   const records = createMemo(() =>
     [
       ...new Map(
-        projectDirectories()
-          .flatMap((directory) => sortedRootSessions(sync.child(directory, { bootstrap: false })[0], Date.now()))
-          .map((session) => [`${pathKey(session.directory)}:${session.id}`, session] as const),
+        (state.archived
+          ? (archivedLoad.data ?? [])
+          : projectDirectories().flatMap((directory) =>
+              sortedRootSessions(sync.child(directory, { bootstrap: false })[0], Date.now()),
+            )
+        ).map((session) => [`${pathKey(session.directory)}:${session.id}`, session] as const),
       ).values(),
     ]
       .sort((a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created))
@@ -217,6 +247,15 @@ function HomeDesign() {
     await globalSDK.client.session.update({ sessionID: session.id, time: { archived: Date.now() } })
   }
 
+  // 260814 Red 取消归档：清掉 time_archived，会话立刻回到正常列表。
+  //   用独立的 unarchive 字段而非 time.archived:null——原因见服务端 UpdatePayload 的注释
+  //   （OpenAPI 生成器会把 payload 里的联合类型压平，null 传不过来）。
+  //   取消后刷新归档列表，让它从"已归档"视图里消失。
+  async function unarchiveSession(session: Session) {
+    await globalSDK.client.session.update({ sessionID: session.id, unarchive: true })
+    await archivedLoad.refetch()
+  }
+
   return (
     <div class="grid w-full h-full gap-x-6 pr-6 lg:grid-cols-[220px_minmax(0,1fr)] grid-rows-[1fr_auto]">
       <HomeProjectColumn
@@ -253,6 +292,17 @@ function HomeDesign() {
               class="size-7"
             />
           </Show>
+          {/* 260814 Red 已归档视图开关：打开后列表换成归档会话（单独请求，见 archivedLoad） */}
+          <IconButtonV2
+            data-action="home-toggle-archived"
+            variant={state.archived ? "contrast" : "ghost-muted"}
+            size="large"
+            icon={<IconV2 name="archive" size="small" />}
+            onClick={() => setState("archived", !state.archived)}
+            aria-label={language.t("home.sessions.archived.toggle")}
+            aria-pressed={state.archived}
+            class="size-7 shrink-0"
+          />
           <div class="flex shrink-0 gap-0.5 rounded-[6px] bg-v2-background-bg-deep p-0.5">
             <IconButtonV2
               data-action="home-view-list"
@@ -286,25 +336,37 @@ function HomeDesign() {
                     <IconV2 name="edit" size="large" class="text-v2-text-text-muted" />
                   </div>
                   <div class="flex flex-col items-center gap-1 text-center">
-                    <div class="text-14-normal font-medium text-v2-text-text-base">{language.t("home.sessions.empty")}</div>
-                    <div class="text-12-regular text-v2-text-text-muted">{language.t("command.session.new")}</div>
+                    <div class="text-14-normal font-medium text-v2-text-text-base">
+                      {language.t(state.archived ? "home.sessions.archived.empty" : "home.sessions.empty")}
+                    </div>
+                    <Show when={!state.archived}>
+                      <div class="text-12-regular text-v2-text-text-muted">{language.t("command.session.new")}</div>
+                    </Show>
                   </div>
-                  <ButtonV2
-                    data-action="home-new-session-empty"
-                    variant="contrast"
-                    size="normal"
-                    icon="edit"
-                    class="mt-2"
-                    onClick={openNewSession}
-                  >
-                    {language.t("command.session.new")}
-                  </ButtonV2>
+                  {/* 归档视图为空时不提示"新建会话"——那不是这个视图该做的事 */}
+                  <Show when={!state.archived}>
+                    <ButtonV2
+                      data-action="home-new-session-empty"
+                      variant="contrast"
+                      size="normal"
+                      icon="edit"
+                      class="mt-2"
+                      onClick={openNewSession}
+                    >
+                      {language.t("command.session.new")}
+                    </ButtonV2>
+                  </Show>
                 </div>
               }
             >
               <Switch>
                 <Match when={state.view === "kanban"}>
-                  <HomeKanban records={records()} openSession={openSession} onArchive={archiveSession} />
+                  <HomeKanban
+                    records={records()}
+                    openSession={openSession}
+                    onArchive={archiveSession}
+                    onUnarchive={(session) => void unarchiveSession(session)}
+                  />
                 </Match>
                 <Match when={state.view === "list"}>
                   <div class="pt-3 flex flex-col gap-6">
@@ -317,7 +379,14 @@ function HomeDesign() {
                           />
                           <div class="flex min-w-0 flex-col gap-px">
                             <For each={group.sessions}>
-                              {(record) => <HomeSessionRow record={record} openSession={openSession} onArchive={archiveSession} />}
+                              {(record) => (
+                                <HomeSessionRow
+                                  record={record}
+                                  openSession={openSession}
+                                  onArchive={archiveSession}
+                                  onUnarchive={(session) => void unarchiveSession(session)}
+                                />
+                              )}
                             </For>
                           </div>
                         </div>
@@ -626,6 +695,7 @@ function HomeSessionRow(props: {
   record: HomeSessionRecord
   openSession: (session: Session) => void
   onArchive: (session: Session) => void
+  onUnarchive?: (session: Session) => void
 }) {
   const globalSync = useServerSync()
   const notification = useNotification()
@@ -692,8 +762,19 @@ function HomeSessionRow(props: {
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content>
-          <ContextMenu.Item onSelect={() => props.onArchive(props.record.session)}>
-            <ContextMenu.ItemLabel>{language.t("command.session.archive")}</ContextMenu.ItemLabel>
+          {/* 260814 Red 已归档的行给"取消归档"，未归档的给"归档" */}
+          <ContextMenu.Item
+            onSelect={() =>
+              props.record.session.time?.archived
+                ? props.onUnarchive?.(props.record.session)
+                : props.onArchive(props.record.session)
+            }
+          >
+            <ContextMenu.ItemLabel>
+              {language.t(
+                props.record.session.time?.archived ? "command.session.unarchive" : "command.session.archive",
+              )}
+            </ContextMenu.ItemLabel>
           </ContextMenu.Item>
         </ContextMenu.Content>
       </ContextMenu.Portal>

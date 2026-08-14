@@ -49,6 +49,9 @@ export const dict = {
   "command.session.previous.unseen": "上一个未读会话",
   "command.session.next.unseen": "下一个未读会话",
   "command.session.archive": "归档会话",
+  "command.session.unarchive": "取消归档",
+  "home.sessions.archived.toggle": "显示已归档会话",
+  "home.sessions.archived.empty": "没有已归档的会话",
 
   "command.palette": "命令面板",
 

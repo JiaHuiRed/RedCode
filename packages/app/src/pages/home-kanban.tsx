@@ -29,6 +29,7 @@ export function HomeKanban(props: {
   records: KanbanRecord[]
   openSession: (session: Session) => void
   onArchive: (session: Session) => void
+  onUnarchive?: (session: Session) => void
 }) {
   const globalSync = useServerSync()
   const notification = useNotification()
@@ -110,6 +111,7 @@ export function HomeKanban(props: {
                       columnId={column.id}
                       onClick={() => props.openSession(record.session)}
                       onArchive={() => props.onArchive(record.session)}
+                      onUnarchive={() => props.onUnarchive?.(record.session)}
                     />
                   )}
                 </For>
@@ -127,6 +129,7 @@ function KanbanCard(props: {
   columnId: KanbanColumn["id"]
   onClick: () => void
   onArchive: () => void
+  onUnarchive?: () => void
 }) {
   const globalSync = useServerSync()
   const language = useLanguage()
@@ -179,8 +182,15 @@ function KanbanCard(props: {
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content>
-          <ContextMenu.Item onSelect={props.onArchive}>
-            <ContextMenu.ItemLabel>{language.t("command.session.archive")}</ContextMenu.ItemLabel>
+          {/* 260814 Red 已归档的卡片给"取消归档"，未归档的给"归档" */}
+          <ContextMenu.Item
+            onSelect={() => (props.record.session.time?.archived ? props.onUnarchive?.() : props.onArchive())}
+          >
+            <ContextMenu.ItemLabel>
+              {language.t(
+                props.record.session.time?.archived ? "command.session.unarchive" : "command.session.archive",
+              )}
+            </ContextMenu.ItemLabel>
           </ContextMenu.Item>
         </ContextMenu.Content>
       </ContextMenu.Portal>
