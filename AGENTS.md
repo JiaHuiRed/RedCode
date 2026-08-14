@@ -72,14 +72,15 @@ RedCode = OpenCode fork：
 
 # 版本与文档
 
-- TUI（`packages/opencode/package.json`）与 GUI（`packages/desktop/package.json`）版本号**独立**，互不牵动。
-- **版本更新 checklist（每次改版本号必须全过）**：
-  1. `package.json` — 改版本号（TUI 或 GUI，看改了哪个 package）
-  2. `README.md` — 中文版徽章更新
-  3. `README.en.md` — **英文版徽章同步更新**（容易漏！双语必须一起动）
-  4. `CHANGELOG.md` — 新版本条目（`## TUI` 或 `## GUI` 下）
-  5. 标题栏徽章 — 自动注入（`package.json` → `__RC_VERSION__` 占位符），无需手改
-  6. 自检脚本 — `script/check-version-consistency.ts`，build.bat 编译前校验
+- **单一版本线（2026-08-14 起）**：TUI 与 GUI 合并维护，全仓一个版本号，从 0.8.16 继续递增。历史双线（TUI ≤0.8.16 / GUI ≤0.7.20）只存在于 CHANGELOG 的 `## TUI`/`## GUI` 两段，**历史条目不改**。
+- **版本更新 checklist（每次升版必须全过）**：
+  1. `packages/opencode/package.json` + `packages/desktop/package.json` — **同号同升**（TUI 运行时与 GUI 标题栏徽章各自从这两处注入，缺一则显示分裂）
+  2. 其余 `@redcode-ai/*` 包、`packages/sdk/js`、`sdks/vscode` 的 `version` — 同号跟升（互引均为 `workspace:*`，该字段仅作标签；Sentry release 与 GUI `Platform.version` 读 `packages/app` 的号）
+  3. `README.md` — 中文版"版本"徽章更新
+  4. `README.en.md` — **英文版 Version 徽章同步更新**（容易漏！双语必须一起动）
+  5. `CHANGELOG.md` — 新条目写在顶部说明之下（合并线区域），**不再**写进 `## TUI`/`## GUI` 历史段
+  6. 标题栏徽章 — 自动注入（`packages/desktop/package.json` → `__RC_VERSION__` 占位符），无需手改
+  7. 自检脚本 — `script/check-version-consistency.ts`，build.bat 编译前校验（含全仓同号断言）
 - 文档（版本号/徽章/CHANGELOG/README）可直接改好；**push / 打包 release 需用户确认**。
 
 # 项目指令

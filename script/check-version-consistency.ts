@@ -1,18 +1,12 @@
 // 260603 Red 版本一致性自检：编译前自动扫描
-// 检查 package.json / README / CHANGELOG / index.html 版本号是否一致
-import { readFileSync, existsSync } from "fs"
+// 260814 Red 版本线合并改造：TUI/GUI 不再分线，全仓单一版本号（以 packages/opencode 为准）
+// 检查范围：全部 @redcode-ai/* 包 + sdk + vscode 同号、README 双语徽章、CHANGELOG 条目、GUI 标题栏徽章
+import { readFileSync } from "fs"
 import { join, dirname } from "path"
 import { fileURLToPath } from "url"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = join(__dirname, "..")
-
-interface VersionInfo {
-  pkg: string
-  readme: string
-  changelog: string
-  badge: string
-}
 
 function read(path: string): string {
   try {
@@ -31,61 +25,77 @@ function extractPkgVersion(file: string): string {
   }
 }
 
-function checkGUI(): VersionInfo {
-  const version = extractPkgVersion("packages/desktop/package.json")
-  const readmeZH = read("README.md")
-  const readmeEN = read("README.en.md")
-  const changelog = read("CHANGELOG.md")
-  const html = read("packages/desktop/src/renderer/index.html")
-  return {
-    pkg: version,
-    readme: (readmeZH.includes(`Desktop/${version}`) || readmeZH.includes(`Desktop-${version}`) || readmeZH.includes(`Desktop ${version}`)) ? version : `${version} ✗`,
-    changelog: changelog.includes(`[${version}]`) ? version : `${version} ✗`,
+// 版本号权威来源：TUI 包（合并线从 TUI 的 0.8.16 起递增）
+const version = extractPkgVersion("packages/opencode/package.json")
+
+// 全仓需同号的 package.json（storybook/script 无 version 字段，不列）
+const VERSIONED_PACKAGES = [
+  "packages/desktop/package.json",
+  "packages/app/package.json",
+  "packages/core/package.json",
+  "packages/ui/package.json",
+  "packages/web/package.json",
+  "packages/llm/package.json",
+  "packages/plugin/package.json",
+  "packages/function/package.json",
+  "packages/enterprise/package.json",
+  "packages/slack/package.json",
+  "packages/http-recorder/package.json",
+  "packages/effect-drizzle-sqlite/package.json",
+  "packages/sdk/js/package.json",
+  "sdks/vscode/package.json",
+]
+
+const readmeZH = read("README.md")
+const readmeEN = read("README.en.md")
+const changelog = read("CHANGELOG.md")
+const html = read("packages/desktop/src/renderer/index.html")
+
+const mismatched = VERSIONED_PACKAGES
+  .map((file) => ({ file, v: extractPkgVersion(file) }))
+  .filter((p) => p.v !== version)
+
+const checks = [
+  {
+    name: `全仓同号（${VERSIONED_PACKAGES.length} 包）`,
+    ok: mismatched.length === 0,
+    detail: mismatched.length === 0 ? version : mismatched.map((p) => `${p.file}=${p.v || "(空)"}`).join(", "),
+  },
+  {
+    name: "README 中文徽章",
+    ok: readmeZH.includes(`版本/${version}`),
+    detail: version,
+  },
+  {
+    name: "README 英文徽章",
+    ok: readmeEN.includes(`Version/${version}`),
+    detail: version,
+  },
+  {
+    name: "CHANGELOG 条目",
+    ok: changelog.includes(`[${version}]`),
+    detail: version,
+  },
+  {
     // __RC_VERSION__ 占位符 = 构建时自动注入，永远跟随 package.json，视为一致
-    badge: (html.includes("__RC_VERSION__") || html.includes(`v${version}`)) ? version : `${version} ✗`,
-  }
+    name: "GUI 标题栏徽章",
+    ok: html.includes("__RC_VERSION__") || html.includes(`v${version}`),
+    detail: version,
+  },
+]
+
+console.log("")
+console.log("=== 版本一致性自检（单一版本线）===")
+console.log("")
+console.log(`  版本 v${version}`)
+for (const c of checks) {
+  console.log(`    ${c.name.padEnd(14)} ${c.ok ? "✅ " : "❌ "}${c.detail}`)
 }
-
-function checkTUI(): VersionInfo {
-  const version = extractPkgVersion("packages/opencode/package.json")
-  const readmeZH = read("README.md")
-  const readmeEN = read("README.en.md")
-  const changelog = read("CHANGELOG.md")
-  return {
-    pkg: version,
-    readme: (readmeZH.includes(`TUI/${version}`) || readmeZH.includes(`TUI-${version}`) || readmeZH.includes(`TUI ${version}`)) ? version : `${version} ✗`,
-    changelog: changelog.includes(`[${version}]`) ? version : `${version} ✗`,
-    badge: "N/A",
-  }
-}
-
-function pad(s: string, n: number): string {
-  return s.padEnd(n)
-}
-
-console.log("")
-console.log("=== 版本一致性自检 ===")
 console.log("")
 
-const gui = checkGUI()
-const tui = checkTUI()
-
-console.log(`  GUI v${gui.pkg}`)
-console.log(`    README 徽章  ${gui.readme.includes("✗") ? "❌ " : "✅ "}${gui.readme}`)
-console.log(`    CHANGELOG   ${gui.changelog.includes("✗") ? "❌ " : "✅ "}${gui.changelog}`)
-console.log(`    标题栏徽章  ${gui.badge.includes("✗") ? "❌ " : "✅ "}${gui.badge}`)
-console.log("")
-console.log(`  TUI v${tui.pkg}`)
-console.log(`    README 徽章  ${tui.readme.includes("✗") ? "❌ " : "✅ "}${tui.readme}`)
-console.log(`    CHANGELOG   ${tui.changelog.includes("✗") ? "❌ " : "✅ "}${tui.changelog}`)
-console.log("")
-
-const ok = !gui.readme.includes("✗") && !gui.changelog.includes("✗") && !gui.badge.includes("✗")
-  && !tui.readme.includes("✗") && !tui.changelog.includes("✗")
-
-if (ok) {
+if (checks.every((c) => c.ok)) {
   console.log("  ✅ 版本一致，可以发布")
 } else {
-  console.log("  ❌ 版本不一致！上面标记 ✗ 的需要补")
+  console.log("  ❌ 版本不一致！上面标记 ❌ 的需要补")
   process.exit(1)
 }

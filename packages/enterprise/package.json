@@ -1,6 +1,6 @@
 {
   "name": "@redcode-ai/enterprise",
-  "version": "1.15.10",
+  "version": "0.8.16",
   "private": true,
   "type": "module",
   "license": "MIT",

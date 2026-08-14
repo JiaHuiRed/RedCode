@@ -1,6 +1,6 @@
 {
   "name": "@redcode-ai/app",
-  "version": "1.15.10",
+  "version": "0.8.16",
   "description": "",
   "type": "module",
   "exports": {
