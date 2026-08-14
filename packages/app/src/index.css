@@ -330,6 +330,12 @@
 [data-app-frost] #session-chat-panel {
   background-color: transparent;
 }
+/* 260814 Red 新建会话页(无 params.id)的容器自带 bg-v2-background-bg-deep 实色底，
+   260813 那批只清了 session-root/session-chat-panel，漏了它 —— 表现是标题栏和文件树
+   都透出壁纸、中间会话区独独黑一块。这里补齐；无壁纸时该实色底照常生效。 */
+[data-app-frost] [data-component="session-new-design"] {
+  background-color: transparent;
+}
 /* 260623 Red tabs.css 用 #review-panel &[data-variant][data-orientation] 嵌套选择器，
    特异度高达 (1,4,0)，普通选择器覆盖不了，必须用 !important 打穿。 */
 [data-app-frost] #review-panel [data-component="tabs"],

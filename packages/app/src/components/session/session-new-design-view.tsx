@@ -38,6 +38,10 @@ export function NewSessionDesignView(props: { worktree: string; children: JSX.El
     navigate(`/${base64Encode(directory)}/session`)
   }
 
+  // 260814 Red 毛玻璃 B 遗漏点：下面这层的实色底盖住了整窗壁纸，新建会话页黑成一块
+  // （会话页 #session-root / #session-chat-panel 已于 260813 清底，独漏这个容器）。
+  // 清底交给 index.css 的 [data-app-frost] [data-component="session-new-design"] 规则，
+  // 无壁纸时这里的实色照常生效。
   return (
     <div data-component="session-new-design" class="relative size-full overflow-hidden bg-v2-background-bg-deep">
       <div class="absolute inset-x-0 top-[25.375%] flex justify-center px-6">
