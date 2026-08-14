@@ -1,5 +1,5 @@
 import crypto from "crypto"
-import { and, or } from "drizzle-orm"
+import { and, count, or } from "drizzle-orm"
 import { Database } from "@/storage/db"
 import { eq } from "drizzle-orm"
 import { ProjectTable } from "./project.sql"
@@ -23,6 +23,35 @@ import { serviceUse } from "@/effect/service-use"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 
 const log = Log.create({ service: "project" })
+
+// 260814 Red 同一个 worktree 可以在 project 表里有多行：upsert 按 id 查，而 id 随目录状态变
+// （有 git 且有提交取根提交哈希，否则回落 pathFallbackId）。目录先在无 git 时打开后 git init，
+// 或 .git 删过重建，都会让同一路径换 id 再插一行，旧行没人清。
+//
+// 列表按规范化路径去重，**保留会话最多的那行**——客户端按 id 导航，留错行等于把用户的历史
+// 会话藏起来。会话数并列时留 time_created 较新的（更可能是当前 id 派生结果）。
+// 决策与备选见 docs/notes/implemented/bug-fix/2026-08-14-duplicate-project-rows-per-worktree.md
+export function dedupeByWorktree<T extends { id: string; worktree: string; time_created?: number | null }>(
+  rows: readonly T[],
+  sessionCount: (id: string) => number,
+  resolve: (p: string) => string,
+): T[] {
+  const best = new Map<string, T>()
+  for (const row of rows) {
+    const key = resolve(row.worktree).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase()
+    const rival = best.get(key)
+    if (!rival) {
+      best.set(key, row)
+      continue
+    }
+    const mine = sessionCount(row.id)
+    const theirs = sessionCount(rival.id)
+    if (mine > theirs || (mine === theirs && (row.time_created ?? 0) > (rival.time_created ?? 0))) {
+      best.set(key, row)
+    }
+  }
+  return [...best.values()]
+}
 
 const ProjectVcs = Schema.Literal("git")
 
@@ -408,7 +437,16 @@ export const layer: Layer.Layer<
     })
 
     const list = Effect.fn("Project.list")(function* () {
-      return yield* db((d) => d.select().from(ProjectTable).all().map(fromRow))
+      const rows = yield* db((d) => d.select().from(ProjectTable).all())
+      const counts = yield* db((d) =>
+        d
+          .select({ projectID: SessionTable.project_id, total: count() })
+          .from(SessionTable)
+          .groupBy(SessionTable.project_id)
+          .all(),
+      )
+      const sessions = new Map<string, number>(counts.map((c) => [c.projectID, c.total]))
+      return dedupeByWorktree(rows, (id) => sessions.get(id) ?? 0, (p) => pathSvc.resolve(p)).map(fromRow)
     })
 
     const get = Effect.fn("Project.get")(function* (id: ProjectID) {
