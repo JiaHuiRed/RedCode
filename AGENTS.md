@@ -92,7 +92,10 @@ RedCode = OpenCode fork：
   6. 标题栏徽章 — 自动注入（`packages/desktop/package.json` → `__RC_VERSION__` 占位符），无需手改
   7. 自检脚本 — `script/check-version-consistency.ts`，build.bat 编译前校验（含全仓同号断言）
 - 文档（版本号/徽章/CHANGELOG/README）可直接改好；**push / 打包 release 需用户确认**。
-- **非平凡改动同 commit 附决策记录**：`docs/notes/`（规则与模板见其 README）。判据：一个月后会有人问"当时为什么这么做"就写。CHANGELOG 记 what，note 记 why。
+- **决策记录 `docs/notes/`，写与查双向**（规则与模板见其 README）：
+  - **写**：非平凡改动同 commit 附 note。判据：一个月后会有人问"当时为什么这么做"就写。CHANGELOG 记 what，note 记 why。
+  - **查**：动一个子系统前、或对"为什么这么设计"存疑时，先 `ls docs/notes/implemented/` 或按主题 grep——已否决的方案在 `rejected/`，别重新发明。
+  - **链**：note 落地时在对应代码头注释/CHANGELOG 条目回链 note 路径——notes 不进上下文，靠链接网被发现。
 
 # 项目指令
 

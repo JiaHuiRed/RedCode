@@ -1,4 +1,5 @@
 // 260814 Red 重复调用递进提醒（参考 DeepSeek Harness 的 repeat-tool-reminder 包）
+// 决策与备选取舍见 docs/notes/implemented/feature/2026-08-14-repeat-tool-reminder-soft-layer.md
 // 软层：同工具 + 同参连续调用达到阈值 → 把提醒贴在该次 tool output 尾部，纯建议不拦截。
 // 与 processor 里的 doom-loop 硬层（要求报错或同输出、触发即弹权限）互补：
 // 轮询类调用每次输出都在变，硬层永不触发，这里仍会数到 3 提醒模型别空转；
