@@ -18,12 +18,13 @@
 | 重复调用递进提醒软层(3/5/8,tool output 尾部注入,todo 工具对链透明,与 doom_loop 硬层互补) | `guard/repeat-tool-reminder` | `session/repeat-tool-reminder.ts` + processor 接线 | 89e85f3 |
 | 压缩摘要截断 head-only → head+tail 4:1(尾部错误栈/退出码保住) | `compaction/compaction-tool-result-pruner` | `message-v2.ts` `truncateToolOutput` | 17a7304a |
 | 提示词减脂:机制落地后删对应规则条(不再占固定前缀) | "行为规范写代码不写提示词"哲学 | deepseek.md 删 re-fetching 条 | 89e85f3 |
-| 测试纪律"证据面匹配 + 永不默认全量"入规 | 根 AGENTS.md "Run relevant checks locally" | AGENTS.md | 本批 |
-| 决策记录制度(notes) | `.agents/notes/`(1369 篇,四态,同 PR 附 note) | `docs/notes/` | 本批 |
+| 测试纪律"证据面匹配 + 永不默认全量"入规 | 根 AGENTS.md "Run relevant checks locally" | AGENTS.md | 9981d03e |
+| 决策记录制度(notes) | `.agents/notes/`(1369 篇,四态,同 PR 附 note) | `docs/notes/` | 9981d03e |
+| timeout-policy(工具自声明 timeoutMs + wrap 层 cooperative 拦截,首个声明方 repo_clone) | `guard/timeout-policy` | `tool/tool.ts` TimeoutError | 16f606b2 |
+| 插话/排队可选(`busy_enter`:steer=中途注入(原行为),queue=真排队;附 stall nudge 退役收敛三层空转提醒为两层) | `ui-input-trigger` 双模 | `config.ts` + `session/prompt.ts`,note ×2 | 0856fb9b |
 
 ## 第二批(小机制,高性价比)
 
-- [ ] **timeout-policy**:工具定义自声明 `timeoutMs`,执行层统一 cooperative 超时(信号通知不硬杀),超时产出结构化 `TOOL_TIMEOUT` 结果供模型自纠。参考 `guard/timeout-policy`。
 - [ ] **goal 语义三件套**进子代理派活提示词/机制:blocked 必须同一阻塞条件持续 ≥N 轮才准标;"难/不确定/还有活"明文不算 blocked;resume/fork 后自动缴械、需用户明说才续跑。对冲 V4 长程早停。参考 `goal/goal` + `goal/tool-goal` guidance。
 - [ ] **指令文件加载细节**:同目录 AGENTS.md/CLAUDE.md 内容去重(trim 后同文只渲染一次);变更/移除注入 "Updated/Removed instructions from";预算裁剪"先丢整个较宽文件再截最具体文件 + 可见通知"。参考 `context/agent-instructions`。
 - [ ] **翻 `dsh-trim-cot-leakage` skill**,对照 step-3.7 思维链泄漏三条防线补手法。
@@ -33,7 +34,8 @@
 - [ ] **动态上下文快照通道**:会变的内容不进 system prompt,走"supersedes 早先快照"的独立消息、只在变化时重发。先对照 prefix-debug.log 找该走此通道的断裂源。参考 `core/system-prompt` PromptContext + agent-loop runtime-context。
 - [ ] **hooks 声明式 subprocess 层**:kimi-hooks 研究的未竟半边;DSH `hooks/hook-protocol` + `hooks-claude-code` 是现成参考(7 个 hook 点映射、fail-open 不崩 boot、CC hooks.json 直接兼容可白嫖生态)。
 - [ ] **"Model Experience 三问"文档规矩**:凡改模型可见内容(提示词/注入/工具 schema),PR/commit 说明需回答 What the model sees / Token effect / KV Cache effect。
-- [ ] **UI 交互四件**(TUI/GUI 通用):Think 行流式期"最新非空行"滚动 summary(展开即停跟随);连续重试折叠为单行状态(倒计时锚定客户端接收时刻);压缩 checkpoint 原位折叠行、展开显示摘要与 token 估算;**繁忙时 Enter 行为可选"排队/插话"**(插话=消息注入进行中的轮次、下个工具结果旁即可见,长任务中途纠偏不打断——260814 用户实测 DSH Web UI 点名要)。参考 `client/ui-conversation` + `client/ui-input-trigger`。
+- [ ] **UI 交互三件**(TUI/GUI 通用):Think 行流式期"最新非空行"滚动 summary(展开即停跟随;与现有 reasoningTitle 粗体标题叠加,优先级:标题>最新行>时长);连续重试折叠为单行状态(倒计时锚定客户端接收时刻);压缩 checkpoint 原位折叠行、展开显示摘要与 token 估算。参考 `client/ui-conversation`。
+- [ ] **busy_enter 的 UI 收尾**:TUI/GUI 设置项开关(V1 只能手改 redcode.jsonc);steer 模式"已送达"徽标(QUEUED → 送达,需 user 消息 schema 字段 + sync 推送 + 双端渲染)。
 - [ ] **subagent-report 两档投递**:子代理回执 wakeup(唤醒父开新轮)/quiet(仅注入不触发请求)部署级策略,对照现有后台子代理通知机制。
 
 ## 记账(等痛点/等时机)
