@@ -1,6 +1,7 @@
 import type { Session } from "@redcode-ai/sdk/v2/client"
 import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore, produce } from "solid-js/store"
+import { Binary } from "@redcode-ai/core/util/binary"
 import { useQuery } from "@tanstack/solid-query"
 import { Spinner } from "@redcode-ai/ui/spinner"
 import { ContextMenu } from "@redcode-ai/ui/context-menu"
@@ -243,8 +244,29 @@ function HomeDesign() {
   }
 
   // 260710 Red 归档会话：标记 archived 时间戳，isRootVisibleSession 自动过滤
+  // 260814 Red 修「点了没反应」：原来既没传 directory 也没动本地 store。
+  //   1) session.update 是实例级路由，缺 directory 时服务端回落 process.cwd()
+  //      （workspace-routing.ts 的 defaultDirectory），于是 session.updated 事件
+  //      被发到那个目录的频道上，首页按 session.directory 分片的 store 永远收不到；
+  //   2) 即便事件到了也该先落本地——directory-sync 的 archive 就是「调 API + 立即
+  //      从 store 摘掉」两步，这里对齐它。
+  function dropFromStore(session: Session) {
+    const [, setStore] = sync.child(session.directory)
+    setStore(
+      produce((draft) => {
+        const match = Binary.search(draft.session, session.id, (s) => s.id)
+        if (match.found) draft.session.splice(match.index, 1)
+      }),
+    )
+  }
+
   async function archiveSession(session: Session) {
-    await globalSDK.client.session.update({ sessionID: session.id, time: { archived: Date.now() } })
+    await globalSDK.client.session.update({
+      sessionID: session.id,
+      directory: session.directory,
+      time: { archived: Date.now() },
+    })
+    dropFromStore(session)
   }
 
   // 260814 Red 取消归档：清掉 time_archived，会话立刻回到正常列表。
@@ -252,8 +274,14 @@ function HomeDesign() {
   //   （OpenAPI 生成器会把 payload 里的联合类型压平，null 传不过来）。
   //   取消后刷新归档列表，让它从"已归档"视图里消失。
   async function unarchiveSession(session: Session) {
-    await globalSDK.client.session.update({ sessionID: session.id, unarchive: true })
+    await globalSDK.client.session.update({
+      sessionID: session.id,
+      directory: session.directory,
+      unarchive: true,
+    })
     await archivedLoad.refetch()
+    // 让它重新出现在正常列表里（归档时已从 store 摘掉，事件回不来就得主动拉）
+    await sync.project.loadSessions(session.directory)
   }
 
   return (
