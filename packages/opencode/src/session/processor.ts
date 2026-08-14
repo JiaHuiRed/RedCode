@@ -33,6 +33,7 @@ import { Usage, type LLMEvent } from "@redcode-ai/llm"
 import { NgramDetector, RECOVERY_PROMPTS } from "./text-loop-detection"
 import * as XmlToolCall from "./xml-tool-call"
 import * as InstructionEcho from "./instruction-echo"
+import * as RepeatToolReminder from "./repeat-tool-reminder"
 
 const DOOM_LOOP_THRESHOLD = 3
 const log = Log.create({ service: "session.processor" })
@@ -591,6 +592,25 @@ export const layer = Layer.effect(
                   ? rawOutput.output
                   : `${rawOutput.output}\n\n[${omitted} image${omitted === 1 ? "" : "s"} omitted: could not be resized below the image size limit.]`,
               attachments: attachments.length ? attachments : undefined,
+            }
+            // 260814 Red 重复调用软层提醒（阈值 3/5/8 递进，纯建议不拦截）：同工具+同参
+            // 连续调用即计数，不要求报错/同输出——轮询类只会走到这里，真空转另有上面
+            // tool-call case 的 doom_loop 硬层弹窗兜底。贴 output 尾部，不伪装 user 角色。
+            // 取舍与口径详见 repeat-tool-reminder.ts。
+            if (toolCall && !RepeatToolReminder.EXCLUDED_TOOLS.has(toolCall.part.tool)) {
+              const inputJSON = JSON.stringify(toolCall.part.state.input)
+              const priorParts = MessageV2.recentToolParts(ctx.sessionID, 24).filter(
+                (part) => part.id !== toolCall.part.id,
+              )
+              const reminder = RepeatToolReminder.reminderFor(
+                toolCall.part.tool,
+                inputJSON,
+                RepeatToolReminder.chainLength(priorParts, toolCall.part.tool, inputJSON) + 1,
+              )
+              if (reminder) {
+                slog.info("repeat.reminder", { sessionID: ctx.sessionID, tool: toolCall.part.tool })
+                output.output = `${output.output}\n\n${reminder}`
+              }
             }
             // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
             if (flags.experimentalEventSystem) {

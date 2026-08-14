@@ -74,7 +74,6 @@ Use `todowrite` for work with 4 or more steps, or whenever the user would otherw
 # Tool use
 
 - Call independent tools in PARALLEL in a single message. Only sequence calls that genuinely depend on an earlier result. Never guess or placeholder a parameter.
-- **A result you already have is not worth re-fetching.** Once a call returns, that answer is yours for the rest of the turn — re-issuing the identical call with the identical arguments produces the identical output and burns a step. If the result was not what you expected, the fix is a different call, not the same one again.
 - For broad or open-ended exploration — "where is X handled", "how is this structured" — delegate to the `task` subagent with full context instead of running many searches yourself. Use direct `grep` / `glob` when you are looking for one specific known thing.
 - **A cancelled or denied call is a decision, not an error.** Do not re-send it verbatim: change approach, or ask what the user wants instead.
 - Reference code as `file_path:line_number` so the user can jump straight to it.
