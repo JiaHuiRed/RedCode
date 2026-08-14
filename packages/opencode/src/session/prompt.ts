@@ -1305,8 +1305,8 @@ export const layer = Layer.effect(
             throw error
           }
           // 260811 cc audit Y2：此前默认 Infinity 且 isLastStep 只注入一段提示词、不中断——
-          // "每次都成功但原地打转"的循环可以烧 token 烧到手动 abort（stall nudge 与
-          // doom_loop 都只管"重复相同调用"，管不住不重复的打转）。默认给硬顶：
+          // "每次都成功但原地打转"的循环可以烧 token 烧到手动 abort（repeat-tool-reminder
+          // 软层与 doom_loop 都只管"重复相同调用"，管不住不重复的打转）。默认给硬顶：
           // step === maxSteps 时先按老路注入 MAX_STEPS 让模型收尾，仍不收就强制落地。
           const maxSteps = agent.steps ?? DEFAULT_MAX_STEPS
           const isLastStep = step >= maxSteps

@@ -48,7 +48,8 @@ export function schema<S extends EffectSchema.Decoder<unknown, never>>(
     const detail = `Unrecognized key${extra.length === 1 ? "" : "s"}: ${extra.join(", ")}`
     throw new InvalidError({
       path: source,
-      // TUI 与 GUI 版本号独立演进却共用同一份全局配置，新版加的键会打死旧版的另一端，
+      // TUI 与 GUI 是两个独立编译的二进制却共用同一份全局配置（260814 版本线合并后
+      // 版本号相同，但两端仍可能不同时重编），新版加的键会打死旧版的另一端，
       // 提示里点出这条，省得下次又从头查
       message: `${source}: ${detail}. If this key was added by a newer client, that client and this one are reading the same config file — upgrade this one or remove the key.`,
       issues: [
