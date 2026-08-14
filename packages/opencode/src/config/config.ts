@@ -198,6 +198,11 @@ export const Info = Schema.Struct({
   username: Schema.optional(Schema.String).annotate({
     description: "Custom username to display in conversations instead of the machine hostname",
   }),
+  // 260814 Red 繁忙时新消息的送达策略(参考 DSH ui-input-trigger 的排队/插话双模)
+  busy_enter: Schema.optional(Schema.Literals(["steer", "queue"])).annotate({
+    description:
+      "How a message sent while the agent is busy reaches the model. 'steer' (default): injected into the running turn at the next step, so you can redirect work in flight. 'queue': hidden from the running turn and processed as the input of a fresh turn after the current one finishes.",
+  }),
   mode: Schema.optional(
     Schema.StructWithRest(
       Schema.Struct({

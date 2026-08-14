@@ -33,7 +33,7 @@
 - [ ] **动态上下文快照通道**:会变的内容不进 system prompt,走"supersedes 早先快照"的独立消息、只在变化时重发。先对照 prefix-debug.log 找该走此通道的断裂源。参考 `core/system-prompt` PromptContext + agent-loop runtime-context。
 - [ ] **hooks 声明式 subprocess 层**:kimi-hooks 研究的未竟半边;DSH `hooks/hook-protocol` + `hooks-claude-code` 是现成参考(7 个 hook 点映射、fail-open 不崩 boot、CC hooks.json 直接兼容可白嫖生态)。
 - [ ] **"Model Experience 三问"文档规矩**:凡改模型可见内容(提示词/注入/工具 schema),PR/commit 说明需回答 What the model sees / Token effect / KV Cache effect。
-- [ ] **UI 交互三件**(TUI/GUI 通用):Think 行流式期"最新非空行"滚动 summary(展开即停跟随);连续重试折叠为单行状态(倒计时锚定客户端接收时刻);压缩 checkpoint 原位折叠行、展开显示摘要与 token 估算。参考 `client/ui-conversation` README。
+- [ ] **UI 交互四件**(TUI/GUI 通用):Think 行流式期"最新非空行"滚动 summary(展开即停跟随);连续重试折叠为单行状态(倒计时锚定客户端接收时刻);压缩 checkpoint 原位折叠行、展开显示摘要与 token 估算;**繁忙时 Enter 行为可选"排队/插话"**(插话=消息注入进行中的轮次、下个工具结果旁即可见,长任务中途纠偏不打断——260814 用户实测 DSH Web UI 点名要)。参考 `client/ui-conversation` + `client/ui-input-trigger`。
 - [ ] **subagent-report 两档投递**:子代理回执 wakeup(唤醒父开新轮)/quiet(仅注入不触发请求)部署级策略,对照现有后台子代理通知机制。
 
 ## 记账(等痛点/等时机)

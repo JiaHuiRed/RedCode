@@ -1148,12 +1148,13 @@ export const layer = Layer.effect(
         // 和「回合中途新到的」—— 只有后者才该提醒，且只提醒一次（详见下方注入处的注释）。
         let turnStartUserID: MessageID | undefined
         const remindedUserIDs = new Set<MessageID>()
-       // 260803 Red 连续相同工具调用 >= 8 次触发 stall nudge（与 Reasonix todo stall 8 轮对齐）
-       const STALL_NUDGE_THRESHOLD = 8
-       // 260803 Red stall nudge：本轮工具调用连续重复（无报错空转）检测。
-       // 与 DOOM_LOOP（连续 3 次相同 + 至少一个报错 → 弹窗）互补：这里管"每次都成功但原地打转"。
-       // 每回合最多注入一次（防 260731 role:user 注入教训重演）。
-       let stallNudged = false
+        // 260814 Red stall nudge（260803）退役：同指纹口径（tool+stringify(input)）的空转检测
+        // 已由 repeat-tool-reminder 软层接管（3/5/8 递进、贴 result 尾部、todo 透明、跨轮），
+        // 8 阈值双响只会文案重复。真空转仍有 doom_loop 硬层弹窗兜底。决策见 docs/notes/。
+        // 260814 Red 繁忙时新消息送达策略：steer(默认)=下个 step 以 reminder 注入进行中的轮次；
+        // queue=对本轮隐藏，轮末由「lastUser.id > lastAssistant.id 则不 break」的既有续跑
+        // 边界自然开新轮消费。详见 docs/notes/ 的 busy-enter note。
+        const busyEnter = (yield* config.get()).busy_enter ?? "steer"
 
         while (true) {
           yield* status.set(sessionID, { type: "busy" })
@@ -1439,8 +1440,14 @@ export const layer = Layer.effect(
             // 2) 没有去重。同一条消息即使确实是中途新到的，也只该提醒一次 —— 它本身就在
             //    msgs 里，模型看得到，反复强调只会让它以为又来了一条新指令。
             if (turnStartUserID === undefined) turnStartUserID = lastUser.id
+            // 260814 Red queue 模式续跑边界：上一轮 assistant 已完成而 lastUser 更新
+            // （排队消息触发续跑，没走 break），新轮起点前移——排队消息从"对本轮隐藏"
+            // 转为"新轮的开轮输入"。steer 模式不动这个边界（260729 修过的雷区）。
+            else if (busyEnter === "queue" && lastAssistant?.finish && lastUser.id > lastAssistant.id) {
+              turnStartUserID = lastUser.id
+            }
             let userReminderText: string | undefined
-            if (step > 1) {
+            if (busyEnter === "steer" && step > 1) {
               const parts: string[] = []
               for (const m of msgs) {
                 if (m.info.role !== "user" || m.info.id <= turnStartUserID) continue
@@ -1457,30 +1464,6 @@ export const layer = Layer.effect(
                 userReminderText = `<system-reminder>\nThe user sent the following message:\n${parts.join("\n")}\n\nPlease address this message and continue with your tasks.\n</system-reminder>`
               }
             }
-
-           // 260803 Red stall nudge：本轮（turnStartUserID 之后）的 assistant 消息里，从后往前数
-           // 连续相同的工具调用（fp = tool + JSON.stringify(input)）。遇到不同的 fp 就停止——
-           // 说明 agent 换过方向，不算空转。>= STALL_NUDGE_THRESHOLD 次则注入 nudge 提醒换思路。
-           let stallNudgeText: string | undefined
-           if (step > 1 && !stallNudged) {
-             let lastFp: string | undefined
-             let repeats = 0
-             outer: for (let i = msgs.length - 1; i >= 0; i--) {
-               const m = msgs[i]
-               if (m.info.role !== "assistant" || m.info.id <= turnStartUserID) continue
-               for (const p of [...m.parts].reverse()) {
-                if (p.type !== "tool" || p.state.status === "pending") continue
-                const fp = `${p.tool}\0${JSON.stringify(p.state.input ?? null)}`
-                 if (lastFp === undefined) lastFp = fp
-                 else if (fp !== lastFp) break outer
-                 repeats++
-               }
-             }
-             if (repeats >= STALL_NUDGE_THRESHOLD) {
-               stallNudgeText = `<system-reminder>\nThe last ${repeats} tool calls are identical and made no progress. Reassess your approach instead of repeating the same tool call.\n</system-reminder>`
-               stallNudged = true
-             }
-           }
 
             // 260731 Red 可见思考的语言/称呼约束注入已撤除。它是 07-29/07-30 为了修 step-3.7-flash 的通道纪律加的，
             // 结果造出了比原问题严重得多的三个新毛病，实测于 ses_04916ea36ffe（step-3.7-flash）：
@@ -1540,11 +1523,18 @@ export const layer = Layer.effect(
             const cachedSystem = _caches.system?.sessionID === sessionID && _caches.system.modelKey === modelKey
               ? _caches.system
               : undefined
+            // 260814 Red queue 模式：本轮中途新到的 user 消息对模型隐藏（只从模型可见消息里
+            // 滤掉整条，不动 msgs 本体——compaction/reminder/msgPin 仍按全量算），留到轮末
+            // 续跑边界作为新轮输入。steer 模式恒等于 msgs。
+            const visibleMsgs =
+              busyEnter === "queue" && turnStartUserID !== undefined
+                ? msgs.filter((m) => !(m.info.role === "user" && m.info.id > turnStartUserID!))
+                : msgs
             const [skills, env, instructions, modelMsgs] = yield* Effect.all([
               cachedSystem ? Effect.succeed(cachedSystem.skills) : sys.skills(agent),
               cachedSystem ? Effect.succeed(cachedSystem.env) : sys.environment(model),
               cachedSystem ? Effect.succeed(cachedSystem.instructions) : instruction.system().pipe(Effect.orDie),
-              MessageV2.toModelMessagesEffect(msgs, model),
+              MessageV2.toModelMessagesEffect(visibleMsgs, model),
             ])
             if (!cachedSystem) {
               _caches.system = { sessionID, modelKey, skills, env, instructions }
@@ -1724,8 +1714,7 @@ export const layer = Layer.effect(
                 ...(userReminderText ? [{ role: "user" as const, content: userReminderText }] : []),
                 // 260710 Red loop recovery prompt 注入（跨 step 重复检测触发）
                 ...(loopRecoveryPrompt ? [{ role: "user" as const, content: loopRecoveryPrompt }] : []),
-                // 260803 Red stall nudge 注入（连续相同工具调用空转提醒，每回合最多一次）
-                ...(stallNudgeText ? [{ role: "user" as const, content: stallNudgeText }] : []),
+                // 260814 Red stall nudge 注入已退役——repeat-tool-reminder 软层接管（见 runLoop 顶部注释）
                 // 260731 Red 原本这里还有第三条注入：每步一条 <reasoning-language> 的 user turn。
                 // 已撤除，原因见本文件上方「可见思考的语言/称呼约束注入已撤除」那段注释。
                 ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : []),
