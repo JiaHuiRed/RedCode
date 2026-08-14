@@ -454,6 +454,7 @@ export type AssistantMessage = {
   role: "assistant"
   time: {
     created: number
+    firstChunk?: number
     completed?: number
   }
   error?:
@@ -742,6 +743,8 @@ export type CompactionPart = {
   auto: boolean
   overflow?: boolean
   tail_start_id?: string
+  tokens_before?: number
+  tokens_after?: number
 }
 
 export type Part =
@@ -1257,6 +1260,7 @@ export type Config = {
   small_model?: string
   default_agent?: string
   username?: string
+  busy_enter?: "steer" | "queue"
   mode?: {
     build?: AgentConfig
     plan?: AgentConfig

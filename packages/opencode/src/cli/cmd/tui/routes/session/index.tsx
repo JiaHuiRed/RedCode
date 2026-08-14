@@ -606,6 +606,31 @@ export function Session() {
       },
     },
     {
+      // 260814 Red busy_enter 切换:steer=插话(中途消息下个 step 送达)/queue=排队(等本轮结束)
+      // 写回走 PATCH /global/config(patchJsonc 只动这一个键),changed 时 server dispose
+      // 全部 instance 强制重载——立即生效,无需重启。详见 MANUAL 7.3 与 docs/notes/ 的 busy-enter note。
+      title: `繁忙时消息: ${(sync.data.config.busy_enter ?? "steer") === "steer" ? "插话(立即送达)" : "排队(等本轮结束)"} → 切换`,
+      value: "config.busyEnter",
+      category: "Config",
+      slash: {
+        name: "busy-enter",
+      },
+      run: async () => {
+        const current = sync.data.config.busy_enter ?? "steer"
+        const next = current === "steer" ? ("queue" as const) : ("steer" as const)
+        await sdk.client.config.update({ config: { busy_enter: next } })
+        toast.show({
+          message:
+            next === "queue"
+              ? "已切换为排队:繁忙时发的消息等本轮结束后作为新一轮输入"
+              : "已切换为插话:繁忙时发的消息在下个工具调用后立即送达模型",
+          variant: "info",
+          duration: 4000,
+        })
+        dialog.clear()
+      },
+    },
+    {
       title: "Unshare session",
       value: "session.unshare",
       category: "Session",
