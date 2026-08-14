@@ -3,7 +3,7 @@ import { mergeDeep, unique } from "remeda"
 import type { JSONSchema7 } from "@ai-sdk/provider"
 import type * as Provider from "./provider"
 import type * as ModelsDev from "@redcode-ai/core/models-dev"
-import { existsSync, writeFileSync } from "fs"
+import { existsSync, readdirSync, statSync, unlinkSync, writeFileSync } from "fs"
 import { createHash } from "crypto"
 import { join } from "path"
 import { tmpdir } from "os"
@@ -447,6 +447,26 @@ function unwrapV7Payload(value: unknown): unknown {
   return value
 }
 
+// vision 临时文件只写不删（同图同路径靠 existsSync 去重），temp 目录会缓慢堆积截图。
+// 首次落盘时惰性清一次 7 天前的旧文件；正在活跃引用的文件必然是近期写入，不会误删。
+let visionTempSwept = false
+const VISION_TEMP_TTL_MS = 7 * 24 * 60 * 60 * 1000
+function sweepVisionTemp() {
+  if (visionTempSwept) return
+  visionTempSwept = true
+  try {
+    const dir = tmpdir()
+    const cutoff = Date.now() - VISION_TEMP_TTL_MS
+    for (const name of readdirSync(dir)) {
+      if (!name.startsWith("redcode-vision-")) continue
+      const filepath = join(dir, name)
+      try {
+        if (statSync(filepath).mtimeMs < cutoff) unlinkSync(filepath)
+      } catch {}
+    }
+  } catch {}
+}
+
 /** Save an unsupported media part to a temp file so a subagent can read it later. */
 function savePartToTemp(part: unknown): string | null {
   const p = part as Record<string, unknown>
@@ -505,6 +525,7 @@ function savePartToTemp(part: unknown): string | null {
   //
   // 改用内容哈希后：同一张图恒定映射到同一路径，请求体逐字节稳定，缓存前缀得以延伸。
   // 顺带去掉了每轮往 temp 目录扔一个新文件的垃圾。
+  sweepVisionTemp()
   const digest = createHash("sha256").update(buffer).digest("hex").slice(0, 16)
   const filepath = join(tmpdir(), `redcode-vision-${digest}.${ext}`)
   try {
