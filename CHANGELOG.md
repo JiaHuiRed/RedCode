@@ -8,6 +8,31 @@
 
 ---
 
+### [0.8.17] - 2026-08-14
+
+> DSH 采纳第一批落地：重复调用递进提醒软层、工具级 cooperative 超时、繁忙时插话/排队可选（stall nudge 随之退役）、压缩摘要截断保尾；决策记录制度（`docs/notes/`）与采纳路线图（`docs/dsh-adoption-plan.md`）建制。
+
+#### 新增
+
+- **重复调用递进提醒软层**（`session/repeat-tool-reminder.ts`、`session/processor.ts`）：同工具+同参连续调用 3/5/8 次递进把 `[System notice]` 提醒贴进该次 tool output 尾部（3 轻提醒，5/8 详细版带参数预览 500 字符头截断）；`todowrite`/`todoread` 对链透明防洗计数，错误调用也计数，running 分片跳过防并行双计。与 doom_loop 硬层互补：轮询类只触软层，真空转硬层弹权限窗兜底。注入不伪装 user 角色、append-only 不破前缀缓存。[why](docs/notes/implemented/feature/2026-08-14-repeat-tool-reminder-soft-layer.md)
+- **工具级 cooperative 超时**（`tool/tool.ts`、`tool/repo_clone.ts`）：工具定义可自声明 `timeoutMs`（策略元数据，不进模型 schema），wrap 执行层统一拦截，超时产出结构化 `TimeoutError` 供模型自纠——整轮不再被一个挂死的工具吊死；协作式不硬杀。首个声明方 `repo_clone`（5 分钟），websearch/webfetch 已有超时不动。
+- **繁忙时消息送达策略可选**（`config.ts` 新增顶层 `busy_enter`、`session/prompt.ts`）：`steer`（默认，原行为）＝中途消息下个 step 注入进行中轮次，可在途纠偏；`queue`＝对本轮隐藏、轮末自动作为新轮输入——真排队自此存在。[why](docs/notes/implemented/feature/2026-08-14-busy-enter-steer-or-queue.md)
+
+#### 变更
+
+- **stall nudge 退役**（`session/prompt.ts`）：与软层同指纹口径三层并存必双响，收敛为软层劝+硬层拦两层。[why](docs/notes/implemented/simplification/2026-08-14-stall-nudge-retired.md)
+- **压缩摘要的工具输出截断 head-only → head+tail 4:1**（`session/message-v2.ts`）：2000 上限改 1600+400，长输出尾部的错误栈/退出码/结论对摘要器可见；主请求路径不传参、行为不变。
+- **deepseek.md 提示词一进一出**：新增"API 行为去查不凭记忆"（V4-Pro-0813 独立评测知识推理仍差一档）；删除"result not worth re-fetching"条——重复调用防护已由机制接管，不再占每请求固定前缀。
+
+#### 文档与制度
+
+- **决策记录制度落地**（`docs/notes/`，引自 DSH `.agents/notes/` 四态实践）：非平凡改动同 commit 附 note，写/查/链三向规则入 AGENTS.md；notes 记 why、CHANGELOG 记 what、agent memory 记协作层。
+- **DSH 采纳路线图**（`docs/dsh-adoption-plan.md`）：权威底本，已落地/二三批/记账区分层，保留特色明确不搬清单（毛玻璃/中文/多模型/Effect）。
+- **测试纪律入规**（AGENTS.md）：证据面匹配、永不默认全量（260810 事故制度化）；带包脚本超时 `--timeout 30000`（260808 在案 260814 复踩后补）。
+- **升版流程适配单一版本线**：`bump-version` skill 重写（不问 scope、15 包同号、合并线区域插条目、体检必跑）。
+
+---
+
 ### [0.8.16] - 2026-08-14（版本线合并）
 
 > 维护方式调整：TUI 与 GUI 不再分线，全仓统一单一版本号。GUI 从 0.7.20 跳版对齐 0.8.16（纯版本号变更，无功能改动）；内部包（`@redcode-ai/*`、sdk、vscode 扩展）的 fork 遗留版本号 1.15.x 一并对齐，该字段仅作标签（互引均为 `workspace:*`），Sentry release 与 GUI 自报版本自此跟随真实版本。README 徽章合并为单一"版本"徽章，`check-version-consistency.ts` 改为单线校验。
