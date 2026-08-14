@@ -255,9 +255,10 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
   const [filter, setFilter] = createSignal("")
   let list: ListRef | undefined
 
-  const missingBase = createMemo(() => !(sync.data.path.home || sync.data.path.directory))
+  // 只有 directory 没有 home 时也要补拉——否则起始位置落在项目目录、路径显示不成 ~/…
+  const missingHome = createMemo(() => !sync.data.path.home)
   const [fallbackPath] = createResource(
-    () => (missingBase() ? true : undefined),
+    () => (missingHome() ? true : undefined),
     async () => {
       return sdk.client.path
         .get()

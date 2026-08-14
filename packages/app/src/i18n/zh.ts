@@ -321,6 +321,9 @@ export const dict = {
   "dialog.mcp.description": "已启用 {{enabled}} / {{total}}",
   "dialog.mcp.empty": "未配置 MCPs",
   "dialog.mcp.toggleFailed": "MCP 切换失败",
+  "dialog.usageExceeded.dontShowAgain": "不再提示",
+  "titlebar.update.button": "更新",
+  "titlebar.update.tooltip": "更新到 {{version}}",
 
   "dialog.lsp.empty": "已从文件类型自动检测到 LSPs",
 
@@ -397,7 +400,7 @@ export const dict = {
   "context.stats.outputTokens": "输出 token",
   "context.stats.reasoningTokens": "推理 token",
   "context.stats.sessionID": "会话 ID",
-  "context.stats.cacheTokens": "缓存令牌（读/写）",
+  "context.stats.cacheTokens": "缓存 token（读/写）",
   "context.stats.turnCacheHit": "单次命中率",
   "context.stats.userMessages": "用户消息",
   "context.stats.assistantMessages": "助手消息",

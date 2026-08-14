@@ -421,7 +421,7 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
       category: "tab",
       title: "",
       keybind: `mod+${i + 1}`,
-      disabled: layout.projects.list().length <= i,
+      disabled: tabsStore.length <= i,
       hidden: true,
       onSelect: () => {
         const tab = tabsStore[i]
@@ -544,9 +544,9 @@ function TitlebarUpdatePill(props: { update?: TitlebarUpdate }) {
         onClick={() => props.update?.install()}
         disabled={props.update?.installing()}
         aria-label={language.t("toast.update.action.installRestart")}
-        title={version() ? `Update ${version()}` : undefined}
+        title={version() ? language.t("titlebar.update.tooltip", { version: version() ?? "" }) : undefined}
       >
-        Update
+        {language.t("titlebar.update.button")}
       </button>
     </Show>
   )

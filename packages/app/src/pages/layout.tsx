@@ -66,6 +66,7 @@ import {
   sortedRootSessions,
 } from "./layout/helpers"
 import { colorSchemeKey, colorSchemeOrder } from "./layout/theme-constants"
+import { runUpdateAndRestart } from "./layout/update"
 import {
   collectNewSessionDeepLinks,
   collectOpenProjectDeepLinks,
@@ -155,11 +156,7 @@ export default function Layout(props: ParentProps) {
     return updateQuery.data.version ?? ""
   }
   const installUpdate = () => {
-    if (!platform.updateAndRestart) return
-    setUpdate("installing", true)
-    void platform.updateAndRestart().catch(() => {
-      setUpdate("installing", false)
-    })
+    runUpdateAndRestart(platform.updateAndRestart, (installing) => setUpdate("installing", installing))
   }
   const titlebarUpdate: TitlebarUpdate = {
     version: updateVersion,

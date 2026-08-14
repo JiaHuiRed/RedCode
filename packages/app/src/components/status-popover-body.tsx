@@ -16,7 +16,7 @@ import { normalizeServerUrl, ServerConnection, useServer } from "@/context/serve
 import { useSync } from "@/context/sync"
 import { useCheckServerHealth, type ServerHealth } from "@/utils/server-health"
 import { useQueryOptions } from "@/context/server-sync"
-import type { PathKey } from "@/utils/path-key"
+import { pathKey } from "@/utils/path-key"
 
 const pollMs = 10_000
 
@@ -155,7 +155,8 @@ const useMcpToggleMutation = () => {
       }
       await sdk.client.mcp.connect({ name })
     },
-    onSuccess: () => queryClient.refetchQueries(queryOptions.mcp(sync.directory as PathKey)),
+    // 同 dialog-select-mcp：原始路径必须过 pathKey，与写入侧 queryKey 对齐
+    onSuccess: () => queryClient.refetchQueries(queryOptions.mcp(pathKey(sync.directory))),
     onError: (err) => {
       showToast({
         variant: "error",

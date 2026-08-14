@@ -304,6 +304,9 @@ export const dict = {
   "dialog.mcp.description": "{{enabled}} of {{total}} enabled",
   "dialog.mcp.empty": "No MCPs configured",
   "dialog.mcp.toggleFailed": "Failed to toggle MCP",
+  "dialog.usageExceeded.dontShowAgain": "Don't show again",
+  "titlebar.update.button": "Update",
+  "titlebar.update.tooltip": "Update {{version}}",
 
   "dialog.lsp.empty": "LSPs auto-detected from file types",
   "dialog.plugins.empty": "Plugins configured in RedCode.json",
