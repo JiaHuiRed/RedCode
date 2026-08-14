@@ -113,8 +113,15 @@
   color: var(--v2-text-text-base);
 }
 
-[data-component="icon-button-v2"][data-variant="ghost"]:is(:hover, [data-state="hover"]):not(:disabled) {
+[data-component="icon-button-v2"][data-variant="ghost"]:is(:hover, [data-state="hover"]):not(:disabled):not(
+    [data-expanded]
+  ) {
   background-color: var(--v2-overlay-simple-overlay-hover);
+}
+
+/* 下拉展开时显示按下态而非悬停态 */
+[data-component="icon-button-v2"][data-variant="ghost"]:where([data-expanded]):not(:disabled) {
+  background-color: var(--v2-overlay-simple-overlay-pressed);
 }
 
 [data-component="icon-button-v2"][data-variant="ghost"]:is(:active, [data-state="pressed"]):not(:disabled) {
@@ -132,8 +139,16 @@
   color: var(--v2-icon-icon-muted);
 }
 
-[data-component="icon-button-v2"][data-variant="ghost-muted"]:is(:hover, [data-state="hover"]):not(:disabled) {
+[data-component="icon-button-v2"][data-variant="ghost-muted"]:is(:hover, [data-state="hover"]):not(:disabled):not(
+    [data-expanded]
+  ) {
   background-color: var(--v2-overlay-simple-overlay-hover);
+}
+
+/* 下拉展开时显示按下态而非悬停态 */
+[data-component="icon-button-v2"][data-variant="ghost-muted"]:where([data-expanded]):not(:disabled) {
+  background-color: var(--v2-overlay-simple-overlay-pressed);
+  color: var(--v2-icon-icon-base);
 }
 
 [data-component="icon-button-v2"][data-variant="ghost-muted"]:is(:active, [data-state="pressed"]):not(:disabled) {

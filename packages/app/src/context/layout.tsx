@@ -15,7 +15,9 @@ import { createPathHelpers } from "./file/path"
 
 const AVATAR_COLOR_KEYS = ["pink", "mint", "orange", "purple", "cyan", "lime"] as const
 const DEFAULT_SIDEBAR_WIDTH = 344
-const DEFAULT_FILE_TREE_WIDTH = 200
+// 200 会裁掉文件树标签条，最小 240；读取时钳制而非覆写持久化值
+export const FILE_TREE_WIDTH_MIN = 240
+const DEFAULT_FILE_TREE_WIDTH = FILE_TREE_WIDTH_MIN
 const DEFAULT_SESSION_WIDTH = 600
 const DEFAULT_TERMINAL_HEIGHT = 280
 export type AvatarColorKey = (typeof AVATAR_COLOR_KEYS)[number]
@@ -639,7 +641,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       },
       fileTree: {
         opened: createMemo(() => store.fileTree?.opened ?? true),
-        width: createMemo(() => store.fileTree?.width ?? DEFAULT_FILE_TREE_WIDTH),
+        width: createMemo(() => Math.max(FILE_TREE_WIDTH_MIN, store.fileTree?.width ?? DEFAULT_FILE_TREE_WIDTH)),
         tab: createMemo(() => store.fileTree?.tab ?? "changes"),
         setTab(tab: "changes" | "all") {
           if (!store.fileTree) {

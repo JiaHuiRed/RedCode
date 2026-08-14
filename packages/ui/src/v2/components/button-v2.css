@@ -133,11 +133,18 @@
   color: var(--v2-text-text-base);
 }
 
-[data-component="button-v2"][data-variant="ghost"]:is(:hover, [data-state="hover"]):not(:disabled) {
+[data-component="button-v2"][data-variant="ghost"]:is(:hover, [data-state="hover"]):not(:disabled):not(
+    [data-expanded]
+  ) {
   background-color: var(--v2-overlay-simple-overlay-hover);
 }
 
 [data-component="button-v2"][data-variant="ghost"]:is(:active, [data-state="pressed"]):not(:disabled) {
+  background-color: var(--v2-overlay-simple-overlay-pressed);
+}
+
+/* 下拉展开时显示按下态而非悬停态，展开与悬停在视觉上可区分 */
+[data-component="button-v2"][data-variant="ghost"]:where([data-expanded]):not(:disabled) {
   background-color: var(--v2-overlay-simple-overlay-pressed);
 }
 
