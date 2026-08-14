@@ -1,5 +1,13 @@
 # 上游改动采摘清单 · opencode 1.15.10 → 1.18.18
 
+> **落地记录（2026-08-14）**：§8 的第一批 16 项与第二批全部条目已在本分支落地
+> （提交 `d29e99f2..f0750b4e`，共 10 个 fix 提交），全仓 typecheck 12/12、相关单测全绿。
+> **明确跳过**：§3A-A1 compaction 行为修复（常量/tail_turns/提示词重写）——用户指示排除；
+> 其中 `prune` 默认值只改了说反的文档与 schema 描述，未碰行为。
+> **待做**：§8 第三批（需决策/验证的条目）+ §3A-A5 远程 skill 缓存（对照重写量较大，归入第三批节奏）。
+> 两处既有环境问题记录在案：`session-composer-state.test.ts` 在 HEAD 单跑即因 router client-only 报错；
+> `test/tool/task.test.ts` 的 description 类用例超时 flake（主仓同现）。
+
 > 产出日期：2026-08-14 ｜ 上游镜像：`D:\AI\opencode`（HEAD = `d8bf79225`，`packages/opencode/package.json` 版本 1.18.18）
 > 比对基准：上游 tag `v1.15.10` 的文件树 vs RedCode `dev` HEAD（`d36b8f3`）的文件树，按 git blob SHA 逐文件比对
 > 本文只做甄别，不含任何代码改动。
