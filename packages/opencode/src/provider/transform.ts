@@ -716,6 +716,32 @@ function glmSupportsEffort(...ids: (string | undefined)[]): boolean {
 
 const effortVariants = (efforts: string[]) =>
   Object.fromEntries(efforts.map((effort) => [effort, { reasoningEffort: effort }]))
+
+// 260814 Red 推理档位数据驱动（决策：数据打底、硬编码表覆盖）。
+// models.dev 的 reasoning_options 只在 variants() 里"通用猜测"的兜底路径上生效：
+// openai-compatible 系尾部的 WIDELY_SUPPORTED_EFFORTS 猜测、未知 npm 的空表。
+// 所有实测校准的特判（GLM/KIMI/GROK/DeepSeek/排除名单）在此之前就已返回，
+// 数据永远压不过它们——models.dev 错了有表兜着，新模型没进表时数据顶上。
+//
+// 只消化 effort 型（这些落点的参数形状全是 {reasoningEffort}，与档位值无关）；
+// budget_tokens/toggle 型在这些 provider 上没有已知的参数形状，返回 undefined 退回硬编码。
+// 字段是 Unknown 透传（外部数据形态会演化），所以逐层运行时收窄，认不出就放弃。
+function dataEffortVariants(model: Provider.Model): Record<string, Record<string, any>> | undefined {
+  const options = model.reasoningOptions
+  if (!Array.isArray(options)) return undefined
+  const effort = options.find(
+    (o) => typeof o === "object" && o !== null && !Array.isArray(o) && (o as Record<string, unknown>).type === "effort",
+  ) as { values?: unknown } | undefined
+  const values = effort?.values
+  if (!Array.isArray(values)) return undefined
+  const efforts = values.flatMap((v) => {
+    if (v === null) return ["none"]
+    if (typeof v === "string" && v.length > 0) return [v]
+    return []
+  })
+  if (efforts.length === 0) return undefined
+  return effortVariants([...new Set(efforts)])
+}
 const OPENAI_EFFORTS = ["none", "minimal", ...WIDELY_SUPPORTED_EFFORTS, "xhigh"]
 const OPENAI_GPT5_1_EFFORTS = ["none", ...WIDELY_SUPPORTED_EFFORTS]
 const OPENAI_GPT5_2_PLUS_EFFORTS = [...OPENAI_GPT5_1_EFFORTS, "xhigh"]
@@ -1015,7 +1041,8 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
           model.providerID === "sensenova" ? [...WIDELY_SUPPORTED_EFFORTS, "xhigh"] : ["low", "high", "max"],
         )
       }
-      return effortVariants(WIDELY_SUPPORTED_EFFORTS)
+      // 到这里说明上面的校准特判都没认领——属"通用猜测"地带，models.dev 数据优先
+      return dataEffortVariants(model) ?? effortVariants(WIDELY_SUPPORTED_EFFORTS)
 
     case "@ai-sdk/azure":
       // https://v5.ai-sdk.dev/providers/ai-sdk-providers/azure
@@ -1266,7 +1293,8 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
       }
       return {}
   }
-  return {}
+  // 未知 npm：硬编码表没有任何知识，models.dev 数据是唯一线索
+  return dataEffortVariants(model) ?? {}
 }
 
 export function options(input: {

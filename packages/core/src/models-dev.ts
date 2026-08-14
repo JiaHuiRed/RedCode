@@ -83,6 +83,10 @@ export const Model = Schema.Struct({
   reasoning: Schema.Boolean,
   temperature: Schema.Boolean,
   tool_call: Schema.Boolean,
+  // models.dev 对推理控制的声明式描述（effort 档位集合 / thinking 开关 / budget_tokens 区间）。
+  // 外部数据、形态会演化（上游收紧成 typed union 后又被真实数据逼着拓宽过一轮），
+  // 这里按 Json 透传不收紧结构，运行时收窄在 opencode/provider/transform 的消费端做。
+  reasoning_options: Schema.optional(Schema.MutableJson),
   interleaved: Schema.optional(
     Schema.Union([
       Schema.Literal(true),
