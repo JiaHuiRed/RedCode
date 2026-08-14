@@ -66,6 +66,16 @@ RedCode = OpenCode fork：
 - 改了测试文件 → 立即跑对应测试
 - 批量改同 package 文件 → 合并验证一次；跨 package 编辑 → 分别验证
 
+## 证据面匹配（永不默认全量）
+
+**跑的检查必须匹配改动面，永远不要默认跑全量测试套件。**（260810 事故：想验一个测试却跑了全量 `bun test`，测试套件洗掉 live 配置——见 `docs/notes/`）
+
+- 行为改动 → 只跑对应的测试文件（带路径过滤）
+- 提示词/模型可见内容改动 → 对照该模型的实际会话验证
+- 文档/版本号改动 → `check-version-consistency.ts`
+- 构建路径改动 → 该 package 的 build
+- 全量套件只在用户明确要求、或改动确属仓库级时才跑
+
 # 本仓红线（通用红线见全局 AGENTS.md）
 
 - **改/删文件前必加载 diagnose skill**：涉及修改、删除、创建文件的操作（包括写日志），先加载 diagnose skill，走完 Phase 1（建反馈循环/交叉验证）→ Phase 3（假设排序确认）→ Phase 6（完成后复盘），确认无误再动手，动手后验证结果。
@@ -82,6 +92,7 @@ RedCode = OpenCode fork：
   6. 标题栏徽章 — 自动注入（`packages/desktop/package.json` → `__RC_VERSION__` 占位符），无需手改
   7. 自检脚本 — `script/check-version-consistency.ts`，build.bat 编译前校验（含全仓同号断言）
 - 文档（版本号/徽章/CHANGELOG/README）可直接改好；**push / 打包 release 需用户确认**。
+- **非平凡改动同 commit 附决策记录**：`docs/notes/`（规则与模板见其 README）。判据：一个月后会有人问"当时为什么这么做"就写。CHANGELOG 记 what，note 记 why。
 
 # 项目指令
 
