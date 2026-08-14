@@ -222,7 +222,6 @@ export function SessionComposerRegion(props: {
               >
                 <div ref={(el) => setStore("body", el)}>
                   <SessionTodoDock
-                    sessionID={route.params.id}
                     todos={props.state.todos()}
                     collapsed={view.todoCollapsed.get()}
                     onToggle={() => view.todoCollapsed.set(!view.todoCollapsed.get())}

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { normalize, text } from "./session-diff"
+import { normalize, resolveFileDiff, text } from "./session-diff"
 
 describe("session diff", () => {
   test("keeps unified patch content", () => {
@@ -32,6 +32,28 @@ describe("session diff", () => {
 
     expect(text(view, "deletions")).toBe("one\ntwo")
     expect(text(view, "additions")).toBe("one\nthree")
+  })
+
+  test("renders whole-file VCS patches as complete diffs", () => {
+    const fileDiff = resolveFileDiff({
+      file: "a.ts",
+      patch:
+        "diff --git a/a.ts b/a.ts\nindex 1a2b3c4..5d6e7f8 100644\n--- a/a.ts\n+++ b/a.ts\n@@ -1,2 +1,2 @@\n one\n-old\n+new\n",
+    })
+
+    expect(fileDiff.isPartial).toBe(false)
+    expect(fileDiff.additionLines).toEqual(["one\n", "new\n"])
+  })
+
+  test("keeps ordinary leading tool patches partial", () => {
+    const fileDiff = resolveFileDiff({
+      file: "a.ts",
+      patch:
+        "Index: a.ts\n===================================================================\n--- a.ts\n+++ a.ts\n@@ -1,5 +1,5 @@\n-old\n+new\n two\n three\n four\n five\n",
+    })
+
+    expect(fileDiff.isPartial).toBe(true)
+    expect(fileDiff.additionLines).toEqual(["new\n", "two\n", "three\n", "four\n", "five\n"])
   })
 
   test("converts legacy content into a patch", () => {
