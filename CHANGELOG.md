@@ -8,6 +8,14 @@
 
 ---
 
+### [0.8.18] - 2026-08-14
+
+#### 修复
+
+- **新建会话页透出壁纸——毛玻璃 B 漏了 session-new-design 容器**（`components/session/session-new-design-view.tsx`、`index.css`）：`d1fc62b` 只清了 `#session-root`/`#session-chat-panel` 两个外壳容器，新建会话页（无会话 id）的内容容器 NewSessionDesignView 根自带 `bg-v2-background-bg-deep` 实色底把壁纸挡死——表现为标题栏/文件树都透出壁纸、中间会话区独独黑一块。补 `[data-app-frost] [data-component="session-new-design"]{background-color:transparent}`（与文件树同款配方），无壁纸时实色底照常生效。
+
+---
+
 ### [0.8.17] - 2026-08-14
 
 > DSH 采纳第一批落地：重复调用递进提醒软层、工具级 cooperative 超时、繁忙时插话/排队可选（stall nudge 随之退役）、压缩摘要截断保尾；决策记录制度（`docs/notes/`）与采纳路线图（`docs/dsh-adoption-plan.md`）建制。
