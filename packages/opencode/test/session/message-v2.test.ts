@@ -846,7 +846,8 @@ describe("session.message-v2.toModelMessage", () => {
             toolName: "bash",
             output: {
               type: "text",
-              value: "abcd\n[Tool output truncated for compaction: omitted 6 chars]",
+              // 260814 Red head+tail 4:1 截断:maxChars=4 → head 3 + tail 1,尾部保留结论/报错
+              value: "abc\n[... tool output middle omitted for compaction: 6 chars ...]\nj",
             },
           },
         ],
@@ -1734,5 +1735,33 @@ describe("ProviderTransform.unsupportedParts - 附件落盘", () => {
     expect(readFileSync(filepath)).toEqual(Buffer.from(PNG, "base64"))
     // 文件名按内容哈希，同一张图恒定同一路径（前缀缓存依赖这点，见 260804）
     expect(filepath).toMatch(/redcode-vision-[0-9a-f]{16}\.png$/)
+  })
+})
+
+// 260814 Red head+tail 截断纯函数测试（改造自 head-only，参考 DSH tool-result-pruner）
+describe("truncateToolOutput", () => {
+  test("returns text unchanged when within budget or no budget", () => {
+    expect(MessageV2.truncateToolOutput("short", 100)).toBe("short")
+    expect(MessageV2.truncateToolOutput("anything", undefined)).toBe("anything")
+  })
+
+  test("keeps head and tail at 4:1 with an omitted-count marker", () => {
+    const text = "H".repeat(900) + "T".repeat(100)
+    const out = MessageV2.truncateToolOutput(text, 100)
+    expect(out.startsWith("H".repeat(80))).toBe(true)
+    expect(out.endsWith("T".repeat(20))).toBe(true)
+    expect(out).toContain("[... tool output middle omitted for compaction: 900 chars ...]")
+  })
+
+  test("tail survives so error conclusions stay visible to the summarizer", () => {
+    const text = "x".repeat(5000) + "\nERROR: exit code 1"
+    const out = MessageV2.truncateToolOutput(text, 2000)
+    expect(out).toContain("ERROR: exit code 1")
+  })
+
+  test("result is strictly smaller than the input", () => {
+    const text = "y".repeat(10_000)
+    const out = MessageV2.truncateToolOutput(text, 2000)
+    expect(out.length).toBeLessThan(text.length)
   })
 })

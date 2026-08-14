@@ -303,10 +303,17 @@ export const ToolStateCompleted = Schema.Struct({
 }).annotate({ identifier: "ToolStateCompleted" })
 export type ToolStateCompleted = Types.DeepMutable<Schema.Schema.Type<typeof ToolStateCompleted>>
 
-function truncateToolOutput(text: string, maxChars?: number) {
+// 260814 Red head-only → head+tail 4:1（参考 DeepSeek Harness tool-result-pruner 的
+// 8192/4096/1024 形态）：长输出的尾部往往是结论/错误栈/退出码——正是摘要器最需要
+// 看到的部分，只留头会把「怎么失败的」整个裁掉。目前唯一传 maxChars 的是压缩摘要
+// 路径（compaction.ts TOOL_OUTPUT_MAX_CHARS=2000 → head 1600 + tail 400）；主请求
+// 路径不传 → 原文直通，行为不变。
+export function truncateToolOutput(text: string, maxChars?: number) {
   if (!maxChars || text.length <= maxChars) return text
+  const head = Math.floor(maxChars * 0.8)
+  const tail = maxChars - head
   const omitted = text.length - maxChars
-  return `${text.slice(0, maxChars)}\n[Tool output truncated for compaction: omitted ${omitted} chars]`
+  return `${text.slice(0, head)}\n[... tool output middle omitted for compaction: ${omitted} chars ...]\n${text.slice(-tail)}`
 }
 
 export const ToolStateError = Schema.Struct({
