@@ -34,6 +34,9 @@ export const RepoCloneTool = Tool.define<typeof Parameters, Metadata, Repository
     return {
       description: DESCRIPTION,
       parameters: Parameters,
+      // 260814 Red clone/fetch 走网络无上限，坏网络或超大仓会把整轮挂死；5 分钟预算
+      // 超时后模型拿到结构化 TimeoutError 自纠（正在跑的 git 进程不被硬杀，缓存目录幂等）
+      timeoutMs: 300_000,
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context<Metadata>) =>
         Effect.gen(function* () {
           const reference = yield* RepositoryCache.parseRemoteReference(params.repository)
