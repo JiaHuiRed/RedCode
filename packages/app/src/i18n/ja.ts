@@ -913,8 +913,6 @@ export const dict = {
   "settings.general.row.shell.description": "ターミナルで使うシェルを選択します。互換性のあるシェルはエージェントのツール実行にも使われます。",
   "settings.general.row.shell.autoDefault": "自動（デフォルト）",
   "settings.general.row.shell.terminalOnly": "ターミナルのみ",
-  "settings.general.row.showFileTree.title": "ファイルツリー",
-  "settings.general.row.showFileTree.description": "デスクトップのセッションにファイルツリーの切り替えとパネルを表示",
   "settings.general.row.showNavigation.title": "ナビゲーション",
   "settings.general.row.showNavigation.description": "デスクトップのタイトルバーに戻る/進むボタンを表示",
   "settings.general.row.showSearch.title": "コマンドパレット",

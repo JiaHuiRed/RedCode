@@ -973,7 +973,6 @@ export const dict = {
 
   // 以下为新增缺失的翻译
   "session.child.backToParent": "返回主会话。",
-  "settings.general.row.showFileTree.title": "文件树",
   "settings.general.row.showSearch.title": "命令面板",
   "session.review.noBranchChanges": "暂无分支变更",
   "settings.general.row.shell.description": "选择终端使用的 Shell。所选 Shell 同时用于 Agent 工具调用。",
@@ -987,7 +986,6 @@ export const dict = {
   "settings.general.row.showNavigation.title": "导航控件",
   "settings.general.row.showTerminal.description": "在桌面标题栏中显示终端按钮",
   "sidebar.empty.description": "打开一个项目以开始使用",
-  "settings.general.row.showFileTree.description": "在桌面会话中显示文件树切换和面板",
   "error.page.action.exportLogs": "导出日志",
   "settings.general.row.shell.terminalOnly": "仅终端",
   "settings.general.row.showNavigation.description": "在桌面标题栏中显示前进和后退按钮",

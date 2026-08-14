@@ -34,7 +34,6 @@ export interface Settings {
     autoSave: boolean
     releaseNotes: boolean
     followup: "queue" | "steer"
-    showFileTree: boolean
     showNavigation: boolean
     showSearch: boolean
     showStatus: boolean
@@ -126,7 +125,6 @@ const defaultSettings: Settings = {
     autoSave: true,
     releaseNotes: true,
     followup: "steer",
-    showFileTree: false,
     showNavigation: false,
     showSearch: false,
     showStatus: false,
@@ -220,10 +218,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         ),
         setFollowup(value: "queue" | "steer") {
           setStore("general", "followup", value === "queue" ? "steer" : value)
-        },
-        showFileTree: withFallback(() => store.general?.showFileTree, defaultSettings.general.showFileTree),
-        setShowFileTree(value: boolean) {
-          setStore("general", "showFileTree", value)
         },
         showNavigation: withFallback(() => store.general?.showNavigation, defaultSettings.general.showNavigation),
         setShowNavigation(value: boolean) {
