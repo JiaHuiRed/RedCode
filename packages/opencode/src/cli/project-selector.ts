@@ -12,6 +12,11 @@ interface ProjectEntry {
   name: string
 }
 
+// 260814 Red 同一个 worktree 在 project 表里可以有多行：upsert 按 id 查（project.ts:297），
+// 而 id 随目录状态变——有 git 且有提交取根提交哈希，否则回落 path-<sha256>。目录先在无 git
+// 时打开、后 git init（实测 attendance/financialcost），或 .git 被删过重建（实测 RedClaw），
+// 都会让同一路径换 id 再插一行，旧行没人清，选择器里就并排显示两个同名条目。
+// 这里按路径去重：选择器返回的是 worktree 路径而非 id，保留哪一行都等价。
 function loadProjects(): ProjectEntry[] {
   try {
     return Database.use((db) => {
@@ -19,8 +24,15 @@ function loadProjects(): ProjectEntry[] {
         worktree: string
         name: string | null
       }>
+      const seen = new Set<string>()
       return rows
         .filter((r) => r.worktree && !r.worktree.includes("redcode-test"))
+        .filter((r) => {
+          const key = path.resolve(r.worktree).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase()
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        })
         .map((r) => ({ worktree: r.worktree, name: r.name || path.basename(r.worktree) }))
         .sort((a, b) => a.name.localeCompare(b.name))
     })
