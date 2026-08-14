@@ -253,6 +253,13 @@ export const SettingsGeneral: Component = () => {
     void update.catch(() => setPinchZoom(!checked))
   }
 
+  // 260814 Red busy_enter 下拉(与 TUI/GUI 的 /busy-enter 斜杠同源,写 PATCH /global/config 立即生效)
+  const busyEnterOptions = createMemo((): { value: "steer" | "queue"; label: string }[] => [
+    { value: "steer", label: language.t("settings.general.row.busyEnter.steer") },
+    { value: "queue", label: language.t("settings.general.row.busyEnter.queue") },
+  ])
+  const currentBusyEnter = createMemo(() => globalSync.data.config.busy_enter ?? "steer")
+
   const colorSchemeOptions = createMemo((): { value: ColorScheme; label: string }[] => [
     { value: "system", label: language.t("theme.scheme.system") },
     { value: "light", label: language.t("theme.scheme.light") },
@@ -348,6 +355,28 @@ export const SettingsGeneral: Component = () => {
               if (!option) return
               if (option.value === currentShell()) return
               globalSync.updateConfig({ shell: option.value })
+            }}
+            variant="secondary"
+            size="small"
+            triggerVariant="settings"
+            triggerStyle={{ "min-width": "180px" }}
+          />
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.general.row.busyEnter.title")}
+          description={language.t("settings.general.row.busyEnter.description")}
+        >
+          <Select
+            data-action="settings-busy-enter"
+            options={busyEnterOptions()}
+            current={busyEnterOptions().find((o) => o.value === currentBusyEnter())}
+            value={(o) => o.value}
+            label={(o) => o.label}
+            onSelect={(option) => {
+              if (!option) return
+              if (option.value === currentBusyEnter()) return
+              globalSync.updateConfig({ busy_enter: option.value })
             }}
             variant="secondary"
             size="small"

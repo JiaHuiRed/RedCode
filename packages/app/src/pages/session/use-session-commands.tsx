@@ -392,6 +392,25 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     })
   }
 
+  const toggleBusyEnter = () => {
+    const current = sync.data.config.busy_enter ?? "steer"
+    const next = current === "steer" ? ("queue" as const) : ("steer" as const)
+    void sdk.client.config
+      .update({ config: { busy_enter: next } })
+      .then(() => {
+        showToast({
+          title: language.t(next === "queue" ? "toast.busyEnter.queue.title" : "toast.busyEnter.steer.title"),
+          description: language.t(
+            next === "queue" ? "toast.busyEnter.queue.description" : "toast.busyEnter.steer.description",
+          ),
+          variant: "success",
+        })
+      })
+      .catch(() => {
+        showToast({ title: language.t("toast.busyEnter.failed"), variant: "error" })
+      })
+  }
+
   const shareCmds = () => {
     if (sync.data.config.share === "disabled") return []
     return [
@@ -469,6 +488,15 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       slash: "fork",
       disabled: !params.id || visibleUserMessages().length === 0,
       onSelect: fork,
+    }),
+    // 260814 Red busy_enter 切换(与 TUI /busy-enter 同源):PATCH /global/config 只动
+    // 这一个键,changed 时 server 强制重载配置——立即生效。见 MANUAL 7.3。
+    sessionCommand({
+      id: "session.busyEnter",
+      title: language.t("command.session.busyEnter"),
+      description: language.t("command.session.busyEnter.description"),
+      slash: "busy-enter",
+      onSelect: toggleBusyEnter,
     }),
   ]
 
