@@ -19,6 +19,8 @@ type PersistTarget = {
   key: string
   legacy?: string[]
   migrate?: (value: unknown) => unknown
+  /** 写盘前的自定义序列化（如剔除不该持久化的大字段）；缺省为 JSON.stringify */
+  serialize?: (value: unknown) => string
 }
 
 const LEGACY_STORAGE = "default.dat"
@@ -588,7 +590,11 @@ export function persisted<T>(
     return api
   })()
 
-  const [state, setState, init] = makePersisted(store, { name: config.key, storage })
+  const [state, setState, init] = makePersisted(store, {
+    name: config.key,
+    storage,
+    ...(config.serialize ? { serialize: config.serialize as (data: T) => string } : {}),
+  })
 
   const isAsync = init instanceof Promise
   const [ready] = createResource(
