@@ -8,9 +8,11 @@
 
 ---
 
-### [0.8.18] - 2026-08-14
+### [0.8.18] - 2026-08-15
 
 #### 修复
+
+- **MessageID 48 位回绕死循环 + 全仓 ID 比较改 time.created + ID 扩容 64 位**（`id/id.ts`、`session/message-v2.ts`、`session/prompt.ts`、`session/session.ts`、`session/revert.ts`、TUI 会话路由与 sync、app 端 8 文件、`core/util/binary.ts`、app/core 两份 ID 实现）：ID 编码 `Date.now()×4096` 压进 6 字节（48 位），回绕周期 2³⁶ ms ≈ 795 天；2026-08-14 19:19:55.136 第 26 次回绕后新 ID 字典序反小于旧 ID，`latest()` 永远选中回绕前旧消息、runLoop 退出条件 `lastUser.id < lastAssistant.id` 恒 false——实测一个 GUI 会话空转 219 步、50 分钟烧 $1.3 直到手动中断。修复：比较先后一律走 `time.created`（新增 `compareTime`/`cmpTime`，同毫秒用 ID tie-break），open code 9 处、TUI 7 处、app 18 处全部替换，消息数组二分改 `Binary.searchBy` comparator；ID 编码扩到 8 字节（64 位，2⁵² ms ≈ 14 万年不回绕），`timestamp()` 解码兼容新旧长度。无数据迁移，旧会话自动恢复。[why](docs/notes/implemented/bug-fix/2026-08-15-messageid-wraparound-fix.md)
 
 - **新建会话页透出壁纸——毛玻璃 B 漏了 session-new-design 容器**（`components/session/session-new-design-view.tsx`、`index.css`）：`d1fc62b` 只清了 `#session-root`/`#session-chat-panel` 两个外壳容器，新建会话页（无会话 id）的内容容器 NewSessionDesignView 根自带 `bg-v2-background-bg-deep` 实色底把壁纸挡死——表现为标题栏/文件树都透出壁纸、中间会话区独独黑一块。补 `[data-app-frost] [data-component="session-new-design"]{background-color:transparent}`（与文件树同款配方），无壁纸时实色底照常生效。
 
