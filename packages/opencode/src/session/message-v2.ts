@@ -1169,25 +1169,44 @@ export const filterCompactedEffect = Effect.fnUntraced(function* (sessionID: Ses
   return filterCompacted(stream(sessionID))
 })
 
+// 260814 Red 消息先后一律用 compareTime（time.created + ID tie-break），ID 只做 identity。
+// 背景：MessageID = 时间戳×4096 压进 6 字节（48 位），回绕周期 2^36 ms ≈ 795 天；
+// 2026-08-14 19:19:55.136 已第 26 次回绕，此后新 ID 字典序小于回绕前旧 ID，
+// 用 ID 字符串比较表达"先后"全部失真（曾致 runLoop 退出条件恒 false、219 步空转死循环）。
+// 同毫秒 tie-break 用 ID 字典序——同 ms 内 counter 递增、字典序正确
+// （仅 1ms 回绕窗口内可能并列错序，概率趋零）。
+export function compareTime(
+  a: { id: string; time: { created: number } },
+  b: { id: string; time: { created: number } },
+): number {
+  return a.time.created !== b.time.created
+    ? a.time.created - b.time.created
+    : a.id < b.id
+      ? -1
+      : a.id > b.id
+        ? 1
+        : 0
+}
+
 // filterCompacted reorders messages for model consumption
 // ([compaction-user, summary, ...retained tail..., continue-user]), so array
-// position is not chronological. Derive each binding by max id (MessageID
-// is monotonic via MessageID.ascending) so a pre-compaction overflowing tail
-// assistant doesn't get mistaken for the most recent turn. tasks are
-// compaction/subtask parts attached to user messages newer than the latest
-// finished assistant — i.e. unprocessed work.
+// position is not chronological. Derive each binding by max creation time
+// (compareTime) so a pre-compaction overflowing tail assistant doesn't get
+// mistaken for the most recent turn. tasks are compaction/subtask parts
+// attached to user messages newer than the latest finished assistant —
+// i.e. unprocessed work.
 export function latest(msgs: WithParts[]) {
   let user: User | undefined
   let assistant: Assistant | undefined
   let finished: Assistant | undefined
   for (const msg of msgs) {
     const info = msg.info
-    if (info.role === "user" && (!user || info.id > user.id)) user = info
-    if (info.role === "assistant" && (!assistant || info.id > assistant.id)) assistant = info
-    if (info.role === "assistant" && info.finish && (!finished || info.id > finished.id)) finished = info
+    if (info.role === "user" && (!user || compareTime(info, user) > 0)) user = info
+    if (info.role === "assistant" && (!assistant || compareTime(info, assistant) > 0)) assistant = info
+    if (info.role === "assistant" && info.finish && (!finished || compareTime(info, finished) > 0)) finished = info
   }
   const tasks = msgs.flatMap((m) =>
-    finished && m.info.id <= finished.id
+    finished && compareTime(m.info, finished) <= 0
       ? []
       : m.parts.filter((p): p is CompactionPart | SubtaskPart => p.type === "compaction" || p.type === "subtask"),
   )

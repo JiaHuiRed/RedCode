@@ -20,6 +20,7 @@ import { createSessionTabs } from "@/pages/session/helpers"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { UserMessage } from "@redcode-ai/sdk/v2"
 import { useSessionLayout } from "@/pages/session/session-layout"
+import { compareTime } from "@/utils/id"
 
 export type SessionCommandContext = {
   navigateMessageByOffset: (offset: number) => void
@@ -82,7 +83,10 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const visibleUserMessages = () => {
     const revert = info()?.revert?.messageID
     if (!revert) return userMessages()
-    return userMessages().filter((m) => m.id < revert)
+    // 260814 Red 过滤边界改 compareTime（ID 回绕后字典序失真）
+    const revertMsg = userMessages().find((m) => m.id === revert)
+    if (!revertMsg) return userMessages()
+    return userMessages().filter((m) => compareTime(m, revertMsg) < 0)
   }
 
   // 260602 Red 切 session：当前 project 内的 root session 列表（按 sidebar 排序）
@@ -105,7 +109,8 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         const bUpdated = b.time?.updated ?? b.time?.created ?? 0
         const aRecent = aUpdated > now - 60_000
         const bRecent = bUpdated > now - 60_000
-        if (aRecent && bRecent) return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+        // 260814 Red recent 分支改 compareTime（ID 回绕后字典序失真）
+        if (aRecent && bRecent) return compareTime(a, b)
         if (aRecent && !bRecent) return -1
         if (!aRecent && bRecent) return 1
         return bUpdated - aUpdated
@@ -331,7 +336,9 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     }
 
     const revert = info()?.revert?.messageID
-    const message = findLast(userMessages(), (x) => !revert || x.id < revert)
+    // 260814 Red 边界比较改 compareTime（ID 回绕后字典序失真）
+    const revertMsg = revert ? userMessages().find((x) => x.id === revert) : undefined
+    const message = findLast(userMessages(), (x) => (!revertMsg || compareTime(x, revertMsg) < 0))
     if (!message) return
 
     await sdk.client.session.revert({ sessionID, messageID: message.id })
@@ -341,7 +348,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       prompt.set(restored)
     }
 
-    const prev = findLast(userMessages(), (x) => x.id < message.id)
+    const prev = findLast(userMessages(), (x) => compareTime(x, message) < 0)
     setActiveMessage(prev)
   }
 
@@ -352,17 +359,19 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     const revertMessageID = info()?.revert?.messageID
     if (!revertMessageID) return
 
-    const next = userMessages().find((x) => x.id > revertMessageID)
+    // 260814 Red 边界比较改 compareTime（ID 回绕后字典序失真）
+    const revertMsg = userMessages().find((x) => x.id === revertMessageID)
+    const next = revertMsg ? userMessages().find((x) => compareTime(x, revertMsg) > 0) : undefined
     if (!next) {
       await sdk.client.session.unrevert({ sessionID })
       prompt.reset()
-      const last = findLast(userMessages(), (x) => x.id >= revertMessageID)
+      const last = revertMsg ? findLast(userMessages(), (x) => compareTime(x, revertMsg) >= 0) : undefined
       setActiveMessage(last)
       return
     }
 
     await sdk.client.session.revert({ sessionID, messageID: next.id })
-    const prev = findLast(userMessages(), (x) => x.id < next.id)
+    const prev = findLast(userMessages(), (x) => compareTime(x, next) < 0)
     setActiveMessage(prev)
   }
 

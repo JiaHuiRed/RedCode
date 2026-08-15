@@ -17,6 +17,7 @@ import { reconcile, type SetStoreFunction, type Store } from "solid-js/store"
 import type { State, VcsCache } from "./types"
 import { cmp, normalizeAgentList, normalizeProviderList } from "./utils"
 import { formatServerError } from "@/utils/server-errors"
+import { compareTime } from "@/utils/id"
 import { QueryClient, queryOptions } from "@tanstack/solid-query"
 import { NormalizedProviderListResponse } from "@redcode-ai/ui/context"
 
@@ -146,7 +147,8 @@ function projectID(directory: string, projects: Project[]) {
 function mergeSession(setStore: SetStoreFunction<State>, session: Session) {
   setStore("session", (list) => {
     const next = list.slice()
-    const idx = next.findIndex((item) => item.id >= session.id)
+    // 260814 Red 插入位置改 compareTime（ID 回绕后字典序失真）
+    const idx = next.findIndex((item) => compareTime(item, session) >= 0)
     if (idx === -1) return [...next, session]
     if (next[idx]?.id === session.id) {
       next[idx] = session

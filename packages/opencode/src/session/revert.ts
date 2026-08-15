@@ -74,7 +74,10 @@ export const layer = Layer.effect(
       if (session.revert?.snapshot) yield* snap.restore(session.revert.snapshot)
       yield* snap.revert(patches)
       if (rev.snapshot) rev.diff = yield* snap.diff(rev.snapshot)
-      const range = all.filter((msg) => msg.info.id >= rev.messageID)
+      // 260814 Red 范围改按 created 截断（ID 回绕后字典序失真）。all 按 created 升序、
+      // revert 点消息必在其中，从它（含）截到末尾。
+      const revertIndex = all.findIndex((msg) => msg.info.id === rev.messageID)
+      const range = revertIndex >= 0 ? all.slice(revertIndex) : []
       const diffs = yield* summary.computeDiff({ messages: range })
       yield* storage.write(["session_diff", input.sessionID], diffs).pipe(Effect.ignore)
       yield* bus.publish(Session.Event.Diff, { sessionID: input.sessionID, diff: diffs })
@@ -105,16 +108,20 @@ export const layer = Layer.effect(
       const sessionID = session.id
       const msgs = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
       const messageID = session.revert.messageID
+      // 260814 Red 边界改 created 比较（ID 回绕后字典序失真）；目标不在列表时保守不删。
+      const targetCreated = msgs.find((msg) => msg.info.id === messageID)?.info.time.created
       const remove = [] as MessageV2.WithParts[]
       let target: MessageV2.WithParts | undefined
       for (const msg of msgs) {
-        if (msg.info.id < messageID) continue
-        if (msg.info.id > messageID) {
+        if (targetCreated === undefined) continue
+        if (msg.info.time.created < targetCreated) continue
+        if (msg.info.time.created === targetCreated && msg.info.id < messageID) continue
+        if (msg.info.id === messageID) {
+          if (session.revert.partID) {
+            target = msg
+            continue
+          }
           remove.push(msg)
-          continue
-        }
-        if (session.revert.partID) {
-          target = msg
           continue
         }
         remove.push(msg)

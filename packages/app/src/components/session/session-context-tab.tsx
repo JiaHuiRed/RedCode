@@ -4,6 +4,7 @@ import { useSync } from "@/context/sync"
 import { checksum } from "@redcode-ai/core/util/encode"
 import { findLast } from "@redcode-ai/core/util/array"
 import { same } from "@/utils/same"
+import { compareTime } from "@/utils/id"
 import { Icon } from "@redcode-ai/ui/icon"
 import { Accordion } from "@redcode-ai/ui/accordion"
 import { StickyAccordionHeader } from "@redcode-ai/ui/sticky-accordion-header"
@@ -120,7 +121,10 @@ export function SessionContextTab() {
     () => {
       const revert = info()?.revert?.messageID
       if (!revert) return userMessages()
-      return userMessages().filter((m) => m.id < revert)
+      // 260814 Red 过滤边界改 compareTime（ID 回绕后字典序失真）
+      const revertMsg = userMessages().find((m) => m.id === revert)
+      if (!revertMsg) return userMessages()
+      return userMessages().filter((m) => compareTime(m, revertMsg) < 0)
     },
     emptyUserMessages,
     { equals: same },

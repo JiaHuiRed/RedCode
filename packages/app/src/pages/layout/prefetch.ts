@@ -101,9 +101,19 @@ export function createPrefetch(deps: {
     return created
   }
 
-  const mergeByID = <T extends { id: string }>(current: T[], incoming: T[]) => {
+  // 260814 Red 合并排序改 time.created（ID 48 位回绕后字典序失真，见 @/utils/id）。
+  // Part 的 time 是推理计时（{start,end}）而非 created，无 created 时退化为 ID 字典序
+  // （同消息内 parts 回绕概率趋零），故这里用本地比较而非 compareTime。
+  const mergeByID = <T extends { id: string; time?: unknown }>(current: T[], incoming: T[]) => {
+    const createdOf = (item: T) => (item.time as { created?: number } | undefined)?.created
+    const cmp = (a: T, b: T) => {
+      const ac = createdOf(a)
+      const bc = createdOf(b)
+      if (ac !== undefined && bc !== undefined && ac !== bc) return ac - bc
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+    }
     if (current.length === 0) {
-      return incoming.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      return incoming.slice().sort(cmp)
     }
 
     const map = new Map<string, T>()
@@ -113,7 +123,7 @@ export function createPrefetch(deps: {
     for (const item of incoming) {
       map.set(item.id, item)
     }
-    return [...map.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    return [...map.values()].sort(cmp)
   }
 
   async function prefetchMessages(directory: string, sessionID: string, token: number) {

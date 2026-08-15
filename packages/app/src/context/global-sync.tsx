@@ -28,6 +28,7 @@ import { queryOptions, useMutation, useQueries, useQuery, useQueryClient } from 
 import { createRefreshQueue } from "./global-sync/queue"
 import { directoryKey } from "./global-sync/utils"
 import { PathKey } from "@/utils/path-key"
+import { compareTime } from "@/utils/id"
 import { createDirSyncContext } from "./directory-sync"
 import { NormalizedProviderListResponse } from "@redcode-ai/ui/context"
 
@@ -261,7 +262,8 @@ function createGlobalSync() {
               const nonArchived = (x.data ?? [])
                 .filter((s) => !!s?.id)
                 .filter((s) => !s.time?.archived)
-                .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+                // 260814 Red 排序改 compareTime（ID 回绕后字典序失真）
+                .sort((a, b) => compareTime(a, b))
               const limit = store.limit
               const childSessions = store.session.filter((s) => !!s.parentID)
               const sessions = trimSessions([...nonArchived, ...childSessions], {

@@ -64,7 +64,7 @@ import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
 import { createSessionHistoryLoader } from "@/pages/session/session-history-loader"
 import { createReviewDiffHelpers } from "@/pages/session/session-review-diff"
 import { createMessageNav } from "@/pages/session/session-message-nav"
-import { Identifier } from "@/utils/id"
+import { Identifier, compareTime } from "@/utils/id"
 import { diffs as list } from "@/utils/diffs"
 import { Persist, persisted } from "@/utils/persist"
 import { extractPromptFromParts } from "@/utils/prompt"
@@ -261,7 +261,10 @@ export default function Page() {
     () => {
       const revert = revertMessageID()
       if (!revert) return userMessages()
-      return userMessages().filter((m) => m.id < revert)
+      // 260814 Red 过滤边界改 compareTime（ID 回绕后字典序失真）
+      const revertMsg = userMessages().find((m) => m.id === revert)
+      if (!revertMsg) return userMessages()
+      return userMessages().filter((m) => compareTime(m, revertMsg) < 0)
     },
     emptyUserMessages,
     {
@@ -445,7 +448,8 @@ export default function Page() {
       )
       return
     }
-    const at = list.findIndex((item) => item.id > next.id)
+    // 260814 Red 插入位置改 compareTime（ID 回绕后字典序失真）
+    const at = list.findIndex((item) => compareTime(item, next) > 0)
     if (at >= 0) {
       globalSync.set("project", [...list.slice(0, at), next, ...list.slice(at)])
       return
@@ -1299,7 +1303,9 @@ export default function Page() {
       const sessionID = params.id
       if (!sessionID) return
 
-      const next = userMessages().find((item) => item.id > id)
+      // 260814 Red 边界比较改 compareTime（ID 回绕后字典序失真）
+      const target = userMessages().find((item) => item.id === id)
+      const next = target ? userMessages().find((item) => compareTime(item, target) > 0) : undefined
       const prev = prompt.current().slice()
       const last = info()?.revert
 
@@ -1351,8 +1357,11 @@ export default function Page() {
   const rolled = createMemo(() => {
     const id = revertMessageID()
     if (!id) return []
+    // 260814 Red 过滤边界改 compareTime（ID 回绕后字典序失真）；revert 点消息不在列表时为 []
+    const target = userMessages().find((item) => item.id === id)
+    if (!target) return []
     return userMessages()
-      .filter((item) => item.id >= id)
+      .filter((item) => compareTime(item, target) >= 0)
       .map((item) => ({ id: item.id, text: line(item.id) }))
   })
 

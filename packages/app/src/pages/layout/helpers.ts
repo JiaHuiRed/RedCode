@@ -1,6 +1,7 @@
 import { getFilename } from "@redcode-ai/core/util/path"
 import { type Session } from "@redcode-ai/sdk/v2/client"
 import { pathKey } from "@/utils/path-key"
+import { compareTime } from "@/utils/id"
 
 type SessionStore = {
   session?: Session[]
@@ -14,7 +15,7 @@ function sortSessions(now: number) {
     const bUpdated = b.time.updated ?? b.time.created
     const aRecent = aUpdated > oneMinuteAgo
     const bRecent = bUpdated > oneMinuteAgo
-    if (aRecent && bRecent) return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+    if (aRecent && bRecent) return compareTime(a, b)
     if (aRecent && !bRecent) return -1
     if (!aRecent && bRecent) return 1
     return bUpdated - aUpdated

@@ -18,7 +18,7 @@ import { Dynamic } from "solid-js/web"
 import path from "path"
 import { useRoute, useRouteData } from "@tui/context/route"
 import { useProject } from "@tui/context/project"
-import { useSync } from "@tui/context/sync"
+import { useSync, cmpTime } from "@tui/context/sync"
 import { useEvent } from "@tui/context/event"
 import { SplitBorder } from "@tui/component/border"
 import { Spinner } from "@tui/component/spinner"
@@ -191,7 +191,8 @@ export function Session() {
     const parentID = session()?.parentID ?? session()?.id
     return sync.data.session
       .filter((x) => x.parentID === parentID || x.id === parentID)
-      .toSorted((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      // 260814 Red 排序改 cmpTime（ID 回绕后字典序失真）
+      .toSorted((a, b) => cmpTime(a, b))
   })
   const messages = createMemo(() => sync.data.message[route.sessionID] ?? [])
 
@@ -226,7 +227,7 @@ export function Session() {
   const disabled = createMemo(() => permissions().length > 0 || questions().length > 0)
 
   const pending = createMemo(() => {
-    return messages().findLast((x) => x.role === "assistant" && x.mode !== "compaction" && !x.time.completed)?.id
+    return messages().findLast((x) => x.role === "assistant" && x.mode !== "compaction" && !x.time.completed)
   })
 
   const lastAssistant = createMemo(() => {
@@ -664,7 +665,9 @@ export function Session() {
         const status = sync.data.session_status?.[route.sessionID]
         if (status?.type !== "idle") await sdk.client.session.abort({ sessionID: route.sessionID }).catch(() => {})
         const revert = session()?.revert?.messageID
-        const message = messages().findLast((x) => (!revert || x.id < revert) && x.role === "user")
+        // 260814 Red 边界比较改 cmpTime（ID 回绕后字典序失真）
+        const revertMsg = revert ? messages().find((x) => x.id === revert) : undefined
+        const message = messages().findLast((x) => (!revertMsg || cmpTime(x, revertMsg) < 0) && x.role === "user")
         if (!message) return
         void sdk.client.session
           .revert({
@@ -702,7 +705,11 @@ export function Session() {
         dialog.clear()
         const messageID = session()?.revert?.messageID
         if (!messageID) return
-        const message = messages().find((x) => x.role === "user" && x.id > messageID)
+        // 260814 Red 边界比较改 cmpTime（ID 回绕后字典序失真）
+        const revertMsg = messages().find((x) => x.id === messageID)
+        const message = revertMsg
+          ? messages().find((x) => x.role === "user" && cmpTime(x, revertMsg) > 0)
+          : undefined
         if (!message) {
           void sdk.client.session.unrevert({
             sessionID: route.sessionID,
@@ -932,8 +939,10 @@ export function Session() {
       category: "Session",
       run: () => {
         const revertID = session()?.revert?.messageID
+        // 260814 Red 边界比较改 cmpTime（ID 回绕后字典序失真）
+        const revertMsg = revertID ? messages().find((x) => x.id === revertID) : undefined
         const lastAssistantMessage = messages().findLast(
-          (msg) => msg.role === "assistant" && (!revertID || msg.id < revertID),
+          (msg) => msg.role === "assistant" && (!revertMsg || cmpTime(msg, revertMsg) < 0),
         )
         if (!lastAssistantMessage) {
           toast.show({ message: "未找到助手消息", variant: "error" })
@@ -1133,12 +1142,21 @@ export function Session() {
   const revertInfo = createMemo(() => session()?.revert)
   const revertMessageID = createMemo(() => revertInfo()?.messageID)
 
+  // 260814 Red revert 边界比较走 cmpTime（ID 回绕后字典序失真），这里缓存 revert 点消息对象
+  const revertPointMsg = createMemo(() => {
+    const id = revertMessageID()
+    return id ? messages().find((x) => x.id === id) : undefined
+  })
+
   const revertDiffFiles = createMemo(() => getRevertDiffFiles(revertInfo()?.diff ?? ""))
 
   const revertRevertedMessages = createMemo(() => {
     const messageID = revertMessageID()
     if (!messageID) return []
-    return messages().filter((x) => x.id >= messageID && x.role === "user")
+    // 260814 Red 边界比较改 cmpTime（ID 回绕后字典序失真）；revert 点消息不在列表时为 []
+    const revertMsg = messages().find((x) => x.id === messageID)
+    if (!revertMsg) return []
+    return messages().filter((x) => cmpTime(x, revertMsg) >= 0 && x.role === "user")
   })
 
   const revert = createMemo(() => {
@@ -1272,7 +1290,8 @@ export function Session() {
                           )
                         })()}
                       </Match>
-                      <Match when={revert()?.messageID && message.id >= revert()!.messageID}>
+                      {/* 260814 Red 边界比较改 cmpTime（ID 回绕后字典序失真） */}
+                      <Match when={revertPointMsg() && cmpTime(message, revertPointMsg()!) >= 0}>
                         <></>
                       </Match>
                       <Match when={message.role === "user"}>
@@ -1290,7 +1309,8 @@ export function Session() {
                           }}
                           message={message as UserMessage}
                           parts={sync.data.part[message.id] ?? []}
-                          pending={pending()}
+                          pending={pending()?.id}
+                          pendingCreated={pending()?.time.created}
                         />
                       </Match>
                       <Match when={message.role === "assistant" && (message as AssistantMessage).mode !== "compaction"}>
@@ -1389,6 +1409,7 @@ function UserMessage(props: {
   onMouseUp: () => void
   index: number
   pending?: string
+  pendingCreated?: number
 }) {
   const ctx = use()
   const local = useLocal()
@@ -1406,7 +1427,12 @@ function UserMessage(props: {
   const files = createMemo(() => props.parts.flatMap((x) => (x.type === "file" ? [x] : [])))
   const { theme } = useTheme()
   const [hover, setHover] = createSignal(false)
-  const queued = createMemo(() => props.pending && props.message.id > props.pending)
+  // 260814 Red queued 边界改 created 比较（ID 回绕后字典序失真）
+  const queued = createMemo(() => {
+    if (!props.pending || props.pendingCreated === undefined) return false
+    const created = props.message.time.created
+    return created !== props.pendingCreated ? created > props.pendingCreated : props.message.id > props.pending
+  })
   const color = createMemo(() => local.agent.color(props.message.agent))
   const queuedFg = createMemo(() => selectedForeground(theme, color()))
   const metadataVisible = createMemo(() => queued() || ctx.showTimestamps())

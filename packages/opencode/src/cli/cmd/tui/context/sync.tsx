@@ -24,7 +24,19 @@ import { useEvent } from "@tui/context/event"
 import { useSDK } from "@tui/context/sdk"
 import { Binary } from "@redcode-ai/core/util/binary"
 import { createSimpleContext } from "./helper"
-import type { Snapshot } from "@/snapshot"
+
+// 260814 Red 消息数组按 (time.created, id) 升序维护。MessageID 48 位编码 795 天回绕
+// （2026-08-14 19:19:55.136 已第 26 次发生），回绕后 ID 字典序不再单调，
+// 二分定位必须走 comparator（Binary.searchBy）。created 缺失时退化为 ID 字典序。
+export function cmpTime(
+  a: { id: string; time?: { created?: number } },
+  b: { id: string; time?: { created?: number } },
+) {
+  const ac = a.time?.created
+  const bc = b.time?.created
+  if (ac !== undefined && bc !== undefined && ac !== bc) return ac - bc
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+}import type { Snapshot } from "@/snapshot"
 import { useExit } from "./exit"
 import { useArgs } from "./args"
 import { batch, onMount } from "solid-js"
@@ -256,7 +268,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
             setStore("message", event.properties.info.sessionID, [event.properties.info])
             break
           }
-          const result = Binary.search(messages, event.properties.info.id, (m) => m.id)
+          const result = Binary.searchBy(messages, event.properties.info, cmpTime)
           if (result.found) {
             setStore("message", event.properties.info.sessionID, result.index, reconcile(event.properties.info))
             break
@@ -291,13 +303,14 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         }
         case "message.removed": {
           const messages = store.message[event.properties.sessionID]
-          const result = Binary.search(messages, event.properties.messageID, (m) => m.id)
-          if (result.found) {
+          // 260814 Red 线性定位（数组 ≤100）：二分只对排序键成立，而数组按 created 排
+          const index = messages.findIndex((m) => m.id === event.properties.messageID)
+          if (index >= 0) {
             setStore(
               "message",
               event.properties.sessionID,
               produce((draft) => {
-                draft.splice(result.index, 1)
+                draft.splice(index, 1)
               }),
             )
           }

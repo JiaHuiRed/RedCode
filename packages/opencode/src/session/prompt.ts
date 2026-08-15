@@ -1144,15 +1144,17 @@ export const layer = Layer.effect(
         let salvageRecoveries = 0
         // 260729 Red soft 档提示每个会话只发一次，别每轮刷屏
         let softContextNoticed = false
-        // 260729 Red 本轮起点的用户消息 id + 已提醒过的消息 id。用来区分「开启本轮的那条」
+        // 260729 Red 本轮起点的用户消息 + 已提醒过的消息 id。用来区分「开启本轮的那条」
         // 和「回合中途新到的」—— 只有后者才该提醒，且只提醒一次（详见下方注入处的注释）。
-        let turnStartUserID: MessageID | undefined
+        // 260814 Red 起点改存消息本体：ID 48 位编码 795 天回绕后字典序失真（见 MessageV2.compareTime），
+        // 边界比较必须走 time.created。
+        let turnStartUserID: MessageV2.User | undefined
         const remindedUserIDs = new Set<MessageID>()
         // 260814 Red stall nudge（260803）退役：同指纹口径（tool+stringify(input)）的空转检测
         // 已由 repeat-tool-reminder 软层接管（3/5/8 递进、贴 result 尾部、todo 透明、跨轮），
         // 8 阈值双响只会文案重复。真空转仍有 doom_loop 硬层弹窗兜底。决策见 docs/notes/。
         // 260814 Red 繁忙时新消息送达策略：steer(默认)=下个 step 以 reminder 注入进行中的轮次；
-        // queue=对本轮隐藏，轮末由「lastUser.id > lastAssistant.id 则不 break」的既有续跑
+        // queue=对本轮隐藏，轮末由「lastUser 比 lastAssistant 新则不 break」的既有续跑
         // 边界自然开新轮消费。详见 docs/notes/ 的 busy-enter note。
         const busyEnter = (yield* config.get()).busy_enter ?? "steer"
 
@@ -1180,7 +1182,7 @@ export const layer = Layer.effect(
             lastAssistant?.finish &&
             !["tool-calls"].includes(lastAssistant.finish) &&
             !hasToolCalls &&
-            lastUser.id < lastAssistant.id &&
+            MessageV2.compareTime(lastUser, lastAssistant) < 0 &&
             // 260728 Red 打捞到文本态工具调用时不走正常退出，强制再跑一轮（下面 A 处设置）
             !forceContinue
           ) {
@@ -1439,18 +1441,18 @@ export const layer = Layer.effect(
             //    而不是上一轮的结束点。
             // 2) 没有去重。同一条消息即使确实是中途新到的，也只该提醒一次 —— 它本身就在
             //    msgs 里，模型看得到，反复强调只会让它以为又来了一条新指令。
-            if (turnStartUserID === undefined) turnStartUserID = lastUser.id
+            if (turnStartUserID === undefined) turnStartUserID = lastUser
             // 260814 Red queue 模式续跑边界：上一轮 assistant 已完成而 lastUser 更新
             // （排队消息触发续跑，没走 break），新轮起点前移——排队消息从"对本轮隐藏"
             // 转为"新轮的开轮输入"。steer 模式不动这个边界（260729 修过的雷区）。
-            else if (busyEnter === "queue" && lastAssistant?.finish && lastUser.id > lastAssistant.id) {
-              turnStartUserID = lastUser.id
+            else if (busyEnter === "queue" && lastAssistant?.finish && MessageV2.compareTime(lastUser, lastAssistant) > 0) {
+              turnStartUserID = lastUser
             }
             let userReminderText: string | undefined
             if (busyEnter === "steer" && step > 1) {
               const parts: string[] = []
               for (const m of msgs) {
-                if (m.info.role !== "user" || m.info.id <= turnStartUserID) continue
+                if (m.info.role !== "user" || MessageV2.compareTime(m.info, turnStartUserID) <= 0) continue
                 if (remindedUserIDs.has(m.info.id)) continue
                 const text = m.parts
                   .filter((p) => p.type === "text" && !p.ignored && !p.synthetic)
@@ -1526,9 +1528,10 @@ export const layer = Layer.effect(
             // 260814 Red queue 模式：本轮中途新到的 user 消息对模型隐藏（只从模型可见消息里
             // 滤掉整条，不动 msgs 本体——compaction/reminder/msgPin 仍按全量算），留到轮末
             // 续跑边界作为新轮输入。steer 模式恒等于 msgs。
+            const turnStart = turnStartUserID
             const visibleMsgs =
-              busyEnter === "queue" && turnStartUserID !== undefined
-                ? msgs.filter((m) => !(m.info.role === "user" && m.info.id > turnStartUserID!))
+              busyEnter === "queue" && turnStart !== undefined
+                ? msgs.filter((m) => !(m.info.role === "user" && MessageV2.compareTime(m.info, turnStart) > 0))
                 : msgs
             const [skills, env, instructions, modelMsgs] = yield* Effect.all([
               cachedSystem ? Effect.succeed(cachedSystem.skills) : sys.skills(agent),

@@ -13,7 +13,7 @@ const prefixes = {
   workspace: "wrk",
 } as const
 
-const LENGTH = 26
+const LENGTH = 30
 
 // State for monotonic ID generation
 let lastTimestamp = 0
@@ -61,19 +61,25 @@ export function create(prefix: string, direction: "descending" | "ascending", ti
 
   now = direction === "descending" ? ~now : now
 
-  const timeBytes = Buffer.alloc(6)
-  for (let i = 0; i < 6; i++) {
-    timeBytes[i] = Number((now >> BigInt(40 - 8 * i)) & BigInt(0xff))
+  // 260814 Red 6 字节(48 位) → 8 字节(64 位)：旧编码回绕周期 2^36 ms ≈ 795 天，
+  // 2026-08-14 19:19:55.136 已第 26 次回绕，此后新 ID 字典序反小于回绕前旧 ID，
+  // 一切按 ID 字典序表达"先后"的比较全部失真（曾致 runLoop 空转死循环，见 MessageV2.compareTime）。
+  // 64 位下时间戳空间 2^52 ms（约 14 万年）内不回绕。
+  const timeBytes = Buffer.alloc(8)
+  for (let i = 0; i < 8; i++) {
+    timeBytes[i] = Number((now >> BigInt(56 - 8 * i)) & BigInt(0xff))
   }
 
-  return prefix + "_" + timeBytes.toString("hex") + randomBase62(LENGTH - 12)
+  return prefix + "_" + timeBytes.toString("hex") + randomBase62(LENGTH - 16)
 }
 
 /** Extract timestamp from an ascending ID. Does not work with descending IDs. */
 export function timestamp(id: string): number {
   const prefix = id.split("_")[0]
-  const hex = id.slice(prefix.length + 1, prefix.length + 13)
-  const encoded = BigInt("0x" + hex)
+  const rest = id.slice(prefix.length + 1)
+  // 260814 Red 兼容旧 6 字节(12 hex)与新 8 字节(16 hex)：random 尾部恒 14 位
+  const hexLen = rest.length - (LENGTH - 16)
+  const encoded = BigInt("0x" + rest.slice(0, hexLen))
   return Number(encoded / BigInt(0x1000))
 }
 

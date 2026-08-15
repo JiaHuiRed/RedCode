@@ -771,10 +771,13 @@ export const layer: Layer.Layer<
         title,
       })
       const msgs = yield* messages({ sessionID: input.sessionID })
+      // 260814 Red 截断边界改 compareTime（ID 48 位编码 795 天回绕后字典序失真）。
+      // msgs 按 created 升序，target 不存在（已被裁剪）时不截断、复制全部。
+      const target = input.messageID ? msgs.find((msg) => msg.info.id === input.messageID) : undefined
       const idMap = new Map<string, MessageID>()
 
       for (const msg of msgs) {
-        if (input.messageID && msg.info.id >= input.messageID) break
+        if (target && MessageV2.compareTime(msg.info, target.info) >= 0) break
         const newID = MessageID.ascending()
         idMap.set(msg.info.id, newID)
 

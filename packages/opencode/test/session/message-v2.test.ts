@@ -1765,3 +1765,84 @@ describe("truncateToolOutput", () => {
     expect(out.length).toBeLessThan(text.length)
   })
 })
+
+// 260814 Red MessageID 48 位编码 795 天回绕回归：2026-08-14 19:19:55.136 第 26 次回绕后，
+// 新 ID 字典序小于回绕前旧 ID（ffff 前缀 → 0000 前缀）。「先后」必须走 compareTime
+// 的 time.created，ID 只做 identity——曾因 latest() 用 ID 字典序致 runLoop 219 步空转死循环。
+describe("session.message-v2.compareTime id wrap-around", () => {
+  // 真实回绕现场的两条 ID（ses_0053f5027f...，19:18:23 vs 19:21:07）
+  const preWrap = MessageID.make("msg_ffffe99de001q1YxL03nJcwemG")
+  const postWrap = MessageID.make("msg_000011a87001hSDtPmoH")
+
+  const withCreated = (info: MessageV2.User | MessageV2.Assistant, created: number) => {
+    info.time.created = created
+    return info
+  }
+
+  test("created decides order even when ID lexicographic order is inverted", () => {
+    const old = withCreated(userInfo(preWrap), 1_786_706_303_698)
+    const fresh = withCreated(userInfo(postWrap), 1_786_706_407_000)
+    expect(fresh.id < old.id).toBe(true) // 字典序已失真（这是 bug 的现场条件）
+    expect(MessageV2.compareTime(fresh, old)).toBeGreaterThan(0)
+    expect(MessageV2.compareTime(old, fresh)).toBeLessThan(0)
+  })
+
+  test("same-ms tie-break falls back to id lexicographic order", () => {
+    const a = withCreated(userInfo("msg_fffffffff0001AA"), 1_000)
+    const b = withCreated(userInfo("msg_fffffffff0002BB"), 1_000)
+    expect(MessageV2.compareTime(b, a)).toBeGreaterThan(0)
+  })
+
+  test("latest() picks newest user by created, not by id", () => {
+    const msgs: MessageV2.WithParts[] = [
+      { info: withCreated(userInfo(preWrap), 1_786_706_303_698), parts: [] },
+      { info: withCreated(userInfo(postWrap), 1_786_706_407_000), parts: [] },
+    ]
+    const { user } = MessageV2.latest(msgs)
+    expect(user?.id).toBe(postWrap)
+  })
+
+  test("latest() picks newest finished assistant by created, not by id", () => {
+    const msgs: MessageV2.WithParts[] = [
+      {
+        info: withCreated(
+          { ...assistantInfo(preWrap, preWrap), finish: "stop" },
+          1_786_706_303_700,
+        ),
+        parts: [],
+      },
+      {
+        info: withCreated(
+          { ...assistantInfo(postWrap, postWrap), finish: "stop" },
+          1_786_706_407_100,
+        ),
+        parts: [],
+      },
+    ]
+    const { assistant, finished } = MessageV2.latest(msgs)
+    expect(assistant?.id).toBe(postWrap)
+    expect(finished?.id).toBe(postWrap)
+  })
+
+  test("tasks filter uses created boundary: compaction on newer user stays a task", () => {
+    const olderFinished = withCreated(
+      { ...assistantInfo("msg_ffffffffffff01AA", preWrap), finish: "stop" },
+      2_000,
+    )
+    const newerUser = withCreated(userInfo(postWrap), 3_000)
+    const compactionPart: MessageV2.CompactionPart = {
+      ...basePart(postWrap, "p-compact"),
+      type: "compaction",
+      auto: false,
+      tail_start_id: undefined,
+    }
+    const msgs: MessageV2.WithParts[] = [
+      { info: olderFinished, parts: [] },
+      { info: newerUser, parts: [compactionPart] },
+    ]
+    // postWrap(id 0000) 字典序 < finished(id ffff)，若按 ID 比较会把 task 误判为已处理
+    expect(postWrap < olderFinished.id).toBe(true)
+    const { tasks } = MessageV2.latest(msgs)
+    expect(tasks).toHaveLength(1)
+  })
+})
