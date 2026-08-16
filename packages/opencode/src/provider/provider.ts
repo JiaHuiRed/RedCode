@@ -1224,14 +1224,21 @@ export const layer = Layer.effect(
         // StepFun: https://platform.stepfun.com/docs/pricing
         const CNY_COST_FLASH = { input: 1, output: 2, cache: { read: 0.02, write: 1 } }
         const CNY_COST_PRO = { input: 3, output: 6, cache: { read: 0.025, write: 3 } }
+        // 260816 Red: DeepSeek 2026-08-17 00:00 起改峰谷定价（官方公告）——高峰时段
+        // （北京时间 9:00-12:00、14:00-18:00）为空闲时段的 2 倍。静态 cost 表无法表达时段，
+        // 按高峰价记（费用显示为保守上限）；空闲时段实际费用约为表中一半。
+        // 公告只给 cache hit / miss / output 三列，cache write 按惯例 = 未命中输入价。
+        // 旧价：flash 1/2/0.02、pro 3/6/0.025 —— 高峰价约为旧价 3-4.5 倍。
+        const DS_V4_COST_FLASH = { input: 3, output: 9, cache: { read: 0.1, write: 3 } }
+        const DS_V4_COST_PRO = { input: 9, output: 27, cache: { read: 0.3, write: 9 } }
         const CNY_PRICING: Record<string, Record<string, typeof CNY_COST_FLASH>> = {
           deepseek: {
-            "deepseek-v4-flash": CNY_COST_FLASH,
-            "deepseek-v4-pro": CNY_COST_PRO,
+            "deepseek-v4-flash": DS_V4_COST_FLASH,
+            "deepseek-v4-pro": DS_V4_COST_PRO,
           },
           "opencode-go": {
-            "deepseek-v4-flash": CNY_COST_FLASH,
-            "deepseek-v4-pro": CNY_COST_PRO,
+            "deepseek-v4-flash": DS_V4_COST_FLASH,
+            "deepseek-v4-pro": DS_V4_COST_PRO,
           },
           xiaomi: {
             "mimo-v2.5": CNY_COST_FLASH,
