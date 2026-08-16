@@ -29,6 +29,7 @@ export type TimelineRowMap = {
   Retry: { userMessageID: string }
   DiffSummary: { userMessageID: string; diffs: SummaryDiff[] }
   Error: { userMessageID: string; text: string }
+  AssistantPending: { userMessageID: string }
   BottomSpacer: {}
 }
 
@@ -66,6 +67,9 @@ export namespace TimelineRow {
     userMessageID: string
     text: string
   }> {}
+  export class AssistantPending extends Data.TaggedClass("AssistantPending")<{
+    userMessageID: string
+  }> {}
   export class Retry extends Data.TaggedClass("Retry")<{
     userMessageID: string
   }> {}
@@ -79,6 +83,7 @@ export namespace TimelineRow {
     | Thinking
     | DiffSummary
     | Error
+    | AssistantPending
     | Retry
     | BottomSpacer
 
@@ -98,6 +103,8 @@ export namespace TimelineRow {
         return `diff-summary:${row.userMessageID}`
       case "Error":
         return `error:${row.userMessageID}`
+      case "AssistantPending":
+        return `assistant-pending:${row.userMessageID}`
       case "Retry":
         return `retry:${row.userMessageID}`
       case "BottomSpacer":
@@ -202,6 +209,13 @@ export namespace Timeline {
       )
       assistantGroupIndex += 1
     })
+
+   // 260816 Yuqi 兜底：assistant 骨架已进 store（message.updated 先到）但可渲染 parts 未到
+   //   （流式生成中 / 切换会话期间 status 缺失）时，原逻辑一行都不渲染 → 回复"凭空消失"。
+   //   busy 时 Thinking 行已覆盖，这里只兜非 busy 的静默窗口期。
+   if (assistantMessages.length > 0 && assistantItems.length === 0 && !error && !(isActive && status === "busy")) {
+     rows.push(new TimelineRow.AssistantPending({ userMessageID: userMessage.id }))
+   }
 
     if (isActive && status === "busy" && !error && (showReasoning ? assistantPartRefs.length === 0 : true)) {
       const heading = assistantMessages

@@ -1284,6 +1284,33 @@ export function MessageTimeline(props: {
           </TimelineRowFrame>
         )
       }
+     case "AssistantPending": {
+       const pendingRow = row as Accessor<TimelineRowByTag<"AssistantPending">>
+       return (
+         <TimelineRowFrame row={pendingRow}>
+           <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
+             <div data-slot="session-turn-assistant-row">
+               <div data-slot="session-turn-assistant-avatar">
+                 <Avatar
+                   fallback="R"
+                   src={settings.assistantProfile.avatar() || undefined}
+                   size="medium"
+                   background="var(--syntax-keyword)"
+                   foreground="var(--text-on-accent)"
+                 />
+               </div>
+               <div data-slot="session-turn-assistant-content">
+                 {/* 260816 Yuqi 兜底占位：assistant 骨架已到但可渲染 parts 未到，显示生成中而非消失 */}
+                 <div class="px-2 py-2 text-12-regular text-text-weak">
+                   {language.t("common.loading")}
+                   {language.t("common.loading.ellipsis")}
+                 </div>
+               </div>
+             </div>
+           </div>
+         </TimelineRowFrame>
+       )
+     }
       case "Retry": {
         const retryRow = row as Accessor<TimelineRowByTag<"Retry">>
         return (
