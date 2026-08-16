@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "version": "0.8.18",
+  "version": "0.8.19",
   "name": "@redcode-ai/http-recorder",
   "type": "module",
   "license": "MIT",
