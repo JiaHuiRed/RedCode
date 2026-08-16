@@ -1530,6 +1530,63 @@ describe("util.token.estimate", () => {
 })
 
 describe("SessionNs.getUsage", () => {
+  describe("tiered pricing (DeepSeek peak/off-peak)", () => {
+    const deepseekModel = {
+      ...createModel({ context: 100_000, output: 32_000 }),
+      id: "deepseek-v4-flash",
+      providerID: "deepseek",
+    } as Provider.Model
+    const oneMillionInput = usage({ inputTokens: 1_000_000, outputTokens: 0, totalTokens: 1_000_000 })
+
+    test("charges legacy flat rate before 2026-08-17", () => {
+      // 2026-08-10T04:00Z = 北京时间 12:00，仍在旧价段
+      const result = SessionNs.getUsage({
+        model: deepseekModel,
+        usage: oneMillionInput,
+        time: Date.parse("2026-08-10T04:00:00Z"),
+      })
+      expect(result.cost).toBeCloseTo(1) // 旧价 input 1 CNY / 1M
+    })
+
+    test("charges peak rate during 9:00-12:00 Beijing", () => {
+      // 2026-08-20T02:00Z = 北京时间 10:00（高峰）
+      const result = SessionNs.getUsage({
+        model: deepseekModel,
+        usage: oneMillionInput,
+        time: Date.parse("2026-08-20T02:00:00Z"),
+      })
+      expect(result.cost).toBeCloseTo(3) // 高峰 input 3 CNY / 1M
+    })
+
+    test("charges peak rate during 14:00-18:00 Beijing", () => {
+      // 2026-08-20T07:00Z = 北京时间 15:00（高峰）
+      const result = SessionNs.getUsage({
+        model: deepseekModel,
+        usage: oneMillionInput,
+        time: Date.parse("2026-08-20T07:00:00Z"),
+      })
+      expect(result.cost).toBeCloseTo(3)
+    })
+
+    test("charges off-peak rate at night", () => {
+      // 2026-08-20T12:00Z = 北京时间 20:00（空闲）
+      const result = SessionNs.getUsage({
+        model: deepseekModel,
+        usage: oneMillionInput,
+        time: Date.parse("2026-08-20T12:00:00Z"),
+      })
+      expect(result.cost).toBeCloseTo(1.5) // 空闲 input 1.5 CNY / 1M
+    })
+
+    test("falls back to static model.cost when time is absent", () => {
+      const result = SessionNs.getUsage({
+        model: deepseekModel,
+        usage: oneMillionInput,
+      })
+      expect(result.cost).toBe(0) // createModel 默认 cost 全 0
+    })
+  })
+
   test("normalizes standard usage to token format", () => {
     const model = createModel({ context: 100_000, output: 32_000 })
     const result = SessionNs.getUsage({

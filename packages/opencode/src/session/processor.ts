@@ -698,6 +698,8 @@ export const layer = Layer.effect(
               model: ctx.model,
               usage: value.usage ?? new Usage({}),
               metadata: value.providerMetadata,
+              // 260816 Red: 峰谷定价按 step 完成时刻查价（记账定格，历史费用不随改价跳变）
+              time: Date.now(),
             })
             if (!ctx.assistantMessage.summary) {
               // TODO(v2): Temporary dual-write while migrating session messages to v2 events.

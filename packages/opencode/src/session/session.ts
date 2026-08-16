@@ -34,6 +34,7 @@ import { ProjectID } from "../project/schema"
 import { WorkspaceID } from "../control-plane/schema"
 import { SessionID, MessageID, PartID } from "./schema"
 import { ModelID, ProviderID } from "@/provider/schema"
+import { resolveTieredCost } from "@/provider/tiered-pricing"
 
 import type { Provider } from "@/provider/provider"
 import { Permission } from "@/permission"
@@ -393,7 +394,13 @@ export function plan(input: { slug: string; time: { created: number } }, instanc
   return path.join(base, [input.time.created, input.slug].join("-") + ".md")
 }
 
-export const getUsage = (input: { model: Provider.Model; usage: Usage; metadata?: ProviderMetadata }) => {
+export const getUsage = (input: {
+  model: Provider.Model
+  usage: Usage
+  metadata?: ProviderMetadata
+  /** 请求时刻（epoch ms）——命中峰谷定价旁路表时按此刻查价；缺省走静态 model.cost。 */
+  time?: number
+}) => {
   const safe = (value: number) => {
     if (!Number.isFinite(value)) return 0
     return Math.max(0, value)
@@ -457,13 +464,20 @@ export const getUsage = (input: { model: Provider.Model; usage: Usage; metadata?
   }
 
   const contextTokens = inputTokens
+  // 260816 Red: 峰谷定价旁路表优先——按请求时刻取价（旧价历史段/高峰/空闲），
+  // 未命中（无 time 或不在表内）回落到静态 model.cost 的 tiers/experimental 逻辑。
+  const tieredCost =
+    input.time === undefined
+      ? undefined
+      : resolveTieredCost(input.model.providerID, input.model.id, input.time)
   const costInfo =
-    input.model.cost?.tiers
+    tieredCost ??
+    (input.model.cost?.tiers
       ?.filter((item) => item.tier.type === "context" && contextTokens > item.tier.size)
       .sort((a, b) => b.tier.size - a.tier.size)[0] ??
-    (input.model.cost?.experimentalOver200K && contextTokens > 200_000
-      ? input.model.cost.experimentalOver200K
-      : input.model.cost)
+      (input.model.cost?.experimentalOver200K && contextTokens > 200_000
+        ? input.model.cost.experimentalOver200K
+        : input.model.cost))
   const cost = safe(
     new Decimal(0)
       .add(new Decimal(tokens.input).mul(costInfo?.input ?? 0).div(1_000_000))
