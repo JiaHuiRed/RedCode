@@ -1136,6 +1136,61 @@ describe("ProviderTransform.message - DeepSeek reasoning content", () => {
     expect(result[0].providerOptions?.openaiCompatible?.reasoning_content).toBe("Let me think about this...")
   })
 
+  test("DeepSeek plain-text turn omits reasoning_content (official thinking_mode rule)", () => {
+    const msgs = [
+      {
+        role: "assistant",
+        content: [
+          { type: "reasoning", text: "Let me think..." },
+          { type: "text", text: "Done." },
+        ],
+      },
+    ] as any[]
+
+    const result = ProviderTransform.message(
+      msgs,
+      {
+        id: ModelID.make("deepseek/deepseek-chat"),
+        providerID: ProviderID.make("deepseek"),
+        api: {
+          id: "deepseek-chat",
+          url: "https://api.deepseek.com",
+          npm: "@ai-sdk/openai-compatible",
+        },
+        name: "DeepSeek Chat",
+        capabilities: {
+          temperature: true,
+          reasoning: true,
+          attachment: false,
+          toolcall: true,
+          input: { text: true, audio: false, image: false, video: false, pdf: false },
+          output: { text: true, audio: false, image: false, video: false, pdf: false },
+          interleaved: {
+            field: "reasoning_content",
+          },
+        },
+        cost: {
+          input: 0.001,
+          output: 0.002,
+          cache: { read: 0.0001, write: 0.0002 },
+        },
+        limit: {
+          context: 128000,
+          output: 8192,
+        },
+        status: "active",
+        options: {},
+        headers: {},
+        release_date: "2023-04-01",
+      },
+      {},
+    )
+
+    expect(result).toHaveLength(1)
+    expect(result[0].content).toEqual([{ type: "text", text: "Done." }])
+    expect(result[0].providerOptions?.openaiCompatible?.reasoning_content).toBeUndefined()
+  })
+
   test("Non-DeepSeek providers leave reasoning content unchanged", () => {
     const msgs = [
       {

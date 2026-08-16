@@ -350,9 +350,14 @@ function normalizeMessages(
         // Filter out reasoning parts from content
         const filteredContent = msg.content.filter((part: any) => part.type !== "reasoning")
 
-        // Include reasoning_content | reasoning_details directly on the message for all assistant messages.
-        // Always set the field even when empty — some providers (e.g. DeepSeek) may return empty
-        // reasoning_content which still needs to be sent back in subsequent requests.
+        // 260816 Red 对齐 DeepSeek thinking_mode 官方规则（guides/thinking_mode.mdx）：
+        // reasoning_content 只在带 tool-call 的 assistant turn 回传（API 硬性要求），
+        // 纯文本 turn 服务端忽略——省略字段省 input token。
+        // tool-call turn 空字段也设置（兼容部分 provider 要求字段存在）。
+        if (!msg.content.some((part: any) => part.type === "tool-call")) {
+          return { ...msg, content: filteredContent }
+        }
+
         return {
           ...msg,
           content: filteredContent,
