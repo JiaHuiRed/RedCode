@@ -28,6 +28,9 @@
 
 - [ ] **goal 语义三件套**进子代理派活提示词/机制:blocked 必须同一阻塞条件持续 ≥N 轮才准标;"难/不确定/还有活"明文不算 blocked;resume/fork 后自动缴械、需用户明说才续跑。对冲 V4 长程早停。参考 `goal/goal` + `goal/tool-goal` guidance。
 - [ ] **指令文件加载细节**:同目录 AGENTS.md/CLAUDE.md 内容去重(trim 后同文只渲染一次);变更/移除注入 "Updated/Removed instructions from";预算裁剪"先丢整个较宽文件再截最具体文件 + 可见通知"。参考 `context/agent-instructions`。
+  - [x] 260817 变更/移除通知已落地：`session/prompt.ts` 每轮读盘对比 + system 尾一次性通知 + 刷新缓存，note 见 `docs/notes/implemented/feature/2026-08-17-instruction-change-notice.md`
+  - [x] 同目录去重：RedCode 本就 first-match-wins 不堆叠，天然规避（无需做）
+  - [ ] 预算裁剪：现 64K 只告警不截断（260813），裁剪语义需哥哥拍板
 - [ ] **翻 `dsh-trim-cot-leakage` skill**,对照 step-3.7 思维链泄漏三条防线补手法。
 
 ## 第三批(结构性)

@@ -1,6 +1,6 @@
 import { NodeFileSystem } from "@effect/platform-node"
 import { FetchHttpClient } from "effect/unstable/http"
-import { expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
 import path from "path"
 import { fileURLToPath, pathToFileURL } from "url"
@@ -2323,3 +2323,35 @@ noLLMServer.instance(
     }),
   30_000,
 )
+
+// 260817 Red 指令文件变更通知（对齐 DSH agent-instructions 的 Updated/Removed 机制）。
+describe("diffInstructionNotice", () => {
+  const part = (filepath: string, content: string) => `Instructions from: ${filepath}\n${content}`
+  const changed = SessionPrompt.diffInstructionNotice
+
+  test("no changes returns undefined", () => {
+    expect(changed([part("a.md", "one"), part("b.md", "two")], [part("a.md", "one"), part("b.md", "two")])).toBe(
+      undefined,
+    )
+  })
+
+  test("updated content emits updated notice", () => {
+    const notice = changed([part("a.md", "old"), part("b.md", "same")], [part("a.md", "new"), part("b.md", "same")])
+    expect(notice).toBe(`Updated instructions from a.md:\nnew`)
+  })
+
+  test("new file emits updated notice", () => {
+    const notice = changed([part("a.md", "one")], [part("a.md", "one"), part("b.md", "two")])
+    expect(notice).toBe(`Updated instructions from b.md:\ntwo`)
+  })
+
+  test("removed file emits removed notice", () => {
+    const notice = changed([part("a.md", "one"), part("b.md", "two")], [part("a.md", "one")])
+    expect(notice).toBe(`Removed instructions from b.md`)
+  })
+
+  test("multiple changes join with blank line", () => {
+    const notice = changed([part("a.md", "old")], [part("a.md", "new"), part("b.md", "two")])
+    expect(notice).toBe(`Updated instructions from a.md:\nnew\n\nUpdated instructions from b.md:\ntwo`)
+  })
+})
