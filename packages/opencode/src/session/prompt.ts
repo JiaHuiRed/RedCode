@@ -1603,13 +1603,16 @@ export const layer = Layer.effect(
  2. Context WILL be compacted; memory is the only bridge to the next session. Anything that survives only in this conversation is lost. Write liberally.
  3. Append via read + edit, NEVER write (write overwrites the file). Project file for this project's facts; only cross-project, reusable lessons go to global.`,
             )
-            // 260801 Red active goal 注入：钉住目标时让模型持续推进，完成调 goal_done 收尾。
+// 260801 Red active goal 注入：钉住目标时让模型持续推进，完成调 goal_done 收尾。
             // 放 memory 条款后 canary 前——goal 状态变化只 bust 尾部缓存，不影响前缀大块。
+            // 260817 Red goal 语义三件套①+②（对齐 DSH goal guidance）：blocked 判定标准与
+            // 明文排除。V4 长程早停的对冲——难/不确定/还有活都不构成停下来报告阻塞的理由。
             const activeGoal = yield* goal.get(sessionID)
             if (activeGoal?.status === "active") {
               system.push(
                 `▸ ACTIVE GOAL (pinned by the user — keep working toward it; call goal_done when finished):
-<goal>${activeGoal.text}</goal>`,
+ <goal>${activeGoal.text}</goal>
+ Blocked rules: only report a blocking condition after the SAME concrete condition has persisted for at least 3 consecutive turns with no progress, and state that concrete condition. Difficulty, uncertainty, or remaining useful work is NOT blocked — keep pushing.`,
               )
             }
             // 260629 Red inject per-session canary marker for prompt-injection detection.
