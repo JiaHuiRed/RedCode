@@ -38,7 +38,11 @@ const TOOL_OUTPUT_MAX_CHARS = 2_000
 const PRUNE_PROTECTED_TOOLS = ["skill"]
 const DEFAULT_TAIL_TURNS = 2
 const MIN_PRESERVE_RECENT_TOKENS = 2_000
-const MAX_PRESERVE_RECENT_TOKENS = 8_000
+// 260817 Red 压缩全灭代价优化：8000 太小——长会话最近 2 轮通常几万 token，装不进 budget
+// 就触发 tail fallback（select 里 keep=undefined → head=全部历史），压缩代理轮请求体
+// 爆炸（~177K 全价）且最近细节也被压掉。调到 50K 后最近轮次保留原样，head 只剩老历史
+// （budget 仍受 usable*0.25 上限约束，模型可用上下文小的时候自动收缩）。
+const MAX_PRESERVE_RECENT_TOKENS = 50_000
 const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <template> and keep the section order unchanged. Do not include the <template> tags in your response.
 <template>
 ## Goal
@@ -497,7 +501,12 @@ export const layer = Layer.effect(
         { context: [], prompt: undefined },
       )
       const nextPrompt = compacting.prompt ?? buildPrompt({ previousSummary, context: compacting.context })
-      const msgs = structuredClone(selected.head)
+      // 260817 Red 压缩全灭代价优化：摘要模型不需要看思考过程——reasoning part 约占
+      // head 的 40-50%，跳过它让压缩代理轮请求体显著变小（全灭 177K → ~90K）。
+      const msgs = structuredClone(selected.head).map((m) => ({
+        ...m,
+        parts: m.parts.filter((part) => part.type !== "reasoning"),
+      }))
       yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
       const modelMessages = yield* MessageV2.toModelMessagesEffect(msgs, model, {
         stripMedia: true,
