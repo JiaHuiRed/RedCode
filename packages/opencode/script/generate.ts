@@ -25,14 +25,26 @@ const CACHE_FILE = path.join(os.homedir(), ".redcode", "cache", "models.json") /
 // 是本机的实际状态，而让用户每次构建都记得 set HTTPS_PROXY 是不现实的。既然 git 已经配好了
 // 能用的代理，直接拿来用：bun 的 fetch 支持 { proxy } 选项，不依赖环境变量。
 // 只读不写，不碰用户的 git 配置。
-function gitProxy(): string | undefined {
-  for (const key of ["https.proxy", "http.proxy"]) {
-    try {
-      const value = execFileSync("git", ["config", "--get", key], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim()
-      if (value) return value
-    } catch {
-      // 没配这一项，或者根本没有 git —— 都不是错误，继续试下一个
-    }
+// 260817 Red 按需代理的机器只配 per-URL 键（http.https://github.com.proxy），通用键读不到，
+// models.dev 直连被墙只能回退 stale cache 打 warning。--get-urlmatch 让 git 按 URL 解析
+// 最具体的规则：per-URL 键、全局 http.proxy 都能命中；都空则退回直连（旧行为不变）。
+function gitProxy(url: string): string | undefined {
+  try {
+    const value = execFileSync(
+      "git",
+      ["config", "--get-urlmatch", "http.proxy", url],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    ).trim()
+    if (value) return value
+  } catch {
+    // 没有 git，或没有任何代理规则 —— 不是错误，继续
+  }
+  try {
+    // legacy 全局键 https.proxy 不在 URL 匹配体系里，单独回退查一次
+    const value = execFileSync("git", ["config", "--get", "https.proxy"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim()
+    if (value) return value
+  } catch {
+    // 同上
   }
   return undefined
 }
@@ -45,7 +57,7 @@ const FETCH_TIMEOUT_MS = 90_000
 // （本机实测直连 12 秒无响应，而且这是常态，能直连才是少数情况）。
 // 没配代理的机器行为不变：直连，失败即失败。
 async function fetchModels(url: string): Promise<string> {
-  const proxy = gitProxy()
+  const proxy = gitProxy(url)
   const direct = () => fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }).then((x) => x.text())
   if (!proxy) return await direct()
 
