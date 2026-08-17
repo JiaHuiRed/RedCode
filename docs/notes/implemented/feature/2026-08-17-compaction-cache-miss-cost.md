@@ -14,13 +14,18 @@
 
 ## 决策
 
-1. **压缩代理请求体跳过 head 的 reasoning part**（`session/compaction.ts` `processCompaction`）：摘要模型只需要工作内容（text/tool），不需要思考过程——reasoning part 约占 head 的 40-50%，`structuredClone(selected.head)` 后按 `part.type !== "reasoning"` 过滤。与既有 `stripMedia: true` 同类轻量化操作。
-2. **`MAX_PRESERVE_RECENT_TOKENS` 8000 → 50K**（`session/compaction.ts:41`）：8000 太小是结构性隐患——长会话最近 2 轮通常几万 token，装不进 budget 就触发 `select()` 的 tail fallback（`keep=undefined → head=全部历史`），压缩代理请求体爆炸（~177K 全价）**且最近细节也被压缩掉**。50K 后最近轮次保留原样（head 只剩老历史），budget 仍受 `usable*0.25` 上限约束，小上下文模型自动收缩。
+1. ~~**压缩代理请求体跳过 head 的 reasoning part**（`session/compaction.ts` `processCompaction`）~~ —— **同日回退**：摘掉 reasoning 后，摘要轮写入的缓存（head 无 reasoning）与恢复轮请求体（head 保留 reasoning，`message-v2.ts` 原样透传）在第一条 reasoning part 处前缀断裂，恢复轮**无法命中**摘要轮缓存，变成 2 次全灭（90K + 177K ≈ 267K），总账比回退前"1 次全灭 + 恢复轮命中"（177K + tail 小量）更贵。**head 必须与恢复轮逐字节一致**，省 reasoning 的 40-50% 必须以不破坏前缀一致为前提（例如将来可让恢复轮也跳过 reasoning，两轮同构再比价）。
+2. **`MAX_PRESERVE_RECENT_TOKENS` 8000 → 50K**（`session/compaction.ts:41`）：8000 太小是结构性隐患——长会话最近 2 轮通常几万 token，装不进 budget 就触发 `select()` 的 tail fallback（`keep=undefined → head=全部历史`），压缩代理请求体爆炸（~177K 全价）**且最近细节也被压缩掉**。50K 后最近轮次保留原样（head 只剩老历史），budget 仍受 `usable*0.25` 上限约束，小上下文模型自动收缩。**保留。**
 
 ## 备选与否决理由
 
-- **reasoning 保留 + 摘要提示词显式忽略**：请求体照样大，浪费带宽与 cache write，弃。
+- **reasoning 保留 + 摘要提示词显式忽略**：请求体照样大，浪费带宽与 cache write，弃——但注意回退后实际就是此形态（保留 reasoning），可观察是否值得将来让恢复轮同样剥 reasoning 做两轮同构（见决策 1）。
 - **tail 预算动态化（按轮数/按百分比自适应）**：先按常量 50K 落地，等实测命中率回升数据再决定是否要更精细的档位，避免一次引入两个变量。
+
+## 同日回退记录（2026-08-17 晚）
+
+466bb79 落地当晚复盘（本机实测 + 代码核对）发现决策 1 负优化：摘要轮与恢复轮 head 前缀不一致 → 恢复轮二次全灭，总账 267K > 回退前 177K。已回退 reasoning 过滤（`compaction.ts` 恢复 `structuredClone(selected.head)`），测试断言改为 `toContain("REASONING_SECRET")`（改名为 `compaction request keeps reasoning parts in head for prefix cache consistency`）。50K tail 预算保留。教训：**摘要代理请求体必须与压缩后恢复轮的请求体逐字节同构，任何"轻量化"改造先验证两侧前缀一致性**。
+
 
 ## 后果
 

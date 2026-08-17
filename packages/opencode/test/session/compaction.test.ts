@@ -995,7 +995,7 @@ describe("session.compaction.process", () => {
   )
 
  itCompaction.instance(
-   "compaction request skips reasoning parts from head",
+   "compaction request keeps reasoning parts in head for prefix cache consistency",
    () => {
      const stub = llm()
      let captured = ""
@@ -1028,8 +1028,8 @@ describe("session.compaction.process", () => {
        expect(parent).toBeTruthy()
        yield* SessionCompaction.use.process({ parentID: parent!, messages: msgs, sessionID: session.id, auto: false })
 
-       expect(captured).toContain("assistant work")
-       expect(captured).not.toContain("REASONING_SECRET")
+      expect(captured).toContain("assistant work")
+      expect(captured).toContain("REASONING_SECRET")
      }).pipe(withCompaction({ llm: stub.layer }))
    },
    { git: true },

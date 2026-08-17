@@ -501,12 +501,12 @@ export const layer = Layer.effect(
         { context: [], prompt: undefined },
       )
       const nextPrompt = compacting.prompt ?? buildPrompt({ previousSummary, context: compacting.context })
-      // 260817 Red 压缩全灭代价优化：摘要模型不需要看思考过程——reasoning part 约占
-      // head 的 40-50%，跳过它让压缩代理轮请求体显著变小（全灭 177K → ~90K）。
-      const msgs = structuredClone(selected.head).map((m) => ({
-        ...m,
-        parts: m.parts.filter((part) => part.type !== "reasoning"),
-      }))
+     // 260817 Red 压缩全灭代价优化（同日回退）：摘掉 head 的 reasoning part 让摘要请求
+     // 变小（177K→90K），但恢复轮请求体保留 reasoning——两者前缀在第一条 reasoning
+     // 处断裂，恢复轮无法命中摘要轮写入的缓存，变成 2 次全灭（90K+177K），总账比
+     // "1 次全灭"（177K，恢复轮命中 head 后只剩 tail 写入）更贵。head 必须与恢复轮
+     // 逐字节一致；50K tail 预算（MAX_PRESERVE_RECENT_TOKENS）保留。
+     const msgs = structuredClone(selected.head)
       yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
       const modelMessages = yield* MessageV2.toModelMessagesEffect(msgs, model, {
         stripMedia: true,
