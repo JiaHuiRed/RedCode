@@ -1533,6 +1533,19 @@ export const layer = Layer.effect(
               busyEnter === "queue" && turnStart !== undefined
                 ? msgs.filter((m) => !(m.info.role === "user" && MessageV2.compareTime(m.info, turnStart) > 0))
                 : msgs
+            // 260817 Red 会话中指令文件变化检测（对齐 DSH agent-instructions 的
+            // Updated/Removed 通知）：指令按会话缓存（260617 前缀稳定设计），文件变了
+            // 模型会一直按旧规则干活。每轮读盘对比，变化轮注入一次性通知并刷新缓存，
+            // 下轮前缀即稳定在新版本。
+            const freshInstructions = cachedSystem
+              ? yield* instruction.system().pipe(Effect.orDie)
+              : undefined
+            const instructionNotice = freshInstructions
+              ? diffInstructionNotice(cachedSystem!.instructions, freshInstructions)
+              : undefined
+            if (instructionNotice && freshInstructions) {
+              _caches.system!.instructions = freshInstructions
+            }
             const [skills, env, instructions, modelMsgs] = yield* Effect.all([
               cachedSystem ? Effect.succeed(cachedSystem.skills) : sys.skills(agent),
               cachedSystem ? Effect.succeed(cachedSystem.env) : sys.environment(model),
@@ -1557,6 +1570,10 @@ export const layer = Layer.effect(
             // session), so only this small tail invalidates the provider's prefix cache once a day
             // instead of everything from <env> onward.
             system.push(`Today's date: ${new Date().toDateString()}`)
+            // 260817 Red 指令变更通知（见上方检测块）——只在变化轮出现一次。
+            if (instructionNotice) {
+              system.push(instructionNotice)
+            }
             // 260728 Red expanded rule 3 with concrete forbidden phrases (Chinese+English).
             // User caught another agent telling him "go rest" after hours of no progress — that phrasing
             // is a form of "put it aside" and is explicitly banned at the model level.
@@ -1586,13 +1603,16 @@ export const layer = Layer.effect(
  2. Context WILL be compacted; memory is the only bridge to the next session. Anything that survives only in this conversation is lost. Write liberally.
  3. Append via read + edit, NEVER write (write overwrites the file). Project file for this project's facts; only cross-project, reusable lessons go to global.`,
             )
-            // 260801 Red active goal 注入：钉住目标时让模型持续推进，完成调 goal_done 收尾。
+// 260801 Red active goal 注入：钉住目标时让模型持续推进，完成调 goal_done 收尾。
             // 放 memory 条款后 canary 前——goal 状态变化只 bust 尾部缓存，不影响前缀大块。
+            // 260817 Red goal 语义三件套①+②（对齐 DSH goal guidance）：blocked 判定标准与
+            // 明文排除。V4 长程早停的对冲——难/不确定/还有活都不构成停下来报告阻塞的理由。
             const activeGoal = yield* goal.get(sessionID)
             if (activeGoal?.status === "active") {
               system.push(
                 `▸ ACTIVE GOAL (pinned by the user — keep working toward it; call goal_done when finished):
-<goal>${activeGoal.text}</goal>`,
+ <goal>${activeGoal.text}</goal>
+ Blocked rules: only report a blocking condition after the SAME concrete condition has persisted for at least 3 consecutive turns with no progress, and state that concrete condition. Difficulty, uncertainty, or remaining useful work is NOT blocked — keep pushing.`,
               )
             }
             // 260629 Red inject per-session canary marker for prompt-injection detection.
@@ -2168,5 +2188,30 @@ const bashRegex = /!`([^`]+)`/g
 const argsRegex = /(?:\[Image\s+\d+\]|"[^"]*"|'[^']*'|[^\s"']+)/gi
 const placeholderRegex = /\$(\d+)/g
 const quoteTrimRegex = /^["']|["']$/g
+
+// 260817 Red 对比缓存与磁盘的指令 parts（"Instructions from: path\ncontent"），产出一次性变更通知。
+/** @internal Exported for testing */
+export function diffInstructionNotice(prev: string[], fresh: string[]): string | undefined {
+  const parse = (parts: string[]) => {
+    const map = new Map<string, string>()
+    for (const part of parts) {
+      const nl = part.indexOf("\n")
+      const head = nl === -1 ? part : part.slice(0, nl)
+      if (!head.startsWith("Instructions from: ")) continue
+      map.set(head.slice("Instructions from: ".length), nl === -1 ? "" : part.slice(nl + 1))
+    }
+    return map
+  }
+  const before = parse(prev)
+  const after = parse(fresh)
+  const notes: string[] = []
+  for (const [filepath, content] of after) {
+    if (before.get(filepath) !== content) notes.push(`Updated instructions from ${filepath}:\n${content}`)
+  }
+  for (const filepath of before.keys()) {
+    if (!after.has(filepath)) notes.push(`Removed instructions from ${filepath}`)
+  }
+  return notes.length > 0 ? notes.join("\n\n") : undefined
+}
 
 export * as SessionPrompt from "./prompt"

@@ -805,10 +805,351 @@ function googleThinkingBudgetMax(apiId: string) {
   return 24_576
 }
 
+// 260817 Red variants() 从 446 行巨型 switch 拆为「模型族特判 + npm 分派表 + 每 provider 一个函数」。
+// 原 switch 每加一个模型就要在一个 400 行的函数里找对应 case；拆开后新 provider 加一行分派 +
+// 一个函数，新模型改对应 provider 的小函数即可。公共形状抽成工厂（adaptiveThinkingVariants /
+// openaiShapeVariants / thinkingBudgetVariants），行为零变化，测试逐分支锚定。
+
+type VariantCtx = { model: Provider.Model; id: string }
+type VariantFn = (ctx: VariantCtx) => Record<string, Record<string, any>>
+
+const openaiShapeVariants = (efforts: string[]) =>
+  Object.fromEntries(efforts.map((effort) => [effort, { reasoningEffort: effort, reasoningSummary: "auto", include: ["reasoning.encrypted_content"] }]))
+
+// Anthropic adaptive thinking 形状：gateway / anthropic / sap 三处共用。
+// opus-4.7 需要 display: "summarized"（anthropic 专用；gateway / sap 不带）。
+const adaptiveThinkingVariants = (efforts: string[], display = false) =>
+  Object.fromEntries(
+    efforts.map((effort) => [
+      effort,
+      {
+        thinking: { type: "adaptive", ...(display ? { display: "summarized" } : {}) },
+        effort,
+      },
+    ]),
+  )
+
+// Anthropic thinking budget 形状的两种口味：固定 16000/31999（gateway/bedrock/sap），
+// 或按 model.limit.output 动态折算（原生 anthropic：thinking 预算不能超过输出预算）。
+const fixedThinkingVariants = () => ({
+  high: { thinking: { type: "enabled", budgetTokens: 16000 } },
+  max: { thinking: { type: "enabled", budgetTokens: 31999 } },
+})
+const anthropicThinkingVariants = (output: number) => ({
+  high: { thinking: { type: "enabled", budgetTokens: Math.min(16_000, Math.floor(output / 2 - 1)) } },
+  max: { thinking: { type: "enabled", budgetTokens: Math.min(31_999, output - 1) } },
+})
+
+const openrouterVariants: VariantFn = ({ model, id }) => {
+  if (!id.includes("gpt") && !id.includes("gemini-3") && !id.includes("claude")) return {}
+  return Object.fromEntries(
+    (id.includes("gpt") ? openaiCompatibleReasoningEfforts(id) : OPENAI_EFFORTS).map((effort) => [
+      effort,
+      { reasoning: { effort } },
+    ]),
+  )
+}
+
+const gatewayProviderVariants: VariantFn = ({ model }) => {
+  // Cloudflare AI Gateway routes every upstream through its OpenAI-compatible
+  // /v1/compat endpoint, so the body is always OAI-shaped. The gateway
+  // translates `reasoning_effort` to the upstream provider's native control
+  // (e.g. Anthropic thinking budgets) when needed. Variants therefore stay
+  // OAI-style for all upstreams, with an extended effort set for OpenAI
+  // models that support it.
+  if (model.api.id.startsWith("openai/")) {
+    const efforts = openaiReasoningEfforts(model.api.id, model.release_date)
+    return Object.fromEntries(efforts.map((effort) => [effort, { reasoningEffort: effort }]))
+  }
+  return Object.fromEntries(WIDELY_SUPPORTED_EFFORTS.map((effort) => [effort, { reasoningEffort: effort }]))
+}
+
+const aiSdkGatewayVariants: VariantFn = ({ model, id }) => {
+  if (model.id.includes("anthropic")) {
+    const adaptiveEfforts = anthropicAdaptiveEfforts(model.api.id)
+    if (adaptiveEfforts) return adaptiveThinkingVariants(adaptiveEfforts)
+    return fixedThinkingVariants()
+  }
+  if (model.id.includes("google")) {
+    if (id.includes("2.5")) {
+      return {
+        high: { thinkingConfig: { includeThoughts: true, thinkingBudget: 16000 } },
+        max: { thinkingConfig: { includeThoughts: true, thinkingBudget: 24576 } },
+      }
+    }
+    return Object.fromEntries(
+      ["low", "high"].map((effort) => [
+        effort,
+        { includeThoughts: true, thinkingLevel: effort },
+      ]),
+    )
+  }
+  return Object.fromEntries(
+    openaiCompatibleReasoningEfforts(model.api.id).map((effort) => [effort, { reasoningEffort: effort }]),
+  )
+}
+
+const copilotVariants: VariantFn = ({ model, id }) => {
+  if (model.id.includes("gemini")) {
+    // currently github copilot only returns thinking
+    return {}
+  }
+  if (model.id.includes("claude")) {
+    return Object.fromEntries(WIDELY_SUPPORTED_EFFORTS.map((effort) => [effort, { reasoningEffort: effort }]))
+  }
+  const copilotEfforts = iife(() => {
+    if (id.includes("5.1-codex-max") || id.includes("5.2") || id.includes("5.3"))
+      return [...WIDELY_SUPPORTED_EFFORTS, "xhigh"]
+    const arr = [...WIDELY_SUPPORTED_EFFORTS]
+    if (id.includes("gpt-5") && model.release_date >= "2025-12-04") arr.push("xhigh")
+    return arr
+  })
+  return openaiShapeVariants(copilotEfforts)
+}
+
+// 共享实现：cerebras / togetherai / xai / deepinfra / venice / openai-compatible
+// 都是 OpenAI 兼容协议，默认 WIDELY_SUPPORTED_EFFORTS；deepseek 系列按官方文档特判。
+const openaiCompatVariants: VariantFn = ({ model, id }) => {
+  // 260802 Red: deepseek-v4 系列的最强档按 provider 区分——官方 DeepSeek API 与
+  // opencode-go 聚合供应商都支持 max；sensenova 只认 low/medium/high/xhigh/none，
+  // 带 max 会 400 报错，用 xhigh 代替 max 作最强档。
+  //
+  // 260808 Red: deepseek 档位改按**官方文档**给，不再复用 WIDELY_SUPPORTED_EFFORTS。
+  // https://api-docs.deepseek.com/zh-cn/guides/thinking_mode 现在明确只有 low/high/max
+  // ——**medium 已被移除**（该基座集是从上游 opencode 一路继承下来的，没跟过 DeepSeek 的变更）。
+  // 为什么必须动：opencode-go 网关**不校验**这个参数，实测 low/medium/high/max/xhigh/none
+  // 六个值全返回 200，选错不会报错，只会静默按别的档跑。同一道题各档实测思考 token：
+  // low 240 / medium 133 / high 134 / max 164 —— medium 与 high 只差 1 个 token，
+  // 基本可以判定 medium 被静默映射成了 high（单次采样，非严格结论，但方向明确）。
+  // 摆一个官方已删、实际等同 high 的档位出来，就是 GLM 那段注释说的"骗人"。
+  // sensenova 那条保持原样：它是中转、档位集合本就与官方不同（有 medium/xhigh、无 max），
+  // 手头没有该 provider 的凭据可复测，不在没有证据的情况下改动它。
+  if (id.includes("deepseek") || model.api.id.toLowerCase().includes("deepseek")) {
+    // 非 v4 一律不给档位。DeepSeek 官方现在**只剩 v4 系列**（deepseek-chat 等 260807 前后
+    // 已下线），所以这条实际是给陈旧模型目录兜底的防线，不是活跃路径——也正因为没人再用，
+    // `variants > deepseek returns empty object` 这个用例一直红着也没人管。
+    if (!model.api.id.toLowerCase().includes("deepseek-v4")) return {}
+    return effortVariants(
+      model.providerID === "sensenova" ? [...WIDELY_SUPPORTED_EFFORTS, "xhigh"] : ["low", "high", "max"],
+    )
+  }
+  return effortVariants(WIDELY_SUPPORTED_EFFORTS)
+}
+
+const azureVariants: VariantFn = ({ model, id }) => {
+  // https://v5.ai-sdk.dev/providers/ai-sdk-providers/azure
+  if (id === "o1-mini") return {}
+  return Object.fromEntries(
+    (GPT5_FAMILY_RE.test(id) && gpt5Version(id) === undefined
+      ? ["minimal", ...WIDELY_SUPPORTED_EFFORTS]
+      : WIDELY_SUPPORTED_EFFORTS
+    ).map((effort) => [
+      effort,
+      {
+        reasoningEffort: effort,
+        reasoningSummary: "auto",
+        include: ["reasoning.encrypted_content"],
+      },
+    ]),
+  )
+}
+
+const openaiVariants: VariantFn = ({ model }) => {
+  // https://v5.ai-sdk.dev/providers/ai-sdk-providers/openai
+  const efforts = openaiReasoningEfforts(model.api.id, model.release_date)
+  return openaiShapeVariants(efforts)
+}
+
+// 共享实现：@ai-sdk/anthropic + @ai-sdk/google-vertex/anthropic
+const anthropicVariants: VariantFn = ({ model }) => {
+  const adaptiveEfforts = anthropicAdaptiveEfforts(model.api.id)
+  if (adaptiveEfforts) {
+    let efforts = [...adaptiveEfforts]
+    if (model.providerID === "github-copilot") {
+      if (model.api.id.includes("opus-4.7")) {
+        efforts = ["medium"]
+      }
+      // Efforts currently supported are: low, medium, high
+      efforts = efforts.filter((v) => v !== "max" && v !== "xhigh")
+    }
+    const display =
+      model.api.id.includes("opus-4-7") || model.api.id.includes("opus-4.7")
+    return adaptiveThinkingVariants(efforts, display)
+  }
+
+  if (["opus-4-5", "opus-4.5"].some((v) => model.api.id.includes(v))) {
+    return Object.fromEntries(WIDELY_SUPPORTED_EFFORTS.map((effort) => [effort, { effort }]))
+  }
+
+  return anthropicThinkingVariants(model.limit.output)
+}
+
+const bedrockVariants: VariantFn = ({ model }) => {
+  // https://v5.ai-sdk.dev/providers/ai-sdk-providers/amazon-bedrock
+  const adaptiveEfforts = anthropicAdaptiveEfforts(model.api.id)
+  if (adaptiveEfforts) {
+    return Object.fromEntries(
+      adaptiveEfforts.map((effort) => [
+        effort,
+        {
+          reasoningConfig: {
+            type: "adaptive",
+            maxReasoningEffort: effort,
+            ...(model.api.id.includes("opus-4-7") || model.api.id.includes("opus-4.7")
+              ? { display: "summarized" }
+              : {}),
+          },
+        },
+      ]),
+    )
+  }
+  // For Anthropic models on Bedrock, use reasoningConfig with budgetTokens
+  if (model.api.id.includes("anthropic")) {
+    return {
+      high: { reasoningConfig: { type: "enabled", budgetTokens: 16000 } },
+      max: { reasoningConfig: { type: "enabled", budgetTokens: 31999 } },
+    }
+  }
+
+  // For Amazon Nova models, use reasoningConfig with maxReasoningEffort
+  return Object.fromEntries(
+    WIDELY_SUPPORTED_EFFORTS.map((effort) => [
+      effort,
+      {
+        reasoningConfig: {
+          type: "enabled",
+          maxReasoningEffort: effort,
+        },
+      },
+    ]),
+  )
+}
+
+// 共享实现：@ai-sdk/google-vertex + @ai-sdk/google
+const googleVariants: VariantFn = ({ model, id }) => {
+  if (id.includes("2.5")) {
+    return {
+      high: {
+        thinkingConfig: {
+          includeThoughts: true,
+          thinkingBudget: 16000,
+        },
+      },
+      max: {
+        thinkingConfig: {
+          includeThoughts: true,
+          thinkingBudget: googleThinkingBudgetMax(id),
+        },
+      },
+    }
+  }
+
+  return Object.fromEntries(
+    googleThinkingLevelEfforts(id).map((effort) => [
+      effort,
+      {
+        thinkingConfig: {
+          includeThoughts: true,
+          thinkingLevel: effort,
+        },
+      },
+    ]),
+  )
+}
+
+const mistralVariants: VariantFn = ({ model }): Record<string, Record<string, any>> => {
+  // https://v5.ai-sdk.dev/providers/ai-sdk-providers/mistral
+  // https://docs.mistral.ai/capabilities/reasoning/adjustable
+  if (!model.capabilities.reasoning) return {}
+  // Only Mistral Small 4 and Medium 3.5 support reasoning
+  const MISTRAL_REASONING_IDS = [
+    "mistral-small-2603",
+    "mistral-small-latest",
+    "mistral-medium-3.5",
+    "mistral-medium-2604",
+  ]
+  const mistralId = model.api.id.toLowerCase()
+  if (!MISTRAL_REASONING_IDS.some((id) => mistralId.includes(id))) return {}
+  return {
+    high: { reasoningEffort: "high" },
+  }
+}
+
+const groqVariants: VariantFn = () => {
+  // https://v5.ai-sdk.dev/providers/ai-sdk-providers/groq
+  const groqEffort = ["none", ...WIDELY_SUPPORTED_EFFORTS]
+  return Object.fromEntries(
+    groqEffort.map((effort) => [
+      effort,
+      {
+        reasoningEffort: effort,
+      },
+    ]),
+  )
+}
+
+const sapVariants: VariantFn = ({ model, id }) => {
+  if (model.api.id.includes("anthropic")) {
+    const adaptiveEfforts = anthropicAdaptiveEfforts(model.api.id)
+    if (adaptiveEfforts) return adaptiveThinkingVariants(adaptiveEfforts)
+    return fixedThinkingVariants()
+  }
+  if (model.api.id.includes("gemini") && id.includes("2.5")) {
+    return {
+      high: {
+        thinkingConfig: {
+          includeThoughts: true,
+          thinkingBudget: 16000,
+        },
+      },
+      max: {
+        thinkingConfig: {
+          includeThoughts: true,
+          thinkingBudget: 24576,
+        },
+      },
+    }
+  }
+  if (model.api.id.includes("gpt") || /\bo[1-9]/.test(model.api.id)) {
+    return Object.fromEntries(WIDELY_SUPPORTED_EFFORTS.map((effort) => [effort, { reasoningEffort: effort }]))
+  }
+  return {}
+}
+
+// npm 包名 → 变体函数分派表。共享实现的 provider（openai-compatible 家族 / anthropic /
+// google / cohere / perplexity）指向同一函数；未知 npm 由 variants() 兜底返回 {}。
+const variantProviders: Record<string, VariantFn> = {
+  "@openrouter/ai-sdk-provider": openrouterVariants,
+  "ai-gateway-provider": gatewayProviderVariants,
+  "@ai-sdk/gateway": aiSdkGatewayVariants,
+  "@ai-sdk/github-copilot": copilotVariants,
+  "@ai-sdk/cerebras": openaiCompatVariants,
+  "@ai-sdk/togetherai": openaiCompatVariants,
+  "@ai-sdk/xai": openaiCompatVariants,
+  "@ai-sdk/deepinfra": openaiCompatVariants,
+  "venice-ai-sdk-provider": openaiCompatVariants,
+  "@ai-sdk/openai-compatible": openaiCompatVariants,
+  "@ai-sdk/azure": azureVariants,
+  "@ai-sdk/openai": openaiVariants,
+  "@ai-sdk/anthropic": anthropicVariants,
+  "@ai-sdk/google-vertex/anthropic": anthropicVariants,
+  "@ai-sdk/amazon-bedrock": bedrockVariants,
+  "@ai-sdk/google-vertex": googleVariants,
+  "@ai-sdk/google": googleVariants,
+  "@ai-sdk/mistral": mistralVariants,
+  "@ai-sdk/cohere": () => ({}),
+  "@ai-sdk/groq": groqVariants,
+  "@ai-sdk/perplexity": () => ({}),
+  "@jerome-benoit/sap-ai-provider-v2": sapVariants,
+}
+
 export function variants(model: Provider.Model): Record<string, Record<string, any>> {
   if (!model.capabilities.reasoning && model.api.npm !== "@ai-sdk/openai-compatible") return {}
 
   const id = model.id.toLowerCase()
+
+  // 模型族特判（跨 provider 的全局规则，在 npm 分派前执行）——glm/kimi/grok 按版本
+  // 判定是否给档位，minimax/k2p/qwen/big-pickle 整个家族不给档位。
   if (
     model.api.id.toLowerCase().includes("minimax-m3") &&
     ["@ai-sdk/anthropic", "@ai-sdk/openai-compatible"].includes(model.api.npm)
@@ -854,403 +1195,7 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
     return v !== undefined && v >= 4.05 ? effortVariants(GROK_EFFORTS) : {}
   }
 
-  switch (model.api.npm) {
-    case "@openrouter/ai-sdk-provider":
-      if (!id.includes("gpt") && !id.includes("gemini-3") && !id.includes("claude")) return {}
-      return Object.fromEntries(
-        (id.includes("gpt") ? openaiCompatibleReasoningEfforts(id) : OPENAI_EFFORTS).map((effort) => [
-          effort,
-          { reasoning: { effort } },
-        ]),
-      )
-
-    case "ai-gateway-provider": {
-      // Cloudflare AI Gateway routes every upstream through its OpenAI-compatible
-      // /v1/compat endpoint, so the body is always OAI-shaped. The gateway
-      // translates `reasoning_effort` to the upstream provider's native control
-      // (e.g. Anthropic thinking budgets) when needed. Variants therefore stay
-      // OAI-style for all upstreams, with an extended effort set for OpenAI
-      // models that support it.
-      if (model.api.id.startsWith("openai/")) {
-        const efforts = openaiReasoningEfforts(model.api.id, model.release_date)
-        return Object.fromEntries(efforts.map((effort) => [effort, { reasoningEffort: effort }]))
-      }
-      return Object.fromEntries(WIDELY_SUPPORTED_EFFORTS.map((effort) => [effort, { reasoningEffort: effort }]))
-    }
-
-    case "@ai-sdk/gateway":
-      if (model.id.includes("anthropic")) {
-        if (adaptiveEfforts) {
-          return Object.fromEntries(
-            adaptiveEfforts.map((effort) => [
-              effort,
-              {
-                thinking: {
-                  type: "adaptive",
-                },
-                effort,
-              },
-            ]),
-          )
-        }
-        return {
-          high: {
-            thinking: {
-              type: "enabled",
-              budgetTokens: 16000,
-            },
-          },
-          max: {
-            thinking: {
-              type: "enabled",
-              budgetTokens: 31999,
-            },
-          },
-        }
-      }
-      if (model.id.includes("google")) {
-        if (id.includes("2.5")) {
-          return {
-            high: {
-              thinkingConfig: {
-                includeThoughts: true,
-                thinkingBudget: 16000,
-              },
-            },
-            max: {
-              thinkingConfig: {
-                includeThoughts: true,
-                thinkingBudget: 24576,
-              },
-            },
-          }
-        }
-        return Object.fromEntries(
-          ["low", "high"].map((effort) => [
-            effort,
-            {
-              includeThoughts: true,
-              thinkingLevel: effort,
-            },
-          ]),
-        )
-      }
-      return Object.fromEntries(
-        openaiCompatibleReasoningEfforts(model.api.id).map((effort) => [effort, { reasoningEffort: effort }]),
-      )
-
-    case "@ai-sdk/github-copilot":
-      if (model.id.includes("gemini")) {
-        // currently github copilot only returns thinking
-        return {}
-      }
-      if (model.id.includes("claude")) {
-        return Object.fromEntries(WIDELY_SUPPORTED_EFFORTS.map((effort) => [effort, { reasoningEffort: effort }]))
-      }
-      const copilotEfforts = iife(() => {
-        if (id.includes("5.1-codex-max") || id.includes("5.2") || id.includes("5.3"))
-          return [...WIDELY_SUPPORTED_EFFORTS, "xhigh"]
-        const arr = [...WIDELY_SUPPORTED_EFFORTS]
-        if (id.includes("gpt-5") && model.release_date >= "2025-12-04") arr.push("xhigh")
-        return arr
-      })
-      return Object.fromEntries(
-        copilotEfforts.map((effort) => [
-          effort,
-          {
-            reasoningEffort: effort,
-            reasoningSummary: "auto",
-            include: ["reasoning.encrypted_content"],
-          },
-        ]),
-      )
-
-    case "@ai-sdk/cerebras":
-    // https://v5.ai-sdk.dev/providers/ai-sdk-providers/cerebras
-    case "@ai-sdk/togetherai":
-    // https://v5.ai-sdk.dev/providers/ai-sdk-providers/togetherai
-    case "@ai-sdk/xai":
-    // https://v5.ai-sdk.dev/providers/ai-sdk-providers/xai
-    case "@ai-sdk/deepinfra":
-    // https://v5.ai-sdk.dev/providers/ai-sdk-providers/deepinfra
-    case "venice-ai-sdk-provider":
-    // https://docs.venice.ai/overview/guides/reasoning-models#reasoning-effort
-    case "@ai-sdk/openai-compatible":
-      // 260802 Red: deepseek-v4 系列的最强档按 provider 区分——官方 DeepSeek API 与
-      // opencode-go 聚合供应商都支持 max；sensenova 只认 low/medium/high/xhigh/none，
-      // 带 max 会 400 报错，用 xhigh 代替 max 作最强档。
-      //
-      // 260808 Red: deepseek 档位改按**官方文档**给，不再复用 WIDELY_SUPPORTED_EFFORTS。
-      // https://api-docs.deepseek.com/zh-cn/guides/thinking_mode 现在明确只有 low/high/max
-      // ——**medium 已被移除**（该基座集是从上游 opencode 一路继承下来的，没跟过 DeepSeek 的变更）。
-      // 为什么必须动：opencode-go 网关**不校验**这个参数，实测 low/medium/high/max/xhigh/none
-      // 六个值全返回 200，选错不会报错，只会静默按别的档跑。同一道题各档实测思考 token：
-      // low 240 / medium 133 / high 134 / max 164 —— medium 与 high 只差 1 个 token，
-      // 基本可以判定 medium 被静默映射成了 high（单次采样，非严格结论，但方向明确）。
-      // 摆一个官方已删、实际等同 high 的档位出来，就是 GLM 那段注释说的"骗人"。
-      // sensenova 那条保持原样：它是中转、档位集合本就与官方不同（有 medium/xhigh、无 max），
-      // 手头没有该 provider 的凭据可复测，不在没有证据的情况下改动它。
-      if (id.includes("deepseek") || model.api.id.toLowerCase().includes("deepseek")) {
-        // 非 v4 一律不给档位。DeepSeek 官方现在**只剩 v4 系列**（deepseek-chat 等 260807 前后
-        // 已下线），所以这条实际是给陈旧模型目录兜底的防线，不是活跃路径——也正因为没人再用，
-        // `variants > deepseek returns empty object` 这个用例一直红着也没人管。
-        if (!model.api.id.toLowerCase().includes("deepseek-v4")) return {}
-        return effortVariants(
-          model.providerID === "sensenova" ? [...WIDELY_SUPPORTED_EFFORTS, "xhigh"] : ["low", "high", "max"],
-        )
-      }
-      return effortVariants(WIDELY_SUPPORTED_EFFORTS)
-
-    case "@ai-sdk/azure":
-      // https://v5.ai-sdk.dev/providers/ai-sdk-providers/azure
-      if (id === "o1-mini") return {}
-      return Object.fromEntries(
-        (GPT5_FAMILY_RE.test(id) && gpt5Version(id) === undefined
-          ? ["minimal", ...WIDELY_SUPPORTED_EFFORTS]
-          : WIDELY_SUPPORTED_EFFORTS
-        ).map((effort) => [
-          effort,
-          {
-            reasoningEffort: effort,
-            reasoningSummary: "auto",
-            include: ["reasoning.encrypted_content"],
-          },
-        ]),
-      )
-    case "@ai-sdk/openai": {
-      // https://v5.ai-sdk.dev/providers/ai-sdk-providers/openai
-      const efforts = openaiReasoningEfforts(model.api.id, model.release_date)
-      return Object.fromEntries(
-        efforts.map((effort) => [
-          effort,
-          {
-            reasoningEffort: effort,
-            reasoningSummary: "auto",
-            include: ["reasoning.encrypted_content"],
-          },
-        ]),
-      )
-    }
-
-    case "@ai-sdk/anthropic":
-    // https://v5.ai-sdk.dev/providers/ai-sdk-providers/anthropic
-    case "@ai-sdk/google-vertex/anthropic":
-      // https://v5.ai-sdk.dev/providers/ai-sdk-providers/google-vertex#anthropic-provider
-      if (adaptiveEfforts) {
-        let efforts = [...adaptiveEfforts]
-        if (model.providerID === "github-copilot") {
-          if (model.api.id.includes("opus-4.7")) {
-            efforts = ["medium"]
-          }
-          // Efforts currently supported are: low, medium, high
-          efforts = efforts.filter((v) => v !== "max" && v !== "xhigh")
-        }
-        return Object.fromEntries(
-          efforts.map((effort) => [
-            effort,
-            {
-              thinking: {
-                type: "adaptive",
-                ...(model.api.id.includes("opus-4-7") || model.api.id.includes("opus-4.7")
-                  ? { display: "summarized" }
-                  : {}),
-              },
-              effort,
-            },
-          ]),
-        )
-      }
-
-      if (["opus-4-5", "opus-4.5"].some((v) => model.api.id.includes(v))) {
-        return Object.fromEntries(WIDELY_SUPPORTED_EFFORTS.map((effort) => [effort, { effort }]))
-      }
-
-      return {
-        high: {
-          thinking: {
-            type: "enabled",
-            budgetTokens: Math.min(16_000, Math.floor(model.limit.output / 2 - 1)),
-          },
-        },
-        max: {
-          thinking: {
-            type: "enabled",
-            budgetTokens: Math.min(31_999, model.limit.output - 1),
-          },
-        },
-      }
-
-    case "@ai-sdk/amazon-bedrock":
-      // https://v5.ai-sdk.dev/providers/ai-sdk-providers/amazon-bedrock
-      if (adaptiveEfforts) {
-        return Object.fromEntries(
-          adaptiveEfforts.map((effort) => [
-            effort,
-            {
-              reasoningConfig: {
-                type: "adaptive",
-                maxReasoningEffort: effort,
-                ...(model.api.id.includes("opus-4-7") || model.api.id.includes("opus-4.7")
-                  ? { display: "summarized" }
-                  : {}),
-              },
-            },
-          ]),
-        )
-      }
-      // For Anthropic models on Bedrock, use reasoningConfig with budgetTokens
-      if (model.api.id.includes("anthropic")) {
-        return {
-          high: {
-            reasoningConfig: {
-              type: "enabled",
-              budgetTokens: 16000,
-            },
-          },
-          max: {
-            reasoningConfig: {
-              type: "enabled",
-              budgetTokens: 31999,
-            },
-          },
-        }
-      }
-
-      // For Amazon Nova models, use reasoningConfig with maxReasoningEffort
-      return Object.fromEntries(
-        WIDELY_SUPPORTED_EFFORTS.map((effort) => [
-          effort,
-          {
-            reasoningConfig: {
-              type: "enabled",
-              maxReasoningEffort: effort,
-            },
-          },
-        ]),
-      )
-
-    case "@ai-sdk/google-vertex":
-    // https://v5.ai-sdk.dev/providers/ai-sdk-providers/google-vertex
-    case "@ai-sdk/google":
-      // https://v5.ai-sdk.dev/providers/ai-sdk-providers/google-generative-ai
-      if (id.includes("2.5")) {
-        return {
-          high: {
-            thinkingConfig: {
-              includeThoughts: true,
-              thinkingBudget: 16000,
-            },
-          },
-          max: {
-            thinkingConfig: {
-              includeThoughts: true,
-              thinkingBudget: googleThinkingBudgetMax(id),
-            },
-          },
-        }
-      }
-
-      return Object.fromEntries(
-        googleThinkingLevelEfforts(id).map((effort) => [
-          effort,
-          {
-            thinkingConfig: {
-              includeThoughts: true,
-              thinkingLevel: effort,
-            },
-          },
-        ]),
-      )
-
-    case "@ai-sdk/mistral":
-      // https://v5.ai-sdk.dev/providers/ai-sdk-providers/mistral
-      // https://docs.mistral.ai/capabilities/reasoning/adjustable
-      if (!model.capabilities.reasoning) return {}
-      // Only Mistral Small 4 and Medium 3.5 support reasoning
-      const MISTRAL_REASONING_IDS = [
-        "mistral-small-2603",
-        "mistral-small-latest",
-        "mistral-medium-3.5",
-        "mistral-medium-2604",
-      ]
-      const mistralId = model.api.id.toLowerCase()
-      if (!MISTRAL_REASONING_IDS.some((id) => mistralId.includes(id))) return {}
-      return {
-        high: { reasoningEffort: "high" },
-      }
-
-    case "@ai-sdk/cohere":
-      // https://v5.ai-sdk.dev/providers/ai-sdk-providers/cohere
-      return {}
-
-    case "@ai-sdk/groq":
-      // https://v5.ai-sdk.dev/providers/ai-sdk-providers/groq
-      const groqEffort = ["none", ...WIDELY_SUPPORTED_EFFORTS]
-      return Object.fromEntries(
-        groqEffort.map((effort) => [
-          effort,
-          {
-            reasoningEffort: effort,
-          },
-        ]),
-      )
-
-    case "@ai-sdk/perplexity":
-      // https://v5.ai-sdk.dev/providers/ai-sdk-providers/perplexity
-      return {}
-
-    case "@jerome-benoit/sap-ai-provider-v2":
-      if (model.api.id.includes("anthropic")) {
-        if (adaptiveEfforts) {
-          return Object.fromEntries(
-            adaptiveEfforts.map((effort) => [
-              effort,
-              {
-                thinking: {
-                  type: "adaptive",
-                },
-                effort,
-              },
-            ]),
-          )
-        }
-        return {
-          high: {
-            thinking: {
-              type: "enabled",
-              budgetTokens: 16000,
-            },
-          },
-          max: {
-            thinking: {
-              type: "enabled",
-              budgetTokens: 31999,
-            },
-          },
-        }
-      }
-      if (model.api.id.includes("gemini") && id.includes("2.5")) {
-        return {
-          high: {
-            thinkingConfig: {
-              includeThoughts: true,
-              thinkingBudget: 16000,
-            },
-          },
-          max: {
-            thinkingConfig: {
-              includeThoughts: true,
-              thinkingBudget: 24576,
-            },
-          },
-        }
-      }
-      if (model.api.id.includes("gpt") || /\bo[1-9]/.test(model.api.id)) {
-        return Object.fromEntries(WIDELY_SUPPORTED_EFFORTS.map((effort) => [effort, { reasoningEffort: effort }]))
-      }
-      return {}
-  }
-  return {}
+  return variantProviders[model.api.npm]?.({ model, id }) ?? {}
 }
 
 export function options(input: {

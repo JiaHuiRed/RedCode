@@ -16,3 +16,4 @@ Usage notes:
 4. The agent's outputs should generally be trusted
 5. Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.), since it is not aware of the user's intent. Tell it how to verify its work if possible (e.g., relevant test commands).
 6. If the agent description mentions that it should be used proactively, then you should try your best to use it without the user having to ask for it first. Use your judgement.
+7. When delegating long-running work, tell the subagent explicitly: difficulty, uncertainty, or remaining useful work is not a reason to stop or stall — only report being blocked after the same concrete condition has persisted for several consecutive attempts, and state that condition. Subagents that hit a wall must pivot (read more code, try a different approach) instead of quitting early.

@@ -73,11 +73,32 @@ describe("Truncate", () => {
       }),
     )
 
-    it.live("truncates from head by default", () =>
+    it.live("keeps head and tail by default (both, 4:1 split)", () =>
+      Effect.gen(function* () {
+        const svc = yield* Truncate.Service
+        const lines = Array.from({ length: 100 }, (_, i) => `line${i}`).join("\n")
+        const result = yield* svc.output(lines, { maxLines: 10 })
+
+        expect(result.truncated).toBe(true)
+        // head 80% = 8 行保留
+        expect(result.content).toContain("line0")
+        expect(result.content).toContain("line7")
+        // tail 20% = 2 行保留
+        expect(result.content).toContain("line98")
+        expect(result.content).toContain("line99")
+        // 中间省略
+        expect(result.content).toContain("truncated...")
+        expect(result.content).not.toContain("line50")
+        // 顺序：head 在前、tail 在后
+        expect(result.content.indexOf("line0")).toBeLessThan(result.content.indexOf("line98"))
+      }),
+    )
+
+    it.live("truncates from head when direction is head", () =>
       Effect.gen(function* () {
         const svc = yield* Truncate.Service
         const lines = Array.from({ length: 10 }, (_, i) => `line${i}`).join("\n")
-        const result = yield* svc.output(lines, { maxLines: 3 })
+        const result = yield* svc.output(lines, { maxLines: 3, direction: "head" })
 
         expect(result.truncated).toBe(true)
         expect(result.content).toContain("line0")
