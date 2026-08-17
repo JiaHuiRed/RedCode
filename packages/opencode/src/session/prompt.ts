@@ -1533,19 +1533,6 @@ export const layer = Layer.effect(
               busyEnter === "queue" && turnStart !== undefined
                 ? msgs.filter((m) => !(m.info.role === "user" && MessageV2.compareTime(m.info, turnStart) > 0))
                 : msgs
-            // 260817 Red 会话中指令文件变化检测（对齐 DSH agent-instructions 的
-            // Updated/Removed 通知）：指令按会话缓存（260617 前缀稳定设计），文件变了
-            // 模型会一直按旧规则干活。每轮读盘对比，变化轮注入一次性通知并刷新缓存，
-            // 下轮前缀即稳定在新版本。
-            const freshInstructions = cachedSystem
-              ? yield* instruction.system().pipe(Effect.orDie)
-              : undefined
-            const instructionNotice = freshInstructions
-              ? diffInstructionNotice(cachedSystem!.instructions, freshInstructions)
-              : undefined
-            if (instructionNotice && freshInstructions) {
-              _caches.system!.instructions = freshInstructions
-            }
             const [skills, env, instructions, modelMsgs] = yield* Effect.all([
               cachedSystem ? Effect.succeed(cachedSystem.skills) : sys.skills(agent),
               cachedSystem ? Effect.succeed(cachedSystem.env) : sys.environment(model),
@@ -1570,10 +1557,6 @@ export const layer = Layer.effect(
             // session), so only this small tail invalidates the provider's prefix cache once a day
             // instead of everything from <env> onward.
             system.push(`Today's date: ${new Date().toDateString()}`)
-            // 260817 Red 指令变更通知（见上方检测块）——只在变化轮出现一次。
-            if (instructionNotice) {
-              system.push(instructionNotice)
-            }
             // 260728 Red expanded rule 3 with concrete forbidden phrases (Chinese+English).
             // User caught another agent telling him "go rest" after hours of no progress — that phrasing
             // is a form of "put it aside" and is explicitly banned at the model level.
@@ -2188,30 +2171,5 @@ const bashRegex = /!`([^`]+)`/g
 const argsRegex = /(?:\[Image\s+\d+\]|"[^"]*"|'[^']*'|[^\s"']+)/gi
 const placeholderRegex = /\$(\d+)/g
 const quoteTrimRegex = /^["']|["']$/g
-
-// 260817 Red 对比缓存与磁盘的指令 parts（"Instructions from: path\ncontent"），产出一次性变更通知。
-/** @internal Exported for testing */
-export function diffInstructionNotice(prev: string[], fresh: string[]): string | undefined {
-  const parse = (parts: string[]) => {
-    const map = new Map<string, string>()
-    for (const part of parts) {
-      const nl = part.indexOf("\n")
-      const head = nl === -1 ? part : part.slice(0, nl)
-      if (!head.startsWith("Instructions from: ")) continue
-      map.set(head.slice("Instructions from: ".length), nl === -1 ? "" : part.slice(nl + 1))
-    }
-    return map
-  }
-  const before = parse(prev)
-  const after = parse(fresh)
-  const notes: string[] = []
-  for (const [filepath, content] of after) {
-    if (before.get(filepath) !== content) notes.push(`Updated instructions from ${filepath}:\n${content}`)
-  }
-  for (const filepath of before.keys()) {
-    if (!after.has(filepath)) notes.push(`Removed instructions from ${filepath}`)
-  }
-  return notes.length > 0 ? notes.join("\n\n") : undefined
-}
 
 export * as SessionPrompt from "./prompt"

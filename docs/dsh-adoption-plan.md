@@ -30,9 +30,9 @@
   - [x] 260817 ①+② 提示词落地：`session/prompt.ts` activeGoal 注入段加 Blocked rules（同一具体条件持续 ≥3 轮 + 说明具体条件；difficulty/uncertainty/remaining work 明文不算）；`tool/task.md` 加派活纪律第 7 条（子代理同规则）。note 见 `docs/notes/implemented/feature/2026-08-17-goal-semantics-three-piece.md`
   - [x] ③ resume 缴械：**天然覆盖无需做**——RedCode 会话推进靠用户输入（runtime.ts eagerStream 只是连接），resume 后用户不发消息就没有 idle 续跑事件；用户 resume 后第一条消息即 DSH 所说 "human asks to continue in any wording" 的隐式 rearm。无 fork（Pi 清单未实现）。
 - [ ] **指令文件加载细节**:同目录 AGENTS.md/CLAUDE.md 内容去重(trim 后同文只渲染一次);变更/移除注入 "Updated/Removed instructions from";预算裁剪"先丢整个较宽文件再截最具体文件 + 可见通知"。参考 `context/agent-instructions`。
-  - [x] 260817 变更/移除通知已落地：`session/prompt.ts` 每轮读盘对比 + system 尾一次性通知 + 刷新缓存，note 见 `docs/notes/implemented/feature/2026-08-17-instruction-change-notice.md`
   - [x] 同目录去重：RedCode 本就 first-match-wins 不堆叠，天然规避（无需做）
   - [x] ~~预算裁剪~~：**260817 哥哥否决**——全局指令不长、缓存命中率稳定 97%+，无膨胀问题；截断丢规则的风险不值。现 64K 只告警不截断保持。
+  - [x] ~~变更/移除通知~~：**260817 同日回退**——变化轮注入一次性通知 + 刷新缓存，通知尾巴与恢复轮不一致，改一次指令文件 = 双重全灭（约 50 万 token 全价）。改完功能重开会话成本更低。见 `docs/notes/rejected/feature/2026-08-17-instruction-change-notice.md`
 - [ ] **翻 `dsh-trim-cot-leakage` skill**,对照 step-3.7 思维链泄漏三条防线补手法。
 
 ## 第三批(结构性)
