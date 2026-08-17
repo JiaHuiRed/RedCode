@@ -1,9 +1,10 @@
 import { Provider } from "@/provider/provider"
 import { serviceUse } from "@/effect/service-use"
 import * as Log from "@redcode-ai/core/util/log"
-import { Context, Effect, Layer } from "effect"
+import { Context, Duration, Effect, Layer } from "effect"
 import * as Stream from "effect/Stream"
 import * as Cause from "effect/Cause"
+import * as Deferred from "effect/Deferred"
 import { streamText, wrapLanguageModel, type AssistantContent, type ModelMessage, type Tool } from "ai"
 import { LLMEvent, Usage } from "@redcode-ai/llm"
 import { LLMClient, RequestExecutor, WebSocketExecutor } from "@redcode-ai/llm/route"
@@ -383,7 +384,7 @@ const live: Layer.Layer<
 
             const result = yield* run({ ...input, abort: ctrl.signal })
 
-            if (result.type === "native") return result.stream
+            if (result.type === "native") return guardFirstEvent(result.stream, ctrl)
 
             // Adapter seam: both runtimes expose the same LLMEvent stream. Native
             // already returns one; AI SDK streams are converted here.
@@ -396,22 +397,25 @@ const live: Layer.Layer<
                 state.routedVia = meta.headers?.["X-Routed-Via"]
               })
               .catch(() => {})
-            return Stream.fromAsyncIterable(result.result.fullStream, (e) =>
-              e instanceof Error ? e : new Error(String(e)),
-            ).pipe(
-              Stream.mapEffect((event) => LLMAISDK.toLLMEvents(state, event)),
-              Stream.flatMap((events) => Stream.fromIterable(events)),
-              // 260803 Red consumption protection: when the stream dies mid-flight the
-              // provider usage chunk never arrives, so the session would bill zero cost
-              // for a large aborted response. Emit an estimated step-finish before the
-              // original failure propagates (processor taps it and books usage, then
-              // halt runs as usual). Interruption passes through untouched so the
-              // processor's onInterrupt -> abort path is preserved.
-              Stream.catchCause((cause) =>
-                Cause.hasInterruptsOnly(cause)
-                  ? Stream.failCause(cause)
-                  : Stream.fromIterable(estimatedFinishEvents(state)).pipe(Stream.concat(Stream.failCause(cause))),
+            return guardFirstEvent(
+              Stream.fromAsyncIterable(result.result.fullStream, (e) =>
+                e instanceof Error ? e : new Error(String(e)),
+              ).pipe(
+                Stream.mapEffect((event) => LLMAISDK.toLLMEvents(state, event)),
+                Stream.flatMap((events) => Stream.fromIterable(events)),
+                // 260803 Red consumption protection: when the stream dies mid-flight the
+                // provider usage chunk never arrives, so the session would bill zero cost
+                // for a large aborted response. Emit an estimated step-finish before the
+                // original failure propagates (processor taps it and books usage, then
+                // halt runs as usual). Interruption passes through untouched so the
+                // processor's onInterrupt -> abort path is preserved.
+                Stream.catchCause((cause) =>
+                  Cause.hasInterruptsOnly(cause)
+                    ? Stream.failCause(cause)
+                    : Stream.fromIterable(estimatedFinishEvents(state)).pipe(Stream.concat(Stream.failCause(cause))),
+                ),
               ),
+              ctrl,
             )
           }),
         ),
@@ -435,6 +439,61 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(RuntimeFlags.defaultLayer),
   ),
 )
+
+// 260816 Red 首事件超时兜底：LLM 出站请求此前没有任何超时——fetch 挂起就无限
+// 等待，网络瞬断时用户只能干等（实测 184 秒无任何输出）。加 75s 首事件看门狗：
+// "首事件" = 流开始产生任何 LLM 事件（≈ TTFT），正常响应十几二十秒，完全无感；
+// 超时则先 abort 底层请求再报错，让会话层立刻看到结果，而不是无限挂起。
+export const FIRST_EVENT_TIMEOUT = Duration.seconds(75)
+
+export class FirstEventTimeoutError extends Error {
+  readonly _tag = "FirstEventTimeoutError"
+  constructor() {
+    super("LLM 请求 75 秒内未收到首个响应事件（网络挂起或网关无响应），已中断")
+    this.name = "FirstEventTimeoutError"
+  }
+}
+
+function guardFirstEvent<S, E>(
+  stream: Stream.Stream<S, E>,
+  ctrl: AbortController,
+): Stream.Stream<S, E | FirstEventTimeoutError> {
+  return Stream.unwrap(
+    Effect.gen(function* () {
+      const firstEvent = yield* Deferred.make<boolean, never>()
+      const timeoutSignal = yield* Deferred.make<never, FirstEventTimeoutError>()
+      // 看门狗 fiber：首事件到达 → 无事发生；75s 超时 → 先 abort 底层请求
+      // 再向 timeoutSignal 失败，merge 收到后让整体流失败。
+      // 不能用 Effect.race 直接拼失败分支：v4 的 race 失败语义是"两边都失败才
+      // 失败"，单边失败会继续等另一边，流就挂住了（实测踩坑）。
+      yield* Effect.forkScoped(
+        Effect.race(
+          Deferred.await(firstEvent).pipe(Effect.as("first")),
+          Effect.sleep(FIRST_EVENT_TIMEOUT).pipe(Effect.as("timeout")),
+        ).pipe(
+          Effect.flatMap((winner) =>
+            winner === "timeout"
+              ? Effect.sync(() => ctrl.abort()).pipe(
+                  Effect.andThen(() => Deferred.fail(timeoutSignal, new FirstEventTimeoutError())),
+                )
+              : Effect.void,
+          ),
+        ),
+      )
+      return Stream.merge(
+        stream.pipe(Stream.tap(() => Deferred.succeed(firstEvent, true).pipe(Effect.ignore))),
+        Stream.fromEffect(
+          Deferred.await(timeoutSignal).pipe(
+            Effect.andThen(() => Effect.fail(new FirstEventTimeoutError())),
+          ),
+        ),
+        // either：任一边 halt（完成/失败）即整体终止——主流结束不挂等信号流，
+        // 信号流失败立即让整体失败。
+        { haltStrategy: "either" },
+      )
+    }),
+  )
+}
 
 // 260803 Red consumption protection: estimate usage from streamed bytes when the
 // stream fails before the provider usage chunk arrives. Reasonix-style estimate:
