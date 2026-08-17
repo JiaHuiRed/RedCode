@@ -8,6 +8,16 @@
 
 ---
 
+### [0.8.20] - 未发布
+
+> DSH 采纳第二批首项：工具输出截断升级 head+tail 双端预览（4:1），尾部结论不再被裁。
+
+#### 改进
+
+- **工具输出截断 head-only → head+tail 双端**（`tool/truncate.ts`、`test/tool/truncation.test.ts`）：`direction` 扩为 `head|tail|both`，默认 `both`——预算按 4:1 切分（head 80% / tail 20%），收集逻辑抽为 `collectPreview` helper（tail 用 `skip` 防与 head 重叠），输出格式 `head → …truncated… → tail → hint`。尾部（错误栈/测试结果/命令收尾）此前被整体裁掉，模型被迫再调一次工具看尾部；压缩摘要侧 0.8.17 已落 4:1（17a7304a），工具输出侧补齐。预览总体积不变（预算只拆分不扩容），显式 `head`/`tail` 调用方语义不变。[why](docs/notes/implemented/feature/2026-08-17-tool-output-head-tail-truncation.md)
+
+---
+
 ### [0.8.19] - 2026-08-16
 
 > DeepSeek 峰谷定价通用机制落地；reasoning_content 与提示词规则对齐；GUI 归档图标与 assistant 回复消失两个渲染修复。

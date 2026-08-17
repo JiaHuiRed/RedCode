@@ -23,7 +23,8 @@ export type Result = { content: string; truncated: false } | { content: string; 
 export interface Options {
   maxLines?: number
   maxBytes?: number
-  direction?: "head" | "tail"
+  // 260817 Red 新增 both：head+tail 双端预览（4:1），尾部常含结论不再被整体裁掉
+  direction?: "head" | "tail" | "both"
 }
 
 function hasTaskTool(agent?: Agent.Info) {
@@ -87,7 +88,7 @@ export const layer = Layer.effect(
       const resolved = yield* limits()
       const maxLines = options.maxLines ?? resolved.maxLines
       const maxBytes = options.maxBytes ?? resolved.maxBytes
-      const direction = options.direction ?? "head"
+      const direction = options.direction ?? "both"
       const lines = text.split("\n")
       const totalBytes = Buffer.byteLength(text, "utf-8")
 
@@ -95,47 +96,35 @@ export const layer = Layer.effect(
         return { content: text, truncated: false } as const
       }
 
-      const out: string[] = []
-      let i = 0
-      let bytes = 0
-      let hitBytes = false
+      // 260817 Red 双端预览：both 按 4:1 把预算分给 head/tail（对齐压缩摘要的比例），
+      // 尾部（错误信息/测试结果/命令收尾）得以保留，模型不再只看开头。
+      const headMaxLines = direction === "tail" ? 0 : direction === "both" ? Math.floor(maxLines * 0.8) : maxLines
+      const tailMaxLines = direction === "head" ? 0 : maxLines - headMaxLines
+      const headMaxBytes = direction === "tail" ? 0 : direction === "both" ? Math.floor(maxBytes * 0.8) : maxBytes
+      const tailMaxBytes = direction === "head" ? 0 : maxBytes - headMaxBytes
 
-      if (direction === "head") {
-        for (i = 0; i < lines.length && i < maxLines; i++) {
-          const size = Buffer.byteLength(lines[i], "utf-8") + (i > 0 ? 1 : 0)
-          if (bytes + size > maxBytes) {
-            hitBytes = true
-            break
-          }
-          out.push(lines[i])
-          bytes += size
-        }
-      } else {
-        for (i = lines.length - 1; i >= 0 && out.length < maxLines; i--) {
-          const size = Buffer.byteLength(lines[i], "utf-8") + (out.length > 0 ? 1 : 0)
-          if (bytes + size > maxBytes) {
-            hitBytes = true
-            break
-          }
-          out.unshift(lines[i])
-          bytes += size
-        }
-      }
+      const head = collectPreview(lines, headMaxLines, headMaxBytes, false)
+      const tail = collectPreview(lines, tailMaxLines, tailMaxBytes, true, head.count)
 
-      const removed = hitBytes ? totalBytes - bytes : lines.length - out.length
-      const unit = hitBytes ? "bytes" : "lines"
-      const preview = out.join("\n")
+      const removed = Math.max(0, (head.hitBytes || tail.hitBytes ? totalBytes - head.bytes - tail.bytes : lines.length - head.count - tail.count))
+      const unit = head.hitBytes || tail.hitBytes ? "bytes" : "lines"
+      const headPreview = head.preview.join("\n")
+      const tailPreview = tail.preview.join("\n")
       const file = yield* write(text)
 
       const hint = hasTaskTool(agent)
         ? `The tool call succeeded but the output was truncated. Full output saved to: ${file}\nUse the Task tool to have explore agent process this file with Grep and Read (with offset/limit). Do NOT read the full file yourself - delegate to save context.`
         : `The tool call succeeded but the output was truncated. Full output saved to: ${file}\nUse Grep to search the full content or Read with offset/limit to view specific sections.`
 
+      const content =
+        direction === "both"
+          ? `${headPreview}\n\n...${removed} ${unit} truncated...\n\n${tailPreview}\n\n${hint}`
+          : direction === "tail"
+            ? `...${removed} ${unit} truncated...\n\n${hint}\n\n${tailPreview}`
+            : `${headPreview}\n\n...${removed} ${unit} truncated...\n\n${hint}`
+
       return {
-        content:
-          direction === "head"
-            ? `${preview}\n\n...${removed} ${unit} truncated...\n\n${hint}`
-            : `...${removed} ${unit} truncated...\n\n${hint}\n\n${preview}`,
+        content,
         truncated: true,
         outputPath: file,
       } as const
@@ -156,5 +145,41 @@ export const layer = Layer.effect(
 )
 
 export const defaultLayer = layer.pipe(Layer.provide(AppFileSystem.defaultLayer), Layer.provide(NodePath.layer))
+
+// 260817 Red 双端预览 helper：单端收集预览行。
+// fromTail=false 从前往后；skip 跳过前 N 行（tail 收集时避免与 head 重叠）。
+function collectPreview(
+  lines: string[],
+  maxLines: number,
+  maxBytes: number,
+  fromTail: boolean,
+  skip = 0,
+): { preview: string[]; bytes: number; hitBytes: boolean; count: number } {
+  const preview: string[] = []
+  let bytes = 0
+  let hitBytes = false
+  if (fromTail) {
+    for (let i = lines.length - 1; i >= skip && preview.length < maxLines; i--) {
+      const size = Buffer.byteLength(lines[i], "utf-8") + (preview.length > 0 ? 1 : 0)
+      if (bytes + size > maxBytes) {
+        hitBytes = true
+        break
+      }
+      preview.unshift(lines[i])
+      bytes += size
+    }
+  } else {
+    for (let i = 0; i < lines.length && preview.length < maxLines; i++) {
+      const size = Buffer.byteLength(lines[i], "utf-8") + (preview.length > 0 ? 1 : 0)
+      if (bytes + size > maxBytes) {
+        hitBytes = true
+        break
+      }
+      preview.push(lines[i])
+      bytes += size
+    }
+  }
+  return { preview, bytes, hitBytes, count: preview.length }
+}
 
 export * as Truncate from "./truncate"

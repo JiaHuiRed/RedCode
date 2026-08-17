@@ -22,6 +22,7 @@
 | 决策记录制度(notes) | `.agents/notes/`(1369 篇,四态,同 PR 附 note) | `docs/notes/` | 9981d03e |
 | timeout-policy(工具自声明 timeoutMs + wrap 层 cooperative 拦截,首个声明方 repo_clone) | `guard/timeout-policy` | `tool/tool.ts` TimeoutError | 16f606b2 |
 | 插话/排队可选(`busy_enter`:steer=中途注入(原行为),queue=真排队;附 stall nudge 退役收敛三层空转提醒为两层) | `ui-input-trigger` 双模 | `config.ts` + `session/prompt.ts`,note ×2 | 0856fb9b |
+| 工具输出截断 head-only → head+tail 4:1(尾部错误栈/测试结果保住;压缩摘要侧 17a7304a 已落,工具输出侧补齐) | `spill-policy` + `compaction-tool-result-pruner` | `tool/truncate.ts` 默认 both | 待 commit |
 
 ## 第二批(小机制,高性价比)
 
