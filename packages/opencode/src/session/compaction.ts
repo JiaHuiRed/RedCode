@@ -38,7 +38,10 @@ const TOOL_OUTPUT_MAX_CHARS = 2_000
 const PRUNE_PROTECTED_TOOLS = ["skill"]
 const DEFAULT_TAIL_TURNS = 2
 const MIN_PRESERVE_RECENT_TOKENS = 2_000
-const MAX_PRESERVE_RECENT_TOKENS = 8_000
+// 260818 Red 8000 太小：usable×0.25（≈87K）被 clamp 到 8K，最近轮次一条都装不下 →
+// tail fallback（head=全部历史）→ 压缩代理看全量上下文。30K 能原样保留最近 1-2 轮，
+// 压缩代理只摘要更小的 head，压缩后恢复轮也能读到最近细节。
+const MAX_PRESERVE_RECENT_TOKENS = 30_000
 const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <template> and keep the section order unchanged. Do not include the <template> tags in your response.
 <template>
 ## Goal
@@ -498,6 +501,12 @@ export const layer = Layer.effect(
       )
       const nextPrompt = compacting.prompt ?? buildPrompt({ previousSummary, context: compacting.context })
       const msgs = structuredClone(selected.head)
+      // 260818 Red 压缩代理只产出结论式摘要（Goal/Progress/Decisions/...），不需要思考过程。
+      // reasoning 是每轮的最大块（常占一半以上），跳过它直接砍压缩代理请求体 → 每次压缩
+      // 的 prefix cache 全灭代价同步下降（实测每次压缩 2 次全灭 ≈22.6 万 token 全价）。
+      for (const m of msgs) {
+        m.parts = m.parts.filter((p) => p.type !== "reasoning")
+      }
       yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
       const modelMessages = yield* MessageV2.toModelMessagesEffect(msgs, model, {
         stripMedia: true,
