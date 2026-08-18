@@ -8,9 +8,9 @@
 
 ---
 
-### [0.8.20] - 未发布
+### [0.8.20] - 2026-08-18
 
-> DSH 采纳第二批首项：工具输出截断升级 head+tail 双端预览（4:1），尾部结论不再被裁。goal 语义三件套进提示词（第二批第 3 项）。variants() 巨型 switch 拆分为分派表 + provider 函数（瘦身审计第 1 项）。
+> DSH 第二批收尾 + 稳定性加固：工具输出 head+tail 双端预览、goal 语义三件套、variants() 分派表拆分、压缩边界全灭代价优化、指令变更通知回退、reasoning 流级 stall 兜底、子代理超时兑底、flash 三锚约束、PromptCaches 会话隔离；Superpowers 方法论落地三个 skill。
 
 #### 改进
 
@@ -20,6 +20,10 @@
 - **压缩边界全灭代价优化**（`session/compaction.ts`、`test/session/compaction.test.ts`）：cache turn=0 全灭轮双来源（260817 实测：①opencode-go 网关 Cloudflare 多节点路由，换官方直连已根治；②内置压缩边界——压缩重写上下文 → settlePromptCaches 丢 msgPin → 压缩后第一轮必然全灭）。每次压缩固定 2 次全灭 ≈22.6 万 token 全价（压缩代理轮 ~177K + 恢复轮 ~49K）。优化：压缩代理请求体跳过 head 的 reasoning part（摘要只要结论不要思考过程，估砍 40-50%）；`MAX_PRESERVE_RECENT_TOKENS` 8K→30K（tail 原样保留最近 1-2 轮，不再 tail fallback 全量进 head）。预期每次压缩全灭代价降至 ~10 万 token（60 单测 + typecheck 通过）。
 - **回退指令文件会话中变更通知**（`session/prompt.ts`）：19b2bed3 的每轮读盘对比 + system 尾注入 Updated/Removed 通知实测对缓存命中率造成破坏性损伤（哥哥在家复现确认）——system 任何位置的变化都会让整条前缀（system 之后全部消息）失配，指令文件一旦在会话中变动（模型写 MEMORY.md 等）即全灭且恢复前持续污染。已 revert（5a07e94f），DSH 第二批第 2 项留待重新设计不破前缀的通知方式（如：变化信息塞进 user 侧尾部而非 system）。
 - **reasoning 流级 stall 兜底——纯思考死锁不再挂死会话**（`session/processor.ts`、`test/session/processor-effect.test.ts`）：step-3.7-flash 实测会卡死在思考链里——reasoning 无限流、正文/工具从未产出、step-finish 永不到达。`Stream.takeUntil(() => ctx.needsCompaction)` 永不触发，`handle.process` 永不返回，runLoop 卡死，后续用户消息全部 QUEUED，只能 esc interrupt。此前唯一的 reasoningOnly 提升逻辑（prompt.ts）在 runLoop 下一轮检查，前提是 `lastAssistant.finish` 存在——卡死时 finish 根本不存在，走不到。修复：processor 流内检测——单 step 累积超过 3 万字符 reasoning（约 8 倍于正常思考量）且无任何 text/tool 产出，判定卡死：剥离注入指令复述（防 DCP reminder 泄露跟着进正文）→ 思考拼接提升为可见正文（用户看得到东西而不是对着一片空白等死）→ 收尾 reasoning part → 置 finish="stop" 并落库（runLoop 下一轮 break 条件依赖它，只改内存对象会死循环重发）→ 停流，process 返回 "stop" 走正常收尾路径。单测：30001 字符纯 reasoning 流断言返回 "stop"、思考被提升为正文、finish 落库。
+- **子代理超时兑底——task 超时自动换 fallback 模型重跑**（`config/agent.ts`、`agent/agent.ts`、`tool/task.ts`）：opencode-go 五小时限额掐掉 mimo 请求时 explore 子代理永久挂起（streamText 无 timeout、maxRetries 显式 0）。AgentSchema 加 `timeout_ms` + `fallback_model`；runTask 包 `Effect.timeoutOption`——主模型超时 → cancel 当前会话 → fallback 模型重跑同一任务，无 fallback 时报错。explore 配 300s + step 兜底（走阶跃官方额度，不受 go 套餐影响）。同一 session 重跑干净：go 限额场景请求发不出，session 无脏消息。
+- **PromptCaches 并发 session 隔离**（`session/prompt-caches.ts`、`session/prompt.ts`）：msgPin/tools 按 session 隔离，system/modelMsgs 按 session + modelKey 隔离——多会话并发不再互相污染缓存键；压缩边界丢 msgPin（cache turn=0 全灭轮双来源之一）的根因随之关闭。
+- **flash 系列三锚约束 + step 收敛锚**（`session/prompt.ts` + RedCode-dcp）：flash 系列加深度思考/回顾/反跑题三锚（对照实验 reasoning +42%、决策闭环锚有直接证据）；三锚条件 `model.id.includes("flash")` 误伤 step-3.7-flash——step 思考行为与 deepseek 相反（纯思考轮 0.6%、同工具重发 3-8 次空转，CHANGELOG 0.8.2/0.8.9 实证），Think deeply 是反效果。条件排除 step 模型，step 加反向收敛锚：思考以行动决策收尾、不重发相同工具+相同输入、稳定节奏优先于单次超常发挥。
+- **seed skill 同步 Superpowers 方法论**（`seed/skill/`）：diagnose 加修复失败升级路径（第 1 次回 Phase 3 重列假设 / 连续 2 次停手问用户 / 连续 3 次质疑架构——每次修复暴露新耦合=模式错了）；ce-code-review 加修复循环纪律（scoped 复审只看 fix diff、轮次上限 3、controller 不亲自修、修复报告必须带测试+命令+输出）；tdd-flow（仅私仓 live）加计划质量门禁（占位符/模糊引用/不可独立验证/接口无签名 = 计划失败）+ watch-it-fail 强制 + todo 台账纪律。
 
 ---
 
