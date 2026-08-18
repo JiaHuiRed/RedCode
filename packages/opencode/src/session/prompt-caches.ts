@@ -3,6 +3,17 @@ import * as Log from "@redcode-ai/core/util/log"
 
 const log = Log.create({ service: "prompt-caches" })
 
+type SystemCache = { sessionID: string; modelKey: string; skills: string | undefined; env: string[]; instructions: string[] }
+type MessagePinCache = { sessionID: string; messages: Map<string, unknown[]> }
+type ModelMessagesCache = { sessionID: string; modelKey: string; messages: ModelMessage[] }
+type ToolCache = { sessionID: string; defs: Map<string, { description: string; inputSchema: unknown }> }
+type PromptCacheState = {
+  system: Map<string, Map<string, SystemCache>>
+  msgPin: Map<string, MessagePinCache>
+  modelMsgs: Map<string, Map<string, ModelMessagesCache>>
+  tools: Map<string, ToolCache>
+}
+
 // 260617 Red session-level caches: snapshot once per session to stabilize system prompt for prefix caching.
 // Without caching, instruction.system() re-reads disk every turn — any file change (MEMORY.md, AGENTS.md,
 // skill files) mutates the system prompt and invalidates DeepSeek prefix cache mid-session.
@@ -10,17 +21,16 @@ const log = Log.create({ service: "prompt-caches" })
 // causing module-level `let` to be duplicated across instances. globalThis ensures single shared cache.
 // 260811 cc audit R4: 从 prompt.ts 抽出为独立模块，让 compact 边界的"分代结算"可以被
 // 会话循环调用而不制造循环依赖。
-export const PromptCaches = ((globalThis as any).__rc_prompt_caches ??= {
-  system: undefined as
-    | { sessionID: string; modelKey: string; skills: string | undefined; env: string[]; instructions: string[] }
-    | undefined,
-  msgPin: undefined as { sessionID: string; messages: Map<string, unknown[]> } | undefined,
-  modelMsgs: undefined as { sessionID: string; modelKey: string; messages: ModelMessage[] } | undefined,
+const globalWithCaches = globalThis as typeof globalThis & { __rc_prompt_caches?: PromptCacheState }
+export const PromptCaches = (globalWithCaches.__rc_prompt_caches ??= {
+  system: new Map<string, Map<string, SystemCache>>(),
+  msgPin: new Map<string, MessagePinCache>(),
+  modelMsgs: new Map<string, Map<string, ModelMessagesCache>>(),
   // 260706 Red cache tool definitions (description+inputSchema) for prefix stability.
   // describeSkill()/describeTask() rebuild tool descriptions from disk every step via Glob.scan;
   // if skill/agent lists change mid-session the tool schema JSON mutates → prefix cache breaks.
   // 260804 Red tools cache is model-agnostic (descriptions come from disk, not model) — no modelKey.
-  tools: undefined as { sessionID: string; defs: Map<string, { description: string; inputSchema: unknown }> } | undefined,
+  tools: new Map<string, ToolCache>(),
 })
 
 // 260811 cc audit R4 分代结算（哥哥拍板：缓存优先）：
@@ -35,13 +45,15 @@ export const PromptCaches = ((globalThis as any).__rc_prompt_caches ??= {
 // system/tools 两个缓存与消息历史无关，不参与结算。
 export function settlePromptCaches(sessionID: string, reason: string) {
   let dropped = 0
-  if (PromptCaches.msgPin?.sessionID === sessionID) {
-    dropped += PromptCaches.msgPin.messages.size
-    PromptCaches.msgPin = undefined
+  const msgPin = PromptCaches.msgPin.get(sessionID)
+  if (msgPin) {
+    dropped += msgPin.messages.size
+    PromptCaches.msgPin.delete(sessionID)
   }
-  if (PromptCaches.modelMsgs?.sessionID === sessionID) {
-    dropped += PromptCaches.modelMsgs.messages.length
-    PromptCaches.modelMsgs = undefined
+  const modelMsgs = PromptCaches.modelMsgs.get(sessionID)
+  if (modelMsgs) {
+    dropped += Array.from(modelMsgs.values()).reduce((total, cache) => total + cache.messages.length, 0)
+    PromptCaches.modelMsgs.delete(sessionID)
   }
   if (dropped > 0) log.info("settled", { sessionID, reason, droppedEntries: dropped })
   return dropped
