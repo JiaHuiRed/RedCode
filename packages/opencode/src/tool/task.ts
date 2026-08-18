@@ -6,6 +6,7 @@ import { Bus } from "@/bus"
 import { Plugin } from "@/plugin"
 import { Session } from "@/session/session"
 import { SessionID, MessageID } from "../session/schema"
+import { ModelID, ProviderID } from "../provider/schema"
 import { MessageV2 } from "../session/message-v2"
 import { Agent } from "../agent/agent"
 import { deriveSubagentSessionPermission } from "../agent/subagent-permissions"
@@ -233,30 +234,60 @@ export const TaskTool = Tool.define(
       const runCancel = yield* EffectBridge.make()
 
       const runTask = Effect.fn("TaskTool.runTask")(function* () {
-        const parts = yield* ops.resolvePromptParts(params.prompt)
-        const result = yield* ops.prompt({
-          messageID: MessageID.ascending(),
-          sessionID: nextSession.id,
-          model: {
-            modelID: model.modelID,
-            providerID: model.providerID,
-          },
-          agent: next.name,
-          tools: {
-            ...(next.permission.some((rule) => rule.permission === "todowrite") ? {} : { todowrite: false }),
-            ...(next.permission.some((rule) => rule.permission === id) ? {} : { task: false }),
-            ...Object.fromEntries((cfg.experimental?.primary_tools ?? []).map((item) => [item, false])),
-          },
-          parts,
+        // 260818 Red 子代理超时兑底：agent 配置 timeout_ms + fallback_model 时，
+        // 主模型跑超时 → cancel 当前子代理会话 → 换 fallback 模型在**同一会话**重跑。
+        // 放在 runTask 内部 = background 与 foreground 分支共享同一行为。
+        const runWithModel = Effect.fn("TaskTool.runWithModel")(function* (useModel: {
+          modelID: ModelID
+          providerID: ProviderID
+        }) {
+          const parts = yield* ops.resolvePromptParts(params.prompt)
+          const result = yield* ops.prompt({
+            messageID: MessageID.ascending(),
+            sessionID: nextSession.id,
+            model: {
+              modelID: useModel.modelID,
+              providerID: useModel.providerID,
+            },
+            agent: next.name,
+            tools: {
+              ...(next.permission.some((rule) => rule.permission === "todowrite") ? {} : { todowrite: false }),
+              ...(next.permission.some((rule) => rule.permission === id) ? {} : { task: false }),
+              ...Object.fromEntries((cfg.experimental?.primary_tools ?? []).map((item) => [item, false])),
+            },
+            parts,
+          })
+          const text = result.parts.findLast((item) => item.type === "text")?.text ?? ""
+          yield* plugin.trigger("subagent.stop", {
+            sessionID: nextSession.id,
+            parentSessionID: ctx.sessionID,
+            agent: next.name,
+            output: text,
+          }, {}).pipe(Effect.catch(() => Effect.void))
+          return text
         })
-        const text = result.parts.findLast((item) => item.type === "text")?.text ?? ""
-        yield* plugin.trigger("subagent.stop", {
-          sessionID: nextSession.id,
-          parentSessionID: ctx.sessionID,
-          agent: next.name,
-          output: text,
-        }, {}).pipe(Effect.catch(() => Effect.void))
-        return text
+
+        const timeoutMs = next.timeoutMs && next.timeoutMs > 0 ? Math.round(next.timeoutMs) : undefined
+        const attempt = (useModel: { modelID: ModelID; providerID: ProviderID }) =>
+          timeoutMs
+            ? runWithModel(useModel).pipe(Effect.timeoutOption(`${timeoutMs} millis`))
+            : runWithModel(useModel).pipe(Effect.map(Option.some))
+
+        const first = yield* attempt(model)
+        if (Option.isSome(first)) return first.value
+
+        // 主模型超时：cancel 当前运行，避免残留的进行中请求继续占住会话
+        yield* ops.cancel(nextSession.id).pipe(Effect.ignore)
+        if (next.fallbackModel) {
+          const fallback = yield* attempt(next.fallbackModel)
+          if (Option.isSome(fallback)) return fallback.value
+          return yield* Effect.fail(
+            new Error(
+              `Subagent timed out after ${timeoutMs}ms on both primary (${model.modelID}) and fallback (${next.fallbackModel.modelID})`,
+            ),
+          )
+        }
+        return yield* Effect.fail(new Error(`Subagent timed out after ${timeoutMs}ms (no fallback model configured)`))
       })
 
       const resumeWhenIdle: (input: { userID: MessageID; state: "completed" | "error" }) => Effect.Effect<void> =

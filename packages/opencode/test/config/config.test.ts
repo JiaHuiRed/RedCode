@@ -625,6 +625,26 @@ it.instance("handles agent configuration", () =>
   }),
 )
 
+it.instance("passes subagent timeout_ms and fallback_model through config", () =>
+  Effect.gen(function* () {
+    const test = yield* TestInstance
+    yield* writeConfigEffect(test.directory, {
+      $schema: "https://opencode.ai/config.json",
+      agent: {
+        test_agent: {
+          model: "test/model",
+          timeout_ms: 300000,
+          fallback_model: "test-fallback/backup",
+        },
+      },
+    })
+    const config = yield* Config.use.get()
+    const agent = config.agent?.["test_agent"]
+    expect(agent?.timeout_ms).toBe(300000)
+    expect(agent?.fallback_model).toBe("test-fallback/backup")
+  }),
+)
+
 it.instance("treats agent variant as model-scoped setting (not provider option)", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
