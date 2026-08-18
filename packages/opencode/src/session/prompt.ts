@@ -1578,21 +1578,41 @@ export const layer = Layer.effect(
   3. Do not ignore compression reminders — failing to compress when context is near the limit wastes tokens and degrades response quality.`,
                )
              }
-             // 260818 Red flash 三锚（借鉴 dsh-routing-suite 的 WEAK_FLASH 实测，P10/P14/P19/P20）：
-             // flash 系列实战反馈「过于自信、思考浅」——直接动手、跳过探索。三锚分别治：
-             // ① deep-then-converge：纯 deep 指令是陷阱（思考到预算烧穿 0% 行动），必须配
-             //    "then commit and act" 绑定句 + 决策闭环收尾（P10 实测推理深度翻倍且 100% 收敛）
-             // ② 回顾锚：行动前回顾已完成步骤，防重复劳动（P22/P23：开放任务完成率 0%→100%）
-             // ③ 反跑题锚：禁环境检查/穷举扫描空转（P19/P20：胡思乱想率压到 0.0-0.3%）
-             // 只对 flash 生效；pro 的深度思考已是天性，加锚反而破坏其行为带（P11 最优区间不共享）。
-             if (model.id.toLowerCase().includes("flash")) {
-               system.push(
-                 `▸ REASONING DISCIPLINE (flash 系列):
+// 260818 Red flash 三锚（借鉴 dsh-routing-suite 的 WEAK_FLASH 实测，P10/P14/P19/P20）：
+              // flash 系列实战反馈「过于自信、思考浅」——直接动手、跳过探索。三锚分别治：
+              // ① deep-then-converge：纯 deep 指令是陷阱（思考到预算烧穿 0% 行动），必须配
+              //    "then commit and act" 绑定句 + 决策闭环收尾（P10 实测推理深度翻倍且 100% 收敛）
+              // ② 回顾锚：行动前回顾已完成步骤，防重复劳动（P22/P23：开放任务完成率 0%→100%）
+              // ③ 反跑题锚：禁环境检查/穷举扫描空转（P19/P20：胡思乱想率压到 0.0-0.3%）
+              // 只对 deepseek 系 flash 生效；step-3.7-flash 虽同名含 flash 但行为带相反
+              // （思考过度不产出，见 step 专属锚），必须排除——否则 Think deeply 是反效果。
+              if (
+                model.id.toLowerCase().includes("flash") &&
+                !model.id.toLowerCase().includes("step")
+              ) {
+                system.push(
+                  `▸ REASONING DISCIPLINE (flash 系列):
   1. Think deeply first, then commit and act. Each reasoning block ends with a decision or an information need — no open-ended rumination.
   2. Before acting, briefly review what you have already done in this session and continue from where you left off; do not repeat completed steps.
   3. Do not run environment checks (echo, whoami, uname, node --version, date, pwd) or exhaustive grep/glob scans. Read the specific file, then act.`,
-               )
-             }
+                )
+              }
+              // 260818 Red step 收敛锚（实测画像与 deepseek flash 相反）：step-3.7-flash
+              // 思考 3553 字/正文仅 144 字（CHANGELOG 0.8.2 实证）、纯思考轮次 0.6% 是
+              // deepseek 的 4 倍、同一工具调用重发 3-8 次空转（0.8.9 空转检测的起因）。
+              // 它不缺深度，缺的是「想完必须产出」——与 flash 的 Think deeply 方向相反，
+              // 给了就是纯 deep 陷阱（思考烧穿预算 0% 行动）。三锚分别治：
+              // ① 收敛锚：思考以行动决策收尾，禁止无限推演；正文是唯一交付物
+              // ② 反空转锚：不重发相同工具+相同输入（空转检测的提示词侧防线）
+              // ③ 一致锚：时强时弱=思考长度波动大，稳定节奏优先于单次超常发挥
+              if (model.providerID === "stepfun" || model.id.toLowerCase().includes("step")) {
+                system.push(
+                  `▸ REASONING DISCIPLINE (step 系列):
+  1. Think, then act — each reasoning block ends with a concrete next action or a decision. Never extend reasoning just to keep thinking; when you have a plan, execute it.
+  2. Do not resend the same tool call with the same input. If a call was already made, read its output and move forward — repeating identical work is the single worst failure mode.
+  3. The visible reply is the deliverable. Keep a steady rhythm of action → verify → report; consistency beats one brilliant turn followed by stalls.`,
+                )
+              }
              // 260801 Red Windsurf-inspired memory clause: write now, not later.
             // Context gets compacted; the two MEMORY.md files are the only bridge to the next session.
             system.push(
