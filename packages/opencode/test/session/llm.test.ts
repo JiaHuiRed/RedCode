@@ -168,6 +168,35 @@ describe("session.llm.hasToolCalls", () => {
   })
 })
 
+describe("session.llm.routedVia", () => {
+  test("normalizes current and legacy route response headers", () => {
+    expect(LLM.routedVia({ "X-Routed-Via": "edge-a" })).toBe("edge-a")
+    expect(LLM.routedVia({ "_routed_via": "edge-b" })).toBe("edge-b")
+  })
+
+  test("waits for response metadata before emitting finish", async () => {
+    const state = LLMAISDK.adapterState()
+    let release!: () => void
+    state.routedVia = "edge-c"
+    state.routedViaPromise = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let finished = false
+    const finish = { type: "finish", finishReason: "stop" } as Parameters<typeof LLMAISDK.toLLMEvents>[1]
+    const result = Effect.runPromise(
+      LLMAISDK.toLLMEvents(state, finish),
+    ).then((events) => {
+      finished = true
+      return events
+    })
+
+    await Promise.resolve()
+    expect(finished).toBe(false)
+    release()
+    await expect(result).resolves.toMatchObject([{ type: "finish", routedVia: "edge-c" }])
+  })
+})
+
 describe("session.llm.ai-sdk adapter", () => {
   type AISDKAdapterEvent = Parameters<typeof LLMAISDK.toLLMEvents>[1]
 

@@ -31,6 +31,13 @@ import { LLMRequestPrep } from "./llm/request"
 const log = Log.create({ service: "llm" })
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
 
+// 260818 Red response headers are exposed with provider-dependent casing and the legacy
+// FreeLLMAPI name was `_routed_via`; normalize both forms before persisting the route marker.
+export function routedVia(headers: HeadersInit | undefined) {
+  const normalized = new Headers(headers)
+  return normalized.get("x-routed-via") ?? normalized.get("_routed_via") ?? undefined
+}
+
 export type StreamInput = {
   user: MessageV2.User
   sessionID: string
@@ -390,10 +397,11 @@ const live: Layer.Layer<
             const state = LLMAISDK.adapterState()
             // 260624 Red AI SDK 的 .response 等整个流完成才 resolve（不是 HTTP 头），
             // 之前 await 它会阻塞流式输出并在网络异常时导致 NoOutputGeneratedError。
-            // 改为异步捕获，不阻塞 fullStream 消费。
-            Promise.resolve(result.result.response)
+            // 改为异步捕获，不阻塞 fullStream 消费；终结事件再等待这个 promise，避免元数据
+            // 在 finish 事件之后才到达，导致 routedVia 永远无法落库。
+            state.routedViaPromise = Promise.resolve(result.result.response)
               .then((meta) => {
-                state.routedVia = meta.headers?.["X-Routed-Via"]
+                state.routedVia = routedVia(meta.headers)
               })
               .catch(() => {})
             return Stream.fromAsyncIterable(result.result.fullStream, (e) =>
@@ -527,4 +535,3 @@ export function withContinuation(
 export const hasToolCalls = LLMRequestPrep.hasToolCalls
 
 export * as LLM from "./llm"
-
