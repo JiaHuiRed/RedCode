@@ -44,6 +44,14 @@ const AgentSchema = Schema.StructWithRest(
       description: "Maximum number of agentic iterations before forcing text-only response",
     }),
     maxSteps: Schema.optional(PositiveInt).annotate({ description: "@deprecated Use 'steps' field instead." }),
+    timeout_ms: Schema.optional(PositiveInt).annotate({
+      description:
+        "Subagent timeout in milliseconds. When a subagent run exceeds this, it is cancelled and retried with fallback_model (if set). 0/omitted = no timeout.",
+    }),
+    fallback_model: Schema.optional(ConfigModelID).annotate({
+      description:
+        "Fallback model (providerID/modelID) used to retry a subagent run that timed out. Only applies to subagents with timeout_ms set.",
+    }),
     permission: Schema.optional(ConfigPermission.Info),
   }),
   [Schema.Record(Schema.String, Schema.Any)],
@@ -66,6 +74,8 @@ const KNOWN_KEYS = new Set([
   "permission",
   "disable",
   "tools",
+  "timeout_ms",
+  "fallback_model",
 ])
 
 // Post-parse normalisation:

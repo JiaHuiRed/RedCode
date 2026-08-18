@@ -17,6 +17,7 @@ export function adapterState() {
     currentReasoningID: undefined as string | undefined,
     toolNames: {} as Record<string, string>,
     routedVia: undefined as string | undefined,
+    routedViaPromise: undefined as Promise<void> | undefined,
   }
 }
 
@@ -102,7 +103,8 @@ export function toLLMEvents(
       ])
 
     case "finish":
-      return Effect.sync(() => {
+      return Effect.promise(async () => {
+        await state.routedViaPromise
         const events = [
           LLMEvent.finish({
             reason: finishReason(event.finishReason),

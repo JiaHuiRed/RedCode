@@ -922,3 +922,59 @@ it.live("session.processor effect tests mark interruptions aborted without manua
     { config: (url) => providerCfg(url) },
   ),
 )
+
+it.live("session.processor effect tests stall-cuts a reasoning-only stream", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+
+        // 260818 Red reasoning 流级 stall 兜底：只有超长思考、没有正文/工具，
+        // step-finish 永不到达 —— 处理器应在阈值处中断，把思考提升为可见正文，
+        // finish 置 "stop" 正常收尾，而不是让 turn 永远挂着。
+        yield* llm.push(reply().reason("x".repeat(30001)).stop())
+
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "stall")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({
+          assistantMessage: msg,
+          sessionID: chat.id,
+          model: mdl,
+        })
+
+        const value = yield* handle.process({
+          user: {
+            id: parent.id,
+            sessionID: chat.id,
+            role: "user",
+            time: parent.time,
+            agent: parent.agent,
+            model: { providerID: ref.providerID, modelID: ref.modelID },
+          } satisfies MessageV2.User,
+          sessionID: chat.id,
+          model: mdl,
+          agent: agent(),
+          system: [],
+          messages: [{ role: "user", content: "stall" }],
+          tools: {},
+        })
+
+        const parts = MessageV2.parts(msg.id)
+        const text = parts.find((part): part is MessageV2.TextPart => part.type === "text")
+
+        // stall 兜底以 "stop" 收尾（runLoop 走正常 break 分支），而不是卡死
+        expect(value).toBe("stop")
+        expect(yield* llm.calls).toBe(1)
+        // 思考被提升为可见正文，用户看得到东西而不是对着空白等死
+        expect(text?.text).toBe("x".repeat(30001))
+        // finish 已落库，runLoop 下一轮能正常 break
+        const stored = yield* MessageV2.get({ sessionID: chat.id, messageID: msg.id })
+        if (stored.info.role === "assistant") {
+          expect(stored.info.finish).toBe("stop")
+        }
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)

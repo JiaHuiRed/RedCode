@@ -36,6 +36,12 @@ import * as InstructionEcho from "./instruction-echo"
 import * as RepeatToolReminder from "./repeat-tool-reminder"
 
 const DOOM_LOOP_THRESHOLD = 3
+// 260818 Red reasoning 流级 stall 兜底：模型卡死在纯思考流里永不 finish
+// （step-3.7-flash 实测——正文/工具从未产出，step-finish 永不到达，runLoop 的
+// reasoningOnly 提升逻辑走不到，turn 永不结束，后续用户消息全部 QUEUED）。
+// 阈值：reasoning 累积 3 万字符仍无任何 text/tool 产出即判定卡死。正常思考
+// 极少超过此量（step-3.7-flash 实测约 3.5K 字符），3 万是约 8 倍余量。
+const REASONING_STALL_CHARS = 30000
 const log = Log.create({ service: "session.processor" })
 
 export type Result = "compact" | "stop" | "continue"
@@ -92,6 +98,11 @@ interface ProcessorContext extends Input {
   ngramTripped: boolean
   // 260812 cc DCP reminder 泄露流式拦截：已触发标志（防同一段多次剥离）
   leakTripped: boolean
+  // 260818 Red reasoning 流级 stall 检测：本 step 累积的 reasoning 字符数 +
+  // 是否已产出过 text/tool（有产出即不算 stall）+ 是否已触发兜底
+  reasoningChars: number
+  stepProduced: boolean
+  reasoningStallTripped: boolean
   // 260728 Red 文本态工具调用打捞：本 step 注册的工具名（防误判）+ 打捞结果
   toolNames: ReadonlySet<string>
   salvaged: XmlToolCall.ParsedCall[]
@@ -146,6 +157,10 @@ export const layer = Layer.effect(
         ngramDetector: new NgramDetector(),
         ngramTripped: false,
         leakTripped: false,
+        // 260818 Red reasoning 流级 stall 检测
+        reasoningChars: 0,
+        stepProduced: false,
+        reasoningStallTripped: false,
         // 260728 Red 文本态工具调用打捞
         toolNames: new Set<string>(),
         salvaged: [],
@@ -416,6 +431,45 @@ export const layer = Layer.effect(
               field: "text",
               delta: value.text,
             })
+            // 260818 Red reasoning 流级 stall 兜底：模型卡死在纯思考流里永不产出。
+            // step-finish 永不到达时 runLoop 的 reasoningOnly 提升逻辑（prompt.ts）
+            // 走不到 —— turn 永不结束，后续用户消息全部 QUEUED，只能手动中断。
+            // 这里在流内直接检测：本 step 已累积超过阈值字符的 reasoning 且从未
+            // 产出 text/tool，判定为卡死。处理：把思考提升为可见正文（用户至少
+            // 看得到东西，而不是对着一片空白等死），置 finish="stop" 正常收尾。
+            // why: docs/notes/implemented/bug-fix/2026-08-18-reasoning-stall-safety-net.md
+            if (!ctx.reasoningStallTripped && !ctx.stepProduced) {
+              ctx.reasoningChars += value.text.length
+              if (ctx.reasoningChars >= REASONING_STALL_CHARS) {
+                ctx.reasoningStallTripped = true
+                slog.warn("reasoning.stall", {
+                  sessionID: ctx.sessionID,
+                  chars: ctx.reasoningChars,
+                  model: ctx.model.id,
+                })
+                // 先剥离注入指令复述（防 DCP reminder 之类的泄露跟着思考一起进正文），
+                // 再拼接提升为可见正文（与 runLoop 的 reasoningOnly.promoted 同款做法）
+                for (const p of Object.values(ctx.reasoningMap)) stripInstructionEcho(p, "reasoning")
+                const reasoningText = Object.values(ctx.reasoningMap)
+                  .map((p) => p.text)
+                  .join("\n\n")
+                const now = Date.now()
+                yield* session.updatePart({
+                  id: PartID.ascending(),
+                  messageID: ctx.assistantMessage.id,
+                  sessionID: ctx.sessionID,
+                  type: "text",
+                  text: reasoningText,
+                  time: { start: now, end: now },
+                })
+                // 收尾 reasoning part（设 end time、落库），与正常 step-finish 行为一致
+                yield* Effect.forEach(Object.keys(ctx.reasoningMap), finishReasoning)
+                ctx.assistantMessage.finish = "stop"
+                // 260818 Red finish 必须落库：runLoop 下一轮的 break 条件读
+                // lastAssistant.finish（prompt.ts），只改内存对象会导致死循环重发
+                yield* session.updateMessage(ctx.assistantMessage)
+              }
+            }
             return
 
           case "reasoning-end":
@@ -429,6 +483,8 @@ export const layer = Layer.effect(
             if (ctx.assistantMessage.summary) {
               throw new Error(`Tool call not allowed while generating summary: ${value.name}`)
             }
+            // 260818 Red 有工具产出了，reasoning stall 检测解除
+            ctx.stepProduced = true
             yield* ensureToolCall(value)
             return
 
@@ -666,6 +722,10 @@ export const layer = Layer.effect(
 
           case "step-start":
             if (!ctx.snapshot) ctx.snapshot = yield* snapshot.track()
+            // 260818 Red reasoning stall 检测按 step 重置：每个新 step 重新计数
+            ctx.reasoningChars = 0
+            ctx.stepProduced = false
+            ctx.reasoningStallTripped = false
             if (!ctx.assistantMessage.summary) {
               // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
               if (flags.experimentalEventSystem) {
@@ -777,6 +837,8 @@ export const layer = Layer.effect(
             ctx.ngramDetector.reset()
             ctx.ngramTripped = false
             ctx.leakTripped = false
+            // 260818 Red 有正文产出了，reasoning stall 检测解除
+            ctx.stepProduced = true
             if (!ctx.assistantMessage.summary) {
               // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
               if (flags.experimentalEventSystem) {
@@ -1011,7 +1073,7 @@ export const layer = Layer.effect(
 
             yield* stream.pipe(
               Stream.tap((event) => handleEvent(event)),
-              Stream.takeUntil(() => ctx.needsCompaction),
+              Stream.takeUntil(() => ctx.needsCompaction || ctx.reasoningStallTripped),
               Stream.runDrain,
             )
           }).pipe(
@@ -1063,6 +1125,9 @@ export const layer = Layer.effect(
           )
 
           if (ctx.needsCompaction) return "compact"
+          // 260818 Red reasoning stall 兜底触发：思考已提升为正文、finish 已置 stop，
+          // 与正常收尾同路径退出（runLoop 里 finish="stop" 会走正常 break 分支）
+          if (ctx.reasoningStallTripped) return "stop"
           if (ctx.blocked || ctx.assistantMessage.error) return "stop"
           return "continue"
         })

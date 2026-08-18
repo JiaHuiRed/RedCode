@@ -8,20 +8,33 @@
 
 ---
 
-### [0.8.20] - 未发布
+### [0.8.21] - 未发布
 
-> DSH 采纳第二批首项：工具输出截断升级 head+tail 双端预览（4:1），尾部结论不再被裁。goal 语义三件套进提示词（第二批第 3 项）。variants() 巨型 switch 拆分为分派表 + provider 函数（瘦身审计第 1 项）。压缩边界全灭代价优化（tail 预算 50K）落地。
+> 压缩全灭优化二次修正：回退压缩代理跳过 head reasoning（随 0.8.20 发布的 a6c2af1 实测为负优化）、tail 预算 30K→50K。
+
+#### 修复
+
+- **回退"压缩代理跳过 head reasoning"**（`session/compaction.ts`）：摘要轮 head 无 reasoning、恢复轮保留（message-v2.ts 透传）——前缀在第一条 reasoning 处断裂，恢复轮无法命中摘要轮写入的缓存，变 2 次全灭（90K+177K）比 1 次（177K）更贵；head 必须与恢复轮逐字节一致（260817 实测，与 466bb79 同批同日回退，abf78d1）。`MAX_PRESERVE_RECENT_TOKENS` 30K→50K：长会话最近 2 轮常超 30K，装不进 budget 触发 tail fallback（head=全部历史）→ 压缩代理轮请求体爆炸；50K 后最近轮次保留原样，head 只剩老历史（budget 仍受 usable×0.25 上限约束）。[why](docs/notes/rejected/feature/2026-08-17-instruction-change-notice.md)
+
+---
+
+### [0.8.20] - 2026-08-18
+
+> DSH 第二批收尾 + 稳定性加固：工具输出 head+tail 双端预览、goal 语义三件套、variants() 分派表拆分、压缩边界全灭代价优化、指令变更通知回退、reasoning 流级 stall 兜底、子代理超时兑底、flash 三锚约束、PromptCaches 会话隔离；Superpowers 方法论落地三个 skill。
 
 #### 改进
 
 - **工具输出截断 head-only → head+tail 双端**（`tool/truncate.ts`、`test/tool/truncation.test.ts`）：`direction` 扩为 `head|tail|both`，默认 `both`——预算按 4:1 切分（head 80% / tail 20%），收集逻辑抽为 `collectPreview` helper（tail 用 `skip` 防与 head 重叠），输出格式 `head → …truncated… → tail → hint`。尾部（错误栈/测试结果/命令收尾）此前被整体裁掉，模型被迫再调一次工具看尾部；压缩摘要侧 0.8.17 已落 4:1（17a7304a），工具输出侧补齐。预览总体积不变（预算只拆分不扩容），显式 `head`/`tail` 调用方语义不变。[why](docs/notes/implemented/feature/2026-08-17-tool-output-head-tail-truncation.md)
 - **variants() 巨型 switch 拆分为分派表 + provider 函数**（`provider/transform.ts`、`test/provider/transform.test.ts`）：446 行的 16-case switch 拆为「模型族特判 + npm 分派表 + 15 个 provider 函数 + 形状工厂」。共享形状抽工厂（`adaptiveThinkingVariants`/`openaiShapeVariants`/`fixedThinkingVariants`/`anthropicThinkingVariants`），cerebras/togetherai/xai/deepinfra/venice/openai-compatible 等共享实现的 provider 指向同一函数。行为零变化（`-t variants` 131/131 锚定），加新 provider 只需分派表加一行 + 一个函数，停止「每加模型就塞 if/else」的持续腐烂。[why](docs/notes/implemented/feature/2026-08-17-transform-variants-dispatch.md)
-- **压缩边界全灭代价优化**（`session/compaction.ts`、`test/session/compaction.test.ts`）：260817 实测每次压缩固定 2 次 cache 全灭 ≈22.6 万 token 全价（压缩代理轮 ~177K + 恢复轮 ~49K，`settlePromptCaches` 丢 msgPin/modelMsgs 后第一轮必然全灭），长会话命中率面板被持续拉低（97%→93%）。`MAX_PRESERVE_RECENT_TOKENS` 8000→50K——8000 太小致长会话最近轮次装不进 budget 触发 tail fallback（head=全部历史），50K 后最近轮次保留原样（恢复轮全灭代价 ~49K → 50K 量级小写入）。**同日回退**：原本同批的"摘要请求跳过 head reasoning"被证伪——摘要轮 head 无 reasoning、恢复轮保留 reasoning，两者前缀在第一条 reasoning 处断裂，恢复轮无法命中摘要轮缓存，变 2 次全灭（90K+177K）反而更贵；head 必须与恢复轮逐字节一致。[why](docs/notes/implemented/feature/2026-08-17-compaction-cache-miss-cost.md)
-
-#### 计划（260817 待办，未开工）
-
-- （暂无）
-- **指令文件变更通知（19b2bed）同日回退**：变化轮一次性通知尾巴与恢复轮不一致 → 改一次指令文件 = 双重全灭（≈50 万 token 全价）；"通知只出现一轮"的假设只保住了恢复轮以后，没保住恢复轮本身。回到 260617 缓存设计——会话中改指令文件不生效、下个会话生效（攒批改+重启）。[why](docs/notes/rejected/feature/2026-08-17-instruction-change-notice.md)
+- **goal 语义三件套**（`session/prompt.ts`、`tool/task.md`）：activeGoal 注入段新增 Blocked rules——同一具体阻塞条件持续 ≥3 轮仍无进展才可报告阻塞并说明条件；difficulty/uncertainty/remaining useful work 明文不算 blocked（对冲 V4 长程早停，对齐 DSH goal guidance）。task 派活纪律第 7 条把同规则传给子代理。resume 缴械经调研确认天然覆盖（resume 后用户不发消息无 idle 续跑事件，首条消息即隐式 rearm），无需改动。[why](docs/notes/implemented/feature/2026-08-17-goal-semantics-three-piece.md)
+- **压缩边界全灭代价优化**（`session/compaction.ts`、`test/session/compaction.test.ts`）：cache turn=0 全灭轮双来源（260817 实测：①opencode-go 网关 Cloudflare 多节点路由，换官方直连已根治；②内置压缩边界——压缩重写上下文 → settlePromptCaches 丢 msgPin → 压缩后第一轮必然全灭）。每次压缩固定 2 次全灭 ≈22.6 万 token 全价（压缩代理轮 ~177K + 恢复轮 ~49K）。优化：压缩代理请求体跳过 head 的 reasoning part（摘要只要结论不要思考过程，估砍 40-50%）；`MAX_PRESERVE_RECENT_TOKENS` 8K→30K（tail 原样保留最近 1-2 轮，不再 tail fallback 全量进 head）。预期每次压缩全灭代价降至 ~10 万 token（60 单测 + typecheck 通过）。
+- **回退指令文件会话中变更通知**（`session/prompt.ts`）：19b2bed3 的每轮读盘对比 + system 尾注入 Updated/Removed 通知实测对缓存命中率造成破坏性损伤（哥哥在家复现确认）——system 任何位置的变化都会让整条前缀（system 之后全部消息）失配，指令文件一旦在会话中变动（模型写 MEMORY.md 等）即全灭且恢复前持续污染。已 revert（5a07e94f），DSH 第二批第 2 项留待重新设计不破前缀的通知方式（如：变化信息塞进 user 侧尾部而非 system）。
+- **reasoning 流级 stall 兜底——纯思考死锁不再挂死会话**（`session/processor.ts`、`test/session/processor-effect.test.ts`）：step-3.7-flash 实测会卡死在思考链里——reasoning 无限流、正文/工具从未产出、step-finish 永不到达。`Stream.takeUntil(() => ctx.needsCompaction)` 永不触发，`handle.process` 永不返回，runLoop 卡死，后续用户消息全部 QUEUED，只能 esc interrupt。此前唯一的 reasoningOnly 提升逻辑（prompt.ts）在 runLoop 下一轮检查，前提是 `lastAssistant.finish` 存在——卡死时 finish 根本不存在，走不到。修复：processor 流内检测——单 step 累积超过 3 万字符 reasoning（约 8 倍于正常思考量）且无任何 text/tool 产出，判定卡死：剥离注入指令复述（防 DCP reminder 泄露跟着进正文）→ 思考拼接提升为可见正文（用户看得到东西而不是对着一片空白等死）→ 收尾 reasoning part → 置 finish="stop" 并落库（runLoop 下一轮 break 条件依赖它，只改内存对象会死循环重发）→ 停流，process 返回 "stop" 走正常收尾路径。单测：30001 字符纯 reasoning 流断言返回 "stop"、思考被提升为正文、finish 落库。
+- **子代理超时兑底——task 超时自动换 fallback 模型重跑**（`config/agent.ts`、`agent/agent.ts`、`tool/task.ts`）：opencode-go 五小时限额掐掉 mimo 请求时 explore 子代理永久挂起（streamText 无 timeout、maxRetries 显式 0）。AgentSchema 加 `timeout_ms` + `fallback_model`；runTask 包 `Effect.timeoutOption`——主模型超时 → cancel 当前会话 → fallback 模型重跑同一任务，无 fallback 时报错。explore 配 300s + step 兜底（走阶跃官方额度，不受 go 套餐影响）。同一 session 重跑干净：go 限额场景请求发不出，session 无脏消息。
+- **PromptCaches 并发 session 隔离**（`session/prompt-caches.ts`、`session/prompt.ts`）：msgPin/tools 按 session 隔离，system/modelMsgs 按 session + modelKey 隔离——多会话并发不再互相污染缓存键；压缩边界丢 msgPin（cache turn=0 全灭轮双来源之一）的根因随之关闭。
+- **flash 系列三锚约束 + step 收敛锚**（`session/prompt.ts` + RedCode-dcp）：flash 系列加深度思考/回顾/反跑题三锚（对照实验 reasoning +42%、决策闭环锚有直接证据）；三锚条件 `model.id.includes("flash")` 误伤 step-3.7-flash——step 思考行为与 deepseek 相反（纯思考轮 0.6%、同工具重发 3-8 次空转，CHANGELOG 0.8.2/0.8.9 实证），Think deeply 是反效果。条件排除 step 模型，step 加反向收敛锚：思考以行动决策收尾、不重发相同工具+相同输入、稳定节奏优先于单次超常发挥。
+- **seed skill 同步 Superpowers 方法论**（`seed/skill/`）：diagnose 加修复失败升级路径（第 1 次回 Phase 3 重列假设 / 连续 2 次停手问用户 / 连续 3 次质疑架构——每次修复暴露新耦合=模式错了）；ce-code-review 加修复循环纪律（scoped 复审只看 fix diff、轮次上限 3、controller 不亲自修、修复报告必须带测试+命令+输出）；tdd-flow（仅私仓 live）加计划质量门禁（占位符/模糊引用/不可独立验证/接口无签名 = 计划失败）+ watch-it-fail 强制 + todo 台账纪律。
+- **compaction 分割线 token 对比口径修复**（`session/compaction.ts`）：tokens_before/after 原用 sumTokens 累计「所有 assistant 消息的 token 消耗」（每轮 input 都等于当时完整上下文，长会话累计值远超真实上下文；且压缩后旧消息仅折叠不删除，after = before + 压缩代理轮消耗）→ UI 显示「Compaction 42137k → 42374k」越压越多。改为 estimate() 对 filterCompacted 折叠后的可见消息估算——before = 压缩前可见上下文，after = 压缩后可见上下文（summary + tail），与 select 的 head/tail 预算同一口径。
 
 ---
 

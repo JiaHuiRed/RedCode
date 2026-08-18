@@ -42,6 +42,7 @@ const MIN_PRESERVE_RECENT_TOKENS = 2_000
 // 就触发 tail fallback（select 里 keep=undefined → head=全部历史），压缩代理轮请求体
 // 爆炸（~177K 全价）且最近细节也被压掉。调到 50K 后最近轮次保留原样，head 只剩老历史
 // （budget 仍受 usable*0.25 上限约束，模型可用上下文小的时候自动收缩）。
+// 260818 Red 远端 a6c2af1 曾调 30K（哥哥在家基于未回退 466bb79 的再调优），合并时保留 50K——实测值。
 const MAX_PRESERVE_RECENT_TOKENS = 50_000
 const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <template> and keep the section order unchanged. Do not include the <template> tags in your response.
 <template>
@@ -437,23 +438,12 @@ export const layer = Layer.effect(
       const userMessage = parent.info
       const compactionPart = parent.parts.find((part): part is MessageV2.CompactionPart => part.type === "compaction")
 
-      // 260813 Red compaction 前后 token 统计：assistant 消息的 tokens 字段是模型侧真实消耗，
-      // 加总即"压缩前上下文有多大"；压缩完成后再算一次 after 回填 part，UI 分割线展示对比。
-      const sumTokens = (msgs: MessageV2.WithParts[]) =>
-        msgs.reduce(
-          (sum, m) =>
-            m.info.role === "assistant"
-              ? sum +
-                (m.info.tokens.input ?? 0) +
-                (m.info.tokens.output ?? 0) +
-                (m.info.tokens.reasoning ?? 0) +
-                (m.info.tokens.cache.read ?? 0) +
-                (m.info.tokens.cache.write ?? 0) +
-                (m.info.tokens.cache.miss ?? 0)
-              : sum,
-          0,
-        )
-      const tokensBefore = sumTokens(input.messages)
+      // 260818 Red 修口径：此前用 sumTokens 累计所有 assistant 消息的 token 消耗（每轮
+      // input 都等于当时的完整上下文），长会话几百轮后远超真实上下文；且压缩后旧消息仍在
+      // 库中（filterCompacted 只折叠不删除），after = before + 压缩代理轮的消耗 → UI 分割线
+      // 显示"Compaction 42137k → 42374k"越压越多（260818 实测）。改为 estimate() 估算
+      // "模型实际可见上下文"（与 select 的 head/tail 预算同一口径）：before 在下方 history
+      // 确定后计算，after 在压缩完成后计算。
 
       let messages = input.messages
       let replay:
@@ -486,6 +476,7 @@ export const layer = Layer.effect(
         : yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID).pipe(Effect.orDie)
       const cfg = yield* config.get()
       const history = compactionPart && messages.at(-1)?.info.id === input.parentID ? messages.slice(0, -1) : messages
+      const tokensBefore = yield* estimate({ messages: MessageV2.filterCompacted(history), model })
       const prior = completedCompactions(history)
       const hidden = new Set(prior.flatMap((item) => [item.userIndex, item.assistantIndex]))
       const previousSummary = prior.at(-1)?.summary
@@ -501,12 +492,12 @@ export const layer = Layer.effect(
         { context: [], prompt: undefined },
       )
       const nextPrompt = compacting.prompt ?? buildPrompt({ previousSummary, context: compacting.context })
-     // 260817 Red 压缩全灭代价优化（同日回退）：摘掉 head 的 reasoning part 让摘要请求
-     // 变小（177K→90K），但恢复轮请求体保留 reasoning——两者前缀在第一条 reasoning
-     // 处断裂，恢复轮无法命中摘要轮写入的缓存，变成 2 次全灭（90K+177K），总账比
-     // "1 次全灭"（177K，恢复轮命中 head 后只剩 tail 写入）更贵。head 必须与恢复轮
-     // 逐字节一致；50K tail 预算（MAX_PRESERVE_RECENT_TOKENS）保留。
-     const msgs = structuredClone(selected.head)
+      // 260817 Red 压缩全灭代价优化（同日回退）：摘掉 head 的 reasoning part 让摘要请求
+      // 变小（177K→90K），但恢复轮请求体保留 reasoning——两者前缀在第一条 reasoning
+      // 处断裂，恢复轮无法命中摘要轮写入的缓存，变成 2 次全灭（90K+177K），总账比
+      // "1 次全灭"（177K，恢复轮命中 head 后只剩 tail 写入）更贵。head 必须与恢复轮
+      // 逐字节一致；50K tail 预算（MAX_PRESERVE_RECENT_TOKENS）保留。
+      const msgs = structuredClone(selected.head)
       yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
       const modelMessages = yield* MessageV2.toModelMessagesEffect(msgs, model, {
         stripMedia: true,
@@ -739,7 +730,7 @@ export const layer = Layer.effect(
         // 注意展开旧 compactionPart 会覆盖掉前面已更新的 tail_start_id，必须带回来。
         if (compactionPart) {
           const after = yield* session.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
-          const tokensAfter = sumTokens(after)
+         const tokensAfter = yield* estimate({ messages: MessageV2.filterCompacted(after), model })
           if (compactionPart.tokens_before !== tokensBefore || compactionPart.tokens_after !== tokensAfter) {
             yield* session.updatePart({
               ...compactionPart,
