@@ -24,6 +24,7 @@
 - **PromptCaches 并发 session 隔离**（`session/prompt-caches.ts`、`session/prompt.ts`）：msgPin/tools 按 session 隔离，system/modelMsgs 按 session + modelKey 隔离——多会话并发不再互相污染缓存键；压缩边界丢 msgPin（cache turn=0 全灭轮双来源之一）的根因随之关闭。
 - **flash 系列三锚约束 + step 收敛锚**（`session/prompt.ts` + RedCode-dcp）：flash 系列加深度思考/回顾/反跑题三锚（对照实验 reasoning +42%、决策闭环锚有直接证据）；三锚条件 `model.id.includes("flash")` 误伤 step-3.7-flash——step 思考行为与 deepseek 相反（纯思考轮 0.6%、同工具重发 3-8 次空转，CHANGELOG 0.8.2/0.8.9 实证），Think deeply 是反效果。条件排除 step 模型，step 加反向收敛锚：思考以行动决策收尾、不重发相同工具+相同输入、稳定节奏优先于单次超常发挥。
 - **seed skill 同步 Superpowers 方法论**（`seed/skill/`）：diagnose 加修复失败升级路径（第 1 次回 Phase 3 重列假设 / 连续 2 次停手问用户 / 连续 3 次质疑架构——每次修复暴露新耦合=模式错了）；ce-code-review 加修复循环纪律（scoped 复审只看 fix diff、轮次上限 3、controller 不亲自修、修复报告必须带测试+命令+输出）；tdd-flow（仅私仓 live）加计划质量门禁（占位符/模糊引用/不可独立验证/接口无签名 = 计划失败）+ watch-it-fail 强制 + todo 台账纪律。
+- **compaction 分割线 token 对比口径修复**（`session/compaction.ts`）：tokens_before/after 原用 sumTokens 累计「所有 assistant 消息的 token 消耗」（每轮 input 都等于当时完整上下文，长会话累计值远超真实上下文；且压缩后旧消息仅折叠不删除，after = before + 压缩代理轮消耗）→ UI 显示「Compaction 42137k → 42374k」越压越多。改为 estimate() 对 filterCompacted 折叠后的可见消息估算——before = 压缩前可见上下文，after = 压缩后可见上下文（summary + tail），与 select 的 head/tail 预算同一口径。
 
 ---
 

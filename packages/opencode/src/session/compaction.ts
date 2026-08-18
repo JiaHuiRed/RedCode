@@ -436,23 +436,12 @@ export const layer = Layer.effect(
       const userMessage = parent.info
       const compactionPart = parent.parts.find((part): part is MessageV2.CompactionPart => part.type === "compaction")
 
-      // 260813 Red compaction 前后 token 统计：assistant 消息的 tokens 字段是模型侧真实消耗，
-      // 加总即"压缩前上下文有多大"；压缩完成后再算一次 after 回填 part，UI 分割线展示对比。
-      const sumTokens = (msgs: MessageV2.WithParts[]) =>
-        msgs.reduce(
-          (sum, m) =>
-            m.info.role === "assistant"
-              ? sum +
-                (m.info.tokens.input ?? 0) +
-                (m.info.tokens.output ?? 0) +
-                (m.info.tokens.reasoning ?? 0) +
-                (m.info.tokens.cache.read ?? 0) +
-                (m.info.tokens.cache.write ?? 0) +
-                (m.info.tokens.cache.miss ?? 0)
-              : sum,
-          0,
-        )
-      const tokensBefore = sumTokens(input.messages)
+      // 260818 Red 修口径：此前用 sumTokens 累计所有 assistant 消息的 token 消耗（每轮
+      // input 都等于当时的完整上下文），长会话几百轮后远超真实上下文；且压缩后旧消息仍在
+      // 库中（filterCompacted 只折叠不删除），after = before + 压缩代理轮的消耗 → UI 分割线
+      // 显示"Compaction 42137k → 42374k"越压越多（260818 实测）。改为 estimate() 估算
+      // "模型实际可见上下文"（与 select 的 head/tail 预算同一口径）：before 在下方 history
+      // 确定后计算，after 在压缩完成后计算。
 
       let messages = input.messages
       let replay:
@@ -485,6 +474,7 @@ export const layer = Layer.effect(
         : yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID).pipe(Effect.orDie)
       const cfg = yield* config.get()
       const history = compactionPart && messages.at(-1)?.info.id === input.parentID ? messages.slice(0, -1) : messages
+      const tokensBefore = yield* estimate({ messages: MessageV2.filterCompacted(history), model })
       const prior = completedCompactions(history)
       const hidden = new Set(prior.flatMap((item) => [item.userIndex, item.assistantIndex]))
       const previousSummary = prior.at(-1)?.summary
@@ -739,7 +729,7 @@ export const layer = Layer.effect(
         // 注意展开旧 compactionPart 会覆盖掉前面已更新的 tail_start_id，必须带回来。
         if (compactionPart) {
           const after = yield* session.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
-          const tokensAfter = sumTokens(after)
+         const tokensAfter = yield* estimate({ messages: MessageV2.filterCompacted(after), model })
           if (compactionPart.tokens_before !== tokensBefore || compactionPart.tokens_after !== tokensAfter) {
             yield* session.updatePart({
               ...compactionPart,
