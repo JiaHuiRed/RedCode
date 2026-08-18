@@ -12,6 +12,10 @@
 
 > 压缩全灭优化二次修正：回退压缩代理跳过 head reasoning（随 0.8.20 发布的 a6c2af1 实测为负优化）、tail 预算 30K→50K。
 
+#### 新增
+
+- **qwen3.8 本地模型专属提示词**（`session/system.ts`、`prompt/qwen.md`）：ollama 本地 Qwen3.8 27B（Q3_K_M 量化，Modelfile 别名 qwen3.8）新增专属提示词，针对该模型实际约束适配——Q3 量化能力上限（大工程任务降级策略：做能做的部分并明说跳过，不硬撑）、~15 tok/s 慢速（短输出 + 并行批处理工具调用）、32K 上下文（切片读文件 + 及时压缩）；自我认知锚定（训练知识不认识自身版本号，防止否认身份）。路由 `system.ts`：providerID 含 ollama 且 api.id 含 qwen → PROMPT_QWEN，**置于 ollama 通用路由之前**（否则 providerID 先命中短路）；minicpm 等其他 ollama 模型仍走 ollama.md 不受影响。
+
 #### 修复
 
 - **回退"压缩代理跳过 head reasoning"**（`session/compaction.ts`）：摘要轮 head 无 reasoning、恢复轮保留（message-v2.ts 透传）——前缀在第一条 reasoning 处断裂，恢复轮无法命中摘要轮写入的缓存，变 2 次全灭（90K+177K）比 1 次（177K）更贵；head 必须与恢复轮逐字节一致（260817 实测，与 466bb79 同批同日回退，abf78d1）。`MAX_PRESERVE_RECENT_TOKENS` 30K→50K：长会话最近 2 轮常超 30K，装不进 budget 触发 tail fallback（head=全部历史）→ 压缩代理轮请求体爆炸；50K 后最近轮次保留原样，head 只剩老历史（budget 仍受 usable×0.25 上限约束）。[why](docs/notes/rejected/feature/2026-08-17-instruction-change-notice.md)

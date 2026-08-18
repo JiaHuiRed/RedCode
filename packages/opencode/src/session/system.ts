@@ -17,6 +17,7 @@ import PROMPT_GLM from "./prompt/glm.md" with { type: "text" }
 import PROMPT_GROK from "./prompt/grok.md" with { type: "text" }
 import PROMPT_STEP from "./prompt/step.md" with { type: "text" }
 import PROMPT_OLLAMA from "./prompt/ollama.md" with { type: "text" }
+import PROMPT_QWEN from "./prompt/qwen.md" with { type: "text" }
 import PROMPT_DOUBAO from "./prompt/doubao.md" with { type: "text" }
 import PROMPT_SENSENOVA from "./prompt/sensenova.md" with { type: "text" }
 import type { Provider } from "@/provider/provider"
@@ -44,6 +45,9 @@ export function provider(model: Provider.Model) {
   if (model.api.id.toLowerCase().includes("mimo")) return [PROMPT_MIMO]
   // 260610 Red minimax(m3 及以后) 专属提示词 — 与 mimo(小米) 非同厂，独立成文件便于后续单独调优
   if (model.api.id.toLowerCase().includes("minimax")) return [PROMPT_MINIMAX]
+  // 260818 Red 本地 Qwen3.8 27B（ollama）专属提示词 —— 必须放在 ollama 通用路由之前，
+  // 否则 providerID 命中 ollama 先短路。针对 Q3 量化能力上限 / ~15 tok/s / 32K 上下文适配。
+  if (model.providerID.toLowerCase().includes("ollama") && model.api.id.toLowerCase().includes("qwen")) return [PROMPT_QWEN]
   // 260704 Red ollama 本地模型 — 精简提示词，适配有限上下文窗口
   // providerID 含 ollama 或 model.id 含 ":latest"/":Xb" 等 ollama 命名特征
   if (model.providerID.toLowerCase().includes("ollama")) return [PROMPT_OLLAMA]
