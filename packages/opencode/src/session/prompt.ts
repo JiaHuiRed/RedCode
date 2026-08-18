@@ -1572,10 +1572,25 @@ export const layer = Layer.effect(
              // 这里直接用铁律约束，不依赖 soft nudge。非 step 模型不动。
              if (model.providerID === "stepfun" || model.id.toLowerCase().includes("step")) {
                system.push(
-                 `▸ CONTEXT COMPRESSION (MUST follow when receiving <dcp-system-reminder> warnings):
+                 `▸ CONTEXT COMPRESSION (MUST follow when receiving  warnings):
   1. When you see "MAX CONTEXT LIMIT REACHED" or similar context warnings, you MUST call the compress tool immediately.
   2. Compress already-closed conversation ranges (finished tasks, resolved questions) using the compress tool.
   3. Do not ignore compression reminders — failing to compress when context is near the limit wastes tokens and degrades response quality.`,
+               )
+             }
+             // 260818 Red flash 三锚（借鉴 dsh-routing-suite 的 WEAK_FLASH 实测，P10/P14/P19/P20）：
+             // flash 系列实战反馈「过于自信、思考浅」——直接动手、跳过探索。三锚分别治：
+             // ① deep-then-converge：纯 deep 指令是陷阱（思考到预算烧穿 0% 行动），必须配
+             //    "then commit and act" 绑定句 + 决策闭环收尾（P10 实测推理深度翻倍且 100% 收敛）
+             // ② 回顾锚：行动前回顾已完成步骤，防重复劳动（P22/P23：开放任务完成率 0%→100%）
+             // ③ 反跑题锚：禁环境检查/穷举扫描空转（P19/P20：胡思乱想率压到 0.0-0.3%）
+             // 只对 flash 生效；pro 的深度思考已是天性，加锚反而破坏其行为带（P11 最优区间不共享）。
+             if (model.id.toLowerCase().includes("flash")) {
+               system.push(
+                 `▸ REASONING DISCIPLINE (flash 系列):
+  1. Think deeply first, then commit and act. Each reasoning block ends with a decision or an information need — no open-ended rumination.
+  2. Before acting, briefly review what you have already done in this session and continue from where you left off; do not repeat completed steps.
+  3. Do not run environment checks (echo, whoami, uname, node --version, date, pwd) or exhaustive grep/glob scans. Read the specific file, then act.`,
                )
              }
              // 260801 Red Windsurf-inspired memory clause: write now, not later.
