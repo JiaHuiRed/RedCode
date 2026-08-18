@@ -1,6 +1,6 @@
 ---
 name: ce-code-review
-description: 结构化代码审查——多维度人格审查、severity 置信度门控、merge/dedup pipeline。PR 前深度审查、大 diff 审查、安全敏感变更审查时触发。
+description: 结构化代码审查。用户说"帮我看看代码""review一下""审一下""看看这个PR"时触发。多维度人格审查、severity 门控、merge/dedup。
 ---
 
 # ce-code-review
@@ -286,6 +286,18 @@ git diff origin/HEAD...HEAD
 /ce-code-review feat/notification  # 审查指定分支
 /ce-code-review base:origin/main   # 指定 base ref
 ```
+
+---
+
+## 修复循环纪律
+
+审查 findings → 修复 → 复审，这个循环有硬约束：
+
+- **Scoped 复审**：复审只看 fix diff（修复前后对比），不重审全量。fix 范围外的新发现记入 Residual/下一轮，不扩展循环
+- **轮次上限 3**：R1-R2 同一实现者修；R3 换更强模型（fresh 子代理）；R3 仍有未解决 finding → 全部交用户裁决，没有第 4 轮
+- **Controller 不亲自修**：主会话只做协调和裁决。亲自修 = 跳过复审 + 污染上下文；修复交给实现者/子代理
+- **Minor 不阻塞**：P3 不进修复循环，记 Residual，交付前 triage
+- **修复带证据**：修复报告必须含覆盖测试、跑的命令、输出——没这三样不派复审
 
 ---
 
