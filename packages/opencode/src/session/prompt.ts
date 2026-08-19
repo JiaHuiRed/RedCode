@@ -81,6 +81,16 @@ globalThis.AI_SDK_LOG_WARNINGS = false
 // 再多就是陪模型烧 token 打转了。
 const MAX_SALVAGE_RECOVERIES = 2
 
+// 260819 cc「prune 够了就跳过 summarize」的额外门槛：释放量至少要占当前上下文这个比例。
+// 为什么需要它：skip 分支必然伴随 settlePromptCaches，msgPin/modelMsgs 一丢，DCP 攒下的
+// 全部改写（prune 标记、nudge 锚点、priority tag）同时生效，整条前缀从最早被改写处起重写
+// ——代价是把当前上下文全量从缓存价打回全价。原来只判「prune 后是否还超限」，于是释放 3%
+// 也照付 100% 重建，而且降幅太小下一轮又撞线 → 再 prune 再 settle，反复全额重建。
+// 实测 08-16~08-19：39 次短间隔同模型跳水吃掉 4528k 本该命中的 token，约占区间总成本 10%。
+// 取 0.15 的依据是数量级而非精算：重建一次相当于付掉 100% 上下文，释放 15% 才有几轮回本的
+// 余地。它是可调旋钮——调大更保守（更多走真压缩），调小更接近旧行为。
+const PRUNE_SKIP_MIN_RATIO = 0.15
+
 // 260811 cc audit Y2：agent 未配置 steps 时的单轮步数硬顶。300 步按每步 10-30s 算
 // 已是 1.5-2.5 小时的连续自主运行，正常任务远达不到；达到即视为失控打转，强制落地。
 const DEFAULT_MAX_STEPS = 300
@@ -1711,8 +1721,14 @@ export const layer = Layer.effect(
                 const c = typeof m.content === "string" ? m.content : JSON.stringify(m.content)
                 return `${i}:${m.role}:${c.length}:${h(c)}`
               })
-              const prev = store.get(sessionID) as string[] | undefined
-              store.set(sessionID, fp)
+              // 260819 cc 探针 key 必须带 modelKey——与 stabilize 的 modelMsgs 缓存同粒度。
+              // 原来只按 sessionID 存：同一会话切换模型时，拿模型 A 上一轮的指纹跟模型 B 这一轮比，
+              // 必然逐条不等 → 报「第 0 条断裂」，而两个模型各自的 provider 前缀缓存其实都没断。
+              // 实测 08-12~08-19 日志 161 处前缀断裂里有 37 处是这么来的误报（23%），
+              // 既把真断裂淹在噪声里，也没法拿它验收缓存修复的效果。
+              const probeKey = `${sessionID}|${modelKey}`
+              const prev = store.get(probeKey) as string[] | undefined
+              store.set(probeKey, fp)
 
               const detail: string[] = []
               if (prev) {
@@ -1888,19 +1904,27 @@ export const layer = Layer.effect(
                 Effect.catch(() => Effect.succeed({ tokens: 0, parts: 0 })),
               )
               let skip = false
+              let freedRatio = 0
               if (!overflow && freed.tokens > 0) {
                 const tokens = handle.message.tokens
                 const before = tokens.total || tokens.input + tokens.output + tokens.cache.read + tokens.cache.write
                 const after = Math.max(0, before - freed.tokens)
-                skip = !(yield* compaction.isOverflow({
+                freedRatio = before > 0 ? freed.tokens / before : 0
+                const fits = !(yield* compaction.isOverflow({
                   tokens: { ...tokens, total: after, cache: { read: 0, write: 0 }, input: after, output: 0 },
                   model,
                 }))
+                // 260819 cc 除了"prune 后不再超限"，还要求释放量够本——理由见 PRUNE_SKIP_MIN_RATIO。
+                // 不达标时不是"什么都不做"（那样 freed 是虚报、上下文没真降、下一轮照样撞线），
+                // 而是落到 else 走真 summarize：同样重建一次前缀，但一次性压到位，不留反复。
+                skip = fits && freedRatio >= PRUNE_SKIP_MIN_RATIO
               }
               if (skip) {
                 yield* slog.info("compaction.skipped_after_prune", {
                   freedTokens: freed.tokens,
                   prunedParts: freed.parts,
+                  freedRatio: freedRatio.toFixed(3),
+                  minRatio: PRUNE_SKIP_MIN_RATIO,
                 })
                 // 260811 cc audit R4: 跳过 summarize 的判断依据是 prune 的释放量，那释放
                 // 必须真发生——此前 msgPin 会把标记钉回去，freed 是虚报（"跳过压缩→实际
