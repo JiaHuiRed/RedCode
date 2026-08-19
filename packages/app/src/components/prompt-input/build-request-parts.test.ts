@@ -49,6 +49,23 @@ describe("buildRequestParts", () => {
     expect(result.optimisticParts.every((part) => part.sessionID === "ses_1" && part.messageID === "msg_1")).toBe(true)
   })
 
+  test("omits the text part when text is empty or whitespace", () => {
+    const result = buildRequestParts({
+      prompt: [],
+      context: [],
+      images: [
+        { type: "image", id: "img_1", filename: "a.png", mime: "image/png", dataUrl: "data:image/png;base64,AAA" },
+      ],
+      text: "  ",
+      messageID: "msg_empty",
+      sessionID: "ses_empty",
+      sessionDirectory: "/repo",
+    })
+
+    expect(result.requestParts.some((part) => part.type === "text" && !part.synthetic)).toBe(false)
+    expect(result.requestParts.filter((part) => part.type === "file")).toHaveLength(1)
+  })
+
   test("keeps multiple uploaded attachments in order", () => {
     const result = buildRequestParts({
       prompt: [{ type: "text", content: "check these", start: 0, end: 11 }],

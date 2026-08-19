@@ -162,11 +162,19 @@ type PromptCacheEntry = {
   dispose: VoidFunction
 }
 
+// 草稿落盘时剔除图片 part：dataUrl 是整张图的 base64，跟着 store 每次按键都被
+// JSON.stringify 一遍（贴图后打字卡顿的根因）。代价是重开应用后草稿丢图、文字保留。
+function serializePromptStore(value: unknown) {
+  const store = value as { prompt?: ContentPart[] }
+  if (!Array.isArray(store?.prompt)) return JSON.stringify(value)
+  return JSON.stringify({ ...store, prompt: store.prompt.filter((part) => part.type !== "image") })
+}
+
 function createPromptSession(dir: string, id: string | undefined) {
   const legacy = `${dir}/prompt${id ? "/" + id : ""}.v2`
 
   const [store, setStore, _, ready] = persisted(
-    Persist.scoped(dir, id, "prompt", [legacy]),
+    { ...Persist.scoped(dir, id, "prompt", [legacy]), serialize: serializePromptStore },
     createStore<{
       prompt: Prompt
       cursor?: number
@@ -276,9 +284,14 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
 
     const session = createMemo(() => load(params.dir!, params.id))
     const pick = (scope?: Scope) => (scope ? load(scope.dir, scope.id) : session())
+    // 旧写法 `ready: () => session().ready` 返回的是 ready 函数对象本身（恒 truthy），
+    // 所有 `prompt.ready()` 门禁形同虚设；改成真调用，.promise 走属性透传（上游 #33528 同款）
+    const ready = Object.defineProperty(() => session().ready(), "promise", {
+      get: () => session().ready.promise,
+    }) as (() => boolean) & { readonly promise: Promise<unknown> | undefined }
 
     return {
-      ready: () => session().ready,
+      ready,
       current: () => session().current(),
       cursor: () => session().cursor(),
       dirty: () => session().dirty(),

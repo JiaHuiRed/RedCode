@@ -318,6 +318,9 @@ export const dict = {
   "dialog.mcp.description": "{{enabled}} of {{total}} enabled",
   "dialog.mcp.empty": "No MCPs configured",
   "dialog.mcp.toggleFailed": "Failed to toggle MCP",
+  "dialog.usageExceeded.dontShowAgain": "Don't show again",
+  "titlebar.update.button": "Update",
+  "titlebar.update.tooltip": "Update {{version}}",
 
   "dialog.lsp.empty": "LSPs auto-detected from file types",
   "dialog.plugins.empty": "Plugins configured in RedCode.json",
@@ -812,8 +815,6 @@ export const dict = {
   "settings.general.row.followup.description": "Choose whether follow-up prompts steer immediately or wait in a queue",
   "settings.general.row.followup.option.queue": "Queue",
   "settings.general.row.followup.option.steer": "Steer",
-  "settings.general.row.showFileTree.title": "File tree",
-  "settings.general.row.showFileTree.description": "Show the file tree toggle and panel in desktop sessions",
   "settings.general.row.showNavigation.title": "Navigation controls",
   "settings.general.row.showNavigation.description": "Show the back and forward buttons in the desktop title bar",
   "settings.general.row.showSearch.title": "Command palette",

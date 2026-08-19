@@ -151,3 +151,73 @@ describe("GLM thinking 参数注入", () => {
       expect(v["max"]).toBeUndefined()
     })
 })
+
+// 260814 Red 推理档位数据驱动（models.dev reasoning_options）——决策：数据打底、硬编码表覆盖。
+// 数据只在"通用猜测"兜底路径生效；实测校准的特判（GLM/KIMI/DeepSeek 等）必须压住数据。
+describe("reasoning_options 数据驱动档位", () => {
+  const make = (id: string, reasoningOptions: unknown, npm = "@ai-sdk/openai-compatible", providerID = "opencode-go") =>
+    ({
+      id,
+      providerID,
+      api: { id, npm },
+      capabilities: { reasoning: true, temperature: true },
+      limit: { context: 200_000, output: 16_000 },
+      reasoningOptions,
+    }) as unknown as Provider.Model
+
+  test("无特判家族 + effort 数据：数据压过 WIDELY 通用猜测", () => {
+    const v = ProviderTransform.variants(make("future-model-9", [{ type: "effort", values: ["low", "ultra"] }]))
+    expect(Object.keys(v)).toEqual(["low", "ultra"])
+    expect(v["ultra"]).toEqual({ reasoningEffort: "ultra" })
+  })
+
+  test("values 里的 null 映射为 none 档", () => {
+    const v = ProviderTransform.variants(make("future-model-9", [{ type: "effort", values: [null, "high"] }]))
+    expect(Object.keys(v)).toEqual(["none", "high"])
+  })
+
+  test("无数据：通用猜测照旧（low/medium/high）", () => {
+    const v = ProviderTransform.variants(make("future-model-9", undefined))
+    expect(Object.keys(v)).toEqual(["low", "medium", "high"])
+  })
+
+  test("deepseek-v4 校准表压住错误数据", () => {
+    const v = ProviderTransform.variants(
+      make("deepseek-v4-pro", [{ type: "effort", values: ["wrong-a", "wrong-b"] }], "@ai-sdk/openai-compatible", "deepseek"),
+    )
+    expect(Object.keys(v)).toEqual(["low", "high", "max"])
+  })
+
+  test("GLM-5.2 校准表压住错误数据", () => {
+    const v = ProviderTransform.variants(make("glm-5.2", [{ type: "effort", values: ["wrong"] }]))
+    expect(Object.keys(v)).toEqual(["none", "high", "max"])
+  })
+
+  test("budget_tokens/toggle 型不消化，退回通用猜测", () => {
+    const v = ProviderTransform.variants(
+      make("future-model-9", [{ type: "budget_tokens", min: 1024, max: 32768 }, { type: "toggle" }]),
+    )
+    expect(Object.keys(v)).toEqual(["low", "medium", "high"])
+  })
+
+  test("未知 npm + effort 数据：数据是唯一线索，生效", () => {
+    const v = ProviderTransform.variants(make("novel-model", [{ type: "effort", values: ["low", "high"] }], "@ai-sdk/brand-new"))
+    expect(Object.keys(v)).toEqual(["low", "high"])
+  })
+
+  test("未知 npm 无数据：维持空表", () => {
+    expect(ProviderTransform.variants(make("novel-model", undefined, "@ai-sdk/brand-new"))).toEqual({})
+  })
+
+  test("垃圾数据不炸：非数组 / 空 values / 非字符串值 / 空字符串 全部退回硬编码", () => {
+    for (const junk of ["effort", { type: "effort" }, [{ type: "effort", values: [] }], [{ type: "effort", values: [42, ""] }], [null]]) {
+      const v = ProviderTransform.variants(make("future-model-9", junk))
+      expect(Object.keys(v)).toEqual(["low", "medium", "high"])
+    }
+  })
+
+  test("重复档位值去重", () => {
+    const v = ProviderTransform.variants(make("future-model-9", [{ type: "effort", values: ["high", "high", null, null] }]))
+    expect(Object.keys(v)).toEqual(["high", "none"])
+  })
+})

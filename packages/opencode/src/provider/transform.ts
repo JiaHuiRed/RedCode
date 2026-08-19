@@ -3,7 +3,7 @@ import { mergeDeep, unique } from "remeda"
 import type { JSONSchema7 } from "@ai-sdk/provider"
 import type * as Provider from "./provider"
 import type * as ModelsDev from "@redcode-ai/core/models-dev"
-import { existsSync, writeFileSync } from "fs"
+import { existsSync, readdirSync, statSync, unlinkSync, writeFileSync } from "fs"
 import { createHash } from "crypto"
 import { join } from "path"
 import { tmpdir } from "os"
@@ -452,6 +452,26 @@ function unwrapV7Payload(value: unknown): unknown {
   return value
 }
 
+// vision 临时文件只写不删（同图同路径靠 existsSync 去重），temp 目录会缓慢堆积截图。
+// 首次落盘时惰性清一次 7 天前的旧文件；正在活跃引用的文件必然是近期写入，不会误删。
+let visionTempSwept = false
+const VISION_TEMP_TTL_MS = 7 * 24 * 60 * 60 * 1000
+function sweepVisionTemp() {
+  if (visionTempSwept) return
+  visionTempSwept = true
+  try {
+    const dir = tmpdir()
+    const cutoff = Date.now() - VISION_TEMP_TTL_MS
+    for (const name of readdirSync(dir)) {
+      if (!name.startsWith("redcode-vision-")) continue
+      const filepath = join(dir, name)
+      try {
+        if (statSync(filepath).mtimeMs < cutoff) unlinkSync(filepath)
+      } catch {}
+    }
+  } catch {}
+}
+
 /** Save an unsupported media part to a temp file so a subagent can read it later. */
 function savePartToTemp(part: unknown): string | null {
   const p = part as Record<string, unknown>
@@ -510,6 +530,7 @@ function savePartToTemp(part: unknown): string | null {
   //
   // 改用内容哈希后：同一张图恒定映射到同一路径，请求体逐字节稳定，缓存前缀得以延伸。
   // 顺带去掉了每轮往 temp 目录扔一个新文件的垃圾。
+  sweepVisionTemp()
   const digest = createHash("sha256").update(buffer).digest("hex").slice(0, 16)
   const filepath = join(tmpdir(), `redcode-vision-${digest}.${ext}`)
   try {
@@ -700,6 +721,32 @@ function glmSupportsEffort(...ids: (string | undefined)[]): boolean {
 
 const effortVariants = (efforts: string[]) =>
   Object.fromEntries(efforts.map((effort) => [effort, { reasoningEffort: effort }]))
+
+// 260814 Red 推理档位数据驱动（决策：数据打底、硬编码表覆盖）。
+// models.dev 的 reasoning_options 只在 variants() 里"通用猜测"的兜底路径上生效：
+// openai-compatible 系尾部的 WIDELY_SUPPORTED_EFFORTS 猜测、未知 npm 的空表。
+// 所有实测校准的特判（GLM/KIMI/GROK/DeepSeek/排除名单）在此之前就已返回，
+// 数据永远压不过它们——models.dev 错了有表兜着，新模型没进表时数据顶上。
+//
+// 只消化 effort 型（这些落点的参数形状全是 {reasoningEffort}，与档位值无关）；
+// budget_tokens/toggle 型在这些 provider 上没有已知的参数形状，返回 undefined 退回硬编码。
+// 字段是 Unknown 透传（外部数据形态会演化），所以逐层运行时收窄，认不出就放弃。
+function dataEffortVariants(model: Provider.Model): Record<string, Record<string, any>> | undefined {
+  const options = model.reasoningOptions
+  if (!Array.isArray(options)) return undefined
+  const effort = options.find(
+    (o) => typeof o === "object" && o !== null && !Array.isArray(o) && (o as Record<string, unknown>).type === "effort",
+  ) as { values?: unknown } | undefined
+  const values = effort?.values
+  if (!Array.isArray(values)) return undefined
+  const efforts = values.flatMap((v) => {
+    if (v === null) return ["none"]
+    if (typeof v === "string" && v.length > 0) return [v]
+    return []
+  })
+  if (efforts.length === 0) return undefined
+  return effortVariants([...new Set(efforts)])
+}
 const OPENAI_EFFORTS = ["none", "minimal", ...WIDELY_SUPPORTED_EFFORTS, "xhigh"]
 const OPENAI_GPT5_1_EFFORTS = ["none", ...WIDELY_SUPPORTED_EFFORTS]
 const OPENAI_GPT5_2_PLUS_EFFORTS = [...OPENAI_GPT5_1_EFFORTS, "xhigh"]
@@ -933,7 +980,8 @@ const openaiCompatVariants: VariantFn = ({ model, id }) => {
       model.providerID === "sensenova" ? [...WIDELY_SUPPORTED_EFFORTS, "xhigh"] : ["low", "high", "max"],
     )
   }
-  return effortVariants(WIDELY_SUPPORTED_EFFORTS)
+  // 到这里说明上面的实测校准特判都没认领——属"通用猜测"地带，models.dev 数据优先
+  return dataEffortVariants(model) ?? effortVariants(WIDELY_SUPPORTED_EFFORTS)
 }
 
 const azureVariants: VariantFn = ({ model, id }) => {
@@ -1195,7 +1243,9 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
     return v !== undefined && v >= 4.05 ? effortVariants(GROK_EFFORTS) : {}
   }
 
-  return variantProviders[model.api.npm]?.({ model, id }) ?? {}
+  // 260819 cc 表里没有的 npm：硬编码没有任何知识，models.dev 的 reasoning_options 是唯一线索。
+  // （dev 把 switch 重构成 variantProviders 查表，这条兜底相应从 switch 末尾移到这里）
+  return variantProviders[model.api.npm]?.({ model, id }) ?? dataEffortVariants(model) ?? {}
 }
 
 export function options(input: {

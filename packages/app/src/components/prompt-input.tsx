@@ -1305,7 +1305,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const providersShouldFadeIn = createMemo((prev) => prev ?? providersLoading())
 
   const [promptReady] = createResource(
-    () => prompt.ready().promise,
+    () => prompt.ready.promise,
     (p) => p,
   )
 

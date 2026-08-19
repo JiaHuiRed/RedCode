@@ -936,6 +936,9 @@ export const Model = Schema.Struct({
   headers: Schema.Record(Schema.String, Schema.String),
   release_date: Schema.String,
   variants: optionalOmitUndefined(Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.Any))),
+  // models.dev 的 reasoning_options 原样透传（外部数据、形态会演化，schema 不收紧；
+  // 消费端 transform.dataEffortVariants 自己做运行时收窄）
+  reasoningOptions: optionalOmitUndefined(Schema.MutableJson),
 }).annotate({ identifier: "Model" })
 export type Model = Types.DeepMutable<Schema.Schema.Type<typeof Model>>
 
@@ -1124,6 +1127,7 @@ function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model
     },
     release_date: model.release_date ?? "",
     variants: {},
+    reasoningOptions: model.reasoning_options,
   }
 
   return {

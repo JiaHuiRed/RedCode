@@ -75,7 +75,10 @@ export default function Share(props: {
     },
     messages: {},
   })
-  const messages = createMemo(() => Object.values(store.messages).toSorted((a, b) => a.id?.localeCompare(b.id)))
+  // 导入/迁移进来的消息 ID 不保证单调，先按创建时间排，ID 只做同刻 tie-breaker
+  const messages = createMemo(() =>
+    Object.values(store.messages).toSorted((a, b) => a.time.created - b.time.created || a.id.localeCompare(b.id)),
+  )
   const [connectionStatus, setConnectionStatus] = createSignal<[Status, string?]>(["disconnected"])
 
   onMount(() => {

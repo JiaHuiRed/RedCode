@@ -297,6 +297,14 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     view().terminal.open()
   }
 
+  const closeTerminal = () => {
+    const id = terminal.active()
+    if (!id) return
+    const last = terminal.all().length === 1
+    void terminal.close(id)
+    if (last) view().terminal.close()
+  }
+
   const chooseModel = () => {
     void import("@/components/dialog-select-model").then((x) => {
       dialog.show(() => <x.DialogSelectModel model={local.model} />)
@@ -571,6 +579,15 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   ]
 
   const terminalCmds = () => [
+    // mod+w 只在焦点落在终端里时关终端（when 谓词），别处仍归全局命令
+    terminalCommand({
+      id: "terminal.close",
+      title: language.t("terminal.close"),
+      keybind: "mod+w",
+      hidden: true,
+      when: (event) => event.target instanceof Element && !!event.target.closest('[data-component="terminal"]'),
+      onSelect: closeTerminal,
+    }),
     terminalCommand({
       id: "terminal.new",
       title: language.t("command.terminal.new"),

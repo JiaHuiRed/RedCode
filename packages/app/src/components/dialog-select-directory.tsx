@@ -17,6 +17,8 @@ interface DialogSelectDirectoryProps {
   onSelect: (result: string | string[] | null) => void
 }
 
+const RECENT_PROJECT_LIMIT = 5
+
 type Row = {
   absolute: string
   search: string
@@ -255,9 +257,10 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
   const [filter, setFilter] = createSignal("")
   let list: ListRef | undefined
 
-  const missingBase = createMemo(() => !(sync.data.path.home || sync.data.path.directory))
+  // 只有 directory 没有 home 时也要补拉——否则起始位置落在项目目录、路径显示不成 ~/…
+  const missingHome = createMemo(() => !sync.data.path.home)
   const [fallbackPath] = createResource(
-    () => (missingBase() ? true : undefined),
+    () => (missingHome() ? true : undefined),
     async () => {
       return sdk.client.path
         .get()
@@ -301,7 +304,6 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
     return projects
       .map((project, index) => ({ project, at: byProject.get(project.worktree) ?? 0, index }))
       .sort((a, b) => b.at - a.at || a.index - b.index)
-      .slice(0, 5)
       .map(({ project }) => {
         const row = toRow(project.worktree, home(), "recent")
         const name = project.name || getFilename(project.worktree)
@@ -315,7 +317,10 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
   const items = async (value: string) => {
     const results = await directories(value)
     const directoryRows = results.map((absolute) => toRow(absolute, home(), "folders"))
-    return uniqueRows([...recentProjects(), ...directoryRows])
+    // 截断只作用于空闲列表——一旦有搜索词，所有在册项目都要可搜（原来在搜索前砍 5 条，第 6 名之后搜不到）
+    const recent = recentProjects()
+    const visible = value ? recent : recent.slice(0, RECENT_PROJECT_LIMIT)
+    return uniqueRows([...visible, ...directoryRows])
   }
 
   function resolve(absolute: string) {

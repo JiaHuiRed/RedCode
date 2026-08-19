@@ -7,12 +7,17 @@ import type { ProviderID } from "./schema"
 // https://github.com/badlogic/pi-mono/blob/main/packages/ai/src/utils/overflow.ts
 const OVERFLOW_PATTERNS = [
   /prompt is too long/i, // Anthropic
+  /request_too_large/i, // Anthropic error code
   /input is too long for requested model/i, // Amazon Bedrock
   /exceeds the context window/i, // OpenAI (Completions + Responses API message text)
+  /exceeds (?:the )?(?:model'?s )?maximum context length(?: of [\d,]+ tokens?|\s*\([\d,]+\))/i, // OpenAI-compatible variants
   /input token count.*exceeds the maximum/i, // Google (Gemini)
+  /tokens in request more than max tokens allowed/i, // z.ai
   /maximum prompt length is \d+/i, // xAI (Grok)
   /reduce the length of the messages/i, // Groq
   /maximum context length is \d+ tokens/i, // OpenRouter, DeepSeek, vLLM
+  /exceeds (?:the )?maximum allowed input length of [\d,]+ tokens?/i,
+  /input \(\d+ tokens\) is longer than the model'?s context length \(\d+ tokens\)/i,
   /exceeds the limit of \d+/i, // GitHub Copilot
   /exceeds the available context size/i, // llama.cpp server
   /greater than the context length/i, // LM Studio
@@ -24,8 +29,15 @@ const OVERFLOW_PATTERNS = [
   /input length.*exceeds.*context length/i, // vLLM
   /prompt too long; exceeded (?:max )?context length/i, // Ollama explicit overflow error
   /too large for model with \d+ maximum context length/i, // Mistral
+  /prompt has [\d,]+ tokens?, but the configured context size is [\d,]+ tokens?/i, // llama.cpp/Ollama configured ctx
   /model_context_window_exceeded/i, // z.ai non-standard finish_reason surfaced as error text
+  /too many tokens/i, // 宽泛兜底，靠下方 OVERFLOW_EXCLUSIONS 挡住限流类误判
+  /token limit exceeded/i, // 同上
 ]
+
+// 限流/服务不可用类报错常带 token 字样（如 "rate limit: too many tokens per minute"），
+// 不是上下文溢出，误判会触发无意义的自动压缩。排除优先于一切匹配。
+const OVERFLOW_EXCLUSIONS = [/^(throttling error|service unavailable):/i, /rate limit/i, /too many requests/i]
 
 function isOpenAiErrorRetryable(e: APICallError) {
   const status = e.statusCode
@@ -37,6 +49,7 @@ function isOpenAiErrorRetryable(e: APICallError) {
 // Providers not reliably handled in this function:
 // - z.ai: can accept overflow silently (needs token-count/context-window checks)
 function isOverflow(message: string) {
+  if (OVERFLOW_EXCLUSIONS.some((p) => p.test(message))) return false
   if (OVERFLOW_PATTERNS.some((p) => p.test(message))) return true
 
   // Providers/status patterns handled outside of regex list:

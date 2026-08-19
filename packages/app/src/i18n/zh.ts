@@ -335,6 +335,9 @@ export const dict = {
   "dialog.mcp.description": "已启用 {{enabled}} / {{total}}",
   "dialog.mcp.empty": "未配置 MCPs",
   "dialog.mcp.toggleFailed": "MCP 切换失败",
+  "dialog.usageExceeded.dontShowAgain": "不再提示",
+  "titlebar.update.button": "更新",
+  "titlebar.update.tooltip": "更新到 {{version}}",
 
   "dialog.lsp.empty": "已从文件类型自动检测到 LSPs",
 
@@ -411,7 +414,7 @@ export const dict = {
   "context.stats.outputTokens": "输出 token",
   "context.stats.reasoningTokens": "推理 token",
   "context.stats.sessionID": "会话 ID",
-  "context.stats.cacheTokens": "缓存令牌（读/写）",
+  "context.stats.cacheTokens": "缓存 token（读/写）",
   "context.stats.turnCacheHit": "单次命中率",
   "context.stats.userMessages": "用户消息",
   "context.stats.assistantMessages": "助手消息",
@@ -984,7 +987,6 @@ export const dict = {
 
   // 以下为新增缺失的翻译
   "session.child.backToParent": "返回主会话。",
-  "settings.general.row.showFileTree.title": "文件树",
   "settings.general.row.showSearch.title": "命令面板",
   "session.review.noBranchChanges": "暂无分支变更",
   "settings.general.row.shell.description": "选择终端使用的 Shell。所选 Shell 同时用于 Agent 工具调用。",
@@ -998,7 +1000,6 @@ export const dict = {
   "settings.general.row.showNavigation.title": "导航控件",
   "settings.general.row.showTerminal.description": "在桌面标题栏中显示终端按钮",
   "sidebar.empty.description": "打开一个项目以开始使用",
-  "settings.general.row.showFileTree.description": "在桌面会话中显示文件树切换和面板",
   "error.page.action.exportLogs": "导出日志",
   "settings.general.row.shell.terminalOnly": "仅终端",
   "settings.general.row.showNavigation.description": "在桌面标题栏中显示前进和后退按钮",

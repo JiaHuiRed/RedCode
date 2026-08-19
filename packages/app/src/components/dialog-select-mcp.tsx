@@ -7,7 +7,7 @@ import { List } from "@redcode-ai/ui/list"
 import { Switch } from "@redcode-ai/ui/switch"
 import { useLanguage } from "@/context/language"
 import { useQueryOptions } from "@/context/server-sync"
-import type { PathKey } from "@/utils/path-key"
+import { pathKey } from "@/utils/path-key"
 import { showToast } from "@redcode-ai/ui/toast"
 
 const statusLabels = {
@@ -41,9 +41,11 @@ export const DialogSelectMcp: Component = () => {
         await sdk.client.mcp.connect({ name })
       }
     },
-    onSuccess: () => queryClient.refetchQueries(queryOptions.mcp(sync.directory as PathKey)),
+    // sync.directory 是原始路径（Windows 下可能带反斜杠），必须过 pathKey 归一化，
+    // 否则与写入侧 directoryKey(...) 的 queryKey 对不上，refetch 打空、开关状态不刷新
+    onSuccess: () => queryClient.refetchQueries(queryOptions.mcp(pathKey(sync.directory))),
     onError: (err) => {
-      queryClient.refetchQueries(queryOptions.mcp(sync.directory as PathKey))
+      queryClient.refetchQueries(queryOptions.mcp(pathKey(sync.directory)))
       showToast({ variant: "error", title: language.t("dialog.mcp.toggleFailed"), description: String(err) })
     },
   }))

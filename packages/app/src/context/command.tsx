@@ -82,8 +82,13 @@ export interface CommandOption {
   suggested?: boolean
   disabled?: boolean
   hidden?: boolean
+  when?: (event: KeyboardEvent) => boolean
   onSelect?: (source?: "palette" | "keybind" | "slash") => void
   onHighlight?: () => (() => void) | void
+}
+
+export function resolveKeybindOption(candidates: CommandOption[] | undefined, event: KeyboardEvent) {
+  return candidates?.find((option) => option.when?.(event)) ?? candidates?.find((option) => !option.when)
 }
 
 type CommandSource = "palette" | "keybind" | "slash"
@@ -102,9 +107,18 @@ export type CommandRegistration = {
   options: Accessor<CommandOption[]>
 }
 
-export function upsertCommandRegistration(registrations: CommandRegistration[], entry: CommandRegistration) {
-  if (entry.key === undefined) return [entry, ...registrations]
-  return [entry, ...registrations.filter((x) => x.key !== entry.key)]
+export function addCommandRegistration(registrations: CommandRegistration[], entry: CommandRegistration) {
+  return [entry, ...registrations]
+}
+
+export function activeCommandRegistrations(registrations: CommandRegistration[]) {
+  const keys = new Set<string>()
+  return registrations.filter((entry) => {
+    if (entry.key === undefined) return true
+    if (keys.has(entry.key)) return false
+    keys.add(entry.key)
+    return true
+  })
 }
 
 export function parseKeybind(config: string): Keybind[] {
@@ -258,7 +272,7 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
       const seen = new Set<string>()
       const all: CommandOption[] = []
 
-      for (const reg of store.registrations) {
+      for (const reg of activeCommandRegistrations(store.registrations)) {
         for (const opt of reg.options()) {
           if (seen.has(opt.id)) {
             if (import.meta.env.DEV && !warnedDuplicates.has(opt.id)) {
@@ -323,7 +337,7 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
     })
 
     const keymap = createMemo(() => {
-      const map = new Map<string, CommandOption>()
+      const map = new Map<string, CommandOption[]>()
       for (const option of options()) {
         if (option.id.startsWith(SUGGESTED_PREFIX)) continue
         if (option.disabled) continue
@@ -333,8 +347,12 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
         for (const kb of keybinds) {
           if (!kb.key) continue
           const sig = signature(kb.key, kb.ctrl, kb.meta, kb.shift, kb.alt)
-          if (map.has(sig)) continue
-          map.set(sig, option)
+          const existing = map.get(sig)
+          if (existing) {
+            existing.push(option)
+            continue
+          }
+          map.set(sig, [option])
         }
       }
       return map
@@ -363,7 +381,7 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
 
       const sig = signatureFromEvent(event)
       const isPalette = palette().has(sig)
-      const option = keymap().get(sig)
+      const option = resolveKeybindOption(keymap().get(sig), event)
       const modified = event.ctrlKey || event.metaKey || event.altKey
       const isTab = event.key === "Tab"
 
@@ -372,17 +390,19 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
 
       if (isPalette) {
         event.preventDefault()
+        event.stopPropagation()
         showPalette()
         return
       }
 
       if (!option) return
       event.preventDefault()
+      event.stopPropagation()
       option.onSelect?.("keybind")
     }
 
     onMount(() => {
-      makeEventListener(document, "keydown", handleKeyDown)
+      makeEventListener(document, "keydown", handleKeyDown, { capture: true })
     })
 
     function register(cb: () => CommandOption[]): void
@@ -396,7 +416,7 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
         key: id,
         options,
       }
-      setStore("registrations", (arr) => upsertCommandRegistration(arr, entry))
+      setStore("registrations", (arr) => addCommandRegistration(arr, entry))
       onCleanup(() => {
         setStore("registrations", (arr) => arr.filter((x) => x !== entry))
       })

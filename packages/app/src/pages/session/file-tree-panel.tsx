@@ -4,7 +4,7 @@ import { ResizeHandle } from "@redcode-ai/ui/resize-handle"
 import type { SnapshotFileDiff, VcsFileDiff } from "@redcode-ai/sdk/v2"
 import FileTree from "@/components/file-tree"
 import { useFile } from "@/context/file"
-import { useLayout } from "@/context/layout"
+import { FILE_TREE_WIDTH_MIN, useLayout } from "@/context/layout"
 import { useLanguage } from "@/context/language"
 import { createOpenSessionFileTab, type Sizing } from "./helpers"
 import { useSessionLayout } from "./session-layout"
@@ -30,6 +30,7 @@ export function FileTreePanel(props: {
   const { tabs } = useSessionLayout()
 
   const fileOpen = createMemo(() => layout.fileTree.opened())
+  // layout.fileTree.width() 已在 context 侧钳到 FILE_TREE_WIDTH_MIN
   const treeWidth = createMemo(() => (fileOpen() ? `${layout.fileTree.width()}px` : "0px"))
 
   const diffs = createMemo(() => props.diffs().filter(renderDiff))
@@ -169,7 +170,7 @@ export function FileTreePanel(props: {
           <ResizeHandle
             direction="horizontal"
             size={layout.fileTree.width()}
-            min={200}
+            min={FILE_TREE_WIDTH_MIN}
             max={480}
             onResize={(width) => {
               props.size.touch()

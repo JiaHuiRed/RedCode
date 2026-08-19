@@ -404,18 +404,8 @@ function renderMathInText(text: string): string {
     }
   })
 
-  // Inline math: $...$ and \(...\)
-  const inlineMathRegex = /(?<!\$)\$(?!\$)((?:[^$\\]|\\.)+?)\$(?!\$)/g
-  result = result.replace(inlineMathRegex, (_, math) => {
-    try {
-      return katex.renderToString(math, {
-        displayMode: false,
-        throwOnError: false,
-      })
-    } catch {
-      return `$${math}$`
-    }
-  })
+  // Inline math: only \(...\) — $...$ 在编码场景歧义太大（$VAR、$5 到 $10、shell 片段
+  // 全会被吃掉渲染成乱码公式），与上游 #34850 同口径砍掉；块级 $$...$$ 保留
   const inlineBracketRegex = /\\\(((?:[^\\]|\\.)+?)\\\)/g
   result = result.replace(inlineBracketRegex, (_, math) => {
     try {
