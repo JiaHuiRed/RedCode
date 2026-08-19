@@ -8,6 +8,36 @@
 
 ---
 
+### [0.9.0] - 2026-08-19
+
+> 一次全仓审计的收口。最要紧的一条是 edit 工具里第四例「无界算法跑在任意文件内容上」——
+> `BlockAnchorReplacer` 是 8 个 replacer 里唯一没有行数上限的，4 万行病理输入实测 16.5 秒
+> 同步阻塞事件循环。其余：三处按会话累积的进程内缓存零回收、TUI 上下文窗口显示的是累加值
+> 而非真实上下文、PrefixShape 的单槽误报漏报、诊断探针从「临时代码」转正为有开关有边界的
+> 常驻件；外加 SDK 生成链与代码格式两处长期漂移的收口。
+
+#### 修复
+
+- **edit 的 BlockAnchorReplacer 二次方候选扫描**（`tool/edit.ts`）：8 个 replacer 里唯一没有行数上限的一个，候选收集是「外层遍历全部行找首锚点、内层从 i+2 一路扫到文件末尾找尾锚点」的嵌套双循环。病理输入（首锚点行大量重复、尾锚点永不以正确块长出现）实测 5000/10000/20000/40000 行 = 254/1013/4074/16518 ms，严格四倍/倍长的 O(n²)，且是同步 CPU——整个事件循环冻住。这是「无界算法跑在任意文件内容上」这一支的第四例（前三例 diffFull 260709、fuzzyFindBestMatch 260722、ContextAwareReplacer 260724），260724 补齐「剩余 5 个 replacer」行数帽时漏掉了它；触发条件正是历史事故场景——大文件 + 模型给的 oldString 不精确（前置 replacer 撞 3000 行帽直接 return，3000 行以上文件里本函数是第一个真正开扫的）。修法不是加帽（那会连带废掉大文件上唯一还在跑的模糊回退），而是利用 dbdef8fc(260812) 的行数一致性校验：候选被接受当且仅当 `j - i + 1 === searchBlockSize`，即 j 只能取 `i + searchBlockSize - 1` 这唯一一个值，内层扫描降为 O(1) 定位。等价性用 20 万例随机 fuzz 验证（0 例不符），40000 行 16518 ms → 4 ms、200000 行 21 ms。顺带给 `MultiOccurrenceReplacer` / `UnicodeNormalizedReplacer` 的 `while (true)` 补空 find 护栏（`indexOf("", i)` 恒返回 i、startIndex 不前进 → 原地打转，实测 5ms 内 yield 超 10 万次；当前经工具入口够不到，但 `replace()` 是 exported）。[why](docs/notes/implemented/bug-fix/2026-08-19-block-anchor-quadratic.md)
+
+- **会话级内存缓存零回收**（`session/prompt-caches.ts`、`file/time.ts`）：三处按 sessionID 累积的进程内 Map 没有任何删除点——`settlePromptCaches` 只删 msgPin/modelMsgs 且只在 compact 边界触发，`system`（skills+env+instructions 全文，再按 modelKey 分桶）、`tools`（全部工具的 description+inputSchema）、`FileTime.state`（每会话「读过的文件 → mtime」全表）全无删除路径，全仓也没有任何 `Session.Event.Deleted` 订阅者做缓存清理。CLI 无影响（进程即会话），长驻的 GUI sidecar 与 `serve` 则按会话数只增不减，子代理放大这件事（每个 subtask 都是独立 sessionID，跑完即冷但缓存留着）。加惰性回收：TTL 为主（1 小时未使用即整会话摘除——此时 provider 侧前缀缓存早已过期，重建不多花钱）、数量为辅（32 会话，只挡突发；上限取得宽松是因为回收活跃会话要付一次全额前缀重建，正是 5670d86 刚花力气避免的那种），当前会话永不被自己这一轮的 touch 顺手回收。回收代价一律 fail-safe：system/tools 重建后只要指令文件没变就逐字节相同、前缀不受影响；FileTime 被回收后下次覆写要求先重读而不是放行旧内容（对一个一小时没动静的会话，这本就是更正确的行为）。[why](docs/notes/implemented/bug-fix/2026-08-19-session-cache-eviction.md)
+
+- **PrefixShape 全局单槽 → 按 sessionID|modelKey 分桶**（`session/prefix-shape.ts`）：诊断状态是全局单槽 `{ sessionID, shape }`，两个毛病跟 5670d86 在前缀探针那边刚修掉的是同一对——不带 modelKey 导致同会话切模型必报假的「prefix cache changed: system」（system 提示词本就按模型分发，`system.ts` 是 15 分支路由），单槽被并发会话/子代理互顶导致 prev 恒取不到、真断裂漏报。改成 Map 按 `sessionID|modelKey` 分桶，`diagnose` 的 modelKey 做成必填而非可选（可选会让将来新增的调用点默默退回单桶行为，必填由 typecheck 逼着表态）。顺带：TTL+数量回收逻辑第三次出现，抽成 `util/session-evictor.ts` 共用。[why](docs/notes/implemented/bug-fix/2026-08-19-prefix-shape-bucketing.md)
+
+- **TUI 侧边栏上下文窗口口径修复 + 显式标注**（`session/session.ts`、`session/processor.ts`、`session/message-v2.ts`、`tui/feature-plugins/sidebar/context.tsx`）：侧边栏那行 `185,925 tokens · 19%` 的分子拿的是 `tokens.total`，而 total 在 processor 里跨 step 累加（260706 为让 cost/缓存命中率对账，对那两个用途是对的），一次 assistant 消息含几次工具往返就累加几次请求的 total——长工具链下上下文占比显示成真实值的十几倍（`percentLabel` 里那句 `p > 200 → ⚠` 就是这问题被看见过但没改口径的痕迹）。与 a94ea6a（压缩分割线「42137k→42374k 越压越多」）是同一个坑的两处，那次只修了 compaction 侧。改法：`getUsage` 把早就算好的 `contextTokens`（= 本次请求提示词总量，峰谷/分档计价在用的同一个数）放进 `tokens.context` 一路透到 assistant 消息，processor 里**覆盖而非累加**；不让消费端拿 `input + cache.read + cache.write` 加回来，因为 `cache.read` 存的是未经上限钳制的原始值（DeepSeek 报 cached_tokens > prompt_tokens），缓存超报时加出来会超过真实提示词量（单测已钉）。schema 用可选字段，message 行是 JSON blob 存的不需迁移，历史消息无此字段时整块不显示、等下一轮请求写入。显示侧补上 `Context window` 标题、`186k / 1M · 19%` 与 24 格进度条（绿 <60%、黄 60–85%、红 ≥85%），与下方 `Session total` 用空行隔开——原先两行都没标签、头顶只有一个 `Context` 标题，会话累计值容易被读成上下文窗口。[why](docs/notes/implemented/bug-fix/2026-08-19-context-window-sidebar.md)
+
+- **transform 用例跟不上孤儿 tool-result 过滤**（`test/provider/transform.test.ts`）：一条长期红着的断言，`result[5]` 恒 undefined。不是实现的问题——transform 里有一道刻意加的「丢弃无前置配对 tool_call 的 tool-result，整条 tool 消息若无剩余则删除」过滤（注释写明是实测「孤儿 result 让会话直接断」后加的），而用例构造的 `role:"tool"` 消息里 call-5/6/7 前面根本没有对应的 tool-call，于是整条被正确丢掉。给 assistant 消息补上配对的 tool-call，追加在末尾以免打乱既有断言下标。
+
+- **SDK 生成产物落后于源 schema**（`sdk/js/src/v2/gen/types.gen.ts`、`provider/provider.ts`）：重跑生成链时一并补回了此前改了 schema 却没重跑的 `timeout_ms` / `fallback_model`（子代理超时兑底）与 `subagent_depth`（上游采摘）。生成产物一更新就暴露出 `provider.ts` 一处被这份落后掩盖着的类型错——`reasoningOptions` 的 schema 是 `Schema.MutableJson`（外部 models.dev 数据刻意不收紧），生成链把它压成 `unknown`，插件 `models()` 的返回值走生成类型、spread 进来赋不回内部的 `MutableJson`；值本身是 JSON 过来的，就地窄回去。
+
+- **CHANGELOG 头部与 0.8.21 整节被复制两份**（`CHANGELOG.md`）：69cfd14 的版本 bump 把文件头（`# 更新日志` 以下的说明段）与 0.8.21 整节又插了一遍，且插入点落在「上游采摘」条目正文中间，把该条目劈成两半——后半截（`$...$` 行内公式那句）被错接到第二份副本的「回退压缩代理」条目尾部，顶掉了它的 `[why]` 链接。以 bump 前的文件为基准重建：重复块删除、劈开的条目按断口还原（缺失的 `` $` `` 依后文"保留块级 `$...$`"补齐）、`[why]` 链接归位。重建后与 bump 前逐行对比，差异仅剩本次 bump 的三处意图改动。
+
+#### 改进
+
+- **前缀断裂探针转正**（`session/prefix-probe.ts`）：`prompt.ts` runLoop 里那 64 行诊断代码，注释第一行写着「260804 Red debug probe v4 — 诊断完成后整块删除」，半个月没删还在长功能（5670d86 同日刚给它补了 modelKey），同时带着四个问题：没有开关、指纹表无界（`globalThis.__prefixProbe` 永不回收，加 modelKey 后条目数从「会话数」涨成「会话数 × 模型数」）、`appendFileSync` 同步写盘压在 prompt 构造主路径上、日志无上限无轮转（实测已 1.4 MB）。不删而是转正——`5670d86` 修 prune-skip 时「39 次跳水吃掉 4528k token」那个数就是从它的日志拿的。抽成独立模块并补齐：开关 `REDCODE_DISABLE_PREFIX_PROBE`（默认开，做成按访问时求值的 getter，否则运行期设的环境变量不生效）、指纹表接回收、写盘改异步并串成一条链（`appendFile` 之间不保证顺序而日志靠行序读）、日志 8 MB 上限轮转一代。日志路径可覆盖是必需的——默认路径那份是正在用的排查数据，用例的 reset 会删掉它。`prompt.ts` 2251 → 2202 行（runLoop 本身仍是 850 行单函数，结构性问题未解决）。[why](docs/notes/implemented/refactor/2026-08-19-prefix-probe-graduation.md)
+
+- **175 个已跟踪源码文件格式化到仓库已配置的 prettier**：配了 prettier 3.9.6 却没有任何格式门禁（pre-push 只跑 typecheck，`script/format.ts` 又因 `generate.ts` 的死路径基本没人跑），漂移积到 175/2035（8.6%），其中 92 个在 `packages/opencode`、36 个在 `packages/app`，包括 `edit.ts`、`prompt.ts` 两个最热的文件。范围限定在 `git ls-files` 命中的源码，自动排除掉 `.claude/worktrees` 下那份被 ignore 的陈旧副本（直接 `prettier .` 会扫进去误报几百个），不碰 md/json（CHANGELOG 与 notes 是手工排版的）。纯机械改动、单条 commit 隔离，会给 blame 带来一次性噪音。
+
 ### [0.8.21] - 2026-08-19
 
 > 压缩全灭优化二次修正：回退压缩代理跳过 head reasoning（随 0.8.20 发布的 a6c2af1 实测为负优化）、tail 预算 30K→50K。
@@ -33,16 +63,6 @@
 - **prune 跳过压缩时的缓存结算加"够本"门槛**（`session/prompt.ts`）：该分支必然伴随 `settlePromptCaches`，msgPin/modelMsgs 一丢，DCP 攒下的全部改写（prune 标记、nudge 锚点、priority tag）同时生效，整条前缀从最早被改写处起重写——代价是当前上下文全量从缓存价打回全价。原判据只看「prune 后是否还超限」，于是释放 3% 也照付 100% 重建，且降幅太小下一轮又撞线 → 再 prune 再 settle，反复全额重建（实测 08-16~08-19 有 39 次短间隔同模型跳水吃掉 4528k 本该命中的 token，约占区间总成本 10%）。改为额外要求释放量 ≥ 当前上下文 15%（`PRUNE_SKIP_MIN_RATIO`）；不达标时不是「什么都不做」（那样 freed 虚报、上下文没真降、下轮照撞），而是走真 summarize，一次性压到位。日志带上 `freedRatio` 便于事后校准阈值。
 
 - **跨盘路径解析统一**（`tool/*.ts`、`tool/read.ts`）：Windows 上无盘符但有根的路径（形如反斜杠开头的 `users\foo`）`isAbsolute` 判 true，若原样放行，`normalizePath` 里的 `path.resolve` 会按 `process.cwd()` 补盘符——仓库与目标不同盘（如仓库在 E:、temp 在 C:）时补错盘。路径解析统一走 `AppFileSystem.resolveFrom`；read 工具只对「缺盘符且非 UNC 的绝对路径」锚定实例目录，UNC 共享路径显式排除。CI runner 的 cwd 恰在 C 盘，一直掩盖着这个岔。
-
-- **edit 的 BlockAnchorReplacer 二次方候选扫描**（`tool/edit.ts`）：8 个 replacer 里唯一没有行数上限的一个，候选收集是「外层遍历全部行找首锚点、内层从 i+2 一路扫到文件末尾找尾锚点」的嵌套双循环。病理输入（首锚点行大量重复、尾锚点永不以正确块长出现）实测 5000/10000/20000/40000 行 = 254/1013/4074/16518 ms，严格四倍/倍长的 O(n²)，且是同步 CPU——整个事件循环冻住。这是「无界算法跑在任意文件内容上」这一支的第四例（前三例 diffFull 260709、fuzzyFindBestMatch 260722、ContextAwareReplacer 260724），260724 补齐「剩余 5 个 replacer」行数帽时漏掉了它；触发条件正是历史事故场景——大文件 + 模型给的 oldString 不精确（前置 replacer 撞 3000 行帽直接 return，3000 行以上文件里本函数是第一个真正开扫的）。修法不是加帽（那会连带废掉大文件上唯一还在跑的模糊回退），而是利用 dbdef8fc(260812) 的行数一致性校验：候选被接受当且仅当 `j - i + 1 === searchBlockSize`，即 j 只能取 `i + searchBlockSize - 1` 这唯一一个值，内层扫描降为 O(1) 定位。等价性用 20 万例随机 fuzz 验证（0 例不符），40000 行 16518 ms → 4 ms、200000 行 21 ms。顺带给 `MultiOccurrenceReplacer` / `UnicodeNormalizedReplacer` 的 `while (true)` 补空 find 护栏（`indexOf("", i)` 恒返回 i、startIndex 不前进 → 原地打转，实测 5ms 内 yield 超 10 万次；当前经工具入口够不到，但 `replace()` 是 exported）。[why](docs/notes/implemented/bug-fix/2026-08-19-block-anchor-quadratic.md)
-
-- **CHANGELOG 头部与 0.8.21 整节被复制两份**（`CHANGELOG.md`）：69cfd14 的版本 bump 把文件头（`# 更新日志` 以下的说明段）与 0.8.21 整节又插了一遍，且插入点落在「上游采摘」条目正文中间，把该条目劈成两半——后半截（`$...$` 行内公式那句）被错接到第二份副本的「回退压缩代理」条目尾部，顶掉了它的 `[why]` 链接。以 bump 前的文件为基准重建：重复块删除、劈开的条目按断口还原（缺失的 `` $` `` 依后文"保留块级 `$...$`"补齐）、`[why]` 链接归位。重建后与 bump 前逐行对比，差异仅剩本次 bump 的三处意图改动。
-
-- **会话级内存缓存零回收**（`session/prompt-caches.ts`、`file/time.ts`）：三处按 sessionID 累积的进程内 Map 没有任何删除点——`settlePromptCaches` 只删 msgPin/modelMsgs 且只在 compact 边界触发，`system`（skills+env+instructions 全文，再按 modelKey 分桶）、`tools`（全部工具的 description+inputSchema）、`FileTime.state`（每会话「读过的文件 → mtime」全表）全无删除路径，全仓也没有任何 `Session.Event.Deleted` 订阅者做缓存清理。CLI 无影响（进程即会话），长驻的 GUI sidecar 与 `serve` 则按会话数只增不减，子代理放大这件事（每个 subtask 都是独立 sessionID，跑完即冷但缓存留着）。加惰性回收：TTL 为主（1 小时未使用即整会话摘除——此时 provider 侧前缀缓存早已过期，重建不多花钱）、数量为辅（32 会话，只挡突发；上限取得宽松是因为回收活跃会话要付一次全额前缀重建，正是 5670d86 刚花力气避免的那种），当前会话永不被自己这一轮的 touch 顺手回收。回收代价一律 fail-safe：system/tools 重建后只要指令文件没变就逐字节相同、前缀不受影响；FileTime 被回收后下次覆写要求先重读而不是放行旧内容（对一个一小时没动静的会话，这本就是更正确的行为）。[why](docs/notes/implemented/bug-fix/2026-08-19-session-cache-eviction.md)
-
-- **TUI 侧边栏上下文窗口口径修复 + 显式标注**（`session/session.ts`、`session/processor.ts`、`session/message-v2.ts`、`tui/feature-plugins/sidebar/context.tsx`）：侧边栏那行 `185,925 tokens · 19%` 的分子拿的是 `tokens.total`，而 total 在 processor 里跨 step 累加（260706 为让 cost/缓存命中率对账，对那两个用途是对的），一次 assistant 消息含几次工具往返就累加几次请求的 total——长工具链下上下文占比显示成真实值的十几倍（`percentLabel` 里那句 `p > 200 → ⚠` 就是这问题被看见过但没改口径的痕迹）。与 a94ea6a（压缩分割线「42137k→42374k 越压越多」）是同一个坑的两处，那次只修了 compaction 侧。改法：`getUsage` 把早就算好的 `contextTokens`（= 本次请求提示词总量，峰谷/分档计价在用的同一个数）放进 `tokens.context` 一路透到 assistant 消息，processor 里**覆盖而非累加**；不让消费端拿 `input + cache.read + cache.write` 加回来，因为 `cache.read` 存的是未经上限钳制的原始值（DeepSeek 报 cached_tokens > prompt_tokens），缓存超报时加出来会超过真实提示词量（单测已钉）。schema 用可选字段，message 行是 JSON blob 存的不需迁移，历史消息无此字段时整块不显示、等下一轮请求写入。显示侧补上 `Context window` 标题、`186k / 1M · 19%` 与 24 格进度条（绿 <60%、黄 60–85%、红 ≥85%），与下方 `Session total` 用空行隔开——原先两行都没标签、头顶只有一个 `Context` 标题，会话累计值容易被读成上下文窗口。[why](docs/notes/implemented/bug-fix/2026-08-19-context-window-sidebar.md)
-
-- **SDK 生成产物落后于源 schema**（`sdk/js/src/v2/gen/types.gen.ts`、`provider/provider.ts`）：重跑生成链时一并补回了此前改了 schema 却没重跑的 `timeout_ms` / `fallback_model`（子代理超时兑底）与 `subagent_depth`（上游采摘）。生成产物一更新就暴露出 `provider.ts` 一处被这份落后掩盖着的类型错——`reasoningOptions` 的 schema 是 `Schema.MutableJson`（外部 models.dev 数据刻意不收紧），生成链把它压成 `unknown`，插件 `models()` 的返回值走生成类型、spread 进来赋不回内部的 `MutableJson`；值本身是 JSON 过来的，就地窄回去。
 
 ---
 
