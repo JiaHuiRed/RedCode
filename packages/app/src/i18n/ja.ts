@@ -359,6 +359,7 @@ export const dict = {
   "context.stats.totalCost": "総コスト",
   "context.stats.sessionCreated": "セッション作成日時",
   "context.stats.lastActivity": "最終アクティビティ",
+  "context.usage.window": "コンテキストウィンドウ",
   "context.usage.tokens": "トークン",
   "context.usage.usage": "使用量",
   "context.usage.cost": "コスト",

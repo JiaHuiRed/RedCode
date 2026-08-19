@@ -32,6 +32,7 @@ import { Button } from "@redcode-ai/ui/button"
 import { DockShellForm } from "@redcode-ai/ui/dock-surface"
 import { Icon } from "@redcode-ai/ui/icon"
 import { ProviderIcon } from "@redcode-ai/ui/provider-icon"
+import { SessionContextUsage } from "@/components/session-context-usage"
 import { Tooltip, TooltipKeybind } from "@redcode-ai/ui/tooltip"
 import { IconButton } from "@redcode-ai/ui/icon-button"
 import { Select } from "@redcode-ai/ui/select"
@@ -1643,6 +1644,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             {agentControl()}
             {modelControl()}
             {variantControl()}
+            {/* 260819 cc 上下文窗口指示器紧跟模型/档位——与 timeline 顶栏那个是同一个组件，
+                这里只是把它放到用户真正在看的位置（选模型的那一行）。组件自带
+                <Show when={params.id}> 守卫，新建会话页没有 id 时整块不渲染。 */}
+            <SessionContextUsage placement="top" />
           </div>
           <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
             <IconButton

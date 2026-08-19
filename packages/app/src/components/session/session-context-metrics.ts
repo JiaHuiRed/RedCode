@@ -29,7 +29,11 @@ type Context = {
   // 260805 Red 单次交互命中率 + 缓存冻结判据（对齐 TUI 4d596f3 状态栏实现）
   turnHitPct: number | null
   stalled: boolean
+  /** 会话累计消耗（所有 assistant 消息之和），不是上下文大小 */
   total: number
+  /** 这一刻真实占用的上下文（最后一条 assistant 的 tokens.context），历史消息无此字段时 undefined */
+  window: number | undefined
+  /** 上下文窗口占用率 = window / limit。窗口数缺失时为 null */
   usage: number | null
 }
 
@@ -97,6 +101,7 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
     if (read + bad > 0) turns.push({ read, bad })
   }
   const total = agg.input + agg.output + agg.reasoning + agg.cacheRead + agg.cacheWrite
+  const window = message.tokens.context
   const lastTurn = turns[turns.length - 1]
 
   return {
@@ -148,7 +153,14 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
         return flat >= 2 && lastTurn.bad > 3000
       })(),
       total,
-      usage: limit ? Math.round((total / limit) * 100) : null,
+      // 260819 cc 口径修复：usage 原来是 total / limit，而 total 是**整个会话累计**
+      // （注释里 'Aggregate across all assistant messages' 写得很明白）。长会话累计动辄是窗口的
+      // 十几倍，ProgressCircle 内部又钳到 [0,100]，于是那个圈从会话超过一个窗口起就永远是满的、
+      // 再没变过；tooltip 里那个 1500% 也正是用户一直误以为是「上下文窗口」的数。
+      // 改用 tokens.context（最后一条 assistant 那一刻的提示词总量，processor 里覆盖不累加）。
+      // 历史消息没有这个字段 → window/usage 都是空，UI 侧不显示，等下一轮请求写入。
+      window,
+      usage: window !== undefined && limit ? Math.round((window / limit) * 100) : null,
     },
   }
 }

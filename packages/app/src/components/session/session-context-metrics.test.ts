@@ -38,7 +38,7 @@ const user = (id: string) => {
 }
 
 describe("getSessionContextMetrics", () => {
-  test("computes totals and usage from latest assistant with tokens", () => {
+  test("total 是会话累计；usage 用最后一条的 tokens.context 算窗口占用率", () => {
     const messages = [
       user("u1"),
       assistant("a1", { input: 0, output: 0, reasoning: 0, read: 0, write: 0 }, 0.5),
@@ -61,8 +61,12 @@ describe("getSessionContextMetrics", () => {
 
     expect(metrics.totalCost).toBe(1.75)
     expect(metrics.context?.message.id).toBe("a2")
-    expect(metrics.context?.total).toBe(500)
-    expect(metrics.context?.usage).toBe(50)
+    expect(metrics.context?.total).toBe(500) // 累计：两条 assistant 的各项之和
+    // 260819 cc 这里原来断言 usage===50，即 total(500)/limit(1000)——那是「会话累计 / 窗口」，
+    // 长会话下会到几百上千 %。现在 usage 只认最后一条的 tokens.context；本用例的 fixture
+    // 没有该字段，所以是 null（UI 侧整块不显示，等下一轮请求写入）。
+    expect(metrics.context?.window).toBeUndefined()
+    expect(metrics.context?.usage).toBeNull()
     expect(metrics.context?.providerLabel).toBe("OpenAI")
     expect(metrics.context?.modelLabel).toBe("GPT-4.1")
   })
@@ -97,5 +101,51 @@ describe("getSessionContextMetrics", () => {
 
     expect(metrics.totalCost).toBe(0)
     expect(metrics.context).toBeUndefined()
+  })
+})
+
+// 260819 cc audit：usage 原来是「会话累计 / 窗口」，长会话下能到 1500%，而 ProgressCircle
+// 内部钳到 [0,100]，那个圈从超过一个窗口起就永远是满的。改用 tokens.context。
+describe("上下文窗口口径", () => {
+  const withContext = (id: string, ctx: number | undefined, read: number) =>
+    ({
+      id,
+      role: "assistant",
+      providerID: "openai",
+      modelID: "gpt-4.1",
+      cost: 0,
+      tokens: {
+        input: 1_000,
+        output: 500,
+        reasoning: 0,
+        ...(ctx === undefined ? {} : { context: ctx }),
+        cache: { read, write: 0 },
+      },
+      time: { created: 1 },
+    }) as unknown as Message
+
+  const providers = [{ id: "openai", models: { "gpt-4.1": { limit: { context: 100_000 } } } }] as any[]
+
+  test("usage 用最后一条的 tokens.context，不随会话累计涨", () => {
+    // 三轮累计远超窗口（每轮 input+output+read = 41.5k，三轮 124.5k > 100k），
+    // 但每一刻真实上下文只有 40k
+    const msgs = [withContext("a", 40_000, 40_000), withContext("b", 40_000, 40_000), withContext("c", 40_000, 40_000)]
+    const m = getSessionContextMetrics(msgs, providers).context!
+    expect(m.window).toBe(40_000)
+    expect(m.usage).toBe(40) // 修复前是 (124500/100000)*100 = 125
+    expect(m.total).toBeGreaterThan(100_000) // total 仍是累计，标签本来就对，不动
+  })
+
+  test("历史消息没有 tokens.context 时 window/usage 都为空（UI 侧不显示）", () => {
+    const m = getSessionContextMetrics([withContext("a", undefined, 10_000)], providers).context!
+    expect(m.window).toBeUndefined()
+    expect(m.usage).toBeNull()
+  })
+
+  test("窗口数缺失时 usage 为空但 window 仍给出", () => {
+    const noLimit = [{ id: "openai", models: { "gpt-4.1": { limit: {} } } }] as any[]
+    const m = getSessionContextMetrics([withContext("a", 40_000, 10_000)], noLimit).context!
+    expect(m.window).toBe(40_000)
+    expect(m.usage).toBeNull()
   })
 })

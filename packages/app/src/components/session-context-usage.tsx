@@ -94,13 +94,22 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
       <Show when={context()}>
         {(ctx) => (
           <>
+            {/* 260819 cc 上下文窗口与会话累计分两行——原来只有一行「Token + 使用率」，
+                而那两个数都来自会话累计，长会话下使用率能到 1500%，正是让人把累计当成窗口的根源。
+                window 为空 = 历史消息还没有 tokens.context，这一行整块不显示，等下一轮写入。 */}
+            <Show when={ctx().window !== undefined}>
+              <div class="flex items-center gap-2">
+                <span class="text-text-invert-strong">
+                  {ctx().window!.toLocaleString(language.intl())}
+                  <Show when={ctx().limit}>{(l) => <> / {l().toLocaleString(language.intl())}</>}</Show>
+                  <Show when={ctx().usage !== null}> · {ctx().usage}%</Show>
+                </span>
+                <span class="text-text-invert-base">{language.t("context.usage.window")}</span>
+              </div>
+            </Show>
             <div class="flex items-center gap-2">
               <span class="text-text-invert-strong">{ctx().total.toLocaleString(language.intl())}</span>
               <span class="text-text-invert-base">{language.t("context.usage.tokens")}</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <span class="text-text-invert-strong">{ctx().usage ?? 0}%</span>
-              <span class="text-text-invert-base">{language.t("context.usage.usage")}</span>
             </div>
           </>
         )}
