@@ -8,7 +8,7 @@
 >
 > 基于 [opencode](https://github.com/anomalyco/opencode)（sst.dev）深度二次开发，侧重**前缀缓存优化、多模型适配、中文体验和稳定性**。
 
-[![版本](https://badgen.net/badge/版本/0.9.0/blue)](CHANGELOG.md)
+[![版本](https://badgen.net/badge/版本/0.9.1/blue)](CHANGELOG.md)
 [![平台](https://badgen.net/badge/平台/Windows%2010%2F11/green)](https://github.com/JiaHuiRed/RedCode)
 [![TypeScript](https://badgen.net/badge/TypeScript/7.x/3178c6)](https://typescriptlang.org)
 [![Bun](https://badgen.net/badge/Bun/1.3.x/fb6e19)](https://bun.sh)

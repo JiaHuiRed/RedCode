@@ -8,6 +8,18 @@
 
 ---
 
+### [0.9.1] - 2026-08-19
+
+> GUI 上下文窗口收口：占用率口径与 0.9.0 的 TUI 那处对齐（原先拿会话累计除窗口，进度圈从会话超过一个窗口起就永远是满的），指示器挪到模型显示旁并去掉重复的一份。
+
+#### 修复
+
+- **GUI 上下文占用率拿会话累计除窗口**（`app/components/session/session-context-metrics.ts`、`session-context-usage.tsx`、`session/session-context-tab.tsx`）：`usage` 的分子是 `total`，而 `total` 按注释「Aggregate across all assistant messages」是**整个会话累计**——实测某会话累计 15,416,562 / 窗口 1M = **1542%**。`ProgressCircle` 内部又钳到 [0,100]，于是那个圈从会话累计超过一个窗口起就**永远是满的、再没变过**；tooltip 里并排的 `total` 与 `usage%` 正是把「会话累计」误读成「上下文窗口」的直接来源。与 0.9.0 修的 TUI 那处是同一个坑的两端（TUI 跨 step 累加、GUI 跨消息累加）。只改 `usage` 的分子、不动 `total`——`总 Token` 标签本来就对，且缓存命中率、逐轮 read/bad 序列、stalled 判据都依赖累计口径。新增 `window = message.tokens.context`（0.9.0 加的字段，processor 里覆盖不累加），`usage = window / limit`；历史消息无该字段则两者皆空、UI 整块不显示，等下一轮请求写入。tooltip 拆两行、面板补一行「上下文窗口」，i18n 三语补 key。[why](docs/notes/implemented/bug-fix/2026-08-19-gui-context-window-metric.md)
+
+#### 改进
+
+- **上下文指示器挪到模型显示旁，并去掉重复的一份**（`app/components/prompt-input.tsx`、`pages/session/message-timeline.tsx`）：prompt 控件行本来就是 `agent | model | variant`，指示器挂在其后与常见排布一致，也正是用户实际在看的位置。复用现成组件而非新写——它自带 `<Show when={params.id}>` 守卫，新建会话页不渲染；依赖的 `useSessionLayout` 只用 `useParams()`+`useLayout()`，路由树任意位置都安全。同时撤掉 timeline 顶栏那份（挪过来后成了同屏第二份、显示同一个数）。现在两处各司其职：prompt 控件行 button（点开分解面板）、侧栏 indicator（只读）。
+
 ### [0.9.0] - 2026-08-19
 
 > 一次全仓审计的收口。最要紧的一条是 edit 工具里第四例「无界算法跑在任意文件内容上」——
