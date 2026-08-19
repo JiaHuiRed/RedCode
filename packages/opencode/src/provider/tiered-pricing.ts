@@ -71,11 +71,7 @@ export const TIERED_PRICING: Record<string, Record<string, TieredPricingSegment[
   },
 }
 
-export function resolveTieredCost(
-  providerID: string,
-  modelID: string,
-  time: number,
-): CostRate | undefined {
+export function resolveTieredCost(providerID: string, modelID: string, time: number): CostRate | undefined {
   const segments = TIERED_PRICING[providerID]?.[modelID]
   if (!segments?.length) return undefined
   let hit: TieredPricingSegment | undefined

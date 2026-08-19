@@ -295,7 +295,5 @@ const TIPS: Tip[] = [
   "使用 {highlight}/rename{/highlight} 重命名当前对话",
   ...(process.platform === "win32"
     ? ([(shortcuts) => press(shortcuts.inputUndo(), "撤销输入框中的修改")] satisfies Tip[])
-    : ([
-        (shortcuts) => press(shortcuts.terminalSuspend(), "挂起终端并返回 shell"),
-      ] satisfies Tip[])),
+    : ([(shortcuts) => press(shortcuts.terminalSuspend(), "挂起终端并返回 shell")] satisfies Tip[])),
 ]

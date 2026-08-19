@@ -16,9 +16,7 @@ function buildSQLiteCount(source: SQLiteTable | SQLiteView | SQL | SQLWrapper, f
 }
 
 export interface SQLiteEffectCountBuilder<TEffectHKT extends QueryEffectHKTBase = QueryEffectHKTBase>
-  extends SQL<number>,
-    SQLWrapper<number>,
-    Effect.Effect<number, TEffectHKT["error"], TEffectHKT["context"]> {}
+  extends SQL<number>, SQLWrapper<number>, Effect.Effect<number, TEffectHKT["error"], TEffectHKT["context"]> {}
 
 export class SQLiteEffectCountBuilder<TEffectHKT extends QueryEffectHKTBase = QueryEffectHKTBase> extends SQL<number> {
   static override readonly [entityKind]: string = "SQLiteEffectCountBuilder"

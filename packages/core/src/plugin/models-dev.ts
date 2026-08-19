@@ -100,7 +100,10 @@ export const ModelsDevPlugin = PluginV2.define({
               draft.time.released = released(model.release_date)
               // 260615 Red: DeepSeek/Xiaomi use official CNY pricing (¥/M tokens).
               // Override models.dev USD values to avoid double-conversion precision loss.
-              const cnyLookup: Record<string, Record<string, { input: number; output: number; cache: { read: number; write: number } }>> = {
+              const cnyLookup: Record<
+                string,
+                Record<string, { input: number; output: number; cache: { read: number; write: number } }>
+              > = {
                 deepseek: {
                   "deepseek-v4-flash": { input: 1, output: 2, cache: { read: 0.02, write: 1 } },
                   "deepseek-v4-pro": { input: 3, output: 6, cache: { read: 0.025, write: 3 } },

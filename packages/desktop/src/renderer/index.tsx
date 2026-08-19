@@ -296,8 +296,7 @@ const createPlatform = (): Platform => {
       })
     },
 
-    writeAttachment: (sessionDir, filename, data) =>
-      window.api.writeAttachment(sessionDir, filename, data),
+    writeAttachment: (sessionDir, filename, data) => window.api.writeAttachment(sessionDir, filename, data),
   }
 }
 
@@ -306,7 +305,6 @@ window.api.onMenuCommand((id) => {
   menuTrigger?.(id)
 })
 listenForDeepLinks()
-
 
 render(() => {
   const platform = createPlatform()

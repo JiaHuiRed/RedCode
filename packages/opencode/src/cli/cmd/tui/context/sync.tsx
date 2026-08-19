@@ -36,7 +36,8 @@ export function cmpTime(
   const bc = b.time?.created
   if (ac !== undefined && bc !== undefined && ac !== bc) return ac - bc
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
-}import type { Snapshot } from "@/snapshot"
+}
+import type { Snapshot } from "@/snapshot"
 import { useExit } from "./exit"
 import { useArgs } from "./args"
 import { batch, onMount } from "solid-js"

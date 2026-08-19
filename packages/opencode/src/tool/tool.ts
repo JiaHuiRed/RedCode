@@ -93,8 +93,7 @@ export interface Info<
 }
 
 type Init<Parameters extends Schema.Decoder<unknown>, M extends Metadata> =
-  | DefWithoutID<Parameters, M>
-  | (() => Effect.Effect<DefWithoutID<Parameters, M>>)
+  DefWithoutID<Parameters, M> | (() => Effect.Effect<DefWithoutID<Parameters, M>>)
 
 export type InferParameters<T> =
   T extends Info<infer P, any>
@@ -145,14 +144,14 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
           )
           const run = execute(decoded as Schema.Schema.Type<Parameters>, ctx)
           // 260814 Red 声明了 timeoutMs 的工具在此统一拦截，超时 fail 结构化 TimeoutError
-          const result = yield* (toolInfo.timeoutMs
+          const result = yield* toolInfo.timeoutMs
             ? run.pipe(
                 Effect.timeoutOrElse({
                   duration: toolInfo.timeoutMs,
                   orElse: () => Effect.fail(new TimeoutError({ tool: id, ms: toolInfo.timeoutMs! })),
                 }),
               )
-            : run)
+            : run
           if (result.metadata.truncated !== undefined) {
             return result
           }
@@ -226,20 +225,12 @@ export function init<P extends Schema.Decoder<unknown>, M extends Metadata>(
  * })
  * ```
  */
-export function build<
-  Params extends Schema.Decoder<unknown>,
-  M extends Metadata = Metadata,
->(
-  config: {
-    id: string
-    description: string
-    parameters: Params
-    execute(
-      args: Schema.Schema.Type<Params>,
-      ctx: Context<M>,
-    ): Effect.Effect<ExecuteResult<M>>
-  },
-): Effect.Effect<Info<Params, M>, never, Truncate.Service | Agent.Service> {
+export function build<Params extends Schema.Decoder<unknown>, M extends Metadata = Metadata>(config: {
+  id: string
+  description: string
+  parameters: Params
+  execute(args: Schema.Schema.Type<Params>, ctx: Context<M>): Effect.Effect<ExecuteResult<M>>
+}): Effect.Effect<Info<Params, M>, never, Truncate.Service | Agent.Service> {
   return define(
     config.id,
     Effect.succeed({

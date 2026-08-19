@@ -35,7 +35,10 @@ export function SubagentFooter() {
     // 260612 Red session-aggregate cache rate
     // 260614 Red fix: cache hit = read / (read + miss). DeepSeek write=0 so use cache.miss.
     // Fallback to input for providers that don't return miss metadata.
-    let sumRead = 0, sumMiss = 0, sumWrite = 0, sumInput = 0
+    let sumRead = 0,
+      sumMiss = 0,
+      sumWrite = 0,
+      sumInput = 0
     for (const m of msg) {
       if (m.role === "assistant") {
         sumRead += m.tokens.cache.read
@@ -77,9 +80,7 @@ export function SubagentFooter() {
               <b>{subagentInfo().label}</b>
             </text>
             <Show when={subagentInfo().total > 0}>
-              <text style={{ fg: theme.textMuted }}>
-                {`(${subagentInfo().index} of ${subagentInfo().total})`}
-              </text>
+              <text style={{ fg: theme.textMuted }}>{`(${subagentInfo().index} of ${subagentInfo().total})`}</text>
             </Show>
             <Show when={usage()}>
               {(item) => (

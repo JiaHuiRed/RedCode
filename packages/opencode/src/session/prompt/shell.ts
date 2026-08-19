@@ -32,9 +32,7 @@ export function makeShell(deps: {
   events: Context.Service.Shape<typeof EventV2Bridge.Service>
   plugin: Context.Service.Shape<typeof Plugin.Service>
   spawner: ChildProcessSpawner.ChildProcessSpawner["Service"]
-  currentModel: (
-    sessionID: SessionID,
-  ) => Effect.Effect<{ providerID: ProviderID; modelID: ModelID; variant?: string }>
+  currentModel: (sessionID: SessionID) => Effect.Effect<{ providerID: ProviderID; modelID: ModelID; variant?: string }>
 }) {
   const { sessions, revert, agents, bus, config, flags, events, plugin, spawner, currentModel } = deps
 

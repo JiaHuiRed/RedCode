@@ -61,7 +61,17 @@ export const EnvTool = Tool.define(
 
         if (category === "all" || category === "paths") {
           sections.push("=== Key Paths ===")
-          const important = ["PATH", "HOME", "SHELL", "USER", "USERPROFILE", "TEMP", "TMP", "XDG_CONFIG_HOME", "LOCALAPPDATA"]
+          const important = [
+            "PATH",
+            "HOME",
+            "SHELL",
+            "USER",
+            "USERPROFILE",
+            "TEMP",
+            "TMP",
+            "XDG_CONFIG_HOME",
+            "LOCALAPPDATA",
+          ]
           for (const key of important) {
             const val = process.env[key]
             if (val) sections.push(`${key}=${val}`)
@@ -74,7 +84,9 @@ export const EnvTool = Tool.define(
           const freeMem = os.freemem()
           sections.push("=== Memory ===")
           sections.push(`total:  ${(totalMem / 1024 / 1024 / 1024).toFixed(1)} GB`)
-          sections.push(`free:   ${(freeMem / 1024 / 1024 / 1024).toFixed(1)} GB (${((freeMem / totalMem) * 100).toFixed(0)}%)`)
+          sections.push(
+            `free:   ${(freeMem / 1024 / 1024 / 1024).toFixed(1)} GB (${((freeMem / totalMem) * 100).toFixed(0)}%)`,
+          )
           sections.push("")
         }
 

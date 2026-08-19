@@ -174,23 +174,28 @@ const uiRoute = HttpRouter.use((router) =>
 
     // 260703 Red TUI terminal page at root
     yield* router.add("GET", "/", () =>
-      Effect.succeed((() => {
-        try {
-          const cwd = process.cwd().replaceAll("\\", "/")
-          // dev mode: 用 dist 里已构建的二进制；生产环境用 process.argv[0]
-          const bin = (() => {
-            const distBin = cwd + "/dist/redcode-windows-x64/bin/redcode.exe"
-            try { require("fs").accessSync(distBin.replaceAll("/", "\\")); return distBin } catch {}
-            return (process.argv[0] || "redcode").replaceAll("\\", "/")
-          })()
-          const html = tuiTerminalHtml().split("__REDCODE_DIR__").join(cwd).split("__REDCODE_BIN__").join(bin)
-          return HttpServerResponse.text(html, {
-            headers: new Headers({ "content-type": "text/html; charset=utf-8", "content-security-policy": TUI_CSP }),
-          })
-        } catch {
-          return HttpServerResponse.text("TUI HTML not found", { status: 500 })
-        }
-      })()),
+      Effect.succeed(
+        (() => {
+          try {
+            const cwd = process.cwd().replaceAll("\\", "/")
+            // dev mode: 用 dist 里已构建的二进制；生产环境用 process.argv[0]
+            const bin = (() => {
+              const distBin = cwd + "/dist/redcode-windows-x64/bin/redcode.exe"
+              try {
+                require("fs").accessSync(distBin.replaceAll("/", "\\"))
+                return distBin
+              } catch {}
+              return (process.argv[0] || "redcode").replaceAll("\\", "/")
+            })()
+            const html = tuiTerminalHtml().split("__REDCODE_DIR__").join(cwd).split("__REDCODE_BIN__").join(bin)
+            return HttpServerResponse.text(html, {
+              headers: new Headers({ "content-type": "text/html; charset=utf-8", "content-security-policy": TUI_CSP }),
+            })
+          } catch {
+            return HttpServerResponse.text("TUI HTML not found", { status: 500 })
+          }
+        })(),
+      ),
     )
 
     // Other paths: original GUI fallback

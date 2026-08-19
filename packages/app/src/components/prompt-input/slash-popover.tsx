@@ -4,8 +4,7 @@ import { Icon } from "@redcode-ai/ui/icon"
 import { getDirectory, getFilename } from "@redcode-ai/core/util/path"
 
 export type AtOption =
-  | { type: "agent"; name: string; display: string }
-  | { type: "file"; path: string; display: string; recent?: boolean }
+  { type: "agent"; name: string; display: string } | { type: "file"; path: string; display: string; recent?: boolean }
 
 export interface SlashCommand {
   id: string

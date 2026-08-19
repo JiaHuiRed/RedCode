@@ -180,12 +180,18 @@ export const layer = Layer.effect(
         if (rule.action === "deny") {
           const pluginOpt = yield* Effect.serviceOption(Plugin.Service)
           if (Option.isSome(pluginOpt)) {
-            yield* pluginOpt.value.trigger("permission.denied", {
-              permission: request.permission,
-              pattern,
-              metadata: JSON.stringify(request.metadata ?? {}),
-              sessionID: request.sessionID ?? "",
-            }, {}).pipe(Effect.catch(() => Effect.void))
+            yield* pluginOpt.value
+              .trigger(
+                "permission.denied",
+                {
+                  permission: request.permission,
+                  pattern,
+                  metadata: JSON.stringify(request.metadata ?? {}),
+                  sessionID: request.sessionID ?? "",
+                },
+                {},
+              )
+              .pipe(Effect.catch(() => Effect.void))
           }
           return yield* new DeniedError({
             ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),

@@ -34,8 +34,7 @@ describe("resource", () => {
 
   test("keeps built-in attributes when env values conflict", () => {
     process.env.REDCODE_CLIENT = "cli"
-    process.env.OTEL_RESOURCE_ATTRIBUTES =
-      "redcode.client=web,service.instance.id=override,service.namespace=JiaHuiRed"
+    process.env.OTEL_RESOURCE_ATTRIBUTES = "redcode.client=web,service.instance.id=override,service.namespace=JiaHuiRed"
 
     expect(resource().attributes).toMatchObject({
       "redcode.client": "cli",

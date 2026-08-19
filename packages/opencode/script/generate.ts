@@ -30,18 +30,20 @@ const CACHE_FILE = path.join(os.homedir(), ".redcode", "cache", "models.json") /
 // 最具体的规则：per-URL 键、全局 http.proxy 都能命中；都空则退回直连（旧行为不变）。
 function gitProxy(url: string): string | undefined {
   try {
-    const value = execFileSync(
-      "git",
-      ["config", "--get-urlmatch", "http.proxy", url],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-    ).trim()
+    const value = execFileSync("git", ["config", "--get-urlmatch", "http.proxy", url], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim()
     if (value) return value
   } catch {
     // 没有 git，或没有任何代理规则 —— 不是错误，继续
   }
   try {
     // legacy 全局键 https.proxy 不在 URL 匹配体系里，单独回退查一次
-    const value = execFileSync("git", ["config", "--get", "https.proxy"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim()
+    const value = execFileSync("git", ["config", "--get", "https.proxy"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim()
     if (value) return value
   } catch {
     // 同上

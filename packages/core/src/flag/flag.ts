@@ -36,9 +36,7 @@ export const Flag = {
   REDCODE_SERVER_USERNAME: process.env["REDCODE_SERVER_USERNAME"],
 
   // Experimental
-  REDCODE_EXPERIMENTAL_FILEWATCHER: Config.boolean("REDCODE_EXPERIMENTAL_FILEWATCHER").pipe(
-    Config.withDefault(false),
-  ),
+  REDCODE_EXPERIMENTAL_FILEWATCHER: Config.boolean("REDCODE_EXPERIMENTAL_FILEWATCHER").pipe(Config.withDefault(false)),
   REDCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: Config.boolean("REDCODE_EXPERIMENTAL_DISABLE_FILEWATCHER").pipe(
     Config.withDefault(false),
   ),

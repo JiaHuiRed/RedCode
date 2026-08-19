@@ -91,7 +91,9 @@ export async function selectProjectInteractive(): Promise<string | undefined> {
     stdin.removeAllListeners("data")
     stdout.write("\x1b[?25h")
     if (renderedLines > 0) stdout.write("\x1b[" + renderedLines + "A\x1b[J")
-    try { stdin.setRawMode(wasRaw) } catch {}
+    try {
+      stdin.setRawMode(wasRaw)
+    } catch {}
     // Discard any bytes buffered during the selector's lifetime (stray
     // keystrokes, or a terminal capability-query reply in flight) so they
     // don't leak into the next stdin reader — the main TUI's own capability
@@ -303,33 +305,48 @@ export async function selectProjectInteractive(): Promise<string | undefined> {
 
       // Home / End
       if (key === "\x1b[H" || key === "\x1b[1~") {
-        selected = 0; render(); return
+        selected = 0
+        render()
+        return
       }
       if (key === "\x1b[F" || key === "\x1b[4~") {
         const filtered = getFiltered()
-        selected = filtered.length - 1; render(); return
+        selected = filtered.length - 1
+        render()
+        return
       }
 
       // Backspace
       if (key === "\x7f" || key === "\b") {
-        if (filter.length > 0) { filter = filter.slice(0, -1); selected = 0 }
-        render(); return
+        if (filter.length > 0) {
+          filter = filter.slice(0, -1)
+          selected = 0
+        }
+        render()
+        return
       }
 
       // Page Up / Page Down
       if (key === "\x1b[5~") {
         const page = Math.floor((stdout.rows ?? 24) / 2)
-        selected = Math.max(0, selected - page); render(); return
+        selected = Math.max(0, selected - page)
+        render()
+        return
       }
       if (key === "\x1b[6~") {
         const filtered = getFiltered()
         const page = Math.floor((stdout.rows ?? 24) / 2)
-        selected = Math.min(filtered.length - 1, selected + page); render(); return
+        selected = Math.min(filtered.length - 1, selected + page)
+        render()
+        return
       }
 
       // Printable
       if (key.length === 1 && key.charCodeAt(0) >= 32) {
-        filter += key; selected = 0; render(); return
+        filter += key
+        selected = 0
+        render()
+        return
       }
     })
   })

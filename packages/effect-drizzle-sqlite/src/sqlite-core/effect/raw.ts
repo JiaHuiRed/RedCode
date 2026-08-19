@@ -10,7 +10,8 @@ import type { SQLiteAsyncDialect } from "drizzle-orm/sqlite-core/dialect"
 type SQLiteEffectRawAction = "all" | "get" | "values" | "run"
 
 export interface SQLiteEffectRaw<TResult, TEffectHKT extends QueryEffectHKTBase = QueryEffectHKTBase>
-  extends Effect.Effect<TResult, TEffectHKT["error"], TEffectHKT["context"]>,
+  extends
+    Effect.Effect<TResult, TEffectHKT["error"], TEffectHKT["context"]>,
     RunnableQuery<TResult, "sqlite">,
     SQLWrapper {}
 

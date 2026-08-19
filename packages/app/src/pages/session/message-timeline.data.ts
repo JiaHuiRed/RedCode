@@ -210,12 +210,12 @@ export namespace Timeline {
       assistantGroupIndex += 1
     })
 
-   // 260816 Yuqi 兜底：assistant 骨架已进 store（message.updated 先到）但可渲染 parts 未到
-   //   （流式生成中 / 切换会话期间 status 缺失）时，原逻辑一行都不渲染 → 回复"凭空消失"。
-   //   busy 时 Thinking 行已覆盖，这里只兜非 busy 的静默窗口期。
-   if (assistantMessages.length > 0 && assistantItems.length === 0 && !error && !(isActive && status === "busy")) {
-     rows.push(new TimelineRow.AssistantPending({ userMessageID: userMessage.id }))
-   }
+    // 260816 Yuqi 兜底：assistant 骨架已进 store（message.updated 先到）但可渲染 parts 未到
+    //   （流式生成中 / 切换会话期间 status 缺失）时，原逻辑一行都不渲染 → 回复"凭空消失"。
+    //   busy 时 Thinking 行已覆盖，这里只兜非 busy 的静默窗口期。
+    if (assistantMessages.length > 0 && assistantItems.length === 0 && !error && !(isActive && status === "busy")) {
+      rows.push(new TimelineRow.AssistantPending({ userMessageID: userMessage.id }))
+    }
 
     if (isActive && status === "busy" && !error && (showReasoning ? assistantPartRefs.length === 0 : true)) {
       const heading = assistantMessages

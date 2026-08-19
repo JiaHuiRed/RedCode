@@ -306,8 +306,6 @@ export function SessionSidePanel(props: {
                 </DragDropProvider>
               </div>
             </div>
-
-
           </div>
         </Show>
       </aside>

@@ -4,7 +4,13 @@ import { MAX_SESSIONS, SESSION_TTL_MS, sessionEvictor } from "@/util/session-evi
 
 const log = Log.create({ service: "prompt-caches" })
 
-type SystemCache = { sessionID: string; modelKey: string; skills: string | undefined; env: string[]; instructions: string[] }
+type SystemCache = {
+  sessionID: string
+  modelKey: string
+  skills: string | undefined
+  env: string[]
+  instructions: string[]
+}
 type MessagePinCache = { sessionID: string; messages: Map<string, unknown[]> }
 type ModelMessagesCache = { sessionID: string; modelKey: string; messages: ModelMessage[] }
 type ToolCache = { sessionID: string; defs: Map<string, { description: string; inputSchema: unknown }> }

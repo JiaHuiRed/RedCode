@@ -366,15 +366,15 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             const key = `${m.providerID}/${m.modelID}`
             return modelStore.variant[key]
           },
-         current() {
-           const v = this.selected()
-           if (!v) return undefined
-           // 260731 Red: "default" 是 DialogVariant 的合法选项（不指定推理强度）。
-           // 之前它不在 variants 列表里导致 current() 返回 undefined → footer 按钮
-           // 消失且没有 UI 入口恢复（切模型也被 dialog-model 的 default 分支跳过）。
-           if (v === "default" || this.list().includes(v)) return v
-           return undefined
-         },
+          current() {
+            const v = this.selected()
+            if (!v) return undefined
+            // 260731 Red: "default" 是 DialogVariant 的合法选项（不指定推理强度）。
+            // 之前它不在 variants 列表里导致 current() 返回 undefined → footer 按钮
+            // 消失且没有 UI 入口恢复（切模型也被 dialog-model 的 default 分支跳过）。
+            if (v === "default" || this.list().includes(v)) return v
+            return undefined
+          },
           list() {
             const m = currentModel()
             if (!m) return []
@@ -390,22 +390,22 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             setModelStore("variant", key, value ?? "default")
             save()
           },
-         cycle() {
-           const variants = this.list()
-           if (variants.length === 0) return
-           const current = this.current()
-           // 260731 Red: "default" 是轮转起点，再点一下进入第一个具体强度
-           if (!current || current === "default") {
-             this.set(variants[0])
-             return
-           }
-           const index = variants.indexOf(current)
-           if (index === -1 || index === variants.length - 1) {
-             this.set(undefined)
-             return
-           }
-           this.set(variants[index + 1])
-         },
+          cycle() {
+            const variants = this.list()
+            if (variants.length === 0) return
+            const current = this.current()
+            // 260731 Red: "default" 是轮转起点，再点一下进入第一个具体强度
+            if (!current || current === "default") {
+              this.set(variants[0])
+              return
+            }
+            const index = variants.indexOf(current)
+            if (index === -1 || index === variants.length - 1) {
+              this.set(undefined)
+              return
+            }
+            this.set(variants[index + 1])
+          },
         },
       }
     })

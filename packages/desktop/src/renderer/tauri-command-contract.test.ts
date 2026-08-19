@@ -52,9 +52,9 @@ describe("tauri command 契约", () => {
   test("每个 #[tauri::command] 都在 generate_handler![] 里登记", () => {
     const registered = new Set(analysis.registered)
     const orphans = analysis.defined.filter((cmd) => !registered.has(cmd.name))
-    expect(
-      orphans.map((cmd) => `main.rs:${cmd.line} ${cmd.name}() 有 #[tauri::command] 但没登记，前端调不到`),
-    ).toEqual([])
+    expect(orphans.map((cmd) => `main.rs:${cmd.line} ${cmd.name}() 有 #[tauri::command] 但没登记，前端调不到`)).toEqual(
+      [],
+    )
   })
 
   test("generate_handler![] 里没有不存在的名字", () => {

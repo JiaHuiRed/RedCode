@@ -57,8 +57,7 @@ function merge(parent: ResolvedProfile, child: RawProfile): ResolvedProfile {
     prompt: child.prompt ?? parent.prompt,
     mode: child.mode ?? parent.mode,
     tools: [...(child.tools ?? parent.tools)],
-    permission:
-      (child.permission as Record<string, unknown> | undefined) ?? parent.permission,
+    permission: (child.permission as Record<string, unknown> | undefined) ?? parent.permission,
   }
 }
 

@@ -27,11 +27,7 @@ export function sessionSourceLabel(client: string): string {
   }
 }
 
-export function makeShared(deps: {
-  provider: Provider.Interface
-  bus: Bus.Interface
-  sessions: Session.Interface
-}) {
+export function makeShared(deps: { provider: Provider.Interface; bus: Bus.Interface; sessions: Session.Interface }) {
   const { provider, bus, sessions } = deps
 
   const getModel = Effect.fn("SessionPrompt.getModel")(function* (

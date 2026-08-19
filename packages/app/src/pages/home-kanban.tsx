@@ -95,7 +95,9 @@ export function HomeKanban(props: {
               </Show>
             </div>
             {/* 260710 Red 空闲列会话多时两列网格展示，充分利用右侧空间 */}
-            <div class={`overflow-y-auto flex-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${column.records.length > 6 ? "grid grid-cols-2 gap-2 auto-rows-min content-start" : "flex flex-col gap-2"}`}>
+            <div
+              class={`overflow-y-auto flex-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${column.records.length > 6 ? "grid grid-cols-2 gap-2 auto-rows-min content-start" : "flex flex-col gap-2"}`}
+            >
               <Show
                 when={column.records.length > 0}
                 fallback={
@@ -175,9 +177,7 @@ function KanbanCard(props: {
               {props.record.projectName}
             </span>
           </Show>
-          <span class="ml-auto shrink-0 text-v2-text-text-faint [font-weight:400] text-[10px]">
-            {dateLabel()}
-          </span>
+          <span class="ml-auto shrink-0 text-v2-text-text-faint [font-weight:400] text-[10px]">{dateLabel()}</span>
         </div>
       </ContextMenu.Trigger>
       <ContextMenu.Portal>

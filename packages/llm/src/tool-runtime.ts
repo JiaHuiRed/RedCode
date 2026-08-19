@@ -316,7 +316,8 @@ const estimatedFinish = (state: StepState, step: number): Stream.Stream<LLMEvent
         cacheReadInputTokens: known?.cacheReadInputTokens,
         cacheWriteInputTokens: known?.cacheWriteInputTokens,
         outputTokens: Math.max(known?.outputTokens ?? 0, completion),
-        reasoningTokens: reasoningBytes > 0 ? Math.max(known?.reasoningTokens ?? 0, reasoningTokens) : known?.reasoningTokens,
+        reasoningTokens:
+          reasoningBytes > 0 ? Math.max(known?.reasoningTokens ?? 0, reasoningTokens) : known?.reasoningTokens,
         totalTokens: Math.max(known?.totalTokens ?? 0, (known?.inputTokens ?? 0) + completion),
         providerMetadata: known?.providerMetadata,
       }),
@@ -358,8 +359,8 @@ const decodeAndExecute = (tool: AnyTool, call: ToolCallPart): Effect.Effect<Tool
         ),
       ),
     ),
-    Effect.map(
-      (encoded): ToolResultValueType => (ToolResultValue.is(encoded) ? encoded : { type: "json", value: encoded }),
+    Effect.map((encoded): ToolResultValueType =>
+      ToolResultValue.is(encoded) ? encoded : { type: "json", value: encoded },
     ),
   )
 

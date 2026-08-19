@@ -248,9 +248,7 @@ export const layer = Layer.effect(
         // inside the gen just for the filter lambda
         const searchToolsSearch = (query: string, all: Tool.Def[]) => {
           const q = query.toLowerCase()
-          return all.filter(
-            (t) => t.id.toLowerCase().includes(q) || t.description.toLowerCase().includes(q),
-          )
+          return all.filter((t) => t.id.toLowerCase().includes(q) || t.description.toLowerCase().includes(q))
         }
 
         // 260606 Red define search_tools inline instead of separate file to avoid
@@ -259,7 +257,8 @@ export const layer = Layer.effect(
         // breaks the cycle by reading the state directly at call time.
         const searchToolsDef: Tool.Def = {
           id: "search_tools",
-          description: "Search for available tools by name or description. Use this when you don't know the exact tool name or want to discover tools for a specific task.",
+          description:
+            "Search for available tools by name or description. Use this when you don't know the exact tool name or want to discover tools for a specific task.",
           parameters: Schema.Struct({
             query: Schema.String.annotate({ description: "Search keywords to find relevant tools" }),
           }),
@@ -289,9 +288,9 @@ export const layer = Layer.effect(
             tool.invalid,
             ...(questionEnabled ? [tool.question] : []),
             tool.shell,
-          tool.read,
-          tool.snippet,
-          tool.glob,
+            tool.read,
+            tool.snippet,
+            tool.glob,
             tool.grep,
             tool.ast_grep,
             tool.git,
@@ -553,5 +552,3 @@ function isJsonSchemaObject(value: unknown): value is Record<string, unknown> {
 }
 
 export * as ToolRegistry from "./registry"
-
-

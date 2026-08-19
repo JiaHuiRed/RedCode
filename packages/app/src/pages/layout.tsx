@@ -1032,7 +1032,6 @@ export default function Layout(props: ParentProps) {
     document.documentElement.style.setProperty("--dialog-left-margin", "0px")
   })
 
-
   const loadedSessionDirs = new Set<string>()
 
   createEffect(
@@ -1127,8 +1126,7 @@ export default function Layout(props: ParentProps) {
   // 回滚：git revert/checkout 至本次 0.4.5 提交之前即可恢复。
   // 260610 Red 0.5.0 整窗背景图按视图分流：进会话(params.id)用聊天背景图，首页/无会话用主界面背景图
   //   —— 哥哥的痛点：主界面满屏壁纸在公司很尴尬，主/聊分开后公司可单独把主界面背景留空或换中性图
-  const appBackground = () =>
-    params.id ? settings.appearance.chatBackground() : settings.appearance.homeBackground()
+  const appBackground = () => (params.id ? settings.appearance.chatBackground() : settings.appearance.homeBackground())
   return (
     <div
       class="relative bg-v2-background-bg-deep flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text"
@@ -1165,4 +1163,3 @@ export default function Layout(props: ParentProps) {
     </div>
   )
 }
-

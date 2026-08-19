@@ -247,10 +247,7 @@ function splitTurn(input: {
 
 export interface Interface {
   /** 当前用量落在哪一档：ok / soft（只提示）/ prune（廉价裁剪）/ compact（真压缩） */
-  readonly level: (input: {
-    tokens: MessageV2.Assistant["tokens"]
-    model: Provider.Model
-  }) => Effect.Effect<Level>
+  readonly level: (input: { tokens: MessageV2.Assistant["tokens"]; model: Provider.Model }) => Effect.Effect<Level>
   readonly isOverflow: (input: {
     tokens: MessageV2.Assistant["tokens"]
     model: Provider.Model
@@ -730,7 +727,7 @@ export const layer = Layer.effect(
         // 注意展开旧 compactionPart 会覆盖掉前面已更新的 tail_start_id，必须带回来。
         if (compactionPart) {
           const after = yield* session.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
-         const tokensAfter = yield* estimate({ messages: MessageV2.filterCompacted(after), model })
+          const tokensAfter = yield* estimate({ messages: MessageV2.filterCompacted(after), model })
           if (compactionPart.tokens_before !== tokensBefore || compactionPart.tokens_after !== tokensAfter) {
             yield* session.updatePart({
               ...compactionPart,

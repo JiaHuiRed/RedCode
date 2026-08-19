@@ -3,20 +3,20 @@ import type { PromptHistoryStoredEntry } from "./history"
 import { findHistorySuggestion } from "./suggestion"
 import { getCaretState } from "./editor-dom"
 
- export type GhostDeps = {
-   editorRef: HTMLElement
-   store: { mode: string; popover: string | null; historyIndex: number }
-   prompt: {
-     current: () => Prompt
-     set: (parts: Prompt, cursor?: number) => void
-   }
-   composing: () => boolean
-   history: { entries: PromptHistoryStoredEntry[] }
-   mirror: { input: boolean }
-   setEditorText: (text: string) => void
-   setCursorPosition: (parent: HTMLElement, position: number) => void
-   resetHistoryNavigation: () => void
- }
+export type GhostDeps = {
+  editorRef: HTMLElement
+  store: { mode: string; popover: string | null; historyIndex: number }
+  prompt: {
+    current: () => Prompt
+    set: (parts: Prompt, cursor?: number) => void
+  }
+  composing: () => boolean
+  history: { entries: PromptHistoryStoredEntry[] }
+  mirror: { input: boolean }
+  setEditorText: (text: string) => void
+  setCursorPosition: (parent: HTMLElement, position: number) => void
+  resetHistoryNavigation: () => void
+}
 
 export function createGhostSystem(deps: GhostDeps) {
   const {
@@ -53,10 +53,10 @@ export function createGhostSystem(deps: GhostDeps) {
     if (store.mode !== "normal" || store.popover || store.historyIndex >= 0 || composing()) return
     const parts = prompt.current().filter((part) => part.type !== "image")
     if (parts.some((part) => part.type !== "text")) return
-     const text = parts.map((part) => ("content" in part ? part.content : "")).join("")
-     if (!text || text.includes("\n")) return
-     const { collapsed, cursorPosition } = getCaretState(editorRef, prompt.current)
-     if (!collapsed || cursorPosition !== text.length) return
+    const text = parts.map((part) => ("content" in part ? part.content : "")).join("")
+    if (!text || text.includes("\n")) return
+    const { collapsed, cursorPosition } = getCaretState(editorRef, prompt.current)
+    if (!collapsed || cursorPosition !== text.length) return
     const suffix = findHistorySuggestion(history.entries, text)
     if (suffix) applyGhost(suffix)
   }

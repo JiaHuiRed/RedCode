@@ -183,11 +183,11 @@ export const layer = Layer.effect(
             mode: "primary",
             native: true,
           },
-         redmind: {
-           name: "redmind",
-           displayName: "RedMind",
-           description:
-             "RedMind — 心有 Red，行前先问。常规操作（读、写、搜索）自动执行，bash 等敏感操作征得同意后再动手。",
+          redmind: {
+            name: "redmind",
+            displayName: "RedMind",
+            description:
+              "RedMind — 心有 Red，行前先问。常规操作（读、写、搜索）自动执行，bash 等敏感操作征得同意后再动手。",
             // 260808 Red：显式给红色。没写 color 的 agent 走「按可见顺序取调色板」
             // （tui/context/local.tsx 的 colors()：secondary/accent/success/warning/
             // primary/error/info），索引一撞就同色 —— 实测 redmind 与 build 都落成蓝色，
@@ -328,7 +328,9 @@ export const layer = Layer.effect(
         }
 
         // Load YAML agent profiles (default + user .opencode/profiles/)
-        for (const [name, profile] of Profile.ProfileResolve.resolve(new Map(Profile.ProfileLoad.loadAll(ctx.worktree)))) {
+        for (const [name, profile] of Profile.ProfileResolve.resolve(
+          new Map(Profile.ProfileLoad.loadAll(ctx.worktree)),
+        )) {
           const existing = agents[name]
           if (existing) {
             agents[name] = {
@@ -497,12 +499,10 @@ export const layer = Layer.effect(
           messages: [
             ...(isOpenaiOauth
               ? []
-              : system.map(
-                  (item): ModelMessage => ({
-                    role: "system",
-                    content: item,
-                  }),
-                )),
+              : system.map((item): ModelMessage => ({
+                  role: "system",
+                  content: item,
+                }))),
             {
               role: "user",
               content: `Create an agent configuration based on this request: "${input.description}".\n\nIMPORTANT: The following identifiers already exist and must NOT be used: ${existing.map((i) => i.name).join(", ")}\n  Return ONLY the JSON object, no other text, do not wrap in backticks`,

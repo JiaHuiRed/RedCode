@@ -79,17 +79,15 @@ export const DoctorCommand = effectCmd({
         const modelsDev = yield* ModelsDev.Service
         const database = yield* modelsDev.get()
         const auth = yield* Auth.Service
-        const credentials = yield* auth.all().pipe(
-          Effect.catch((error) =>
-            Effect.fail(new CliError({ message: errorMessage(error) })),
-          ),
-        )
+        const credentials = yield* auth
+          .all()
+          .pipe(Effect.catch((error) => Effect.fail(new CliError({ message: errorMessage(error) }))))
 
         const enabledProviders = cfg.enabled_providers ? new Set(cfg.enabled_providers) : undefined
         const disabledProviders = new Set(cfg.disabled_providers ?? [])
         const allProviderIds = Object.keys(database)
-        const enabled = allProviderIds.filter((id) =>
-          (enabledProviders ? enabledProviders.has(id) : true) && !disabledProviders.has(id),
+        const enabled = allProviderIds.filter(
+          (id) => (enabledProviders ? enabledProviders.has(id) : true) && !disabledProviders.has(id),
         )
         const disabled = allProviderIds.filter((id) => disabledProviders.has(id))
         const withAuth = enabled.filter((id) => credentials[id])

@@ -11,24 +11,24 @@ const decodeProfile = Schema.decodeUnknownSync(ProfileTypes.RawProfile)
 /** Load all raw YAML profiles from a directory */
 function loadFromDir(dir: string): [string, RawProfile][] {
   const entries: [string, RawProfile][] = []
-    try {
-      if (!existsSync(dir)) return entries
-      for (const file of readdirSync(dir)) {
-        if (!file.endsWith(".yaml") && !file.endsWith(".yml")) continue
-        try {
-          const abs = path.join(dir, file)
-          const raw = yaml.load(readFileSync(abs, "utf-8")) as Record<string, unknown> | undefined
-          if (!raw || typeof raw !== "object") continue
-          const parsed = decodeProfile(raw)
-          if (!parsed) continue
-          entries.push([parsed.name, parsed])
-        } catch {
-          // skip malformed file
-        }
+  try {
+    if (!existsSync(dir)) return entries
+    for (const file of readdirSync(dir)) {
+      if (!file.endsWith(".yaml") && !file.endsWith(".yml")) continue
+      try {
+        const abs = path.join(dir, file)
+        const raw = yaml.load(readFileSync(abs, "utf-8")) as Record<string, unknown> | undefined
+        if (!raw || typeof raw !== "object") continue
+        const parsed = decodeProfile(raw)
+        if (!parsed) continue
+        entries.push([parsed.name, parsed])
+      } catch {
+        // skip malformed file
       }
-    } catch {
-      // skip inaccessible dir
     }
+  } catch {
+    // skip inaccessible dir
+  }
   return entries
 }
 

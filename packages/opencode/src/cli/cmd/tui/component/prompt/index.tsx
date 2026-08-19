@@ -126,15 +126,7 @@ function compactTokens(n: number): string {
 function cacheTierColor(pct: number, miss = false): RGBA {
   const score = miss ? 100 - pct : pct
   const hex =
-    score >= 95
-      ? "#66bb6a"
-      : score >= 90
-        ? "#ce93d8"
-        : score >= 80
-          ? "#40c4ff"
-          : score >= 60
-            ? "#ffb300"
-            : "#ff5252"
+    score >= 95 ? "#66bb6a" : score >= 90 ? "#ce93d8" : score >= 80 ? "#40c4ff" : score >= 60 ? "#ffb300" : "#ff5252"
   return RGBA.fromHex(hex)
 }
 
@@ -1472,9 +1464,7 @@ export function Prompt(props: PromptProps) {
       return dimFire
     }
   })()
-  const maxHeight = createMemo(
-    () => tuiConfig.prompt?.max_height ?? Math.max(6, Math.floor(dimensions().height / 3)),
-  )
+  const maxHeight = createMemo(() => tuiConfig.prompt?.max_height ?? Math.max(6, Math.floor(dimensions().height / 3)))
 
   return (
     <>
@@ -1523,30 +1513,30 @@ export function Prompt(props: PromptProps) {
                   e.preventDefault()
                   return
                 }
-                 if (!e.ctrl && !e.meta && input && !input.isDestroyed && e.name) {
-                   // 260725 Red Full-width bracket — IME auto-closes; track expected closing char
-                   if (fullWidthPairs[e.name]) {
-                     expectedClose = fullWidthPairs[e.name]
-                     return
-                   }
-                   // Half-width brackets — keyboard sends one char at a time
-                   if (e.name === "(" || e.name === "[" || e.name === "{") {
-                     const close = { "(": ")", "[": "]", "{": "}" }[e.name]
-                     e.preventDefault()
-                     input.insertText(e.name + close)
-                     input.moveCursorLeft()
-                   } else if (e.name === '"' || e.name === "'") {
-                     e.preventDefault()
-                     const nextChar = input.getTextRange(input.cursorOffset, input.cursorOffset + 1)
-                     const close = { '"': '"', "'": "'" }[e.name]
-                     if (nextChar === close) {
-                       input.moveCursorRight()
-                     } else {
-                       input.insertText(e.name + close)
-                       input.moveCursorLeft()
-                     }
-                   }
-                 }
+                if (!e.ctrl && !e.meta && input && !input.isDestroyed && e.name) {
+                  // 260725 Red Full-width bracket — IME auto-closes; track expected closing char
+                  if (fullWidthPairs[e.name]) {
+                    expectedClose = fullWidthPairs[e.name]
+                    return
+                  }
+                  // Half-width brackets — keyboard sends one char at a time
+                  if (e.name === "(" || e.name === "[" || e.name === "{") {
+                    const close = { "(": ")", "[": "]", "{": "}" }[e.name]
+                    e.preventDefault()
+                    input.insertText(e.name + close)
+                    input.moveCursorLeft()
+                  } else if (e.name === '"' || e.name === "'") {
+                    e.preventDefault()
+                    const nextChar = input.getTextRange(input.cursorOffset, input.cursorOffset + 1)
+                    const close = { '"': '"', "'": "'" }[e.name]
+                    if (nextChar === close) {
+                      input.moveCursorRight()
+                    } else {
+                      input.insertText(e.name + close)
+                      input.moveCursorLeft()
+                    }
+                  }
+                }
               }}
               onSubmit={() => {
                 // IME: double-defer so the last composed character (e.g. Korean
@@ -1612,19 +1602,15 @@ export function Prompt(props: PromptProps) {
                 <Show when={local.agent.current()} fallback={<box height={1} />}>
                   {(agent) => (
                     <>
-                      <box
-                        onMouseUp={() => dialog.replace(() => <DialogAgent />)}
-                      >
+                      <box onMouseUp={() => dialog.replace(() => <DialogAgent />)}>
                         <text fg={fadeColor(highlight(), agentMetaAlpha())}>
-                         {store.mode === "shell" ? "Shell" : agent().displayName ?? Locale.titlecase(agent().name)}
+                          {store.mode === "shell" ? "Shell" : (agent().displayName ?? Locale.titlecase(agent().name))}
                         </text>
                       </box>
                       <Show when={store.mode === "normal"}>
                         <box flexDirection="row" gap={1}>
                           <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>·</text>
-                          <box
-                            onMouseUp={() => dialog.replace(() => <DialogModel />)}
-                          >
+                          <box onMouseUp={() => dialog.replace(() => <DialogModel />)}>
                             <text
                               flexShrink={0}
                               fg={fadeColor(leader() ? theme.textMuted : theme.text, modelMetaAlpha())}
@@ -1635,9 +1621,7 @@ export function Prompt(props: PromptProps) {
                           <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>{currentProviderLabel()}</text>
                           <Show when={showVariant()}>
                             <text fg={fadeColor(theme.textMuted, variantMetaAlpha())}>·</text>
-                            <box
-                              onMouseUp={() => dialog.replace(() => <DialogVariant />)}
-                            >
+                            <box onMouseUp={() => dialog.replace(() => <DialogVariant />)}>
                               <text>
                                 <span style={{ fg: fadeColor(theme.warning, variantMetaAlpha()), bold: true }}>
                                   {local.model.variant.current()}

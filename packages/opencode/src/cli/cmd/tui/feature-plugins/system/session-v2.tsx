@@ -754,11 +754,7 @@ function Glob(props: ToolProps) {
       Glob "{stringValue(props.input.pattern) ?? pendingInput(props.part)}"{" "}
       <Show when={stringValue(props.input.path)}>in {normalizePath(stringValue(props.input.path))} </Show>
       <Show when={numberValue(props.metadata.count)}>
-        {(count) => (
-          <>
-            {`(${count()} ${count() === 1 ? "match" : "matches"})`}
-          </>
-        )}
+        {(count) => <>{`(${count()} ${count() === 1 ? "match" : "matches"})`}</>}
       </Show>
     </InlineTool>
   )
@@ -800,11 +796,7 @@ function Grep(props: ToolProps) {
       Grep "{stringValue(props.input.pattern) ?? pendingInput(props.part)}"{" "}
       <Show when={stringValue(props.input.path)}>in {normalizePath(stringValue(props.input.path))} </Show>
       <Show when={numberValue(props.metadata.matches)}>
-        {(matches) => (
-          <>
-            {`(${matches()} ${matches() === 1 ? "match" : "matches"})`}
-          </>
-        )}
+        {(matches) => <>{`(${matches()} ${matches() === 1 ? "match" : "matches"})`}</>}
       </Show>
     </InlineTool>
   )
@@ -842,23 +834,11 @@ function Write(props: ToolProps) {
             when={ft() === "markdown"}
             fallback={
               <line_number fg={theme.textMuted} minWidth={3} paddingRight={1}>
-                <code
-                  conceal={false}
-                  fg={theme.text}
-                  filetype={ft()}
-                  syntaxStyle={syntax()}
-                  content={content()}
-                />
+                <code conceal={false} fg={theme.text} filetype={ft()} syntaxStyle={syntax()} content={content()} />
               </line_number>
             }
           >
-            <markdown
-              syntaxStyle={syntax()}
-              content={content()}
-              conceal={true}
-              fg={theme.text}
-              bg={theme.background}
-            />
+            <markdown syntaxStyle={syntax()} content={content()} conceal={true} fg={theme.text} bg={theme.background} />
           </Show>
           <Diagnostics diagnostics={props.metadata.diagnostics} filePath={filePath()} />
         </BlockTool>

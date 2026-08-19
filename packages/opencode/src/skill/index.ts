@@ -316,7 +316,10 @@ export const layer = Layer.effect(
             try: () => Glob.scan(pattern, { cwd: directory, include: "file", absolute: false }),
             catch: (error) => error,
           }).pipe(Effect.catch(() => Effect.succeed([] as string[])))
-          if (matches.length > 0) { matched = true; break }
+          if (matches.length > 0) {
+            matched = true
+            break
+          }
         }
         if (matched) result.push(skill)
       }

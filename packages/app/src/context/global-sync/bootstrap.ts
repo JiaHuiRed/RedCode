@@ -243,7 +243,8 @@ export async function bootstrapDirectory(input: {
           if (settled) return
           input.setStore("agent_ready", true)
         }, 5_000)
-        return input.queryClient.ensureQueryData(loadAgentsQuery(input.directory, input.sdk))
+        return input.queryClient
+          .ensureQueryData(loadAgentsQuery(input.directory, input.sdk))
           .then((data) => done(data))
           .catch(() => done([]))
       },

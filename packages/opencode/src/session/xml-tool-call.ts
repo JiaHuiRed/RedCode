@@ -153,7 +153,12 @@ export function detect(text: string, known?: ReadonlySet<string>): DetectResult 
   }
 
   if (calls.length === 0) {
-    return { calls: EMPTY, stripped: stripOrphanClose(text).replace(/\n{3,}/g, "\n\n").trim() }
+    return {
+      calls: EMPTY,
+      stripped: stripOrphanClose(text)
+        .replace(/\n{3,}/g, "\n\n")
+        .trim(),
+    }
   }
 
   // 两种形状各自扫了一遍全文，cuts 不再天然有序，摘除前必须排序并跳过重叠区间
@@ -171,7 +176,12 @@ export function detect(text: string, known?: ReadonlySet<string>): DetectResult 
   }
   stripped += text.slice(cursor)
 
-  return { calls, stripped: stripOrphanClose(stripped).replace(/\n{3,}/g, "\n\n").trim() }
+  return {
+    calls,
+    stripped: stripOrphanClose(stripped)
+      .replace(/\n{3,}/g, "\n\n")
+      .trim(),
+  }
 }
 
 /** 回灌给模型的纠正提示：告诉它刚才那次调用没生效，并把解析结果原样还给它 */

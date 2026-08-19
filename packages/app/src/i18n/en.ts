@@ -102,7 +102,8 @@ export const dict = {
   "toast.busyEnter.queue.description": "Messages sent while busy start a fresh turn after the current one ends",
   "toast.busyEnter.failed": "Toggle failed, check backend connection",
   "settings.general.row.busyEnter.title": "Busy message delivery",
-  "settings.general.row.busyEnter.description": "How messages sent while the agent is running are handled; takes effect immediately",
+  "settings.general.row.busyEnter.description":
+    "How messages sent while the agent is running are handled; takes effect immediately",
   "settings.general.row.busyEnter.steer": "Steer (deliver mid-turn)",
   "settings.general.row.busyEnter.queue": "Queue (wait for turn end)",
   "command.session.share": "Share session",
@@ -419,7 +420,8 @@ export const dict = {
   "context.stats.totalCost": "Total Cost",
   "context.stats.sessionCreated": "Session Created",
   "context.stats.lastActivity": "Last Activity",
-  "context.stats.partial": "Totals reflect only the {{count}} messages loaded so far — scroll up in the chat to load full history for accurate numbers.",
+  "context.stats.partial":
+    "Totals reflect only the {{count}} messages loaded so far — scroll up in the chat to load full history for accurate numbers.",
 
   "context.usage.tokens": "Tokens",
   "context.usage.usage": "Usage",
@@ -787,7 +789,8 @@ export const dict = {
   "settings.general.tts.enabled.title": "Enable TTS",
   "settings.general.tts.enabled.description": "Show a read-aloud button on AI reply messages",
   "settings.general.tts.apiKey.title": "MiMo TTS API Key",
-  "settings.general.tts.apiKey.description": "MiMo sk- prefix API key for read-aloud, obtained from platform.xiaomimimo.com",
+  "settings.general.tts.apiKey.description":
+    "MiMo sk- prefix API key for read-aloud, obtained from platform.xiaomimimo.com",
   "settings.general.tts.apiKey.placeholder": "sk-...",
   "settings.general.tts.voice.title": "Voice",
   "settings.general.tts.voice.description": "Choose the voice used for read-aloud",

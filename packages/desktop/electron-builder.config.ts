@@ -22,11 +22,18 @@ async function signWindows(configuration: { path: string }) {
   }
 
   try {
-    await execFileAsync("pwsh", [
-      "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass",
-      "-Command",
-      `Set-AuthenticodeSignature -FilePath "${configuration.path}" -Certificate (Get-ChildItem Cert:\\CurrentUser\\My -CodeSigningCert)[0] -TimestampServer http://timestamp.digicert.com -HashAlgorithm SHA256 -Force`,
-    ], { stdio: "pipe" })
+    await execFileAsync(
+      "pwsh",
+      [
+        "-NoLogo",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        `Set-AuthenticodeSignature -FilePath "${configuration.path}" -Certificate (Get-ChildItem Cert:\\CurrentUser\\My -CodeSigningCert)[0] -TimestampServer http://timestamp.digicert.com -HashAlgorithm SHA256 -Force`,
+      ],
+      { stdio: "pipe" },
+    )
   } catch {
     // self-signed cert signing failed, still continue
   }

@@ -54,12 +54,9 @@ function usage(value: unknown) {
   // 260714 Red: raw prompt_cache_hit_tokens can be cumulative KV-cache size, not per-request.
   // Only use it as lowest-priority fallback if it's reasonable (≤ inputTokens for one request).
   const maxCacheRead = item.inputTokens ?? Infinity
-  const safeDeepSeekCacheRead = deepSeekCacheRead && deepSeekCacheRead <= maxCacheRead
-    ? deepSeekCacheRead
-    : undefined
-  const safeDeepSeekCacheWrite = deepSeekCacheWrite && deepSeekCacheWrite <= maxCacheRead
-    ? deepSeekCacheWrite
-    : undefined
+  const safeDeepSeekCacheRead = deepSeekCacheRead && deepSeekCacheRead <= maxCacheRead ? deepSeekCacheRead : undefined
+  const safeDeepSeekCacheWrite =
+    deepSeekCacheWrite && deepSeekCacheWrite <= maxCacheRead ? deepSeekCacheWrite : undefined
   const entries = Object.entries({
     inputTokens: item.inputTokens,
     outputTokens: item.outputTokens,

@@ -65,14 +65,16 @@ export function embeddedUI(disableEmbeddedWebUi: boolean) {
   if (disableEmbeddedWebUi) return Promise.resolve(null)
   return (embeddedUIPromise ??=
     // @ts-expect-error - generated file at build time
-    import("redcode-web-ui.gen.ts").then(
-      (module) => module.default as Record<string, string>,
-      () => {
-        // Fallback for dev mode: resolve relative to CWD (project root)
-        const devPath = path.join(process.cwd(), "redcode-web-ui.gen.ts")
-        return import(devPath).then((m) => m.default as Record<string, string>)
-      },
-    ).catch(() => null))
+    import("redcode-web-ui.gen.ts")
+      .then(
+        (module) => module.default as Record<string, string>,
+        () => {
+          // Fallback for dev mode: resolve relative to CWD (project root)
+          const devPath = path.join(process.cwd(), "redcode-web-ui.gen.ts")
+          return import(devPath).then((m) => m.default as Record<string, string>)
+        },
+      )
+      .catch(() => null))
 }
 
 function notFound() {

@@ -344,9 +344,11 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
   //   恢复 0.4.6 延迟连接的"首页不 spawn"语义——首页 routeDir 为空且不取 projects()[0]，落空不连；
   //   进项目即用 routeDir 与 statusDir 对齐到同一个 store，popover 才能显示真实 MCP 状态。
   const activeMcpDir = createMemo(() => routeDir() ?? currentSessionTab()?.dir ?? tabsStore[0]?.dir)
-  createEffect(on(activeMcpDir, (dir) => {
-    if (dir) setActiveMcpDirectory(dir)
-  }))
+  createEffect(
+    on(activeMcpDir, (dir) => {
+      if (dir) setActiveMcpDirectory(dir)
+    }),
+  )
 
   // 260610 Red 方案 A：标题栏状态圆点点击 → 打开右侧面板的 status 标签页（仅在有会话时）
   const openStatusTab = () => {
@@ -476,9 +478,7 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
           <For each={tabsEnriched()}>
             {(tab, i) => (
               <>
-                {i() !== 0 && (
-                  <div class="w-[1.5px] h-3 shrink-0 rounded-full bg-[var(--v2-background-bg-layer-02)]" />
-                )}
+                {i() !== 0 && <div class="w-[1.5px] h-3 shrink-0 rounded-full bg-[var(--v2-background-bg-layer-02)]" />}
                 <TabNavItem
                   href={tab.href}
                   title={tab.info.title}
@@ -655,9 +655,7 @@ function ChannelIndicator() {
   const platform = usePlatform()
   return (
     <Show when={platform.version}>
-      {(version) => (
-        <span class="text-[11px] text-v2-text-text-muted shrink-0 select-none">v{version()}</span>
-      )}
+      {(version) => <span class="text-[11px] text-v2-text-text-muted shrink-0 select-none">v{version()}</span>}
     </Show>
   )
 }

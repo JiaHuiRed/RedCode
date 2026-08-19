@@ -268,28 +268,29 @@ function convertMcpTool(
     execute: async (args: unknown) => {
       let lastError: unknown
       for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-          try {
-            // 260807 Red: 每次调用从 clients 表取最新 client（s.clients[name] 由 storeClient 更新）
-            const client = getClient()
-            if (!client) {
-              throw new Error(`MCP server "${serverName}" is not connected`)
-            }
-            // 260603 Red 进度推送：实时记录 MCP 工具调用进度
-            let progressLog = ""
-            return await client.callTool(
-              { name: mcpTool.name, arguments: (args || {}) as Record<string, unknown> },
-              CallToolResultSchema,
-              {
-                onprogress: (progress) => {
-                  const msg = progress.message ?? `progress ${progress.progress}${progress.total ? "/" + progress.total : ""}`
-                  if (msg !== progressLog) {
-                    progressLog = msg
-                    log.info("MCP tool progress", { server: serverName, tool: mcpTool.name, ...progress })
-                  }
-                },
-                resetTimeoutOnProgress: true,
-                timeout,
+        try {
+          // 260807 Red: 每次调用从 clients 表取最新 client（s.clients[name] 由 storeClient 更新）
+          const client = getClient()
+          if (!client) {
+            throw new Error(`MCP server "${serverName}" is not connected`)
+          }
+          // 260603 Red 进度推送：实时记录 MCP 工具调用进度
+          let progressLog = ""
+          return await client.callTool(
+            { name: mcpTool.name, arguments: (args || {}) as Record<string, unknown> },
+            CallToolResultSchema,
+            {
+              onprogress: (progress) => {
+                const msg =
+                  progress.message ?? `progress ${progress.progress}${progress.total ? "/" + progress.total : ""}`
+                if (msg !== progressLog) {
+                  progressLog = msg
+                  log.info("MCP tool progress", { server: serverName, tool: mcpTool.name, ...progress })
+                }
               },
+              resetTimeoutOnProgress: true,
+              timeout,
+            },
           )
         } catch (err) {
           lastError = err
@@ -301,7 +302,9 @@ function convertMcpTool(
           })
           if (attempt < MAX_RETRIES - 1) {
             if (reconnectFn) {
-              try { await reconnectFn() } catch {}
+              try {
+                await reconnectFn()
+              } catch {}
             }
             // 260716 Red 指数退避（1s/2s）：网络型瞬时故障给更多恢复时间，别在同一秒内连打三炮
             await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt))
@@ -721,9 +724,9 @@ export const layer = Layer.effect(
     const killProcessTree = Effect.fnUntraced(
       function* (pid: number) {
         if (process.platform === "win32") {
-          yield* spawner.spawn(ChildProcess.make("taskkill", ["/F", "/T", "/PID", String(pid)], { stdin: "ignore" })).pipe(
-            Effect.ignore,
-          )
+          yield* spawner
+            .spawn(ChildProcess.make("taskkill", ["/F", "/T", "/PID", String(pid)], { stdin: "ignore" }))
+            .pipe(Effect.ignore)
           return
         }
         const pids: number[] = []
@@ -830,9 +833,7 @@ export const layer = Layer.effect(
           Effect.forever(
             Effect.gen(function* () {
               yield* Effect.sleep(HEALTH_CHECK_INTERVAL)
-              const connected = Object.entries(s.clients).filter(
-                ([name]) => s.status[name]?.status === "connected",
-              )
+              const connected = Object.entries(s.clients).filter(([name]) => s.status[name]?.status === "connected")
               for (const [name, client] of connected) {
                 try {
                   yield* Effect.tryPromise({
@@ -886,7 +887,9 @@ export const layer = Layer.effect(
             if (timer) clearTimeout(timer)
             timer = setTimeout(async () => {
               timer = null
-              try { await bridge.promise(reconcile()) } catch {}
+              try {
+                await bridge.promise(reconcile())
+              } catch {}
             }, 1000)
           }
           const watcher = fs.watch(cfgPath, changeHandler)
@@ -973,9 +976,13 @@ export const layer = Layer.effect(
             transport.close = async () => {
               const pid = transport.pid
               if (pid) {
-                try { await Effect.runPromise(killProcessTree(pid)) } catch {}
+                try {
+                  await Effect.runPromise(killProcessTree(pid))
+                } catch {}
               }
-              try { await originalClose() } catch {}
+              try {
+                await originalClose()
+              } catch {}
             }
           }
         }
@@ -1053,7 +1060,11 @@ export const layer = Layer.effect(
               if (disabled?.includes(mcpTool.name)) continue
               result[sanitize(clientName) + "_" + sanitize(mcpTool.name)] = convertMcpTool(
                 // 260807 Red: 传 getClient 闭包而非 client 引用——s.clients[name] 重连后由 storeClient 换新
-                mcpTool, () => s.clients[clientName], clientName, doReconnect, timeout,
+                mcpTool,
+                () => s.clients[clientName],
+                clientName,
+                doReconnect,
+                timeout,
               )
             }
           }),
@@ -1078,9 +1089,7 @@ export const layer = Layer.effect(
         for (const mcpTool of cached) {
           if (allow && !allow.includes(mcpTool.name)) continue
           if (disabled?.includes(mcpTool.name)) continue
-          result[sanitize(serverName) + "_" + sanitize(mcpTool.name)] = convertMcpToolCached(
-            mcpTool, serverName,
-          )
+          result[sanitize(serverName) + "_" + sanitize(mcpTool.name)] = convertMcpToolCached(mcpTool, serverName)
         }
       }
 
@@ -1113,7 +1122,11 @@ export const layer = Layer.effect(
     // 260624 Red 上游移植: MCP resource template listing
     const resourceTemplates = Effect.fn("MCP.resourceTemplates")(function* () {
       const s = yield* InstanceState.get(state)
-      return yield* collectFromConnected(s, (c) => c.listResourceTemplates().then((r) => r.resourceTemplates), "resourceTemplates")
+      return yield* collectFromConnected(
+        s,
+        (c) => c.listResourceTemplates().then((r) => r.resourceTemplates),
+        "resourceTemplates",
+      )
     })
 
     const withClient = Effect.fnUntraced(function* <A>(
@@ -1131,7 +1144,10 @@ export const layer = Layer.effect(
       // 260610 Red 移植上游 #31612：给 getPrompt/readResource 也带上超时（之前无超时可永久挂起）
       const cfg = yield* cfgSvc.get()
       const configured = cfg.mcp?.[clientName]
-      const timeout = (configured && isMcpConfigured(configured) ? configured.timeout : undefined) ?? cfg.experimental?.mcp_timeout ?? DEFAULT_TIMEOUT
+      const timeout =
+        (configured && isMcpConfigured(configured) ? configured.timeout : undefined) ??
+        cfg.experimental?.mcp_timeout ??
+        DEFAULT_TIMEOUT
       return yield* Effect.tryPromise({
         try: () => fn(client, timeout),
         catch: (e: any) => {

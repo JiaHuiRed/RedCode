@@ -150,7 +150,7 @@ type HookSpec = {
     }
     output: {}
   }
-  "notification": {
+  notification: {
     input: {
       sessionID?: string
       title?: string

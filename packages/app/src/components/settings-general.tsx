@@ -524,188 +524,216 @@ export const SettingsGeneral: Component = () => {
     }
 
     return (
-    <div class="flex flex-col gap-1">
-      <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.appearance")}</h3>
+      <div class="flex flex-col gap-1">
+        <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.appearance")}</h3>
 
-      <SettingsList>
-        <SettingsRow
-          title={language.t("settings.general.row.colorScheme.title")}
-          description={language.t("settings.general.row.colorScheme.description")}
-        >
-          <Select
-            data-action="settings-color-scheme"
-            options={colorSchemeOptions()}
-            current={colorSchemeOptions().find((o) => o.value === theme.colorScheme())}
-            value={(o) => o.value}
-            label={(o) => o.label}
-            onSelect={(option) => option && theme.setColorScheme(option.value)}
-            onHighlight={(option) => {
-              if (!option) return
-              theme.previewColorScheme(option.value)
-              return () => theme.cancelPreview()
-            }}
-            variant="secondary"
-            size="small"
-            triggerVariant="settings"
-            triggerStyle={{ "min-width": "220px" }}
-          />
-        </SettingsRow>
-
-        <SettingsRow
-          title={language.t("settings.general.row.theme.title")}
-          description={
-            <>
-              {language.t("settings.general.row.theme.description")}{" "}
-              <Link href="https://redcode.dev/docs/themes/">{language.t("common.learnMore")}</Link>
-            </>
-          }
-        >
-          <Select
-            data-action="settings-theme"
-            options={themeOptions()}
-            current={themeOptions().find((o) => o.id === theme.themeId())}
-            value={(o) => o.id}
-            label={(o) => o.name}
-            onSelect={(option) => {
-              if (!option) return
-              theme.setTheme(option.id)
-            }}
-            onHighlight={(option) => {
-              if (!option) return
-              theme.previewTheme(option.id)
-              return () => theme.cancelPreview()
-            }}
-            variant="secondary"
-            size="small"
-            triggerVariant="settings"
-          />
-        </SettingsRow>
-
-        <SettingsRow
-          title={language.t("settings.general.row.uiFont.title")}
-          description={language.t("settings.general.row.uiFont.description")}
-        >
-          <div class="w-full sm:w-[220px]">
-            <TextField
-              data-action="settings-ui-font"
-              label={language.t("settings.general.row.uiFont.title")}
-              hideLabel
-              type="text"
-              value={sans()}
-              onChange={(value) => settings.appearance.setUIFont(value)}
-              placeholder={sansDefault}
-              spellcheck={false}
-              autocorrect="off"
-              autocomplete="off"
-              autocapitalize="off"
-              class="text-12-regular"
-              style={{ "font-family": sansFontFamily(settings.appearance.uiFont()) }}
+        <SettingsList>
+          <SettingsRow
+            title={language.t("settings.general.row.colorScheme.title")}
+            description={language.t("settings.general.row.colorScheme.description")}
+          >
+            <Select
+              data-action="settings-color-scheme"
+              options={colorSchemeOptions()}
+              current={colorSchemeOptions().find((o) => o.value === theme.colorScheme())}
+              value={(o) => o.value}
+              label={(o) => o.label}
+              onSelect={(option) => option && theme.setColorScheme(option.value)}
+              onHighlight={(option) => {
+                if (!option) return
+                theme.previewColorScheme(option.value)
+                return () => theme.cancelPreview()
+              }}
+              variant="secondary"
+              size="small"
+              triggerVariant="settings"
+              triggerStyle={{ "min-width": "220px" }}
             />
-          </div>
-        </SettingsRow>
+          </SettingsRow>
 
-        <SettingsRow
-          title={language.t("settings.general.row.font.title")}
-          description={language.t("settings.general.row.font.description")}
-        >
-          <div class="w-full sm:w-[220px]">
-            <TextField
-              data-action="settings-code-font"
-              label={language.t("settings.general.row.font.title")}
-              hideLabel
-              type="text"
-              value={mono()}
-              onChange={(value) => settings.appearance.setFont(value)}
-              placeholder={monoDefault}
-              spellcheck={false}
-              autocorrect="off"
-              autocomplete="off"
-              autocapitalize="off"
-              class="text-12-regular"
-              style={{ "font-family": monoFontFamily(settings.appearance.font()) }}
+          <SettingsRow
+            title={language.t("settings.general.row.theme.title")}
+            description={
+              <>
+                {language.t("settings.general.row.theme.description")}{" "}
+                <Link href="https://redcode.dev/docs/themes/">{language.t("common.learnMore")}</Link>
+              </>
+            }
+          >
+            <Select
+              data-action="settings-theme"
+              options={themeOptions()}
+              current={themeOptions().find((o) => o.id === theme.themeId())}
+              value={(o) => o.id}
+              label={(o) => o.name}
+              onSelect={(option) => {
+                if (!option) return
+                theme.setTheme(option.id)
+              }}
+              onHighlight={(option) => {
+                if (!option) return
+                theme.previewTheme(option.id)
+                return () => theme.cancelPreview()
+              }}
+              variant="secondary"
+              size="small"
+              triggerVariant="settings"
             />
-          </div>
-        </SettingsRow>
+          </SettingsRow>
 
-        <SettingsRow
-          title={language.t("settings.general.row.terminalFont.title")}
-          description={language.t("settings.general.row.terminalFont.description")}
-        >
-          <div class="w-full sm:w-[220px]">
-            <TextField
-              data-action="settings-terminal-font"
-              label={language.t("settings.general.row.terminalFont.title")}
-              hideLabel
-              type="text"
-              value={terminal()}
-              onChange={(value) => settings.appearance.setTerminalFont(value)}
-              placeholder={terminalDefault}
-              spellcheck={false}
-              autocorrect="off"
-              autocomplete="off"
-              autocapitalize="off"
-              class="text-12-regular"
-              style={{ "font-family": terminalFontFamily(settings.appearance.terminalFont()) }}
-            />
-          </div>
-        </SettingsRow>
-
-        <SettingsRow title="Chat Background" description="Image shown behind the chat window (applies to all chats)">
-          <div class="flex items-center gap-3">
-            <div
-              class="w-10 h-10 rounded-md border border-border-weaker-base bg-cover bg-center bg-background-stronger shrink-0"
-              style={settings.appearance.chatBackground() ? { "background-image": `url(${settings.appearance.chatBackground()})` } : {}}
-            />
-            <input
-              ref={chatBgInput}
-              type="file"
-              accept="image/png,image/jpeg,image/webp,image/gif"
-              onChange={handleChatBgSelect}
-              class="hidden"
-            />
-            <div class="flex gap-2">
-              <Button data-action="settings-chat-bg-upload" variant="secondary" size="small" onClick={() => chatBgInput?.click()}>
-                Upload
-              </Button>
-              <Show when={settings.appearance.chatBackground()}>
-                <Button data-action="settings-chat-bg-remove" variant="ghost" size="small" onClick={handleChatBgRemove}>
-                  Remove
-                </Button>
-              </Show>
+          <SettingsRow
+            title={language.t("settings.general.row.uiFont.title")}
+            description={language.t("settings.general.row.uiFont.description")}
+          >
+            <div class="w-full sm:w-[220px]">
+              <TextField
+                data-action="settings-ui-font"
+                label={language.t("settings.general.row.uiFont.title")}
+                hideLabel
+                type="text"
+                value={sans()}
+                onChange={(value) => settings.appearance.setUIFont(value)}
+                placeholder={sansDefault}
+                spellcheck={false}
+                autocorrect="off"
+                autocomplete="off"
+                autocapitalize="off"
+                class="text-12-regular"
+                style={{ "font-family": sansFontFamily(settings.appearance.uiFont()) }}
+              />
             </div>
-          </div>
-        </SettingsRow>
+          </SettingsRow>
 
-        <SettingsRow
-          title="Home Background"
-          description="Image shown behind the home / no-session screen (independent from chat background)"
-        >
-          <div class="flex items-center gap-3">
-            <div
-              class="w-10 h-10 rounded-md border border-border-weaker-base bg-cover bg-center bg-background-stronger shrink-0"
-              style={settings.appearance.homeBackground() ? { "background-image": `url(${settings.appearance.homeBackground()})` } : {}}
-            />
-            <input
-              ref={homeBgInput}
-              type="file"
-              accept="image/png,image/jpeg,image/webp,image/gif"
-              onChange={handleHomeBgSelect}
-              class="hidden"
-            />
-            <div class="flex gap-2">
-              <Button data-action="settings-home-bg-upload" variant="secondary" size="small" onClick={() => homeBgInput?.click()}>
-                Upload
-              </Button>
-              <Show when={settings.appearance.homeBackground()}>
-                <Button data-action="settings-home-bg-remove" variant="ghost" size="small" onClick={handleHomeBgRemove}>
-                  Remove
-                </Button>
-              </Show>
+          <SettingsRow
+            title={language.t("settings.general.row.font.title")}
+            description={language.t("settings.general.row.font.description")}
+          >
+            <div class="w-full sm:w-[220px]">
+              <TextField
+                data-action="settings-code-font"
+                label={language.t("settings.general.row.font.title")}
+                hideLabel
+                type="text"
+                value={mono()}
+                onChange={(value) => settings.appearance.setFont(value)}
+                placeholder={monoDefault}
+                spellcheck={false}
+                autocorrect="off"
+                autocomplete="off"
+                autocapitalize="off"
+                class="text-12-regular"
+                style={{ "font-family": monoFontFamily(settings.appearance.font()) }}
+              />
             </div>
-          </div>
-        </SettingsRow>
-      </SettingsList>
-    </div>
+          </SettingsRow>
+
+          <SettingsRow
+            title={language.t("settings.general.row.terminalFont.title")}
+            description={language.t("settings.general.row.terminalFont.description")}
+          >
+            <div class="w-full sm:w-[220px]">
+              <TextField
+                data-action="settings-terminal-font"
+                label={language.t("settings.general.row.terminalFont.title")}
+                hideLabel
+                type="text"
+                value={terminal()}
+                onChange={(value) => settings.appearance.setTerminalFont(value)}
+                placeholder={terminalDefault}
+                spellcheck={false}
+                autocorrect="off"
+                autocomplete="off"
+                autocapitalize="off"
+                class="text-12-regular"
+                style={{ "font-family": terminalFontFamily(settings.appearance.terminalFont()) }}
+              />
+            </div>
+          </SettingsRow>
+
+          <SettingsRow title="Chat Background" description="Image shown behind the chat window (applies to all chats)">
+            <div class="flex items-center gap-3">
+              <div
+                class="w-10 h-10 rounded-md border border-border-weaker-base bg-cover bg-center bg-background-stronger shrink-0"
+                style={
+                  settings.appearance.chatBackground()
+                    ? { "background-image": `url(${settings.appearance.chatBackground()})` }
+                    : {}
+                }
+              />
+              <input
+                ref={chatBgInput}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                onChange={handleChatBgSelect}
+                class="hidden"
+              />
+              <div class="flex gap-2">
+                <Button
+                  data-action="settings-chat-bg-upload"
+                  variant="secondary"
+                  size="small"
+                  onClick={() => chatBgInput?.click()}
+                >
+                  Upload
+                </Button>
+                <Show when={settings.appearance.chatBackground()}>
+                  <Button
+                    data-action="settings-chat-bg-remove"
+                    variant="ghost"
+                    size="small"
+                    onClick={handleChatBgRemove}
+                  >
+                    Remove
+                  </Button>
+                </Show>
+              </div>
+            </div>
+          </SettingsRow>
+
+          <SettingsRow
+            title="Home Background"
+            description="Image shown behind the home / no-session screen (independent from chat background)"
+          >
+            <div class="flex items-center gap-3">
+              <div
+                class="w-10 h-10 rounded-md border border-border-weaker-base bg-cover bg-center bg-background-stronger shrink-0"
+                style={
+                  settings.appearance.homeBackground()
+                    ? { "background-image": `url(${settings.appearance.homeBackground()})` }
+                    : {}
+                }
+              />
+              <input
+                ref={homeBgInput}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                onChange={handleHomeBgSelect}
+                class="hidden"
+              />
+              <div class="flex gap-2">
+                <Button
+                  data-action="settings-home-bg-upload"
+                  variant="secondary"
+                  size="small"
+                  onClick={() => homeBgInput?.click()}
+                >
+                  Upload
+                </Button>
+                <Show when={settings.appearance.homeBackground()}>
+                  <Button
+                    data-action="settings-home-bg-remove"
+                    variant="ghost"
+                    size="small"
+                    onClick={handleHomeBgRemove}
+                  >
+                    Remove
+                  </Button>
+                </Show>
+              </div>
+            </div>
+          </SettingsRow>
+        </SettingsList>
+      </div>
     )
   }
 
@@ -826,10 +854,7 @@ export const SettingsGeneral: Component = () => {
           description={language.t("settings.general.tts.enabled.description")}
         >
           <div data-action="settings-tts-enabled">
-            <Switch
-              checked={settings.tts.enabled()}
-              onChange={(checked) => settings.tts.setEnabled(checked)}
-            />
+            <Switch checked={settings.tts.enabled()} onChange={(checked) => settings.tts.setEnabled(checked)} />
           </div>
         </SettingsRow>
 
@@ -953,11 +978,31 @@ export const SettingsGeneral: Component = () => {
                   background="var(--syntax-property)"
                   foreground="var(--text-on-accent)"
                 />
-                <input ref={userFileInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={handleUserFileSelect} class="hidden" />
+                <input
+                  ref={userFileInput}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  onChange={handleUserFileSelect}
+                  class="hidden"
+                />
                 <div class="flex gap-2">
-                  <Button data-action="settings-avatar-upload" variant="secondary" size="small" onClick={() => userFileInput?.click()}>Upload</Button>
+                  <Button
+                    data-action="settings-avatar-upload"
+                    variant="secondary"
+                    size="small"
+                    onClick={() => userFileInput?.click()}
+                  >
+                    Upload
+                  </Button>
                   <Show when={userPreview()}>
-                    <Button data-action="settings-avatar-remove" variant="ghost" size="small" onClick={handleUserRemove}>Remove</Button>
+                    <Button
+                      data-action="settings-avatar-remove"
+                      variant="ghost"
+                      size="small"
+                      onClick={handleUserRemove}
+                    >
+                      Remove
+                    </Button>
                   </Show>
                 </div>
               </div>
@@ -978,11 +1023,31 @@ export const SettingsGeneral: Component = () => {
                   background="var(--syntax-keyword)"
                   foreground="var(--text-on-accent)"
                 />
-                <input ref={assistantFileInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={handleAssistantFileSelect} class="hidden" />
+                <input
+                  ref={assistantFileInput}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  onChange={handleAssistantFileSelect}
+                  class="hidden"
+                />
                 <div class="flex gap-2">
-                  <Button data-action="settings-assistant-avatar-upload" variant="secondary" size="small" onClick={() => assistantFileInput?.click()}>Upload</Button>
+                  <Button
+                    data-action="settings-assistant-avatar-upload"
+                    variant="secondary"
+                    size="small"
+                    onClick={() => assistantFileInput?.click()}
+                  >
+                    Upload
+                  </Button>
                   <Show when={assistantPreview()}>
-                    <Button data-action="settings-assistant-avatar-remove" variant="ghost" size="small" onClick={handleAssistantRemove}>Remove</Button>
+                    <Button
+                      data-action="settings-assistant-avatar-remove"
+                      variant="ghost"
+                      size="small"
+                      onClick={handleAssistantRemove}
+                    >
+                      Remove
+                    </Button>
                   </Show>
                 </div>
               </div>

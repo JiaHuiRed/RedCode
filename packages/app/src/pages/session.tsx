@@ -46,11 +46,7 @@ import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { type FollowupDraft, sendFollowupDraft } from "@/components/prompt-input/submit"
 import { createSessionComposerState, SessionComposerRegion } from "@/pages/session/composer"
-import {
-  createOpenReviewFile,
-  createSessionTabs,
-  createSizing,
-} from "@/pages/session/helpers"
+import { createOpenReviewFile, createSessionTabs, createSizing } from "@/pages/session/helpers"
 import { createSessionKeyboard } from "@/pages/session/session-keyboard"
 import { MessageTimeline } from "@/pages/session/message-timeline"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
@@ -1665,7 +1661,7 @@ export default function Page() {
                 direction="horizontal"
                 invert={true}
                 size={layout.session.width()}
-                      min={340}
+                min={340}
                 max={typeof window === "undefined" ? 1000 : window.innerWidth * 0.45}
                 onResize={(width) => {
                   size.touch()
@@ -1676,12 +1672,7 @@ export default function Page() {
           </Show>
         </div>
 
-        <SessionSidePanel
-          canReview={canReview}
-          reviewPanel={reviewPanel}
-          reviewSnap={ui.reviewSnap}
-          size={size}
-        />
+        <SessionSidePanel canReview={canReview} reviewPanel={reviewPanel} reviewSnap={ui.reviewSnap} size={size} />
       </div>
 
       <TerminalPanel />

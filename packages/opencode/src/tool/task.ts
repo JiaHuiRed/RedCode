@@ -220,12 +220,18 @@ export const TaskTool = Tool.define(
           ],
         }))
 
-      yield* plugin.trigger("subagent.start", {
-        sessionID: nextSession.id,
-        parentSessionID: ctx.sessionID,
-        agent: next.name,
-        title: params.description,
-      }, {}).pipe(Effect.catch(() => Effect.void))
+      yield* plugin
+        .trigger(
+          "subagent.start",
+          {
+            sessionID: nextSession.id,
+            parentSessionID: ctx.sessionID,
+            agent: next.name,
+            title: params.description,
+          },
+          {},
+        )
+        .pipe(Effect.catch(() => Effect.void))
 
       const msg = yield* MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }).pipe(Effect.orDie)
       if (msg.info.role !== "assistant") return yield* Effect.fail(new Error("Not an assistant message"))
@@ -275,12 +281,18 @@ export const TaskTool = Tool.define(
             parts,
           })
           const text = result.parts.findLast((item) => item.type === "text")?.text ?? ""
-          yield* plugin.trigger("subagent.stop", {
-            sessionID: nextSession.id,
-            parentSessionID: ctx.sessionID,
-            agent: next.name,
-            output: text,
-          }, {}).pipe(Effect.catch(() => Effect.void))
+          yield* plugin
+            .trigger(
+              "subagent.stop",
+              {
+                sessionID: nextSession.id,
+                parentSessionID: ctx.sessionID,
+                agent: next.name,
+                output: text,
+              },
+              {},
+            )
+            .pipe(Effect.catch(() => Effect.void))
           return text
         })
 

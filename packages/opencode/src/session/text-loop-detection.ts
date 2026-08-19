@@ -72,7 +72,8 @@ export class LoopRecoveryTracker {
       return null
     }
 
-    const isSimilar = this.history.length > 0 && similarity(tail, this.history[this.history.length - 1]) >= SIMILARITY_THRESHOLD
+    const isSimilar =
+      this.history.length > 0 && similarity(tail, this.history[this.history.length - 1]) >= SIMILARITY_THRESHOLD
 
     this.history.push(tail)
     // 只保留最近 5 条
@@ -120,6 +121,5 @@ export const RECOVERY_PROMPTS: Record<RecoveryLevel, string> = {
     "[System notice] Your recent outputs appear very similar to previous ones. Please re-read the user's request carefully and provide a different, substantive response. Avoid repeating the same content.",
   replan:
     "[System notice] You are stuck in a repetition loop. STOP what you are doing. Re-examine the original task from scratch, consider a completely different approach, and respond with a new plan of action.",
-  stop:
-    "[System notice] Repetition loop detected after multiple recovery attempts. Halting to prevent further wasted tokens. Please try a different prompt or approach.",
+  stop: "[System notice] Repetition loop detected after multiple recovery attempts. Halting to prevent further wasted tokens. Please try a different prompt or approach.",
 }

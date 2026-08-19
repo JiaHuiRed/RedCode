@@ -10,9 +10,7 @@ const pkg = await Bun.file("package.json").json()
 // TUI uses its own version from packages/opencode/package.json (independent from GUI)
 const redcodeVersion: string = pkg.version
 
-const migrations = (
-  await fs.promises.readdir(path.join(dir, "migration"), { withFileTypes: true })
-)
+const migrations = (await fs.promises.readdir(path.join(dir, "migration"), { withFileTypes: true }))
   .filter((entry) => entry.isDirectory() && /^\d{14}/.test(entry.name))
   .sort((a, b) => a.name.localeCompare(b.name))
 
@@ -22,7 +20,14 @@ const migrationData = await Promise.all(
     const sql = await Bun.file(file).text()
     const match = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/.exec(entry.name)
     const timestamp = match
-      ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6]))
+      ? Date.UTC(
+          Number(match[1]),
+          Number(match[2]) - 1,
+          Number(match[3]),
+          Number(match[4]),
+          Number(match[5]),
+          Number(match[6]),
+        )
       : 0
     return { sql, timestamp, name: entry.name }
   }),
@@ -79,6 +84,10 @@ await fs.promises.writeFile(
 )
 await fs.promises.writeFile(
   path.join(watcherDir, "package.json"),
-  JSON.stringify({ name: "@parcel/watcher", type: "module", exports: { "./wrapper": "./wrapper.js", "./package.json": "./package.json" } }),
+  JSON.stringify({
+    name: "@parcel/watcher",
+    type: "module",
+    exports: { "./wrapper": "./wrapper.js", "./package.json": "./package.json" },
+  }),
   "utf-8",
 )

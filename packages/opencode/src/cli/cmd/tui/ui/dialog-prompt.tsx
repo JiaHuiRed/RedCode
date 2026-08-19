@@ -1,4 +1,11 @@
-import { TextareaRenderable, TextAttributes, PasteEvent, decodePasteBytes, MouseButton, type MouseEvent } from "@opentui/core"
+import {
+  TextareaRenderable,
+  TextAttributes,
+  PasteEvent,
+  decodePasteBytes,
+  MouseButton,
+  type MouseEvent,
+} from "@opentui/core"
 import { useTheme } from "../context/theme"
 import { useDialog, type DialogContext } from "./dialog"
 import { Show, createEffect, createSignal, onMount, type JSX } from "solid-js"

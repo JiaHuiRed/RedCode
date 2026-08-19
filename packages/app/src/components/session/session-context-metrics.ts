@@ -101,7 +101,7 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
 
   return {
     totalCost,
-    costCurrency: CNY_PROVIDERS.has(message.providerID) ? "CNY" as const : "USD" as const,
+    costCurrency: CNY_PROVIDERS.has(message.providerID) ? ("CNY" as const) : ("USD" as const),
     context: {
       message,
       provider,
@@ -123,7 +123,9 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
       // gives the true total instead of an either/or pick that silently drops whichever bucket the
       // buggy path skipped — this was inflating hit% (e.g. 99% vs the real ~96%).
       cacheHit: (() => {
-        let sumRead = 0, sumMiss = 0, sumWrite = 0
+        let sumRead = 0,
+          sumMiss = 0,
+          sumWrite = 0
         for (const m of messages) {
           if (m.role === "assistant") {
             sumRead += m.tokens.cache.read

@@ -120,7 +120,7 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
   }
 
   useBindings(() => ({
-      mode: OPENCODE_BASE_MODE,
+    mode: OPENCODE_BASE_MODE,
     enabled: store.editing && !confirm(),
     commands: [
       {
@@ -201,7 +201,7 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
     const max = Math.min(total, 9)
 
     return {
-mode: OPENCODE_BASE_MODE,
+      mode: OPENCODE_BASE_MODE,
       enabled: !store.editing,
       commands: [
         {

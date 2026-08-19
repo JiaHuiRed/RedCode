@@ -852,7 +852,11 @@ export const RunCommand = effectCmd({
             const listener = await Server.listen({ hostname, port })
             UI.empty()
             if (hostname === "0.0.0.0") {
-              UI.println(UI.Style.TEXT_INFO_BOLD + "  Local access:   ", UI.Style.TEXT_NORMAL, `http://localhost:${listener.port}`)
+              UI.println(
+                UI.Style.TEXT_INFO_BOLD + "  Local access:   ",
+                UI.Style.TEXT_NORMAL,
+                `http://localhost:${listener.port}`,
+              )
               const nets = networkInterfaces()
               const ips: string[] = []
               for (const name of Object.keys(nets)) {
@@ -865,10 +869,18 @@ export const RunCommand = effectCmd({
                 }
               }
               for (const ip of ips) {
-                UI.println(UI.Style.TEXT_INFO_BOLD + "  Network access: ", UI.Style.TEXT_NORMAL, `http://${ip}:${listener.port}`)
+                UI.println(
+                  UI.Style.TEXT_INFO_BOLD + "  Network access: ",
+                  UI.Style.TEXT_NORMAL,
+                  `http://${ip}:${listener.port}`,
+                )
               }
             } else {
-              UI.println(UI.Style.TEXT_INFO_BOLD + "  Server:         ", UI.Style.TEXT_NORMAL, `http://${hostname}:${listener.port}`)
+              UI.println(
+                UI.Style.TEXT_INFO_BOLD + "  Server:         ",
+                UI.Style.TEXT_NORMAL,
+                `http://${hostname}:${listener.port}`,
+              )
             }
             UI.empty()
           } catch (error) {

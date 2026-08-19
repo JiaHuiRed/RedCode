@@ -104,10 +104,7 @@ function DiffViewer(props: { api: TuiPluginApi }) {
       return normalizeDiffs(result.data ?? [])
     }
 
-    const result = await props.api.client.vcs.diff(
-      { mode: "git" },
-      { throwOnError: true },
-    )
+    const result = await props.api.client.vcs.diff({ mode: "git" }, { throwOnError: true })
     return normalizeDiffs(result.data ?? [])
   })
   const files = createMemo(() => diff() ?? [])
@@ -665,9 +662,7 @@ function DiffViewer(props: { api: TuiPluginApi }) {
           <text fg={theme().text}>Diff </text>
           <text fg={theme().textMuted}>{mode() === "last-turn" ? "last turn" : "working tree"}</text>
           <box flexGrow={1} />
-          <text fg={theme().textMuted}>
-            {`${files().length} ${files().length === 1 ? "file" : "files"}`}
-          </text>
+          <text fg={theme().textMuted}>{`${files().length} ${files().length === 1 ? "file" : "files"}`}</text>
         </Panel>
 
         <box flexGrow={1} minHeight={0}>

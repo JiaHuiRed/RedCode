@@ -77,7 +77,9 @@ const createEmbeddedWebUIBundle = async () => {
 
 const embeddedFileMap = skipEmbedWebUi ? null : await createEmbeddedWebUIBundle()
 
-try { await $`rm -rf dist` } catch {}
+try {
+  await $`rm -rf dist`
+} catch {}
 
 const binaries: Record<string, string> = {}
 // 260615 Red Windows-only single target
@@ -140,7 +142,9 @@ await Bun.build({
   }
 }
 
-try { await $`rm -rf ./dist/${name}/bin/tui` } catch {}
+try {
+  await $`rm -rf ./dist/${name}/bin/tui`
+} catch {}
 await Bun.file(`dist/${name}/package.json`).write(
   JSON.stringify(
     {

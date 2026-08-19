@@ -446,7 +446,11 @@ export const layer: Layer.Layer<
           .all(),
       )
       const sessions = new Map<string, number>(counts.map((c) => [c.projectID, c.total]))
-      return dedupeByWorktree(rows, (id) => sessions.get(id) ?? 0, (p) => pathSvc.resolve(p)).map(fromRow)
+      return dedupeByWorktree(
+        rows,
+        (id) => sessions.get(id) ?? 0,
+        (p) => pathSvc.resolve(p),
+      ).map(fromRow)
     })
 
     const get = Effect.fn("Project.get")(function* (id: ProjectID) {

@@ -152,7 +152,11 @@ function formatUsage(
   // Fallback to input for providers that don't return miss metadata.
   const cacheHitPct =
     (tokens?.cache?.read ?? 0) > 0
-      ? Math.round(((tokens?.cache?.read ?? 0) / ((tokens?.cache?.read ?? 0) + (tokens?.cache?.miss ?? tokens?.cache?.write ?? tokens?.input ?? 0))) * 1000) / 10
+      ? Math.round(
+          ((tokens?.cache?.read ?? 0) /
+            ((tokens?.cache?.read ?? 0) + (tokens?.cache?.miss ?? tokens?.cache?.write ?? tokens?.input ?? 0))) *
+            1000,
+        ) / 10
       : undefined
   const cacheStr = cacheHitPct !== undefined ? `Cache: ${cacheHitPct}%` : undefined
 

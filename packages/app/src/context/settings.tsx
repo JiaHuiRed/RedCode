@@ -287,17 +287,11 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         setTerminalFont(value: string) {
           setStore("appearance", "terminal", value.trim() ? value : "")
         },
-        chatBackground: withFallback(
-          () => store.appearance?.chatBackground,
-          defaultSettings.appearance.chatBackground,
-        ),
+        chatBackground: withFallback(() => store.appearance?.chatBackground, defaultSettings.appearance.chatBackground),
         setChatBackground(value: string) {
           setStore("appearance", "chatBackground", value)
         },
-        homeBackground: withFallback(
-          () => store.appearance?.homeBackground,
-          defaultSettings.appearance.homeBackground,
-        ),
+        homeBackground: withFallback(() => store.appearance?.homeBackground, defaultSettings.appearance.homeBackground),
         setHomeBackground(value: string) {
           setStore("appearance", "homeBackground", value)
         },
@@ -397,7 +391,10 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         setAvatar(value: string) {
           setStore("assistantProfile", "avatar", value)
         },
-        displayName: withFallback(() => store.assistantProfile?.displayName, defaultSettings.assistantProfile.displayName),
+        displayName: withFallback(
+          () => store.assistantProfile?.displayName,
+          defaultSettings.assistantProfile.displayName,
+        ),
         setDisplayName(value: string) {
           setStore("assistantProfile", "displayName", value)
         },

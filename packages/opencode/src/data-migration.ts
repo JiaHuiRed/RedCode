@@ -26,7 +26,12 @@ export const layer = Layer.effect(
         run: Effect.gen(function* () {
           type Usage = {
             cost: number
-            tokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number; miss: number } }
+            tokens: {
+              input: number
+              output: number
+              reasoning: number
+              cache: { read: number; write: number; miss: number }
+            }
           }
 
           for (let cursor: SessionID | undefined, page = 1; ; page++) {

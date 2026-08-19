@@ -457,9 +457,7 @@ function HomeShortcutBar() {
     { keys: `${mod}+Shift+⌫`, label: language.t("home.shortcuts.archiveSession") },
   ]
   const [dynamicTip, setDynamicTip] = createSignal<string | undefined>()
-  const tip = createMemo(
-    () => dynamicTip() ?? HOME_TIPS[Math.floor(Math.random() * HOME_TIPS.length)],
-  )
+  const tip = createMemo(() => dynamicTip() ?? HOME_TIPS[Math.floor(Math.random() * HOME_TIPS.length)])
   // 260811 Red 每 20 分钟向 /experimental/generate 要一条新提示，失败保持现有
   onMount(() => {
     const refresh = async () => {
@@ -482,9 +480,7 @@ function HomeShortcutBar() {
   // 人格化设计且随主题走。快捷键行补 flex-wrap，窄窗不再溢出裁切。
   return (
     <div class="col-span-full lg:col-start-2 flex flex-col items-center gap-1.5 px-4 pt-3 pb-5">
-      <span class="text-[14px] [font-weight:440] italic text-v2-state-fg-success">
-        {tip()}
-      </span>
+      <span class="text-[14px] [font-weight:440] italic text-v2-state-fg-success">{tip()}</span>
       <div class="flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-[13px] [font-weight:440] text-v2-state-fg-success">
         <For each={shortcuts}>
           {(item) => (
@@ -674,7 +670,12 @@ function HomeProjectAvatar(props: { project: LocalProject }) {
   )
 }
 
-function HomeSessionSearch(props: { ref?: (el: HTMLInputElement) => void; value: string; placeholder: string; onInput: (value: string) => void }) {
+function HomeSessionSearch(props: {
+  ref?: (el: HTMLInputElement) => void
+  value: string
+  placeholder: string
+  onInput: (value: string) => void
+}) {
   const isMac = navigator.platform.includes("Mac")
   const modKey = isMac ? "⌘" : "Ctrl"
   let inputRef: HTMLInputElement | undefined
@@ -682,7 +683,10 @@ function HomeSessionSearch(props: { ref?: (el: HTMLInputElement) => void; value:
     <label class="ml-4 flex h-9 w-[calc(100%_-_48px)] sticky top-0 inset-x-0 items-center gap-2 rounded-[6px] bg-v2-background-bg-deep px-3 py-1 text-v2-icon-icon-muted transition-[background-color,box-shadow] duration-[120ms] ease-in-out focus-within:bg-v2-background-bg-base focus-within:shadow-[0_0_0_0.5px_var(--v2-border-border-focus),var(--v2-elevation-raised)]">
       <IconV2 name="magnifying-glass" size="small" />
       <input
-        ref={(el) => { inputRef = el; props.ref?.(el) }}
+        ref={(el) => {
+          inputRef = el
+          props.ref?.(el)
+        }}
         class="min-w-0 flex-1 border-0 bg-transparent text-v2-text-text-base outline-0 [font-weight:440] placeholder:text-v2-text-text-faint"
         value={props.value}
         placeholder={props.placeholder}
@@ -847,4 +851,3 @@ function groupSessions(records: HomeSessionRecord[], language: ReturnType<typeof
     { id: "older" as const, title: olderTitle, sessions: olderSessions },
   ].filter((group) => group.sessions.length > 0)
 }
-

@@ -28,7 +28,10 @@ export const GoalSetTool = Tool.define<typeof SetParams, SetMetadata, never>(
           })
 
           const goal = goalFromCtx(ctx)
-          if (!goal) return yield* Effect.sync(() => { throw new Error("Goal tool requires goal service in ctx.extra") })
+          if (!goal)
+            return yield* Effect.sync(() => {
+              throw new Error("Goal tool requires goal service in ctx.extra")
+            })
           yield* goal.set({ sessionID: ctx.sessionID, text: params.text })
 
           return {
@@ -58,7 +61,10 @@ export const GoalDoneTool = Tool.define<typeof DoneParams, DoneMetadata, never>(
           })
 
           const goal = goalFromCtx(ctx)
-          if (!goal) return yield* Effect.sync(() => { throw new Error("Goal tool requires goal service in ctx.extra") })
+          if (!goal)
+            return yield* Effect.sync(() => {
+              throw new Error("Goal tool requires goal service in ctx.extra")
+            })
           const current = yield* goal.get(ctx.sessionID)
           if (!current) {
             return { title: "No goal", output: "No active goal to mark done.", metadata: {} }
@@ -91,7 +97,10 @@ export const GoalClearTool = Tool.define<typeof ClearParams, ClearMetadata, neve
           })
 
           const goal = goalFromCtx(ctx)
-          if (!goal) return yield* Effect.sync(() => { throw new Error("Goal tool requires goal service in ctx.extra") })
+          if (!goal)
+            return yield* Effect.sync(() => {
+              throw new Error("Goal tool requires goal service in ctx.extra")
+            })
           yield* goal.clear(ctx.sessionID)
           return {
             title: "Goal cleared",
@@ -120,5 +129,3 @@ type DoneMetadata = {
 const ClearParams = Schema.Struct({})
 
 type ClearMetadata = Record<string, never>
-
-

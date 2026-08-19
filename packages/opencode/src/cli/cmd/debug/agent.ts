@@ -34,9 +34,7 @@ export const AgentCommand = effectCmd({
   handler: Effect.fn("Cli.debug.agent")(function* (args) {
     const ctx = yield* InstanceRef
     if (!ctx) return
-    return yield* run(args, ctx).pipe(
-      Effect.catch((e) => fail((e as { message?: string })?.message ?? String(e), 1)),
-    )
+    return yield* run(args, ctx).pipe(Effect.catch((e) => fail((e as { message?: string })?.message ?? String(e), 1)))
   }),
 })
 
@@ -107,9 +105,9 @@ function parseToolParams(input?: string) {
     try {
       return JSON.parse(trimmed)
     } catch (jsonError) {
-    try {
-      // 260529 Red JSON.parse 失败�?fallback �?JS 对字面量解析，仅�?debug --params
-      return new Function(`return (${trimmed})`)()
+      try {
+        // 260529 Red JSON.parse 失败�?fallback �?JS 对字面量解析，仅�?debug --params
+        return new Function(`return (${trimmed})`)()
       } catch (evalError) {
         throw new Error(
           `Failed to parse --params. Use JSON or a JS object literal. JSON error: ${jsonError}. Eval error: ${evalError}.`,

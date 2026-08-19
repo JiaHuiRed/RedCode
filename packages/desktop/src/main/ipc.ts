@@ -172,16 +172,19 @@ export function registerIpcHandlers(deps: Deps) {
   })
 
   // 260629 Red: 保存图片附件到 sessionDir/.attachments/（renderer 无法用 fs/Bun）
-  ipcMain.handle("write-attachment", async (_event: IpcMainInvokeEvent, sessionDir: string, filename: string, data: Uint8Array) => {
-    const dir = resolve(sessionDir, ".attachments")
-    await mkdir(dir, { recursive: true })
-    const filepath = resolve(dir, filename)
-    // 260630 Red 防御路径遍历：确保最终路径在 .attachments/ 内
-    if (!filepath.startsWith(dir + sep) && filepath !== dir)
-      throw new Error(`Invalid attachment filename: ${filename}`)
-    await writeFile(filepath, Buffer.from(data))
-    return filepath
-  })
+  ipcMain.handle(
+    "write-attachment",
+    async (_event: IpcMainInvokeEvent, sessionDir: string, filename: string, data: Uint8Array) => {
+      const dir = resolve(sessionDir, ".attachments")
+      await mkdir(dir, { recursive: true })
+      const filepath = resolve(dir, filename)
+      // 260630 Red 防御路径遍历：确保最终路径在 .attachments/ 内
+      if (!filepath.startsWith(dir + sep) && filepath !== dir)
+        throw new Error(`Invalid attachment filename: ${filename}`)
+      await writeFile(filepath, Buffer.from(data))
+      return filepath
+    },
+  )
 
   ipcMain.on("show-notification", (_event: IpcMainEvent, title: string, body?: string) => {
     new Notification({ title, body }).show()

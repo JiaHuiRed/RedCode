@@ -35,9 +35,9 @@ export const projectHandlers = HttpApiBuilder.group(InstanceHttpApi, "project", 
       params: { projectID: ProjectID }
       payload: Project.UpdatePayload
     }) {
-      return yield* svc.update({ ...ctx.payload, projectID: ctx.params.projectID }).pipe(
-        Effect.catchTag("Project.NotFoundError", () => new HttpApiError.NotFound()),
-      )
+      return yield* svc
+        .update({ ...ctx.payload, projectID: ctx.params.projectID })
+        .pipe(Effect.catchTag("Project.NotFoundError", () => new HttpApiError.NotFound()))
     })
 
     const remove = Effect.fn("ProjectHttpApi.remove")(function* (ctx: { params: { projectID: ProjectID } }) {

@@ -174,10 +174,7 @@ export function DialogCustomProvider(props: Props) {
             ...result.config,
             options: { ...existing?.options, ...result.config.options },
             models: Object.fromEntries(
-              Object.entries(result.config.models).map(([id, m]) => [
-                id,
-                { ...existing?.models?.[id], ...m },
-              ]),
+              Object.entries(result.config.models).map(([id, m]) => [id, { ...existing?.models?.[id], ...m }]),
             ),
           },
         },

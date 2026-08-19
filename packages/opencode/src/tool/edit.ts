@@ -141,7 +141,8 @@ export const EditTool = Tool.define(
           let diff = ""
           let contentOld = ""
           let contentNew = ""
-          yield* withFileLock(filePath,
+          yield* withFileLock(
+            filePath,
             Effect.gen(function* () {
               if (oldString === "") {
                 const existed = yield* afs.existsSafe(filePath)
@@ -168,15 +169,20 @@ export const EditTool = Tool.define(
                   const changed = existed ? Bom.detectEncodingChange(source.encoding) : undefined
                   if (changed)
                     return yield* Effect.fail(
-                      new Error(`拒绝写入 ${filePath}：${changed}。要转编码请先跟用户确认，只改内容就换用能保留原编码的方式。`),
+                      new Error(
+                        `拒绝写入 ${filePath}：${changed}。要转编码请先跟用户确认，只改内容就换用能保留原编码的方式。`,
+                      ),
                     )
                   const garbled = Bom.detectGarbled(contentNew)
                   if (garbled)
                     return yield* Effect.fail(
-                      new Error(`拒绝写入 ${filePath}：${garbled}。多半是用错误编码读取后写回，请用 read 重读原文(UTF-8)，勿写回乱码。`),
+                      new Error(
+                        `拒绝写入 ${filePath}：${garbled}。多半是用错误编码读取后写回，请用 read 重读原文(UTF-8)，勿写回乱码。`,
+                      ),
                     )
                   const bloat = Bom.detectCrBloat(contentNew, contentOld)
-                  if (bloat) return yield* Effect.fail(new Error(`拒绝写入 ${filePath}：${bloat}。这是行尾转换 bug，请报告。`))
+                  if (bloat)
+                    return yield* Effect.fail(new Error(`拒绝写入 ${filePath}：${bloat}。这是行尾转换 bug，请报告。`))
                 }
                 yield* afs.writeWithDirs(filePath, Bom.join(contentNew, desiredBom))
                 if (yield* format.file(filePath)) {
@@ -247,15 +253,20 @@ export const EditTool = Tool.define(
                 const changed = Bom.detectEncodingChange(source.encoding)
                 if (changed)
                   return yield* Effect.fail(
-                    new Error(`拒绝写入 ${filePath}：${changed}。要转编码请先跟用户确认，只改内容就换用能保留原编码的方式。`),
+                    new Error(
+                      `拒绝写入 ${filePath}：${changed}。要转编码请先跟用户确认，只改内容就换用能保留原编码的方式。`,
+                    ),
                   )
                 const garbled = Bom.detectGarbled(contentNew)
                 if (garbled)
                   return yield* Effect.fail(
-                    new Error(`拒绝写入 ${filePath}：${garbled}。多半是用错误编码读取后写回，请用 read 重读原文(UTF-8)，勿写回乱码。`),
+                    new Error(
+                      `拒绝写入 ${filePath}：${garbled}。多半是用错误编码读取后写回，请用 read 重读原文(UTF-8)，勿写回乱码。`,
+                    ),
                   )
                 const bloat = Bom.detectCrBloat(contentNew, contentOld)
-                if (bloat) return yield* Effect.fail(new Error(`拒绝写入 ${filePath}：${bloat}。这是行尾转换 bug，请报告。`))
+                if (bloat)
+                  return yield* Effect.fail(new Error(`拒绝写入 ${filePath}：${bloat}。这是行尾转换 bug，请报告。`))
               }
               yield* afs.writeWithDirs(filePath, Bom.join(contentNew, desiredBom))
               if (yield* format.file(filePath)) {
@@ -505,12 +516,18 @@ function applyHashlineOps(text: string, ops: HashlineOp[]): string {
 
 function opSortIndex(op: HashlineOp, totalLines: number): number {
   switch (op.type) {
-    case "replace": return op.startLine
-    case "delete": return op.startLine
-    case "insertBefore": return op.startLine
-    case "insertAfter": return op.startLine + 1
-    case "insertHead": return 0
-    case "insertTail": return totalLines + 1
+    case "replace":
+      return op.startLine
+    case "delete":
+      return op.startLine
+    case "insertBefore":
+      return op.startLine
+    case "insertAfter":
+      return op.startLine + 1
+    case "insertHead":
+      return 0
+    case "insertTail":
+      return totalLines + 1
   }
 }
 
@@ -534,7 +551,8 @@ const executeHashline = (
     let contentOld = ""
     let contentNew = ""
     let diff = ""
-    yield* withFileLock(resolvedPath,
+    yield* withFileLock(
+      resolvedPath,
       Effect.gen(function* () {
         const info = yield* afs.stat(resolvedPath).pipe(Effect.catch(() => Effect.succeed(undefined)))
         if (!info) throw new Error(`File ${resolvedPath} not found`)
@@ -593,15 +611,20 @@ const executeHashline = (
           const changed = Bom.detectEncodingChange(source.encoding)
           if (changed)
             return yield* Effect.fail(
-              new Error(`拒绝写入 ${resolvedPath}：${changed}。要转编码请先跟用户确认，只改内容就换用能保留原编码的方式。`),
+              new Error(
+                `拒绝写入 ${resolvedPath}：${changed}。要转编码请先跟用户确认，只改内容就换用能保留原编码的方式。`,
+              ),
             )
           const garbled = Bom.detectGarbled(contentNew)
           if (garbled)
             return yield* Effect.fail(
-              new Error(`拒绝写入 ${resolvedPath}：${garbled}。多半是用错误编码读取后写回，请用 read 重读原文(UTF-8)，勿写回乱码。`),
+              new Error(
+                `拒绝写入 ${resolvedPath}：${garbled}。多半是用错误编码读取后写回，请用 read 重读原文(UTF-8)，勿写回乱码。`,
+              ),
             )
           const bloat = Bom.detectCrBloat(contentNew, contentOld)
-          if (bloat) return yield* Effect.fail(new Error(`拒绝写入 ${resolvedPath}：${bloat}。这是行尾转换 bug，请报告。`))
+          if (bloat)
+            return yield* Effect.fail(new Error(`拒绝写入 ${resolvedPath}：${bloat}。这是行尾转换 bug，请报告。`))
         }
         yield* afs.writeWithDirs(resolvedPath, Bom.join(contentNew, desiredBom))
         if (yield* format.file(resolvedPath)) {
@@ -807,7 +830,6 @@ export const SimpleReplacer: Replacer = function* (_content, find) {
 // 行数封顶，跳过这个 best-effort 兜底、退回"没找到"，而不是等真出一次卡死事故再补。
 const LINE_SCAN_MAX_CONTENT_LINES = 3000
 
-
 // 260808 Red 学习 Pi (badlogic) 的 normalizeForFuzzyMatch：模型经常因智能引号、Unicode
 // 破折号、特殊空格、全角字符与文件实际字符的细微差异导致精确匹配失败。这里做逐字符
 // 1:1 归一化（NFKC + 引号/破折号/空格归 ASCII），保证 norm 与原文等长，偏移直接可映射
@@ -824,7 +846,14 @@ export function normalizeUnicodeChar(ch: string): string {
   if (nfkc >= "\u2010" && nfkc <= "\u2015") return "-"
   if (nfkc === "\u2212") return "-"
   // 特殊空格 → 普通空格（U+3000 全角空格 NFKC 已转，这里补 NBSP 等）
-  if (nfkc === "\u00A0" || (nfkc >= "\u2002" && nfkc <= "\u200A") || nfkc === "\u202F" || nfkc === "\u205F" || nfkc === "\u3000") return " "
+  if (
+    nfkc === "\u00A0" ||
+    (nfkc >= "\u2002" && nfkc <= "\u200A") ||
+    nfkc === "\u202F" ||
+    nfkc === "\u205F" ||
+    nfkc === "\u3000"
+  )
+    return " "
   return nfkc
 }
 

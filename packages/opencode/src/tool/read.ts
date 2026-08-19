@@ -408,7 +408,9 @@ export const ReadTool = Tool.define(
       // 260810 cc audit R2: 记录本会话读过此文件（含当前 mtime），write/edit 写前据此断言
       yield* FileTime.record(ctx.sessionID, filepath)
 
-      let output = [`<path>${filepath}</path>`, `<type>file</type>`, `[${filepath}#${fileTag}]`, "<content>\n"].join("\n")
+      let output = [`<path>${filepath}</path>`, `<type>file</type>`, `[${filepath}#${fileTag}]`, "<content>\n"].join(
+        "\n",
+      )
       output += file.raw.map((line, i) => `${i + file.offset}: ${line}`).join("\n")
 
       const last = file.offset + file.raw.length - 1

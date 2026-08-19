@@ -200,7 +200,9 @@ export interface SQLiteEffectInsertBase<
   TDynamic extends boolean = false,
   _TExcludedMethods extends string = never,
   TEffectHKT extends QueryEffectHKTBase = QueryEffectHKTBase,
-> extends SQLWrapper,
+>
+  extends
+    SQLWrapper,
     RunnableQuery<TReturning extends undefined ? TRunResult : TReturning[], "sqlite">,
     Effect.Effect<
       TReturning extends undefined ? TRunResult : TReturning[],
@@ -221,13 +223,13 @@ export interface SQLiteEffectInsertBase<
 }
 
 export class SQLiteEffectInsertBase<
-    TTable extends SQLiteTable,
-    TRunResult,
-    TReturning = undefined,
-    TDynamic extends boolean = false,
-    _TExcludedMethods extends string = never,
-    TEffectHKT extends QueryEffectHKTBase = QueryEffectHKTBase,
-  >
+  TTable extends SQLiteTable,
+  TRunResult,
+  TReturning = undefined,
+  TDynamic extends boolean = false,
+  _TExcludedMethods extends string = never,
+  TEffectHKT extends QueryEffectHKTBase = QueryEffectHKTBase,
+>
   implements RunnableQuery<TReturning extends undefined ? TRunResult : TReturning[], "sqlite">, SQLWrapper
 {
   static readonly [entityKind]: string = "SQLiteEffectInsert"

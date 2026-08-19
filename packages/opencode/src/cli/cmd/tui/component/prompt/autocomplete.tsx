@@ -512,38 +512,34 @@ export function Autocomplete(props: {
     const agents = sync.data.agent
     return agents
       .filter((agent) => !agent.hidden && agent.mode !== "primary")
-      .map(
-        (agent): AutocompleteOption => ({
-          display: "@" + agent.name,
-          onSelect: () => {
-            insertPart(agent.name, {
-              type: "agent",
-              name: agent.name,
-              source: {
-                start: 0,
-                end: 0,
-                value: "",
-              },
-            })
-          },
-        }),
-      )
+      .map((agent): AutocompleteOption => ({
+        display: "@" + agent.name,
+        onSelect: () => {
+          insertPart(agent.name, {
+            type: "agent",
+            name: agent.name,
+            source: {
+              start: 0,
+              end: 0,
+              value: "",
+            },
+          })
+        },
+      }))
   })
 
   const referenceAliases = createMemo(() =>
-    references().map(
-      (reference): AutocompleteOption => ({
-        display: "@" + reference.name,
-        description: reference.kind === "invalid" ? reference.message : " configured reference",
-        onSelect: () => {
-          insertPart(reference.name, {
-            type: "text",
-            text: referencePromptText(reference),
-            synthetic: true,
-          })
-        },
-      }),
-    ),
+    references().map((reference): AutocompleteOption => ({
+      display: "@" + reference.name,
+      description: reference.kind === "invalid" ? reference.message : " configured reference",
+      onSelect: () => {
+        insertPart(reference.name, {
+          type: "text",
+          text: referencePromptText(reference),
+          synthetic: true,
+        })
+      },
+    })),
   )
 
   const commands = createMemo((): AutocompleteOption[] => {

@@ -684,7 +684,10 @@ function providerMeta(metadata: Record<string, any> | undefined) {
 
 export interface UIMessagesWithTools {
   messages: UIMessage[]
-  tools: Record<string, { toModelOutput(modelOutput: { toolCallId: string; input: unknown; output: unknown }): unknown }>
+  tools: Record<
+    string,
+    { toModelOutput(modelOutput: { toolCallId: string; input: unknown; output: unknown }): unknown }
+  >
 }
 
 export const toUIMessages = Effect.fn("Message.toUIMessages")(function* (
@@ -1193,13 +1196,7 @@ export function compareTime(
   a: { id: string; time: { created: number } },
   b: { id: string; time: { created: number } },
 ): number {
-  return a.time.created !== b.time.created
-    ? a.time.created - b.time.created
-    : a.id < b.id
-      ? -1
-      : a.id > b.id
-        ? 1
-        : 0
+  return a.time.created !== b.time.created ? a.time.created - b.time.created : a.id < b.id ? -1 : a.id > b.id ? 1 : 0
 }
 
 // filterCompacted reorders messages for model consumption
@@ -1342,7 +1339,7 @@ export function fromError(
             },
           ).toObject()
         }
-      // 260529 Red 反序列化失败时兜底为 Unknown 错误，保留原始 cause
+        // 260529 Red 反序列化失败时兜底为 Unknown 错误，保留原始 cause
       } catch {}
       return new NamedError.Unknown({ message: JSON.stringify(e) }, { cause: e }).toObject()
   }

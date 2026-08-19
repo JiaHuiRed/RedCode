@@ -66,7 +66,11 @@ const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
 // 强制给非零分段一个最小可视弧长——纯视觉兜底，tooltip 里的数字仍然精确
 const RING_MIN_ARC = 2.5
 
-const RING_SEGMENTS: { key: keyof Pick<HomeStats, "cacheRead" | "cacheWrite" | "cacheMiss" | "output">; color: string; label: "home.stats.tokens.read" | "home.stats.tokens.write" | "home.stats.tokens.miss" | "home.stats.tokens.output" }[] = [
+const RING_SEGMENTS: {
+  key: keyof Pick<HomeStats, "cacheRead" | "cacheWrite" | "cacheMiss" | "output">
+  color: string
+  label: "home.stats.tokens.read" | "home.stats.tokens.write" | "home.stats.tokens.miss" | "home.stats.tokens.output"
+}[] = [
   { key: "cacheRead", color: "#3fb950", label: "home.stats.tokens.read" },
   { key: "cacheWrite", color: "#58a6ff", label: "home.stats.tokens.write" },
   { key: "cacheMiss", color: "#f85149", label: "home.stats.tokens.miss" },
@@ -74,7 +78,9 @@ const RING_SEGMENTS: { key: keyof Pick<HomeStats, "cacheRead" | "cacheWrite" | "
 ]
 
 function StatsRing(props: { stats: HomeStats }) {
-  const total = createMemo(() => props.stats.cacheRead + props.stats.cacheWrite + props.stats.cacheMiss + props.stats.output)
+  const total = createMemo(
+    () => props.stats.cacheRead + props.stats.cacheWrite + props.stats.cacheMiss + props.stats.output,
+  )
   const arcs = createMemo(() => {
     const t = total()
     if (t <= 0) return []
@@ -158,7 +164,8 @@ export function HomeStatsPanel(props: { sessions: Session[] }) {
         </Tooltip>
         <div class="flex min-w-0 flex-col gap-0.5">
           <span class="text-11-regular text-v2-text-text-muted">
-            {language.t("home.stats.cacheHit")} {stats().cacheHitPct !== null ? `${stats().cacheHitPct!.toFixed(2)}%` : "—"}
+            {language.t("home.stats.cacheHit")}{" "}
+            {stats().cacheHitPct !== null ? `${stats().cacheHitPct!.toFixed(2)}%` : "—"}
           </span>
           <span class="text-12-regular text-v2-text-text-base [font-weight:530] tabular-nums">
             {language.t("home.stats.cost")} {formatter().cost(stats().costCNY, "CNY")}

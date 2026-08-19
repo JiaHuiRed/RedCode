@@ -46,7 +46,8 @@ function View(props: { api: TuiPluginApi }) {
           <For each={list()}>
             {(item) => {
               // 260615 Red MCP error items: ⚠ prefix + name in error color for visibility
-              const isBad = () => item.status === "failed" || item.status === "needs_auth" || item.status === "needs_client_registration"
+              const isBad = () =>
+                item.status === "failed" || item.status === "needs_auth" || item.status === "needs_client_registration"
               return (
                 <box flexDirection="row" gap={1}>
                   <text

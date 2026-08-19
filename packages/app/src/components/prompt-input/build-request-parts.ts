@@ -186,9 +186,7 @@ export function buildRequestParts(input: BuildRequestPartsInput) {
 
   const images = input.images.map((attachment) => {
     // 260629 Red: 优先用落盘路径（attachments.ts 存到 .attachments/），避免 dataUrl 透传时 AI SDK 对 data: URL 处理不一致
-    const url = attachment.path
-      ? `file://${encodeFilePath(attachment.path)}`
-      : attachment.dataUrl
+    const url = attachment.path ? `file://${encodeFilePath(attachment.path)}` : attachment.dataUrl
     return {
       id: Identifier.ascending("part"),
       type: "file",

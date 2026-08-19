@@ -496,7 +496,7 @@ const main = Effect.gen(function* () {
   const loadingTask = yield* Effect.gen(function* () {
     logger.log("sidecar connection started", { url })
 
-      initEmitter.on("sqlite", (progress: SqliteMigrationProgress) => {
+    initEmitter.on("sqlite", (progress: SqliteMigrationProgress) => {
       setInitStep({ phase: "sqlite_waiting" })
       if (mainWindow) sendSqliteMigrationProgress(mainWindow, progress)
     })
@@ -559,7 +559,6 @@ const main = Effect.gen(function* () {
       },
     })
   }
-
 })
 
 Effect.runFork(main)

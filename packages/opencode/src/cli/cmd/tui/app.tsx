@@ -70,7 +70,7 @@ import { FormatError, FormatUnknownError } from "@/cli/error"
 import { CommandPaletteDialog } from "./component/command-palette"
 import {
   COMMAND_PALETTE_COMMAND,
-OPENCODE_BASE_MODE,
+  OPENCODE_BASE_MODE,
   OpencodeKeymapProvider,
   registerOpencodeKeymap,
   useBindings,
@@ -793,9 +793,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       {
         name: "app.toggle.session_directory_filter",
-        title: kv.get("session_directory_filter_enabled", true)
-          ? "禁用会话目录过滤"
-          : "启用会话目录过滤",
+        title: kv.get("session_directory_filter_enabled", true) ? "禁用会话目录过滤" : "启用会话目录过滤",
         category: "System",
         run: async () => {
           kv.set("session_directory_filter_enabled", !kv.get("session_directory_filter_enabled", true))

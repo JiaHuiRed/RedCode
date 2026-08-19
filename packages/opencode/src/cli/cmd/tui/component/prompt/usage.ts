@@ -33,7 +33,9 @@ export function usePromptUsage(
     // 260804 Red 这个累计值的统计范围是 **sync.data.message 里现有的消息**，也就是
     // "本次连接以来"，不是本会话全历史 —— 重启客户端就归零重算。界面上原来只写
     // "Cache hit"，会被理解成会话累计；实测因此误判过一整天，所以标签改成写明范围。
-    let sumRead = 0, sumMiss = 0, sumWrite = 0
+    let sumRead = 0,
+      sumMiss = 0,
+      sumWrite = 0
     // 逐轮序列，用来算本轮值和"缓存有没有停止延伸"
     const turns: Array<{ read: number; bad: number }> = []
     for (const m of msg) {

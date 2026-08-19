@@ -1,4 +1,4 @@
- import { DEFAULT_PROMPT, type Prompt } from "@/context/prompt"
+import { DEFAULT_PROMPT, type Prompt } from "@/context/prompt"
 import { promptLength } from "./history"
 const MAX_BREAKS = 200
 
@@ -235,23 +235,23 @@ export function parseFromDOM(editorRef: HTMLElement): Prompt {
 
   flushText()
 
-   if (parts.length === 0) parts.push(...DEFAULT_PROMPT)
-   return parts
- }
+  if (parts.length === 0) parts.push(...DEFAULT_PROMPT)
+  return parts
+}
 
- export function getCaretState(editorRef: HTMLElement, prompt: () => Prompt) {
-   const selection = window.getSelection()
-   const textLength = promptLength(prompt())
-   if (!selection || selection.rangeCount === 0) {
-     return { collapsed: false, cursorPosition: 0, textLength }
-   }
-   const anchorNode = selection.anchorNode
-   if (!anchorNode || !editorRef.contains(anchorNode)) {
-     return { collapsed: false, cursorPosition: 0, textLength }
-   }
-   return {
-     collapsed: selection.isCollapsed,
-     cursorPosition: getCursorPosition(editorRef),
-     textLength,
-   }
- }
+export function getCaretState(editorRef: HTMLElement, prompt: () => Prompt) {
+  const selection = window.getSelection()
+  const textLength = promptLength(prompt())
+  if (!selection || selection.rangeCount === 0) {
+    return { collapsed: false, cursorPosition: 0, textLength }
+  }
+  const anchorNode = selection.anchorNode
+  if (!anchorNode || !editorRef.contains(anchorNode)) {
+    return { collapsed: false, cursorPosition: 0, textLength }
+  }
+  return {
+    collapsed: selection.isCollapsed,
+    cursorPosition: getCursorPosition(editorRef),
+    textLength,
+  }
+}

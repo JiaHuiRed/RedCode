@@ -526,7 +526,8 @@ export function RunFooterView(props: RunFooterViewProps) {
                           truncate
                           flexShrink={0}
                         >
-                          {"· "}{props.state().routedVia}
+                          {"· "}
+                          {props.state().routedVia}
                         </text>
                       </Show>
                     </Show>

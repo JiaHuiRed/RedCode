@@ -9,11 +9,7 @@ import * as path from "node:path"
 
 // 260603 Red exe 从 bin/ 启动时 cwd 不是项目根，从 exe 所在目录向上查找
 function findProjectRoot(startDir: string): string {
-  const candidates = [
-    path.dirname(process.execPath),
-    path.dirname(process.argv[0]),
-    startDir,
-  ]
+  const candidates = [path.dirname(process.execPath), path.dirname(process.argv[0]), startDir]
   for (const candidate of candidates) {
     if (!candidate || candidate === path.dirname(candidate)) continue
     let dir = candidate

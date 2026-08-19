@@ -104,11 +104,9 @@ export function detectGarbled(text: string): string | undefined {
   }
   const total = text.length || 1
   // U+FFFD 只在解码失败时产生，正常内容绝不含 —— 密集出现即乱码
-  if (repl > 0 && repl / total > 0.005)
-    return `内容含 ${repl} 个 Unicode 替换符(U+FFFD)，疑似编码解码失败的乱码`
+  if (repl > 0 && repl / total > 0.005) return `内容含 ${repl} 个 Unicode 替换符(U+FFFD)，疑似编码解码失败的乱码`
   // PUA 多用于 Nerd Font 图标，正常文档占比极低；高占比+高绝对数 = GBK 错解 UTF-8
-  if (pua > 30 && pua / total > 0.02)
-    return `内容含 ${pua} 个私用区字符(PUA)，疑似 GBK 错解 UTF-8 产生的乱码`
+  if (pua > 30 && pua / total > 0.02) return `内容含 ${pua} 个私用区字符(PUA)，疑似 GBK 错解 UTF-8 产生的乱码`
   return undefined
 }
 

@@ -65,7 +65,11 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     if (input.sessionDirectory && input.writeAttachment) {
       const ext = mime.split("/")[1]?.split("+")[0] || "bin"
       const filename = `${uuid()}.${ext}`
-      attachmentPath = await input.writeAttachment(input.sessionDirectory, filename, new Uint8Array(await file.arrayBuffer()))
+      attachmentPath = await input.writeAttachment(
+        input.sessionDirectory,
+        filename,
+        new Uint8Array(await file.arrayBuffer()),
+      )
     }
 
     const attachment: ImageAttachmentPart = {

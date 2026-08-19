@@ -608,10 +608,13 @@ export function Logo(props: { shape?: LogoShape; ink?: RGBA; idle?: boolean } = 
   }
 
   const schedule = () => {
-    timer = setTimeout(() => {
-      tick()
-      if (timer !== undefined) schedule()
-    }, busy() ? 16 : 70)
+    timer = setTimeout(
+      () => {
+        tick()
+        if (timer !== undefined) schedule()
+      },
+      busy() ? 16 : 70,
+    )
   }
 
   const start = () => {
@@ -902,4 +905,3 @@ export function Logo(props: { shape?: LogoShape; ink?: RGBA; idle?: boolean } = 
     </box>
   )
 }
-

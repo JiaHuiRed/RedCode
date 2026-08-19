@@ -119,8 +119,12 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     // same tokens (tokens.cache.miss === tokens.input by construction in session.ts), so summing
     // read+miss+write gives the true total instead of an either/or pick that silently drops
     // whichever bucket the buggy path skipped — this was inflating hit% (e.g. 99% vs the real ~96%).
-    let sumRead = 0, sumMiss = 0, sumWrite = 0
-    let sessionTotalInput = 0, sessionTotalOutput = 0, sessionTotalReasoning = 0
+    let sumRead = 0,
+      sumMiss = 0,
+      sumWrite = 0
+    let sessionTotalInput = 0,
+      sessionTotalOutput = 0,
+      sessionTotalReasoning = 0
     for (const m of msg()) {
       if (m.role === "assistant") {
         sumRead += m.tokens.cache.read
@@ -180,11 +184,12 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       </text>
       <Show when={state().provider}>
         <text fg={theme()?.textMuted}>
-          <span style={{ fg: theme()?.accent }}>●</span> <span style={{ fg: theme()?.secondary }}>{state().provider}</span>
+          <span style={{ fg: theme()?.accent }}>●</span>{" "}
+          <span style={{ fg: theme()?.secondary }}>{state().provider}</span>
         </text>
       </Show>
       <Show when={state().model}>
-        <text fg={theme()?.primary}>  {state().model}</text>
+        <text fg={theme()?.primary}> {state().model}</text>
       </Show>
       <box height={1} />
       <text fg={theme()?.textMuted}>Context window</text>
@@ -213,7 +218,8 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         Session total <span style={{ fg: tokenColor.total }}>{state().sessionTotal.toLocaleString()}</span>
       </text>
       <text fg={theme()?.textMuted}>
-        in <span style={{ fg: tokenColor.input }}>{state().input.toLocaleString()}</span> · out <span style={{ fg: tokenColor.output }}>{state().output.toLocaleString()}</span>
+        in <span style={{ fg: tokenColor.input }}>{state().input.toLocaleString()}</span> · out{" "}
+        <span style={{ fg: tokenColor.output }}>{state().output.toLocaleString()}</span>
       </text>
       <Show when={state().reasoning > 0}>
         <text fg={theme()?.textMuted}>
@@ -222,17 +228,21 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       </Show>
       <Show when={state().cacheRead > 0 || state().cacheWrite > 0}>
         <text fg={theme()?.textMuted}>
-          cache{' '}
-          <Show when={state().cacheWrite > 0} fallback={
-            <span style={{ fg: tokenColor.cacheRead }}>{state().cacheRead.toLocaleString()}</span>
-          }>
-            <span style={{ fg: tokenColor.cacheRead }}>{state().cacheRead.toLocaleString()}</span> /{' '}
+          cache{" "}
+          <Show
+            when={state().cacheWrite > 0}
+            fallback={<span style={{ fg: tokenColor.cacheRead }}>{state().cacheRead.toLocaleString()}</span>}
+          >
+            <span style={{ fg: tokenColor.cacheRead }}>{state().cacheRead.toLocaleString()}</span> /{" "}
             <span style={{ fg: tokenColor.cacheWrite }}>{state().cacheWrite.toLocaleString()}</span>
           </Show>
         </text>
       </Show>
       <text fg={theme()?.textMuted}>
-        <span style={{ fg: tokenColor.cost }}>{money.format(CNY_PROVIDERS.has(state().providerID ?? "") ? cost() : cost() * USD_TO_CNY)}</span> · {`${state().messageCount} msgs`}
+        <span style={{ fg: tokenColor.cost }}>
+          {money.format(CNY_PROVIDERS.has(state().providerID ?? "") ? cost() : cost() * USD_TO_CNY)}
+        </span>{" "}
+        · {`${state().messageCount} msgs`}
       </text>
       <Show when={agent()}>
         <text fg={theme()?.textMuted}>

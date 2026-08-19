@@ -55,9 +55,7 @@ export namespace FileTime {
     touch(sessionID)
     const recorded = state.get(sessionID)?.get(key(filepath))
     if (recorded === undefined) {
-      return yield* Effect.fail(
-        new Error(`You must read file ${filepath} with the read tool before overwriting it.`),
-      )
+      return yield* Effect.fail(new Error(`You must read file ${filepath} with the read tool before overwriting it.`))
     }
 
     const current = yield* Effect.promise(() => mtime(filepath))

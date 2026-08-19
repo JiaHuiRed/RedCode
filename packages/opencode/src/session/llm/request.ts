@@ -60,11 +60,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
   const agentPrompt = input.agent.prompt ?? SystemPrompt.provider(input.model)
   const agentPrefix = input.agent.mode === "subagent" ? SUBAGENT_ROLE + "\n\n" : ""
   const system = [
-    [
-      agentPrefix + agentPrompt,
-      ...input.system,
-      ...(input.user.system ? [input.user.system] : []),
-    ]
+    [agentPrefix + agentPrompt, ...input.system, ...(input.user.system ? [input.user.system] : [])]
       .filter((x) => x)
       .join("\n"),
   ]
@@ -102,12 +98,10 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     isOpenaiOauth || input.isWorkflow
       ? input.messages
       : [
-          ...system.map(
-            (x): ModelMessage => ({
-              role: "system",
-              content: x,
-            }),
-          ),
+          ...system.map((x): ModelMessage => ({
+            role: "system",
+            content: x,
+          })),
           ...input.messages,
         ]
 

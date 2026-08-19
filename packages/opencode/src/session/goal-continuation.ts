@@ -62,12 +62,14 @@ export const layer = Layer.effect(
       const budget = cfg.experimental?.goal_token_budget ?? DEFAULT_TOKEN_BUDGET
       if (g.tokens_used >= budget) {
         const agent = (yield* sessions.get(sessionID).pipe(Effect.orDie)).agent ?? "build"
-        const message = yield* ops.prompt({
-          sessionID,
-          noReply: true,
-          agent,
-          parts: [{ type: "text", synthetic: true, text: budgetFinish(budget) }],
-        }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+        const message = yield* ops
+          .prompt({
+            sessionID,
+            noReply: true,
+            agent,
+            parts: [{ type: "text", synthetic: true, text: budgetFinish(budget) }],
+          })
+          .pipe(Effect.catch(() => Effect.succeed(undefined)))
         if (message === undefined) return // 260801 Red 注入失败（Image.Error 等）跳过本次续跑
         lastSteer.set(sessionID, message.info.id)
         yield* goal.mark(sessionID, "budget_limited")
@@ -91,12 +93,14 @@ export const layer = Layer.effect(
       // 7. 注入 steering + 记录 + tick + 续跑
       lastRunAt.set(sessionID, now)
       const agent = (yield* sessions.get(sessionID).pipe(Effect.orDie)).agent ?? "build"
-      const message = yield* ops.prompt({
-        sessionID,
-        noReply: true,
-        agent,
-        parts: [{ type: "text", synthetic: true, text: steering(g.text) }],
-      }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+      const message = yield* ops
+        .prompt({
+          sessionID,
+          noReply: true,
+          agent,
+          parts: [{ type: "text", synthetic: true, text: steering(g.text) }],
+        })
+        .pipe(Effect.catch(() => Effect.succeed(undefined)))
       if (message === undefined) return // 260801 Red 注入失败（Image.Error 等）跳过本次续跑
       lastSteer.set(sessionID, message.info.id)
       yield* goal.tick(sessionID)

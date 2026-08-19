@@ -1,16 +1,16 @@
- import { Agent } from "@/agent/agent"
- import { Provider } from "@/provider/provider"
- import { ProviderTransform } from "@/provider/transform"
- import { MCP } from "@/mcp"
- import { Permission } from "@/permission"
- import { Tool } from "@/tool/tool"
- import { ToolJsonSchema } from "@/tool/json-schema"
- import { ToolRegistry } from "@/tool/registry"
- import { Truncate } from "@/tool/truncate"
- import { ModelID } from "@/provider/schema"
- import { Plugin } from "@/plugin"
- import type { TaskPromptOps } from "@/tool/task"
- import { type Tool as AITool, tool, jsonSchema, type ToolExecutionOptions, asSchema } from "ai"
+import { Agent } from "@/agent/agent"
+import { Provider } from "@/provider/provider"
+import { ProviderTransform } from "@/provider/transform"
+import { MCP } from "@/mcp"
+import { Permission } from "@/permission"
+import { Tool } from "@/tool/tool"
+import { ToolJsonSchema } from "@/tool/json-schema"
+import { ToolRegistry } from "@/tool/registry"
+import { Truncate } from "@/tool/truncate"
+import { ModelID } from "@/provider/schema"
+import { Plugin } from "@/plugin"
+import type { TaskPromptOps } from "@/tool/task"
+import { type Tool as AITool, tool, jsonSchema, type ToolExecutionOptions, asSchema } from "ai"
 import { Effect } from "effect"
 import { MessageV2 } from "./message-v2"
 import * as Session from "./session"
@@ -41,7 +41,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const mcp = yield* MCP.Service
   const truncate = yield* Truncate.Service
 
-  const context = (args: Record<string, unknown>, options: ToolExecutionOptions<Record<string, unknown>>): Tool.Context => ({
+  const context = (
+    args: Record<string, unknown>,
+    options: ToolExecutionOptions<Record<string, unknown>>,
+  ): Tool.Context => ({
     sessionID: input.session.id,
     abort: options.abortSignal!,
     messageID: input.processor.message.id,
@@ -115,11 +118,21 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             args = beforeHook.args
             const result = yield* item.execute(args, ctx).pipe(
               Effect.tapError((error) =>
-                plugin.trigger("tool.execute.failure", {
-                  tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID, args, error: String(error),
-              }, {}).pipe(Effect.catch(() => Effect.void)),
-            ),
-          )
+                plugin
+                  .trigger(
+                    "tool.execute.failure",
+                    {
+                      tool: item.id,
+                      sessionID: ctx.sessionID,
+                      callID: ctx.callID,
+                      args,
+                      error: String(error),
+                    },
+                    {},
+                  )
+                  .pipe(Effect.catch(() => Effect.void)),
+              ),
+            )
             const output = {
               ...result,
               attachments: result.attachments?.map((attachment) => ({
@@ -154,28 +167,28 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     item.execute = (args, opts) => {
       return run.promise(
         Effect.gen(function* () {
-            const ctx = context(args, opts)
-            // 260717 Red pre-tool-use: 前置拦截钩子
-            const preToolUse = yield* plugin.trigger(
-              "tool.use.pre",
-              { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId, args },
-              { denied: false as boolean, reason: undefined as string | undefined },
-            )
-            if (preToolUse.denied) {
-              return {
-                title: "Blocked",
-                output: `Tool "${key}" was blocked by hook.${preToolUse.reason ? ` Reason: ${preToolUse.reason}` : ""}`,
-                metadata: { blocked: true },
-                content: [],
-              } as any
-            }
-            // 260811 cc audit Y5：同上，MCP 路径的 args 改写同样要接住返回值
-            const beforeHook = yield* plugin.trigger(
-              "tool.execute.before",
-              { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId },
-              { args },
-            )
-            args = beforeHook.args
+          const ctx = context(args, opts)
+          // 260717 Red pre-tool-use: 前置拦截钩子
+          const preToolUse = yield* plugin.trigger(
+            "tool.use.pre",
+            { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId, args },
+            { denied: false as boolean, reason: undefined as string | undefined },
+          )
+          if (preToolUse.denied) {
+            return {
+              title: "Blocked",
+              output: `Tool "${key}" was blocked by hook.${preToolUse.reason ? ` Reason: ${preToolUse.reason}` : ""}`,
+              metadata: { blocked: true },
+              content: [],
+            } as any
+          }
+          // 260811 cc audit Y5：同上，MCP 路径的 args 改写同样要接住返回值
+          const beforeHook = yield* plugin.trigger(
+            "tool.execute.before",
+            { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId },
+            { args },
+          )
+          args = beforeHook.args
           const result: Awaited<ReturnType<NonNullable<typeof execute>>> = yield* Effect.gen(function* () {
             yield* ctx.ask({ permission: key, metadata: {}, patterns: ["*"], always: ["*"] })
             return yield* Effect.promise(() => execute(args, opts))
@@ -189,9 +202,19 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               },
             }),
             Effect.tapError((error) =>
-              plugin.trigger("tool.execute.failure", {
-                tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId, args, error: String(error),
-              }, {}).pipe(Effect.catch(() => Effect.void)),
+              plugin
+                .trigger(
+                  "tool.execute.failure",
+                  {
+                    tool: key,
+                    sessionID: ctx.sessionID,
+                    callID: opts.toolCallId,
+                    args,
+                    error: String(error),
+                  },
+                  {},
+                )
+                .pipe(Effect.catch(() => Effect.void)),
             ),
           )
           yield* plugin.trigger(
@@ -247,8 +270,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             yield* input.processor.completeToolCall(opts.toolCallId, output)
           }
           return output
-          }),
-
+        }),
       )
     }
     tools[key] = item

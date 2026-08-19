@@ -218,9 +218,7 @@ export const layer = Layer.effect(
       Effect.map((v) => v as Record<string, Provider> | undefined),
     )
 
-    const loadSnapshot = Effect.sync(() =>
-      typeof REDCODE_MODELS_DEV === "undefined" ? undefined : REDCODE_MODELS_DEV,
-    )
+    const loadSnapshot = Effect.sync(() => (typeof REDCODE_MODELS_DEV === "undefined" ? undefined : REDCODE_MODELS_DEV))
 
     const fetchAndWrite = Effect.fn("ModelsDev.fetchAndWrite")(function* () {
       const text = yield* fetchApi()
@@ -258,10 +256,7 @@ export const layer = Layer.effect(
               : `未检测到代理配置：若本机需要代理出网，设一个 HTTPS_PROXY 环境变量，或 git config --global http.proxy <地址>（只读取、不修改）。`,
             `也可以先跑 \`redcode models --refresh\` 把目录缓存到 ${filepath}。`,
           ].join("\n"),
-        ).pipe(
-          Effect.annotateLogs("cause", String(cause)),
-          Effect.as({} as Record<string, Provider>),
-        ),
+        ).pipe(Effect.annotateLogs("cause", String(cause)), Effect.as({} as Record<string, Provider>)),
       ),
     )
 

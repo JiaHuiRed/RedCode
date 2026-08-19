@@ -410,11 +410,7 @@ export const getUsage = (input: {
   const reasoningTokens = safe(input.usage.reasoningTokens ?? 0)
 
   const cacheReadInputTokens = safe(
-    Number(
-      input.usage.cacheReadInputTokens ??
-        input.metadata?.["deepseek"]?.["promptCacheHitTokens"] ??
-        0,
-    ),
+    Number(input.usage.cacheReadInputTokens ?? input.metadata?.["deepseek"]?.["promptCacheHitTokens"] ?? 0),
   )
   const cacheWriteInputTokens = safe(
     Number(
@@ -473,17 +469,15 @@ export const getUsage = (input: {
   // 260816 Red: 峰谷定价旁路表优先——按请求时刻取价（旧价历史段/高峰/空闲），
   // 未命中（无 time 或不在表内）回落到静态 model.cost 的 tiers/experimental 逻辑。
   const tieredCost =
-    input.time === undefined
-      ? undefined
-      : resolveTieredCost(input.model.providerID, input.model.id, input.time)
+    input.time === undefined ? undefined : resolveTieredCost(input.model.providerID, input.model.id, input.time)
   const costInfo =
     tieredCost ??
-    (input.model.cost?.tiers
+    input.model.cost?.tiers
       ?.filter((item) => item.tier.type === "context" && contextTokens > item.tier.size)
       .sort((a, b) => b.tier.size - a.tier.size)[0] ??
-      (input.model.cost?.experimentalOver200K && contextTokens > 200_000
-        ? input.model.cost.experimentalOver200K
-        : input.model.cost))
+    (input.model.cost?.experimentalOver200K && contextTokens > 200_000
+      ? input.model.cost.experimentalOver200K
+      : input.model.cost)
   const cost = safe(
     new Decimal(0)
       .add(new Decimal(tokens.input).mul(costInfo?.input ?? 0).div(1_000_000))
@@ -619,13 +613,17 @@ export const layer: Layer.Layer<
       yield* sync.run(Event.Created, { sessionID: result.id, info: result })
       const pluginOpt = yield* Effect.serviceOption(Plugin.Service)
       if (Option.isSome(pluginOpt)) {
-        yield* pluginOpt.value.trigger("session.start", {
-          sessionID: result.id,
-          agent: result.agent,
-          model: result.model ? { providerID: result.model.providerID, modelID: result.model.id } : undefined,
-        }, {}).pipe(
-          Effect.catch(() => Effect.void),
-        )
+        yield* pluginOpt.value
+          .trigger(
+            "session.start",
+            {
+              sessionID: result.id,
+              agent: result.agent,
+              model: result.model ? { providerID: result.model.providerID, modelID: result.model.id } : undefined,
+            },
+            {},
+          )
+          .pipe(Effect.catch(() => Effect.void))
       }
 
       if (!flags.experimentalWorkspaces) {
@@ -688,9 +686,7 @@ export const layer: Layer.Layer<
 
     const remove: Interface["remove"] = Effect.fnUntraced(function* (sessionID: SessionID) {
       // 260704 Red 删除不存在的 session 时静默返回，避免级联删除或重复删除时 404
-      const session = yield* get(sessionID).pipe(
-        Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)),
-      )
+      const session = yield* get(sessionID).pipe(Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)))
       if (!session) return
       try {
         // `remove` needs to work in all cases, such as broken sessions that
@@ -709,9 +705,9 @@ export const layer: Layer.Layer<
         yield* sync.run(Event.Deleted, { sessionID, info: session }, { publish: hasInstance })
         const pluginOpt = yield* Effect.serviceOption(Plugin.Service)
         if (Option.isSome(pluginOpt)) {
-          yield* pluginOpt.value.trigger("session.end", { sessionID, reason: "removed" }, {}).pipe(
-            Effect.catch(() => Effect.void),
-          )
+          yield* pluginOpt.value
+            .trigger("session.end", { sessionID, reason: "removed" }, {})
+            .pipe(Effect.catch(() => Effect.void))
         }
         yield* sync.remove(sessionID)
       } catch (e) {
@@ -947,28 +943,28 @@ export const layer: Layer.Layer<
     })
 
     // 260630 Red P1-a: compacted 会话 GUI 初始加载跳过旧消息的游标（从 server handler 收归）
-    const latestCompactionCursor: Interface["latestCompactionCursor"] = Effect.fn(
-      "Session.latestCompactionCursor",
-    )(function* (sessionID) {
-      const row = Database.use((db) =>
-        db
-          .select({ time_created: MessageTable.time_created, id: MessageTable.id })
-          .from(MessageTable)
-          .innerJoin(PartTable, eq(PartTable.message_id, MessageTable.id))
-          .where(
-            and(
-              eq(MessageTable.session_id, sessionID),
-              sql`json_extract(${PartTable.data}, '$.type') = 'compaction'`,
-              sql`json_extract(${PartTable.data}, '$.tail_start_id') IS NOT NULL`,
-            ),
-          )
-          .orderBy(desc(MessageTable.time_created))
-          .limit(1)
-          .get(),
-      )
-      if (!row) return undefined
-      return MessageV2.cursor.encode({ id: row.id, time: row.time_created })
-    })
+    const latestCompactionCursor: Interface["latestCompactionCursor"] = Effect.fn("Session.latestCompactionCursor")(
+      function* (sessionID) {
+        const row = Database.use((db) =>
+          db
+            .select({ time_created: MessageTable.time_created, id: MessageTable.id })
+            .from(MessageTable)
+            .innerJoin(PartTable, eq(PartTable.message_id, MessageTable.id))
+            .where(
+              and(
+                eq(MessageTable.session_id, sessionID),
+                sql`json_extract(${PartTable.data}, '$.type') = 'compaction'`,
+                sql`json_extract(${PartTable.data}, '$.tail_start_id') IS NOT NULL`,
+              ),
+            )
+            .orderBy(desc(MessageTable.time_created))
+            .limit(1)
+            .get(),
+        )
+        if (!row) return undefined
+        return MessageV2.cursor.encode({ id: row.id, time: row.time_created })
+      },
+    )
 
     return Service.of({
       list,

@@ -10,7 +10,8 @@ import { useRoute } from "../../context/route"
 function Hint(props: { key: string; label: string; theme: any }) {
   return (
     <text fg={props.theme.textMuted}>
-      <span style={{ fg: props.theme.text }}>{props.key}</span>{props.label}
+      <span style={{ fg: props.theme.text }}>{props.key}</span>
+      {props.label}
     </text>
   )
 }

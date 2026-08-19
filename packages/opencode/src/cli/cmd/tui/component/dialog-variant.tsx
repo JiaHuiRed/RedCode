@@ -29,11 +29,6 @@ export function DialogVariant() {
   })
 
   return (
-    <DialogSelect<string>
-      options={options()}
-      title={"选择变体"}
-      current={local.model.variant.selected()}
-      flat={true}
-    />
+    <DialogSelect<string> options={options()} title={"选择变体"} current={local.model.variant.selected()} flat={true} />
   )
 }

@@ -868,10 +868,12 @@ export const dict = {
   "titlebar.update.tooltip": "{{version}} に更新",
   "context.stats.sessionID": "セッション ID",
   "context.stats.turnCacheHit": "直近ターンのキャッシュヒット",
-  "context.stats.partial": "集計は読み込み済みの {{count}} 件のメッセージのみを反映しています。正確な数値を見るには、チャットを上にスクロールして全履歴を読み込んでください。",
+  "context.stats.partial":
+    "集計は読み込み済みの {{count}} 件のメッセージのみを反映しています。正確な数値を見るには、チャットを上にスクロールして全履歴を読み込んでください。",
   "error.page.action.exportLogs": "ログをエクスポート",
   "notification.loopDetected.title": "繰り返し出力を検出",
-  "notification.loopDetected.description": "モデルが同じ内容を繰り返していました（{{type}}）。自動リカバリーを適用しました。",
+  "notification.loopDetected.description":
+    "モデルが同じ内容を繰り返していました（{{type}}）。自動リカバリーを適用しました。",
   "home.title": "ホーム",
   "home.projects": "プロジェクト",
   "home.project.add": "プロジェクトを追加",
@@ -919,12 +921,14 @@ export const dict = {
   "settings.general.tts.enabled.title": "TTS を有効化",
   "settings.general.tts.enabled.description": "AI の返信メッセージに読み上げボタンを表示",
   "settings.general.tts.apiKey.title": "MiMo TTS API キー",
-  "settings.general.tts.apiKey.description": "読み上げに使う MiMo の sk- プレフィックス API キー（platform.xiaomimimo.com で取得）",
+  "settings.general.tts.apiKey.description":
+    "読み上げに使う MiMo の sk- プレフィックス API キー（platform.xiaomimimo.com で取得）",
   "settings.general.tts.apiKey.placeholder": "sk-...",
   "settings.general.tts.voice.title": "ボイス",
   "settings.general.tts.voice.description": "読み上げに使う声を選択",
   "settings.general.row.shell.title": "ターミナルシェル",
-  "settings.general.row.shell.description": "ターミナルで使うシェルを選択します。互換性のあるシェルはエージェントのツール実行にも使われます。",
+  "settings.general.row.shell.description":
+    "ターミナルで使うシェルを選択します。互換性のあるシェルはエージェントのツール実行にも使われます。",
   "settings.general.row.shell.autoDefault": "自動（デフォルト）",
   "settings.general.row.shell.terminalOnly": "ターミナルのみ",
   "settings.general.row.showNavigation.title": "ナビゲーション",

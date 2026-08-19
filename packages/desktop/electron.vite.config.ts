@@ -108,11 +108,21 @@ export default defineConfig({
           )
           await fs.writeFile(
             path.join(outWatcherDir, "package.json"),
-            JSON.stringify({ name: "@parcel/watcher", type: "module", exports: { "./wrapper": "./wrapper.js", "./package.json": "./package.json" } }),
+            JSON.stringify({
+              name: "@parcel/watcher",
+              type: "module",
+              exports: { "./wrapper": "./wrapper.js", "./package.json": "./package.json" },
+            }),
           )
           for (const name of ["watcher-win32-x64"]) {
             const src = path.join(pkgDir, name)
-            if (!await fs.stat(src).then(() => true).catch(() => false)) continue
+            if (
+              !(await fs
+                .stat(src)
+                .then(() => true)
+                .catch(() => false))
+            )
+              continue
             await fs.cp(src, path.join(outPkgDir, name), { recursive: true, dereference: true })
           }
         },

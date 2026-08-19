@@ -341,8 +341,8 @@ const live: Layer.Layer<
           // 260705 Red system 在 messages 里使用 {role: "system"} 是为了保持
           // HTTP 请求体结构稳定 → 云端 prefix cache key 不变 → 缓存命中率稳定。
           // AI SDK 6.x 检测到 system role 会 console.warn，显式置 true 关掉告警。
-           // 260711 Red 全局共用的 {role: "system"} 模式，保持 HTTP 请求体结构稳定
-           allowSystemInMessages: true,
+          // 260711 Red 全局共用的 {role: "system"} 模式，保持 HTTP 请求体结构稳定
+          allowSystemInMessages: true,
           messages: msgs,
           model: wrapLanguageModel({
             model: language,
@@ -491,9 +491,7 @@ function guardFirstEvent<S, E>(
       return Stream.merge(
         stream.pipe(Stream.tap(() => Deferred.succeed(firstEvent, true).pipe(Effect.ignore))),
         Stream.fromEffect(
-          Deferred.await(timeoutSignal).pipe(
-            Effect.andThen(() => Effect.fail(new FirstEventTimeoutError())),
-          ),
+          Deferred.await(timeoutSignal).pipe(Effect.andThen(() => Effect.fail(new FirstEventTimeoutError()))),
         ),
         // either：任一边 halt（完成/失败）即整体终止——主流结束不挂等信号流，
         // 信号流失败立即让整体失败。
@@ -507,9 +505,7 @@ function guardFirstEvent<S, E>(
 // stream fails before the provider usage chunk arrives. Reasonix-style estimate:
 // ~4 bytes per token (see packages/llm/src/schema/events.ts visibleOutputTokens).
 // Only emitted when output was actually produced — header-time failures estimate 0.
-const estimatedFinishEvents = (
-  state: ReturnType<typeof LLMAISDK.adapterState>,
-): ReadonlyArray<LLMEvent> => {
+const estimatedFinishEvents = (state: ReturnType<typeof LLMAISDK.adapterState>): ReadonlyArray<LLMEvent> => {
   const textTokens = Math.ceil(state.textBytes / 4)
   const reasoningTokens = Math.ceil(state.reasoningBytes / 4)
   const completion = textTokens + reasoningTokens

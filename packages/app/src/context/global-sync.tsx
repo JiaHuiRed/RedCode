@@ -223,7 +223,9 @@ function createGlobalSync() {
       // 260601 Red fix: use getter so child-store's reactive getter reads the
       // live globalStore.provider value, not the snapshot from init time
       // (which is always EMPTY while the global query is still loading).
-      get provider() { return globalStore.provider },
+      get provider() {
+        return globalStore.provider
+      },
     },
   })
 
@@ -424,9 +426,7 @@ function createGlobalSync() {
     for (const [key, pair] of Object.entries(children.children)) {
       if (!pair) continue
       const [store, setStore] = pair
-      const hasBusy = Object.values(store.session_status).some(
-        (s) => s && s.type !== "idle",
-      )
+      const hasBusy = Object.values(store.session_status).some((s) => s && s.type !== "idle")
       if (!hasBusy) continue
       const sdk = sdkFor(key)
       sdk.session

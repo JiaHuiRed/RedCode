@@ -30,9 +30,7 @@ export const SnippetTool = Tool.define(
         Effect.gen(function* () {
           const snippet = yield* snippetService.get(ctx.messageID, params.snippetId)
           if (!snippet) {
-            throw new Error(
-              `Snippet not found: "${params.snippetId}". Re-read the file to get current snippet IDs.`,
-            )
+            throw new Error(`Snippet not found: "${params.snippetId}". Re-read the file to get current snippet IDs.`)
           }
 
           const source = yield* Bom.readFile(afs, snippet.file)

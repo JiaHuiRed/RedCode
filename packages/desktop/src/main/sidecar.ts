@@ -52,7 +52,10 @@ process.on("uncaughtException", (error) => {
 process.on("unhandledRejection", (reason) => {
   const msg = `[sidecar-fatal] unhandledRejection: ${reason instanceof Error ? reason.stack : String(reason)}\n`
   fs.appendFileSync(path.join(os.tmpdir(), "redcode-sidecar-crash.log"), msg)
-  parentPort.postMessage({ type: "error", error: serializeError(reason instanceof Error ? reason : new Error(String(reason))) })
+  parentPort.postMessage({
+    type: "error",
+    error: serializeError(reason instanceof Error ? reason : new Error(String(reason))),
+  })
   setImmediate(() => process.exit(1))
 })
 // 260813 cc "code 0 静默蒸发"取证钩子。start() 里那句保活注释是错觉——
@@ -87,8 +90,7 @@ parentPort.on("message", (event) => {
 async function start(command: StartCommand) {
   // 260608 Red 启动计时：定位首页"加载中"卡在 sidecar 哪段（import/migration/listen），测完即删
   const t0 = performance.now()
-  const mark = (label: string) =>
-    console.error(`[sidecar-timing] ${label}: ${Math.round(performance.now() - t0)}ms`)
+  const mark = (label: string) => console.error(`[sidecar-timing] ${label}: ${Math.round(performance.now() - t0)}ms`)
   try {
     prepareSidecarEnv(command.password, command.userDataPath)
     ensureLoopbackNoProxy()

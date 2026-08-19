@@ -174,7 +174,11 @@ export function parseCommands(src: string): RustCommand[] {
     for (const param of splitTopLevel(m[2])) {
       const pm = /^(?:mut\s+)?([A-Za-z_]\w*)\s*:\s*([\s\S]+)$/.exec(param)
       if (!pm) throw new Error(`command ${m[1]} 的参数无法解析：${param}`)
-      const baseType = pm[2].replace(/^&(?:mut\s+)?/, "").replace(/^tauri::/, "").split("<")[0].trim()
+      const baseType = pm[2]
+        .replace(/^&(?:mut\s+)?/, "")
+        .replace(/^tauri::/, "")
+        .split("<")[0]
+        .trim()
       if (INJECTED_PARAM_TYPES.has(baseType)) continue // Tauri 注入，不进 payload
       params.push({ jsName: toCamel(pm[1]), rustType: pm[2].trim() })
     }

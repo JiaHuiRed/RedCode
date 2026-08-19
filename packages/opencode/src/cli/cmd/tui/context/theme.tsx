@@ -374,7 +374,13 @@ export function resolveTheme(theme: ThemeJson, mode: "dark" | "light") {
   const resolved = Object.fromEntries(
     Object.entries(theme.theme)
       // 260603 Red backgroundMessage 在这里排除，避免第一次遍历多解析一次。
-      .filter(([key]) => key !== "selectedListItemText" && key !== "backgroundMenu" && key !== "backgroundMessage" && key !== "thinkingOpacity")
+      .filter(
+        ([key]) =>
+          key !== "selectedListItemText" &&
+          key !== "backgroundMenu" &&
+          key !== "backgroundMessage" &&
+          key !== "thinkingOpacity",
+      )
       .map(([key, value]) => {
         return [key, resolveColor(value as ColorValue)]
       }),

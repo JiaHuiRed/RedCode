@@ -16,14 +16,11 @@ const backend = spawn(
   { cwd: opencodeDir, stdio: ["ignore", "inherit", "inherit"] },
 )
 
-const frontend = spawn(
-  ["bun", "x", "vite", "--port", VITE_PORT],
-  {
-    cwd: appRoot,
-    env: { ...process.env, VITE_REDCODE_SERVER_PORT: SERVER_PORT },
-    stdio: ["ignore", "inherit", "inherit"],
-  },
-)
+const frontend = spawn(["bun", "x", "vite", "--port", VITE_PORT], {
+  cwd: appRoot,
+  env: { ...process.env, VITE_REDCODE_SERVER_PORT: SERVER_PORT },
+  stdio: ["ignore", "inherit", "inherit"],
+})
 
 let shuttingDown = false
 function cleanup() {

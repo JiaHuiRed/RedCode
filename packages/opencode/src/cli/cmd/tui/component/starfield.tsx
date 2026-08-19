@@ -1,4 +1,10 @@
-import { FrameBufferRenderable, RGBA, type OptimizedBuffer, type RenderContext, type RenderableOptions } from "@opentui/core"
+import {
+  FrameBufferRenderable,
+  RGBA,
+  type OptimizedBuffer,
+  type RenderContext,
+  type RenderableOptions,
+} from "@opentui/core"
 import { extend } from "@opentui/solid"
 import { onCleanup, onMount } from "solid-js"
 import { useTheme } from "@tui/context/theme"

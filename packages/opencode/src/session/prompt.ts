@@ -203,9 +203,7 @@ export const layer = Layer.effect(
     const cancel = Effect.fn("SessionPrompt.cancel")(function* (sessionID: SessionID) {
       yield* elog.info("cancel", { sessionID })
       yield* state.cancel(sessionID)
-      yield* plugin.trigger("session.stop", { sessionID }, {}).pipe(
-        Effect.catch(() => Effect.void),
-      )
+      yield* plugin.trigger("session.stop", { sessionID }, {}).pipe(Effect.catch(() => Effect.void))
     })
 
     const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(function* (template: string) {
@@ -347,7 +345,11 @@ export const layer = Layer.effect(
               retries: 2,
               messages: [{ role: "user", content: "Generate a title for this conversation:\n" }, ...msgs],
             })
-            .pipe(Stream.filter(LLMEvent.is.textDelta), Stream.map((e) => e.text), Stream.mkString)
+            .pipe(
+              Stream.filter(LLMEvent.is.textDelta),
+              Stream.map((e) => e.text),
+              Stream.mkString,
+            )
         })
       const text = yield* generate(mainModel).pipe(Effect.orDie)
       const cleaned = text
@@ -1114,12 +1116,16 @@ export const layer = Layer.effect(
 
       if (input.noReply === true) return message
 
-      yield* plugin.trigger("user.prompt.submit", {
-        sessionID: input.sessionID,
-        text: message.parts.find((p) => p.type === "text")?.text ?? "",
-      }, {}).pipe(
-        Effect.catch(() => Effect.void),
-      )
+      yield* plugin
+        .trigger(
+          "user.prompt.submit",
+          {
+            sessionID: input.sessionID,
+            text: message.parts.find((p) => p.type === "text")?.text ?? "",
+          },
+          {},
+        )
+        .pipe(Effect.catch(() => Effect.void))
 
       return yield* loop({ sessionID: input.sessionID })
     })
@@ -1132,791 +1138,793 @@ export const layer = Layer.effect(
       throw new Error("Impossible")
     })
 
-    const runLoop = Effect.fn("SessionPrompt.run")(
-      function* (sessionID: SessionID) {
-        const ctx = yield* InstanceState.context
-        const slog = elog.with({ sessionID })
-        let structured: unknown
-        let step = 0
-        // 260801 Red Goal token 记账：runLoop 全程累计，收尾写回 goal.tokens_used
-        let usageTokens = 0
-        const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
-        // 260710 Red 跨 step 文本重复检测（loop recovery）
-        const loopTracker = new LoopRecoveryTracker()
-        let loopRecoveryPrompt: string | undefined
-        // 260728 Red step-3.7-flash 偶发通道退化的两条兜底（见 xml-tool-call.ts）：
-        // forceContinue —— 打捞到文本态工具调用后，强制多跑一轮让模型用原生通道重发；
-        // reasoningOnlyRetried —— 整轮只有思考没有正文时纠正一次，只纠正一次防死循环。
-        // 两者都必须封顶：模型可能一轮接一轮地重犯，无上限就是死循环。
-        let forceContinue = false
-        let reasoningOnlyRetried = false
-        // 260808 Red：整轮**什么都没产出**（连思考都没有）时纠正一次，同样只纠正一次防死循环
-        let emptyTurnRetried = false
-        let salvageRecoveries = 0
-        // 260729 Red soft 档提示每个会话只发一次，别每轮刷屏
-        let softContextNoticed = false
-        // 260729 Red 本轮起点的用户消息 + 已提醒过的消息 id。用来区分「开启本轮的那条」
-        // 和「回合中途新到的」—— 只有后者才该提醒，且只提醒一次（详见下方注入处的注释）。
-        // 260814 Red 起点改存消息本体：ID 48 位编码 795 天回绕后字典序失真（见 MessageV2.compareTime），
-        // 边界比较必须走 time.created。
-        let turnStartUserID: MessageV2.User | undefined
-        const remindedUserIDs = new Set<MessageID>()
-        // 260814 Red stall nudge（260803）退役：同指纹口径（tool+stringify(input)）的空转检测
-        // 已由 repeat-tool-reminder 软层接管（3/5/8 递进、贴 result 尾部、todo 透明、跨轮），
-        // 8 阈值双响只会文案重复。真空转仍有 doom_loop 硬层弹窗兜底。决策见 docs/notes/。
-        // 260814 Red 繁忙时新消息送达策略：steer(默认)=下个 step 以 reminder 注入进行中的轮次；
-        // queue=对本轮隐藏，轮末由「lastUser 比 lastAssistant 新则不 break」的既有续跑
-        // 边界自然开新轮消费。详见 docs/notes/ 的 busy-enter note。
-        const busyEnter = (yield* config.get()).busy_enter ?? "steer"
+    const runLoop = Effect.fn("SessionPrompt.run")(function* (sessionID: SessionID) {
+      const ctx = yield* InstanceState.context
+      const slog = elog.with({ sessionID })
+      let structured: unknown
+      let step = 0
+      // 260801 Red Goal token 记账：runLoop 全程累计，收尾写回 goal.tokens_used
+      let usageTokens = 0
+      const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+      // 260710 Red 跨 step 文本重复检测（loop recovery）
+      const loopTracker = new LoopRecoveryTracker()
+      let loopRecoveryPrompt: string | undefined
+      // 260728 Red step-3.7-flash 偶发通道退化的两条兜底（见 xml-tool-call.ts）：
+      // forceContinue —— 打捞到文本态工具调用后，强制多跑一轮让模型用原生通道重发；
+      // reasoningOnlyRetried —— 整轮只有思考没有正文时纠正一次，只纠正一次防死循环。
+      // 两者都必须封顶：模型可能一轮接一轮地重犯，无上限就是死循环。
+      let forceContinue = false
+      let reasoningOnlyRetried = false
+      // 260808 Red：整轮**什么都没产出**（连思考都没有）时纠正一次，同样只纠正一次防死循环
+      let emptyTurnRetried = false
+      let salvageRecoveries = 0
+      // 260729 Red soft 档提示每个会话只发一次，别每轮刷屏
+      let softContextNoticed = false
+      // 260729 Red 本轮起点的用户消息 + 已提醒过的消息 id。用来区分「开启本轮的那条」
+      // 和「回合中途新到的」—— 只有后者才该提醒，且只提醒一次（详见下方注入处的注释）。
+      // 260814 Red 起点改存消息本体：ID 48 位编码 795 天回绕后字典序失真（见 MessageV2.compareTime），
+      // 边界比较必须走 time.created。
+      let turnStartUserID: MessageV2.User | undefined
+      const remindedUserIDs = new Set<MessageID>()
+      // 260814 Red stall nudge（260803）退役：同指纹口径（tool+stringify(input)）的空转检测
+      // 已由 repeat-tool-reminder 软层接管（3/5/8 递进、贴 result 尾部、todo 透明、跨轮），
+      // 8 阈值双响只会文案重复。真空转仍有 doom_loop 硬层弹窗兜底。决策见 docs/notes/。
+      // 260814 Red 繁忙时新消息送达策略：steer(默认)=下个 step 以 reminder 注入进行中的轮次；
+      // queue=对本轮隐藏，轮末由「lastUser 比 lastAssistant 新则不 break」的既有续跑
+      // 边界自然开新轮消费。详见 docs/notes/ 的 busy-enter note。
+      const busyEnter = (yield* config.get()).busy_enter ?? "steer"
 
-        while (true) {
-          yield* status.set(sessionID, { type: "busy" })
-          yield* slog.info("loop", { step })
+      while (true) {
+        yield* status.set(sessionID, { type: "busy" })
+        yield* slog.info("loop", { step })
 
-          let msgs = yield* MessageV2.filterCompactedEffect(sessionID)
+        let msgs = yield* MessageV2.filterCompactedEffect(sessionID)
 
-          const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = MessageV2.latest(msgs)
+        const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = MessageV2.latest(msgs)
 
-          if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
+        if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
 
-          const lastAssistantMsg = msgs.findLast(
-            (msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id,
+        const lastAssistantMsg = msgs.findLast(
+          (msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id,
+        )
+        // Some providers return "stop" even when the assistant message contains tool calls.
+        // Keep the loop running so tool results can be sent back to the model.
+        // Skip provider-executed tool parts �� those were fully handled within the
+        // provider's stream (e.g. DWS Agent Platform) and don't need a re-loop.
+        const hasToolCalls =
+          lastAssistantMsg?.parts.some((part) => part.type === "tool" && !part.metadata?.providerExecuted) ?? false
+
+        if (
+          lastAssistant?.finish &&
+          !["tool-calls"].includes(lastAssistant.finish) &&
+          !hasToolCalls &&
+          MessageV2.compareTime(lastUser, lastAssistant) < 0 &&
+          // 260728 Red 打捞到文本态工具调用时不走正常退出，强制再跑一轮（下面 A 处设置）
+          !forceContinue
+        ) {
+          // 260728 Red B：整轮只产出了思考，既无正文也无工具调用 —— 用户看到的是一片空白，
+          // 看起来跟被打断/卡死一模一样。实测 step-3.7-flash 约 0.6% 的轮次会这样
+          // （deepseek-v4-flash 0.15%、gpt-5.6-luna 0%）。
+          const reasoning = (lastAssistantMsg?.parts ?? []).filter(
+            (part): part is MessageV2.ReasoningPart => part.type === "reasoning" && part.text.trim().length > 0,
           )
-          // Some providers return "stop" even when the assistant message contains tool calls.
-          // Keep the loop running so tool results can be sent back to the model.
-          // Skip provider-executed tool parts �� those were fully handled within the
-          // provider's stream (e.g. DWS Agent Platform) and don't need a re-loop.
-          const hasToolCalls =
-            lastAssistantMsg?.parts.some((part) => part.type === "tool" && !part.metadata?.providerExecuted) ?? false
+          const hasVisibleText = (lastAssistantMsg?.parts ?? []).some(
+            (part) => part.type === "text" && part.text.trim().length > 0,
+          )
+          const reasoningOnly = !lastAssistant.summary && reasoning.length > 0 && !hasVisibleText
+          // 260808 Red：上面那条只兜「有思考、没正文」。还有更空的一种——**连思考都没有**，
+          // 分片只剩 step-start → text(长度 0) → step-finish，finish 却是 "stop"、无报错，
+          // 于是循环当成正常收尾直接 break，用户看到的是"跑着跑着莫名其妙停了"
+          // （实测 ses_020e2ecaaffe…，deepseek-v4-flash，18 个输出 token、3.9s）。
+          // 走到这里时已确定本轮没有工具调用（见外层条件），所以"什么都没有"必属异常。
+          const producedNothing = !lastAssistant.summary && reasoning.length === 0 && !hasVisibleText
 
-          if (
-            lastAssistant?.finish &&
-            !["tool-calls"].includes(lastAssistant.finish) &&
-            !hasToolCalls &&
-            MessageV2.compareTime(lastUser, lastAssistant) < 0 &&
-            // 260728 Red 打捞到文本态工具调用时不走正常退出，强制再跑一轮（下面 A 处设置）
-            !forceContinue
-          ) {
-            // 260728 Red B：整轮只产出了思考，既无正文也无工具调用 —— 用户看到的是一片空白，
-            // 看起来跟被打断/卡死一模一样。实测 step-3.7-flash 约 0.6% 的轮次会这样
-            // （deepseek-v4-flash 0.15%、gpt-5.6-luna 0%）。
-            const reasoning = (lastAssistantMsg?.parts ?? []).filter(
-              (part): part is MessageV2.ReasoningPart => part.type === "reasoning" && part.text.trim().length > 0,
-            )
-            const hasVisibleText = (lastAssistantMsg?.parts ?? []).some(
-              (part) => part.type === "text" && part.text.trim().length > 0,
-            )
-            const reasoningOnly = !lastAssistant.summary && reasoning.length > 0 && !hasVisibleText
-            // 260808 Red：上面那条只兜「有思考、没正文」。还有更空的一种——**连思考都没有**，
-            // 分片只剩 step-start → text(长度 0) → step-finish，finish 却是 "stop"、无报错，
-            // 于是循环当成正常收尾直接 break，用户看到的是"跑着跑着莫名其妙停了"
-            // （实测 ses_020e2ecaaffe…，deepseek-v4-flash，18 个输出 token、3.9s）。
-            // 走到这里时已确定本轮没有工具调用（见外层条件），所以"什么都没有"必属异常。
-            const producedNothing = !lastAssistant.summary && reasoning.length === 0 && !hasVisibleText
-
-            if (reasoningOnly && !reasoningOnlyRetried) {
-              // 先给模型一次机会把话说到正文通道里，比直接把思考链当答案端出去干净
-              reasoningOnlyRetried = true
-              loopRecoveryPrompt = XmlToolCall.REASONING_ONLY_PROMPT
-              yield* slog.warn("reasoning.only", { step, model: lastUser.model.modelID })
-            } else if (producedNothing && !emptyTurnRetried) {
-              // 空转没有思考可提升，只能让模型重来一次；同样封顶一次，防死循环
-              emptyTurnRetried = true
-              loopRecoveryPrompt = XmlToolCall.EMPTY_TURN_PROMPT
-              yield* slog.warn("empty.turn", { step, model: lastUser.model.modelID })
-            } else {
-              if (reasoningOnly) {
-                // 纠正过一次仍然只有思考 —— 别再烧 token 了，把思考内容提升成可见正文，
-                // 至少让用户看得到东西，而不是对着空白猜是不是卡死了
-                yield* slog.warn("reasoning.only.promoted", { step, model: lastUser.model.modelID })
-                const now = Date.now()
-                yield* sessions.updatePart({
-                  id: PartID.ascending(),
-                  messageID: lastAssistant.id,
-                  sessionID,
-                  type: "text",
-                  text: reasoning.map((part) => part.text).join("\n\n"),
-                  time: { start: now, end: now },
-                })
-              } else if (producedNothing) {
-                // 260808 Red：纠正过一次还是彻底空转。这里没有思考可提升，但**不能就这么静默退出** ——
-                // 那正是"莫名其妙停下来"的观感来源。写一句可见说明，让用户知道是模型空回复、
-                // 可以直接重发，而不是去猜自己是不是被打断了。
-                yield* slog.warn("empty.turn.exhausted", { step, model: lastUser.model.modelID })
-                const now = Date.now()
-                yield* sessions.updatePart({
-                  id: PartID.ascending(),
-                  messageID: lastAssistant.id,
-                  sessionID,
-                  type: "text",
-                  text: "（模型本轮没有返回任何内容，已自动重试一次仍为空。可以直接重发上一条消息。）",
-                  time: { start: now, end: now },
-                })
-              }
-              yield* slog.info("exiting loop")
-              break
-            }
-          }
-          forceContinue = false
-
-          step++
-          if (step === 1)
-            yield* title({
-              session,
-              modelID: lastUser.model.modelID,
-              providerID: lastUser.model.providerID,
-              history: msgs,
-            }).pipe(Effect.ignore, Effect.forkIn(scope))
-
-          const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
-          const task = tasks.pop()
-
-          if (task?.type === "subtask") {
-            yield* handleSubtask({ task, model, lastUser, sessionID, session, msgs })
-            continue
-          }
-
-          if (task?.type === "compaction") {
-            const result = yield* compaction.process({
-              messages: msgs,
-              parentID: lastUser.id,
-              sessionID,
-              auto: task.auto,
-              overflow: task.overflow,
-            })
-            // 260811 cc audit R4 分代结算：摘要已落库、前缀缓存反正要重建——此刻丢弃
-            // msgPin/modelMsgs，让累积的 prune 标记与 DCP 改写随下一轮一并生效，
-            // 快照双份内存同步释放。
-            settlePromptCaches(sessionID, "compaction")
-            if (result === "stop") break
-            continue
-          }
-
-          const lastFinishedMsg = lastFinished && msgs.findLast((msg) => msg.info.id === lastFinished.id)
-          const justRanExternalCompress =
-            lastFinishedMsg?.parts.some(
-              (part) =>
-                part.type === "tool" && part.state.status === "completed" && EXTERNAL_COMPRESS_TOOLS.has(part.tool),
-            ) ?? false
-
-          if (
-            lastFinished &&
-            lastFinished.summary !== true &&
-            !justRanExternalCompress &&
-            (yield* compaction.isOverflow({ tokens: lastFinished.tokens, model }))
-          ) {
-            yield* compaction.create({ sessionID, agent: lastUser.agent, model: lastUser.model, auto: true })
-            continue
-          }
-
-          const agent = yield* agents.get(lastUser.agent)
-          if (!agent) {
-            const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
-            const hint = available.length ? ` Available agents: ${available.join(", ")}` : ""
-            const error = new NamedError.Unknown({ message: `Agent not found: "${lastUser.agent}".${hint}` })
-            yield* bus.publish(Session.Event.Error, { sessionID, error: error.toObject() })
-            throw error
-          }
-          // 260811 cc audit Y2：此前默认 Infinity 且 isLastStep 只注入一段提示词、不中断——
-          // "每次都成功但原地打转"的循环可以烧 token 烧到手动 abort（repeat-tool-reminder
-          // 软层与 doom_loop 都只管"重复相同调用"，管不住不重复的打转）。默认给硬顶：
-          // step === maxSteps 时先按老路注入 MAX_STEPS 让模型收尾，仍不收就强制落地。
-          const maxSteps = agent.steps ?? DEFAULT_MAX_STEPS
-          const isLastStep = step >= maxSteps
-          if (step > maxSteps) {
-            yield* slog.warn("max.steps", { step, maxSteps, agent: agent.name })
-            if (lastAssistant) {
+          if (reasoningOnly && !reasoningOnlyRetried) {
+            // 先给模型一次机会把话说到正文通道里，比直接把思考链当答案端出去干净
+            reasoningOnlyRetried = true
+            loopRecoveryPrompt = XmlToolCall.REASONING_ONLY_PROMPT
+            yield* slog.warn("reasoning.only", { step, model: lastUser.model.modelID })
+          } else if (producedNothing && !emptyTurnRetried) {
+            // 空转没有思考可提升，只能让模型重来一次；同样封顶一次，防死循环
+            emptyTurnRetried = true
+            loopRecoveryPrompt = XmlToolCall.EMPTY_TURN_PROMPT
+            yield* slog.warn("empty.turn", { step, model: lastUser.model.modelID })
+          } else {
+            if (reasoningOnly) {
+              // 纠正过一次仍然只有思考 —— 别再烧 token 了，把思考内容提升成可见正文，
+              // 至少让用户看得到东西，而不是对着空白猜是不是卡死了
+              yield* slog.warn("reasoning.only.promoted", { step, model: lastUser.model.modelID })
               const now = Date.now()
               yield* sessions.updatePart({
                 id: PartID.ascending(),
                 messageID: lastAssistant.id,
                 sessionID,
                 type: "text",
-                text: `（已达到单轮步数上限 ${maxSteps}，强制收束。任务若未完成，直接续发消息即可继续；上限可用 agent 配置的 steps 调整。）`,
+                text: reasoning.map((part) => part.text).join("\n\n"),
+                time: { start: now, end: now },
+              })
+            } else if (producedNothing) {
+              // 260808 Red：纠正过一次还是彻底空转。这里没有思考可提升，但**不能就这么静默退出** ——
+              // 那正是"莫名其妙停下来"的观感来源。写一句可见说明，让用户知道是模型空回复、
+              // 可以直接重发，而不是去猜自己是不是被打断了。
+              yield* slog.warn("empty.turn.exhausted", { step, model: lastUser.model.modelID })
+              const now = Date.now()
+              yield* sessions.updatePart({
+                id: PartID.ascending(),
+                messageID: lastAssistant.id,
+                sessionID,
+                type: "text",
+                text: "（模型本轮没有返回任何内容，已自动重试一次仍为空。可以直接重发上一条消息。）",
                 time: { start: now, end: now },
               })
             }
+            yield* slog.info("exiting loop")
             break
           }
-          msgs = yield* SessionReminders.apply({ messages: msgs, agent, session }).pipe(
-            Effect.provideService(RuntimeFlags.Service, flags),
-            Effect.provideService(AppFileSystem.Service, fsys),
-            Effect.provideService(Session.Service, sessions),
+        }
+        forceContinue = false
+
+        step++
+        if (step === 1)
+          yield* title({
+            session,
+            modelID: lastUser.model.modelID,
+            providerID: lastUser.model.providerID,
+            history: msgs,
+          }).pipe(Effect.ignore, Effect.forkIn(scope))
+
+        const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
+        const task = tasks.pop()
+
+        if (task?.type === "subtask") {
+          yield* handleSubtask({ task, model, lastUser, sessionID, session, msgs })
+          continue
+        }
+
+        if (task?.type === "compaction") {
+          const result = yield* compaction.process({
+            messages: msgs,
+            parentID: lastUser.id,
+            sessionID,
+            auto: task.auto,
+            overflow: task.overflow,
+          })
+          // 260811 cc audit R4 分代结算：摘要已落库、前缀缓存反正要重建——此刻丢弃
+          // msgPin/modelMsgs，让累积的 prune 标记与 DCP 改写随下一轮一并生效，
+          // 快照双份内存同步释放。
+          settlePromptCaches(sessionID, "compaction")
+          if (result === "stop") break
+          continue
+        }
+
+        const lastFinishedMsg = lastFinished && msgs.findLast((msg) => msg.info.id === lastFinished.id)
+        const justRanExternalCompress =
+          lastFinishedMsg?.parts.some(
+            (part) =>
+              part.type === "tool" && part.state.status === "completed" && EXTERNAL_COMPRESS_TOOLS.has(part.tool),
+          ) ?? false
+
+        if (
+          lastFinished &&
+          lastFinished.summary !== true &&
+          !justRanExternalCompress &&
+          (yield* compaction.isOverflow({ tokens: lastFinished.tokens, model }))
+        ) {
+          yield* compaction.create({ sessionID, agent: lastUser.agent, model: lastUser.model, auto: true })
+          continue
+        }
+
+        const agent = yield* agents.get(lastUser.agent)
+        if (!agent) {
+          const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
+          const hint = available.length ? ` Available agents: ${available.join(", ")}` : ""
+          const error = new NamedError.Unknown({ message: `Agent not found: "${lastUser.agent}".${hint}` })
+          yield* bus.publish(Session.Event.Error, { sessionID, error: error.toObject() })
+          throw error
+        }
+        // 260811 cc audit Y2：此前默认 Infinity 且 isLastStep 只注入一段提示词、不中断——
+        // "每次都成功但原地打转"的循环可以烧 token 烧到手动 abort（repeat-tool-reminder
+        // 软层与 doom_loop 都只管"重复相同调用"，管不住不重复的打转）。默认给硬顶：
+        // step === maxSteps 时先按老路注入 MAX_STEPS 让模型收尾，仍不收就强制落地。
+        const maxSteps = agent.steps ?? DEFAULT_MAX_STEPS
+        const isLastStep = step >= maxSteps
+        if (step > maxSteps) {
+          yield* slog.warn("max.steps", { step, maxSteps, agent: agent.name })
+          if (lastAssistant) {
+            const now = Date.now()
+            yield* sessions.updatePart({
+              id: PartID.ascending(),
+              messageID: lastAssistant.id,
+              sessionID,
+              type: "text",
+              text: `（已达到单轮步数上限 ${maxSteps}，强制收束。任务若未完成，直接续发消息即可继续；上限可用 agent 配置的 steps 调整。）`,
+              time: { start: now, end: now },
+            })
+          }
+          break
+        }
+        msgs = yield* SessionReminders.apply({ messages: msgs, agent, session }).pipe(
+          Effect.provideService(RuntimeFlags.Service, flags),
+          Effect.provideService(AppFileSystem.Service, fsys),
+          Effect.provideService(Session.Service, sessions),
+        )
+
+        const msg: MessageV2.Assistant = {
+          id: MessageID.ascending(),
+          parentID: lastUser.id,
+          role: "assistant",
+          mode: agent.name,
+          agent: agent.name,
+          variant: lastUser.model.variant,
+          path: { cwd: ctx.directory, root: ctx.worktree },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
+          modelID: model.id,
+          providerID: model.providerID,
+          time: { created: Date.now() },
+          sessionID,
+        }
+        yield* sessions.updateMessage(msg)
+
+        const finalizeInterruptedAssistant = Effect.gen(function* () {
+          if (msg.time.completed) return
+          msg.error ??= MessageV2.fromError(new DOMException("Aborted", "AbortError"), {
+            providerID: msg.providerID,
+            aborted: true,
+          })
+          msg.time.completed = Date.now()
+          yield* sessions.updateMessage(msg)
+        })
+
+        const handle = yield* processor
+          .create({
+            assistantMessage: msg,
+            sessionID,
+            model,
+          })
+          .pipe(Effect.onInterrupt(() => finalizeInterruptedAssistant))
+
+        const outcome: "break" | "continue" = yield* Effect.gen(function* () {
+          const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
+          const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
+          const promptOps = yield* ops()
+
+          const tools = yield* SessionTools.resolve({
+            agent,
+            session,
+            model,
+            processor: handle,
+            bypassAgentCheck,
+            messages: msgs,
+            promptOps,
+            goal,
+          }).pipe(
+            Effect.provideService(Plugin.Service, plugin),
+            Effect.provideService(Permission.Service, permission),
+            Effect.provideService(ToolRegistry.Service, registry),
+            Effect.provideService(MCP.Service, mcp),
+            Effect.provideService(Truncate.Service, truncate),
           )
 
-          const msg: MessageV2.Assistant = {
-            id: MessageID.ascending(),
-            parentID: lastUser.id,
-            role: "assistant",
-            mode: agent.name,
-            agent: agent.name,
-            variant: lastUser.model.variant,
-            path: { cwd: ctx.directory, root: ctx.worktree },
-            cost: 0,
-            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
-            modelID: model.id,
-            providerID: model.providerID,
-            time: { created: Date.now() },
-            sessionID,
+          if (lastUser.format?.type === "json_schema") {
+            tools["StructuredOutput"] = createStructuredOutputTool({
+              schema: lastUser.format.schema,
+              onSuccess(output) {
+                structured = output
+              },
+            })
           }
-          yield* sessions.updateMessage(msg)
 
-          const finalizeInterruptedAssistant = Effect.gen(function* () {
-            if (msg.time.completed) return
-            msg.error ??= MessageV2.fromError(new DOMException("Aborted", "AbortError"), {
-              providerID: msg.providerID,
-              aborted: true,
-            })
-            msg.time.completed = Date.now()
-            yield* sessions.updateMessage(msg)
-          })
+          // 260623 Red sort tool keys for deterministic serialization → stable DeepSeek prefix cache
+          const sortedTools: typeof tools = {}
+          for (const k of Object.keys(tools).sort()) sortedTools[k] = tools[k]
 
-          const handle = yield* processor
-            .create({
-              assistantMessage: msg,
-              sessionID,
-              model,
-            })
-            .pipe(Effect.onInterrupt(() => finalizeInterruptedAssistant))
-
-          const outcome: "break" | "continue" = yield* Effect.gen(function* () {
-            const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
-            const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
-            const promptOps = yield* ops()
-
-            const tools = yield* SessionTools.resolve({
-              agent,
-              session,
-              model,
-              processor: handle,
-              bypassAgentCheck,
-              messages: msgs,
-              promptOps,
-              goal,
-            }).pipe(
-              Effect.provideService(Plugin.Service, plugin),
-              Effect.provideService(Permission.Service, permission),
-              Effect.provideService(ToolRegistry.Service, registry),
-              Effect.provideService(MCP.Service, mcp),
-              Effect.provideService(Truncate.Service, truncate),
-            )
-
-            if (lastUser.format?.type === "json_schema") {
-              tools["StructuredOutput"] = createStructuredOutputTool({
-                schema: lastUser.format.schema,
-                onSuccess(output) {
-                  structured = output
-                },
-              })
-            }
-
-            // 260623 Red sort tool keys for deterministic serialization → stable DeepSeek prefix cache
-            const sortedTools: typeof tools = {}
-            for (const k of Object.keys(tools).sort()) sortedTools[k] = tools[k]
-
-            // 260706 Red cache tool definitions for prefix stability.
-            // registry.tools() calls describeSkill()/describeTask() every step, which read from disk
-            // (Glob.scan for skill path patterns) and agent state. If a build agent creates files
-            // matching skill patterns, the Skill tool description changes → tool schema JSON mutates →
-            // entire prefix cache breaks from the tool definitions onward (thousands of tokens).
-            // Fix: pin descriptions + schemas from the first step, overlay on subsequent steps.
-            const cachedTools = _caches.tools.get(sessionID)
-            if (cachedTools) {
-              for (const [k, t] of Object.entries(sortedTools)) {
-                const cached = cachedTools.defs.get(k)
-                if (cached) {
-                  ;(t as any).description = cached.description
-                  ;(t as any).inputSchema = cached.inputSchema
-                }
-              }
-            } else {
-              const defs = new Map<string, { description: string; inputSchema: unknown }>()
-              for (const [k, t] of Object.entries(sortedTools)) {
-                defs.set(k, { description: (t as any).description, inputSchema: (t as any).inputSchema })
-              }
-              _caches.tools.set(sessionID, { sessionID, defs })
-            }
-
-            if (step === 1)
-              yield* summary.summarize({ sessionID, messageID: lastUser.id }).pipe(Effect.ignore, Effect.forkIn(scope))
-
-            // 260623 Red collect user reminder text for step>1 injection (old approach mutated
-            // p.text before msgPin, which silently restored the un-wrapped cached version).
-            // 260729 Red 修两处，症状是模型思考链里反复出现「刚才用户让我做 xx，我继续干」
-            // 而用户其实一个字都没发：
-            //
-            // 1) 边界用错。原来的条件是 `m.info.id > lastFinished.id`，但 lastFinished 来自
-            //    MessageV2.latest()，而**当前这条 assistant 消息整轮都不算 finished**，所以它
-            //    一直钉在上一轮。于是"开启本轮的那条用户消息"永远满足这个条件，被当成"中途新
-            //    到的消息"每一步重新提醒一次 —— 20 步的回合模型会被告知 19 次「用户发话了，
-            //    请处理」。本意只是想捕捉回合**中途**新到的消息，边界应该是本轮起点那条，
-            //    而不是上一轮的结束点。
-            // 2) 没有去重。同一条消息即使确实是中途新到的，也只该提醒一次 —— 它本身就在
-            //    msgs 里，模型看得到，反复强调只会让它以为又来了一条新指令。
-            if (turnStartUserID === undefined) turnStartUserID = lastUser
-            // 260814 Red queue 模式续跑边界：上一轮 assistant 已完成而 lastUser 更新
-            // （排队消息触发续跑，没走 break），新轮起点前移——排队消息从"对本轮隐藏"
-            // 转为"新轮的开轮输入"。steer 模式不动这个边界（260729 修过的雷区）。
-            else if (busyEnter === "queue" && lastAssistant?.finish && MessageV2.compareTime(lastUser, lastAssistant) > 0) {
-              turnStartUserID = lastUser
-            }
-            let userReminderText: string | undefined
-            if (busyEnter === "steer" && step > 1) {
-              const parts: string[] = []
-              for (const m of msgs) {
-                if (m.info.role !== "user" || MessageV2.compareTime(m.info, turnStartUserID) <= 0) continue
-                if (remindedUserIDs.has(m.info.id)) continue
-                const text = m.parts
-                  .filter((p) => p.type === "text" && !p.ignored && !p.synthetic)
-                  .map((p) => (p.type === "text" ? p.text : ""))
-                  .filter((t) => t.trim())
-                if (text.length === 0) continue
-                parts.push(...text)
-                remindedUserIDs.add(m.info.id)
-              }
-              if (parts.length > 0) {
-                userReminderText = `<system-reminder>\nThe user sent the following message:\n${parts.join("\n")}\n\nPlease address this message and continue with your tasks.\n</system-reminder>`
+          // 260706 Red cache tool definitions for prefix stability.
+          // registry.tools() calls describeSkill()/describeTask() every step, which read from disk
+          // (Glob.scan for skill path patterns) and agent state. If a build agent creates files
+          // matching skill patterns, the Skill tool description changes → tool schema JSON mutates →
+          // entire prefix cache breaks from the tool definitions onward (thousands of tokens).
+          // Fix: pin descriptions + schemas from the first step, overlay on subsequent steps.
+          const cachedTools = _caches.tools.get(sessionID)
+          if (cachedTools) {
+            for (const [k, t] of Object.entries(sortedTools)) {
+              const cached = cachedTools.defs.get(k)
+              if (cached) {
+                ;(t as any).description = cached.description
+                ;(t as any).inputSchema = cached.inputSchema
               }
             }
+          } else {
+            const defs = new Map<string, { description: string; inputSchema: unknown }>()
+            for (const [k, t] of Object.entries(sortedTools)) {
+              defs.set(k, { description: (t as any).description, inputSchema: (t as any).inputSchema })
+            }
+            _caches.tools.set(sessionID, { sessionID, defs })
+          }
 
-            // 260731 Red 可见思考的语言/称呼约束注入已撤除。它是 07-29/07-30 为了修 step-3.7-flash 的通道纪律加的，
-            // 结果造出了比原问题严重得多的三个新毛病，实测于 ses_04916ea36ffe（step-3.7-flash）：
-            //
-            // 1) **每一步都以 role:"user" 注入**（下面 messages 数组里，无 step 门槛）。对模型来说
-            //    对话永远停在"用户刚说完话"，于是它每一步都重新推导用户意图而不是继续干活 ——
-            //    9 分钟无人发话的窗口里跑了 154 次工具调用，其中只有 62 个不同：同一个
-            //    redcode.jsonc 读了 16 次、改了 8 次，同样 4 个 md 各读 4 次。
-            // 2) 称呼约束原文是「与正文保持一致…从第一句思考开始就这么称呼」——
-            //    等于明确要求模型把思考写成正文。一个本就分不清通道的模型照做了：
-            //    93 轮里只有 5 轮有正文，却有 46 段思考在直接对用户说话。
-            // 3) 开关挂错了地方。语言约束看 config.reasoning_language，称呼约束却只看
-            //    config.username —— 而 username 是 TUI 标签的显示设置。用户撤掉
-            //    reasoning_language 之后注入照常，根本关不掉。
-            //
-            // reasoning-language.ts 与 instruction-echo.ts 的 STRIP 都保留：历史会话里已经
-            // 存了大量被复述的 <reasoning-language> 块，剥离逻辑还得继续管它们。
-            // 要重新启用得先解决两件事：不占用 role:"user"，且每回合最多注一次。
+          if (step === 1)
+            yield* summary.summarize({ sessionID, messageID: lastUser.id }).pipe(Effect.ignore, Effect.forkIn(scope))
 
-            yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
+          // 260623 Red collect user reminder text for step>1 injection (old approach mutated
+          // p.text before msgPin, which silently restored the un-wrapped cached version).
+          // 260729 Red 修两处，症状是模型思考链里反复出现「刚才用户让我做 xx，我继续干」
+          // 而用户其实一个字都没发：
+          //
+          // 1) 边界用错。原来的条件是 `m.info.id > lastFinished.id`，但 lastFinished 来自
+          //    MessageV2.latest()，而**当前这条 assistant 消息整轮都不算 finished**，所以它
+          //    一直钉在上一轮。于是"开启本轮的那条用户消息"永远满足这个条件，被当成"中途新
+          //    到的消息"每一步重新提醒一次 —— 20 步的回合模型会被告知 19 次「用户发话了，
+          //    请处理」。本意只是想捕捉回合**中途**新到的消息，边界应该是本轮起点那条，
+          //    而不是上一轮的结束点。
+          // 2) 没有去重。同一条消息即使确实是中途新到的，也只该提醒一次 —— 它本身就在
+          //    msgs 里，模型看得到，反复强调只会让它以为又来了一条新指令。
+          if (turnStartUserID === undefined) turnStartUserID = lastUser
+          // 260814 Red queue 模式续跑边界：上一轮 assistant 已完成而 lastUser 更新
+          // （排队消息触发续跑，没走 break），新轮起点前移——排队消息从"对本轮隐藏"
+          // 转为"新轮的开轮输入"。steer 模式不动这个边界（260729 修过的雷区）。
+          else if (
+            busyEnter === "queue" &&
+            lastAssistant?.finish &&
+            MessageV2.compareTime(lastUser, lastAssistant) > 0
+          ) {
+            turnStartUserID = lastUser
+          }
+          let userReminderText: string | undefined
+          if (busyEnter === "steer" && step > 1) {
+            const parts: string[] = []
+            for (const m of msgs) {
+              if (m.info.role !== "user" || MessageV2.compareTime(m.info, turnStartUserID) <= 0) continue
+              if (remindedUserIDs.has(m.info.id)) continue
+              const text = m.parts
+                .filter((p) => p.type === "text" && !p.ignored && !p.synthetic)
+                .map((p) => (p.type === "text" ? p.text : ""))
+                .filter((t) => t.trim())
+              if (text.length === 0) continue
+              parts.push(...text)
+              remindedUserIDs.add(m.info.id)
+            }
+            if (parts.length > 0) {
+              userReminderText = `<system-reminder>\nThe user sent the following message:\n${parts.join("\n")}\n\nPlease address this message and continue with your tasks.\n</system-reminder>`
+            }
+          }
 
-            // 260618 Red pin post-DCP message content for prefix cache stability.
-            // DCP modifies old messages cumulatively (prune grows, nudge anchors shift, priority tags change).
-            // By restoring already-sent messages from cache, the prefix stays identical across turns.
-            {
-              // 260819 cc audit：登记本会话活跃时刻并顺手回收冷会话。四个缓存此前只增不减
-              // （settle 只管 msgPin/modelMsgs，system/tools 无删除点），长驻的 GUI sidecar /
-              // serve 进程按会话数持续堆积。回收口径与阈值见 prompt-caches.ts。
-              touchSession(sessionID)
-              if (!_caches.msgPin.has(sessionID)) {
-                _caches.msgPin.set(sessionID, { sessionID, messages: new Map() })
+          // 260731 Red 可见思考的语言/称呼约束注入已撤除。它是 07-29/07-30 为了修 step-3.7-flash 的通道纪律加的，
+          // 结果造出了比原问题严重得多的三个新毛病，实测于 ses_04916ea36ffe（step-3.7-flash）：
+          //
+          // 1) **每一步都以 role:"user" 注入**（下面 messages 数组里，无 step 门槛）。对模型来说
+          //    对话永远停在"用户刚说完话"，于是它每一步都重新推导用户意图而不是继续干活 ——
+          //    9 分钟无人发话的窗口里跑了 154 次工具调用，其中只有 62 个不同：同一个
+          //    redcode.jsonc 读了 16 次、改了 8 次，同样 4 个 md 各读 4 次。
+          // 2) 称呼约束原文是「与正文保持一致…从第一句思考开始就这么称呼」——
+          //    等于明确要求模型把思考写成正文。一个本就分不清通道的模型照做了：
+          //    93 轮里只有 5 轮有正文，却有 46 段思考在直接对用户说话。
+          // 3) 开关挂错了地方。语言约束看 config.reasoning_language，称呼约束却只看
+          //    config.username —— 而 username 是 TUI 标签的显示设置。用户撤掉
+          //    reasoning_language 之后注入照常，根本关不掉。
+          //
+          // reasoning-language.ts 与 instruction-echo.ts 的 STRIP 都保留：历史会话里已经
+          // 存了大量被复述的 <reasoning-language> 块，剥离逻辑还得继续管它们。
+          // 要重新启用得先解决两件事：不占用 role:"user"，且每回合最多注一次。
+
+          yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
+
+          // 260618 Red pin post-DCP message content for prefix cache stability.
+          // DCP modifies old messages cumulatively (prune grows, nudge anchors shift, priority tags change).
+          // By restoring already-sent messages from cache, the prefix stays identical across turns.
+          {
+            // 260819 cc audit：登记本会话活跃时刻并顺手回收冷会话。四个缓存此前只增不减
+            // （settle 只管 msgPin/modelMsgs，system/tools 无删除点），长驻的 GUI sidecar /
+            // serve 进程按会话数持续堆积。回收口径与阈值见 prompt-caches.ts。
+            touchSession(sessionID)
+            if (!_caches.msgPin.has(sessionID)) {
+              _caches.msgPin.set(sessionID, { sessionID, messages: new Map() })
+            }
+            const pinnedMessages = _caches.msgPin.get(sessionID)!
+            let pinned = 0,
+              cached = 0
+            for (const msg of msgs) {
+              const mid = msg.info.id
+              const parts = pinnedMessages.messages.get(mid)
+              if (parts) {
+                msg.parts = parts as typeof msg.parts
+                pinned++
+              } else {
+                pinnedMessages.messages.set(mid, structuredClone(msg.parts))
+                cached++
               }
-              const pinnedMessages = _caches.msgPin.get(sessionID)!
-              let pinned = 0, cached = 0
-              for (const msg of msgs) {
-                const mid = msg.info.id
-                const parts = pinnedMessages.messages.get(mid)
-                if (parts) {
-                  msg.parts = parts as typeof msg.parts
-                  pinned++
-                } else {
-                  pinnedMessages.messages.set(mid, structuredClone(msg.parts))
-                  cached++
-                }
-                // 260706 Red: periodic yield so event loop can serve heartbeat + health check
-                if ((pinned + cached) % 10 === 0) {
-                  yield* Effect.yieldNow
-                }
+              // 260706 Red: periodic yield so event loop can serve heartbeat + health check
+              if ((pinned + cached) % 10 === 0) {
+                yield* Effect.yieldNow
               }
             }
+          }
 
-            // 260617 Red cache instruction+skills+env per session to stabilize system prompt for prefix caching.
-            // instruction.system() re-reads all instruction files from disk every turn — if any file
-            // changes mid-session (agent edits MEMORY.md, AGENTS.md, etc.), the system prompt mutates
-            // and DeepSeek prefix cache is invalidated, causing cache hit to cliff-drop.
-            // 260804 Red modelKey: serialize caches per model. Without it, switching models mid-session
-            // reuses the previous model's serialized messages (toUIMessages strips providerMetadata /
-            // demotes reasoning for messages generated by a different model), producing a mixed-prefix
-            // the target provider has never cached → full rebuild → prolonged low cache-hit rate.
-            // Key uses the same stable string as toUIMessages' differentModel check (`providerID/model.id`).
-            const modelKey = `${model.providerID}/${model.id}`
-            const cachedSystem = _caches.system.get(sessionID)?.get(modelKey)
-            // 260814 Red queue 模式：本轮中途新到的 user 消息对模型隐藏（只从模型可见消息里
-            // 滤掉整条，不动 msgs 本体——compaction/reminder/msgPin 仍按全量算），留到轮末
-            // 续跑边界作为新轮输入。steer 模式恒等于 msgs。
-            const turnStart = turnStartUserID
-            const visibleMsgs =
-              busyEnter === "queue" && turnStart !== undefined
-                ? msgs.filter((m) => !(m.info.role === "user" && MessageV2.compareTime(m.info, turnStart) > 0))
-                : msgs
-            const [skills, env, instructions, modelMsgs] = yield* Effect.all([
-              cachedSystem ? Effect.succeed(cachedSystem.skills) : sys.skills(agent),
-              cachedSystem ? Effect.succeed(cachedSystem.env) : sys.environment(model),
-              cachedSystem ? Effect.succeed(cachedSystem.instructions) : instruction.system().pipe(Effect.orDie),
-              MessageV2.toModelMessagesEffect(visibleMsgs, model),
-            ])
-            if (!cachedSystem) {
-              const systemCache = { sessionID, modelKey, skills, env, instructions }
-              const sessionSystem = _caches.system.get(sessionID)
-              if (sessionSystem) sessionSystem.set(modelKey, systemCache)
-              else _caches.system.set(sessionID, new Map([[modelKey, systemCache]]))
+          // 260617 Red cache instruction+skills+env per session to stabilize system prompt for prefix caching.
+          // instruction.system() re-reads all instruction files from disk every turn — if any file
+          // changes mid-session (agent edits MEMORY.md, AGENTS.md, etc.), the system prompt mutates
+          // and DeepSeek prefix cache is invalidated, causing cache hit to cliff-drop.
+          // 260804 Red modelKey: serialize caches per model. Without it, switching models mid-session
+          // reuses the previous model's serialized messages (toUIMessages strips providerMetadata /
+          // demotes reasoning for messages generated by a different model), producing a mixed-prefix
+          // the target provider has never cached → full rebuild → prolonged low cache-hit rate.
+          // Key uses the same stable string as toUIMessages' differentModel check (`providerID/model.id`).
+          const modelKey = `${model.providerID}/${model.id}`
+          const cachedSystem = _caches.system.get(sessionID)?.get(modelKey)
+          // 260814 Red queue 模式：本轮中途新到的 user 消息对模型隐藏（只从模型可见消息里
+          // 滤掉整条，不动 msgs 本体——compaction/reminder/msgPin 仍按全量算），留到轮末
+          // 续跑边界作为新轮输入。steer 模式恒等于 msgs。
+          const turnStart = turnStartUserID
+          const visibleMsgs =
+            busyEnter === "queue" && turnStart !== undefined
+              ? msgs.filter((m) => !(m.info.role === "user" && MessageV2.compareTime(m.info, turnStart) > 0))
+              : msgs
+          const [skills, env, instructions, modelMsgs] = yield* Effect.all([
+            cachedSystem ? Effect.succeed(cachedSystem.skills) : sys.skills(agent),
+            cachedSystem ? Effect.succeed(cachedSystem.env) : sys.environment(model),
+            cachedSystem ? Effect.succeed(cachedSystem.instructions) : instruction.system().pipe(Effect.orDie),
+            MessageV2.toModelMessagesEffect(visibleMsgs, model),
+          ])
+          if (!cachedSystem) {
+            const systemCache = { sessionID, modelKey, skills, env, instructions }
+            const sessionSystem = _caches.system.get(sessionID)
+            if (sessionSystem) sessionSystem.set(modelKey, systemCache)
+            else _caches.system.set(sessionID, new Map([[modelKey, systemCache]]))
+          }
+          // 260621 Red cache final model messages for prefix stability.
+          let stabilizedMsgs = modelMsgs
+          const sessionModelMsgs = _caches.modelMsgs.get(sessionID)
+          const cachedModelMsgs = sessionModelMsgs?.get(modelKey)
+          if (cachedModelMsgs) {
+            const prevLen = cachedModelMsgs.messages.length
+            if (prevLen > 0 && prevLen < modelMsgs.length) {
+              stabilizedMsgs = [...cachedModelMsgs.messages, ...modelMsgs.slice(prevLen)]
             }
-            // 260621 Red cache final model messages for prefix stability.
-            let stabilizedMsgs = modelMsgs
-            const sessionModelMsgs = _caches.modelMsgs.get(sessionID)
-            const cachedModelMsgs = sessionModelMsgs?.get(modelKey)
-            if (cachedModelMsgs) {
-              const prevLen = cachedModelMsgs.messages.length
-              if (prevLen > 0 && prevLen < modelMsgs.length) {
-                stabilizedMsgs = [...cachedModelMsgs.messages, ...modelMsgs.slice(prevLen)]
-              }
-            }
-            const modelMsgsCache = { sessionID, modelKey, messages: [...stabilizedMsgs] }
-            if (sessionModelMsgs) sessionModelMsgs.set(modelKey, modelMsgsCache)
-            else _caches.modelMsgs.set(sessionID, new Map([[modelKey, modelMsgsCache]]))
-            const system = [...env, ...instructions, ...(skills ? [skills] : [])]
-            // 260718 Red today's date lives here, not in the cached <env> block above - this
-            // section runs fresh every turn (unlike env/instructions/skills, which are cached per
-            // session), so only this small tail invalidates the provider's prefix cache once a day
-            // instead of everything from <env> onward.
-            system.push(`Today's date: ${new Date().toDateString()}`)
-            // 260728 Red expanded rule 3 with concrete forbidden phrases (Chinese+English).
-            // User caught another agent telling him "go rest" after hours of no progress — that phrasing
-            // is a form of "put it aside" and is explicitly banned at the model level.
-            system.push(
-              `▸ WORK RULES (CORE — must obey, never violate):
+          }
+          const modelMsgsCache = { sessionID, modelKey, messages: [...stabilizedMsgs] }
+          if (sessionModelMsgs) sessionModelMsgs.set(modelKey, modelMsgsCache)
+          else _caches.modelMsgs.set(sessionID, new Map([[modelKey, modelMsgsCache]]))
+          const system = [...env, ...instructions, ...(skills ? [skills] : [])]
+          // 260718 Red today's date lives here, not in the cached <env> block above - this
+          // section runs fresh every turn (unlike env/instructions/skills, which are cached per
+          // session), so only this small tail invalidates the provider's prefix cache once a day
+          // instead of everything from <env> onward.
+          system.push(`Today's date: ${new Date().toDateString()}`)
+          // 260728 Red expanded rule 3 with concrete forbidden phrases (Chinese+English).
+          // User caught another agent telling him "go rest" after hours of no progress — that phrasing
+          // is a form of "put it aside" and is explicitly banned at the model level.
+          system.push(
+            `▸ WORK RULES (CORE — must obey, never violate):
   1. READ CODE FIRST — never guess file paths, APIs, or function names. Investigate before acting.
   2. FAIL → DIAGNOSE → PIVOT — after 2 same-direction failures, force-switch approach AND report facts/cause/new-plan to user.
   3. NEVER suggest the user rest / give up / pause / resume later / ask someone else — in ANY language (e.g. "去休息吧", "下次继续", "叫别人来做", "let's stop for today", "put it aside", "come back to this later"). That is the WORST violation: you are making the user's decision for them. Instead: admit "I cannot" + reason + alternative, or switch approach and keep working.
    4. APOLOGIES WITHOUT ACTION = ZERO — after being corrected, first message MUST be a tool call (read/grep/bash/write). Pure text = non-acknowledgment.
             5. AFTER ANALYSIS → EXECUTE YOURSELF — download, extract, modify config, run scripts. NEVER tell the user to do what you can do. Only ask for: irreversible ops, missing info, physical actions.`,
-             )
-             // 260805 Red step 模型专用：step 经常无视 DCP nudge 不调用 compress，
-             // 这里直接用铁律约束，不依赖 soft nudge。非 step 模型不动。
-             if (model.providerID === "stepfun" || model.id.toLowerCase().includes("step")) {
-               system.push(
-                 `▸ CONTEXT COMPRESSION (MUST follow when receiving  warnings):
+          )
+          // 260805 Red step 模型专用：step 经常无视 DCP nudge 不调用 compress，
+          // 这里直接用铁律约束，不依赖 soft nudge。非 step 模型不动。
+          if (model.providerID === "stepfun" || model.id.toLowerCase().includes("step")) {
+            system.push(
+              `▸ CONTEXT COMPRESSION (MUST follow when receiving  warnings):
   1. When you see "MAX CONTEXT LIMIT REACHED" or similar context warnings, you MUST call the compress tool immediately.
   2. Compress already-closed conversation ranges (finished tasks, resolved questions) using the compress tool.
   3. Do not ignore compression reminders — failing to compress when context is near the limit wastes tokens and degrades response quality.`,
-               )
-             }
-// 260818 Red flash 三锚（借鉴 dsh-routing-suite 的 WEAK_FLASH 实测，P10/P14/P19/P20）：
-              // flash 系列实战反馈「过于自信、思考浅」——直接动手、跳过探索。三锚分别治：
-              // ① deep-then-converge：纯 deep 指令是陷阱（思考到预算烧穿 0% 行动），必须配
-              //    "then commit and act" 绑定句 + 决策闭环收尾（P10 实测推理深度翻倍且 100% 收敛）
-              // ② 回顾锚：行动前回顾已完成步骤，防重复劳动（P22/P23：开放任务完成率 0%→100%）
-              // ③ 反跑题锚：禁环境检查/穷举扫描空转（P19/P20：胡思乱想率压到 0.0-0.3%）
-              // 只对 deepseek 系 flash 生效；step-3.7-flash 虽同名含 flash 但行为带相反
-              // （思考过度不产出，见 step 专属锚），必须排除——否则 Think deeply 是反效果。
-              if (
-                model.id.toLowerCase().includes("flash") &&
-                !model.id.toLowerCase().includes("step")
-              ) {
-                system.push(
-                  `▸ REASONING DISCIPLINE (flash 系列):
+            )
+          }
+          // 260818 Red flash 三锚（借鉴 dsh-routing-suite 的 WEAK_FLASH 实测，P10/P14/P19/P20）：
+          // flash 系列实战反馈「过于自信、思考浅」——直接动手、跳过探索。三锚分别治：
+          // ① deep-then-converge：纯 deep 指令是陷阱（思考到预算烧穿 0% 行动），必须配
+          //    "then commit and act" 绑定句 + 决策闭环收尾（P10 实测推理深度翻倍且 100% 收敛）
+          // ② 回顾锚：行动前回顾已完成步骤，防重复劳动（P22/P23：开放任务完成率 0%→100%）
+          // ③ 反跑题锚：禁环境检查/穷举扫描空转（P19/P20：胡思乱想率压到 0.0-0.3%）
+          // 只对 deepseek 系 flash 生效；step-3.7-flash 虽同名含 flash 但行为带相反
+          // （思考过度不产出，见 step 专属锚），必须排除——否则 Think deeply 是反效果。
+          if (model.id.toLowerCase().includes("flash") && !model.id.toLowerCase().includes("step")) {
+            system.push(
+              `▸ REASONING DISCIPLINE (flash 系列):
   1. Think deeply first, then commit and act. Each reasoning block ends with a decision or an information need — no open-ended rumination.
   2. Before acting, briefly review what you have already done in this session and continue from where you left off; do not repeat completed steps.
   3. Do not run environment checks (echo, whoami, uname, node --version, date, pwd) or exhaustive grep/glob scans. Read the specific file, then act.`,
-                )
-              }
-              // 260818 Red step 收敛锚（实测画像与 deepseek flash 相反）：step-3.7-flash
-              // 思考 3553 字/正文仅 144 字（CHANGELOG 0.8.2 实证）、纯思考轮次 0.6% 是
-              // deepseek 的 4 倍、同一工具调用重发 3-8 次空转（0.8.9 空转检测的起因）。
-              // 它不缺深度，缺的是「想完必须产出」——与 flash 的 Think deeply 方向相反，
-              // 给了就是纯 deep 陷阱（思考烧穿预算 0% 行动）。三锚分别治：
-              // ① 收敛锚：思考以行动决策收尾，禁止无限推演；正文是唯一交付物
-              // ② 反空转锚：不重发相同工具+相同输入（空转检测的提示词侧防线）
-              // ③ 一致锚：时强时弱=思考长度波动大，稳定节奏优先于单次超常发挥
-              if (model.providerID === "stepfun" || model.id.toLowerCase().includes("step")) {
-                system.push(
-                  `▸ REASONING DISCIPLINE (step 系列):
+            )
+          }
+          // 260818 Red step 收敛锚（实测画像与 deepseek flash 相反）：step-3.7-flash
+          // 思考 3553 字/正文仅 144 字（CHANGELOG 0.8.2 实证）、纯思考轮次 0.6% 是
+          // deepseek 的 4 倍、同一工具调用重发 3-8 次空转（0.8.9 空转检测的起因）。
+          // 它不缺深度，缺的是「想完必须产出」——与 flash 的 Think deeply 方向相反，
+          // 给了就是纯 deep 陷阱（思考烧穿预算 0% 行动）。三锚分别治：
+          // ① 收敛锚：思考以行动决策收尾，禁止无限推演；正文是唯一交付物
+          // ② 反空转锚：不重发相同工具+相同输入（空转检测的提示词侧防线）
+          // ③ 一致锚：时强时弱=思考长度波动大，稳定节奏优先于单次超常发挥
+          if (model.providerID === "stepfun" || model.id.toLowerCase().includes("step")) {
+            system.push(
+              `▸ REASONING DISCIPLINE (step 系列):
   1. Think, then act — each reasoning block ends with a concrete next action or a decision. Never extend reasoning just to keep thinking; when you have a plan, execute it.
   2. Do not resend the same tool call with the same input. If a call was already made, read its output and move forward — repeating identical work is the single worst failure mode.
   3. The visible reply is the deliverable. Keep a steady rhythm of action → verify → report; consistency beats one brilliant turn followed by stalls.`,
-                )
-              }
-             // 260801 Red Windsurf-inspired memory clause: write now, not later.
-            // Context gets compacted; the two MEMORY.md files are the only bridge to the next session.
-            system.push(
-              `▸ MEMORY (WRITE NOW, NOT LATER):
+            )
+          }
+          // 260801 Red Windsurf-inspired memory clause: write now, not later.
+          // Context gets compacted; the two MEMORY.md files are the only bridge to the next session.
+          system.push(
+            `▸ MEMORY (WRITE NOW, NOT LATER):
  1. You have persistent memory (project \`.redcode/MEMORY.md\` + global \`~/.redcode/MEMORY.md\`). On any durable event — user decision, project-specific pitfall, being corrected, architecture choice — write it down IMMEDIATELY, never wait for wrap-up. No user permission needed.
  2. Context WILL be compacted; memory is the only bridge to the next session. Anything that survives only in this conversation is lost. Write liberally.
  3. Append via read + edit, NEVER write (write overwrites the file). Project file for this project's facts; only cross-project, reusable lessons go to global.`,
-            )
-// 260801 Red active goal 注入：钉住目标时让模型持续推进，完成调 goal_done 收尾。
-            // 放 memory 条款后 canary 前——goal 状态变化只 bust 尾部缓存，不影响前缀大块。
-            // 260817 Red goal 语义三件套①+②（对齐 DSH goal guidance）：blocked 判定标准与
-            // 明文排除。V4 长程早停的对冲——难/不确定/还有活都不构成停下来报告阻塞的理由。
-            const activeGoal = yield* goal.get(sessionID)
-            if (activeGoal?.status === "active") {
-              system.push(
-                `▸ ACTIVE GOAL (pinned by the user — keep working toward it; call goal_done when finished):
+          )
+          // 260801 Red active goal 注入：钉住目标时让模型持续推进，完成调 goal_done 收尾。
+          // 放 memory 条款后 canary 前——goal 状态变化只 bust 尾部缓存，不影响前缀大块。
+          // 260817 Red goal 语义三件套①+②（对齐 DSH goal guidance）：blocked 判定标准与
+          // 明文排除。V4 长程早停的对冲——难/不确定/还有活都不构成停下来报告阻塞的理由。
+          const activeGoal = yield* goal.get(sessionID)
+          if (activeGoal?.status === "active") {
+            system.push(
+              `▸ ACTIVE GOAL (pinned by the user — keep working toward it; call goal_done when finished):
  <goal>${activeGoal.text}</goal>
  Blocked rules: only report a blocking condition after the SAME concrete condition has persisted for at least 3 consecutive turns with no progress, and state that concrete condition. Difficulty, uncertainty, or remaining useful work is NOT blocked — keep pushing.`,
-              )
+            )
+          }
+          // 260629 Red inject per-session canary marker for prompt-injection detection.
+          // If it ever appears in model output, terminate the session.
+          // 260722 Red reworded after a real false-positive: the old "Session marker: X" phrasing
+          // sat right next to "Today's date: X" and read like ordinary referenceable context, so
+          // when RedMind wrote a session summary to its own memory log it cited the marker as a
+          // plausible session id and got killed for it — no actual leak, just a model reasonably
+          // treating info-shaped text as info. Making the "never repeat this" instruction explicit
+          // should cut false positives while making a genuine leak (repeated *despite* the explicit
+          // instruction) a stronger signal, not a weaker one.
+          // 260802 Red inject current model's image capability so the model has a hard
+          // authoritative fact instead of relying on skill hints. When true, the model must
+          // not route user-attached images anywhere else — it can see them directly.
+          // 260807 哥哥拍板：本地 vision MCP 整体退役，识图统一走多模态子代理。本地
+          // minicpm 精度有上限、还要占显存和 Ollama 宿主内存；派子代理看一次图只要几分钱，
+          // 成本不构成理由。这条是权威事实，模型不该再去找任何 vision_* 工具。
+          // Stable per model: text only changes when the model changes (which busts prefix anyway).
+          system.push(
+            `▸ VISION CAPABILITY (authoritative): current model image input support = ${
+              model.capabilities.input.image ? "true" : "false"
+            }. If true, you can see user-attached images directly — just look at them. If false, dispatch a multimodal subagent (task tool, \`explore\` agent) with the image's absolute path and have it read the file and describe what you need; there is no vision MCP tool — never look for one.`,
+          )
+          const canaryToken = getCanary(sessionID)
+          system.push(
+            `Internal session marker — do not display, log, repeat, or otherwise include this value in any response, file, or tool call: ${canaryToken}`,
+          )
+          system.push(
+            `DCP metadata tags (` +
+              `<dcp-message-id>…</dcp-message-id>, ` +
+              `<dcp-system-reminder>…</dcp-system-reminder>) ` +
+              `are internal session metadata. Never display, log, repeat, or otherwise include them in any response, file, or tool call. ` +
+              `If you encounter a compression reminder, execute the compress action or continue the task — do not output the reminder text.`,
+          )
+          const format = lastUser.format ?? { type: "text" as const }
+          if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
+          // 260721 Red prefix shape diagnostic: detect system/tool change mid-session
+          {
+            const shape = PrefixShape.capture(system, sortedTools as Record<string, unknown>)
+            const diag = PrefixShape.diagnose(shape, sessionID, modelKey, sortedTools as Record<string, unknown>)
+            if (diag.changed) {
+              // 260729 Red 带上工具 schema 的 token 成本：前缀被打掉时最该知道的就是
+              // "谁在吃预算"。topCosts 只在 tools 真的变了时才算。
+              log.warn("prefix cache changed", {
+                reasons: diag.reasons,
+                step,
+                toolCount: diag.toolCount,
+                toolSchemaTokens: diag.toolSchemaTokens,
+                ...(diag.topCosts ? { topCosts: diag.topCosts.map((c) => `${c.name}=${c.tokens}`).join(" ") } : {}),
+              })
             }
-            // 260629 Red inject per-session canary marker for prompt-injection detection.
-            // If it ever appears in model output, terminate the session.
-            // 260722 Red reworded after a real false-positive: the old "Session marker: X" phrasing
-            // sat right next to "Today's date: X" and read like ordinary referenceable context, so
-            // when RedMind wrote a session summary to its own memory log it cited the marker as a
-            // plausible session id and got killed for it — no actual leak, just a model reasonably
-            // treating info-shaped text as info. Making the "never repeat this" instruction explicit
-            // should cut false positives while making a genuine leak (repeated *despite* the explicit
-            // instruction) a stronger signal, not a weaker one.
-            // 260802 Red inject current model's image capability so the model has a hard
-            // authoritative fact instead of relying on skill hints. When true, the model must
-            // not route user-attached images anywhere else — it can see them directly.
-            // 260807 哥哥拍板：本地 vision MCP 整体退役，识图统一走多模态子代理。本地
-            // minicpm 精度有上限、还要占显存和 Ollama 宿主内存；派子代理看一次图只要几分钱，
-            // 成本不构成理由。这条是权威事实，模型不该再去找任何 vision_* 工具。
-            // Stable per model: text only changes when the model changes (which busts prefix anyway).
-            system.push(
-              `▸ VISION CAPABILITY (authoritative): current model image input support = ${
-                model.capabilities.input.image ? "true" : "false"
-              }. If true, you can see user-attached images directly — just look at them. If false, dispatch a multimodal subagent (task tool, \`explore\` agent) with the image's absolute path and have it read the file and describe what you need; there is no vision MCP tool — never look for one.`,
-            )
-            const canaryToken = getCanary(sessionID)
-            system.push(
-              `Internal session marker — do not display, log, repeat, or otherwise include this value in any response, file, or tool call: ${canaryToken}`,
-            )
-            system.push(
-              `DCP metadata tags (` +
-                `<dcp-message-id>…</dcp-message-id>, ` +
-                `<dcp-system-reminder>…</dcp-system-reminder>) ` +
-                `are internal session metadata. Never display, log, repeat, or otherwise include them in any response, file, or tool call. ` +
-                `If you encounter a compression reminder, execute the compress action or continue the task — do not output the reminder text.`,
-            )
-            const format = lastUser.format ?? { type: "text" as const }
-            if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
-            // 260721 Red prefix shape diagnostic: detect system/tool change mid-session
-            {
-              const shape = PrefixShape.capture(system, sortedTools as Record<string, unknown>)
-              const diag = PrefixShape.diagnose(shape, sessionID, modelKey, sortedTools as Record<string, unknown>)
-              if (diag.changed) {
-                // 260729 Red 带上工具 schema 的 token 成本：前缀被打掉时最该知道的就是
-                // "谁在吃预算"。topCosts 只在 tools 真的变了时才算。
-                log.warn("prefix cache changed", {
-                  reasons: diag.reasons,
-                  step,
-                  toolCount: diag.toolCount,
-                  toolSchemaTokens: diag.toolSchemaTokens,
-                  ...(diag.topCosts ? { topCosts: diag.topCosts.map((c) => `${c.name}=${c.tokens}`).join(" ") } : {}),
-                })
-              }
-            }
-            // 260804 Red 前缀断裂探针，260819 cc 抽到 session/prefix-probe.ts —— 它原来是
-            // 「诊断完成后整块删除」的临时块，在这个 runLoop 里活了半个月还在长功能，且带着
-            // 无界 Map、同步写盘、无轮转、无开关。抽出去转正，行为不变，开关见 Flag。
-            PrefixProbe.record({
-              sessionID,
-              modelKey,
-              system,
-              messages: stabilizedMsgs,
-              reminderLength: userReminderText?.length ?? 0,
-            })
-            const result = yield* handle.process({
-              user: lastUser,
-              agent,
-              permission: session.permission,
-              sessionID,
-              parentSessionID: session.parentID,
-              system,
-              // 260623 Red inject user reminder AFTER stabilized prefix (not before msgPin)
-              // so it doesn't mutate cached messages yet still reaches the model on step>1.
-              messages: [
-                ...stabilizedMsgs,
-                ...(userReminderText ? [{ role: "user" as const, content: userReminderText }] : []),
-                // 260710 Red loop recovery prompt 注入（跨 step 重复检测触发）
-                ...(loopRecoveryPrompt ? [{ role: "user" as const, content: loopRecoveryPrompt }] : []),
-                // 260814 Red stall nudge 注入已退役——repeat-tool-reminder 软层接管（见 runLoop 顶部注释）
-                // 260731 Red 原本这里还有第三条注入：每步一条 <reasoning-language> 的 user turn。
-                // 已撤除，原因见本文件上方「可见思考的语言/称呼约束注入已撤除」那段注释。
-                ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : []),
-              ],
-              tools: sortedTools,
-              model,
-              toolChoice: format.type === "json_schema" ? "required" : undefined,
-            })
-            // 260710 Red 注入后清空，下一轮只在 loopTracker 再次触发时才重新设置
-            loopRecoveryPrompt = undefined
-            // 260801 Red Goal token 记账：累计本步 tokens（无 goal 时无开销）
-            usageTokens += handle.message.tokens?.total ?? 0
+          }
+          // 260804 Red 前缀断裂探针，260819 cc 抽到 session/prefix-probe.ts —— 它原来是
+          // 「诊断完成后整块删除」的临时块，在这个 runLoop 里活了半个月还在长功能，且带着
+          // 无界 Map、同步写盘、无轮转、无开关。抽出去转正，行为不变，开关见 Flag。
+          PrefixProbe.record({
+            sessionID,
+            modelKey,
+            system,
+            messages: stabilizedMsgs,
+            reminderLength: userReminderText?.length ?? 0,
+          })
+          const result = yield* handle.process({
+            user: lastUser,
+            agent,
+            permission: session.permission,
+            sessionID,
+            parentSessionID: session.parentID,
+            system,
+            // 260623 Red inject user reminder AFTER stabilized prefix (not before msgPin)
+            // so it doesn't mutate cached messages yet still reaches the model on step>1.
+            messages: [
+              ...stabilizedMsgs,
+              ...(userReminderText ? [{ role: "user" as const, content: userReminderText }] : []),
+              // 260710 Red loop recovery prompt 注入（跨 step 重复检测触发）
+              ...(loopRecoveryPrompt ? [{ role: "user" as const, content: loopRecoveryPrompt }] : []),
+              // 260814 Red stall nudge 注入已退役——repeat-tool-reminder 软层接管（见 runLoop 顶部注释）
+              // 260731 Red 原本这里还有第三条注入：每步一条 <reasoning-language> 的 user turn。
+              // 已撤除，原因见本文件上方「可见思考的语言/称呼约束注入已撤除」那段注释。
+              ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : []),
+            ],
+            tools: sortedTools,
+            model,
+            toolChoice: format.type === "json_schema" ? "required" : undefined,
+          })
+          // 260710 Red 注入后清空，下一轮只在 loopTracker 再次触发时才重新设置
+          loopRecoveryPrompt = undefined
+          // 260801 Red Goal token 记账：累计本步 tokens（无 goal 时无开销）
+          usageTokens += handle.message.tokens?.total ?? 0
 
-            if (structured !== undefined) {
-              handle.message.structured = structured
-              handle.message.finish = handle.message.finish ?? "stop"
+          if (structured !== undefined) {
+            handle.message.structured = structured
+            handle.message.finish = handle.message.finish ?? "stop"
+            yield* sessions.updateMessage(handle.message)
+            return "break" as const
+          }
+
+          const finished = handle.message.finish && !["tool-calls", "unknown"].includes(handle.message.finish)
+          if (finished && !handle.message.error) {
+            // 内容过滤中止（如 Anthropic stop_reason: refusal）可能一个字都没输出，
+            // 不当错误处理的话会话直接静默转 idle，用户什么都看不到
+            if (handle.message.finish === "content-filter") {
+              handle.message.error = new MessageV2.ContentFilterError({
+                message: "The response was blocked by the provider's content filter",
+              }).toObject()
+              yield* sessions.updateMessage(handle.message)
+              yield* bus.publish(Session.Event.Error, { sessionID, error: handle.message.error })
+              return "break" as const
+            }
+            if (format.type === "json_schema") {
+              handle.message.error = new MessageV2.StructuredOutputError({
+                message: "Model did not produce structured output",
+                retries: 0,
+              }).toObject()
               yield* sessions.updateMessage(handle.message)
               return "break" as const
             }
+          }
 
-            const finished = handle.message.finish && !["tool-calls", "unknown"].includes(handle.message.finish)
-            if (finished && !handle.message.error) {
-              // 内容过滤中止（如 Anthropic stop_reason: refusal）可能一个字都没输出，
-              // 不当错误处理的话会话直接静默转 idle，用户什么都看不到
-              if (handle.message.finish === "content-filter") {
-                handle.message.error = new MessageV2.ContentFilterError({
-                  message: "The response was blocked by the provider's content filter",
-                }).toObject()
-                yield* sessions.updateMessage(handle.message)
-                yield* bus.publish(Session.Event.Error, { sessionID, error: handle.message.error })
-                return "break" as const
-              }
-              if (format.type === "json_schema") {
-                handle.message.error = new MessageV2.StructuredOutputError({
-                  message: "Model did not produce structured output",
-                  retries: 0,
-                }).toObject()
-                yield* sessions.updateMessage(handle.message)
-                return "break" as const
-              }
-            }
+          if (result === "stop") return "break" as const
 
-            if (result === "stop") return "break" as const
-
-            // 260710 Red 跨 step loop recovery：检查本轮文本输出是否与前几轮高度相似
-            {
-              const textParts = MessageV2.parts(handle.message.id).filter((p): p is MessageV2.TextPart => p.type === "text")
-              const fullText = textParts.map((p) => p.text).join("\n")
-              if (fullText.length > 0) {
-                const level = loopTracker.record(fullText)
-                if (level) {
-                  yield* slog.warn("text.loop.recovery", { level, textLen: fullText.length })
-                  yield* bus.publish(Session.Event.LoopDetected, { sessionID, type: level, textLen: fullText.length })
-                  if (level === "stop") {
-                    return "break" as const
-                  }
-                  // nudge / replan: 在下一轮注入恢复提示
-                  loopRecoveryPrompt = RECOVERY_PROMPTS[level]
+          // 260710 Red 跨 step loop recovery：检查本轮文本输出是否与前几轮高度相似
+          {
+            const textParts = MessageV2.parts(handle.message.id).filter(
+              (p): p is MessageV2.TextPart => p.type === "text",
+            )
+            const fullText = textParts.map((p) => p.text).join("\n")
+            if (fullText.length > 0) {
+              const level = loopTracker.record(fullText)
+              if (level) {
+                yield* slog.warn("text.loop.recovery", { level, textLen: fullText.length })
+                yield* bus.publish(Session.Event.LoopDetected, { sessionID, type: level, textLen: fullText.length })
+                if (level === "stop") {
+                  return "break" as const
                 }
+                // nudge / replan: 在下一轮注入恢复提示
+                loopRecoveryPrompt = RECOVERY_PROMPTS[level]
               }
             }
+          }
 
-            // 260728 Red A：本轮把工具调用写成了 XML 文本（processor 已从可见正文里摘掉）。
-            // 那次调用根本没执行，就这么退出等于整轮白跑 —— 把解析结果回灌给模型，
-            // 强制续跑一轮让它用原生 tool-call 通道重发。
-            // 不在这里直接执行打捞出的调用：默认 ai-sdk 运行时里工具由 streamText 内部执行，
-            // 凭空合成 tool-call 事件会造出永不 settle 的 running part，还绕过 permission.ask。
-            if (handle.salvagedToolCalls.length > 0) {
-              const tools = handle.salvagedToolCalls.map((call) => call.name)
-              if (salvageRecoveries < MAX_SALVAGE_RECOVERIES) {
-                salvageRecoveries++
-                yield* slog.warn("toolcall.text_form.recover", {
+          // 260728 Red A：本轮把工具调用写成了 XML 文本（processor 已从可见正文里摘掉）。
+          // 那次调用根本没执行，就这么退出等于整轮白跑 —— 把解析结果回灌给模型，
+          // 强制续跑一轮让它用原生 tool-call 通道重发。
+          // 不在这里直接执行打捞出的调用：默认 ai-sdk 运行时里工具由 streamText 内部执行，
+          // 凭空合成 tool-call 事件会造出永不 settle 的 running part，还绕过 permission.ask。
+          if (handle.salvagedToolCalls.length > 0) {
+            const tools = handle.salvagedToolCalls.map((call) => call.name)
+            if (salvageRecoveries < MAX_SALVAGE_RECOVERIES) {
+              salvageRecoveries++
+              yield* slog.warn("toolcall.text_form.recover", {
+                step,
+                tools,
+                attempt: salvageRecoveries,
+                model: lastUser.model.modelID,
+              })
+              loopRecoveryPrompt = XmlToolCall.recoveryPrompt(handle.salvagedToolCalls)
+              forceContinue = true
+            } else {
+              // 纠正过 MAX_SALVAGE_RECOVERIES 次还在重犯，再续跑就是烧 token 陪它打转。
+              // 放它正常收尾——XML 已经被摘干净，用户至少不会对着一坨标签，
+              // 但必须留一句可见说明，否则看起来就是模型无缘无故什么都没做。
+              yield* slog.error("toolcall.text_form.exhausted", { step, tools, model: lastUser.model.modelID })
+              const now = Date.now()
+              yield* sessions.updatePart({
+                id: PartID.ascending(),
+                messageID: handle.message.id,
+                sessionID,
+                type: "text",
+                text: `[RedCode] 模型连续 ${MAX_SALVAGE_RECOVERIES + 1} 次把工具调用写成了文本而不是真正发起调用（${tools.join("、")}），这些调用都没有执行。已停止自动重试，请重发一次或换个模型。`,
+                time: { start: now, end: now },
+              })
+            }
+          }
+
+          // 260729 Red 分级阈值：在真正触发压缩之前先上廉价手段（见 overflow.ts）。
+          // soft 档刻意什么都不做，只记一条 —— 在这里做任何重写都是白白炸掉 prefix cache。
+          if (result !== "compact" && !handle.message.summary) {
+            const tier = yield* compaction
+              .level({ tokens: handle.message.tokens, model })
+              .pipe(Effect.catch(() => Effect.succeed("ok" as const)))
+            if (tier === "soft" && !softContextNoticed) {
+              softContextNoticed = true
+              yield* slog.info("context.soft", { step, note: "保留缓存前缀，暂不做任何重写" })
+            }
+            if (tier === "prune") {
+              const freed = yield* compaction
+                .prune({ sessionID })
+                .pipe(Effect.catch(() => Effect.succeed({ tokens: 0, parts: 0 })))
+              if (freed.tokens > 0) {
+                // 260811 cc audit R4: 此档只记账不结算——标记已入库，但 msgPin 仍钉着
+                // 首次快照，模型端 prompt 不变（缓存优先）。真正生效在 compact 边界
+                // 的 settlePromptCaches，日志措辞别再谎报"已释放"。
+                yield* slog.info("context.prune.marked", {
                   step,
-                  tools,
-                  attempt: salvageRecoveries,
-                  model: lastUser.model.modelID,
-                })
-                loopRecoveryPrompt = XmlToolCall.recoveryPrompt(handle.salvagedToolCalls)
-                forceContinue = true
-              } else {
-                // 纠正过 MAX_SALVAGE_RECOVERIES 次还在重犯，再续跑就是烧 token 陪它打转。
-                // 放它正常收尾——XML 已经被摘干净，用户至少不会对着一坨标签，
-                // 但必须留一句可见说明，否则看起来就是模型无缘无故什么都没做。
-                yield* slog.error("toolcall.text_form.exhausted", { step, tools, model: lastUser.model.modelID })
-                const now = Date.now()
-                yield* sessions.updatePart({
-                  id: PartID.ascending(),
-                  messageID: handle.message.id,
-                  sessionID,
-                  type: "text",
-                  text: `[RedCode] 模型连续 ${MAX_SALVAGE_RECOVERIES + 1} 次把工具调用写成了文本而不是真正发起调用（${tools.join("、")}），这些调用都没有执行。已停止自动重试，请重发一次或换个模型。`,
-                  time: { start: now, end: now },
+                  markedTokens: freed.tokens,
+                  markedParts: freed.parts,
+                  note: "记账托管，结算于 compact 边界；期间前缀维持钉死",
                 })
               }
             }
+          }
 
-            // 260729 Red 分级阈值：在真正触发压缩之前先上廉价手段（见 overflow.ts）。
-            // soft 档刻意什么都不做，只记一条 —— 在这里做任何重写都是白白炸掉 prefix cache。
-            if (result !== "compact" && !handle.message.summary) {
-              const tier = yield* compaction
-                .level({ tokens: handle.message.tokens, model })
-                .pipe(Effect.catch(() => Effect.succeed("ok" as const)))
-              if (tier === "soft" && !softContextNoticed) {
-                softContextNoticed = true
-                yield* slog.info("context.soft", { step, note: "保留缓存前缀，暂不做任何重写" })
-              }
-              if (tier === "prune") {
-                const freed = yield* compaction
-                  .prune({ sessionID })
-                  .pipe(Effect.catch(() => Effect.succeed({ tokens: 0, parts: 0 })))
-                if (freed.tokens > 0) {
-                  // 260811 cc audit R4: 此档只记账不结算——标记已入库，但 msgPin 仍钉着
-                  // 首次快照，模型端 prompt 不变（缓存优先）。真正生效在 compact 边界
-                  // 的 settlePromptCaches，日志措辞别再谎报"已释放"。
-                  yield* slog.info("context.prune.marked", {
-                    step,
-                    markedTokens: freed.tokens,
-                    markedParts: freed.parts,
-                    note: "记账托管，结算于 compact 边界；期间前缀维持钉死",
-                  })
-                }
-              }
+          if (result === "compact") {
+            // 260729 Red prune 先于 summarize（取自 DeepSeek-Reasonix 的 compact.go）：
+            // 摘要压缩是一次付费的模型调用，而且会重写前缀、把 prefix cache 整个打掉。
+            // 裁剪陈旧工具输出只是本地改写，代价接近零。所以先 prune，如果光这一步就把
+            // 用量压回阈值以下，这一轮的 summarize 直接跳过 —— 省一次调用，也少一次缓存重置。
+            // 溢出（!finish，模型是被上下文顶断的）时不做这个判断：那种情况必须真压。
+            const overflow = !handle.message.finish
+            const freed = yield* compaction
+              .prune({ sessionID })
+              .pipe(Effect.catch(() => Effect.succeed({ tokens: 0, parts: 0 })))
+            let skip = false
+            let freedRatio = 0
+            if (!overflow && freed.tokens > 0) {
+              const tokens = handle.message.tokens
+              const before = tokens.total || tokens.input + tokens.output + tokens.cache.read + tokens.cache.write
+              const after = Math.max(0, before - freed.tokens)
+              freedRatio = before > 0 ? freed.tokens / before : 0
+              const fits = !(yield* compaction.isOverflow({
+                tokens: { ...tokens, total: after, cache: { read: 0, write: 0 }, input: after, output: 0 },
+                model,
+              }))
+              // 260819 cc 除了"prune 后不再超限"，还要求释放量够本——理由见 PRUNE_SKIP_MIN_RATIO。
+              // 不达标时不是"什么都不做"（那样 freed 是虚报、上下文没真降、下一轮照样撞线），
+              // 而是落到 else 走真 summarize：同样重建一次前缀，但一次性压到位，不留反复。
+              skip = fits && freedRatio >= PRUNE_SKIP_MIN_RATIO
             }
-
-            if (result === "compact") {
-              // 260729 Red prune 先于 summarize（取自 DeepSeek-Reasonix 的 compact.go）：
-              // 摘要压缩是一次付费的模型调用，而且会重写前缀、把 prefix cache 整个打掉。
-              // 裁剪陈旧工具输出只是本地改写，代价接近零。所以先 prune，如果光这一步就把
-              // 用量压回阈值以下，这一轮的 summarize 直接跳过 —— 省一次调用，也少一次缓存重置。
-              // 溢出（!finish，模型是被上下文顶断的）时不做这个判断：那种情况必须真压。
-              const overflow = !handle.message.finish
-              const freed = yield* compaction.prune({ sessionID }).pipe(
-                Effect.catch(() => Effect.succeed({ tokens: 0, parts: 0 })),
-              )
-              let skip = false
-              let freedRatio = 0
-              if (!overflow && freed.tokens > 0) {
-                const tokens = handle.message.tokens
-                const before = tokens.total || tokens.input + tokens.output + tokens.cache.read + tokens.cache.write
-                const after = Math.max(0, before - freed.tokens)
-                freedRatio = before > 0 ? freed.tokens / before : 0
-                const fits = !(yield* compaction.isOverflow({
-                  tokens: { ...tokens, total: after, cache: { read: 0, write: 0 }, input: after, output: 0 },
-                  model,
-                }))
-                // 260819 cc 除了"prune 后不再超限"，还要求释放量够本——理由见 PRUNE_SKIP_MIN_RATIO。
-                // 不达标时不是"什么都不做"（那样 freed 是虚报、上下文没真降、下一轮照样撞线），
-                // 而是落到 else 走真 summarize：同样重建一次前缀，但一次性压到位，不留反复。
-                skip = fits && freedRatio >= PRUNE_SKIP_MIN_RATIO
-              }
-              if (skip) {
-                yield* slog.info("compaction.skipped_after_prune", {
-                  freedTokens: freed.tokens,
-                  prunedParts: freed.parts,
-                  freedRatio: freedRatio.toFixed(3),
-                  minRatio: PRUNE_SKIP_MIN_RATIO,
-                })
-                // 260811 cc audit R4: 跳过 summarize 的判断依据是 prune 的释放量，那释放
-                // 必须真发生——此前 msgPin 会把标记钉回去，freed 是虚报（"跳过压缩→实际
-                // 没降→下轮再超限"）。既然已到 compact 边界，缓存重建成本本来就要付：
-                // 立即结算，让 prune 落地、跳过判断从此诚实。
-                settlePromptCaches(sessionID, "prune-sufficient")
-              } else {
-                yield* compaction.create({
-                  sessionID,
-                  agent: lastUser.agent,
-                  model: lastUser.model,
-                  auto: true,
-                  overflow,
-                })
-              }
+            if (skip) {
+              yield* slog.info("compaction.skipped_after_prune", {
+                freedTokens: freed.tokens,
+                prunedParts: freed.parts,
+                freedRatio: freedRatio.toFixed(3),
+                minRatio: PRUNE_SKIP_MIN_RATIO,
+              })
+              // 260811 cc audit R4: 跳过 summarize 的判断依据是 prune 的释放量，那释放
+              // 必须真发生——此前 msgPin 会把标记钉回去，freed 是虚报（"跳过压缩→实际
+              // 没降→下轮再超限"）。既然已到 compact 边界，缓存重建成本本来就要付：
+              // 立即结算，让 prune 落地、跳过判断从此诚实。
+              settlePromptCaches(sessionID, "prune-sufficient")
+            } else {
+              yield* compaction.create({
+                sessionID,
+                agent: lastUser.agent,
+                model: lastUser.model,
+                auto: true,
+                overflow,
+              })
             }
-            return "continue" as const
-          }).pipe(
-            Effect.ensuring(instruction.clear(handle.message.id)),
-            Effect.onInterrupt(() => finalizeInterruptedAssistant),
-          )
-          if (outcome === "break") break
-          continue
-        }
+          }
+          return "continue" as const
+        }).pipe(
+          Effect.ensuring(instruction.clear(handle.message.id)),
+          Effect.onInterrupt(() => finalizeInterruptedAssistant),
+        )
+        if (outcome === "break") break
+        continue
+      }
 
-        yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
-        // 260801 Red Goal token 记账：无 active goal 时 UPDATE no-op，零成本
-        yield* goal.addUsage({ sessionID, tokens: usageTokens }).pipe(Effect.ignore)
-        return yield* lastAssistant(sessionID)
-      },
-    )
+      yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
+      // 260801 Red Goal token 记账：无 active goal 时 UPDATE no-op，零成本
+      yield* goal.addUsage({ sessionID, tokens: usageTokens }).pipe(Effect.ignore)
+      return yield* lastAssistant(sessionID)
+    })
 
     const loop: (input: LoopInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.loop")(function* (
       input: LoopInput,

@@ -225,22 +225,19 @@ export function registerRendererProtocol() {
 
     // Try primary path first, then nested path (for production builds with root: ".")
     const decoded = decodeURIComponent(url.pathname)
-    const candidates = [
-      resolve(rendererRoot, `.${decoded}`),
-      resolve(rendererRoot, `src/renderer${decoded}`),
-    ]
+    const candidates = [resolve(rendererRoot, `.${decoded}`), resolve(rendererRoot, `src/renderer${decoded}`)]
 
     for (const file of candidates) {
       const rel = relative(rendererRoot, file)
       if (rel.startsWith("..") || isAbsolute(rel)) continue
       if (existsSync(file)) {
-          const response = await net.fetch(pathToFileURL(file).toString())
-          if (response.status >= 400) {
-            writeLog("protocol", "fetch failed", { url: request.url, file, status: response.status }, "error")
-          }
-          return addDocumentPolicy(response, file)
+        const response = await net.fetch(pathToFileURL(file).toString())
+        if (response.status >= 400) {
+          writeLog("protocol", "fetch failed", { url: request.url, file, status: response.status }, "error")
         }
+        return addDocumentPolicy(response, file)
       }
+    }
 
     writeLog("protocol", "fetch error", { url: request.url, path: decoded }, "error")
     return new Response("Not found", { status: 404 })

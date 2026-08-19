@@ -13,7 +13,11 @@ import {
 } from "../../errors"
 import { V2Authorization } from "../../middleware/authorization"
 import { InstanceContextMiddleware } from "../../middleware/instance-context"
-import { WorkspaceRoutingMiddleware, WorkspaceRoutingQuery, WorkspaceRoutingQueryFields } from "../../middleware/workspace-routing"
+import {
+  WorkspaceRoutingMiddleware,
+  WorkspaceRoutingQuery,
+  WorkspaceRoutingQueryFields,
+} from "../../middleware/workspace-routing"
 import { QueryBoolean } from "../query"
 
 export const SessionsQuery = Schema.Struct({

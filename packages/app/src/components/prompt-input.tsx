@@ -45,7 +45,13 @@ import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
-import { createTextFragment, getCursorPosition, setCursorPosition, setRangeEdge, parseFromDOM } from "./prompt-input/editor-dom"
+import {
+  createTextFragment,
+  getCursorPosition,
+  setCursorPosition,
+  setRangeEdge,
+  parseFromDOM,
+} from "./prompt-input/editor-dom"
 import { findHistorySuggestion } from "./prompt-input/suggestion"
 import { createGhostSystem } from "./prompt-input/ghost"
 import { createPromptAttachments } from "./prompt-input/attachments"
@@ -487,43 +493,49 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       onSelect: () => setMode("normal"),
     },
   ])
-   const closePopover = () => setStore("popover", null)
+  const closePopover = () => setStore("popover", null)
 
-   const [composing, setComposing] = createSignal(false)
+  const [composing, setComposing] = createSignal(false)
 
-   const resetHistoryNavigation = (force = false) => {
-     if (!force && (store.historyIndex < 0 || store.applyingHistory)) return
-     setStore("historyIndex", -1)
-     setStore("savedPrompt", null)
-   }
+  const resetHistoryNavigation = (force = false) => {
+    if (!force && (store.historyIndex < 0 || store.applyingHistory)) return
+    setStore("historyIndex", -1)
+    setStore("savedPrompt", null)
+  }
 
-   const clearEditor = () => {
-     editorRef.innerHTML = ""
-   }
+  const clearEditor = () => {
+    editorRef.innerHTML = ""
+  }
 
-   const setEditorText = (text: string) => {
-     clearEditor()
-     editorRef.textContent = text
-   }
+  const setEditorText = (text: string) => {
+    clearEditor()
+    editorRef.textContent = text
+  }
 
-   const ghost = createGhostSystem({
-     editorRef,
-     store: {
-       get mode() { return store.mode },
-       get popover() { return store.popover },
-       get historyIndex() { return store.historyIndex },
-     },
-     prompt: {
-       current: () => prompt.current(),
-       set: (parts, cursor) => prompt.set(parts, cursor),
-     },
-     composing,
-     history,
-     mirror,
-     setEditorText,
-     setCursorPosition,
-      resetHistoryNavigation,
-    })
+  const ghost = createGhostSystem({
+    editorRef,
+    store: {
+      get mode() {
+        return store.mode
+      },
+      get popover() {
+        return store.popover
+      },
+      get historyIndex() {
+        return store.historyIndex
+      },
+    },
+    prompt: {
+      current: () => prompt.current(),
+      set: (parts, cursor) => prompt.set(parts, cursor),
+    },
+    composing,
+    history,
+    mirror,
+    setEditorText,
+    setCursorPosition,
+    resetHistoryNavigation,
+  })
 
   const focusEditorEnd = () => {
     requestAnimationFrame(() => {
@@ -566,9 +578,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       setStore("placeholder", (prev) => (prev + 1) % EXAMPLES.length)
     }, 6500)
     onCleanup(() => clearInterval(interval))
-   })
+  })
 
-   const isImeComposing = (event: KeyboardEvent) => event.isComposing || composing() || event.keyCode === 229
+  const isImeComposing = (event: KeyboardEvent) => event.isComposing || composing() || event.keyCode === 229
 
   const handleBlur = () => {
     closePopover()
@@ -641,9 +653,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const agentList = createMemo(() =>
     sync.data.agent
       .filter((agent) => !agent.hidden && agent.mode !== "primary")
-      .map(
-        (agent): AtOption => ({ type: "agent", name: agent.name, display: agent.displayName ?? agent.name }),
-      ),
+      .map((agent): AtOption => ({ type: "agent", name: agent.name, display: agent.displayName ?? agent.name })),
   )
   const agentNames = createMemo(() => local.agent.list().map((agent) => agent.name))
 
@@ -1501,161 +1511,158 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         t={(key) => language.t(key as Parameters<typeof language.t>[0])}
       />
       <DockShellForm
-            data-component={newSession() ? "session-new-composer" : "session-composer"}
-            onSubmit={handleSubmit}
-            classList={{
-              "group/prompt-input min-h-[96px] w-full rounded-xl bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)]": true,
-              "border-icon-info-active border-dashed": store.draggingType !== null,
-              [props.class ?? ""]: !!props.class,
-            }}
-          >
-            <PromptDragOverlay
-              type={store.draggingType}
-              label={language.t(
-                store.draggingType === "@mention" ? "prompt.dropzone.file.label" : "prompt.dropzone.label",
-              )}
-            />
-            <PromptContextItems
-              items={contextItems()}
-              active={(item) => {
-                const active = comments.active()
-                return !!item.commentID && item.commentID === active?.id && item.path === active?.file
+        data-component={newSession() ? "session-new-composer" : "session-composer"}
+        onSubmit={handleSubmit}
+        classList={{
+          "group/prompt-input min-h-[96px] w-full rounded-xl bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)]": true,
+          "border-icon-info-active border-dashed": store.draggingType !== null,
+          [props.class ?? ""]: !!props.class,
+        }}
+      >
+        <PromptDragOverlay
+          type={store.draggingType}
+          label={language.t(store.draggingType === "@mention" ? "prompt.dropzone.file.label" : "prompt.dropzone.label")}
+        />
+        <PromptContextItems
+          items={contextItems()}
+          active={(item) => {
+            const active = comments.active()
+            return !!item.commentID && item.commentID === active?.id && item.path === active?.file
+          }}
+          openComment={openComment}
+          remove={(item) => {
+            if (item.commentID) comments.remove(item.path, item.commentID)
+            prompt.context.remove(item.key)
+          }}
+          t={(key) => language.t(key as Parameters<typeof language.t>[0])}
+        />
+        <PromptImageAttachments
+          attachments={imageAttachments()}
+          onOpen={(attachment) =>
+            dialog.show(() => {
+              const imgs = imageAttachments().map((a) => ({ src: a.dataUrl, alt: a.filename }))
+              const idx = imageAttachments().findIndex((a) => a.id === attachment.id)
+              return <ImagePreview images={imgs} initialIndex={Math.max(0, idx)} />
+            })
+          }
+          onRemove={removeAttachment}
+          removeLabel={language.t("prompt.attachment.remove")}
+        />
+        <div
+          class="relative min-h-[52px]"
+          onMouseDown={(e) => {
+            const target = e.target
+            if (!(target instanceof HTMLElement)) return
+            if (target.closest('[data-action="prompt-attach"], [data-action="prompt-submit"]')) return
+            editorRef?.focus()
+          }}
+        >
+          <div class="relative max-h-[180px] overflow-y-auto no-scrollbar" ref={(el) => (scrollRef = el)}>
+            <div
+              data-component="prompt-input"
+              ref={(el) => {
+                editorRef = el
+                props.ref?.(el)
               }}
-              openComment={openComment}
-              remove={(item) => {
-                if (item.commentID) comments.remove(item.path, item.commentID)
-                prompt.context.remove(item.key)
+              role="textbox"
+              aria-multiline="true"
+              aria-label={designPlaceholder()}
+              contenteditable="true"
+              autocapitalize={store.mode === "normal" ? "sentences" : "off"}
+              autocorrect={store.mode === "normal" ? "on" : "off"}
+              spellcheck={store.mode === "normal"}
+              inputMode="text"
+              // @ts-expect-error
+              autocomplete="off"
+              onInput={handleInput}
+              onPaste={handlePaste}
+              onCompositionStart={handleCompositionStart}
+              onCompositionEnd={handleCompositionEnd}
+              onBlur={handleBlur}
+              onKeyDown={handleKeyDown}
+              classList={{
+                "select-text": true,
+                "min-h-[52px] w-full px-4 pt-4 pb-2 focus:outline-none whitespace-pre-wrap leading-5 text-[13px] font-[440] text-v2-text-text-faint [font-family:Inter,var(--font-family-sans)]": true,
+                "[&_[data-type=file]]:text-syntax-property": true,
+                "[&_[data-type=agent]]:text-syntax-type": true,
+                "font-mono!": store.mode === "shell",
               }}
-              t={(key) => language.t(key as Parameters<typeof language.t>[0])}
-            />
-            <PromptImageAttachments
-              attachments={imageAttachments()}
-              onOpen={(attachment) =>
-                dialog.show(() => {
-                  const imgs = imageAttachments().map((a) => ({ src: a.dataUrl, alt: a.filename }))
-                  const idx = imageAttachments().findIndex((a) => a.id === attachment.id)
-                  return <ImagePreview images={imgs} initialIndex={Math.max(0, idx)} />
-                })
-              }
-              onRemove={removeAttachment}
-              removeLabel={language.t("prompt.attachment.remove")}
             />
             <div
-              class="relative min-h-[52px]"
-              onMouseDown={(e) => {
-                const target = e.target
-                if (!(target instanceof HTMLElement)) return
-                if (target.closest('[data-action="prompt-attach"], [data-action="prompt-submit"]')) return
-                editorRef?.focus()
-              }}
+              data-component={newSession() ? "session-new-design-text" : "session-composer-text"}
+              class="absolute top-0 inset-x-0 px-4 pt-4 pointer-events-none whitespace-nowrap truncate leading-5 text-[13px] font-[440] text-v2-text-text-faint [font-family:Inter,var(--font-family-sans)]"
+              classList={{ "font-mono!": store.mode === "shell", hidden: prompt.dirty() }}
             >
-              <div class="relative max-h-[180px] overflow-y-auto no-scrollbar" ref={(el) => (scrollRef = el)}>
-                <div
-                  data-component="prompt-input"
-                  ref={(el) => {
-                    editorRef = el
-                    props.ref?.(el)
-                  }}
-                  role="textbox"
-                  aria-multiline="true"
-                  aria-label={designPlaceholder()}
-                  contenteditable="true"
-                  autocapitalize={store.mode === "normal" ? "sentences" : "off"}
-                  autocorrect={store.mode === "normal" ? "on" : "off"}
-                  spellcheck={store.mode === "normal"}
-                  inputMode="text"
-                  // @ts-expect-error
-                  autocomplete="off"
-                  onInput={handleInput}
-                  onPaste={handlePaste}
-                  onCompositionStart={handleCompositionStart}
-                  onCompositionEnd={handleCompositionEnd}
-                  onBlur={handleBlur}
-                  onKeyDown={handleKeyDown}
-                  classList={{
-                    "select-text": true,
-                    "min-h-[52px] w-full px-4 pt-4 pb-2 focus:outline-none whitespace-pre-wrap leading-5 text-[13px] font-[440] text-v2-text-text-faint [font-family:Inter,var(--font-family-sans)]": true,
-                    "[&_[data-type=file]]:text-syntax-property": true,
-                    "[&_[data-type=agent]]:text-syntax-type": true,
-                    "font-mono!": store.mode === "shell",
-                  }}
-                />
-                <div
-                  data-component={newSession() ? "session-new-design-text" : "session-composer-text"}
-                  class="absolute top-0 inset-x-0 px-4 pt-4 pointer-events-none whitespace-nowrap truncate leading-5 text-[13px] font-[440] text-v2-text-text-faint [font-family:Inter,var(--font-family-sans)]"
-                  classList={{ "font-mono!": store.mode === "shell", hidden: prompt.dirty() }}
-                >
-                  {designPlaceholder()}
+              {designPlaceholder()}
+            </div>
+          </div>
+        </div>
+        <div class="flex h-11 items-center px-2">
+          <div class="flex min-w-0 flex-1 items-center gap-0">
+            {fileAttachmentInput()}
+            <TooltipKeybind
+              placement="top"
+              title={language.t("prompt.action.attachFile")}
+              keybind={command.keybind("file.attach")}
+            >
+              <IconButton
+                data-action="prompt-attach"
+                type="button"
+                icon="plus"
+                variant="ghost"
+                class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted"
+                style={buttons()}
+                onClick={pick}
+                disabled={store.mode !== "normal"}
+                tabIndex={store.mode === "normal" ? undefined : -1}
+                aria-label={language.t("prompt.action.attachFile")}
+              />
+            </TooltipKeybind>
+            <Show when={newSession()}>
+              <div class="relative">
+                <div class="pointer-events-none absolute left-2 top-1/2 z-10 flex size-4 -translate-y-1/2 items-center justify-center">
+                  <Icon name="sliders" size="small" />
                 </div>
-              </div>
-            </div>
-            <div class="flex h-11 items-center px-2">
-              <div class="flex min-w-0 flex-1 items-center gap-0">
-                {fileAttachmentInput()}
-                <TooltipKeybind
-                  placement="top"
-                  title={language.t("prompt.action.attachFile")}
-                  keybind={command.keybind("file.attach")}
-                >
-                  <IconButton
-                    data-action="prompt-attach"
-                    type="button"
-                    icon="plus"
-                    variant="ghost"
-                    class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted"
-                    style={buttons()}
-                    onClick={pick}
-                    disabled={store.mode !== "normal"}
-                    tabIndex={store.mode === "normal" ? undefined : -1}
-                    aria-label={language.t("prompt.action.attachFile")}
-                  />
-                </TooltipKeybind>
-                <Show when={newSession()}>
-                  <div class="relative">
-                    <div class="pointer-events-none absolute left-2 top-1/2 z-10 flex size-4 -translate-y-1/2 items-center justify-center">
-                      <Icon name="sliders" size="small" />
-                    </div>
-                    <Select
-                      size="normal"
-                      options={worktrees()}
-                      current={currentWorktree()}
-                      label={worktreeLabel}
-                      onSelect={(value) => {
-                        if (value) props.onNewSessionWorktreeChange?.(value)
-                        restoreFocus()
-                      }}
-                      class="max-w-[175px] justify-start text-text-base [&_[data-component=icon]]:text-v2-icon-icon-muted"
-                      valueClass="truncate pl-5 text-[13px] font-[440] leading-4 text-v2-text-text-faint"
-                      triggerStyle={control()}
-                      triggerProps={{ "data-action": "prompt-workspace" }}
-                      variant="ghost"
-                    />
-                  </div>
-                </Show>
-                {agentControl()}
-                {modelControl()}
-                {variantControl()}
-              </div>
-              <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
-                <IconButton
-                  data-action="prompt-submit"
-                  type="submit"
-                  disabled={!working() && blank()}
-                  tabIndex={store.mode === "normal" ? undefined : -1}
-                  icon={stopping() ? "stop" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"}
-                  variant="primary"
-                  class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted shadow-[var(--v2-elevation-button-contrast)] disabled:opacity-50"
-                  style={{
-                    "background-image":
-                      "linear-gradient(180deg,var(--v2-alpha-light-20) 0%,var(--v2-alpha-light-0) 100%),linear-gradient(90deg,var(--v2-background-bg-contrast) 0%,var(--v2-background-bg-contrast) 100%)",
+                <Select
+                  size="normal"
+                  options={worktrees()}
+                  current={currentWorktree()}
+                  label={worktreeLabel}
+                  onSelect={(value) => {
+                    if (value) props.onNewSessionWorktreeChange?.(value)
+                    restoreFocus()
                   }}
-                  aria-label={stopping() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
+                  class="max-w-[175px] justify-start text-text-base [&_[data-component=icon]]:text-v2-icon-icon-muted"
+                  valueClass="truncate pl-5 text-[13px] font-[440] leading-4 text-v2-text-text-faint"
+                  triggerStyle={control()}
+                  triggerProps={{ "data-action": "prompt-workspace" }}
+                  variant="ghost"
                 />
-              </Tooltip>
-            </div>
-            <PromptErrorBanner error={sendError} onRetry={handleSubmit} onDismiss={clearSendError} />
-          </DockShellForm>
-
+              </div>
+            </Show>
+            {agentControl()}
+            {modelControl()}
+            {variantControl()}
+          </div>
+          <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
+            <IconButton
+              data-action="prompt-submit"
+              type="submit"
+              disabled={!working() && blank()}
+              tabIndex={store.mode === "normal" ? undefined : -1}
+              icon={stopping() ? "stop" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"}
+              variant="primary"
+              class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted shadow-[var(--v2-elevation-button-contrast)] disabled:opacity-50"
+              style={{
+                "background-image":
+                  "linear-gradient(180deg,var(--v2-alpha-light-20) 0%,var(--v2-alpha-light-0) 100%),linear-gradient(90deg,var(--v2-background-bg-contrast) 0%,var(--v2-background-bg-contrast) 100%)",
+              }}
+              aria-label={stopping() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
+            />
+          </Tooltip>
+        </div>
+        <PromptErrorBanner error={sendError} onRetry={handleSubmit} onDismiss={clearSendError} />
+      </DockShellForm>
     </div>
   )
 }

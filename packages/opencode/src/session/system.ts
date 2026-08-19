@@ -47,7 +47,8 @@ export function provider(model: Provider.Model) {
   if (model.api.id.toLowerCase().includes("minimax")) return [PROMPT_MINIMAX]
   // 260818 Red 本地 Qwen3.8 27B（ollama）专属提示词 —— 必须放在 ollama 通用路由之前，
   // 否则 providerID 命中 ollama 先短路。针对 Q3 量化能力上限 / ~15 tok/s / 32K 上下文适配。
-  if (model.providerID.toLowerCase().includes("ollama") && model.api.id.toLowerCase().includes("qwen")) return [PROMPT_QWEN]
+  if (model.providerID.toLowerCase().includes("ollama") && model.api.id.toLowerCase().includes("qwen"))
+    return [PROMPT_QWEN]
   // 260704 Red ollama 本地模型 — 精简提示词，适配有限上下文窗口
   // providerID 含 ollama 或 model.id 含 ":latest"/":Xb" 等 ollama 命名特征
   if (model.providerID.toLowerCase().includes("ollama")) return [PROMPT_OLLAMA]

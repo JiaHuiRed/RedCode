@@ -35,9 +35,7 @@ export const SettingsProviders: Component = () => {
   const providers = useProviders()
 
   const connected = createMemo(() => {
-    return providers
-      .connected()
-      .filter((p) => p.id !== "redcode" || Object.values(p.models).find((m) => m.cost?.input))
+    return providers.connected().filter((p) => p.id !== "redcode" || Object.values(p.models).find((m) => m.cost?.input))
   })
 
   const popular = createMemo(() => {
@@ -172,7 +170,9 @@ export const SettingsProviders: Component = () => {
                           <Button
                             size="large"
                             variant="secondary"
-                            onClick={() => dialog.show(() => <DialogCustomProvider back="close" editProviderID={item.id} />)}
+                            onClick={() =>
+                              dialog.show(() => <DialogCustomProvider back="close" editProviderID={item.id} />)
+                            }
                           >
                             {language.t("common.edit")}
                           </Button>

@@ -69,7 +69,8 @@ export class SQLiteEffectRelationalQueryBuilder<
 }
 
 export interface SQLiteEffectRelationalQuery<TResult, TEffectHKT extends QueryEffectHKTBase = QueryEffectHKTBase>
-  extends Effect.Effect<TResult, TEffectHKT["error"], TEffectHKT["context"]>,
+  extends
+    Effect.Effect<TResult, TEffectHKT["error"], TEffectHKT["context"]>,
     RunnableQuery<TResult, "sqlite">,
     SQLWrapper {}
 

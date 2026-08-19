@@ -368,7 +368,8 @@ const prepareWith = Effect.fn("LLMClient.prepare")(function* (request: LLMReques
   })
 })
 
-const streamRequestWith = (runtime: TransportRuntime) =>
+const streamRequestWith =
+  (runtime: TransportRuntime) =>
   (request: LLMRequest): Stream.Stream<LLMEvent, LLMError> =>
     Stream.unwrap(
       Effect.gen(function* () {

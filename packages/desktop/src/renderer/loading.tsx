@@ -93,7 +93,10 @@ render(() => {
         `}</style>
         <div class="flex flex-col items-center gap-11">
           <Splash class={`w-20 h-25 loading-logo ${visible() ? "opacity-20" : "opacity-0"}`} />
-          <div class={`w-60 flex flex-col items-center gap-4 loading-content ${visible() ? "visible" : ""}`} aria-live="polite">
+          <div
+            class={`w-60 flex flex-col items-center gap-4 loading-content ${visible() ? "visible" : ""}`}
+            aria-live="polite"
+          >
             <span class="loading-text w-full overflow-hidden text-center text-ellipsis whitespace-nowrap text-text-strong text-14-normal">
               {status()}
             </span>

@@ -232,15 +232,31 @@ export function SessionContextTab() {
   const stats = [
     { label: "context.stats.session", value: () => info()?.title ?? params.id ?? "—" },
     { label: "context.stats.sessionID", value: () => params.id ?? "—", color: "var(--syntax-property)" },
-    { label: "context.stats.messages", value: () => counts().all.toLocaleString(language.intl()), color: "var(--syntax-primitive)" },
+    {
+      label: "context.stats.messages",
+      value: () => counts().all.toLocaleString(language.intl()),
+      color: "var(--syntax-primitive)",
+    },
     { label: "context.stats.provider", value: providerLabel, color: "var(--syntax-info)" },
     { label: "context.stats.model", value: modelLabel, color: "var(--syntax-string)" },
     { label: "context.stats.limit", value: () => formatter().number(ctx()?.limit), color: "var(--syntax-type)" },
-    { label: "context.stats.totalTokens", value: () => formatter().number(ctx()?.total), color: "var(--syntax-success)" },
+    {
+      label: "context.stats.totalTokens",
+      value: () => formatter().number(ctx()?.total),
+      color: "var(--syntax-success)",
+    },
     { label: "context.stats.usage", value: () => formatter().percent(ctx()?.usage), color: "var(--syntax-warning)" },
     { label: "context.stats.inputTokens", value: () => formatter().number(ctx()?.input), color: inputTokensColor() },
-    { label: "context.stats.outputTokens", value: () => formatter().number(ctx()?.output), color: "var(--syntax-property)" },
-    { label: "context.stats.reasoningTokens", value: () => formatter().number(ctx()?.reasoning), color: "var(--syntax-warning)" },
+    {
+      label: "context.stats.outputTokens",
+      value: () => formatter().number(ctx()?.output),
+      color: "var(--syntax-property)",
+    },
+    {
+      label: "context.stats.reasoningTokens",
+      value: () => formatter().number(ctx()?.reasoning),
+      color: "var(--syntax-warning)",
+    },
     {
       label: "context.stats.cacheTokens",
       value: () => {
@@ -260,17 +276,27 @@ export function SessionContextTab() {
       value: () => {
         const c = ctx()
         if (c?.turnHitPct == null) return "—"
-        return c.stalled
-          ? `${formatter().percent(c.turnHitPct)} · 缓存未延伸`
-          : `${formatter().percent(c.turnHitPct)}`
+        return c.stalled ? `${formatter().percent(c.turnHitPct)} · 缓存未延伸` : `${formatter().percent(c.turnHitPct)}`
       },
       color: "var(--syntax-critical)",
     },
-    { label: "context.stats.userMessages", value: () => counts().user.toLocaleString(language.intl()), color: "var(--syntax-success)" },
-    { label: "context.stats.assistantMessages", value: () => counts().assistant.toLocaleString(language.intl()), color: "var(--syntax-type)" },
+    {
+      label: "context.stats.userMessages",
+      value: () => counts().user.toLocaleString(language.intl()),
+      color: "var(--syntax-success)",
+    },
+    {
+      label: "context.stats.assistantMessages",
+      value: () => counts().assistant.toLocaleString(language.intl()),
+      color: "var(--syntax-type)",
+    },
     { label: "context.stats.totalCost", value: cost, color: "var(--syntax-critical)" },
     { label: "context.stats.sessionCreated", value: () => formatter().time(info()?.time.created) },
-    { label: "context.stats.lastActivity", value: () => formatter().time(ctx()?.message.time.created), color: "var(--syntax-constant)" },
+    {
+      label: "context.stats.lastActivity",
+      value: () => formatter().time(ctx()?.message.time.created),
+      color: "var(--syntax-constant)",
+    },
   ] satisfies { label: string; value: () => JSX.Element; color?: string }[]
 
   let scroll: HTMLDivElement | undefined

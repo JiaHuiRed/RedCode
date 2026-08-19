@@ -120,9 +120,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       }
 
       // 260529 Red compacted 会话初始加载只返回 compaction summary 及之后的消息
-      const compactionAfter = ctx.query.before
-        ? undefined
-        : yield* session.latestCompactionCursor(ctx.params.sessionID)
+      const compactionAfter = ctx.query.before ? undefined : yield* session.latestCompactionCursor(ctx.params.sessionID)
 
       const page = yield* SessionError.mapStorageNotFound(
         MessageV2.page({

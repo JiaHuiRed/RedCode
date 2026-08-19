@@ -163,7 +163,8 @@ export function SessionPlanTab() {
                             : todo.status === "in_progress"
                               ? "var(--text-strong)"
                               : "var(--text-base)",
-                        "text-decoration": todo.status === "completed" || todo.status === "cancelled" ? "line-through" : "none",
+                        "text-decoration":
+                          todo.status === "completed" || todo.status === "cancelled" ? "line-through" : "none",
                         "text-decoration-color": "var(--text-weaker)",
                       }}
                     >

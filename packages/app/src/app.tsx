@@ -306,10 +306,12 @@ export function AppInterface(props: {
         <ServerKey>
           <GlobalSDKProvider>
             <ServerSDKProvider>
-            <ServerSyncProvider>
+              <ServerSyncProvider>
                 <Dynamic
                   component={props.router ?? Router}
-                  root={(routerProps: BaseRouterProps) => <RouterRoot appChildren={props.children}>{routerProps.children as JSX.Element}</RouterRoot>}
+                  root={(routerProps: BaseRouterProps) => (
+                    <RouterRoot appChildren={props.children}>{routerProps.children as JSX.Element}</RouterRoot>
+                  )}
                 >
                   <Route path="/" component={HomeRoute} />
                   <Route path="/:dir" component={DirectoryLayout}>
@@ -317,7 +319,7 @@ export function AppInterface(props: {
                     <Route path="/session/:id?" component={SessionRoute} />
                   </Route>
                 </Dynamic>
-            </ServerSyncProvider>
+              </ServerSyncProvider>
             </ServerSDKProvider>
           </GlobalSDKProvider>
         </ServerKey>

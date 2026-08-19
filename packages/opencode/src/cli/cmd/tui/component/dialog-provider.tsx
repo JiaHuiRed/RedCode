@@ -358,8 +358,7 @@ function ApiMethod(props: ApiMethodProps) {
           redcode: (
             <box gap={1}>
               <text fg={theme.textMuted}>
-                RedCode Zen gives you access to all the best coding models at the cheapest prices with a single API
-                key.
+                RedCode Zen gives you access to all the best coding models at the cheapest prices with a single API key.
               </text>
               <text fg={theme.text}>
                 Go to <span style={{ fg: theme.primary }}>https://redcode.dev/zen</span> to get a key

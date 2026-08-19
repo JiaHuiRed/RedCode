@@ -7,8 +7,14 @@ import type { Hooks, PluginInput } from "@redcode-ai/plugin"
  */
 const DANGEROUS_PATTERNS: { pattern: RegExp; reason: string }[] = [
   // Root filesystem deletion
-  { pattern: /\brm\s+(-rf|-[a-zA-Z]*rf[a-zA-Z]*|--recursive\s+--force)\s+(--no-preserve-root\s+)?\/\b/, reason: "Attempted to delete root filesystem" },
-  { pattern: /\brm\s+(-rf|-[a-zA-Z]*rf[a-zA-Z]*)\s+--no-preserve-root\b/, reason: "Attempted to bypass root filesystem protection" },
+  {
+    pattern: /\brm\s+(-rf|-[a-zA-Z]*rf[a-zA-Z]*|--recursive\s+--force)\s+(--no-preserve-root\s+)?\/\b/,
+    reason: "Attempted to delete root filesystem",
+  },
+  {
+    pattern: /\brm\s+(-rf|-[a-zA-Z]*rf[a-zA-Z]*)\s+--no-preserve-root\b/,
+    reason: "Attempted to bypass root filesystem protection",
+  },
 
   // Direct disk writes
   { pattern: /\bdd\s+if=\/dev\/zero\s+of=\/dev\/(sd|nvme|vd|hd|xvd)/, reason: "Attempted direct disk write" },

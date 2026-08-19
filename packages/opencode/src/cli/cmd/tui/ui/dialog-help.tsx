@@ -26,9 +26,7 @@ export function DialogHelp() {
         </text>
       </box>
       <box paddingBottom={1}>
-        <text fg={theme.textMuted}>
-          按 {commandShortcut()} 查看当前上下文中所有可用的操作和命令。
-        </text>
+        <text fg={theme.textMuted}>按 {commandShortcut()} 查看当前上下文中所有可用的操作和命令。</text>
       </box>
       <box flexDirection="row" justifyContent="flex-end" paddingBottom={1}>
         <box paddingLeft={3} paddingRight={3} backgroundColor={theme.primary} onMouseUp={() => dialog.clear()}>

@@ -12,9 +12,9 @@ export const OpencodePlugin = PluginV2.define({
         if (!item) return
         hasKey = Boolean(
           process.env.REDCODE_API_KEY ||
-            item.provider.env.some((env) => process.env[env]) ||
-            item.provider.options.aisdk.provider.apiKey ||
-            (item.provider.enabled && item.provider.enabled.via === "account"),
+          item.provider.env.some((env) => process.env[env]) ||
+          item.provider.options.aisdk.provider.apiKey ||
+          (item.provider.enabled && item.provider.enabled.via === "account"),
         )
         evt.provider.update(item.provider.id, (provider) => {
           if (!hasKey) provider.options.aisdk.provider.apiKey = "public"

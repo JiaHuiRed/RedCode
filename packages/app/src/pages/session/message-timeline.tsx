@@ -178,19 +178,9 @@ function TimelineThinkingRow(props: {
 
   return (
     <div data-slot="session-turn-thinking" class="flex items-center gap-2">
-      <img
-        src="/mona-loading.gif"
-        alt="loading"
-        class="w-6 h-6 shrink-0"
-        style={{ "image-rendering": "pixelated" }}
-      />
+      <img src="/mona-loading.gif" alt="loading" class="w-6 h-6 shrink-0" style={{ "image-rendering": "pixelated" }} />
       <TextShimmer text={language.t("ui.sessionTurn.status.thinking")} />
-      <img
-        src="/hamster.png"
-        alt=""
-        class="w-5 h-5 shrink-0 animate-hamster select-none"
-        aria-hidden="true"
-      />
+      <img src="/hamster.png" alt="" class="w-5 h-5 shrink-0 animate-hamster select-none" aria-hidden="true" />
       {/* 260608 Red 仓鼠改透明底直接平铺：原 mix-blend-mode:screen+深色盒在浅色主题会被洗白 */}
       <Show when={!props.showReasoningSummaries}>
         <TextReveal text={props.reasoningHeading} class="session-turn-thinking-heading" travel={25} duration={700} />
@@ -520,8 +510,7 @@ export function MessageTimeline(props: {
           signature = `${part.id}:${part.type}:${part.text.length}`
         } else if (part.type === "tool") {
           const metadata = "metadata" in part.state ? part.state.metadata : undefined
-          const output =
-            "output" in part.state && typeof part.state.output === "string" ? part.state.output.length : 0
+          const output = "output" in part.state && typeof part.state.output === "string" ? part.state.output.length : 0
           const metadataOutput =
             metadata && typeof metadata === "object" && "output" in metadata && typeof metadata.output === "string"
               ? metadata.output.length
@@ -1212,15 +1201,15 @@ export function MessageTimeline(props: {
               {(message) => (
                 <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
                   <div data-slot="session-turn-message-content" aria-live="off">
-                      <Message
-                        message={message()}
-                        parts={getMsgParts(userMessageRow().userMessageID)}
-                        actions={props.actions}
-                        userProfile={{
-                          avatar: settings.userProfile.avatar(),
-                          displayName: settings.userProfile.displayName(),
-                        }}
-                      />
+                    <Message
+                      message={message()}
+                      parts={getMsgParts(userMessageRow().userMessageID)}
+                      actions={props.actions}
+                      userProfile={{
+                        avatar: settings.userProfile.avatar(),
+                        displayName: settings.userProfile.displayName(),
+                      }}
+                    />
                   </div>
                 </div>
               )}
@@ -1284,33 +1273,33 @@ export function MessageTimeline(props: {
           </TimelineRowFrame>
         )
       }
-     case "AssistantPending": {
-       const pendingRow = row as Accessor<TimelineRowByTag<"AssistantPending">>
-       return (
-         <TimelineRowFrame row={pendingRow}>
-           <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-             <div data-slot="session-turn-assistant-row">
-               <div data-slot="session-turn-assistant-avatar">
-                 <Avatar
-                   fallback="R"
-                   src={settings.assistantProfile.avatar() || undefined}
-                   size="medium"
-                   background="var(--syntax-keyword)"
-                   foreground="var(--text-on-accent)"
-                 />
-               </div>
-               <div data-slot="session-turn-assistant-content">
-                 {/* 260816 Yuqi 兜底占位：assistant 骨架已到但可渲染 parts 未到，显示生成中而非消失 */}
-                 <div class="px-2 py-2 text-12-regular text-text-weak">
-                   {language.t("common.loading")}
-                   {language.t("common.loading.ellipsis")}
-                 </div>
-               </div>
-             </div>
-           </div>
-         </TimelineRowFrame>
-       )
-     }
+      case "AssistantPending": {
+        const pendingRow = row as Accessor<TimelineRowByTag<"AssistantPending">>
+        return (
+          <TimelineRowFrame row={pendingRow}>
+            <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
+              <div data-slot="session-turn-assistant-row">
+                <div data-slot="session-turn-assistant-avatar">
+                  <Avatar
+                    fallback="R"
+                    src={settings.assistantProfile.avatar() || undefined}
+                    size="medium"
+                    background="var(--syntax-keyword)"
+                    foreground="var(--text-on-accent)"
+                  />
+                </div>
+                <div data-slot="session-turn-assistant-content">
+                  {/* 260816 Yuqi 兜底占位：assistant 骨架已到但可渲染 parts 未到，显示生成中而非消失 */}
+                  <div class="px-2 py-2 text-12-regular text-text-weak">
+                    {language.t("common.loading")}
+                    {language.t("common.loading.ellipsis")}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </TimelineRowFrame>
+        )
+      }
       case "Retry": {
         const retryRow = row as Accessor<TimelineRowByTag<"Retry">>
         return (

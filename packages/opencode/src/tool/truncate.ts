@@ -106,7 +106,10 @@ export const layer = Layer.effect(
       const head = collectPreview(lines, headMaxLines, headMaxBytes, false)
       const tail = collectPreview(lines, tailMaxLines, tailMaxBytes, true, head.count)
 
-      const removed = Math.max(0, (head.hitBytes || tail.hitBytes ? totalBytes - head.bytes - tail.bytes : lines.length - head.count - tail.count))
+      const removed = Math.max(
+        0,
+        head.hitBytes || tail.hitBytes ? totalBytes - head.bytes - tail.bytes : lines.length - head.count - tail.count,
+      )
       const unit = head.hitBytes || tail.hitBytes ? "bytes" : "lines"
       const headPreview = head.preview.join("\n")
       const tailPreview = tail.preview.join("\n")

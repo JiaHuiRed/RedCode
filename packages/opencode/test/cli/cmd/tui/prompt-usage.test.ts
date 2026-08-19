@@ -7,7 +7,7 @@ import { usePromptUsage } from "../../../../src/cli/cmd/tui/component/prompt/usa
 function makeSync(messages: unknown[], sessions: unknown[] = []) {
   return {
     data: {
-      message: { "s1": messages },
+      message: { s1: messages },
       session: sessions,
     },
   } as unknown as Parameters<typeof usePromptUsage>[1]
@@ -37,10 +37,7 @@ describe("usePromptUsage", () => {
   })
 
   test("全部命中：hit=100%，turn/conn/life 一致，无 stalled", () => {
-    const messages = [
-      msg({ read: 1000, miss: 0, input: 1000 }),
-      msg({ read: 2000, miss: 0, input: 2000 }),
-    ]
+    const messages = [msg({ read: 1000, miss: 0, input: 1000 }), msg({ read: 2000, miss: 0, input: 2000 })]
     // life 语义：input 即全价未命中部分（session.ts cache.miss === input by construction），
     // 全命中场景 input=0 → lifeMiss=0, lifeHitPct=100
     const sessions = [{ id: "s1", tokens: { input: 0, cache: { read: 3000, write: 0 } } }]

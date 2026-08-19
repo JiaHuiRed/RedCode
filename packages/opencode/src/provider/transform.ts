@@ -477,9 +477,7 @@ function savePartToTemp(part: unknown): string | null {
   const p = part as Record<string, unknown>
 
   // Extract MIME: ImagePart uses mimeType; FilePart uses mediaType
-  const mime = p.type === "image"
-    ? String(p.mimeType || "")
-    : String(p.mediaType || "")
+  const mime = p.type === "image" ? String(p.mimeType || "") : String(p.mediaType || "")
   const ext = MIME_EXT[mime] || "bin"
 
   // Extract raw data: FilePart uses "data" (AI SDK v4); ImagePart uses "image"
@@ -563,9 +561,8 @@ function unsupportedParts(msgs: ModelMessage[], model: Provider.Model): ModelMes
         }
       }
 
-      const mime = part.type === "image"
-        ? (String((part as unknown as Record<string, unknown>).mimeType || ""))
-        : part.mediaType
+      const mime =
+        part.type === "image" ? String((part as unknown as Record<string, unknown>).mimeType || "") : part.mediaType
       const filename = part.type === "file" ? part.filename : undefined
       const modality = mimeToModality(mime)
       if (!modality) return part
@@ -861,7 +858,12 @@ type VariantCtx = { model: Provider.Model; id: string }
 type VariantFn = (ctx: VariantCtx) => Record<string, Record<string, any>>
 
 const openaiShapeVariants = (efforts: string[]) =>
-  Object.fromEntries(efforts.map((effort) => [effort, { reasoningEffort: effort, reasoningSummary: "auto", include: ["reasoning.encrypted_content"] }]))
+  Object.fromEntries(
+    efforts.map((effort) => [
+      effort,
+      { reasoningEffort: effort, reasoningSummary: "auto", include: ["reasoning.encrypted_content"] },
+    ]),
+  )
 
 // Anthropic adaptive thinking 形状：gateway / anthropic / sap 三处共用。
 // opus-4.7 需要 display: "summarized"（anthropic 专用；gateway / sap 不带）。
@@ -925,10 +927,7 @@ const aiSdkGatewayVariants: VariantFn = ({ model, id }) => {
       }
     }
     return Object.fromEntries(
-      ["low", "high"].map((effort) => [
-        effort,
-        { includeThoughts: true, thinkingLevel: effort },
-      ]),
+      ["low", "high"].map((effort) => [effort, { includeThoughts: true, thinkingLevel: effort }]),
     )
   }
   return Object.fromEntries(
@@ -1020,8 +1019,7 @@ const anthropicVariants: VariantFn = ({ model }) => {
       // Efforts currently supported are: low, medium, high
       efforts = efforts.filter((v) => v !== "max" && v !== "xhigh")
     }
-    const display =
-      model.api.id.includes("opus-4-7") || model.api.id.includes("opus-4.7")
+    const display = model.api.id.includes("opus-4-7") || model.api.id.includes("opus-4.7")
     return adaptiveThinkingVariants(efforts, display)
   }
 
@@ -1312,10 +1310,7 @@ export function options(input: {
   // 实测：请求 body 加 thinking: {type: "enabled"} 后，思考走独立 reasoning_content 字段，
   // AI SDK openai-compatible 识别成 reasoning part → UI 自动折叠成「已思考」。
   // 判据用模型名（同 GLM 教训：挂聚合供应商下也生效），不用 providerID。
-  if (
-    input.model.api.id.toLowerCase().includes("doubao") &&
-    input.model.api.npm === "@ai-sdk/openai-compatible"
-  ) {
+  if (input.model.api.id.toLowerCase().includes("doubao") && input.model.api.npm === "@ai-sdk/openai-compatible") {
     result["thinking"] = {
       type: "enabled",
     }
@@ -1351,7 +1346,10 @@ export function options(input: {
   // Enable thinking by default for kimi models using anthropic SDK
   if (
     (input.model.api.npm === "@ai-sdk/anthropic" || input.model.api.npm === "@ai-sdk/google-vertex/anthropic") &&
-    (modelId.includes("kimi-k3") || modelId.includes("k2p") || modelId.includes("kimi-k2.") || modelId.includes("kimi-k2p"))
+    (modelId.includes("kimi-k3") ||
+      modelId.includes("k2p") ||
+      modelId.includes("kimi-k2.") ||
+      modelId.includes("kimi-k2p"))
   ) {
     result["thinking"] = {
       type: "enabled",

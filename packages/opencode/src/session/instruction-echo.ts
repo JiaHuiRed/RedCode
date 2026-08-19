@@ -150,7 +150,8 @@ function stripSchemaRuns(text: string): { text: string; hit: boolean } {
  * 检测并剥离模型复述出来的注入指令。
  * 快路径：正文里没有任何可疑标记时直接返回原串，不做逐行扫描。
  */
-export function detect(text: string): EchoResult {  if (!text) return { kinds: EMPTY, stripped: text }
+export function detect(text: string): EchoResult {
+  if (!text) return { kinds: EMPTY, stripped: text }
   const suspicious =
     text.includes("<system-reminder>") ||
     text.includes("<reasoning-language>") ||

@@ -250,13 +250,16 @@ export const AstGrepTool = Tool.define(
     return {
       description: DESCRIPTION,
       parameters: Parameters,
-      execute: (params: {
-        pattern: string
-        path?: string
-        include?: string
-        language?: string
-        replace?: string
-      }, ctx: Tool.Context) =>
+      execute: (
+        params: {
+          pattern: string
+          path?: string
+          include?: string
+          language?: string
+          replace?: string
+        },
+        ctx: Tool.Context,
+      ) =>
         Effect.gen(function* () {
           yield* ctx.ask({
             permission: "grep",
@@ -290,7 +293,11 @@ export const AstGrepTool = Tool.define(
               ctx,
             )
             if (result.files.length === 0) {
-              return { title: params.pattern, metadata: { matches: 0, replaced: 0, truncated: false }, output: result.output || "No matches found." }
+              return {
+                title: params.pattern,
+                metadata: { matches: 0, replaced: 0, truncated: false },
+                output: result.output || "No matches found.",
+              }
             }
 
             let totalReplaced = 0
@@ -306,7 +313,10 @@ export const AstGrepTool = Tool.define(
               permission: "edit",
               patterns: result.files.map((f) => path.relative(ins.worktree, f.file)),
               always: ["*"],
-              metadata: { filepath: result.files.length > 1 ? result.files[0].file : result.files[0].file, diff: preview },
+              metadata: {
+                filepath: result.files.length > 1 ? result.files[0].file : result.files[0].file,
+                diff: preview,
+              },
             })
 
             for (const fe of result.files) {
@@ -328,7 +338,11 @@ export const AstGrepTool = Tool.define(
           const search = yield* searchInFiles(params.pattern, resolved, params.include, params.language, ctx)
           const { matches } = search
           if (matches.length === 0) {
-            return { title: params.pattern, metadata: { matches: 0, replaced: 0, truncated: false }, output: "No matches found." }
+            return {
+              title: params.pattern,
+              metadata: { matches: 0, replaced: 0, truncated: false },
+              output: "No matches found.",
+            }
           }
 
           const limit = 150

@@ -50,9 +50,7 @@ export const layer = Layer.effect(
 
     const get = Effect.fn("Goal.get")(function* (sessionID: SessionID) {
       const row = yield* Effect.sync(() =>
-        Database.use((db) =>
-          db.select().from(GoalTable).where(eq(GoalTable.session_id, sessionID)).get(),
-        ),
+        Database.use((db) => db.select().from(GoalTable).where(eq(GoalTable.session_id, sessionID)).get()),
       )
       if (!row) return undefined
       return {
@@ -100,10 +98,7 @@ export const layer = Layer.effect(
     const done = Effect.fn("Goal.done")(function* (sessionID: SessionID) {
       yield* Effect.sync(() =>
         Database.transaction((db) => {
-          db.update(GoalTable)
-            .set({ status: "done" })
-            .where(eq(GoalTable.session_id, sessionID))
-            .run()
+          db.update(GoalTable).set({ status: "done" }).where(eq(GoalTable.session_id, sessionID)).run()
         }),
       )
       yield* publish(sessionID)
@@ -115,10 +110,7 @@ export const layer = Layer.effect(
     ) {
       yield* Effect.sync(() =>
         Database.transaction((db) => {
-          db.update(GoalTable)
-            .set({ status })
-            .where(eq(GoalTable.session_id, sessionID))
-            .run()
+          db.update(GoalTable).set({ status }).where(eq(GoalTable.session_id, sessionID)).run()
         }),
       )
       yield* publish(sessionID)

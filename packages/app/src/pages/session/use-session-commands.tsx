@@ -99,10 +99,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       time?: { archived?: number; updated?: number; created?: number }
     }>
     return all
-      .filter(
-        (s) =>
-          s.directory === params.dir && !s.parentID && !s.time?.archived,
-      )
+      .filter((s) => s.directory === params.dir && !s.parentID && !s.time?.archived)
       .sort((a, b) => {
         const now = Date.now()
         const aUpdated = a.time?.updated ?? a.time?.created ?? 0
@@ -346,7 +343,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     const revert = info()?.revert?.messageID
     // 260814 Red 边界比较改 compareTime（ID 回绕后字典序失真）
     const revertMsg = revert ? userMessages().find((x) => x.id === revert) : undefined
-    const message = findLast(userMessages(), (x) => (!revertMsg || compareTime(x, revertMsg) < 0))
+    const message = findLast(userMessages(), (x) => !revertMsg || compareTime(x, revertMsg) < 0)
     if (!message) return
 
     await sdk.client.session.revert({ sessionID, messageID: message.id })

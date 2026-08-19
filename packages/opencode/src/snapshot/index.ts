@@ -398,7 +398,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
 
                 const clash = (a: string, b: string) => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`)
 
-                for (let i = 0; i < ops.length; ) {
+                for (let i = 0; i < ops.length;) {
                   const first = ops[i]!
                   const run = [first]
                   let j = i + 1

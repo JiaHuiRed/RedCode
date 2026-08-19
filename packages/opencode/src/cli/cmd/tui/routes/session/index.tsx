@@ -189,10 +189,12 @@ export function Session() {
   const session = createMemo(() => sync.session.get(route.sessionID))
   const children = createMemo(() => {
     const parentID = session()?.parentID ?? session()?.id
-    return sync.data.session
-      .filter((x) => x.parentID === parentID || x.id === parentID)
-      // 260814 Red 排序改 cmpTime（ID 回绕后字典序失真）
-      .toSorted((a, b) => cmpTime(a, b))
+    return (
+      sync.data.session
+        .filter((x) => x.parentID === parentID || x.id === parentID)
+        // 260814 Red 排序改 cmpTime（ID 回绕后字典序失真）
+        .toSorted((a, b) => cmpTime(a, b))
+    )
   })
   const messages = createMemo(() => sync.data.message[route.sessionID] ?? [])
 
@@ -707,9 +709,7 @@ export function Session() {
         if (!messageID) return
         // 260814 Red 边界比较改 cmpTime（ID 回绕后字典序失真）
         const revertMsg = messages().find((x) => x.id === messageID)
-        const message = revertMsg
-          ? messages().find((x) => x.role === "user" && cmpTime(x, revertMsg) > 0)
-          : undefined
+        const message = revertMsg ? messages().find((x) => x.role === "user" && cmpTime(x, revertMsg) > 0) : undefined
         if (!message) {
           void sdk.client.session.unrevert({
             sessionID: route.sessionID,
@@ -1172,10 +1172,15 @@ export function Session() {
   })
 
   // snap to bottom and reset message window when session changes
-  createEffect(on(() => route.sessionID, () => {
-    setMessageWindowSize(MSG_WINDOW_DEFAULT)
-    toBottom()
-  }))
+  createEffect(
+    on(
+      () => route.sessionID,
+      () => {
+        setMessageWindowSize(MSG_WINDOW_DEFAULT)
+        toBottom()
+      },
+    ),
+  )
 
   return (
     <PathFormatterProvider path={session()?.directory}>
@@ -1230,103 +1235,105 @@ export function Session() {
                   {(message, index) => (
                     <>
                       <Switch>
-                      <Match when={message.id === revert()?.messageID}>
-                        {(function () {
-                          const redoShortcut = useCommandShortcut("session.redo")
-                          const [hover, setHover] = createSignal(false)
-                          const dialog = useDialog()
+                        <Match when={message.id === revert()?.messageID}>
+                          {(function () {
+                            const redoShortcut = useCommandShortcut("session.redo")
+                            const [hover, setHover] = createSignal(false)
+                            const dialog = useDialog()
 
-                          const handleUnrevert = async () => {
-                            const confirmed = await DialogConfirm.show(
-                              dialog,
-                              "Confirm Redo",
-                              "Are you sure you want to restore the reverted messages?",
-                            )
-                            if (confirmed) {
-                              keymap.dispatchCommand("session.redo")
+                            const handleUnrevert = async () => {
+                              const confirmed = await DialogConfirm.show(
+                                dialog,
+                                "Confirm Redo",
+                                "Are you sure you want to restore the reverted messages?",
+                              )
+                              if (confirmed) {
+                                keymap.dispatchCommand("session.redo")
+                              }
                             }
-                          }
 
-                          return (
-                            <box
-                              onMouseOver={() => setHover(true)}
-                              onMouseOut={() => setHover(false)}
-                              onMouseUp={handleUnrevert}
-                              marginTop={1}
-                              flexShrink={0}
-                              border={["left"]}
-                              customBorderChars={SplitBorder.customBorderChars}
-                              borderColor={theme.backgroundPanel}
-                            >
+                            return (
                               <box
-                                paddingTop={1}
-                                paddingBottom={1}
-                                paddingLeft={2}
-                                backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
+                                onMouseOver={() => setHover(true)}
+                                onMouseOut={() => setHover(false)}
+                                onMouseUp={handleUnrevert}
+                                marginTop={1}
+                                flexShrink={0}
+                                border={["left"]}
+                                customBorderChars={SplitBorder.customBorderChars}
+                                borderColor={theme.backgroundPanel}
                               >
-                                <text fg={theme.textMuted}>{`${revert()!.reverted.length} message reverted`}</text>
-                                <text fg={theme.textMuted}>
-                                  <span style={{ fg: theme.text }}>{redoShortcut()}</span> or /redo to restore
-                                </text>
-                                <Show when={revert()!.diffFiles?.length}>
-                                  <box marginTop={1}>
-                                    <For each={revert()!.diffFiles}>
-                                      {(file) => (
-                                        <text fg={theme.text}>
-                                          {file.filename}
-                                          <Show when={file.additions > 0}>
-                                            <span style={{ fg: theme.diffAdded }}> +{file.additions}</span>
-                                          </Show>
-                                          <Show when={file.deletions > 0}>
-                                            <span style={{ fg: theme.diffRemoved }}> -{file.deletions}</span>
-                                          </Show>
-                                        </text>
-                                      )}
-                                    </For>
-                                  </box>
-                                </Show>
+                                <box
+                                  paddingTop={1}
+                                  paddingBottom={1}
+                                  paddingLeft={2}
+                                  backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
+                                >
+                                  <text fg={theme.textMuted}>{`${revert()!.reverted.length} message reverted`}</text>
+                                  <text fg={theme.textMuted}>
+                                    <span style={{ fg: theme.text }}>{redoShortcut()}</span> or /redo to restore
+                                  </text>
+                                  <Show when={revert()!.diffFiles?.length}>
+                                    <box marginTop={1}>
+                                      <For each={revert()!.diffFiles}>
+                                        {(file) => (
+                                          <text fg={theme.text}>
+                                            {file.filename}
+                                            <Show when={file.additions > 0}>
+                                              <span style={{ fg: theme.diffAdded }}> +{file.additions}</span>
+                                            </Show>
+                                            <Show when={file.deletions > 0}>
+                                              <span style={{ fg: theme.diffRemoved }}> -{file.deletions}</span>
+                                            </Show>
+                                          </text>
+                                        )}
+                                      </For>
+                                    </box>
+                                  </Show>
+                                </box>
                               </box>
-                            </box>
-                          )
-                        })()}
-                      </Match>
-                      {/* 260814 Red 边界比较改 cmpTime（ID 回绕后字典序失真） */}
-                      <Match when={revertPointMsg() && cmpTime(message, revertPointMsg()!) >= 0}>
-                        <></>
-                      </Match>
-                      <Match when={message.role === "user"}>
-                        <UserMessage
-                          index={index()}
-                          onMouseUp={() => {
-                            if (renderer.getSelection()?.getSelectedText()) return
-                            dialog.replace(() => (
-                              <DialogMessage
-                                messageID={message.id}
-                                sessionID={route.sessionID}
-                                setPrompt={(promptInfo) => prompt?.set(promptInfo)}
-                              />
-                            ))
-                          }}
-                          message={message as UserMessage}
-                          parts={sync.data.part[message.id] ?? []}
-                          pending={pending()?.id}
-                          pendingCreated={pending()?.time.created}
-                        />
-                      </Match>
-                      <Match when={message.role === "assistant" && (message as AssistantMessage).mode !== "compaction"}>
-                        <AssistantMessage
-                          last={lastAssistant()?.id === message.id}
-                          message={message as AssistantMessage}
-                          parts={sync.data.part[message.id] ?? []}
-                        />
-                      </Match>
-                    </Switch>
-                    <Show when={index() < windowedMessages().length - 1}>
-                      <box height={1}>
-                        <text fg={theme.borderSubtle}>{"· · ·"}</text>
-                      </box>
-                    </Show>
-                  </>
+                            )
+                          })()}
+                        </Match>
+                        {/* 260814 Red 边界比较改 cmpTime（ID 回绕后字典序失真） */}
+                        <Match when={revertPointMsg() && cmpTime(message, revertPointMsg()!) >= 0}>
+                          <></>
+                        </Match>
+                        <Match when={message.role === "user"}>
+                          <UserMessage
+                            index={index()}
+                            onMouseUp={() => {
+                              if (renderer.getSelection()?.getSelectedText()) return
+                              dialog.replace(() => (
+                                <DialogMessage
+                                  messageID={message.id}
+                                  sessionID={route.sessionID}
+                                  setPrompt={(promptInfo) => prompt?.set(promptInfo)}
+                                />
+                              ))
+                            }}
+                            message={message as UserMessage}
+                            parts={sync.data.part[message.id] ?? []}
+                            pending={pending()?.id}
+                            pendingCreated={pending()?.time.created}
+                          />
+                        </Match>
+                        <Match
+                          when={message.role === "assistant" && (message as AssistantMessage).mode !== "compaction"}
+                        >
+                          <AssistantMessage
+                            last={lastAssistant()?.id === message.id}
+                            message={message as AssistantMessage}
+                            parts={sync.data.part[message.id] ?? []}
+                          />
+                        </Match>
+                      </Switch>
+                      <Show when={index() < windowedMessages().length - 1}>
+                        <box height={1}>
+                          <text fg={theme.borderSubtle}>{"· · ·"}</text>
+                        </box>
+                      </Show>
+                    </>
                   )}
                 </For>
               </scrollbox>
@@ -1915,7 +1922,6 @@ function InlineTool(props: {
     return callID === props.part.callID
   })
 
-
   const error = createMemo(() => (props.part.state.status === "error" ? props.part.state.error : undefined))
 
   const denied = createMemo(
@@ -2183,23 +2189,11 @@ function Write(props: ToolProps<typeof WriteTool>) {
             when={ft() === "markdown"}
             fallback={
               <line_number fg={theme.textMuted} minWidth={3} paddingRight={1}>
-                <code
-                  conceal={false}
-                  fg={theme.text}
-                  filetype={ft()}
-                  syntaxStyle={syntax()}
-                  content={code()}
-                />
+                <code conceal={false} fg={theme.text} filetype={ft()} syntaxStyle={syntax()} content={code()} />
               </line_number>
             }
           >
-            <markdown
-              syntaxStyle={syntax()}
-              content={code()}
-              conceal={true}
-              fg={theme.text}
-              bg={theme.background}
-            />
+            <markdown syntaxStyle={syntax()} content={code()} conceal={true} fg={theme.text} bg={theme.background} />
           </Show>
           <Diagnostics diagnostics={props.metadata.diagnostics} filePath={props.input.filePath ?? ""} />
         </BlockTool>
@@ -2263,7 +2257,7 @@ function Read(props: ToolProps<typeof ReadTool>) {
 function Grep(props: ToolProps<typeof GrepTool>) {
   const pathFormatter = usePathFormatter()
   return (
-            <InlineTool icon="⊞" pending="搜索内容中..." complete={props.input.pattern} part={props.part}>
+    <InlineTool icon="⊞" pending="搜索内容中..." complete={props.input.pattern} part={props.part}>
       Grep "{props.input.pattern}" <Show when={props.input.path}>in {pathFormatter.format(props.input.path)} </Show>
       <Show when={props.metadata.matches}>
         ({props.metadata.matches} {props.metadata.matches === 1 ? "match" : "matches"})
@@ -2283,7 +2277,7 @@ function WebFetch(props: ToolProps<typeof WebFetchTool>) {
 function WebSearch(props: ToolProps<typeof WebSearchTool>) {
   const metadata = () => props.metadata as { numResults?: number; provider?: unknown }
   return (
-            <InlineTool icon="◎" pending="搜索网页中..." complete={props.input.query} part={props.part}>
+    <InlineTool icon="◎" pending="搜索网页中..." complete={props.input.query} part={props.part}>
       {webSearchProviderLabel(metadata().provider)} "{props.input.query}"{" "}
       <Show when={metadata().numResults}>{`(${metadata().numResults} results)`}</Show>
     </InlineTool>

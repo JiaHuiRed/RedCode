@@ -1078,11 +1078,11 @@ function cost(c: ModelsDev.Model["cost"]): Model["cost"] {
   return result
 }
 
- // 260707 Red: models.dev / OpenRouter occasionally report stale context windows.
- // Hard overrides for models whose real context is larger than what the registry returns.
- const CONTEXT_OVERRIDES: Record<string, number> = {
-   "THUDM/GLM-4-9B-0414": 128_000,
- }
+// 260707 Red: models.dev / OpenRouter occasionally report stale context windows.
+// Hard overrides for models whose real context is larger than what the registry returns.
+const CONTEXT_OVERRIDES: Record<string, number> = {
+  "THUDM/GLM-4-9B-0414": 128_000,
+}
 
 function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model): Model {
   const base: Model = {
@@ -1099,11 +1099,11 @@ function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model
     headers: {},
     options: {},
     cost: cost(model.cost),
-     limit: {
-       context: CONTEXT_OVERRIDES[model.id] ?? model.limit.context,
-       input: model.limit.input,
-       output: model.limit.output,
-     },
+    limit: {
+      context: CONTEXT_OVERRIDES[model.id] ?? model.limit.context,
+      input: model.limit.input,
+      output: model.limit.output,
+    },
     capabilities: {
       temperature: model.temperature ?? false,
       reasoning: model.reasoning ?? false,
@@ -1277,14 +1277,14 @@ export const layer = Layer.effect(
             "gpt-5.6-sol": { input: 10, output: 30, cache: { read: 2.5, write: 10 } },
             "gpt-5.6-terra": { input: 13.5, output: 81, cache: { read: 3.375, write: 13.5 } },
           },
-         // 260731 Red 火山方舟官方定价（元/百万 tokens）：doubao-seed-2.1-turbo 输入 3.00、
-         // 缓存读 0.60、输出 15.00；doubao-seed-2.1-pro 输入 6.00、缓存读 1.20、输出 30.00。
-         // volcengine-ark 不在 models.dev（纯 config 自定义 provider），不套这张表 cost 全 0
-         // （config 循环兜底 0，费用会显示 ¥0.00）。cache write 按惯例 = input。
-         "volcengine-ark": {
-           "Doubao-Seed-2.1-turbo": { input: 3, output: 15, cache: { read: 0.6, write: 3 } },
-           "Doubao-Seed-2.1-pro": { input: 6, output: 30, cache: { read: 1.2, write: 6 } },
-         },
+          // 260731 Red 火山方舟官方定价（元/百万 tokens）：doubao-seed-2.1-turbo 输入 3.00、
+          // 缓存读 0.60、输出 15.00；doubao-seed-2.1-pro 输入 6.00、缓存读 1.20、输出 30.00。
+          // volcengine-ark 不在 models.dev（纯 config 自定义 provider），不套这张表 cost 全 0
+          // （config 循环兜底 0，费用会显示 ¥0.00）。cache write 按惯例 = input。
+          "volcengine-ark": {
+            "Doubao-Seed-2.1-turbo": { input: 3, output: 15, cache: { read: 0.6, write: 3 } },
+            "Doubao-Seed-2.1-pro": { input: 6, output: 30, cache: { read: 1.2, write: 6 } },
+          },
         }
         // 260802 Red: 已知多模态模型列表——models.dev API 可能不声明 modalities，
         // 但实际支持图片输入。强制覆盖 capabilities.input.image = true，
