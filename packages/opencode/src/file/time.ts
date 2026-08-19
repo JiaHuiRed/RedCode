@@ -2,6 +2,7 @@ import * as fsp from "fs/promises"
 import { Effect } from "effect"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import * as Log from "@redcode-ai/core/util/log"
+import { MAX_SESSIONS, SESSION_TTL_MS, sessionEvictor } from "@/util/session-evictor"
 
 // 260810 cc audit R2: "写前已读"守卫（上游 FileTime 的移植，比对口径从墙钟改为 mtime）。
 // write/edit 此前不校验文件是否被本会话 read 过、也不比对改动时间——IDE 手改、git 操作、
@@ -16,37 +17,21 @@ const log = Log.create({ service: "file.time" })
 
 // 260819 cc audit：state 此前零删除——没有任何删除点，也没人订阅 Session.Event.Deleted，
 // 会话维度只增不减。CLI 无影响（进程即会话），但 GUI sidecar 与 serve 是长驻多会话进程，
-// 每个会话留下一整张「读过的文件 → mtime」表。回收同 prompt-caches：TTL 为主、数量为辅，
-// 且 record/assert 都算触碰，活跃会话不会被回收。
+// 每个会话留下一整张「读过的文件 → mtime」表。回收口径与阈值见 util/session-evictor.ts，
+// record/assert 都算触碰，活跃会话不会被回收。
 //
 // 回收一个会话的代价是 fail-safe 的：下次覆写该文件时守卫要求先重读（而不是放行旧内容）。
 // 对一个已经一小时没动静的会话来说，这恰恰也是更正确的行为——文件很可能真的变了。
-const SESSION_TTL_MS = 60 * 60 * 1000
-const MAX_SESSIONS = 32
-const seen = new Map<string, number>()
+const evictor = sessionEvictor({
+  ttlMs: SESSION_TTL_MS,
+  max: MAX_SESSIONS,
+  drop: (sessionID) => (state.delete(sessionID) ? 1 : 0),
+})
 
-function touch(sessionID: string, now = Date.now()) {
-  seen.delete(sessionID)
-  seen.set(sessionID, now)
-  let evicted = 0
-  // Map 保插入序 => 从头遍历就是从最冷到最热，撞到第一个还热的即可停
-  for (const [id, at] of [...seen]) {
-    if (id === sessionID) continue
-    if (now - at <= SESSION_TTL_MS) break
-    state.delete(id)
-    seen.delete(id)
-    evicted++
-  }
-  while (seen.size > MAX_SESSIONS) {
-    const oldest = seen.keys().next().value
-    if (oldest === undefined || oldest === sessionID) break
-    state.delete(oldest)
-    seen.delete(oldest)
-    evicted++
-  }
-  if (evicted > 0) log.info("evicted", { sessions: evicted, live: seen.size })
+function touch(sessionID: string) {
+  const evicted = evictor.touch(sessionID)
+  if (evicted.length > 0) log.info("evicted", { sessions: evicted.length, live: evictor.size() })
 }
-
 function key(filepath: string) {
   return AppFileSystem.resolve(filepath)
 }
@@ -96,6 +81,6 @@ export namespace FileTime {
   /** 测试钩子：清空进程内记录，避免用例之间互相污染 */
   export const reset = () => {
     state.clear()
-    seen.clear()
+    evictor.clear()
   }
 }

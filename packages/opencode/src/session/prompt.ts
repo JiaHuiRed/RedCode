@@ -1691,7 +1691,7 @@ export const layer = Layer.effect(
             // 260721 Red prefix shape diagnostic: detect system/tool change mid-session
             {
               const shape = PrefixShape.capture(system, sortedTools as Record<string, unknown>)
-              const diag = PrefixShape.diagnose(shape, sessionID, sortedTools as Record<string, unknown>)
+              const diag = PrefixShape.diagnose(shape, sessionID, modelKey, sortedTools as Record<string, unknown>)
               if (diag.changed) {
                 // 260729 Red 带上工具 schema 的 token 成本：前缀被打掉时最该知道的就是
                 // "谁在吃预算"。topCosts 只在 tools 真的变了时才算。

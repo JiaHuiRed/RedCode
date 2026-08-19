@@ -1,5 +1,6 @@
 import type { ModelMessage } from "ai"
 import * as Log from "@redcode-ai/core/util/log"
+import { MAX_SESSIONS, SESSION_TTL_MS, sessionEvictor } from "@/util/session-evictor"
 
 const log = Log.create({ service: "prompt-caches" })
 
@@ -72,15 +73,14 @@ export function settlePromptCaches(sessionID: string, reason: string) {
 // tools（全部工具的 description+inputSchema）、以及尚未在 compact 边界结算掉的
 // msgPin/modelMsgs（整段被钉死的消息历史，长会话可达数 MB）。
 //
-// 回收口径用「冷」而不是「删」：会话被显式删除是少数情况，绝大多数只是不再被 prompt。
-//   TTL 为主：超过 1 小时没被使用即回收。此时 provider 侧的前缀缓存（分钟量级）早已过期，
-//            重建不会多花一分钱，纯赚内存。
-//   数量为辅：只挡突发。回收活跃会话是有代价的——丢 msgPin/modelMsgs 等于让 DCP 攒下的
-//            改写一次性生效、整条前缀从最早改写处重写（见上面分代结算那段），所以上限取
-//            得宽松，单人使用下一小时内触碰超过 32 个会话不现实。
-//   两条都命中不了的极端情况宁可留着内存，也不主动去打前缀缓存。
-const SESSION_TTL_MS = 60 * 60 * 1000
-const MAX_SESSIONS = 32
+// 回收口径与阈值见 util/session-evictor.ts —— 那里也解释了为什么上限取得宽松：
+// 回收活跃会话要付一次全额前缀重建，正是 5670d86 刚花力气避免的那种。
+const evictor = sessionEvictor({
+  ttlMs: SESSION_TTL_MS,
+  max: MAX_SESSIONS,
+  drop: (sessionID) => dropSession(sessionID),
+  seen: PromptCaches.seen,
+})
 
 /** 把一个会话从全部四个缓存里彻底摘掉。settle 只管 msgPin/modelMsgs，这里连 system/tools 一起。 */
 export function dropSession(sessionID: string) {
@@ -88,33 +88,13 @@ export function dropSession(sessionID: string) {
     settlePromptCaches(sessionID, "evict") +
     (PromptCaches.system.delete(sessionID) ? 1 : 0) +
     (PromptCaches.tools.delete(sessionID) ? 1 : 0)
-  PromptCaches.seen.delete(sessionID)
+  evictor.forget(sessionID)
   return dropped
 }
 
-/**
- * 每轮 prompt 构造时调用一次，登记本会话的活跃时刻并顺手回收冷会话。
- * 惰性清扫而非定时器：条目数是「近期会话数」量级（个位到几十），每轮扫一遍代价可忽略，
- * 也不必操心 timer 的生命周期与 unref。
- */
+/** 每轮 prompt 构造时调用一次：登记本会话活跃时刻并顺手回收冷会话。 */
 export function touchSession(sessionID: string, now = Date.now()) {
-  // 重新插入把自己挪到末尾——Map 保插入序，于是从头遍历就是「从最冷到最热」
-  PromptCaches.seen.delete(sessionID)
-  PromptCaches.seen.set(sessionID, now)
-
-  const evicted: string[] = []
-  for (const [id, at] of [...PromptCaches.seen]) {
-    if (id === sessionID) continue
-    if (now - at <= SESSION_TTL_MS) break // 后面的只会更热
-    // dropSession 自己会把它从 seen 里摘掉；返回 0 表示这个会话只有活跃记录、没缓存数据，
-    // 摘掉但不记进 evicted（没释放东西就别谎报释放）
-    if (dropSession(id) > 0) evicted.push(id)
-  }
-  while (PromptCaches.seen.size > MAX_SESSIONS) {
-    const oldest = PromptCaches.seen.keys().next().value
-    if (oldest === undefined || oldest === sessionID) break
-    if (dropSession(oldest) > 0) evicted.push(oldest)
-  }
-  if (evicted.length > 0) log.info("evicted", { sessions: evicted.length, live: PromptCaches.seen.size })
+  const evicted = evictor.touch(sessionID, now)
+  if (evicted.length > 0) log.info("evicted", { sessions: evicted.length, live: evictor.size() })
   return evicted
 }
