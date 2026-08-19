@@ -1314,6 +1314,14 @@ describe("ProviderTransform.message - surrogate sanitization", () => {
             toolName: "Read",
             output: { type: "content", value: [{ type: "text", text: text("assistant tool content") }] },
           },
+          // 260819 cc: call-5/6/7 必须在这里有配对的 tool-call —— transform 里有一道
+          // 「丢弃无前置配对 tool_call 的 tool-result，整条 tool 消息若无剩余则删除」的
+          // 过滤（见 transform.ts 的孤儿注释，是哥哥实测报错后加的）。此前用例没给配对，
+          // 下面那条 role:"tool" 消息被整条丢掉，result[5] 恒 undefined，用例一直是红的。
+          // 追加在数组末尾是为了不打乱上面 content[0..5] 的既有断言下标。
+          { type: "tool-call", toolCallId: "call-5", toolName: "Read", input: { filePath: "a.ts" } },
+          { type: "tool-call", toolCallId: "call-6", toolName: "Read", input: { filePath: "b.ts" } },
+          { type: "tool-call", toolCallId: "call-7", toolName: "Read", input: { filePath: "c.ts" } },
         ],
       },
       {
