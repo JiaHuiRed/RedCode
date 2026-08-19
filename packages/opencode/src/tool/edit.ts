@@ -838,6 +838,11 @@ export function normalizeUnicode(text: string): string {
 
 export const UnicodeNormalizedReplacer: Replacer = function* (content, find) {
   if (content.split("\n").length > LINE_SCAN_MAX_CONTENT_LINES) return
+  // 260819 cc: 空 find 会让下面的 while(true) 原地打转 —— indexOf("", i) 恒返回 i、
+  // startIndex 加 0 不前进，实测 5ms 内 yield 超 10 万次且永不终止。目前 edit 工具在上游
+  // 把 oldString === "" 分流到了建档路径（本函数够不到），但 replace() 是 exported，
+  // 护栏离这个循环一千行远，就地挡住。
+  if (find === "") return
   const normContent = normalizeUnicode(content)
   const normFind = normalizeUnicode(find)
   // 两侧都无需归一化时，归一化匹配与精确匹配等价，SimpleReplacer 已覆盖——顺便也挡住
@@ -911,27 +916,38 @@ export const BlockAnchorReplacer: Replacer = function* (content, find) {
   const lastLineSearch = searchLines[searchLines.length - 1].trim()
   const searchBlockSize = searchLines.length
 
- // Collect all candidate positions where both anchors match
- const candidates: Array<{ startLine: number; endLine: number }> = []
- for (let i = 0; i < originalLines.length; i++) {
-   if (originalLines[i].trim() !== firstLineSearch) {
-     continue
-   }
+  // Collect all candidate positions where both anchors match
+  const candidates: Array<{ startLine: number; endLine: number }> = []
+  // 260819 cc: 尾锚点位置由块长唯一确定，不需要扫描。
+  // why: docs/notes/implemented/bug-fix/2026-08-19-block-anchor-quadratic.md
+  // 原本内层是「从 i+2 逐行往后找尾锚点行」，配合 dbdef8fc(260812) 把命中后的 break 改成
+  // 「行数不符就 continue 接着找」，最坏情况每个首锚点都要扫到文件末尾 —— 整体 O(n²)，
+  // 且是同步 CPU，直接冻住事件循环。实测病理输入（首锚点行大量重复、尾锚点永不以正确
+  // 块长出现）5000/10000/20000/40000 行 = 254/1013/4074/16518 ms，严格四倍/倍长。
+  // 这是 diffFull(260709)、fuzzyFindBestMatch(260722)、ContextAwareReplacer(260724)
+  // 同一支「无界算法跑在任意文件内容上」的病的第四例，本函数是当时唯一漏掉行数帽的。
+  //
+  // 但这里不需要加帽：260812 的行数一致性校验本身让扫描变成多余的 —— 候选被接受当且仅当
+  // j - i + 1 === searchBlockSize，即 j 只能取 i + searchBlockSize - 1 这一个值，
+  // 原循环找的「≥ i+2 且两个条件都满足的最小 j」就是它。直接算出来，行为逐字等价，
+  // 复杂度 O(n²) → O(n)，大文件上的模糊回退能力也原样保留（加 3000 行帽会把它废掉）。
+  //
+  // 行数校验保留的原因（dbdef8fc 事故记录，勿删）：只锚首/尾行时，尾锚点在本块内缺失会
+  // 让候选区间跨越多个函数，构造出吞掉整段代码的巨大伪候选 —— app.py 事故里 except 结尾
+  // 的 3 行 oldString，尾行 return jsonify 不在 qpf 块内，扫到 1800 行后 capital 块的
+  // return 才匹配，records/stats/users 整段被吞。
+  for (let i = 0; i < originalLines.length; i++) {
+    if (originalLines[i].trim() !== firstLineSearch) {
+      continue
+    }
 
-   // Look for the matching last line after this first line
-   for (let j = i + 2; j < originalLines.length; j++) {
-     if (originalLines[j].trim() === lastLineSearch) {
-       // 260812 Red: 候选行数必须与 oldString 一致，否则"首锚点行 → 其后第一个尾锚点行"
-       // 在尾锚点于本块内缺失时会跨越多个函数，构造出吞掉整段代码的巨大伪候选
-       // （app.py 事故：except 结尾 3 行 oldString，尾行 return jsonify 不在 qpf 块内，
-       // 扫到 1800 行后 capital 块的 return 才匹配，records/stats/users 整段被吞）。
-       // 行数不符时继续找下一个尾锚点，不急着 break。
-       if (j - i + 1 !== searchBlockSize) continue
-       candidates.push({ startLine: i, endLine: j })
-       break // Only match the first occurrence of the last line
-     }
-   }
- }
+    const j = i + searchBlockSize - 1
+    // j >= i + 2 保持原内层循环的起点约束：searchLines 尾部空行被 pop 后 searchBlockSize
+    // 可能降到 2，那时原循环够不到 j = i + 1，不产生候选。
+    if (j < i + 2 || j >= originalLines.length) continue
+    if (originalLines[j].trim() !== lastLineSearch) continue
+    candidates.push({ startLine: i, endLine: j })
+  }
   // Return immediately if no candidates
   if (candidates.length === 0) {
     return
@@ -1171,6 +1187,11 @@ export const EscapeNormalizedReplacer: Replacer = function* (content, find) {
 export const MultiOccurrenceReplacer: Replacer = function* (content, find) {
   // This replacer yields all exact matches, allowing the replace function
   // to handle multiple occurrences based on replaceAll parameter
+  // 260819 cc: 空 find 会让下面的 while(true) 原地打转 —— indexOf("", i) 恒返回 i、
+  // startIndex 加 0 不前进，实测 5ms 内 yield 超 10 万次且永不终止。目前 edit 工具在上游
+  // 把 oldString === "" 分流到了建档路径（本函数够不到），但 replace() 是 exported，
+  // 护栏离这个循环一千行远，就地挡住。
+  if (find === "") return
   let startIndex = 0
 
   while (true) {

@@ -2,7 +2,14 @@ import { afterEach, describe, expect, test } from "bun:test"
 import path from "path"
 import fs from "fs/promises"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect"
-import { EditTool, fileLockCount, replace } from "../../src/tool/edit"
+import {
+  BlockAnchorReplacer,
+  EditTool,
+  fileLockCount,
+  MultiOccurrenceReplacer,
+  replace,
+  UnicodeNormalizedReplacer,
+} from "../../src/tool/edit"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { LSP } from "@/lsp/lsp"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
@@ -987,3 +994,52 @@ describe("tool.edit", () => {
       expect(result).toContain("REPLACED")
     })
   })
+
+describe("replacer 复杂度与终止性回归", () => {
+  // 260819 cc audit：BlockAnchorReplacer 是「无界算法跑在任意文件内容上」这一支的第四例
+  // （前三例 diffFull 260709 / fuzzyFindBestMatch 260722 / ContextAwareReplacer 260724），
+  // 也是当时唯一没被补上行数帽的 replacer。病理输入 = 首锚点行大量重复 + 尾锚点永不以正确
+  // 块长出现，此时旧实现每个首锚点都要扫到文件末尾：实测 5000/10000/20000/40000 行 =
+  // 254/1013/4074/16518 ms，严格四倍/倍长，同步 CPU 直接冻住事件循环。
+  // 修法不是加帽（那会连带废掉大文件上的模糊回退），而是利用 260812 的行数一致性校验把
+  // 内层扫描降成 O(1) 定位。阈值 2 秒是修复后（4ms）的 500 倍余量，只拦复杂度回归，不做
+  // 性能基准。
+  test("BlockAnchorReplacer 在病理大文件上保持线性", () => {
+    const find = ["ANCHOR", "middle", "TAIL_NEVER"].join("\n")
+    const content = Array.from({ length: 40000 }, () => "ANCHOR").join("\n")
+    const started = Date.now()
+    const yields = [...BlockAnchorReplacer(content, find)]
+    const elapsed = Date.now() - started
+    expect(yields).toEqual([])
+    expect(elapsed).toBeLessThan(2000)
+  })
+
+  // 上面那条改用「加 3000 行帽」的修法也会绿，但那样会连带废掉大文件上的模糊回退能力。
+  // 这条把「>3000 行仍要能模糊匹配」钉住，防止后人图省事换成加帽。
+  test("BlockAnchorReplacer 在 3000 行以上文件仍能模糊匹配", () => {
+    const filler = Array.from({ length: 8000 }, (_, i) => `const v${i} = ${i}`)
+    const content = [...filler, "function target() {", "  return 1", "}"].join("\n")
+    // 中间行与原文不同 —— 精确匹配失败，只能靠 BlockAnchor 的首/尾锚点 + 相似度回退
+    const find = ["function target() {", "  return 2", "}"].join("\n")
+    expect([...BlockAnchorReplacer(content, find)]).toEqual(["function target() {\n  return 1\n}"])
+  })
+
+  // 空 find：indexOf("", i) 恒返回 i、startIndex 加 0 不前进 → while(true) 原地打转，
+  // 实测修复前 5ms 内 yield 超 10 万次且永不终止。目前 edit 工具在上游把 oldString === ""
+  // 分流到建档路径所以够不到这里，但 replace() 是 exported，护栏离循环一千行远。
+  //
+  // 用例正文必须含「归一化后会变」的字符（这里用全角引号）：UnicodeNormalizedReplacer 上游
+  // 有一道 normContent === content && normFind === find 的 early return，纯 ASCII 正文会被
+  // 它挡在循环之外 —— 拿 ASCII 当输入这条在修复前也是绿的，guard 不住任何东西。
+  test.each([
+    ["MultiOccurrenceReplacer", MultiOccurrenceReplacer],
+    ["UnicodeNormalizedReplacer", UnicodeNormalizedReplacer],
+  ])("%s 遇到空 find 立即终止", (_name, replacer) => {
+    const yields: string[] = []
+    for (const match of replacer("const s = \u201Chi\u201D\nbeta\ngamma\n", "")) {
+      yields.push(match)
+      if (yields.length > 1000) break // 兜底：真无限时不挂死整个测试进程
+    }
+    expect(yields).toEqual([])
+  })
+})
