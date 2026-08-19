@@ -19,6 +19,13 @@ export const Flag = {
   REDCODE_DISABLE_AUTOUPDATE: truthy("REDCODE_DISABLE_AUTOUPDATE"),
   REDCODE_ALWAYS_NOTIFY_UPDATE: truthy("REDCODE_ALWAYS_NOTIFY_UPDATE"),
   REDCODE_DISABLE_PRUNE: truthy("REDCODE_DISABLE_PRUNE"),
+  // 260819 cc 前缀断裂探针（session/prefix-probe.ts）。默认开——哥哥的前缀缓存排查还在
+  // 进行中，它就是数据来源；不需要时置 1 关掉，省下每轮约 2.8ms 的全量指纹开销。
+  // 按访问时求值（同下方 REDCODE_DISABLE_PROJECT_CONFIG 的理由）：模块加载时求值的话，
+  // 用例与 CLI 在运行期设的环境变量都不生效。
+  get REDCODE_DISABLE_PREFIX_PROBE() {
+    return truthy("REDCODE_DISABLE_PREFIX_PROBE")
+  },
   REDCODE_DISABLE_TERMINAL_TITLE: truthy("REDCODE_DISABLE_TERMINAL_TITLE"),
   REDCODE_SHOW_TTFD: truthy("REDCODE_SHOW_TTFD"),
   REDCODE_DISABLE_AUTOCOMPACT: truthy("REDCODE_DISABLE_AUTOCOMPACT"),
