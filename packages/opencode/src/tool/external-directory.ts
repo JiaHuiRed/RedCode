@@ -23,7 +23,12 @@ export const assertExternalDirectoryEffect = Effect.fn("Tool.assertExternalDirec
   if (options?.bypass) return
 
   const ins = yield* InstanceState.context
-  const full = process.platform === "win32" ? AppFileSystem.normalizePath(target) : target
+  // 260810 cc: 先以 instance.directory 为基准 resolve 再 normalize —— 否则
+  // "/users/foo" 这类有根无盘符路径会被 normalizePath 兜底的 pathResolve 按
+  // process.cwd() 补盘符，仓库与目标不同盘（仓库 E:、temp C:）时补错盘，
+  // containsPath 与授权 glob 都会落在错误的盘上。
+  const resolved = AppFileSystem.resolveFrom(ins.directory, target)
+  const full = process.platform === "win32" ? AppFileSystem.normalizePath(resolved) : resolved
   if (containsPath(full, ins)) return
 
   const kind = options?.kind ?? "file"

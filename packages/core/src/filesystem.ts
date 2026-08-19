@@ -234,6 +234,16 @@ export namespace AppFileSystem {
     }
   }
 
+  // 260810 cc: Windows 上 path.isAbsolute 对 "\users\foo" 这类有根无盘符路径返回 true，
+  // "isAbsolute ? 原样 : join(base, ...)" 会把它原样放行，后续 pathResolve 兜底按
+  // process.cwd() 所在盘补盘符 —— 仓库在 E:、目标在 C: 时补错盘。这里无条件
+  // pathResolve(base, ...)：全绝对路径原样透传、相对路径接到 base、无盘符有根路径
+  // 取 base 的盘。必须先过 windowsPath，否则 "/c:/foo" 这类 MSYS 风格会被 resolve
+  // 当成有根无盘符路径，搅成 "<base盘>:\c:\foo"。
+  export function resolveFrom(base: string, p: string): string {
+    return pathResolve(base, windowsPath(p))
+  }
+
   export function windowsPath(p: string): string {
     if (process.platform !== "win32") return p
     return p

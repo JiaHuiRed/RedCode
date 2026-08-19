@@ -39,9 +39,8 @@ export const WriteTool = Tool.define(
       execute: (params: { content: string; filePath: string }, ctx: Tool.Context) =>
         Effect.gen(function* () {
           const instance = yield* InstanceState.context
-          const filepath = path.isAbsolute(params.filePath)
-            ? params.filePath
-            : path.join(instance.directory, params.filePath)
+          // 260810 cc: isAbsolute 对 "\users\foo" 有根无盘符路径返回 true，见 AppFileSystem.resolveFrom
+          const filepath = AppFileSystem.resolveFrom(instance.directory, params.filePath)
           yield* assertExternalDirectoryEffect(ctx, filepath)
 
           const exists = yield* fs.existsSafe(filepath)
