@@ -58,7 +58,6 @@ import { Popover as KobaltePopover } from "@kobalte/core/popover"
 import { normalize } from "@redcode-ai/ui/session-diff"
 import { useFileComponent } from "@redcode-ai/ui/context/file"
 import { shouldMarkBoundaryGesture, normalizeWheelDelta } from "@/pages/session/message-gesture"
-import { SessionContextUsage } from "@/components/session-context-usage"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useLanguage } from "@/context/language"
@@ -1492,7 +1491,6 @@ export function MessageTimeline(props: {
               <Show when={sessionID()} keyed>
                 {(id) => (
                   <div class="shrink-0 flex items-center gap-3">
-                    <SessionContextUsage placement="bottom" />
                     <Show when={!parentID()}>
                       <DropdownMenu
                         gutter={4}
