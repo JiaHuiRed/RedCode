@@ -1749,6 +1749,46 @@ describe("SessionNs.getUsage", () => {
     expect(result.cost).toBe(3 + 1.5)
   })
 
+  // 260819 cc: tokens.context = 这一刻上下文有多大，供 TUI 侧边栏的上下文窗口显示。
+  // 与 tokens.total 的区别要紧——total 在 processor 里跨 step 累加（260706 为让 cost 与缓存
+  // 命中率对账），拿它当上下文会虚高成倍数。
+  describe("tokens.context（上下文窗口口径）", () => {
+    const model = createModel({ context: 100_000, output: 32_000 })
+
+    test("context = 本次请求提示词总量，不含输出", () => {
+      const result = SessionNs.getUsage({
+        model,
+        usage: usage({ inputTokens: 40_000, outputTokens: 5_000, totalTokens: 45_000 }),
+      })
+      expect(result.tokens.context).toBe(40_000)
+      expect(result.tokens.total).toBe(45_000)
+    })
+
+    test("含缓存读写时 context 仍是提示词全量", () => {
+      const result = SessionNs.getUsage({
+        model,
+        usage: usage({ inputTokens: 40_000, outputTokens: 500, totalTokens: 40_500, cacheReadInputTokens: 38_000 }),
+      })
+      expect(result.tokens.context).toBe(40_000)
+      // input 是扣掉缓存后的新鲜量，三个字段加回来才约等于 context——正常情况下成立
+      expect(result.tokens.input + result.tokens.cache.read + result.tokens.cache.write).toBe(40_000)
+    })
+
+    // 这条是 context 必须由 getUsage 直接给出、而不能让消费端把三个字段加回来的原因：
+    // DeepSeek 会报 cached_tokens > prompt_tokens（KV 缓存聚合口径 vs 单次请求），
+    // cache.read 存的是未经上限钳制的原始值，加出来会超过真实提示词量。
+    test("DeepSeek 缓存超报时，三字段相加会虚高，context 不受影响", () => {
+      const result = SessionNs.getUsage({
+        model,
+        usage: usage({ inputTokens: 40_000, outputTokens: 500, totalTokens: 40_500 }),
+        metadata: { deepseek: { promptCacheHitTokens: 50_000 } },
+      })
+      expect(result.tokens.context).toBe(40_000)
+      const summedBack = result.tokens.input + result.tokens.cache.read + result.tokens.cache.write
+      expect(summedBack).toBeGreaterThan(40_000)
+    })
+  })
+
   test("uses matching context cost tier before over-200k fallback", () => {
     const model = createModel({
       context: 1_000_000,

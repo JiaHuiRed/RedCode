@@ -449,10 +449,17 @@ export const getUsage = (input: {
   // raw.prompt_cache_hit_tokens from the AI SDK usage response.
   const cacheMissInputTokens = adjustedInputTokens
 
+  const contextTokens = inputTokens
+
   const total = input.usage.totalTokens
 
   const tokens = {
     total,
+    // 260819 cc: 本次请求的提示词总量（含缓存读写），也就是「这一刻的上下文有多大」。
+    // 不能拿 input + cache.read + cache.write 事后加回来——cache.read 存的是未经上限
+    // 钳制的原始值（DeepSeek 会报 cached_tokens > prompt_tokens），加出来会超过真实值。
+    // contextTokens 就是 usage.inputTokens 本身，下面峰谷/分档计价也用的它。
+    context: contextTokens,
     input: adjustedInputTokens,
     output: safe(outputTokens - reasoningTokens),
     reasoning: reasoningTokens,
@@ -463,7 +470,6 @@ export const getUsage = (input: {
     },
   }
 
-  const contextTokens = inputTokens
   // 260816 Red: 峰谷定价旁路表优先——按请求时刻取价（旧价历史段/高峰/空闲），
   // 未命中（无 time 或不在表内）回落到静态 model.cost 的 tiers/experimental 逻辑。
   const tieredCost =

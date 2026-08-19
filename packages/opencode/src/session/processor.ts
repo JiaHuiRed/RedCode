@@ -783,6 +783,11 @@ export const layer = Layer.effect(
             const prevTokens = ctx.assistantMessage.tokens
             ctx.assistantMessage.tokens = {
               total: (prevTokens.total ?? 0) + (usage.tokens.total ?? 0),
+              // 260819 cc: context 是「这一刻上下文多大」，必须覆盖、不能像上面那样累加——
+              // 累加出来是本轮所有 step 的提示词之和，长工具链下会是上下文的十几倍
+              // （TUI 侧边栏原先拿 total 当上下文用，percentLabel 里那句 p > 200 加 ⚠
+              // 就是这个问题被看见过但没改口径的痕迹）。
+              context: usage.tokens.context,
               input: prevTokens.input + usage.tokens.input,
               output: prevTokens.output + usage.tokens.output,
               reasoning: prevTokens.reasoning + usage.tokens.reasoning,

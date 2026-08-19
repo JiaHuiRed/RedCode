@@ -486,6 +486,7 @@ export type AssistantMessage = {
   cost: number
   tokens: {
     total?: number
+    context?: number
     input: number
     output: number
     reasoning: number
@@ -690,6 +691,7 @@ export type StepFinishPart = {
   cost: number
   tokens: {
     total?: number
+    context?: number
     input: number
     output: number
     reasoning: number
@@ -1047,6 +1049,8 @@ export type AgentConfig = {
   color?: string | "primary" | "secondary" | "accent" | "success" | "warning" | "error" | "info"
   steps?: number
   maxSteps?: number
+  timeout_ms?: number
+  fallback_model?: string
   permission?: PermissionConfig
   [key: string]:
     | unknown
@@ -1267,6 +1271,7 @@ export type Config = {
   model?: string
   small_model?: string
   default_agent?: string
+  subagent_depth?: number
   username?: string
   busy_enter?: "steer" | "queue"
   mode?: {
@@ -1450,6 +1455,7 @@ export type Model = {
       [key: string]: unknown
     }
   }
+  reasoningOptions?: unknown
 }
 
 export type Provider = {
@@ -1715,6 +1721,11 @@ export type Agent = {
     [key: string]: unknown
   }
   steps?: number
+  timeoutMs?: number
+  fallbackModel?: {
+    modelID: string
+    providerID: string
+  }
 }
 
 export type LspStatus = {

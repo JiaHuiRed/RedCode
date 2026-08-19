@@ -49,6 +49,33 @@ function formatDuration(updated: number): string {
   return `${Math.floor(diff / 86_400_000)}d ago`
 }
 
+// 260819 cc 上下文窗口用紧凑记法，侧边栏只有 42 列，185,925 / 1,000,000 这种写法一行放不下
+export function compact(n: number): string {
+  if (n >= 1_000_000) {
+    const m = n / 1_000_000
+    return `${m >= 10 ? Math.round(m) : Math.round(m * 10) / 10}M`
+  }
+  if (n >= 1_000) {
+    const k = n / 1_000
+    return `${k >= 100 ? Math.round(k) : Math.round(k * 10) / 10}k`
+  }
+  return String(n)
+}
+
+const BAR_WIDTH = 24
+export function bar(percent: number): { filled: string; rest: string } {
+  const clamped = Math.max(0, Math.min(100, percent))
+  const filled = Math.min(BAR_WIDTH, Math.round((clamped / 100) * BAR_WIDTH))
+  return { filled: "█".repeat(filled), rest: "░".repeat(BAR_WIDTH - filled) }
+}
+
+// 绿→黄→红：85% 以上就该考虑压缩了，颜色先于数字给出信号
+export function barColor(percent: number): string {
+  if (percent >= 85) return "#ff5252"
+  if (percent >= 60) return "#ffb300"
+  return "#66bb6a"
+}
+
 function View(props: { api: TuiPluginApi; session_id: string }) {
   const theme = () => props.api.theme.current
   const msg = createMemo(() => props.api.state.session.messages(props.session_id))
@@ -67,6 +94,8 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         cacheWrite: 0,
         cacheHit: null,
         percent: null,
+        context: null as number | null,
+        limit: null as number | null,
         model: null as string | null,
         provider: null as string | null,
         providerID: null as string | null,
@@ -114,7 +143,17 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       cacheMiss: sumMiss,
       cacheWrite: sumWrite,
       cacheHit,
-      percent: modelInfo?.limit.context ? Math.round((tokens / modelInfo.limit.context) * 100) : null,
+      // 260819 cc 口径修复：percent 原来拿 tokens（= last.tokens.total）除上下文窗口，而 total 在
+      // processor 里跨 step 累加（260706 为让 cost/缓存命中率对账），一次 assistant 消息含几次工具
+      // 往返就累加几次请求的 total —— 长工具链下显示成上下文的十几倍。下面 percentLabel 里那句
+      // p > 200 就是这个问题被看见过但没改口径的痕迹。改用 tokens.context（最后一个 step 的提示词
+      // 总量，恒不累加）。历史消息没有这个字段，此时整块不显示，等本会话下一轮请求写入。
+      context: last.tokens.context ?? null,
+      limit: modelInfo?.limit.context ?? null,
+      percent:
+        last.tokens.context !== undefined && modelInfo?.limit.context
+          ? Math.round((last.tokens.context / modelInfo.limit.context) * 100)
+          : null,
       model: modelName,
       provider: prov?.name ?? last.providerID,
       providerID: last.providerID,
@@ -147,11 +186,31 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       <Show when={state().model}>
         <text fg={theme()?.primary}>  {state().model}</text>
       </Show>
+      <box height={1} />
+      <text fg={theme()?.textMuted}>Context window</text>
+      <Show
+        when={state().context !== null && state().limit !== null}
+        fallback={
+          <text fg={theme()?.textMuted}>
+            {"  "}
+            <span style={{ fg: theme()?.textMuted }}>暂无（本会话下一轮请求后显示）</span>
+          </text>
+        }
+      >
+        <text fg={theme()?.textMuted}>
+          {"  "}
+          <span style={{ fg: barColor(state().percent ?? 0) }}>{compact(state().context!)}</span> /{" "}
+          {compact(state().limit!)} · <span style={{ fg: barColor(state().percent ?? 0) }}>{percentLabel()}</span>
+        </text>
+        <text>
+          {"  "}
+          <span style={{ fg: barColor(state().percent ?? 0) }}>{bar(state().percent ?? 0).filled}</span>
+          <span style={{ fg: theme()?.textMuted }}>{bar(state().percent ?? 0).rest}</span>
+        </text>
+      </Show>
+      <box height={1} />
       <text fg={theme()?.textMuted}>
-        <span style={{ fg: tokenColor.current }}>{state().tokens.toLocaleString()}</span> tokens · {percentLabel()}
-      </text>
-      <text fg={theme()?.textMuted}>
-        Total <span style={{ fg: tokenColor.total }}>{state().sessionTotal.toLocaleString()}</span> tokens
+        Session total <span style={{ fg: tokenColor.total }}>{state().sessionTotal.toLocaleString()}</span>
       </text>
       <text fg={theme()?.textMuted}>
         in <span style={{ fg: tokenColor.input }}>{state().input.toLocaleString()}</span> · out <span style={{ fg: tokenColor.output }}>{state().output.toLocaleString()}</span>

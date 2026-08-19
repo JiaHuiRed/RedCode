@@ -40,6 +40,10 @@
 
 - **会话级内存缓存零回收**（`session/prompt-caches.ts`、`file/time.ts`）：三处按 sessionID 累积的进程内 Map 没有任何删除点——`settlePromptCaches` 只删 msgPin/modelMsgs 且只在 compact 边界触发，`system`（skills+env+instructions 全文，再按 modelKey 分桶）、`tools`（全部工具的 description+inputSchema）、`FileTime.state`（每会话「读过的文件 → mtime」全表）全无删除路径，全仓也没有任何 `Session.Event.Deleted` 订阅者做缓存清理。CLI 无影响（进程即会话），长驻的 GUI sidecar 与 `serve` 则按会话数只增不减，子代理放大这件事（每个 subtask 都是独立 sessionID，跑完即冷但缓存留着）。加惰性回收：TTL 为主（1 小时未使用即整会话摘除——此时 provider 侧前缀缓存早已过期，重建不多花钱）、数量为辅（32 会话，只挡突发；上限取得宽松是因为回收活跃会话要付一次全额前缀重建，正是 5670d86 刚花力气避免的那种），当前会话永不被自己这一轮的 touch 顺手回收。回收代价一律 fail-safe：system/tools 重建后只要指令文件没变就逐字节相同、前缀不受影响；FileTime 被回收后下次覆写要求先重读而不是放行旧内容（对一个一小时没动静的会话，这本就是更正确的行为）。[why](docs/notes/implemented/bug-fix/2026-08-19-session-cache-eviction.md)
 
+- **TUI 侧边栏上下文窗口口径修复 + 显式标注**（`session/session.ts`、`session/processor.ts`、`session/message-v2.ts`、`tui/feature-plugins/sidebar/context.tsx`）：侧边栏那行 `185,925 tokens · 19%` 的分子拿的是 `tokens.total`，而 total 在 processor 里跨 step 累加（260706 为让 cost/缓存命中率对账，对那两个用途是对的），一次 assistant 消息含几次工具往返就累加几次请求的 total——长工具链下上下文占比显示成真实值的十几倍（`percentLabel` 里那句 `p > 200 → ⚠` 就是这问题被看见过但没改口径的痕迹）。与 a94ea6a（压缩分割线「42137k→42374k 越压越多」）是同一个坑的两处，那次只修了 compaction 侧。改法：`getUsage` 把早就算好的 `contextTokens`（= 本次请求提示词总量，峰谷/分档计价在用的同一个数）放进 `tokens.context` 一路透到 assistant 消息，processor 里**覆盖而非累加**；不让消费端拿 `input + cache.read + cache.write` 加回来，因为 `cache.read` 存的是未经上限钳制的原始值（DeepSeek 报 cached_tokens > prompt_tokens），缓存超报时加出来会超过真实提示词量（单测已钉）。schema 用可选字段，message 行是 JSON blob 存的不需迁移，历史消息无此字段时整块不显示、等下一轮请求写入。显示侧补上 `Context window` 标题、`186k / 1M · 19%` 与 24 格进度条（绿 <60%、黄 60–85%、红 ≥85%），与下方 `Session total` 用空行隔开——原先两行都没标签、头顶只有一个 `Context` 标题，会话累计值容易被读成上下文窗口。[why](docs/notes/implemented/bug-fix/2026-08-19-context-window-sidebar.md)
+
+- **SDK 生成产物落后于源 schema**（`sdk/js/src/v2/gen/types.gen.ts`、`provider/provider.ts`）：重跑生成链时一并补回了此前改了 schema 却没重跑的 `timeout_ms` / `fallback_model`（子代理超时兑底）与 `subagent_depth`（上游采摘）。生成产物一更新就暴露出 `provider.ts` 一处被这份落后掩盖着的类型错——`reasoningOptions` 的 schema 是 `Schema.MutableJson`（外部 models.dev 数据刻意不收紧），生成链把它压成 `unknown`，插件 `models()` 的返回值走生成类型、spread 进来赋不回内部的 `MutableJson`；值本身是 JSON 过来的，就地窄回去。
+
 ---
 
 ### [0.8.20] - 2026-08-18

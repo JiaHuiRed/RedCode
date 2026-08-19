@@ -261,6 +261,11 @@ export const StepFinishPart = Schema.Struct({
   cost: Schema.Finite,
   tokens: Schema.Struct({
     total: Schema.optional(Schema.Finite),
+    // 260819 cc: 本次请求的提示词总量 = 这一刻的真实上下文大小。与 total 的区别要紧：
+    // total 在 processor 里跨 step 累加（260706 为让 cost/缓存命中率对账），一次 assistant
+    // 消息含几次工具往返就累加几次请求，拿它当上下文会虚高成倍数。context 恒为最后一个
+    // step 的值、不累加。可选是为了让历史消息照常解码。
+    context: Schema.optional(Schema.Finite),
     input: Schema.Finite,
     output: Schema.Finite,
     reasoning: Schema.Finite,
@@ -513,6 +518,11 @@ export const Assistant = Schema.Struct({
   cost: Schema.Finite,
   tokens: Schema.Struct({
     total: Schema.optional(Schema.Finite),
+    // 260819 cc: 本次请求的提示词总量 = 这一刻的真实上下文大小。与 total 的区别要紧：
+    // total 在 processor 里跨 step 累加（260706 为让 cost/缓存命中率对账），一次 assistant
+    // 消息含几次工具往返就累加几次请求，拿它当上下文会虚高成倍数。context 恒为最后一个
+    // step 的值、不累加。可选是为了让历史消息照常解码。
+    context: Schema.optional(Schema.Finite),
     input: Schema.Finite,
     output: Schema.Finite,
     reasoning: Schema.Finite,

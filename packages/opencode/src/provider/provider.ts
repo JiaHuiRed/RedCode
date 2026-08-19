@@ -1398,6 +1398,13 @@ export const layer = Layer.effect(
                   ...model,
                   id: ModelID.make(id),
                   providerID,
+                  // 260819 cc: SDK 生成链把 Schema.MutableJson 压成 unknown（reasoningOptions 是
+                  // 外部 models.dev 数据、schema 刻意不收紧，见其定义处注释），而插件的 models()
+                  // 返回值用的是生成类型，spread 进来就是 unknown，赋不回内部的 MutableJson。
+                  // 值本身是 JSON 过来的，就地窄回去。
+                  // 这个错在生成产物落后于源 schema 期间一直被掩盖着——260819 因别的字段重跑
+                  // 生成链才暴露出来，不是新引入的。
+                  reasoningOptions: model.reasoningOptions as Model["reasoningOptions"],
                 },
               ]),
             )
