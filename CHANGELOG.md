@@ -8,9 +8,11 @@
 
 ---
 
-### [0.8.21] - 未发布
+### [0.8.21] - 2026-08-19
 
 > 压缩全灭优化二次修正：回退压缩代理跳过 head reasoning（随 0.8.20 发布的 a6c2af1 实测为负优化）、tail 预算 30K→50K。
+>
+> 另：上游 opencode 1.15.10→1.18.18 采摘三批合入（GUI 四包 40 余处用户可见修复）；前缀缓存两处止血——诊断探针按模型分桶、prune 跳过压缩时的缓存结算加“够本”门槛。
 
 #### 新增
 
@@ -23,6 +25,40 @@
 #### 修复
 
 - **回退"压缩代理跳过 head reasoning"**（`session/compaction.ts`）：摘要轮 head 无 reasoning、恢复轮保留（message-v2.ts 透传）——前缀在第一条 reasoning 处断裂，恢复轮无法命中摘要轮写入的缓存，变 2 次全灭（90K+177K）比 1 次（177K）更贵；head 必须与恢复轮逐字节一致（260817 实测，与 466bb79 同批同日回退，abf78d1）。`MAX_PRESERVE_RECENT_TOKENS` 30K→50K：长会话最近 2 轮常超 30K，装不进 budget 触发 tail fallback（head=全部历史）→ 压缩代理轮请求体爆炸；50K 后最近轮次保留原样，head 只剩老历史（budget 仍受 usable×0.25 上限约束）。[why](docs/notes/rejected/feature/2026-08-17-instruction-change-notice.md)
+
+- **上游 opencode 1.15.10→1.18.18 采摘（三批）**（`ui/**`、`app/**`、`opencode/**`、`web/**`、`desktop/**`）：从上游 4600 余个提交里按落点甄别、逐条验证后落地。**UI 层**：oc-2 亮色主题 `icon-weak-base` 少个 `#` 致非法色值静默回落（默认主题直接受害）；v1 Tooltip 补 openDelay 400/skipDelay 300，扫过工具栏不再瀑布弹提示；ButtonV2 行高 1→20px 修下伸字母被裁；下拉展开态改按下色与悬停区分；ScrollView 改 flex 收缩 + `min-height:0` 不再溢出父容器；对话框改栈式渲染（弹窗套弹窗不再吃掉父层，Esc/遮罩逐层关闭）；文件树最小宽度 200→240（200 恰好裁掉标签条）。**交互**：ScrollView 支持空格/Shift+空格翻页、焦点在按钮时不抢 PageUp/Down、嵌套滚动内层到底交还外层、拇指拖拽按抓取点计算不跳位、pointercancel 兜底防拖拽态卡死；命令注册同 key 改遮蔽制（后注册者卸载后先注册的恢复，快捷键不再某次交互后静默失效）；终端内应用级快捷键改 capture 阶段监听不再被 xterm 吞（顺带补 mod+w 关当前终端）。**修复**：titlebar `mod+1..9` 误用项目数做 gate 致多标签时失效；安装更新缺 `.finally` 致按钮永久转圈；event-reducer 归档分支先解引用后判 found 致 Binary.search 未命中时越界抛错；终端面板收起后渲染器仍挂着吃 CPU；只发附件时产生空 text part；MCP 开关 refetch 用未归一化路径强转 PathKey 致 Windows 下状态不刷新；Windows 从搜索打开文件时文件树不展开父目录；会话顶栏 Portal 挂载点被替换致控件区整块消失；会话列表排序去掉"1 分钟内活动"特殊档改纯时间降序（列表不再自己跳）；分享页消息按创建时间排序；整文件补丁按完整 diff 渲染不再显示成片段；review 面板改 itemsMap 使 diff 更新即刷新；todo dock 跨会话不再串台。**引擎与桌面**：内容过滤中止（如 Anthropic `stop_reason: refusal`）不再静默转 idle，落 ContentFilterError 并发事件；子代理嵌套加深度上限（`subagent_depth`，默认 1）；Electron 主进程补导航策略，markdown 链接不再弹无地址栏裸窗口，一律转系统浏览器；provider 溢出识别表补 8 条模式（request_too_large、z.ai、llama.cpp 配置上限等）并新增限流排除表挡住误判；api-key + 额外 metadata（base_url/region）的 provider 连接对话框不再静默丢字段（对国内自定义端点直接相关）。**中文化**：dialog-usage-exceeded 与 titlebar 两处硬编码英文接入 i18n（三语补 key），zh 词典清掉最后一处"令牌"。删掉 `$...# 更新日志
+
+本文件记录 RedCode 的所有重要变更。
+
+格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
+
+版本线历史分三段：0.3.0 及之前 TUI 与 GUI 共同历史；0.3.0 起两线独立维护（TUI 至 0.8.16，GUI 至 0.7.20），分别记录在下方 `## TUI` 与 `## GUI` 两段；**2026-08-14 起两线重新合并**，单一版本号覆盖全部组件，从 TUI 的 0.8.16 继续递增，新条目直接记录在本说明之下、不再按组件分段。
+
+---
+
+### [0.8.21] - 2026-08-19
+
+> 压缩全灭优化二次修正：回退压缩代理跳过 head reasoning（随 0.8.20 发布的 a6c2af1 实测为负优化）、tail 预算 30K→50K。
+>
+> 另：上游 opencode 1.15.10→1.18.18 采摘三批合入（GUI 四包 40 余处用户可见修复）；前缀缓存两处止血——诊断探针按模型分桶、prune 跳过压缩时的缓存结算加“够本”门槛。
+
+#### 新增
+
+- **qwen3.8 本地模型专属提示词**（`session/system.ts`、`prompt/qwen.md`）：ollama 本地 Qwen3.8 27B（Q3_K_M 量化，Modelfile 别名 qwen3.8）新增专属提示词，针对该模型实际约束适配——Q3 量化能力上限（大工程任务降级策略：做能做的部分并明说跳过，不硬撑）、~15 tok/s 慢速（短输出 + 并行批处理工具调用）、32K 上下文（切片读文件 + 及时压缩）；自我认知锚定（训练知识不认识自身版本号，防止否认身份）。路由 `system.ts`：providerID 含 ollama 且 api.id 含 qwen → PROMPT_QWEN，**置于 ollama 通用路由之前**（否则 providerID 先命中短路）；minicpm 等其他 ollama 模型仍走 ollama.md 不受影响。
+
+#### 改进
+
+- **webqa MCP 跨调用保留页面状态**（`webqa-server/index.js`）：browser/page 提升为进程级单例（MCP local 进程按会话隔离，无跨会话共享风险），interact 调用之间 DOM/localStorage/导航不再重置——此前每次调用都 launch 新浏览器回到 about:blank，多步交互被迫挤进单条 steps、每次都要重复 goto；现在可分多次调用逐步推进。新增 `press` action（`keyboard.press`，支持 Enter/Tab/Escape 等键名，补上 `type` 无法可靠模拟的特殊键——实测 `type "\r"` 不触发提交）、`newpage`/`close` 管理生命周期（无页面时操作返回友好错误提示先 goto）。除 eval 外所有步骤结果附带当前 `page.url()`，跨调用一眼定位页面。exit 事件同步 kill chromium 子进程防泄漏。
+
+#### 修复
+
+- **回退"压缩代理跳过 head reasoning"**（`session/compaction.ts`）：摘要轮 head 无 reasoning、恢复轮保留（message-v2.ts 透传）——前缀在第一条 reasoning 处断裂，恢复轮无法命中摘要轮写入的缓存，变 2 次全灭（90K+177K）比 1 次（177K）更贵；head 必须与恢复轮逐字节一致（260817 实测，与 466bb79 同批同日回退，abf78d1）。`MAX_PRESERVE_RECENT_TOKENS` 30K→50K：长会话最近 2 轮常超 30K，装不进 budget 触发 tail fallback（head=全部历史）→ 压缩代理轮请求体爆炸；50K 后最近轮次保留原样，head 只剩老历史（budget 仍受 usable×0.25 上限约束）。 行内公式正则（`$VAR`、`$5 到 $10` 会被 KaTeX 吃成乱码，保留块级 `$...$` 与 `\(...\)`）。
+
+- **前缀缓存诊断探针按模型分桶**（`session/prompt.ts`）：指纹此前只按 sessionID 存，同一会话切换模型时拿模型 A 上一轮的指纹跟模型 B 这一轮比，必然逐条不等 → 报「第 0 条断裂」，而两个模型各自的 provider 前缀缓存其实都没断。实测 08-12~08-19 日志 161 处断裂里 37 处是这么来的误报（23%），既把真断裂淹在噪声里，也没法拿它验收缓存修复的效果。key 补上 modelKey，与 stabilize 的 modelMsgs 缓存同粒度。
+
+- **prune 跳过压缩时的缓存结算加"够本"门槛**（`session/prompt.ts`）：该分支必然伴随 `settlePromptCaches`，msgPin/modelMsgs 一丢，DCP 攒下的全部改写（prune 标记、nudge 锚点、priority tag）同时生效，整条前缀从最早被改写处起重写——代价是当前上下文全量从缓存价打回全价。原判据只看「prune 后是否还超限」，于是释放 3% 也照付 100% 重建，且降幅太小下一轮又撞线 → 再 prune 再 settle，反复全额重建（实测 08-16~08-19 有 39 次短间隔同模型跳水吃掉 4528k 本该命中的 token，约占区间总成本 10%）。改为额外要求释放量 ≥ 当前上下文 15%（`PRUNE_SKIP_MIN_RATIO`）；不达标时不是「什么都不做」（那样 freed 虚报、上下文没真降、下轮照撞），而是走真 summarize，一次性压到位。日志带上 `freedRatio` 便于事后校准阈值。
+
+- **跨盘路径解析统一**（`tool/*.ts`、`tool/read.ts`）：Windows 上无盘符但有根的路径（形如反斜杠开头的 `users\foo`）`isAbsolute` 判 true，若原样放行，`normalizePath` 里的 `path.resolve` 会按 `process.cwd()` 补盘符——仓库与目标不同盘（如仓库在 E:、temp 在 C:）时补错盘。路径解析统一走 `AppFileSystem.resolveFrom`；read 工具只对「缺盘符且非 UNC 的绝对路径」锚定实例目录，UNC 共享路径显式排除。CI runner 的 cwd 恰在 C 盘，一直掩盖着这个岔。
 
 ---
 
