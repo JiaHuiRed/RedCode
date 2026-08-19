@@ -2,7 +2,7 @@ import path from "path"
 import os from "os"
 import { SessionID, MessageID, PartID } from "./schema"
 import { MessageV2 } from "./message-v2"
-import { PromptCaches, settlePromptCaches } from "./prompt-caches"
+import { PromptCaches, settlePromptCaches, touchSession } from "./prompt-caches"
 import * as Log from "@redcode-ai/core/util/log"
 import { SessionRevert } from "./revert"
 import * as Session from "./session"
@@ -1502,6 +1502,10 @@ export const layer = Layer.effect(
             // DCP modifies old messages cumulatively (prune grows, nudge anchors shift, priority tags change).
             // By restoring already-sent messages from cache, the prefix stays identical across turns.
             {
+              // 260819 cc audit：登记本会话活跃时刻并顺手回收冷会话。四个缓存此前只增不减
+              // （settle 只管 msgPin/modelMsgs，system/tools 无删除点），长驻的 GUI sidecar /
+              // serve 进程按会话数持续堆积。回收口径与阈值见 prompt-caches.ts。
+              touchSession(sessionID)
               if (!_caches.msgPin.has(sessionID)) {
                 _caches.msgPin.set(sessionID, { sessionID, messages: new Map() })
               }

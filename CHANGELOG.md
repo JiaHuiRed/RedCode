@@ -38,6 +38,8 @@
 
 - **CHANGELOG 头部与 0.8.21 整节被复制两份**（`CHANGELOG.md`）：69cfd14 的版本 bump 把文件头（`# 更新日志` 以下的说明段）与 0.8.21 整节又插了一遍，且插入点落在「上游采摘」条目正文中间，把该条目劈成两半——后半截（`$...$` 行内公式那句）被错接到第二份副本的「回退压缩代理」条目尾部，顶掉了它的 `[why]` 链接。以 bump 前的文件为基准重建：重复块删除、劈开的条目按断口还原（缺失的 `` $` `` 依后文"保留块级 `$...$`"补齐）、`[why]` 链接归位。重建后与 bump 前逐行对比，差异仅剩本次 bump 的三处意图改动。
 
+- **会话级内存缓存零回收**（`session/prompt-caches.ts`、`file/time.ts`）：三处按 sessionID 累积的进程内 Map 没有任何删除点——`settlePromptCaches` 只删 msgPin/modelMsgs 且只在 compact 边界触发，`system`（skills+env+instructions 全文，再按 modelKey 分桶）、`tools`（全部工具的 description+inputSchema）、`FileTime.state`（每会话「读过的文件 → mtime」全表）全无删除路径，全仓也没有任何 `Session.Event.Deleted` 订阅者做缓存清理。CLI 无影响（进程即会话），长驻的 GUI sidecar 与 `serve` 则按会话数只增不减，子代理放大这件事（每个 subtask 都是独立 sessionID，跑完即冷但缓存留着）。加惰性回收：TTL 为主（1 小时未使用即整会话摘除——此时 provider 侧前缀缓存早已过期，重建不多花钱）、数量为辅（32 会话，只挡突发；上限取得宽松是因为回收活跃会话要付一次全额前缀重建，正是 5670d86 刚花力气避免的那种），当前会话永不被自己这一轮的 touch 顺手回收。回收代价一律 fail-safe：system/tools 重建后只要指令文件没变就逐字节相同、前缀不受影响；FileTime 被回收后下次覆写要求先重读而不是放行旧内容（对一个一小时没动静的会话，这本就是更正确的行为）。[why](docs/notes/implemented/bug-fix/2026-08-19-session-cache-eviction.md)
+
 ---
 
 ### [0.8.20] - 2026-08-18
