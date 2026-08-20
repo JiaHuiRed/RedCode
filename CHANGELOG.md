@@ -8,6 +8,20 @@
 
 ---
 
+### [0.9.2] - 2026-08-19
+
+> 上下文窗口进度条改由引擎档位上色（颜色含义从「用了多少」变成「引擎下一步会做什么」），侧边栏新增解码速率与首字延迟，以及摘除会话事件系统双写（净 -1713 行）。
+
+#### 新增
+
+- **侧边栏显示解码速率与首字延迟**（`tui/feature-plugins/sidebar/context.tsx`）：数据早在库里（`time.firstChunk`/`time.completed`，埋点 `processor.ts` 的 `llm.ttft`，260811 为排查「首次交互为什么慢」而加），实测最近 400 条 assistant 消息 400 条有值，只是从没显示过。两段**刻意分开**不合成「总速度」——首字慢是排队/预填（供应商负载、上下文长度），解码慢是吐字本身，合成一个数会让两种完全不同的问题看起来一样。实测同一个 deepseek-v4-flash 解码在 15～73 tok/s 摆动四倍而首字稳定在 2.1～2.8s，只报总速度会把「解码忽快忽慢」误读成「整体时快时慢」。两个口径要点：分子必须是 `output + reasoning`（`session.ts:460` 把 output 定义成 `outputTokens - reasoningTokens`，只用 output 会漏掉思考的字，对长思考模型严重低估）；分母必须从 `firstChunk` 起算（用 `created` 会把排队算进解码，长上下文下 60 tok/s 稀释成 20）。[why](docs/notes/implemented/feature/2026-08-19-decode-rate-display.md)
+
+#### 改进
+
+- **上下文进度条改由引擎档位上色**（`session/message-v2.ts`、`session/prompt.ts`、`tui/.../sidebar/context.tsx`、`app/components/session-context-usage.tsx`）：原先颜色阈值是拍的（绿<60/黄60-85/红≥85），与引擎真正动手的时机对不上——档位相对 `ceiling()=min(硬顶,usable)` 算，而进度条分母是模型标称的 `limit.context`，step-3.7-flash 上三条线落在进度条的 52%/70%/88%，按 60/85 上色等于颜色比引擎慢半拍。assistant 消息新增可选字段 `contextLevel`（ok/soft/prune/compact），由服务端算好发出，客户端只做 level→颜色映射；不在客户端复刻 `ceiling()` 依赖的那张按模型家族匹配的 `maxOutputTokens` 表（复刻等于两处维护，加一个模型漏一处颜色就悄悄偏）。档位改为无条件计算并落库（原来只在 `result !== "compact"` 时算，恰恰在最该变红那一轮拿不到值），soft/prune 两档的**动作**门槛原样保留。GUI 侧收成三档（v2 语义色只有 success/warning/danger/info，没有橙色 state token，为装饰新增一对设计 token 不划算）。[why](docs/notes/implemented/feature/2026-08-19-context-bar-level-color.md)
+
+- **摘除会话事件系统双写，退回单写**（`session/processor.ts`、`prompt.ts`、`compaction.ts`、`prompt/shell.ts`、`tui/plugin/internal.ts`、`effect/runtime-flags.ts`）：`experimentalEventSystem`（默认关）门控着 23 处双写分支，前两个文件是全仓改动最频繁的，每次改会话链路都要判断「双写那边跟不跟」而绕过是零成本的，两边必然渐行渐远。这是上游 opencode 的迁移工程（fork 点就带着），本仓从未采摘其主体——`provider-parity-checklist.md` 指向的 `src/v2/plugin/provider/` 目录根本不存在，剩余 20 个未勾项全是主体功能。摘除 23 处分支 + `SessionV2Debug` 调试插件（1186 行，唯一入口是被摘的注册行）+ `context/sync-v2.tsx`（307 行，其订阅的 24 种事件的发布者全部被摘）+ 测试侧 12 处传参与两段双写断言；保留 `specs/v2/`、`src/v2/session.ts`、`projectors-next.ts` 与两个有活消费者的非门控事件发布。净 -1713 行。[why](docs/notes/implemented/simplification/2026-08-19-event-dualwrite-removal.md)
+
 ### [0.9.1] - 2026-08-19
 
 > GUI 上下文窗口收口：占用率口径与 0.9.0 的 TUI 那处对齐（原先拿会话累计除窗口，进度圈从会话超过一个窗口起就永远是满的），指示器挪到模型显示旁并去掉重复的一份。
