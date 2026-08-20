@@ -204,6 +204,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     })
 
     const remove = Effect.fn("SessionHttpApi.remove")(function* (ctx: { params: { sessionID: SessionID } }) {
+      // 260820 Red session.remove 对不存在的 id 是静默返回（级联/重复删除要幂等，见 session/session.ts 的 remove），
+      // 所以 404 只能在这一层守：与同文件 update 一致，先 requireSession 再删。
+      yield* requireSession(ctx.params.sessionID)
       yield* SessionError.mapStorageNotFound(session.remove(ctx.params.sessionID))
       return true
     })

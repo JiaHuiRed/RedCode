@@ -60,9 +60,12 @@ export const SessionDeleteCommand = effectCmd({
   handler: Effect.fn("Cli.session.delete")(function* (args) {
     const svc = yield* Session.Service
     const sessionID = SessionID.make(args.sessionID)
-    yield* svc
-      .remove(sessionID)
-      .pipe(Effect.catchIf(NotFoundError.isInstance, () => fail(`Session not found: ${args.sessionID}`)))
+    // 260820 Red remove 对不存在的 id 是静默返回（级联/重复删除要幂等，见 session/session.ts 的 remove），
+    // 只 pipe remove 的话下面这个 catchIf 永远命中不了，删一个不存在的 id 也会打印 deleted；先 get 一次才报得出来。
+    yield* svc.get(sessionID).pipe(
+      Effect.andThen(() => svc.remove(sessionID)),
+      Effect.catchIf(NotFoundError.isInstance, () => fail(`Session not found: ${args.sessionID}`)),
+    )
     UI.println(UI.Style.TEXT_SUCCESS_BOLD + `Session ${args.sessionID} deleted` + UI.Style.TEXT_NORMAL)
   }),
 })
