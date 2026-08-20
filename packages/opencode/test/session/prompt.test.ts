@@ -23,7 +23,6 @@ import { Question } from "../../src/question"
 import { Todo } from "../../src/session/todo"
 import { Session } from "@/session/session"
 import { Goal } from "../../src/session/goal"
-import { SessionMessageTable } from "../../src/session/session.sql"
 import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
@@ -36,7 +35,6 @@ import { SessionRevert } from "../../src/session/revert"
 import { SessionRunState } from "../../src/session/run-state"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionStatus } from "../../src/session/status"
-import { SessionV2 } from "../../src/v2/session"
 import { Skill } from "../../src/skill"
 import { SystemPrompt } from "../../src/session/system"
 import { Shell } from "../../src/shell/shell"
@@ -202,7 +200,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
     Layer.provide(Reference.defaultLayer),
     Layer.provide(Ripgrep.defaultLayer),
     Layer.provide(Format.defaultLayer),
-    Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+    Layer.provide(RuntimeFlags.layer({})),
     Layer.provideMerge(todo),
     Layer.provideMerge(goal),
     Layer.provideMerge(question),
@@ -215,11 +213,11 @@ function makePrompt(input?: { processor?: "blocking" }) {
       : SessionProcessor.layer.pipe(
           Layer.provide(summary),
           Layer.provide(Image.defaultLayer),
-          Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+          Layer.provide(RuntimeFlags.layer({})),
           Layer.provideMerge(deps),
         )
   const compact = SessionCompaction.layer.pipe(
-    Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+    Layer.provide(RuntimeFlags.layer({})),
     Layer.provideMerge(proc),
     Layer.provideMerge(deps),
   )
@@ -236,7 +234,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
     Layer.provide(Instruction.defaultLayer),
     Layer.provide(Snippet.defaultLayer),
     Layer.provide(SystemPrompt.defaultLayer),
-    Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+    Layer.provide(RuntimeFlags.layer({})),
     Layer.provideMerge(deps),
     Layer.provide(summary),
   )
@@ -491,46 +489,10 @@ it.instance("loop calls LLM and returns assistant message", () =>
   }),
 )
 
-noLLMServer.instance(
-  "prompt emits v2 prompted and synthetic events",
-  () =>
-    Effect.gen(function* () {
-      const prompt = yield* SessionPrompt.Service
-      const sessions = yield* Session.Service
-      const chat = yield* sessions.create({ title: "Pinned" })
-
-      yield* prompt.prompt({
-        sessionID: chat.id,
-        agent: "build",
-        noReply: true,
-        parts: [
-          { type: "text", text: "hello v2" },
-          {
-            type: "file",
-            mime: "text/plain",
-            filename: "note.txt",
-            url: "data:text/plain;base64,bm90ZSBjb250ZW50",
-          },
-        ],
-      })
-
-      const messages = yield* SessionV2.Service.use((session) => session.messages({ sessionID: chat.id })).pipe(
-        Effect.provide(SessionV2.layer),
-      )
-      const row = Database.use((db) =>
-        db.select().from(SessionMessageTable).where(Database.eq(SessionMessageTable.session_id, chat.id)).get(),
-      )
-      expect(messages.find((message) => message.type === "user")).toMatchObject({ type: "user", text: "hello v2" })
-      expect(typeof row?.data.time.created).toBe("number")
-      expect(messages).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ type: "synthetic", text: expect.stringContaining("Called the Read tool") }),
-          expect.objectContaining({ type: "synthetic", text: "note content" }),
-        ]),
-      )
-    }),
-  { config: cfg },
-)
+// 260819 cc 原本这里有一条「prompt emits v2 prompted and synthetic events」用例，断言引擎
+// prompt 入口把 prompted/synthetic 事件写进 session_message 表。那是 experimentalEventSystem
+// 双写路径的产物，双写已摘（见 docs/notes/implemented/simplification/2026-08-19-event-dualwrite-removal.md），
+// 用例随之退役。
 
 it.instance("static loop returns assistant text through local provider", () =>
   Effect.gen(function* () {

@@ -32,7 +32,6 @@ import { useEvent } from "@tui/context/event"
 import { SDKProvider, useSDK } from "@tui/context/sdk"
 import { StartupLoading } from "@tui/component/startup-loading"
 import { SyncProvider, useSync } from "@tui/context/sync"
-import { SyncProviderV2 } from "@tui/context/sync-v2"
 import { LocalProvider, useLocal } from "@tui/context/local"
 import { DialogModel } from "@tui/component/dialog-model"
 import { useConnected } from "@tui/component/use-connected"
@@ -238,25 +237,23 @@ export function tui(input: {
                         >
                           <ProjectProvider>
                             <SyncProvider>
-                              <SyncProviderV2>
-                                <ThemeProvider mode={mode}>
-                                  <LocalProvider>
-                                    <PromptStashProvider>
-                                      <DialogProvider>
-                                        <FrecencyProvider>
-                                          <PromptHistoryProvider>
-                                            <PromptRefProvider>
-                                              <EditorContextProvider>
-                                                <App onSnapshot={input.onSnapshot} />
-                                              </EditorContextProvider>
-                                            </PromptRefProvider>
-                                          </PromptHistoryProvider>
-                                        </FrecencyProvider>
-                                      </DialogProvider>
-                                    </PromptStashProvider>
-                                  </LocalProvider>
-                                </ThemeProvider>
-                              </SyncProviderV2>
+                              <ThemeProvider mode={mode}>
+                                <LocalProvider>
+                                  <PromptStashProvider>
+                                    <DialogProvider>
+                                      <FrecencyProvider>
+                                        <PromptHistoryProvider>
+                                          <PromptRefProvider>
+                                            <EditorContextProvider>
+                                              <App onSnapshot={input.onSnapshot} />
+                                            </EditorContextProvider>
+                                          </PromptRefProvider>
+                                        </PromptHistoryProvider>
+                                      </FrecencyProvider>
+                                    </DialogProvider>
+                                  </PromptStashProvider>
+                                </LocalProvider>
+                              </ThemeProvider>
                             </SyncProvider>
                           </ProjectProvider>
                         </SDKProvider>

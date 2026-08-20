@@ -13,13 +13,10 @@ import { Config } from "@/config/config"
 import { NotFoundError } from "@/storage/storage"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { Effect, Layer, Context, Schema } from "effect"
-import * as DateTime from "effect/DateTime"
 import { InstanceState } from "@/effect/instance-state"
 import { isOverflow as overflow, level as overflowLevel, usable, type Level } from "./overflow"
 import { serviceUse } from "@/effect/service-use"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { EventV2Bridge } from "@/event-v2-bridge"
-import { SessionEvent } from "@redcode-ai/core/session-event"
 
 const log = Log.create({ service: "session.compaction" })
 
@@ -284,7 +281,6 @@ export const layer = Layer.effect(
     const plugin = yield* Plugin.Service
     const processors = yield* SessionProcessor.Service
     const provider = yield* Provider.Service
-    const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
 
     const isOverflow = Effect.fn("SessionCompaction.isOverflow")(function* (input: {
@@ -715,14 +711,6 @@ export const layer = Layer.effect(
             })
           }
         }
-        if (flags.experimentalEventSystem) {
-          yield* events.publish(SessionEvent.Compaction.Ended, {
-            sessionID: input.sessionID,
-            timestamp: DateTime.makeUnsafe(Date.now()),
-            text: summary ?? "",
-            include: selected.tail_start_id,
-          })
-        }
         // 260813 Red 回填 compaction 前后 token，供 UI 分割线展示对比。
         // 注意展开旧 compactionPart 会覆盖掉前面已更新的 tail_start_id，必须带回来。
         if (compactionPart) {
@@ -766,13 +754,6 @@ export const layer = Layer.effect(
         auto: input.auto,
         overflow: input.overflow,
       })
-      if (flags.experimentalEventSystem) {
-        yield* events.publish(SessionEvent.Compaction.Started, {
-          sessionID: input.sessionID,
-          timestamp: DateTime.makeUnsafe(Date.now()),
-          reason: input.auto ? "auto" : "manual",
-        })
-      }
     })
 
     return Service.of({
@@ -795,7 +776,6 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Bus.layer),
     Layer.provide(Config.defaultLayer),
     Layer.provide(RuntimeFlags.defaultLayer),
-    Layer.provide(EventV2Bridge.defaultLayer),
   ),
 )
 

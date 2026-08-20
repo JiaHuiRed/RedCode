@@ -151,7 +151,7 @@ function makeHttp() {
     Layer.provide(Reference.defaultLayer),
     Layer.provide(Ripgrep.defaultLayer),
     Layer.provide(Format.defaultLayer),
-    Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+    Layer.provide(RuntimeFlags.layer({})),
     Layer.provideMerge(todo),
     Layer.provideMerge(goal),
     Layer.provideMerge(question),
@@ -160,11 +160,11 @@ function makeHttp() {
   const proc = SessionProcessor.layer.pipe(
     Layer.provide(SessionSummary.defaultLayer),
     Layer.provide(Image.defaultLayer),
-    Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+    Layer.provide(RuntimeFlags.layer({})),
     Layer.provideMerge(deps),
   )
   const compact = SessionCompaction.layer.pipe(
-    Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+    Layer.provide(RuntimeFlags.layer({})),
     Layer.provideMerge(proc),
     Layer.provideMerge(deps),
   )
@@ -184,7 +184,7 @@ function makeHttp() {
       Layer.provide(Instruction.defaultLayer),
       Layer.provide(Snippet.defaultLayer),
       Layer.provide(SystemPrompt.defaultLayer),
-      Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+      Layer.provide(RuntimeFlags.layer({})),
       Layer.provideMerge(deps),
     ),
   )

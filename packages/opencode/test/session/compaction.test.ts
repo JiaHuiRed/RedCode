@@ -18,7 +18,6 @@ import { MessageV2 } from "../../src/session/message-v2"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionStatus } from "../../src/session/status"
 import { SessionSummary } from "../../src/session/summary"
-import { SessionV2 } from "../../src/v2/session"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import type { Provider } from "@/provider/provider"
 import * as SessionProcessorModule from "../../src/session/processor"
@@ -234,7 +233,7 @@ const deps = Layer.mergeAll(
   Bus.layer,
   Config.defaultLayer,
   SyncEvent.defaultLayer,
-  RuntimeFlags.layer({ experimentalEventSystem: true }),
+  RuntimeFlags.layer({}),
   EventV2Bridge.defaultLayer,
 )
 
@@ -268,7 +267,7 @@ function compactionProcessLayer(options?: CompactionProcessOptions) {
     ? SessionProcessorModule.SessionProcessor.layer.pipe(
         Layer.provide(summary),
         Layer.provide(Image.defaultLayer),
-        Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+        Layer.provide(RuntimeFlags.layer({})),
         Layer.provide(status),
       )
     : layer(options?.result ?? "continue")
@@ -284,7 +283,7 @@ function compactionProcessLayer(options?: CompactionProcessOptions) {
     Layer.provide(bus),
     Layer.provide(options?.config ?? Config.defaultLayer),
     Layer.provide(SyncEvent.defaultLayer),
-    Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+    Layer.provide(RuntimeFlags.layer({})),
     Layer.provide(EventV2Bridge.defaultLayer),
   )
 }
@@ -472,7 +471,7 @@ describe("session.compaction.isOverflow", () => {
         // We've used 198K tokens total. Only 2K under the input limit.
         // On the next turn, the full conversation (198K) becomes input,
         // plus the model needs room to generate output — this WILL overflow.
-const tokens = { input: 180_000, output: 15_000, reasoning: 0, cache: { read: 3_000, write: 0, miss: 0 } }
+        const tokens = { input: 180_000, output: 15_000, reasoning: 0, cache: { read: 3_000, write: 0, miss: 0 } }
         // count = 198K
         // usable = limit.input = 200K (no output subtracted!)
         // 198K > 200K = false → no compaction triggered
@@ -484,7 +483,7 @@ const tokens = { input: 180_000, output: 15_000, reasoning: 0, cache: { read: 3_
         // Compaction MUST trigger here.
         expect(yield* compact.isOverflow({ tokens, model })).toBe(true)
       }),
-    )
+    ),
   )
 
   it.live(
@@ -588,14 +587,10 @@ describe("session.compaction.create", () => {
           overflow: true,
         })
 
-        const v2 = yield* SessionV2.Service.use((svc) => svc.messages({ sessionID: info.id })).pipe(
-          Effect.provide(SessionV2.defaultLayer),
-        )
-        expect(v2.at(-1)).toMatchObject({
-          type: "compaction",
-          reason: "auto",
-          summary: "",
-        })
+        // 260819 cc 原本这里还有一段对 SessionV2.messages 的断言（compaction 记录出现在
+        // session_message 表）。那是 experimentalEventSystem 双写路径的产物——引擎侧发布
+        // SessionEvent.Compaction.Started，经 EventV2Bridge 桥回 SyncEvent 投影入表。双写
+        // 已摘（生产从未开启，/v2 路由组不在 openapi 里、客户端无法调用），断言随之退役。
       }),
     ),
   )
@@ -994,46 +989,46 @@ describe("session.compaction.process", () => {
     { git: true },
   )
 
- itCompaction.instance(
-   "compaction request keeps reasoning parts in head for prefix cache consistency",
-   () => {
-     const stub = llm()
-     let captured = ""
-     stub.push(reply("summary", (input) => (captured = JSON.stringify(input.messages))))
-     return Effect.gen(function* () {
-       const ssn = yield* SessionNs.Service
-       const test = yield* TestInstance
-       const session = yield* ssn.create({})
-       const user = yield* createUserMessage(session.id, "context text")
-       const assistant = yield* createAssistantMessage(session.id, user.id, test.directory)
-       yield* ssn.updatePart({
-         id: PartID.ascending(),
-         messageID: assistant.id,
-         sessionID: session.id,
-         type: "reasoning",
-         text: "REASONING_SECRET",
-         time: { start: 0 },
-       })
-       yield* ssn.updatePart({
-         id: PartID.ascending(),
-         messageID: assistant.id,
-         sessionID: session.id,
-         type: "text",
-         text: "assistant work",
-       })
-       yield* createCompactionMarker(session.id)
+  itCompaction.instance(
+    "compaction request keeps reasoning parts in head for prefix cache consistency",
+    () => {
+      const stub = llm()
+      let captured = ""
+      stub.push(reply("summary", (input) => (captured = JSON.stringify(input.messages))))
+      return Effect.gen(function* () {
+        const ssn = yield* SessionNs.Service
+        const test = yield* TestInstance
+        const session = yield* ssn.create({})
+        const user = yield* createUserMessage(session.id, "context text")
+        const assistant = yield* createAssistantMessage(session.id, user.id, test.directory)
+        yield* ssn.updatePart({
+          id: PartID.ascending(),
+          messageID: assistant.id,
+          sessionID: session.id,
+          type: "reasoning",
+          text: "REASONING_SECRET",
+          time: { start: 0 },
+        })
+        yield* ssn.updatePart({
+          id: PartID.ascending(),
+          messageID: assistant.id,
+          sessionID: session.id,
+          type: "text",
+          text: "assistant work",
+        })
+        yield* createCompactionMarker(session.id)
 
-       const msgs = yield* ssn.messages({ sessionID: session.id })
-       const parent = msgs.at(-1)?.info.id
-       expect(parent).toBeTruthy()
-       yield* SessionCompaction.use.process({ parentID: parent!, messages: msgs, sessionID: session.id, auto: false })
+        const msgs = yield* ssn.messages({ sessionID: session.id })
+        const parent = msgs.at(-1)?.info.id
+        expect(parent).toBeTruthy()
+        yield* SessionCompaction.use.process({ parentID: parent!, messages: msgs, sessionID: session.id, auto: false })
 
-      expect(captured).toContain("assistant work")
-      expect(captured).toContain("REASONING_SECRET")
-     }).pipe(withCompaction({ llm: stub.layer }))
-   },
-   { git: true },
- )
+        expect(captured).toContain("assistant work")
+        expect(captured).toContain("REASONING_SECRET")
+      }).pipe(withCompaction({ llm: stub.layer }))
+    },
+    { git: true },
+  )
 
   itCompaction.instance(
     "falls back to full summary when retained tail media exceeds preserve token budget",
@@ -1147,9 +1142,7 @@ describe("session.compaction.process", () => {
         all.some(
           (msg) =>
             msg.info.role === "user" &&
-            msg.parts.some(
-              (part) => part.type === "text" && part.synthetic && part.text.includes("[System notice]"),
-            ),
+            msg.parts.some((part) => part.type === "text" && part.synthetic && part.text.includes("[System notice]")),
         ),
       ).toBe(false)
     }).pipe(withCompaction({ plugin: autocontinue(false) })),
@@ -1975,7 +1968,9 @@ describe("compaction file tags", () => {
   test("appendFileTags appends only when files exist", () => {
     expect(appendFileTags("summary", { read: [], modified: [] })).toBe("summary")
     const tagged = appendFileTags("summary", { read: ["src/a.ts"], modified: ["src/c.ts"] })
-    expect(tagged).toBe("summary\n\n<read-files>\nsrc/a.ts\n</read-files>\n<modified-files>\nsrc/c.ts\n</modified-files>")
+    expect(tagged).toBe(
+      "summary\n\n<read-files>\nsrc/a.ts\n</read-files>\n<modified-files>\nsrc/c.ts\n</modified-files>",
+    )
   })
 
   test("round trip: append then parse returns the same files", () => {

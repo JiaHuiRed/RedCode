@@ -1,7 +1,6 @@
 // 260630 Red P1-b: shellImpl 从 prompt.ts 提取（用户在终端执行命令，写入会话为 tool part）
 import { Cause, Context, Effect, Exit, Latch } from "effect"
 import * as Stream from "effect/Stream"
-import * as DateTime from "effect/DateTime"
 import { ulid } from "ulid"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { SessionID, MessageID, PartID } from "../schema"
@@ -17,9 +16,7 @@ import { Shell } from "@/shell/shell"
 import { ShellID } from "@/tool/shell/id"
 import { InstanceState } from "@/effect/instance-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { EventV2Bridge } from "@/event-v2-bridge"
 import { NamedError } from "@redcode-ai/core/util/error"
-import { SessionEvent } from "@redcode-ai/core/session-event"
 import type { ShellInput } from "../prompt"
 
 export function makeShell(deps: {
@@ -29,12 +26,11 @@ export function makeShell(deps: {
   bus: Context.Service.Shape<typeof Bus.Service>
   config: Context.Service.Shape<typeof Config.Service>
   flags: Context.Service.Shape<typeof RuntimeFlags.Service>
-  events: Context.Service.Shape<typeof EventV2Bridge.Service>
   plugin: Context.Service.Shape<typeof Plugin.Service>
   spawner: ChildProcessSpawner.ChildProcessSpawner["Service"]
   currentModel: (sessionID: SessionID) => Effect.Effect<{ providerID: ProviderID; modelID: ModelID; variant?: string }>
 }) {
-  const { sessions, revert, agents, bus, config, flags, events, plugin, spawner, currentModel } = deps
+  const { sessions, revert, agents, bus, config, flags, plugin, spawner, currentModel } = deps
 
   const shellImpl = Effect.fn("SessionPrompt.shellImpl")(function* (input: ShellInput, ready?: Latch.Latch) {
     return yield* Effect.uninterruptibleMask((restore) =>
@@ -104,14 +100,6 @@ export function makeShell(deps: {
             },
           }
           yield* sessions.updatePart(part)
-          if (flags.experimentalEventSystem) {
-            yield* events.publish(SessionEvent.Shell.Started, {
-              sessionID: input.sessionID,
-              timestamp: DateTime.makeUnsafe(started),
-              callID: part.callID,
-              command: input.command,
-            })
-          }
           return { msg, part, cwd: ctx.directory }
         }).pipe(Effect.ensuring(markReady))
 
@@ -127,14 +115,6 @@ export function makeShell(deps: {
               output += "\n\n" + ["<metadata>", "User aborted the command", "</metadata>"].join("\n")
             }
             const completed = Date.now()
-            if (flags.experimentalEventSystem) {
-              yield* events.publish(SessionEvent.Shell.Ended, {
-                sessionID: input.sessionID,
-                timestamp: DateTime.makeUnsafe(completed),
-                callID: part.callID,
-                output,
-              })
-            }
             if (!msg.time.completed) {
               msg.time.completed = completed
               yield* sessions.updateMessage(msg)

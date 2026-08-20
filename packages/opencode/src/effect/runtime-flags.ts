@@ -48,7 +48,6 @@ export class Service extends ConfigService.Service<Service>()("@opencode/Runtime
   experimentalLspTool: enabledByExperimental("REDCODE_EXPERIMENTAL_LSP_TOOL"),
   experimentalOxfmt: enabledByExperimental("REDCODE_EXPERIMENTAL_OXFMT"),
   experimentalPlanMode: enabledByExperimental("REDCODE_EXPERIMENTAL_PLAN_MODE"),
-  experimentalEventSystem: enabledByExperimental("REDCODE_EXPERIMENTAL_EVENT_SYSTEM"),
   experimentalWorkspaces: enabledByExperimental("REDCODE_EXPERIMENTAL_WORKSPACES"),
   experimentalIconDiscovery: enabledByExperimental("REDCODE_EXPERIMENTAL_ICON_DISCOVERY"),
   outputTokenMax: positiveInteger("REDCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX"),

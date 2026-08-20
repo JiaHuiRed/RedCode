@@ -23,11 +23,8 @@ import { Question } from "@/question"
 import { errorMessage } from "@/util/error"
 import * as Log from "@redcode-ai/core/util/log"
 import { isRecord } from "@/util/record"
-import { EventV2Bridge } from "@/event-v2-bridge"
-import { SessionEvent } from "@redcode-ai/core/session-event"
 import { ModelV2 } from "@redcode-ai/core/model"
 import { ProviderV2 } from "@redcode-ai/core/provider"
-import * as DateTime from "effect/DateTime"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Usage, type LLMEvent } from "@redcode-ai/llm"
 import { NgramDetector, RECOVERY_PROMPTS } from "./text-loop-detection"
@@ -131,7 +128,6 @@ export const layer = Layer.effect(
     const scope = yield* Scope.Scope
     const status = yield* SessionStatus.Service
     const image = yield* Image.Service
-    const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
     // 260708 Red acquire snippet service at construction so cleanup captures it (keeps Handle.process R = never)
     const snippetService = yield* Snippet.Service
@@ -295,15 +291,6 @@ export const layer = Layer.effect(
         // 260728 Red 泄漏落 reasoning 通道的情况占实测 6/14，这里也要摘
         salvageToolCalls(ctx.reasoningMap[reasoningID], "reasoning")
         stripInstructionEcho(ctx.reasoningMap[reasoningID], "reasoning")
-        // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
-        if (flags.experimentalEventSystem) {
-          yield* events.publish(SessionEvent.Reasoning.Ended, {
-            sessionID: ctx.sessionID,
-            reasoningID,
-            text: ctx.reasoningMap[reasoningID].text,
-            timestamp: DateTime.makeUnsafe(Date.now()),
-          })
-        }
         // oxlint-disable-next-line no-self-assign -- reactivity trigger
         ctx.reasoningMap[reasoningID].text = ctx.reasoningMap[reasoningID].text
         ctx.reasoningMap[reasoningID].time = { ...ctx.reasoningMap[reasoningID].time, end: Date.now() }
@@ -330,15 +317,6 @@ export const layer = Layer.effect(
             sessionID: part.sessionID,
           }
           return { call: ctx.toolcalls[input.id], part }
-        }
-        // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
-        if (flags.experimentalEventSystem) {
-          yield* events.publish(SessionEvent.Tool.Input.Started, {
-            sessionID: ctx.sessionID,
-            callID: input.id,
-            name: input.name,
-            timestamp: DateTime.makeUnsafe(Date.now()),
-          })
         }
         const part = yield* session.updatePart({
           id: PartID.ascending(),
@@ -399,14 +377,6 @@ export const layer = Layer.effect(
         switch (value.type) {
           case "reasoning-start":
             if (value.id in ctx.reasoningMap) return
-            // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
-            if (flags.experimentalEventSystem) {
-              yield* events.publish(SessionEvent.Reasoning.Started, {
-                sessionID: ctx.sessionID,
-                reasoningID: value.id,
-                timestamp: DateTime.makeUnsafe(Date.now()),
-              })
-            }
             ctx.reasoningMap[value.id] = {
               id: PartID.ascending(),
               messageID: ctx.assistantMessage.id,
@@ -495,15 +465,6 @@ export const layer = Layer.effect(
 
           case "tool-input-end": {
             const toolCall = yield* ensureToolCall(value)
-            // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
-            if (flags.experimentalEventSystem) {
-              yield* events.publish(SessionEvent.Tool.Input.Ended, {
-                sessionID: ctx.sessionID,
-                callID: value.id,
-                text: "",
-                timestamp: DateTime.makeUnsafe(Date.now()),
-              })
-            }
             ctx.toolcalls[value.id] = { ...toolCall.call, inputEnded: true }
             return
           }
@@ -515,29 +476,6 @@ export const layer = Layer.effect(
             const toolCall = yield* ensureToolCall(value)
             const input = toolInput(value.input)
             if (!toolCall.call.inputEnded) {
-              // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
-              if (flags.experimentalEventSystem) {
-                yield* events.publish(SessionEvent.Tool.Input.Ended, {
-                  sessionID: ctx.sessionID,
-                  callID: value.id,
-                  text: "",
-                  timestamp: DateTime.makeUnsafe(Date.now()),
-                })
-              }
-            }
-            // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
-            if (flags.experimentalEventSystem) {
-              yield* events.publish(SessionEvent.Tool.Called, {
-                sessionID: ctx.sessionID,
-                callID: value.id,
-                tool: value.name,
-                input,
-                provider: {
-                  executed: toolCall.part.metadata?.providerExecuted === true,
-                  ...(value.providerMetadata ? { metadata: value.providerMetadata } : {}),
-                },
-                timestamp: DateTime.makeUnsafe(Date.now()),
-              })
             }
             yield* updateToolCall(value.id, (match) => ({
               ...match,
@@ -668,51 +606,12 @@ export const layer = Layer.effect(
                 output.output = `${output.output}\n\n${reminder}`
               }
             }
-            // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
-            if (flags.experimentalEventSystem) {
-              yield* events.publish(SessionEvent.Tool.Success, {
-                sessionID: ctx.sessionID,
-                callID: value.id,
-                structured: output.metadata,
-                content: [
-                  {
-                    type: "text",
-                    text: output.output,
-                  },
-                  ...(output.attachments?.map((item: MessageV2.FilePart) => ({
-                    type: "file" as const,
-                    uri: item.url,
-                    mime: item.mime,
-                    name: item.filename,
-                  })) ?? []),
-                ],
-                provider: {
-                  executed: value.providerExecuted === true || toolCall?.part.metadata?.providerExecuted === true,
-                },
-                timestamp: DateTime.makeUnsafe(Date.now()),
-              })
-            }
             yield* completeToolCall(value.id, output)
             return
           }
 
           case "tool-error": {
             const toolCall = yield* readToolCall(value.id)
-            // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
-            if (flags.experimentalEventSystem) {
-              yield* events.publish(SessionEvent.Tool.Failed, {
-                sessionID: ctx.sessionID,
-                callID: value.id,
-                error: {
-                  type: "unknown",
-                  message: value.message,
-                },
-                provider: {
-                  executed: toolCall?.part.metadata?.providerExecuted === true,
-                },
-                timestamp: DateTime.makeUnsafe(Date.now()),
-              })
-            }
             yield* failToolCall(value.id, value.error ?? new Error(value.message))
             return
           }
@@ -727,20 +626,6 @@ export const layer = Layer.effect(
             ctx.stepProduced = false
             ctx.reasoningStallTripped = false
             if (!ctx.assistantMessage.summary) {
-              // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
-              if (flags.experimentalEventSystem) {
-                yield* events.publish(SessionEvent.Step.Started, {
-                  sessionID: ctx.sessionID,
-                  agent: input.assistantMessage.agent,
-                  model: {
-                    id: ModelV2.ID.make(ctx.model.id),
-                    providerID: ProviderV2.ID.make(ctx.model.providerID),
-                    variant: ModelV2.VariantID.make(input.assistantMessage.variant ?? "default"),
-                  },
-                  snapshot: ctx.snapshot,
-                  timestamp: DateTime.makeUnsafe(Date.now()),
-                })
-              }
             }
             yield* session.updatePart({
               id: PartID.ascending(),
@@ -762,17 +647,6 @@ export const layer = Layer.effect(
               time: Date.now(),
             })
             if (!ctx.assistantMessage.summary) {
-              // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
-              if (flags.experimentalEventSystem) {
-                yield* events.publish(SessionEvent.Step.Ended, {
-                  sessionID: ctx.sessionID,
-                  finish: value.reason,
-                  cost: usage.cost,
-                  tokens: usage.tokens,
-                  snapshot: completedSnapshot,
-                  timestamp: DateTime.makeUnsafe(Date.now()),
-                })
-              }
             }
             ctx.assistantMessage.finish = value.reason
             ctx.assistantMessage.cost += usage.cost
@@ -845,13 +719,6 @@ export const layer = Layer.effect(
             // 260818 Red 有正文产出了，reasoning stall 检测解除
             ctx.stepProduced = true
             if (!ctx.assistantMessage.summary) {
-              // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
-              if (flags.experimentalEventSystem) {
-                yield* events.publish(SessionEvent.Text.Started, {
-                  sessionID: ctx.sessionID,
-                  timestamp: DateTime.makeUnsafe(Date.now()),
-                })
-              }
             }
             ctx.currentText = {
               id: PartID.ascending(),
@@ -918,14 +785,6 @@ export const layer = Layer.effect(
               { text: ctx.currentText.text },
             )).text
             if (!ctx.assistantMessage.summary) {
-              // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
-              if (flags.experimentalEventSystem) {
-                yield* events.publish(SessionEvent.Text.Ended, {
-                  sessionID: ctx.sessionID,
-                  text: ctx.currentText.text,
-                  timestamp: DateTime.makeUnsafe(Date.now()),
-                })
-              }
             }
             {
               const end = Date.now()
@@ -1022,17 +881,6 @@ export const layer = Layer.effect(
           return
         }
         if (!ctx.assistantMessage.summary) {
-          // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
-          if (flags.experimentalEventSystem) {
-            yield* events.publish(SessionEvent.Step.Failed, {
-              sessionID: ctx.sessionID,
-              error: {
-                type: "unknown",
-                message: errorMessage(e),
-              },
-              timestamp: DateTime.makeUnsafe(Date.now()),
-            })
-          }
         }
         ctx.assistantMessage.error = error
         yield* bus.publish(Session.Event.Error, {
@@ -1099,29 +947,13 @@ export const layer = Layer.effect(
                 provider: input.model.providerID,
                 parse,
                 set: (info) => {
-                  // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
-                  const event = flags.experimentalEventSystem
-                    ? events.publish(SessionEvent.Retried, {
-                        sessionID: ctx.sessionID,
-                        attempt: info.attempt,
-                        error: {
-                          message: info.message,
-                          isRetryable: true,
-                        },
-                        timestamp: DateTime.makeUnsafe(Date.now()),
-                      })
-                    : Effect.void
-                  return event.pipe(
-                    Effect.andThen(
-                      status.set(ctx.sessionID, {
-                        type: "retry",
-                        attempt: info.attempt,
-                        message: info.message,
-                        action: info.action,
-                        next: info.next,
-                      }),
-                    ),
-                  )
+                  return status.set(ctx.sessionID, {
+                    type: "retry",
+                    attempt: info.attempt,
+                    message: info.message,
+                    action: info.action,
+                    next: info.next,
+                  })
                 },
               }),
             ),
@@ -1169,7 +1001,6 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Bus.layer),
     Layer.provide(Config.defaultLayer),
     Layer.provide(RuntimeFlags.defaultLayer),
-    Layer.provide(EventV2Bridge.defaultLayer),
     // 260708 Red wire Snippet.Service required by cleanup's snippet clear
     Layer.provide(Snippet.defaultLayer),
   ),
