@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { bar, barColor, compact } from "../../../../src/cli/cmd/tui/feature-plugins/sidebar/context"
+import { bar, barColor, compact, formatMs } from "../../../../src/cli/cmd/tui/feature-plugins/sidebar/context"
 
 // 260819 cc: 侧边栏上下文窗口的显示件。侧边栏宽 42 列，紧凑记法和进度条宽度都按这个定的。
 describe("sidebar context window 显示", () => {
@@ -41,5 +41,22 @@ describe("sidebar context window 显示", () => {
   test("档位缺失（历史消息没有该字段）回落到 ok 的颜色，不报错", () => {
     expect(barColor(undefined)).toBe(barColor("ok"))
     expect(barColor("不认识的档位")).toBe(barColor("ok"))
+  })
+})
+
+// 260819 cc 解码速率显示。数据来自 message-v2 的 time.firstChunk/completed（埋点
+// processor.ts 的 llm.ttft），实测最近 400 条 assistant 消息 400 条有值。
+describe("首字延迟格式化", () => {
+  test("秒级用 s，毫秒级用 ms", () => {
+    expect(formatMs(2423)).toBe("2.4s")
+    expect(formatMs(999)).toBe("999ms")
+    expect(formatMs(1000)).toBe("1s")
+    expect(formatMs(0)).toBe("0ms")
+  })
+
+  test("秒级只保留一位小数，不出现 2.42s 这种挤版的写法", () => {
+    for (const ms of [1234, 5678, 12345, 98765]) {
+      expect(formatMs(ms)).toMatch(/^\d+(\.\d)?s$/)
+    }
   })
 })

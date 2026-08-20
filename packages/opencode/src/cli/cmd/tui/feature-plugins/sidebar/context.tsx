@@ -33,6 +33,7 @@ const tokenColor = {
   cacheRead: "#40c4ff",
   cacheWrite: "#ab47bc",
   cost: "#ff4081",
+  speed: "#4dd0e1",
 }
 
 function formatTime(ts: number): string {
@@ -60,6 +61,11 @@ export function compact(n: number): string {
     return `${k >= 100 ? Math.round(k) : Math.round(k * 10) / 10}k`
   }
   return String(n)
+}
+
+// 260819 cc 首字延迟：秒级用 s，否则 ms —— 侧边栏只有 42 列，2423ms 比 2.4s 长且没更有用
+export function formatMs(ms: number): string {
+  return ms >= 1000 ? `${Math.round(ms / 100) / 10}s` : `${ms}ms`
 }
 
 const BAR_WIDTH = 24
@@ -111,6 +117,8 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         context: null as number | null,
         limit: null as number | null,
         level: undefined as string | undefined,
+        decodeRate: null as number | null,
+        firstChunkMs: null as number | null,
         model: null as string | null,
         provider: null as string | null,
         providerID: null as string | null,
@@ -169,6 +177,25 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       // 总量，恒不累加）。历史消息没有这个字段，此时整块不显示，等本会话下一轮请求写入。
       context: last.tokens.context ?? null,
       level: last.contextLevel,
+      // 260819 cc 解码速率与首字延迟。数据早就在库里（message-v2.ts:500 的注释：
+      // created→firstChunk = 等第一个字（排队/预填），firstChunk→completed = 吐字），
+      // 埋点见 processor.ts 的 llm.ttft，分析脚本 script/ttft.ts。这里只是把它显示出来。
+      //
+      // 分子必须是 output + reasoning：session.ts:460 把 output 定义成
+      // outputTokens - reasoningTokens，只用 output 会把思考的字漏掉 —— 对 DeepSeek
+      // 这类长思考模型会严重低估速率。
+      //
+      // 分母必须从 firstChunk 起算，不能用 created：那段是排队/预填，长上下文下能把
+      // 60 tok/s 稀释成 20，测出来的就不是解码速度而是排队时间。
+      ...(() => {
+        const t = last.time
+        const decoded = last.tokens.output + last.tokens.reasoning
+        const ms = t.firstChunk && t.completed ? t.completed - t.firstChunk : 0
+        return {
+          decodeRate: ms > 0 && decoded > 0 ? Math.round((decoded / ms) * 1000 * 10) / 10 : null,
+          firstChunkMs: t.firstChunk ? t.firstChunk - t.created : null,
+        }
+      })(),
       limit: modelInfo?.limit.context ?? null,
       percent:
         last.tokens.context !== undefined && modelInfo?.limit.context
@@ -220,8 +247,8 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       >
         <text fg={theme()?.textMuted}>
           {"  "}
-          <span style={{ fg: barColor(state().level) }}>{compact(state().context!)}</span> /{" "}
-          {compact(state().limit!)} · <span style={{ fg: barColor(state().level) }}>{percentLabel()}</span>
+          <span style={{ fg: barColor(state().level) }}>{compact(state().context!)}</span> / {compact(state().limit!)} ·{" "}
+          <span style={{ fg: barColor(state().level) }}>{percentLabel()}</span>
         </text>
         <text>
           {"  "}
@@ -233,6 +260,18 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       <text fg={theme()?.textMuted}>
         Session total <span style={{ fg: tokenColor.total }}>{state().sessionTotal.toLocaleString()}</span>
       </text>
+      {/* 260819 cc 解码速率 · 首字延迟。两段分开显示是刻意的：它们是不同的东西 ——
+          首字慢 = 排队/预填（供应商侧负载、上下文长度），解码慢 = 吐字本身。
+          混成一个"总速度"会让这两种完全不同的问题看起来一样。 */}
+      <Show when={state().decodeRate !== null || state().firstChunkMs !== null}>
+        <text fg={theme()?.textMuted}>
+          <Show when={state().decodeRate !== null}>
+            <span style={{ fg: tokenColor.speed }}>{state().decodeRate}</span> tok/s
+          </Show>
+          <Show when={state().decodeRate !== null && state().firstChunkMs !== null}> · </Show>
+          <Show when={state().firstChunkMs !== null}>首字 {formatMs(state().firstChunkMs!)}</Show>
+        </text>
+      </Show>
       <text fg={theme()?.textMuted}>
         in <span style={{ fg: tokenColor.input }}>{state().input.toLocaleString()}</span> · out{" "}
         <span style={{ fg: tokenColor.output }}>{state().output.toLocaleString()}</span>
