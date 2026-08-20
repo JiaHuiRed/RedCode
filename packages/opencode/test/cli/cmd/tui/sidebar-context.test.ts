@@ -30,11 +30,16 @@ describe("sidebar context window 显示", () => {
     expect([...bar(-5).filled].length).toBe(0)
   })
 
-  test("barColor 在 60 / 85 两个门槛换色", () => {
-    expect(barColor(0)).toBe(barColor(59))
-    expect(barColor(60)).not.toBe(barColor(59))
-    expect(barColor(84)).toBe(barColor(60))
-    expect(barColor(85)).not.toBe(barColor(84))
-    expect(barColor(200)).toBe(barColor(85))
+  // 260819 cc 颜色改由引擎档位驱动，不再是百分比门槛：档位相对 ceiling()=min(硬顶,usable)
+  // 算，而进度条分母是标称 context window，两者不是一个数（step-3.7-flash 上三条线换算成
+  // 进度条是 52%/70%/88%，按 60/85 上色会比引擎实际动手慢半拍）。
+  test("barColor 四档各不相同", () => {
+    const colors = ["ok", "soft", "prune", "compact"].map(barColor)
+    expect(new Set(colors).size).toBe(4)
+  })
+
+  test("档位缺失（历史消息没有该字段）回落到 ok 的颜色，不报错", () => {
+    expect(barColor(undefined)).toBe(barColor("ok"))
+    expect(barColor("不认识的档位")).toBe(barColor("ok"))
   })
 })

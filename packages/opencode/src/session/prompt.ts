@@ -1837,15 +1837,22 @@ export const layer = Layer.effect(
 
           // 260729 Red 分级阈值：在真正触发压缩之前先上廉价手段（见 overflow.ts）。
           // soft 档刻意什么都不做，只记一条 —— 在这里做任何重写都是白白炸掉 prefix cache。
-          if (result !== "compact" && !handle.message.summary) {
+          // 260819 cc 档位改为**无条件**计算并落库：侧边栏的上下文进度条按它上色，
+          // 颜色含义是「引擎下一步会做什么」。原来只在 result !== "compact" 时算，
+          // 那样恰恰在最该变红的那一轮拿不到值。下面 soft/prune 两档的动作维持原有门槛不变。
+          if (!handle.message.summary) {
             const tier = yield* compaction
               .level({ tokens: handle.message.tokens, model })
               .pipe(Effect.catch(() => Effect.succeed("ok" as const)))
-            if (tier === "soft" && !softContextNoticed) {
+            if (handle.message.contextLevel !== tier) {
+              handle.message.contextLevel = tier
+              yield* sessions.updateMessage(handle.message)
+            }
+            if (result !== "compact" && tier === "soft" && !softContextNoticed) {
               softContextNoticed = true
               yield* slog.info("context.soft", { step, note: "保留缓存前缀，暂不做任何重写" })
             }
-            if (tier === "prune") {
+            if (result !== "compact" && tier === "prune") {
               const freed = yield* compaction
                 .prune({ sessionID })
                 .pipe(Effect.catch(() => Effect.succeed({ tokens: 0, parts: 0 })))

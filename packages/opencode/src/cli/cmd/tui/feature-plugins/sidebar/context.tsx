@@ -69,11 +69,25 @@ export function bar(percent: number): { filled: string; rest: string } {
   return { filled: "█".repeat(filled), rest: "░".repeat(BAR_WIDTH - filled) }
 }
 
-// 绿→黄→红：85% 以上就该考虑压缩了，颜色先于数字给出信号
-export function barColor(percent: number): string {
-  if (percent >= 85) return "#ff5252"
-  if (percent >= 60) return "#ffb300"
-  return "#66bb6a"
+// 260819 cc 颜色由**引擎判定的档位**驱动，不是百分比。
+//
+// 为什么不按百分比：档位是相对 ceiling() = min(硬顶, usable) 算的，而进度条的分母是
+// 模型标称的 context window，两者不是一个数。以 step-3.7-flash 为例 context=256k、
+// usable≈224k，三条线落在 134k/179k/224k，换算成进度条就是 52%/70%/88% —— 按 60/85
+// 上色会比引擎实际动手慢半拍（soft 早在 52% 就过了，prune 在 70% 就已在裁工具输出）。
+// 拿它当「要不要手动 compress」的依据会误判。
+//
+// ceiling 需要 maxOutputTokens(model) 那张按模型家族匹配的表，在 TUI 侧复刻等于两处
+// 维护、加一个模型漏一处颜色就悄悄偏，所以让服务端算好经 tokens 一起发过来。
+const LEVEL_COLOR: Record<string, string> = {
+  ok: "#66bb6a", // 绿：引擎不会动手
+  soft: "#ffb300", // 黄：只记一条提示，刻意不动前缀
+  prune: "#ff9100", // 橙：开始裁陈旧工具输出（本地改写，不花钱）
+  compact: "#ff5252", // 红：真正的摘要压缩，重写前缀 + 一次模型调用
+}
+
+export function barColor(level: string | undefined): string {
+  return LEVEL_COLOR[level ?? "ok"] ?? LEVEL_COLOR.ok
 }
 
 function View(props: { api: TuiPluginApi; session_id: string }) {
@@ -96,6 +110,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         percent: null,
         context: null as number | null,
         limit: null as number | null,
+        level: undefined as string | undefined,
         model: null as string | null,
         provider: null as string | null,
         providerID: null as string | null,
@@ -153,6 +168,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       // p > 200 就是这个问题被看见过但没改口径的痕迹。改用 tokens.context（最后一个 step 的提示词
       // 总量，恒不累加）。历史消息没有这个字段，此时整块不显示，等本会话下一轮请求写入。
       context: last.tokens.context ?? null,
+      level: last.contextLevel,
       limit: modelInfo?.limit.context ?? null,
       percent:
         last.tokens.context !== undefined && modelInfo?.limit.context
@@ -204,12 +220,12 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       >
         <text fg={theme()?.textMuted}>
           {"  "}
-          <span style={{ fg: barColor(state().percent ?? 0) }}>{compact(state().context!)}</span> /{" "}
-          {compact(state().limit!)} · <span style={{ fg: barColor(state().percent ?? 0) }}>{percentLabel()}</span>
+          <span style={{ fg: barColor(state().level) }}>{compact(state().context!)}</span> /{" "}
+          {compact(state().limit!)} · <span style={{ fg: barColor(state().level) }}>{percentLabel()}</span>
         </text>
         <text>
           {"  "}
-          <span style={{ fg: barColor(state().percent ?? 0) }}>{bar(state().percent ?? 0).filled}</span>
+          <span style={{ fg: barColor(state().level) }}>{bar(state().percent ?? 0).filled}</span>
           <span style={{ fg: theme()?.textMuted }}>{bar(state().percent ?? 0).rest}</span>
         </text>
       </Show>

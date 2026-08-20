@@ -536,6 +536,11 @@ export const Assistant = Schema.Struct({
   variant: Schema.optional(Schema.String),
   finish: Schema.optional(Schema.String),
   routedVia: Schema.optional(Schema.String),
+  // 260819 cc 引擎判定的压缩档位（overflow.ts 的 Level）。给 UI 用：侧边栏的上下文
+  // 进度条按它上色，颜色的含义因此是「引擎下一步会做什么」而不是某个拍脑袋的百分比。
+  // 由服务端算好发出来，不让客户端复刻 ceiling()/maxOutputTokens() 那张按模型家族
+  // 匹配的表——复刻等于两处维护，加一个模型漏一处、颜色就悄悄偏。
+  contextLevel: Schema.optional(Schema.Literals(["ok", "soft", "prune", "compact"])),
 }).annotate({ identifier: "AssistantMessage" })
 export type Assistant = Omit<Types.DeepMutable<Schema.Schema.Type<typeof Assistant>>, "error"> & {
   error?: AssistantError

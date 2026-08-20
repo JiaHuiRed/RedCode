@@ -500,6 +500,7 @@ export type AssistantMessage = {
   variant?: string
   finish?: string
   routedVia?: string
+  contextLevel?: "ok" | "soft" | "prune" | "compact"
 }
 
 export type Message = UserMessage | AssistantMessage

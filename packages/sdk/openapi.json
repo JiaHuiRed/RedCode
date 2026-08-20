@@ -12115,6 +12115,10 @@
           },
           "routedVia": {
             "type": "string"
+          },
+          "contextLevel": {
+            "type": "string",
+            "enum": ["ok", "soft", "prune", "compact"]
           }
         },
         "required": [
