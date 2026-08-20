@@ -394,6 +394,13 @@ export const dict = {
   "dialog.project.edit.worktree.startup.description": "在创建新的工作区 (worktree) 后运行。",
   "dialog.project.edit.worktree.startup.placeholder": "例如 bun install",
 
+  "context.inspect.title": "真实构成",
+  "context.inspect.note": "取自本会话最后一次真正发出的请求——与上面的估算不同，它含系统提示与工具定义。",
+  "context.inspect.empty": "暂无（本会话下一轮请求后显示）。",
+  "context.inspect.system": "系统提示",
+  "context.inspect.tools": "工具定义",
+  "context.inspect.messages": "对话",
+  "context.inspect.more": "另有 {{count}} 个工具",
   "context.breakdown.title": "上下文拆分",
   "context.breakdown.note": "输入 token 的大致拆分。“其他”包含工具定义和开销。",
   "context.breakdown.system": "系统",

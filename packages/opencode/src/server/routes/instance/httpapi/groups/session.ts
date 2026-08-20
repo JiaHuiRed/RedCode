@@ -2,6 +2,7 @@ import { Permission } from "@/permission"
 import { PermissionID } from "@/permission/schema"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { Session } from "@/session/session"
+import { ContextSnapshot } from "@/session/context-snapshot"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionPrompt } from "@/session/prompt"
 import { SessionRevert } from "@/session/revert"
@@ -89,6 +90,10 @@ export const SessionPaths = {
   get: `${root}/:sessionID`,
   children: `${root}/:sessionID/children`,
   todo: `${root}/:sessionID/todo`,
+  // 260820 cc 刻意不叫 /context —— v2 那边已经有个同名端点（/api/session/:id/context），
+  // 它读的 session_message 表在摘除双写后不再有对话内容，是个空壳。名字撞上只会让人以为
+  // 是同一个东西的两个版本。
+  contextInspect: `${root}/:sessionID/context-inspect`,
   diff: `${root}/:sessionID/diff`,
   messages: `${root}/:sessionID/message`,
   message: `${root}/:sessionID/message/:messageID`,
@@ -173,6 +178,19 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.todo",
             summary: "Get session todos",
             description: "Retrieve the todo list associated with a specific session, showing tasks and action items.",
+          }),
+        ),
+        HttpApiEndpoint.get("contextInspect", SessionPaths.contextInspect, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(ContextSnapshot.Info, "Context composition of the most recent request"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.contextInspect",
+            summary: "Inspect session context",
+            description:
+              "Break down the most recent request sent for this session into system prompt, tool schemas and conversation, with per-segment token estimates. Returns 404 until the session sends a request (the snapshot lives in memory only).",
           }),
         ),
         HttpApiEndpoint.get("diff", SessionPaths.diff, {

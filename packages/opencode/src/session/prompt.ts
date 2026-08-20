@@ -3,6 +3,7 @@ import os from "os"
 import { SessionID, MessageID, PartID } from "./schema"
 import { MessageV2 } from "./message-v2"
 import { PromptCaches, settlePromptCaches, touchSession } from "./prompt-caches"
+import { ContextSnapshot } from "./context-snapshot"
 import { PrefixProbe } from "./prefix-probe"
 import * as Log from "@redcode-ai/core/util/log"
 import { SessionRevert } from "./revert"
@@ -1700,6 +1701,30 @@ export const layer = Layer.effect(
             messages: stabilizedMsgs,
             reminderLength: userReminderText?.length ?? 0,
           })
+          // 260623 Red inject user reminder AFTER stabilized prefix (not before msgPin)
+          // so it doesn't mutate cached messages yet still reaches the model on step>1.
+          // 260820 cc 提出来成变量：上下文快照要记的是**真正发出去的那一份**，包含下面
+          // 这三条临时注入。留在参数位上就只能记 stabilizedMsgs，差的正是每轮变动的部分。
+          const outgoing: ModelMessage[] = [
+            ...stabilizedMsgs,
+            ...(userReminderText ? [{ role: "user" as const, content: userReminderText }] : []),
+            // 260710 Red loop recovery prompt 注入（跨 step 重复检测触发）
+            ...(loopRecoveryPrompt ? [{ role: "user" as const, content: loopRecoveryPrompt }] : []),
+            // 260814 Red stall nudge 注入已退役——repeat-tool-reminder 软层接管（见 runLoop 顶部注释）
+            // 260731 Red 原本这里还有第三条注入：每步一条 <reasoning-language> 的 user turn。
+            // 已撤除，原因见本文件上方「可见思考的语言/称呼约束注入已撤除」那段注释。
+            ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : []),
+          ]
+          // 260820 cc 上下文构成快照，供 /session/:id/context-inspect 查看。与上面两个探针
+          // 的区别：它们比对「跟上一轮比变了什么」，这个回答「现在窗口里装的是什么」。
+          ContextSnapshot.record({
+            sessionID,
+            providerID: model.providerID,
+            modelID: model.id,
+            system,
+            tools: sortedTools as Record<string, unknown>,
+            messages: outgoing,
+          })
           const result = yield* handle.process({
             user: lastUser,
             agent,
@@ -1707,18 +1732,7 @@ export const layer = Layer.effect(
             sessionID,
             parentSessionID: session.parentID,
             system,
-            // 260623 Red inject user reminder AFTER stabilized prefix (not before msgPin)
-            // so it doesn't mutate cached messages yet still reaches the model on step>1.
-            messages: [
-              ...stabilizedMsgs,
-              ...(userReminderText ? [{ role: "user" as const, content: userReminderText }] : []),
-              // 260710 Red loop recovery prompt 注入（跨 step 重复检测触发）
-              ...(loopRecoveryPrompt ? [{ role: "user" as const, content: loopRecoveryPrompt }] : []),
-              // 260814 Red stall nudge 注入已退役——repeat-tool-reminder 软层接管（见 runLoop 顶部注释）
-              // 260731 Red 原本这里还有第三条注入：每步一条 <reasoning-language> 的 user turn。
-              // 已撤除，原因见本文件上方「可见思考的语言/称呼约束注入已撤除」那段注释。
-              ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : []),
-            ],
+            messages: outgoing,
             tools: sortedTools,
             model,
             toolChoice: format.type === "json_schema" ? "required" : undefined,

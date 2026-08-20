@@ -29,12 +29,12 @@ export type Event =
   | EventGoalUpdated
   | EventSessionStatus
   | EventSessionIdle
+  | EventSessionCompacted
   | EventMcpToolsChanged
   | EventMcpBrowserOpenFailed
   | EventCommandExecuted
   | EventProjectUpdated
   | EventProjectRemoved
-  | EventSessionCompacted
   | EventWorktreeReady
   | EventWorktreeFailed
   | EventVcsBranchUpdated
@@ -870,12 +870,12 @@ export type GlobalEvent = {
     | EventGoalUpdated
     | EventSessionStatus
     | EventSessionIdle
+    | EventSessionCompacted
     | EventMcpToolsChanged
     | EventMcpBrowserOpenFailed
     | EventCommandExecuted
     | EventProjectUpdated
     | EventProjectRemoved
-    | EventSessionCompacted
     | EventWorktreeReady
     | EventWorktreeFailed
     | EventVcsBranchUpdated
@@ -1848,6 +1848,53 @@ export type ProviderAuthError1 = {
   }
 }
 
+export type ContextSegment = {
+  /**
+   * Human-readable name of this slice of the prompt
+   */
+  label: string
+  /**
+   * Estimated tokens (chars / 4)
+   */
+  tokens: number
+}
+
+export type ContextSnapshot = {
+  providerID: string
+  modelID: string
+  /**
+   * When this request was assembled
+   */
+  time: number
+  /**
+   * system + tools + messages
+   */
+  total: number
+  system: {
+    tokens: number
+    /**
+     * One entry per system-prompt block, largest first
+     */
+    segments: Array<ContextSegment>
+  }
+  tools: {
+    count: number
+    tokens: number
+    /**
+     * Most expensive tool schemas, largest first
+     */
+    top: Array<ContextSegment>
+  }
+  messages: {
+    count: number
+    tokens: number
+    /**
+     * Conversation tokens grouped by role, largest first
+     */
+    byRole: Array<ContextSegment>
+  }
+}
+
 export type TextPartInput = {
   id?: string
   type: "text"
@@ -2739,6 +2786,14 @@ export type EventSessionIdle = {
   }
 }
 
+export type EventSessionCompacted = {
+  id: string
+  type: "session.compacted"
+  properties: {
+    sessionID: string
+  }
+}
+
 export type EventMcpToolsChanged = {
   id: string
   type: "mcp.tools.changed"
@@ -2777,14 +2832,6 @@ export type EventProjectRemoved = {
   id: string
   type: "project.removed"
   properties: string
-}
-
-export type EventSessionCompacted = {
-  id: string
-  type: "session.compacted"
-  properties: {
-    sessionID: string
-  }
 }
 
 export type EventWorktreeReady = {
@@ -6451,6 +6498,40 @@ export type SessionTodoResponses = {
 }
 
 export type SessionTodoResponse = SessionTodoResponses[keyof SessionTodoResponses]
+
+export type SessionContextInspectData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/context-inspect"
+}
+
+export type SessionContextInspectErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionContextInspectError = SessionContextInspectErrors[keyof SessionContextInspectErrors]
+
+export type SessionContextInspectResponses = {
+  /**
+   * Context composition of the most recent request
+   */
+  200: ContextSnapshot
+}
+
+export type SessionContextInspectResponse = SessionContextInspectResponses[keyof SessionContextInspectResponses]
 
 export type SessionDiffData = {
   body?: never

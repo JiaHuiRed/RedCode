@@ -23,6 +23,7 @@ import "./environment"
 import { Effect } from "effect"
 import { OpenApi } from "effect/unstable/httpapi"
 import { TestLLMServer } from "../../lib/llm-server"
+import { ContextSnapshot } from "../../../src/session/context-snapshot"
 import os from "os"
 import path from "path"
 import { array, boolean, check, isRecord, message, object, stable } from "./assertions"
@@ -89,9 +90,7 @@ const scenarios: Scenario[] = [
         Effect.gen(function* () {
           object(body)
           check(body.username === "httpapi-global", "global config update should return patched config")
-          const text = yield* Effect.promise(() =>
-            Bun.file(path.join(exerciseConfigDirectory, "redcode.jsonc")).text(),
-          )
+          const text = yield* Effect.promise(() => Bun.file(path.join(exerciseConfigDirectory, "redcode.jsonc")).text())
           check(text.includes('"username": "httpapi-global"'), "global config update should write isolated config file")
           check(!text.includes("httpapi-seed"), "global config update should overwrite the seeded value in place")
         }),
@@ -901,6 +900,33 @@ const scenarios: Scenario[] = [
       check(stable(body) === stable(ctx.state.todos), "todos should match seeded state")
     }),
   http.protected
+    .get("/session/{sessionID}/context-inspect", "session.contextInspect")
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const session = yield* ctx.session({ title: "Context inspect session" })
+        // 快照是进程内的（见 session/context-snapshot.ts），exerciser 与被测路由同进程，
+        // 直接种一条即可覆盖 200 分支——否则新建会话必然 404，成功响应的 schema 永不被走到。
+        const snapshot = yield* Effect.sync(() =>
+          ContextSnapshot.record({
+            sessionID: session.id,
+            providerID: "exercise",
+            modelID: "exercise-model",
+            system: ["<env>", "a".repeat(40)],
+            tools: { read: { description: "read a file" } },
+            messages: [{ role: "user", content: "hello context inspect" }],
+          }),
+        )
+        return { session, snapshot }
+      }),
+    )
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/context-inspect", { sessionID: ctx.state.session.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body, ctx) => {
+      check(stable(body) === stable(ctx.state.snapshot), "context inspect should match the recorded snapshot")
+    }),
+  http.protected
     .get("/session/{sessionID}/diff", "session.diff")
     .seeded((ctx) => ctx.session({ title: "Diff session" }))
     .at((ctx) => ({ path: route("/session/{sessionID}/diff", { sessionID: ctx.state.id }), headers: ctx.headers() }))
@@ -1402,7 +1428,8 @@ const llmScenarios = new Set([
 const assertIsolated = Effect.gen(function* () {
   const { Global } = yield* Effect.promise(() => import("@redcode-ai/core/global"))
   const real = path.join(os.homedir(), ".redcode")
-  const same = (dir: string) => dir.toLowerCase() === real.toLowerCase() || dir.toLowerCase().startsWith(real.toLowerCase() + path.sep)
+  const same = (dir: string) =>
+    dir.toLowerCase() === real.toLowerCase() || dir.toLowerCase().startsWith(real.toLowerCase() + path.sep)
   for (const [key, value] of Object.entries(Global.Path)) {
     if (typeof value !== "string" || !same(value)) continue
     return yield* Effect.fail(

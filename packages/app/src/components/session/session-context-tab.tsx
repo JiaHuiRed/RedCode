@@ -1,5 +1,7 @@
 import { createMemo, createEffect, on, onCleanup, For, Show } from "solid-js"
 import type { JSX } from "solid-js"
+import { useQuery } from "@tanstack/solid-query"
+import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { checksum } from "@redcode-ai/core/util/encode"
 import { findLast } from "@redcode-ai/core/util/array"
@@ -18,6 +20,16 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { getSessionContextMetrics } from "./session-context-metrics"
 import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "./session-context-breakdown"
 import { createSessionContextFormatter } from "./session-context-format"
+
+// 260820 cc 真实构成三块的配色。刻意与下面 BREAKDOWN_COLOR 的 system 同色（都是 info）——
+// 两块讲的是同一件事的估算版与实测版，颜色一致才看得出对应关系。
+const INSPECT_COLOR = {
+  system: "var(--syntax-info)",
+  tools: "var(--syntax-warning)",
+  messages: "var(--syntax-property)",
+} as const
+
+type InspectKey = keyof typeof INSPECT_COLOR
 
 const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
   system: "var(--syntax-info)",
@@ -223,6 +235,63 @@ export function SessionContextTab() {
     return language.t("context.breakdown.other")
   }
 
+  // 260820 cc 真实构成：服务端在「请求真正发出去的那一刻」记下的快照
+  // （session/context-snapshot.ts）。与上面那块估算的区别不是精度，是**范围**——
+  // system 提示与 tool schema 这两块从来没到过客户端，估算器手里根本没有这两份数据，
+  // 而它们恰恰是前缀里最大且最不透明的部分。
+  //
+  // 快照只在服务端内存、只留最后一轮：会话还没在本进程发过请求时是 404，那不是错误，
+  // 按「暂无」显示。key 跟着最后一条 assistant 的 id 与 context 走，一轮请求落定才重取。
+  const sdk = useSDK()
+  const inspect = useQuery(() => ({
+    queryKey: ["session", params.id ?? "", ctx()?.message.id ?? "", ctx()?.window ?? 0, "context-inspect"] as const,
+    enabled: () => !!params.id,
+    queryFn: async () => {
+      const id = params.id
+      if (!id) return null
+      try {
+        const result = await sdk.client.session.contextInspect({ sessionID: id })
+        return result.data ?? null
+      } catch {
+        return null
+      }
+    },
+  }))
+
+  const inspectGroups = createMemo(() => {
+    const snapshot = inspect.data
+    if (!snapshot || snapshot.total <= 0) return []
+    const groups: {
+      key: InspectKey
+      tokens: number
+      count: number
+      items: readonly { label: string; tokens: number }[]
+    }[] = [
+      {
+        key: "system",
+        tokens: snapshot.system.tokens,
+        count: snapshot.system.segments.length,
+        items: snapshot.system.segments,
+      },
+      { key: "tools", tokens: snapshot.tools.tokens, count: snapshot.tools.count, items: snapshot.tools.top },
+      {
+        key: "messages",
+        tokens: snapshot.messages.tokens,
+        count: snapshot.messages.count,
+        items: snapshot.messages.byRole,
+      },
+    ]
+    return groups
+      .filter((group) => group.tokens > 0)
+      .map((group) => ({ ...group, percent: Math.round((group.tokens / snapshot.total) * 1000) / 10 }))
+  })
+
+  const inspectLabel = (key: InspectKey) => {
+    if (key === "system") return language.t("context.inspect.system")
+    if (key === "tools") return language.t("context.inspect.tools")
+    return language.t("context.inspect.messages")
+  }
+
   // 260715 Red: 每项固定分到不同的 --syntax-* token（同色的两处在网格里横向/纵向都不相邻，
   // 单列塌陷时也按数组序错开），标题类字段（会话名/创建时间）留中性色，其余全部上色。
   // 260805 Red 每项固定分到不同的 --syntax-* token（同色的两处在网格里横向/纵向都不相邻，
@@ -389,6 +458,66 @@ export function SessionContextTab() {
             )}
           </For>
         </div>
+
+        <Show
+          when={inspectGroups().length > 0}
+          fallback={
+            <div class="flex flex-col gap-2">
+              <div class="text-12-regular text-text-weak">{language.t("context.inspect.title")}</div>
+              <div class="text-11-regular text-text-weaker">{language.t("context.inspect.empty")}</div>
+            </div>
+          }
+        >
+          <div class="flex flex-col gap-2">
+            <div class="flex items-baseline justify-between gap-2">
+              <div class="text-12-regular text-text-weak">{language.t("context.inspect.title")}</div>
+              <div class="text-11-regular text-text-weaker">
+                {formatter().number(inspect.data?.total)} · {inspect.data?.modelID}
+              </div>
+            </div>
+            <div class="h-2 w-full rounded-full bg-surface-base overflow-hidden flex">
+              <For each={inspectGroups()}>
+                {(group) => (
+                  <div
+                    class="h-full"
+                    style={{ width: `${group.percent}%`, "background-color": INSPECT_COLOR[group.key] }}
+                  />
+                )}
+              </For>
+            </div>
+            <div class="grid grid-cols-1 @[32rem]:grid-cols-3 gap-4">
+              <For each={inspectGroups()}>
+                {(group) => (
+                  <div class="flex flex-col gap-1">
+                    <div class="flex items-center gap-1 text-11-regular text-text-weak">
+                      <div class="size-2 rounded-sm" style={{ "background-color": INSPECT_COLOR[group.key] }} />
+                      <div>{inspectLabel(group.key)}</div>
+                      <div class="text-text-weaker">
+                        {formatter().number(group.tokens)} · {group.percent.toLocaleString(language.intl())}%
+                      </div>
+                    </div>
+                    <For each={group.items}>
+                      {(item) => (
+                        <div class="flex items-baseline justify-between gap-2 text-11-regular">
+                          <div class="text-text-weaker truncate select-text" title={item.label}>
+                            {item.label}
+                          </div>
+                          <div class="text-text-weak shrink-0">{formatter().number(item.tokens)}</div>
+                        </div>
+                      )}
+                    </For>
+                    <Show when={group.key === "tools" && group.count > group.items.length}>
+                      <div class="text-11-regular text-text-weaker">
+                        {language.t("context.inspect.more", { count: (group.count - group.items.length).toString() })}
+                      </div>
+                    </Show>
+                  </div>
+                )}
+              </For>
+            </div>
+            <div class="text-11-regular text-text-weaker">{language.t("context.inspect.note")}</div>
+          </div>
+        </Show>
 
         <Show when={breakdown().length > 0}>
           <div class="flex flex-col gap-2">

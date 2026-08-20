@@ -5809,6 +5809,86 @@
         ]
       }
     },
+    "/session/{sessionID}/context-inspect": {
+      "get": {
+        "tags": ["session"],
+        "operationId": "session.contextInspect",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Context composition of the most recent request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContextSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Break down the most recent request sent for this session into system prompt, tool schemas and conversation, with per-segment token estimates. Returns 404 until the session sends a request (the snapshot lives in memory only).",
+        "summary": "Inspect session context",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.session.contextInspect({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/session/{sessionID}/diff": {
       "get": {
         "tags": ["session"],
@@ -10704,6 +10784,9 @@
             "$ref": "#/components/schemas/EventSessionIdle"
           },
           {
+            "$ref": "#/components/schemas/EventSessionCompacted"
+          },
+          {
             "$ref": "#/components/schemas/EventMcpToolsChanged"
           },
           {
@@ -10717,9 +10800,6 @@
           },
           {
             "$ref": "#/components/schemas/EventProjectRemoved"
-          },
-          {
-            "$ref": "#/components/schemas/EventSessionCompacted"
           },
           {
             "$ref": "#/components/schemas/EventWorktreeReady"
@@ -13269,6 +13349,9 @@
                 "$ref": "#/components/schemas/EventSessionIdle"
               },
               {
+                "$ref": "#/components/schemas/EventSessionCompacted"
+              },
+              {
                 "$ref": "#/components/schemas/EventMcpToolsChanged"
               },
               {
@@ -13282,9 +13365,6 @@
               },
               {
                 "$ref": "#/components/schemas/EventProjectRemoved"
-              },
-              {
-                "$ref": "#/components/schemas/EventSessionCompacted"
               },
               {
                 "$ref": "#/components/schemas/EventWorktreeReady"
@@ -16089,6 +16169,107 @@
           }
         },
         "required": ["name", "data"],
+        "additionalProperties": false
+      },
+      "ContextSegment": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Human-readable name of this slice of the prompt"
+          },
+          "tokens": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Estimated tokens (chars / 4)"
+          }
+        },
+        "required": ["label", "tokens"],
+        "additionalProperties": false
+      },
+      "ContextSnapshot": {
+        "type": "object",
+        "properties": {
+          "providerID": {
+            "type": "string"
+          },
+          "modelID": {
+            "type": "string"
+          },
+          "time": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "When this request was assembled"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "system + tools + messages"
+          },
+          "system": {
+            "type": "object",
+            "properties": {
+              "tokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "segments": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ContextSegment"
+                },
+                "description": "One entry per system-prompt block, largest first"
+              }
+            },
+            "required": ["tokens", "segments"],
+            "additionalProperties": false
+          },
+          "tools": {
+            "type": "object",
+            "properties": {
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "tokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "top": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ContextSegment"
+                },
+                "description": "Most expensive tool schemas, largest first"
+              }
+            },
+            "required": ["count", "tokens", "top"],
+            "additionalProperties": false
+          },
+          "messages": {
+            "type": "object",
+            "properties": {
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "tokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "byRole": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ContextSegment"
+                },
+                "description": "Conversation tokens grouped by role, largest first"
+              }
+            },
+            "required": ["count", "tokens", "byRole"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["providerID", "modelID", "time", "total", "system", "tools", "messages"],
         "additionalProperties": false
       },
       "TextPartInput": {
@@ -19067,6 +19248,31 @@
         "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
+      "EventSessionCompacted": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.compacted"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              }
+            },
+            "required": ["sessionID"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
       "EventMcpToolsChanged": {
         "type": "object",
         "properties": {
@@ -19182,31 +19388,6 @@
           },
           "properties": {
             "type": "string"
-          }
-        },
-        "required": ["id", "type", "properties"],
-        "additionalProperties": false
-      },
-      "EventSessionCompacted": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["session.compacted"]
-          },
-          "properties": {
-            "type": "object",
-            "properties": {
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              }
-            },
-            "required": ["sessionID"],
-            "additionalProperties": false
           }
         },
         "required": ["id", "type", "properties"],

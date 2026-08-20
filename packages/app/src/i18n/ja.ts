@@ -334,6 +334,14 @@ export const dict = {
   "dialog.project.edit.worktree.startup.description":
     "新しいワークスペース (ワークツリー) を作成した後に実行されます。",
   "dialog.project.edit.worktree.startup.placeholder": "例: bun install",
+  "context.inspect.title": "実際の構成",
+  "context.inspect.note":
+    "このセッションが最後に実際に送信したリクエストの実測値です。上の推定と違い、システムプロンプトとツール定義を含みます。",
+  "context.inspect.empty": "まだありません（このセッションの次のリクエスト後に表示されます）。",
+  "context.inspect.system": "システムプロンプト",
+  "context.inspect.tools": "ツール定義",
+  "context.inspect.messages": "会話",
+  "context.inspect.more": "他 {{count}} 個のツール",
   "context.breakdown.title": "コンテキストの内訳",
   "context.breakdown.note": '入力トークンのおおよその内訳です。"その他"にはツールの定義やオーバーヘッドが含まれます。',
   "context.breakdown.system": "システム",
