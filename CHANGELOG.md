@@ -8,6 +8,40 @@
 
 ---
 
+### [0.9.3] - 2026-08-20
+
+> 一轮「代码里已有、前端从没显示过」的清点收口：上下文真实构成查看器、钉住的目标终于有了界面、GUI 补上输出被截断标记。清点本身还发现了一个空壳端点、一个把自动续跑轮数腰斩的复制粘贴 bug，和三处过时文档。
+
+#### 新增
+
+- **上下文真实构成查看器**（`session/context-snapshot.ts`、`session/prompt.ts`、`server/.../session.ts`、`app/components/session/session-context-tab.tsx`）：新端点 `GET /session/:sessionID/context-inspect`，把这一刻发出去的请求拆成**系统提示 / 工具定义 / 对话**三块，各自给出 token 数与明细（system 按段、tools 按最贵的 8 个、messages 按角色）。GUI 上下文面板新增「真实构成」一段。与既有那块估算拆分的区别不是精度是**范围**——系统提示与工具定义从来没到过客户端，估算器手里根本没有这两份数据，而它们恰恰是前缀里最大且最不透明的部分（「哪个 MCP 挂上来吃掉几千 token」只有这里看得到）。
+
+  三个决定：① **在请求真正发出的那一刻记账**，不在读取时从 `PromptCaches` 重建——那里缓存的只是 system 的原料（env/instructions/skills），runLoop 每轮还要追加日期、WORK RULES、按模型家族分支的锚、canary、DCP 说明，重建等于把拼装逻辑复刻一份在读取侧，加一条锚漏一处数字就悄悄偏。② **只留最后一轮、只在内存**：这是「现在窗口里装的是什么」不是历史指标；没有快照时返 404 而不是空对象，空对象会被 UI 画成「构成全是 0」。③ **稳态成本靠 `WeakMap` 按对象引用记忆**——`modelMsgs` 的前缀是钉死的同一批对象，稳态下只算新增的那几条，不是每轮全量序列化。[why](docs/notes/implemented/feature/2026-08-20-context-inspector.md)
+
+- **钉住的目标终于有了界面**（`session/goal.ts`、`server/.../session.ts`、`tui/feature-plugins/sidebar/goal.tsx`、`app/components/session/session-plan-tab.tsx`）：Goal 此前是「后端整套在跑、前端一个字都没有」最极端的一例——独立表与五态状态机、每轮把 `▸ ACTIVE GOAL` 注进系统提示、按 token 预算自动续跑、三个工具还是无 flag 门控的默认工具，而 `grep -ri goal` 打全 TUI + GUI + run 三个前端零命中。新增 `GET /session/:sessionID/goal`（没钉目标返 404，不返 `status:"cleared"` 的空壳——「从没钉过」和「钉过又清掉」在自动续跑那边是两回事）；TUI 侧边栏 slot 350（Todo 上方）、GUI Plan 面板顶部各加一块，显示目标原文、状态与已用 token。轮次与预算只在 `goal_auto_continue` 开启时显示——它默认关，关着时 20 轮上限与预算天花板不会拦任何人，画「3/20 轮」会让人以为有个并不存在的限制在逼近。[why](docs/notes/implemented/feature/2026-08-20-goal-panel.md)
+
+- **GUI 补上「输出被截断」标记**（`app/pages/session/message-timeline.data.ts`、`message-timeline.tsx`）：`finish === "length"` 是模型撞到输出 token 上限被砍断，TUI 07-28 就标出来了，**GUI 从来没读过 `message.finish`**——被截断的回复和正常说完的长得一模一样，用户无从判断。复用既有的 `TurnDivider` 加第三个 label（旁边已有 compaction / interrupted 两条同类分割线）。取**最后一条** assistant 而不是 `some()`：`prompt.ts` 的 `finished` 判定把 `"length"` 当终止原因（只有 tool-calls / unknown 会继续），被截断的必然是本轮最后一条，分割线因此正好画在话被切断的地方。[why](docs/notes/implemented/feature/2026-08-20-gui-output-truncated.md)
+
+#### 修复
+
+- **自动续跑轮数被腰斩**（`session/goal-continuation.ts`）：`goal.tick()` 连着调了两次，而 `tick` 是无条件 `turn_count + 1`（`goal.ts:142`）不是幂等的——**每次自动续跑把计数推进 2，`MAX_GOAL_TURNS = 20` 实际只跑 10 轮就停**。21e1f71b 初次落地时就是两行，属复制粘贴。同一段的 `goal.mark("budget_limited")` 也是两行，那个幂等、无后果，一并收掉。做目标面板要显示「第 N/20 轮」，这个数必须先诚实。
+
+#### 改进
+
+- **`Goal.Info` 的两个计数器改用 `NonNegativeInt`**（`session/goal.ts`）：原本是 `Schema.Number`，而 JSON 表示里 Number 允许 NaN/Infinity，codegen 于是把 `tokens_used` 摊成 `number | "NaN" | "Infinity" | "-Infinity"`，客户端每次读都得先判类型。它们结构上就是非负整数（`tokens_used` 靠 SQL 累加、`turn_count` 每轮 +1）。
+
+- **GUI 会话缓存淘汰漏了 goal**（`app/context/global-sync/session-cache.ts`）：`dropSessionCaches` 一并清理 `goal`，不留一处会随会话淘汰泄漏的键。
+
+#### 文档
+
+- **`docs/parallel-systems-plan.md` 的「记下防复述」里有一句是错的**：「/v2 路由组不在 openapi 里，SDK 没有对应方法，客户端无法调用」。实测 openapi.json 里有 9 个 `v2.*` 操作，SDK 也照常生成了 `client.v2.session.*`（`sdk.gen.ts` 的 `class Session3`）。成立的只有「没有客户端在**调用**」——零调用方不是零能力。这条写在防复述段落里，反而成了最容易被复述的错误。同时记入后续事实：`GET /api/session/:id/context` 已确认是空壳（摘除双写后 `session_message` 表只剩 `model-switched` / `agent-switched` 两类行，实测 live 库 782 行里一条对话都没有），其去留仍未决。
+
+- **`AGENTS.md` 的 SDK 重新生成指令不完整**：`./packages/sdk/js/script/build.ts` 自己也会生成一份 openapi，但落在 `packages/sdk/js/` 下当临时输入、末尾 `rm` 掉，**不碰仓库里那份 `packages/sdk/openapi.json`**。改成两条命令并注明别跑 `script/generate.ts` 整脚本（最后一步是 prettier 全仓 `--write`）。
+
+- **`httpapi/AGENTS.md` 补上路由覆盖门禁**：`bun run test:httpapi` 带 `--fail-on-missing` 跑三遍，任何在 openapi 里出现而 exercise 里没有场景的路由会让三遍全部失败。补上场景写法、单跑一条的命令，以及「不在 `AppLayer` 里的服务要在种子处单独 provide，别为了让测试跑通改生产接线」。
+
+- **`MANUAL.md` 新增 7.6 与 8.1**：7.6「上下文用量：在哪看、怎么读」——两个界面的位置、档位颜色表（颜色是「引擎下一步会做什么」不是百分比，附 step-3.7-flash 上 52/70/88 的换算）、解码速率与首字延迟为什么分开、真实构成与估算拆分的范围差别、输出被截断标记；8.1「钉住的目标：钉了之后在哪看」。
+
 ### [0.9.2] - 2026-08-19
 
 > 上下文窗口进度条改由引擎档位上色（颜色含义从「用了多少」变成「引擎下一步会做什么」），侧边栏新增解码速率与首字延迟，以及摘除会话事件系统双写（净 -1713 行）。
