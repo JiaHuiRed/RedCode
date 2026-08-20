@@ -111,12 +111,33 @@ tool-error-card / line-comment / basic-tool 各 0
   1. 「唯一消费者是调试插件」不准确——`prompt.ts` 有两处**非门控**发布（Agent/ModelSwitched，保留），
      测试套件经 preload.ts 全程开着 flag 在测双写（两个用例断言 SessionV2.messages）。
   2. 「src/v2/session.ts 是活的骨干」说重了——它活在 import 图里（httpapi /v2 路由组引用），
-     但 **/v2 路由组不在 openapi 里，SDK 没有对应方法，客户端无法调用**，生产零流量。
-     `SessionV2.messages` 读的 session_message 表，引擎侧唯一写入链就是被摘的门控发布。
+     生产零流量。`SessionV2.messages` 读的 session_message 表，引擎侧唯一写入链就是被摘的门控发布。
+
+     > **260820 cc 更正**：本条原来还写着「**/v2 路由组不在 openapi 里，SDK 没有对应方法，
+     > 客户端无法调用**」——**这句是错的**。openapi.json 里有 9 个 `v2.*` 操作
+     > （`v2.session.list` / `prompt` / `compact` / `wait` / `context` / `messages`、
+     > `v2.model.list`、`v2.provider.list` / `get`），SDK 也照常生成了
+     > `client.v2.session.*`（`sdk.gen.ts` 的 `class Session3`，经 `class V2` 挂载）。
+     > 「客户端无法调用」不成立，成立的只有「没有客户端在调用」——**零调用方，不是零能力**。
+     > 这条写在「记下防复述」里，反而成了最容易被复述的错误，08-20 就是照它下的判断。
   3. 「SDK v2」≠「路由组 v2」：sdk/js/src/v2 是**整个 API** 的新生成客户端（app 72 处 / TUI 43 处
      指的是它）；路由组 v2 是事件系统实验面。此前把两者混在一起说了。
 - 既有失败不背锅：`snapshot-tool-race` 的 "non-empty session diff" 在 HEAD 基线上同样失败，
   与本次无关，另行处理。
+
+### 后续（2026-08-20）：`/api/session/:id/context` 已确认是空壳
+
+摘除双写的直接后果，08-20 做上下文查看器时撞上并实测确认：
+
+- `prompt.ts` 现在只 publish `AgentSwitched` / `ModelSwitched`，`session_message` 表因此
+  只剩这两类行。拷 live 库查：**782 行 = model-switched 501 + agent-switched 281，
+  一条对话内容都没有**；真正的会话在旧 `message` 表（51,264 行）。
+- 于是 `GET /api/session/:sessionID/context`（"Retrieve the active context messages"）
+  对任何真实会话都返回空数组。它在 openapi 里、SDK 里都有，只是**答案是空的**。
+- 替代品已落地：`GET /session/:sessionID/context-inspect`（`session/context-snapshot.ts`），
+  在请求真正发出的那一刻记账，不依赖 `session_message`。
+- **未决**：那个空壳端点的去留。要么让它改读旧 `message` 表重建，要么删掉——两条都是独立
+  决定，没混进 08-20 那次改动。删之前注意它是 `/v2` 路由组的一员，动它等于动整组的存废。
 
 ---
 

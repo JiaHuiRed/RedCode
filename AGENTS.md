@@ -101,7 +101,15 @@ RedCode = OpenCode fork：
 
 - 默认分支 `dev`；`main` 可能不存在，对比用 `origin/dev`
 - Commit scope（types 与前缀规则见全局 AGENTS.md）：`core` `redcode` `tui` `app` `desktop` `sdk` `plugin`
-- 重新生成 SDK：`./packages/sdk/js/script/build.ts`
+- **重新生成 SDK 是两条命令，只跑第一条会漏掉 `packages/sdk/openapi.json`**（260820 cc 实测）：
+
+  ```bash
+  bun ./packages/sdk/js/script/build.ts                              # → packages/sdk/js/src/v2/gen/**
+  cd packages/opencode && bun dev generate > ../sdk/openapi.json     # → packages/sdk/openapi.json
+  ```
+
+  第一条自己也会生成一份 openapi，但落在 `packages/sdk/js/` 下当临时输入，末尾 `rm` 掉，
+  **不碰仓库里那份**。别跑 `script/generate.ts` 整脚本——它最后一步是 prettier 全仓 `--write`。
 
 # 代码规范
 
