@@ -205,6 +205,48 @@ export const layer = Layer.effect(
       yield* plugin.trigger("session.stop", { sessionID }, {}).pipe(Effect.catch(() => Effect.void))
     })
 
+    // 260820 cc 「agent 不存在」这段在本文件出现四次（handleSubtask / createUserMessage /
+    // runLoop / command），六行逐字相同、只有 agent 名与 sessionID 的取法不同。四份拷贝的
+    // 代价不在行数，在于改一句提示语要记得改四遍——比如「hint 里要不要列 hidden agent」
+    // 这种细节，各自演化是迟早的事。
+    //
+    // 只把「造错误 + 发总线」抽出来，`throw` 留在调用点：调用点都在 `if (!agent) { … }` 里，
+    // 后面紧接着用那个 agent，把 throw 也搬进来会让 TS 失去收窄。用法是
+    // `throw yield* agentNotFound({ … })`。
+    const agentNotFound = Effect.fn("SessionPrompt.agentNotFound")(function* (input: {
+      sessionID: SessionID
+      // 260820 cc 收 `string | undefined` 是为了与原样等价，不是疏忽：createUserMessage 与
+      // command 那两处传的是可选的 input.agent，模板插值出来就是字面量 "undefined"
+      // （`Agent not found: "undefined"`）。这次只做去重，不顺手改文案——改了就不是等价变换。
+      name: string | undefined
+    }) {
+      const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
+      const hint = available.length ? ` Available agents: ${available.join(", ")}` : ""
+      const error = new NamedError.Unknown({ message: `Agent not found: "${input.name}".${hint}` })
+      yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
+      return error
+    })
+
+    // 260820 cc 「给这条 assistant 追加一句可见说明」在 runLoop 里出现四次：思考提升为正文 /
+    // 空转耗尽 / 步数上限 / 工具调用被写成文本。四处共同的纪律是**不能静默退出**——那正是
+    // 「模型莫名其妙停下来」这个观感的来源。抽出来主要是给这条纪律一个名字，下次再多一种
+    // 收场方式时，写的人能看见前面四处都做了同一件事。
+    const appendNotice = Effect.fn("SessionPrompt.appendNotice")(function* (input: {
+      sessionID: SessionID
+      messageID: MessageID
+      text: string
+    }) {
+      const now = Date.now()
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: input.messageID,
+        sessionID: input.sessionID,
+        type: "text",
+        text: input.text,
+        time: { start: now, end: now },
+      })
+    })
+
     const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(function* (template: string) {
       const ctx = yield* InstanceState.context
       const parts: Types.DeepMutable<PromptInput["parts"]> = [{ type: "text", text: template }]
@@ -426,11 +468,7 @@ export const layer = Layer.effect(
 
       const taskAgent = yield* agents.get(task.agent)
       if (!taskAgent) {
-        const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
-        const hint = available.length ? ` Available agents: ${available.join(", ")}` : ""
-        const error = new NamedError.Unknown({ message: `Agent not found: "${task.agent}".${hint}` })
-        yield* bus.publish(Session.Event.Error, { sessionID, error: error.toObject() })
-        throw error
+        throw yield* agentNotFound({ sessionID, name: task.agent })
       }
 
       let error: Error | undefined
@@ -578,11 +616,7 @@ export const layer = Layer.effect(
       const agentName = input.agent
       const ag = agentName ? yield* agents.get(agentName) : yield* agents.defaultInfo()
       if (!ag) {
-        const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
-        const hint = available.length ? ` Available agents: ${available.join(", ")}` : ""
-        const error = new NamedError.Unknown({ message: `Agent not found: "${agentName}".${hint}` })
-        yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
-        throw error
+        throw yield* agentNotFound({ sessionID: input.sessionID, name: agentName })
       }
 
       const current = Database.use((db) =>
@@ -649,6 +683,17 @@ export const layer = Layer.effect(
         id: part.id ? PartID.make(part.id) : PartID.ascending(),
       })
 
+      // 260820 cc resolvePart 里「合成一条文本 part」的五行样板出现 13 次，除 text 外逐字相同。
+      // 收成一个函数不只是省行数：合成 part 的三个固定字段（synthetic 标记、归属消息、会话）
+      // 从此只有一处，加字段或改归属不必再逐处对齐。
+      const syntheticText = (text: string): Draft<MessageV2.Part> => ({
+        messageID: info.id,
+        sessionID: input.sessionID,
+        type: "text",
+        synthetic: true,
+        text,
+      })
+
       const referenceContextFromFilePart = Effect.fnUntraced(function* (
         part: Extract<PromptInput["parts"][number], { type: "file" }>,
         filepath: string,
@@ -680,15 +725,7 @@ export const layer = Layer.effect(
           if (part.source?.type === "resource") {
             const { clientName, uri } = part.source
             log.info("mcp resource", { clientName, uri, mime: part.mime })
-            const pieces: Draft<MessageV2.Part>[] = [
-              {
-                messageID: info.id,
-                sessionID: input.sessionID,
-                type: "text",
-                synthetic: true,
-                text: `Reading MCP resource: ${part.filename} (${uri})`,
-              },
-            ]
+            const pieces: Draft<MessageV2.Part>[] = [syntheticText(`Reading MCP resource: ${part.filename} (${uri})`)]
             const exit = yield* mcp.readResource(clientName, uri).pipe(Effect.exit)
             if (Exit.isSuccess(exit)) {
               const content = exit.value
@@ -696,22 +733,10 @@ export const layer = Layer.effect(
               const items = Array.isArray(content.contents) ? content.contents : [content.contents]
               for (const c of items) {
                 if ("text" in c && c.text) {
-                  pieces.push({
-                    messageID: info.id,
-                    sessionID: input.sessionID,
-                    type: "text",
-                    synthetic: true,
-                    text: c.text,
-                  })
+                  pieces.push(syntheticText(c.text))
                 } else if ("blob" in c && c.blob) {
                   const mime = "mimeType" in c ? c.mimeType : part.mime
-                  pieces.push({
-                    messageID: info.id,
-                    sessionID: input.sessionID,
-                    type: "text",
-                    synthetic: true,
-                    text: `[Binary content: ${mime}]`,
-                  })
+                  pieces.push(syntheticText(`[Binary content: ${mime}]`))
                 }
               }
               pieces.push({ ...part, messageID: info.id, sessionID: input.sessionID })
@@ -719,13 +744,7 @@ export const layer = Layer.effect(
               const error = Cause.squash(exit.cause)
               log.error("failed to read MCP resource", { error, clientName, uri })
               const message = error instanceof Error ? error.message : String(error)
-              pieces.push({
-                messageID: info.id,
-                sessionID: input.sessionID,
-                type: "text",
-                synthetic: true,
-                text: `Failed to read MCP resource ${part.filename}: ${message}`,
-              })
+              pieces.push(syntheticText(`Failed to read MCP resource ${part.filename}: ${message}`))
             }
             return pieces
           }
@@ -734,20 +753,10 @@ export const layer = Layer.effect(
             case "data:":
               if (part.mime === "text/plain") {
                 return [
-                  {
-                    messageID: info.id,
-                    sessionID: input.sessionID,
-                    type: "text",
-                    synthetic: true,
-                    text: `Called the Read tool with the following input: ${JSON.stringify({ filePath: part.filename })}`,
-                  },
-                  {
-                    messageID: info.id,
-                    sessionID: input.sessionID,
-                    type: "text",
-                    synthetic: true,
-                    text: decodeDataUrl(part.url),
-                  },
+                  syntheticText(
+                    `Called the Read tool with the following input: ${JSON.stringify({ filePath: part.filename })}`,
+                  ),
+                  syntheticText(decodeDataUrl(part.url)),
                   { ...part, messageID: info.id, sessionID: input.sessionID },
                 ]
               }
@@ -804,13 +813,7 @@ export const layer = Layer.effect(
                   ...(referenceContext
                     ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }]
                     : []),
-                  {
-                    messageID: info.id,
-                    sessionID: input.sessionID,
-                    type: "text",
-                    synthetic: true,
-                    text: `Called the Read tool with the following input: ${JSON.stringify(args)}`,
-                  },
+                  syntheticText(`Called the Read tool with the following input: ${JSON.stringify(args)}`),
                 ]
                 const exit = yield* provider.getModel(info.model.providerID, info.model.modelID).pipe(
                   Effect.flatMap((mdl) => execRead(args, { model: mdl })),
@@ -818,13 +821,7 @@ export const layer = Layer.effect(
                 )
                 if (Exit.isSuccess(exit)) {
                   const result = exit.value
-                  pieces.push({
-                    messageID: info.id,
-                    sessionID: input.sessionID,
-                    type: "text",
-                    synthetic: true,
-                    text: result.output,
-                  })
+                  pieces.push(syntheticText(result.output))
                   if (result.attachments?.length) {
                     pieces.push(
                       ...result.attachments.map((a) => ({
@@ -846,13 +843,9 @@ export const layer = Layer.effect(
                     sessionID: input.sessionID,
                     error: new NamedError.Unknown({ message }).toObject(),
                   })
-                  pieces.push({
-                    messageID: info.id,
-                    sessionID: input.sessionID,
-                    type: "text",
-                    synthetic: true,
-                    text: `Read tool failed to read ${filepath} with the following error: ${message}`,
-                  })
+                  pieces.push(
+                    syntheticText(`Read tool failed to read ${filepath} with the following error: ${message}`),
+                  )
                 }
                 return pieces
               }
@@ -872,33 +865,15 @@ export const layer = Layer.effect(
                     ...(referenceContext
                       ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }]
                       : []),
-                    {
-                      messageID: info.id,
-                      sessionID: input.sessionID,
-                      type: "text",
-                      synthetic: true,
-                      text: `Read tool failed to read ${filepath} with the following error: ${message}`,
-                    },
+                    syntheticText(`Read tool failed to read ${filepath} with the following error: ${message}`),
                   ]
                 }
                 return [
                   ...(referenceContext
                     ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }]
                     : []),
-                  {
-                    messageID: info.id,
-                    sessionID: input.sessionID,
-                    type: "text",
-                    synthetic: true,
-                    text: `Called the Read tool with the following input: ${JSON.stringify(args)}`,
-                  },
-                  {
-                    messageID: info.id,
-                    sessionID: input.sessionID,
-                    type: "text",
-                    synthetic: true,
-                    text: exit.value.output,
-                  },
+                  syntheticText(`Called the Read tool with the following input: ${JSON.stringify(args)}`),
+                  syntheticText(exit.value.output),
                   { ...part, mime, messageID: info.id, sessionID: input.sessionID },
                 ]
               }
@@ -932,16 +907,11 @@ export const layer = Layer.effect(
           const hint = perm.action === "deny" ? " . Invoked by user; guaranteed to exist." : ""
           return [
             { ...part, messageID: info.id, sessionID: input.sessionID },
-            {
-              messageID: info.id,
-              sessionID: input.sessionID,
-              type: "text",
-              synthetic: true,
-              text:
-                " Use the above message and context to generate a prompt and call the task tool with subagent: " +
+            syntheticText(
+              " Use the above message and context to generate a prompt and call the task tool with subagent: " +
                 part.name +
                 hint,
-            },
+            ),
           ]
         }
 
@@ -1147,28 +1117,20 @@ export const layer = Layer.effect(
               // 纠正过一次仍然只有思考 —— 别再烧 token 了，把思考内容提升成可见正文，
               // 至少让用户看得到东西，而不是对着空白猜是不是卡死了
               yield* slog.warn("reasoning.only.promoted", { step, model: lastUser.model.modelID })
-              const now = Date.now()
-              yield* sessions.updatePart({
-                id: PartID.ascending(),
-                messageID: lastAssistant.id,
+              yield* appendNotice({
                 sessionID,
-                type: "text",
+                messageID: lastAssistant.id,
                 text: reasoning.map((part) => part.text).join("\n\n"),
-                time: { start: now, end: now },
               })
             } else if (producedNothing) {
               // 260808 Red：纠正过一次还是彻底空转。这里没有思考可提升，但**不能就这么静默退出** ——
               // 那正是"莫名其妙停下来"的观感来源。写一句可见说明，让用户知道是模型空回复、
               // 可以直接重发，而不是去猜自己是不是被打断了。
               yield* slog.warn("empty.turn.exhausted", { step, model: lastUser.model.modelID })
-              const now = Date.now()
-              yield* sessions.updatePart({
-                id: PartID.ascending(),
-                messageID: lastAssistant.id,
+              yield* appendNotice({
                 sessionID,
-                type: "text",
+                messageID: lastAssistant.id,
                 text: "（模型本轮没有返回任何内容，已自动重试一次仍为空。可以直接重发上一条消息。）",
-                time: { start: now, end: now },
               })
             }
             yield* slog.info("exiting loop")
@@ -1229,11 +1191,7 @@ export const layer = Layer.effect(
 
         const agent = yield* agents.get(lastUser.agent)
         if (!agent) {
-          const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
-          const hint = available.length ? ` Available agents: ${available.join(", ")}` : ""
-          const error = new NamedError.Unknown({ message: `Agent not found: "${lastUser.agent}".${hint}` })
-          yield* bus.publish(Session.Event.Error, { sessionID, error: error.toObject() })
-          throw error
+          throw yield* agentNotFound({ sessionID, name: lastUser.agent })
         }
         // 260811 cc audit Y2：此前默认 Infinity 且 isLastStep 只注入一段提示词、不中断——
         // "每次都成功但原地打转"的循环可以烧 token 烧到手动 abort（repeat-tool-reminder
@@ -1244,14 +1202,10 @@ export const layer = Layer.effect(
         if (step > maxSteps) {
           yield* slog.warn("max.steps", { step, maxSteps, agent: agent.name })
           if (lastAssistant) {
-            const now = Date.now()
-            yield* sessions.updatePart({
-              id: PartID.ascending(),
-              messageID: lastAssistant.id,
+            yield* appendNotice({
               sessionID,
-              type: "text",
+              messageID: lastAssistant.id,
               text: `（已达到单轮步数上限 ${maxSteps}，强制收束。任务若未完成，直接续发消息即可继续；上限可用 agent 配置的 steps 调整。）`,
-              time: { start: now, end: now },
             })
           }
           break
@@ -1749,14 +1703,10 @@ export const layer = Layer.effect(
               // 放它正常收尾——XML 已经被摘干净，用户至少不会对着一坨标签，
               // 但必须留一句可见说明，否则看起来就是模型无缘无故什么都没做。
               yield* slog.error("toolcall.text_form.exhausted", { step, tools, model: lastUser.model.modelID })
-              const now = Date.now()
-              yield* sessions.updatePart({
-                id: PartID.ascending(),
-                messageID: handle.message.id,
+              yield* appendNotice({
                 sessionID,
-                type: "text",
+                messageID: handle.message.id,
                 text: `[RedCode] 模型连续 ${MAX_SALVAGE_RECOVERIES + 1} 次把工具调用写成了文本而不是真正发起调用（${tools.join("、")}），这些调用都没有执行。已停止自动重试，请重发一次或换个模型。`,
-                time: { start: now, end: now },
               })
             }
           }
@@ -1937,11 +1887,7 @@ export const layer = Layer.effect(
 
       const agent = agentName ? yield* agents.get(agentName) : yield* agents.defaultInfo()
       if (!agent) {
-        const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
-        const hint = available.length ? ` Available agents: ${available.join(", ")}` : ""
-        const error = new NamedError.Unknown({ message: `Agent not found: "${agentName}".${hint}` })
-        yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
-        throw error
+        throw yield* agentNotFound({ sessionID: input.sessionID, name: agentName })
       }
 
       const templateParts = yield* resolvePromptParts(template)
