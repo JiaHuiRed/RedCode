@@ -42,6 +42,8 @@ function normalize(text: string): string {
 // keep it in that order so the snapshot file reads as a table of contents.
 // `completion` is intentionally excluded — it's a yargs built-in that emits
 // top-level help on `--help` and exits 1; not a real redcode command.
+// `console` and the default tui are excluded too: the former is hidden
+// (`describe: false`), the latter prints a version-stamped banner.
 const TOP_LEVEL = [
   "acp",
   "mcp",
@@ -63,6 +65,7 @@ const TOP_LEVEL = [
   "session",
   "plugin",
   "db",
+  "doctor",
 ] as const
 
 // Subcommands worth pinning. Not exhaustive — the goal is one snapshot per
