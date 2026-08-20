@@ -146,6 +146,7 @@ export const dict = {
   "ui.message.stopReadAloud": "停止朗读",
   "ui.message.copied": "已复制！",
   "ui.message.interrupted": "已中断",
+  "ui.message.truncated": "输出被截断（达到 token 上限）",
   "ui.message.queued": "排队中",
   "ui.message.attachment.alt": "附件",
 

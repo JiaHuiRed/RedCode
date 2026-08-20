@@ -163,6 +163,7 @@ export const dict: Record<string, string> = {
   "ui.message.duration.seconds": "{{count}}s",
   "ui.message.duration.minutesSeconds": "{{minutes}}m {{seconds}}s",
   "ui.message.interrupted": "Interrupted",
+  "ui.message.truncated": "Output cut off (hit the token limit)",
   "ui.message.queued": "Queued",
   "ui.message.attachment.alt": "attachment",
 

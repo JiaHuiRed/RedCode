@@ -17,7 +17,7 @@ export type TimelineRowMap = {
   }
   TurnDivider: {
     userMessageID: string
-    label: "compaction" | "interrupted"
+    label: "compaction" | "interrupted" | "truncated"
   }
   AssistantPart: {
     userMessageID: string
@@ -45,7 +45,7 @@ export namespace TimelineRow {
   }> {}
   export class TurnDivider extends Data.TaggedClass("TurnDivider")<{
     userMessageID: string
-    label: "compaction" | "interrupted"
+    label: "compaction" | "interrupted" | "truncated"
   }> {}
   export class AssistantPart extends Data.TaggedClass("AssistantPart")<{
     userMessageID: string
@@ -187,6 +187,15 @@ export namespace Timeline {
       )
     }
 
+    // 260820 cc finish === "length" 是模型撞到输出 token 上限被砍断。TUI 07-28 就标出来了
+    // （routes/session/index.tsx 的 finish === "length" 分支），GUI 这边从没读过
+    // message.finish —— 话说到一半就结束的回复和正常说完的长得一模一样，用户无从判断。
+    //
+    // 取最后一条而不是 some()：prompt.ts 的 finished 判定把 "length" 当作终止原因
+    // （只有 tool-calls / unknown 会继续），所以被截断的那条必然是本轮最后一条 assistant。
+    // 分割线因此画在整段助手输出之后，位置就是话被切断的地方。
+    const truncated = assistantMessages.at(-1)?.finish === "length"
+
     let assistantGroupIndex = 0
     assistantItems.forEach((item) => {
       if (item.type === "interrupted") {
@@ -209,6 +218,15 @@ export namespace Timeline {
       )
       assistantGroupIndex += 1
     })
+
+    if (truncated) {
+      rows.push(
+        new TimelineRow.TurnDivider({
+          userMessageID: userMessage.id,
+          label: "truncated",
+        }),
+      )
+    }
 
     // 260816 Yuqi 兜底：assistant 骨架已进 store（message.updated 先到）但可渲染 parts 未到
     //   （流式生成中 / 切换会话期间 status 缺失）时，原逻辑一行都不渲染 → 回复"凭空消失"。

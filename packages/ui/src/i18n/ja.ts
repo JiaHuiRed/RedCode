@@ -138,6 +138,7 @@ export const dict = {
   "ui.message.copyResponse": "応答をコピー",
   "ui.message.copied": "コピーしました！",
   "ui.message.interrupted": "中断",
+  "ui.message.truncated": "出力が途中で終了（トークン上限に到達）",
   "ui.message.queued": "待機中",
   "ui.message.attachment.alt": "添付ファイル",
 
