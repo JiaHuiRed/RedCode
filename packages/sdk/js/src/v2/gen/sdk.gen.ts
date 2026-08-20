@@ -4480,7 +4480,9 @@ export class Session3 extends HeyApiClient {
   /**
    * Send v2 message
    *
-   * Create a v2 session message and queue it for the agent loop.
+   * NOT IMPLEMENTED — always fails with 503 ServiceUnavailableError; the v2 agent loop was never built. Use POST /session/{sessionID}/message instead.
+   *
+   * @deprecated
    */
   public prompt<ThrowOnError extends boolean = false>(
     parameters: {
@@ -4521,7 +4523,9 @@ export class Session3 extends HeyApiClient {
   /**
    * Compact v2 session
    *
-   * Compact a v2 session conversation.
+   * NOT IMPLEMENTED — always fails with 503 ServiceUnavailableError. Use POST /session/{sessionID}/summarize instead.
+   *
+   * @deprecated
    */
   public compact<ThrowOnError extends boolean = false>(
     parameters: {
@@ -4553,7 +4557,9 @@ export class Session3 extends HeyApiClient {
   /**
    * Wait for v2 session
    *
-   * Wait for a v2 session agent loop to become idle.
+   * NOT IMPLEMENTED — always fails with 503 ServiceUnavailableError; there is no v2 agent loop to wait for.
+   *
+   * @deprecated
    */
   public wait<ThrowOnError extends boolean = false>(
     parameters: {
@@ -4585,7 +4591,9 @@ export class Session3 extends HeyApiClient {
   /**
    * Get v2 session context
    *
-   * Retrieve the active context messages for a v2 session (all messages after the last compaction).
+   * DEPRECATED — reads the session_message projection, which stopped receiving conversation content when the event dual-write was removed in 0.9.2, so this returns an empty array for real sessions. Use GET /session/{sessionID}/context-inspect for what the current request is actually made of.
+   *
+   * @deprecated
    */
   public context<ThrowOnError extends boolean = false>(
     parameters: {
@@ -4617,7 +4625,9 @@ export class Session3 extends HeyApiClient {
   /**
    * Get v2 session messages
    *
-   * Retrieve projected v2 messages for a session. Items keep the requested order across pages; use cursor.next or cursor.previous to move through the ordered timeline.
+   * DEPRECATED — reads the session_message projection, which since 0.9.2 only receives agent/model switch rows; conversation content lives in the legacy message table. Use GET /session/{sessionID}/message instead.
+   *
+   * @deprecated
    */
   public messages<ThrowOnError extends boolean = false>(
     parameters: {

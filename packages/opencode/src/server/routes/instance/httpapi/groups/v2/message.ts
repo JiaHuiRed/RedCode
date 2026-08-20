@@ -24,6 +24,9 @@ export const MessagesQuery = Schema.Struct({
   ),
 }).annotate({ identifier: "V2SessionMessagesQuery" })
 
+// 260820 cc 同 groups/v2/session.ts 里那四个：这个端点读的 session_message 投影自 0.9.2
+// 摘除事件双写后只剩 agent-switched / model-switched 两类行（实测 live 库 782 行里一条
+// 对话都没有），但它的 OpenAPI 文档与 SDK 方法一应俱全。标 deprecated 让调用方一眼看出。
 export const MessageGroup = HttpApiGroup.make("v2.message")
   .add(
     HttpApiEndpoint.get("messages", "/api/session/:sessionID/message", {
@@ -42,7 +45,8 @@ export const MessageGroup = HttpApiGroup.make("v2.message")
         identifier: "v2.session.messages",
         summary: "Get v2 session messages",
         description:
-          "Retrieve projected v2 messages for a session. Items keep the requested order across pages; use cursor.next or cursor.previous to move through the ordered timeline.",
+          "DEPRECATED — reads the session_message projection, which since 0.9.2 only receives agent/model switch rows; conversation content lives in the legacy message table. Use GET /session/{sessionID}/message instead.",
+        deprecated: true,
       }),
     ),
   )

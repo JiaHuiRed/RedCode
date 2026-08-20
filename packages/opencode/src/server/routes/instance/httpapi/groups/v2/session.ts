@@ -63,6 +63,14 @@ export const SessionGroup = HttpApiGroup.make("v2.session")
       }),
     ),
   )
+  // 260820 cc 下面四个端点全部标 deprecated —— 它们有完整的 OpenAPI 文档、有生成好的 SDK
+  // 方法、有类型，唯独**调了什么也拿不到**：prompt/compact/wait 恒抛 ServiceUnavailable
+  // （v2 的 agent loop 从未实现），context 读的 session_message 投影自 0.9.2 摘除双写后
+  // 不再收到对话内容。这种「看起来能用、调了是空的」比端点不存在更坑，08-20 我自己就是
+  // 照它们的文档下的判断。
+  //
+  // 标记而不是删除：specs/v2/api.ts 描述的目标 API 恰好就是这几个，删掉等于把「备将来」
+  // 那条路的桩一起拆了。去留是独立决定，见 docs/parallel-systems-plan.md。
   .add(
     HttpApiEndpoint.post("prompt", "/api/session/:sessionID/prompt", {
       params: { sessionID: SessionID },
@@ -77,7 +85,9 @@ export const SessionGroup = HttpApiGroup.make("v2.session")
       OpenApi.annotations({
         identifier: "v2.session.prompt",
         summary: "Send v2 message",
-        description: "Create a v2 session message and queue it for the agent loop.",
+        description:
+          "NOT IMPLEMENTED — always fails with 503 ServiceUnavailableError; the v2 agent loop was never built. Use POST /session/{sessionID}/message instead.",
+        deprecated: true,
       }),
     ),
   )
@@ -91,7 +101,9 @@ export const SessionGroup = HttpApiGroup.make("v2.session")
       OpenApi.annotations({
         identifier: "v2.session.compact",
         summary: "Compact v2 session",
-        description: "Compact a v2 session conversation.",
+        description:
+          "NOT IMPLEMENTED — always fails with 503 ServiceUnavailableError. Use POST /session/{sessionID}/summarize instead.",
+        deprecated: true,
       }),
     ),
   )
@@ -105,7 +117,9 @@ export const SessionGroup = HttpApiGroup.make("v2.session")
       OpenApi.annotations({
         identifier: "v2.session.wait",
         summary: "Wait for v2 session",
-        description: "Wait for a v2 session agent loop to become idle.",
+        description:
+          "NOT IMPLEMENTED — always fails with 503 ServiceUnavailableError; there is no v2 agent loop to wait for.",
+        deprecated: true,
       }),
     ),
   )
@@ -119,7 +133,9 @@ export const SessionGroup = HttpApiGroup.make("v2.session")
       OpenApi.annotations({
         identifier: "v2.session.context",
         summary: "Get v2 session context",
-        description: "Retrieve the active context messages for a v2 session (all messages after the last compaction).",
+        description:
+          "DEPRECATED — reads the session_message projection, which stopped receiving conversation content when the event dual-write was removed in 0.9.2, so this returns an empty array for real sessions. Use GET /session/{sessionID}/context-inspect for what the current request is actually made of.",
+        deprecated: true,
       }),
     ),
   )

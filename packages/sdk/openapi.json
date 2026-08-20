@@ -8659,8 +8659,9 @@
             }
           }
         },
-        "description": "Create a v2 session message and queue it for the agent loop.",
+        "description": "NOT IMPLEMENTED — always fails with 503 ServiceUnavailableError; the v2 agent loop was never built. Use POST /session/{sessionID}/message instead.",
         "summary": "Send v2 message",
+        "deprecated": true,
         "requestBody": {
           "content": {
             "application/json": {
@@ -8765,8 +8766,9 @@
             }
           }
         },
-        "description": "Compact a v2 session conversation.",
+        "description": "NOT IMPLEMENTED — always fails with 503 ServiceUnavailableError. Use POST /session/{sessionID}/summarize instead.",
         "summary": "Compact v2 session",
+        "deprecated": true,
         "x-codeSamples": [
           {
             "lang": "js",
@@ -8852,8 +8854,9 @@
             }
           }
         },
-        "description": "Wait for a v2 session agent loop to become idle.",
+        "description": "NOT IMPLEMENTED — always fails with 503 ServiceUnavailableError; there is no v2 agent loop to wait for.",
         "summary": "Wait for v2 session",
+        "deprecated": true,
         "x-codeSamples": [
           {
             "lang": "js",
@@ -8949,8 +8952,9 @@
             }
           }
         },
-        "description": "Retrieve the active context messages for a v2 session (all messages after the last compaction).",
+        "description": "DEPRECATED — reads the session_message projection, which stopped receiving conversation content when the event dual-write was removed in 0.9.2, so this returns an empty array for real sessions. Use GET /session/{sessionID}/context-inspect for what the current request is actually made of.",
         "summary": "Get v2 session context",
+        "deprecated": true,
         "x-codeSamples": [
           {
             "lang": "js",
@@ -9076,8 +9080,9 @@
             }
           }
         },
-        "description": "Retrieve projected v2 messages for a session. Items keep the requested order across pages; use cursor.next or cursor.previous to move through the ordered timeline.",
+        "description": "DEPRECATED — reads the session_message projection, which since 0.9.2 only receives agent/model switch rows; conversation content lives in the legacy message table. Use GET /session/{sessionID}/message instead.",
         "summary": "Get v2 session messages",
+        "deprecated": true,
         "x-codeSamples": [
           {
             "lang": "js",

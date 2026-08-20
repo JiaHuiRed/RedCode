@@ -136,8 +136,56 @@ tool-error-card / line-comment / basic-tool 各 0
   对任何真实会话都返回空数组。它在 openapi 里、SDK 里都有，只是**答案是空的**。
 - 替代品已落地：`GET /session/:sessionID/context-inspect`（`session/context-snapshot.ts`），
   在请求真正发出的那一刻记账，不依赖 `session_message`。
-- **未决**：那个空壳端点的去留。要么让它改读旧 `message` 表重建，要么删掉——两条都是独立
-  决定，没混进 08-20 那次改动。删之前注意它是 `/v2` 路由组的一员，动它等于动整组的存废。
+### `/v2` 路由组体检（2026-08-20）
+
+9 个操作，**零调用方**（`client.v2.` 全仓搜遍 app / TUI / desktop / ui / vscode-sdk 无命中；
+`SessionV2.list` 里那句 `This is a load bearing sort, desktop relies on this` 是上游带来的，
+在本仓不成立）：
+
+| 端点 | 实现 | 状态 |
+| --- | --- | --- |
+| `GET /api/session` | 读真 `session` 表 | 能用 |
+| `GET /api/model` · `/api/provider` · `/api/provider/{id}` | 读真 Catalog / provider | 能用 |
+| `GET /api/session/{id}/message` · `/context` | 读 `session_message` 投影 | **空壳** |
+| `POST /api/session/{id}/prompt` · `/compact` · `/wait` | 恒抛 `OperationUnavailableError` | **恒 503** |
+
+**判决：标 `deprecated` 而不是删。** 后五个已加 `deprecated: true` + 说明「未实现 / 返回空 +
+替代端点」，生成的 SDK 方法带 `@deprecated`，编辑器里直接划掉。理由是 `specs/v2/api.ts` 描述
+的目标 API 恰好就是 `prompt` / `wait` / `messages`——删掉等于把「备将来」那条路的桩拆了，而
+那是独立决定。
+
+删除（B：删五个端点 / A：删整组）的实际代价，调研时量过，比直观印象大：
+
+- 源码 6 文件（2 个整删）；测试**4 个**文件，不是 1 个：`httpapi-exercise`（8 个场景）、
+  `httpapi-public-openapi`（3 行断言）、`httpapi-query-schema-drift`（**import 了
+  `groups/v2/message`，删文件就是编译错误**）、`httpapi-session`（19 个 `/api/session` 调用点
+  里 14 个要删，外加两个只服务于它们的 fixture）。
+- 好消息：Effect 的 HttpApi **双向类型强制配对**，实测删一半编译不过
+  （删 endpoint 留 handler → `'"context"' is not assignable to parameter of type 'never'`；
+  删 handler 留 endpoint → `Type ... is not assignable to type '"Endpoint not handled: context"'`）。
+  半成品不可能静默上线。
+- `@redcode-ai/sdk` **npm 上不存在**（实测 404），删端点没有外部消费者要顾。
+- 因为 4 个测试文件反正都要动，A 相对 B 的边际成本比想象中小（14 vs 19 个调用点）。
+
+### ⚠️ 删之前必读：`projectors-next.ts` 不是死代码
+
+它看着像「v2 遗留」，实际**是会话创建之后唯一更新 `SessionTable.agent` / `SessionTable.model`
+的地方**（`projectors-next.ts:123-142`）。链条是分叉的：
+
+```
+prompt.ts publish Agent/ModelSwitched
+     └→ projectors-next
+          ├→ update SessionTable.agent/model   ← 活的、承重（会话列表靠它显示当前 agent/模型）
+          └→ insert session_message 行          ← 死的（只有 SessionV2 读，无调用方）
+```
+
+实测：有 ≥2 次 agent 切换的会话，`session.agent` 等于最后一次切换值而非创建值。**整块删掉
+会让会话列表的 agent/模型静默冻结在创建时的值，而且没有任何测试会红。**
+
+另一个容易误读的地方：`httpapi-session.test.ts` 的 `insertLegacyAssistantMessage` 名字像
+「从旧 message 表读」，实际是**直接往 `session_message` 插一行**，模拟被摘掉的双写。那些测试
+证明的是「读代码能跑」，不是「端点有数据」——它们全部用 `ses_httpapi_missing` 断言 404/400，
+或者自己造数据；exercise 里 8 个 v2 场景没有一个走过成功路径。
 
 ---
 
