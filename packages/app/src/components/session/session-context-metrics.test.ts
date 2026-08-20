@@ -142,6 +142,16 @@ describe("上下文窗口口径", () => {
     expect(m.usage).toBeNull()
   })
 
+  // 260819 cc 档位由服务端算好随消息发来，metrics 只负责透传（GUI 的圈按它着色，纯装饰）
+  test("level 透传自最后一条 assistant 的 contextLevel", () => {
+    const withLevel = { ...(withContext("a", 40_000, 10_000) as any), contextLevel: "prune" }
+    expect(getSessionContextMetrics([withLevel], providers).context!.level).toBe("prune")
+  })
+
+  test("历史消息没有 contextLevel 时 level 为空（圈保持默认色）", () => {
+    expect(getSessionContextMetrics([withContext("a", 40_000, 10_000)], providers).context!.level).toBeUndefined()
+  })
+
   test("窗口数缺失时 usage 为空但 window 仍给出", () => {
     const noLimit = [{ id: "openai", models: { "gpt-4.1": { limit: {} } } }] as any[]
     const m = getSessionContextMetrics([withContext("a", 40_000, 10_000)], noLimit).context!

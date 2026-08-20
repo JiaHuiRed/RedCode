@@ -44,3 +44,14 @@
 - 测试：`sidebar-context.test.ts` 的颜色用例按新语义重写（四档颜色互不相同 / 档位缺失或不认识时回落 ok 且不报错），替换掉原来断言 60/85 门槛的那条。`overflow.ts` 本身没动，其 11 个档位边界用例照旧。
 - 历史消息没有 `contextLevel` → 回落到 `ok` 的绿色，发一轮新消息即校正。
 - 顺带记一笔：同批讨论过把 DCP 的三档提醒砍到只留紧急档（`inject.ts` 里 `overMaxLimit` / `else if (overMinLimit)` 本就是互斥两支，砍法干净），哥哥决定**保留三档不动**。
+
+## GUI 侧（同日追加）
+
+哥哥明确了这个颜色是**锦上添花**——"我可能不一定严格按照颜色区间 compress，纯粹是前端好看"。所以 GUI 侧按最小改动做，不为它引入任何新机制：
+
+- **共享组件一行没改**。`progress-circle.css` 本来就是 `stroke: var(--progress-circle-progress, var(--border-active))` 的可覆盖写法，调用方传 `style` 即可。
+- `session-context-metrics.ts` 只做透传（`level: message.contextLevel`），计算仍在服务端。
+- **GUI 收成三档，TUI 是四档。** 原因：v2 的语义色只有 `success/warning/danger/info`，**没有橙色的 state token**。有 `--v2-orange-*` 调色板，但那是原始色阶、不分亮暗（`state-fg-*` 是亮色用 `-800`、暗色用 `-500` 两套），直接用会在暗色主题下发错。为一个装饰功能新增一对设计 token 不划算，于是 `soft` 与 `prune` 合并为 warning：**黄 = 廉价手段已在生效，红 = 正在全量压缩**。
+- `ok` 档**不覆盖**变量，保持组件默认的 `--border-active` —— 没事发生时圈就该是平时的样子。
+
+如果哪天真要四档对齐，正确做法是补一对 `--v2-state-fg-caution`（亮 `orange-800` / 暗 `orange-500`），而不是在调用点写死颜色。

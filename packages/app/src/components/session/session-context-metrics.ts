@@ -35,6 +35,8 @@ type Context = {
   window: number | undefined
   /** 上下文窗口占用率 = window / limit。窗口数缺失时为 null */
   usage: number | null
+  /** 引擎判定的压缩档位（服务端算好随消息发来）。历史消息无此字段时 undefined */
+  level: AssistantMessage["contextLevel"]
 }
 
 type Metrics = {
@@ -160,6 +162,7 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
       // 改用 tokens.context（最后一条 assistant 那一刻的提示词总量，processor 里覆盖不累加）。
       // 历史消息没有这个字段 → window/usage 都是空，UI 侧不显示，等下一轮请求写入。
       window,
+      level: message.contextLevel,
       usage: window !== undefined && limit ? Math.round((window / limit) * 100) : null,
     },
   }

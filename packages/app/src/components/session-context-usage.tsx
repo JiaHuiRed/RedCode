@@ -83,9 +83,31 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
     })
   }
 
+  // 260819 cc 进度圈按引擎判定的档位着色。纯装饰——哥哥明确说不会严格照它决定压缩时机，
+  // 所以不为它引入任何新机制：progress-circle.css 本来就是 var(--progress-circle-progress, …)
+  // 的可覆盖写法，调用方传 style 即可，共享组件一行不用改。
+  //
+  // TUI 侧是四档（ok/soft/prune/compact），GUI 收成三档：v2 的语义色只有
+  // success/warning/danger/info，没有橙色的 state token（有 --v2-orange-* 调色板，但那是
+  // 原始色阶、不分亮暗，直接用会在暗色主题下发错）。为一个装饰功能新增一对设计 token
+  // 不划算，所以 soft 与 prune 合并成 warning：黄=廉价手段已在生效，红=正在全量压缩。
+  const LEVEL_STROKE: Record<string, string> = {
+    soft: "var(--v2-state-fg-warning)",
+    prune: "var(--v2-state-fg-warning)",
+    compact: "var(--v2-state-fg-danger)",
+  }
   const circle = () => (
     <div class="flex items-center justify-center">
-      <ProgressCircle size={16} strokeWidth={2} percentage={context()?.usage ?? 0} />
+      <ProgressCircle
+        size={16}
+        strokeWidth={2}
+        percentage={context()?.usage ?? 0}
+        style={(() => {
+          const stroke = LEVEL_STROKE[context()?.level ?? ""]
+          // ok 档不覆盖，保持组件默认的 --border-active —— 没事发生时圈就该是平时的样子
+          return stroke ? { "--progress-circle-progress": stroke } : undefined
+        })()}
+      />
     </div>
   )
 
