@@ -15,7 +15,6 @@ import { Config } from "@/config/config"
 import { Shell } from "@/shell/shell"
 import { ShellID } from "@/tool/shell/id"
 import { InstanceState } from "@/effect/instance-state"
-import { RuntimeFlags } from "@/effect/runtime-flags"
 import { NamedError } from "@redcode-ai/core/util/error"
 import type { ShellInput } from "../prompt"
 
@@ -25,12 +24,11 @@ export function makeShell(deps: {
   agents: Context.Service.Shape<typeof Agent.Service>
   bus: Context.Service.Shape<typeof Bus.Service>
   config: Context.Service.Shape<typeof Config.Service>
-  flags: Context.Service.Shape<typeof RuntimeFlags.Service>
   plugin: Context.Service.Shape<typeof Plugin.Service>
   spawner: ChildProcessSpawner.ChildProcessSpawner["Service"]
   currentModel: (sessionID: SessionID) => Effect.Effect<{ providerID: ProviderID; modelID: ModelID; variant?: string }>
 }) {
-  const { sessions, revert, agents, bus, config, flags, plugin, spawner, currentModel } = deps
+  const { sessions, revert, agents, bus, config, plugin, spawner, currentModel } = deps
 
   const shellImpl = Effect.fn("SessionPrompt.shellImpl")(function* (input: ShellInput, ready?: Latch.Latch) {
     return yield* Effect.uninterruptibleMask((restore) =>

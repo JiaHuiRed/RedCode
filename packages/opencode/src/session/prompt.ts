@@ -24,7 +24,7 @@ import { ToolRegistry } from "@/tool/registry"
 import { MCP } from "../mcp"
 import { LSP } from "@/lsp/lsp"
 import { ulid } from "ulid"
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
+import { ChildProcessSpawner } from "effect/unstable/process"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 import * as Stream from "effect/Stream"
 import { Command } from "../command"
@@ -40,7 +40,6 @@ import { Permission } from "@/permission"
 import { SessionStatus } from "./status"
 import { LLM } from "./llm"
 import { Shell } from "@/shell/shell"
-import { ShellID } from "@/tool/shell/id"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Truncate } from "@/tool/truncate"
 import { Image } from "@/image/image"
@@ -59,13 +58,12 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { SessionEvent } from "@redcode-ai/core/session-event"
 import { ModelV2 } from "@redcode-ai/core/model"
 import { ProviderV2 } from "@redcode-ai/core/provider"
-import { AgentAttachment, FileAttachment, ReferenceAttachment, Source } from "@redcode-ai/core/session-prompt"
 import { Reference } from "@/reference/reference"
 import * as DateTime from "effect/DateTime"
 import { eq } from "@/storage/db"
 import * as Database from "@/storage/db"
 import { SessionTable } from "./session.sql"
-import { referencePromptMetadata, referenceTextPart } from "./prompt/reference"
+import { referenceTextPart } from "./prompt/reference"
 import { sessionSourceLabel, makeShared } from "./prompt/shared"
 import { makeShell } from "./prompt/shell"
 import { SessionReminders } from "./reminders"
@@ -571,7 +569,6 @@ export const layer = Layer.effect(
       agents,
       bus,
       config,
-      flags,
       plugin,
       spawner,
       currentModel,
@@ -1004,75 +1001,12 @@ export const layer = Layer.effect(
 
       yield* sessions.updateMessage(info)
       for (const part of parts) yield* sessions.updatePart(part)
-      const nextPrompt = parts.reduce(
-        (result, part) => {
-          if (part.type === "text") {
-            if (part.synthetic) result.synthetic.push(part.text)
-            else result.text.push(part.text)
-            const reference = referencePromptMetadata(part.metadata?.reference)
-            if (reference) {
-              result.references.push(
-                new ReferenceAttachment({
-                  name: reference.name,
-                  kind: reference.kind,
-                  uri: reference.path ? pathToFileURL(reference.path).href : undefined,
-                  repository: reference.repository,
-                  branch: reference.branch,
-                  target: reference.target,
-                  targetUri: reference.targetPath ? pathToFileURL(reference.targetPath).href : undefined,
-                  problem: reference.problem,
-                  source: new Source({
-                    start: reference.source.start,
-                    end: reference.source.end,
-                    text: reference.source.value,
-                  }),
-                }),
-              )
-            }
-          }
-          if (part.type === "file") {
-            result.files.push(
-              new FileAttachment({
-                uri: part.url,
-                mime: part.mime,
-                name: part.filename,
-                source: part.source
-                  ? new Source({
-                      start: part.source.text.start,
-                      end: part.source.text.end,
-                      text: part.source.text.value,
-                    })
-                  : undefined,
-              }),
-            )
-          }
-          if (part.type === "agent") {
-            result.agents.push(
-              new AgentAttachment({
-                name: part.name,
-                source: part.source
-                  ? new Source({
-                      start: part.source.start,
-                      end: part.source.end,
-                      text: part.source.value,
-                    })
-                  : undefined,
-              }),
-            )
-          }
-          return result
-        },
-        {
-          text: [] as string[],
-          files: [] as FileAttachment[],
-          agents: [] as AgentAttachment[],
-          references: [] as ReferenceAttachment[],
-          synthetic: [] as string[],
-        },
-      )
-      for (const text of nextPrompt.synthetic) {
-      }
-
+      // 260820 cc 这里原本有一段 66 行的 reduce，把 parts 归并成 text/files/agents/references/
+      // synthetic 五个数组，专供 688c31cf 摘掉的那两处 events.publish(SessionEvent.Prompted /
+      // Synthetic)。那次是脚本化摘除、护栏只认「块内必须是 events.publish(SessionEvent」，
+      // 于是精准删掉了 if 块，喂数据的 66 行连同一个空掉的 `for (const text of
+      // nextPrompt.synthetic) {}` 一起留了下来。tsc 抓不到：nextPrompt 确实「被读了」，
+      // 死在下一层。要恢复事件发布的话去 git 里取 688c31cf 的父版本，别照着重写。
       return { info, parts }
     }, Effect.scoped)
 

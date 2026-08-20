@@ -23,8 +23,6 @@ import { Question } from "@/question"
 import { errorMessage } from "@/util/error"
 import * as Log from "@redcode-ai/core/util/log"
 import { isRecord } from "@/util/record"
-import { ModelV2 } from "@redcode-ai/core/model"
-import { ProviderV2 } from "@redcode-ai/core/provider"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Usage, type LLMEvent } from "@redcode-ai/llm"
 import { NgramDetector, RECOVERY_PROMPTS } from "./text-loop-detection"
@@ -58,7 +56,6 @@ export interface Handle {
       attachments?: MessageV2.FilePart[]
     },
   ) => Effect.Effect<void>
-  // 260709 Red fix: Snippet.Service 在 construction 时获取（line 107），process 不再泄漏到 R channel
   readonly process: (streamInput: LLM.StreamInput) => Effect.Effect<Result>
   // 260728 Red 上一次 process() 从正文/思考链里打捞出的文本态工具调用（见 xml-tool-call.ts）
   readonly salvagedToolCalls: readonly XmlToolCall.ParsedCall[]
@@ -128,9 +125,6 @@ export const layer = Layer.effect(
     const scope = yield* Scope.Scope
     const status = yield* SessionStatus.Service
     const image = yield* Image.Service
-    const flags = yield* RuntimeFlags.Service
-    // 260708 Red acquire snippet service at construction so cleanup captures it (keeps Handle.process R = never)
-    const snippetService = yield* Snippet.Service
 
     const create = Effect.fn("SessionProcessor.create")(function* (input: Input) {
       // Pre-capture snapshot before the LLM stream starts. The AI SDK
@@ -611,7 +605,9 @@ export const layer = Layer.effect(
           }
 
           case "tool-error": {
-            const toolCall = yield* readToolCall(value.id)
+            // readToolCall 的返回值这里用不上，但它在 part 已不存在时会清掉 ctx.toolcalls，
+            // 那个副作用要保留 —— 所以摘的是绑定不是调用
+            yield* readToolCall(value.id)
             yield* failToolCall(value.id, value.error ?? new Error(value.message))
             return
           }
@@ -1002,6 +998,8 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Config.defaultLayer),
     Layer.provide(RuntimeFlags.defaultLayer),
     // 260708 Red wire Snippet.Service required by cleanup's snippet clear
+    // 260820 cc 那个 construction 时获取 Snippet.Service 的写法已随双写摘除一起没了消费者，
+    // 本文件不再 yield 它；这一层留着是因为下游（工具链）仍可能要求它，摘层是另一件事。
     Layer.provide(Snippet.defaultLayer),
   ),
 )

@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Schema } from "effect"
 import { MessageV2 } from "../message-v2"
 import { Reference } from "@/reference/reference"
 
@@ -20,12 +20,6 @@ export const ReferencePromptMetadata = Schema.Struct({
   source: Source,
 })
 export type ReferencePromptMetadata = typeof ReferencePromptMetadata.Type
-
-const decodeReferencePromptMetadata = Schema.decodeUnknownOption(ReferencePromptMetadata)
-
-export function referencePromptMetadata(input: unknown) {
-  return Option.getOrUndefined(decodeReferencePromptMetadata(input))
-}
 
 export function referenceTextPart(input: {
   reference: Reference.Resolved
