@@ -354,8 +354,8 @@ export type Goal = {
    */
   text: string
   status: "active" | "done" | "cleared" | "blocked" | "budget_limited"
-  tokens_used: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  turn_count: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  tokens_used: number
+  turn_count: number
 }
 
 export type SessionStatus =
@@ -2066,16 +2066,6 @@ export type WorkspaceWarpError = {
   data: {
     message: string
   }
-}
-
-export type Goal1 = {
-  /**
-   * The pinned session goal
-   */
-  text: string
-  status: "active" | "done" | "cleared" | "blocked" | "budget_limited"
-  tokens_used: number | "NaN" | "Infinity" | "-Infinity"
-  turn_count: number | "NaN" | "Infinity" | "-Infinity"
 }
 
 export type SyncEventMessageUpdated = {
@@ -6498,6 +6488,40 @@ export type SessionTodoResponses = {
 }
 
 export type SessionTodoResponse = SessionTodoResponses[keyof SessionTodoResponses]
+
+export type SessionGoalData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/goal"
+}
+
+export type SessionGoalErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionGoalError = SessionGoalErrors[keyof SessionGoalErrors]
+
+export type SessionGoalResponses = {
+  /**
+   * The pinned session goal
+   */
+  200: Goal
+}
+
+export type SessionGoalResponse = SessionGoalResponses[keyof SessionGoalResponses]
 
 export type SessionContextInspectData = {
   body?: never

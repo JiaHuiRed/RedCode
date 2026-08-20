@@ -181,6 +181,7 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
   const inflight = new Map<string, Promise<void>>()
   const inflightDiff = new Map<string, Promise<void>>()
   const inflightTodo = new Map<string, Promise<void>>()
+  const inflightGoal = new Map<string, Promise<void>>()
   const optimistic = new Map<string, Map<string, OptimisticItem>>()
   const maxDirs = 30
   const seen = new Map<string, Set<string>>()
@@ -524,6 +525,26 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
             setStore("todo", sessionID, reconcile(list, { key: "id" }))
             globalSync.todo.set(sessionID, list)
           }),
+        )
+      },
+      // 260820 cc 钉住的目标。跟 todo 同一个触发点（会话切换），但不进 globalSync 的
+      // 跨目录缓存——它是单个小对象，缓存省不下什么，而缓存层每多一个键就多一处要
+      // 跟着 evict/trim 走的东西。没钉目标时服务端 404，按「没有」写回，不是错误。
+      async goal(sessionID: string) {
+        const [, setStore] = globalSync.child(directory)
+        touch(directory, setStore, sessionID)
+        const key = keyFor(directory, sessionID)
+        return runInflight(inflightGoal, key, () =>
+          client.session
+            .goal({ sessionID })
+            .then((goal) => {
+              if (!tracked(directory, sessionID)) return
+              setStore("goal", sessionID, goal.data ?? undefined)
+            })
+            .catch(() => {
+              if (!tracked(directory, sessionID)) return
+              setStore("goal", sessionID, undefined)
+            }),
         )
       },
       history: {

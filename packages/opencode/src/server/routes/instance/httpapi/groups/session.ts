@@ -3,6 +3,7 @@ import { PermissionID } from "@/permission/schema"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { Session } from "@/session/session"
 import { ContextSnapshot } from "@/session/context-snapshot"
+import { Goal } from "@/session/goal"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionPrompt } from "@/session/prompt"
 import { SessionRevert } from "@/session/revert"
@@ -94,6 +95,7 @@ export const SessionPaths = {
   // 它读的 session_message 表在摘除双写后不再有对话内容，是个空壳。名字撞上只会让人以为
   // 是同一个东西的两个版本。
   contextInspect: `${root}/:sessionID/context-inspect`,
+  goal: `${root}/:sessionID/goal`,
   diff: `${root}/:sessionID/diff`,
   messages: `${root}/:sessionID/message`,
   message: `${root}/:sessionID/message/:messageID`,
@@ -178,6 +180,19 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.todo",
             summary: "Get session todos",
             description: "Retrieve the todo list associated with a specific session, showing tasks and action items.",
+          }),
+        ),
+        HttpApiEndpoint.get("goal", SessionPaths.goal, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(Goal.Info, "The pinned session goal"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.goal",
+            summary: "Get session goal",
+            description:
+              "Retrieve the goal pinned to this session, with its status and the budget consumed so far. Returns 404 when no goal is pinned.",
           }),
         ),
         HttpApiEndpoint.get("contextInspect", SessionPaths.contextInspect, {

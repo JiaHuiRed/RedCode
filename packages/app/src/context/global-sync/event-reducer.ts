@@ -11,6 +11,7 @@ import type {
   SessionStatus,
   SnapshotFileDiff,
   Todo,
+  Goal,
 } from "@redcode-ai/sdk/v2/client"
 import type { State, VcsCache } from "./types"
 import { trimSessions } from "./session-trim"
@@ -228,6 +229,13 @@ export function applyDirectoryEvent(input: {
       const props = event.properties as { sessionID: string; todos: Todo[] }
       input.setStore("todo", props.sessionID, reconcile(props.todos, { key: "id" }))
       input.setSessionTodo?.(props.sessionID, props.todos)
+      break
+    }
+    // 260820 cc goal 被清掉时 properties.goal 是 undefined —— 直接写进去，面板随之收起。
+    // 不走 reconcile：整条对象要么在要么不在，没有需要保 key 的列表。
+    case "goal.updated": {
+      const props = event.properties as { sessionID: string; goal?: Goal }
+      input.setStore("goal", props.sessionID, props.goal)
       break
     }
     case "session.status": {

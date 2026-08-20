@@ -30,6 +30,7 @@ describe("bootstrapDirectory", () => {
       },
       session_diff: {},
       todo: {},
+      goal: {},
       permission: {},
       question: {},
       mcp_ready: true,

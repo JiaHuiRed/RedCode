@@ -72,7 +72,8 @@ export const layer = Layer.effect(
           .pipe(Effect.catch(() => Effect.succeed(undefined)))
         if (message === undefined) return // 260801 Red 注入失败（Image.Error 等）跳过本次续跑
         lastSteer.set(sessionID, message.info.id)
-        yield* goal.mark(sessionID, "budget_limited")
+        // 同上的复制粘贴：mark 是幂等的（写同一个 status），重复调没有后果，但留着
+        // 只会让下一个读到这里的人怀疑自己漏了什么。
         yield* goal.mark(sessionID, "budget_limited")
         yield* bus.publish(TuiEvent.ToastShow, {
           title: "目标预算用尽",
@@ -103,7 +104,10 @@ export const layer = Layer.effect(
         .pipe(Effect.catch(() => Effect.succeed(undefined)))
       if (message === undefined) return // 260801 Red 注入失败（Image.Error 等）跳过本次续跑
       lastSteer.set(sessionID, message.info.id)
-      yield* goal.tick(sessionID)
+      // 260820 cc 原来这里连着调了两次 tick。tick 是无条件 `turn_count + 1`（goal.ts:142），
+      // 不是幂等的——每次自动续跑把计数推进 2，MAX_GOAL_TURNS=20 实际只跑 10 轮就停。
+      // 21e1f71b 初次落地时就是两行，是复制粘贴留下的。做 goal 面板时要显示「第 N/20 轮」，
+      // 这个数必须先诚实。
       yield* goal.tick(sessionID)
       yield* bus.publish(TuiEvent.ToastShow, {
         title: "目标自动续跑",

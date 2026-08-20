@@ -3,6 +3,7 @@ import HomeTips from "../feature-plugins/home/tips"
 import SidebarContext from "../feature-plugins/sidebar/context"
 import SidebarMcp from "../feature-plugins/sidebar/mcp"
 import SidebarLsp from "../feature-plugins/sidebar/lsp"
+import SidebarGoal from "../feature-plugins/sidebar/goal"
 import SidebarTodo from "../feature-plugins/sidebar/todo"
 import SidebarFiles from "../feature-plugins/sidebar/files"
 import SidebarFooter from "../feature-plugins/sidebar/footer"
@@ -27,6 +28,7 @@ export function internalTuiPlugins(flags: Pick<RuntimeFlags.Info, "diffViewer">)
     SidebarContext,
     SidebarMcp,
     SidebarLsp,
+    SidebarGoal,
     SidebarTodo,
     SidebarFiles,
     SidebarFooter,

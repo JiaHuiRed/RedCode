@@ -900,6 +900,24 @@ const scenarios: Scenario[] = [
       check(stable(body) === stable(ctx.state.todos), "todos should match seeded state")
     }),
   http.protected
+    .get("/session/{sessionID}/goal", "session.goal")
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const session = yield* ctx.session({ title: "Goal session" })
+        yield* ctx.goal({ sessionID: session.id, text: "ship the goal panel" })
+        return session
+      }),
+    )
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/goal", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      check(isRecord(body) && body.text === "ship the goal panel", "goal text should match seeded state")
+      check(isRecord(body) && body.status === "active", "a freshly pinned goal should be active")
+      check(isRecord(body) && body.turn_count === 0 && body.tokens_used === 0, "budget counters start at zero")
+    }),
+  http.protected
     .get("/session/{sessionID}/context-inspect", "session.contextInspect")
     .seeded((ctx) =>
       Effect.gen(function* () {

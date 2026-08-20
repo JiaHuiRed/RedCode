@@ -13,6 +13,7 @@ import type {
   SessionStatus,
   SnapshotFileDiff,
   Todo,
+  Goal,
   VcsInfo,
 } from "@redcode-ai/sdk/v2/client"
 import { NormalizedProviderListResponse } from "@redcode-ai/ui/context"
@@ -54,6 +55,10 @@ export type State = {
   }
   todo: {
     [sessionID: string]: Todo[]
+  }
+  // 260820 cc 钉住的目标。一个会话至多一个，没钉时整条不存在（服务端 404）
+  goal: {
+    [sessionID: string]: Goal | undefined
   }
   permission: {
     [sessionID: string]: PermissionRequest[]

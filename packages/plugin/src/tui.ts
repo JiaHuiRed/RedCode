@@ -6,6 +6,7 @@ import type {
   LspStatus,
   McpStatus,
   Todo,
+  Goal,
   Message,
   Part,
   Provider,
@@ -281,12 +282,7 @@ export type TuiAttentionNotifyInput = {
 }
 
 export type TuiAttentionNotifySkipReason =
-  | "attention_disabled"
-  | "empty_message"
-  | "blurred"
-  | "focused"
-  | "focus_unknown"
-  | "renderer_destroyed"
+  "attention_disabled" | "empty_message" | "blurred" | "focused" | "focus_unknown" | "renderer_destroyed"
 
 export type TuiAttentionNotifyResult = {
   ok: boolean
@@ -389,6 +385,7 @@ export type TuiState = {
     get: (sessionID: string) => Session | undefined
     diff: (sessionID: string) => ReadonlyArray<TuiSidebarFileItem>
     todo: (sessionID: string) => ReadonlyArray<TuiSidebarTodoItem>
+    goal: (sessionID: string) => Goal | undefined
     messages: (sessionID: string) => ReadonlyArray<Message>
     status: (sessionID: string) => SessionStatus | undefined
     permission: (sessionID: string) => ReadonlyArray<PermissionRequest>

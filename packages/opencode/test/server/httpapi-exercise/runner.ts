@@ -44,7 +44,8 @@ function runAuth(scenario: ActiveScenario) {
   return Effect.gen(function* () {
     const result = yield* callAuthProbe(scenario, "missing")
     if (scenario.auth === "protected") {
-      if (result.status !== 401) throw new Error(`auth expected 401, got ${result.status}: ${result.text.slice(0, 400)}`)
+      if (result.status !== 401)
+        throw new Error(`auth expected 401, got ${result.status}: ${result.text.slice(0, 400)}`)
       const authed = yield* callAuthProbe(scenario, "valid")
       if (authed.status === 401) throw new Error("auth rejected valid credentials")
       return
@@ -171,6 +172,15 @@ function withContext<A, E>(
           messages: (sessionID) =>
             run(modules.Session.Service.use((svc) => svc.messages({ sessionID }).pipe(Effect.orDie))),
           todos: (sessionID, todos) => run(modules.Todo.Service.use((svc) => svc.update({ sessionID, todos }))),
+          // Goal 不在 AppLayer 里（只有 GoalContinuation 在，且它把 Goal 私有地 provide 掉了），
+          // HTTP 侧是 server.ts 自己那份 layer 列表在提供。种子路径单独补一层即可，
+          // 不为测试改动生产接线。
+          goal: (input) =>
+            modules.Goal.Service.use((svc) => svc.set(input)).pipe(
+              Effect.provide(modules.Goal.defaultLayer),
+              Effect.provideService(modules.InstanceRef, instance),
+              Effect.provide(modules.AppLayer),
+            ),
           worktree: (input) => run(modules.Worktree.Service.use((svc) => svc.create(input).pipe(Effect.orDie))),
           worktreeRemove: (directory) =>
             run(modules.Worktree.Service.use((svc) => svc.remove({ directory })).pipe(Effect.ignore)),

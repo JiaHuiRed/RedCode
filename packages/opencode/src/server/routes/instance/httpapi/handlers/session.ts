@@ -7,6 +7,7 @@ import { PermissionID } from "@/permission/schema"
 import { SessionShare } from "@/share/session"
 import { Session } from "@/session/session"
 import { ContextSnapshot } from "@/session/context-snapshot"
+import { Goal } from "@/session/goal"
 import { SessionCompaction } from "@/session/compaction"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionPrompt } from "@/session/prompt"
@@ -57,6 +58,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const permissionSvc = yield* Permission.Service
     const statusSvc = yield* SessionStatus.Service
     const todoSvc = yield* Todo.Service
+    const goalSvc = yield* Goal.Service
     const summary = yield* SessionSummary.Service
     const bus = yield* Bus.Service
     const scope = yield* Scope.Scope
@@ -94,6 +96,16 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const todo = Effect.fn("SessionHttpApi.todo")(function* (ctx: { params: { sessionID: SessionID } }) {
       yield* requireSession(ctx.params.sessionID)
       return yield* todoSvc.get(ctx.params.sessionID)
+    })
+
+    const goal = Effect.fn("SessionHttpApi.goal")(function* (ctx: { params: { sessionID: SessionID } }) {
+      yield* requireSession(ctx.params.sessionID)
+      const pinned = yield* goalSvc.get(ctx.params.sessionID)
+      // 大多数会话没钉目标，这里 404 是常态而不是异常。不返回一个 status:"cleared" 的空壳：
+      // 「没钉过」和「钉过又清掉」在自动续跑那边是两回事（后者的 turn_count/tokens_used 仍在），
+      // 用一个假对象抹平会让 UI 把从没设过目标的会话画成「目标已清除」。
+      if (!pinned) return yield* notFound(`No goal pinned for session ${ctx.params.sessionID}`)
+      return pinned
     })
 
     const contextInspect = Effect.fn("SessionHttpApi.contextInspect")(function* (ctx: {
@@ -466,6 +478,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("get", get)
       .handle("children", children)
       .handle("todo", todo)
+      .handle("goal", goal)
       .handle("contextInspect", contextInspect)
       .handle("diff", diff)
       .handle("messages", messages)

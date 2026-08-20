@@ -6,6 +6,7 @@ export type Runtime = {
   InstanceStore: (typeof import("../../../src/project/instance-store"))["InstanceStore"]
   Session: (typeof import("../../../src/session/session"))["Session"]
   Todo: (typeof import("../../../src/session/todo"))["Todo"]
+  Goal: (typeof import("../../../src/session/goal"))["Goal"]
   Worktree: (typeof import("../../../src/worktree"))["Worktree"]
   Project: (typeof import("../../../src/project/project"))["Project"]
   Tui: typeof import("../../../src/server/shared/tui-control")
@@ -25,6 +26,7 @@ export function runtime() {
     const instanceStore = await import("../../../src/project/instance-store")
     const session = await import("../../../src/session/session")
     const todo = await import("../../../src/session/todo")
+    const goal = await import("../../../src/session/goal")
     const worktree = await import("../../../src/worktree")
     const project = await import("../../../src/project/project")
     const tui = await import("../../../src/server/shared/tui-control")
@@ -38,6 +40,7 @@ export function runtime() {
       InstanceStore: instanceStore.InstanceStore,
       Session: session.Session,
       Todo: todo.Todo,
+      Goal: goal.Goal,
       Worktree: worktree.Worktree,
       Project: project.Project,
       Tui: tui,

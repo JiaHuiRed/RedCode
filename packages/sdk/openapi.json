@@ -5809,6 +5809,86 @@
         ]
       }
     },
+    "/session/{sessionID}/goal": {
+      "get": {
+        "tags": ["session"],
+        "operationId": "session.goal",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The pinned session goal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Goal"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Retrieve the goal pinned to this session, with its status and the budget consumed so far. Returns 404 when no goal is pinned.",
+        "summary": "Get session goal",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.session.goal({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/session/{sessionID}/context-inspect": {
       "get": {
         "tags": ["session"],
@@ -11703,50 +11783,12 @@
             "enum": ["active", "done", "cleared", "blocked", "budget_limited"]
           },
           "tokens_used": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["NaN"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["-Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity", "-Infinity", "NaN"]
-              }
-            ]
+            "type": "integer",
+            "minimum": 0
           },
           "turn_count": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["NaN"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["-Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity", "-Infinity", "NaN"]
-              }
-            ]
+            "type": "integer",
+            "minimum": 0
           }
         },
         "required": ["text", "status", "tokens_used", "turn_count"],
@@ -16792,59 +16834,6 @@
           }
         },
         "required": ["name", "data"],
-        "additionalProperties": false
-      },
-      "Goal1": {
-        "type": "object",
-        "properties": {
-          "text": {
-            "type": "string",
-            "description": "The pinned session goal"
-          },
-          "status": {
-            "type": "string",
-            "enum": ["active", "done", "cleared", "blocked", "budget_limited"]
-          },
-          "tokens_used": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["NaN"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["-Infinity"]
-              }
-            ]
-          },
-          "turn_count": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "enum": ["NaN"]
-              },
-              {
-                "type": "string",
-                "enum": ["Infinity"]
-              },
-              {
-                "type": "string",
-                "enum": ["-Infinity"]
-              }
-            ]
-          }
-        },
-        "required": ["text", "status", "tokens_used", "turn_count"],
         "additionalProperties": false
       },
       "SyncEventMessageUpdated": {

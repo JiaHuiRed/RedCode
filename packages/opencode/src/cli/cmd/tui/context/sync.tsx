@@ -6,6 +6,7 @@ import type {
   Part,
   Config,
   Todo,
+  Goal,
   Command,
   PermissionRequest,
   QuestionRequest,
@@ -76,6 +77,10 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       todo: {
         [sessionID: string]: Todo[]
       }
+      // 260820 cc 钉住的目标。一个会话至多一个，没钉时整条不存在（服务端 404）
+      goal: {
+        [sessionID: string]: Goal | undefined
+      }
       message: {
         [sessionID: string]: Message[]
       }
@@ -111,6 +116,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       session_status: {},
       session_diff: {},
       todo: {},
+      goal: {},
       message: {},
       part: {},
       lsp: [],
@@ -225,6 +231,12 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
 
         case "todo.updated":
           setStore("todo", event.properties.sessionID, event.properties.todos)
+          break
+
+        // 260820 cc goal 被清掉时 properties.goal 是 undefined —— 直接写进去即可，
+        // 侧边栏的 Show 会随之收起。
+        case "goal.updated":
+          setStore("goal", event.properties.sessionID, event.properties.goal)
           break
 
         case "session.diff":
@@ -534,11 +546,13 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         },
         async sync(sessionID: string) {
           if (fullSyncedSessions.has(sessionID)) return
-          const [session, messages, todo, diff] = await Promise.all([
+          const [session, messages, todo, diff, goal] = await Promise.all([
             sdk.client.session.get({ sessionID }, { throwOnError: true }),
             sdk.client.session.messages({ sessionID, limit: 100 }),
             sdk.client.session.todo({ sessionID }),
             sdk.client.session.diff({ sessionID }),
+            // 没钉目标时服务端 404，这是常态不是错误
+            sdk.client.session.goal({ sessionID }).catch(() => undefined),
           ])
           setStore(
             produce((draft) => {
@@ -546,6 +560,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
               if (match.found) draft.session[match.index] = session.data!
               if (!match.found) draft.session.splice(match.index, 0, session.data!)
               draft.todo[sessionID] = todo.data ?? []
+              draft.goal[sessionID] = goal?.data ?? undefined
               const infos: (typeof draft.message)[string] = []
               for (const message of messages.data ?? []) {
                 infos.push(message.info)

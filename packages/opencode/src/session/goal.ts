@@ -2,6 +2,7 @@ import { BusEvent } from "@/bus/bus-event"
 import { Bus } from "@/bus"
 import { SessionID } from "./schema"
 import { Effect, Layer, Context, Schema } from "effect"
+import { NonNegativeInt } from "@redcode-ai/core/schema"
 import { eq, sql } from "drizzle-orm"
 import { Database } from "@/storage/db"
 import { GoalTable } from "./session.sql"
@@ -16,8 +17,12 @@ export type Status = Schema.Schema.Type<typeof Status>
 export const Info = Schema.Struct({
   text: Schema.String.annotate({ description: "The pinned session goal" }),
   status: Status,
-  tokens_used: Schema.Number,
-  turn_count: Schema.Number,
+  // 260820 cc Schema.Number → NonNegativeInt。两个都是计数器（tokens_used 靠 SQL 累加、
+  // turn_count 每轮 +1），本来就是非负整数；用 Schema.Number 的代价在生成链上：JSON
+  // 表示里 Number 允许 NaN/Infinity，codegen 于是把它摊成
+  // `number | "NaN" | "Infinity" | "-Infinity"`，客户端每次读都得先判类型。
+  tokens_used: NonNegativeInt,
+  turn_count: NonNegativeInt,
 }).annotate({ identifier: "Goal" })
 export type Info = Schema.Schema.Type<typeof Info>
 

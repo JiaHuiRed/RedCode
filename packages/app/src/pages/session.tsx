@@ -554,6 +554,9 @@ export default function Page() {
             if (sdk.directory !== dir || params.id !== id) return
             untrack(() => {
               void sync.session.todo(id, cached ? { force: true } : undefined)
+              // 260820 cc goal 蹭同一个触发点：与 todo 同源（goal_set 的说明里写着
+              // 「Sub-tasks become todos」），显示位置也在同一个面板顶部。
+              void sync.session.goal(id)
             })
           }, 0)
         })
