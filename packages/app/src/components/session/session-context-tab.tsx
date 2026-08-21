@@ -314,18 +314,9 @@ export function SessionContextTab() {
       value: () => formatter().number(ctx()?.total),
       color: "var(--syntax-success)",
     },
+    // 260821 Red：删除「上下文窗口」字段——输入框 tooltip 已显示窗口占用率，右侧重复。
     // 260819 cc usage 现在是「上下文窗口占用率」（window / limit），不再是会话累计除窗口。
     // 上面 totalTokens 那行仍是会话累计，标签本来就对，不动。
-    {
-      label: "context.usage.window",
-      value: () => {
-        const w = ctx()?.window
-        if (w === undefined) return "—"
-        const limit = ctx()?.limit
-        return limit ? `${formatter().number(w)} / ${formatter().number(limit)}` : formatter().number(w)
-      },
-      color: "var(--syntax-info)",
-    },
     { label: "context.stats.usage", value: () => formatter().percent(ctx()?.usage), color: "var(--syntax-warning)" },
     { label: "context.stats.inputTokens", value: () => formatter().number(ctx()?.input), color: inputTokensColor() },
     {
