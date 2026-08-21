@@ -540,12 +540,27 @@ export function MessageTimeline(props: {
         if (!props.shouldAnchorBottom() && !measuredBottomAnchored) return
         const keys = timelineRowKeys()
         if (keys.length === 0) return
-        virtualizer.scrollToIndex(keys.length - 1, { align: "end" })
+        scheduleScrollToEnd()
         scheduleMeasuredBottomAnchor()
       },
       { defer: true },
     ),
   )
+
+  // 260821 Red：流式期间 delta 每秒 50-100 次，同步 scrollToIndex 每次强制布局+滚动事件链，
+  // 主线程每帧被重复布局多次 → 整窗闪烁 + 吞键。节流到每帧最多一次，且 90 帧循环已滚到底时跳过。
+  let scrollToEndFrame: number | undefined
+  const scheduleScrollToEnd = () => {
+    if (scrollToEndFrame !== undefined) return
+    scrollToEndFrame = requestAnimationFrame(() => {
+      scrollToEndFrame = undefined
+      if (!virtualizer || !listRoot) return
+      if (isMeasuredBottom(listRoot)) return
+      const keys = timelineRowKeys()
+      if (keys.length === 0) return
+      virtualizer.scrollToIndex(keys.length - 1, { align: "end" })
+    })
+  }
 
   createEffect(() => {
     props.setRevealMessage?.((id) => {
@@ -760,6 +775,7 @@ export function MessageTimeline(props: {
     if (listFrame !== undefined) cancelAnimationFrame(listFrame)
     if (contentFrame !== undefined) cancelAnimationFrame(contentFrame)
     if (bottomAnchorFrame !== undefined) cancelAnimationFrame(bottomAnchorFrame)
+    if (scrollToEndFrame !== undefined) cancelAnimationFrame(scrollToEndFrame)
     setScrollRoot(undefined)
     props.setScrollRef(undefined)
   })
