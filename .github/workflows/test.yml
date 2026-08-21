@@ -76,6 +76,15 @@ jobs:
         working-directory: packages/opencode
         run: bun run test:httpapi
 
+      # 260821 cc OpenAPI 生成物漂移闸门：packages/sdk/openapi.json 必须逐字节等于
+      # `redcode generate` 的当前输出。这条生成路径曾指向不存在的 packages/redcode
+      # 而静默失效，openapi.json 长期靠手改（见 script/generate.ts 注释）；260819
+      # 修好了路径，但没有任何东西阻止它再烂一次——这一步就是那个东西。
+      # 只放 CI 不放 pre-push：要起完整 server 模块图，几十秒量级，而 pre-push 上的
+      # check-subprocess-timeout 是秒级文本扫描，代价不在一个量级。
+      - name: Run OpenAPI drift gate
+        run: bun run check:openapi-drift
+
       - name: Publish unit reports
         if: always()
         uses: mikepenz/action-junit-report@bccf2e31636835cf0874589931c4116687171386 # v6.4.0
