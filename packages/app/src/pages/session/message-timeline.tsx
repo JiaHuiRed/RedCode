@@ -95,7 +95,11 @@ const timelineCache = new Map<string, { keys: readonly string[]; cache: Virtuali
 function readTimelineCache(id: string, keys: readonly string[]) {
   const entry = timelineCache.get(id)
   if (!entry) return
-  if (sameKeys(entry.keys, keys)) return entry.cache
+  // 260821 Red：行只追加在末尾（消息 append）时，旧缓存按索引存的尺寸仍有效。
+  // 原 sameKeys 严格相等会让一次新行插入丢弃全部缓存 → virtualizer 回落到 60px 估算，
+  // 工具行（默认展开、几百 px）插入瞬间整列塌缩再逐行测量恢复 → 内容跳变（屏幕闪一下）+ 吞键。
+  // 放宽为前缀匹配：顶部加载历史/compaction 截断/回滚等非末尾变更照旧失效。
+  if (keys.length >= entry.keys.length && entry.keys.every((key, i) => keys[i] === key)) return entry.cache
   timelineCache.delete(id)
 }
 
