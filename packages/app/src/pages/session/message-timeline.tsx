@@ -94,12 +94,21 @@ const timelineCache = new Map<string, { keys: readonly string[]; cache: Virtuali
 
 function readTimelineCache(id: string, keys: readonly string[]) {
   const entry = timelineCache.get(id)
-  if (!entry) return
+  if (!entry) {
+    // 260821 Red 临时诊断（取证后删）：cache 未命中/失效时留痕，配合 renderer.log 定位闪烁
+    console.log("[FLASH-DIAG] cache-miss", id, "keys", keys.length)
+    return
+  }
   // 260821 Red：行只追加在末尾（消息 append）时，旧缓存按索引存的尺寸仍有效。
   // 原 sameKeys 严格相等会让一次新行插入丢弃全部缓存 → virtualizer 回落到 60px 估算，
   // 工具行（默认展开、几百 px）插入瞬间整列塌缩再逐行测量恢复 → 内容跳变（屏幕闪一下）+ 吞键。
   // 放宽为前缀匹配：顶部加载历史/compaction 截断/回滚等非末尾变更照旧失效。
   if (keys.length >= entry.keys.length && entry.keys.every((key, i) => keys[i] === key)) return entry.cache
+  console.log(
+    "[FLASH-DIAG] cache-invalidate", id,
+    "entry", entry.keys.length, "keys", keys.length,
+    "prefixDiffAt", entry.keys.findIndex((key, i) => keys[i] !== key),
+  )
   timelineCache.delete(id)
 }
 
@@ -326,6 +335,9 @@ export function MessageTimeline(props: {
   const { params, sessionKey } = useSessionKey()
   const platform = usePlatform()
 
+  // 260821 Red 临时诊断（取证后删）：组件挂载留痕，与 unmount 日志配合判断是否整树重挂
+  console.log("[FLASH-DIAG] timeline-mount", sessionKey())
+
   let virtualizer: VirtualizerHandle | undefined
   const sessionID = createMemo(() => params.id)
   const sessionMessages = createMemo(() => {
@@ -457,7 +469,12 @@ export function MessageTimeline(props: {
   const timelineRows = createMemo((previous: TimelineRow.TimelineRow[] | undefined) => {
     const rows = messageRowMemos().flatMap((memo) => memo())
     if (rows.length === 0) return rows
-    return reuseTimelineRows(previous, [...rows, new TimelineRow.BottomSpacer()])
+    const result = reuseTimelineRows(previous, [...rows, new TimelineRow.BottomSpacer()])
+    if (previous && result.length !== previous.length) {
+      // 260821 Red 临时诊断（取证后删）：行数变化留痕
+      console.log("[FLASH-DIAG] rows-changed", previous.length, "->", result.length)
+    }
+    return result
   })
   const timelineRowKeys = createMemo(() => timelineRows().map(TimelineRow.key), [] as string[], { equals: sameKeys })
   const virtualCache = createMemo(() => readTimelineCache(sessionKey(), timelineRowKeys()))
@@ -601,6 +618,11 @@ export function MessageTimeline(props: {
         if (virtualizer) {
           virtualizerSessionKey = cacheSessionKey
           virtualizerRowKeys = cacheRowKeys
+          // 260821 Red 同会话行变化也持续写缓：此前只在切会话时写旧会话，当前会话从未写入 →
+          // readTimelineCache 恒 miss → virtualCache 恒 undefined → itemSize 恒 60px fallback →
+          // 每次行插入（如工具行）60px 起步 + RO 整列重测 → 布局跳变闪烁。
+          // 写入的是 handle.cache 对象引用，virtua 自身会持续往同一对象更新新行实测尺寸。
+          writeTimelineCache(next[0], next[1], virtualizer)
           maybeAnchorBottom()
         }
       },
@@ -609,6 +631,8 @@ export function MessageTimeline(props: {
   )
 
   onCleanup(() => {
+    // 260821 Red 临时诊断（取证后删）：组件卸载留痕，区分「Show 翻转卸载」与「行塌缩重排」
+    console.log("[FLASH-DIAG] timeline-unmount", sessionKey())
     writeTimelineCache(virtualizerSessionKey, virtualizerRowKeys, virtualizer)
     props.setRevealMessage?.(() => {})
   })
