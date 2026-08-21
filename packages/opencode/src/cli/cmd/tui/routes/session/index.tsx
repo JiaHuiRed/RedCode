@@ -1420,6 +1420,7 @@ function UserMessage(props: {
 }) {
   const ctx = use()
   const local = useLocal()
+  const dimensions = useTerminalDimensions()
   const text = createMemo(() => {
     const texts = props.parts
       .map((x) => {
@@ -1459,17 +1460,20 @@ function UserMessage(props: {
     return " Compaction "
   })
 
+  // 260821 Red 用户消息右对齐（聊天式左右对照）：气泡限宽 80% 终端宽，窄窗兜底 40 列。
+  // flexShrink=1 而非原来的 0——外层从 column 改 row 后，shrink 语义变成水平方向，
+  // 窄于 maxWidth 时让文本回绕而不是溢出。
+  const messageMaxWidth = createMemo(() => Math.max(40, Math.floor(dimensions().width * 0.8)))
+
   return (
     <>
       <Show when={text()}>
-        <box
-          id={props.message.id}
-          border={["left"]}
-          borderColor={color()}
-          customBorderChars={SplitBorder.customBorderChars}
-          marginTop={props.index === 0 ? 0 : 1}
-        >
+        <box flexDirection="row" justifyContent="flex-end" marginTop={props.index === 0 ? 0 : 1}>
           <box
+            id={props.message.id}
+            border={["left"]}
+            borderColor={color()}
+            customBorderChars={SplitBorder.customBorderChars}
             onMouseOver={() => {
               setHover(true)
             }}
@@ -1480,8 +1484,10 @@ function UserMessage(props: {
             paddingTop={1}
             paddingBottom={1}
             paddingLeft={2}
+            paddingRight={2}
             backgroundColor={hover() ? theme.backgroundElement : theme.backgroundMessage}
-            flexShrink={0}
+            flexShrink={1}
+            maxWidth={messageMaxWidth()}
           >
             <text fg={color()}>
               <span style={{ bold: true }}>{local.displayName.user + ": "}</span>
