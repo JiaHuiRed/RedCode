@@ -133,7 +133,8 @@
       "enabled": true
     }
   },
-  "disabled_providers": ["ollama-cloud", "opencode"],
+ // 260821 Karina 解除 opencode 禁用：zen/v1 网关 27 个免费模型，key 同 opencode-go
+ "disabled_providers": ["ollama-cloud"],
   // small_model 挪到本地层 redcode.local.jsonc（260812 cc）：它引用本机 ollama 模型，
   // 而本地模型是按各机显存挑的，随 provider.ollama 一起下沉。留在这里会被 merge-home-config
   // 当"用户缺的键"补回 redcode.jsonc——260811/260812 两次回潮正是如此。
