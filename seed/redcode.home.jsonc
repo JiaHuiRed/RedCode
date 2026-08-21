@@ -74,7 +74,7 @@
       "type": "local",
       "command": ["node", "./webqa-server/index.js"],
       "cwd": "$REDCODE_ROOT",
-      "description": "浏览器视觉验证（Playwright headless）——webqa_screenshot 截图、webqa_interact 驱动点击/输入/eval，截图落 Temp\\webqa，审图派多模态子代理（mimo-v2.5）read 图片。替代旧 browsermcp（需浏览器扩展+手动 Connect，已移除）。",
+      "description": "浏览器视觉验证（Playwright headless）——webqa_screenshot 截图、webqa_interact 驱动点击/输入/eval，截图落 Temp\\webqa。审图：当前主模型是多模态（如 deepseek-v4-flash-vision-exp）时直接用 read 读图；仅非多模态主模型才派 explore 子代理（mimo-v2.5）。替代旧 browsermcp（需浏览器扩展+手动 Connect，已移除）。",
       "timeout": 120000,
       "enabled": true
     },
@@ -91,6 +91,8 @@
     // 上限、还要占显存与 Ollama 宿主内存，而派子代理看一次图只要几分钱，成本不构成理由。
     // 配套改动：prompt.ts 的 VISION CAPABILITY 权威注入、skill/vision-autoagent、
     // 三个子代理的 vision_* 放行均已同步。别再把这个块加回来。
+    // 260821 更新：官方 deepseek-v4-flash-vision-exp 已接入（与 flash 同价同性能，测评通过），
+    // 主模型选它时图片直读，mimo 子代理降级为仅非多模态模型的兜底。
     "su-prememory": {
       "type": "local",
       "command": ["bun", "./plugins/mcp-su-prememory-local/src/index.ts"],
