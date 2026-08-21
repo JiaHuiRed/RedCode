@@ -1,6 +1,6 @@
 import { afterEach, describe, expect } from "bun:test"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
-import { Deferred, Effect, Layer, Schema } from "effect"
+import { Deferred, Effect, Layer, Schema, Stream } from "effect"
 import { Bus } from "../../src/bus"
 import { BusEvent } from "../../src/bus/bus-event"
 import { disposeAllInstances, provideInstance, tmpdirScoped } from "../fixture/fixture"
@@ -235,6 +235,37 @@ describe("Bus", () => {
         expect(received).toContain("test.ping")
         expect(received).toContain(Bus.InstanceDisposed.type)
       }),
+    )
+  })
+
+  // 260821 cc wildcard 有界性回归
+  //
+  // 这个 describe 存在的唯一理由：wildcard 曾经是 PubSub.unbounded，慢订阅者
+  // （断了没清理的 SSE、卡住的 renderer）会让事件无限堆积到 OOM。改成 sliding
+  // 之后，如果有人改回 unbounded，下面的断言会红 —— 否则这个不变量又会变成
+  // 靠人记得，而人不记得。
+  describe("背压：wildcard 有界", () => {
+    it.instance(
+      "不消费的 wildcard 订阅者不会让事件无限堆积",
+      () =>
+        Effect.gen(function* () {
+          const bus = yield* Bus.Service
+          // subscribeAll 是 eager 的：订阅在 yield* 时就建立了。这里拿到 stream
+          // 之后一条都不拉，模拟一个已经不再消费但还没被清理的订阅者。
+          const stream = yield* bus.subscribeAll()
+
+          const total = Bus.WILDCARD_CAPACITY + 200
+          for (let i = 0; i < total; i++) yield* bus.publish(TestEvent.Ping, { value: i })
+
+          // sliding 满了丢最旧的，所以这个迟到的消费者拿到的第一条不可能是 value=0：
+          // 最早的 200 条已经被挤出去了。unbounded 的话第一条就是 0。
+          // wildcard 流的元素是无类型的 Payload（properties 来自 Schema.Top → unknown），
+          // 与 Interface 上 subscribeAllCallback 声明成 any 是同一个原因，这里沿用同样的标注。
+          const head: any[] = Array.from(yield* stream.pipe(Stream.take(1), Stream.runCollect))
+          expect(head).toHaveLength(1)
+          expect(head[0].properties.value).toBeGreaterThan(0)
+        }),
+      30_000,
     )
   })
 })

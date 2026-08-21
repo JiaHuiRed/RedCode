@@ -12,6 +12,32 @@ import { InstanceRef } from "@/effect/instance-ref"
 
 const log = Log.create({ service: "bus" })
 
+// 260821 cc 事件总线的背压策略
+//
+// 原来 wildcard 与每个 typed 通道都是 PubSub.unbounded —— publish 永不阻塞，队列
+// 没有上限。慢订阅者（断了但没清理的 SSE 连接、卡住的 renderer）会让事件无限堆积，
+// 直到 OOM 把整个进程带走。这是冻结家族谱里"无界"那一支。
+//
+// 分类思路取自 codex app-server：按"丢了会怎样"决定策略，而不是一刀切。
+//
+//   wildcard —— 订阅者是 SSE 连接（每个已连客户端一条）和插件，生命周期不受本进程
+//     控制，是唯一真正会失控的通道。改成 sliding：满了丢最旧的，publish 永不阻塞。
+//     丢旧帧对 UI 是可恢复的（下一条状态会纠正），OOM 不可恢复 —— 严格优于 unbounded。
+//
+//   typed —— 订阅者全在进程内且即时消费（lsp 诊断、mcp 通知、github 进度、
+//     session/llm.ts 的审批回调）。量小、消费快，不是失控源；且 permission.asked
+//     这类"丢了就再也等不到人"的事件走这里，保守起见维持 unbounded。
+//
+// 明确不用 PubSub.bounded：它在满时挂起 publish，而 publish 是在会话主流程里 await 的，
+// 那等于把"内存无界"换成"业务冻结" —— 用一个更难查的 bug 换掉当前这个。
+//
+// 丢弃不能是静默的：sliding 的 publish 不返回丢弃信号，所以用 sizeUnsafe 做高水位
+// 告警，跨越阈值时 warn 一次、回落时 info 一次（不是每条都打，否则日志自己变成负载）。
+/** 导出供 test/bus/bus.test.ts 的有界性回归测试引用，避免测试里写死魔数。 */
+export const WILDCARD_CAPACITY = 4096
+const WILDCARD_WARN_AT = Math.floor(WILDCARD_CAPACITY * 0.75)
+const WILDCARD_RECOVER_AT = Math.floor(WILDCARD_CAPACITY * 0.25)
+
 type BusProperties<D extends BusEvent.Definition<string, Schema.Top>> = Schema.Schema.Type<D["properties"]>
 
 export const InstanceDisposed = BusEvent.define(
@@ -30,6 +56,8 @@ type Payload<D extends BusEvent.Definition = BusEvent.Definition> = {
 type State = {
   wildcard: PubSub.PubSub<Payload>
   typed: Map<string, PubSub.PubSub<Payload>>
+  /** wildcard 是否已越过高水位；用来让告警只在跨越时打一次，而不是每条事件都打。 */
+  wildcardSaturated: boolean
 }
 
 export interface Interface {
@@ -64,7 +92,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const state = yield* InstanceState.make<State>(
       Effect.fn("Bus.state")(function* (ctx) {
-        const wildcard = yield* PubSub.unbounded<Payload>()
+        const wildcard = yield* PubSub.sliding<Payload>(WILDCARD_CAPACITY)
         const typed = new Map<string, PubSub.PubSub<Payload>>()
 
         yield* Effect.addFinalizer(() =>
@@ -82,7 +110,7 @@ export const layer = Layer.effect(
           }),
         )
 
-        return { wildcard, typed }
+        return { wildcard, typed, wildcardSaturated: false }
       }),
     )
 
@@ -90,6 +118,8 @@ export const layer = Layer.effect(
       return Effect.gen(function* () {
         let ps = state.typed.get(def.type)
         if (!ps) {
+          // 维持 unbounded：typed 订阅者全在进程内且即时消费，量小；且
+          // permission.asked 这类不可丢的事件走 typed。理由见文件顶部策略注释。
           ps = yield* PubSub.unbounded<Payload>()
           state.typed.set(def.type, ps)
         }
@@ -106,6 +136,22 @@ export const layer = Layer.effect(
         const ps = s.typed.get(def.type)
         if (ps) yield* PubSub.publish(ps, payload)
         yield* PubSub.publish(s.wildcard, payload)
+
+        // wildcard 是 sliding：满了会静默丢最旧的一条。sliding 的 publish 不返回
+        // 丢弃信号，所以在这里读一次 size 做高水位告警 —— 让"有订阅者跟不上"这件事
+        // 在真正开始丢数据之前就可见，而不是事后从 UI 缺帧倒推。
+        const backlog = PubSub.sizeUnsafe(s.wildcard)
+        if (!s.wildcardSaturated && backlog >= WILDCARD_WARN_AT) {
+          s.wildcardSaturated = true
+          log.warn("wildcard subscriber falling behind", {
+            backlog,
+            capacity: WILDCARD_CAPACITY,
+            type: def.type,
+          })
+        } else if (s.wildcardSaturated && backlog <= WILDCARD_RECOVER_AT) {
+          s.wildcardSaturated = false
+          log.info("wildcard drained", { backlog })
+        }
 
         const dir = yield* InstanceState.directory
         const context = yield* InstanceState.context
