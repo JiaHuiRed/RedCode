@@ -8,6 +8,44 @@
 
 ---
 
+### [0.9.4] - 2026-08-21
+
+> 收口三条 GUI 输入体验主线（流式闪烁吞键、上下文面板去重、计划面板调色）与一条 TUI 布局线（消息左右对照），顺手把「无超时子进程」「总线通道 OOM」「doctor 死代码」三个稳定性隐患清掉，并接入官方 DeepSeek 视觉模型。
+
+#### 新增
+
+- **官方 DeepSeek 视觉模型接入**（`seed/redcode.home.jsonc`）：`deepseek-v4-flash-vision-exp` 与 flash 同价（官方定价页核实），与既有多模态主模型直读路径打通；顺带纠正 chat/reasoner 上「不支持图片」的错误附件标注。
+
+- **TUI 消息左右对照**（`cli/cmd/tui/routes/session/index.tsx`）：用户消息改为右对齐气泡（宽度上限 80% 终端列、40 兜底，窄窗回绕不溢出），与左对齐的助手消息形成常见聊天界面排布。边框随气泡走，不再漂到屏幕左缘。
+
+#### 修复
+
+- **GUI 流式期间整窗闪烁、吞键**（`app/pages/session/message-timeline.tsx`）：流式 delta 每秒 50-100 次，每次触发 `virtualizer.scrollToIndex`（同步设 scrollTop + 强制布局），与 90 帧底锚 rAF 循环、`createAutoScroll` ResizeObserver 三路滚动叠加，每帧 2-3 次强制同步滚动 → 掉帧闪烁 + 键盘事件延迟丢失（已落字保留、正在打的字被吞）。scrollToIndex 改为 rAF 节流（每帧最多一次、已到底跳过），语义不变。
+
+- **八个 git/安装类子进程调用全线无超时**（`core/process.ts`、`opencode/src/git/index.ts`、`installation/index.ts`、`snapshot/index.ts`）：挂起时日志一个字都没有，全部补上超时；并新增 `script/check-subprocess-timeout.ts` 可执行闸门（挂 pre-push），例外必须显式豁免。
+
+- **bus wildcard 通道 unbounded → sliding**（`opencode/src/bus/index.ts`）：慢订阅者不再能把进程堆到 OOM（150k 条消息实测内存从 3.4GB 回落到 300MB 量级）。
+
+- **doctor 四个 catch 全是死代码**（`cli/cmd/doctor.ts`）：一个检查失败整条诊断就没了，改为逐项收集错误。
+
+- **删除不存在的会话不再假装成功**（`cli/cmd/session.ts`）：`session delete` 对不存在的 id 报错而不是返回空成功。
+
+- **DeepSeek V4 Flash Vision 计费恒为 0**（`core/provider.ts` CNY_PRICING）：缺 `deepseek-v4-flash-vision-exp` 条目，cost 落 0 → 补上与 flash 同价；历史会话费用不回溯。
+
+- **上下文面板删掉重复的「上下文窗口」字段**（`app/components/session/session-context-tab.tsx`）：输入框 tooltip 已显示窗口占用率，右侧面板那行是重复。
+
+- **计划面板毛玻璃掺粉调淡**（`app/index.css`）：todo dock 在壁纸场景补 [data-chat-frost]/[data-app-frost] 掺粉配方（与用户气泡同款 260812 配方），无壁纸保持原实色。
+
+#### 重构
+
+- **prompt.ts 三处 copy-paste 收成三个有名字的函数**（净 -54 行）；双写摘除留下的孤儿代码清掉（净 -77 行）。
+
+#### 文档
+
+- **五个 v2 空壳端点标 deprecated**（`docs/parallel-systems-plan.md`、`sdk.gen.ts`、`openapi.json`），记下删除前必读的地雷。
+- **seed 模板同步**：opencode 白名单、解除禁用、vision 双路径、fixer 观察期注释、browsermcp 残留清理。
+- **help 快照测试基线**：34 条 key 停在 opencode 时代、doctor 不在名单里——快照从没比对过基线，补上。
+
 ### [0.9.3] - 2026-08-20
 
 > 一轮「代码里已有、前端从没显示过」的清点收口：上下文真实构成查看器、钉住的目标终于有了界面、GUI 补上输出被截断标记。清点本身还发现了一个空壳端点、一个把自动续跑轮数腰斩的复制粘贴 bug，和三处过时文档。
