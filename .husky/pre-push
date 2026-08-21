@@ -17,4 +17,6 @@ if (process.versions.bun !== expectedBunVersion) {
   console.warn(`Warning: Bun version ${process.versions.bun} differs from expected ${expectedBunVersion}`);
 }
 '
+# 子进程超时不变量：秒级文本扫描，放在 typecheck 前面，坏了立刻知道
+bun run script/check-subprocess-timeout.ts
 bun typecheck

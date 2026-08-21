@@ -57,6 +57,7 @@ RedCode = OpenCode fork：
 - 各 package 的代码风格/构建细节见该 package 的 AGENTS.md
 - 跑单测**必须带完整文件路径过滤**：不带过滤的 `bun test` 会碰 live 配置（260811 已修根因，但 plugin-loader 那类直接操作 live 文件名的用例仍靠路径隔离兜着）
 - `bun run typecheck` 走 `script/typecheck.ts`：先跑 tsgo，崩溃（OOM/panic）时自动回退 TypeScript 5.x 重跑
+- **子进程超时不变量**：`bun run check:subprocess-timeout`（已挂 pre-push）。新增 `appProcess.run` 调用点必须显式给 `timeout`，或在调用行上方写 `// subprocess-timeout: none — <理由>`。无界的子进程等待不触发 evloop drift 探针，挂起时日志里一个字都没有
 
 ## 编辑后自动验证
 

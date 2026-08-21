@@ -53,5 +53,9 @@
 
 - 超时值是拍的，不是量的。误伤的识别签名：日志出现 `git timed out` / `snapshot git timed out` 但命令本身其实正常，只是仓库特别大——这时放宽对应档位，别把上限撤掉。
 - `Result` / `GitResult` 新增了必填字段，任何新构造点都得给 `timedOut`（typecheck 会拦）。
-- `appProcess.run` 剩余调用点为零，但**这条不变量目前没有闸门**：新增调用点忘了传 `timeout` 不会有人告诉你。这是本批留下的最大缺口，也是 DSH 采纳路线里"能机械检查的规矩挂到可执行闸门上"该覆盖的下一处。
+- 闸门已补：`script/check-subprocess-timeout.ts`（挂在 pre-push，也可 `bun run check:subprocess-timeout` 单跑）。它先找出绑定到 `AppProcess.Service` 的变量名再抓这些名字上的 `.run(` 调用，所以调用方改名不会让检查失效；豁免必须写成 `// subprocess-timeout: none — <理由>`，例外可见而不是静默。
+
+  写这个脚本时自己先踩了一次它要防的坑：第一版用 `indexOf("appProcess.run(")` 找调用，漏掉了 `format/index.ts` 里被 prettier 折成两行的那处（`appProcess` 换行再 `.run(`），报出的是「9 处里只看到 8 处、全部合规」这种看着很干净的假通过。修法有两层——接收者改成从 `.run` 往前跳空白再取标识符；更重要的是加了**盲区断言**：一个文件绑定了服务、文本里也有 `.run(`、却一处都没归因上，直接判失败并要求先修检测。这是 help 快照那次（测试从没比对过基线却报 1 pass）的同形状教训。
+
+  三条路径都实测过有牙：拿掉 snapshot 一处 timeout → 报违规并 exit 1；补上豁免注释 → 放行；把 format 的接收者改名模拟归因失败 → 盲区断言开火。
 - 借自 deepseek-harness `docs/defensive-patterns.md` 的第一条 "Report orthogonal outcomes independently"；那份文档整体进仓的提议见 DSH 采纳路线图。
