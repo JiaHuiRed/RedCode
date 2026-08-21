@@ -280,6 +280,21 @@
   -webkit-backdrop-filter: blur(12px);
 }
 
+/* 260821 Red 计划面板（todo dock）毛玻璃：原先实色 --background-base 在 yuqi 深色主题下是
+   neutral(#5a2f4c) 派生的深紫红，一整块实色压在壁纸上又深又闷。与用户气泡同款掺粉配方：
+   外层 55% 透明透出壁纸（更淡），内层 65% 原底 + 35% 粉（rgba(248,164,208) 同 260812 掺粉），
+   粉色调与气泡/边框统一。 */
+[data-chat-frost] [data-component="session-todo-dock"],
+[data-app-frost] [data-component="session-todo-dock"] {
+  background-color: color-mix(
+    in srgb,
+    color-mix(in srgb, rgba(248, 164, 208, 0.45), var(--background-base) 65%) 55%,
+    transparent
+  );
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
 /* 260610 Red 毛玻璃 B：全界面毛玻璃。背景图由根布局整窗铺底（祖先带 data-app-frost），
    标题栏与主卡片改半透明材质 + backdrop blur，透出并模糊整窗背景图；内部各栏（文件/审查/聊天）
    去实色底，露出主卡片这层统一磨砂材质，形成「全界面磨砂」。无背景图不触发（模糊纯色无意义）。
