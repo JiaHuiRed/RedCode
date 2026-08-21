@@ -1,6 +1,17 @@
 import { AppProcess } from "@redcode-ai/core/process"
-import { Effect, Layer, Context, Stream } from "effect"
+import { Duration, Effect, Layer, Context, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
+import * as Log from "@redcode-ai/core/util/log"
+
+const log = Log.create({ service: "git" })
+
+// 260821 cc 冻结家族支线 B:此前所有 git 调用都没有超时上限。git 挂起有真实成因
+// (index.lock 等锁、Windows 凭据管理器弹窗、远程 TCP 黑洞、stdin 管道半开),挂起时
+// 事件循环没被阻塞,evloop drift 探针一声不响 —— 用户只能杀进程。这里给本地 git 管道
+// 命令一个宽松但有限的上限:够大不会误伤大仓的合法慢操作,够小能把"永久冻结"变成
+// "两分钟后报错并留下日志"。需要更长的调用方自己传 opts.timeout。
+// 决策与实证:docs/notes/implemented/bug-fix/2026-08-21-subprocess-timeout-git.md
+const TIMEOUT = Duration.seconds(120)
 
 const cfg = [
   "--no-optional-locks",
@@ -20,11 +31,13 @@ const out = (result: { text(): string }) => result.text().trim()
 const nuls = (text: string) => text.split("\0").filter(Boolean)
 const fail = (err: unknown) =>
   ({
+    // exitCode 1 是这里合成的失败标记,不是 git 真的返回过 1;真正的事实在 timedOut 上。
     exitCode: 1,
     text: () => "",
     stdout: Buffer.alloc(0),
     stderr: Buffer.from(err instanceof Error ? err.message : String(err)),
     truncated: false,
+    timedOut: AppProcess.isTimeout(err),
   }) satisfies Result
 
 export type Kind = "added" | "deleted" | "modified"
@@ -62,6 +75,8 @@ export interface Result {
   readonly stdout: Buffer
   readonly stderr: Buffer
   readonly truncated: boolean
+  /** 被本进程的超时砍断,而不是 git 自己退出。与 exitCode 各自独立,别互相推断。 */
+  readonly timedOut: boolean
 }
 
 export interface Options {
@@ -69,6 +84,8 @@ export interface Options {
   readonly env?: Record<string, string>
   readonly maxOutputBytes?: number
   readonly stdin?: ChildProcess.CommandInput
+  /** 覆盖默认超时;网络类 git(fetch/clone)或超大仓的批量操作才需要放宽。 */
+  readonly timeout?: Duration.Input
 }
 
 export interface Interface {
@@ -117,7 +134,7 @@ export const layer = Layer.effect(
             stdout: "pipe",
             stderr: "pipe",
           }),
-          { maxOutputBytes: opts.maxOutputBytes },
+          { maxOutputBytes: opts.maxOutputBytes, timeout: opts.timeout ?? TIMEOUT },
         )
         return {
           exitCode: result.exitCode,
@@ -125,9 +142,14 @@ export const layer = Layer.effect(
           stdout: result.stdout,
           stderr: result.stderr,
           truncated: result.stdoutTruncated || result.stderrTruncated,
+          timedOut: false,
         } satisfies Result
       },
-      Effect.catch((err) => Effect.succeed(fail(err))),
+      Effect.catch((err) => {
+        // 超时单独留一条日志:这是今天完全没有的诊断面,挂起时日志里一个字都没有。
+        if (AppProcess.isTimeout(err)) log.error("git timed out", { command: err.command })
+        return Effect.succeed(fail(err))
+      }),
     )
 
     const text = Effect.fn("Git.text")(function* (args: string[], opts: Options) {

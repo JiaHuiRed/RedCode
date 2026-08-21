@@ -1,4 +1,4 @@
-import { Effect, Layer, Schema, Context, Stream } from "effect"
+import { Duration, Effect, Layer, Schema, Context, Stream } from "effect"
 import { serviceUse } from "@/effect/service-use"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { withTransientReadRetry } from "@/util/effect-http-client"
@@ -14,6 +14,13 @@ import { InstallationChannel, InstallationVersion } from "@redcode-ai/core/insta
 import { NpmConfig } from "@redcode-ai/core/npm-config"
 
 const log = Log.create({ service: "installation" })
+
+// 260821 cc 冻结家族支线 B:自更新路径此前完全没有超时上限。这里跑的是 brew/npm/choco
+// 和下载来的安装脚本,全都碰网络,还可能停在交互提示上(sudo、确认 y/N)——挂住就是永远。
+// 查询类给短上限,真正的安装类放宽到 10 分钟。
+// 决策与实证:docs/notes/implemented/bug-fix/2026-08-21-subprocess-timeout-git.md
+const QUERY_TIMEOUT = Duration.minutes(2)
+const INSTALL_TIMEOUT = Duration.minutes(10)
 
 export type Method = "curl" | "npm" | "yarn" | "pnpm" | "bun" | "brew" | "scoop" | "choco" | "unknown"
 
@@ -107,10 +114,15 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProce
             env: opts?.env,
             extendEnv: true,
           }),
+          { timeout: QUERY_TIMEOUT },
         )
         return result.stdout.toString("utf8")
       },
-      Effect.catch(() => Effect.succeed("")),
+      // 原来这里把失败原因整个吞掉只留空串;超时至少要在日志里留下痕迹。
+      Effect.catch((err) => {
+        if (AppProcess.isTimeout(err)) log.error("installation query timed out", { command: err.command })
+        return Effect.succeed("")
+      }),
     )
 
     const run = Effect.fnUntraced(
@@ -121,6 +133,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProce
             env: opts?.env,
             extendEnv: true,
           }),
+          { timeout: INSTALL_TIMEOUT },
         )
         return {
           code: result.exitCode,
@@ -128,7 +141,10 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProce
           stderr: result.stderr.toString("utf8"),
         }
       },
-      Effect.catch((err) => Effect.succeed({ code: 1, stdout: "", stderr: errorMessage(err) })),
+      Effect.catch((err) => {
+        if (AppProcess.isTimeout(err)) log.error("installation command timed out", { command: err.command })
+        return Effect.succeed({ code: 1, stdout: "", stderr: errorMessage(err) })
+      }),
     )
 
     const getBrewFormula = Effect.fnUntraced(function* () {
@@ -149,6 +165,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProce
           env: { VERSION: target },
           extendEnv: true,
         }),
+        { timeout: INSTALL_TIMEOUT },
       )
       return {
         code: result.exitCode,

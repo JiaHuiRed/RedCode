@@ -1,6 +1,7 @@
 import { describe, expect } from "bun:test"
-import { realpathSync } from "node:fs"
+import { existsSync, realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { Effect, Exit, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { AppProcess } from "@redcode-ai/core/process"
@@ -272,6 +273,58 @@ describe("AppProcess", () => {
             .pipe(Stream.runCollect),
         )
         expect(Exit.isFailure(exit)).toBe(true)
+      }),
+    )
+  })
+
+  describe("timeout", () => {
+    it.live(
+      "hanging command fails as a timeout, and exitCode stays absent",
+      Effect.gen(function* () {
+        const svc = yield* AppProcess.Service
+        const err = yield* svc
+          .run(cmd("-e", "setInterval(() => {}, 60_000)"), { timeout: "300 millis" })
+          .pipe(Effect.catch((e) => Effect.succeed(e)))
+        // 超时与退出码是正交事实:超时时我们不知道退出码,它必须缺席而不是被合成成 1。
+        expect(AppProcess.isTimeout(err)).toBe(true)
+        expect(AppProcess.isTimeout(err) && err.exitCode).toBeUndefined()
+      }),
+    )
+
+    it.live(
+      "timeout kills the child instead of leaving it running",
+      Effect.gen(function* () {
+        const svc = yield* AppProcess.Service
+        const marker = join(realpathSync(tmpdir()), `redcode-timeout-${process.pid}-${Date.now()}.marker`)
+        const script = `setTimeout(() => require('fs').writeFileSync(${JSON.stringify(marker)}, 'alive'), 2000)`
+        const err = yield* svc
+          .run(cmd("-e", script), { timeout: "300 millis" })
+          .pipe(Effect.catch((e) => Effect.succeed(e)))
+        expect(AppProcess.isTimeout(err)).toBe(true)
+        // 拆卸必须真的到达静默,不是发完 kill 就返回:活着的子进程会在 2 秒后写下标记。
+        yield* Effect.sleep("2500 millis")
+        expect(existsSync(marker)).toBe(false)
+      }),
+    )
+
+    it.live(
+      "a command that finishes in time is untouched by the timeout",
+      Effect.gen(function* () {
+        const svc = yield* AppProcess.Service
+        const result = yield* svc.run(cmd("-e", "process.stdout.write('done')"), { timeout: "30 seconds" })
+        expect(result.exitCode).toBe(0)
+        expect(result.stdout.toString("utf8")).toBe("done")
+      }),
+    )
+
+    it.live(
+      "an ordinary spawn failure is not reported as a timeout",
+      Effect.gen(function* () {
+        const svc = yield* AppProcess.Service
+        const err = yield* svc
+          .run(ChildProcess.make("redcode-no-such-binary-xyz", []), { timeout: "30 seconds" })
+          .pipe(Effect.catch((e) => Effect.succeed(e)))
+        expect(AppProcess.isTimeout(err)).toBe(false)
       }),
     )
   })

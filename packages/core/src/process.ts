@@ -8,8 +8,17 @@ export class AppProcessError extends Schema.TaggedErrorClass<AppProcessError>()(
   command: Schema.String,
   exitCode: Schema.optional(Schema.Number),
   stderr: Schema.optional(Schema.String),
+  // 260821 cc 超时是与 exitCode 正交的独立事实,必须单独上报,不能塞进 exitCode 分支:
+  // 子进程被 SIGTERM 砍断时仍可能 exit 0,把超时折进退出码会让调用方把"被砍断的运行"
+  // 读成干净成功。超时时 exitCode 缺席(我们不知道它是多少),只有 timedOut 为 true。
+  // 决策与实证:docs/notes/implemented/bug-fix/2026-08-21-subprocess-timeout-git.md
+  timedOut: Schema.optional(Schema.Boolean),
   cause: Schema.optional(Schema.Defect),
 }) {}
+
+/** 这次失败是不是我们自己的超时砍的。调用方据此区分"命令说不"和"命令没说话"。 */
+export const isTimeout = (err: unknown): err is AppProcessError =>
+  err instanceof AppProcessError && err.timedOut === true
 
 export interface RunOptions {
   readonly maxOutputBytes?: number
@@ -156,7 +165,14 @@ export const layer = Layer.effect(
       const timed = options?.timeout
         ? Effect.timeoutOrElse(collect, {
             duration: options.timeout,
-            orElse: () => Effect.fail(new AppProcessError({ command: description, cause: new Error("Timed out") })),
+            orElse: () =>
+              Effect.fail(
+                new AppProcessError({
+                  command: description,
+                  timedOut: true,
+                  cause: new Error(`Timed out after ${Duration.toMillis(options.timeout!)}ms`),
+                }),
+              ),
           })
         : collect
       const aborted = options?.signal

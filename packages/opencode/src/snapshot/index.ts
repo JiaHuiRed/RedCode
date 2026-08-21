@@ -38,7 +38,16 @@ interface GitResult {
   readonly code: ChildProcessSpawner.ExitCode
   readonly text: string
   readonly stderr: string
+  /** 被本进程的超时砍断,而不是 git 自己退出。与 code 各自独立,别互相推断。 */
+  readonly timedOut: boolean
 }
+
+// 260821 cc 冻结家族支线 B:snapshot 在**每一次编辑**都跑 git,是全仓最热的子进程路径,
+// 而此前这里没有任何超时上限。git 挂起(锁等待、凭据弹窗、stdin 管道半开)时事件循环
+// 没被阻塞,drift 探针一声不响,用户只能杀进程重开、丢掉整个会话。上限取宽松值:够大
+// 不会误伤大仓首次快照的合法慢操作,够小能把"永久冻结"变成"报错并留下日志"。
+// 决策与实证:docs/notes/implemented/bug-fix/2026-08-21-subprocess-timeout-git.md
+const TIMEOUT = Duration.seconds(120)
 
 type State = Omit<Interface, "init">
 
@@ -92,21 +101,26 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
             function* (cmd: string[], opts?: { cwd?: string; env?: Record<string, string>; stdin?: string }) {
               const result = yield* appProcess.run(
                 ChildProcess.make("git", cmd, { cwd: opts?.cwd, env: opts?.env, extendEnv: true }),
-                { stdin: opts?.stdin },
+                { stdin: opts?.stdin, timeout: TIMEOUT },
               )
               return {
                 code: ChildProcessSpawner.ExitCode(result.exitCode),
                 text: result.stdout.toString("utf8"),
                 stderr: result.stderr.toString("utf8"),
+                timedOut: false,
               } satisfies GitResult
             },
-            Effect.catch((err) =>
-              Effect.succeed({
+            Effect.catch((err) => {
+              // 超时单独留一条日志:这是今天完全没有的诊断面,挂起时日志里一个字都没有。
+              if (AppProcess.isTimeout(err)) log.error("snapshot git timed out", { command: err.command })
+              return Effect.succeed({
+                // code 1 是这里合成的失败标记,不是 git 真的返回过 1;真正的事实在 timedOut 上。
                 code: ChildProcessSpawner.ExitCode(1),
                 text: "",
                 stderr: err instanceof Error ? err.message : String(err),
-              }),
-            ),
+                timedOut: AppProcess.isTimeout(err),
+              })
+            }),
           )
 
           const ignore = Effect.fnUntraced(function* (files: string[]) {
@@ -562,7 +576,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                         cwd: state.directory,
                         extendEnv: true,
                       }),
-                      { stdin: refs.map((item) => item.ref).join("\n") + "\n" },
+                      { stdin: refs.map((item) => item.ref).join("\n") + "\n", timeout: TIMEOUT },
                     )
                     if (batch.exitCode !== 0) {
                       log.info("git cat-file --batch failed during snapshot diff, falling back to per-file git show", {

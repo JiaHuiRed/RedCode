@@ -13,7 +13,7 @@ import { errorMessage } from "../util/error"
 import { BusEvent } from "@/bus/bus-event"
 import { GlobalBus } from "@/bus/global"
 import { Git } from "@/git"
-import { Effect, Layer, Path, Schema, Scope, Context } from "effect"
+import { Duration, Effect, Layer, Path, Schema, Scope, Context } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { NodePath } from "@effect/platform-node"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
@@ -147,7 +147,21 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Worktree") {}
 
-type GitResult = { code: number; text: string; stderr: string }
+type GitResult = {
+  code: number
+  text: string
+  stderr: string
+  /** 被本进程的超时砍断,而不是 git 自己退出。与 code 各自独立,别互相推断。 */
+  timedOut: boolean
+}
+
+// 260821 cc 冻结家族支线 B:worktree 的 git 与用户启动脚本此前都没有超时上限。
+// 本地 git 管道命令给宽松上限;网络类(fetch)单独放宽;用户配置的 start 脚本最容易
+// 挂死——它可能是个前台常驻进程或在等输入,挂住的是整个 worktree 创建流程。
+// 决策与实证:docs/notes/implemented/bug-fix/2026-08-21-subprocess-timeout-git.md
+const TIMEOUT = Duration.seconds(120)
+const NETWORK_TIMEOUT = Duration.minutes(5)
+const START_SCRIPT_TIMEOUT = Duration.minutes(5)
 
 export const layer: Layer.Layer<
   Service,
@@ -165,23 +179,29 @@ export const layer: Layer.Layer<
     const store = yield* InstanceStore.Service
 
     const git = Effect.fnUntraced(
-      function* (args: string[], opts?: { cwd?: string }) {
+      function* (args: string[], opts?: { cwd?: string; timeout?: Duration.Input }) {
         const result = yield* appProcess.run(
           ChildProcess.make("git", args, { cwd: opts?.cwd, extendEnv: true, stdin: "ignore" }),
+          { timeout: opts?.timeout ?? TIMEOUT },
         )
         return {
           code: result.exitCode,
           text: result.stdout.toString("utf8"),
           stderr: result.stderr.toString("utf8"),
+          timedOut: false,
         } satisfies GitResult
       },
-      Effect.catch((e) =>
-        Effect.succeed({
+      Effect.catch((e) => {
+        // 超时单独留一条日志:这是今天完全没有的诊断面,挂起时日志里一个字都没有。
+        if (AppProcess.isTimeout(e)) log.error("worktree git timed out", { command: e.command })
+        return Effect.succeed({
+          // code 1 是这里合成的失败标记,不是 git 真的返回过 1;真正的事实在 timedOut 上。
           code: 1,
           text: "",
           stderr: e instanceof Error ? e.message : String(e),
-        } satisfies GitResult),
-      ),
+          timedOut: AppProcess.isTimeout(e),
+        } satisfies GitResult)
+      }),
     )
 
     const MAX_NAME_ATTEMPTS = 26
@@ -458,7 +478,7 @@ export const layer: Layer.Layer<
 
     const gitExpect = Effect.fnUntraced(function* (
       args: string[],
-      opts: { cwd: string },
+      opts: { cwd: string; timeout?: Duration.Input },
       error: (r: GitResult) => Error,
     ) {
       const result = yield* git(args, opts)
@@ -471,10 +491,15 @@ export const layer: Layer.Layer<
         const [shell, args] = process.platform === "win32" ? ["cmd", ["/c", cmd]] : ["bash", ["-lc", cmd]]
         const result = yield* appProcess.run(
           ChildProcess.make(shell, args as string[], { cwd: directory, extendEnv: true, stdin: "ignore" }),
+          { timeout: START_SCRIPT_TIMEOUT },
         )
         return { code: result.exitCode, stderr: result.stderr.toString("utf8") }
       },
-      Effect.catch(() => Effect.succeed({ code: 1, stderr: "" })),
+      // 原来这里把错误信息也一起吞了(stderr: ""),挂死或失败都只剩一个 code 1。
+      Effect.catch((e) => {
+        if (AppProcess.isTimeout(e)) log.error("worktree start command timed out", { command: e.command })
+        return Effect.succeed({ code: 1, stderr: e instanceof Error ? e.message : String(e) })
+      }),
     )
 
     const runStartScript = Effect.fnUntraced(function* (directory: string, cmd: string, kind: string) {
@@ -562,7 +587,8 @@ export const layer: Layer.Layer<
         const branch = base.ref.slice(sep + 1)
         yield* gitExpect(
           ["fetch", remote, branch],
-          { cwd: ctx.worktree },
+          // 网络操作:凭据提示、死掉的 TCP 连接都能让它永远挂着,单独放宽而不是不设限。
+          { cwd: ctx.worktree, timeout: NETWORK_TIMEOUT },
           (r) => new ResetFailedError({ message: r.stderr || r.text || `Failed to fetch ${base.ref}` }),
         )
       }
