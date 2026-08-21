@@ -196,6 +196,40 @@
      "models": {
        "laguna-s-2.1-free": { "status": "active" }
      }
+   },
+   // 260821 cc 官方 DeepSeek 覆盖块。models.dev 目录与线上对不上，两处都得纠。
+   //
+   // 1) deepseek-v4-flash-vision-exp 目录里整条缺失，不补就在 RedCode 里选不到。
+   //    实测：GET /models 已列出；发 120x120 三色带测试图，色带顺序与右下角白方块全部答对；
+   //    图 + tools 混合请求 finish_reason=tool_calls，参数取自图像内容（不是猜的），
+   //    所以能进 agent 循环。同族 v4-flash / v4-pro 发图一律 400 not support image。
+   //    注意它是推理模型且 reasoning 消耗波动大（同一 prompt 实测 65 / 490 token 两次），
+   //    输出预算给小了会把正文截断成半句。
+   //    limit 沿用同族的 1M/384K —— 官方未公布这个实验模型的上下文，是假设值不是实测。
+   //
+   // 2) deepseek-chat / deepseek-reasoner 目录标 attachment=true 却 modalities.input 只有
+   //    text，自相矛盾；实测两者发图都是 400，所以 attachment 那个字段是错的。官方
+   //    /models 已不再列出这两个（仍作别名可用于纯文本，实测 200）。这里把标注纠正过来。
+   "deepseek": {
+     "models": {
+       "deepseek-v4-flash-vision-exp": {
+         "name": "DeepSeek V4 Flash Vision (实验)",
+         "temperature": true,
+         "reasoning": true,
+         "tool_call": true,
+         "attachment": true,
+         "modalities": { "input": ["text", "image"], "output": ["text"] },
+         "limit": { "context": 1000000, "output": 384000 }
+       },
+       "deepseek-chat": {
+         "attachment": false,
+         "modalities": { "input": ["text"], "output": ["text"] }
+       },
+       "deepseek-reasoner": {
+         "attachment": false,
+         "modalities": { "input": ["text"], "output": ["text"] }
+       }
+     }
    }
    // 260729 Red 删除 anthropic 块。它有三重无效：apiKey 是占位符、ANTHROPIC_API_KEY 未设、
    // 唯一的模型 gpt-5-chat-latest 经实测根本不存在（请求 404，见 codex 块注释）。
