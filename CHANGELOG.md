@@ -32,6 +32,8 @@
 
 - **GUI 会话缓存淘汰漏了 goal**（`app/context/global-sync/session-cache.ts`）：`dropSessionCaches` 一并清理 `goal`，不留一处会随会话淘汰泄漏的键。
 
+- **fixer 子代理换用 hy3（关推理档）**（`seed/agents/fixer.md`）：`model` 从 `opencode-go/deepseek-v4-flash` 换成 `opencode-go/hy3` 并显式 `variant: none`。bench 实测（6 任务 × 2 轮）：hy3 默认深度推理烧 300-5000 推理 token、慢 10-20 倍，`reasoning_effort: none` 后与 deepseek-v4-flash 速度同量级且判分全过，单价约 1/12、套餐 8x 额度。**hy3 网关侧纯文本**（图片被剥，三种格式实测均"没收到图"），识图任务仍走 explore(mimo-v2.5)，故只换纯文本执行类 agent。[why](docs/notes/implemented/feature/2026-08-21-fixer-hy3.md)
+
 #### 文档
 
 - **`docs/parallel-systems-plan.md` 的「记下防复述」里有一句是错的**：「/v2 路由组不在 openapi 里，SDK 没有对应方法，客户端无法调用」。实测 openapi.json 里有 9 个 `v2.*` 操作，SDK 也照常生成了 `client.v2.session.*`（`sdk.gen.ts` 的 `class Session3`）。成立的只有「没有客户端在**调用**」——零调用方不是零能力。这条写在防复述段落里，反而成了最容易被复述的错误。同时记入后续事实：`GET /api/session/:id/context` 已确认是空壳（摘除双写后 `session_message` 表只剩 `model-switched` / `agent-switched` 两类行，实测 live 库 782 行里一条对话都没有），其去留仍未决。

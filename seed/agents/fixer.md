@@ -2,7 +2,11 @@
 name: fixer
 mode: subagent
 description: 实现与修复执行专家（读写）。当方案已定、需要实际改代码、跑测试、修 bug 时使用。不规划不研究，拿到需求直接实现。
-model: opencode-go/deepseek-v4-flash
+model: opencode-go/hy3
+# 260821 Karina hy3 换入：纯文本执行任务（bench 实测关推理比 deepseek-v4-flash 快且便宜 8 倍）；
+# variant: none 显式关推理——hy3 默认深度推理会烧 300-5000 推理 token、慢 10-20 倍。
+# ⚠ hy3 网关侧纯文本（图片被剥），识图任务仍用 explore(mimo-v2.5)，别把 fixer 用于识图。
+variant: none
 permission:
   "*": deny
   read: allow
