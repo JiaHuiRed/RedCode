@@ -186,6 +186,16 @@
          "limit": { "context": 262144, "output": 65536 }
        }
      }
+   },
+   // 260821 Karina opencode 官方 zen/v1 网关白嫖：key 复用 opencode-go（auth.json 已配）。
+   // whitelist 只暴露实测可用的 4 个免费模型（provider.ts:1631-1635 白名单过滤），
+   // 其余 89 个（付费全家桶 + 不可用 free）不显示。laguna 在 models.dev 标了 deprecated
+   // 会被提前删掉（provider.ts:1630），故用 models 覆盖 status 救回。
+   "opencode": {
+     "whitelist": ["x-preview-f-free", "hy3-free", "mimo-v2.5-free", "laguna-s-2.1-free"],
+     "models": {
+       "laguna-s-2.1-free": { "status": "active" }
+     }
    }
    // 260729 Red 删除 anthropic 块。它有三重无效：apiKey 是占位符、ANTHROPIC_API_KEY 未设、
    // 唯一的模型 gpt-5-chat-latest 经实测根本不存在（请求 404，见 codex 块注释）。
