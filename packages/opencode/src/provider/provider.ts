@@ -1238,6 +1238,7 @@ export const layer = Layer.effect(
         const CNY_PRICING: Record<string, Record<string, typeof CNY_COST_FLASH>> = {
           deepseek: {
             "deepseek-v4-flash": DS_V4_COST_FLASH,
+            "deepseek-v4-flash-vision-exp": DS_V4_COST_FLASH,
             "deepseek-v4-pro": DS_V4_COST_PRO,
           },
           "opencode-go": {
