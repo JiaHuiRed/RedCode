@@ -99,15 +99,20 @@ function readTimelineCache(id: string, keys: readonly string[]) {
     console.log("[FLASH-DIAG] cache-miss", id, "keys", keys.length)
     return
   }
+  // 260821 Red：BottomSpacer 恒在最后一行（timelineRows 472 行），行插入时它被新行顶后一位——
+  // 前缀比较前先剔除末位 spacer，否则每次行插入（工具行等）都 invalidate → 60px 整列塌缩。
+  // 顶部加载历史 / compaction 截断 / 回滚等真中间变更（prefixDiffAt 落在中部）照旧失效。
+  const prev = entry.keys.at(-1) === "bottom-spacer" ? entry.keys.slice(0, -1) : entry.keys
+  const next = keys.at(-1) === "bottom-spacer" ? keys.slice(0, -1) : keys
   // 260821 Red：行只追加在末尾（消息 append）时，旧缓存按索引存的尺寸仍有效。
   // 原 sameKeys 严格相等会让一次新行插入丢弃全部缓存 → virtualizer 回落到 60px 估算，
   // 工具行（默认展开、几百 px）插入瞬间整列塌缩再逐行测量恢复 → 内容跳变（屏幕闪一下）+ 吞键。
   // 放宽为前缀匹配：顶部加载历史/compaction 截断/回滚等非末尾变更照旧失效。
-  if (keys.length >= entry.keys.length && entry.keys.every((key, i) => keys[i] === key)) return entry.cache
+  if (next.length >= prev.length && prev.every((key, i) => next[i] === key)) return entry.cache
   console.log(
     "[FLASH-DIAG] cache-invalidate", id,
     "entry", entry.keys.length, "keys", keys.length,
-    "prefixDiffAt", entry.keys.findIndex((key, i) => keys[i] !== key),
+    "prefixDiffAt", prev.findIndex((key, i) => next[i] !== key),
   )
   timelineCache.delete(id)
 }
