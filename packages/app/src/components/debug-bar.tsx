@@ -99,6 +99,13 @@ export function DebugBar() {
       dur: undefined as number | undefined,
       pending: false,
     },
+    // 260822 cc 临时诊断（取证后删）：整屏闪烁的来源。用 MutationObserver 抓"哪一棵大子树
+    // 在某一帧被摘掉了"——Suspense 回退、<Show> fallback、路由重挂全都会表现为一次大移除。
+    flash: {
+      count: 0,
+      last: "" as string,
+      log: [] as string[],
+    },
   })
 
   const na = () => language.t("debugBar.na")
@@ -111,6 +118,8 @@ export function DebugBar() {
   const longv = () => (state.long.count === undefined ? na() : `${time(state.long.block) ?? na()}/${state.long.count}`)
   const navv = () => (state.nav.pending ? "..." : (time(state.nav.dur) ?? na()))
 
+  // 260822 cc 临时诊断（取证后删）：上一帧的虚拟列表内容高度，用于识别整列塌缩
+  let collapsePeak = 0
   let prev = ""
   let start = 0
   let init = false
@@ -161,7 +170,60 @@ export function DebugBar() {
     })
   })
 
+  // 260822 cc 临时诊断（取证后删）。
+  const nodeLabel = (el: Element): string => {
+    if (el.id) return `#${el.id}`
+    const comp = el.getAttribute("data-component")
+    if (comp) return `[${comp}]`
+    const slot = el.getAttribute("data-slot")
+    if (slot) return `{${slot}}`
+    const frost = el.getAttribute("data-frost-surface")
+    if (frost) return `<${frost}>`
+    const cls = typeof el.className === "string" ? el.className.split(/\s+/).filter(Boolean).slice(0, 2).join(".") : ""
+    return el.tagName.toLowerCase() + (cls ? "." + cls : "")
+  }
+  const chain = (el: Element | null): string => {
+    const parts: string[] = []
+    let cur: Element | null = el
+    for (let i = 0; i < 3 && cur; i++) {
+      parts.unshift(nodeLabel(cur))
+      cur = cur.parentElement
+    }
+    return parts.join(">")
+  }
+
   onMount(() => {
+    const root = document.getElementById("root")
+    if (root) {
+      const observer = new MutationObserver((records) => {
+        let biggest: { size: number; text: string } | undefined
+        for (const record of records) {
+          if (record.type !== "childList") continue
+          if (record.removedNodes.length === 0) continue
+          for (const node of Array.from(record.removedNodes)) {
+            if (!(node instanceof Element)) continue
+            if (node.childElementCount < 2) continue
+            const size = node.querySelectorAll("*").length
+            if (size < 30) continue
+            const added = Array.from(record.addedNodes)
+              .filter((n): n is Element => n instanceof Element)
+              .map((n) => nodeLabel(n))
+              .join(",")
+            const text = `${chain(record.target as Element)} −${nodeLabel(node)}×${size}${added ? ` +${added}` : ""}`
+            if (!biggest || size > biggest.size) biggest = { size, text }
+          }
+        }
+        if (!biggest) return
+        setState("flash", (prev) => ({
+          count: prev.count + 1,
+          last: biggest!.text,
+          log: [...prev.log, biggest!.text].slice(-6),
+        }))
+      })
+      observer.observe(root, { childList: true, subtree: true })
+      onCleanup(() => observer.disconnect())
+    }
+
     const obs: PerformanceObserver[] = []
     const fps: Array<{ at: number; dur: number }> = []
     const long: Array<{ at: number; dur: number }> = []
@@ -310,6 +372,24 @@ export function DebugBar() {
       fps.push({ at, dur: at - last })
       last = at
 
+      // 260822 cc 临时诊断（取证后删）：虚拟列表整列塌缩。子树没被卸载、但总高度掉到接近 0
+      // 再弹回，同样表现为"满屏底色一闪"，且 CLS 会爆而 LONG 为 0 —— 与卸载路径必须能分辨。
+      // bottom-spacer 恒在最后一行，它的父元素就是 virtua 写 totalSize 的那个内容容器。
+      {
+        const spacer = document.querySelector('[data-timeline-row="bottom-spacer"]')
+        const inner = spacer?.parentElement
+        const h = inner ? inner.offsetHeight : 0
+        if (h > 0) {
+          if (collapsePeak > 200 && h < collapsePeak * 0.5) {
+            setState("flash", (prev) => {
+              const text = `COLLAPSE ${Math.round(collapsePeak)}→${Math.round(h)}px`
+              return { count: prev.count + 1, last: text, log: [...prev.log, text].slice(-6) }
+            })
+          }
+          collapsePeak = h
+        }
+      }
+
       if (at - snap >= 250) {
         snap = at
         syncFrame(at)
@@ -435,6 +515,16 @@ export function DebugBar() {
           value={heapv()}
           bad={bad(heap(), 0.8)}
           dim={state.heap.used === undefined}
+          wide
+        />
+        {/* 260822 cc 临时诊断（取证后删）：整屏闪烁来源。value 是最近一次大子树移除的位置，
+            tip 里是最近 6 次。截图这一格就能定位到底是谁被卸载了。 */}
+        <Cell
+          label="BLANK"
+          tip={state.flash.log.length ? state.flash.log.join("  |  ") : "no large unmount yet"}
+          value={state.flash.count === 0 ? na() : `${state.flash.count} ${state.flash.last}`}
+          bad={state.flash.count > 0}
+          dim={state.flash.count === 0}
           wide
         />
       </div>
