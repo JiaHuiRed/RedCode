@@ -5,6 +5,7 @@ import { LLM, LLMError, Message, Model, ToolCallPart, Usage } from "../../src"
 import { Auth, LLMClient, RequestExecutor, WebSocketExecutor } from "../../src/route"
 import * as Azure from "../../src/providers/azure"
 import * as OpenAI from "../../src/providers/openai"
+import { openAIDefaultOptions } from "../../src/providers/openai-options"
 import * as OpenAIResponses from "../../src/protocols/openai-responses"
 import * as ProviderShared from "../../src/protocols/shared"
 import { continuationRequest, nativeOpenAIResponsesContinuation } from "../continuation-scenarios"
@@ -506,6 +507,79 @@ describe("OpenAI Responses route", () => {
       )
 
       expect(prepared.body.include).toBeUndefined()
+    }),
+  )
+
+  it.effect("lets includeEncryptedReasoning: false opt out of the GPT-5 default include", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<OpenAIResponses.OpenAIResponsesBody>(
+        LLM.request({
+          model: OpenAI.configure({ baseURL: "https://api.openai.test/v1/", apiKey: "test" }).responses("gpt-5.2"),
+          prompt: "hi",
+          providerOptions: { openai: { includeEncryptedReasoning: false } },
+        }),
+      )
+
+      expect(prepared.body.include).toBeUndefined()
+    }),
+  )
+
+  it.effect("folds includeEncryptedReasoning into the outbound include array", () =>
+    Effect.gen(function* () {
+      // `model` here is plain gpt-4.1-mini off the raw route, so no GPT-5
+      // defaults apply: the include can only have come from the boolean.
+      const prepared = yield* LLMClient.prepare<OpenAIResponses.OpenAIResponsesBody>(
+        LLM.request({ model, prompt: "hi", providerOptions: { openai: { includeEncryptedReasoning: true } } }),
+      )
+
+      expect(prepared.body.include).toEqual(["reasoning.encrypted_content"])
+    }),
+  )
+
+  it.effect("lets an explicit include array win over includeEncryptedReasoning", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<OpenAIResponses.OpenAIResponsesBody>(
+        LLM.request({
+          model,
+          prompt: "hi",
+          providerOptions: { openai: { include: ["web_search_call.results"], includeEncryptedReasoning: true } },
+        }),
+      )
+
+      expect(prepared.body.include).toEqual(["web_search_call.results"])
+    }),
+  )
+
+  // Outbound gate. An option declared on `providerOptions.openai` that nothing
+  // reads is invisible to typecheck and to the unit tests on either side of the
+  // boundary -- it only shows up as a field missing from the wire body, which is
+  // how `includeEncryptedReasoning` sat inert (and how b0a16010 lost `Message.native`
+  // one layer over). This pins each facade default to the body field that proves
+  // it was read, and asserts the map still covers the defaults, so adding a
+  // default without a reader -- or deleting a reader -- fails here.
+  const gpt5DefaultBodyReaders: Record<string, (body: OpenAIResponses.OpenAIResponsesBody) => unknown> = {
+    store: (body) => body.store,
+    reasoningEffort: (body) => body.reasoning?.effort,
+    reasoningSummary: (body) => body.reasoning?.summary,
+    includeEncryptedReasoning: (body) => body.include,
+    textVerbosity: (body) => body.text?.verbosity,
+  }
+
+  it.effect("lands every GPT-5 facade default in the outbound request body", () =>
+    Effect.gen(function* () {
+      const defaults = openAIDefaultOptions("gpt-5.2", { textVerbosity: true })?.openai
+      expect(defaults).toBeDefined()
+      expect(Object.keys(gpt5DefaultBodyReaders).sort()).toEqual(Object.keys(defaults ?? {}).sort())
+
+      const prepared = yield* LLMClient.prepare<OpenAIResponses.OpenAIResponsesBody>(
+        LLM.request({
+          model: OpenAI.configure({ baseURL: "https://api.openai.test/v1/", apiKey: "test" }).responses("gpt-5.2"),
+          prompt: "hi",
+        }),
+      )
+
+      for (const [key, read] of Object.entries(gpt5DefaultBodyReaders))
+        expect({ key, value: read(prepared.body) }).toEqual({ key, value: expect.anything() })
     }),
   )
 

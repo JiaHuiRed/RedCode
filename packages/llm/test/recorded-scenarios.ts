@@ -322,7 +322,15 @@ const runReasoningScenario = (context: GoldenScenarioContext) =>
     user("Think briefly, then reply exactly with: Hello!"),
     assistant.expectText(/^Hello!?$/, {
       system: "Show concise reasoning when the provider supports visible reasoning summaries.",
-      providerOptions: { openai: { reasoningEffort: "low", reasoningSummary: "auto" } },
+      // This is the single-turn reasoning scenario; `reasoning-continuation`
+      // is the one that replays reasoning state. Opt out of the OpenAI facade's
+      // GPT-5 `includeEncryptedReasoning` default explicitly so the golden
+      // request shape is pinned here rather than inherited from a default that
+      // can move. Without this the recorded request would ask for an encrypted
+      // blob no step in this scenario ever reads.
+      providerOptions: {
+        openai: { reasoningEffort: "low", reasoningSummary: "auto", includeEncryptedReasoning: false },
+      },
       maxTokens: context.maxTokens ?? 120,
       assert: (response) => expect(response.usage?.reasoningTokens ?? 0).toBeGreaterThan(0),
     }),

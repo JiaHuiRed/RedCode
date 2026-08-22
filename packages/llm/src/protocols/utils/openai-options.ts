@@ -25,6 +25,7 @@ const REASONING_EFFORTS = new Set<string>(ReasoningEfforts)
 const OPENAI_REASONING_EFFORTS = new Set<string>(OpenAIReasoningEfforts)
 const TEXT_VERBOSITY = new Set<string>(["low", "medium", "high"])
 const INCLUDABLES = new Set<string>(OpenAIResponseIncludables)
+const ENCRYPTED_REASONING: OpenAIResponseIncludable = "reasoning.encrypted_content"
 
 export const OpenAIReasoningEffort = Schema.Literals(OpenAIReasoningEfforts)
 export const OpenAITextVerbosity = TextVerbosity
@@ -59,12 +60,26 @@ export const reasoningSummary = (request: LLMRequest): "auto" | undefined =>
 // invalid entry instead of poisoning the wire body. An empty array (either
 // passed directly or produced by filtering) is treated as "no include" and
 // returns undefined so the request body omits the field entirely.
+//
+// Precedence: an explicit `include` array is authoritative -- when one is
+// present it is the whole answer and `includeEncryptedReasoning` is ignored.
+// The boolean is shorthand for the single includable almost every caller
+// wants, consulted only when no array was given. That split is what lets a
+// route default opt GPT-5 into encrypted reasoning while still allowing a
+// caller to pass their own list, or `include: []` to opt out entirely.
 export const include = (request: LLMRequest): ReadonlyArray<OpenAIResponseIncludable> | undefined => {
   const value = options(request)?.include
-  if (!Array.isArray(value)) return undefined
+  if (!Array.isArray(value)) return includeEncryptedReasoning(request) ? [ENCRYPTED_REASONING] : undefined
   const filtered = value.filter((entry): entry is OpenAIResponseIncludable => INCLUDABLES.has(entry))
   return filtered.length > 0 ? filtered : undefined
 }
+
+// Shorthand for `include: ["reasoning.encrypted_content"]`. Stateless
+// (`store: false`) reasoning models cannot replay their own reasoning state on
+// a follow-up turn unless the request asks for the encrypted blob back, so
+// this is the one includable that belongs in provider defaults.
+export const includeEncryptedReasoning = (request: LLMRequest): boolean =>
+  options(request)?.includeEncryptedReasoning === true
 
 export const promptCacheKey = (request: LLMRequest) => {
   const value = options(request)?.promptCacheKey

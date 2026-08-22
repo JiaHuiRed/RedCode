@@ -1,3 +1,4 @@
+import type { OpenAIResponseIncludable } from "../protocols/utils/openai-options"
 import type { ProviderOptions, ReasoningEffort, TextVerbosity } from "../schema"
 import { mergeProviderOptions } from "../schema"
 
@@ -7,6 +8,9 @@ export interface OpenAIOptionsInput {
   readonly promptCacheKey?: string
   readonly reasoningEffort?: ReasoningEffort
   readonly reasoningSummary?: "auto"
+  /** Explicit Responses `include` list. Wins outright over `includeEncryptedReasoning`. */
+  readonly include?: ReadonlyArray<OpenAIResponseIncludable>
+  /** Shorthand for `include: ["reasoning.encrypted_content"]`, used only when `include` is absent. */
   readonly includeEncryptedReasoning?: boolean
   readonly textVerbosity?: TextVerbosity
 }
@@ -25,6 +29,7 @@ const openAIProviderOptions = (options: OpenAIOptionsInput | undefined): Provide
       promptCacheKey: options?.promptCacheKey,
       reasoningEffort: options?.reasoningEffort,
       reasoningSummary: options?.reasoningSummary,
+      include: options?.include,
       includeEncryptedReasoning: options?.includeEncryptedReasoning,
       textVerbosity: options?.textVerbosity,
     }),
@@ -42,6 +47,14 @@ export const gpt5DefaultOptions = (
   return openAIProviderOptions({
     reasoningEffort: "medium",
     reasoningSummary: "auto",
+    // `openAIDefaultOptions` pins GPT-5 to `store: false`, so the server keeps
+    // no reasoning state between turns. Without the encrypted blob coming back
+    // a continuation drops its own reasoning items on the floor, so ask for it
+    // by default. Callers opt out with `includeEncryptedReasoning: false`, or
+    // by passing their own `include` list. The Chat route has no `include`
+    // field and ignores this, the same way it already ignores
+    // `reasoningSummary` and `textVerbosity`.
+    includeEncryptedReasoning: true,
     textVerbosity:
       options.textVerbosity === true && id.includes("gpt-5.") && !id.includes("codex") && !id.includes("-chat")
         ? "low"
