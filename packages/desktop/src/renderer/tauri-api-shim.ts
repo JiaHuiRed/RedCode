@@ -162,3 +162,36 @@ async function install() {
 }
 
 await install()
+
+// 260822 cc 纯浏览器（vite dev，既非 Electron 也非 Tauri）下的 window.api 兜底。
+// 没有它，`index.tsx:69` 与 `webview-zoom.ts:48` 在模块顶层就 TypeError，整个模块图
+// 中止 → #root 永远空着，白屏且只有一行看不出因果的报错。docs 里那条「GUI 可以不重编
+// 调试」（redcode serve + vite，浏览器直接开会话）因此一直是断的。
+// 只在 DEV 构建里存在，打包产物不含这段；Electron/Tauri 两条真路径都已在上面返回。
+if (import.meta.env.DEV && !isTauri && typeof window !== "undefined" && !window.api) {
+  const unsubscribe = () => () => {}
+  const devServerUrl = `http://localhost:${import.meta.env.VITE_REDCODE_SERVER_PORT ?? "4096"}`
+  const resolved = new Map<string, unknown>([
+    ["consumeInitialDeepLinks", []],
+    ["storeKeys", []],
+    ["getPinchZoomEnabled", false],
+    ["storeLength", 0],
+    ["getWindowCount", 1],
+    // 渲染进程靠这条拿到 sidecar 地址；浏览器下没有 sidecar，指向 dev 后端
+    ["awaitInitialization", { url: devServerUrl }],
+    ["getDefaultServerUrl", null],
+  ])
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  window.api = new Proxy(
+    { appVersion: "dev" },
+    {
+      get(target, prop: string) {
+        if (prop in target) return (target as Record<string, unknown>)[prop]
+        // on* 是订阅：必须同步返回退订函数，不能返回 Promise
+        if (prop.startsWith("on")) return unsubscribe
+        return () => Promise.resolve(resolved.has(prop) ? resolved.get(prop) : undefined)
+      },
+    },
+  ) as unknown as ElectronAPI
+  console.warn("[dev] window.api 缺失，已装浏览器兜底桩（桌面能力全部为空操作）")
+}
