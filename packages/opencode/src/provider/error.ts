@@ -39,6 +39,27 @@ const OVERFLOW_PATTERNS = [
 // 不是上下文溢出，误判会触发无意义的自动压缩。排除优先于一切匹配。
 const OVERFLOW_EXCLUSIONS = [/^(throttling error|service unavailable):/i, /rate limit/i, /too many requests/i]
 
+// 260822 cc 网关的**请求体积**上限，不是上下文溢出。
+//
+// 两者都可能以 413 回来，但补救方式相反：上下文溢出该触发压缩，体积超限压缩帮不上忙
+// （图片载荷占大头时尤其如此），而且原样重发同一个超限请求体不可能成功——每次重试都
+// 白烧一次。官方 deepseek-harness 记录的线上措辞是
+// "Failed to buffer the request body: length limit exceeded"，两张截图即触发。
+//
+// 只按措辞判，不按状态码：裸 413（无 body，Cerebras/Mistral 常见）仍走原来的
+// context_overflow 启发式——那种情况下没有信息可判，而"上下文太大"是更常见的成因。
+const REQUEST_BODY_LIMIT_PATTERNS = [
+  /failed to buffer the request body/i,
+  /request body.{0,20}length limit exceeded/i,
+  /body.{0,10}(size|length) (limit )?exceeded/i,
+  /request (body|payload) too large/i,
+]
+
+function isRequestBodyLimit(message: string) {
+  if (OVERFLOW_PATTERNS.some((p) => p.test(message))) return false // 明说了上下文的，按上下文处理
+  return REQUEST_BODY_LIMIT_PATTERNS.some((p) => p.test(message))
+}
+
 function isOpenAiErrorRetryable(e: APICallError) {
   const status = e.statusCode
   if (!status) return e.isRetryable
@@ -196,6 +217,20 @@ export type ParsedAPICallError =
 export function parseAPICallError(input: { providerID: ProviderID; error: APICallError }): ParsedAPICallError {
   const m = message(input.providerID, input.error)
   const body = json(input.error.responseBody)
+  // 请求体积超限必须在溢出判断**之前**拦下：它同样以 413 回来，会被下面那个无条件的
+  // statusCode === 413 吞进 context_overflow，于是压缩被白触发一次、重试又原样重发同一个
+  // 超限请求体。归为不可重试的 api_error，让上层直接把真实原因报给用户。
+  if (isRequestBodyLimit(m)) {
+    return {
+      type: "api_error",
+      message: m,
+      statusCode: input.error.statusCode,
+      isRetryable: false,
+      responseHeaders: input.error.responseHeaders,
+      responseBody: input.error.responseBody,
+      metadata: input.error.url ? { url: input.error.url } : undefined,
+    }
+  }
   if (isOverflow(m) || input.error.statusCode === 413 || body?.error?.code === "context_length_exceeded") {
     return {
       type: "context_overflow",

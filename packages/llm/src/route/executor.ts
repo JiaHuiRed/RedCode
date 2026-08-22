@@ -249,7 +249,17 @@ const statusReason = (input: {
       http: input.http,
     })
   }
-  if (input.status === 400 || input.status === 404 || input.status === 409 || input.status === 422) {
+  // 260822 cc 413 归 InvalidRequest：原样重发同一个超限请求体不可能成功。
+  // 此前它既不在这张表里、也不满足 >=500，掉进末尾的 UnknownProviderReason —— 既不重试
+  // 也不触发任何补救，整轮硬失败。归到这里至少让上层拿到"请求本身不合法、别重发"的语义。
+  // 判定上下文溢出 vs 网关体积超限靠措辞，那一层在 opencode 侧的 provider/error.ts。
+  if (
+    input.status === 400 ||
+    input.status === 404 ||
+    input.status === 409 ||
+    input.status === 413 ||
+    input.status === 422
+  ) {
     return new InvalidRequestReason({ message: input.message, http: input.http })
   }
   if (input.status >= 500 || retryableStatus(input.status)) {

@@ -41,3 +41,45 @@ describe("parseAPICallError overflow detection", () => {
     }
   })
 })
+
+// 260822 cc 网关请求体积超限 vs 上下文溢出
+describe("parseAPICallError request-body limit", () => {
+  const parse413 = (message: string, responseBody?: string) =>
+    parseAPICallError({
+      providerID: ProviderID.make("openai"),
+      error: new APICallError({
+        message,
+        url: "https://example.com/v1/chat",
+        requestBodyValues: {},
+        statusCode: 413,
+        responseBody,
+      }),
+    })
+
+  // 官方 deepseek-harness 记录的线上措辞。压缩帮不上忙（图片载荷占大头），
+  // 原样重发同一个超限请求体也不可能成功，所以必须归不可重试而不是 context_overflow。
+  test("gateway body-size 413 is a non-retryable api_error, not context overflow", () => {
+    const r = parse413("Failed to buffer the request body: length limit exceeded")
+    expect(r.type).toBe("api_error")
+    if (r.type === "api_error") {
+      expect(r.isRetryable).toBe(false)
+      expect(r.statusCode).toBe(413)
+    }
+  })
+
+  test("other body-limit phrasings are recognized too", () => {
+    for (const msg of ["Request body too large", "request payload too large", "body size limit exceeded"]) {
+      expect(parse413(msg).type).toBe("api_error")
+    }
+  })
+
+  // 明说了上下文的 413 仍按溢出处理——压缩确实是对的补救
+  test("a 413 that names the context length is still context overflow", () => {
+    expect(parse413("Request entity too large: context length exceeded").type).toBe("context_overflow")
+  })
+
+  // 裸 413（无 body，Cerebras/Mistral 常见）没有信息可判，维持原来的溢出启发式
+  test("a bare 413 keeps the existing overflow heuristic", () => {
+    expect(parse413("Payload Too Large").type).toBe("context_overflow")
+  })
+})
