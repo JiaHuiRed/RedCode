@@ -44,8 +44,8 @@ describe("Image", () => {
       ])
 
       source.free()
-      expect(results.map((result) => result.url.startsWith(`data:${result.mime};base64,`))).toEqual([true, true])
-      expect(results.every((result) => result.mime === "image/png" || result.mime === "image/jpeg")).toBe(true)
+      expect(results.map(({ part }) => part.url.startsWith(`data:${part.mime};base64,`))).toEqual([true, true])
+      expect(results.every(({ part }) => part.mime === "image/png" || part.mime === "image/jpeg")).toBe(true)
     }),
   )
 
@@ -56,7 +56,7 @@ describe("Image", () => {
 
       // 260822 cc toBe 而非 toEqual：in-budget 走的是 `return input`，返回同一个对象引用，
       // 即逐字节透传。钉住引用相等，才能在有人改成重编码时立刻报警（那会废掉内容寻址去重）。
-      expect(yield* image.normalize(input)).toBe(input)
+      expect((yield* image.normalize(input)).part).toBe(input)
     }),
   )
 
@@ -67,7 +67,7 @@ describe("Image", () => {
       const image = yield* Image.Service
       const result = yield* image.normalize(part("image/png", Buffer.from(source.get_bytes()).toString("base64")))
       const resized = photon.PhotonImage.new_from_byteslice(
-        Buffer.from(result.url.slice(result.url.indexOf(";base64,") + ";base64,".length), "base64"),
+        Buffer.from(result.part.url.slice(result.part.url.indexOf(";base64,") + ";base64,".length), "base64"),
       )
 
       source.free()
@@ -88,11 +88,11 @@ describe("Image", () => {
       const input = part("image/png", data.toString("base64"))
       const image = yield* Image.Service
       const result = yield* image.normalize(input)
-      const base64 = result.url.slice(result.url.indexOf(";base64,") + ";base64,".length)
+      const base64 = result.part.url.slice(result.part.url.indexOf(";base64,") + ";base64,".length)
       const resized = photon.PhotonImage.new_from_byteslice(Buffer.from(base64, "base64"))
 
       expect(input.url.slice(input.url.indexOf(";base64,") + ";base64,".length).length).toBe(5 * 1024 * 1024)
-      expect(result.url).not.toBe(input.url)
+      expect(result.part.url).not.toBe(input.url)
       expect(base64.length).toBeLessThan(5 * 1024 * 1024)
       expect(resized.get_width()).toBeLessThanOrEqual(2_000)
       expect(resized.get_height()).toBeLessThanOrEqual(2_000)
@@ -163,8 +163,46 @@ describe("Image JPEG candidate ladder", () => {
 
       const image = yield* Image.Service
       const result = yield* image.normalize(part("image/png", png))
-      expect(result.mime).toBe("image/jpeg")
-      expect(result.url.startsWith("data:image/jpeg;base64,")).toBe(true)
+      expect(result.part.mime).toBe("image/jpeg")
+      expect(result.part.url.startsWith("data:image/jpeg;base64,")).toBe(true)
+    }),
+  )
+})
+
+// 260822 cc 缩放报告与坐标倍数（搬自官方 harness 6e17c20804）
+describe("Image resize report", () => {
+  it.effect("reports source dimensions when the image was downscaled, and nothing when it was not", () =>
+    Effect.gen(function* () {
+      const photon = yield* Effect.promise(() => import("@silvia-odwyer/photon-node"))
+      const source = new photon.PhotonImage(new Uint8Array(Array.from({ length: 9_000 * 4 }, () => 255)), 9_000, 1)
+      const image = yield* Image.Service
+      const resized = yield* image.normalize(part("image/png", Buffer.from(source.get_bytes()).toString("base64")))
+      source.free()
+
+      expect(resized.resize).toBeDefined()
+      expect(resized.resize!.sourceWidth).toBe(9_000)
+      expect(resized.resize!.sourceHeight).toBe(1)
+      expect(resized.resize!.width).toBeLessThanOrEqual(2_000)
+
+      // 未缩放的图不产出报告 —— 否则模型会被告知一个不存在的坐标换算
+      const small = yield* image.normalize(
+        part("image/webp", "UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA"),
+      )
+      expect(small.resize).toBeUndefined()
+    }),
+  )
+
+  // 文案必须完全由尺寸推导。掺进时间戳/随机数就会重演 260804 那次事故：同一张历史图
+  // 每轮生成不同文本 → provider 前缀缓存被永久钉死、命中率线性掉到 50% 且不自愈。
+  it.effect("the notice is deterministic and states the back-mapping multiplier", () =>
+    Effect.gen(function* () {
+      const report = { sourceWidth: 3840, sourceHeight: 2160, width: 2000, height: 1125 }
+      const a = Image.formatResizeNotice(report)
+      const b = Image.formatResizeNotice({ ...report })
+      expect(a).toBe(b)
+      expect(a).toContain("3840x2160")
+      expect(a).toContain("2000x1125")
+      expect(a).toContain("1.92") // 3840/2000，宽方向回映射倍数
     }),
   )
 })

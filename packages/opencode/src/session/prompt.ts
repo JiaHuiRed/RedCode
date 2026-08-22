@@ -934,9 +934,14 @@ export const layer = Layer.effect(
         { message: info, parts: resolvedParts },
       )
 
+      // 260822 cc normalize 现在返回 { part, resize? }。这里只取 part：用户手动附件被缩过时
+      // 也该告诉模型（同 processor.ts 的工具产出路径），但那要在 file part 旁插一条合成文本
+      // part，而 parts 会经 981 行 sessions.updatePart 持久化、还要过 TUI/GUI 两端渲染 ——
+      // 是独立一步。工具产出那条路（read/webfetch/MCP/plugin/task，webqa 截图走它）已覆盖。
       const parts = yield* Effect.forEach(resolvedParts, (part) =>
         part.type === "file" && part.mime.startsWith("image/")
           ? image.normalize(part).pipe(
+              Effect.map((result) => result.part),
               Effect.catchIf(
                 (error) => error instanceof Image.ResizerUnavailableError,
                 () => Effect.succeed(part),

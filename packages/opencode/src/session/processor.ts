@@ -565,20 +565,37 @@ export const layer = Layer.effect(
                 ? image.normalize(attachment).pipe(
                     Effect.catchIf(
                       (error) => error instanceof Image.ResizerUnavailableError,
-                      () => Effect.succeed(attachment),
+                      () =>
+                        Effect.succeed<{ part: MessageV2.FilePart; resize?: Image.ResizeReport }>({ part: attachment }),
                     ),
                     Effect.exit,
                   )
-                : Effect.succeed(Exit.succeed<MessageV2.FilePart>(attachment)),
+                : Effect.succeed(Exit.succeed<{ part: MessageV2.FilePart; resize?: Image.ResizeReport }>({ part: attachment })),
             )
             const omitted = normalized.filter(Exit.isFailure).length
-            const attachments = normalized.filter(Exit.isSuccess).map((item) => item.value)
+            const succeeded = normalized.filter(Exit.isSuccess).map((item) => item.value)
+            const attachments = succeeded.map((item) => item.part)
+            // 260822 cc 被缩过的图要告诉模型缩了多少（搬自官方 harness 6e17c20804）。
+            // 不说的话模型看的是缩略图却以为是原图，它报出的任何像素尺寸/坐标都对不上原文件。
+            // 这条路覆盖 read / webfetch / MCP / plugin / task 全部产图来源（webqa 截图走这里）。
+            // 多张图时按序号编号，否则模型分不清说的是哪张。文案由 formatResizeNotice 统一
+            // 产出且完全由尺寸推导——必须确定性，理由见该函数注释。
+            const resizeNotices = succeeded
+              .map((item, index) =>
+                item.resize
+                  ? `[attachment #${index + 1}] ${Image.formatResizeNotice(item.resize)}`
+                  : undefined,
+              )
+              .filter((notice): notice is string => notice !== undefined)
             const output = {
               ...rawOutput,
-              output:
-                omitted === 0
-                  ? rawOutput.output
-                  : `${rawOutput.output}\n\n[${omitted} image${omitted === 1 ? "" : "s"} omitted: could not be resized below the image size limit.]`,
+              output: [
+                rawOutput.output,
+                ...(omitted === 0
+                  ? []
+                  : [`[${omitted} image${omitted === 1 ? "" : "s"} omitted: could not be resized below the image size limit.]`]),
+                ...resizeNotices,
+              ].join("\n\n"),
               attachments: attachments.length ? attachments : undefined,
             }
             // 260814 Red 重复调用软层提醒（阈值 3/5/8 递进，纯建议不拦截）：同工具+同参

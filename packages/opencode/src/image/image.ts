@@ -65,8 +65,44 @@ export class SizeError extends Schema.TaggedErrorClass<SizeError>()("ImageSizeEr
 
 export type Error = ResizerUnavailableError | InvalidDataUrlError | DecodeError | SizeError
 
+/** 缩放后的尺寸报告；未缩放时不产出。 */
+export interface ResizeReport {
+  readonly sourceWidth: number
+  readonly sourceHeight: number
+  readonly width: number
+  readonly height: number
+}
+
+/**
+ * 260822 cc 把「这张图被缩过、缩了多少」告诉模型（搬自官方 deepseek-harness
+ * 6e17c20804 read_image reports downscaled dimensions and coordinate scale）。
+ *
+ * 之前 originalWidth/originalHeight 只进了 log，模型完全不知道自己看的是缩略图：
+ * 它报出的任何像素尺寸/坐标都是缩放后坐标系里的数，与原文件对不上。
+ *
+ * 三条约束：
+ * · **必须确定性**——文案只由尺寸推导，不含时间戳/随机数。掺进去就会重演
+ *   transform.ts savePartToTemp 上方记录的那次事故：同一张历史图每轮生成不同文本，
+ *   provider 前缀缓存被永久钉死、命中率线性掉到 50% 且不自愈。
+ * · **倍数现算，不复用 normalize 里的 scale**——那是首选尺寸的缩小率，而 ×0.75 降级
+ *   循环 + Math.floor 会让最终尺寸偏离它。
+ * · **宽高分开给**——降级循环对宽高各自 floor，两个方向的倍数可能不等。
+ */
+export function formatResizeNotice(report: ResizeReport): string {
+  const x = (report.sourceWidth / report.width).toFixed(2)
+  const y = (report.sourceHeight / report.height).toFixed(2)
+  return (
+    `This image was downscaled for transport: the file on disk is ` +
+    `${report.sourceWidth}x${report.sourceHeight} px, you are seeing ${report.width}x${report.height} px. ` +
+    `Multiply any coordinate or size you measure on it by ${x} horizontally and ${y} vertically ` +
+    `to locate the same feature in the original file.`
+  )
+}
+
 export interface Interface {
-  readonly normalize: (input: MessageV2.FilePart) => Effect.Effect<MessageV2.FilePart, Error>
+  readonly normalize: (
+    input: MessageV2.FilePart,
+  ) => Effect.Effect<{ part: MessageV2.FilePart; resize?: ResizeReport }, Error>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Image") {}
@@ -115,7 +151,8 @@ export const layer = Layer.effect(
         const originalWidth = decoded.get_width()
         const originalHeight = decoded.get_height()
         if (originalWidth <= info.maxWidth && originalHeight <= info.maxHeight && bytes <= info.maxBase64Bytes)
-          return input
+          // in-budget 原样透传：返回同一个 part 对象引用，逐字节相同（内容寻址去重的前提）
+          return { part: input }
         if (!info.autoResize)
           return yield* new SizeError({
             bytes,
@@ -161,9 +198,17 @@ export const layer = Layer.effect(
               to: `${size.width}x${size.height}`,
             })
             return {
-              ...input,
-              mime: candidate.mime,
-              url: `data:${candidate.mime};base64,${candidate.data}`,
+              part: {
+                ...input,
+                mime: candidate.mime,
+                url: `data:${candidate.mime};base64,${candidate.data}`,
+              },
+              resize: {
+                sourceWidth: originalWidth,
+                sourceHeight: originalHeight,
+                width: size.width,
+                height: size.height,
+              },
             }
           }
         }
