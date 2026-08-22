@@ -1,4 +1,4 @@
-import type { AssistantMessage, Message } from "@redcode-ai/sdk/v2/client"
+import type { AssistantMessage, CompactionPart, Message, Part } from "@redcode-ai/sdk/v2/client"
 
 type Provider = {
   id: string
@@ -208,4 +208,27 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
 
 export function getSessionContextMetrics(messages: Message[] = [], providers: Provider[] = []) {
   return build(messages, providers)
+}
+
+/**
+ * 最近一次压缩的那个 part。
+ *
+ * 260822 cc 抽成纯函数只为一件事：倒序扫描很容易写成正序，而写反之后界面上仍然会显示
+ * 一组"看着挺像"的数字（会话第一次压缩，而不是最近一次），没人看得出来。测试钉住它。
+ * 一次压缩写一个 CompactionPart（compaction.ts:714-726 回填 tokens_before/after），
+ * 所以要的是"最后一条消息里的最后一个"，两层都得倒着走。
+ */
+export function findLastCompaction(
+  messages: Message[],
+  getParts: (messageID: string) => Part[],
+): CompactionPart | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]
+    if (!message) continue
+    const parts = getParts(message.id)
+    for (let j = parts.length - 1; j >= 0; j--) {
+      const part = parts[j]
+      if (part?.type === "compaction") return part
+    }
+  }
 }

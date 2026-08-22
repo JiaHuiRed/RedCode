@@ -17,7 +17,7 @@ import type { Message, Part, UserMessage } from "@redcode-ai/sdk/v2/client"
 import { useLanguage } from "@/context/language"
 import { useProviders } from "@/hooks/use-providers"
 import { useSessionLayout } from "@/pages/session/session-layout"
-import { getSessionContextMetrics } from "./session-context-metrics"
+import { findLastCompaction, getSessionContextMetrics } from "./session-context-metrics"
 import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "./session-context-breakdown"
 import { createSessionContextFormatter } from "./session-context-format"
 
@@ -312,6 +312,15 @@ export function SessionContextTab() {
   // 单列塌陷时也按数组序错开），标题类字段（会话名/创建时间）留中性色，其余全部上色。
   // 260809 Red 输入 token 为 0 时用中性色——浅色主题下 syntax-string 是橙红，零值看着像报错
   const inputTokensColor = createMemo(() => (ctx()?.input ? "var(--syntax-string)" : undefined))
+
+  // 260822 cc 最近一次压缩。CompactionPart 上的 tokens_before/after 是服务端压缩完成后回填的
+  // （compaction.ts:714-726），TUI 的分割线早就显示了（routes/session/index.tsx:1450-1459
+  // 那句 " Compaction 180k → 32k "），GUI 这边一直只画一个没有数字的死标签。
+  // 放在面板而不是输入框悬浮：它是"这个会话被压过没有、压掉了多少"，是账本，不是当下这一轮。
+  const lastCompaction = createMemo(() =>
+    findLastCompaction(messages(), (messageID) => (sync.data.part[messageID] ?? []) as Part[]),
+  )
+
   const stats = [
     { label: "context.stats.session", value: () => info()?.title ?? params.id ?? "—" },
     { label: "context.stats.sessionID", value: () => params.id ?? "—", color: "var(--syntax-property)" },
@@ -322,16 +331,18 @@ export function SessionContextTab() {
     },
     { label: "context.stats.provider", value: providerLabel, color: "var(--syntax-info)" },
     { label: "context.stats.model", value: modelLabel, color: "var(--syntax-string)" },
-    { label: "context.stats.limit", value: () => formatter().number(ctx()?.limit), color: "var(--syntax-type)" },
     {
       label: "context.stats.totalTokens",
       value: () => formatter().number(ctx()?.total),
       color: "var(--syntax-success)",
     },
     // 260821 Red：删除「上下文窗口」字段——输入框 tooltip 已显示窗口占用率，右侧重复。
-    // 260819 cc usage 现在是「上下文窗口占用率」（window / limit），不再是会话累计除窗口。
+    // 260822 cc 「上下文限制」与「使用率」也一并删掉，分工彻底切开：
+    //   **窗口口径归输入框那个圆圈**（占用/上限/百分比 + 首字延迟 + 解码速率，都是"当下这一轮"），
+    //   **会话账本归这里**（累计用量、构成、成本、元数据）。
+    // 这两格原本就是 tooltip 第一行 `51,572 / 256,000 · 20%` 的分母与百分比，一字不差。
+    // 腾出的位置换成两条同样"数据早就在线上、但从没显示过"的压缩机制字段（见下）。
     // 上面 totalTokens 那行仍是会话累计，标签本来就对，不动。
-    { label: "context.stats.usage", value: () => formatter().percent(ctx()?.usage), color: "var(--syntax-warning)" },
     { label: "context.stats.inputTokens", value: () => formatter().number(ctx()?.input), color: inputTokensColor() },
     {
       label: "context.stats.outputTokens",
@@ -377,6 +388,33 @@ export function SessionContextTab() {
       color: "var(--syntax-type)",
     },
     { label: "context.stats.totalCost", value: cost, color: "var(--syntax-critical)" },
+    {
+      label: "context.stats.lastCompaction",
+      value: () => {
+        const part = lastCompaction()
+        if (!part || part.tokens_before === undefined || part.tokens_after === undefined) return "—"
+        // auto/overflow 是两件事：auto 说的是谁触发的（引擎还是人），
+        // overflow 说的是"被上下文顶爆才压的"而不是主动降本 —— 后者只在为真时才提。
+        const tags = [language.t(part.auto ? "context.stats.compactionAuto" : "context.stats.compactionManual")]
+        if (part.overflow) tags.push(language.t("context.stats.compactionOverflow"))
+        return `${formatter().number(part.tokens_before)} → ${formatter().number(part.tokens_after)} · ${tags.join(" · ")}`
+      },
+      color: "var(--syntax-warning)",
+    },
+    {
+      // 260822 cc 自动压缩的开关与硬顶。关着的时候进度圈变红也不会有人来救
+      // （overflow.ts:65 auto:false 直接返回 ok，整个分级机制不动手），
+      // 这件事在界面上此前一个字都没有。threshold 是硬顶，与模型窗口取小者才是真触发点。
+      label: "context.stats.autoCompaction",
+      value: () => {
+        const cfg = sync.data.config.compaction
+        if (cfg?.auto === false) return language.t("context.stats.compactionOff")
+        const threshold = cfg?.threshold
+        const on = language.t("context.stats.compactionOn")
+        return threshold ? `${on} · ${formatter().number(threshold)}` : on
+      },
+      color: "var(--syntax-info)",
+    },
     { label: "context.stats.sessionCreated", value: () => formatter().time(info()?.time.created) },
     {
       label: "context.stats.lastActivity",

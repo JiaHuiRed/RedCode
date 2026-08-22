@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { Message } from "@redcode-ai/sdk/v2/client"
-import { getSessionContextMetrics } from "./session-context-metrics"
+import type { Message, Part } from "@redcode-ai/sdk/v2/client"
+import { findLastCompaction, getSessionContextMetrics } from "./session-context-metrics"
 
 const assistant = (
   id: string,
@@ -238,5 +238,48 @@ describe("getSessionContextMetrics — 解码速率与首字延迟", () => {
     ]).context
     expect(ctx?.decodeRate).toBeNull()
     expect(ctx?.firstChunkMs).toBeNull()
+  })
+})
+
+// 260822 cc 面板「上次压缩」那格靠它。倒序扫描写反了界面照样显示一组"看着挺像"的数字
+// （会话第一次压缩而不是最近一次），肉眼分不出来，所以两层倒序各钉一条。
+describe("findLastCompaction", () => {
+  const compaction = (id: string, messageID: string, before: number, after: number) =>
+    ({
+      id,
+      messageID,
+      sessionID: "s1",
+      type: "compaction",
+      auto: true,
+      tokens_before: before,
+      tokens_after: after,
+    }) as unknown as Part
+  const text = (id: string, messageID: string) =>
+    ({ id, messageID, sessionID: "s1", type: "text", text: "hi" }) as unknown as Part
+
+  test("跨消息取最后一条，不是第一条", () => {
+    const parts: Record<string, Part[]> = {
+      m1: [compaction("p1", "m1", 180_000, 32_000)],
+      m2: [text("p2", "m2")],
+      m3: [compaction("p3", "m3", 200_000, 40_000)],
+    }
+    const found = findLastCompaction(
+      [user("m1"), user("m2"), user("m3")].map((m, i) => ({ ...m, id: `m${i + 1}` })) as Message[],
+      (id) => parts[id] ?? [],
+    )
+    expect(found?.tokens_before).toBe(200_000)
+  })
+
+  test("同一条消息里也取最后一个", () => {
+    const parts: Record<string, Part[]> = {
+      m1: [compaction("p1", "m1", 100, 10), text("p2", "m1"), compaction("p3", "m1", 300, 30)],
+    }
+    const found = findLastCompaction([{ ...user("m1"), id: "m1" }] as Message[], (id) => parts[id] ?? [])
+    expect(found?.tokens_before).toBe(300)
+  })
+
+  test("从没压缩过时是 undefined", () => {
+    const found = findLastCompaction([{ ...user("m1"), id: "m1" }] as Message[], () => [text("p1", "m1")])
+    expect(found).toBeUndefined()
   })
 })
