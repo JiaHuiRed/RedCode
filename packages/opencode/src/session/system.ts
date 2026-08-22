@@ -64,16 +64,35 @@ export function provider(model: Provider.Model) {
   // 260625 Red GLM(智谱) + Qwen(通义) — 准一线，复用精炼档
   if (model.api.id.toLowerCase().includes("glm") || model.api.id.toLowerCase().includes("qwen")) return [PROMPT_GLM]
   // 260623 Red Step(阶跃星辰)
-  // 260729 Red grok 此前无专属提示词、落 default.md —— 而 default.md 强制「不超过 4 行、
+  // 260729 Red grok 此前无专属提示词、落 default.md —— 而当时的 default.md 强制「不超过 4 行、
   // 单词回答最好」，会直接碾平 soul 的人格。见 grok.md。
+  // ⚠ 260822 cc default.md 已重写，那套限制**不复存在**（见文件末尾兜底分支的注释）。
+  //   grok/doubao/sensenova 这三份当初唯一的存在理由就是逃开它，如今可考虑合并回兜底；
+  //   没有一并删是因为它们可能已积累了各自的调优，需要逐份看过再决定，不该混在重写里做。
   if (model.api.id.toLowerCase().includes("grok")) return [PROMPT_GROK]
-  // 260731 Red 火山方舟 Doubao Seed 系列专属提示词（不落 default.md 那套"不超过 4 行"的限制）
+  // 260731 Red 火山方舟 Doubao Seed 系列专属提示词（当时是为了不落 default.md 那套
+  // "不超过 4 行"的限制；该限制 260822 已从 default.md 移除，见上）
   if (model.providerID.toLowerCase().includes("volcengine")) return [PROMPT_DOUBAO]
   if (model.api.id.toLowerCase().includes("step")) return [PROMPT_STEP]
-  // 260802 Red sensenova 自家模型（flash-lite / u1-fast 等）——不落 default.md 那套
-  // 「不超过 4 行、单词回答最好」的旧限制。deepseek/glm 模型已在上面命中各自专属，
-  // 不会走到这里。
+  // 260802 Red sensenova 自家模型（flash-lite / u1-fast 等）——当时是为了不落 default.md
+  // 那套「不超过 4 行、单词回答最好」的旧限制（260822 已移除，见上）。
+  // deepseek/glm 模型已在上面命中各自专属，不会走到这里。
   if (model.providerID.toLowerCase().includes("sensenova")) return [PROMPT_SENSENOVA]
+  // 260822 cc 兜底分支的定位，一并写清楚，因为它此前是反的：
+  //
+  // **走到这里的通常是最新、最强的模型**，不是最弱的。上面每一条 include 都是为某个已知
+  // 模型手写的；一个刚发布、还没人来得及加分支的模型（尤其是测试期用假名字的），必然落到
+  // 这里。而旧 default.md 恰恰是全仓最紧的一份——4 行上限、"单词回答最好"、禁止任何注释——
+  // 于是"未知 ⇒ 当成弱模型死死管住"，把新模型的能力直接压掉一大截。上面 grok/doubao/
+  // sensenova 三处注释就是这个错误的化石：它们唯一的存在理由是逃开兜底。
+  //
+  // 重写后的 default.md 按"能力无关的余地"写：不设长度上限、不禁注释、按周围代码风格走，
+  // 同时保留客观性/验证/安全那几条硬约束。弱模型不会因此失控（长度由"答案长度跟着问题走"
+  // 与 soul 管），强模型也不再被凭空砍一刀。
+  //
+  // 注意它同时是上面 experimentNoModelPrompt 那个 A/B 实验的基线——基线因此从"被削弱的
+  // 提示词"变成了"合理的通用提示词"，该实验现在比较的是"模型专属调优 vs 通用基线"，
+  // 而不是"任何提示词 vs 残废提示词"。这正是那个实验本来想测的东西。
   return [PROMPT_DEFAULT]
 }
 
