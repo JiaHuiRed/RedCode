@@ -521,8 +521,12 @@ export function DebugBar() {
             tip 里是最近 6 次。截图这一格就能定位到底是谁被卸载了。 */}
         <Cell
           label="BLANK"
-          tip={state.flash.log.length ? state.flash.log.join("  |  ") : "no large unmount yet"}
-          value={state.flash.count === 0 ? na() : `${state.flash.count} ${state.flash.last}`}
+          tip={
+            state.flash.log.length
+              ? state.flash.log.map((item, i) => `${i + 1}. ${item}`).join("   |   ")
+              : "还没抓到大子树卸载或整列塌缩"
+          }
+          value={state.flash.count === 0 ? "0" : String(state.flash.count)}
           bad={state.flash.count > 0}
           dim={state.flash.count === 0}
           wide
