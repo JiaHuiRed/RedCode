@@ -1136,7 +1136,10 @@ describe("ProviderTransform.message - DeepSeek reasoning content", () => {
     expect(result[0].providerOptions?.openaiCompatible?.reasoning_content).toBe("Let me think about this...")
   })
 
-  test("DeepSeek plain-text turn omits reasoning_content (official thinking_mode rule)", () => {
+  // 260822 cc 这条原来叫 "plain-text turn omits reasoning_content (official thinking_mode rule)"，
+  // 锁的是「纯文本轮省略」。规则已按官方 deepseek-harness 583894f7ae 翻转：经网关转发时
+  // 纯文本轮不带思维链会导致签名查找落空、重建的对话与记录分叉。详见 transform.ts 的注释。
+  test("DeepSeek plain-text turn passes reasoning_content back (gateway signature recovery)", () => {
     const msgs = [
       {
         role: "assistant",
@@ -1188,7 +1191,73 @@ describe("ProviderTransform.message - DeepSeek reasoning content", () => {
 
     expect(result).toHaveLength(1)
     expect(result[0].content).toEqual([{ type: "text", text: "Done." }])
+    expect(result[0].providerOptions?.openaiCompatible?.reasoning_content).toBe("Let me think...")
+  })
+
+  // 260822 cc 下面三条是翻转规则时配的闸门，缺一条就会让错误实现悄悄通过。
+  const interleavedModel = (over: { apiID?: string; field?: string } = {}) =>
+    ({
+      id: ModelID.make(`x/${over.apiID ?? "deepseek-chat"}`),
+      providerID: ProviderID.make("x"),
+      api: { id: over.apiID ?? "deepseek-chat", url: "https://example.com", npm: "@ai-sdk/openai-compatible" },
+      name: "fixture",
+      capabilities: {
+        temperature: true,
+        reasoning: true,
+        attachment: false,
+        toolcall: true,
+        input: { text: true, audio: false, image: false, video: false, pdf: false },
+        output: { text: true, audio: false, image: false, video: false, pdf: false },
+        interleaved: { field: over.field ?? "reasoning_content" },
+      },
+      cost: { input: 0.001, output: 0.002, cache: { read: 0.0001, write: 0.0002 } },
+      limit: { context: 128000, output: 8192 },
+      status: "active",
+      options: {},
+      headers: {},
+      release_date: "2023-04-01",
+    }) as any
+
+  // 最重要的一条：transform.ts 上面的 deepseek 分支给每条 assistant 消息都补了
+  // { type: "reasoning", text: "" }，所以 reasoningParts 恒非空。若把新条件误写成
+  // 判 parts 而不是判 text，每条消息（含跨模型降级过的历史）都会长出空字段，
+  // 前缀在最早那条 assistant 处就分叉、全量重建。这条用例就是那个错误实现的闸门。
+  test("plain-text turn with only the padded empty reasoning part still omits the field", () => {
+    const msgs = [{ role: "assistant", content: [{ type: "text", text: "Hi." }] }] as any[]
+    const result = ProviderTransform.message(msgs, interleavedModel(), {})
     expect(result[0].providerOptions?.openaiCompatible?.reasoning_content).toBeUndefined()
+  })
+
+  // reasoning_details 在 OpenRouter 语义里是对象数组，这里塞的是 join 出来的字符串，
+  // 类型本就错配。翻转规则时刻意不放大它：维持仅 tool-call 轮。
+  test("reasoning_details is not widened to plain-text turns", () => {
+    const msgs = [
+      {
+        role: "assistant",
+        content: [
+          { type: "reasoning", text: "thinking" },
+          { type: "text", text: "Done." },
+        ],
+      },
+    ] as any[]
+    const result = ProviderTransform.message(msgs, interleavedModel({ field: "reasoning_details" }), {})
+    expect(result[0].providerOptions?.openaiCompatible?.reasoning_details).toBeUndefined()
+  })
+
+  // 命中该分支的 796 个模型里 666 个不是 deepseek（大头是 GLM 211 / Kimi 168），
+  // 它们不走上面那段 deepseek padding，新条件对它们同样要正确。
+  test("non-DeepSeek interleaved model passes reasoning back on a plain-text turn", () => {
+    const msgs = [
+      {
+        role: "assistant",
+        content: [
+          { type: "reasoning", text: "weighing options" },
+          { type: "text", text: "Done." },
+        ],
+      },
+    ] as any[]
+    const result = ProviderTransform.message(msgs, interleavedModel({ apiID: "glm-5.2" }), {})
+    expect(result[0].providerOptions?.openaiCompatible?.reasoning_content).toBe("weighing options")
   })
 
   test("Non-DeepSeek providers leave reasoning content unchanged", () => {

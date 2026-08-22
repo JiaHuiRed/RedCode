@@ -350,11 +350,34 @@ function normalizeMessages(
         // Filter out reasoning parts from content
         const filteredContent = msg.content.filter((part: any) => part.type !== "reasoning")
 
-        // 260816 Red 对齐 DeepSeek thinking_mode 官方规则（guides/thinking_mode.mdx）：
-        // reasoning_content 只在带 tool-call 的 assistant turn 回传（API 硬性要求），
-        // 纯文本 turn 服务端忽略——省略字段省 input token。
-        // tool-call turn 空字段也设置（兼容部分 provider 要求字段存在）。
-        if (!msg.content.some((part: any) => part.type === "tool-call")) {
+        // 260822 cc 纯文本轮也回传思维链（对齐官方 deepseek-harness 583894f7ae）。
+        //
+        // 原规则「只在 tool-call 轮回传，纯文本轮省略以省 token」只对 api.deepseek.com
+        // 成立。经网关转发时（把 DeepSeek chat-completions 重编码给别家）协议里没有
+        // 承载上游思考签名的字段，网关只能对回放的思维链取哈希来恢复；纯文本轮不带
+        // 推理 → 签名查找落空 → 重建出的对话与记录分叉。本仓同时在用 opencode-go /
+        // SenseNova 等网关，正是会中招的形态，且症状只在纯作答轮出现所以偶发难查。
+        //
+        // 另一重理由：这段代码先把 reasoning part 从 content 里剥掉（filteredContent），
+        // 只在 tool-call 轮用 providerOptions 重新注入 —— 纯文本轮的思维链无人重新注入，
+        // 等于**主动丢弃 SDK 本来会发的信息**。@ai-sdk/openai-compatible 自己的 assistant
+        // 分支是 `...reasoning.length > 0 ? { reasoning_content } : {}`，不分轮型；
+        // interleaved.field 为空的同类模型今天就是这个形态在跑生产。所以这次是回归
+        // SDK 默认行为，不是引入新行为。
+        //
+        // 两条边界，都不可省：
+        // ① 必须判 reasoningText 而不是 reasoningParts —— 上面 322-336 行给每条 deepseek
+        //    assistant 消息都补了 { type: "reasoning", text: "" }，parts 恒非空。按 parts
+        //    判会让每条消息（含跨模型降级过的历史）长出 reasoning_content: ""，前缀在
+        //    最早那条 assistant 处就分叉，全量重建。
+        // ② reasoning_details 不跟着放大 —— 它在 OpenRouter 语义里是对象数组，这里塞的
+        //    是 join 出来的字符串，类型本就错配（命中集里只剩 2 个模型）。维持仅 tool-call
+        //    轮，别让错配按轮次线性放大。
+        //
+        // tool-call 轮维持原样：空字段也设置（兼容部分 provider 要求字段存在）。
+        const hasToolCall = msg.content.some((part: any) => part.type === "tool-call")
+        const carriesReasoning = field !== "reasoning_details" && reasoningText.length > 0
+        if (!hasToolCall && !carriesReasoning) {
           return { ...msg, content: filteredContent }
         }
 

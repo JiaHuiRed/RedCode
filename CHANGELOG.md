@@ -196,7 +196,7 @@
 
 #### 修复
 
-- **reasoning_content 仅 tool-call turn 回传**（`session/processor.ts`）：对齐官方 thinking_mode 规则，避免思考内容在非工具调用轮被重复回传。
+- **reasoning_content 仅 tool-call turn 回传**（`provider/transform.ts`）：对齐官方 thinking_mode 规则，避免思考内容在非工具调用轮被重复回传。（260822 更正：原文写的文件路径 `session/processor.ts` 是错的，该文件全域无 reasoning_content；实现一直在 `provider/transform.ts`。另：此规则已于 260822 翻转，见该版本条目。）
 - **deepseek.md 提示词去双立法 + 补库幻觉抑制**（`session/system.ts`、`prompt/deepseek.md`）：对照三方证据（Claude Code opus5 / Codex 5.3 / 官方 harness）确认"没人教思考、全是行为契约"，删除 3 处与全局 AGENTS+铁律重复的条目，补回 default.md 被误砍的库幻觉抑制条。加载链 `system.ts:43`（model.api.id 含 deepseek → PROMPT_DEEPSEEK）。
 - **归档按钮图标 fallback 成"+"，与新建会话按钮撞脸**（`ui/v2/components/icon.tsx`）：IconV2 图标字典缺 `archive`，`Icon` 对未知名静默回退 `plus`——首页工具栏"归档会话"按钮渲染成与旁边"新建会话"一模一样的"+"，看起来像两个重复按钮。补 `archive` 图标（复用 v1 同名 SVG 路径），并全量比对 app 内 IconV2 用法确认无其他未知名。
 - **切换会话后 assistant 回复"凭空消失"——只剩连续 user 消息**（`pages/session/message-timeline.data.ts`、`message-timeline.tsx`）：切换/返回会话瞬间，`message.updated` 骨架事件先到但可渲染 parts 未到（流式生成中或 `session_status` 未同步），`sync()` 判定 cached=true 跳过 fetch 不补齐，原逻辑该条 assistant 一行都不渲染（user 行不依赖 parts 照常显示）——表现为图里只有连续 user 消息、AI 回复全无，过一会儿事件流/loadMore 补齐才恢复正常。修复：渲染层兜底，assistant 骨架在、parts 空、非 busy、无 error 时推 `AssistantPending` 占位行（头像 + "加载中…"），busy 时 Thinking 行照旧不重复；新增 5 个单测覆盖 Pending/Thinking/Part/Error/空边界（mock `@redcode-ai/ui/message-part` 纯函数规避 tsx→solid-js 测试环境问题）。
