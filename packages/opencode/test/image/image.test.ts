@@ -54,7 +54,9 @@ describe("Image", () => {
       const image = yield* Image.Service
       const input = part("image/webp", "UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA")
 
-      expect(yield* image.normalize(input)).toEqual(input)
+      // 260822 cc toBe 而非 toEqual：in-budget 走的是 `return input`，返回同一个对象引用，
+      // 即逐字节透传。钉住引用相等，才能在有人改成重编码时立刻报警（那会废掉内容寻址去重）。
+      expect(yield* image.normalize(input)).toBe(input)
     }),
   )
 
@@ -118,6 +120,51 @@ describe("Image", () => {
           expect(error.max).toBe(1)
         }
       }
+    }),
+  )
+})
+
+// 260822 cc JPEG 候选梯子的闸门。
+//
+// 原梯子是 [80, 85, 70, 55, 40]：候选顺序为 [png, q80, q85, q70, q55, q40]，.find() 取
+// 第一个字节数达标的，所以命中 q85 需要 bytes(q85) < bytes(q80) —— 与「质量越高字节越大」
+// 矛盾，那一档在任何输入下都不可达。这个 bug 能长期存活的结构性原因是 JPEG_QUALITIES
+// 是文件内 const、测试拿不到，于是最廉价的那种闸门写不出来。现已导出。
+describe("Image JPEG candidate ladder", () => {
+  it.effect("the quality ladder is strictly descending", () =>
+    Effect.gen(function* () {
+      const ladder = Image.JPEG_QUALITIES
+      expect(ladder.length).toBeGreaterThan(0)
+      // 严格递减：等值也不行——相等的后一档同样不可达（前一档先被 find 命中）
+      for (let i = 1; i < ladder.length; i++) expect(ladder[i]).toBeLessThan(ladder[i - 1])
+      expect(new Set(ladder).size).toBe(ladder.length)
+    }),
+  )
+
+  // JPEG 分支此前实际覆盖率是 0：4 条正向用例全在第 0 档的 PNG 候选就命中了。
+  // 噪声图不可压缩，PNG 候选必然超限，于是第一次真正走到 JPEG 档。
+  it.effect("falls through to a JPEG candidate when the PNG candidate is over budget", () =>
+    Effect.gen(function* () {
+      const photon = yield* Effect.promise(() => import("@silvia-odwyer/photon-node"))
+      const side = 1000
+      const pixels = new Uint8Array(side * side * 4)
+      // 确定性伪随机（LCG），保证同一输入每次跑出同样的字节数
+      let seed = 0x2545f491
+      for (let i = 0; i < pixels.length; i += 4) {
+        seed = (seed * 1664525 + 1013904223) >>> 0
+        pixels[i] = seed & 0xff
+        pixels[i + 1] = (seed >>> 8) & 0xff
+        pixels[i + 2] = (seed >>> 16) & 0xff
+        pixels[i + 3] = 255
+      }
+      const source = new photon.PhotonImage(pixels, side, side)
+      const png = Buffer.from(source.get_bytes()).toString("base64")
+      source.free()
+
+      const image = yield* Image.Service
+      const result = yield* image.normalize(part("image/png", png))
+      expect(result.mime).toBe("image/jpeg")
+      expect(result.url.startsWith("data:image/jpeg;base64,")).toBe(true)
     }),
   )
 })

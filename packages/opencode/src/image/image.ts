@@ -10,7 +10,21 @@ const MAX_BASE64_BYTES = 5 * 1024 * 1024
 const MAX_WIDTH = 2000
 const MAX_HEIGHT = 2000
 const AUTO_RESIZE = true
-const JPEG_QUALITIES = [80, 85, 70, 55, 40]
+// 260822 cc 必须严格单调递减，否则后面的档位不可达。
+//
+// 候选数组的实际顺序是 [png, q80, q85, q70, q55, q40]，.find() 取第一个字节数达标的。
+// 要命中 q85 就得同时满足 bytes(q80) > MAX 且 bytes(q85) <= MAX，即 bytes(q85) < bytes(q80)
+// —— 与「质量越高字节越大」矛盾。原数组里的 85 因此在任何输入下都取不到，是死代码，
+// 每一档尺寸还白编码一次（2000x1333 实测单次 JPEG 编码 ~332ms + 一个 3.9MB buffer）。
+// 已实测：删掉 85 之后，现有 5 条用例选中的候选与最终结果一模一样。
+//
+// 刻意**不**对齐官方 harness 的 85/75/60/45：那会把首个 JPEG 档从 80 抬到 85，实测
+// 3000x2000 噪声图 payload 从 b64 3799524 涨到 4441280（+17%）。那是拿 vision token
+// 成本换保真度，官方不按人民币计费，本仓按。要改是独立决策，不是顺手跟。
+//
+// 导出是为了让 image.test.ts 能钉住「严格递减」这条不变式 —— 它此前是文件内 const，
+// 测试拿不到，这正是这个 bug 能长期存活的结构性原因。
+export const JPEG_QUALITIES = [80, 70, 55, 40]
 const log = Log.create({ service: "image" })
 
 export class ResizerUnavailableError extends Schema.TaggedErrorClass<ResizerUnavailableError>()(
