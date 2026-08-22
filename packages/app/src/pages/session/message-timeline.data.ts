@@ -23,7 +23,6 @@ export type TimelineRowMap = {
     userMessageID: string
     group: PartGroup
     previousAssistantPart: boolean
-    lastAssistantPart: boolean
   }
   Thinking: { userMessageID: string; reasoningHeading?: string }
   Retry: { userMessageID: string }
@@ -51,7 +50,6 @@ export namespace TimelineRow {
     userMessageID: string
     group: PartGroup
     previousAssistantPart: boolean
-    lastAssistantPart: boolean
   }> {}
   export class Thinking extends Data.TaggedClass("Thinking")<{
     userMessageID: string
@@ -160,7 +158,6 @@ export namespace Timeline {
             ),
           ]
         : groupParts(assistantPartRefs).map((group) => ({ type: "part" as const, group }))
-    const assistantGroupCount = assistantItems.filter((item) => item.type === "part").length
 
     if (comments.length > 0)
       rows.push(
@@ -209,11 +206,17 @@ export namespace Timeline {
       }
 
       rows.push(
+        // 260822 cc 这里原本还带一个 lastAssistantPart 字段，**全仓没有任何地方读它**
+        //   （组件判断"是不是本轮最后一组"用的是 message-timeline.tsx:1178 那个响应式
+        //   lastAssistantGroupKey memo）。它唯一的实际作用是坏的：末尾一插新行，原来那行的
+        //   lastAssistantPart 就 true→false，行对象因此不再 equals、reuseTimelineRows 复用不到，
+        //   而 virtua 的 <For each={可见项}> 按**引用** key（lib/solid/index.jsx:1459）——
+        //   于是那一行整棵 DOM 被销毁重建，重建后 virtua 视其为未测量项先隐藏一帧再测高，
+        //   表现就是"模型一调工具就闪一下"。纯文字增量不动这个字段，所以只有插行时才闪。
         new TimelineRow.AssistantPart({
           userMessageID: userMessage.id,
           group: item.group,
           previousAssistantPart: assistantGroupIndex > 0,
-          lastAssistantPart: assistantGroupIndex === assistantGroupCount - 1,
         }),
       )
       assistantGroupIndex += 1

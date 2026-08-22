@@ -31,6 +31,17 @@ const assistantMessage = (id: string, created: number, parentID: string): Assist
 const textPart = (id: string, messageID: string): Part =>
   ({ id, sessionID: "s1", messageID, type: "text", text: "hello" }) as unknown as Part
 
+const toolPart = (id: string, messageID: string): Part =>
+  ({
+    id,
+    sessionID: "s1",
+    messageID,
+    type: "tool",
+    tool: "bash",
+    callID: id,
+    state: { status: "completed", input: {}, output: "ok", title: "bash", time: { start: 1, end: 2 } },
+  }) as unknown as Part
+
 type TimelineRow = ReturnType<typeof Timeline.constructMessageRows>[number]
 
 const tags = (rows: TimelineRow[]) => rows.map((row) => row._tag)
@@ -136,5 +147,57 @@ describe("Timeline.constructMessageRows — 输出被截断", () => {
         : [textPart("p1", "a1")]
     const rows = Timeline.constructMessageRows(userMessage("u1", 1), getParts, [cut], 0, false, "idle", false)
     expect(dividers(rows)).toEqual(["compaction", "truncated"])
+  })
+})
+
+// 260822 cc 钉住一条**载重假设**：TimelineRow.equals 走的是 Effect 的 Equal.equals，
+// 它对 Data 类里的普通对象字段做的是结构比较而非引用比较。这条不成立的话，
+// AssistantPart.group（groupParts 每次重算都新建对象）就永远比不相等，
+// reuseTimelineRows 拿不回旧行对象；而 virtua 的 <For each={可见项}> 按引用 key
+// （lib/solid/index.jsx:1459），行对象换新 = 那一行整棵 DOM 销毁重建 —— 活跃轮次
+// 每来一个 part 事件就整屏重挂。升级 effect 时这条要是变了，这里先炸。
+describe("TimelineRow.equals — 载重假设：结构比较而非引用比较", () => {
+  const mkRow = (previous: boolean) =>
+    new TimelineRow.AssistantPart({
+      userMessageID: "u1",
+      group: { key: "part:m1:p1", type: "part", ref: { messageID: "m1", partID: "p1" } },
+      previousAssistantPart: previous,
+    })
+
+  test("group 是两个不同对象但结构相同 → 相等", () => {
+    const a = mkRow(true)
+    const b = mkRow(true)
+    expect(a.group).not.toBe(b.group)
+    expect(TimelineRow.equals(a, b)).toBe(true)
+  })
+
+  test("previousAssistantPart 变化 → 不相等", () => {
+    expect(TimelineRow.equals(mkRow(true), mkRow(false))).toBe(false)
+  })
+
+  test("同样输入连续构造两次，每一行都相等", () => {
+    const user = userMessage("u1", 1)
+    const assistant = assistantMessage("a1", 2, "u1")
+    const parts = [textPart("p1", "a1")]
+    const build = () => Timeline.constructMessageRows(user, () => parts, [assistant], 0, true, "idle", false)
+    const first = build()
+    const second = build()
+    expect(first.length).toBe(second.length)
+    expect(first.every((row, i) => TimelineRow.equals(row, second[i]!))).toBe(true)
+  })
+
+  // 260822 cc 本病的回归钉子：模型在输出中途调工具 = 末尾插一行。
+  // 已有的那些行必须原样可复用，否则 virtua 会把它们整棵 DOM 销毁重建（闪一下）。
+  test("末尾追加一行后，原有的行仍然相等（可复用，不会被重挂）", () => {
+    const user = userMessage("u1", 1)
+    const assistant = assistantMessage("a1", 2, "u1")
+    const before = [textPart("p1", "a1")]
+    const after = [textPart("p1", "a1"), toolPart("p2", "a1")]
+    const build = (parts: Part[]) =>
+      Timeline.constructMessageRows(user, () => parts, [assistant], 0, true, "busy", true)
+    const first = build(before)
+    const second = build(after)
+    expect(second.length).toBeGreaterThan(first.length)
+    expect(first.every((row, i) => TimelineRow.equals(row, second[i]!))).toBe(true)
   })
 })
