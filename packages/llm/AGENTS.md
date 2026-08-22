@@ -171,6 +171,31 @@ The dependency arrow points down: `providers/*.ts` files import protocol routes 
 
 If you find yourself copying a 3-to-5-line snippet between two protocols, lift it into `ProviderShared` next to these helpers rather than duplicating.
 
+### Native options
+
+`Message.native` (and `ToolDefinition.native`) is the per-message escape hatch for
+provider-specific request fields. It is keyed by provider, one level deep, exactly like
+`LLMRequest.providerOptions`:
+
+```ts
+Message.make({
+  role: "assistant",
+  content: "done",
+  native: { openaiCompatible: { reasoning_content: "..." } },
+})
+```
+
+Protocol lowering reads its own key and ignores every other one. Today OpenAI Chat is the
+only consumer: `native.openaiCompatible.reasoning_content` becomes the assistant message's
+`reasoning_content` field on the wire.
+
+Adapters that build `Message` directly — such as opencode's
+`session/llm/native-request.ts` — must forward the provider-keyed bag as-is. Wrapping it in
+another object silently strands every field: `ProviderOptions` values are `unknown`, so any
+nesting depth typechecks and any decode passes. When a protocol starts reading a new
+`native` key, add an outbound assertion in `test/provider/<protocol>.test.ts` — the inbound
+SSE tests cannot see a request-side mistake.
+
 ### Tools
 
 Tool loops are represented in common messages and events:

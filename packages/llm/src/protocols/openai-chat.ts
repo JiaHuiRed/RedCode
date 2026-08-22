@@ -185,6 +185,10 @@ const lowerToolCall = (part: ToolCallPart): OpenAIChatAssistantToolCall => ({
   },
 })
 
+// `Message.native` is provider-keyed (`native[provider][field]`) and OpenAI Chat
+// owns the `openaiCompatible` key. The guard stays runtime-level on purpose: the
+// bag reaches here as plain JSON from adapters that build `Message` directly
+// instead of decoding it through the schema.
 const openAICompatibleReasoningContent = (native: unknown) =>
   isRecord(native) && typeof native.reasoning_content === "string" ? native.reasoning_content : undefined
 

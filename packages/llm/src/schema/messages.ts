@@ -152,7 +152,19 @@ export class Message extends Schema.Class<Message>("LLM.Message")({
   role: MessageRole,
   content: Schema.Array(ContentPart),
   metadata: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
-  native: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+  /**
+   * Per-message escape hatch for provider-specific request fields. Keyed by
+   * provider exactly like `LLMRequest.providerOptions`: `native[provider][field]`,
+   * one level, no wrapper. Protocol lowering reads its own key and ignores the
+   * rest — OpenAI Chat reads `native.openaiCompatible.reasoning_content`.
+   *
+   * `ProviderOptions` pins the nesting depth for readers and for schema decode,
+   * but structural typing cannot reject an extra wrapper level (every JSON-ish
+   * record is assignable to the next one down). The gate against that mistake is
+   * the outbound tests: `test/provider/openai-chat.test.ts` here, and
+   * `test/session/llm-native.test.ts` on the opencode lowering side.
+   */
+  native: Schema.optional(ProviderOptions),
 }) {}
 
 export namespace Message {
@@ -185,7 +197,8 @@ export class ToolDefinition extends Schema.Class<ToolDefinition>("LLM.ToolDefini
   inputSchema: JsonSchema,
   cache: Schema.optional(CacheHint),
   metadata: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
-  native: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+  /** Provider-keyed escape hatch; same contract as `Message.native`. */
+  native: Schema.optional(ProviderOptions),
 }) {}
 
 export namespace ToolDefinition {

@@ -28,6 +28,18 @@ const OpenAIResponses = Schema.Struct({
   websocket: Schema.optional(Schema.Boolean),
 })
 
+// 260822 cc 下面的 reasoning 字段全仓零生产者、零消费者，别把它接成第三条链路。
+//
+// openai/completions 这个 endpoint 变体（连同 openai/responses、anthropic/messages）
+// 是上游 v2 的前瞻分类，本仓从来只构造 aisdk 与 unknown 两种；reasoning 想表达的
+// 「这个 endpoint 的思维链走哪个字段」在本仓已经有两个活的载体：
+//   · AI SDK 路径：Model.capabilities.interleaved.field（provider/transform.ts 消费）
+//   · native 路径：Message.native[provider]（@redcode-ai/llm，openai-chat lowering 消费）
+//
+// 保留而不删：Endpoint 在公开 schema 面上——packages/sdk/openapi.json 有逐字节漂移门禁
+// （script/check-openapi-drift.ts，进 CI 与 pre-push），packages/sdk/js 的 types.gen.ts
+// 是生成物，specs/v2/provider-model.md 还抄着同一段。为一个休眠可选字段动这条链，代价
+// 是两份生成物重跑 + 与上游 specs 分叉，不划算。真要删，删的是整个变体而不是单个字段。
 const OpenAICompletions = Schema.Struct({
   type: Schema.Literal("openai/completions"),
   url: Schema.String,

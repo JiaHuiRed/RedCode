@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { ToolFailure } from "@redcode-ai/llm"
+import type { OpenAIChatBody } from "@redcode-ai/llm/protocols/openai-chat"
 import { LLMClient, RequestExecutor, WebSocketExecutor } from "@redcode-ai/llm/route"
 import { jsonSchema, tool, type ModelMessage, type Tool } from "ai"
 import { Effect, Layer, Stream } from "effect"
+import { ProviderTransform } from "@/provider/transform"
 import { LLMNative } from "@/session/llm/native-request"
 import { LLMNativeRuntime } from "@/session/llm/native-runtime"
 import type { Provider } from "@/provider/provider"
@@ -59,6 +61,28 @@ const baseModel: Provider.Model = {
     "x-model": "model-header",
   },
   release_date: "2026-01-01",
+}
+
+// DeepSeek 形态：走 @ai-sdk/openai-compatible，落到 openai-compatible-chat 路由，
+// 也是 provider/transform.ts 回传 reasoning_content 的那批模型。
+const openAICompatibleModel: Provider.Model = {
+  ...baseModel,
+  id: ModelID.make("deepseek-reasoner"),
+  providerID: ProviderID.make("deepseek"),
+  name: "DeepSeek Reasoner",
+  api: {
+    id: "deepseek-reasoner",
+    url: "https://api.deepseek.com/v1",
+    npm: "@ai-sdk/openai-compatible",
+  },
+  headers: {},
+}
+
+// interleaved.field 命中集：transform.ts 会把 reasoning part 剥出来、改挂到
+// providerOptions.openaiCompatible 上回传（260822 d9bc9688）。
+const interleavedModel: Provider.Model = {
+  ...openAICompatibleModel,
+  capabilities: { ...baseModel.capabilities, interleaved: { field: "reasoning_content" } },
 }
 
 const providerInfo: Provider.Info = {
@@ -605,6 +629,107 @@ describe("session.llm-native.request", () => {
         include: ["reasoning.encrypted_content"],
         store: false,
       },
+    }),
+  )
+
+  // 260822 cc 跨包形状闸门。native runtime 走 openai-compatible 时，transform.ts 塞在
+  // providerOptions.openaiCompatible 上的思维链要一路活到 chat/completions 的请求体里。
+  // 这条链此前断在本文件的 lowering 上（多包了一层 providerOptions），两侧 typecheck 都
+  // 绿、两侧单测都绿——因为谁都没测出站方向。
+  it.effect("carries stored reasoning_content into the openai-compatible chat body", () =>
+    Effect.gen(function* () {
+      const request = LLMNative.request({
+        model: openAICompatibleModel,
+        apiKey: "test-deepseek-key",
+        messages: [
+          storedSession.user("What changed?"),
+          {
+            role: "assistant",
+            content: [storedSession.text("The parser changed.")],
+            providerOptions: { openaiCompatible: { reasoning_content: "Checked the previous diff." } },
+          },
+          storedSession.user("Summarize it."),
+        ],
+      })
+
+      // 逃生舱按 provider 分键，就一层：native[provider][field]。
+      expect(request.messages.map((message) => message.native)).toEqual([
+        undefined,
+        { openaiCompatible: { reasoning_content: "Checked the previous diff." } },
+        undefined,
+      ])
+
+      expect(yield* LLMClient.prepare(request)).toMatchObject({
+        route: "openai-compatible-chat",
+        body: {
+          messages: [
+            { role: "user", content: "What changed?" },
+            {
+              role: "assistant",
+              content: "The parser changed.",
+              reasoning_content: "Checked the previous diff.",
+            },
+            { role: "user", content: "Summarize it." },
+          ],
+        },
+      })
+    }),
+  )
+
+  // 全链路：native-runtime.ts:78 就是这样先过 ProviderTransform.message 再进 lowering 的。
+  // 上一条用例手工塞 providerOptions，这条从「存档里的 reasoning part」出发，把 d9bc9688
+  // 那条回传规则在 native 路径上从头到尾钉住。
+  it.effect("keeps the deepseek reasoning passback intact from transform to wire", () =>
+    Effect.gen(function* () {
+      const messages = ProviderTransform.message(
+        [
+          storedSession.user("What changed?"),
+          {
+            role: "assistant",
+            content: [
+              { type: "reasoning", text: "Checked the previous diff." },
+              storedSession.text("The parser changed."),
+            ],
+          },
+          storedSession.user("Summarize it."),
+        ],
+        interleavedModel,
+        {},
+      )
+
+      const prepared = yield* LLMClient.prepare<OpenAIChatBody>(
+        LLMNative.request({ model: interleavedModel, apiKey: "test-deepseek-key", messages }),
+      )
+
+      expect(prepared.body.messages).toEqual([
+        { role: "user", content: "What changed?" },
+        {
+          role: "assistant",
+          content: "The parser changed.",
+          reasoning_content: "Checked the previous diff.",
+        },
+        { role: "user", content: "Summarize it." },
+      ])
+    }),
+  )
+
+  it.effect("omits reasoning_content when the stored turn carries none", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<OpenAIChatBody>(
+        LLMNative.request({
+          model: openAICompatibleModel,
+          apiKey: "test-deepseek-key",
+          messages: [
+            storedSession.user("What changed?"),
+            { role: "assistant", content: [storedSession.text("The parser changed.")] },
+          ],
+        }),
+      )
+
+      expect(prepared.body.messages).toEqual([
+        { role: "user", content: "What changed?" },
+        { role: "assistant", content: "The parser changed." },
+      ])
     }),
   )
 

@@ -112,7 +112,16 @@ const messages = (input: readonly ModelMessage[]) => {
       Message.make({
         role: message.role,
         content: content(message.content),
-        native: isRecord(message.providerOptions) ? { providerOptions: message.providerOptions } : undefined,
+        // 260822 cc native 是 @redcode-ai/llm Message 上「按 provider 分键」的逃生舱：
+        // native[provider][field]，与 AI SDK 的 providerOptions 是同一套键。今天唯一在用
+        // 的是 openaiCompatible.reasoning_content，由 protocols/openai-chat.ts 的 lowering
+        // 读走，所以整包原样转发即可。
+        //
+        // 原来多包了一层 { providerOptions: ... }，读侧的 native.openaiCompatible 恒为
+        // undefined —— native runtime 上的 reasoning_content 从来没发出去过。schema 那侧
+        // 是 Record<string, unknown>，任何深度都合法，typecheck 不会响；出站方向的测试才是
+        // 闸门（见 test/session/llm-native.test.ts 的 openai-compatible 用例）。
+        native: providerMetadata(message.providerOptions),
       }),
     ]
   })

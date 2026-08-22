@@ -65,6 +65,56 @@ describe("OpenAI Chat route", () => {
     }),
   )
 
+  // Outbound direction. The inbound SSE tests below prove the parser reads
+  // `reasoning_content` off the wire; nothing proved the request side ever wrote
+  // it, which is how a lowering that could never populate the field survived.
+  it.effect("lowers openaiCompatible native options into reasoning_content", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<OpenAIChat.OpenAIChatBody>(
+        LLM.request({
+          model,
+          messages: [
+            Message.user("Why?"),
+            Message.make({
+              role: "assistant",
+              content: "Because.",
+              native: { openaiCompatible: { reasoning_content: "weighing options" } },
+            }),
+            Message.user("Go on."),
+          ],
+        }),
+      )
+
+      expect(prepared.body.messages).toEqual([
+        { role: "user", content: "Why?" },
+        { role: "assistant", content: "Because.", reasoning_content: "weighing options" },
+        { role: "user", content: "Go on." },
+      ])
+    }),
+  )
+
+  // `native` is provider-keyed and exactly one level deep. An extra wrapper level
+  // still typechecks and still decodes — `ProviderOptions` values are `unknown` —
+  // so this asserts the only observable difference: the field never ships.
+  it.effect("ignores native options that are not keyed by provider", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<OpenAIChat.OpenAIChatBody>(
+        LLM.request({
+          model,
+          messages: [
+            Message.make({
+              role: "assistant",
+              content: "Because.",
+              native: { providerOptions: { openaiCompatible: { reasoning_content: "weighing options" } } },
+            }),
+          ],
+        }),
+      )
+
+      expect(prepared.body.messages).toEqual([{ role: "assistant", content: "Because." }])
+    }),
+  )
+
   it.effect("adds native query params to the Chat Completions URL", () =>
     LLMClient.generate(
       LLM.updateRequest(request, {
