@@ -94,11 +94,7 @@ const timelineCache = new Map<string, { keys: readonly string[]; cache: Virtuali
 
 function readTimelineCache(id: string, keys: readonly string[]) {
   const entry = timelineCache.get(id)
-  if (!entry) {
-    // 260821 Red 临时诊断（取证后删）：cache 未命中/失效时留痕，配合 renderer.log 定位闪烁
-    console.log("[FLASH-DIAG] cache-miss", id, "keys", keys.length)
-    return
-  }
+  if (!entry) return
   // 260821 Red：BottomSpacer 恒在最后一行（timelineRows 472 行），行插入时它被新行顶后一位——
   // 前缀比较前先剔除末位 spacer，否则每次行插入（工具行等）都 invalidate → 60px 整列塌缩。
   // 顶部加载历史 / compaction 截断 / 回滚等真中间变更（prefixDiffAt 落在中部）照旧失效。
@@ -109,11 +105,6 @@ function readTimelineCache(id: string, keys: readonly string[]) {
   // 工具行（默认展开、几百 px）插入瞬间整列塌缩再逐行测量恢复 → 内容跳变（屏幕闪一下）+ 吞键。
   // 放宽为前缀匹配：顶部加载历史/compaction 截断/回滚等非末尾变更照旧失效。
   if (next.length >= prev.length && prev.every((key, i) => next[i] === key)) return entry.cache
-  console.log(
-    "[FLASH-DIAG] cache-invalidate", id,
-    "entry", entry.keys.length, "keys", keys.length,
-    "prefixDiffAt", prev.findIndex((key, i) => next[i] !== key),
-  )
   timelineCache.delete(id)
 }
 
@@ -340,9 +331,6 @@ export function MessageTimeline(props: {
   const { params, sessionKey } = useSessionKey()
   const platform = usePlatform()
 
-  // 260821 Red 临时诊断（取证后删）：组件挂载留痕，与 unmount 日志配合判断是否整树重挂
-  console.log("[FLASH-DIAG] timeline-mount", sessionKey())
-
   let virtualizer: VirtualizerHandle | undefined
   const sessionID = createMemo(() => params.id)
   const sessionMessages = createMemo(() => {
@@ -474,12 +462,7 @@ export function MessageTimeline(props: {
   const timelineRows = createMemo((previous: TimelineRow.TimelineRow[] | undefined) => {
     const rows = messageRowMemos().flatMap((memo) => memo())
     if (rows.length === 0) return rows
-    const result = reuseTimelineRows(previous, [...rows, new TimelineRow.BottomSpacer()])
-    if (previous && result.length !== previous.length) {
-      // 260821 Red 临时诊断（取证后删）：行数变化留痕
-      console.log("[FLASH-DIAG] rows-changed", previous.length, "->", result.length)
-    }
-    return result
+    return reuseTimelineRows(previous, [...rows, new TimelineRow.BottomSpacer()])
   })
   const timelineRowKeys = createMemo(() => timelineRows().map(TimelineRow.key), [] as string[], { equals: sameKeys })
   const virtualCache = createMemo(() => readTimelineCache(sessionKey(), timelineRowKeys()))
@@ -632,6 +615,10 @@ export function MessageTimeline(props: {
     bottomAnchorSessionKey = key
     if (!props.shouldAnchorBottom()) return
     virtualizer.scrollToIndex(keys.length - 1, { align: "end" })
+    // 260822 cc scrollToIndex 用的是虚拟**估算**尺寸：缓存未命中时每行按 timelineFallbackItemSize
+    //   估，落点可以离真底部很远。再补一轮以实测高度为准的锚定（scrollTop = scrollHeight），
+    //   沉降完自动收工。少了这一步就是"切回会话掉在历史中间"。
+    scheduleMeasuredBottomAnchor({ force: true })
   }
 
   createEffect(
@@ -657,8 +644,6 @@ export function MessageTimeline(props: {
   )
 
   onCleanup(() => {
-    // 260821 Red 临时诊断（取证后删）：组件卸载留痕，区分「Show 翻转卸载」与「行塌缩重排」
-    console.log("[FLASH-DIAG] timeline-unmount", sessionKey())
     writeTimelineCache(virtualizerSessionKey, virtualizerRowKeys, virtualizer)
     props.setRevealMessage?.(() => {})
   })
@@ -687,6 +672,9 @@ export function MessageTimeline(props: {
   let contentFrame: number | undefined
   let bottomAnchorFrame: number | undefined
   let bottomAnchorFrames = 0
+  let bottomAnchorSettled = 0
+  let bottomAnchorHeight = -1
+  let bottomAnchorForce = false
   let measuredBottomAnchored = true
   // 260822 cc IME 组合期暂停底部锚定。见 scheduleMeasuredBottomAnchor 上方注释。
   let imeComposing = false
@@ -707,7 +695,10 @@ export function MessageTimeline(props: {
 
   function anchorMeasuredBottom() {
     if (!listRoot) return false
-    if (!measuredBottomAnchored) return false
+    // force：切会话入场时的纠偏。此时 measuredBottomAnchored 往往刚被一次落点偏高的
+    // scrollToIndex 经 handleListScroll 置成 false —— 正是需要纠正的状态，不能拿它当门禁，
+    // 否则就是"越偏越不修"的死结（表现：切回会话停在历史中间，要自己滚下来）。
+    if (!bottomAnchorForce && !measuredBottomAnchored) return false
     // 组合期不写 scrollTop：读 scrollHeight 是强制同步布局，和虚拟列表的重测量挤在一帧里
     // 是很重的主线程任务，会打断 IME 组合、把正在打的字吞掉。循环保持存活，组合结束后
     // 由 compositionend 补一次锚定。
@@ -723,10 +714,12 @@ export function MessageTimeline(props: {
   // ① 只有插行才重置预算。这个 workaround 本来就是为插行写的（见下方 virtua #301
   //    注释：工具行的初始测量高度会短暂超出）；文本增量只是把已有行撑长，那条路由
   //    scheduleScrollToEnd 走一次 rAF 就够，不需要连续强制布局。
-  // ② 预算 90 → 12 帧。90 帧是 1.5 秒，远超一次测量沉降所需；12 帧仍留足余量。
-  //
-  // 症状：GUI 里模型输出阶段每次调工具都闪一下，正在打的字被吞（已上屏的不受影响）。
-  const BOTTOM_ANCHOR_FRAMES = 12
+  // ② 不再用固定帧数，改**沉降判据**：滚动高度连续 3 帧不变就收工，90 帧只是硬兜底。
+  //    先前那版写死 12 帧（约 0.2s），大会话切回时不够 —— 行是随进入视口才逐个实测的，
+  //    预算烧完时还没测到底，循环停在半路，人被留在历史中间。判据收工比固定帧数既省
+  //    （静态内容 3 帧就停，不用烧满 90）又稳（慢的场景等得起）。
+  const BOTTOM_ANCHOR_MAX_FRAMES = 90
+  const BOTTOM_ANCHOR_SETTLED_FRAMES = 3
 
   // 组合期让路：IME 组合中不写 scrollTop，组合结束补一次锚定。
   // 监听挂在 document 上而不是输入框上 —— timeline 拿不到 composer 的 ref，两者是
@@ -747,22 +740,41 @@ export function MessageTimeline(props: {
     })
   })
 
-  function scheduleMeasuredBottomAnchor() {
+  function scheduleMeasuredBottomAnchor(options?: { force?: boolean }) {
     // Workaround for virtua issue #301: virtua does not expose a synchronous item-resize hook for
     // "stay at bottom if already at bottom". Tool rows can briefly outgrow the measured virtual
-    // height, so keep the scroll container bottom-locked for a few frames while measurement settles.
-    bottomAnchorFrames = BOTTOM_ANCHOR_FRAMES
+    // height, so keep the scroll container bottom-locked while measurement settles.
+    bottomAnchorFrames = BOTTOM_ANCHOR_MAX_FRAMES
+    bottomAnchorSettled = 0
+    bottomAnchorHeight = -1
+    if (options?.force) bottomAnchorForce = true
     if (bottomAnchorFrame !== undefined) return
+
+    const stop = () => {
+      bottomAnchorFrames = 0
+      bottomAnchorForce = false
+    }
 
     const tick = () => {
       bottomAnchorFrame = undefined
-      if (!anchorMeasuredBottom()) {
-        bottomAnchorFrames = 0
-        return
-      }
+      // 强制纠偏期间用户自己滚了 → 立刻让位，绝不跟人抢滚动条
+      if (bottomAnchorForce && props.hasScrollGesture()) return stop()
+      if (!anchorMeasuredBottom()) return stop()
 
       bottomAnchorFrames -= 1
-      if (bottomAnchorFrames <= 0) return
+      if (bottomAnchorFrames <= 0) return stop()
+
+      // 组合期 anchorMeasuredBottom 不写 scrollTop，高度不变不能算作沉降，否则会提前收工
+      if (!imeComposing) {
+        const height = listRoot?.scrollHeight ?? -1
+        if (height === bottomAnchorHeight) bottomAnchorSettled += 1
+        else {
+          bottomAnchorSettled = 0
+          bottomAnchorHeight = height
+        }
+        if (bottomAnchorSettled >= BOTTOM_ANCHOR_SETTLED_FRAMES) return stop()
+      }
+
       bottomAnchorFrame = requestAnimationFrame(tick)
     }
 
