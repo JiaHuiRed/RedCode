@@ -611,8 +611,129 @@ function unsupportedParts(msgs: ModelMessage[], model: Provider.Model): ModelMes
   })
 }
 
+// 260822 cc 请求级图片载荷累计上限（搬自官方 deepseek-harness 0b4a322003 /
+// note 2026-08-18-request-image-payload-bound）。
+//
+// 会话历史里每张图都会 base64 内联进**每一个**请求，请求体随入库图片数单调增长。
+// 越过网关体积上限后 413，而组装层没有任何约束或裁剪，每次重试都原样重发同一个
+// 超限请求体 —— 会话永久不可用。上游线上两张截图即触发。单张上限（image.ts 的
+// 5MiB）挡不住：每张单看都合规，总和仍然无界。
+//
+// 现在主力模型是多模态、图片来源是会不断累积的 webqa 截图，这条路是敞开的。
+//
+// 设计上照抄上游的三条约束：
+//   · 从 ref 的 base64 长度推算，绝不为了量大小把整张图解码一遍；
+//   · 从**最老**的开始淘汰，最新一张恒保留（用户刚发的图不能被静默吃掉）；
+//   · 淘汰是前缀式且单调的 —— 只要某张被淘汰，比它更老的必然也被淘汰。不做
+//     「先扔最大的」之类贪心排序，那会让请求体每轮抖动、前缀缓存永远追不上。
+//
+// 占位文本复用 unsupportedParts 那套 savePartToTemp + sha256 路径：同一张图恒定
+// 映射到同一路径，请求体逐字节稳定。这一点是 260804 那次缓存事故（用时间戳命名
+// 导致命中率线性滑到 50% 且不自愈，见 savePartToTemp 上方注释）换来的教训，
+// 新写的淘汰路径不能重蹈。
+const DEFAULT_MAX_TOTAL_IMAGE_BASE64_BYTES = 24 * 1024 * 1024
+
+/** base64 载荷长度；拿不到字符串形态时返回 0（宁可少算也不解码整张图）。 */
+function base64LengthOf(part: unknown): number {
+  const p = part as Record<string, unknown>
+  const raw = unwrapV7Payload(p.type === "image" ? p.image : (p.data ?? p.url))
+  if (typeof raw === "string") {
+    const comma = raw.startsWith("data:") ? raw.indexOf(",") : -1
+    return comma === -1 ? raw.length : raw.length - comma - 1
+  }
+  if (raw instanceof Uint8Array) return Math.ceil(raw.byteLength / 3) * 4
+  return 0
+}
+
+function imageMimeOf(part: unknown): string {
+  const p = part as Record<string, unknown>
+  const mime = p.type === "image" ? String(p.mimeType || "image/*") : String(p.mediaType || "")
+  return mime.startsWith("image/") ? mime : ""
+}
+
+function omittedImageText(part: unknown): string {
+  const savedPath = savePartToTemp(part)
+  const tail = savedPath
+    ? `Re-read it from this file if it is still needed: ${savedPath}`
+    : `Re-read the source file if this image is still needed.`
+  return `ERROR: Image omitted to keep the request within the provider's size limit; older images are omitted first. ${tail}`
+}
+
+function capImageBytes(msgs: ModelMessage[], limit: number): ModelMessage[] {
+  if (!Number.isFinite(limit) || limit <= 0) return msgs
+
+  // 第一趟：按时间顺序收集全部图片载体。两种都要收 —— user 消息里的 image/file part，
+  // 以及 tool-result 里 output.type==="content" 的 file-data 条目。后者是能看图的模型
+  // 读图的主路径（webqa 截图就走这条），漏了等于白做。
+  const slots: { msg: number; part: number; value?: number; bytes: number }[] = []
+  msgs.forEach((msg, m) => {
+    if (!Array.isArray(msg.content)) return
+    msg.content.forEach((part: any, p) => {
+      if (msg.role === "user" && (part?.type === "image" || part?.type === "file")) {
+        if (imageMimeOf(part)) slots.push({ msg: m, part: p, bytes: base64LengthOf(part) })
+        return
+      }
+      if (msg.role === "tool" && part?.type === "tool-result" && part.output?.type === "content") {
+        const value = part.output.value
+        if (!Array.isArray(value)) return
+        value.forEach((entry: any, v) => {
+          if (entry?.type !== "file-data" || !imageMimeOf(entry)) return
+          slots.push({ msg: m, part: p, value: v, bytes: base64LengthOf(entry) })
+        })
+      }
+    })
+  })
+
+  const total = slots.reduce((sum, s) => sum + s.bytes, 0)
+  if (total <= limit) return msgs
+
+  // 第二趟：从最老开始淘汰，最新一张无条件保留。
+  const evict = new Set<number>()
+  let over = total - limit
+  for (let i = 0; i < slots.length - 1 && over > 0; i++) {
+    evict.add(i)
+    over -= slots[i].bytes
+  }
+  if (evict.size === 0) return msgs
+
+  const byMsg = new Map<number, Set<string>>()
+  for (const i of evict) {
+    const s = slots[i]
+    const key = `${s.part}:${s.value ?? -1}`
+    const set = byMsg.get(s.msg) ?? new Set<string>()
+    set.add(key)
+    byMsg.set(s.msg, set)
+  }
+
+  return msgs.map((msg, m) => {
+    const keys = byMsg.get(m)
+    if (!keys || !Array.isArray(msg.content)) return msg
+    const content = msg.content.map((part: any, p) => {
+      if (keys.has(`${p}:-1`)) return { type: "text" as const, text: omittedImageText(part) }
+      if (part?.type !== "tool-result" || part.output?.type !== "content" || !Array.isArray(part.output.value)) return part
+      const value = part.output.value.map((entry: any, v: number) =>
+        keys.has(`${p}:${v}`) ? { type: "text", text: omittedImageText(entry) } : entry,
+      )
+      return { ...part, output: { ...part.output, value } }
+    })
+    return { ...msg, content } as ModelMessage
+  })
+}
+
 export function message(msgs: ModelMessage[], model: Provider.Model, options: Record<string, unknown>) {
   msgs = unsupportedParts(msgs, model)
+  // 必须在 unsupportedParts 之后：不支持图片的模型那一趟已经把图换成占位文本了，
+  // 剩下还是图片的才是真会进请求体的载荷。
+  // options 这个读法只是测试注入用的缝，**不是**用户配置入口：request.ts:124 把同一个
+  // options 对象当 providerOptions 发给供应商，真在配置里设这个键会把它泄给对方。
+  // 要做成可配置项应当走 config/attachment.ts 加 max_total_base64_bytes、另开一条
+  // 不进 providerOptions 的通道传进来 —— 那是独立一步，本批只落默认值。
+  msgs = capImageBytes(
+    msgs,
+    typeof options.maxTotalImageBase64Bytes === "number"
+      ? options.maxTotalImageBase64Bytes
+      : DEFAULT_MAX_TOTAL_IMAGE_BASE64_BYTES,
+  )
   msgs = normalizeMessages(msgs, model, options)
   if (
     (model.providerID === "anthropic" ||

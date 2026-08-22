@@ -3941,3 +3941,99 @@ describe("ProviderTransform.providerOptions - ai-gateway-provider", () => {
     expect(result).toEqual({ openaiCompatible: { reasoningEffort: "high" } })
   })
 })
+
+// 260822 cc 请求级图片载荷累计上限（transform.ts capImageBytes）
+describe("ProviderTransform.message - cumulative image payload bound", () => {
+  const visionModel = () =>
+    ({
+      id: ModelID.make("x/vision"),
+      providerID: ProviderID.make("x"),
+      api: { id: "vision", url: "https://example.com", npm: "@ai-sdk/openai-compatible" },
+      name: "vision fixture",
+      capabilities: {
+        temperature: true,
+        reasoning: false,
+        attachment: true,
+        toolcall: true,
+        input: { text: true, audio: false, image: true, video: false, pdf: false },
+        output: { text: true, audio: false, image: false, video: false, pdf: false },
+      },
+      cost: { input: 0.001, output: 0.002, cache: { read: 0.0001, write: 0.0002 } },
+      limit: { context: 128000, output: 8192 },
+      status: "active",
+      options: {},
+      headers: {},
+      release_date: "2023-04-01",
+    }) as any
+
+  // 内容不同 → sha256 不同 → 临时路径不同，正好也能验占位路径的稳定性
+  const png = (seed: string, n: number) => `data:image/png;base64,${seed.repeat(n)}`
+  const userImage = (seed: string, n: number) => ({ role: "user", content: [{ type: "image", image: png(seed, n), mimeType: "image/png" }] })
+  // tool-result 必须有前置配对的 tool-call，否则 normalizeMessages 会整条删掉（transform.ts:139）
+  const toolImage = (seed: string, n: number) => [
+    {
+      role: "assistant",
+      content: [{ type: "tool-call", toolCallId: `call_${seed}`, toolName: "webqa_screenshot", input: {} }],
+    },
+    {
+      role: "tool",
+      content: [
+        {
+          type: "tool-result",
+          toolCallId: `call_${seed}`,
+          toolName: "webqa_screenshot",
+          output: { type: "content", value: [{ type: "file-data", mediaType: "image/png", data: seed.repeat(n) }] },
+        },
+      ],
+    },
+  ]
+
+  const isOmitted = (text: unknown) => typeof text === "string" && text.startsWith("ERROR: Image omitted")
+
+  test("under the bound nothing is touched", () => {
+    const msgs = [userImage("aaaa", 10), userImage("bbbb", 10)] as any[]
+    const result = ProviderTransform.message(msgs, visionModel(), { maxTotalImageBase64Bytes: 1_000_000 }) as any[]
+    expect(result[0].content[0].type).toBe("image")
+    expect(result[1].content[0].type).toBe("image")
+  })
+
+  test("over the bound drops the oldest image first and always keeps the newest", () => {
+    const msgs = [userImage("aaaa", 100), userImage("bbbb", 100), userImage("cccc", 100)] as any[]
+    // 每张 400 字符，总 1200；上限 500 ⇒ 需要淘汰掉 700，从最老开始
+    const result = ProviderTransform.message(msgs, visionModel(), { maxTotalImageBase64Bytes: 500 }) as any[]
+    expect(isOmitted(result[0].content[0].text)).toBe(true)
+    expect(isOmitted(result[1].content[0].text)).toBe(true)
+    expect(result[2].content[0].type).toBe("image")
+  })
+
+  // 这条是「漏了等于白做」的那一条：能看图的模型读截图走的是 tool-result 这条路，
+  // 只收 user 消息里的图会让整个上限对 webqa 这类来源完全失效。
+  test("tool-result file-data images are counted and offloaded too", () => {
+    const msgs = [...toolImage("aaaa", 100), ...toolImage("bbbb", 100), userImage("cccc", 100)] as any[]
+    const result = ProviderTransform.message(msgs, visionModel(), { maxTotalImageBase64Bytes: 500 }) as any[]
+    const toolMsgs = result.filter((m: any) => m.role === "tool")
+    expect(toolMsgs).toHaveLength(2)
+    const oldest = toolMsgs[0].content[0].output.value[0]
+    expect(oldest.type).toBe("text")
+    expect(isOmitted(oldest.text)).toBe(true)
+    // 最新那张（user 消息里的）恒保留
+    expect(result.at(-1).content[0].type).toBe("image")
+  })
+
+  test("a single image larger than the bound is still kept when it is the newest", () => {
+    const msgs = [userImage("aaaa", 1000)] as any[]
+    const result = ProviderTransform.message(msgs, visionModel(), { maxTotalImageBase64Bytes: 10 }) as any[]
+    expect(result[0].content[0].type).toBe("image")
+  })
+
+  // 前缀缓存闸门。260804 那次事故是占位文本用 Date.now() 命名临时文件，同一张历史图
+  // 每轮生成不同文本 → 从那条消息往后逐轮全部失配 → 命中率线性滑到 50% 且不自愈。
+  // 淘汰路径复用了同一套 sha256 命名，这条用例把「同输入两次转换逐字节相同」钉死。
+  test("the same input transforms byte-identically twice (prefix stability)", () => {
+    const build = () => [userImage("aaaa", 100), userImage("bbbb", 100), userImage("cccc", 100)] as any[]
+    const opts = { maxTotalImageBase64Bytes: 500 }
+    const a = ProviderTransform.message(build(), visionModel(), opts) as any[]
+    const b = ProviderTransform.message(build(), visionModel(), opts) as any[]
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b))
+  })
+})
