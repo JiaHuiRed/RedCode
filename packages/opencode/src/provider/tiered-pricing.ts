@@ -63,10 +63,14 @@ const DS_V4_PRO_SEGMENTS: TieredPricingSegment[] = [
 export const TIERED_PRICING: Record<string, Record<string, TieredPricingSegment[]>> = {
   deepseek: {
     "deepseek-v4-flash": DS_V4_FLASH_SEGMENTS,
+    // 260822 Red: vision-exp 与 flash 同价同峰谷（260821 注册 713263e7 时峰谷表未跟上）
+    "deepseek-v4-flash-vision-exp": DS_V4_FLASH_SEGMENTS,
     "deepseek-v4-pro": DS_V4_PRO_SEGMENTS,
   },
   "opencode-go": {
     "deepseek-v4-flash": DS_V4_FLASH_SEGMENTS,
+    // 260822 Red: 同上，opencode-go 网关键亦缺 vision-exp 峰谷分段
+    "deepseek-v4-flash-vision-exp": DS_V4_FLASH_SEGMENTS,
     "deepseek-v4-pro": DS_V4_PRO_SEGMENTS,
   },
 }

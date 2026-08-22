@@ -30,7 +30,7 @@
 
 - **删除不存在的会话不再假装成功**（`cli/cmd/session.ts`）：`session delete` 对不存在的 id 报错而不是返回空成功。
 
-- **DeepSeek V4 Flash Vision 计费恒为 0**（`core/provider.ts` CNY_PRICING）：缺 `deepseek-v4-flash-vision-exp` 条目，cost 落 0 → 补上与 flash 同价；历史会话费用不回溯。
+- **DeepSeek V4 Flash Vision 计费恒为 0**（`core/provider.ts` CNY_PRICING）：缺 `deepseek-v4-flash-vision-exp` 条目，cost 落 0 → 补上与 flash 同价；历史会话费用不回溯。**8/22 补齐同类遗漏**：opencode-go provider 键同样缺该条目（按 USD 计费 0.22/0.66，官方人民币口径 3/9 高峰、1.5/4.5 空闲）+ `tiered-pricing.ts` 的 deepseek/opencode-go 两个键的峰谷分段表缺 vision 条目，一并补上。[why](docs/notes/implemented/feature/2026-08-22-deepseek-vision-pricing.md)
 
 - **上下文面板删掉重复的「上下文窗口」字段**（`app/components/session/session-context-tab.tsx`）：输入框 tooltip 已显示窗口占用率，右侧面板那行是重复。
 

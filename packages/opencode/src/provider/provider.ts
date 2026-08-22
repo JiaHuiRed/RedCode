@@ -1243,6 +1243,10 @@ export const layer = Layer.effect(
           },
           "opencode-go": {
             "deepseek-v4-flash": DS_V4_COST_FLASH,
+            // 260822 Red: vision-exp 与 flash 同价（官方定价页），补漏——此前仅
+            // 官方 deepseek 键有（76a15bfb），opencode-go 键缺失导致走 models.dev
+            // USD 价（0.22/0.66），费用按美元显示。
+            "deepseek-v4-flash-vision-exp": DS_V4_COST_FLASH,
             "deepseek-v4-pro": DS_V4_COST_PRO,
           },
           xiaomi: {
