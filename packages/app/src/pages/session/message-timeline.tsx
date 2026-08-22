@@ -718,7 +718,14 @@ export function MessageTimeline(props: {
   //    先前那版写死 12 帧（约 0.2s），大会话切回时不够 —— 行是随进入视口才逐个实测的，
   //    预算烧完时还没测到底，循环停在半路，人被留在历史中间。判据收工比固定帧数既省
   //    （静态内容 3 帧就停，不用烧满 90）又稳（慢的场景等得起）。
-  const BOTTOM_ANCHOR_MAX_FRAMES = 90
+  // 两个场景对"该锁多久"的要求正好相反，必须分开给预算（260822 第一版混成一个，
+  // 流式期间被拉成 90 帧 = 每帧强制同步布局连续 1.5 秒，哥哥实测"闪得比以前还快"）：
+  //   插行（流式中调工具）—— 内容每帧都在长，高度永远不会"连续不变"，沉降判据在这里
+  //     根本不会触发，只能靠预算收口。短，12 帧足够让新行测完。
+  //   切会话入场 —— 内容是静态的，行随进入视口逐个实测，慢的会话 0.2 秒远不够；
+  //     但正因为静态，沉降判据一定会触发，通常几帧就收工，90 帧只是兜底。
+  const BOTTOM_ANCHOR_FRAMES = 12
+  const BOTTOM_ANCHOR_FORCE_FRAMES = 90
   const BOTTOM_ANCHOR_SETTLED_FRAMES = 3
 
   // 组合期让路：IME 组合中不写 scrollTop，组合结束补一次锚定。
@@ -744,7 +751,7 @@ export function MessageTimeline(props: {
     // Workaround for virtua issue #301: virtua does not expose a synchronous item-resize hook for
     // "stay at bottom if already at bottom". Tool rows can briefly outgrow the measured virtual
     // height, so keep the scroll container bottom-locked while measurement settles.
-    bottomAnchorFrames = BOTTOM_ANCHOR_MAX_FRAMES
+    bottomAnchorFrames = options?.force ? BOTTOM_ANCHOR_FORCE_FRAMES : BOTTOM_ANCHOR_FRAMES
     bottomAnchorSettled = 0
     bottomAnchorHeight = -1
     if (options?.force) bottomAnchorForce = true
