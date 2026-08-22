@@ -136,7 +136,11 @@
     }
   },
  // 260821 Karina 解除 opencode 禁用：zen/v1 网关 27 个免费模型，key 同 opencode-go
- "disabled_providers": ["ollama-cloud"],
+ // 260822 cc 清空 ollama-cloud：残留，不禁用它也不会加载 —— 它需要 OLLAMA_API_KEY
+ // 且 auth.json 里无条目，而 provider.ts 里根本没有 ollama 的自动发现代码。实测清空后
+ // `redcode models ollama-cloud` 仍是 Provider not found。保留空数组而不是删键：
+ // merge-home-config 是 deepMergeUserWins，删掉会让用户侧的空数组被当"缺键"补回来。
+ "disabled_providers": [],
   // small_model 挪到本地层 redcode.local.jsonc（260812 cc）：它引用本机 ollama 模型，
   // 而本地模型是按各机显存挑的，随 provider.ollama 一起下沉。留在这里会被 merge-home-config
   // 当"用户缺的键"补回 redcode.jsonc——260811/260812 两次回潮正是如此。
