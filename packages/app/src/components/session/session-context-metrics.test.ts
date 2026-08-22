@@ -159,3 +159,84 @@ describe("上下文窗口口径", () => {
     expect(m.usage).toBeNull()
   })
 })
+
+// 260822 cc 输入框那个小悬浮改成显示「首字延迟 + 解码速率」之后，这两条口径就是它全部的
+// 独立性所在，写错了没人看得出来（数字仍然"像那么回事"）。两个陷阱各钉一条。
+describe("getSessionContextMetrics — 解码速率与首字延迟", () => {
+  const timed = (
+    id: string,
+    tokens: { input: number; output: number; reasoning: number; read: number; write: number },
+    time: { created: number; firstChunk?: number; completed?: number },
+  ) =>
+    ({
+      id,
+      role: "assistant",
+      providerID: "openai",
+      modelID: "gpt-4.1",
+      cost: 0,
+      tokens: {
+        input: tokens.input,
+        output: tokens.output,
+        reasoning: tokens.reasoning,
+        cache: { read: tokens.read, write: tokens.write },
+      },
+      time,
+    }) as unknown as Message
+
+  test("分子含 reasoning，分母从 firstChunk 起算", () => {
+    // created→firstChunk 2000ms 是排队/预填，必须排除在速率之外；
+    // firstChunk→completed 1000ms 里吐了 output 60 + reasoning 40 = 100 个字 → 100 tok/s。
+    // 若误用 created 起算会得到 33.3；若漏掉 reasoning 会得到 60。
+    const messages = [
+      timed(
+        "a1",
+        { input: 10, output: 60, reasoning: 40, read: 0, write: 0 },
+        {
+          created: 1_000,
+          firstChunk: 3_000,
+          completed: 4_000,
+        },
+      ),
+    ]
+    const ctx = getSessionContextMetrics(messages).context
+    expect(ctx?.decodeRate).toBe(100)
+    expect(ctx?.firstChunkMs).toBe(2000)
+  })
+
+  test("流式中（未 completed）与纯工具往返（未吐字）都跳过，取上一条跑完的", () => {
+    const messages = [
+      timed(
+        "a1",
+        { input: 10, output: 100, reasoning: 0, read: 0, write: 0 },
+        {
+          created: 0,
+          firstChunk: 500,
+          completed: 1_500,
+        },
+      ),
+      // 纯工具往返：跑完了但一个字都没吐
+      timed(
+        "a2",
+        { input: 10, output: 0, reasoning: 0, read: 0, write: 0 },
+        {
+          created: 2_000,
+          firstChunk: 2_100,
+          completed: 2_200,
+        },
+      ),
+      // 正在流式：还没 completed
+      timed("a3", { input: 10, output: 30, reasoning: 0, read: 0, write: 0 }, { created: 3_000, firstChunk: 3_200 }),
+    ]
+    const ctx = getSessionContextMetrics(messages).context
+    expect(ctx?.decodeRate).toBe(100)
+    expect(ctx?.firstChunkMs).toBe(500)
+  })
+
+  test("完全没有计时数据时是 null，不是 0", () => {
+    const ctx = getSessionContextMetrics([
+      assistant("a1", { input: 10, output: 10, reasoning: 0, read: 0, write: 0 }, 0),
+    ]).context
+    expect(ctx?.decodeRate).toBeNull()
+    expect(ctx?.firstChunkMs).toBeNull()
+  })
+})

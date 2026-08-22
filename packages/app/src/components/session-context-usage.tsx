@@ -9,7 +9,6 @@ import { useSync } from "@/context/sync"
 import { useLanguage } from "@/context/language"
 import { useProviders } from "@/hooks/use-providers"
 import { getSessionContextMetrics } from "@/components/session/session-context-metrics"
-import { createSessionContextFormatter } from "@/components/session/session-context-format"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
 
@@ -45,30 +44,8 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   })
   const messages = createMemo(() => (params.id ? (sync.data.message[params.id] ?? []) : []))
 
-  const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
-
   const metrics = createMemo(() => getSessionContextMetrics(messages(), [...providers.all().values()]))
   const context = createMemo(() => metrics().context)
-  // 260706 Red: 子代理 cost 汇总（与 session-context-tab 保持一致）
-  const childCost = createMemo(() => {
-    const id = params.id
-    if (!id) return 0
-    let total = 0
-    for (const s of sync.data.session) {
-      if (s.parentID !== id) continue
-      const msgs = sync.data.message[s.id]
-      if (!msgs) continue
-      for (const m of msgs) {
-        if (m.role === "assistant") total += m.cost
-      }
-    }
-    return total
-  })
-  const cost = createMemo(() => {
-    const m = metrics()
-    return formatter().cost(m.totalCost + childCost(), m.costCurrency)
-  })
-
   const openContext = () => {
     if (!params.id) return
 
@@ -83,19 +60,38 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
     })
   }
 
-  // 260819 cc 进度圈按引擎判定的档位着色。纯装饰——哥哥明确说不会严格照它决定压缩时机，
-  // 所以不为它引入任何新机制：progress-circle.css 本来就是 var(--progress-circle-progress, …)
-  // 的可覆盖写法，调用方传 style 即可，共享组件一行不用改。
+  // 260819 cc 进度圈上色是纯装饰——哥哥明确说不会严格照它决定压缩时机，所以不为它引入
+  // 任何新机制：progress-circle.css 本来就是 var(--progress-circle-progress, …) 的可覆盖写法，
+  // 调用方传 style 即可，共享组件一行不用改。
   //
-  // TUI 侧是四档（ok/soft/prune/compact），GUI 收成三档：v2 的语义色只有
-  // success/warning/danger/info，没有橙色的 state token（有 --v2-orange-* 调色板，但那是
-  // 原始色阶、不分亮暗，直接用会在暗色主题下发错）。为一个装饰功能新增一对设计 token
-  // 不划算，所以 soft 与 prune 合并成 warning：黄=廉价手段已在生效，红=正在全量压缩。
-  const LEVEL_STROKE: Record<string, string> = {
-    soft: "var(--v2-state-fg-warning)",
-    prune: "var(--v2-state-fg-warning)",
-    compact: "var(--v2-state-fg-danger)",
+  // 260822 cc 改成**跟着上下文窗口占用**走，与 tooltip 第一行的百分比同一个口径。
+  // 之前只按引擎档位（level）上色，而 level 的分母是 ceiling（usable 扣掉输出预留、再被
+  // compaction.threshold 封顶，见 overflow.ts:48-56），与这里显示的 window / limit.context
+  // 不是同一个分母 —— step-3.7-flash 上 usable≈224k、窗口 256k，soft 落在显示的 52%，
+  // 于是"圈黄了但数字才 52%"，颜色与数字对不上。
+  //
+  // 取两者中更严重的一档：窗口占用负责「跟着涨」，引擎档位负责「真要压缩了别瞒着」。
+  // 仍只有三级：v2 的语义色只有 success/warning/danger/info，没有橙色的 state token
+  // （有 --v2-orange-* 调色板，但那是原始色阶、不分亮暗，直接用会在暗色主题下发错），
+  // 为一个装饰功能新增一对设计 token 不划算，所以 soft 与 prune 合并成 warning。
+  const TIER_STROKE = [undefined, "var(--v2-state-fg-warning)", "var(--v2-state-fg-danger)"] as const
+  const usageTier = (usage: number | null) => {
+    if (usage === null) return 0
+    if (usage >= 80) return 2
+    if (usage >= 60) return 1
+    return 0
   }
+  const levelTier = (level: string | undefined) => {
+    if (level === "compact") return 2
+    if (level === "prune" || level === "soft") return 1
+    return 0
+  }
+  const strokeTier = () => {
+    const ctx = context()
+    if (!ctx) return 0
+    return Math.max(usageTier(ctx.usage), levelTier(ctx.level))
+  }
+
   const circle = () => (
     <div class="flex items-center justify-center">
       <ProgressCircle
@@ -103,22 +99,35 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
         strokeWidth={2}
         percentage={context()?.usage ?? 0}
         style={(() => {
-          const stroke = LEVEL_STROKE[context()?.level ?? ""]
-          // ok 档不覆盖，保持组件默认的 --border-active —— 没事发生时圈就该是平时的样子
+          const stroke = TIER_STROKE[strokeTier()]
+          // 最低档不覆盖，保持组件默认的 --border-active —— 没事发生时圈就该是平时的样子
           return stroke ? { "--progress-circle-progress": stroke } : undefined
         })()}
       />
     </div>
   )
 
+  // 260822 cc 首字延迟的显示：秒以下给毫秒（分辨 200ms 与 900ms 有意义），
+  // 秒以上给一位小数（分辨 1.4s 与 1.5s 没意义，但 1.4s 与 4.2s 有意义）。
+  const formatMs = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`)
+
+  // 260822 cc 这个悬浮与右侧「上下文」面板的分工：**面板是会话账本，这里是当下这一轮**。
+  // 原先这里还有「Token（会话累计）」与「成本」两行，两个数在面板里一模一样地各有一格
+  // （总 token / 总成本），纯粹是重复。换成面板没有、也不该有的两个实时指标：
+  //
+  //   首字 = created→firstChunk，排队与预填。它慢说明供应商侧在排队、或上下文太长。
+  //   解码 = firstChunk→completed 期间的 tok/s。它慢说明吐字本身慢。
+  //
+  // 两段分开是刻意的（与 TUI 侧边栏同样的取舍）：混成一个「总速度」会让这两种成因完全
+  // 不同的问题看起来一样。口径见 session-context-metrics.ts 里那段注释。
+  //
+  // 第一行的上下文窗口保留 —— 它是这个圆圈本身的含义，没有它悬浮就解释不了自己。
   const tooltipValue = () => (
     <div>
       <Show when={context()}>
         {(ctx) => (
           <>
-            {/* 260819 cc 上下文窗口与会话累计分两行——原来只有一行「Token + 使用率」，
-                而那两个数都来自会话累计，长会话下使用率能到 1500%，正是让人把累计当成窗口的根源。
-                window 为空 = 历史消息还没有 tokens.context，这一行整块不显示，等下一轮写入。 */}
+            {/* window 为空 = 历史消息还没有 tokens.context，这一行整块不显示，等下一轮写入。 */}
             <Show when={ctx().window !== undefined}>
               <div class="flex items-center gap-2">
                 <span class="text-text-invert-strong">
@@ -129,17 +138,21 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
                 <span class="text-text-invert-base">{language.t("context.usage.window")}</span>
               </div>
             </Show>
-            <div class="flex items-center gap-2">
-              <span class="text-text-invert-strong">{ctx().total.toLocaleString(language.intl())}</span>
-              <span class="text-text-invert-base">{language.t("context.usage.tokens")}</span>
-            </div>
+            <Show when={ctx().firstChunkMs !== null}>
+              <div class="flex items-center gap-2">
+                <span class="text-text-invert-strong">{formatMs(ctx().firstChunkMs!)}</span>
+                <span class="text-text-invert-base">{language.t("context.usage.firstToken")}</span>
+              </div>
+            </Show>
+            <Show when={ctx().decodeRate !== null}>
+              <div class="flex items-center gap-2">
+                <span class="text-text-invert-strong">{ctx().decodeRate} tok/s</span>
+                <span class="text-text-invert-base">{language.t("context.usage.decodeRate")}</span>
+              </div>
+            </Show>
           </>
         )}
       </Show>
-      <div class="flex items-center gap-2">
-        <span class="text-text-invert-strong">{cost()}</span>
-        <span class="text-text-invert-base">{language.t("context.usage.cost")}</span>
-      </div>
     </div>
   )
 

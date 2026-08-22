@@ -430,9 +430,9 @@ export const dict = {
   "context.stats.lastActivity": "最后活动",
   "context.stats.partial": "以上数字只统计了已加载的 {{count}} 条消息，向上滚动聊天记录加载完整历史后会更准确。",
   "context.usage.window": "上下文窗口",
-  "context.usage.tokens": "Token",
+  "context.usage.firstToken": "首字延迟",
+  "context.usage.decodeRate": "解码速率",
   "context.usage.usage": "使用率",
-  "context.usage.cost": "成本",
   "context.usage.clickToView": "点击查看上下文",
   "context.usage.view": "查看上下文用量",
 

@@ -37,6 +37,14 @@ type Context = {
   usage: number | null
   /** 引擎判定的压缩档位（服务端算好随消息发来）。历史消息无此字段时 undefined */
   level: AssistantMessage["contextLevel"]
+  /**
+   * 最近一轮**已完成**回合的解码速率（tok/s）。口径与 TUI 侧边栏一致
+   * （cli/cmd/tui/feature-plugins/sidebar/context.tsx:184-197），两处必须一样，
+   * 否则同一个会话在两个界面上给出不同的速度。数据不足时 null。
+   */
+  decodeRate: number | null
+  /** 最近一轮**已完成**回合的首字延迟（ms，created→firstChunk）。数据不足时 null */
+  firstChunkMs: number | null
 }
 
 type Metrics = {
@@ -48,6 +56,20 @@ type Metrics = {
 
 const tokenTotal = (msg: AssistantMessage) => {
   return msg.tokens.input + msg.tokens.output + msg.tokens.reasoning + msg.tokens.cache.read + msg.tokens.cache.write
+}
+
+// 260822 cc 速度指标取「最近一条**跑完且真的吐过字**的 assistant」，与上面那条
+// lastAssistantWithTokens 刻意分开：正在流式的那条 time.completed 还没写，纯工具往返的
+// 那条 output+reasoning 是 0 —— 两种都算不出速率。分开取的效果是流式期间稳定显示上一轮
+// 的数字，而不是闪成空白。
+const lastAssistantWithSpeed = (messages: Message[]) => {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]
+    if (msg?.role !== "assistant") continue
+    if (!msg.time.firstChunk || !msg.time.completed) continue
+    if (msg.tokens.output + msg.tokens.reasoning <= 0) continue
+    return msg
+  }
 }
 
 const lastAssistantWithTokens = (messages: Message[]) => {
@@ -105,6 +127,20 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
   const total = agg.input + agg.output + agg.reasoning + agg.cacheRead + agg.cacheWrite
   const window = message.tokens.context
   const lastTurn = turns[turns.length - 1]
+
+  // 260822 cc 解码速率 / 首字延迟。两个陷阱，照搬 TUI 的口径（sidebar/context.tsx:184-197）：
+  //   ① 分子必须是 output + reasoning —— session.ts:460 把 output 定义成
+  //      outputTokens - reasoningTokens，只用 output 会漏掉思考的字，对 DeepSeek
+  //      这类长思考模型能把速率低估到一半以下。
+  //   ② 分母必须从 firstChunk 起算，不能用 created —— created→firstChunk 那段是排队与
+  //      预填，长上下文下能把 60 tok/s 稀释成 20，量出来的就不是解码速度而是排队时间。
+  // 两段分开显示也是刻意的：首字慢 = 排队/预填（供应商负载、上下文长度），
+  // 解码慢 = 吐字本身，混成一个「总速度」会让两种完全不同的问题看起来一样。
+  const speedMessage = lastAssistantWithSpeed(messages)
+  const decoded = speedMessage ? speedMessage.tokens.output + speedMessage.tokens.reasoning : 0
+  const decodeMs = speedMessage ? speedMessage.time.completed! - speedMessage.time.firstChunk! : 0
+  const decodeRate = decodeMs > 0 && decoded > 0 ? Math.round((decoded / decodeMs) * 1000 * 10) / 10 : null
+  const firstChunkMs = speedMessage ? speedMessage.time.firstChunk! - speedMessage.time.created : null
 
   return {
     totalCost,
@@ -164,6 +200,8 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
       window,
       level: message.contextLevel,
       usage: window !== undefined && limit ? Math.round((window / limit) * 100) : null,
+      decodeRate,
+      firstChunkMs,
     },
   }
 }
