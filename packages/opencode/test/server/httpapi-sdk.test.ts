@@ -226,6 +226,8 @@ function withProject<A, E, E2 = never>(
   serverPath: ServerPath,
   options: {
     git?: boolean
+    /** 见 fixture.tmpdirScoped 的同名选项：不放 .git 标记，用于断言「尚未 init git」的用例。 */
+    bare?: boolean
     config?: Partial<Config.Info>
     setup?: (dir: string) => Effect.Effect<void, E2, TestServices>
   },
@@ -234,6 +236,7 @@ function withProject<A, E, E2 = never>(
   return Effect.gen(function* () {
     const directory = yield* tmpdirScoped({
       git: options.git ?? false,
+      bare: options.bare ?? false,
       config: { formatter: false, lsp: false, ...options.config },
     })
     yield* options.setup?.(directory) ?? Effect.void
@@ -856,7 +859,8 @@ describe("HttpApi SDK", () => {
   )
 
   serverPathParity("matches generated SDK project git initialization", (serverPath) =>
-    withProject(serverPath, {}, ({ sdk, directory }) =>
+    // bare: 本用例断言 initGit 前后的 vcs 变化，起点必须是真正没有 git 的目录
+    withProject(serverPath, { bare: true }, ({ sdk, directory }) =>
       Effect.gen(function* () {
         const before = yield* capture(() => sdk.project.current())
         const init = yield* capture(() => sdk.project.initGit())

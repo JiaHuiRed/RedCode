@@ -136,7 +136,8 @@ describe("Project.fromDirectory", () => {
 
   it.live("returns global for non-git directory", () =>
     Effect.gen(function* () {
-      const tmp = yield* tmpdirScoped()
+      // bare: 本用例断言的就是「非 git 目录 → ProjectID.global」，不能有 .git 标记
+      const tmp = yield* tmpdirScoped({ bare: true })
       const { project } = yield* run((svc) => svc.fromDirectory(tmp))
       expect(project.id).toBe(ProjectID.global)
     }),

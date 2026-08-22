@@ -77,6 +77,8 @@ async function stop(dir: string) {
 
 type TmpDirOptions<T> = {
   git?: boolean
+  /** 见 tmpdirScoped 的同名选项。 */
+  bare?: boolean
   config?: Partial<Config.Info>
   init?: (dir: string) => Promise<T>
   dispose?: (dir: string) => Promise<T>
@@ -84,6 +86,9 @@ type TmpDirOptions<T> = {
 export async function tmpdir<T>(options?: TmpDirOptions<T>) {
   const dirpath = sanitizePath(path.join(os.tmpdir(), "redcode-test-" + Math.random().toString(36).slice(2)))
   await fs.mkdir(dirpath, { recursive: true })
+  // 260822 cc 与 tmpdirScoped 同款：空 .git 把 worktree 钉在本目录，防止配置发现
+  // 一路向上扫到家目录、读到跑测试的人真实的 ~/.redcode。理由见 tmpdirScoped 的注释。
+  if (!options?.git && !options?.bare) await fs.mkdir(path.join(dirpath, ".git"), { recursive: true })
   if (options?.git) {
     await $`git init`.cwd(dirpath).quiet()
     await $`git config core.fsmonitor false`.cwd(dirpath).quiet()
@@ -121,6 +126,13 @@ export async function tmpdir<T>(options?: TmpDirOptions<T>) {
 /** Effectful scoped tmpdir. Cleaned up when the scope closes. Make sure these stay in sync */
 export function tmpdirScoped(options?: {
   git?: boolean
+  /**
+   * 260822 cc 不放 .git 标记 —— 只给「刻意需要一个非项目目录」的用例使用
+   * （如 project.fromDirectory 的 non-git 分支、initGit 的 before 状态、
+   * external_directory 归类）。代价是这个目录**不隔离**跑测试的人的 ~/.redcode，
+   * 所以别在读配置的用例上用它。理由见下方 .git 标记处的注释。
+   */
+  bare?: boolean
   config?: Partial<Config.Info> | (() => Partial<Config.Info>)
 }) {
   return Effect.gen(function* () {
@@ -138,6 +150,15 @@ export function tmpdirScoped(options?: {
 
     const git = (...args: string[]) =>
       spawner.spawn(ChildProcess.make("git", args, { cwd: dir })).pipe(Effect.flatMap((handle) => handle.exitCode))
+
+    // 260822 cc 没有 .git 时 project.fromDirectory 回落成 worktree="/"（无项目哨兵），
+    // 配置发现就会从临时目录一路向上扫到盘根 —— 而 os.tmpdir() 在 Windows 上是
+    // C:\Users\<user>\AppData\Local\Temp，途中必经家目录，命中跑测试的人真实的
+    // ~/.redcode，把用例自己传的 config 整个盖掉（数组是替换不是合并）。
+    // 放一个空 .git 目录即可把 worktree 钉在临时目录：fs.up 只判存在，随后的
+    // rev-parse 会失败并优雅回退到 sandbox=本目录（project.ts:276）。
+    if (!options?.git && !options?.bare)
+      yield* Effect.promise(() => fs.mkdir(path.join(dir, ".git"), { recursive: true }))
 
     if (options?.git) {
       yield* git("init")
@@ -162,12 +183,31 @@ export function tmpdirScoped(options?: {
   })
 }
 
+// 260822 cc worktree 必须显式钉在临时目录上，否则测试会读到**跑测试的人**的真实配置。
+//
+// 项目配置的发现是向上遍历找 .redcode（config/paths.ts:28
+// `afs.up({ targets: [".redcode"], start: directory, stop: worktree })`）。worktree 不传
+// 就一路走到盘根 —— 而 Windows 上 os.tmpdir() 是 C:\Users\<user>\AppData\Local\Temp，
+// 临时目录本身就在家目录底下，往上必经 C:\Users\<user>，正好命中真实的 ~/.redcode。
+//
+// 实测打印出的扫描列表（修复前）：
+//   ["…\redcode-test-data-6828\home\.redcode",  ← 隔离的测试家目录，对的
+//    "C:\Users\Administrator\.redcode",          ← 泄漏
+//    "C:\.redcode"]
+//
+// 注意 REDCODE_TEST_HOME（preload.ts 早就设了、global.ts 260811 也修过）挡不住这条：
+// 它管的是家目录那段扫描，与项目层的向上遍历是两条独立的路。REDCODE_CONFIG /
+// REDCODE_CONFIG_DIR 同样压不住，它们只作用于全局层。
+//
+// 后果是这批测试的成败取决于跑测试的人个人配置里有什么：CI 无用户配置所以绿，
+// 本机有 provider 块/disabled_providers/小模型覆盖就红。语义上也该这么钉——
+// 一个临时测试项目本来就是它自己的 worktree 根。
 export const provideInstance =
   (directory: string) =>
   <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
     Effect.contextWith((services: Context.Context<R>) =>
       Effect.promise<A>(async () => {
-        const ctx = await runTestInstanceStore((store) => store.load({ directory }))
+        const ctx = await runTestInstanceStore((store) => store.load({ directory, worktree: directory }))
         return Effect.runPromiseWith(services)(self.pipe(Effect.provideService(InstanceRef, ctx)))
       }),
     )
@@ -175,7 +215,7 @@ export const provideInstance =
 export const provideInstanceEffect =
   (directory: string) =>
   <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, R | InstanceStore.Service> =>
-    InstanceStore.Service.use((store) => store.provide({ directory }, self))
+    InstanceStore.Service.use((store) => store.provide({ directory, worktree: directory }, self))
 
 export const reloadInstance = (input: InstanceStore.LoadInput) =>
   InstanceStore.Service.use((store) => store.reload(input))

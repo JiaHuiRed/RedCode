@@ -885,8 +885,9 @@ describe("tool.shell permissions", () => {
     it.live("normalizes external_directory workdir variants on Windows", () =>
       Effect.gen(function* () {
         const err = new Error("stop after permission")
-        const outerTmp = yield* tmpdirScoped()
-        const tmp = yield* tmpdirScoped()
+        // bare: 本用例验的是 external_directory 归类，两个目录都必须保持非项目态
+        const outerTmp = yield* tmpdirScoped({ bare: true })
+        const tmp = yield* tmpdirScoped({ bare: true })
         yield* runIn(
           tmp,
           Effect.gen(function* () {
