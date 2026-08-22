@@ -28,7 +28,16 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Config } from "@/config/config"
 import { addressFrom } from "./reasoning-language"
 
+// 260821 cc 提示词分层 A/B 实验开关（默认关=现行行为）。P21 实测：在相关任务链里
+// guidance 相对裸跑转负（baseline 63% > deep 46%），而 RedCode 把模型提示词与推理锚
+// 叠着每轮注入，正好是那个场景。要证伪/证实必须能干净地摘掉单层，故留两个开关。
+//   REDCODE_EXPERIMENT_NO_MODEL_PROMPT=1  → 不注入 prompt/<model>.md
+//   REDCODE_EXPERIMENT_NO_REASONING_ANCHORS=1 → 不注入 flash/step 推理锚（见 prompt.ts）
+export const experimentNoModelPrompt = () => process.env["REDCODE_EXPERIMENT_NO_MODEL_PROMPT"] === "1"
+export const experimentNoReasoningAnchors = () => process.env["REDCODE_EXPERIMENT_NO_REASONING_ANCHORS"] === "1"
+
 export function provider(model: Provider.Model) {
+  if (experimentNoModelPrompt()) return [PROMPT_DEFAULT]
   if (model.api.id.includes("gpt-4") || model.api.id.includes("o1") || model.api.id.includes("o3"))
     return [PROMPT_BEAST]
   if (model.api.id.includes("gpt")) {

@@ -1483,14 +1483,20 @@ export const layer = Layer.effect(
           //    "then commit and act" 绑定句 + 决策闭环收尾（P10 实测推理深度翻倍且 100% 收敛）
           // ② 回顾锚：行动前回顾已完成步骤，防重复劳动（P22/P23：开放任务完成率 0%→100%）
           // ③ 反跑题锚：禁环境检查/穷举扫描空转（P19/P20：胡思乱想率压到 0.0-0.3%）
+          // 260822 cc 去重：③ 原有后半句 "Read the specific file, then act" 与 WORK RULES #1
+          // "READ CODE FIRST" 同义，而 deepseek.md 的 Doing tasks 还有第三处同义表述。同一条
+          // 规范三层各说一遍，恰恰是 P21 实测里 read-continuity 只有 13-21% 的那条——重复没换来
+          // 遵守。③ 独有的价值是禁 echo/whoami 类环境探测与穷举扫描，那半句保留。
           // 只对 deepseek 系 flash 生效；step-3.7-flash 虽同名含 flash 但行为带相反
           // （思考过度不产出，见 step 专属锚），必须排除——否则 Think deeply 是反效果。
-          if (model.id.toLowerCase().includes("flash") && !model.id.toLowerCase().includes("step")) {
+          // 260821 cc 见 system.ts 的实验开关说明
+          const noAnchors = SystemPrompt.experimentNoReasoningAnchors()
+          if (!noAnchors && model.id.toLowerCase().includes("flash") && !model.id.toLowerCase().includes("step")) {
             system.push(
               `▸ REASONING DISCIPLINE (flash 系列):
   1. Think deeply first, then commit and act. Each reasoning block ends with a decision or an information need — no open-ended rumination.
   2. Before acting, briefly review what you have already done in this session and continue from where you left off; do not repeat completed steps.
-  3. Do not run environment checks (echo, whoami, uname, node --version, date, pwd) or exhaustive grep/glob scans. Read the specific file, then act.`,
+  3. Do not run environment checks (echo, whoami, uname, node --version, date, pwd) or exhaustive grep/glob scans.`,
             )
           }
           // 260818 Red step 收敛锚（实测画像与 deepseek flash 相反）：step-3.7-flash
@@ -1501,7 +1507,7 @@ export const layer = Layer.effect(
           // ① 收敛锚：思考以行动决策收尾，禁止无限推演；正文是唯一交付物
           // ② 反空转锚：不重发相同工具+相同输入（空转检测的提示词侧防线）
           // ③ 一致锚：时强时弱=思考长度波动大，稳定节奏优先于单次超常发挥
-          if (model.providerID === "stepfun" || model.id.toLowerCase().includes("step")) {
+          if (!noAnchors && (model.providerID === "stepfun" || model.id.toLowerCase().includes("step"))) {
             system.push(
               `▸ REASONING DISCIPLINE (step 系列):
   1. Think, then act — each reasoning block ends with a concrete next action or a decision. Never extend reasoning just to keep thinking; when you have a plan, execute it.
