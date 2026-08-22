@@ -1616,9 +1616,15 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     <Show when={text()}>
       <div data-component="text-part" data-timeline-part-id={part().id}>
         <div data-slot="text-part-body">
-          <Show when={streaming()} fallback={<Markdown text={text()} cacheKey={part().id} streaming={false} />}>
-            <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
-          </Show>
+          {/* 260822 cc 这里原本是 <Show when={streaming()} fallback={<Markdown …/>}>，
+              而 PacedMarkdown 在 streaming=false 时本就直接 setMdText(全文) 并渲染
+              <Markdown … streaming={false}/>，与 fallback 那支输出**完全相同**。
+              于是那个 Show 唯一的作用，是在流式结束（time.completed 落库）的一瞬间
+              把两个不同组件互换 —— Solid 只能销毁重建，整块 markdown 的 DOM
+              （实测一个推理块 191~247 个节点）连同 Shiki 高亮全部重来一遍。
+              诊断探针抓到过：[reasoning-part] −[markdown]×191 +[markdown]。
+              直接常挂 PacedMarkdown，同一个实例跨过这次翻转，DOM 一个节点都不动。 */}
+          <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
         </div>
         <Show when={showCopy()}>
           <div data-slot="text-part-copy-wrapper" data-interrupted={interrupted() ? "" : undefined}>
@@ -1709,9 +1715,8 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
             {elapsed()}
           </span>
         </Show>
-        <Show when={streaming()} fallback={<Markdown text={text()} cacheKey={part().id} streaming={false} />}>
-          <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
-        </Show>
+        {/* 260822 cc 同上（文本块那处的注释）：常挂 PacedMarkdown，避免流式结束时整块重建 */}
+        <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
       </div>
     </Show>
   )
