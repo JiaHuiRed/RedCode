@@ -246,6 +246,20 @@ export function SessionContextTab() {
   const inspect = useQuery(() => ({
     queryKey: ["session", params.id ?? "", ctx()?.message.id ?? "", ctx()?.window ?? 0, "context-inspect"] as const,
     enabled: () => !!params.id,
+    // 260822 cc **这一行是在修「模型一调工具，整个界面闪一下变成主题底色再回来」**。
+    //
+    // 上面这个 key 每轮都会变（带着最后一条 assistant 的 id 与 tokens.context，而
+    // tokens.context 是服务端每个 step 覆写一次的）。solid-query 的 useQuery 内部就是
+    // createResource：key 一变就成了一个「全新且无缓存」的 pending 查询，此时读 .data
+    // （inspectGroups 里）会**向上抛给最近的 Suspense**。而最近的那个是 app.tsx:198
+    // 包住**整个应用**的那一个，它的 fallback 是满屏 bg-background-base + Splash ——
+    // 于是每次工具调用，整棵树被卸载换成一块满屏色块再重挂。伴随症状：CLS 爆表、
+    // 没有任何长任务（不是算卡了，是真的换掉了）、正在输入的 IME 组合被强行提交成拼音。
+    // 只在本 tab 激活时出现，因为侧栏 tab 内容是 <Show when={activeTab()===...}> 真卸载的。
+    //
+    // 保留上一轮数据即可让它永远不进入「无数据 pending」：换 key 时先拿旧快照顶着，
+    // 新的取回来再替换。旧快照短暂偏一轮，远好过整个界面闪。
+    placeholderData: (previous) => previous,
     queryFn: async () => {
       const id = params.id
       if (!id) return null

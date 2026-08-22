@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
+import { For, Show, Suspense, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
 import { Tabs } from "@redcode-ai/ui/tabs"
@@ -240,56 +240,63 @@ export function SessionSidePanel(props: {
                       </Tabs.List>
                     </div>
 
-                    <Show when={reviewTab() && props.canReview()}>
-                      <Tabs.Content value="review" class="flex flex-col h-full overflow-hidden contain-strict">
-                        <Show when={reviewOpen() && activeTab() === "review"}>{props.reviewPanel()}</Show>
-                      </Tabs.Content>
-                    </Show>
-
-                    <Tabs.Content value="empty" class="flex flex-col h-full overflow-hidden contain-strict">
-                      <Show when={activeTab() === "empty"}>
-                        <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
-                          <div class="h-full px-6 pb-42 -mt-4 flex flex-col items-center justify-center text-center gap-6">
-                            <Mark class="w-14 opacity-10" />
-                            <div class="text-14-regular text-text-weak max-w-56">
-                              {language.t("session.files.selectToOpen")}
-                            </div>
-                          </div>
-                        </div>
+                    {/* 260822 cc 面板自己的 Suspense 边界。少了它，任何一个 tab 里的异步读
+                        （useQuery/createResource）一进入无数据 pending，就会一路抛到 app.tsx:198
+                        那个包住**整个应用**的 Suspense，把整扇窗换成满屏 Splash 再换回来 ——
+                        「上下文」tab 的 context-inspect 查询就这么干过（见该文件里 placeholderData
+                        上方那段）。边界放在这里，最坏情况也只是面板这一块空一下。 */}
+                    <Suspense fallback={<div class="flex-1 min-h-0" />}>
+                      <Show when={reviewTab() && props.canReview()}>
+                        <Tabs.Content value="review" class="flex flex-col h-full overflow-hidden contain-strict">
+                          <Show when={reviewOpen() && activeTab() === "review"}>{props.reviewPanel()}</Show>
+                        </Tabs.Content>
                       </Show>
-                    </Tabs.Content>
 
-                    <Show when={contextOpen()}>
-                      <Tabs.Content value="context" class="flex flex-col h-full overflow-hidden contain-strict">
-                        <Show when={activeTab() === "context"}>
+                      <Tabs.Content value="empty" class="flex flex-col h-full overflow-hidden contain-strict">
+                        <Show when={activeTab() === "empty"}>
                           <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
-                            <SessionContextTab />
+                            <div class="h-full px-6 pb-42 -mt-4 flex flex-col items-center justify-center text-center gap-6">
+                              <Mark class="w-14 opacity-10" />
+                              <div class="text-14-regular text-text-weak max-w-56">
+                                {language.t("session.files.selectToOpen")}
+                              </div>
+                            </div>
                           </div>
                         </Show>
                       </Tabs.Content>
-                    </Show>
 
-                    {/* 260610 Red status 标签页内容：复用标题栏弹层的 StatusPopoverBody（fill 自适应宽度） */}
-                    <Tabs.Content value="status" class="flex flex-col h-full overflow-hidden contain-strict">
-                      <Show when={activeTab() === "status"}>
-                        <div class="relative pt-2 flex-1 min-h-0 overflow-auto px-2">
-                          <StatusPopoverBody shown={() => true} fill />
-                        </div>
+                      <Show when={contextOpen()}>
+                        <Tabs.Content value="context" class="flex flex-col h-full overflow-hidden contain-strict">
+                          <Show when={activeTab() === "context"}>
+                            <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
+                              <SessionContextTab />
+                            </div>
+                          </Show>
+                        </Tabs.Content>
                       </Show>
-                    </Tabs.Content>
 
-                    {/* 260615 Red Plan 标签页内容 */}
-                    <Tabs.Content value="plan" class="flex flex-col h-full overflow-hidden contain-strict">
-                      <Show when={activeTab() === "plan"}>
-                        <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
-                          <SessionPlanTab />
-                        </div>
+                      {/* 260610 Red status 标签页内容：复用标题栏弹层的 StatusPopoverBody（fill 自适应宽度） */}
+                      <Tabs.Content value="status" class="flex flex-col h-full overflow-hidden contain-strict">
+                        <Show when={activeTab() === "status"}>
+                          <div class="relative pt-2 flex-1 min-h-0 overflow-auto px-2">
+                            <StatusPopoverBody shown={() => true} fill />
+                          </div>
+                        </Show>
+                      </Tabs.Content>
+
+                      {/* 260615 Red Plan 标签页内容 */}
+                      <Tabs.Content value="plan" class="flex flex-col h-full overflow-hidden contain-strict">
+                        <Show when={activeTab() === "plan"}>
+                          <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
+                            <SessionPlanTab />
+                          </div>
+                        </Show>
+                      </Tabs.Content>
+
+                      <Show when={activeFileTab()} keyed>
+                        {(tab) => <FileTabContent tab={tab} />}
                       </Show>
-                    </Tabs.Content>
-
-                    <Show when={activeFileTab()} keyed>
-                      {(tab) => <FileTabContent tab={tab} />}
-                    </Show>
+                    </Suspense>
                   </Tabs>
                   <DragOverlay>
                     <Show when={store.activeDraggable} keyed>
