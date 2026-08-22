@@ -8,6 +8,29 @@
 
 ---
 
+### [0.9.5] - 2026-08-22
+
+> 找到并修掉「模型一调工具整个界面就闪一下」的**真**根因——0.9.4 记的那条只是缓解，方向也不对。顺带把输入框那个上下文按钮与右侧面板的分工彻底切开，重写并砍半了兜底提示词。
+
+#### 修复
+
+- **模型每调一次工具，整个界面闪一下变成主题底色再回来**（`app/components/session/session-context-tab.tsx`）。真根因：「上下文」面板的 `context-inspect` 查询，`queryKey` 里带着最后一条 assistant 的 id 与 `tokens.context`，而后者是服务端**每个 step 覆写一次**的 —— 每次工具调用 key 就变，对 solid-query 就是一个全新且无缓存的 pending 查询。`useQuery` 内部是 `createResource`，渲染期读 `.data` 会向上抛给最近的 Suspense，而最近的那个是 `app.tsx:198` 包住**整个应用**的那一个，fallback 是满屏 `bg-background-base` + Splash。于是整棵树被卸载、换成一块满屏色块、请求回来后再整棵重挂。复现条件极窄——**只有该 tab 处于激活状态时才发生**（侧栏 tab 内容是 `<Show when={activeTab()===...}>` 真卸载的），纯文字流式不触发（`tokens.context` 每 step 才写一次）。修法是 `placeholderData` 保留上一轮快照，使其永不进入无数据 pending；并给侧栏 tab 内容加了自己的 Suspense 边界兜底。
+  诊断口径记一笔：`LONG 0/0` 配 `CLS 1.47` = 内容被换掉了，不是算卡了；输入法组合被强行提交成裸拼音 = 编辑区所在的整棵树被重建。
+- **时间线上一行被无谓重挂**（`app/pages/session/message-timeline.data.ts`）：`AssistantPart` 带着一个全仓没人读的 `lastAssistantPart` 字段。末尾插新行会让原来那行的该字段 true→false，行对象因此不再 equals、复用不到，而 virtua 的 `<For>` 按引用 key —— 那一行整棵 DOM 被销毁重建。已删除该字段并钉回归测试。
+- **切回会话停在历史中间**（`app/pages/session/message-timeline.tsx`）：入场锚定走 `scrollToIndex`，按虚拟**估算**尺寸算落点（缓存未命中时每行 60px），落点一偏，紧跟的 scroll 事件就把 `measuredBottomAnchored` 置 false，而唯一能纠正它的实测锚定恰好拿这个标志当门禁——越偏越不修。加 force 模式并把固定帧预算改成沉降判据（插行 12 帧、入场纠偏 90 帧兜底）。
+- **纯浏览器 dev 模式白屏**（`desktop/src/renderer/tauri-api-shim.ts`）：既非 Electron 也非 Tauri 时 `window.api` 不存在，而 `index.tsx` 与 `webview-zoom.ts` 在模块顶层就无条件调用它——一个模块级 TypeError 打断整个模块图。DEV 构建下装 Proxy 兜底桩，恢复「不重编调试 GUI」那条路子。
+
+#### 新增
+
+- **输入框那个上下文小按钮改成显示首字延迟与解码速率**（`app/components/session-context-usage.tsx`）：原先三行里有两行（会话累计 Token、成本）在右侧面板里一模一样地各有一格，纯重复。分工定成「面板是会话账本，悬浮是当下这一轮」。口径照搬 TUI 侧边栏：分子必须 `output + reasoning`（`output` 的定义已扣掉推理），分母必须从 `firstChunk` 起算（`created→firstChunk` 是排队与预填，用它会把 60 tok/s 稀释成 20）。两个陷阱各钉一条回归测试。进度圈同步改成跟着**上下文窗口占用**上色——此前按引擎压缩档位上色，而那个档位的分母是 `ceiling`（可用窗口扣输出预留、再被 threshold 封顶），与显示的百分比不是同一个分母，会出现「圈黄了但数字才 52%」。
+- **上下文面板补上压缩机制两格**：「上次压缩」（`CompactionPart` 的 `tokens_before → tokens_after`，附自动/手动与溢出触发；服务端早就回填、TUI 早就显示、GUI 一直只有个没数字的死标签）与「自动压缩」（`config.compaction.auto` / `threshold`——关掉自动压缩的会话，进度圈变红也不会有人来救，此前界面上一个字都没有）。同时删掉与输入框悬浮重复的「上下文限制」「使用率」两格。
+
+#### 优化
+
+- **兜底提示词重写并砍到一半**（`opencode/src/session/prompt/default.md`，95 行 8594 字符 → 53 行 5400）。按 `model.api.id` 子串匹配挑模板，匹不上就落 `default.md`——所以走到兜底的恰恰是刚发布、还没人加分支的模型，**通常是当下最强的那个**；而旧 default.md 是全仓最紧的一份（4 行上限／单词回答最好／禁止任何注释），等于「未知 ⇒ 当成弱模型死死管住」。`grok`/`doubao`/`sensenova` 三份专属提示词的注释都明写唯一目的是逃开它——三次绕行没人修根。重写判据：**偶然事实与本地约定留下，普世工程道德删掉**；因由只在界定规则边界时保留（如 GBK 那条，没有它模型会以为规则武断）。
+- **流式结束时不再把整块 markdown 拆了重建**（`ui/src/components/message-part.tsx`）：文本块与推理块都用 `<Show when={streaming()} fallback={<Markdown/>}>` 包着 `PacedMarkdown`，而后者在 `streaming=false` 时的输出与 fallback 逐字节相同。那个 Show 唯一的作用是在 `time.completed` 落库瞬间互换两个**不同组件**，导致整块 DOM 连同 Shiki 高亮全部重来（实测一个推理块 191~247 个节点）。改成常挂。
+- **删掉 `doubao.md` 与火山方舟的提示词路由**：确认不再使用该供应商，且该文件逐条读下来没有任何 Doubao 特有内容。
+
 ### [0.9.4] - 2026-08-21
 
 > 收口三条 GUI 输入体验主线（流式闪烁吞键、上下文面板去重、计划面板调色）与一条 TUI 布局线（消息左右对照），顺手把「无超时子进程」「总线通道 OOM」「doctor 死代码」三个稳定性隐患清掉，并接入官方 DeepSeek 视觉模型。
