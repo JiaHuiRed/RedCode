@@ -558,16 +558,37 @@ export function MessageTimeline(props: {
     return assistantContentVersion
   })
 
+  const canAnchorBottom = () => {
+    if (!virtualizer) return false
+    if (!props.shouldAnchorBottom() && !measuredBottomAnchored) return false
+    return timelineRowKeys().length > 0
+  }
+
+  // 260822 cc 拆成两条，见 scheduleMeasuredBottomAnchor 上方注释。
+  //
+  // ① 插行 / 会话状态变化 —— 需要底部锚定循环。timelineRowKeys 用 equals: sameKeys，
+  //    只在键列表变化时触发；每个 assistant part 自成一行，所以工具调用会走到这里。
   createEffect(
     on(
-      () => [timelineRowKeys(), activeAssistantContentVersion(), sessionStatus().type] as const,
+      () => [timelineRowKeys(), sessionStatus().type] as const,
       () => {
-        if (!virtualizer) return
-        if (!props.shouldAnchorBottom() && !measuredBottomAnchored) return
-        const keys = timelineRowKeys()
-        if (keys.length === 0) return
+        if (!canAnchorBottom()) return
         scheduleScrollToEnd()
         scheduleMeasuredBottomAnchor()
+      },
+      { defer: true },
+    ),
+  )
+
+  // ② 纯内容增长（文本/推理增量、工具输出变长）—— 只走一次 scrollToEnd。
+  //    activeAssistantContentVersion 的签名含 part.text.length，每个 delta 都 bump；
+  //    让它去续命锚定循环，等于整段回答期间每帧强制同步布局。
+  createEffect(
+    on(
+      () => activeAssistantContentVersion(),
+      () => {
+        if (!canAnchorBottom()) return
+        scheduleScrollToEnd()
       },
       { defer: true },
     ),
@@ -667,6 +688,8 @@ export function MessageTimeline(props: {
   let bottomAnchorFrame: number | undefined
   let bottomAnchorFrames = 0
   let measuredBottomAnchored = true
+  // 260822 cc IME 组合期暂停底部锚定。见 scheduleMeasuredBottomAnchor 上方注释。
+  let imeComposing = false
   const [scrollRoot, setScrollRoot] = createSignal<HTMLDivElement>()
 
   const updateTitleMetrics = () => {
@@ -685,15 +708,50 @@ export function MessageTimeline(props: {
   function anchorMeasuredBottom() {
     if (!listRoot) return false
     if (!measuredBottomAnchored) return false
+    // 组合期不写 scrollTop：读 scrollHeight 是强制同步布局，和虚拟列表的重测量挤在一帧里
+    // 是很重的主线程任务，会打断 IME 组合、把正在打的字吞掉。循环保持存活，组合结束后
+    // 由 compositionend 补一次锚定。
+    if (imeComposing) return true
     listRoot.scrollTop = listRoot.scrollHeight
     return true
   }
+
+  // 260822 cc 底部锚定的两处收敛。原实现：任何内容更新都把预算重置成 90 帧，而
+  // activeAssistantContentVersion 的签名含 part.text.length —— 每个文本增量都 bump，
+  // 于是流式期间预算被反复续命、rAF 永不停止，**整段回答期间每帧都在强制同步布局**。
+  //
+  // ① 只有插行才重置预算。这个 workaround 本来就是为插行写的（见下方 virtua #301
+  //    注释：工具行的初始测量高度会短暂超出）；文本增量只是把已有行撑长，那条路由
+  //    scheduleScrollToEnd 走一次 rAF 就够，不需要连续强制布局。
+  // ② 预算 90 → 12 帧。90 帧是 1.5 秒，远超一次测量沉降所需；12 帧仍留足余量。
+  //
+  // 症状：GUI 里模型输出阶段每次调工具都闪一下，正在打的字被吞（已上屏的不受影响）。
+  const BOTTOM_ANCHOR_FRAMES = 12
+
+  // 组合期让路：IME 组合中不写 scrollTop，组合结束补一次锚定。
+  // 监听挂在 document 上而不是输入框上 —— timeline 拿不到 composer 的 ref，两者是
+  // session 页里的同级块；组合事件会冒泡到 document，够用且不需要跨组件接线。
+  onMount(() => {
+    const onCompositionStart = () => {
+      imeComposing = true
+    }
+    const onCompositionEnd = () => {
+      imeComposing = false
+      if (canAnchorBottom()) scheduleMeasuredBottomAnchor()
+    }
+    document.addEventListener("compositionstart", onCompositionStart)
+    document.addEventListener("compositionend", onCompositionEnd)
+    onCleanup(() => {
+      document.removeEventListener("compositionstart", onCompositionStart)
+      document.removeEventListener("compositionend", onCompositionEnd)
+    })
+  })
 
   function scheduleMeasuredBottomAnchor() {
     // Workaround for virtua issue #301: virtua does not expose a synchronous item-resize hook for
     // "stay at bottom if already at bottom". Tool rows can briefly outgrow the measured virtual
     // height, so keep the scroll container bottom-locked for a few frames while measurement settles.
-    bottomAnchorFrames = 90
+    bottomAnchorFrames = BOTTOM_ANCHOR_FRAMES
     if (bottomAnchorFrame !== undefined) return
 
     const tick = () => {
@@ -703,8 +761,6 @@ export function MessageTimeline(props: {
         return
       }
 
-      // 260808 Red 去掉 working 续命：内容更新已由 createEffect 重新 schedule（重置 90 帧预算），
-      // 流式期间每帧续 12 会让 rAF 永不停止、每帧强制 scrollTop 重排，模型思考间隙也在白跑
       bottomAnchorFrames -= 1
       if (bottomAnchorFrames <= 0) return
       bottomAnchorFrame = requestAnimationFrame(tick)
