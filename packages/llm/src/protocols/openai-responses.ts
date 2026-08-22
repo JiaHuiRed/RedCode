@@ -233,6 +233,11 @@ interface ParserState {
   readonly hasFunctionCall: boolean
   readonly lifecycle: Lifecycle.State
   readonly reasoningItems: Readonly<Record<string, ReasoningStreamItem>>
+  // Mirror of the request-level `store` option. The stream never repeats it,
+  // and the reasoning lifecycle depends on it: under `store: false` an item's
+  // encrypted state only arrives with `output_item.done`, so the last summary
+  // block has to stay open until then. Seeded by `stream.initial(request)` and
+  // constant for the life of one response.
   readonly store: boolean | undefined
 }
 
@@ -899,12 +904,12 @@ export const protocol = Protocol.make({
   },
   stream: {
     event: Protocol.jsonEvent(OpenAIResponsesEvent),
-    initial: () => ({
+    initial: (request) => ({
       hasFunctionCall: false,
       tools: ToolStream.empty<string>(),
       lifecycle: Lifecycle.initial(),
       reasoningItems: {},
-      store: undefined,
+      store: OpenAIOptions.store(request),
     }),
     step,
     terminal: (event) => TERMINAL_TYPES.has(event.type),
