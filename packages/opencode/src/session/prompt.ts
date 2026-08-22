@@ -180,8 +180,6 @@ export const layer = Layer.effect(
       } satisfies TaskPromptOps
     })
 
-    // 260610 Red task isolation�������� worktree �� �õ��� InstanceContext �� run �ڸ�ʵ�����ܣ����� cwd ���룩
-    // Worktree �� serviceOption ����ʱ���ң�app/server ����ͬ�� mergeAll �ṩ��������ʵ�������ѣ��� Worktree ��������ֱ�ӱ�����
     const runIsolated = <A, E>(input: { name: string; startCommand?: string }, run: Effect.Effect<A, E>) =>
       Effect.gen(function* () {
         const service = yield* Effect.serviceOption(Worktree.Service)
