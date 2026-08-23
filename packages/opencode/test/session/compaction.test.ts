@@ -1612,6 +1612,34 @@ describe("SessionNs.getUsage", () => {
       expect(result.cost).toBeCloseTo(1.5) // 空闲 input 1.5 CNY / 1M
     })
 
+    test("charges off-peak on Saturday high window (260823 new rule)", () => {
+      // 2026-08-22T02:00Z = 周六 北京时间 10:00（高峰窗口时刻）→ 周六全天空闲
+      const saturday = SessionNs.getUsage({
+        model: deepseekModel,
+        usage: oneMillionInput,
+        time: Date.parse("2026-08-22T02:00:00Z"),
+      })
+      expect(saturday.cost).toBeCloseTo(1.5) // 空闲 input 1.5 CNY / 1M
+
+      // 2026-08-23T02:00Z = 周日 北京时间 10:00（高峰窗口时刻）→ 周日全天空闲
+      const sunday = SessionNs.getUsage({
+        model: deepseekModel,
+        usage: oneMillionInput,
+        time: Date.parse("2026-08-23T02:00:00Z"),
+      })
+      expect(sunday.cost).toBeCloseTo(1.5)
+    })
+
+    test("charges peak on Monday high window after weekend rule", () => {
+      // 2026-08-24T02:00Z = 周一 北京时间 10:00（高峰窗口 + 工作日）
+      const result = SessionNs.getUsage({
+        model: deepseekModel,
+        usage: oneMillionInput,
+        time: Date.parse("2026-08-24T02:00:00Z"),
+      })
+      expect(result.cost).toBeCloseTo(3)
+    })
+
     test("falls back to static model.cost when time is absent", () => {
       const result = SessionNs.getUsage({
         model: deepseekModel,
