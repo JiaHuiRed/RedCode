@@ -14,7 +14,16 @@
 
 #### 移除
 
-- **输入框上的 todo dock**（`app/pages/session/composer/session-todo-dock.tsx` 及全部联动）：与侧边栏 `session-plan-tab` 功能重复（进度条、统计、完整列表、Goal 卡一应俱全，按哥哥定案只留右侧计划面板）。连带删除：`session-composer-state.ts` 的 `todoState`/`todoDockAtBoundary` 状态机与 dock store 字段（state 现只管权限/提问/决策）、`session-composer-region.tsx` 的 dock 渲染块/ResizeObserver 高度测量/`view.todoCollapsed` 折叠态（spring 动画改由 revert dock 滑入驱动）、`layout.tsx` 的 `todoCollapsed` 字段、i18n `session.todo.*` 4 key × 3 语言、index.css 的 dock 毛玻璃掺粉块、过期动画 playground story（`todo-panel-motion.stories.tsx`，其 props 早已与 region 脱节）与 storybook mock 残留。数据层不动：todo 由侧边栏走 `directory-sync` `store.todo` 拉取展示，与 dock 消费的 globalSync 镜像互不影响。原「todo 多时最后一条与输入文字重叠」根因（列表 pb-11 底部留白 + 输入框上移 36px 叠加）随组件删除一并消灭。
+- **输入框上的 todo dock**（`app/pages/session/composer/session-todo-dock.tsx` 及全部联动）：与侧边栏 `session-plan-tab` 功能重复（进度条、统计、完整列表、Goal 卡一应俱全，按哥哥定案只留右侧计划面板）。连带删除：`session-composer-state.ts` 的 `todoState`/`todoDockAtBoundary` 状态机与 dock store 字段（state 现只管权限/提问/决策）、`session-composer-region.tsx` 的 dock 渲染块/ResizeObserver 高度测量/`view.todoCollapsed` 折叠态（spring 动画改由 revert dock 滑入驱动）、`layout.tsx` 的 `todoCollapsed` 字段、i18n `session.todo.*` 4 key × 3 语言、index.css 的 dock 毛玻璃掺粉块、过期动画 playground story（`todo-panel-motion.stories.tsx`，其 props 早已与 region 脱节）与 storybook mock 残留。数据层不动：todo 由侧边栏走 `directory-sync` `store.todo` 拉取展示，    与 dock 消费的 globalSync 镜像互不影响。原「todo 多时最后一条与输入文字重叠」根因（列表 pb-11 底部留白 + 输入框上移 36px 叠加）随组件删除一并消灭。
+- **全局同步旧壳**（`app/context/global-sync.tsx`，522 行）：与 `server-sync.tsx` 同构双副本（同样的 bootstrap/event-reducer/child-store 依赖与 GlobalStore），全仓零引用——此前全局 store 重构为 server-sync 时留下的死壳，连带删除其 storybook alias 与 mock。`context/global-sync/` 目录（bootstrap/event-reducer 等活模块）不动。
+- **旧的新会话视图**（`app/components/session/session-new-view.tsx`）：`USE_NEW_SESSION_DESIGN` 恒为 true，design 版（项目切换器 + 分支选择器，功能超集）一直是默认——旧视图与 fallback 分支、`params.id || !USE_NEW_SESSION_DESIGN` 恒等条件均为死代码，连带清 i18n `session.new.title/worktree.main/mainWithBranch/lastModified`（`worktree.create` 仍被输入框活引用，保留）。
+
+#### 新增
+
+- **压缩中状态 + 压缩完成提示**（`app/pages/home-kanban.tsx`、`app/pages/layout/notification-toasts.ts`）：引擎的 `session.time.compacting` 与 `session.compacted` 事件早就存在、TUI 侧边栏早就显示，GUI 一直零消费——压缩跑在后台时看板卡片毫无指示，压完了也没人报告数字。现在：①看板卡片标题旁显示「压缩中」徽标（`time.compacting` 非空）；②收到 `session.compacted` 事件弹 toast，描述带 `CompactionPart` 回填的 `tokens_before → tokens_after`（事件在回填之后发出，数字必在），异常路径只报标题。
+
+- **全局同步旧壳**（`app/context/global-sync.tsx`，522 行）：与 `server-sync.tsx` 同构双副本（同样的 bootstrap/event-reducer/child-store 依赖与 GlobalStore），全仓零引用——此前全局 store 重构为 server-sync 时留下的死壳，连带删除其 storybook alias 与 mock。`context/global-sync/` 目录（bootstrap/event-reducer 等活模块）不动。
+- **旧的新会话视图**（`app/components/session/session-new-view.tsx`）：`USE_NEW_SESSION_DESIGN` 恒为 true，design 版（项目切换器 + 分支选择器，功能超集）一直是默认——旧视图与 fallback 分支、`params.id || !USE_NEW_SESSION_DESIGN` 恒等条件均为死代码，连带清 i18n `session.new.title/worktree.main/mainWithBranch/lastModified`（`worktree.create` 仍被输入框活引用，保留）。
 
 
 

@@ -41,7 +41,6 @@ export default defineMain({
           { find: /^@\/context\/permission$/, replacement: path.resolve(mocks, "app/context/permission.ts") },
           { find: /^@\/context\/language$/, replacement: path.resolve(mocks, "app/context/language.ts") },
           { find: /^@\/context\/platform$/, replacement: path.resolve(mocks, "app/context/platform.ts") },
-          { find: /^@\/context\/global-sync$/, replacement: path.resolve(mocks, "app/context/global-sync.ts") },
           { find: /^@\/hooks\/use-providers$/, replacement: path.resolve(mocks, "app/hooks/use-providers.ts") },
           {
             find: /^@\/components\/dialog-select-model$/,

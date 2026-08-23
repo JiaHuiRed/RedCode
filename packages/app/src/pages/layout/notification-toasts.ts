@@ -4,6 +4,7 @@ import { base64Encode } from "@redcode-ai/core/util/encode"
 import { getFilename } from "@redcode-ai/core/util/path"
 import { pathKey } from "@/utils/path-key"
 import { playSoundById } from "@/utils/sound"
+import { findLastCompaction } from "@/components/session/session-context-metrics"
 import type { useGlobalSDK } from "@/context/global-sdk"
 import type { useLanguage } from "@/context/language"
 import type { usePermission } from "@/context/permission"
@@ -73,6 +74,28 @@ export function createSDKNotificationToasts(deps: {
           icon: "shield" as any,
           title: language.t("notification.loopDetected.title"),
           description: language.t("notification.loopDetected.description", { type: typeLabel }),
+        })
+        return
+      }
+
+      // 260823 Red 压缩完成 toast：compaction.ts 先回填 tokens_before/after 再发 Compacted
+      // 事件（compaction.ts:716-728），消息流里最后一条 CompactionPart 一定带数字，
+      // 所以能报「180k → 32k」而不是一句空话。拿不到数字（非标准压缩路径）就只报标题。
+      if (e.details?.type === "session.compacted") {
+        const props = e.details.properties as { sessionID: string }
+        const [store] = globalSync.child(e.name, { bootstrap: false })
+        const last = findLastCompaction(store.message[props.sessionID] ?? [], (messageID) => store.part[messageID] ?? [])
+        const fmt = (n: number) => n.toLocaleString(language.intl())
+        showToast({
+          icon: "collapse" as any,
+          title: language.t("notification.compacted.title"),
+          description:
+            last && last.tokens_before !== undefined && last.tokens_after !== undefined
+              ? language.t("notification.compacted.description", {
+                  before: fmt(last.tokens_before),
+                  after: fmt(last.tokens_after),
+                })
+              : undefined,
         })
         return
       }

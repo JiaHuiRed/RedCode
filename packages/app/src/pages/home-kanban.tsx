@@ -170,6 +170,13 @@ function KanbanCard(props: {
           <span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-base [font-weight:530] text-[13px]">
             {title()}
           </span>
+          {/* 260823 Red 压缩中徽标：session.time.compacting 非空 = 正按 token 预算在后台压缩，
+              TUI 侧边栏同款状态（tui/context/sync.tsx:540），GUI 看板此前毫无指示 */}
+          <Show when={props.record.session.time?.compacting}>
+            <span class="shrink-0 rounded-[3px] border border-v2-border-border-base px-1 py-px text-[10px] text-v2-text-text-muted [font-weight:530]">
+              {language.t("home.kanban.compacting")}
+            </span>
+          </Show>
         </div>
         <div class="flex items-center gap-1 min-w-0 w-full">
           <Show when={props.record.projectName}>

@@ -31,7 +31,7 @@ import { Button } from "@redcode-ai/ui/button"
 import { showToast } from "@redcode-ai/ui/toast"
 import { base64Encode, checksum } from "@redcode-ai/core/util/encode"
 import { useLocation, useNavigate, useSearchParams } from "@solidjs/router"
-import { NewSessionDesignView, NewSessionView, SessionHeader } from "@/components/session"
+import { NewSessionDesignView, SessionHeader } from "@/components/session"
 import { useComments } from "@/context/comments"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
 import { setActiveMcpDirectory } from "@/context/global-sync/child-store"
@@ -75,7 +75,6 @@ const emptyFollowups: FollowupItem[] = []
 
 type ChangeMode = "git" | "branch" | "turn"
 type VcsMode = "git" | "branch"
-const USE_NEW_SESSION_DESIGN = true
 
 export default function Page() {
   const globalSync = useServerSync()
@@ -1652,16 +1651,12 @@ export default function Page() {
                 </Show>
               </Match>
               <Match when={true}>
-                <Show when={USE_NEW_SESSION_DESIGN} fallback={<NewSessionView worktree={newSessionWorktree()} />}>
-                  <NewSessionDesignView worktree={newSessionWorktree()}>
-                    {composerRegion("inline")}
-                  </NewSessionDesignView>
-                </Show>
+                <NewSessionDesignView worktree={newSessionWorktree()}>{composerRegion("inline")}</NewSessionDesignView>
               </Match>
             </Switch>
           </div>
 
-          <Show when={params.id || !USE_NEW_SESSION_DESIGN}>{composerRegion("dock")}</Show>
+          <Show when={params.id}>{composerRegion("dock")}</Show>
 
           <Show when={desktopReviewOpen()}>
             <div onPointerDown={() => size.start()}>

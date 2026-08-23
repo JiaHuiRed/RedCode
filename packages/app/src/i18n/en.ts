@@ -544,6 +544,8 @@ export const dict = {
 
   "notification.loopDetected.title": "Repetitive output detected",
   "notification.loopDetected.description": "The model was repeating itself ({{type}}). Auto-recovery applied.",
+  "notification.compacted.title": "Context compressed",
+  "notification.compacted.description": "Compacted from {{before}} to {{after}}",
   "notification.permission.title": "Permission required",
   "notification.permission.description": "{{sessionTitle}} in {{projectName}} needs permission",
   "notification.question.title": "Question",
@@ -572,6 +574,7 @@ export const dict = {
   "home.kanban.attention": "Attention",
   "home.kanban.idle": "Idle",
   "home.kanban.empty": "No sessions",
+  "home.kanban.compacting": "Compacting",
   "home.stats.cacheHit": "Cache hit",
   "home.stats.cost": "Cost",
   "home.stats.tokens.read": "Read",
@@ -648,11 +651,7 @@ export const dict = {
   "session.revertDock.expand": "Expand rolled back messages",
   "session.revertDock.restore": "Restore message",
 
-  "session.new.title": "Build anything",
-  "session.new.worktree.main": "Main branch",
-  "session.new.worktree.mainWithBranch": "Main branch ({{branch}})",
   "session.new.worktree.create": "Create new worktree",
-  "session.new.lastModified": "Last modified",
 
   "session.header.search.placeholder": "Search {{project}}",
   "session.header.searchFiles": "Search files",
