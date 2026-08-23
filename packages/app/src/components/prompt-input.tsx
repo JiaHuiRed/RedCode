@@ -1212,6 +1212,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       return
     }
 
+    // 260823 Red Ctrl/Cmd+Enter 属于权限弹窗快捷键（session-permission-dock 在 window 层监听，
+    // 焦点在输入框内也响应）。这里只 preventDefault 阻止 contenteditable 默认插入换行，
+    // 不 stopPropagation —— 事件必须继续冒泡到 window 让 dock 消费，否则权限确认失效。
+    if (event.key === "Enter" && !event.shiftKey && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault()
+      return
+    }
+
     const ctrl = event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
 
     if (store.popover) {
@@ -1283,7 +1291,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     }
 
     // Note: Shift+Enter is handled earlier, before IME check
-    if (event.key === "Enter" && !event.shiftKey) {
+    // 260823 Red Ctrl/Cmd+Enter 是权限弹窗"允许一次"的快捷键（session-permission-dock
+    // window 级监听），输入框发送必须排除带修饰键的 Enter——否则按 Ctrl+Enter 时
+    // 输入框文字先被 handleSubmit 发出去，权限随后也被允许，撞成两个动作。
+    if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
       event.preventDefault()
       if (event.repeat) return
       if (
