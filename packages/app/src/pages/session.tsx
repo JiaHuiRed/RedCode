@@ -1590,10 +1590,15 @@ export default function Page() {
             {/* 260608 Yuqi 半透明遮罩：压低壁纸亮度确保文字可读，同时过渡到两侧面板的实色背景 */}
             {/* 260609 Yuqi 0.4→0.62：哥哥实测 0.4 仍偏亮压不住文字，加深遮罩保证对话可读 */}
             {/* 260610 Red 0.5.0 refine#1：0.62→0.3，两侧栏已改深色磨砂当暗壳，聊天区作为更亮的焦点区，弱化暗罩 */}
+            {/* 260823 Yuqi 0.3→深紫粉渐变：纯黑遮罩把壁纸的粉紫色调全部压灰，改用主题色相
+                的渐变罩（顶部保留壁纸亮度、底部压深保证输入区对比），压暗但保色。 */}
             <div
               aria-hidden="true"
               class="absolute inset-0 z-0 pointer-events-none"
-              style={{ background: "rgba(0,0,0,0.3)" }}
+              style={{
+                background:
+                  "linear-gradient(180deg, rgba(60,32,58,0.30) 0%, rgba(40,22,44,0.45) 45%, rgba(22,12,28,0.62) 100%)",
+              }}
             />
           </Show>
           <div class="relative z-[1] flex-1 min-h-0 overflow-hidden">

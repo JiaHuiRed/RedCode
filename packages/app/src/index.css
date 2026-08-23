@@ -366,3 +366,39 @@
 [data-app-frost] #review-panel [data-slot="tabs-list"] > .sticky::before {
   background: transparent !important;
 }
+
+/* 260823 Yuqi v2 色板主题化：v2 色彩系统（--v2-background-bg-* 等）只按 color-scheme 映射
+   到灰板（dark → grey-1100 #080808 纯黑），yuqi 是粉紫主题但 v2 层一直吃灰黑——
+   左侧文件树/标题栏/tabs 的磨砂底是"黑 72% 压壁纸"，看着又脏又闷。
+   这里按主题+scheme 覆盖 v2 背景/边框变量为 yuqi 色相链（hue≈330 粉紫），
+   毛玻璃规则不动，材质靠变量颜色。选择器精确到 yuqi，不影响其它主题。 */
+[data-theme="yuqi"] {
+  /* light 保留既有观感，仅补偿 border 弱化 */
+}
+
+[data-theme="yuqi"][data-color-scheme="dark"] {
+  --v2-background-bg-deep: #1d1322;      /* 外壳/标题栏/面板——极深紫，不再纯黑 */
+  --v2-background-bg-base: #241828;      /* 主卡/会话区 */
+  --v2-background-bg-layer-01: #2e1f34;  /* 层 1（hover/标签） */
+  --v2-background-bg-layer-02: #39263f;  /* 层 2（激活态） */
+  --v2-background-bg-layer-03: #462d48;  /* 层 3 */
+  --v2-border-border-muted: rgba(244, 202, 224, 0.10);
+  --v2-border-border-base: rgba(244, 202, 224, 0.16);
+  --v2-border-border-strong: rgba(244, 202, 224, 0.28);
+  --v2-text-text-base: #f2e4ea;
+  --v2-text-text-muted: #c9a8b8;
+  --v2-text-text-faint: #9a7f8d;
+}
+
+/* 260823 Yuqi diff 摘要条（sticky accordion header）同款毛玻璃：实底 --background-stronger
+   太深紫，跟 file tree 外壳一个病。改为 65% v2-layer-01 + 粉 35% → 外层 55% 透，blur 12 扛住。 */
+[data-chat-frost] [data-component="sticky-accordion-header"],
+[data-app-frost] [data-component="sticky-accordion-header"] {
+  background-color: color-mix(
+    in srgb,
+    color-mix(in srgb, rgba(248, 164, 208, 0.40), var(--v2-background-bg-layer-01) 65%) 55%,
+    transparent
+  );
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}

@@ -58,13 +58,13 @@
       "diffDelete": "#e06c85"
     },
     "overrides": {
-      "background-stronger": "#43265a",
+      "background-stronger": "#47234a",
       "text-weak": "#c4aab4",
       "syntax-comment": "#9a8894",
       "syntax-keyword": "#c9a0e8",
       "syntax-string": "#8fd8b0",
       "syntax-primitive": "#f2a5c9",
-      "syntax-variable": "#e8a0b8",
+      "syntax-variable": "#d48ba6",
       "syntax-property": "#7cc4d8",
       "syntax-type": "#e5b07b",
       "syntax-constant": "#f0b47c",
