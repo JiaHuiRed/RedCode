@@ -622,10 +622,6 @@ export const dict = {
   "session.messages.jumpToLatest": "Jump to latest",
 
   "session.context.addToContext": "Add {{selection}} to context",
-  "session.todo.title": "Todos",
-  "session.todo.collapse": "Collapse",
-  "session.todo.expand": "Expand",
-  "session.todo.progress": "{{done}} of {{total}} todos completed",
   "session.plan.progress": "{{done}} of {{total}} completed",
   "session.goal.title": "Pinned Goal",
   "session.goal.status.active": "Active",

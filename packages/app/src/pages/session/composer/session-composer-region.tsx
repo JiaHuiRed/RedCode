@@ -2,7 +2,6 @@ import { Show, createEffect, createMemo, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useNavigate } from "@solidjs/router"
 import { useSpring } from "@redcode-ai/ui/motion-spring"
-import { useLayout } from "@/context/layout"
 import { PromptInput } from "@/components/prompt-input"
 import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
@@ -14,9 +13,7 @@ import { SessionQuestionDock } from "@/pages/session/composer/session-question-d
 import { SessionFollowupDock } from "@/pages/session/composer/session-followup-dock"
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
 import type { SessionComposerState } from "@/pages/session/composer/session-composer-state"
-import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
 import type { FollowupDraft } from "@/components/prompt-input/submit"
-import { createResizeObserver } from "@solid-primitives/resize-observer"
 
 export function SessionComposerRegion(props: {
   state: SessionComposerState
@@ -49,12 +46,10 @@ export function SessionComposerRegion(props: {
   setPromptDockRef: (el: HTMLDivElement) => void
 }) {
   const navigate = useNavigate()
-  const layout = useLayout()
   const prompt = usePrompt()
   const language = useLanguage()
   const route = useSessionKey()
   const sync = useSync()
-  const view = layout.view(route.sessionKey)
 
   const handoffPrompt = createMemo(() => getSessionHandoff(route.sessionKey())?.prompt)
   const info = createMemo(() => (route.params.id ? sync.session.get(route.params.id) : undefined))
@@ -86,8 +81,6 @@ export function SessionComposerRegion(props: {
 
   const [store, setStore] = createStore({
     ready: false,
-    height: 320,
-    body: undefined as HTMLDivElement | undefined,
   })
   let timer: number | undefined
   let frame: number | undefined
@@ -123,27 +116,19 @@ export function SessionComposerRegion(props: {
 
   onCleanup(clear)
 
-  const open = createMemo(() => store.ready && props.state.dock() && !props.state.closing())
+  const rolled = createMemo(() => (props.revert?.items.length ? props.revert : undefined))
+  // 260823 Red: 输入框 todo dock 已砍（功能由侧边栏计划面板覆盖，见 session-plan-tab），
+  // spring/value 仅服务 revert dock 的 -36*value() 滑入动画。
+  const open = createMemo(() => store.ready && !!rolled())
   const progress = useSpring(() => (open() ? 1 : 0), { visualDuration: 0.3, bounce: 0 })
   const value = createMemo(() => Math.max(0, Math.min(1, progress())))
-  const dock = createMemo(() => (store.ready && props.state.dock()) || value() > 0.001)
-  const rolled = createMemo(() => (props.revert?.items.length ? props.revert : undefined))
   const lift = createMemo(() => (rolled() ? 18 : 36 * value()))
-  const full = createMemo(() => Math.max(78, store.height))
 
   const openParent = () => {
     const id = parentID()
     if (!id) return
     navigate(`/${route.params.dir}/session/${id}`)
   }
-
-  createEffect(() => {
-    const el = store.body
-    if (!el) return
-    const update = () => setStore("height", el.getBoundingClientRect().height)
-    createResizeObserver(store.body, update)
-    update()
-  })
 
   return (
     <div
@@ -210,28 +195,6 @@ export function SessionComposerRegion(props: {
               </>
             }
           >
-            <Show when={dock()}>
-              <div
-                classList={{
-                  "overflow-hidden": true,
-                  "pointer-events-none": value() < 0.98,
-                }}
-                style={{
-                  "max-height": `${full() * value()}px`,
-                }}
-              >
-                <div ref={(el) => setStore("body", el)}>
-                  <SessionTodoDock
-                    todos={props.state.todos()}
-                    collapsed={view.todoCollapsed.get()}
-                    onToggle={() => view.todoCollapsed.set(!view.todoCollapsed.get())}
-                    collapseLabel={language.t("session.todo.collapse")}
-                    expandLabel={language.t("session.todo.expand")}
-                    dockProgress={value()}
-                  />
-                </div>
-              </div>
-            </Show>
             <Show when={rolled()} keyed>
               {(revert) => (
                 <div

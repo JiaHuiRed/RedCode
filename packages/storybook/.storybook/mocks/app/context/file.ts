@@ -24,7 +24,6 @@ const pool = [
   "src/session/timeline.tsx",
   "src/session/composer.tsx",
   "src/components/prompt-input.tsx",
-  "src/components/session-todo-dock.tsx",
   "README.md",
 ]
 

@@ -8,7 +8,15 @@
 
 ---
 
-### [0.9.5] - 2026-08-22
+### [0.9.6] - 2026-08-23
+
+> 输入框上的 todo dock 与侧边栏「计划」面板功能重复（哥哥 8/23 定案：只保留侧边栏）。整个组件与状态机删掉，输入框回归纯粹——todo 多时不再有面板叠在输入框上、与正在输入的文字重叠。
+
+#### 移除
+
+- **输入框上的 todo dock**（`app/pages/session/composer/session-todo-dock.tsx` 及全部联动）：与侧边栏 `session-plan-tab` 功能重复（进度条、统计、完整列表、Goal 卡一应俱全，按哥哥定案只留右侧计划面板）。连带删除：`session-composer-state.ts` 的 `todoState`/`todoDockAtBoundary` 状态机与 dock store 字段（state 现只管权限/提问/决策）、`session-composer-region.tsx` 的 dock 渲染块/ResizeObserver 高度测量/`view.todoCollapsed` 折叠态（spring 动画改由 revert dock 滑入驱动）、`layout.tsx` 的 `todoCollapsed` 字段、i18n `session.todo.*` 4 key × 3 语言、index.css 的 dock 毛玻璃掺粉块、过期动画 playground story（`todo-panel-motion.stories.tsx`，其 props 早已与 region 脱节）与 storybook mock 残留。数据层不动：todo 由侧边栏走 `directory-sync` `store.todo` 拉取展示，与 dock 消费的 globalSync 镜像互不影响。原「todo 多时最后一条与输入文字重叠」根因（列表 pb-11 底部留白 + 输入框上移 36px 叠加）随组件删除一并消灭。
+
+
 
 > 找到并修掉「模型一调工具整个界面就闪一下」的**真**根因——0.9.4 记的那条只是缓解，方向也不对。顺带把输入框那个上下文按钮与右侧面板的分工彻底切开，重写并砍半了兜底提示词。
 
