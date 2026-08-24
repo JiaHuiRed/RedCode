@@ -88,7 +88,13 @@ export function formatPart(part: Part, options: TranscriptOptions): string {
 
   if (part.type === "reasoning") {
     if (options.thinking) {
-      return `_思考中:_\n\n${part.text}\n\n`
+      // 260824 cc 这里保持英文：本文件是**导出格式**，通篇英文结构标签
+      // （# Test Session / ## User / ## Assistant / **Tool:** / **Input:** /
+      // **Output:** / **Error:**），`_思考中:_` 是 d6d579c4 那次
+      // Thinking→思考中 全局替换的误伤，同批还把标识符扫成了 思考中Mode /
+      // show思考中 / use思考中Mode。TUI 的实时显示（routes/session/index.tsx
+      // 的 `_思考中:_`/`_已思考:_`）是有意的中文，与本文件是两条路径，不要对齐。
+      return `_Thinking:_\n\n${part.text}\n\n`
     }
     return ""
   }
