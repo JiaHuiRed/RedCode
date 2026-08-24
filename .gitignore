@@ -86,3 +86,6 @@ packages/opencode/models_test.txt
 
 # 260810 cc OpenTUI FFI 调试日志（运行时产物，落在仓库根）
 ffi_otui_*.log
+
+# 260824 Red deepsec 安全扫描工作目录（findings 数据库 + 运行时状态，非源码）
+.deepsec/
