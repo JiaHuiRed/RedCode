@@ -2006,3 +2006,29 @@ describe("compaction file tags", () => {
     expect(parseFileTags(appendFileTags("summary", files))).toEqual(files)
   })
 })
+
+// 260824 cc session.time.compacting 的往返。这个字段此前全仓只有搬运与消费、没有生产者，
+// TUI 侧边栏与 GUI 看板的「压缩中」因此永远不亮（260822 查实）。补上 setCompacting 之后，
+// 真正的风险不在 ensuring（Effect 语义是确定的），而在**这个值到底能不能落库再读回来** ——
+// patch → 投影(projectors.ts:92 的 grab) → SQL 列 → 反序列化(session.ts:112)，四段里任何
+// 一段断了，徽标照样不亮，而那是一次看不出来的假修复。尤其 null（清除）那一步：grab 对
+// null 的处理没人验过。
+describe("session.time.compacting", () => {
+  it.live(
+    "setCompacting 写得进、读得回，null 能清掉",
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const ssn = yield* SessionNs.Service
+        const info = yield* ssn.create({})
+        expect(info.time.compacting).toBeUndefined()
+
+        const at = 1_700_000_000_000
+        yield* ssn.setCompacting({ sessionID: info.id, time: at })
+        expect((yield* ssn.get(info.id)).time.compacting).toBe(at)
+
+        yield* ssn.setCompacting({ sessionID: info.id, time: null })
+        expect((yield* ssn.get(info.id)).time.compacting).toBeUndefined()
+      }),
+    ),
+  )
+})

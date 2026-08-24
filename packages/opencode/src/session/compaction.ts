@@ -417,7 +417,7 @@ export const layer = Layer.effect(
       return { tokens: pruned, parts: toPrune.length }
     })
 
-    const processCompaction = Effect.fn("SessionCompaction.process")(function* (input: {
+    const processCompactionInner = Effect.fn("SessionCompaction.process")(function* (input: {
       parentID: MessageID
       messages: MessageV2.WithParts[]
       sessionID: SessionID
@@ -428,6 +428,11 @@ export const layer = Layer.effect(
       if (!parent || parent.info.role !== "user") {
         throw new Error(`Compaction parent must be a user message: ${input.parentID}`)
       }
+      // 260824 cc 置起「正在压缩」。这是 session.time.compacting 全仓唯一的写入点 ——
+      // 此前该字段只有搬运与消费（TUI 侧边栏、GUI 看板徽标），两端因此永远不亮。
+      // 只在真正的全量摘要压缩上置起：prune 档是纯本地裁剪、不调模型、瞬时完成，
+      // 给它挂个"压缩中"只会闪一下，没有信息量。
+      yield* session.setCompacting({ sessionID: input.sessionID, time: Date.now() })
       const userMessage = parent.info
       const compactionPart = parent.parts.find((part): part is MessageV2.CompactionPart => part.type === "compaction")
 
@@ -729,7 +734,16 @@ export const layer = Layer.effect(
         yield* plugin.trigger("compact.post", { sessionID: input.sessionID }, {}).pipe(Effect.catch(() => Effect.void))
       }
       return result
-    }) as Interface["process"]
+    })
+
+    // 260824 cc 清除走 ensuring 而不是写在函数末尾：压缩失败、模型报错、用户中断时若不清，
+    // 看板与 TUI 会永远停在"压缩中"——一个永不消失的状态比没有状态更糟。
+    // setCompacting 自身失败不该淹掉压缩本身的错误，故 ignore。
+    const processCompaction = ((input: Parameters<Interface["process"]>[0]) =>
+      Effect.ensuring(
+        processCompactionInner(input),
+        session.setCompacting({ sessionID: input.sessionID, time: null }).pipe(Effect.ignore),
+      )) as Interface["process"]
 
     const create = Effect.fn("SessionCompaction.create")(function* (input: {
       sessionID: SessionID

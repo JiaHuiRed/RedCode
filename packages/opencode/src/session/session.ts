@@ -516,6 +516,7 @@ export interface Interface {
   readonly get: (id: SessionID) => Effect.Effect<Info, NotFound>
   readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
   readonly setArchived: (input: { sessionID: SessionID; time?: number | null }) => Effect.Effect<void>
+  readonly setCompacting: (input: { sessionID: SessionID; time?: number | null }) => Effect.Effect<void>
   readonly setPermission: (input: { sessionID: SessionID; permission: Permission.Ruleset }) => Effect.Effect<void>
   readonly setRevert: (input: {
     sessionID: SessionID
@@ -838,6 +839,17 @@ export const layer: Layer.Layer<
       yield* patch(input.sessionID, { time: { archived: input.time } })
     })
 
+    // 260824 cc time.compacting 的**生产者**。此前全仓只有搬运（序列化 :147、投影、JSON 迁移）
+    // 与消费（TUI 侧边栏状态、GUI 看板「压缩中」徽标），从来没有任何代码给它赋过值 ——
+    // 两端的"压缩中"因此永远不亮。Patch schema（:313）连清空用的 NullOr 都早就留好了，
+    // 说明当初就打算写，只是落地时漏了。
+    const setCompacting = Effect.fn("Session.setCompacting")(function* (input: {
+      sessionID: SessionID
+      time?: number | null
+    }) {
+      yield* patch(input.sessionID, { time: { compacting: input.time } })
+    })
+
     const setPermission = Effect.fn("Session.setPermission")(function* (input: {
       sessionID: SessionID
       permission: Permission.Ruleset
@@ -974,6 +986,7 @@ export const layer: Layer.Layer<
       get,
       setTitle,
       setArchived,
+      setCompacting,
       setPermission,
       setRevert,
       clearRevert,
