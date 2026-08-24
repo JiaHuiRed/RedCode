@@ -13,6 +13,7 @@
     "lint": "oxlint",
     "typecheck": "bun turbo typecheck",
     "check:subprocess-timeout": "bun run script/check-subprocess-timeout.ts",
+    "check:control-bytes": "bun run script/check-control-bytes.ts",
     "check:openapi-drift": "bun run script/check-openapi-drift.ts",
     "gen:openapi": "bun run --cwd packages/opencode --conditions=browser src/index.ts generate > packages/sdk/openapi.json",
     "upgrade-opentui": "bun run script/upgrade-opentui.ts",

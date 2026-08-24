@@ -50,6 +50,13 @@ jobs:
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
 
+      # 260824 cc 裸控制字节闸门：全仓字节扫描，放在测试前面，坏了立刻知道。
+      # pre-push 上已经有同一条（.husky/pre-push），但 --no-verify 绕得过去，而这类
+      # 字节没有任何运行时征兆——代码照跑、测试照过，只有 grep 悄悄看不见那个文件
+      # （见 7dec94a7：一个权限审批模块因此对全仓搜索隐身）。
+      - name: Run control-byte gate
+        run: bun run check:control-bytes
+
       - name: Configure git identity
         run: |
           git config --global user.email "bot@opencode.ai"
