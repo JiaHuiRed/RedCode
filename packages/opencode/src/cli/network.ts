@@ -1,6 +1,8 @@
 import type { Argv, InferredOptionTypes } from "yargs"
 import { Config } from "@/config/config"
 import { Effect } from "effect"
+import { Flag } from "@redcode-ai/core/flag/flag"
+import { UI } from "./ui"
 
 const options = {
   port: {
@@ -36,9 +38,41 @@ export type NetworkOptions = InferredOptionTypes<typeof options>
 export function withNetworkOptions<T>(yargs: Argv<T>) {
   return yargs.options(options)
 }
+// 260824 cc 回环判定：0.0.0.0 与 :: 是通配（等于对整个局域网开放），具体的内网 IP 同理。
+// 只有这四个字面量才是"只有本机连得上"。
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1", "[::1]"])
+
+/**
+ * 局域网暴露的密码闸门。
+ *
+ * 260824 cc 此前 serve/web 两条命令在没有 REDCODE_SERVER_PASSWORD 时只打印一行 warning
+ * 然后照常监听 —— 而 `redcode web` 的整个用途就是把机器开给局域网，于是同一个 Wi-Fi 下的
+ * 任何设备都能拿到 shell 与全部源码，一行灰字提示挡不住任何人。
+ *
+ * 这里选择**直接拒绝启动**而不是静默退回回环：`--hostname 0.0.0.0` 只有一个用途，
+ * 悄悄改成只听本机等于把命令变成一个不做事的空壳，而用户会去查"为什么手机连不上"——
+ * 那种排查最费时间。报错必须把下一步动作写清楚。
+ */
+function assertPasswordForExposure(hostname: string) {
+  if (LOOPBACK.has(hostname)) return
+  if (Flag.REDCODE_SERVER_PASSWORD) return
+  UI.error(`拒绝在 ${hostname} 上监听：未设置 REDCODE_SERVER_PASSWORD。`)
+  UI.println("")
+  UI.println("  这个地址对局域网可见，同一网络下的任何设备都能拿到本机 shell 与全部源码。")
+  UI.println("  设一个密码再启动：")
+  UI.println("")
+  UI.println('    PowerShell:  $env:REDCODE_SERVER_PASSWORD = "你的密码"')
+  UI.println('    bash:        export REDCODE_SERVER_PASSWORD="你的密码"')
+  UI.println("")
+  UI.println("  只在本机用则不受影响：去掉 --hostname/--mdns，或显式指定 --hostname 127.0.0.1。")
+  process.exit(1)
+}
+
 export const resolveNetworkOptions = Effect.fn("Cli.resolveNetworkOptions")(function* (args: NetworkOptions) {
   const config = yield* Config.Service.use((cfg) => cfg.getGlobal())
-  return resolveNetworkOptionsNoConfig(args, config)
+  const opts = resolveNetworkOptionsNoConfig(args, config)
+  assertPasswordForExposure(opts.hostname)
+  return opts
 })
 
 export function resolveNetworkOptionsNoConfig(args: NetworkOptions, config?: Config.Info) {

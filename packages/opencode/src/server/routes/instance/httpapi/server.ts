@@ -172,8 +172,15 @@ const uiRoute = HttpRouter.use((router) =>
     const client = yield* HttpClient.HttpClient
     const flags = yield* RuntimeFlags.Service
 
-    // 260703 Red TUI terminal page at root
-    yield* router.add("GET", "/", () =>
+    // 260703 Red TUI web 终端页。
+    // 260824 cc 从 "/" 挪到 "/tui"。原因是实测出来的：手机通过局域网连过来落在 "/" 上，
+    // 拿到的是 xterm 里跑 TUI —— 而 TUI 是纯键盘驱动的，工作区选择器要方向键 + 回车，
+    // 触屏上根本按不出来，于是卡死在第一屏（哥哥原话：「只能登录当前工作区无法选择，
+    // 因为没有按键实现」）。而带完整移动端适配的 GUI（packages/app，768px 断点 +
+    // 移动端 tab 切换）其实一直在下面那条 "*" 路由上供着，只是被根路径挡住了 ——
+    // 换句话说以前直接开 /session 反而能进 GUI，开根地址反而不行。
+    // 桌面上要 web 终端仍然可用，地址变成 /tui。
+    yield* router.add("GET", "/tui", () =>
       Effect.succeed(
         (() => {
           try {
@@ -198,7 +205,8 @@ const uiRoute = HttpRouter.use((router) =>
       ),
     )
 
-    // Other paths: original GUI fallback
+    // 根路径与其余路径都交给 GUI（内嵌产物优先，没有则反代 app.redcode.dev）。
+    // SPA 回退在 serveEmbeddedUIEffect 里：找不到的路径一律发 index.html。
     yield* router.add("*", "/*", (request) =>
       serveUIEffect(request, { fs, client, disableEmbeddedWebUi: flags.disableEmbeddedWebUi }),
     )
