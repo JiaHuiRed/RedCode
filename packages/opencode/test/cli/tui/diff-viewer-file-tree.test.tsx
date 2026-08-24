@@ -161,9 +161,45 @@ async function renderFrame(component: () => JSX.Element) {
   }
 }
 
+// 260824 cc 沉降判据，不是固定帧预算。
+//
+// 原写法是 renderOnce → setTimeout(25) → renderOnce。实测（20 轮探针，量"渲染出
+// 可见内容"的耗时）：min 15ms / p50 18ms / p90 26ms / max 47ms —— **25ms 正好压在
+// p90 上**，约每 10 次渲染输一次；本文件一轮跑 3~4 次渲染，于是三成多的运行会挂，
+// 且挂哪一条随机（实测 3/1→4/0→4/0→3/1 交替）。失败形态是断言收到 []：画面还没
+// 渲出来就被 captureCharFrame 抓走了。
+//
+// 根因是 KVProvider 要异步读盘（测试 temp home 里 kv.json 通常不存在、走 ENOENT
+// 回落，日志里那串 "Failed to read KV state" 在通过的轮次里同样刷屏，是噪音不是
+// 原因），这段延迟随机器负载浮动，任何固定值都是赌。
+//
+// 三条腿：① 出现可见内容即停——tests 1/3/4 与 "No files" 走这条，约 20ms 返回；
+// ② loading/error 分支渲染的是空 <text/>、本就没有可见内容，靠画面连续 STABLE_MS
+// 不变收尾（250ms，远高于实测 max 47ms，不会误判成"还没渲完"）；③ 两者都不满足
+// 时由 BUDGET_MS 兜底，避免无限等。
 async function renderOnceSettled(app: Awaited<ReturnType<typeof testRender>>) {
+  const BUDGET_MS = 2000
+  const STABLE_MS = 250
+  const POLL_MS = 2
+
+  const deadline = performance.now() + BUDGET_MS
   await app.renderOnce()
-  await new Promise((resolve) => setTimeout(resolve, 25))
+  let last = app.captureCharFrame()
+  let stableSince = performance.now()
+
+  while (performance.now() < deadline) {
+    if (visibleLines(last).length > 0) break
+    await new Promise((resolve) => setTimeout(resolve, POLL_MS))
+    await app.renderOnce()
+    const frame = app.captureCharFrame()
+    if (frame !== last) {
+      last = frame
+      stableSince = performance.now()
+      continue
+    }
+    if (performance.now() - stableSince >= STABLE_MS) break
+  }
+
   await app.renderOnce()
 }
 
