@@ -110,7 +110,7 @@ export interface Interface {
   ) => Effect.Effect<{ onMessage: (message: string | ArrayBuffer) => void; onClose: () => void } | undefined>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/Pty") {}
+export class Service extends Context.Service<Service, Interface>()("@redcode/Pty") {}
 
 export const layer = Layer.effect(
   Service,

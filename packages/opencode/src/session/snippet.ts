@@ -19,7 +19,7 @@ export interface Interface {
 
 // ---------- service ----------
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/Snippet") {}
+export class Service extends Context.Service<Service, Interface>()("@redcode/Snippet") {}
 
 // 260709 Red snippet store：register 按 messageID 分桶（支持按消息清理），
 // get 跨所有 messageID 搜索（snippet 工具的 messageID ≠ read 工具的 messageID）。

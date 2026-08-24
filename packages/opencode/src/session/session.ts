@@ -554,7 +554,7 @@ export interface Interface {
   readonly latestCompactionCursor: (sessionID: SessionID) => Effect.Effect<string | undefined>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/Session") {}
+export class Service extends Context.Service<Service, Interface>()("@redcode/Session") {}
 
 export const use = serviceUse(Service)
 

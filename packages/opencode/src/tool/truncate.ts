@@ -46,7 +46,7 @@ export interface Interface {
   readonly limits: () => Effect.Effect<{ maxLines: number; maxBytes: number }>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/Truncate") {}
+export class Service extends Context.Service<Service, Interface>()("@redcode/Truncate") {}
 
 export const layer = Layer.effect(
   Service,

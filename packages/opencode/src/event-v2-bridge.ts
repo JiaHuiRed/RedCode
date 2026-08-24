@@ -23,7 +23,7 @@ export function toSyncDefinition<D extends EventV2.Definition>(definition: D) {
   return result as SyncEvent.Definition<D["type"], D["data"], D["data"]>
 }
 
-export class Service extends Context.Service<Service, EventV2.Interface>()("@opencode/EventV2Bridge") {}
+export class Service extends Context.Service<Service, EventV2.Interface>()("@redcode/EventV2Bridge") {}
 
 export const layer = Layer.effect(
   Service,

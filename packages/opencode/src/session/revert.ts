@@ -25,7 +25,7 @@ export interface Interface {
   readonly cleanup: (session: Session.Info) => Effect.Effect<void>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/SessionRevert") {}
+export class Service extends Context.Service<Service, Interface>()("@redcode/SessionRevert") {}
 
 export const layer = Layer.effect(
   Service,

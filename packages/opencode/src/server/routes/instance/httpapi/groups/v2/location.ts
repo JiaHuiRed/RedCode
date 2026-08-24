@@ -35,7 +35,7 @@ export class V2LocationMiddleware extends HttpApiMiddleware.Service<
   {
     provides: Catalog.Service | PluginBoot.Service
   }
->()("@opencode/ExperimentalHttpApiV2Location") {}
+>()("@redcode/ExperimentalHttpApiV2Location") {}
 
 function ref(request: HttpServerRequest.HttpServerRequest): Location.Ref {
   const query = new URL(request.url, "http://localhost").searchParams

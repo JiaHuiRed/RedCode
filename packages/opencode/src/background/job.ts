@@ -58,7 +58,7 @@ export interface Interface {
   readonly cancel: (id: string) => Effect.Effect<Info | undefined>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/BackgroundJob") {}
+export class Service extends Context.Service<Service, Interface>()("@redcode/BackgroundJob") {}
 
 function snapshot(job: Active): Info {
   return {

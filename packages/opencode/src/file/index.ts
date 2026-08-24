@@ -325,7 +325,7 @@ export interface Interface {
   }) => Effect.Effect<string[]>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/File") {}
+export class Service extends Context.Service<Service, Interface>()("@redcode/File") {}
 
 export const use = serviceUse(Service)
 

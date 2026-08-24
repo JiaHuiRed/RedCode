@@ -180,7 +180,7 @@ export interface Interface {
   readonly poll: (input: Login) => Effect.Effect<PollResult, AccountError>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/Account") {}
+export class Service extends Context.Service<Service, Interface>()("@redcode/Account") {}
 
 export const use = serviceUse(Service)
 

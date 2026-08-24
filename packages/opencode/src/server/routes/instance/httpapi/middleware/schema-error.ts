@@ -19,7 +19,7 @@ function truncateReason(reason: string) {
 // Default Respondable returns an empty 400 body. Match the NamedError shape
 // used by other 4xx/5xx so the SDK's `wrapClientError` extracts `.data.message`.
 export class SchemaErrorMiddleware extends HttpApiMiddleware.Service<SchemaErrorMiddleware>()(
-  "@opencode/HttpApiSchemaError",
+  "@redcode/HttpApiSchemaError",
   {
     error: InvalidRequestError,
   },

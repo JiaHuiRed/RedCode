@@ -140,7 +140,7 @@ export interface Interface {
   readonly completion: (input: LocInput) => Effect.Effect<any[]>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/LSP") {}
+export class Service extends Context.Service<Service, Interface>()("@redcode/LSP") {}
 
 export const layer = Layer.effect(
   Service,

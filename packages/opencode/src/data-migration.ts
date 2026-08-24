@@ -15,7 +15,7 @@ const log = Log.create({ service: "data-migration" })
 
 export interface Interface {}
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/DataMigration") {}
+export class Service extends Context.Service<Service, Interface>()("@redcode/DataMigration") {}
 
 export const layer = Layer.effect(
   Service,

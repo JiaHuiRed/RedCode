@@ -46,7 +46,7 @@ export interface Interface {
   readonly tick: (sessionID: SessionID) => Effect.Effect<void>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/SessionGoal") {}
+export class Service extends Context.Service<Service, Interface>()("@redcode/SessionGoal") {}
 
 export const layer = Layer.effect(
   Service,

@@ -12,7 +12,7 @@ const experimental = bool("REDCODE_EXPERIMENTAL")
 const enabledByExperimental = (name: string) =>
   Config.all({ experimental, enabled: bool(name) }).pipe(Config.map((flags) => flags.experimental || flags.enabled))
 
-export class Service extends ConfigService.Service<Service>()("@opencode/RuntimeFlags", {
+export class Service extends ConfigService.Service<Service>()("@redcode/RuntimeFlags", {
   autoShare: bool("REDCODE_AUTO_SHARE"),
   pure: bool("REDCODE_PURE"),
   disableDefaultPlugins: bool("REDCODE_DISABLE_DEFAULT_PLUGINS"),

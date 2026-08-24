@@ -118,7 +118,7 @@ type TransportService = {
   readonly close: () => Effect.Effect<void>
 }
 
-class Service extends Context.Service<Service, TransportService>()("@opencode/RunStreamTransport") {}
+class Service extends Context.Service<Service, TransportService>()("@redcode/RunStreamTransport") {}
 
 function sid(event: Event): string | undefined {
   if (event.type === "message.updated") {

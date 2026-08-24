@@ -99,7 +99,7 @@ export interface Interface {
   readonly skills: (agent: Agent.Info) => Effect.Effect<string | undefined>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/SystemPrompt") {}
+export class Service extends Context.Service<Service, Interface>()("@redcode/SystemPrompt") {}
 
 export const layer = Layer.effect(
   Service,

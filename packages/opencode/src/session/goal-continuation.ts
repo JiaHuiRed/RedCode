@@ -25,7 +25,7 @@ export interface Interface {
   readonly maybeContinue: (sessionID: SessionID) => Effect.Effect<void>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/GoalContinuation") {}
+export class Service extends Context.Service<Service, Interface>()("@redcode/GoalContinuation") {}
 
 export const layer = Layer.effect(
   Service,

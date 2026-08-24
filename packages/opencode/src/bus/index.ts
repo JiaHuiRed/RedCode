@@ -83,7 +83,7 @@ export interface Interface {
   readonly subscribeAllCallback: (callback: (event: any) => unknown) => Effect.Effect<() => void>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/Bus") {}
+export class Service extends Context.Service<Service, Interface>()("@redcode/Bus") {}
 
 export const use = serviceUse(Service)
 

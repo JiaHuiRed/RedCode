@@ -134,7 +134,7 @@ export interface Interface {
   readonly wait: (sessionID: SessionID) => Effect.Effect<void, NotFoundError | OperationUnavailableError>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/v2/Session") {}
+export class Service extends Context.Service<Service, Interface>()("@redcode/v2/Session") {}
 
 export const layer = Layer.effect(
   Service,

@@ -105,7 +105,7 @@ export interface Interface {
   ) => Effect.Effect<{ part: MessageV2.FilePart; resize?: ResizeReport }, Error>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/Image") {}
+export class Service extends Context.Service<Service, Interface>()("@redcode/Image") {}
 
 export const layer = Layer.effect(
   Service,
