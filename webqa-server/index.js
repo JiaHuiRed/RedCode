@@ -3,6 +3,13 @@
 //   webqa_screenshot(url, {width,height,fullPage,waitUntil,waitMs}) -> {path,width,height}
 //   webqa_interact(steps) -> per-step results (goto/click/fill/type/press/screenshot/resize/wait/eval/newpage/close)
 // Screenshots land in os.tmpdir()/webqa so any agent can read them back.
+// 260824 优化（借鉴 ego-lite 的 snapshotText 设计）：
+//   - 新增 observe action：page.locator("body").ariaSnapshot({ mode: "ai" }) 输出带
+//     [ref=eN] 注解的 aria 语义树；后续 click/fill/type 直接传 "aria-ref=eN"
+//     作为 selector（Playwright 原生选择器引擎解析，无需自建 refMap）。
+//     ref 只在页面结构稳定期间可靠，大幅 DOM 变化后请重新 observe；
+//   - 新增 waitFor action：mode=selector/loadState/url，替代死等 wait(ms)；
+//   - 截图文件名加 pid+序号，避免同毫秒覆盖。
 //
 // 260819 优化（跨调用保留页面状态）：
 //   - browser/page 提升为进程级单例（每客户端会话独立进程，见 RedCode mcp/index.ts clients
@@ -21,6 +28,10 @@ import path from "node:path";
 
 const OUT_DIR = path.join(os.tmpdir(), "webqa");
 mkdirSync(OUT_DIR, { recursive: true });
+
+// 截图序号：与 pid 组合保证并发/同毫秒不撞名（借鉴 ego-browser screenshot 命名）
+let shotSeq = 0;
+const nextShotPath = () => path.join(OUT_DIR, `shot-${process.pid}-${++shotSeq}.png`);
 
 const server = new McpServer({ name: "webqa", version: "1.1.0" });
 
@@ -72,7 +83,7 @@ server.tool(
       });
       await p.goto(url, { waitUntil: waitUntil ?? "networkidle", timeout: 30000 });
       if (waitMs) await p.waitForTimeout(waitMs);
-      const out = path.join(OUT_DIR, `shot-${Date.now()}.png`);
+     const out = nextShotPath();
       await p.screenshot({ path: out, fullPage: fullPage ?? false });
       return {
         content: [{ type: "text", text: JSON.stringify({ path: out, width: width ?? 1280, height: height ?? 800 }) }],
@@ -84,22 +95,23 @@ server.tool(
 );
 
 const stepSchema = z.object({
-  action: z.enum(["goto", "click", "fill", "type", "press", "screenshot", "resize", "wait", "eval", "newpage", "close"]),
-  url: z.string().optional(),
-  selector: z.string().optional(),
-  value: z.string().optional().describe("press 时为键名（Enter/Tab/Escape/ArrowDown...），type/fill 时为文本"),
-  path: z.string().optional(),
-  fullPage: z.boolean().optional(),
-  width: z.number().int().positive().optional(),
-  height: z.number().int().positive().optional(),
-  ms: z.number().int().positive().optional(),
-  expr: z.string().optional(),
-  waitUntil: z.enum(["load", "domcontentloaded", "networkidle", "commit"]).optional(),
+ action: z.enum(["goto", "click", "fill", "type", "press", "screenshot", "resize", "wait", "observe", "waitFor", "eval", "newpage", "close"]),
+ url: z.string().optional(),
+ selector: z.string().optional().describe("click/fill/type 用 CSS 或 aria-ref=sXeY（取自最近一次 observe）"),
+ value: z.string().optional().describe("press 时为键名（Enter/Tab/Escape/ArrowDown...），type/fill 时为文本，waitFor loadState 时为状态名"),
+ path: z.string().optional(),
+ fullPage: z.boolean().optional(),
+ width: z.number().int().positive().optional(),
+ height: z.number().int().positive().optional(),
+ ms: z.number().int().positive().optional().describe("waitFor 的超时上限；wait 时为等待时长"),
+ expr: z.string().optional(),
+ mode: z.enum(["selector", "loadState", "url"]).optional().describe("waitFor 模式：selector 需 selector 字段，loadState 需 value（networkidle 等），url 需 url（支持 glob）"),
+ waitUntil: z.enum(["load", "domcontentloaded", "networkidle", "commit"]).optional(),
 });
 
 server.tool(
   "webqa_interact",
-  { steps: z.array(stepSchema).min(1).describe("ordered action sequence; 页面跨调用保留，首次请先 goto 或 newpage") },
+ { steps: z.array(stepSchema).min(1).describe("ordered action sequence; 页面跨调用保留，首次请先 goto 或 newpage。观察页面用 observe（返回带 [ref=sXeY] 的 aria 快照），之后 click/fill 的 selector 可直接传 \"aria-ref=sXeY\"；SPA 渲染等待用 waitFor 替代死等 wait") },
   async ({ steps }) => {
     const results = [];
     try {
@@ -135,7 +147,7 @@ server.tool(
             results.push({ action: "press", ok: true, url: p.url() });
             break;
           case "screenshot": {
-            const out = s.path ?? path.join(OUT_DIR, `shot-${Date.now()}.png`);
+            const out = s.path ?? nextShotPath();
             await p.screenshot({ path: out, fullPage: s.fullPage ?? false });
             results.push({ action: "screenshot", path: out, url: p.url() });
             break;
@@ -148,6 +160,26 @@ server.tool(
             await p.waitForTimeout(s.ms);
             results.push({ action: "wait", ok: true, url: p.url() });
             break;
+          case "observe":
+            results.push({
+              action: "observe",
+              snapshot: await p.locator("body").ariaSnapshot({ mode: "ai" }),
+              url: p.url(),
+            });
+            break;
+          case "waitFor": {
+            // selector → 元素出现；loadState → 页面状态；url → 导航目标（Playwright glob 匹配）
+            const mode = s.mode ?? "selector";
+            if (mode === "url") {
+              await p.waitForURL(s.url, { timeout: s.ms ?? 30000 });
+            } else if (mode === "loadState") {
+              await p.waitForLoadState(s.value ?? "networkidle", { timeout: s.ms ?? 30000 });
+            } else {
+              await p.waitForSelector(s.selector, { timeout: s.ms ?? 10000 });
+            }
+            results.push({ action: "waitFor", mode, ok: true, url: p.url() });
+            break;
+          }
           case "eval":
             results.push({ action: "eval", value: await p.evaluate(s.expr), url: p.url() });
             break;
