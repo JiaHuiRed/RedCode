@@ -6,6 +6,7 @@
 import {
   existsSync,
   lstatSync,
+  readFileSync,
   readdirSync,
   readlinkSync,
   realpathSync,
@@ -26,6 +27,16 @@ const ROOT = resolve(import.meta.dir, "..")
 // 终端跑源码的 TUI 启动即崩 "Keymap not found"（编译产物不受影响，依赖已打包）。
 // 探测规则：在 .bun 里找 keymap 实例，其内嵌 solid-js 链接与仓库根解析到的
 // solid-js 实例一致 —— 那就是当前 peer 上下文的正解。多个匹配取版本最高的 0.2.x。
+function readCatalogVersion(pkg: string): string | undefined {
+  try {
+    const root = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"))
+    const version = root?.workspaces?.catalog?.[pkg]
+    return typeof version === "string" && /^\d/.test(version) ? version : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function detectTargetInstance(): string | undefined {
  const bunDir = join(ROOT, "node_modules", ".bun")
  // 260808 Red hoisted 布局（CI `bun install --linker hoisted`）没有 .bun 目录，
@@ -80,8 +91,13 @@ function detectTargetInstance(): string | undefined {
      if (matched.length) pool = matched
    }
  }
-  // 版本排序取最高的 0.2.x（catalog 钉的是 0.2.15；0.4.x 是并存的未启用实例）
-  const wanted = pool.filter((c) => c.version.startsWith("0.2."))
+  // 260824 Red 想要的版本从 catalog 现取，不写死。
+  // 教训：这里原本硬编码 `0.2.`（"catalog 钉的是 0.2.15"），于是 catalog 升到 0.5.7 后，
+  // core/solid 都上去了、keymap 却被这一行按回 0.2.15 的旧实例——core 与 keymap 跨大版本
+  // 混装，正是本脚本开头那条 #private 类型不兼容要防的情形，反被自己制造出来。
+  // 版本号不匹配时退回 pool，保持旧的「多实例取最高版」兜底。
+  const wantedVersion = readCatalogVersion("@opentui/keymap")
+  const wanted = wantedVersion ? pool.filter((c) => c.version === wantedVersion) : []
   const final = wanted.length ? wanted : pool
   final.sort((a, b) => b.version.localeCompare(a.version, undefined, { numeric: true }))
   return final[0]!.dir
