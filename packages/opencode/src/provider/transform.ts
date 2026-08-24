@@ -19,13 +19,28 @@ function mimeToModality(mime: string): Modality | undefined {
   return undefined
 }
 
+// 输出预算的**下限**（模型目录没声明 output 时的兜底），不是上限。
 export const OUTPUT_TOKEN_MAX = 32_000
-// 260710 Red MiMo 模型支持超长输出（MiMo-V2.5 等），给予更高上限
-export const MIMO_OUTPUT_TOKEN_MAX = 100_000
-// 260801 Red DeepSeek V4 Flash 思考链长（max 档 311 avg，长尾远超），正文被 32K 共享预算挤断
-// max_tokens 覆盖 reasoning_content + content 总和；模型自身 output 384K，提到 64K 防截断
-// 260803 Red 上限调回 50K 试跑：截断由 llm.ts 续写机制兜底，输出 token 成本随之下降
-export const DEEPSEEK_V4_FLASH_OUTPUT_TOKEN_MAX = 50_000
+// 260824 cc 输出上限改为按模型目录推导，不再手工累加特例。
+//
+// 旧形状是 32K 常量 + 每来一个长输出模型就加一行 isXxxModel 分支（MiMo 100K、
+// DeepSeek V4 Flash 50K）。代价是**新模型默认吃老上限、要有人记得去加**：实测
+// step-3.7-flash 声明 output 256K 却被夹在 32K，17 次 finish="length" 全部精确停在
+// 32000（最近 2026-08-04）；x-preview-f-free 声明 131072 同样只拿到 32K。
+//
+// 两道封顶：
+//   OUTPUT_TOKEN_CAP           绝对封顶，不让单次回复的等待时间无界。
+//   OUTPUT_CONTEXT_FRACTION    只在**没有 limit.input** 的模型上生效。那条路径
+//     overflow.usable() 算的是 context - 本函数，输出预留直接吃工作上下文，
+//     context≈output 的模型（kimi-k2.7-code 256K、glm-5.1 202K、qwen3.5-* 262K）
+//     不夹会掉 43%。有 limit.input 的模型走 limit.input - reserved，而
+//     reserved = min(COMPACTION_BUFFER, maxOutputTokens) 恒等于 20000（本函数结果
+//     永远 >= 20000），对输出预算免疫，因此不夹 —— step-3.7-flash 正在这一支。
+//
+// 推导值严格优于被它取代的两条特例（deepseek-v4-flash 50K→65536 即其目录声明值、
+// mimo-v2.5 100K→128000），故两条特例一并退役。isDeepSeekV4FlashModel 仍被 topP() 使用。
+export const OUTPUT_TOKEN_CAP = 128_000
+export const OUTPUT_CONTEXT_FRACTION = 0.25
 
 export function sanitizeSurrogates(content: string) {
   return content.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD")
@@ -1641,23 +1656,18 @@ export function providerOptions(model: Provider.Model, options: { [x: string]: a
 }
 
 export function maxOutputTokens(model: Provider.Model, outputTokenMax = OUTPUT_TOKEN_MAX): number {
-  // 260710 Red MiMo 模型用更高的 output token 上限
-  // 260801 Red v4Flash 思考链长，正文被 32K 共享预算挤断，同样放宽到 64K
-  const effective = isMimoModel(model)
-    ? Math.max(outputTokenMax, MIMO_OUTPUT_TOKEN_MAX)
-    : isDeepSeekV4FlashModel(model)
-      ? Math.max(outputTokenMax, DEEPSEEK_V4_FLASH_OUTPUT_TOKEN_MAX)
-      : outputTokenMax
-  return Math.min(model.limit.output, effective) || effective
-}
-
-function isMimoModel(model: Provider.Model): boolean {
-  // 260729 Red 空值保护：`model.api` 并非在所有构造路径上都存在，裸取 `.id` 会抛
-  // "undefined is not an object"。它经由 maxOutputTokens → overflow.usable → isOverflow
-  // 位于压缩判定的主路径上，抛在这里等于整条压缩链断掉。compaction 那 8 条 isOverflow
-  // 测试长期挂的就是这个，不是断言写错。
-  const id = model.api?.id?.toLowerCase() ?? model.id?.toLowerCase() ?? ""
-  return id.includes("mimo")
+  // 260729 Red 空值保护（原挂在 isMimoModel 上，随其退役迁到这里）：model 的各字段
+  // 并非在所有构造路径上都存在，裸取会抛 "undefined is not an object"。本函数经由
+  // maxOutputTokens → overflow.usable → isOverflow 位于压缩判定的主路径上，抛在这里
+  // 等于整条压缩链断掉。compaction 那 8 条 isOverflow 测试长期挂的就是这个。
+  const limit = model.limit as Provider.Model["limit"] | undefined
+  const declared = limit?.output ?? 0
+  if (!declared) return outputTokenMax
+  const cap = limit?.input
+    ? OUTPUT_TOKEN_CAP
+    : Math.min(OUTPUT_TOKEN_CAP, Math.floor((limit?.context ?? 0) * OUTPUT_CONTEXT_FRACTION))
+  // 外层 min 保证永不超过模型自己声明的能力（目录里 1087/3491 个模型 output < 32K）
+  return Math.min(declared, Math.max(outputTokenMax, cap))
 }
 
 function isDeepSeekV4FlashModel(model: Provider.Model): boolean {

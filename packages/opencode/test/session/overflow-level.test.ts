@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { isOverflow, level, RATIOS, usable } from "../../src/session/overflow"
+import { maxOutputTokens, OUTPUT_TOKEN_CAP, OUTPUT_TOKEN_MAX } from "../../src/provider/transform"
 import type { Config } from "../../src/config/config"
 import type { Provider } from "../../src/provider/provider"
 
@@ -82,8 +83,47 @@ describe("overflow.level 退化情形", () => {
     expect(level({ cfg, tokens: tokens(999_999), model: m })).toBe("ok")
   })
 
-  test("模型缺少 api 字段也不抛 —— isMimoModel 的空值保护", () => {
+  test("模型缺少 api 字段也不抛 —— maxOutputTokens 的空值保护", () => {
     const bare = { id: "mimo-test", limit: { context: 100_000, output: 8_000 } } as unknown as Provider.Model
     expect(() => level({ cfg, tokens: tokens(10), model: bare })).not.toThrow()
+  })
+})
+
+// 260824 cc 输出预算改为按目录推导后的回归。数字取自实际模型目录，不是构造的。
+describe("maxOutputTokens 按目录推导", () => {
+  test("有 limit.input 时不夹 fraction —— step-3.7-flash 256K/256K 拿满 CAP", () => {
+    // usable() 走 limit.input - reserved(恒 20000)，输出预算不吃上下文，故不夹
+    expect(maxOutputTokens(model(256_000, 256_000, 256_000))).toBe(OUTPUT_TOKEN_CAP)
+  })
+
+  test("无 limit.input 但窗口够大时也拿满 —— x-preview-f-free 1M/131072", () => {
+    expect(maxOutputTokens(model(1_000_000, 131_072))).toBe(OUTPUT_TOKEN_CAP)
+  })
+
+  test("不超过模型自己声明的 output —— deepseek-v4-flash 1048560/65536", () => {
+    expect(maxOutputTokens(model(1_048_560, 65_536))).toBe(65_536)
+  })
+
+  test("context≈output 的模型被 fraction 夹住 —— kimi-k2.7-code 256K/256K 无 input", () => {
+    expect(maxOutputTokens(model(256_000, 256_000))).toBe(64_000)
+  })
+
+  test("声明 output 低于下限时以声明值为准，绝不超发", () => {
+    expect(maxOutputTokens(model(32_000, 8_000))).toBe(8_000)
+  })
+
+  test("目录没声明 output 时落到下限", () => {
+    expect(maxOutputTokens(model(200_000, 0))).toBe(OUTPUT_TOKEN_MAX)
+  })
+
+  test("退役的两条特例，推导值都不低于它们原来给的", () => {
+    // deepseek-v4-flash 原特例 50_000、mimo-v2.5 原特例 100_000
+    expect(maxOutputTokens(model(1_048_560, 65_536))).toBeGreaterThanOrEqual(50_000)
+    expect(maxOutputTokens(model(1_048_576, 131_072))).toBeGreaterThanOrEqual(100_000)
+  })
+
+  test("提高输出上限不会缩小 step 的 usable（limit.input 分支对其免疫）", () => {
+    const step = model(256_000, 256_000, 256_000)
+    expect(usable({ cfg, model: step })).toBe(256_000 - 20_000)
   })
 })
