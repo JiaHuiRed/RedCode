@@ -646,6 +646,54 @@ describe("MessageV2.filterCompacted", () => {
     ),
   )
 
+  it.instance("folds identically for chronological and display-order input", () =>
+    withSession(({ session, sessionID }) =>
+      Effect.gen(function* () {
+        // Regression 260824: compaction.ts feeds filterCompacted the *display order*
+        // ([parent, summary, tail, rest]) from filterCompactedEffect's output, which is
+        // NOT chronological. The from-newest-back fold loop silently skipped and returned
+        // everything, so the divider showed full history (534k → 535k). filterCompacted
+        // now normalizes input order with compareTime, so any order must fold identically.
+        const h1 = yield* addUser(sessionID, "head user")
+        yield* addAssistant(sessionID, h1)
+        const t0 = yield* addUser(sessionID, "tail start user")
+        const ta0 = yield* addAssistant(sessionID, t0)
+        const u1 = yield* addUser(sessionID, "compaction boundary")
+        yield* addCompactionPart(sessionID, u1, t0)
+        const a1 = yield* addAssistant(sessionID, u1, { summary: true, finish: "end_turn" })
+        yield* session.updatePart({
+          id: PartID.ascending(),
+          sessionID,
+          messageID: a1,
+          type: "text",
+          text: "summary",
+        })
+        const u2 = yield* addUser(sessionID, "new question")
+        const a2 = yield* addAssistant(sessionID, u2)
+        yield* session.updatePart({
+          id: PartID.ascending(),
+          sessionID,
+          messageID: a2,
+          type: "text",
+          text: "new response",
+        })
+
+        // Baseline from the canonical path (stream = newest first). Head [h1, ha1] is folded away.
+        const baseline = MessageV2.filterCompacted(MessageV2.stream(sessionID))
+        expect(baseline.map((item) => item.info.id)).toEqual([u1, a1, t0, ta0, u2, a2])
+
+        // Chronological full input (oldest first, includes head) must fold identically.
+        const chronological = [...MessageV2.stream(sessionID)].reverse()
+        const folded = MessageV2.filterCompacted(chronological)
+        expect(folded.map((item) => item.info.id)).toEqual([u1, a1, t0, ta0, u2, a2])
+
+        // Display order (what compaction.ts:477/723 receives) must be idempotent.
+        const display = MessageV2.filterCompacted([...baseline])
+        expect(display.map((item) => item.info.id)).toEqual([u1, a1, t0, ta0, u2, a2])
+      }),
+    ),
+  )
+
   it.live("handles empty iterable", () =>
     Effect.sync(() => {
       const result = MessageV2.filterCompacted([])

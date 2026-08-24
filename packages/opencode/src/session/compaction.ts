@@ -474,6 +474,9 @@ export const layer = Layer.effect(
         : yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID).pipe(Effect.orDie)
       const cfg = yield* config.get()
       const history = compactionPart && messages.at(-1)?.info.id === input.parentID ? messages.slice(0, -1) : messages
+      // 260824 Red: tokensBefore 用 filterCompacted 折叠后的真实可见消息估算。注意 input.messages
+      // 是展示序（[parent, summary, tail, 后续]），filterCompacted 已改为内部按 compareTime 归一化
+      // 成逆序，折叠才真正生效——此前正序输入让折叠恒不生效，分割线显示全量 534k → 535k。
       const tokensBefore = yield* estimate({ messages: MessageV2.filterCompacted(history), model })
       const prior = completedCompactions(history)
       const hidden = new Set(prior.flatMap((item) => [item.userIndex, item.assistantIndex]))

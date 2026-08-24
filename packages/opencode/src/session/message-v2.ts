@@ -1135,10 +1135,15 @@ export const get = Effect.fn("MessageV2.get")(function* (input: { sessionID: Ses
 })
 
 export function filterCompacted(msgs: Iterable<WithParts>) {
+  // 260824 Red: 循环从新往回扫依赖 chrono 逆序输入，但 compaction.ts 的 estimate 回填
+  // 传入的是正序/展示序（[parent, summary, tail, 后续]），折叠因此从不生效 → 分割线
+  // before/after 恒为全量估算。按 compareTime 归一化为逆序后任意输入顺序都稳定，
+  // stream() 路径排序前后值不变（本就是逆序），无行为漂移。
+  const ordered = [...msgs].sort((a, b) => compareTime(b.info, a.info))
   const result = [] as WithParts[]
   const completed = new Set<string>()
   let retain: MessageID | undefined
-  for (const msg of msgs) {
+  for (const msg of ordered) {
     result.push(msg)
     if (retain) {
       if (msg.info.id === retain) break
