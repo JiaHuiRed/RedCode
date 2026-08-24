@@ -45,6 +45,7 @@ export interface Handle {
   readonly message: MessageV2.Assistant
   readonly updateToolCall: (
     toolCallID: string,
+    name: string,
     update: (part: MessageV2.ToolPart) => MessageV2.ToolPart,
   ) => Effect.Effect<MessageV2.ToolPart | undefined>
   readonly completeToolCall: (
@@ -185,21 +186,49 @@ export const layer = Layer.effect(
         return { call, part }
       })
 
-      const updateToolCall = Effect.fn("SessionProcessor.updateToolCall")(function* (
-        toolCallID: string,
-        update: (part: MessageV2.ToolPart) => MessageV2.ToolPart,
-      ) {
-        const match = yield* readToolCall(toolCallID)
-        if (!match) return undefined
-        const part = yield* session.updatePart(update(match.part))
-        ctx.toolcalls[toolCallID] = {
-          ...match.call,
-          partID: part.id,
-          messageID: part.messageID,
-          sessionID: part.sessionID,
-        }
-        return part
-      })
+const updateToolCall = (toolCallID: string,
+  name: string,
+  update: (part: MessageV2.ToolPart) => MessageV2.ToolPart) =>
+  Effect.gen(function* () {
+    let match = yield* readToolCall(toolCallID)
+    // 260824 Red AI SDK v7 在 fullStream 推出 tool-call 事件之前就启动 execute：
+    // TaskTool.execute 的 ctx.metadata 回调先于 ensureToolCall 到达，ctx.toolcalls
+    // 未注册、DB 里也没有对应 part（消息尚未落库）→ readToolCall miss，旧代码
+    // 静默丢了 metadata，流事件路径补写的 running state 不带 title/metadata。
+    // 兜底：按 callID 现场创建 pending tool part（同 ensureToolCall 创建分支），
+    // 让 update 把 title/metadata 写进去；随后的 ensureToolCall 走 existing 分支。
+    if (!match) match = yield* adoptOrphanToolCall(toolCallID, name)
+    if (!match) return undefined
+    const updated = yield* session.updatePart(update(match.part))
+    const part = updated
+    ctx.toolcalls[toolCallID] = {
+      ...match.call,
+      partID: part.id,
+      messageID: part.messageID,
+      sessionID: part.sessionID,
+    }
+    return part
+  })
+
+const adoptOrphanToolCall = Effect.fn("SessionProcessor.adoptOrphanToolCall")(function* (toolCallID: string, name: string) {
+  const part = yield* session.updatePart({
+    id: PartID.ascending(),
+    messageID: ctx.assistantMessage.id,
+    sessionID: ctx.assistantMessage.sessionID,
+    type: "tool",
+    tool: name,
+    callID: toolCallID,
+    state: { status: "pending", input: {}, raw: "" },
+  } satisfies MessageV2.ToolPart)
+  ctx.toolcalls[toolCallID] = {
+    done: yield* Deferred.make<void>(),
+    partID: part.id,
+    messageID: part.messageID,
+    sessionID: part.sessionID,
+    inputEnded: false,
+  }
+  return { call: ctx.toolcalls[toolCallID], part }
+})
 
       const completeToolCall = Effect.fn("SessionProcessor.completeToolCall")(function* (
         toolCallID: string,
@@ -471,7 +500,7 @@ export const layer = Layer.effect(
             const input = toolInput(value.input)
             if (!toolCall.call.inputEnded) {
             }
-            yield* updateToolCall(value.id, (match) => ({
+            yield* updateToolCall(value.id, value.name, (match) => ({
               ...match,
               tool: value.name,
               state:

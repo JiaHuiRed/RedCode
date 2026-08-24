@@ -42,6 +42,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const truncate = yield* Truncate.Service
 
   const context = (
+    name: string,
     args: Record<string, unknown>,
     options: ToolExecutionOptions<Record<string, unknown>>,
   ): Tool.Context => ({
@@ -58,7 +59,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     agent: input.agent.name,
     messages: input.messages,
     metadata: (val) =>
-      input.processor.updateToolCall(options.toolCallId, (match) => {
+      input.processor.updateToolCall(options.toolCallId, name, (match) => {
         if (!["running", "pending"].includes(match.state.status)) return match
         return {
           ...match,
@@ -94,7 +95,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       execute(args, options) {
         return run.promise(
           Effect.gen(function* () {
-            const ctx = context(args, options)
+            const ctx = context(item.id, args, options)
             // 260717 Red pre-tool-use: 前置拦截钩子
             const preToolUse = yield* plugin.trigger(
               "tool.use.pre",
@@ -167,7 +168,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     item.execute = (args, opts) => {
       return run.promise(
         Effect.gen(function* () {
-          const ctx = context(args, opts)
+          const ctx = context(key, args, opts)
           // 260717 Red pre-tool-use: 前置拦截钩子
           const preToolUse = yield* plugin.trigger(
             "tool.use.pre",
