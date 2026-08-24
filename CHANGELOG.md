@@ -58,6 +58,7 @@
 - **两条特例退役是因为推导值严格更优，不是因为它们错**：`deepseek-v4-flash` 50K→65536（即其目录声明值）、`mimo-v2.5` 100K→128000。顺带查清一桩看似的矛盾：MiMo 实测 max 也精确停在 32000、有 6 次截断，但**全部落在 2026-05-29~06-05，早于 260710 那条特例**；特例之后 994 条、max 10414、零截断——那条特例一直是好的。`isMimoModel` 随之删除，其空值保护迁进 `maxOutputTokens`（该函数位于 `maxOutputTokens → overflow.usable → isOverflow` 的压缩主路径上，抛在这里等于整条压缩链断掉）；`isDeepSeekV4FlashModel` 保留，`topP()` 还在用。
 - **不会超发**：外层 `min(声明值, ...)` 保证永不超过模型自己声明的能力——目录里 **1087/3491** 个模型 output < 32K，它们仍被各自的真实上限夹住。
 - 验证：新增 8 条回归（数字取自真实模型目录而非构造值，含「step 提上限后 usable 不变」这条耦合断言），`overflow-level` 19 pass 0 fail；全仓 `turbo typecheck` 12/12。`test/session` + `test/provider` 892 pass / 10 fail，**与 HEAD 基线做了对照**：基线同样 10 fail、其中 9 条逐字相同，差异那 1 条是轮换的 flaky（基线是 `plugin config providers persist` 30s 超时，本轮是 `Anthropic API key` 那条录制用例），本次改动零新增失败。
+- **删掉废弃的 `@gitlab/opencode-gitlab-auth@1.3.3`**（`packages/opencode/package.json`）：npm 上该包全版本被标废弃（"This package has moved to 'opencode-gitlab-auth'"），而**替代包 `opencode-gitlab-auth@2.0.1` 早就装着并且是唯一被引用的那个**（`plugin/index.ts:17` 静态 import）。含 gitignore 路径的全仓穷举只剩两处命中：这条声明本身，以及 `.redcode/temp/upstream-package.json` 里的上游快照副本（留作 diff 参照，不动）。零功能引用。删后 `bun install` 干净、`turbo typecheck` 12/12、lock 里该包彻底消失。
 
 ### [0.9.4] - 2026-08-21
 
