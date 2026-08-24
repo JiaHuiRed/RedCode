@@ -36,6 +36,7 @@
 - **时间线上一行被无谓重挂**（`app/pages/session/message-timeline.data.ts`）：`AssistantPart` 带着一个全仓没人读的 `lastAssistantPart` 字段。末尾插新行会让原来那行的该字段 true→false，行对象因此不再 equals、复用不到，而 virtua 的 `<For>` 按引用 key —— 那一行整棵 DOM 被销毁重建。已删除该字段并钉回归测试。
 - **切回会话停在历史中间**（`app/pages/session/message-timeline.tsx`）：入场锚定走 `scrollToIndex`，按虚拟**估算**尺寸算落点（缓存未命中时每行 60px），落点一偏，紧跟的 scroll 事件就把 `measuredBottomAnchored` 置 false，而唯一能纠正它的实测锚定恰好拿这个标志当门禁——越偏越不修。加 force 模式并把固定帧预算改成沉降判据（插行 12 帧、入场纠偏 90 帧兜底）。
 - **纯浏览器 dev 模式白屏**（`desktop/src/renderer/tauri-api-shim.ts`）：既非 Electron 也非 Tauri 时 `window.api` 不存在，而 `index.tsx` 与 `webview-zoom.ts` 在模块顶层就无条件调用它——一个模块级 TypeError 打断整个模块图。DEV 构建下装 Proxy 兜底桩，恢复「不重编调试 GUI」那条路子。
+- **`permission/index.ts` 里一个裸 0x00 字节让整个文件对 grep 隐身**（`permission/index.ts:278`）：dedup Map 的 key 用 `` `${rule.permission}<NUL>${rule.pattern}` `` 拼接——**选 NUL 当分隔符本身是对的**（permission 与 pattern 里都不可能出现它，拼 key 不会撞），但它被写成了**裸 0x00 字节**而不是转义序列。后果不在运行时（两者完全等价，已实测 `raw === esc`、码点 0），而在工具链：12128 字节的文件里这一个字节就让 grep 报 `Binary file ... matches`、ripgrep 不加 `-a` 直接搜不到，本模块因此对全仓搜索隐身过一次（`reference_tool_input_escape_hazard` 在案）。改成转义写法并留注释说明为什么不能"清理"回去。修完 ripgrep 立刻能命中 `index.ts:143` 的 `@opencode/Permission`——**这条是评估 76 个 service tag 能否批量改名时发现的：任何跳过二进制文件的批量替换都会静默漏掉这个 tag，漏一个就是多出一个身份不同的服务且不报错。** 另记：`claude/nifty-shamir-c658f6` 分支上有个 `script/check-control-bytes.ts` 裸控制字节闸门（215 行，挂 pre-push），**尚未合进 dev**，所以这边没有守卫。验证：permission 三个测试文件 107 pass 0 fail、`turbo typecheck` 12/12。
 
 #### 新增
 

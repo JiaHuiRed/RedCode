@@ -275,7 +275,11 @@ export const layer = Layer.effect(
       // findLast 语义一致。
       const ctx = yield* InstanceState.context
       const deduped = new Map<string, Rule>()
-      for (const rule of approved) deduped.set(`${rule.permission} ${rule.pattern}`, rule)
+      // 260824 cc 分隔符写成转义而不是裸 0x00 字节。运行时值完全相同，但裸字节会让
+      // 整个文件被 grep/ripgrep 判成 binary、对不加 -a 的全仓搜索隐身 —— 本模块因此
+      // 隐身过一次（见 reference_tool_input_escape_hazard）。选 NUL 当分隔符本身是对的：
+      // permission 与 pattern 里都不可能出现它，拼 Map key 不会撞。
+      for (const rule of approved) deduped.set(`${rule.permission}\u0000${rule.pattern}`, rule)
       const data = [...deduped.values()]
       Database.use((db) =>
         db
