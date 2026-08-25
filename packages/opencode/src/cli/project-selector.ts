@@ -74,21 +74,35 @@ export async function selectProjectInteractive(): Promise<string | undefined> {
   stdin.setRawMode(true)
   stdin.resume()
   stdout.write("\x1b[?25l")
+  // 260825 Red mouse support: enable SGR mouse tracking (1000 = button
+  // events, 1006 = SGR encoding), then clear the screen and home the cursor
+  // so buf[0] always paints at row 1 — a click's y maps to buf line as
+  // y - 1. An earlier revision anchored the mapping with a DSR
+  // cursor-position reply instead, but under ConPTY that reply is measured
+  // against the conpty-side buffer, not the visible viewport, so it drifts
+  // against the terminal's mouse coordinates by a variable number of lines
+  // (observed 5-8) and clicks landed on the wrong item. Clearing makes the
+  // anchor constant; the selector is an ephemeral full-screen UI, so wiping
+  // whatever output preceded it costs nothing.
+  stdout.write("\x1b[?1000h\x1b[?1006h")
+  stdout.write("\x1b[2J\x1b[H")
 
   let filter = ""
   let selected = 0
   let renderedLines = 0
   let cleanupDone = false
+  let scrollOffset = 0
+  let itemRows: number[] = []
 
   // Path input mode state
   let pathInputMode = false
   let pathBuffer = ""
   let pathError = ""
-
   const cleanup = () => {
     if (cleanupDone) return
     cleanupDone = true
     stdin.removeAllListeners("data")
+    stdout.write("\x1b[?1000l\x1b[?1006l")
     stdout.write("\x1b[?25h")
     if (renderedLines > 0) stdout.write("\x1b[" + renderedLines + "A\x1b[J")
     try {
@@ -115,8 +129,15 @@ export async function selectProjectInteractive(): Promise<string | undefined> {
     if (selected < 0) selected = 0
 
     const height = stdout.rows ?? 24
-    const maxVisible = Math.min(filtered.length, height - 6)
-    const scrollOffset = Math.max(0, Math.min(selected - Math.floor(maxVisible / 2), filtered.length - maxVisible))
+    // 260825 Red the frame costs 7 fixed rows (blank/title/blank/filter/blank
+    // above the list, blank/footer below) plus one selected-path row; keep one
+    // more row spare so content's trailing "\n" parks the cursor inside the
+    // viewport. If the frame overflows even one line the terminal scrolls,
+    // buf[0] leaves row 1, and the click mapping (y - 1) silently shifts by
+    // the scroll amount — full-screen windows never overflowed (which is why
+    // clicks were accurate there) while small windows drifted badly.
+    const maxVisible = Math.min(filtered.length, height - 9)
+    scrollOffset = Math.max(0, Math.min(selected - Math.floor(maxVisible / 2), filtered.length - maxVisible))
 
     const buf: string[] = []
 
@@ -147,11 +168,13 @@ export async function selectProjectInteractive(): Promise<string | undefined> {
 
       // List
       const visible = filtered.slice(scrollOffset, scrollOffset + maxVisible)
+      itemRows = []
       for (let i = 0; i < visible.length; i++) {
         const entry = visible[i]!
         const isSel = i + scrollOffset === selected
         const prefix = isSel ? "  " + TEXT_SUCCESS + "▸" + TEXT_NORMAL + " " : "    "
         const label = isSel ? TEXT_NORMAL + entry.name : TEXT_DIM + entry.name
+        itemRows.push(buf.length)
 
         if (entry.worktree === NEW_DIR_SENTINEL) {
           buf.push(prefix + label)
@@ -164,7 +187,7 @@ export async function selectProjectInteractive(): Promise<string | undefined> {
 
       // Footer
       buf.push("")
-      buf.push(TEXT_DIM + "  ↑↓ navigate · type filter · Enter select · Esc cancel" + TEXT_NORMAL)
+      buf.push(TEXT_DIM + "  ↑↓/wheel navigate · type filter · click select · click again / Enter open · Esc cancel" + TEXT_NORMAL)
     }
 
     // buf.join has no trailing separator, unlike the old `content +=`
@@ -211,12 +234,56 @@ export async function selectProjectInteractive(): Promise<string | undefined> {
       resolve(resolved)
       return true
     }
+    // 260825 Red shared by Enter and mouse-click confirm: act on the
+    // currently selected entry (open path input for the sentinel, otherwise
+    // resolve the worktree).
+    const confirmSelected = () => {
+      const filtered = getFiltered()
+      const entry = filtered.length > 0 ? filtered[selected] : undefined
+      if (entry?.worktree === NEW_DIR_SENTINEL) {
+        enterPathInput()
+        return
+      }
+      const result = entry?.worktree
+      cleanup()
+      resolve(result)
+    }
 
     render()
 
     stdin.on("data", (data: Buffer) => {
       if (cleanupDone) return
       const key = data.toString()
+      // 260825 Red SGR mouse: \x1b[<button;x;yM (press) / m (release).
+      // Release events are ignored. Wheel (buttons 64/65) needs no absolute
+      // row; clicks map y onto itemRows with buf[0] pinned at screen row 1
+      // (see the clear-screen at startup). Clicking the already-selected
+      // entry confirms it — so double-click = open, single click = select,
+      // matching the footer copy.
+      const mouse = key.match(/^\x1b\[<(\d+);\d+;(\d+)M$/)
+      if (mouse) {
+        if (!pathInputMode) {
+          const button = parseInt(mouse[1]!)
+          const y = parseInt(mouse[2]!)
+          if (button === 64 || button === 65) {
+            const filtered = getFiltered()
+            selected = Math.max(0, Math.min(filtered.length - 1, selected + (button === 64 ? -1 : 1)))
+            render()
+          } else if (button === 0) {
+            const visibleIndex = itemRows.indexOf(y - 1)
+            if (visibleIndex >= 0) {
+              const idx = scrollOffset + visibleIndex
+              if (idx === selected) {
+                confirmSelected()
+              } else {
+                selected = idx
+                render()
+              }
+            }
+          }
+        }
+        return
+      }
 
       if (pathInputMode) {
         // === Path input mode ===
@@ -269,19 +336,11 @@ export async function selectProjectInteractive(): Promise<string | undefined> {
 
       // === List navigation mode ===
 
-      // Enter
-      if (key === "\r" || key === "\n") {
-        const filtered = getFiltered()
-        const entry = filtered.length > 0 ? filtered[selected] : undefined
-        if (entry?.worktree === NEW_DIR_SENTINEL) {
-          enterPathInput()
-          return
-        }
-        const result = entry?.worktree
-        cleanup()
-        resolve(result)
-        return
-      }
+     // Enter
+     if (key === "\r" || key === "\n") {
+       confirmSelected()
+       return
+     }
 
       // Escape / Ctrl+C
       if (key === "\x1b" || key === "\u0003") {
