@@ -6,7 +6,7 @@
 **机制（引擎自动注入，无需主动读取）：**
 
 - 两份记忆（全局 + 项目）在会话第一轮整份拼进 system prompt——开局就在上下文里，不要花工具调用去 read
-- **索引化 + 双写**：MEMORY.md 正文是**索引行**（编号 + 4-8 字主题 + 关键动作词），完整全文存 `~/.redcode/supermemory.db`（memories 表，project=global/项目名）；写索引必须同时入库，缺一不可
+- **索引化 + 双写**：MEMORY.md 正文是**索引行**（编号 + 4-8 字主题 + 关键动作词），完整全文存 `~/.redcode/supermemory.db`（memories 表，project=global/项目名）；写索引必须同时入库，缺一不可；写完跑核对脚本 `bun ~/.redcode/scripts/check-memory-dualwrite.mjs` 自检（pre-commit 已挂自动检查，私仓机器）
 - **注入面纪律（触发器非教材）**：索引行只负责"提醒该想一下"，长句一律砍进库；状态（进度）只记最近四天，历史查 git commit；参考文档（借鉴清单等）放 `.redcode/` 下文档，记忆里只留指针
 - 当日日志 `memory/YYMMDD.md` 与 `INDEX.md` **已退役**，只作归档不再写入——它们不注入、实测没人读
 

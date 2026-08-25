@@ -39,6 +39,8 @@ description: 两层记忆系统——项目记忆记进度与本项目教训，�
 
 **写入姿势（双写）**：① MEMORY.md 加索引行——编号（新教训=最大号+1）+ 4-8 字主题 + 关键动作词，放对应分区；② supermemory.db 存全文——用 `sqlite_query` 执行 `INSERT INTO memories (content, project, source) VALUES (全文, 'global'|项目名, 'manual')`（写操作会弹一次权限确认，正常）。
 
+**双写核对（260825 起）**：写完双写后跑 `bun ~/.redcode/scripts/check-memory-dualwrite.mjs` 自检——MEMORY.md 每个 `#NN` 索引必须对 db `content LIKE '#NN %'` 全文，缺则列出编号。私仓 pre-commit 已挂自动检查：动 MEMORY.md 的提交缺全文直接阻断（`--no-verify` 可临时绕过，别带病闯关）。
+
 **content 首行格式**（召回展示与索引核对都靠它）：
 - 全局条目：`#NN 标题（YYMMDD）`——编号与索引行严格一致，核对脚本按 `content LIKE '#NN %'` 找全文
 - 项目条目：`[项目名·踩坑|决策|技法] 标题（YYMMDD）`——项目条目不编号，靠标签分类
