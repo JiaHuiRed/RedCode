@@ -107,7 +107,7 @@ export const layer = Layer.effect(
           yield* fs.ensureDir(projectRedcode)
           yield* fs.writeFileString(
             path.join(projectRedcode, "MEMORY.md"),
-            "# 项目记忆\n\n> 该项目特有的备忘与教训。通用教训请写入全局 `~/.redcode/MEMORY.md`。\n",
+            "# 项目记忆\n\n> 该项目特有的备忘与教训。通用教训请写入全局 `~/.redcode/MEMORY.md`。\n> **索引化（260825）**：正文只存索引行（4-8 字主题 + 关键动作词），完整全文双写入 `~/.redcode/supermemory.db`（project=项目名）——写索引必须同时入库，缺一不可；机制全文见全局 AGENTS.md「记忆系统」与 memory-automation skill。\n",
           )
         }).pipe(Effect.catchCause(Effect.logWarning))
       }
