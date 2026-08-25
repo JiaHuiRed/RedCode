@@ -25,7 +25,7 @@ Reads code, writes code, fixes bugs, runs commands. You speak Chinese (or any la
 
 ### Core capabilities
 
-Code understanding (jCodeMunch / TypeGraph) · Multi-model (DeepSeek / OpenAI / Anthropic / Ollama) · File read/write/edit · Terminal execution · Web search · Vision analysis · Session management · Permission gating · Context compaction · Automated memory system · Goal tracking · Skill system · Four-role subagents (explore / architect / fixer / reviewer, each assignable its own model) · Anti-repeat loop detection · Custom AI personas
+Code understanding (jCodeMunch / TypeGraph) · Multi-model (DeepSeek / OpenAI / Anthropic / Ollama) · File read/write/edit · Terminal execution · Web search · Vision analysis · Session management · Permission gating · Context compaction · Automated memory system · Goal tracking · Skill system · Four-role subagents (explore / architect / fixer / reviewer, each assignable its own model) · Custom AI personas
 
 ### Highlights
 
@@ -57,7 +57,7 @@ cd packages/desktop && bun run dev
 cd packages/opencode && bun run build
 ```
 
-Output: `packages/opencode/dist/redcode-windows-x64/bin/redcode.exe` — double-click to run. A bare launch (no directory argument) opens a workspace selector: pick a registered project, or use "Open a different directory..." to type or paste any path.
+Output: `packages/opencode/dist/redcode-windows-x64/bin/redcode.exe` — double-click to run. A bare launch (no directory argument) opens a workspace selector: pick a registered project, or use "Open a different directory..." to type or paste any path. The selector supports mouse: click to select, click on the selected item to open, scroll wheel to scroll.
 
 ---
 

@@ -27,7 +27,7 @@ AI 编程助手。两个入口、同一引擎：
 
 ### 核心能力
 
-代码理解（jCodeMunch / TypeGraph）· 多模型（DeepSeek / OpenAI / Anthropic / Ollama）· 文件读写编辑 · 终端执行 · Web 搜索 · 视觉分析 · 会话管理 · 权限门控与防护环 · 上下文压缩 · 自动化记忆系统 · 目标管理 · Skill 技能系统 · 四角色子代理（explore / architect / fixer / reviewer，可按角色分配不同模型）· 防重复循环检测 · 自定义 AI 人格
+代码理解（jCodeMunch / TypeGraph）· 多模型（DeepSeek / OpenAI / Anthropic / Ollama）· 文件读写编辑 · 终端执行 · Web 搜索 · 视觉分析 · 会话管理 · 权限门控与防护环 · 上下文压缩 · 自动化记忆系统 · 目标管理 · Skill 技能系统 · 四角色子代理（explore / architect / fixer / reviewer，可按角色分配不同模型）· 自定义 AI 人格
 
 ### 特点
 
@@ -69,7 +69,7 @@ cd packages/opencode && bun run build
 cd packages/desktop && bun run build && bun run package
 ```
 
-> TUI 编译产物：`packages/opencode/dist/redcode-windows-x64/bin/redcode.exe`，可直接双击运行——无参数启动会先显示工作区选择器，支持从已注册项目中选择，或经"Open a different directory..."手输/粘贴任意目录路径。
+> TUI 编译产物：`packages/opencode/dist/redcode-windows-x64/bin/redcode.exe`，可直接双击运行——无参数启动会先显示工作区选择器，支持从已注册项目中选择，或经"Open a different directory..."手输/粘贴任意目录路径；选择器支持鼠标点击选中、点击已选中项打开、滚轮滚动。
 
 ---
 

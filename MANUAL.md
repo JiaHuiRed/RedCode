@@ -239,7 +239,7 @@ MCP（Model Context Protocol）让 AI 获得外部能力。安装越多 MCP，AI
 
 | 服务器 | 用途 | 首次使用前 |
 |--------|------|-----------|
-| **su-prememory** | 本地语义记忆：SQLite+FTS5 全文搜索，纯离线 | — |
+| **su-prememory** | ~~本地语义记忆：SQLite+FTS5 全文搜索，纯离线~~ **已废弃**：当前配置 `tools: []` 一个工具都不暴露，回忆工具不可用（260825 核实）；记忆检索实际走 memory-recall 插件自动注入 + `sqlite_query` 原生工具查库 | — |
 | **mcp-process-mgmt** | 管理交互式/长驻 shell 会话（REPL、dev server 等需要 stdin 的进程）| — |
 
 > 曾预配置过的 **gbrain**（记忆）、**Exa Search**（语义搜索）、**Agent Reach**（B站/抖音/GitHub 统一搜索）已彻底移除（gbrain 元数据损坏且功能被 su-prememory 覆盖；Exa 与 Web Search 冗余；Agent Reach 实际使用率过低，插件源码已删除）。
@@ -297,8 +297,6 @@ MCP（Model Context Protocol）让 AI 获得外部能力。安装越多 MCP，AI
 
 ### 6.1 概述
 
-RedCode 内置自动化记忆系统（skill `memory-automation`），在启动/压缩/收工时自动运作。
-
 RedCode 内置自动化记忆系统（skill `memory-automation`），在启动/收工时自动运作，分两层：
 
 - **项目级** `.redcode/MEMORY.md`——当前项目专有的进度、决策与踩坑
@@ -308,6 +306,16 @@ RedCode 内置自动化记忆系统（skill `memory-automation`），在启动/�
 
 > 早期版本还有一层当日日志（`~/.redcode/memory/YYMMDD.md`），260729 起退役——实测几乎无人主动读、写入质量也不稳定，历史文件保留可查，不再写入。
 
+### 6.2 索引化与双写（260812 起）
+
+记忆已索引化：MEMORY.md 正文只存**索引行**（编号 + 4-8 字主题 + 关键动作词），完整教训全文落在本地记忆库 `~/.redcode/supermemory.db`（memories 表，project=global/项目名，FTS5 全文索引）。写入必须**双写**——MEMORY.md 加索引行 + 数据库存全文，缺一不可。
+
+配套核对机制：
+
+- 自检脚本 `bun ~/.redcode/scripts/check-memory-dualwrite.mjs`——每个 `#NN` 索引行必须对数据库全文，缺则列出
+- 私仓 pre-commit 已挂自动检查——动 MEMORY.md 的提交缺全文直接阻断
+- 260828 定案：索引化前的存量项目（正文无 `#NN` 索引行结构）不做一次性迁移，在该工作区整理记忆或收尾时**就地索引化**（全文入库 + 正文改写为索引行）
+
 ### 6.3 教训提炼
 
 收工时，AI 自动：
@@ -316,16 +324,11 @@ RedCode 内置自动化记忆系统（skill `memory-automation`），在启动/�
 2. 把**跨项目通用**的教训摘入全局 `~/.redcode/MEMORY.md`
 3. 每条过三道门禁（换项目仍成立？忘了会再踩且修复贵？未被 AGENTS.md/skill 覆盖？）
 
-全局记忆每轮都要付 token，只留值得长期持有的条目。
+全局记忆每轮都要付 token，只留值得长期持有的条目。另有两项注入面纪律：状态类内容（进度）只记最近四天；参考文档（借鉴清单等）不进 MEMORY.md，放项目 `.redcode/` 下文档并留一句指针。
 
-每次新对话启动时，AI 自动注入两份记忆：
+### 6.4 关闭记忆
 
-- **全局级** `~/.redcode/MEMORY.md`（通用教训，在前）
-- **项目级** `.redcode/MEMORY.md`（项目专有，在后，覆盖一般）
-
-### 6.5 关闭记忆
-
-如果你不想要记忆功能，从 `redcode.jsonc` 的 `instructions` 中移除 `memory-automation` 条目即可。
+两条 MEMORY.md 由引擎**固定注入**（`session/instruction.ts` 的 systemPaths 硬编码路径），没有官方开关；移除 `instructions` 里的 `memory-automation` 只关闭该 skill 的自动化提示，记忆文件仍会注入。确实不想要的话：清空两份 MEMORY.md 内容，或改 `instruction.ts` 重新编译（不推荐）。
 
 ---
 
@@ -463,7 +466,7 @@ token、缓存读写与命中率、花费。
 | `/goal done` | 标为完成，自动归档教训 |
 | `/tui-persona` | 加载 TUI 灵魂人格 |
 | `/gui-persona` | 加载 GUI 灵魂人格 |
-| `/recall <关键词>` | 按关键词从 `MEMORY.md` 语义召回历史教训 |
+| `/recall <关键词>` | 按关键词从记忆库（含 supermemory.db）语义召回历史教训 |
 | `/subtask <任务>` | 派后台子任务，上下文隔离不污染当前会话 |
 | `/commit` | 按 conventional commit 格式提交代码 |
 | `/changelog` | 生成 CHANGELOG.md 条目 |
@@ -506,7 +509,7 @@ Skill 是扩展 AI 行为的机制——本质上是注入给 AI 的指令文件
 
 | Skill | 作用 | 触发词 |
 |-------|------|--------|
-| **memory-automation** | 自动记忆系统（日志/长期库/启动注入）| "收工""保存记忆" |
+| **memory-automation** | 自动化记忆系统（两层 MEMORY.md 注入 + 索引化双写 + 核对机制）| "收工""保存记忆" |
 | **ce-code-review** | 结构化多维度代码审查 | "帮我看看代码""review一下" |
 | **diagnose** | 形式化 bug 诊断循环 | "查bug""排查一下""debug" |
 | **defensive-agent** | 防止 AI 假阳性报告、无意义修改 | "小心点""别乱改" |
@@ -520,7 +523,7 @@ Skill 是扩展 AI 行为的机制——本质上是注入给 AI 的指令文件
 
 以上 11 个随仓库分发（`seed/skill/`），克隆即有，首次启动会播种到 `~/.redcode/skill/`。
 
-下面这些只存在于维护者本机的 `~/.redcode/skill/`，**不在仓库里**，克隆的人不会有——列在这里是说明个人库可以怎么扩展：
+下面这些只存在于维护者本机的 `~/.redcode/skill/`，**不在仓库里**，克隆的人不会有——举例说明个人库可以怎么扩展（**不是全量清单**，个人库随维护者习惯持续增删）：
 
 | Skill | 作用 | 触发词 |
 |-------|------|--------|
@@ -530,6 +533,8 @@ Skill 是扩展 AI 行为的机制——本质上是注入给 AI 的指令文件
 | game-daily | 游戏热点日报 | "游戏日报""游戏新闻" |
 | bump-version | 一键升版 | "升版""bump""放版" |
 | tdd-flow | TDD 流程 | "tdd""先写测试" |
+
+另有一批「思维视角」类 skill（`nuwa-skill` 蒸馏体系）——如 `karina-perspective`／`yuqi-perspective`／`munger-perspective` 等，把特定人物的思维框架蒸馏成可注入的决策顾问，触发词为视角名称（"用芒格的视角想一下"）。
 
 ### 9.2 添加自定义 Skill
 
