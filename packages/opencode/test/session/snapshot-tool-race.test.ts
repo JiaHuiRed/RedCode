@@ -234,7 +234,15 @@ it.live("tool execution produces non-empty session diff (snapshot race)", () =>
       })
 
       // Use bash tool (always registered) to create a file
-      const command = `echo 'snapshot race test content' > ${path.join(dir, "race-test.txt")}`
+      // 260825 cc 重定向目标必须加引号并换成正斜杠。原写法把 path.join() 产出的
+      // Windows 路径裸插进命令，而跑它的是 POSIX 系 shell：反斜杠被当转义吃掉，
+      // `C:\Users\...\race-test.txt` 塌成 cwd 下的单个文件
+      // `CUsersAdministratorAppDataLocalTemp...race-test.txt`（实测文件名如此），
+      // 于是断言的路径永远不存在。工具还自报 status=completed —— 重定向本身成功了，
+      // 只是写去了别处，所以这条从仓库初始快照 d6d579c4 起在 Windows 上一直红着。
+      // 引号 + 正斜杠在 bash 与 PowerShell 下都成立。
+      const target = path.join(dir, "race-test.txt").replaceAll("\\", "/")
+      const command = `echo 'snapshot race test content' > '${target}'`
       yield* llm.toolMatch((hit) => JSON.stringify(hit.body).includes("create the file"), "bash", {
         command,
         description: "create test file",

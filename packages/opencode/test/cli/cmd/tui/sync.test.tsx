@@ -19,7 +19,13 @@ function branchEvent(branch: string, workspace?: string): GlobalEvent {
 }
 
 describe("tui sync", () => {
-  test("refresh scopes sessions by default and lists project sessions when disabled", async () => {
+  // 260825 cc 断言从 scope="project" 改为 "global"，跟上 0.4.4 的行为变更。
+  // f25f0b29「Session 全局 scope」有意把"关掉目录过滤"的语义从"放宽到本项目"
+  // 改成"放宽到全局"，同批改了服务端 session.ts、HTTP 路由与 SDK 生成类型共
+  // 5 个文件，CHANGELOG 作为新功能记着（"Session.list() 支持 scope: 'global'
+  // 列出所有项目的会话（不限于当前项目）"）。本测试来自仓库初始快照 d6d579c4，
+  // 从没跟着更新，此后一直红着——是测试陈旧，不是 sync.tsx:137 写错。
+  test("refresh scopes sessions by default and lists global sessions when disabled", async () => {
     const previous = Global.Path.state
     await using tmp = await tmpdir()
     Global.Path.state = tmp.path
@@ -34,7 +40,7 @@ describe("tui sync", () => {
       kv.set("session_directory_filter_enabled", false)
       await sync.session.refresh()
 
-      expect(session.at(-1)?.searchParams.get("scope")).toBe("project")
+      expect(session.at(-1)?.searchParams.get("scope")).toBe("global")
       expect(session.at(-1)?.searchParams.get("path")).toBeNull()
     } finally {
       app.renderer.destroy()

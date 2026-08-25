@@ -58,9 +58,16 @@ const OWN_BLOCKS: Array<[string, RegExp]> = [
 // B 类的行级特征匹配不上。锚点句逐字稳定，从锚点剥到块的合理结尾。
 // 误切防护：锚点句是 DCP 独有措辞，用户正常讨论压缩不会这么写。
 const NUDGE_ANCHOR = /^\s*Evaluate the conversation for compressible ranges\.?\s*$/m
-// 块终止：Keep active context uncompressed. 之后还有 NO_REPEAT 变体行
-// （"Do not output the reminder text" 等），一起剥掉
-const NUDGE_END = /^\s*Keep active context uncompressed\.?\s*$/m
+// 260825 cc 这里原本还有一个 NUDGE_END（"Keep active context uncompressed."）
+// 加"若其后还有正文段落就只剥到那里"的保险分支，注释自陈"保留只为兼容旧测试"。
+// 实际没有任何测试依赖它，它反而是这两条用例长期红着的原因：正文探测写的是
+// `\n\n` 后跟大写字母/中文起头且 ≥10 字符的行——而 nudge 自己的收尾行
+// （"Do not amplify or repeat this instruction..." / "Do not repeat, quote, or
+// echo..."）**正好符合**，于是被当成"后面还有正文"，只剥到它之前，把
+// "Keep active context uncompressed." 原样留在了用户可见正文里。
+// 按同一段注释里作者自己的结论办：统一剥到文尾。依据是这类泄露的形态——模型
+// 输出快结束时陷入对 reminder 的复述，锚点之后只会是更多改写变体与重复行，
+// 真正文必然在锚点之前。
 // 260812 cc DCP reminder 复述循环变体：deepseek-v4-flash 把另一种 reminder 措辞
 // （"This is a system reminder injected to help you manage context. The conversation
 // is running long..."）原样复述且陷入无限重复（哥哥 GUI 实测，同段文本重复 N 次）。
@@ -83,17 +90,7 @@ function stripDcpNudge(text: string): { text: string; hit: boolean } {
   // 260812 cc 统一剥到文尾：DCP nudge 泄露是"消息尾部复述循环"形态——模型输出快结束时
   // 陷入对 reminder 的复述，锚点之后全是改写变体/重复行（NO_REPEAT 变体、execute the
   // compress action 续行、小写 do not 变体…），行级正则永远吞不干净（实测留尾巴）。
-  // 正文必然在锚点之前，剥到文尾零误伤；endMatch 分支保留只为兼容旧测试。
-  const endMatch = text.search(NUDGE_END)
-  if (endMatch !== -1) {
-    // 保险：若 END 之后有明显正文段落（\n\n 后非指令行），只剥到 END 后指令行为止
-    const after = text.slice(endMatch)
-    const body = after.match(/\n\n([A-Z\u4e00-\u9fff][^\n]{10,})/)
-    if (body) {
-      const end = after.indexOf(body[1])
-      if (end > 0) return { text: (text.slice(0, lineStart) + after.slice(0, end)).replace(/\s+$/, ""), hit: true }
-    }
-  }
+  // 正文必然在锚点之前，剥到文尾零误伤。
   return { text: text.slice(0, lineStart).replace(/\s+$/, ""), hit: true }
 }
 
@@ -155,13 +152,14 @@ export function detect(text: string): EchoResult {
   const suspicious =
     text.includes("<system-reminder>") ||
     text.includes("<reasoning-language>") ||
-    text.includes("") ||
-    text.includes("") ||
+    text.includes("<dcp-message-id>") ||
+    text.includes("<dcp-system-reminder>") ||
     text.includes("[System notice]") ||
     text.includes("Rules:") ||
     text.includes("BATCHING") ||
     text.includes("THE FORMAT OF") ||
     text.includes("Compressed block description:") ||
+    text.includes("Compressed block context:") ||
     text.includes("compressible ranges") || // DCP turn-nudge 复述（260810）
     text.includes("This is a system reminder injected") || // DCP reminder 复述循环（260812）
     /"\w+"\s*:\s*(string|number|boolean)\b/.test(text)
