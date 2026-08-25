@@ -8,13 +8,18 @@
 
 ---
 
-### [0.9.7] - 未发布
+### [0.9.7] - 2026-08-28
 
 #### 新增
 
 - **工作区选择器支持鼠标**（`cli/project-selector.ts`）：启动前的 workspace 选择原本纯键盘，工作区 30+ 个时翻找不便。开启 SGR 鼠标追踪（`?1000h` + `?1006h`）：单击选中、点击已选中项（等价双击）打开、滚轮滚动，键盘路径原样保留。点击坐标→列表项的映射靠进入时清屏归位（`ESC[2J ESC[H`）把列表首行钉在视口第 1 行，点击 y 减 1 即列表行——**不能用 DSR 光标应答做锚点**：ConPTY 转发下该应答按它内部缓冲计行、与终端视口的鼠标坐标不同步（首版实测点击整体偏移若干行），清屏让两边同处视口坐标系。列表行数上限同步收紧为 `height - 9`：画面固定开销 9 行（标题区 5 + footer 区 2 + 选中项路径行 1 + 结尾换行 1），旧上限 `height - 6` 会让小窗口下的画面超高 2~3 行、终端被迫滚动、首行滚出视口导致映射整体漂移（实测全屏准、小窗口偏的根因）。终端不支持时点击/滚轮静默无效，键盘不受影响。退出时关鼠标模式，不漏事件给主 TUI。
 
 - **记忆系统双写自检**（`seed/skill/memory-automation/SKILL.md`）：记忆机制正式化——MEMORY.md 索引行的完整全文必须落在 `~/.redcode/supermemory.db`（索引化后删索引行 = 删除唯一入口，260825 核对时发现 6 条旧索引有索引无全文，疑似被 260824 发现的 sqlite 多语句事务回滚坑吞掉）。此后写完双写跑 `bun ~/.redcode/scripts/check-memory-dualwrite.mjs` 自检，私仓 pre-commit 已挂自动检查——动 MEMORY.md 的提交缺全文直接阻断（`--no-verify` 可临时绕过）。
+- **存量旧项目记忆就地索引化**（`seed/skill/memory-automation/SKILL.md`、`project/bootstrap.ts`）：索引化（260812）之前建立的项目，`.redcode/MEMORY.md` 正文是完整段落全文（无 `#NN` 索引行结构），不会自动迁移、也没人核对（私仓核对脚本只查全局）。定案：不做一次性迁移——在该工作区整理记忆（consolidate-memory 流程新增「旧格式检测」步骤）或收尾时发现旧格式，就地转换：每条教训全文 INSERT `supermemory.db`（content 首行 `[项目名·踩坑|决策] 标题（YYMMDD）`）+ 正文改写成索引行。新项目播种文案（bootstrap.ts:110）同步补上索引化指引，新播种的项目开局即知新机制。
+
+#### 修复
+
+- **分割线 token 对比不再越压越大**（`session/compaction.ts`、`session/message-v2.ts`）：260818 起 `estimate(filterCompacted(...))` 口径方向对，但 `filterCompacted` 的折叠循环假设 chrono 逆序输入，而 compaction.ts 回填收到的是展示序（`[parent, summary, tail, 后续]`）——折叠从不生效，before/after 恒为全量估算，分割线显示 534k → 535k，越压越大。改为内部按 `compareTime` 归一化成逆序：stream 路径排序前后值不变，展示序输入也能正确折叠。附带回归测试（chronological / display-order / stream 三种输入输出一致）。
 
 ### [0.9.6] - 2026-08-24
 
