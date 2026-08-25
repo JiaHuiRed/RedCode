@@ -186,49 +186,60 @@ export const layer = Layer.effect(
         return { call, part }
       })
 
-const updateToolCall = (toolCallID: string,
-  name: string,
-  update: (part: MessageV2.ToolPart) => MessageV2.ToolPart) =>
-  Effect.gen(function* () {
-    let match = yield* readToolCall(toolCallID)
-    // 260824 Red AI SDK v7 在 fullStream 推出 tool-call 事件之前就启动 execute：
-    // TaskTool.execute 的 ctx.metadata 回调先于 ensureToolCall 到达，ctx.toolcalls
-    // 未注册、DB 里也没有对应 part（消息尚未落库）→ readToolCall miss，旧代码
-    // 静默丢了 metadata，流事件路径补写的 running state 不带 title/metadata。
-    // 兜底：按 callID 现场创建 pending tool part（同 ensureToolCall 创建分支），
-    // 让 update 把 title/metadata 写进去；随后的 ensureToolCall 走 existing 分支。
-    if (!match) match = yield* adoptOrphanToolCall(toolCallID, name)
-    if (!match) return undefined
-    const updated = yield* session.updatePart(update(match.part))
-    const part = updated
-    ctx.toolcalls[toolCallID] = {
-      ...match.call,
-      partID: part.id,
-      messageID: part.messageID,
-      sessionID: part.sessionID,
-    }
-    return part
-  })
+      const updateToolCall = Effect.fn("SessionProcessor.updateToolCall")(function* (
+        toolCallID: string,
+        name: string,
+        update: (part: MessageV2.ToolPart) => MessageV2.ToolPart,
+      ) {
+        // 260825 cc adopt 的触发条件收窄到"从未注册过"。readToolCall 的 miss 有两个
+        // 来源：① ctx.toolcalls 里根本没有这个 callID —— 就是下面注释说的那个竞态；
+        // ② 注册过、但 part 在库里查不到或类型不对，此时它会顺手 delete 掉该条目
+        //（见 readToolCall）。②（revert / 压缩把 part 移走等）若也去 adopt，等于在
+        // **当前** assistantMessage 上复活一个本属于别处的 pending part，属于错挂。
+        // 所以先在 readToolCall 之前记下"是否注册过"，只对 ① 兜底，② 保持原来的
+        // 静默 no-op。
+        const known = toolCallID in ctx.toolcalls
+        let match = yield* readToolCall(toolCallID)
+        // 260824 Red AI SDK v7 在 fullStream 推出 tool-call 事件之前就启动 execute：
+        // TaskTool.execute 的 ctx.metadata 回调先于 ensureToolCall 到达，ctx.toolcalls
+        // 未注册、DB 里也没有对应 part（消息尚未落库）→ readToolCall miss，旧代码
+        // 静默丢了 metadata，流事件路径补写的 running state 不带 title/metadata。
+        // 兜底：按 callID 现场创建 pending tool part（同 ensureToolCall 创建分支），
+        // 让 update 把 title/metadata 写进去；随后的 ensureToolCall 走 existing 分支。
+        if (!match && !known) match = yield* adoptOrphanToolCall(toolCallID, name)
+        if (!match) return undefined
+        const part = yield* session.updatePart(update(match.part))
+        ctx.toolcalls[toolCallID] = {
+          ...match.call,
+          partID: part.id,
+          messageID: part.messageID,
+          sessionID: part.sessionID,
+        }
+        return part
+      })
 
-const adoptOrphanToolCall = Effect.fn("SessionProcessor.adoptOrphanToolCall")(function* (toolCallID: string, name: string) {
-  const part = yield* session.updatePart({
-    id: PartID.ascending(),
-    messageID: ctx.assistantMessage.id,
-    sessionID: ctx.assistantMessage.sessionID,
-    type: "tool",
-    tool: name,
-    callID: toolCallID,
-    state: { status: "pending", input: {}, raw: "" },
-  } satisfies MessageV2.ToolPart)
-  ctx.toolcalls[toolCallID] = {
-    done: yield* Deferred.make<void>(),
-    partID: part.id,
-    messageID: part.messageID,
-    sessionID: part.sessionID,
-    inputEnded: false,
-  }
-  return { call: ctx.toolcalls[toolCallID], part }
-})
+      const adoptOrphanToolCall = Effect.fn("SessionProcessor.adoptOrphanToolCall")(function* (
+        toolCallID: string,
+        name: string,
+      ) {
+        const part = yield* session.updatePart({
+          id: PartID.ascending(),
+          messageID: ctx.assistantMessage.id,
+          sessionID: ctx.assistantMessage.sessionID,
+          type: "tool",
+          tool: name,
+          callID: toolCallID,
+          state: { status: "pending", input: {}, raw: "" },
+        } satisfies MessageV2.ToolPart)
+        ctx.toolcalls[toolCallID] = {
+          done: yield* Deferred.make<void>(),
+          partID: part.id,
+          messageID: part.messageID,
+          sessionID: part.sessionID,
+          inputEnded: false,
+        }
+        return { call: ctx.toolcalls[toolCallID], part }
+      })
 
       const completeToolCall = Effect.fn("SessionProcessor.completeToolCall")(function* (
         toolCallID: string,
@@ -599,7 +610,9 @@ const adoptOrphanToolCall = Effect.fn("SessionProcessor.adoptOrphanToolCall")(fu
                     ),
                     Effect.exit,
                   )
-                : Effect.succeed(Exit.succeed<{ part: MessageV2.FilePart; resize?: Image.ResizeReport }>({ part: attachment })),
+                : Effect.succeed(
+                    Exit.succeed<{ part: MessageV2.FilePart; resize?: Image.ResizeReport }>({ part: attachment }),
+                  ),
             )
             const omitted = normalized.filter(Exit.isFailure).length
             const succeeded = normalized.filter(Exit.isSuccess).map((item) => item.value)
@@ -611,9 +624,7 @@ const adoptOrphanToolCall = Effect.fn("SessionProcessor.adoptOrphanToolCall")(fu
             // 产出且完全由尺寸推导——必须确定性，理由见该函数注释。
             const resizeNotices = succeeded
               .map((item, index) =>
-                item.resize
-                  ? `[attachment #${index + 1}] ${Image.formatResizeNotice(item.resize)}`
-                  : undefined,
+                item.resize ? `[attachment #${index + 1}] ${Image.formatResizeNotice(item.resize)}` : undefined,
               )
               .filter((notice): notice is string => notice !== undefined)
             const output = {
@@ -622,7 +633,9 @@ const adoptOrphanToolCall = Effect.fn("SessionProcessor.adoptOrphanToolCall")(fu
                 rawOutput.output,
                 ...(omitted === 0
                   ? []
-                  : [`[${omitted} image${omitted === 1 ? "" : "s"} omitted: could not be resized below the image size limit.]`]),
+                  : [
+                      `[${omitted} image${omitted === 1 ? "" : "s"} omitted: could not be resized below the image size limit.]`,
+                    ]),
                 ...resizeNotices,
               ].join("\n\n"),
               attachments: attachments.length ? attachments : undefined,

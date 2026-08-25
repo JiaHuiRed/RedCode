@@ -18,52 +18,52 @@
 //     补上 type 无法可靠模拟的特殊键；
 //   - 新增 newpage（重置到空白页）/ close（关闭页面与浏览器）管理生命周期；
 //   - 除 eval 外所有步骤结果附带当前 page.url()，便于跨调用定位页面。
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
-import { chromium } from "playwright";
-import { mkdirSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
+import { z } from "zod"
+import { chromium } from "playwright"
+import { mkdirSync } from "node:fs"
+import os from "node:os"
+import path from "node:path"
 
-const OUT_DIR = path.join(os.tmpdir(), "webqa");
-mkdirSync(OUT_DIR, { recursive: true });
+const OUT_DIR = path.join(os.tmpdir(), "webqa")
+mkdirSync(OUT_DIR, { recursive: true })
 
 // 截图序号：与 pid 组合保证并发/同毫秒不撞名（借鉴 ego-browser screenshot 命名）
-let shotSeq = 0;
-const nextShotPath = () => path.join(OUT_DIR, `shot-${process.pid}-${++shotSeq}.png`);
+let shotSeq = 0
+const nextShotPath = () => path.join(OUT_DIR, `shot-${process.pid}-${++shotSeq}.png`)
 
-const server = new McpServer({ name: "webqa", version: "1.1.0" });
+const server = new McpServer({ name: "webqa", version: "1.1.0" })
 
 // ---- 单例浏览器/页面：跨 interact 调用保留状态（per-session 进程，无并发共享） ----
-let browser = null;
-let page = null;
+let browser = null
+let page = null
 
 async function getPage() {
   if (!page) {
-    if (!browser) browser = await chromium.launch({ headless: true });
-    page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    if (!browser) browser = await chromium.launch({ headless: true })
+    page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
   }
-  return page;
+  return page
 }
 
 async function closePage() {
   try {
-    if (page) await page.close();
+    if (page) await page.close()
   } catch {}
-  page = null;
+  page = null
   try {
-    if (browser) await browser.close();
+    if (browser) await browser.close()
   } catch {}
-  browser = null;
+  browser = null
 }
 
 // exit 事件里只能同步收尾：直接 kill chromium 子进程
 process.on("exit", () => {
   try {
-    if (browser && browser.process) browser.process()?.kill();
+    if (browser && browser.process) browser.process()?.kill()
   } catch {}
-});
+})
 
 server.tool(
   "webqa_screenshot",
@@ -76,130 +76,162 @@ server.tool(
     waitMs: z.number().int().positive().optional().describe("extra settle time after load"),
   },
   async ({ url, width, height, fullPage, waitUntil, waitMs }) => {
-    const b = await chromium.launch({ headless: true });
+    const b = await chromium.launch({ headless: true })
     try {
       const p = await b.newPage({
         viewport: { width: width ?? 1280, height: height ?? 800 },
-      });
-      await p.goto(url, { waitUntil: waitUntil ?? "networkidle", timeout: 30000 });
-      if (waitMs) await p.waitForTimeout(waitMs);
-     const out = nextShotPath();
-      await p.screenshot({ path: out, fullPage: fullPage ?? false });
+      })
+      await p.goto(url, { waitUntil: waitUntil ?? "networkidle", timeout: 30000 })
+      if (waitMs) await p.waitForTimeout(waitMs)
+      const out = nextShotPath()
+      await p.screenshot({ path: out, fullPage: fullPage ?? false })
       return {
         content: [{ type: "text", text: JSON.stringify({ path: out, width: width ?? 1280, height: height ?? 800 }) }],
-      };
+      }
     } finally {
-      await b.close();
+      await b.close()
     }
   },
-);
+)
 
 const stepSchema = z.object({
- action: z.enum(["goto", "click", "fill", "type", "press", "screenshot", "resize", "wait", "observe", "waitFor", "eval", "newpage", "close"]),
- url: z.string().optional(),
- selector: z.string().optional().describe("click/fill/type 用 CSS 或 aria-ref=sXeY（取自最近一次 observe）"),
- value: z.string().optional().describe("press 时为键名（Enter/Tab/Escape/ArrowDown...），type/fill 时为文本，waitFor loadState 时为状态名"),
- path: z.string().optional(),
- fullPage: z.boolean().optional(),
- width: z.number().int().positive().optional(),
- height: z.number().int().positive().optional(),
- ms: z.number().int().positive().optional().describe("waitFor 的超时上限；wait 时为等待时长"),
- expr: z.string().optional(),
- mode: z.enum(["selector", "loadState", "url"]).optional().describe("waitFor 模式：selector 需 selector 字段，loadState 需 value（networkidle 等），url 需 url（支持 glob）"),
- waitUntil: z.enum(["load", "domcontentloaded", "networkidle", "commit"]).optional(),
-});
+  action: z.enum([
+    "goto",
+    "click",
+    "fill",
+    "type",
+    "press",
+    "screenshot",
+    "resize",
+    "wait",
+    "observe",
+    "waitFor",
+    "eval",
+    "newpage",
+    "close",
+  ]),
+  url: z.string().optional(),
+  selector: z.string().optional().describe("click/fill/type 用 CSS 或 aria-ref=sXeY（取自最近一次 observe）"),
+  value: z
+    .string()
+    .optional()
+    .describe("press 时为键名（Enter/Tab/Escape/ArrowDown...），type/fill 时为文本，waitFor loadState 时为状态名"),
+  path: z.string().optional(),
+  fullPage: z.boolean().optional(),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
+  ms: z.number().int().positive().optional().describe("waitFor 的超时上限；wait 时为等待时长"),
+  expr: z.string().optional(),
+  mode: z
+    .enum(["selector", "loadState", "url"])
+    .optional()
+    .describe("waitFor 模式：selector 需 selector 字段，loadState 需 value（networkidle 等），url 需 url（支持 glob）"),
+  waitUntil: z.enum(["load", "domcontentloaded", "networkidle", "commit"]).optional(),
+})
 
 server.tool(
   "webqa_interact",
- { steps: z.array(stepSchema).min(1).describe("ordered action sequence; 页面跨调用保留，首次请先 goto 或 newpage。观察页面用 observe（返回带 [ref=sXeY] 的 aria 快照），之后 click/fill 的 selector 可直接传 \"aria-ref=sXeY\"；SPA 渲染等待用 waitFor 替代死等 wait") },
+  {
+    steps: z
+      .array(stepSchema)
+      .min(1)
+      .describe(
+        'ordered action sequence; 页面跨调用保留，首次请先 goto 或 newpage。观察页面用 observe（返回带 [ref=sXeY] 的 aria 快照），之后 click/fill 的 selector 可直接传 "aria-ref=sXeY"；SPA 渲染等待用 waitFor 替代死等 wait',
+      ),
+  },
   async ({ steps }) => {
-    const results = [];
+    const results = []
     try {
-      const first = steps[0];
+      const first = steps[0]
       if (first.action !== "goto" && first.action !== "newpage") {
         if (!page) {
           return {
-            content: [{ type: "text", text: JSON.stringify([{ action: first.action, error: "no page open — start with goto or newpage" }]) }],
-          };
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify([{ action: first.action, error: "no page open — start with goto or newpage" }]),
+              },
+            ],
+          }
         }
       }
       for (const s of steps) {
-        const p = await getPage();
+        const p = await getPage()
         switch (s.action) {
           case "goto":
-            await p.goto(s.url, { waitUntil: s.waitUntil ?? "networkidle", timeout: 30000 });
-            results.push({ action: "goto", ok: true, url: p.url() });
-            break;
+            await p.goto(s.url, { waitUntil: s.waitUntil ?? "networkidle", timeout: 30000 })
+            results.push({ action: "goto", ok: true, url: p.url() })
+            break
           case "click":
-            await p.click(s.selector, { timeout: 10000 });
-            results.push({ action: "click", ok: true, url: p.url() });
-            break;
+            await p.click(s.selector, { timeout: 10000 })
+            results.push({ action: "click", ok: true, url: p.url() })
+            break
           case "fill":
-            await p.fill(s.selector, s.value);
-            results.push({ action: "fill", ok: true, url: p.url() });
-            break;
+            await p.fill(s.selector, s.value)
+            results.push({ action: "fill", ok: true, url: p.url() })
+            break
           case "type":
-            await p.type(s.selector, s.value);
-            results.push({ action: "type", ok: true, url: p.url() });
-            break;
+            await p.type(s.selector, s.value)
+            results.push({ action: "type", ok: true, url: p.url() })
+            break
           case "press":
-            await p.keyboard.press(s.value);
-            results.push({ action: "press", ok: true, url: p.url() });
-            break;
+            await p.keyboard.press(s.value)
+            results.push({ action: "press", ok: true, url: p.url() })
+            break
           case "screenshot": {
-            const out = s.path ?? nextShotPath();
-            await p.screenshot({ path: out, fullPage: s.fullPage ?? false });
-            results.push({ action: "screenshot", path: out, url: p.url() });
-            break;
+            const out = s.path ?? nextShotPath()
+            await p.screenshot({ path: out, fullPage: s.fullPage ?? false })
+            results.push({ action: "screenshot", path: out, url: p.url() })
+            break
           }
           case "resize":
-            await p.setViewportSize({ width: s.width, height: s.height });
-            results.push({ action: "resize", ok: true, url: p.url() });
-            break;
+            await p.setViewportSize({ width: s.width, height: s.height })
+            results.push({ action: "resize", ok: true, url: p.url() })
+            break
           case "wait":
-            await p.waitForTimeout(s.ms);
-            results.push({ action: "wait", ok: true, url: p.url() });
-            break;
+            await p.waitForTimeout(s.ms)
+            results.push({ action: "wait", ok: true, url: p.url() })
+            break
           case "observe":
             results.push({
               action: "observe",
               snapshot: await p.locator("body").ariaSnapshot({ mode: "ai" }),
               url: p.url(),
-            });
-            break;
+            })
+            break
           case "waitFor": {
             // selector → 元素出现；loadState → 页面状态；url → 导航目标（Playwright glob 匹配）
-            const mode = s.mode ?? "selector";
+            const mode = s.mode ?? "selector"
             if (mode === "url") {
-              await p.waitForURL(s.url, { timeout: s.ms ?? 30000 });
+              await p.waitForURL(s.url, { timeout: s.ms ?? 30000 })
             } else if (mode === "loadState") {
-              await p.waitForLoadState(s.value ?? "networkidle", { timeout: s.ms ?? 30000 });
+              await p.waitForLoadState(s.value ?? "networkidle", { timeout: s.ms ?? 30000 })
             } else {
-              await p.waitForSelector(s.selector, { timeout: s.ms ?? 10000 });
+              await p.waitForSelector(s.selector, { timeout: s.ms ?? 10000 })
             }
-            results.push({ action: "waitFor", mode, ok: true, url: p.url() });
-            break;
+            results.push({ action: "waitFor", mode, ok: true, url: p.url() })
+            break
           }
           case "eval":
-            results.push({ action: "eval", value: await p.evaluate(s.expr), url: p.url() });
-            break;
+            results.push({ action: "eval", value: await p.evaluate(s.expr), url: p.url() })
+            break
           case "newpage":
-            await closePage();
-            await getPage();
-            results.push({ action: "newpage", ok: true, url: "about:blank" });
-            break;
+            await closePage()
+            await getPage()
+            results.push({ action: "newpage", ok: true, url: "about:blank" })
+            break
           case "close":
-            await closePage();
-            results.push({ action: "close", ok: true, url: "about:blank" });
-            break;
+            await closePage()
+            results.push({ action: "close", ok: true, url: "about:blank" })
+            break
         }
       }
-      return { content: [{ type: "text", text: JSON.stringify(results) }] };
+      return { content: [{ type: "text", text: JSON.stringify(results) }] }
     } finally {
       // 页面/浏览器保持打开，供下一次调用复用
     }
   },
-);
+)
 
-const transport = new StdioServerTransport();
-await server.connect(transport);
+const transport = new StdioServerTransport()
+await server.connect(transport)

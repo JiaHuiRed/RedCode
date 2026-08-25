@@ -20,6 +20,11 @@
 #### 修复
 
 - **分割线 token 对比不再越压越大**（`session/compaction.ts`、`session/message-v2.ts`）：260818 起 `estimate(filterCompacted(...))` 口径方向对，但 `filterCompacted` 的折叠循环假设 chrono 逆序输入，而 compaction.ts 回填收到的是展示序（`[parent, summary, tail, 后续]`）——折叠从不生效，before/after 恒为全量估算，分割线显示 534k → 535k，越压越大。改为内部按 `compareTime` 归一化成逆序：stream 路径排序前后值不变，展示序输入也能正确折叠。附带回归测试（chronological / display-order / stream 三种输入输出一致）。
+- **矮终端下工作区选择器一个条目都不显示**（`cli/project-selector.ts`）：鼠标支持那次把可见行数从 `height - 6` 收紧到 `height - 9`（为了让帧不溢出、点击映射 `y - 1` 保持成立），但没留下限。终端 9 行时算出 `maxVisible = 0`、8 行时算出 `-1`，两种情况下 `filtered.slice(offset, offset + maxVisible)` 都返回空数组——**框架画得出来、列表整个是空的**。选择器是入口闸，连「新建路径」那个哨兵项也在同一个列表里、一起消失，用户无路可走；而且不崩不报错，看着就像"没有工作区"。这次改动把死区从 `≤6` 扩到了 `≤9`，分屏与 IDE 终端面板够得着。修法是给可用行数加 `Math.max(1, ...)` 兜底：宁可让帧溢出（点击映射偏一点、方向键仍可用），也不能让列表消失。顺带把这段算术抽成导出的纯函数 `listViewport()`——此前它内联在 `render()` 里，而 `render()` 要真终端才能跑，没法测；现在有 6 条回归钉住（含 1~11 行逐行扫、选中项恒在视口内、偏移不越尾）。
+- **`updateToolCall` 的 orphan 兜底收窄到"从未注册过"**（`session/processor.ts`）：`readToolCall` 的 miss 有两个来源——① `ctx.toolcalls` 里根本没有该 callID，就是 AI SDK v7 那个 execute 早于 tool-call 事件的竞态；② 注册过但 part 在库里查不到／类型不对，此时它会顺手 `delete` 掉该条目。新加的 `adoptOrphanToolCall` 对两者一视同仁，于是 ②（revert／压缩把 part 移走等）会在**当前** assistantMessage 上复活一个本属于别处的 pending part，属于错挂。改为在 `readToolCall` 之前先记下"是否注册过"，只对 ① 兜底，② 保持原来的静默 no-op。
+- **`updateToolCall` 丢失的 tracing span 补回**（`session/processor.ts`）：竞态修复那次把它从 `Effect.fn("SessionProcessor.updateToolCall")(...)` 改成了普通箭头函数返回 `Effect.gen`，span 名随之消失（同批新增的 `adoptOrphanToolCall` 反而保留了 `Effect.fn`）。本文件另有 11 处 `Effect.fn`，按文件惯例还原。仓里 opentelemetry 在跑，这类退化不报错、只是链路上少一段。
+- **选择器鼠标模式加异常退出兜底**（`cli/project-selector.ts`）：`cleanup()` 只在显式路径上跑。Ctrl+C 已在按键处理里接住（raw mode 下它不变成 SIGINT），但硬崩溃／外部 kill／终端被直接关掉时不会执行，SGR 鼠标追踪就留在用户终端里——之后每次点击都往 shell 喷 `\x1b[<0;12;5M`。挂一个 `process.once("exit")` 做最小复位（只关鼠标追踪 + 恢复光标，刻意不碰 raw mode 与依赖 `renderedLines` 的光标回退，退出路径上重排屏幕比留点脏字节更危险），`cleanup()` 里 `process.off` 摘掉、避免重复调用时堆监听器。不挂 SIGTERM/SIGHUP：装处理器会阻止默认终止、得自己补 re-exit，为这点收益不值得。
+- **三个文件补跑 prettier**（`session/processor.ts`、`cli/project-selector.ts`、`webqa-server/index.js`）：均未过 `prettier --check`。其中 `processor.ts` 最明显——新加的 `updateToolCall` 与 `adoptOrphanToolCall` **顶格书写**，而同级的 `readToolCall` 缩进 6 空格；JS 缩进不影响作用域，所以类型照过、行为无异，但读起来像掉出了闭包。
 
 ### [0.9.6] - 2026-08-24
 

@@ -46,6 +46,36 @@ function truncate(str: string, max: number): string {
   return "…" + str.slice(-(max - 1))
 }
 
+/** 列表视口占掉的固定行数（见 listViewport 的注释）。 */
+export const FRAME_ROWS = 9
+
+/**
+ * 算出列表能显示几项、从第几项开始。抽成纯函数是为了能单测——
+ * 这段算术此前内联在 render() 里，而 render() 需要真终端才能跑。
+ *
+ * 260825 Red 帧本身要占 7 个固定行（列表上方的 空行/标题/空行/过滤器/空行，
+ * 下方的 空行/页脚）加一行选中路径，再留一行富余，好让内容结尾的 "\n" 把光标
+ * 停在视口内。帧只要溢出一行，终端就会滚动，buf[0] 离开第 1 行，点击映射
+ * （y - 1）就会静默偏移滚动的行数——全屏窗口从不溢出（所以点击一直是准的），
+ * 小窗口则偏得厉害。
+ *
+ * 260825 cc **下限保护**：原先是裸的 `height - FRAME_ROWS`，没有下限。终端只有
+ * 9 行时算出 0、8 行时算出 -1，两种情况下 `slice(offset, offset + maxVisible)`
+ * 都返回空数组——框架画得出来、**一个工作区都不显示**，而选择器是入口闸，
+ * 连「新建路径」那个哨兵项也在列表里、一起消失，用户直接卡死。不崩、不报错，
+ * 只是看着像没有工作区。至少留 1 行：宁可让帧溢出（点击映射偏一点、方向键仍
+ * 可用），也不能让列表整个消失。
+ */
+export function listViewport(input: { total: number; selected: number; height: number }): {
+  maxVisible: number
+  scrollOffset: number
+} {
+  const room = Math.max(1, input.height - FRAME_ROWS)
+  const maxVisible = Math.min(input.total, room)
+  const scrollOffset = Math.max(0, Math.min(input.selected - Math.floor(maxVisible / 2), input.total - maxVisible))
+  return { maxVisible, scrollOffset }
+}
+
 /**
  * Show an interactive project selector at startup.
  * Returns the selected worktree path, or `undefined` if cancelled / no projects.
@@ -98,9 +128,27 @@ export async function selectProjectInteractive(): Promise<string | undefined> {
   let pathInputMode = false
   let pathBuffer = ""
   let pathError = ""
+  // 260825 cc 异常退出兜底。cleanup 只在显式路径上跑（Enter/Esc/点击确认，以及按键
+  // 处理里接住的 Ctrl+C —— raw mode 下它不会变成 SIGINT，而是当作普通按键送进来，
+  // 所以那条路径是安全的）。
+  // 但硬崩溃、外部 kill、终端被直接关掉时 cleanup 不会执行，SGR 鼠标追踪就留在了用户
+  // 终端里：之后每次点击都往 shell 里喷 \x1b[<0;12;5M。
+  // 这里只做最小复位（关鼠标追踪 + 恢复光标），刻意不碰 raw mode 和那段依赖
+  // renderedLines 的光标回退——退出路径上重排屏幕比留点脏字节更危险。
+  // 只挂 "exit"：它覆盖正常退出、process.exit() 与未捕获异常退出。不挂 SIGTERM/SIGHUP，
+  // 因为装上处理器会阻止默认终止行为，得自己补 re-exit，为这点收益不值得担那个风险。
+  const restoreTerminal = () => {
+    if (cleanupDone) return
+    try {
+      stdout.write("\x1b[?1000l\x1b[?1006l\x1b[?25h")
+    } catch {}
+  }
+  process.once("exit", restoreTerminal)
+
   const cleanup = () => {
     if (cleanupDone) return
     cleanupDone = true
+    process.off("exit", restoreTerminal)
     stdin.removeAllListeners("data")
     stdout.write("\x1b[?1000l\x1b[?1006l")
     stdout.write("\x1b[?25h")
@@ -129,15 +177,9 @@ export async function selectProjectInteractive(): Promise<string | undefined> {
     if (selected < 0) selected = 0
 
     const height = stdout.rows ?? 24
-    // 260825 Red the frame costs 7 fixed rows (blank/title/blank/filter/blank
-    // above the list, blank/footer below) plus one selected-path row; keep one
-    // more row spare so content's trailing "\n" parks the cursor inside the
-    // viewport. If the frame overflows even one line the terminal scrolls,
-    // buf[0] leaves row 1, and the click mapping (y - 1) silently shifts by
-    // the scroll amount — full-screen windows never overflowed (which is why
-    // clicks were accurate there) while small windows drifted badly.
-    const maxVisible = Math.min(filtered.length, height - 9)
-    scrollOffset = Math.max(0, Math.min(selected - Math.floor(maxVisible / 2), filtered.length - maxVisible))
+    const viewport = listViewport({ total: filtered.length, selected, height })
+    const maxVisible = viewport.maxVisible
+    scrollOffset = viewport.scrollOffset
 
     const buf: string[] = []
 
@@ -187,7 +229,11 @@ export async function selectProjectInteractive(): Promise<string | undefined> {
 
       // Footer
       buf.push("")
-      buf.push(TEXT_DIM + "  ↑↓/wheel navigate · type filter · click select · click again / Enter open · Esc cancel" + TEXT_NORMAL)
+      buf.push(
+        TEXT_DIM +
+          "  ↑↓/wheel navigate · type filter · click select · click again / Enter open · Esc cancel" +
+          TEXT_NORMAL,
+      )
     }
 
     // buf.join has no trailing separator, unlike the old `content +=`
@@ -336,11 +382,11 @@ export async function selectProjectInteractive(): Promise<string | undefined> {
 
       // === List navigation mode ===
 
-     // Enter
-     if (key === "\r" || key === "\n") {
-       confirmSelected()
-       return
-     }
+      // Enter
+      if (key === "\r" || key === "\n") {
+        confirmSelected()
+        return
+      }
 
       // Escape / Ctrl+C
       if (key === "\x1b" || key === "\u0003") {
