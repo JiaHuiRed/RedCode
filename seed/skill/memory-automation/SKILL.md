@@ -1,94 +1,109 @@
 ---
 name: memory-automation
-description: 自动化记忆系统——SessionStart 自动注入上下文、PreCompact 保存状态、Stop 时提取教训。减少手动读写 MEMORY.md 的开销。
+description: 两层记忆系统——项目记忆记进度与本项目教训，全局记忆收跨项目通用教训。两者都由引擎自动注入 system prompt，无需主动读取；本 skill 只规定何时写、写什么、什么该提拔。
 ---
 
-# Memory Automation
+# 记忆系统
 
-自动化记忆环：**启动注入 → 工作 → 压缩保存 → 结束提取**。
+**两层，都自动注入。**
 
-## 启动时（SessionStart）
+| 层 | 文件 | 写什么 | 不写什么 |
+|---|---|---|---|
+| **项目记忆** | `<项目根>/.redcode/MEMORY.md` | 工作进度、本项目特有的坑与决策、关键路径 | 通用教训、流水账 |
+| **全局记忆** | `~/.redcode/MEMORY.md` | 跨项目、跨会话都成立的通用教训 | 任何项目细节 |
 
-自动做三件事，不做第四件：
+> **260812 索引化（写侧规则）**：上面两个文件的正文都是**索引行**（编号+主题+关键词），**完整教训全文写入本地库 `~/.redcode/supermemory.db`**（memories 表，project=global 或项目名，FTS5 trigram 全文）。**写记忆 = 双写**：MEMORY.md 加索引行 + db 存全文，两者必须成对，缺一不可。
 
-1. **先读会话索引**：读 `~/.redcode/memory/INDEX.md`（每 session 一条 50–100 token 摘要），摘出相关教训；只有需要某天细节时，再读对应 `YYMMDD.md` 全量日志
-2. **长期库按需召回**：不再整体读 `~/.redcode/MEMORY.md`（已撤出 instructions 注入），改用 `/recall <关键词>` 按需召回历史教训；工作铁律由 `AGENTS.md` 的 CORE 块每轮注入兜底
-3. **注入上下文**：把摘出来的教训放在对话顶部，格式：
-   ```
-   [MEMORY] YYMMDD: 关键教训摘要
-   [MEMORY] YYMMDD: ...
-   ```
-4. **不做的事**：不把整个日志文件或 MEMORY.md dump 进去，只摘警告和教训
+> **260825 注入面纪律**：MEMORY.md 每轮整份注入，只放**触发器**——4-8 字主题 + 关键动作词，长句一律砍进库。按寿命分类挂载：教训/决策双写；状态（进度）只记最近四天、历史查 commit；待办一行一条；参考文档（借鉴清单等）不进 MEMORY.md，放项目 `.redcode/` 文档并留一句指针。判断与执行靠模型自身，索引行是"提醒该想一下"，不是教材。
 
-## 工作中
+## 最重要的一条认知：不需要去"读"记忆
 
-### 硬触发器（必须记，不等收工）
+这两份文件由 `session/instruction.ts` 在会话第一轮读盘，**索引行整份拼进 system prompt**（全局在前、项目在后）。开局它们就已经在上下文里了。
 
-以下情况**必须立刻**写一句到 `~/.redcode/memory/YYMMDD.md`，不能跳过：
+所以：**不要花工具调用去 read 它们**，那是重复消耗。你要做的只有"写"。索引行只有主题没有细节，全文的获取顺序（260813 实证后修订）：
 
-1. **被批评** → 记下批评内容和原因
-2. **被夸奖** → 记下夸奖的原因
-3. **犯错被纠正** → 记下错误和正确做法
-4. **用户透露个人信息** → 新偏好、项目变化、习惯等
-5. **项目决策** → 用户明确说了"用 X 不用 Y"这类
+1. **memory-recall 插件会按你的消息自动检索注入**——命中时全文已经在最新 user 消息尾部的 `<system-reminder>…本地历史记忆库…</system-reminder>` 块里，先看有没有，有就直接用
+2. 没命中就 **sqlite 原生工具查库**：`sqlite_query`，db=`~/.redcode/supermemory.db`，例 `SELECT content FROM memories WHERE content LIKE '%杀伤半径%'`（FTS 走 `memories_fts MATCH`，短词优先 LIKE）
 
-### 软建议（看情况记）
+别凭索引行猜细节。
 
-- 连续失败 2 次 → 停手问用户
-- 改了敏感区（version、config、schema）→ 停下等确认
+## 什么时候写
 
-## 压缩前（PreCompact）
+### 硬触发（立刻写项目记忆，不等收尾）
 
-Context 被压缩前，保存当前状态到 `~/.redcode/memory/.session-last.json`：
+1. **被批评 / 犯错被纠正** → 记错在哪、正确做法是什么
+2. **项目决策** → 用户明确定了"用 X 不用 Y"
+3. **踩了本项目特有的坑** → 现象 + 根因 + 绕法
 
-```json
-{
-  "task": "当前任务",
-  "progress": "做了啥",
-  "remaining": "还差啥",
-  "decisions": ["关键决策1", "关键决策2"],
-  "files_modified": ["path1", "path2"],
-  "errors": ["待处理的错误"]
-}
+一句话就够。目的是下次新会话开局就知道这里踩过什么。
+
+**写入姿势（双写）**：① MEMORY.md 加索引行——编号（新教训=最大号+1）+ 4-8 字主题 + 关键动作词，放对应分区；② supermemory.db 存全文——用 `sqlite_query` 执行 `INSERT INTO memories (content, project, source) VALUES (全文, 'global'|项目名, 'manual')`（写操作会弹一次权限确认，正常）。
+
+**content 首行格式**（召回展示与索引核对都靠它）：
+- 全局条目：`#NN 标题（YYMMDD）`——编号与索引行严格一致，核对脚本按 `content LIKE '#NN %'` 找全文
+- 项目条目：`[项目名·踩坑|决策|技法] 标题（YYMMDD）`——项目条目不编号，靠标签分类
+
+### 收尾时（每次交付告一段落）
+
+**必须双写当前项目**：`.redcode/MEMORY.md` 索引行 + supermemory.db 全文 —— 这是下一个新会话唯一能接上进度的桥梁。
+
+索引行控制在 30 行以内，只留跨会话还需要知道的：
+
+- **当前进度**：上次做到哪、下一步是什么——**只记最近四天**，更早查 git commit 或 MEMORY-archive.md（有版本管理的项目不靠记忆记进度）
+- **架构决策**：选型与定案，附一句为什么
+- **踩坑记录**：本项目特有的坑
+- **关键路径**：常改的文件、入口、构建/测试命令
+
+**更新时先审视，不只新增**（260803 哥哥指示）：看当前项目记忆区有没有过时内容——经验教训和决策记录一直保留；但**久远且已完成的进度段落**（"上次做到哪"早被更新的段落取代）要删掉。只增不删会让文件无限膨胀、前缀变长，既拖慢每轮注入又影响缓存命中。
+
+然后判断有没有值得**提拔到全局**的。每条过三道门禁：
+
+1. 换个项目仍然成立？
+2. 忘了会再踩，而且修复成本高？
+3. `AGENTS.md` 或某个 skill 没有覆盖？
+
+三个 YES 才提拔。任一 NO → 留在项目记忆，不提拔。
+
+**全局记忆是每轮都要付 token 的固定成本**，写进去之前先想清楚它值不值这个价。提拔时顺手复审全库，删掉过时或已经内化进 AGENTS.md 的条目。
+
+复审发现分区散乱、编号跳号、条目啰嗦时，用 `consolidate-memory` skill 跑一次整理——那份文档规定了归类分区、压缩取舍（留命令/报错串/阈值，砍心路历程）与"条目数前后必须相等"的验证法。**整理删除任何索引行/段落前，先确认全文已在 supermemory.db（没有就先 INSERT 归档），再删——索引化后删索引行 = 删除唯一入口，db 里没全文就真丢了**。
+
+## 归档：`~/.redcode/memory/`
+
+`YYMMDD.md` 每日日志、`INDEX.md` 会话索引 —— **已退役，只作归档，不再写入**。
+
+退役原因（2026-07-29 实测）：它们不注入，要模型主动去读，而近 14 天 113 个会话里开局读过 `INDEX.md` 的只有 **1 个（0.9%）**；同期唯一的自动写入者是个低精度正则分类器（把"还有什么**可以**优化的"记成"被表扬"）。三层里这一层既没人读也写不准，且内容与项目记忆高度重复，形同流水账。
+
+历史内容有价值，保留可查；需要按关键词翻旧账：查库（`sqlite_query`）或 grep `~/.redcode/memory/lessons-backup.<机器名>.md`（库的可读快照，**入库推送**——全文的版本化与跨机可见靠它）；`/recall` 命令仍可用（默认搜全局记忆，`REDCODE_MEMORY` 环境变量可指向归档文件）。
+
+## 追加内容的正确姿势（关键 —— 没有 append 工具）
+
+`write` 工具会**覆盖整个文件**，没有追加模式。往已存在的记忆文件加内容：
+
+1. 先 `read` 拿到完整内容
+2. 用 `edit` 定位最后一行，替换成「那一行 + 你要追加的内容」
+
+例：
+- `read <项目>/.redcode/MEMORY.md` → 看到最后一行是 `- 教训：xxx`
+- `edit` old_string=`- 教训：xxx` new_string=`- 教训：xxx\n\n### 新增\n- 新教训`
+
+对已存在的文件**绝不用 `write`**，会丢内容。
+**绝不用 bash `echo >>`** —— Windows 上中文会变 GBK 乱码（`redline-guard` 插件会直接拦下来）。
+
+## 提交全局记忆
+
+改了 `~/.redcode/MEMORY.md` 之后：
+
+```bash
+cd ~/.redcode && git pull --rebase
 ```
 
-## 收工/结束时（Stop）
+先 pull 再改，避免覆盖别处刚写的。提交时**只 add 你改过的文件，不要 `add -A`**。push 被拒就 `pull --rebase` 后重推，不 force push。
 
-**0. 先同步再动手**：`cd ~/.redcode && git pull --rebase` 拿最新记忆（别的会话/另一台机器可能刚推过），基于最新版再编辑，避免覆盖别人刚写的。
-
-1. 从 `~/.redcode/memory/` 当天日志摘**关键且需长期警惕**的教训
-2. 去重合入 `~/.redcode/MEMORY.md`
-3. 给 `~/.redcode/memory/INDEX.md` 追加本 session 一条 50–100 token 摘要（[Session]/[Lesson]/[Decision]/[Note] 分类）
-4. 删当日日志里已移到长期库的条目
-5. 复审长期库，删过时/已内化条目
-6. **推送私仓**：先 `git status` 核验，**只精确 add 记忆文件**：`cd ~/.redcode && git add MEMORY.md memory/ && git commit -m "..." && git push`，确保今天沉淀的记忆入库。做完这步才算真正收工。**绝不用 `git add -A`/`git add .`——共享工作树里 git 不分谁改的，`-A` 会把别的会话（CC/敏敏/小宋）未提交的改动一起吞进你的 commit。其他文件（souls/skill/redcode.jsonc 等）由改动它们的场景各自精确提交。只在记忆文件确认无误后推送，不中途推送。push 若被远端拒绝（远端有新提交），`git pull --rebase` 合并后重推，绝不 force push。**
-
-## 记忆结构
-
-```
-~/.redcode/memory/
-├── INDEX.md            # 会话摘要索引（每 session 一条，SessionStart 优先读，省 token）
-├── YYMMDD.md          # 当天日志
-├── .session-last.json  # 最后压缩时的状态（自动维护，不手动改）
-~/.redcode/MEMORY.md   # 长期库（收工/Stop 时更新，按需 /recall 召回，不再整体注入）
-```
-
-## How to append (CRITICAL — no append tool exists)
-
-The `write` tool OVERWRITES the entire file. There is NO append mode. To add content to an existing memory file:
-
-1. `read` the file first to get its full content
-2. Use `edit` to find the LAST line of existing content and replace it with: that last line + your new content appended below
-
-Example — appending a lesson to `260613.md`:
-- `read ~/.redcode/memory/260613.md` → see last line is e.g. `- 教训：xxx`
-- `edit` old_string=`- 教训：xxx` new_string=`- 教训：xxx\n\n### 新增内容\n- 新教训`
-
-NEVER use `write` to create content for a file that already exists — you WILL lose existing content.
-NEVER use bash `echo >>` — Chinese text WILL be garbled on Windows (GBK encoding).
+项目记忆跟着项目自己的仓库走，不进 `~/.redcode`。
 
 ## 边界
 
-- 只在启动/压缩/收工时操作记忆文件，不占用正常工具调用
-- 日志文件只追加不重写（用上面的 read+edit 方法，不用 write 覆盖）
-- session-last.json 只保留最后一次压缩状态，不做历史版本
+- 只在硬触发和收尾时写记忆，不占用正常工作的工具调用
+- 项目记忆是**给下一个会话看的**，不是给自己看的：会话内改了它，本会话的 system prompt 已经缓存，不会重新加载（这是刻意设计，为保前缀缓存稳定）
+- 两份记忆语义正交，同一条内容不要两边都写
