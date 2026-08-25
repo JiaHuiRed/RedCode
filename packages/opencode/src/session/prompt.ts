@@ -1484,6 +1484,16 @@ export const layer = Layer.effect(
           // flash 系列实战反馈「过于自信、思考浅」——直接动手、跳过探索。三锚分别治：
           // ① deep-then-converge：纯 deep 指令是陷阱（思考到预算烧穿 0% 行动），必须配
           //    "then commit and act" 绑定句 + 决策闭环收尾（P10 实测推理深度翻倍且 100% 收敛）
+          // 260825 cc ① 改为复杂度分派（dsh-routing-suite P30 + 其 v19 改动）：
+          //    原文「Think deeply first」是**无条件**施加的，而上游实战反馈是「硬收敛锚催停了
+          //    复杂任务的探索」，其 v19 因此改为简单任务快速收敛（1 步零浪费）、复杂任务才给
+          //    深度引导。**决策闭环那半句原样保留**——P30 单独量化过它：复杂任务上深度 +12%
+          //    且收敛更快（8.0 vs 8.3 步），是"深度有产出、不空转"，属于被实测认可的部分，
+          //    动它才是退步。另：P27 修正了早先一个误判——Pro 档的「67% 完成率」是 8 步上限
+          //    造成的假象，16 步下天然 100%，「Pro 的慢是深度思考的代价不是缺陷」；本块按
+          //    model.id 含 flash 分档、Pro 不受影响，别顺手给 Pro 也加收敛压力。
+          //    还有一条上游评估后否掉的：预算锚（"最多 N 次工具调用"）实测能到 100%，但
+          //    "值是任务相关的"，不适合进 persona——我们同样不做。
           // ② 回顾锚：行动前回顾已完成步骤，防重复劳动（P22/P23：开放任务完成率 0%→100%）
           // ③ 反跑题锚：禁环境检查/穷举扫描空转（P19/P20：胡思乱想率压到 0.0-0.3%）
           // 260822 cc 去重：③ 原有后半句 "Read the specific file, then act" 与 WORK RULES #1
@@ -1497,7 +1507,7 @@ export const layer = Layer.effect(
           if (!noAnchors && model.id.toLowerCase().includes("flash") && !model.id.toLowerCase().includes("step")) {
             system.push(
               `▸ REASONING DISCIPLINE (flash 系列):
-  1. Think deeply first, then commit and act. Each reasoning block ends with a decision or an information need — no open-ended rumination.
+  1. Match reasoning depth to the task. A simple, well-specified task converges in one pass — do not manufacture deliberation for it. A complex or ambiguous one earns real depth before you commit. Either way each reasoning block ends with a decision or an information need — no open-ended rumination.
   2. Before acting, briefly review what you have already done in this session and continue from where you left off; do not repeat completed steps.
   3. Do not run environment checks (echo, whoami, uname, node --version, date, pwd) or exhaustive grep/glob scans.`,
             )
