@@ -457,6 +457,8 @@ export const dict = {
   "notification.session.responseReady.title": "応答の準備ができました",
   "notification.session.error.title": "セッションエラー",
   "notification.session.error.fallbackDescription": "エラーが発生しました",
+  "notification.session.backgroundComplete.title": "バックグラウンドタスク完了",
+  "notification.session.backgroundFailed.title": "バックグラウンドタスク失敗",
   "home.recentProjects": "最近のプロジェクト",
   "home.empty.title": "最近のプロジェクトはありません",
   "home.empty.description": "ローカルプロジェクトを開いて始めましょう",

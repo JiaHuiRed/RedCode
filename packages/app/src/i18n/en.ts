@@ -555,6 +555,8 @@ export const dict = {
   "notification.session.responseReady.title": "Response ready",
   "notification.session.error.title": "Session error",
   "notification.session.error.fallbackDescription": "An error occurred",
+  "notification.session.backgroundComplete.title": "Background task complete",
+  "notification.session.backgroundFailed.title": "Background task failed",
 
   "home.recentProjects": "Recent projects",
   "home.empty.title": "No recent projects",

@@ -527,6 +527,8 @@ export const dict = {
   "notification.session.responseReady.title": "回复已就绪",
   "notification.session.error.title": "会话错误",
   "notification.session.error.fallbackDescription": "发生错误",
+  "notification.session.backgroundComplete.title": "后台任务完成",
+  "notification.session.backgroundFailed.title": "后台任务失败",
 
   "home.recentProjects": "最近项目",
   "home.empty.title": "没有最近项目",

@@ -287,6 +287,25 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
 
     const unsub = globalSDK.event.listen((e) => {
       const event = e.details
+      // 260826 Red ④ 后台任务完成通知（GUI 版 TuiEvent.ToastShow）：
+      // task 工具 background 完成时往父会话注入合成消息（task.ts backgroundMessage），
+      // 标题固定以 "Background task " 开头——识别后弹桌面通知，不打扰主线程对话。
+      if (event.type === "message.updated") {
+        const info = (event.properties as { info?: { role?: string; parts?: Array<{ type?: string; text?: string }> } }).info
+        const text = info?.parts?.find((p) => p.type === "text" && p.text?.startsWith("Background task "))?.text
+        if (info?.role === "user" && text) {
+          const ok = !text.startsWith("Background task failed")
+          const description = text.split("\n")[0] ?? ""
+          if (settings.notifications.agent()) {
+            void platform.notify(
+              ok ? language.t("notification.session.backgroundComplete.title") : language.t("notification.session.backgroundFailed.title"),
+              description,
+              `/${e.name}`,
+            )
+          }
+          return
+        }
+      }
       if (event.type !== "session.idle" && event.type !== "session.error") return
 
       const directory = e.name
