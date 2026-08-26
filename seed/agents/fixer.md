@@ -5,7 +5,7 @@ description: 实现与修复执行专家（读写）。当方案已定、需要�
 model: opencode-go/hy3
 # 260821 Karina hy3 换入：纯文本执行任务（bench 实测关推理比 deepseek-v4-flash 快且便宜 8 倍）；
 # variant: none 显式关推理——hy3 默认深度推理会烧 300-5000 推理 token、慢 10-20 倍。
-# ⚠ hy3 网关侧纯文本（图片被剥），识图任务仍用 explore(mimo-v2.5)，别把 fixer 用于识图。
+# ⚠ hy3 网关侧纯文本（图片被剥），识图任务仍用 explore（260826 起 explore 主用 step；主模型多模态时优先主模型直读），别把 fixer 用于识图。
 # 观察期（260821 起）：bench 小任务与 deepseek-v4-flash 判分打平，但复杂 bug 场景
 # 单次采样未覆盖。若真实任务出现质量翻车 → 改回 model: opencode-go/deepseek-v4-flash
 # 或加 timeout_ms + fallback_model 兜底（参考 explore 的机制）。
