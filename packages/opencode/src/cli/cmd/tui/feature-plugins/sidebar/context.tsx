@@ -112,6 +112,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         reasoning: 0,
         cacheRead: 0,
         cacheWrite: 0,
+        cacheMiss: 0,
         cacheHit: null,
         percent: null,
         context: null as number | null,
@@ -164,8 +165,8 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     return {
       tokens,
       input: last.tokens.input,
-      output: last.tokens.output,
-      reasoning: last.tokens.reasoning,
+      output: sessionTotalOutput,
+      reasoning: sessionTotalReasoning,
       cacheRead: sumRead,
       cacheMiss: sumMiss,
       cacheWrite: sumWrite,
@@ -273,24 +274,22 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         </text>
       </Show>
       <text fg={theme()?.textMuted}>
-        in <span style={{ fg: tokenColor.input }}>{state().input.toLocaleString()}</span> · out{" "}
-        <span style={{ fg: tokenColor.output }}>{state().output.toLocaleString()}</span>
+        out <span style={{ fg: tokenColor.output }}>{state().output.toLocaleString()}</span>
       </text>
       <Show when={state().reasoning > 0}>
         <text fg={theme()?.textMuted}>
           reason <span style={{ fg: tokenColor.reasoning }}>{state().reasoning.toLocaleString()}</span>
         </text>
       </Show>
-      <Show when={state().cacheRead > 0 || state().cacheWrite > 0}>
+      <Show when={state().cacheRead > 0 || state().cacheMiss > 0 || state().cacheWrite > 0}>
+        {/* 260826 Red 隐藏 in 行：DeepSeek 输入=命中+未命中恒等，in(末轮 input≈cache.miss) 恒 0 纯误导——
+            未命中总量 = cache.write + cache.miss（互斥双桶，read+miss+write 含全部输入），
+            直接显示 hit/miss 与 GUI 上下文面板、usage-dashboard v0.1.2 同语义 */}
         <text fg={theme()?.textMuted}>
-          cache{" "}
-          <Show
-            when={state().cacheWrite > 0}
-            fallback={<span style={{ fg: tokenColor.cacheRead }}>{state().cacheRead.toLocaleString()}</span>}
-          >
-            <span style={{ fg: tokenColor.cacheRead }}>{state().cacheRead.toLocaleString()}</span> /{" "}
-            <span style={{ fg: tokenColor.cacheWrite }}>{state().cacheWrite.toLocaleString()}</span>
-          </Show>
+          hit <span style={{ fg: tokenColor.cacheRead }}>{state().cacheRead.toLocaleString()}</span> / miss{" "}
+          <span style={{ fg: tokenColor.cacheWrite }}>
+            {(state().cacheWrite + (state().cacheMiss ?? 0)).toLocaleString()}
+          </span>
         </text>
       </Show>
       <text fg={theme()?.textMuted}>
