@@ -64,6 +64,12 @@ import { Snippet } from "@/session/snippet"
 
 const log = Log.create({ service: "tool.registry" })
 
+// 260826 Red 内建低频工具按需注册：这些工具全量历史近乎零调用（repo_clone/lsp/repo_overview/
+// external-directory 0 次、ast_grep 4 次），默认从模型工具表剔除——省固定前缀 schema token，
+// 也避免低频工具诱导模型走弯路（如让 lsp 干 typegraph 的活）。需要时显式开：
+// provider.<id>.models.<id>.tools.<id> = true（与 tools() 的 explicit 分支兼容）。
+const GATED_TOOLS = new Set(["repo_clone", "lsp", "repo_overview", "ast_grep", "external-directory"])
+
 export function webSearchEnabled(providerID: ProviderID, flags = { exa: false, parallel: false }) {
   return providerID === ProviderID.redcode || flags.exa || flags.parallel
 }
@@ -391,6 +397,8 @@ export const layer = Layer.effect(
 
         const explicit = modelTools?.[tool.id]
         if (explicit !== undefined) return explicit
+
+        if (GATED_TOOLS.has(tool.id)) return false
 
         if (tool.id === WebSearchTool.id) {
           return webSearchEnabled(input.providerID, { exa: flags.enableExa, parallel: flags.enableParallel })
