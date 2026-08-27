@@ -1364,7 +1364,16 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
       thinking: { thinking: { type: "adaptive" } },
     }
   }
-  const adaptiveEfforts = anthropicAdaptiveEfforts(model.api.id)
+
+  // 260827 cc claude 经 openai-compatible 中转接入时不给推理档位。Anthropic 的 API 里
+  // 根本没有 reasoning_effort 这个维度——原生是 thinking.budget_tokens，只有 anthropic /
+  // bedrock 那几条分支发得出去；中转站也不会凭空造一个，本机 justwoker 的目录就是把思考
+  // 做成独立模型 id（claude-opus-5 与 claude-opus-5-thinking 两张卡、两个价），选不选思考
+  // 靠换模型而不是传参。不特判的话这里会一路落到 openaiCompatVariants 末尾的兜底
+  // effortVariants(WIDELY_SUPPORTED_EFFORTS)，页脚摆出 low/medium/high 三个上游根本不认的
+  // 档位——正是 deepseek medium 那段注释说的"骗人"：选了不报错，只是什么都没发生。
+  // 判据用模型不用 provider 名，同 GLM/Doubao 的教训（挂在聚合供应商下也要成立）。
+  if (model.api.npm === "@ai-sdk/openai-compatible" && model.api.id.toLowerCase().includes("claude")) return {}
 
   // 260729 Red GLM 从排除表移出：reasoning_effort 在 GLM-5.2 起是官方支持的（见 GLM_EFFORTS
   // 上方注释）。5.1 及以下仍然只有 thinking 二值开关，没有"想多深"这个维度，继续不给变体。

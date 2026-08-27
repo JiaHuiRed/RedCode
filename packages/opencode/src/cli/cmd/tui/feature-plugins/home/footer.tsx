@@ -15,7 +15,7 @@ const id = "internal:home-footer"
 // 实测漏的就是 `stepfun-step-plan`：它的 cost 本来就是人民币（0.8.1 刚补的定价），
 // 却因为不在这个集合里被当美元又乘了一次 6.76，¥7.50 显示成 ¥50.73。
 // provider.ts:1267 落定价时已经写了 `currency: "CNY"`，直接读它就不会再漏。
-const USD_TO_CNY = 6.75 // 260731 Karina 汇率 6.76 → 6.75（哥哥给定）
+const USD_TO_CNY = 6.72 // 260731 Karina 6.76 → 6.75；260827 cc 6.75 → 6.72（均哥哥给定）
 const money = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" })
 
 function Directory(props: { api: TuiPluginApi }) {

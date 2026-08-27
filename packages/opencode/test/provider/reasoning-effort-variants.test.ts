@@ -221,3 +221,22 @@ describe("reasoning_options 数据驱动档位", () => {
     expect(Object.keys(v)).toEqual(["high", "none"])
   })
 })
+
+// 260827 cc claude 经 openai-compatible 中转接入：Anthropic 没有 reasoning_effort 这个维度，
+// 中转站把思考做成独立模型 id（本机 justwoker 的目录是 claude-opus-5 / claude-opus-5-thinking
+// 两张卡、两个价），所以这条路径一个档位都不该给——否则页脚摆的是上游不认的 low/medium/high。
+describe("claude 走 openai-compatible 中转", () => {
+  test("不给任何档位（含 -thinking 变体）", () => {
+    for (const id of ["claude-opus-5", "claude-opus-5-thinking", "claude-opus-4-8", "claude-sonnet-4-6"]) {
+      expect(variantsOf(id)).toEqual([])
+    }
+  })
+
+  test("走原生 anthropic npm 时不受这条影响，档位照给", () => {
+    expect(variantsOf("claude-opus-4-7", "@ai-sdk/anthropic")).toEqual(["low", "medium", "high", "xhigh", "max"])
+  })
+
+  test("不误伤同一 npm 下的其他家族", () => {
+    expect(variantsOf("glm-5.2")).toEqual(["none", "high", "max"])
+  })
+})

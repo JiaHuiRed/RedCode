@@ -8,7 +8,8 @@ const id = "internal:sidebar-context"
 // 260615 Red: DeepSeek/Xiaomi/StepFun costs are already in CNY (official pricing), only USD providers need conversion
 // 260731 Karina 名单补齐 stepfun-step-plan/zhipuai/openox（provider.ts CNY_PRICING 的 provider 全集），
 // 汇率 6.76 → 6.75（哥哥给定）。此名单与 CNY_PRICING 同步维护，加 provider 必漏。
-const USD_TO_CNY = 6.75
+// 260827 cc 汇率 6.75 → 6.72（哥哥给定）。
+const USD_TO_CNY = 6.72
 const CNY_PROVIDERS = new Set([
   "deepseek",
   "xiaomi",
