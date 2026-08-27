@@ -1,5 +1,4 @@
 import path from "path"
-import { pathToFileURL } from "url"
 import { Effect, Layer, Context, Schema } from "effect"
 import { NamedError } from "@redcode-ai/core/util/error"
 import type { Agent } from "@/agent/agent"
@@ -221,9 +220,28 @@ const discoverSkills = Effect.fnUntraced(function* (
     }
   }
 
+  // 260827 cc 剔除嵌套 skill：`**/SKILL.md` 深度不设限，skill 自带的样例目录会被当成顶层技能
+  // 注册（实例：nuwa-skill/examples/ 的 15 个样例，白占 ~2.6k token/请求）。
+  // 判据与 glob 写法无关：SKILL.md 落在另一个 SKILL.md 的目录之下，就是附属资源。
+  const all = Array.from(state.matches)
+  const skillDirs = new Set(all.map((match) => path.dirname(match)))
+  const isNested = (match: string) => {
+    let dir = path.dirname(path.dirname(match))
+    for (;;) {
+      if (skillDirs.has(dir)) return true
+      const parent = path.dirname(dir)
+      if (parent === dir) return false
+      dir = parent
+    }
+  }
+  const matches = all.filter((match) => !isNested(match))
+  if (matches.length !== all.length)
+    log.info("skipped nested skills", { count: all.length - matches.length })
+
+  const nestedDirs = new Set(all.filter(isNested).map((match) => path.dirname(match)))
   return {
-    matches: Array.from(state.matches),
-    dirs: Array.from(state.dirs),
+    matches,
+    dirs: Array.from(state.dirs).filter((dir) => !nestedDirs.has(dir)),
   }
 })
 
@@ -339,7 +357,7 @@ export const defaultLayer = layer.pipe(
   Layer.provide(RuntimeFlags.defaultLayer),
 )
 
-export function fmt(list: Info[], opts: { verbose: boolean }) {
+export function fmt(list: Info[], opts: { verbose: boolean; namesOnly?: boolean }) {
   const described = list.filter((skill) => skill.description !== undefined)
   if (described.length === 0) return "No skills are currently available."
   if (opts.verbose) {
@@ -350,11 +368,22 @@ export function fmt(list: Info[], opts: { verbose: boolean }) {
         .flatMap((skill) => [
           "  <skill>",
           `    <name>${skill.name}</name>`,
+          // 260827 cc 不发 <location>：模型按 name 调用，加载后工具输出会再给一次 base directory，
+          // 这行每条约 27 token 没人读。
           `    <description>${skill.description}</description>`,
-          `    <location>${pathToFileURL(skill.location).href}</location>`,
           "  </skill>",
         ]),
       "</available_skills>",
+    ].join("\n")
+  }
+
+  // 260827 cc 工具描述只列名字：完整描述已在上面的 <available_skills> 里发过一遍，
+  // 重复一份是每请求都付的开销（实测 4,849 token，其中目录占 ~4,600）。
+  // 路由决策看系统提示词那份，工具这里够拼出合法 name 即可。
+  if (opts.namesOnly) {
+    return [
+      "## Available Skills",
+      ...described.toSorted((a, b) => a.name.localeCompare(b.name)).map((skill) => `- ${skill.name}`),
     ].join("\n")
   }
 

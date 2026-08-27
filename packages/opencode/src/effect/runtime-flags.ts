@@ -40,6 +40,10 @@ export class Service extends ConfigService.Service<Service>()("@redcode/RuntimeF
   }).pipe(Config.map((flags) => flags.enabled || flags.legacy)),
   enableExperimentalModels: bool("REDCODE_ENABLE_EXPERIMENTAL_MODELS"),
   enableQuestionTool: bool("REDCODE_ENABLE_QUESTION_TOOL"),
+  // 260827 cc 默认关闭：goal 表 0 行、goal_set/done/clear 90 天零调用，三个定义却每请求付 214 token。
+  // 引擎侧的目标注入（prompt.ts / goal-continuation.ts）只在有 active goal 时才发，功能从没被启用过。
+  // 设 REDCODE_ENABLE_GOAL_TOOLS=true 可恢复。
+  enableGoalTools: bool("REDCODE_ENABLE_GOAL_TOOLS"),
   experimentalScout: enabledByExperimental("REDCODE_EXPERIMENTAL_SCOUT"),
   // 260717 Red 默认开启：非后台模式下派发子代理会一直占着 session busy 直到子代理跑完，
   // 主界面全程没法交互，等于白设计了后台任务这条路。设 REDCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=false 可退回旧行为。

@@ -308,9 +308,7 @@ export const layer = Layer.effect(
             tool.fetch,
             tool.todo,
             tool.todoread,
-            tool.goal_set,
-            tool.goal_done,
-            tool.goal_clear,
+            ...(flags.enableGoalTools ? [tool.goal_set, tool.goal_done, tool.goal_clear] : []),
             tool.search,
             ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
             tool.skill,
@@ -341,16 +339,16 @@ export const layer = Layer.effect(
       return [
         "Load a specialized skill that provides domain-specific instructions and workflows.",
         "",
-        "When you recognize that a task matches one of the available skills listed below, use this tool to load the full skill instructions.",
+        "When you recognize that a task matches one of the available skills, use this tool to load the full skill instructions.",
         "",
         "The skill will inject detailed instructions, workflows, and access to bundled resources (scripts, references, templates) into the conversation context.",
         "",
         'Tool output includes a `<skill_content name="...">` block with the loaded content.',
         "",
-        "The following skills provide specialized sets of instructions for particular tasks",
-        "Invoke this tool to load a skill when a task matches one of the available skills listed below:",
+        "Each skill's full description is in the <available_skills> block of the system prompt — decide from there.",
+        "The names below are the valid values for the name parameter:",
         "",
-        Skill.fmt(list, { verbose: false }),
+        Skill.fmt(list, { verbose: false, namesOnly: true }),
       ].join("\n")
     })
 
