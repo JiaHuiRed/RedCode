@@ -2,7 +2,7 @@
   "name": "redcode",
   "displayName": "redcode",
   "description": "RedCode for VS Code",
-  "version": "0.9.7",
+  "version": "0.9.8",
   "publisher": "sst-dev",
   "repository": {
     "type": "git",

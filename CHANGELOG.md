@@ -8,7 +8,38 @@
 
 ---
 
-### [0.9.7] - 2026-08-28
+### [0.9.8] - 2026-08-27
+
+> 这一版的主线是**每请求都要付的固定开销**：固定前缀瘦身 ~9.5k token、重复 read 折叠未变区段、五个近乎零调用的内建工具默认下线。另清掉一条让单元测试每轮静默少跑一条的老毛病。
+
+#### 新增
+
+- **后台任务完成桌面通知**（`app/context/notification.tsx`、`tool/task.ts`）：GUI 此前对 subagent/background 零消费——后台任务跑完没有任何提示，而 TUI 早就有 `subagent.start/stop` 与 toast。task 工具在 background 完成/失败时注入的合成消息以 `Background task ` 开头（`backgroundMessage`），notification provider 监听 `message.updated` 认这个前缀并 `platform.notify`，词条三语，受 `settings.notifications.agent()` 开关控制。
+- **内建低频工具按需注册**（`tool/registry.ts`）：`repo_clone` / `lsp` / `repo_overview` / `external-directory` 全量历史 **0 次调用**，`ast_grep` 只有 4 次，却常驻每个请求的模型工具表——付的是 schema token，收的是负收益（模型会被诱导走弯路，例如拿 `lsp` 去干 typegraph-mcp 的活）。这五个进 `GATED_TOOLS` 默认过滤，需要时 `provider.<id>.models.<id>.tools.<id>=true` 显式恢复（复用既有 explicit 分支，优先级不变：deny > explicit > gated > 特判）。
+
+#### 优化
+
+- **固定前缀瘦身 ~9.5k token/请求**（`skill/index.ts`、`tool/registry.ts`、`effect/runtime-flags.ts`、`session/prompt/deepseek.md`）：拆一条真实请求体（287KB）量出固定前缀 **46,052 token**——system 提示词 21,209 + 内置工具 14,483 + MCP 工具 10,337，最肥的单项是 skill 工具定义 **4,990 token**，而 skill 工具七天只被调用 11 次。四处下刀：① skill 工具描述只列名字（`fmt` 加 `namesOnly`）——完整描述在系统提示词的 `<available_skills>` 里已经发过一遍，路由决策看的是那份，工具描述够拼出合法 name 即可，省 ~4,350；② 剔除嵌套 skill——`**/SKILL.md` 深度不设限，skill 自带的样例目录会被当成顶层技能注册（本机 `nuwa-skill/examples/` 下 15 个样例，比真装的 27 个描述加起来还长），判据与 glob 写法无关：`SKILL.md` 落在另一个 `SKILL.md` 的目录之下就是附属资源；③ `<available_skills>` 不再发 `<location>`——模型按 name 调用，加载后工具输出会再给一次 base directory，这行每条约 27 token 没人读，省 ~650；④ `goal_set/done/clear` 上 `enableGoalTools` 开关且默认关——goal 表 0 行、90 天零调用，三个定义却每请求付 214 token，引擎侧目标注入本就只在有 active goal 时才发，`REDCODE_ENABLE_GOAL_TOOLS=true` 可恢复。固定前缀 46,052 → 约 36,500。另有配置侧改动不在本仓（`~/.redcode/redcode.jsonc`：jcodemunch 白名单删 4 个 90 天零调用工具、mcp-process-mgmt 禁用 `pty_resize`）。同批把 `deepseek.md` 的批处理规则写实：79.9% 的 step 只带一个工具调用，而每多一步就把整个上下文重发一遍；同引擎下 step-3.7-flash 多工具率 32.5%、deepseek 只有 12~15%，是习惯问题不是被卡住。
+- **重复 read 同一文件时折叠未变区段**（`tool/read.ts`）：实测每周 **928 次**「同会话内重复 read 同一文件」，其中 902 次文件确实变了，每次把整份文件重新灌进上下文，这些副本此后每一步都要被重读一遍，放大约 **195M token/周**的缓存读。**不发 diff，发折叠**——hashline 补丁靠 `replace N..M` 定位，纯 diff 会让模型自己数行号，等于把刚修掉的标签失效换个形式请回来；折叠保留绝对行号，只把连续未变区段收成一行 `... (lines A-B unchanged since your last read) ...`。旧内容不另开缓存，直接从对话历史里上一条 read 的输出反解（`recoverPriorLines`），好处是失效逻辑自带：那条若已被压缩掉（`part.state.time.compacted`）就找不到、自动退回发全文，不存在「模型看不见旧内容却收到折叠件」的形态。三道保守闸：只在整文件、未截断的读上生效（分段读行号基准对不上）；反解要求行号从 1 连续递增，因此折叠过的输出不能当下次的基准（`priorReadLines` 会继续往前找可反解的那条，第三、四次读仍能折）；省不到三成就不折，原样发全文。新增 6 条纯函数单测。
+- **hashline 标签失效时把当前内容带回来，省掉一趟 read**（`tool/edit.ts`）：近 30 天 edit 调用 4,532 次、失败 525 次（11.6%），其中标签/哈希失效 286 次占 **54%**，是最大的一类；协议类失败合计 395 次（75%），模型真正「改错内容」只占 18%。原来只回一句 "Re-read the file to get the current hash."，一次失效烧三步（失败 → read → 重试），而文件内容此刻就在手上（`contentOld` 刚读完），那趟 read 还会把整份文件重新灌进上下文。改成把当前内容按 read 的排版（`[path#TAG]` + 行号）带进错误消息，模型可直接重建补丁重试；一并记 `FileTime`，否则重试会再撞「必须先 read」那道守卫（那一类另占 58 次）。上限沿用 read 的 50KB——带回来的绝不会比它本来要跑的那趟 read 更大，超限才退回让它自己读。
+
+#### 变更
+
+- **seed 子代理默认模型改 step**（`seed/redcode.home.jsonc`、`seed/agents/fixer.md`、`seed/skill/vision-autoagent/SKILL.md`）：mimo 停用，`explore(mimo-v2.5)` → `explore(step)`；审图提示词注明「别重复刷工具」（step 前科）。
+
+#### 修复
+
+- **GLM-5.3 的提示词与推理锚——改名不该换待遇**（`session/system.ts`、`session/prompt.ts`、`session/prompt/glm.md`）：GLM-5.3-Flash 就是先前以 ox-alpha / x-preview 名义在跑的那个模型。换成智谱官方名字接入后两处待遇被静默换掉，而两处都没有针对它的证据：① `api.id` 里出现 "glm" → 从重写过的 `default.md` 换到 `glm.md`，后者是 260625 给 5.1/5.2 那代写的管教式稿子（编号 do/don't、"Same fix twice → STOP"、"No deferral"），此后没再动过；② `model.id` 里出现 "flash" → 凭空吃到 deepseek 的推理锚（判据是「含 flash 且不含 step」），而它叫 x-preview 的时候名字里没有 flash、**根本不吃锚**。改法不是绕开 `glm.md`，而是把 `glm.md` 重写成当前一线水准（不迁就弱模型，step-3.7-flash 是唯一例外因为免费）：新稿以实测过的 `default.md` 为骨，另加三条 GLM 特有的——可见思考文本用中文（实测英文率 6.7%，deepseek 各路是 0.0~0.5%）、批处理规则（实测多工具率 11.7%，常用模型里最低）、hashline 标签失效后直接用返回的内容重试别再 read 一次（配合本版 `edit.ts` 那条）。锚点判据从内联移到 `wantsFlashAnchor` / `wantsStepAnchor`，并从「含 flash 且不含 step」收窄到「含 deepseek 且含 flash」，对齐这条锚的证据来源（WEAK_FLASH 对 DeepSeek V4 Flash 的实测）；`gemini-*-flash` 同样是被名字捎带进来的，一并排除。路由本身不动：glm/qwen 仍走 `glm.md`，旧稿不另存（它的目标模型 5.1/5.2 已不用）。6 条纯函数测试钉住路由归属与两条锚的互斥。
+- **单元测试每轮静默少跑一条**（`opencode/test/preload.ts`）：`test/tool/edit.test.ts`、`read.test.ts` 这类文件每次运行**必定挂第 2 条**（5004ms 超时），且与用例内容无关——谁排第二谁挂；`--timeout 30000` 下不报错，只是白等。根因是一条真实的 3MB 下载：ModelsDev 层每次构建都 `forkScoped` 一个后台 refresh（`core/models-dev.ts`），它先拿 `models-dev` 的 flock 再去拉 `https://models.dev/api.json`；preload 虽把 `REDCODE_MODELS_PATH` 钉在 fixture 上，但 `fresh()`/`refresh()` 不看这个变量，照拉不误。第一条用例结束时 fixture 的 `afterEach → disposeAllInstances()` **首次把整个生产 AppLayer 建进测试进程**，它那份 ModelsDev 抢到锁开始下载，而 AppRuntime 全程不 dispose；第二条用例自己的 ModelsDev 就堵在 `Flock.effect` 上，而 `Effect.acquireRelease` 的 acquire 段不可中断 —— 它的 layer scope 关不掉，用例被拖满整段下载（实测 4–9s）。第三条起缓存文件已落盘、`fresh()` 为真，后台 refresh 直接跳过，所以只有第二条挂。preload 补 `REDCODE_DISABLE_MODELS_FETCH=1`（`test/lib/cli-process.ts` 给子进程早就设了，进程内跑的测试一直漏了）：`edit.test.ts` 默认 5000ms 超时下 60 pass / 0 fail（原 59/1），24s → 17.6s；`test/tool` 与 `test/provider`+`agent`+`config` 的失败数与净版逐项一致（2 / 35，均为存量）。**两条遗留未动**：`Flock.effect` 的 acquire 段不可中断，等锁最长可堵 `timeoutMs` 默认 5 分钟（`core/util/flock.ts`，`reference/repository-cache.ts` 同形）；`REDCODE_MODELS_PATH` 被 `populate` 认、却不被 `fresh()`/`refresh()` 认，钉了目录还照拉一遍属纯死工作。
+- **上下文面板 token 列名对齐命中/未命中语义**（`app/i18n/*`、`cli/cmd/tui/feature-plugins/sidebar/context.tsx`）：GUI 侧词条「输入 token」→「输入（未命中）」、「缓存 token（读/写）」→「命中 / 未命中」——DeepSeek 的输入 = 命中 + 未命中恒等，`input` 是未命中残值恒 0，原名误导；与 usage-dashboard v0.1.2 同款修复，数字本就是真值、只改语义。TUI 侧删掉恒 0 的 "in" 行，cache read/write 改 `hit {read}` / `miss {write+miss}`（write 与 miss 是互斥双桶，read+miss+write 才算全输入，260707 的注释即此口径），out/reason 从「末轮值」改成会话累计——原来与 hit/miss 量纲不一致，现与 GUI 上下文面板账本对齐。
+
+#### 文档
+
+- **README/MANUAL 过时点清理**（`README.md`、`README.en.md`、`MANUAL.md`）：删已退役的防重复循环检测、补选择器鼠标能力、记忆系统章节重写为索引化机制。
+- **双写核对脚本收进 seed**（`seed/scripts/check-memory-dualwrite.mjs`、`AGENTS.md`）：`sync-home` 对 scripts 目录是 wipe-then-copy 的镜像同步，live 独有脚本每次 build 都会被清掉，故收进 seed 受管；根 `AGENTS.md` 顺手修 CORE 标题的全角空格、双空行与文末换行。
+- **日期勘误 260828→260825**（`MANUAL.md`、`seed/skill/memory-automation/SKILL.md`）：存量旧格式就地索引化的定案实为 260825。本文件 `[0.9.7]` 的标题日期同属这一族笔误，2026-08-28 → 2026-08-25——该版 bump 提交 `8b1f439a` 落在 08-25，条目内容也都是 08-25。
+
+### [0.9.7] - 2026-08-25
 
 #### 新增
 
