@@ -41,6 +41,8 @@
 
 - **`REDCODE_MODELS_PATH` 钉了目录，refresh 却照拉不误**（`core/models-dev.ts`）：`populate` 认这个变量（`loadFromDisk` 用 `Flag.REDCODE_MODELS_PATH ?? filepath`），`fresh()`/`refresh()` 不认 —— 于是钉了目录的人（测试进程、离线/内网环境）照样每小时把 models.dev 那 3MB 拉一遍,而拉回来的东西**一行都用不上**：它写的是 Global 缓存里的 `filepath`,`invalidate` 之后 `populate` 重新读到的还是同一份钉住的文件。半截口子补齐:钉住时 `refresh()` 直接跳过并打一条 debug 日志(`redcode models --refresh` 因此也不再做无用功而是说明原因),且连那个每小时的 `forkScoped` 都不再建 —— 这个 fiber 的存在本身就是代价,它正是上一条里堵在 flock 上的那个。新增 2 条回归(钉住时 `refresh(false)`/`refresh(true)` 都不发请求;钉住时建层不 fork)。附带效果:`opencode/test/preload.ts` 里那行 `REDCODE_DISABLE_MODELS_FETCH=1` 现在是冗余的(preload 本来就钉了 fixture),保留只为显式。
 
+- **清掉三个上游 fork 残留的 GitHub 元文件**（`.github/CODEOWNERS`、`.github/TEAM_MEMBERS`、`.github/ISSUE_TEMPLATE/config.yml`）：这三个不是躺着不动的垃圾,对公开仓是**活的**。`CODEOWNERS` 把 `packages/app/`、`packages/desktop/` 派给 `@adamdotdevin` / `@brendonovich`——上游的人、不是本仓协作者,GitHub 只会静默派不出去,里面还写着本仓根本不存在的 `packages/tauri/`;`TEAM_MEMBERS` 是 15 个上游名字;`ISSUE_TEMPLATE/config.yml` 最实际——`blank_issues_enabled: false` 挡掉空白 issue,再把来提问的人导去 **`discord.gg/opencode`**,等于把自己仓的提问送到别人家。删掉后空白 issue 恢复可用。四个通用模板(`bug-report` / `feature-request` / `question` / `pull_request_template`)内容不提上游,留着。
+
 #### 文档
 
 - **README/MANUAL 过时点清理**（`README.md`、`README.en.md`、`MANUAL.md`）：删已退役的防重复循环检测、补选择器鼠标能力、记忆系统章节重写为索引化机制。
