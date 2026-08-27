@@ -264,7 +264,18 @@ export const layer = Layer.effect(
 
     const get = (): Effect.Effect<Record<string, Provider>> => cachedGet
 
+    // 260827 cc REDCODE_MODELS_PATH 钉住目录之后，refresh 是纯死工作：它拉的是 models.dev、
+    // 写的是 Global 缓存里的 filepath，而 populate 读的是**钉住的那份**（loadFromDisk 用
+    // `Flag.REDCODE_MODELS_PATH ?? filepath`），取回来的东西一行都用不上，invalidate 之后
+    // 重新读到的还是同一份钉住的文件。此前 populate 认这个变量、fresh()/refresh() 不认，
+    // 是个半截口子——钉了目录的人（测试进程、离线/内网环境）照样每小时拉一次 3MB。
+    const pinned = () => Flag.REDCODE_MODELS_PATH
     const refresh = Effect.fn("ModelsDev.refresh")(function* (force = false) {
+      const pin = pinned()
+      if (pin)
+        return yield* Effect.logDebug("models catalog pinned by REDCODE_MODELS_PATH, skipping refresh").pipe(
+          Effect.annotateLogs("path", pin),
+        )
       if (!force && (yield* fresh())) return
       yield* Effect.scoped(
         Effect.gen(function* () {
@@ -284,7 +295,9 @@ export const layer = Layer.effect(
       )
     })
 
-    if (!Flag.REDCODE_DISABLE_MODELS_FETCH && !process.argv.includes("--get-yargs-completions")) {
+    // 钉住目录时连 fork 都不做：refresh 本身已经会跳过，但这个 fiber 的存在本身就是代价——
+    // 它就是「第二个用例必挂」那条里堵在 flock 上的那个（见 CHANGELOG 0.9.8）。
+    if (!Flag.REDCODE_DISABLE_MODELS_FETCH && !pinned() && !process.argv.includes("--get-yargs-completions")) {
       // Schedule.spaced runs the effect once, then waits between completions.
       yield* Effect.forkScoped(refresh().pipe(Effect.repeat(Schedule.spaced("60 minutes")), Effect.ignore))
     }

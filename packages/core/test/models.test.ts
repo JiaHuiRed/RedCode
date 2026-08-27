@@ -109,6 +109,21 @@ const writeCache = (data: object, mtimeMs?: number) =>
 const provided = <A, E>(state: Ref.Ref<MockState>, eff: Effect.Effect<A, E, ModelsDev.Service>) =>
   eff.pipe(Effect.provide(buildLayer(state)))
 
+// 260827 cc 临时钉住目录并保证还原——直接 try/finally 在 Effect 生成器里遇到中断不保证跑到
+const withPinned = <A, E, R>(value: string | undefined, eff: Effect.Effect<A, E, R>) =>
+  Effect.acquireUseRelease(
+    Effect.sync(() => {
+      const previous = Flag.REDCODE_MODELS_PATH
+      Flag.REDCODE_MODELS_PATH = value
+      return previous
+    }),
+    () => eff,
+    (previous) =>
+      Effect.sync(() => {
+        Flag.REDCODE_MODELS_PATH = previous
+      }),
+  )
+
 beforeEach(async () => {
   await rm(cacheFile, { force: true })
 })
@@ -260,6 +275,65 @@ describe("ModelsDev Service", () => {
       // retryTransient retries 5xx, so calls may be > 1.
       const final = yield* Ref.get(state)
       expect(final.calls.length).toBeGreaterThanOrEqual(1)
+    }),
+  )
+
+  // 260827 cc REDCODE_MODELS_PATH 钉住目录后 refresh 是纯死工作：拉的是 models.dev、写的是
+  // Global 缓存，而 populate 读的是钉住的那份。此前 populate 认这个变量、refresh 不认。
+  it.live("REDCODE_MODELS_PATH 钉住目录时 refresh 不发请求（force 也不发）", () =>
+    Effect.gen(function* () {
+      // 故意做成陈旧的：不钉的话 refresh(false) 这里一定会真去拉
+      yield* writeCache(fixture, Date.now() - 10 * 60 * 1000)
+      const state = yield* Ref.make({ ...initialState, body: JSON.stringify(fixture2) })
+
+      yield* withPinned(
+        cacheFile,
+        provided(
+          state,
+          Effect.gen(function* () {
+            const svc = yield* ModelsDev.Service
+            yield* svc.refresh(false)
+            yield* svc.refresh(true)
+          }),
+        ),
+      )
+
+      const final = yield* Ref.get(state)
+      expect(final.calls).toEqual([])
+    }),
+  )
+
+  it.live("REDCODE_MODELS_PATH 钉住目录时不再 fork 后台 refresh", () =>
+    Effect.gen(function* () {
+      yield* writeCache(fixture, Date.now() - 10 * 60 * 1000)
+      const state = yield* Ref.make({ ...initialState, body: JSON.stringify(fixture2) })
+      const previousDisable = Flag.REDCODE_DISABLE_MODELS_FETCH
+
+      // 关掉 DISABLE_MODELS_FETCH，只让 MODELS_PATH 这一道闸挡着——否则测的是另一个开关
+      yield* withPinned(
+        cacheFile,
+        Effect.acquireUseRelease(
+          Effect.sync(() => {
+            Flag.REDCODE_DISABLE_MODELS_FETCH = false
+          }),
+          () =>
+            provided(
+              state,
+              Effect.gen(function* () {
+                yield* ModelsDev.Service
+                // 给后台 fiber 留出发请求的时间；mock client 是同步返回的，300ms 足够
+                yield* Effect.sleep("300 millis")
+              }),
+            ),
+          () =>
+            Effect.sync(() => {
+              Flag.REDCODE_DISABLE_MODELS_FETCH = previousDisable
+            }),
+        ),
+      )
+
+      const final = yield* Ref.get(state)
+      expect(final.calls).toEqual([])
     }),
   )
 })
