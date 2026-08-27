@@ -60,6 +60,18 @@ export function provider(model: Provider.Model) {
   // 260704 Red ollama 本地模型 — 精简提示词，适配有限上下文窗口
   // providerID 含 ollama 或 model.id 含 ":latest"/":Xb" 等 ollama 命名特征
   if (model.providerID.toLowerCase().includes("ollama")) return [PROMPT_OLLAMA]
+  // 260827 cc GLM-5.3 起改走兜底的 default.md，不再进 glm.md。
+  //
+  // glm.md 是 260625 给 5.1/5.2 那代写的「准一线」管教式提示词（编号 do/don't、
+  // "Same fix twice → STOP"、"No deferral"），此后没再动过。而 GLM-5.3-Flash 就是先前以
+  // ox-alpha / x-preview 名义在跑的那个模型 —— 它的 api.id 里没有 "glm"，一直落在
+  // default.md 上，实测表现是一线水准。换成智谱官方名字接入后 api.id 出现 "glm"，
+  // 于是**只因为改了个名字就被换了提示词**，换到一份为弱两代的模型写的稿子上。
+  //
+  // 判据用版本号而不是模型名单：5.2 及以下与 qwen 维持原样（它们确实是那份稿子的目标），
+  // 5.3 及以后一律走重写过的 default.md（"按能力无关的余地写"，见本函数末尾兜底分支注释）。
+  const glmVersion = /glm-(\d+)\.(\d+)/.exec(model.api.id.toLowerCase())
+  if (glmVersion && Number(glmVersion[1]) * 100 + Number(glmVersion[2]) >= 503) return [PROMPT_DEFAULT]
   // 260625 Red GLM(智谱) + Qwen(通义) — 准一线，复用精炼档
   if (model.api.id.toLowerCase().includes("glm") || model.api.id.toLowerCase().includes("qwen")) return [PROMPT_GLM]
   // 260623 Red Step(阶跃星辰)
