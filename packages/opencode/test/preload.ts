@@ -34,6 +34,14 @@ process.env["XDG_CACHE_HOME"] = path.join(dir, "cache")
 process.env["XDG_CONFIG_HOME"] = path.join(dir, "config")
 process.env["XDG_STATE_HOME"] = path.join(dir, "state")
 process.env["REDCODE_MODELS_PATH"] = path.join(import.meta.dir, "tool", "fixtures", "models-api.json")
+// 260827 cc: 目录已经钉在上面那份 fixture 上，可 ModelsDev 层每次构建仍会 forkScoped 一个
+// 后台 refresh 去真拉 models.dev（~3MB）—— 对测试是纯死工作，还制造了"第二个用例必挂"：
+// 第一个用例结束时 afterEach 的 disposeAllInstances() 首次建起整个 AppLayer，它那份 ModelsDev
+// 抢到 models-dev 的 flock 开始下载，而 AppRuntime 全程不 dispose；第二个用例自己的 ModelsDev
+// 于是堵在 Flock.effect 上，而 acquireRelease 的 acquire 段不可中断 —— 它的 layer scope 关不掉，
+// 用例被拖满整个下载时长（实测 4-9s），默认 5000ms 超时下必红，且与用例内容无关（谁排第二谁挂）。
+// test/lib/cli-process.ts 给子进程早就设了这个变量，进程内跑的测试一直漏了。
+process.env["REDCODE_DISABLE_MODELS_FETCH"] = "1"
 process.env["REDCODE_EXPERIMENTAL_WORKSPACES"] = "true"
 
 // Set test home directory to isolate tests from user's actual home directory
