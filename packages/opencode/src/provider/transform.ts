@@ -1462,10 +1462,15 @@ export function options(input: {
   // 但同样的 GLM 也可能挂在别的聚合供应商下（本机就是 opencode-go/glm-5.2），那条路径既拿不到
   // thinking 参数、也没有档位，完全靠上游默认值，RedCode 这边一个字都没说。
   // 官方文档：thinking.type 是 GLM-4.5 及以上都有的开关，默认 enabled。
+  // 260827 Red 逃生口：clear_thinking 是智谱方言子字段，严格 schema 的网关会整体拒收
+  // （tokenrhythm 实测 400「未知请求字段：thinking.clear_thinking」，而只发 type 是 200）。
+  // 模型配置 options 里显式写了 thinking 就整个跳过硬注入，由用户自己定请求体长什么样
+  // （mergeDeep 下无法用配置删键，必须在这里让位）。
   if (
     (glmVersion(input.model.id, input.model.api.id) !== undefined ||
       ["zai", "zhipuai"].some((id) => input.model.providerID.includes(id))) &&
-    input.model.api.npm === "@ai-sdk/openai-compatible"
+    input.model.api.npm === "@ai-sdk/openai-compatible" &&
+    input.model.options?.thinking === undefined
   ) {
     result["thinking"] = {
       type: "enabled",
