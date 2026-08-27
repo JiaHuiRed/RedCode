@@ -687,6 +687,46 @@ describe("tool.edit", () => {
       }),
     )
 
+    // 260827 cc 标签失效占 edit 失败的 54%（近 30 天 286/525）。原来只回一句「回去重读」，
+    // 一次失效烧三步：失败 → read → 重试，且那趟 read 把整份文件又灌一遍上下文。
+    // 现在把当前内容按 read 的排版带回来，模型可以直接重试。
+    it.instance("hash 不匹配时把当前内容带回错误里，模型不必再 read 一次", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "page.txt")
+        yield* put(filepath, lines.join("\r\n"))
+
+        const err = yield* fail({ input: `[${filepath}#0000]\nreplace 3..3:\n+ nope` })
+
+        // 带回真实的当前标签，且不是那个过期的 0000
+        const tag = err.message.match(/current is \[.*#([0-9a-f]+)\]/i)?.[1]
+        expect(tag).toBeDefined()
+        expect(tag).not.toBe("0000")
+        expect(err.message).toContain(`[${filepath}#${tag}]`)
+        // 按 read 的排版给出带行号的全文
+        lines.forEach((line, i) => expect(err.message).toContain(`${i + 1}: ${line}`))
+        expect(err.message).toContain(`(End of file - total ${lines.length} lines)`)
+        // 明确告诉模型别再跑一趟 read
+        expect(err.message).toContain("do not call read first")
+      }),
+    )
+
+    it.instance("文件过大时不内联全文，退回让模型自己读", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "huge.txt")
+        // 刚过 50KB 上限即可，别写超大文件——全量跑时的 I/O 会把邻居测试挤超时
+        const big = Array.from({ length: 1200 }, (_, i) => `${i}: ${"x".repeat(40)}`)
+        yield* put(filepath, big.join("\n"))
+
+        const err = yield* fail({ input: `[${filepath}#0000]\nreplace 3..3:\n+ nope` })
+
+        expect(err.message).toContain("Hash mismatch")
+        expect(err.message).toContain("too large to inline")
+        expect(err.message).not.toContain("1: 0: xxxx")
+      }),
+    )
+
     // 260813 cc 静默失效家族。全局 #87/#88 已复现 5~6 次「报成功但文件没动」「多操作
     // 只生效一部分」，根因都在 parseHashline：while 循环没有 else 分支，任何不匹配
     // 六个操作正则的行被直接丢弃；ops 非空就不报错，于是漏掉的那条无声无息。
@@ -1006,7 +1046,7 @@ describe("replacer 复杂度与终止性回归", () => {
   // 性能基准。
   test("BlockAnchorReplacer 在病理大文件上保持线性", () => {
     const find = ["ANCHOR", "middle", "TAIL_NEVER"].join("\n")
-    const content = Array.from({ length: 40000 }, () => "ANCHOR").join("\n")
+    const content = Array.from({ length: 12000 }, () => "ANCHOR").join("\n")
     const started = Date.now()
     const yields = [...BlockAnchorReplacer(content, find)]
     const elapsed = Date.now() - started

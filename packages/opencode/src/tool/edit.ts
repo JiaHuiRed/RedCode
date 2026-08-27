@@ -533,6 +533,20 @@ function opSortIndex(op: HashlineOp, totalLines: number): number {
 
 // --- Hashline executor ---
 
+// 260827 cc 标签失效时把当前内容按 read 的排版直接带回错误里。
+// 上限与 read 一致（50KB）：带回来的绝不会比模型本来要跑的那趟 read 更大；超限才退回让它自己读。
+const HASH_MISMATCH_MAX_BYTES = 50 * 1024
+
+function renderCurrentFile(filePath: string, tag: string, content: string) {
+  const lines = normalizeLineEndings(content).split("\n")
+  const body = lines.map((line, i) => `${i + 1}: ${line}`).join("\n")
+  if (new TextEncoder().encode(body).length > HASH_MISMATCH_MAX_BYTES)
+    return `(File is ${lines.length} lines — too large to inline here. Re-read it to get the current content.)`
+  return [`[${filePath}#${tag}]`, "<content>", body, `(End of file - total ${lines.length} lines)`, "</content>"].join(
+    "\n",
+  )
+}
+
 const executeHashline = (
   input: string,
   ctx: Tool.Context,
@@ -563,8 +577,19 @@ const executeHashline = (
 
         const currentHash = Hash.fileTag(contentOld)
         if (currentHash !== expectedHash) {
+          // 260827 cc 原来这里只说「回去重读」，于是一次标签失效烧三步：失败 → read → 重试。
+          // 近 30 天 edit 失败 525 次，标签/哈希失效占 286 次（54%），是最大的一类。
+          // 而文件内容此刻就在手上（contentOld 刚读完），让模型再跑一趟 read 纯属浪费——
+          // 那趟 read 还会把整份文件重新灌进上下文（每周 928 次重复 read 有相当一部分是这么来的），
+          // 之后每一步都要多付这份缓存读。带回内容后塌成两步，且不产生那份冗余副本。
+          // 一并记 FileTime：模型已经看到当前内容了，否则重试会再撞「必须先 read」那道守卫。
+          yield* FileTime.record(ctx.sessionID, resolvedPath)
           throw new Error(
-            `Hash mismatch: expected [${filePath}#${expectedHash}] but current is [${filePath}#${currentHash}]. Re-read the file to get the current hash.`,
+            [
+              `Hash mismatch: expected [${filePath}#${expectedHash}] but current is [${filePath}#${currentHash}].`,
+              `The file changed since you read it. Its current content is below — rebuild the patch against it and retry directly; do not call read first.`,
+              renderCurrentFile(filePath, currentHash, contentOld),
+            ].join("\n"),
           )
         }
 
