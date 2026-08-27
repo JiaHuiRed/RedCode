@@ -1,4 +1,4 @@
-import { afterEach, describe, expect } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { Cause, Effect, Exit, Layer, Stream } from "effect"
 import path from "path"
 import { Agent } from "../../src/agent/agent"
@@ -11,7 +11,7 @@ import { LSP } from "@/lsp/lsp"
 import { Permission } from "../../src/permission"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { Instruction } from "../../src/session/instruction"
-import { ReadTool } from "../../src/tool/read"
+import { collapseUnchanged, ReadTool, recoverPriorLines } from "../../src/tool/read"
 import { Truncate } from "@/tool/truncate"
 import { Tool } from "@/tool/tool"
 import { Filesystem } from "@/util/filesystem"
@@ -717,4 +717,67 @@ describe("tool.read 编码检测", () => {
       expect(result.output).toContain(`#${Hash.fileTag(content)}]`)
     }),
   )
+})
+
+// 260827 cc 折叠重读：重复 read 同一文件时把未变区段折起来。
+// 这两个是纯函数，单独测——不走 TestInstance fixture（该 fixture 有「每批第 2 条必超时」的既有毛病）。
+describe("read.折叠重读", () => {
+  const render = (lines: string[], filepath = "/tmp/a.ts") =>
+    [
+      `<path>${filepath}</path>`,
+      `<type>file</type>`,
+      `[${filepath}#abcd]`,
+      "<content>\n" + lines.map((l, i) => `${i + 1}: ${l}`).join("\n"),
+      "",
+      `(End of file - total ${lines.length} lines)`,
+      "</content>",
+    ].join("\n")
+
+  const body = (lines: string[]) => Array.from({ length: 30 }, (_, i) => lines[i] ?? `line ${i + 1}`)
+
+  test("能从一份完整 read 输出里反解出原始内容", () => {
+    const lines = body([])
+    expect(recoverPriorLines(render(lines))).toEqual(lines)
+  })
+
+  test("拒绝反解被截断的输出", () => {
+    const capped = render(body([])).replace("(End of file - total 30 lines)", "(Output capped at 50 KB. Showing lines 1-30.)")
+    expect(recoverPriorLines(capped)).toBeUndefined()
+  })
+
+  test("拒绝把折叠过的输出当作下次的基准（行号不连续）", () => {
+    const prev = body([])
+    const cur = [...prev]
+    cur[14] = "CHANGED"
+    const folded = collapseUnchanged(prev, cur)!
+    expect(folded).toBeDefined()
+    // 拿折叠结果拼成一份输出，反解必须失败，否则会以错误的基准继续折
+    const fake = render(body([])).replace(/(<content>\n)[\s\S]*?(\n\n\(End of file)/, `$1${folded}$2`)
+    expect(recoverPriorLines(fake)).toBeUndefined()
+  })
+
+  test("折叠后保留绝对行号，改动行与其上下文都在", () => {
+    const prev = body([])
+    const cur = [...prev]
+    cur[14] = "CHANGED HERE"
+    const folded = collapseUnchanged(prev, cur)!
+    expect(folded).toContain("15: CHANGED HERE")
+    expect(folded).toContain("12: line 12") // 上文锚点
+    expect(folded).toContain("18: line 18") // 下文锚点
+    expect(folded).toContain("unchanged since your last read")
+    // 被折掉的行不该出现
+    expect(folded).not.toContain("5: line 5")
+  })
+
+  test("省不下多少就不折，退回发全文", () => {
+    const prev = body([])
+    const cur = prev.map((l, i) => (i % 2 === 0 ? "CHANGED " + i : l))
+    expect(collapseUnchanged(prev, cur)).toBeUndefined()
+  })
+
+  test("文件没变时整份折起来", () => {
+    const lines = body([])
+    const folded = collapseUnchanged(lines, lines)!
+    expect(folded).toContain("lines 1-30 unchanged")
+  })
 })

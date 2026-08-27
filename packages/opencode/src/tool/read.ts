@@ -28,6 +28,94 @@ const SUPPORTED_IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "
 
 class ReadStop extends Schema.TaggedErrorClass<ReadStop>()("ReadStop", {}) {}
 
+// --- 折叠重读 ---------------------------------------------------------------
+// 260827 cc 实测每周 928 次「同会话内重复 read 同一文件」，其中 902 次文件确实变了，
+// 每次把整份文件重新灌进上下文；这些副本之后每一步都要再被读一遍（放大约 195M token/周）。
+// 这里在重复读同一文件时，把没变的区段折起来，只展开改动附近。
+//
+// 为什么不发 diff：hashline 补丁靠 `replace N..M` 定位，纯 diff 会让模型自己数行号，
+// 刚修完的标签失效会以另一种形式回来。折叠保留绝对行号，一个都不错。
+//
+// 旧内容不另存缓存，直接从对话历史里上一条 read 的输出反解——这样「那条已经被压缩掉了」
+// 会自动退回发全文（part.state.time.compacted），不需要额外的失效逻辑。
+const COLLAPSE_CONTEXT_LINES = 3
+const COLLAPSE_MIN_RUN = 8 // 连续未变行少于这个数就不值得折
+const COLLAPSE_MIN_SAVING = 0.3 // 至少省下三成才折，否则原样发全文
+
+/** 从上一条 read 的输出里反解出当时的文件内容。只接受完整、未截断的全文读。 */
+export function recoverPriorLines(output: string): string[] | undefined {
+  if (output.includes("Output capped at") || output.includes(MAX_LINE_SUFFIX)) return undefined
+  if (!/\(End of file - total (\d+) lines\)/.test(output)) return undefined
+  const start = output.indexOf("<content>\n")
+  const end = output.lastIndexOf("\n\n(End of file")
+  if (start < 0 || end < 0 || end <= start) return undefined
+  const body = output.slice(start + "<content>\n".length, end)
+  const lines: string[] = []
+  for (const raw of body.split("\n")) {
+    const m = /^(\d+): ?(.*)$/s.exec(raw)
+    // 行号必须连续递增，否则说明这不是一份完整全文（或已被折叠过），不敢拿来做基准
+    if (!m || Number(m[1]) !== lines.length + 1) return undefined
+    lines.push(m[2])
+  }
+  return lines.length ? lines : undefined
+}
+
+/** 把与 prev 相同的长区段折起来，返回带绝对行号的正文；不值得折时返回 undefined。 */
+export function collapseUnchanged(prev: string[], cur: string[]): string | undefined {
+  const same = new Array<boolean>(cur.length)
+  for (let i = 0; i < cur.length; i++) same[i] = prev[i] !== undefined && prev[i] === cur[i]
+  const keep = new Array<boolean>(cur.length).fill(false)
+  for (let i = 0; i < cur.length; i++) {
+    if (same[i]) continue
+    for (let j = Math.max(0, i - COLLAPSE_CONTEXT_LINES); j <= Math.min(cur.length - 1, i + COLLAPSE_CONTEXT_LINES); j++)
+      keep[j] = true
+  }
+  // 行数变化时尾部也可能整体位移，上面按下标比对已覆盖；这里只再保证首尾各留一点锚
+  const out: string[] = []
+  let i = 0
+  let collapsed = 0
+  while (i < cur.length) {
+    if (keep[i]) {
+      out.push(`${i + 1}: ${cur[i]}`)
+      i++
+      continue
+    }
+    let j = i
+    while (j < cur.length && !keep[j]) j++
+    const run = j - i
+    if (run < COLLAPSE_MIN_RUN) {
+      for (let k = i; k < j; k++) out.push(`${k + 1}: ${cur[k]}`)
+    } else {
+      out.push(`... (lines ${i + 1}-${j} unchanged since your last read) ...`)
+      collapsed += run
+    }
+    i = j
+  }
+  if (collapsed / cur.length < COLLAPSE_MIN_SAVING) return undefined
+  return out.join("\n")
+}
+
+/**
+ * 从会话历史里找这个文件最近一次「仍在上下文里、且可反解」的完整 read。
+ * 反解放在循环里而不是循环外：折叠过的输出反解不出来（行号不连续，见 recoverPriorLines），
+ * 若只取最近一条就会在第三次读时退回全文。继续往前找，能一直折下去。
+ */
+function priorReadLines(messages: Tool.Context["messages"], filepath: string) {
+  for (let m = messages.length - 1; m >= 0; m--) {
+    for (let p = messages[m].parts.length - 1; p >= 0; p--) {
+      const part = messages[m].parts[p]
+      if (part.type !== "tool" || part.tool !== "read") continue
+      if (part.state.status !== "completed") continue
+      if (part.state.time.compacted) continue // 已被压缩掉，模型看不见了
+      const out = typeof part.state.output === "string" ? part.state.output : undefined
+      if (!out || !out.includes(`<path>${filepath}</path>`)) continue
+      const lines = recoverPriorLines(out)
+      if (lines) return lines
+    }
+  }
+  return undefined
+}
+
 // 260709 Red snippet 符号提取：正则扫描常见语言的顶层声明，返回 { name, startLine } 列表。
 // 不依赖 LSP，快且普适。只提取顶层符号（行首或仅缩进 export）。
 const SYMBOL_PATTERNS: Array<{ re: RegExp; exts: Set<string> }> = [
@@ -411,7 +499,18 @@ export const ReadTool = Tool.define(
       let output = [`<path>${filepath}</path>`, `<type>file</type>`, `[${filepath}#${fileTag}]`, "<content>\n"].join(
         "\n",
       )
-      output += file.raw.map((line, i) => `${i + file.offset}: ${line}`).join("\n")
+      // 260827 cc 重复读同一文件时折叠未变区段（见文件头部 "折叠重读"）。
+      // 只在「整文件、未截断」的读上生效——分段读的行号基准对不上，折了会错。
+      let collapsed = false
+      if (!params.limit && (!params.offset || params.offset === 1) && !file.cut && !file.more) {
+        const prior = priorReadLines(ctx.messages, filepath)
+        const folded = prior && collapseUnchanged(prior, file.raw)
+        if (folded) {
+          output += folded
+          collapsed = true
+        }
+      }
+      if (!collapsed) output += file.raw.map((line, i) => `${i + file.offset}: ${line}`).join("\n")
 
       const last = file.offset + file.raw.length - 1
       const next = last + 1
@@ -420,6 +519,8 @@ export const ReadTool = Tool.define(
         output += `\n\n(Output capped at ${MAX_BYTES_LABEL}. Showing lines ${file.offset}-${last}. Use offset=${next} to continue.)`
       } else if (file.more) {
         output += `\n\n(Showing lines ${file.offset}-${last} of ${file.count}. Use offset=${next} to continue.)`
+      } else if (collapsed) {
+        output += `\n\n(End of file - total ${file.count} lines. Regions marked unchanged are identical to your earlier read of this file — line numbers above are absolute and current, use them directly.)`
       } else {
         output += `\n\n(End of file - total ${file.count} lines)`
       }
