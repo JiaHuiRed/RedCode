@@ -1504,7 +1504,9 @@ export const layer = Layer.effect(
           // （思考过度不产出，见 step 专属锚），必须排除——否则 Think deeply 是反效果。
           // 260821 cc 见 system.ts 的实验开关说明
           const noAnchors = SystemPrompt.experimentNoReasoningAnchors()
-          if (!noAnchors && model.id.toLowerCase().includes("flash") && !model.id.toLowerCase().includes("step")) {
+          // 260827 cc 判据移到 system.ts 的 wantsFlashAnchor（有测试钉住），并从
+          // 「含 flash 且不含 step」收窄到「含 deepseek 且含 flash」——对齐这条锚的证据来源。
+          if (!noAnchors && SystemPrompt.wantsFlashAnchor(model.id)) {
             system.push(
               `▸ REASONING DISCIPLINE (flash 系列):
   1. Match reasoning depth to the task. A simple, well-specified task converges in one pass — do not manufacture deliberation for it. A complex or ambiguous one earns real depth before you commit. Either way each reasoning block ends with a decision or an information need — no open-ended rumination.
@@ -1520,7 +1522,7 @@ export const layer = Layer.effect(
           // ① 收敛锚：思考以行动决策收尾，禁止无限推演；正文是唯一交付物
           // ② 反空转锚：不重发相同工具+相同输入（空转检测的提示词侧防线）
           // ③ 一致锚：时强时弱=思考长度波动大，稳定节奏优先于单次超常发挥
-          if (!noAnchors && (model.providerID === "stepfun" || model.id.toLowerCase().includes("step"))) {
+          if (!noAnchors && SystemPrompt.wantsStepAnchor(model.id, model.providerID)) {
             system.push(
               `▸ REASONING DISCIPLINE (step 系列):
   1. Think, then act — each reasoning block ends with a concrete next action or a decision. Never extend reasoning just to keep thinking; when you have a plan, execute it.

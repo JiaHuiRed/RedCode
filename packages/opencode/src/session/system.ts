@@ -35,6 +35,21 @@ import { addressFrom } from "./reasoning-language"
 export const experimentNoModelPrompt = () => process.env["REDCODE_EXPERIMENT_NO_MODEL_PROMPT"] === "1"
 export const experimentNoReasoningAnchors = () => process.env["REDCODE_EXPERIMENT_NO_REASONING_ANCHORS"] === "1"
 
+// 260827 cc 两条锚的归属判据独立成函数（原先内联在 prompt.ts）。提出来是因为它们是**按名字
+// 巧合匹配**的，而锚的内容来自对特定模型的实测，两者一旦错位就是静默的反效果：
+// GLM-5.3-Flash 以智谱官方名字接入后含 "flash" 不含 "step"，凭空吃到 deepseek 的锚；
+// 而它先前以 ox-alpha / x-preview 名义在跑时名字里没有 "flash"，根本不吃锚——
+// 也就是说「改个模型名字就换了一套推理约束」，且无声无息。判据现在按证据来源写，并有测试钉住。
+export const wantsFlashAnchor = (modelID: string) => {
+  const id = modelID.toLowerCase()
+  // 锚来自 WEAK_FLASH 对 DeepSeek V4 Flash 的实测，就只给 deepseek 系的 flash。
+  // gemini-*-flash / glm-*-flash / step-3.7-flash 都只是名字里带 flash。
+  return id.includes("deepseek") && id.includes("flash")
+}
+
+export const wantsStepAnchor = (modelID: string, providerID: string) =>
+  providerID.toLowerCase().includes("stepfun") || modelID.toLowerCase().includes("step")
+
 export function provider(model: Provider.Model) {
   if (experimentNoModelPrompt()) return [PROMPT_DEFAULT]
   if (model.api.id.includes("gpt-4") || model.api.id.includes("o1") || model.api.id.includes("o3"))
@@ -60,18 +75,6 @@ export function provider(model: Provider.Model) {
   // 260704 Red ollama 本地模型 — 精简提示词，适配有限上下文窗口
   // providerID 含 ollama 或 model.id 含 ":latest"/":Xb" 等 ollama 命名特征
   if (model.providerID.toLowerCase().includes("ollama")) return [PROMPT_OLLAMA]
-  // 260827 cc GLM-5.3 起改走兜底的 default.md，不再进 glm.md。
-  //
-  // glm.md 是 260625 给 5.1/5.2 那代写的「准一线」管教式提示词（编号 do/don't、
-  // "Same fix twice → STOP"、"No deferral"），此后没再动过。而 GLM-5.3-Flash 就是先前以
-  // ox-alpha / x-preview 名义在跑的那个模型 —— 它的 api.id 里没有 "glm"，一直落在
-  // default.md 上，实测表现是一线水准。换成智谱官方名字接入后 api.id 出现 "glm"，
-  // 于是**只因为改了个名字就被换了提示词**，换到一份为弱两代的模型写的稿子上。
-  //
-  // 判据用版本号而不是模型名单：5.2 及以下与 qwen 维持原样（它们确实是那份稿子的目标），
-  // 5.3 及以后一律走重写过的 default.md（"按能力无关的余地写"，见本函数末尾兜底分支注释）。
-  const glmVersion = /glm-(\d+)\.(\d+)/.exec(model.api.id.toLowerCase())
-  if (glmVersion && Number(glmVersion[1]) * 100 + Number(glmVersion[2]) >= 503) return [PROMPT_DEFAULT]
   // 260625 Red GLM(智谱) + Qwen(通义) — 准一线，复用精炼档
   if (model.api.id.toLowerCase().includes("glm") || model.api.id.toLowerCase().includes("qwen")) return [PROMPT_GLM]
   // 260623 Red Step(阶跃星辰)
