@@ -33,6 +33,7 @@
       "cwd": "$REDCODE_ROOT",
       "environment": { "TYPEGRAPH_PROJECT_ROOT": ".", "TYPEGRAPH_TSCONFIG": "./tsconfig.json" },
       "timeout": 60000,
+      "description": "TS 类型真相查询（等价 VS Code 悬停）——ts_type_info 按符号名或行列取推断类型与文档；改接口/泛型/联合类型前先确认真实签名，别照着调用处猜。找定义/引用/调用链用 jcodemunch，读整文件用 read。",
       "tools": ["ts_type_info"],
       "enabled": true
     },
@@ -97,7 +98,7 @@
       "type": "local",
       "command": ["bun", "./plugins/mcp-su-prememory-local/src/index.ts"],
       "cwd": "$REDCODE_ROOT",
-      "description": "Local semantic memory — SQLite+FTS5, no cloud",
+      "description": "本机记忆库（SQLite+FTS5，就是 ~/.redcode/supermemory.db，与 MEMORY.md 同一份）——recall 按语义查全文（≥3 字走 FTS5 bm25，更短回落 LIKE，可按 project 限定），stats 看条目分布。写入别用 memory 工具：记忆是「MEMORY.md 索引行 + 库里全文」双写，只写这边会留下有全文无索引的孤儿行。",
       // 260807 Karina: 30 天零调用，白名单留空 = 连接但不注入任何工具
       "tools": [],
       "enabled": true
@@ -112,7 +113,7 @@
     "fff": {
       "type": "local",
       "command": ["fff-mcp"],
-      "description": "High-performance file finder & grep (fff_find_files, fff_grep, fff_multi_grep)",
+      "description": "文件名/内容高速检索——fff_find_files 按名字模糊找文件（支持路径前缀与 glob 约束），fff_grep 单模式、fff_multi_grep 多模式 OR 查内容（约束语法可按 *.ts / src/ 预筛）。大范围找东西优先它，比原生 glob/grep 快；已知精确路径直接 read。",
       "enabled": true
     },
     "sqlite-query": {

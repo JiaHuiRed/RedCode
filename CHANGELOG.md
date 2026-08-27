@@ -29,6 +29,8 @@
 
 - **美元兑人民币汇率 6.75 → 6.72**（`app/components/session/session-context-format.ts`、`app/pages/home-stats.tsx`、`cli/cmd/tui/feature-plugins/home/footer.tsx`、`cli/cmd/tui/feature-plugins/sidebar/context.tsx`）：哥哥给定的新汇率。这个常量在 GUI/TUI 各有两份共四处硬编码，必须同步改——漏一处就会出现同一笔花费在首页和侧边栏不一致。四处都留了注释互指。
 
+- **10 个 MCP 的工具描述统一成「什么时候用 + 什么时候别用」**（`seed/redcode.home.jsonc`）：前缀里 MCP 工具定义占 10,337 token，描述写不准的代价是模型走弯路（0.9.8 那条瘦身里记的「拿 lsp 去干 typegraph 的活」就是这么来的）。补齐最后三个不合格的：`typegraph` 原本**没有描述**，`fff` 与 `su-prememory` 还是英文原文。每条都带反向路由 —— typegraph 指明「找定义/引用/调用链用 jcodemunch，读整文件用 read」，fff 指明「已知精确路径直接 read」。`su-prememory` 那条另有实质内容：它开的库就是 `~/.redcode/supermemory.db`，**和 MEMORY.md 是同一份**，所以描述里写死了「写入别用 memory 工具」—— 记忆是「MEMORY.md 索引行 + 库里全文」双写，只写库这一侧会留下有全文无索引的孤儿行（双写核对脚本目前就报着 15 条这种）。
+
 #### 修复
 
 - **GLM-5.3 的提示词与推理锚——改名不该换待遇**（`session/system.ts`、`session/prompt.ts`、`session/prompt/glm.md`）：GLM-5.3-Flash 就是先前以 ox-alpha / x-preview 名义在跑的那个模型。换成智谱官方名字接入后两处待遇被静默换掉，而两处都没有针对它的证据：① `api.id` 里出现 "glm" → 从重写过的 `default.md` 换到 `glm.md`，后者是 260625 给 5.1/5.2 那代写的管教式稿子（编号 do/don't、"Same fix twice → STOP"、"No deferral"），此后没再动过；② `model.id` 里出现 "flash" → 凭空吃到 deepseek 的推理锚（判据是「含 flash 且不含 step」），而它叫 x-preview 的时候名字里没有 flash、**根本不吃锚**。改法不是绕开 `glm.md`，而是把 `glm.md` 重写成当前一线水准（不迁就弱模型，step-3.7-flash 是唯一例外因为免费）：新稿以实测过的 `default.md` 为骨，另加三条 GLM 特有的——可见思考文本用中文（实测英文率 6.7%，deepseek 各路是 0.0~0.5%）、批处理规则（实测多工具率 11.7%，常用模型里最低）、hashline 标签失效后直接用返回的内容重试别再 read 一次（配合本版 `edit.ts` 那条）。锚点判据从内联移到 `wantsFlashAnchor` / `wantsStepAnchor`，并从「含 flash 且不含 step」收窄到「含 deepseek 且含 flash」，对齐这条锚的证据来源（WEAK_FLASH 对 DeepSeek V4 Flash 的实测）；`gemini-*-flash` 同样是被名字捎带进来的，一并排除。路由本身不动：glm/qwen 仍走 `glm.md`，旧稿不另存（它的目标模型 5.1/5.2 已不用）。6 条纯函数测试钉住路由归属与两条锚的互斥。
