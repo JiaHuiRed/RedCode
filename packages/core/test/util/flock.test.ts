@@ -3,6 +3,7 @@ import fs from "fs/promises"
 import { spawn } from "child_process"
 import path from "path"
 import os from "os"
+import { Cause, Effect, Exit } from "effect"
 import { Flock } from "@redcode-ai/core/util/flock"
 import { Hash } from "@redcode-ai/core/util/hash"
 
@@ -423,4 +424,76 @@ describe("util.flock", () => {
       await fs.chmod(dir, 0o700)
     }
   })
+})
+
+// 260827 cc Flock.effect 的等待从 acquireRelease 的不可中断 acquire 段挪到了 Effect 侧
+describe("Flock.effect（Effect 侧等待）", () => {
+  test("等锁时可被中断 —— 不再被 timeoutMs 堵住", async () => {
+    await using tmp = await tmpdir()
+    const dir = path.join(tmp.path, "locks")
+    const key = "flock:interrupt"
+    const held = await Flock.acquire(key, { dir, staleMs: 30_000, timeoutMs: 5_000 })
+
+    const started = Date.now()
+    const outcome = await Effect.runPromise(
+      Effect.scoped(Flock.effect(key, { dir, staleMs: 30_000, timeoutMs: 60_000, baseDelayMs: 50 })).pipe(
+        Effect.timeoutOrElse({ duration: "600 millis", orElse: () => Effect.succeed("interrupted" as const) }),
+      ),
+    )
+    const elapsed = Date.now() - started
+
+    expect(outcome).toBe("interrupted")
+    // 改动前这里会一直堵到 timeoutMs（60s）才回来：acquireRelease 的 acquire 段不可中断，
+    // 传进 Effect.promise 的 AbortSignal 永远不触发
+    expect(elapsed).toBeLessThan(5_000)
+
+    // 中断没留下野锁：原持有者仍是唯一持有者，释放后立刻能拿到
+    await held.release()
+    const after = await Flock.tryAcquire(key, { dir, staleMs: 30_000 })
+    expect(after).toBeDefined()
+    await after?.release()
+  }, 20_000)
+
+  test("tryAcquire 单次尝试：占用时返回 undefined，空闲时拿到且可释放", async () => {
+    await using tmp = await tmpdir()
+    const dir = path.join(tmp.path, "locks")
+    const key = "flock:try"
+
+    const first = await Flock.tryAcquire(key, { dir, staleMs: 30_000 })
+    expect(first).toBeDefined()
+    expect(await Flock.tryAcquire(key, { dir, staleMs: 30_000 })).toBeUndefined()
+
+    await first?.release()
+    const again = await Flock.tryAcquire(key, { dir, staleMs: 30_000 })
+    expect(again).toBeDefined()
+    await again?.release()
+  }, 15_000)
+
+  test("超时仍然是 defect，消息不变", async () => {
+    await using tmp = await tmpdir()
+    const dir = path.join(tmp.path, "locks")
+    const key = "flock:effect-timeout"
+    await using _held = await Flock.acquire(key, { dir, staleMs: 30_000, timeoutMs: 5_000 })
+
+    const exit = await Effect.runPromiseExit(
+      Effect.scoped(Flock.effect(key, { dir, staleMs: 30_000, timeoutMs: 300, baseDelayMs: 50 })),
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (!Exit.isFailure(exit)) return
+    const err = Cause.squash(exit.cause)
+    expect(err instanceof Error ? err.message : String(err)).toContain("Timed out waiting for lock")
+  }, 15_000)
+
+  test("拿到锁后 scope 关闭会释放", async () => {
+    await using tmp = await tmpdir()
+    const dir = path.join(tmp.path, "locks")
+    const key = "flock:release-on-scope-close"
+
+    await Effect.runPromise(Effect.scoped(Flock.effect(key, { dir, staleMs: 30_000, timeoutMs: 5_000 })))
+
+    const after = await Flock.tryAcquire(key, { dir, staleMs: 30_000 })
+    expect(after).toBeDefined()
+    await after?.release()
+  }, 15_000)
 })
