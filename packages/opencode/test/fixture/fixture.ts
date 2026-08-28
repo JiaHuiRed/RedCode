@@ -70,6 +70,37 @@ function clean(dir: string) {
   })
 }
 
+// 260828 cc 清理失败此前是 `.catch(() => undefined)` —— 静默。
+//
+// Windows 上 `rm -r` 撞到没释放的句柄（SQLite WAL、git 子进程、node_modules 链接）
+// 会 EBUSY/EPERM，`clean()` 自带的 5 次重试之后仍可能失败，而那个 catch 把结果整个
+// 吞掉。实测后果：%TEMP% 里累积了 1565 个 redcode-test-* 目录、40GB，从 08-12 长到
+// 08-28 无人知晓，最后把 C 盘写满。
+//
+// 现在失败会留痕：即时一条 warn（带路径和 errno），退出时一条汇总。**不抛** —— 在
+// finalizer 里抛会带塌与它无关的用例。真正的兜底是 test/preload.ts 的启动期清扫。
+const leaked = new Set<string>()
+let leakReporterInstalled = false
+
+function reportLeak(dir: string, error: unknown) {
+  leaked.add(dir)
+  const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : String(error)
+  console.warn(`[fixture] could not remove test temp dir (${code}): ${dir}`)
+  if (leakReporterInstalled) return
+  leakReporterInstalled = true
+  process.on("exit", () => {
+    if (leaked.size === 0) return
+    console.warn(
+      `[fixture] ${leaked.size} test temp dir(s) left behind; they will be swept on a later run. ` +
+        `First: ${[...leaked].slice(0, 3).join(", ")}`,
+    )
+  })
+}
+
+async function cleanReporting(dir: string) {
+  await clean(dir).catch((error) => reportLeak(dir, error))
+}
+
 async function stop(dir: string) {
   if (!(await exists(dir))) return
   await $`git fsmonitor--daemon stop`.cwd(dir).quiet().nothrow()
@@ -114,7 +145,7 @@ export async function tmpdir<T>(options?: TmpDirOptions<T>) {
         await options?.dispose?.(realpath)
       } finally {
         if (options?.git) await stop(realpath).catch(() => undefined)
-        await clean(realpath).catch(() => undefined)
+        await cleanReporting(realpath)
       }
     },
     path: realpath,
@@ -144,7 +175,7 @@ export function tmpdirScoped(options?: {
     yield* Effect.addFinalizer(() =>
       Effect.promise(async () => {
         if (options?.git) await stop(dir).catch(() => undefined)
-        await clean(dir).catch(() => undefined)
+        await cleanReporting(dir)
       }),
     )
 
