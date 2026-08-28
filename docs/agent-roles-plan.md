@@ -10,7 +10,7 @@
 
 | # | 路径 | 全机实际内容 |
 | --- | --- | --- |
-| 1 | 内建 native（`agent/agent.ts` 硬编码） | 9 个（含 3 个 hidden），`scout` 由 `REDCODE_EXPERIMENTAL_SCOUT` 控制 |
+| 1 | 内建 native（`agent/agent.ts` 硬编码） | 默认 **8** 个（含 3 个 hidden）；开 `REDCODE_EXPERIMENTAL_SCOUT` 才是 9 个 |
 | 2 | 随包 YAML profile `agent/profile/default/*.yaml` + 用户 `.opencode/profiles/` | 随包 3 份；**用户目录全机为空** |
 | 3 | `{agent,agents}/**/*.md`（`ConfigAgent.load`） | 本机 3 份：architect / fixer / reviewer |
 | 4 | `{mode,modes}/*.md`（`ConfigAgent.loadMode`） | **全机零文件** —— 只有 loader 还在跑 |
@@ -91,12 +91,14 @@ scout 的招牌能力是 `repo_clone` / `repo_overview`（把依赖仓 clone 进
 | | 唯一入口 | 配置能做什么 |
 | --- | --- | --- |
 | 姿态 | 内建 2 个 | 只能调权限，**不能新增**（姿态是引擎语义，不是用户内容） |
-| 工种 | `agent/*.md` | 覆写 model / variant / timeout / permission；`disable` 保留 |
+| 工种 | 内建，定义在 `src/agent/definition/*.md`（构建期内联，见修正九） | 覆写 model / variant / timeout / permission 走 `agent.<name>`；`disable` 保留。用户仍可自建 `~/.redcode/agent/*.md` 造**新**工种 |
 | 机件 | 纯内建 | 碰不到 |
 
 ## 2026-08-28 调研修正（五路并行 + 反驳式复核）
 
-上面「目标形态」不变，但第 4 步的**做法**被调研推翻了三处。以下每条都带 file:line，是复核后净下来的判断。
+上面「目标形态」不变，但第 4 步的**做法**被两轮调研推翻了多处。以下每条都带 file:line，是复核后净下来的判断。
+
+修正一~六出自 08-28 上午（五路并行 + 反驳式复核），落地了 4a/4b。**修正七~十二出自 08-28 下午的第二轮**（六路并行 + 三路反驳式复核，含真构建产物字节扫描、权限 findLast 实测矩阵、live 库只读统计），它推翻了修正五、补齐了修正三的行号与清单，是第 4c 步的直接依据。
 
 ### 修正一：底本自相矛盾，已定死为「姿态不写 md」
 
@@ -112,7 +114,7 @@ scout 的招牌能力是 `repo_clone` / `repo_overview`（把依赖仓 clone 进
 
 **做法**：保留静态 text 导入，把导入目标指向 `seed/agent/*.md`，模块顶层用 `gray-matter`（已是运行时依赖）剥 frontmatter 取正文。现成先例是 `project/bootstrap.ts:20-22` + `:56-68`（内联 text 导入 + 首次启动不存在才落盘），不是 `build.ts:63-66`（那是生成的虚拟入口里的 `type: "file"`）。注意 `ConfigMarkdown.parse` 用不上——它是路径读盘器（`config/markdown.ts:70-71`），内联字符串得直接 `matter(text)`。
 
-### 修正三：别名只能落在 `Agent.get`，且它够不到六处硬编码
+### 修正三：别名的落点与它够不到的硬编码（行号见修正十、清单见修正十一）
 
 md 路线表达不了别名——`config/agent.ts:143` 是 `result[config.name] = ...`，**key 强制等于 name**，写 `name: advise` 只会造出第二个 advise。配置层加 `alias` 字段要动 schema + 重跑 OpenAPI/SDK，为一轮过渡不值。
 
@@ -124,12 +126,14 @@ md 路线表达不了别名——`config/agent.ts:143` 是 `result[config.name] 
 | --- | --- | --- | --- |
 | 1 | `cli/cmd/tui/routes/session/index.tsx:319` `local.agent.set("build")` | 客户端字面量，`local.tsx:85` 先校验 name 在 list 里，不中弹 toast → **plan_exit 后 TUI 卡在 plan 姿态出不来** | 必须 |
 | 2 | `session/reminders.ts:37` `input.agent.name === "build"` | BUILD_SWITCH 提醒**静默失效**（不抛错、不降级，最难发现） | 必须 |
-| 3 | `agent/agent.ts:397` `agents[c.default_agent]` | `default_agent: "build"` 的配置升级后直接抛错；顺带 `:388` 排序谓词按 name 比、`:397` 按 key 查，两边口径本来就不一致 | 必须 |
-| 4 | `tool/plan.ts:57` `agent: "build"` 写进**新造的** MessageV2.User | 写入侧不改，别名表**永远删不掉**——「一轮过渡」的承诺落空 | 应该 |
-| 5 | `session/goal-continuation.ts:64/96` `?? "build"` | 唯一**无条件**跑到的兜底（plan 那条挂在 `experimentalPlanMode` 上默认不注册） | 应该 |
-| 6 | `config/config.ts:222-227` 具名 key `build`/`general`/`scout` | 经 `handlers/config.ts:14-16` 出仓、生成进 `sdk/openapi.json:14546/14549/14555`。**这张表已漏了 redmind**，本来就该修 | 应该 |
+| 3 | `agent/agent.ts` 的 `defaultInfo` 与 `list` 排序谓词 | `default_agent: "build"` 的配置升级后直接抛错；只修一处则排序退化、默认姿态静默变 plan。**行号与做法见修正十** | 必须 |
+| 4 | `tool/plan.ts:57` `agent: "build"` 写进**新造的** MessageV2.User | 写入侧不改就一直在生产老名字（但别名删不掉另有更硬的原因，见修正十二） | 应该 |
+| 5 | `session/goal-continuation.ts:64/96` `?? "build"` | 兜底指向已下线的名字（**不是**「唯一无条件跑到」的——`:47` 的 `goal_auto_continue !== true` 同样默认关，与 plan.ts:57 可达性同级） | 应该 |
+| 6 | `config/config.ts:222-227` 具名 key `build`/`general`/`scout` | 经 `cli/cmd/generate.ts:10` 的 `Server.openapi()` 出仓（**不经 handlers**，schema 在 `groups/config.ts:17/27/28`）、生成进 `sdk/openapi.json:14546/14549/14555`。**这张表已漏了 redmind**，本来就该修 | 应该 |
 
-**硬约束**：`session/prompt.ts:1195-1197` 在续跑时对最后一条 user 消息的 agent 名做 `get` + 抛 `agentNotFound`。所以 `build`/`general` **必须留别名、不能物理删**——任何历史会话续跑就炸，不是降级。
+第 7~11 处（调研新发现）见**修正十一**。
+
+**硬约束**：`session/prompt.ts:1195-1198` 在续跑时对最后一条 user 消息的 agent 名做 `get` + 抛 `agentNotFound`。同类抛点共四个（`:467-470` 重放 task part、`:615-618` createUserMessage、`:1909-1912` slash 命令），第五个在 `session/prompt/shell.ts:43-50`。所以 `build`/`general` **必须留别名、不能物理删**——任何历史会话续跑就炸，不是降级。
 
 **CHANGELOG 别写错**：老 `@architect` 手打**不再可用**——交互式 @ 提及的 part 由客户端从 `list()` 造（`autocomplete.tsx:517`、`app/prompt-input.tsx:664`），别名进不去。仍可用的老入口只有：`subagent_type`、历史会话续跑、`--agent`（非 `--attach` 路径）、`default_agent`。
 
@@ -139,7 +143,7 @@ md 路线表达不了别名——`config/agent.ts:143` 是 `result[config.name] 
 
 两处真冲突要拍板：`advise` 的 `bash`（reviewer 有、architect 无）；`execute` 更大——general 是 `"*": allow`（继承 defaults）、fixer 是 `"*": deny` + 白名单，**根本不是同一档，写法上必须二选一**。
 
-### 修正五：sync-home 先不动
+### 修正五：sync-home 先不动 —— **已被修正九推翻，见下**
 
 live 的 `~/.redcode/agent/` 是**私仓工作树**，三份都在版本控制里（`git ls-files agent/`），而且历史上有 4 次在 live 侧的直接编辑。所以「手动对齐一次 live」的正解是私仓 `git rm` 一次，一步到位、零新增机械。
 
@@ -156,6 +160,72 @@ live 的 `~/.redcode/agent/` 是**私仓工作树**，三份都在版本控制�
 `"build"` 在 `packages/opencode/test/` 下是 **42 个文件 / 162 行**，不是三个。确定会红的：`test/tool/task.test.ts:222`（不是 :221——:221 只比 explore 与 alpha，:223 因 `general=-1` 反而假绿通过）、`test/session/prompt.test.ts:1910` 的 `toEqual(["build"])`、`test/config/agent-color.test.ts:35` 的 `get("build")`。而 architect/reviewer/fixer **零调用零断言**，改名几乎免费。
 
 
+### 修正七：advise / execute **必须内建**，md-only 在发布二进制里根本不存在
+
+拿 `packages/opencode/dist/redcode-windows-x64/bin/redcode.exe`（08-27 16:22 的真构建产物）做字节扫描：静态导入的 md（`src/agent/prompt/scout.md` 正文）**在**；构建时就已存在的三份 md-only 角色的 ASCII 标记（`name: architect`、`model: opencode-go/hy3`）**全部不在**。`~/.redcode/agent/` 的唯一写入者是 `script/sync-home.bat:33`，只被 `packages/opencode/build.bat:2` 与 `packages/desktop/build-and-package.bat:2` 调用；`project/bootstrap.ts` 只播 souls/MEMORY 与 skill，一行都不碰 agent/。
+
+所以别名指向一个 md-only 的目标 = 把今天能用的 architect/reviewer/fixer 变成「不存在」。链路：`get("architect")` → 别名 → `agents["advise"]` = undefined → `session/prompt.ts:1195-1198` 历史会话续跑**硬抛** `agentNotFound`（不是降级）。live 数据：以 `general` 结尾的会话 15 个、`reviewer` 1 个。
+
+**内建化是别名表的前置条件，不能拆成「先加别名、后内建」两个提交。**
+
+### 修正八：md 的扁平 `"*": deny` 会打掉 defaults 里的**对象型**权限
+
+`"*": deny` 的 rule 是 `permission="*", pattern="*"`，findLast 下匹配一切 —— 包括 defaults 里那些写成对象的权限。实测三笔：
+
+- **`external_directory` 塌成 deny**：三份 md 都没写它，于是 defaults（`agent.ts:135-138`）整段白名单作废。项目外 ask→deny、`~/.redcode/skill/*` allow→deny、`Global.Path.tmp` allow→deny、工作区 `.redcode/temp` allow→deny。而 deny 在 `permission/index.ts:196-199` 是直接 `DeniedError` **硬失败**，不是弹询问。（live 的 architect/fixer/reviewer 今天就这样，读不了全局技能目录。）
+- **`read` 的 .env 护栏失效**：defaults 是 `read: { "*": allow, "*.env": ask, ... }`（`agent.ts:145-150`），被 md 的扁平 `read: allow` 顶掉 → `execute` 能静默读 .env，而它同时有 write/edit。
+- **`destructive` / `doom_loop` 从 ask 变 deny**：advise.md 与 execute.md 的注释写着「破坏性操作仍由 defaults 的 `destructive: ask` 拦着」，**与实际相反**。行为上这和 fixer 今天一致（同样 `"*": deny` 开头），所以**不改行为、只改注释**。
+
+修法：`read` 在 md 里写成对象形式即可（静态可表达）；`external_directory` 依赖 `ctx.directory` 与 `skill.dirs()`，静态表达不了，**只能由代码在 md 块之后、`user` 之前重新宣告**：
+
+```ts
+Permission.merge(defaults, Permission.fromConfig(fm.permission),
+                 Permission.fromConfig({ external_directory: readonlyExternalDirectory }), user)
+```
+
+被实测否掉的两个替代：放进 `agent.ts:371-385` 那个循环后补丁，会把用户自己在 `permission.external_directory` 里配的白名单从 allow 压成 ask（`instance-context.ts:23` 就是这个用法的官方示例）；循环后再补一遍 `user`，会把「per-agent > 全局」的优先级颠倒过来。
+
+### 修正九：三份工种 md **不能再回流**（推翻修正五的「sync-home 先不动」）
+
+`sync-home.bat:33` 把 `seed/agent/*.md` 拷进 `~/.redcode/agent/`，`ConfigAgent.load` 再把同一份塞进 `cfg.agent`，`agent.ts:368` 把**同一段白名单接到最末尾**（在 `user` 之后）。实测后果两条：修正八的补丁**一跑 build.bat 就作废**，四项全部退回 deny；而且 md 尾巴会让用户全局 `permission` 整段失效（`bash: ask` → allow、`websearch: deny` → allow）。
+
+这不是能糊过去的实现细节：**「内建吃 frontmatter」与「同一份 md 经配置回流」在 findLast 语义下必然打架**。
+
+**定死**：三份工种 md 移出 `seed/`，落 `packages/opencode/src/agent/definition/*.md`；`sync-home.bat` 的 agent 块整块删掉（`seed/agent/` 清空后不再存在）。用户**仍可**自建 `~/.redcode/agent/*.md`（md 型 agent 语义不变），只是我们不再默认发一份同名的进去。4a 提交里那句「同一个文件同时是构建期内联的提示词、又是运行时可覆写的定义」**作废**。
+
+### 修正十：别名解析要在**三处**共用，配置层的 key 还要先规范化
+
+- `Agent.defaultInfo`（`agent.ts:406`）与 `list()` 的排序谓词（`:397`）都**绕开 `get`**（`:387-389`）。只在 get 加别名，`default_agent: "build"` 仍在 `:407` 抛 `default agent "build" not found`；只修 `:406` 不修 `:397`，排序退化成 name-asc，客户端按 primary 过滤后 `at(0)` 实测是 **plan** —— TUI（`local.tsx:82`）与 GUI（`app/src/context/local.tsx:91` + `:113`）都会静默进只读姿态。
+- 顺序必须**「直查优先、别名兜底」**：`agent.ts:344-351` 对任何未知 key 凭空造一个 `mode:"all"` 的角色，别名优先会被这个幽灵劫持。
+- 还得在配置循环里**先规范化 key**，否则老配置里的 `agent: { build: {...} }` 会复活一个 `native:false`、`mode:"all"`、权限 `"*": allow`、description 为 undefined 的幽灵 build：它通过 `registry.ts:356` 的 `mode !== "primary"` 过滤，**同时出现在 @ 补全与 `describeTask` 里**，而 `question` 又被 defaults 的 deny 经 `registry.ts:382` 整个下架——比今天的 build 还低一档。`mode: { build: {...} }` 那条 deprecated 路径（`config.ts:789-796`）造出的更是 `mode:"primary"` 的幽灵。
+- **`disable` 走别名 key 时按 no-op 处理**：`agent: { build: { disable: true } }` 不能拿去删 redmind —— redmind 是默认姿态，删了 `defaultInfo` 直接抛「no primary visible agent found」。
+
+（旧行号已陈旧 9 行：底本先前写的 `:378-380`/`:388`/`:397`/`:248` 分别对应现在的 `:387-389`/`:397`/`:406`/`:257`。）
+
+### 修正十一：硬编码不是六处，是十一处
+
+修正三表里的 1~6 之外，调研另找到五处：
+
+| # | 位置 | 不改的后果 | 必要性 |
+| --- | --- | --- | --- |
+| 7 | `agent/agent.ts:338-351` 配置循环不规范化 key | 见修正十：老配置复活一个权限更宽的幽灵 build，而且从配置里删条目也删不掉 | 必须 |
+| 8 | `seed/command/subtask.md:4` `agent: general` | 走 `prompt.ts:1856` → `:1909` **硬抛** `agentNotFound`（live 已装同一份）。别名能接住，但它是老名字的永久生产者 | 必须（等同级） |
+| 9 | `cli/cmd/run/runtime.lifecycle.ts:118` `?? "build"` | `redcode run` 不带 `--agent` 时页脚显示一个已不存在的角色名 | 应该 |
+| 10 | 两处提示词「call the task tool with subagent **scout**」 | 指使模型去调一个 `describeTask` 里不存在的名字 | 应该 |
+| 11 | `skill/prompt/customize-redcode.md` 的内建 agent 清单 | **今天就已经错**（写成 `OPENCODE_` 前缀、漏了 redmind）；这是进模型上下文的提示词，说错内建角色直接误导模型 | 应该 |
+
+另有约五处纯文案/注释兜底（`tool/plan.ts` 的 "Build Agent" 文案、`cli/cmd/run/tool.ts` 与 `subagent-data.ts` 的 `subagent_type || "general"` 兜底、`demo.ts:892`、`github.ts:955` 注释），零功能影响，顺手改。
+
+### 修正十二：别名**退不了休**，别写「一轮过渡」
+
+`session/compaction.ts:582 / :610 / :630 / :763` 四处直接 `session.updateMessage` 铸 `role:"user"` 消息，**绕开 `createUserMessage` 与 `Agent.get`**，把历史 agent 名原样重铸。所以跑到自动压缩的老会话每压一次就再生一条 `agent:"build"`。
+
+另一条独立通道：`session/processor.ts:588` 读的是 **assistant** 消息的 agent（来源 `prompt.ts:426-427`，重放 subtask part 时原样落库），紧接着 `:585` 就 `agent.permission`，**没有 undefined 守卫** —— 它和 `prompt.ts:1195` 那道守卫读的根本不是同一个字段。
+
+live 规模（只读查 `~/.redcode/data/redcode.db`）：session.agent `build` 56 / `general` 15 / `reviewer` 1；message assistant `build` 17607 / `general` 197；part 表历史 `subagent_type` `general` 15 / `reviewer` 1。
+
+**结论**：别名表按长期存在设计。CHANGELOG 里别承诺「一轮过渡后删掉」。
+
 ## 迁移步骤
 
 | 步 | 内容 | 风险 | 状态 |
@@ -163,7 +233,13 @@ live 的 `~/.redcode/agent/` 是**私仓工作树**，三份都在版本控制�
 | 1 | 删 `ConfigAgent.loadMode` 与 `config.ts:714` 的调用 | **零**——全机零文件 | **已做 2026-08-28** |
 | 2 | 删随包 YAML profile 三份 + `agent/profile/{load,resolve,types,index}.ts`；`explore`/`general` 的 description/prompt 收回内建 | **零**——`agent.yaml` 已被 disable，另两份与内建重复，用户目录空 | **已做 2026-08-28**（连带清掉 seed 里那条已失效的 `agent.disable`；live 配置同步见私仓） |
 | 3 | `{agent,agents}` 收成只认 `agent/`（顺带清掉审计记的「seed 单复数双套」） | 低 | **已做 2026-08-28**（复数目录存在时打 warning，不静默丢定义） |
-| 4 | **三个工种**写成 `seed/agent/*.md`（姿态不写 md，见下节修正）+ 别名表 + 六处硬编码。live 对齐用私仓 `git rm`，不动 sync-home | 中 | 未做 |
+| 4a | `explore` 的提示词与权限并成一份 md，验证「prompt 搬进 md」这条机制 | 低 | **已做 2026-08-28**（`0419c3a8`） |
+| 4b | 新增合并后的 `advise` 与 `execute`（只新增、不删旧） | 低 | **已做 2026-08-28**（`5b48e1af`） |
+| 4c-1 | 三个工种**全部内建**（连 frontmatter 一起吃，见修正七）；md 移进 `src/agent/definition/`、退出 sync-home（修正九）；权限按修正八补 `external_directory` 与 `read`；删 `seed/agent/{architect,fixer,reviewer}.md` | 中 | 未做 |
+| 4c-2 | 别名表 + 三处共用 resolve + 配置 key 规范化（修正十）；删内建 `build`/`general`/`scout` 与 `PROMPT_SCOUT`/`scout.md`；`redmind` 补 `plan_enter: allow`；十一处硬编码（修正十一） | 中 | 未做 |
+| 4c-3 | `config.ts` 具名 key 换成 redmind/plan/explore/advise/execute + 机件三件套，重跑 `gen:openapi` 与 SDK | 低 | 未做 |
+| 4c-4 | 测试面：`test/agent/agent.test.ts`、`test/tool/task.test.ts:222`、`test/session/prompt.test.ts:763/1910/2253`、`test/config/agent-color.test.ts:35` | 低 | 未做 |
+| 4 | live 对齐（**私仓**）：`git rm agent/{architect,fixer,reviewer}.md`；`command/subtask.md:4` 改 `agent: execute` | 低 | 未做（仓外） |
 | 5 | `Info` 拆成姿态/工种两个类型；内建裁到机件 + 一个最小 fallback | 中 | 未做 |
 | 6 | `agent.*` 去掉「创建」分支，只留覆写 + disable | 低 | 未做 |
 
@@ -173,3 +249,16 @@ live 的 `~/.redcode/agent/` 是**私仓工作树**，三份都在版本控制�
 
 - **不动 `task` 工具的调用面**（`subagent_type` 仍是字符串，老的 `architect`/`reviewer`/`fixer` 名字在第 4 步之前照常可用）
 - **不改 `Permission.merge` 的语义**——本方案只动「谁来定义角色」，不动「权限怎么叠」
+
+## 调研顺出来的独立项（不进本方案）
+
+按被发现的顺序，各自都有独立的动机，混进 4c 只会冲淡 diff：
+
+1. **`experimentalScout` 改名** → `experimentalReference` / `REDCODE_EXPERIMENTAL_REFERENCE`。scout agent 删掉后这个 flag 还门控着 @reference 的 git 物化（`reference.ts:128/208/218/224`）与 `repo_clone`/`repo_overview` 的注册（`registry.ts:313`），名字彻底对不上了。改名要连带决定留不留 legacy 别名（`enabledByExperimental` 只收一个名字，要留得改成 `enableExa` 那种 `Config.all` 三键写法，`runtime-flags.ts:32-36`），是设计题；且会把 6 个测试文件卷进来。顺带修 `customize-redcode.md:231` 的 `OPENCODE_` 错前缀。
+2. **`agent.ts:368` 的「md 尾巴盖过全局 `permission`」**：任何用户自建 md agent 的权限块都排在 `cfg.permission` 之后，findLast 下用户全局配置整段失效。属于「权限怎么叠」，本方案说了不动，但它是真 bug。
+3. **`redcode agent create` 写进 `agents/`（复数）**，而第 3 步之后 loader 只扫单数 —— md 型 agent 唯一的运行时创建入口现在是坏的，只有一条 `log.warn`。
+4. **`project/bootstrap.ts` 的 skill 播种从 `ctx.directory/seed/skill` 读**（即当前项目目录，不是安装目录），在 RedCode 仓库之外启动时直接早退，全局 skill 一个都不播。与修正七是同一类病（读盘 vs 内联）。
+5. **`packages/web` 的 `agents.mdx` 三语 + `Share.tsx`** 里的 build/general/scout 残留：上游同源文件，改了加大 fork 分叉面，且与引擎行为无关。
+6. **live 私仓里写死老角色名的提示词**：`~/.redcode/skill/technical-documentation/SKILL.md:47` 明写「the `general` subagent for merge/synthesis」，sync-home 是「不存在才拷」永远不会更新它。
+7. **GUI 的 per-session agent 写进 localStorage** 且 restore 有一次性守卫（写进去就再不纠正），老会话里存的 `"build"` 需要人工清一次。
+8. **`Agent.get` 的返回类型是谎言**：`Effect.Effect<Info>` 不带 undefined（`noUncheckedIndexedAccess: false`），16 个调用点里 12 个自己写了 `if (!x)`。收窄签名是独立清理。
