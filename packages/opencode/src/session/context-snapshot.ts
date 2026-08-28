@@ -2,6 +2,7 @@ import type { ModelMessage } from "ai"
 import { Schema } from "effect"
 import { NonNegativeInt } from "@redcode-ai/core/schema"
 import { Token } from "@/util/token"
+import { countModelMessageContent, imageRequestTokens } from "./image-tokens"
 import { MAX_SESSIONS, SESSION_TTL_MS, sessionEvictor } from "@/util/session-evictor"
 
 // 260820 cc 上下文构成快照：把「这一刻发出去的请求由什么组成」记下来，供 UI 查看。
@@ -60,7 +61,7 @@ const evictor = sessionEvictor({
 })
 
 /** 每条 ModelMessage 的 token 数，按对象引用记忆——钉死的前缀不重算 */
-const memo = new WeakMap<object, number>()
+const memo = new WeakMap<object, { text: number; images: number }>()
 
 const LABEL_MAX = 48
 const TOP_TOOLS = 8
@@ -79,13 +80,28 @@ export function label(text: string): string {
   return cleaned.length > LABEL_MAX ? cleaned.slice(0, LABEL_MAX - 1) + "…" : cleaned
 }
 
-function messageTokens(message: ModelMessage): number {
+// 260828 cc：原来是 Token.estimate(JSON.stringify(content))，而图片在 ModelMessage
+// 里是内联 data URL —— 一张 400KB 的 JPEG 会被记成约 13 万 token，用量面板的
+// "messages 占多少"于是被一张截图完全带偏。按 image-tokens 的路由投影计价。
+//
+// 缓存存的是**路由无关**的事实（文本 token 数 + 图片张数），价钱在读的时候按当前
+// 路由现算 —— 否则换模型之后 WeakMap 里留的是上一条路由的价（形态取自 DSH 的
+// route-priced surface：节点存事实，measure() 时定价）。
+function messageFacts(message: ModelMessage): { text: number; images: number } {
   const cached = memo.get(message)
   if (cached !== undefined) return cached
   const content = message.content
-  const tokens = Token.estimate(typeof content === "string" ? content : (JSON.stringify(content) ?? ""))
-  memo.set(message, tokens)
-  return tokens
+  const facts =
+    typeof content === "string"
+      ? { text: Token.estimate(content), images: 0 }
+      : countModelMessageContent(content)
+  memo.set(message, facts)
+  return facts
+}
+
+function messageTokens(message: ModelMessage, providerID: string): number {
+  const facts = messageFacts(message)
+  return facts.text + facts.images * imageRequestTokens({ providerID })
 }
 
 const bySize = (a: Segment, b: Segment) => b.tokens - a.tokens
@@ -116,7 +132,7 @@ export function record(input: {
   const roles = new Map<string, number>()
   let messageTotal = 0
   for (const message of input.messages) {
-    const tokens = messageTokens(message)
+    const tokens = messageTokens(message, input.providerID)
     messageTotal += tokens
     roles.set(message.role, (roles.get(message.role) ?? 0) + tokens)
   }
