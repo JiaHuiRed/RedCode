@@ -94,6 +94,68 @@ scout 的招牌能力是 `repo_clone` / `repo_overview`（把依赖仓 clone 进
 | 工种 | `agent/*.md` | 覆写 model / variant / timeout / permission；`disable` 保留 |
 | 机件 | 纯内建 | 碰不到 |
 
+## 2026-08-28 调研修正（五路并行 + 反驳式复核）
+
+上面「目标形态」不变，但第 4 步的**做法**被调研推翻了三处。以下每条都带 file:line，是复核后净下来的判断。
+
+### 修正一：底本自相矛盾，已定死为「姿态不写 md」
+
+本文件上面写了姿态「结构里不带 model / prompt / timeoutMs 字段」、「唯一入口是内建 2 个」，第 4 步却写「**五个**角色写成 md」——五个必然含 redmind 与 plan。**定死：只有三个工种写 md，姿态保持内建。** 理由是 `Info.prompt` 的语义（见修正二）——姿态一旦有 md 正文，就会顶掉模型家族提示词。
+
+`PROMPT_PLAN` 也不能折进 `seed/agent/plan.md`：它走的是合成 user 消息 part（`session/reminders.ts:26-35`），与 `Info.prompt` 是两条通道。
+
+### 修正二：prompt 搬进 md，不能做成「运行时读盘」
+
+`with { type: "text" }` 是**构建期内联**，而 `seed/` 既不进构建也不进发布包（`script/sync-home.bat` 是它唯一出口）。改成运行时从磁盘读 md，等于把内建角色的提示词从二进制里拿掉——只有跑过 sync-home 的开发机才有。
+
+更糟的是失败形态：`Info.prompt` 的唯一消费点 `session/llm/request.ts:60` 是**替换**模型家族提示词（default.md/deepseek.md…）而非追加，所以 md 缺失不会崩，而是**静默回落**。机件三件套受害最重——`title`（`prompt.ts:379`）与 `compaction`（`compaction.ts:545`）显式传 `system: []`，md 一空就是一份系统提示词都没有。
+
+**做法**：保留静态 text 导入，把导入目标指向 `seed/agent/*.md`，模块顶层用 `gray-matter`（已是运行时依赖）剥 frontmatter 取正文。现成先例是 `project/bootstrap.ts:20-22` + `:56-68`（内联 text 导入 + 首次启动不存在才落盘），不是 `build.ts:63-66`（那是生成的虚拟入口里的 `type: "file"`）。注意 `ConfigMarkdown.parse` 用不上——它是路径读盘器（`config/markdown.ts:70-71`），内联字符串得直接 `matter(text)`。
+
+### 修正三：别名只能落在 `Agent.get`，且它够不到六处硬编码
+
+md 路线表达不了别名——`config/agent.ts:143` 是 `result[config.name] = ...`，**key 强制等于 name**，写 `name: advise` 只会造出第二个 advise。配置层加 `alias` 字段要动 schema + 重跑 OpenAPI/SDK，为一轮过渡不值。
+
+落点是 `agent/agent.ts:378-380` 的 `get`——全部 14 个服务端解析点都经它，别名不进 `agents` 记录就自动缺席 `list()`、@ 补全、姿态切换列表**和 `describeTask`**（最后这项是 `hidden` 做不到的：`tool/registry.ts:356` 只按 `mode !== "primary"` 过滤，压根不看 hidden）。
+
+**但别名表够不到这六处，必须逐个改**：
+
+| # | 位置 | 不改的后果 | 必要性 |
+| --- | --- | --- | --- |
+| 1 | `cli/cmd/tui/routes/session/index.tsx:319` `local.agent.set("build")` | 客户端字面量，`local.tsx:85` 先校验 name 在 list 里，不中弹 toast → **plan_exit 后 TUI 卡在 plan 姿态出不来** | 必须 |
+| 2 | `session/reminders.ts:37` `input.agent.name === "build"` | BUILD_SWITCH 提醒**静默失效**（不抛错、不降级，最难发现） | 必须 |
+| 3 | `agent/agent.ts:397` `agents[c.default_agent]` | `default_agent: "build"` 的配置升级后直接抛错；顺带 `:388` 排序谓词按 name 比、`:397` 按 key 查，两边口径本来就不一致 | 必须 |
+| 4 | `tool/plan.ts:57` `agent: "build"` 写进**新造的** MessageV2.User | 写入侧不改，别名表**永远删不掉**——「一轮过渡」的承诺落空 | 应该 |
+| 5 | `session/goal-continuation.ts:64/96` `?? "build"` | 唯一**无条件**跑到的兜底（plan 那条挂在 `experimentalPlanMode` 上默认不注册） | 应该 |
+| 6 | `config/config.ts:222-227` 具名 key `build`/`general`/`scout` | 经 `handlers/config.ts:14-16` 出仓、生成进 `sdk/openapi.json:14546/14549/14555`。**这张表已漏了 redmind**，本来就该修 | 应该 |
+
+**硬约束**：`session/prompt.ts:1195-1197` 在续跑时对最后一条 user 消息的 agent 名做 `get` + 抛 `agentNotFound`。所以 `build`/`general` **必须留别名、不能物理删**——任何历史会话续跑就炸，不是降级。
+
+**CHANGELOG 别写错**：老 `@architect` 手打**不再可用**——交互式 @ 提及的 part 由客户端从 `list()` 造（`autocomplete.tsx:517`、`app/prompt-input.tsx:664`），别名进不去。仍可用的老入口只有：`subagent_type`、历史会话续跑、`--agent`（非 `--attach` 路径）、`default_agent`。
+
+### 修正四：权限不能取并集
+
+`Permission.merge` 就是数组 concat（`core/permission.ts:33-35`），`evaluate` 是 **findLast**（同文件 21-31）。所以把 architect 块和 reviewer 块首尾相接，**后一个块开头的 `"*": deny` 会把前一个块的所有 allow 全部作废**。三个工种必须各**手写一份扁平白名单**，第一个键是 `"*": deny`。
+
+两处真冲突要拍板：`advise` 的 `bash`（reviewer 有、architect 无）；`execute` 更大——general 是 `"*": allow`（继承 defaults）、fixer 是 `"*": deny` + 白名单，**根本不是同一档，写法上必须二选一**。
+
+### 修正五：sync-home 先不动
+
+live 的 `~/.redcode/agent/` 是**私仓工作树**，三份都在版本控制里（`git ls-files agent/`），而且历史上有 4 次在 live 侧的直接编辑。所以「手动对齐一次 live」的正解是私仓 `git rm` 一次，一步到位、零新增机械。
+
+记账法（`.seeded-agents` 清单 + `.trash`）是为「以后还会再删角色」和「多机」买的保险，单维护者 ROI 低，**拆成独立提案**。同类先例：`CHANGELOG.md:843` 的 FreeLLMAPI 反复重现（`merge-home-config` 同样只增不删），当时的修法也是「模板与 live 两处同时删」，不是做记账。
+
+顺带：`sync-home.bat:29` 的注释已陈旧（还写 `{agent,agents}`），改这块时一并修。
+
+### 修正六：scout 与它的 flag 要分开
+
+`scout` 挂在 `flags.experimentalScout` 下（`agent.ts:248`），**默认关**，所以合并它的成本比读起来低。但 `experimentalScout` 这个 flag 还门控着 @reference 的 git 物化（`reference.ts:128/208/218/224`）与 `repo_clone`/`repo_overview` 的注册（`registry.ts:313`）——**别把 flag 跟 agent 一起删**，要清单独立项并先改名。
+
+### 测试面比原估计大一个量级
+
+`"build"` 在 `packages/opencode/test/` 下是 **42 个文件 / 162 行**，不是三个。确定会红的：`test/tool/task.test.ts:222`（不是 :221——:221 只比 explore 与 alpha，:223 因 `general=-1` 反而假绿通过）、`test/session/prompt.test.ts:1910` 的 `toEqual(["build"])`、`test/config/agent-color.test.ts:35` 的 `get("build")`。而 architect/reviewer/fixer **零调用零断言**，改名几乎免费。
+
+
 ## 迁移步骤
 
 | 步 | 内容 | 风险 | 状态 |
@@ -101,7 +163,7 @@ scout 的招牌能力是 `repo_clone` / `repo_overview`（把依赖仓 clone 进
 | 1 | 删 `ConfigAgent.loadMode` 与 `config.ts:714` 的调用 | **零**——全机零文件 | **已做 2026-08-28** |
 | 2 | 删随包 YAML profile 三份 + `agent/profile/{load,resolve,types,index}.ts`；`explore`/`general` 的 description/prompt 收回内建 | **零**——`agent.yaml` 已被 disable，另两份与内建重复，用户目录空 | **已做 2026-08-28**（连带清掉 seed 里那条已失效的 `agent.disable`；live 配置同步见私仓） |
 | 3 | `{agent,agents}` 收成只认 `agent/`（顺带清掉审计记的「seed 单复数双套」） | 低 | **已做 2026-08-28**（复数目录存在时打 warning，不静默丢定义） |
-| 4 | 五个角色写成 `seed/agent/*.md`。**`sync-home` 对 agent 是「只补缺失、不覆盖」**，本机已有的三份不会被盖——这一步必须手动对齐一次 live | 中 | 未做 |
+| 4 | **三个工种**写成 `seed/agent/*.md`（姿态不写 md，见下节修正）+ 别名表 + 六处硬编码。live 对齐用私仓 `git rm`，不动 sync-home | 中 | 未做 |
 | 5 | `Info` 拆成姿态/工种两个类型；内建裁到机件 + 一个最小 fallback | 中 | 未做 |
 | 6 | `agent.*` 去掉「创建」分支，只留覆写 + disable | 低 | 未做 |
 
