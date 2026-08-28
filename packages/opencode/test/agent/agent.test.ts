@@ -720,12 +720,11 @@ it.instance(
 )
 
 it.instance(
-  "defaultAgent returns plan when build, redmind and agent are disabled and default_agent not set",
+  "defaultAgent returns plan when build and redmind are disabled and default_agent not set",
   () =>
     Effect.gen(function* () {
       const agent = yield* load((svc) => svc.defaultAgent())
-      // build, redmind and the default agent profile are disabled,
-      // so it should return plan (next primary agent)
+      // build 与 redmind 都被禁用，于是回落到下一个 primary agent
       expect(agent).toBe("plan")
     }),
   {
@@ -733,7 +732,6 @@ it.instance(
       agent: {
         build: { disable: true },
         redmind: { disable: true },
-        agent: { disable: true },
       },
     },
   },

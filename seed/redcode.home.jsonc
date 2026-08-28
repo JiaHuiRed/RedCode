@@ -21,11 +21,6 @@
   "instructions": ["~/.redcode/skill/memory-automation/SKILL.md"],
   // 260804 Red 不设这个键会 fallback 到内置 build（见 config.ts 的 default_agent 注释）。
   "default_agent": "redmind",
-  // 260804 Red 切换列表里那个多余的 "agent" 来自随包发行的内置 profile
-  // （src/agent/profile/default/agent.yaml，description 与 build 完全相同），
-  // 从配置里删条目没用、每次启动都会重新造出来，只能 disable。
-  // 这里只放 disable 一项：live 配置的 agent 段还有 explore 等内容，别在模板里重写整段。
-  "agent": { "agent": { "disable": true } },
   "mcp": {
     "typegraph": {
       "type": "local",
