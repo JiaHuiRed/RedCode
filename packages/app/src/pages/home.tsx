@@ -26,6 +26,7 @@ import { displayName, getProjectAvatarSource, projectForSession, sortedRootSessi
 import { sessionTitle } from "@/utils/session-title"
 import { pathKey } from "@/utils/path-key"
 import { messageAgentColor } from "@/utils/agent"
+import { tallySessionStatus } from "@/utils/session-status"
 import { sessionPermissionRequest } from "@/pages/session/composer/session-request-tree"
 import { HomeKanban } from "@/pages/home-kanban"
 import { HomeStatsPanel } from "@/pages/home-stats"
@@ -613,6 +614,7 @@ function HomeProjectColumn(props: {
                 >
                   <HomeProjectAvatar project={project} />
                   <span>{displayName(project)}</span>
+                  <HomeProjectStatus project={project} />
                 </ContextMenu.Trigger>
                 <ContextMenu.Portal>
                   <ContextMenu.Content>
@@ -653,6 +655,41 @@ function HomeProjectColumn(props: {
         </div>
       </div>
     </aside>
+  )
+}
+
+// 260828 cc 项目行的运行态指示。
+//
+// 12 个项目排在侧边栏里，此前只有色块头像 + 名字 —— 哪个有会话在跑、哪个有权限请求
+// 等着你，必须逐个点进去才知道。而看板早就把这个分类算出来了（现在两边共用
+// @/utils/session-status 的判据）。
+//
+// **只读窥探，不拉起任何目录**：`sync.child(dir, { bootstrap: false })` 只读已经在内存里
+// 的 store，不触发 InstanceStore.load()（那会起整套 MCP/LSP 进程树，见本文件 sessionLoad
+// 上方那段注释）。所以从没打开过的项目这里什么都不显示 —— 那是对的，我们确实不知道，
+// 也不该为了显示一个小点去把它拉起来。
+function HomeProjectStatus(props: { project: LocalProject }) {
+  const sync = useServerSync()
+  const notification = useNotification()
+  const permission = usePermission()
+  const tally = createMemo(() => {
+    const [store] = sync.child(props.project.worktree, { bootstrap: false })
+    const sessions = (store.session ?? []).filter((session) => !session.time?.archived)
+    if (sessions.length === 0) return undefined
+    return tallySessionStatus(sessions, { sync, notification, permission })
+  })
+  return (
+    <span class="ml-auto flex shrink-0 items-center gap-1.5">
+      <Show when={(tally()?.working ?? 0) > 0}>
+        <Spinner class="size-[11px] text-v2-icon-icon-info" />
+      </Show>
+      <Show when={(tally()?.attention ?? 0) > 0}>
+        <span class="flex items-center gap-1 text-[11px] [font-weight:530] text-v2-icon-icon-warning">
+          <span class="size-1.5 rounded-full bg-surface-warning-strong" />
+          {tally()!.attention}
+        </span>
+      </Show>
+    </span>
   )
 }
 

@@ -10,7 +10,7 @@ import { usePermission } from "@/context/permission"
 import { useLanguage } from "@/context/language"
 import { sessionTitle } from "@/utils/session-title"
 import { messageAgentColor } from "@/utils/agent"
-import { sessionPermissionRequest } from "@/pages/session/composer/session-request-tree"
+import { classifySession } from "@/utils/session-status"
 import type { LocalProject } from "@/context/layout"
 
 type KanbanRecord = {
@@ -41,26 +41,14 @@ export function HomeKanban(props: {
     const attention: KanbanRecord[] = []
     const idle: KanbanRecord[] = []
 
+    // 260828 cc 判据搬到 @/utils/session-status —— 侧边栏的项目运行态指示要用同一套规则，
+    // 各写一份必然漂（看板说"需关注"、侧边栏不亮点，或者反过来）。
+    const deps = { sync: globalSync, notification, permission }
     for (const record of props.records) {
-      const [store] = globalSync.child(record.session.directory, { bootstrap: false })
-      const id = record.session.id
-      const hasPermission = !!sessionPermissionRequest(
-        store.session,
-        store.permission,
-        id,
-        (item) => !permission.autoResponds(item, record.session.directory),
-      )
-      const isWorking = !hasPermission && store.session_working(id)
-      const hasUnseen = notification.session.unseenCount(id) > 0
-      const hasError = notification.session.unseenHasError(id)
-
-      if (isWorking) {
-        working.push(record)
-      } else if (hasPermission || hasError || hasUnseen) {
-        attention.push(record)
-      } else {
-        idle.push(record)
-      }
+      const status = classifySession(record.session, deps)
+      if (status === "working") working.push(record)
+      else if (status === "attention") attention.push(record)
+      else idle.push(record)
     }
 
     return [
@@ -96,9 +84,10 @@ export function HomeKanban(props: {
             <div class="flex items-center gap-2 px-2 h-7 shrink-0">
               <div class="size-2 rounded-full" style={{ "background-color": columnColor(column.id) }} />
               <span class="text-v2-text-text-muted [font-weight:530] text-[13px]">{columnLabel(column.id)}</span>
-              <Show when={column.records.length > 0}>
-                <span class="text-v2-text-text-faint text-[11px] [font-weight:440]">{column.records.length}</span>
-              </Show>
+              {/* 260828 cc 计数改成三列都显示。原来只在 > 0 时给，于是「工作中」「需关注」
+                  没数字、「空闲」有个 5，三个列头的信息密度不齐，扫视时会卡一下。
+                  而且 0 本身是信息 —— 「需关注 0」是个正面信号，不是没内容。 */}
+              <span class="text-v2-text-text-faint text-[11px] [font-weight:440]">{column.records.length}</span>
             </div>
             {/* 260828 cc 卡片列数按可用宽度自适应，不再按记录条数切换。原判据是
                 records.length > 6 才切两列，但决定该排几列的是宽度不是条数：5 张卡在宽列里
