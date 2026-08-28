@@ -170,6 +170,9 @@ const context = createContext<{
   tui: ReturnType<typeof useTuiConfig>
 }>()
 
+// 260828 cc 导出供快照测试直接喂假值，见 test/cli/tui/lib/transcript.tsx。
+export { context as SessionRenderContext }
+
 function use() {
   const ctx = useContext(context)
   if (!ctx) throw new Error("useContext must be used within a Session component")
@@ -1410,7 +1413,7 @@ const MIME_BADGE: Record<string, string> = {
   "application/x-directory": "dir",
 }
 
-function UserMessage(props: {
+export function UserMessage(props: {
   message: UserMessage
   parts: Part[]
   onMouseUp: () => void
@@ -1561,7 +1564,7 @@ function WaitingForModel(props: { start: number }) {
   )
 }
 
-function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; last: boolean }) {
+export function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; last: boolean }) {
   const ctx = use()
   const local = useLocal()
   const { theme } = useTheme()
