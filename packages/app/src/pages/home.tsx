@@ -687,16 +687,18 @@ function HomeProjectColumn(props: {
 // 等着你，必须逐个点进去才知道。而看板早就把这个分类算出来了（现在两边共用
 // @/utils/session-status 的判据）。
 //
-// **只读窥探，不拉起任何目录**：`sync.child(dir, { bootstrap: false })` 只读已经在内存里
-// 的 store，不触发 InstanceStore.load()（那会起整套 MCP/LSP 进程树，见本文件 sessionLoad
-// 上方那段注释）。所以从没打开过的项目这里什么都不显示 —— 那是对的，我们确实不知道，
-// 也不该为了显示一个小点去把它拉起来。
+// **必须用 peek 不是 child**：`child()` 无条件 pinForOwner，把目录永久钉住，重连时
+// 「只刷新 pinned 目录」的过滤形同虚设（layout.tsx 的 enrich() 上方那条注释记的就是这个
+// 坑）。首个版本用了 child，侧边栏对 12 个项目各调一次，实测触发 12 次串行 session.list、
+// 累计 28 秒 —— 期间首页一条会话都显示不出来。`peek()` 只读已经在内存里的 store，不 pin、
+// 不触发 InstanceStore.load()。代价是从没打开过的项目这里什么都不显示 —— 那是对的，
+// 我们确实不知道，也不该为了点亮一个小点去把整套 MCP/LSP 进程树拉起来。
 function HomeProjectStatus(props: { project: LocalProject }) {
   const sync = useServerSync()
   const notification = useNotification()
   const permission = usePermission()
   const tally = createMemo(() => {
-    const [store] = sync.child(props.project.worktree, { bootstrap: false })
+    const [store] = sync.peek(props.project.worktree, { bootstrap: false })
     const sessions = (store.session ?? []).filter((session) => !session.time?.archived)
     if (sessions.length === 0) return undefined
     return tallySessionStatus(sessions, { sync, notification, permission })
