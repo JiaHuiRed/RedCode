@@ -21,13 +21,13 @@ There are two types of agents in RedCode; primary agents and subagents.
 
 ### Primary agents
 
-Primary agents are the main assistants you interact with directly. You can cycle through them using the **Tab** key, or your configured `switch_agent` keybind. These agents handle your main conversation. Tool access is configured via permissions — for example, Build has all tools enabled while Plan is restricted.
+Primary agents are the main assistants you interact with directly. You can cycle through them using the **Tab** key, or your configured `switch_agent` keybind. These agents handle your main conversation. Tool access is configured via permissions — for example, RedMind has all tools enabled while Plan is restricted.
 
 :::tip
 You can use the **Tab** key to switch between primary agents during a session.
 :::
 
-RedCode comes with two built-in primary agents, **Build** and **Plan**. We'll
+RedCode comes with two built-in primary agents, **RedMind** and **Plan**. We'll
 look at these below.
 
 ---
@@ -42,15 +42,18 @@ RedCode comes with three built-in subagents, **General**, **Explore**, and **Sco
 
 ## Built-in
 
-RedCode comes with two built-in primary agents and three built-in subagents.
+RedCode comes with two built-in primary agents and two built-in subagents, plus
+three hidden system agents.
 
 ---
 
-### Use build
+### Use redmind
 
 _Mode_: `primary`
 
-Build is the **default** primary agent with all tools enabled. This is the standard agent for development work where you need full access to file operations and system commands.
+RedMind is the **default** primary agent. Everyday operations (read, write,
+search) run automatically; sensitive ones such as `bash` ask first. This is the
+standard agent for development work.
 
 ---
 
@@ -68,27 +71,28 @@ This agent is useful when you want the LLM to analyze code, suggest changes, or 
 
 ---
 
-### Use general
-
-_Mode_: `subagent`
-
-A general-purpose agent for researching complex questions and executing multi-step tasks. Has full tool access (except todo), so it can make file changes when needed. Use this to run multiple units of work in parallel.
-
----
-
 ### Use explore
 
 _Mode_: `subagent`
 
-A fast, read-only agent for exploring codebases. Cannot modify files. Use this when you need to quickly find files by patterns, search code for keywords, or answer questions about the codebase.
+A read-only investigator. It never modifies anything. Say in the prompt which of
+the three jobs you want:
+
+- **find** — locate files by pattern, search code for keywords, or answer "how
+  does X work?" about the codebase
+- **design** — read the current state, then produce a plan, evaluate a technical
+  choice, or map an architecture
+- **review** — read a change and report bugs, risks, and quality problems
 
 ---
 
-### Use scout
+### Use execute
 
 _Mode_: `subagent`
 
-A read-only agent for external docs and dependency research. Use this when you need to clone a dependency repository into RedCode's managed cache, inspect library source, or cross-reference local code against upstream implementations without modifying your workspace.
+A read-write agent for implementation. Use it once the approach is settled and
+you need code changed, tests run, or a bug fixed. It does not plan or research.
+Also use it to run several well-defined units of work in parallel.
 
 ---
 
@@ -116,6 +120,17 @@ Hidden system agent that creates session summaries. It runs automatically and is
 
 ---
 
+### Older names
+
+`build`, `general`, `architect`, `reviewer`, `fixer`, `scout`, and `advise` still
+resolve through an alias table — `build` to `redmind`, `general` and `fixer` to
+`execute`, and the rest to `explore`. They do not appear in any agent list or in
+`@` completion, and should not be used in new configuration. The aliases are
+permanent: older sessions keep replaying the old names, so they are not going
+away after a transition period.
+
+---
+
 ## Usage
 
 1. For primary agents, use the **Tab** key to cycle through them during a session. You can also use your configured `switch_agent` keybind.
@@ -125,7 +140,7 @@ Hidden system agent that creates session summaries. It runs automatically and is
    - Manually by **@ mentioning** a subagent in your message. For example.
 
      ```txt frame="none"
-     @general help me search for this function
+     @explore help me search for this function
      ```
 
 3. **Navigation between sessions**: When subagents create child sessions, use `session_child_first` (default: **\<Leader>+Down**) to enter the first child session from the parent.
@@ -147,37 +162,30 @@ You can customize the built-in agents or create your own through configuration. 
 
 ### JSON
 
-Configure agents in your `redcode.json` config file:
+The `agent` block in `redcode.json` **overrides or disables an agent that already
+exists**. It does not create one — an unknown key there is ignored with a
+warning. To add a new agent, write a [markdown file](#markdown).
 
 ```json title="redcode.json"
 {
   "$schema": "https://redcode.dev/config.json",
   "agent": {
-    "build": {
-      "mode": "primary",
+    "redmind": {
       "model": "anthropic/claude-sonnet-4-20250514",
-      "prompt": "{file:./prompts/build.txt}",
       "permission": {
         "edit": "allow",
         "bash": "allow"
       }
     },
     "plan": {
-      "mode": "primary",
       "model": "anthropic/claude-haiku-4-20250514",
       "permission": {
         "edit": "deny",
         "bash": "deny"
       }
     },
-    "code-reviewer": {
-      "description": "Reviews code for best practices and potential issues",
-      "mode": "subagent",
-      "model": "anthropic/claude-sonnet-4-20250514",
-      "prompt": "You are a code reviewer. Focus on security, performance, and maintainability.",
-      "permission": {
-        "edit": "deny"
-      }
+    "explore": {
+      "disable": true
     }
   }
 }
@@ -189,10 +197,10 @@ Configure agents in your `redcode.json` config file:
 
 You can also define agents using markdown files. Place them in:
 
-- Global: `~/.redcode/agents/`
-- Per-project: `.redcode/agents/`
+- Global: `~/.redcode/agent/`
+- Per-project: `.redcode/agent/`
 
-```markdown title="~/.redcode/agents/review.md"
+```markdown title="~/.redcode/agent/review.md"
 ---
 description: Reviews code for quality and best practices
 mode: subagent
@@ -482,7 +490,7 @@ You can override these permissions per agent.
 
 You can also set permissions in Markdown agents.
 
-```markdown title="~/.redcode/agents/review.md"
+```markdown title="~/.redcode/agent/review.md"
 ---
 description: Code review without edits
 mode: subagent
@@ -739,7 +747,7 @@ Do you have an agent you'd like to share? [Submit a PR](https://github.com/JiaHu
 
 ### Documentation agent
 
-```markdown title="~/.redcode/agents/docs-writer.md"
+```markdown title="~/.redcode/agent/docs-writer.md"
 ---
 description: Writes and maintains project documentation
 mode: subagent
@@ -761,7 +769,7 @@ Focus on:
 
 ### Security auditor
 
-```markdown title="~/.redcode/agents/security-auditor.md"
+```markdown title="~/.redcode/agent/security-auditor.md"
 ---
 description: Performs security audits and identifies vulnerabilities
 mode: subagent

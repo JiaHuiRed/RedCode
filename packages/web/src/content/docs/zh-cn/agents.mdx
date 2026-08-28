@@ -21,13 +21,13 @@ RedCode 中有两种类型的代理：主代理和子代理。
 
 ### 主代理
 
-主代理是您直接交互的主要助手。您可以使用 **Tab** 键或配置的 `switch_agent` 快捷键来循环切换它们。这些代理处理您的主要对话。工具访问通过权限进行配置——例如，Build 启用了所有工具，而 Plan 则受到限制。
+主代理是您直接交互的主要助手。您可以使用 **Tab** 键或配置的 `switch_agent` 快捷键来循环切换它们。这些代理处理您的主要对话。工具访问通过权限进行配置——例如，RedMind 启用了所有工具，而 Plan 则受到限制。
 
 :::tip
 您可以在会话期间使用 **Tab** 键在主代理之间切换。
 :::
 
-RedCode 内置了两个主代理：**Build** 和 **Plan**。我们将在下面介绍它们。
+RedCode 内置了两个主代理：**RedMind** 和 **Plan**。我们将在下面介绍它们。
 
 ---
 
@@ -35,21 +35,22 @@ RedCode 内置了两个主代理：**Build** 和 **Plan**。我们将在下面�
 
 子代理是主代理可以调用来执行特定任务的专业助手。您也可以通过在消息中 **@ 提及**它们来手动调用。
 
-RedCode 内置了三个子代理：**General**、**Explore** 和 **Scout**。我们将在下面介绍它们。
+RedCode 内置了两个子代理：**Explore** 和 **Execute**。我们将在下面介绍它们。
 
 ---
 
 ## 内置代理
 
-RedCode 内置了两个主代理和三个子代理。
+RedCode 内置了两个主代理和两个子代理，另有三个隐藏的系统代理。
 
 ---
 
-### 使用 Build
+### 使用 RedMind
 
 _模式_：`primary`
 
-Build 是启用了所有工具的**默认**主代理。这是用于需要完全访问文件操作和系统命令的开发工作的标准代理。
+RedMind 是**默认**主代理。常规操作（读、写、搜索）自动执行，bash 等敏感操作会先征得同意。
+这是日常开发工作的标准代理。
 
 ---
 
@@ -67,27 +68,24 @@ _模式_：`primary`
 
 ---
 
-### 使用 General
-
-_模式_：`subagent`
-
-一个用于研究复杂问题和执行多步骤任务的通用代理。拥有完整的工具访问权限（todo 除外），因此可以在需要时修改文件。可用于并行运行多个工作单元。
-
----
-
 ### 使用 Explore
 
 _模式_：`subagent`
 
-一个用于探索代码库的快速只读代理。无法修改文件。当您需要按模式快速查找文件、搜索代码中的关键字或回答有关代码库的问题时，请使用此代理。
+只读的调查型代理，绝不修改任何文件。在提示词里说明你要哪一种：
+
+- **找东西** —— 按模式查找文件、搜索关键字，或回答「这块是怎么跑的」
+- **出方案** —— 先读清现状，再给方案、评估技术选型或梳理架构
+- **做审查** —— 读一份改动，报出 bug、风险与质量问题
 
 ---
 
-### 使用 Scout
+### 使用 Execute
 
 _模式_：`subagent`
 
-一个用于外部文档和依赖研究的只读代理。当您需要将某个依赖仓库克隆到 RedCode 的托管缓存中、检查库的源代码，或在不修改工作区的情况下将本地代码与 upstream 实现进行交叉对照时，请使用此代理。
+可读写的实现型代理。当方案已定、需要实际改代码、跑测试、修 bug 时使用；不规划不研究。
+也用于把多个明确的工作单元并行铺开。
 
 ---
 
@@ -115,6 +113,15 @@ _模式_：`primary`
 
 ---
 
+### 老名字
+
+`build`、`general`、`architect`、`reviewer`、`fixer`、`scout`、`advise` 仍可经别名表解析
+—— `build` → `redmind`，`general` 与 `fixer` → `execute`，其余 → `explore`。它们不出现在任何
+代理列表与 `@` 补全里，新配置不应再用。别名是**长期保留**的：老会话会不断重放旧名字，
+不存在「过渡一轮后删掉」。
+
+---
+
 ## 用法
 
 1. 对于主代理，在会话期间使用 **Tab** 键循环切换。您也可以使用配置的 `switch_agent` 快捷键。
@@ -124,7 +131,7 @@ _模式_：`primary`
    - 通过在消息中 **@ 提及**子代理来手动调用。例如：
 
      ```txt frame="none"
-     @general help me search for this function
+     @explore help me search for this function
      ```
 
 3. **会话间导航**：当子代理创建自己的子会话时，您可以使用以下方式在父会话和所有子会话之间导航：
@@ -143,40 +150,29 @@ _模式_：`primary`
 
 ### JSON
 
-在 `redcode.json` 配置文件中配置代理：
+`redcode.json` 里的 `agent` 块只能**覆写或禁用一个已经存在的代理**，不能创建 ——
+未知的 key 会被忽略并打一条 warning。要新增代理，写一份 [Markdown 文件](#markdown)。
 
 ```json title="redcode.json"
 {
   "$schema": "https://redcode.dev/config.json",
   "agent": {
-    "build": {
-      "mode": "primary",
+    "redmind": {
       "model": "anthropic/claude-sonnet-4-20250514",
-      "prompt": "{file:./prompts/build.txt}",
-      "tools": {
-        "write": true,
-        "edit": true,
-        "bash": true
+      "permission": {
+        "edit": "allow",
+        "bash": "allow"
       }
     },
     "plan": {
-      "mode": "primary",
       "model": "anthropic/claude-haiku-4-20250514",
-      "tools": {
-        "write": false,
-        "edit": false,
-        "bash": false
+      "permission": {
+        "edit": "deny",
+        "bash": "deny"
       }
     },
-    "code-reviewer": {
-      "description": "Reviews code for best practices and potential issues",
-      "mode": "subagent",
-      "model": "anthropic/claude-sonnet-4-20250514",
-      "prompt": "You are a code reviewer. Focus on security, performance, and maintainability.",
-      "tools": {
-        "write": false,
-        "edit": false
-      }
+    "explore": {
+      "disable": true
     }
   }
 }
@@ -188,10 +184,10 @@ _模式_：`primary`
 
 您还可以使用 Markdown 文件定义代理。将它们放在：
 
-- 全局：`~/.redcode/agents/`
-- 项目级：`.redcode/agents/`
+- 全局：`~/.redcode/agent/`
+- 项目级：`.redcode/agent/`
 
-```markdown title="~/.redcode/agents/review.md"
+```markdown title="~/.redcode/agent/review.md"
 ---
 description: Reviews code for quality and best practices
 mode: subagent
@@ -454,7 +450,7 @@ RedCode 配置中的模型 ID 使用 `provider/model-id` 格式。例如，如�
 
 您还可以在 Markdown 代理中设置权限。
 
-```markdown title="~/.redcode/agents/review.md"
+```markdown title="~/.redcode/agent/review.md"
 ---
 description: Code review without edits
 mode: subagent
@@ -691,7 +687,7 @@ redcode agent create
 
 以下是不同代理的一些常见使用场景。
 
-- **Build 代理**：启用所有工具的完整开发工作
+- **RedMind 代理**：启用所有工具的完整开发工作
 - **Plan 代理**：分析和规划，不进行任何更改
 - **Review 代理**：具有只读访问权限和文档工具的代码审查
 - **Debug 代理**：专注于问题排查，启用 bash 和读取工具
@@ -711,7 +707,7 @@ redcode agent create
 
 ### 文档代理
 
-```markdown title="~/.redcode/agents/docs-writer.md"
+```markdown title="~/.redcode/agent/docs-writer.md"
 ---
 description: Writes and maintains project documentation
 mode: subagent
@@ -733,7 +729,7 @@ Focus on:
 
 ### 安全审计代理
 
-```markdown title="~/.redcode/agents/security-auditor.md"
+```markdown title="~/.redcode/agent/security-auditor.md"
 ---
 description: Performs security audits and identifies vulnerabilities
 mode: subagent

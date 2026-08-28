@@ -21,13 +21,13 @@ RedCode には 2 種類のエージェントがあります。プライマリエ
 
 ### プライマリエージェント
 
-プライマリエージェントは、直接対話する主要なアシスタントです。 **Tab** キー、または設定した `switch_agent` キーバインドを使用して、それらを切り替えることができます。これらのエージェントが主な会話を処理します。ツールへのアクセスは権限によって構成されます。たとえば、Build ではすべてのツールが有効になっていますが、Plan は制限されています。
+プライマリエージェントは、直接対話する主要なアシスタントです。 **Tab** キー、または設定した `switch_agent` キーバインドを使用して、それらを切り替えることができます。これらのエージェントが主な会話を処理します。ツールへのアクセスは権限によって構成されます。たとえば、RedMind ではすべてのツールが有効になっていますが、Plan は制限されています。
 
 :::tip
 **Tab** キーを使用して、セッション中にプライマリエージェントを切り替えることができます。
 :::
 
-RedCode には、**Build** と **Plan** という 2 つの組み込みプライマリエージェントが付属しています。これらについて以下で説明します。
+RedCode には、**RedMind** と **Plan** という 2 つの組み込みプライマリエージェントが付属しています。これらについて以下で説明します。
 
 ---
 
@@ -35,21 +35,22 @@ RedCode には、**Build** と **Plan** という 2 つの組み込みプライ�
 
 サブエージェントは、プライマリエージェントが特定のタスクのために呼び出すことができる特殊なアシスタントです。メッセージ内で **@ メンション**することで、手動で呼び出すこともできます。
 
-RedCode には、**General**、**Explore**、**Scout** という 3 つの組み込みサブエージェントが付属しています。これについては以下で見ていきます。
+RedCode には、**Explore** と **Execute** という 2 つの組み込みサブエージェントが付属しています。これについては以下で見ていきます。
 
 ---
 
 ## 組み込み
 
-RedCode には、2 つの組み込みプライマリエージェントと 3 つの組み込みサブエージェントが付属しています。
+RedCode には、2 つの組み込みプライマリエージェントと 2 つの組み込みサブエージェント、さらに 3 つの非表示システムエージェントが付属しています。
 
 ---
 
-### Build
+### RedMind
 
 _モード_: `primary`
 
-Build は、すべてのツールが有効になっている **デフォルト** プライマリエージェントです。これは、ファイル操作やシステムコマンドへの完全なアクセスが必要な開発作業用の標準エージェントです。
+RedMind は **デフォルト** のプライマリエージェントです。通常の操作（読み取り、書き込み、検索）は
+自動で実行し、`bash` などの機微な操作は先に確認を取ります。日常の開発作業の標準エージェントです。
 
 ---
 
@@ -57,21 +58,13 @@ Build は、すべてのツールが有効になっている **デフォルト**
 
 _モード_: `primary`
 
-計画と分析のために設計された制限付きエージェント。より詳細な制御を提供し、意図しない変更を防ぐために、許可システムを使用しています。
-デフォルトでは、次のすべてが `ask` に設定されます。
+計画と分析のために設計された制限付きエージェントです。権限システムにより、意図しない変更を防ぎます。
+デフォルトでは、以下のすべてが `ask` に設定されています:
 
-- `file edits`: すべての書き込み、パッチ、および編集
+- `file edits`: すべての書き込み、パッチ、編集
 - `bash`: すべての bash コマンド
 
-このエージェントは、コードベースに実際の変更を加えずに LLM にコードの分析、変更の提案、または計画の作成を行わせたい場合に役立ちます。
-
----
-
-### General
-
-_モード_: `subagent`
-
-複雑な質問を調査し、複数ステップのタスクを実行するための汎用エージェント。完全なツールアクセス権 (todo を除く) があるため、必要に応じてファイルを変更できます。これを使用して、複数の作業単位を並行して実行します。
+コードベースに実際の変更を加えずに、LLM にコードの分析、変更の提案、計画の作成をさせたいときに有用です。
 
 ---
 
@@ -79,15 +72,29 @@ _モード_: `subagent`
 
 _モード_: `subagent`
 
-コードベースを探索するための高速な読み取り専用エージェント。ファイルを変更できません。これは、パターンでファイルをすばやく検索したり、コードでキーワードを検索したり、コードベースに関する質問に答えたりする必要がある場合に使用します。
+読み取り専用の調査エージェントで、何も変更しません。プロンプトでどの仕事かを伝えてください:
+
+- **探す** — パターンでファイルを見つける、キーワードでコードを検索する、「X はどう動くのか」に答える
+- **設計する** — 現状を読んだうえで、計画を出す、技術選定を評価する、アーキテクチャを整理する
+- **レビューする** — 変更を読み、バグ・リスク・品質上の問題を報告する
 
 ---
 
-### Scout
+### Execute
 
 _モード_: `subagent`
 
-外部ドキュメントや依存関係の調査を行うための読み取り専用エージェントです。依存関係のリポジトリを RedCode の管理キャッシュにクローンしたいとき、ライブラリのソースコードを調べたいとき、あるいはワークスペースを変更せずにローカルコードを upstream の実装と突き合わせたいときに使用します。
+読み書き可能な実装エージェントです。方針が固まっていて、実際にコードを変更する・テストを走らせる・
+バグを直す必要があるときに使います。計画も調査もしません。明確な作業単位を並列に流すのにも使えます。
+
+---
+
+### 旧称
+
+`build`、`general`、`architect`、`reviewer`、`fixer`、`scout`、`advise` はエイリアス表を経由して
+今も解決されます（`build` → `redmind`、`general` と `fixer` → `execute`、それ以外 → `explore`）。
+エージェント一覧にも `@` 補完にも現れないため、新しい設定では使わないでください。エイリアスは
+**恒久的**です。古いセッションが旧称を再生し続けるため、移行期間後に削除する予定はありません。
 
 ---
 
@@ -124,7 +131,7 @@ _モード_: `primary`
    - メッセージ内でサブエージェントを **@ メンション**することで手動で実行できます。例えば。
 
      ```txt frame="none"
-     @general help me search for this function
+     @explore help me search for this function
      ```
 
 3. **セッション間のナビゲーション**: サブエージェントが独自の子セッションを作成する場合、以下を使用して親セッションとすべての子セッションの間を移動できます。
@@ -143,40 +150,30 @@ _モード_: `primary`
 
 ### JSON
 
-`redcode.json` 設定ファイルでエージェントを構成します。
+`redcode.json` の `agent` ブロックは、**すでに存在するエージェントの上書きまたは無効化**のみ
+行えます。新規作成はできません（未知のキーは警告付きで無視されます）。新しいエージェントを
+追加するには [Markdown ファイル](#markdown)を書いてください。
 
 ```json title="redcode.json"
 {
   "$schema": "https://redcode.dev/config.json",
   "agent": {
-    "build": {
-      "mode": "primary",
+    "redmind": {
       "model": "anthropic/claude-sonnet-4-20250514",
-      "prompt": "{file:./prompts/build.txt}",
-      "tools": {
-        "write": true,
-        "edit": true,
-        "bash": true
+      "permission": {
+        "edit": "allow",
+        "bash": "allow"
       }
     },
     "plan": {
-      "mode": "primary",
       "model": "anthropic/claude-haiku-4-20250514",
-      "tools": {
-        "write": false,
-        "edit": false,
-        "bash": false
+      "permission": {
+        "edit": "deny",
+        "bash": "deny"
       }
     },
-    "code-reviewer": {
-      "description": "Reviews code for best practices and potential issues",
-      "mode": "subagent",
-      "model": "anthropic/claude-sonnet-4-20250514",
-      "prompt": "You are a code reviewer. Focus on security, performance, and maintainability.",
-      "tools": {
-        "write": false,
-        "edit": false
-      }
+    "explore": {
+      "disable": true
     }
   }
 }
@@ -188,10 +185,10 @@ _モード_: `primary`
 
 Markdown ファイルを使用してエージェントを定義することもできます。それらを次の場所に置きます。
 
-- グローバル: `~/.redcode/agents/`
-- プロジェクトごと: `.redcode/agents/`
+- グローバル: `~/.redcode/agent/`
+- プロジェクトごと: `.redcode/agent/`
 
-```markdown title="~/.redcode/agents/review.md"
+```markdown title="~/.redcode/agent/review.md"
 ---
 description: Reviews code for quality and best practices
 mode: subagent
@@ -453,7 +450,7 @@ MCP サーバーからすべてのツールを無効にするには、次のよ�
 
 Markdown エージェントで権限を設定することもできます。
 
-```markdown title="~/.redcode/agents/review.md"
+```markdown title="~/.redcode/agent/review.md"
 ---
 description: Code review without edits
 mode: subagent
@@ -708,7 +705,7 @@ redcode agent create
 
 ### ドキュメント作成エージェント
 
-```markdown title="~/.redcode/agents/docs-writer.md"
+```markdown title="~/.redcode/agent/docs-writer.md"
 ---
 description: Writes and maintains project documentation
 mode: subagent
@@ -730,7 +727,7 @@ Focus on:
 
 ### セキュリティ監査エージェント
 
-```markdown title="~/.redcode/agents/security-auditor.md"
+```markdown title="~/.redcode/agent/security-auditor.md"
 ---
 description: Performs security audits and identifies vulnerabilities
 mode: subagent
