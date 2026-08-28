@@ -310,10 +310,15 @@
    与聊天界面同款配方，去掉 dark 下纯色 layer-01 的深闷感。不放进 @layer：需越过 Tailwind utilities 层。
    260812 Red 掺淡蓝：内层 70% layer-01 + 30% 蓝紫（与 assistant 气泡同色系 168,180,240），
    外层 55% 透明保磨砂，dark 下由纯深灰变深蓝灰。 */
+/* 260828 cc 外层 55% → 68%：侧边栏此前与内容区 main 同为 55%，在这套分层语言里没有
+   "外壳"身份 —— 亮壁纸（比如日落照）下它几乎不成立为一个面板，项目列表下方一大片没有
+   任何容器感，"设置"和缓存环像浮在海面上。同为外壳的文件树/审查栏是 72%，上面那句
+   "两侧暗、中间亮"就是这条规则；这里按同一规则往那个档靠，蓝紫掺色与模糊半径都不动。
+   这是本轮唯一一处口味问题，改回去只需要动这一个数字。 */
 [data-app-frost] [data-frost-surface="home-sidebar"] {
   background-color: color-mix(
     in srgb,
-    color-mix(in srgb, rgba(168, 180, 240, 0.45), var(--v2-background-bg-layer-01) 70%) 55%,
+    color-mix(in srgb, rgba(168, 180, 240, 0.45), var(--v2-background-bg-layer-01) 70%) 68%,
     transparent
   );
   backdrop-filter: blur(18px);
