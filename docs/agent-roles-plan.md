@@ -98,7 +98,7 @@ scout 的招牌能力是 `repo_clone` / `repo_overview`（把依赖仓 clone 进
 
 | 步 | 内容 | 风险 | 状态 |
 | --- | --- | --- | --- |
-| 1 | 删 `ConfigAgent.loadMode` 与 `config.ts:714` 的调用 | **零**——全机零文件 | 未做 |
+| 1 | 删 `ConfigAgent.loadMode` 与 `config.ts:714` 的调用 | **零**——全机零文件 | **已做 2026-08-28** |
 | 2 | 删随包 YAML profile 三份 + `agent/profile/{load,resolve,types,index}.ts`；`explore`/`general` 的 description/prompt 收回内建 | **零**——`agent.yaml` 已被 disable，另两份与内建重复，用户目录空 | 未做 |
 | 3 | `{agent,agents}` 收成只认 `agent/`（顺带清掉审计记的「seed 单复数双套」） | 低 | 未做 |
 | 4 | 五个角色写成 `seed/agent/*.md`。**`sync-home` 对 agent 是「只补缺失、不覆盖」**，本机已有的三份不会被盖——这一步必须手动对齐一次 live | 中 | 未做 |

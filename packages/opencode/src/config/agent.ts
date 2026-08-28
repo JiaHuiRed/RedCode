@@ -138,33 +138,3 @@ export async function load(dir: string) {
   }
   return result
 }
-
-export async function loadMode(dir: string) {
-  const result: Record<string, Info> = {}
-  for (const item of await Glob.scan("{mode,modes}/*.md", {
-    cwd: dir,
-    absolute: true,
-    dot: true,
-    symlink: true,
-  })) {
-    const md = await ConfigMarkdown.parse(item).catch((err) => {
-      log.error("failed to load mode", { mode: item, err })
-      return undefined
-    })
-    if (!md) continue
-
-    const config = {
-      name: configEntryNameFromPath(path.relative(dir, item), ["mode/", "modes/"]),
-      ...md.data,
-      prompt: md.content.trim(),
-    }
-    const parsed = Schema.decodeUnknownExit(Info)(config, { errors: "all", propertyOrder: "original" })
-    if (Exit.isSuccess(parsed)) {
-      result[config.name] = {
-        ...parsed.value,
-        mode: "primary" as const,
-      }
-    }
-  }
-  return result
-}
