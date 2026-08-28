@@ -1,0 +1,33 @@
+/* 260828 cc 字标的入场与流光。
+   动效语汇沿用私仓用量面板那份（~/.redcode/usage-dashboard 的 .card / cardIn，260814 Red）：
+   缓动都是 cubic-bezier(0.2, 0.8, 0.2, 1)，进入慢、收得快。 */
+
+[data-component="wordmark"] {
+  display: inline-block;
+  position: relative;
+}
+
+/* 逐字母升起。用 backwards 填充：动画结束后不保留最终帧，否则会压住后续的 transform。
+   （这条坑私仓那份注释里专门记过。） */
+[data-component="wordmark"] [data-wordmark-letter] {
+  display: inline-block;
+  animation: wordmark-rise 0.62s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+
+@keyframes wordmark-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.28em) rotate(-4deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 常驻界面的动效必须能关掉。 */
+@media (prefers-reduced-motion: reduce) {
+  [data-component="wordmark"] [data-wordmark-letter] {
+    animation: none;
+  }
+}
