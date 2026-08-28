@@ -209,9 +209,10 @@
    //    输出预算给小了会把正文截断成半句。
    //    limit 沿用同族的 1M/384K —— 官方未公布这个实验模型的上下文，是假设值不是实测。
    //
-   // 2) deepseek-chat / deepseek-reasoner 目录标 attachment=true 却 modalities.input 只有
-   //    text，自相矛盾；实测两者发图都是 400，所以 attachment 那个字段是错的。官方
-   //    /models 已不再列出这两个（仍作别名可用于纯文本，实测 200）。这里把标注纠正过来。
+   // 2) deepseek-chat / deepseek-reasoner 已于 260828 删除。原先留着是为了纠正目录里
+   //    attachment=true 与 modalities.input 只有 text 的自相矛盾；现在 models.dev 全部
+   //    204 个 provider 的目录里都查不到这两个了（官方 260807 前后下线），纠正也就没有
+   //    纠正对象，只剩两个模型列表里的死条目。会话库实测 0 次使用。
    "deepseek": {
      "models": {
        "deepseek-v4-flash-vision-exp": {
@@ -222,14 +223,6 @@
          "attachment": true,
          "modalities": { "input": ["text", "image"], "output": ["text"] },
          "limit": { "context": 1000000, "output": 384000 }
-       },
-       "deepseek-chat": {
-         "attachment": false,
-         "modalities": { "input": ["text"], "output": ["text"] }
-       },
-       "deepseek-reasoner": {
-         "attachment": false,
-         "modalities": { "input": ["text"], "output": ["text"] }
        }
      }
    }
