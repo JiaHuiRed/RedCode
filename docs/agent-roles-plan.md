@@ -373,15 +373,40 @@ prompt），模型才是唯一按次表达不了的东西。所以：**只有「
 - **不动 `task` 工具的调用面**（`subagent_type` 仍是字符串，老的 `architect`/`reviewer`/`fixer` 名字在第 4 步之前照常可用）
 - **不改 `Permission.merge` 的语义**——本方案只动「谁来定义角色」，不动「权限怎么叠」
 
-## 调研顺出来的独立项（不进本方案）
+## 调研顺出来的独立项 —— **08-28 全部处理完**
 
-按被发现的顺序，各自都有独立的动机，混进 4c 只会冲淡 diff：
+按被发现的顺序。原计划是「不进本方案」，08-28 当天单独一批做掉了，每条各自一个提交。
 
-1. **`experimentalScout` 改名** → `experimentalReference` / `REDCODE_EXPERIMENTAL_REFERENCE`。scout agent 删掉后这个 flag 还门控着 @reference 的 git 物化（`reference.ts:128/208/218/224`）与 `repo_clone`/`repo_overview` 的注册（`registry.ts:313`），名字彻底对不上了。改名要连带决定留不留 legacy 别名（`enabledByExperimental` 只收一个名字，要留得改成 `enableExa` 那种 `Config.all` 三键写法，`runtime-flags.ts:32-36`），是设计题；且会把 6 个测试文件卷进来。顺带修 `customize-redcode.md:231` 的 `OPENCODE_` 错前缀。
-2. **`agent.ts:368` 的「md 尾巴盖过全局 `permission`」**：任何用户自建 md agent 的权限块都排在 `cfg.permission` 之后，findLast 下用户全局配置整段失效。属于「权限怎么叠」，本方案说了不动，但它是真 bug。
-3. **`redcode agent create` 写进 `agents/`（复数）**，而第 3 步之后 loader 只扫单数 —— md 型 agent 唯一的运行时创建入口现在是坏的，只有一条 `log.warn`。
-4. **`project/bootstrap.ts` 的 skill 播种从 `ctx.directory/seed/skill` 读**（即当前项目目录，不是安装目录），在 RedCode 仓库之外启动时直接早退，全局 skill 一个都不播。与修正七是同一类病（读盘 vs 内联）。
-5. **`packages/web` 的 `agents.mdx` 三语 + `Share.tsx`** 里的 build/general/scout 残留：上游同源文件，改了加大 fork 分叉面，且与引擎行为无关。
-6. **live 私仓里写死老角色名的提示词**：`~/.redcode/skill/technical-documentation/SKILL.md:47` 明写「the `general` subagent for merge/synthesis」，sync-home 是「不存在才拷」永远不会更新它。
-7. **GUI 的 per-session agent 写进 localStorage** 且 restore 有一次性守卫（写进去就再不纠正），老会话里存的 `"build"` 需要人工清一次。
-8. **`Agent.get` 的返回类型是谎言**：`Effect.Effect<Info>` 不带 undefined（`noUncheckedIndexedAccess: false`），16 个调用点里 12 个自己写了 `if (!x)`。收窄签名是独立清理。
+1. **`experimentalScout` 改名** → `experimentalReference` / `REDCODE_EXPERIMENTAL_REFERENCE`。
+   **已做**：scout agent 没了，这个 flag 还门控着 @reference 的 git 物化与 `repo_clone` /
+   `repo_overview` 的注册。**保留 legacy 键** `REDCODE_EXPERIMENTAL_SCOUT`（可能已写在 live 环境里，
+   静默失效等于悄悄关掉物化），按 `enableExa` 那套 `Config.all` 三键写法展开。新增用例覆盖
+   新键 / legacy 键 / `REDCODE_EXPERIMENTAL` 总闸 / 都不设四条路径。
+2. **`agent.ts:368` 的「md 尾巴盖过全局 `permission`」**。**查完不是 bug**：真正出事的是我们自己发的
+   工种 md 经 `~/.redcode/agent/` 回流（修正九），那时排在最后的是**我们的**块，已由 4c-1 删掉
+   sync-home 的 agent 播种解决。用户自己写的 md 属于「用户的 per-agent 配置」，盖过用户全局是对的。
+   优先级钉成一条用例：**defaults < 内建块 < 用户全局 permission < 用户 per-agent 块**。
+3. **`redcode agent create` 写进 `agents/`（复数）**。**已做**：两处改单数。同一个坑的另一半在文档里
+   （见第 5 条），六处 `~/.redcode/agents/` 一起改了。
+4. **`project/bootstrap.ts` 的 skill 播种从 `ctx.directory/seed/skill` 读**。**已做一半**：改成按候选
+   顺序找（项目目录、`<dist>/bin/../seed/skill`），找不到且目标目录为空时打 warning 而**不再静默
+   early return**。⚠ **长期修法没做**：`seed/skill` 得随发布包一起发 —— 今天只有
+   `script/sync-home.bat` 在**构建机**上拷过去，别的机器上从来就没播过。那是构建系统的事。
+5. **`packages/web` 的 `agents.mdx` 三语 + `Share.tsx`**。**已做（Share.tsx 明确不改）**：三语文档的
+   内建清单、Explore 的三段职能、Execute、老名字别名一节、JSON 一节改成「只能覆写/禁用」、
+   `@general` → `@explore`。顺带修了六处 `~/.redcode/agents/`（复数，照着放永远加载不了）。
+   `Share.tsx` 那两处 `"build"` 在 v1→v2 消息迁移里给**历史**共享会话补字段，那些消息当年确实跑在
+   build 上，如实记录历史不是活引用，改成 redmind 反而是篡改。
+   另外修了 `customize-redcode.md` 的全局路径表：原文写 `~/.config/redcode/` 还特意标「NOT
+   `~/.redcode/`」，而本 fork 的 `core/global.ts` 把 XDG 目录统一到了 `~/.redcode`，**标反了**。
+6. **live 私仓里写死老角色名的提示词**。**已做**（私仓 `3f7acf3`）：`technical-documentation` 的
+   「`general` 做汇总综合」改成两半都用 explore（汇总是只读推理，派给可写角色是多给权限）；
+   `vision-autoagent` 去掉悬空的 `fixer.md` 引用，并注明识图优先主会话直读。
+7. **GUI 的 per-session agent 写进 localStorage**。**已做**：补一条与 `store.current` 同款的自愈
+   effect。原来 `pickAgent` 查不到只是回落到 `items[0]`（显示对了、看不出问题），但存的值原样留着，
+   `write()` 每次又把 `scope()` 摊开写回去，老名字永远留在盘上，`restore()` 的守卫还保证它再没机会
+   被覆盖。
+8. **`Agent.get` 的返回类型是谎言**。**已做**：收窄成 `Info | undefined`，编译器一次抓出 9 处，其中
+   **src 里两处是真的没守卫** —— `session/processor.ts:588`（agent 名来自落库的 assistant 消息，
+   可能已删/已改名，紧接着就 `.permission`，真撞上是 TypeError；修正十二点过名但一直没修，现在回落
+   到默认姿态的规则集）与 `session/compaction.ts:476`（内建机件缺失属于不变量被破坏，明着抛）。
