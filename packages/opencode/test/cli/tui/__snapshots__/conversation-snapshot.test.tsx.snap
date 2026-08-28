@@ -1,0 +1,59 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`TUI 会话记录整帧 空会话只有一条用户消息 1`] = `
+"                    ┃
+                    ┃  你:
+                    ┃  把 sync 的写入路径读一遍，给出该 pin 的不变量。
+                    ┃"
+`;
+
+exports[`TUI 会话记录整帧 一轮问答：用户消息 + 助手回复 1`] = `
+"                                               ┃
+                                               ┃  你:
+                                               ┃  这条路默认是走的吗？
+                                               ┃
+ 柳智敏:
+
+   不是。远程 workspace 同步在同一个 flag 后面，默认整条休眠。
+
+   ▣  Build · deepseek-v4-flash"
+`;
+
+exports[`TUI 会话记录整帧 助手回复里的长文本按宽度折行 1`] = `
+" 柳智敏:
+
+   序号的读与写必须由同一个条件门控：run() 无条件读 event_sequence 算
+   seq，而两条 insert 原本都在 experimentalWorkspaces 后面（默认关），
+   结果默认配置下每个事件的 seq 恒为 0，还被 GlobalBus 原样广播出去。
+
+   ▣  Build · deepseek-v4-flash"
+`;
+
+exports[`TUI 会话记录整帧 多轮连续渲染时相邻消息的间隔 1`] = `
+"                                                             ┃
+                                                             ┃  你:
+                                                             ┃  第一问
+                                                             ┃
+
+                                                             ┃
+                                                             ┃  你:
+                                                             ┃  第二问
+                                                             ┃
+
+                                                             ┃
+                                                             ┃  你:
+                                                             ┃  第三问
+                                                             ┃"
+`;
+
+exports[`TUI 会话记录整帧 助手消息带错误时的呈现 1`] = `
+" 柳智敏:
+
+   正在读取配置……
+
+┃
+┃  invalid api key
+┃
+
+   ▣  Build · deepseek-v4-flash"
+`;

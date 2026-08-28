@@ -48,7 +48,12 @@ import path from "path"
 import { useKV } from "./kv"
 import { aggregateFailures } from "./aggregate-failures"
 
-export const { use: useSync, provider: SyncProvider } = createSimpleContext({
+export const {
+  use: useSync,
+  provider: SyncProvider,
+  // 260828 cc 原始 context 供快照测试直接喂假值，见 test/cli/tui/lib/transcript.tsx
+  context,
+} = createSimpleContext({
   name: "Sync",
   init: () => {
     const [store, setStore] = createStore<{

@@ -38,7 +38,12 @@ export function parseModel(model: string) {
   }
 }
 
-export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
+export const {
+  use: useLocal,
+  provider: LocalProvider,
+  // 260828 cc 原始 context 供快照测试直接喂假值，见 test/cli/tui/lib/transcript.tsx
+  context,
+} = createSimpleContext({
   name: "Local",
   init: () => {
     const sync = useSync()

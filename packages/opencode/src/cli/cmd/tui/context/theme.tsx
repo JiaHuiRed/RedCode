@@ -466,7 +466,12 @@ function ansiToRgba(code: number): RGBA {
   return RGBA.fromInts(0, 0, 0)
 }
 
-export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
+export const {
+  use: useTheme,
+  provider: ThemeProvider,
+  // 260828 cc 原始 context 供快照测试直接喂假值，见 test/cli/tui/lib/transcript.tsx
+  context,
+} = createSimpleContext({
   name: "Theme",
   init: (props: { mode: "dark" | "light" }) => {
     const renderer = useRenderer()

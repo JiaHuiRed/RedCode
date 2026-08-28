@@ -40,6 +40,9 @@
 
 ## 第三批(结构性)
 
+- [~] **界面文本快照**(部分落地 260828):TUI 侧已落 —— `test/cli/tui/conversation-snapshot.test.tsx` 5 个场景用**真** `UserMessage`/`AssistantMessage` 渲染整帧,`test/cli/tui/prompt-usage.test.ts` 10 例钉住三档命中率与冻结判据。harness 靠给 `createSimpleContext` 加 `context` 返回字段绕过 7 层 provider 链。**GUI 侧未做**(对应 Playwright `toMatchAriaSnapshot()`)。上游是 33 个场景,本仓 5 个。note 见 `docs/notes/implemented/testing/2026-08-28-tui-transcript-snapshots.md`
+
+
 - [ ] **动态上下文快照通道**:会变的内容不进 system prompt,走"supersedes 早先快照"的独立消息、只在变化时重发。先对照 prefix-debug.log 找该走此通道的断裂源。参考 `core/system-prompt` PromptContext + agent-loop runtime-context。
 - [ ] **hooks 声明式 subprocess 层**:kimi-hooks 研究的未竟半边;DSH `hooks/hook-protocol` + `hooks-claude-code` 是现成参考(7 个 hook 点映射、fail-open 不崩 boot、CC hooks.json 直接兼容可白嫖生态)。
 - [x] ~~**"Model Experience 三问"文档规矩**~~ **已落地**:入 `AGENTS.md` 的「版本与文档」节。三问 = 模型看到什么变了 / token 影响 / KV cache 影响；第三条挂了本仓自己的两笔账（`19b2bed3` 的命中率破坏性损伤、resize 通知文案的确定性要求）。额外补了一条上游没明写的：**段落顺序也算模型可见改动，移动一段的代价是从它往后整个前缀作废**。

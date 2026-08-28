@@ -21,6 +21,10 @@ if (process.versions.bun !== expectedBunVersion) {
 bun run script/check-subprocess-timeout.ts
 # 裸控制字节不变量：全仓字节扫描。裸 NUL 会让文件对 grep/ripgrep 整个隐身（见 7dec94a7）
 bun run script/check-control-bytes.ts
+# OpenAPI 生成物不变量（约 6s）：改了 config schema 却忘记重跑生成物，本地全绿、推上去
+# 才在 CI 红。260828 一上午撞两次（webfetch.allow_private_hosts、image 的 max_pixels/
+# max_dimension），两次都是别的会话合并时才发现。脚本自己无副作用（见其头注释）。
+bun run check:openapi-drift
 bun typecheck
 # 260828 cc OpenAPI 生成物漂移：改了 config/server 的 schema 却忘了重跑 gen:openapi，本地全绿、
 # 推上去 CI 才红。08-28 一天撞两次（webfetch.allow_private_hosts、image 的 max_pixels/max_dimension）。
