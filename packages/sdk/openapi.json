@@ -14723,6 +14723,15 @@
             },
             "additionalProperties": false
           },
+          "webfetch": {
+            "type": "object",
+            "properties": {
+              "allow_private_hosts": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
           "tool_output": {
             "type": "object",
             "properties": {

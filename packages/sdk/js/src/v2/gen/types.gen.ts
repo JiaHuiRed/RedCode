@@ -1349,6 +1349,9 @@ export type Config = {
   enterprise?: {
     url?: string
   }
+  webfetch?: {
+    allow_private_hosts?: boolean
+  }
   tool_output?: {
     max_lines?: number
     max_bytes?: number
