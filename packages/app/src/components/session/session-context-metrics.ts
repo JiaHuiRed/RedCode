@@ -8,6 +8,9 @@ type Provider = {
 
 type Model = {
   name?: string
+  cost?: {
+    currency?: "USD" | "CNY"
+  }
   limit: {
     context: number
   }
@@ -81,24 +84,11 @@ const lastAssistantWithTokens = (messages: Message[]) => {
   }
 }
 
-// 260615 Red: providers with official CNY pricing — cost values are already in ¥, no USD→CNY conversion needed
-// 260701 Red exported for reuse by home-stats.tsx (cross-session cost aggregation)
-//
-// 260730 Karina 这份名单的权威来源是 provider.ts 的 CNY_PRICING —— 那边加了 provider
-// 这里不同步就会把人民币金额当美元再乘一次 6.76。实测漏的就是 `stepfun-step-plan`
-// （0.8.1 刚给它补了人民币定价）：库里 ¥7.50 被显示成 ¥50.73。
-// TUI 侧（feature-plugins/home/footer.tsx）已改成直接读 `model.cost.currency`，不再维护名单；
-// 这里暂时保留名单是因为 home-stats.tsx 只拿得到 session、拿不到 provider 的 model 报价。
-// **CNY_PRICING 增删条目时必须同步改这里。**
-export const CNY_PROVIDERS = new Set([
-  "deepseek",
-  "xiaomi",
-  "stepfun",
-  "stepfun-step-plan",
-  "zhipuai",
-  "opencode-go",
-  "openox", // 260731 Karina openox 报价是人民币（见 provider.ts CNY_PRICING）
-])
+// 260615 Red 币种判定原为硬编码 providerID 名单（CNY_PROVIDERS）。
+// 260730 Karina TUI footer 已改读 model.cost.currency；260827 Red 这里跟进并退役名单：
+// provider.ts 落 CNY_PRICING 覆盖与 config.cost.currency 两条路都会在 model.cost.currency
+// 写标记（providers 入参一直在，"拿不到 model 报价"的旧前提不成立），无标记 = USD，
+// USD→CNY 折算由消费方（session-context-tab.tsx 的 formatter）按 costCurrency 做。
 
 const build = (messages: Message[] = [], providers: Provider[] = []): Metrics => {
   const totalCost = messages.reduce((sum, msg) => sum + (msg.role === "assistant" ? msg.cost : 0), 0)
@@ -144,7 +134,8 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
 
   return {
     totalCost,
-    costCurrency: CNY_PROVIDERS.has(message.providerID) ? ("CNY" as const) : ("USD" as const),
+    // 260827 Red 币种读 model.cost.currency（无标记按 USD 折算，USD_TO_CNY 见上）
+    costCurrency: (model?.cost?.currency ?? "USD") === "CNY" ? ("CNY" as const) : ("USD" as const),
     context: {
       message,
       provider,

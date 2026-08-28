@@ -6,19 +6,10 @@ import { createMemo, Show } from "solid-js"
 const id = "internal:sidebar-context"
 
 // 260615 Red: DeepSeek/Xiaomi/StepFun costs are already in CNY (official pricing), only USD providers need conversion
-// 260731 Karina 名单补齐 stepfun-step-plan/zhipuai/openox（provider.ts CNY_PRICING 的 provider 全集），
-// 汇率 6.76 → 6.75（哥哥给定）。此名单与 CNY_PRICING 同步维护，加 provider 必漏。
-// 260827 cc 汇率 6.75 → 6.72（哥哥给定）。
+// 260827 Red 币种判定改读 model.cost.currency（provider.ts 落定价时写入）：CNY_PRICING 表与
+// config.cost.currency 两条路都会标。名单版每加一个 CNY provider 必漏（stepfun-step-plan 栽过），
+// 与 home/footer.tsx 260730 的改法对齐。汇率 6.76→6.75（260731）→6.72（260827 cc，哥哥给定）。
 const USD_TO_CNY = 6.72
-const CNY_PROVIDERS = new Set([
-  "deepseek",
-  "xiaomi",
-  "stepfun",
-  "stepfun-step-plan",
-  "zhipuai",
-  "opencode-go",
-  "openox", // 260731 Karina openox 报价是人民币（见 provider.ts CNY_PRICING）
-])
 
 const money = new Intl.NumberFormat("zh-CN", {
   style: "currency",
@@ -124,6 +115,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         model: null as string | null,
         provider: null as string | null,
         providerID: null as string | null,
+        costCurrency: null as "USD" | "CNY" | null,
         messageCount: msg().length,
         sessionTotal: 0,
       }
@@ -206,6 +198,8 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       model: modelName,
       provider: prov?.name ?? last.providerID,
       providerID: last.providerID,
+      // 260827 Red 币种判定数据源：model 报价上的 currency 标记（无标记 = USD，显示时折算）
+      costCurrency: (modelInfo?.cost as { currency?: "USD" | "CNY" } | undefined)?.currency ?? null,
       messageCount: msg().length,
       sessionTotal,
     }
@@ -295,7 +289,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       </Show>
       <text fg={theme()?.textMuted}>
         <span style={{ fg: tokenColor.cost }}>
-          {money.format(CNY_PROVIDERS.has(state().providerID ?? "") ? cost() : cost() * USD_TO_CNY)}
+          {money.format(state().costCurrency === "CNY" ? cost() : cost() * USD_TO_CNY)}
         </span>{" "}
         · {`${state().messageCount} msgs`}
       </text>

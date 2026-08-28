@@ -5,9 +5,9 @@
 import { createMemo, For, Show } from "solid-js"
 import type { Session } from "@redcode-ai/sdk/v2/client"
 import { Tooltip } from "@redcode-ai/ui/tooltip"
-import { CNY_PROVIDERS } from "@/components/session/session-context-metrics"
 import { createSessionContextFormatter } from "@/components/session/session-context-format"
 import { useLanguage } from "@/context/language"
+import { useProviders } from "@/hooks/use-providers"
 
 // 260615 与 session-context-format.ts 的 USD_TO_CNY 保持一致，把跨模型花费统一折算成 ¥ 展示
 // 260731 Karina 汇率 6.76 → 6.75（哥哥给定）
@@ -25,7 +25,12 @@ type HomeStats = {
   cacheHitPct: number | null
 }
 
-function aggregateHomeStats(sessions: Session[]): HomeStats {
+type ProviderDirectory = {
+  id: string
+  models: Record<string, { cost?: { currency?: "USD" | "CNY" } } | undefined>
+}
+
+function aggregateHomeStats(sessions: Session[], providers: ProviderDirectory[]): HomeStats {
   let costCNY = 0
   let cacheRead = 0
   let cacheWrite = 0
@@ -35,7 +40,13 @@ function aggregateHomeStats(sessions: Session[]): HomeStats {
 
   for (const s of sessions) {
     const cost = s.cost ?? 0
-    const isCNY = s.model?.providerID ? CNY_PROVIDERS.has(s.model.providerID) : true
+    // 260827 Red 币种改读 model.cost.currency（CNY_PRICING 覆盖与 config.cost.currency 都会写标记），
+    // 退役 CNY_PROVIDERS 名单——与 session-context-metrics.ts 260827 改法一致：无标记 = USD 折算
+    const quoted =
+      s.model?.providerID && s.model?.id
+        ? providers.find((p) => p.id === s.model!.providerID)?.models[s.model!.id]?.cost?.currency
+        : undefined
+    const isCNY = quoted === "CNY"
     costCNY += isCNY ? cost : cost * USD_TO_CNY
 
     const t = s.tokens
@@ -133,7 +144,9 @@ function StatsRing(props: { stats: HomeStats }) {
 export function HomeStatsPanel(props: { sessions: Session[] }) {
   const language = useLanguage()
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
-  const stats = createMemo(() => aggregateHomeStats(props.sessions))
+  // 260827 Red 币种判定需要 provider 目录里的 model 报价（cost.currency），从全局 store 取
+  const providers = useProviders()
+  const stats = createMemo(() => aggregateHomeStats(props.sessions, [...providers.all().values()]))
 
   const tooltipValue = () => {
     const s = stats()

@@ -23,6 +23,10 @@ export const Model = Schema.Struct({
     Schema.Struct({
       input: Schema.Finite,
       output: Schema.Finite,
+      currency: Schema.optional(Schema.Literals(["USD", "CNY"])).annotate({
+        description:
+          'Currency these prices are quoted in. "CNY" skips the USD→CNY conversion in cost display (TUI footer, TUI sidebar, GUI context panel, home stats). Custom CNY-priced providers declare this here — no source-code change needed.',
+      }),
       cache_read: Schema.optional(Schema.Finite),
       cache_write: Schema.optional(Schema.Finite),
       context_over_200k: Schema.optional(

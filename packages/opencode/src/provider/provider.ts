@@ -1298,7 +1298,9 @@ export const layer = Layer.effect(
             "Doubao-Seed-2.1-turbo": { input: 3, output: 15, cache: { read: 0.6, write: 3 } },
             "Doubao-Seed-2.1-pro": { input: 6, output: 30, cache: { read: 1.2, write: 6 } },
           },
-        }
+         }
+         // 260827 Red tokenrhythm 是 config.cost.currency（见上方 fallback）的首个用户——
+         // 曾整表硬编码在这里，机制上线后撤出：自定义 provider 的 CNY 报价从此纯配置声明。
         // 260802 Red: 已知多模态模型列表——models.dev API 可能不声明 modalities，
         // 但实际支持图片输入。强制覆盖 capabilities.input.image = true，
         // 避免 transform.ts unsupportedParts() 误触发 vision MCP。
@@ -1496,6 +1498,9 @@ export const layer = Layer.effect(
                 //                 https://mimo.mi.com/docs/zh-CN/price/pay-as-you-go
                 const cnyCost = CNY_PRICING[providerID]?.[modelID] ?? CNY_PRICING[providerID]?.[apiID]
                 if (cnyCost) return { ...cnyCost, currency: "CNY" as const }
+                // 260827 Red 自定义 provider 走配置声明：model.cost.currency 在 config 里显式写了
+                // 就带上（CNY 报价零源码接入，CNY_PRICING 从此只服务 models.dev 目录里的存量 provider）
+                const currency = model?.cost?.currency
                 return {
                   input: model?.cost?.input ?? existingModel?.cost?.input ?? 0,
                   output: model?.cost?.output ?? existingModel?.cost?.output ?? 0,
@@ -1503,6 +1508,7 @@ export const layer = Layer.effect(
                     read: model?.cost?.cache_read ?? existingModel?.cost?.cache.read ?? 0,
                     write: model?.cost?.cache_write ?? existingModel?.cost?.cache.write ?? 0,
                   },
+                  ...(currency ? { currency } : {}),
                 }
               }),
               options: mergeDeep(existingModel?.options ?? {}, model.options ?? {}),
