@@ -115,7 +115,13 @@ export type Info = Schema.Schema.Type<typeof Info>
 
 export async function load(dir: string) {
   const result: Record<string, Info> = {}
-  for (const item of await Glob.scan("{agent,agents}/**/*.md", {
+  // 260828 cc 只认单数 agent/。复数 agents/ 是上游遗留的第二套写法，全机零使用；
+  // 留着它等于同一件事有两个正确答案。存在但没被扫到时给一条 warning，别静默丢用户的定义。
+  const plural = await Glob.scan("agents/**/*.md", { cwd: dir, absolute: true, dot: true, symlink: true })
+  if (plural.length > 0)
+    log.warn("ignoring agents/ (plural) — rename the directory to agent/", { dir, count: plural.length })
+
+  for (const item of await Glob.scan("agent/**/*.md", {
     cwd: dir,
     absolute: true,
     dot: true,
@@ -127,7 +133,7 @@ export async function load(dir: string) {
     })
     if (!md) continue
 
-    const name = configEntryNameFromPath(path.relative(dir, item), ["agent/", "agents/"])
+    const name = configEntryNameFromPath(path.relative(dir, item), ["agent/"])
 
     const config = {
       name,

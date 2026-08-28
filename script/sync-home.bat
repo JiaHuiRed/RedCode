@@ -30,7 +30,7 @@ rem global agents: repo staging -> ~/.redcode/agent (engine scans {agent,agents}
 rem 260805 added: architect/fixer/reviewer had been sitting in the staging dir since 1b6c1e3 with
 rem nothing loading them - `agent list` never showed them. Seeding them here is what makes them real.
 if not exist "%USERPROFILE%\.redcode\agent" mkdir "%USERPROFILE%\.redcode\agent" >nul 2>&1
-if exist "seed\agents" for %%F in (seed\agents\*.md) do if not exist "%USERPROFILE%\.redcode\agent\%%~nxF" copy /y "%%F" "%USERPROFILE%\.redcode\agent\%%~nxF" >nul
+if exist "seed\agent" for %%F in (seed\agent\*.md) do if not exist "%USERPROFILE%\.redcode\agent\%%~nxF" copy /y "%%F" "%USERPROFILE%\.redcode\agent\%%~nxF" >nul
 
 rem global scripts: repo staging -> ~/.redcode/scripts (called by slash commands, e.g. /recall)
 rem true mirror: wipe first so deleted-in-repo scripts do not linger in home
