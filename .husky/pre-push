@@ -22,3 +22,7 @@ bun run script/check-subprocess-timeout.ts
 # 裸控制字节不变量：全仓字节扫描。裸 NUL 会让文件对 grep/ripgrep 整个隐身（见 7dec94a7）
 bun run script/check-control-bytes.ts
 bun typecheck
+# 260828 cc OpenAPI 生成物漂移：改了 config/server 的 schema 却忘了重跑 gen:openapi，本地全绿、
+# 推上去 CI 才红。08-28 一天撞两次（webfetch.allow_private_hosts、image 的 max_pixels/max_dimension）。
+# 脚本自己的注释就写着"没有副作用，可以放心进 CI 和 pre-push"，只是一直没接上来。实测 5.4s。
+bun run check:openapi-drift
