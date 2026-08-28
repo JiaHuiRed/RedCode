@@ -75,3 +75,26 @@ yield* Effect.addFinalizer(() =>
 - 遗留的 258 个目录（含事故后用户手动清理的剩余）会在下一次跑测试、且它们超过 2 小时后被自动扫掉，不需要人工干预。
 - `test/file/ripgrep.test.ts` 自己 `mkdtemp` 了一个同前缀目录，用 `Effect.acquireRelease` 清理，失败同样静默 —— 它在清扫的覆盖范围内，本轮未单独改。
 - `test/preload.ts` 的 `redcode-test-data-<pid>` 有一段 30 次重试的 EBUSY 处理，比 fixture 侧更强；两者可以合并成一个共用的 `removeWithRetry`，本轮未做。
+
+## 全仓同类扫描（260828，随本条一起做）
+
+修完之后按两条判据扫了一遍全仓，判据是这次事故暴露出来的：**① 后台工作的副作用比创建它的作用域活得长；② 失败被静默吞掉。**
+
+### 逃逸的后台工作
+
+| 位置 | 判定 |
+|---|---|
+| `config/config.ts` 的插件依赖安装 | **就是本条的病灶**，已修 |
+| `control-plane/workspace.ts:1005` 的 `forkDetach` | 干净 —— 它 `log.warn` 了失败，且不写临时目录；分离是设计意图（长活的同步连接） |
+| `cli/cmd/tui/config/tui.ts:285` | **同一个安装的第二份并行拷贝**（`forkScoped` + `concurrency: "unbounded"`）。测试里不触发（实测 delta=0），但生产上不受 `REDCODE_DISABLE_PLUGIN_DEP_INSTALL` 约束 —— 离线用户设了开关，TUI 那条路照样去装。**本轮一并收口。** |
+| `project/bootstrap.ts:118` 写项目 `MEMORY.md` | 干净 —— 有 `catchCause(logWarning)`，且写的是项目工作树不是临时目录 |
+
+`Effect.forkDetach` 全仓只有 2 处；后台 fiber 里直接碰文件系统的只有上表这 4 处。
+
+### 被吞掉的失败
+
+- **src/**：`Effect.ignore` 59 处，其中掩盖写操作的只有 `project/project.ts:303`（把 git 推出的 project id 写进 `.git/redcode` 当缓存）—— 失败只是下次再跑一遍 `rev-list`，可接受。
+- **src/ 的 `.catch(() => {})` 形态**：掩盖写操作的 2 处，都在 `config.ts`。`:473` 是 `$schema` 回填（内存里的值照样设了，只是不落盘）；`:520` 是 legacy TOML→JSON 迁移，把 `writeFile` + `unlink` **整条**吞掉 —— 中途失败会静默留下重复配置并每次加载重试。**记账不修**：那是近乎死路的老格式迁移。
+- **test/**：拆解被吞掉的约 45 处，全部要么不累积（监听器 / 内存库里的会话行 / pty），要么落在 `%TEMP%/redcode-test-*` 下 —— 包括 `snapshot.test.ts` 的 git worktree，它是 `tmpdirScoped` 出来的，**已被本条的清扫与留痕覆盖**。
+
+结论：除了 TUI 那份并行拷贝，没有第二处同类泄漏。
