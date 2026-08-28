@@ -14549,9 +14549,6 @@
               "explore": {
                 "$ref": "#/components/schemas/AgentConfig"
               },
-              "advise": {
-                "$ref": "#/components/schemas/AgentConfig"
-              },
               "execute": {
                 "$ref": "#/components/schemas/AgentConfig"
               },

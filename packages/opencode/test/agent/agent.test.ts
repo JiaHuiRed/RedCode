@@ -55,12 +55,11 @@ it.instance("returns default native agents when no config", () =>
     expect(names).toContain("redmind")
     expect(names).toContain("plan")
     expect(names).toContain("explore")
-    expect(names).toContain("advise")
     expect(names).toContain("execute")
     expect(names).toContain("compaction")
     expect(names).toContain("title")
     expect(names).toContain("summary")
-    for (const gone of ["build", "general", "scout", "architect", "reviewer", "fixer"]) {
+    for (const gone of ["build", "general", "scout", "architect", "reviewer", "fixer", "advise"]) {
       expect(names).not.toContain(gone)
     }
   }),
@@ -75,8 +74,9 @@ it.instance("legacy agent names resolve through the alias table", () =>
       build: "redmind",
       general: "execute",
       fixer: "execute",
-      architect: "advise",
-      reviewer: "advise",
+      architect: "explore",
+      reviewer: "explore",
+      advise: "explore",
       scout: "explore",
     }
     for (const [legacy, target] of Object.entries(expected)) {
@@ -183,15 +183,14 @@ it.instance("explore agent asks for external directories and allows whitelisted 
   }),
 )
 
-// 260828 cc 第 4c-1 步：explore / advise / execute 的定义单一来源是 src/agent/definition/*.md，
+// 260828 cc 第 4c-1 步：explore / execute 的定义单一来源是 src/agent/definition/*.md，
 // 内建那份直接吃 frontmatter。下面四条守的是「frontmatter 真被吃进去了」以及「扁平白名单第一条
 // "*": deny 没有把 defaults 里的**对象型**权限一起打掉」——后者是 findLast 语义下最容易回归的一处。
 it.instance("md-defined subagents carry their frontmatter", () =>
   Effect.gen(function* () {
     const explore = yield* load((svc) => svc.get("explore"))
-    const advise = yield* load((svc) => svc.get("advise"))
     const execute = yield* load((svc) => svc.get("execute"))
-    for (const agent of [explore, advise, execute]) {
+    for (const agent of [explore, execute]) {
       expect(agent).toBeDefined()
       expect(agent?.mode).toBe("subagent")
       expect(agent?.native).toBe(true)
@@ -202,19 +201,16 @@ it.instance("md-defined subagents carry their frontmatter", () =>
     // 普通字符串再比，顺便和 md 里 `model:` 那一行的写法一模一样。
     const modelOf = (agent: Agent.Info | undefined) => `${agent?.model?.providerID}/${agent?.model?.modelID}`
     expect(modelOf(explore)).toBe("stepfun-step-plan/step-3.7-flash")
-    expect(modelOf(advise)).toBe("deepseek/deepseek-v4-flash-vision-exp")
     expect(modelOf(execute)).toBe("opencode-go/glm-5.3-flash")
     // 三个工种都配了超时兑底：timeout_ms 罩整个子代理运行，超时换 fallback_model 重跑一次
     const fallbackOf = (agent: Agent.Info | undefined) =>
       `${agent?.fallbackModel?.providerID}/${agent?.fallbackModel?.modelID}`
-    expect(explore?.timeoutMs).toBe(180000)
-    expect(advise?.timeoutMs).toBe(600000)
+    expect(explore?.timeoutMs).toBe(600000)
     expect(execute?.timeoutMs).toBe(900000)
     expect(fallbackOf(explore)).toBe("opencode-go/glm-5.3-flash")
-    expect(fallbackOf(advise)).toBe("opencode-go/glm-5.3-flash")
     expect(fallbackOf(execute)).toBe("opencode-go/mimo-v2.5")
     // 兑底必须换族，同族换路由治不了「模型自己卡住」这种失效
-    for (const agent of [explore, advise, execute]) {
+    for (const agent of [explore, execute]) {
       expect(fallbackOf(agent)).not.toBe(modelOf(agent))
     }
     // 不写 variant：glm-5.3-flash 的 effort 只有 low/high/max，没有 none
@@ -229,7 +225,7 @@ it.instance("md-defined subagents carry their frontmatter", () =>
 it.instance("md-defined subagents keep the external directory whitelist", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
-    for (const name of ["advise", "execute"]) {
+    for (const name of ["execute"]) {
       const agent = yield* load((svc) => svc.get(name))
       expect(agent).toBeDefined()
       // md 里没有 external_directory，全靠 agent.ts 在 md 之后、user 之前重新宣告一遍
@@ -251,7 +247,7 @@ it.instance("md-defined subagents keep the external directory whitelist", () =>
 
 it.instance("md-defined subagents keep the .env read guard", () =>
   Effect.gen(function* () {
-    for (const name of ["explore", "advise", "execute"]) {
+    for (const name of ["explore", "execute"]) {
       const agent = yield* load((svc) => svc.get(name))
       expect(agent).toBeDefined()
       expect(Permission.evaluate("read", "src/index.ts", agent!.permission).action).toBe("allow")

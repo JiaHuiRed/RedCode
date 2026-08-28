@@ -212,20 +212,20 @@ describe("tool.task", () => {
 
         expect(first).toBe(second)
 
-        // 260828 cc general 已并入 execute；按名字排序后是 advise < alpha < execute < explore < zebra
-        const advise = first.indexOf("- advise:")
+        // 260828 cc 工种只剩 explore / execute；按名字排序后是 alpha < execute < explore < zebra
         const alpha = first.indexOf("- alpha: Alpha agent")
         const execute = first.indexOf("- execute:")
         const explore = first.indexOf("- explore:")
         const zebra = first.indexOf("- zebra: Zebra agent")
 
-        expect(advise).toBeGreaterThan(-1)
-        expect(alpha).toBeGreaterThan(advise)
+        expect(alpha).toBeGreaterThan(-1)
         expect(execute).toBeGreaterThan(alpha)
         expect(explore).toBeGreaterThan(execute)
         expect(zebra).toBeGreaterThan(explore)
         // 阴性对照：合并掉的老名字不进 describeTask 清单
-        expect(first.indexOf("- general:")).toBe(-1)
+        for (const gone of ["- general:", "- advise:", "- architect:", "- reviewer:"]) {
+          expect(first.indexOf(gone)).toBe(-1)
+        }
       }),
     {
       config: {

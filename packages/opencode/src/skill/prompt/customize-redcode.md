@@ -220,7 +220,7 @@ Allowed top-level frontmatter fields: `name, model, variant, description, mode,
 hidden, color, steps, options, permission, disable, temperature, top_p`. Any
 unknown field is silently routed into `options`.
 
-To disable a built-in agent: `agent: { advise: { disable: true } }`, or in a
+To disable a built-in agent: `agent: { explore: { disable: true } }`, or in a
 file, `disable: true` in frontmatter. The default agent `redmind` cannot be
 disabled this way -- something has to stay as the primary agent.
 
@@ -229,14 +229,16 @@ disabled this way -- something has to stay as the primary agent.
 ### Built-in agents
 
 Two session agents you switch between: `redmind` (the default) and `plan`.
-Three subagents the `task` tool dispatches: `explore` (read-only search),
-`advise` (read-only design and review), `execute` (read-write implementation).
-Hidden internal agents: `compaction`, `title`, `summary`.
+Two subagents the `task` tool dispatches: `explore` (read-only -- find things,
+produce a plan, or review a change; say which in the prompt) and `execute`
+(read-write implementation). Hidden internal agents: `compaction`, `title`,
+`summary`.
 
-The older names `build`, `general`, `architect`, `reviewer`, `fixer`, `scout`
-still resolve through an alias table (`build` -> `redmind`, `general`/`fixer` ->
-`execute`, `architect`/`reviewer` -> `advise`, `scout` -> `explore`), but they do
-not appear in any agent list and should not be used in new configuration.
+The older names `build`, `general`, `architect`, `reviewer`, `fixer`, `scout`,
+`advise` still resolve through an alias table (`build` -> `redmind`,
+`general`/`fixer` -> `execute`, `architect`/`reviewer`/`advise` -> `explore`,
+`scout` -> `explore`), but they do not appear in any agent list and should not be
+used in new configuration.
 
 To override a built-in's fields, define the same key in
 `agent: { <name>: { ... } }`; the old names are normalised to the new ones there

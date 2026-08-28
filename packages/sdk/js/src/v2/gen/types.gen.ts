@@ -1284,7 +1284,6 @@ export type Config = {
     redmind?: AgentConfig
     plan?: AgentConfig
     explore?: AgentConfig
-    advise?: AgentConfig
     execute?: AgentConfig
     title?: AgentConfig
     summary?: AgentConfig

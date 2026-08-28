@@ -226,7 +226,6 @@ export const Info = Schema.Struct({
         plan: Schema.optional(ConfigAgent.Info),
         // 子代理工种
         explore: Schema.optional(ConfigAgent.Info),
-        advise: Schema.optional(ConfigAgent.Info),
         execute: Schema.optional(ConfigAgent.Info),
         // 内部机件
         title: Schema.optional(ConfigAgent.Info),

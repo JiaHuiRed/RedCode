@@ -10,7 +10,6 @@ import { ProviderTransform } from "@/provider/transform"
 import PROMPT_GENERATE from "./generate.md" with { type: "text" }
 import PROMPT_COMPACTION from "./prompt/compaction.md" with { type: "text" }
 import DEFINITION_EXPLORE from "./definition/explore.md" with { type: "text" }
-import DEFINITION_ADVISE from "./definition/advise.md" with { type: "text" }
 import DEFINITION_EXECUTE from "./definition/execute.md" with { type: "text" }
 import PROMPT_SUMMARY from "./prompt/summary.md" with { type: "text" }
 import PROMPT_TITLE from "./prompt/title.md" with { type: "text" }
@@ -47,7 +46,6 @@ const parseDefinition = (md: string): Definition => {
 }
 const DEFINITIONS = {
   explore: parseDefinition(DEFINITION_EXPLORE),
-  advise: parseDefinition(DEFINITION_ADVISE),
   execute: parseDefinition(DEFINITION_EXECUTE),
 }
 
@@ -62,8 +60,12 @@ export const ALIAS: Record<string, string> = {
   build: "redmind",
   general: "execute",
   fixer: "execute",
-  architect: "advise",
-  reviewer: "advise",
+  // 260828 cc advise 并回 explore：两者权限逐条相同，差别只有提示词与模型，而模型这一层在主力收敛到
+  // 两个多模态模型之后不再有区分度 —— 它就只是「换了个提示词的 explore」。靠调用方的 prompt 区分
+  // FIND / DESIGN / REVIEW 即可，这正是 4b 合并 architect + reviewer 用的同一条逻辑。
+  architect: "explore",
+  reviewer: "explore",
+  advise: "explore",
   scout: "explore",
 }
 
@@ -267,7 +269,6 @@ export const layer = Layer.effect(
             native: true,
           },
           explore: subagent("explore"),
-          advise: subagent("advise"),
           execute: subagent("execute"),
           compaction: {
             name: "compaction",

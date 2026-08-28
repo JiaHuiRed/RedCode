@@ -59,23 +59,22 @@ plan    = defaults + { question: allow, plan_exit: allow,
 
 `build` 合并删除。
 
-### 子代理工种：3 个
+### 子代理工种：2 个
 
-带 model + prompt + 工具白名单 + 超时/fallback。
+带 model + prompt + 工具白名单 + 超时/fallback。（起草时是 3 个，`advise` 在 08-28 落地当天并回了 `explore`，理由见修正十四。）
 
 | 工种 | 写 | 吸收 | 模型 |
 | --- | --- | --- | --- |
-| `explore` | 只读 | + `scout` | `stepfun-step-plan/step-3.7-flash`（现状），`timeout_ms: 180000` |
-| `advise` | 只读 | `architect` + `reviewer` | **`deepseek/deepseek-v4-flash-vision-exp`（官方源）** |
-| `execute` | 可写 | `general` + `fixer` | `opencode-go/glm-5.3-flash`（08-28 由 `hy3` 改来，见修正十三） |
+| `explore` | 只读 | `scout` + `architect` + `reviewer` + `advise` | `stepfun-step-plan/step-3.7-flash`，`timeout_ms: 600000` |
+| `execute` | 可写 | `general` + `fixer` | `opencode-go/glm-5.3-flash`，`timeout_ms: 900000` |
 
-`advise` 合并的理由：architect 与 reviewer 都是「只读 + 输出判断」，区别只在输入是需求还是 diff——而 `task` 调用本来就带 prompt，靠 prompt 区分即可。选官方源 vision 是因为审查/设计都可能要看截图，而它是官方 provider 下唯一的多模态模型。**注意**：vision-exp 的推理消耗波动极大，`advise` 必须给足输出预算，必要时配 `timeout_ms` + `fallback_model`。
+合并的统一理由：这些角色的**权限逐条相同**，差别只在提示词，而 `task` 调用本来就带 prompt——靠调用方的 prompt 区分 FIND / DESIGN / REVIEW 即可。模型是唯一无法按次表达的东西，所以只有「需要不同模型」才构成拆分理由。
 
 ### 内部机件：3 个
 
 `compaction` / `title` / `summary`。纯内建、配置碰不到、不出现在「角色」这个概念里。
 
-对用户可见的就是 **2 + 3 = 5**，分属两张互不覆盖的表。
+对用户可见的就是 **2 + 2 = 4**，分属两张互不覆盖的表。
 
 ## scout 并入 explore 的坑
 
@@ -256,6 +255,30 @@ live 规模（只读查 `~/.redcode/data/redcode.db`）：session.agent `build` 
 结论」；execute 900s 给「跑测试 / 跑构建」。它们只该在真卡死时触发——如果开始误杀慢活，往上调，
 别往下调。
 
+### 修正十四：`advise` 并回 `explore`（08-28 落地当天）
+
+**触发点**：主力收敛到 DeepSeek vision 与 glm-5.3-flash 两个多模态模型之后，一个跑主力模型的只读子代理
+相对主会话已经没有「换个脑子看」这层价值了。
+
+**判据**：实测 dump 显示 `advise` 与 `explore` 的**权限逐条相同**（同一份扁平白名单，连
+`external_directory` / `read(.env)` 的判定都一样），差别只有三样——提示词、模型、超时。模型这一层的
+区分度一消失，`advise` 就只是「换了个提示词的 explore」。而**提示词是可以按次传的**（`task` 的入参就是
+prompt），模型才是唯一按次表达不了的东西。所以：**只有「需要不同模型」才构成拆分一个工种的理由。**
+
+这正是 4b 合并 architect + reviewer 时用的同一条逻辑，只是当时没把它推到底。
+
+**做法**：advise.md 的正文并进 explore.md，explore 的 description 与提示词改成三段式
+（FIND 找东西 / DESIGN 出方案 / REVIEW 做审查，含 reviewer 那套报告门禁），别名 `architect` /
+`reviewer` / `advise` 全部指向 `explore`。`explore` 的 `timeout_ms` 从 180s 提到 **600s** —— 它现在要
+干「读一圈再出结论」的活，180s 会误杀真在跑的运行；超时只在卡死时触发，对快搜索零成本。
+
+**保留的两个已知取舍**：
+
+- explore 仍跑 `step-3.7-flash`（走阶跃额度、256K 上下文）。它是调用量最大的工种（live 库 277 个会话，
+  对比 general 15 / reviewer 1），换主力模型是一笔真实开销。**如果审查/出方案的质量不够**，改 md 里
+  `model:` 一行即可，这是独立一笔、可以看效果再定。
+- 256K 上下文对「审一个大 diff」可能是上限。真撞到了同样是改一行。
+
 ## 迁移步骤
 
 | 步 | 内容 | 风险 | 状态 |
@@ -285,15 +308,15 @@ live 规模（只读查 `~/.redcode/data/redcode.db`）：session.agent `build` 
 第 1~4c 步都没动 CHANGELOG（这一串按仓里惯例，条目在切版本时一次写）。切版本时**必须**包含
 下面这些，都是对用户可见的行为变化：
 
-- **角色从 9 个收成 5 个**：姿态 `redmind` / `plan`，工种 `explore` / `advise` / `execute`；
-  机件 `compaction` / `title` / `summary` 不进任何列表。
+- **角色从 9 个收成 4 个**：姿态 `redmind` / `plan`，工种 `explore`（只读：找东西 / 出方案 / 做审查）
+  与 `execute`（可写）；机件 `compaction` / `title` / `summary` 不进任何列表。
 - **老名字只经别名解析可用，且手打 `@architect` 不再可用** —— 交互式 @ 提及的 part 由客户端从
   `list()` 造（`autocomplete.tsx:517`、`app/prompt-input.tsx:664`），别名进不去。仍可用的老入口只有
   `subagent_type`、历史会话续跑、`--agent`（非 `--attach`）、`default_agent`、配置里的 `agent.<老名>`。
   **别写「一轮过渡后删掉别名」**，理由见修正十二。
 - **`general` → `execute` 会静默换模型**：general 从前不带 model、跟随会话模型，execute 自带
   `opencode-go/glm-5.3-flash` + 900s 超时。影响历史 `subagent_type: "general"` 与 `/subtask`。
-- **三个工种都配了超时兑底**（explore 180s / advise 600s / execute 900s，各带换族的 `fallback_model`）。
+- **两个工种都配了超时兑底**（explore 600s / execute 900s，各带换族的 `fallback_model`）。
   此前只有 explore 有 `timeout_ms` 且没有兑底，超时是硬失败。
 - **`execute` 比 general 严一档**：`"*": deny` 白名单意味着它**一个 skill 都看不见**
   （`skill/index.ts` 按 `evaluate("skill", name)` 过滤），`task` 与任意非白名单前缀的 MCP 工具也被禁。
