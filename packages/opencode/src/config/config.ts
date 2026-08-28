@@ -691,7 +691,9 @@ export const layer = Layer.effect(
           yield* ensureGitignore(dir).pipe(Effect.orDie)
 
           const lastFailure = depInstallFailureAt.get(dir)
-          if (lastFailure !== undefined && Date.now() - lastFailure < DEP_INSTALL_RETRY_COOLDOWN_MS) {
+          if (Flag.REDCODE_DISABLE_PLUGIN_DEP_INSTALL) {
+            log.debug("skipping background dependency install, disabled by flag", { dir })
+          } else if (lastFailure !== undefined && Date.now() - lastFailure < DEP_INSTALL_RETRY_COOLDOWN_MS) {
             log.debug("skipping background dependency install, still in cooldown after last failure", { dir })
           } else {
             const dep = yield* npmSvc

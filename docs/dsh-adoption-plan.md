@@ -23,6 +23,9 @@
 | timeout-policy(工具自声明 timeoutMs + wrap 层 cooperative 拦截,首个声明方 repo_clone) | `guard/timeout-policy` | `tool/tool.ts` TimeoutError | 16f606b2 |
 | 插话/排队可选(`busy_enter`:steer=中途注入(原行为),queue=真排队;附 stall nudge 退役收敛三层空转提醒为两层) | `ui-input-trigger` 双模 | `config.ts` + `session/prompt.ts`,note ×2 | 0856fb9b |
 | 工具输出截断 head-only → head+tail 4:1(尾部错误栈/测试结果保住;压缩摘要侧 17a7304a 已落,工具输出侧补齐) | `spill-policy` + `compaction-tool-result-pruner` | `tool/truncate.ts` 默认 both | 待 commit |
+| webfetch 目的地守卫:拒非公网地址、审批在 DNS 解析之前、**逐跳**校验重定向(fetch 默认 follow 只看得到第一跳)。分两档 —— 环回/RFC1918/CGNAT/ULA 可由配置放行,link-local(云元数据)等永不放行 | `web/web-fetch-http/src/network.ts`(上游 `b2219bba`/`709e5eda`) | `util/net-address.ts` + `tool/webfetch.ts`,配置 `webfetch.allow_private_hosts` | 5c121d7b |
+| 图片按路由计价进上下文估算(此前按内联 base64 长度算,一张 400KB JPEG = 约 13 万 token,把**保留范围**与**用量面板**都带偏;触发线锚在 provider usage 上未动) | `route-priced-image-request-pressure` | `session/image-tokens.ts`,接 `compaction.estimate` 与 `context-snapshot` | 9286a867 |
+| 图片尺寸从每边盒子改**总像素预算**(2000x20000 长截图 200px 宽 → 632px)+ 候选懒求值 + 按 alpha 路由(JPEG 源不再排 PNG 候选) | `alpha-routed-image-quality-ladders` | `image/image.ts`,配置 `attachment.image.max_pixels`/`max_dimension` | fefc7ce2 |
 
 ## 第二批(小机制,高性价比)
 
@@ -39,15 +42,15 @@
 
 - [ ] **动态上下文快照通道**:会变的内容不进 system prompt,走"supersedes 早先快照"的独立消息、只在变化时重发。先对照 prefix-debug.log 找该走此通道的断裂源。参考 `core/system-prompt` PromptContext + agent-loop runtime-context。
 - [ ] **hooks 声明式 subprocess 层**:kimi-hooks 研究的未竟半边;DSH `hooks/hook-protocol` + `hooks-claude-code` 是现成参考(7 个 hook 点映射、fail-open 不崩 boot、CC hooks.json 直接兼容可白嫖生态)。
-- [ ] **"Model Experience 三问"文档规矩**:凡改模型可见内容(提示词/注入/工具 schema),PR/commit 说明需回答 What the model sees / Token effect / KV Cache effect。
+- [x] ~~**"Model Experience 三问"文档规矩**~~ **已落地**:入 `AGENTS.md` 的「版本与文档」节。三问 = 模型看到什么变了 / token 影响 / KV cache 影响；第三条挂了本仓自己的两笔账（`19b2bed3` 的命中率破坏性损伤、resize 通知文案的确定性要求）。额外补了一条上游没明写的：**段落顺序也算模型可见改动，移动一段的代价是从它往后整个前缀作废**。
 - [ ] **UI 交互三件**(TUI/GUI 通用):Think 行流式期"最新非空行"滚动 summary(展开即停跟随;与现有 reasoningTitle 粗体标题叠加,优先级:标题>最新行>时长);连续重试折叠为单行状态(倒计时锚定客户端接收时刻);压缩 checkpoint 原位折叠行、展开显示摘要与 token 估算。参考 `client/ui-conversation`。
 - [ ] **busy_enter 的 UI 收尾**:~~TUI 斜杠~~(138aa422)、~~GUI 斜杠+设置面板下拉~~(本批,DSH 同款形态);剩 steer 模式"已送达"徽标(QUEUED → 送达,需 user 消息 schema 字段 + sync 推送 + 双端渲染)。
 - [ ] **subagent-report 两档投递**:子代理回执 wakeup(唤醒父开新轮)/quiet(仅注入不触发请求)部署级策略,对照现有后台子代理通知机制。
 
 ## 记账(等痛点/等时机)
 
-- [ ] **Code Mode**:工具集折叠为 `run_code` + 按 scope 确定性生成 TS/Python SDK(byte-identical 缓存友好),中间值不进上下文,子调用重入完整权限管线。MCP 工具定义成本的终极解法,实现重。参考 `core/tools` Code Mode + `code-runtime`。
+- [ ] **PTC**(上游 260825 从 Code Mode 改名为 programmatic tool calls,配置值 `tools.mode: 'ptc'`):工具集折叠为 `run_code` + 按 scope 确定性生成 TS/Python SDK(byte-identical 缓存友好),中间值不进上下文,子调用重入完整权限管线。MCP 工具定义成本的终极解法,实现重。参考 `core/tools` Code Mode + `code-runtime`。
 - [ ] **workflow 工具**:模型写 JS 编排脚本 fan-out 子代理。参考 `workflow/tool-workflow`。
-- [ ] **token-meter 式 projectedTokens**:provider usage 锚点 + 启发式只算增量,压缩落地立即反映下一请求成本。用量面板已有基础,等口径重构时对照。
+- [x] ~~**token-meter 式 projectedTokens**~~ **部分落地(9286a867)**:图片那一半已做 —— 事实与定价分离(节点存路由无关事实,读时按当前路由定价)、usage 仍是完成请求的锚。**未做**:逐字移植 v4 视觉计算器(要图片宽高,`FilePart` 不带,为估算而解码每张图不划算);文本侧仍是 chars/4。
 - [ ] **压缩日志锁括号**:compaction start/end 括号日志,crash 留可检测孤儿锁而非假完成。对照现有 compact 实现评估。
 - [ ] **文档预算/生成式 catalog 门禁**:单人仓文档量未到痛点,缓。

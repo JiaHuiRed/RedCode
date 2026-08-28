@@ -270,8 +270,12 @@ export const layer = Layer.effect(
     const directory = yield* CurrentWorkingDirectory
     const npm = yield* Npm.Service
     const data = yield* loadState({ directory })
+    // 260828 cc 与 config.ts 的后台安装同源（本仓两份并行拷贝），同样受
+    // REDCODE_DISABLE_PLUGIN_DEP_INSTALL 约束 —— 否则离线用户设了开关，TUI 这条路
+    // 照样去装。config.ts 那份的泄漏账见
+    // docs/notes/implemented/bug-fix/2026-08-28-test-temp-dir-leak.md。
     const deps = yield* Effect.forEach(
-      data.dirs,
+      Flag.REDCODE_DISABLE_PLUGIN_DEP_INSTALL ? [] : data.dirs,
       (dir) =>
         npm
           .install(dir, {

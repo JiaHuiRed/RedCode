@@ -6,6 +6,18 @@ import fs from "fs/promises"
 import { setTimeout as sleep } from "node:timers/promises"
 import { afterAll } from "bun:test"
 
+// 260828 cc 启动期清扫陈旧的测试临时目录。理由与判据见 test/lib/sweep-temp.ts ——
+// 简言之：进程被超时杀掉/崩溃时 finalizer 根本不会跑，那一类漏得最多，只能靠兜底扫。
+// `REDCODE_TEST_TMP_TTL_HOURS=0` 可关掉。
+const { sweepStaleTestDirs } = await import("./lib/sweep-temp")
+const swept = await sweepStaleTestDirs()
+if (swept.removed > 0) {
+  console.warn(
+    `[preload] swept ${swept.removed} stale test temp dir(s), ${(swept.bytes / 1024 / 1024).toFixed(0)} MB` +
+      (swept.skipped > 0 ? ` (${swept.skipped} still in use, left for a later run)` : ""),
+  )
+}
+
 // Set XDG env vars FIRST, before any src/ imports
 const dir = path.join(os.tmpdir(), "redcode-test-data-" + process.pid)
 await fs.mkdir(dir, { recursive: true })
@@ -43,6 +55,10 @@ process.env["REDCODE_MODELS_PATH"] = path.join(import.meta.dir, "tool", "fixture
 // test/lib/cli-process.ts 给子进程早就设了这个变量，进程内跑的测试一直漏了。
 process.env["REDCODE_DISABLE_MODELS_FETCH"] = "1"
 process.env["REDCODE_EXPERIMENTAL_WORKSPACES"] = "true"
+// 260828 cc 测试里不要真的 npm install。那步是分离 fiber，比临时目录的 finalizer 活得
+// 长：finalizer 删完之后 npm 又把 .redcode/node_modules 写回来，于是留下一个 38MB 的
+// 目录且**没有任何告警**（clean() 当时确实删成功了）。实测一轮会话攒出 177 个、6.5GB。
+process.env["REDCODE_DISABLE_PLUGIN_DEP_INSTALL"] = "1"
 
 // Set test home directory to isolate tests from user's actual home directory
 // This prevents tests from picking up real user configs/skills from ~/.claude/skills

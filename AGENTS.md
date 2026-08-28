@@ -78,6 +78,11 @@
   - **写**：非平凡改动同 commit 附 note。判据：一个月后会有人问"当时为什么这么做"就写。CHANGELOG 记 what，note 记 why。
   - **查**：动一个子系统前、或对"为什么这么设计"存疑时，先 `ls docs/notes/implemented/` 或按主题 grep——已否决的方案在 `rejected/`，别重新发明。
   - **链**：note 落地时在对应代码头注释/CHANGELOG 条目回链 note 路径——notes 不进上下文，靠链接网被发现。
+- **模型可见改动的三问**（改提示词 / 注入段 / 工具 schema 与 description / 工具输出格式，必答）：在 commit 说明里逐条回答，有 note 的写进 note。
+  1. **模型看到什么变了**——加了删了还是移了哪一段，给原文对照。
+  2. **token 影响**——固定前缀增减多少（`session/prefix-shape.ts` 能直接量）。
+  3. **KV cache 影响**——从哪一段起前缀作废，还是完全不动。**这条最容易漏、代价最大**：`19b2bed3`「每轮读盘对比 + system 尾部注入变更通知」就是没答这条落的地，在家实测对命中率造成破坏性损伤后整条回退；`image/image.ts` 的 resize 通知文案至今被钉成"只由尺寸推导、不含时间戳"，同一笔账——掺进去会让同一张历史图每轮生成不同文本，命中率线性掉到 50% 且不自愈。
+  段落顺序也算模型可见改动：**移动一段的代价是从它开始往后的整个前缀作废**，不是只有那一段。来源：deepseek-harness 的 "Model Experience 三问" 文档规矩，其 `sparse-first-party-prompt-section-orders` 一条就是在 Consequences 里主动写明了这个作废点。
 
 # 项目指令
 

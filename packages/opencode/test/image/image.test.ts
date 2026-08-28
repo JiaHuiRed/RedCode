@@ -71,8 +71,13 @@ describe("Image", () => {
       )
 
       source.free()
-      expect(resized.get_width()).toBeLessThanOrEqual(2_000)
-      expect(resized.get_height()).toBeLessThanOrEqual(2_000)
+      // 260828 cc 断言从「每边 <= 2000」改成「每边 <= 8192 且总像素 <= 4M」——
+      // 这是**有意的行为变更**不是迁就实现：9000x1 总共才 9000 像素，视觉 token 成本
+      // 可以忽略，把它压成 2000 宽纯属旧盒子规则的副作用。现在只由每边硬帽收一次。
+      expect(resized.get_width()).toBeLessThanOrEqual(8_192)
+      expect(resized.get_height()).toBeLessThanOrEqual(8_192)
+      expect(resized.get_width() * resized.get_height()).toBeLessThanOrEqual(4_000_000)
+      expect(resized.get_width()).toBeGreaterThan(2_000)
       resized.free()
     }),
   )
@@ -92,10 +97,12 @@ describe("Image", () => {
       const resized = photon.PhotonImage.new_from_byteslice(Buffer.from(base64, "base64"))
 
       expect(input.url.slice(input.url.indexOf(";base64,") + ";base64,".length).length).toBe(5 * 1024 * 1024)
+      // 仍然重编码（透传闸门保持旧盒子，2964 > 2000），payload 仍远低于上限；
+      // 变的是它保住了源分辨率而不是被压到 2000x329。
       expect(result.part.url).not.toBe(input.url)
-      expect(base64.length).toBeLessThan(5 * 1024 * 1024)
-      expect(resized.get_width()).toBeLessThanOrEqual(2_000)
-      expect(resized.get_height()).toBeLessThanOrEqual(2_000)
+      expect(base64.length).toBeLessThan(1024 * 1024)
+      expect(resized.get_width()).toBe(2_964)
+      expect(resized.get_height()).toBe(488)
       resized.free()
     }),
   )
@@ -170,6 +177,78 @@ describe("Image JPEG candidate ladder", () => {
 })
 
 // 260822 cc 缩放报告与坐标倍数（搬自官方 harness 6e17c20804）
+// 260828 cc 尺寸规则从「每边盒子」改成「总像素预算 + 每边硬帽」之后的行为闸门。
+describe("Image pixel budget", () => {
+  // R3 的实际修复点：长截图不再被压成十分之一宽。
+  // 旧规则 scale = min(1, 2000/100, 2000/2400) = 0.833 -> 83x2000（宽度砍掉 17%）；
+  // 新规则总共才 240K 像素，远在 4M 预算内，只受每边 8192 约束 -> 原尺寸保留。
+  it.effect("keeps the short edge of a tall screenshot instead of crushing it", () =>
+    Effect.gen(function* () {
+      const photon = yield* Effect.promise(() => import("@silvia-odwyer/photon-node"))
+      const source = new photon.PhotonImage(new Uint8Array(Array.from({ length: 100 * 2_400 * 4 }, () => 255)), 100, 2_400)
+      const image = yield* Image.Service
+      const result = yield* image.normalize(part("image/png", Buffer.from(source.get_bytes()).toString("base64")))
+      const out = photon.PhotonImage.new_from_byteslice(
+        Buffer.from(result.part.url.slice(result.part.url.indexOf(";base64,") + ";base64,".length), "base64"),
+      )
+      source.free()
+
+      expect(out.get_width()).toBe(100)
+      expect(out.get_height()).toBe(2_400)
+      out.free()
+    }),
+  )
+
+  // 回归闸门：方形图落在预算边界上，行为必须与改动前逐像素相同。
+  it.effect("leaves a square image at the budget boundary exactly as before", () =>
+    Effect.gen(function* () {
+      const photon = yield* Effect.promise(() => import("@silvia-odwyer/photon-node"))
+      const source = new photon.PhotonImage(new Uint8Array(Array.from({ length: 2_100 * 2_100 * 4 }, () => 255)), 2_100, 2_100)
+      const image = yield* Image.Service
+      const result = yield* image.normalize(part("image/png", Buffer.from(source.get_bytes()).toString("base64")))
+      const out = photon.PhotonImage.new_from_byteslice(
+        Buffer.from(result.part.url.slice(result.part.url.indexOf(";base64,") + ";base64,".length), "base64"),
+      )
+      source.free()
+
+      // 2100x2100 = 4.41M px 超 4M 预算 -> sqrt(4M/4.41M) = 0.952 -> 2000x2000，
+      // 与旧盒子规则 min(1, 2000/2100) = 0.952 得到的结果相同。
+      expect(out.get_width()).toBe(2_000)
+      expect(out.get_height()).toBe(2_000)
+      out.free()
+    }),
+  )
+})
+
+// 260828 cc JPEG 源不可能带 alpha，给它排一个 PNG 候选是纯浪费 —— PNG 排在第一位，
+// 一旦碰巧落在字节预算内就会被选中，那正是「照片被路由到无损编码器」的病。
+describe("Image alpha routing", () => {
+  it.effect("never offers a PNG candidate for a JPEG source", () =>
+    Effect.gen(function* () {
+      const photon = yield* Effect.promise(() => import("@silvia-odwyer/photon-node"))
+      const source = new photon.PhotonImage(new Uint8Array(Array.from({ length: 3_000 * 100 * 4 }, () => 255)), 3_000, 100)
+      const image = yield* Image.Service
+      // 全白图的 PNG 极小，旧实现里它一定排第一且在预算内 —— 所以这条断言能区分两种实现。
+      const result = yield* image.normalize(part("image/jpeg", Buffer.from(source.get_bytes_jpeg(90)).toString("base64")))
+      source.free()
+
+      expect(result.part.mime).toBe("image/jpeg")
+    }),
+  )
+
+  it.effect("still offers PNG first for a source that may carry alpha", () =>
+    Effect.gen(function* () {
+      const photon = yield* Effect.promise(() => import("@silvia-odwyer/photon-node"))
+      const source = new photon.PhotonImage(new Uint8Array(Array.from({ length: 3_000 * 100 * 4 }, () => 255)), 3_000, 100)
+      const image = yield* Image.Service
+      const result = yield* image.normalize(part("image/png", Buffer.from(source.get_bytes()).toString("base64")))
+      source.free()
+
+      expect(result.part.mime).toBe("image/png")
+    }),
+  )
+})
+
 describe("Image resize report", () => {
   it.effect("reports source dimensions when the image was downscaled, and nothing when it was not", () =>
     Effect.gen(function* () {
@@ -182,7 +261,8 @@ describe("Image resize report", () => {
       expect(resized.resize).toBeDefined()
       expect(resized.resize!.sourceWidth).toBe(9_000)
       expect(resized.resize!.sourceHeight).toBe(1)
-      expect(resized.resize!.width).toBeLessThanOrEqual(2_000)
+      expect(resized.resize!.width).toBeLessThanOrEqual(8_192)
+      expect(resized.resize!.width).toBeGreaterThan(2_000)
 
       // 未缩放的图不产出报告 —— 否则模型会被告知一个不存在的坐标换算
       const small = yield* image.normalize(
