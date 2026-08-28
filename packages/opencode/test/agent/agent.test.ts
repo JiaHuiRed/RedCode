@@ -203,9 +203,21 @@ it.instance("md-defined subagents carry their frontmatter", () =>
     const modelOf = (agent: Agent.Info | undefined) => `${agent?.model?.providerID}/${agent?.model?.modelID}`
     expect(modelOf(explore)).toBe("stepfun-step-plan/step-3.7-flash")
     expect(modelOf(advise)).toBe("deepseek/deepseek-v4-flash-vision-exp")
-    expect(modelOf(execute)).toBe("opencode-go/mimo-v2.5")
+    expect(modelOf(execute)).toBe("opencode-go/glm-5.3-flash")
+    // 三个工种都配了超时兑底：timeout_ms 罩整个子代理运行，超时换 fallback_model 重跑一次
+    const fallbackOf = (agent: Agent.Info | undefined) =>
+      `${agent?.fallbackModel?.providerID}/${agent?.fallbackModel?.modelID}`
     expect(explore?.timeoutMs).toBe(180000)
-    // execute 不写 variant：mimo-v2.5 的 reasoning_options 是空数组，没有 effort 档位
+    expect(advise?.timeoutMs).toBe(600000)
+    expect(execute?.timeoutMs).toBe(900000)
+    expect(fallbackOf(explore)).toBe("opencode-go/glm-5.3-flash")
+    expect(fallbackOf(advise)).toBe("opencode-go/glm-5.3-flash")
+    expect(fallbackOf(execute)).toBe("opencode-go/mimo-v2.5")
+    // 兑底必须换族，同族换路由治不了「模型自己卡住」这种失效
+    for (const agent of [explore, advise, execute]) {
+      expect(fallbackOf(agent)).not.toBe(modelOf(agent))
+    }
+    // 不写 variant：glm-5.3-flash 的 effort 只有 low/high/max，没有 none
     expect(execute?.variant).toBeUndefined()
     // 阴性对照：md 的白名单里有 indexgraph_*，4c 之前手写的内建块没有。命中即证明吃的是 frontmatter。
     expect(evalPerm(explore, "indexgraph_explore")).toBe("allow")

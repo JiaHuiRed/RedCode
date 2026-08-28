@@ -6,6 +6,17 @@ description: 方案设计与代码审查专家（只读）。当需要设计方�
 # 带 image 输入的模型。⚠ vision-exp 的推理消耗波动极大（同一 prompt 实测 65 / 490 token
 # 两次），输出预算给小了会把正文截断成半句——真出现截断就加 timeout_ms + fallback_model。
 model: deepseek/deepseek-v4-flash-vision-exp
+# 260828 cc 官方源：同一个 vision-exp 在官方 deepseek 是 in 0.14 / out 0.28，走 opencode-go 是
+# 0.22 / 0.66，贵一半以上。（选它原本的理由是「审查要看截图」，那条已经不成立——识图现在由主会话
+# 直读；留着是因为它是主力模型之一、判断质量有底，而且官方源这一档确实便宜。）
+#
+# 260828 cc 超时兑底。⚠ vision-exp 的推理消耗波动极大（同一 prompt 实测 65 / 490 token 两次），
+# 是这三个工种里最需要上限的一个。机制见 tool/task.ts：timeout_ms 罩的是**整个子代理运行**，
+# 超时先 cancel、再用 fallback_model 在同一子会话里重发一次，两次都超时才报错。
+# advise 只读、没有半截改动的问题，重试是安全的。10 分钟对「读一圈再出结论」是宽裕的。
+timeout_ms: 600000
+# 兑底特意换族（deepseek -> glm）：失效模式是「推理烧不完」，同族换路由治不了它。
+fallback_model: opencode-go/glm-5.3-flash
 # 260828 cc 这份 md 是本工种**唯一的定义来源**：frontmatter 给 mode/description/model/权限，正文给
 # 提示词。agent.ts 用 with { type: "text" } 在**构建期**把整份文件内联进二进制，运行时用 gray-matter
 # 剥出来 —— 不是读盘（src 不进发布包）。这份 md **不会**被 sync-home 播到 ~/.redcode/agent/：一旦那里

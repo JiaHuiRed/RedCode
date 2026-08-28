@@ -301,7 +301,7 @@ function providerCfg(url: string) {
   }
 }
 
-// 260828 cc 老名字 general 经别名解析到 execute，而 execute 自带 model: opencode-go/mimo-v2.5
+// 260828 cc 老名字 general 经别名解析到 execute，而 execute 自带 model: opencode-go/glm-5.3-flash
 //（general 从前不带 model、跟随会话模型）。这是真实的行为变化，不是测试环境瑕疵 —— 测试里只有
 // test provider，所以凡是要让子会话真跑起来的用例，都得先把 execute 钉回测试模型。
 function subtaskCfg(url: string) {

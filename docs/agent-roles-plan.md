@@ -67,7 +67,7 @@ plan    = defaults + { question: allow, plan_exit: allow,
 | --- | --- | --- | --- |
 | `explore` | 只读 | + `scout` | `stepfun-step-plan/step-3.7-flash`（现状），`timeout_ms: 180000` |
 | `advise` | 只读 | `architect` + `reviewer` | **`deepseek/deepseek-v4-flash-vision-exp`（官方源）** |
-| `execute` | 可写 | `general` + `fixer` | `opencode-go/mimo-v2.5`（08-28 由 `hy3` 改来，见修正十三） |
+| `execute` | 可写 | `general` + `fixer` | `opencode-go/glm-5.3-flash`（08-28 由 `hy3` 改来，见修正十三） |
 
 `advise` 合并的理由：architect 与 reviewer 都是「只读 + 输出判断」，区别只在输入是需求还是 diff——而 `task` 调用本来就带 prompt，靠 prompt 区分即可。选官方源 vision 是因为审查/设计都可能要看截图，而它是官方 provider 下唯一的多模态模型。**注意**：vision-exp 的推理消耗波动极大，`advise` 必须给足输出预算，必要时配 `timeout_ms` + `fallback_model`。
 
@@ -226,29 +226,35 @@ live 规模（只读查 `~/.redcode/data/redcode.db`）：session.agent `build` 
 
 **结论**：别名表按长期存在设计。CHANGELOG 里别承诺「一轮过渡后删掉」。
 
-### 修正十三：execute 的模型定 `opencode-go/mimo-v2.5`（08-28 落地时改的）
+### 修正十三：三个工种的模型与超时兑底（08-28 落地时定的）
 
-4b 时沿用了 fixer 的 `opencode-go/hy3` + `variant: none`。落地后按模型目录（`~/.redcode/cache/models.json`）
-复核，改成 `opencode-go/mimo-v2.5`：
+**前提变了**：主力收敛到 DeepSeek vision 与 glm-5.3-flash 两个多模态模型之后，**识图不再派子进程**
+——主会话直读。所以 4b 给 `advise` 选官方源 vision、以及中途给 `execute` 选多模态 mimo 的那条理由
+（「审查/设计要看截图」）**已经不成立**，多模态从此只是顺带属性，不是选型依据。
 
-| | `hy3` | `mimo-v2.5` |
-| --- | --- | --- |
-| 输入模态 | 纯文本 | text / **image** / audio / video |
-| 上下文 / 输出 | 256K / 64K | **1M / 128K** |
-| input / output 单价 | 0.0175 / 0.0725 | **0.14 / 0.28**（8x / 3.9x） |
-| 推理档位 | `effort: none/low/high` | **`reasoning_options: []`** |
+| 工种 | 模型 | in / out | ctx / out上限 | timeout | fallback |
+| --- | --- | --- | --- | --- | --- |
+| `explore` | `stepfun-step-plan/step-3.7-flash` | 走阶跃额度 | 256K / 256K | 180s | `opencode-go/glm-5.3-flash` |
+| `advise` | `deepseek/deepseek-v4-flash-vision-exp` | 0.14 / 0.28 | 1M / 384K | 600s | `opencode-go/glm-5.3-flash` |
+| `execute` | `opencode-go/glm-5.3-flash` | **0.075 / 0.25** | 1M / 131K | 900s | `opencode-go/mimo-v2.5` |
 
-两条要点：
+三条要点：
 
-- **`variant` 字段必须删掉**。`variant: none` 是为 hy3 的 effort 档位写的，mimo-v2.5 的
-  `reasoning_options` 是空数组，写了是空操作。
-- **图不是靠 `task` 传进来的**：`task` 的入参 `prompt` 是纯字符串，父会话没法把 image part 递给子代理。
-  子代理拿到图的唯一路径是**自己 `read` 一个图片文件** —— `tool/read.ts:452-468` 对
-  jpeg/png/gif/webp 与 PDF 返回 `type: "file"` part。所以这条对 execute 是「派活时不用先想会不会碰到图」
-  的省心，不是一个高频场景；`advise` 那边才是真需求（审 UI 截图），4b 选官方源 vision 就是为它。
+- **`execute` 从 `hy3` 换成 `glm-5.3-flash`**：hy3 是纯文本、256K/64K；glm-5.3-flash 是主力之一
+  （质量有第一手判断）、1M/131K，而且比中途考虑过的 mimo-v2.5（0.14/0.28）还便宜近一半。
+  **`variant` 字段删掉** —— `variant: none` 是为 hy3 的 effort 档位写的，glm-5.3-flash 的 effort 只有
+  `low/high/max`，**没有 `none`**；mimo-v2.5 更是 `reasoning_options: []`。写了都是空操作。
+- **超时兑底的机制**（`tool/task.ts:299-319`）：`timeout_ms` 罩的是**整个子代理运行**，不是单次请求。
+  超时先 `ops.cancel`，再用 `fallback_model` 在**同一个子会话**里重发一次同样的 prompt——所以兑底模型
+  看得到第一次留下的历史，是「接着干」不是「从头来」。两次都超时才 fail。
+  **只配 `timeout_ms` 不配 `fallback_model` = 超时即硬失败**（explore 此前就是这样，白等三分钟）。
+- **兑底一律换族**：失效模式是「模型自己卡住/推理烧不完」，同族换路由治不了它。`advise` 尤其需要
+  上限——vision-exp 的推理消耗实测同一 prompt 能差 65 / 490 token。
+  ⚠ `execute` 可写，重试意味着「半截改动 + 换模型接着干」，看它的汇报别只看结果。
 
-代价是单价，execute 又是派得最勤的工种。要退回：`opencode-go/hy3` + `variant: none`，
-或中间档 `opencode-go/deepseek-v4-flash`。
+超时的三个数字是**按用途估的、不是实测出来的**：explore 180s 沿用原值；advise 600s 给「读一圈再出
+结论」；execute 900s 给「跑测试 / 跑构建」。它们只该在真卡死时触发——如果开始误杀慢活，往上调，
+别往下调。
 
 ## 迁移步骤
 
@@ -286,7 +292,9 @@ live 规模（只读查 `~/.redcode/data/redcode.db`）：session.agent `build` 
   `subagent_type`、历史会话续跑、`--agent`（非 `--attach`）、`default_agent`、配置里的 `agent.<老名>`。
   **别写「一轮过渡后删掉别名」**，理由见修正十二。
 - **`general` → `execute` 会静默换模型**：general 从前不带 model、跟随会话模型，execute 自带
-  `opencode-go/mimo-v2.5`。影响历史 `subagent_type: "general"` 与 `/subtask`。
+  `opencode-go/glm-5.3-flash` + 900s 超时。影响历史 `subagent_type: "general"` 与 `/subtask`。
+- **三个工种都配了超时兑底**（explore 180s / advise 600s / execute 900s，各带换族的 `fallback_model`）。
+  此前只有 explore 有 `timeout_ms` 且没有兑底，超时是硬失败。
 - **`execute` 比 general 严一档**：`"*": deny` 白名单意味着它**一个 skill 都看不见**
   （`skill/index.ts` 按 `evaluate("skill", name)` 过滤），`task` 与任意非白名单前缀的 MCP 工具也被禁。
   要放宽在 `src/agent/definition/execute.md` 里显式写 `skill: allow`。

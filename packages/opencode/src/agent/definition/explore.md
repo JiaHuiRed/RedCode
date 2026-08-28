@@ -9,6 +9,10 @@ description: >-
   "very thorough" for comprehensive analysis across multiple locations and naming conventions.
 model: stepfun-step-plan/step-3.7-flash
 timeout_ms: 180000
+# 260828 cc 补 fallback_model：原先只有 timeout_ms，超时就是一次硬失败（tool/task.ts 会直接报
+# 「timed out after 180000ms (no fallback model configured)」），白等三分钟还什么都没拿到。
+# 换族又换供应商（阶跃 -> opencode-go），顺带绕开阶跃额度本身的抖动。
+fallback_model: opencode-go/glm-5.3-flash
 # 260828 cc 这份 md 是本工种**唯一的定义来源**：frontmatter 给 mode/description/model/超时与权限，
 # 正文给提示词。agent.ts 用 with { type: "text" } 在**构建期**把整份文件内联进二进制，运行时用
 # gray-matter 剥出来 —— 不是读盘（seed 与 src 都不进发布包；而且 Info.prompt 在 llm/request.ts 是
