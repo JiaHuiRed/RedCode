@@ -235,15 +235,45 @@ live 规模（只读查 `~/.redcode/data/redcode.db`）：session.agent `build` 
 | 3 | `{agent,agents}` 收成只认 `agent/`（顺带清掉审计记的「seed 单复数双套」） | 低 | **已做 2026-08-28**（复数目录存在时打 warning，不静默丢定义） |
 | 4a | `explore` 的提示词与权限并成一份 md，验证「prompt 搬进 md」这条机制 | 低 | **已做 2026-08-28**（`0419c3a8`） |
 | 4b | 新增合并后的 `advise` 与 `execute`（只新增、不删旧） | 低 | **已做 2026-08-28**（`5b48e1af`） |
-| 4c-1 | 三个工种**全部内建**（连 frontmatter 一起吃，见修正七）；md 移进 `src/agent/definition/`、退出 sync-home（修正九）；权限按修正八补 `external_directory` 与 `read`；删 `seed/agent/{architect,fixer,reviewer}.md` | 中 | 未做 |
-| 4c-2 | 别名表 + 三处共用 resolve + 配置 key 规范化（修正十）；删内建 `build`/`general`/`scout` 与 `PROMPT_SCOUT`/`scout.md`；`redmind` 补 `plan_enter: allow`；十一处硬编码（修正十一） | 中 | 未做 |
-| 4c-3 | `config.ts` 具名 key 换成 redmind/plan/explore/advise/execute + 机件三件套，重跑 `gen:openapi` 与 SDK | 低 | 未做 |
-| 4c-4 | 测试面：`test/agent/agent.test.ts`、`test/tool/task.test.ts:222`、`test/session/prompt.test.ts:763/1910/2253`、`test/config/agent-color.test.ts:35` | 低 | 未做 |
+| 4c-1 | 三个工种**全部内建**（连 frontmatter 一起吃，见修正七）；md 移进 `src/agent/definition/`、退出 sync-home（修正九）；权限按修正八补 `external_directory` 与 `read`；删 `seed/agent/{architect,fixer,reviewer}.md` | 中 | **已做 2026-08-28**（`f952f07b`） |
+| 4c-2 | 别名表 + 三处共用 resolve + 配置 key 规范化（修正十）；删内建 `build`/`general`/`scout` 与 `PROMPT_SCOUT`/`scout.md`；`redmind` 补 `plan_enter: allow`；十一处硬编码（修正十一） | 中 | **已做 2026-08-28**（`236d0bc4`，测试面并进同一提交，见下注） |
+| 4c-3 | `config.ts` 具名 key 换成 redmind/plan/explore/advise/execute + 机件三件套，重跑 `gen:openapi` 与 SDK | 低 | **已做 2026-08-28**（`dc34fe97`） |
 | 4 | live 对齐（**私仓**）：`git rm agent/{architect,fixer,reviewer}.md`；`command/subtask.md:4` 改 `agent: execute` | 低 | 未做（仓外） |
 | 5 | `Info` 拆成姿态/工种两个类型；内建裁到机件 + 一个最小 fallback | 中 | 未做 |
 | 6 | `agent.*` 去掉「创建」分支，只留覆写 + disable | 低 | 未做 |
 
 每步独立可回退。1、2 当天可落可验。
+
+原计划里单列的「4c-4 测试面」已并进 4c-2 —— 改代码的那一刀就会让测试红，分成两个提交等于中间
+留一个红的 dev。落地时的实测基线也和调研估的不一样：`test/agent test/config test/tool test/session`
+的存量红是 **35 条**不是 33 条（`revert-compact.test.ts` 那两条调研没数进去，已在 4b / 4c-1 / 4c-2
+三个点位 A/B 过，动手前就是红的）。另外 `test/server` 的红条数抖动极大，且**会被磁盘占满伪装成
+大面积回归**（08-28 实遇：C 盘满时同一批从 13 红涨到 44~64 红），量它必须先看 `df`。
+
+## 升版时要写进 CHANGELOG 的（第 1~4c 步累计）
+
+第 1~4c 步都没动 CHANGELOG（这一串按仓里惯例，条目在切版本时一次写）。切版本时**必须**包含
+下面这些，都是对用户可见的行为变化：
+
+- **角色从 9 个收成 5 个**：姿态 `redmind` / `plan`，工种 `explore` / `advise` / `execute`；
+  机件 `compaction` / `title` / `summary` 不进任何列表。
+- **老名字只经别名解析可用，且手打 `@architect` 不再可用** —— 交互式 @ 提及的 part 由客户端从
+  `list()` 造（`autocomplete.tsx:517`、`app/prompt-input.tsx:664`），别名进不去。仍可用的老入口只有
+  `subagent_type`、历史会话续跑、`--agent`（非 `--attach`）、`default_agent`、配置里的 `agent.<老名>`。
+  **别写「一轮过渡后删掉别名」**，理由见修正十二。
+- **`general` → `execute` 会静默换模型**：general 从前不带 model、跟随会话模型，execute 自带
+  `opencode-go/hy3` + `variant: none`。影响历史 `subagent_type: "general"` 与 `/subtask`。
+- **`execute` 比 general 严一档**：`"*": deny` 白名单意味着它**一个 skill 都看不见**
+  （`skill/index.ts` 按 `evaluate("skill", name)` 过滤），`task` 与任意非白名单前缀的 MCP 工具也被禁。
+  要放宽在 `src/agent/definition/execute.md` 里显式写 `skill: allow`。
+- **`destructive` / `doom_loop` 对三个工种是 deny 不是 ask**（扁平 `"*": deny` 盖掉了 defaults 的
+  ask 档），deny 是硬失败不是弹询问。这与 fixer 今天的行为一致，不是新收紧，但要说清。
+- **`redmind` 补上了 `plan_enter`**：默认姿态下模型现在能自己提议进计划模式了。
+- **scout 的依赖缓存能力退役**：`repo_clone` / `repo_overview` 没有任何角色再放行；
+  `REDCODE_EXPERIMENTAL_SCOUT` flag 保留（它还门控 @reference 的 git 物化）。
+- **配置里显式写了 `agent.build` / `agent.general` 的用户**：这些 key 现在被规范化到 redmind /
+  execute 上，覆写照旧生效；但 `agent.build.disable` 从「删掉 build」退化成 no-op。
+- **`~/.redcode/agent/` 不再由 sync-home 播种**（修正九）。用户自建的 md 照常加载。
 
 ## 明确不做的
 
