@@ -86,7 +86,13 @@ export function HomeKanban(props: {
     <div class="flex gap-4 min-h-0 overflow-x-auto overflow-y-hidden flex-1 px-4 pb-4">
       <For each={columns()}>
         {(column) => (
-          <div class="flex flex-col min-w-[220px] flex-1 gap-3">
+          // 260828 cc 空列不再与有内容的列等宽。原来每列都是 `flex-1`：宽窗口下
+          // 「工作中」「需关注」各占三分之一全是虚线占位，唯一有内容的列被挤在剩下的
+          // 三分之一里。改成空列只占最小宽度、不参与 grow，横向空间全给有内容的列。
+          <div
+            class="flex flex-col min-w-[220px] gap-3"
+            style={{ flex: column.records.length > 0 ? "1 1 0%" : "0 1 220px" }}
+          >
             <div class="flex items-center gap-2 px-2 h-7 shrink-0">
               <div class="size-2 rounded-full" style={{ "background-color": columnColor(column.id) }} />
               <span class="text-v2-text-text-muted [font-weight:530] text-[13px]">{columnLabel(column.id)}</span>
@@ -94,14 +100,17 @@ export function HomeKanban(props: {
                 <span class="text-v2-text-text-faint text-[11px] [font-weight:440]">{column.records.length}</span>
               </Show>
             </div>
-            {/* 260710 Red 空闲列会话多时两列网格展示，充分利用右侧空间 */}
-            <div
-              class={`overflow-y-auto flex-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${column.records.length > 6 ? "grid grid-cols-2 gap-2 auto-rows-min content-start" : "flex flex-col gap-2"}`}
-            >
+            {/* 260828 cc 卡片列数按可用宽度自适应，不再按记录条数切换。原判据是
+                records.length > 6 才切两列，但决定该排几列的是宽度不是条数：5 张卡在宽列里
+                各占满整行，一张卡 500+px 只装一行标题。auto-fill + minmax 让窄列自然退化成
+                一列、宽列自动铺开，不需要阈值。 */}
+            <div class="overflow-y-auto flex-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-2 auto-rows-min content-start">
               <Show
                 when={column.records.length > 0}
                 fallback={
-                  <div class="rounded-[8px] border border-dashed border-v2-border-border-base px-3 py-6 text-center text-[12px] text-v2-text-text-faint [font-weight:440]">
+                  // 260828 cc 空态从 py-6 的虚线大盒子改成一行淡字。列收窄之后那个盒子
+                  // 仍是整屏最显眼的两个矩形之一，而它承载的信息是「这里没有东西」。
+                  <div class="px-2 py-1 text-[12px] text-v2-text-text-faint [font-weight:440]">
                     {language.t("home.kanban.empty")}
                   </div>
                 }
