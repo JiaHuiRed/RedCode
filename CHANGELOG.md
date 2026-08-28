@@ -19,7 +19,9 @@
 
 #### 新增
 
-- **侧边栏项目行显示运行态**（`packages/app`、`app/utils/session-status.ts`）：12 个项目此前只有色块头像 + 名字，哪个有会话在跑、哪个有权限请求等着你，必须逐个点进去才知道——而看板早就把这个分类算出来了。项目行右侧给一个转圈（有会话在跑）和一个橙点 + 数字（有待关注）。**只读窥探，不拉起任何目录**：`sync.child(dir, { bootstrap: false })` 只读已经在内存里的 store，不触发 `InstanceStore.load()`（那会起整套 MCP/LSP 进程树，即「打开即多目录进程风暴」）。从没打开过的项目这里什么都不显示。看板计数三列口径统一。
+- **侧边栏项目行显示运行态**（`packages/app`、`app/utils/session-status.ts`）：12 个项目此前只有色块头像 + 名字，哪个有会话在跑、哪个有权限请求等着你，必须逐个点进去才知道——而看板早就把这个分类算出来了。项目行右侧给一个转圈（有会话在跑）和一个橙点 + 数字（有待关注）。看板计数三列口径统一。
+  **窥探用 `sync.peek()`，不是 `child()`**：这一点第一版做错过，值得写下来——`child(dir, { bootstrap: false })` 的 `bootstrap: false` 只管要不要 bootstrap，**管不住 pin**，而 `child()` 无条件 `pinForOwner`，会把目录永久钉住，重连时「只刷新 pinned 目录」的过滤就形同虚设。侧边栏对 12 个项目各调一次，实测触发 **12 次串行 `session.list`、累计 28 秒**，期间首页一条会话都显示不出来。`peek()` 就是 `ensureChild` 本身、不 pin，改回后 `session.list` 从 12 次降到 1 次。
+- **看板卡片补按压反馈**（`packages/app`）：配方取自私仓用量面板的 `.card`。
 
 #### 变更
 
