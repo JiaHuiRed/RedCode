@@ -232,14 +232,18 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
       clearHeartbeat()
     }
 
-    onMount(() => {
-      makeEventListener(document, "visibilitychange", () => {
-        if (document.visibilityState !== "visible") return
-        if (!started) return
-        if (Date.now() - lastEventAt < HEARTBEAT_TIMEOUT_MS) return
-        attempt?.abort()
-      })
-    })
+   onMount(() => {
+     // 260828 Red 通知断链修复：globalSDK.event.start() 之前无任何调用者，
+     //   挂在 globalSDK.event.listen 上的通知/声音/权限自动应答全成死监听，
+     //   serverSDK 却正常启动（dock 弹窗可见、桌面通知从未出现）。这里自启动。
+     void start()
+     makeEventListener(document, "visibilitychange", () => {
+       if (document.visibilityState !== "visible") return
+       if (!started) return
+       if (Date.now() - lastEventAt < HEARTBEAT_TIMEOUT_MS) return
+       attempt?.abort()
+     })
+   })
 
     onCleanup(() => {
       stop()
