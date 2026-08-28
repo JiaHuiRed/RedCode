@@ -203,9 +203,10 @@ it.instance("md-defined subagents carry their frontmatter", () =>
     const modelOf = (agent: Agent.Info | undefined) => `${agent?.model?.providerID}/${agent?.model?.modelID}`
     expect(modelOf(explore)).toBe("stepfun-step-plan/step-3.7-flash")
     expect(modelOf(advise)).toBe("deepseek/deepseek-v4-flash-vision-exp")
-    expect(modelOf(execute)).toBe("opencode-go/hy3")
+    expect(modelOf(execute)).toBe("opencode-go/mimo-v2.5")
     expect(explore?.timeoutMs).toBe(180000)
-    expect(execute?.variant).toBe("none")
+    // execute 不写 variant：mimo-v2.5 的 reasoning_options 是空数组，没有 effort 档位
+    expect(execute?.variant).toBeUndefined()
     // 阴性对照：md 的白名单里有 indexgraph_*，4c 之前手写的内建块没有。命中即证明吃的是 frontmatter。
     expect(evalPerm(explore, "indexgraph_explore")).toBe("allow")
     // 反向阴性对照：白名单外的 MCP 工具仍被 "*": deny 拦下

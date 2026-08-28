@@ -67,7 +67,7 @@ plan    = defaults + { question: allow, plan_exit: allow,
 | --- | --- | --- | --- |
 | `explore` | 只读 | + `scout` | `stepfun-step-plan/step-3.7-flash`（现状），`timeout_ms: 180000` |
 | `advise` | 只读 | `architect` + `reviewer` | **`deepseek/deepseek-v4-flash-vision-exp`（官方源）** |
-| `execute` | 可写 | `general` + `fixer` | `opencode-go/hy3` + `variant: none`（现状 fixer 的配置） |
+| `execute` | 可写 | `general` + `fixer` | `opencode-go/mimo-v2.5`（08-28 由 `hy3` 改来，见修正十三） |
 
 `advise` 合并的理由：architect 与 reviewer 都是「只读 + 输出判断」，区别只在输入是需求还是 diff——而 `task` 调用本来就带 prompt，靠 prompt 区分即可。选官方源 vision 是因为审查/设计都可能要看截图，而它是官方 provider 下唯一的多模态模型。**注意**：vision-exp 的推理消耗波动极大，`advise` 必须给足输出预算，必要时配 `timeout_ms` + `fallback_model`。
 
@@ -226,6 +226,30 @@ live 规模（只读查 `~/.redcode/data/redcode.db`）：session.agent `build` 
 
 **结论**：别名表按长期存在设计。CHANGELOG 里别承诺「一轮过渡后删掉」。
 
+### 修正十三：execute 的模型定 `opencode-go/mimo-v2.5`（08-28 落地时改的）
+
+4b 时沿用了 fixer 的 `opencode-go/hy3` + `variant: none`。落地后按模型目录（`~/.redcode/cache/models.json`）
+复核，改成 `opencode-go/mimo-v2.5`：
+
+| | `hy3` | `mimo-v2.5` |
+| --- | --- | --- |
+| 输入模态 | 纯文本 | text / **image** / audio / video |
+| 上下文 / 输出 | 256K / 64K | **1M / 128K** |
+| input / output 单价 | 0.0175 / 0.0725 | **0.14 / 0.28**（8x / 3.9x） |
+| 推理档位 | `effort: none/low/high` | **`reasoning_options: []`** |
+
+两条要点：
+
+- **`variant` 字段必须删掉**。`variant: none` 是为 hy3 的 effort 档位写的，mimo-v2.5 的
+  `reasoning_options` 是空数组，写了是空操作。
+- **图不是靠 `task` 传进来的**：`task` 的入参 `prompt` 是纯字符串，父会话没法把 image part 递给子代理。
+  子代理拿到图的唯一路径是**自己 `read` 一个图片文件** —— `tool/read.ts:452-468` 对
+  jpeg/png/gif/webp 与 PDF 返回 `type: "file"` part。所以这条对 execute 是「派活时不用先想会不会碰到图」
+  的省心，不是一个高频场景；`advise` 那边才是真需求（审 UI 截图），4b 选官方源 vision 就是为它。
+
+代价是单价，execute 又是派得最勤的工种。要退回：`opencode-go/hy3` + `variant: none`，
+或中间档 `opencode-go/deepseek-v4-flash`。
+
 ## 迁移步骤
 
 | 步 | 内容 | 风险 | 状态 |
@@ -262,7 +286,7 @@ live 规模（只读查 `~/.redcode/data/redcode.db`）：session.agent `build` 
   `subagent_type`、历史会话续跑、`--agent`（非 `--attach`）、`default_agent`、配置里的 `agent.<老名>`。
   **别写「一轮过渡后删掉别名」**，理由见修正十二。
 - **`general` → `execute` 会静默换模型**：general 从前不带 model、跟随会话模型，execute 自带
-  `opencode-go/hy3` + `variant: none`。影响历史 `subagent_type: "general"` 与 `/subtask`。
+  `opencode-go/mimo-v2.5`。影响历史 `subagent_type: "general"` 与 `/subtask`。
 - **`execute` 比 general 严一档**：`"*": deny` 白名单意味着它**一个 skill 都看不见**
   （`skill/index.ts` 按 `evaluate("skill", name)` 过滤），`task` 与任意非白名单前缀的 MCP 工具也被禁。
   要放宽在 `src/agent/definition/execute.md` 里显式写 `skill: allow`。

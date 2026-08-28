@@ -2,14 +2,14 @@
 name: execute
 mode: subagent
 description: 实现与修复执行专家（读写）。当方案已定、需要实际改代码、跑测试、修 bug 时使用，也用于把多个明确的工作单元并行铺开。不规划不研究，拿到需求直接实现。
-model: opencode-go/hy3
-# 260821 Karina hy3 换入：纯文本执行任务（bench 实测关推理比 deepseek-v4-flash 快且便宜 8 倍）；
-# variant: none 显式关推理——hy3 默认深度推理会烧 300-5000 推理 token、慢 10-20 倍。
-# ⚠ hy3 网关侧纯文本（图片被剥），识图任务派 explore 或让多模态主模型直读，别用 execute。
-# 观察期（260821 起）：bench 小任务与 deepseek-v4-flash 判分打平，复杂 bug 场景未覆盖。
-# 若真实任务出现质量翻车 → 改回 model: opencode-go/deepseek-v4-flash，或加
-# timeout_ms + fallback_model 兜底（参考 explore 的机制）。
-variant: none
+model: opencode-go/mimo-v2.5
+# 260828 Red hy3 -> mimo-v2.5：hy3 是纯文本（网关侧剥图），而子代理**自己 read 一张图**是能拿到
+# image part 的（tool/read.ts 对 jpeg/png/gif/webp 与 PDF 返回 type: "file"），换成多模态就不用
+# 在派活时先想「这个任务会不会碰到图」。顺带 256K/64K -> 1M/128K。
+# 代价是单价：input 0.0175 -> 0.14（8x）、output 0.0725 -> 0.28（3.9x）。execute 是派得最勤的工种，
+# 真觉得贵就改回 opencode-go/hy3 + variant: none，或换 opencode-go/deepseek-v4-flash。
+# ⚠ 不要写 variant：mimo-v2.5 的 reasoning_options 是**空数组**，没有 effort 档位，写了是空操作
+#（hy3 才有 none/low/high，原来那句 variant: none 就是为它写的）。
 # 260828 cc 这份 md 是本工种**唯一的定义来源**：frontmatter 给 mode/description/model/权限，正文给
 # 提示词。agent.ts 用 with { type: "text" } 在**构建期**把整份文件内联进二进制，运行时用 gray-matter
 # 剥出来 —— 不是读盘（src 不进发布包）。这份 md **不会**被 sync-home 播到 ~/.redcode/agent/：一旦那里
