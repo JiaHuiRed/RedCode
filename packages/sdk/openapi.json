@@ -14540,19 +14540,19 @@
           "agent": {
             "type": "object",
             "properties": {
+              "redmind": {
+                "$ref": "#/components/schemas/AgentConfig"
+              },
               "plan": {
-                "$ref": "#/components/schemas/AgentConfig"
-              },
-              "build": {
-                "$ref": "#/components/schemas/AgentConfig"
-              },
-              "general": {
                 "$ref": "#/components/schemas/AgentConfig"
               },
               "explore": {
                 "$ref": "#/components/schemas/AgentConfig"
               },
-              "scout": {
+              "advise": {
+                "$ref": "#/components/schemas/AgentConfig"
+              },
+              "execute": {
                 "$ref": "#/components/schemas/AgentConfig"
               },
               "title": {

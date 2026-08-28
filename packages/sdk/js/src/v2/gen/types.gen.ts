@@ -1281,11 +1281,11 @@ export type Config = {
     [key: string]: AgentConfig | undefined
   }
   agent?: {
+    redmind?: AgentConfig
     plan?: AgentConfig
-    build?: AgentConfig
-    general?: AgentConfig
     explore?: AgentConfig
-    scout?: AgentConfig
+    advise?: AgentConfig
+    execute?: AgentConfig
     title?: AgentConfig
     summary?: AgentConfig
     compaction?: AgentConfig

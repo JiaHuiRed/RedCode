@@ -193,7 +193,7 @@ export const Info = Schema.Struct({
   }),
   default_agent: Schema.optional(Schema.String).annotate({
     description:
-      "Default agent to use when none is specified. Must be a primary agent. Falls back to 'build' if not set or if the specified agent is invalid.",
+      "Default agent to use when none is specified. Must be a primary agent. Falls back to 'redmind' if not set or if the specified agent is invalid.",
   }),
   subagent_depth: Schema.optional(NonNegativeInt).annotate({
     description: "Maximum subagent nesting depth. Defaults to 1, which prevents subagents from launching subagents.",
@@ -218,14 +218,17 @@ export const Info = Schema.Struct({
   agent: Schema.optional(
     Schema.StructWithRest(
       Schema.Struct({
-        // primary
+        // 260828 cc 具名 key 纯粹是给 JSON schema / SDK 类型补全用的（rest 是 Record<string, Info>，
+        // 校验与运行时都不看这张表）。老名字 build / general / scout 已合并，写在这里只会教人配错；
+        // 老配置照样能过，因为配置循环会把它们规范化到目标上（agent/agent.ts 的 ALIAS）。
+        // 会话姿态
+        redmind: Schema.optional(ConfigAgent.Info),
         plan: Schema.optional(ConfigAgent.Info),
-        build: Schema.optional(ConfigAgent.Info),
-        // subagent
-        general: Schema.optional(ConfigAgent.Info),
+        // 子代理工种
         explore: Schema.optional(ConfigAgent.Info),
-        scout: Schema.optional(ConfigAgent.Info),
-        // specialized
+        advise: Schema.optional(ConfigAgent.Info),
+        execute: Schema.optional(ConfigAgent.Info),
+        // 内部机件
         title: Schema.optional(ConfigAgent.Info),
         summary: Schema.optional(ConfigAgent.Info),
         compaction: Schema.optional(ConfigAgent.Info),
