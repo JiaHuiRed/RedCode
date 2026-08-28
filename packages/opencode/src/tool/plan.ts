@@ -30,11 +30,11 @@ export const PlanExitTool = Tool.define(
             sessionID: ctx.sessionID,
             questions: [
               {
-                question: `Plan at ${plan} is complete. Would you like to switch to the build agent and start implementing?`,
-                header: "Build Agent",
+                question: `Plan at ${plan} is complete. Would you like to switch to the redmind agent and start implementing?`,
+                header: "RedMind Agent",
                 custom: false,
                 options: [
-                  { label: "Yes", description: "Switch to build agent and start implementing the plan" },
+                  { label: "Yes", description: "Switch to redmind agent and start implementing the plan" },
                   { label: "No", description: "Stay with plan agent to continue refining the plan" },
                 ],
               },
@@ -54,7 +54,9 @@ export const PlanExitTool = Tool.define(
             sessionID: ctx.sessionID,
             role: "user",
             time: { created: Date.now() },
-            agent: "build",
+            // 260828 cc 这是**写入侧**：它往历史里新铸一条 user 消息，不改的话每次 plan_exit 都在生产
+            // 一个已下线的名字。字面量而非 defaultAgent()——default_agent 若是 plan 就自相矛盾。
+            agent: "redmind",
             model,
           }
           yield* session.updateMessage(msg)
@@ -68,8 +70,8 @@ export const PlanExitTool = Tool.define(
           } satisfies MessageV2.TextPart)
 
           return {
-            title: "Switching to build agent",
-            output: "User approved switching to build agent. Wait for further instructions.",
+            title: "Switching to redmind agent",
+            output: "User approved switching to redmind agent. Wait for further instructions.",
             metadata: {},
           }
         }).pipe(Effect.orDie),

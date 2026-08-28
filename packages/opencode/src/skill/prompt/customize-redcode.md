@@ -41,8 +41,8 @@ already-loaded config until then.
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | Project config                | `./redcode.json`, `./redcode.jsonc`, or `.redcode/redcode.json` (redcode walks up from the cwd to the worktree root) |
 | Global config                 | `~/.config/redcode/redcode.json` (NOT `~/.redcode/`)                                                                   |
-| Project agents                | `.redcode/agent/<name>.md` or `.redcode/agents/<name>.md`                                                               |
-| Global agents                 | `~/.config/redcode/agent(s)/<name>.md`                                                                                   |
+| Project agents                | `.redcode/agent/<name>.md` (singular only)                                                                              |
+| Global agents                 | `~/.config/redcode/agent/<name>.md` (singular only)                                                                      |
 | Project skills                | `.redcode/skill(s)/<name>/SKILL.md`                                                                                      |
 | Global skills                 | `~/.config/redcode/skill(s)/<name>/SKILL.md`                                                                             |
 | External skills (auto-loaded) | `~/.claude/skills/<name>/SKILL.md`, `~/.agents/skills/<name>/SKILL.md`                                                    |
@@ -195,7 +195,7 @@ Two ways to define an agent. Use the file form for anything non-trivial.
 ### File
 
 ```
-.redcode/agent/my-reviewer.md      OR     .redcode/agents/my-reviewer.md
+.redcode/agent/my-reviewer.md
 ```
 
 ```markdown
@@ -220,17 +220,27 @@ Allowed top-level frontmatter fields: `name, model, variant, description, mode,
 hidden, color, steps, options, permission, disable, temperature, top_p`. Any
 unknown field is silently routed into `options`.
 
-To disable a built-in agent: `agent: { build: { disable: true } }`, or in a
-file, `disable: true` in frontmatter.
+To disable a built-in agent: `agent: { advise: { disable: true } }`, or in a
+file, `disable: true` in frontmatter. The default agent `redmind` cannot be
+disabled this way -- something has to stay as the primary agent.
 
 `default_agent` must point to a non-hidden, primary-mode agent.
 
 ### Built-in agents
 
-redcode ships with `build`, `plan`, `general`, `explore`, plus optionally
-`scout` (gated on `OPENCODE_EXPERIMENTAL_SCOUT`). Hidden internal agents:
-`compaction`, `title`, `summary`. To override a built-in's fields, define the
-same key in `agent: { <name>: { ... } }`.
+Two session agents you switch between: `redmind` (the default) and `plan`.
+Three subagents the `task` tool dispatches: `explore` (read-only search),
+`advise` (read-only design and review), `execute` (read-write implementation).
+Hidden internal agents: `compaction`, `title`, `summary`.
+
+The older names `build`, `general`, `architect`, `reviewer`, `fixer`, `scout`
+still resolve through an alias table (`build` -> `redmind`, `general`/`fixer` ->
+`execute`, `architect`/`reviewer` -> `advise`, `scout` -> `explore`), but they do
+not appear in any agent list and should not be used in new configuration.
+
+To override a built-in's fields, define the same key in
+`agent: { <name>: { ... } }`; the old names are normalised to the new ones there
+too, so an existing `agent: { general: { ... } }` lands on `execute`.
 
 ## Plugins
 

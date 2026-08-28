@@ -292,7 +292,7 @@ function metadata(part: ToolPart, key: string) {
 }
 
 function taskTab(part: ToolPart, sessionID: string): FooterSubagentTab {
-  const label = Locale.titlecase(text(part.state.input.subagent_type) ?? "general")
+  const label = Locale.titlecase(text(part.state.input.subagent_type) ?? "execute")
   const description = text(part.state.input.description) ?? stateTitle(part) ?? inputLabel(part.state.input) ?? ""
   const status = part.state.status === "error" ? "error" : part.state.status === "completed" ? "completed" : "running"
 

@@ -301,6 +301,16 @@ function providerCfg(url: string) {
   }
 }
 
+// 260828 cc 老名字 general 经别名解析到 execute，而 execute 自带 model: opencode-go/hy3
+//（general 从前不带 model、跟随会话模型）。这是真实的行为变化，不是测试环境瑕疵 —— 测试里只有
+// test provider，所以凡是要让子会话真跑起来的用例，都得先把 execute 钉回测试模型。
+function subtaskCfg(url: string) {
+  return {
+    ...providerCfg(url),
+    agent: { execute: { model: `${ref.providerID}/${ref.modelID}` } },
+  }
+}
+
 const writeText = Effect.fn("test.writeText")(function* (file: string, text: string) {
   const fs = yield* AppFileSystem.Service
   yield* fs.writeWithDirs(file, text)
@@ -705,7 +715,7 @@ it.instance(
   "running subtask preserves metadata after tool-call transition",
   () =>
     Effect.gen(function* () {
-      const { llm } = yield* useServerConfig(providerCfg)
+      const { llm } = yield* useServerConfig(subtaskCfg)
       const prompt = yield* SessionPrompt.Service
       const sessions = yield* Session.Service
       const chat = yield* sessions.create({ title: "Pinned" })
@@ -760,7 +770,8 @@ it.instance(
       const tool = yield* pollWithTimeout(
         Effect.gen(function* () {
           const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
-          const assistant = msgs.findLast((item) => item.info.role === "assistant" && item.info.agent === "build")
+          // 260828 cc 别名自愈存储：入参写 "build"，落库的是解析后的 "redmind"
+          const assistant = msgs.findLast((item) => item.info.role === "assistant" && item.info.agent === "redmind")
           const tool = assistant?.parts.find(
             (part): part is MessageV2.ToolPart => part.type === "tool" && part.tool === "task",
           )
@@ -998,7 +1009,7 @@ it.instance(
   "cancel propagates from slash command subtask to child session",
   () =>
     Effect.gen(function* () {
-      const { llm } = yield* useServerConfig(providerCfg)
+      const { llm } = yield* useServerConfig(subtaskCfg)
       const prompt = yield* SessionPrompt.Service
       const sessions = yield* Session.Service
       const status = yield* SessionStatus.Service
@@ -1907,7 +1918,7 @@ noLLMServer.instance(
         [path.join(docs, "README.md"), path.join(docs, "guide")].sort(),
       )
       expect(guide?.mime).toBe("application/x-directory")
-      expect(agents.map((agent) => agent.name)).toEqual(["build"])
+      expect(agents.map((agent) => agent.name)).toEqual(["redmind"])
     }),
   {
     config: {
@@ -1944,7 +1955,7 @@ noLLMServer.instance(
 
       expect(reference?.metadata?.reference).toMatchObject({ name: "docs", kind: "local", path: docs })
       expect(synthetic.some((part) => part.text.includes(`Reference root: ${docs}`))).toBe(true)
-      expect(synthetic.some((part) => part.text.includes("subagent scout"))).toBe(true)
+      expect(synthetic.some((part) => part.text.includes("subagent explore"))).toBe(true)
 
       yield* sessions.remove(session.id)
     }),
@@ -2250,7 +2261,7 @@ noLLMServer.instance(
         const err = Cause.squash(exit.cause)
         expect(NamedError.Unknown.isInstance(err)).toBe(true)
         if (NamedError.Unknown.isInstance(err)) {
-          expect(err.data.message).toContain("build")
+          expect(err.data.message).toContain("redmind")
         }
       }
     }),

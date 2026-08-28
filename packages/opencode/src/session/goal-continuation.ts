@@ -61,7 +61,7 @@ export const layer = Layer.effect(
       // 5. token 预算：超限注入收尾 prompt + mark budget_limited（一次后 status 非 active，自动停）
       const budget = cfg.experimental?.goal_token_budget ?? DEFAULT_TOKEN_BUDGET
       if (g.tokens_used >= budget) {
-        const agent = (yield* sessions.get(sessionID).pipe(Effect.orDie)).agent ?? "build"
+        const agent = (yield* sessions.get(sessionID).pipe(Effect.orDie)).agent
         const message = yield* ops
           .prompt({
             sessionID,
@@ -93,7 +93,7 @@ export const layer = Layer.effect(
 
       // 7. 注入 steering + 记录 + tick + 续跑
       lastRunAt.set(sessionID, now)
-      const agent = (yield* sessions.get(sessionID).pipe(Effect.orDie)).agent ?? "build"
+      const agent = (yield* sessions.get(sessionID).pipe(Effect.orDie)).agent
       const message = yield* ops
         .prompt({
           sessionID,

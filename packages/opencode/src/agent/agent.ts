@@ -12,7 +12,6 @@ import PROMPT_COMPACTION from "./prompt/compaction.md" with { type: "text" }
 import DEFINITION_EXPLORE from "./definition/explore.md" with { type: "text" }
 import DEFINITION_ADVISE from "./definition/advise.md" with { type: "text" }
 import DEFINITION_EXECUTE from "./definition/execute.md" with { type: "text" }
-import PROMPT_SCOUT from "./prompt/scout.md" with { type: "text" }
 import PROMPT_SUMMARY from "./prompt/summary.md" with { type: "text" }
 import PROMPT_TITLE from "./prompt/title.md" with { type: "text" }
 import matter from "gray-matter"
@@ -50,6 +49,22 @@ const DEFINITIONS = {
   explore: parseDefinition(DEFINITION_EXPLORE),
   advise: parseDefinition(DEFINITION_ADVISE),
   execute: parseDefinition(DEFINITION_EXECUTE),
+}
+
+// 260828 cc 老角色名 -> 合并后的目标。**按长期存在设计，不是「一轮过渡」**：
+// session/compaction.ts 有四处直接 session.updateMessage 铸 role:"user" 消息，绕开 createUserMessage
+// 与 Agent.get，把历史 agent 名原样重铸 —— 跑到自动压缩的老会话每压一次就再生一条 agent:"build"。
+// live 库里 assistant 消息 agent="build" 17607 条、"general" 197 条。
+//
+// 解析顺序必须是**「直查优先、别名兜底」**：下面的配置循环对任何未知 key 都会凭空造出一个真角色，
+// 别名优先就会把用户显式定义的同名角色劫持掉。详见 docs/agent-roles-plan.md 修正十 / 修正十二。
+export const ALIAS: Record<string, string> = {
+  build: "redmind",
+  general: "execute",
+  fixer: "execute",
+  architect: "advise",
+  reviewer: "advise",
+  scout: "explore",
 }
 
 export const Info = Schema.Struct({
@@ -126,7 +141,6 @@ export const layer = Layer.effect(
     const plugin = yield* Plugin.Service
     const skill = yield* Skill.Service
     const provider = yield* Provider.Service
-    const flags = yield* RuntimeFlags.Service
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("Agent.state")(function* (ctx) {
@@ -203,21 +217,6 @@ export const layer = Layer.effect(
         }
 
         const agents: Record<string, Info> = {
-          build: {
-            name: "build",
-            description: "The default agent. Executes tools based on configured permissions.",
-            options: {},
-            permission: Permission.merge(
-              defaults,
-              Permission.fromConfig({
-                question: "allow",
-                plan_enter: "allow",
-              }),
-              user,
-            ),
-            mode: "primary",
-            native: true,
-          },
           plan: {
             name: "plan",
             description: "Plan mode. Disallows all edit tools.",
@@ -257,62 +256,19 @@ export const layer = Layer.effect(
               defaults,
               Permission.fromConfig({
                 question: "allow",
+                // 260828 cc plan_enter 从合并掉的 build 收回来：defaults 把它 deny 了而 redmind 没补回，
+                // 结果默认姿态下模型没法自己提议进计划模式 —— 这是定义时漏的一条，不是有意分工
+                // （redmind 的 description 只讲「敏感操作先问」，从没说过不做计划）。
+                plan_enter: "allow",
               }),
               user,
             ),
             mode: "primary",
             native: true,
           },
-          general: {
-            name: "general",
-            description: `General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel.`,
-            permission: Permission.merge(
-              defaults,
-              Permission.fromConfig({
-                todowrite: "deny",
-              }),
-              user,
-            ),
-            options: {},
-            mode: "subagent",
-            native: true,
-          },
           explore: subagent("explore"),
           advise: subagent("advise"),
           execute: subagent("execute"),
-          ...(flags.experimentalScout
-            ? {
-                scout: {
-                  name: "scout",
-                  permission: Permission.merge(
-                    defaults,
-                    Permission.fromConfig({
-                      "*": "deny",
-                      grep: "allow",
-                      glob: "allow",
-                      webfetch: "allow",
-                      websearch: "allow",
-                      read: "allow",
-                      repo_clone: "allow",
-                      repo_overview: "allow",
-                      external_directory: {
-                        ...readonlyExternalDirectory,
-                        [path.join(Global.Path.repos, "*")]: "allow",
-                      },
-                      // 260808 Red 同上：scout 也走索引优先
-                      "jcodemunch_*": "allow",
-                      "typegraph_*": "allow",
-                    }),
-                    user,
-                  ),
-                  description: `Docs and dependency-source specialist. Use this when you need to inspect external documentation, clone dependency repositories into the managed cache, and research library implementation details without modifying the user's workspace.`,
-                  prompt: PROMPT_SCOUT,
-                  options: {},
-                  mode: "subagent" as const,
-                  native: true,
-                },
-              }
-            : {}),
           compaction: {
             name: "compaction",
             mode: "primary",
@@ -361,9 +317,17 @@ export const layer = Layer.effect(
           },
         }
 
-        for (const [key, value] of Object.entries(cfg.agent ?? {})) {
+        for (const [rawKey, value] of Object.entries(cfg.agent ?? {})) {
+          // 260828 cc 老名字先规范化到合并后的目标，否则 `agent: { build: {...} }` 这类老配置会在下面
+          // 凭空造出一个 native:false / mode:"all" / "*": allow 的幽灵 build：它会通过 registry.ts 的
+          // `mode !== "primary"` 过滤同时进 @ 补全与 describeTask，而 question 又被 defaults 的 deny
+          // 下架 —— 比它替代的那个 build 还低一档，且直查优先会让别名解析被它劫持。
+          const aliased = !agents[rawKey] && ALIAS[rawKey] !== undefined
+          const key = aliased ? ALIAS[rawKey] : rawKey
           if (value.disable) {
-            delete agents[key]
+            // 别名 key 上的 disable 按 no-op：`agent.build.disable` 的原意是「不要 build」，而 build 已经
+            // 没了；照字面删掉 redmind 会让 defaultInfo 抛「no primary visible agent found」。
+            if (!aliased) delete agents[key]
             continue
           }
           let item = agents[key]
@@ -410,26 +374,32 @@ export const layer = Layer.effect(
           )
         }
 
+        // 260828 cc 别名解析。三个消费者共用一份：get、list 的排序谓词、defaultInfo —— 后两者**不经过
+        // get**，只往 get 里加别名的话 `default_agent: "build"` 照样在下面抛「not found」，就算只补
+        // defaultInfo，排序谓词也会比不中而退化成 name-asc，客户端按 primary 过滤后 at(0) 变成 plan，
+        // TUI 与 GUI 都会静默进只读姿态。
+        // 返回类型故意不标 `Info | undefined`：State.get 的声明是 Effect.Effect<Info>（`agents[x]` 在
+        // noUncheckedIndexedAccess 关闭下被推成 Info，是个类型谎言），标了下面的 satisfies 会当场红。
+        const resolve = (name: string) => agents[name] ?? agents[ALIAS[name] ?? ""]
+
         const get = Effect.fnUntraced(function* (agent: string) {
-          return agents[agent]
+          return resolve(agent)
         })
 
         const list = Effect.fnUntraced(function* () {
           const cfg = yield* config.get()
+          const preferred = cfg.default_agent ? (resolve(cfg.default_agent)?.name ?? cfg.default_agent) : "redmind"
           return pipe(
             agents,
             values(),
-            sortBy(
-              [(x) => (cfg.default_agent ? x.name === cfg.default_agent : x.name === "redmind"), "desc"],
-              [(x) => x.name, "asc"],
-            ),
+            sortBy([(x) => x.name === preferred, "desc"], [(x) => x.name, "asc"]),
           )
         })
 
         const defaultInfo = Effect.fnUntraced(function* () {
           const c = yield* config.get()
           if (c.default_agent) {
-            const agent = agents[c.default_agent]
+            const agent = resolve(c.default_agent)
             if (!agent) throw new Error(`default agent "${c.default_agent}" not found`)
             if (agent.mode === "subagent") throw new Error(`default agent "${c.default_agent}" is a subagent`)
             if (agent.hidden === true) throw new Error(`default agent "${c.default_agent}" is hidden`)

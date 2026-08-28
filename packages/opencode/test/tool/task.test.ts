@@ -201,7 +201,7 @@ describe("tool.task", () => {
     () =>
       Effect.gen(function* () {
         const agent = yield* Agent.Service
-        const build = yield* agent.get("build")
+        const build = yield* agent.get("redmind")
         const registry = yield* ToolRegistry.Service
         const get = Effect.fnUntraced(function* () {
           const tools = yield* registry.tools({ ...ref, agent: build })
@@ -212,15 +212,20 @@ describe("tool.task", () => {
 
         expect(first).toBe(second)
 
+        // 260828 cc general 已并入 execute；按名字排序后是 advise < alpha < execute < explore < zebra
+        const advise = first.indexOf("- advise:")
         const alpha = first.indexOf("- alpha: Alpha agent")
+        const execute = first.indexOf("- execute:")
         const explore = first.indexOf("- explore:")
-        const general = first.indexOf("- general:")
         const zebra = first.indexOf("- zebra: Zebra agent")
 
-        expect(alpha).toBeGreaterThan(-1)
-        expect(explore).toBeGreaterThan(alpha)
-        expect(general).toBeGreaterThan(explore)
-        expect(zebra).toBeGreaterThan(general)
+        expect(advise).toBeGreaterThan(-1)
+        expect(alpha).toBeGreaterThan(advise)
+        expect(execute).toBeGreaterThan(alpha)
+        expect(explore).toBeGreaterThan(execute)
+        expect(zebra).toBeGreaterThan(explore)
+        // 阴性对照：合并掉的老名字不进 describeTask 清单
+        expect(first.indexOf("- general:")).toBe(-1)
       }),
     {
       config: {
@@ -243,7 +248,7 @@ describe("tool.task", () => {
     () =>
       Effect.gen(function* () {
         const agent = yield* Agent.Service
-        const build = yield* agent.get("build")
+        const build = yield* agent.get("redmind")
         const registry = yield* ToolRegistry.Service
         const description =
           (yield* registry.tools({ ...ref, agent: build })).find((tool) => tool.id === TaskTool.id)?.description ?? ""

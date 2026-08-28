@@ -315,11 +315,11 @@ export function Session() {
     if (part.state.status !== "completed") return
     if (part.id === lastSwitch) return
 
+    // 260828 cc 字面量而非 defaultAgent()：客户端能拿到的默认只有 local.agent.list().at(0)，用户配了
+    // default_agent: "plan" 时它就是 plan，plan_exit 会变成空操作。local.tsx 的 set 本来就 fail-safe。
+    // （原先还有一个 part.tool === "plan_enter" 的对称分支，全仓根本没有叫 plan_enter 的工具，已删。）
     if (part.tool === "plan_exit") {
-      local.agent.set("build")
-      lastSwitch = part.id
-    } else if (part.tool === "plan_enter") {
-      local.agent.set("plan")
+      local.agent.set("redmind")
       lastSwitch = part.id
     }
   })

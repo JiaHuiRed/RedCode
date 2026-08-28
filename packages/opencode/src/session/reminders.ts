@@ -34,7 +34,10 @@ export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
       })
     }
     const wasPlan = input.messages.some((msg) => msg.info.role === "assistant" && msg.info.agent === "plan")
-    if (wasPlan && input.agent.name === "build") {
+    // 260828 cc 判「不是 plan」而不是判具体姿态名：build 已并进 redmind，而下面 experimentalPlanMode
+    // 开启时那条姐妹分支（:51 附近）本来就是这个写法。子代理会话不会误触发——wasPlan 要求本会话里
+    // 有 agent === "plan" 的 assistant 消息。
+    if (wasPlan && input.agent.name !== "plan") {
       userMessage.parts.push({
         id: PartID.ascending(),
         messageID: userMessage.info.id,

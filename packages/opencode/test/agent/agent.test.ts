@@ -51,18 +51,83 @@ it.instance("returns default native agents when no config", () =>
   Effect.gen(function* () {
     const agents = yield* load((svc) => svc.list())
     const names = agents.map((a) => a.name)
-    expect(names).toContain("build")
+    // 姿态 2 + 工种 3 + 机件 3。合并掉的老名字只活在别名表里，**不进 list()**
+    expect(names).toContain("redmind")
     expect(names).toContain("plan")
-    expect(names).toContain("general")
     expect(names).toContain("explore")
-    expect(names).not.toContain("scout")
+    expect(names).toContain("advise")
+    expect(names).toContain("execute")
     expect(names).toContain("compaction")
     expect(names).toContain("title")
     expect(names).toContain("summary")
+    for (const gone of ["build", "general", "scout", "architect", "reviewer", "fixer"]) {
+      expect(names).not.toContain(gone)
+    }
   }),
 )
 
-it.instance("build agent has correct default properties", () =>
+// 260828 cc 第 4c-2 步：老名字只能经别名解析拿到，不能进任何列表。
+// 硬约束是 session/prompt.ts 有四处对 agent 名做 get + 抛 agentNotFound（历史会话续跑、重放 task part、
+// createUserMessage、slash 命令），别名一旦断了，老会话与老 subagent_type 直接终止而不是降级。
+it.instance("legacy agent names resolve through the alias table", () =>
+  Effect.gen(function* () {
+    const expected: Record<string, string> = {
+      build: "redmind",
+      general: "execute",
+      fixer: "execute",
+      architect: "advise",
+      reviewer: "advise",
+      scout: "explore",
+    }
+    for (const [legacy, target] of Object.entries(expected)) {
+      const agent = yield* load((svc) => svc.get(legacy))
+      expect(agent).toBeDefined()
+      expect(agent?.name).toBe(target)
+    }
+    // 阴性对照：不在别名表里的名字仍然解析不到
+    expect(yield* load((svc) => svc.get("nope"))).toBeUndefined()
+  }),
+)
+
+it.instance(
+  "an explicitly configured agent wins over the alias pointing at the same name",
+  () =>
+    Effect.gen(function* () {
+      // 直查优先、别名兜底：配置循环会把老 key 规范化到目标上，所以 `agent.general.description` 落在
+      // execute 身上，而不是凭空造出一个 mode:"all" 的幽灵 general 把别名劫持掉。
+      const names = (yield* load((svc) => svc.list())).map((a) => a.name)
+      expect(names).not.toContain("general")
+      const general = yield* load((svc) => svc.get("general"))
+      expect(general?.name).toBe("execute")
+      expect(general?.description).toBe("configured through the old name")
+    }),
+  { config: { agent: { general: { description: "configured through the old name" } } } },
+)
+
+it.instance(
+  "disable on a legacy alias key is a no-op, not a way to delete the default agent",
+  () =>
+    Effect.gen(function* () {
+      const names = (yield* load((svc) => svc.list())).map((a) => a.name)
+      expect(names).toContain("redmind")
+      expect(yield* load((svc) => svc.defaultAgent())).toBe("redmind")
+    }),
+  { config: { agent: { build: { disable: true } } } },
+)
+
+it.instance(
+  "default_agent still accepts a legacy name",
+  () =>
+    Effect.gen(function* () {
+      // 没有别名解析时这里会抛 `default agent "build" not found`；只补 defaultInfo 而不补排序谓词的话，
+      // list() 会退化成 name-asc、客户端 at(0) 变成 plan。
+      expect(yield* load((svc) => svc.defaultAgent())).toBe("redmind")
+      expect((yield* load((svc) => svc.list()))[0]?.name).toBe("redmind")
+    }),
+  { config: { default_agent: "build" } },
+)
+
+it.instance("legacy \"build\" resolves to redmind with the same default properties", () =>
   Effect.gen(function* () {
     const build = yield* load((svc) => svc.get("build"))
     expect(build).toBeDefined()
@@ -133,11 +198,14 @@ it.instance("md-defined subagents carry their frontmatter", () =>
       expect(agent?.prompt?.startsWith("---")).toBe(false)
       expect(agent?.description).toBeTruthy()
     }
-    expect(explore?.model).toEqual({ providerID: "stepfun-step-plan", modelID: "step-3.7-flash" })
+    // model 是 branded 类型（ModelID / ProviderID），toBe/toEqual 会把参数收窄成 brand —— 拼成
+    // 普通字符串再比，顺便和 md 里 `model:` 那一行的写法一模一样。
+    const modelOf = (agent: Agent.Info | undefined) => `${agent?.model?.providerID}/${agent?.model?.modelID}`
+    expect(modelOf(explore)).toBe("stepfun-step-plan/step-3.7-flash")
+    expect(modelOf(advise)).toBe("deepseek/deepseek-v4-flash-vision-exp")
+    expect(modelOf(execute)).toBe("opencode-go/hy3")
     expect(explore?.timeoutMs).toBe(180000)
-    expect(execute?.model).toEqual({ providerID: "opencode-go", modelID: "hy3" })
     expect(execute?.variant).toBe("none")
-    expect(advise?.model).toEqual({ providerID: "deepseek", modelID: "deepseek-v4-flash-vision-exp" })
     // 阴性对照：md 的白名单里有 indexgraph_*，4c 之前手写的内建块没有。命中即证明吃的是 frontmatter。
     expect(evalPerm(explore, "indexgraph_explore")).toBe("allow")
     // 反向阴性对照：白名单外的 MCP 工具仍被 "*": deny 拦下
@@ -193,21 +261,18 @@ it.instance(
   { config: { agent: { explore: { permission: { bash: "deny" } } } } },
 )
 
-scout.instance("scout agent allows repo cloning and repo cache reads", () =>
+// 260828 cc scout 已并入 explore：agent 没了，flag（experimentalScout）留着，因为它还门控 @reference
+// 的 git 物化与 repo_clone/repo_overview 的注册。连带后果是这两个工具**没有任何角色再放行** ——
+// 依赖缓存能力就此退役（全量历史零调用，这正是 0.9.8 把它们放进 GATED_TOOLS 的原因）。
+scout.instance("scout is merged into explore and the repo cache tools are retired", () =>
   Effect.gen(function* () {
-    const scout = yield* load((svc) => svc.get("scout"))
-    expect(scout).toBeDefined()
-    expect(scout?.mode).toBe("subagent")
-    expect(evalPerm(scout, "repo_clone")).toBe("allow")
-    expect(evalPerm(scout, "repo_overview")).toBe("allow")
-    expect(evalPerm(scout, "edit")).toBe("deny")
-    expect(
-      Permission.evaluate(
-        "external_directory",
-        path.join(Global.Path.repos, "github.com", "owner", "repo", "README.md"),
-        scout!.permission,
-      ).action,
-    ).toBe("allow")
+    const names = (yield* load((svc) => svc.list())).map((agent) => agent.name)
+    expect(names).not.toContain("scout")
+    const scoutAgent = yield* load((svc) => svc.get("scout"))
+    expect(scoutAgent?.name).toBe("explore")
+    expect(evalPerm(scoutAgent, "repo_clone")).toBe("deny")
+    expect(evalPerm(scoutAgent, "repo_overview")).toBe("deny")
+    expect(evalPerm(scoutAgent, "edit")).toBe("deny")
   }),
 )
 
@@ -217,7 +282,6 @@ scout.instance(
     Effect.gen(function* () {
       const agents = yield* load((svc) => svc.list())
       const names = agents.map((agent) => agent.name)
-      expect(names).toContain("scout")
       expect(names).not.toContain("effect")
       expect(names).not.toContain("effectFull")
       expect(names).not.toContain("localdocs")
@@ -240,7 +304,7 @@ scout.instance(
   },
 )
 
-it.instance("general agent denies todo tools", () =>
+it.instance("legacy \"general\" resolves to execute, which still denies todo tools", () =>
   Effect.gen(function* () {
     const general = yield* load((svc) => svc.get("general"))
     expect(general).toBeDefined()
