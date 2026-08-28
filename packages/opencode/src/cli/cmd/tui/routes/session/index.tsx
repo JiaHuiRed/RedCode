@@ -26,12 +26,12 @@ import { generateSubtleSyntax, selectedForeground, useTheme } from "@tui/context
 import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
 import { Prompt, type PromptRef } from "@tui/component/prompt"
 import type {
-  AssistantMessage,
+  AssistantMessage as AssistantMessageInfo,
   Part,
   Provider,
   ToolPart,
   CompactionPart,
-  UserMessage,
+  UserMessage as UserMessageInfo,
   TextPart,
   ReasoningPart,
 } from "@redcode-ai/sdk/v2"
@@ -1315,18 +1315,18 @@ export function Session() {
                                 />
                               ))
                             }}
-                            message={message as UserMessage}
+                            message={message as UserMessageInfo}
                             parts={sync.data.part[message.id] ?? []}
                             pending={pending()?.id}
                             pendingCreated={pending()?.time.created}
                           />
                         </Match>
                         <Match
-                          when={message.role === "assistant" && (message as AssistantMessage).mode !== "compaction"}
+                          when={message.role === "assistant" && (message as AssistantMessageInfo).mode !== "compaction"}
                         >
                           <AssistantMessage
                             last={lastAssistant()?.id === message.id}
-                            message={message as AssistantMessage}
+                            message={message as AssistantMessageInfo}
                             parts={sync.data.part[message.id] ?? []}
                           />
                         </Match>
@@ -1414,7 +1414,7 @@ const MIME_BADGE: Record<string, string> = {
 }
 
 export function UserMessage(props: {
-  message: UserMessage
+  message: UserMessageInfo
   parts: Part[]
   onMouseUp: () => void
   index: number
@@ -1564,7 +1564,7 @@ function WaitingForModel(props: { start: number }) {
   )
 }
 
-export function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; last: boolean }) {
+export function AssistantMessage(props: { message: AssistantMessageInfo; parts: Part[]; last: boolean }) {
   const ctx = use()
   const local = useLocal()
   const { theme } = useTheme()
@@ -1675,7 +1675,7 @@ const PART_MAPPING = {
 
 const INLINE_TOOL_ICON_WIDTH = 2
 
-function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: AssistantMessage }) {
+function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: AssistantMessageInfo }) {
   const { theme } = useTheme()
   const ctx = use()
   // Collapsed by default in hide mode: a single line throughout, so the
@@ -1753,7 +1753,7 @@ function CollapsedReasoningText(props: { title: string | null; duration: number 
   )
 }
 
-function TextPart(props: { last: boolean; part: TextPart; message: AssistantMessage }) {
+function TextPart(props: { last: boolean; part: TextPart; message: AssistantMessageInfo }) {
   const ctx = use()
   const { theme, syntax } = useTheme()
 
@@ -1777,7 +1777,7 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
 
 // Pending messages moved to individual tool pending functions
 
-function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMessage }) {
+function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMessageInfo }) {
   const ctx = use()
   const sync = useSync()
 

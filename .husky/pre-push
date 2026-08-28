@@ -26,7 +26,3 @@ bun run script/check-control-bytes.ts
 # max_dimension），两次都是别的会话合并时才发现。脚本自己无副作用（见其头注释）。
 bun run check:openapi-drift
 bun typecheck
-# 260828 cc OpenAPI 生成物漂移：改了 config/server 的 schema 却忘了重跑 gen:openapi，本地全绿、
-# 推上去 CI 才红。08-28 一天撞两次（webfetch.allow_private_hosts、image 的 max_pixels/max_dimension）。
-# 脚本自己的注释就写着"没有副作用，可以放心进 CI 和 pre-push"，只是一直没接上来。实测 5.4s。
-bun run check:openapi-drift
