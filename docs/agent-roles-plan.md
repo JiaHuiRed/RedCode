@@ -291,9 +291,9 @@ prompt），模型才是唯一按次表达不了的东西。所以：**只有「
 | 4c-1 | 三个工种**全部内建**（连 frontmatter 一起吃，见修正七）；md 移进 `src/agent/definition/`、退出 sync-home（修正九）；权限按修正八补 `external_directory` 与 `read`；删 `seed/agent/{architect,fixer,reviewer}.md` | 中 | **已做 2026-08-28**（`f952f07b`） |
 | 4c-2 | 别名表 + 三处共用 resolve + 配置 key 规范化（修正十）；删内建 `build`/`general`/`scout` 与 `PROMPT_SCOUT`/`scout.md`；`redmind` 补 `plan_enter: allow`；十一处硬编码（修正十一） | 中 | **已做 2026-08-28**（`236d0bc4`，测试面并进同一提交，见下注） |
 | 4c-3 | `config.ts` 具名 key 换成 redmind/plan/explore/advise/execute + 机件三件套，重跑 `gen:openapi` 与 SDK | 低 | **已做 2026-08-28**（`dc34fe97`） |
-| 4 | live 对齐（**私仓**）：`git rm agent/{architect,fixer,reviewer}.md`；`command/subtask.md:4` 改 `agent: execute` | 低 | 未做（仓外） |
-| 5 | `Info` 拆成姿态/工种两个类型；内建裁到机件 + 一个最小 fallback | 中 | 未做 |
-| 6 | `agent.*` 去掉「创建」分支，只留覆写 + disable | 低 | 未做 |
+| 4 | live 对齐（**私仓**）：`git rm agent/{architect,fixer,reviewer}.md`；`command/subtask.md:4` 改 `agent: execute` | 低 | **已做 2026-08-28**（私仓 `32adb92`，未 push） |
+| 5 | 三种语义各拆出自己的构造器（`posture` / `subagent` / `machine`），定义处不再互相污染 | 中 | **已做 2026-08-28**（做法与原文不同，见修正十五） |
+| 6 | `agent.*` 去掉「创建」分支，只留覆写 + disable | 低 | **已做 2026-08-28**（含 fixture 的 `files` 选项与插件通道，见修正十六） |
 
 每步独立可回退。1、2 当天可落可验。
 
@@ -302,6 +302,44 @@ prompt），模型才是唯一按次表达不了的东西。所以：**只有「
 的存量红是 **35 条**不是 33 条（`revert-compact.test.ts` 那两条调研没数进去，已在 4b / 4c-1 / 4c-2
 三个点位 A/B 过，动手前就是红的）。另外 `test/server` 的红条数抖动极大，且**会被磁盘占满伪装成
 大面积回归**（08-28 实遇：C 盘满时同一批从 13 红涨到 44~64 红），量它必须先看 `df`。
+
+### 修正十五：第 5 步只拆构造器，**不拆 Schema**
+
+原文写的是「`Info` 拆成姿态/工种两个类型；内建裁到机件 + 一个最小 fallback」。两处不能照做：
+
+- 「内建裁到机件」与**修正一**（姿态保持内建、不写 md）和**修正九**（工种也内建）直接冲突。
+  起草时的形态已被两轮调研推翻，这半句作废。
+- **`Info` 是 wire 契约**：它带 `identifier: "Agent"`，出现在 `/agent` 端点、`sdk/openapi.json`、
+  `types.gen.ts` 的 `Agent`，TUI 与 GUI 都直接吃。拆成联合类型等于改契约 + 重生成 + 所有客户端做
+  类型收窄，而底本要的收益（「从类型上杜绝与工种互相污染」）**在定义处就能拿到** —— 内建条目是
+  唯一会手写这些字段的地方。
+
+**实际做法**：`agent/agent.ts` 里三个构造器，各自结构上拿不到对方的字段：
+
+| 构造器 | 语义 | 能给什么 |
+| --- | --- | --- |
+| `posture({ name, description, displayName?, color?, permission })` | 会话姿态 | 只有权限与展示。**没有** model / prompt / timeout / variant / steps |
+| `subagent(name)` | 子代理工种 | 整份定义来自 `src/agent/definition/*.md` 的 frontmatter |
+| `machine({ name, prompt, temperature? })` | 内部机件 | 固定 prompt + 全 deny + `hidden: true` |
+
+`agents` 记录从约 110 行手写字面量收成 40 行。新增一条运行时守卫用例（三类角色的形态各自成立、
+机件不进可见列表、可见列表恰好是 redmind/plan/explore/execute 四个）。
+
+**没做的一半**：底本「装载路径收敛后的形态」写姿态「只能调权限」，但现在 `agent.redmind.model`
+仍然能给姿态钉一个模型。没去堵，因为那更像**功能**而不是污染（「计划模式固定用便宜模型」是个合理
+需求），而且它是配置层的行为、与这一步的类型隔离无关。要堵是独立一笔。
+
+### 修正十六：第 6 步的两个前提
+
+- **md 与 jsonc 落进同一个 `cfg.agent`**，光看值分不出来源，所以加了派生字段 `agent_origins`
+  （照 `plugin_origins` 的先例：不进 Schema、`writable()` 里剥掉、不落盘）记住「哪些名字是 md 定义的」。
+- **插件也是合法创建通道**：插件的 `config` 钩子直接往 `cfg.agent` 塞新 key
+  （`test/agent/plugin-agent-regression.test.ts` 守这个）。所以 `plugin/index.ts` 在钩子跑完后要把
+  新增的 key 补进 `agent_origins`，否则插件注册的 agent 会被静默丢掉。这条差点漏。
+- 测试面：六个用例靠 jsonc 造 agent。为改成 md，给 fixture 加了 `files` 选项（实例启动**前**落文件）
+  —— 在测试体里写 md 已经晚了，配置那时已读完并缓存（先试过一次，三条红）。
+- **这是一次明确的能力删除**：`customize-redcode.md` 原本写「Two ways to define an agent」，
+  jsonc 那条路没了，文档已同步。
 
 ## 升版时要写进 CHANGELOG 的（第 1~4c 步累计）
 

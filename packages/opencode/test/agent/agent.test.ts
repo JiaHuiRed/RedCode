@@ -328,6 +328,42 @@ it.instance("legacy \"general\" resolves to execute, which still denies todo too
   }),
 )
 
+// 260828 cc 收口第 5 步：三种语义各有自己的构造器（posture / subagent / machine），结构上
+// 拿不到对方的字段。类型上的隔离编译期就守住了，这条守的是**运行时形态**没被别处偷偷改回去。
+it.instance("the three role kinds keep their shapes separate", () =>
+  Effect.gen(function* () {
+    for (const name of ["redmind", "plan"]) {
+      const p = yield* load((svc) => svc.get(name))
+      expect(p?.mode).toBe("primary")
+      expect(p?.hidden).toBeUndefined()
+      // 姿态跟随会话模型，不带自己的模型/提示词/超时
+      expect(p?.model).toBeUndefined()
+      expect(p?.prompt).toBeUndefined()
+      expect(p?.timeoutMs).toBeUndefined()
+      expect(p?.variant).toBeUndefined()
+    }
+    for (const name of ["explore", "execute"]) {
+      const w = yield* load((svc) => svc.get(name))
+      expect(w?.mode).toBe("subagent")
+      expect(w?.model).toBeDefined()
+      expect(w?.prompt).toBeTruthy()
+      expect(w?.timeoutMs).toBeGreaterThan(0)
+    }
+    const listed = (yield* load((svc) => svc.list())).filter((a) => a.hidden !== true).map((a) => a.name)
+    for (const name of ["compaction", "title", "summary"]) {
+      const m = yield* load((svc) => svc.get(name))
+      expect(m?.hidden).toBe(true)
+      expect(m?.prompt).toBeTruthy()
+      expect(m?.model).toBeUndefined()
+      expect(evalPerm(m, "read")).toBe("deny")
+      expect(evalPerm(m, "bash")).toBe("deny")
+      // 机件不进任何对用户可见的列表
+      expect(listed).not.toContain(name)
+    }
+    expect(listed.sort()).toEqual(["execute", "explore", "plan", "redmind"])
+  }),
+)
+
 it.instance("compaction agent denies all permissions", () =>
   Effect.gen(function* () {
     const compaction = yield* load((svc) => svc.get("compaction"))

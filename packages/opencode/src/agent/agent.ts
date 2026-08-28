@@ -15,6 +15,7 @@ import PROMPT_SUMMARY from "./prompt/summary.md" with { type: "text" }
 import PROMPT_TITLE from "./prompt/title.md" with { type: "text" }
 import matter from "gray-matter"
 import { Permission } from "@/permission"
+import { ConfigPermission } from "@/config/permission"
 import * as Log from "@redcode-ai/core/util/log"
 import { mergeDeep, pipe, sortBy, values } from "remeda"
 import { Global } from "@redcode-ai/core/global"
@@ -221,31 +222,66 @@ export const layer = Layer.effect(
           }
         }
 
+        // 260828 cc 收口第 5 步：`Info` 一张表里塞了**三种互不相干的语义**（底本「现状二」），
+        // 于是每个内建条目都是手写字面量、每次都要重复 options/native/mode，而且没有任何东西拦着
+        // 「给姿态配一个 model」或「给机件配一个超时」这类跨语义的污染。
+        //
+        // 三个构造器把三种语义分开，各自**结构上**拿不到对方的字段：
+        //   posture(...)   会话姿态：只有权限与展示。没有 model / prompt / timeout / variant / steps。
+        //   subagent(...)  子代理工种：整份定义来自 src/agent/definition/*.md 的 frontmatter。
+        //   machine(...)   内部机件：固定 prompt + 全 deny，永不进任何列表。
+        //
+        // **没有把 Schema 本身拆成联合类型**：`Info` 带 `identifier: "Agent"`，是 /agent 端点的 wire
+        // 契约，SDK（types.gen.ts 的 `Agent`）与 TUI/GUI 都直接吃它。拆 Schema 等于改契约、要动
+        // 生成物与所有客户端的类型收窄，而底本要的「从类型上杜绝互相污染」在**定义处**就能拿到 ——
+        // 内建条目是唯一会手写这些字段的地方。
+        const posture = (spec: {
+          name: string
+          description: string
+          displayName?: string
+          color?: string
+          /** 叠在 defaults 之上、user 之前的那一段 */
+          permission: ConfigPermission.Info
+        }): Info => ({
+          name: spec.name,
+          description: spec.description,
+          ...(spec.displayName ? { displayName: spec.displayName } : {}),
+          ...(spec.color ? { color: spec.color } : {}),
+          mode: "primary",
+          native: true,
+          options: {},
+          permission: Permission.merge(defaults, Permission.fromConfig(spec.permission), user),
+        })
+
+        const machine = (spec: { name: string; prompt: string; temperature?: number }): Info => ({
+          name: spec.name,
+          mode: "primary",
+          native: true,
+          hidden: true,
+          prompt: spec.prompt,
+          ...(spec.temperature !== undefined ? { temperature: spec.temperature } : {}),
+          options: {},
+          permission: Permission.merge(defaults, Permission.fromConfig({ "*": "deny" }), user),
+        })
+
         const agents: Record<string, Info> = {
-          plan: {
+          plan: posture({
             name: "plan",
             description: "Plan mode. Disallows all edit tools.",
-            options: {},
-            permission: Permission.merge(
-              defaults,
-              Permission.fromConfig({
-                question: "allow",
-                plan_exit: "allow",
-                external_directory: {
-                  [path.join(Global.Path.data, "plans", "*")]: "allow",
-                },
-                edit: {
-                  "*": "deny",
-                  [path.join(".redcode", "plans", "*.md")]: "allow",
-                  [path.relative(ctx.worktree, path.join(Global.Path.data, path.join("plans", "*.md")))]: "allow",
-                },
-              }),
-              user,
-            ),
-            mode: "primary",
-            native: true,
-          },
-          redmind: {
+            permission: {
+              question: "allow",
+              plan_exit: "allow",
+              external_directory: {
+                [path.join(Global.Path.data, "plans", "*")]: "allow",
+              },
+              edit: {
+                "*": "deny",
+                [path.join(".redcode", "plans", "*.md")]: "allow",
+                [path.relative(ctx.worktree, path.join(Global.Path.data, path.join("plans", "*.md")))]: "allow",
+              },
+            },
+          }),
+          redmind: posture({
             name: "redmind",
             displayName: "RedMind",
             description:
@@ -256,69 +292,19 @@ export const layer = Layer.effect(
             // 光看输入框左边线分不出当前是哪个 agent（plan 是青色、能区分）。
             // RedMind 是默认 agent 又是 RedCode 的门面，钉死成红色最省事也最好认。
             color: "error",
-            options: {},
-            permission: Permission.merge(
-              defaults,
-              Permission.fromConfig({
-                question: "allow",
-                // 260828 cc plan_enter 从合并掉的 build 收回来：defaults 把它 deny 了而 redmind 没补回，
-                // 结果默认姿态下模型没法自己提议进计划模式 —— 这是定义时漏的一条，不是有意分工
-                // （redmind 的 description 只讲「敏感操作先问」，从没说过不做计划）。
-                plan_enter: "allow",
-              }),
-              user,
-            ),
-            mode: "primary",
-            native: true,
-          },
+            permission: {
+              question: "allow",
+              // 260828 cc plan_enter 从合并掉的 build 收回来：defaults 把它 deny 了而 redmind 没补回，
+              // 结果默认姿态下模型没法自己提议进计划模式 —— 这是定义时漏的一条，不是有意分工
+              // （redmind 的 description 只讲「敏感操作先问」，从没说过不做计划）。
+              plan_enter: "allow",
+            },
+          }),
           explore: subagent("explore"),
           execute: subagent("execute"),
-          compaction: {
-            name: "compaction",
-            mode: "primary",
-            native: true,
-            hidden: true,
-            prompt: PROMPT_COMPACTION,
-            permission: Permission.merge(
-              defaults,
-              Permission.fromConfig({
-                "*": "deny",
-              }),
-              user,
-            ),
-            options: {},
-          },
-          title: {
-            name: "title",
-            mode: "primary",
-            options: {},
-            native: true,
-            hidden: true,
-            temperature: 0.5,
-            permission: Permission.merge(
-              defaults,
-              Permission.fromConfig({
-                "*": "deny",
-              }),
-              user,
-            ),
-            prompt: PROMPT_TITLE,
-          },
-          summary: {
-            name: "summary",
-            mode: "primary",
-            options: {},
-            native: true,
-            hidden: true,
-            permission: Permission.merge(
-              defaults,
-              Permission.fromConfig({
-                "*": "deny",
-              }),
-              user,
-            ),
-            prompt: PROMPT_SUMMARY,
-          },
+          compaction: machine({ name: "compaction", prompt: PROMPT_COMPACTION }),
+          title: machine({ name: "title", prompt: PROMPT_TITLE, temperature: 0.5 }),
+          summary: machine({ name: "summary", prompt: PROMPT_SUMMARY }),
         }
 
         // 260828 cc 由 `agent/*.md` 文件定义的名字（config.ts 装载时记的派生状态）。md 与 jsonc 的
