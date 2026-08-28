@@ -73,11 +73,10 @@ Every field is optional.
     "urls": ["https://example.com/.well-known/skills/"]
   },
 
+  // overrides only -- a key with no matching agent is ignored (see Agents below)
   "agent": {
-    "my-agent": {
+    "explore": {
       "model": "anthropic/claude-sonnet-4-6",
-      "mode": "subagent",
-      "description": "...",
       "permission": { "edit": "deny" }
     }
   },
@@ -174,25 +173,9 @@ skills).
 
 ## Agents
 
-Two ways to define an agent. Use the file form for anything non-trivial.
-
-### Inline (in `redcode.json`)
-
-```json
-{
-  "agent": {
-    "my-reviewer": {
-      "description": "Reviews PRs for style violations.",
-      "mode": "subagent",
-      "model": "anthropic/claude-sonnet-4-6",
-      "permission": { "edit": "deny", "bash": "ask" },
-      "prompt": "You are a strict PR reviewer..."
-    }
-  }
-}
-```
-
-### File
+A new agent is defined by a markdown file. The `agent` block in `redcode.json`
+can only **override or disable an agent that already exists** -- an unknown key
+there is ignored with a warning, it does not create anything.
 
 ```
 .redcode/agent/my-reviewer.md

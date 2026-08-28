@@ -126,13 +126,10 @@ it.instance(
       expect(Permission.evaluate("edit", "/some/file.ts", effective).action).toBe("deny")
     }),
   {
-    config: {
-      agent: {
-        my_subagent: {
-          description: "A user-defined subagent",
-          mode: "subagent",
-        },
-      },
+    // 260828 cc 收口第 6 步：新角色只能由 agent/*.md 定义，jsonc 的 agent.<name> 只能覆写已有的。
+    files: {
+      ".redcode/agent/my_subagent.md":
+        "---\ndescription: A user-defined subagent\nmode: subagent\n---\n\nA user-defined subagent\n",
     },
   },
 )

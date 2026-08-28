@@ -165,6 +165,12 @@ export function tmpdirScoped(options?: {
    */
   bare?: boolean
   config?: Partial<Config.Info> | (() => Partial<Config.Info>)
+  /**
+   * 260828 cc 实例起来**之前**往目录里落几个文件（key 是相对路径，会自动建父目录）。
+   * 用于「必须在配置装载前就存在」的东西 —— 典型是 `.redcode/agent/<name>.md`：收口第 6 步之后
+   * 新角色只能由 md 文件定义，而在测试体里写文件已经晚了，那时配置早读完并缓存了。
+   */
+  files?: Record<string, string>
 }) {
   return Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
@@ -208,6 +214,14 @@ export function tmpdirScoped(options?: {
           JSON.stringify({ $schema: "https://redcode.dev/config.json", ...resolved }),
         ),
       )
+    }
+
+    if (options?.files) {
+      for (const [rel, content] of Object.entries(options.files)) {
+        const target = path.join(dir, rel)
+        yield* Effect.promise(() => fs.mkdir(path.dirname(target), { recursive: true }))
+        yield* Effect.promise(() => fs.writeFile(target, content))
+      }
     }
 
     return dir
@@ -285,7 +299,11 @@ export const requireInstance = Effect.gen(function* () {
 })
 
 export const withTmpdirInstance =
-  (options?: { git?: boolean; config?: Partial<Config.Info> | (() => Partial<Config.Info>) }) =>
+  (options?: {
+    git?: boolean
+    config?: Partial<Config.Info> | (() => Partial<Config.Info>)
+    files?: Record<string, string>
+  }) =>
   <A, E, R>(self: Effect.Effect<A, E, R>) =>
     Effect.gen(function* () {
       const directory = yield* tmpdirScoped(options)

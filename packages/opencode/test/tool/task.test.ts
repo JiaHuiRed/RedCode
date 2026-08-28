@@ -195,6 +195,14 @@ function reply(input: SessionPrompt.PromptInput, text: string): MessageV2.WithPa
   }
 }
 
+const subagentMd = (name: string) =>
+  `---\ndescription: ${name} agent\nmode: subagent\n---\n\n${name} agent prompt\n`
+// 260828 cc 收口第 6 步：新角色只能由 agent/*.md 定义，jsonc 的 agent.<name> 只能覆写已有的。
+const SUBAGENT_FILES = {
+  ".redcode/agent/zebra.md": subagentMd("Zebra"),
+  ".redcode/agent/alpha.md": subagentMd("Alpha"),
+}
+
 describe("tool.task", () => {
   noBackground.instance(
     "description sorts subagents by name and is stable across calls",
@@ -228,18 +236,7 @@ describe("tool.task", () => {
         }
       }),
     {
-      config: {
-        agent: {
-          zebra: {
-            description: "Zebra agent",
-            mode: "subagent",
-          },
-          alpha: {
-            description: "Alpha agent",
-            mode: "subagent",
-          },
-        },
-      },
+      files: SUBAGENT_FILES,
     },
   )
 
@@ -264,17 +261,8 @@ describe("tool.task", () => {
             zebra: "deny",
           },
         },
-        agent: {
-          zebra: {
-            description: "Zebra agent",
-            mode: "subagent",
-          },
-          alpha: {
-            description: "Alpha agent",
-            mode: "subagent",
-          },
-        },
       },
+      files: SUBAGENT_FILES,
     },
   )
 

@@ -8,10 +8,15 @@ import type { Config } from "@/config/config"
 import { TestInstance, withTmpdirInstance } from "../fixture/fixture"
 
 type Body<A, E, R> = Effect.Effect<A, E, R> | (() => Effect.Effect<A, E, R>)
-type InstanceOptions = { git?: boolean; config?: Partial<Config.Info> | (() => Partial<Config.Info>) }
+type InstanceOptions = {
+  git?: boolean
+  config?: Partial<Config.Info> | (() => Partial<Config.Info>)
+  /** 实例启动前先落文件，见 fixture.tmpdirScoped 的同名选项 */
+  files?: Record<string, string>
+}
 
 function isInstanceOptions(options: InstanceOptions | number | TestOptions | undefined): options is InstanceOptions {
-  return !!options && typeof options === "object" && ("git" in options || "config" in options)
+  return !!options && typeof options === "object" && ("git" in options || "config" in options || "files" in options)
 }
 
 function instanceArgs(

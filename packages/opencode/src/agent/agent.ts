@@ -15,6 +15,7 @@ import PROMPT_SUMMARY from "./prompt/summary.md" with { type: "text" }
 import PROMPT_TITLE from "./prompt/title.md" with { type: "text" }
 import matter from "gray-matter"
 import { Permission } from "@/permission"
+import * as Log from "@redcode-ai/core/util/log"
 import { mergeDeep, pipe, sortBy, values } from "remeda"
 import { Global } from "@redcode-ai/core/global"
 import path from "path"
@@ -104,6 +105,8 @@ export const Info = Schema.Struct({
   }),
 }).annotate({ identifier: "Agent" })
 export type Info = DeepMutable<Schema.Schema.Type<typeof Info>>
+
+const log = Log.create({ service: "agent" })
 
 const GeneratedAgent = Schema.Struct({
   identifier: Schema.String,
@@ -318,6 +321,9 @@ export const layer = Layer.effect(
           },
         }
 
+        // 260828 cc 由 `agent/*.md` 文件定义的名字（config.ts 装载时记的派生状态）。md 与 jsonc 的
+        // agent.<name> 落进同一个记录，只有这张名单能把「定义一个新角色」和「覆写一个已有角色」分开。
+        const mdAgents = new Set(cfg.agent_origins ?? [])
         for (const [rawKey, value] of Object.entries(cfg.agent ?? {})) {
           // 260828 cc 老名字先规范化到合并后的目标，否则 `agent: { build: {...} }` 这类老配置会在下面
           // 凭空造出一个 native:false / mode:"all" / "*": allow 的幽灵 build：它会通过 registry.ts 的
@@ -332,7 +338,19 @@ export const layer = Layer.effect(
             continue
           }
           let item = agents[key]
-          if (!item)
+          if (!item) {
+            // 260828 cc 配置只能**覆写 / 禁用**已存在的角色，不能凭空创建（收口第 6 步）。
+            // 新角色的唯一入口是 `agent/*.md` 文件 —— 那条路会把名字记进 cfg.agent_origins。
+            // 不这么分的话，jsonc 里一个手滑的 key 就会静默变成一个 mode:"all"、权限 "*": allow、
+            // description 为 undefined 的可派发子代理，而且它会同时进 @ 补全与 describeTask。
+            // 这正是「现状一」里 profile 加载器那个病例的翻版：配置里删条目删不掉。
+            if (!mdAgents.has(key)) {
+              log.warn("ignoring unknown agent key — config can only override an existing agent", {
+                agent: key,
+                hint: "define new agents as agent/<name>.md under a .redcode directory",
+              })
+              continue
+            }
             item = agents[key] = {
               name: key,
               mode: "all",
@@ -340,6 +358,7 @@ export const layer = Layer.effect(
               options: {},
               native: false,
             }
+          }
           if (value.model) item.model = Provider.parseModel(value.model)
           item.variant = value.variant ?? item.variant
           item.prompt = value.prompt ?? item.prompt

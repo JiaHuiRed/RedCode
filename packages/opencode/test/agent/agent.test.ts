@@ -1,4 +1,5 @@
 import { afterEach, expect } from "bun:test"
+import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Cause, Effect, Exit, Layer } from "effect"
 import path from "path"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
@@ -32,6 +33,10 @@ function evalPerm(agent: Agent.Info | undefined, permission: string): Permission
   if (!agent) return undefined
   return Permission.evaluate(permission, "*", agent.permission).action
 }
+
+// 260828 cc 收口第 6 步之后，**新**角色只能由 `agent/*.md` 定义（jsonc 的 agent.<name> 只能覆写或
+// disable 一个已存在的）。md 必须在实例启动前就落盘 —— 测试体里再写就晚了，那时配置已经读完并缓存。
+const agentMd = (frontmatter: string) => `---\n${frontmatter}\n---\n\nTest agent prompt\n`
 
 function load<A>(fn: (svc: Agent.Interface) => Effect.Effect<A>) {
   return Agent.Service.use(fn)
@@ -335,7 +340,7 @@ it.instance("compaction agent denies all permissions", () =>
 )
 
 it.instance(
-  "custom agent from config creates new agent",
+  "custom agent from an agent md file creates a new agent",
   () =>
     Effect.gen(function* () {
       const custom = yield* load((svc) => svc.get("my_custom_agent"))
@@ -349,15 +354,10 @@ it.instance(
       expect(custom?.mode).toBe("all")
     }),
   {
-    config: {
-      agent: {
-        my_custom_agent: {
-          model: "openai/gpt-4",
-          description: "My custom agent",
-          temperature: 0.5,
-          top_p: 0.9,
-        },
-      },
+    files: {
+      ".redcode/agent/my_custom_agent.md": agentMd(
+        ["model: openai/gpt-4", "description: My custom agent", "temperature: 0.5", "top_p: 0.9"].join("\n"),
+      ),
     },
   },
 )
@@ -572,16 +572,32 @@ it.instance(
       expect(agentB?.mode).toBe("primary")
     }),
   {
+    files: {
+      ".redcode/agent/agent_a.md": agentMd("description: Agent A\nmode: subagent"),
+      ".redcode/agent/agent_b.md": agentMd("description: Agent B\nmode: primary"),
+    },
+  },
+)
+
+// 260828 cc 第 6 步的守卫：jsonc 里一个没对应角色的 key 不再凭空造出 agent，只打一条 warning。
+// 不这么拦的话，一个手滑的 key 会变成 mode:"all"、权限 "*": allow、description 为 undefined 的
+// 可派发子代理，同时进 @ 补全与 describeTask。
+it.instance(
+  "an unknown agent key in config does not create an agent",
+  () =>
+    Effect.gen(function* () {
+      expect(yield* load((svc) => svc.get("typo_agent"))).toBeUndefined()
+      const names = (yield* load((svc) => svc.list())).map((a) => a.name)
+      expect(names).not.toContain("typo_agent")
+      // 阴性对照：同一批配置里对**已存在**角色的覆写照常生效
+      const explore = yield* load((svc) => svc.get("explore"))
+      expect(explore?.description).toBe("overridden")
+    }),
+  {
     config: {
       agent: {
-        agent_a: {
-          description: "Agent A",
-          mode: "subagent",
-        },
-        agent_b: {
-          description: "Agent B",
-          mode: "primary",
-        },
+        typo_agent: { description: "should be ignored", mode: "subagent" },
+        explore: { description: "overridden" },
       },
     },
   },
@@ -826,14 +842,8 @@ it.instance(
       expect(agent).toBe("my_custom")
     }),
   {
-    config: {
-      default_agent: "my_custom",
-      agent: {
-        my_custom: {
-          description: "My custom agent",
-        },
-      },
-    },
+    config: { default_agent: "my_custom" },
+    files: { ".redcode/agent/my_custom.md": agentMd("description: My custom agent") },
   },
 )
 

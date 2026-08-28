@@ -358,6 +358,10 @@ export type Info = DeepMutable<Schema.Schema.Type<typeof Info>> & {
   // plugin_origins is derived state, not a persisted config field. It keeps each winning plugin spec together
   // with the file and scope it came from so later runtime code can make location-sensitive decisions.
   plugin_origins?: ConfigPlugin.Origin[]
+  // 260828 cc 同样是派生状态：哪些 agent 条目是从 `agent/*.md` 文件来的。md 与 jsonc 的 `agent.<name>`
+  // 落进同一个 `agent` 记录，光看值分不出来源，而这两者的**权力不一样**：md 文件可以定义一个新角色，
+  // jsonc 只能覆写/禁用已存在的（见 docs/agent-roles-plan.md 第 6 步）。Agent 服务靠这张名单区分。
+  agent_origins?: string[]
 }
 
 type State = {
@@ -405,7 +409,7 @@ function patchJsonc(input: string, patch: unknown, path: string[] = []): string 
 }
 
 function writable(info: Info) {
-  const { plugin_origins: _plugin_origins, ...next } = info
+  const { plugin_origins: _plugin_origins, agent_origins: _agent_origins, ...next } = info
   return next
 }
 
@@ -724,7 +728,13 @@ export const layer = Layer.effect(
           }
 
           result.command = mergeDeep(result.command ?? {}, yield* Effect.promise(() => ConfigCommand.load(dir)))
-          result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.load(dir)))
+          const agentMd = yield* Effect.promise(() => ConfigAgent.load(dir))
+          result.agent = mergeDeep(result.agent ?? {}, agentMd)
+          // 260828 cc 记下「这个名字是 md 文件定义的」。只增不删：多个扫描目录各自贡献一份，
+          // 而 mergeDeep 的结果里分不出来源。消费点是 agent/agent.ts 的配置循环。
+          const seenAgentMd = new Set(result.agent_origins ?? [])
+          for (const name of Object.keys(agentMd)) seenAgentMd.add(name)
+          result.agent_origins = [...seenAgentMd]
           // Auto-discovered plugins under `.opencode/plugin(s)` are already local files, so ConfigPlugin.load
           // returns normalized Specs and we only need to attach origin metadata here.
           const list = yield* Effect.promise(() => ConfigPlugin.load(dir))

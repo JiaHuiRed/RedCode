@@ -263,6 +263,10 @@ export const layer = Layer.effect(
         }
 
         // Notify plugins of current config
+        // 260828 cc 插件的 config hook 是**创建 agent 的合法通道之一**（往 cfg.agent 塞新 key）。
+        // 收口第 6 步之后 jsonc 只能覆写、不能创建，创建权靠 cfg.agent_origins 这张名单授予 ——
+        // 所以钩子跑完要把它新加的 key 补进名单，否则插件注册的 agent 会被静默丢掉。
+        const agentKeysBefore = new Set(Object.keys(cfg.agent ?? {}))
         for (const hook of hooks) {
           yield* Effect.tryPromise({
             try: () => Promise.resolve((hook as any).config?.(cfg)),
@@ -271,6 +275,9 @@ export const layer = Layer.effect(
             },
           }).pipe(Effect.ignore)
         }
+        const addedByPlugins = Object.keys(cfg.agent ?? {}).filter((name) => !agentKeysBefore.has(name))
+        if (addedByPlugins.length > 0)
+          cfg.agent_origins = [...new Set([...(cfg.agent_origins ?? []), ...addedByPlugins])]
 
         // Subscribe to bus events, fiber interrupted when scope closes
         yield* (yield* bus.subscribeAll()).pipe(
