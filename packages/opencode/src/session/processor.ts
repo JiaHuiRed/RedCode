@@ -585,7 +585,12 @@ export const layer = Layer.effect(
               ? [...new Set(cycleParts.flatMap((p) => (p.type === "tool" ? [p.tool] : [])))]
               : [value.name]
 
-            const agent = yield* agents.get(ctx.assistantMessage.agent)
+            // 260828 cc ctx.assistantMessage.agent 来自**落库的 assistant 消息**，可能指向一个已经
+            // 删掉或改名的角色 —— 别名表只接得住内建的老名字，用户自建的 md agent 删掉后没人接。
+            // 原来这里直接 `agent.permission`，被 Agent.get 那个「返回 Info」的类型谎言藏住了，真撞上
+            // 就是 TypeError。回落到默认姿态的规则集：doom_loop 在 defaults 是 ask，回落只会更谨慎。
+            const agent =
+              (yield* agents.get(ctx.assistantMessage.agent)) ?? (yield* agents.defaultInfo())
             yield* permission.ask({
               permission: "doom_loop",
               patterns: cycleTools,

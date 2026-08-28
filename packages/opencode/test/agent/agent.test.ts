@@ -364,6 +364,36 @@ it.instance("the three role kinds keep their shapes separate", () =>
   }),
 )
 
+// 260828 cc 权限叠加的优先级，钉死成一条用例。
+// 调研的「独立项 2」写的是「任何用户自建 md agent 的权限块都排在 cfg.permission 之后，用户全局
+// 配置整段失效」—— 实测下来那**不是** bug：真正出事的是**我们自己**发的工种 md 经 ~/.redcode/agent/
+// 回流（底本修正九），那种情况下排在最后的是我们的块、不是用户的，已经由第 4c-1 步删掉 sync-home
+// 的 agent 播种解决。用户自己写的 md 属于「用户的 per-agent 配置」，它盖过用户全局是对的。
+//
+// 定死的顺序（后者盖前者）：defaults < 内建块 < 用户全局 permission < 用户的 per-agent 块
+it.instance(
+  "permission precedence: per-agent user config beats global, which beats the built-in block",
+  () =>
+    Effect.gen(function* () {
+      // 内建姿态：用户全局盖过我们写的内建块（redmind 的内建块给 question: allow）
+      const redmind = yield* load((svc) => svc.get("redmind"))
+      expect(evalPerm(redmind, "question")).toBe("deny")
+
+      // 用户自建 md：per-agent 块盖过用户全局（全局 bash: deny，md 里 bash: allow）
+      const mine = yield* load((svc) => svc.get("mine"))
+      expect(evalPerm(mine, "bash")).toBe("allow")
+      // 阴性对照：md 没写的项仍然沿用用户全局
+      expect(evalPerm(mine, "websearch")).toBe("deny")
+    }),
+  {
+    config: { permission: { question: "deny", bash: "deny", websearch: "deny" } },
+    files: {
+      ".redcode/agent/mine.md":
+        "---\ndescription: mine\nmode: subagent\npermission:\n  bash: allow\n---\n\nprompt\n",
+    },
+  },
+)
+
 it.instance("compaction agent denies all permissions", () =>
   Effect.gen(function* () {
     const compaction = yield* load((svc) => svc.get("compaction"))

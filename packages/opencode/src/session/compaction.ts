@@ -474,6 +474,10 @@ export const layer = Layer.effect(
       }
 
       const agent = yield* agents.get("compaction")
+      // 260828 cc Agent.get 的签名 08-28 收窄成 `Info | undefined`（原来标 Info 是类型谎言）。
+      // compaction 是内建机件、恒存在，查不到说明不变量被破坏了，明着抛比让它在下面变成
+      // `undefined.model` 的 TypeError 强。
+      if (!agent) throw new Error("built-in compaction agent is missing")
       const model = agent.model
         ? yield* provider.getModel(agent.model.providerID, agent.model.modelID).pipe(Effect.orDie)
         : yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID).pipe(Effect.orDie)

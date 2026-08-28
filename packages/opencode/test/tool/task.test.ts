@@ -210,6 +210,7 @@ describe("tool.task", () => {
       Effect.gen(function* () {
         const agent = yield* Agent.Service
         const build = yield* agent.get("redmind")
+        if (!build) throw new Error("redmind not found")
         const registry = yield* ToolRegistry.Service
         const get = Effect.fnUntraced(function* () {
           const tools = yield* registry.tools({ ...ref, agent: build })
@@ -246,6 +247,7 @@ describe("tool.task", () => {
       Effect.gen(function* () {
         const agent = yield* Agent.Service
         const build = yield* agent.get("redmind")
+        if (!build) throw new Error("redmind not found")
         const registry = yield* ToolRegistry.Service
         const description =
           (yield* registry.tools({ ...ref, agent: build })).find((tool) => tool.id === TaskTool.id)?.description ?? ""

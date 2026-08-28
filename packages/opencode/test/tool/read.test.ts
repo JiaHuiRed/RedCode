@@ -323,6 +323,8 @@ describe("tool.read env file permissions", () => {
               Effect.gen(function* () {
                 const agent = yield* Agent.Service
                 const info = yield* agent.get(agentName)
+                // 260828 cc Agent.get 收窄成 Info | undefined 之后要显式断言；用例里这个角色必然存在
+                if (!info) throw new Error(`agent ${agentName} not found`)
                 let asked = false
                 const next = {
                   ...ctx,

@@ -116,7 +116,10 @@ const GeneratedAgent = Schema.Struct({
 })
 
 export interface Interface {
-  readonly get: (agent: string) => Effect.Effect<Info>
+  // 260828 cc 签名收窄成 `Info | undefined`。原来标的是 `Effect.Effect<Info>`，那是个类型谎言：
+  // 实现是 `agents[name]`，在 noUncheckedIndexedAccess 关闭下被推成 Info，但查不到时返回的就是
+  // undefined。16 个调用点里有 12 个已经自己写了 `if (!x)` —— 编译器没帮上忙，是人肉发现的。
+  readonly get: (agent: string) => Effect.Effect<Info | undefined>
   readonly list: () => Effect.Effect<Info[]>
   readonly defaultInfo: () => Effect.Effect<Info>
   readonly defaultAgent: () => Effect.Effect<string>
@@ -384,9 +387,7 @@ export const layer = Layer.effect(
         // get**，只往 get 里加别名的话 `default_agent: "build"` 照样在下面抛「not found」，就算只补
         // defaultInfo，排序谓词也会比不中而退化成 name-asc，客户端按 primary 过滤后 at(0) 变成 plan，
         // TUI 与 GUI 都会静默进只读姿态。
-        // 返回类型故意不标 `Info | undefined`：State.get 的声明是 Effect.Effect<Info>（`agents[x]` 在
-        // noUncheckedIndexedAccess 关闭下被推成 Info，是个类型谎言），标了下面的 satisfies 会当场红。
-        const resolve = (name: string) => agents[name] ?? agents[ALIAS[name] ?? ""]
+        const resolve = (name: string): Info | undefined => agents[name] ?? agents[ALIAS[name] ?? ""]
 
         const get = Effect.fnUntraced(function* (agent: string) {
           return resolve(agent)

@@ -85,8 +85,11 @@ const AgentCreateCommand = effectCmd({
 
       // Determine scope/path
       let targetPath: string
+      // 260828 cc 目录名从复数 `agents` 改回单数 `agent`：收口第 3 步之后 ConfigAgent.load 只扫
+      // 单数目录（复数存在时只打一条 warning），于是 `redcode agent create` —— md 型 agent 唯一的
+      // 运行时创建入口 —— 造出来的文件永远加载不了，创建完立刻「不存在」。
       if (cliPath) {
-        targetPath = path.join(cliPath, "agents")
+        targetPath = path.join(cliPath, "agent")
       } else {
         let scope: "global" | "project" = "global"
         if (project.vcs === "git") {
@@ -108,7 +111,7 @@ const AgentCreateCommand = effectCmd({
           if (prompts.isCancel(scopeResult)) throw new UI.CancelledError()
           scope = scopeResult
         }
-        targetPath = path.join(scope === "global" ? Global.Path.config : path.join(ctx.worktree, ".redcode"), "agents")
+        targetPath = path.join(scope === "global" ? Global.Path.config : path.join(ctx.worktree, ".redcode"), "agent")
       }
 
       // Get description
