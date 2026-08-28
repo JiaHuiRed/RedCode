@@ -5,6 +5,7 @@ import { SessionID, MessageID, PartID } from "./schema"
 import { Provider } from "@/provider/provider"
 import { MessageV2 } from "./message-v2"
 import { Token } from "@/util/token"
+import { estimateModelMessages } from "./image-tokens"
 import * as Log from "@redcode-ai/core/util/log"
 import { SessionProcessor } from "./processor"
 import { Agent } from "@/agent/agent"
@@ -313,7 +314,11 @@ export const layer = Layer.effect(
       model: Provider.Model
     }) {
       const msgs = yield* MessageV2.toModelMessagesEffect(input.messages, input.model)
-      return Token.estimate(JSON.stringify(msgs))
+      // 260828 cc：原来是 Token.estimate(JSON.stringify(msgs))，而图片在这里是内联
+      // data URL —— chars/4 把一张 400KB 的 JPEG 算成约 13 万 token（实际最多 384）。
+      // select() 用这个数倒着累加各轮决定保留范围，于是一张图就让它所在轮及更早的
+      // 全部被判出局。改为文本照旧 chars/4、图片按路由投影计价。见 image-tokens.ts。
+      return estimateModelMessages(msgs, input.model)
     })
 
     const select = Effect.fn("SessionCompaction.select")(function* (input: {

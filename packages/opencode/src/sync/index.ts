@@ -205,6 +205,7 @@ export const use = serviceUse(Service)
 
 export const registry = new Map<string, Definition>()
 let projectors: Map<string, ProjectorFunc> | undefined
+let nonProjecting = new Set<string>()
 const versions = new Map<string, number>()
 let frozen = false
 let convertEvent: ConvertEvent
@@ -212,11 +213,23 @@ let convertEvent: ConvertEvent
 export function reset() {
   frozen = false
   projectors = undefined
+  nonProjecting = new Set()
   convertEvent = (_, data) => data
 }
 
-export function init(input: { projectors: Array<[Definition, ProjectorFunc]>; convertEvent?: ConvertEvent }) {
+export function init(input: {
+  projectors: Array<[Definition, ProjectorFunc]>
+  // Event types that deliberately have no projector: streaming deltas and
+  // progress notifications that carry no durable state. Keyed by unversioned
+  // type, so a later version of the same event stays exempt. Anything not
+  // listed here and not in `projectors` throws at `process()` — see
+  // `test/sync/invariants.test.ts` for the set-equality gate that catches a new
+  // event type whose projector was forgotten.
+  nonProjecting?: readonly string[]
+  convertEvent?: ConvertEvent
+}) {
   projectors = new Map(input.projectors.map(([def, func]) => [versionedType(def.type, def.version), func]))
+  nonProjecting = new Set(input.nonProjecting ?? [])
   for (let entry of EventV2.registry.values()) {
     if (!entry.version || !entry.aggregate) continue
     register({
@@ -290,6 +303,18 @@ function register(def: Definition) {
   registry.set(versionedType(def.type, def.version), def)
 }
 
+// 260828 cc：run() 与 replay() 的 data 不同源 —— run 把内存对象原样交给 projector，
+// replay 拿到的是 JSON 往返之后的产物（EventTable.data 或 HTTP body）。显式 undefined
+// 的成员只在前者可见，所以任何用 `key in obj` 区分「清空该字段」和「不动该字段」的
+// projector，在两条路径上会得到不同的语义。
+//
+// 试过在 run() 入口统一拒掉显式 undefined：不成立 —— 本仓构造事件时把可选字段留成
+// undefined 是普遍写法（如 session.created 的 info.workspaceID），加上这条 throw 会
+// 打挂 146 个既有测试。所以这条契约只由**关心键存在性的 projector 自己**负责：
+// session/projectors.ts 的 grab() 就是唯一一个，它对显式 undefined 直接抛错，要求改
+// 传 null（null 能 JSON 往返，两条路径因此一致）。新增会 `in` 判断的 projector 时必须
+// 照做，test/sync/invariants.test.ts 钉住了这条。
+
 function process<Def extends Definition>(
   def: Def,
   event: Event<Def>,
@@ -307,25 +332,35 @@ function process<Def extends Definition>(
 
   const projector = projectors.get(versionedType(def.type, def.version))
   if (!projector) {
-    if (!def.type.includes("next")) throw new Error(`Projector not found for event: ${def.type}`)
+    // 260828 cc：这里原本是 `def.type.includes("next")` —— 名字含 "next" 就静默
+    // 跳过投影、持久化与发布。护栏对着唯一在长的命名空间（session.next.*）关掉了，
+    // 而且下一个名字里碰巧带 next 的事件会免费拿到同样的豁免。改成显式名单。
+    if (!nonProjecting.has(def.type)) throw new Error(`Projector not found for event: ${def.type}`)
     return
   }
 
   Database.transaction((tx) => {
     projector(tx, event.data, event)
 
+    // 260828 cc：序号的读与写必须同门控。`run()` 无条件读 event_sequence 算 seq，
+    // 而这两条 insert 原本都在 experimentalWorkspaces 后面（默认关）—— 结果默认配置下
+    // 每个事件的 seq 恒为 0，还被 GlobalBus 原样广播出去。计数器行很小（一个 aggregate
+    // 一行三列），始终写；事件全文体积大且只有 workspace 同步要用，继续留在 flag 后面。
+    // 副作用是好的：flag 中途打开时,对端会因 seq 从 N 起跳而抛 Sequence mismatch（响），
+    // 而不是接受一条从 0 重新开始、缺掉全部历史的流（哑）。
+    tx.insert(EventSequenceTable)
+      .values({
+        aggregate_id: event.aggregateID,
+        seq: event.seq,
+        owner_id: options?.ownerID,
+      })
+      .onConflictDoUpdate({
+        target: EventSequenceTable.aggregate_id,
+        set: { seq: event.seq },
+      })
+      .run()
+
     if (options.experimentalWorkspaces) {
-      tx.insert(EventSequenceTable)
-        .values({
-          aggregate_id: event.aggregateID,
-          seq: event.seq,
-          owner_id: options?.ownerID,
-        })
-        .onConflictDoUpdate({
-          target: EventSequenceTable.aggregate_id,
-          set: { seq: event.seq },
-        })
-        .run()
       tx.insert(EventTable)
         .values({
           id: event.id,

@@ -132,3 +132,36 @@ describe("context-snapshot.record", () => {
     expect(snapshot.messages.byRole).toEqual([])
   })
 })
+
+// 260828 cc：用量面板的"messages 占多少"曾被一张截图完全带偏 —— 图片在 ModelMessage
+// 里是内联 data URL，chars/4 把 400KB 的 JPEG 记成约 13 万 token。
+describe("context-snapshot 图片计价", () => {
+  const imageMessage = (bytes: number): ModelMessage => ({
+    role: "user",
+    content: [
+      { type: "text", text: "看这张图" },
+      { type: "file", mediaType: "image/jpeg", data: `data:image/jpeg;base64,${"A".repeat(bytes)}` },
+    ],
+  })
+
+  test("一张图不再按 base64 长度计入 messages", () => {
+    const info = record({ ...base, messages: [imageMessage(200 * 1024)] })
+    expect(info.messages.tokens).toBeLessThan(1000)
+    expect(info.messages.tokens).toBeGreaterThanOrEqual(384)
+  })
+
+  test("图片载荷变大不改变记账", () => {
+    const small = record({ ...base, messages: [imageMessage(10 * 1024)] }).messages.tokens
+    reset()
+    const large = record({ ...base, messages: [imageMessage(256 * 1024)] }).messages.tokens
+    expect(large).toBe(small)
+  })
+
+  test("纯文本消息的记账不受影响", () => {
+    const info = record({
+      ...base,
+      messages: [{ role: "user", content: "hello world" } as ModelMessage],
+    })
+    expect(info.messages.tokens).toBe(3)
+  })
+})

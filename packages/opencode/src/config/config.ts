@@ -271,6 +271,16 @@ export const Info = Schema.Struct({
       url: Schema.optional(Schema.String).annotate({ description: "Enterprise URL" }),
     }),
   ),
+  webfetch: Schema.optional(
+    Schema.Struct({
+      allow_private_hosts: Schema.optional(Schema.Boolean).annotate({
+        description:
+          "Allow the webfetch tool to reach loopback, private, link-local and other non-public addresses (default: false). Leaving this off keeps a model-supplied URL from reaching your LAN or a cloud metadata endpoint; use a shell command when you genuinely need a local address.",
+      }),
+    }),
+  ).annotate({
+    description: "webfetch tool configuration",
+  }),
   tool_output: Schema.optional(
     Schema.Struct({
       max_lines: Schema.optional(PositiveInt).annotate({
