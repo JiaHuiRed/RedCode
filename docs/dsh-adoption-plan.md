@@ -42,7 +42,7 @@
 
 - [ ] **动态上下文快照通道**:会变的内容不进 system prompt,走"supersedes 早先快照"的独立消息、只在变化时重发。先对照 prefix-debug.log 找该走此通道的断裂源。参考 `core/system-prompt` PromptContext + agent-loop runtime-context。
 - [ ] **hooks 声明式 subprocess 层**:kimi-hooks 研究的未竟半边;DSH `hooks/hook-protocol` + `hooks-claude-code` 是现成参考(7 个 hook 点映射、fail-open 不崩 boot、CC hooks.json 直接兼容可白嫖生态)。
-- [ ] **"Model Experience 三问"文档规矩**:凡改模型可见内容(提示词/注入/工具 schema),PR/commit 说明需回答 What the model sees / Token effect / KV Cache effect。
+- [x] ~~**"Model Experience 三问"文档规矩**~~ **已落地**:入 `AGENTS.md` 的「版本与文档」节。三问 = 模型看到什么变了 / token 影响 / KV cache 影响；第三条挂了本仓自己的两笔账（`19b2bed3` 的命中率破坏性损伤、resize 通知文案的确定性要求）。额外补了一条上游没明写的：**段落顺序也算模型可见改动，移动一段的代价是从它往后整个前缀作废**。
 - [ ] **UI 交互三件**(TUI/GUI 通用):Think 行流式期"最新非空行"滚动 summary(展开即停跟随;与现有 reasoningTitle 粗体标题叠加,优先级:标题>最新行>时长);连续重试折叠为单行状态(倒计时锚定客户端接收时刻);压缩 checkpoint 原位折叠行、展开显示摘要与 token 估算。参考 `client/ui-conversation`。
 - [ ] **busy_enter 的 UI 收尾**:~~TUI 斜杠~~(138aa422)、~~GUI 斜杠+设置面板下拉~~(本批,DSH 同款形态);剩 steer 模式"已送达"徽标(QUEUED → 送达,需 user 消息 schema 字段 + sync 推送 + 双端渲染)。
 - [ ] **subagent-report 两档投递**:子代理回执 wakeup(唤醒父开新轮)/quiet(仅注入不触发请求)部署级策略,对照现有后台子代理通知机制。
