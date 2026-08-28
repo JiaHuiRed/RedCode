@@ -1,11 +1,13 @@
 import type { JSX } from "solid-js"
-import { createMemo } from "solid-js"
+import { createMemo, createSignal } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { useServerSync } from "@/context/server-sync"
 import { useLayout } from "@/context/layout"
 import { useSDK } from "@/context/sdk"
 import { useServer } from "@/context/server"
 import { useSync } from "@/context/sync"
+import { useLanguage } from "@/context/language"
+import { pickGreetingKey } from "./session-new-greeting"
 import { base64Encode } from "@redcode-ai/core/util/encode"
 import { getFilename } from "@redcode-ai/core/util/path"
 import { Icon } from "@redcode-ai/ui/icon"
@@ -21,6 +23,8 @@ export function NewSessionDesignView(props: { worktree: string; children: JSX.El
   const sdk = useSDK()
   const server = useServer()
   const sync = useSync()
+  const language = useLanguage()
+  const [greetingKey] = createSignal(pickGreetingKey(new Date().getHours()))
 
   const projectRoot = createMemo(() => sync.project?.worktree ?? sdk.directory)
   const projects = createMemo(() => {
@@ -58,6 +62,11 @@ export function NewSessionDesignView(props: { worktree: string; children: JSX.El
             {/* 260828 cc 72 → 88px。字标是这一屏的视觉中心，之前偏小、又被钉在上方，
                 两头不靠。逐字母升起与流光见 wordmark-v2.css。 */}
             <WordmarkV2 class="text-[88px] leading-none" />
+          </div>
+          {/* 260828 cc 问候语。字标是品牌、输入框是功能，中间这一句是唯一说人话的地方，
+              所以放这儿。字号刻意压在 15px：它是陪衬，抢了输入框的注意力就本末倒置了。 */}
+          <div class="mt-5 text-center text-[15px] font-[440] text-v2-text-text-muted">
+            {language.t(greetingKey())}
           </div>
           <div class="mt-8">
             {props.children}
