@@ -124,6 +124,26 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       setStore("current", items[0]?.name)
     })
 
+    // 260828 cc 每会话的 agent 存在 localStorage（saved.session）。角色收口把 build / general /
+    // architect / reviewer / fixer / scout / advise 全从 list() 里拿掉了，而上面那条 effect 只自愈
+    // store.current，saved.session **不会**被纠正：pickAgent 查不到时回落到 items[0]（所以显示是对的），
+    // 但存的值原样留着，而 write() 每次都把 scope() 摊开写回去 —— 老名字会永远留在盘上。
+    // restore() 那道 `if (saved.session[session] !== undefined) return` 守卫也保证它再没机会被覆盖。
+    // 列表就绪后走一遍，把查不到的名字改写成 items[0]：服务端 list() 把默认姿态排在第一个，
+    // 所以 build -> redmind 正好是别名表的目标。
+    createEffect(() => {
+      const items = list()
+      if (items.length === 0) return
+      const names = new Set(items.map((item) => item.name))
+      const fallback = items[0]?.name
+      if (!fallback) return
+      for (const [session, state] of Object.entries(saved.session)) {
+        const name = state?.agent
+        if (!name || names.has(name)) continue
+        setSaved("session", session, "agent", fallback)
+      }
+    })
+
     const scope = createMemo<State | undefined>(() => {
       const session = id()
       if (!session) return store.draft
