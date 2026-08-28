@@ -5,7 +5,7 @@ import {
   formatPart,
   formatTranscript,
 } from "../../../src/cli/cmd/tui/util/transcript"
-import type { AssistantMessage, Part, Provider, UserMessage } from "@redcode-ai/sdk/v2"
+import type { Agent, AssistantMessage, Part, Provider, UserMessage } from "@redcode-ai/sdk/v2"
 
 const providers: Provider[] = [
   {
@@ -108,6 +108,15 @@ describe("transcript", () => {
       const msg = { ...baseMsg, agent: "plan" }
       const result = formatAssistantHeader(msg, true)
       expect(result).toContain("Plan")
+    })
+
+    // 260828 cc titlecase("redmind") = "Redmind"，而 agent 的 displayName 是 "RedMind"。
+    // 拿得到 agent 列表就以 displayName 为准，拿不到才退回 titlecase。
+    test("prefers agent displayName over titlecase", () => {
+      const agents = [{ name: "redmind", displayName: "RedMind", mode: "primary" }] as Agent[]
+      const msg = { ...baseMsg, agent: "redmind" }
+      expect(formatAssistantHeader(msg, true, providers, agents)).toContain("RedMind ·")
+      expect(formatAssistantHeader(msg, true, providers)).toContain("Redmind ·")
     })
   })
 

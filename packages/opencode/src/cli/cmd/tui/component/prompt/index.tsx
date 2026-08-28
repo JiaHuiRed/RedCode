@@ -1604,7 +1604,7 @@ export function Prompt(props: PromptProps) {
                     <>
                       <box onMouseUp={() => dialog.replace(() => <DialogAgent />)}>
                         <text fg={fadeColor(highlight(), agentMetaAlpha())}>
-                          {store.mode === "shell" ? "Shell" : (agent().displayName ?? Locale.titlecase(agent().name))}
+                          {store.mode === "shell" ? "Shell" : local.agent.label(agent().name)}
                         </text>
                       </box>
                       <Show when={store.mode === "normal"}>

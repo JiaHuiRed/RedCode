@@ -1000,6 +1000,7 @@ export function Session() {
               toolDetails: showDetails(),
               assistantMetadata: showAssistantMetadata(),
               providers: sync.data.provider,
+              agents: sync.data.agent,
             },
           )
           await Clipboard.copy(transcript)
@@ -1044,6 +1045,7 @@ export function Session() {
               toolDetails: options.toolDetails,
               assistantMetadata: options.assistantMetadata,
               providers: sync.data.provider,
+              agents: sync.data.agent,
             },
           )
 
@@ -1645,7 +1647,7 @@ export function AssistantMessage(props: { message: AssistantMessageInfo; parts: 
               >
                 ▣{" "}
               </span>{" "}
-              <span style={{ fg: theme.text }}>{Locale.titlecase(props.message.mode)}</span>
+              <span style={{ fg: theme.text }}>{local.agent.label(props.message.agent)}</span>
               <span style={{ fg: theme.textMuted }}> · {model()}</span>
               <Show when={duration()}>
                 <span style={{ fg: theme.textMuted }}> · {Locale.duration(duration())}</span>

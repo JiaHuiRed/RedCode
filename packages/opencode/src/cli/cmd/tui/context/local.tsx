@@ -14,6 +14,7 @@ import { useArgs } from "./args"
 import { useSDK } from "./sdk"
 import { RGBA } from "@opentui/core"
 import { Filesystem } from "@/util/filesystem"
+import { Locale } from "@/util/locale"
 
 // 260608 Red 读取 agent 显示名
 // 260730 Karina 用户名不再从 ~/.redcode/USER.md 的 "称呼：" 字段解析 —— USER.md 已下线，
@@ -105,6 +106,13 @@ export const {
             const value = agents()[next]
             setAgentStore("current", value.name)
           })
+        },
+        // 260828 cc agent 的展示名只有 displayName 是权威的：redmind 的 displayName 是
+        // "RedMind"，而 titlecase("redmind") 会得到 "Redmind"。输入框走的是
+        // `displayName ?? titlecase(name)`，消息头与会话记录导出却直接 titlecase，
+        // 同一屏上两种写法。这里把那条链收成一处，找不到的名字（比如子代理）仍按 titlecase。
+        label(name: string) {
+          return sync.data.agent.find((x) => x.name === name)?.displayName ?? Locale.titlecase(name)
         },
         color(name: string) {
           const index = visibleAgents().findIndex((x) => x.name === name)

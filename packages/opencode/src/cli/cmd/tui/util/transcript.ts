@@ -1,4 +1,4 @@
-import type { AssistantMessage, Part, Provider, UserMessage } from "@redcode-ai/sdk/v2"
+import type { Agent, AssistantMessage, Part, Provider, UserMessage } from "@redcode-ai/sdk/v2"
 import { Locale } from "@/util/locale"
 import * as Model from "./model"
 
@@ -7,6 +7,7 @@ export type TranscriptOptions = {
   toolDetails: boolean
   assistantMetadata: boolean
   providers?: Provider[]
+  agents?: Agent[]
 }
 
 export type SessionInfo = {
@@ -54,7 +55,7 @@ export function formatMessage(
   if (msg.role === "user") {
     result += `## User\n\n`
   } else {
-    result += formatAssistantHeader(msg, options.assistantMetadata, providers ?? options.providers)
+    result += formatAssistantHeader(msg, options.assistantMetadata, providers ?? options.providers, options.agents)
   }
 
   for (const part of parts) {
@@ -68,6 +69,7 @@ export function formatAssistantHeader(
   msg: AssistantMessage,
   includeMetadata: boolean,
   providers?: Provider[] | ReadonlyMap<string, Provider>,
+  agents?: Agent[],
 ): string {
   if (!includeMetadata) {
     return `## Assistant\n\n`
@@ -78,7 +80,11 @@ export function formatAssistantHeader(
 
   const modelName = Model.name(providers, msg.providerID, msg.modelID)
 
-  return `## Assistant (${Locale.titlecase(msg.agent)} · ${modelName}${duration ? ` · ${duration}` : ""})\n\n`
+  // 260828 cc 展示名以 agent.displayName 为准，titlecase 只是拿不到 agent 列表时的兜底 ——
+  // 否则导出的会话记录里 redmind 写成 "Redmind"，跟界面上的 "RedMind" 对不上。
+  const agentLabel = agents?.find((x) => x.name === msg.agent)?.displayName ?? Locale.titlecase(msg.agent)
+
+  return `## Assistant (${agentLabel} · ${modelName}${duration ? ` · ${duration}` : ""})\n\n`
 }
 
 export function formatPart(part: Part, options: TranscriptOptions): string {

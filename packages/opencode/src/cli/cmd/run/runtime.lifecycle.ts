@@ -114,8 +114,11 @@ function splashInfo(title: string | undefined, history: RunPrompt[]) {
   }
 }
 
-function footerLabels(input: Pick<RunInput, "agent" | "model" | "variant">): FooterLabels {
-  const agentLabel = Locale.titlecase(input.agent ?? "redmind")
+function footerLabels(input: Pick<LifecycleInput, "agent" | "agents" | "model" | "variant">): FooterLabels {
+  // 260828 cc 跟 TUI 一样：展示名以 agent.displayName 为准，titlecase 只作兜底。
+  // titlecase("redmind") 会得到 "Redmind"，而它的 displayName 是 "RedMind"。
+  const agentName = input.agent ?? "redmind"
+  const agentLabel = input.agents.find((x) => x.name === agentName)?.displayName ?? Locale.titlecase(agentName)
 
   if (!input.model) {
     return {
@@ -214,6 +217,7 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
 
         const labels = footerLabels({
           agent: input.agent,
+          agents: input.agents,
           model: input.model,
           variant: input.variant,
         })
