@@ -9,10 +9,11 @@ import { ProviderTransform } from "@/provider/transform"
 
 import PROMPT_GENERATE from "./generate.md" with { type: "text" }
 import PROMPT_COMPACTION from "./prompt/compaction.md" with { type: "text" }
-import PROMPT_EXPLORE from "./prompt/explore.md" with { type: "text" }
+import EXPLORE_MD from "../../../../seed/agent/explore.md" with { type: "text" }
 import PROMPT_SCOUT from "./prompt/scout.md" with { type: "text" }
 import PROMPT_SUMMARY from "./prompt/summary.md" with { type: "text" }
 import PROMPT_TITLE from "./prompt/title.md" with { type: "text" }
+import matter from "gray-matter"
 import { Permission } from "@/permission"
 import { mergeDeep, pipe, sortBy, values } from "remeda"
 import { Global } from "@redcode-ai/core/global"
@@ -25,6 +26,14 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import * as Option from "effect/Option"
 import * as OtelTracer from "@effect/opentelemetry/Tracer"
 import { type DeepMutable } from "@redcode-ai/core/schema"
+
+// 260828 cc 工种的提示词与权限单一来源在 seed/agent/*.md。这里用 with { type: "text" } 在
+// **构建期**把同一份文件内联进二进制（seed/ 本身不进发布包，运行时读盘拿不到），运行时
+// ConfigAgent.load 再从 ~/.redcode/agent/ 读同一份做覆盖 —— 两条路同源，不再有第二份副本。
+// 不能改成运行时读盘：Info.prompt 在 llm/request.ts:60 是**替换**模型家族提示词而非追加，
+// 文件缺失不会报错、只会静默回落（title/compaction 显式传 system: [] 时尤其致命）。
+const promptBody = (md: string) => matter(md).content.trim()
+const PROMPT_EXPLORE = promptBody(EXPLORE_MD)
 
 export const Info = Schema.Struct({
   name: Schema.String,
