@@ -20,13 +20,18 @@ export interface SessionStatusDeps {
 /**
  * 判定一个会话属于哪一档。
  *
- * **只读窥探**：`sync.child(dir, { bootstrap: false })` 不会触发目录的
+ * **只读窥探**：`sync.peek(dir, { bootstrap: false })` 不 pin、也不会触发目录的
  * `InstanceStore.load()`（那会拉起整套 MCP/LSP 进程树，见 home.tsx 里 sessionLoad 上方
  * 那段注释）。所以这个函数可以对任意多个项目调用，代价只是读已经在内存里的 store ——
  * 从没打开过的项目自然什么都没有，那也是对的：我们确实不知道，且不该为了知道而去拉起它。
  */
 export function classifySession(session: Session, deps: SessionStatusDeps): SessionStatus {
-  const [store] = deps.sync.child(session.directory, { bootstrap: false })
+  // 260828 cc 必须用 peek 不是 child。`child()` 无条件 pinForOwner —— 把目录永久钉住，
+  // 重连时「只刷新 pinned 目录」的过滤形同虚设，会把全部被钉过的项目重新 bootstrap 一遍
+  // （layout.tsx:390 那条注释记的就是这个坑，enrich() 当年踩过）。首个版本用了 child，
+  // 侧边栏对 12 个项目各调一次，实测触发 12 次串行 session.list、累计 28 秒 —— 期间首页
+  // 一条会话都显示不出来。`peek()` 就是 ensureChild 本身，不 pin。
+  const [store] = deps.sync.peek(session.directory, { bootstrap: false })
   const id = session.id
 
   const hasPermission = !!sessionPermissionRequest(

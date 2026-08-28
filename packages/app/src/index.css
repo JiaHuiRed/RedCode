@@ -392,3 +392,47 @@
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
+
+/* 260828 cc 看板卡片的呼吸抬起 —— 配方取自私仓用量面板
+   （~/.redcode/usage-dashboard/public/index.html 的 .card，260814 Red）。
+
+   手感来自**三段不同的时长**，不是位移本身：
+   · hover 进入 0.25s（慢慢浮起来）
+   · 移出回落走基础 0.15s（比进入快，有回弹感）
+   · :active 按下 0.08s（干脆）
+   第一版我三段用了同一个 120ms，于是只有位移没有手感。
+
+   :active 的方向也别写反：不是压到静止位置**以下**，而是从悬停高度**回落一点 + 缩小**
+   （-5px→-2px、1.02→0.99）—— 读起来才是「被按进去」而不是「往下掉」。
+
+   位移比原方案小一档（-5px→-4px）：看板是密集网格，卡片挨得比仪表盘的统计卡近。
+   hover 时抬 z-index，否则放大的卡会被相邻卡片盖住边缘。
+   不放进 @layer：需越过 Tailwind utilities 层覆盖 transition/transform 工具类。 */
+[data-component="kanban-card"] {
+  position: relative;
+  z-index: 1;
+  transition:
+    transform 0.15s ease-out,
+    box-shadow 0.15s ease-out,
+    background-color 0.15s;
+}
+[data-component="kanban-card"]:hover:not(:active) {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: var(--v2-elevation-floating, 0 4px 14px rgba(0, 0, 0, 0.35), 0 18px 44px rgba(0, 0, 0, 0.48));
+  z-index: 2;
+  transition-duration: 0.25s;
+}
+[data-component="kanban-card"]:active {
+  transform: translateY(-1px) scale(0.99);
+  box-shadow: var(--v2-elevation-raised, 0 6px 20px rgba(0, 0, 0, 0.38));
+  z-index: 2;
+  transition-duration: 0.08s;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-component="kanban-card"],
+  [data-component="kanban-card"]:hover:not(:active),
+  [data-component="kanban-card"]:active {
+    transform: none;
+    transition: background-color 0.15s;
+  }
+}
