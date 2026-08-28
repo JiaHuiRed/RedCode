@@ -9,7 +9,9 @@ import { ProviderTransform } from "@/provider/transform"
 
 import PROMPT_GENERATE from "./generate.md" with { type: "text" }
 import PROMPT_COMPACTION from "./prompt/compaction.md" with { type: "text" }
-import EXPLORE_MD from "../../../../seed/agent/explore.md" with { type: "text" }
+import DEFINITION_EXPLORE from "./definition/explore.md" with { type: "text" }
+import DEFINITION_ADVISE from "./definition/advise.md" with { type: "text" }
+import DEFINITION_EXECUTE from "./definition/execute.md" with { type: "text" }
 import PROMPT_SCOUT from "./prompt/scout.md" with { type: "text" }
 import PROMPT_SUMMARY from "./prompt/summary.md" with { type: "text" }
 import PROMPT_TITLE from "./prompt/title.md" with { type: "text" }
@@ -27,13 +29,28 @@ import * as Option from "effect/Option"
 import * as OtelTracer from "@effect/opentelemetry/Tracer"
 import { type DeepMutable } from "@redcode-ai/core/schema"
 
-// 260828 cc 工种的提示词与权限单一来源在 seed/agent/*.md。这里用 with { type: "text" } 在
-// **构建期**把同一份文件内联进二进制（seed/ 本身不进发布包，运行时读盘拿不到），运行时
-// ConfigAgent.load 再从 ~/.redcode/agent/ 读同一份做覆盖 —— 两条路同源，不再有第二份副本。
-// 不能改成运行时读盘：Info.prompt 在 llm/request.ts:60 是**替换**模型家族提示词而非追加，
-// 文件缺失不会报错、只会静默回落（title/compaction 显式传 system: [] 时尤其致命）。
-const promptBody = (md: string) => matter(md).content.trim()
-const PROMPT_EXPLORE = promptBody(EXPLORE_MD)
+// 260828 cc 三个子代理工种的**唯一定义来源**是 src/agent/definition/*.md：frontmatter 给
+// mode / description / model / variant / timeout_ms / permission，正文给提示词。这里用
+// with { type: "text" } 在**构建期**把整份文件内联进二进制。
+//
+// 不能改成运行时读盘：src/ 不进发布包，而且 Info.prompt 在 llm/request.ts:60 是**替换**模型家族
+// 提示词而非追加 —— 文件缺失不会报错，只会静默回落。
+//
+// 这三份也**不进 sync-home**（script/sync-home.bat 的 agent 块已删）：~/.redcode/agent/ 里一旦躺着
+// 同名副本，ConfigAgent.load 会把同一段扁平白名单再 concat 到 `user` 之后，findLast 之下把下面补的
+// external_directory 和用户全局 permission 一起作废。详见 docs/agent-roles-plan.md 修正八 / 修正九。
+//
+// ⚠ gray-matter 按内容缓存：同一份字符串两次 matter() 返回**同一个对象**，解出来的 data 绝不能就地改。
+type Definition = { data: Record<string, any>; prompt: string }
+const parseDefinition = (md: string): Definition => {
+  const parsed = matter(md)
+  return { data: parsed.data, prompt: parsed.content.trim() }
+}
+const DEFINITIONS = {
+  explore: parseDefinition(DEFINITION_EXPLORE),
+  advise: parseDefinition(DEFINITION_ADVISE),
+  execute: parseDefinition(DEFINITION_EXECUTE),
+}
 
 export const Info = Schema.Struct({
   name: Schema.String,
@@ -152,6 +169,39 @@ export const layer = Layer.effect(
 
         const user = Permission.fromConfig(cfg.permission ?? {})
 
+        // 260828 cc 由 md 定义的工种：frontmatter -> Info 的字段映射只在这里做一次，
+        // 不再在下面的 agents 记录里手写第二遍（4a/4b 时 description 与 permission 各有两份、且已经不一致）。
+        const subagent = (name: keyof typeof DEFINITIONS): Info => {
+          const { data, prompt } = DEFINITIONS[name]
+          return {
+            name,
+            description: data.description,
+            mode: data.mode ?? "subagent",
+            native: true,
+            prompt,
+            options: {},
+            ...(data.model ? { model: Provider.parseModel(data.model) } : {}),
+            ...(data.fallback_model ? { fallbackModel: Provider.parseModel(data.fallback_model) } : {}),
+            ...(data.variant !== undefined ? { variant: data.variant } : {}),
+            ...(data.timeout_ms !== undefined ? { timeoutMs: data.timeout_ms } : {}),
+            ...(data.temperature !== undefined ? { temperature: data.temperature } : {}),
+            ...(data.top_p !== undefined ? { topP: data.top_p } : {}),
+            ...(data.steps !== undefined ? { steps: data.steps } : {}),
+            ...(data.color !== undefined ? { color: data.color } : {}),
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig(data.permission ?? {}),
+              // md 白名单第一条是 "*": deny（rule 是 permission="*" / pattern="*"），findLast 之下它会把
+              // defaults 里**对象型**的 external_directory 整段作废 —— 而这份白名单依赖 ctx.directory 与
+              // skill.dirs()，md 里静态表达不了，只能在这里重新宣告一遍。
+              // 位置必须是「md 之后、user 之前」：挪到下面 Truncate.GLOB 那个循环后补丁里，会把用户自己在
+              // permission.external_directory 配的白名单从 allow 压成 ask（docs/agent-roles-plan.md 修正八）。
+              Permission.fromConfig({ external_directory: readonlyExternalDirectory }),
+              user,
+            ),
+          }
+        }
+
         const agents: Record<string, Info> = {
           build: {
             name: "build",
@@ -227,33 +277,9 @@ export const layer = Layer.effect(
             mode: "subagent",
             native: true,
           },
-          explore: {
-            name: "explore",
-            permission: Permission.merge(
-              defaults,
-              Permission.fromConfig({
-                "*": "deny",
-                grep: "allow",
-                glob: "allow",
-                list: "allow",
-                bash: "allow",
-                webfetch: "allow",
-                websearch: "allow",
-                read: "allow",
-                external_directory: readonlyExternalDirectory,
-                // 260808 Red 索引/类型查询放行——探索子代理此前只能 grep/read 硬读，
-                // 白白浪费效率与 token（jcodemunch 索引命中即可跳过原文件读取）
-                "jcodemunch_*": "allow",
-                "typegraph_*": "allow",
-              }),
-              user,
-            ),
-            description: `Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. "src/components/**/*.tsx"), search code for keywords (eg. "API endpoints"), or answer questions about the codebase (eg. "how do API endpoints work?"). When calling this agent, specify the desired thoroughness level: "quick" for basic searches, "medium" for moderate exploration, or "very thorough" for comprehensive analysis across multiple locations and naming conventions.`,
-            prompt: PROMPT_EXPLORE,
-            options: {},
-            mode: "subagent",
-            native: true,
-          },
+          explore: subagent("explore"),
+          advise: subagent("advise"),
+          execute: subagent("execute"),
           ...(flags.experimentalScout
             ? {
                 scout: {

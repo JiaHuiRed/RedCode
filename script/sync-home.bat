@@ -26,11 +26,12 @@ rem Private-repo edits (persona commands etc.) are never overwritten.
 if not exist "%USERPROFILE%\.redcode\command" mkdir "%USERPROFILE%\.redcode\command" >nul 2>&1
 if exist "seed\command" for %%F in (seed\command\*) do if not exist "%USERPROFILE%\.redcode\command\%%~nxF" copy /y "%%F" "%USERPROFILE%\.redcode\command\%%~nxF" >nul
 
-rem global agents: repo staging -> ~/.redcode/agent (engine scans {agent,agents} under .redcode dirs)
-rem 260805 added: architect/fixer/reviewer had been sitting in the staging dir since 1b6c1e3 with
-rem nothing loading them - `agent list` never showed them. Seeding them here is what makes them real.
-if not exist "%USERPROFILE%\.redcode\agent" mkdir "%USERPROFILE%\.redcode\agent" >nul 2>&1
-if exist "seed\agent" for %%F in (seed\agent\*.md) do if not exist "%USERPROFILE%\.redcode\agent\%%~nxF" copy /y "%%F" "%USERPROFILE%\.redcode\agent\%%~nxF" >nul
+rem 260828 no agent seeding on purpose: the three built-in subagents (explore/advise/execute) are
+rem defined in packages/opencode/src/agent/definition/*.md and inlined at BUILD time. Seeding a
+rem byte-identical copy into ~/.redcode/agent/ would make ConfigAgent.load append the same flat
+rem whitelist AFTER the user's global permission - findLast then voids both that and the engine's
+rem external_directory patch. See docs/agent-roles-plan.md, correction 9. Hand-written agent md
+rem in ~/.redcode/agent/ still works; we just no longer ship one.
 
 rem global scripts: repo staging -> ~/.redcode/scripts (called by slash commands, e.g. /recall)
 rem true mirror: wipe first so deleted-in-repo scripts do not linger in home

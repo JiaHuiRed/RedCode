@@ -9,16 +9,31 @@ description: >-
   "very thorough" for comprehensive analysis across multiple locations and naming conventions.
 model: stepfun-step-plan/step-3.7-flash
 timeout_ms: 180000
-# 260828 cc 这份 md 是 explore 提示词与权限的**唯一来源**：agent.ts 用 with { type: "text" }
-# 把本文件内联进二进制（构建期），运行时 ConfigAgent.load 又会从 ~/.redcode/agent/ 读同一份，
-# 两条路指向同一个文件，不再有第二份副本。改这里就够了。
+# 260828 cc 这份 md 是本工种**唯一的定义来源**：frontmatter 给 mode/description/model/超时与权限，
+# 正文给提示词。agent.ts 用 with { type: "text" } 在**构建期**把整份文件内联进二进制，运行时用
+# gray-matter 剥出来 —— 不是读盘（seed 与 src 都不进发布包；而且 Info.prompt 在 llm/request.ts 是
+# **替换**模型家族提示词而非追加，文件缺失不报错、只静默回落）。改这里就够了。
 #
-# 权限是**扁平白名单**，第一条必须是 "*": deny —— Permission.merge 是数组 concat、evaluate 是
-# findLast（core/permission.ts:33-35 / 21-31），块首尾相接时后一个块的 "*": deny 会把前一个块
-# 的全部 allow 作废。所以别用"继承 + 追加"的写法。
+# 这份 md **不会**被 sync-home 播到 ~/.redcode/agent/：一旦那里躺着同名副本，ConfigAgent.load 会把
+# 同一段白名单再 concat 到用户全局 permission 之后，findLast 下把它和 agent.ts 补的 external_directory
+# 一起作废。详见 docs/agent-roles-plan.md 修正九。
+#
+# 权限是**扁平白名单**，第一条必须是 "*": deny —— Permission.merge 是数组 concat、evaluate 是 findLast
+# （packages/core/src/permission.ts:33-35 / 21-31），块首尾相接时后一个块的 "*": deny 会把前一个块的
+# 全部 allow 作废。所以别用「继承 + 追加」的写法。
+#
+# ⚠ "*": deny 也会盖掉 defaults 里 **ask 档**的几项：destructive 与 doom_loop 实际是 **deny**（硬失败，
+# permission/index.ts 直接 DeniedError，不是弹询问），不是 ask；skill 也整个不可见（skill/index.ts 按
+# evaluate("skill", name) 过滤）。要放宽就在下面白名单里显式写 destructive: ask / skill: allow。
 permission:
   "*": deny
-  read: allow
+  # read 必须写成对象形式：defaults 里是 { "*": allow, "*.env": ask, ... }（agent.ts 的 defaults），
+  # 一条扁平的 read: allow（pattern "*"）排在后面会把整个对象白名单顶掉，.env 的 ask 护栏当场失效。
+  read:
+    "*": allow
+    "*.env": ask
+    "*.env.*": ask
+    "*.env.example": allow
   grep: allow
   glob: allow
   list: allow

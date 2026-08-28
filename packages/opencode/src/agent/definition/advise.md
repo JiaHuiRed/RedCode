@@ -6,15 +6,31 @@ description: 方案设计与代码审查专家（只读）。当需要设计方�
 # 带 image 输入的模型。⚠ vision-exp 的推理消耗波动极大（同一 prompt 实测 65 / 490 token
 # 两次），输出预算给小了会把正文截断成半句——真出现截断就加 timeout_ms + fallback_model。
 model: deepseek/deepseek-v4-flash-vision-exp
-# 260828 cc 权限是**扁平白名单**，第一条必须是 "*": deny —— Permission.merge 是数组 concat、
-# evaluate 是 findLast（core/permission.ts:33-35 / 21-31），块首尾相接时后一个块的 "*": deny
-# 会把前一个块的全部 allow 作废。合并 architect + reviewer 时不能"两段拼接"，只能手写一份。
+# 260828 cc 这份 md 是本工种**唯一的定义来源**：frontmatter 给 mode/description/model/权限，正文给
+# 提示词。agent.ts 用 with { type: "text" } 在**构建期**把整份文件内联进二进制，运行时用 gray-matter
+# 剥出来 —— 不是读盘（src 不进发布包）。这份 md **不会**被 sync-home 播到 ~/.redcode/agent/：一旦那里
+# 躺着同名副本，ConfigAgent.load 会把同一段白名单再 concat 到用户全局 permission 之后，findLast 下把
+# 它和 agent.ts 补的 external_directory 一起作废。详见 docs/agent-roles-plan.md 修正九。
 #
-# bash 是合并时的真冲突项：reviewer 有（要跑 git diff/status 看改动）、architect 没有。
-# 取宽 —— 没有 bash 它做不了代码审查这个本职；破坏性操作仍由 defaults 的 destructive: ask 拦着。
+# 权限是**扁平白名单**，第一条必须是 "*": deny —— Permission.merge 是数组 concat、evaluate 是 findLast
+# （packages/core/src/permission.ts:33-35 / 21-31），块首尾相接时后一个块的 "*": deny 会把前一个块的
+# 全部 allow 作废。所以只能手写一份，不能「两段拼接」也不能「继承 + 追加」。
+#
+# ⚠ "*": deny 也会盖掉 defaults 里 **ask 档**的几项：destructive 与 doom_loop 实际是 **deny**（硬失败，
+# permission/index.ts 直接 DeniedError，不是弹询问），不是 ask；skill 也整个不可见（skill/index.ts 按
+# evaluate("skill", name) 过滤）。要放宽就在下面白名单里显式写 destructive: ask / skill: allow。
+#
+# bash 是合并 architect + reviewer 时的真冲突项：reviewer 有（要跑 git diff/status 看改动）、
+# architect 没有。取宽 —— 没有 bash 它做不了代码审查这个本职。
 permission:
   "*": deny
-  read: allow
+  # read 必须写成对象形式：defaults 里是 { "*": allow, "*.env": ask, ... }（agent.ts 的 defaults），
+  # 一条扁平的 read: allow（pattern "*"）排在后面会把整个对象白名单顶掉，.env 的 ask 护栏当场失效。
+  read:
+    "*": allow
+    "*.env": ask
+    "*.env.*": ask
+    "*.env.example": allow
   grep: allow
   glob: allow
   list: allow

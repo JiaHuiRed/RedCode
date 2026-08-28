@@ -118,6 +118,81 @@ it.instance("explore agent asks for external directories and allows whitelisted 
   }),
 )
 
+// 260828 cc 第 4c-1 步：explore / advise / execute 的定义单一来源是 src/agent/definition/*.md，
+// 内建那份直接吃 frontmatter。下面四条守的是「frontmatter 真被吃进去了」以及「扁平白名单第一条
+// "*": deny 没有把 defaults 里的**对象型**权限一起打掉」——后者是 findLast 语义下最容易回归的一处。
+it.instance("md-defined subagents carry their frontmatter", () =>
+  Effect.gen(function* () {
+    const explore = yield* load((svc) => svc.get("explore"))
+    const advise = yield* load((svc) => svc.get("advise"))
+    const execute = yield* load((svc) => svc.get("execute"))
+    for (const agent of [explore, advise, execute]) {
+      expect(agent).toBeDefined()
+      expect(agent?.mode).toBe("subagent")
+      expect(agent?.native).toBe(true)
+      expect(agent?.prompt?.startsWith("---")).toBe(false)
+      expect(agent?.description).toBeTruthy()
+    }
+    expect(explore?.model).toEqual({ providerID: "stepfun-step-plan", modelID: "step-3.7-flash" })
+    expect(explore?.timeoutMs).toBe(180000)
+    expect(execute?.model).toEqual({ providerID: "opencode-go", modelID: "hy3" })
+    expect(execute?.variant).toBe("none")
+    expect(advise?.model).toEqual({ providerID: "deepseek", modelID: "deepseek-v4-flash-vision-exp" })
+    // 阴性对照：md 的白名单里有 indexgraph_*，4c 之前手写的内建块没有。命中即证明吃的是 frontmatter。
+    expect(evalPerm(explore, "indexgraph_explore")).toBe("allow")
+    // 反向阴性对照：白名单外的 MCP 工具仍被 "*": deny 拦下
+    expect(evalPerm(explore, "some_random_mcp_tool")).toBe("deny")
+  }),
+)
+
+it.instance("md-defined subagents keep the external directory whitelist", () =>
+  Effect.gen(function* () {
+    const test = yield* TestInstance
+    for (const name of ["advise", "execute"]) {
+      const agent = yield* load((svc) => svc.get(name))
+      expect(agent).toBeDefined()
+      // md 里没有 external_directory，全靠 agent.ts 在 md 之后、user 之前重新宣告一遍
+      expect(Permission.evaluate("external_directory", "/some/other/path", agent!.permission).action).toBe("ask")
+      expect(Permission.evaluate("external_directory", Truncate.GLOB, agent!.permission).action).toBe("allow")
+      expect(
+        Permission.evaluate("external_directory", path.join(Global.Path.tmp, "agent-work"), agent!.permission).action,
+      ).toBe("allow")
+      expect(
+        Permission.evaluate(
+          "external_directory",
+          path.join(test.directory, ".redcode", "temp", "agent-work"),
+          agent!.permission,
+        ).action,
+      ).toBe("allow")
+    }
+  }),
+)
+
+it.instance("md-defined subagents keep the .env read guard", () =>
+  Effect.gen(function* () {
+    for (const name of ["explore", "advise", "execute"]) {
+      const agent = yield* load((svc) => svc.get(name))
+      expect(agent).toBeDefined()
+      expect(Permission.evaluate("read", "src/index.ts", agent!.permission).action).toBe("allow")
+      expect(Permission.evaluate("read", "packages/app/.env", agent!.permission).action).toBe("ask")
+      expect(Permission.evaluate("read", "packages/app/.env.local", agent!.permission).action).toBe("ask")
+      expect(Permission.evaluate("read", "packages/app/.env.example", agent!.permission).action).toBe("allow")
+    }
+  }),
+)
+
+it.instance(
+  "per-agent config still wins over the md whitelist",
+  () =>
+    Effect.gen(function* () {
+      const explore = yield* load((svc) => svc.get("explore"))
+      expect(evalPerm(explore, "bash")).toBe("deny")
+      // 同一份 md 的其余白名单不受影响
+      expect(evalPerm(explore, "grep")).toBe("allow")
+    }),
+  { config: { agent: { explore: { permission: { bash: "deny" } } } } },
+)
+
 scout.instance("scout agent allows repo cloning and repo cache reads", () =>
   Effect.gen(function* () {
     const scout = yield* load((svc) => svc.get("scout"))
