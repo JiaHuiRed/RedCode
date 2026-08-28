@@ -345,16 +345,16 @@ the `plan` agent's permission ruleset (`edit: deny *`).
 
 When a user's config is broken and redcode won't start, these env vars help:
 
-- `OPENCODE_DISABLE_PROJECT_CONFIG=1`: skip the project's local `redcode.json`
+- `REDCODE_DISABLE_PROJECT_CONFIG=1`: skip the project's local `redcode.json`
   and start from globals only. Run from the project directory, redcode loads,
   the user edits the broken file, then they restart without the flag.
-- `OPENCODE_CONFIG=/path/to/file.json`: load an additional explicit config.
-- `OPENCODE_CONFIG_CONTENT='{"$schema":"https://redcode.ai/config.json"}'`:
+- `REDCODE_CONFIG=/path/to/file.json`: load an additional explicit config.
+- `REDCODE_CONFIG_CONTENT='{"$schema":"https://redcode.ai/config.json"}'`:
   inject inline JSON as a final local-scope merge.
-- `OPENCODE_DISABLE_DEFAULT_PLUGINS=1`: skip default plugins.
-- `OPENCODE_PURE=1`: skip external plugins entirely.
-- `OPENCODE_DISABLE_EXTERNAL_SKILLS=1`,
-  `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1`: skip the external skill scans under
+- `REDCODE_DISABLE_DEFAULT_PLUGINS=1`: skip default plugins.
+- `REDCODE_PURE=1`: skip external plugins entirely.
+- `REDCODE_DISABLE_EXTERNAL_SKILLS=1`,
+  `REDCODE_DISABLE_CLAUDE_CODE_SKILLS=1`: skip the external skill scans under
   `~/.claude/` and `~/.agents/`.
 
 ## When proposing edits

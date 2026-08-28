@@ -26,7 +26,7 @@ const agentLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
   )
 
 const it = testEffect(agentLayer())
-const scout = testEffect(agentLayer({ experimentalScout: true }))
+const scout = testEffect(agentLayer({ experimentalReference: true }))
 
 // Helper to evaluate permission for a tool with wildcard pattern
 function evalPerm(agent: Agent.Info | undefined, permission: string): Permission.Action | undefined {
@@ -275,7 +275,7 @@ it.instance(
   { config: { agent: { explore: { permission: { bash: "deny" } } } } },
 )
 
-// 260828 cc scout 已并入 explore：agent 没了，flag（experimentalScout）留着，因为它还门控 @reference
+// 260828 cc scout 已并入 explore：agent 没了，flag（experimentalReference）留着，因为它还门控 @reference
 // 的 git 物化与 repo_clone/repo_overview 的注册。连带后果是这两个工具**没有任何角色再放行** ——
 // 依赖缓存能力就此退役（全量历史零调用，这正是 0.9.8 把它们放进 GATED_TOOLS 的原因）。
 scout.instance("scout is merged into explore and the repo cache tools are retired", () =>

@@ -310,7 +310,7 @@ export const layer = Layer.effect(
             tool.todoread,
             ...(flags.enableGoalTools ? [tool.goal_set, tool.goal_done, tool.goal_clear] : []),
             tool.search,
-            ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
+            ...(flags.experimentalReference ? [tool.repo_clone, tool.repo_overview] : []),
             tool.skill,
             tool.patch,
             ...(flags.experimentalLspTool ? [tool.lsp] : []),

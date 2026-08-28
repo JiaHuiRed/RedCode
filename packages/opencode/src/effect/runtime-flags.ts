@@ -44,7 +44,16 @@ export class Service extends ConfigService.Service<Service>()("@redcode/RuntimeF
   // 引擎侧的目标注入（prompt.ts / goal-continuation.ts）只在有 active goal 时才发，功能从没被启用过。
   // 设 REDCODE_ENABLE_GOAL_TOOLS=true 可恢复。
   enableGoalTools: bool("REDCODE_ENABLE_GOAL_TOOLS"),
-  experimentalScout: enabledByExperimental("REDCODE_EXPERIMENTAL_SCOUT"),
+  // 260828 cc 从 experimentalScout 改名而来。scout agent 已并入 explore，但这个 flag 还门控着
+  // @reference 的 git 物化（reference/reference.ts:128/208/218/224）与 repo_clone / repo_overview
+  // 的注册（tool/registry.ts:313）—— 名字跟它管的东西彻底对不上了。
+  // 保留 legacy 键：REDCODE_EXPERIMENTAL_SCOUT 可能已经写在 live 环境里，静默失效等于悄悄关掉
+  // @reference 的物化。三键写法与 enableExa / enableParallel 一致。
+  experimentalReference: Config.all({
+    experimental,
+    enabled: bool("REDCODE_EXPERIMENTAL_REFERENCE"),
+    legacy: bool("REDCODE_EXPERIMENTAL_SCOUT"),
+  }).pipe(Config.map((flags) => flags.experimental || flags.enabled || flags.legacy)),
   // 260717 Red 默认开启：非后台模式下派发子代理会一直占着 session busy 直到子代理跑完，
   // 主界面全程没法交互，等于白设计了后台任务这条路。设 REDCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=false 可退回旧行为。
   experimentalBackgroundSubagents: boolDefaultTrue("REDCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS"),

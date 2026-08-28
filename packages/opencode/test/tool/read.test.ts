@@ -60,7 +60,7 @@ const readLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
   )
 
 const it = testEffect(readLayer())
-const scout = testEffect(readLayer({ experimentalScout: true }))
+const scout = testEffect(readLayer({ experimentalReference: true }))
 
 const init = Effect.fn("ReadToolTest.init")(function* () {
   const info = yield* ReadTool

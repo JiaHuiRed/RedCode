@@ -52,7 +52,7 @@ describe("RuntimeFlags", () => {
       expect(flags.enableParallel).toBe(true)
       expect(flags.enableExperimentalModels).toBe(true)
       expect(flags.enableQuestionTool).toBe(true)
-      expect(flags.experimentalScout).toBe(true)
+      expect(flags.experimentalReference).toBe(true)
       expect(flags.experimentalBackgroundSubagents).toBe(true)
       expect(flags.experimentalLspTy).toBe(false)
       expect(flags.experimentalLspTool).toBe(true)
@@ -76,6 +76,23 @@ describe("RuntimeFlags", () => {
       )
 
       expect(flags.experimentalLspTy).toBe(true)
+    }),
+  )
+
+  // 260828 cc experimentalScout -> experimentalReference 改名时保留了 legacy 键：
+  // REDCODE_EXPERIMENTAL_SCOUT 可能已经写在 live 环境里，静默失效等于悄悄关掉 @reference 的
+  // git 物化与 repo_clone / repo_overview 的注册。三条路径都要通。
+  it.effect("enables @reference materialization via new, legacy, or umbrella flag", () =>
+    Effect.gen(function* () {
+      const renamed = yield* readFlags.pipe(Effect.provide(fromConfig({ REDCODE_EXPERIMENTAL_REFERENCE: "true" })))
+      const legacy = yield* readFlags.pipe(Effect.provide(fromConfig({ REDCODE_EXPERIMENTAL_SCOUT: "true" })))
+      const umbrella = yield* readFlags.pipe(Effect.provide(fromConfig({ REDCODE_EXPERIMENTAL: "true" })))
+      const none = yield* readFlags.pipe(Effect.provide(fromConfig({})))
+
+      expect(renamed.experimentalReference).toBe(true)
+      expect(legacy.experimentalReference).toBe(true)
+      expect(umbrella.experimentalReference).toBe(true)
+      expect(none.experimentalReference).toBe(false)
     }),
   )
 

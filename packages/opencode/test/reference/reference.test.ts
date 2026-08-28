@@ -32,7 +32,7 @@ const scout = testEffect(
     AppFileSystem.defaultLayer,
     CrossSpawnSpawner.defaultLayer,
     Git.defaultLayer,
-    referenceLayer({ experimentalScout: true }),
+    referenceLayer({ experimentalReference: true }),
   ),
 )
 

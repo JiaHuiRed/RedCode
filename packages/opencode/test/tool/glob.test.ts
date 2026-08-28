@@ -38,7 +38,7 @@ const toolLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
   )
 
 const it = testEffect(toolLayer())
-const scout = testEffect(toolLayer({ experimentalScout: true }))
+const scout = testEffect(toolLayer({ experimentalReference: true }))
 
 const ctx = {
   sessionID: SessionID.make("ses_test"),

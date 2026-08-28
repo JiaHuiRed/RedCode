@@ -73,10 +73,36 @@ export const layer = Layer.effect(
       // red-scribe 之后的 skill 全部不播种（实测 13 个只落 7 个，静默无提示）。
       yield* Effect.gen(function* () {
         // 260805 源目录 .opencode -> seed（本仓的暂存/种子目录改名，见 script/sync-home.bat）
-        const srcSkillDir = path.join(ctx.directory, "seed", "skill")
+        //
+        // 260828 cc 原来只试 `ctx.directory/seed/skill` —— 那是**当前项目目录**，不是安装目录。
+        // 在 RedCode 仓库之外启动时这个路径必然不存在，于是直接 `return`，全局 skill 一个都不播，
+        // 而且**一声不响**。同一类病见底本修正七（读盘 vs 内联）。
+        //
+        // 现在按候选顺序找，并且找不到时打一条 warning 而不是静默早退。注意真正的长期修法是把
+        // seed/skill 随发布包一起发（今天只有 script/sync-home.bat 在**构建机**上拷过去），
+        // 那是构建系统的事，这里先把「失败可见」拿到手。
         const destSkillDir = path.join(redcodeHome, "skill")
-        const srcExists = yield* fs.existsSafe(srcSkillDir)
-        if (!srcExists) return
+        const candidates = [
+          path.join(ctx.directory, "seed", "skill"),
+          // 编译产物：<dist>/bin/redcode.exe -> <dist>/seed/skill
+          path.join(path.dirname(process.execPath), "..", "seed", "skill"),
+        ]
+        let srcSkillDir: string | undefined
+        for (const candidate of candidates) {
+          if (yield* fs.existsSafe(candidate)) {
+            srcSkillDir = candidate
+            break
+          }
+        }
+        if (!srcSkillDir) {
+          const destExists = yield* fs.existsSafe(destSkillDir)
+          // 目标目录已经有东西（构建机上 sync-home.bat 拷过）就不用吵
+          if (!destExists)
+            yield* Effect.logWarning(
+              `skill seeding skipped: no seed/skill found (tried ${candidates.join(", ")})`,
+            )
+          return
+        }
         yield* fs.ensureDir(destSkillDir)
         const entries = yield* Effect.tryPromise(() =>
           import("fs/promises").then((fsp) => fsp.readdir(srcSkillDir, { withFileTypes: true })),

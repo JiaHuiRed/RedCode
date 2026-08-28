@@ -119,7 +119,7 @@ const brokenPluginLayer = Layer.succeed(
 
 const it = testEffect(Layer.mergeAll(registryLayer(), node, Agent.defaultLayer))
 const scout = testEffect(
-  Layer.mergeAll(registryLayer({ flags: { experimentalScout: true } }), node, Agent.defaultLayer),
+  Layer.mergeAll(registryLayer({ flags: { experimentalReference: true } }), node, Agent.defaultLayer),
 )
 const background = testEffect(
   Layer.mergeAll(registryLayer({ flags: { experimentalBackgroundSubagents: true } }), node, Agent.defaultLayer),
