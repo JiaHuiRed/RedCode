@@ -9,6 +9,18 @@ import { fileURLToPath } from "node:url"
 const MAX_BASE64_BYTES = 5 * 1024 * 1024
 const MAX_WIDTH = 2000
 const MAX_HEIGHT = 2000
+// 260828 cc 尺寸规则从「长边盒子」改成「总像素预算 + 每边硬帽」。
+//
+// 旧规则 scale = min(1, maxW/W, maxH/H) 是个 2000x2000 的盒子：一张 2000x20000 的
+// 长截图（网页整页截图、聊天记录截图）会被缩到 **200px 宽**，文字全糊。而它的代价
+// 本来就该由**总像素数**决定 —— 视觉 token 是按面积算的，不是按最长边。
+//
+// 新规则：等比缩到总像素 <= maxPixels，再用 maxDimension 夹一次极端单轴。同一张
+// 2000x20000 现在得到约 632x6325（面积不变、宽度是原来的 3 倍多）；正方形图的行为
+// 与之前**逐像素相同**（2000x2000 = 4,000,000 = 默认预算，scale 仍是 1）。
+// 形态取自 deepseek-harness 的 alpha-routed-image-quality-ladders（它用 2048² + 8192）。
+const MAX_PIXELS = MAX_WIDTH * MAX_HEIGHT
+const MAX_DIMENSION = 8192
 const AUTO_RESIZE = true
 // 260822 cc 必须严格单调递减，否则后面的档位不可达。
 //
@@ -129,6 +141,10 @@ export const layer = Layer.effect(
         autoResize: image?.auto_resize ?? AUTO_RESIZE,
         maxWidth: image?.max_width ?? MAX_WIDTH,
         maxHeight: image?.max_height ?? MAX_HEIGHT,
+        // 未显式设 max_pixels 时，预算沿用 max_width * max_height —— 既有配置的
+        // 总量语义不变，变的只是「怎么把这些像素分配到两个轴上」。
+        maxPixels: image?.max_pixels ?? (image?.max_width ?? MAX_WIDTH) * (image?.max_height ?? MAX_HEIGHT),
+        maxDimension: image?.max_dimension ?? MAX_DIMENSION,
         maxBase64Bytes: image?.max_base64_bytes ?? MAX_BASE64_BYTES,
       }
       if (!input.url.startsWith("data:") || !input.url.includes(";base64,"))
@@ -150,6 +166,17 @@ export const layer = Layer.effect(
       try {
         const originalWidth = decoded.get_width()
         const originalHeight = decoded.get_height()
+        // 260828 cc **透传闸门刻意仍用旧的每边盒子**，不用像素预算。
+        //
+        // 实测过：把闸门也换成像素预算，`test/image/fixtures/picture-5mb-base64.png`
+        // （2964x488 = 1.45M px、base64 恰好 5.00MB）会从"缩到 2000x329 再编码得
+        // 0.09MB"变成"原样透传 5.00MB"—— **55 倍**。旧规则那个小 payload 是盒子的
+        // 副作用而不是有意的字节策略，像素预算一放宽，5MB 的硬上限就成了唯一约束。
+        // 官方不按人民币计费，本仓按。
+        //
+        // 所以只让**缩放算法**用像素预算：该被重编码的照旧被重编码，变的只是"这些
+        // 像素怎么分配到两个轴上"。真要放宽透传是独立决策，得先定一个远低于 5MB 的
+        // 重编码目标线。
         if (originalWidth <= info.maxWidth && originalHeight <= info.maxHeight && bytes <= info.maxBase64Bytes)
           // in-budget 原样透传：返回同一个 part 对象引用，逐字节相同（内容寻址去重的前提）
           return { part: input }
@@ -163,7 +190,12 @@ export const layer = Layer.effect(
             max_height: info.maxHeight,
           })
 
-        const scale = Math.min(1, info.maxWidth / originalWidth, info.maxHeight / originalHeight)
+        const scale = Math.min(
+          1,
+          Math.sqrt(info.maxPixels / (originalWidth * originalHeight)),
+          info.maxDimension / originalWidth,
+          info.maxDimension / originalHeight,
+        )
         for (const size of Array.from({ length: 32 }).reduce<Array<{ width: number; height: number }>>((acc) => {
           const previous = acc.at(-1) ?? {
             width: Math.max(1, Math.round(originalWidth * scale)),
@@ -179,15 +211,31 @@ export const layer = Layer.effect(
           return acc.some((item) => item.width === next.width && item.height === next.height) ? acc : [...acc, next]
         }, [])) {
           const resized = photon.resize(decoded, size.width, size.height, photon.SamplingFilter.Lanczos3)
-          const candidate = [
-            { data: Buffer.from(resized.get_bytes()).toString("base64"), mime: "image/png" },
+          // 260828 cc 两处改动，都搬自 harness 的 alpha-routed image ladders：
+          //
+          // 1. **懒求值**。原来是先把 [png, q80, q70, q55, q40] 五档**全部编码**，再
+          //    `.find()` 取第一个达标的 —— 尺寸降级最多 32 档，最坏 160 次编码，而
+          //    实际只需要第一个达标的那一次（2000x1333 单次 JPEG 编码实测 ~332ms）。
+          // 2. **按 alpha 路由**。JPEG 源不可能带 alpha，给它排一个 PNG 候选是纯浪费：
+          //    PNG 对照片类内容既慢又大，而它排在第一位，一旦碰巧落在字节预算内就会被
+          //    选中 —— 那正是上游 #2885 那类「照片被路由到无损编码器」的病。alpha 探测
+          //    只读源 mime，不解码、零成本；非 JPEG 一律保守当作可能有 alpha。
+          const mayHaveAlpha = input.mime !== "image/jpeg"
+          const ladder: Array<{ mime: string; encode: () => Uint8Array }> = [
+            ...(mayHaveAlpha ? [{ mime: "image/png", encode: () => resized.get_bytes() }] : []),
             ...JPEG_QUALITIES.map((quality) => ({
-              data: Buffer.from(resized.get_bytes_jpeg(quality)).toString("base64"),
               mime: "image/jpeg",
+              encode: () => resized.get_bytes_jpeg(quality),
             })),
           ]
-            .map((item) => ({ ...item, bytes: Buffer.byteLength(item.data, "utf8") }))
-            .find((item) => item.bytes <= info.maxBase64Bytes)
+          let candidate: { data: string; mime: string; bytes: number } | undefined
+          for (const step of ladder) {
+            const data = Buffer.from(step.encode()).toString("base64")
+            const encoded = Buffer.byteLength(data, "utf8")
+            if (encoded > info.maxBase64Bytes) continue
+            candidate = { data, mime: step.mime, bytes: encoded }
+            break
+          }
           resized.free()
 
           if (candidate) {
