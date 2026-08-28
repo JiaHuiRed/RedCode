@@ -8,7 +8,7 @@ import { useServerSync } from "@/context/server-sync"
 import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
 import { useLanguage } from "@/context/language"
-import { sessionTitle } from "@/utils/session-title"
+import { sessionTitleParts } from "@/utils/session-title"
 import { messageAgentColor } from "@/utils/agent"
 import { classifySession } from "@/utils/session-status"
 import type { LocalProject } from "@/context/layout"
@@ -27,6 +27,8 @@ type KanbanColumn = {
 // 260615 Red Kanban 看板视图：按会话运行状态分列（工作中/需关注/空闲）
 export function HomeKanban(props: {
   records: KanbanRecord[]
+  /** 当前选中的项目名。卡片只在自己不属于它时才印项目名 —— 否则那是个常量。 */
+  selectedProjectName?: string
   openSession: (session: Session) => void
   onArchive: (session: Session) => void
   onUnarchive?: (session: Session) => void
@@ -109,6 +111,7 @@ export function HomeKanban(props: {
                     <KanbanCard
                       record={record}
                       columnId={column.id}
+                      selectedProjectName={props.selectedProjectName}
                       onClick={() => props.openSession(record.session)}
                       onArchive={() => props.onArchive(record.session)}
                       onUnarchive={() => props.onUnarchive?.(record.session)}
@@ -127,6 +130,7 @@ export function HomeKanban(props: {
 function KanbanCard(props: {
   record: KanbanRecord
   columnId: KanbanColumn["id"]
+  selectedProjectName?: string
   onClick: () => void
   onArchive: () => void
   onUnarchive?: () => void
@@ -134,7 +138,17 @@ function KanbanCard(props: {
   const globalSync = useServerSync()
   const language = useLanguage()
   const [store] = globalSync.child(props.record.session.directory, { bootstrap: false })
-  const title = createMemo(() => sessionTitle(props.record.session.title) || props.record.session.id)
+  // 260828 cc 人格前缀（`[宋雨琦] …`）从标题里拆出来降到第二行。同一批卡片的前缀几乎
+  // 恒等，留在标题开头等于让一个常量占掉每张卡最值钱的那几个字符。
+  const parts = createMemo(() => sessionTitleParts(props.record.session.title))
+  const title = createMemo(() => parts().text || props.record.session.id)
+  // 260828 cc 项目名只在与当前选中项目不同时才印（sandbox/worktree 会话可能归属别的项目行）。
+  // 相同时它是个常量，占了第二行一半宽度却零信息量 —— 侧边栏已经高亮着那个项目了。
+  const foreignProject = createMemo(() =>
+    props.record.projectName && props.record.projectName !== props.selectedProjectName
+      ? props.record.projectName
+      : undefined,
+  )
   const tint = createMemo(() => messageAgentColor(store.message[props.record.session.id], store.agent))
   // 260710 Red 看板卡片显示会话日期
   const dateLabel = createMemo(() => {
@@ -165,7 +179,7 @@ function KanbanCard(props: {
           <Show when={props.columnId === "attention"}>
             <div class="size-1.5 shrink-0 rounded-full bg-surface-warning-strong" />
           </Show>
-          <span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-base [font-weight:530] text-[13px]">
+          <span class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-base [font-weight:530] text-[13px]">
             {title()}
           </span>
           {/* 260823 Red 压缩中徽标：session.time.compacting 非空 = 正按 token 预算在后台压缩，
@@ -176,10 +190,13 @@ function KanbanCard(props: {
             </span>
           </Show>
         </div>
-        <div class="flex items-center gap-1 min-w-0 w-full">
-          <Show when={props.record.projectName}>
+        <div class="flex items-center gap-1.5 min-w-0 w-full">
+          <Show when={parts().persona}>
+            <span class="shrink-0 text-v2-text-text-faint [font-weight:440] text-[11px]">{parts().persona}</span>
+          </Show>
+          <Show when={foreignProject()}>
             <span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-muted [font-weight:440] text-[11px]">
-              {props.record.projectName}
+              {foreignProject()}
             </span>
           </Show>
           <span class="ml-auto shrink-0 text-v2-text-text-faint [font-weight:400] text-[10px]">{dateLabel()}</span>

@@ -392,6 +392,7 @@ function HomeDesign() {
                 <Match when={state.view === "kanban"}>
                   <HomeKanban
                     records={records()}
+                    selectedProjectName={selectedProject() ? displayName(selectedProject()!) : undefined}
                     openSession={openSession}
                     onArchive={archiveSession}
                     onUnarchive={(session) => void unarchiveSession(session)}
@@ -458,7 +459,24 @@ function HomeShortcutBar() {
     { keys: `${mod}+Shift+⌫`, label: language.t("home.shortcuts.archiveSession") },
   ]
   const [dynamicTip, setDynamicTip] = createSignal<string | undefined>()
-  const tip = createMemo(() => dynamicTip() ?? HOME_TIPS[Math.floor(Math.random() * HOME_TIPS.length)])
+  // 260828 cc 两个问题一起修。
+  //
+  // ① 轮播提示重复正下方的快捷键条。同屏出现「Ctrl+N 新建会话，开启一段新对话」而正下方
+  //    就写着「Ctrl+N 新会话」，两行讲同一件事。`HOME_TIPS` 里凡是教这十个快捷键的条目，
+  //    在这个位置都是零信息量 —— 过滤掉（`shortcutKeys` 由快捷键条自己算出，不用手维护
+  //    第二份名单，加减快捷键时自动同步）。
+  // ② 原来 `tip` 是 `createMemo(() => dynamicTip() ?? HOME_TIPS[random])`：memo 里的
+  //    `Math.random()` 不是响应式的，所以本地库只在挂载那一瞬间抽一次；而 onMount 立刻
+  //    发起 `refresh()`，几秒后 `dynamicTip` 就把它永久顶掉。**50 条本地提示实际上是死的**，
+  //    只在首次生成返回前的那几秒露过脸。改成每次轮询换一条本地的，生成成功再覆盖。
+  const shortcutKeys = new Set(shortcuts.map((item) => item.keys.replace(/^⌘/, "Ctrl")))
+  const localTips = HOME_TIPS.filter((text) => {
+    const key = text.match(/^((?:Ctrl|⌘|Alt|Shift)[^\s]*)/)?.[1]
+    return !key || !shortcutKeys.has(key.replace(/^⌘/, "Ctrl"))
+  })
+  const pickLocalTip = () => localTips[Math.floor(Math.random() * localTips.length)]!
+  const [localTip, setLocalTip] = createSignal(pickLocalTip())
+  const tip = createMemo(() => dynamicTip() ?? localTip())
   // 260811 Red 每 20 分钟向 /experimental/generate 要一条新提示，失败保持现有
   onMount(() => {
     const refresh = async () => {
@@ -473,7 +491,12 @@ function HomeShortcutBar() {
       }
     }
     void refresh()
-    const timer = setInterval(refresh, DYNAMIC_TIP_INTERVAL_MS)
+    const timer = setInterval(() => {
+      // 先换一条本地的，生成成功再被覆盖 —— 生成挂了也仍然会轮换，不会永远停在同一句
+      setLocalTip(pickLocalTip())
+      setDynamicTip(undefined)
+      void refresh()
+    }, DYNAMIC_TIP_INTERVAL_MS)
     onCleanup(() => clearInterval(timer))
   })
   // 260810 cc audit R9: 原硬编码 #4ade80 带 60%/80% alpha，浅色三主题（light/cream/green)
