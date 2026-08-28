@@ -1,4 +1,5 @@
-// 260828 cc 按时段问候，放在字标与输入框之间。
+// 260828 cc 按时段问候。新建会话页（字标与输入框之间）与首页底部共用同一组文案 ——
+// 同一个产品的同一个声音，不该在两个页面上是两套东西。
 //
 // 分档取整点：5–11 早上 / 11–13 中午 / 13–18 下午 / 18–23 晚上 / 其余 深夜。
 // 每档两句，进页面时抽一次。
@@ -8,11 +9,11 @@
 // tips 就是栽在这个写法上（见 home.tsx HomeShortcutBar 的注释）。这里要的正是
 // "每次进页面抽一次"，signal 的初值恰好就是这个语义，也不会被后续渲染改掉。
 const GREETINGS = {
-  morning: ["session.new.greeting.morning.a", "session.new.greeting.morning.b"],
-  noon: ["session.new.greeting.noon.a", "session.new.greeting.noon.b"],
-  afternoon: ["session.new.greeting.afternoon.a", "session.new.greeting.afternoon.b"],
-  evening: ["session.new.greeting.evening.a", "session.new.greeting.evening.b"],
-  night: ["session.new.greeting.night.a", "session.new.greeting.night.b"],
+  morning: ["greeting.morning.a", "greeting.morning.b"],
+  noon: ["greeting.noon.a", "greeting.noon.b"],
+  afternoon: ["greeting.afternoon.a", "greeting.afternoon.b"],
+  evening: ["greeting.evening.a", "greeting.evening.b"],
+  night: ["greeting.night.a", "greeting.night.b"],
 } as const
 
 function greetingBucket(hour: number): keyof typeof GREETINGS {

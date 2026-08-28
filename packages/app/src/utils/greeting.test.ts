@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { pickGreetingKey } from "./session-new-greeting"
+import { pickGreetingKey } from "./greeting"
 import { dict as zh } from "@/i18n/zh"
 
 // 260828 cc 时段分档的闸门。边界（11 点算早上还是中午、23 点算晚上还是深夜）是这类
 // 代码最容易在后续改动里被挪错的地方，而挪错了不会有任何东西报错 —— 只是某个时段的
 // 问候语永远不出现。
 describe("pickGreetingKey 时段分档", () => {
-  const bucketOf = (hour: number) => pickGreetingKey(hour, 0).split(".")[3]
+  const bucketOf = (hour: number) => pickGreetingKey(hour, 0).split(".")[1]
 
   test("五档各自的覆盖区间", () => {
     expect([5, 8, 10].map(bucketOf)).toEqual(["morning", "morning", "morning"])
