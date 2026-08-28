@@ -1221,6 +1221,8 @@ export type ImageAttachmentConfig = {
   auto_resize?: boolean
   max_width?: number
   max_height?: number
+  max_pixels?: number
+  max_dimension?: number
   max_base64_bytes?: number
 }
 

@@ -14356,6 +14356,14 @@
             "type": "integer",
             "exclusiveMinimum": 0
           },
+          "max_pixels": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "max_dimension": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
           "max_base64_bytes": {
             "type": "integer",
             "exclusiveMinimum": 0
