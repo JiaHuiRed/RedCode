@@ -8,6 +8,86 @@
 
 ---
 
+### [0.9.12] - 2026-08-28
+
+> 角色收口过程中顺出来的八条独立项，各自动机独立，单独一批做掉。最要紧的是 `Agent.get` 那个类型谎言——收窄签名后编译器一次抓出两处真的没写守卫的空指针。另有两处**对外文档说错**：环境变量前缀与全局配置路径都是反的。
+
+#### 修复
+
+- **`Agent.get` 的返回类型是谎言，藏住两处空指针**（`agent/agent.ts`、`session/processor.ts`、`session/compaction.ts`）：签名标 `Effect.Effect<Info>`，实现是 `agents[name]`——`noUncheckedIndexedAccess` 关闭下被推成 `Info`，查不到时返回的其实是 undefined。16 个调用点里 12 个自己写了 `if (!x)`，全靠人肉发现。收窄成 `Info | undefined` 后编译器一次抓出 9 处，其中 src 里两处**真的没守卫**：`processor.ts` 的 doom_loop 分支读的是**落库 assistant 消息**的 agent 名（可能已删/已改名，别名表只接得住内建的老名字），紧接着就 `.permission`，真撞上是 TypeError——现在回落到默认姿态的规则集，`doom_loop` 在 defaults 是 ask，只会更谨慎；`compaction.ts` 取内建 `compaction` 机件，查不到属于不变量被破坏，明着抛比在下一行变成 `undefined.model` 强。
+- **`redcode agent create` 造出来的文件永远加载不了**（`cli/cmd/agent.ts`）：它两处都写复数 `agents/`，而 loader 只扫单数——md 型 agent 唯一的运行时创建入口是坏的，创建完立刻「不存在」，只有一条 warning。文档里六处 `~/.redcode/agents/` 是同一个坑的另一半，一并改。
+- **GUI 里每会话的 agent 残留老名字**（`app/context/local.tsx`）：per-session 选择存在 localStorage。原来只有全局默认 `store.current` 有自愈 effect，`saved.session` 没有——`pickAgent` 查不到时回落到 `items[0]`（**显示是对的**，看不出问题），但存的值原样留着，而 `write()` 每次改模型/变体都把 `scope()` 摊开写回去，`restore()` 的守卫又保证它再没机会被覆盖。补一条同款 effect，列表就绪后把不在列表里的名字改写成 `items[0]`（服务端 `list()` 把默认姿态排在第一个，`build` → `redmind` 正好是别名表的目标）。
+- **skill 播种在 RedCode 仓库之外静默早退**（`project/bootstrap.ts`）：源目录写死 `ctx.directory/seed/skill`——那是**当前项目目录**，不是安装目录，别的项目里必然不存在，于是直接 `return`，全局 skill 一个都不播且一声不响。与「md-only 角色在发布二进制里根本不存在」是同一类病（读盘 vs 内联）。改成按候选顺序找（项目目录、`<dist>/bin/../seed/skill`），找不到且目标目录为空时打 warning。⚠ 长期修法（`seed/skill` 随发布包一起发）未做——今天只有 `script/sync-home.bat` 在**构建机**上拷过去，别的机器上从来就没播过。
+
+#### 变更
+
+- **`experimentalScout` 改名 `experimentalReference`**（`effect/runtime-flags.ts`）：scout agent 并入 explore 后，这个 flag 还门控着 @reference 的 git 物化与 `repo_clone` / `repo_overview` 的注册，名字跟它管的东西彻底对不上。新键 `REDCODE_EXPERIMENTAL_REFERENCE`，**保留 legacy 键** `REDCODE_EXPERIMENTAL_SCOUT`——它可能已经写在 live 环境里，静默失效等于悄悄关掉 @reference 的物化。`enabledByExperimental` 只收一个名字，按 `enableExa` / `enableParallel` 那套 `Config.all` 三键写法展开，新增用例覆盖新键 / legacy 键 / `REDCODE_EXPERIMENTAL` 总闸 / 都不设四条路径。
+- **权限叠加的优先级钉成一条用例**（`test/agent/agent.test.ts`）：调研原本记的是「任何用户自建 md agent 的权限块都排在 `cfg.permission` 之后，用户全局配置整段失效」，实测**不成立**——真正出事的是我们自己发的工种 md 经 `~/.redcode/agent/` 回流，那时排在最后的是**我们的**块，已在上一版删掉 sync-home 的 agent 播种时解决。用户自己写的 md 属于「用户的 per-agent 配置」，盖过用户全局是对的。定死的顺序：**defaults < 内建块 < 用户全局 permission < 用户 per-agent 块**。
+
+#### 文档
+
+- **web 的 `agents.mdx` 三语同步**（`packages/web`）：内建清单（Build/Plan + General/Explore/Scout → RedMind/Plan + Explore/Execute）、Explore 的三段职能、Execute、「老名字」一节（写明别名**长期保留**、不承诺过渡后删除）、JSON 一节改成「只能覆写或禁用已存在的角色」、`@general` → `@explore`。**不改 `Share.tsx`**：它那两处 `agent: "build"` 在 v1→v2 消息迁移里给**历史**共享会话补字段，那些消息当年确实跑在 build 上，如实记录历史不是活引用，改成 redmind 反而是篡改。
+- **`customize-redcode.md` 两处硬错**（`skill/prompt/`）：escape hatches 一节的七个环境变量写成 `OPENCODE_` 前缀，逐条对着 `flag.ts` 与 `runtime-flags.ts` 验过，引擎只认 `REDCODE_`，一个都不认；全局路径表写 `~/.config/redcode/` 还特意标注「NOT `~/.redcode/`」，而本 fork 的 `core/global.ts` 把 XDG 目录统一到了 `~/.redcode`（`config: () => root()`），**标反了**。这是进模型上下文的提示词，说错直接误导模型给用户错命令。
+- **`docs/agent-roles-plan.md`** 补到修正十六，迁移步骤 1~6 与八条独立项全部标注落地。
+
+---
+
+### [0.9.11] - 2026-08-28
+
+> **子代理与会话姿态的收口**：对用户可见的角色从 9 个收成 **4 个**（姿态 `redmind` / `plan`，工种 `explore` / `execute`），老名字全部经别名表长期解析。过程中实测出两处**权限回归**——工种读不了工作区外任何路径、`.env` 护栏失效。附带一次明确的能力删除：`redcode.json` 的 `agent.*` 不再能凭空创建角色。
+
+#### 变更
+
+- **角色从 9 个收成 4 个**（`agent/agent.ts`、`agent/definition/*.md`、`config/config.ts`）：姿态 `redmind`（默认）与 `plan`；工种 `explore`（只读——找东西 / 出方案 / 做审查）与 `execute`（可写——实现执行）；机件 `compaction` / `title` / `summary` 隐藏、不进任何列表。删掉的 `build` / `general` / `scout` / `architect` / `reviewer` / `fixer` / `advise` 经**别名表**解析（`build`→`redmind`，`general`/`fixer`→`execute`，其余→`explore`）。别名在 `get`、`list` 的排序谓词、`defaultInfo` **三处共用**——后两者不经过 `get`，只补 `get` 的话 `default_agent: "build"` 照样抛 not found；只补 `defaultInfo` 则排序退化成 name-asc、客户端 `at(0)` 实测变成 **plan**，TUI 与 GUI 都会静默进只读姿态。
+  **别名是长期保留的，不要指望过渡一轮后删除**：`session/compaction.ts` 四处直接 `updateMessage` 铸 `role:"user"` 消息，绕开 `createUserMessage` 与 `Agent.get`，把历史 agent 名原样重铸——跑到自动压缩的老会话每压一次就再生一条 `agent:"build"`。live 规模：session `build` 56 / `general` 15 / `reviewer` 1，assistant 消息 `build` 17,607。
+  **手打 `@architect` 不再可用**：交互式 @ 提及的 part 由客户端从 `list()` 造（`autocomplete.tsx`、`app/prompt-input.tsx`），别名进不去。仍可用的老入口只有 `subagent_type`、历史会话续跑、`--agent`、`default_agent`、配置里的 `agent.<老名>`。
+- **`agent.*` 只能覆写 / 禁用，不能凭空创建**（`agent/agent.ts`、`config/config.ts`、`plugin/index.ts`）：原来配置循环对任何没有内建对应的 key 都造一个 `native:false` / `mode:"all"` / 权限 `"*": allow` / description 为 undefined 的角色——jsonc 里一个手滑的 key 就静默变成可派发子代理，同时进 @ 补全与 `describeTask`，而且从配置里删条目也删不掉。现在**新角色的唯一入口是 `agent/*.md` 文件**，未知 key 打一条 warning 后跳过。md 与 jsonc 落进同一个 `cfg.agent` 记录，靠新增的派生字段 `agent_origins` 区分来源（照 `plugin_origins` 的先例：不进 Schema、`writable()` 里剥掉、不落盘）。**插件的 `config` 钩子仍是合法创建通道**——它直接往 `cfg.agent` 塞 key，钩子跑完后新增的名字会补进 `agent_origins`。这是一次有意的能力删除，文档同步改掉。
+- **三种语义各有自己的构造器**（`agent/agent.ts`）：`posture()`（只有权限与展示，**没有** model / prompt / timeout / variant / steps）、`subagent()`（整份定义来自 md frontmatter）、`machine()`（固定 prompt + 全 deny + hidden）。`agents` 记录从约 110 行手写字面量收成 40 行，「给姿态配一个 model」这类跨语义写法编译期就写不出来。**没有拆 Schema**：`Info` 带 `identifier: "Agent"`，是 `/agent` 端点与 SDK `Agent` 类型的 wire 契约，拆成联合等于改契约 + 重生成 + 所有客户端做类型收窄，而收益在定义处就能拿到——内建条目是唯一会手写这些字段的地方。
+- **两个工种的模型与超时兑底**（`agent/definition/*.md`）：`explore` = `stepfun-step-plan/step-3.7-flash`，600s 超时（原 180s，它现在要干「读一圈再出结论」的活）；`execute` = **`opencode-go/glm-5.3-flash`**（由 `hy3` 改来：hy3 纯文本、256K/64K，glm-5.3-flash 1M/131K 且 in 0.075 / out 0.25 更便宜），900s 超时。两者各带**换族**的 `fallback_model`——失效模式是「模型自己卡住 / 推理烧不完」，同族换路由治不了。此前只有 explore 有 `timeout_ms` 且**没有 fallback**，按 `tool/task.ts` 那等于「超时即硬失败」，白等三分钟报 `no fallback model configured`。注意兑底是在**同一个子会话**里重发同样的 prompt，兑底模型看得到第一次留下的历史——对可写的 execute 就是「半截改动 + 换模型接着干」，不是从头来。
+- **`general` → `execute` 会静默换模型**：general 从前不带 model、跟随会话模型（`tool/task.ts` 的 `next.model ?? 调用方那一轮的模型`），execute 自带 `opencode-go/glm-5.3-flash` + 900s 超时。影响历史 `subagent_type: "general"` 与 `/subtask`。
+- **`execute` 比 general 严一档**：扁平 `"*": deny` 白名单意味着它**一个 skill 都看不见**（`skill/index.ts` 按 `evaluate("skill", name)` 过滤），`task`（不能再派子代理）与任意非白名单前缀的 MCP 工具也被禁。要放宽在 `src/agent/definition/execute.md` 里显式写 `skill: allow`。同理 `destructive` / `doom_loop` 对工种是 **deny 不是 ask**——扁平 `"*": deny` 盖掉了 defaults 的 ask 档，而 deny 是硬失败不是弹询问。这与 fixer 此前的行为一致，不是新收紧，但两份 md 的注释原本写反了，已改。
+- **`redmind` 补上 `plan_enter`**：defaults 把它 deny 了而 redmind 没补回，默认姿态下模型没法自己提议进计划模式。这是定义时漏的一条，不是有意分工——redmind 的 description 只讲「敏感操作先问」，从没说过不做计划。
+- **`~/.redcode/agent/` 不再由 sync-home 播种**（`script/sync-home.bat`）：工种 md 移进 `src/agent/definition/`，构建期用 `with { type: "text" }` 内联进二进制。同一份 md 经配置回流会把白名单再接到用户全局 permission **之后**，在 findLast 语义下把下面修的两条权限回归**一跑 build.bat 就打回去**，而且会让用户全局 `permission` 整段失效。用户自建的 `~/.redcode/agent/*.md` 照常加载，只是我们不再默认发一份同名的进去。
+- **删掉两条上游遗留的装载路径**：随包 YAML profile 三份 + `agent/profile/{load,resolve,types,index}.ts`（`agent.yaml` 已被 disable，另两份与内建重复，用户目录空）；`{mode,modes}/*.md`（全机零文件）。`{agent,agents}` 收成只认单数 `agent/`，复数目录存在时打 warning 而不是静默丢定义。
+
+#### 修复
+
+- **工种读不了工作区外的任何路径**（`agent/agent.ts`）：md 里扁平的 `"*": deny` 其 rule 是 `permission="*", pattern="*"`，findLast 下匹配一切——**包括 defaults 里那些写成对象的权限**。`external_directory` 整段白名单因此作废：项目外 ask→deny、`~/.redcode/skill/*` allow→deny、`Global.Path.tmp` allow→deny、工作区 `.redcode/temp` allow→deny，而 deny 是 `DeniedError` **硬失败**不是弹询问。live 的 architect / fixer / reviewer 此前就是这样，读不了全局技能目录。修法只有一种站得住：`merge(defaults, md白名单, external_directory 重新宣告, user)`——它依赖 `ctx.directory` 与 `skill.dirs()`，静态表达不了，只能由代码在 md 块之后、`user` 之前重新宣告。另外两个候选被实测否掉：放进循环后补丁会把用户自配的 extdir 白名单从 allow 压成 ask（`instance-context.ts` 就是这个用法）；循环后再补一遍 `user` 会把「per-agent > 全局」的优先级颠倒。
+- **`read` 的 `.env` 护栏失效**（`agent/definition/*.md`）：defaults 是 `read: { "*": allow, "*.env": ask, ... }`，被 md 的扁平 `read: allow` 顶掉——`execute` 能静默读 `.env`，而它同时有 write/edit。md 里改写成对象形式即可（这一条静态可表达，不像 `external_directory`）。
+
+---
+
+### [0.9.10] - 2026-08-28
+
+> 测试基础设施与生成物闸门。主线是一条把 200GB 系统盘写到只剩 0.1GB 的临时目录泄漏——它伪装成大面积代码回归，排查时先被误判。另把 OpenAPI 漂移检查接进 pre-push：一天之内撞了两次「改了 schema 忘记重跑生成物」。
+
+#### 修复
+
+- **测试临时目录泄漏，40.3GB / 1565 个目录**（`config/config.ts`、`core/flag/flag.ts`、`test/preload.ts`、`test/lib/sweep-temp.ts`）：`%TEMP%` 里的 `redcode-test-*` 从 08-12 长到 08-28 无人知晓，最终把 C 盘写到只剩 0.1GB，测试开始以 1 fail → 9 fail → 31 fail 崩塌，**而失败信息与磁盘无关**。三个独立成因，只修一个都不够。大头是「npm install 比作用域活得长」：`config.ts` 用 `Effect.forkDetach` 把 `@opencode-ai/plugin` 装进项目 `.redcode/node_modules`——分离 fiber，不受作用域约束；临时目录的 finalizer 先跑，此时目录还基本是空的，删得掉、不报错，npm 随后把 `node_modules` 写回来，留下一个 38MB 的目录且**零告警**（实测一轮会话 177 个、6.5GB）。新增 `REDCODE_DISABLE_PLUGIN_DEP_INSTALL`，测试默认打开——不是测试专用开关，离线部署同样需要，且只跳过预装 SDK 包那一步，调用方本来就无法依赖它已完成。
+- **插件依赖安装的第二份拷贝也受 flag 约束**（`cli/cmd/tui/config/tui.ts`）：按「后台工作的副作用比作用域活得长 / 失败被静默吞掉」两条判据扫全仓，只揪出这一处同类——它是 `config.ts` 那个安装逻辑的并行拷贝，测试里不触发，但生产上不受上面那个开关约束，离线用户设了开关 TUI 那条路照样去装。
+- **`session/index.tsx` 的组件名与类型导入冲突**：`UserMessage` / `AssistantMessage` 两个组件加 `export`（好让新快照测试 import）之后，与同文件顶部 `import type { UserMessage, AssistantMessage }` 撞名，`<UserMessage>` 解析回 type-only 导入，报 `TS1361`。给类型导入起别名（`UserMessageInfo` / `AssistantMessageInfo`），组件保留原名，新测试的 import 照常可用。
+- **两次生成物漂移补跑**（`packages/sdk/*`）：`webfetch.allow_private_hosts` 与 image 的 `max_pixels` / `max_dimension` 两批 config schema 改动都没重跑 `gen:openapi`，`check:openapi-drift` 在本地一直是红的。
+
+#### 新增
+
+- **会话记录整帧文本快照**（`test/cli/tui/conversation-snapshot.test.tsx`、`test/cli/tui/lib/transcript.tsx`）：界面侧测试比 0.09（GUI 91,085 行源码 / 7,753 行测试），DSH client 是 0.77，差距不在写没写而在用什么方式写——33K 行 `ui/` 靠组件单测补到 0.75 得写两万多行，DSH 自己的 0.77 是 33 个整帧文本快照堆出来的。5 个场景渲染 `routes/session/index.tsx` 里**真正在跑**的 `UserMessage` / `AssistantMessage`（单条用户消息、一轮问答、长文本按宽度折行含 CJK、多轮相邻间隔、助手带错误），不再用手写替身。
+- **pre-push 接上 OpenAPI 漂移闸门**（`.husky/pre-push`）：改了 config schema 却忘记重跑生成物，本地全绿、推上去才在 CI 红——08-28 一天撞两次。`script/check-openapi-drift.ts` 自己的头注释就写着「没有副作用，可以放心进 CI 和 pre-push」，只是一直没接上来（实测约 5s）。
+
+---
+
+### [0.9.9] - 2026-08-28
+
+> 三条互不相干的正确性修复：图片在压缩预算里被当成十几万 token、`webfetch` 对目的地只查 scheme（云元数据端点照发）、sync 写入路径的序号在默认配置下恒为 0。
+
+#### 修复
+
+- **图片按路由计价，不再按 base64 长度**（`session/image-tokens.ts`、`session/compaction.ts`、`session/context-snapshot.ts`）：`SessionCompaction.estimate` 是 `Token.estimate(JSON.stringify(modelMessages))`，而 `Token.estimate` 就是 chars/4、`toModelMessages` 把图片拼成内联 data URL——一张 400KB 的 JPEG 于是被算成约 **13 万 token**，它在 DeepSeek 上实际最多 384。触发线没被带偏（`level()` 取 provider usage，锚是对的），被带偏的是两处：保留范围 `select()` 倒着累加各轮 size，一张图必然让它所在那轮超预算，`splitTurn` 也切不出装得下的片，结果图片所在轮及更早的**全部被判出局**，即使那些内容加起来只有几千 token；以及用量面板的上下文构成，「messages 占多少」被一张截图完全带偏。新模块把事实与定价分开：内联载荷换占位再计长度，远程图片 URL 原样保留但同样计一张图（不计就是反方向失真，上游正是因为把图按结构 JSON 算成约 40 token 而让压缩迟到溢出），按 providerID 定价、取 DeepSeek 官方计算器封顶 384。
+- **图片尺寸改总像素预算，候选改懒求值 + 按 alpha 路由**（`image/image.ts`、`config/attachment.ts`）：`scale = min(1, maxW/W, maxH/H)` 让一张 2000×20000 的整页截图变成 **200px 宽**，文字全糊——而它的代价本来该由总像素数决定，视觉 token 按面积算不按最长边。改成 `min(1, sqrt(maxPixels/(W*H)), maxDimension/W, maxDimension/H)`，新配置 `max_pixels`（默认 `max_width*max_height` = 4,000,000）与 `max_dimension`（8192）；`max_width`/`max_height` 标记 deprecated 但仍贡献默认预算，既有配置的**总量语义不变**，变的只是像素怎么分配到两个轴上。2000×20000 现在得 632×6325，方形图逐像素不变。**透传闸门刻意仍用旧盒子**：先写的版本把闸门也换成像素预算，实测一张 2964×488、base64 恰好 5.00MB 的图从「缩到 2000×329 再编码得 0.09MB」变成「原样透传 5.00MB」，**55 倍**——旧规则那个小 payload 是盒子的副作用不是有意的字节策略，放宽透传是独立决策。另外候选原来是 5 档全部编码再 `.find()` 取第一个达标的，尺寸降级最多 32 档、最坏 160 次编码（单次 JPEG 编码实测约 332ms），改成逐档编码、第一个达标即 break；PNG 候选不再对所有源排第一位——JPEG 源不可能带 alpha，给它 PNG 纯属浪费，更糟的是 PNG 一旦碰巧落在预算内就会被选中，那正是上游「照片被路由到无损编码器」的病。
+- **`webfetch` 拒绝非公网目的地并逐跳校验重定向**（`tool/webfetch.ts`、`util/net-address.ts`）：此前对目的地只检查 scheme，模型给出 `http://169.254.169.254/`（云元数据）、`http://192.168.1.1/` 或 `http://127.0.0.1:port/` 都会照常发出去，而 `ctx.ask` 的 `always: ["*"]` 意味着用户选过一次「始终允许」之后任何 URL 都不再出现审批——**模型给的 URL 常常来自它读到的网页内容，那是不可信输入**。新增地址分类，分两档：配置可放行（环回、RFC1918、CGNAT、ULA——人真的会在上面跑服务）与不可放行（link-local `169.254/16`、`fe80::/10`，云元数据就在这里；组播、保留、未指定、文档段、基准段）。比上游更细一档：本地编码代理让代理看一眼自己起的 dev server 是正当工作流，但那不该顺带打开云元数据端点。IPv4 映射与 NAT64（`64:ff9b::/96`）都拆包按内嵌 v4 判，否则 `64:ff9b::169.254.169.254` 是一条免费绕过。配置 `webfetch.allow_private_hosts` 默认 false。审批仍在 DNS 解析**之前**——否则一次会被拒的调用也已经替模型做过名字解析，审批本身就成了探测原语。
+- **sync 的序号读写同门控 + 投影豁免改显式名单**（`sync/index.ts`、`server/projectors.ts`）：`event_sequence` 的 upsert 原本在 `experimentalWorkspaces` 后面（默认关），而 `run()` **无条件**读这张表算 seq——默认配置下每个事件的 seq 恒为 0，还被 GlobalBus 原样广播；flag 中途打开时序号从 0 重开，对端 replay 会静默接受并缺掉全部历史。计数器移出 flag（一行三列，代价可忽略），event 表存事件全文、只有 workspace 同步要用，继续留在 flag 后面；现在 flag 中途打开会抛 `Sequence mismatch`（响）而不是静默缺历史（哑）。投影豁免从 `def.type.includes("next")` 改成 `init({ nonProjecting })` 显式名单——旧判据把「忘写 projector」的护栏对整个 `session.next.*` 命名空间关掉了，而那个 return 在插入块之前，同时跳过投影、持久化与发布；名字里碰巧带 next 的事件（`plugin.nextcloud.synced`）也会免费拿到豁免。生产名单只有 `session.next.tool.progress` 一个。
+
+---
+
 ### [0.9.8] - 2026-08-27
 
 > 这一版的主线是**每请求都要付的固定开销**：固定前缀瘦身 ~9.5k token、重复 read 折叠未变区段、五个近乎零调用的内建工具默认下线。另清掉一条让单元测试每轮静默少跑一条的老毛病。
