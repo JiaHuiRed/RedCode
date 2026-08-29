@@ -393,14 +393,14 @@ export const dict = {
 
   "context.inspect.title": "Actual Composition",
   "context.inspect.note":
-    "Measured from the request this session last sent — unlike the estimate above, it includes the system prompt and tool schemas.",
+    "Measured from the request this session last sent — it includes the system prompt and tool schemas.",
   "context.inspect.empty": "Not available yet (shown after this session's next request).",
   "context.inspect.system": "System Prompt",
   "context.inspect.tools": "Tool Schemas",
   "context.inspect.messages": "Conversation",
   "context.inspect.more": "+{{count}} more tools",
   "context.breakdown.title": "Context Breakdown",
-  "context.breakdown.note": 'Approximate breakdown of input tokens. "Other" includes tool definitions and overhead.',
+  "context.breakdown.note": 'Approximate breakdown of input tokens. "Other" is almost entirely the system prompt and tool schemas — neither ever reaches the client, so only the real composition can show them.',
   "context.breakdown.system": "System",
   "context.breakdown.user": "User",
   "context.breakdown.assistant": "Assistant",

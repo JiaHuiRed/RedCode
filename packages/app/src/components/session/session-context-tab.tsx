@@ -562,7 +562,11 @@ export function SessionContextTab() {
           </div>
         </Show>
 
-        <Show when={breakdown().length > 0}>
+        {/* 260829 cc 估算只在**没有真实构成**时出现。此前两块无条件并列，而快照存在时
+            估算是被完全支配的：快照把系统提示与工具定义拆到了每一条，估算却把同一坨
+            囫囵报成「其他 99.5%」——同一份东西上面拆开了、下面又报一遍还报错了名字。
+            快照是内存态、只留最后一轮，所以估算仍要留着兜底，只是让位。 */}
+        <Show when={inspectGroups().length === 0 && breakdown().length > 0}>
           <div class="flex flex-col gap-2">
             <div class="text-12-regular text-text-weak">{language.t("context.breakdown.title")}</div>
             <div class="h-2 w-full rounded-full bg-surface-base overflow-hidden flex">
@@ -589,7 +593,7 @@ export function SessionContextTab() {
                 )}
               </For>
             </div>
-            <div class="hidden text-11-regular text-text-weaker">{language.t("context.breakdown.note")}</div>
+            <div class="text-11-regular text-text-weaker">{language.t("context.breakdown.note")}</div>
           </div>
         </Show>
 
