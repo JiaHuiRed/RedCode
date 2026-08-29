@@ -3,7 +3,8 @@ import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createSimpleContext } from "../context/helper"
 import oc2ThemeJson from "./themes/oc-2.json"
-import { resolveThemeVariant, themeToCss } from "./resolve"
+import { getColors, resolveThemeVariant, themeToCss } from "./resolve"
+import { v2NeutralsToCss } from "./v2-neutrals"
 import type { DesktopTheme } from "./types"
 
 export type ColorScheme = "light" | "dark" | "system" | "cream" | "green" | "deepblue"
@@ -138,10 +139,15 @@ function applyThemeCss(theme: DesktopTheme, themeId: string, mode: "light" | "da
     write(isDark ? STORAGE_KEYS.THEME_CSS_DARK : STORAGE_KEYS.THEME_CSS_LIGHT, css)
   }
 
+  // 260829 cc v2 的原始色阶跟着主题走，见 v2-neutrals.ts 的说明。
+  // 中性主题返回空串（默认 oc-2 就是），此时这里与改造前逐字节一致。
+  const v2 = v2NeutralsToCss(getColors(variant).neutral)
+
   const fullCss = `:root {
   color-scheme: ${mode};
   --text-mix-blend-mode: ${isDark ? "plus-lighter" : "multiply"};
-  ${css}
+  ${css}${v2 ? `
+  ${v2}` : ""}
 }`
 
   document.getElementById("oc-theme-preload")?.remove()

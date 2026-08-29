@@ -470,7 +470,9 @@ interface ThemeColors {
   diffDelete?: HexColor
 }
 
-function getColors(variant: ThemeVariant): ThemeColors {
+// 260829 cc 导出：v2 原始色阶的生成需要拿到解析后的 neutral（variant 可能给的是
+// seeds 而不是 palette，直接读 variant.palette 会漏）。见 v2-neutrals.ts。
+export function getColors(variant: ThemeVariant): ThemeColors {
   const input = variant as { palette?: unknown; seeds?: unknown }
   if (input.palette && input.seeds) {
     throw new Error("Theme variant cannot define both `palette` and `seeds`")
