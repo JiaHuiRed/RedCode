@@ -313,6 +313,25 @@
   --frost-edge-veil: rgba(0, 0, 0, 0.14);
 }
 
+/* ---------- 260829 cc 一条实测过的边界，动磨砂面之前先读。
+
+   带 backdrop-filter 的元素会成为其后代 position:fixed 的**包含块**（CSS 规范行为，
+   与 transform / filter / will-change 同类）。参照的 DSH Aqua 插件为此专门写了
+   `:has([role='dialog'])` 在弹窗打开时临时关掉侧栏的 blur——他们的设置面板被困在
+   254px 而不是设计的 800px。
+
+   本仓实测**不需要那个变通**：
+   · 机制确实存在——往 [data-frost-surface="main"] 里塞一个 fixed;top:0;left:0 的探针，
+     它落在 (9,45)（该磨砂元素自己的原点）而不是视口的 (0,0)
+   · 但没有任何产品 UI 撞上：全页 position:fixed 只有 debug 面板与 toast 两个，都不在
+     磨砂子树内；菜单/右键菜单走 Portal；对话框由 ui/context/dialog.tsx 的
+     DialogProvider 渲染成 props.children 的**兄弟节点**，而它挂在 app.tsx 很高的位置
+   · 从磨砂侧栏卡片内部点「设置」实测：弹窗 960×588，而侧栏只有 220px 宽，
+     insideFrostAncestor=false ——完整尺寸，没被困
+
+   **规则**：别往任何 [data-frost-surface] / [data-chat-frost] 子树里放 position:fixed
+   的浮层。要浮就交给 DialogProvider 或 Portal。破了这条才需要 Aqua 那个变通。 ---------- */
+
 /* 260608 Red 毛玻璃 A：仅当聊天面板设了背景图（祖先带 data-chat-frost）时，用户气泡与输入框
    改半透明底 + backdrop-filter，透出并模糊背景图 = 真毛玻璃。无背景图不触发（模糊纯色无意义）。
    不放进 @layer：需越过 Tailwind 的 utilities 层覆盖 bg-* 工具类的 background-color。

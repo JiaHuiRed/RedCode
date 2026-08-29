@@ -1,6 +1,6 @@
 {
   "name": "@redcode-ai/function",
-  "version": "0.9.13",
+  "version": "0.9.14",
   "$schema": "https://json.schemastore.org/package.json",
   "private": true,
   "type": "module",

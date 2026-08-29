@@ -8,6 +8,32 @@
 
 ---
 
+### [0.9.14] - 2026-08-29
+
+> 一批玻璃材质的推进（迎光边、边缘渐隐、旋钮化、侧栏成卡），外加把 v2 色板并回主题这条根上的修正——首页上同时存在三种配色不是三处随手写的，是三套颜色系统同屏。正确性上最重的一条是「切走再切回会话，内容掉在很多条消息之前」：不是 Electron 的性能限制，是一次刷新拿 40 条覆盖了已加载的整段历史。
+
+#### 修复
+
+- **切回会话不再把已加载的历史窗口砍回首屏那一页**（`packages/app/src/context/directory-sync.ts`、`pages/session/message-timeline.tsx`）：症状是切到主界面或别的会话再回来，文件树和会话区先空白，然后会话区掉在很多条消息之前、必须手动滚到底。**不是 Electron 的性能限制**——同一份前端在浏览器里稳定复现，且表现是「内容被换掉」不是掉帧。两个独立缺陷叠在一起：① `session.tsx` 的 stale 判据是「prefetch 记录超过 15s」，离开超过 15 秒回来就必然触发 `sync(id, { force: true })`，所以在真实使用里"永远会出现"；而 `sync()` 走的 `loadMessages` 默认 `replace`，拿 `meta.limit` 那一页覆盖 store 里已有的全部消息。`meta` 是 directory-sync 实例级的 store，离开 `/:dir` 时随 `DirectoryLayout` 一起重建、被首屏装载写成 40，而模块级的 prefetch 记录明明还记着真实深度 1435，回填却只在 `meta.limit === undefined` 时才做，轮不到。② 锚定是「每会话只锚一次」，窗口从 1671 行塌成 12 行时 sessionKey 没变，就此永不重锚——这是"要手动滚到底"那一半。修法：回填条件放宽成「比 prefetch 记的浅」；手上已有消息时的刷新一律走新增的 `mode: "refresh"`（只拉最新一页并按 id 并集合并、保住原游标，绝不 replace）；行数相对上次锚定缩水过半即重新武装。实测同一路径：离开前 143220px 在底部 → 首页停 20s → 切回 143849px、距底 0px（修前是 1801px 且掉在历史中间）。
+- **agent 展示名统一走 `displayName`**（`cli/cmd/tui/routes/session/index.tsx`、`cli/cmd/tui/util/transcript.ts`、`cli/cmd/run/runtime.lifecycle.ts`、`cli/cmd/tui/context/local.tsx`）：这是第三轮了——0.8.x 修过 TUI 输入框、0.9.x 修过 GUI 下拉，剩下的助手消息头、会话记录导出、`redcode run` 底栏仍在 `Locale.titlecase(name)`，于是同一屏上输入框写 RedMind、消息头写 Redmind。之所以反复复发，是因为前两次都在各自的渲染点手写 `displayName ?? titlecase`，没有唯一解析口。这次在 TUI 的 agent store 加 `label(name)`（与旁边 `color(name)` 同形），把三处并进来，输入框那份手写的也改调它。顺带把消息头取值从 `.mode` 换成 `.agent`——两个字段在 `prompt.ts` 的两个写入点都赋同一个 `agent.name`，`.mode` 是历史同义字段，而相邻取颜色用的正是 `.agent`。
+- **上游 `TEAM_MEMBERS` 删了但两处还在读，build 在模块加载期就 ENOENT**（`packages/script/src/index.ts`、`script/raw-changelog.ts`）：0.9.13 那次清理上游 fork 残留删掉了 `.github/TEAM_MEMBERS`，但两个 top-level `await` 仍在读它，任何一次 `bun run build` 都在 import 阶段直接炸。`Script.team` 全仓零消费者，纯死代码，连 getter 一起删；`raw-changelog.ts` 那份是活的（贡献者列表与 `(@author)` 归属靠它过滤），改成内联。补记一句：`.github/TEAM_MEMBERS` 不是 GitHub 认的文件（`CODEOWNERS` 和 `ISSUE_TEMPLATE/config.yml` 才是），它只是构建脚本的数据文件——那次清理对它「对公开仓是活的」这条判断不成立，真正的影响是把 build 打断了。
+- **看板卡片抬起时四周不再被切平**（`packages/app/src/pages/home-kanban.tsx`、`index.css`）：卡片网格是 `overflow-y-auto`，裁剪边就在网格自己的边上，而首行卡片 `content-start` 紧贴着它。主因不是形变那 4px，是阴影：`--v2-elevation-floating` 是给独立大卡设计的（`0 4px 14px` + `0 18px 44px`），向上够到 26px，被一刀切平读起来就是「卡片往上滑进了什么东西底下」。修法是两件事一起——`pt-2 -mt-2` / `px-2 -mx-2` 用负边距吃掉外层间距再由 padding 补回来（静止版式一像素不动，只把裁剪边推开 8px），阴影换成本地一对 `0 2px 6px` + `0 8px 16px`（向上延伸 4px 与 8px，正好收在那 8px 里，仍明显向下偏）。已知代价：网格比列宽 16px，`auto-fill` 的列数会在极窄的临界宽度上提前跳一档。
+- **新建会话页去掉假下拉，布局跟窗口高度走**（`packages/app`）：字标改逐字母入场。
+
+#### 变更
+
+- **v2 色板跟着主题走，删掉手写的第二真源**（`packages/ui/src/theme/v2-neutrals.ts`、`theme/context.tsx`、`theme/resolve.ts`、`app/src/index.css`）：首页上一眼能看出三种配色——右下角 debug 面板吃 v1 token（由 `themes/yuqi.json` 的 `neutral #5a2f4c` 生成，色相约 320°）、卡片与搜索框吃 v2 token（约 285°）、侧栏还要再掺一层 230° 的冷蓝。根因是 v2 的 60 个语义 token 全都指向一条原始色阶（`--v2-grey-N` / `--v2-alpha-*`），而那条色阶只按 `data-color-scheme` 分五档、**不认 theme**（`v2/styles/theme.css` 全文只有 1 处 `data-theme`），所以 260823 只能在 `app/index.css` 手写一段 yuqi 覆盖顶着，而且只盖了 11 个、剩下 49 个照旧发灰。修法不动那 60 个语义 token，只把它们底下的原始色阶按主题重新生成，用 `:root` 覆盖 `@layer theme` 的默认值（无层样式天然胜过有层样式）。三条设计约束写在新文件头：**明度曲线一律不动**（每档保持原本的 OKLCH `L`，只换 `H`、加 `C`，v2 的深浅两块是按这条明度阶挑档位的，对比度全靠它）；**彩度随明度收敛**，`c = neutral.c × 0.75 × 4L(1-L)`——这是拿 260823 那份手调覆盖做的拟合，8 档里 6 档误差 < 0.002，不衰减的话暗端会出 `#15010e` 这种发紫发脏的东西；**无彩度主题逐字节还原**（默认 oc-2 的 neutral 是 `#1f1f1f`，直接返回空串、一个变量都不发）。此前一直发灰的 `grey-100/300/400/1200` 与全部图标色、状态色、elevation、overlay 现在也跟上了主题。
+- **磨砂面加迎光边，会话滚动区加上下渐变模糊带**（`packages/app/src/index.css`、`pages/session.tsx`）：此前各磨砂面只有 `background` + `backdrop-filter`，没有任何边缘光学，读起来是「半透明的板」而不是玻璃——厚度感来自迎光边那道亮线。只给顶边真的露在外面的几处（标题栏、输入框、用户气泡，以及后面改成浮起卡片的首页侧栏）。渐隐带是会话滚动区上下各 14px 的伪元素，`blur(5px)` + mask 渐变 + 一层几乎看不见的 veil，内容滚到边缘融进模糊再消失。**连带记一条坑**：mask 只能加在这两个伪元素上，绝不能加到滚动容器本身——那会把它变成 backdrop root，其内 sticky 输入框的 `backdrop-filter` 静默失效（表现是输入框背后的内容不模糊）。
+- **磨砂材质的模糊半径与不透明度收拢成按角色命名的变量**（`packages/app/src/index.css`）：此前是散在七条规则里的字面量，改一次口味要翻七处，而且「两侧暗、中间亮」这条分层规则只写在注释里、不存在于代码里。收成 `--frost-blur-*` / `--frost-alpha-*` / `--frost-tint-*` / `--frost-strength`，数值从大到小 = 从外壳到内联。实测重构前后计算样式逐项相同；`--frost-strength` 可用区间约 0.6–1.35，到 1.39 外壳档乘满 100% 会被钳成全不透明、壁纸整个消失。
+- **首页侧栏从贴边的柱子改成浮起的玻璃卡片**（`packages/app/src/pages/home.tsx`、`index.css`）：起因是「看板卡片的玻璃质感明显比侧栏好」，而看板卡片**根本没有玻璃**（实色底、零 `backdrop-filter`），真磨砂一直在侧栏。差的不是光学是物体性：卡片有圆角、四边描边、阴影、一眼看得到四条边；侧栏只有一条 `border-r`、贴边到底，眼睛读成墙。所以杠杆不在把 68%/blur18 往上推，而在脱边留白 + 14px 圆角 + 四边描边 + 向下阴影。内容位置靠卡片内部的 `pt-10` 顶回原来的 52px，与改造前逐像素相同。
+- **首页轮播 tips 下线，与新建会话页共用按时段问候**（`packages/app`）。
+
+#### 新增
+
+- **新建会话页加按时段问候**（`packages/app`）。
+
+---
+
 ### [0.9.13] - 2026-08-28
 
 > GUI 主界面的信息密度与材质分层：最占地方的两个东西内容都是「这里没有」，而 12 个项目排在侧边栏里、哪个在跑要逐个点进去才知道——那个分类看板早就算出来了。
