@@ -232,11 +232,65 @@ export function Session() {
   const disabled = createMemo(() => permissions().length > 0 || questions().length > 0)
 
   const pending = createMemo(() => {
-    return messages().findLast((x) => x.role === "assistant" && x.mode !== "compaction" && !x.time.completed)
+    return messages().findLast(
+      (x): x is AssistantMessageInfo => x.role === "assistant" && x.mode !== "compaction" && !x.time.completed,
+    )
   })
 
   const lastAssistant = createMemo(() => {
     return messages().findLast((x) => x.role === "assistant" && x.mode !== "compaction")
+  })
+
+  // 260829 Red 插队送达状态:busy 中发送且无 assistant 子消息的 user 消息,
+  // 时间上其后已有 assistant = 下个 step 组装上下文已吃进 → delivered;否则等待 → queued
+  const assistantByParent = createMemo(() => {
+    const result = new Map<string, AssistantMessageInfo[]>()
+    for (const message of messages()) {
+      if (message.role !== "assistant") continue
+      const list = result.get(message.parentID)
+      if (list) list.push(message)
+      else result.set(message.parentID, [message])
+    }
+    return result
+  })
+  const working = createMemo(
+    () => (sync.data.session_status[route.sessionID] ?? { type: "idle" }).type !== "idle",
+  )
+  const activeMessageID = createMemo(() => {
+    const parentID = pending()?.parentID
+    if (parentID) {
+      const message = messages().find((x) => x.id === parentID)
+      if (message && message.role === "user") return message.id
+    }
+    if (working()) {
+      const msgs = messages()
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        if (msgs[i].role === "user") return msgs[i].id
+      }
+    }
+    return undefined
+  })
+  const steerStateByID = createMemo(() => {
+    const result = new Map<string, "queued" | "delivered">()
+    const msgs = messages()
+    const busy = working()
+    const activeID = activeMessageID()
+    let maxAssistantTime = 0
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const message = msgs[i]
+      if (message.role === "assistant") {
+        maxAssistantTime = Math.max(maxAssistantTime, message.time?.created ?? 0)
+        continue
+      }
+      if (message.role !== "user") continue
+      // 正常轮首:有自己的 assistant 子消息 → 不标记
+      if ((assistantByParent().get(message.id) ?? []).length > 0) continue
+      // 当前活跃轮首 → 不标记(它在跑,不是插队)
+      if (busy && activeID === message.id) continue
+      if (maxAssistantTime > (message.time?.created ?? 0)) result.set(message.id, "delivered")
+      else if (busy) result.set(message.id, "queued")
+    }
+    return result
   })
 
   const dimensions = useTerminalDimensions()
@@ -1319,8 +1373,7 @@ export function Session() {
                             }}
                             message={message as UserMessageInfo}
                             parts={sync.data.part[message.id] ?? []}
-                            pending={pending()?.id}
-                            pendingCreated={pending()?.time.created}
+                            steerState={steerStateByID().get(message.id)}
                           />
                         </Match>
                         <Match
@@ -1420,8 +1473,7 @@ export function UserMessage(props: {
   parts: Part[]
   onMouseUp: () => void
   index: number
-  pending?: string
-  pendingCreated?: number
+  steerState?: "queued" | "delivered"
 }) {
   const ctx = use()
   const local = useLocal()
@@ -1440,15 +1492,9 @@ export function UserMessage(props: {
   const files = createMemo(() => props.parts.flatMap((x) => (x.type === "file" ? [x] : [])))
   const { theme } = useTheme()
   const [hover, setHover] = createSignal(false)
-  // 260814 Red queued 边界改 created 比较（ID 回绕后字典序失真）
-  const queued = createMemo(() => {
-    if (!props.pending || props.pendingCreated === undefined) return false
-    const created = props.message.time.created
-    return created !== props.pendingCreated ? created > props.pendingCreated : props.message.id > props.pending
-  })
   const color = createMemo(() => local.agent.color(props.message.agent))
   const queuedFg = createMemo(() => selectedForeground(theme, color()))
-  const metadataVisible = createMemo(() => queued() || ctx.showTimestamps())
+  const metadataVisible = createMemo(() => props.steerState != null || ctx.showTimestamps())
 
   const compaction = createMemo(() => props.parts.find((x) => x.type === "compaction"))
 
@@ -1518,7 +1564,7 @@ export function UserMessage(props: {
               </box>
             </Show>
             <Show
-              when={queued()}
+              when={props.steerState}
               fallback={
                 <Show when={ctx.showTimestamps()}>
                   <text fg={theme.textMuted}>
@@ -1530,7 +1576,12 @@ export function UserMessage(props: {
               }
             >
               <text fg={theme.textMuted}>
-                <span style={{ bg: color(), fg: queuedFg(), bold: true }}> QUEUED </span>
+                <Show when={props.steerState! === "queued"}>
+                  <span style={{ bg: color(), fg: queuedFg(), bold: true }}> QUEUED </span>
+                </Show>
+                <Show when={props.steerState! === "delivered"}>
+                  <span style={{ fg: theme.textMuted }}> DELIVERED </span>
+                </Show>
               </text>
             </Show>
           </box>
