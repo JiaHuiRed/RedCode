@@ -255,6 +255,64 @@
   }
 }
 
+/* ============================================================================
+   260829 cc 磨砂材质的统一旋钮。
+   在此之前，模糊半径与不透明度是散在下面七条规则里的字面量（12/18px 与
+   40%/45%/50%/55%/58%/65%/68%/70%/72%），有两个实际代价：
+   ① 改一次口味要在文件里翻七处，漏一处就出现「标题栏透了、主卡没透」这种不一致；
+   ② 「两侧暗、中间亮」这条分层规则只写在注释里、不存在于代码里 —— 260828 那次把
+      侧栏从 55% 调到 68%，是照着注释手动对齐外壳档的，代码本身拦不住写错。
+   收拢成一组**按角色命名**的变量：读变量名就知道这块面板站在层次的哪一档，
+   数值从大到小 = 从外壳到内联，加新磨砂面时照着挑一档，不要再写字面量。
+   ========================================================================== */
+:root {
+  /* 模糊半径两档 + 边缘档。外壳/主卡这类大面走 chrome；气泡/输入框/摘要条这类内联
+     元素走 inline（半径小一点，否则小面积上糊成一团）；边缘渐隐带最轻。 */
+  --frost-blur-chrome: 18px;
+  --frost-blur-inline: 12px;
+  --frost-blur-edge: 5px;
+
+  /* 磨砂强度总开关：下面每一档不透明度都乘它。1 = 现状，逐像素与旋钮化之前一致。
+     调大 = 更实、更少透壁纸；调小 = 更通透。要做成设置项时把它接出去即可。
+     实测可用区间约 0.6–1.35：外壳档是 72%，强度到 1.39 就乘满 100% 被钳成全不透明，
+     壁纸整个消失、"两侧暗中间亮"塌成一块实底。做滑杆的话上限别放过 1.35。 */
+  --frost-strength: 1;
+
+  /* 不透明度分档 —— 「两侧暗、中间亮」那条分层语言的落点。改动请保持这个大小序。 */
+  --frost-alpha-shell: 72%; /* 外壳：文件树 / 审查栏 */
+  --frost-alpha-aside: 68%; /* 侧栏：首页项目栏 */
+  --frost-alpha-chrome: 58%; /* 标题栏 */
+  --frost-alpha-surface: 55%; /* 主卡 / 会话区 */
+  --frost-alpha-bubble: 55%; /* 用户气泡 / diff 摘要条 */
+  --frost-alpha-inline: 50%; /* 输入框 */
+
+  /* 掺色：让磨砂底不是一块纯灰。内层先把主色掺进底色，外层再整体透明化。
+     ⚠️ 与 --frost-strength 耦合：强度调大掺色会跟着更显。参照的 DSH Aqua 插件明确
+     记着「深色玻璃要用中性冷灰、别掺色，否则 frost 拉满会读成一块彩色板」——本仓是
+     有意掺的，所以 --frost-strength 往上调过 1.3 要回来看这几行。
+     ⚠️ 摘要条那份（.40 / 65%）与气泡那份（.45 / 70%）本该是同一个配方，是 260812 与
+     260823 两次手写留下的漂移。这里如实保留原值以保证旋钮化前后逐像素一致；要不要
+     统一成一份是单独一次口味改动，别混在重构里做。 */
+  --frost-tint-amount: 70%; /* 掺色后底色占内层的比例 */
+  --frost-tint-bubble: rgba(248, 164, 208, 0.45); /* 气泡：粉 */
+  --frost-tint-aside: rgba(168, 180, 240, 0.45); /* 首页侧栏：蓝紫 */
+  --frost-tint-summary: rgba(248, 164, 208, 0.4); /* diff 摘要条：粉（见上面的漂移说明） */
+  --frost-tint-summary-amount: 65%;
+
+  /* 边缘光学：① 迎光边（磨砂面顶边的内高光）与 ③ 渐隐带，规则见本文件后两节。
+     浅色 .42（Aqua 用 .45，本仓浅色磨砂本就更实，.45 会在标题栏与主卡接缝处糊成
+     白边）；veil 必须「几乎看不见」，稍重就会在玻璃面下读成一层脏膜。 */
+  --frost-edge-size: 14px;
+  --frost-edge-highlight: rgba(255, 255, 255, 0.42);
+  --frost-edge-veil: rgba(255, 255, 255, 0.16);
+}
+
+/* 边缘光学按 color-scheme 分档而不是按 theme：cream / green 都是浅色底，跟 theme 走会漏。 */
+:root[data-color-scheme="dark"] {
+  --frost-edge-highlight: rgba(255, 255, 255, 0.08);
+  --frost-edge-veil: rgba(0, 0, 0, 0.14);
+}
+
 /* 260608 Red 毛玻璃 A：仅当聊天面板设了背景图（祖先带 data-chat-frost）时，用户气泡与输入框
    改半透明底 + backdrop-filter，透出并模糊背景图 = 真毛玻璃。无背景图不触发（模糊纯色无意义）。
    不放进 @layer：需越过 Tailwind 的 utilities 层覆盖 bg-* 工具类的 background-color。
@@ -263,11 +321,12 @@
 [data-chat-frost] [data-component="user-message"] [data-slot="user-message-text"] {
   background: color-mix(
     in srgb,
-    color-mix(in srgb, rgba(248, 164, 208, 0.45), var(--surface-base) 70%) 55%,
+    color-mix(in srgb, var(--frost-tint-bubble), var(--surface-base) var(--frost-tint-amount))
+      calc(var(--frost-alpha-bubble) * var(--frost-strength)),
     transparent
   );
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(var(--frost-blur-inline));
+  -webkit-backdrop-filter: blur(var(--frost-blur-inline));
 }
 
 /* 输入框毛玻璃：dock 不再铺底色（260812 Red 去掉 bg-background-stronger 后此处同删——
@@ -275,9 +334,13 @@
    仅输入框本体（composer）半透明+模糊。 */
 [data-chat-frost] [data-component="session-composer"],
 [data-chat-frost] [data-component="session-new-composer"] {
-  background-color: color-mix(in srgb, var(--v2-background-bg-base) 50%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background-color: color-mix(
+    in srgb,
+    var(--v2-background-bg-base) calc(var(--frost-alpha-inline) * var(--frost-strength)),
+    transparent
+  );
+  backdrop-filter: blur(var(--frost-blur-inline));
+  -webkit-backdrop-filter: blur(var(--frost-blur-inline));
 }
 
 /* 260810 Red 毛玻璃 B：全界面毛玻璃。背景图由根布局整窗铺底（祖先带 data-app-frost），
@@ -285,15 +348,23 @@
    去实色底，露出主卡片这层统一磨砂材质，形成「全界面磨砂」。无背景图不触发（模糊纯色无意义）。
    不放进 @layer：需越过 Tailwind 的 utilities 层覆盖 bg-* 工具类的 background-color。 */
 [data-app-frost] [data-frost-surface="titlebar"] {
-  background-color: color-mix(in srgb, var(--v2-background-bg-deep) 58%, transparent);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  background-color: color-mix(
+    in srgb,
+    var(--v2-background-bg-deep) calc(var(--frost-alpha-chrome) * var(--frost-strength)),
+    transparent
+  );
+  backdrop-filter: blur(var(--frost-blur-chrome));
+  -webkit-backdrop-filter: blur(var(--frost-blur-chrome));
 }
 
 [data-app-frost] [data-frost-surface="main"] {
-  background-color: color-mix(in srgb, var(--v2-background-bg-base) 55%, transparent);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  background-color: color-mix(
+    in srgb,
+    var(--v2-background-bg-base) calc(var(--frost-alpha-surface) * var(--frost-strength)),
+    transparent
+  );
+  backdrop-filter: blur(var(--frost-blur-chrome));
+  -webkit-backdrop-filter: blur(var(--frost-blur-chrome));
 }
 
 /* 260610 Red 0.5.0 refine#1 亮暗互换：文件栏/审查栏是"外壳"，给更深的磨砂底（透出但压暗背景图），
@@ -301,9 +372,13 @@
    形成"两侧暗、中间亮"的合理层次，也确保审查栏可见变化（不再是全透显得"没变化"）。 */
 [data-app-frost] #file-tree-panel,
 [data-app-frost] #review-panel {
-  background-color: color-mix(in srgb, var(--v2-background-bg-deep) 72%, transparent);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  background-color: color-mix(
+    in srgb,
+    var(--v2-background-bg-deep) calc(var(--frost-alpha-shell) * var(--frost-strength)),
+    transparent
+  );
+  backdrop-filter: blur(var(--frost-blur-chrome));
+  -webkit-backdrop-filter: blur(var(--frost-blur-chrome));
 }
 
 /* 260812 Red home 侧边栏毛玻璃：主界面壁纸铺底时，侧边栏改半透明+模糊透出壁纸，
@@ -318,11 +393,12 @@
 [data-app-frost] [data-frost-surface="home-sidebar"] {
   background-color: color-mix(
     in srgb,
-    color-mix(in srgb, rgba(168, 180, 240, 0.45), var(--v2-background-bg-layer-01) 70%) 68%,
+    color-mix(in srgb, var(--frost-tint-aside), var(--v2-background-bg-layer-01) var(--frost-tint-amount))
+      calc(var(--frost-alpha-aside) * var(--frost-strength)),
     transparent
   );
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(var(--frost-blur-chrome));
+  -webkit-backdrop-filter: blur(var(--frost-blur-chrome));
 }
 [data-app-frost] #file-tree-panel .bg-background-stronger,
 [data-app-frost] #review-panel .bg-background-base,
@@ -355,26 +431,6 @@
 /* tabs-list > .sticky::before 有渐变背景也要清掉 */
 [data-app-frost] #review-panel [data-slot="tabs-list"] > .sticky::before {
   background: transparent !important;
-}
-
-/* ============================================================================
-   260829 cc 玻璃质感两件套（参照 DSH Aqua 插件 E:\AI\DSH-Transparent-UI-Plugin）。
-   两条都沿用本文件既有的口径：无背景图不触发 —— 纯色底上模糊是空操作，只会留一条
-   莫名其妙的色带。所以全部挂在 data-app-frost / data-chat-frost 之下。
-   变量按 color-scheme 分档而不是按 theme：cream / green 都是浅色底，跟 theme 走会漏。
-   ========================================================================== */
-:root {
-  /* ① 玻璃迎光边。Aqua 用 light .45 / dark .08；本仓浅色磨砂本就比它实，
-     .45 会在标题栏与主卡接缝处糊成一条白边，取 .42。 */
-  --frost-edge-highlight: rgba(255, 255, 255, 0.42);
-  /* ③ 边缘带的薄veil。浅色微泛白、深色微泛黑，必须"几乎看不见"——
-     Aqua 的注释记着教训：veil 稍重就会在玻璃面下读成一层脏膜。 */
-  --frost-edge-veil: rgba(255, 255, 255, 0.16);
-}
-
-:root[data-color-scheme="dark"] {
-  --frost-edge-highlight: rgba(255, 255, 255, 0.08);
-  --frost-edge-veil: rgba(0, 0, 0, 0.14);
 }
 
 /* ---------- ① 玻璃厚度：磨砂面顶边一道内高光。
@@ -418,12 +474,12 @@
   position: absolute;
   left: 0;
   right: 0;
-  height: 14px;
+  height: var(--frost-edge-size);
   z-index: 2;
   pointer-events: none;
   background: var(--frost-edge-veil);
-  backdrop-filter: blur(5px);
-  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(var(--frost-blur-edge));
+  -webkit-backdrop-filter: blur(var(--frost-blur-edge));
 }
 
 [data-app-frost] [data-frost-edge]::before,
@@ -470,11 +526,16 @@
 [data-app-frost] [data-component="sticky-accordion-header"] {
   background-color: color-mix(
     in srgb,
-    color-mix(in srgb, rgba(248, 164, 208, 0.40), var(--v2-background-bg-layer-01) 65%) 55%,
+    color-mix(
+        in srgb,
+        var(--frost-tint-summary),
+        var(--v2-background-bg-layer-01) var(--frost-tint-summary-amount)
+      )
+      calc(var(--frost-alpha-bubble) * var(--frost-strength)),
     transparent
   );
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(var(--frost-blur-inline));
+  -webkit-backdrop-filter: blur(var(--frost-blur-inline));
 }
 
 /* 260828 cc 看板卡片的呼吸抬起 —— 配方取自私仓用量面板
