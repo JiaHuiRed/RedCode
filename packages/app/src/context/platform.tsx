@@ -105,6 +105,9 @@ export type Platform = {
   /** Check if an editor app exists (desktop only) */
   checkAppExists?(appName: string): Promise<boolean>
 
+  /** List font families installed on this machine (desktop only) */
+  listFonts?(): Promise<string[]>
+
   /** Read image from clipboard (desktop only) */
   readClipboardImage?(): Promise<File | null>
 

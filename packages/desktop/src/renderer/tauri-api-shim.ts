@@ -137,6 +137,7 @@ async function install() {
     consumeInitialDeepLinks: async () => [] as string[],
 
     // ── 尚未移植，明确抛错而非静默失败 ────────────────────────────
+    listFonts: notPorted("listFonts", "系统字体枚举"),
     killSidecar: notPorted("killSidecar", "任务 #6 sidecar 生命周期"),
     getWindowFocused: notPorted("getWindowFocused", "任务 #6 窗口控制"),
     setWindowFocus: notPorted("setWindowFocus", "任务 #6 窗口控制"),

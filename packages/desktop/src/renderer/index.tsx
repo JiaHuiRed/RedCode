@@ -287,6 +287,10 @@ const createPlatform = (): Platform => {
       return window.api.checkAppExists(appName)
     },
 
+    listFonts: async () => {
+      return window.api.listFonts().catch(() => [])
+    },
+
     async readClipboardImage() {
       const image = await window.api.readClipboardImage().catch(() => null)
       if (!image) return null

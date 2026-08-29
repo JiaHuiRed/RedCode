@@ -36,6 +36,7 @@ type Deps = {
   setDisplayBackend: (backend: string | null) => Promise<void> | void
   parseMarkdown: (markdown: string) => Promise<string> | string
   checkAppExists: (appName: string) => Promise<boolean> | boolean
+  listFonts: () => Promise<string[]>
   wslPath: (path: string, mode: "windows" | "linux" | null) => Promise<string>
   resolveAppPath: (appName: string) => Promise<string | null>
   loadingWindowComplete: () => void
@@ -67,6 +68,7 @@ export function registerIpcHandlers(deps: Deps) {
   )
   ipcMain.handle("parse-markdown", (_event: IpcMainInvokeEvent, markdown: string) => deps.parseMarkdown(markdown))
   ipcMain.handle("check-app-exists", (_event: IpcMainInvokeEvent, appName: string) => deps.checkAppExists(appName))
+  ipcMain.handle("list-fonts", () => deps.listFonts())
   ipcMain.handle("wsl-path", (_event: IpcMainInvokeEvent, path: string, mode: "windows" | "linux" | null) =>
     deps.wslPath(path, mode),
   )

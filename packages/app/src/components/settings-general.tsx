@@ -32,6 +32,19 @@ import { playSoundById, SOUND_OPTIONS } from "@/utils/sound"
 import { Link } from "./link"
 import { SettingsList, SettingsRow } from "./settings-list"
 
+// 候选列表来自系统枚举，字体本机一定有，不存在回退到默认字体的误判
+const isMonospace = (font: string) => {
+  const ctx = document.createElement("canvas").getContext("2d")
+  if (!ctx) return false
+  ctx.font = `72px "${font}"`
+  return ctx.measureText("MMMMMMMMMM").width === ctx.measureText("iiiiiiiiii").width
+}
+
+const splitFontWidths = (all: string[]) => ({ all, mono: all.filter(isMonospace) })
+
+/** 字体下拉的「默认」哨兵：字体名不可能长这样（无下划线字体），选它=清除配置回到系统默认 */
+const FONT_UNDEFINED = "__default__"
+
 let demoSoundState = {
   cleanup: undefined as (() => void) | undefined,
   timeout: undefined as NodeJS.Timeout | undefined,
@@ -198,6 +211,16 @@ export const SettingsGeneral: Component = () => {
     () => (desktop() && platform.getPinchZoomEnabled ? true : false),
     () => Promise.resolve(platform.getPinchZoomEnabled?.() ?? false).catch(() => false),
     { initialValue: false },
+  )
+
+  // 260829 Red 字体输入配 datalist 候选：枚举本机字体，等宽的那份只给代码/终端用
+  const [fonts] = createResource(
+    () => (desktop() && platform.listFonts ? true : false),
+    () =>
+      Promise.resolve(platform.listFonts?.() ?? [])
+        .then(splitFontWidths)
+        .catch(() => ({ all: [] as string[], mono: [] as string[] })),
+    { initialValue: { all: [] as string[], mono: [] as string[] } },
   )
 
   onMount(() => {
@@ -581,74 +604,93 @@ export const SettingsGeneral: Component = () => {
             />
           </SettingsRow>
 
-          <SettingsRow
-            title={language.t("settings.general.row.uiFont.title")}
-            description={language.t("settings.general.row.uiFont.description")}
-          >
-            <div class="w-full sm:w-[220px]">
-              <TextField
-                data-action="settings-ui-font"
-                label={language.t("settings.general.row.uiFont.title")}
-                hideLabel
-                type="text"
-                value={sans()}
-                onChange={(value) => settings.appearance.setUIFont(value)}
-                placeholder={sansDefault}
-                spellcheck={false}
-                autocorrect="off"
-                autocomplete="off"
-                autocapitalize="off"
-                class="text-12-regular"
-                style={{ "font-family": sansFontFamily(settings.appearance.uiFont()) }}
-              />
-            </div>
-          </SettingsRow>
+          {(() => {
+            // 260829 Red 字体选择改自定义下拉：每项以自身字体渲染预览，交互走 Kobalte 弹层
+            // （原生 datalist 样式不可控、点输入框不弹、点按钮收不回——哥哥实测三连败）
+            const fontItem = (kind: "sans" | "mono") => (font: string | undefined) => {
+              if (font === FONT_UNDEFINED)
+                return <span>{language.t("settings.general.row.font.undefined")}</span>
+              if (!font) return null
+              return (
+                <span style={{ "font-family": `"${font}", ${kind === "sans" ? "sans-serif" : "monospace"}` }}>
+                  {font}
+                </span>
+              )
+            }
+            const fontOptions = (list: readonly string[]) => [FONT_UNDEFINED, ...list]
+            return (
+              <>
+                <SettingsRow
+                  title={language.t("settings.general.row.uiFont.title")}
+                  description={language.t("settings.general.row.uiFont.description")}
+                >
+                  <Select
+                    data-action="settings-ui-font"
+                    options={fontOptions(fonts().all)}
+                    current={sans() || undefined}
+                    value={(f) => f}
+                    label={(f) => (f === FONT_UNDEFINED ? language.t("settings.general.row.font.undefined") : f)}
+                    onSelect={(f) => {
+                      if (f) settings.appearance.setUIFont(f === FONT_UNDEFINED ? "" : f)
+                    }}
+                    placeholder={sansDefault}
+                    variant="secondary"
+                    size="small"
+                    triggerVariant="settings"
+                    triggerStyle={{ "min-width": "180px" }}
+                  >
+                    {fontItem("sans")}
+                  </Select>
+                </SettingsRow>
 
-          <SettingsRow
-            title={language.t("settings.general.row.font.title")}
-            description={language.t("settings.general.row.font.description")}
-          >
-            <div class="w-full sm:w-[220px]">
-              <TextField
-                data-action="settings-code-font"
-                label={language.t("settings.general.row.font.title")}
-                hideLabel
-                type="text"
-                value={mono()}
-                onChange={(value) => settings.appearance.setFont(value)}
-                placeholder={monoDefault}
-                spellcheck={false}
-                autocorrect="off"
-                autocomplete="off"
-                autocapitalize="off"
-                class="text-12-regular"
-                style={{ "font-family": monoFontFamily(settings.appearance.font()) }}
-              />
-            </div>
-          </SettingsRow>
+                <SettingsRow
+                  title={language.t("settings.general.row.font.title")}
+                  description={language.t("settings.general.row.font.description")}
+                >
+                  <Select
+                    data-action="settings-code-font"
+                    options={fontOptions(fonts().mono)}
+                    current={mono() || undefined}
+                    value={(f) => f}
+                    label={(f) => (f === FONT_UNDEFINED ? language.t("settings.general.row.font.undefined") : f)}
+                    onSelect={(f) => {
+                      if (f) settings.appearance.setFont(f === FONT_UNDEFINED ? "" : f)
+                    }}
+                    placeholder={monoDefault}
+                    variant="secondary"
+                    size="small"
+                    triggerVariant="settings"
+                    triggerStyle={{ "min-width": "180px" }}
+                  >
+                    {fontItem("mono")}
+                  </Select>
+                </SettingsRow>
 
-          <SettingsRow
-            title={language.t("settings.general.row.terminalFont.title")}
-            description={language.t("settings.general.row.terminalFont.description")}
-          >
-            <div class="w-full sm:w-[220px]">
-              <TextField
-                data-action="settings-terminal-font"
-                label={language.t("settings.general.row.terminalFont.title")}
-                hideLabel
-                type="text"
-                value={terminal()}
-                onChange={(value) => settings.appearance.setTerminalFont(value)}
-                placeholder={terminalDefault}
-                spellcheck={false}
-                autocorrect="off"
-                autocomplete="off"
-                autocapitalize="off"
-                class="text-12-regular"
-                style={{ "font-family": terminalFontFamily(settings.appearance.terminalFont()) }}
-              />
-            </div>
-          </SettingsRow>
+                <SettingsRow
+                  title={language.t("settings.general.row.terminalFont.title")}
+                  description={language.t("settings.general.row.terminalFont.description")}
+                >
+                  <Select
+                    data-action="settings-terminal-font"
+                    options={fontOptions(fonts().mono)}
+                    current={terminal() || undefined}
+                    value={(f) => f}
+                    label={(f) => (f === FONT_UNDEFINED ? language.t("settings.general.row.font.undefined") : f)}
+                    onSelect={(f) => {
+                      if (f) settings.appearance.setTerminalFont(f === FONT_UNDEFINED ? "" : f)
+                    }}
+                    placeholder={terminalDefault}
+                    variant="secondary"
+                    size="small"
+                    triggerVariant="settings"
+                    triggerStyle={{ "min-width": "180px" }}
+                  >
+                    {fontItem("mono")}
+                  </Select>
+                </SettingsRow>
+              </>
+            )
+          })()}
 
           <SettingsRow title="Chat Background" description="Image shown behind the chat window (applies to all chats)">
             <div class="flex items-center gap-3">

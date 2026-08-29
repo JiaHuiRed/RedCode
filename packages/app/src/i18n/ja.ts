@@ -592,6 +592,7 @@ export const dict = {
   "settings.general.row.theme.description": "RedCodeのテーマをカスタマイズします。",
   "settings.general.row.font.title": "コードフォント",
   "settings.general.row.font.description": "コードブロックで使用するフォントをカスタマイズします",
+  "settings.general.row.font.undefined": "デフォルト（システム）",
   "settings.general.row.terminalFont.title": "Terminal Font",
   "settings.general.row.terminalFont.description": "Customise the font used in the terminal",
   "settings.general.row.uiFont.title": "UIフォント",

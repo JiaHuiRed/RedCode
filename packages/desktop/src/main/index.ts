@@ -14,6 +14,7 @@ import contextMenu from "electron-context-menu"
 
 import type { InitStep, ServerReadyData, SqliteMigrationProgress, WslConfig } from "../preload/types"
 import { checkAppExists, resolveAppPath, wslPath } from "./apps"
+import { listFonts } from "./fonts"
 import { CHANNEL, UPDATER_ENABLED } from "./constants"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand, sendSqliteMigrationProgress } from "./ipc"
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
@@ -433,6 +434,7 @@ const main = Effect.gen(function* () {
     setDisplayBackend: async () => undefined,
     parseMarkdown: async (markdown) => parseMarkdown(markdown),
     checkAppExists: (appName) => checkAppExists(appName),
+    listFonts: () => listFonts(),
     wslPath: async (path, mode) => wslPath(path, mode),
     resolveAppPath: async (appName) => resolveAppPath(appName),
     loadingWindowComplete: () => Deferred.doneUnsafe(loadingComplete, Effect.void),
