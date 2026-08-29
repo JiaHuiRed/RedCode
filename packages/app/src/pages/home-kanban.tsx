@@ -99,9 +99,14 @@ export function HomeKanban(props: {
                 content-start 紧贴着它 —— hover 抬起的 4px、scale 溢出和向上的阴影全被切平，
                 读起来是「卡片滑进了上面的东西底下」。负边距吃掉列的 gap-3 里的 8px、再由
                 padding 补回来：静止版式一像素不动，只把裁剪边往上挪 8px。
-                左右暂未处理：scale(1.02) 在侧边也各溢出约 2-3px，但加负横边距会让网格比列宽，
-                auto-fill 的列数会在临界宽度上跳，不值当，等有人真觉得碍眼再说。 */}
-            <div class="overflow-y-auto flex-1 pt-2 -mt-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-2 auto-rows-min content-start">
+                260829 二轮：左右也补上（哥哥说首列卡片左侧仍有裁剪痕迹）。px-2 -mx-2 同款手法。
+                真正要让开的不是 scale 那 2-3px，是阴影——0 8px 16px 没有 x 偏移，左右各够到
+                16px。没给满 16 是因为再宽就把列间 gap-4 整个吃掉、相邻两列的裁剪盒会贴死；
+                8px 覆盖掉形变全部与阴影的实心段，外侧那截 alpha 已经接近 0，看不出来。
+                负横边距只伸进外层那圈 px-4 的 padding 里（overflow 裁在 padding 盒，padding
+                区不裁），所以首列与末列都不会被行容器切掉。
+                已知代价：网格比列宽 16px，auto-fill 的列数会在极窄的临界宽度上提前跳一档。 */}
+            <div class="overflow-y-auto flex-1 pt-2 -mt-2 px-2 -mx-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-2 auto-rows-min content-start">
               <Show
                 when={column.records.length > 0}
                 fallback={
