@@ -380,6 +380,64 @@ it.effect("updates global config and omits empty shell key in jsonc", () =>
   ),
 )
 
+// 260829 Red GUI「智能体」面板：面板只能用字符串把显式配置改回默认（请求体会丢掉 undefined），
+// 由 updateGlobal 在落盘前把空串 / "default" / 0 翻译成删键。
+it.effect("writes agent model, variant and timeout into global jsonc", () =>
+  withGlobalConfig({ config: { model: "test/model" }, name: "redcode.jsonc" }, ({ dir }) =>
+    Effect.gen(function* () {
+      yield* Config.use.updateGlobal({
+        agent: { explore: { model: "anthropic/claude-sonnet-4", variant: "high", timeout_ms: 600_000 } },
+      })
+
+      const file = path.join(dir, "redcode.jsonc")
+      const written = yield* AppFileSystem.use.readFileString(file)
+      const parsed = ConfigParse.schema(Config.Info, ConfigParse.jsonc(written, file), file)
+      expect(parsed.agent?.explore).toMatchObject({
+        model: "anthropic/claude-sonnet-4",
+        variant: "high",
+        timeout_ms: 600_000,
+      })
+    }),
+  ),
+)
+
+it.effect("updates global agent config and omits keys set back to their default", () =>
+  withGlobalConfig(
+    {
+      config: {
+        agent: {
+          explore: {
+            model: "anthropic/claude-sonnet-4",
+            variant: "high",
+            timeout_ms: 600_000,
+            fallback_model: "openai/gpt-5",
+          },
+        },
+      },
+      name: "redcode.jsonc",
+    },
+    ({ dir }) =>
+      Effect.gen(function* () {
+        yield* Config.use.updateGlobal({
+          agent: { explore: { model: "", variant: "default", timeout_ms: 0, fallback_model: "" } },
+        })
+
+        const file = path.join(dir, "redcode.jsonc")
+        const written = yield* AppFileSystem.use.readFileString(file)
+        expect(written).not.toContain('"model"')
+        expect(written).not.toContain('"variant"')
+        expect(written).not.toContain('"timeout_ms"')
+        expect(written).not.toContain('"fallback_model"')
+        const parsed = ConfigParse.schema(Config.Info, ConfigParse.jsonc(written, file), file)
+        // 四项全清空后不该在文件里留下空壳 `"explore": {},`
+        expect(parsed.agent?.explore).toBeUndefined()
+        expect(parsed.agent?.explore?.variant).toBeUndefined()
+        expect(parsed.agent?.explore?.timeout_ms).toBeUndefined()
+        expect(parsed.agent?.explore?.fallback_model).toBeUndefined()
+      }),
+  ),
+)
+
 it.instance(
   "loads formatter boolean config",
   Effect.gen(function* () {

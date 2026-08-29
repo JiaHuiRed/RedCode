@@ -2,7 +2,7 @@ export * as ConfigAgent from "./agent"
 
 import path from "path"
 import { Exit, Schema, SchemaGetter } from "effect"
-import { PositiveInt } from "@redcode-ai/core/schema"
+import { NonNegativeInt, PositiveInt } from "@redcode-ai/core/schema"
 import * as Log from "@redcode-ai/core/util/log"
 import { Glob } from "@redcode-ai/core/util/glob"
 import { configEntryNameFromPath } from "./entry-name"
@@ -44,7 +44,10 @@ const AgentSchema = Schema.StructWithRest(
       description: "Maximum number of agentic iterations before forcing text-only response",
     }),
     maxSteps: Schema.optional(PositiveInt).annotate({ description: "@deprecated Use 'steps' field instead." }),
-    timeout_ms: Schema.optional(PositiveInt).annotate({
+    // 260829 Red 用 NonNegativeInt 而不是 PositiveInt：注释从写下那天起就是「0/omitted = no timeout」，
+    // 但 PositiveInt 把 0 挡在门外，于是 GUI 面板没法把超时改回「不覆盖」——选默认发 0，服务端直接 400。
+    // 0 与「没写这一行」同义，落盘前由 config.ts 的 writableAgent 翻译成删键，文件里不留 0。
+    timeout_ms: Schema.optional(NonNegativeInt).annotate({
       description:
         "Subagent timeout in milliseconds. When a subagent run exceeds this, it is cancelled and retried with fallback_model (if set). 0/omitted = no timeout.",
     }),

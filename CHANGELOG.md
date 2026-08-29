@@ -8,43 +8,22 @@
 
 ---
 
-## 待做
+### [0.9.16] - 2026-08-29
 
-> 这一节记的是**尚未实现**的计划，不是已发生的变更。做完之后删掉本节、把结果写进对应版本条目。
+> 子代理的模型、推理档、超时搬进 GUI 设置面板——此前只能手改 `~/.redcode/redcode.jsonc`；顺手修掉一处让「改回默认」根本发不出去的 schema 矛盾。
 
-### GUI 设置面板：子代理模型管理（只管已有，不做新建）
+#### 新增
 
-**为什么**：换子代理模型现在只能手改 `~/.redcode/redcode.jsonc`。step 这类供应商到期、或想把某个工种换个模型试试，都要翻配置文件。
+- **设置面板「智能体」页**（`packages/app/src/components/settings-agents.tsx`、`dialog-settings.tsx`、`app/i18n/*`）：给已有角色配「模型 / 推理档 / 超时 / 兜底模型」，分「主智能体」（`redmind`、`plan`）与「子代理」（`explore`、`execute`）两组；内部机件（`title` / `summary` / `compaction`）引擎侧已标 `hidden`，面板按 `!hidden` 过滤自动排除。写入走现成的 `globalSync.updateConfig({ agent: { <name>: { ... } } })`，落 `~/.redcode/redcode.jsonc`（同步层）——实测改一个值再读文件，键确实进同步层，注释与格式原地保留（`patchJsonc` 逐键改，不整文件重写）。三处按实测定的实现细节：
+  - **档位集合按模型重算**（取 `models.find(...).variants`）：Hy4 preview 只有 `none` / `high`，别家是 low/medium/high/max。换模型时若旧档位不在新模型的档位表里，一并写回 `default`，不留一个引擎会静默丢弃的值（`prompt.ts` 只认 `variants` 里真实存在的档位名）。
+  - **第一项叫「默认（不覆盖）」，不叫「跟随主模型」**：清空配置不等于跟随主模型——内建子代理的 `agent/definition/*.md` 自带 model / timeout_ms / fallback_model（execute 自带 GLM-5.3-Flash，explore 自带超时与 GLM 兜底），删键是**交回这份定义**；主智能体没有定义，才真的跟随会话主模型。文案按这个语义写，三语同步。
+  - **下拉的选项值不能用空串 / 0**：Kobalte 的选中态对 falsy key 判定不稳，实测 trigger 显示空白、甚至串到别的模型上。界面上用哨兵值，落库前再翻译成空串。
+- **改回默认时真正删键**（`packages/opencode/src/config/config.ts`）：HTTP 请求体传不了 `undefined`，所以「改回默认」只能发一个能过 schema 的哨兵值、由服务端在落盘前翻译——沿用 `shell: ""` 那条既有先例。现在 `model` / `fallback_model` 的空串、`variant` 的 `"default"`、`timeout_ms` 的 `0` 都在 `writableAgent()` 里转成 `undefined`，`patchJsonc` 据此删键；四项全清空时整个 agent 键一并删掉，不留 `"redmind": {}` 空壳——判空要算上 `normalize()` 总会塞进来的空 `options` / `permission`，否则每个 agent 都显得「还有东西」。
+- **看板卡片上限收到 24 并整体放大**（`packages/app/src/pages/home-kanban.tsx`、`app/i18n/*`）：此前跟着 `HOME_SESSION_LIMIT`（64）全量铺开，一屏全是同尺寸小卡，「最近」这件事被数量稀释掉了——每张都一样大、一样多，扫视没有落点。改成看板自己的 `KANBAN_LIMIT = 24`，**只砍「空闲」列**：工作中与需关注的会话无论多旧都保留，那两列是报警灯，砍掉等于把指示关掉。折叠掉的部分在列底给一行「另有 N 个较早会话未显示」——静悄悄少一截最坏，用户会以为会话丢了（归档入口在右键菜单里，看板又没有分页）。卡片同步放大一档，纵向为主：列宽 `minmax(240px)` → `minmax(340px)`，内边距 `py-2.5` → `py-3.5`、`px-3` → `px-4`，标题 13 → 15px，副行与日期 11/10 → 12/11px。
 
-**范围**：给**已有**角色配「模型 + 推理档」。**不做**自定义子智能体新建——那要一整套表单（名字 / 工具集 / 系统提示词），工作量差一个量级。
+#### 修复
 
-**配置对象**（具名键见 `packages/opencode/src/config/config.ts:218-233`）：
-
-| 类别 | 键 | 是否进面板 |
-|---|---|---|
-| 子代理工种 | `explore`、`execute` | ✅ 主要目标 |
-| 会话姿态 | `redmind`、`plan` | 可选——它俩跟着主模型走更自然 |
-| 内部机件 | `title`、`summary` 等 | ❌ 隐藏角色，别放 |
-
-**可写字段**（`packages/opencode/src/config/agent.ts:23-53`，全部 optional）：
-
-- `model` —— `providerID/modelID` 形态
-- `variant` —— 推理档。注意 schema 注释写明它**只在使用该 agent 自己配置的模型时生效**
-- `timeout_ms` + `fallback_model` —— 超时与超时后的兜底模型（0.9.12 刚给三个工种补齐过超时，面板里一并暴露很顺手）
-- `temperature` / `top_p` / `steps` —— 可以先不做
-
-**落点**：
-
-- 面板挂载：`packages/app/src/components/dialog-settings.tsx`（现有分区用 `Tabs.SectionTitle`）；新建 `settings-agents.tsx`，与 `settings-models.tsx` / `settings-providers.tsx` 同级
-- 写配置：`globalSync.updateConfig({ agent: { explore: { model, variant } } })` —— 现成通路，`settings-general.tsx:357`、`settings-providers.tsx:93` 都是这么写的
-- 模型下拉与档位下拉：`packages/app/src/components/prompt-input.tsx` 里那组 agent / model / variant 控件可直接抄
-
-**四个必须注意的**：
-
-1. **档位集合按模型变，不是固定五档。** `variants` 来自 `provider.model.variants`（由 models.dev 的 `reasoning_options` 派生），Hy4 preview 只有 `none` / `high`，别家是 low/medium/high/max。**选完模型必须重算档位选项**，否则会写进一个该模型不接受的值。
-2. **「默认」这一项 = 不发 `reasoning_effort` 参数**（`packages/opencode/src/session/prompt.ts:663` 把 `"default"` 映射成 `undefined`），由供应商决定。它可能与某个显式档等价，面板上最好把这层意思标出来，别让人以为是第三种行为。
-3. **目标层已定（同步层），要验的是 GUI 会不会写偏。** 子代理配置本来就是两台机器通用的、跟路径无关，所以该落在 `~/.redcode/redcode.jsonc` 这份同步配置里。风险不在选层而在实现：在册有一条「同步配置冒出本地层的键」，根因已修但注明 GUI 侧还留着一个窄口子。做完先改一个值，确认它进的是同步层、而不是被静默落到本地覆盖层——后者会导致换台电脑就失效，而且不会报错。
-4. **别用别名键。** `build` / `general` / `scout` 是老名字，已并入 `redmind` / `explore`；配置循环会规范化（`agent/agent.ts` 的 `ALIAS`），但面板不该再教人写老名字。
+- **`timeout_ms: 0` 被 schema 拒，超时一旦设过就改不回去**（`packages/opencode/src/config/agent.ts`）：这个字段用的是 `PositiveInt`，而它自己的注释从写下那天起就是「0/omitted = no timeout」——校验和注释打架，代价是面板选「默认」发 0、服务端直接 400、UI 静默退回旧值。改 `NonNegativeInt`（0 与「没写这一行」同义），落盘前翻译成删键，文件里不留 0。
 
 ---
 
