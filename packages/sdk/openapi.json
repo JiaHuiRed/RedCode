@@ -13964,7 +13964,7 @@
           },
           "timeout_ms": {
             "type": "integer",
-            "exclusiveMinimum": 0
+            "minimum": 0
           },
           "fallback_model": {
             "type": "string"
@@ -14099,6 +14099,10 @@
                     },
                     "output": {
                       "type": "number"
+                    },
+                    "currency": {
+                      "type": "string",
+                      "enum": ["USD", "CNY"]
                     },
                     "cache_read": {
                       "type": "number"
