@@ -187,3 +187,92 @@ describe("detect —— <args> 形状", () => {
     expect(out.stripped).toBe(text)
   })
 })
+
+// 260829 第四种形状：命名空间后缀变体（hy4-preview 实测）。
+// <tool_calls:6124c78e><tool_call:6124c78e>bash<arg_key:6124c78e>command</arg_key:6124c78e>
+// <arg_value:6124c78e>…</arg_value:6124c78e>…</tool_call:6124c78e>…</tool_calls:6124c78e>
+// 旧快路径只认无冒号的 <function= / <args> / </tool_calls>，三者都不含，所以既不摘除也不回灌。
+describe("detect —— 命名空间 <tool_calls:NS> 形状", () => {
+  const KNOWN = new Set(["bash", "read", "edit", "todowrite"])
+
+  test("★线上原样：hy4 reasoning 末端的完整工具草稿，一块摘干净", () => {
+    // 取自 redcode.db prt_001a04dd0c2ab001（8/29 GUI+hy4 会话，len 3475）
+    const text = [
+      "一次发三个。ComfyUI 离线——先把炉子点着，不然我啥也干不了。同时摸清现有 CG 家底。",
+      "",
+      "<tool_calls:6124c78e>",
+      "<tool_call:6124c78e>bash",
+      "<arg_key:6124c78e>command</arg_key:6124c78e>",
+      "<arg_value:6124c78e>Start-Process -FilePath \"D:\\AI\\ComfyUI\\venv\\Scripts\\python.exe\" -ArgumentList \"main.py\"</arg_value:6124c78e>",
+      "<arg_key:6124c78e>description</arg_key:6124c78e>",
+      "<arg_value:6124c78e>Starts ComfyUI server in background</arg_value:6124c78e>",
+      "</tool_call:6124c78e>",
+      "<tool_call:6124c78e>bash",
+      "<arg_key:6124c78e>command</arg_key:6124c78e>",
+      "<arg_value:6124c78e>Get-ChildItem D:\\AI\\Galgame\\CG -Recurse | Select-Object -First 20</arg_value:6124c78e>",
+      "</tool_call:6124c78e>",
+      "<tool_call:6124c78e>read",
+      "<arg_key:6124c78e>filePath</arg_key:6124c78e>",
+      "<arg_value:6124c78e>D:\\AI\\Galgame\\gen.py</arg_value:6124c78e>",
+      "</tool_call:6124c78e>",
+      "</tool_calls:6124c78e>",
+    ].join("\n")
+
+    const out = detect(text, KNOWN)
+    expect(out.calls.map((c) => c.name)).toEqual(["bash", "bash", "read"])
+    expect(out.calls[0].params).toEqual({
+      command:
+        "Start-Process -FilePath \"D:\\AI\\ComfyUI\\venv\\Scripts\\python.exe\" -ArgumentList \"main.py\"",
+      description: "Starts ComfyUI server in background",
+    })
+    expect(out.calls[2].params).toEqual({ filePath: "D:\\AI\\Galgame\\gen.py" })
+    expect(out.stripped).toBe("一次发三个。ComfyUI 离线——先把炉子点着，不然我啥也干不了。同时摸清现有 CG 家底。")
+  })
+
+  test("参数缺失时忽略 arg_value（只有 key 没 value 的截断）也能认", () => {
+    const text =
+      "写文件。<tool_calls:6124c78e><tool_call:6124c78e>edit<arg_key:6124c78e>filePath</arg_key:6124c78e><arg_value:6124c78e>a.ts</arg_value:6124c78e></tool_call:6124c78e>"
+    const out = detect(text, KNOWN)
+    expect(out.calls).toHaveLength(1)
+    expect(out.calls[0].params).toEqual({ filePath: "a.ts" })
+    expect(out.stripped).toBe("写文件。")
+  })
+
+  test("截断（无 </tool_calls:NS>）吃到末尾", () => {
+    const text =
+      "读一下。<tool_calls:6124c78e><tool_call:6124c78e>read<arg_key:6124c78e>filePath</arg_key:6124c78e><arg_value:6124c78e>a.ts</arg_value:6124c78e><arg_key:6124c78e>x</arg_key:6124c78e>"
+    const out = detect(text, KNOWN)
+    expect(out.calls).toHaveLength(1)
+    expect(out.calls[0].params).toEqual({ filePath: "a.ts" })
+    expect(out.stripped).toBe("读一下。")
+  })
+
+  test("命名空间不同名（标签名不是同一 ns 的后缀）不匹配，不误伤", () => {
+    const text = "讨论：<tool_calls:abc><tool_call:def>bash</tool_call:def></tool_calls:abc>"
+    const out = detect(text, KNOWN)
+    expect(out.calls).toHaveLength(0)
+    expect(out.stripped).toBe(text)
+  })
+
+  test("工具名对不上不认（防误判防线与旧形态一致）", () => {
+    const text =
+      "<tool_calls:6124c78e><tool_call:6124c78e>not_a_real_tool<arg_key:6124c78e>x</arg_key:6124c78e></tool_call:6124c78e></tool_calls:6124c78e>"
+    const out = detect(text, KNOWN)
+    expect(out.calls).toHaveLength(0)
+    expect(out.stripped).toBe(text)
+  })
+
+  test("光杆工具名无参数不算命中（模型引用格式骨架）", () => {
+    const text = "我认为 XML 是这样写的：<tool_calls:6124c78e><tool_call:6124c78e>bash<arg_key:6124c78e>command</arg_key:6124c78e>"
+    const r = detect(text, new Set(["bash", "read"]))
+    expect(r.calls).toEqual([])
+    expect(r.stripped).toBe(text)
+  })
+
+  test("正文只是提了一嘴 <tool_calls: 不误伤", () => {
+    const text = "它输出 <tool_calls:6124c78e> 这种标签，说明格式退化了。"
+    const out = detect(text, KNOWN)
+    expect(out.calls).toHaveLength(0)
+    expect(out.stripped).toBe(text)
+  })
+})
