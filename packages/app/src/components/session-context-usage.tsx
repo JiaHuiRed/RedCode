@@ -75,6 +75,14 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   // （有 --v2-orange-* 调色板，但那是原始色阶、不分亮暗，直接用会在暗色主题下发错），
   // 为一个装饰功能新增一对设计 token 不划算，所以 soft 与 prune 合并成 warning。
   const TIER_STROKE = [undefined, "var(--v2-state-fg-warning)", "var(--v2-state-fg-danger)"] as const
+  // 260829 cc 条用的分档色。与圈共用 strokeTier()，但**常态档不同**：圈在常态刻意不上色
+  // （「没事发生时圈就该是平时的样子」，见上），而条的职责是把占比画出来，没有填充色就
+  // 什么都看不到，所以常态给 info 蓝。警戒两档与圈完全一致。
+  const TIER_BAR = [
+    "var(--v2-state-fg-info)",
+    "var(--v2-state-fg-warning)",
+    "var(--v2-state-fg-danger)",
+  ] as const
   const usageTier = (usage: number | null) => {
     if (usage === null) return 0
     if (usage >= 80) return 2
@@ -123,7 +131,8 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   //
   // 第一行的上下文窗口保留 —— 它是这个圆圈本身的含义，没有它悬浮就解释不了自己。
   const tooltipValue = () => (
-    <div>
+    // min-w：条的长度不该跟着那三行文字的宽度忽长忽短
+    <div class="min-w-[196px]">
       <Show when={context()}>
         {(ctx) => (
           <>
@@ -137,6 +146,26 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
                 </span>
                 <span class="text-text-invert-base">{language.t("context.usage.window")}</span>
               </div>
+              {/* 260829 cc 占比色条。此前这个悬浮只有三行数字，占用率要靠读百分比才知道，
+                  而"还剩多少"是它最该一眼给出的东西。底槽从 tooltip 自己的文字色 color-mix
+                  出来，不引入新 token —— 这层是 --surface-float-base 的浮层，深浅主题下
+                  它的文字色本就已经翻好了，跟着它走就不会在某个主题上糊掉。
+                  宽度按 usage 钳在 100%：窗口口径可能短暂超过 limit（比如上一轮刚压缩、
+                  limit 换了模型），条不该溢出容器。 */}
+              <Show when={ctx().usage !== null}>
+                <div
+                  class="mt-1.5 mb-0.5 h-1 w-full overflow-hidden rounded-full"
+                  style={{ "background-color": "color-mix(in srgb, var(--text-invert-base) 22%, transparent)" }}
+                >
+                  <div
+                    class="h-full rounded-full"
+                    style={{
+                      width: `${Math.min(100, Math.max(0, ctx().usage!))}%`,
+                      "background-color": TIER_BAR[strokeTier()],
+                    }}
+                  />
+                </div>
+              </Show>
             </Show>
             <Show when={ctx().firstChunkMs !== null}>
               <div class="flex items-center gap-2">
