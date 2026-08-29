@@ -1235,6 +1235,13 @@ export const layer = Layer.effect(
         // 旧价：flash 1/2/0.02、pro 3/6/0.025 —— 高峰价约为旧价 3-4.5 倍。
         const DS_V4_COST_FLASH = { input: 3, output: 9, cache: { read: 0.1, write: 3 } }
         const DS_V4_COST_PRO = { input: 9, output: 27, cache: { read: 0.3, write: 9 } }
+        // 260829 cc 腾讯 Hy4 preview 官方定价（每百万 token，见 hy.tencent.com 发布页）：
+        // 输入 6 元、输出 18 元、命中缓存 0.3 元。cache write 按本表惯例 = 未命中输入价。
+        // 必须覆盖：opencode-go 已在 CNY_PROVIDERS 名单里（GUI 一律按 ¥ 标注），而
+        // models.dev 给的是**美元**价（0.834/2.501/0.042，×7.2 正好等于上面三个人民币数），
+        // 不覆盖就是拿美元数字贴人民币标签 —— 费用显示只有真实值的 1/7.2。
+        // 这与 260822 vision-exp 那次漏配是同型问题。
+        const HY4_COST = { input: 6, output: 18, cache: { read: 0.3, write: 6 } }
         const CNY_PRICING: Record<string, Record<string, typeof CNY_COST_FLASH>> = {
           deepseek: {
             "deepseek-v4-flash": DS_V4_COST_FLASH,
@@ -1248,6 +1255,7 @@ export const layer = Layer.effect(
             // USD 价（0.22/0.66），费用按美元显示。
             "deepseek-v4-flash-vision-exp": DS_V4_COST_FLASH,
             "deepseek-v4-pro": DS_V4_COST_PRO,
+            "hy4-preview": HY4_COST,
           },
           xiaomi: {
             "mimo-v2.5": CNY_COST_FLASH,

@@ -14,6 +14,7 @@ import PROMPT_MINIMAX from "./prompt/minimax.md" with { type: "text" }
 import PROMPT_CODEX from "./prompt/codex.md" with { type: "text" }
 import PROMPT_TRINITY from "./prompt/trinity.md" with { type: "text" }
 import PROMPT_GLM from "./prompt/glm.md" with { type: "text" }
+import PROMPT_HY from "./prompt/hy.md" with { type: "text" }
 import PROMPT_GROK from "./prompt/grok.md" with { type: "text" }
 import PROMPT_STEP from "./prompt/step.md" with { type: "text" }
 import PROMPT_OLLAMA from "./prompt/ollama.md" with { type: "text" }
@@ -77,6 +78,12 @@ export function provider(model: Provider.Model) {
   if (model.providerID.toLowerCase().includes("ollama")) return [PROMPT_OLLAMA]
   // 260625 Red GLM(智谱) + Qwen(通义) — 准一线，复用精炼档
   if (model.api.id.toLowerCase().includes("glm") || model.api.id.toLowerCase().includes("qwen")) return [PROMPT_GLM]
+  // 260829 cc 腾讯混元 Hy 系列（hy4-preview / hy3 …）。用 `hy` + 数字并带边界，不能写成
+  // includes("hy") —— 那会命中任何名字里带 hy 的模型。provider 侧的 id 形态见 models.dev：
+  // opencode-go 是 `hy4-preview`、nano-gpt 是 `tencent/hy4-preview`，所以边界要允许 `/`。
+  // 专属档的存在理由是官方自陈的两个已知问题（长思考、过度自我验证），不是逃开兜底——
+  // 260822 重写后的 default.md 本身已是一线水准，hy.md 就是以它为骨加那两条。
+  if (/(?:^|[/\-_])hy[0-9]/i.test(model.api.id)) return [PROMPT_HY]
   // 260623 Red Step(阶跃星辰)
   // 260729 Red grok 此前无专属提示词、落 default.md —— 而当时的 default.md 强制「不超过 4 行、
   // 单词回答最好」，会直接碾平 soul 的人格。见 grok.md。
