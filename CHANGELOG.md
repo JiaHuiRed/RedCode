@@ -8,6 +8,46 @@
 
 ---
 
+## 待做
+
+> 这一节记的是**尚未实现**的计划，不是已发生的变更。做完之后删掉本节、把结果写进对应版本条目。
+
+### GUI 设置面板：子代理模型管理（只管已有，不做新建）
+
+**为什么**：换子代理模型现在只能手改 `~/.redcode/redcode.jsonc`。step 这类供应商到期、或想把某个工种换个模型试试，都要翻配置文件。
+
+**范围**：给**已有**角色配「模型 + 推理档」。**不做**自定义子智能体新建——那要一整套表单（名字 / 工具集 / 系统提示词），工作量差一个量级。
+
+**配置对象**（具名键见 `packages/opencode/src/config/config.ts:218-233`）：
+
+| 类别 | 键 | 是否进面板 |
+|---|---|---|
+| 子代理工种 | `explore`、`execute` | ✅ 主要目标 |
+| 会话姿态 | `redmind`、`plan` | 可选——它俩跟着主模型走更自然 |
+| 内部机件 | `title`、`summary` 等 | ❌ 隐藏角色，别放 |
+
+**可写字段**（`packages/opencode/src/config/agent.ts:23-53`，全部 optional）：
+
+- `model` —— `providerID/modelID` 形态
+- `variant` —— 推理档。注意 schema 注释写明它**只在使用该 agent 自己配置的模型时生效**
+- `timeout_ms` + `fallback_model` —— 超时与超时后的兜底模型（0.9.12 刚给三个工种补齐过超时，面板里一并暴露很顺手）
+- `temperature` / `top_p` / `steps` —— 可以先不做
+
+**落点**：
+
+- 面板挂载：`packages/app/src/components/dialog-settings.tsx`（现有分区用 `Tabs.SectionTitle`）；新建 `settings-agents.tsx`，与 `settings-models.tsx` / `settings-providers.tsx` 同级
+- 写配置：`globalSync.updateConfig({ agent: { explore: { model, variant } } })` —— 现成通路，`settings-general.tsx:357`、`settings-providers.tsx:93` 都是这么写的
+- 模型下拉与档位下拉：`packages/app/src/components/prompt-input.tsx` 里那组 agent / model / variant 控件可直接抄
+
+**四个必须注意的**：
+
+1. **档位集合按模型变，不是固定五档。** `variants` 来自 `provider.model.variants`（由 models.dev 的 `reasoning_options` 派生），Hy4 preview 只有 `none` / `high`，别家是 low/medium/high/max。**选完模型必须重算档位选项**，否则会写进一个该模型不接受的值。
+2. **「默认」这一项 = 不发 `reasoning_effort` 参数**（`packages/opencode/src/session/prompt.ts:663` 把 `"default"` 映射成 `undefined`），由供应商决定。它可能与某个显式档等价，面板上最好把这层意思标出来，别让人以为是第三种行为。
+3. **目标层已定（同步层），要验的是 GUI 会不会写偏。** 子代理配置本来就是两台机器通用的、跟路径无关，所以该落在 `~/.redcode/redcode.jsonc` 这份同步配置里。风险不在选层而在实现：在册有一条「同步配置冒出本地层的键」，根因已修但注明 GUI 侧还留着一个窄口子。做完先改一个值，确认它进的是同步层、而不是被静默落到本地覆盖层——后者会导致换台电脑就失效，而且不会报错。
+4. **别用别名键。** `build` / `general` / `scout` 是老名字，已并入 `redmind` / `explore`；配置循环会规范化（`agent/agent.ts` 的 `ALIAS`），但面板不该再教人写老名字。
+
+---
+
 ### [0.9.14] - 2026-08-29
 
 > 一批玻璃材质的推进（迎光边、边缘渐隐、旋钮化、侧栏成卡），外加把 v2 色板并回主题这条根上的修正——首页上同时存在三种配色不是三处随手写的，是三套颜色系统同屏。正确性上最重的一条是「切走再切回会话，内容掉在很多条消息之前」：不是 Electron 的性能限制，是一次刷新拿 40 条覆盖了已加载的整段历史。
