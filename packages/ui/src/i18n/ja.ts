@@ -140,6 +140,8 @@ export const dict = {
   "ui.message.interrupted": "中断",
   "ui.message.truncated": "出力が途中で終了（トークン上限に到達）",
   "ui.message.queued": "待機中",
+ "ui.message.steerQueued": "割り込み済み・現在のステップの完了を待機中",
+ "ui.message.steerDelivered": "反映済み",
   "ui.message.attachment.alt": "添付ファイル",
 
   "ui.patch.action.deleted": "削除済み",

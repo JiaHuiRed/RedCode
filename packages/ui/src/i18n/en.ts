@@ -165,6 +165,8 @@ export const dict: Record<string, string> = {
   "ui.message.interrupted": "Interrupted",
   "ui.message.truncated": "Output cut off (hit the token limit)",
   "ui.message.queued": "Queued",
+ "ui.message.steerQueued": "Stepped in · waiting for current step",
+ "ui.message.steerDelivered": "Delivered",
   "ui.message.attachment.alt": "attachment",
 
   "ui.patch.action.deleted": "Deleted",

@@ -399,6 +399,31 @@ export function MessageTimeline(props: {
 
     return undefined
   })
+ // 260828 Red 插队送达状态:busy 中发送且无 assistant 子消息的 user 消息,
+ // 时间上其后已有 assistant 消息 = 下个 step 组装上下文已吃进 → delivered;否则等待 → queued
+ const steerStateByID = createMemo(() => {
+   const result = new Map<string, "queued" | "delivered">()
+   const messages = sessionMessages()
+   const busy = working()
+   const activeID = activeMessageID()
+   let maxAssistantTime = 0
+   for (let i = messages.length - 1; i >= 0; i--) {
+     const message = messages[i]
+     if (message.role === "assistant") {
+       maxAssistantTime = Math.max(maxAssistantTime, message.time?.created ?? 0)
+       continue
+     }
+     if (message.role !== "user") continue
+     // 正常轮首:有自己的 assistant 子消息 → 不标记
+     if ((assistantMessagesByParent().get(message.id) ?? []).length > 0) continue
+     // 当前活跃轮首 → 不标记(它在跑,不是插队)
+     if (busy && activeID === message.id) continue
+     if (maxAssistantTime > (message.time?.created ?? 0)) result.set(message.id, "delivered")
+     else if (busy) result.set(message.id, "queued")
+   }
+   return result
+ })
+
   const info = createMemo(() => {
     const id = sessionID()
     if (!id) return
@@ -1339,6 +1364,18 @@ export function MessageTimeline(props: {
                         displayName: settings.userProfile.displayName(),
                       }}
                     />
+                   <Show when={steerStateByID().get(userMessageRow().userMessageID)}>
+                     {(state) => (
+                       <div class="mt-1 flex w-full items-center gap-1.5 px-1 text-11-regular text-text-tertiary">
+                         <Icon name={state() === "queued" ? "arrow-down-to-line" : "check-small"} size="small" />
+                         <span>
+                           {language.t(
+                             state() === "queued" ? "ui.message.steerQueued" : "ui.message.steerDelivered",
+                           )}
+                         </span>
+                       </div>
+                     )}
+                   </Show>
                   </div>
                 </div>
               )}

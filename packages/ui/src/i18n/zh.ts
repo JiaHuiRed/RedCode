@@ -148,6 +148,8 @@ export const dict = {
   "ui.message.interrupted": "已中断",
   "ui.message.truncated": "输出被截断（达到 token 上限）",
   "ui.message.queued": "排队中",
+ "ui.message.steerQueued": "已插队 · 等待当前步骤完成",
+ "ui.message.steerDelivered": "已送达",
   "ui.message.attachment.alt": "附件",
 
   "ui.patch.action.deleted": "已删除",
