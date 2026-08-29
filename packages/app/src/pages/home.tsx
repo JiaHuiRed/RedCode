@@ -287,7 +287,7 @@ function HomeDesign() {
   }
 
   return (
-    <div class="grid w-full h-full gap-x-6 pr-6 lg:grid-cols-[220px_minmax(0,1fr)] grid-rows-[1fr_auto]">
+    <div class="grid w-full h-full gap-x-6 pr-6 lg:grid-cols-[232px_minmax(0,1fr)] grid-rows-[1fr_auto]">
       <HomeProjectColumn
         projects={projects()}
         selected={selectedProject()?.worktree}
@@ -501,8 +501,29 @@ function HomeProjectColumn(props: {
 }) {
   const platform = usePlatform()
   return (
+    // 260829 cc 侧栏从「贴边到底的柱子」改成浮起的卡片。
+    //   起因：哥哥说看板卡片的玻璃质感明显比侧栏好，而看板卡片**根本没有玻璃**
+    //   （bg-v2-background-bg-base 是实色，零 backdrop-filter），真磨砂在侧栏这边。
+    //   差的是物体性不是光学：卡片有圆角、四边描边、阴影、浮在磨砂主卡之上；侧栏只有
+    //   一条 border-r，贴边到底，眼睛读成墙——墙再通透也不是玻璃。
+    //   所以杠杆不是把 68%/blur18 往上推（推到 --frost-strength 1.39 还会整块钳成不透明），
+    //   而是让它成为一个看得见四条边的物件：脱边留白 + 14px 圆角 + 四边描边 + 向下阴影。
+    //   border-r 与 pr-6 一并撤掉——前者是「墙」的边界语言，后者是墙与内容的间距，
+    //   成卡之后由 px-3 与栅格的 gap-x-6 接手。
+    //   列宽 220→232 是补偿：ml-3(12) + px-3 两侧(24) 之后内容仍是 196px，与改前一致，
+    //   免得项目名截断变化混进观感判断里。
+    //
+    //   260829 cc 二轮，哥哥说「不算严丝合缝」。量出来两处：
+    //   · 原来的 pt-[52px] 是把内容顶到 52px，与内容列 <section> 的 pt-12(48px) 对齐过——
+    //     搜索框和「项目」标题是一条线上的。第一版写成 mt-[52px] + p-3，内容落到 64px，
+    //     整整低了 12px，那条线就断了。
+    //   · 上边距 42px、左右下 12px。那 42px 不是新加的，是页面本来的顶部呼吸带，但侧栏
+    //     成卡之后它就读成一个大得离谱的上边距。
+    //   改法是把这两件事拆开：卡片上提到 mt-3，三边留白统一 12px；内容靠卡片**内部**的
+    //   pt-10(40px) 顶回 12+40=52px，与改造前逐像素相同。卡顶因此高于搜索框一截——
+    //   这正是 Aqua 那种侧栏卡的样子，不是失误。
     <aside
-      class="flex min-w-0 flex-col lg:row-span-full lg:pt-[52px] lg:border-r lg:border-v2-border-border-base lg:bg-v2-background-bg-layer-01 lg:pr-6"
+      class="flex min-w-0 flex-col lg:row-span-full lg:mt-3 lg:mb-3 lg:ml-3 lg:rounded-[14px] lg:border lg:border-v2-border-border-base lg:bg-v2-background-bg-layer-01 lg:px-3 lg:pb-3 lg:pt-10 lg:shadow-[var(--v2-elevation-floating)]"
       data-frost-surface="home-sidebar"
       aria-label={props.language.t("home.projects")}
     >

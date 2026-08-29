@@ -436,13 +436,21 @@
 /* ---------- ① 玻璃厚度：磨砂面顶边一道内高光。
    此前各磨砂面只有 background + backdrop-filter，没有任何边缘光学，读起来是「半透明
    的板」而不是玻璃——厚度感来自迎光边那一道亮线。
-   只给**顶边真的露在外面**的三处：标题栏（窗口顶）、输入框、用户气泡。
-   main / file-tree-panel / review-panel / home-sidebar 的顶边都压在标题栏底下，
-   加了看不见，故意不加 —— 别当成漏了补上去。
+   只给**顶边真的露在外面**的几处：标题栏（窗口顶）、输入框、用户气泡，以及 260829
+   改成浮起卡片之后的首页侧栏。main / file-tree-panel / review-panel 的顶边仍然压在
+   标题栏底下，加了看不见，故意不加 —— 别当成漏了补上去；哪天它们也脱边成卡，
+   再照着 home-sidebar 补进来。
    box-shadow 不叠加：composer 自带 shadow-[var(--v2-elevation-raised)]，这里必须
    把它一起写回来，否则悬浮阴影会被这条规则整个顶掉。 ---------- */
 [data-app-frost] [data-frost-surface="titlebar"] {
   box-shadow: inset 0 1px 0 var(--frost-edge-highlight);
+}
+
+/* 侧栏是浮起卡片，自带 --v2-elevation-floating；box-shadow 不叠加，必须一起写回来。 */
+[data-app-frost] [data-frost-surface="home-sidebar"] {
+  box-shadow:
+    inset 0 1px 0 var(--frost-edge-highlight),
+    var(--v2-elevation-floating);
 }
 
 [data-chat-frost] [data-component="user-message"] [data-slot="user-message-text"] {
