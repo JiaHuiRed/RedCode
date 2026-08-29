@@ -563,7 +563,14 @@
 }
 [data-component="kanban-card"]:hover:not(:active) {
   transform: translateY(-4px) scale(1.02);
-  box-shadow: var(--v2-elevation-floating, 0 4px 14px rgba(0, 0, 0, 0.35), 0 18px 44px rgba(0, 0, 0, 0.48));
+  /* 260829 cc 阴影从 --v2-elevation-floating 换成本地这一对。那个 token 是给独立大卡
+     设计的（0 4px 14px + 0 18px 44px），向上够到 26px；看板是密集网格，上面只匀得出
+     8px 头部空间（见 home-kanban.tsx 的 pt-2 -mt-2），26px 必然被切平。
+     这里两层的向上延伸分别是 6-2=4px 与 16-8=8px，正好收在那 8px 里，
+     阴影仍然明显向下偏 —— 抬起感来自方向，不是来自糊多大一片。 */
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.3),
+    0 8px 16px rgba(0, 0, 0, 0.34);
   z-index: 2;
   transition-duration: 0.25s;
 }

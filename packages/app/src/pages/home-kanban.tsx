@@ -95,7 +95,13 @@ export function HomeKanban(props: {
                 records.length > 6 才切两列，但决定该排几列的是宽度不是条数：5 张卡在宽列里
                 各占满整行，一张卡 500+px 只装一行标题。auto-fill + minmax 让窄列自然退化成
                 一列、宽列自动铺开，不需要阈值。 */}
-            <div class="overflow-y-auto flex-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-2 auto-rows-min content-start">
+            {/* 260829 cc pt-2 -mt-2：overflow-y-auto 的裁剪边就在这个网格的顶边，而首行卡片
+                content-start 紧贴着它 —— hover 抬起的 4px、scale 溢出和向上的阴影全被切平，
+                读起来是「卡片滑进了上面的东西底下」。负边距吃掉列的 gap-3 里的 8px、再由
+                padding 补回来：静止版式一像素不动，只把裁剪边往上挪 8px。
+                左右暂未处理：scale(1.02) 在侧边也各溢出约 2-3px，但加负横边距会让网格比列宽，
+                auto-fill 的列数会在临界宽度上跳，不值当，等有人真觉得碍眼再说。 */}
+            <div class="overflow-y-auto flex-1 pt-2 -mt-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-2 auto-rows-min content-start">
               <Show
                 when={column.records.length > 0}
                 fallback={
