@@ -22,7 +22,15 @@ type KanbanRecord = {
 type KanbanColumn = {
   id: "working" | "attention" | "idle"
   records: KanbanRecord[]
+  /** 因超过 KANBAN_LIMIT 被折叠掉的条数。只有 idle 列会非零。 */
+  hidden?: number
 }
+
+// 260829 Red 看板最多铺几张卡。原来跟着 HOME_SESSION_LIMIT 走（64），结果一屏全是同尺寸
+// 小卡，扫视时没有重点 —— "最近"这件事被稀释掉了。
+// 截断只砍「空闲」：正在跑与需关注的会话无论多旧都留着，那两列是看板存在的理由，
+// 砍掉等于把报警灯关了。idle 是"过去式"，少看几个不影响任何决策。
+const KANBAN_LIMIT = 24
 
 // 260615 Red Kanban 看板视图：按会话运行状态分列（工作中/需关注/空闲）
 export function HomeKanban(props: {
@@ -53,10 +61,13 @@ export function HomeKanban(props: {
       else idle.push(record)
     }
 
+    // idle 的额度 = 上限减去前两列已经占掉的；前两列自己超上限时 idle 直接为 0。
+    const shown = Math.min(idle.length, Math.max(0, KANBAN_LIMIT - working.length - attention.length))
+
     return [
       { id: "working", records: working },
       { id: "attention", records: attention },
-      { id: "idle", records: idle },
+      { id: "idle", records: idle.slice(0, shown), hidden: idle.length - shown },
     ]
   })
 
@@ -106,7 +117,7 @@ export function HomeKanban(props: {
                 负横边距只伸进外层那圈 px-4 的 padding 里（overflow 裁在 padding 盒，padding
                 区不裁），所以首列与末列都不会被行容器切掉。
                 已知代价：网格比列宽 16px，auto-fill 的列数会在极窄的临界宽度上提前跳一档。 */}
-            <div class="overflow-y-auto flex-1 pt-2 -mt-2 px-2 -mx-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-2 auto-rows-min content-start">
+             <div class="overflow-y-auto flex-1 pt-2 -mt-2 px-2 -mx-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden grid grid-cols-[repeat(auto-fill,minmax(340px,1fr))] gap-2.5 auto-rows-min content-start">
               <Show
                 when={column.records.length > 0}
                 fallback={
@@ -128,9 +139,16 @@ export function HomeKanban(props: {
                       onUnarchive={() => props.onUnarchive?.(record.session)}
                     />
                   )}
-                </For>
-              </Show>
-            </div>
+                 </For>
+                 {/* 260829 Red 折叠提示。静悄悄少给一截卡片是最坏的做法 —— 用户会以为会话丢了
+                     （归档入口在右键菜单里，看板又没分页）。一句话说清还有多少、为什么没有。 */}
+                 <Show when={column.hidden}>
+                   <div class="px-2 pt-0.5 pb-1 text-[11px] text-v2-text-text-faint [font-weight:440]">
+                     {language.t("home.kanban.hidden", { count: column.hidden ?? 0 })}
+                   </div>
+                 </Show>
+               </Show>
+             </div>
           </div>
         )}
       </For>
@@ -178,7 +196,7 @@ function KanbanCard(props: {
         as="button"
         type="button"
         data-component="kanban-card"
-        class="flex flex-col gap-1.5 rounded-[8px] border border-v2-border-border-base bg-v2-background-bg-base px-3 py-2.5 text-left transition-colors duration-[120ms] ease-in-out hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none cursor-default"
+        class="flex flex-col gap-2.5 rounded-[8px] border border-v2-border-border-base bg-v2-background-bg-base px-4 py-3.5 text-left transition-colors duration-[120ms] ease-in-out hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none cursor-default"
         onClick={props.onClick}
       >
         <div class="flex items-center gap-2 min-w-0 w-full">
@@ -190,7 +208,7 @@ function KanbanCard(props: {
           <Show when={props.columnId === "attention"}>
             <div class="size-1.5 shrink-0 rounded-full bg-surface-warning-strong" />
           </Show>
-          <span class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-base [font-weight:530] text-[13px]">
+          <span class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-base [font-weight:530] text-[15px]">
             {title()}
           </span>
           {/* 260823 Red 压缩中徽标：session.time.compacting 非空 = 正按 token 预算在后台压缩，
@@ -201,16 +219,16 @@ function KanbanCard(props: {
             </span>
           </Show>
         </div>
-        <div class="flex items-center gap-1.5 min-w-0 w-full">
+        <div class="flex items-center gap-2 min-w-0 w-full">
           <Show when={parts().persona}>
-            <span class="shrink-0 text-v2-text-text-faint [font-weight:440] text-[11px]">{parts().persona}</span>
+            <span class="shrink-0 text-v2-text-text-faint [font-weight:440] text-[12px]">{parts().persona}</span>
           </Show>
           <Show when={foreignProject()}>
-            <span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-muted [font-weight:440] text-[11px]">
+            <span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-muted [font-weight:440] text-[12px]">
               {foreignProject()}
             </span>
           </Show>
-          <span class="ml-auto shrink-0 text-v2-text-text-faint [font-weight:400] text-[10px]">{dateLabel()}</span>
+          <span class="ml-auto shrink-0 text-v2-text-text-faint [font-weight:400] text-[11px]">{dateLabel()}</span>
         </div>
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
