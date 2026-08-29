@@ -357,6 +357,90 @@
   background: transparent !important;
 }
 
+/* ============================================================================
+   260829 cc 玻璃质感两件套（参照 DSH Aqua 插件 E:\AI\DSH-Transparent-UI-Plugin）。
+   两条都沿用本文件既有的口径：无背景图不触发 —— 纯色底上模糊是空操作，只会留一条
+   莫名其妙的色带。所以全部挂在 data-app-frost / data-chat-frost 之下。
+   变量按 color-scheme 分档而不是按 theme：cream / green 都是浅色底，跟 theme 走会漏。
+   ========================================================================== */
+:root {
+  /* ① 玻璃迎光边。Aqua 用 light .45 / dark .08；本仓浅色磨砂本就比它实，
+     .45 会在标题栏与主卡接缝处糊成一条白边，取 .42。 */
+  --frost-edge-highlight: rgba(255, 255, 255, 0.42);
+  /* ③ 边缘带的薄veil。浅色微泛白、深色微泛黑，必须"几乎看不见"——
+     Aqua 的注释记着教训：veil 稍重就会在玻璃面下读成一层脏膜。 */
+  --frost-edge-veil: rgba(255, 255, 255, 0.16);
+}
+
+:root[data-color-scheme="dark"] {
+  --frost-edge-highlight: rgba(255, 255, 255, 0.08);
+  --frost-edge-veil: rgba(0, 0, 0, 0.14);
+}
+
+/* ---------- ① 玻璃厚度：磨砂面顶边一道内高光。
+   此前各磨砂面只有 background + backdrop-filter，没有任何边缘光学，读起来是「半透明
+   的板」而不是玻璃——厚度感来自迎光边那一道亮线。
+   只给**顶边真的露在外面**的三处：标题栏（窗口顶）、输入框、用户气泡。
+   main / file-tree-panel / review-panel / home-sidebar 的顶边都压在标题栏底下，
+   加了看不见，故意不加 —— 别当成漏了补上去。
+   box-shadow 不叠加：composer 自带 shadow-[var(--v2-elevation-raised)]，这里必须
+   把它一起写回来，否则悬浮阴影会被这条规则整个顶掉。 ---------- */
+[data-app-frost] [data-frost-surface="titlebar"] {
+  box-shadow: inset 0 1px 0 var(--frost-edge-highlight);
+}
+
+[data-chat-frost] [data-component="user-message"] [data-slot="user-message-text"] {
+  box-shadow: inset 0 1px 0 var(--frost-edge-highlight);
+}
+
+[data-chat-frost] [data-component="session-composer"],
+[data-chat-frost] [data-component="session-new-composer"] {
+  box-shadow:
+    inset 0 1px 0 var(--frost-edge-highlight),
+    var(--v2-elevation-raised);
+}
+
+/* ---------- ③ 边缘渐变模糊带：会话滚动区的上下各一条 14px，内容滚到边缘融进模糊
+   再消失，而不是硬切一刀。挂在滚动区容器（session.tsx 里带 data-frost-edge 的那层）
+   的伪元素上，不新增 DOM。
+
+   ⚠️ 关键：mask 只能加在这两个 14px 的伪元素上，**绝不能加到滚动容器本身**。
+   给滚动容器加 mask 会把它变成 backdrop root，其内 sticky 定位的输入框的
+   backdrop-filter 会静默失效（表现：输入框背后的内容是锐的、不模糊）。
+   Aqua 的 CSS 里专门留了这条注释，说明他们踩过。本仓 ui/list.css 的
+   [data-slot="list-scroll"] 就带 mask —— 会话区用的是 ScrollView（无 mask）才没中招，
+   以后要给会话区做底部渐隐，也必须走这里这种覆盖层，不许改成 mask 滚动容器。 ---------- */
+[data-app-frost] [data-frost-edge]::before,
+[data-app-frost] [data-frost-edge]::after,
+[data-chat-frost] [data-frost-edge]::before,
+[data-chat-frost] [data-frost-edge]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 14px;
+  z-index: 2;
+  pointer-events: none;
+  background: var(--frost-edge-veil);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+
+[data-app-frost] [data-frost-edge]::before,
+[data-chat-frost] [data-frost-edge]::before {
+  top: 0;
+  mask-image: linear-gradient(180deg, #000 0%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 100%);
+}
+
+[data-app-frost] [data-frost-edge]::after,
+[data-chat-frost] [data-frost-edge]::after {
+  bottom: 0;
+  mask-image: linear-gradient(0deg, #000 0%, transparent 100%);
+  -webkit-mask-image: linear-gradient(0deg, #000 0%, transparent 100%);
+}
+
+
 /* 260823 Yuqi v2 色板主题化：v2 色彩系统（--v2-background-bg-* 等）只按 color-scheme 映射
    到灰板（dark → grey-1100 #080808 纯黑），yuqi 是粉紫主题但 v2 层一直吃灰黑——
    左侧文件树/标题栏/tabs 的磨砂底是"黑 72% 压壁纸"，看着又脏又闷。

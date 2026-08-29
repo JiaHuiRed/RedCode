@@ -1600,7 +1600,9 @@ export default function Page() {
               }}
             />
           </Show>
-          <div class="relative z-[1] flex-1 min-h-0 overflow-hidden">
+          {/* 260829 cc data-frost-edge：会话滚动区上下两条渐变模糊带的挂载点，
+              规则见 index.css 的「③ 边缘渐变模糊带」。有壁纸才生效。 */}
+          <div data-frost-edge="" class="relative z-[1] flex-1 min-h-0 overflow-hidden">
             <Switch>
               <Match when={params.id && mobileChanges()}>
                 <div class="relative h-full overflow-hidden">
