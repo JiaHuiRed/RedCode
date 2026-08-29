@@ -1,5 +1,8 @@
 import type { ModelMessage } from "ai"
-import { Schema } from "effect"
+import fs from "node:fs/promises"
+import path from "node:path"
+import { Effect, Schema } from "effect"
+import { Global } from "@redcode-ai/core/global"
 import { NonNegativeInt } from "@redcode-ai/core/schema"
 import { Token } from "@/util/token"
 import { countModelMessageContent, imageRequestTokens } from "./image-tokens"
@@ -17,8 +20,26 @@ import { MAX_SESSIONS, SESSION_TTL_MS, sessionEvictor } from "@/util/session-evi
 // 写入在 688c31cf（摘除双写）之后就停了——实测 live 库 782 行里只有 model-switched 501
 // + agent-switched 281，一条对话都没有。它现在只是个空壳。
 //
-// 只留最后一轮、只在内存：这是「现在窗口里装了什么」，不是历史指标，重启后下一轮请求
-// 就重新有值。回收接 session-evictor（与 prompt-caches/prefix-shape 同一套）。
+// 只留最后一轮：这是「上一次请求发出去时窗口里装了什么」，不是历史序列。内存那份接
+// session-evictor 回收（与 prompt-caches/prefix-shape 同一套）。
+//
+// 260829 cc 加了一层落盘。原本纯内存的代价：打开任何一个本进程没发过请求的会话——重启后、
+// 或刚被 evictor 回收的——都只剩「暂无」，UI 掉回客户端估算，而估算先天看不见 system 与
+// tool schema，「其他」恒等于整包前缀（实测一个新会话是 99.5%）。前缀本身是稳态的，上一轮
+// 的构成对「这个会话大概装着什么」是个好答案，远好过一条废条。
+//
+// **为什么是裸 fs 而不是 Storage 服务**：试过，走不通。record 的调用点在 runLoop 里，而
+// prompt.ts 的 `loop` 被显式标注成 `Effect.Effect<MessageV2.WithParts>`（零依赖契约），
+// 在里面拿 Storage.Service 会把依赖漏进那个类型；改成在 SessionPrompt 的 layer 链上
+// `Layer.provide(Storage.defaultLayer)` 之后，另外三个测试的 layer 组合塌成
+// `Layer<unknown, unknown, unknown>` —— 那条链已经顶到 TS 推断上限，再加一个 provide 就爆，
+// 位置放哪都一样（链首链尾都试过）。修它等于重构整张 layer 图。
+// 而 Storage 的目录是 `path.join(Global.Path.data, "storage")`，**进程级常量、不按项目算**，
+// 所以纯模块自己算得出同级路径。这里刻意用**另一个目录**而不是写进 storage/ 树：那棵树有
+// 迁移与可重入锁，多一个绕过它们的写入者是隐患；而这份东西本质是缓存，丢了下一轮就重建。
+//
+// 写入是 fire-and-forget、错误全吞：快照是可有可无的观测数据，不该让写盘失败打断请求。
+// 逐 step 落盘没有另做 flush 合并——JSON 只有几 KB，紧接着就是一次几秒的 LLM 请求。
 //
 // 成本：system 段只做 length/4，免费；tools 每轮按工具序列化一次（PrefixShape.capture
 // 本就整体序列化一次，这里是同一批数据换成逐个）；messages 靠 WeakMap 按**对象引用**
@@ -149,14 +170,63 @@ export function record(input: {
   }
   store.set(input.sessionID, snapshot)
   evictor.touch(input.sessionID)
+  save(input.sessionID, snapshot)
   return snapshot
+}
+
+const DISK_MAX = 500
+const PRUNE_EVERY = 200
+let writes = 0
+
+const dir = () => path.join(Global.Path.data, "context-snapshot")
+const file = (sessionID: string) => path.join(dir(), `${sessionID}.json`)
+
+/** 一份文件几 KB，但会话数无界——每 200 次写做一次修剪，按 mtime 只留最新的 500 份。 */
+async function prune() {
+  const base = dir()
+  const names = await fs.readdir(base).catch(() => [] as string[])
+  if (names.length <= DISK_MAX) return
+  const stats = await Promise.all(
+    names.map(async (name) => ({ name, at: await fs.stat(path.join(base, name)).then((x) => x.mtimeMs, () => 0) })),
+  )
+  const stale = stats.sort((a, b) => b.at - a.at).slice(DISK_MAX)
+  await Promise.all(stale.map((x) => fs.rm(path.join(base, x.name), { force: true }).catch(() => {})))
+}
+
+function save(sessionID: string, snapshot: Info) {
+  void (async () => {
+    try {
+      await fs.mkdir(dir(), { recursive: true })
+      await fs.writeFile(file(sessionID), JSON.stringify(snapshot))
+      if (++writes % PRUNE_EVERY === 0) await prune()
+    } catch {
+      // 观测数据，写不进去就算了
+    }
+  })()
 }
 
 export function get(sessionID: string): Info | undefined {
   return store.get(sessionID)
 }
 
-/** 测试钩子：清空进程内快照，避免用例之间互相污染 */
+/** 先读内存，miss 再回盘；回盘命中顺手暖回内存，免得同一会话每次查看都读一次文件。 */
+export const load = (sessionID: string) =>
+  Effect.promise(async (): Promise<Info | undefined> => {
+    const cached = store.get(sessionID)
+    if (cached) return cached
+    try {
+      const text = await fs.readFile(file(sessionID), "utf8")
+      const found = JSON.parse(text) as Info
+      store.set(sessionID, found)
+      evictor.touch(sessionID)
+      return found
+    } catch {
+      return undefined
+    }
+  })
+
+/** 测试钩子：清空**进程内**快照，避免用例之间互相污染。盘上那份按 sessionID 分文件，
+ * 测试用的 id 各不相同、互不干扰，不动。 */
 export function reset() {
   store.clear()
   evictor.clear()

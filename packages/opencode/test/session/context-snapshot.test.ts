@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import type { ModelMessage } from "ai"
-import { get, label, record, reset } from "../../src/session/context-snapshot"
+import { Effect } from "effect"
+import { get, label, load, record, reset } from "../../src/session/context-snapshot"
 
 const base = {
   sessionID: "ses_context_snapshot",
@@ -163,5 +164,39 @@ describe("context-snapshot 图片计价", () => {
       messages: [{ role: "user", content: "hello world" } as ModelMessage],
     })
     expect(info.messages.tokens).toBe(3)
+  })
+})
+
+// 260829 cc 落盘往返。reset() 只清进程内那份，所以「record → reset → load」正好模拟
+// 「上一次运行记过 → 重启 / 被 evictor 回收 → 现在打开这个会话」这条路径 —— 修之前
+// 它必然拿到 undefined，UI 就掉回看不见 system 与 tool schema 的估算。
+describe("context-snapshot 落盘", () => {
+  const sessionID = "ses_context_snapshot_disk"
+
+  test("内存清空后仍能从盘上读回，且内容一致", async () => {
+    const written = record({
+      ...base,
+      sessionID,
+      system: ["<env>\n  Platform: win32\n</env>"],
+      tools: { bash: { description: "run a command" } },
+      messages: [{ role: "user", content: "hello world" } as ModelMessage],
+    })
+    // 写入是 fire-and-forget，给它落地的机会
+    await new Promise((r) => setTimeout(r, 120))
+
+    reset()
+    expect(get(sessionID)).toBeUndefined()
+
+    const back = await Effect.runPromise(load(sessionID))
+    expect(back?.total).toBe(written.total)
+    expect(back?.system.segments[0]?.label).toBe("env")
+    expect(back?.tools.top[0]?.label).toBe("bash")
+
+    // 回盘命中要暖回内存，否则同一会话每次查看都读一次文件
+    expect(get(sessionID)?.total).toBe(written.total)
+  })
+
+  test("从来没记过的会话返回 undefined，而不是空构成", async () => {
+    expect(await Effect.runPromise(load("ses_never_recorded"))).toBeUndefined()
   })
 })

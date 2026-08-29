@@ -112,10 +112,12 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
     }) {
       yield* requireSession(ctx.params.sessionID)
-      const snapshot = ContextSnapshot.get(ctx.params.sessionID)
-      // 快照只在内存、只留最后一轮：会话存在但本进程还没为它发过请求（刚启动、或刚被
-      // 回收）时没有值。这里 404 而不是返回空对象——空对象会被 UI 画成「构成全是 0」，
-      // 那是在说谎；404 让 UI 老实显示「等下一轮请求」。
+      // 260829 cc get → load：内存 miss 时回盘（context-snapshot 落盘那段见该文件头）。
+      // 此前纯内存，重启或被 evictor 回收之后打开旧会话必然落到下面这个 404，UI 掉回
+      // 看不见 system 与 tool schema 的客户端估算。
+      const snapshot = yield* ContextSnapshot.load(ctx.params.sessionID)
+      // 只留最后一轮：会话从来没发过请求时两边都没有。这里 404 而不是返回空对象——空对象
+      // 会被 UI 画成「构成全是 0」，那是在说谎；404 让 UI 老实显示「等下一轮请求」。
       if (!snapshot) return yield* notFound(`No context snapshot yet for session ${ctx.params.sessionID}`)
       return snapshot
     })

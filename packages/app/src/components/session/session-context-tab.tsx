@@ -300,6 +300,20 @@ export function SessionContextTab() {
       .map((group) => ({ ...group, percent: Math.round((group.tokens / snapshot.total) * 1000) / 10 }))
   })
 
+  // 260829 cc 快照现在会落盘（context-snapshot.ts），于是它可能来自几天前的一次请求。
+  // 标着「真实构成」却不说是什么时候的，那是在误导——纯内存时它必然是本进程刚记的，
+  // 不标时间尚可，落盘之后必须标。
+  const inspectTime = createMemo(() => {
+    const at = inspect.data?.time
+    if (!at) return ""
+    return new Date(at).toLocaleString(language.intl(), {
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+  })
+
   const inspectLabel = (key: InspectKey) => {
     if (key === "system") return language.t("context.inspect.system")
     if (key === "tools") return language.t("context.inspect.tools")
@@ -516,6 +530,7 @@ export function SessionContextTab() {
               <div class="text-12-regular text-text-weak">{language.t("context.inspect.title")}</div>
               <div class="text-11-regular text-text-weaker">
                 {formatter().number(inspect.data?.total)} · {inspect.data?.modelID}
+                <Show when={inspectTime()}>{(t) => <> · {t()}</>}</Show>
               </div>
             </div>
             <div class="h-2 w-full rounded-full bg-surface-base overflow-hidden flex">
