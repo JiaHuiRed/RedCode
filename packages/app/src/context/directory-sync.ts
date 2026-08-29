@@ -312,7 +312,7 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
     sessionID: string
     limit: number
     before?: string
-    mode?: "replace" | "prepend"
+    mode?: "replace" | "prepend" | "refresh"
   }) => {
     const key = keyFor(input.directory, input.sessionID)
     if (meta.loading[key]) return
@@ -326,8 +326,15 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
           clearOptimistic(input.directory, input.sessionID, messageID)
         }
         const [store] = globalSync.child(input.directory, { bootstrap: false })
-        const cached = input.mode === "prepend" ? (store.message[input.sessionID] ?? []) : []
-        const message = input.mode === "prepend" ? merge(cached, next.session) : next.session
+        // 260829 cc refresh 与 prepend 一样并集合并，区别只在游标：prepend 拉的是更老的一页，
+        // 游标要往前推；refresh 拉的是最新一页，若手上已有更深的历史，推游标等于把历史窗口
+        // 的回溯位置重置到很近的地方，下次往回翻会重复拉已有的消息。
+        const isMerge = input.mode === "prepend" || input.mode === "refresh"
+        const cached = isMerge ? (store.message[input.sessionID] ?? []) : []
+        const message = isMerge ? merge(cached, next.session) : next.session
+        const keepCursor = input.mode === "refresh" && cached.length > next.session.length
+        const cursor = keepCursor ? (meta.cursor[key] ?? next.cursor) : next.cursor
+        const complete = keepCursor ? (meta.complete[key] ?? next.complete) : next.complete
         batch(() => {
           input.setStore("message", input.sessionID, reconcile(message, { key: "id" }))
           for (const p of next.part) {
@@ -335,14 +342,14 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
             if (filtered.length) input.setStore("part", p.id, filtered)
           }
           setMeta("limit", key, message.length)
-          setMeta("cursor", key, next.cursor)
-          setMeta("complete", key, next.complete)
+          setMeta("cursor", key, cursor)
+          setMeta("complete", key, complete)
           setSessionPrefetch({
             directory: input.directory,
             sessionID: input.sessionID,
             limit: message.length,
-            cursor: next.cursor,
-            complete: next.complete,
+            cursor,
+            complete,
           })
         })
       })
@@ -425,7 +432,13 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
         touch(directory, setStore, sessionID)
 
         const seeded = getSessionPrefetch(directory, sessionID)
-        if (seeded && store.message[sessionID] !== undefined && meta.limit[key] === undefined) {
+        // 260829 cc 回填条件从「meta.limit 缺失」放宽成「meta.limit 比 prefetch 记的浅」。
+        // meta 是 directory-sync 实例级的，离开 /:dir 会随 DirectoryLayout 一起重建；重建后
+        // 首屏装载会先把它写成 initialMessagePageSize(40)，而 prefetch（模块级 Map）记着真实
+        // 窗口深度。只认「缺失」就轮不到回填，40 盖住 1435，接着下面的 stale 强制刷新拿这个
+        // 40 去 replace 掉内存里整段历史 —— 时间线从 1671 行塌成 12 行，就是「切回会话掉在
+        // 历史中间、要手动滚到底」的来源。
+        if (seeded && store.message[sessionID] !== undefined && (meta.limit[key] ?? 0) < seeded.limit) {
           batch(() => {
             setMeta("limit", key, seeded.limit)
             setMeta("cursor", key, seeded.cursor)
@@ -474,6 +487,9 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
                   )
                 })
 
+          // 260829 cc 手上已经有消息时的刷新一律走 refresh：只拉最新一页并并集合并，
+          // 绝不 replace。此前是 replace，一次刷新就把已加载的历史窗口砍回首屏那一页。
+          const refreshing = (store.message[sessionID]?.length ?? 0) > 0
           const messagesReq =
             cached && !opts?.force
               ? Promise.resolve()
@@ -482,7 +498,8 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
                   client,
                   setStore,
                   sessionID,
-                  limit,
+                  limit: refreshing ? initialMessagePageSize : limit,
+                  ...(refreshing ? { mode: "refresh" as const } : {}),
                 })
 
           await Promise.all([sessionReq, messagesReq])

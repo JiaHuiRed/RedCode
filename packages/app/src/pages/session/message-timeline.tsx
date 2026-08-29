@@ -605,14 +605,20 @@ export function MessageTimeline(props: {
   let virtualizerSessionKey = cacheSessionKey
   let virtualizerRowKeys = cacheRowKeys
   let bottomAnchorSessionKey = ""
+  let bottomAnchorRows = 0
 
   const maybeAnchorBottom = () => {
     const key = sessionKey()
-    if (bottomAnchorSessionKey === key) return
     if (!virtualizer) return
     const keys = timelineRowKeys()
     if (keys.length === 0) return
+    // 260829 cc 「每会话只锚一次」不够。一次刷新若把窗口从 1671 行砍回 12 行，内容整段
+    // 换过、落点必然不在底部，而 sessionKey 没变 —— 原来就此永不重锚，只能手动滚到底。
+    // 行数相对上次锚定缩水过半即视为内容被换掉，重新武装。
+    const shrank = keys.length * 2 <= bottomAnchorRows
+    if (bottomAnchorSessionKey === key && !shrank) return
     bottomAnchorSessionKey = key
+    bottomAnchorRows = keys.length
     if (!props.shouldAnchorBottom()) return
     virtualizer.scrollToIndex(keys.length - 1, { align: "end" })
     // 260822 cc scrollToIndex 用的是虚拟**估算**尺寸：缓存未命中时每行按 timelineFallbackItemSize
