@@ -236,6 +236,60 @@ server.tool(
   },
 )
 
+// ── list-memories tool ──────────────────────────────────────────
+// 260830 Red 吸收上游 supermemory list-memories：审计/清理场景列全量（分页），
+// recall 保持 top-N 不动（搜索语义）；只有这个工具在 redcode.jsonc 白名单暴露。
+server.tool(
+  "list-memories",
+  "List saved memories with pagination (audit/cleanup use — see everything, not search). Returns id, project, created_at, content length and a 300-char preview per entry, newest first.",
+  {
+    limit: z.number().min(1).max(200).optional().default(50),
+    offset: z.number().min(0).optional().default(0),
+    project: z.string().max(128).optional().describe("Optional: list only this project"),
+  },
+  async ({ limit = 50, offset = 0, project }) => {
+    try {
+      const projectFilter = project ? "WHERE m.project = $project" : ""
+      const params = {
+        ...(project ? { $project: project } : {}),
+        $limit: limit,
+        $offset: offset,
+      }
+      const total = db
+        .query(`SELECT COUNT(*) as c FROM memories m ${projectFilter}`)
+        .get(project ? { $project: project } : {}) as { c: number }
+      const rows = db
+        .query(
+          `SELECT m.id, m.project, m.created_at, LENGTH(m.content) as chars, SUBSTR(m.content, 1, 300) as preview
+           FROM memories m
+           ${projectFilter}
+           ORDER BY m.created_at DESC, m.id DESC
+           LIMIT $limit OFFSET $offset`,
+        )
+        .all(params) as Array<{ id: number; project: string; created_at: string; chars: number; preview: string }>
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: [
+              `## Memories (${total.c} total, showing ${rows.length} from offset ${offset})\n`,
+              ...rows.map((r) => {
+                const preview = r.preview.replace(/\s+/g, " ").trim()
+                return `- #${r.id} [${r.project}] ${r.created_at} (${r.chars} chars) ${preview}`
+              }),
+            ].join("\n"),
+          },
+        ],
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return { content: [{ type: "text" as const, text: `Error: ${msg}` }], isError: true }
+    }
+  },
+)
+
+// ── stats tool ───────────────────────────────────────────────────
 // ── stats tool ───────────────────────────────────────────────────
 server.tool(
   "stats",
