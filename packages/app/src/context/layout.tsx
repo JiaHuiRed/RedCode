@@ -460,7 +460,11 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       })
     })
 
-    const enriched = createMemo(() => server.projects.list().map(enrich))
+    // 260830 global 虚拟项目（worktree="/"、无 name/icon）不渲染在工作区列表，
+    //   displayName 对其返回空串 = 空白行；桌面/浏览器种子里都不该出现它
+    const enriched = createMemo(() =>
+      server.projects.list().filter((project) => project.worktree !== "/").map(enrich),
+    )
     const list = createMemo(() => {
       const projects = enriched()
       return projects.map((project) => {
@@ -522,19 +526,29 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
     })
 
     // 260621 Red 从 API 种子本地项目列表，解决手机/浏览器首次加载空问题
+    // 260830 Red 加固：原逻辑「本地列表非空即放弃」会在某个项目先入列表时
+    //   把其余 API 项目永久挡在外面（alook/新环境实测卡在 1 项刷新不补）。
+    //   改为「本地为空 → 全量种子；本地与 API 缺口 ≥50% → 补种缺失项」，
+    //   正常关闭个别项目（缺口小）不会被复活。
     createEffect(() => {
-      if (server.projects.list().length > 0) return
       const apiProjects = globalSync.data.project
       if (!apiProjects || apiProjects.length === 0) return
 
-      batch(() => {
-        for (const p of apiProjects) {
-          if (!p.worktree || p.worktree.includes("redcode-test")) continue
-          const root = rootFor(p.worktree)
-          if (server.projects.list().some((x) => x.worktree === root)) continue
-          server.projects.open(root)
-        }
-      })
+      const current = server.projects.list()
+      const missing = apiProjects.filter(
+        (p) =>
+          p.worktree &&
+          p.worktree !== "/" && // global 虚拟项目不种，避免空白工作区条（260830）
+          !p.worktree.includes("redcode-test") &&
+          !current.some((x) => x.worktree === rootFor(p.worktree)),
+      )
+      if (current.length === 0 || missing.length >= apiProjects.length / 2) {
+        batch(() => {
+          for (const p of missing) {
+            server.projects.open(rootFor(p.worktree))
+          }
+        })
+      }
     })
 
     let sessionFrame: number | undefined
