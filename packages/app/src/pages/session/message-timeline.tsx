@@ -640,8 +640,13 @@ export function MessageTimeline(props: {
     // 260829 cc 「每会话只锚一次」不够。一次刷新若把窗口从 1671 行砍回 12 行，内容整段
     // 换过、落点必然不在底部，而 sessionKey 没变 —— 原来就此永不重锚，只能手动滚到底。
     // 行数相对上次锚定缩水过半即视为内容被换掉，重新武装。
+    // 260830 Red 反方向同样成立：prefetch 深窗并集把窗口从 12 行顶到 350 行（27 倍），
+    //   总量翻倍级增长 = 内容整段换过，同样必须重锚，否则视口相对落到旧历史区
+    //   （哥哥实测「点进老会话先见新消息、随即跳回旧历史」；发新消息不显示同因）。
+    //   行数逐行 +1 的流式增长远达不到 2 倍，不会误触。
     const shrank = keys.length * 2 <= bottomAnchorRows
-    if (bottomAnchorSessionKey === key && !shrank) return
+    const grew = keys.length >= bottomAnchorRows * 2
+    if (bottomAnchorSessionKey === key && !shrank && !grew) return
     bottomAnchorSessionKey = key
     bottomAnchorRows = keys.length
     if (!props.shouldAnchorBottom()) return
@@ -755,6 +760,13 @@ export function MessageTimeline(props: {
   //     根本不会触发，只能靠预算收口。短，12 帧足够让新行测完。
   //   切会话入场 —— 内容是静态的，行随进入视口逐个实测，慢的会话 0.2 秒远不够；
   //     但正因为静态，沉降判据一定会触发，通常几帧就收工，90 帧只是兜底。
+  // 260830 Red 实测纠偏：**force 模式不能用沉降判据收工**（哥哥 Console 日志：
+  //   rows 11→148 两次重锚，force 循环只跑了 4/7 帧就因 scrollHeight 连续 3 帧不变
+  //   提前停 —— 此时大窗口里只有视口附近的行实测过，顶部大量行还是 60px 估算值，
+  //   之后那批行进视口实测 → 高度修正 → 内容下移，而 scrollTop 停在旧位置 →
+  //   视口相对落到旧历史（"几秒后跳旧"的机械模型）。force 模式只靠 90 帧预算收口，
+  //   settle 判据仅 loop（插行）模式使用 —— force 期间每帧 scrollTop=scrollHeight
+  //   本来就是强制布局，多扛完全程（90 帧 ≈ 1.5s，仅入场时发生，可接受）。
   const BOTTOM_ANCHOR_FRAMES = 12
   const BOTTOM_ANCHOR_FORCE_FRAMES = 90
   const BOTTOM_ANCHOR_SETTLED_FRAMES = 3
@@ -803,7 +815,9 @@ export function MessageTimeline(props: {
       if (bottomAnchorFrames <= 0) return stop()
 
       // 组合期 anchorMeasuredBottom 不写 scrollTop，高度不变不能算作沉降，否则会提前收工
-      if (!imeComposing) {
+      // 260830 Red：沉降判据只对 loop 模式生效；force 模式（入场重锚）必须烧满 90 帧预算
+      //   ——settle 在大窗口行高未实测完时是假象（见上方注释）。
+      if (!bottomAnchorForce && !imeComposing) {
         const height = listRoot?.scrollHeight ?? -1
         if (height === bottomAnchorHeight) bottomAnchorSettled += 1
         else {

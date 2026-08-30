@@ -466,7 +466,10 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
           const cached = store.message[sessionID] !== undefined && meta.limit[key] !== undefined
           if (cached && hasSession && !opts?.force) return
 
-          const limit = meta.limit[key] ?? initialMessagePageSize
+          // 260830 Red 首次加载直接拉 200 条（对齐 layout/prefetch.ts 的 prefetchChunk）：
+          // 原首屏只拉 40 条，随后 prefetch 异步合并全量会让行数 40→148 跳变，
+          // 虚拟列表重锚失败时视口被甩进旧历史（点进老会话先见新消息几秒后跳旧）。
+          const limit = meta.limit[key] ?? 200
           const sessionReq =
             hasSession && !opts?.force
               ? Promise.resolve()
