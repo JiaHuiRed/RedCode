@@ -99,14 +99,11 @@
     align-self: stretch;
     gap: 12px;
     position: relative;
-
-    /* 气泡样式 — 淡蓝紫，iMessage 风格圆角（左侧来源） */
-    background: rgba(168, 180, 240, 0.12);
-    border: 1px solid rgba(168, 180, 240, 0.22);
-    border-left: 2.5px solid rgba(168, 180, 240, 0.40);
-    border-radius: 4px 20px 20px 20px;
+    /* 260830 Red 去 assistant 气泡（哥哥拍板，对齐 zcode 纯文本流形态）：
+       此前是淡蓝紫气泡（bg rgba(168,180,240,0.12) + 边框），与壁纸无关——
+       深色主题自然显紫，工具调用被包成一个个紫胶囊。去掉底色/边框/阴影，
+       内容回到通栏文本流；padding 保留保证与头像的缩进呼吸 */
     padding: 10px 14px;
-    box-shadow: 0 2px 6px rgba(168, 180, 240, 0.10);
 
     /* 工具输出在气泡内时去掉自身边框，避免双重边框 */
     [data-component="bash-output"],

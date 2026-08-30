@@ -113,8 +113,10 @@
   }
 
   [data-slot="user-message-body"] {
-    width: fit-content;
-    max-width: min(82%, 64ch);
+    /* 260830 Red 长内容舒展：占满可用宽（avatar 之外），短文本仍收缩为窄胶囊 */
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     align-items: flex-end;
@@ -307,6 +309,55 @@
   width: 100%;
   color: var(--text-base);
   line-height: var(--line-height-normal);
+
+  [data-slot="reasoning-toggle"] {
+    /* 260830 Red 思考链折叠行：占满宽度、单行、弱化颜色，流式期间高度恒定 */
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 2px 0;
+    border: none;
+    background: transparent;
+    color: var(--text-weak);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+      color: var(--text-base);
+    }
+
+    .reasoning-spinner {
+      width: 13px;
+      height: 13px;
+      flex: none;
+    }
+
+    [data-slot="reasoning-state"] {
+      flex: none;
+    }
+
+    [data-slot="reasoning-title"] {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    [data-slot="reasoning-duration"] {
+      margin-left: auto;
+    }
+
+    .reasoning-chevron {
+      flex: none;
+      transition: transform 0.15s ease;
+
+      &.is-open {
+        transform: rotate(180deg);
+      }
+    }
+  }
 
   [data-component="markdown"] {
     margin-top: 16px;

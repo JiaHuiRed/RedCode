@@ -1684,13 +1684,28 @@ export function formatReasoningDuration(input: number) {
   return `${hours}h ${minutes}m`
 }
 
+// 260830 Red 思考链折叠对齐 TUI hide 模式：默认收起为一行，点击整行展开全文/再点收起。
+// 标题沿用 Copilot/OpenAI 摘要惯例 `**Title**\n\n<body>`，规则与 TUI context/thinking.ts
+// 的 reasoningTitle 同款，保证两端收起态表现一致。
+function reasoningTitle(text: string): string | null {
+  const match = text.trimStart().match(/^\*\*([^*\n]+)\*\*/)
+  return match ? match[1].trim() : null
+}
+
 PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   const data = useData()
+  const i18n = useI18n()
   const part = () => props.part as ReasoningPart
   const streaming = createMemo(
     () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
   )
   const text = () => readPartText(data.store.part_text_accum_delta, part())
+  // OpenRouter 加密的 reasoning 块是空壳占位，摘除后再判定（与 TUI ReasoningPart 同法）
+  const content = createMemo(() => text().replace(/\[REDACTED\]/g, "").trim())
+  const isDone = createMemo(() => typeof part().time?.end === "number")
+  const title = createMemo(() => reasoningTitle(content()))
+  // 260830 Red 思考链折叠：默认收起（折叠态固定一行高度，流式期间布局不抖动）
+  const [expanded, setExpanded] = createSignal(false)
   // 260811 Red 思考计时：流式期间每秒刷新已用时，结束后定格 end-start
   const [now, setNow] = createSignal(Date.now())
   onMount(() => {
@@ -1705,18 +1720,36 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   })
 
   return (
-    <Show when={text()}>
-      <div data-component="reasoning-part" data-timeline-part-id={part().id} class="relative">
-        <Show when={elapsed()}>
-          <span
-            data-slot="reasoning-duration"
-            class="absolute right-0 top-0 z-10 px-1.5 py-0.5 text-11-regular text-text-weak tabular-nums"
-          >
-            {elapsed()}
+    <Show when={content()}>
+      <div data-component="reasoning-part" data-timeline-part-id={part().id}>
+        <button
+          data-slot="reasoning-toggle"
+          type="button"
+          aria-expanded={expanded()}
+          onClick={() => setExpanded((prev) => !prev)}
+        >
+          <Show when={isDone()} fallback={<Spinner class="reasoning-spinner" />}>
+            <Icon name="brain" size="small" />
+          </Show>
+          <span data-slot="reasoning-state" class="text-12-medium">
+            {isDone() ? i18n.t("ui.sessionTurn.status.thinkingDone") : i18n.t("ui.sessionTurn.status.thinking")}
           </span>
+          <Show when={title()}>
+            <span data-slot="reasoning-title" class="truncate text-12-regular">
+              {title()}
+            </span>
+          </Show>
+          <Show when={elapsed()}>
+            <span data-slot="reasoning-duration" class="text-11-regular tabular-nums">
+              {elapsed()}
+            </span>
+          </Show>
+          <Icon name="chevron-down" size="small" classList={{ "reasoning-chevron": true, "is-open": expanded() }} />
+        </button>
+        <Show when={expanded()}>
+          {/* 260822 cc 同上（文本块那处的注释）：展开态下由 PacedMarkdown 承接流式更新 */}
+          <PacedMarkdown text={content()} cacheKey={part().id} streaming={streaming()} />
         </Show>
-        {/* 260822 cc 同上（文本块那处的注释）：常挂 PacedMarkdown，避免流式结束时整块重建 */}
-        <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
       </div>
     </Show>
   )

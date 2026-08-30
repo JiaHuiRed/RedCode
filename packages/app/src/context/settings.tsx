@@ -129,7 +129,8 @@ const defaultSettings: Settings = {
     showSearch: false,
     showStatus: false,
     showTerminal: false,
-    showReasoningSummaries: false,
+    // 260830 Red 思考链对齐 TUI hide 模式：默认显示折叠行（可点击展开），不再默认隐藏
+    showReasoningSummaries: true,
     shellToolPartsExpanded: false,
     editToolPartsExpanded: false,
     showSessionProgressBar: true,
