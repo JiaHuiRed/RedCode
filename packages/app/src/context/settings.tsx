@@ -31,13 +31,8 @@ export interface UserProfile {
 
 export interface Settings {
   general: {
-    autoSave: boolean
     releaseNotes: boolean
     followup: "queue" | "steer"
-    showNavigation: boolean
-    showSearch: boolean
-    showStatus: boolean
-    showTerminal: boolean
     showReasoningSummaries: boolean
     shellToolPartsExpanded: boolean
     editToolPartsExpanded: boolean
@@ -57,9 +52,6 @@ export interface Settings {
     homeBackground: string
   }
   keybinds: Record<string, string>
-  permissions: {
-    autoApprove: boolean
-  }
   notifications: NotificationSettings
   sounds: SoundSettings
   tts: TtsSettings
@@ -122,13 +114,8 @@ export function terminalFontFamily(font: string | undefined) {
 
 const defaultSettings: Settings = {
   general: {
-    autoSave: true,
     releaseNotes: true,
     followup: "steer",
-    showNavigation: false,
-    showSearch: false,
-    showStatus: false,
-    showTerminal: false,
     // 260830 Red 思考链对齐 TUI hide 模式：默认显示折叠行（可点击展开），不再默认隐藏
     showReasoningSummaries: true,
     shellToolPartsExpanded: false,
@@ -147,9 +134,6 @@ const defaultSettings: Settings = {
     homeBackground: "",
   },
   keybinds: {},
-  permissions: {
-    autoApprove: false,
-  },
   notifications: {
     agent: true,
     permissions: true,
@@ -192,6 +176,14 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
       const root = document.documentElement
       root.style.setProperty("--font-family-mono", monoFontFamily(store.appearance?.mono))
       root.style.setProperty("--font-family-sans", sansFontFamily(store.appearance?.sans))
+      // 260830 Red 字体大小生效：--font-size-* 按外观配置等比缩放（基准 14px）。
+      // 此前 fontSize 是死配置——储存、有读写、有 setFontSize，但没有任何消费点。
+      const scale = (store.appearance?.fontSize ?? 14) / 14
+      const px = (base: number) => `${Math.round(base * scale * 100) / 100}px`
+      root.style.setProperty("--font-size-small", px(13))
+      root.style.setProperty("--font-size-base", px(14))
+      root.style.setProperty("--font-size-large", px(16))
+      root.style.setProperty("--font-size-x-large", px(20))
     })
 
     createEffect(() => {
@@ -205,10 +197,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         return store
       },
       general: {
-        autoSave: withFallback(() => store.general?.autoSave, defaultSettings.general.autoSave),
-        setAutoSave(value: boolean) {
-          setStore("general", "autoSave", value)
-        },
         releaseNotes: withFallback(() => store.general?.releaseNotes, defaultSettings.general.releaseNotes),
         setReleaseNotes(value: boolean) {
           setStore("general", "releaseNotes", value)
@@ -219,22 +207,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         ),
         setFollowup(value: "queue" | "steer") {
           setStore("general", "followup", value === "queue" ? "steer" : value)
-        },
-        showNavigation: withFallback(() => store.general?.showNavigation, defaultSettings.general.showNavigation),
-        setShowNavigation(value: boolean) {
-          setStore("general", "showNavigation", value)
-        },
-        showSearch: withFallback(() => store.general?.showSearch, defaultSettings.general.showSearch),
-        setShowSearch(value: boolean) {
-          setStore("general", "showSearch", value)
-        },
-        showStatus: withFallback(() => store.general?.showStatus, defaultSettings.general.showStatus),
-        setShowStatus(value: boolean) {
-          setStore("general", "showStatus", value)
-        },
-        showTerminal: withFallback(() => store.general?.showTerminal, defaultSettings.general.showTerminal),
-        setShowTerminal(value: boolean) {
-          setStore("general", "showTerminal", value)
         },
         showReasoningSummaries: withFallback(
           () => store.general?.showReasoningSummaries,
@@ -312,12 +284,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         },
         resetAll() {
           setStore("keybinds", reconcile({}))
-        },
-      },
-      permissions: {
-        autoApprove: withFallback(() => store.permissions?.autoApprove, defaultSettings.permissions.autoApprove),
-        setAutoApprove(value: boolean) {
-          setStore("permissions", "autoApprove", value)
         },
       },
       notifications: {

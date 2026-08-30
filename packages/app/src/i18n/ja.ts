@@ -597,6 +597,8 @@ export const dict = {
   "settings.general.row.terminalFont.description": "Customise the font used in the terminal",
   "settings.general.row.uiFont.title": "UIフォント",
   "settings.general.row.uiFont.description": "インターフェース全体で使用するフォントをカスタマイズします",
+  "settings.general.row.fontSize.title": "フォントサイズ",
+  "settings.general.row.fontSize.description": "インターフェース全体で使用するフォントサイズを調整します（基準 14px）",
   "settings.general.row.followup.title": "フォローアップの動作",
   "settings.general.row.followup.description":
     "フォローアッププロンプトを即座に実行するか、キューで待機させるかを選択します",
@@ -978,14 +980,6 @@ export const dict = {
     "ターミナルで使うシェルを選択します。互換性のあるシェルはエージェントのツール実行にも使われます。",
   "settings.general.row.shell.autoDefault": "自動（デフォルト）",
   "settings.general.row.shell.terminalOnly": "ターミナルのみ",
-  "settings.general.row.showNavigation.title": "ナビゲーション",
-  "settings.general.row.showNavigation.description": "デスクトップのタイトルバーに戻る/進むボタンを表示",
-  "settings.general.row.showSearch.title": "コマンドパレット",
-  "settings.general.row.showSearch.description": "デスクトップのタイトルバーに検索・コマンドパレットボタンを表示",
-  "settings.general.row.showTerminal.title": "ターミナル",
-  "settings.general.row.showTerminal.description": "デスクトップのタイトルバーにターミナルボタンを表示",
-  "settings.general.row.showStatus.title": "サーバーステータス",
-  "settings.general.row.showStatus.description": "デスクトップのタイトルバーにサーバーステータスボタンを表示",
   "settings.general.row.pinchZoom.title": "ピンチズーム",
   "settings.general.row.pinchZoom.description": "トラックパッドのピンチと Ctrl+スクロールでのズームを許可",
 }

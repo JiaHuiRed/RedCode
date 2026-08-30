@@ -459,61 +459,7 @@ export const SettingsGeneral: Component = () => {
     </div>
   )
 
-  const AdvancedSection = () => (
-    <div class="flex flex-col gap-1">
-      <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.advanced")}</h3>
 
-      <SettingsList>
-        <SettingsRow
-          title={language.t("settings.general.row.showNavigation.title")}
-          description={language.t("settings.general.row.showNavigation.description")}
-        >
-          <div data-action="settings-show-navigation">
-            <Switch
-              checked={settings.general.showNavigation()}
-              onChange={(checked) => settings.general.setShowNavigation(checked)}
-            />
-          </div>
-        </SettingsRow>
-
-        <SettingsRow
-          title={language.t("settings.general.row.showSearch.title")}
-          description={language.t("settings.general.row.showSearch.description")}
-        >
-          <div data-action="settings-show-search">
-            <Switch
-              checked={settings.general.showSearch()}
-              onChange={(checked) => settings.general.setShowSearch(checked)}
-            />
-          </div>
-        </SettingsRow>
-
-        <SettingsRow
-          title={language.t("settings.general.row.showTerminal.title")}
-          description={language.t("settings.general.row.showTerminal.description")}
-        >
-          <div data-action="settings-show-terminal">
-            <Switch
-              checked={settings.general.showTerminal()}
-              onChange={(checked) => settings.general.setShowTerminal(checked)}
-            />
-          </div>
-        </SettingsRow>
-
-        <SettingsRow
-          title={language.t("settings.general.row.showStatus.title")}
-          description={language.t("settings.general.row.showStatus.description")}
-        >
-          <div data-action="settings-show-status">
-            <Switch
-              checked={settings.general.showStatus()}
-              onChange={(checked) => settings.general.setShowStatus(checked)}
-            />
-          </div>
-        </SettingsRow>
-      </SettingsList>
-    </div>
-  )
 
   const AppearanceSection = () => {
     // 260608 Red 0.4.5 聊天背景图：复用 avatar 的 FileReader→dataURL→settings 模式
@@ -687,6 +633,27 @@ export const SettingsGeneral: Component = () => {
                   >
                     {fontItem("mono")}
                   </Select>
+                </SettingsRow>
+
+                {/* 260830 Red 字体大小：fontSize 此前是死配置（储存≠生效），这里接线 UI 供调节 */}
+                <SettingsRow
+                  title={language.t("settings.general.row.fontSize.title")}
+                  description={language.t("settings.general.row.fontSize.description")}
+                >
+                  <Select
+                    data-action="settings-font-size"
+                    options={["12", "13", "14", "15", "16", "17", "18", "20"]}
+                    current={String(settings.appearance.fontSize())}
+                    value={(f) => f}
+                    label={(f) => `${f}px`}
+                    onSelect={(f) => {
+                      if (f) settings.appearance.setFontSize(Number(f))
+                    }}
+                    variant="secondary"
+                    size="small"
+                    triggerVariant="settings"
+                    triggerStyle={{ "min-width": "72px" }}
+                  />
                 </SettingsRow>
               </>
             )
@@ -1207,8 +1174,6 @@ export const SettingsGeneral: Component = () => {
         <UpdatesSection />
 
         <DisplaySection />
-
-        <AdvancedSection />
       </div>
     </div>
   )
