@@ -1,6 +1,9 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
   "extends": "@tsconfig/bun/tsconfig.json",
+  // 260830 Red 生成物（script/build.ts createEmbeddedWebUIBundle 输出，gitignore）
+  //   类型不是 TS，tsc 无法解析其 `with { type: "file" }` 资源 import → 142 个 TS2307
+  "exclude": ["redcode-web-ui.gen.ts"],
   "compilerOptions": {
     "jsx": "preserve",
     "jsxImportSource": "@opentui/solid",
