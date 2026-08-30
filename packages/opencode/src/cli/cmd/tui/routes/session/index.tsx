@@ -1800,7 +1800,7 @@ function CollapsedReasoningText(props: { title: string | null; duration: number 
   return (
     <text fg={theme.warning} wrapMode="none">
       <span style={{ fg: theme.warning }}>
-        {props.title ? "+ 已思考: " + props.title + " · " + duration() : "+ 已思考: " + duration()}
+        {props.title ? "🧠 已思考: " + props.title + " · " + duration() : "🧠 已思考: " + duration()}
       </span>
     </text>
   )
@@ -1945,7 +1945,8 @@ function GenericTool(props: ToolProps<any>) {
       }
     >
       <BlockTool
-        title={`# ${props.tool} ${input(props.input)}`}
+        title={`${props.tool} ${input(props.input)}`}
+        icon="⚙"
         part={props.part}
         onClick={collapsed().overflow ? () => setExpanded((prev) => !prev) : undefined}
       >
@@ -2129,6 +2130,8 @@ export function InlineToolRow(props: {
 
 function BlockTool(props: {
   title: string
+  /* 260830 Red 展开态标题前缀 icon：与折叠态 InlineTool 的 icon 同符号，折叠/展开不跳戏 */
+  icon?: string
   children: JSX.Element
   onClick?: () => void
   part?: ToolPart
@@ -2161,11 +2164,12 @@ function BlockTool(props: {
         when={props.spinner}
         fallback={
           <text paddingLeft={3} fg={theme.textMuted}>
+            {props.icon ? props.icon + " " : ""}
             {props.title}
           </text>
         }
       >
-        <Spinner color={theme.textMuted}>{props.title.replace(/^# /, "")}</Spinner>
+        <Spinner color={theme.textMuted}>{props.title}</Spinner>
       </Show>
       {props.children}
       <Show when={error()}>
@@ -2199,9 +2203,9 @@ function Shell(props: ToolProps<typeof ShellTool>) {
   const title = createMemo(() => {
     const desc = props.input.description ?? "Shell"
     const wd = workdirDisplay()
-    if (!wd) return `# ${desc}`
-    if (desc.includes(wd)) return `# ${desc}`
-    return `# ${desc} in ${wd}`
+    if (!wd) return desc
+    if (desc.includes(wd)) return desc
+    return `${desc} in ${wd}`
   })
 
   return (
@@ -2209,6 +2213,7 @@ function Shell(props: ToolProps<typeof ShellTool>) {
       <Match when={props.metadata.output !== undefined}>
         <BlockTool
           title={title()}
+          icon="⌘"
           part={props.part}
           spinner={isRunning()}
           onClick={collapsed().overflow ? () => setExpanded((prev) => !prev) : undefined}
@@ -2245,7 +2250,7 @@ function Write(props: ToolProps<typeof WriteTool>) {
   return (
     <Switch>
       <Match when={props.metadata.diagnostics !== undefined}>
-        <BlockTool title={"# Wrote " + pathFormatter.format(props.input.filePath)} part={props.part}>
+        <BlockTool title={"Wrote " + pathFormatter.format(props.input.filePath)} icon="✎" part={props.part}>
           {/* 260803 Red markdown 文件用渲染视图（** → 粗体），其余保持源码视图 */}
           <Show
             when={ft() === "markdown"}
@@ -2441,7 +2446,7 @@ function Edit(props: ToolProps<typeof EditTool>) {
   return (
     <Switch>
       <Match when={props.metadata.diff !== undefined}>
-        <BlockTool title={"← Edit " + pathFormatter.format(props.input.filePath)} part={props.part}>
+        <BlockTool title={"Edit " + pathFormatter.format(props.input.filePath)} icon="✎" part={props.part}>
           <box paddingLeft={1}>
             <diff
               diff={diffContent()}
@@ -2467,7 +2472,7 @@ function Edit(props: ToolProps<typeof EditTool>) {
         </BlockTool>
       </Match>
       <Match when={true}>
-        <InlineTool icon="" pending="Preparing edit..." complete={props.input.filePath} part={props.part}>
+        <InlineTool icon="✎" pending="Preparing edit..." complete={props.input.filePath} part={props.part}>
           Edit {pathFormatter.format(props.input.filePath)} {input({ replaceAll: props.input.replaceAll })}
         </InlineTool>
       </Match>
@@ -2515,10 +2520,10 @@ function ApplyPatch(props: ToolProps<typeof ApplyPatchTool>) {
   }
 
   function title(file: { type: string; relativePath: string; filePath: string; deletions: number }) {
-    if (file.type === "delete") return "# Deleted " + file.relativePath
-    if (file.type === "add") return "# Created " + file.relativePath
-    if (file.type === "move") return "# Moved " + pathFormatter.format(file.filePath) + " → " + file.relativePath
-    return "← Patched " + file.relativePath
+    if (file.type === "delete") return "Deleted " + file.relativePath
+    if (file.type === "add") return "Created " + file.relativePath
+    if (file.type === "move") return "Moved " + pathFormatter.format(file.filePath) + " → " + file.relativePath
+    return "Patched " + file.relativePath
   }
 
   return (
@@ -2526,7 +2531,7 @@ function ApplyPatch(props: ToolProps<typeof ApplyPatchTool>) {
       <Match when={files().length > 0}>
         <For each={files()}>
           {(file) => (
-            <BlockTool title={title(file)} part={props.part}>
+            <BlockTool title={title(file)} icon="⊡" part={props.part}>
               <Show
                 when={file.type !== "delete"}
                 fallback={
@@ -2555,7 +2560,7 @@ function TodoWrite(props: ToolProps<typeof TodoWriteTool>) {
   return (
     <Switch>
       <Match when={props.metadata.todos?.length}>
-        <BlockTool title="# Todos" part={props.part}>
+        <BlockTool title="Todos" icon="⚙" part={props.part}>
           <box>
             <For each={props.input.todos ?? []}>
               {(todo) => <TodoItem status={todo.status} content={todo.content} />}
@@ -2584,7 +2589,7 @@ function Question(props: ToolProps<typeof QuestionTool>) {
   return (
     <Switch>
       <Match when={props.metadata.answers}>
-        <BlockTool title="# Questions" part={props.part}>
+        <BlockTool title="Questions" icon="◉" part={props.part}>
           <box gap={1}>
             <For each={props.input.questions ?? []}>
               {(q, i) => (
