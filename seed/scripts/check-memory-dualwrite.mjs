@@ -25,7 +25,10 @@ if (!existsSync(DB_PATH)) {
 // ── 解析 MEMORY.md 的全局编号索引行：抓所有 "#数字" 后跟空格/行尾的模式 ──
 const md = readFileSync(MEMORY_PATH, "utf-8")
 const nums = new Set()
-for (const m of md.matchAll(/#(\d+)(?=\s|$|[|/])/g)) nums.add(m[1])
+// 260830 Red 合并索引行 "#NN/NN"（#71/114、#87/88/106 等）按 "/" 拆开逐个登记；
+// 原正则只抓到 "#71"，"/114" 前无 "#" 字符不匹配 → 114 被反向检查误判 orphan
+for (const m of md.matchAll(/#(\d+(?:\/\d+)*)(?=\s|$)/g))
+  for (const n of m[1].split("/")) nums.add(n)
 
 // ── 查库：project='global' 的 content 首行格式为 "#NN 标题（YYMMDD）" ──
 const db = new Database(DB_PATH, { readonly: true })
