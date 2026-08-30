@@ -2155,21 +2155,21 @@ ToolRegistry.register({
             </div>
           }
         >
-          <Show when={path()}>
-            <ToolFileAccordion
-              path={path()}
-              actions={
-                <Show when={!pending() && props.metadata.filediff}>
-                  <DiffChanges changes={props.metadata.filediff!} />
-                </Show>
-              }
-            >
-              <div data-component="edit-content">
-                <Dynamic component={fileComponent} mode="diff" {...fileCompProps()} />
-              </div>
-            </ToolFileAccordion>
-          </Show>
-          <DiagnosticsDisplay diagnostics={diagnostics()} />
+          <Show when={path() && props.status !== "error"}>
+          <ToolFileAccordion
+            path={path()}
+            actions={
+              <Show when={!pending() && props.metadata.filediff}>
+                <DiffChanges changes={props.metadata.filediff!} />
+              </Show>
+            }
+          >
+            <div data-component="edit-content">
+              <Dynamic component={fileComponent} mode="diff" {...fileCompProps()} />
+            </div>
+          </ToolFileAccordion>
+        </Show>
+        <DiagnosticsDisplay diagnostics={diagnostics()} />
         </BasicTool>
       </div>
     )
