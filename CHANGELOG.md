@@ -8,6 +8,24 @@
 
 ---
 
+### [0.9.18] - 2026-08-31
+
+> 玻璃质感六条清单收尾：光标辉光、两个侧栏脱边成卡、圆角标度补上缺的「面」这一格。
+
+#### 新增
+
+- **⑤ 光标 spotlight 辉光**（`packages/app/src/utils/spotlight.ts`、`app/src/pages/layout.tsx`、`app/src/index.css`）：一团跟着光标走的径向光，垫在所有玻璃面**背后**。底本是 DSH Aqua 从 deepseek.com 官方特性卡移植的那个 hover 交互。只做一个实例、挂在 `<main data-frost-surface="main">` 里——`z-index:-1` 的子元素按 CSS 绘制序画在**父背景之上、父内容之下**，而 `#file-tree-panel` / `#review-panel` / `home-sidebar` 全是 main 的后代，于是一团光同时垫在上面每一层玻璃底下，覆盖全应用，也不会像逐面板各挂一个那样在重叠处叠成两倍亮。逐帧只改 transform 不重画渐变（辉光是 2×半径 的定尺方块、渐变只栅格化一次，靠 `--spot-x/y` 驱动位移；Aqua 那边每帧重写整块 `background-image`，重画面积等于整个窗口）；几何量每次 hover 只测一次，逐帧路径零布局读取，面板可拖拽改宽故用 ResizeObserver 作废缓存。两处不照搬底本：半径 126px（官方 180 的 70%，实机看过定的），颜色取 `--frost-tint-aside` 那支蓝紫而非官方的青（本仓玻璃掺色语言是粉 + 蓝紫，青会是唯一的第三种色相）。`prefers-reduced-motion` 直接关掉。
+- **④ 文件树 / 审查栏脱边成卡**（`packages/app/src/index.css`）：沿用首页侧栏那份配方——8px 脱边 + 14px 圆角 + 四边描边 + `--v2-elevation-floating`，再叠 ① 的迎光边。脱边量给 8px 而不是首页那档 12px：这两个栏可拖拽调宽，用户按内容宽度定的宽，左右各吃 12px 更肉疼。只在有壁纸时成卡（无壁纸时 main 自己就是带 `m-2` 的卡，里面再套两张是盒中盒）。两个容易静默失效的点都实测过：这两个元素带 `h-full`，只加 margin 会溢出 2×inset，必须同时改 height（实测 main 1228px → 面板 1212px）；`box-shadow` 不叠加，迎光边必须把 `--v2-elevation-floating` 一起写回来（实测 5 层且含 inset）。**`main` 保持满贴是本次拍的板，不是 ④ 没做完**——那会推翻 260610 定的「毛玻璃满贴标题栏，不再像镶嵌进去的一块玻璃」，且变成壁纸 + 大卡 + 卡里两张小卡的盒中盒。
+- **⑥ 圆角标度补上「面」这一格**（`packages/app/src/index.css`）：⑥ 原计划是「立一套 14 面 / 10 控件 / 8 原子的三档语言」。勘查发现语言早就存在且更细——260602 就在的 `--radius-xs/sm/md/lg/xl/2xl`，全 ui 组件库在用（button/card/dropdown = md(8)，avatar/checkbox/icon-button = sm(6)，dialog = xl(16)）；计划里的「8 原子」其实是控件档的值，「10 控件」全仓零实例。真正缺的只有**「面」这一格**：脱边浮起、四边可见的那几张卡各写各的字面量（三处 14、`main` 是 10）。补 `--radius-pane: 14px`，四处收进来，`main` 的 10 并入同档。按角色命名而非尺寸是有意的——它不是「再大一号」，是「脱边浮起的面」这个身份；14 不吃现成的 `xl(16)` 是因为同心圆角要求外层面 > 内层面，内层的 composer / dock / 斜杠浮层是 `lg(12)`。
+
+#### 其他
+
+- **四处圆角字面量接回既有标度**（`packages/ui/src/components/dock-surface.css`、`app/src/components/prompt-input/slash-popover.tsx`、`app/src/pages/session/composer/session-composer-region.tsx`、`app/src/components/titlebar.tsx`）：三处 `12px` → `var(--radius-lg)`（值就是 12px），titlebar 那个 `rounded-[27px]` → `rounded-full`（元素高 20px，27px 本来就被钳成胶囊）。全部等值，零视觉变化。
+- 勘查中记下的一处地形：**两套 `--radius-*` 并存**——ui 自己定义 `xs..xl = 2/4/6/8/10`，app 那套是每档上调一级的覆盖（4/6/8/12/16/24）。app 在 `@layer base`、ui 在 `@theme`，base 在后所以 app 生效（浏览器实测 `xs=4 sm=6 md=8 lg=12 xl=16`）。但 storybook 不加载 `app/index.css`，ui 组件在那里拿到的是 ui 那套——所以 app 定义的 token 不能给 ui 组件用（`line-comment-popover` 那处 14px 是浮层不是面，数值巧合，故意不动）。
+- `.claude/` 入 gitignore（Claude Code 的本机开发配置，非源码）。
+
+---
+
 ### [0.9.17] - 2026-08-31
 
 > 点工具行里的文件名就能在侧栏看到那个文件（图片直接出图）；消息顺序钉在 store 自身，ID 回绕不再把新的一轮甩到会话最顶上；提示词按 zcode 对照补齐五条。
