@@ -8,6 +8,26 @@
 
 ---
 
+### [0.9.19] - 2026-08-31
+
+> 工具行的文件名前挂上文件类型图标；diff 收掉重复的文件名与那层盒子，变更行的着色给足；圆角标度三份合一。
+
+#### 新增
+
+- **工具行的文件名前挂文件类型图标**（`packages/ui/src/components/basic-tool.tsx`、`basic-tool.css`、`message-part.tsx`、`message-part.css`、`basic-tool.stories.tsx`）：读取 / 编辑 / 写入三种工具行的文件名前显示该文件的类型图标。查下来又是现成的多、缺的少——`packages/ui` 本来就有整套 `FileIcon`，`chooseIconName()` 带文件名表 / 扩展名表 / 文件夹名表与默认档，sprite 里一千多个图标（VSCode Material 那一脉），文件树与选文件 / 选目录对话框都在用，缺的只是没人接到工具行上。不是 emoji，是 SVG sprite 的 `<use>` 引用。`TriggerTitle` 加 `subtitlePath` 而不是从 `subtitle` 推——`subtitle` 只是 basename，而 `chooseIconName` 要看完整路径才能分辨按目录命中的规则。两处实现细节：图标必须是 subtitle 的**兄弟节点**（那个 span 带 `overflow:hidden` + `text-overflow:ellipsis`，svg 进去会被省略号机制波及）；`basic-tool` 的容器是 `align-items:baseline` 而 svg 没有文字基线、默认按下边缘对齐会整体坐低半格，故单独 `align-self:center`（`message-part` 那个容器是 center，不用处理）。性能：每行代价可忽略（一个 svg + use，`chooseIconName` 是几次查表且组件内 memo），真正的成本是 sprite 那 922K 只在首次被 `use` 引用时拉一次——文件树与两个对话框已经在用，但文件树是 `<Show when={fileOpen()}>`，所以从不开文件树的会话现在会新拉这一次；Electron 里是本地文件可忽略，走 WiFi 的手机端会有感。
+
+#### 修复
+
+- **edit / write 的 diff 去掉重复文件名的手风琴头**（`packages/ui/src/components/message-part.tsx`）：`ToolFileAccordion` 的头渲染「文件图标 + 目录 + 文件名 + `+N -N`」，而上面 `BasicTool` 的 trigger 已经有了同样的东西——一屏之内文件名出现两次（加了工具行图标之后连图标都重复）。折叠能力也是重复的：外层 `BasicTool` 本身就是 Collapsible，单文件场景内层再折一次没有意义。去掉后 diff 直接接在工具行下面，顺带少一层带边框的盒子。代价是长 diff 滚动时失去 sticky 的文件名——单文件、名字就在正上方，可接受；`apply-patch` 那种多文件场景仍用 `ToolFileAccordion`，那里每文件一个头是必要的。
+- **diff 变更行的着色强度上调，行号槽单独给足**（`packages/ui/src/pierre/index.ts`）：变更行一直有底色，但深色档只有 8% 的着色量（`color-mix` 92% 背景 + 8% 基色），在磨砂紫底上读不出来。一个旁证说明 8% 偏低：同一份配置里 hover 态是 30%——鼠标划过一行的提示比「这行被改了」这个事实本身还显眼四倍，主次是反的。行底色 8% → 16%（深色 92→84，浅色 98→94），行号槽 15% → 26%（深色 85→74，浅色 91→86）。只动改动行，上下文行保持不着色——正是这个反差让人一眼看到改动的形状。嫌重嫌轻改这四个百分数即可；pierre 另留了 `--diffs-bg-*-override` 可在下游单独覆盖。注意这同时影响侧栏审阅面板与 enterprise 的公开分享页，它们走同一套变量。
+
+#### 其他
+
+- **圆角标度三份合一**（`packages/ui/src/styles/tailwind/index.css`、`ui/styles/theme.css`、`app/src/index.css` 及四处消费点）：此前三份——ui 的 `@theme`（2/4/6/8/10）、`ui/styles/theme.css`（同值重复且被前者覆盖的死副本）、`app/src/index.css` 的 `@layer base` 覆盖（4/6/8/12/16/24，每档上调一级）。base 层在 theme 层之后，所以桌面应用里生效的一直是 app 那份，**而下游只有 app 有那份覆盖**：`packages/storybook`（79 个 story，全在 `ui/src` 下）与 `packages/enterprise` 的 `/share/[shareID]`（公开的会话分享页，渲染 ui 的 `SessionTurn` 与 `SessionReview`）拿到的都是小一号的值，ui 组件 CSS 里那 48 处 `var(--radius-*)` 在这两处都受影响。生效值（含 ⑥ 的 `--radius-pane: 14px`）搬进 ui 的 `@theme`，删掉另外两份，下游不再覆盖；`--radius-pane` 进 `@theme` 后 Tailwind 会生成 `rounded-pane` 工具类，app 侧六处 `rounded-[var(--radius-*)]` 一并简化。桌面端逐档不变、零视觉变化，变的是 storybook 与分享页跟上来了。另：`--radius-2xl` 全仓零使用，`@theme` 里没人用的档位会被 Tailwind 摇掉、不出现在 `:root` 上，探针查它显示未定义是正常的。
+- `packages/storybook/debug-storybook.log` untrack 并入 gitignore —— 2026-05-25 初始导入时误入仓的调试产物，跑一次 storybook 就被重写一次。
+
+---
+
 ### [0.9.18] - 2026-08-31
 
 > 玻璃质感六条清单收尾：光标辉光、两个侧栏脱边成卡、圆角标度补上缺的「面」这一格。
