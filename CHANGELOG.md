@@ -8,6 +8,25 @@
 
 ---
 
+### [0.9.17] - 2026-08-31
+
+> 点工具行里的文件名就能在侧栏看到那个文件（图片直接出图）；消息顺序钉在 store 自身，ID 回绕不再把新的一轮甩到会话最顶上；提示词按 zcode 对照补齐五条。
+
+#### 新增
+
+- **点工具行里的文件名，在侧栏打开它**（`packages/ui/src/context/file.tsx`、`ui/components/message-part.tsx`、`message-part.css`、`packages/app/src/pages/session.tsx`、`packages/opencode/src/file/index.ts`）：此前看到「读取 gen_test_prof.png」只能自己去文件树里翻路径。调研下来这条链上**现成的比缺的多得多**——服务端 `/file/content` 早就返回 base64 + mimeType，`file-media.tsx` 早就认 image / audio / svg，`file-tabs.tsx` 早就把 media 传给了 `<File>`（从文件树打开图片本来就能看），`basic-tool.tsx` 早就有 `onSubtitleClick` 与配套 `.clickable` 样式。真正缺的只有两点：**没人传 `onSubtitleClick`**，以及 **subtitle 只是 basename、拿不到完整路径**。read 走 object trigger 直接接回调，edit / write 用的是自定义 JSX trigger、在各自 filename span 上接，三处都从 `input.filePath` / `metadata.filediff.file` 取全路径；app 侧在 `session.tsx` 提供实现（`file.normalize` 转项目相对路径后复用现成的 `openReviewFile`，面板关着时先打开，否则点了没反应）。`FileOpenProvider` 刻意用 Solid 原生 context 而非 `createSimpleContext`——后者的 provider 带 ready 门控，而这里要的恰恰是「没有 provider 时安静返回 undefined」，storybook 与 playground 里没人提供实现。
+- **内联文件 20MB 上限**（`packages/opencode/src/file/index.ts`）：超限按「二进制、不提供内容」返回并打 `read.tooLarge`。判断放在 base64 之前而不是先 stat——`AppFileSystem` 接口上没有 stat/size，加一个要动服务定义与各实现；读完再判省不掉磁盘读，但省掉了 base64 的 33% 膨胀与整段 JSON 传输，贵的是后两者。限额设 20MB 而非更低，是因为这条 `File.read` 与 `read` 工具给多模态模型读图共用，设低了会误伤模型。
+- **提示词补齐五条**（`packages/opencode/src/session/prompt/{default,glm,deepseek,hy}.md`）：拿 zcode 里 glm-5.3-flash 的自述提示词逐条对照（那是模型的转述不是逐字原文，按「结构与意图」采信）。绝大部分我们已经有了；真正缺的是首句即结论、回复形状匹配问题形状、收尾前检查最后一段（以「我待会儿会…」结尾的回合就是未完成的回合）、描述问题 ≠ 要你改、以及 Markdown 会被渲染这条能力事实。**刻意没吸收**语气与详略那两条（`glm.md` 开头写死了「由 soul 决定，本文件不规定」，两处立法会让调 soul 时被莫名拽回）。另修掉一条从 zcode 带进来的假前提：「用户看不到推理通道」在本仓不成立——思考链默认折叠但**可展开**，`deepseek.md` 第 11 行自己就写着 `which the client collapses by default`。换成针对真实失效的规则：思考链里想明白了、正文又复述一遍，是回复变长而不变有用的最常见方式。铺开范围是在用的这四份，`step.md` 等其余十来份仍未铺——那属于 17 份提示词无共享底本的结构性漂移，另行处理。
+
+#### 修复
+
+- **消息顺序钉在 store 自身，ID 回绕不再把新消息排到会话最顶**（`packages/app/src/context/directory-sync.ts`、`context/global-sync/event-reducer.ts`、`pages/session.tsx`、`pages/session/message-timeline.tsx`）：ID 是时间编码且 795 天回绕一次，回绕后**新**消息的 ID 字典序反而**小于**旧消息——实测同一会话里 8/31 的 `msg_001a…` 字典序小于 7/29 的 `msg_fac…`，按 ID 排会把新的一轮甩到会话最前面，看起来像消息丢了（DB 实测 201 条一条没少；全库 504 个会话里 6 个 ID 序≠时间序，1 个会因此在 200 条窗口里真丢消息）。0.9.16 那次只排了显示层两处，是打地鼠——直接读 `sync.data.message[...]` 的消费者有 8 处，侧栏「最后活动」就是漏掉的那个（还显示一个月前）。这次把顺序钉在写入侧（`fetchMessages` / 乐观增删 / `message.updated` 插入一律按 `compareTime`），读取侧恢复裸读。代价是定位不能再用 `Binary.search`（它假设字典序），改线性 `findIndex`——消息数组最多几百条，插入本来就要 O(n) 拷贝。
+- **乐观合并里漏网的一处二分**（`packages/app/src/context/directory-sync.ts`）：`mergeOptimisticPage` 仍在对 session 数组二分，而该数组这次已改成时间序。探针实测两个失效模式都成立——对**已在数组里**的消息 `found=false`（重复插入且 `confirmed` 永不填，乐观气泡不消失），插入位算成 0（新消息甩到时间线最前面）。
+- **删掉一份没人跑却被测试盯着的同构 reducer**（`packages/app/src/context/sync.tsx`、`context/sync-optimistic.test.ts`）：`sync.tsx` 与 `directory-sync.ts` 各有一套 `mergeOptimisticPage` / `applyOptimisticAdd` / `applyOptimisticRemove`，活的是后者，前者零生产调用者、唯一导入方是 `sync-optimistic.test.ts`——**测试一直绿着测一份没人跑的副本，真正跑的那份反而裸奔**，上面那个排序 bug 就是从这个口子进来的。已删 `sync.tsx` 的三个导出（只留 `useSync`），测试改指活代码，并补两条用真实 ID 的回绕用例。
+- **上下文面板换掉两个没有显示意义的压缩字段**（`packages/app/src/components/session/session-context-tab.tsx`、`app/i18n/*`）：改成「平均每轮」= 总 token ÷ 用户消息数；连带清掉已无消费者的 `lastCompaction` memo 与三份 i18n 里 7 个孤儿键。`findLastCompaction` 本体保留——它仍有独立测试，状态页日后可能还要用。
+
+---
+
 ### [0.9.16] - 2026-08-29
 
 > 子代理的模型、推理档、超时搬进 GUI 设置面板——此前只能手改 `~/.redcode/redcode.jsonc`；顺手修掉一处让「改回默认」根本发不出去的 schema 矛盾。
