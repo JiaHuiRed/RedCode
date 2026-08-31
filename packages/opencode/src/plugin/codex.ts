@@ -6,6 +6,79 @@ import * as ProviderQuota from "../provider/quota"
 import os from "os"
 import { setTimeout as sleep } from "node:timers/promises"
 import { createServer } from "http"
+import { execFileSync } from "node:child_process"
+
+import { ProxyAgent, fetch as undiciFetch } from "undici"
+
+// 260831 Red xxx：Node 原生 fetch 不读 HTTP(S)_PROXY 环境变量（undici 限制），GUI sidecar 的
+// createSidecarEnv 已把系统代理注入 env；Bun 原生 fetch 认 env。实机验证：直连 auth.openai.com
+// 被 OpenAI 地区策略 403（unsupported_country_region_territory），走代理后返回正常业务错误。
+// 260831 Red xxx：原版只扫 process.env；Windows 下 TUI（Bun）没有 createSidecarEnv 注入，
+// 系统代理存于 HKCU\...\Internet Settings\Connections\DefaultConnectionSettings blob（WinINET
+// 只写这一层，顶层 ProxyEnable/ProxyServer 是不同步的镜像，本机实测 ProxyEnable=0 但 blob
+// flags=0x452 含 PROXY_TYPE_PROXY 位）。读 blob 解析后**写回 env 再返回**——Bun 原生 fetch
+// 只认 process.env，仅返回值不生效；写回后后续调用直接命中 env，reg.exe 只跑一次。
+function proxyFromEnv(): string | undefined {
+  for (const name of ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"]) {
+    const value = process.env[name]?.trim()
+    if (value && /^https?:\/\//.test(value)) return value
+  }
+  if (process.platform === "win32") return windowsSystemProxy()
+  return undefined
+}
+
+// 260831 Red xxx：DefaultConnectionSettings blob 解析。offset4 = PROXY_TYPE flags（0x2=
+// PROXY_TYPE_PROXY 位），其后 segment 以 ASCII 存 proxy server（本机实测 "127.0.0.1:7897"
+// 位于 0x0E 长度字段之后），末尾还有 proxy.pac 路径——用字节正则提取 host:port 不依赖偏移。
+export function parseDefaultConnectionSettings(hex: string): string | undefined {
+  const bytes = Buffer.from(hex, "hex")
+  if (bytes.length < 8) return undefined
+  const flags = bytes.readUInt32LE(4)
+  if ((flags & 0x2) === 0) return undefined
+  const host = bytes.toString("latin1").match(/[a-zA-Z0-9.-]+:\d{2,5}/)?.[0]
+  return host ? `http://${host}` : undefined
+}
+
+function windowsSystemProxy(): string | undefined {
+  try {
+    const result = execFileSync(
+      "reg.exe",
+      [
+        "query",
+        "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\Connections",
+        "/v",
+        "DefaultConnectionSettings",
+      ],
+      { encoding: "utf8", timeout: 5000 },
+    )
+    const hex = /REG_BINARY\s+([0-9a-fA-F]+)/.exec(result)?.[1]
+    const url = hex ? parseDefaultConnectionSettings(hex) : undefined
+    if (url) {
+      process.env.HTTPS_PROXY = url
+      process.env.HTTP_PROXY = url
+    }
+    return url
+  } catch {
+    // 260831 Red xxx：reg.exe 缺失/超时/值不存在都是无代理的正常情况，不能炸 plugins 加载
+    return undefined
+  }
+}
+
+let proxyAgent: ProxyAgent | undefined
+
+  // Node 原生 fetch 就是 undici 的实现，只是无法注入 dispatcher；undici 类型声明与 DOM lib
+  // 不完全一致（Response/RequestInit 泛型细节），运行时同构，此处 cast 仅为对齐类型。
+  const undiciFetchTyped = undiciFetch as unknown as (
+    url: RequestInfo | URL,
+    init?: RequestInit & { dispatcher?: ProxyAgent },
+  ) => Promise<Response>
+
+  function fetchWithProxy(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    const proxy = proxyFromEnv()
+    if (!proxy || typeof Bun !== "undefined") return fetch(url, init)
+    if (!proxyAgent) proxyAgent = new ProxyAgent(proxy)
+    return undiciFetchTyped(url, { ...init, dispatcher: proxyAgent })
+  }
 
 const log = Log.create({ service: "plugin.codex" })
 
@@ -124,7 +197,7 @@ interface CodexAuthPluginOptions {
 }
 
 async function exchangeCodeForTokens(code: string, redirectUri: string, pkce: PkceCodes): Promise<TokenResponse> {
-  const response = await fetch(`${ISSUER}/oauth/token`, {
+  const response = await fetchWithProxy(`${ISSUER}/oauth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -142,7 +215,7 @@ async function exchangeCodeForTokens(code: string, redirectUri: string, pkce: Pk
 }
 
 async function refreshAccessToken(refreshToken: string, issuer = ISSUER): Promise<TokenResponse> {
-  const response = await fetch(`${issuer}/oauth/token`, {
+  const response = await fetchWithProxy(`${issuer}/oauth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -437,7 +510,7 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
             }
 
             const currentAuth = await getAuth()
-            if (currentAuth.type !== "oauth") return fetch(requestInput, init)
+            if (currentAuth.type !== "oauth") return fetchWithProxy(requestInput, init)
 
             // Cast to include accountId field
             const authWithAccount = currentAuth as typeof currentAuth & { accountId?: string }
@@ -508,7 +581,7 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
                 ? new URL(codexApiEndpoint)
                 : parsed
 
-            const response = await fetch(url, {
+            const response = await fetchWithProxy(url, {
               ...init,
               headers,
             })
@@ -558,7 +631,7 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
           label: "ChatGPT Pro/Plus (headless)",
           type: "oauth",
           authorize: async () => {
-            const deviceResponse = await fetch(`${ISSUER}/api/accounts/deviceauth/usercode`, {
+            const deviceResponse = await fetchWithProxy(`${ISSUER}/api/accounts/deviceauth/usercode`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -582,7 +655,7 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
               method: "auto" as const,
               async callback() {
                 while (true) {
-                  const response = await fetch(`${ISSUER}/api/accounts/deviceauth/token`, {
+                  const response = await fetchWithProxy(`${ISSUER}/api/accounts/deviceauth/token`, {
                     method: "POST",
                     headers: {
                       "Content-Type": "application/json",
@@ -600,7 +673,7 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
                       code_verifier: string
                     }
 
-                    const tokenResponse = await fetch(`${ISSUER}/oauth/token`, {
+                    const tokenResponse = await fetchWithProxy(`${ISSUER}/oauth/token`, {
                       method: "POST",
                       headers: { "Content-Type": "application/x-www-form-urlencoded" },
                       body: new URLSearchParams({

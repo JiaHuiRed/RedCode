@@ -47,9 +47,14 @@ function rewrite(request: Request, values: { directory?: string; workspace?: str
 export function createOpencodeClient(config?: Config & { directory?: string; experimental_workspaceID?: string }) {
   if (!config?.fetch) {
     const customFetch: any = (req: any) => {
-      // @ts-ignore
-      req.timeout = false
-      return fetch(req)
+      // SSE 长连接端点（/global/event、/event）：不设超时，靠 signal 断开
+      if (new URL(req.url).pathname.endsWith("/event")) {
+        // @ts-ignore
+        req.timeout = false
+        return fetch(req)
+      }
+      // 260831 Red 请求级超时兜底：服务端挂起/不响应时避免 GUI 乐观消息永驻、abort 静默失效
+      return fetch(new Request(req, { signal: AbortSignal.timeout(60_000) }))
     }
     config = {
       ...config,

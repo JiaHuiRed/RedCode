@@ -4,6 +4,7 @@ import {
   parseJwtClaims,
   extractAccountIdFromClaims,
   extractAccountId,
+  parseDefaultConnectionSettings,
   type IdTokenClaims,
 } from "../../src/plugin/codex"
 
@@ -119,6 +120,36 @@ describe("plugin.codex", () => {
           refresh_token: "rt",
         }),
       ).toBe("acc-123")
+    })
+  })
+
+  describe("parseDefaultConnectionSettings", () => {
+    // 260831 Red xxx：实测 blob（reg.exe 取回），flags=0x452 含 PROXY_TYPE_PROXY(0x2)，
+    // proxy server 以 ASCII 存于长度字段 0x0E=14 之后
+    test("extracts proxy from Windows blob", () => {
+      const hex =
+        "4600000052040000010000000E0000003132372E302E302E313A37383937B6000000" +
+        "6C6F63616C686F73743B3132372E2A3B3139322E3136382E2A3B31302E2A3B313732" +
+        "2E31362E2A3B3137322E31372E2A3B3137322E31382E2A3B3137322E31392E2A3B31" +
+        "37322E32302E2A3B3137322E32312E2A3B3137322E32322E2A3B3137322E32332E2A" +
+        "3B3137322E32342E2A3B3137322E32352E2A3B3137322E32362E2A3B3137322E3237" +
+        "2E2A3B3137322E32382E2A3B3137322E32392E2A3B3137322E33302E2A3B3137322E" +
+        "33312E2A3B3C6C6F63616C3E2800000066696C653A2F2F2F433A2F55736572732F41" +
+        "646D696E6973747261746F722F70726F78792E706163"
+      expect(parseDefaultConnectionSettings(hex)).toBe("http://127.0.0.1:7897")
+    })
+
+    test("returns undefined when proxy flag bit is set off", () => {
+      const hex =
+        "4600000050040000010000000E0000003132372E302E302E313A37383937B6000000" +
+        "6C6F63616C686F73743B3132372E2A3B3C6C6F63616C3E2800000066696C653A2F2F" +
+        "2F433A2F55736572732F41646D696E6973747261746F722F70726F78792E706163"
+      expect(parseDefaultConnectionSettings(hex)).toBeUndefined()
+    })
+
+    test("returns undefined for garbage", () => {
+      expect(parseDefaultConnectionSettings("zzzz")).toBeUndefined()
+      expect(parseDefaultConnectionSettings("00")).toBeUndefined()
     })
   })
 
