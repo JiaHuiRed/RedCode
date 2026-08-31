@@ -1,3 +1,4 @@
+import { filetype } from "@tui/util/filetype"
 import {
   batch,
   createContext,
@@ -65,7 +66,6 @@ import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
 import { SubagentFooter } from "./subagent-footer.tsx"
-import { LANGUAGE_EXTENSIONS } from "@/lsp/language"
 import parsers from "../../../../../../parsers-config.ts"
 import * as Clipboard from "../../util/clipboard"
 import { errorMessage } from "@/util/error"
@@ -89,6 +89,7 @@ import { collapseToolOutput } from "../../util/collapse-tool-output"
 import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
 import { DialogRetryAction } from "../../component/dialog-retry-action"
 import { SessionRetry } from "@/session/retry"
+import { fileEmoji } from "../../util/file-emoji"
 import { getRevertDiffFiles } from "../../util/revert-diff"
 import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useOpencodeKeymap } from "../../keymap"
 import { PathFormatterProvider, usePathFormatter } from "../../context/path-format"
@@ -2250,7 +2251,11 @@ function Write(props: ToolProps<typeof WriteTool>) {
   return (
     <Switch>
       <Match when={props.metadata.diagnostics !== undefined}>
-        <BlockTool title={"Wrote " + pathFormatter.format(props.input.filePath)} icon="✎" part={props.part}>
+        <BlockTool
+          title={"Wrote " + fileEmoji(props.input.filePath) + " " + pathFormatter.format(props.input.filePath)}
+          icon="✎"
+          part={props.part}
+        >
           {/* 260803 Red markdown 文件用渲染视图（** → 粗体），其余保持源码视图 */}
           <Show
             when={ft() === "markdown"}
@@ -2267,7 +2272,7 @@ function Write(props: ToolProps<typeof WriteTool>) {
       </Match>
       <Match when={true}>
         <InlineTool icon="✎" pending="Preparing write..." complete={props.input.filePath} part={props.part}>
-          Write {pathFormatter.format(props.input.filePath)}
+          Write {fileEmoji(props.input.filePath)} {pathFormatter.format(props.input.filePath)}
         </InlineTool>
       </Match>
     </Switch>
@@ -2306,7 +2311,7 @@ function Read(props: ToolProps<typeof ReadTool>) {
         spinner={isRunning()}
         part={props.part}
       >
-        Read {pathFormatter.format(props.input.filePath)} {input(props.input, ["filePath"])}
+        Read {fileEmoji(props.input.filePath)} {pathFormatter.format(props.input.filePath)} {input(props.input, ["filePath"])}
       </InlineTool>
       <For each={loaded()}>
         {(filepath) => (
@@ -2446,7 +2451,11 @@ function Edit(props: ToolProps<typeof EditTool>) {
   return (
     <Switch>
       <Match when={props.metadata.diff !== undefined}>
-        <BlockTool title={"Edit " + pathFormatter.format(props.input.filePath)} icon="✎" part={props.part}>
+        <BlockTool
+          title={"Edit " + fileEmoji(props.input.filePath) + " " + pathFormatter.format(props.input.filePath)}
+          icon="✎"
+          part={props.part}
+        >
           <box paddingLeft={1}>
             <diff
               diff={diffContent()}
@@ -2473,7 +2482,7 @@ function Edit(props: ToolProps<typeof EditTool>) {
       </Match>
       <Match when={true}>
         <InlineTool icon="✎" pending="Preparing edit..." complete={props.input.filePath} part={props.part}>
-          Edit {pathFormatter.format(props.input.filePath)} {input({ replaceAll: props.input.replaceAll })}
+          Edit {fileEmoji(props.input.filePath)} {pathFormatter.format(props.input.filePath)} {input({ replaceAll: props.input.replaceAll })}
         </InlineTool>
       </Match>
     </Switch>
@@ -2651,10 +2660,3 @@ function input(input: Record<string, any>, omit?: string[]): string {
   return `[${primitives.map(([key, value]) => `${key}=${value}`).join(", ")}]`
 }
 
-function filetype(input?: string) {
-  if (!input) return "none"
-  const ext = path.extname(input)
-  const language = LANGUAGE_EXTENSIONS[ext]
-  if (["typescriptreact", "javascriptreact", "javascript"].includes(language)) return "typescript"
-  return language
-}

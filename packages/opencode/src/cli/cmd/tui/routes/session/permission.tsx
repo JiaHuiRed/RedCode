@@ -1,3 +1,4 @@
+import { filetype } from "@tui/util/filetype"
 import { createStore } from "solid-js/store"
 import { createMemo, For, Match, Show, Switch } from "solid-js"
 import { Portal, useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
@@ -9,7 +10,6 @@ import { SplitBorder } from "../../component/border"
 import { useSync } from "../../context/sync"
 import { useProject } from "../../context/project"
 import path from "path"
-import { LANGUAGE_EXTENSIONS } from "@/lsp/language"
 import { Locale } from "@/util/locale"
 import { ShellID } from "@/tool/shell/id"
 import { webSearchProviderLabel } from "@/tool/websearch"
@@ -20,13 +20,6 @@ import { usePathFormatter } from "../../context/path-format"
 
 type PermissionStage = "permission" | "always" | "reject"
 
-function filetype(input?: string) {
-  if (!input) return "none"
-  const ext = path.extname(input)
-  const language = LANGUAGE_EXTENSIONS[ext]
-  if (["typescriptreact", "javascriptreact", "javascript"].includes(language)) return "typescript"
-  return language
-}
 
 function EditBody(props: { request: PermissionRequest }) {
   const themeState = useTheme()

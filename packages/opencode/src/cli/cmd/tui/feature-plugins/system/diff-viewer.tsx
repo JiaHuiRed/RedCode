@@ -1,12 +1,11 @@
 /** @jsxImportSource @opentui/solid */
+import { filetype } from "@tui/util/filetype"
 import type { TuiPlugin, TuiPluginApi, TuiRouteCurrent } from "@redcode-ai/plugin/tui"
 import type { SnapshotFileDiff, VcsFileDiff } from "@redcode-ai/sdk/v2"
 import { TextAttributes, type BorderSides, type BoxRenderable, type ScrollBoxRenderable } from "@opentui/core"
-import { LANGUAGE_EXTENSIONS } from "@/lsp/language"
 import { useBindings, useCommandShortcut } from "@tui/keymap"
 import { useTheme } from "@tui/context/theme"
 import { useTerminalDimensions } from "@opentui/solid"
-import path from "path"
 import { createEffect, createMemo, createResource, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js"
 import { DiffViewerFileTree } from "./diff-viewer-file-tree"
 import { Panel, PanelGroup, Separator } from "./diff-viewer-ui"
@@ -63,12 +62,6 @@ const normalizeDiffs = (diffs: readonly (VcsFileDiff | SnapshotFileDiff)[]): Dif
       : [],
   )
 
-function filetype(input?: string) {
-  if (!input) return "none"
-  const language = LANGUAGE_EXTENSIONS[path.extname(input)]
-  if (["typescriptreact", "javascriptreact", "javascript"].includes(language)) return "typescript"
-  return language
-}
 
 function storedView(value: unknown): DiffView | undefined {
   if (value === "split" || value === "unified") return value
