@@ -748,8 +748,15 @@
    在此之前两者不一致——「已探索」有一条 2px 橙色左边线加 12px 左内距，思考链什么都没有，
    展开就是一段裸 markdown 掉在背景上。同一屏里一个像列表、一个像散文。
 
-   面用 --surface-base 而不是实色：它是对称的 alpha（浅色 3.1% 黑 / 深色 3.1% 白），
-   坐在磨砂面上只把身后压暗一档、壁纸仍然透得出来。实色会把玻璃挡死。
+   ⚠️ 面**不能**用 --surface-base。260831 cc 第一版用了它，理由写的是「它是 3.1% 的 alpha、
+   壁纸仍然透得出来」—— 那个理由是错的，只对 theme.css 里的默认值成立。启用主题时
+   resolve.ts:121 把 surface-base 设成 neutralAlpha[1]，而 generateNeutralAlphaScale 走的是
+   color.ts:257 的 blend()，**返回值是 HexColor（实色）**，不是 rgba。于是这块面在 yuqi
+   之类的主题下是一块不透明的板，把身后的壁纸挡死 —— 哥哥当场看出来「很厚，看不到壁纸」。
+
+   改用 color-mix 显式兑出透明度：以 --text-base 为色源，深色主题下它是近白、浅色主题下是
+   近黑，5% 兑透明正好在两边都是「轻轻提一层」而不换色相，且只依赖 ui 自己的 token
+   （app 的 --frost-* 在 storybook / enterprise 里取不到，见今天圆角标度那次的教训）。
 
    圆角吃 --radius-lg(12px) 这一档：它是嵌在时间线里的内层面，外层的 main 是
    --radius-pane(14px)，内小于外符合同心圆角。
@@ -765,7 +772,7 @@
   padding: 10px 12px;
   border: 1px solid var(--v2-border-border-base);
   border-radius: var(--radius-lg);
-  background: var(--surface-base);
+  background: color-mix(in srgb, var(--text-base) 5%, transparent);
 }
 
 [data-component="context-tool-group-list"] {
