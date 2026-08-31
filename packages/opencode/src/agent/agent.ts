@@ -303,6 +303,33 @@ export const layer = Layer.effect(
               plan_enter: "allow",
             },
           }),
+          // 260831 cc 姿态梯子的最上一格。此前只有 plan（只建议）与 redmind（动手但敏感操作先问），
+          // 「简单任务放心时不想一直守在屏幕前点权限」这一档没有落点 —— 能力其实早就有（GUI 设置里
+          // 那个 autoAccept 开关对整个会话血缘无差别放行），但它不在这根轴上，用户看不见，
+          // 于是 RedCode 显得比实际更克制。
+          //
+          // 只放开 defaults 里剩下的四个 ask，**不碰 deny**：repo_clone / repo_overview / plan_exit
+          // 是功能性关闭不是安全性询问，把它们一起打开是另一件事，别混进来。
+          //
+          // 内部名用 auto 而不是起个花名：这个名字同时是配置键（`agent.auto` 可覆写）、CLI 的
+          // --agent 取值、default_agent 的取值，猜得到比有个性重要。危险性靠 description 说清楚 +
+          // warning 橙色区分（plan 青 / redmind 红），不靠比喻。
+          auto: posture({
+            name: "auto",
+            displayName: "全自动",
+            description:
+              "全自动 —— 不打断。破坏性 shell 命令、工作树之外的目录、.env 读取全部自动放行，只适合你已经确认安全的任务。",
+            color: "warning",
+            permission: {
+              question: "allow",
+              plan_enter: "allow",
+              // 下面四条就是 defaults 里仅存的 ask，逐条放开
+              destructive: "allow",
+              doom_loop: "allow",
+              external_directory: { "*": "allow" },
+              read: { "*": "allow" },
+            },
+          }),
           explore: subagent("explore"),
           execute: subagent("execute"),
           compaction: machine({ name: "compaction", prompt: PROMPT_COMPACTION }),
