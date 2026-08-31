@@ -43,6 +43,7 @@ import { usePermission } from "@/context/permission"
 import { Binary } from "@redcode-ai/core/util/binary"
 import { retry } from "@redcode-ai/core/util/retry"
 import { playSoundById } from "@/utils/sound"
+import { trackSpotlight } from "@/utils/spotlight"
 import { createAim } from "@/utils/aim"
 import { setNavigate } from "@/utils/notification-click"
 import { Worktree as WorktreeState } from "@/utils/worktree"
@@ -1127,6 +1128,16 @@ export default function Layout(props: ParentProps) {
   // 260610 Red 0.5.0 整窗背景图按视图分流：进会话(params.id)用聊天背景图，首页/无会话用主界面背景图
   //   —— 哥哥的痛点：主界面满屏壁纸在公司很尴尬，主/聊分开后公司可单独把主界面背景留空或换中性图
   const appBackground = () => (params.id ? settings.appearance.chatBackground() : settings.appearance.homeBackground())
+
+  // ⑤ 光标辉光。不按 appBackground() 开关监听：无壁纸时 CSS 里 [data-app-frost] 那条
+  // 选择器不命中、光斑本就不显示，这里再加一层响应式反而要处理装卸时序。
+  let mainEl!: HTMLElement
+  onMount(() => {
+    const glow = mainEl.querySelector<HTMLElement>("[data-spotlight-glow]")
+    if (!glow) return
+    onCleanup(trackSpotlight(mainEl, glow))
+  })
+
   return (
     <div
       class="relative bg-v2-background-bg-deep flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text"
@@ -1153,7 +1164,11 @@ export default function Layout(props: ParentProps) {
           "overflow-hidden": (!!params.id || !params.dir) && !!appBackground(),
         }}
         data-frost-surface="main"
+        ref={mainEl}
       >
+        {/* ⑤ 光标辉光。必须是 main 的直接子元素：z-index:-1 只在同一个层叠上下文里才
+            落在「父背景之上、父内容之下」那一层，塞进 props.children 里就被内容裹住了。 */}
+        <div data-spotlight-glow aria-hidden="true" />
         <Show when={!autoselecting.loading} fallback={<div class="size-full" />}>
           {props.children}
         </Show>

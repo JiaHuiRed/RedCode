@@ -305,12 +305,22 @@
   --frost-edge-size: 14px;
   --frost-edge-highlight: rgba(255, 255, 255, 0.42);
   --frost-edge-veil: rgba(255, 255, 255, 0.16);
+
+  /* ⑤ 光标辉光。半径 126px = Aqua / deepseek 官方特性卡那个 180px 的 70%
+     —— 哥哥 260831 看过实机后定的，官方那档在本仓的窗口尺寸下偏大。
+     颜色也不照搬（官方是青 rgba(90,215,255,.17)）——本仓玻璃的掺色语言是粉 + 蓝紫，
+     青会是这套配色里唯一的第三种色相。取 --frost-tint-aside 同一支蓝紫，只调明度与
+     透明度：浅色底上玻璃本就亮，光斑要更沉一点才看得见；深色底上反过来。
+     口味只在这两个数字上，改它们即可，别去动 spotlight.ts。 */
+  --frost-spot-size: 126px;
+  --frost-spot-color: rgba(120, 138, 224, 0.2);
 }
 
 /* 边缘光学按 color-scheme 分档而不是按 theme：cream / green 都是浅色底，跟 theme 走会漏。 */
 :root[data-color-scheme="dark"] {
   --frost-edge-highlight: rgba(255, 255, 255, 0.08);
   --frost-edge-veil: rgba(0, 0, 0, 0.14);
+  --frost-spot-color: rgba(168, 180, 240, 0.16);
 }
 
 /* ---------- 260829 cc 一条实测过的边界，动磨砂面之前先读。
@@ -481,6 +491,52 @@
   box-shadow:
     inset 0 1px 0 var(--frost-edge-highlight),
     var(--v2-elevation-raised);
+}
+
+/* ---------- ⑤ 光标 spotlight 辉光：一团跟着光标走的径向光，垫在所有玻璃面**背后**。
+
+   只有一个实例，挂在 <main data-frost-surface="main"> 里。z-index:-1 的子元素按 CSS
+   绘制序画在**父背景之上、父内容之下**，而 #file-tree-panel / #review-panel /
+   home-sidebar 全是 main 的后代 —— 于是这一团同时垫在上面每一层玻璃底下，覆盖全应用，
+   也不会像逐面板各挂一个那样在重叠处叠成两倍亮。
+
+   逐帧只改 transform：辉光是个 2×半径 的定尺方块、渐变只栅格化一次，靠 --spot-x/y
+   驱动位移。Aqua 那边是每帧重写整块 background-image，重画面积等于整个窗口。
+
+   跟 data-app-frost 走：无壁纸时各面是实色，光斑会变成实底上一块突兀的蓝斑，
+   而且这一条本来就是玻璃语言的一部分。 ---------- */
+/* 布局这半不设门：无壁纸时下面那条上色规则不命中，但这个 div 仍要脱流。否则它会变成
+   main 这个 flex 列里的一个在流子元素——现在高度为 0 看不出事，哪天谁给它加点东西就是
+   一处莫名其妙的布局偏移。 */
+[data-spotlight-glow] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  width: calc(var(--frost-spot-size) * 2);
+  height: calc(var(--frost-spot-size) * 2);
+  /* 负外边距把方块的中心挪到原点，这样 --spot-x/y 直接就是光标坐标、不用在 JS 里减半径 */
+  margin: calc(var(--frost-spot-size) * -1);
+  pointer-events: none;
+  transform: translate(var(--spot-x, 0px), var(--spot-y, 0px));
+  opacity: 0;
+  transition: opacity 0.18s ease-out;
+}
+
+[data-app-frost] [data-spotlight-glow] {
+  background: radial-gradient(closest-side, var(--frost-spot-color), transparent 70%);
+}
+
+[data-app-frost] [data-spotlight-glow][data-on] {
+  opacity: 1;
+}
+
+/* 光斑跟着光标走属于位移动效。他明确讨厌周期性装饰动效、跟手的可以，但 reduced-motion
+   是无障碍设置不是口味，照关。 */
+@media (prefers-reduced-motion: reduce) {
+  [data-app-frost] [data-spotlight-glow] {
+    display: none;
+  }
 }
 
 /* ---------- ③ 边缘渐变模糊带：会话滚动区的上下各一条 14px，内容滚到边缘融进模糊
