@@ -2174,20 +2174,18 @@ ToolRegistry.register({
             </div>
           }
         >
+          {/* 260831 cc 这里原本套着 ToolFileAccordion，它的头会把「图标 + 文件名 + N -N」
+              再显示一遍 —— 而上面 BasicTool 的 trigger 已经有了同样三样东西，一屏之内
+              文件名出现两次。手风琴的折叠能力也是重复的：外层 BasicTool 本身就是
+              Collapsible，单文件场景下内层再折一次没有意义。
+              去掉之后 diff 直接接在工具行下面，少一层带边框的盒子。
+              代价：长 diff 滚动时失去 sticky 的文件名。单文件、且名字就在正上方，可接受；
+              apply-patch 那种多文件场景仍然用 ToolFileAccordion，那里每文件一个头是必要的。 */}
           <Show when={path() && props.status !== "error"}>
-          <ToolFileAccordion
-            path={path()}
-            actions={
-              <Show when={!pending() && props.metadata.filediff}>
-                <DiffChanges changes={props.metadata.filediff!} />
-              </Show>
-            }
-          >
             <div data-component="edit-content">
               <Dynamic component={fileComponent} mode="diff" {...fileCompProps()} />
             </div>
-          </ToolFileAccordion>
-        </Show>
+          </Show>
         <DiagnosticsDisplay diagnostics={diagnostics()} />
         </BasicTool>
       </div>
@@ -2246,21 +2244,20 @@ ToolRegistry.register({
             </div>
           }
         >
+          {/* 260831 cc 同 edit：去掉重复文件名的手风琴头，见那边的注释。 */}
           <Show when={props.input.content && path()}>
-            <ToolFileAccordion path={path()}>
-              <div data-component="write-content">
-                <Dynamic
-                  component={fileComponent}
-                  mode="text"
-                  file={{
-                    name: props.input.filePath,
-                    contents: props.input.content,
-                    cacheKey: checksum(props.input.content),
-                  }}
-                  overflow="scroll"
-                />
-              </div>
-            </ToolFileAccordion>
+            <div data-component="write-content">
+              <Dynamic
+                component={fileComponent}
+                mode="text"
+                file={{
+                  name: props.input.filePath,
+                  contents: props.input.content,
+                  cacheKey: checksum(props.input.content),
+                }}
+                overflow="scroll"
+              />
+            </div>
           </Show>
           <DiagnosticsDisplay diagnostics={diagnostics()} />
         </BasicTool>
