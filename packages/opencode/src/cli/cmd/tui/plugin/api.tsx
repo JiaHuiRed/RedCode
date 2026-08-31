@@ -190,6 +190,9 @@ function stateApi(sync: ReturnType<typeof useSync>): TuiPluginApi["state"] {
           error: item.status === "failed" ? item.error : undefined,
         }))
     },
+    provider_quota() {
+      return sync.data.provider_quota
+    },
   }
 }
 

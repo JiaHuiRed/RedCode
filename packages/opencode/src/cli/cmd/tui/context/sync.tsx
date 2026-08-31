@@ -17,6 +17,7 @@ import type {
   SessionStatus,
   ProviderListResponse,
   ProviderAuthMethod,
+  ProviderQuota,
   VcsInfo,
 } from "@redcode-ai/sdk/v2"
 import { createStore, produce, reconcile } from "solid-js/store"
@@ -63,6 +64,7 @@ export const {
       provider_next: ProviderListResponse
       console_state: ConsoleState
       provider_auth: Record<string, ProviderAuthMethod[]>
+      provider_quota: ProviderQuota[]
       agent: Agent[]
       command: Command[]
       permission: {
@@ -109,6 +111,7 @@ export const {
       },
       console_state: emptyConsoleState,
       provider_auth: {},
+      provider_quota: [],
       config: {},
       status: "loading",
       agent: [],
@@ -277,6 +280,23 @@ export const {
 
         case "session.status": {
           setStore("session_status", event.properties.sessionID, event.properties.status)
+          break
+        }
+
+        // 260831 Red 额度是账号级事实，走 GlobalBus 全局事件（同 GUI 合并策略：
+        // 同 providerID+accountID 替换，否则追加）
+        case "provider.quota.updated": {
+          const quota = event.properties
+          setStore(
+            "provider_quota",
+            produce((draft) => {
+              const idx = draft.findIndex(
+                (q) => q.providerID === quota.providerID && (q.accountID ?? "") === (quota.accountID ?? ""),
+              )
+              if (idx === -1) draft.push(quota)
+              else draft[idx] = quota
+            }),
+          )
           break
         }
 
@@ -489,6 +509,9 @@ export const {
               setStore("session_status", reconcile(x.data ?? {}))
             }),
             sdk.client.provider.auth({ workspace }).then((x) => setStore("provider_auth", reconcile(x.data ?? {}))),
+            sdk.client.provider
+              .quota({ workspace })
+              .then((x) => setStore("provider_quota", reconcile(x.data ?? []))),
             sdk.client.vcs.get({ workspace }).then((x) => setStore("vcs", reconcile(x.data))),
             project.workspace.sync(),
           ]).then(() => {

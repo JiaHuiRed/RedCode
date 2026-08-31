@@ -391,6 +391,12 @@ export const dict = {
   "dialog.releaseNotes.action.hideFuture": "Don't show these in the future",
   "dialog.releaseNotes.media.alt": "Release preview",
 
+  "context.quota.title": "ChatGPT / Codex Plan Quota",
+  "context.quota.window.primary": "Primary window",
+  "context.quota.window.secondary": "Secondary window",
+  "context.quota.window.reserve": "Reserve window",
+  "context.quota.resetsAt": "Resets at {{time}}",
+  "context.quota.empty": "No quota captured yet — will appear after the next OpenAI/Codex request",
   "context.inspect.title": "Actual Composition",
   "context.inspect.note":
     "Measured from the request this session last sent — it includes the system prompt and tool schemas.",

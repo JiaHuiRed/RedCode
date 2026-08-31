@@ -1,5 +1,6 @@
 import { ProviderAuth } from "@/provider/auth"
 import { Provider } from "@/provider/provider"
+import * as ProviderQuota from "@/provider/quota"
 import { ProviderID } from "@/provider/schema"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
@@ -52,6 +53,18 @@ export const ProviderApi = HttpApi.make("provider")
             identifier: "provider.auth",
             summary: "Get provider auth methods",
             description: "Retrieve available authentication methods for all AI providers.",
+          }),
+        ),
+        HttpApiEndpoint.get("quota", `${root}/quota`, {
+          query: WorkspaceRoutingQuery,
+          // Schema.Array 而非 NullOr：legacy OpenAPI transform 会在非 /api 路径上剥掉
+          // null 分支，空数组表示尚未捕获。
+          success: described(Schema.Array(ProviderQuota.Info), "Current quota snapshots"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "provider.quota",
+            summary: "Get current quota snapshots",
+            description: "Return the latest quota snapshots captured from provider response headers.",
           }),
         ),
         HttpApiEndpoint.post("authorize", `${root}/:providerID/oauth/authorize`, {

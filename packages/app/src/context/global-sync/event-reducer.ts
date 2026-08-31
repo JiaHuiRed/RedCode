@@ -12,6 +12,7 @@ import type {
   SnapshotFileDiff,
   Todo,
   Goal,
+  ProviderQuota,
 } from "@redcode-ai/sdk/v2/client"
 import type { State, VcsCache } from "./types"
 import { trimSessions } from "./session-trim"
@@ -44,10 +45,27 @@ export function applyGlobalEvent(input: {
   event: { type: string; properties?: unknown }
   project: Project[]
   setGlobalProject: (next: Project[] | ((draft: Project[]) => Project[])) => void
+  setProviderQuota?: (next: ProviderQuota[] | ((draft: ProviderQuota[]) => ProviderQuota[])) => void
   refresh: () => void
 }) {
   if (input.event.type === "global.disposed" || input.event.type === "server.connected") {
     input.refresh()
+    return
+  }
+
+  if (input.event.type === "provider.quota.updated") {
+    // 260831 Red 额度是账号级事实（走 GlobalBus 广播），同一 providerID+accountID 就地替换否则追加
+    const quota = input.event.properties as ProviderQuota
+    if (!quota?.providerID) return
+    input.setProviderQuota?.(
+      produce((draft) => {
+        const idx = draft.findIndex(
+          (q) => q.providerID === quota.providerID && (q.accountID ?? "") === (quota.accountID ?? ""),
+        )
+        if (idx === -1) draft.push(quota)
+        else draft[idx] = quota
+      }),
+    )
     return
   }
 

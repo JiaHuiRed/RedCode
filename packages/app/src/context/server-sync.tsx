@@ -1,4 +1,4 @@
-import type { Config, OpencodeClient, Path, Project, ProviderAuthResponse, Todo } from "@redcode-ai/sdk/v2/client"
+import type { Config, OpencodeClient, Path, Project, ProviderAuthResponse, ProviderQuota, Todo } from "@redcode-ai/sdk/v2/client"
 import { showToast } from "@redcode-ai/ui/toast"
 import { getFilename } from "@redcode-ai/core/util/path"
 import {
@@ -24,6 +24,7 @@ import {
   loadGlobalConfigQuery,
   loadPathQuery,
   loadProjectsQuery,
+  loadProviderQuotaQuery,
   loadProvidersQuery,
 } from "./global-sync/bootstrap"
 import { createChildStoreManager } from "./global-sync/child-store"
@@ -54,6 +55,7 @@ type GlobalStore = {
   }
   provider: NormalizedProviderListResponse
   provider_auth: ProviderAuthResponse
+  provider_quota: ProviderQuota[]
   config: Config
   reload: undefined | "pending" | "complete"
 }
@@ -123,6 +125,7 @@ export function createServerSyncContext() {
     project: [],
     session_todo: {},
     provider_auth: {},
+    provider_quota: [],
     get path() {
       const EMPTY = { state: "", config: "", worktree: "", directory: "", home: "" }
       if (pathQuery.isLoading) return EMPTY
@@ -176,6 +179,10 @@ export function createServerSyncContext() {
 
   const setProjects = (next: Project[] | ((draft: Project[]) => Project[])) => {
     setGlobalStore("project", next)
+  }
+
+  const setProviderQuota = (next: ProviderQuota[] | ((draft: ProviderQuota[]) => ProviderQuota[])) => {
+    setGlobalStore("provider_quota", next)
   }
 
   const setBootStore = ((...input: unknown[]) => {
@@ -393,6 +400,7 @@ export function createServerSyncContext() {
           bootstrap.refetch()
         },
         setGlobalProject: setProjects,
+        setProviderQuota,
       })
       if (event.type === "server.connected" || event.type === "global.disposed") {
         if (recent) return

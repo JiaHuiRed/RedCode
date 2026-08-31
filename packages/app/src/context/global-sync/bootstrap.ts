@@ -5,6 +5,7 @@ import type {
   PermissionRequest,
   Project,
   ProviderAuthResponse,
+  ProviderQuota,
   QuestionRequest,
   Session,
   Todo,
@@ -30,6 +31,7 @@ type GlobalStore = {
   }
   provider: NormalizedProviderListResponse
   provider_auth: ProviderAuthResponse
+  provider_quota: ProviderQuota[]
   config: Config
   reload: undefined | "pending" | "complete"
 }
@@ -115,6 +117,10 @@ export async function bootstrapGlobal(input: {
   const slow = [
     () => input.queryClient.fetchQuery(loadGlobalConfigQuery(input.globalSDK)),
     () => input.queryClient.fetchQuery(loadProvidersQuery(null, input.globalSDK)),
+    () =>
+      input.queryClient
+        .fetchQuery(loadProviderQuotaQuery(null, input.globalSDK))
+        .then((data) => input.setGlobalStore("provider_quota", data)),
     () => input.queryClient.fetchQuery(loadPathQuery(null, input.globalSDK)),
     () =>
       input.queryClient
@@ -183,6 +189,12 @@ export const loadProvidersQuery = (directory: string | null, sdk: OpencodeClient
   queryOptions({
     queryKey: [directory, "providers"],
     queryFn: () => retry(() => sdk.provider.list().then((x) => normalizeProviderList(x.data!))),
+  })
+
+export const loadProviderQuotaQuery = (directory: string | null, sdk: OpencodeClient) =>
+  queryOptions({
+    queryKey: [directory, "providerQuota"],
+    queryFn: () => retry(() => sdk.provider.quota().then((x) => x.data ?? [])),
   })
 
 export const loadAgentsQuery = (directory: string | null, sdk: OpencodeClient) =>

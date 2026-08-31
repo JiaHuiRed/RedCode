@@ -4908,6 +4908,64 @@
         ]
       }
     },
+    "/provider/quota": {
+      "get": {
+        "tags": ["provider"],
+        "operationId": "provider.quota",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current quota snapshots",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderQuota"
+                  },
+                  "description": "Current quota snapshots"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Return the latest quota snapshots captured from provider response headers.",
+        "summary": "Get current quota snapshots",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.provider.quota({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/provider/{providerID}/oauth/authorize": {
       "post": {
         "tags": ["provider"],
@@ -10824,6 +10882,9 @@
             "$ref": "#/components/schemas/EventFileWatcherUpdated"
           },
           {
+            "$ref": "#/components/schemas/EventProviderQuotaUpdated"
+          },
+          {
             "$ref": "#/components/schemas/EventLspClientDiagnostics"
           },
           {
@@ -11356,6 +11417,384 @@
           }
         },
         "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "ProviderQuota": {
+        "type": "object",
+        "properties": {
+          "providerID": {
+            "type": "string"
+          },
+          "accountID": {
+            "type": "string"
+          },
+          "capturedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "planType": {
+            "type": "string"
+          },
+          "activeLimit": {
+            "type": "string"
+          },
+          "primary": {
+            "type": "object",
+            "properties": {
+              "usedPercent": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "windowMinutes": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "resetAfterSeconds": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "resetAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              }
+            },
+            "required": ["usedPercent", "windowMinutes", "resetAfterSeconds", "resetAt"],
+            "additionalProperties": false
+          },
+          "secondary": {
+            "type": "object",
+            "properties": {
+              "usedPercent": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "windowMinutes": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "resetAfterSeconds": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "resetAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              }
+            },
+            "required": ["usedPercent", "windowMinutes", "resetAfterSeconds", "resetAt"],
+            "additionalProperties": false
+          },
+          "reserveName": {
+            "type": "string"
+          },
+          "reserve": {
+            "type": "object",
+            "properties": {
+              "usedPercent": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "windowMinutes": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "resetAfterSeconds": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "resetAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              }
+            },
+            "required": ["usedPercent", "windowMinutes", "resetAfterSeconds", "resetAt"],
+            "additionalProperties": false
+          },
+          "credits": {
+            "type": "object",
+            "properties": {
+              "balance": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "has": {
+                "type": "boolean"
+              },
+              "unlimited": {
+                "type": "boolean"
+              }
+            },
+            "required": ["balance", "has", "unlimited"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["providerID", "capturedAt", "planType"],
         "additionalProperties": false
       },
       "PermissionRequest": {
@@ -13349,6 +13788,9 @@
               },
               {
                 "$ref": "#/components/schemas/EventFileWatcherUpdated"
+              },
+              {
+                "$ref": "#/components/schemas/EventProviderQuotaUpdated"
               },
               {
                 "$ref": "#/components/schemas/EventLspClientDiagnostics"
@@ -16859,6 +17301,328 @@
         "required": ["name", "data"],
         "additionalProperties": false
       },
+      "ProviderQuota1": {
+        "type": "object",
+        "properties": {
+          "providerID": {
+            "type": "string"
+          },
+          "accountID": {
+            "type": "string"
+          },
+          "capturedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              }
+            ]
+          },
+          "planType": {
+            "type": "string"
+          },
+          "activeLimit": {
+            "type": "string"
+          },
+          "primary": {
+            "type": "object",
+            "properties": {
+              "usedPercent": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  }
+                ]
+              },
+              "windowMinutes": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  }
+                ]
+              },
+              "resetAfterSeconds": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  }
+                ]
+              },
+              "resetAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  }
+                ]
+              }
+            },
+            "required": ["usedPercent", "windowMinutes", "resetAfterSeconds", "resetAt"],
+            "additionalProperties": false
+          },
+          "secondary": {
+            "type": "object",
+            "properties": {
+              "usedPercent": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  }
+                ]
+              },
+              "windowMinutes": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  }
+                ]
+              },
+              "resetAfterSeconds": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  }
+                ]
+              },
+              "resetAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  }
+                ]
+              }
+            },
+            "required": ["usedPercent", "windowMinutes", "resetAfterSeconds", "resetAt"],
+            "additionalProperties": false
+          },
+          "reserveName": {
+            "type": "string"
+          },
+          "reserve": {
+            "type": "object",
+            "properties": {
+              "usedPercent": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  }
+                ]
+              },
+              "windowMinutes": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  }
+                ]
+              },
+              "resetAfterSeconds": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  }
+                ]
+              },
+              "resetAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  }
+                ]
+              }
+            },
+            "required": ["usedPercent", "windowMinutes", "resetAfterSeconds", "resetAt"],
+            "additionalProperties": false
+          },
+          "credits": {
+            "type": "object",
+            "properties": {
+              "balance": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  }
+                ]
+              },
+              "has": {
+                "type": "boolean"
+              },
+              "unlimited": {
+                "type": "boolean"
+              }
+            },
+            "required": ["balance", "has", "unlimited"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["providerID", "capturedAt", "planType"],
+        "additionalProperties": false
+      },
       "SyncEventMessageUpdated": {
         "type": "object",
         "properties": {
@@ -18823,6 +19587,23 @@
             },
             "required": ["file", "event"],
             "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventProviderQuotaUpdated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["provider.quota.updated"]
+          },
+          "properties": {
+            "$ref": "#/components/schemas/ProviderQuota"
           }
         },
         "required": ["id", "type", "properties"],

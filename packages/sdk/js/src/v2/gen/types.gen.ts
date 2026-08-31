@@ -14,6 +14,7 @@ export type Event =
   | EventServerInstanceDisposed
   | EventFileEdited
   | EventFileWatcherUpdated
+  | EventProviderQuotaUpdated
   | EventLspClientDiagnostics
   | EventLspUpdated
   | EventMessagePartDelta
@@ -174,6 +175,38 @@ export type EventTuiSessionSelect = {
      * Session ID to navigate to
      */
     sessionID: string
+  }
+}
+
+export type ProviderQuota = {
+  providerID: string
+  accountID?: string
+  capturedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  planType: string
+  activeLimit?: string
+  primary?: {
+    usedPercent: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    windowMinutes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    resetAfterSeconds: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    resetAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+  secondary?: {
+    usedPercent: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    windowMinutes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    resetAfterSeconds: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    resetAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+  reserveName?: string
+  reserve?: {
+    usedPercent: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    windowMinutes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    resetAfterSeconds: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    resetAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+  credits?: {
+    balance: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    has: boolean
+    unlimited: boolean
   }
 }
 
@@ -855,6 +888,7 @@ export type GlobalEvent = {
     | EventServerInstanceDisposed
     | EventFileEdited
     | EventFileWatcherUpdated
+    | EventProviderQuotaUpdated
     | EventLspClientDiagnostics
     | EventLspUpdated
     | EventMessagePartDelta
@@ -1076,6 +1110,7 @@ export type AgentConfig = {
     | "error"
     | "info"
     | number
+    | number
     | PermissionConfig
     | undefined
 }
@@ -1118,6 +1153,7 @@ export type ProviderConfig = {
       cost?: {
         input: number
         output: number
+        currency?: "USD" | "CNY"
         cache_read?: number
         cache_write?: number
         context_over_200k?: {
@@ -2072,6 +2108,38 @@ export type WorkspaceWarpError = {
   }
 }
 
+export type ProviderQuota1 = {
+  providerID: string
+  accountID?: string
+  capturedAt: number | "NaN" | "Infinity" | "-Infinity"
+  planType: string
+  activeLimit?: string
+  primary?: {
+    usedPercent: number | "NaN" | "Infinity" | "-Infinity"
+    windowMinutes: number | "NaN" | "Infinity" | "-Infinity"
+    resetAfterSeconds: number | "NaN" | "Infinity" | "-Infinity"
+    resetAt: number | "NaN" | "Infinity" | "-Infinity"
+  }
+  secondary?: {
+    usedPercent: number | "NaN" | "Infinity" | "-Infinity"
+    windowMinutes: number | "NaN" | "Infinity" | "-Infinity"
+    resetAfterSeconds: number | "NaN" | "Infinity" | "-Infinity"
+    resetAt: number | "NaN" | "Infinity" | "-Infinity"
+  }
+  reserveName?: string
+  reserve?: {
+    usedPercent: number | "NaN" | "Infinity" | "-Infinity"
+    windowMinutes: number | "NaN" | "Infinity" | "-Infinity"
+    resetAfterSeconds: number | "NaN" | "Infinity" | "-Infinity"
+    resetAt: number | "NaN" | "Infinity" | "-Infinity"
+  }
+  credits?: {
+    balance: number | "NaN" | "Infinity" | "-Infinity"
+    has: boolean
+    unlimited: boolean
+  }
+}
+
 export type SyncEventMessageUpdated = {
   type: "sync"
   name: "message.updated.1"
@@ -2644,6 +2712,12 @@ export type EventFileWatcherUpdated = {
     file: string
     event: "add" | "change" | "unlink"
   }
+}
+
+export type EventProviderQuotaUpdated = {
+  id: string
+  type: "provider.quota.updated"
+  properties: ProviderQuota
 }
 
 export type EventLspClientDiagnostics = {
@@ -6138,6 +6212,34 @@ export type ProviderAuthResponses = {
 }
 
 export type ProviderAuthResponse = ProviderAuthResponses[keyof ProviderAuthResponses]
+
+export type ProviderQuotaData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/provider/quota"
+}
+
+export type ProviderQuotaErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ProviderQuotaError = ProviderQuotaErrors[keyof ProviderQuotaErrors]
+
+export type ProviderQuotaResponses = {
+  /**
+   * Current quota snapshots
+   */
+  200: Array<ProviderQuota>
+}
+
+export type ProviderQuotaResponse = ProviderQuotaResponses[keyof ProviderQuotaResponses]
 
 export type ProviderOauthAuthorizeData = {
   body?: {

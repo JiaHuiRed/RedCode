@@ -139,6 +139,8 @@ import type {
   ProviderOauthAuthorizeResponses,
   ProviderOauthCallbackErrors,
   ProviderOauthCallbackResponses,
+  ProviderQuotaErrors,
+  ProviderQuotaResponses,
   PtyConnectErrors,
   PtyConnectResponses,
   PtyConnectTokenErrors,
@@ -3107,6 +3109,36 @@ export class Provider extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<ProviderAuthResponses, ProviderAuthErrors, ThrowOnError>({
       url: "/provider/auth",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get current quota snapshots
+   *
+   * Return the latest quota snapshots captured from provider response headers.
+   */
+  public quota<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ProviderQuotaResponses, ProviderQuotaErrors, ThrowOnError>({
+      url: "/provider/quota",
       ...options,
       ...params,
     })

@@ -217,6 +217,7 @@ const scenarios: Scenario[] = [
     ),
   http.protected.get("/provider", "provider.list").json(),
   http.protected.get("/provider/auth", "provider.auth").json(),
+  http.protected.get("/provider/quota", "provider.quota").json(200, array),
   http.protected
     .post("/provider/{providerID}/oauth/authorize", "provider.oauth.authorize")
     .at((ctx) => ({

@@ -105,6 +105,7 @@ type Opts = {
     part?: HostPluginApi["state"]["part"]
     lsp?: HostPluginApi["state"]["lsp"]
     mcp?: HostPluginApi["state"]["mcp"]
+    provider_quota?: HostPluginApi["state"]["provider_quota"]
   }
   theme?: {
     selected?: string
@@ -327,6 +328,7 @@ export function createTuiPluginApi(opts: Opts = {}): HostPluginApi {
       part: opts.state?.part ?? (() => []),
       lsp: opts.state?.lsp ?? (() => []),
       mcp: opts.state?.mcp ?? (() => []),
+      provider_quota: opts.state?.provider_quota ?? (() => []),
     },
     theme: {
       get current() {

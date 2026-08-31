@@ -1,5 +1,7 @@
 import { Schema } from "effect"
 import * as Log from "@redcode-ai/core/util/log"
+import { BusEvent } from "@/bus/bus-event"
+import { GlobalBus } from "@/bus/global"
 import type { ProviderID } from "./schema"
 
 const log = Log.create({ service: "provider.quota" })
@@ -60,6 +62,12 @@ export const Info = Schema.Struct({
   credits: Schema.optional(Credits),
 }).annotate({ identifier: "ProviderQuota" })
 export type Info = Schema.Schema.Type<typeof Info>
+
+/**
+ * 额度快照更新广播。走 GlobalBus（而不是 Bus.publish(ctx, …)）：额度是账号级事实，
+ * 不带实例的 directory/project 章，GUI 才能在全项目范围看到。
+ */
+export const QuotaUpdated = BusEvent.define("provider.quota.updated", Info)
 
 function num(headers: Headers, name: string): number | undefined {
   const raw = headers.get(name)
@@ -147,6 +155,10 @@ export function record(providerID: ProviderID | string, accountID: string | unde
     const quota = parse(providerID, accountID, headers)
     if (!quota) return
     store.set(key(providerID, accountID), quota)
+    GlobalBus.emit("event", {
+      directory: "global",
+      payload: { type: QuotaUpdated.type, properties: quota },
+    })
     log.info("plan quota", {
       provider: providerID,
       plan: quota.planType,

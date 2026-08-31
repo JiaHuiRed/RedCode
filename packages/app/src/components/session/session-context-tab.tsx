@@ -13,8 +13,9 @@ import { StickyAccordionHeader } from "@redcode-ai/ui/sticky-accordion-header"
 import { File } from "@redcode-ai/ui/file"
 import { Markdown } from "@redcode-ai/ui/markdown"
 import { ScrollView } from "@redcode-ai/ui/scroll-view"
-import type { Message, Part, UserMessage } from "@redcode-ai/sdk/v2/client"
+import type { Message, Part, ProviderQuota, UserMessage } from "@redcode-ai/sdk/v2/client"
 import { useLanguage } from "@/context/language"
+import { useServerSync } from "@/context/server-sync"
 import { useProviders } from "@/hooks/use-providers"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { findLastCompaction, getSessionContextMetrics } from "./session-context-metrics"
@@ -46,6 +47,78 @@ function Stat(props: { label: string; value: JSX.Element; color?: string }) {
       <div class="text-12-medium select-text" style={{ color: props.color ?? "var(--text-strong)" }}>
         {props.value}
       </div>
+    </div>
+  )
+}
+
+type QuotaWindowData = NonNullable<ProviderQuota["primary"]>
+// 260831 Red hey-api 把数字字段生成为 number | "NaN" | "Infinity" | "-Infinity" 的 union，
+//   归一化成 number 才能做百分比/时长/时间运算
+type QuotaNumeric = number | "NaN" | "Infinity" | "-Infinity"
+const quotaNum = (v: QuotaNumeric) => (typeof v === "number" ? v : 0)
+
+// 260831 Red 额度进度条颜色分档：接近用完才告急，不然整页都是红色
+const quotaColor = (percent: number) =>
+  percent >= 90 ? "var(--syntax-critical)" : percent >= 60 ? "var(--syntax-warning)" : "var(--syntax-info)"
+
+const quotaDuration = (minutes: number) =>
+  minutes >= 1440 && minutes % 1440 === 0
+    ? `${minutes / 1440}d`
+    : minutes % 60 === 0
+      ? `${minutes / 60}h`
+      : `${minutes}m`
+
+function QuotaWindow(props: { label: string; window?: QuotaWindowData }) {
+  const language = useLanguage()
+  return (
+    <div class="flex flex-col gap-1">
+      <div class="flex items-baseline justify-between gap-2 text-11-regular text-text-weak">
+        <div>{props.label}</div>
+        <Show when={props.window} fallback={<div class="text-text-weaker">—</div>}>
+          {(window) => {
+            const percent = quotaNum(window().usedPercent)
+            return (
+              <div class="flex items-baseline gap-1.5">
+                <div class="text-12-medium select-text" style={{ color: quotaColor(percent) }}>
+                  {percent}%
+                </div>
+                <div class="text-text-weaker">{quotaDuration(quotaNum(window().windowMinutes))}</div>
+              </div>
+            )
+          }}
+        </Show>
+      </div>
+      <Show when={props.window}>
+        {(window) => {
+          const percent = quotaNum(window().usedPercent)
+          const resetAt = quotaNum(window().resetAt)
+          return (
+            <div class="flex flex-col gap-1">
+              <div class="h-2 w-full rounded-full bg-surface-base overflow-hidden">
+                <div
+                  class="h-full"
+                  style={{
+                    width: `${percent}%`,
+                    "background-color": quotaColor(percent),
+                  }}
+                />
+              </div>
+              <Show when={resetAt > 0}>
+                <div class="text-11-regular text-text-weaker">
+                  {language.t("context.quota.resetsAt", {
+                    time: new Date(resetAt * 1000).toLocaleString(language.intl(), {
+                      month: "numeric",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    }),
+                  })}
+                </div>
+              </Show>
+            </div>
+          )
+        }}
+      </Show>
     </div>
   )
 }
@@ -108,6 +181,9 @@ const emptyUserMessages: UserMessage[] = []
 export function SessionContextTab() {
   const sync = useSync()
   const language = useLanguage()
+  const globalSync = useServerSync()
+  // 260831 Red 额度是账号级事实（GlobalBus 广播 + bootstrap 首次拉取），直接从全局 store 读
+  const quotaList = () => globalSync.data.provider_quota
   const providers = useProviders()
   const { params, view } = useSessionLayout()
 
@@ -493,6 +569,45 @@ export function SessionContextTab() {
               />
             )}
           </For>
+        </div>
+
+        <div class="flex flex-col gap-2 pr-2">
+          <div class="text-12-regular text-text-weak">{language.t("context.quota.title")}</div>
+          <Show
+            when={quotaList().length > 0}
+            fallback={<div class="text-11-regular text-text-weaker">{language.t("context.quota.empty")}</div>}
+          >
+            <div class="flex flex-col gap-4">
+              <For each={quotaList()}>
+                {(quota) => (
+                  <div class="flex flex-col gap-2">
+                    <div class="flex items-baseline justify-between gap-2">
+                      <div class="text-11-regular text-text-weak">{quota.planType}</div>
+                      <Show when={quota.accountID}>
+                        {(accountID) => <div class="text-11-regular text-text-weaker select-text">{accountID()}</div>}
+                      </Show>
+                    </div>
+                    <div class="flex flex-col gap-3">
+                      <QuotaWindow label={language.t("context.quota.window.primary")} window={quota.primary} />
+                      <QuotaWindow label={language.t("context.quota.window.secondary")} window={quota.secondary} />
+                      <Show when={quota.reserve}>
+                        {(reserve) => (
+                          <QuotaWindow
+                            label={
+                              quota.reserveName
+                                ? `${language.t("context.quota.window.reserve")} · ${quota.reserveName}`
+                                : language.t("context.quota.window.reserve")
+                            }
+                            window={reserve()}
+                          />
+                        )}
+                      </Show>
+                    </div>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
         </div>
 
         <Show

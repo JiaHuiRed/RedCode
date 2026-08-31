@@ -10,6 +10,7 @@ import type {
   Message,
   Part,
   Provider,
+  ProviderQuota,
   PermissionRequest,
   QuestionRequest,
   Session,
@@ -394,6 +395,7 @@ export type TuiState = {
   part: (messageID: string) => ReadonlyArray<Part>
   lsp: () => ReadonlyArray<TuiSidebarLspItem>
   mcp: () => ReadonlyArray<TuiSidebarMcpItem>
+  provider_quota: () => ReadonlyArray<ProviderQuota>
 }
 
 type TuiBindingLookupView = {

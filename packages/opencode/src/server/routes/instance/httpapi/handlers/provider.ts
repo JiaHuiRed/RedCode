@@ -2,6 +2,7 @@ import { ProviderAuth } from "@/provider/auth"
 import { Config } from "@/config/config"
 import { ModelsDev } from "@redcode-ai/core/models-dev"
 import { Provider } from "@/provider/provider"
+import * as ProviderQuota from "@/provider/quota"
 import { ProviderID } from "@/provider/schema"
 import { mapValues } from "remeda"
 import { Effect, Schema } from "effect"
@@ -61,6 +62,10 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       return yield* svc.methods()
     })
 
+    const quota = Effect.fn("ProviderHttpApi.quota")(function* () {
+      return ProviderQuota.list()
+    })
+
     const authorize = Effect.fn("ProviderHttpApi.authorize")(function* (ctx: {
       params: { providerID: ProviderID }
       payload: ProviderAuth.AuthorizeInput
@@ -106,6 +111,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
     return handlers
       .handle("list", list)
       .handle("auth", auth)
+      .handle("quota", quota)
       .handleRaw("authorize", authorizeRaw)
       .handle("callback", callback)
   }),

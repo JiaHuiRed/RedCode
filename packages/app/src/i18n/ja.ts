@@ -334,6 +334,12 @@ export const dict = {
   "dialog.project.edit.worktree.startup.description":
     "新しいワークスペース (ワークツリー) を作成した後に実行されます。",
   "dialog.project.edit.worktree.startup.placeholder": "例: bun install",
+  "context.quota.title": "ChatGPT / Codex プラン残量",
+  "context.quota.window.primary": "プライマリ枠",
+  "context.quota.window.secondary": "セカンダリ枠",
+  "context.quota.window.reserve": "予備枠",
+  "context.quota.resetsAt": "{{time}} にリセット",
+  "context.quota.empty": "残量記録はまだありません — 次の OpenAI/Codex リクエスト後に表示されます",
   "context.inspect.title": "実際の構成",
   "context.inspect.note":
     "このセッションが最後に実際に送信したリクエストの実測値です。システムプロンプトとツール定義を含みます。",

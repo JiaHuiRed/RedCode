@@ -6,7 +6,7 @@ import SidebarLsp from "../feature-plugins/sidebar/lsp"
 import SidebarGoal from "../feature-plugins/sidebar/goal"
 import SidebarTodo from "../feature-plugins/sidebar/todo"
 import SidebarFiles from "../feature-plugins/sidebar/files"
-import SidebarFooter from "../feature-plugins/sidebar/footer"
+import SidebarQuota from "../feature-plugins/sidebar/quota"
 import PluginManager from "../feature-plugins/system/plugins"
 import Notifications from "../feature-plugins/system/notifications"
 import WhichKey from "../feature-plugins/system/which-key"
@@ -31,7 +31,7 @@ export function internalTuiPlugins(flags: Pick<RuntimeFlags.Info, "diffViewer">)
     SidebarGoal,
     SidebarTodo,
     SidebarFiles,
-    SidebarFooter,
+    SidebarQuota,
     Notifications,
     PluginManager,
     WhichKey,
