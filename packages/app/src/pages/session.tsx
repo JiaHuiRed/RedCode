@@ -67,6 +67,7 @@ import { extractPromptFromParts } from "@/utils/prompt"
 import { same } from "@/utils/same"
 import { formatServerError } from "@/utils/server-errors"
 import { useUsageExceededDialogs } from "./session/usage-exceeded-dialogs"
+import { FileOpenProvider } from "@redcode-ai/ui/context/file"
 
 const emptyUserMessages: UserMessage[] = []
 type FollowupItem = FollowupDraft & { id: string }
@@ -754,6 +755,19 @@ export default function Page() {
     setActive: tabs().setActive,
     loadFile: file.load,
   })
+
+  // 260831 cc 点工具行里的文件名 → 在侧栏打开它（read / edit / write 三种工具）。
+  //   哥哥要的场景：模型 read 了一张图，想直接看到，而不是去文件树里找路径。
+  //   工具输入里的 filePath 通常是绝对路径，而 tab/load 走的是项目相对——file.normalize
+  //   已经处理了这层（分隔符无关、Windows 下大小写不敏感地剥掉项目根前缀），直接用。
+  //   面板关着时先打开它，否则点了没反应。
+  const openFileFromTranscript = (input: string) => {
+    const path = file.normalize(input)
+    if (!path) return
+    const panel = view().reviewPanel
+    if (!panel.opened()) panel.open()
+    openReviewFile(path)
+  }
 
   const changesTitle = () => {
     if (!canReview()) {
@@ -1535,6 +1549,7 @@ export default function Page() {
   )
 
   return (
+    <FileOpenProvider onOpen={openFileFromTranscript}>
     <div
       id="session-root"
       class="relative size-full overflow-hidden flex flex-col"
@@ -1692,5 +1707,6 @@ export default function Page() {
 
       <TerminalPanel />
     </div>
+    </FileOpenProvider>
   )
 }

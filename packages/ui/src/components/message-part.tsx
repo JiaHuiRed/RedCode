@@ -31,7 +31,7 @@ import {
   QuestionInfo,
 } from "@redcode-ai/sdk/v2"
 import { useData } from "../context"
-import { useFileComponent } from "../context/file"
+import { useFileComponent, useFileOpen } from "../context/file"
 import { useDialog } from "../context/dialog"
 import { type UiI18n, useI18n } from "../context/i18n"
 import { BasicTool, GenericTool } from "./basic-tool"
@@ -1758,6 +1758,7 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
 ToolRegistry.register({
   name: "read",
   render(props) {
+    const openFile = useFileOpen()
     const data = useData()
     const i18n = useI18n()
     const args: string[] = []
@@ -1779,6 +1780,8 @@ ToolRegistry.register({
             subtitle: props.input.filePath ? getFilename(props.input.filePath) : "",
             args,
           }}
+          // 260831 cc 点文件名在侧栏开它。subtitle 只是 basename，路径要从 input 取。
+          onSubtitleClick={props.input.filePath ? () => openFile?.(props.input.filePath) : undefined}
         />
         <For each={loaded()}>
           {(filepath) => (
@@ -2093,6 +2096,7 @@ ToolRegistry.register({
 ToolRegistry.register({
   name: "edit",
   render(props) {
+    const openFile = useFileOpen()
     const i18n = useI18n()
     const fileComponent = useFileComponent()
     const diagnostics = createMemo(() => getDiagnostics(props.metadata.diagnostics, props.input.filePath))
@@ -2138,7 +2142,18 @@ ToolRegistry.register({
                     <TextShimmer text={i18n.t("ui.messagePart.title.edit")} active={pending()} />
                   </span>
                   <Show when={!pending()}>
-                    <span data-slot="message-part-title-filename">{filename()}</span>
+                    {/* 260831 cc 点文件名在侧栏开它；没有注入实现时保持纯文本、不显示为可点。 */}
+                    <span
+                      data-slot="message-part-title-filename"
+                      classList={{ clickable: !!openFile && !!path() }}
+                      onClick={(e) => {
+                        if (!openFile || !path()) return
+                        e.stopPropagation()
+                        openFile(path())
+                      }}
+                    >
+                      {filename()}
+                    </span>
                   </Show>
                 </div>
                 <Show when={!pending() && props.input.filePath?.includes("/")}>
@@ -2179,6 +2194,7 @@ ToolRegistry.register({
 ToolRegistry.register({
   name: "write",
   render(props) {
+    const openFile = useFileOpen()
     const i18n = useI18n()
     const fileComponent = useFileComponent()
     const diagnostics = createMemo(() => getDiagnostics(props.metadata.diagnostics, props.input.filePath))
@@ -2199,7 +2215,18 @@ ToolRegistry.register({
                     <TextShimmer text={i18n.t("ui.messagePart.title.write")} active={pending()} />
                   </span>
                   <Show when={!pending()}>
-                    <span data-slot="message-part-title-filename">{filename()}</span>
+                    {/* 260831 cc 点文件名在侧栏开它；没有注入实现时保持纯文本、不显示为可点。 */}
+                    <span
+                      data-slot="message-part-title-filename"
+                      classList={{ clickable: !!openFile && !!path() }}
+                      onClick={(e) => {
+                        if (!openFile || !path()) return
+                        e.stopPropagation()
+                        openFile(path())
+                      }}
+                    >
+                      {filename()}
+                    </span>
                   </Show>
                 </div>
                 <Show when={!pending() && props.input.filePath?.includes("/")}>

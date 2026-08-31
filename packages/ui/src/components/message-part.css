@@ -554,6 +554,19 @@
     font-weight: var(--font-weight-regular);
   }
 
+  /* 260831 cc 点文件名在侧栏打开它。只有 app 注入了 FileOpenProvider 时才加这个 class，
+     所以 storybook / playground 里仍然是纯文本、没有假的可点提示。
+     与 basic-tool.css 的 .clickable 保持同一套观感。 */
+  [data-slot="message-part-title-filename"].clickable {
+    cursor: pointer;
+    text-decoration: underline;
+    transition: color 0.15s ease;
+
+    &:hover {
+      color: var(--text-base);
+    }
+  }
+
   [data-slot="message-part-path"] {
     display: flex;
     flex-grow: 1;

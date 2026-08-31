@@ -279,6 +279,14 @@ const isImageByExtension = (file: string) => image.has(ext(file))
 const isTextByExtension = (file: string) => text.has(ext(file))
 const isTextByName = (file: string) => textName.has(name(file))
 const isBinaryByExtension = (file: string) => binary.has(ext(file))
+
+// 260831 cc 内联图片的字节上限。超过就按「二进制、不提供内容」返回，不做 base64。
+//   为什么是 20MB：哥哥判断「读不到那么大的图」，这是兜底不是常规门槛——设低了会误伤
+//   `read` 工具给多模态模型读图那条路（它和 GUI 查看器走的是同一个 File.read）。
+//   为什么在读完之后判而不是先 stat：AppFileSystem 接口上没有 stat/size，加一个要动服务
+//   定义与各实现。读完再判省不掉磁盘读，但省掉了 base64 的 33% 膨胀与整段 JSON 传输——
+//   贵的是后两者。真要连磁盘读一起省，那是另一件事（给接口补 stat）。
+const MAX_INLINE_BYTES = 20 * 1024 * 1024
 const isImage = (mimeType: string) => mimeType.startsWith("image/")
 const getImageMimeType = (file: string) => mime[ext(file)] || "image/" + ext(file)
 
@@ -517,10 +525,15 @@ export const layer = Layer.effect(
         const exists = yield* appFs.existsSafe(full)
         if (exists) {
           const bytes = yield* appFs.readFile(full).pipe(Effect.catch(() => Effect.succeed(new Uint8Array())))
+          const mime = getImageMimeType(file)
+          if (bytes.length > MAX_INLINE_BYTES) {
+            log.warn("read.tooLarge", { file, bytes: bytes.length, limit: MAX_INLINE_BYTES })
+            return { type: "binary" as const, content: "", mimeType: mime }
+          }
           return {
             type: "text" as const,
             content: Buffer.from(bytes).toString("base64"),
-            mimeType: getImageMimeType(file),
+            mimeType: mime,
             encoding: "base64" as const,
           }
         }
@@ -541,6 +554,10 @@ export const layer = Layer.effect(
 
       if (encode) {
         const bytes = yield* appFs.readFile(full).pipe(Effect.catch(() => Effect.succeed(new Uint8Array())))
+        if (bytes.length > MAX_INLINE_BYTES) {
+          log.warn("read.tooLarge", { file, bytes: bytes.length, limit: MAX_INLINE_BYTES })
+          return { type: "binary" as const, content: "", mimeType }
+        }
         return {
           type: "text" as const,
           content: Buffer.from(bytes).toString("base64"),
