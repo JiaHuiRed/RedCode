@@ -202,7 +202,10 @@ export const layer = Layer.effect(
                 log.info("loading plugin", { path: candidate.plan.spec })
               },
               missing(candidate, _retry, message) {
+                // 260831 cc: 此前只写日志——插件解析到了却没有 server 入口时界面完全无提示。
+                // RedCode-dcp 就因为导出条件不匹配「从未被宿主加载」而长期无人察觉（31f7361）。
                 log.warn("plugin has no server entrypoint", { path: candidate.plan.spec, message })
+                publishPluginError(`Plugin ${candidate.plan.spec} was not loaded: ${message}`)
               },
               error(candidate, _retry, stage, error, resolved) {
                 const spec = candidate.plan.spec
@@ -235,7 +238,13 @@ export const layer = Layer.effect(
           }),
         ).pipe(
           Effect.timeout("30 seconds"),
-          Effect.catch(() => Effect.succeed([])),
+          // 260831 cc: 超时/失败此前直接吞成空数组——所有外置插件一起静默消失，日志里也不留痕。
+          Effect.catch((error) => {
+            const message = errorMessage(error) || "timed out after 30s"
+            log.error("external plugin loading aborted", { count: plugins.length, error: message })
+            publishPluginError(`Plugin loading aborted, ${plugins.length} external plugin(s) skipped: ${message}`)
+            return Effect.succeed([] as PluginLoader.Loaded[])
+          }),
         )
         for (const load of loaded) {
           if (!load) continue
@@ -250,13 +259,9 @@ export const layer = Layer.effect(
               return message
             },
           }).pipe(
-            Effect.catch(() => {
-              // TODO: make proper events for this
-              // bus.publish(Session.Event.Error, {
-              //   error: new NamedError.Unknown({
-              //     message: `Failed to load plugin ${load.spec}: ${message}`,
-              //   }).toObject(),
-              // })
+            Effect.catch((message) => {
+              // 260831 cc: 补上原 TODO 空着的事件——插件工厂抛错此前只有日志，界面无感。
+              publishPluginError(`Failed to load plugin ${load.spec}: ${message}`)
               return Effect.void
             }),
           )
