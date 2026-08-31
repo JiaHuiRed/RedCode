@@ -16,8 +16,15 @@ import { compareTime } from "@/utils/id"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 
+// 260831 Red 语义序：reasoning（思考链）恒置最前，段内保持字典序（=落库时间序）。
+//   GLM-5.3-Flash 首轮流式里 tool_calls 会先于 thinking 到达，服务端按到达序写时间戳，
+//   字典序会把工具气泡甩到思考链前面（哥哥 260831 撞上）；思考链放最前是跨 vendor
+//   的稳定语义（GUI 正常会话一直是思考链在最上）。
 function sortParts(parts: Part[]) {
-  return parts.filter((part) => !!part?.id).sort((a, b) => cmp(a.id, b.id))
+  const sorted = parts.filter((part) => !!part?.id).sort((a, b) => cmp(a.id, b.id))
+  const reasoning = sorted.filter((part) => part.type === "reasoning")
+  if (reasoning.length === 0 || reasoning.length === sorted.length) return sorted
+  return [...reasoning, ...sorted.filter((part) => part.type !== "reasoning")]
 }
 
 function runInflight(map: Map<string, Promise<void>>, key: string, task: () => Promise<void>) {
@@ -89,7 +96,7 @@ type MessagePage = {
 
 const hasParts = (parts: Part[] | undefined, want: Part[]) => {
   if (!parts) return want.length === 0
-  return want.every((part) => Binary.search(parts, part.id, (item) => item.id).found)
+  return want.every((part) => parts.some((item) => item.id === part.id))
 }
 
 const mergeParts = (parts: Part[] | undefined, want: Part[]) => {
@@ -97,9 +104,15 @@ const mergeParts = (parts: Part[] | undefined, want: Part[]) => {
   const next = [...parts]
   let changed = false
   for (const part of want) {
-    const result = Binary.search(next, part.id, (item) => item.id)
-    if (result.found) continue
-    next.splice(result.index, 0, part)
+    if (next.some((item) => item.id === part.id)) continue
+    // 数组已是语义序（reasoning 恒最前），不能用词典序二分：按语义段线性插位——
+    // reasoning 插到第一个非 reasoning 之前；其他插到同段内第一个字典序更大的之前。
+    const at = next.findIndex((item) => {
+      if (part.type === "reasoning") return item.type !== "reasoning"
+      if (item.type === "reasoning") return false
+      return cmp(item.id, part.id) > 0
+    })
+    next.splice(at === -1 ? next.length : at, 0, part)
     changed = true
   }
   if (!changed) return parts
