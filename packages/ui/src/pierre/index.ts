@@ -27,12 +27,21 @@ const unsafeCSS = `
   --diffs-deletion-base: var(--syntax-diff-delete);
   --diffs-addition-base: var(--syntax-diff-add);
   --diffs-modified-base: var(--syntax-diff-unknown);
-  --diffs-bg-deletion: var(--diffs-bg-deletion-override, light-dark( color-mix(in lab, var(--diffs-bg) 98%, var(--diffs-deletion-base)), color-mix(in lab, var(--diffs-bg) 92%, var(--diffs-deletion-base))));
-  --diffs-bg-deletion-number: var(--diffs-bg-deletion-number-override, light-dark( color-mix(in lab, var(--diffs-bg) 91%, var(--diffs-deletion-base)), color-mix(in lab, var(--diffs-bg) 85%, var(--diffs-deletion-base))));
+  /* 260831 cc 变更行的着色强度上调。原值深色档是 92%/8% —— 8% 的着色量在磨砂紫底上
+     几乎读不出来，哥哥的原话是「增三行和减三行底色其实是有区别的，只是在紫色底色下
+     不够明显」。一个旁证：同一份配置里 hover 态是 30%，也就是「鼠标划过」的提示比
+     「这行被改了」这个事实本身还显眼四倍，主次是反的。
+     行底色 8% → 16%（深色档 92→84，浅色档 98→94）；
+     行号槽 15% → 26%（深色档 85→74，浅色档 91→86）—— 行号槽单独给足，才有 zcode 那种
+     「整行连行号一起铺」的观感。
+     只动改动行，上下文行保持不着色：正是那个反差让人一眼看到改动的形状。
+     嫌重嫌轻改这四个百分数即可；pierre 还留了 --diffs-bg-*-override 可以在下游单独覆盖。 */
+  --diffs-bg-deletion: var(--diffs-bg-deletion-override, light-dark( color-mix(in lab, var(--diffs-bg) 94%, var(--diffs-deletion-base)), color-mix(in lab, var(--diffs-bg) 84%, var(--diffs-deletion-base))));
+  --diffs-bg-deletion-number: var(--diffs-bg-deletion-number-override, light-dark( color-mix(in lab, var(--diffs-bg) 86%, var(--diffs-deletion-base)), color-mix(in lab, var(--diffs-bg) 74%, var(--diffs-deletion-base))));
   --diffs-bg-deletion-hover: var(--diffs-bg-deletion-hover-override, light-dark( color-mix(in lab, var(--diffs-bg) 80%, var(--diffs-deletion-base)), color-mix(in lab, var(--diffs-bg) 75%, var(--diffs-deletion-base))));
   --diffs-bg-deletion-emphasis: var(--diffs-bg-deletion-emphasis-override, light-dark(rgb(from var(--diffs-deletion-base) r g b / 0.7), rgb(from var(--diffs-deletion-base) r g b / 0.1)));
-  --diffs-bg-addition: var(--diffs-bg-addition-override, light-dark( color-mix(in lab, var(--diffs-bg) 98%, var(--diffs-addition-base)), color-mix(in lab, var(--diffs-bg) 92%, var(--diffs-addition-base))));
-  --diffs-bg-addition-number: var(--diffs-bg-addition-number-override, light-dark( color-mix(in lab, var(--diffs-bg) 91%, var(--diffs-addition-base)), color-mix(in lab, var(--diffs-bg) 85%, var(--diffs-addition-base))));
+  --diffs-bg-addition: var(--diffs-bg-addition-override, light-dark( color-mix(in lab, var(--diffs-bg) 94%, var(--diffs-addition-base)), color-mix(in lab, var(--diffs-bg) 84%, var(--diffs-addition-base))));
+  --diffs-bg-addition-number: var(--diffs-bg-addition-number-override, light-dark( color-mix(in lab, var(--diffs-bg) 86%, var(--diffs-addition-base)), color-mix(in lab, var(--diffs-bg) 74%, var(--diffs-addition-base))));
   --diffs-bg-addition-hover: var(--diffs-bg-addition-hover-override, light-dark( color-mix(in lab, var(--diffs-bg) 80%, var(--diffs-addition-base)), color-mix(in lab, var(--diffs-bg) 70%, var(--diffs-addition-base))));
   --diffs-bg-addition-emphasis: var(--diffs-bg-addition-emphasis-override, light-dark(rgb(from var(--diffs-addition-base) r g b / 0.07), rgb(from var(--diffs-addition-base) r g b / 0.1)));
   --diffs-selection-base: var(--surface-warning-strong);
