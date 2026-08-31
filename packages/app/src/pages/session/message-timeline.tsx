@@ -71,6 +71,7 @@ import { messageAgentColor } from "@/utils/agent"
 import { sessionTitle } from "@/utils/session-title"
 import { makeTimer } from "@solid-primitives/timer"
 import { MessageComment, SummaryDiff, Timeline, TimelineRow, TimelineRowMap } from "./message-timeline.data"
+import { compareTime } from "@/utils/id"
 
 const emptyMessages: MessageType[] = []
 const emptyParts: PartType[] = []
@@ -333,10 +334,15 @@ export function MessageTimeline(props: {
 
   let virtualizer: VirtualizerHandle | undefined
   const sessionID = createMemo(() => params.id)
+  // 260831 cc 与 session.tsx 的 messages 同因由：store 是 ID 序，而 ID 回绕后字典序 ≠ 时间序。
+  //   这份尤其要排——下面 lastUserMessageID 是**从后往前扫**数组找最后一条 user，位置错了
+  //   就会认错整轮的归属。
   const sessionMessages = createMemo(() => {
     const id = sessionID()
     if (!id) return emptyMessages
-    return sync.data.message[id] ?? emptyMessages
+    const list = sync.data.message[id]
+    if (!list || list.length === 0) return emptyMessages
+    return [...list].sort(compareTime)
   })
   const messageByID = createMemo(() => new Map(sessionMessages().map((message) => [message.id, message] as const)))
   const assistantMessagesByParent = createMemo(() => {

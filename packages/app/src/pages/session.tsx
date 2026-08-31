@@ -231,7 +231,17 @@ export default function Page() {
   const activeTab = tabState.activeTab
   const activeFileTab = tabState.activeFileTab
   const revertMessageID = createMemo(() => info()?.revert?.messageID)
-  const messages = createMemo(() => (params.id ? (sync.data.message[params.id] ?? []) : []))
+  // 260831 cc **展示层按时间排序**。store 里是 ID 序（插入走 Binary.search(id)，自洽），但
+  //   ID 是时间编码且会回绕 —— 实测一个会话里 8/31 的 `msg_001a…` 字典序小于 7/29 的
+  //   `msg_fac…`，于是新发的那一轮被排到整个会话最前面，用户在底部找不到（哥哥 260830 撞上，
+  //   以为消息丢了；实际库里全在，只是位置错了）。
+  //   260814 那批把**所有比较型消费者**都换成了 compareTime（revert 过滤、插入位、边界），
+  //   却没动数组自身的顺序，所以位置型消费者（渲染顺序、从后往前扫最后一条 user）仍然错。
+  //   排在这里而不是改 store：store 的排序与二分插入是同一套 ID 口径、自洽，动它要同时改
+  //   6 处 Binary.search，其中按 ID 删除的两处无法构造复合键。
+  const messages = createMemo(() =>
+    params.id ? [...(sync.data.message[params.id] ?? [])].sort(compareTime) : [],
+  )
   const messagesReady = createMemo(() => {
     const id = params.id
     if (!id) return true
