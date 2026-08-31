@@ -56,11 +56,33 @@
   --tracking-tight: var(--letter-spacing-tight);
   --tracking-tightest: var(--letter-spacing-tightest);
 
-  --radius-xs: 0.125rem;
-  --radius-sm: 0.25rem;
-  --radius-md: 0.375rem;
-  --radius-lg: 0.5rem;
-  --radius-xl: 0.625rem;
+  /* 260831 cc 圆角标度的**唯一定义处**。此前有三份：本块、styles/theme.css（同值重复、
+     且被本块覆盖，是死副本），以及 app/src/index.css 里一份 @layer base 的覆盖，把每档
+     上调一级（2/4/6/8/10 → 4/6/8/12/16）。base 层在 theme 层之后，所以桌面应用里生效的
+     一直是 app 那份。
+
+     问题是**下游只有 app 有那份覆盖**，另外两个消费者直接 import 本文件、拿到的是小一号的值：
+     - packages/storybook（79 个 story，全在 ui/src 下，见 .storybook/main.ts 的 stories 通配）
+       —— 组件工作台的全部意义是「这里看到的 = 应用里的」，小一号就废掉了这个前提；
+     - packages/enterprise 的 /share/[shareID]，公开的会话分享页，渲染的正是 ui 的
+       SessionTurn 与 SessionReview。别人打开你分享的会话，圆角和你本地不是一套。
+     ui 组件 CSS 里那 48 处 var(--radius-*) 在这两处都受影响。
+
+     修法：生效值搬到这里、删掉另外两份，下游不再覆盖。 */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  /* 2xl 目前全仓零使用。@theme 里没人用的档位会被 Tailwind 摇掉、不出现在 :root 上，
+     所以探针查 --radius-2xl 会显示未定义 —— 那是正常的，不是回归。有人用了就会出现。 */
+  --radius-2xl: 24px;
+
+  /* 玻璃清单 ⑥ 补的「面」这一档：脱边浮起、四边可见的面（首页侧栏 / 文件树 / 审查栏 /
+     无壁纸时的 main）。按角色命名而非尺寸是有意的——它不是「再大一号」，是那个身份。
+     同心圆角：外层面 14 > 内层的 composer / dock / 斜杠浮层 lg(12)。
+     在 @theme 里所以 Tailwind 会生成 rounded-pane 工具类。 */
+  --radius-pane: 14px;
 
   --shadow-xs: var(--shadow-xs);
   --shadow-md: var(--shadow-md);

@@ -523,7 +523,7 @@ function HomeProjectColumn(props: {
     //   pt-10(40px) 顶回 12+40=52px，与改造前逐像素相同。卡顶因此高于搜索框一截——
     //   这正是 Aqua 那种侧栏卡的样子，不是失误。
     <aside
-      class="flex min-w-0 flex-col lg:row-span-full lg:mt-3 lg:mb-3 lg:ml-3 lg:rounded-[var(--radius-pane)] lg:border lg:border-v2-border-border-base lg:bg-v2-background-bg-layer-01 lg:px-3 lg:pb-3 lg:pt-10 lg:shadow-[var(--v2-elevation-floating)]"
+      class="flex min-w-0 flex-col lg:row-span-full lg:mt-3 lg:mb-3 lg:ml-3 lg:rounded-pane lg:border lg:border-v2-border-border-base lg:bg-v2-background-bg-layer-01 lg:px-3 lg:pb-3 lg:pt-10 lg:shadow-[var(--v2-elevation-floating)]"
       data-frost-surface="home-sidebar"
       aria-label={props.language.t("home.projects")}
     >

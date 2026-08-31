@@ -1159,7 +1159,7 @@ export default function Layout(props: ParentProps) {
         classList={{
           "items-start": true,
           // 260610 Red 0.5.0 refine#3：设了背景图时主卡片去掉外边距/圆角/阴影，毛玻璃满贴标题栏不再像"镶嵌进去的一块玻璃"
-          "m-2 mt-0 rounded-[var(--radius-pane)] shadow-[var(--v2-elevation-raised)] overflow-hidden":
+          "m-2 mt-0 rounded-pane shadow-[var(--v2-elevation-raised)] overflow-hidden":
             (!!params.id || !params.dir) && !appBackground(),
           "overflow-hidden": (!!params.id || !params.dir) && !!appBackground(),
         }}

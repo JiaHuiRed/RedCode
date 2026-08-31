@@ -42,11 +42,8 @@
   --container-6xl: 72rem;
   --container-7xl: 80rem;
 
-  --radius-xs: 0.125rem;
-  --radius-sm: 0.25rem;
-  --radius-md: 0.375rem;
-  --radius-lg: 0.5rem;
-  --radius-xl: 0.625rem;
+  /* 圆角标度已收归 styles/tailwind/index.css 的 @theme 块（260831 cc）。本文件经
+     styles/index.css 被那个文件 import，@theme 在后、本处的值一直被盖掉，是死副本。 */
 
   --shadow-xs:
     0 1px 2px -0.5px light-dark(hsl(0 0% 0% / 0.04), hsl(0 0% 0% / 0.06)),

@@ -92,3 +92,6 @@ ffi_otui_*.log
 
 # 260831 cc Claude Code 的会话级工作目录（launch.json 之类的本机开发配置，非源码）
 .claude/
+
+# 260831 cc storybook 调试日志（2026-05-25 初始导入时误入仓的产物，跑一次 storybook 就重写一次）
+packages/storybook/debug-storybook.log
