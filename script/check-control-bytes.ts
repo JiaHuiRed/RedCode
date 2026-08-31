@@ -25,8 +25,9 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..")
 
 /** 路径 → 豁免理由。理由为空视为没写，一样报错。 */
 const EXEMPT: Record<string, string> = {
-  "packages/storybook/debug-storybook.log":
-    "抓下来的 storybook 终端输出，0x1b 是 ANSI 颜色码，是这份日志的内容本身而不是手滑",
+  // 260831 cc 原有 packages/storybook/debug-storybook.log 一条，随该文件 untrack 一并删除
+  // （它是 2026-05-25 初始导入时误入仓的调试产物，现已进 gitignore）。
+  // 本表当前为空是正常状态，不是漏写。
 }
 
 // 二进制资产按扩展名跳过。这里刻意用**黑名单**而不是白名单：漏登记一种二进制格式
