@@ -8,6 +8,34 @@
 
 ---
 
+### [未发布]
+
+> 插件加载的三条静默失败路径补上提示；`gpt.md` 按 GPT-5.6 重做；ChatGPT 套餐额度开始被记录（面板未做，待办见下）。
+
+#### 新增
+
+- **记录 ChatGPT/Codex 套餐额度**（`packages/opencode/src/provider/quota.ts` 新增、`plugin/codex.ts`）：订阅认证下 Codex 后端把用量窗口放在**响应头**里，此前 `return fetch(...)` 原样丢弃。实测（Plus 账号，一次真实请求取证）带回 `x-codex-plan-type` / `-active-limit`、`x-codex-primary-*`（`window-minutes: 300` = 5 小时档）、`x-codex-secondary-*`（`10080` = 7 天档）、`x-codex-credits-*`，外加 `x-base-model-inference-*` 这组独立的 `gpt-reserve` 储备池——与 Claude Code 用量面板的三条进度条一一对应。现在解析并存进内存，日志可见。只读头、**绝不碰 `response.body`**（那是要交给 AI SDK / 原生运行时消费的 SSE 流）；`record()` 内部吞掉全部异常，解析失败不会把模型请求带走。存储刻意做成模块级而非 `InstanceState`——写入点是 AI SDK 起的裸 promise，没有 fiber 也没有 `InstanceRef`，`InstanceState.get` 会静默落到 `process.cwd()` 键上（见 `effect/instance-state.ts` 的 `fallbackContext`），写进去没人读得到且不报错；何况凭据本身就是进程级的。捕获点选在插件的 fetch 而不是 `provider.ts` 的 AI SDK 包装，因为原生运行时会绕过后者（`session/llm/native-runtime.ts:97` 那道 `openai` + `oauth` 闸门），插件 fetch 是两条运行时唯一的交汇点。
+
+#### 修复
+
+- **插件加载的三条静默失败路径**（`packages/opencode/src/plugin/index.ts`）：`loadExternal` 的 install / compatibility / entry / load 四档都已 publish `Session.Event.Error`，唯独漏了三处——① `missing`（包解析到了但没有 server 入口）只有 `log.warn`，界面全无，RedCode-dcp 当年导出条件不匹配「从未被宿主加载」就长期落在这一档；② 整体的 `Effect.timeout("30 seconds")` 后面接 `Effect.catch(() => Effect.succeed([]))`，超时把**所有**外置插件一起吞成空数组，连日志都不留；③ `applyPlugin` 抛错处那个 `// TODO: make proper events for this`，事件被注释掉只剩日志。三处统一走 `publishPluginError`，措辞区分「未加载」与「加载失败」，超时那条带上被跳过的插件数量。
+- **`gpt.md` 按 GPT-5.6 重做**（`packages/opencode/src/session/prompt/gpt.md`）：底本是泄漏的 gpt-5.4 提示词（对 5.4/5.5/5.6 三份做归一化 diff，5.4 差 188 行最近），跟 5.6 差两代。① `multi_tool_use.parallel` 是 OpenAI 自家 harness 的工具、本仓不存在（全仓仅此一处命中），而原句写的是「用它并行**且只能用它**」，等于劝退并行调用；换成 5.6 自己的写法（不提工具名）。② `## Response channels` 那 29 行讲 commentary/final 双频道，是 Codex 的 Harmony 频道，本仓 TS 侧零引用，还写着「最终答复出现后过程更新会被折叠」这种不存在的 UI；改写成 `## Progress updates` + `## Final answer`，行为保留、频道机制去掉。③ 自主性分档换成 5.6 的请求类型表（答疑/诊断/修改/等待四档），替掉 5.4 的一刀切「假定用户要你改代码」。另补 5.6 的 `## Destructive actions` 段并按本仓教训落两条（跑命令前先确认实际会碰什么、按 PID 杀进程不按进程名），Visualizations 换成 5.6 那版判据。**故意没搬**三样：`# Personality`（本仓人格由 soul 给，搬 Codex 的会打架，只取了不涉人格的一句）、`# Using skills`（引用 `skills.list` 等本仓没有的 API，且本仓 `<available_skills>` 是刻意精简的）、5.6 的 markdown 文件链接格式（本仓用行内代码路径）。净 132 → 145 行。
+
+#### 待办（额度面板剩余部分）
+
+上面只做完「捕获 + 存储 + 解析」这一刀，刻意停在**不触发 codegen** 的边界上——再往前一步就要动 `BusEvent.define` 与 HTTP 路由，两者都会改 `effectPayloads()` 的事件联合 / `openapi.json`，而 `check:openapi-drift` 在 `.husky/pre-push` 与 CI 双卡。剩余步骤（已勘定，按序）：
+
+1. `provider/quota.ts` 加 `BusEvent.define("provider.quota.updated", …)`，`record()` 里经 `GlobalBus.emit("event", { directory: "global", … })` 广播。走 `GlobalBus` 而不是 `Bus.publish(ctx, …)`：额度是**账号级**事实，后者会把事件盖上某个实例的 directory/project 章，GUI 只会在那一个项目里看到。样板见 `server/global-lifecycle.ts` 与 `server/event.ts` 的 `server.connected`。
+2. `server/routes/instance/httpapi/groups/provider.ts` 加 `GET /provider/quota`，`query: WorkspaceRoutingQuery` **必须带**（该组挂了 `WorkspaceRoutingMiddleware`，不带是硬 400）；success 用 `Schema.Array(...)` 不要 `NullOr`（legacy OpenAPI transform 会在非 `/api` 路径上剥掉 null 分支，空数组表示尚未捕获）。handler 加在 `handlers/provider.ts` 的链上。
+3. `test/server/httpapi-exercise/index.ts` 补一条场景——那是**门禁不是 lint**，`openapi.json` 里任何没有场景的 operationId 会让三轮 `--fail-on-missing --fail-on-skip` 全挂。
+4. 依次跑 `bun run gen:openapi` → `bun --cwd packages/sdk/js run build` → `bun run check:openapi-drift`，两份生成物一起提交（drift 只比 `openapi.json`，`types.gen.ts` 落后会在全仓 typecheck 才炸）。
+5. GUI：`context/server-sync.tsx` 的 `GlobalStore` 加字段（照 `provider_auth` 的可写字段，不是 query 派生的 getter）、`global-sync/event-reducer.ts` 加事件分支、`global-sync/bootstrap.ts` 加首次拉取（否则新客户端接上长跑服务端时面板是空的）、`components/session/session-context-tab.tsx` 渲染三条进度条。**重置时间渲染成 `resetAt` 的绝对本地时刻而不是倒计时**——零定时器、零周期重绘、不闪。`resetAt` 是 unix **秒**，要 ×1000。文案走 i18n。
+6. TUI：`cli/cmd/tui/context/sync.tsx` 接事件，侧栏出一块；footer 那一行的段位最后再说。
+
+已知未决：sol / terra / luna 共用同一个 `x-codex-active-limit: premium` 桶，单次请求对百分比的权重差多少，在 0% 上量不出来，等实际用出读数再看。
+
+---
+
 ### [0.9.19] - 2026-08-31
 
 > 工具行的文件名前挂上文件类型图标；diff 收掉重复的文件名与那层盒子，变更行的着色给足；圆角标度三份合一。

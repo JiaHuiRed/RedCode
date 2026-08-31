@@ -2,6 +2,7 @@ import type { Hooks, PluginInput } from "@redcode-ai/plugin"
 import * as Log from "@redcode-ai/core/util/log"
 import { InstallationVersion } from "@redcode-ai/core/installation/version"
 import { OAUTH_DUMMY_KEY } from "../auth"
+import * as ProviderQuota from "../provider/quota"
 import os from "os"
 import { setTimeout as sleep } from "node:timers/promises"
 import { createServer } from "http"
@@ -507,10 +508,18 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
                 ? new URL(codexApiEndpoint)
                 : parsed
 
-            return fetch(url, {
+            const response = await fetch(url, {
               ...init,
               headers,
             })
+
+            // 260831 cc 顺手记下套餐额度：Codex 后端把用量窗口放在**响应头**里
+            // （x-codex-primary-* / -secondary-* / x-base-model-inference-*），此前原样丢弃。
+            // 只读头，绝不碰 response.body —— 那是要交给 AI SDK / 原生运行时消费的 SSE 流。
+            // record 内部吞掉所有异常，不会把模型请求带走。见 provider/quota.ts。
+            ProviderQuota.record("openai", authWithAccount.accountId, response.headers)
+
+            return response
           },
         }
       },
