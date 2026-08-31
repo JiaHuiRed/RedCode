@@ -964,7 +964,7 @@ export function ContextToolGroup(props: { parts: ToolPart[]; busy?: boolean }) {
         </div>
       </Collapsible.Trigger>
       <Collapsible.Content>
-        <div data-component="context-tool-group-list">
+        <div data-component="context-tool-group-list" class="part-expanded-panel">
           <Index each={props.parts}>
             {(partAccessor) => {
               const trigger = createMemo(() => contextToolTrigger(partAccessor(), i18n))

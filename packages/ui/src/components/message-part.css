@@ -359,8 +359,10 @@
     }
   }
 
+  /* 260831 cc 展开态给一个真正的面。此前思考链展开就是一段裸 markdown 直接掉在背景上，
+     而隔壁「已探索」有一条橙色左边线 —— 同一屏里两个展开态一个有容器一个没有。
+     现在两块共用下面那套 .part-expanded-panel（见本文件末尾），这里只留字号与颜色。 */
   [data-component="markdown"] {
-    margin-top: 16px;
     font-style: normal;
     font-size: 13px;
     color: var(--text-weak);
@@ -741,21 +743,45 @@
   }
 }
 
+/* ---------- 260831 cc 展开面板：思考链与「已探索」共用。
+
+   在此之前两者不一致——「已探索」有一条 2px 橙色左边线加 12px 左内距，思考链什么都没有，
+   展开就是一段裸 markdown 掉在背景上。同一屏里一个像列表、一个像散文。
+
+   面用 --surface-base 而不是实色：它是对称的 alpha（浅色 3.1% 黑 / 深色 3.1% 白），
+   坐在磨砂面上只把身后压暗一档、壁纸仍然透得出来。实色会把玻璃挡死。
+
+   圆角吃 --radius-lg(12px) 这一档：它是嵌在时间线里的内层面，外层的 main 是
+   --radius-pane(14px)，内小于外符合同心圆角。
+
+   左侧 2px 身份色留着，但改用 inset box-shadow 而不是 border-left —— 那样四边描边保持
+   均匀 1px，色条跟着圆角走，不会在左上/左下拐角处顶出一个方角。
+   已探索=橙(warning)，思考链=青(info)，与各自图标一起构成两块的区分。 ---------- */
+/* 思考链那侧走选择器而不是加 class：它的内容由 PacedMarkdown 渲染，而那个组件的签名
+   只有 text / cacheKey / streaming，为一条样式给它开个 class 口子不划算。 */
+.part-expanded-panel,
+[data-component="reasoning-part"] [data-component="markdown"] {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--v2-border-border-base);
+  border-radius: var(--radius-lg);
+  background: var(--surface-base);
+}
+
 [data-component="context-tool-group-list"] {
-  padding-top: 0;
-  padding-right: 0;
-  padding-bottom: 0;
-  padding-left: 12px;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  border-left: 2px solid var(--syntax-warning);
-  margin-left: 2px;
+  box-shadow: inset 2px 0 0 var(--syntax-warning);
 
   [data-slot="context-tool-group-item"] {
     min-width: 0;
     padding: 0;
   }
+}
+
+[data-component="reasoning-part"] [data-component="markdown"] {
+  box-shadow: inset 2px 0 0 var(--syntax-info);
 }
 
 [data-component="diagnostics"] {
