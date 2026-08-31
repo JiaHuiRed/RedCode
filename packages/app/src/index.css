@@ -206,6 +206,19 @@
     --radius-xl: 16px;
     --radius-2xl: 24px;
 
+    /* 260831 cc 玻璃清单 ⑥。这套标度按尺寸命名（xs…2xl），本档按**角色**命名是有意的：
+       它不是「再大一号」，而是「脱边浮起、四边可见的面」这个身份——首页侧栏、文件树、
+       审查栏，以及无壁纸时的 main。四张卡此前各写各的字面量（三处 14、main 是 10），
+       ⑥ 要补的就是标度里缺的这一格。
+
+       为什么是 14 而不是吃现成的 --radius-xl(16)：14 是 260829 首页侧栏成卡时定下、
+       哥哥确认过好看的值；且同心圆角要求外层面 > 内层面，内层的 composer / dock /
+       斜杠浮层是 --radius-lg(12)，14 正好落在 12 与 dialog 的 16 之间。
+
+       ⚠️ 只给 app 侧的面用。ui 包里 line-comment-popover 也写着 14px，那是浮层不是面，
+       数值巧合而已；而且 ui 组件不能引 app 定义的变量（storybook 不加载本文件）。 */
+    --radius-pane: 14px;
+
     --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.04);
     --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05), 0 1px 3px 0 rgb(0 0 0 / 0.08);
     --shadow-md: 0 2px 4px 0 rgb(0 0 0 / 0.06), 0 4px 8px 0 rgb(0 0 0 / 0.1);
@@ -518,7 +531,7 @@
 [data-app-frost] #review-panel {
   margin: var(--frost-card-inset);
   height: calc(100% - var(--frost-card-inset) * 2);
-  border-radius: 14px;
+  border-radius: var(--radius-pane);
   border: 1px solid var(--v2-border-border-base);
   box-shadow:
     inset 0 1px 0 var(--frost-edge-highlight),
