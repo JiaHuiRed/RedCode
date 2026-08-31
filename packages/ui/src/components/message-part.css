@@ -545,6 +545,16 @@
     color: var(--text-strong);
   }
 
+  /* 260831 cc 文件类型图标，放在文件名前。与 basic-tool 那份同尺寸（16px 配 14px 文字）。
+     这个容器是 align-items:center，不像 basic-tool 那边是 baseline，所以不用单独拉正。
+     负右边距抵掉父级 8px 的 gap 一部分，让图标贴着文件名读成一件东西。 */
+  [data-slot="message-part-title-icon"] {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    margin-right: -3px;
+  }
+
   [data-slot="message-part-title-filename"] {
     /* No text-transform - preserve original filename casing */
     min-width: 0;

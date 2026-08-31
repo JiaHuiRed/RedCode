@@ -1778,6 +1778,7 @@ ToolRegistry.register({
           trigger={{
             title: i18n.t("ui.tool.read"),
             subtitle: props.input.filePath ? getFilename(props.input.filePath) : "",
+            subtitlePath: props.input.filePath,
             args,
           }}
           // 260831 cc 点文件名在侧栏开它。subtitle 只是 basename，路径要从 input 取。
@@ -2142,6 +2143,9 @@ ToolRegistry.register({
                     <TextShimmer text={i18n.t("ui.messagePart.title.edit")} active={pending()} />
                   </span>
                   <Show when={!pending()}>
+                    <Show when={path()}>
+                      {(p) => <FileIcon data-slot="message-part-title-icon" node={{ path: p(), type: "file" }} />}
+                    </Show>
                     {/* 260831 cc 点文件名在侧栏开它；没有注入实现时保持纯文本、不显示为可点。 */}
                     <span
                       data-slot="message-part-title-filename"
@@ -2215,6 +2219,9 @@ ToolRegistry.register({
                     <TextShimmer text={i18n.t("ui.messagePart.title.write")} active={pending()} />
                   </span>
                   <Show when={!pending()}>
+                    <Show when={path()}>
+                      {(p) => <FileIcon data-slot="message-part-title-icon" node={{ path: p(), type: "file" }} />}
+                    </Show>
                     {/* 260831 cc 点文件名在侧栏开它；没有注入实现时保持纯文本、不显示为可点。 */}
                     <span
                       data-slot="message-part-title-filename"

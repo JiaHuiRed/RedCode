@@ -101,6 +101,18 @@
     }
   }
 
+  /* 260831 cc 文件类型图标。父容器是 align-items:baseline，而 svg 没有文字基线，
+     默认按下边缘对齐会整体坐低半格，所以这里单独改 center。
+     16px 配 14px 的文件名，与文件树 / 选文件对话框里那份 size-4 同尺寸。 */
+  [data-slot="basic-tool-tool-subtitle-icon"] {
+    flex-shrink: 0;
+    align-self: center;
+    width: 16px;
+    height: 16px;
+    /* 图标与文件名之间不吃父级那 8px 的 gap，靠得近才读成「这个文件」而不是两件东西 */
+    margin-right: -3px;
+  }
+
   [data-slot="basic-tool-tool-subtitle"] {
     flex-shrink: 1;
     min-width: 0;

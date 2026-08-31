@@ -3,6 +3,7 @@ import { animate, type AnimationPlaybackControls } from "motion"
 import { useI18n } from "../context/i18n"
 import { createStore } from "solid-js/store"
 import { Collapsible } from "./collapsible"
+import { FileIcon } from "./file-icon"
 import type { IconProps } from "./icon"
 import { TextShimmer } from "./text-shimmer"
 
@@ -11,6 +12,12 @@ export type TriggerTitle = {
   titleClass?: string
   subtitle?: string
   subtitleClass?: string
+  /**
+   * 260831 cc 有值时在 subtitle 前渲染该路径的文件类型图标（复用文件树那套 sprite）。
+   * 单独一个字段而不是从 subtitle 推：subtitle 只是 basename，而 chooseIconName 要看
+   * 完整路径才能分辨 `foo/test.ts` 这类按目录命中的规则。没有路径就别传，图标不出现。
+   */
+  subtitlePath?: string
   args?: string[]
   argsClass?: string
   action?: JSX.Element
@@ -191,6 +198,17 @@ export function BasicTool(props: BasicToolProps) {
                       <TextShimmer text={title().title} active={pending()} />
                     </span>
                     <Show when={!pending()}>
+                      {/* 260831 cc 文件类型图标。必须是 subtitle 的**兄弟节点**：subtitle 那个
+                          span 带 overflow:hidden + text-overflow:ellipsis，把 svg 塞进去会被
+                          省略号机制波及。点击交给旁边的文件名，图标本身只是装饰。 */}
+                      <Show when={title().subtitlePath}>
+                        {(path) => (
+                          <FileIcon
+                            data-slot="basic-tool-tool-subtitle-icon"
+                            node={{ path: path(), type: "file" }}
+                          />
+                        )}
+                      </Show>
                       <Show when={title().subtitle}>
                         <span
                           data-slot="basic-tool-tool-subtitle"

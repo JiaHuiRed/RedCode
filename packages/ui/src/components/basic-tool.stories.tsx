@@ -58,6 +58,33 @@ export default {
 
 export const Basic = story.Basic
 
+// 260831 cc subtitlePath：给文件类工具行在文件名前挂文件类型图标（复用文件树那套 sprite）。
+// 这里各挑一个走不同命中路径的例子：py 命中扩展名表、README.md 命中文件名表、
+// vite.config.ts 命中文件名表（而不是退化成 ts）、无后缀文件退化到默认 Document。
+export const WithFileIcon = {
+  args: {
+    icon: "glasses",
+    defaultOpen: false,
+    trigger: {
+      title: "读取",
+      subtitle: "window.py",
+      subtitlePath: "player/viewer/window.py",
+    },
+  },
+}
+
+export const FileIconVariants = {
+  args: {
+    icon: "code-lines",
+    defaultOpen: false,
+    trigger: {
+      title: "编辑",
+      subtitle: "vite.config.ts",
+      subtitlePath: "packages/app/vite.config.ts",
+    },
+  },
+}
+
 export const Pending = {
   args: {
     status: "pending",
