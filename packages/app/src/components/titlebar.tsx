@@ -540,7 +540,7 @@ function TitlebarUpdatePill(props: { update?: TitlebarUpdate }) {
     <Show when={version() !== undefined}>
       <button
         type="button"
-        class="h-5 shrink-0 rounded-[27px] bg-[var(--v2-background-bg-accent)] px-2.5 text-[11px] font-[530] leading-[1.1] tracking-[-0.04px] text-[var(--v2-text-text-contrast)] disabled:opacity-60"
+        class="h-5 shrink-0 rounded-full bg-[var(--v2-background-bg-accent)] px-2.5 text-[11px] font-[530] leading-[1.1] tracking-[-0.04px] text-[var(--v2-text-text-contrast)] disabled:opacity-60"
         onClick={() => props.update?.install()}
         disabled={props.update?.installing()}
         aria-label={language.t("toast.update.action.installRestart")}
