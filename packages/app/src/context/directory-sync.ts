@@ -12,6 +12,7 @@ import { useServerSync, type ServerSyncContext } from "./server-sync"
 import type { Message, OpencodeClient, Part } from "@redcode-ai/sdk/v2/client"
 import { SESSION_CACHE_LIMIT, dropSessionCaches, pickSessionCacheEvictions } from "./global-sync/session-cache"
 import { diffs as list, message as clean } from "@/utils/diffs"
+import { compareTime } from "@/utils/id"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 
@@ -33,10 +34,29 @@ const keyFor = (directory: string, id: string) => `${directory}\n${id}`
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
-function merge<T extends { id: string }>(a: readonly T[], b: readonly T[]) {
+// 260831 cc 消息的顺序一律按 compareTime（时间优先、ID 只做 tie-break），不用字典序。
+//   ID 是时间编码且会回绕：实测同一会话里 8/31 的 `msg_001a…` 字典序**小于** 7/29 的
+//   `msg_fac…`，按 ID 排会把新的一轮甩到会话最前面（哥哥 260830 撞上，以为消息丢了）。
+//   260814 那批（#109）只把「比较型」消费者换成了 compareTime，没动数组自身的顺序，于是
+//   位置型消费者仍然错——而直接读 store 的消费者有 8 处，逐个排序是打地鼠。这里把顺序
+//   钉在 store 上，一处解决。
+//   代价：定位不能再用 Binary.search（它假设字典序）。改成线性 findIndex——消息数组最多
+//   几百条，而插入本来就要 O(n) 拷贝，这点开销可以忽略。
+const byTime = <T extends { id: string; time?: { created?: number } }>(a: T, b: T) => compareTime(a, b)
+
+/** 按时间序找插入位（第一个比 item 晚的位置；都不晚则追加到末尾）。 */
+function insertIndex<T extends { id: string; time?: { created?: number } }>(list: readonly T[], item: T) {
+  const at = list.findIndex((x) => compareTime(x, item) > 0)
+  return at === -1 ? list.length : at
+}
+
+/** 按 id 定位（删除/更新用）。数组已不是字典序，不能二分。 */
+const indexOfID = <T extends { id: string }>(list: readonly T[], id: string) => list.findIndex((x) => x.id === id)
+
+function merge<T extends { id: string; time?: { created?: number } }>(a: readonly T[], b: readonly T[]) {
   const map = new Map(a.map((item) => [item.id, item] as const))
   for (const item of b) map.set(item.id, item)
-  return [...map.values()].sort((x, y) => cmp(x.id, y.id))
+  return [...map.values()].sort(byTime)
 }
 
 type OptimisticStore = {
@@ -94,9 +114,12 @@ export function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) 
   const confirmed: string[] = []
 
   for (const item of items) {
-    const result = Binary.search(session, item.message.id, (message) => message.id)
-    const found = result.found
-    if (!found) session.splice(result.index, 0, item.message)
+    // session 已是时间序（见上方 byTime 注释），不能二分：回绕后乐观消息的 ID 偏小，
+    // 会被插到时间线最前面，且 found 误判为 false —— 重复插入且 confirmed 永远不填，
+    // 乐观气泡不消。
+    const at = indexOfID(session, item.message.id)
+    const found = at !== -1
+    if (!found) session.splice(insertIndex(session, item.message), 0, item.message)
 
     const current = part.get(item.message.id)
     if (found && hasParts(current, item.parts)) {
@@ -119,8 +142,7 @@ export function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) 
 export function applyOptimisticAdd(draft: OptimisticStore, input: OptimisticAddInput) {
   const messages = draft.message[input.sessionID]
   if (messages) {
-    const result = Binary.search(messages, input.message.id, (m) => m.id)
-    messages.splice(result.index, 0, input.message)
+    messages.splice(insertIndex(messages, input.message), 0, input.message)
   } else {
     draft.message[input.sessionID] = [input.message]
   }
@@ -130,8 +152,8 @@ export function applyOptimisticAdd(draft: OptimisticStore, input: OptimisticAddI
 export function applyOptimisticRemove(draft: OptimisticStore, input: OptimisticRemoveInput) {
   const messages = draft.message[input.sessionID]
   if (messages) {
-    const result = Binary.search(messages, input.messageID, (m) => m.id)
-    if (result.found) messages.splice(result.index, 1)
+    const at = indexOfID(messages, input.messageID)
+    if (at !== -1) messages.splice(at, 1)
   }
   delete draft.part[input.messageID]
 }
@@ -139,9 +161,8 @@ export function applyOptimisticRemove(draft: OptimisticStore, input: OptimisticR
 function setOptimisticAdd(setStore: (...args: unknown[]) => void, input: OptimisticAddInput) {
   setStore("message", input.sessionID, (messages: Message[] | undefined) => {
     if (!messages) return [input.message]
-    const result = Binary.search(messages, input.message.id, (m) => m.id)
     const next = [...messages]
-    next.splice(result.index, 0, input.message)
+    next.splice(insertIndex(messages, input.message), 0, input.message)
     return next
   })
   setStore("part", input.message.id, sortParts(input.parts))
@@ -150,10 +171,10 @@ function setOptimisticAdd(setStore: (...args: unknown[]) => void, input: Optimis
 function setOptimisticRemove(setStore: (...args: unknown[]) => void, input: OptimisticRemoveInput) {
   setStore("message", input.sessionID, (messages: Message[] | undefined) => {
     if (!messages) return messages
-    const result = Binary.search(messages, input.messageID, (m) => m.id)
-    if (!result.found) return messages
+    const at = indexOfID(messages, input.messageID)
+    if (at === -1) return messages
     const next = [...messages]
-    next.splice(result.index, 1)
+    next.splice(at, 1)
     return next
   })
   setStore("part", (part: Record<string, Part[] | undefined>) => {
@@ -292,7 +313,7 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
       input.client.session.messages({ sessionID: input.sessionID, limit: input.limit, before: input.before }),
     )
     const items = (messages.data ?? []).filter((x) => !!x?.info?.id)
-    const session = items.map((x) => clean(x.info)).sort((a, b) => cmp(a.id, b.id))
+    const session = items.map((x) => clean(x.info)).sort(byTime)
     const part = items.map((message) => ({ id: message.info.id, part: sortParts(message.parts) }))
     const cursor = messages.response.headers.get("x-next-cursor") ?? undefined
     return {

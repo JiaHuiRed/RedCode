@@ -327,14 +327,6 @@ export function SessionContextTab() {
   // 260809 Red 输入 token 为 0 时用中性色——浅色主题下 syntax-string 是橙红，零值看着像报错
   const inputTokensColor = createMemo(() => (ctx()?.input ? "var(--syntax-string)" : undefined))
 
-  // 260822 cc 最近一次压缩。CompactionPart 上的 tokens_before/after 是服务端压缩完成后回填的
-  // （compaction.ts:714-726），TUI 的分割线早就显示了（routes/session/index.tsx:1450-1459
-  // 那句 " Compaction 180k → 32k "），GUI 这边一直只画一个没有数字的死标签。
-  // 放在面板而不是输入框悬浮：它是"这个会话被压过没有、压掉了多少"，是账本，不是当下这一轮。
-  const lastCompaction = createMemo(() =>
-    findLastCompaction(messages(), (messageID) => (sync.data.part[messageID] ?? []) as Part[]),
-  )
-
   const stats = [
     { label: "context.stats.session", value: () => info()?.title ?? params.id ?? "—" },
     { label: "context.stats.sessionID", value: () => params.id ?? "—", color: "var(--syntax-property)" },
@@ -403,31 +395,18 @@ export function SessionContextTab() {
     },
     { label: "context.stats.totalCost", value: cost, color: "var(--syntax-critical)" },
     {
-      label: "context.stats.lastCompaction",
+      // 260831 cc 换掉原来的「上次压缩」与「自动压缩」两格（哥哥 260831 定）：前者绝大多数
+      //   会话是个破折号，后者是**配置回显**而不是会话数据——压缩状态属于「状态」tab，不属于
+      //   这本会话账本。换成真属于本会话的：平均每轮 = 总 token ÷ 用户消息数，比「总 token
+      //   1638 万」更能说明这个会话有多重（该例约 102 万/轮）。
+      label: "context.stats.avgPerTurn",
       value: () => {
-        const part = lastCompaction()
-        if (!part || part.tokens_before === undefined || part.tokens_after === undefined) return "—"
-        // auto/overflow 是两件事：auto 说的是谁触发的（引擎还是人），
-        // overflow 说的是"被上下文顶爆才压的"而不是主动降本 —— 后者只在为真时才提。
-        const tags = [language.t(part.auto ? "context.stats.compactionAuto" : "context.stats.compactionManual")]
-        if (part.overflow) tags.push(language.t("context.stats.compactionOverflow"))
-        return `${formatter().number(part.tokens_before)} → ${formatter().number(part.tokens_after)} · ${tags.join(" · ")}`
+        const turns = counts().user
+        const total = ctx()?.total
+        if (!turns || !total) return "—"
+        return formatter().number(Math.round(total / turns))
       },
       color: "var(--syntax-warning)",
-    },
-    {
-      // 260822 cc 自动压缩的开关与硬顶。关着的时候进度圈变红也不会有人来救
-      // （overflow.ts:65 auto:false 直接返回 ok，整个分级机制不动手），
-      // 这件事在界面上此前一个字都没有。threshold 是硬顶，与模型窗口取小者才是真触发点。
-      label: "context.stats.autoCompaction",
-      value: () => {
-        const cfg = sync.data.config.compaction
-        if (cfg?.auto === false) return language.t("context.stats.compactionOff")
-        const threshold = cfg?.threshold
-        const on = language.t("context.stats.compactionOn")
-        return threshold ? `${on} · ${formatter().number(threshold)}` : on
-      },
-      color: "var(--syntax-info)",
     },
     { label: "context.stats.sessionCreated", value: () => formatter().time(info()?.time.created) },
     {

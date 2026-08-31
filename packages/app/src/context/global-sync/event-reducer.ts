@@ -17,6 +17,7 @@ import type { State, VcsCache } from "./types"
 import { trimSessions } from "./session-trim"
 import { dropSessionCaches } from "./session-cache"
 import { diffs as list, message as clean } from "@/utils/diffs"
+import { compareTime } from "@/utils/id"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 
@@ -250,16 +251,23 @@ export function applyDirectoryEvent(input: {
         input.setStore("message", info.sessionID, [info])
         break
       }
-      const result = Binary.search(messages, info.id, (m) => m.id)
-      if (result.found) {
-        input.setStore("message", info.sessionID, result.index, reconcile(info))
+      // 260831 cc 消息数组已改为时间序（见 directory-sync 的 byTime 注释），不能再二分：
+      //   Binary.search 假设字典序，而 ID 是时间编码且会回绕。定位用线性 find，插入位按
+      //   compareTime 取「第一个比它晚的位置」。
+      const at = messages.findIndex((m) => m.id === info.id)
+      if (at !== -1) {
+        input.setStore("message", info.sessionID, at, reconcile(info))
         break
       }
+      const insertAt = (() => {
+        const i = messages.findIndex((m) => compareTime(m, info) > 0)
+        return i === -1 ? messages.length : i
+      })()
       input.setStore(
         "message",
         info.sessionID,
         produce((draft) => {
-          draft.splice(result.index, 0, info)
+          draft.splice(insertAt, 0, info)
         }),
       )
       // 260801 Red 0.7.12 懒化打点：session 已不在列表时插入消息 = 孤儿缓存产生，
