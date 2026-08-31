@@ -312,6 +312,11 @@
      青会是这套配色里唯一的第三种色相。取 --frost-tint-aside 同一支蓝紫，只调明度与
      透明度：浅色底上玻璃本就亮，光斑要更沉一点才看得见；深色底上反过来。
      口味只在这两个数字上，改它们即可，别去动 spotlight.ts。 */
+  /* ④ 浮起卡片的脱边量。首页侧栏用的是 12px（Tailwind 的 lg:m-3），这里给会话页的两个
+     侧栏用 8px：它们是可拖拽调宽的，用户是按内容宽度定的宽，左右各吃掉 12px 更肉疼。
+     嫌浮得不够或太浮就改这一个数。 */
+  --frost-card-inset: 8px;
+
   --frost-spot-size: 126px;
   --frost-spot-color: rgba(120, 138, 224, 0.2);
 }
@@ -466,9 +471,9 @@
    此前各磨砂面只有 background + backdrop-filter，没有任何边缘光学，读起来是「半透明
    的板」而不是玻璃——厚度感来自迎光边那一道亮线。
    只给**顶边真的露在外面**的几处：标题栏（窗口顶）、输入框、用户气泡，以及 260829
-   改成浮起卡片之后的首页侧栏。main / file-tree-panel / review-panel 的顶边仍然压在
-   标题栏底下，加了看不见，故意不加 —— 别当成漏了补上去；哪天它们也脱边成卡，
-   再照着 home-sidebar 补进来。
+   改成浮起卡片之后的首页侧栏。260831 文件树 / 审查栏也脱边成卡了（见下面 ④ 那节），
+   迎光边跟着一起加在那节的 box-shadow 里，不在本节重复。
+   main 的顶边仍然压在标题栏底下、加了看不见，故意不加 —— 别当成漏了补上去。
    box-shadow 不叠加：composer 自带 shadow-[var(--v2-elevation-raised)]，这里必须
    把它一起写回来，否则悬浮阴影会被这条规则整个顶掉。 ---------- */
 [data-app-frost] [data-frost-surface="titlebar"] {
@@ -491,6 +496,34 @@
   box-shadow:
     inset 0 1px 0 var(--frost-edge-highlight),
     var(--v2-elevation-raised);
+}
+
+/* ---------- ④ 浮起卡片（续）：文件树 / 审查栏脱边成卡。
+
+   260829 那条有对照实验的结论——**玻璃感来自物体性不是光学**。看板卡片一点 backdrop-filter
+   都没有却比真磨砂的侧栏更像玻璃，差的是四条看得见的边；侧栏当时只有一条 border-r、贴边
+   到底，眼睛读成墙，墙再通透也不是玻璃。首页侧栏照这个改完他确认好看，这里把同一条应用到
+   会话页剩下的两个外壳。
+
+   只在有壁纸时成卡：无壁纸时 main 自己就是带 m-2 的卡（见 layout.tsx 那处 classList），
+   里面再套两张卡是盒中盒；有壁纸时 main 满贴、两侧栏浮在那层磨砂上，才是 ④ 要的样子。
+
+   height 必须一起改：这两个元素带 h-full(height:100%)，只加 margin 会溢出 2×inset。 ---------- */
+[data-app-frost] #file-tree-panel,
+[data-app-frost] #review-panel {
+  margin: var(--frost-card-inset);
+  height: calc(100% - var(--frost-card-inset) * 2);
+  border-radius: 14px;
+  border: 1px solid var(--v2-border-border-base);
+  box-shadow:
+    inset 0 1px 0 var(--frost-edge-highlight),
+    var(--v2-elevation-floating);
+}
+
+/* 成卡之后文件树内层那条 border-r 变成多余的第五条边（正好压在卡的右边框里侧）。
+   只清颜色不清宽度，避免 1px 的布局位移。 */
+[data-app-frost] #file-tree-panel > div {
+  border-right-color: transparent;
 }
 
 /* ---------- ⑤ 光标 spotlight 辉光：一团跟着光标走的径向光，垫在所有玻璃面**背后**。
