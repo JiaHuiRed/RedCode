@@ -316,7 +316,11 @@ export const layer = Layer.effect(
           // warning 橙色区分（plan 青 / redmind 红），不靠比喻。
           auto: posture({
             name: "auto",
-            displayName: "全自动",
+            // 260901 cc 刻意不给 displayName。这一栏三档并排显示，plan 靠输入框那个下拉的
+            //   `capitalize` 自动渲染成 "Plan"，redmind 给 displayName 是因为 "RedMind" 是
+            //   品牌名、大小写靠 capitalize 出不来。我当初给 auto 塞了个「全自动」，
+            //   于是三档变成 Plan / RedMind / 全自动，中英混排。名字这一栏跟着 name 走就好，
+            //   要解释危险性有 description 和橙色 warning，不该由标签承担。
             description:
               "全自动 —— 不打断。破坏性 shell 命令、工作树之外的目录、.env 读取全部自动放行，只适合你已经确认安全的任务。",
             color: "warning",
