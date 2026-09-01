@@ -421,7 +421,10 @@
    任何容器感，"设置"和缓存环像浮在海面上。同为外壳的文件树/审查栏是 72%，上面那句
    "两侧暗、中间亮"就是这条规则；这里按同一规则往那个档靠，蓝紫掺色与模糊半径都不动。
    这是本轮唯一一处口味问题，改回去只需要动这一个数字。 */
-[data-app-frost] [data-frost-surface="home-sidebar"] {
+/* 260901 cc 首页用量看板并进侧边栏这条规则，不另写一份配方——他要的就是「跟侧边栏差不多」，
+   并进同一个选择器才能保证以后调 frost 参数时两边永远一致。 */
+[data-app-frost] [data-frost-surface="home-sidebar"],
+[data-app-frost] [data-frost-surface="home-usage"] {
   background-color: color-mix(
     in srgb,
     color-mix(in srgb, var(--frost-tint-aside), var(--v2-background-bg-layer-01) var(--frost-tint-amount))
@@ -478,7 +481,8 @@
 }
 
 /* 侧栏是浮起卡片，自带 --v2-elevation-floating；box-shadow 不叠加，必须一起写回来。 */
-[data-app-frost] [data-frost-surface="home-sidebar"] {
+[data-app-frost] [data-frost-surface="home-sidebar"],
+[data-app-frost] [data-frost-surface="home-usage"] {
   box-shadow:
     inset 0 1px 0 var(--frost-edge-highlight),
     var(--v2-elevation-floating);

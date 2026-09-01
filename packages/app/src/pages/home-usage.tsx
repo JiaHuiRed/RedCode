@@ -42,11 +42,10 @@ import {
 type Range = "all" | "30d" | "7d"
 const RANGES: Range[] = ["all", "30d", "7d"]
 
-// 260901 cc 边线看着「太淡」的根因不是 token 太浅——会话卡（home-kanban.tsx:199）用的是
-//   同一个 border token，但它还带 bg-v2-background-bg-base。只有描边没有面，就会浮在壁纸上
-//   只剩一条发丝线。这里跟会话卡取同一套：面 + 同样的边，观感自然对齐。
-const TILE =
-  "flex min-w-0 flex-col gap-0.5 rounded-[6px] border border-v2-border-border-base bg-v2-background-bg-base px-2.5 py-1.5"
+// 260901 cc 「边线太淡」的根因不是 token 太浅，是**只有描边没有面**——浮在壁纸上就只剩一条
+//   发丝线。面给到外层面板（磨砂，同侧边栏），格子本身就不再需要自己的实色底了：
+//   叠在磨砂面上再加一层实色只会闷成一块，那正是他说的「太深」。
+const TILE = "flex min-w-0 flex-col gap-0.5 rounded-[6px] border border-v2-border-border-base px-2.5 py-1.5"
 const TILE_LABEL = "text-11-regular text-v2-text-text-muted truncate"
 const TILE_VALUE = "text-14-normal [font-weight:530] text-v2-text-text-base tabular-nums truncate"
 
@@ -270,7 +269,14 @@ export function HomeUsagePanel(props: { directory: string | undefined }) {
   return (
     <Show when={usage()}>
       {(data) => (
-        <div class="mt-6 flex flex-col gap-3 rounded-[8px] border border-v2-border-border-base bg-v2-background-bg-base p-3">
+        // 260901 cc 面与侧边栏取同一套：bg-layer-01 + data-frost-surface（CSS 规则并在
+        //   index.css 里的同一个选择器上）+ rounded-pane + floating 阴影。bg-base 是实色，
+        //   铺在壁纸上太闷，这也是他说「太深」的原因。
+        //   max-w 收住宽度：8 个指标块横跨整个主区，每格几百像素装一个三位数，稀得发慌。
+        <div
+          data-frost-surface="home-usage"
+          class="mt-6 flex w-full max-w-[880px] flex-col gap-3 rounded-pane border border-v2-border-border-base bg-v2-background-bg-layer-01 p-3 shadow-[var(--v2-elevation-floating)]"
+        >
           <div class="flex flex-wrap items-center gap-2">
             <Segmented
               value={tab()}
@@ -317,7 +323,7 @@ export function HomeUsagePanel(props: { directory: string | undefined }) {
                 <Heatmap usage={data()} dark={dark()} formatNumber={number} />
               </div>
             </div>
-            <div class="grid gap-2 grid-cols-2 sm:grid-cols-4 xl:grid-cols-8">
+            <div class="grid gap-2 grid-cols-2 sm:grid-cols-4">
               <div class={TILE}>
                 <span class={TILE_LABEL}>{t("home.usage.tile.sessions")}</span>
                 <span class={TILE_VALUE}>{number(data().sessions)}</span>
