@@ -26,6 +26,78 @@ type Obs = PerformanceObserverInit & {
   durationThreshold?: number
 }
 
+// 260901 cc LoAF（long-animation-frame）归因。
+//
+// 浮层原本只观测 longtask，而 longtask 条目只有 startTime/duration——所以哥哥看得到
+// 「LONG 1054」却看不到是谁。实测数据（他 08-31 的三次点击）：同工作区换会话 LONG 115~139，
+// **跨工作区换会话 1054、INP 1096ms、单帧 1050ms**，差近十倍——目标已经很窄，缺的只是名字。
+//
+// LoAF 比 longtask 强的地方就是 entry.scripts[]：带 sourceURL / sourceFunctionName /
+// sourceCharPosition / invoker，能直接点到函数。Chromium 才有，watch() 会按
+// supportedEntryTypes 判断，不支持就整块静默跳过，不影响其余指标。
+type LoAFScript = PerformanceEntry & {
+  invoker?: string
+  invokerType?: string
+  sourceURL?: string
+  sourceFunctionName?: string
+  sourceCharPosition?: number
+}
+type LoAF = PerformanceEntry & {
+  blockingDuration?: number
+  scripts?: LoAFScript[]
+}
+
+type Culprit = { at: number; frame: number; blocking: number; script: number; who: string }
+
+/** 只留最贵的若干条：这是给人看的诊断，不是全量埋点。 */
+const CULPRIT_KEEP = 20
+const culprits: Culprit[] = []
+
+function recordCulprits(entry: LoAF) {
+  const blocking = entry.blockingDuration ?? 0
+  // 阻塞 50ms 以下不值得记——那是正常帧，记了会把真正的元凶淹掉。
+  if (blocking < 50) return
+  const scripts = entry.scripts ?? []
+  if (scripts.length === 0) {
+    culprits.push({ at: entry.startTime, frame: entry.duration, blocking, script: 0, who: "(无脚本归因)" })
+  } else {
+    // 一帧里可能有多段脚本，只记最贵的那段——找瓶颈看头部就够。
+    const worst = scripts.reduce((hi, item) => (item.duration > hi.duration ? item : hi), scripts[0])
+    const where = worst.sourceURL ? `${worst.sourceURL}${worst.sourceCharPosition ? `:${worst.sourceCharPosition}` : ""}` : ""
+    culprits.push({
+      at: entry.startTime,
+      frame: entry.duration,
+      blocking,
+      script: worst.duration,
+      who: [worst.sourceFunctionName || worst.invoker || "(匿名)", where].filter(Boolean).join("  @  "),
+    })
+  }
+  culprits.sort((a, b) => b.blocking - a.blocking)
+  if (culprits.length > CULPRIT_KEEP) culprits.length = CULPRIT_KEEP
+}
+
+// 挂到 window 上供随时查看：DevTools 控制台敲 __redcodePerf.top() 就能拿到排行。
+// 不主动 console 输出——切一次工作区上千帧，自动打印会把控制台冲垮，反而看不见东西。
+if (typeof window !== "undefined") {
+  ;(window as unknown as { __redcodePerf?: unknown }).__redcodePerf = {
+    top(n = 10) {
+      console.table(
+        culprits.slice(0, n).map((item) => ({
+          阻塞ms: Math.round(item.blocking),
+          整帧ms: Math.round(item.frame),
+          脚本ms: Math.round(item.script),
+          来源: item.who,
+        })),
+      )
+      return culprits.slice(0, n)
+    },
+    reset() {
+      culprits.length = 0
+    },
+    raw: () => culprits.slice(),
+  }
+}
+
 const span = 5000
 
 const ms = (n?: number, d = 0) => {
@@ -272,6 +344,12 @@ export function DebugBar() {
       hasLong = true
       setState("long", { block: 0, count: 0, max: 0 })
     }
+
+    // 260901 cc 只做归因，不参与 HUD 上任何数字——LONG 那格仍旧由 longtask 统计，
+    // 免得两套口径打架。归因结果走 window.__redcodePerf.top()。
+    watch("long-animation-frame", { buffered: true, type: "long-animation-frame" }, (entries) => {
+      for (const entry of entries) recordCulprits(entry)
+    })
 
     watch("event", { buffered: true, durationThreshold: 16, type: "event" }, (entries) => {
       for (const raw of entries) {
