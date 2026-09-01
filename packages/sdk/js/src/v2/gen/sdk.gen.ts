@@ -219,6 +219,8 @@ import type {
   SessionUnshareResponses,
   SessionUpdateErrors,
   SessionUpdateResponses,
+  SessionUsageErrors,
+  SessionUsageResponses,
   SubtaskPartInput,
   SyncHistoryListErrors,
   SyncHistoryListResponses,
@@ -3241,6 +3243,38 @@ export class Session2 extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * Get project usage aggregates
+   *
+   * Aggregate token, cost and activity statistics for the current project, computed over the message table.
+   */
+  public usage<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      range?: "all" | "30d" | "7d"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "range" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionUsageResponses, SessionUsageErrors, ThrowOnError>({
+      url: "/session/usage",
+      ...options,
+      ...params,
     })
   }
 

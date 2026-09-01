@@ -16,7 +16,9 @@ import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
+import * as SessionUsage from "@/session/usage"
 import { MessageID, PartID, SessionID } from "@/session/schema"
+import { InstanceState } from "@/effect/instance-state"
 import { NamedError } from "@redcode-ai/core/util/error"
 import { Cause, Effect, Option, Schema, Scope } from "effect"
 import * as Stream from "effect/Stream"
@@ -36,6 +38,7 @@ import {
   ShellPayload,
   SummarizePayload,
   UpdatePayload,
+  UsageQuery,
 } from "../groups/session"
 import { PermissionNotFoundError, notFound } from "../errors"
 import * as SessionError from "./session-errors"
@@ -73,6 +76,18 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         start: ctx.query.start,
         search: ctx.query.search,
         limit: ctx.query.limit,
+      })
+    })
+
+    // 260901 cc 项目维度的用量聚合。作用域取 InstanceState.context 的 project.id —— 与
+    //   Session.list 的 project scope 同一个口径，所以一个项目的多个 worktree 会被算在一起，
+    //   跟侧边栏选中一个项目时的语义一致。
+    const usage = Effect.fn("SessionHttpApi.usage")(function* (ctx: { query: typeof UsageQuery.Type }) {
+      const instance = yield* InstanceState.context
+      return SessionUsage.aggregate({
+        projectID: instance.project.id,
+        range: ctx.query.range ?? "all",
+        now: Date.now(),
       })
     })
 
@@ -479,6 +494,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
 
     return handlers
       .handle("list", list)
+      .handle("usage", usage)
       .handle("status", status)
       .handle("get", get)
       .handle("children", children)
