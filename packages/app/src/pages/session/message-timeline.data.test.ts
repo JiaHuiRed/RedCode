@@ -201,3 +201,63 @@ describe("TimelineRow.equals — 载重假设：结构比较而非引用比较",
     expect(first.every((row, i) => TimelineRow.equals(row, second[i]!))).toBe(true)
   })
 })
+
+// 260901 cc 这条钉的是**引用语义**，不是内容语义。TimelineRow.reuse 的价值全在
+// 「没变化时返回 previous 本身」这一点上：createMemo 默认按 === 比较，返回一个内容相同
+// 但引用不同的新数组，等于每 16ms 让下游（timelineRows / timelineRowKeys /
+// messageRowIndex / lastAssistantGroupKey / Virtualizer 的 data）全量重算一遍。
+// 所以下面几乎每条断言都是 toBe（引用），不是 toEqual（结构）——写成 toEqual 就废了。
+describe("TimelineRow.reuse — 引用语义", () => {
+  const row = (id: string, previous = false) =>
+    new TimelineRow.AssistantPart({
+      userMessageID: "u1",
+      group: { key: `part:m1:${id}`, type: "part", ref: { messageID: "m1", partID: id } },
+      previousAssistantPart: previous,
+    })
+
+  test("没有 previous 时原样返回新数组", () => {
+    const rows = [row("p1")]
+    expect(TimelineRow.reuse(undefined, rows)).toBe(rows)
+    expect(TimelineRow.reuse([], rows)).toBe(rows)
+  })
+
+  test("内容全等 → 返回 previous 本身，传播就地停住", () => {
+    const previous = [row("p1"), row("p2")]
+    const next = [row("p1"), row("p2")]
+    expect(next[0]).not.toBe(previous[0])
+    expect(TimelineRow.reuse(previous, next)).toBe(previous)
+  })
+
+  test("有一行真的变了 → 返回新数组，但没变的那些行仍复用旧对象", () => {
+    const previous = [row("p1"), row("p2")]
+    const next = [row("p1"), row("p2", true)]
+    const result = TimelineRow.reuse(previous, next)
+    expect(result).not.toBe(previous)
+    expect(result[0]).toBe(previous[0])
+    expect(result[1]).toBe(next[1])
+  })
+
+  test("追加一行 → 数组变了，已有行仍复用", () => {
+    const previous = [row("p1")]
+    const next = [row("p1"), row("p2")]
+    const result = TimelineRow.reuse(previous, next)
+    expect(result).not.toBe(previous)
+    expect(result[0]).toBe(previous[0])
+  })
+
+  test("行数相同但顺序变了 → 必须判为已变，不能短路", () => {
+    const previous = [row("p1"), row("p2")]
+    const next = [row("p2"), row("p1")]
+    const result = TimelineRow.reuse(previous, next)
+    expect(result).not.toBe(previous)
+    expect(result[0]).toBe(previous[1])
+    expect(result[1]).toBe(previous[0])
+  })
+
+  test("BottomSpacer 每次是新对象也不该破坏短路——外层调用每帧都新建一个", () => {
+    const previous = [row("p1"), new TimelineRow.BottomSpacer()]
+    const next = [row("p1"), new TimelineRow.BottomSpacer()]
+    expect(next[1]).not.toBe(previous[1])
+    expect(TimelineRow.reuse(previous, next)).toBe(previous)
+  })
+})

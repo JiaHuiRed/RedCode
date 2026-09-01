@@ -115,15 +115,8 @@ function writeTimelineCache(id: string, keys: readonly string[], handle: Virtual
   while (timelineCache.size > timelineCacheLimit) timelineCache.delete(timelineCache.keys().next().value!)
 }
 
-function reuseTimelineRows(previous: TimelineRow.TimelineRow[] | undefined, rows: TimelineRow.TimelineRow[]) {
-  if (!previous?.length) return rows
-  const byKey = new Map(previous.map((row) => [TimelineRow.key(row), row] as const))
-  return rows.map((row) => {
-    const existing = byKey.get(TimelineRow.key(row))
-    if (!existing) return row
-    return TimelineRow.equals(existing, row) ? existing : row
-  })
-}
+// 260901 cc 搬到 message-timeline.data.ts 的 TimelineRow.reuse，那边是纯模块、能单测。
+const reuseTimelineRows = TimelineRow.reuse
 
 const taskDescription = (part: PartType, sessionID: string) => {
   if (part.type !== "tool" || part.tool !== "task") return

@@ -113,6 +113,37 @@ export namespace TimelineRow {
   export function equals(a: TimelineRow, b: TimelineRow) {
     return Equal.equals(a, b)
   }
+
+  /**
+   * 逐行复用旧的行对象；**整个数组都没变时把 previous 原样还回去**。
+   *
+   * 260901 cc 之前这个函数（原先私有在 message-timeline.tsx）除了 `!previous?.length`
+   * 那条早退，永远 `return rows.map(...)` —— 一个新数组。createMemo 默认按 === 比较，
+   * 所以哪怕每一行都复用成功（实测流式期间命中率就是 100%），memo 的返回值引用还是变了，
+   * 下游整条派生链每 16ms 全量重跑一遍：timelineRows 对**整个已加载会话** flatMap +
+   * 建全量 Map + 逐行 equals；timelineRowKeys / messageRowIndex / lastAssistantGroupKey
+   * 各自再遍历一次全量行；Virtualizer 的 data prop 每帧换新引用。
+   *
+   * 实测（V8）：481 行 0.68ms、1651 行 1.82ms、3601 行 3.96ms，每次 flush 都付。按
+   * server-sdk.tsx 的 FLUSH_FRAME_MS = 16 算，中等会话吃掉 4%、长会话 11% 的帧预算，
+   * 整段回答期间持续，外加每帧约 2N 次模板串分配喂给 GC。
+   *
+   * 返回 previous 本身（不是拷贝）才有意义 —— 要的就是让 === 成立、让传播就地停住。
+   * 外层调用传的是 [...rows, new BottomSpacer()]：BottomSpacer 每次是新对象，但它没有
+   * 字段、key 也是常量，会被 byKey 匹配到上一个并判等，不影响短路。
+   */
+  export function reuse(previous: TimelineRow[] | undefined, rows: TimelineRow[]) {
+    if (!previous?.length) return rows
+    const byKey = new Map(previous.map((row) => [key(row), row] as const))
+    let changed = rows.length !== previous.length
+    const result = rows.map((row, index) => {
+      const existing = byKey.get(key(row))
+      const next = existing && equals(existing, row) ? existing : row
+      if (!changed && next !== previous[index]) changed = true
+      return next
+    })
+    return changed ? result : previous
+  }
 }
 
 export namespace Timeline {
