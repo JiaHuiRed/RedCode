@@ -42,10 +42,12 @@ import {
 type Range = "all" | "30d" | "7d"
 const RANGES: Range[] = ["all", "30d", "7d"]
 
-// 260901 cc 「边线太淡」的根因不是 token 太浅，是**只有描边没有面**——浮在壁纸上就只剩一条
-//   发丝线。面给到外层面板（磨砂，同侧边栏），格子本身就不再需要自己的实色底了：
-//   叠在磨砂面上再加一层实色只会闷成一块，那正是他说的「太深」。
-const TILE = "flex min-w-0 flex-col gap-0.5 rounded-[6px] border border-v2-border-border-base px-2.5 py-1.5"
+// 260901 cc 格子用 layer-02：面板是 layer-01，格子就该是它上面一档 —— 这套 token 本来就是
+//   为「面上放面」设计的，用它比自己挑一个具体颜色更稳，换主题时跟着走。
+//   走过的两个弯路都记在这：① 只有描边没有面 → 浮在壁纸上只剩一条发丝线（他说「边线太淡」）；
+//   ② 改用 bg-base 那种**实色** → 铺在磨砂上闷成一块（他说「太深」）。
+const TILE =
+  "flex min-w-0 flex-col gap-0.5 rounded-[6px] border border-v2-border-border-base bg-v2-background-bg-layer-02 px-2.5 py-1.5"
 const TILE_LABEL = "text-11-regular text-v2-text-text-muted truncate"
 const TILE_VALUE = "text-14-normal [font-weight:530] text-v2-text-text-base tabular-nums truncate"
 
