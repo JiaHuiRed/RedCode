@@ -8,7 +8,9 @@ import { type ComponentProps } from "solid-js"
  *    走 import 资源虽然能出独立文件，但 Splash 恰恰是首屏第一个要显示的东西，
  *    多一次请求换来的是白屏多一帧。320px webp 的 base64 是 43KB，原来那只猫 23.8KB，
  *    多出来的 19KB 相对今天减掉的 1.26MB 可以忽略。
- * ② 320px 是给 2 倍 DPI 留的余量：显示尺寸约 160px，再大就不值当了。
+ * ② 320px 是余量：显示尺寸 260901 从 160px 提到 **208px**（size-52），源图仍留 1.54 倍。
+ *    再往上要覆盖 2 倍 DPI 就得 416px 源，实测 webp 448px 的 base64 是 108KB —— 比现在
+ *    多 65KB，全压在首屏内联路径上，为一个 1 倍屏用不到的清晰度不值当。真要提再说。
  */
 export const Splash = (props: Pick<ComponentProps<"img">, "ref" | "class">) => {
   return (

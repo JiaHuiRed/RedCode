@@ -325,6 +325,32 @@
   --frost-spot-color: rgba(168, 180, 240, 0.16);
 }
 
+/* ---------- 260901 cc 启动画面的底。
+
+   原先是 bg-background-base，也就是 v1 管线的 neutral[0]（yuqi 暗色下 #200a22）——
+   主题里最暗的那一档，一整屏铺满之后读起来是「黑屏上贴了张图」，跟应用真正的面色
+   差得很远。改成跟着侧栏那份掺色走：**同样的 --frost-tint-aside 掺进同样的
+   --v2-background-bg-layer-01**，配方与下面侧栏那条规则的内层逐字一致，以后调
+   frost 掺色两边一起动。
+
+   ⚠️ 与那条规则的两点差别，都是有意的：
+   ① **不带 [data-app-frost] 门控**。那个属性挂在 layout.tsx 的布局根上，而启动画面
+      早于 Layout 挂载 —— 那一刻 DOM 祖先链只有 html / body / #root 三层，壁纸和整套
+      毛玻璃都还不存在，复用那个选择器会一条都不命中。
+   ② **不加 backdrop-filter**。背后没有壁纸可透，模糊一层纯色是白付成本。
+
+   掺色后自带 0.835 的 alpha（tint 本身就是 rgba(...,0.45)），透出的是 index.html 给
+   <html> 的 var(--background-base)，合成约 #3b3045 —— 比原来亮一档、偏紫，与侧栏
+   同色系。这与本文件里每个磨砂面都是「alpha 叠在下层上」是同一套写法。
+   ---------- */
+[data-splash-surface] {
+  background-color: color-mix(
+    in srgb,
+    var(--frost-tint-aside),
+    var(--v2-background-bg-layer-01) var(--frost-tint-amount)
+  );
+}
+
 /* ---------- 260829 cc 一条实测过的边界，动磨砂面之前先读。
 
    带 backdrop-filter 的元素会成为其后代 position:fixed 的**包含块**（CSS 规范行为，

@@ -397,8 +397,8 @@ render(() => {
             用与 app.tsx:200 同一套 splash，保证两边观感一致。 */}
         <Show
           fallback={
-            <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
-              <Splash class="size-40 opacity-90" />
+            <div data-splash-surface class="h-dvh w-screen flex flex-col items-center justify-center">
+              <Splash class="size-52 opacity-90" />
             </div>
           }
           when={

@@ -10,6 +10,12 @@
 
 ### [未发布]
 
+- **启动画面：徽章放大 30%、底色改跟侧栏同色系**（`packages/app/src/index.css` 新增 `[data-splash-surface]`、`packages/desktop/src/renderer/index.tsx`、`packages/app/src/app.tsx`、`packages/ui/src/components/logo.tsx`）：他截图里那扇几乎全空的深紫屏，渲染的是 **desktop 渲染层**那个包住整个 UI 的 `<Show>` fallback（`renderer/index.tsx`），不是 `app.tsx` 的 ConnectionGate —— 两处 markup 逐字节相同、像素上分不出来，但主进程时序决定了占住那 1.4~1.6 秒的是前者（建窗已提到等 sidecar 之前，`awaitInitialization` 真的等 `serverReady`）。徽章 `size-40` → `size-52`（160px → 208px，正好 +30%）；**内联 base64 不动** —— 源图 320px 对 208px 仍有 1.54 倍余量，要覆盖 2 倍 DPI 得换 416px 源，实测 448px 的 base64 是 108KB、比现在多 65KB，全压在首屏内联路径上，为一个 1 倍屏用不到的清晰度不值当。
+
+  底色原先是 `bg-background-base`，也就是 **v1 管线**的 `neutral[0]`（yuqi 暗色实值 `#200a22`，与 v2 那套灰阶是两条独立管线）—— 主题里最暗的一档铺满整屏，读起来是「黑屏上贴了张图」。改成复用侧栏那份掺色配方：同样的 `--frost-tint-aside` 掺进同样的 `--v2-background-bg-layer-01`，与 `index.css` 侧栏规则的内层逐字一致，以后调 frost 掺色两边一起动。计算值 `color(srgb 0.251312 0.216211 0.300331 / 0.835294)`，透出 `<html>` 的 `--background-base` 后合成约 `#3b3045`。
+
+  两点与侧栏规则有意的差别：① **不带 `[data-app-frost]` 门控** —— 那个属性挂在 `layout.tsx` 的布局根上，而启动画面早于 Layout 挂载，那一刻 DOM 祖先链只有 html / body / #root 三层，壁纸和整套毛玻璃都还不存在，复用那个选择器一条都命中不了；② **不加 `backdrop-filter`** —— 背后没有壁纸可透，模糊一层纯色是白付成本。`ConnectionError` 那屏一并换底（保持 `size-24`），否则启动画面切到错误页会跳一次色。独立的 loading 窗（`renderer/loading.tsx`，DB 迁移时才出）没动。
+
 ---
 
 ### [0.10.1] - 2026-09-01

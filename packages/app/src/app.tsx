@@ -233,16 +233,16 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
   return (
     <Suspense
       fallback={
-        <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
-          <Splash class="size-40 opacity-90" />
+        <div data-splash-surface class="h-dvh w-screen flex flex-col items-center justify-center">
+          <Splash class="size-52 opacity-90" />
         </div>
       }
     >
       {/*<Show
         when={checkMode() === "blocking" ? !startupHealthCheck.loading : startupHealthCheck.state !== "pending"}
         fallback={
-          <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
-            <Splash class="size-40 opacity-90" />
+          <div data-splash-surface class="h-dvh w-screen flex flex-col items-center justify-center">
+            <Splash class="size-52 opacity-90" />
           </div>
         }
       >*/}
@@ -281,7 +281,7 @@ function ConnectionError(props: { onRetry?: () => void; onServerSelected?: (key:
   onCleanup(() => clearInterval(timer))
 
   return (
-    <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base gap-6 p-6">
+    <div data-splash-surface class="h-dvh w-screen flex flex-col items-center justify-center gap-6 p-6">
       <div class="flex flex-col items-center max-w-md text-center">
         <Splash class="size-24 mb-4" />
         <p class="text-14-regular text-text-base">
