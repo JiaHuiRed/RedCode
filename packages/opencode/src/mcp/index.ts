@@ -32,7 +32,7 @@ import { Bus } from "@/bus"
 import { TuiEvent } from "@/cli/cmd/tui/event"
 import open from "open"
 import os from "os"
-import { Cause, Effect, Exit, Layer, Option, Context, Schema, Stream } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer, Option, Context, Schema, Stream } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
@@ -780,7 +780,7 @@ export const layer = Layer.effect(
           creating: new Set(),
         }
 
-        yield* Effect.forEach(
+        const connectAll = Effect.forEach(
           Object.entries(config),
           ([key, mcp]) =>
             Effect.gen(function* () {
@@ -804,6 +804,41 @@ export const layer = Layer.effect(
               }
             }),
           { concurrency: "unbounded" },
+        )
+
+        // 260901 cc 启动不再等所有 MCP 连上——这是「打开程序后十几秒什么都点不动」的根因。
+        //
+        // 取证（哥哥 08-31 在**打包版**里读的 resource timing，不是 dev）：18 个请求全部在
+        // t≈500ms 发出、**全部在 t≈13000ms 一起返回**，之后同一个 /session 只要 381ms。
+        // /command 16.2s、/provider 14.5s、/agent 13.4s、/permission 12.9s……凡是会碰到 MCP
+        // 状态的接口一律排在这后面。跟渲染、数据库、Node/Bun、硬件都无关：就是在等。
+        //
+        // 原因是这个构造器走 InstanceState 的 ScopedCache，首次访问会**执行并等待**它，
+        // 而它 forEach 了全部 MCP 逐个 create() 并等全部返回——最慢的那个决定所有人等多久。
+        //
+        // 反讽的是兜底一直是齐的：下面 tools() 里那段 cache-first（"servers still starting/failed"）
+        // 按 config 遍历、只跳过未配置/禁用/已连接三种，对「还在连」的服务器本来就会回磁盘缓存。
+        // 它救不了自己，只因为构造器在人拿到 tools 之前就把人挡住了。改成后台连接，兜底自然生效。
+        //
+        // 只等一个短宽限期：多数本地 MCP 几百毫秒就连上，等一下能让首屏拿到真实工具表、
+        // 避免无谓的缓存回退与随后的工具表变化（工具表一变会炸掉前缀缓存）。超出宽限的继续在
+        // 后台连，连上后 watch() 就地填 s 并发 ToolsChanged，界面与后续请求自动跟上。
+        //
+        // 这条 2026-08-11 就定位过（见记忆 project-first-request-blocks-on-mcp），当时用
+        // 「关掉两个慢 MCP」在配置层拿到 90% 收益（95.8s → 9.6s）后有条件押后代码修改，
+        // 条件写的是「除非将来又加了慢 MCP」。现在实测 13 秒，条件已经成立。
+        const STARTUP_GRACE = "1500 millis"
+        const connecting = yield* Effect.forkScoped(connectAll)
+        yield* Fiber.join(connecting).pipe(
+          Effect.timeout(STARTUP_GRACE),
+          Effect.catch(() =>
+            Effect.sync(() => {
+              const pending = Object.keys(config).filter(
+                (key) => s.status[key] === undefined && (config[key] as { enabled?: boolean })?.enabled !== false,
+              )
+              log.info("mcp still connecting in background", { pending })
+            }),
+          ),
         )
 
         yield* Effect.addFinalizer(() =>
