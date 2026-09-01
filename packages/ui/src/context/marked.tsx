@@ -1,7 +1,6 @@
 /// <reference path="./markdown-it-task-lists.d.ts" />
 import MarkdownIt from "markdown-it"
 import taskLists from "markdown-it-task-lists"
-import katex from "katex"
 import { bundledLanguages, type BundledLanguage } from "shiki"
 import { createSimpleContext } from "./helper"
 import { getSharedHighlighter, registerCustomTheme, ThemeRegistrationResolved } from "@pierre/diffs"
@@ -376,7 +375,29 @@ registerCustomTheme("RedCode", () => {
   } as unknown as ThemeRegistrationResolved)
 })
 
-function renderMathInText(text: string): string {
+// 260901 cc katex 改成用到才加载。
+//
+// 它是首屏 chunk 里最大的单个文件：从打包产物 sourcemap 归因，katex.mjs 594KB，
+// 占 main-*.js（转译前 4.78MB）的 12.2%。而 MarkedProvider 在 app.tsx 是静态引入的，
+// 于是每次启动都要把它解析编译一遍——哪怕整个会话里一条公式都没有。
+//
+// 三件事让这个改动是零视觉代价的：
+//   ① parse() 本来就是 async（下面 provider 里两处都是），调用方已经在 await；
+//   ② 同一个文件里的 highlightCodeBlocks 早就是这个套路（getSharedHighlighter 异步取），
+//      照抄它的形状，不是新发明；
+//   ③ katex 的**样式**走 CSS 层（ui/src/styles/index.css:7 的 @import），不受这里影响，
+//      所以公式渲染出来时不会有一瞬间没样式的闪动。
+// 绝大多数消息根本不含公式，MATH_PATTERN 先挡一道，连动态 import 都不会发起。
+const MATH_PATTERN = /\$\$|\\\[|\\\(/
+type Katex = typeof import("katex").default
+let katexPromise: Promise<Katex> | undefined
+
+function loadKatex(): Promise<Katex> {
+  katexPromise ??= import("katex").then((m) => m.default)
+  return katexPromise
+}
+
+function renderMathInText(text: string, katex: Katex): string {
   let result = text
 
   // Display math: $$...$$ and \[...\]
@@ -421,7 +442,11 @@ function renderMathInText(text: string): string {
   return result
 }
 
-function renderMathExpressions(html: string): string {
+async function renderMathExpressions(html: string): Promise<string> {
+  // 没有任何公式定界符就直接走人——不加载 katex，也不做下面的 split/join。
+  if (!MATH_PATTERN.test(html)) return html
+  const katex = await loadKatex()
+
   // Split on code/pre/kbd tags to avoid processing their contents
   const codeBlockPattern = /(<(?:pre|code|kbd)[^>]*>[\s\S]*?<\/(?:pre|code|kbd)>)/gi
   const parts = html.split(codeBlockPattern)
@@ -431,7 +456,7 @@ function renderMathExpressions(html: string): string {
       // Odd indices are the captured code blocks - leave them alone
       if (i % 2 === 1) return part
       // Process math only in non-code parts
-      return renderMathInText(part)
+      return renderMathInText(part, katex)
     })
     .join("")
 }
@@ -492,7 +517,7 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
       return {
         async parse(markdown: string, opts?: MarkdownParseOptions): Promise<string> {
           const html = await nativeParser(markdown)
-          const withMath = renderMathExpressions(html)
+          const withMath = await renderMathExpressions(html)
           return highlightCodeBlocks(withMath, opts?.highlight === false)
         },
       }
@@ -530,7 +555,7 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
       return {
         async parse(markdown: string, opts?: MarkdownParseOptions): Promise<string> {
           const html = md.render(stripNamespacedTags(markdown))
-          const withMath = renderMathExpressions(html)
+          const withMath = await renderMathExpressions(html)
           return highlightCodeBlocks(withMath, opts?.highlight === false)
         },
       }
