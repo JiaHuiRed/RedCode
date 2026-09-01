@@ -63,11 +63,19 @@ export function topModels(models: Usage["models"], limit = MAX_MODEL_SERIES): Mo
   const totalOutput = sorted.reduce((sum, m) => sum + m.output, 0)
   const share = (output: number) => (totalOutput > 0 ? output / totalOutput : 0)
 
+  // 260901 cc 同一个 modelID 可以来自不同 provider（他这里 deepseek-v4-flash 同时挂在
+  //   opencode-go 与 deepseek 下），只显示 modelID 会让图例出现两行同名不同色 ——
+  //   那正是「身份不能只靠颜色区分」失败的样子。只在真的重名时才带上 provider 前缀，
+  //   不重名的保持短标签。
+  const duplicated = new Set(
+    sorted.map((m) => m.modelID).filter((id, i, all) => all.indexOf(id) !== i),
+  )
+
   const head = sorted.slice(0, limit).map((m) => ({
     key: modelKey(m.providerID, m.modelID),
     providerID: m.providerID,
     modelID: m.modelID,
-    label: m.modelID,
+    label: duplicated.has(m.modelID) ? `${m.providerID} / ${m.modelID}` : m.modelID,
     messages: m.messages,
     input: m.input,
     output: m.output,
