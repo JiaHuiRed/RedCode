@@ -8,7 +8,7 @@
 >
 > Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev), with deep enhancements in **prefix cache optimization, multi-model pricing, Chinese UX, and runtime stability**.
 
-[![Version](https://badgen.net/badge/Version/0.9.19/blue)](CHANGELOG.md)
+[![Version](https://badgen.net/badge/Version/0.10.0/blue)](CHANGELOG.md)
 [![License](https://badgen.net/badge/License/MIT/grey)](LICENSE)
 [![Platform](https://badgen.net/badge/Platform/Windows%2010%2F11/green)](https://github.com/JiaHuiRed/RedCode)
 
