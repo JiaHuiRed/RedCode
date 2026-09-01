@@ -225,7 +225,6 @@ export async function bootstrapDirectory(input: {
   }
   queryClient: QueryClient
 }) {
-  const loading = input.store.status !== "complete"
   const seededProject = projectID(input.directory, input.global.project)
   const seededPath = input.global.path.directory === input.directory ? input.global.path : undefined
   if (seededProject) input.setStore("project", seededProject)
