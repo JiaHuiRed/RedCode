@@ -1,0 +1,43 @@
+#!/bin/sh
+# 记忆双写自检 + 全文快照导出。
+#
+# 260825 Karina 起：本次提交若动了 MEMORY.md，必须保证每个索引行在 supermemory.db 有全文。
+#   没动 MEMORY.md 则零开销跳过（纯触发式，不占每轮成本）。
+#
+# 260831 cc 补上导出这一步。原因：supermemory.db 在 .gitignore、不随仓同步，两台机器之间
+#   **唯一的全文通路**就是 memory/lessons-backup.<hostname>.md 这份快照（按机器名分文件，
+#   互不冲突）。此前导出全靠手动跑，于是 Red314 写完 #141-143 没导就推了——Lin 这边拉下来
+#   索引有、全文无，双写核对当场报孤儿，而那三条的正文谁也拿不到。
+#   挂进钩子后「写完记忆必导快照」不再依赖记性。
+#
+# 260901 Karina 把源文件放回公仓 seed。此前只进了私仓，而 sync-home.bat:36-39 对 scripts
+#   做真镜像（先整目录删再 xcopy），于是每跑一次 sync-home 都把 home 里的 hooks/ 抹掉一次。
+#
+# 安装（每台机器各做一次，.git/hooks 不入仓）：
+#   cp ~/.redcode/scripts/hooks/pre-commit ~/.redcode/.git/hooks/pre-commit
+#   chmod +x ~/.redcode/.git/hooks/pre-commit
+
+if ! git diff --cached --name-only | grep -q 'MEMORY.md'; then
+  exit 0
+fi
+
+# 先导出，再校验：导出只读库、写快照文件，失败不该拦住提交，但要出声。
+if ! bun "$HOME/.redcode/scripts/export-memory-backup.mjs"; then
+  echo "pre-commit 警告：全文快照导出失败，本次提交的快照可能不是最新的。"
+fi
+
+SNAP="$HOME/.redcode/memory/lessons-backup.$(hostname).md"
+if [ -f "$SNAP" ]; then
+  git add "$SNAP"
+fi
+
+bun "$HOME/.redcode/scripts/check-memory-dualwrite.mjs"
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "pre-commit 阻断：记忆双写不完整（MEMORY.md 有索引行但 supermemory.db 缺全文）。"
+  echo "按脚本提示 INSERT 补齐后重新提交；确需临时绕过：git commit --no-verify"
+  echo ""
+  echo "若缺的是**另一台机器**写的条目：让那台先跑一次 export-memory-backup.mjs 并推送，"
+  echo "本机 pull 后从 memory/lessons-backup.<对方hostname>.md 回填即可。"
+  exit 1
+fi
