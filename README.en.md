@@ -1,14 +1,16 @@
 # ⚡ RedCode
 
 <p align="center">
-  <img src="docs/assets/screenshot.png" width="720" alt="RedCode TUI screenshot" style="border-radius: 8px;">
+  <img src="docs/assets/chi-portrait.webp" height="360" alt="Chi, RedCode's mascot">
 </p>
+
+<p align="center"><sub><b>Chi</b> (赤) — RedCode's mascot. She's also both exe icons and the GUI splash.</sub></p>
 
 > **A Chinese-native AI coding agent.** TUI (terminal) or GUI (desktop), speaks your language, plug in any model — DeepSeek, OpenAI, Anthropic, Ollama, domestic-first.
 >
 > Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev), with deep enhancements in **prefix cache optimization, multi-model pricing, Chinese UX, and runtime stability**.
 
-[![Version](https://badgen.net/badge/Version/0.10.0/blue)](CHANGELOG.md)
+[![Version](https://badgen.net/badge/Version/0.10.1/blue)](CHANGELOG.md)
 [![License](https://badgen.net/badge/License/MIT/grey)](LICENSE)
 [![Platform](https://badgen.net/badge/Platform/Windows%2010%2F11/green)](https://github.com/JiaHuiRed/RedCode)
 
@@ -16,24 +18,52 @@
 
 ## ✨ What is this?
 
-AI coding assistant, two entry points, one engine:
+An AI coding assistant. **Two entry points, one engine** — same server, same session database, same config. Start a session in the TUI, continue it in the GUI.
 
-- **TUI** — terminal interface (`packages/opencode`)
-- **GUI** — desktop window, Electron (`packages/desktop`; Tauri migration in progress — `src-tauri/` scaffolding is in place, build pipeline not yet wired)
+<p align="center">
+  <img src="docs/assets/screenshot.png" width="760" alt="RedCode TUI screenshot">
+</p>
 
-Reads code, writes code, fixes bugs, runs commands. You speak Chinese (or any language), it does the work.
+| | |
+| --- | --- |
+| **TUI** `packages/opencode` | Terminal interface, single-file exe. A bare launch opens a workspace selector (mouse-clickable, scrollable, or type any path). Pluggable sidebar. |
+| **GUI** `packages/desktop` | Electron desktop window. Home screen carries a **usage dashboard**; sessions get diff review, file preview (image / audio / PDF), and a context-usage tab. Tauri migration in progress — `src-tauri/` scaffolding is in place, build pipeline not yet wired. |
 
-### Core capabilities
+Reads code, writes code, fixes bugs, runs commands.
 
-Code understanding (jCodeMunch / TypeGraph) · Multi-model (DeepSeek / OpenAI / Anthropic / Ollama) · File read/write/edit · Terminal execution · Web search · Vision analysis · Session management · Permission gating · Context compaction · Automated memory system · Goal tracking · Skill system · Four-role subagents (explore / architect / fixer / reviewer, each assignable its own model) · Custom AI personas
+---
+
+## 🧠 Core capabilities
+
+| Area | What you get |
+| --- | --- |
+| **Code understanding** | jCodeMunch / TypeGraph indexing, cross-file navigation and blast-radius analysis |
+| **Doing** | File read/write/edit · terminal execution · web search · vision (multimodal models read images directly; a subagent can also be delegated) |
+| **Models** | DeepSeek / OpenAI / Anthropic / GLM / Qwen / MiniMax / Ollama… assignable per role |
+| **Context** | Prefix cache freshness · automatic compaction · context usage visualization |
+| **Organization** | Session management · goal tracking · automated memory system · Skill system |
+| **Agents** | Four-role subagents (explore / architect / fixer / reviewer) · custom AI personas |
+| **Safety** | Permission gating and guard rails — three postures below |
+
+### Three permission postures
+
+The dropdown under the prompt box *is* the permission axis. The three postures **differ only in permissions** — same prompt, same model:
+
+| Posture | What it can do |
+| --- | --- |
+| **Plan** 🟦 | Read and propose only. `edit: deny` — it can hand you a plan but cannot land it. |
+| **RedMind** 🟥 | The default. Acts, but asks first for destructive commands, directories outside the worktree, and `.env` reads. |
+| **Auto** 🟧 | No interruptions; everything above is auto-approved. Only for tasks you've already vetted. |
 
 ### Highlights
 
 - **Prefix cache freshness**: multi-layer caching (msgPin → modelMsgs → tools → system) keeps input cost low
-- **Model pricing**: full DeepSeek cache billing tiers, fixes upstream `cacheReadInputTokens=0` under-report
-- **Chinese UX**: full Chinese docs, Chinese UI
+- **Model pricing**: full DeepSeek cache billing tiers, fixes upstream `cacheReadInputTokens=0` under-report; ChatGPT / Codex plan quotas (5-hour window, 7-day window, reserve pool) get panels in both the TUI sidebar and the GUI context tab
+- **Usage dashboard**: project-level totals on the home screen — cache-hit ring, sessions / requests / output tokens, active and streak days, an activity heatmap, and per-model stacked bars by day. Backed by a server-side aggregation endpoint rather than a client-side reduce over whatever sessions happen to be loaded
+- **Chinese UX**: full Chinese docs and UI, trilingual i18n (zh / en / ja)
 - **Domestic models first**: zero-config for DeepSeek, GLM, Qwen, MiniMax, Zhipu
 - **Multi-machine sync**: machine-local override layer `redcode.local.jsonc` keeps synced configs machine-neutral
+- **Stability work**: 0.10.0 landed a desktop performance pass — the bottleneck was synchronous I/O on the main process, not rendering. Startup-to-connected went 7.28s → 5.71s, first-screen chunk shrank by 1.26MB, and streaming re-parse per tick dropped to 1/16. Details in [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
@@ -57,7 +87,15 @@ cd packages/desktop && bun run dev
 cd packages/opencode && bun run build
 ```
 
-Output: `packages/opencode/dist/redcode-windows-x64/bin/redcode.exe` — double-click to run. A bare launch (no directory argument) opens a workspace selector: pick a registered project, or use "Open a different directory..." to type or paste any path. The selector supports mouse: click to select, click on the selected item to open, scroll wheel to scroll.
+Output: `packages/opencode/dist/redcode-windows-x64/bin/redcode.exe` — double-click to run.
+
+### 📱 From your phone
+
+```bash
+redcode web --hostname 0.0.0.0
+```
+
+Open the `Network access` URL printed in the terminal from any browser on the same LAN. **A password is mandatory for LAN-visible binds** — without one the launch is refused outright, not warned about and allowed through.
 
 ---
 

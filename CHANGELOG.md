@@ -12,6 +12,30 @@
 
 ---
 
+### [0.10.1] - 2026-09-01
+
+> 0.10.0 之后的收尾批：文件查看器支持 PDF；插件依赖等待从 15 秒砍到 2 秒并且超时后整个进程不再等（这是打包版「进项目要等二十秒」的最后一段）；权限姿态三档不再中英混排；等待首 token 的那行不再叫「思考中」。另把看板娘「赤」正式定下来——两个 exe 的图标、GUI 启动画面、README 立绘，并重写了双语 README。
+
+#### 新增
+
+- **文件查看器支持 PDF 预览**（`packages/opencode/src/file/index.ts`、`packages/ui/src/pierre/media.ts`、`components/file-media.tsx`、`packages/app/src/pages/session/file-tabs.tsx`、i18n 三语）：此前点开 PDF 只会得到「二进制文件，无法预览」。原因是服务端 `read` 在 `isBinaryByExtension` 那道早退里就把 PDF 挡了，而图片走的分支排在早退**之后**——所以 PDF 分支必须插在早退之前，否则加了也走不到。返回形态沿用图片那条（`type: "binary"` + base64 + `application/pdf`），**共用同一个 20MB 上限**，不另开一套。前端 `MediaKind` 加 `pdf`，`validDataUrl` / `dataUrlFromMediaValue` 与三处 `(k !== "image" && k !== "audio")` 的闸门一并放宽——这三处是同一个判断被抄了三遍，漏一处就是「能打开但渲染成空白」。渲染用 `<embed type="application/pdf">` 交给 Chromium 自带的 PDF 插件，不引第三方渲染器。
+
+#### 优化
+
+- **插件依赖等待 15s → 2s，且超时后整个进程不再等**（`packages/opencode/src/plugin/index.ts`）：打包版日志里 `session.list` 一次 20721ms，而 sidecar 本身 1.5 秒就绪——差额几乎全在这里。链条是：`~/.redcode/package.json` 声明了 `solid-js@^1.9.13`，而 `@opentui/solid@0.4.1` 把 peer 钉死在 `solid-js@1.9.12`；宿主装依赖用的 @npmcli/arborist 对 peer 冲突比 bun 严格得多，于是 ERESOLVE 失败（约 13 秒），后面那道 15 秒等待再空转满。**这一条我先前用错误的测量否定过**——当时量的是 sidecar 启动耗时（1388ms，看着没问题），而实际卡住的是实例 bootstrap，两者不是一回事。等待降到 2 秒，并加一个模块级 `depWaitTimedOut`：超时发生过一次之后，后续目录直接跳过等待而不是每个目录再赔 15 秒。依赖冲突本身在配置仓那侧修。
+
+#### 修复
+
+- **`auto` 姿态去掉中文 displayName**（`packages/opencode/src/agent/agent.ts`）：三档姿态在输入框下拉里并排显示，plan 靠 `capitalize` 渲染成 "Plan"，redmind 给 displayName 是因为 "RedMind" 的大小写靠 capitalize 出不来。给 auto 塞的「全自动」让这一栏变成 Plan / RedMind / 全自动，中英混排。名字这一栏跟着 `name` 走即可——危险性由 description 和橙色 warning 承担，不该让标签兼职。
+- **等首 token 的那行不再叫「思考中」**（`packages/app/src/pages/session/message-timeline.data.ts`、`message-timeline.tsx`、i18n 三语）：开着推理摘要时，时间线底部那行动画的存在条件是 `assistantPartRefs.length === 0`——**一个可渲染 part 都还没到**，也就是在等供应商的首 token；首个 reasoning part 一落地它就消失，换成推理块自己的「思考中 → 已思考」。于是同一个词在一秒之内指了两件事，而先出现的那个恰恰不是思考（那行秒表的注释本来就写着「供应商排队等首 token 的等待也算进秒表」）。行上加一个 `awaiting` 布尔，为真时文案走新增的 `ui.sessionTurn.status.awaitingResponse`。按布尔分而不是按「有没有开推理摘要」分，是因为关掉推理摘要时这行横跨整个 busy 窗口，那种情况下前半段仍是等待、后半段才是思考。
+
+#### 其他
+
+- **看板娘「赤」**（`packages/desktop/scripts/build-icons.ts` 新增、`icons/{dev,beta,prod}/*`、`packages/desktop/赤.ico`、`packages/opencode/script/build.ts`、`packages/app/src/app.tsx`、`components/logo.tsx`、`docs/assets/chi-portrait.webp`）：两个 exe 的图标、GUI 启动画面、README 立绘统一换成她。图标生成脚本化而不是手搓 ICO，三件事写进了脚本头：边界按 alpha 扫不靠目测；**小尺寸（16/24/32/48）用放大到头部的裁剪、大尺寸（64/128/256）用完整徽章**——任务栏在 100% DPI 下只取 32×32，满幅细节缩到 32 没有剪影可言，而 ICO 本来就允许每帧不同的图；必须多尺寸——旧的 `icon.ico` 只有一帧 249×256（还不是正方形），Windows 取不到 32 那一档时整个回退成默认 Electron 图标。启动画面从原来那只猫的 GIF（base64 23.8KB）换成她的 GUI 徽章（320px webp）。
+- **重写双语 README**（`README.md`、`README.en.md`）：原来的「核心能力」是一长串顿号堆到底，两个入口只有两行 bullet。改成表格分区（代码理解 / 动手 / 多模型 / 上下文 / 组织 / 代理 / 安全），补上此前从未写进 README 的三件事——首页用量看板、三档权限姿态（并说明三档**只差权限**，不换提示词也不换模型）、`redcode web --hostname 0.0.0.0` 的手机访问（含「局域网绑定必须设密码，否则直接拦下」这条实际行为）。0.10.0 那轮桌面端性能专项的结论也在「相比上游做了什么」里留了一句带数字的索引。
+
+---
+
 ### [0.10.0] - 2026-09-01
 
 > **桌面端性能专项**：定案「慢」的主因是主进程的同步 I/O 而非渲染 —— 共用的 .dat 被 base64 图片撑到 2.64MB，每一次持久化读写都在主进程上重写整个文件；provider 关键路径每进一个目录拉 5.7MB；建窗死等 sidecar 1.6 秒；流式渲染每 tick 重算全文。逐条实测修完，首屏 chunk 累计减 1.26MB。另新增首页用量看板（服务端聚合端点 + 前端面板）。此前积压的未发布项一并发布：插件加载的三条静默失败路径补上提示；gpt.md 按 GPT-5.6 重做；ChatGPT 套餐额度记录并上了 GUI 面板，TUI 侧边栏也出了同款面板；会话消息的 part 排序补掉思考链被工具气泡甩到前面的漏网。
