@@ -409,7 +409,8 @@ export default function Page() {
         : skipToken,
     }
   })
-  const refreshVcs = debounce(() => void queryClient.invalidateQueries({ queryKey: vcsKey() }), 100)
+  // 260901 Red 文件变更风暴时 100ms 防抖会让 vcs diff 请求堆积成灾（单次 diff 对未跟踪文件是 O(N) git 进程）
+  const refreshVcs = debounce(() => void queryClient.invalidateQueries({ queryKey: vcsKey() }), 1000)
   const reviewDiffs = () => {
     if (store.changes === "git" || store.changes === "branch")
       // avoids suspense

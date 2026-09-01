@@ -12,6 +12,10 @@ const PATCH_CONTEXT_LINES = 2_147_483_647
 const MAX_PATCH_BYTES = 10_000_000
 const MAX_TOTAL_PATCH_BYTES = 10_000_000
 
+// 260901 Red 未跟踪文件要逐文件起 git 子进程（stat+patch ≈95ms/个，实测 300 个 28s）。
+// 批量落素材时上百个未跟踪文件会把 sidecar 拖到无响应，故设预算，超出的只给空统计与空补丁
+const MAX_UNTRACKED_FILE_PROCESSES = 60
+
 const emptyPatch = (file: string) => formatPatch(structuredPatch(file, file, "", "", "", "", { context: 0 }))
 
 const nums = (list: Git.Stat[]) =>
@@ -160,10 +164,13 @@ const files = Effect.fnUntraced(function* (
   const next: FileDiff[] = []
   let total = 0
   let capped = false
+  let untracked = 0
 
   for (const item of list.toSorted((a, b) => a.file.localeCompare(b.file))) {
-    const stat = map.get(item.file) ?? (item.status === "added" ? yield* git.statUntracked(cwd, item.file) : undefined)
-    const patch = yield* patchForItem(git, cwd, ref, item, batch, capped)
+    const added = item.status === "added"
+    const budgeted = !added || untracked++ < MAX_UNTRACKED_FILE_PROCESSES
+    const stat = budgeted ? (map.get(item.file) ?? (added ? yield* git.statUntracked(cwd, item.file) : undefined)) : undefined
+    const patch = budgeted ? yield* patchForItem(git, cwd, ref, item, batch, capped) : emptyPatch(item.file)
     const result: { patch: string; capped: boolean } = capped
       ? { patch, capped: true }
       : totalPatch(item.file, patch, total)
