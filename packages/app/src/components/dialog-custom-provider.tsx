@@ -48,6 +48,8 @@ function initFormFromConfig(providerID: string, config: Record<string, unknown>)
 export function DialogCustomProvider(props: Props) {
   const dialog = useDialog()
   const globalSync = useServerSync()
+  // 撞 ID 校验要比对全量目录，见下方 validate()。
+  globalSync.wantProviderCatalog()
   const globalSDK = useGlobalSDK()
   const language = useLanguage()
 
@@ -138,7 +140,13 @@ export function DialogCustomProvider(props: Props) {
       form,
       t: language.t,
       disabledProviders: globalSync.data.config.disabled_providers ?? [],
-      existingProviderIDs: new Set(globalSync.data.provider.all.keys()),
+      // 260901 cc 撞 ID 要跟**全量目录**比，不是只跟已连接的比：新建一个叫 "anthropic" 的
+      //   自定义厂商同样是冲突，哪怕你还没连过 anthropic。已连接那份现在只有十几条（见
+      //   loadProvidersQuery），照旧读它会把绝大多数真冲突放过去。
+      existingProviderIDs: new Set([
+        ...globalSync.data.provider_catalog.all.keys(),
+        ...globalSync.data.provider.all.keys(),
+      ]),
       editProviderID: props.editProviderID,
     })
     batch(() => {

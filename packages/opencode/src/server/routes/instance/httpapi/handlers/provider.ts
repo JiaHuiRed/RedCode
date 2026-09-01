@@ -4,7 +4,6 @@ import { ModelsDev } from "@redcode-ai/core/models-dev"
 import { Provider } from "@/provider/provider"
 import * as ProviderQuota from "@/provider/quota"
 import { ProviderID } from "@/provider/schema"
-import { mapValues } from "remeda"
 import { Effect, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
@@ -31,6 +30,20 @@ function mapProviderAuthError<A, R>(self: Effect.Effect<A, ProviderAuth.Error, R
   )
 }
 
+// 目录条目 → 其 public 形态。键是 models.dev 目录里的源对象，目录失效重建后旧条目自动回收。
+// catalogPublic 用来在 list() 末尾分辨「这条已经是 public 形态，别再 toPublicInfo 一遍」。
+const catalogCache = new WeakMap<object, Provider.Info>()
+const catalogPublic = new WeakSet<object>()
+
+function publicFromCatalog(item: ModelsDev.Provider): Provider.Info {
+  const hit = catalogCache.get(item)
+  if (hit) return hit
+  const value = Provider.toPublicInfo(Provider.fromModelsDevProvider(item))
+  catalogCache.set(item, value)
+  catalogPublic.add(value)
+  return value
+}
+
 export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider", (handlers) =>
   Effect.gen(function* () {
     const cfg = yield* Config.Service
@@ -47,12 +60,24 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
         if ((enabled ? enabled.has(key) : true) && !disabled.has(key)) filtered[key] = value
       }
       const connected = yield* provider.list()
-      const providers = Object.assign(
-        mapValues(filtered, (item) => Provider.fromModelsDevProvider(item)),
-        connected,
-      )
+      // 260901 cc 目录那部分（215 厂商 / 7378 模型）按源对象缓存，不再每请求重算。
+      //   之前这里对全部 215 个厂商各跑一次 fromModelsDevProvider + toPublicInfo，而后者是
+      //   `JSON.parse(JSON.stringify())` —— 一次完整的序列化往返，7378 个模型全走一遍。
+      //   实测这条路径热态恒 630-915ms，从来不会变快。
+      //   缓存成立的前提：ModelsDev 的目录在进程内是 cachedInvalidateWithTTL(infinity)，
+      //   对象身份稳定；用 WeakMap 挂在源对象上，目录一旦失效重建，旧条目自然被回收。
+      //   **只缓存目录条目，不缓存 connected**：后者带 source/key 这些运行时状态，必须现算。
+      const providers: Record<string, Provider.Info> = {}
+      for (const [key, item] of Object.entries(filtered)) {
+        const override = connected[key as keyof typeof connected]
+        providers[key] = override ?? publicFromCatalog(item)
+      }
+      for (const [key, item] of Object.entries(connected)) {
+        if (key in providers) continue
+        providers[key] = item
+      }
       return {
-        all: Object.values(providers).map(Provider.toPublicInfo),
+        all: Object.values(providers).map((item) => (catalogPublic.has(item) ? item : Provider.toPublicInfo(item))),
         default: Provider.defaultModelIDs(providers),
         connected: Object.keys(connected),
       }

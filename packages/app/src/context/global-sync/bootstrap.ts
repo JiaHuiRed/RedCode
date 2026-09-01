@@ -16,7 +16,7 @@ import { retry } from "@redcode-ai/core/util/retry"
 import { batch } from "solid-js"
 import { reconcile, type SetStoreFunction, type Store } from "solid-js/store"
 import type { State, VcsCache } from "./types"
-import { cmp, normalizeAgentList, normalizeProviderList } from "./utils"
+import { cmp, normalizeAgentList, normalizeConfigProviderList, normalizeProviderList } from "./utils"
 import { formatServerError } from "@/utils/server-errors"
 import { compareTime } from "@/utils/id"
 import { QueryClient, queryOptions } from "@tanstack/solid-query"
@@ -30,6 +30,7 @@ type GlobalStore = {
     [sessionID: string]: Todo[]
   }
   provider: NormalizedProviderListResponse
+  provider_catalog: NormalizedProviderListResponse
   provider_auth: ProviderAuthResponse
   provider_quota: ProviderQuota[]
   config: Config
@@ -188,6 +189,37 @@ function warmSessions(input: {
 export const loadProvidersQuery = (directory: string | null, sdk: OpencodeClient) =>
   queryOptions({
     queryKey: [directory, "providers"],
+    queryFn: () =>
+      retry(() =>
+        sdk.config.providers().then((x) =>
+          normalizeConfigProviderList({
+            providers: x.data?.providers ?? [],
+            default: x.data?.default ?? {},
+          }),
+        ),
+      ),
+  })
+
+/**
+ * models.dev 全量目录（未连接的厂商也在里面）。
+ *
+ * 260901 cc 从关键路径上摘下来的那 5.7MB。三条约束都写在这里，别再挪回去：
+ *
+ * ① **key 不带 directory。** 目录之间这份数据完全相同，之前 `[directory, "providers"]` 的
+ *    key 让每进一个新目录就重新拉一次 5879KB —— 传输、解析、7378 个模型对象的 Map，
+ *    以及在 query 缓存里各留一份常驻内存（16G 机器上这条比耗时更要命）。
+ * ② **不进 bootstrap 的 slow 组。** 首屏没有任何一处需要未连接的厂商，进项目那条路径
+ *    只用得上 [loadProvidersQuery] 的已连接列表。
+ * ③ **空闲时拉一次就够。** 消费方只有连接厂商对话框、popular 列表，以及老会话里引用了
+ *    已移除厂商时的模型报价兜底 —— 全是可以晚到的。
+ */
+export const loadProviderCatalogQuery = (sdk: OpencodeClient) =>
+  queryOptions({
+    queryKey: ["providerCatalog"],
+    // 目录本身在服务端是 Effect.cachedInvalidateWithTTL(infinity) 缓存的，进程内不会变；
+    // 客户端跟着钉死，避免 refetch 把 5.7MB 再走一遍。
+    staleTime: Infinity,
+    gcTime: Infinity,
     queryFn: () => retry(() => sdk.provider.list().then((x) => normalizeProviderList(x.data!))),
   })
 

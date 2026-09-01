@@ -33,6 +33,8 @@ export const SettingsProviders: Component = () => {
   const globalSDK = useGlobalSDK()
   const globalSync = useServerSync()
   const providers = useProviders()
+  // popular() 列的是「推荐但还没连」的厂商，只有全量目录里有。
+  globalSync.wantProviderCatalog()
 
   const connected = createMemo(() => {
     return providers.connected().filter((p) => p.id !== "redcode" || Object.values(p.models).find((m) => m.cost?.input))

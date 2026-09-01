@@ -5,6 +5,7 @@ import {
   batch,
   createContext,
   createEffect,
+  createSignal,
   getOwner,
   onCleanup,
   onMount,
@@ -24,6 +25,7 @@ import {
   loadGlobalConfigQuery,
   loadPathQuery,
   loadProjectsQuery,
+  loadProviderCatalogQuery,
   loadProviderQuotaQuery,
   loadProvidersQuery,
 } from "./global-sync/bootstrap"
@@ -54,6 +56,7 @@ type GlobalStore = {
     [sessionID: string]: Todo[]
   }
   provider: NormalizedProviderListResponse
+  provider_catalog: NormalizedProviderListResponse
   provider_auth: ProviderAuthResponse
   provider_quota: ProviderQuota[]
   config: Config
@@ -118,6 +121,32 @@ export function createServerSyncContext() {
     queries: [queryOptionsApi.globalConfig(), queryOptionsApi.providers(null), queryOptionsApi.path(null)],
   }))
 
+  // 260901 cc 全量 models.dev 目录：只在空闲时拉一次，且不带 directory。
+  //   enabled 由 catalogWanted 翻起来 —— 首屏与进项目都不需要它（见 loadProviderCatalogQuery
+  //   的三条约束），所以默认关，等第一帧画完之后的空闲窗口再放行。
+  //   注意别改成无条件 enabled：那等于把 5.7MB 挪个位置又塞回启动路径。
+  const [catalogWanted, setCatalogWanted] = createSignal(false)
+  const catalogQuery = useQuery(() => ({
+    ...loadProviderCatalogQuery(serverSDK.client),
+    enabled: catalogWanted(),
+  }))
+  const wantProviderCatalog = () => setCatalogWanted(true)
+  onMount(() => {
+    const idle = (globalThis as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number })
+      .requestIdleCallback
+    if (typeof idle === "function") {
+      const handle = idle(() => wantProviderCatalog(), { timeout: 10_000 })
+      onCleanup(() =>
+        (
+          globalThis as unknown as { cancelIdleCallback?: (h: number) => void }
+        ).cancelIdleCallback?.(handle),
+      )
+      return
+    }
+    const timer = setTimeout(wantProviderCatalog, 3_000)
+    onCleanup(() => clearTimeout(timer))
+  })
+
   const [globalStore, setGlobalStore] = createStore<GlobalStore>({
     get ready() {
       return bootstrap.isPending
@@ -135,6 +164,11 @@ export function createServerSyncContext() {
       const EMPTY = { all: new Map(), connected: [], default: {} }
       if (providerQuery.isLoading) return EMPTY
       return providerQuery.data ?? EMPTY
+    },
+    // 未连接的厂商只在这里出现；关键路径一律读 provider，不读它。空闲拉到之前是空 Map。
+    get provider_catalog() {
+      const EMPTY = { all: new Map(), connected: [], default: {} }
+      return catalogQuery.data ?? EMPTY
     },
     get config() {
       if (configQuery.isLoading) return {}
@@ -487,6 +521,10 @@ export function createServerSyncContext() {
       // appear immediately in the available provider list across all directories.
       queryClient.invalidateQueries({ queryKey: [null, "providers"] })
       queryClient.invalidateQueries({ predicate: (query) => query.queryKey[1] === "providers" })
+      // 260901 cc 目录查询的 key 是 ["providerCatalog"]，queryKey[1] 是 undefined，
+      //   上面那条 predicate 扫不到它。自定义厂商写进 config 后 /provider 的结果会变，
+      //   漏掉这句就会出现「设置里加完自定义厂商，连接对话框里还是找不到」。
+      queryClient.invalidateQueries({ queryKey: ["providerCatalog"] })
     },
   }))
 
@@ -502,6 +540,9 @@ export function createServerSyncContext() {
     child: children.child,
     peek: children.peek,
     queryOptions: queryOptionsApi,
+    // 需要「未连接的厂商」的界面（连接对话框、popular 列表、设置页）在挂载时调一次。
+    // 空闲预取通常已经跑过了，这句是覆盖「刚启动就点开连接对话框」那个窗口。
+    wantProviderCatalog,
     // bootstrap,
     updateConfig: updateConfigMutation.mutateAsync,
     project: projectApi,

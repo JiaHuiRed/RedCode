@@ -23,6 +23,8 @@ export function DialogConnectProvider(props: { provider: string }) {
   const globalSDK = useGlobalSDK()
   const language = useLanguage()
   const providers = useProviders()
+  // 要连的厂商按定义还没连上，只可能在全量目录里。
+  globalSync.wantProviderCatalog()
 
   const all = () => {
     void import("./dialog-select-provider").then((x) => {

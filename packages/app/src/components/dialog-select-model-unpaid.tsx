@@ -10,6 +10,7 @@ import { useLocal } from "@/context/local"
 import { popularProviders, useProviders } from "@/hooks/use-providers"
 import { ModelTooltip } from "./model-tooltip"
 import { useLanguage } from "@/context/language"
+import { useServerSync } from "@/context/server-sync"
 
 type ModelState = ReturnType<typeof useLocal>["model"]
 
@@ -18,6 +19,8 @@ export const DialogSelectModelUnpaid: Component<{ model?: ModelState }> = (props
   const dialog = useDialog()
   const providers = useProviders()
   const language = useLanguage()
+  // popular() 里的厂商多半还没连上，只有全量目录里有。
+  useServerSync().wantProviderCatalog()
 
   const connect = (provider: string) => {
     void import("./dialog-connect-provider").then((x) => {

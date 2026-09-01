@@ -7,6 +7,7 @@ import { Tag } from "@redcode-ai/ui/tag"
 import { ProviderIcon } from "@redcode-ai/ui/provider-icon"
 import { DialogConnectProvider } from "./dialog-connect-provider"
 import { useLanguage } from "@/context/language"
+import { useServerSync } from "@/context/server-sync"
 import { DialogCustomProvider } from "./dialog-custom-provider"
 
 const CUSTOM_ID = "_custom"
@@ -15,6 +16,8 @@ export const DialogSelectProvider: Component = () => {
   const dialog = useDialog()
   const providers = useProviders()
   const language = useLanguage()
+  // 这个列表要列出「还没连的厂商」，是全量目录唯一真正的消费者之一。
+  useServerSync().wantProviderCatalog()
 
   const popularGroup = () => language.t("dialog.provider.group.popular")
   const otherGroup = () => language.t("dialog.provider.group.other")
