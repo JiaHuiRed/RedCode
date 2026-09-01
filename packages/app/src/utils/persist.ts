@@ -31,6 +31,82 @@ const fallback = new Map<string, boolean>()
 const CACHE_MAX_ENTRIES = 500
 const CACHE_MAX_BYTES = 8 * 1024 * 1024
 
+/**
+ * 桌面端落盘合并。
+ *
+ * 260901 cc makePersisted 是**写穿**的：每一次 setStore 都同步序列化整个 store 并调一次
+ * setItem，而桌面端的 setItem 是一条 IPC，主进程那边 electron-store 底下的 conf 会
+ * readFileSync 整个 .dat + JSON.parse + JSON.stringify + 原子写（临时文件 + fsync + rename），
+ * **同步**跑在 Electron 主进程上。主进程同时也是窗口/菜单/全部 ipcMain 的事件循环，
+ * 它被 I/O 占住时标题栏拖动都会僵。
+ *
+ * 最容易复现的是拖分栏条：ui/components/resize-handle.tsx:52 的 onMouseMove 直接
+ * onResize → setStore → 一次落盘。Chromium 已经把 mousemove 对齐到帧，所以是 ~60 次/秒，
+ * 在那里再加 rAF 合帧基本是空操作 —— 真正该合并的是**落盘**，而且合并要放在这一层，
+ * 因为调用点有 20 多个，一个个改改不干净。
+ *
+ * 只对桌面端（异步 IPC）这条路做；web 端 localStorage 没有这个成本，也不动它的测试语义。
+ *
+ * 取舍：最后一次改动到落盘之间有个 <=250ms 的窗口。三个退出信号都补了 flush，
+ * 真正丢数据要在最后一次改动后 250ms 内被强杀。相对「拖一次分栏条整窗僵住几秒」，
+ * 这个交换是划算的。
+ */
+const WRITE_DELAY_MS = 250
+
+type PendingWrite = {
+  value: string
+  write: (value: string) => Promise<unknown>
+  timer: ReturnType<typeof setTimeout>
+}
+
+const pendingWrites = new Map<string, PendingWrite>()
+
+function flushWrite(id: string) {
+  const pending = pendingWrites.get(id)
+  if (!pending) return
+  clearTimeout(pending.timer)
+  pendingWrites.delete(id)
+  void pending.write(pending.value)
+}
+
+export function flushPersistedWrites() {
+  for (const id of [...pendingWrites.keys()]) flushWrite(id)
+}
+
+function scheduleWrite(id: string, value: string, write: (value: string) => Promise<unknown>) {
+  const pending = pendingWrites.get(id)
+  if (pending) {
+    // 同一个 key 后来的值直接盖掉前一个，只有最后一版会落盘。
+    pending.value = value
+    pending.write = write
+    return
+  }
+  pendingWrites.set(id, {
+    value,
+    write,
+    timer: setTimeout(() => flushWrite(id), WRITE_DELAY_MS),
+  })
+}
+
+/** removeItem 必须先撤掉排队中的写，否则删完又被旧值写回来。 */
+function cancelWrite(id: string) {
+  const pending = pendingWrites.get(id)
+  if (!pending) return
+  clearTimeout(pending.timer)
+  pendingWrites.delete(id)
+}
+
+if (typeof window === "object" && typeof window.addEventListener === "function") {
+  const flush = () => flushPersistedWrites()
+  window.addEventListener("beforeunload", flush)
+  window.addEventListener("pagehide", flush)
+  if (typeof document === "object" && typeof document.addEventListener === "function") {
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") flush()
+    })
+  }
+}
+
 type CacheEntry = { value: string; bytes: number }
 const cache = new Map<string, CacheEntry>()
 const cacheTotal = { bytes: 0 }
@@ -567,6 +643,10 @@ export function persisted<T>(
 
     const api: AsyncStorage = {
       getItem: async (key) => {
+        // 还排在队里没落盘的那一版才是最新的，直接给它——否则会读到旧值。
+        // 现在 makePersisted 只在初始化时读一次，这条是防御性的，不是已知路径。
+        const queued = pendingWrites.get(`${config.storage ?? ""} ${key}`)
+        if (queued) return queued.value
         const value = await readCurrentAsync({ storage: current, key, defaults, migrate: config.migrate })
         if (value !== undefined) return value
         return migrateLegacyAsync({
@@ -579,10 +659,12 @@ export function persisted<T>(
           migrate: config.migrate,
         })
       },
+      // 见文件顶部 WRITE_DELAY_MS 的说明：合并同一个 key 的连续写，只落最后一版。
       setItem: async (key, value) => {
-        await current.setItem(key, value)
+        scheduleWrite(`${config.storage ?? ""} ${key}`, value, (latest) => current.setItem(key, latest))
       },
       removeItem: async (key) => {
+        cancelWrite(`${config.storage ?? ""} ${key}`)
         await current.removeItem(key)
       },
     }
