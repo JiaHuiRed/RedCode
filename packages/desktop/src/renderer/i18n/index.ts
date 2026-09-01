@@ -6,9 +6,17 @@ import { dict as desktopEn } from "./en"
 import { dict as desktopZh } from "./zh"
 import { dict as desktopJa } from "./ja"
 
+// 260901 cc 只静态引 appEn，不引 appZh/appJa。
+//
+// 这个模块被 renderer/index.tsx 静态引入，于是三份 app 字典（en 55KB / zh 43KB / ja 47KB）
+// 全部落进首屏 chunk —— 从打包产物的 sourcemap 归因里量到的，app/src/i18n/{en,zh,ja}.ts
+// 三个都在 main-*.js 里。而 app 层的 language.tsx:42-43 本来是把 zh/ja 写成动态 import 的，
+// 这里的静态引用把那份切分整个废掉了（对照：ui 层的 zh 正常切出了独立 chunk，只有 7KB）。
+//
+// 外壳自己只用 7 个 key：6 个在 desktop 自己的字典里，剩下 1 个 error.dev.rootNotFound
+// 是 import.meta.env.DEV 分支里的开发期报错。app 界面的翻译走 app 自己的 LanguageProvider，
+// 不经过这里。所以 appZh/appJa 对生产行为没有任何贡献，只贡献 90KB 首屏体积。
 import { dict as appEn } from "../../../../app/src/i18n/en"
-import { dict as appZh } from "../../../../app/src/i18n/zh"
-import { dict as appJa } from "../../../../app/src/i18n/ja"
 
 export type Locale = "en" | "zh" | "ja"
 
@@ -67,8 +75,8 @@ function pickLocale(value: unknown): Locale | null {
 const base = i18n.flatten({ ...appEn, ...desktopEn })
 
 function build(locale: Locale): Dictionary {
-  if (locale === "zh") return { ...base, ...i18n.flatten(appZh), ...i18n.flatten(desktopZh) }
-  if (locale === "ja") return { ...base, ...i18n.flatten(appJa), ...i18n.flatten(desktopJa) }
+  if (locale === "zh") return { ...base, ...i18n.flatten(desktopZh) }
+  if (locale === "ja") return { ...base, ...i18n.flatten(desktopJa) }
   return base
 }
 
