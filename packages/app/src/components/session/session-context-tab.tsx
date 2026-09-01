@@ -1,5 +1,6 @@
 import { createMemo, createEffect, on, onCleanup, For, Show } from "solid-js"
 import type { JSX } from "solid-js"
+import { Dynamic } from "solid-js/web"
 import { useQuery } from "@tanstack/solid-query"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
@@ -10,7 +11,7 @@ import { compareTime } from "@/utils/id"
 import { Icon } from "@redcode-ai/ui/icon"
 import { Accordion } from "@redcode-ai/ui/accordion"
 import { StickyAccordionHeader } from "@redcode-ai/ui/sticky-accordion-header"
-import { File } from "@redcode-ai/ui/file"
+import { useFileComponent } from "@redcode-ai/ui/context/file"
 import { Markdown } from "@redcode-ai/ui/markdown"
 import { ScrollView } from "@redcode-ai/ui/scroll-view"
 import type { Message, Part, ProviderQuota, UserMessage } from "@redcode-ai/sdk/v2/client"
@@ -124,6 +125,12 @@ function QuotaWindow(props: { label: string; window?: QuotaWindowData }) {
 }
 
 function RawMessageContent(props: { message: Message; getParts: (id: string) => Part[]; onRendered: () => void }) {
+  // 260901 cc 这里原本是 `import { File } from "@redcode-ai/ui/file"` 直接用。
+  //   app.tsx 把 File 改成动态加载之后，**这一处静态引入就是那个改动的漏底**：
+  //   打包产物里 session-*.js 因此静态 import 了整个 file-*.js（447KB，含 @pierre/diffs
+  //   334KB），于是「用到才加载」退化成「进会话就加载」。改成和其余 7 处消费方一样走
+  //   useFileComponent()，静态边就断了。
+  const fileComponent = useFileComponent()
   const file = createMemo(() => {
     const parts = props.getParts(props.message.id)
     const contents = JSON.stringify({ message: props.message, parts }, null, 2)
@@ -135,7 +142,8 @@ function RawMessageContent(props: { message: Message; getParts: (id: string) => 
   })
 
   return (
-    <File
+    <Dynamic
+      component={fileComponent}
       mode="text"
       file={file()}
       overflow="wrap"

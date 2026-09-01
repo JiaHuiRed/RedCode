@@ -4,7 +4,7 @@ import { I18nProvider } from "@redcode-ai/ui/context"
 import { DialogProvider } from "@redcode-ai/ui/context/dialog"
 import { FileComponentProvider } from "@redcode-ai/ui/context/file"
 import { MarkedProvider } from "@redcode-ai/ui/context/marked"
-import { File } from "@redcode-ai/ui/file"
+import type { FileProps } from "@redcode-ai/ui/file"
 import { Font } from "@redcode-ai/ui/font"
 import { Splash } from "@redcode-ai/ui/logo"
 import { ThemeProvider } from "@redcode-ai/ui/theme/context"
@@ -50,6 +50,42 @@ import { useCheckServerHealth } from "./utils/server-health"
 
 const HomeRoute = lazy(() => import("@/pages/home"))
 const Session = lazy(() => import("@/pages/session"))
+
+// 260901 cc @pierre/diffs 改成用到才加载。
+//
+// 它是首屏 chunk 里最大的第三方块（katex 拆走之后）：从打包产物 sourcemap 归因，
+// @pierre/diffs 344KB，占 main-*.js（转译前 4.15MB）的 8.3%。而 File 在这里是静态引入的，
+// 于是每次启动都要把整套 diff 渲染引擎（FileDiff / Virtualizer / InteractionManager /
+// DiffHunksRenderer）解析编译一遍——哪怕整个会话里一个 diff 都不展开。
+//
+// **必须自带 Suspense，裸 lazy() 是倒退**。File 是交给下面 FileComponentProvider、
+// 在消息内容深处由 7 处 <Dynamic> 渲染的（message-part 三处，session-review /
+// session-turn / file-tabs / message-timeline 各一处）。裸 lazy() 的挂起会一路冒泡到
+// ConnectionGate 里那个包住**整个应用**的 Suspense（fallback 是满屏 Splash）——
+// 展开一个 diff 会把整扇窗清掉。这正是 b43dbcda / 67c3336c 修掉的那一类，
+// 那两条的结论是「边界必须贴着挂起源」，所以这里就地兜住，挂起只影响 diff 那一块。
+//
+// ⚠️ 想自己验这条的话，**别用切路由来验**：solid-router 的跳转跑在 startTransition 里，
+//   而 solid-js 的 createResource.read() 里那一支（`c.resolved && Transition &&
+//   loadedUnderTransition` → 把 promise 挂到 transition 上，不 increment）会替你兜住，
+//   于是裸 lazy() 在路由跳转时看着也「没事」。会露馅的是**不在 transition 里**的那些路径：
+//   会话内展开 diff、侧栏点开文件。我就是先按前者验的，白跑一轮。
+//
+// 刻意不给 fallback：加载期间 diff 区域是空的，四周一切照旧。放骨架屏反而会多一次
+// 高度跳变，而带动画的骨架屏是周期性闪动。
+const FileImpl = lazy(() => import("@redcode-ai/ui/file").then((m) => ({ default: m.File })))
+
+// File 是泛型组件（`File<T>(props: FileProps<T>)`），这里把 T 定死成 unknown。这不是将就：
+// FileComponentProvider 只要求 ValidComponent（packages/ui/src/context/file.tsx:4），
+// 7 处消费方也全部走 <Dynamic component={fileComponent}>，沿途本来就没有 T 可用——
+// 丢掉的类型信息下游没人接得住。tsgo 7.0.2 与 TS 5.9.3 都不需要为此加断言。
+function LazyFile(props: FileProps<unknown>) {
+  return (
+    <Suspense>
+      <FileImpl {...props} />
+    </Suspense>
+  )
+}
 
 const SessionRoute = Object.assign(
   () => (
@@ -155,7 +191,7 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
               <QueryProvider>
                 <DialogProvider>
                   <MarkedProvider>
-                    <FileComponentProvider component={File}>{props.children}</FileComponentProvider>
+                    <FileComponentProvider component={LazyFile}>{props.children}</FileComponentProvider>
                   </MarkedProvider>
                 </DialogProvider>
               </QueryProvider>
