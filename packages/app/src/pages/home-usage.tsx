@@ -14,7 +14,7 @@
  *
  * 文字一律用 v2 text token，**不用系列色**——系列色只出现在色块上，标签旁边配色块来带身份。
  */
-import { createMemo, createSignal, For, Show } from "solid-js"
+import { createMemo, createSignal, For, Show, Suspense } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { Tooltip } from "@redcode-ai/ui/tooltip"
 import { useTheme } from "@redcode-ai/ui/theme"
@@ -140,11 +140,16 @@ function StackedBars(props: { usage: Usage; slices: ModelSlice[]; color: (slice:
   const max = createMemo(() => Math.max(1, ...buckets().map((b) => b.total)))
 
   return (
-    <div class="flex h-[168px] items-end gap-[3px] overflow-x-auto">
+    <div class="flex h-[150px] items-end gap-[3px] overflow-x-auto">
       <For each={buckets()}>
         {(bucket) => (
           <Tooltip
             placement="top"
+            // 260901 cc **高度必须给到 Tooltip 的 trigger 上。** Tooltip 渲染的是一个
+            //   <div data-component="tooltip-trigger" class={class}> 包住 children
+            //   （tooltip.tsx:126-130），它默认是自动高度；而柱子的高度是百分比，
+            //   于是形成循环依赖：父高 0 → 柱子高 0 → 父高 0，一根都画不出来。
+            class="h-full shrink-0"
             value={
               <div class="flex flex-col gap-0.5">
                 <span class="text-text-invert-strong tabular-nums">{bucket.day}</span>
@@ -166,7 +171,7 @@ function StackedBars(props: { usage: Usage; slices: ModelSlice[]; color: (slice:
             }
           >
             {/* 柱子本身细，命中区域给整列——鼠标不用瞄 */}
-            <div class="flex h-full w-[10px] shrink-0 cursor-default flex-col justify-end gap-[2px]">
+            <div class="flex h-full w-[10px] cursor-default flex-col justify-end gap-[2px]">
               <For each={bucket.segments.filter((s) => s.output > 0)}>
                 {(segment, index) => {
                   const slice = () => props.slices.find((s) => s.key === segment.key)!
@@ -191,7 +196,23 @@ function StackedBars(props: { usage: Usage; slices: ModelSlice[]; color: (slice:
   )
 }
 
+/**
+ * 对外的入口只做一件事：**把挂起就地兜住**。
+ *
+ * 260901 cc 这层无 fallback 的 Suspense 不是可选的。面板在首页常驻路径上，里面有 useQuery；
+ * 任何一次挂起漏出去，都会冒到 app.tsx ConnectionGate 那个 fallback 是满屏 Splash 的边界，
+ * 表现就是「切工作区整扇窗变成猫猫加载页」。内层已经用 isLoading 先判过一道，这里是第二道。
+ * 无 fallback 是刻意的：面板没画出来时这块地方留空即可，不该有任何一闪而过的占位。
+ */
 export function HomeUsagePanel(props: { directory: string | undefined }) {
+  return (
+    <Suspense>
+      <HomeUsagePanelInner directory={props.directory} />
+    </Suspense>
+  )
+}
+
+function HomeUsagePanelInner(props: { directory: string | undefined }) {
   const language = useLanguage()
   const theme = useTheme()
   const providers = useProviders()
@@ -208,7 +229,14 @@ export function HomeUsagePanel(props: { directory: string | undefined }) {
     enabled: !!props.directory,
   }))
 
-  const usage = () => query.data as Usage | undefined
+  // 260901 cc **先判 isLoading 再读 data，不能直接读。**
+  //   solid-query 在 pending 时读 .data 会挂起，而这个面板在常驻路径（首页）上，挂起会冒泡到
+  //   app.tsx ConnectionGate 那个 fallback 是**满屏 Splash** 的 Suspense —— 切换工作区时
+  //   queryKey 变 → 重新拉取 → 整扇窗被猫猫加载页顶掉。这正是 260901 上午清掉的那类病
+  //   （见 project_gui_desktop_perf 的「常驻路径上不能有挂起源」）。
+  //   仓里既有写法就是这样防的：server-sync.tsx:136 的 `if (providerQuery.isLoading) return EMPTY`。
+  //   下面 HomeUsagePanel 外面那层无 fallback 的 Suspense 是第二道保险，两道都要留。
+  const usage = () => (query.isLoading ? undefined : (query.data as Usage | undefined))
   const dark = () => theme.mode() === "dark"
 
   // 服务端只出原始 cost（币种混合）。折算按 provider 目录里的 model.cost.currency 走，
@@ -277,7 +305,7 @@ export function HomeUsagePanel(props: { directory: string | undefined }) {
         //   max-w 收住宽度：8 个指标块横跨整个主区，每格几百像素装一个三位数，稀得发慌。
         <div
           data-frost-surface="home-usage"
-          class="mt-6 flex w-full max-w-[880px] flex-col gap-3 rounded-pane border border-v2-border-border-base bg-v2-background-bg-layer-01 p-3 shadow-[var(--v2-elevation-floating)]"
+          class="mb-4 flex w-full max-w-[880px] flex-col gap-3 rounded-pane border border-v2-border-border-base bg-v2-background-bg-layer-01 p-3 shadow-[var(--v2-elevation-floating)]"
         >
           <div class="flex flex-wrap items-center gap-2">
             <Segmented
