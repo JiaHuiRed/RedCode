@@ -10,6 +10,7 @@ import {
   createSignal,
   createResource,
   type Accessor,
+  Suspense,
 } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLocal } from "@/context/local"
@@ -1506,7 +1507,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   return (
     <div class="relative size-full flex flex-col gap-0">
-      {(promptReady(), null)}
+      {/* 260901 cc 同 session.tsx 那处：只为触发挂起、不渲染任何东西，但会一路挂到应用级
+          Suspense 把整扇窗顶成 Splash。就地兜住，见那边的完整说明。 */}
+      <Suspense>{(promptReady(), null)}</Suspense>
       <PromptPopover
         popover={store.popover}
         setSlashPopoverRef={(el) => (slashPopoverRef = el)}

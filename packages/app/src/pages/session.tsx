@@ -14,6 +14,7 @@ import {
   onMount,
   untrack,
   createResource,
+  Suspense,
 } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createMediaQuery } from "@solid-primitives/media"
@@ -1548,7 +1549,17 @@ export default function Page() {
       // 260610 Red 毛玻璃 B：设了聊天背景图则会话页根容器去实色底，露出根布局整窗壁纸做毛玻璃；否则维持原实色
       classList={{ "bg-background-base": !settings.appearance.chatBackground() }}
     >
-      {sessionSync() ?? ""}
+      {/* 260901 cc 这行在 JSX 里读 sessionSync 但什么都不渲染，唯一作用是触发挂起。
+          问题是它离最近的 Suspense 边界是 app.tsx 里那个**包住整个应用**的（fallback 是满屏
+          Splash），而 sessionSync 的依赖是 [sdk.directory, params.id]——点一次会话卡片、切一次
+          工作区它就重跑一次。于是每次切换都把整扇窗换成 Splash 再换回来，组件树整棵拆掉重搭。
+          哥哥说的「点卡片进主界面慢」和「主界面偶尔变空白」就是这个，不是偶发，是每次必然。
+
+          就地加一层没有 fallback 的 Suspense 把挂起兜住：这行本来就不渲染任何东西，兜住之后
+          挂起对界面完全不可见，标题栏、侧边栏、消息区保持原样，数据到了由 store 驱动逐步更新。
+          注意不能把边界加到路由层（cb3b8b4e 试过，已撤回）——那会废掉 solid-router 的
+          transition，反而从「保持旧画面」退化成「立刻清空」。边界必须贴着挂起源。 */}
+      <Suspense>{sessionSync() ?? ""}</Suspense>
       <SessionHeader />
       <div class="flex-1 min-h-0 flex flex-col md:flex-row">
         <Show when={!isDesktop() && !!params.id}>
