@@ -181,8 +181,11 @@ function StackedBars(props: { usage: Usage; slices: ModelSlice[]; color: (slice:
                       style={{
                         height: `${Math.max((segment.output / max()) * 100, 1.5)}%`,
                         background: props.color(slice()),
-                        // 圆角只给最上面那段的顶端，底端贴基线
-                        "border-radius": index() === 0 ? "0 0 0 0" : "0",
+                        // 260901 cc 圆角只给整根柱子的**顶端**，底端必须贴平基线——
+                        //   两头都圆会让柱子看起来浮在轴线上方，读数就不准了。
+                        //   段是 justify-end 从上往下排的，所以 index 0 是最上面那段。
+                        //   （上一版这里写的是 "0 0 0 0"，等于没有圆角，是个漏改。）
+                        "border-radius": index() === 0 ? "3px 3px 0 0" : "0",
                       }}
                     />
                   )
@@ -301,11 +304,15 @@ function HomeUsagePanelInner(props: { directory: string | undefined }) {
       {(data) => (
         // 260901 cc 面与侧边栏取同一套：bg-layer-01 + data-frost-surface（CSS 规则并在
         //   index.css 里的同一个选择器上）+ rounded-pane + floating 阴影。bg-base 是实色，
-        //   铺在壁纸上太闷，这也是他说「太深」的原因。
-        //   max-w 收住宽度：8 个指标块横跨整个主区，每格几百像素装一个三位数，稀得发慌。
+        //   铺在壁纸上太闷，这是他说「太深」的原因。
+        //
+        //   宽度 460px：与会话看板并排同高。走过两个极端——880px 横跨主区太稀
+        //   （八个格子各装一个三位数）、340px 窄列又太挤（指标块只剩两列、热力图要横滚，
+        //   他的说法是「原来的长方形更有美感」）。460px 下指标块两列成方阵，
+        //   圆环与热力图仍能同行，整体还是横向长方形。
         <div
           data-frost-surface="home-usage"
-          class="mb-4 flex w-full max-w-[880px] flex-col gap-3 rounded-pane border border-v2-border-border-base bg-v2-background-bg-layer-01 p-3 shadow-[var(--v2-elevation-floating)]"
+          class="flex w-[460px] shrink-0 flex-col gap-3 self-start rounded-pane border border-v2-border-border-base bg-v2-background-bg-layer-01 p-3 shadow-[var(--v2-elevation-floating)]"
         >
           <div class="flex flex-wrap items-center gap-2">
             <Segmented
@@ -347,13 +354,12 @@ function HomeUsagePanelInner(props: { directory: string | undefined }) {
                   {t("home.stats.cost")} {formatter().cost(ring().costCNY, "CNY")}
                 </span>
               </div>
-              {/* 热力图跟圆环同一行、靠右吃掉剩余宽度 —— 原先它独占一行缩在左下角，
-                  而八个指标块横跨全宽各装一个三位数，整块面板显得又大又空。 */}
+              {/* 热力图跟圆环同一行、靠右吃掉剩余宽度 */}
               <div class="ml-auto min-w-0 overflow-hidden">
                 <Heatmap usage={data()} dark={dark()} formatNumber={number} />
               </div>
             </div>
-            <div class="grid gap-2 grid-cols-2 sm:grid-cols-4">
+            <div class="grid grid-cols-2 gap-2">
               <div class={TILE}>
                 <span class={TILE_LABEL}>{t("home.usage.tile.sessions")}</span>
                 <span class={TILE_VALUE}>{number(data().sessions)}</span>

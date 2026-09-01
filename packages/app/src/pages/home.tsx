@@ -356,11 +356,13 @@ function HomeDesign() {
             />
           </div>
         </div>
-        <div class="mt-3 overflow-auto flex-1">
-          {/* 260901 cc 用量看板放在会话看板**上方**。我原本主张放下面，理由是「不该让人先滚
-              一屏才够到会话」——他用 RedCode（会话最多的工作区）当场证伪：它完全放得下，
-              其余项目更放得下，那条理由不成立。放在同一个滚动容器里，不占固定高度。 */}
+        {/* 260901 cc 用量看板与会话看板**并排同高**。
+            改在这一层而不是塞进 HomeKanban：看板自己是个 flex 行（home-kanban.tsx:87），
+            但它只在 kanban 视图下渲染，塞进去列表视图就没有面板了；放外层两种视图都成立。
+            面板 self-start，只占自己那点高度；右侧内容区独立滚动。 */}
+        <div class="mt-3 flex min-h-0 flex-1 gap-3">
           <HomeUsagePanel directory={selectedProject()?.worktree} />
+          <div class="flex min-w-0 flex-1 flex-col overflow-auto">
           <Show when={!sessionLoad.isLoading} fallback={<HomeSessionSkeleton label={language.t("common.loading")} />}>
             <Show
               when={records().length > 0}
@@ -432,6 +434,7 @@ function HomeDesign() {
               </Switch>
             </Show>
           </Show>
+          </div>
         </div>
       </section>
       {/* 260709 Red 首页底部快捷键提示条 */}

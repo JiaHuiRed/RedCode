@@ -83,16 +83,18 @@ export function HomeKanban(props: {
     return "var(--v2-text-text-muted, var(--text-weak))"
   }
 
+  // 260901 cc 间距整体收一档（gap-4→3、px-4→2、列宽 220→200、卡片网格 340→300）：
+  // 用量看板搬到左侧与看板并排之后，横向预算少了 460px，这些外围留白是最先该让出来的。
   return (
-    <div class="flex gap-4 min-h-0 overflow-x-auto overflow-y-hidden flex-1 px-4 pb-4">
+    <div class="flex gap-3 min-h-0 overflow-x-auto overflow-y-hidden flex-1 px-2 pb-4">
       <For each={columns()}>
         {(column) => (
           // 260828 cc 空列不再与有内容的列等宽。原来每列都是 `flex-1`：宽窗口下
           // 「工作中」「需关注」各占三分之一全是虚线占位，唯一有内容的列被挤在剩下的
           // 三分之一里。改成空列只占最小宽度、不参与 grow，横向空间全给有内容的列。
           <div
-            class="flex flex-col min-w-[220px] gap-3"
-            style={{ flex: column.records.length > 0 ? "1 1 0%" : "0 1 220px" }}
+            class="flex flex-col min-w-[200px] gap-3"
+            style={{ flex: column.records.length > 0 ? "1 1 0%" : "0 1 200px" }}
           >
             <div class="flex items-center gap-2 px-2 h-7 shrink-0">
               <div class="size-2 rounded-full" style={{ "background-color": columnColor(column.id) }} />
@@ -117,7 +119,7 @@ export function HomeKanban(props: {
                 负横边距只伸进外层那圈 px-4 的 padding 里（overflow 裁在 padding 盒，padding
                 区不裁），所以首列与末列都不会被行容器切掉。
                 已知代价：网格比列宽 16px，auto-fill 的列数会在极窄的临界宽度上提前跳一档。 */}
-             <div class="overflow-y-auto flex-1 pt-2 -mt-2 px-2 -mx-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden grid grid-cols-[repeat(auto-fill,minmax(340px,1fr))] gap-2.5 auto-rows-min content-start">
+             <div class="overflow-y-auto flex-1 pt-2 -mt-2 px-2 -mx-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-2.5 auto-rows-min content-start">
               <Show
                 when={column.records.length > 0}
                 fallback={
