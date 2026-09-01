@@ -20,23 +20,23 @@ beforeEach(() => {
 
 describe("theme preload", () => {
   test("migrates legacy oc-1 to oc-2 before mount", () => {
-    localStorage.setItem("RedCode-theme-id", "oc-1")
-    localStorage.setItem("RedCode-theme-css-light", "--background-base:#fff;")
-    localStorage.setItem("RedCode-theme-css-dark", "--background-base:#000;")
+    localStorage.setItem("redcode-theme-id", "oc-1")
+    localStorage.setItem("redcode-theme-css-light", "--background-base:#fff;")
+    localStorage.setItem("redcode-theme-css-dark", "--background-base:#000;")
 
     run()
 
     expect(document.documentElement.dataset.theme).toBe("oc-2")
     expect(document.documentElement.dataset.colorScheme).toBe("light")
-    expect(localStorage.getItem("RedCode-theme-id")).toBe("oc-2")
-    expect(localStorage.getItem("RedCode-theme-css-light")).toBeNull()
-    expect(localStorage.getItem("RedCode-theme-css-dark")).toBeNull()
+    expect(localStorage.getItem("redcode-theme-id")).toBe("oc-2")
+    expect(localStorage.getItem("redcode-theme-css-light")).toBeNull()
+    expect(localStorage.getItem("redcode-theme-css-dark")).toBeNull()
     expect(document.getElementById("oc-theme-preload")).toBeNull()
   })
 
   test("keeps cached css for non-default themes", () => {
-    localStorage.setItem("RedCode-theme-id", "nightowl")
-    localStorage.setItem("RedCode-theme-css-light", "--background-base:#fff;")
+    localStorage.setItem("redcode-theme-id", "nightowl")
+    localStorage.setItem("redcode-theme-css-light", "--background-base:#fff;")
 
     run()
 

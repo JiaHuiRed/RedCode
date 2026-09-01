@@ -6,7 +6,7 @@ describe("authFromToken", () => {
     expect(authFromToken(btoa("kit:secret"))).toEqual({ username: "kit", password: "secret" })
   })
 
-  test("defaults blank username to RedCode", () => {
+  test("defaults blank username to redcode", () => {
     expect(authFromToken(btoa(":secret"))).toEqual({ username: "redcode", password: "secret" })
   })
 
@@ -18,6 +18,6 @@ describe("authFromToken", () => {
 
 describe("authTokenFromCredentials", () => {
   test("encodes credentials with the default username", () => {
-    expect(authTokenFromCredentials({ password: "secret" })).toBe(btoa("RedCode:secret"))
+    expect(authTokenFromCredentials({ password: "secret" })).toBe(btoa("redcode:secret"))
   })
 })
