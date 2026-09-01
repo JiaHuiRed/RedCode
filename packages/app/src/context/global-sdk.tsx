@@ -2,7 +2,7 @@ import type { Event } from "@redcode-ai/sdk/v2/client"
 import { createSimpleContext } from "@redcode-ai/ui/context"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import { batch, onCleanup, onMount } from "solid-js"
+import { batch, createSignal, onCleanup, onMount } from "solid-js"
 import { createSdkForServer } from "@/utils/server"
 import { useLanguage } from "./language"
 import { usePlatform } from "./platform"
@@ -50,6 +50,9 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
     const RECONNECT_BASE_MS = 256
     const RECONNECT_MAX_MS = 2000
     let reconnectDelay = RECONNECT_BASE_MS
+
+    // 260901 cc 连接活性对外可见，与 server-sdk 同构。理由见那边的注释。
+    const [connection, setConnection] = createSignal<"connecting" | "live" | "reconnecting">("connecting")
 
     let queue: Queued[] = []
     let buffer: Queued[] = []
@@ -158,6 +161,7 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
               },
             })
             reconnectDelay = RECONNECT_BASE_MS
+            setConnection("live")
             let yielded = Date.now()
             resetHeartbeat()
             for await (const event of events.stream) {
@@ -207,6 +211,7 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
 
           // 260706 Red: 记录断连原因，区分正常结束 vs 心跳超时 vs 网络错误
           if (!abort.signal.aborted && started) {
+            setConnection("reconnecting")
             const sinceLastEvent = Date.now() - lastEventAt
             console.warn("[global-sdk] stream ended, reconnecting", {
               url: currentServer.http.url,
@@ -267,6 +272,8 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
         on: emitter.on.bind(emitter),
         listen: emitter.listen.bind(emitter),
         start,
+        /** 事件流活性，与 server-sdk 同构。 */
+        connection,
       },
       createClient(opts: Omit<Parameters<typeof createSdkForServer>[0], "server" | "fetch">) {
         const s = server.current

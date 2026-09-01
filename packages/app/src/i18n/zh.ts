@@ -635,6 +635,7 @@ export const dict = {
   "session.header.open.copyPath": "复制路径",
 
   "status.popover.trigger": "状态",
+  "status.connection.reconnecting": "状态 - 事件流已断开，正在重连",
   "status.popover.ariaLabel": "服务器配置",
   "status.popover.tab.servers": "服务器",
   "status.popover.tab.mcp": "MCP",

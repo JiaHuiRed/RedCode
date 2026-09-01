@@ -233,8 +233,20 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
     return undefined
   }
 
+  // 260901 cc 未确认消息要在界面上看得出来。
+  //
+  // 「已发出待确认」和「已落库」此前长得一模一样，所以发送失败看起来就像发送成功——
+  // 哥哥 08-31 在家那次，消息一直挂在界面上，其实从头到尾没离开过浏览器。
+  //
+  // 判据不用新造：optimistic 表里还在 = 服务端尚未回吐这条消息（mergeOptimisticPage 算出
+  // confirmed 后就会把它清掉）。这里只是把那个既有事实做成响应式的，供渲染层读。
+  // 上面那个 optimistic 是普通 Map，不是响应式的，所以另开一份而不是改它的形态——
+  // 它被合并逻辑按值遍历，换成 store 会牵动那一片，得不偿失。
+  const [pending, setPending] = createStore<Record<string, true>>({})
+
   const setOptimistic = (directory: string, sessionID: string, item: OptimisticItem) => {
     const key = keyFor(directory, sessionID)
+    setPending(item.message.id, true)
     const list = optimistic.get(key)
     if (list) {
       list.set(item.message.id, { message: item.message, parts: sortParts(item.parts) })
@@ -246,12 +258,15 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
   const clearOptimistic = (directory: string, sessionID: string, messageID?: string) => {
     const key = keyFor(directory, sessionID)
     if (!messageID) {
+      // 整会话清空：把这一份里的 id 全部退出 pending，别留孤儿键。
+      for (const id of optimistic.get(key)?.keys() ?? []) setPending(id, undefined!)
       optimistic.delete(key)
       return
     }
 
     const list = optimistic.get(key)
     if (!list) return
+    setPending(messageID, undefined!)
     list.delete(messageID)
     if (list.size === 0) optimistic.delete(key)
   }
@@ -433,6 +448,10 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
           const [, setStore] = target(input.directory)
           clearOptimistic(_directory, input.sessionID, input.messageID)
           setOptimisticRemove(setStore as (...args: unknown[]) => void, input)
+        },
+        /** 这条消息是否还没被服务端确认。见 setOptimistic 上方的注释。 */
+        isPending(messageID: string) {
+          return pending[messageID] === true
         },
       },
       addOptimisticMessage(input: {

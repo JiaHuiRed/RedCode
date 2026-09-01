@@ -1369,7 +1369,15 @@ export function MessageTimeline(props: {
           <TimelineRowFrame row={userMessageRow}>
             <Show when={message()}>
               {(message) => (
-                <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
+                // 260901 cc 未确认的消息压一档不透明度：此前「已发出待确认」和「已落库」
+                // 长得一模一样，发送失败看起来就跟成功一样（哥哥 08-31 在家那次，消息一直
+                // 挂在界面上，其实从没离开过浏览器）。服务端回吐这条消息后 optimistic 表被
+                // 清掉，它自然转正。是静态的一档差，不是动画——周期性闪动明确不要。
+                <div
+                  data-slot="session-turn-message-container"
+                  class="w-full px-4 md:px-5"
+                  classList={{ "opacity-60": sync.session.optimistic.isPending(userMessageRow().userMessageID) }}
+                >
                   <div data-slot="session-turn-message-content" aria-live="off">
                     <Message
                       message={message()}

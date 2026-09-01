@@ -2,6 +2,7 @@ import { Button } from "@redcode-ai/ui/button"
 import { Icon } from "@redcode-ai/ui/icon"
 import { Popover } from "@redcode-ai/ui/popover"
 import { Suspense, createMemo, createSignal, lazy, Show } from "solid-js"
+import { useGlobalSDK } from "@/context/global-sdk"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
 import { useSync } from "@/context/sync"
@@ -13,6 +14,7 @@ export function StatusPopover(props: { openInPanel?: () => void }) {
   const language = useLanguage()
   const server = useServer()
   const sync = useSync()
+  const globalSDK = useGlobalSDK()
   const [shown, setShown] = createSignal(false)
   const ready = createMemo(() => server.healthy() === false || sync.data.mcp_ready)
   const mcpIssue = createMemo(() => {
@@ -24,6 +26,21 @@ export function StatusPopover(props: { openInPanel?: () => void }) {
   })
   const healthy = createMemo(() => server.healthy() === true && !mcpIssue())
 
+  // 260901 cc 事件流断线要在标题栏可见。
+  //
+  // 为什么不能只靠 server.healthy()：那是独立的 HTTP 轮询，跟承载会话更新的 SSE 流是两条路。
+  // 哥哥 08-31 在家遇到的那次，流还活着（看得见模型继续跑）但请求全挂——反过来也成立：
+  // 流断了而健康检查还通，界面照样是绿的、却收不到任何更新。轮询那侧还有个 busy 重入锁
+  // 无超时的问题（一次挂住就再也不更新，见 context/server.tsx），所以它不能当唯一信号。
+  //
+  // 归到 warning 档而不是 critical：断开的瞬间就在重连（指数退避 256ms→2s），多数情况几秒
+  // 内自愈，标红会制造恐慌。不加脉冲动画——周期性闪动是明确不要的。
+  const streamDown = createMemo(() => globalSDK.event.connection() === "reconnecting")
+
+  // 颜色之外还要有文字：无障碍读屏与 hover 提示都靠它，光靠一个色点不算「可见」。
+  const triggerLabel = () =>
+    streamDown() ? language.t("status.connection.reconnecting") : language.t("status.popover.trigger")
+
   const dot = (open: boolean) => (
     <div class="relative size-4">
       <div class="badge-mask-tight size-4 flex items-center justify-center">
@@ -32,8 +49,10 @@ export function StatusPopover(props: { openInPanel?: () => void }) {
       <div
         classList={{
           "absolute -top-px -right-px size-1.5 rounded-full": true,
-          "bg-icon-success-base": ready() && healthy(),
-          "bg-icon-warning-base": ready() && server.healthy() === true && mcpIssue() === "warning",
+          "bg-icon-success-base": ready() && healthy() && !streamDown(),
+          "bg-icon-warning-base":
+            (ready() && server.healthy() === true && mcpIssue() === "warning") ||
+            (ready() && server.healthy() === true && streamDown()),
           "bg-icon-critical-base":
             server.healthy() === false || (ready() && server.healthy() === true && mcpIssue() === "critical"),
           "bg-border-weak-base": server.healthy() === undefined || !ready(),
@@ -54,7 +73,7 @@ export function StatusPopover(props: { openInPanel?: () => void }) {
           triggerProps={{
             variant: "ghost",
             class: "titlebar-icon w-8 h-6 p-0 box-border",
-            "aria-label": language.t("status.popover.trigger"),
+            "aria-label": triggerLabel(),
             style: { scale: 1 },
           }}
           trigger={dot(shown())}
@@ -79,7 +98,7 @@ export function StatusPopover(props: { openInPanel?: () => void }) {
         <Button
           variant="ghost"
           class="titlebar-icon w-8 h-6 p-0 box-border"
-          aria-label={language.t("status.popover.trigger")}
+          aria-label={triggerLabel()}
           style={{ scale: 1 }}
           onClick={() => open()()}
         >

@@ -2,7 +2,7 @@ import type { Event } from "@redcode-ai/sdk/v2/client"
 import { createSimpleContext } from "@redcode-ai/ui/context"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import { batch, onCleanup, onMount } from "solid-js"
+import { batch, createSignal, onCleanup, onMount } from "solid-js"
 import { createSdkForServer } from "@/utils/server"
 import { useLanguage } from "./language"
 import { usePlatform } from "./platform"
@@ -125,6 +125,12 @@ function createServerSdkContext(server: ServerConnection.Any) {
   const RECONNECT_MAX_MS = 2000
   let reconnectDelay = RECONNECT_BASE_MS
 
+  // 260901 cc 连接活性对外可见。重连逻辑本身早就齐全（心跳 + 退避 + abort），缺的只是
+  // 它从不把状态吐给界面——断连信号全进了 console.warn。哥哥 08-31 在家遇到的那次
+  // 「她还在跑但我发不出消息、面板全空」，界面上没有任何地方会变，就是缺这一格。
+  // 三态而不是布尔：断开的瞬间就重连，"reconnecting" 才是用户实际看到的那个状态。
+  const [connection, setConnection] = createSignal<"connecting" | "live" | "reconnecting">("connecting")
+
   const start = () => {
     if (started) return run
     started = true
@@ -144,7 +150,9 @@ function createServerSdkContext(server: ServerConnection.Any) {
               if (aborted(error)) return
               if (streamErrorLogged) return
               streamErrorLogged = true
-              console.error("[global-sdk] event stream error", {
+              // 260901 cc 标签原本写的是 [global-sdk]，是从 global-sdk.tsx 抄过来时漏改的。
+              // 两个文件各有一份几乎相同的重连循环，日志串台正好在排查断连时误导人。
+              console.error("[server-sdk] event stream error", {
                 url: server.http.url,
                 fetch: eventFetch ? "platform" : "webview",
                 error,
@@ -152,6 +160,7 @@ function createServerSdkContext(server: ServerConnection.Any) {
             },
           })
           reconnectDelay = RECONNECT_BASE_MS
+          setConnection("live")
           let yielded = Date.now()
           resetHeartbeat()
           for await (const event of events.stream) {
@@ -187,7 +196,7 @@ function createServerSdkContext(server: ServerConnection.Any) {
         } catch (error) {
           if (!aborted(error) && !streamErrorLogged) {
             streamErrorLogged = true
-            console.error("[global-sdk] event stream failed", {
+            console.error("[server-sdk] event stream failed", {
               url: server.http.url,
               fetch: eventFetch ? "platform" : "webview",
               error,
@@ -200,6 +209,8 @@ function createServerSdkContext(server: ServerConnection.Any) {
         }
 
         if (abort.signal.aborted || !started) return
+
+        setConnection("reconnecting")
 
         // 260706 Red: 记录断连原因
         const sinceLastEvent = Date.now() - lastEventAt
@@ -253,6 +264,8 @@ function createServerSdkContext(server: ServerConnection.Any) {
       on: emitter.on.bind(emitter),
       listen: emitter.listen.bind(emitter),
       start,
+      /** 事件流活性。界面据此显示断连提示，见 260901 那条注释。 */
+      connection,
     },
     createClient(opts: Omit<Parameters<typeof createSdkForServer>[0], "server" | "fetch">) {
       return createSdkForServer({
