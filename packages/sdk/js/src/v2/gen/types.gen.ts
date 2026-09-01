@@ -6388,6 +6388,71 @@ export type SessionCreateResponses = {
 
 export type SessionCreateResponse = SessionCreateResponses[keyof SessionCreateResponses]
 
+export type SessionUsageData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    range?: "all" | "30d" | "7d"
+  }
+  url: "/session/usage"
+}
+
+export type SessionUsageErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type SessionUsageError = SessionUsageErrors[keyof SessionUsageErrors]
+
+export type SessionUsageResponses = {
+  /**
+   * Usage aggregates for the current project
+   */
+  200: {
+    range: "all" | "30d" | "7d"
+    sessions: number
+    messages: number
+    tokens: {
+      input: number
+      output: number
+      reasoning: number
+      cacheRead: number
+      cacheWrite: number
+    }
+    cost: number
+    activeDays: number
+    currentStreak: number
+    longestStreak: number
+    peakHour?: number
+    daily: Array<{
+      day: string
+      messages: number
+      output: number
+      cost: number
+    }>
+    models: Array<{
+      providerID: string
+      modelID: string
+      messages: number
+      input: number
+      output: number
+      cost: number
+    }>
+    dailyByModel: Array<{
+      day: string
+      providerID: string
+      modelID: string
+      output: number
+    }>
+  }
+}
+
+export type SessionUsageResponse = SessionUsageResponses[keyof SessionUsageResponses]
+
 export type SessionStatusData = {
   body?: never
   path?: never

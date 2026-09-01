@@ -1,20 +1,15 @@
-// 260701 Red 首页左下角看板：跨 session 缓存效率环 + 累计花费。
-// 数据来源：session.cost / session.tokens 是每个 session 落库时已经 denormalize 好的汇总列
-// （见 packages/opencode/src/session/session.ts），前端已经把这些 session 对象加载好了，
-// 纯本地 reduce，不需要新起 server/IPC 通路。
-import { createMemo, For, Show } from "solid-js"
-import type { Session } from "@redcode-ai/sdk/v2/client"
-import { Tooltip } from "@redcode-ai/ui/tooltip"
-import { createSessionContextFormatter } from "@/components/session/session-context-format"
-import { useLanguage } from "@/context/language"
-import { useProviders } from "@/hooks/use-providers"
+// 260701 Red 跨 session 缓存效率环。
+// 260901 cc 原先它连着一个在侧边栏底部的面板，数据是前端对**已加载会话**的 reduce ——
+//   那意味着它显示的「累计花费」并不是累计（实测圆环 ¥253.68，而该项目 268 个会话的真实
+//   总额不是这个数）。面板已搬到主区并改用服务端聚合（home-usage.tsx），这里只留圆环本身。
+import { createMemo, For } from "solid-js"
 
 // 260615 与 session-context-format.ts 的 USD_TO_CNY 保持一致，把跨模型花费统一折算成 ¥ 展示
 // 260731 Karina 汇率 6.76 → 6.75（哥哥给定）
 // 260827 cc 汇率 6.75 → 6.72（哥哥给定）
-const USD_TO_CNY = 6.72
+export const USD_TO_CNY = 6.72
 
-type HomeStats = {
+export type HomeStats = {
   costCNY: number
   cacheRead: number
   cacheWrite: number
@@ -30,45 +25,6 @@ type ProviderDirectory = {
   models: Record<string, { cost?: { currency?: "USD" | "CNY" } } | undefined>
 }
 
-function aggregateHomeStats(sessions: Session[], providers: ProviderDirectory[]): HomeStats {
-  let costCNY = 0
-  let cacheRead = 0
-  let cacheWrite = 0
-  let cacheMiss = 0
-  let output = 0
-  let input = 0
-
-  for (const s of sessions) {
-    const cost = s.cost ?? 0
-    // 260827 Red 币种改读 model.cost.currency（CNY_PRICING 覆盖与 config.cost.currency 都会写标记），
-    // 退役 CNY_PROVIDERS 名单——与 session-context-metrics.ts 260827 改法一致：无标记 = USD 折算
-    const quoted =
-      s.model?.providerID && s.model?.id
-        ? providers.find((p) => p.id === s.model!.providerID)?.models[s.model!.id]?.cost?.currency
-        : undefined
-    const isCNY = quoted === "CNY"
-    costCNY += isCNY ? cost : cost * USD_TO_CNY
-
-    const t = s.tokens
-    if (!t) continue
-    cacheRead += t.cache.read ?? 0
-    cacheWrite += t.cache.write ?? 0
-    cacheMiss += t.cache.miss ?? 0
-    output += (t.output ?? 0) + (t.reasoning ?? 0)
-    input += t.input ?? 0
-  }
-
-  // 260707 Red fix: same either/or fallback bug as session-context-metrics.ts — miss tokens can be
-  // mislabeled into cache.write for DeepSeek depending on which raw metadata field the SDK response
-  // populated. miss and write never double-count the same tokens (cache.miss === tokens.input by
-  // construction), so sum all three instead of picking one and silently dropping the rest.
-  const miss = cacheMiss || input
-  const denom = cacheRead + miss + cacheWrite
-  const cacheHitPct = denom > 0 && cacheRead > 0 ? Math.round((cacheRead / denom) * 10000) / 100 : null
-
-  return { costCNY, cacheRead, cacheWrite, cacheMiss: miss, output, cacheHitPct }
-}
-
 const RING_SIZE = 56
 const RING_STROKE = 6
 const RING_CENTER = RING_SIZE / 2
@@ -78,7 +34,7 @@ const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
 // 强制给非零分段一个最小可视弧长——纯视觉兜底，tooltip 里的数字仍然精确
 const RING_MIN_ARC = 2.5
 
-const RING_SEGMENTS: {
+export const RING_SEGMENTS: {
   key: keyof Pick<HomeStats, "cacheRead" | "cacheWrite" | "cacheMiss" | "output">
   color: string
   label: "home.stats.tokens.read" | "home.stats.tokens.write" | "home.stats.tokens.miss" | "home.stats.tokens.output"
@@ -89,7 +45,7 @@ const RING_SEGMENTS: {
   { key: "output", color: "#d29922", label: "home.stats.tokens.output" },
 ]
 
-function StatsRing(props: { stats: HomeStats }) {
+export function StatsRing(props: { stats: HomeStats }) {
   const total = createMemo(
     () => props.stats.cacheRead + props.stats.cacheWrite + props.stats.cacheMiss + props.stats.output,
   )
@@ -138,54 +94,5 @@ function StatsRing(props: { stats: HomeStats }) {
         )}
       </For>
     </svg>
-  )
-}
-
-export function HomeStatsPanel(props: { sessions: Session[] }) {
-  const language = useLanguage()
-  const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
-  // 260827 Red 币种判定需要 provider 目录里的 model 报价（cost.currency），从全局 store 取
-  const providers = useProviders()
-  const stats = createMemo(() => aggregateHomeStats(props.sessions, [...providers.all().values()]))
-
-  const tooltipValue = () => {
-    const s = stats()
-    return (
-      <div>
-        <For each={RING_SEGMENTS}>
-          {(seg) => (
-            <div class="flex items-center gap-2">
-              <span class="inline-block size-2 rounded-full" style={{ background: seg.color }} />
-              <span class="text-text-invert-base">{language.t(seg.label)}</span>
-              <span class="text-text-invert-strong ml-auto">{formatter().number(s[seg.key])}</span>
-            </div>
-          )}
-        </For>
-      </div>
-    )
-  }
-
-  return (
-    <Show when={stats().cacheHitPct !== null || stats().costCNY > 0}>
-      <div class="mt-4 flex min-w-0 items-center gap-3 rounded-[6px] px-2 py-2">
-        <Tooltip value={tooltipValue()} placement="top">
-          <div class="relative flex shrink-0 items-center justify-center">
-            <StatsRing stats={stats()} />
-            <span class="absolute text-[10px] font-medium text-v2-text-text-base tabular-nums">
-              {stats().cacheHitPct !== null ? `${stats().cacheHitPct!.toFixed(2)}%` : "—"}
-            </span>
-          </div>
-        </Tooltip>
-        <div class="flex min-w-0 flex-col gap-0.5">
-          <span class="text-11-regular text-v2-text-text-muted">
-            {language.t("home.stats.cacheHit")}{" "}
-            {stats().cacheHitPct !== null ? `${stats().cacheHitPct!.toFixed(2)}%` : "—"}
-          </span>
-          <span class="text-12-regular text-v2-text-text-base [font-weight:530] tabular-nums">
-            {language.t("home.stats.cost")} {formatter().cost(stats().costCNY, "CNY")}
-          </span>
-        </div>
-      </div>
-    </Show>
   )
 }

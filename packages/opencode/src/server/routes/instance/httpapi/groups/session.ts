@@ -10,6 +10,7 @@ import { SessionRevert } from "@/session/revert"
 import { SessionStatus } from "@/session/status"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
+import * as SessionUsage from "@/session/usage"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { Snapshot } from "@/snapshot"
 import { Schema, Struct } from "effect"
@@ -43,6 +44,11 @@ export const MessagesQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
   limit: Schema.optional(Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))),
   before: Schema.optional(Schema.String),
+})
+// 260901 cc 首页用量看板的数据源。前端只加载了最近一批会话，算不出真·累计，见 usage.ts 文件头。
+export const UsageQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+  range: Schema.optional(SessionUsage.RangeSchema),
 })
 export const StatusMap = Schema.Record(Schema.String, SessionStatus.Info)
 export const UpdatePayload = Schema.Struct({
@@ -88,6 +94,7 @@ export const PermissionResponsePayload = Schema.Struct({
 export const SessionPaths = {
   list: root,
   status: `${root}/status`,
+  usage: `${root}/usage`,
   get: `${root}/:sessionID`,
   children: `${root}/:sessionID/children`,
   todo: `${root}/:sessionID/todo`,
@@ -133,6 +140,17 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.list",
             summary: "List sessions",
             description: "Get a list of all RedCode sessions, sorted by most recently updated.",
+          }),
+        ),
+        HttpApiEndpoint.get("usage", SessionPaths.usage, {
+          query: UsageQuery,
+          success: described(SessionUsage.Info, "Usage aggregates for the current project"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.usage",
+            summary: "Get project usage aggregates",
+            description:
+              "Aggregate token, cost and activity statistics for the current project, computed over the message table.",
           }),
         ),
         HttpApiEndpoint.get("status", SessionPaths.status, {

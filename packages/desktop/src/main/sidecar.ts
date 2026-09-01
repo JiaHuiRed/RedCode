@@ -1,4 +1,5 @@
 import { drizzle } from "drizzle-orm/node-sqlite/driver"
+import * as module from "node:module"
 import * as http from "node:http"
 import * as tls from "node:tls"
 import * as fs from "node:fs"
@@ -21,6 +22,36 @@ type StartCommand = {
   password: string
   userDataPath: string
   needsMigration: boolean
+}
+
+/**
+ * 给那个 20MB 的服务端 bundle 开 V8 编译缓存。
+ *
+ * 260901 cc `import virtual:redcode-server` 是启动里最大的单项，他机器上实测
+ * 1132 / 1183 / 1343 / 1777 ms，占 sidecar 就绪时间的 92%（剩下的 Server.listen 只要 100ms）。
+ * 那不是 I/O，是 V8 解析编译执行 20MB JS。
+ *
+ * 拿真实 bundle 做过冷热对照（Electron 42.4.1 自带 Node 24.16.0，enableCompileCache 可用）：
+ *   不开缓存        1245 / 1294 / 1312 ms
+ *   开缓存·首次冷   1403 ms   （多付约 110ms 写缓存）
+ *   开缓存·后续热   1035 / 1019 / 1149 ms
+ * 约省 260ms（20%），缓存 3.1MB / 131 个文件。省不掉更多是因为这 1.3 秒里大部分是模块
+ * **执行**而不是编译——编译缓存只能吃掉编译那部分，别指望它把 import 变成零。
+ *
+ * 必须在 `await import("virtual:redcode-server")` **之前**调用，静态 import 会被提升到
+ * 模块顶部、来不及。缓存目录名里带 Node 版本与内容哈希（v24.16.0-x64-17dfeeaa），
+ * 升级 Electron 或重新构建 bundle 会自然失效，不需要手工清。
+ *
+ * 失败一律吞掉：它纯粹是加速，任何原因不可用（磁盘只读、API 变动）都不该影响启动。
+ */
+function enableCompileCache(userDataPath: string) {
+  try {
+    const enable = (module as unknown as { enableCompileCache?: (dir: string) => unknown }).enableCompileCache
+    if (typeof enable !== "function") return
+    enable(path.join(userDataPath, "compile-cache"))
+  } catch {
+    // 加速失败不是错误
+  }
 }
 
 type StopCommand = { type: "stop" }
@@ -96,6 +127,7 @@ async function start(command: StartCommand) {
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
+    enableCompileCache(command.userDataPath)
     const { Database, JsonMigration, Log, Server } = await import("virtual:redcode-server")
     mark("import virtual:redcode-server")
     await Log.init({ level: "WARN" })

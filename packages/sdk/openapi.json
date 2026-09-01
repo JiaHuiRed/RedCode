@@ -5367,6 +5367,205 @@
         ]
       }
     },
+    "/session/usage": {
+      "get": {
+        "tags": ["session"],
+        "operationId": "session.usage",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "range",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["all", "30d", "7d"]
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Usage aggregates for the current project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "range": {
+                      "type": "string",
+                      "enum": ["all", "30d", "7d"]
+                    },
+                    "sessions": {
+                      "type": "number"
+                    },
+                    "messages": {
+                      "type": "number"
+                    },
+                    "tokens": {
+                      "type": "object",
+                      "properties": {
+                        "input": {
+                          "type": "number"
+                        },
+                        "output": {
+                          "type": "number"
+                        },
+                        "reasoning": {
+                          "type": "number"
+                        },
+                        "cacheRead": {
+                          "type": "number"
+                        },
+                        "cacheWrite": {
+                          "type": "number"
+                        }
+                      },
+                      "required": ["input", "output", "reasoning", "cacheRead", "cacheWrite"],
+                      "additionalProperties": false
+                    },
+                    "cost": {
+                      "type": "number"
+                    },
+                    "activeDays": {
+                      "type": "number"
+                    },
+                    "currentStreak": {
+                      "type": "number"
+                    },
+                    "longestStreak": {
+                      "type": "number"
+                    },
+                    "peakHour": {
+                      "type": "number"
+                    },
+                    "daily": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "day": {
+                            "type": "string"
+                          },
+                          "messages": {
+                            "type": "number"
+                          },
+                          "output": {
+                            "type": "number"
+                          },
+                          "cost": {
+                            "type": "number"
+                          }
+                        },
+                        "required": ["day", "messages", "output", "cost"],
+                        "additionalProperties": false
+                      }
+                    },
+                    "models": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "providerID": {
+                            "type": "string"
+                          },
+                          "modelID": {
+                            "type": "string"
+                          },
+                          "messages": {
+                            "type": "number"
+                          },
+                          "input": {
+                            "type": "number"
+                          },
+                          "output": {
+                            "type": "number"
+                          },
+                          "cost": {
+                            "type": "number"
+                          }
+                        },
+                        "required": ["providerID", "modelID", "messages", "input", "output", "cost"],
+                        "additionalProperties": false
+                      }
+                    },
+                    "dailyByModel": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "day": {
+                            "type": "string"
+                          },
+                          "providerID": {
+                            "type": "string"
+                          },
+                          "modelID": {
+                            "type": "string"
+                          },
+                          "output": {
+                            "type": "number"
+                          }
+                        },
+                        "required": ["day", "providerID", "modelID", "output"],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "range",
+                    "sessions",
+                    "messages",
+                    "tokens",
+                    "cost",
+                    "activeDays",
+                    "currentStreak",
+                    "longestStreak",
+                    "daily",
+                    "models",
+                    "dailyByModel"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Usage aggregates for the current project"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Aggregate token, cost and activity statistics for the current project, computed over the message table.",
+        "summary": "Get project usage aggregates",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.session.usage({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/session/status": {
       "get": {
         "tags": ["session"],

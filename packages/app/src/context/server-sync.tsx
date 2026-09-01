@@ -28,6 +28,7 @@ import {
   loadProviderCatalogQuery,
   loadProviderQuotaQuery,
   loadProvidersQuery,
+  loadUsageQuery,
 } from "./global-sync/bootstrap"
 import { createChildStoreManager } from "./global-sync/child-store"
 import { applyDirectoryEvent, applyGlobalEvent, cleanupDroppedSessionCaches } from "./global-sync/event-reducer"
@@ -86,6 +87,7 @@ function makeQueryOptionsApi(serverSDK: () => OpencodeClient, sdkFor: (dir: Path
     mcp: (directory: PathKey) => loadMcpQuery(directory, sdkFor(directory)),
     lsp: (directory: PathKey) => loadLspQuery(directory, sdkFor(directory)),
     sessions: (directory: PathKey) => ({ queryKey: [directory, "loadSessions"] as const }),
+    usage: (directory: PathKey, range: "all" | "30d" | "7d") => loadUsageQuery(directory, range, sdkFor(directory)),
   }
 }
 export type QueryOptionsApi = ReturnType<typeof makeQueryOptionsApi>
