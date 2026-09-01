@@ -9,6 +9,7 @@ import {
   ParentProps,
   Show,
   untrack,
+  Suspense,
 } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { useMatch, useNavigate, useParams } from "@solidjs/router"
@@ -1152,7 +1153,11 @@ export default function Layout(props: ParentProps) {
           style={{ "background-image": `url(${appBackground()})` }}
         />
       </Show>
-      {autoselecting() ?? ""}
+      {/* 260901 cc 常驻路径上最后一处「读 resource 只为触发挂起」的写法，而且它就在外壳里、
+          紧挨着 Titlebar——一挂起，连标题栏和侧边栏一起被应用级 Suspense 换成满屏 Splash。
+          本文件 1172 行其实已经在用正确写法（`!autoselecting.loading`，读 .loading 不挂起），
+          这一行是漏网的。就地兜住即可：它本来就不渲染任何东西。 */}
+      <Suspense>{autoselecting() ?? ""}</Suspense>
       <Titlebar update={titlebarUpdate} />
       <main
         class="relative z-[1] flex-1 min-h-0 min-w-0 overflow-x-hidden flex flex-col contain-strict bg-v2-background-bg-base"
