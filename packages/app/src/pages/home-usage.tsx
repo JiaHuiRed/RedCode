@@ -42,7 +42,11 @@ import {
 type Range = "all" | "30d" | "7d"
 const RANGES: Range[] = ["all", "30d", "7d"]
 
-const TILE = "flex min-w-0 flex-col gap-0.5 rounded-[6px] border border-v2-border-border-base px-3 py-2"
+// 260901 cc 边线看着「太淡」的根因不是 token 太浅——会话卡（home-kanban.tsx:199）用的是
+//   同一个 border token，但它还带 bg-v2-background-bg-base。只有描边没有面，就会浮在壁纸上
+//   只剩一条发丝线。这里跟会话卡取同一套：面 + 同样的边，观感自然对齐。
+const TILE =
+  "flex min-w-0 flex-col gap-0.5 rounded-[6px] border border-v2-border-border-base bg-v2-background-bg-base px-2.5 py-1.5"
 const TILE_LABEL = "text-11-regular text-v2-text-text-muted truncate"
 const TILE_VALUE = "text-14-normal [font-weight:530] text-v2-text-text-base tabular-nums truncate"
 
@@ -266,7 +270,7 @@ export function HomeUsagePanel(props: { directory: string | undefined }) {
   return (
     <Show when={usage()}>
       {(data) => (
-        <div class="mt-6 flex flex-col gap-4 rounded-[10px] border border-v2-border-border-base p-4">
+        <div class="mt-6 flex flex-col gap-3 rounded-[8px] border border-v2-border-border-base bg-v2-background-bg-base p-3">
           <div class="flex flex-wrap items-center gap-2">
             <Segmented
               value={tab()}
@@ -307,8 +311,13 @@ export function HomeUsagePanel(props: { directory: string | undefined }) {
                   {t("home.stats.cost")} {formatter().cost(ring().costCNY, "CNY")}
                 </span>
               </div>
+              {/* 热力图跟圆环同一行、靠右吃掉剩余宽度 —— 原先它独占一行缩在左下角，
+                  而八个指标块横跨全宽各装一个三位数，整块面板显得又大又空。 */}
+              <div class="ml-auto min-w-0 overflow-hidden">
+                <Heatmap usage={data()} dark={dark()} formatNumber={number} />
+              </div>
             </div>
-            <div class="grid gap-2 grid-cols-2 sm:grid-cols-4">
+            <div class="grid gap-2 grid-cols-2 sm:grid-cols-4 xl:grid-cols-8">
               <div class={TILE}>
                 <span class={TILE_LABEL}>{t("home.usage.tile.sessions")}</span>
                 <span class={TILE_VALUE}>{number(data().sessions)}</span>
@@ -344,7 +353,6 @@ export function HomeUsagePanel(props: { directory: string | undefined }) {
                 </span>
               </div>
             </div>
-            <Heatmap usage={data()} dark={dark()} formatNumber={number} />
           </Show>
 
           <Show when={tab() === "models"}>
