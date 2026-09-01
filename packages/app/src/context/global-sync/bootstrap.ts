@@ -223,6 +223,20 @@ export const loadProviderCatalogQuery = (sdk: OpencodeClient) =>
     queryFn: () => retry(() => sdk.provider.list().then((x) => normalizeProviderList(x.data!))),
   })
 
+/**
+ * 项目用量聚合。260901 cc 首页看板的数据源，见服务端 session/usage.ts。
+ *
+ * 走服务端而不是前端 reduce，是因为前端只有已加载的那批会话（首页 limit=114），
+ * 算不出真·累计。staleTime 给 60s：这是看板不是实时指标，会话结束后数字才有意义地变化，
+ * 每次切标签页都重拉一遍没必要。
+ */
+export const loadUsageQuery = (directory: string, range: "all" | "30d" | "7d", sdk: OpencodeClient) =>
+  queryOptions({
+    queryKey: [directory, "usage", range] as const,
+    staleTime: 60_000,
+    queryFn: () => retry(() => sdk.session.usage({ range }).then((x) => x.data!)),
+  })
+
 export const loadProviderQuotaQuery = (directory: string | null, sdk: OpencodeClient) =>
   queryOptions({
     queryKey: [directory, "providerQuota"],

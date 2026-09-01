@@ -30,7 +30,7 @@ import { tallySessionStatus } from "@/utils/session-status"
 import { pickGreetingKey } from "@/utils/greeting"
 import { sessionPermissionRequest } from "@/pages/session/composer/session-request-tree"
 import { HomeKanban } from "@/pages/home-kanban"
-import { HomeStatsPanel } from "@/pages/home-stats"
+import { HomeUsagePanel } from "@/pages/home-usage"
 
 // 260710 Red 上游从 15 提到 64，修复"只显示 5 个会话"
 const HOME_SESSION_LIMIT = 64
@@ -428,6 +428,9 @@ function HomeDesign() {
               </Switch>
             </Show>
           </Show>
+          {/* 260901 cc 用量看板放在会话卡的**同一个滚动容器**里：卡片少的时候它填满下面那片
+              空白，卡片多的时候它滚到下面去，不占卡片的固定高度。 */}
+          <HomeUsagePanel directory={selectedProject()?.worktree} />
         </div>
       </section>
       {/* 260709 Red 首页底部快捷键提示条 */}
@@ -598,8 +601,9 @@ function HomeProjectColumn(props: {
         </Show>
       </div>
       {/* 260709 Red 左栏底部吸底：StatsPanel + 设置按钮固定在左栏最下方，不随项目列表滚动 */}
+      {/* 260901 cc StatsPanel 搬到主区会话卡下方（HomeUsagePanel 里）——左栏 232px 放不下看板，
+          而主区会话卡以下本来就是一大片空白。这里只剩设置按钮。 */}
       <div class="mt-auto shrink-0">
-        <HomeStatsPanel sessions={props.statsSessions} />
         <div class="mt-2 flex min-w-0 flex-col gap-1">
           <button
             type="button"
