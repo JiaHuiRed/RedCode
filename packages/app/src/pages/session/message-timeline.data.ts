@@ -56,6 +56,15 @@ export namespace TimelineRow {
     reasoningHeading?: string
     // 260811 Red 思考计时：首个 reasoning part 的 time.start，用于动画行实时秒表
     startedAt?: number
+    /**
+     * 一个可渲染 part 都还没到 —— 这段是在等供应商的首 token，不是模型在想。
+     *
+     * 260901 cc 开着推理摘要时这行只在这段窗口里存在（条件就是
+     * assistantPartRefs.length === 0），首个 reasoning part 一落地它就消失、
+     * 换成推理块自己的「思考中/已思考」；关掉推理摘要时它横跨整个 busy。
+     * 两种设置下都按这个布尔分文案才说得准，否则等待期会被叫成「思考中」。
+     */
+    awaiting: boolean
   }> {}
   export class DiffSummary extends Data.TaggedClass("DiffSummary")<{
     userMessageID: string
@@ -288,6 +297,7 @@ export namespace Timeline {
           userMessageID: userMessage.id,
           reasoningHeading: heading,
           startedAt,
+          awaiting: assistantPartRefs.length === 0,
         }),
       )
     }

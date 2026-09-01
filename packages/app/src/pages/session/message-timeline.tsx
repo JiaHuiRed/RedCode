@@ -163,6 +163,7 @@ function TimelineThinkingRow(props: {
   reasoningHeading?: string
   showReasoningSummaries: boolean
   startedAt?: number
+  awaiting: boolean
 }) {
   const language = useLanguage()
   // 260811 Red 思考计时：动画行右侧实时秒表，起点为首个 reasoning part 的 time.start
@@ -180,7 +181,13 @@ function TimelineThinkingRow(props: {
   return (
     <div data-slot="session-turn-thinking" class="flex items-center gap-2">
       <img src="/mona-loading.gif" alt="loading" class="w-6 h-6 shrink-0" style={{ "image-rendering": "pixelated" }} />
-      <TextShimmer text={language.t("ui.sessionTurn.status.thinking")} />
+      {/* 260901 cc 一个 part 都没到的时候这行量的是「等供应商首 token」，叫「思考中」是错的
+          —— 真在想的时候下面推理块自己会写「思考中」，随后变「已思考」，两处撞名 */}
+      <TextShimmer
+        text={language.t(
+          props.awaiting ? "ui.sessionTurn.status.awaitingResponse" : "ui.sessionTurn.status.thinking",
+        )}
+      />
       <img src="/hamster.png" alt="" class="w-5 h-5 shrink-0 animate-hamster select-none" aria-hidden="true" />
       {/* 260608 Red 仓鼠改透明底直接平铺：原 mix-blend-mode:screen+深色盒在浅色主题会被洗白 */}
       <Show when={!props.showReasoningSummaries}>
@@ -1455,6 +1462,7 @@ export function MessageTimeline(props: {
                 reasoningHeading={thinkingRow().reasoningHeading}
                 showReasoningSummaries={settings.general.showReasoningSummaries()}
                 startedAt={thinkingRow().startedAt}
+                awaiting={thinkingRow().awaiting}
               />
             </div>
           </TimelineRowFrame>

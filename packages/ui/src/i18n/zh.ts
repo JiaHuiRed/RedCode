@@ -67,6 +67,7 @@ export const dict = {
   "ui.sessionTurn.status.searchingWeb": "正在搜索网页",
   "ui.sessionTurn.status.makingEdits": "正在修改",
   "ui.sessionTurn.status.runningCommands": "正在运行命令",
+  "ui.sessionTurn.status.awaitingResponse": "等待响应",
   "ui.sessionTurn.status.thinking": "思考中",
   "ui.sessionTurn.status.thinkingDone": "已思考",
   "ui.sessionTurn.status.thinkingWithTopic": "思考：{{topic}}",
