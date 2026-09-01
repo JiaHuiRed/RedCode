@@ -95,7 +95,15 @@ export function HomeKanban(props: {
           // 三分之一里。改成空列只占最小宽度、不参与 grow，横向空间全给有内容的列。
           <div
             class="flex flex-col min-w-[150px] gap-3"
-            style={{ flex: column.records.length > 0 ? "1 1 0%" : "0 1 150px" }}
+            // 260901 cc 增长权重按**内容量**给，不是有内容就平均分。
+            //   原来是 `1 1 0%`：「工作中」有 1 个会话、「空闲」有 24 个，两列拿到一样宽 ——
+            //   于是空闲被压成一列卡片，而工作中那一列大半是空白。
+            //   权重 = min(条数, 3)：1 条给 1、2 条给 2、3 条以上一律 3。封顶是必要的，
+            //   不封顶的话 24 : 1 会把「工作中」压到 min-w 的地板上，那一列就只剩一条缝。
+            //   空列仍然是 `0 1 150px`（不参与增长），这一档只在该列真的没有会话时生效。
+            style={{
+              flex: column.records.length > 0 ? `${Math.min(column.records.length, 3)} 1 0%` : "0 1 150px",
+            }}
           >
             <div class="flex items-center gap-2 px-2 h-7 shrink-0">
               <div class="size-2 rounded-full" style={{ "background-color": columnColor(column.id) }} />
