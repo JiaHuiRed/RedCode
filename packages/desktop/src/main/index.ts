@@ -72,7 +72,20 @@ function formatMetric(metric: ProcessMetric) {
   }
 }
 
+// 260901 cc 默认关掉，改成 REDCODE_METRICS=1 才开。
+//
+// 这套东西是 260706 为了排查「打开对话飙到 7G」临时加的取证工具，但它留在了常驻路径上、
+// 没有任何开关。代价在实测里是可见的：
+//   · 每 15 秒 spawn 一个 powershell.exe 跑 Get-CimInstance Win32_Process 拉全机进程表，
+//     本机实测单次 565-697ms 墙钟。常驻开着一天就是 5760 次进程创建（还各带一个 conhost），
+//     Windows 上每次还会触发 Defender 对镜像的扫描。
+//   · %APPDATA%\ai.redcode.desktop.dev\logs 整个目录 18MB，其中 17.5MB 是它写的
+//     （单个 metrics.log 最大 4.7MB）；其余所有日志加起来不到 500KB。
+// 取证能力没有删掉，需要时 REDCODE_METRICS=1 起一次就有。
+const METRICS_ENABLED = process.env.REDCODE_METRICS === "1"
+
 function startMetricsLogging() {
+  if (!METRICS_ENABLED) return
   if (metricsInterval) return
   metricsInterval = setInterval(() => {
     const metrics = app.getAppMetrics().map(formatMetric)

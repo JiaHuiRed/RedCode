@@ -41,7 +41,20 @@ export function initCrashReporter() {
   write("crash", "crash reporter started", { path: dir })
 }
 
+// 260901 cc 改成 REDCODE_NETLOG=1 才开。
+//
+// captureMode "default" 的语义是「记录全部事件」——每个 socket 事件、每次请求头、每个响应
+// chunk 的读取边界都要生成一条事件并序列化写盘。而这个应用的网络画像恰好是最坏情况：
+// 一条常驻 SSE 流，模型输出时每个 token 一条 SSE 消息。实测 4 分钟写掉 10.55MB。
+// 常驻开着不关的用法下这是一条永不停歇的后台写盘 + 网络栈插桩开销。
+//
+// 关掉不影响导出调试日志：exportDebugLogs 是靠 `netLog.currentlyLogging` 判断要不要重启的，
+// 没开就跳过；manifest 里的 netLog 字段是 undefined 会被 JSON.stringify 省掉；
+// network.netlog 本来就落在 run 目录里，由 collect(root) 顺带收，没有就没有。
+const NET_LOG_ENABLED = process.env.REDCODE_NETLOG === "1"
+
 export async function startNetLog() {
+  if (!NET_LOG_ENABLED) return
   if (netLog.currentlyLogging) return
   netLogPath = join(run, "network.netlog")
   await netLog.startLogging(netLogPath, { captureMode: "default", maxFileSize: NET_LOG_SIZE })
