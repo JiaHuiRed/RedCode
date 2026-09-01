@@ -21,7 +21,7 @@ import { AzureAuthPlugin } from "./azure"
 import { DigitalOceanAuthPlugin } from "./digitalocean"
 import { XaiAuthPlugin } from "./xai"
 import { SafeShellPlugin } from "./safe-shell"
-import { Effect, Layer, Context, Stream } from "effect"
+import { Effect, Exit, Layer, Context, Stream } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { errorMessage } from "@/util/error"
@@ -75,6 +75,15 @@ const INTERNAL_PLUGINS: PluginInstance[] = [
 // 260810 cc audit R5: hook 失败/超时日志要能报出是哪个插件——Hooks 对象本身无名，
 // 注册时在这里旁挂归属（内置插件用函数名，外置用 spec），零侵入 State 形状。
 const hookOwner = new WeakMap<Hooks, string>()
+
+/**
+ * 依赖安装等待是否已经超时过一次。见下方 waitForDependencies 那段的说明。
+ *
+ * 260901 cc 刻意是进程级而不是按目录：这个等待每个目录各走一次，开三个项目就付三次。
+ * 一旦第一次等超时，说明这台机器上依赖装不快（离线 / 代理 / 依赖没装全），后面几个目录
+ * 再等只是把首屏一次次拖住，等不出结果。整个进程降级一次，重启后重来。
+ */
+let depWaitTimedOut = false
 
 function isServerPlugin(value: unknown): value is PluginInstance {
   return typeof value === "function"
@@ -187,11 +196,28 @@ export const layer = Layer.effect(
         }
         // 260608 Red 依赖装在 npm registry，离线/代理失效会把这步拖到 ~37s 冻死首页（每个请求都过 bootstrap）。
         // 超时即放行，后台 fiber 继续装、本次插件降级加载，首页不再被网络拖死。
-        if (plugins.length)
-          yield* config.waitForDependencies().pipe(
-            Effect.timeout("15 seconds"),
-            Effect.catch(() => Effect.void),
-          )
+        //
+        // 260901 cc 15 秒 → 2 秒，并且**超时之后整个进程内不再等**。
+        //
+        //   打包版实测：首个项目的 session.list 花了 20721ms，猫猫加载页就是在等它
+        //   （renderer.log 的 `[timing] session.list`）。20.7s ≈ 这里的 15s + 其余实例
+        //   bootstrap 约 5.7s。触发条件是 ~/.redcode/package.json 里声明的依赖没装全 ——
+        //   Arborist reify 要去核对整棵树、走 registry，而 registry 在这台机器上要过代理。
+        //
+        //   为什么 2 秒够：依赖**已经装好**时 reify 是空转，2 秒绰绰有余；没装好时给多久
+        //   都没用（这一轮的插件注定降级加载），多等的每一秒都是白等在首屏上。
+        //   同一个判断此前用在 MCP 上（c7c86a4a 的 STARTUP_GRACE = 1500ms），一个道理。
+        //
+        //   waited 那个模块级开关是必须的：这段按**目录**走，开三个项目就是三次。
+        //   config 侧的 depInstallFailureAt 冷却只在 fiber 真的失败时才置位（reify 自己的
+        //   超时是 20s），比这里的等待还晚，救不了第二、第三个目录。
+        if (plugins.length && !depWaitTimedOut) {
+          const outcome = yield* config.waitForDependencies().pipe(Effect.timeout("2 seconds"), Effect.exit)
+          if (Exit.isFailure(outcome)) {
+            depWaitTimedOut = true
+            log.warn("dependency install still running, loading plugins degraded for this process")
+          }
+        }
 
         const loaded = yield* Effect.promise(() =>
           PluginLoader.loadExternal({
