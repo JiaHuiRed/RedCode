@@ -113,7 +113,7 @@ await Bun.build({
     outfile: `dist/${name}/bin/redcode`,
     execArgv: [`--user-agent=redcode/${Script.version}`, "--use-system-ca", "--"],
     windows: {
-      icon: path.resolve(dir, "../desktop/小鲸鱼.ico"),
+      icon: path.resolve(dir, "../desktop/赤.ico"),
     },
   },
   files: embeddedFileMap ? { "redcode-web-ui.gen.ts": embeddedFileMap } : {},
