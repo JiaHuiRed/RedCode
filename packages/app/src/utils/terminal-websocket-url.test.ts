@@ -16,7 +16,7 @@ describe("terminalWebSocketURL", () => {
     expect(url.protocol).toBe("ws:")
     expect(url.username).toBe("")
     expect(url.password).toBe("")
-    expect(url.searchParams.get("auth_token")).toBe(btoa("RedCode:secret"))
+    expect(url.searchParams.get("auth_token")).toBe(btoa("redcode:secret"))
   })
 
   test("omits query auth for same-origin saved credentials", () => {
@@ -47,6 +47,6 @@ describe("terminalWebSocketURL", () => {
     })
 
     expect(url.protocol).toBe("wss:")
-    expect(url.searchParams.get("auth_token")).toBe(btoa("RedCode:secret"))
+    expect(url.searchParams.get("auth_token")).toBe(btoa("redcode:secret"))
   })
 })
