@@ -66,6 +66,8 @@ import {
   type PromptHistoryEntry,
   type PromptHistoryStoredEntry,
   promptLength,
+  serializePromptHistory,
+  stripPromptHistoryImages,
 } from "./prompt-input/history"
 import { createPromptSubmit, type FollowupDraft } from "./prompt-input/submit"
 import { PromptPopover, type AtOption, type SlashCommand } from "./prompt-input/slash-popover"
@@ -341,8 +343,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return messages.some((m) => m.role === "user")
   })
 
+  // 260901 cc migrate + serialize 两个都要挂，见 history.ts 的 stripPromptHistoryImages：
+  //   serialize 管「以后别再写进去」，migrate 管「存量就地瘦身」。
+  //   这个 store 住在 Persist.global 共用的 RedCode.global.dat 里，它一胖，
+  //   layout / model / command.catalog 每一次写都跟着变贵。
   const [history, setHistory] = persisted(
-    Persist.global("prompt-history", ["prompt-history.v1"]),
+    {
+      ...Persist.global("prompt-history", ["prompt-history.v1"]),
+      migrate: stripPromptHistoryImages,
+      serialize: serializePromptHistory,
+    },
     createStore<{
       entries: PromptHistoryStoredEntry[]
     }>({
@@ -350,7 +360,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     }),
   )
   const [shellHistory, setShellHistory] = persisted(
-    Persist.global("prompt-history-shell", ["prompt-history-shell.v1"]),
+    {
+      ...Persist.global("prompt-history-shell", ["prompt-history-shell.v1"]),
+      migrate: stripPromptHistoryImages,
+      serialize: serializePromptHistory,
+    },
     createStore<{
       entries: PromptHistoryStoredEntry[]
     }>({
