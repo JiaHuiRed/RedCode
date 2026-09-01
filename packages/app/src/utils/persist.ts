@@ -661,10 +661,10 @@ export function persisted<T>(
       },
       // 见文件顶部 WRITE_DELAY_MS 的说明：合并同一个 key 的连续写，只落最后一版。
       setItem: async (key, value) => {
-        scheduleWrite(`${config.storage ?? ""} ${key}`, value, (latest) => current.setItem(key, latest))
+        scheduleWrite(`${config.storage ?? ""}\u0000${key}`, value, (latest) => current.setItem(key, latest))
       },
       removeItem: async (key) => {
-        cancelWrite(`${config.storage ?? ""} ${key}`)
+        cancelWrite(`${config.storage ?? ""}\u0000${key}`)
         await current.removeItem(key)
       },
     }
