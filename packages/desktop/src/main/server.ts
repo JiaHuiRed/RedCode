@@ -209,13 +209,21 @@ export async function spawnLocalServer(
       throw new Error(`Sidecar exited before health check passed with code ${code}`)
     })
 
+    // 260901 cc 先探一次再睡，别先睡再探。
+    //
+    // 这个循环是在收到 sidecar 的 "ready" 之后才开始跑的（上面那个 await new Promise
+    // 等的就是它），而 sidecar 是 `await Server.listen(...)` 成功之后才 postMessage("ready")
+    // 的（sidecar.ts:119 → :127）。也就是说循环启动时端口 100% 已经在监听，第一次
+    // checkHealth 必然成功 —— 原先那句放在循环头的 sleep(100) 是纯粹的固定损耗。
+    //
+    // 他打包版日志里 ready→healthy 的间隔：118 / 123 / 123 / 134 ms（五次），基本全是这 100ms。
     const ready = async () => {
       while (true) {
-        await new Promise((resolve) => setTimeout(resolve, 100))
         if (await checkHealth(url, password)) {
           healthy = true
           return
         }
+        await new Promise((resolve) => setTimeout(resolve, 100))
       }
     }
 
