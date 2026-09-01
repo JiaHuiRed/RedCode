@@ -14,7 +14,6 @@
 // **Electron 下必须是惰性的**：同一份 index.html 两边共用，检测不到 Tauri 就原样返回，
 // 绝不能覆盖 preload already 注入好的那个 api。
 import { invoke } from "@tauri-apps/api/core"
-import { marked } from "marked"
 import type { ElectronAPI, LinuxDisplayBackend } from "../preload/types"
 import type { TauriCommand, TauriCommandArgs, TauriCommandResult } from "./tauri-commands.generated"
 
@@ -119,6 +118,12 @@ async function install() {
     // markdown crate 会让 GFM 边缘行为与 Electron 版出现差异，而输出直接进 UI。
     // 当初放主进程是 Electron 时代的惯性，不是必要。
     parseMarkdownCommand: async (markdown: string) => {
+      // 260901 cc marked 改成用到才加载。这个模块在 index.html 里是排在 index.tsx **之前**
+      //   的阻塞 module 脚本（顶层 await，后面的脚本要等它评估完），而它在 Electron 下检测
+      //   不到 Tauri 就原样返回、整个 api 对象根本不装——也就是说这条路径在 Electron 上
+      //   永远不会被调用，marked 那 70KB 是纯粹的死重，却挡在应用入口前面被解析编译。
+      //   这个函数本来就是 async，改成动态 import 对 Tauri 侧行为零影响。
+      const { marked } = await import("marked")
       const renderer = new marked.Renderer()
       renderer.link = ({ href, title, text }: { href: string; title?: string | null; text: string }) =>
         `<a href="${href}"${title ? ` title="${title}"` : ""} class="external-link" target="_blank" rel="noopener noreferrer">${text}</a>`
