@@ -1,6 +1,12 @@
 # ⚡ RedCode
 
 <p align="center">
+  <img src="docs/assets/chi-portrait.webp" height="380" alt="RedCode 看板娘「赤」">
+</p>
+
+<p align="center"><sub><b>赤</b> — RedCode 的看板娘</sub></p>
+
+<p align="center">
   <img src="docs/assets/screenshot.png" width="720" alt="RedCode TUI 截图" style="border-radius: 8px;">
 </p>
 
