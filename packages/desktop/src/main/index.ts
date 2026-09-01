@@ -425,17 +425,28 @@ const main = Effect.gen(function* () {
   }
 
   const loadingComplete = Deferred.makeUnsafe<void>()
+  // 260901 cc sidecar 就绪信号。窗口现在早于 sidecar 创建（见下方 createMainWindow 那段），
+  //   所以 awaitInitialization 不能再立刻 resolve —— 渲染层拿到 url 就会去连，连早了必然失败。
+  const serverReady = Deferred.makeUnsafe<void>()
 
   registerIpcHandlers({
     killSidecar: () => killSidecar(),
-    awaitInitialization: (sendStep: (step: InitStep) => void) => {
+    // 260901 cc 原先这里是「注册 listener → 立刻注销 → 立刻 resolve」，那套 init-step 协议
+    //   等于是死的：窗口本来就建在 sidecar 就绪之后，第一次被调用时 initStep 早已是 done。
+    //   现在窗口早于 sidecar 出现，这条才真正开始承担它本来的职责：把启动进度推给渲染层，
+    //   并在 sidecar 真的好了之后才交出 url —— 提前交出去渲染层会连一个还没监听的端口。
+    awaitInitialization: async (sendStep: (step: InitStep) => void) => {
       sendStep(initStep)
       const listener = (step: InitStep) => sendStep(step)
       initEmitter.on("step", listener)
       logger.log("awaiting server ready")
+      try {
+        await Effect.runPromise(Deferred.await(serverReady))
+      } finally {
+        initEmitter.off("step", listener)
+      }
       logger.log("server ready", { url })
-      initEmitter.off("step", listener)
-      return Promise.resolve({ url, username: "redcode", password })
+      return { url, username: "redcode", password }
     },
     getWindowConfig: () => ({ updaterEnabled: UPDATER_ENABLED }),
     consumeInitialDeepLinks: () => pendingDeepLinks.splice(0),
@@ -552,9 +563,26 @@ const main = Effect.gen(function* () {
     logger.log("loading task finished")
   }).pipe(Effect.forkChild)
 
-  yield* Fiber.await(loadingTask)
-  setInitStep({ phase: "done" })
-
+  // 260901 cc 建窗提到等 sidecar **之前**。
+  //
+  // 他打包版的真实日志（两次一致）：
+  //   app starting            T+0
+  //   sidecar ready           T+1.49s
+  //   sidecar healthy         T+1.63s   ← 原先窗口到这一刻才被创建
+  //   awaiting server ready   T+2.07s   ← 渲染层自己只花了 0.44s
+  // 也就是说点了图标之后 1.6 秒屏幕上什么都没有，而这 1.6 秒里渲染进程根本还没被 fork，
+  // 主进程只是在等 sidecar 的 I/O。两件事之间没有依赖：sidecar 是独立的 utilityProcess，
+  // 渲染层拿 url/password 走的是 awaitInitialization 这条 IPC。
+  //
+  // 放在这个位置而不是更靠前，是因为 port/hostname/url/password（上面几十行）必须先算完 ——
+  // registerIpcHandlers 的闭包捕获的是这几个 const，窗口一旦早于它们创建，渲染层调
+  // await-initialization 就会撞 TDZ。这里已经在它们之后、loadingTask fork 之后，是最早的安全点。
+  //
+  // 配套两处缺一不可：
+  //   ① awaitInitialization 改成真的等 serverReady（原先立刻 resolve，因为那时 sidecar
+  //      必然已经好了）；
+  //   ② renderer/index.tsx 那个包住整个 UI 的 <Show> 必须补 fallback —— 它原先没有，
+  //      窗口提前出现会变成「1.4 秒空白窗」，比没窗口更糟（仓里 ca2eebea 打过一次这种黑窗）。
   mainWindow = createMainWindow()
   startMetricsLogging()
   if (mainWindow) {
@@ -574,6 +602,12 @@ const main = Effect.gen(function* () {
       },
     })
   }
+
+  // Fiber.await 仍然留在 main 的末尾，位置不能再往前收：loadingTask 是 Effect.forkChild，
+  // 生命周期挂在父 fiber 上，main 一结束它就会被打断。这里只是不再让**建窗**等它。
+  yield* Fiber.await(loadingTask)
+  setInitStep({ phase: "done" })
+  Deferred.doneUnsafe(serverReady, Effect.void)
 })
 
 Effect.runFork(main)

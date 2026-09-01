@@ -24,6 +24,7 @@ import { initI18n, t } from "./i18n"
 import { resetZoom, setPinchZoomEnabled, webviewZoom, zoomIn, zoomOut } from "./webview-zoom"
 import "./styles.css"
 import { useTheme } from "@redcode-ai/ui/theme"
+import { Splash } from "@redcode-ai/ui/logo"
 
 const root = document.getElementById("root")
 if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
@@ -389,7 +390,17 @@ render(() => {
   return (
     <PlatformProvider value={platform}>
       <AppBaseProviders locale={locale.latest}>
+        {/* 260901 cc 这个 Show 原先没有 fallback。以前无所谓——窗口本来就建在 sidecar 就绪
+            之后，第一次渲染时这五个条件早就全真了。现在主进程把建窗提到了等 sidecar 之前
+            （main/index.ts 的 createMainWindow 那段），窗口会在 sidecar 还没好时就出现，
+            没有 fallback 就是一个约 1.4 秒的**空白窗**，比「点了图标没反应」更糟。
+            用与 app.tsx:200 同一套 splash，保证两边观感一致。 */}
         <Show
+          fallback={
+            <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
+              <Splash class="w-16 h-20 opacity-50 animate-pulse" />
+            </div>
+          }
           when={
             !defaultServer.loading &&
             !sidecar.loading &&
