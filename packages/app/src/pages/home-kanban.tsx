@@ -83,8 +83,9 @@ export function HomeKanban(props: {
     return "var(--v2-text-text-muted, var(--text-weak))"
   }
 
-  // 260901 cc 间距整体收一档（gap-4→3、px-4→2、列宽 220→200、卡片网格 340→300）：
-  // 用量看板搬到左侧与看板并排之后，横向预算少了 460px，这些外围留白是最先该让出来的。
+  // 260901 cc 间距整体收一档（gap-4→3、px-4→2、空列 220→150、卡片网格 340→250）：
+  // 用量看板搬到左侧并排之后横向预算少了 620px，让出来的是外围留白与**空列**的宽度
+  // ——「工作中 0」「需关注 0」两列只装一个列头加一行淡字，150px 够用。
   return (
     <div class="flex gap-3 min-h-0 overflow-x-auto overflow-y-hidden flex-1 px-2 pb-4">
       <For each={columns()}>
@@ -93,8 +94,8 @@ export function HomeKanban(props: {
           // 「工作中」「需关注」各占三分之一全是虚线占位，唯一有内容的列被挤在剩下的
           // 三分之一里。改成空列只占最小宽度、不参与 grow，横向空间全给有内容的列。
           <div
-            class="flex flex-col min-w-[200px] gap-3"
-            style={{ flex: column.records.length > 0 ? "1 1 0%" : "0 1 200px" }}
+            class="flex flex-col min-w-[150px] gap-3"
+            style={{ flex: column.records.length > 0 ? "1 1 0%" : "0 1 150px" }}
           >
             <div class="flex items-center gap-2 px-2 h-7 shrink-0">
               <div class="size-2 rounded-full" style={{ "background-color": columnColor(column.id) }} />
@@ -119,7 +120,19 @@ export function HomeKanban(props: {
                 负横边距只伸进外层那圈 px-4 的 padding 里（overflow 裁在 padding 盒，padding
                 区不裁），所以首列与末列都不会被行容器切掉。
                 已知代价：网格比列宽 16px，auto-fill 的列数会在极窄的临界宽度上提前跳一档。 */}
-             <div class="overflow-y-auto flex-1 pt-2 -mt-2 px-2 -mx-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-2.5 auto-rows-min content-start">
+            {/* 260901 cc 封顶三列。auto-fill 只看「一格最少多宽」，宽窗口下会一直铺到四列。
+                做法是把每格的最小宽度抬到 max(250px, 容器的三分之一) —— 三分之一以下的宽度
+                永远塞不进第四格，而窄窗口下 250px 这一支仍然生效，会自然退成两列/一列。
+                单纯写死 grid-cols-3 不行：三列都有内容时每列只剩三分之一宽，卡片会被压扁。
+                地板从 300 降到 250：三列本来就比四列每格更宽，300 的地板会让整个看板占得更多，
+                而封顶三列的**目的**是把宽度让给左边的用量面板（见 home.tsx 的并排容器）。
+                grid-template-columns 走 style 而不是 Tailwind 任意值：这个值里有空格和括号，
+                任意值语法要靠下划线转义，写错了不会报错、只会静默退化成一列。
+                减的是 gap-2.5 的两条缝（0.625rem × 2）。 */}
+            <div
+              class="overflow-y-auto flex-1 pt-2 -mt-2 px-2 -mx-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden grid gap-2.5 auto-rows-min content-start"
+              style={{ "grid-template-columns": "repeat(auto-fill,minmax(max(250px,(100% - 1.25rem)/3),1fr))" }}
+            >
               <Show
                 when={column.records.length > 0}
                 fallback={

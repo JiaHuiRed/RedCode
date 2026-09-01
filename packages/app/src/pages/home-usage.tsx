@@ -306,13 +306,14 @@ function HomeUsagePanelInner(props: { directory: string | undefined }) {
         //   index.css 里的同一个选择器上）+ rounded-pane + floating 阴影。bg-base 是实色，
         //   铺在壁纸上太闷，这是他说「太深」的原因。
         //
-        //   宽度 460px：与会话看板并排同高。走过两个极端——880px 横跨主区太稀
-        //   （八个格子各装一个三位数）、340px 窄列又太挤（指标块只剩两列、热力图要横滚，
-        //   他的说法是「原来的长方形更有美感」）。460px 下指标块两列成方阵，
-        //   圆环与热力图仍能同行，整体还是横向长方形。
+        //   宽度 620px，与会话看板并排。这个数是倒推出来的：看板要留住三列卡片，
+        //   需要 空闲列 ≥ 3×250+缝隙 ≈ 780、加两个空列(150×2)与内边距 ≈ 1110；
+        //   他这块主区约 1820，减掉 1110 与列间距，面板最多能到 ~680，取 620 留余量。
+        //   走过的两个极端：880px 横跨整个主区太稀（八个格子各装一个三位数）、
+        //   340px 窄列又太挤（指标块只剩两列、热力图要横滚）。
         <div
           data-frost-surface="home-usage"
-          class="flex w-[460px] shrink-0 flex-col gap-3 self-start rounded-pane border border-v2-border-border-base bg-v2-background-bg-layer-01 p-3 shadow-[var(--v2-elevation-floating)]"
+          class="flex w-[620px] shrink-0 flex-col gap-3 self-start rounded-pane border border-v2-border-border-base bg-v2-background-bg-layer-01 p-3 shadow-[var(--v2-elevation-floating)]"
         >
           <div class="flex flex-wrap items-center gap-2">
             <Segmented
@@ -359,7 +360,8 @@ function HomeUsagePanelInner(props: { directory: string | undefined }) {
                 <Heatmap usage={data()} dark={dark()} formatNumber={number} />
               </div>
             </div>
-            <div class="grid grid-cols-2 gap-2">
+            {/* 面板变宽之后指标块回到四列两行——两列在 600px 以上又会显得稀 */}
+            <div class="grid grid-cols-2 gap-2 min-[560px]:grid-cols-4">
               <div class={TILE}>
                 <span class={TILE_LABEL}>{t("home.usage.tile.sessions")}</span>
                 <span class={TILE_VALUE}>{number(data().sessions)}</span>

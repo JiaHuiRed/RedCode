@@ -360,6 +360,9 @@ function HomeDesign() {
             改在这一层而不是塞进 HomeKanban：看板自己是个 flex 行（home-kanban.tsx:87），
             但它只在 kanban 视图下渲染，塞进去列表视图就没有面板了；放外层两种视图都成立。
             面板 self-start，只占自己那点高度；右侧内容区独立滚动。 */}
+        {/* 260901 cc 宽度分配：面板取固定宽，看板 flex-1 **吃满剩余**。
+            上一版给看板设了 max-w 封顶，结果最右边空出一大片死区（他圈出来了）——
+            封顶是错的手段：要让面板变宽就直接给面板宽度，别去限制看板。 */}
         <div class="mt-3 flex min-h-0 flex-1 gap-3">
           <HomeUsagePanel directory={selectedProject()?.worktree} />
           <div class="flex min-w-0 flex-1 flex-col overflow-auto">
