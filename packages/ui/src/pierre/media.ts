@@ -1,6 +1,6 @@
 import type { FileContent } from "@redcode-ai/sdk/v2"
 
-export type MediaKind = "image" | "audio" | "svg"
+export type MediaKind = "image" | "audio" | "svg" | "pdf"
 
 const imageExtensions = new Set(["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "ico", "tif", "tiff", "heic"])
 const audioExtensions = new Set(["mp3", "wav", "ogg", "m4a", "aac", "flac", "opus"])
@@ -36,6 +36,9 @@ export function fileExtension(path: string | undefined) {
 export function mediaKindFromPath(path: string | undefined): MediaKind | undefined {
   const ext = fileExtension(path)
   if (ext === "svg") return "svg"
+  // 260901 cc PDF 走 Electron 内置的 Chromium PDF 查看器（<embed>），不引第三方库。
+  //   服务端那侧要配套：pdf 原本在 binary 集合里、返回空内容，见 file/index.ts 的 pdf 分支。
+  if (ext === "pdf") return "pdf"
   if (imageExtensions.has(ext)) return "image"
   if (audioExtensions.has(ext)) return "audio"
 }
@@ -47,6 +50,7 @@ export function isBinaryContent(value: MediaValue) {
 function validDataUrl(value: string, kind: MediaKind) {
   if (kind === "svg") return value.startsWith("data:image/svg+xml") ? value : undefined
   if (kind === "image") return value.startsWith("data:image/") ? value : undefined
+  if (kind === "pdf") return value.startsWith("data:application/pdf") ? value : undefined
   if (value.startsWith("data:audio/x-aac;")) return value.replace("data:audio/x-aac;", "data:audio/aac;")
   if (value.startsWith("data:audio/x-m4a;")) return value.replace("data:audio/x-m4a;", "data:audio/mp4;")
   if (value.startsWith("data:audio/")) return value
@@ -75,6 +79,7 @@ export function dataUrlFromMediaValue(value: MediaValue, kind: MediaKind) {
 
   if (kind === "image" && !mime.startsWith("image/")) return
   if (kind === "audio" && !mime.startsWith("audio/")) return
+  if (kind === "pdf" && mime !== "application/pdf") return
   if (record.encoding !== "base64") return
 
   return `data:${mime};base64,${record.content}`

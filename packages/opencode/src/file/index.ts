@@ -540,6 +540,33 @@ export const layer = Layer.effect(
         return { type: "text" as const, content: "" }
       }
 
+      // 260901 cc PDF 也内联返回，供 GUI 查看器预览。
+      //
+      //   必须放在下面 isBinaryByExtension 那道早退**之前**：pdf 在 binary 集合里（:75 起），
+      //   原先走到那一行就返回空内容，前端拿不到任何东西可渲染。
+      //
+      //   type 给 "binary" 而不是像图片那样给 "text"：PDF 不是文本，给 "text" 会让任何按
+      //   type 分流的消费方把它当正文。前端的 dataUrlFromMediaValue 只看
+      //   content/encoding/mimeType，不看 type，所以 "binary" 不影响预览。
+      //
+      //   共用图片那条的 20MB 上限。这条路径只有两个调用点（/file/content 与
+      //   cli/cmd/debug/file.ts），read 工具不走这里，所以不会把多模态读图那条路带偏。
+      if (ext(file) === "pdf") {
+        const exists = yield* appFs.existsSafe(full)
+        if (!exists) return { type: "binary" as const, content: "" }
+        const bytes = yield* appFs.readFile(full).pipe(Effect.catch(() => Effect.succeed(new Uint8Array())))
+        if (bytes.length > MAX_INLINE_BYTES) {
+          log.warn("read.tooLarge", { file, bytes: bytes.length, limit: MAX_INLINE_BYTES })
+          return { type: "binary" as const, content: "", mimeType: "application/pdf" }
+        }
+        return {
+          type: "binary" as const,
+          content: Buffer.from(bytes).toString("base64"),
+          mimeType: "application/pdf",
+          encoding: "base64" as const,
+        }
+      }
+
       const knownText = isTextByExtension(file) || isTextByName(file)
 
       if (isBinaryByExtension(file) && !knownText) return { type: "binary" as const, content: "" }

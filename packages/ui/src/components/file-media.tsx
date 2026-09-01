@@ -6,6 +6,7 @@ import {
   hasMediaValue,
   isBinaryContent,
   mediaKindFromPath,
+  type MediaKind,
   normalizeMimeType,
   svgTextFromValue,
 } from "../pierre/media"
@@ -19,10 +20,10 @@ export type FileMediaOptions = {
   deleted?: boolean
   readFile?: (path: string) => Promise<FileContent | undefined>
   onLoad?: () => void
-  onError?: (ctx: { kind: "image" | "audio" | "svg" }) => void
+  onError?: (ctx: { kind: MediaKind }) => void
 }
 
-function mediaValue(cfg: FileMediaOptions, mode: "image" | "audio") {
+function mediaValue(cfg: FileMediaOptions, mode: MediaKind) {
   if (cfg.current !== undefined) return cfg.current
   if (mode === "image") return cfg.after ?? cfg.before
   return cfg.after ?? cfg.before
@@ -59,14 +60,14 @@ export function FileMedia(props: { media?: FileMediaOptions; fallback: () => JSX
   const direct = createMemo(() => {
     const media = cfg()
     const k = kind()
-    if (!media || (k !== "image" && k !== "audio")) return
+    if (!media || (k !== "image" && k !== "audio" && k !== "pdf")) return
     return dataUrlFromMediaValue(mediaValue(media, k), k)
   })
 
   const request = createMemo(() => {
     const media = cfg()
     const k = kind()
-    if (!media || (k !== "image" && k !== "audio")) return
+    if (!media || (k !== "image" && k !== "audio" && k !== "pdf")) return
     if (media.current !== undefined) return
     if (deleted()) return
     if (direct()) return
@@ -156,18 +157,24 @@ export function FileMedia(props: { media?: FileMediaOptions; fallback: () => JSX
     ),
   )
 
-  const kindLabel = (value: "image" | "audio") =>
-    i18n.t(value === "image" ? "ui.fileMedia.kind.image" : "ui.fileMedia.kind.audio")
+  const kindLabel = (value: "image" | "audio" | "pdf") =>
+    i18n.t(
+      value === "image"
+        ? "ui.fileMedia.kind.image"
+        : value === "pdf"
+          ? "ui.fileMedia.kind.pdf"
+          : "ui.fileMedia.kind.audio",
+    )
 
   return (
     <Switch>
-      <Match when={kind() === "image" || kind() === "audio"}>
+      <Match when={kind() === "image" || kind() === "audio" || kind() === "pdf"}>
         <Show
           when={src()}
           fallback={(() => {
             const media = cfg()
             const k = kind()
-            if (!media || (k !== "image" && k !== "audio")) return props.fallback()
+            if (!media || (k !== "image" && k !== "audio" && k !== "pdf")) return props.fallback()
             const label = kindLabel(k)
 
             if (deleted()) {
@@ -200,7 +207,22 @@ export function FileMedia(props: { media?: FileMediaOptions; fallback: () => JSX
         >
           {(value) => {
             const k = kind()
-            if (k !== "image" && k !== "audio") return props.fallback()
+            if (k !== "image" && k !== "audio" && k !== "pdf") return props.fallback()
+            if (k === "pdf") {
+              // 260901 cc 用 <embed> 走 Electron 内置的 Chromium PDF 查看器（翻页/缩放/搜索
+              //   都是它自带的），不引第三方渲染库。高度给固定值而不是 max-h：PDF 没有
+              //   内在尺寸，容器高度塌了就什么都看不见。
+              return (
+                <div class="bg-background-stronger px-6 py-4">
+                  <embed
+                    src={value()}
+                    type="application/pdf"
+                    class="h-[70vh] w-full rounded border border-border-weak-base bg-background-base"
+                    onLoad={onLoad}
+                  />
+                </div>
+              )
+            }
             if (k === "image") {
               return (
                 <div class="flex justify-center bg-background-stronger px-6 py-4">

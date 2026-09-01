@@ -428,7 +428,7 @@ export function FileTabContent(props: { tab: string }) {
           path: path(),
           current: state()?.content,
           onLoad: scrollSync.queueRestore,
-          onError: (args: { kind: "image" | "audio" | "svg" }) => {
+          onError: (args: { kind: "image" | "audio" | "svg" | "pdf" }) => {
             if (args.kind !== "svg") return
             showToast({
               variant: "error",

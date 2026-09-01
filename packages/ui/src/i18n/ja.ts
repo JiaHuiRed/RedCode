@@ -19,6 +19,7 @@ export const dict = {
   "ui.sessionReview.largeDiff.renderAnyway": "それでも表示する",
   "ui.fileMedia.kind.image": "画像",
   "ui.fileMedia.kind.audio": "音声",
+  "ui.fileMedia.kind.pdf": "PDF",
   "ui.fileMedia.state.removed": "{{kind}}は削除されました",
   "ui.fileMedia.state.loading": "{{kind}}を読み込んでいます...",
   "ui.fileMedia.state.error": "{{kind}}の読み込みに失敗しました",
