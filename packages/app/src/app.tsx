@@ -51,26 +51,11 @@ import { useCheckServerHealth } from "./utils/server-health"
 const HomeRoute = lazy(() => import("@/pages/home"))
 const Session = lazy(() => import("@/pages/session"))
 
-// 260901 cc 会话路由自己的 Suspense 边界。
-//
-// 少了它，会话页里任何一个异步读（useQuery / createResource）一进入无数据 pending，就会一路
-// 抛到 app.tsx 里那个包住**整个应用**的 Suspense，把整扇窗换成满屏 Splash 再换回来——组件树
-// 整棵拆掉重搭。哥哥体感的「点会话卡片进去慢」和「进去之后时不时变空白」是同一件事：不是加载慢，
-// 是整个应用重建了一次，所以跟机器多快关系不大（一次网络往返 + 全树重挂，8 核和 20 核都得等）。
-//
-// 同样的补丁 260822 已经在 session-side-panel.tsx:248 打过一次（那次是「上下文」tab 的
-// context-inspect 查询干的），但只护住了侧栏那一块；会话主视图和路由层一直没有边界。
-//
-// 边界放在 SessionProviders **外面**：provider 自己的异步初始化也要被接住。
-// fallback 刻意是撑住布局的空 div 而不是 Splash——最坏情况只有会话内容区空一下，标题栏、
-// 侧边栏、标签页纹丝不动。这是这个修法的关键：不是不许挂起，是别让挂起冒泡到整扇窗。
 const SessionRoute = Object.assign(
   () => (
-    <Suspense fallback={<div class="h-full w-full" />}>
-      <SessionProviders>
-        <Session />
-      </SessionProviders>
-    </Suspense>
+    <SessionProviders>
+      <Session />
+    </SessionProviders>
   ),
   { preload: Session.preload },
 )
@@ -142,13 +127,10 @@ function SessionProviders(props: ParentProps) {
 function RouterRoot(props: ParentProps<{ appChildren?: JSX.Element }>) {
   return (
     <AppShellProviders>
-      {/* 260901 cc 路由层兜底边界，替掉上游带进来就被注释掉的那份（d6d579c4 初始导入即如此，
-          而且它引用的 <Loading /> 在本仓根本不存在，是纯死代码）。会话路由自己已有更近的边界，
-          这层管的是其余路由与 AppShell 下的异步读，同样用占位 fallback 而不是满屏 Splash。 */}
-      <Suspense fallback={<div class="h-full w-full" />}>
-        {props.appChildren}
-        {props.children}
-      </Suspense>
+      {/*<Suspense fallback={<Loading />}>*/}
+      {props.appChildren}
+      {props.children}
+      {/*</Suspense>*/}
     </AppShellProviders>
   )
 }
