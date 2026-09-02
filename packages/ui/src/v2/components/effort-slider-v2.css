@@ -128,6 +128,16 @@
   border-radius: calc(var(--_thumb) / 4);
 }
 
+/* 260902 cc 拖动中关掉一切过渡：滑块必须严格跟手。留着 140ms 缓动的话滑块会拖在指针
+   后面，比"跳"更难受。松手后 data-dragging 消失，那一下 round 到最近档的吸附才走过渡。 */
+[data-slot="effort-slider-v2"][data-dragging] [data-slot="effort-slider-v2-thumb"] {
+  transition: none;
+}
+
+[data-slot="effort-slider-v2"][data-dragging] [data-slot="effort-slider-v2-ticks"] span {
+  transition: none;
+}
+
 [data-slot="effort-slider-v2-thumb"]:focus-visible {
   outline: 2px solid var(--v2-border-border-focus);
   outline-offset: 1px;
