@@ -10,6 +10,14 @@
 
 ### [未发布]
 
+- **配置写盘改成原子替换，并在 Windows 上重试被外部句柄顶掉的 rename**（`packages/core/src/filesystem.ts`、`packages/opencode/src/config/config.ts`、`cli/cmd/tui/context/kv.tsx`、新增 `packages/core/test/filesystem/write-atomic.test.ts`）：采自 DSH 的 `2026-08-29-windows-atomic-replace-retry`，但**回本仓核实后发现缺口比上游那篇大一档** —— 上游是「已有 `writeFileAtomic`，补上 Windows 重试」，而本仓 `config.ts` 六处写盘全是 `fs.writeFileString` 直写，连临时文件和 rename 都没有。直写被打断（关机 / 崩溃 / 磁盘满）留下的就是半截 JSON，下次启动读不出来；其中 `$schema` 回填那条尤其别扭，它不是用户主动保存，而是**读配置的副作用**在改用户的文件。全仓唯一一份 temp+rename 在 TUI 的 `kv.tsx`，没共享出去也没有重试，临时名用 `Date.now()`（同一毫秒连写会撞名）。`write-file-atomic` 确实在依赖树里，但只是 `conf`（electron-store）的传递依赖 —— 也就是 GUI 那条 persist 路径是原子的、配置文件这条不是。
+
+  原语落在 `AppFileSystem`，普通 async 面（`writeFileAtomic`）与 Effect 面（`writeFileStringAtomic`）各一个。临时文件必须是同目录兄弟（跨卷 rename 直接 EXDEV），名字用 pid + 进程内计数器。Windows 上只对 `EACCES` / `EBUSY` / `EPERM` 重试 —— 杀软扫描、索引器、另一个读者临时握着目标句柄时替换会被拒，而这是瞬时的，跨进程写锁（`Flock`）排的是我们自己人、管不到外部句柄；别的错误码和别的平台立刻失败。延迟 20ms 起翻倍、封顶 200ms，9 次尝试累计最多多等 1.1 秒（**这次没有跟上游参数的取舍问题** —— 对比 260822 那次 JPEG 质量梯子，配置写盘既不在模型热路径上又罕见，偏宽容才对，何况这台机器 Defender 活跃）。重试耗尽时删掉临时文件再抛出：**目标文件全程没被碰过**，读者看到的始终是完整的旧内容。
+
+  刻意没做：fsync（temp+rename 已经解决「读者看到半截文件」，为掉电那个窄窗口给每次配置写盘加 fsync 不划算）；`ensureGitignore` 不换（它创建新文件，没有「替换已有内容」这回事）；`writeJson` / `writeWithDirs` 不动（调用点是缓存 / 快照 / 临时产物，写坏了重新生成即可，原子替换的成本只给「写坏了就毁用户数据」的文件付）。
+
+  测试 10 例，重试那部分**不 mock `fs/promises`**（全仓都在用它，换掉风险太大），改成把 rename 循环抽成 `renameWithRetry(from, to, deps)` 注入 `rename` / `sleep` / `platform`，于是能观察尝试次数与退避序列而不依赖墙钟。`test/config/` 那 31 个既有失败（`opencode.jsonc` 找不到，改名遗留的陈旧断言）**已用对照确认与本改动无关**：还原到 dev 基线跑同一批同样是 153 pass / 31 fail。note 见 `docs/notes/implemented/bug-fix/2026-09-01-atomic-config-writes.md`。
+
 - **启动画面：徽章放大 30%、底色改跟侧栏同色系**（`packages/app/src/index.css` 新增 `[data-splash-surface]`、`packages/desktop/src/renderer/index.tsx`、`packages/app/src/app.tsx`、`packages/ui/src/components/logo.tsx`）：他截图里那扇几乎全空的深紫屏，渲染的是 **desktop 渲染层**那个包住整个 UI 的 `<Show>` fallback（`renderer/index.tsx`），不是 `app.tsx` 的 ConnectionGate —— 两处 markup 逐字节相同、像素上分不出来，但主进程时序决定了占住那 1.4~1.6 秒的是前者（建窗已提到等 sidecar 之前，`awaitInitialization` 真的等 `serverReady`）。徽章 `size-40` → `size-52`（160px → 208px，正好 +30%）；**内联 base64 不动** —— 源图 320px 对 208px 仍有 1.54 倍余量，要覆盖 2 倍 DPI 得换 416px 源，实测 448px 的 base64 是 108KB、比现在多 65KB，全压在首屏内联路径上，为一个 1 倍屏用不到的清晰度不值当。
 
   底色原先是 `bg-background-base`，也就是 **v1 管线**的 `neutral[0]`（yuqi 暗色实值 `#200a22`，与 v2 那套灰阶是两条独立管线）—— 主题里最暗的一档铺满整屏，读起来是「黑屏上贴了张图」。改成复用侧栏那份掺色配方：同样的 `--frost-tint-aside` 掺进同样的 `--v2-background-bg-layer-01`，与 `index.css` 侧栏规则的内层逐字一致，以后调 frost 掺色两边一起动。计算值 `color(srgb 0.251312 0.216211 0.300331 / 0.835294)`，透出 `<html>` 的 `--background-base` 后合成约 `#3b3045`。

@@ -26,6 +26,7 @@
 | webfetch 目的地守卫:拒非公网地址、审批在 DNS 解析之前、**逐跳**校验重定向(fetch 默认 follow 只看得到第一跳)。分两档 —— 环回/RFC1918/CGNAT/ULA 可由配置放行,link-local(云元数据)等永不放行 | `web/web-fetch-http/src/network.ts`(上游 `b2219bba`/`709e5eda`) | `util/net-address.ts` + `tool/webfetch.ts`,配置 `webfetch.allow_private_hosts` | 5c121d7b |
 | 图片按路由计价进上下文估算(此前按内联 base64 长度算,一张 400KB JPEG = 约 13 万 token,把**保留范围**与**用量面板**都带偏;触发线锚在 provider usage 上未动) | `route-priced-image-request-pressure` | `session/image-tokens.ts`,接 `compaction.estimate` 与 `context-snapshot` | 9286a867 |
 | 图片尺寸从每边盒子改**总像素预算**(2000x20000 长截图 200px 宽 → 632px)+ 候选懒求值 + 按 alpha 路由(JPEG 源不再排 PNG 候选) | `alpha-routed-image-quality-ladders` | `image/image.ts`,配置 `attachment.image.max_pixels`/`max_dimension` | fefc7ce2 |
+| 配置写盘改**原子替换**(此前 config.ts 六处全是直写,打断即半截 JSON;`$schema` 回填还发生在**读**配置的过程里)+ Windows 上对 EACCES/EBUSY/EPERM 重试 rename(外部句柄瞬时占用,跨进程锁管不到);TUI kv.tsx 那份孤立 temp+rename 并入 | `2026-08-29-windows-atomic-replace-retry`(上游只补重试,**本仓连原子替换都缺**) | `core/filesystem.ts` 的 `writeFileAtomic` / `writeFileStringAtomic`,`config/config.ts` 四处 + `tui/context/kv.tsx` | 待 commit |
 
 ## 第二批(小机制,高性价比)
 

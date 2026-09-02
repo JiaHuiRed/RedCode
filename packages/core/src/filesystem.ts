@@ -28,6 +28,8 @@ export namespace AppFileSystem {
     readonly readFileStringSafe: (path: string) => Effect.Effect<string | undefined, Error>
     readonly readJson: (path: string) => Effect.Effect<unknown, Error>
     readonly writeJson: (path: string, data: unknown, mode?: number) => Effect.Effect<void, Error>
+    /** 原子替换写，见下面 `writeFileAtomic` 的说明。配置这类「写坏了就毁掉用户数据」的文件走这条。 */
+    readonly writeFileStringAtomic: (path: string, content: string, mode?: number) => Effect.Effect<void, Error>
     readonly ensureDir: (path: string) => Effect.Effect<void, Error>
     readonly writeWithDirs: (path: string, content: string | Uint8Array, mode?: number) => Effect.Effect<void, Error>
     readonly readDirectoryEntries: (path: string) => Effect.Effect<DirEntry[], Error>
@@ -36,6 +38,89 @@ export namespace AppFileSystem {
     readonly globUp: (pattern: string, start: string, stop?: string) => Effect.Effect<string[], Error>
     readonly glob: (pattern: string, options?: Glob.Options) => Effect.Effect<string[], Error>
     readonly globMatch: (pattern: string, filepath: string) => boolean
+  }
+
+  /* ------------------------------------------------------------------------
+     260901 cc 原子替换写。
+
+     此前全仓只有 TUI 的 kv.tsx 自己搓了一份 temp+rename，配置文件那条路
+     （config.ts 的 $schema 回填 / update / updateGlobal / 旧版 TOML 迁移）
+     一直是 `writeFileString` 直写 —— 写到一半被打断，用户的配置就是半截 JSON；
+     而 $schema 回填恰恰发生在**加载**配置的过程里。
+
+     两件事一起做：
+     ① **临时文件必须是同目录兄弟**，否则跨卷 rename 直接 EXDEV。名字带 pid +
+        进程内计数器（不是 Date.now()：同一毫秒内连写会撞名）。
+     ② **Windows 上重试 rename**。DSH 的 note（2026-08-29-windows-atomic-replace-retry）
+        记录了这个失败形态：别的系统组件（杀软扫描、索引器、另一个读者）临时握着
+        目标句柄时，替换会以 EACCES / EBUSY / EPERM 被拒，而这是**瞬时**的 ——
+        把第一次失败当永久失败，就变成配置更新会不确定地失败。跨进程写锁（Flock）
+        排的是我们自己人，管不到外部句柄。
+
+     重试只在 win32、只对那三个码；别的错误码和别的平台立刻失败。延迟 20ms 起
+     翻倍、封顶 200ms，共 9 次尝试 = 最多多等 1.1 秒（与上游同一量级 —— 这次没有
+     "官方不按人民币计费" 那类取舍，配置写盘既不在模型热路径上，也罕见，
+     偏宽容才是对的方向）。重试耗尽时删掉临时文件再抛出：**目标文件全程没被
+     碰过**，读者看到的始终是完整的旧内容。
+
+     刻意不做 fsync：temp+rename 解决的是「读者看到半截文件」，这条已经够了；
+     为掉电那个窄窗口给每次配置写盘加一次 fsync 不划算。
+     ------------------------------------------------------------------------ */
+  const ATOMIC_RETRY_CODES = new Set(["EACCES", "EBUSY", "EPERM"])
+  /** 8 次重试（共 9 次尝试），20ms 起翻倍、封顶 200ms，累计最多多等 1.1 秒。 */
+  const ATOMIC_RETRY_DELAYS = [20, 40, 80, 160, 200, 200, 200, 200]
+  let atomicSeq = 0
+
+  /** 注入点只为回归测试存在：真实调用一律走默认值。 */
+  export interface AtomicWriteDeps {
+    readonly rename?: (from: string, to: string) => Promise<void>
+    readonly sleep?: (ms: number) => Promise<void>
+    readonly platform?: string
+  }
+
+  /** 带 Windows 重试的 rename。语义见 `writeFileAtomic` 上面那段说明。 */
+  export async function renameWithRetry(from: string, to: string, deps: AtomicWriteDeps = {}): Promise<void> {
+    const rename = deps.rename ?? NFS.rename
+    const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+    const platform = deps.platform ?? process.platform
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await rename(from, to)
+        return
+      } catch (cause) {
+        const code = (cause as NodeJS.ErrnoException).code
+        if (
+          platform !== "win32" ||
+          !code ||
+          !ATOMIC_RETRY_CODES.has(code) ||
+          attempt >= ATOMIC_RETRY_DELAYS.length
+        )
+          throw cause
+        await sleep(ATOMIC_RETRY_DELAYS[attempt]!)
+      }
+    }
+  }
+
+  export async function writeFileAtomic(
+    path: string,
+    content: string | Uint8Array,
+    mode?: number,
+    deps: AtomicWriteDeps = {},
+  ): Promise<void> {
+    const temp = `${path}.${process.pid}.${(atomicSeq += 1).toString(36)}.tmp`
+    try {
+      await NFS.writeFile(temp, content).catch(async (cause) => {
+        if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause
+        await NFS.mkdir(dirname(path), { recursive: true })
+        await NFS.writeFile(temp, content)
+      })
+      // 先改权限再 rename：目标是「一步换成内容与权限都对的文件」
+      if (mode !== undefined) await NFS.chmod(temp, mode)
+      await renameWithRetry(temp, path, deps)
+    } catch (cause) {
+      await NFS.rm(temp, { force: true }).catch(() => undefined)
+      throw cause
+    }
   }
 
   export class Service extends Context.Service<Service, Interface>()("@RedCode/FileSystem") {}
@@ -95,6 +180,17 @@ export namespace AppFileSystem {
         const content = JSON.stringify(data, null, 2)
         yield* fs.writeFileString(path, content)
         if (mode) yield* fs.chmod(path, mode)
+      })
+
+      const writeFileStringAtomic = Effect.fn("FileSystem.writeFileStringAtomic")(function* (
+        path: string,
+        content: string,
+        mode?: number,
+      ) {
+        yield* Effect.tryPromise({
+          try: () => writeFileAtomic(path, content, mode),
+          catch: (cause) => new FileSystemError({ method: "writeFileStringAtomic", cause }),
+        })
       })
 
       const ensureDir = Effect.fn("FileSystem.ensureDir")(function* (path: string) {
@@ -183,6 +279,7 @@ export namespace AppFileSystem {
         readDirectoryEntries,
         readJson,
         writeJson,
+        writeFileStringAtomic,
         ensureDir,
         writeWithDirs,
         findUp,

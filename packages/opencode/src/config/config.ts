@@ -497,7 +497,9 @@ export const layer = Layer.effect(
       if (!data.$schema) {
         data.$schema = "https://redcode.dev/config.json"
         const updated = text.replace(/^\s*\{/, '{\n  "$schema": "https://redcode.dev/config.json",')
-        yield* fs.writeFileString(options.path, updated).pipe(Effect.catch(() => Effect.void))
+        // 260901 cc 原子写：这一步发生在**加载**配置的过程里，直写被打断就是把用户的
+        //   配置文件截成半截 JSON，下一次启动直接读不出来。
+        yield* fs.writeFileStringAtomic(options.path, updated).pipe(Effect.catch(() => Effect.void))
       }
       return data
     })
@@ -541,7 +543,10 @@ export const layer = Layer.effect(
               if (provider && model) result.model = `${provider}/${model}`
               result["$schema"] = "https://redcode.dev/config.json"
               result = mergeConfig(result, rest)
-              await fsNode.writeFile(path.join(Global.Path.config, "config.json"), JSON.stringify(result, null, 2))
+              await AppFileSystem.writeFileAtomic(
+                path.join(Global.Path.config, "config.json"),
+                JSON.stringify(result, null, 2),
+              )
               await fsNode.unlink(legacy)
             })
             .catch(() => {}),
@@ -917,7 +922,7 @@ export const layer = Layer.effect(
       const file = path.join(dir, "config.json")
       const existing = yield* loadFile(file)
       yield* fs
-        .writeFileString(file, JSON.stringify(mergeDeep(writable(existing), writable(config)), null, 2))
+        .writeFileStringAtomic(file, JSON.stringify(mergeDeep(writable(existing), writable(config)), null, 2))
         .pipe(Effect.orDie)
     })
 
@@ -937,13 +942,13 @@ export const layer = Layer.effect(
         const merged = mergeDeep(writable(existing), patch)
         const serialized = JSON.stringify(merged, null, 2)
         changed = serialized !== before
-        if (changed) yield* fs.writeFileString(file, serialized).pipe(Effect.orDie)
+        if (changed) yield* fs.writeFileStringAtomic(file, serialized).pipe(Effect.orDie)
         next = merged
       } else {
         const updated = patchJsonc(before, patch)
         next = ConfigParse.schema(Info, ConfigParse.jsonc(updated, file), file)
         changed = updated !== before
-        if (changed) yield* fs.writeFileString(file, updated).pipe(Effect.orDie)
+        if (changed) yield* fs.writeFileStringAtomic(file, updated).pipe(Effect.orDie)
       }
 
       if (changed) yield* invalidate()

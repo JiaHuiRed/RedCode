@@ -1,7 +1,7 @@
 import { Global } from "@redcode-ai/core/global"
 import { Filesystem } from "@/util/filesystem"
 import { Flock } from "@redcode-ai/core/util/flock"
-import { rename, rm } from "fs/promises"
+import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { createSignal, type Setter } from "solid-js"
 import { createStore, unwrap } from "solid-js/store"
 import { createSimpleContext } from "./helper"
@@ -17,15 +17,13 @@ export const { use: useKV, provider: KVProvider } = createSimpleContext({
     // Queue same-process writes so rapid updates persist in order.
     let write = Promise.resolve()
 
-    // Write to a temp file first so kv.json is only replaced once the JSON is complete, avoiding partial writes if shutdown interrupts persistence.
+    // 先写临时文件再替换，kv.json 只会在 JSON 完整之后被顶掉，关机打断也不会留半截文件。
+    //
+    // 260901 cc 这里原本自己搓了一份 temp+rename（临时名用 Date.now()，同一毫秒连写会撞名），
+    //   现在并到 AppFileSystem.writeFileAtomic：同一份语义，外加 Windows 上目标被外部句柄
+    //   临时握住时的 rename 重试。配置文件那条路同时也换成了它。
     function writeSnapshot(snapshot: Record<string, any>) {
-      const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`
-      return Filesystem.writeJson(tempPath, snapshot)
-        .then(() => rename(tempPath, filePath))
-        .catch(async (error) => {
-          await rm(tempPath, { force: true }).catch(() => undefined)
-          throw error
-        })
+      return AppFileSystem.writeFileAtomic(filePath, JSON.stringify(snapshot, null, 2))
     }
 
     // Read under the same lock used for writes because kv.json is shared across processes.
