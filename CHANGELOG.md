@@ -10,6 +10,16 @@
 
 ### [未发布]
 
+- **soul 模板填上默认语气，新用户开箱不再没有语气约束**（`packages/opencode/src/project/template/Tsoul.md`、`Gsoul.md`）：`deepseek.md`／`step.md`／`glm.md` 里都写着"语气、称呼、详略由 soul 决定，本文件不再重复规定"，但这句话在三份里都是假的——说完之后文件里仍有四到八条在规定详略，大多聚在 `# Output channels`。而 `gpt.md`／`anthropic.md` 连这句都没有。
+
+  之所以不能直接把那些条款删掉：**没有兜底层**。`system.ts` 的 `provider()` 返回的是单个文件（`[PROMPT_DEEPSEEK]` 而不是 `[PROMPT_DEFAULT, PROMPT_DEEPSEEK]`），model 档是**替换** `default.md` 不是叠加；soul 又是有条件注入的（`instruction.ts:170` 的 `existsSafe`）；而播种出去的模板**每一节都是空占位**。三条叠起来，一个没编辑过 soul 的新用户会一条语气约束都没有。
+
+  所以先把兜底收进模板本身：与让位条款同范围的三节（我是谁／怎么称呼用户／语气风格）换成可直接使用的中性默认值——简洁、先结论、短句、无表情符号、长度跟着问题走、结尾不问"还需要我做什么吗"。其余四节保持空占位，那些是行为约束、model 提示词本来就覆盖，填了只会造出新的重复。
+
+  顺带修掉一个一直靠碰巧工作的地方：首行改成 `# RedCode · TUI 灵魂模板`。首行不是装饰——`shared.ts:23` 用它取会话标题前缀、`local.tsx:27` 取 `·` 之前那截当 agent 名；原来没有 `·`，两处都是回落到 "TUI"／"GUI"。现在新用户看到的 agent 名是 "RedCode"。
+
+  **已有 `~/.redcode/souls/*.md` 一律不受影响**（`bootstrap.ts` 只在文件不存在时播种）。note 见 `docs/notes/implemented/refactor/2026-09-02-soul-template-tone-floor.md`，其中记了下一步怎么剪 model 提示词里的重复条款。
+
 - **`@` 菜单的陈旧候选不再能被 Enter / Tab 选中**（`packages/ui/src/hooks/use-filtered-list.tsx`、`packages/app/src/components/prompt-input.tsx`、新增 `packages/ui/src/hooks/use-filtered-list.test.ts`、`packages/ui/package.json`）：采自 DSH 的 `2026-08-28-trigger-menu-stale-while-revalidate`。那篇是两半，**核实下来本仓第一半本来就有、第二半没有** —— `use-filtered-list.tsx` 的 `flat` 读的是 `grouped.latest` 而不是 `grouped()`，新查询在途时保留上一轮结果，所以列表不会像上游那样每敲一个字就塌成骨架屏；但 Enter 分支没有任何在途判断。
 
   `@` 那个列表的 `items` 每个按键都发一次 HTTP 文件搜索、**没有防抖**。于是敲 `@src/comp` 时高亮在 `src/components/app.tsx`，快速敲完 `onents/prompt` 并回车 —— 若最后一轮还没落地，插进去的就是 `src/components/app.tsx`，一个用户没挑过的候选，而且静默。`createEffect(on(grouped, () => reset()))` 让这件事更明确：结果一落地高亮就重置到新列表第一项，pending 窗口里那个高亮**注定**不是 settle 后会看到的那个。
