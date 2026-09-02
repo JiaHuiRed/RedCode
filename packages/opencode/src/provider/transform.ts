@@ -725,7 +725,8 @@ function capImageBytes(msgs: ModelMessage[], limit: number): ModelMessage[] {
     if (!keys || !Array.isArray(msg.content)) return msg
     const content = msg.content.map((part: any, p) => {
       if (keys.has(`${p}:-1`)) return { type: "text" as const, text: omittedImageText(part) }
-      if (part?.type !== "tool-result" || part.output?.type !== "content" || !Array.isArray(part.output.value)) return part
+      if (part?.type !== "tool-result" || part.output?.type !== "content" || !Array.isArray(part.output.value))
+        return part
       const value = part.output.value.map((entry: any, v: number) =>
         keys.has(`${p}:${v}`) ? { type: "text", text: omittedImageText(entry) } : entry,
       )
@@ -857,6 +858,9 @@ const KIMI_K3_EFFORTS = ["low", "high", "max"]
 const GLM_RE = /glm-(\d+)(?:\.(\d+))?/
 const GROK_RE = /grok-(\d+)(?:\.(\d+))?/
 const KIMI_RE = /kimi-k(\d+)(?:\.(\d+))?/
+// 260902 cc 腾讯混元 hy4。锚在串首或分隔符上，不能写 includes("hy4")——各家 id 形态不同
+// （opencode-go 是 `hy4-preview`、nano-gpt 是 `tencent/hy4-preview`），同 system.ts 的 hy 判据。
+const HY4_RE = /(?:^|[/\-_])hy4(?:[.\-_]|$)/i
 
 /** 从模型 id 里解出版本号（major.minor 记作 major + minor/100）；认不出来返回 undefined */
 function modelVersion(re: RegExp, ...ids: (string | undefined)[]): number | undefined {
@@ -1388,6 +1392,17 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
   }
 
   if (id.includes("minimax") || id.includes("k2p") || id.includes("qwen") || id.includes("big-pickle")) return {}
+
+  // 260902 cc hy4 从数据路径提升到特判。实测（opencode-go 网关，同一道需要推理的题、
+  // temperature 0、每档跑两轮）：**只有 none 是真的**——reasoning_tokens 恒为 0、
+  // completion ~289；minimal/low/medium/high/xhigh/max 与"完全不发这个参数"落在同一个
+  // 区间（421~1200），且不单调（medium 427/421 反而低于 low 615/541），是噪声不是分档。
+  // 网关对任何值都回 200（连 "xhigh"/"max" 这种它压根不认的也回 200），所以只能按行为判、
+  // 不能按报错判 —— 这也是"提升到特判"的理由：数据错了不会有任何信号。
+  // 值与 models.dev 当前给的 ["none","high"] 一致，提升的意义是**钉住**它：上游哪天把
+  // reasoning_options 改成五档，滑杆不会跟着长出四个不存在的档位。
+  // 只认 hy4：hy3 的 ["none","low","high"] 没实测过，继续走数据路径。
+  if (HY4_RE.test(model.api.id)) return effortVariants(["none", "high"])
 
   // see: https://docs.x.ai/docs/guides/reasoning#control-how-hard-the-model-thinks
   if (id.includes("grok") && id.includes("grok-3-mini")) {

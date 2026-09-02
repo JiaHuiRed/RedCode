@@ -2542,6 +2542,48 @@ describe("ProviderTransform.variants", () => {
     expect(result).toEqual({})
   })
 
+  // 260902 cc hy4 提升到特判。档位来自实测（opencode-go 网关：只有 none 让 reasoning_tokens
+  // 归零，其余取值与不发参数落在同一区间且不单调），不是抄 models.dev。
+  // 这几条钉的是"钉住"这件事本身——上游数据怎么变都不该动摇它。
+  test("hy4 pins to none/high regardless of models.dev data", () => {
+    const model = createMockModel({
+      id: "opencode-go/hy4-preview",
+      providerID: "opencode-go",
+      api: { id: "hy4-preview", url: "https://opencode.ai/zen/go/v1", npm: "@ai-sdk/openai-compatible" },
+      reasoningOptions: [{ type: "effort", values: ["none", "low", "medium", "high", "xhigh"] }],
+    })
+    expect(Object.keys(ProviderTransform.variants(model))).toEqual(["none", "high"])
+  })
+
+  test("hy4 matches the scoped id shape too", () => {
+    const model = createMockModel({
+      id: "nano-gpt/tencent/hy4-preview",
+      providerID: "nano-gpt",
+      api: { id: "tencent/hy4-preview", url: "https://nano-gpt.com/api/v1", npm: "@ai-sdk/openai-compatible" },
+    })
+    expect(Object.keys(ProviderTransform.variants(model))).toEqual(["none", "high"])
+  })
+
+  test("hy3 still follows models.dev data (only hy4 was measured)", () => {
+    const model = createMockModel({
+      id: "opencode-go/hy3",
+      providerID: "opencode-go",
+      api: { id: "hy3", url: "https://opencode.ai/zen/go/v1", npm: "@ai-sdk/openai-compatible" },
+      reasoningOptions: [{ type: "effort", values: ["none", "low", "high"] }],
+    })
+    expect(Object.keys(ProviderTransform.variants(model))).toEqual(["none", "low", "high"])
+  })
+
+  test("hy4 matcher does not swallow hy40", () => {
+    const model = createMockModel({
+      id: "opencode-go/hy40-x",
+      providerID: "opencode-go",
+      api: { id: "hy40-x", url: "https://opencode.ai/zen/go/v1", npm: "@ai-sdk/openai-compatible" },
+      reasoningOptions: [{ type: "effort", values: ["none", "low", "high"] }],
+    })
+    expect(Object.keys(ProviderTransform.variants(model))).toEqual(["none", "low", "high"])
+  })
+
   test("minimax returns empty object", () => {
     const model = createMockModel({
       id: "minimax/minimax-model",
@@ -3968,7 +4010,10 @@ describe("ProviderTransform.message - cumulative image payload bound", () => {
 
   // 内容不同 → sha256 不同 → 临时路径不同，正好也能验占位路径的稳定性
   const png = (seed: string, n: number) => `data:image/png;base64,${seed.repeat(n)}`
-  const userImage = (seed: string, n: number) => ({ role: "user", content: [{ type: "image", image: png(seed, n), mimeType: "image/png" }] })
+  const userImage = (seed: string, n: number) => ({
+    role: "user",
+    content: [{ type: "image", image: png(seed, n), mimeType: "image/png" }],
+  })
   // tool-result 必须有前置配对的 tool-call，否则 normalizeMessages 会整条删掉（transform.ts:139）
   const toolImage = (seed: string, n: number) => [
     {
