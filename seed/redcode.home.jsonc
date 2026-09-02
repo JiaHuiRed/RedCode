@@ -18,7 +18,10 @@
   // 260730 Karina USER.md 下线：用户画像基本被 souls/*.md 覆盖，留着只是每轮多一道加载。
   // TUI 标签上的称呼改由 config 的 username 字段提供（缺省退到系统用户名）。
   // 这份 shipped 模板必须跟 live 配置一起改 —— 只改 live 的话同步时会被模板反向覆盖回来。
-  "instructions": ["~/.redcode/skill/memory-automation/SKILL.md"],
+  // 260902 cc instructions 清空：memory-automation 是最后一个"既是 skill 又整篇常驻"的双重注册项，
+  //   与 260718 摘掉的那四个同因（见上）。它已与 consolidate-memory 合并成 skill/memory，
+  //   两条都改成按需 load；剪枝的触发阈值移到 AGENTS.md 自检触发点（注入面上才提醒得到）。
+  "instructions": [],
   // 260804 Red 不设这个键会 fallback 到内置 build（见 config.ts 的 default_agent 注释）。
   "default_agent": "redmind",
   "mcp": {

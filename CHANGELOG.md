@@ -10,6 +10,14 @@
 
 ### [未发布]
 
+- **两个记忆 skill 合并成一个，剪枝阈值挪到注入面**（`seed/skill/memory/`、`seed/redcode.home.jsonc`；配套改动在私仓 `~/.redcode`）：原先 `memory-automation`（写侧）通过 `instructions` 数组**每轮强制注入**，`consolidate-memory`（整理侧）只在被 load 时才进上下文。结果是只写不剪——MEMORY.md 单调上涨，而它每轮整份注入，等于每轮成本一直在涨。
+
+  260901 判过一轮，当时结论是不能合并（合并后仍注入 = 把 125 行整理细则变成每轮成本）。那条判据没错，变的是前提：这次把 `instructions` 一并清空，两条都不再进固定前缀，合并的成本理由随之消失。`memory-automation` 是最后一个"既是 skill 又整篇常驻"的双重注册项，与 260718 摘掉的那四个（goal-automation/simplify/vision-autoagent/diagnose，当时实测白吃 ~2800 token/次）同因。
+
+  **真正修的是触发条件的位置**：旧阈值「全局记忆超过约 30 条 / 200 行就提议整理」写在 `consolidate-memory` 里，而那份**不注入**——触发条件躺在一个"要先决定整理才会读到"的文件里，所以实测全局 MEMORY.md 已到 73 条也没人提醒过。现在阈值按**字符**（旧的条数/行数对索引行格式没有意义：73 条、49 行、8207 字符，数条数早超、数行数永远到不了），并移进私仓 AGENTS.md 的自检触发点。
+
+  顺带修掉 `seed/skill/memory-automation/SKILL.md` **与私仓版本的漂移**：私仓那份 260901 已剪到 2535 字节，seed 这份还停在 8618 字节的旧稿，新用户一直拿到被取代的版本。
+
 - **删掉 `beast.md` 与 `copilot-gpt-5.md` 两份旧档**（`packages/opencode/src/session/prompt/`、`session/system.ts`）：不会再拿上上代模型干活。`copilot-gpt-5.md`（143 行）是纯死文件——全仓零引用，`system.ts` 从来没 import 过；Copilot 侧模型 id 含 `gpt`，本来就走 `gpt.md`（与 `packages/core/src/github-copilot/` 那个 provider 集成无关，那个还在用）。
 
   `beast.md`（139 行）不同，它原本是活的，所以一并删掉 `system.ts` 里 `gpt-4 / o1 / o3` 那条路由分支。探针实跑 `provider()` 确认：48 个 `gpt-4*` 含 `gpt`、落在维护中的 `gpt.md`，24 个真正的 o1/o3 落 `default.md`（按兜底分支那段注释，重写后的 `default.md` 本就是一线水准）。
