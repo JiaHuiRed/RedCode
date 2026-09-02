@@ -6,6 +6,7 @@ import { Permission } from "@/permission"
 import { Tool } from "@/tool/tool"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { ToolRegistry } from "@/tool/registry"
+import { Freeform } from "@/tool/freeform"
 import { Truncate } from "@/tool/truncate"
 import { ModelID } from "@/provider/schema"
 import { Plugin } from "@/plugin"
@@ -89,73 +90,93 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     agent: input.agent,
   })) {
     const schema = ProviderTransform.schema(input.model, ToolJsonSchema.fromTool(item))
-    tools[item.id] = tool({
-      description: item.description,
-      inputSchema: jsonSchema(schema),
-      execute(args, options) {
-        return run.promise(
-          Effect.gen(function* () {
-            const ctx = context(item.id, args, options)
-            // 260717 Red pre-tool-use: 前置拦截钩子
-            const preToolUse = yield* plugin.trigger(
-              "tool.use.pre",
-              { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID, args },
-              { denied: false as boolean, reason: undefined as string | undefined },
-            )
-            if (preToolUse.denied) {
-              return {
-                title: "Blocked",
-                output: `Tool "${item.id}" was blocked by hook.${preToolUse.reason ? ` Reason: ${preToolUse.reason}` : ""}`,
-                metadata: { blocked: true },
-              } as any
-            }
-            // 260811 cc audit Y5：返回值此前被丢弃，插件 SDK 承诺的 output.args 改写
-            // （整体赋值写法）完全无效，只有原地 mutate 碰巧生效。接住返回值让两种写法都成立。
-            const beforeHook = yield* plugin.trigger(
-              "tool.execute.before",
-              { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
-              { args },
-            )
-            args = beforeHook.args
-            const result = yield* item.execute(args, ctx).pipe(
-              Effect.tapError((error) =>
-                plugin
-                  .trigger(
-                    "tool.execute.failure",
-                    {
-                      tool: item.id,
-                      sessionID: ctx.sessionID,
-                      callID: ctx.callID,
-                      args,
-                      error: String(error),
-                    },
-                    {},
-                  )
-                  .pipe(Effect.catch(() => Effect.void)),
-              ),
-            )
-            const output = {
-              ...result,
-              attachments: result.attachments?.map((attachment) => ({
-                ...attachment,
-                id: PartID.ascending(),
-                sessionID: ctx.sessionID,
-                messageID: input.processor.message.id,
-              })),
-            }
-            yield* plugin.trigger(
-              "tool.execute.after",
-              { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID, args },
-              output,
-            )
-            if (options.abortSignal?.aborted) {
-              yield* input.processor.completeToolCall(options.toolCallId, output)
-            }
-            return output
-          }),
-        )
-      },
-    })
+    // 260902 cc GPT-5 系走 Responses custom tool：入参是裸字符串而不是对象，见 tool/freeform.ts。
+    const freeform = Freeform.spec(input.model, item.id)
+    const execute = (rawArgs: any, options: ToolExecutionOptions<Record<string, unknown>>) => {
+      let args = Freeform.normalizeInput(item.id, rawArgs) ?? (rawArgs as Record<string, unknown>)
+      return run.promise(
+        Effect.gen(function* () {
+          const ctx = context(item.id, args, options)
+          // 260717 Red pre-tool-use: 前置拦截钩子
+          const preToolUse = yield* plugin.trigger(
+            "tool.use.pre",
+            { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID, args },
+            { denied: false as boolean, reason: undefined as string | undefined },
+          )
+          if (preToolUse.denied) {
+            return {
+              title: "Blocked",
+              output: `Tool "${item.id}" was blocked by hook.${preToolUse.reason ? ` Reason: ${preToolUse.reason}` : ""}`,
+              metadata: { blocked: true },
+            } as any
+          }
+          // 260811 cc audit Y5：返回值此前被丢弃，插件 SDK 承诺的 output.args 改写
+          // （整体赋值写法）完全无效，只有原地 mutate 碰巧生效。接住返回值让两种写法都成立。
+          const beforeHook = yield* plugin.trigger(
+            "tool.execute.before",
+            { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
+            { args },
+          )
+          args = beforeHook.args
+          const result = yield* item.execute(args, ctx).pipe(
+            Effect.tapError((error) =>
+              plugin
+                .trigger(
+                  "tool.execute.failure",
+                  {
+                    tool: item.id,
+                    sessionID: ctx.sessionID,
+                    callID: ctx.callID,
+                    args,
+                    error: String(error),
+                  },
+                  {},
+                )
+                .pipe(Effect.catch(() => Effect.void)),
+            ),
+          )
+          const output = {
+            ...result,
+            attachments: result.attachments?.map((attachment) => ({
+              ...attachment,
+              id: PartID.ascending(),
+              sessionID: ctx.sessionID,
+              messageID: input.processor.message.id,
+            })),
+          }
+          yield* plugin.trigger(
+            "tool.execute.after",
+            { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID, args },
+            output,
+          )
+          if (options.abortSignal?.aborted) {
+            yield* input.processor.completeToolCall(options.toolCallId, output)
+          }
+          return output
+        }),
+      )
+    }
+    tools[item.id] = freeform
+      ? // AI SDK 里 provider 工具就是这个形状：type/id/args 原样交给 @ai-sdk/openai 的
+        // `openai.custom` 分支拼成 {type:"custom", name, format}，name 取 tools 的键。
+        // 带 execute 的工具一律由客户端执行（ai@7 只跳过 providerExecuted 的），
+        // 所以执行器还是本仓这套，只有工具定义和入参形状换了。
+        ({
+          type: "provider",
+          id: "openai.custom",
+          args: {
+            name: item.id,
+            description: [item.description, freeform.note].join("\n\n"),
+            format: { type: "grammar", syntax: "lark", definition: freeform.grammar },
+          },
+          inputSchema: jsonSchema({ type: "string" }),
+          execute,
+        } as unknown as AITool)
+      : tool({
+          description: item.description,
+          inputSchema: jsonSchema(schema),
+          execute,
+        })
   }
 
   for (const [key, item] of Object.entries(yield* mcp.tools())) {

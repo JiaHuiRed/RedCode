@@ -68,6 +68,12 @@ export function stream(input: StreamInput): StreamResult {
   const current = statusWithFetch(input, fetch)
   if (current.type === "unsupported") return current
 
+  // 260902 cc provider 工具（GPT-5 的 Responses custom tool，见 tool/freeform.ts）没有
+  // JSON schema 形态：nativeTools 下面那条 nativeSchema 路径会把它压成一个参数是字符串的
+  // 普通函数工具发出去，等于静默发错。native runtime 还没实现 custom tool，直接让位给 ai-sdk。
+  if (Object.values(input.tools).some((item) => (item as { type?: string }).type === "provider"))
+    return { type: "unsupported", reason: "provider-defined tools are not supported by the native runtime" }
+
   // Integration point with @redcode-ai/llm: native-request lowers session data
   // into an LLMRequest, then LLMClient handles route selection and transport.
   const stream = input.llmClient.stream({
