@@ -219,8 +219,23 @@ let respawnAttempts = 0
 let sidecarSpawnCfg: { hostname: string; port: number; password: string; userDataPath: string } | undefined
 const RESPAWN_DELAYS_MS = [1000, 3000, 10000]
 
+// 260902 cc 时间窗闸门。原来只有 respawnAttempts 一个计数器，而它在**健康检查通过**时清零
+// （见下面 respawnSidecar 里那句）——问题是"过了健康检查"不等于"稳住了"。260828 15:58-15:59
+// 实测：70 秒内死三次，每次都健康起来、活约 33 秒又死，于是计数器每轮清零、attempt 恒为 1，
+// "giving up" 永远不触发，理论上可以无限拉尸体。
+// 所以再加一道与健康无关的闸：滑动窗口内重生次数超限就停手。孤立的偶发猝死照旧自愈
+// （一次死亡只占一个名额、10 分钟后自然过期），只有"起来又死"的循环会撞上限。
+const RESPAWN_WINDOW_MS = 10 * 60_000
+const RESPAWN_MAX_IN_WINDOW = 5
+let respawnTimes: number[] = []
+// 上一次 sidecar 起来的时刻——用来在退出日志里给出存活时长，
+// 一眼分清"孤立猝死"与"起来又死"（此前退出日志只有 code，两者长得一样）。
+let sidecarStartedAt: number | undefined
+
 function handleSidecarExit(code: number) {
-  writeLog("utility", "sidecar exited", { code }, "warn")
+  const aliveMs = sidecarStartedAt === undefined ? undefined : Date.now() - sidecarStartedAt
+  sidecarStartedAt = undefined
+  writeLog("utility", "sidecar exited", { code, aliveMs }, "warn")
   if (quitting || !server || !sidecarSpawnCfg) return
   server = null
   sidecarPid = undefined
@@ -230,6 +245,19 @@ function handleSidecarExit(code: number) {
 async function respawnSidecar(code: number) {
   const cfg = sidecarSpawnCfg
   if (!cfg) return
+  const now = Date.now()
+  respawnTimes = respawnTimes.filter((t) => now - t < RESPAWN_WINDOW_MS)
+  respawnTimes.push(now)
+  if (respawnTimes.length > RESPAWN_MAX_IN_WINDOW) {
+    // 与健康检查无关的第二道闸：窗口内重生太频繁 = 起来又死，再拉也是拉尸体
+    writeLog(
+      "utility",
+      "sidecar respawn giving up (rate)",
+      { code, respawnsInWindow: respawnTimes.length, windowMs: RESPAWN_WINDOW_MS },
+      "error",
+    )
+    return
+  }
   const attempt = respawnAttempts++
   if (attempt >= RESPAWN_DELAYS_MS.length) {
     // 连续三次都没活过健康检查，别无限拉尸体——留日志请人来看
@@ -250,6 +278,7 @@ async function respawnSidecar(code: number) {
     })
     server = listener
     sidecarPid = listener.pid
+    sidecarStartedAt = Date.now()
     const healthy = await Promise.race([
       health.wait.then(() => true),
       new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 30_000)),
@@ -547,6 +576,7 @@ const main = Effect.gen(function* () {
     )
     server = listener
     sidecarPid = listener.pid
+    sidecarStartedAt = Date.now()
     hookSidecarCleanup()
     logger.log("[timing] sidecar ready", { ms: Math.round(performance.now() - tSpawn) })
 
