@@ -10,6 +10,14 @@
 
 ### [未发布]
 
+- **`@` 菜单的陈旧候选不再能被 Enter / Tab 选中**（`packages/ui/src/hooks/use-filtered-list.tsx`、`packages/app/src/components/prompt-input.tsx`、新增 `packages/ui/src/hooks/use-filtered-list.test.ts`、`packages/ui/package.json`）：采自 DSH 的 `2026-08-28-trigger-menu-stale-while-revalidate`。那篇是两半，**核实下来本仓第一半本来就有、第二半没有** —— `use-filtered-list.tsx` 的 `flat` 读的是 `grouped.latest` 而不是 `grouped()`，新查询在途时保留上一轮结果，所以列表不会像上游那样每敲一个字就塌成骨架屏；但 Enter 分支没有任何在途判断。
+
+  `@` 那个列表的 `items` 每个按键都发一次 HTTP 文件搜索、**没有防抖**。于是敲 `@src/comp` 时高亮在 `src/components/app.tsx`，快速敲完 `onents/prompt` 并回车 —— 若最后一轮还没落地，插进去的就是 `src/components/app.tsx`，一个用户没挑过的候选，而且静默。`createEffect(on(grouped, () => reset()))` 让这件事更明确：结果一落地高亮就重置到新列表第一项，pending 窗口里那个高亮**注定**不是 settle 后会看到的那个。
+
+  Enter 的闸设在 hook 里（返回不会漏成"提交草稿"—— `prompt-input.tsx` 的分发在 popover 打开时对 Enter 一律 `preventDefault()` 后 `return`）；Tab 走 `selectPopoverActive()` 绕过 hook，单独判一次，hook 因此多导出一个 `loading()`。`/` 菜单是同步数组，这道闸实际只对 `@` 生效。**刻意不给「加载中」的视觉反馈** —— 陈旧行本来就是对的样子，按键级的明暗切换会变成逐字符闪动。
+
+  写回归测试时顺带发现 **`packages/ui` 的测试一直在用 solid 的服务端构建**：`bun test` 按 node 条件解析，`solid-js` 落到 `dist/server.js`，`createResource` 在那里直接抛 `getNextContextId cannot be used under non-hydrating context`。既有 7 个测试全是纯逻辑碰不到响应式，所以一直没暴露；但这是个浏览器 UI 包，解析到服务端构建本来就是错的。`test` / `test:ci` 都加 `--conditions browser`，对照过：不带是 38 pass / 2 fail，带上是 40 pass / 0 fail。note 见 `docs/notes/implemented/bug-fix/2026-09-01-trigger-menu-stale-selection-guard.md`。
+
 - **配置写盘改成原子替换，并在 Windows 上重试被外部句柄顶掉的 rename**（`packages/core/src/filesystem.ts`、`packages/opencode/src/config/config.ts`、`cli/cmd/tui/context/kv.tsx`、新增 `packages/core/test/filesystem/write-atomic.test.ts`）：采自 DSH 的 `2026-08-29-windows-atomic-replace-retry`，但**回本仓核实后发现缺口比上游那篇大一档** —— 上游是「已有 `writeFileAtomic`，补上 Windows 重试」，而本仓 `config.ts` 六处写盘全是 `fs.writeFileString` 直写，连临时文件和 rename 都没有。直写被打断（关机 / 崩溃 / 磁盘满）留下的就是半截 JSON，下次启动读不出来；其中 `$schema` 回填那条尤其别扭，它不是用户主动保存，而是**读配置的副作用**在改用户的文件。全仓唯一一份 temp+rename 在 TUI 的 `kv.tsx`，没共享出去也没有重试，临时名用 `Date.now()`（同一毫秒连写会撞名）。`write-file-atomic` 确实在依赖树里，但只是 `conf`（electron-store）的传递依赖 —— 也就是 GUI 那条 persist 路径是原子的、配置文件这条不是。
 
   原语落在 `AppFileSystem`，普通 async 面（`writeFileAtomic`）与 Effect 面（`writeFileStringAtomic`）各一个。临时文件必须是同目录兄弟（跨卷 rename 直接 EXDEV），名字用 pid + 进程内计数器。Windows 上只对 `EACCES` / `EBUSY` / `EPERM` 重试 —— 杀软扫描、索引器、另一个读者临时握着目标句柄时替换会被拒，而这是瞬时的，跨进程写锁（`Flock`）排的是我们自己人、管不到外部句柄；别的错误码和别的平台立刻失败。延迟 20ms 起翻倍、封顶 200ms，9 次尝试累计最多多等 1.1 秒（**这次没有跟上游参数的取舍问题** —— 对比 260822 那次 JPEG 质量梯子，配置写盘既不在模型热路径上又罕见，偏宽容才对，何况这台机器 Defender 活跃）。重试耗尽时删掉临时文件再抛出：**目标文件全程没被碰过**，读者看到的始终是完整的旧内容。

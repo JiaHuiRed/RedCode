@@ -693,6 +693,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     setActive: setAtActive,
     onInput: atOnInput,
     onKeyDown: atOnKeyDown,
+    loading: atLoading,
   } = useFilteredList<AtOption>({
     items: async (query) => {
       const agents = agentList()
@@ -841,6 +842,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   })
   const selectPopoverActive = () => {
     if (store.popover === "at") {
+      // 260901 cc Tab 走的是这条路而不是 useFilteredList 的 onKeyDown，所以那边的
+      //   同款闸门管不到这里，要单独判一次：新查询在途时 atFlat() 还是上一次的结果，
+      //   选中就等于插入一个用户没挑的候选。说明见 use-filtered-list.tsx 的 Enter 分支。
+      if (atLoading()) return
       const items = atFlat()
       if (items.length === 0) return
       const active = atActive()
