@@ -38,6 +38,7 @@ import { DropdownMenu } from "@redcode-ai/ui/dropdown-menu"
 import { Dialog } from "@redcode-ai/ui/dialog"
 import { InlineInput } from "@redcode-ai/ui/inline-input"
 import { Spinner } from "@redcode-ai/ui/spinner"
+import { ChiTaskSticker } from "@redcode-ai/ui/v2/components/chi-task-sticker.jsx"
 import { SessionRetry } from "@redcode-ai/ui/session-retry"
 import { ScrollView } from "@redcode-ai/ui/scroll-view"
 import { StickyAccordionHeader } from "@redcode-ai/ui/sticky-accordion-header"
@@ -1458,6 +1459,10 @@ export function MessageTimeline(props: {
         return (
           <TimelineRowFrame row={thinkingRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
+              {/* 260902 cc 看板娘只在会话第一轮的等待期露面：每轮都放就成了周期性闪动 */}
+              <Show when={thinkingRow().awaiting && thinkingRow().userMessageID === props.userMessages[0]?.id}>
+                <ChiTaskSticker />
+              </Show>
               <TimelineThinkingRow
                 reasoningHeading={thinkingRow().reasoningHeading}
                 showReasoningSummaries={settings.general.showReasoningSummaries()}

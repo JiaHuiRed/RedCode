@@ -1,0 +1,39 @@
+.chi-task-sticker {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0 6px;
+}
+
+/*
+ * 延迟 600ms 才起淡入。
+ *
+ * 快模型三百毫秒就吐首 token，那时 Thinking 行连同这张图已经卸载了 —— 有延迟就一次都不会露面。
+ * 只有真的等起来了才补这块空白，免得变成「闪一下就没」的那种周期性动效。
+ */
+.chi-task-sticker img {
+  width: 280px;
+  max-width: min(280px, 100%);
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: 16px;
+  user-select: none;
+  -webkit-user-drag: none;
+  animation: chi-task-sticker-in 420ms ease-out 600ms both;
+}
+
+@keyframes chi-task-sticker-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chi-task-sticker img {
+    animation-duration: 1ms;
+  }
+}
