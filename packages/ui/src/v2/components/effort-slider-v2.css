@@ -51,17 +51,20 @@
   pointer-events: none;
 }
 
+/* 260902 cc 刻度点放大并提亮。原来 2px + icon-muted + 0.45 透明度，在这条深色轨道上
+   肉眼基本看不见——刻度是"有几档、现在第几档"的唯一线索，看不见等于没做。
+   区分用明度不用色相：这排控件不该出现第二种颜色。 */
 [data-slot="effort-slider-v2-ticks"] span {
-  width: 2px;
-  height: 2px;
+  width: 3px;
+  height: 3px;
   border-radius: 999px;
-  background: var(--v2-icon-icon-muted);
-  opacity: 0.45;
-  transition: opacity 90ms ease-out;
+  background: var(--v2-icon-icon-base);
+  opacity: 0.4;
+  transition: opacity 120ms ease-out;
 }
 
 [data-slot="effort-slider-v2-ticks"] span[data-on] {
-  opacity: 1;
+  opacity: 0.9;
 }
 
 [data-slot="effort-slider-v2-thumb"] {
@@ -86,10 +89,21 @@
     ),
     var(--v2-grey-200);
   box-shadow: var(--v2-elevation-elements);
+  /* 260902 cc left 也要过渡。Kobalte 把位置写成内联 left: calc(N%)，不给它过渡的话
+     滑块在档位之间是硬跳的——这就是"不够丝滑"的来源，跟拖拽手感无关。
+     step=1 决定了它本来就只能落在离散点上，加一段 140ms 的缓动把跳变抹成滑行。
+     缓动曲线沿用侧栏宽度动画那条，保持全局手感一致。 */
   transition:
+    left 140ms cubic-bezier(0.22, 1, 0.36, 1),
     width 90ms ease-out,
     height 90ms ease-out,
     border-radius 90ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="effort-slider-v2-thumb"] {
+    transition: none;
+  }
 }
 
 [data-slot="effort-slider-v2-thumb"] input {
