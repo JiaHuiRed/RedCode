@@ -10,6 +10,14 @@
 
 ### [未发布]
 
+- **17 份模型提示词全部让位 soul，语气不再两处立法**（`packages/opencode/src/session/prompt/` 下 14 份）：接着上一条的兜底做第 2 步。原先只有 `deepseek.md`／`step.md`／`glm.md`／`grok.md` 带让位条款，而且那句"本文件不再重复规定"在多数文件里是假的——说完之后仍有四到八条在规定详略。现在路由到的 17 份**全部**带条款，同范围的条款已剪掉。
+
+  剪的判据不是按小节，而是按「这条在描述谁」：说**你是谁／怎么说话**（长度、称呼、短句、表情、不说教、开场白与结尾话术）归 soul，删；说**通道或模型缺陷**（别把推理泄进正文、别空轮结束）、**格式机制**（markdown 渲染、列表层级、`file:line` 引用）、**行为**（别乱建文件、工具用法、安全）归提示词，留。校准直接取自 `d0b5dac2` 里实际删掉的那批。
+
+  最重的三份：`trinity.md` 97→52 行——它整节 Tone and style 后面挂着 10 个演示"单词回答最好"的 example，还留着 `default.md` 早已移除的「不超过 4 行」硬钉、且写了两遍；`gemini.md` 155→142（「少于 3 行」、No Chitchat，以及 examples 区里 `1+2→3`、`13 是不是质数→true` 两条纯粹演示单词回答的例子）；`beast.md` 147→139（"casual, friendly yet professional tone" 及其 6 条语气示例）。
+
+  `plan*.md`／`max-steps.md`／`build-switch.md` **刻意不加条款**——它们是叠在 model 提示词之上的 overlay，不是人格层。顺带查出 **`copilot-gpt-5.md`（143 行）是死文件**：全仓零引用，`system.ts` 没 import 它，本次未动。typecheck 干净；`test/session/` 552 pass / 2 fail，那 2 条是 `revert-compact` 的既有 5s 超时——换回改前的提示词跑同样是 5 pass / 2 fail。
+
 - **会话轮次导航栏**（`packages/opencode/src/session/outline.ts` 新增、`server/routes/instance/httpapi/{groups,handlers}/session.ts`、`packages/app` 的 `pages/session/turn-outline.tsx` 新增 / `session-history-loader.ts` / `session.tsx` / `session/session-side-panel.tsx` / `context/global-sync/bootstrap.ts` / `context/server-sync.tsx` / i18n 三语、新增 `packages/opencode/test/session/outline.test.ts`）：采自 DSH 的 `2026-08-30-web-turn-rail-outline-jump`。会话页右侧面板新增「轮次」标签，列出**整份日志**的每一轮（提问一行 + 回答两行预览），点一条自动往前翻页直到那一轮进窗口，再滚过去。
 
   上游那篇的问题陈述对本仓逐字成立：导航若从**已加载的消息窗口**推导，而窗口只是日志的一个分页后缀（本仓首屏 40 条），长会话里就只会列出最近几轮——恰恰是不需要导航也看得到的那部分。现有的 `session-message-nav.ts` 前后跳收的是 `UserMessage` **对象**，同样只在已加载的轮次之间走。实测他库里最长的会话 2612 条消息 / **379 轮**。
