@@ -85,6 +85,16 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Enter" && !event.isComposing) {
       event.preventDefault()
+      // 260901 cc 新查询在途时 flat() 读的是 grouped.latest —— 上一次查询的结果。
+      //   这个 stale-while-revalidate 是有意的（否则每敲一个字列表就塌成空白），但
+      //   **陈旧行只能看不能选**：此刻高亮的那一行是为上一个 filter 算出来的，直接
+      //   选中就等于静默插入一个用户没挑的候选。这个窗口里 Enter 是显式空操作 ——
+      //   调用方（prompt-input.tsx 的 keydown 分发）在 popover 打开时对 Enter 一律
+      //   preventDefault + return，所以这里返回不会漏成"提交草稿"。
+      //   代价是快打时可能吞掉一次 Enter，再按一次即可；换来的是不会选错。
+      //   刻意不给"加载中"的视觉反馈：陈旧行本来就是对的样子，而按键级的明暗切换
+      //   会变成逐字符闪动。来源 DSH `2026-08-28-trigger-menu-stale-while-revalidate`。
+      if (grouped.loading) return
       const selectedIndex = flat().findIndex((x) => props.key(x) === list.active())
       const selected = flat()[selectedIndex]
       if (selected) props.onSelect?.(selected, selectedIndex)
@@ -116,6 +126,8 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
 
   return {
     grouped,
+    /** 新查询在途。此时 `flat()` 是上一次的结果，别拿它做选中类动作。 */
+    loading: () => grouped.loading,
     filter: () => store.filter,
     flat,
     reset,
