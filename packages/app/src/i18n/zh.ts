@@ -272,6 +272,9 @@ export const dict = {
   "common.default": "默认",
   "common.attachment": "附件",
 
+  // 260902 cc 推理强度弹窗里滑杆两端的标签
+  "prompt.variant.faster": "更快",
+  "prompt.variant.smarter": "更强",
   "prompt.placeholder.shell": "输入 shell 命令... {{example}}",
   "prompt.placeholder.normal": '随便问点什么... "{{example}}"',
   "prompt.placeholder.simple": "随便问点什么...",
@@ -408,7 +411,8 @@ export const dict = {
   "context.inspect.messages": "对话",
   "context.inspect.more": "另有 {{count}} 个工具",
   "context.breakdown.title": "上下文拆分",
-  "context.breakdown.note": "输入 token 的大致拆分。「其他」几乎全是系统提示与工具定义——这两份从没到过客户端，估算器看不见；真实构成要等本会话下一轮请求。",
+  "context.breakdown.note":
+    "输入 token 的大致拆分。「其他」几乎全是系统提示与工具定义——这两份从没到过客户端，估算器看不见；真实构成要等本会话下一轮请求。",
   "context.breakdown.system": "系统",
   "context.breakdown.user": "用户",
   "context.breakdown.assistant": "助手",

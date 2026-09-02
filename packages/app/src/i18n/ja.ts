@@ -223,6 +223,9 @@ export const dict = {
   "common.saving": "保存中...",
   "common.default": "デフォルト",
   "common.attachment": "添付ファイル",
+  // 260902 cc 推理强度弹窗里滑杆两端的标签
+  "prompt.variant.faster": "高速",
+  "prompt.variant.smarter": "高精度",
   "prompt.placeholder.shell": "シェルコマンドを入力... {{example}}",
   "prompt.placeholder.normal": '何でも聞いてください... "{{example}}"',
   "prompt.placeholder.simple": "何でも聞いてください...",
@@ -349,7 +352,8 @@ export const dict = {
   "context.inspect.messages": "会話",
   "context.inspect.more": "他 {{count}} 個のツール",
   "context.breakdown.title": "コンテキストの内訳",
-  "context.breakdown.note": '入力トークンのおおよその内訳です。「その他」はほぼシステムプロンプトとツール定義で、どちらもクライアントには届かないため、実測値でしか確認できません。',
+  "context.breakdown.note":
+    "入力トークンのおおよその内訳です。「その他」はほぼシステムプロンプトとツール定義で、どちらもクライアントには届かないため、実測値でしか確認できません。",
   "context.breakdown.system": "システム",
   "context.breakdown.user": "ユーザー",
   "context.breakdown.assistant": "アシスタント",
@@ -723,7 +727,8 @@ export const dict = {
   "settings.agents.section.subagent": "サブエージェント",
   "settings.agents.group.default": "既定",
   "settings.agents.model.title": "モデル",
-  "settings.agents.model.description": "未設定の場合、サブエージェントは自身の既定モデル、メインエージェントはセッションのメインモデルを使います",
+  "settings.agents.model.description":
+    "未設定の場合、サブエージェントは自身の既定モデル、メインエージェントはセッションのメインモデルを使います",
   "settings.agents.model.follow": "既定（上書きしない）",
   "settings.agents.variant.title": "推論レベル",
   "settings.agents.variant.description": "このエージェントが自身のモデルを使う場合のみ有効です",

@@ -251,6 +251,9 @@ export const dict = {
   "common.default": "Default",
   "common.attachment": "attachment",
 
+  // 260902 cc 推理强度弹窗里滑杆两端的标签
+  "prompt.variant.faster": "Faster",
+  "prompt.variant.smarter": "Smarter",
   "prompt.placeholder.shell": "Enter shell command... {{example}}",
   "prompt.placeholder.normal": 'Ask anything... "{{example}}"',
   "prompt.placeholder.simple": "Ask anything...",
@@ -406,7 +409,8 @@ export const dict = {
   "context.inspect.messages": "Conversation",
   "context.inspect.more": "+{{count}} more tools",
   "context.breakdown.title": "Context Breakdown",
-  "context.breakdown.note": 'Approximate breakdown of input tokens. "Other" is almost entirely the system prompt and tool schemas — neither ever reaches the client, so only the real composition can show them.',
+  "context.breakdown.note":
+    'Approximate breakdown of input tokens. "Other" is almost entirely the system prompt and tool schemas — neither ever reaches the client, so only the real composition can show them.',
   "context.breakdown.system": "System",
   "context.breakdown.user": "User",
   "context.breakdown.assistant": "Assistant",
@@ -999,12 +1003,13 @@ export const dict = {
   "settings.models.description": "Model settings will be configurable here.",
   "settings.agents.title": "Agents",
   "settings.agents.description":
-    "Override the model, reasoning effort and timeout of the built-in agents. \"Default\" leaves the agent's own definition in charge.",
+    'Override the model, reasoning effort and timeout of the built-in agents. "Default" leaves the agent\'s own definition in charge.',
   "settings.agents.section.primary": "Primary agents",
   "settings.agents.section.subagent": "Subagents",
   "settings.agents.group.default": "Default",
   "settings.agents.model.title": "Model",
-  "settings.agents.model.description": "Unset: subagents use their own default model, primary agents follow the session's main model",
+  "settings.agents.model.description":
+    "Unset: subagents use their own default model, primary agents follow the session's main model",
   "settings.agents.model.follow": "Default (don't override)",
   "settings.agents.variant.title": "Reasoning effort",
   "settings.agents.variant.description": "Only applies while this agent is using its own configured model",

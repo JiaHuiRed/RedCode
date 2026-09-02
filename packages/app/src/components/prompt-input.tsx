@@ -35,6 +35,8 @@ import { Icon } from "@redcode-ai/ui/icon"
 import { ProviderIcon } from "@redcode-ai/ui/provider-icon"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { Tooltip, TooltipKeybind } from "@redcode-ai/ui/tooltip"
+import { EffortSliderV2 } from "@redcode-ai/ui/v2/components/effort-slider-v2.jsx"
+import { Popover } from "@redcode-ai/ui/popover"
 import { IconButton } from "@redcode-ai/ui/icon-button"
 import { Select } from "@redcode-ai/ui/select"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
@@ -1115,6 +1117,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   )
 
   const variants = createMemo(() => ["default", ...local.model.variant.list()])
+  const variantLabel = (value: string) => (value === "default" ? language.t("common.default") : value)
   const accepting = createMemo(() => {
     const id = params.id
     if (!id) return permission.isAutoAcceptingDirectory(sdk.directory)
@@ -1405,36 +1408,72 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         style={providersShouldFadeIn() ? { animation: "fade-in 0.3s" } : undefined}
         class="flex items-center"
       >
-        <Icon
-          name="brain"
-          size="small"
-          class={
-            local.model.variant.current()
-              ? "text-yellow-400 pointer-events-none shrink-0"
-              : "text-v2-icon-icon-muted pointer-events-none shrink-0"
-          }
-        />
+        {/* 260902 cc 下拉 → 弹窗里的滑杆。两步：
+            ① 档位本来就是有序的一条轴（low→high），下拉把它呈现成无序候选，滑杆才是它的形状；
+            ② 滑杆必须放进弹窗。第一版直接嵌在底栏，64px 宽根本滑不出"滚动感"，而且这排
+               控件（模型选择器等）本来就都是弹窗，嵌一个异类进去也不成体统。
+            "default" 保留为最左一档：它是"交给模型/agent 自己定"不是"最低强度"，
+            但它是唯一能滑回未设置状态的路径，放在轴的起点当原点。 */}
         <TooltipKeybind
           placement="top"
           gutter={4}
           title={language.t("command.model.variant.cycle")}
           keybind={command.keybind("model.variant.cycle")}
         >
-          <Select
-            size="normal"
-            options={variants()}
-            current={local.model.variant.current() ?? "default"}
-            label={(x) => (x === "default" ? language.t("common.default") : x)}
-            onSelect={(value) => {
-              local.model.variant.set(value === "default" ? undefined : value)
-              restoreFocus()
+          <Popover
+            placement="top"
+            gutter={8}
+            class="w-[236px]"
+            triggerAs={Button}
+            triggerProps={{
+              variant: "ghost",
+              size: "normal",
+              style: control(),
+              class: "min-w-0 max-w-[160px] justify-start text-[13px] font-[440] leading-4 text-v2-text-text-faint",
+              "data-action": "prompt-model-variant",
             }}
-            class={`capitalize max-w-[160px] ${local.model.variant.current() ? "text-yellow-400" : "text-text-base"}`}
-            valueClass="truncate text-13-regular"
-            triggerStyle={control()}
-            triggerProps={{ "data-action": "prompt-model-variant" }}
-            variant="ghost"
-          />
+            trigger={
+              <>
+                <Icon
+                  name="brain"
+                  size="small"
+                  class={
+                    local.model.variant.current() ? "shrink-0 text-yellow-400" : "shrink-0 text-v2-icon-icon-muted"
+                  }
+                />
+                <span class="truncate capitalize">{variantLabel(local.model.variant.current() ?? "default")}</span>
+                <Icon name="chevron-down" size="small" class="shrink-0 text-v2-icon-icon-muted" />
+              </>
+            }
+            onOpenChange={(open: boolean) => {
+              if (!open) restoreFocus()
+            }}
+          >
+            <div class="flex flex-col gap-2">
+              <div class="flex items-baseline justify-between gap-2">
+                <span class="text-11-regular text-text-weak">{language.t("settings.agents.variant.title")}</span>
+                <span
+                  class={`capitalize text-12-medium truncate ${
+                    local.model.variant.current() ? "text-yellow-400" : "text-text-base"
+                  }`}
+                >
+                  {variantLabel(local.model.variant.current() ?? "default")}
+                </span>
+              </div>
+              <div class="flex items-baseline justify-between gap-2 text-11-regular text-text-weaker">
+                <span>{language.t("prompt.variant.faster")}</span>
+                <span>{language.t("prompt.variant.smarter")}</span>
+              </div>
+              <EffortSliderV2
+                steps={variants()}
+                current={local.model.variant.current() ?? "default"}
+                label={variantLabel}
+                title={language.t("settings.agents.variant.title")}
+                onChange={(value) => local.model.variant.set(value === "default" ? undefined : value)}
+                style={{ "--effort-slider-v2-width": "100%", "--effort-slider-v2-height": "20px" }}
+              />
+            </div>
+          </Popover>
         </TooltipKeybind>
       </div>
     </Show>
