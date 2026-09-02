@@ -81,6 +81,16 @@ model 提示词本来就覆盖，填进去只会造出新的重复。
   （Copilot **provider** 集成）是两回事，那个还在用；Copilot 侧的模型 id 含 `gpt`，
   本来就走 `gpt.md`，删掉这份不丢任何覆盖。
 
+- **`beast.md`（139 行）也删了**，连同 `system.ts` 里 `gpt-4 / o1 / o3` 那条路由分支。
+  与 copilot 那份不同，它原本是**活的**，所以这是行为变更不是清死代码，哥哥单独拍了板。
+  实测路由改动（探针跑 `provider()`，不是推断）：`gpt-4*` 共 48 个含 `gpt`、落在维护中的
+  `gpt.md`；真正的 o1/o3 共 24 个落 `default.md`。
+
+  **顺带修掉一处巧合匹配**：那条分支用的是裸子串 `includes("o1")` / `includes("o3")`，于是
+  `sao10k/*`（"Sa-**o1**-0K"，12 个 Llama 微调）和 `solar-pro3`（"pr-**o3**"）这 13 个跟
+  OpenAI 毫无关系的模型一直在吃 beast 档。删掉分支后它们回落 `default.md`。
+  这与 `wantsFlashAnchor` 那处注释记的是同一个教训：判据写在模型名字里，改个名字就换一套约束。
+
 - 覆盖面的边界：`plan.md` / `plan-mode.md` / `plan-reminder-anthropic.md` /
   `max-steps.md` / `build-switch.md` **刻意不加条款**——它们是叠加在 model 提示词之上的
   overlay/reminder，不是人格层；它们本来也没在规定语气。

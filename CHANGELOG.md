@@ -10,6 +10,12 @@
 
 ### [未发布]
 
+- **删掉 `beast.md` 与 `copilot-gpt-5.md` 两份旧档**（`packages/opencode/src/session/prompt/`、`session/system.ts`）：不会再拿上上代模型干活。`copilot-gpt-5.md`（143 行）是纯死文件——全仓零引用，`system.ts` 从来没 import 过；Copilot 侧模型 id 含 `gpt`，本来就走 `gpt.md`（与 `packages/core/src/github-copilot/` 那个 provider 集成无关，那个还在用）。
+
+  `beast.md`（139 行）不同，它原本是活的，所以一并删掉 `system.ts` 里 `gpt-4 / o1 / o3` 那条路由分支。探针实跑 `provider()` 确认：48 个 `gpt-4*` 含 `gpt`、落在维护中的 `gpt.md`，24 个真正的 o1/o3 落 `default.md`（按兜底分支那段注释，重写后的 `default.md` 本就是一线水准）。
+
+  **顺带修掉一处巧合匹配**：那条分支用的是裸子串 `includes("o1")` / `includes("o3")`，于是 `sao10k/*`（"Sa**o1**0K"，12 个 Llama 微调）和 `solar-pro3`（"pr**o3**"）这 13 个跟 OpenAI 毫无关系的模型一直在吃 beast 档，删掉分支后回落 `default.md`。与 `wantsFlashAnchor` 那处注释记的是同一个教训。typecheck 干净；`test/session/` 552 pass / 2 fail，与改前同（`revert-compact` 的既有 5s 超时）。
+
 - **17 份模型提示词全部让位 soul，语气不再两处立法**（`packages/opencode/src/session/prompt/` 下 14 份）：接着上一条的兜底做第 2 步。原先只有 `deepseek.md`／`step.md`／`glm.md`／`grok.md` 带让位条款，而且那句"本文件不再重复规定"在多数文件里是假的——说完之后仍有四到八条在规定详略。现在路由到的 17 份**全部**带条款，同范围的条款已剪掉。
 
   剪的判据不是按小节，而是按「这条在描述谁」：说**你是谁／怎么说话**（长度、称呼、短句、表情、不说教、开场白与结尾话术）归 soul，删；说**通道或模型缺陷**（别把推理泄进正文、别空轮结束）、**格式机制**（markdown 渲染、列表层级、`file:line` 引用）、**行为**（别乱建文件、工具用法、安全）归提示词，留。校准直接取自 `d0b5dac2` 里实际删掉的那批。

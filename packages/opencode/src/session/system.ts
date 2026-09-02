@@ -4,7 +4,6 @@ import { InstanceState } from "@/effect/instance-state"
 
 import PROMPT_ANTHROPIC from "./prompt/anthropic.md" with { type: "text" }
 import PROMPT_DEFAULT from "./prompt/default.md" with { type: "text" }
-import PROMPT_BEAST from "./prompt/beast.md" with { type: "text" }
 import PROMPT_DEEPSEEK from "./prompt/deepseek.md" with { type: "text" }
 import PROMPT_GEMINI from "./prompt/gemini.md" with { type: "text" }
 import PROMPT_GPT from "./prompt/gpt.md" with { type: "text" }
@@ -52,8 +51,11 @@ export const wantsStepAnchor = (modelID: string, providerID: string) =>
 
 export function provider(model: Provider.Model) {
   if (experimentNoModelPrompt()) return [PROMPT_DEFAULT]
-  if (model.api.id.includes("gpt-4") || model.api.id.includes("o1") || model.api.id.includes("o3"))
-    return [PROMPT_BEAST]
+  // 260902 cc beast.md（gpt-4 / o1 / o3 专属档）已删：哥哥判定不会再拿上上代模型干活。
+  // gpt-4* 含 "gpt"，落下面的 gpt.md（在维护的那份）；o1/o3 落 default.md。
+  // 顺带修掉这条分支的巧合匹配：includes("o1") / includes("o3") 是裸子串，
+  // sao10k/*（"Sa-o1-0K"）与 solar-pro3（"pr-o3"）这 13 个跟 OpenAI 毫无关系的模型
+  // 一直在吃 beast 档。判据写死在名字里就会这样，同 wantsFlashAnchor 那处的教训。
   // 260902 Red GPT 系列统一走 gpt.md。原 codex.md 是 Codex CLI 的遗留，其独有内容已并入
   // gpt.md（后者才是按 GPT-5.6 重做的那份）；分开维护只会让同系列的 sol/terra/luna 与
   // *-codex 拿到两套工程约束。
