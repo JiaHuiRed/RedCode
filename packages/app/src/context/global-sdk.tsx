@@ -7,6 +7,7 @@ import { createSdkForServer } from "@/utils/server"
 import { useLanguage } from "./language"
 import { usePlatform } from "./platform"
 import { useServer } from "./server"
+import { SSE_MAX_RETRY_ATTEMPTS, sseLogLine } from "@/utils/sse-log"
 
 const isAbortError = (error: unknown) =>
   error !== null && typeof error === "object" && "name" in error && error.name === "AbortError"
@@ -149,24 +150,31 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
           try {
             const events = await eventSdk.global.event({
               signal: attempt.signal,
+              sseMaxRetryAttempts: SSE_MAX_RETRY_ATTEMPTS,
               onSseError: (error) => {
                 if (aborted(error)) return
                 if (streamErrorLogged) return
                 streamErrorLogged = true
-                console.error("[global-sdk] event stream error", {
-                  url: currentServer.http.url,
-                  fetch: eventFetch ? "platform" : "webview",
-                  error,
-                })
+                console.error(
+                  sseLogLine("[global-sdk]", "event stream error", {
+                    url: currentServer.http.url,
+                    fetch: eventFetch ? "platform" : "webview",
+                    error,
+                  }),
+                )
               },
             })
-            reconnectDelay = RECONNECT_BASE_MS
             setConnection("live")
             let yielded = Date.now()
             resetHeartbeat()
             for await (const event of events.stream) {
               resetHeartbeat()
               streamErrorLogged = false
+              // 260902 cc 退避在**收到第一条事件**后才归零，不是连上就归零。
+              // SDK 那圈重试收掉之后（sseMaxRetryAttempts=1），3 秒的起始退避没了；
+              // 若仍在"请求成功即归零"，服务端接了连接又立刻断的情况会退化成 256ms 紧循环。
+              // 以"真的流出过数据"为准，连上但立刻断的场景才会继续按指数退避。
+              reconnectDelay = RECONNECT_BASE_MS
               const directory = event.directory ?? "global"
               if (event.payload.type === "sync") {
                 continue
@@ -197,11 +205,13 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
           } catch (error) {
             if (!aborted(error) && !streamErrorLogged) {
               streamErrorLogged = true
-              console.error("[global-sdk] event stream failed", {
-                url: currentServer.http.url,
-                fetch: eventFetch ? "platform" : "webview",
-                error,
-              })
+              console.error(
+                sseLogLine("[global-sdk]", "event stream failed", {
+                  url: currentServer.http.url,
+                  fetch: eventFetch ? "platform" : "webview",
+                  error,
+                }),
+              )
             }
           } finally {
             abort.signal.removeEventListener("abort", onAbort)
@@ -213,11 +223,13 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
           if (!abort.signal.aborted && started) {
             setConnection("reconnecting")
             const sinceLastEvent = Date.now() - lastEventAt
-            console.warn("[global-sdk] stream ended, reconnecting", {
-              url: currentServer.http.url,
-              sinceLastEventMs: sinceLastEvent,
-              exceededHeartbeat: sinceLastEvent > HEARTBEAT_TIMEOUT_MS,
-            })
+            console.warn(
+              sseLogLine("[global-sdk]", "stream ended, reconnecting", {
+                url: currentServer.http.url,
+                sinceLastEventMs: sinceLastEvent,
+                exceededHeartbeat: sinceLastEvent > HEARTBEAT_TIMEOUT_MS,
+              }),
+            )
           }
 
           if (abort.signal.aborted || !started) return
@@ -237,18 +249,18 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
       clearHeartbeat()
     }
 
-   onMount(() => {
-     // 260828 Red 通知断链修复：globalSDK.event.start() 之前无任何调用者，
-     //   挂在 globalSDK.event.listen 上的通知/声音/权限自动应答全成死监听，
-     //   serverSDK 却正常启动（dock 弹窗可见、桌面通知从未出现）。这里自启动。
-     void start()
-     makeEventListener(document, "visibilitychange", () => {
-       if (document.visibilityState !== "visible") return
-       if (!started) return
-       if (Date.now() - lastEventAt < HEARTBEAT_TIMEOUT_MS) return
-       attempt?.abort()
-     })
-   })
+    onMount(() => {
+      // 260828 Red 通知断链修复：globalSDK.event.start() 之前无任何调用者，
+      //   挂在 globalSDK.event.listen 上的通知/声音/权限自动应答全成死监听，
+      //   serverSDK 却正常启动（dock 弹窗可见、桌面通知从未出现）。这里自启动。
+      void start()
+      makeEventListener(document, "visibilitychange", () => {
+        if (document.visibilityState !== "visible") return
+        if (!started) return
+        if (Date.now() - lastEventAt < HEARTBEAT_TIMEOUT_MS) return
+        attempt?.abort()
+      })
+    })
 
     onCleanup(() => {
       stop()

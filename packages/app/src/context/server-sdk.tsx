@@ -8,6 +8,7 @@ import { useLanguage } from "./language"
 import { usePlatform } from "./platform"
 import { ServerConnection, useServer } from "./server"
 import { createRefCountMap } from "@/utils/refcount"
+import { SSE_MAX_RETRY_ATTEMPTS, sseLogLine } from "@/utils/sse-log"
 
 const isAbortError = (error: unknown) =>
   error !== null && typeof error === "object" && "name" in error && error.name === "AbortError"
@@ -146,26 +147,30 @@ function createServerSdkContext(server: ServerConnection.Any) {
         try {
           const events = await eventSdk.global.event({
             signal: attempt.signal,
+            sseMaxRetryAttempts: SSE_MAX_RETRY_ATTEMPTS,
             onSseError: (error) => {
               if (aborted(error)) return
               if (streamErrorLogged) return
               streamErrorLogged = true
               // 260901 cc 标签原本写的是 [global-sdk]，是从 global-sdk.tsx 抄过来时漏改的。
               // 两个文件各有一份几乎相同的重连循环，日志串台正好在排查断连时误导人。
-              console.error("[server-sdk] event stream error", {
-                url: server.http.url,
-                fetch: eventFetch ? "platform" : "webview",
-                error,
-              })
+              console.error(
+                sseLogLine("[server-sdk]", "event stream error", {
+                  url: server.http.url,
+                  fetch: eventFetch ? "platform" : "webview",
+                  error,
+                }),
+              )
             },
           })
-          reconnectDelay = RECONNECT_BASE_MS
           setConnection("live")
           let yielded = Date.now()
           resetHeartbeat()
           for await (const event of events.stream) {
             resetHeartbeat()
             streamErrorLogged = false
+            // 260902 cc 退避在收到第一条事件后才归零，理由见 global-sdk.tsx 同处注释。
+            reconnectDelay = RECONNECT_BASE_MS
             const directory = event.directory ?? "global"
             if (event.payload.type === "sync") {
               continue
@@ -196,11 +201,13 @@ function createServerSdkContext(server: ServerConnection.Any) {
         } catch (error) {
           if (!aborted(error) && !streamErrorLogged) {
             streamErrorLogged = true
-            console.error("[server-sdk] event stream failed", {
-              url: server.http.url,
-              fetch: eventFetch ? "platform" : "webview",
-              error,
-            })
+            console.error(
+              sseLogLine("[server-sdk]", "event stream failed", {
+                url: server.http.url,
+                fetch: eventFetch ? "platform" : "webview",
+                error,
+              }),
+            )
           }
         } finally {
           abort.signal.removeEventListener("abort", onAbort)
@@ -214,11 +221,13 @@ function createServerSdkContext(server: ServerConnection.Any) {
 
         // 260706 Red: 记录断连原因
         const sinceLastEvent = Date.now() - lastEventAt
-        console.warn("[server-sdk] stream ended, reconnecting", {
-          url: server.http.url,
-          sinceLastEventMs: sinceLastEvent,
-          exceededHeartbeat: sinceLastEvent > HEARTBEAT_TIMEOUT_MS,
-        })
+        console.warn(
+          sseLogLine("[server-sdk]", "stream ended, reconnecting", {
+            url: server.http.url,
+            sinceLastEventMs: sinceLastEvent,
+            exceededHeartbeat: sinceLastEvent > HEARTBEAT_TIMEOUT_MS,
+          }),
+        )
 
         await wait(Math.min(reconnectDelay, RECONNECT_MAX_MS))
         reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS)
