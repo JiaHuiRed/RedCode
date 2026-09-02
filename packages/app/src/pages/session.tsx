@@ -14,6 +14,7 @@ import {
   onMount,
   untrack,
   createResource,
+  createSignal,
   Suspense,
 } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
@@ -52,6 +53,7 @@ import { createSessionKeyboard } from "@/pages/session/session-keyboard"
 import { MessageTimeline } from "@/pages/session/message-timeline"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { useSessionLayout } from "@/pages/session/session-layout"
+import { SessionTurnOutline } from "@/pages/session/turn-outline"
 import { syncSessionModel } from "@/pages/session/session-model-helpers"
 import { SessionSidePanel } from "@/pages/session/session-side-panel"
 import { FileTreePanel } from "@/pages/session/file-tree-panel"
@@ -1090,6 +1092,45 @@ export default function Page() {
     scroller: () => scroller,
   })
 
+  /**
+   * 轮次导航栏的跳转：先把目标翻进已加载窗口，再滚过去。
+   *
+   * 260901 cc 两步都不能省。`revealMessage` 只认已渲染的行（它查的是 messageRowIndex），
+   * 而目录覆盖的是**整份日志**，点到的那一轮很可能还没被加载 —— 直接 reveal 会静默无事发生。
+   * `loadThrough` 负责一路往前翻到它（含无进展保护与并发翻页的等待，见
+   * session-history-loader.ts），翻不到就明说，不退化成"落在最近的一条"。
+   *
+   * 滚动放在 rAF 里：prepend 刚插进来的行还没被 virtua 测量，同一拍里 scrollToIndex
+   * 用的是估算尺寸（message-timeline.tsx:656 那条注释记的就是这个坑）。
+   */
+  const [jumpingTurn, setJumpingTurn] = createSignal(false)
+  const jumpToTurn = async (messageID: string) => {
+    if (jumpingTurn()) return
+    setJumpingTurn(true)
+    try {
+      const reached = await historyLoader.loadThrough(messageID)
+      if (!reached) {
+        showToast({ variant: "error", title: language.t("session.outline.unreachable") })
+        return
+      }
+      // loadThrough 已经确认它进窗口了，这里必然找得到；setActiveMessage 收的是消息对象不是 id。
+      nav.setActiveMessage(visibleUserMessages().find((message) => message.id === messageID))
+      requestAnimationFrame(() => revealMessage(messageID))
+    } finally {
+      setJumpingTurn(false)
+    }
+  }
+
+  const outlinePanel = () => (
+    <SessionTurnOutline
+      directory={sdk.directory}
+      sessionID={params.id ?? ""}
+      activeMessageID={store.messageId}
+      busy={jumpingTurn()}
+      onJump={(id) => void jumpToTurn(id)}
+    />
+  )
+
   fill = () => {
     if (fillFrame !== undefined) return
 
@@ -1705,7 +1746,13 @@ export default function Page() {
           </Show>
         </div>
 
-        <SessionSidePanel canReview={canReview} reviewPanel={reviewPanel} reviewSnap={ui.reviewSnap} size={size} />
+        <SessionSidePanel
+          canReview={canReview}
+          reviewPanel={reviewPanel}
+          outlinePanel={outlinePanel}
+          reviewSnap={ui.reviewSnap}
+          size={size}
+        />
       </div>
 
       <TerminalPanel />

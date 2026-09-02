@@ -28,6 +28,7 @@
 | 图片尺寸从每边盒子改**总像素预算**(2000x20000 长截图 200px 宽 → 632px)+ 候选懒求值 + 按 alpha 路由(JPEG 源不再排 PNG 候选) | `alpha-routed-image-quality-ladders` | `image/image.ts`,配置 `attachment.image.max_pixels`/`max_dimension` | fefc7ce2 |
 | 配置写盘改**原子替换**(此前 config.ts 六处全是直写,打断即半截 JSON;`$schema` 回填还发生在**读**配置的过程里)+ Windows 上对 EACCES/EBUSY/EPERM 重试 rename(外部句柄瞬时占用,跨进程锁管不到);TUI kv.tsx 那份孤立 temp+rename 并入 | `2026-08-29-windows-atomic-replace-retry`(上游只补重试,**本仓连原子替换都缺**) | `core/filesystem.ts` 的 `writeFileAtomic` / `writeFileStringAtomic`,`config/config.ts` 四处 + `tui/context/kv.tsx` | 待 commit |
 | `@` 菜单陈旧候选**只能看不能选**(新查询在途时 Enter/Tab 不再选中上一轮的高亮 —— 该列表每按键一次 HTTP 搜索且无防抖,快打时会静默插入用户没挑过的文件) | `2026-08-28-trigger-menu-stale-while-revalidate`(该篇两半:**显示侧本仓已有** —— `flat` 读 `grouped.latest`;缺的是正确性侧) | `ui/hooks/use-filtered-list.tsx` + `app/components/prompt-input.tsx` 的 `selectPopoverActive`;顺带修掉 `packages/ui` 测试一直在用 solid 服务端构建 | 待 commit |
+| **会话轮次导航栏**:右侧面板新增「轮次」标签,列出**整份日志**的每一轮,点一条自动翻页到那一轮再滚过去(此前只有 `session-message-nav` 在**已加载**的轮次间前后跳) | `2026-08-30-web-turn-rail-outline-jump` + 配套 4 个 feat 提交 | 新增 `session/outline.ts` + `GET /session/:id/outline`;`session-history-loader.ts` 的 `loadThrough`;新增 `pages/session/turn-outline.tsx` | 待 commit |
 
 ## 第二批(小机制,高性价比)
 

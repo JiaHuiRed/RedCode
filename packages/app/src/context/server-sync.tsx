@@ -28,6 +28,7 @@ import {
   loadProviderCatalogQuery,
   loadProviderQuotaQuery,
   loadProvidersQuery,
+  loadSessionOutlineQuery,
   loadUsageQuery,
 } from "./global-sync/bootstrap"
 import { createChildStoreManager } from "./global-sync/child-store"
@@ -88,6 +89,8 @@ function makeQueryOptionsApi(serverSDK: () => OpencodeClient, sdkFor: (dir: Path
     lsp: (directory: PathKey) => loadLspQuery(directory, sdkFor(directory)),
     sessions: (directory: PathKey) => ({ queryKey: [directory, "loadSessions"] as const }),
     usage: (directory: PathKey, range: "all" | "30d" | "7d") => loadUsageQuery(directory, range, sdkFor(directory)),
+    sessionOutline: (directory: PathKey, sessionID: string) =>
+      loadSessionOutlineQuery(directory, sessionID, sdkFor(directory)),
   }
 }
 export type QueryOptionsApi = ReturnType<typeof makeQueryOptionsApi>

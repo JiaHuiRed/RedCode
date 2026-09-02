@@ -16,6 +16,7 @@ import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
+import * as SessionOutline from "@/session/outline"
 import * as SessionUsage from "@/session/usage"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { InstanceState } from "@/effect/instance-state"
@@ -142,6 +143,12 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       query: typeof DiffQuery.Type
     }) {
       return yield* summary.diff({ sessionID: ctx.params.sessionID, messageID: ctx.query.messageID })
+    })
+
+    // 260901 cc 轮次目录。刻意**不经过 requireSession** —— 会话不存在时返回空目录即可，
+    //   导航栏拿不到内容自己就不渲染，为一条纯只读的辅助数据把整个会话页顶成错误页不划算。
+    const outline = Effect.fn("SessionHttpApi.outline")(function* (ctx: { params: { sessionID: SessionID } }) {
+      return SessionOutline.build(ctx.params.sessionID)
     })
 
     const messages = Effect.fn("SessionHttpApi.messages")(function* (ctx: {
@@ -502,6 +509,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("goal", goal)
       .handle("contextInspect", contextInspect)
       .handle("diff", diff)
+      .handle("outline", outline)
       .handle("messages", messages)
       .handle("message", message)
       .handleRaw("create", createRaw)

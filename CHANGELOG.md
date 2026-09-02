@@ -10,6 +10,14 @@
 
 ### [未发布]
 
+- **会话轮次导航栏**（`packages/opencode/src/session/outline.ts` 新增、`server/routes/instance/httpapi/{groups,handlers}/session.ts`、`packages/app` 的 `pages/session/turn-outline.tsx` 新增 / `session-history-loader.ts` / `session.tsx` / `session/session-side-panel.tsx` / `context/global-sync/bootstrap.ts` / `context/server-sync.tsx` / i18n 三语、新增 `packages/opencode/test/session/outline.test.ts`）：采自 DSH 的 `2026-08-30-web-turn-rail-outline-jump`。会话页右侧面板新增「轮次」标签，列出**整份日志**的每一轮（提问一行 + 回答两行预览），点一条自动往前翻页直到那一轮进窗口，再滚过去。
+
+  上游那篇的问题陈述对本仓逐字成立：导航若从**已加载的消息窗口**推导，而窗口只是日志的一个分页后缀（本仓首屏 40 条），长会话里就只会列出最近几轮——恰恰是不需要导航也看得到的那部分。现有的 `session-message-nav.ts` 前后跳收的是 `UserMessage` **对象**，同样只在已加载的轮次之间走。实测他库里最长的会话 2612 条消息 / **379 轮**。
+
+  三块各自独立：① **数据**走新增的 `GET /session/:id/outline`，直接查库、与窗口无关；不做上游那套投影折叠（本仓是 SQLite 不是事件溯源），预览在 SQL 里就截断，part 表按 `group by message_id` + `min(id)` 压成每条消息一行，否则长会话要拉几千行只为每条消息的头几十个字。② **跳转** `loadThrough(messageID)` 一路翻到目标进窗口；**无进展时不当场放弃而是等一拍再试** —— `loadMessages` 对并发调用是静默 no-op，"没进展"最常见的原因是用户同时在往上滚、pager 被占着（上游的 `fix(ui-chat): hold jumps while a plain pull owns the pager` 修的就是这种情况下退化成"落在最近一条"）；翻不到就 toast 明说。滚动放 rAF 里，因为 prepend 刚插的行还没被 virtua 测量。③ **UI** 不另起面板，加进右侧现成的标签组，内容包在 `<Show when={activeTab() === "outline"}>` 里——目录请求只在真的打开这个标签时才发，不给「点开会话」那条热路径加往返。
+
+  实测（真实库只读探针，最长会话）：两条 SQL 共 414ms，1418 行 part 压成每消息一行，379 轮，载荷 107.2KB。测试 7 例，折叠逻辑抽成纯函数 `fold()` 与库解耦，覆盖轮次编号、「最后一条带文字的 assistant 才算回答」、孤儿 assistant 不造轮次、截断按码点不按码元、空会话。**界面未做视觉验证**（起 desktop dev server 在这台机器上曾把内存打到 2.9GB）。note 见 `docs/notes/implemented/feature/2026-09-01-session-turn-outline.md`。
+
 - **`@` 菜单的陈旧候选不再能被 Enter / Tab 选中**（`packages/ui/src/hooks/use-filtered-list.tsx`、`packages/app/src/components/prompt-input.tsx`、新增 `packages/ui/src/hooks/use-filtered-list.test.ts`、`packages/ui/package.json`）：采自 DSH 的 `2026-08-28-trigger-menu-stale-while-revalidate`。那篇是两半，**核实下来本仓第一半本来就有、第二半没有** —— `use-filtered-list.tsx` 的 `flat` 读的是 `grouped.latest` 而不是 `grouped()`，新查询在途时保留上一轮结果，所以列表不会像上游那样每敲一个字就塌成骨架屏；但 Enter 分支没有任何在途判断。
 
   `@` 那个列表的 `items` 每个按键都发一次 HTTP 文件搜索、**没有防抖**。于是敲 `@src/comp` 时高亮在 `src/components/app.tsx`，快速敲完 `onents/prompt` 并回车 —— 若最后一轮还没落地，插进去的就是 `src/components/app.tsx`，一个用户没挑过的候选，而且静默。`createEffect(on(grouped, () => reset()))` 让这件事更明确：结果一落地高亮就重置到新列表第一项，pending 窗口里那个高亮**注定**不是 settle 后会看到的那个。

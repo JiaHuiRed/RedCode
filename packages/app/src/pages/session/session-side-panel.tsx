@@ -28,6 +28,8 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 export function SessionSidePanel(props: {
   canReview: () => boolean
   reviewPanel: () => JSX.Element
+  /** 轮次导航栏。数据与跳转都在 session.tsx（那里才有 loadThrough 与 revealMessage），这里只放槽。 */
+  outlinePanel: () => JSX.Element
   reviewSnap: boolean
   size: Sizing
 }) {
@@ -208,6 +210,12 @@ export function SessionSidePanel(props: {
                             <div>{language.t("session.tab.status")}</div>
                           </div>
                         </Tabs.Trigger>
+                        {/* 260901 cc 轮次标签：整份日志的轮次目录，点一条翻页并跳过去 */}
+                        <Tabs.Trigger value="outline">
+                          <div class="flex items-center gap-1.5">
+                            <div>{language.t("session.tab.outline")}</div>
+                          </div>
+                        </Tabs.Trigger>
                         {/* 260615 Red Plan 标签：展示当前会话 todo 计划进度 */}
                         <Tabs.Trigger value="plan">
                           <div class="flex items-center gap-1.5">
@@ -281,6 +289,14 @@ export function SessionSidePanel(props: {
                           <div class="relative pt-2 flex-1 min-h-0 overflow-auto px-2">
                             <StatusPopoverBody shown={() => true} fill />
                           </div>
+                        </Show>
+                      </Tabs.Content>
+
+                      {/* 260901 cc 轮次标签页内容。Show 保证只在激活时挂载 —— 目录请求因此
+                          只在真的打开这个标签时才发，不给「点开会话」那条热路径加往返。 */}
+                      <Tabs.Content value="outline" class="flex flex-col h-full overflow-hidden contain-strict">
+                        <Show when={activeTab() === "outline"}>
+                          <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">{props.outlinePanel()}</div>
                         </Show>
                       </Tabs.Content>
 
