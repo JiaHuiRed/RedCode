@@ -35,6 +35,7 @@ import { Icon } from "@redcode-ai/ui/icon"
 import { ProviderIcon } from "@redcode-ai/ui/provider-icon"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { Tooltip, TooltipKeybind } from "@redcode-ai/ui/tooltip"
+import { EffortSliderV2 } from "@redcode-ai/ui/v2/components/effort-slider-v2.jsx"
 import { IconButton } from "@redcode-ai/ui/icon-button"
 import { Select } from "@redcode-ai/ui/select"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
@@ -1115,6 +1116,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   )
 
   const variants = createMemo(() => ["default", ...local.model.variant.list()])
+  const variantLabel = (value: string) => (value === "default" ? language.t("common.default") : value)
   const accepting = createMemo(() => {
     const id = params.id
     if (!id) return permission.isAutoAcceptingDirectory(sdk.directory)
@@ -1420,21 +1422,32 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           title={language.t("command.model.variant.cycle")}
           keybind={command.keybind("model.variant.cycle")}
         >
-          <Select
-            size="normal"
-            options={variants()}
-            current={local.model.variant.current() ?? "default"}
-            label={(x) => (x === "default" ? language.t("common.default") : x)}
-            onSelect={(value) => {
-              local.model.variant.set(value === "default" ? undefined : value)
-              restoreFocus()
-            }}
-            class={`capitalize max-w-[160px] ${local.model.variant.current() ? "text-yellow-400" : "text-text-base"}`}
-            valueClass="truncate text-13-regular"
-            triggerStyle={control()}
-            triggerProps={{ "data-action": "prompt-model-variant" }}
-            variant="ghost"
-          />
+          {/* 260902 cc 从下拉换成滑杆。档位本来就是**有序的一条轴**（low→high），
+              下拉把它呈现成无序候选，滑杆才是它真正的形状。
+              "default" 保留为最左一档：它是"交给模型/agent 自己定"，不是"最低强度"——
+              放在轴的起点当原点，也是唯一能滑回未设置状态的路径。 */}
+          <div
+            data-action="prompt-model-variant"
+            class="flex items-center gap-1.5"
+            /* 拖完/点完把焦点还给输入框（原来下拉关闭时做的事）。不放在 onChange 里：
+               那样键盘左右键调档位时每按一次就被抢走焦点，滑杆等于不能用键盘操作。 */
+            onPointerUp={restoreFocus}
+          >
+            <span
+              class={`capitalize text-13-regular max-w-[80px] truncate ${
+                local.model.variant.current() ? "text-yellow-400" : "text-text-base"
+              }`}
+            >
+              {variantLabel(local.model.variant.current() ?? "default")}
+            </span>
+            <EffortSliderV2
+              steps={variants()}
+              current={local.model.variant.current() ?? "default"}
+              label={variantLabel}
+              title={language.t("settings.agents.variant.title")}
+              onChange={(value) => local.model.variant.set(value === "default" ? undefined : value)}
+            />
+          </div>
         </TooltipKeybind>
       </div>
     </Show>

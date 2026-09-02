@@ -1,0 +1,116 @@
+/* 260902 cc 推理强度滑杆。
+   形制照 switch-v2 来，不照浏览器 range：胶囊轨道 + 落在轨道**内部**的方圆滑块，
+   而不是"细轨 + 一颗大圆球"——后者在这条 12px 字号的底栏里又大又亮，像误入的表单控件。
+   没有强调色填充：档位进度由点亮到第几个刻度表达，这排控件本来就该是安静的。 */
+
+/* 胶囊画在根元素上，Track 是内缩后的那条看不见的轨。
+   内缩 5px = 半个滑块：Kobalte 按 Track 宽度定位滑块，滑到 0%/100% 时滑块中心正好落在
+   Track 两端，只有把 Track 收进来，滑块才不会探出胶囊。 */
+[data-slot="effort-slider-v2"] {
+  position: relative;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  width: 64px;
+  height: 12px;
+  padding: 0 5px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, var(--v2-alpha-light-0) 0%, var(--v2-alpha-light-20) 100%), var(--v2-background-bg-layer-03);
+  box-shadow: var(--v2-elevation-switch-off);
+  touch-action: none;
+  cursor: pointer;
+  user-select: none;
+  transition: background 90ms ease-out;
+}
+
+[data-slot="effort-slider-v2"][data-disabled] {
+  cursor: default;
+  opacity: 0.5;
+}
+
+[data-slot="effort-slider-v2-track"] {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+[data-slot="effort-slider-v2-ticks"] {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  /* 与滑块 travel 同一条基准（都以 Track 为界），刻度才对得上滑块停的位置 */
+  justify-content: space-between;
+  /* 刻度不吃事件，否则点在刻度上滑杆不响应（见 tsx 里的注释） */
+  pointer-events: none;
+}
+
+[data-slot="effort-slider-v2-ticks"] span {
+  width: 2px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--v2-icon-icon-muted);
+  opacity: 0.45;
+  transition: opacity 90ms ease-out;
+}
+
+[data-slot="effort-slider-v2-ticks"] span[data-on] {
+  opacity: 1;
+}
+
+[data-slot="effort-slider-v2-thumb"] {
+  box-sizing: border-box;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  /* 横向居中别自己做：Kobalte 已经内联了 transform: translateX(-50%)，
+     再补一次会变成整整一个滑块宽的偏移（实测 0% 档时左缘落在轨道外 12px）。
+     这里只管纵向。 */
+  translate: 0 -50%;
+  /* 方圆而不是正圆：跟 switch-v2 的 thumb 同族，圆球是另一套语言 */
+  border-radius: 3px;
+  border: 0.5px solid var(--v2-overlay-gradient-depth-overlay-depth-top);
+  background:
+    linear-gradient(
+      180deg,
+      var(--v2-overlay-gradient-depth-overlay-depth-top) 0%,
+      var(--v2-overlay-gradient-depth-overlay-depth-bot) 100%
+    ),
+    var(--v2-grey-200);
+  box-shadow: var(--v2-elevation-elements);
+  transition:
+    width 90ms ease-out,
+    height 90ms ease-out,
+    border-radius 90ms ease-out;
+}
+
+[data-slot="effort-slider-v2-thumb"] input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+[data-slot="effort-slider-v2"]:hover:not([data-disabled]) {
+  background:
+    linear-gradient(0deg, var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)),
+    linear-gradient(180deg, var(--v2-alpha-light-0) 0%, var(--v2-alpha-light-20) 100%), var(--v2-background-bg-layer-03);
+}
+
+[data-slot="effort-slider-v2"]:hover:not([data-disabled]) [data-slot="effort-slider-v2-thumb"] {
+  width: 11px;
+  height: 11px;
+  border-radius: 4px;
+}
+
+[data-slot="effort-slider-v2-thumb"]:focus-visible {
+  outline: 2px solid var(--v2-border-border-focus);
+  outline-offset: 1px;
+}
