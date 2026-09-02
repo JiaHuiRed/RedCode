@@ -191,8 +191,20 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
     })
 
   // Every config dir we may read from: global config dir, any `.redcode`
-  // folders between cwd and home, and REDCODE_CONFIG_DIR.
-  const directories = yield* ConfigPaths.directories(ctx.directory)
+  // folders between cwd and worktree, and REDCODE_CONFIG_DIR.
+  //
+  // 260902 cc 这里必须传 worktree。不传的话 ConfigPaths.directories 的项目级上溯
+  // `stop` 为 undefined、一路走到盘根 —— Windows 上 os.tmpdir() 就在家目录底下
+  // （C:\Users\<user>\AppData\Local\Temp），上溯必经真实家目录，于是把**跑测试的人**
+  // 的 ~/.redcode 扫进来。config.ts 一直传 ctx.worktree 所以不中招，只有这条 TUI 路
+  // 漏着；2026-08-22 在临时目录里钉空 `.git` 的那次修复也因此没能覆盖到这里。
+  // 读泄漏之外还有写的一面：下面 migrateTuiConfig 会拿这批目录当迁移源，命中就剥掉
+  // theme/keybinds/tui 三个键并落 .tui-migration.bak。
+  // 边界取最近的 `.git`（与 fixture 钉的标记同源）；找不到就维持不收口，跟
+  // project.fromDirectory 对非 git 目录回落成 worktree="/" 的语义保持一致。
+  const gitMarker = yield* AppFileSystem.use.up({ targets: [".git"], start: ctx.directory })
+  const worktree = gitMarker.length ? path.dirname(gitMarker[0]!) : undefined
+  const directories = yield* ConfigPaths.directories(ctx.directory, worktree)
   yield* Effect.promise(() => migrateTuiConfig({ directories, cwd: ctx.directory }))
 
   const projectFiles = Flag.REDCODE_DISABLE_PROJECT_CONFIG ? [] : yield* ConfigPaths.files("tui", ctx.directory)
@@ -226,6 +238,15 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
 
   for (const dir of dirs) {
     if (!dir.endsWith(".redcode") && dir !== Flag.REDCODE_CONFIG_DIR) continue
+    // 260902 cc 合并时必须跳过 Global.Path.config：它本身就是 `<home>/.redcode`、
+    // 同样 endsWith(".redcode")，不跳的话全局层会在项目层**之后**被重新合入、拿到
+    // 最高优先级 —— 跟上面第 1 步注释写的 "lowest precedence" 正好相反。实测对照：
+    // 全局目录名叫 `.redcode` 时项目值输，同一份配置把目录改名 `globalcfg` 就赢。
+    // 生产环境 Global.Path.config 恒等于 ~/.redcode，所以这是真实用户可见的 bug：
+    // 全局 tui.json 会盖掉项目的 tui.json。第 1 步已经加载过它，跳过即可。
+    // 注意只跳过**合并**：dirs 还要原样返回给上面的 npm.install 装插件依赖，
+    // 把全局目录从 dirs 里滤掉会让全局插件的依赖不再被安装。
+    if (dir === Global.Path.config) continue
     for (const file of ConfigPaths.fileInDirectory(dir, "tui")) {
       yield* mergeFile(acc, file)
     }

@@ -31,45 +31,29 @@ error: NotFound: FileSystem.readFile (C:\Users\...\Temp\redcode-test-xxxx\openco
 4. `$schema` 断言 `https://opencode.ai/config.json` → `https://redcode.dev/config.json`（src 现写后者）。
 5. 复数 `agents/` 那条改成钉住"复数被忽略、单数照常"。它不是重命名欠账，是 `43be65f0` 刻意收口的**已删功能**：`src/config/agent.ts:123` 扫到复数目录只发一条 warning 就丢弃。注意命令侧不同，`{command,commands}` 两种都仍支持，别顺手一起收。
 
-结果 153/31 → **179 pass / 5 fail**。typecheck 干净。
+本条改动把 153/31 带到 **179 pass / 5 fail**；剩下 5 条是两个 src 真 bug，另行修掉后为 184/0。
 
 ## 备选与否决理由
 
 - **对 `opencode.json` 做全局 sed**：否决——会一并改掉 MCP 兼容路径与 mock URL，把仍在生效的兼容行为改没。
 - **把复数 `agents/` 测试直接删掉**：否决——那样"复数被忽略"这个刻意决定就没有任何测试钉着，后来者容易把它加回来。
-- **改 src 让 5 条剩余失败转绿**：否决（本次不做）——它们是真 bug，改的是用户可见的配置优先级语义，得单独决策，见下。
+- **改测试让剩下 5 条转绿**：否决——那 5 条测试写得对、src 错，是两个真 bug（见
+  [2026-09-02-tui-config-layer-leak-and-precedence](../bug-fix/2026-09-02-tui-config-layer-leak-and-precedence.md)）。
+  改测试就是把 bug 盖住。两个 bug 已另行修掉，`test/config/` 现为 **184 pass / 0 fail**。
 
 ## 后果
 
-剩余 5 条**全部不是测试欠账，是 src 真 bug**，测试写得对、代码错。故意留红，不要靠改测试掩盖。
-
-### bug 1：全局 `.redcode` 会反压项目级 TUI 配置（4 条）
-
-`src/cli/cmd/tui/config/tui.ts` 第 4 步按 `dir.endsWith(".redcode")` 过滤"项目级 `.redcode` 目录"再合一次。但 `Global.Path.config` 本身就是 `<home>/.redcode`，**也 endsWith `.redcode`**，于是全局层在项目层之后被重新合入、拿到最高优先级——跟同文件第 1 步注释写的"Global tui config (lowest precedence)"正好相反。
-
-开关式对照（同一份配置，只改全局目录名）：
-
-```
-全局目录名 ".redcode"   -> demo = true   （全局赢，错）
-全局目录名 "globalcfg"  -> demo = false  （项目赢，对）
-```
-
-生产环境 `Global.Path.config` 就是 `~/.redcode`，**真实用户受影响**：`~/.redcode/tui.json` 会盖掉项目的 `tui.json`。识别签名：项目里改 theme／plugin_enabled 不生效，删掉全局同名键才生效。
-
-### bug 2：测试会读到维护者的真实 `~/.redcode`（1 条）
-
-`ConfigPaths.directories(directory, worktree)` 的项目级上溯设计上由 `worktree` 收口，`config.ts` 传了，`tui.ts:195` **没传**（同文件 `:63` 还留着一行注释掉的 `ctx.worktree`——该层拿不到 worktree）。`worktree` 为 undefined 时上溯一路走到盘根。Windows 上临时目录在 `C:\Users\<user>\AppData\Local\Temp` 底下，上溯必然经过真实家目录，于是扫到真实的 `C:\Users\<user>\.redcode`。
-
-实测探针从临时目录出发拿到：
-
-```
-- <testhome>\.redcode          （测试全局，对）
-- C:\Users\ADMINI~1\.redcode   （维护者 live 配置，泄漏）
-- C:\.redcode
-```
-
-`resolves attention config defaults and overrides` 收到的 `{enabled:true, notifications:false, sound:false}` 与 `~/.redcode/tui.jsonc` 逐字节一致，即为实锤。
-
-**读泄漏已发生，写泄漏是悬着的**：`tui-migrate.ts` 的 `redcodeFiles()` 把这批 directories 也当迁移源，命中就会剥掉 `theme`／`keybinds`／`tui` 三个键并落一个 `.tui-migration.bak`。本次没触发，只因维护者的 `~/.redcode/redcode.jsonc` 恰好不含这三个键（顶层只有 agent／compaction／default_agent／disabled_providers／instructions／mcp／shell／tools）。已核对 mtime 与 `git -C ~/.redcode status`，live 配置未被改动。这条与"测试洗 live 配置"是同一族危险，`packages/core/src/global.ts:9` 那段注释记的就是上一次同族事故。
-
-两条都未修：修法要么把 worktree 穿进 TUI 配置层，要么把 `Global.Path.config` 与家目录 `.redcode` 排除出第 4 步——都改用户可见语义，留给维护者决策。
+- 结果 153/31 → **179 pass / 5 fail**（本次改动本身），typecheck 干净。剩余 5 条不是测试欠账，
+  是两个 src 真 bug；单独修掉后 `test/config/` 为 **184 pass / 0 fail**。根因、实证与修法见
+  [2026-09-02-tui-config-layer-leak-and-precedence](../bug-fix/2026-09-02-tui-config-layer-leak-and-precedence.md)。
+- **别再对 `opencode` 字样做无差别替换**。仓里仍有四类合法出现，一个都不是文件名欠账：
+  项目级 `opencode.json(c)`（MCP 兼容，`config.ts:687` 显式再扫一遍）、供应商 id
+  `provider.opencode`、npm 包名 `oh-my-opencode`、主题名 `DEFAULT_THEMES.opencode`，
+  外加 `config.example.com/opencode.json` 这类纯 mock URL。
+  安全的匹配形式是**带引号的字面量** `"opencode.json"`，它天然避开 URL（URL 里前一个字符是 `/`）。
+- 全仓扫过，`packages/opencode/test/` 下其余测试文件零重命名欠账。
+  `inline-tool-wrap-snapshot` 里的 `OPENCODE_DB|OPENCODE_DEV` 是**折行用的展示字符串**、
+  不是环境变量消费点，改它只会白洗快照。
+- 识别签名（下次再遇到同类）：报错落在 `NotFound: FileSystem.readFile (...\opencode.jsonc)` 的
+  只是少数；**大头是环境变量名不匹配**，症状五花八门（`path.join(undefined, ...)` 直接抛、
+  flag 读不到导致走错分支），从签名反推根因会漏掉一大半。先按"env 名 / 目录名 / 文件名"三类分桶再动手。
