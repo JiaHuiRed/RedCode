@@ -11,9 +11,13 @@
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
-  width: 64px;
-  height: 12px;
-  padding: 0 5px;
+  /* 尺寸留给调用方：底栏那种窄条用默认值，弹窗里铺满宽度、轨道也更厚，
+     手感差别全在这两个数上（窄条滑不出"滚动感"，这是 260902 第一版翻车的原因）。
+     滑块跟着轨道高走，两端内缩恒等于半个滑块宽，胶囊才包得住它。 */
+  --_thumb: calc(var(--effort-slider-v2-height, 12px) - 2px);
+  width: var(--effort-slider-v2-width, 64px);
+  height: var(--effort-slider-v2-height, 12px);
+  padding: 0 calc(var(--_thumb) / 2);
   flex-shrink: 0;
   border-radius: 999px;
   background:
@@ -63,14 +67,16 @@
 [data-slot="effort-slider-v2-thumb"] {
   box-sizing: border-box;
   top: 50%;
-  width: 10px;
-  height: 10px;
+  /* 滑块跟着轨道高走：窄条时是颗小方块，弹窗里（20px 轨道）长成参照物里那种
+     几乎填满轨道的白色圆角块。写死 10px 的话弹窗里会缩成一粒，滚动感全无。 */
+  width: var(--_thumb);
+  height: var(--_thumb);
   /* 横向居中别自己做：Kobalte 已经内联了 transform: translateX(-50%)，
      再补一次会变成整整一个滑块宽的偏移（实测 0% 档时左缘落在轨道外 12px）。
      这里只管纵向。 */
   translate: 0 -50%;
   /* 方圆而不是正圆：跟 switch-v2 的 thumb 同族，圆球是另一套语言 */
-  border-radius: 3px;
+  border-radius: calc(var(--_thumb) / 3);
   border: 0.5px solid var(--v2-overlay-gradient-depth-overlay-depth-top);
   background:
     linear-gradient(
@@ -105,9 +111,7 @@
 }
 
 [data-slot="effort-slider-v2"]:hover:not([data-disabled]) [data-slot="effort-slider-v2-thumb"] {
-  width: 11px;
-  height: 11px;
-  border-radius: 4px;
+  border-radius: calc(var(--_thumb) / 4);
 }
 
 [data-slot="effort-slider-v2-thumb"]:focus-visible {

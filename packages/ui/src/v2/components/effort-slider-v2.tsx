@@ -1,5 +1,5 @@
 import { Slider as Kobalte } from "@kobalte/core/slider"
-import { For, Show, splitProps } from "solid-js"
+import { For, Show, splitProps, type JSX } from "solid-js"
 import "./effort-slider-v2.css"
 
 export interface EffortSliderV2Props {
@@ -13,6 +13,8 @@ export interface EffortSliderV2Props {
   /** 无障碍名，落到 aria-label。 */
   title?: string
   class?: string
+  /** 尺寸走 --effort-slider-v2-width / --effort-slider-v2-height 两个自定义属性。 */
+  style?: JSX.CSSProperties
 }
 
 /**
@@ -26,7 +28,7 @@ export interface EffortSliderV2Props {
  * 对外仍然只交换字符串，调用方不用知道有下标这回事。
  */
 export function EffortSliderV2(props: EffortSliderV2Props) {
-  const [local] = splitProps(props, ["steps", "current", "onChange", "label", "title", "class"])
+  const [local] = splitProps(props, ["steps", "current", "onChange", "label", "title", "class", "style"])
 
   const index = () => {
     const found = local.steps.indexOf(local.current)
@@ -39,6 +41,7 @@ export function EffortSliderV2(props: EffortSliderV2Props) {
       <Kobalte
         data-slot="effort-slider-v2"
         class={local.class}
+        style={local.style}
         aria-label={local.title}
         minValue={0}
         maxValue={local.steps.length - 1}
