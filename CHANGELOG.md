@@ -8,7 +8,31 @@
 
 ---
 
-### [未发布]
+### [0.10.6] - 2026-09-02
+
+> 界面批：ChatGPT/Codex 额度面板两端的可读性收口，推理强度从下拉换成弹窗里的滑杆。
+
+- **推理强度：下拉 → 弹窗里的滑杆**（新增 `packages/ui/src/v2/components/effort-slider-v2.{tsx,css}`、`packages/app/src/components/prompt-input.tsx`、i18n 三语）：档位本来就是**有序的一条轴**（low→high），下拉把它呈现成无序候选。档位集合是每个模型自己的（openai 五档、deepseek 三档、hy4 两档、anthropic 系没有这一维），所以刻度数由 `steps.length` 决定，少于两档不渲染。
+
+  形制走了三版才落地，每一版的翻车都指向同一件事——**滑杆的手感来自尺寸与跟手，不来自缓动**：① 第一版是细轨 + 大圆球 + 纯蓝填充直接嵌在输入框底栏，64px 宽根本滑不出行程，而且这排控件（模型选择器等）本来就都是弹窗，嵌个异类进去也不成体统；② 挪进弹窗后加了 140ms 的 `left` 缓动，仍然是「一闪而过」——`step=1` 时滑块只能落在档位上，档位之间隔着 40px，无论缓动多久，滑块都是**离开手指自己跑过去**的；③ 最终改成拖动阶段用 0.01 细步长严格跟手，松手（`onChangeEnd`）才 round 到最近一档提交，那一下吸附由 CSS 过渡收尾。拖动中必须关掉过渡（`data-dragging`），否则滑块拖在指针后面，比跳更难受。
+
+  几处容易踩的实现细节：胶囊画在根元素、Track 内缩半个滑块宽（Kobalte 按 Track 宽定位滑块，不内缩的话滑到两端会探出胶囊外），因此**不能用 `Kobalte.Fill`**——它只能长在 Track 里，跟着内缩会在左端留一截填不到的空当，进度改由「点亮到第几个刻度」表达；横向居中交给 Kobalte 内联的 `translateX(-50%)`，自己只做纵向，两边都做会偏整整一个滑块宽；`restoreFocus` 挂 `pointerup` 而不是 `onChange`，挂后者的话键盘方向键每按一次焦点就被抢回输入框。细步长的代价是 Kobalte 的方向键按 `step` 走（一次只挪 1%），所以在根节点捕获阶段自己接管 `ArrowLeft/Right/Up/Down/Home/End`，按整档走。
+
+  刻度点原先是 2px + `icon-muted` + 0.45 透明度，在 `rgb(92,92,92)` 的轨道上肉眼看不见——刻度是「有几档、现在第几档」的唯一线索，看不见等于没做。放大到 3px、换 `icon-base`（212 灰），已越过 0.9 / 未越过 0.4，**区分用明度不用色相**。
+
+- **上下文页右侧留空 + 额度百分比显示保护**（`packages/app/src/components/session/session-context-tab.tsx`）：面板做窄之后，右对齐的值（账号 ID、`3%`、构成行的模型名）连同进度条全部停在同一条右边界上叠成一堵墙，读起来像被截断。外层容器 `px-6` → `pl-6 pr-10`（左 24 / 右 40），同时去掉额度块自己那条 `pr-2`——改容器而不是改单个区块，是为了让各区块共用同一条右边界，错开两条比贴边更难看。左右不等距是故意的：左边是「起始于此」的标签、参差不齐所以不成墙，右边是「结束在此」的值。
+
+  百分比另加一道显示保护。实测（plus 账号连发四次请求）`x-codex-*-used-percent` 回的一直是整数 3 / 4，codex 侧同源的那条 JSON 路在 OpenAPI 里也直接声明成 `i32`，说明服务端自己就 round 过；**但本仓整条链路（响应头 → `Number()` → `Schema.Number` → openapi 的 `number`）没有任何一处取整**，服务端哪天不 round 了会原样渲染出 `33.333333333333336%`。用 `toLocaleString` 而不是 `toFixed`，整数不会被补成 `3.0`。
+
+- **TUI 额度条上色，套餐名不再被账号 ID 挤掉末字**（`cli/cmd/tui/feature-plugins/sidebar/quota.tsx`）：原来整条进度条（含已用部分）都上 `textMuted`，画出来是条没颜色的灰带，3% 时完全看不出是进度条。拆成 filled / rest 两段，已用部分按 info/warning/error 分档上色——与 `context.tsx` 的 `bar()` 同形状；宽度保持 10 不复用那边的 24，因为这一行还要放 label、百分比、窗口长度、重置时刻，而侧栏只有约 38 列。
+
+  套餐名那个 `text` 没写 `flexShrink`，在 `space-between` 里被 36 字符的账号 ID 压缩，实测 `plus` 显示成 `plu`、账号 ID 还得折两行。plan 补 `flexShrink={0}`，账号 ID 取 UUID 第一段（足够区分账号），一行放得下。顺带把裸的 `{q.accountID}` 收进 `Show`——它是可选字段。
+
+---
+
+### [0.10.5] - 2026-09-02
+
+> 提示词批：语气从 17 份 model 提示词里收进 soul，删掉两份上上代旧档，记忆的写与剪合并成一个 skill 并摘出固定前缀。
 
 - **两个记忆 skill 合并成一个，剪枝阈值挪到注入面**（`seed/skill/memory/`、`seed/redcode.home.jsonc`；配套改动在私仓 `~/.redcode`）：原先 `memory-automation`（写侧）通过 `instructions` 数组**每轮强制注入**，`consolidate-memory`（整理侧）只在被 load 时才进上下文。结果是只写不剪——MEMORY.md 单调上涨，而它每轮整份注入，等于每轮成本一直在涨。
 
@@ -32,13 +56,6 @@
 
   `plan*.md`／`max-steps.md`／`build-switch.md` **刻意不加条款**——它们是叠在 model 提示词之上的 overlay，不是人格层。顺带删掉 **`copilot-gpt-5.md`（143 行）**——死文件，全仓零引用，`system.ts` 没 import 它；Copilot 侧模型 id 含 `gpt`，本来就走 `gpt.md`，删掉不丢覆盖（与 `packages/core/src/github-copilot/` 那个 provider 集成无关，那个还在用）。typecheck 干净；`test/session/` 552 pass / 2 fail，那 2 条是 `revert-compact` 的既有 5s 超时——换回改前的提示词跑同样是 5 pass / 2 fail。
 
-- **会话轮次导航栏**（`packages/opencode/src/session/outline.ts` 新增、`server/routes/instance/httpapi/{groups,handlers}/session.ts`、`packages/app` 的 `pages/session/turn-outline.tsx` 新增 / `session-history-loader.ts` / `session.tsx` / `session/session-side-panel.tsx` / `context/global-sync/bootstrap.ts` / `context/server-sync.tsx` / i18n 三语、新增 `packages/opencode/test/session/outline.test.ts`）：采自 DSH 的 `2026-08-30-web-turn-rail-outline-jump`。会话页右侧面板新增「轮次」标签，列出**整份日志**的每一轮（提问一行 + 回答两行预览），点一条自动往前翻页直到那一轮进窗口，再滚过去。
-
-  上游那篇的问题陈述对本仓逐字成立：导航若从**已加载的消息窗口**推导，而窗口只是日志的一个分页后缀（本仓首屏 40 条），长会话里就只会列出最近几轮——恰恰是不需要导航也看得到的那部分。现有的 `session-message-nav.ts` 前后跳收的是 `UserMessage` **对象**，同样只在已加载的轮次之间走。实测他库里最长的会话 2612 条消息 / **379 轮**。
-
-  三块各自独立：① **数据**走新增的 `GET /session/:id/outline`，直接查库、与窗口无关；不做上游那套投影折叠（本仓是 SQLite 不是事件溯源），预览在 SQL 里就截断，part 表按 `group by message_id` + `min(id)` 压成每条消息一行，否则长会话要拉几千行只为每条消息的头几十个字。② **跳转** `loadThrough(messageID)` 一路翻到目标进窗口；**无进展时不当场放弃而是等一拍再试** —— `loadMessages` 对并发调用是静默 no-op，"没进展"最常见的原因是用户同时在往上滚、pager 被占着（上游的 `fix(ui-chat): hold jumps while a plain pull owns the pager` 修的就是这种情况下退化成"落在最近一条"）；翻不到就 toast 明说。滚动放 rAF 里，因为 prepend 刚插的行还没被 virtua 测量。③ **UI** 不另起面板，加进右侧现成的标签组，内容包在 `<Show when={activeTab() === "outline"}>` 里——目录请求只在真的打开这个标签时才发，不给「点开会话」那条热路径加往返。
-
-  实测（真实库只读探针，最长会话）：两条 SQL 共 414ms，1418 行 part 压成每消息一行，379 轮，载荷 107.2KB。测试 7 例，折叠逻辑抽成纯函数 `fold()` 与库解耦，覆盖轮次编号、「最后一条带文字的 assistant 才算回答」、孤儿 assistant 不造轮次、截断按码点不按码元、空会话。**界面未做视觉验证**（起 desktop dev server 在这台机器上曾把内存打到 2.9GB）。note 见 `docs/notes/implemented/feature/2026-09-01-session-turn-outline.md`。
 - **soul 模板填上默认语气，新用户开箱不再没有语气约束**（`packages/opencode/src/project/template/Tsoul.md`、`Gsoul.md`）：`deepseek.md`／`step.md`／`glm.md` 里都写着"语气、称呼、详略由 soul 决定，本文件不再重复规定"，但这句话在三份里都是假的——说完之后文件里仍有四到八条在规定详略，大多聚在 `# Output channels`。而 `gpt.md`／`anthropic.md` 连这句都没有。
 
   之所以不能直接把那些条款删掉：**没有兜底层**。`system.ts` 的 `provider()` 返回的是单个文件（`[PROMPT_DEEPSEEK]` 而不是 `[PROMPT_DEFAULT, PROMPT_DEEPSEEK]`），model 档是**替换** `default.md` 不是叠加；soul 又是有条件注入的（`instruction.ts:170` 的 `existsSafe`）；而播种出去的模板**每一节都是空占位**。三条叠起来，一个没编辑过 soul 的新用户会一条语气约束都没有。
@@ -48,6 +65,47 @@
   顺带修掉一个一直靠碰巧工作的地方：首行改成 `# RedCode · TUI 灵魂模板`。首行不是装饰——`shared.ts:23` 用它取会话标题前缀、`local.tsx:27` 取 `·` 之前那截当 agent 名；原来没有 `·`，两处都是回落到 "TUI"／"GUI"。现在新用户看到的 agent 名是 "RedCode"。
 
   **已有 `~/.redcode/souls/*.md` 一律不受影响**（`bootstrap.ts` 只在文件不存在时播种）。note 见 `docs/notes/implemented/refactor/2026-09-02-soul-template-tone-floor.md`，其中记了下一步怎么剪 model 提示词里的重复条款。
+
+- **GPT 系列提示词并入 `gpt.md` 并让位 soul**（`packages/opencode/src/session/prompt/gpt.md`、删除 `prompt/codex.md`、`session/system.ts`）：`codex.md` 是 Codex CLI 时期的遗留，其独有内容已并进按 GPT-5.6 重做的 `gpt.md`；分开维护只会让同系列的 sol/terra/luna 与 `*-codex` 拿到两套工程约束。路由相应简化成「id 含 gpt 就走 `gpt.md`」。
+
+- **补记提示词改动的「模型可见改动三问」**（`docs/notes/`）：改提示词 / 注入段 / 工具 schema 前必答的三个问题写进 note，与 AGENTS.md 的检查点对齐。
+
+---
+
+### [0.10.4] - 2026-09-02
+
+> GPT 接入批：`apply_patch` 改走 Responses 的文法约束工具；hy4 的推理档从数据路径提升到实测特判。
+
+- **`apply_patch` 走 Responses 的 freeform 文法工具，不再包 JSON**（新增 `packages/opencode/src/tool/freeform.ts` 与 `test/tool/freeform.test.ts`、`session/tools.ts`、`session/processor.ts`、`session/llm/native-runtime.ts`、`test/session/llm-native.test.ts`）：GPT-5 系在 Responses API 上有 custom tool——工具调用不走 JSON，模型直接吐一段受 Lark 文法约束的裸文本（`custom_tool_call`，input 是字符串而不是对象）。codex 唯一这么发的工具就是 `apply_patch`（`core/assets/tools/apply_patch.lark`），文法原样搬了过来。
+
+  值得做的理由：补丁正文本来就是纯文本，包进 JSON 字符串等于给每个换行和引号加一层转义——① token 明显变多；② 离模型训练时的输出分布更远，转义错一个字符整条调用就废（JSON 解析失败 → repairToolCall → 一轮白跑）。文法约束这条路上，解码器在采样阶段就被 Lark 挡住，语法上吐不出不合法的补丁。
+
+  适用面刻意收窄到 `providerID === "openai"` + `@ai-sdk/openai` + gpt-5 家族（排除 `-chat`）：custom tool 只存在于 Responses API，而 `provider.ts` 里只有 openai 的 `getModel` 固定走 `sdk.responses()`。逃生口 `REDCODE_DISABLE_FREEFORM_TOOLS=1`。
+
+  入参形状在**两个边界**上归一（freeform 回来的 input 是裸字符串）：进执行器前 → `{ patchText }`；落库前 → 否则掉进 `{ value }` 兜底，`apply_patch` 的 diff 视图渲染不出来。另外 native runtime 让位——它的 `nativeTools` 会把 provider 工具压成「参数是字符串的普通函数工具」静默发错，所以带 provider 工具时判 unsupported 回落 ai-sdk。线上形状用探针实测过：下行 `{type:"custom",name:"apply_patch",format:{grammar,lark}}`，上行 `custom_tool_call` 的 input 原样是补丁字符串。
+
+- **hy4 推理档从数据路径提升到特判（实测 none/high）**（`packages/opencode/src/provider/transform.ts`、`test/provider/transform.test.ts`）：opencode-go 网关上同一道需要推理的题、`temperature 0`、`max_tokens 1200`，每档跑两轮只变 `reasoning_effort`，看 `reasoning_tokens`——**只有 `none` 是真的**（恒为 0、completion ~289）；`minimal/low/medium/high/xhigh/max` 与「完全不发这个参数」落在同一区间（421~1200），且不单调（medium 427/421 反而低于 low 615/541），是噪声不是分档。
+
+  网关对任何值都回 200，连它压根不认的 `xhigh`/`max` 也回 200——**所以只能按行为判、不能按报错判**，这也正是提升到特判的理由：走数据路径时，models.dev 写错了不会有任何信号，UI 上会长出几个滑得动但什么都不改变的档位。值与当前 models.dev 数据一致（`["none","high"]`），提升的意义是**钉住**它，测试里直接喂一份「上游改成五档」的假数据断言仍只出两档。只认 hy4，hy3 的 `["none","low","high"]` 没实测过、继续走数据路径；id 匹配锚在串首或分隔符上（`hy4-preview` / `tencent/hy4-preview` 都认），并钉了 `hy40` 不被误伤。
+
+---
+
+### [0.10.3] - 2026-09-02
+
+> 会话轮次导航栏：整份日志的目录 + 翻页跳转。
+
+- **会话轮次导航栏**（`packages/opencode/src/session/outline.ts` 新增、`server/routes/instance/httpapi/{groups,handlers}/session.ts`、`packages/app` 的 `pages/session/turn-outline.tsx` 新增 / `session-history-loader.ts` / `session.tsx` / `session/session-side-panel.tsx` / `context/global-sync/bootstrap.ts` / `context/server-sync.tsx` / i18n 三语、新增 `packages/opencode/test/session/outline.test.ts`）：采自 DSH 的 `2026-08-30-web-turn-rail-outline-jump`。会话页右侧面板新增「轮次」标签，列出**整份日志**的每一轮（提问一行 + 回答两行预览），点一条自动往前翻页直到那一轮进窗口，再滚过去。
+
+  上游那篇的问题陈述对本仓逐字成立：导航若从**已加载的消息窗口**推导，而窗口只是日志的一个分页后缀（本仓首屏 40 条），长会话里就只会列出最近几轮——恰恰是不需要导航也看得到的那部分。现有的 `session-message-nav.ts` 前后跳收的是 `UserMessage` **对象**，同样只在已加载的轮次之间走。实测他库里最长的会话 2612 条消息 / **379 轮**。
+
+  三块各自独立：① **数据**走新增的 `GET /session/:id/outline`，直接查库、与窗口无关；不做上游那套投影折叠（本仓是 SQLite 不是事件溯源），预览在 SQL 里就截断，part 表按 `group by message_id` + `min(id)` 压成每条消息一行，否则长会话要拉几千行只为每条消息的头几十个字。② **跳转** `loadThrough(messageID)` 一路翻到目标进窗口；**无进展时不当场放弃而是等一拍再试** —— `loadMessages` 对并发调用是静默 no-op，"没进展"最常见的原因是用户同时在往上滚、pager 被占着（上游的 `fix(ui-chat): hold jumps while a plain pull owns the pager` 修的就是这种情况下退化成"落在最近一条"）；翻不到就 toast 明说。滚动放 rAF 里，因为 prepend 刚插的行还没被 virtua 测量。③ **UI** 不另起面板，加进右侧现成的标签组，内容包在 `<Show when={activeTab() === "outline"}>` 里——目录请求只在真的打开这个标签时才发，不给「点开会话」那条热路径加往返。
+
+  实测（真实库只读探针，最长会话）：两条 SQL 共 414ms，1418 行 part 压成每消息一行，379 轮，载荷 107.2KB。测试 7 例，折叠逻辑抽成纯函数 `fold()` 与库解耦，覆盖轮次编号、「最后一条带文字的 assistant 才算回答」、孤儿 assistant 不造轮次、截断按码点不按码元、空会话。**界面未做视觉验证**（起 desktop dev server 在这台机器上曾把内存打到 2.9GB）。note 见 `docs/notes/implemented/feature/2026-09-01-session-turn-outline.md`。
+---
+
+### [0.10.2] - 2026-09-02
+
+> 修复批：配置写盘改原子替换、持久化键里的裸控制字符、`@` 菜单的陈旧候选、配置上溯的层序、启动画面配色。
 
 - **`@` 菜单的陈旧候选不再能被 Enter / Tab 选中**（`packages/ui/src/hooks/use-filtered-list.tsx`、`packages/app/src/components/prompt-input.tsx`、新增 `packages/ui/src/hooks/use-filtered-list.test.ts`、`packages/ui/package.json`）：采自 DSH 的 `2026-08-28-trigger-menu-stale-while-revalidate`。那篇是两半，**核实下来本仓第一半本来就有、第二半没有** —— `use-filtered-list.tsx` 的 `flat` 读的是 `grouped.latest` 而不是 `grouped()`，新查询在途时保留上一轮结果，所以列表不会像上游那样每敲一个字就塌成骨架屏；但 Enter 分支没有任何在途判断。
 
@@ -64,6 +122,12 @@
   刻意没做：fsync（temp+rename 已经解决「读者看到半截文件」，为掉电那个窄窗口给每次配置写盘加 fsync 不划算）；`ensureGitignore` 不换（它创建新文件，没有「替换已有内容」这回事）；`writeJson` / `writeWithDirs` 不动（调用点是缓存 / 快照 / 临时产物，写坏了重新生成即可，原子替换的成本只给「写坏了就毁用户数据」的文件付）。
 
   测试 10 例，重试那部分**不 mock `fs/promises`**（全仓都在用它，换掉风险太大），改成把 rename 循环抽成 `renameWithRetry(from, to, deps)` 注入 `rename` / `sleep` / `platform`，于是能观察尝试次数与退避序列而不依赖墙钟。`test/config/` 那 31 个既有失败（`opencode.jsonc` 找不到，改名遗留的陈旧断言）**已用对照确认与本改动无关**：还原到 dev 基线跑同一批同样是 153 pass / 31 fail。note 见 `docs/notes/implemented/bug-fix/2026-09-01-atomic-config-writes.md`。
+
+- **persist 的合并键分隔符写成了裸 NUL 字节，改回转义**（`packages/app/src/utils/persist.ts`）：源码里那个分隔符是直接打进字符串字面量的 `\0` **实体字符**，不是转义序列——文件里躺着一个真正的控制字节。行为上碰巧能用（它确实是 NUL），但任何一次经过不透明搬运（复制粘贴、编码转换、某些编辑器的规范化）都可能把它悄悄换掉或吃掉，而键一旦变了，用户已持久化的状态就全部读不回来。改回 `\0` 转义写法，行为不变、字节可见。
+
+- **全局 `.redcode` 不再反压项目层，配置上溯收口到 worktree**（`packages/opencode/src/config/config.ts`、`cli/cmd/tui`）：配置目录上溯时会一路走到用户主目录，于是 `~/.redcode` 被当成「离得最近的项目层」参与合并、盖住真正的项目配置。上溯改成到 worktree 根为止，全局层只在它该在的那一层生效。
+
+- **清掉配置测试里 opencode→redcode 的重命名欠账**（`packages/opencode/test/config/`）：`test/config/` 那 31 个失败是改名时留下的陈旧断言（找 `opencode.jsonc`），一直挂在那里遮住真实回归——上一条改动的对照就因此得先跑一遍基线才能说清。这次把断言更到新文件名。
 
 - **启动画面：徽章放大 30%、底色改跟侧栏同色系**（`packages/app/src/index.css` 新增 `[data-splash-surface]`、`packages/desktop/src/renderer/index.tsx`、`packages/app/src/app.tsx`、`packages/ui/src/components/logo.tsx`）：他截图里那扇几乎全空的深紫屏，渲染的是 **desktop 渲染层**那个包住整个 UI 的 `<Show>` fallback（`renderer/index.tsx`），不是 `app.tsx` 的 ConnectionGate —— 两处 markup 逐字节相同、像素上分不出来，但主进程时序决定了占住那 1.4~1.6 秒的是前者（建窗已提到等 sidecar 之前，`awaitInitialization` 真的等 `serverReady`）。徽章 `size-40` → `size-52`（160px → 208px，正好 +30%）；**内联 base64 不动** —— 源图 320px 对 208px 仍有 1.54 倍余量，要覆盖 2 倍 DPI 得换 416px 源，实测 448px 的 base64 是 108KB、比现在多 65KB，全压在首屏内联路径上，为一个 1 倍屏用不到的清晰度不值当。
 
