@@ -8,6 +8,28 @@
 
 ---
 
+### [0.10.7] - 2026-09-02
+
+> 冻结类 bug 支线 C 定案：「界面像死了但任务还在跑」是客户端 SSE 重连被 SDK 架空，不是 sidecar 猝死。连带补上取证面与 sidecar 重生的第二道闸。
+
+- **事件流断连收归一套重连策略**（`packages/app/src/context/{global-sdk,server-sdk}.tsx`、新增 `packages/app/src/utils/sse-log.{ts,test.ts}`）：生成的 SDK（`sdk/js/src/gen/core/serverSentEvents.gen.ts`）的 SSE 生成器**自带一圈重试**——不传 `sseMaxRetryAttempts` 就是无上限，退避 `3000 * 2 ** (attempt-1)`、上限 30 秒。而它只要还在重试就**永不返回**，于是 `global-sdk` / `server-sdk` 各自那套 256ms→2s 的重连**一行都执行不到**。
+
+  证据不是读代码读出来的，是数出来的：47 个会话的 `renderer.log` 里 `event stream error` 出现几十次，而应用层重连路径上的 `stream ended, reconnecting` 一共只有 **2 行**。
+
+  三个后果都指向同一个症状（文件树与上下文面板同时空白、消息发得出去但没进库、Esc 没反应、刷新无效，**但任务仍在推进**）：① `connection` 状态卡在 `"live"`，三态断连指示器根本不会亮；② 真实重连间隔涨到 30 秒，不是应用层以为的 2 秒；③ 唯一自救是 90 秒心跳 abort。
+
+  修法是把重试权收回上层：`sseMaxRetryAttempts: 1`，SDK 失败即交回，退避 / 状态 / 日志全由应用层负责。**两套重连只留能把状态吐给界面的那套。** 连带把退避归零点从「请求成功」挪到「收到第一条事件」——失去 SDK 那 3 秒起始退避之后，「接了连接又立刻断」会退化成 256ms 紧循环，以「真的流出过数据」为准才不会。
+
+  取证面同批修好：`console.error("[global-sdk] event stream error", { url, fetch, error })` 转发进 `renderer.log` 时被拍平成 `[global-sdk] event stream error [object Object]`，三个字段全丢——**这就是这条 bug 长期「根因未定」的直接原因**。新增 `sseErrorText`（展开 `Error` 的 name/message 与 **cause 链**，`Response` 这类对象挑 status/statusText，循环引用退到 toString）与 `sseLogLine`（把字段拍进消息字符串本身），六处日志全部改走它。测试 9 例，含「整行不含 `[object Object]`」这条断言。
+
+- **sidecar 重生加时间窗闸门，退出日志带存活时长**（`packages/desktop/src/main/index.ts`）：原来只有 `respawnAttempts` 一个计数器，而它在**健康检查通过**时清零——「过了健康检查」不等于「稳住了」。实测过一次 70 秒内死三次、每次都健康起来活约 33 秒又死，于是计数器每轮清零、`attempt` 恒为 1，`giving up` 永远不触发，可以无限拉尸体。
+
+  加一道与健康无关的闸：滑动窗口 10 分钟内重生超过 5 次就停手。孤立的偶发猝死照旧自愈（一次死亡只占一个名额、10 分钟后自然过期），只有「起来又死」的循环会撞上限。另外 `sidecar exited` 此前只有 `code`，「孤立猝死」与「起来又死」在日志里长得一模一样，现在一并写 `aliveMs`。
+
+  **顺带排除一条假线索**：`renderer.log` 里那些相隔 1ms 的成对 `[global-sdk]` 错误不是双连接——`server-sdk.tsx` 的日志标签曾误写成 `[global-sdk]`（抄文件时漏改，已改对）。标签修好后看得很清楚：每次断连是 global + server 各一条，两条 SSE 流本来就是设计如此。
+
+---
+
 ### [0.10.6] - 2026-09-02
 
 > 界面批：ChatGPT/Codex 额度面板两端的可读性收口，推理强度从下拉换成弹窗里的滑杆。
