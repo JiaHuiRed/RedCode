@@ -16,10 +16,18 @@ function View(props: { api: TuiPluginApi }) {
     return theme().info
   }
 
+  // 260902 cc 拆成 filled / rest 两段，跟 context.tsx 的 bar() 一个形状——原来整条（含已用
+  // 部分）都上 textMuted，等于画了条没颜色的灰带，3% 的时候完全看不出这是个进度条。
+  // 宽度仍是 10 不复用 context 的 24：这一行还要放 label / 百分比 / 窗口长度 / 重置时刻，
+  // 侧栏只有 ~38 列，24 会把后面的字全挤掉。
   const bar = (pct: number, width = 10) => {
     const filled = Math.round((Math.max(0, Math.min(100, pct)) / 100) * width)
-    return "█".repeat(filled) + "░".repeat(Math.max(0, width - filled))
+    return { filled: "█".repeat(filled), rest: "░".repeat(Math.max(0, width - filled)) }
   }
+
+  // 侧栏只有 ~38 列，36 字符的账号 ID 一定换行；而套餐名没写 flexShrink 时会被 flex 压缩，
+  // 实测 "plus" 被压成 "plu"（末字被账号 ID 顶掉）。取 UUID 第一段足够区分账号。
+  const shortAccount = (id: string) => id.split("-")[0] || id
 
   // 时长：>1440 显示 d，>60 显示 h，否则 m
   const duration = (minutes: number) => {
@@ -50,7 +58,10 @@ function View(props: { api: TuiPluginApi }) {
         <text flexShrink={0} fg={color(pct())}>
           {pct()}%
         </text>
-        <text fg={theme().textMuted}>{bar(pct())}</text>
+        <text flexShrink={0}>
+          <span style={{ fg: color(pct()) }}>{bar(pct()).filled}</span>
+          <span style={{ fg: theme().textMuted }}>{bar(pct()).rest}</span>
+        </text>
         <Show when={minutes() > 0}>
           <text fg={theme().textMuted}>{duration(minutes())}</text>
         </Show>
@@ -74,11 +85,13 @@ function View(props: { api: TuiPluginApi }) {
         <For each={list()}>
           {(q) => (
             <box flexDirection="column" gap={0}>
-              <box flexDirection="row" justifyContent="space-between">
-                <text fg={theme().text}>
+              <box flexDirection="row" justifyContent="space-between" gap={1}>
+                <text flexShrink={0} fg={theme().text}>
                   <b>{q.planType}</b>
                 </text>
-                <text fg={theme().textMuted}>{q.accountID}</text>
+                <Show when={q.accountID}>
+                  {(accountID) => <text fg={theme().textMuted}>{shortAccount(accountID())}</text>}
+                </Show>
               </box>
               <Show when={q.primary}>
                 <WindowRow label="Primary" window={q.primary!} />
