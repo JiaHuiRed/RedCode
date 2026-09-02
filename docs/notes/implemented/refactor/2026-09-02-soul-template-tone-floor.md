@@ -76,8 +76,10 @@ model 提示词本来就覆盖，填进去只会造出新的重复。
   （"casual, friendly yet professional tone" 及其 6 条语气示例，含 "Whelp - I see we have
   some problems" 这种明显跑调的）。
 
-- **`copilot-gpt-5.md`（143 行）是死文件**：全仓零引用，`system.ts` 根本没 import 它。
-  这次没动它——它不参与任何路由，改了也没人读。要么删，要么接回路由，等哥哥定。
+- **`copilot-gpt-5.md`（143 行）已删**：死文件，全仓零引用，`system.ts` 根本没 import 它。
+  哥哥判定"没人会用上上代的模型来干活"，直接删。注意这与 `packages/core/src/github-copilot/`
+  （Copilot **provider** 集成）是两回事，那个还在用；Copilot 侧的模型 id 含 `gpt`，
+  本来就走 `gpt.md`，删掉这份不丢任何覆盖。
 
 - 覆盖面的边界：`plan.md` / `plan-mode.md` / `plan-reminder-anthropic.md` /
   `max-steps.md` / `build-switch.md` **刻意不加条款**——它们是叠加在 model 提示词之上的

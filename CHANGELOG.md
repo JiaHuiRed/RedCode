@@ -16,7 +16,7 @@
 
   最重的三份：`trinity.md` 97→52 行——它整节 Tone and style 后面挂着 10 个演示"单词回答最好"的 example，还留着 `default.md` 早已移除的「不超过 4 行」硬钉、且写了两遍；`gemini.md` 155→142（「少于 3 行」、No Chitchat，以及 examples 区里 `1+2→3`、`13 是不是质数→true` 两条纯粹演示单词回答的例子）；`beast.md` 147→139（"casual, friendly yet professional tone" 及其 6 条语气示例）。
 
-  `plan*.md`／`max-steps.md`／`build-switch.md` **刻意不加条款**——它们是叠在 model 提示词之上的 overlay，不是人格层。顺带查出 **`copilot-gpt-5.md`（143 行）是死文件**：全仓零引用，`system.ts` 没 import 它，本次未动。typecheck 干净；`test/session/` 552 pass / 2 fail，那 2 条是 `revert-compact` 的既有 5s 超时——换回改前的提示词跑同样是 5 pass / 2 fail。
+  `plan*.md`／`max-steps.md`／`build-switch.md` **刻意不加条款**——它们是叠在 model 提示词之上的 overlay，不是人格层。顺带删掉 **`copilot-gpt-5.md`（143 行）**——死文件，全仓零引用，`system.ts` 没 import 它；Copilot 侧模型 id 含 `gpt`，本来就走 `gpt.md`，删掉不丢覆盖（与 `packages/core/src/github-copilot/` 那个 provider 集成无关，那个还在用）。typecheck 干净；`test/session/` 552 pass / 2 fail，那 2 条是 `revert-compact` 的既有 5s 超时——换回改前的提示词跑同样是 5 pass / 2 fail。
 
 - **会话轮次导航栏**（`packages/opencode/src/session/outline.ts` 新增、`server/routes/instance/httpapi/{groups,handlers}/session.ts`、`packages/app` 的 `pages/session/turn-outline.tsx` 新增 / `session-history-loader.ts` / `session.tsx` / `session/session-side-panel.tsx` / `context/global-sync/bootstrap.ts` / `context/server-sync.tsx` / i18n 三语、新增 `packages/opencode/test/session/outline.test.ts`）：采自 DSH 的 `2026-08-30-web-turn-rail-outline-jump`。会话页右侧面板新增「轮次」标签，列出**整份日志**的每一轮（提问一行 + 回答两行预览），点一条自动往前翻页直到那一轮进窗口，再滚过去。
 
