@@ -51,7 +51,9 @@ export const displayName = (project: { name?: string; worktree: string }) =>
 const REDCODE_PROJECT_ID = "4b0ea68d7af9a6031a7ffda7ad66e0cb83315750"
 
 export function getProjectAvatarSource(id?: string, icon?: { color?: string; url?: string; override?: string }) {
-  if (id === REDCODE_PROJECT_ID) return "https://redcode.dev/favicon.svg"
+  // 260902 cc 原来指 https://redcode.dev/favicon.svg —— 域名不解析、且 svg 那一档已随
+  // 换赤一起去掉，两头都不存在。改走本地那张 96px（与通知图标同一份）。
+  if (id === REDCODE_PROJECT_ID) return new URL("favicon-96x96-v3.png", document.baseURI).href
   if (icon?.override) return icon.override
   if (icon?.color) return undefined
   return icon?.url

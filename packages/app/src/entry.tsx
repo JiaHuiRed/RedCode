@@ -69,7 +69,9 @@ const notify: Platform["notify"] = async (title, description, href) => {
 
   const notification = new Notification(title, {
     body: description ?? "",
-    icon: "https://redcode.dev/favicon-96x96-v3.png",
+    // 260902 cc 原来写死 https://redcode.dev/...，而那个域名不解析（desktop 那条通知路径
+    // 260801 就为此改成本地图标了，注释还在，web 这条漏了）——结果是 web 版通知一直没图标。
+    icon: new URL("favicon-96x96-v3.png", document.baseURI).href,
   })
 
   notification.onclick = () => {
