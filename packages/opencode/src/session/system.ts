@@ -11,7 +11,6 @@ import PROMPT_GPT from "./prompt/gpt.md" with { type: "text" }
 import PROMPT_KIMI from "./prompt/kimi.md" with { type: "text" }
 import PROMPT_MIMO from "./prompt/mimo.md" with { type: "text" }
 import PROMPT_MINIMAX from "./prompt/minimax.md" with { type: "text" }
-import PROMPT_CODEX from "./prompt/codex.md" with { type: "text" }
 import PROMPT_TRINITY from "./prompt/trinity.md" with { type: "text" }
 import PROMPT_GLM from "./prompt/glm.md" with { type: "text" }
 import PROMPT_HY from "./prompt/hy.md" with { type: "text" }
@@ -55,12 +54,10 @@ export function provider(model: Provider.Model) {
   if (experimentNoModelPrompt()) return [PROMPT_DEFAULT]
   if (model.api.id.includes("gpt-4") || model.api.id.includes("o1") || model.api.id.includes("o3"))
     return [PROMPT_BEAST]
-  if (model.api.id.includes("gpt")) {
-    if (model.api.id.includes("codex")) {
-      return [PROMPT_CODEX]
-    }
-    return [PROMPT_GPT]
-  }
+  // 260902 Red GPT 系列统一走 gpt.md。原 codex.md 是 Codex CLI 的遗留，其独有内容已并入
+  // gpt.md（后者才是按 GPT-5.6 重做的那份）；分开维护只会让同系列的 sol/terra/luna 与
+  // *-codex 拿到两套工程约束。
+  if (model.api.id.includes("gpt")) return [PROMPT_GPT]
   if (model.api.id.includes("gemini-")) return [PROMPT_GEMINI]
   if (model.api.id.includes("claude")) return [PROMPT_ANTHROPIC]
   if (model.api.id.toLowerCase().includes("trinity")) return [PROMPT_TRINITY]

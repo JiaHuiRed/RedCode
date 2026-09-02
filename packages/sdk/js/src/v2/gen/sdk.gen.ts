@@ -195,6 +195,8 @@ import type {
   SessionMessageResponses,
   SessionMessagesErrors,
   SessionMessagesResponses,
+  SessionOutlineErrors,
+  SessionOutlineResponses,
   SessionPromptAsyncErrors,
   SessionPromptAsyncResponses,
   SessionPromptErrors,
@@ -3546,6 +3548,25 @@ export class Session2 extends HeyApiClient {
       ThrowOnError
     >({
       url: "/session/{sessionID}/context-inspect",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get session turn outline
+   *
+   * Per-turn prompt and response previews for the entire session, independent of the loaded message window.
+   */
+  public outline<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<SessionOutlineResponses, SessionOutlineErrors, ThrowOnError>({
+      url: "/session/{sessionID}/outline",
       ...options,
       ...params,
     })

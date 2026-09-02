@@ -23,6 +23,7 @@ import { Question } from "@/question"
 import { errorMessage } from "@/util/error"
 import * as Log from "@redcode-ai/core/util/log"
 import { isRecord } from "@/util/record"
+import { Freeform } from "@/tool/freeform"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Usage, type LLMEvent } from "@redcode-ai/llm"
 import { NgramDetector, RECOVERY_PROMPTS } from "./text-loop-detection"
@@ -395,7 +396,11 @@ export const layer = Layer.effect(
         }
       }
 
-      const toolInput = (value: unknown): Record<string, any> => (isRecord(value) ? value : { value })
+      // 260902 cc freeform 工具（GPT-5 的 Responses custom tool）回来的 input 是裸字符串，
+      // 落库前还原成对象形状——part.state.input 和 TUI/GUI 的渲染器都按对象写的，
+      // 掉进 { value } 兜底会让 apply_patch 的 diff 视图整个渲染不出来。
+      const toolInput = (value: unknown, name?: string): Record<string, any> =>
+        isRecord(value) ? value : ((name ? Freeform.normalizeInput(name, value) : undefined) ?? { value })
 
       const handleEvent = Effect.fnUntraced(function* (value: StreamEvent) {
         // 260811 cc TTFT 埋点：记下第一个流式分片到达的时刻。放在 switch 之前，任何类型的
@@ -508,7 +513,7 @@ export const layer = Layer.effect(
               throw new Error(`Tool call not allowed while generating summary: ${value.name}`)
             }
             const toolCall = yield* ensureToolCall(value)
-            const input = toolInput(value.input)
+            const input = toolInput(value.input, value.name)
             if (!toolCall.call.inputEnded) {
             }
             yield* updateToolCall(value.id, value.name, (match) => ({
@@ -589,8 +594,7 @@ export const layer = Layer.effect(
             // 删掉或改名的角色 —— 别名表只接得住内建的老名字，用户自建的 md agent 删掉后没人接。
             // 原来这里直接 `agent.permission`，被 Agent.get 那个「返回 Info」的类型谎言藏住了，真撞上
             // 就是 TypeError。回落到默认姿态的规则集：doom_loop 在 defaults 是 ask，回落只会更谨慎。
-            const agent =
-              (yield* agents.get(ctx.assistantMessage.agent)) ?? (yield* agents.defaultInfo())
+            const agent = (yield* agents.get(ctx.assistantMessage.agent)) ?? (yield* agents.defaultInfo())
             yield* permission.ask({
               permission: "doom_loop",
               patterns: cycleTools,

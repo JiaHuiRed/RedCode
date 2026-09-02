@@ -6728,6 +6728,44 @@ export type SessionContextInspectResponses = {
 
 export type SessionContextInspectResponse = SessionContextInspectResponses[keyof SessionContextInspectResponses]
 
+export type SessionOutlineData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/session/{sessionID}/outline"
+}
+
+export type SessionOutlineErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type SessionOutlineError = SessionOutlineErrors[keyof SessionOutlineErrors]
+
+export type SessionOutlineResponses = {
+  /**
+   * Turn outline for the whole session log
+   */
+  200: {
+    sessionID: string
+    entries: Array<{
+      messageID: string
+      time: number
+      turn: number
+      prompt: string
+      promptClipped: boolean
+      response: string
+      responseClipped: boolean
+    }>
+  }
+}
+
+export type SessionOutlineResponse = SessionOutlineResponses[keyof SessionOutlineResponses]
+
 export type SessionDiffData = {
   body?: never
   path: {

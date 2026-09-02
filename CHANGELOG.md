@@ -10,6 +10,13 @@
 
 ### [未发布]
 
+- **会话轮次导航栏**（`packages/opencode/src/session/outline.ts` 新增、`server/routes/instance/httpapi/{groups,handlers}/session.ts`、`packages/app` 的 `pages/session/turn-outline.tsx` 新增 / `session-history-loader.ts` / `session.tsx` / `session/session-side-panel.tsx` / `context/global-sync/bootstrap.ts` / `context/server-sync.tsx` / i18n 三语、新增 `packages/opencode/test/session/outline.test.ts`）：采自 DSH 的 `2026-08-30-web-turn-rail-outline-jump`。会话页右侧面板新增「轮次」标签，列出**整份日志**的每一轮（提问一行 + 回答两行预览），点一条自动往前翻页直到那一轮进窗口，再滚过去。
+
+  上游那篇的问题陈述对本仓逐字成立：导航若从**已加载的消息窗口**推导，而窗口只是日志的一个分页后缀（本仓首屏 40 条），长会话里就只会列出最近几轮——恰恰是不需要导航也看得到的那部分。现有的 `session-message-nav.ts` 前后跳收的是 `UserMessage` **对象**，同样只在已加载的轮次之间走。实测他库里最长的会话 2612 条消息 / **379 轮**。
+
+  三块各自独立：① **数据**走新增的 `GET /session/:id/outline`，直接查库、与窗口无关；不做上游那套投影折叠（本仓是 SQLite 不是事件溯源），预览在 SQL 里就截断，part 表按 `group by message_id` + `min(id)` 压成每条消息一行，否则长会话要拉几千行只为每条消息的头几十个字。② **跳转** `loadThrough(messageID)` 一路翻到目标进窗口；**无进展时不当场放弃而是等一拍再试** —— `loadMessages` 对并发调用是静默 no-op，"没进展"最常见的原因是用户同时在往上滚、pager 被占着（上游的 `fix(ui-chat): hold jumps while a plain pull owns the pager` 修的就是这种情况下退化成"落在最近一条"）；翻不到就 toast 明说。滚动放 rAF 里，因为 prepend 刚插的行还没被 virtua 测量。③ **UI** 不另起面板，加进右侧现成的标签组，内容包在 `<Show when={activeTab() === "outline"}>` 里——目录请求只在真的打开这个标签时才发，不给「点开会话」那条热路径加往返。
+
+  实测（真实库只读探针，最长会话）：两条 SQL 共 414ms，1418 行 part 压成每消息一行，379 轮，载荷 107.2KB。测试 7 例，折叠逻辑抽成纯函数 `fold()` 与库解耦，覆盖轮次编号、「最后一条带文字的 assistant 才算回答」、孤儿 assistant 不造轮次、截断按码点不按码元、空会话。**界面未做视觉验证**（起 desktop dev server 在这台机器上曾把内存打到 2.9GB）。note 见 `docs/notes/implemented/feature/2026-09-01-session-turn-outline.md`。
 - **soul 模板填上默认语气，新用户开箱不再没有语气约束**（`packages/opencode/src/project/template/Tsoul.md`、`Gsoul.md`）：`deepseek.md`／`step.md`／`glm.md` 里都写着"语气、称呼、详略由 soul 决定，本文件不再重复规定"，但这句话在三份里都是假的——说完之后文件里仍有四到八条在规定详略，大多聚在 `# Output channels`。而 `gpt.md`／`anthropic.md` 连这句都没有。
 
   之所以不能直接把那些条款删掉：**没有兜底层**。`system.ts` 的 `provider()` 返回的是单个文件（`[PROMPT_DEEPSEEK]` 而不是 `[PROMPT_DEFAULT, PROMPT_DEEPSEEK]`），model 档是**替换** `default.md` 不是叠加；soul 又是有条件注入的（`instruction.ts:170` 的 `existsSafe`）；而播种出去的模板**每一节都是空占位**。三条叠起来，一个没编辑过 soul 的新用户会一条语气约束都没有。

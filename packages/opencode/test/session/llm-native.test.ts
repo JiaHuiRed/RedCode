@@ -781,4 +781,31 @@ describe("session.llm-native.request", () => {
       )
     }),
   )
+
+  // 260902 cc provider 工具（GPT-5 的 Responses custom tool）没有 JSON schema 形态，
+  // native runtime 的 nativeTools 会把它压成参数是字符串的普通函数工具静默发错。
+  // 这条钉住让位行为：带 provider 工具时必须判 unsupported，由 llm.ts 回落到 ai-sdk。
+  test("provider-defined tools force a fallback to the ai-sdk runtime", () => {
+    const native = LLMNativeRuntime.stream({
+      model: baseModel,
+      provider: { ...providerInfo, options: { apiKey: "sk-test" } },
+      auth: undefined,
+      llmClient: undefined as never,
+      messages: [{ role: "user", content: "hello" }],
+      tools: {
+        apply_patch: {
+          type: "provider",
+          id: "openai.custom",
+          args: { name: "apply_patch", format: { type: "grammar", syntax: "lark", definition: "start: /.+/" } },
+          inputSchema: jsonSchema({ type: "string" }),
+          execute: async () => ({}),
+        } as unknown as Tool,
+      },
+      providerOptions: {},
+      headers: {},
+      abort: new AbortController().signal,
+    })
+    expect(native.type).toBe("unsupported")
+    if (native.type === "unsupported") expect(native.reason).toContain("provider-defined tools")
+  })
 })

@@ -10,6 +10,7 @@ import { SessionRevert } from "@/session/revert"
 import { SessionStatus } from "@/session/status"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
+import * as SessionOutline from "@/session/outline"
 import * as SessionUsage from "@/session/usage"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { Snapshot } from "@/snapshot"
@@ -104,6 +105,7 @@ export const SessionPaths = {
   contextInspect: `${root}/:sessionID/context-inspect`,
   goal: `${root}/:sessionID/goal`,
   diff: `${root}/:sessionID/diff`,
+  outline: `${root}/:sessionID/outline`,
   messages: `${root}/:sessionID/message`,
   message: `${root}/:sessionID/message/:messageID`,
   create: root,
@@ -224,6 +226,17 @@ export const SessionApi = HttpApi.make("session")
             summary: "Inspect session context",
             description:
               "Break down the most recent request sent for this session into system prompt, tool schemas and conversation, with per-segment token estimates. Returns 404 until the session sends a request (the snapshot lives in memory only).",
+          }),
+        ),
+        HttpApiEndpoint.get("outline", SessionPaths.outline, {
+          params: { sessionID: SessionID },
+          success: described(SessionOutline.Info, "Turn outline for the whole session log"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.outline",
+            summary: "Get session turn outline",
+            description:
+              "Per-turn prompt and response previews for the entire session, independent of the loaded message window.",
           }),
         ),
         HttpApiEndpoint.get("diff", SessionPaths.diff, {
