@@ -58,6 +58,14 @@ type QuotaWindowData = NonNullable<ProviderQuota["primary"]>
 type QuotaNumeric = number | "NaN" | "Infinity" | "-Infinity"
 const quotaNum = (v: QuotaNumeric) => (typeof v === "number" ? v : 0)
 
+// 260902 cc 百分比显示保护。实测（plus 账号连发四次请求）x-codex-*-used-percent 回的一直是
+// 整数 3 / 4，codex 侧同源的那条 JSON 路在 OpenAPI 里也直接声明成 i32，说明服务端自己就
+// round 过。但整条链路（响应头 → Number() → Schema.Number → openapi 的 number）没有任何
+// 一处取整，服务端哪天不 round 了，面板会原样渲染出 33.333333333333336%。
+// 跟 session-context-format.ts 的 percent() 一个路数：toLocaleString 而不是 toFixed，
+// 整数不会被补成 "3.0"。
+const quotaPercent = (percent: number, locale: string) => percent.toLocaleString(locale, { maximumFractionDigits: 1 })
+
 // 260831 Red 额度进度条颜色分档：接近用完才告急，不然整页都是红色
 const quotaColor = (percent: number) =>
   percent >= 90 ? "var(--syntax-critical)" : percent >= 60 ? "var(--syntax-warning)" : "var(--syntax-info)"
@@ -81,7 +89,7 @@ function QuotaWindow(props: { label: string; window?: QuotaWindowData }) {
             return (
               <div class="flex items-baseline gap-1.5">
                 <div class="text-12-medium select-text" style={{ color: quotaColor(percent) }}>
-                  {percent}%
+                  {quotaPercent(percent, language.intl())}%
                 </div>
                 <div class="text-text-weaker">{quotaDuration(quotaNum(window().windowMinutes))}</div>
               </div>
@@ -558,7 +566,12 @@ export function SessionContextTab() {
       }}
       onScroll={handleScroll}
     >
-      <div class="px-6 pt-4 pb-10 flex flex-col gap-10">
+      {/* 260902 cc 左 24 / 右 40 的不等距是故意的。面板做窄之后，右对齐的那些值（账号 ID、
+          3%、构成行的模型名）全部停在同一条右边界上叠成一堵墙，读起来像被截断——左边是
+          "起始于此"的标签，参差不齐所以不成墙，右边是"结束在此"的值，等距反而更挤。
+          右侧多给一档让整块浮在面板里；改这里而不是改单个区块，是为了让所有区块共用同一条
+          右边界，否则错开的两条边界比贴边更难看。 */}
+      <div class="pl-6 pr-10 pt-4 pb-10 flex flex-col gap-10">
         <Show when={hasMoreHistory()}>
           <div class="flex items-start gap-2 border border-border-base rounded-md bg-surface-base px-3 py-2">
             <Icon name="warning" size="small" class="shrink-0 mt-0.5" style={{ color: "var(--syntax-warning)" }} />
@@ -579,7 +592,7 @@ export function SessionContextTab() {
           </For>
         </div>
 
-        <div class="flex flex-col gap-2 pr-2">
+        <div class="flex flex-col gap-2">
           <div class="text-12-regular text-text-weak">{language.t("context.quota.title")}</div>
           <Show
             when={quotaList().length > 0}
