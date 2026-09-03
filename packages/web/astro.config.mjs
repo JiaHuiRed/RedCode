@@ -51,7 +51,13 @@ export default defineConfig({
           dir: "ltr",
         },
       },
-      favicon: "/favicon-v3.svg",
+      // 260903 cc 指向 .ico 而不是 .svg。81adb45a 把 favicon 一套换成看板娘「赤」时
+      //   删掉了 SVG 那一档（插画没法做成矢量），但这里还指着它，于是文档站**每一页**
+      //   都在请求一个不存在的文件。
+      //   注意不能直接删掉这一行：Starlight 的 favicon 默认值是 "/favicon.svg"
+      //   （schemas/favicon.ts 的 .default()），删了只会把 404 从 favicon-v3.svg 挪到
+      //   favicon.svg，而那个链接同样是断的。必须显式指向一个真实存在的文件。
+      favicon: "/favicon-v3.ico",
       head: [
         {
           tag: "link",
