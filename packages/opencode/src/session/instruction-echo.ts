@@ -29,8 +29,46 @@ export interface EchoResult {
 
 // 260812 cc 流式拦截用：DCP reminder 泄露锚点（processor.ts text-delta 路径每段检查，
 // 命中即中断+剥离，防止 GUI 无限刷屏）。泄露是消息尾部复述循环，锚点出现=已泄露。
+const LEAK_ANCHORS = ["compressible ranges", "This is a system reminder injected"] as const
+const MAX_ANCHOR_LENGTH = Math.max(...LEAK_ANCHORS.map((anchor) => anchor.length))
+
+/** 一次性判定：整串里有没有锚点。流式路径别用它，用 {@link LeakAnchorScanner}。 */
 export function hasLeakAnchor(text: string): boolean {
-  return text.includes("compressible ranges") || text.includes("This is a system reminder injected")
+  return LEAK_ANCHORS.some((anchor) => text.includes(anchor))
+}
+
+/**
+ * 流式增量扫描器，与 `NgramDetector` 同一个用法（`feed(delta)` 返回是否命中）。
+ *
+ * 260903 cc 原先 processor 每条 delta 都拿 `hasLeakAnchor(ctx.currentText.text)` 扫**已写出的
+ * 全文**，是 O(n²)。实测一整轮流式（delta 24 字符，本机 bun 1.3.14）：
+ *
+ *     回答 20K   7.5ms →  0.2ms
+ *     回答 60K  41.0ms →  0.5ms
+ *     回答 120K 165ms  →  0.8ms
+ *     回答 240K 763ms  →  1.2ms
+ *
+ * 只保留一小段尾巴、不碰累积串，是因为**累积串在流式期间是 rope**：任何对它的 `includes`
+ * 或 `slice` 都要先摊平，成本跟已写长度成正比。中间试过「只 slice 尾窗再 includes」，
+ * 240K 那档只从 763ms 降到 451ms —— 省掉的是比较，没省掉摊平。
+ *
+ * 等价性：能整段落在旧文本里的锚点，在它到达的那条 delta 上就已经命中了（命中即
+ * `leakTripped` + `shouldBreak`，不会再有下一条）。所以每轮只需要看「结尾落在新 delta 里」
+ * 的那些，它们最多从 delta 起点往前 `MAX_ANCHOR_LENGTH - 1` 个字符开始 —— 尾巴留这么长即可。
+ * 四种切片粒度（1/5/24/100 字符）下与全文扫描的首次命中位置逐一比对过，完全一致。
+ */
+export class LeakAnchorScanner {
+  private tail = ""
+
+  feed(delta: string): boolean {
+    const window = this.tail === "" ? delta : this.tail + delta
+    this.tail = window.length > MAX_ANCHOR_LENGTH - 1 ? window.slice(-(MAX_ANCHOR_LENGTH - 1)) : window
+    return hasLeakAnchor(window)
+  }
+
+  reset() {
+    this.tail = ""
+  }
 }
 
 const EMPTY: string[] = []

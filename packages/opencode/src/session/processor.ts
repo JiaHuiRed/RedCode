@@ -94,6 +94,8 @@ interface ProcessorContext extends Input {
   ngramTripped: boolean
   // 260812 cc DCP reminder 泄露流式拦截：已触发标志（防同一段多次剥离）
   leakTripped: boolean
+  // 260903 cc 泄露锚点的增量扫描器（原先每条 delta 扫全文，O(n²)）
+  leakScanner: InstructionEcho.LeakAnchorScanner
   // 260818 Red reasoning 流级 stall 检测：本 step 累积的 reasoning 字符数 +
   // 是否已产出过 text/tool（有产出即不算 stall）+ 是否已触发兜底
   reasoningChars: number
@@ -149,6 +151,7 @@ export const layer = Layer.effect(
         ngramDetector: new NgramDetector(),
         ngramTripped: false,
         leakTripped: false,
+        leakScanner: new InstructionEcho.LeakAnchorScanner(),
         // 260818 Red reasoning 流级 stall 检测
         reasoningChars: 0,
         stepProduced: false,
@@ -780,6 +783,7 @@ export const layer = Layer.effect(
             ctx.ngramDetector.reset()
             ctx.ngramTripped = false
             ctx.leakTripped = false
+            ctx.leakScanner.reset()
             // 260818 Red 有正文产出了，reasoning stall 检测解除
             ctx.stepProduced = true
             if (!ctx.assistantMessage.summary) {
@@ -823,7 +827,9 @@ export const layer = Layer.effect(
             // 泄露是消息尾部的复述循环（GUI 实测无限刷屏），发现即止损——已推送的 delta
             // 无法撤回，但剥离后的文本会落库，且不再继续输出。ngram 拦不住它（复述并非
             // 逐字重复，是同一段语义反复）。
-            if (!ctx.leakTripped && InstructionEcho.hasLeakAnchor(ctx.currentText.text)) {
+            // 260903 cc 改成增量扫描：原先每条 delta 都拿全文 includes 两次，是 O(n²)
+            //   （一整轮 240K 的回答实测 763ms）。等价性推导见 LeakAnchorScanner 的注释。
+            if (!ctx.leakTripped && ctx.leakScanner.feed(value.text)) {
               ctx.leakTripped = true
               slog.warn("leak.dcp-reminder", { sessionID: ctx.sessionID, textLen: ctx.currentText.text.length })
               ctx.currentText.text = InstructionEcho.detect(ctx.currentText.text).stripped

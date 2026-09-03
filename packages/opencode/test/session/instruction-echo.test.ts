@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { detect } from "../../src/session/instruction-echo"
+import { detect, hasLeakAnchor, LeakAnchorScanner } from "../../src/session/instruction-echo"
 
 describe("instruction-echo 快路径", () => {
   test("普通回答原样返回，不做逐行扫描", () => {
@@ -187,5 +187,73 @@ describe("组合与幂等", () => {
   test("剥完再跑一次不再变化（幂等）", () => {
     const once = detect("先说结论。\n<system-reminder>x</system-reminder>").stripped
     expect(detect(once).stripped).toBe(once)
+  })
+})
+
+// 260903 cc 泄露锚点扫描从「每条 delta 扫全文」改成增量扫描，这一组守的是等价性。
+// 会退化的只有一种情况：锚点正好跨在两条 delta 的交界上。
+describe("LeakAnchorScanner 增量扫描", () => {
+  const ANCHOR = "This is a system reminder injected"
+  const SHORT = "compressible ranges"
+
+  test("hasLeakAnchor 一次性判定不变", () => {
+    expect(hasLeakAnchor("前面一大段正文。" + ANCHOR + " 后面")).toBe(true)
+    expect(hasLeakAnchor("干干净净的一段回答")).toBe(false)
+    expect(hasLeakAnchor("")).toBe(false)
+  })
+
+  test("锚点整段落在一条 delta 里 —— 命中", () => {
+    const scan = new LeakAnchorScanner()
+    expect(scan.feed("x".repeat(5000))).toBe(false)
+    expect(scan.feed("……" + SHORT + "……")).toBe(true)
+  })
+
+  test("锚点跨在 delta 交界上 —— 仍然命中（这条是尾巴长度的依据）", () => {
+    for (const anchor of [ANCHOR, SHORT]) {
+      for (let cut = 1; cut < anchor.length; cut++) {
+        const scan = new LeakAnchorScanner()
+        scan.feed("旧正文".repeat(300) + anchor.slice(0, cut))
+        expect(scan.feed(anchor.slice(cut) + " 尾巴")).toBe(true)
+      }
+    }
+  })
+
+  test("锚点被逐字符喂进来也能命中", () => {
+    const scan = new LeakAnchorScanner()
+    let hit = false
+    for (const ch of "闲聊几句。" + ANCHOR) hit = scan.feed(ch) || hit
+    expect(hit).toBe(true)
+  })
+
+  test("reset 之后不带着上一段的尾巴", () => {
+    const scan = new LeakAnchorScanner()
+    scan.feed("compressible")
+    scan.reset()
+    expect(scan.feed(" ranges")).toBe(false)
+  })
+
+  test("逐段流式：增量版与全文版在同一条 delta 上首次命中", () => {
+    const full =
+      "先正常回答一段。".repeat(400) + "然后模型开始复述：" + ANCHOR + " to help you manage context. " + SHORT
+    for (const chunk of [1, 3, 7, 24, 100]) {
+      const scan = new LeakAnchorScanner()
+      let acc = ""
+      let incHit = -1
+      let fullHit = -1
+      for (let i = 0; i < full.length; i += chunk) {
+        const delta = full.slice(i, i + chunk)
+        acc += delta
+        if (incHit === -1 && scan.feed(delta)) incHit = acc.length
+        if (fullHit === -1 && hasLeakAnchor(acc)) fullHit = acc.length
+      }
+      expect(incHit).toBeGreaterThan(0)
+      expect(incHit).toBe(fullHit)
+    }
+  })
+
+  test("空 delta 与首条即全文都不越界", () => {
+    const scan = new LeakAnchorScanner()
+    expect(scan.feed("")).toBe(false)
+    expect(new LeakAnchorScanner().feed(SHORT)).toBe(true)
   })
 })
