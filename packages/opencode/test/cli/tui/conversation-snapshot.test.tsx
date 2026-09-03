@@ -38,7 +38,10 @@ function assistantMessage(input: {
       sessionID: "ses_snapshot",
       modelID: input.modelID ?? "deepseek-v4-flash",
       providerID: input.providerID ?? "deepseek",
-      // 助手消息头显示 `Mode · model · duration`，mode 缺了会在 Locale.titlecase 当场炸
+      // 助手消息头显示 `Agent · model · duration`，缺了会在 label() 当场炸。
+      // agent 与 mode 是同义字段，prompt.ts 两个写入点都赋同一个 agent.name；消息头
+      // 260828 起读的是 agent（mode 是历史遗留），两个都给，跟真消息一致。
+      agent: "build",
       mode: "build",
       error: input.error,
       time: { created: 1_756_000_001_000, completed: 1_756_000_004_000 },

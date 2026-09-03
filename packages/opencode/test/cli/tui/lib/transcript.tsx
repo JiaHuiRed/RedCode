@@ -9,6 +9,7 @@
 // 代价说清楚：**这条路不覆盖 provider 自身的逻辑**（主题解析、模型校验等）。它守的是
 // "消息渲染成什么样"，那正是改动最频繁、回归最容易溜过去的一层。
 import { SyntaxStyle } from "@opentui/core"
+import { Locale } from "@/util/locale"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { testRender, useRenderer, type JSX } from "@opentui/solid"
 import { context as ThemeContext } from "@tui/context/theme"
@@ -49,7 +50,12 @@ const syntax = SyntaxStyle.fromTheme([])
 const local = {
   // agent.color 是函数（按 agent 名给色），不是常量 —— 第一版写成字符串，渲染当场就炸了。
   // 这正是这套 fake 的性质：缺字段/形状不对不会静默，会立刻报出来。
-  agent: { color: () => "#7aa2f7" },
+  //
+  // 260903 cc label 是补的：c454e8c0 把消息头从 `Locale.titlecase(message.mode)` 换成
+  // `local.agent.label(message.agent)`，这份 fake 没跟上，三条快照 TypeError 挂了六天。
+  // 真实现是 `sync.data.agent 里查 displayName ?? titlecase`，这里只兜后半段 —— 前半段
+  // （displayName 覆盖 titlecase）由 test/cli/tui/transcript.test.ts 钉，不重复。
+  agent: { color: () => "#7aa2f7", label: (name: string) => Locale.titlecase(name) },
   displayName: { user: "你", agent: "柳智敏" },
 }
 
