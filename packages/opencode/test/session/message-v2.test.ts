@@ -1690,6 +1690,48 @@ describe("session.message-v2.latest", () => {
     expect(state.tasks).toHaveLength(1)
     expect(state.tasks[0]).toMatchObject({ type: "compaction", auto: true })
   })
+
+  // 260903 cc filterCompacted 拆成两个入口：数组入参先排序（filterCompacted），
+  // 逆序流直接懒扫（filterCompactedOrdered）。这一组守两件事：两条路结果一致，
+  // 且懒扫真的在压缩边界处停止拉取、不会把整个生成器抽干。
+  describe("filterCompactedOrdered 懒扫", () => {
+    const shown = [continueUser, summaryAssistant, compactionUser, overflowAssistant, tailUser]
+    const newestFirst = [...shown].sort((a, b) => MessageV2.compareTime(b.info, a.info))
+
+    test("逆序懒扫与排序全扫结果逐条相同", () => {
+      const viaArray = MessageV2.filterCompacted(shown)
+      const viaOrdered = MessageV2.filterCompactedOrdered(newestFirst)
+      expect(viaOrdered.map((m) => m.info.id)).toEqual(viaArray.map((m) => m.info.id))
+    })
+
+    test("入参顺序被打乱时 filterCompacted 仍归一化到同一结果", () => {
+      const base = MessageV2.filterCompacted(shown).map((m) => m.info.id)
+      for (const order of [
+        [tailUser, overflowAssistant, compactionUser, summaryAssistant, continueUser],
+        [summaryAssistant, tailUser, continueUser, compactionUser, overflowAssistant],
+      ]) {
+        expect(MessageV2.filterCompacted(order).map((m) => m.info.id)).toEqual(base)
+      }
+    })
+
+    test("命中压缩边界后不再从生成器取值", () => {
+      let pulled = 0
+      function* source() {
+        for (const msg of newestFirst) {
+          pulled++
+          yield msg
+        }
+        // 边界之后还有一大截历史；懒扫不该碰到它们
+        for (let i = 0; i < 500; i++) {
+          pulled++
+          yield newestFirst[newestFirst.length - 1]!
+        }
+      }
+      const out = MessageV2.filterCompactedOrdered(source())
+      expect(out.length).toBeGreaterThan(0)
+      expect(pulled).toBeLessThanOrEqual(newestFirst.length)
+    })
+  })
 })
 
 describe("ProviderTransform.unsupportedParts - 附件落盘", () => {
