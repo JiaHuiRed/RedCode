@@ -87,6 +87,8 @@ export type PromptProps = {
 
 export type PromptRef = {
   focused: boolean
+  /** 补全/斜杠命令面板是否展开。首页据此让位给面板，见 routes/home.tsx */
+  menuOpen?: boolean
   current: PromptInfo
   set(prompt: PromptInfo): void
   reset(): void
@@ -652,6 +654,9 @@ export function Prompt(props: PromptProps) {
   const ref: PromptRef = {
     get focused() {
       return input.focused
+    },
+    get menuOpen() {
+      return !!auto()?.visible
     },
     get current() {
       return store.prompt

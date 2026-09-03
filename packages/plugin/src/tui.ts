@@ -202,6 +202,8 @@ export type TuiPromptInfo = {
 
 export type TuiPromptRef = {
   focused: boolean
+  /** 补全/斜杠命令面板是否展开；宿主输入框会提供，自定义实现可以不提供 */
+  menuOpen?: boolean
   current: TuiPromptInfo
   set(prompt: TuiPromptInfo): void
   reset(): void

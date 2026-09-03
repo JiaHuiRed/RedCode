@@ -78,10 +78,19 @@ export function Home() {
       <box flexGrow={1} alignItems="center" paddingLeft={2} paddingRight={2} zIndex={1}>
         <box flexGrow={SPACE_ABOVE} minHeight={0} />
         <box height={4} minHeight={0} flexShrink={1} />
-        <TuiPluginRuntime.Slot name="home_logo" mode="replace">
-          {/* 260731 Red 首页用大号字形（55×7）；run 的进场 splash 仍用原来的 41×5 */}
-          <Logo idle shape={logoLarge} />
-        </TuiPluginRuntime.Slot>
+        {/* 260903 cc 补全面板是从输入框往上开的，正好落在 logo 这一块。opentui 里
+            两者的绘制先后并不稳定（同样的结构，改一处无关的子节点顺序就会翻过来，
+            已用 testRender 复现），靠 zIndex 压不住 —— 面板展开时直接让 logo 隐身。
+            visible=false 会连带 yoga display:none，所以外面套一层写死高度的壳，
+            logo 藏起来时那几行留白仍在，输入框与面板不会上下弹。 */}
+        <box height={logoLarge.left.length} flexShrink={0} alignItems="center">
+          <box visible={!ref()?.menuOpen}>
+            <TuiPluginRuntime.Slot name="home_logo" mode="replace">
+              {/* 260731 Red 首页用大号字形（55×7）；run 的进场 splash 仍用原来的 41×5 */}
+              <Logo idle shape={logoLarge} />
+            </TuiPluginRuntime.Slot>
+          </box>
+        </box>
         <box height={1} minHeight={0} flexShrink={1} />
         <box width="100%" flexDirection="row" alignItems="center" justifyContent="center" flexShrink={0}>
           <box width="100%" maxWidth={promptMaxWidth()} zIndex={1000} paddingTop={1} flexShrink={0}>
