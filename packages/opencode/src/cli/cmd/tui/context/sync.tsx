@@ -73,6 +73,14 @@ export const {
       question: {
         [sessionID: string]: QuestionRequest[]
       }
+      // 260903 cc 权限/提问事件按 project 过滤、不按 workspace，所以别的 workspace
+      // （worktree 隔离的子代理就是一个）问出来的弹窗照样会显示在这里；而回复走的是
+      // WorkspaceRoutingMiddleware，发去当前 workspace 就在错误的实例里查 requestID，
+      // 一律 PermissionNotFoundError —— 表现是弹窗点了、按了都没反应。按 requestID
+      // 记下当初 ask 的 workspace，回复时原路发回去。
+      request_workspace: {
+        [requestID: string]: string | undefined
+      }
       config: Config
       session: Session[]
       session_status: {
@@ -117,6 +125,7 @@ export const {
       agent: [],
       permission: {},
       question: {},
+      request_workspace: {},
       command: [],
       provider: [],
       provider_default: {},
@@ -157,12 +166,21 @@ export const {
         .then((x) => (x.data ?? []).toSorted((a, b) => a.id.localeCompare(b.id)))
     }
 
+    const forgetRequestWorkspace = (requestID: string) =>
+      setStore(
+        "request_workspace",
+        produce((draft) => {
+          delete draft[requestID]
+        }),
+      )
+
     event.subscribe((event, { workspace }) => {
       switch (event.type) {
         case "server.instance.disposed":
           void bootstrap()
           break
         case "permission.replied": {
+          forgetRequestWorkspace(event.properties.requestID)
           const requests = store.permission[event.properties.sessionID]
           if (!requests) break
           const match = Binary.search(requests, event.properties.requestID, (r) => r.id)
@@ -179,6 +197,7 @@ export const {
 
         case "permission.asked": {
           const request = event.properties
+          setStore("request_workspace", request.id, workspace)
           const requests = store.permission[request.sessionID]
           if (!requests) {
             setStore("permission", request.sessionID, [request])
@@ -201,6 +220,7 @@ export const {
 
         case "question.replied":
         case "question.rejected": {
+          forgetRequestWorkspace(event.properties.requestID)
           const requests = store.question[event.properties.sessionID]
           if (!requests) break
           const match = Binary.search(requests, event.properties.requestID, (r) => r.id)
@@ -217,6 +237,7 @@ export const {
 
         case "question.asked": {
           const request = event.properties
+          setStore("request_workspace", request.id, workspace)
           const requests = store.question[request.sessionID]
           if (!requests) {
             setStore("question", request.sessionID, [request])

@@ -115,6 +115,12 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
 
   const session = createMemo(() => sync.data.session.find((s) => s.id === props.request.sessionID))
 
+  // 260903 cc 回复必须发回当初 ask 的那个 workspace。worktree 隔离的子代理跑在自己的
+  // workspace 实例里，它问出来的弹窗照样显示在主会话（事件只按 project 过滤），但按
+  // 当前 workspace 回复会在错误的实例里查 requestID —— 服务端 404、弹窗纹丝不动，
+  // 点击和按键都像失灵。见 context/sync.tsx 的 request_workspace。
+  const workspace = () => sync.data.request_workspace[props.request.id] ?? project.workspace.current()
+
   // 260811 Red 权限弹窗键盘快捷键（复用 GUI 方案，参照雨琦 915556e）：
   // Enter = 允许一次，Ctrl+Shift+Enter = 始终允许（先进确认页），Esc 已由 Prompt escapeKey 处理
   // 三个动作都有专属快捷键，主弹窗不再需要左右选择+Enter 确认（enterAction="once"）
@@ -192,7 +198,7 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
             void sdk.client.permission.reply({
               reply: "always",
               requestID: props.request.id,
-              workspace: project.workspace.current(),
+              workspace: workspace(),
             })
           }}
         />
@@ -204,7 +210,7 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
               reply: "reject",
               requestID: props.request.id,
               message: message || undefined,
-              workspace: project.workspace.current(),
+              workspace: workspace(),
             })
           }}
           onCancel={() => {
@@ -444,14 +450,14 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
                   void sdk.client.permission.reply({
                     reply: "reject",
                     requestID: props.request.id,
-                    workspace: project.workspace.current(),
+                    workspace: workspace(),
                   })
                   return
                 }
                 void sdk.client.permission.reply({
                   reply: "once",
                   requestID: props.request.id,
-                  workspace: project.workspace.current(),
+                  workspace: workspace(),
                 })
               }}
             />

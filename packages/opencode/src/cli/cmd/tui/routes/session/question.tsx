@@ -5,15 +5,23 @@ import type { TextareaRenderable } from "@opentui/core"
 import { selectedForeground, tint, useTheme } from "../../context/theme"
 import type { QuestionAnswer, QuestionRequest } from "@redcode-ai/sdk/v2"
 import { useSDK } from "../../context/sdk"
+import { useSync } from "../../context/sync"
+import { useProject } from "../../context/project"
 import { SplitBorder } from "../../component/border"
 import { useTuiConfig } from "../../context/tui-config"
 import { OPENCODE_BASE_MODE, useBindings } from "../../keymap"
 
 export function QuestionPrompt(props: { request: QuestionRequest }) {
   const sdk = useSDK()
+  const sync = useSync()
+  const project = useProject()
   const { theme } = useTheme()
   const renderer = useRenderer()
   const tuiConfig = useTuiConfig()
+
+  // 260903 cc 与权限弹窗同因：提问也可能来自别的 workspace（worktree 子代理），
+  // 回复要原路发回去，否则服务端在错误的实例里查 requestID。见 context/sync.tsx。
+  const workspace = () => sync.data.request_workspace[props.request.id] ?? project.workspace.current()
 
   const questions = createMemo(() => props.request.questions)
   const single = createMemo(() => questions().length === 1 && questions()[0]?.multiple !== true)
@@ -47,12 +55,14 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
     void sdk.client.question.reply({
       requestID: props.request.id,
       answers,
+      workspace: workspace(),
     })
   }
 
   function reject() {
     void sdk.client.question.reject({
       requestID: props.request.id,
+      workspace: workspace(),
     })
   }
 
@@ -69,6 +79,7 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
       void sdk.client.question.reply({
         requestID: props.request.id,
         answers: [[answer]],
+        workspace: workspace(),
       })
       return
     }
