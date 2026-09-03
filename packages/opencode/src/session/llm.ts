@@ -452,7 +452,27 @@ export const defaultLayer = Layer.suspend(() =>
 // 等待，网络瞬断时用户只能干等（实测 184 秒无任何输出）。加 75s 首事件看门狗：
 // "首事件" = 流开始产生任何 LLM 事件（≈ TTFT），正常响应十几二十秒，完全无感；
 // 超时则先 abort 底层请求再报错，让会话层立刻看到结果，而不是无限挂起。
+//
+// 260903 cc 扩成**空闲看门狗**：原来那版是一次性的，`Stream.tap` 对流里**任何**元素
+// 都会兑现 firstEvent，而协议层的第一个事件几乎立刻就到——看门狗一被满足，此后整条流
+// 再无任何保护，中途静默就是无限挂起。
+//
+// 取证（260903，两个不同模型、同一签名）：`opencode-go/hy4-preview` 真题第 2 轮，末条
+// assistant 消息**一个分片都没有**、`time.firstChunk` 空，却挂了 575 秒——首事件看门狗
+// 本该在 75 秒时开火，说明它早被某个不产生分片的协议事件satisfied 掉了。同一模型第 3 轮
+// 与 `muse-spark-1.3` 合成题第 2 轮则是另一种：分片有 step-start/reasoning/text/tool，
+// 事件流到一半断掉，此前完全没有防线。两个模型都中 ⇒ 是传输层缺口，不是某家模型的毛病。
+//
+// 挂起率与任务重量强相关：7 步的任务 8 次挂 1 次，13–24 步的任务 4 次挂 3 次 ——
+// 长会话正是日常形态，所以这条值得单独修。
 export const FIRST_EVENT_TIMEOUT = Duration.seconds(75)
+
+// 首事件之后，两个事件之间允许的最大静默。推理模型在思考段可能长时间不吐字，
+// 所以给得比首事件更宽；它要挡的是"永远不再来"，不是"来得慢"。
+export const IDLE_EVENT_TIMEOUT = Duration.seconds(120)
+
+// 看门狗自己的轮询粒度。5s 足够精确（相对上面两个阈值），且空转成本可忽略。
+const WATCHDOG_TICK = Duration.seconds(5)
 
 export class FirstEventTimeoutError extends Error {
   readonly _tag = "FirstEventTimeoutError"
@@ -462,37 +482,56 @@ export class FirstEventTimeoutError extends Error {
   }
 }
 
+export class StreamIdleTimeoutError extends Error {
+  readonly _tag = "StreamIdleTimeoutError"
+  constructor(readonly idleMs: number) {
+    super(`LLM 流在中途静默 ${Math.round(idleMs / 1000)} 秒无新事件（网关停摆），已中断`)
+    this.name = "StreamIdleTimeoutError"
+  }
+}
+
 function guardFirstEvent<S, E>(
   stream: Stream.Stream<S, E>,
   ctrl: AbortController,
-): Stream.Stream<S, E | FirstEventTimeoutError> {
+): Stream.Stream<S, E | FirstEventTimeoutError | StreamIdleTimeoutError> {
   return Stream.unwrap(
     Effect.gen(function* () {
-      const firstEvent = yield* Deferred.make<boolean, never>()
-      const timeoutSignal = yield* Deferred.make<never, FirstEventTimeoutError>()
-      // 看门狗 fiber：首事件到达 → 无事发生；75s 超时 → 先 abort 底层请求
-      // 再向 timeoutSignal 失败，merge 收到后让整体流失败。
-      // 不能用 Effect.race 直接拼失败分支：v4 的 race 失败语义是"两边都失败才
-      // 失败"，单边失败会继续等另一边，流就挂住了（实测踩坑）。
+      const state = { last: Date.now(), seen: false }
+      const timeoutSignal = yield* Deferred.make<never, FirstEventTimeoutError | StreamIdleTimeoutError>()
+      // 看门狗 fiber：每 tick 比一次"距上一个事件多久"。超过当前档位的阈值就先 abort
+      // 底层请求，再向 timeoutSignal 失败，merge 收到后让整体流失败。
+      //
+      // 不用 Effect.race 拼失败分支：v4 的 race 失败语义是"两边都失败才失败"，
+      // 单边失败会继续等另一边，流就挂住了（260816 实测踩坑，勿改回去）。
+      // 也不用 Stream.timeout —— 它掐的是整条流的总时长，长回答会被误杀。
+      //
+      // forkScoped：流的 scope 关闭时这个 fiber 一并被中断，正常结束不留空转。
       yield* Effect.forkScoped(
-        Effect.race(
-          Deferred.await(firstEvent).pipe(Effect.as("first")),
-          Effect.sleep(FIRST_EVENT_TIMEOUT).pipe(Effect.as("timeout")),
-        ).pipe(
-          Effect.flatMap((winner) =>
-            winner === "timeout"
-              ? Effect.sync(() => ctrl.abort()).pipe(
-                  Effect.andThen(() => Deferred.fail(timeoutSignal, new FirstEventTimeoutError())),
-                )
-              : Effect.void,
-          ),
-        ),
+        Effect.gen(function* () {
+          while (true) {
+            yield* Effect.sleep(WATCHDOG_TICK)
+            const idle = Date.now() - state.last
+            const limit = Duration.toMillis(state.seen ? IDLE_EVENT_TIMEOUT : FIRST_EVENT_TIMEOUT)
+            if (idle < limit) continue
+            ctrl.abort()
+            yield* Deferred.fail(
+              timeoutSignal,
+              state.seen ? new StreamIdleTimeoutError(idle) : new FirstEventTimeoutError(),
+            )
+            return
+          }
+        }),
       )
       return Stream.merge(
-        stream.pipe(Stream.tap(() => Deferred.succeed(firstEvent, true).pipe(Effect.ignore))),
-        Stream.fromEffect(
-          Deferred.await(timeoutSignal).pipe(Effect.andThen(() => Effect.fail(new FirstEventTimeoutError()))),
+        stream.pipe(
+          Stream.tap(() =>
+            Effect.sync(() => {
+              state.last = Date.now()
+              state.seen = true
+            }),
+          ),
         ),
+        Stream.fromEffect(Deferred.await(timeoutSignal)),
         // either：任一边 halt（完成/失败）即整体终止——主流结束不挂等信号流，
         // 信号流失败立即让整体失败。
         { haltStrategy: "either" },

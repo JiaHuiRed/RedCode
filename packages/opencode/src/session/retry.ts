@@ -73,6 +73,15 @@ export function delay(attempt: number, error?: MessageV2.APIError) {
 export function retryable(error: Err, provider: string) {
   // context overflow errors should not be retried
   if (MessageV2.ContextOverflowError.isInstance(error)) return undefined
+  // 260903 cc 传输层看门狗掐断的两类超时都可重试。
+  //   它们既不是 APIError、文案也不匹配下面任何一条限流模式，此前一律落到函数末尾的
+  //   `return undefined` = 直接 halt：用户等满 75 秒（或流中途静默 120 秒）之后看到的是
+  //   报错，而不是自动重试一次。而这两类恰恰是最该重试的——网关停摆通常换一次连接就好。
+  //   走 `_tag` 而不是 instanceof：这里拿到的 Err 已经过 Cause 归一化，跨模块的类实例
+  //   判等不可靠（同一个类经不同打包路径会有两份）。
+  const tag = (error as { _tag?: unknown })._tag
+  if (tag === "FirstEventTimeoutError") return { message: "网关未响应，正在重试" }
+  if (tag === "StreamIdleTimeoutError") return { message: "响应流中断，正在重试" }
   if (MessageV2.APIError.isInstance(error)) {
     const status = error.data.statusCode
     // 5xx errors are transient server failures and should always be retried,
