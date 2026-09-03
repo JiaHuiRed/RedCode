@@ -44,6 +44,8 @@
 
   改法：收尾里 `delete` 返回 true（= 不是正常 reply 路径删的）时补发一条 `permission.replied(reject)`。正常 reply 已经删过并发过事件、返回 false，不重复发；实例关停的 finalizer 先 `clear` 再唤醒等待方，同样返回 false，不会刷事件。
 
+  ⚠️ **触发它的那一半在用户配置里，代码改不掉**：`agent/definition/explore.md` 的 frontmatter 早在 260828 就把 `timeout_ms` 从 180000 提到 600000（原注释：「explore 吸收了 advise 的出方案/做审查之后，180s 会误杀真在干活的运行」），但 `~/.redcode/redcode.jsonc` 里仍留着一条 `agent.explore.timeout_ms: 180000`——配置层赢过 md，旧值一直生效。于是 explore 每次跑满 3 分钟就被掐、由 `fallback_model: opencode-go/glm-5.3-flash` 接手重跑，表现是「子代理明明配的 step，跑着跑着变成 GLM」，同时留下上面那个幽灵弹窗。DB 佐证：08-26 之后的 explore 子会话清一色 `step-3.7-flash`，只有 2026-09-03 16:28 这一条是 `glm-5.3-flash`。**待办：删掉全局配置里那行 `timeout_ms`，让 md 的 600000 生效。**
+
 - **权限/提问的回复原路发回 ask 的那个 workspace**（`packages/opencode/src/cli/cmd/tui/`）。
 
 - **补全面板展开时首页 logo 让位**（`packages/opencode/src/cli/cmd/tui/routes/home.tsx`）：绘制先后压不住，改为布局层让位。
