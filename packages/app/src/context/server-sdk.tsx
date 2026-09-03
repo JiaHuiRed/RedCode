@@ -211,6 +211,9 @@ function createServerSdkContext(server: ServerConnection.Any) {
           }
         } finally {
           abort.signal.removeEventListener("abort", onAbort)
+          // 260903 cc 与 global-sdk.tsx 同一处收尾不对称，理由见那边的长注释。
+          // 两条流都占着 renderer 的连接池，只修一条不够。
+          attempt?.abort()
           attempt = undefined
           clearHeartbeat()
         }

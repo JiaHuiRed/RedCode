@@ -215,6 +215,17 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
             }
           } finally {
             abort.signal.removeEventListener("abort", onAbort)
+            // 260903 cc 这条路径此前只把引用置空、不 abort —— 同文件其余五处都 abort，
+            // 唯独"流正常结束"这条不。AbortController 是保证底层 fetch 被拆掉的唯一把手，
+            // 置 undefined 只是让 GC 有机会回收，不保证 socket 立刻关。
+            // 为什么要紧：本地场景下 eventFetch 是 undefined（见文件开头，只有非 loopback
+            // 才走 platform.fetch），两条 SSE 流都占着 renderer 里 Chromium 的连接池，
+            // 而 sidecar 是 node:http 的 HTTP/1.1 —— 同 host 只有 6 个槽。旧连接不释放 +
+            // 256ms 起步的重连，槽位会被吃光，之后**所有**到该 origin 的请求无限排队：
+            // 文件树空、上下文面板空、消息发得出但不落库、Esc 无效，而服务端毫发无伤，
+            // 任务照常推进 —— 正是 09-01 那次的症状组合。
+            // abort() 幂等，流已正常结束时是 no-op，只有还挂着才真正生效。
+            attempt?.abort()
             attempt = undefined
             clearHeartbeat()
           }
