@@ -8,6 +8,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const [open, setOpen] = createSignal(true)
   const theme = () => props.api.theme.current
   const list = createMemo(() => props.api.state.session.diff(props.session_id))
+  const total = createMemo(() => props.api.state.session.get(props.session_id)?.summary?.files ?? list().length)
 
   return (
     <Show when={list().length > 0}>
@@ -15,7 +16,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       <box
         border={["top"]}
         borderColor={theme().borderSubtle ?? theme().textMuted}
-        title={` Files ${list().length} `}
+        title={` Files ${total()} `}
         titleAlignment="left"
         paddingTop={0}
       >
@@ -25,6 +26,9 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
           </Show>
         </box>
         <Show when={list().length <= 2 || open()}>
+          <Show when={list().length < total()}>
+            <text fg={theme().textMuted}>Showing {list().length} recent files</text>
+          </Show>
           <For each={list()}>
             {(item) => (
               <box flexDirection="row" gap={1} justifyContent="space-between">

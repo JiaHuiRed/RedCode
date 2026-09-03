@@ -2,7 +2,7 @@
 import { describe, expect, test } from "bun:test"
 import { Global } from "@redcode-ai/core/global"
 import { tmpdir } from "../../../fixture/fixture"
-import { mount, wait } from "./sync-fixture"
+import { directory, json, mount, wait } from "./sync-fixture"
 import type { GlobalEvent } from "@redcode-ai/sdk/v2"
 
 function branchEvent(branch: string, workspace?: string): GlobalEvent {
@@ -19,6 +19,39 @@ function branchEvent(branch: string, workspace?: string): GlobalEvent {
 }
 
 describe("tui sync", () => {
+  test("opening a session does not eagerly fetch its full diff", async () => {
+    const previous = Global.Path.state
+    await using tmp = await tmpdir()
+    Global.Path.state = tmp.path
+    await Bun.write(`${tmp.path}/kv.json`, "{}")
+    const sessionID = "ses_large"
+    const requests: string[] = []
+    const sessionPayload = {
+      id: sessionID,
+      title: "large diff",
+      time: { created: 0, updated: 0 },
+      version: "1.14.42",
+      directory,
+      project_id: "proj_test",
+    }
+    const { app, sync } = await mount((url) => {
+      if (!url.pathname.startsWith(`/session/${sessionID}`)) return undefined
+      requests.push(url.pathname)
+      if (url.pathname === `/session/${sessionID}`) return json(sessionPayload)
+      if (url.pathname === `/session/${sessionID}/message`) return json([])
+      if (url.pathname === `/session/${sessionID}/todo`) return json([])
+      if (url.pathname === `/session/${sessionID}/diff`) return json([])
+      return new Response("", { status: 404 })
+    })
+    try {
+      await sync.session.sync(sessionID)
+      expect(requests).not.toContain(`/session/${sessionID}/diff`)
+    } finally {
+      app.renderer.destroy()
+      Global.Path.state = previous
+    }
+  })
+
   // 260825 cc 断言从 scope="project" 改为 "global"，跟上 0.4.4 的行为变更。
   // f25f0b29「Session 全局 scope」有意把"关掉目录过滤"的语义从"放宽到本项目"
   // 改成"放宽到全局"，同批改了服务端 session.ts、HTTP 路由与 SDK 生成类型共

@@ -39,6 +39,13 @@ export function cmpTime(
   if (ac !== undefined && bc !== undefined && ac !== bc) return ac - bc
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
 }
+const MAX_SESSION_DIFF_FILES = 100
+
+function sidebarDiff(input: Snapshot.FileDiff[]) {
+  return input
+    .slice(0, MAX_SESSION_DIFF_FILES)
+    .map((item) => ({ file: item.file, additions: item.additions, deletions: item.deletions, status: item.status }))
+}
 import type { Snapshot } from "@/snapshot"
 import { useExit } from "./exit"
 import { useArgs } from "./args"
@@ -269,7 +276,7 @@ export const {
           break
 
         case "session.diff":
-          setStore("session_diff", event.properties.sessionID, event.properties.diff)
+          setStore("session_diff", event.properties.sessionID, sidebarDiff(event.properties.diff))
           break
 
         case "session.deleted": {
@@ -595,11 +602,10 @@ export const {
         },
         async sync(sessionID: string) {
           if (fullSyncedSessions.has(sessionID)) return
-          const [session, messages, todo, diff, goal] = await Promise.all([
+          const [session, messages, todo, goal] = await Promise.all([
             sdk.client.session.get({ sessionID }, { throwOnError: true }),
             sdk.client.session.messages({ sessionID, limit: 100 }),
             sdk.client.session.todo({ sessionID }),
-            sdk.client.session.diff({ sessionID }),
             // 没钉目标时服务端 404，这是常态不是错误
             sdk.client.session.goal({ sessionID }).catch(() => undefined),
           ])
@@ -616,7 +622,6 @@ export const {
                 draft.part[message.info.id] = message.parts
               }
               draft.message[sessionID] = infos
-              draft.session_diff[sessionID] = diff.data ?? []
             }),
           )
           fullSyncedSessions.add(sessionID)

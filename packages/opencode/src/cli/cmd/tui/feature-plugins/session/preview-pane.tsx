@@ -16,7 +16,6 @@ type Sdk = ReturnType<typeof useSDK>
 type Sync = ReturnType<typeof useSync>
 
 const messageCache = new Map<string, Promise<WithParts[]>>()
-const diffCache = new Map<string, Promise<SnapshotFileDiff[]>>()
 
 function cacheKey(sessionID: string, version: number) {
   return `${sessionID}:${version}`
@@ -47,30 +46,10 @@ function loadMessages(sdk: Sdk, sessionID: string, version: number): Promise<Wit
   return promise
 }
 
-function loadDiff(sdk: Sdk, sessionID: string, version: number): Promise<SnapshotFileDiff[]> {
-  const key = cacheKey(sessionID, version)
-  const cached = diffCache.get(key)
-  if (cached) return cached
-
-  const promise = sdk.client.session
-    .diff({ sessionID })
-    .then((res) => {
-      if (res.error) diffCache.delete(key)
-      return (res.data as SnapshotFileDiff[] | undefined) ?? []
-    })
-    .catch(() => {
-      diffCache.delete(key)
-      return [] as SnapshotFileDiff[]
-    })
-  diffCache.set(key, promise)
-  return promise
-}
-
 export function prefetchPreviews(sdk: Sdk, sync: Sync, sessionIDs: readonly string[]) {
   for (const id of sessionIDs) {
     const version = sync.data.session.find((session) => session.id === id)?.time.updated ?? 0
     if (!hydrateFromSync(sync, id)) loadMessages(sdk, id, version).catch(() => {})
-    if (!sync.data.session_diff[id]?.length) loadDiff(sdk, id, version).catch(() => {})
   }
 }
 
@@ -137,19 +116,12 @@ export function SessionPreviewPane(props: {
     async (input) => loadMessages(sdk, input.sessionID, input.version),
   )
 
-  const [fetchedDiff] = createResource(
-    () => {
-      const id = props.sessionID()
-      if (!id || syncedDiff()) return undefined
-      return { sessionID: id, version: session()?.time.updated ?? 0 }
-    },
-    async (input) => loadDiff(sdk, input.sessionID, input.version),
-  )
-
   const messages = createMemo(() => syncedMessages() ?? fetchedMessages() ?? [])
-  const diff = createMemo(() => syncedDiff() ?? fetchedDiff() ?? [])
+  const diff = createMemo(() => syncedDiff() ?? [])
 
   const diffSummary = createMemo(() => {
+    const summary = session()?.summary
+    if (summary) return formatDiffSummary(summary)
     const live = diff()
     if (live && live.length > 0) {
       let additions = 0
@@ -174,7 +146,7 @@ export function SessionPreviewPane(props: {
     return { user, assistant }
   })
 
-  const loading = createMemo(() => (fetchedMessages.loading || fetchedDiff.loading) && !exchange())
+  const loading = createMemo(() => fetchedMessages.loading && !exchange())
 
   const statusLabel = createMemo(() => {
     const s = status()
