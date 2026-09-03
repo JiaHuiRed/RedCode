@@ -56,6 +56,10 @@ export interface Interface {
   readonly cleanup: () => Effect.Effect<void>
   readonly track: () => Effect.Effect<string | undefined>
   readonly patch: (hash: string) => Effect.Effect<Patch>
+  /** step-finish 专用：一次 add() 同时出完成快照与相对 from 的补丁。见实现处的说明。 */
+  readonly finish: (
+    from: string | undefined,
+  ) => Effect.Effect<{ hash: string | undefined; patch: Patch | undefined }>
   readonly restore: (snapshot: string) => Effect.Effect<void>
   readonly revert: (patches: Patch[]) => Effect.Effect<void>
   readonly diff: (hash: string) => Effect.Effect<string>
@@ -292,27 +296,93 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
             )
           })
 
+          /** 首次使用时建快照仓；已存在则只多一次 exists 检查。 */
+          const ensureRepo = Effect.fnUntraced(function* () {
+            const existed = yield* exists(state.gitdir)
+            yield* fs.ensureDir(state.gitdir).pipe(Effect.orDie)
+            if (existed) return
+            yield* git(["init"], {
+              env: { GIT_DIR: state.gitdir, GIT_WORK_TREE: state.worktree },
+            })
+            yield* git(["--git-dir", state.gitdir, "config", "core.autocrlf", "false"])
+            yield* git(["--git-dir", state.gitdir, "config", "core.longpaths", "true"])
+            yield* git(["--git-dir", state.gitdir, "config", "core.symlinks", "true"])
+            yield* git(["--git-dir", state.gitdir, "config", "core.fsmonitor", "false"])
+            log.info("initialized")
+          })
+
+          /** 把当前索引写成 tree 对象。**调用前索引必须已被 add() 刷新过。** */
+          const writeTree = Effect.fnUntraced(function* () {
+            const result = yield* git(args(["write-tree"]), { cwd: state.directory })
+            const hash = result.text.trim()
+            log.info("tracking", { hash, cwd: state.directory, git: state.gitdir })
+            return hash
+          })
+
+          /** 相对某棵 tree 的改动文件，已滤掉源仓 gitignore 命中的。**索引须已刷新。** */
+          const diffCached = Effect.fnUntraced(function* (hash: string) {
+            const result = yield* git(
+              [...quote, ...args(["diff", "--cached", "--no-ext-diff", "--name-only", hash, "--", "."])],
+              {
+                cwd: state.directory,
+              },
+            )
+            if (result.code !== 0) {
+              log.warn("failed to get diff", { hash, exitCode: result.code })
+              return { hash, files: [] as string[] }
+            }
+            const files = result.text
+              .trim()
+              .split("\n")
+              .map((x) => x.trim())
+              .filter(Boolean)
+
+            // Hide ignored-file removals from the user-facing patch output.
+            const ignored = yield* ignore(files)
+
+            return {
+              hash,
+              files: files
+                .filter((item) => !ignored.has(item))
+                .map((x) => path.join(state.worktree, x).replaceAll("\\", "/")),
+            }
+          })
+
           const track = Effect.fnUntraced(function* () {
             return yield* locked(
               Effect.gen(function* () {
                 if (!(yield* enabled())) return
-                const existed = yield* exists(state.gitdir)
-                yield* fs.ensureDir(state.gitdir).pipe(Effect.orDie)
-                if (!existed) {
-                  yield* git(["init"], {
-                    env: { GIT_DIR: state.gitdir, GIT_WORK_TREE: state.worktree },
-                  })
-                  yield* git(["--git-dir", state.gitdir, "config", "core.autocrlf", "false"])
-                  yield* git(["--git-dir", state.gitdir, "config", "core.longpaths", "true"])
-                  yield* git(["--git-dir", state.gitdir, "config", "core.symlinks", "true"])
-                  yield* git(["--git-dir", state.gitdir, "config", "core.fsmonitor", "false"])
-                  log.info("initialized")
-                }
+                yield* ensureRepo()
                 yield* add()
-                const result = yield* git(args(["write-tree"]), { cwd: state.directory })
-                const hash = result.text.trim()
-                log.info("tracking", { hash, cwd: state.directory, git: state.gitdir })
-                return hash
+                return yield* writeTree()
+              }),
+            )
+          })
+
+          /**
+           * step-finish 专用：一次 `add()` 同时产出「完成快照」与「相对 from 的补丁」。
+           *
+           * 260903 cc 原先这里是 `track()` 紧接着 `patch(ctx.snapshot)` 两次独立调用，
+           * 而两者各自都跑一遍 `add()` —— 那是一个 step 里最贵的一段（sync + diff-files +
+           * ls-files + check-ignore + 逐文件 stat + git add，Windows 上每个 git 进程 30ms 起步）。
+           * 两次调用之间只有内存记账与写会话库（会话库在 ~/.redcode/data，不在被跟踪的工作树里），
+           * **工作树一个字节都没变**，所以第二遍 add() 纯属白跑。
+           *
+           * 合进同一个 locked 块还顺带堵一个隐患：原先两次调用之间锁是放开的，中间若有别的
+           * fiber 动了索引，patch 算的就不是刚 write-tree 出来的那棵树。
+           *
+           * ⚠️ `patch()` 保留自己的 `add()` 不能删 —— `cleanup()`（流中断/出错的收尾路径）
+           * 直接调它，前面没有 track。
+           */
+          const finish = Effect.fnUntraced(function* (from: string | undefined) {
+            return yield* locked(
+              Effect.gen(function* () {
+                if (!(yield* enabled())) return { hash: undefined, patch: undefined }
+                yield* ensureRepo()
+                yield* add()
+                const hash = yield* writeTree()
+                if (from === undefined) return { hash, patch: undefined }
+                return { hash, patch: yield* diffCached(from) }
               }),
             )
           })
@@ -321,31 +391,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
             return yield* locked(
               Effect.gen(function* () {
                 yield* add()
-                const result = yield* git(
-                  [...quote, ...args(["diff", "--cached", "--no-ext-diff", "--name-only", hash, "--", "."])],
-                  {
-                    cwd: state.directory,
-                  },
-                )
-                if (result.code !== 0) {
-                  log.warn("failed to get diff", { hash, exitCode: result.code })
-                  return { hash, files: [] }
-                }
-                const files = result.text
-                  .trim()
-                  .split("\n")
-                  .map((x) => x.trim())
-                  .filter(Boolean)
-
-                // Hide ignored-file removals from the user-facing patch output.
-                const ignored = yield* ignore(files)
-
-                return {
-                  hash,
-                  files: files
-                    .filter((item) => !ignored.has(item))
-                    .map((x) => path.join(state.worktree, x).replaceAll("\\", "/")),
-                }
+                return yield* diffCached(hash)
               }),
             )
           })
@@ -746,7 +792,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
             Effect.forkScoped,
           )
 
-          return { cleanup, track, patch, restore, revert, diff, diffFull }
+          return { cleanup, track, patch, finish, restore, revert, diff, diffFull }
         }),
       )
 
@@ -762,6 +808,9 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
         }),
         patch: Effect.fn("Snapshot.patch")(function* (hash: string) {
           return yield* InstanceState.useEffect(state, (s) => s.patch(hash))
+        }),
+        finish: Effect.fn("Snapshot.finish")(function* (from: string | undefined) {
+          return yield* InstanceState.useEffect(state, (s) => s.finish(from))
         }),
         restore: Effect.fn("Snapshot.restore")(function* (snapshot: string) {
           return yield* InstanceState.useEffect(state, (s) => s.restore(snapshot))

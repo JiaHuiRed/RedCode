@@ -704,7 +704,12 @@ export const layer = Layer.effect(
             return
 
           case "step-finish": {
-            const completedSnapshot = yield* snapshot.track()
+            // 260903 cc 一次 add() 同时拿「完成快照」和「相对本 step 起点的补丁」。
+            //   原先是 track() 与后面那句 patch(ctx.snapshot) 两次独立调用，各自跑一遍 add()，
+            //   而两者之间工作树没有任何变化（中间只有内存记账和写会话库）。等价性推导与
+            //   为什么 patch() 自己那个 add() 不能删，见 snapshot/index.ts 的 finish()。
+            const stepSnapshot = yield* snapshot.finish(ctx.snapshot)
+            const completedSnapshot = stepSnapshot.hash
             yield* Effect.forEach(Object.keys(ctx.reasoningMap), finishReasoning)
             const usage = Session.getUsage({
               model: ctx.model,
@@ -750,8 +755,8 @@ export const layer = Layer.effect(
             })
             yield* session.updateMessage(ctx.assistantMessage)
             if (ctx.snapshot) {
-              const patch = yield* snapshot.patch(ctx.snapshot)
-              if (patch.files.length) {
+              const patch = stepSnapshot.patch
+              if (patch && patch.files.length) {
                 yield* session.updatePart({
                   id: PartID.ascending(),
                   messageID: ctx.assistantMessage.id,
