@@ -114,6 +114,15 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
     let attempt: AbortController | undefined
     let run: Promise<void> | undefined
     let started = false
+    // 260903 cc 防「多个重连循环并发跑」。`started` 那个布尔只挡得住 start() 被连着调两次，
+    // 挡不住 stop() 之后再 start() 时**旧循环还没退出来**：stop() 把 started 置 false，可旧
+    // 循环正卡在 `await wait(...)` 或 `for await (...)` 上，要等它自己转到检查点才退——这中间
+    // 新循环已经起来了，两个循环同时在开连接。RedCode 比上游更容易踩到：本仓有 global + server
+    // 两条流（上游只有一条），server 变化时（切目录/切服务器/sidecar 重生）就是一轮 stop→start，
+    // 而退避最长 2 秒意味着旧循环最久要 2 秒才醒来检查，窗口比上游固定 250ms 大八倍。
+    // 叠上 Chromium 同 host 6 连接的上限，多余的循环会加速吃满槽位。形状取自 opencode
+    // `packages/app/src/context/server-sdk.tsx` 的 generation 守卫。
+    let generation = 0
     // 260706 Red: 90s — 实测 sidecar 在处理重请求时 event loop 可能阻塞 >30s，导致 Stream.tick 心跳无法按时发送
     const HEARTBEAT_TIMEOUT_MS = 90_000
     let lastEventAt = Date.now()
@@ -138,9 +147,10 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
     const start = () => {
       if (started) return run
       started = true
-      run = (async () => {
-        // oxlint-disable-next-line no-unmodified-loop-condition -- `started` is set to false by stop() which also aborts; both flags are checked to allow graceful exit
-        while (!abort.signal.aborted && started) {
+      const active = ++generation
+      const current = (async () => {
+        // oxlint-disable-next-line no-unmodified-loop-condition -- `started`/`generation` are mutated by stop() which also aborts; all three are checked to allow graceful exit
+        while (!abort.signal.aborted && started && generation === active) {
           attempt = new AbortController()
           lastEventAt = Date.now()
           const onAbort = () => {
@@ -243,19 +253,25 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
             )
           }
 
-          if (abort.signal.aborted || !started) return
+          if (abort.signal.aborted || !started || generation !== active) return
           await wait(Math.min(reconnectDelay, RECONNECT_MAX_MS))
           reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS)
         }
       })().finally(() => {
+        // 旧循环的 finally 不能把新 run 的引用清掉——stop() 后紧接着 start() 时，
+        // 旧的这段可能比新循环晚结束。同样取自 opencode 那份。
+        if (run !== current) return
         run = undefined
         flush()
       })
+      run = current
       return run
     }
 
     const stop = () => {
       started = false
+      // 让还没退出来的旧循环在下一个检查点自行结束，别跟新循环并存
+      generation++
       attempt?.abort()
       clearHeartbeat()
     }

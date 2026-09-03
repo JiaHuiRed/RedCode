@@ -10,6 +10,14 @@
 
 ### [未发布]
 
+- **补 `generation` 守卫，防两个重连循环并发开连接**（`packages/app/src/context/global-sdk.tsx`、`server-sdk.tsx`）：对照 opencode（已分叉两个多月）发现本仓缺一处它有的守卫。`started` 那个布尔只挡得住 start() 被连着调两次，**挡不住 stop() 之后再 start() 时旧循环还没退出来**——stop() 把 `started` 置 false，可旧循环正卡在 `await wait(...)` 或 `for await (...)` 上，要等它自己转到检查点才退，这中间新循环已经起来了，两个循环同时在开连接。
+
+  本仓比上游更容易踩到：**两条 SSE 流**各有这个问题（上游只有一条，最坏 4 个循环 vs 2 个）；`server` 变化时（切目录／切服务器／sidecar 重生）就是一轮 stop→start；退避最长 2 秒意味着旧循环最久要 2 秒才醒来检查，窗口比上游固定 250ms 大八倍。叠上 Chromium 同 host 6 连接的上限，多余的循环会加速吃满槽位。
+
+  连带抄了 opencode 的 `run !== current` 守卫：旧循环的 `finally` 不能把新 run 的引用清掉——同一族缺陷。顺带一提，前一条修的那处收尾不对称（`finally` 里不 abort）**是从上游继承的**，opencode 现在仍然如此，不是本仓写错的。
+
+  这条与前一条同样**不依赖连接池假设成立**：「stop 之后旧循环可能还在跑」本身就是错的。两条合起来才完整——abort 管连接及时释放，generation 管不会有多余的循环去开连接。
+
 - **SSE 流正常结束时补上 `abort()`**（`packages/app/src/context/global-sdk.tsx`、`server-sdk.tsx`）：两个文件的重连循环里，`finally` 只把 `attempt` 置 `undefined` 而不 `abort()` —— 同一文件其余五处（stop／心跳超时／onCleanup）**都 abort**，唯独"流正常结束"这条不。AbortController 是保证底层 fetch 被拆掉的唯一把手，置空只是让 GC 有机会回收，不保证 socket 立刻关。
 
   **旧结论解释不了一半症状**：09-02 按"重连被 SDK 架空"修掉（`65582cc9`）之后当晚又犯，症状逐条相同。而 SSE 是**入站**通道，"消息发得出但不落库""Esc 无效"是**出站** HTTP —— 两者一起死说明有共用资源被占死。

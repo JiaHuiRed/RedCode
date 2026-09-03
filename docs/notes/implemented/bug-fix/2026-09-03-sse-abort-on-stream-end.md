@@ -96,6 +96,39 @@ SDK 那圈的起始退避是 **3 秒**，应用层这套是 **256ms** —— 同
   通道本身现成，而 `cli/cmd/tui/thread.ts` 的 `createWorkerFetch` / `createEventSource`
   就是可抄的样板。两条都是真改动，等假设证实再动。
 
+## 追加（同日）：补 generation 守卫，形状取自 opencode
+
+对照 `D:\AI\opencode`（26-09-02 HEAD，已分叉两个多月）的 `packages/app/src/context/server-sdk.tsx`：
+
+| | opencode | RedCode（改前） |
+|---|---|---|
+| SSE 流数量 | **1** 条 | **2** 条（`global-sdk` + `server-sdk`） |
+| 并发重连守卫 | **有** `generation` 计数 | **没有** |
+| 重连延迟 | 固定 250ms | 256ms→2000ms 指数 |
+| 心跳 | 无 | 有，90s abort（RedCode 自己加的，是真改进） |
+| `finally` 里 abort | **也没有**（同样的缺陷） | 本 note 上半段已补 |
+| 测试 | `server-sdk.test.ts` 196 行 | 无 |
+
+**那处收尾不对称是从上游继承的，不是本仓写错的** —— opencode 现在仍是 `attempt = undefined`。
+
+但 opencode 有一处本仓没有的守卫：`generation` 计数。`started` 那个布尔只挡得住
+start() 被连着调两次，**挡不住 stop() 之后再 start() 时旧循环还没退出来**：stop() 把
+`started` 置 false，可旧循环正卡在 `await wait(...)` 或 `for await (...)` 上，要等它自己
+转到检查点才退 —— 这中间新循环已经起来了，**两个循环同时在开连接**。
+
+本仓比上游更容易踩到：两条流各有这个问题（最坏 4 个循环）；`server` 变化时
+（切目录／切服务器／sidecar 重生）就是一轮 stop→start；而退避最长 2 秒意味着旧循环
+最久要 2 秒才醒来检查，窗口比上游固定 250ms 大八倍。
+
+已补两处（两个文件各一套）：
+- `let generation = 0`；start 里 `const active = ++generation`；循环条件与退出检查点都带上
+  `generation === active` / `generation !== active`；stop 里 `generation++`。
+- 连带抄了 opencode 的 `run !== current` 守卫：**旧循环的 `finally` 不能把新 run 的引用清掉**
+  —— 同一族缺陷，stop 后紧接着 start 时旧的那段可能比新循环晚结束。
+
+这条同样**不依赖连接池假设成立**：「stop 之后旧循环可能还在跑」本身就是错的。
+两条合起来才完整——abort 管「连接及时释放」，generation 管「不会有多余的循环去开连接」。
+
 ## 后果
 
 - 若假设成立，这一条应当足以止住：连接在流结束时立刻释放，槽位不再累积。

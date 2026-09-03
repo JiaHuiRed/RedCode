@@ -100,6 +100,9 @@ function createServerSdkContext(server: ServerConnection.Any) {
   let attempt: AbortController | undefined
   let run: Promise<void> | undefined
   let started = false
+  // 260903 cc 防「多个重连循环并发跑」，理由与形状见 global-sdk.tsx 同名守卫的长注释。
+  // 本仓有 global + server 两条流，只补一条不够。
+  let generation = 0
   // 260706 Red: 90s — 实测 sidecar event loop 阻塞可 >30s（重请求处理），导致 Stream.tick 心跳延迟
   const HEARTBEAT_TIMEOUT_MS = 90_000
   let lastEventAt = Date.now()
@@ -135,9 +138,10 @@ function createServerSdkContext(server: ServerConnection.Any) {
   const start = () => {
     if (started) return run
     started = true
-    run = (async () => {
-      // oxlint-disable-next-line no-unmodified-loop-condition -- `started` is set to false by stop() which also aborts; both flags are checked to allow graceful exit
-      while (!abort.signal.aborted && started) {
+    const active = ++generation
+    const current = (async () => {
+      // oxlint-disable-next-line no-unmodified-loop-condition -- `started`/`generation` are mutated by stop() which also aborts; all three are checked to allow graceful exit
+      while (!abort.signal.aborted && started && generation === active) {
         attempt = new AbortController()
         lastEventAt = Date.now()
         const onAbort = () => {
@@ -218,7 +222,7 @@ function createServerSdkContext(server: ServerConnection.Any) {
           clearHeartbeat()
         }
 
-        if (abort.signal.aborted || !started) return
+        if (abort.signal.aborted || !started || generation !== active) return
 
         setConnection("reconnecting")
 
@@ -236,14 +240,19 @@ function createServerSdkContext(server: ServerConnection.Any) {
         reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS)
       }
     })().finally(() => {
+      // 旧循环的 finally 不能把新 run 的引用清掉，见 global-sdk.tsx 同处注释
+      if (run !== current) return
       run = undefined
       flush()
     })
+    run = current
     return run
   }
 
   const stop = () => {
     started = false
+    // 让还没退出来的旧循环在下一个检查点自行结束
+    generation++
     attempt?.abort()
     clearHeartbeat()
   }
