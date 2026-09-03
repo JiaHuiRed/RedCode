@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "version": "0.10.9",
+  "version": "0.10.10",
   "name": "@redcode-ai/effect-drizzle-sqlite",
   "type": "module",
   "license": "MIT",

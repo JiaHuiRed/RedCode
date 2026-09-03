@@ -34,6 +34,53 @@
 
   本次只修已证的收尾不对称，**不依赖假设成立**。复发判据：renderer DevTools → Network，**Stalled/Queueing = 池满**，**Pending = 服务端不回**（另一回事）。note 见 `docs/notes/implemented/bug-fix/2026-09-03-sse-abort-on-stream-end.md`。
 
+### [0.10.10] - 2026-09-03
+
+> 一次覆盖数据库 / 服务端 / 单轮交互链 / GUI 渲染层 / Electron 外壳 / TUI 六个维度的性能体检，以及从中挑出的**收益÷改动量最高的四条**的落地。体检本身的完整结论、对照实验与「查过没问题」清单不在这里，四条落地的实证如下。
+>
+> 共同结论：慢的地方基本不是算力不够，是在做本来不必做的重复工作 —— 一个缺失的复合索引、一个从未落盘的编译缓存、一个每条 delta 重扫全文的检测、一组订阅了会话级信号的逐轮 memo。
+
+#### 优化
+
+- **part 表索引从 `(session_id)` 换成 `(session_id, id)`**（`session/session.sql.ts`、新增迁移 `20260903032902_part_session_id_index`）：`recentToolParts`（`message-v2.ts:1101-1120`）查的是 `where session_id=? order by id desc limit N*8`，单列索引让 `EXPLAIN` 明写 `USE TEMP B-TREE FOR ORDER BY` —— 每次把该会话全部分片扫一遍再排序。调用点两个（`processor.ts:544` 空转检测、`:658` 重复调用提醒），所以**每个工具调用跑两遍**。
+
+  活库副本实测（10,299 分片的会话，与生产同 pragma）：**36.61ms → 0.138ms，266 倍**，即每工具调用 73ms → 0.28ms。小会话（129 分片）本来就只有 1.8ms，无感 —— 这条只在长会话上兑现。
+
+  单列那个不保留：`(session_id, id)` 的前缀能服务原来所有 `where session_id=?` 的查询，多留一棵树只会给每次 part 写入多一份维护成本（流式期间每 step 写 8–12 条）。逐条核过其余 part 查询的计划没有退步，`count(*) where session_id=?` 反而升级成 COVERING INDEX。索引体积 10.7MB → 15.8MB。**用户下次启动会一次性付 429ms 建索引**，此后不再有。
+
+- **泄漏锚点检测改成增量扫描**（`session/instruction-echo.ts` 新增 `LeakAnchorScanner`、`session/processor.ts`）：text-delta 路径每条 delta 都拿 `hasLeakAnchor(ctx.currentText.text)` 扫**已写出的全文**，O(n²)。整轮累计实测（delta 24 字符，「纯累积」是同一循环去掉检查的对照）：
+
+  | 一轮写出 | delta 数 | 纯累积 | 改前 | 改后 |
+  |---|---|---|---|---|
+  | 20K | 834 | 0.1ms | 8.1ms | 0.4ms |
+  | 60K | 2,500 | 0.1ms | 40.6ms | 0.6ms |
+  | 120K | 5,000 | 0.1ms | 179ms | 1.0ms |
+  | 240K | 10,000 | 0.2ms | 833ms | 1.9ms |
+
+  用法与相邻的 `NgramDetector` 一致（`feed(delta)`），只留锚点长度那么长的尾巴、完全不碰累积串。**中途试过「只 slice 尾窗再 includes」，240K 那档只从 833ms 降到 451ms** —— 累积串在流式期间是 rope，对它 `includes` 或 `slice` 都要先摊平，省掉的是比较不是摊平；滚动尾巴才真正是 O(delta)。等价性：能整段落在旧文本里的锚点在它到达那条 delta 上就已命中（命中即 `leakTripped` + `shouldBreak`），所以每轮只需看结尾落在新 delta 里的那些。补 7 条用例（逐字符喂、锚点跨 delta 交界的每一种切法、reset 语义、五种切片粒度下与全文扫描比对首次命中位置）。
+
+- **时间线轮次 memo 去掉会话级依赖**（`app/pages/session/message-timeline.tsx`）：`mapArray` 给每个轮次建了一个 memo，本意各转各的，但回调里直接读了 `sessionStatus().type` 与 `activeMessageID() === userMessage.id` —— 两个都是会话级信号，于是每次 idle↔busy、每次换轮，全部轮次一起重跑。2,600 条消息的会话实测 `constructMessageRows` 全量 43ms + reuse 5.9ms，而一轮里这两个信号各翻一次，即**每轮撞两次约 50ms**。单个活动轮只要 3.8µs，说明 `reuseTimelineRows` 的短路本来就有效，贵的是「一起跑」。
+
+  改法：`activeMessageID` 换 `createSelector`；status 只在活动轮读，写成**短路三元** —— Solid 的依赖是动态登记的，没执行到就不是依赖，写成先取值再传参等于没改。复刻同一 memo 结构数重跑次数：1300 个轮次下，**status 翻转 1300 → 1 个，换活动轮 → 2 个**。非活动轮传 `"idle"` 的安全性有依据：status 四处用法里三处要求 `isActive`，第四处 `status === "idle" || !isActive` 在 `!isActive` 时已短路；补 6 条用例覆盖五种消息形状逐字节比对，外加一条对照证明活动轮确实敏感。
+
+  遗留：`assistantMessagesByParent()` 仍是全部轮次共用的依赖，新 assistant 消息到达时仍会让所有轮次重跑一遍（靠 reuse 短路兜住），未动。
+
+#### 修复
+
+- **V8 编译缓存改成显式 flush —— 它从建立那天起就是 0 个文件**（`desktop/src/main/sidecar.ts`）：[0.10.0] 记的「省掉约 260ms」**一直没有生效**。取证（打包版 0.10.x，15 次启动）：`compile-cache/v24.16.0-x64-<hash>/` 目录 09-01 建出来后 0 个文件；`import virtual:redcode-server` p50 **1227ms**，而启用缓存之前的 0.9.x 同口径是 1222ms —— 一毫秒没省。目录被创建只说明 `enableCompileCache` 返回了 ENABLED。
+
+  根因：Node 只在**退出路径**持久化编译缓存，而 sidecar 是 Electron 的 utilityProcess，`before-quit` 里是 `void killSidecar()` 既不 `preventDefault` 也不 await —— 主进程先走、Electron 直接 TerminateProcess，那一刻永远不会到来（48 次退出里 34 次是 `code 1 / reason: killed`）。0.10.0 当时的冷热对照没错，但那是在一个独立 Node 进程里做的，它跑完自然退出。
+
+  改法：ready 之后 2 秒由一个 `unref` 定时器显式 flush，与退出路径解耦。排在 ready 之后是因为主进程收到 ready 就立刻发健康检查（`5568bce2` 把 ready→healthy 压到 16ms，不能在这里还回去）。同版本 Node（v24.16.0，与 Electron 42.4.1 内置一致）验过机制：不 flush 空转 1.5 秒仍是 0 个文件，`flushCompileCache()` **3ms** 就落盘，下个进程 import 103ms → 26ms，热态重复 flush 是 0ms。真实 bundle 的收益小于这个倍数 —— 那 1.3 秒里大部分是模块执行不是编译。
+
+  **验收标准是缓存目录里出现文件，不是看日志有没有调用**；`[sidecar-timing] flushCompileCache: Nms` 会打进 `server.log`。端到端要一次真实打包版启动，本次只验了机制。刻意没做：`before-quit` 改 `preventDefault` + await —— 对缓存已无必要，但 sidecar 的 `listener.stop()`（DB 句柄、MCP 子进程）同样没机会跑，那是另一笔账。note：`docs/notes/implemented/bug-fix/2026-09-03-compile-cache-never-flushed.md`
+
+#### 更正
+
+- 体检初稿里「泄漏锚检测 20KB 26ms、100KB 407ms 一次」**差四个数量级**，真实单次是 0.005ms / 0.04ms。有意义的口径是整轮累计（见上表）。教训同 `feedback-verify-before-reporting-findings`：数字类结论比存在性结论更容易错，因为它不触发怀疑。
+
+---
+
 ### [0.10.9] - 2026-09-03
 
 > deepseek-harness 第五轮反哺（上游 08-31 后新增 341 提交）。扫完只有三条真缺口——其余候选全被本仓已有的东西挡掉，逐条核实的记录在 `docs/dsh-adoption-plan.md`。
