@@ -25,6 +25,9 @@
 | webfetch 目的地守卫:拒非公网地址、审批在 DNS 解析之前、**逐跳**校验重定向(fetch 默认 follow 只看得到第一跳)。分两档 —— 环回/RFC1918/CGNAT/ULA 可由配置放行,link-local(云元数据)等永不放行 | `web/web-fetch-http/src/network.ts`(上游 `b2219bba`/`709e5eda`) | `util/net-address.ts` + `tool/webfetch.ts`,配置 `webfetch.allow_private_hosts` | 5c121d7b |
 | 图片按路由计价进上下文估算(此前按内联 base64 长度算,一张 400KB JPEG = 约 13 万 token,把**保留范围**与**用量面板**都带偏;触发线锚在 provider usage 上未动) | `route-priced-image-request-pressure` | `session/image-tokens.ts`,接 `compaction.estimate` 与 `context-snapshot` | 9286a867 |
 | 图片尺寸从每边盒子改**总像素预算**(2000x20000 长截图 200px 宽 → 632px)+ 候选懒求值 + 按 alpha 路由(JPEG 源不再排 PNG 候选) | `alpha-routed-image-quality-ladders` | `image/image.ts`,配置 `attachment.image.max_pixels`/`max_dimension` | fefc7ce2 |
+| 工具读到的图片直接画在卡片里(`part.state.attachments` 一直带到客户端、只缺渲染器;live 库里已有 14 条带图记录) | `feat(ui-tool): render read_image results as the image` + 补嵌套调用 | `ui/components/message-part.tsx` `ToolAttachmentImages` | 6a12b8a7 |
+| 圆角改画超椭圆 `superellipse(1.5)`,通配选择器铺满 + 全圆形逐条 opt-out,扫描防回潮 | `2026-09-01-web-superellipse-corner-smoothing` | `ui/styles/corner-shape.css` + `.test.ts` | fe9578b4 |
+| 浮层描边统一画进 box-shadow(`--shadow-md-border`),反色面保留真 border,扫描防回潮。**刻意不跟 0.5px**——实测 DPR=1 下 `border:0.5px` 根本不画 | `2026-09-01-web-elevation-stroke-shadows` | `ui/styles/theme.css` + `dropdown-menu`/`popover`/`hover-card` | a93e1b46 |
 
 ## 第二批(小机制,高性价比)
 

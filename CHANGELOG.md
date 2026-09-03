@@ -8,6 +8,30 @@
 
 ---
 
+### [0.10.9] - 2026-09-03
+
+> deepseek-harness 第五轮反哺（上游 08-31 后新增 341 提交）。扫完只有三条真缺口——其余候选全被本仓已有的东西挡掉，逐条核实的记录在 `docs/dsh-adoption-plan.md`。
+
+- **工具读到的图片直接画在卡片里**（`packages/ui/src/components/message-part.tsx`）：`tool/read.ts` 读图时早就返回 `attachments: [{type:"file", mime, url:"data:..."}]`，`processor.ts` 写进 `part.state.attachments`，SDK 的 `ToolStateCompleted.attachments` 也一路带到了客户端——**生产者和管道一直都在，缺的只是渲染器**。客户端唯一消费 attachments 的地方是用户消息那条路，工具卡片只显示一行 "Image read successfully"：模型看得见图，用户看不见。查本机 live 库确认过，`part` 表里已有 14 条带 `image/png` 附件的记录。
+
+  放在 `ToolPart` 这一层而不是 read 的 render 里，任何工具返回图片都能显示，子代理/嵌套调用同理。点开走既有的 `ImagePreview` 灯箱（多图带左右切换），与用户附件同一套交互；高度封顶 240px，不然一张竖图能把整条时间线顶开。
+
+- **圆角改画超椭圆**（新增 `packages/ui/src/styles/corner-shape.css`）：`superellipse(1.5)` 落在 `round`（=1）与 `squircle`（=2）之间，**不改任何半径值**，只改角的曲率。用 `*, *::before, *::after` 铺是因为 `corner-shape` 不继承，没法在 `:root` 设一次；本仓半径同时来自 Tailwind 工具类、组件 CSS 与 v2 那套，没有一份能穷举的类名单。整条规则包在 `@supports` 里，不支持的引擎连声明都读不到，零回退代码——本仓 Electron 42 = Chromium 148，该属性从 139 起可用。
+
+  全圆形逐条退回 `round`（超椭圆会把正圆压成 squircle，用 border 画的 spinner 转起来会晃；胶囊两头会被削方），Tailwind 的 `.rounded-full` 在 utilities 层一条盖掉。
+
+- **浮层描边统一画进 box-shadow**（`packages/ui/src/styles/theme.css` 新增 `--shadow-md-border`；`dropdown-menu` / `popover` / `hover-card`）：本仓两种写法一直并存——`context-menu` / `dialog` / `select` / `dock-surface` 早就是描边画进阴影，这三个还是 `border: 1px solid` + 另一条 `box-shadow`。真 border 吃 1px 布局、在 `<button>` 上会顶掉 UA 默认值、描边与柔光层还得各改各的。描边色沿用原本那条 border 的值，只改承载方式不改观感。
+
+  `toast` / `tooltip` / markdown 代码复制提示保留真 border：它们用 `--surface-float-base`（浅色深色两档都是 `#161616`，固定深色面），跟随主题的描边色画在上面没有意义。
+
+  **刻意不跟上游的 0.5px 发丝**：上游 note 写「Chromium 把亚设备像素的 border 画成一个设备像素，1x 屏与原来完全一致」，在 Chromium 148 上这句是错的。offscreen 截图逐像素量（白底黑线读 R 通道）：`box-shadow 1px` = 0（纯黑）、`0.5px` = 127（淡一半）、`border 1px` = 0、**`border 0.5px` = 255（根本没画出来）**。本机两块显示器都是 100% 缩放，跟过去是变淡不是变锐。同理没跟他们同批的半径 1.25× 放大——本仓 260831 刚把圆角标度收归一处。
+
+  两条扫描防回潮：`styles/corner-shape.test.ts`（全圆半径缺配对即失败）、`styles/elevation.test.ts`（真 border 与抬升阴影并排即失败，反色面豁免）。都故意插违例验过会报错。决策记录见 `docs/notes/implemented/feature/2026-09-03-superellipse-corners-and-elevation-strokes.md`。
+
+- **会话快照的三条用例修好**（`packages/opencode/test/cli/tui/lib/transcript.tsx`、`conversation-snapshot.test.tsx`）：从 08-28 就挂着，同一个 `local.agent.label is not a function`。同一天两个提交撞车、隔三小时：`45cd187f`（14:31）落快照 harness，fake `local` 只有 `agent.color`；`c454e8c0`（17:25）把消息头从 `Locale.titlecase(message.mode)` 换成 `local.agent.label(message.agent)`，fake 没跟上。那个提交的 verify 跑的是 `transcript.test.ts`——会话记录**导出**的 util 测试，跟整帧快照不是一个文件，名字像而已。修完快照文件一个字节没改，5 条全部命中原快照。
+
+---
+
 ### [0.10.8] - 2026-09-02
 
 > 看板娘「赤」进产品：图标、TUI 首页、GUI 等待期三处。原则是**赤只做门面，不做嘴替**——soul 有独立人格，助手说话那块一个字不碰。
