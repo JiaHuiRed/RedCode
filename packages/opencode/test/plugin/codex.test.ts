@@ -1,3 +1,6 @@
+import { rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { describe, expect, test } from "bun:test"
 import {
   CodexAuthPlugin,
@@ -139,12 +142,43 @@ describe("plugin.codex", () => {
       expect(parseDefaultConnectionSettings(hex)).toBe("http://127.0.0.1:7897")
     })
 
-    test("returns undefined when proxy flag bit is set off", () => {
+    // 260902 Red 代理关闭时 proxyEnable=0（offset 8），与 flags 无关——权威开关
+    test("returns undefined when proxyEnable is off", () => {
       const hex =
-        "4600000050040000010000000E0000003132372E302E302E313A37383937B6000000" +
+        "4600000050040000000000000E0000003132372E302E302E313A37383937B6000000" +
         "6C6F63616C686F73743B3132372E2A3B3C6C6F63616C3E2800000066696C653A2F2F" +
         "2F433A2F55736572732F41646D696E6973747261746F722F70726F78792E706163"
       expect(parseDefaultConnectionSettings(hex)).toBeUndefined()
+    })
+
+    // 260902 Red 本机实况：Clash Verge PAC 模式 flags=0x464（0x4=AUTO_PROXY_URL）
+    // 不含 0x2（PROXY_TYPE_PROXY），但 proxyEnable=1 且 proxyServer 字段有值——
+    // 老判据（flags&0x2）会误杀，新判据以 proxyEnable 为准
+    test("extracts proxy without PROXY_TYPE flag (PAC mode, flags=0x464)", () => {
+      const hex =
+        "4600000064040000010000000E0000003132372E302E302E313A37383937B6000000" +
+        "6C6F63616C686F73743B3132372E2A3B3C6C6F63616C3E2800000066696C653A2F2F" +
+        "2F433A2F55736572732F41646D696E6973747261746F722F70726F78792E706163"
+      expect(parseDefaultConnectionSettings(hex)).toBe("http://127.0.0.1:7897")
+    })
+
+    // 260902 Red PAC-only 兜底：proxyServer 字段为空、PAC 指向 file:// 时读文件取第一个 PROXY
+    test("falls back to file:// PAC when proxyServer field is empty", () => {
+      const pacPath = join(tmpdir(), "redcode-pac-test.pac")
+      const pacUrl = "file:///" + pacPath.replace(/\\/g, "/")
+      writeFileSync(pacPath, 'function FindProxyForURL(url, host) { return "PROXY 127.0.0.1:7898; DIRECT" }')
+      try {
+        const head = Buffer.alloc(20)
+        head.writeUInt32LE(0x46, 0)
+        head.writeUInt32LE(0x464, 4)
+        head.writeUInt32LE(1, 8)
+        const pacLen = Buffer.alloc(4)
+        pacLen.writeUInt32LE(pacUrl.length)
+        const blob = Buffer.concat([head, pacLen, Buffer.from(pacUrl)]).toString("hex")
+        expect(parseDefaultConnectionSettings(blob)).toBe("http://127.0.0.1:7898")
+      } finally {
+        rmSync(pacPath, { force: true })
+      }
     })
 
     test("returns undefined for garbage", () => {
