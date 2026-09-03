@@ -1,6 +1,7 @@
 import {
   createEffect,
   createMemo,
+  createSelector,
   createSignal,
   For,
   Index,
@@ -466,19 +467,37 @@ export function MessageTimeline(props: {
   })
   const showHeader = createMemo(() => !!(titleValue() || parentID()))
 
+  // 260903 cc 每个轮次一个 memo，但下面这两条依赖原先是**会话级**的：直接读
+  //   `activeMessageID() === userMessage.id` 和 `sessionStatus().type`，于是每次
+  //   idle↔busy、每次换轮，全部轮次的 memo 一起重跑。2,600 条消息的会话实测
+  //   constructMessageRows 全量 43ms + reuse 5.9ms，而一轮里这两个信号各翻一次 = 每轮两次。
+  //   （单个活动轮只要 3.8µs，说明 reuseTimelineRows 的短路本来就是有效的，贵的是「一起跑」。）
+  //
+  //   ① activeMessageID 换成 createSelector：只有「不再是活动轮」和「新成为活动轮」那两个
+  //      轮次会失效，其余一个都不动。
+  //   ② status 只在活动轮读。**必须写成短路三元**——Solid 的依赖是动态登记的，没执行到
+  //      `sessionStatus()` 就不会成为该 memo 的依赖；写成先取值再传参就白改了。
+  //
+  //   非活动轮传 "idle" 是安全的：constructMessageRows 里 status 一共四个用处，前三个
+  //   (`message-timeline.data.ts:277/281/305`) 都要求 `isActive` 才生效，第四个
+  //   (`:315` `status === "idle" || !isActive`) 在 `!isActive` 时已经短路，读不到 status。
+  //   也就是说 isActive 为假时 status 取什么值都不影响输出。
+  const isActiveMessage = createSelector(activeMessageID)
+
   const messageRowMemos = createMemo(
     mapArray(
       () => props.userMessages,
       (userMessage, indexAccessor) => {
         return createMemo((previous: TimelineRow.TimelineRow[] | undefined) => {
+          const active = isActiveMessage(userMessage.id)
           const rows = Timeline.constructMessageRows(
             userMessage,
             getMsgParts,
             assistantMessagesByParent().get(userMessage.id) ?? emptyAssistantMessages,
             indexAccessor(),
             settings.general.showReasoningSummaries(),
-            sessionStatus().type,
-            activeMessageID() === userMessage.id,
+            active ? sessionStatus().type : "idle",
+            active,
           )
 
           return reuseTimelineRows(previous, rows)

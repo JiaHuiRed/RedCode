@@ -261,3 +261,65 @@ describe("TimelineRow.reuse — 引用语义", () => {
     expect(TimelineRow.reuse(previous, next)).toBe(previous)
   })
 })
+
+// 260903 cc message-timeline.tsx 把 status 改成「只有活动轮才读」（非活动轮固定传 "idle"），
+// 目的是让 idle↔busy 翻转不再让全部轮次的 memo 重跑。这一组守的就是那个前提：
+// isActive 为假时，status 取任何值输出都必须完全一致。
+describe("Timeline.constructMessageRows — 非活动轮对 status 不敏感", () => {
+  const STATUSES = ["idle", "busy", "retry"] as const
+
+  const shapes: Array<[string, () => ReturnType<typeof Timeline.constructMessageRows>[]]> = [
+    [
+      "有 assistant 骨架但无可渲染 parts",
+      () => STATUSES.map((st) => Timeline.constructMessageRows(userMessage("u1", 1), () => [], [assistantMessage("a1", 2, "u1")], 0, false, st, false)),
+    ],
+    [
+      "正常一问一答",
+      () => {
+        const parts = (id: string) => (id === "a1" ? [textPart("p1", "a1")] : [])
+        return STATUSES.map((st) => Timeline.constructMessageRows(userMessage("u1", 1), parts, [assistantMessage("a1", 2, "u1")], 0, false, st, false))
+      },
+    ],
+    [
+      "带工具调用",
+      () => {
+        const parts = (id: string) => (id === "a1" ? [textPart("p1", "a1"), toolPart("p2", "a1")] : [])
+        return STATUSES.map((st) => Timeline.constructMessageRows(userMessage("u1", 1), parts, [assistantMessage("a1", 2, "u1")], 1, true, st, false))
+      },
+    ],
+    [
+      "带 summary.diffs（第 315 行那条 `status === idle || !isActive` 的分支）",
+      () => {
+        const withDiffs = {
+          ...userMessage("u1", 1),
+          summary: { diffs: [{ file: "a.ts", added: 3, removed: 1 }] },
+        } as unknown as UserMessage
+        return STATUSES.map((st) => Timeline.constructMessageRows(withDiffs, () => [], [assistantMessage("a1", 2, "u1")], 0, false, st, false))
+      },
+    ],
+    [
+      "无 assistant 消息",
+      () => STATUSES.map((st) => Timeline.constructMessageRows(userMessage("u1", 1), () => [], [], 0, false, st, false)),
+    ],
+  ]
+
+  for (const [name, build] of shapes) {
+    test(name, () => {
+      const runs = build()
+      const baseline = tags(runs[0]!)
+      expect(baseline.length).toBeGreaterThan(0)
+      for (let i = 1; i < runs.length; i++) {
+        expect({ status: STATUSES[i], tags: tags(runs[i]!) }).toEqual({ status: STATUSES[i], tags: baseline })
+        expect(JSON.stringify(runs[i])).toBe(JSON.stringify(runs[0]))
+      }
+    })
+  }
+
+  test("对照：活动轮对 status 是敏感的（否则上面那组是空断言）", () => {
+    const idle = Timeline.constructMessageRows(userMessage("u1", 1), () => [], [assistantMessage("a1", 2, "u1")], 0, false, "idle", true)
+    const busy = Timeline.constructMessageRows(userMessage("u1", 1), () => [], [assistantMessage("a1", 2, "u1")], 0, false, "busy", true)
+    const retry = Timeline.constructMessageRows(userMessage("u1", 1), () => [], [assistantMessage("a1", 2, "u1")], 0, false, "retry", true)
+    expect(tags(idle)).not.toEqual(tags(busy))
+    expect(tags(retry)).not.toEqual(tags(idle))
+  })
+})
