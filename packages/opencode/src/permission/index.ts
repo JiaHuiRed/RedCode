@@ -220,8 +220,20 @@ export const layer = Layer.effect(
       yield* bus.publish(Event.Asked, info)
       return yield* Effect.ensuring(
         Deferred.await(deferred),
-        Effect.sync(() => {
-          pending.delete(id)
+        // 260903 cc 中断时补一条 replied 事件。原来这里只 pending.delete、不发事件：
+        // 提问方的 fiber 被打断（explore 子代理超时兑底就会打断——tool/task.ts 的
+        // Effect.timeoutOption 掐掉主模型那次运行）时，服务端这条 pending 没了，
+        // 而 TUI/GUI 只靠 permission.replied 摘弹窗 —— 弹窗于是永远留在屏幕上，
+        // 点它 reply 的是一个已经不在 pending 里的 requestID，NotFoundError，
+        // 调用点又是 void 不看返回，表现就是「点击和按键都失灵」。
+        // delete 返回 false = 正常 reply 路径已经删过并发过事件了，别重复发。
+        Effect.suspend(() => {
+          if (!pending.delete(id)) return Effect.void
+          return bus.publish(Event.Replied, {
+            sessionID: info.sessionID,
+            requestID: id,
+            reply: "reject",
+          })
         }),
       )
     })
