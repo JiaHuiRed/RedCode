@@ -1301,6 +1301,14 @@ export interface ToolProps {
   deferContent?: boolean
   forceOpen?: boolean
   locked?: boolean
+  /**
+   * 工具产出的附件（`read` 读图/读 PDF 时就走这条）。
+   *
+   * 一直存在于 `part.state.attachments` 里、也一路同步到了客户端（SDK 的
+   * `ToolStateCompleted.attachments`），只是此前没有消费者——模型看得见图，用户只看得见
+   * "Image read successfully" 一行字。
+   */
+  attachments?: FilePart[]
 }
 
 export type ToolComponent = Component<ToolProps>
@@ -1325,6 +1333,42 @@ export function getTool(name: string) {
 export const ToolRegistry = {
   register: registerTool,
   render: getTool,
+}
+
+/**
+ * 工具产出的图片直接画出来。
+ *
+ * 放在 ToolPart 这一层而不是某个工具的 render 里：任何工具返回图片都能显示，
+ * 子代理/嵌套调用同理，不必逐个工具接线。非图片附件不管——工具正文里通常已有交代。
+ */
+function ToolAttachmentImages(props: { attachments?: FilePart[] }) {
+  const dialog = useDialog()
+  const i18n = useI18n()
+  const images = createMemo(() => (props.attachments ?? []).filter((file) => kind(file) === "image"))
+
+  const open = (index: number) => {
+    const list = images()
+    const items = list.map((file) => ({ src: file.url, alt: file.filename }))
+    if (items.length > 1) {
+      dialog.show(() => <ImagePreview images={items} initialIndex={index} />)
+      return
+    }
+    dialog.show(() => <ImagePreview src={items[0]!.src} alt={items[0]!.alt} />)
+  }
+
+  return (
+    <Show when={images().length > 0}>
+      <div data-slot="tool-attachment-images">
+        <For each={images()}>
+          {(file, index) => (
+            <button type="button" data-slot="tool-attachment-image" onClick={() => open(index())}>
+              <img src={file.url} alt={file.filename ?? i18n.t("ui.message.attachment.alt")} />
+            </button>
+          )}
+        </For>
+      </div>
+    </Show>
+  )
 }
 
 function ToolFileAccordion(props: { path: string; actions?: JSX.Element; children: JSX.Element }) {
@@ -1438,7 +1482,9 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               hideDetails={props.hideDetails}
               defaultOpen={props.defaultOpen}
               deferContent={props.deferToolContent}
+              attachments={(part().state as { attachments?: FilePart[] }).attachments}
             />
+            <ToolAttachmentImages attachments={(part().state as { attachments?: FilePart[] }).attachments} />
           </Match>
         </Switch>
       </div>
