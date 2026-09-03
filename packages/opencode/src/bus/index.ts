@@ -131,7 +131,10 @@ export const layer = Layer.effect(
       return Effect.gen(function* () {
         const s = yield* InstanceState.get(state)
         const payload: Payload = { id: options?.id ?? createID(), type: def.type, properties }
-        log.info("publishing", { type: def.type })
+        // 260903 cc 降到 debug：这行在每一次 publish 上无条件执行，而流式期间
+        //   message.part.delta 是每 token 一条（90 tok/s ≈ 90 行/秒）。GUI 的 sidecar
+        //   级别是 WARN 所以看不出来，但 TUI 本地安装默认 DEBUG，那里是实打实的每 delta 一行。
+        log.debug("publishing", { type: def.type })
 
         const ps = s.typed.get(def.type)
         if (ps) yield* PubSub.publish(ps, payload)

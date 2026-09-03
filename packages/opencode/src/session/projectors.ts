@@ -172,7 +172,16 @@ export default [
 
   SyncEvent.project(MessageV2.Event.PartUpdated, (db, data) => {
     const { id, messageID, sessionID, ...rest } = data.part
-    const row = db.select().from(PartTable).where(eq(PartTable.id, id)).get()
+    // 260903 cc 这一行原先是无条件 `select *`，把整行 data 读出来再 JSON.parse —— 而它
+    //   唯一的用处是 `usage(row.data)`，即「旧值若是 step-finish 就把它的用量冲抵掉」。
+    //   带 3MB base64 图片的 tool/read 分片，光这一步实测就要 7.5ms，**每次 updatePart 都付**。
+    //
+    //   分片的 type 不会中途改变（创建时定死，后续更新只动状态），所以进来的不是 step-finish
+    //   时，库里那条也不可能是 —— 直接不查。step-finish 分片本身只有 177 字节，回读很便宜。
+    //   （中间试过「先 json_extract 取类型再决定」，3MB 那档只从 7.5ms 降到 5.3ms：
+    //    json_extract 照样要把 blob 读进来，省下的只是 JSON 解析。按进来的类型判才是零查询。）
+    const row =
+      data.part.type === "step-finish" ? db.select().from(PartTable).where(eq(PartTable.id, id)).get() : undefined
 
     try {
       db.insert(PartTable)
