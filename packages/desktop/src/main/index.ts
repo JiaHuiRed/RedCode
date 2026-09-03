@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, rmSync } from "node:fs"
 import * as http from "node:http"
 import { createServer } from "node:net"
 import { homedir, tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event, ProcessMetric } from "electron"
 import { app, BrowserWindow, nativeTheme } from "electron"
@@ -348,6 +348,26 @@ const main = Effect.gen(function* () {
   process.env.REDCODE_DISABLE_EMBEDDED_WEB_UI = "true"
 
   const appId = app.isPackaged ? APP_IDS[CHANNEL] : "ai.redcode.desktop.dev"
+  /**
+   * 260903 cc AUMID 与 userData 目录**分开取值**，别再共用 appId。
+   *
+   * 原来两者都用 appId，而未打包时的 appId 与 dev 渠道打包版是同一个字符串，于是：
+   * 跑一次 `bun dev:desktop`，Electron 为了让 toast 有归属会往开始菜单塞一个
+   * 指向 `process.execPath`（= 裸 electron.exe，**无参数**）的快捷方式，并给它写上
+   * 这个 AUMID。此后打包版发的系统通知，Windows 按 AUMID 反查快捷方式时会命中那一个，
+   * 点击就启动裸 electron.exe —— 屏幕上出现 Electron 的欢迎页而不是回到应用。
+   *
+   * 实测取证（哥哥机器，2026-09-03）：开始菜单下两个 .lnk 都带 AUMID
+   * `ai.redcode.desktop.dev` —— `Electron.lnk`（08-31 建，指向 node_modules 里的
+   * electron.exe，参数为空）与 `RedCode Dev.lnk`（09-01 建，指向打包版 exe）。
+   *
+   * 只改 AUMID、不改 userData：后者是数据目录，跟着变会把已有的 dev 设置/日志甩掉。
+   *
+   * ⚠️ 未打包时的 toast 点击**仍然**会落到裸 electron（它自己那个快捷方式就指向那里），
+   * 这一改只保证它不再劫持打包版。要让 dev 的 toast 也能跳回窗口，得自己写一个带
+   * app 路径参数的快捷方式，不在本次范围内。
+   */
+  const userModelId = app.isPackaged ? appId : `${appId}.unpackaged`
   const onboardingTestRoot = ((): string | undefined => {
     if (!TEST_ONBOARDING) return
 
@@ -364,7 +384,7 @@ const main = Effect.gen(function* () {
     return root
   })()
   app.setName(app.isPackaged ? APP_NAMES[CHANNEL] : "RedCode Dev")
-  app.setAppUserModelId(appId)
+  app.setAppUserModelId(userModelId)
   app.setPath(
     "userData",
     onboardingTestRoot ? join(onboardingTestRoot, "desktop") : join(app.getPath("appData"), appId),
@@ -502,7 +522,17 @@ const main = Effect.gen(function* () {
   yield* Effect.promise(() => app.whenReady())
 
   if (!TEST_ONBOARDING) migrate()
-  app.setAsDefaultProtocolClient("redcode")
+  // 260903 cc 只有打包版才登记 `redcode://`。
+  //   `setAsDefaultProtocolClient` 不传 path/args 时默认用 `process.execPath` + 空参数，
+  //   未打包时那就是裸 electron.exe —— 注册完之后系统里的 redcode:// 全部指向它，
+  //   点开只会得到 Electron 欢迎页，而且**跑完 dev 之后这个注册还留着**，把打包版的
+  //   深链一并弄坏（与上面 AUMID 那条同源：dev 不该冒用打包版的系统身份）。
+  //   开发要测深链就带 REDCODE_REGISTER_PROTOCOL=1，此时按 Electron 文档补齐两个参数。
+  if (app.isPackaged) {
+    app.setAsDefaultProtocolClient("redcode")
+  } else if (process.env.REDCODE_REGISTER_PROTOCOL === "1" && process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient("redcode", process.execPath, [resolve(process.argv[1]!)])
+  }
   registerRendererProtocol()
   setDockIcon()
   setupAutoUpdater()
