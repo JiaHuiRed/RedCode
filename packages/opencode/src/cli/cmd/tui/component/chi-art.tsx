@@ -1,6 +1,5 @@
 import { RGBA } from "@opentui/core"
-import { useTerminalDimensions } from "@opentui/solid"
-import { createMemo, For, Show } from "solid-js"
+import { createMemo, For } from "solid-js"
 import { tint, useTheme } from "@tui/context/theme"
 import { CHI_ART_COLS, CHI_ART_ROWS, CHI_ART_RGB_BASE64 } from "./chi-art-data"
 
@@ -26,9 +25,9 @@ function decode(): Uint8Array {
 const PIXELS = decode()
 
 /**
- * 看板娘「赤」的半格字符画。32 列 × 16 行。
+ * 看板娘「赤」的半格字符画。22 列 × 11 行。
  *
- * 一个单元格 = 两个上下堆叠的像素（`▀` 的前景/背景），所以 32×32 像素铺成 32×16 格，
+ * 一个单元格 = 两个上下堆叠的像素（`▀` 的前景/背景），所以 22×22 像素铺成 22×11 格，
  * 像素是方的。整张图标缩到这个尺寸五官会糊，数据取的是脸部特写，见 chi-art-data.ts。
  */
 export function ChiArt(props: { class?: string }) {
@@ -61,22 +60,5 @@ export function ChiArt(props: { class?: string }) {
         )}
       </For>
     </box>
-  )
-}
-
-/**
- * 尺寸不够就别画。
- *
- * 32 列 × 16 行不是小东西：首页 logo 才 55×7，右边再加 32 列会把整块内容顶宽到 ~90 列；
- * 竖着 16 行也比 logo 高一倍多。窄窗口或矮窗口里硬画会把输入框挤出屏幕，
- * 而输入框才是首页的主体。
- */
-export function ChiArtWhenFits() {
-  const dimensions = useTerminalDimensions()
-  const fits = createMemo(() => dimensions().width >= 100 && dimensions().height >= 34)
-  return (
-    <Show when={fits()}>
-      <ChiArt />
-    </Show>
   )
 }

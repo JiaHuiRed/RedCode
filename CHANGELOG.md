@@ -16,11 +16,13 @@
 
   同批修掉两处写死的 `https://redcode.dev/...`（`packages/app/src/entry.tsx`、`packages/app/src/pages/layout/helpers.ts`）：那个域名根本解析不了，社交卡片和 apple-touch-icon 一直指向空气。改成 `new URL(..., document.baseURI)`，跟着实际部署走。
 
-- **TUI 首页 logo 右侧加赤的半格字符画**（新增 `packages/opencode/src/cli/cmd/tui/component/chi-art.{tsx,ts}`）：32 列 × 16 行，一个单元格用 `▀` 的前景/背景各画一个像素，所以像素是方的。取的是脸部特写——整张立绘缩到这个尺寸五官会糊成一团。
+- **TUI 首页输入框右侧加赤的半格字符画**（新增 `packages/opencode/src/cli/cmd/tui/component/chi-art.{tsx,ts}`）：22 列 × 11 行，一个单元格用 `▀` 的前景/背景各画一个像素，所以像素是方的。取的是脸部特写——整张立绘缩到这个尺寸五官会糊成一团。
 
   颜色两步走：数据里存的是**去饱和到 25% 的原色、没有压暗**，压暗要以主题背景为锚（`tint(theme.background, src, 0.7)`）。直接乘系数在深色主题下没问题，但 TUI 有二十多个主题、其中有浅色的，那样会在浅底上拍出一块黑洞；从背景往原色混合则在浅色主题里自动变成浅色版本，始终跟底色同族。
 
-  尺寸不够就不画（宽 ≥100 列且高 ≥34 行才出）：logo 才 55×7，右边再加 32 列会把内容顶到 ~90 列宽、竖着还高一倍多，窄窗口里硬画会把输入框挤出屏幕，而输入框才是首页的主体。
+  挂在**输入框**右侧而不是 logo 右侧，且左边补一条等宽空列：输入框下方的提示行按 `promptMaxWidth` 自己居中（`component/prompt/width.ts` 里两处共用的那个值），把「输入框 + 赤」当整体居中会让输入框左移十几列、跟提示行错开。镜像留白让输入框保持原位不动。
+
+  尺寸不够就不画：宽度要够 `promptMaxWidth + 2×(3+22)`（默认 148 列），高度 ≥30 行。窄窗口里硬画会把 logo 或提示行挤出屏幕，而那两块才是首页的主体。
 
 - **GUI 会话首轮的等待期放赤的「任务已接收」立绘**（新增 `packages/ui/src/v2/components/chi-task-sticker.{tsx,css}`、`packages/app/src/pages/session/message-timeline.tsx`）：出现条件收得很窄——**会话第一轮、且一个 token 都还没回来**，复用 Thinking 行已有的 `awaiting`（那正是「等供应商首 token」的窗口）。每轮都放就成了周期性闪动。
 
