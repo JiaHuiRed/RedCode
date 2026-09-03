@@ -38,6 +38,12 @@
 
 #### 修复
 
+- **权限弹窗不再变成点不动的幽灵**（`packages/opencode/src/permission/index.ts`）：症状是弹窗出来后 Allow once / Allow always / Reject 全无反应，键盘快捷键一样，日志里一条 `permission.replied` 都没有。
+
+  链路是 explore 子代理的超时兑底：主模型（step-3.7-flash）跑到 `timeout_ms` 被 `Effect.timeoutOption` 掐断，提问方的 fiber 一起被打断，`ask` 的 `Effect.ensuring` 收尾**只做了 `pending.delete`、不发任何事件**。而 TUI/GUI 摘弹窗只认 `permission.replied` —— 屏幕上那个弹窗于是对应一个服务端早已不存在的 `requestID`，点它拿回 `NotFoundError`，调用点又是 `void` 不看返回，失败得一声不吭。随后 fallback 模型重跑、又问一次，用户看到的是"点了没反应还越点越多"。
+
+  改法：收尾里 `delete` 返回 true（= 不是正常 reply 路径删的）时补发一条 `permission.replied(reject)`。正常 reply 已经删过并发过事件、返回 false，不重复发；实例关停的 finalizer 先 `clear` 再唤醒等待方，同样返回 false，不会刷事件。
+
 - **权限/提问的回复原路发回 ask 的那个 workspace**（`packages/opencode/src/cli/cmd/tui/`）。
 
 - **补全面板展开时首页 logo 让位**（`packages/opencode/src/cli/cmd/tui/routes/home.tsx`）：绘制先后压不住，改为布局层让位。
