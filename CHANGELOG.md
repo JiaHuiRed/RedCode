@@ -8,6 +8,16 @@
 
 ---
 
+### [未发布]
+
+- **SSE 流正常结束时补上 `abort()`**（`packages/app/src/context/global-sdk.tsx`、`server-sdk.tsx`）：两个文件的重连循环里，`finally` 只把 `attempt` 置 `undefined` 而不 `abort()` —— 同一文件其余五处（stop／心跳超时／onCleanup）**都 abort**，唯独"流正常结束"这条不。AbortController 是保证底层 fetch 被拆掉的唯一把手，置空只是让 GC 有机会回收，不保证 socket 立刻关。
+
+  **旧结论解释不了一半症状**：09-02 按"重连被 SDK 架空"修掉（`65582cc9`）之后当晚又犯，症状逐条相同。而 SSE 是**入站**通道，"消息发得出但不落库""Esc 无效"是**出站** HTTP —— 两者一起死说明有共用资源被占死。
+
+  假设（**未证**）是 renderer 连接池耗尽：sidecar 是 `node:http` 的 HTTP/1.1；本地场景 `eventFetch` 恒为 `undefined`（只有非 loopback 才走 `platform.fetch`），两条常驻 SSE 都占着 Chromium 的池，而同 host 只有 6 个槽；重连 `RECONNECT_BASE_MS = 256`。旧连接不释放 + 紧循环 ⇒ 槽位吃光 ⇒ 之后所有到该 origin 的请求无限排队，服务端毫发无伤所以任务照常推进。这也解释了 **TUI 为什么从不犯**（默认走 worker RPC，`createWorkerFetch` / `createEventSource`，根本不建 socket）、**为什么偏偏是配置更好那台**（紧循环与竞态，快机器更容易中招），以及**为什么 `65582cc9` 之后反而当晚就犯**（退避从 SDK 的 3 秒变成上层的 256ms）。
+
+  本次只修已证的收尾不对称，**不依赖假设成立**。复发判据：renderer DevTools → Network，**Stalled/Queueing = 池满**，**Pending = 服务端不回**（另一回事）。note 见 `docs/notes/implemented/bug-fix/2026-09-03-sse-abort-on-stream-end.md`。
+
 ### [0.10.9] - 2026-09-03
 
 > deepseek-harness 第五轮反哺（上游 08-31 后新增 341 提交）。扫完只有三条真缺口——其余候选全被本仓已有的东西挡掉，逐条核实的记录在 `docs/dsh-adoption-plan.md`。
