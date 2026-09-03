@@ -8,7 +8,39 @@
 
 ---
 
-### [未发布]
+### [0.10.11] - 2026-09-03
+
+> 性能体检落地第一批 + 一个长期潜伏的挂起缺陷。合并了此前 [未发布] 段的三条。
+
+- **流中途静默不再无限挂起**（`packages/opencode/src/session/llm.ts`、`session/retry.ts`，新增 `test/session/llm-idle-guard.test.ts`）：症状是会话跑到一半彻底停住、界面只显示忙碌、一挂十分钟，库里的签名是 assistant 消息建了、`finish` 空、输出 0、`time.completed` 恒 null。
+
+  根因两层。① **原有的 75 秒看门狗是一次性的，而且几乎立刻就被满足**——`Stream.tap` 对流里任何元素都兑现 firstEvent，协议层第一个事件转瞬即到，此后整条流再无保护。② **掐断之后不重试**：`FirstEventTimeoutError` 既不是 APIError、文案也不匹配 retry.ts 任何一条限流模式，`retryable()` 落到末尾 `return undefined` 直接 halt，用户等满 75 秒看到的是报错。
+
+  取证是**两个不同模型的同一签名**（所以是传输层缺口，不是某家模型的毛病）：`hy4-preview` 一轮末条消息一个分片都没有却挂了 575 秒（首事件看门狗本该 75 秒开火）、另一轮分片有 step-start/reasoning/text/tool 而流中途断掉；`muse-spark-1.3` 合成任务一轮挂 9 分 40 秒。挂起率与任务重量强相关：7 步的任务 8 次挂 1 次，13–24 步的 4 次挂 3 次。
+
+  改法：看门狗改成**每来一个事件就重置**，首事件仍给 75 秒（TTFT 本来就长），之后两个事件之间给 120 秒——它要挡的是「永远不再来」不是「来得慢」。新增 `StreamIdleTimeoutError` 带实际静默毫秒数。`retryable()` 按 `_tag` 认这两类可重试（走 tag 不走 instanceof：Err 已过 Cause 归一化，跨模块类实例判等不可靠）。仍不用 `Effect.race` 拼失败分支（v4 语义会挂住流，260816 踩过），也不用 `Stream.timeout`（掐总时长会误杀长回答，新测试有一条专门守这个区别）。测试用真时钟——`it.effect` 的 TestClock 下 `Effect.sleep` 永不推进会挂死进程。**做过反向对照**：把看门狗降级回一次性逻辑，「中途静默」判红且耗时 30010ms（一路等到 sleep 自然结束），修复后 400ms 掐断。
+
+#### 优化
+
+> 本批来自一次六维度全量性能体检（数据库 / 服务端热路径 / 单轮交互链 / GUI 渲染层 / Electron 外壳 / TUI）。共同结论：**渲染没问题，主线程在等自己**——最贵的几处都是本来不必做的重复工作。
+
+- **step-finish 的两次 `git add` 合并成一次**（`packages/opencode/src/snapshot/index.ts`、`session/processor.ts`）：原先是 `snapshot.track()` 紧接着 `snapshot.patch()` 两次独立调用，而两者**各自都跑一遍 `add()`** —— 那是一个 step 里最贵的一段（sync + diff-files + ls-files + check-ignore + 逐文件 stat + git add，Windows 上每个 git 进程 30ms 起步）。两次调用之间只有内存记账与写会话库（会话库在 `~/.redcode/data`，不在被跟踪的工作树里），**工作树一个字节都没变**。
+
+  新增 `Snapshot.finish(from)`：一个 locked 块里 add 一次，同时产出完成快照（write-tree）与相对起点的补丁（diff --cached）。顺带把重复片段抽成 `ensureRepo` / `writeTree` / `diffCached`。合进同一个锁还堵了一个隐患：原先两次调用之间锁是放开的，中间若有别的 fiber 动了索引，patch 算的就不是刚 write-tree 那棵树。⚠️ `patch()` 自己那个 `add()` **不能删**——`cleanup()`（流中断/出错的收尾路径）直接调它。
+
+  实测（500 文件的临时工作树 + 临时 gitdir，不碰仓库自己的 `.git/index`）：6 个 step 的 hash 与文件列表逐条一致，232–244ms → 125–157ms，**每 step 省约 105ms**。刻意没做把完成快照直接当下一 step 起点——那在「用户两个 step 之间手动改了文件」时会把改动错算进下一个 step，是行为回归不是优化。
+
+- **`filterCompacted` 边扫边停**（`packages/opencode/src/session/message-v2.ts`）：第一行 `[...msgs].sort(...)` 把 `stream()` 这个分页生成器**整个物化**，于是后面「扫到压缩边界就 break」一页 DB 读都没省。而 `stream()` 本就是逆序产出（`page()` 内部 desc 取、逐页回溯），排序对它是恒等变换。
+
+  拆成两个入口：数组入参走 `filterCompacted`（先归一化，`compaction.ts` 传的是展示序，**这条排序不能删**）、逆序流走 `filterCompactedOrdered`（直接懒扫）。实测 2,612 条消息的会话：全量 53 页 33.7MB **202ms** → 按边界懒停 14 页 7.4MB **45ms**。新增三条用例，含「命中边界后不再从生成器取值」。
+
+- **分片落库不再无条件回读整行**（`packages/opencode/src/session/projectors.ts`）；**bus 的 `publishing` 日志降到 debug**（`bus/index.ts`）：前者每次 `updatePart` 都先 `select *` 读旧行全部 `data`，只为判一下 `type === "step-finish"`；带 3MB base64 图的 tool part 单次 29ms 里有 6–7ms 花在这个预读加 JSON.parse 上。后者在每次 publish 上无条件记一行 INFO，流式期间约 90 行/秒。
+
+#### 修复
+
+- **权限/提问的回复原路发回 ask 的那个 workspace**（`packages/opencode/src/cli/cmd/tui/`）。
+
+- **补全面板展开时首页 logo 让位**（`packages/opencode/src/cli/cmd/tui/routes/home.tsx`）：绘制先后压不住，改为布局层让位。
 
 - **后台任务续跑的等待加上限，超时不再静默挂着**（`packages/opencode/src/tool/task.ts`）：`resumeWhenIdle` 原本是**无上限**的 300ms 递归——后台子代理跑完后要等父会话空闲才自动续跑，而会话若因别的原因永不 idle，它就永远等下去，且**不超时、不报错、不记日志**，与本仓冻结族同一种气味。
 
