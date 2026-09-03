@@ -58,6 +58,16 @@
     0 6px 12px -2px light-dark(hsl(0 0% 0% / 0.025), hsl(0 0% 0% / 0.1)),
     0 1px 2.5px light-dark(hsl(0 0% 0% / 0.025), hsl(0 0% 0% / 0.1));
   --shadow-xxs-border: 0 0 0 0.5px var(--border-weak-base, rgba(0, 0, 0, 0.07));
+  /* 260903 cc 浮层描边画进 box-shadow（采自 DSH 2026-09-01 web-elevation-stroke-shadows）。
+     真 border 吃 1px 布局、且在 <button> 上会顶掉 UA 默认值；画进阴影后描边与柔光层是同一条
+     属性，浮层只需声明一次。颜色沿用各浮层原本那条 border 的值，这次只改承载方式不改观感。
+     ⚠️ 保持 1px 不跟上游的 0.5px：实测本机 DPR=1，`0 0 0 0.5px` 只画出半透明（R=127 vs
+     1px 的 R=0），是变淡不是变锐；`border: 0.5px solid` 更是直接不画（R=255）。理由见 commit。 */
+  --shadow-md-border:
+    0 0 0 1px color-mix(in oklch, var(--border-base) 50%, transparent),
+    0 6px 12px -2px light-dark(hsl(0 0% 0% / 0.075), hsl(0 0% 0% / 0.1)),
+    0 4px 8px -2px light-dark(hsl(0 0% 0% / 0.075), hsl(0 0% 0% / 0.15)),
+    0 1px 2px light-dark(hsl(0 0% 0% / 0.1), hsl(0 0% 0% / 0.15));
   --shadow-xs-border:
     0 0 0 1px var(--border-base, rgba(11, 6, 0, 0.2)), 0 1px 2px -1px rgba(19, 16, 16, 0.04),
     0 1px 2px 0 rgba(19, 16, 16, 0.06), 0 1px 3px 0 rgba(19, 16, 16, 0.08);

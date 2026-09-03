@@ -13,9 +13,8 @@
   background-color: var(--surface-raised-stronger-non-alpha);
   pointer-events: auto;
 
-  border: 1px solid color-mix(in oklch, var(--border-base) 50%, transparent);
-  background-clip: padding-box;
-  box-shadow: var(--shadow-md);
+  border: none;
+  box-shadow: var(--shadow-md-border);
 
   transform-origin: var(--kb-hovercard-content-transform-origin);
 

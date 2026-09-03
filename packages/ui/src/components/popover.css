@@ -9,9 +9,9 @@
   border-radius: var(--radius-md);
   background-color: var(--surface-raised-stronger-non-alpha);
 
-  border: 1px solid color-mix(in oklch, var(--border-base) 50%, transparent);
+  border: none;
   background-clip: padding-box;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-md-border);
 
   transform-origin: var(--kb-popover-content-transform-origin);
 
