@@ -36,16 +36,20 @@ function View(props: { api: TuiPluginApi }) {
     return `${minutes}m`
   }
 
-  // 重置时刻：unix 秒 ×1000 转本地 HH:mm（绝对时刻，不做倒计时）
-  const reset = (resetAt: number) => {
+  // 260903 Red 长窗口补日期，避免 7d 的重置时间看起来像“每天同一时刻”
+  const reset = (resetAt: number, includeDate: boolean) => {
     if (!resetAt) return ""
-    return new Date(resetAt * 1000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+    const date = new Date(resetAt * 1000)
+    const time = date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+    if (!includeDate) return time
+    return `${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${time}`
   }
 
   // 260831 Red hey-api 把数字字段生成成 number | 字符串三元组，统一归一化为 number
   const WindowRow = (props: {
     label: string
     window: { usedPercent?: number | string; windowMinutes?: number | string; resetAt?: number | string }
+    showDuration?: boolean
   }) => {
     const pct = () => Number(props.window.usedPercent ?? 0)
     const minutes = () => Number(props.window.windowMinutes ?? 0)
@@ -62,11 +66,11 @@ function View(props: { api: TuiPluginApi }) {
           <span style={{ fg: color(pct()) }}>{bar(pct()).filled}</span>
           <span style={{ fg: theme().textMuted }}>{bar(pct()).rest}</span>
         </text>
-        <Show when={minutes() > 0}>
+        <Show when={props.showDuration !== false && minutes() > 0}>
           <text fg={theme().textMuted}>{duration(minutes())}</text>
         </Show>
         <Show when={at() > 0}>
-          <text fg={theme().textMuted}>→ {reset(at())}</text>
+          <text fg={theme().textMuted}>→ {reset(at(), minutes() >= 1440)}</text>
         </Show>
       </box>
     )
@@ -97,7 +101,7 @@ function View(props: { api: TuiPluginApi }) {
                 <WindowRow label="Primary" window={q.primary!} />
               </Show>
               <Show when={q.secondary}>
-                <WindowRow label="Weekly" window={q.secondary!} />
+                <WindowRow label="Weekly" window={q.secondary!} showDuration={false} />
               </Show>
               <Show when={q.reserve}>
                 <WindowRow label={q.reserveName ?? "Reserve"} window={q.reserve!} />
