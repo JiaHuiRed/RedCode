@@ -6,6 +6,9 @@ import path from "node:path"
 const dir = path.resolve(import.meta.dirname, "..")
 process.chdir(dir)
 
+// 260903 Red GUI sidecar must not block instance startup on models.dev.
+const generated = await import("./generate.ts")
+
 const pkg = await Bun.file("package.json").json()
 // TUI uses its own version from packages/opencode/package.json (independent from GUI)
 const redcodeVersion: string = pkg.version
@@ -62,6 +65,7 @@ const result = await Bun.build({
   define: {
     REDCODE_VERSION: `'${redcodeVersion}'`,
     REDCODE_MIGRATIONS: JSON.stringify(migrationData),
+    REDCODE_MODELS_DEV: generated.modelsData,
   },
   root: dir,
 })
