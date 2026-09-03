@@ -131,7 +131,27 @@ Choose a clear conceptual direction and execute it with precision. Bold maximali
 
 以下条目来自用户明确表达的好感，等参考图到位后取交集完善成完整 taste 档案：
 
+> **最强证据是他自己发布的 GUI**（`packages/ui/src/styles/`），不是参考图：参考图证明"觉得好看"，
+> 产品证明"真的做了、留下来了、还写了测试防回潮"。以下 #2/#3 采自那里，属证据表里的"仓库源码"档。
+
 - **#1 物理质感的深度交互**：卡片 hover 浮起——`translateY(-4~-8px)` + `scale(1.02~1.05)` + 阴影升档（Material elevation / lift on hover），过渡 150-250ms ease-out，hover 移出时阴影回落略快制造回弹感
+
+- **#2 圆角画超椭圆，但正圆必须成对退回**（源码：`styles/corner-shape.css` + `corner-shape.test.ts`）：
+  `corner-shape: superellipse(1.5)`（介于 `round` 与 `squircle` 之间），圆弧角比超椭圆角"硬"。
+  **半径值一个不改，只改角的曲率**——纯观感升级、零重排风险。
+  用通配选择器 `*, *::before, *::after` 是因为 `corner-shape` **不继承**，`:root` 设一次铺不满；
+  整条包在 `@supports` 里，不支持的引擎读不到声明，不需要回退代码。
+  ⚠️ **全圆形与胶囊必须显式写回 `corner-shape: round`**：超椭圆会把正圆压成 squircle
+  （用 border 画的 spinner 转起来会晃），也会把胶囊两头削方。
+
+- **#3 浮层的描边画进 box-shadow，不与真 border 并排**（源码：`elevation.test.ts`）：
+  浮层不许同时写"真 border + 抬升阴影"，描边并进 `--shadow-*-border*` 那族 token 一次画完。
+  **例外：反色固定深色面**（toast / tooltip / 代码复制提示，用 `--surface-float-base`）保留真
+  border——跟随主题的描边色画在固定深色填充上没有意义。
+
+**方法论（比上面三条更通用）**：这类"同一屏上两种做法并存"的设计债，收敛之后要用**源码扫描测试**
+防回潮，而不是靠文档和自觉。本仓两条约定各配一个扫描（`corner-shape.test.ts` /
+`elevation.test.ts`），新组件写错当场红。定约定时一并想"怎么防回潮"，否则半年后又是两种做法。
 
 ### 输出：项目根 DESIGN.md
 
