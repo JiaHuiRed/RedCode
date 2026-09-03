@@ -75,11 +75,26 @@ SDK 那圈的起始退避是 **3 秒**，应用层这套是 **256ms** —— 同
 
 ## 备选与否决理由
 
-- **让 loopback 也走 `platform.fetch`**（把两条 SSE 整个挪出 renderer 连接池）：**暂缓**——
-  代码路径现成，只被 `!loopback` 挡着，但**不清楚当初为什么这么挡**。动之前要先弄明白，
-  否则是拿一个未知换另一个未知。假设被证实后这才是治本改法。
+- ~~让 loopback 也走 `platform.fetch`~~：**这条是错的，已查证作废**（09-03 当天）。
+  桌面端 renderer 里 `platform.fetch` 就是全局 `fetch` 的透传壳
+  （`packages/desktop/src/renderer/index.tsx:248`：`if (input instanceof Request) return fetch(input)`），
+  **不走主进程**；全仓也没有任何基于 IPC 的 fetch（`window.api` 里没有）。
+  两个分支落在同一个 Chromium fetch、同一个连接池上，翻这个条件挪不动任何东西。
+
+  顺带查清 `!loopback` 的来历：代码从 `d6d579c4`（26-05-25，RedCode 初始导入，pre-upstream-sync）
+  起一字未改，意图在上游 opencode。读条件本身能推出语义——`明文 http 且非本机`正是
+  Chromium 会按混合内容/非可信来源拦掉的那一类，而 loopback 被当作 potentially trustworthy
+  天然豁免。所以 **`!loopback` 不是在保护 loopback，只是在说"本机不需要这个逃生口"**，
+  跟连接池无关。日志里那行 `fetch: eventFetch ? "platform" : "webview"` 是**误导性标签**：
+  两边都是 webview 的 fetch，查日志时别拿它当传输方式的判据。
 - **加大重连退避**：否决——那是把症状往后推，不是修泄漏；而且会让真实断连的恢复变慢。
 - **等复发再修**：否决——收尾不对称是确定的错误，不该拿它当观测手段。
+
+- **真正的治本改法要新建通道**，不是调条件。两条候选：①在 preload 暴露一条 IPC fetch，
+  由主进程代发（Node 侧无 6 连接限制）；②照 TUI 那样用 MessagePort 直连 sidecar
+  —— `utilityProcess.fork` 已经在用 `postMessage`（`desktop/src/main/server.ts:111/188/240`），
+  通道本身现成，而 `cli/cmd/tui/thread.ts` 的 `createWorkerFetch` / `createEventSource`
+  就是可抄的样板。两条都是真改动，等假设证实再动。
 
 ## 后果
 
