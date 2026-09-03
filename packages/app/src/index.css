@@ -30,6 +30,7 @@
     width: 12px;
     height: 12px;
     border-radius: 50%;
+    corner-shape: round;
     border: none;
     cursor: pointer;
     padding: 0;
@@ -47,6 +48,7 @@
     position: absolute;
     inset: 0;
     border-radius: 50%;
+    corner-shape: round;
     opacity: 0;
   }
   .rc-traffic-close {
@@ -99,6 +101,7 @@
     width: 100%;
     height: 100%;
     border-radius: 999px;
+    corner-shape: round;
     clip-path: inset(0 100% 0 0 round 999px);
     will-change: clip-path;
   }

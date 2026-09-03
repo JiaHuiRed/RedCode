@@ -1,0 +1,26 @@
+/*
+ * 圆角改画超椭圆（squircle）。
+ *
+ * 260903 cc 采自 deepseek-harness 的 2026-09-01 note。圆弧角比超椭圆角"硬"，
+ * 这一条是纯观感升级，且**不改任何半径值**——只改角的曲率。
+ *
+ * `superellipse(1.5)` 在 `round`（= superellipse(1)）与 `squircle`（= superellipse(2)）之间。
+ *
+ * 为什么用通配选择器：`corner-shape` **不继承**，所以没法在 :root 设一次就铺满全树。
+ * 我们虽然有 Tailwind，但半径同时来自工具类、组件 CSS 与 v2 那套，没有一份能穷举的类名单，
+ * 通配是唯一一次覆盖到位的写法。整条规则包在 @supports 里，不支持的引擎连声明都读不到，
+ * 不需要任何回退代码。
+ *
+ * 本仓的 Electron 42 = Chromium 148，`corner-shape` 从 139 起无 flag 可用，实际会生效。
+ *
+ * ⚠️ 全圆形必须自己退回 round，规则见下方 utilities 里的 .rounded-full 与各组件里成对写的
+ * `corner-shape: round`：超椭圆会把正圆压成 squircle（用 border 画的 spinner 转起来会晃），
+ * 也会把胶囊两头削方。这条配对由 tests/corner-shape.test.ts 扫描把关。
+ */
+@supports (corner-shape: superellipse(1.5)) {
+  *,
+  *::before,
+  *::after {
+    corner-shape: superellipse(1.5);
+  }
+}

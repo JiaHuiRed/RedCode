@@ -116,3 +116,14 @@
   line-height: var(--line-height-x-large); /* 120% */
   letter-spacing: var(--letter-spacing-tightest);
 }
+
+/*
+ * Tailwind 的全圆工具类退回圆弧角。
+ *
+ * 260903 cc 见 styles/corner-shape.css：超椭圆会把正圆压成 squircle、把胶囊两头削方。
+ * 组件 CSS 里的全圆是逐条成对写 `corner-shape: round`，工具类这边一条就够。
+ * 本层（utilities）在 corner-shape.css 所在的 base 层之后，无条件盖过通配规则。
+ */
+.rounded-full {
+  corner-shape: round;
+}

@@ -34,6 +34,7 @@
     height: 8px;
     overflow: hidden;
     border-radius: 999px;
+    corner-shape: round;
     border: 1px solid var(--border-weak-base);
     background-color: var(--surface-base);
   }

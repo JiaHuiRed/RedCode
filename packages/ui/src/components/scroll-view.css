@@ -39,6 +39,7 @@
   bottom: 0;
   width: 4px;
   border-radius: 9999px;
+  corner-shape: round;
   background-color: var(--border-weak-base);
   backdrop-filter: blur(4px);
   transition: background-color 150ms ease;

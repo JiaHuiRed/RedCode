@@ -20,6 +20,7 @@
   padding: 0 calc(var(--_thumb) / 2);
   flex-shrink: 0;
   border-radius: 999px;
+  corner-shape: round;
   background:
     linear-gradient(180deg, var(--v2-alpha-light-0) 0%, var(--v2-alpha-light-20) 100%), var(--v2-background-bg-layer-03);
   box-shadow: var(--v2-elevation-switch-off);
@@ -58,6 +59,7 @@
   width: 3px;
   height: 3px;
   border-radius: 999px;
+  corner-shape: round;
   background: var(--v2-icon-icon-base);
   opacity: 0.4;
   transition: opacity 120ms ease-out;

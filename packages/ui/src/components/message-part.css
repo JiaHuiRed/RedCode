@@ -1010,6 +1010,7 @@
     border: 0;
     background: transparent;
     border-radius: 999px;
+    corner-shape: round;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1021,6 +1022,7 @@
       width: 16px;
       height: 2px;
       border-radius: 999px;
+      corner-shape: round;
       background-color: var(--icon-weak-base);
       transition: background-color 0.2s ease;
     }
@@ -1142,12 +1144,14 @@
 
     &[data-type="radio"] {
       border-radius: 999px;
+      corner-shape: round;
     }
 
     [data-slot="question-option-radio-dot"] {
       width: 6px;
       height: 6px;
       border-radius: 999px;
+      corner-shape: round;
       background-color: var(--background-stronger);
       opacity: 0;
     }
