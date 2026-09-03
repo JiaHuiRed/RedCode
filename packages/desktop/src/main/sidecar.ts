@@ -54,6 +54,33 @@ function enableCompileCache(userDataPath: string) {
   }
 }
 
+/**
+ * 把攒下的编译缓存显式落盘。
+ *
+ * 260903 cc **上面那套一直没生效，缓存目录从建立起就是 0 个文件。** 上面记的冷热对照
+ * 是在一个独立 Node 进程里做的，它跑完自然退出——而 Node **只在退出路径持久化**编译缓存。
+ * 真实的 sidecar 是 Electron utilityProcess，`before-quit` 里是 `void killSidecar()`
+ * 既不 preventDefault 也不 await，主进程先走、Electron 直接 TerminateProcess，
+ * 于是那一刻永远不会到来。
+ *
+ * 取证（打包版 0.10.x，15 次启动）：`compile-cache/v24.16.0-x64-<hash>/` 目录 09-01 建出来，
+ * 此后 0 个文件；`import virtual:redcode-server` p50 **1227ms**，而启用缓存之前是 1222ms
+ * ——一毫秒没省。48 次退出里 34 次是 `code 1 / reason: killed`。
+ *
+ * 所以改成显式 flush，与退出路径彻底解耦。**排在 ready 之后 + 延时**：flush 是同步的，
+ * 冷缓存那次约 100ms，而主进程收到 ready 就立刻发健康检查（0.10.0 把 ready→healthy 压到
+ * 16ms，别在这里还回去）。定时器 unref，它自己不负责让进程活着。
+ */
+function flushCompileCache() {
+  try {
+    const flush = (module as unknown as { flushCompileCache?: () => void }).flushCompileCache
+    if (typeof flush !== "function") return
+    flush()
+  } catch {
+    // 同上，落盘失败不是错误
+  }
+}
+
 type StopCommand = { type: "stop" }
 type SidecarCommand = StartCommand | StopCommand
 
@@ -157,6 +184,14 @@ async function start(command: StartCommand) {
     })
     mark("Server.listen (ready)")
     parentPort.postMessage({ type: "ready" })
+    // 260903 cc 见 flushCompileCache 的注释：ready 之后再落盘，别挡健康检查那一跳。
+    //   2 秒是「启动这一波全过去了」的余量；unref 保证它不参与进程存活判定。
+    const flushTimer = setTimeout(() => {
+      const t = performance.now()
+      flushCompileCache()
+      console.error(`[sidecar-timing] flushCompileCache: ${Math.round(performance.now() - t)}ms`)
+    }, 2000)
+    flushTimer.unref?.()
     // Keep the process alive until told otherwise
     await new Promise<void>(() => {})
   } catch (error) {
