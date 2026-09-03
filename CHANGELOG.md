@@ -10,6 +10,14 @@
 
 ### [未发布]
 
+- **后台任务续跑的等待加上限，超时不再静默挂着**（`packages/opencode/src/tool/task.ts`）：`resumeWhenIdle` 原本是**无上限**的 300ms 递归——后台子代理跑完后要等父会话空闲才自动续跑，而会话若因别的原因永不 idle，它就永远等下去，且**不超时、不报错、不记日志**，与本仓冻结族同一种气味。
+
+  超时**不丢结果**：`inject()` 已经先把合成结果落进会话（`noReply: true`），这里等的只是"替用户按下继续"这一步。所以超时的正确行为是放弃续跑 + 弹 toast 告诉用户结果已就绪、发条消息即可接上——把静默挂起变成可见且可操作的状态，另记一条 `logWarning` 供排查。
+
+  上限取 30 分钟：单轮跑这么久已属异常，而更短会误杀正当的长任务（压缩阈值 400K，一轮几十次工具调用是常态）。计时用 `Clock.currentTimeMillis` 而非 `Date.now()`，这样 TestClock 能拨动、这个上限才写得了测试——「存在但没人验过的开关」在本仓有过前车（`appProcess.run` 的 timeout），且与 `background/job.ts` 的用法一致。
+
+  顺带澄清一个容易查反的地方：**后台任务跑完自动唤醒父会话这套机制是完整存在且默认开的**（`experimentalBackgroundSubagents` 是 `boolDefaultTrue`）。唤醒代码在 `tool/task.ts`（`inject` + `resumeWhenIdle` + toast + `ops.loop`），**不在** `background/job.ts`——后者的 `finish()` 只 resolve 一个 `Deferred` 供 `task_status(wait=true)` 消费，只看它必然误判成"没人被通知"。
+
 - **补 `generation` 守卫，防两个重连循环并发开连接**（`packages/app/src/context/global-sdk.tsx`、`server-sdk.tsx`）：对照 opencode（已分叉两个多月）发现本仓缺一处它有的守卫。`started` 那个布尔只挡得住 start() 被连着调两次，**挡不住 stop() 之后再 start() 时旧循环还没退出来**——stop() 把 `started` 置 false，可旧循环正卡在 `await wait(...)` 或 `for await (...)` 上，要等它自己转到检查点才退，这中间新循环已经起来了，两个循环同时在开连接。
 
   本仓比上游更容易踩到：**两条 SSE 流**各有这个问题（上游只有一条，最坏 4 个循环 vs 2 个）；`server` 变化时（切目录／切服务器／sidecar 重生）就是一轮 stop→start；退避最长 2 秒意味着旧循环最久要 2 秒才醒来检查，窗口比上游固定 250ms 大八倍。叠上 Chromium 同 host 6 连接的上限，多余的循环会加速吃满槽位。

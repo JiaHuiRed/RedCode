@@ -14,7 +14,7 @@ import type { SessionPrompt } from "../session/prompt"
 import { SessionStatus } from "@/session/status"
 import { Config } from "@/config/config"
 import { TuiEvent } from "@/cli/cmd/tui/event"
-import { Cause, Effect, Exit, Option, Schema, Scope } from "effect"
+import { Cause, Clock, Effect, Exit, Option, Schema, Scope } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 
@@ -319,16 +319,45 @@ export const TaskTool = Tool.define(
         return yield* Effect.fail(new Error(`Subagent timed out after ${timeoutMs}ms (no fallback model configured)`))
       })
 
-      const resumeWhenIdle: (input: { userID: MessageID; state: "completed" | "error" }) => Effect.Effect<void> =
-        Effect.fn("TaskTool.resumeWhenIdle")(function* (input: { userID: MessageID; state: "completed" | "error" }) {
+      // 260903 cc 等父会话空闲的上限。原来是无上限的 300ms 递归：会话若因别的原因永不 idle，
+      // 它就永远等下去，而且**不留任何痕迹**——不超时、不报错、不记日志，与本仓冻结族
+      // （docs/notes/.../2026-09-03-sse-abort-on-stream-end.md）同一种气味。
+      // 超时**不丢结果**：inject() 已经先把合成结果落进会话了（noReply），这里等的只是
+      // "自动替用户按下继续"这一步。所以超时的正确行为是放弃续跑 + 告诉用户结果已就绪，
+      // 把静默挂起变成可见且可操作的状态。
+      // 30 分钟：单轮跑这么久已属异常，而更短会误杀正当的长任务（本仓压缩阈值 400K，
+      // 一轮几十次工具调用是常态）。
+      // 用 Clock.currentTimeMillis 而不是 Date.now()：前者能被 TestClock 拨动，这个上限才写得了测试。
+      // 「存在但没人验过的开关」在本仓有过前车（appProcess.run 的 timeout），与 background/job.ts 一致。
+      const RESUME_IDLE_TIMEOUT_MS = 30 * 60_000
+      type ResumeInput = { userID: MessageID; state: "completed" | "error"; deadline?: number }
+      const resumeWhenIdle: (input: ResumeInput) => Effect.Effect<void> =
+        Effect.fn("TaskTool.resumeWhenIdle")(function* (input: ResumeInput) {
+          const deadline = input.deadline ?? (yield* Clock.currentTimeMillis) + RESUME_IDLE_TIMEOUT_MS
           const latest = yield* sessions
             .findMessage(ctx.sessionID, (item) => item.info.role === "user")
             .pipe(Effect.orDie)
           if (Option.isNone(latest)) return
           if (latest.value.info.id !== input.userID) return
           if ((yield* status.get(ctx.sessionID)).type !== "idle") {
+            if ((yield* Clock.currentTimeMillis) >= deadline) {
+              yield* Effect.logWarning("background task result injected but session never went idle", {
+                sessionID: ctx.sessionID,
+                taskSessionID: nextSession.id,
+                description: params.description,
+                state: input.state,
+                waitedMs: RESUME_IDLE_TIMEOUT_MS,
+              })
+              yield* bus.publish(TuiEvent.ToastShow, {
+                title: "Background task result waiting",
+                message: `Background task "${params.description}" finished, but this session stayed busy for 30 minutes so it was not resumed automatically. The result is already in the conversation — send any message to pick it up.`,
+                variant: "warning",
+                duration: 8000,
+              })
+              return
+            }
             yield* Effect.sleep("300 millis")
-            return yield* resumeWhenIdle(input)
+            return yield* resumeWhenIdle({ ...input, deadline })
           }
           yield* bus.publish(TuiEvent.ToastShow, {
             title: input.state === "completed" ? "Background task complete" : "Background task failed",
