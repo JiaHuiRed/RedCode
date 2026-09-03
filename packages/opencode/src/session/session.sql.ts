@@ -88,7 +88,12 @@ export const PartTable = sqliteTable(
   },
   (table) => [
     index("part_message_id_id_idx").on(table.message_id, table.id),
-    index("part_session_idx").on(table.session_id),
+    // 260903 Red 从 (session_id) 换成 (session_id, id)：recentToolParts 是
+    //   `where session_id=? order by id desc`，单列索引让它走临时 B 树、全扫会话所有分片
+    //   （10,299 分片实测 89–104ms，每个工具调用调两次）。加上 id 之后排序直接吃索引，0.33ms。
+    //   单列那个不再保留——(session_id, id) 的前缀就能服务原来所有 `where session_id=?` 的查询，
+    //   多留一个只会给每次 part 写入多维护一棵树（流式期间每 step 写 8–12 条）。
+    index("part_session_id_id_idx").on(table.session_id, table.id),
   ],
 )
 
