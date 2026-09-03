@@ -1,6 +1,6 @@
 ---
 name: ce-code-review
-description: 结构化代码审查。用户说"帮我看看代码""review一下""审一下""看看这个PR"时触发。多维度人格审查、severity 门控、merge/dedup。
+description: 结构化代码审查——多维度审、severity 门控、去重合并。用户说「review 一下」「审一下代码/这个 PR」时触发。
 ---
 
 # ce-code-review

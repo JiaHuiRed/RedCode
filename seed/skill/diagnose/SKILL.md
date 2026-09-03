@@ -1,6 +1,6 @@
 ---
 name: diagnose
-description: 形式化 bug 诊断循环。用户说"查bug""排查一下""这啥问题""debug一下""怎么报错了"时触发。Reproduce → Hypothesise → Instrument → Fix → 回归测试。
+description: 形式化 bug 诊断循环：复现 → 假设 → 埋点 → 修 → 回归。用户说「查一下这个 bug」「排查」「怎么报错了」时触发。
 ---
 
 # Diagnose — 形式化诊断循环

@@ -1,6 +1,6 @@
 ---
 name: vision-autoagent
-description: 图片自动分析——多模态主模型（deepseek-v4-flash-vision-exp 等）直接读图，绝不派子代理；仅当模型不支持图片输入、收到"不支持图片"类报错时，派 explore 子代理（step，260826 起 mimo 停用）审图兜底。
+description: 图片分析的分工规则——主模型多模态，直接读图，**不派子代理**；仅当模型不支持图片输入、收到「不支持图片」类报错时才派子代理兜底。会话里出现图片时触发。
 ---
 
 # 视觉自动分析 (Vision AutoAgent)

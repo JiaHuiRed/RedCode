@@ -1,6 +1,6 @@
 ---
 name: red-scribe
-description: Red 的个人写作风格——理性、精炼、因果逻辑完整的技术文档风格。善用古诗成语点缀，拒绝空话套话和网络烂梗。
+description: Red 的中文技术写作风格——理性、精炼、因果链完整，善用古诗成语点缀，拒绝空话套话与网络烂梗。写博客/公告/长文档正文，或用户说「按我的风格写」时触发。（去 AI 味用 yuqi-slop，两者可叠加）
 metadata:
   trigger: "按我的风格写, red风格, red-scribe, 我的文风"
   author: "宋雨琦（基于 Red 个人风格提炼）"

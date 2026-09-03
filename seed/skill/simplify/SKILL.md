@@ -1,6 +1,6 @@
 ---
 name: simplify
-description: Use when a diff, function, or file feels over-engineered — too many abstractions, layers, flags, defensive checks, or premature generality for what the task actually needs. Trims code back to the minimum that does the job, without changing behavior.
+description: 精简过度工程的代码——砍多余抽象/层级/防御检查，只减复杂度不改行为。用户说「太复杂了」「精简一下」时触发。
 ---
 
 # Simplify

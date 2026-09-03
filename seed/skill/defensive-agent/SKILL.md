@@ -1,6 +1,6 @@
 ---
 name: defensive-agent
-description: Agent 防御性设计——False Positive 过滤、Confidence Gate、Pre-Edit 强制调查。减少盲目修改和假阳性报告，提高输出质量。
+description: 防御性工作模式——假阳性过滤、置信度闸、编辑前强制调查。用户说「小心点」「别乱改」「稳着来」时触发。
 ---
 
 # Defensive Agent

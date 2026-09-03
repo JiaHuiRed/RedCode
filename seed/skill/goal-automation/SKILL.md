@@ -1,6 +1,6 @@
 ---
 name: goal-automation
-description: Detect big multi-step tasks and proactively suggest /goal to pin the session objective. Keeps the agent on-topic without forcing a hard lock — user keeps the final say.
+description: 识别大型多步任务，主动建议 /goal 钉住会话目标——只建议不强锁，哥哥拍板。（管**别跑丢**；要纪律流程用 tdd-flow）
 ---
 
 # Goal Automation

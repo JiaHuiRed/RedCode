@@ -1,6 +1,6 @@
 ---
 name: frontend-design
-description: 高设计质量的前端界面——构建 web 组件/页面/应用时触发，产出去 AI 味的生产级创意代码。默认 macOS/Apple 审美，用户另有指定则从之。也含逆向分析（截图→设计系统→代码）。
+description: 从零构建高设计质量的前端界面/组件/页面，产出去 AI 味的生产级代码；也含逆向分析（截图 → 设计系统 → 代码）。默认 macOS/Apple 审美，用户另有指定则从之。（**构建**用这个；已有界面要审用 frontend-qa）
 ---
 
 # Frontend Design
