@@ -231,7 +231,15 @@ export function Prompt(props: PromptProps) {
   const [workspaceCreating, setWorkspaceCreating] = createSignal(false)
   const [workspaceCreatingDots, setWorkspaceCreatingDots] = createSignal(3)
   const [warpNotice, setWarpNotice] = createSignal<string>()
-  const [cursorVersion, setCursorVersion] = createSignal(0)
+  // 260904 cc 这里原先有个 cursorVersion 计数器：光标一动就自增，四个 useBindings 的 enabled
+  // 里读它一下，用来强制那几层重算。已删——`useBindings` 是个 createEffect，`enabled` 写成
+  // 立即求值的 IIFE 时，里面读到的信号就成了这个 effect 的依赖，于是**每一次按键都要把那四层
+  // 键位 dispose 掉再 registerLayer 注册回来**，不管 enabled 的值变没变（光标从第 5 列移到第 6 列，
+  // 两次都是 false，照样重注册四遍）。
+  // opentui 的 `enabled` 本来就收 `boolean | (() => boolean) | ReactiveMatcher`（见
+  // addons/universal/enabled.d.ts），函数形式会被交给 `ctx.activeWhen`，在按键判定时才求值。
+  // 改成函数之后：effect 不再依赖光标，层不再重注册，而 `input.visualCursor.offset` 这类
+  // 非响应式的可变读取每次判定都取最新值——比原来靠计数器补触发还准。
   const currentProviderLabel = createMemo(() => local.model.parsed().provider)
   const hasRightContent = createMemo(() => Boolean(props.right))
 
@@ -903,16 +911,12 @@ export function Prompt(props: PromptProps) {
   useBindings(() => {
     return {
       target: inputTarget,
-      enabled: (() => {
-        cursorVersion()
-        return (
-          inputTarget() !== undefined &&
-          !props.disabled &&
-          store.mode === "normal" &&
-          !auto()?.visible &&
-          input?.visualCursor.offset === 0
-        )
-      })(),
+      enabled: () =>
+        inputTarget() !== undefined &&
+        !props.disabled &&
+        store.mode === "normal" &&
+        !auto()?.visible &&
+        input?.visualCursor.offset === 0,
       bindings: [
         {
           key: "!",
@@ -938,10 +942,7 @@ export function Prompt(props: PromptProps) {
   useBindings(() => {
     return {
       target: inputTarget,
-      enabled: (() => {
-        cursorVersion()
-        return inputTarget() !== undefined && store.mode === "shell" && input?.visualCursor.offset === 0
-      })(),
+      enabled: () => inputTarget() !== undefined && store.mode === "shell" && input?.visualCursor.offset === 0,
       bindings: [{ key: "backspace", desc: "Exit shell mode", group: "Prompt", cmd: () => setStore("mode", "normal") }],
     }
   })
@@ -949,10 +950,7 @@ export function Prompt(props: PromptProps) {
   useBindings(() => {
     return {
       target: inputTarget,
-      enabled: (() => {
-        cursorVersion()
-        return inputTarget() !== undefined && !props.disabled && !auto()?.visible && input !== undefined
-      })(),
+      enabled: () => inputTarget() !== undefined && !props.disabled && !auto()?.visible && input !== undefined,
       commands: [
         {
           name: "prompt.history.previous",
@@ -981,10 +979,7 @@ export function Prompt(props: PromptProps) {
   useBindings(() => {
     return {
       target: inputTarget,
-      enabled: (() => {
-        cursorVersion()
-        return inputTarget() !== undefined && !props.disabled && !auto()?.visible && input !== undefined
-      })(),
+      enabled: () => inputTarget() !== undefined && !props.disabled && !auto()?.visible && input !== undefined,
       commands: [
         {
           name: "prompt.history.next",
@@ -1512,14 +1507,12 @@ export function Prompt(props: PromptProps) {
                 setStore("prompt", "input", value)
                 auto()?.onInput(value)
                 syncExtmarksWithPromptParts()
-                setCursorVersion((value) => value + 1)
                 // 260725 Red IME full-width brackets: detect when IME commits the pair, move cursor inside
                 if (expectedClose && value.endsWith(expectedClose)) {
                   expectedClose = undefined
                   input.moveCursorLeft()
                 }
               }}
-              onCursorChange={() => setCursorVersion((value) => value + 1)}
               onKeyDown={(e: { preventDefault(): void; name?: string; ctrl?: boolean; meta?: boolean }) => {
                 if (props.disabled) {
                   e.preventDefault()

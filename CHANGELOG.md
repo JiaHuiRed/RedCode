@@ -12,6 +12,14 @@
 
 #### 优化
 
+- **输入框按键不再重注册键位层**（`packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`）：`useBindings` 是一个 `createEffect`，它同步调用 `createLayer()`——**在那里面读到的任何信号都成了这个 effect 的依赖**，一变就把整层 dispose 掉再 `registerLayer` 注册回来。输入框原先有个 `cursorVersion` 计数器（内容变化和光标移动各自增一次），四个 `useBindings` 把 `enabled` 写成立即求值的 IIFE 并在里面读它一下，用来强制那几层重算非响应式的 `input.visualCursor.offset`。于是**每一次按键都要重注册四层键位**，而 enabled 的值大多数时候根本没变（光标从第 5 列移到第 6 列，两次都是 false，照样重注册四遍）。
+
+  改法：opentui 的 `enabled` 本来就收 `boolean | (() => boolean) | ReactiveMatcher`（`addons/universal/enabled.d.ts`），函数形式会被交给 `ctx.activeWhen`，在**按键判定时**才求值。四处从 IIFE 改成函数后 effect 不再依赖光标，`cursorVersion` 那个计数器连同两处自增一起删掉——惰性求值每次都读最新的 `visualCursor`，比原来靠计数器补触发还准。顺带一提，那四处里有两处的 enabled 压根没读 `visualCursor`，计数器对它们纯属多余。
+
+  实测对照（新增 `test/cli/tui/keymap-enabled-lazy.test.tsx`，包一层 `registerLayer` 数调用次数）：同样 5 次信号变化，IIFE 写法从 1 次注册涨到 **6 次**，函数写法**稳定在 1 次**。两个用例是对照组，以后谁再写回 IIFE 会当场变红。**未做的**：没有在真实 TUI 里量过每键省下的绝对毫秒数，上面钉住的是机制与次数。
+
+  **实测否决，别再排期**：同批想做的黄档 A8「TUI 流式尾块超阈值走纯文本」换了个更稳的思路试过——`<markdown streaming>` 和 reasoning 的 `<code streaming>` 都是**硬编码 `true` 从不设回 false**，而上游文档明说「流完要置 false 才会 finalize 尾部 token 解析」，所以改成按 part 的 `time.end` 绑定。整帧快照当场抓出问题：`streaming=false` 那一帧**正文全部消失**，只剩两个列表标记。把 harness 的等待从 25ms 加到 400ms 后正文完整出现——**不是上游坏了，是关掉 streaming 会触发一次全量重解析**，慢到 25ms 都不够。对刚生成完的消息，这等于在每条消息收尾的瞬间闪一下。收益（尾块不再 unstable）远小于代价，已整条回退，`streaming` 维持硬编码 true。
+
 - **头像与壁纸搬出设置文件，改个字号不再重写 3.4MB**（`packages/app/src/context/settings.tsx`、`utils/persist.ts`，新增 `Persist.media`）：`persisted` 是**写穿**的——每次 setStore 都同步序列化整个 store 并走一条 IPC，主进程那边 electron-store 底下的 conf 对 get 和 set **都**要 readFileSync 整个文件 + JSON.parse（set 还要再 stringify + 原子写）。本机实测 `default.dat` 3.40MB，其中 `settings.v3` 占 3397.9KB，而这 3.4MB 全是四张 base64 JPEG：
 
   | 字段 | 大小 |
