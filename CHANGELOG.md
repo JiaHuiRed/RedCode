@@ -8,9 +8,31 @@
 
 ---
 
-### [未发布]
+### [0.10.12] - 2026-09-04
+
+> 权限弹窗「点不动」定案（潜伏三个月、9-03 第一次被踩上），外加子代理超时不再烧掉已产出的结论。合并了此前 [未发布] 段的两条。
 
 #### 修复
+
+- **权限/提问弹窗点了没反应——真凶是回复找不到发出请求的那个实例**（`packages/opencode/src/permission/index.ts`、`question/index.ts`）：症状是隔离 worktree 里的子代理弹出授权框后，点 Allow once / Allow always / Reject 全无反应，键盘也一样；按 esc 甚至会穿透到全局绑定把主会话掐掉。服务端日志的签名是 `permission.asked` 之后**一条 `permission.replied` 都没有**。
+
+  根因：`Permission` / `Question` 的 `pending` 表挂在 `InstanceState` 上，**按实例目录分**。子代理在隔离 worktree 实例里 `ask`，条目落在那个实例的表里；而 TUI/GUI 的回复按 **workspace** 路由，`runIsolated` 只 provide `InstanceRef` 不动 `WorkspaceRef`——worktree 与父目录**共享同一个 workspace，只有 directory 不同**。于是回复落到父实例，`pending.get` 拿不到，一律 `NotFoundError`。09-03 的 `e3dffe24`（回复原路发回 ask 的那个 workspace）修的是真缺陷，但堵的是「发错 workspace」那半边，对「同 workspace、不同目录」无效。
+
+  改法：模块级 `owners` 登记 `requestID → 拥有它的那份实例状态`，`ask` 时登记，`reply`/`reject`、中断的 `ensuring`、实例销毁的 finalizer 三处注销。`reply` 在本实例找不到就按登记去拥有者那份状态里处理——**先从拥有者的表里删再 resolve**，否则拥有者那边的 `ensuring` 会补发一条假的 reject。「始终允许」也记进拥有者的 `approved`。走到跨实例路径记一条 `reply routed to owning instance`，下次现场一行日志定案。
+
+  **这个缺陷自 26-06-10 worktree 隔离上线起就潜伏着**，直到 09-03 16:28 第一次真正被走到（`~/.redcode/data/worktree/` 下目录的创建时间是唯一可靠的「何时开始用」证据；08-11 有过一次但那轮没触发权限询问）。
+
+- **子代理超时不再丢弃已经产出的结论**（`packages/opencode/src/tool/task.ts`）：`Effect.timeoutOption` 只回答「有没有按时完成」，中途产出一律丢弃。实祸：一次 explore 审计被掐断时，子会话里已有 **6 条助手消息、38 个 part** 的真实结论，父会话只收到一句 `Subagent timed out`，只能自己从头重做——主备各掐一次，六分钟白烧，而结论一直躺在库里（TUI 里 ctrl+x 就能翻）。
+
+  改法：超时后先 `salvageOutput` 把已产出的助手文本读回来，捞得到就带「这是半截、自行判断覆盖够不够、不许当成完整调查转述」的告诫交给父会话，捞不到（真卡死、一个 token 都没吐）才按硬失败报。上限 `SALVAGE_MAX_CHARS = 24000`，超限**保留尾部**（结论累积在后面，开头多是复述任务与检索过程）并在截断处写明丢了多少字符。顺带补上兑底模型超时后缺的那次 `ops.cancel`（主模型那条早就有，兑底这条一直漏着，残留的进行中请求会继续占住子会话）。
+
+- **空闲看门狗别把「本地在干活」当成网关停摆**（`packages/opencode/src/session/llm.ts`）：0.10.11 引入的回归。看门狗只看「两个事件之间隔多久」，而工具执行与等待用户授权这段时间里流本来就不该有新事件——于是一个正在等你点授权的回合会在 120 秒被判成网关停摆掐掉。改法是给它一个本地态：任何 `tool-input-*` / `tool-call` 事件进入本地态，`tool-result` / `tool-error` 退出，`text-*` / `reasoning-*` / `step-*` 这些只有网关才发得出的事件也顺带清掉；本地态期间不计时。不押上游 AI SDK 的 enqueue 顺序。
+
+- **权限/提问的回复失败不再静默**（`packages/opencode/src/cli/cmd/tui/routes/session/{permission,question}.tsx`）：六处 `void sdk.client.permission.reply(...)` 不看返回、不 catch、不提示，服务端报什么错都一声不吭——上面那个跨实例缺陷之所以查了两天，一半原因在此。收进带 catch 的 `send()`，失败弹 toast。
+
+- **权限弹窗期间点到输入框不再抢回焦点**（`packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`）：弹窗期间输入框保持挂载（卸载会连正在打的字一起销毁），靠 `disabled` 触发一个 effect 让出焦点——textarea 在 disabled 时 `onKeyDown` 是 `preventDefault` 直接吞键，占着焦点会让弹窗收不到任何按键。缺的另一半是 `onMouseDown` 无条件 `r.target?.focus()`，而那个 effect **不订阅 `input.focused`**，焦点被鼠标抢回去之后它不会再跑；弹窗按钮那排紧贴输入框上沿，点偏一行即命中。判定抽成 `mustYieldFocus()` 两处共用，`onKeyDown` 的 disabled 分支加自愈（吞第一键时立刻 blur）并留一条 warn。
+
+  ⚠️ **这条不是当天那次「点不动」的根因**——埋的 warn 一次都没打出来，真凶是上面的跨实例问题。它是同一症状的另一条真实路径，独立成立。
 
 - **GUI 超过 100 条的会话不再静默丢历史**（`packages/app/src/context/global-sync/{types,event-reducer,session-cache,child-store}.ts`、`context/directory-sync.ts`）：`event-reducer` 的每会话 100 条上限会把最旧的消息连同 parts 从内存里 `shift` 掉，代码注释写着「历史可经 `loadMore` 随时回拉」——**这句话在修之前不成立**。
 
@@ -18,7 +40,15 @@
 
   改法：state 加一个 `message_trimmed[sessionID]`，截断时标记；`history.more()` 见到标记就返回 true（绕过 `complete`），`loadMore()` 改用**内存里现存最旧的那条**当游标往回补，成功后清标记。`dropSessionCaches` 一并清理该标记，避免会话整体驱逐后留下假阳性。新增两条用例（跨过上限时标记置位 / 未跨过时不动）。⚠️ 已知局限：拉回来之后若会话仍在流式推进，下一条 `message.updated` 会再砍一次；彻底解法是让上限跟着「用户显式加载过的长度」走，未做。
 
-  **同一条待办里的性能那一半（「`message.updated` 定位改 Map」，记为每 step 省约 12ms）经实测否决**：100 条消息的 Solid store 上 `findIndex` 全扫一次 **0.5 µs**，与普通数组同数量级（proxy 几乎不额外收费），要凑够 12ms 得每 step 两万四千次 `message.updated`。定位不是瓶颈，改 Map 属于纯churn，没做。真要追那 12ms，下一个该量的是 `reconcile(info)` 的深比较与它触发的下游重算。
+  **同一条待办里的性能那一半（「`message.updated` 定位改 Map」，记为每 step 省约 12ms）经实测否决**：100 条消息的 Solid store 上 `findIndex` 全扫一次 **0.5 µs**，与普通数组同数量级（proxy 几乎不额外收费），要凑够 12ms 得每 step 两万四千次 `message.updated`。定位不是瓶颈，改 Map 属于纯 churn，没做。真要追那 12ms，下一个该量的是 `reconcile(info)` 的深比较与它触发的下游重算。
+
+#### 新增
+
+- **朱印落地**（`packages/ui/src/assets/brand/`、`script/brand/rasterize-mark.mjs`、两处 favicon 目录、`packages/app/src/components/titlebar.tsx`、`packages/docs/docs.json`）：09-03 设计完就没进过仓，这次补上。
+
+  分工按当时拍板的来——**标志负责「认出来」，看板娘负责「有性格」**：朱印只吃小尺寸、陌生环境那一类（浏览器页签、PWA、GUI 标题栏署名、文档站），启动画面 Splash、「任务已接收」贴纸、README 头图仍是赤，**桌面端应用图标也保持赤**（`packages/desktop/resources/icons` 一个字节没碰）。
+
+  `script/brand/rasterize-mark.mjs` 把几何直接栅格化成 PNG/ICO：仓里没有 SVG 栅格化依赖，而这标志只有四种图元（闭合贝塞尔填充、多边形填充、圆头折线描边、圆角矩形填充），自己画比引依赖划算；4 倍超采样 + 盒式下采样。**≤32px 自动走简化刻本**（去掉右上崩口与印边留白，那两处在 16px 下只会让边缘发毛），maskable 那两档留 10% 安全区。改标志先改 SVG 再同步几何，不一致以 SVG 为准。favicon 一套换代 v3 → v4，两份目录同步，v3 删除。文档站主题色从 Mintlify 模板绿 `#16A34A` 换成朱红 `#C8322B`（favicon 09-03 已是朱印，颜色一直没跟上）。
 
 #### 工具链
 
@@ -27,6 +57,10 @@
   背景：260901 起 `seed/scripts` 是这批脚本的唯一权威、私仓不再跟踪它们（`RedCode-private` 的 `.gitignore` 加了 `scripts/`）。**于是 `git pull` 会把家目录里的工作副本删掉，而唯一能放回去的镜像只在 build 时跑**（全仓只有 `packages/opencode/build.bat:2` 和 `packages/desktop/build-and-package.bat:2` 调 `sync-home.bat`）——删得到、补不上。在一台只拉取不构建的机器上，这批脚本就此消失，`/recall` 静默失效（`~/.redcode/command/recall.md` 直接 `node "$HOME/.redcode/scripts/recall-memory.mjs"`）。本机实测确认过：拉完只剩 `export-memory-backup.mjs`，另外三个（`recall-memory.mjs`、`check-memory-dualwrite.mjs`、`hooks/pre-commit`）都不在。
 
   现在拉完直接跑 `script\sync-home-scripts.bat` 即可，不必为了几个脚本走整套构建（`sync-home.bat` 还会跑版本一致性检查与配置合并器）。⚠️ 仍未自动化的一步：`~/.redcode/.git/hooks/pre-commit` 是从 `scripts/hooks/pre-commit` **手工拷**过去的，镜像只负责把源放回 `~/.redcode/scripts/hooks/`。
+
+#### 已知问题
+
+- **`agent.explore.timeout_ms` 若在用户全局配置里写死会压过仓库定义**。本机那份写着 180000，压着 `explore.md` 的 600000（260828 提高的，理由是 explore 吸收出方案/做审查之后「读一圈再出结论」比纯搜索慢得多）。实祸：09-04 一次审计被 180 秒掐断，日志显示兑底模型首字 5–7 秒、一路在出结果，是**误杀不是卡死**；主备各掐一次共六分钟。已在本机删掉该覆盖改为跟随仓库定义。配置不在仓库里，代码改不掉，只能记在此处提醒：升级后若发现 explore 频繁三分钟超时并转兑底，先查自己的 `~/.redcode/redcode.jsonc`。
 
 ### [0.10.11] - 2026-09-03
 
