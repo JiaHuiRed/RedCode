@@ -8,7 +8,10 @@
 
 ---
 
-### [未发布]
+### [0.10.15] - 2026-09-04
+
+> A1 收口：`summary.diffs` 这条线的四步一次做完——先修好「打开老会话统计全归零」，再把每 step 的全量加载、重复重算、无上限增长、孤儿文件逐个拆掉。**不做 schema 迁移**（三份迁移方案的机制全拿 fatal，且 95% 历史快照已被 gc，存量不可重算），全部改在写入侧与读取侧。
+
 
 #### 修复
 
@@ -45,6 +48,32 @@
   **顺带**：`from === to` 直接给空 diff，不再起 2 个 git 进程去证明恒等式。
 
   验证：`capPatches` 4 条（不超限原样返回 / 最大优先清空 / 连清多个 / 按字节不按码元）、`diff({patch:false})` 去正文留元数据、`Session.remove` 删文件、TUI sync 断言改成「只请求不带正文的那种」；summary-snapshot-parts / snapshot-tool-race / snapshot / httpapi-session 全过；`revert-compact` 那两条红是基线就红的存量（stash 对照过，`docs/agent-roles-plan.md` 也记着）；opencode + sdk typecheck 干净。live 上跑了一次 sweep：615 → 437 个文件。**未做的**：UI 对被清空的 patch 没有专门提示（展开就是空 diff，与超大文件今天的表现一致）；4MB 会话级上限会让「大会话 review 面板里最大的几个文件没正文」，要提示得动 `FileDiff` schema，本批不做。
+
+### [0.10.14] - 2026-09-04
+
+> gpt-5.6 三个变体一直只能选到 xhigh，codex 自己的滑块却有顶档「最高」。
+
+#### 修复
+
+- **gpt-5.6 补上 max 档**（`packages/opencode/src/provider/transform.ts`）：GUI 的推理强度滑块与 TUI 的变体列表里，`gpt-5.6-luna` 最高只到 xhigh。逐档打真请求测出来的（Codex 后端、ChatGPT Plus 账号）：三个变体 `none / low / xhigh / max` 全部 200；`gpt-5.5` 与 `gpt-5.4` 请求 max 直接 400（报文自陈「不支持」）。所以 max 只挂 5.6 及以上，不扩到整个 5.2+；`none` 保留——实测 200，且 400 报文自报的支持集里就有它。
+
+  ⚠️ 一并记下一个陷阱：`GET /backend-api/codex/models` 返回的 `supported_reasoning_levels` 给 sol 和 terra 列了 `ultra`，但这三个模型实际请求 ultra **一律 400**，报文自报的集合里根本没有它。**那个字段不能当实情用**——要么是更高订阅档才开放，要么名单本身不准。加新档位前一律发一次真请求验，别读字段。新增四条用例钉住：三变体到 max、都不给 ultra、5.5/5.4 不给 max、更高版本自动跟上。
+
+### [0.10.13] - 2026-09-04
+
+> MCP 协议里服务器自己写的「这套工具整体是干什么的」，本仓从接入那天起就没读过。
+
+#### 新增
+
+- **读取并注入 MCP 服务器自报的用途说明**（`packages/opencode/src/mcp/index.ts`、`session/prompt.ts`、`session/prompt-caches.ts`）：MCP 的 initialize 响应里有 `instructions` 字段——服务器自己写的「这套工具整体是干什么的、什么时候该用」。本仓此前完全不读它，mcp 模块零引用。实测本机的 jcodemunch 提供 931 字符，从接入那天起就丢在地上；模型只能从逐条工具描述里拼凑整体意图，而那些描述还会被 `tool.definition` 钩子截断。
+
+  三个实现约束都是冲着**前缀缓存稳定性**去的：磁盘缓存（`mcp-tools/<server>.json`）与工具定义同批写入 instructions，**断线期间和连上之后必须拿到同一段文本**，否则系统提示词随连接状态抖动、整个前缀缓存被打掉（与 `convertMcpToolCached` 那句「description 必须字节级一致」是同一条约束）；`MCP.instructions()` 走 cache-first 并按服务器名排序固定顺序（`Object.entries` 的顺序变化同样会废掉前缀）；不拼进工具描述而是单独成块——拼进去要在两条转换路径上同步维护同一段文本，稍有出入就在重连时炸缓存。代价写明：**会话开始后才连上的服务器要等下一个会话才带上说明**，这是为前缀稳定性主动选的。
+
+  模型可见改动按 `AGENTS.md` 四问过了一遍。其中第 ③ 问：这条会让所有会话的固定前缀**作废一次**（新增一段落在 instructions 之后、skills 之前），一次性，不是每轮不稳定——块内容按会话缓存。
+
+#### 修复
+
+- **给 MCP 服务器说明加硬上限**（`packages/opencode/src/mcp/index.ts`）：上一条的四问第 ④ 问答的是「没有硬上限，已知缺口，留待补」。**这是把缺陷写成待办**——仓里的规矩是没有上限就当场加，不进待办池。文本长度由第三方 MCP 服务器决定、本仓无从约束，而它直接进模型上下文。`MAX_INSTRUCTION_CHARS = 2000`（本机唯一提供者 931 字符，给足余量又挡得住写长篇的服务器），两处捕获与磁盘缓存回落路径都过它；超限从尾部截断并标注截断字符数，别让模型以为自己看到的是全部。
 
 ### [0.10.12] - 2026-09-04
 
