@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { ProxyAgent, fetch as undiciFetch } from "undici"
 
-function proxyFromEnv(): string | undefined {
+export function proxyFromEnv(): string | undefined {
   for (const name of ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"]) {
     const value = process.env[name]?.trim()
     if (value && /^https?:\/\//.test(value)) return value
