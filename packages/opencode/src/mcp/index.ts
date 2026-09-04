@@ -72,9 +72,24 @@ function readMcpInstructionsCache(serverName: string): string | undefined {
   try {
     const raw = fs.readFileSync(mcpToolsCachePath(serverName), "utf-8")
     const parsed = JSON.parse(raw)
-    if (typeof parsed?.instructions === "string" && parsed.instructions.trim()) return parsed.instructions.trim()
+    if (typeof parsed?.instructions === "string" && parsed.instructions.trim())
+      return capInstructions(parsed.instructions)
   } catch {}
   return undefined
+}
+
+/**
+ * 每台服务器说明的硬上限。文本由第三方 MCP 服务器决定，本仓无从约束其长度，而它直接进
+ * 模型上下文——**没有上限就是缺陷不是待办**（AGENTS.md 四问之④）。本机唯一提供者
+ * jcodemunch 是 931 字符（约 260 token），2000 给足余量又挡得住写长篇的服务器。
+ * 超限从尾部截断并标注，别让模型以为自己看到的是全部。
+ */
+const MAX_INSTRUCTION_CHARS = 2000
+
+function capInstructions(text: string): string {
+  const trimmed = text.trim()
+  if (trimmed.length <= MAX_INSTRUCTION_CHARS) return trimmed
+  return trimmed.slice(0, MAX_INSTRUCTION_CHARS) + `\n[...truncated ${trimmed.length - MAX_INSTRUCTION_CHARS} chars]`
 }
 
 function readMcpToolsCache(serverName: string): MCPToolDef[] | undefined {
@@ -728,7 +743,8 @@ export const layer = Layer.effect(
             return yield* Effect.fail(new Error("Failed to get tools"))
           }
           // 见 readMcpInstructionsCache：服务器级 instructions 与工具定义同批取、同批缓存
-          const instructions = mcpClient.getInstructions()?.trim() || undefined
+          const raw = mcpClient.getInstructions()?.trim()
+          const instructions = raw ? capInstructions(raw) : undefined
           log.info("create() successfully created client", {
             key,
             toolCount: listed.length,
@@ -994,7 +1010,8 @@ export const layer = Layer.effect(
       s.status[name] = { status: "connected" }
       s.clients[name] = client
       s.defs[name] = listed
-      const reconnectInstructions = client.getInstructions()?.trim()
+      const rawReconnect = client.getInstructions()?.trim()
+      const reconnectInstructions = rawReconnect ? capInstructions(rawReconnect) : undefined
       if (reconnectInstructions) s.instructions[name] = reconnectInstructions
       watch(s, name, client, bridge, timeout)
       return s.status[name]
