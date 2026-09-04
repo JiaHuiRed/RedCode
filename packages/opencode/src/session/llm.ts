@@ -496,7 +496,7 @@ function guardFirstEvent<S, E>(
 ): Stream.Stream<S, E | FirstEventTimeoutError | StreamIdleTimeoutError> {
   return Stream.unwrap(
     Effect.gen(function* () {
-      const state = { last: Date.now(), seen: false }
+      const state = { last: Date.now(), seen: false, local: false }
       const timeoutSignal = yield* Deferred.make<never, FirstEventTimeoutError | StreamIdleTimeoutError>()
       // 看门狗 fiber：每 tick 比一次"距上一个事件多久"。超过当前档位的阈值就先 abort
       // 底层请求，再向 timeoutSignal 失败，merge 收到后让整体流失败。
@@ -510,6 +510,15 @@ function guardFirstEvent<S, E>(
         Effect.gen(function* () {
           while (true) {
             yield* Effect.sleep(WATCHDOG_TICK)
+            // 260904 cc **本地在干活时不计时。** AI SDK 的工具执行跑在流内部：
+            //   `tool-call` 之后到 `tool-result` 之前，流上一个事件都不会来。那段时间
+            //   长短完全由本地决定——工具自己可以跑 10 分钟（bash 上限 600s、repo_clone
+            //   300s），等用户点权限更没有上限。把它当成「网关停摆」是错的。
+            //   实测代价：260904 一次外部目录授权，权限 02:26:20 弹出、用户还没点完，
+            //   看门狗 120s 到点把整轮掐了（日志「静默 124 秒」），中断连带触发
+            //   permission 的 replied 兜底，表现成「弹窗点了没反应、然后会话停摆」。
+            //   看门狗要守的是「网关不再发」，不是「我们自己在忙」。
+            if (state.local) continue
             const idle = Date.now() - state.last
             const limit = Duration.toMillis(state.seen ? IDLE_EVENT_TIMEOUT : FIRST_EVENT_TIMEOUT)
             if (idle < limit) continue
@@ -524,10 +533,15 @@ function guardFirstEvent<S, E>(
       )
       return Stream.merge(
         stream.pipe(
-          Stream.tap(() =>
+          Stream.tap((event) =>
             Effect.sync(() => {
               state.last = Date.now()
               state.seen = true
+              // tool-call 之后进入本地执行，tool-result / tool-error 回到等网关。
+              // 只认这三个边界：其余事件（含 tool-input-*）都还在网关这一侧。
+              const type = (event as { type?: string })?.type
+              if (type === "tool-call") state.local = true
+              else if (type === "tool-result" || type === "tool-error") state.local = false
             }),
           ),
         ),
