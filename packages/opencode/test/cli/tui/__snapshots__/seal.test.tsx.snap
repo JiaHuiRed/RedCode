@@ -1,0 +1,7 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`朱印整帧 1`] = `
+"╭────╮
+│ >_ │
+╰────╯"
+`;

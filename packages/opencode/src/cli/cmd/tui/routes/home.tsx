@@ -3,6 +3,7 @@ import { usePromptMaxWidth } from "@tui/component/prompt/width"
 import { createEffect, createSignal, onMount } from "solid-js"
 import { logoLarge } from "@/cli/logo"
 import { Logo } from "../component/logo"
+import { Seal } from "../component/seal"
 import { Starfield } from "../component/starfield"
 import { useSync } from "../context/sync"
 import { Toast } from "../ui/toast"
@@ -87,7 +88,13 @@ export function Home() {
           <box visible={!ref()?.menuOpen}>
             <TuiPluginRuntime.Slot name="home_logo" mode="replace">
               {/* 260731 Red 首页用大号字形（55×7）；run 的进场 splash 仍用原来的 41×5 */}
-              <Logo idle shape={logoLarge} />
+              {/* 260904 cc 字标右侧落一枚朱印。放在 slot **内**：印是字标的落款，插件整块
+                  替换 home_logo 时该一起被替换掉，而不是孤零零留一个印在那儿。
+                  alignItems=center 让 3 行的印在 7 行字标里垂直居中。 */}
+              <box flexDirection="row" alignItems="center" gap={2}>
+                <Logo idle shape={logoLarge} />
+                <Seal />
+              </box>
             </TuiPluginRuntime.Slot>
           </box>
         </box>

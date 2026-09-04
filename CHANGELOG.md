@@ -32,6 +32,14 @@
 
 #### 新增
 
+- **TUI 首页字标右侧落一枚朱印**（新增 `packages/opencode/src/cli/cmd/tui/component/seal.tsx`，`routes/home.tsx` 接入）：品牌标志 09-04 已经进了 GUI（favicon / PWA 图标 / 标题栏 / 等待行），终端这边一直没有。
+
+  **GUI 那套 SVG 几何搬不进终端，这版是重刻的。** 先试的是栅格化：把 `redcode-mark.svg` 渲成位图再用半块字符 `▀▄█` 铺（一格装两个垂直像素，正好凑出方像素）。实测 10 到 24 列，`>` 的笔画在 16 列下只有 **1.7 个像素宽**、`_` 直接消失，要到 24 列 × 12 行才看得清——而首页字标本身才 7 行。改用**线条刻本**：印身用圆角框字符，`6 列 × 3 行` 在终端里就是视觉正方形（字符约 1:2）；印文直接写 `>_`,它本来就是终端提示符，用真字符比栅格成色块更本真。
+
+  **右上角崩口有意舍弃**。试过用断笔 `╸` 开口，出来像画错了而不是手刻残缺——那个特征需要亚字符级精度，终端给不了。**静态不动也是有意的**：印是盖上去的落款，而字标那边已经有常驻扫光，再让印晃两边会打架。
+
+  颜色不跟主题调色板走（那是标志不是 UI 元素），但深色底上 `#C8322B` 压不住，按背景亮度在 `#C8322B` / `#E4534A` 两档官方用色之间切一次，与 `redcode-mark.svg` 头部注释同源。组件放在 `home_logo` 这个插件 slot **内**——印是字标的落款，插件整块替换 logo 时该一起被替换，而不是孤零零留一个印在那儿。两条用例钉住形状：整帧快照，以及「6 列 × 3 行、印文含 `>_`」——尺寸单独断言是因为任何一边动了都不再是方印。
+
 - **`effect` skill 从没生效过，现在挪进真正会被播种的目录**（`seed/skills/effect/` → `seed/skill/effect/`）：`seed` 下**单数**的 `skill/` 才是活目录——`project/bootstrap.ts` 从它播种到 `~/.redcode/skill`，`script/sync-home.bat:21` 也拷它；而**复数**的 `skills/` 唯一一次提交是上游改名那回（`dda1a629`，无本仓前缀），本仓从没有任何代码或脚本读过它。里面躺着的 `effect` skill 因此从落地那天起一次都没被加载过。
 
   同批修好它内容里的过期引用。`.opencode/references/effect-smol` 在文件里出现三次，而 `.opencode` 早在 260805 就改名成 `seed`，并且 `seed/references/effect-smol` 也从来不存在——**正因为没人用这个 skill，路径烂掉了也没人发现**。改成指向实际在盘上的源码：Effect v4 的完整 TypeScript 源码随包分发，读 `packages/<pkg>/node_modules/effect/src/*.ts` 即可（**包级** node_modules，不是仓根），不需要克隆任何外部仓库。顺带补两条本仓踩过的坑：`Effect.either` 在这个 beta 里不存在（拿失败值用 `Effect.flip`）、碰数据库的测试要用 `it.instance` 而不是 `it.effect`（后者不起 `TestInstance`，`session.create` 会撞外键，报错看起来像被测代码的 bug）。
