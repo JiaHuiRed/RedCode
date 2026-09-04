@@ -5,6 +5,7 @@ import type { TextareaRenderable } from "@opentui/core"
 import { selectedForeground, tint, useTheme } from "../../context/theme"
 import type { QuestionAnswer, QuestionRequest } from "@redcode-ai/sdk/v2"
 import { useSDK } from "../../context/sdk"
+import { useToast } from "../../ui/toast"
 import { useSync } from "../../context/sync"
 import { useProject } from "../../context/project"
 import { SplitBorder } from "../../component/border"
@@ -13,6 +14,10 @@ import { OPENCODE_BASE_MODE, useBindings } from "../../keymap"
 
 export function QuestionPrompt(props: { request: QuestionRequest }) {
   const sdk = useSDK()
+  // 260904 cc 同 permission.tsx：回复失败不能静默。见那边 send() 的完整因由。
+  const toast = useToast()
+  const send = (input: Parameters<typeof sdk.client.question.reply>[0]) =>
+    void sdk.client.question.reply(input).catch((err) => toast.error(err))
   const sync = useSync()
   const project = useProject()
   const { theme } = useTheme()
@@ -52,7 +57,7 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
 
   function submit() {
     const answers = questions().map((_, i) => store.answers[i] ?? [])
-    void sdk.client.question.reply({
+    send({
       requestID: props.request.id,
       answers,
       workspace: workspace(),
@@ -76,7 +81,7 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
       setStore("custom", inputs)
     }
     if (single()) {
-      void sdk.client.question.reply({
+      send({
         requestID: props.request.id,
         answers: [[answer]],
         workspace: workspace(),

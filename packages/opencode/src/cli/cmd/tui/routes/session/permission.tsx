@@ -6,6 +6,7 @@ import type { TextareaRenderable } from "@opentui/core"
 import { useTheme, selectedForeground } from "../../context/theme"
 import type { PermissionRequest } from "@redcode-ai/sdk/v2"
 import { useSDK } from "../../context/sdk"
+import { useToast } from "../../ui/toast"
 import { SplitBorder } from "../../component/border"
 import { useSync } from "../../context/sync"
 import { useProject } from "../../context/project"
@@ -121,6 +122,15 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
   // 点击和按键都像失灵。见 context/sync.tsx 的 request_workspace。
   const workspace = () => sync.data.request_workspace[props.request.id] ?? project.workspace.current()
 
+  // 260904 cc 回复失败必须看得见。原来六处（本文件四处 + question.tsx 两处）都是
+  //   `void sdk.client...reply(...)`，**没人读返回值** —— 一旦 requestID 不在目标实例的
+  //   pending 里（workspace 记错或回落到当前 workspace），服务端回 PermissionNotFoundError，
+  //   而界面上什么都不会发生：点击和按键看起来就是失灵。260904 实遇一次，排查花了一轮
+  //   才从日志的「asked 有、replied 没有」推出来。现在失败弹 toast，至少知道是发出去了没被收下。
+  const toast = useToast()
+  const send = (input: Parameters<typeof sdk.client.permission.reply>[0]) =>
+    void sdk.client.permission.reply(input).catch((err) => toast.error(err))
+
   // 260811 Red 权限弹窗键盘快捷键（复用 GUI 方案，参照雨琦 915556e）：
   // Enter = 允许一次，Ctrl+Shift+Enter = 始终允许（先进确认页），Esc 已由 Prompt escapeKey 处理
   // 三个动作都有专属快捷键，主弹窗不再需要左右选择+Enter 确认（enterAction="once"）
@@ -195,7 +205,7 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
           onSelect={(option) => {
             setStore("stage", "permission")
             if (option === "cancel") return
-            void sdk.client.permission.reply({
+            send({
               reply: "always",
               requestID: props.request.id,
               workspace: workspace(),
@@ -206,7 +216,7 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
       <Match when={store.stage === "reject"}>
         <RejectPrompt
           onConfirm={(message) => {
-            void sdk.client.permission.reply({
+            send({
               reply: "reject",
               requestID: props.request.id,
               message: message || undefined,
@@ -447,14 +457,14 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
                     setStore("stage", "reject")
                     return
                   }
-                  void sdk.client.permission.reply({
+                  send({
                     reply: "reject",
                     requestID: props.request.id,
                     workspace: workspace(),
                   })
                   return
                 }
-                void sdk.client.permission.reply({
+                send({
                   reply: "once",
                   requestID: props.request.id,
                   workspace: workspace(),
