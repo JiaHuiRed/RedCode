@@ -114,14 +114,6 @@
       "description": "文件名/内容高速检索——fff_find_files 按名字模糊找文件（支持路径前缀与 glob 约束），fff_grep 单模式、fff_multi_grep 多模式 OR 查内容（约束语法可按 *.ts / src/ 预筛）。大范围找东西优先它，比原生 glob/grep 快；已知精确路径直接 read。",
       "enabled": true
     },
-    "sqlite-query": {
-      "type": "local",
-      "command": ["bun", "./plugins/mcp-sqlite-query/src/index.ts"],
-      "cwd": "$REDCODE_ROOT",
-      "description": "查 SQLite 库优先用本工具而非 bash sqlite3——结构化返回、免 shell 转义。sqlite_query 执行 SQL、sqlite_schema 看表结构。",
-      "timeout": 30000,
-      "enabled": true
-    },
     // chrome-devtools MCP 挪到本地层 redcode.local.jsonc（260811 cc）：命令是
     // npm 全局安装的绝对路径（C:/Users/<用户名>/AppData/Roaming/npm/...），换机
     // 必 ENOENT，与 DCP 插件路径同一类"因机而异"的值。配置样例见该文件。
