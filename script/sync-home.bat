@@ -34,9 +34,10 @@ rem external_directory patch. See docs/agent-roles-plan.md, correction 9. Hand-w
 rem in ~/.redcode/agent/ still works; we just no longer ship one.
 
 rem global scripts: repo staging -> ~/.redcode/scripts (called by slash commands, e.g. /recall)
-rem true mirror: wipe first so deleted-in-repo scripts do not linger in home
-if exist "%USERPROFILE%\.redcode\scripts" rd /s /q "%USERPROFILE%\.redcode\scripts" >nul 2>&1
-if exist "seed\scripts" xcopy /y /e /i "seed\scripts" "%USERPROFILE%\.redcode\scripts" >nul
+rem 260904 cc split out so it can also be run on its own after a plain "git pull" -
+rem this mirror used to be reachable only through a full build, and since the private
+rem repo stopped tracking these scripts, pulling deletes them with nothing to put them back.
+call "%~dp0sync-home-scripts.bat"
 
 rem global plugin: only memory.ts (CORE per-turn injector). Engine scans ~/.redcode/plugin for every project.
 rem Selective copy on purpose: do NOT mirror the whole seed\plugins (smoke/stub files stay repo-local).

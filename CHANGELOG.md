@@ -8,6 +8,16 @@
 
 ---
 
+### [未发布]
+
+#### 工具链
+
+- **新增 `script/sync-home-scripts.bat`：只做 `seed/scripts` → `~/.redcode/scripts` 的镜像**。`sync-home.bat` 里那两行原地拆出来，`sync-home.bat` 改为 `call` 它，行为不变。
+
+  背景：260901 起 `seed/scripts` 是这批脚本的唯一权威、私仓不再跟踪它们（`RedCode-private` 的 `.gitignore` 加了 `scripts/`）。**于是 `git pull` 会把家目录里的工作副本删掉，而唯一能放回去的镜像只在 build 时跑**（全仓只有 `packages/opencode/build.bat:2` 和 `packages/desktop/build-and-package.bat:2` 调 `sync-home.bat`）——删得到、补不上。在一台只拉取不构建的机器上，这批脚本就此消失，`/recall` 静默失效（`~/.redcode/command/recall.md` 直接 `node "$HOME/.redcode/scripts/recall-memory.mjs"`）。本机实测确认过：拉完只剩 `export-memory-backup.mjs`，另外三个（`recall-memory.mjs`、`check-memory-dualwrite.mjs`、`hooks/pre-commit`）都不在。
+
+  现在拉完直接跑 `script\sync-home-scripts.bat` 即可，不必为了几个脚本走整套构建（`sync-home.bat` 还会跑版本一致性检查与配置合并器）。⚠️ 仍未自动化的一步：`~/.redcode/.git/hooks/pre-commit` 是从 `scripts/hooks/pre-commit` **手工拷**过去的，镜像只负责把源放回 `~/.redcode/scripts/hooks/`。
+
 ### [0.10.11] - 2026-09-03
 
 > 性能体检落地第一批 + 一个长期潜伏的挂起缺陷。合并了此前 [未发布] 段的三条。
