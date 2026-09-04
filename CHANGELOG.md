@@ -10,6 +10,26 @@
 
 ### [未发布]
 
+### [0.10.19] - 2026-09-04
+
+> 朱印终于出现在界面上（此前只是文件），外加 sync-home 镜像的孤儿闸门。共同点是「写完了但没接上 / 会静默丢东西」。
+
+#### 修复
+
+- **会话等待行左边换上朱印，此前是 GitHub 的 `mona-loading.gif`**（`packages/app/src/pages/session/message-timeline.tsx`）：等待期最抢眼的位置一直摆着别家的吉祥物。更要紧的是——**朱印此前在任何界面里都不出现**：09-04 那次落地（`35f92412`）加了 `Seal` 组件与 `ChannelIndicator`，但后者**全仓无人引用**，写完从没挂上去；就算挂了也看不见，因为桌面端 `renderer/index.html` 用裸 DOM 注入了自己那条 `rc-ver` 版本徽标，还起了个定时器主动隐藏原生 badge。所以它此前只以文件形式存在（favicon / PWA 图标 / 文档站主题色）。这次先接上最显眼的一处。
+
+  尺寸 20px 与右边仓鼠齐平，用**完整刻本**——拿 16/20/24/32/48 五档实物对照后选的。**刻意不加动效**：这一行右边已有 TextShimmer 与仓鼠两处运动，再加一处就是周期性闪动。顺带按实测更正 `Seal` 的注释：原写「≤24px 矢量崩口与细白边只会让边缘发毛」，那条判据只对**位图管线**成立，浏览器矢量抗锯齿下 20px 完全立得住，16px 才是真分界；不改的话下次谁读到又会绕开完整刻本。`ChannelIndicator` 与桌面端那个绿点这次没动。
+
+#### 构建
+
+- **sync-home 镜像加孤儿闸门，home 里的脚本不会再被静默抹掉**（新增 `script/check-home-scripts-orphans.ts`，改 `script/sync-home-scripts.bat`）：`sync-home-scripts.bat` 是**真镜像**——先 `rd /s /q ~/.redcode/scripts` 再从 `seed/scripts` 铺回来，而 `scripts/` 在私仓被 gitignore（260816 起权威移到公仓 seed）。两条叠起来的后果是：谁往 home 写个脚本却没同步进 seed，**下一次 build 就静默抹掉，git 也不留底**——260901 那次 `hooks/pre-commit` 被反复抹掉正是这个形态。
+
+  现在 `rd` 之前先比对，发现孤儿就中止并逐条列出，给三条处理路径；`REDCODE_SYNC_SCRIPTS_FORCE=1` 是逃生口。四个场景实测：无孤儿静默放行 / 有孤儿（含子目录）中止 exit 1 / FORCE 降级为警告后放行 / 完整跑一遍 .bat 镜像结果与 seed 一致。`.bat` 新增注释仍是纯 ASCII——cmd 按 OEM 码页读，UTF-8 注释会毁掉解析。
+
+### [0.10.18] - 2026-09-04
+
+> 审计清单收口：三处「写了但从没生效」与一处四份拷贝。
+
 #### 新增
 
 - **`effect` skill 从没生效过，现在挪进真正会被播种的目录**（`seed/skills/effect/` → `seed/skill/effect/`）：`seed` 下**单数**的 `skill/` 才是活目录——`project/bootstrap.ts` 从它播种到 `~/.redcode/skill`，`script/sync-home.bat:21` 也拷它；而**复数**的 `skills/` 唯一一次提交是上游改名那回（`dda1a629`，无本仓前缀），本仓从没有任何代码或脚本读过它。里面躺着的 `effect` skill 因此从落地那天起一次都没被加载过。
@@ -19,6 +39,26 @@
   **模型可见改动的四问**：① 看到什么变了——skill 列表多一条 `effect`（此前模型根本看不到它），description 一并改写，去掉 `effect-smol` 这个误导性的仓名（本仓用的是发布包不是那个开发仓），补上触发条件。② token——常驻部分只有 description，207 字节；全部 skill description 合计 2513 字节 ≈ 838 token，这条占 8.2%。正文 3683 字节**只在 skill 被 load 时**进上下文。③ KV cache——skill 列表在固定前缀里，新增一条会让**从 skill 段起往后的前缀作废一次**；一次性，不是每轮不稳定，之后内容恒定。④ 硬上限——单条正文 3683 字节、description 207 字节，都远低于任何阈值；skill 条目数本身没有硬上限，但那是既有结构且内容全部由本仓自己维护（不像 MCP instructions 那样来自第三方），不是本次引入的缺口。
 
   复数目录里另一个 `improve-codebase-architecture` 保持原样未动。
+
+#### 修复
+
+- **删掉 `infra/console.ts` 这条死链——`sst deploy` 此前必崩**（删除 `infra/console.ts`、`sst.config.ts`）：这 302 行是 SaaS 控制台那套的基础设施定义，五个 handler / directory 全部指向 `packages/console/*`，而那个包早在 `78e86454 chore: remove unused SaaS console package` 就被有意删掉了。`sst.config.ts` 的 `run()` 却仍**无条件** `await import("./infra/console.js")`，还把 `stat.url` 当部署输出返回——任何一次 `sst deploy` 都会在解析 handler 路径时崩。CI 不跑 sst，所以这条死链一直没人踩到。
+
+  删之前确认过没有别的消费者：`infra/console.ts` 的四个导出（`database` / `auth` / `stripeWebhook` / `stat`）里只有 `stat` 被 `sst.config.ts` 用，`app.ts` / `enterprise.ts` / `monitoring.ts` 三个 infra 文件既不 import 它也不链接它的资源。要恢复就从 `78e86454` 之前取，连同 `packages/console` 一起。
+
+#### 优化
+
+- **美元汇率的四份拷贝合并成一处**（新增 `packages/core/src/currency.ts`，改 `app/components/session/session-context-format.ts`、`app/pages/home-stats.tsx`、`tui/feature-plugins/home/footer.tsx`、`tui/feature-plugins/sidebar/context.tsx`）：`USD_TO_CNY = 6.72` 此前有四份逐字相同的定义，两份在 GUI 两份在 TUI，全靠注释互相提醒「四处必须同步改」。改过两轮（260731 6.76→6.75、260827 6.75→6.72）都是手工同步四处——**漏一处就会出现同一笔花费在首页和侧栏显示不同金额，而且不会有任何东西报错**。两个包都依赖 `@redcode-ai/core`，常量挪进去，四处改成 import；`home-stats.tsx` 继续 re-export（`home-usage.tsx` 一直从它取，改成直连 core 属于无谓的连带改动）。注意这跟「币种判定」是两回事：某个模型本来就是人民币标价时不该再乘汇率，那一步读 `model.cost.currency`，260827 起已退役 `CNY_PROVIDERS` 硬编码名单。
+
+#### 构建
+
+- **构建产物移出格式检查，不合规文件数 730 → 281**（`.prettierignore`）：`prettier --list-different .` 此前报 730 个文件不合规，其中 **386 个是 `packages/desktop/out/` 里的打包 js**（electron-vite 输出，已被 git 忽略）。压过的代码当然不符合源码格式，它把这个指标的一半以上变成噪音，也让「给格式化加门禁」看上去比实际难得多。
+
+  排掉产物后 281 个，构成：手写文档 117（md+mdx）、源码 125（ts+tsx）、json 16、css 12——真正在 `packages/*/src/` 下的源码只有 **59 个**。注意 **prettier 3 起不再自动读 `.gitignore`**，所以产物即使不进版本库也要在 `.prettierignore` 里再列一遍。
+
+### [0.10.17] - 2026-09-04
+
+> 黄档性能体检第二批，四条互不相干的热路径：SSE 序列化、用量聚合、TUI 键位层、设置文件写放大。
 
 #### 优化
 
@@ -70,17 +110,13 @@
 
   **实测否决，别再排期**：性能体检待办里的 A6「shiki 核心改动态 import，首屏 gzip 减约 15%（165KB/440KB）」**前提不成立**。改成动态 import 后重新构建对照，主 chunk 从 1,122.66 kB / gzip 387.46 kB 变成 1,130.50 kB / gzip **389.48 kB——反而大了 2 kB**。原因：`bundledLanguages` 只是一张 `{ 语言名: () => import(...) }` 的懒加载映射表，rollup 早就把每个语言 grammar 切成了独立 chunk（本次构建 406 个 chunk，`cpp-*.js` / `emacs-lisp-*.js` / `java-*.js` 各自成块），主 chunk 里根本没有语言表。动态化只是多包一层 promise。已回退。
 
+### [0.10.16] - 2026-09-04
+
+> 附件读取补上大小上限——PDF 此前原样透传进上下文，一道闸都没有。
+
 #### 修复
 
-- **删掉 `infra/console.ts` 这条死链——`sst deploy` 此前必崩**（删除 `infra/console.ts`、`sst.config.ts`）：这 302 行是 SaaS 控制台那套的基础设施定义，五个 handler / directory 全部指向 `packages/console/*`，而那个包早在 `78e86454 chore: remove unused SaaS console package` 就被有意删掉了。`sst.config.ts` 的 `run()` 却仍**无条件** `await import("./infra/console.js")`，还把 `stat.url` 当部署输出返回——任何一次 `sst deploy` 都会在解析 handler 路径时崩。CI 不跑 sst，所以这条死链一直没人踩到。
-
-  删之前确认过没有别的消费者：`infra/console.ts` 的四个导出（`database` / `auth` / `stripeWebhook` / `stat`）里只有 `stat` 被 `sst.config.ts` 用，`app.ts` / `enterprise.ts` / `monitoring.ts` 三个 infra 文件既不 import 它也不链接它的资源。要恢复就从 `78e86454` 之前取，连同 `packages/console` 一起。
-
-#### 优化
-
-- **美元汇率的四份拷贝合并成一处**（新增 `packages/core/src/currency.ts`，改 `app/components/session/session-context-format.ts`、`app/pages/home-stats.tsx`、`tui/feature-plugins/home/footer.tsx`、`tui/feature-plugins/sidebar/context.tsx`）：`USD_TO_CNY = 6.72` 此前有四份逐字相同的定义，两份在 GUI 两份在 TUI，全靠注释互相提醒「四处必须同步改」。改过两轮（260731 6.76→6.75、260827 6.75→6.72）都是手工同步四处——**漏一处就会出现同一笔花费在首页和侧栏显示不同金额，而且不会有任何东西报错**。两个包都依赖 `@redcode-ai/core`，常量挪进去，四处改成 import；`home-stats.tsx` 继续 re-export（`home-usage.tsx` 一直从它取，改成直连 core 属于无谓的连带改动）。注意这跟「币种判定」是两回事：某个模型本来就是人民币标价时不该再乘汇率，那一步读 `model.cost.currency`，260827 起已退役 `CNY_PROVIDERS` 硬编码名单。
-
-（`packages/opencode/src/tool/read.ts`）：此前这里一道上限都没有——`fs.readFile` 读整个文件、base64 编码后直接挂进 attachments，文件多大就吃多大内存（base64 再涨 4/3，photon 解码还要再吃一份 宽×高×4）。
+- **附件分支补上大小上限——PDF 此前原样透传进上下文**（`packages/opencode/src/tool/read.ts`）：此前这里一道上限都没有——`fs.readFile` 读整个文件、base64 编码后直接挂进 attachments，文件多大就吃多大内存（base64 再涨 4/3，photon 解码还要再吃一份 宽×高×4）。
 
   **图片和 PDF 的下游待遇完全不同，所以两道线不同**。图片：`session/processor.ts` 的 tool-result 分支会对每个 `image/*` 附件跑 `Image.normalize`，那里有 5MB base64 硬上限、总像素预算、JPEG 质量阶梯自动降质，缩不下去就丢掉附件并告诉模型「omitted」——**进模型上下文这条路本来就有上限**，所以这里新加的 32MB 纯粹是内存闸门，超过它连读都不读。PDF：`processor.ts` 那个 `startsWith("image/")` 的条件把 PDF 排除在外，**它原样透传、不过任何缩减**，所以 PDF 的线必须画在 read 这里，且没有理由比图片的字节预算宽松——用同一条 5MB base64 线，反推回磁盘就是 3.75MB。图片能被缩放器救，PDF 只能直接拒。
 
