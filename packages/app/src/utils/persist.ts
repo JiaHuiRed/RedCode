@@ -25,6 +25,7 @@ type PersistTarget = {
 
 const LEGACY_STORAGE = "default.dat"
 const GLOBAL_STORAGE = "RedCode.global.dat"
+const MEDIA_STORAGE = "RedCode.media.dat"
 const LOCAL_PREFIX = "RedCode."
 const fallback = new Map<string, boolean>()
 
@@ -533,6 +534,26 @@ export const PersistTesting = {
 export const Persist = {
   global(key: string, legacy?: string[]): PersistTarget {
     return { storage: GLOBAL_STORAGE, key, legacy }
+  },
+  /**
+   * 260904 cc 大块二进制（头像、壁纸）专用的存储文件。
+   *
+   * 为什么必须跟设置分家：`persisted` 是**写穿**的——每次 setStore 都同步序列化整个 store
+   * 并走一条 IPC，主进程那边 electron-store 底下的 conf 对 get 和 set **都**要 readFileSync
+   * 整个文件 + JSON.parse（set 还要再 stringify + 原子写）。本机实测 `default.dat` 3.40MB，
+   * 其中 settings.v3 占 3397.9KB，而这 3.4MB 全是四张 base64 JPEG：
+   *     assistantProfile.avatar 1331.4KB / userProfile.avatar 695.7KB
+   *     appearance.homeBackground 754.4KB / appearance.chatBackground 615.5KB
+   * 于是改个字号、换个主题、切个开关，都要把这 3.4MB 在**主进程**上连读带写过一遍，
+   * 主进程一卡，标题栏拖动、菜单、所有 IPC 一起卡（这也是渲染进程抓 profile 只看到 idle
+   * 的原因）。图片本身很少变，把它们挪出来之后，高频的小设置写的就只是几 KB。
+   *
+   * 与 prompt-history 那条（`components/prompt-input/history.ts`）是同一个病、不同的药：
+   * 历史里的图是陈年草稿，直接剔掉；这里的图是用户自己设的头像和壁纸，**必须原样留着**，
+   * 所以是搬家不是丢弃。
+   */
+  media(key: string): PersistTarget {
+    return { storage: MEDIA_STORAGE, key }
   },
   workspace(dir: string, key: string, legacy?: string[]): PersistTarget {
     const storage = workspaceStorage(pathKey(dir))

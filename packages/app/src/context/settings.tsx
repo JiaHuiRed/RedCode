@@ -1,7 +1,7 @@
 import { createStore, reconcile } from "solid-js/store"
-import { createEffect, createMemo } from "solid-js"
+import { createEffect, createMemo, untrack } from "solid-js"
 import { createSimpleContext } from "@redcode-ai/ui/context"
-import { persisted } from "@/utils/persist"
+import { Persist, persisted } from "@/utils/persist"
 
 export interface NotificationSettings {
   agent: boolean
@@ -57,6 +57,52 @@ export interface Settings {
   tts: TtsSettings
   userProfile: UserProfile
   assistantProfile: UserProfile
+}
+
+/**
+ * 260904 cc 从 Settings 拆出去的大块二进制：头像与壁纸，都是 data URL。
+ * 存在自己的 `RedCode.media.dat` 里（`Persist.media`），不跟高频的小设置同文件。
+ * 字段名刻意扁平——它们在 Settings 里分属 appearance / userProfile / assistantProfile 三处，
+ * 拍平之后这个 store 只有一层，搬家与读写都不用关心嵌套。
+ */
+export interface SettingsMedia {
+  chatBackground: string
+  homeBackground: string
+  userAvatar: string
+  assistantAvatar: string
+}
+
+const defaultMedia: SettingsMedia = {
+  chatBackground: "",
+  homeBackground: "",
+  userAvatar: "",
+  assistantAvatar: "",
+}
+
+const MEDIA_KEYS = ["chatBackground", "homeBackground", "userAvatar", "assistantAvatar"] as const
+
+/**
+ * 存量搬家的决策：给定旧 `settings.v3` 里那四个字段的现值与 media store 的现状，
+ * 算出该写哪些、该清哪些。
+ *
+ * 抽成纯函数是为了能单独测——这段只在启动瞬间跑一次，错了用户看到的是「头像和壁纸没了」，
+ * 而且旧值已被清掉、找不回来。两条规则：
+ *   · media 已有值就**不覆盖**——说明搬过了，用户此后可能又换过图，旧值是陈的
+ *   · 只要旧字段有值就**一定清**（不管有没有写）——不清等于留两份，`default.dat` 不会瘦
+ */
+export function planMediaMigration(input: {
+  legacy: Partial<Record<keyof SettingsMedia, string | undefined>>
+  media: SettingsMedia
+}) {
+  const write: Array<[keyof SettingsMedia, string]> = []
+  const clear: Array<keyof SettingsMedia> = []
+  for (const key of MEDIA_KEYS) {
+    const value = input.legacy[key]
+    if (!value) continue
+    if (!input.media[key]) write.push([key, value])
+    clear.push(key)
+  }
+  return { write, clear }
 }
 
 export const monoDefault = "System Mono"
@@ -170,6 +216,37 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
   name: "Settings",
   init: () => {
     const [store, setStore, _, ready] = persisted("settings.v3", createStore<Settings>(defaultSettings))
+    // 260904 cc 四张 base64 图挪进自己的存储文件，理由见 Persist.media 的注释（一句话：
+    // 写穿 + 主进程整文件读写，让改字号也要搬 3.4MB）。Settings 类型里那四个字段**保留**，
+    // 上层组件与设置页一行都不用改——变的只是这几个 accessor 从哪个 store 取值。
+    const [media, setMedia, __, mediaReady] = persisted(
+      Persist.media("settings.media.v1"),
+      createStore<SettingsMedia>({ ...defaultMedia }),
+    )
+
+    // 存量搬家，两个 store 都就绪后跑一次。决策在 planMediaMigration 里（有单测）。
+    const clearLegacy: Record<keyof SettingsMedia, () => void> = {
+      chatBackground: () => setStore("appearance", "chatBackground", ""),
+      homeBackground: () => setStore("appearance", "homeBackground", ""),
+      userAvatar: () => setStore("userProfile", "avatar", ""),
+      assistantAvatar: () => setStore("assistantProfile", "avatar", ""),
+    }
+    createEffect(() => {
+      if (!ready() || !mediaReady()) return
+      untrack(() => {
+        const plan = planMediaMigration({
+          legacy: {
+            chatBackground: store.appearance?.chatBackground,
+            homeBackground: store.appearance?.homeBackground,
+            userAvatar: store.userProfile?.avatar,
+            assistantAvatar: store.assistantProfile?.avatar,
+          },
+          media,
+        })
+        for (const [key, value] of plan.write) setMedia(key, value)
+        for (const key of plan.clear) clearLegacy[key]()
+      })
+    })
 
     createEffect(() => {
       if (typeof document === "undefined") return
@@ -260,13 +337,13 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         setTerminalFont(value: string) {
           setStore("appearance", "terminal", value.trim() ? value : "")
         },
-        chatBackground: withFallback(() => store.appearance?.chatBackground, defaultSettings.appearance.chatBackground),
+        chatBackground: withFallback(() => media.chatBackground, defaultMedia.chatBackground),
         setChatBackground(value: string) {
-          setStore("appearance", "chatBackground", value)
+          setMedia("chatBackground", value)
         },
-        homeBackground: withFallback(() => store.appearance?.homeBackground, defaultSettings.appearance.homeBackground),
+        homeBackground: withFallback(() => media.homeBackground, defaultMedia.homeBackground),
         setHomeBackground(value: string) {
-          setStore("appearance", "homeBackground", value)
+          setMedia("homeBackground", value)
         },
       },
       keybinds: {
@@ -344,9 +421,9 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         },
       },
       userProfile: {
-        avatar: withFallback(() => store.userProfile?.avatar, defaultSettings.userProfile.avatar),
+        avatar: withFallback(() => media.userAvatar, defaultMedia.userAvatar),
         setAvatar(value: string) {
-          setStore("userProfile", "avatar", value)
+          setMedia("userAvatar", value)
         },
         displayName: withFallback(() => store.userProfile?.displayName, defaultSettings.userProfile.displayName),
         setDisplayName(value: string) {
@@ -354,9 +431,9 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         },
       },
       assistantProfile: {
-        avatar: withFallback(() => store.assistantProfile?.avatar, defaultSettings.assistantProfile.avatar),
+        avatar: withFallback(() => media.assistantAvatar, defaultMedia.assistantAvatar),
         setAvatar(value: string) {
-          setStore("assistantProfile", "avatar", value)
+          setMedia("assistantAvatar", value)
         },
         displayName: withFallback(
           () => store.assistantProfile?.displayName,

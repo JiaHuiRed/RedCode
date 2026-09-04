@@ -10,6 +10,23 @@
 
 ### [未发布]
 
+#### 优化
+
+- **头像与壁纸搬出设置文件，改个字号不再重写 3.4MB**（`packages/app/src/context/settings.tsx`、`utils/persist.ts`，新增 `Persist.media`）：`persisted` 是**写穿**的——每次 setStore 都同步序列化整个 store 并走一条 IPC，主进程那边 electron-store 底下的 conf 对 get 和 set **都**要 readFileSync 整个文件 + JSON.parse（set 还要再 stringify + 原子写）。本机实测 `default.dat` 3.40MB，其中 `settings.v3` 占 3397.9KB，而这 3.4MB 全是四张 base64 JPEG：
+
+  | 字段 | 大小 |
+  |---|---|
+  | `assistantProfile.avatar` | 1331.4 KB |
+  | `appearance.homeBackground` | 754.4 KB |
+  | `userProfile.avatar` | 695.7 KB |
+  | `appearance.chatBackground` | 615.5 KB |
+
+  于是改个字号、换个主题、切个开关，都要把这 3.4MB 在**主进程**上连读带写过一遍；主进程一卡，标题栏拖动、菜单、所有 IPC 一起卡——这也是为什么在渲染进程抓 CPU profile 只看得到 idle。
+
+  改法：四张图挪进自己的 `RedCode.media.dat`（`Persist.media`），高频的小设置写的就只是几 KB。`Settings` 类型与设置页**一行都不用改**，变的只是这四个 accessor 从哪个 store 取值。存量搬家在两个 store 都就绪后跑一次，决策抽成纯函数 `planMediaMigration` 并单测：media 已有值就不覆盖（搬过了，旧值是陈的），但只要旧字段有值就一定清空——**清空这步才是 `default.dat` 真正瘦下来的地方，只搬不清等于留两份**。与 prompt-history 那条（0.10.x 的 `stripPromptHistoryImages`）是同一个病、不同的药：历史里的图是陈年草稿直接剔掉，这里是用户自己设的头像壁纸，必须原样留着。
+
+  **实测否决，别再排期**：性能体检待办里的 A6「shiki 核心改动态 import，首屏 gzip 减约 15%（165KB/440KB）」**前提不成立**。改成动态 import 后重新构建对照，主 chunk 从 1,122.66 kB / gzip 387.46 kB 变成 1,130.50 kB / gzip **389.48 kB——反而大了 2 kB**。原因：`bundledLanguages` 只是一张 `{ 语言名: () => import(...) }` 的懒加载映射表，rollup 早就把每个语言 grammar 切成了独立 chunk（本次构建 406 个 chunk，`cpp-*.js` / `emacs-lisp-*.js` / `java-*.js` 各自成块），主 chunk 里根本没有语言表。动态化只是多包一层 promise。已回退。
+
 #### 修复
 
 - **read 工具的附件分支补上大小上限**（`packages/opencode/src/tool/read.ts`）：此前这里一道上限都没有——`fs.readFile` 读整个文件、base64 编码后直接挂进 attachments，文件多大就吃多大内存（base64 再涨 4/3，photon 解码还要再吃一份 宽×高×4）。
