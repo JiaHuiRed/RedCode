@@ -589,6 +589,58 @@ describe("tool.read truncation", () => {
     }),
   )
 
+  // 260904 cc 附件分支的两道上限。图片走 processor.ts 的 Image.normalize（5MB base64 + 自动降质），
+  // 这里那道 32MB 只是内存闸门；PDF 在 processor 里被 startsWith("image/") 排除、原样透传，
+  // 所以它的线必须画在 read 这里，与图片同一条 5MB base64 预算（反推磁盘 3.75MB）。
+  it.live("oversized PDFs are not inlined; the file is left alone", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      // %PDF- magic + 填充到 4MB，超过 3.75MB 的磁盘线
+      const pdf = Buffer.concat([Buffer.from("%PDF-1.7"), Buffer.alloc(4 * 1024 * 1024, 0x20)])
+      const file = path.join(dir, "big.pdf")
+      yield* put(file, pdf)
+
+      const result = yield* exec(dir, { filePath: file })
+      expect(result.attachments).toBeUndefined()
+      expect(result.output).toContain("PDF not attached")
+      expect(result.output).toContain("cannot be downscaled")
+      expect(result.metadata.truncated).toBe(true)
+      // 文件没被动过
+      expect(Buffer.byteLength(yield* load(file))).toBe(pdf.length)
+    }),
+  )
+
+  it.live("PDFs under the budget are still inlined", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      const pdf = Buffer.concat([Buffer.from("%PDF-1.7"), Buffer.alloc(1024, 0x20)])
+      const file = path.join(dir, "small.pdf")
+      yield* put(file, pdf)
+
+      const result = yield* exec(dir, { filePath: file })
+      expect(result.output).toBe("PDF read successfully")
+      expect(result.attachments?.[0].mime).toBe("application/pdf")
+    }),
+  )
+
+  it.live("oversized images are not inlined either", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      // PNG magic + 填充到 33MB，超过 32MB 的内存闸门
+      const png = Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        Buffer.alloc(33 * 1024 * 1024, 0x00),
+      ])
+      const file = path.join(dir, "huge.png")
+      yield* put(file, png)
+
+      const result = yield* exec(dir, { filePath: file })
+      expect(result.attachments).toBeUndefined()
+      expect(result.output).toContain("Image not attached")
+      expect(result.output).toContain("33.0 MB")
+    }),
+  )
+
   it.live(".fbs files (FlatBuffers schema) are read as text, not images", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped()

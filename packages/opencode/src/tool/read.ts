@@ -26,6 +26,25 @@ const MAX_BYTES_LABEL = `${MAX_BYTES / 1024} KB`
 const SAMPLE_BYTES = Bom.SNIFF_BYTES
 const SUPPORTED_IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"])
 
+// 260904 cc 附件分支的两道上限。此前这里一道都没有：`fs.readFile` 读整个文件、base64 编码后
+// 直接挂进 attachments，文件多大就吃多大内存（base64 再涨 4/3）。
+//
+// **图片和 PDF 的下游待遇完全不同，所以两道线不同**：
+//   · 图片：`processor.ts` 的 tool-result 分支会对每个 `image/*` 附件跑 `Image.normalize`，
+//     那里有 5MB base64 硬上限 + 总像素预算 + JPEG 质量阶梯自动降质，缩不下去就丢掉附件并
+//     告诉模型「omitted」。**进模型上下文这条路本来就有上限**，这里这道纯粹是内存闸门：
+//     photon 解码要吃 宽×高×4 字节，一张 32MB 的 PNG 解出来就是几百 MB。超过它连读都不读。
+//   · PDF：`processor.ts` 那个 `startsWith("image/")` 的条件把 PDF 排除在外，**它原样透传、
+//     不过任何缩减**。所以 PDF 的线必须画在这里，且没有理由比图片的字节预算宽松——用同一条
+//     5MB base64 线，反推回磁盘字节就是 5MB×3/4。图片能被缩放器救，PDF 只能直接拒。
+//
+// 两者超限都不是报错：文件仍在那里，只是不内联。output 说明情况，模型可以换别的方式取。
+const MAX_IMAGE_FILE_BYTES = 32 * 1024 * 1024
+// 与 image.ts 的 MAX_BASE64_BYTES 同源。base64 每 3 字节编成 4 字符，反推磁盘上限。
+const MAX_PDF_BASE64_BYTES = 5 * 1024 * 1024
+const MAX_PDF_FILE_BYTES = Math.floor((MAX_PDF_BASE64_BYTES * 3) / 4)
+const mb = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+
 class ReadStop extends Schema.TaggedErrorClass<ReadStop>()("ReadStop", {}) {}
 
 // --- 折叠重读 ---------------------------------------------------------------
@@ -452,6 +471,27 @@ export const ReadTool = Tool.define(
       const isImage = SUPPORTED_IMAGE_MIMES.has(mime)
 
       if (isImage || isPdfAttachment(mime)) {
+        const isPdf = isPdfAttachment(mime)
+        const size = Number(stat.size)
+        const cap = isPdf ? MAX_PDF_FILE_BYTES : MAX_IMAGE_FILE_BYTES
+        if (size > cap) {
+          const kind = isPdf ? "PDF" : "Image"
+          // 在 readFile 之前返回：超限的文件一个字节都不读进内存。
+          const why = isPdf
+            ? `the ${mb(MAX_PDF_BASE64_BYTES)} attachment budget (PDFs are sent as-is, they cannot be downscaled)`
+            : `the ${mb(cap)} limit for inlining an image`
+          const output = `${kind} not attached: ${filepath} is ${mb(size)}, over ${why}. The file is unchanged on disk.`
+          yield* FileTime.record(ctx.sessionID, filepath)
+          return {
+            title,
+            output,
+            metadata: {
+              preview: output,
+              truncated: true,
+              loaded: loaded.map((item) => item.filepath),
+            },
+          }
+        }
         const bytes = yield* fs.readFile(filepath)
         yield* FileTime.record(ctx.sessionID, filepath)
         const msg = isPdfAttachment(mime) ? "PDF read successfully" : "Image read successfully"
