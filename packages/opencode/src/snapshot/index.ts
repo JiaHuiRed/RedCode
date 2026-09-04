@@ -28,6 +28,18 @@ export const FileDiff = Schema.Struct({
 }).annotate({ identifier: "SnapshotFileDiff" })
 export type FileDiff = typeof FileDiff.Type
 
+// 260904 cc diffFull 的两次 git diff 此前不查退出码（同文件 diff()/diffCached() 都查，唯独它漏）。
+// 快照是 write-tree 出来的游离 tree，cleanup 每小时 `gc --prune=7.days`，超过 7 天的 tree 大概率
+// 已被清掉；此时 git 报 bad object、stdout 为空，diffFull 静默返回 []——上游 summarize 就把
+// session 的 additions/deletions/files 抹成 0，这就是「恢复老会话统计全归零」的根因。
+// 改成显式失败，让调用方分得清「这轮确实没改文件」和「快照没了」。
+export class DiffError extends Schema.TaggedErrorClass<DiffError>()("SnapshotDiffError", {
+  from: Schema.String,
+  to: Schema.String,
+  exitCode: Schema.Number,
+  stderr: Schema.String,
+}) {}
+
 const log = Log.create({ service: "snapshot" })
 const prune = "7.days"
 const limit = 2 * 1024 * 1024
@@ -63,7 +75,7 @@ export interface Interface {
   readonly restore: (snapshot: string) => Effect.Effect<void>
   readonly revert: (patches: Patch[]) => Effect.Effect<void>
   readonly diff: (hash: string) => Effect.Effect<string>
-  readonly diffFull: (from: string, to: string) => Effect.Effect<FileDiff[]>
+  readonly diffFull: (from: string, to: string) => Effect.Effect<FileDiff[], DiffError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@redcode/Snapshot") {}
@@ -702,6 +714,10 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                   [...quote, ...args(["diff", "--no-ext-diff", "--name-status", "--no-renames", from, to, "--", "."])],
                   { cwd: state.directory },
                 )
+                if (statuses.code !== 0) {
+                  log.warn("diffFull failed", { from, to, step: "name-status", exitCode: statuses.code, stderr: statuses.stderr })
+                  return yield* new DiffError({ from, to, exitCode: statuses.code, stderr: statuses.stderr })
+                }
 
                 for (const line of statuses.text.trim().split("\n")) {
                   if (!line) continue
@@ -716,6 +732,10 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                     cwd: state.directory,
                   },
                 )
+                if (numstat.code !== 0) {
+                  log.warn("diffFull failed", { from, to, step: "numstat", exitCode: numstat.code, stderr: numstat.stderr })
+                  return yield* new DiffError({ from, to, exitCode: numstat.code, stderr: numstat.stderr })
+                }
 
                 const rows = numstat.text
                   .trim()

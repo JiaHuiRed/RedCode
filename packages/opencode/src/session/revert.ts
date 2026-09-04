@@ -78,7 +78,11 @@ export const layer = Layer.effect(
       // revert 点消息必在其中，从它（含）截到末尾。
       const revertIndex = all.findIndex((msg) => msg.info.id === rev.messageID)
       const range = revertIndex >= 0 ? all.slice(revertIndex) : []
-      const diffs = yield* summary.computeDiff({ messages: range })
+      // 260904 cc computeDiff 现在会在快照 tree 缺失时显式失败。revert 这里已经把工作树改回去了，
+      // 摘要只是附带产物：拿不到就按空处理（与改前行为一致），别让一次 gc 把整个 revert 打回。
+      const diffs = yield* summary
+        .computeDiff({ messages: range })
+        .pipe(Effect.catchTag("SnapshotDiffError", () => Effect.succeed([] as Snapshot.FileDiff[])))
       yield* storage.write(["session_diff", input.sessionID], diffs).pipe(Effect.ignore)
       yield* bus.publish(Session.Event.Diff, { sessionID: input.sessionID, diff: diffs })
       yield* sessions.setRevert({

@@ -8,6 +8,16 @@
 
 ---
 
+### [未发布]
+
+#### 修复
+
+- **快照 tree 缺失时 `diffFull` 显式失败，不再把会话统计抹成 0**（`packages/opencode/src/snapshot/index.ts`、`session/summary.ts`、`session/revert.ts`）：`diffFull` 里两次 `git diff`（`--name-status` / `--numstat`）此前**不查退出码**——同文件的 `diff()` 与 `diffCached()` 都查，唯独它漏了。快照是 `git write-tree` 出来的游离 tree（无 commit、无 ref），而 cleanup 每小时跑 `gc --prune=7.days`，本机实测 272 个带 step-start 的会话里 259 个首快照已 `missing`（95%）。此时 git 报 bad object、stdout 为空，`diffFull` 静默返回 `[]`，上游 `summarize()` 就把 session 的 additions/deletions/files 用空数组覆盖成 **0**——这就是「打开老会话，增删统计全归零」的根因。
+
+  改法：新增 `Snapshot.DiffError`（tag `SnapshotDiffError`，带 from/to/exitCode/stderr），两处 git 调用退出码非 0 即 `log.warn` + 失败。`summarize()` 捕到它就**什么都不写**（统计保持上一次的真值，`session_diff` 文件、总线事件、消息行都不动）；`revert()` 捕到它按空数组处理（与改前行为一致——revert 已经把工作树改回去了，摘要只是附带产物，别让一次 gc 把整个 revert 打回）。`computeDiff` 的错误通道随之显式化；测试桩 `it.instance` / `withTrackedSnapshot` 对错误通道是泛型的，14 处既有 `diffFull` 测试调用不受影响。新增用例：用全零哈希当 `to`，断言拿到 `SnapshotDiffError` 且 exitCode ≠ 0。
+
+  这一条同时是后面「`(from,to)` 指纹短路」的前置条件：不修它，短路会把一次 gc 后的 `[]` 当成真结果永久缓存。
+
 ### [0.10.12] - 2026-09-04
 
 > 权限弹窗「点不动」定案（潜伏三个月、9-03 第一次被踩上），外加子代理超时不再烧掉已产出的结论。合并了此前 [未发布] 段的两条。

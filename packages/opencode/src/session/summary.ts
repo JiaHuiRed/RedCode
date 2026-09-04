@@ -5,6 +5,9 @@ import { Storage } from "@/storage/storage"
 import * as Session from "./session"
 import { MessageV2 } from "./message-v2"
 import { SessionID, MessageID } from "./schema"
+import * as Log from "@redcode-ai/core/util/log"
+
+const log = Log.create({ service: "session.summary" })
 
 function unquoteGitPath(input: string) {
   if (!input.startsWith('"')) return input
@@ -65,7 +68,9 @@ function unquoteGitPath(input: string) {
 export interface Interface {
   readonly summarize: (input: { sessionID: SessionID; messageID: MessageID }) => Effect.Effect<void>
   readonly diff: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Snapshot.FileDiff[]>
-  readonly computeDiff: (input: { messages: MessageV2.WithParts[] }) => Effect.Effect<Snapshot.FileDiff[]>
+  readonly computeDiff: (
+    input: { messages: MessageV2.WithParts[] },
+  ) => Effect.Effect<Snapshot.FileDiff[], Snapshot.DiffError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@redcode/SessionSummary") {}
@@ -105,7 +110,16 @@ export const layer = Layer.effect(
       const all = yield* sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
       if (!all.length) return
 
-      const diffs = yield* computeDiff({ messages: all })
+      // 260904 cc 快照 tree 被 gc 掉时 diffFull 现在会显式失败（见 snapshot/index.ts 的 DiffError）。
+      // 这里的正确动作是**什么都不写**：session 上的 additions/deletions/files 保持上一次的真值，
+      // 而不是像以前那样拿一个空数组把它们抹成 0。
+      const diffs = yield* computeDiff({ messages: all }).pipe(
+        Effect.catchTag("SnapshotDiffError", (e) => {
+          log.warn("session diff skipped: snapshot missing", { sessionID: input.sessionID, from: e.from, to: e.to })
+          return Effect.succeed(undefined)
+        }),
+      )
+      if (!diffs) return
       yield* sessions.setSummary({
         sessionID: input.sessionID,
         summary: {
@@ -122,7 +136,13 @@ export const layer = Layer.effect(
       )
       const target = messages.find((m) => m.info.id === input.messageID)
       if (!target || target.info.role !== "user") return
-      const msgDiffs = yield* computeDiff({ messages })
+      const msgDiffs = yield* computeDiff({ messages }).pipe(
+        Effect.catchTag("SnapshotDiffError", (e) => {
+          log.warn("turn diff skipped: snapshot missing", { messageID: input.messageID, from: e.from, to: e.to })
+          return Effect.succeed(undefined)
+        }),
+      )
+      if (!msgDiffs) return
       target.info.summary = { ...target.info.summary, diffs: msgDiffs }
       yield* sessions.updateMessage(target.info)
     })

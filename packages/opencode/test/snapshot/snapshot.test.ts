@@ -1000,6 +1000,23 @@ it.instance(
   { git: true },
 )
 
+// 260904 cc 快照 tree 被 gc 掉（或任何 bad object）时必须显式失败，不能静默给 []——
+// 否则上游 summarize 会把会话统计抹成 0。这里用全零哈希模拟一个不存在的 tree。
+it.instance(
+  "diffFull fails loudly when a tree object is missing",
+  withTrackedSnapshot(({ snapshot, before }) =>
+    Effect.gen(function* () {
+      const gone = "0000000000000000000000000000000000000000"
+      // effect v4 没有 Effect.either；flip 把失败翻成成功值，拿到的就是那个 DiffError
+      const err = yield* snapshot.diffFull(before, gone).pipe(Effect.flip)
+      expect(err._tag).toBe("SnapshotDiffError")
+      expect(err.to).toBe(gone)
+      expect(err.exitCode).not.toBe(0)
+    }),
+  ),
+  { git: true },
+)
+
 it.instance(
   "diffFull with binary file changes",
   withTrackedSnapshot(({ tmp, snapshot, before }) =>
