@@ -12,6 +12,25 @@
 
 #### 优化
 
+- **用量看板的聚合按指纹短路**（`packages/opencode/src/session/usage.ts`）：`/session/usage` 的五个聚合查询 WHERE 完全相同，各自把同一批 message 行扫一遍，而**每一条都要读 `message.data`**。本机副本实测该列合计 171MB，光把它读出来就要 1462ms。逐项冷态：
+
+  | 查询 | 冷态 |
+  |---|---|
+  | base | 1664 ms |
+  | daily | 292 ms |
+  | byModel | 296 ms |
+  | dailyByModel | 310 ms |
+  | peakHour | 204 ms |
+  | 合计 | 2766 ms（热态 1307 ms） |
+
+  瓶颈是读 blob，不是 `json_extract` 本身：同一批行不碰 data 只 count 是 **6ms**，一加 role 过滤就跳到 172ms。所以加索引救不了——`sum` 无论如何都要把行读出来。
+
+  改法：加一道指纹，**不碰 data、不带 role 过滤、不带 range 过滤**，只数该项目的 message 行数与最大时间戳，热态中位 **5.55ms**。指纹没变就直接复用上次结果，等于用 5ms 决定那 1.3s 要不要做。任何新消息都会让行数或时间戳之一变化，宁可过度失效也不会漏。只缓存 `range="all"`——7d/30d 的窗口是相对当前时间**滑动**的，message 一行没变、时间往前走结果照样该变，指纹管不住这一维；而 "all" 正好是服务端默认值，也是最贵的那条。缓存有界，16 个项目按 LRU 淘汰。
+
+  **走过但否掉的一条**：`session` 表本来就有 `cost` / `tokens_*` 六个汇总列，实测与 message 实算**逐项 0.00% 差异**、查询只要 2.5ms（快 91 倍）。但它替代不了这里：① 模块头部早写明按天归集不能走 session 表（会话跨天会把今天的量算进创建那天，日线失真）；② `sessions` 计数对不齐——本项目 277 个会话里有 6 个汇总列全 0，其中 **5 个其实有 1 条 assistant 消息**（token 为 0 的失败请求），无论 `count(*)`（277）还是"非零过滤"（271）都复现不了真值 276。所以只做缓存，不改数据来源。
+
+  四条用例钉住：同指纹复用同一个对象引用、新消息后重算、带时间窗的档位不进缓存、`invalidate` 强制重算。
+
 - **输入框按键不再重注册键位层**（`packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`）：`useBindings` 是一个 `createEffect`，它同步调用 `createLayer()`——**在那里面读到的任何信号都成了这个 effect 的依赖**，一变就把整层 dispose 掉再 `registerLayer` 注册回来。输入框原先有个 `cursorVersion` 计数器（内容变化和光标移动各自增一次），四个 `useBindings` 把 `enabled` 写成立即求值的 IIFE 并在里面读它一下，用来强制那几层重算非响应式的 `input.visualCursor.offset`。于是**每一次按键都要重注册四层键位**，而 enabled 的值大多数时候根本没变（光标从第 5 列移到第 6 列，两次都是 false，照样重注册四遍）。
 
   改法：opentui 的 `enabled` 本来就收 `boolean | (() => boolean) | ReactiveMatcher`（`addons/universal/enabled.d.ts`），函数形式会被交给 `ctx.activeWhen`，在**按键判定时**才求值。四处从 IIFE 改成函数后 effect 不再依赖光标，`cursorVersion` 那个计数器连同两处自增一起删掉——惰性求值每次都读最新的 `visualCursor`，比原来靠计数器补触发还准。顺带一提，那四处里有两处的 enabled 压根没读 `visualCursor`，计数器对它们纯属多余。

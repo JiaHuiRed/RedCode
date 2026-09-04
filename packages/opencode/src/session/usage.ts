@@ -221,7 +221,72 @@ export function streaks(days: string[], today: string) {
   return { current, longest }
 }
 
+/**
+ * 260904 cc 指纹短路（黄档 A2）。
+ *
+ * 五个聚合查询的 WHERE 完全相同，各自把同一批 message 行扫一遍，而**每一条都要读
+ * `message.data`**——本机副本实测该列合计 171MB，光把它读出来就要 1462ms。逐项冷态：
+ *     base 1664ms / daily 292 / byModel 296 / dailyByModel 310 / peakHour 204 = 2766ms
+ * （热态 1307ms）。瓶颈是读 blob，不是 `json_extract` 本身：同一批行不碰 data 只 count 是 6ms，
+ * 一加 role 过滤就跳到 172ms。所以加索引救不了——`sum` 无论如何都要把行读出来。
+ *
+ * 指纹**刻意不碰 data、不带 role 过滤、不带 range 过滤**：只数该项目的 message 行数与最大
+ * 时间戳，实测 5ms。任何新消息都会让两者之一变化，于是宁可过度失效也不会漏。
+ */
+function fingerprint(projectID: ProjectID) {
+  return Database.use((db) =>
+    db
+      .select({
+        rows: sql<number>`count(*)`,
+        latest: sql<number>`coalesce(max(${MessageTable.time_created}), 0)`,
+      })
+      .from(MessageTable)
+      .innerJoin(SessionTable, eq(MessageTable.session_id, SessionTable.id))
+      .where(eq(SessionTable.project_id, projectID))
+      .get(),
+  )
+}
+
+// 只缓存 range="all"。7d/30d 的窗口是**相对当前时间滑动**的，message 一行没变、时间往前走
+// 结果照样该变，指纹管不住这一维。而 "all" 正好是服务端的默认值（handlers/session.ts），
+// 也是最贵的那条（没有时间过滤 = 全表）。
+// 有界：一个进程同时开的项目数很小，16 个足够，超了按 LRU 淘汰。
+const CACHE_LIMIT = 16
+const cache = new Map<ProjectID, { rows: number; latest: number; value: ReturnType<typeof compute> }>()
+
+/** 供测试与 revert 之类的写入路径手动作废；正常路径靠指纹自己失效。 */
+export function invalidate(projectID?: ProjectID) {
+  if (projectID === undefined) cache.clear()
+  else cache.delete(projectID)
+}
+
 export function aggregate(input: { projectID: ProjectID; range: Range; now: number }) {
+  if (input.range !== "all") return compute(input)
+
+  const print = fingerprint(input.projectID)
+  const rows = Number(print?.rows ?? 0)
+  const latest = Number(print?.latest ?? 0)
+  const hit = cache.get(input.projectID)
+  if (hit && hit.rows === rows && hit.latest === latest) {
+    // 命中顺带刷新 LRU 位置
+    cache.delete(input.projectID)
+    cache.set(input.projectID, hit)
+    return hit.value
+  }
+
+  const value = compute(input)
+  cache.delete(input.projectID)
+  cache.set(input.projectID, { rows, latest, value })
+  while (cache.size > CACHE_LIMIT) {
+    for (const oldest of cache.keys()) {
+      cache.delete(oldest)
+      break
+    }
+  }
+  return value
+}
+
+function compute(input: { projectID: ProjectID; range: Range; now: number }) {
   const { projectID, range, now } = input
   const overview = base(projectID, range, now)
   const days = daily(projectID, range, now)
