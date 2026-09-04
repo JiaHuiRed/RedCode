@@ -910,6 +910,16 @@ function dataEffortVariants(model: Provider.Model): Record<string, Record<string
 const OPENAI_EFFORTS = ["none", "minimal", ...WIDELY_SUPPORTED_EFFORTS, "xhigh"]
 const OPENAI_GPT5_1_EFFORTS = ["none", ...WIDELY_SUPPORTED_EFFORTS]
 const OPENAI_GPT5_2_PLUS_EFFORTS = [...OPENAI_GPT5_1_EFFORTS, "xhigh"]
+// 260904 cc gpt-5.6 起多一档 `max`。**逐档实测得来，不是推的**（Codex 后端，ChatGPT Plus 账号）：
+//   gpt-5.6-luna / -terra / -sol：none / low / xhigh / max 全部 200，ultra 一律 400
+//   gpt-5.5 / gpt-5.4：max 直接 400「'max' is not supported with the 'gpt-5.5' model」
+// 所以这一档只能挂在 5.6 及以上，不能扩到整个 5.2+。
+//
+// ⚠️ `GET /backend-api/codex/models` 的 supported_reasoning_levels 给 sol 和 terra 列了
+// `ultra`，但实际请求这三个模型一律 400，报文自报的支持集是
+// 「none, minimal, low, medium, high, xhigh, max」。**那个字段不能当实情用**——它要么是
+// 更高订阅档才开放，要么就是名单本身不准。加新档位前一律发一次真请求验，别读字段。
+const OPENAI_GPT5_6_PLUS_EFFORTS = [...OPENAI_GPT5_2_PLUS_EFFORTS, "max"]
 const OPENAI_GPT5_PRO_EFFORTS = ["high"]
 const OPENAI_GPT5_PRO_2_PLUS_EFFORTS = ["medium", "high", "xhigh"]
 const OPENAI_GPT5_CHAT_EFFORTS = ["medium"]
@@ -941,6 +951,7 @@ function versionedGpt5ReasoningEfforts(apiId: string) {
   const version = gpt5Version(apiId)
   if (version === undefined) return undefined
   if (version === 1) return OPENAI_GPT5_1_EFFORTS
+  if (version >= 6) return OPENAI_GPT5_6_PLUS_EFFORTS
   return OPENAI_GPT5_2_PLUS_EFFORTS
 }
 

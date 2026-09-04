@@ -240,3 +240,37 @@ describe("claude 走 openai-compatible 中转", () => {
     expect(variantsOf("glm-5.2")).toEqual(["none", "high", "max"])
   })
 })
+
+// 260904 cc gpt-5.6 的 max 档。**逐档打真请求测出来的**（Codex 后端，ChatGPT Plus）：
+//   gpt-5.6-luna / -terra / -sol：none / low / xhigh / max 全 200，ultra 一律 400
+//   gpt-5.5 / gpt-5.4：max 直接 400「'max' is not supported with the 'gpt-5.5' model」
+// 所以这一档只挂 5.6 及以上。⚠️ `GET /backend-api/codex/models` 的
+// supported_reasoning_levels 给 sol / terra 列了 ultra，实际请求却一律被拒——那个字段
+// 不能当实情，加档位前必须发真请求验。
+describe("gpt-5.6 的 max 档", () => {
+  const gpt = (id: string) => variantsOf(id, "@ai-sdk/openai")
+
+  test("三个 5.6 变体都到 max", () => {
+    for (const id of ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]) {
+      expect(gpt(id)).toEqual(["none", "low", "medium", "high", "xhigh", "max"])
+    }
+  })
+
+  test("一个都不给 ultra —— 三个变体实测全 400", () => {
+    for (const id of ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]) {
+      expect(gpt(id)).not.toContain("ultra")
+    }
+  })
+
+  test("5.5 与 5.4 不给 max —— 实测会 400", () => {
+    for (const id of ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini"]) {
+      expect(gpt(id)).not.toContain("max")
+      expect(gpt(id)).toContain("xhigh")
+    }
+  })
+
+  test("更高版本自动跟上", () => {
+    expect(gpt("gpt-5.7")).toContain("max")
+    expect(gpt("gpt-6.0")).not.toContain("max")
+  })
+})
