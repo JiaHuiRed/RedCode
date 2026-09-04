@@ -1608,7 +1608,10 @@ export function Prompt(props: PromptProps) {
                   return
                 }
                 // 260904 cc 弹窗/对话框期间点到输入框不能把焦点抢回来：上面那个让焦点的 effect
-                // 不订阅 input.focused，抢回去之后它不会再跑，权限弹窗从此整个死掉（实祸）。
+                // 不订阅 input.focused，抢回去之后它不会再跑，弹窗从此收不到任何按键。
+                // 注：当天那次「点不动」的真凶是服务端跨实例找不到 requestID（见 permission/index.ts
+                // 的 owners），不是这里——下面那条 warn 一次都没打出来。这里是同一症状的
+                // 另一条真实路径，独立成立，别因为它没背那口锅就撤掉。
                 if (mustYieldFocus()) return
                 r.target?.focus()
               }}
