@@ -10,6 +10,16 @@
 
 ### [未发布]
 
+#### 新增
+
+- **`effect` skill 从没生效过，现在挪进真正会被播种的目录**（`seed/skills/effect/` → `seed/skill/effect/`）：`seed` 下**单数**的 `skill/` 才是活目录——`project/bootstrap.ts` 从它播种到 `~/.redcode/skill`，`script/sync-home.bat:21` 也拷它；而**复数**的 `skills/` 唯一一次提交是上游改名那回（`dda1a629`，无本仓前缀），本仓从没有任何代码或脚本读过它。里面躺着的 `effect` skill 因此从落地那天起一次都没被加载过。
+
+  同批修好它内容里的过期引用。`.opencode/references/effect-smol` 在文件里出现三次，而 `.opencode` 早在 260805 就改名成 `seed`，并且 `seed/references/effect-smol` 也从来不存在——**正因为没人用这个 skill，路径烂掉了也没人发现**。改成指向实际在盘上的源码：Effect v4 的完整 TypeScript 源码随包分发，读 `packages/<pkg>/node_modules/effect/src/*.ts` 即可（**包级** node_modules，不是仓根），不需要克隆任何外部仓库。顺带补两条本仓踩过的坑：`Effect.either` 在这个 beta 里不存在（拿失败值用 `Effect.flip`）、碰数据库的测试要用 `it.instance` 而不是 `it.effect`（后者不起 `TestInstance`，`session.create` 会撞外键，报错看起来像被测代码的 bug）。
+
+  **模型可见改动的四问**：① 看到什么变了——skill 列表多一条 `effect`（此前模型根本看不到它），description 一并改写，去掉 `effect-smol` 这个误导性的仓名（本仓用的是发布包不是那个开发仓），补上触发条件。② token——常驻部分只有 description，207 字节；全部 skill description 合计 2513 字节 ≈ 838 token，这条占 8.2%。正文 3683 字节**只在 skill 被 load 时**进上下文。③ KV cache——skill 列表在固定前缀里，新增一条会让**从 skill 段起往后的前缀作废一次**；一次性，不是每轮不稳定，之后内容恒定。④ 硬上限——单条正文 3683 字节、description 207 字节，都远低于任何阈值；skill 条目数本身没有硬上限，但那是既有结构且内容全部由本仓自己维护（不像 MCP instructions 那样来自第三方），不是本次引入的缺口。
+
+  复数目录里另一个 `improve-codebase-architecture` 保持原样未动。
+
 #### 优化
 
 - **SSE 事件体按对象缓存，订阅者再多也只序列化一次**（新增 `packages/opencode/src/server/routes/instance/httpapi/handlers/sse-encode.ts`，`handlers/global.ts` 与 `handlers/event.ts` 改用它）：`/event` 与 `/global/event` 都是**每条连接建一条独立的 Stream**、各自 `Stream.map(eventData)`，于是同一个事件对象被 `JSON.stringify` N 遍，N = 当前订阅者数。而 GUI 一个窗口就固定开**两条**流——`context/global-sdk.tsx` 在 onMount 自启动，`context/server-sync.tsx` 在下一帧启动 `server-sdk`，两者都取自同一个 `useServer().current`，连的是同一个 server 的同一个端点。再算上 TUI、第二个窗口、分享服务，N 还会更大；会话 diff 那类事件能到 30MB 级，每多一个订阅者就多一遍全量序列化。
