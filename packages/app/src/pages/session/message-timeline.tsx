@@ -32,6 +32,7 @@ import {
   type UserActions,
 } from "@redcode-ai/ui/message-part"
 import { DiffChanges } from "@redcode-ai/ui/diff-changes"
+import { Seal } from "@redcode-ai/ui/logo"
 import { FileIcon } from "@redcode-ai/ui/file-icon"
 import { Icon } from "@redcode-ai/ui/icon"
 import { IconButton } from "@redcode-ai/ui/icon-button"
@@ -182,7 +183,12 @@ function TimelineThinkingRow(props: {
 
   return (
     <div data-slot="session-turn-thinking" class="flex items-center gap-2">
-      <img src="/mona-loading.gif" alt="loading" class="w-6 h-6 shrink-0" style={{ "image-rendering": "pixelated" }} />
+      {/* 260904 cc 换掉 GitHub 的 mona-loading.gif：这一格是等待期最显眼的位置，摆着别家的
+          吉祥物。尺寸 20px（w-5）与右边仓鼠齐平，用**完整刻本**——哥哥在 16/20/24/32/48
+          五档实物对照里选的，崩口与印边在 20px 仍然立得住（Seal 注释里那条「≤24px 用简化版」
+          是位图管线的判据，浏览器矢量抗锯齿下不成立）。
+          刻意不给它动效——这一行右边已经有 TextShimmer 和仓鼠两处运动，再加一处就是周期性闪动。 */}
+      <Seal class="w-5 h-5 shrink-0 text-[#C8322B] dark:text-[#E4534A]" />
       {/* 260901 cc 一个 part 都没到的时候这行量的是「等供应商首 token」，叫「思考中」是错的
           —— 真在想的时候下面推理块自己会写「思考中」，随后变「已思考」，两处撞名 */}
       <TextShimmer

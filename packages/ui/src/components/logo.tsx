@@ -49,8 +49,10 @@ export const Mark = (props: { class?: string }) => {
  * 260904 cc 标志与看板娘按职能分：**标志负责「认出来」，看板娘负责「有性格」**。
  * 这个组件只放在要在小尺寸、陌生环境里一眼认出是谁的地方（标题栏、通知、页签）；
  * 启动画面、空状态、贴纸那些大面积、有情绪的位置留给赤，别把它塞过去。
- * ≤24px 的位图场景请走 favicon 那套（script/brand/rasterize-mark.mjs 有简化刻本），
- * 矢量在那个尺寸下崩口与细白边只会让边缘发毛。
+ * ≤24px 的**位图**场景请走 favicon 那套（script/brand/rasterize-mark.mjs 有简化刻本）——
+ * 那条判据只对位图成立。260904 拿 16/20/24/32/48 五档实物对照过：浏览器矢量抗锯齿下，
+ * 崩口与印边到 20px 都还立得住，会话等待行（message-timeline.tsx）用的就是 20px 完整刻本。
+ * 16px 才是分界——那一档确实糊，要用请转位图。
  */
 export const Seal = (props: { class?: string }) => {
   return (

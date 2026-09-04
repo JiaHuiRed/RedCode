@@ -18,6 +18,14 @@ if not exist "seed\scripts" (
   echo [sync-scripts] seed\scripts missing - nothing to mirror
   exit /b 0
 )
+rem 260904 cc gate before the wipe: abort if home has scripts that seed does not.
+rem The mirror below is a real rd /s /q, and scripts/ is gitignored in the private repo,
+rem so a home-only file dies silently with nothing to restore it (see 260901 note above,
+rem hooks\pre-commit was wiped once per build for exactly this reason).
+rem Escape hatch: set REDCODE_SYNC_SCRIPTS_FORCE=1 to mirror anyway.
+call bun run script/check-home-scripts-orphans.ts
+if %errorlevel% neq 0 exit /b %errorlevel%
+
 echo [sync-scripts] seed\scripts to %USERPROFILE%\.redcode\scripts
 rem true mirror: wipe first so deleted-in-repo scripts do not linger in home
 if exist "%USERPROFILE%\.redcode\scripts" rd /s /q "%USERPROFILE%\.redcode\scripts" >nul 2>&1
