@@ -43,6 +43,53 @@ export const Mark = (props: { class?: string }) => {
   )
 }
 
+/**
+ * RedCode 主标 · 朱印。源文件在 ../assets/brand/redcode-mark*.svg，这里是 currentColor 刻本。
+ *
+ * 260904 cc 标志与看板娘按职能分：**标志负责「认出来」，看板娘负责「有性格」**。
+ * 这个组件只放在要在小尺寸、陌生环境里一眼认出是谁的地方（标题栏、通知、页签）；
+ * 启动画面、空状态、贴纸那些大面积、有情绪的位置留给赤，别把它塞过去。
+ * ≤24px 的位图场景请走 favicon 那套（script/brand/rasterize-mark.mjs 有简化刻本），
+ * 矢量在那个尺寸下崩口与细白边只会让边缘发毛。
+ */
+export const Seal = (props: { class?: string }) => {
+  return (
+    <svg
+      data-component="logo-seal"
+      classList={ { [props.class ?? ""]: !!props.class } }
+      viewBox="0 0 100 100"
+      xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      aria-label="RedCode"
+    >
+      <mask id="rc-seal-carve">
+        <rect width="100" height="100" fill="#fff" />
+        <path d="M 84,6 L 96,7 L 95,19 Z" fill="#000" />
+        <path
+          d="M 17,17.5 C 38,15.8 62,16.3 83,17.5 C 84.6,32 84.6,68 83,82.5 C 62,83.8 38,83.8 17,82.5 C 15.4,68 15.4,32 17,17.5 Z"
+          fill="none"
+          stroke="#000"
+          stroke-width="3.2"
+        />
+        <polyline
+          points="30,31 49,50 30,69"
+          fill="none"
+          stroke="#000"
+          stroke-width="10.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+        <rect x="56" y="61" width="20" height="8.5" rx="2.5" fill="#000" />
+      </mask>
+      <path
+        d="M 12,9 C 34,6.5 62,7.5 89,9.5 C 92,11 93.5,13 93.5,16 C 95,40 94,66 92.5,90 C 91,92.5 88.5,93.5 85,93.5 C 60,95 34,94 12.5,92.5 C 9,92 7,90 6.5,86.5 C 5,62 5.5,36 7,13 C 7.5,10.5 9,9.2 12,9 Z"
+        fill="currentColor"
+        mask="url(#rc-seal-carve)"
+      />
+    </svg>
+  )
+}
+
 /** RedCode wordmark */
 export const Logo = (props: { class?: string }) => {
   return (

@@ -1,0 +1,27 @@
+<!-- RedCode 主标 · 朱印（A4：手刻边 + 印边留白）
+     配色：#C8322B；深色界面上换 #E4534A。
+     换色只改 fill 那一处；也可把 fill 改成 currentColor 交给 CSS 控制。
+     ≤24px 的场景请改用 redcode-mark-simple.svg（崩口与细白边在小尺寸只会让边缘发毛）。 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="512" height="512"
+     role="img" aria-label="RedCode">
+  <title>RedCode</title>
+  <mask id="rc-carve">
+    <rect width="100" height="100" fill="#fff"/>
+    <!-- 右上角崩口 -->
+    <path d="M 84,6 L 96,7 L 95,19 Z" fill="#000"/>
+    <!-- 印边留白 -->
+    <path d="M 17,17.5 C 38,15.8 62,16.3 83,17.5 C 84.6,32 84.6,68 83,82.5
+             C 62,83.8 38,83.8 17,82.5 C 15.4,68 15.4,32 17,17.5 Z"
+          fill="none" stroke="#000" stroke-width="3.2"/>
+    <!-- 提示符 >_ -->
+    <polyline points="30,31 49,50 30,69" fill="none" stroke="#000" stroke-width="10.5"
+              stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="56" y="61" width="20" height="8.5" rx="2.5" fill="#000"/>
+  </mask>
+  <!-- 印身：四边微鼓，非正矩形 -->
+  <path d="M 12,9 C 34,6.5 62,7.5 89,9.5 C 92,11 93.5,13 93.5,16
+           C 95,40 94,66 92.5,90 C 91,92.5 88.5,93.5 85,93.5
+           C 60,95 34,94 12.5,92.5 C 9,92 7,90 6.5,86.5
+           C 5,62 5.5,36 7,13 C 7.5,10.5 9,9.2 12,9 Z"
+        fill="#C8322B" mask="url(#rc-carve)"/>
+</svg>

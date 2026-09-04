@@ -6,6 +6,7 @@ import { Icon } from "@redcode-ai/ui/icon"
 import { Button } from "@redcode-ai/ui/button"
 import { Tooltip, TooltipKeybind } from "@redcode-ai/ui/tooltip"
 import { useTheme } from "@redcode-ai/ui/theme/context"
+import { Seal } from "@redcode-ai/ui/logo"
 import { IconButtonV2 } from "@redcode-ai/ui/v2/components/icon-button-v2.jsx"
 import { Icon as IconV2 } from "@redcode-ai/ui/v2/components/icon.jsx"
 
@@ -655,7 +656,14 @@ function ChannelIndicator() {
   const platform = usePlatform()
   return (
     <Show when={platform.version}>
-      {(version) => <span class="text-[11px] text-v2-text-text-muted shrink-0 select-none">v{version()}</span>}
+      {(version) => (
+        // 260904 cc 朱印落在版本号旁：标题栏是「陌生环境里一眼认出是谁」的位置，
+        // 用品牌朱红而不是 muted 灰，这一格就是它的署名。
+        <span class="flex items-center gap-1 shrink-0 select-none">
+          <Seal class="size-3 text-[#C8322B] dark:text-[#E4534A]" />
+          <span class="text-[11px] text-v2-text-text-muted">v{version()}</span>
+        </span>
+      )}
     </Show>
   )
 }

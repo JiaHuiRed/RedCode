@@ -3,9 +3,9 @@
   "theme": "mint",
   "name": "@redcode-ai/docs",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#C8322B",
+    "light": "#E4534A",
+    "dark": "#A8281F"
   },
   "favicon": "/favicon-v3.svg",
   "navigation": {

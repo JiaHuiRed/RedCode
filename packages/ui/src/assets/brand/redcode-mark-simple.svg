@@ -1,0 +1,14 @@
+<!-- RedCode 小尺寸标 · 朱印简化版（≤24px 用这个）
+     去掉崩口与印边留白，只留印身与提示符——那两处细节在 16 像素下看不见，
+     留着只会让边缘发毛。这不是另一个标志，是同一个标志的小号刻本。 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="512" height="512"
+     role="img" aria-label="RedCode">
+  <title>RedCode</title>
+  <mask id="rc-carve-s">
+    <rect width="100" height="100" fill="#fff"/>
+    <polyline points="30,31 49,50 30,69" fill="none" stroke="#000" stroke-width="10.5"
+              stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="56" y="61" width="20" height="8.5" rx="2.5" fill="#000"/>
+  </mask>
+  <rect x="7" y="7" width="86" height="86" rx="7" fill="#C8322B" mask="url(#rc-carve-s)"/>
+</svg>
