@@ -18,6 +18,16 @@
 
   这一条同时是后面「`(from,to)` 指纹短路」的前置条件：不修它，短路会把一次 gc 后的 `[]` 当成真结果永久缓存。
 
+#### 优化
+
+- **`summarize()` 按 `(from,to)` 指纹短路：工作树没变的 step 不再重算、不再重写**（`packages/opencode/src/session/summary.ts`、`session/revert.ts`）。`summarize()` 每个 step-finish 跑一次（`processor.ts`），此前每次都无条件做完整条尾巴：两次 `diffFull`（各起 3+ 个 git 子进程、串行排在同一把 gitdir 信号量后面）、`sessions.setSummary`、`session_diff` 文件 `JSON.stringify(x, null, 2)` 全量重写、user 消息行整行重写、两条大 payload 广播。本机副本实测那条 32.5MB 的消息行单次重写 **129ms**，`session_diff` 目录里最大一个文件 33MB——而一轮里多数 step 只读不写，这些活全是重复的。
+
+  依据：git tree 是内容寻址的，工作树没变 `write-tree` 给同一个 hash；`diffFull(from,to)` 只读两棵 tree、不碰工作树，所以 `(from,to)` 不变 ⇒ 结果必然不变。会话级与本轮级各记一个 `(from,to)`，命中时：**会话级**跳过重算 / `setSummary` / 文件重写，但**照发 `Session.Event.Diff`**（TUI 的 Files 侧栏只靠这条事件填充，`tui/context/sync.tsx` 的 `"session.diff"` 分支没有 fetch 兜底，后接入的客户端等的就是它）；**本轮级**直接返回，跳过整行重写与 `message.updated` 大 payload（消息行有库可读，不依赖事件）。
+
+  对抗审查点出的三个坑逐条避开：不 memo `sessionFrom`（每次从 parts 重扫，新会话不会被钉成 undefined）；只在 `diffFull` 成功后写 memo（配合上一条，快照被 gc 后的 `[]` 不会被固化）；有界——会话级条目挂着整份 diffs，LRU 只留 4 个，本轮级只存两个 hash、上限 256。`revert()` 改写 `session_diff` 文件后调用 `SessionSummary.invalidate(sessionID)` 让会话级 memo 失效，否则下一步若恰好命中旧条目会跳过文件重写、留下文件与事件不一致。
+
+  验证：memo 语义（精确匹配 / LRU 淘汰 / 失效）4 条单测；`snapshot-tool-race` 走真实 summarize 路径 1 pass；opencode typecheck 干净。**未做的**：命中率没有在活会话里实测，上面那些是各组件的单项实测成本；`summarize()` 开头那次无 limit 的全会话消息加载（O(步数 × 会话累计 diffs) 的 JSON.parse）这次没动，是下一步。`Session.Event.Diff` 命中时照发意味着 SSE 上那份 30MB 级 stringify 仍在——要摘掉它得先给 TUI 补一个进会话时的 fetch，属于另一件事。
+
 ### [0.10.12] - 2026-09-04
 
 > 权限弹窗「点不动」定案（潜伏三个月、9-03 第一次被踩上），外加子代理超时不再烧掉已产出的结论。合并了此前 [未发布] 段的两条。

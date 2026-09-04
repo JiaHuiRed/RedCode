@@ -84,6 +84,8 @@ export const layer = Layer.effect(
         .computeDiff({ messages: range })
         .pipe(Effect.catchTag("SnapshotDiffError", () => Effect.succeed([] as Snapshot.FileDiff[])))
       yield* storage.write(["session_diff", input.sessionID], diffs).pipe(Effect.ignore)
+      // 260904 cc 文件刚被改写成 revert 点起的范围 diff，会话级指纹 memo 必须失效（见 summary.ts invalidate）
+      SessionSummary.invalidate(input.sessionID)
       yield* bus.publish(Session.Event.Diff, { sessionID: input.sessionID, diff: diffs })
       yield* sessions.setRevert({
         sessionID: input.sessionID,
