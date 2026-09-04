@@ -17,6 +17,14 @@ import { Plugin } from "@/plugin"
 
 const log = Log.create({ service: "permission" })
 
+// 260904 cc 跨实例登记：requestID → 拥有它的那份实例状态。
+// pending 表按实例（目录）分。隔离 worktree 里的子代理发出的 ask 落在 worktree 实例的表里，
+// 而 TUI/GUI 的回复按 workspace 路由，落到的是父目录那个实例——本实例查不到就一律
+// NotFoundError，表现是弹窗点了、按了都没反应。昨天 e3dffe24 只堵了「发错 workspace」
+// 这半边，「同 workspace、不同实例目录」这半边靠这张表：reply 在本实例找不到就按登记
+// 去拥有者那份状态里处理。登记随 pending 同生共死（ask 登记，reply / 中断 / 实例销毁注销）。
+const owners = new Map<PermissionID, State>()
+
 export const Action = PermissionV2.Action.annotate({ identifier: "PermissionAction" })
 export type Action = Schema.Schema.Type<typeof Action>
 
@@ -161,6 +169,7 @@ export const layer = Layer.effect(
             for (const item of state.pending.values()) {
               yield* Deferred.fail(item.deferred, new RejectedError())
             }
+            for (const id of state.pending.keys()) owners.delete(id)
             state.pending.clear()
           }),
         )
@@ -170,7 +179,8 @@ export const layer = Layer.effect(
     )
 
     const ask = Effect.fn("Permission.ask")(function* (input: AskInput) {
-      const { approved, pending } = yield* InstanceState.get(state)
+      const owner = yield* InstanceState.get(state)
+      const { approved, pending } = owner
       const { ruleset, ...request } = input
       let needsAsk = false
 
@@ -217,6 +227,7 @@ export const layer = Layer.effect(
 
       const deferred = yield* Deferred.make<void, RejectedError | CorrectedError>()
       pending.set(id, { info, deferred })
+      owners.set(id, owner)
       yield* bus.publish(Event.Asked, info)
       return yield* Effect.ensuring(
         Deferred.await(deferred),
@@ -228,6 +239,7 @@ export const layer = Layer.effect(
         // 调用点又是 void 不看返回，表现就是「点击和按键都失灵」。
         // delete 返回 false = 正常 reply 路径已经删过并发过事件了，别重复发。
         Effect.suspend(() => {
+          owners.delete(id)
           if (!pending.delete(id)) return Effect.void
           return bus.publish(Event.Replied, {
             sessionID: info.sessionID,
@@ -239,10 +251,16 @@ export const layer = Layer.effect(
     })
 
     const reply = Effect.fn("Permission.reply")(function* (input: ReplyInput) {
-      const { approved, pending } = yield* InstanceState.get(state)
+      const local = yield* InstanceState.get(state)
+      // 本实例没有就查跨实例登记（见文件头 owners）：拿到的是拥有者那份状态，
+      // 下面的 pending / approved 全部对它操作，「始终允许」也记进拥有者。
+      const owner = local.pending.has(input.requestID) ? local : owners.get(input.requestID)
+      if (owner && owner !== local) log.info("reply routed to owning instance", { requestID: input.requestID })
+      const { approved, pending } = owner ?? local
       const existing = pending.get(input.requestID)
       if (!existing) return yield* new NotFoundError({ requestID: input.requestID })
 
+      owners.delete(input.requestID)
       pending.delete(input.requestID)
       yield* bus.publish(Event.Replied, {
         sessionID: existing.info.sessionID,
@@ -258,6 +276,7 @@ export const layer = Layer.effect(
 
         for (const [id, item] of pending.entries()) {
           if (item.info.sessionID !== existing.info.sessionID) continue
+          owners.delete(id)
           pending.delete(id)
           yield* bus.publish(Event.Replied, {
             sessionID: item.info.sessionID,

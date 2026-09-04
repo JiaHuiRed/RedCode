@@ -8,6 +8,19 @@ import { QuestionID } from "./schema"
 
 const log = Log.create({ service: "question" })
 
+// 260904 cc 跨实例登记，与 permission/index.ts 的 owners 同形状同理由：隔离 worktree 里的
+// 子代理提问落在 worktree 实例的 pending 表，回复却路由到父实例，本实例查不到就 NotFound。
+const owners = new Map<QuestionID, State>()
+
+// 本实例没有就查登记；返回要操作的那张 pending 表
+function locate(id: QuestionID, local: State) {
+  if (local.pending.has(id)) return local.pending
+  const owner = owners.get(id)
+  if (!owner) return local.pending
+  log.info("reply routed to owning instance", { requestID: id })
+  return owner.pending
+}
+
 // Schemas — these are pure data; nothing checks class identity (see PR
 // description) so they're plain `Schema.Struct` + type alias. That lets
 // `Question.ask` and other internal sites trust the type contract without a
@@ -144,6 +157,7 @@ export const layer = Layer.effect(
             for (const item of state.pending.values()) {
               yield* Deferred.fail(item.deferred, new RejectedError())
             }
+            for (const id of state.pending.keys()) owners.delete(id)
             state.pending.clear()
           }),
         )
@@ -157,7 +171,8 @@ export const layer = Layer.effect(
       questions: ReadonlyArray<Info>
       tool?: Tool
     }) {
-      const pending = (yield* InstanceState.get(state)).pending
+      const owner = yield* InstanceState.get(state)
+      const pending = owner.pending
       const id = QuestionID.ascending()
       log.info("asking", { id, questions: input.questions.length })
 
@@ -169,11 +184,13 @@ export const layer = Layer.effect(
         tool: input.tool,
       }
       pending.set(id, { info, deferred })
+      owners.set(id, owner)
       yield* bus.publish(Event.Asked, info)
 
       return yield* Effect.ensuring(
         Deferred.await(deferred),
         Effect.sync(() => {
+          owners.delete(id)
           pending.delete(id)
         }),
       )
@@ -183,12 +200,13 @@ export const layer = Layer.effect(
       requestID: QuestionID
       answers: ReadonlyArray<Answer>
     }) {
-      const pending = (yield* InstanceState.get(state)).pending
+      const pending = locate(input.requestID, yield* InstanceState.get(state))
       const existing = pending.get(input.requestID)
       if (!existing) {
         log.warn("reply for unknown request", { requestID: input.requestID })
         return yield* new NotFoundError({ requestID: input.requestID })
       }
+      owners.delete(input.requestID)
       pending.delete(input.requestID)
       log.info("replied", { requestID: input.requestID, answers: input.answers })
       yield* bus.publish(Event.Replied, {
@@ -200,12 +218,13 @@ export const layer = Layer.effect(
     })
 
     const reject = Effect.fn("Question.reject")(function* (requestID: QuestionID) {
-      const pending = (yield* InstanceState.get(state)).pending
+      const pending = locate(requestID, yield* InstanceState.get(state))
       const existing = pending.get(requestID)
       if (!existing) {
         log.warn("reject for unknown request", { requestID })
         return yield* new NotFoundError({ requestID })
       }
+      owners.delete(requestID)
       pending.delete(requestID)
       log.info("rejected", { requestID })
       yield* bus.publish(Event.Rejected, {
