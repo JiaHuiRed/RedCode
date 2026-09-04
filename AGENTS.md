@@ -76,10 +76,9 @@
   6. 标题栏徽章 — 自动注入（`packages/desktop/package.json` → `__RC_VERSION__` 占位符），无需手改
   7. 自检脚本 — `script/check-version-consistency.ts`，build.bat 编译前校验（含全仓同号断言）
 - 文档（版本号/徽章/CHANGELOG/README）可直接改好；**push / 打包 release 需用户确认**。
-- **决策记录 `docs/notes/`，写与查双向**（规则与模板见其 README）：
+- **决策记录 `docs/notes/`，写完必须回链**（规则与模板见其 README）：
   - **写**：非平凡改动同 commit 附 note。判据：一个月后会有人问"当时为什么这么做"就写。CHANGELOG 记 what，note 记 why。
-  - **查**：动一个子系统前、或对"为什么这么设计"存疑时，先 `ls docs/notes/implemented/` 或按主题 grep——已否决的方案在 `rejected/`，别重新发明。
-  - **链**：note 落地时在对应代码头注释/CHANGELOG 条目回链 note 路径——notes 不进上下文，靠链接网被发现。
+  - **链**：note 落地时**必须**在对应代码头注释 / CHANGELOG 条目回链其路径。notes 不进上下文，**只能靠链接网被撞见**——没有回链的 note 等于没写。（此处原有「动子系统前先 ls/grep 查一遍」一条，260904 查库：实际读取 0 次、跑了一个月零命中，已删。那个动作没有触发点，别加回来。）
 - **模型可见改动的四问**（改提示词 / 注入段 / 工具 schema 与 description / 工具输出格式，必答）：在 commit 说明里逐条回答，有 note 的写进 note。
   1. **模型看到什么变了**——加了删了还是移了哪一段，给原文对照。
   2. **token 影响**——固定前缀增减多少（`session/prefix-shape.ts` 能直接量）。
