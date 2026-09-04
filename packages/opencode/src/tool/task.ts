@@ -17,6 +17,7 @@ import { TuiEvent } from "@/cli/cmd/tui/event"
 import { Cause, Clock, Effect, Exit, Option, Schema, Scope } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import * as Log from "@redcode-ai/core/util/log"
 
 export interface TaskPromptOps {
   cancel(sessionID: SessionID): Effect.Effect<void>
@@ -84,6 +85,45 @@ function output(sessionID: SessionID, text: string) {
     "<task_result>",
     text,
     "</task_result>",
+  ].join("\n")
+}
+
+const log = Log.create({ service: "tool.task" })
+
+/**
+ * 260904 cc 超时时把子代理已经产出的东西捞回来。
+ *
+ * `Effect.timeoutOption` 只告诉你「没在时限内完成」，中途产出的一律丢弃。实祸：09-04 一次
+ * explore 审计被 180s 掐断，子会话里已有 6 条助手消息、38 个 part 的真实结论，父会话却只
+ * 收到一句 "timed out"，只能自己从头重做——主备各掐一次，六分钟白烧。
+ *
+ * 子代理的产出本来就落库了（会话在 TUI 里 ctrl+x 就能翻），所以这里不需要新的收集机制，
+ * 读回来即可。给不出内容时（真卡死、一个 token 都没吐）返回 undefined，调用方仍按失败处理。
+ */
+function salvageOutput(sessions: Session.Interface, sessionID: SessionID) {
+  return Effect.gen(function* () {
+    const messages = yield* sessions.messages({ sessionID })
+    const text = messages
+      .filter((item) => item.info.role === "assistant")
+      .flatMap((item) => item.parts.filter((part) => part.type === "text").map((part) => part.text))
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0)
+      .join("\n\n")
+      .trim()
+    return text.length > 0 ? text : undefined
+  }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+}
+
+function timedOutOutput(sessionID: SessionID, salvaged: string, detail: string) {
+  return [
+    `task_id: ${sessionID} (for resuming to continue this task if needed)`,
+    `⚠️ ${detail} The result below is what the subagent had produced before it was cut off —`,
+    "it is INCOMPLETE. Judge whether it covers what you asked; if not, resume the task or redo the",
+    "missing part yourself. Do not present it as a finished investigation.",
+    "",
+    "<partial_task_result>",
+    salvaged,
+    "</partial_task_result>",
   ].join("\n")
 }
 
@@ -307,16 +347,29 @@ export const TaskTool = Tool.define(
 
         // 主模型超时：cancel 当前运行，避免残留的进行中请求继续占住会话
         yield* ops.cancel(nextSession.id).pipe(Effect.ignore)
+
+        // 超时后不再是「一句错误了事」：先把已产出的内容捞回来（见 salvageOutput）。
+        // 捞得到就带着「不完整」的告诫交给父会话，捞不到才按硬失败报。
+        const giveUp = Effect.fn("TaskTool.giveUp")(function* (detail: string) {
+          const salvaged = yield* salvageOutput(sessions, nextSession.id)
+          if (!salvaged) return yield* Effect.fail(new Error(detail))
+          log.warn("subagent timed out, returning partial output", {
+            sessionID: nextSession.id,
+            timeoutMs,
+            chars: salvaged.length,
+          })
+          return timedOutOutput(nextSession.id, salvaged, detail)
+        })
+
         if (next.fallbackModel) {
           const fallback = yield* attempt(next.fallbackModel)
           if (Option.isSome(fallback)) return fallback.value
-          return yield* Effect.fail(
-            new Error(
-              `Subagent timed out after ${timeoutMs}ms on both primary (${model.modelID}) and fallback (${next.fallbackModel.modelID})`,
-            ),
+          yield* ops.cancel(nextSession.id).pipe(Effect.ignore)
+          return yield* giveUp(
+            `Subagent timed out after ${timeoutMs}ms on both primary (${model.modelID}) and fallback (${next.fallbackModel.modelID}).`,
           )
         }
-        return yield* Effect.fail(new Error(`Subagent timed out after ${timeoutMs}ms (no fallback model configured)`))
+        return yield* giveUp(`Subagent timed out after ${timeoutMs}ms (no fallback model configured).`)
       })
 
       // 260903 cc 等父会话空闲的上限。原来是无上限的 300ms 递归：会话若因别的原因永不 idle，
