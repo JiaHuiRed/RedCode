@@ -62,7 +62,15 @@
 
 #### 修复
 
-- **read 工具的附件分支补上大小上限**（`packages/opencode/src/tool/read.ts`）：此前这里一道上限都没有——`fs.readFile` 读整个文件、base64 编码后直接挂进 attachments，文件多大就吃多大内存（base64 再涨 4/3，photon 解码还要再吃一份 宽×高×4）。
+- **删掉 `infra/console.ts` 这条死链——`sst deploy` 此前必崩**（删除 `infra/console.ts`、`sst.config.ts`）：这 302 行是 SaaS 控制台那套的基础设施定义，五个 handler / directory 全部指向 `packages/console/*`，而那个包早在 `78e86454 chore: remove unused SaaS console package` 就被有意删掉了。`sst.config.ts` 的 `run()` 却仍**无条件** `await import("./infra/console.js")`，还把 `stat.url` 当部署输出返回——任何一次 `sst deploy` 都会在解析 handler 路径时崩。CI 不跑 sst，所以这条死链一直没人踩到。
+
+  删之前确认过没有别的消费者：`infra/console.ts` 的四个导出（`database` / `auth` / `stripeWebhook` / `stat`）里只有 `stat` 被 `sst.config.ts` 用，`app.ts` / `enterprise.ts` / `monitoring.ts` 三个 infra 文件既不 import 它也不链接它的资源。要恢复就从 `78e86454` 之前取，连同 `packages/console` 一起。
+
+#### 优化
+
+- **美元汇率的四份拷贝合并成一处**（新增 `packages/core/src/currency.ts`，改 `app/components/session/session-context-format.ts`、`app/pages/home-stats.tsx`、`tui/feature-plugins/home/footer.tsx`、`tui/feature-plugins/sidebar/context.tsx`）：`USD_TO_CNY = 6.72` 此前有四份逐字相同的定义，两份在 GUI 两份在 TUI，全靠注释互相提醒「四处必须同步改」。改过两轮（260731 6.76→6.75、260827 6.75→6.72）都是手工同步四处——**漏一处就会出现同一笔花费在首页和侧栏显示不同金额，而且不会有任何东西报错**。两个包都依赖 `@redcode-ai/core`，常量挪进去，四处改成 import；`home-stats.tsx` 继续 re-export（`home-usage.tsx` 一直从它取，改成直连 core 属于无谓的连带改动）。注意这跟「币种判定」是两回事：某个模型本来就是人民币标价时不该再乘汇率，那一步读 `model.cost.currency`，260827 起已退役 `CNY_PROVIDERS` 硬编码名单。
+
+（`packages/opencode/src/tool/read.ts`）：此前这里一道上限都没有——`fs.readFile` 读整个文件、base64 编码后直接挂进 attachments，文件多大就吃多大内存（base64 再涨 4/3，photon 解码还要再吃一份 宽×高×4）。
 
   **图片和 PDF 的下游待遇完全不同，所以两道线不同**。图片：`session/processor.ts` 的 tool-result 分支会对每个 `image/*` 附件跑 `Image.normalize`，那里有 5MB base64 硬上限、总像素预算、JPEG 质量阶梯自动降质，缩不下去就丢掉附件并告诉模型「omitted」——**进模型上下文这条路本来就有上限**，所以这里新加的 32MB 纯粹是内存闸门，超过它连读都不读。PDF：`processor.ts` 那个 `startsWith("image/")` 的条件把 PDF 排除在外，**它原样透传、不过任何缩减**，所以 PDF 的线必须画在 read 这里，且没有理由比图片的字节预算宽松——用同一条 5MB base64 线，反推回磁盘就是 3.75MB。图片能被缩放器救，PDF 只能直接拒。
 

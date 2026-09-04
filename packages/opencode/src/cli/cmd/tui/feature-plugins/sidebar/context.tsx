@@ -1,4 +1,5 @@
 import type { AssistantMessage } from "@redcode-ai/sdk/v2"
+import { USD_TO_CNY } from "@redcode-ai/core/currency"
 import type { TuiPlugin, TuiPluginApi } from "@redcode-ai/plugin/tui"
 import type { InternalTuiPlugin } from "../../plugin/internal"
 import { createMemo, Show } from "solid-js"
@@ -8,8 +9,8 @@ const id = "internal:sidebar-context"
 // 260615 Red: DeepSeek/Xiaomi/StepFun costs are already in CNY (official pricing), only USD providers need conversion
 // 260827 Red 币种判定改读 model.cost.currency（provider.ts 落定价时写入）：CNY_PRICING 表与
 // config.cost.currency 两条路都会标。名单版每加一个 CNY provider 必漏（stepfun-step-plan 栽过），
-// 与 home/footer.tsx 260730 的改法对齐。汇率 6.76→6.75（260731）→6.72（260827 cc，哥哥给定）。
-const USD_TO_CNY = 6.72
+// 与 home/footer.tsx 260730 的改法对齐。
+// 260904 cc 汇率的四份拷贝已合并到 @redcode-ai/core/currency，改汇率只改那一处。
 
 const money = new Intl.NumberFormat("zh-CN", {
   style: "currency",

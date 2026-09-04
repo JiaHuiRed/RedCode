@@ -4,10 +4,9 @@
 //   总额不是这个数）。面板已搬到主区并改用服务端聚合（home-usage.tsx），这里只留圆环本身。
 import { createMemo, For } from "solid-js"
 
-// 260615 与 session-context-format.ts 的 USD_TO_CNY 保持一致，把跨模型花费统一折算成 ¥ 展示
-// 260731 Karina 汇率 6.76 → 6.75（哥哥给定）
-// 260827 cc 汇率 6.75 → 6.72（哥哥给定）
-export const USD_TO_CNY = 6.72
+// 260904 cc 汇率的四份拷贝已合并到 @redcode-ai/core/currency。这里继续 re-export，
+// 是因为 home-usage.tsx 一直从本模块取它，改成直连 core 属于无谓的连带改动。
+export { USD_TO_CNY } from "@redcode-ai/core/currency"
 
 export type HomeStats = {
   costCNY: number
