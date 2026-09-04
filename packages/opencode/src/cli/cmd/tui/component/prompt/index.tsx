@@ -66,6 +66,9 @@ import { Flag } from "@redcode-ai/core/flag/flag"
 import { type WorkspaceStatus } from "../workspace-label"
 import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useLeaderActive, useOpencodeKeymap } from "../../keymap"
 import { useTuiConfig } from "../../context/tui-config"
+import * as Log from "@redcode-ai/core/util/log"
+
+const log = Log.create({ service: "tui.prompt" })
 
 export type PromptProps = {
   sessionID?: string
@@ -707,6 +710,10 @@ export function Prompt(props: PromptProps) {
     props.ref?.(undefined)
   })
 
+  // 输入框必须让出焦点的三种情形。effect 与 onMouseDown 共用同一判定——
+  // 两处判法不一样就是 260904 那个坑：effect 让了，鼠标又抢回来。
+  const mustYieldFocus = () => props.visible === false || props.disabled || dialog.stack.length > 0
+
   createEffect(() => {
     // 260808 Red: disabled 也要让出焦点。权限/提问弹窗期间输入框现在**保持挂载可见**
     // （见 routes/session/index.tsx 的 visible 备注：卸载会连正在打的字一起销毁），
@@ -714,7 +721,7 @@ export function Prompt(props: PromptProps) {
     // onKeyDown/onPaste 在 disabled 时是 preventDefault 直接吞掉，占着焦点会让弹窗
     // 整个没法操作。让出焦点后按键落到弹窗，输入框只负责把内容留在原地。
     if (!input || input.isDestroyed) return
-    if (props.visible === false || props.disabled || dialog.stack.length > 0) {
+    if (mustYieldFocus()) {
       if (input.focused) input.blur()
       return
     }
@@ -1516,6 +1523,10 @@ export function Prompt(props: PromptProps) {
               onKeyDown={(e: { preventDefault(): void; name?: string; ctrl?: boolean; meta?: boolean }) => {
                 if (props.disabled) {
                   e.preventDefault()
+                  // 走到这里说明 disabled 期间焦点还在输入框上——按设计不该发生（见让焦点的 effect）。
+                  // 记一笔并立刻让出，下一键就能落到弹窗；别让它永久吞键。
+                  log.warn("prompt swallowed key while disabled", { key: e.name })
+                  if (input && !input.isDestroyed && input.focused) input.blur()
                   return
                 }
                 if (!e.ctrl && !e.meta && input && !input.isDestroyed && e.name) {
@@ -1596,6 +1607,9 @@ export function Prompt(props: PromptProps) {
                   keymap.dispatchCommand("prompt.paste")
                   return
                 }
+                // 260904 cc 弹窗/对话框期间点到输入框不能把焦点抢回来：上面那个让焦点的 effect
+                // 不订阅 input.focused，抢回去之后它不会再跑，权限弹窗从此整个死掉（实祸）。
+                if (mustYieldFocus()) return
                 r.target?.focus()
               }}
               focusedBackgroundColor={theme.backgroundElement}
