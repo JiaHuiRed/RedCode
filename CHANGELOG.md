@@ -18,7 +18,7 @@
 
   根因：`Permission` / `Question` 的 `pending` 表挂在 `InstanceState` 上，**按实例目录分**。子代理在隔离 worktree 实例里 `ask`，条目落在那个实例的表里；而 TUI/GUI 的回复按 **workspace** 路由，`runIsolated` 只 provide `InstanceRef` 不动 `WorkspaceRef`——worktree 与父目录**共享同一个 workspace，只有 directory 不同**。于是回复落到父实例，`pending.get` 拿不到，一律 `NotFoundError`。09-03 的 `e3dffe24`（回复原路发回 ask 的那个 workspace）修的是真缺陷，但堵的是「发错 workspace」那半边，对「同 workspace、不同目录」无效。
 
-  改法：模块级 `owners` 登记 `requestID → 拥有它的那份实例状态`，`ask` 时登记，`reply`/`reject`、中断的 `ensuring`、实例销毁的 finalizer 三处注销。`reply` 在本实例找不到就按登记去拥有者那份状态里处理——**先从拥有者的表里删再 resolve**，否则拥有者那边的 `ensuring` 会补发一条假的 reject。「始终允许」也记进拥有者的 `approved`。走到跨实例路径记一条 `reply routed to owning instance`，下次现场一行日志定案。
+  改法：模块级 `owners` 登记 `requestID → 拥有它的那份实例状态`，`ask` 时登记，`reply`/`reject`、中断的 `ensuring`、实例销毁的 finalizer 三处注销。`reply` 在本实例找不到就按登记去拥有者那份状态里处理——**先从拥有者的表里删再 resolve**，否则拥有者那边的 `ensuring` 会补发一条假的 reject。「始终允许」也记进拥有者的 `approved`。走到跨实例路径记一条 `reply routed to owning instance`，下次现场一行日志定案。 三条路径的分诊顺序与各自的日志判据见 `docs/notes/implemented/bug-fix/2026-09-04-permission-popup-dead-cross-instance.md`。
 
   **这个缺陷自 26-06-10 worktree 隔离上线起就潜伏着**，直到 09-03 16:28 第一次真正被走到（`~/.redcode/data/worktree/` 下目录的创建时间是唯一可靠的「何时开始用」证据；08-11 有过一次但那轮没触发权限询问）。
 
