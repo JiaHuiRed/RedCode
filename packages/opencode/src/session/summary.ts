@@ -59,6 +59,17 @@ export function invalidate(sessionID: SessionID) {
   sessionSpans.delete(sessionID)
 }
 
+/** 同 endpoints()，但吃 MessageV2.snapshotParts 的行（已按消息序、分片序排好）。两者语义必须一致。 */
+function spanOf(rows: MessageV2.SnapshotPartRow[]) {
+  let from: string | undefined
+  let to: string | undefined
+  for (const row of rows) {
+    if (!from && row.type === "step-start") from = row.snapshot
+    if (row.type === "step-finish") to = row.snapshot
+  }
+  return from && to ? { from, to } : undefined
+}
+
 /** 从消息 parts 里取 diff 端点：会话/本轮的首个 step-start.snapshot 当 from，最后一个 step-finish.snapshot 当 to */
 function endpoints(messages: MessageV2.WithParts[]) {
   let from: string | undefined
@@ -159,14 +170,27 @@ export const layer = Layer.effect(
       return yield* snapshot.diffFull(span.from, span.to)
     })
 
+    // 260904 cc 快照 tree 被 gc 掉时 diffFull 显式失败（见 snapshot/index.ts 的 DiffError）：
+    // 正确动作是什么都不写，别拿空数组把统计抹成 0。两处 catch 共用这一个。
+    const diffSpan = (span: { from: string; to: string } | undefined, what: string, id: string) =>
+      span
+        ? snapshot.diffFull(span.from, span.to).pipe(
+            Effect.catchTag("SnapshotDiffError", (e) => {
+              log.warn(`${what} diff skipped: snapshot missing`, { id, from: e.from, to: e.to })
+              return Effect.succeed(undefined)
+            }),
+          )
+        : Effect.succeed([] as Snapshot.FileDiff[])
+
     const summarize = Effect.fn("SessionSummary.summarize")(function* (input: {
       sessionID: SessionID
       messageID: MessageID
     }) {
-      const all = yield* sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
-      if (!all.length) return
-
-      const sessionSpan = endpoints(all)
+      // 260904 cc A1-2b：不再 Session.messages() 全量加载。端点只要 step 分片里的两个哈希，
+      // 由 snapshotParts 一条查询给出（user 行的 diffs blob 一个字节不碰）；目标 user 消息的整行
+      // 只在真要重写它时才加载（见下）。
+      const rows = yield* MessageV2.snapshotParts(input.sessionID)
+      const sessionSpan = spanOf(rows)
       const sessionHit = sessionSpan ? sessionSpans.hit(input.sessionID, sessionSpan) : undefined
       if (sessionHit) {
         // 指纹命中：不重算、不写 session 摘要（跨进程别用陈值覆盖新值）、不重写 session_diff 文件。
@@ -174,15 +198,7 @@ export const layer = Layer.effect(
         // "session.diff" 分支，没有 fetch 兜底），后接入的客户端等的就是它。
         yield* bus.publish(Session.Event.Diff, { sessionID: input.sessionID, diff: sessionHit.diffs })
       } else {
-        // 260904 cc 快照 tree 被 gc 掉时 diffFull 现在会显式失败（见 snapshot/index.ts 的 DiffError）。
-        // 这里的正确动作是**什么都不写**：session 上的 additions/deletions/files 保持上一次的真值，
-        // 而不是像以前那样拿一个空数组把它们抹成 0。
-        const diffs = yield* computeDiff({ messages: all }).pipe(
-          Effect.catchTag("SnapshotDiffError", (e) => {
-            log.warn("session diff skipped: snapshot missing", { sessionID: input.sessionID, from: e.from, to: e.to })
-            return Effect.succeed(undefined)
-          }),
-        )
+        const diffs = yield* diffSpan(sessionSpan, "session", input.sessionID)
         if (!diffs) return
         yield* sessions.setSummary({
           sessionID: input.sessionID,
@@ -197,21 +213,18 @@ export const layer = Layer.effect(
         if (sessionSpan) sessionSpans.set(input.sessionID, { ...sessionSpan, diffs })
       }
 
-      const messages = all.filter(
-        (m) => m.info.id === input.messageID || (m.info.role === "assistant" && m.info.parentID === input.messageID),
-      )
-      const target = messages.find((m) => m.info.id === input.messageID)
-      if (!target || target.info.role !== "user") return
+      // 本轮 = 目标 user 消息 + parentID 指向它的 assistant 消息（每 step 一条，prompt.ts 的循环里建）。
+      // user 消息本身没有 step 分片，所以本轮端点全部来自那些 assistant 行。
+      const turnSpan = spanOf(rows.filter((row) => row.parentID === input.messageID))
       // 本轮 (from,to) 没变 ⇒ 消息行里的 summary.diffs 不会变：跳过整行重写（病态行 32MB 一次 129ms）
       // 与随之而来的 message.updated 大 payload。后接入的客户端从库里读消息，不依赖这条事件。
-      const turnSpan = endpoints(messages)
+      // 命中时连目标行都不用加载。
       if (turnSpan && turnSpans.hit(input.messageID, turnSpan)) return
-      const msgDiffs = yield* computeDiff({ messages }).pipe(
-        Effect.catchTag("SnapshotDiffError", (e) => {
-          log.warn("turn diff skipped: snapshot missing", { messageID: input.messageID, from: e.from, to: e.to })
-          return Effect.succeed(undefined)
-        }),
+      const target = yield* MessageV2.get({ sessionID: input.sessionID, messageID: input.messageID }).pipe(
+        Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)),
       )
+      if (!target || target.info.role !== "user") return
+      const msgDiffs = yield* diffSpan(turnSpan, "turn", input.messageID)
       if (!msgDiffs) return
       target.info.summary = { ...target.info.summary, diffs: msgDiffs }
       yield* sessions.updateMessage(target.info)

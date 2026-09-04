@@ -7,7 +7,7 @@ import { Snapshot } from "@/snapshot"
 import { SyncEvent } from "../sync"
 import { Database } from "@/storage/db"
 import { NotFoundError } from "@/storage/storage"
-import { and } from "drizzle-orm"
+import { and, asc, sql } from "drizzle-orm"
 import { desc } from "drizzle-orm"
 import { eq } from "drizzle-orm"
 import { inArray } from "drizzle-orm"
@@ -1118,6 +1118,59 @@ export function recentToolParts(session_id: SessionID, limit: number) {
   }
   return out.reverse()
 }
+
+export type SnapshotPartRow = {
+  messageID: MessageID
+  /** 该分片所属 assistant 消息的 parentID（即本轮的 user 消息）。 */
+  parentID: MessageID | undefined
+  type: "step-start" | "step-finish"
+  snapshot: string
+}
+
+// 260904 cc A1-2b：diff 端点只需要 step-start / step-finish 里的 snapshot 哈希，却一直是靠
+// Session.messages() 把整个会话的 message 行 + part 行全量读出来、逐行 JSON.parse 再扫出来的。
+// user 消息行里躺着 summary.diffs（本机最大单行 32.5MB），summarize 每个 step-finish 跑一次
+// ⇒ 每 step 都把历史所有轮次的 diffs 读回来解析一遍，O(步数 × 会话累计 diffs)。
+// 这里只查 part 表、只在 SQL 里 json_extract 两个字段；JOIN message 拿 time_created（列，不读 data）
+// 与 parentID。**parentID 的 json_extract 只会落在有 step 分片的消息上**——只有 assistant 消息有
+// step 分片，而 assistant 行没有 diffs blob；user 行的 data 一个字节都不碰。
+// 本机最大会话实测：60 行 1.2ms，对照读全部 message.data 85ms + JSON.parse 106ms。
+// 排序按 (message.time_created, message.id, part.id)，与 Session.messages() + hydrate 的顺序一致，
+// 也与本仓「先后用 compareTime，ID 只做 identity」的约定一致（ID 是时间编码且会回绕）。
+export const snapshotParts = Effect.fn("MessageV2.snapshotParts")(function* (sessionID: SessionID) {
+  const rows = Database.use((db) =>
+    db
+      .select({
+        messageID: PartTable.message_id,
+        parentID: sql<string | null>`json_extract(${MessageTable.data}, '$.parentID')`,
+        type: sql<string>`json_extract(${PartTable.data}, '$.type')`,
+        snapshot: sql<string | null>`json_extract(${PartTable.data}, '$.snapshot')`,
+      })
+      .from(PartTable)
+      .innerJoin(MessageTable, eq(MessageTable.id, PartTable.message_id))
+      .where(
+        and(
+          eq(PartTable.session_id, sessionID),
+          sql`json_extract(${PartTable.data}, '$.type') IN ('step-start', 'step-finish')`,
+          sql`json_extract(${PartTable.data}, '$.snapshot') IS NOT NULL`,
+        ),
+      )
+      .orderBy(asc(MessageTable.time_created), asc(MessageTable.id), asc(PartTable.id))
+      .all(),
+  )
+  const out: SnapshotPartRow[] = []
+  for (const row of rows) {
+    if (row.type !== "step-start" && row.type !== "step-finish") continue
+    if (!row.snapshot) continue
+    out.push({
+      messageID: row.messageID,
+      parentID: row.parentID ? MessageID.make(row.parentID) : undefined,
+      type: row.type,
+      snapshot: row.snapshot,
+    })
+  }
+  return out
+})
 
 export const get = Effect.fn("MessageV2.get")(function* (input: { sessionID: SessionID; messageID: MessageID }) {
   const row = Database.use((db) =>

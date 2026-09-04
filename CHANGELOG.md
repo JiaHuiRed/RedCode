@@ -20,6 +20,12 @@
 
 #### 优化
 
+- **`summarize()` 不再每 step 全量加载整个会话**（`packages/opencode/src/session/message-v2.ts` 新增 `snapshotParts`、`session/summary.ts`）：diff 端点只需要 step-start / step-finish 分片里的两个 snapshot 哈希，却一直靠 `Session.messages()` 把整个会话的 message 行 + part 行全量读出、逐行 `JSON.parse` 再扫出来。user 消息行里躺着 `summary.diffs`（本机最大单行 32.5MB），而 `summarize()` 每个 step-finish 跑一次——**每 step 都把历史所有轮次的 diffs 读回来解析一遍，O(步数 × 会话累计 diffs)**。这是 A1 调研定出的每 step 真正的大头，不是行重写。
+
+  改法：`MessageV2.snapshotParts(sessionID)` 一条查询——只查 part 表、在 SQL 里 `json_extract` type/snapshot，JOIN message 拿 `time_created`（列，不读 data）与 `parentID`。**`parentID` 的 `json_extract` 只会落在有 step 分片的消息上，也就是 assistant 行，它们没有 diffs blob；user 行的 data 一个字节都不碰。** 本轮成员改由 `parentID === messageID` 切出（与原来 `Session.messages()` 后的过滤逐字同义：assistant 消息每 step 一条、`parentID` 指向本轮 user 消息）。目标 user 消息的整行只在真要重写它时才 `MessageV2.get` 一次；本轮指纹命中时连这一行都不加载。排序 `(message.time_created, message.id, part.id)`，与 `Session.messages()` + `hydrate` 一致，也守本仓「先后用 compareTime、ID 只做 identity」的约定。
+
+  本机副本实测最大会话（36 条消息 / 32.6MB message.data / 151 个 part）：端点查询 **60 行 1.2ms**；对照原路径读全部 `message.data` 85ms + `JSON.parse` 106ms ≈ **190ms/step**，还没算 hydrate 全部 part。`revert()` 用的 `computeDiff` 保持原样（它本来就只对一段范围算）。新增 DB 夹具用例两条：只出带 snapshot 的 step 分片（无 snapshot 的与 text 分片被滤掉）、按消息时间序 + 分片序、`parentID` 能把本轮切出来；空会话给空表。
+
 - **`summarize()` 按 `(from,to)` 指纹短路：工作树没变的 step 不再重算、不再重写**（`packages/opencode/src/session/summary.ts`、`session/revert.ts`）。`summarize()` 每个 step-finish 跑一次（`processor.ts`），此前每次都无条件做完整条尾巴：两次 `diffFull`（各起 3+ 个 git 子进程、串行排在同一把 gitdir 信号量后面）、`sessions.setSummary`、`session_diff` 文件 `JSON.stringify(x, null, 2)` 全量重写、user 消息行整行重写、两条大 payload 广播。本机副本实测那条 32.5MB 的消息行单次重写 **129ms**，`session_diff` 目录里最大一个文件 33MB——而一轮里多数 step 只读不写，这些活全是重复的。
 
   依据：git tree 是内容寻址的，工作树没变 `write-tree` 给同一个 hash；`diffFull(from,to)` 只读两棵 tree、不碰工作树，所以 `(from,to)` 不变 ⇒ 结果必然不变。会话级与本轮级各记一个 `(from,to)`，命中时：**会话级**跳过重算 / `setSummary` / 文件重写，但**照发 `Session.Event.Diff`**（TUI 的 Files 侧栏只靠这条事件填充，`tui/context/sync.tsx` 的 `"session.diff"` 分支没有 fetch 兜底，后接入的客户端等的就是它）；**本轮级**直接返回，跳过整行重写与 `message.updated` 大 payload（消息行有库可读，不依赖事件）。
