@@ -48,11 +48,33 @@ function mcpToolsCachePath(serverName: string) {
   return path.join(MCP_TOOLS_CACHE_DIR, `${sanitize(serverName)}.json`)
 }
 
-function writeMcpToolsCache(serverName: string, tools: MCPToolDef[]) {
+function writeMcpToolsCache(serverName: string, tools: MCPToolDef[], instructions?: string) {
   try {
     fs.mkdirSync(MCP_TOOLS_CACHE_DIR, { recursive: true })
-    fs.writeFileSync(mcpToolsCachePath(serverName), JSON.stringify({ tools, cachedAt: Date.now() }), "utf-8")
+    fs.writeFileSync(
+      mcpToolsCachePath(serverName),
+      JSON.stringify({ tools, instructions, cachedAt: Date.now() }),
+      "utf-8",
+    )
   } catch {}
+}
+
+/**
+ * 260904 cc MCP 协议 initialize 响应里的 `instructions` 字段——服务器自报的
+ * 「这套工具是干什么的、什么时候该用」。本仓此前完全不读它（全模块零引用），
+ * 模型只能从逐条截断的工具描述里猜整体用途。实测 jcodemunch 提供 931 字符，一直丢在地上。
+ *
+ * 与工具定义走同一份磁盘缓存：**断线期间和连上之后必须拿到同一段文本**，否则系统提示词
+ * 随连接状态抖动，整个前缀缓存会被打掉——与 convertMcpToolCached 那句「description 必须
+ * 字节级一致」是同一条约束。
+ */
+function readMcpInstructionsCache(serverName: string): string | undefined {
+  try {
+    const raw = fs.readFileSync(mcpToolsCachePath(serverName), "utf-8")
+    const parsed = JSON.parse(raw)
+    if (typeof parsed?.instructions === "string" && parsed.instructions.trim()) return parsed.instructions.trim()
+  } catch {}
+  return undefined
 }
 
 function readMcpToolsCache(serverName: string): MCPToolDef[] | undefined {
@@ -382,6 +404,7 @@ interface CreateResult {
   mcpClient?: MCPClient
   status: Status
   defs?: MCPToolDef[]
+  instructions?: string
 }
 
 interface AuthResult {
@@ -396,6 +419,7 @@ interface State {
   status: Record<string, Status>
   clients: Record<string, MCPClient>
   defs: Record<string, MCPToolDef[]>
+  instructions: Record<string, string>
   creating: Set<string>
 }
 
@@ -403,6 +427,8 @@ export interface Interface {
   readonly status: () => Effect.Effect<Record<string, Status>>
   readonly clients: () => Effect.Effect<Record<string, MCPClient>>
   readonly tools: () => Effect.Effect<Record<string, Tool>>
+  /** 各 MCP 服务器自报的用途说明（initialize 的 instructions 字段）；断线时回落磁盘缓存以稳住前缀 */
+  readonly instructions: () => Effect.Effect<{ server: string; text: string }[]>
   readonly prompts: () => Effect.Effect<Record<string, PromptInfo & { client: string }>>
   readonly resources: () => Effect.Effect<Record<string, ResourceInfo & { client: string }>>
   readonly resourceTemplates: () => Effect.Effect<Record<string, ResourceTemplateInfo & { client: string }>>
@@ -701,9 +727,15 @@ export const layer = Layer.effect(
           if (!listed) {
             return yield* Effect.fail(new Error("Failed to get tools"))
           }
-          log.info("create() successfully created client", { key, toolCount: listed.length })
-          writeMcpToolsCache(key, listed)
-          return { mcpClient, status, defs: listed } satisfies CreateResult
+          // 见 readMcpInstructionsCache：服务器级 instructions 与工具定义同批取、同批缓存
+          const instructions = mcpClient.getInstructions()?.trim() || undefined
+          log.info("create() successfully created client", {
+            key,
+            toolCount: listed.length,
+            instructionChars: instructions?.length ?? 0,
+          })
+          writeMcpToolsCache(key, listed, instructions)
+          return { mcpClient, status, defs: listed, instructions } satisfies CreateResult
         }).pipe(
           Effect.catchCause((cause) =>
             Effect.tryPromise(() => mcpClient.close()).pipe(Effect.ignore, Effect.andThen(Effect.failCause(cause))),
@@ -777,6 +809,7 @@ export const layer = Layer.effect(
           status: {},
           clients: {},
           defs: {},
+          instructions: {},
           creating: new Set(),
         }
 
@@ -800,6 +833,7 @@ export const layer = Layer.effect(
               if (result.mcpClient) {
                 s.clients[key] = result.mcpClient
                 s.defs[key] = result.defs!
+                if (result.instructions) s.instructions[key] = result.instructions
                 watch(s, key, result.mcpClient, bridge, mcp.timeout)
               }
             }),
@@ -938,6 +972,7 @@ export const layer = Layer.effect(
     function closeClient(s: State, name: string) {
       const client = s.clients[name]
       delete s.defs[name]
+      delete s.instructions[name]
       if (!client) return Effect.void
       // 260607 Red 杀进程树：stdio server 不响应 stdin close 会变孤儿（gbrain/browsermcp 等）
       const pid = client.transport instanceof StdioClientTransport ? client.transport.pid : null
@@ -959,6 +994,8 @@ export const layer = Layer.effect(
       s.status[name] = { status: "connected" }
       s.clients[name] = client
       s.defs[name] = listed
+      const reconnectInstructions = client.getInstructions()?.trim()
+      if (reconnectInstructions) s.instructions[name] = reconnectInstructions
       watch(s, name, client, bridge, timeout)
       return s.status[name]
     })
@@ -1129,6 +1166,30 @@ export const layer = Layer.effect(
       }
 
       return result
+    })
+
+    /**
+     * 260904 cc 汇总各服务器的 instructions，交给系统提示词单独成块。
+     *
+     * 为什么不拼进工具描述：convertMcpTool 与 convertMcpToolCached 两条路径的 description
+     * 必须字节级一致（260706 Red 的约束），拼进去等于要在两处同步维护同一段文本，
+     * 稍有出入就在断线重连时打掉整个前缀缓存。单独成块没有这个耦合。
+     *
+     * 与 tools() 同样 cache-first：连上的用内存里的，没连上的回落磁盘缓存——**同一台机器上
+     * 连没连上都拿到同一段文本**，系统提示词不随连接状态抖动。顺序按服务器名排序固定，
+     * 否则 Object.entries 的顺序变化会让前缀缓存失效。
+     */
+    const instructions = Effect.fn("MCP.instructions")(function* () {
+      const s = yield* InstanceState.get(state)
+      const config = (yield* cfgSvc.get()).mcp ?? {}
+      const out: { server: string; text: string }[] = []
+      for (const [serverName, cfgEntry] of Object.entries(config)) {
+        if (!isMcpConfigured(cfgEntry) || cfgEntry.enabled === false) continue
+        const text = s.instructions[serverName] ?? readMcpInstructionsCache(serverName)
+        if (text) out.push({ server: serverName, text })
+      }
+      out.sort((a, b) => (a.server < b.server ? -1 : a.server > b.server ? 1 : 0))
+      return out
     })
 
     function collectFromConnected<T extends { name: string }>(
@@ -1395,6 +1456,7 @@ export const layer = Layer.effect(
       status,
       clients,
       tools,
+      instructions,
       prompts,
       resources,
       resourceTemplates,

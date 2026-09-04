@@ -168,6 +168,27 @@ export const layer = Layer.effect(
     const llm = yield* LLM.Service
     const references = yield* Reference.Service
     const events = yield* EventV2Bridge.Service
+
+    /**
+     * 260904 cc MCP 服务器自报用途说明拼成的提示词块。
+     *
+     * MCP 协议 initialize 响应里有 `instructions` 字段，服务器用它说明「这套工具整体是干什么的、
+     * 什么时候该用」。本仓此前完全不读（mcp 模块零引用），模型只能从逐条工具描述里拼凑整体意图——
+     * 而那些描述还会被 tool.definition 钩子截断。实测 jcodemunch 提供 931 字符，一直丢在地上。
+     *
+     * 没有任何服务器提供时返回 undefined，一个字节都不加进前缀。
+     */
+    const mcpGuideText = Effect.fn("SessionPrompt.mcpGuide")(function* () {
+      const list = yield* mcp.instructions().pipe(Effect.catch(() => Effect.succeed([])))
+      if (list.length === 0) return undefined
+      return [
+        "<mcp_server_guides>",
+        "Usage notes published by the connected MCP servers themselves. They describe what each",
+        "server's tools are collectively for and when to reach for them.",
+        ...list.flatMap((item) => ["", `## ${item.server}`, item.text]),
+        "</mcp_server_guides>",
+      ].join("\n")
+    })
     const flags = yield* RuntimeFlags.Service
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
       return {
@@ -1428,14 +1449,18 @@ export const layer = Layer.effect(
             busyEnter === "queue" && turnStart !== undefined
               ? msgs.filter((m) => !(m.info.role === "user" && MessageV2.compareTime(m.info, turnStart) > 0))
               : msgs
-          const [skills, env, instructions, modelMsgs] = yield* Effect.all([
+          const [skills, env, instructions, mcpGuide, modelMsgs] = yield* Effect.all([
             cachedSystem ? Effect.succeed(cachedSystem.skills) : sys.skills(agent),
             cachedSystem ? Effect.succeed(cachedSystem.env) : sys.environment(model),
             cachedSystem ? Effect.succeed(cachedSystem.instructions) : instruction.system().pipe(Effect.orDie),
+            // 260904 cc MCP 服务器自报的用途说明。跟 env/instructions/skills 一样按会话缓存：
+            // 服务器是后台连接的（STARTUP_GRACE 之后陆续连上），不缓存的话同一会话里这段会
+            // 中途出现，把前缀缓存打掉。代价是会话开始后才连上的服务器要等下一个会话才带上说明。
+            cachedSystem ? Effect.succeed(cachedSystem.mcpGuide) : mcpGuideText(),
             MessageV2.toModelMessagesEffect(visibleMsgs, model),
           ])
           if (!cachedSystem) {
-            const systemCache = { sessionID, modelKey, skills, env, instructions }
+            const systemCache = { sessionID, modelKey, skills, env, instructions, mcpGuide }
             const sessionSystem = _caches.system.get(sessionID)
             if (sessionSystem) sessionSystem.set(modelKey, systemCache)
             else _caches.system.set(sessionID, new Map([[modelKey, systemCache]]))
@@ -1453,7 +1478,7 @@ export const layer = Layer.effect(
           const modelMsgsCache = { sessionID, modelKey, messages: [...stabilizedMsgs] }
           if (sessionModelMsgs) sessionModelMsgs.set(modelKey, modelMsgsCache)
           else _caches.modelMsgs.set(sessionID, new Map([[modelKey, modelMsgsCache]]))
-          const system = [...env, ...instructions, ...(skills ? [skills] : [])]
+          const system = [...env, ...instructions, ...(mcpGuide ? [mcpGuide] : []), ...(skills ? [skills] : [])]
           // 260718 Red today's date lives here, not in the cached <env> block above - this
           // section runs fresh every turn (unlike env/instructions/skills, which are cached per
           // session), so only this small tail invalidates the provider's prefix cache once a day

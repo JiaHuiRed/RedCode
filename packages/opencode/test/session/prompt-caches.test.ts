@@ -9,7 +9,9 @@ function seed(sessionID: string) {
   PromptCaches.modelMsgs.set(sessionID, new Map([["p/m", { sessionID, modelKey: "p/m", messages: [{ role: "user", content: "hi" }] }]]))
   PromptCaches.system.set(
     sessionID,
-    new Map([["p/m", { sessionID, modelKey: "p/m", skills: undefined, env: ["env"], instructions: ["ins"] }]]),
+    new Map([
+      ["p/m", { sessionID, modelKey: "p/m", skills: undefined, env: ["env"], instructions: ["ins"], mcpGuide: undefined }],
+    ]),
   )
   PromptCaches.tools.set(sessionID, { sessionID, defs: new Map() })
 }
