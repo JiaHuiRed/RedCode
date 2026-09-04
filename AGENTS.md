@@ -60,6 +60,8 @@
 
 # 本仓红线（通用红线见全局 AGENTS.md）
 
+- **改一个函数前先数它的同形状兄弟。** 无法解释的不对称通常意味着漏了一次抽取，而本仓这件事**已经发生三次**：`edit.ts` 的 replacer 家族，07-22 修了 `fuzzyFindBestMatch`，07-24 号称"补齐其余 5 个"实际漏掉 `BlockAnchorReplacer`，08-19 审计才发现。**"补齐了"这个说法本身要复核——数一遍函数，别信上一次的收尾结论。** 来源：deepseek-harness 的 *unexplained asymmetry usually signals a missed extraction*。
+- **误配置要响。** 自包含的在加载时响，否则在最早能解析的时刻响；**永远不要静默跳过一个解析不到的引用**。0.10.0 修过插件加载的三条静默失败路径（包解析到了但没有 server 入口只有 log.warn、整体超时把所有外置插件一起吞成空数组、`applyPlugin` 抛错处事件被注释掉只剩日志），当时是逐条补，没有立成规矩。
 - **改/删文件前必加载 diagnose skill**：涉及修改、删除、创建文件的操作（包括写日志），先加载 diagnose skill，走完 Phase 1（建反馈循环/交叉验证）→ Phase 3（假设排序确认）→ Phase 6（完成后复盘），确认无误再动手，动手后验证结果。
 
 # 版本与文档
@@ -78,10 +80,11 @@
   - **写**：非平凡改动同 commit 附 note。判据：一个月后会有人问"当时为什么这么做"就写。CHANGELOG 记 what，note 记 why。
   - **查**：动一个子系统前、或对"为什么这么设计"存疑时，先 `ls docs/notes/implemented/` 或按主题 grep——已否决的方案在 `rejected/`，别重新发明。
   - **链**：note 落地时在对应代码头注释/CHANGELOG 条目回链 note 路径——notes 不进上下文，靠链接网被发现。
-- **模型可见改动的三问**（改提示词 / 注入段 / 工具 schema 与 description / 工具输出格式，必答）：在 commit 说明里逐条回答，有 note 的写进 note。
+- **模型可见改动的四问**（改提示词 / 注入段 / 工具 schema 与 description / 工具输出格式，必答）：在 commit 说明里逐条回答，有 note 的写进 note。
   1. **模型看到什么变了**——加了删了还是移了哪一段，给原文对照。
   2. **token 影响**——固定前缀增减多少（`session/prefix-shape.ts` 能直接量）。
   3. **KV cache 影响**——从哪一段起前缀作废，还是完全不动。**这条最容易漏、代价最大**：`19b2bed3`「每轮读盘对比 + system 尾部注入变更通知」就是没答这条落的地，在家实测对命中率造成破坏性损伤后整条回退；`image/image.ts` 的 resize 通知文案至今被钉成"只由尺寸推导、不含时间戳"，同一笔账——掺进去会让同一张历史图每轮生成不同文本，命中率线性掉到 50% 且不自愈。
+  4. **注入项有没有硬上限**——任何进入模型上下文的东西都必须有确定的字节或 token 上限，**没有上限就是缺陷不是待办**。单项超过 1K token 在 commit 里单独点名；超过 10K 要说明为什么不能截断。本仓两次栽在这条：`tool/read.ts` 的文本分支有 `MAX_BYTES = 50KB` 而**图片分支一个上限都没有**（库里最大单条 3.23MB）；`summary.diffs` 无上限写回消息行（单行 32MB，占 message 表 79%）。两处都是"写的时候没人问上限"。来源：codex 的 Model visible context 第 3–5 条。
   段落顺序也算模型可见改动：**移动一段的代价是从它开始往后的整个前缀作废**，不是只有那一段。来源：deepseek-harness 的 "Model Experience 三问" 文档规矩，其 `sparse-first-party-prompt-section-orders` 一条就是在 Consequences 里主动写明了这个作废点。
 
 # 项目指令
@@ -101,6 +104,7 @@
 # 代码规范
 
 - 尽量避免 `try`/`catch` 和 `any`
+- **`catch` 要么处理要么说明**：空 `catch` 必须用一行注释写清它吞掉的是什么、以及为什么别的错误到不了这里；`try` 只包会抛的那一条语句。（`packages/opencode/src` 现有 97 处空的或无说明的 catch，不要求一次清完，新写的必须带说明。）
 - 优先用类型推断、Bun API、函数式数组（`flatMap`、`filter`、`map`）
 - 优先 `const` + 三元/early return，避免 `else`
 - 值只用一次就内联，减少变量
