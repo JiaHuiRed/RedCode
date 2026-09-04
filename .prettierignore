@@ -1,2 +1,17 @@
 sst-env.d.ts
 packages/desktop/src/bindings.ts
+
+# 260904 cc 构建产物不参与格式检查。
+#
+# 此前 `prettier --list-different .` 报 730 个文件不合规，其中 **386 个是
+# packages/desktop/out/ 里的打包 js**——那是 electron-vite 的输出（已被 git 忽略），
+# 压过的代码当然不符合源码格式。它把这个指标的一半以上变成了噪音，也让「给格式化加门禁」
+# 看上去比实际难得多：排掉产物之后，真正的源码（packages/*/src/**.ts/tsx）只有 59 个不合规。
+#
+# 注意 .gitignore 不会被 prettier 自动读取（prettier 3 起只认 .prettierignore），
+# 所以这些即使不进版本库也要在这里再列一遍。
+packages/desktop/out/
+packages/*/dist/
+packages/opencode/dist/
+**/.artifacts/
+**/node_modules/
