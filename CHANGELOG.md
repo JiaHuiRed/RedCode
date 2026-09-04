@@ -12,6 +12,12 @@
 
 #### 优化
 
+- **SSE 事件体按对象缓存，订阅者再多也只序列化一次**（新增 `packages/opencode/src/server/routes/instance/httpapi/handlers/sse-encode.ts`，`handlers/global.ts` 与 `handlers/event.ts` 改用它）：`/event` 与 `/global/event` 都是**每条连接建一条独立的 Stream**、各自 `Stream.map(eventData)`，于是同一个事件对象被 `JSON.stringify` N 遍，N = 当前订阅者数。而 GUI 一个窗口就固定开**两条**流——`context/global-sdk.tsx` 在 onMount 自启动，`context/server-sync.tsx` 在下一帧启动 `server-sdk`，两者都取自同一个 `useServer().current`，连的是同一个 server 的同一个端点。再算上 TUI、第二个窗口、分享服务，N 还会更大；会话 diff 那类事件能到 30MB 级，每多一个订阅者就多一遍全量序列化。
+
+  改法：`eventData` 抽成共用模块并按事件对象 `WeakMap` 缓存。可以缓存的依据是派发路径不拷贝也不改写——`GlobalBus` 是 Node 的 `EventEmitter`，`super.emit` 把同一个对象引用同步派给所有 handler，instance 侧的 `bus.subscribeAll()`（Effect PubSub）同样不拷贝；各连接的 handler 只把它入队，而 `GlobalBus.emit` 里那次 `payload.id` 赋值发生在 `super.emit` **之前**，轮不到订阅者看见半成品。用 `WeakMap` 而不是带上限的 Map：事件对象只要还在某条队列里就活着、条目就在，两条队列都消费完就随对象一起回收，天然有界。心跳与 `server.connected` 每次都是新对象、不会命中，它们本来也不是要省的那部分。四条用例钉住：同对象只序列化一次、不同对象各自序列化、输出形状与 `Sse.Event` 一致、primitive 与 null 照常编码。
+
+  **只做了服务端这一半**：黄档 A4 原本要「两条 SSE 流合一」，客户端那一半没做。那两个 provider 是近乎逐字复制的 724 行（文件里自己的注释就写着「两个文件各有一份几乎相同的重连循环」），各自带重连、心跳、合批、flush，而**整个目录只有一个 `sse-log.test.ts`**，重连与合批逻辑零测试覆盖。在没有测试保护、也无法在本机真跑 GUI 验证的前提下重构 GUI 的核心数据通路不划算。服务端这一半是纯缓存、不改语义，收益（stringify 次数从 N 降到 1）恰好覆盖了原方案里最贵的那部分。
+
 - **用量看板的聚合按指纹短路**（`packages/opencode/src/session/usage.ts`）：`/session/usage` 的五个聚合查询 WHERE 完全相同，各自把同一批 message 行扫一遍，而**每一条都要读 `message.data`**。本机副本实测该列合计 171MB，光把它读出来就要 1462ms。逐项冷态：
 
   | 查询 | 冷态 |

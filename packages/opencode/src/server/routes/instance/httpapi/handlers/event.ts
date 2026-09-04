@@ -6,17 +6,9 @@ import { HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import * as Sse from "effect/unstable/encoding/Sse"
 import { EventApi } from "../groups/event"
+import { eventData } from "./sse-encode"
 
 const log = Log.create({ service: "server" })
-
-function eventData(data: unknown): Sse.Event {
-  return {
-    _tag: "Event",
-    event: "message",
-    id: undefined,
-    data: JSON.stringify(data),
-  }
-}
 
 function eventResponse(bus: Bus.Interface) {
   return Effect.gen(function* () {
