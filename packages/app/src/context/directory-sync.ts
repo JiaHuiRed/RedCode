@@ -626,6 +626,10 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
           const key = keyFor(directory, sessionID)
           if (store.message[sessionID] === undefined) return false
           if (meta.limit[key] === undefined) return false
+          // 260904 cc 内存缓存被 100 条上限砍过的会话，即使分页层认为已拉全也还有东西可回拉。
+          // 这两个来源问的是不同的问题：complete 说的是「服务端还有没有更老的」，
+          // message_trimmed 说的是「已经拿到过但被我们自己扔了」。见 global-sync/types.ts。
+          if (store.message_trimmed[sessionID]) return true
           if (meta.complete[key]) return false
           return !!meta.cursor[key]
         },
@@ -639,8 +643,12 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
           const key = keyFor(directory, sessionID)
           const step = count ?? historyMessagePageSize
           if (meta.loading[key]) return
-          if (meta.complete[key]) return
-          const before = meta.cursor[key]
+          // 260904 cc 被截断过的会话走另一套游标：meta.cursor 停在服务端最后一页的位置，
+          // 对内存里被 shift 掉的那些一无所知，而且 complete 多半已是 true 会直接挡在这里。
+          // 改用现存最旧的那条当 before，往回补的正是被砍掉的那一段。
+          const trimmed = current()[0].message_trimmed[sessionID]
+          if (!trimmed && meta.complete[key]) return
+          const before = trimmed ? current()[0].message[sessionID]?.[0]?.id : meta.cursor[key]
           if (!before) return
 
           await loadMessages({
@@ -652,6 +660,7 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
             before,
             mode: "prepend",
           })
+          if (trimmed) setStore("message_trimmed", sessionID, false)
         },
       },
       evict(sessionID: string, _directory = directory) {

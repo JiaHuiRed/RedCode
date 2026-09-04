@@ -10,6 +10,16 @@
 
 ### [未发布]
 
+#### 修复
+
+- **GUI 超过 100 条的会话不再静默丢历史**（`packages/app/src/context/global-sync/{types,event-reducer,session-cache,child-store}.ts`、`context/directory-sync.ts`）：`event-reducer` 的每会话 100 条上限会把最旧的消息连同 parts 从内存里 `shift` 掉，代码注释写着「历史可经 `loadMore` 随时回拉」——**这句话在修之前不成立**。
+
+  分页层的 `meta.cursor` / `meta.complete` 记的是「服务端给过什么」，对内存里被自己扔掉的那些一无所知。一个已经拉全的会话（`complete === true`）在流式跑过 100 条之后，`history.more()` 第一行就 `if (meta.complete[key]) return false`，「加载更多」根本不出现，`loadMore()` 即使被调用也在同一处早退。结果是消息无声消失、且**没有任何途径拉回来**，除非整页重载。
+
+  改法：state 加一个 `message_trimmed[sessionID]`，截断时标记；`history.more()` 见到标记就返回 true（绕过 `complete`），`loadMore()` 改用**内存里现存最旧的那条**当游标往回补，成功后清标记。`dropSessionCaches` 一并清理该标记，避免会话整体驱逐后留下假阳性。新增两条用例（跨过上限时标记置位 / 未跨过时不动）。⚠️ 已知局限：拉回来之后若会话仍在流式推进，下一条 `message.updated` 会再砍一次；彻底解法是让上限跟着「用户显式加载过的长度」走，未做。
+
+  **同一条待办里的性能那一半（「`message.updated` 定位改 Map」，记为每 step 省约 12ms）经实测否决**：100 条消息的 Solid store 上 `findIndex` 全扫一次 **0.5 µs**，与普通数组同数量级（proxy 几乎不额外收费），要凑够 12ms 得每 step 两万四千次 `message.updated`。定位不是瓶颈，改 Map 属于纯churn，没做。真要追那 12ms，下一个该量的是 `reconcile(info)` 的深比较与它触发的下游重算。
+
 #### 工具链
 
 - **新增 `script/sync-home-scripts.bat`：只做 `seed/scripts` → `~/.redcode/scripts` 的镜像**。`sync-home.bat` 里那两行原地拆出来，`sync-home.bat` 改为 `call` 它，行为不变。

@@ -53,6 +53,13 @@ export type State = {
   session_diff: {
     [sessionID: string]: SnapshotFileDiff[]
   }
+  // 260904 cc 这个会话的内存消息缓存被 MAX_MESSAGES_PER_SESSION 截断过（见 event-reducer）。
+  // 分页层的 cursor/complete 记的是「服务端给过什么」，不知道内存里被砍过——不标这一笔，
+  // 一个已经拉全（complete=true）的会话在流式跑过 100 条之后，history.more() 会一口咬定
+  // 「没有更多」，被砍掉的历史就再也拉不回来了。
+  message_trimmed: {
+    [sessionID: string]: boolean
+  }
   todo: {
     [sessionID: string]: Todo[]
   }

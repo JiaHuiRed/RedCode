@@ -17,6 +17,7 @@ type SessionCache = {
   todo: Record<string, Todo[] | undefined>
   goal: Record<string, Goal | undefined>
   message: Record<string, Message[] | undefined>
+  message_trimmed: Record<string, boolean | undefined>
   part: Record<string, Part[] | undefined>
   permission: Record<string, PermissionRequest[] | undefined>
   question: Record<string, QuestionRequest[] | undefined>
@@ -38,6 +39,9 @@ export function dropSessionCaches(store: SessionCache, sessionIDs: Iterable<stri
 
   for (const sessionID of stale) {
     delete store.message[sessionID]
+    // 260904 cc 整个会话的消息都清了，"被截断过"这个标记也必须跟着走——
+    // 留着会让重新拉全的会话被 history.more() 误判成还有更老的可拉。
+    delete store.message_trimmed[sessionID]
     delete store.todo[sessionID]
     delete store.goal[sessionID]
     delete store.session_diff[sessionID]

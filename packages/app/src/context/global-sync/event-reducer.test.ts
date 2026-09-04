@@ -72,6 +72,7 @@ const baseState = (input: Partial<State> = {}) =>
     sessionTotal: 0,
     session_status: {},
     session_diff: {},
+    message_trimmed: {},
     todo: {},
     goal: {},
     permission: {},
@@ -594,5 +595,57 @@ describe("applyDirectoryEvent", () => {
     })
 
     expect(pushes).toEqual([])
+  })
+
+  // 260904 cc 上限截断把最旧的消息扔出内存，但分页层的 complete/cursor 记的是「服务端给过
+  // 什么」，不知道内存里被砍过。不标 message_trimmed，一个已拉全的会话流式跑过 100 条之后
+  // history.more() 会一口咬定没有更多，被砍掉的历史就再也拉不回来（directory-sync 的
+  // more()/loadMore() 靠这个标记绕过 complete）。
+  test("marks message_trimmed when the per-session cap drops the oldest message", () => {
+    const sessionID = "ses_cap"
+    const seeded = Array.from({ length: 100 }, (_, i) => userMessage(`msg_${String(i).padStart(3, "0")}`, sessionID))
+    const [store, setStore] = createStore(
+      baseState({
+        session: [rootSession({ id: sessionID })],
+        message: { [sessionID]: seeded },
+      }),
+    )
+
+    expect(store.message_trimmed[sessionID]).toBeUndefined()
+
+    applyDirectoryEvent({
+      event: { type: "message.updated", properties: { info: userMessage("msg_100", sessionID) } },
+      store,
+      setStore,
+      push() {},
+      directory: "/tmp",
+      loadLsp() {},
+    })
+
+    expect(store.message[sessionID]).toHaveLength(100)
+    expect(store.message[sessionID][0].id).toBe("msg_001")
+    expect(store.message_trimmed[sessionID]).toBe(true)
+  })
+
+  test("leaves message_trimmed untouched while under the cap", () => {
+    const sessionID = "ses_small"
+    const [store, setStore] = createStore(
+      baseState({
+        session: [rootSession({ id: sessionID })],
+        message: { [sessionID]: [userMessage("msg_000", sessionID)] },
+      }),
+    )
+
+    applyDirectoryEvent({
+      event: { type: "message.updated", properties: { info: userMessage("msg_001", sessionID) } },
+      store,
+      setStore,
+      push() {},
+      directory: "/tmp",
+      loadLsp() {},
+    })
+
+    expect(store.message[sessionID]).toHaveLength(2)
+    expect(store.message_trimmed[sessionID]).toBeUndefined()
   })
 })

@@ -38,6 +38,7 @@ describe("app session cache", () => {
       todo: Record<string, Todo[] | undefined>
       goal: Record<string, Goal | undefined>
       message: Record<string, Message[] | undefined>
+      message_trimmed: Record<string, boolean | undefined>
       part: Record<string, Part[] | undefined>
       permission: Record<string, PermissionRequest[] | undefined>
       question: Record<string, QuestionRequest[] | undefined>
@@ -48,6 +49,7 @@ describe("app session cache", () => {
       todo: { ses_1: [] as Todo[] },
       goal: { ses_1: { text: "g", status: "active", tokens_used: 0, turn_count: 0 } as Goal },
       message: {},
+      message_trimmed: { ses_1: true },
       part: { msg_1: [part("prt_1", "ses_1", "msg_1")] },
       permission: { ses_1: [] as PermissionRequest[] },
       question: { ses_1: [] as QuestionRequest[] },
@@ -57,6 +59,7 @@ describe("app session cache", () => {
     dropSessionCaches(store, ["ses_1"])
 
     expect(store.message.ses_1).toBeUndefined()
+    expect(store.message_trimmed.ses_1).toBeUndefined()
     expect(store.part.msg_1).toBeUndefined()
     expect(store.part_text_accum_delta.prt_1).toBeUndefined()
     expect(store.todo.ses_1).toBeUndefined()
@@ -75,6 +78,7 @@ describe("app session cache", () => {
       todo: Record<string, Todo[] | undefined>
       goal: Record<string, Goal | undefined>
       message: Record<string, Message[] | undefined>
+      message_trimmed: Record<string, boolean | undefined>
       part: Record<string, Part[] | undefined>
       permission: Record<string, PermissionRequest[] | undefined>
       question: Record<string, QuestionRequest[] | undefined>
@@ -82,6 +86,7 @@ describe("app session cache", () => {
     } = {
       session_status: {},
       session_diff: {},
+      message_trimmed: {},
       todo: {},
       goal: {},
       message: { ses_1: [m] },

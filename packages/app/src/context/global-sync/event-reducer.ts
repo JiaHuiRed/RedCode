@@ -294,6 +294,13 @@ export function applyDirectoryEvent(input: {
         pendingOrphanSessions.add(info.sessionID)
       }
       // 260801 Red 每会话消息上限：插入后超出即丢最旧消息 + 其 parts（仿 TUI sync.tsx:271-289）
+      // 260904 cc 顺带标记 message_trimmed。上面那条注释说「历史可经 loadMore 随时回拉」——
+      //   在这一步之前它不成立：分页层的 complete/cursor 记的是服务端给过什么，对内存里
+      //   被 shift 掉的这一条一无所知。一个已经拉全的会话（complete=true）流式跑过 100 条后，
+      //   history.more() 直接 return false，"加载更多"根本不出现，历史静默消失。
+      //   标了这一笔，directory-sync 的 more()/loadMore() 才知道要绕过 complete 再往回拉。
+      //   ⚠️ 已知局限：拉回来之后若会话仍在流式推进，下一条 message.updated 会再砍一次。
+      //   彻底解法是让上限跟着「用户显式加载过的长度」走，不在本次范围内。
       const updated = input.store.message[info.sessionID]
       if (updated.length > MAX_MESSAGES_PER_SESSION) {
         const oldest = updated[0]
@@ -311,6 +318,7 @@ export function applyDirectoryEvent(input: {
               delete draft[oldest.id]
             }),
           )
+          input.setStore("message_trimmed", info.sessionID, true)
         })
       }
       break
