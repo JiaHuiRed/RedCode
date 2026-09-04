@@ -537,11 +537,18 @@ function guardFirstEvent<S, E>(
             Effect.sync(() => {
               state.last = Date.now()
               state.seen = true
-              // tool-call 之后进入本地执行，tool-result / tool-error 回到等网关。
-              // 只认这三个边界：其余事件（含 tool-input-*）都还在网关这一侧。
-              const type = (event as { type?: string })?.type
-              if (type === "tool-call") state.local = true
+              // 260904 cc 整个工具阶段都算本地，不依赖事件顺序。
+              //   第一版只在 `tool-call` 这一个事件上进入本地态。AI SDK 6.0.208 实测确实是
+              //   先 enqueue tool-call 再执行工具，所以第一版逻辑上成立、现场也没被证伪
+              //   （重启后日志里没有任何 idle 超时；截图里那条「123 秒」是重进会话时的旧滚屏）。
+              //   但把正确性押在上游的 enqueue 顺序上没必要：任何 tool-* 输入/调用事件都
+              //   进入本地态，tool-result / tool-error 退出；只有网关才发得出的事件
+              //   （text / reasoning / step-*）也顺带清掉——那说明网关正在说话。
+              const type = (event as { type?: string })?.type ?? ""
+              if (type.startsWith("tool-input-") || type === "tool-call") state.local = true
               else if (type === "tool-result" || type === "tool-error") state.local = false
+              else if (type.startsWith("text-") || type.startsWith("reasoning-") || type.startsWith("step-"))
+                state.local = false
             }),
           ),
         ),
