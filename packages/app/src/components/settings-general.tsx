@@ -283,6 +283,37 @@ export const SettingsGeneral: Component = () => {
   ])
   const currentBusyEnter = createMemo(() => globalSync.data.config.busy_enter ?? "steer")
 
+  // 260903 cc 生图后端。预设只是把 baseURL+model 一次填好的快捷方式，两个字段本身
+  //   始终可编辑 —— 换供应商是改配置不是改代码，这正是它存在的理由。
+  //   密钥不在这里填：走 auth（provider 字段指哪个条目）或 REDCODE_IMAGE_API_KEY，
+  //   免得把密钥写进会被同步、被分享的配置文件。
+  const IMAGE_PRESETS = [
+    {
+      id: "stepfun",
+      label: "StepFun Step Plan",
+      provider: "step_plan",
+      baseURL: "https://api.stepfun.com/step_plan/v1",
+      model: "step-image-edit-2",
+    },
+    {
+      id: "openai",
+      label: "OpenAI",
+      provider: "openai",
+      baseURL: "https://api.openai.com/v1",
+      model: "gpt-image-1",
+    },
+  ] as const
+  const currentImage = createMemo(() => globalSync.data.config.image ?? {})
+  const currentImagePreset = createMemo(
+    () => IMAGE_PRESETS.find((preset) => preset.baseURL === currentImage().baseURL)?.id ?? "custom",
+  )
+  const imagePresetOptions = createMemo(() => [
+    ...IMAGE_PRESETS.map((preset) => ({ value: preset.id as string, label: preset.label })),
+    { value: "custom", label: language.t("settings.general.row.image.custom") },
+  ])
+  const patchImage = (patch: Record<string, string | undefined>) =>
+    globalSync.updateConfig({ image: { ...currentImage(), ...patch } })
+
   const colorSchemeOptions = createMemo((): { value: ColorScheme; label: string }[] => [
     { value: "system", label: language.t("theme.scheme.system") },
     { value: "light", label: language.t("theme.scheme.light") },
@@ -384,6 +415,55 @@ export const SettingsGeneral: Component = () => {
             triggerVariant="settings"
             triggerStyle={{ "min-width": "180px" }}
           />
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.general.row.image.title")}
+          description={language.t("settings.general.row.image.description")}
+        >
+          <Select
+            data-action="settings-image-preset"
+            options={imagePresetOptions()}
+            current={imagePresetOptions().find((o) => o.value === currentImagePreset())}
+            value={(o) => o.value}
+            label={(o) => o.label}
+            onSelect={(option) => {
+              if (!option || option.value === "custom") return
+              const preset = IMAGE_PRESETS.find((item) => item.id === option.value)
+              if (!preset) return
+              patchImage({ provider: preset.provider, baseURL: preset.baseURL, model: preset.model })
+            }}
+            variant="secondary"
+            size="small"
+            triggerVariant="settings"
+            triggerStyle={{ "min-width": "180px" }}
+          />
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.general.row.imageEndpoint.title")}
+          description={language.t("settings.general.row.imageEndpoint.description")}
+        >
+          <div style={{ display: "flex", "flex-direction": "column", gap: "8px", "min-width": "320px" }}>
+            <TextField
+              name="image-base-url"
+              value={currentImage().baseURL ?? ""}
+              placeholder="https://api.stepfun.com/step_plan/v1"
+              onChange={(value) => patchImage({ baseURL: value.trim() || undefined })}
+            />
+            <TextField
+              name="image-model"
+              value={currentImage().model ?? ""}
+              placeholder="step-image-edit-2"
+              onChange={(value) => patchImage({ model: value.trim() || undefined })}
+            />
+            <TextField
+              name="image-provider"
+              value={currentImage().provider ?? ""}
+              placeholder="step_plan"
+              onChange={(value) => patchImage({ provider: value.trim() || undefined })}
+            />
+          </div>
         </SettingsRow>
 
         <SettingsRow

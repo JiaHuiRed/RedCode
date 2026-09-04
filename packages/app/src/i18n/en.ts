@@ -101,6 +101,11 @@ export const dict = {
   "toast.busyEnter.queue.title": "Switched to queue",
   "toast.busyEnter.queue.description": "Messages sent while busy start a fresh turn after the current one ends",
   "toast.busyEnter.failed": "Toggle failed, check backend connection",
+  "settings.general.row.image.title": "Image backend",
+  "settings.general.row.image.description": "Which API the image tool calls. Switching providers is a setting, not a code change.",
+  "settings.general.row.image.custom": "Custom",
+  "settings.general.row.imageEndpoint.title": "Image endpoint",
+  "settings.general.row.imageEndpoint.description": "Base URL, model id, and the auth entry the key comes from. The key itself is not stored here — use auth or REDCODE_IMAGE_API_KEY.",
   "settings.general.row.busyEnter.title": "Busy message delivery",
   "settings.general.row.busyEnter.description":
     "How messages sent while the agent is running are handled; takes effect immediately",

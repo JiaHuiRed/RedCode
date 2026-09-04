@@ -15266,6 +15266,24 @@
           "username": {
             "type": "string"
           },
+          "image": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string"
+              },
+              "baseURL": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "size": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
           "busy_enter": {
             "type": "string",
             "enum": ["steer", "queue"]

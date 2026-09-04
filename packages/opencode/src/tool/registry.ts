@@ -27,6 +27,7 @@ import { WebSearchTool } from "./websearch"
 import { RepoCloneTool } from "./repo_clone"
 import { RepoOverviewTool } from "./repo_overview"
 import { AstGrepTool } from "./ast_grep"
+import { ImageTool } from "./image"
 import { GitTool } from "./git"
 import { EnvTool } from "./env"
 import { RepositoryCache } from "@/reference/repository-cache"
@@ -125,6 +126,7 @@ export const layer = Layer.effect(
     const edit = yield* EditTool
     const greptool = yield* GrepTool
     const astGreptool = yield* AstGrepTool
+    const imagetool = yield* ImageTool
     const gittool = yield* GitTool
     const envtool = yield* EnvTool
     const patchtool = yield* ApplyPatchTool
@@ -227,6 +229,7 @@ export const layer = Layer.effect(
           glob: Tool.init(globtool),
           grep: Tool.init(greptool),
           ast_grep: Tool.init(astGreptool),
+          image: Tool.init(imagetool),
           git: Tool.init(gittool),
           env: Tool.init(envtool),
           edit: Tool.init(edit),
@@ -299,6 +302,7 @@ export const layer = Layer.effect(
             tool.glob,
             tool.grep,
             tool.ast_grep,
+            tool.image,
             tool.git,
             tool.env,
             tool.edit,

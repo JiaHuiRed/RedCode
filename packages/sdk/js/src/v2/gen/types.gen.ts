@@ -1312,6 +1312,12 @@ export type Config = {
   default_agent?: string
   subagent_depth?: number
   username?: string
+  image?: {
+    provider?: string
+    baseURL?: string
+    model?: string
+    size?: string
+  }
   busy_enter?: "steer" | "queue"
   mode?: {
     build?: AgentConfig

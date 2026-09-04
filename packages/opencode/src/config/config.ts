@@ -202,6 +202,25 @@ export const Info = Schema.Struct({
     description: "Custom username to display in conversations instead of the machine hostname",
   }),
   // 260814 Red 繁忙时新消息的送达策略(参考 DSH ui-input-trigger 的排队/插话双模)
+  image: Schema.optional(
+    Schema.Struct({
+      provider: Schema.optional(Schema.String).annotate({
+        description:
+          "Auth entry to take the API key from, by provider id (e.g. 'step_plan'). Falls back to REDCODE_IMAGE_API_KEY when unset.",
+      }),
+      baseURL: Schema.optional(Schema.String).annotate({
+        description:
+          "Base URL of an OpenAI-compatible image API. Generation posts to {baseURL}/images/generations, editing to {baseURL}/images/edits.",
+      }),
+      model: Schema.optional(Schema.String).annotate({ description: "Model id used by the image tool" }),
+      size: Schema.optional(Schema.String).annotate({
+        description: "Default output size, e.g. '1024x1024'. Backends accept different sets; a rejected value is reported as-is.",
+      }),
+    }),
+  ).annotate({
+    description:
+      "Backend for the image tool. Swapping providers is a config change, not a code change — the tool only assumes an OpenAI-shaped /images/generations and /images/edits.",
+  }),
   busy_enter: Schema.optional(Schema.Literals(["steer", "queue"])).annotate({
     description:
       "How a message sent while the agent is busy reaches the model. 'steer' (default): injected into the running turn at the next step, so you can redirect work in flight. 'queue': hidden from the running turn and processed as the input of a fresh turn after the current one finishes.",
