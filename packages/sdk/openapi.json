@@ -6358,6 +6358,22 @@
               "pattern": "^msg"
             },
             "required": false
+          },
+          {
+            "name": "patch",
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string",
+                  "enum": ["true", "false"]
+                }
+              ]
+            },
+            "required": false
           }
         ],
         "responses": {

@@ -602,10 +602,14 @@ export const {
         },
         async sync(sessionID: string) {
           if (fullSyncedSessions.has(sessionID)) return
-          const [session, messages, todo, goal] = await Promise.all([
+          const [session, messages, todo, diff, goal] = await Promise.all([
             sdk.client.session.get({ sessionID }, { throwOnError: true }),
             sdk.client.session.messages({ sessionID, limit: 100 }),
             sdk.client.session.todo({ sessionID }),
+            // 260904 cc 只拉元数据（patch=false），Files 侧栏只要文件名与增删数。260903 因为带正文的那份
+            // 能到 33MB、卡 23s 把这条 fetch 删了；此后侧栏只靠 session.diff 事件填充，服务端为此
+            // 在指纹命中时也照发大 payload。现在 fetch 回来了、事件只在 diff 真变时才发。
+            sdk.client.session.diff({ sessionID, patch: false }).catch(() => undefined),
             // 没钉目标时服务端 404，这是常态不是错误
             sdk.client.session.goal({ sessionID }).catch(() => undefined),
           ])
@@ -622,6 +626,7 @@ export const {
                 draft.part[message.info.id] = message.parts
               }
               draft.message[sessionID] = infos
+              if (diff?.data) draft.session_diff[sessionID] = sidebarDiff(diff.data)
             }),
           )
           fullSyncedSessions.add(sessionID)

@@ -142,7 +142,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       query: typeof DiffQuery.Type
     }) {
-      return yield* summary.diff({ sessionID: ctx.params.sessionID, messageID: ctx.query.messageID })
+      return yield* summary.diff({ sessionID: ctx.params.sessionID, messageID: ctx.query.messageID, patch: ctx.query.patch })
     })
 
     // 260901 cc 轮次目录。刻意**不经过 requireSession** —— 会话不存在时返回空目录即可，

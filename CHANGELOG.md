@@ -34,6 +34,18 @@
 
   验证：memo 语义（精确匹配 / LRU 淘汰 / 失效）4 条单测；`snapshot-tool-race` 走真实 summarize 路径 1 pass；opencode typecheck 干净。**未做的**：命中率没有在活会话里实测，上面那些是各组件的单项实测成本；`summarize()` 开头那次无 limit 的全会话消息加载（O(步数 × 会话累计 diffs) 的 JSON.parse）这次没动，是下一步。`Session.Event.Diff` 命中时照发意味着 SSE 上那份 30MB 级 stringify 仍在——要摘掉它得先给 TUI 补一个进会话时的 fetch，属于另一件事。
 
+- **每轮 / 每会话的 patch 正文加总量上限；TUI 进会话只拉元数据；指纹命中不再广播；session_diff 孤儿文件跟着会话删**（A1 第 3/4/5 步，`packages/opencode/src/session/summary.ts`、`session/revert.ts`、`session/session.ts`、新增 `session/session-diff-gc.ts`、`server/routes/instance/httpapi/{groups,handlers}/session.ts` + `public.ts`、`cli/cmd/tui/context/sync.tsx`、`index.ts`、SDK 生成物）。
+
+  **上限（第 3 步）**：副本实测 1,920 条带 diffs 的 user 行，本轮 patch 总量 p50 14KB / p90 158KB / p99 1.0MB / 最大 30.7MB；最大那条是 **6,526 个文件、单文件最大 377KB**——snapshot 里那道 256KB 的单文件上限管不住「文件多」，所以按总量管。`capPatches(diffs, limit)`：超限**不丢文件条目**，file/additions/deletions/status 全留，只把最大的几个 patch 清成 `""`（snapshot 对二进制 / 超大文件早就在用的「没有正文」记号，`app/utils/diffs.ts` 与 `ui/session-diff.ts` 两侧都认）。本轮 1MB（只碰 1.1% 的轮次、拿掉 28% 的字节），会话级 4MB；`revert()` 改写 session_diff 时走同一道。统计从完整结果算，增删数不受影响。**只对新写入生效，存量一行不动**——不做 schema 迁移是定案（三方案迁移机制全 fatal、95% 历史快照已 missing）。
+
+  **TUI fetch 回来（第 4 步）**：diff 端点新增 `?patch=false`，只回元数据（OpenAPI 覆盖表登记为 boolean，SDK 侧 `patch?: boolean | "true" | "false"`，与 `roots` 同款）。260903 因为带正文的那份能到 33MB、TUI 卡 23s 把进会话的 fetch 删了，此后 Files 侧栏只靠 `session.diff` 事件填充，服务端不得不在指纹命中时也照发大 payload。现在 `sync()` 用 `patch: false` 拉一次填侧栏；`summarize()` 会话级命中时**不再广播**，事件只在 diff 真变时才发——SSE 上那份 30MB 级 stringify ×2/订阅者 随之消失。会话级 memo 不再挂整份 diffs，两级都只存两个 hash、LRU 各 256。
+
+  **孤儿（第 5 步）**：`Session.remove` 此前只删库行不删 `storage/session_diff/<id>.json`，本机 615 个文件里 **178 个（21.7MB）** 是已删会话的孤儿。remove 现在跟着删；`SessionDiffGc.sweep()` 在 CLI 入口（JSON→DB 迁移之后）每次启动跑一遍补历史欠账，几毫秒、不阻塞命令。两道保险都冲着「测试洗掉 live 数据」那族事故：只挂在 CLI 入口不挂 Layer（测试构建 Session layer 碰不到它）；库里一个会话都没有就什么都不删（空库时「全是孤儿」大概率是目录指错了）。量过「美化重写」那条：前 40 个大文件 pretty 68.2MB vs compact 67.5MB，**空白只占 1%，不值得改**——真成本是重写本身，已被指纹短路挡掉。
+
+  **顺带**：`from === to` 直接给空 diff，不再起 2 个 git 进程去证明恒等式。
+
+  验证：`capPatches` 4 条（不超限原样返回 / 最大优先清空 / 连清多个 / 按字节不按码元）、`diff({patch:false})` 去正文留元数据、`Session.remove` 删文件、TUI sync 断言改成「只请求不带正文的那种」；summary-snapshot-parts / snapshot-tool-race / snapshot / httpapi-session 全过；`revert-compact` 那两条红是基线就红的存量（stash 对照过，`docs/agent-roles-plan.md` 也记着）；opencode + sdk typecheck 干净。live 上跑了一次 sweep：615 → 437 个文件。**未做的**：UI 对被清空的 patch 没有专门提示（展开就是空 diff，与超大文件今天的表现一致）；4MB 会话级上限会让「大会话 review 面板里最大的几个文件没正文」，要提示得动 `FileDiff` schema，本批不做。
+
 ### [0.10.12] - 2026-09-04
 
 > 权限弹窗「点不动」定案（潜伏三个月、9-03 第一次被踩上），外加子代理超时不再烧掉已产出的结论。合并了此前 [未发布] 段的两条。

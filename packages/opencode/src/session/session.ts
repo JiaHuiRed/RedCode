@@ -711,6 +711,8 @@ export const layer: Layer.Layer<
             .pipe(Effect.catch(() => Effect.void))
         }
         yield* sync.remove(sessionID)
+        // 260904 cc storage 里那份 session_diff/<id>.json 跟着删——此前从不清理，本机 615 个文件里 186 个（22MB）是已删会话的孤儿
+        yield* storage.remove(["session_diff", sessionID]).pipe(Effect.ignore)
       } catch (e) {
         log.error(e)
       }

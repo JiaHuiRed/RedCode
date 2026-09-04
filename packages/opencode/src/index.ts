@@ -34,6 +34,7 @@ import path from "path"
 import { Global } from "@redcode-ai/core/global"
 import { JsonMigration } from "@/storage/json-migration"
 import { Database } from "@/storage/db"
+import { SessionDiffGc } from "@/session/session-diff-gc"
 import { errorMessage } from "./util/error"
 import { PluginCommand } from "./cli/cmd/plug"
 import { DoctorCommand } from "./cli/cmd/doctor"
@@ -153,6 +154,8 @@ const cli = yargs(args)
       }
       process.stderr.write("Database migration complete." + EOL)
     }
+    // 260904 cc 已删会话留下的 session_diff 孤儿文件，启动时顺手清（见模块头两道保险）；不阻塞命令
+    void SessionDiffGc.sweep().catch((e) => Log.Default.warn("session_diff gc failed", { error: errorMessage(e) }))
   })
   .usage("")
   .completion("completion", "generate shell completion script")

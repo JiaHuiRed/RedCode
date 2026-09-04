@@ -6781,6 +6781,7 @@ export type SessionDiffData = {
     directory?: string
     workspace?: string
     messageID?: string
+    patch?: boolean | "true" | "false"
   }
   url: "/session/{sessionID}/diff"
 }

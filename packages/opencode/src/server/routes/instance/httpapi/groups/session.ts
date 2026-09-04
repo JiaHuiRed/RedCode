@@ -40,6 +40,9 @@ export const ListQuery = Schema.Struct({
 export const DiffQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
   ...Struct.omit(SessionSummary.DiffInput.fields, ["sessionID"]),
+  // 260904 cc patch=false 只回 file/additions/deletions/status。TUI 进会话填 Files 侧栏用：
+  // 病态会话那份 diff 33MB，带正文拉一次 TUI 卡 23s（260903 因此把进会话的 fetch 删掉了）。
+  patch: Schema.optional(QueryBoolean),
 })
 export const MessagesQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,

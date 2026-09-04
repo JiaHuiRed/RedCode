@@ -19,7 +19,8 @@ function branchEvent(branch: string, workspace?: string): GlobalEvent {
 }
 
 describe("tui sync", () => {
-  test("opening a session does not eagerly fetch its full diff", async () => {
+  // 260904 cc 进会话的 diff fetch 回来了，但只拉元数据（patch=false）：断言从「不请求」改成「只请求不带正文的那种」。
+  test("opening a session fetches its diff without patch bodies", async () => {
     const previous = Global.Path.state
     await using tmp = await tmpdir()
     Global.Path.state = tmp.path
@@ -36,7 +37,7 @@ describe("tui sync", () => {
     }
     const { app, sync } = await mount((url) => {
       if (!url.pathname.startsWith(`/session/${sessionID}`)) return undefined
-      requests.push(url.pathname)
+      requests.push(url.pathname + url.search)
       if (url.pathname === `/session/${sessionID}`) return json(sessionPayload)
       if (url.pathname === `/session/${sessionID}/message`) return json([])
       if (url.pathname === `/session/${sessionID}/todo`) return json([])
@@ -45,7 +46,9 @@ describe("tui sync", () => {
     })
     try {
       await sync.session.sync(sessionID)
-      expect(requests).not.toContain(`/session/${sessionID}/diff`)
+      const diffs = requests.filter((r) => r.startsWith(`/session/${sessionID}/diff`))
+      expect(diffs).toHaveLength(1)
+      expect(new URL(diffs[0]!, "http://test").searchParams.get("patch")).toBe("false")
     } finally {
       app.renderer.destroy()
       Global.Path.state = previous
