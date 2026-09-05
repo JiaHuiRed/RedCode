@@ -12,6 +12,7 @@ import { List } from "@redcode-ai/ui/list"
 import { Tooltip } from "@redcode-ai/ui/tooltip"
 import { ModelTooltip } from "./model-tooltip"
 import { useLanguage } from "@/context/language"
+import { useServerSync } from "@/context/server-sync"
 
 const isFree = (provider: string, cost: { input: number } | undefined) =>
   provider === "redcode" && (!cost || cost.input === 0)
@@ -105,6 +106,7 @@ export function ModelSelectorPopover(props: {
     dismiss: null,
   })
   const dialog = useDialog()
+  const globalSync = useServerSync()
 
   const close = (dismiss: Dismiss) => {
     setStore("dismiss", dismiss)
@@ -130,6 +132,7 @@ export function ModelSelectorPopover(props: {
     <Kobalte
       open={store.open}
       onOpenChange={(next) => {
+        if (next) globalSync.wantProviderCatalog()
         if (next) setStore("dismiss", null)
         setStore("open", next)
       }}
@@ -200,6 +203,7 @@ export function ModelSelectorPopover(props: {
 export const DialogSelectModel: Component<{ provider?: string; model?: ModelState }> = (props) => {
   const dialog = useDialog()
   const language = useLanguage()
+  useServerSync().wantProviderCatalog()
 
   const provider = () => {
     void import("./dialog-select-provider").then((x) => {

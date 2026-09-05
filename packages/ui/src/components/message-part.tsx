@@ -1341,12 +1341,18 @@ export const ToolRegistry = {
  * 放在 ToolPart 这一层而不是某个工具的 render 里：任何工具返回图片都能显示，
  * 子代理/嵌套调用同理，不必逐个工具接线。非图片附件不管——工具正文里通常已有交代。
  */
-function ToolAttachmentImages(props: { attachments?: FilePart[] }) {
+function ToolAttachmentImages(props: { attachments?: FilePart[]; filepath?: string }) {
   const dialog = useDialog()
   const i18n = useI18n()
+  const openFile = useFileOpen()
   const images = createMemo(() => (props.attachments ?? []).filter((file) => kind(file) === "image"))
 
   const open = (index: number) => {
+    if (props.filepath && openFile) {
+      openFile(props.filepath)
+      return
+    }
+
     const list = images()
     const items = list.map((file) => ({ src: file.url, alt: file.filename }))
     if (items.length > 1) {
@@ -1438,6 +1444,11 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     if (typeof value === "string" && value) return value
     return taskId()
   })
+  const imageFilepath = createMemo(() => {
+    if (part().tool !== "image") return
+    const value = partMetadata().filepath
+    return typeof value === "string" && value ? value : undefined
+  })
 
   const render = createMemo(() => ToolRegistry.render(part().tool) ?? GenericTool)
 
@@ -1484,7 +1495,10 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               deferContent={props.deferToolContent}
               attachments={(part().state as { attachments?: FilePart[] }).attachments}
             />
-            <ToolAttachmentImages attachments={(part().state as { attachments?: FilePart[] }).attachments} />
+            <ToolAttachmentImages
+              attachments={(part().state as { attachments?: FilePart[] }).attachments}
+              filepath={imageFilepath()}
+            />
           </Match>
         </Switch>
       </div>
@@ -1841,6 +1855,47 @@ ToolRegistry.register({
           )}
         </For>
       </>
+    )
+  },
+})
+
+ToolRegistry.register({
+  name: "image",
+  render(props) {
+    const openFile = useFileOpen()
+    const i18n = useI18n()
+    const filepath = createMemo(() => {
+      const value = props.metadata?.filepath
+      return typeof value === "string" && value ? value : undefined
+    })
+    const mode = createMemo(() => {
+      const value = props.metadata?.mode
+      return typeof value === "string" && value ? value : undefined
+    })
+    const open = () => {
+      const path = filepath()
+      if (!path || !openFile) return
+      openFile(path)
+    }
+
+    return (
+      <BasicTool
+        {...props}
+        icon="photo"
+        trigger={{
+          title: i18n.t("ui.sessionReview.image.placeholder"),
+          subtitle: filepath() ? getFilename(filepath()!) : "",
+          subtitlePath: filepath(),
+          args: mode() ? [mode()!] : [],
+        }}
+        onSubtitleClick={openFile && filepath() ? open : undefined}
+      >
+        <Show when={props.output}>
+          <div data-component="tool-output" data-scrollable>
+            <Markdown text={props.output!} />
+          </div>
+        </Show>
+      </BasicTool>
     )
   },
 })

@@ -204,9 +204,6 @@ export const TaskTool = Tool.define(
         )
       }
       const isolated = params.isolation === "worktree"
-      if (runInBackground && isolated) {
-        return yield* Effect.fail(new Error("Background subagents cannot be combined with worktree isolation"))
-      }
 
       // 沿 parentID 链上溯算嵌套深度，超限直接拒绝——放在权限询问之前，别先弹窗再报错
       const parent = yield* sessions.get(ctx.sessionID)
@@ -475,12 +472,19 @@ export const TaskTool = Tool.define(
       }
 
       if (runInBackground) {
+        // 260904 Red 隔离必须包在后台 job 内，否则后台任务会误跑进 parent instance。
+        // 决策: docs/notes/implemented/bug-fix/2026-09-04-isolated-subagent-startup.md
+        const backgroundRun = isolated
+          ? ops
+              .runIsolated({ name: params.description }, runTask())
+              .pipe(Effect.map(({ result, worktree }) => isolatedOutput(nextSession.id, result, worktree)))
+          : runTask()
         const info = yield* background.start({
           id: nextSession.id,
           type: id,
           title: params.description,
           metadata,
-          run: runTask().pipe(
+          run: backgroundRun.pipe(
             Effect.tap((text) => inject("completed", text).pipe(Effect.ignore)),
             Effect.catchCause((cause) =>
               (Cause.hasInterruptsOnly(cause)

@@ -13,7 +13,7 @@ import { errorMessage } from "../util/error"
 import { BusEvent } from "@/bus/bus-event"
 import { GlobalBus } from "@/bus/global"
 import { Git } from "@/git"
-import { Duration, Effect, Layer, Path, Schema, Scope, Context } from "effect"
+import { Duration, Effect, Exit, Layer, Path, Schema, Scope, Context } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { NodePath } from "@effect/platform-node"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
@@ -160,6 +160,9 @@ type GitResult = {
 // 挂死——它可能是个前台常驻进程或在等输入,挂住的是整个 worktree 创建流程。
 // 决策与实证:docs/notes/implemented/bug-fix/2026-08-21-subprocess-timeout-git.md
 const TIMEOUT = Duration.seconds(120)
+// 260904 Red 大仓首次 checkout 单独放宽时限，避免 --no-checkout 后 reset 被误杀。
+// 决策: docs/notes/implemented/bug-fix/2026-09-04-isolated-subagent-startup.md
+const CHECKOUT_TIMEOUT = Duration.minutes(10)
 const NETWORK_TIMEOUT = Duration.minutes(5)
 const START_SCRIPT_TIMEOUT = Duration.minutes(5)
 
@@ -267,7 +270,7 @@ export const layer: Layer.Layer<
       const projectID = ctx.project.id
       const extra = startCommand?.trim()
 
-      const populated = yield* git(["reset", "--hard"], { cwd: info.directory })
+      const populated = yield* git(["reset", "--hard"], { cwd: info.directory, timeout: CHECKOUT_TIMEOUT })
       if (populated.code !== 0) {
         const message = populated.stderr || populated.text || "Failed to populate worktree"
         log.error("worktree checkout failed", { directory: info.directory, message })
@@ -314,7 +317,7 @@ export const layer: Layer.Layer<
 
     const createFromInfo = Effect.fn("Worktree.createFromInfo")(function* (info: Info, startCommand?: string) {
       yield* setup(info)
-      yield* boot(info, startCommand).pipe(
+      yield* bootWithCleanup(info, startCommand).pipe(
         Effect.asVoid,
         Effect.catchCause((cause) => Effect.sync(() => log.error("worktree bootstrap failed", { cause }))),
         Effect.forkIn(scope),
@@ -323,7 +326,7 @@ export const layer: Layer.Layer<
 
     const createAndWait = Effect.fn("Worktree.createAndWait")(function* (info: Info, startCommand?: string) {
       yield* setup(info)
-      const instance = yield* boot(info, startCommand)
+      const instance = yield* bootWithCleanup(info, startCommand)
       if (!instance) return yield* new CreateFailedError({ message: "Failed to initialize isolated worktree" })
       return instance
     })
@@ -474,6 +477,30 @@ export const layer: Layer.Layer<
       }
 
       return true
+    })
+
+    const cleanupFailed = Effect.fnUntraced(function* (info: Info) {
+      yield* remove({ directory: info.directory }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.sync(() =>
+            log.error("worktree cleanup after bootstrap failure failed", {
+              directory: info.directory,
+              cause,
+            }),
+          ),
+        ),
+      )
+    })
+
+    const bootWithCleanup = Effect.fnUntraced(function* (info: Info, startCommand?: string) {
+      const exit = yield* Effect.exit(boot(info, startCommand))
+      if (Exit.isFailure(exit)) {
+        yield* Effect.uninterruptible(cleanupFailed(info))
+        return yield* Effect.failCause(exit.cause)
+      }
+      if (exit.value) return exit.value
+      yield* Effect.uninterruptible(cleanupFailed(info))
+      return undefined
     })
 
     const gitExpect = Effect.fnUntraced(function* (

@@ -3,6 +3,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { formatPatch, structuredPatch } from "diff"
 import path from "path"
 import { AppProcess } from "@redcode-ai/core/process"
+import { Flock } from "@redcode-ai/core/util/flock"
 import { InstanceState } from "@/effect/instance-state"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Hash } from "@redcode-ai/core/util/hash"
@@ -195,7 +196,16 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
           const exists = (file: string) => fs.exists(file).pipe(Effect.orDie)
           const read = (file: string) => fs.readFileString(file).pipe(Effect.catch(() => Effect.succeed("")))
           const remove = (file: string) => fs.remove(file).pipe(Effect.catch(() => Effect.void))
-          const locked = <A, E, R>(fx: Effect.Effect<A, E, R>) => lock(state.gitdir).withPermits(1)(fx)
+          // 260904 Red 进程内信号量之外再加跨进程目录锁，避免多个 RedCode 进程同时写同一快照。
+          // 只恢复 Flock 自身的崩溃锁，不碰 Git 的 index.lock；决策见：
+          // docs/notes/implemented/bug-fix/2026-09-04-isolated-subagent-startup.md
+          const locked = <A, E, R>(fx: Effect.Effect<A, E, R>) =>
+            Effect.scoped(
+              Effect.gen(function* () {
+                yield* Flock.effect(`snapshot:${state.gitdir}`)
+                return yield* lock(state.gitdir).withPermits(1)(fx)
+              }),
+            )
 
           const enabled = Effect.fnUntraced(function* () {
             if (state.vcs !== "git") return false

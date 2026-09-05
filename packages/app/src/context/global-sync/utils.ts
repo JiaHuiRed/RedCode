@@ -1,8 +1,29 @@
-import type { Agent, Project, ProviderListResponse } from "@redcode-ai/sdk/v2/client"
+import type { Agent, Project, Provider, ProviderListResponse } from "@redcode-ai/sdk/v2/client"
 import { NormalizedProviderListResponse } from "@redcode-ai/ui/context"
 export { pathKey as directoryKey, type PathKey as DirectoryKey } from "@/utils/path-key"
 
 export const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+
+// 260905 Red 连接状态只覆盖目录 provider 的运行时字段；模型表必须合并，避免
+// server 在 Auth 变更前创建的旧 connected 快照把新目录模型（如 Omen Alpha）遮掉。
+// 见 docs/notes/implemented/bug-fix/2026-09-05-omen-model-list.md
+export function mergeProviderMaps(full: Map<string, Provider>, connected: Map<string, Provider>) {
+  const merged = new Map(full)
+  for (const [id, provider] of connected) {
+    const catalog = full.get(id)
+    merged.set(
+      id,
+      catalog
+        ? {
+            ...catalog,
+            ...provider,
+            models: { ...catalog.models, ...provider.models },
+          }
+        : provider,
+    )
+  }
+  return merged
+}
 
 function isAgent(input: unknown): input is Agent {
   if (!input || typeof input !== "object") return false

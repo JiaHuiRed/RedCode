@@ -36,14 +36,17 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
       }),
     )
 
-    const available = createMemo(() =>
-      providers.connected().flatMap((p) =>
-        Object.values(p.models).map((m) => ({
-          ...m,
-          provider: p,
-        })),
-      ),
-    )
+    const available = createMemo(() => {
+      const connected = new Set(providers.connected().map((p) => p.id))
+      return [...providers.all().values()]
+        .filter((p) => connected.has(p.id))
+        .flatMap((p) =>
+          Object.values(p.models).map((m) => ({
+            ...m,
+            provider: p,
+          })),
+        )
+    })
 
     const release = createMemo(
       () =>

@@ -1,11 +1,13 @@
 import { useServerSync } from "@/context/server-sync"
 import { decode64 } from "@/utils/base64"
 import { useParams } from "@solidjs/router"
+import { mergeProviderMaps } from "@/context/global-sync/utils"
 import { Iterable, pipe } from "effect"
 import { createMemo } from "solid-js"
 
 export const popularProviders = [
   "redcode",
+  "opencode-go",
   "redcode-go",
   "anthropic",
   "github-copilot",
@@ -51,7 +53,7 @@ export function useProviders() {
     const full = catalog()
     if (full.size === 0) return connected
     if (connected.size === 0) return full
-    return new Map([...full, ...connected])
+    return mergeProviderMaps(full, connected)
   })
   return {
     ready,
