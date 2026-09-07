@@ -1083,3 +1083,36 @@ describe("replacer 复杂度与终止性回归", () => {
     expect(yields).toEqual([])
   })
 })
+
+// 260907 Red: 文件超过 FUZZY_MAX_CONTENT_LINES(3000) 时 fuzzyFindBestMatch 静默返回
+// undefined，同类"oldString 与文件不符"的失误在小文件上能得到相似度提示、在大文件上
+// 只有裸错误（真实案例：D:\KLX\bopp_system 4588 行 index.html，模型脑补"主机产量和折算
+// 产量"而文件是"主机产量"，模型拿不到任何自纠线索）。修复 = 报错时明示 fuzzy 因文件
+// 超限被跳过并附行数。两条用例钉住两端：大文件必须披露、小文件不得误报。
+describe("edit 大文件 fuzzy 跳过披露", () => {
+  it.instance("超过行数帽时报错明示 fuzzy 已跳过并附行数", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "big.txt")
+      const content = Array.from({ length: 3200 }, (_, i) => `line ${i}`).join("\n")
+      yield* put(filepath, content)
+
+      const err = yield* fail({ filePath: filepath, oldString: "line totally-absent\nsecond line", newString: "x" })
+      expect(err.message).toContain("fuzzy matching was skipped")
+      expect(err.message).toContain("3200")
+      expect(err.message).toContain("re-read the file")
+    }),
+  )
+
+  it.instance("行数帽以内失败不带大文件披露", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "small.txt")
+      yield* put(filepath, "alpha\nbeta\ngamma\n")
+
+      const err = yield* fail({ filePath: filepath, oldString: "totally absent text", newString: "x" })
+      expect(err.message).toContain("Could not find oldString")
+      expect(err.message).not.toContain("fuzzy matching was skipped")
+    }),
+  )
+})

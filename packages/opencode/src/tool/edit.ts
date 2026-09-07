@@ -224,6 +224,19 @@ export const EditTool = Tool.define(
                         `Re-read the file to get the exact text, or adjust oldString to match the above.`,
                     )
                   }
+                  // 260907 Red: 文件超过 FUZZY_MAX_CONTENT_LINES 时 fuzzyFindBestMatch 静默返回
+                  // undefined（260722 为防事件循环卡死加的帽），同类失误在小文件上有相似度提示、
+                  // 大文件上只有裸错误，模型无从区分"我引错了"还是"工具没帮上"。真实案例：
+                  // KLX 4588 行 index.html，oldString 脑补了文件里没有的文案，拿不到任何自纠
+                  // 线索。报错时明示被跳过并附行数，引导模型重读文件拿精确文本。
+                  const lineCount = contentOld.split("\n").length
+                  if (lineCount > FUZZY_MAX_CONTENT_LINES) {
+                    throw new Error(
+                      `${err.message}\n\n` +
+                        `Note: fuzzy matching was skipped because this file has ${lineCount} lines (limit ${FUZZY_MAX_CONTENT_LINES}). ` +
+                        `Do not reconstruct oldString from memory — re-read the file and copy the exact current text.`,
+                    )
+                  }
                 }
                 throw err
               }

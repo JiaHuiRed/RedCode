@@ -10,6 +10,10 @@
 
 ### [未发布]
 
+#### 修复
+
+- **edit 大文件报错补上"fuzzy 已跳过"披露**（`packages/opencode/src/tool/edit.ts`，回归 `test/tool/edit.test.ts`）：文件超过 3000 行（260722 为防事件循环卡死加的帽）时，exact 匹配失败后 `fuzzyFindBestMatch` 静默返回 undefined——同样"oldString 与文件不符"的失误，小文件上会得到"87% 相似匹配在第 X 行"加 diff 的自纠提示，大文件上只有一句裸错误，模型无从区分"我引错了"还是"工具没帮上"。真实案例：KLX 4588 行的 index.html，模型把文件里并不存在的"主机产量和折算产量"写进 oldString（文件实为"主机产量"），连续两次失败都拿不到任何线索只能盲试。现在报错附上实际行数与上限，并明示引导：不要凭记忆拼 oldString，重读文件拿精确文本。错误信息只在失败路径追加，不进固定前缀。
+
 #### 新增
 
 - **TUI 首页字标右侧落一枚朱印**（新增 `packages/opencode/src/cli/cmd/tui/component/seal.tsx`，`routes/home.tsx` 接入）：品牌标志 09-04 已经进了 GUI（favicon / PWA 图标 / 标题栏 / 等待行），终端这边一直没有。
