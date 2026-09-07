@@ -28,27 +28,6 @@ import { makeEventListener } from "@solid-primitives/event-listener"
 import { StatusPopover } from "./status-popover"
 import { SDKProvider } from "@/context/sdk"
 
-type TauriDesktopWindow = {
-  startDragging?: () => Promise<void>
-  toggleMaximize?: () => Promise<void>
-}
-
-type TauriThemeWindow = {
-  setTheme?: (theme?: "light" | "dark" | null) => Promise<void>
-}
-
-type TauriApi = {
-  window?: {
-    getCurrentWindow?: () => TauriDesktopWindow
-  }
-  webviewWindow?: {
-    getCurrentWebviewWindow?: () => TauriThemeWindow
-  }
-}
-
-const tauriApi = () => (window as unknown as { __TAURI__?: TauriApi }).__TAURI__
-const currentDesktopWindow = () => tauriApi()?.window?.getCurrentWindow?.()
-const currentThemeWindow = () => tauriApi()?.webviewWindow?.getCurrentWebviewWindow?.()
 const legacyTitlebarHeight = 40
 const v2TitlebarHeight = 44
 const minTitlebarZoom = 0.25
@@ -76,7 +55,6 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
 
   const mac = createMemo(() => platform.platform === "desktop" && platform.os === "macos")
   const windows = createMemo(() => platform.platform === "desktop" && platform.os === "windows")
-  const electronWindows = createMemo(() => windows() && !tauriApi())
   const linux = createMemo(() => platform.platform === "desktop" && platform.os === "linux")
   const web = createMemo(() => platform.platform === "web")
   const zoom = () => platform.webviewZoom?.() ?? 1
@@ -150,54 +128,6 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
     },
   ])
 
-  const getWin = () => {
-    if (platform.platform !== "desktop") return
-    return currentDesktopWindow()
-  }
-
-  createEffect(() => {
-    if (platform.platform !== "desktop") return
-
-    const scheme = theme.colorScheme()
-    const win = currentThemeWindow()
-    if (!win?.setTheme) return
-
-    void win.setTheme(scheme === "system" ? null : theme.mode()).catch(() => undefined)
-  })
-
-  const interactive = (target: EventTarget | null) => {
-    if (!(target instanceof Element)) return false
-
-    const selector =
-      "button, a, input, textarea, select, option, [role='button'], [role='menuitem'], [contenteditable='true'], [contenteditable='']"
-
-    return !!target.closest(selector)
-  }
-
-  const drag = (e: MouseEvent) => {
-    if (platform.platform !== "desktop") return
-    if (e.buttons !== 1) return
-    if (interactive(e.target)) return
-
-    const win = getWin()
-    if (!win?.startDragging) return
-
-    e.preventDefault()
-    void win.startDragging().catch(() => undefined)
-  }
-
-  const maximize = (e: MouseEvent) => {
-    if (platform.platform !== "desktop") return
-    if (interactive(e.target)) return
-    if (e.target instanceof Element && e.target.closest("[data-tauri-decorum-tb]")) return
-
-    const win = getWin()
-    if (!win?.toggleMaximize) return
-
-    e.preventDefault()
-    void win.toggleMaximize().catch(() => undefined)
-  }
-
   return (
     <header
       classList={{
@@ -210,13 +140,13 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
       style={{
         "min-height": minHeight(),
         "padding-left": mac() ? `${84 / zoom()}px` : 0,
-        width: electronWindows() ? `env(titlebar-area-width, 100vw)` : undefined,
-        "max-width": electronWindows() ? `env(titlebar-area-width, 100vw)` : undefined,
-        "align-self": electronWindows() ? "flex-start" : undefined,
+        width: windows() ? `env(titlebar-area-width, 100vw)` : undefined,
+        "max-width": windows() ? `env(titlebar-area-width, 100vw)` : undefined,
+        "align-self": windows() ? "flex-start" : undefined,
       }}
+      // 260907 Red 历史命名：Tauri 时代的拖拽区属性。Electron 的窗口拖拽靠 index.css 对它的
+      // [data-tauri-drag-region] 选择器挂 -webkit-app-region: drag，勿改名勿删。
       data-tauri-drag-region
-      onMouseDown={drag}
-      onDblClick={maximize}
     >
       <V2TitlebarContent update={props.update} />
     </header>
@@ -233,7 +163,6 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
 
   const mac = createMemo(() => platform.platform === "desktop" && platform.os === "macos")
   const windows = createMemo(() => platform.platform === "desktop" && platform.os === "windows")
-  const electronWindows = createMemo(() => windows() && !tauriApi())
   const linux = createMemo(() => platform.platform === "desktop" && platform.os === "linux")
 
   const creating = createMemo(() => {
@@ -526,9 +455,6 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
         )}
       </Show>
       <TitlebarUpdatePill update={props.update} />
-      <Show when={windows() && !electronWindows()}>
-        <div data-tauri-decorum-tb class="flex flex-row" />
-      </Show>
     </div>
   )
 }

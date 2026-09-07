@@ -27,7 +27,7 @@ An AI coding assistant. **Two entry points, one engine** — same server, same s
 | | |
 | --- | --- |
 | **TUI** `packages/opencode` | Terminal interface, single-file exe. A bare launch opens a workspace selector (mouse-clickable, scrollable, or type any path). Pluggable sidebar. |
-| **GUI** `packages/desktop` | Electron desktop window. Home screen carries a **usage dashboard**; sessions get diff review, file preview (image / audio / PDF), and a context-usage tab. Tauri migration in progress — `src-tauri/` scaffolding is in place, build pipeline not yet wired. |
+| **GUI** `packages/desktop` | Electron desktop window. Home screen carries a **usage dashboard**; sessions get diff review, file preview (image / audio / PDF), and a context-usage tab. |
 
 Reads code, writes code, fixes bugs, runs commands.
 

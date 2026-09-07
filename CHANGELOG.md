@@ -10,6 +10,10 @@
 
 ### [未发布]
 
+#### 移除
+
+- **砍掉 Tauri 迁移栈，桌面端收敛为 Electron 单栈**（260907 拍板：迁移停工一个月，Electron 无痛点）：删除 `packages/desktop/src-tauri/` 整目录、`tauri-api-shim.ts`（及 `index.html` 的引入）、`tauri-commands.generated.ts` + contract 测试 + `gen:tauri-commands` 脚本、`@tauri-apps/api` 依赖、`main/migrate.ts`（Tauri 时代 .dat 数据迁移——Tauri 栈从未进过发布流程，不存在需要迁移的用户数据）、server CORS 的三个 `tauri://` origin 白名单分支、`titlebar.tsx` 的 `__TAURI__` 探测与拖拽/主题 Tauri 分支（Electron 走 `-webkit-app-region`，靠 `data-tauri-drag-region` 属性驱动，**属性与 `index.css` 选择器保留勿改名**）、双 README 的"Tauri 迁移中"描述、`raw-changelog.ts` 的 tauri area 映射、`docs/tauri-migration-plan.md`。保留：`finalize-latest-json.ts` 的 `@tauri-apps/cli signer sign`（发布签名工具，与运行时栈无关）、`icons/` 目录（Electron 打包经 `copy-icons.ts` 在用，README 已改写）、`packages/containers` 的 `tauri-linux` 镜像定义（构建基建，另行处理）。
+
 #### 修复
 
 - **edit 大文件报错补上"fuzzy 已跳过"披露**（`packages/opencode/src/tool/edit.ts`，回归 `test/tool/edit.test.ts`）：文件超过 3000 行（260722 为防事件循环卡死加的帽）时，exact 匹配失败后 `fuzzyFindBestMatch` 静默返回 undefined——同样"oldString 与文件不符"的失误，小文件上会得到"87% 相似匹配在第 X 行"加 diff 的自纠提示，大文件上只有一句裸错误，模型无从区分"我引错了"还是"工具没帮上"。真实案例：KLX 4588 行的 index.html，模型把文件里并不存在的"主机产量和折算产量"写进 oldString（文件实为"主机产量"），连续两次失败都拿不到任何线索只能盲试。现在报错附上实际行数与上限，并明示引导：不要凭记忆拼 oldString，重读文件拿精确文本。错误信息只在失败路径追加，不进固定前缀。

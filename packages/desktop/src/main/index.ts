@@ -37,7 +37,6 @@ import {
   setBackgroundColor,
   setDockIcon,
 } from "./windows"
-import { migrate } from "./migrate"
 import { checkUpdate, checkForUpdates, installUpdate, setupAutoUpdater } from "./updater"
 import { Deferred, Effect, Fiber } from "effect"
 
@@ -521,7 +520,6 @@ const main = Effect.gen(function* () {
 
   yield* Effect.promise(() => app.whenReady())
 
-  if (!TEST_ONBOARDING) migrate()
   // 260903 cc 只有打包版才登记 `redcode://`。
   //   `setAsDefaultProtocolClient` 不传 path/args 时默认用 `process.execPath` + 空参数，
   //   未打包时那就是裸 electron.exe —— 注册完之后系统里的 redcode:// 全部指向它，
