@@ -10,6 +10,10 @@
 
 ### [未发布]
 
+### [0.10.20] - 2026-09-07
+
+> 「等待响应中」两连修 + GUI 性能第一批：快照锁不再把 prompt 堵死在发请求之前、opencode zen 网关恢复可用；打开会话 / 流式输出 / 代码高亮 / bash 大输出四条 GUI 热路径落地。Tauri 迁移栈同批砍除。
+
 #### 移除
 
 - **砍掉 Tauri 迁移栈，桌面端收敛为 Electron 单栈**（260907 拍板：迁移停工一个月，Electron 无痛点）：删除 `packages/desktop/src-tauri/` 整目录、`tauri-api-shim.ts`（及 `index.html` 的引入）、`tauri-commands.generated.ts` + contract 测试 + `gen:tauri-commands` 脚本、`@tauri-apps/api` 依赖、`main/migrate.ts`（Tauri 时代 .dat 数据迁移——Tauri 栈从未进过发布流程，不存在需要迁移的用户数据）、server CORS 的三个 `tauri://` origin 白名单分支、`titlebar.tsx` 的 `__TAURI__` 探测与拖拽/主题 Tauri 分支（Electron 走 `-webkit-app-region`，靠 `data-tauri-drag-region` 属性驱动，**属性与 `index.css` 选择器保留勿改名**）、双 README 的"Tauri 迁移中"描述、`raw-changelog.ts` 的 tauri area 映射、`docs/tauri-migration-plan.md`。保留：`finalize-latest-json.ts` 的 `@tauri-apps/cli signer sign`（发布签名工具，与运行时栈无关）、`icons/` 目录（Electron 打包经 `copy-icons.ts` 在用，README 已改写）、`packages/containers` 的 `tauri-linux` 镜像定义（构建基建，另行处理）。
@@ -22,6 +26,10 @@
 
 - **edit 大文件报错补上"fuzzy 已跳过"披露**（`packages/opencode/src/tool/edit.ts`，回归 `test/tool/edit.test.ts`）：文件超过 3000 行（260722 为防事件循环卡死加的帽）时，exact 匹配失败后 `fuzzyFindBestMatch` 静默返回 undefined——同样"oldString 与文件不符"的失误，小文件上会得到"87% 相似匹配在第 X 行"加 diff 的自纠提示，大文件上只有一句裸错误，模型无从区分"我引错了"还是"工具没帮上"。真实案例：KLX 4588 行的 index.html，模型把文件里并不存在的"主机产量和折算产量"写进 oldString（文件实为"主机产量"），连续两次失败都拿不到任何线索只能盲试。现在报错附上实际行数与上限，并明示引导：不要凭记忆拼 oldString，重读文件拿精确文本。错误信息只在失败路径追加，不进固定前缀。
 
+- **快照锁不再把 prompt 堵死在 LLM 调用之前**（`packages/opencode/src/snapshot/index.ts`，回归 `test/snapshot/snapshot.test.ts`，决策：`docs/notes/implemented/bug-fix/2026-09-07-snapshot-lock-bounded-degrade.md`）：prompt 第 0 步的 `track` 与每 step 的 `finish` 此前与 `restore/revert` 共用 Flock 默认 **5 分钟**等待，且临界区内串多个 120s 上限的 git 子进程——另一进程持锁跑慢 git 时，本会话卡在「等待响应中」直至实例死亡（260907 实测：prompt 起跑后 94 秒无任何 LLM 日志与报错，**换任何供应商都无效，因为请求根本没发出去**）。现在热路径等锁最多 10 秒，拿不到就跳过本步快照（降级形态复用既有「快照禁用」路径，丢的只是该步 diff 统计，会话照常继续）；`restore/revert` 是用户显式撤销，保持原长等待不降级。诊断指纹：日志连续出现 `snapshot lock busy — skipping op` = 另一进程长期持锁，该查实例生命周期而非供应商网络。
+
+- **opencode.ai zen 网关（opencode-go）不再全模型 400**（`packages/opencode/src/session/llm/request.ts`，决策：`docs/notes/implemented/bug-fix/2026-09-07-opencode-zen-session-header.md`）：zen 网关按 `x-opencode-session` 头路由，缺头一律 `400 MissingSessionID`——此前非 redcode 供应商分支只发它不认的 `x-session-affinity`，`opencode-go` 全模型必现秒断。现在对 baseURL 落在 opencode.ai 域内的供应商按请求注入会话 ID，走 `streamText` headers 通道（不打爆 SDK 客户端按 options 的哈希缓存）。纯传输层改动，无 token/KV cache 影响。
+
 #### 新增
 
 - **模型目录的 `reasoning_options` 已规范为运行时能力**（`packages/opencode/src/provider/provider.ts`，决策：`docs/notes/implemented/architecture/2026-09-07-structured-reasoning-efforts.md`）：`capabilities.reasoningEfforts` 只接受 effort 型选项中的有效字符串（`null` 规范为 `none` 并去重）；推理档位变体优先读取这份结构化能力，仍保留 plugin 旧 raw 字段的兼容兜底。所有已有的模型族实测特判继续优先，外部目录数据不会覆盖它们。
@@ -33,6 +41,16 @@
   **右上角崩口有意舍弃**。试过用断笔 `╸` 开口，出来像画错了而不是手刻残缺——那个特征需要亚字符级精度，终端给不了。**静态不动也是有意的**：印是盖上去的落款，而字标那边已经有常驻扫光，再让印晃两边会打架。
 
   颜色不跟主题调色板走（那是标志不是 UI 元素），但深色底上 `#C8322B` 压不住，按背景亮度在 `#C8322B` / `#E4534A` 两档官方用色之间切一次，与 `redcode-mark.svg` 头部注释同源。组件放在 `home_logo` 这个插件 slot **内**——印是字标的落款，插件整块替换 logo 时该一起被替换，而不是孤零零留一个印在那儿。两条用例钉住形状：整帧快照，以及「6 列 × 3 行、印文含 `>_`」——尺寸单独断言是因为任何一边动了都不再是方印。
+
+#### 优化
+
+- **GUI 性能第一批：打开会话不再拉全量 diff 正文**（`packages/app/src/context/directory-sync.ts`）：桌面端文件树默认打开 ⇒ 打开任何会话都会拉一次完整 `session_diff`（每文件带 patch 正文，存量行最大 94MB），而 GUI 侧唯一活消费方（`commentInReview`）只读文件名。切 `patch:false` 对齐 TUI（服务端 260904 已切），打开会话少一次 MB~94MB 级的主线程 JSON.parse + reconcile。
+
+- **流式 heal 下沉 + bash 大输出显示侧截断**（`packages/ui/src/components/markdown-stream.ts`、`message-part.tsx`，回归 `markdown-stream.test.ts`）：`heal(text)` 此前在 `stream()` 顶部无条件执行，但分块主路径用的是 `heal(chunk)`——长回答每 tick 白付一份 O(全文) remend，下沉到早退分支后主路径零成本。bash 工具输出流式期间每 16ms 合并一次，MB 级日志此前每次 flush 全量 stripAnsi + 全量 `<pre>` 文本替换；现在未展开时只对尾部 64KB 付费（就近对齐行边界，防 ANSI 序列拦腰截断），带「展开全部 / 收起」，复制按钮点击时才取全量。纯展示层截断，模型可见输出不变。
+
+- **markdown 代码块高亮迁 worker 池，主线程零计算**（新增 `packages/ui/src/context/highlight-worker.ts`、`highlight-pool.ts`、`shiki-theme.ts`，改 `marked.tsx`，决策：`docs/notes/implemented/bug-fix/2026-09-07-markdown-highlight-worker.md`）：shiki 此前在主线程逐块同步 `codeToHtml`，流式期已跳过（260811），但最终渲染与工具输出仍全量主线程——长会话滚动时缓存未命中的块逐个卡 UI（「翻历史消息卡一下」的主力）。现在 2 worker 并发高亮：RedCode 主题抽成共享模块，worker 与主线程兜底输出逐字节一致（markdown 块缓存两边通用；颜色全是 CSS 变量，不随主题切换失效）；单调用 10s 超时、连续 3 次失败熔断整池，最坏退化等于改动前。顺带把 O(块数×全文) 的 `result.replace` 拼接改为按 `matchAll` 索引切片。
+
+- **流式 markdown 渲染分块化，DOM 只付变化块的成本**（`packages/ui/src/components/markdown.tsx`，决策：`docs/notes/implemented/bug-fix/2026-09-07-markdown-block-dom.md`）：此前每 tick 把全部块 HTML join 成一个字符串后**整篇** innerHTML 解析 + 全树 decorate + 全树 morphdom——260901 的分块缓存只省了 parse/sanitize，DOM 三步仍与已输出全文长度成正比，长回答越写越卡。现在每个块一个 `display:contents` 子容器（不生成盒，margin 折叠与 `> *:first/last-child` 语义全保持，布局与拼接 HTML 完全等价），HTML 没变的块（定型前缀 ⇒ 缓存命中 ⇒ 同一字符串引用）引用相等即跳过，每 tick 只有正在长的 settled 尾段 + 活跃尾块（≤2 块）重跑 DOM。DOM 成本从 O(全文) 降到 O(活跃尾块)，与已输出长度解耦。
 
 ### [0.10.19] - 2026-09-04
 
