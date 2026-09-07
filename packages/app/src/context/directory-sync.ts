@@ -568,7 +568,11 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
 
         const key = keyFor(directory, sessionID)
         return runInflight(inflightDiff, key, () =>
-          retry(() => client.session.diff({ sessionID })).then((diff) => {
+          // 260907 Red GUI 对齐 TUI（服务端 session.ts 260904 已切）：不带 patch:false 时整份
+          // session_diff（每文件完整 patch 正文）原样出网，存量行最大 94MB，桌面端文件树默认
+          // 打开 ⇒ 打开任何会话都会拉一次。GUI 侧唯一活消费方（prompt-input 的 commentInReview）
+          // 只读 diff.file 文件名，正文一个字节用不上。需要正文的地方走 turn 级 summary 或 vcs 查询。
+          retry(() => client.session.diff({ sessionID, patch: false })).then((diff) => {
             if (!tracked(directory, sessionID)) return
             setStore("session_diff", sessionID, reconcile(list(diff.data), { key: "file" }))
           }),
