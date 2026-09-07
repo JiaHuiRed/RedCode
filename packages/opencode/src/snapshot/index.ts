@@ -207,6 +207,44 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
               }),
             )
 
+          // 260907 Red 快照热路径改「有界等锁 + 降级」。病根:prompt 第 0 步的 track、每个
+          // step 的 finish 此前与 restore/revert 共用 locked()，即 Flock 默认 5 分钟等待；
+          // 另一进程持锁跑慢 git（临界区内串多个 120s 上限的子进程）时，本会话 prompt 被堵在
+          // LLM 调用之前，用户侧表现为「等待响应中」直至实例死亡（260907 实测 94s 无任何
+          // LLM 日志、无报错）。决策与备选与否决理由：docs/notes/implemented/bug-fix/2026-09-07-snapshot-lock-bounded-degrade.md
+          const BUSY_WAIT_MS = 10_000
+          const lockedSkip = <A, E, R>(op: string, fx: Effect.Effect<A, E, R>): Effect.Effect<A | undefined, E, R> =>
+            Effect.scoped(
+              Effect.gen(function* () {
+                const deadline = performance.now() + BUSY_WAIT_MS
+                let delay = 100
+                while (true) {
+                  // 单次尝试不可中断（同 Flock.effect：中途打断会留下建好却无人持有的锁目录，
+                  // heartbeat 一直刷导致 stale 永不触发）；退避 sleep 可中断。
+                  const lease = yield* Effect.uninterruptible(
+                    Effect.promise(() => Flock.tryAcquire(`snapshot:${state.gitdir}`)),
+                  )
+                  if (lease) {
+                    yield* Effect.addFinalizer(() =>
+                      Effect.promise(() => lease.release().catch(() => undefined)).pipe(Effect.withSpan("Flock.release")),
+                    )
+                    return yield* lock(state.gitdir).withPermits(1)(fx)
+                  }
+                  if (performance.now() >= deadline) {
+                    log.warn("snapshot lock busy — skipping op, session continues without snapshot this step", {
+                      op,
+                      gitdir: state.gitdir,
+                      waitedMs: BUSY_WAIT_MS,
+                    })
+                    return undefined
+                  }
+                  const ms = Math.min(2_000, delay)
+                  yield* Effect.sleep(Duration.millis(ms))
+                  delay = Math.floor(delay * 1.7)
+                }
+              }),
+            )
+
           const enabled = Effect.fnUntraced(function* () {
             if (state.vcs !== "git") return false
             return (yield* config.get()).snapshot !== false
@@ -301,7 +339,8 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
           })
 
           const cleanup = Effect.fnUntraced(function* () {
-            return yield* locked(
+            return yield* lockedSkip(
+              "cleanup",
               Effect.gen(function* () {
                 if (!(yield* enabled())) return
                 if (!(yield* exists(state.gitdir))) return
@@ -371,9 +410,12 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
           })
 
           const track = Effect.fnUntraced(function* () {
-            return yield* locked(
+            if (!(yield* enabled())) return
+            // 260907 Red enabled 判断移到锁外：禁用时不再碰锁；锁忙时返回 undefined（与「快照禁用」
+            // 同一形态，processor 既有的降级路径直接复用），绝不阻塞 prompt。
+            return yield* lockedSkip(
+              "track",
               Effect.gen(function* () {
-                if (!(yield* enabled())) return
                 yield* ensureRepo()
                 yield* add()
                 return yield* writeTree()
@@ -397,9 +439,11 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
            * 直接调它，前面没有 track。
            */
           const finish = Effect.fnUntraced(function* (from: string | undefined) {
-            return yield* locked(
+            if (!(yield* enabled())) return { hash: undefined, patch: undefined }
+            // 260907 Red 锁忙时降级为空结果：丢这一 step 的 diff 统计，会话照常继续。
+            const out = yield* lockedSkip(
+              "finish",
               Effect.gen(function* () {
-                if (!(yield* enabled())) return { hash: undefined, patch: undefined }
                 yield* ensureRepo()
                 yield* add()
                 const hash = yield* writeTree()
@@ -407,15 +451,19 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                 return { hash, patch: yield* diffCached(from) }
               }),
             )
+            return out ?? { hash: undefined, patch: undefined }
           })
 
           const patch = Effect.fnUntraced(function* (hash: string) {
-            return yield* locked(
+            // 260907 Red 锁忙时降级为空 files，与 diffCached 失败时的既有降级同形态。
+            const out = yield* lockedSkip(
+              "patch",
               Effect.gen(function* () {
                 yield* add()
                 return yield* diffCached(hash)
               }),
             )
+            return out ?? { hash, files: [] as string[] }
           })
 
           const restore = Effect.fnUntraced(function* (snapshot: string) {
