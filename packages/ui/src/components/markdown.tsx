@@ -12,8 +12,14 @@ type Entry = {
   html: string
 }
 
-const max = 200
+// 260907 ZCode 块缓存上限从「条数 200」改为「字节预算 8MB」：30KB 一条的长回答就有
+// 8+ 个块，几百条消息的长会话滚动时 200 条上限会互相挤掉（virtua 反复挂载/卸载行），
+// 挤掉 = 重跑 parse+sanitize（shiki 已迁 worker，但前两样仍在主线程）。字节预算下
+// 4KB 级块能缓存数千条而内存有界（8MB 字符串对桌面端无感），命中率不再随会话长度
+// 劣化。逐出仍按 LRU（Map 插入序），单条超预算的巨块不会被自己挤出（size > 1 守卫）。
+const MAX_CACHE_BYTES = 8 * 1024 * 1024
 const cache = new Map<string, Entry>()
+let cacheBytes = 0
 
 if (typeof window !== "undefined" && DOMPurify.isSupported) {
   DOMPurify.addHook("afterSanitizeAttributes", (node: Element) => {
@@ -228,14 +234,18 @@ function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
 }
 
 function touch(key: string, value: Entry) {
+  const prev = cache.get(key)
   cache.delete(key)
   cache.set(key, value)
+  cacheBytes += value.html.length - (prev ? prev.html.length : 0)
 
-  if (cache.size <= max) return
-
-  const first = cache.keys().next().value
-  if (!first) return
-  cache.delete(first)
+  while (cacheBytes > MAX_CACHE_BYTES && cache.size > 1) {
+    const first = cache.keys().next().value
+    if (!first) break
+    const evicted = cache.get(first)
+    cache.delete(first)
+    if (evicted) cacheBytes -= evicted.html.length
+  }
 }
 
 export function Markdown(

@@ -45,7 +45,10 @@ import { getWorkerPool } from "../pierre/worker"
 import { FileMedia, type FileMediaOptions } from "./file-media"
 import { FileSearchBar } from "./file-search"
 
-const VIRTUALIZE_BYTES = 500_000
+// 260907 ZCode 500KB→100KB（GUI 性能审计问题 8）：低于阈值走非虚拟化 PierreFile，全部行
+// 进 DOM——write 工具行展开即挂载，几百 KB 的文件一展开就是上万行级 DOM。100KB（约两三千
+// 行）以下的非虚拟化收益（无虚拟izer开销、文本选择更顺）保留，之上的交给虚拟化兜底。
+const VIRTUALIZE_BYTES = 100_000
 
 const codeMetrics = {
   ...DEFAULT_VIRTUAL_FILE_METRICS,
