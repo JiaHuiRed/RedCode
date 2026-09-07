@@ -403,8 +403,8 @@ export const dict = {
   "dialog.project.edit.worktree.startup.placeholder": "例如 bun install",
 
   "context.quota.title": "ChatGPT / Codex 套餐额度",
-  "context.quota.window.primary": "主窗口",
-  "context.quota.window.secondary": "二级窗口",
+  "context.quota.window.primary": "5小时额度",
+  "context.quota.window.secondary": "周额度",
   "context.quota.window.reserve": "备用窗口",
   "context.quota.resetsAt": "重置于 {{time}}",
   "context.quota.empty": "尚无额度记录——下一次 OpenAI/Codex 请求后会显示",
