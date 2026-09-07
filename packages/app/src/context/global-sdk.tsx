@@ -117,11 +117,12 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
     // 260903 cc 防「多个重连循环并发跑」。`started` 那个布尔只挡得住 start() 被连着调两次，
     // 挡不住 stop() 之后再 start() 时**旧循环还没退出来**：stop() 把 started 置 false，可旧
     // 循环正卡在 `await wait(...)` 或 `for await (...)` 上，要等它自己转到检查点才退——这中间
-    // 新循环已经起来了，两个循环同时在开连接。RedCode 比上游更容易踩到：本仓有 global + server
-    // 两条流（上游只有一条），server 变化时（切目录/切服务器/sidecar 重生）就是一轮 stop→start，
-    // 而退避最长 2 秒意味着旧循环最久要 2 秒才醒来检查，窗口比上游固定 250ms 大八倍。
-    // 叠上 Chromium 同 host 6 连接的上限，多余的循环会加速吃满槽位。形状取自 opencode
-    // `packages/app/src/context/server-sdk.tsx` 的 generation 守卫。
+    // 新循环已经起来了，两个循环同时在开连接。server 变化时（切目录/切服务器/sidecar 重生）
+    // 就是一轮 stop→start，而退避最长 2 秒意味着旧循环最久要 2 秒才醒来检查，窗口比上游固定
+    // 250ms 大八倍。叠上 Chromium 同 host 6 连接的上限，多余的循环会加速吃满槽位。形状取自
+    // opencode `packages/app/src/context/server-sdk.tsx` 的 generation 守卫。
+    // 260907 ZCode 起本仓只剩这一条事件流（server-sdk 的第二条已合流代理到这里，见其
+    // 文件头注释），守卫照旧保留——防的是本循环自身的新旧并存，与流的条数无关。
     let generation = 0
     // 260706 Red: 90s — 实测 sidecar 在处理重请求时 event loop 可能阻塞 >30s，导致 Stream.tick 心跳无法按时发送
     const HEARTBEAT_TIMEOUT_MS = 90_000
@@ -229,11 +230,12 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
             // 唯独"流正常结束"这条不。AbortController 是保证底层 fetch 被拆掉的唯一把手，
             // 置 undefined 只是让 GC 有机会回收，不保证 socket 立刻关。
             // 为什么要紧：本地场景下 eventFetch 是 undefined（见文件开头，只有非 loopback
-            // 才走 platform.fetch），两条 SSE 流都占着 renderer 里 Chromium 的连接池，
+            // 才走 platform.fetch），这条 SSE 流占着 renderer 里 Chromium 的连接池，
             // 而 sidecar 是 node:http 的 HTTP/1.1 —— 同 host 只有 6 个槽。旧连接不释放 +
             // 256ms 起步的重连，槽位会被吃光，之后**所有**到该 origin 的请求无限排队：
             // 文件树空、上下文面板空、消息发得出但不落库、Esc 无效，而服务端毫发无伤，
             // 任务照常推进 —— 正是 09-01 那次的症状组合。
+            // 260907 ZCode 合流后这是唯一一条事件流，槽位预算比两条流时代宽松一倍。
             // abort() 幂等，流已正常结束时是 no-op，只有还挂着才真正生效。
             attempt?.abort()
             attempt = undefined

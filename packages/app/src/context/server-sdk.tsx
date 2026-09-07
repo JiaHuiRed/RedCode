@@ -1,276 +1,29 @@
 import type { Event } from "@redcode-ai/sdk/v2/client"
 import { createSimpleContext } from "@redcode-ai/ui/context"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
-import { makeEventListener } from "@solid-primitives/event-listener"
-import { batch, createSignal, onCleanup, onMount } from "solid-js"
+import { onCleanup } from "solid-js"
 import { createSdkForServer } from "@/utils/server"
 import { useLanguage } from "./language"
 import { usePlatform } from "./platform"
 import { ServerConnection, useServer } from "./server"
+import { useGlobalSDK } from "./global-sdk"
 import { createRefCountMap } from "@/utils/refcount"
-import { SSE_MAX_RETRY_ATTEMPTS, sseLogLine } from "@/utils/sse-log"
 
-const isAbortError = (error: unknown) =>
-  error !== null && typeof error === "object" && "name" in error && error.name === "AbortError"
-
+// 260907 ZCode SSE 合流（GUI 性能审计问题 5）：此前本文件与 global-sdk 各开一条
+// /global/event 全量 firehose——事件源、eventFetch 判定、queue/合并/退避/心跳逻辑
+// 完全同构（两份代码互相抄、注释互相引用），每个事件被双份 parse/排队/派发，还常驻
+// 占掉 Chromium 同 host 6 个 HTTP/1.1 连接中的 2 个（sidecar 是 node:http，无多路复用）。
+//
+// 合流方向：保留**外层** global-sdk 那条连接，本文件的 event 整体代理过去——不需要动
+// app.tsx 的 Provider 顺序（GlobalSDKProvider 在外，useGlobalSDK 在这里必然可用）。
+// 保留 global 侧的理由：260828 的修复保证它 onMount 自启动（通知/权限不依赖
+// server-sync 挂载）；server-sync 的 start() 调用透传过去且幂等，行为不变。
+// 断连状态信号 connection 一并透传（唯一 UI 消费方 status-popover 读的是 globalSDK
+// 那份，代理兜住其他潜在读取者）。重连日志此后只会有 [global-sdk] 一个来源——
+// 只剩一条流，串台问题不复存在。
 function createServerSdkContext(server: ServerConnection.Any) {
+  const globalSDK = useGlobalSDK()
   const platform = usePlatform()
-  const abort = new AbortController()
-
-  const eventFetch = (() => {
-    if (!platform.fetch || !server) return
-    try {
-      const url = new URL(server.http.url)
-      const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1"
-      if (url.protocol === "http:" && !loopback) return platform.fetch
-    } catch {
-      return
-    }
-  })()
-
-  const eventSdk = createSdkForServer({
-    signal: abort.signal,
-    fetch: eventFetch,
-    server: server.http,
-  })
-  const emitter = createGlobalEmitter<{
-    [key: string]: Event
-  }>()
-
-  type Queued = { directory: string; payload: Event }
-  const FLUSH_FRAME_MS = 16
-  const STREAM_YIELD_MS = 8
-
-  let queue: Queued[] = []
-  let buffer: Queued[] = []
-  const coalesced = new Map<string, number>()
-  const staleDeltas = new Set<string>()
-  let timer: ReturnType<typeof setTimeout> | undefined
-  let last = 0
-
-  const deltaKey = (directory: string, messageID: string, partID: string) => `${directory}:${messageID}:${partID}`
-
-  const key = (directory: string, payload: Event) => {
-    if (payload.type === "session.status") return `session.status:${directory}:${payload.properties.sessionID}`
-    if (payload.type === "lsp.updated") return `lsp.updated:${directory}`
-    if (payload.type === "message.part.updated") {
-      const part = payload.properties.part
-      return `message.part.updated:${directory}:${part.messageID}:${part.id}`
-    }
-  }
-
-  const flush = () => {
-    if (timer) clearTimeout(timer)
-    timer = undefined
-
-    if (queue.length === 0) return
-
-    const events = queue
-    const skip = staleDeltas.size > 0 ? new Set(staleDeltas) : undefined
-    queue = buffer
-    buffer = events
-    queue.length = 0
-    coalesced.clear()
-    staleDeltas.clear()
-
-    last = Date.now()
-    batch(() => {
-      for (const event of events) {
-        if (skip && event.payload.type === "message.part.delta") {
-          const props = event.payload.properties
-          if (skip.has(deltaKey(event.directory, props.messageID, props.partID))) continue
-        }
-        emitter.emit(event.directory, event.payload)
-      }
-    })
-
-    buffer.length = 0
-  }
-
-  const schedule = () => {
-    if (timer) return
-    const elapsed = Date.now() - last
-    timer = setTimeout(flush, Math.max(0, FLUSH_FRAME_MS - elapsed))
-  }
-
-  let streamErrorLogged = false
-  const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
-  const aborted = isAbortError
-
-  let attempt: AbortController | undefined
-  let run: Promise<void> | undefined
-  let started = false
-  // 260903 cc 防「多个重连循环并发跑」，理由与形状见 global-sdk.tsx 同名守卫的长注释。
-  // 本仓有 global + server 两条流，只补一条不够。
-  let generation = 0
-  // 260706 Red: 90s — 实测 sidecar event loop 阻塞可 >30s（重请求处理），导致 Stream.tick 心跳延迟
-  const HEARTBEAT_TIMEOUT_MS = 90_000
-  let lastEventAt = Date.now()
-  let heartbeat: ReturnType<typeof setTimeout> | undefined
-  let heartbeatGen = 0
-  const resetHeartbeat = () => {
-    lastEventAt = Date.now()
-    const gen = ++heartbeatGen
-    if (heartbeat) clearTimeout(heartbeat)
-    heartbeat = setTimeout(() => {
-      if (gen !== heartbeatGen) return
-      attempt?.abort()
-    }, HEARTBEAT_TIMEOUT_MS)
-  }
-  const clearHeartbeat = () => {
-    if (!heartbeat) return
-    heartbeatGen++
-    clearTimeout(heartbeat)
-    heartbeat = undefined
-  }
-
-  // 260705 Red: 指数退避重连，256ms→512ms→1s→2s(cap)，减少断连环的刷新风暴
-  const RECONNECT_BASE_MS = 256
-  const RECONNECT_MAX_MS = 2000
-  let reconnectDelay = RECONNECT_BASE_MS
-
-  // 260901 cc 连接活性对外可见。重连逻辑本身早就齐全（心跳 + 退避 + abort），缺的只是
-  // 它从不把状态吐给界面——断连信号全进了 console.warn。哥哥 08-31 在家遇到的那次
-  // 「她还在跑但我发不出消息、面板全空」，界面上没有任何地方会变，就是缺这一格。
-  // 三态而不是布尔：断开的瞬间就重连，"reconnecting" 才是用户实际看到的那个状态。
-  const [connection, setConnection] = createSignal<"connecting" | "live" | "reconnecting">("connecting")
-
-  const start = () => {
-    if (started) return run
-    started = true
-    const active = ++generation
-    const current = (async () => {
-      // oxlint-disable-next-line no-unmodified-loop-condition -- `started`/`generation` are mutated by stop() which also aborts; all three are checked to allow graceful exit
-      while (!abort.signal.aborted && started && generation === active) {
-        attempt = new AbortController()
-        lastEventAt = Date.now()
-        const onAbort = () => {
-          attempt?.abort()
-        }
-        abort.signal.addEventListener("abort", onAbort)
-        try {
-          const events = await eventSdk.global.event({
-            signal: attempt.signal,
-            sseMaxRetryAttempts: SSE_MAX_RETRY_ATTEMPTS,
-            onSseError: (error) => {
-              if (aborted(error)) return
-              if (streamErrorLogged) return
-              streamErrorLogged = true
-              // 260901 cc 标签原本写的是 [global-sdk]，是从 global-sdk.tsx 抄过来时漏改的。
-              // 两个文件各有一份几乎相同的重连循环，日志串台正好在排查断连时误导人。
-              console.error(
-                sseLogLine("[server-sdk]", "event stream error", {
-                  url: server.http.url,
-                  fetch: eventFetch ? "platform" : "webview",
-                  error,
-                }),
-              )
-            },
-          })
-          setConnection("live")
-          let yielded = Date.now()
-          resetHeartbeat()
-          for await (const event of events.stream) {
-            resetHeartbeat()
-            streamErrorLogged = false
-            // 260902 cc 退避在收到第一条事件后才归零，理由见 global-sdk.tsx 同处注释。
-            reconnectDelay = RECONNECT_BASE_MS
-            const directory = event.directory ?? "global"
-            if (event.payload.type === "sync") {
-              continue
-            }
-
-            const payload = event.payload as Event
-
-            const k = key(directory, payload)
-            if (k) {
-              const i = coalesced.get(k)
-              if (i !== undefined) {
-                queue[i] = { directory, payload }
-                if (payload.type === "message.part.updated") {
-                  const part = payload.properties.part
-                  staleDeltas.add(deltaKey(directory, part.messageID, part.id))
-                }
-                continue
-              }
-              coalesced.set(k, queue.length)
-            }
-            queue.push({ directory, payload })
-            schedule()
-
-            if (Date.now() - yielded < STREAM_YIELD_MS) continue
-            yielded = Date.now()
-            await wait(0)
-          }
-        } catch (error) {
-          if (!aborted(error) && !streamErrorLogged) {
-            streamErrorLogged = true
-            console.error(
-              sseLogLine("[server-sdk]", "event stream failed", {
-                url: server.http.url,
-                fetch: eventFetch ? "platform" : "webview",
-                error,
-              }),
-            )
-          }
-        } finally {
-          abort.signal.removeEventListener("abort", onAbort)
-          // 260903 cc 与 global-sdk.tsx 同一处收尾不对称，理由见那边的长注释。
-          // 两条流都占着 renderer 的连接池，只修一条不够。
-          attempt?.abort()
-          attempt = undefined
-          clearHeartbeat()
-        }
-
-        if (abort.signal.aborted || !started || generation !== active) return
-
-        setConnection("reconnecting")
-
-        // 260706 Red: 记录断连原因
-        const sinceLastEvent = Date.now() - lastEventAt
-        console.warn(
-          sseLogLine("[server-sdk]", "stream ended, reconnecting", {
-            url: server.http.url,
-            sinceLastEventMs: sinceLastEvent,
-            exceededHeartbeat: sinceLastEvent > HEARTBEAT_TIMEOUT_MS,
-          }),
-        )
-
-        await wait(Math.min(reconnectDelay, RECONNECT_MAX_MS))
-        reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS)
-      }
-    })().finally(() => {
-      // 旧循环的 finally 不能把新 run 的引用清掉，见 global-sdk.tsx 同处注释
-      if (run !== current) return
-      run = undefined
-      flush()
-    })
-    run = current
-    return run
-  }
-
-  const stop = () => {
-    started = false
-    // 让还没退出来的旧循环在下一个检查点自行结束
-    generation++
-    attempt?.abort()
-    clearHeartbeat()
-  }
-
-  onMount(() => {
-    makeEventListener(document, "visibilitychange", () => {
-      if (document.visibilityState !== "visible") return
-      if (!started) return
-      if (Date.now() - lastEventAt < HEARTBEAT_TIMEOUT_MS) return
-      attempt?.abort()
-    })
-  })
-
-  onCleanup(() => {
-    stop()
-    abort.abort()
-    flush()
-  })
 
   const sdk = createSdkForServer({
     server: server.http,
@@ -278,15 +31,18 @@ function createServerSdkContext(server: ServerConnection.Any) {
     throwOnError: true,
   })
 
+  const shared = globalSDK.event
+
   return {
     url: server.http.url,
     client: sdk,
     event: {
-      on: emitter.on.bind(emitter),
-      listen: emitter.listen.bind(emitter),
-      start,
-      /** 事件流活性。界面据此显示断连提示，见 260901 那条注释。 */
-      connection,
+      // global-sdk 返回的 on/listen 已 bind 到它的 emitter，直接透传引用即可
+      on: shared.on,
+      listen: shared.listen,
+      start: () => shared.start(),
+      /** 事件流活性，透传共享连接的状态。 */
+      connection: shared.connection,
     },
     createClient(opts: Omit<Parameters<typeof createSdkForServer>[0], "server" | "fetch">) {
       return createSdkForServer({
