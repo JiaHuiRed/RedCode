@@ -1,3 +1,10 @@
+/* 260907 Red 流式分块渲染：每个块一个子容器。display:contents 不生成盒，
+   子元素的 margin 直接与容器折叠——布局与「全部块 HTML 拼成一个字符串」完全等价，
+   markdown.css 其余规则全是后代选择器，不受这层包裹影响。 */
+[data-slot="markdown-block"] {
+  display: contents;
+}
+
 [data-component="markdown"] {
   /* Reset & Base Typography */
   min-width: 0;

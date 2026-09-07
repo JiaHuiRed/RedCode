@@ -109,8 +109,10 @@ export function stream(text: string, live: boolean) {
   // 切开之后前缀块的 raw 在两次块边界之间是恒定的 ⇒ 缓存命中 ⇒ parse 与 sanitize 都跳过，
   // 只有尾块重算。前缀只在「一个块写完、新块开始」时才变一次，不是每 tick。
   //
-  // 注意这里只省掉 parse/sanitize，DOM 那一步（innerHTML + morphdom）仍然是整篇做的
-  // ——把每个块渲染进各自的子容器是下一步，风险更高，先不动。
+  // 注意这里只省掉 parse/sanitize；DOM 那一步 260907 起也分块了——markdown.tsx 给每个块
+  // 一个 display:contents 子容器，只有 HTML 变了的块（正在长的 settled 尾段 + 活跃尾块）
+  // 重跑 innerHTML+morphdom，已定型前缀一个字节不动。见
+  // docs/notes/implemented/bug-fix/2026-09-07-markdown-block-dom.md
   const starts = topLevelStarts(tokens)
   if (starts.length < 2) return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
 

@@ -251,15 +251,15 @@ export function Markdown(
   const marked = useMarked()
   const i18n = useI18n()
   const [root, setRoot] = createSignal<HTMLDivElement>()
-  const [html] = createResource(
+  const [blocks] = createResource(
     () => ({
       text: local.text,
       key: local.cacheKey,
       streaming: local.streaming ?? false,
     }),
     async (src) => {
-      if (isServer) return fallback(src.text)
-      if (!src.text) return ""
+      if (isServer) return [fallback(src.text)]
+      if (!src.text) return [] as string[]
 
       const base = src.key ?? checksum(src.text)
       return Promise.all(
@@ -280,23 +280,31 @@ export function Markdown(
           if (key && hash) touch(key, { hash, html: safe })
           return safe
         }),
-      )
-        .then((list) => list.join(""))
-        .catch(() => fallback(src.text))
+      ).catch(() => [fallback(src.text)] as string[])
     },
-    { initialValue: fallback(local.text) },
+    { initialValue: [fallback(local.text)] as string[] },
   )
 
   let copyCleanup: (() => void) | undefined
 
+  // 260907 Red 流式 DOM 也分块：此前每 tick 把全部块的 HTML join 成一个字符串，整篇
+  // innerHTML 解析 + 全树 decorate + 全树 morphdom——块缓存只省了 parse/sanitize，DOM
+  // 一步仍与全文长度成正比，长回答越写越卡。现在每个块一个 display:contents 子容器
+  // （布局与拼接 HTML 完全等价，见 markdown.css），HTML 没变的块（stream() 保证已定型
+  // 前缀的 raw 恒定 ⇒ 缓存命中 ⇒ 同一字符串引用）一个字节不动；每 tick 只有正在长的
+  // settled 尾段与活跃尾块重跑 innerHTML+morphdom。决策记录：
+  // docs/notes/implemented/bug-fix/2026-09-07-markdown-block-dom.md
+  const rendered: { el: HTMLDivElement; html: string }[] = []
+
   createEffect(() => {
     const container = root()
-    const content = local.text ? (html.latest ?? html() ?? "") : ""
+    const list = local.text ? (blocks.latest ?? blocks() ?? []) : []
     if (!container) return
     if (isServer) return
 
-    if (!content) {
+    if (list.length === 0) {
       container.innerHTML = ""
+      rendered.length = 0
       return
     }
 
@@ -304,25 +312,39 @@ export function Markdown(
       copy: i18n.t("ui.message.copy"),
       copied: i18n.t("ui.message.copied"),
     }
-    const temp = document.createElement("div")
-    temp.innerHTML = content
-    decorate(temp, labels)
 
-    morphdom(container, temp, {
-      childrenOnly: true,
-      onBeforeElUpdated: (fromEl, toEl) => {
-        if (
-          fromEl instanceof HTMLButtonElement &&
-          toEl instanceof HTMLButtonElement &&
-          fromEl.getAttribute("data-slot") === "markdown-copy-button" &&
-          toEl.getAttribute("data-slot") === "markdown-copy-button" &&
-          fromEl.getAttribute("data-copied") === "true"
-        ) {
-          setCopyState(toEl, labels, true)
-        }
-        if (fromEl.isEqualNode(toEl)) return false
-        return true
-      },
+    while (rendered.length < list.length) {
+      const el = document.createElement("div")
+      el.setAttribute("data-slot", "markdown-block")
+      container.appendChild(el)
+      rendered.push({ el, html: "" })
+    }
+    while (rendered.length > list.length) rendered.pop()!.el.remove()
+
+    list.forEach((html, index) => {
+      const entry = rendered[index]!
+      if (entry.html === html) return
+      entry.html = html
+      const temp = document.createElement("div")
+      temp.innerHTML = html
+      decorate(temp, labels)
+
+      morphdom(entry.el, temp, {
+        childrenOnly: true,
+        onBeforeElUpdated: (fromEl, toEl) => {
+          if (
+            fromEl instanceof HTMLButtonElement &&
+            toEl instanceof HTMLButtonElement &&
+            fromEl.getAttribute("data-slot") === "markdown-copy-button" &&
+            toEl.getAttribute("data-slot") === "markdown-copy-button" &&
+            fromEl.getAttribute("data-copied") === "true"
+          ) {
+            setCopyState(toEl, labels, true)
+          }
+          if (fromEl.isEqualNode(toEl)) return false
+          return true
+        },
+      })
     })
 
     if (!copyCleanup)
