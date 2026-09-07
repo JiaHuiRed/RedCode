@@ -879,12 +879,33 @@ const ProviderInterleaved = Schema.Union([
 const ProviderCapabilities = Schema.Struct({
   temperature: Schema.Boolean,
   reasoning: Schema.Boolean,
+  reasoningEfforts: optionalOmitUndefined(Schema.Array(Schema.String)),
   attachment: Schema.Boolean,
   toolcall: Schema.Boolean,
   input: ProviderModalities,
   output: ProviderModalities,
   interleaved: ProviderInterleaved,
 })
+
+// 260907 Red: models.dev keeps reasoning_options deliberately open-ended, but the
+// provider runtime only needs a stable list of selectable effort labels. Decision:
+// docs/notes/implemented/architecture/2026-09-07-structured-reasoning-efforts.md.
+function reasoningEfforts(options: unknown): string[] | undefined {
+  if (!Array.isArray(options)) return undefined
+  const effort = options.find(
+    (option) =>
+      typeof option === "object" &&
+      option !== null &&
+      !Array.isArray(option) &&
+      (option as Record<string, unknown>).type === "effort",
+  ) as { values?: unknown } | undefined
+  if (!Array.isArray(effort?.values)) return undefined
+  const values = effort.values.flatMap((value) => {
+    if (value === null) return ["none"]
+    return typeof value === "string" && value.length > 0 ? [value] : []
+  })
+  return values.length > 0 ? [...new Set(values)] : undefined
+}
 
 const ProviderCacheCost = Schema.Struct({
   read: Schema.Finite,
@@ -1108,6 +1129,7 @@ function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model
     capabilities: {
       temperature: model.temperature ?? false,
       reasoning: model.reasoning ?? false,
+      reasoningEfforts: reasoningEfforts(model.reasoning_options),
       attachment: model.attachment ?? false,
       toolcall: model.tool_call ?? true,
       input: {
@@ -1466,6 +1488,8 @@ export const layer = Layer.effect(
               capabilities: {
                 temperature: model.temperature ?? existingModel?.capabilities.temperature ?? false,
                 reasoning: model.reasoning ?? existingModel?.capabilities.reasoning ?? false,
+                reasoningEfforts:
+                  reasoningEfforts(model.reasoning_options) ?? existingModel?.capabilities.reasoningEfforts,
                 attachment: model.attachment ?? existingModel?.capabilities.attachment ?? false,
                 toolcall: model.tool_call ?? existingModel?.capabilities.toolcall ?? true,
                 input: {
@@ -1521,6 +1545,7 @@ export const layer = Layer.effect(
               headers: mergeDeep(existingModel?.headers ?? {}, model.headers ?? {}),
               family: model.family ?? existingModel?.family ?? "",
               release_date: model.release_date ?? existingModel?.release_date ?? "",
+              reasoningOptions: model.reasoning_options ?? existingModel?.reasoningOptions,
               variants: {},
             }
             const merged = mergeDeep(ProviderTransform.variants(parsedModel), model.variants ?? {})

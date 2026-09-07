@@ -171,6 +171,15 @@ describe("reasoning_options 数据驱动档位", () => {
     expect(v["ultra"]).toEqual({ reasoningEffort: "ultra" })
   })
 
+  test("规范化能力字段驱动未知模型，不再读取原始目录数据", () => {
+    const model = make("future-model-9", undefined)
+    model.capabilities.reasoningEfforts = ["low", "ultra"]
+
+    const v = ProviderTransform.variants(model)
+    expect(Object.keys(v)).toEqual(["low", "ultra"])
+    expect(v["ultra"]).toEqual({ reasoningEffort: "ultra" })
+  })
+
   test("values 里的 null 映射为 none 档", () => {
     const v = ProviderTransform.variants(make("future-model-9", [{ type: "effort", values: [null, "high"] }]))
     expect(Object.keys(v)).toEqual(["none", "high"])

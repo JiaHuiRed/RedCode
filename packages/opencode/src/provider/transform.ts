@@ -892,6 +892,9 @@ const effortVariants = (efforts: string[]) =>
 // budget_tokens/toggle 型在这些 provider 上没有已知的参数形状，返回 undefined 退回硬编码。
 // 字段是 Unknown 透传（外部数据形态会演化），所以逐层运行时收窄，认不出就放弃。
 function dataEffortVariants(model: Provider.Model): Record<string, Record<string, any>> | undefined {
+  const normalized = model.capabilities.reasoningEfforts
+  if (normalized?.length) return effortVariants(normalized)
+
   const options = model.reasoningOptions
   if (!Array.isArray(options)) return undefined
   const effort = options.find(

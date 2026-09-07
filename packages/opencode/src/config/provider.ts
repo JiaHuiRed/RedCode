@@ -9,6 +9,7 @@ export const Model = Schema.Struct({
   release_date: Schema.optional(Schema.String),
   attachment: Schema.optional(Schema.Boolean),
   reasoning: Schema.optional(Schema.Boolean),
+  reasoning_options: Schema.optional(Schema.MutableJson),
   temperature: Schema.optional(Schema.Boolean),
   tool_call: Schema.optional(Schema.Boolean),
   interleaved: Schema.optional(

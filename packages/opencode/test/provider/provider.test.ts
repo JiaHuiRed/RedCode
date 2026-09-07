@@ -1293,6 +1293,33 @@ test("models.dev normalization fills required response fields", () => {
   expect(model.release_date).toBe("")
 })
 
+test("models.dev reasoning_options becomes a structured model capability", () => {
+  const provider = {
+    id: "gateway",
+    name: "Gateway",
+    env: [],
+    models: {
+      "future-model": {
+        id: "future-model",
+        name: "Future Model",
+        release_date: "2026-09-07",
+        attachment: false,
+        reasoning: true,
+        temperature: true,
+        tool_call: true,
+        reasoning_options: [{ type: "effort", values: [null, "high", "ultra", "high"] }],
+        limit: { context: 128_000, output: 8192 },
+      },
+    },
+  } as unknown as ModelsDev.Provider
+
+  expect(Provider.fromModelsDevProvider(provider).models["future-model"].capabilities.reasoningEfforts).toEqual([
+    "none",
+    "high",
+    "ultra",
+  ])
+})
+
  test("models.dev normalization applies context override for stale registry data", () => {
    const provider = {
      id: "openrouter",

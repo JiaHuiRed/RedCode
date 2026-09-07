@@ -24,6 +24,8 @@
 
 #### 新增
 
+- **模型目录的 `reasoning_options` 已规范为运行时能力**（`packages/opencode/src/provider/provider.ts`，决策：`docs/notes/implemented/architecture/2026-09-07-structured-reasoning-efforts.md`）：`capabilities.reasoningEfforts` 只接受 effort 型选项中的有效字符串（`null` 规范为 `none` 并去重）；推理档位变体优先读取这份结构化能力，仍保留 plugin 旧 raw 字段的兼容兜底。所有已有的模型族实测特判继续优先，外部目录数据不会覆盖它们。
+
 - **TUI 首页字标右侧落一枚朱印**（新增 `packages/opencode/src/cli/cmd/tui/component/seal.tsx`，`routes/home.tsx` 接入）：品牌标志 09-04 已经进了 GUI（favicon / PWA 图标 / 标题栏 / 等待行），终端这边一直没有。
 
   **GUI 那套 SVG 几何搬不进终端，这版是重刻的。** 先试的是栅格化：把 `redcode-mark.svg` 渲成位图再用半块字符 `▀▄█` 铺（一格装两个垂直像素，正好凑出方像素）。实测 10 到 24 列，`>` 的笔画在 16 列下只有 **1.7 个像素宽**、`_` 直接消失，要到 24 列 × 12 行才看得清——而首页字标本身才 7 行。改用**线条刻本**：印身用圆角框字符，`6 列 × 3 行` 在终端里就是视觉正方形（字符约 1:2）；印文直接写 `>_`,它本来就是终端提示符，用真字符比栅格成色块更本真。
