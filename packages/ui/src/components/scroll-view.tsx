@@ -1,4 +1,4 @@
-import { onMount, splitProps, type ComponentProps, Show, mergeProps } from "solid-js"
+import { onCleanup, onMount, splitProps, type ComponentProps, Show, mergeProps } from "solid-js"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { createStore } from "solid-js/store"
 import { useI18n } from "../context/i18n"
@@ -139,6 +139,21 @@ export function ScrollView(props: ScrollViewProps) {
     setState("thumbTop", boundedTop)
   }
 
+  // 260907 ZCode 滚动路径的 thumb 更新并入 rAF（GUI 性能审计小项）：此前每个 scroll 事件
+  // 都同步跑 updateThumb（3 次布局读 + store 写），快速滚动时高频触发。合并到帧预算内
+  // 一帧最多跑一次；resize/初始化两条冷路径保持同步，挂载后第一帧就有正确的 thumb。
+  let thumbFrame: number | undefined
+  const scheduleThumb = () => {
+    if (thumbFrame !== undefined) return
+    thumbFrame = requestAnimationFrame(() => {
+      thumbFrame = undefined
+      updateThumb()
+    })
+  }
+  onCleanup(() => {
+    if (thumbFrame !== undefined) cancelAnimationFrame(thumbFrame)
+  })
+
   onMount(() => {
     if (local.viewportRef) {
       local.viewportRef(viewportRef)
@@ -242,7 +257,7 @@ export function ScrollView(props: ScrollViewProps) {
         class="scroll-view__viewport"
         data-scrollable
         onScroll={(e) => {
-          updateThumb()
+          scheduleThumb()
           if (typeof events.onScroll === "function") events.onScroll(e as any)
         }}
         onWheel={events.onWheel as any}

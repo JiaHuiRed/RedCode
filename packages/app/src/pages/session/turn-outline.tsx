@@ -89,10 +89,15 @@ export function TurnOutline(props: {
                   aria-current={active() ? "true" : undefined}
                   disabled={props.busy}
                   onClick={() => props.onJump(entry.messageID)}
+                  /* 260907 ZCode 长会话几千轮 = 几千个按钮，content-visibility:auto 让屏外的
+                     跳过布局与绘制（DOM 仍在、点击/滚动定位不受影响）；contain-intrinsic-size
+                     的 auto 关键字让浏览器记住每条实测高度，滚动条不跳。为这个次要项引入整套
+                     virtua 虚拟化不成比例。 */
                   class="group w-full text-left rounded-md px-2.5 py-2 flex flex-col gap-1
                          transition-colors disabled:opacity-60 disabled:cursor-progress
                          hover:bg-surface-raised-base-hover
-                         data-[active]:bg-surface-raised-base data-[active]:shadow-[inset_2px_0_0_var(--v2-border-border-focus)]"
+                         data-[active]:bg-surface-raised-base data-[active]:shadow-[inset_2px_0_0_var(--v2-border-border-focus)]
+                         [content-visibility:auto] [contain-intrinsic-size:auto_40px]"
                 >
                   <div class="flex items-baseline gap-2 min-w-0">
                     <span class="shrink-0 text-11-regular tabular-nums text-text-weak">{entry.turn}</span>
