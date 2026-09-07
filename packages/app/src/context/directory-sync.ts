@@ -9,6 +9,7 @@ import {
   setSessionPrefetch,
 } from "./global-sync/session-prefetch"
 import { useServerSync, type ServerSyncContext } from "./server-sync"
+import { trackForegroundMessageLoad } from "./foreground-loads"
 import type { Message, OpencodeClient, Part } from "@redcode-ai/sdk/v2/client"
 import { SESSION_CACHE_LIMIT, dropSessionCaches, pickSessionCacheEvictions } from "./global-sync/session-cache"
 import { diffs as list, message as clean } from "@/utils/diffs"
@@ -337,8 +338,9 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
   }
 
   const fetchMessages = async (input: { client: typeof client; sessionID: string; limit: number; before?: string }) => {
-    const messages = await retry(() =>
-      input.client.session.messages({ sessionID: input.sessionID, limit: input.limit, before: input.before }),
+    // 260907 ZCode 在途登记给 prefetch pump 让路用，见 context/foreground-loads.ts
+    const messages = await trackForegroundMessageLoad(
+      retry(() => input.client.session.messages({ sessionID: input.sessionID, limit: input.limit, before: input.before })),
     )
     const items = (messages.data ?? []).filter((x) => !!x?.info?.id)
     const session = items.map((x) => clean(x.info)).sort(byTime)

@@ -12,6 +12,7 @@ import {
   shouldSkipSessionPrefetch,
 } from "@/context/global-sync/session-prefetch"
 import { dropSessionCaches, pickSessionCacheEvictions } from "@/context/global-sync/session-cache"
+import { foregroundMessageLoads } from "@/context/foreground-loads"
 import { pathKey } from "@/utils/path-key"
 
 type PrefetchQueue = {
@@ -32,12 +33,20 @@ export function createPrefetch(deps: {
 }) {
   const { visibleSessionDirs, currentDir, sessionId, sessions, globalSync, globalSDK, route } = deps
 
-  const prefetchChunk = 200
+  // 260907 ZCode 预取降载（GUI 性能审计问题 6）：chunk 从 200 降到 40。
+  // 预取的职责是「点开秒有内容」——40 条足够首屏 paint，且载荷与前台刷新页同量级；
+  // 此前 200 条全量 parts（base64 图 + summary.diffs 内联）和前台首开一样重，
+  // 会话列表点来点去时后台持续下载几百 MB 级 JSON 还挤占连接池。深历史由打开后的
+  // loadMore/loadThrough 分页补，不靠预取。skip 判定（shouldSkipSessionPrefetch 的
+  // info.limit > chunk）语义不变：前台已加载更全的窗口时照旧跳过。
+  const prefetchChunk = 40
   const prefetchConcurrency = 2
   const prefetchPendingLimit = 10
   const span = 4
   const prefetchToken = { value: 0 }
   const prefetchQueues = new Map<string, PrefetchQueue>()
+  const PUMP_YIELD_MS = 250
+  let pumpYieldTimer: ReturnType<typeof setTimeout> | undefined
 
   const PREFETCH_MAX_SESSIONS_PER_DIR = 10
   const prefetchedByDir = new Map<string, Set<string>>()
@@ -200,6 +209,18 @@ export function createPrefetch(deps: {
   const pumpPrefetch = (directory: string) => {
     const q = queueFor(directory)
     if (q.running >= prefetchConcurrency) return
+
+    // 260907 ZCode 前台正在拉消息（fetchMessages 在途）时让路：连接池优先供给用户
+    // 正在看的会话，预取延迟 250ms 再试。预取不经 fetchMessages，不会被自己挡死；
+    // 队列清空后重试是空转，无害。
+    if (foregroundMessageLoads() > 0) {
+      if (pumpYieldTimer) return
+      pumpYieldTimer = setTimeout(() => {
+        pumpYieldTimer = undefined
+        for (const dir of prefetchQueues.keys()) pumpPrefetch(dir)
+      }, PUMP_YIELD_MS)
+      return
+    }
 
     const sessionID = q.pending.shift()
     if (!sessionID) return
