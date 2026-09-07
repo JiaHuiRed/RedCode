@@ -1143,6 +1143,7 @@ export type ProviderConfig = {
       release_date?: string
       attachment?: boolean
       reasoning?: boolean
+      reasoning_options?: unknown
       temperature?: boolean
       tool_call?: boolean
       interleaved?:
@@ -1433,6 +1434,7 @@ export type Model = {
   capabilities: {
     temperature: boolean
     reasoning: boolean
+    reasoningEfforts?: Array<string>
     attachment: boolean
     toolcall: boolean
     input: {

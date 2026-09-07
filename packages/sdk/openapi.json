@@ -14817,6 +14817,7 @@
                 "reasoning": {
                   "type": "boolean"
                 },
+                "reasoning_options": {},
                 "temperature": {
                   "type": "boolean"
                 },
@@ -15633,6 +15634,12 @@
               },
               "reasoning": {
                 "type": "boolean"
+              },
+              "reasoningEfforts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               },
               "attachment": {
                 "type": "boolean"
