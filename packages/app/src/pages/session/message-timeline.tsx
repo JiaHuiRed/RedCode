@@ -302,7 +302,9 @@ function TimelineDiffView(props: { diff: SummaryDiff }) {
 
   return (
     <div data-slot="session-turn-diff-view" data-scrollable>
-      <Dynamic component={fileComponent} mode="diff" virtualize={false} fileDiff={view.fileDiff} />
+      {/* 260907 ZCode virtualize={false} 是死 prop——file 组件没有此 option，splitProps 把它
+          扫进 others 透传后被库忽略；实际虚拟化由滚动根决定，见 session-turn.css 的 max-height */}
+      <Dynamic component={fileComponent} mode="diff" fileDiff={view.fileDiff} />
     </div>
   )
 }

@@ -262,6 +262,11 @@
     background-color: var(--surface-inset-base);
     width: 100%;
     min-width: 0;
+    /* 260907 ZCode 虚拟化修复：此前只有 overflow-y:auto 没有 max-height——容器永远不滚，
+       pierre 虚拟izer 以它为滚动根、拿它的 clientHeight 当视口 = 判定全内容可见，
+       几千行 diff 一展开就是全量 DOM + 全量高亮。加上限后容器真滚，虚拟化生效
+       （对齐 bash 输出 240px / 文件页 60vh 的「上限内滚动」既有模式）。 */
+    max-height: 60vh;
     overflow-y: auto;
     overflow-x: hidden;
     scrollbar-width: none;
