@@ -17,14 +17,13 @@ const CODEX_API_ENDPOINT = "https://chatgpt.com/backend-api/codex/responses"
 const OAUTH_PORT = 1455
 const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000
 // 260831 cc ChatGPT 订阅认证下后端接受的型号。**实测得来，不是推的**：
-// `GET /backend-api/codex/models?client_version=…` 返回当前账号的权威名单，Plus 档是
+// `GET /backend-api/codex/models?client_version=…` 返回当前账号的权威名单，Plus 档曾是
 // gpt-5.6-sol / -terra / -luna、gpt-reserve、gpt-5.5、gpt-5.4、gpt-5.4-mini、codex-auto-review。
 // 名单外的一律 400 `The '<id>' model is not supported when using Codex with a ChatGPT account.`
 // —— gpt-5.2 / gpt-5.3-codex / gpt-5.3-codex-spark / gpt-5.5-pro / **裸 gpt-5.6** 全部实测被拒。
-// 裸 gpt-5.6 只是 API 侧的名字，Codex 侧不存在；5.6 只有这三个变体。哥哥拍板只留这三个，
-// 老型号不再用。原先那条 `^gpt-(\d+\.\d+)` > 5.4 的正则兜底一并删掉：正是它放行了裸 gpt-5.6
-// 和 gpt-5.5-pro 这两个选了就 400 的选项。
-const ALLOWED_MODELS = new Set(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"])
+// 260907 Red 这是产品筛选白名单，不是版本号猜测：旧型号不加入；新发布且已确认可用的型号要放行，
+// 否则更新后的模型会被旧列表挡在 GUI 之外。
+const ALLOWED_MODELS = new Set(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra"])
 
 interface PkceCodes {
   verifier: string
