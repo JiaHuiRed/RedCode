@@ -36,6 +36,29 @@ describe("ToolStream", () => {
     }),
   )
 
+  it.effect("keeps established identity when a continuation sends empty fields", () =>
+    Effect.gen(function* () {
+      const first = ToolStream.appendOrStart(
+        ADAPTER,
+        ToolStream.empty<number>(),
+        0,
+        { id: "call_1", name: "lookup", text: '{"query"' },
+        "missing tool",
+      )
+      if (ToolStream.isError(first)) return yield* first
+      const second = ToolStream.appendOrStart(
+        ADAPTER,
+        first.tools,
+        0,
+        { id: "", name: "", text: ':"weather"}' },
+        "missing tool",
+      )
+      if (ToolStream.isError(second)) return yield* second
+
+      expect(second.events).toEqual([{ type: "tool-input-delta", id: "call_1", name: "lookup", text: ':"weather"}' }])
+    }),
+  )
+
   it.effect("fails appendExisting when the provider skipped the tool start", () =>
     Effect.gen(function* () {
       const error = ToolStream.appendExisting(ADAPTER, ToolStream.empty<number>(), 0, "{}", "missing tool")

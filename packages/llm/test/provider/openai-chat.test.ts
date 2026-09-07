@@ -343,7 +343,12 @@ describe("OpenAI Chat route", () => {
           role: "assistant",
           tool_calls: [{ index: 0, id: "call_1", function: { name: "lookup", arguments: '{"query"' } }],
         }),
-        deltaChunk({ tool_calls: [{ index: 0, function: { arguments: ':"weather"}' } }] }),
+        deltaChunk({
+          tool_calls: [{ index: 0, id: "", function: { name: "", arguments: ':"weather"' } }],
+        }),
+        deltaChunk({
+          tool_calls: [{ index: 0, id: null, function: { name: null, arguments: "}" } }],
+        }),
         deltaChunk({}, "tool_calls"),
       )
       const response = yield* LLMClient.generate(
@@ -356,7 +361,8 @@ describe("OpenAI Chat route", () => {
         { type: "step-start", index: 0 },
         { type: "tool-input-start", id: "call_1", name: "lookup", providerMetadata: undefined },
         { type: "tool-input-delta", id: "call_1", name: "lookup", text: '{"query"' },
-        { type: "tool-input-delta", id: "call_1", name: "lookup", text: ':"weather"}' },
+        { type: "tool-input-delta", id: "call_1", name: "lookup", text: ':"weather"' },
+        { type: "tool-input-delta", id: "call_1", name: "lookup", text: "}" },
         { type: "tool-input-end", id: "call_1", name: "lookup", providerMetadata: undefined },
         {
           type: "tool-call",

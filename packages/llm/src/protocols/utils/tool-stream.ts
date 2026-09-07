@@ -107,6 +107,9 @@ export const start = <K extends StreamKey>(
   tool: Omit<PendingTool, "input"> & { readonly input?: string },
 ) => withTool(tools, key, { ...tool, input: tool.input ?? "" })
 
+const acceptIdentity = (current: string | undefined, incoming: string | null | undefined) =>
+  typeof incoming === "string" && incoming.length > 0 ? incoming : current
+
 /**
  * Append a streamed argument delta, starting the tool if this provider encodes
  * identity on the first delta instead of a separate start event. OpenAI Chat has
@@ -117,12 +120,12 @@ export const appendOrStart = <K extends StreamKey>(
   route: string,
   tools: State<K>,
   key: K,
-  delta: { readonly id?: string; readonly name?: string; readonly text: string },
+  delta: { readonly id?: string | null; readonly name?: string | null; readonly text: string },
   missingToolMessage: string,
 ): AppendOutcome<K> | LLMError => {
   const current = tools[key]
-  const id = delta.id ?? current?.id
-  const name = delta.name ?? current?.name
+  const id = acceptIdentity(current?.id, delta.id)
+  const name = acceptIdentity(current?.name, delta.name)
   if (!id || !name) return eventError(route, missingToolMessage)
 
   const tool = {
