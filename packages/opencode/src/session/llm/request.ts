@@ -162,6 +162,14 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     ? (yield* InstanceState.context).project.id
     : undefined
 
+  // 260907 Red opencode.ai zen 网关（Console Go 等）按 x-opencode-session 路由，缺头一律 400
+  // MissingSessionID（opencode-go 全模型必现；它不认 x-session-affinity）。只给 baseURL 落在
+  // opencode.ai 域内的供应商加，别的网关不认识这个头。决策见：
+  // docs/notes/implemented/bug-fix/2026-09-07-opencode-zen-session-header.md
+  const viaOpencodeZen = [input.provider.options?.baseURL, input.model.api?.url].some(
+    (url) => typeof url === "string" && url.startsWith("https://opencode.ai/"),
+  )
+
   return {
     system,
     messages,
@@ -180,6 +188,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
         : {
             "x-session-affinity": input.sessionID,
             ...(input.parentSessionID ? { "x-parent-session-id": input.parentSessionID } : {}),
+            ...(viaOpencodeZen ? { "x-opencode-session": input.sessionID } : {}),
             "User-Agent": USER_AGENT,
           }),
       ...input.model.headers,
