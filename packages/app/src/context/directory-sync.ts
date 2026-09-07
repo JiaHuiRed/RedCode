@@ -14,6 +14,7 @@ import type { Message, OpencodeClient, Part } from "@redcode-ai/sdk/v2/client"
 import { SESSION_CACHE_LIMIT, dropSessionCaches, pickSessionCacheEvictions } from "./global-sync/session-cache"
 import { diffs as list, message as clean } from "@/utils/diffs"
 import { compareTime } from "@/utils/id"
+import { pathKey } from "@/utils/path-key"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 
@@ -206,9 +207,13 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
   type Setter = Child[1]
 
   const current = createMemo(() => globalSync.child(directory))
-  const target = (directory?: string) => {
-    if (!directory || directory === directory) return current()
-    return globalSync.child(directory)
+  const target = (dir?: string) => {
+    // 260907 ZCode 修复恒真条件：参数原名 directory 遮蔽外层同名变量，`directory === directory`
+    // 恒真 ⇒ 无论传什么都返回 current()，跨目录的 optimistic.add/remove 写全部落进当前
+    // 目录的 store（optimistic map 却按入参目录记账，两边错位）。比较用 pathKey，与
+    // child-store 的目录键控完全一致。addOptimisticMessage 的无参调用不受影响。
+    if (!dir || pathKey(dir) === pathKey(directory)) return current()
+    return globalSync.child(dir)
   }
   const absolute = (path: string) => (current()[0].path.directory + "/" + path).replace("//", "/")
   const initialMessagePageSize = 40

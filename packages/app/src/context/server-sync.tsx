@@ -327,8 +327,6 @@ export function createServerSyncContext() {
     }
 
     const limit = Math.max(store.limit + SESSION_RECENT_LIMIT, SESSION_RECENT_LIMIT)
-    // 260608 Red 启动计时：首页"加载中"等的就是这个 session.list 往返，测每个目录多久，测完即删
-    const tList = performance.now()
     const promise = queryClient
       .fetchQuery({
         ...queryOptionsApi.sessions(key),
@@ -379,7 +377,8 @@ export function createServerSyncContext() {
 
     sessionLoads.set(key, promise)
     void promise.finally(() => {
-      console.log(`[timing] session.list ${getFilename(directory)}: ${Math.round(performance.now() - tList)}ms`)
+      // 260907 ZCode 移除生产计时日志（原注释自称"测完即删"）：每次目录会话列表加载都打一条
+      // console.log。要看耗时就临时加回来，别常驻。
       sessionLoads.delete(key)
       children.unpin(key)
     })
