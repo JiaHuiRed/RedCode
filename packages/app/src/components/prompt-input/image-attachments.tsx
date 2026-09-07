@@ -38,6 +38,9 @@ export const PromptImageAttachments: Component<PromptImageAttachmentsProps> = (p
                     alt={attachment.filename}
                     class={imageClass}
                     onClick={() => props.onOpen(attachment)}
+                    // 260907 ZCode 懒解码：输入框附件预览同款 MB 级 data URL
+                    loading="lazy"
+                    decoding="async"
                   />
                 </Show>
                 <button

@@ -230,6 +230,9 @@ export function FileMedia(props: { media?: FileMediaOptions; fallback: () => JSX
                     src={value()}
                     alt={cfg()?.path}
                     class="max-h-[60vh] max-w-full rounded border border-border-weak-base bg-background-base object-contain"
+                    // 260907 ZCode 懒解码：60vh 视口也可能装多张 MB 级原图，异步解码不卡主线程
+                    loading="lazy"
+                    decoding="async"
                     onLoad={onLoad}
                   />
                 </div>

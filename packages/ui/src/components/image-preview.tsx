@@ -61,6 +61,8 @@ export function ImagePreview(props: ImagePreviewProps | ImageGalleryPreviewProps
               src={current()?.src}
               alt={current()?.alt ?? i18n.t("ui.imagePreview.alt")}
               data-slot="image-preview-image"
+              // 260907 ZCode 懒解码：灯箱必在视口（主动打开），不需要 lazy；异步解码避免 MB 级图卡主线程
+              decoding="async"
             />
             <Show when={hasNext()}>
               <button

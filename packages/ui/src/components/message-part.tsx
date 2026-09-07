@@ -1130,7 +1130,15 @@ export function UserMessageDisplay(props: { message: UserMessage; parts: PartTyp
                       </div>
                     }
                   >
-                    <img data-slot="user-message-attachment-image" src={file.url} alt={name} />
+                    {/* 260907 ZCode 懒加载/懒解码：48px chip 用的是原图 data URL（最大 5MB 级）， */}
+                    {/* eager 解码 12MP 只为 48px 显示会卡主线程，lazy 让视口外的完全不解码 */}
+                    <img
+                      data-slot="user-message-attachment-image"
+                      src={file.url}
+                      alt={name}
+                      loading="lazy"
+                      decoding="async"
+                    />
                   </Show>
                 </div>
               )
@@ -1368,7 +1376,12 @@ function ToolAttachmentImages(props: { attachments?: FilePart[]; filepath?: stri
         <For each={images()}>
           {(file, index) => (
             <button type="button" data-slot="tool-attachment-image" onClick={() => open(index())}>
-              <img src={file.url} alt={file.filename ?? i18n.t("ui.message.attachment.alt")} />
+              <img
+                src={file.url}
+                alt={file.filename ?? i18n.t("ui.message.attachment.alt")}
+                loading="lazy"
+                decoding="async"
+              />
             </button>
           )}
         </For>
