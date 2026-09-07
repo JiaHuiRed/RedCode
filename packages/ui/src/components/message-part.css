@@ -492,6 +492,29 @@
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
+
+  /* 260907 Red bash 大输出截断提示行 */
+  [data-slot="bash-truncate"] {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px 0;
+  }
+
+  [data-slot="bash-truncate-note"] {
+    font-size: 12px;
+    color: var(--text-weak);
+  }
+
+  [data-slot="bash-truncate-toggle"] {
+    border: none;
+    background: none;
+    padding: 0;
+    font-size: 12px;
+    color: var(--text-weak);
+    text-decoration: underline;
+    cursor: pointer;
+  }
 }
 
 [data-component="edit-trigger"],

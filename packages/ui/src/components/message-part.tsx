@@ -2134,16 +2134,34 @@ ToolRegistry.register({
     const i18n = useI18n()
     const pending = () => props.status === "pending" || props.status === "running"
     const sawPending = pending()
-    const text = createMemo(() => {
-      const cmd = props.input.command ?? props.metadata.command ?? ""
-      const out = stripAnsi(props.output || props.metadata.output || "").replace(/\r\n?/g, "\n")
-      return `$ ${cmd}${out ? "\n\n" + out : ""}`
+    // 260907 Red 大输出显示侧截断：流式期间输出每 16ms 合并一次，MB 级日志若全量
+    // stripAnsi + 全量 <pre> 文本替换，每次 flush 都是 O(全文) 的主线程重算。未展开时
+    // 只对尾部 DISPLAY_CAP 字符付费（命令输出的结尾通常才是错误与退出信息），并就近
+    // 对齐行边界降低 ANSI 序列被拦腰截断的概率；复制走 handleCopy 点击时才算全量，
+    // 完整内容不丢。这是纯展示层截断，工具输出/模型可见内容不受影响。
+    const DISPLAY_CAP = 64 * 1024
+    const [expanded, setExpanded] = createSignal(false)
+    const cmd = () => props.input.command ?? props.metadata.command ?? ""
+
+    const view = createMemo(() => {
+      const raw = props.output || props.metadata.output || ""
+      if (!raw) return { text: `$ ${cmd()}`, clipped: 0 }
+      if (expanded() || raw.length <= DISPLAY_CAP) {
+        return { text: `$ ${cmd()}\n\n${stripAnsi(raw).replace(/\r\n?/g, "\n")}`, clipped: 0 }
+      }
+      let start = raw.length - DISPLAY_CAP
+      const nl = raw.indexOf("\n", start)
+      if (nl !== -1 && nl < start + 1024) start = nl + 1
+      return {
+        text: `$ ${cmd()}\n\n${stripAnsi(raw.slice(start)).replace(/\r\n?/g, "\n")}`,
+        clipped: start,
+      }
     })
     const [copied, setCopied] = createSignal(false)
 
     const handleCopy = async () => {
-      const content = text()
-      if (!content) return
+      const raw = props.output || props.metadata.output || ""
+      const content = `$ ${cmd()}${raw ? "\n\n" + stripAnsi(raw).replace(/\r\n?/g, "\n") : ""}`
       if (await writeClipboard(content)) {
         setCopied(true)
         setTimeout(() => setCopied(false), 2000)
@@ -2185,8 +2203,22 @@ ToolRegistry.register({
             </Tooltip>
           </div>
           <div data-slot="bash-scroll" data-scrollable>
+            <Show when={view().clipped > 0}>
+              <div data-slot="bash-truncate">
+                <span data-slot="bash-truncate-note">
+                  {i18n.t("ui.tool.bash.truncated", { size: `${Math.round(view().clipped / 1024)} KB` })}
+                </span>
+                <button
+                  data-slot="bash-truncate-toggle"
+                  type="button"
+                  onClick={() => setExpanded((value) => !value)}
+                >
+                  {expanded() ? i18n.t("ui.tool.bash.collapse") : i18n.t("ui.tool.bash.showAll")}
+                </button>
+              </div>
+            </Show>
             <pre data-slot="bash-pre">
-              <code>{text()}</code>
+              <code>{view().text}</code>
             </pre>
           </div>
         </div>

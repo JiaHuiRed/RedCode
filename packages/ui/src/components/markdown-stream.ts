@@ -75,9 +75,11 @@ const CHUNK_BYTES = 4096
 
 export function stream(text: string, live: boolean) {
   if (!live) return [{ raw: text, src: text, mode: "full" }] satisfies Block[]
-  const src = heal(text)
+  // 260907 Red heal(text) 下沉到早退分支：分块主路径（下面的 for 循环）用的是 heal(chunk)，
+  // 此前这里每 tick 无条件对**全文**跑一次 remend，结果只在三个早退分支被用到——
+  // 长回答的主路径等于白付一份 O(全文) 的文本修复成本。
   // 引用式定义可以出现在正文任何位置并影响**前面**的链接，所以这种文本不能切。
-  if (refs(text)) return [{ raw: text, src, mode: "live" }] satisfies Block[]
+  if (refs(text)) return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
   // 260802 Red: marked → markdown-it（marked 的 lexer 对长文本 O(n²)，换用线性 tokenize）
   // 未闭合 fence 的特征：markdown-it 不产生 fence_close，token 序列以 fence 结尾
   const tokens = md.parse(text, {})
@@ -110,11 +112,11 @@ export function stream(text: string, live: boolean) {
   // 注意这里只省掉 parse/sanitize，DOM 那一步（innerHTML + morphdom）仍然是整篇做的
   // ——把每个块渲染进各自的子容器是下一步，风险更高，先不动。
   const starts = topLevelStarts(tokens)
-  if (starts.length < 2) return [{ raw: text, src, mode: "live" }] satisfies Block[]
+  if (starts.length < 2) return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
 
   // 最后一个顶层块还在长，它是活跃尾块；它之前的都已经定型。
   const tailOffset = lineStart(text, starts[starts.length - 1]!)
-  if (tailOffset <= 0 || tailOffset >= text.length) return [{ raw: text, src, mode: "live" }] satisfies Block[]
+  if (tailOffset <= 0 || tailOffset >= text.length) return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
 
   const blocks: Block[] = []
   let cut = 0
