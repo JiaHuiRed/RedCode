@@ -46,8 +46,8 @@
       "@types/luxon": "3.7.1",
       "@types/node": "24.12.2",
       "@types/semver": "7.7.1",
-      "@tsconfig/node22": "22.0.2",
-      "@tsconfig/bun": "1.0.10",
+      "@tsconfig/node22": "22.0.6",
+      "@tsconfig/bun": "1.0.11",
       "@cloudflare/workers-types": "4.20251008.0",
       "@openauthjs/openauth": "0.0.0-20250322224806",
       "@pierre/diffs": "1.1.0-beta.18",
@@ -97,9 +97,9 @@
     "oxlint": "1.77.0",
     "oxlint-tsgolint": "7.0.2001",
     "prettier": "3.9.6",
-    "semver": "^7.6.0",
+    "semver": "7.8.5",
     "sst": "4.17.1",
-    "turbo": "2.10.8"
+    "turbo": "2.10.12"
   },
   "dependencies": {
     "@redcode-ai/plugin": "workspace:*",
