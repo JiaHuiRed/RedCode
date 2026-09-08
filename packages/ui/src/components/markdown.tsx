@@ -1,5 +1,6 @@
 import { useMarked } from "../context/marked"
 import { useI18n } from "../context/i18n"
+import { copyText } from "../utils/clipboard"
 import DOMPurify from "dompurify"
 import morphdom from "morphdom"
 import { checksum } from "@redcode-ai/core/util/encode"
@@ -207,9 +208,9 @@ function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
     const code = button.closest('[data-component="markdown-code"]')?.querySelector("code")
     const content = code?.textContent ?? ""
     if (!content) return
-    const clipboard = navigator?.clipboard
-    if (!clipboard) return
-    await clipboard.writeText(content)
+    // 260909 Red copyText 带 execCommand 兜底：局域网 HTTP 下 navigator.clipboard 为
+    // undefined，旧实现直接 return——手机上点复制毫无反应也毫无提示
+    if (!(await copyText(content))) return
     const labels = getLabels()
     setCopyState(button, labels, true)
     const existing = timeouts.get(button)

@@ -195,6 +195,13 @@
     opacity: 1;
   }
 
+  /* 260909 Red 触屏没有 hover：代码块复制按钮常显，否则手机上永久不可见 */
+  @media (hover: none) {
+    [data-slot="markdown-copy-button"] {
+      opacity: 1;
+    }
+  }
+
   [data-slot="markdown-copy-button"] [data-slot="check-icon"] {
     display: none;
   }

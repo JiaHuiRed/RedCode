@@ -1,4 +1,5 @@
 import { AppIcon } from "@redcode-ai/ui/app-icon"
+import { copyText } from "@redcode-ai/ui/clipboard"
 import { Button } from "@redcode-ai/ui/button"
 import { DropdownMenu } from "@redcode-ai/ui/dropdown-menu"
 import { Icon } from "@redcode-ai/ui/icon"
@@ -255,17 +256,17 @@ export function SessionHeader() {
   const copyPath = () => {
     const directory = projectDirectory()
     if (!directory) return
-    navigator.clipboard
-      .writeText(directory)
-      .then(() => {
-        showToast({
-          variant: "success",
-          icon: "circle-check",
-          title: language.t("session.share.copy.copied"),
-          description: directory,
-        })
+    // 260909 Red copyText 带 execCommand 兜底：局域网 HTTP（非 secure context）下
+    // navigator.clipboard 缺失，旧实现在手机上直接 reject 走错误提示
+    copyText(directory).then((ok) => {
+      if (!ok) return
+      showToast({
+        variant: "success",
+        icon: "circle-check",
+        title: language.t("session.share.copy.copied"),
+        description: directory,
       })
-      .catch((err: unknown) => showRequestError(language, err))
+    })
   }
 
   const [centerMount, setCenterMount] = createSignal<HTMLElement | null>(null)

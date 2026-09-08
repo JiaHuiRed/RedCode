@@ -6,6 +6,7 @@ import { Icon } from "./icon"
 import { IconButton } from "./icon-button"
 import { Tooltip } from "./tooltip"
 import { useI18n } from "../context/i18n"
+import { copyText } from "../utils/clipboard"
 
 export interface ToolErrorCardProps extends Omit<ComponentProps<typeof Card>, "children" | "variant"> {
   tool: string
@@ -70,7 +71,8 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
   const copy = async () => {
     const text = cleaned()
     if (!text) return
-    await navigator.clipboard.writeText(text)
+    // 260909 Red copyText 带 execCommand 兜底，局域网 HTTP 下 clipboard API 不可用
+    if (!(await copyText(text))) return
     setState("copied", true)
     setTimeout(() => setState("copied", false), 2000)
   }

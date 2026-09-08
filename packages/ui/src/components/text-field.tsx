@@ -2,6 +2,7 @@ import { TextField as Kobalte } from "@kobalte/core/text-field"
 import { createSignal, Show, splitProps } from "solid-js"
 import type { ComponentProps } from "solid-js"
 import { useI18n } from "../context/i18n"
+import { copyText } from "../utils/clipboard"
 import { IconButton } from "./icon-button"
 import { Tooltip } from "./tooltip"
 
@@ -69,7 +70,9 @@ export function TextField(props: TextFieldProps) {
 
   async function handleCopy() {
     const value = local.value ?? local.defaultValue ?? ""
-    await navigator.clipboard.writeText(value)
+    // 260909 Red copyText 带 execCommand 兜底：局域网 HTTP（非 secure context）下
+    // navigator.clipboard 为 undefined，直调会在手机上抛 TypeError 静默失败
+    if (!(await copyText(value))) return
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
