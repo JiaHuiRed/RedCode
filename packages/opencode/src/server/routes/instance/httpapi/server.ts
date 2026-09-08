@@ -172,14 +172,11 @@ const uiRoute = HttpRouter.use((router) =>
     const client = yield* HttpClient.HttpClient
     const flags = yield* RuntimeFlags.Service
 
-    // 260703 Red TUI web 终端页。
-    // 260824 cc 从 "/" 挪到 "/tui"。原因是实测出来的：手机通过局域网连过来落在 "/" 上，
-    // 拿到的是 xterm 里跑 TUI —— 而 TUI 是纯键盘驱动的，工作区选择器要方向键 + 回车，
-    // 触屏上根本按不出来，于是卡死在第一屏（哥哥原话：「只能登录当前工作区无法选择，
-    // 因为没有按键实现」）。而带完整移动端适配的 GUI（packages/app，768px 断点 +
-    // 移动端 tab 切换）其实一直在下面那条 "*" 路由上供着，只是被根路径挡住了 ——
-    // 换句话说以前直接开 /session 反而能进 GUI，开根地址反而不行。
-    // 桌面上要 web 终端仍然可用，地址变成 /tui。
+    // 260703 Red TUI web 终端页。260824 cc 从 "/" 挪到 "/tui"：根路径让给带移动端
+    // 适配的 GUI（packages/app），桌面上要 web 终端就开 /tui。
+    // 260908 Red 原注里「触屏按不出方向键、卡死在第一屏」的前提已过时——0.9.7
+    // （50cf2430）起 TUI 支持鼠标点选，xterm 会把网页点击转成鼠标序列转发给 PTY，
+    // 手机实测可点选进工作区。
     yield* router.add("GET", "/tui", () =>
       Effect.succeed(
         (() => {
