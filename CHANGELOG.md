@@ -16,6 +16,19 @@
 - **GUI 工具行文件图标换成朱印**（新增 `packages/ui/src/components/seal-icon.tsx`，`basic-tool.tsx` / `message-part.tsx` / `session-review.tsx` 接入）：agent 动过文件的地方——通用工具行、edit/write、apply-patch 触发行与多文件列表头、会话审查的变更文件列表——文件名前的文件类型小图标统一换成 RedCode 朱印（`redcode-mark-simple.svg` 的内联刻本，≤24px 场景钦点版；品牌红固定不随主题）。盖章＝落款：这些行是 agent 的手笔。文件树、文件选择器、@提及下拉与用户消息附件等「识别文件」的导航位保留 `FileIcon` 类型图标。
 - **GUI 会话状态立绘拆分接入**（`packages/ui/src/assets/images/chi-{thinking,coding}.jpg`、`chi-task-sticker.tsx`、`packages/app/src/pages/session/message-timeline.tsx`）：`思考和编码中.png` 按左右两幅裁成独立资源；左图只跟随当前活动的 reasoning 组，右图只在 `edit` / `write` / `apply_patch` 执行时出现，现有「任务已接收」仍保留在首轮等待期，三种状态不会同时显示。
 
+#### 新增
+
+- **接入 DeepSeek V4.1 Flash 临时多模态内测别名**（`seed/redcode.home.jsonc`、`packages/opencode/src/provider/{provider,tiered-pricing}.ts`，决策：`docs/notes/implemented/feature/2026-09-08-deepseek-v4-1-flash-alias.md`）：新增到 0910 到期的 `deepseek-v4.1-flash-expires-on-0910`，声明原生图片输入、1M/384K 上下文限制，并复用 Flash/Vision 的人民币工作日峰谷分段价。
+
+#### 修复
+
+- **Windows MCP 裸命令无法启动**（`packages/opencode/src/util/{process,windows-job,windows-job-runner}.ts`、`packages/opencode/src/mcp/{index,stdio}.ts`，决策：`docs/notes/implemented/bug-fix/2026-09-08-windows-job-path-resolution.md`）：自定义 Job runner 不再把裸命令填入 `CreateProcessW` 的 `lpApplicationName`，改由 Windows 按完整命令行搜索 PATH；`node`、`bun`、`fff-mcp`、`markitdown-mcp` 等 MCP 可以走同一条受 Job 管理的启动链。
+
+#### 待办
+
+- **重启新版 TUI 宿主并复核 MCP 侧栏**：当前会话仍由旧版 `redcode.exe` 持有，源码修复和旁路构建已验证，但旧进程不会热加载；重启后确认本地 MCP 的真实连接数与错误日志。
+- **继续排查 GUI 白屏/OOM 与渲染卡顿**：已有 renderer gone、5.6 秒 unresponsive、ResizeObserver 循环和失败 fetch 证据，但尚未确认白屏是否由 renderer 内存耗尽触发；回家后先完成根因交叉验证，再分别修白屏和卡顿。
+
 ### [0.10.20] - 2026-09-07
 
 > 「等待响应中」两连修 + GUI 性能第一批：快照锁不再把 prompt 堵死在发请求之前、opencode zen 网关恢复可用；打开会话 / 流式输出 / 代码高亮 / bash 大输出四条 GUI 热路径落地。Tauri 迁移栈同批砍除。

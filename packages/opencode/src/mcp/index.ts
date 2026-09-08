@@ -37,6 +37,7 @@ import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
+import { createStdioClientTransport, WindowsJobStdioClientTransport } from "./stdio"
 
 const log = Log.create({ service: "mcp" })
 const DEFAULT_TIMEOUT = 30_000
@@ -479,7 +480,11 @@ export const layer = Layer.effect(
     const auth = yield* McpAuth.Service
     const bus = yield* Bus.Service
 
-    type Transport = StdioClientTransport | StreamableHTTPClientTransport | SSEClientTransport
+    type Transport =
+      | StdioClientTransport
+      | WindowsJobStdioClientTransport
+      | StreamableHTTPClientTransport
+      | SSEClientTransport
 
     /**
      * Connect a client via the given transport with resource safety:
@@ -500,8 +505,12 @@ export const layer = Layer.effect(
                 // _process 在 start() 后才存在，故在 connect 完成后设置。解除上限治本；
                 // 兜底拦截在 worker.ts 的 process.on("warning")。
                 if (t instanceof StdioClientTransport) {
-                  ;(t as unknown as { _process: { stdin: NodeJS.WritableStream } })._process.stdin.setMaxListeners(0)
+                  const stdin = (
+                    t as unknown as { _process?: { stdin?: { setMaxListeners: (count: number) => void } } }
+                  )._process?.stdin
+                  stdin?.setMaxListeners(0)
                 }
+                if (t instanceof WindowsJobStdioClientTransport) t.stdin?.setMaxListeners(0)
                 return client
               })
             },
@@ -674,7 +683,7 @@ export const layer = Layer.effect(
         }
       }
 
-      const transport = new StdioClientTransport({
+      const transport = createStdioClientTransport({
         stderr: "pipe",
         command: cmd,
         args: resolvedArgs,
@@ -684,7 +693,7 @@ export const layer = Layer.effect(
           ...(cmd === "redcode" ? { BUN_BE_BUN: "1" } : {}),
         },
       })
-      // 260620 Red capture PID immediately — StdioClientTransport spawns in constructor,
+      // 260620 Red capture PID immediately — stdio transport starts the process during connect,
       // but t.close() in acquireUseRelease release handler uses process.kill() which is
       // unreliable on Windows for compiled exes. We need the PID to killProcessTree on failure.
       const spawnedPid = transport.pid
@@ -897,7 +906,11 @@ export const layer = Layer.effect(
               Object.values(s.clients),
               (client) =>
                 Effect.gen(function* () {
-                  const pid = client.transport instanceof StdioClientTransport ? client.transport.pid : null
+                  const pid =
+                    client.transport instanceof StdioClientTransport ||
+                    client.transport instanceof WindowsJobStdioClientTransport
+                      ? client.transport.pid
+                      : null
                   if (typeof pid === "number") {
                     yield* killProcessTree(pid)
                   }
@@ -1166,6 +1179,7 @@ export const layer = Layer.effect(
       for (const [serverName, cfgEntry] of Object.entries(config)) {
         if (!isMcpConfigured(cfgEntry) || cfgEntry.enabled === false) continue
         if (connectedNames.has(serverName)) continue
+        if (s.status[serverName]?.status === "disabled") continue
 
         const cached = readMcpToolsCache(serverName)
         if (!cached || cached.length === 0) continue

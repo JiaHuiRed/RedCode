@@ -43,6 +43,11 @@ import { drizzle } from "drizzle-orm/bun-sqlite"
 import { ensureProcessMetadata } from "@redcode-ai/core/util/redcode-process"
 import { isRecord } from "@/util/record"
 
+if (process.env.REDCODE_WINDOWS_JOB_RUNNER === "1") {
+  await import("./util/windows-job-runner")
+  process.exit()
+}
+
 const processMetadata = ensureProcessMetadata("main")
 
 process.on("unhandledRejection", (e) => {

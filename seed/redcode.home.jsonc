@@ -218,6 +218,18 @@
          "attachment": true,
          "modalities": { "input": ["text", "image"], "output": ["text"] },
          "limit": { "context": 1000000, "output": 384000 }
+       },
+       // 260908 Red: 官方助手公布的 V4.1 Flash 临时多模态内测别名，
+       // 到 0910 失效；同 baseURL、同 Flash 计价，账号限流 20 请求/分钟。
+       // limit 沿用 V4 Flash 的 1M/384K；费用复用官方 Flash 峰谷/工作日分段价。
+       "deepseek-v4.1-flash-expires-on-0910": {
+         "name": "DeepSeek V4.1 Flash (多模态内测，0910到期)",
+         "temperature": true,
+         "reasoning": true,
+         "tool_call": true,
+         "attachment": true,
+         "modalities": { "input": ["text", "image"], "output": ["text"] },
+         "limit": { "context": 1000000, "output": 384000 }
        }
      }
    }

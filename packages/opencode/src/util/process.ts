@@ -2,6 +2,7 @@ import { type ChildProcess } from "child_process"
 import launch from "cross-spawn"
 import { buffer } from "node:stream/consumers"
 import { errorMessage } from "./error"
+import { WindowsJob } from "./windows-job"
 
 export type Stdio = "inherit" | "pipe" | "ignore"
 export type Shell = boolean | string
@@ -59,20 +60,24 @@ export function spawn(cmd: string[], opts: Options = {}): Child {
   if (cmd.length === 0) throw new Error("Command is required")
   opts.abort?.throwIfAborted()
 
-  const proc = launch(cmd[0], cmd.slice(1), {
-    cwd: opts.cwd,
-    shell: opts.shell,
-    env: opts.env === null ? {} : opts.env ? { ...process.env, ...opts.env } : undefined,
-    stdio: [opts.stdin ?? "ignore", opts.stdout ?? "ignore", opts.stderr ?? "ignore"],
-    windowsHide: process.platform === "win32",
-  })
+  const proc =
+    process.platform === "win32" && typeof Bun !== "undefined" && !opts.shell
+      ? WindowsJob.spawn(cmd[0]!, cmd.slice(1), opts)
+      : launch(cmd[0], cmd.slice(1), {
+          cwd: opts.cwd,
+          shell: opts.shell,
+          env: opts.env === null ? {} : opts.env ? { ...process.env, ...opts.env } : undefined,
+          stdio: [opts.stdin ?? "ignore", opts.stdout ?? "ignore", opts.stderr ?? "ignore"],
+          windowsHide: process.platform === "win32",
+        })
 
   let closed = false
   let timer: ReturnType<typeof setTimeout> | undefined
 
   const abort = () => {
     if (closed) return
-    if (proc.exitCode !== null || proc.signalCode !== null) return
+    if (WindowsJob.isManaged(proc) ? WindowsJob.exited(proc) : proc.exitCode !== null || proc.signalCode !== null)
+      return
     closed = true
 
     proc.kill(opts.kill ?? "SIGTERM")
@@ -82,22 +87,25 @@ export function spawn(cmd: string[], opts: Options = {}): Child {
     timer = setTimeout(() => proc.kill("SIGKILL"), ms)
   }
 
-  const exited = new Promise<number>((resolve, reject) => {
-    const done = () => {
-      opts.abort?.removeEventListener("abort", abort)
-      if (timer) clearTimeout(timer)
-    }
+  const done = () => {
+    opts.abort?.removeEventListener("abort", abort)
+    if (timer) clearTimeout(timer)
+  }
 
-    proc.once("exit", (code, signal) => {
-      done()
-      resolve(code ?? (signal ? 1 : 0))
-    })
+  const exited = WindowsJob.isManaged(proc)
+    ? proc.exited
+    : new Promise<number>((resolve, reject) => {
+        proc.once("exit", (code, signal) => {
+          done()
+          resolve(code ?? (signal ? 1 : 0))
+        })
 
-    proc.once("error", (error) => {
-      done()
-      reject(error)
-    })
-  })
+        proc.once("error", (error) => {
+          done()
+          reject(error)
+        })
+      })
+  void exited.then(done, done)
   void exited.catch(() => undefined)
 
   if (opts.abort) {
@@ -147,6 +155,11 @@ export async function run(cmd: string[], opts: RunOptions = {}): Promise<Result>
 // `redcode` without creating a cycle. Keep both copies in sync.
 export async function stop(proc: ChildProcess) {
   if (proc.exitCode !== null || proc.signalCode !== null) return
+
+  if (WindowsJob.isManaged(proc)) {
+    WindowsJob.terminate(proc)
+    return
+  }
 
   if (process.platform !== "win32" || !proc.pid) {
     proc.kill()

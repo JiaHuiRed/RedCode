@@ -96,6 +96,11 @@ void mock.module("@modelcontextprotocol/sdk/client/stdio.js", () => ({
   StdioClientTransport: MockStdioTransport,
 }))
 
+void mock.module(new URL("../../src/mcp/stdio.ts", import.meta.url).href, () => ({
+  WindowsJobStdioClientTransport: MockStdioTransport,
+  createStdioClientTransport: (opts: unknown) => new MockStdioTransport(opts),
+}))
+
 void mock.module("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({
   StreamableHTTPClientTransport: MockStreamableHTTP,
 }))
@@ -163,6 +168,10 @@ void mock.module("@modelcontextprotocol/sdk/client/index.js", () => ({
 
     async close() {
       if (this._state) this._state.closed = true
+    }
+
+    getInstructions() {
+      return undefined
     }
   },
 }))

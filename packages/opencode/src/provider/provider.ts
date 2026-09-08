@@ -1269,6 +1269,8 @@ export const layer = Layer.effect(
           deepseek: {
             "deepseek-v4-flash": DS_V4_COST_FLASH,
             "deepseek-v4-flash-vision-exp": DS_V4_COST_FLASH,
+            // 260908 Red: V4.1 Flash 临时别名与 V4 Flash 同价，复用官方 CNY 价。
+            "deepseek-v4.1-flash-expires-on-0910": DS_V4_COST_FLASH,
             "deepseek-v4-pro": DS_V4_COST_PRO,
           },
           "opencode-go": {

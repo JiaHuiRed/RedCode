@@ -1,11 +1,31 @@
 import { describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import path from "path"
+import { once } from "node:events"
 import { Process } from "@/util/process"
 import { tmpdir } from "../fixture/fixture"
 
 function node(script: string) {
   return [process.execPath, "-e", script]
+}
+
+function processIsAlive(pid: number) {
+  return Bun.spawnSync(["tasklist", "/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"])
+    .stdout.toString()
+    .includes(`"${pid}"`)
+}
+
+function terminateProcess(pid: number) {
+  if (!processIsAlive(pid)) return
+  Bun.spawnSync(["taskkill", "/PID", String(pid), "/F"])
+}
+
+async function waitFor(predicate: () => boolean, message: string) {
+  const deadline = Date.now() + 5_000
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error(message)
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
 }
 
 describe("util.process", () => {
@@ -14,6 +34,13 @@ describe("util.process", () => {
     expect(out.code).toBe(0)
     expect(out.stdout.toString()).toBe("out")
     expect(out.stderr.toString()).toBe("err")
+  })
+
+  test("resolves bare commands through PATH on Windows", async () => {
+    if (process.platform !== "win32") return
+
+    const out = await Process.run(["node", "-e", 'process.stdout.write("path")'])
+    expect(out.stdout.toString()).toBe("path")
   })
 
   test("returns code when nothrow is enabled", async () => {
@@ -109,6 +136,39 @@ describe("util.process", () => {
 
     expect(await proc.exited).toBe(0)
   })
+
+  test("contains detached descendants in a Windows Job", async () => {
+    if (process.platform !== "win32") return
+
+    let descendant = 0
+    const proc = Process.spawn(
+      node(
+        [
+          'const { spawn } = require("node:child_process")',
+          'const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" })',
+          "child.unref()",
+          "process.stdout.write(String(child.pid))",
+          "setInterval(() => {}, 1000)",
+        ].join(";"),
+      ),
+      { stdout: "pipe" },
+    )
+
+    try {
+      const [output] = (await once(proc.stdout!, "data")) as [Buffer]
+      descendant = Number(output.toString())
+      expect(descendant).toBeGreaterThan(0)
+      expect(processIsAlive(descendant)).toBe(true)
+
+      await Process.stop(proc)
+      await proc.exited
+      await waitFor(() => !processIsAlive(descendant), `Detached descendant ${descendant} survived Job termination`)
+    } finally {
+      await Process.stop(proc)
+      if (proc.exitCode === null && proc.signalCode === null) proc.kill("SIGKILL")
+      if (descendant) terminateProcess(descendant)
+    }
+  }, 10_000)
 
   test("rejects missing commands without leaking unhandled errors", async () => {
     await using tmp = await tmpdir()

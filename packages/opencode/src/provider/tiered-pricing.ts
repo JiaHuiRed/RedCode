@@ -77,6 +77,8 @@ export const TIERED_PRICING: Record<string, Record<string, TieredPricingSegment[
     "deepseek-v4-flash": DS_V4_FLASH_SEGMENTS,
     // 260822 Red: vision-exp 与 flash 同价同峰谷（260821 注册 713263e7 时峰谷表未跟上）
     "deepseek-v4-flash-vision-exp": DS_V4_FLASH_SEGMENTS,
+    // 260908 Red: V4.1 Flash 临时别名与 Flash 同价，复用峰谷/工作日分段。
+    "deepseek-v4.1-flash-expires-on-0910": DS_V4_FLASH_SEGMENTS,
     "deepseek-v4-pro": DS_V4_PRO_SEGMENTS,
   },
   "opencode-go": {
