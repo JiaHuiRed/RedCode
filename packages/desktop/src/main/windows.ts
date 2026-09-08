@@ -58,7 +58,8 @@ function iconsDir() {
   return app.isPackaged ? join(process.resourcesPath, "icons") : join(root, "../../resources/icons")
 }
 
-function iconPath() {
+// 260907 ZCode 导出给 index.ts 的 dev toast 快捷方式用（AUMID 归因图标）
+export function iconPath() {
   const ext = process.platform === "win32" ? "ico" : "png"
   return join(iconsDir(), `icon.${ext}`)
 }

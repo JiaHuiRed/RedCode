@@ -8,7 +8,7 @@ import { homedir, tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event, ProcessMetric } from "electron"
-import { app, BrowserWindow, nativeTheme } from "electron"
+import { app, BrowserWindow, nativeTheme, shell } from "electron"
 
 import contextMenu from "electron-context-menu"
 
@@ -32,6 +32,7 @@ import {
 } from "./server"
 import {
   createMainWindow,
+  iconPath,
   registerRendererProtocol,
   setRelaunchHandler,
   setBackgroundColor,
@@ -364,7 +365,8 @@ const main = Effect.gen(function* () {
    *
    * ⚠️ 未打包时的 toast 点击**仍然**会落到裸 electron（它自己那个快捷方式就指向那里），
    * 这一改只保证它不再劫持打包版。要让 dev 的 toast 也能跳回窗口，得自己写一个带
-   * app 路径参数的快捷方式，不在本次范围内。
+   * app 路径参数的快捷方式——【260907 ZCode 已补】：见下方 whenReady 后写
+   * `RedCode Dev (dev).lnk` 的那段，显示名/图标/点击激活三处一并修掉。
    */
   const userModelId = app.isPackaged ? appId : `${appId}.unpackaged`
   const onboardingTestRoot = ((): string | undefined => {
@@ -530,6 +532,42 @@ const main = Effect.gen(function* () {
     app.setAsDefaultProtocolClient("redcode")
   } else if (process.env.REDCODE_REGISTER_PROTOCOL === "1" && process.argv.length >= 2) {
     app.setAsDefaultProtocolClient("redcode", process.execPath, [resolve(process.argv[1]!)])
+  }
+
+  // 260907 ZCode 补 260903 AUMID 修复留下的尾巴：dev（未打包）的 AUMID
+  // `ai.redcode.desktop.dev.unpackaged` 在开始菜单没有对应快捷方式，Windows 对 toast 的
+  // 归因与点击激活全部回落——显示成默认的「Electron」+默认图标；点击不投递给运行中的
+  // 进程，而是 ShellExecute 快捷方式目标（裸 electron.exe，无参数）→ Electron 欢迎页，
+  // 渲染层写好的 notification.onclick（聚焦 + 跳对应会话）从未有机会执行。
+  // 这里给自己写一个 lnk：同名 AUMID + 复刻当前进程的启动参数。toast 归因显示 RedCode
+  // Dev；点击两条路径都收口到聚焦——COM 激活到运行中实例（notification.onclick 生效，
+  // 含会话跳转），或拉起第二实例后被 requestSingleInstanceLock 拒掉、第一实例收
+  // second-instance 事件 show+focus。每次启动覆盖写，入口路径变了自动跟上；文件名带
+  // (dev) 后缀，避免覆盖 260903 取证里打包版的 RedCode Dev.lnk。
+  if (process.platform === "win32" && !app.isPackaged && process.argv.length >= 2) {
+    const lnk = join(
+      app.getPath("appData"),
+      "Microsoft",
+      "Windows",
+      "Start Menu",
+      "Programs",
+      "RedCode Dev (dev).lnk",
+    )
+    try {
+      // 图标用 RedCode ico（windows.ts 同源），不是裸 electron.exe 的原子图标
+      shell.writeShortcutLink(lnk, "create", {
+        target: process.execPath,
+        args: process.argv.slice(1).join(" "),
+        cwd: process.cwd(),
+        icon: iconPath(),
+        iconIndex: 0,
+        description: "RedCode Dev (development)",
+        appUserModelId: userModelId,
+      })
+      logger.log("dev toast shortcut written", { lnk, aumid: userModelId })
+    } catch (error) {
+      logger.warn("failed to write dev toast shortcut", { error: String(error) })
+    }
   }
   registerRendererProtocol()
   setDockIcon()
