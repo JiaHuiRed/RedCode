@@ -15,8 +15,11 @@ const rendererRoot = join(root, "../renderer")
 const rendererProtocol = "oc"
 const rendererHost = "renderer"
 const clipboardWritePermission = "clipboard-sanitized-write"
+// 260907 ZCode Electron 44 clipboard W3C 化：read-clipboard-image 改走渲染层
+// navigator.clipboard.read()（读图需要 clipboard-read；此前只有 sanitize-write）
+const clipboardReadPermission = "clipboard-read"
 const notificationPermission = "notifications"
-const rendererPermissions = new Set([clipboardWritePermission, notificationPermission])
+const rendererPermissions = new Set([clipboardWritePermission, clipboardReadPermission, notificationPermission])
 const documentPolicyHeader = "Document-Policy"
 const jsCallStacksDocumentPolicy = "include-js-call-stacks-in-crash-reports"
 
@@ -382,9 +385,19 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
     writeLog("window", "renderer responsive", { window: name, currentURL: win.webContents.getURL() }, "error")
     sampler.stopAndFlush()
   })
-  win.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+  // 260907 ZCode Electron 44 起旧的位置参数签名废弃，改为 Event 对象参数
+  // （WebContentsConsoleMessageEventParams）——继续用旧签名会在未来版本被移除。
+  win.webContents.on("console-message", (event) => {
+    const message = event.message ?? ""
+    const sourceId = event.sourceId ?? ""
     if (message.toLowerCase().includes("terminal") || sourceId.toLowerCase().includes("terminal")) {
-      writeLog("pty", "console", { window: name, level, message, line, sourceId })
+      writeLog("pty", "console", {
+        window: name,
+        level: event.level,
+        message,
+        line: event.lineNumber,
+        sourceId,
+      })
     }
   })
   win.webContents.on("preload-error", (_event, preloadPath, error) => {

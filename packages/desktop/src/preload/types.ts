@@ -73,7 +73,6 @@ export type ElectronAPI = {
   saveFilePicker: (opts?: { title?: string; defaultPath?: string }) => Promise<string | null>
   openLink: (url: string) => void
   openPath: (path: string, app?: string) => Promise<void>
-  readClipboardImage: () => Promise<{ buffer: ArrayBuffer; width: number; height: number } | null>
   writeAttachment: (sessionDir: string, filename: string, data: Uint8Array) => Promise<string>
   showNotification: (title: string, body?: string) => void
   // 260801 Red 任务栏闪烁：失焦时收到通知/权限请求闪任务栏（仿 TUI attention.bell）

@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process"
 import { mkdir, writeFile } from "node:fs/promises"
 import { join, resolve, sep } from "node:path"
-import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, shell } from "electron"
+import { BrowserWindow, Notification, app, dialog, ipcMain, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { DesktopMenuAction } from "@redcode-ai/app/desktop-menu"
 
@@ -165,13 +165,9 @@ export function registerIpcHandlers(deps: Deps) {
     })
   })
 
-  ipcMain.handle("read-clipboard-image", () => {
-    const image = clipboard.readImage()
-    if (image.isEmpty()) return null
-    const buffer = image.toPNG().buffer
-    const size = image.getSize()
-    return { buffer, width: size.width, height: size.height }
-  })
+  // 260907 ZCode read-clipboard-image 已删：Electron 44 移除主进程 clipboard.readImage
+  // （W3C 化），粘贴图片改由渲染层 navigator.clipboard.read() 直读（renderer/index.tsx），
+  // clipboard-read 权限在 windows.ts 放行。
 
   // 260629 Red: 保存图片附件到 sessionDir/.attachments/（renderer 无法用 fs/Bun）
   ipcMain.handle(

@@ -293,12 +293,25 @@ const createPlatform = (): Platform => {
     },
 
     async readClipboardImage() {
-      const image = await window.api.readClipboardImage().catch(() => null)
-      if (!image) return null
-      const blob = new Blob([image.buffer], { type: "image/png" })
-      return new File([blob], `pasted-image-${Date.now()}.png`, {
-        type: "image/png",
-      })
+      // 260907 ZCode Electron 44 把主进程 clipboard.readImage 移除（W3C 化），
+      // 改用渲染层 Web API；clipboard-read 权限已在 windows.ts 放行。
+      // 返回形状（File | null）与旧 IPC 路径一致，调用方零改动。
+      try {
+        const items = await navigator.clipboard.read()
+        for (const item of items) {
+          const type = item.types.find((t) => t.startsWith("image/"))
+          if (!type) continue
+          const blob = await item.getType(type)
+          const bitmap = await createImageBitmap(blob)
+          const ext = type === "image/png" ? "png" : type === "image/jpeg" ? "jpg" : (type.split("/")[1] ?? "png")
+          const file = new File([blob], `pasted-image-${Date.now()}.${ext}`, { type })
+          bitmap.close()
+          return file
+        }
+      } catch {
+        return null
+      }
+      return null
     },
 
     writeAttachment: (sessionDir, filename, data) => window.api.writeAttachment(sessionDir, filename, data),
