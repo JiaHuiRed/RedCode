@@ -1,6 +1,10 @@
-import { deflateSync, gzipSync } from "node:zlib"
+import { deflate, gzip } from "node:zlib"
+import { promisify } from "node:util"
 import { Effect } from "effect"
 import { HttpBody, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+
+const gzipAsync = promisify(gzip)
+const deflateAsync = promisify(deflate)
 
 // Keep the server's compressible content-type set stable across HTTP backend changes.
 const COMPRESSIBLE_CONTENT_TYPE_REGEX =
@@ -54,7 +58,14 @@ export const compressionLayer = HttpRouter.middleware<{ handles: unknown }>()((e
     const encoding = pickEncoding(request.headers["accept-encoding"])
     if (!encoding) return response
 
-    const compressed = encoding === "gzip" ? gzipSync(body.body) : deflateSync(body.body)
+    // 260909 Red 换异步 zlib：gzipSync 5MB 级响应会在事件循环上阻塞 30-80ms，
+    // 同进程还在泵 SSE 心跳（阻塞超时误判的前科见 global-sdk.tsx 90s 兜底注释）。
+    // 压缩失败则退回原样返回，不因压缩挂掉请求。
+    const compressed = yield* Effect.tryPromise({
+      try: () => (encoding === "gzip" ? gzipAsync(body.body) : deflateAsync(body.body)),
+      catch: () => undefined,
+    }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+    if (!compressed) return response
     return HttpServerResponse.setHeader(
       HttpServerResponse.setBody(response, HttpBody.uint8Array(compressed, contentType)),
       "content-encoding",
