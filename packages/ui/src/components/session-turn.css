@@ -172,6 +172,10 @@
     opacity: 0;
     transition: opacity 0.15s ease;
     margin-left: 4px;
+    /* 260909 Red span→button 的原生样式复位 */
+    background: none;
+    border: none;
+    padding: 0;
   }
 
   [data-component="session-turn-diffs-group"]:hover [data-slot="session-turn-diffs-toggle"] {
@@ -180,6 +184,13 @@
 
   [data-component="session-turn-diffs-group"][data-show-all] [data-slot="session-turn-diffs-toggle"] {
     opacity: 1;
+  }
+
+  /* 260909 Red 触屏没有 hover：显示全部/收起常显 */
+  @media (hover: none) {
+    [data-slot="session-turn-diffs-toggle"] {
+      opacity: 1;
+    }
   }
 
   [data-slot="session-turn-diffs-more"] {
@@ -191,6 +202,12 @@
     padding: 0 0 6px;
     cursor: pointer;
     transition: color 0.15s ease;
+    /* 260909 Red div→button 的原生样式复位 */
+    background: none;
+    border: none;
+    display: block;
+    width: 100%;
+    text-align: left;
 
     &:hover {
       color: var(--text-link-base);

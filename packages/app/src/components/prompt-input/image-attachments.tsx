@@ -13,8 +13,9 @@ type PromptImageAttachmentsProps = {
 const fallbackClass = "size-16 rounded-md bg-surface-base flex items-center justify-center border border-border-base"
 const imageClass =
   "size-16 rounded-md object-cover border border-border-base hover:border-border-strong-base transition-colors"
+// 260909 Red 触屏没有 hover：移除按钮 [@media(hover:none)] 常显；20px→24px 提升触屏命中
 const removeClass =
-  "absolute -top-1.5 -right-1.5 size-5 rounded-full bg-surface-raised-stronger-non-alpha border border-border-base flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-surface-raised-base-hover"
+  "absolute -top-1.5 -right-1.5 size-6 rounded-full bg-surface-raised-stronger-non-alpha border border-border-base flex items-center justify-center opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity hover:bg-surface-raised-base-hover"
 const nameClass = "absolute bottom-0 left-0 right-0 px-1 py-0.5 bg-black/50 rounded-b-md"
 
 export const PromptImageAttachments: Component<PromptImageAttachmentsProps> = (props) => {
@@ -49,7 +50,7 @@ export const PromptImageAttachments: Component<PromptImageAttachmentsProps> = (p
                   class={removeClass}
                   aria-label={props.removeLabel}
                 >
-                  <Icon name="close" class="size-3 text-text-weak" />
+                  <Icon name="close" class="size-3.5 text-text-weak" />
                 </button>
                 <div class={nameClass}>
                   <span class="text-10-regular text-white truncate block">{attachment.filename}</span>

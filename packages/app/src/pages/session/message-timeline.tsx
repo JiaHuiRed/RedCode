@@ -292,9 +292,10 @@ function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[] }) {
           </For>
         </Accordion>
         <Show when={!showAll() && overflow() > 0}>
-          <div data-slot="session-turn-diffs-more" onClick={() => setState("showAll", true)}>
+          {/* 260909 Red div→button：键盘可达 */}
+          <button type="button" data-slot="session-turn-diffs-more" onClick={() => setState("showAll", true)}>
             {language.t("ui.sessionTurn.diffs.more", { count: String(overflow()) })}
-          </div>
+          </button>
         </Show>
       </div>
     </div>

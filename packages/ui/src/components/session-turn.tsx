@@ -445,9 +445,10 @@ export function SessionTurn(
                     </span>
                     <DiffChanges changes={diffs()} />
                     <Show when={overflow() > 0}>
-                      <span data-slot="session-turn-diffs-toggle" onClick={toggleAll}>
+                      {/* 260909 Red span→button：触屏无 hover 看不见、键盘也到不了，原生按钮两者都解 */}
+                      <button type="button" data-slot="session-turn-diffs-toggle" onClick={toggleAll}>
                         {showAll() ? i18n.t("ui.sessionTurn.diffs.showLess") : i18n.t("ui.sessionTurn.diffs.showAll")}
-                      </span>
+                      </button>
                     </Show>
                   </div>
                   <div data-component="session-turn-diffs-content">
@@ -518,9 +519,10 @@ export function SessionTurn(
                       </For>
                     </Accordion>
                     <Show when={!showAll() && overflow() > 0}>
-                      <div data-slot="session-turn-diffs-more" onClick={toggleAll}>
+                      {/* 260909 Red div→button：键盘可达 */}
+                      <button type="button" data-slot="session-turn-diffs-more" onClick={toggleAll}>
                         {i18n.t("ui.sessionTurn.diffs.more", { count: String(overflow()) })}
-                      </div>
+                      </button>
                     </Show>
                   </div>
                 </div>

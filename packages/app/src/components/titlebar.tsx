@@ -522,7 +522,7 @@ function TabNavItem(props: {
         <IconButtonV2
           size="small"
           variant="ghost-muted"
-          class="opacity-0 group-hover:opacity-100 group-data-[active='true']:opacity-100"
+          class="opacity-0 group-hover:opacity-100 group-data-[active='true']:opacity-100 [@media(hover:none)]:opacity-100"
           onClick={props.onClose}
           icon={<IconV2 name="xmark-small" />}
         />

@@ -47,6 +47,14 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
                     "bg-background-stronger": !selected,
                   }}
                   onClick={() => props.openComment(item)}
+                  role={item.commentID ? "button" : undefined}
+                  tabIndex={item.commentID ? 0 : undefined}
+                  onKeyDown={(e) => {
+                    if (!item.commentID) return
+                    if (e.key !== "Enter" && e.key !== " ") return
+                    e.preventDefault()
+                    props.openComment(item)
+                  }}
                 >
                   <div class="flex items-center gap-1.5">
                     <FileIcon node={{ path: item.path, type: "file" }} class="shrink-0 size-3.5" />
@@ -66,7 +74,7 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
                       type="button"
                       icon="close-small"
                       variant="ghost"
-                      class="ml-auto size-3.5 text-text-weak hover:text-text-strong transition-all"
+                      class="ml-auto size-5 text-text-weak hover:text-text-strong transition-all"
                       onClick={(e) => {
                         e.stopPropagation()
                         props.remove(item)
