@@ -998,9 +998,9 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
 
   const large = createMemo(() => {
     if (local.fileDiff) {
-      const before = local.fileDiff.deletionLines.join("")
-      const after = local.fileDiff.additionLines.join("")
-      return Math.max(before.length, after.length) > 500_000
+      // 260909 Red 求长度和即可，join 会为量个大小分配两份整文件字符串
+      const size = (lines: string[]) => lines.reduce((n, l) => n + l.length, 0)
+      return Math.max(size(local.fileDiff.deletionLines), size(local.fileDiff.additionLines)) > 500_000
     }
 
     const before = typeof local.before?.contents === "string" ? local.before.contents : ""

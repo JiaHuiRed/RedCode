@@ -1,3 +1,4 @@
+import { sampledChecksum } from "@redcode-ai/core/util/encode"
 import { parseDiffFromFile, parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs"
 import { createTwoFilesPatch, parsePatch } from "diff"
 import type { SnapshotFileDiff, VcsFileDiff } from "@redcode-ai/sdk/v2"
@@ -59,7 +60,9 @@ export function text(diff: ViewDiff, side: "deletions" | "additions") {
 }
 
 function fileDiffFromPatch(file: string, patch: string) {
-  const key = `${file}\0${patch}`
+  // 260909 Red 键里不再拼整份 patch（存量 patch 可达 MB 级，每次命中判定都要分配并
+  // 哈希一份等长字符串）——长度 + sampledChecksum 做身份，命中判定零大分配
+  const key = `${file}\0${patch.length}\0${sampledChecksum(patch) ?? ""}`
   const hit = patchFileDiffCache.get(key)
   if (hit) {
     patchFileDiffCache.delete(key)
