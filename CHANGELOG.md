@@ -10,6 +10,10 @@
 
 ### [未发布]
 
+#### 变更
+
+- **gpt.md 按同代官方提示词去老化**（`packages/opencode/src/session/prompt/gpt.md`）：对照泄漏的 GPT-6 官方 harness 提示词（`system_prompts_leaks/OpenAI/Codex/gpt-6-astra.md`）修订三处——① Formatting rules 删掉 Codex CLI plain-text 时代的格式微操（禁嵌套列表、每列表 4-6 项、`**Title Case**` 表头、「表头后不空行」——最后这条与 CommonMark 相反，本来就会渲染错），改为最小格式化原则 + CommonMark 空行规则；② 「默认 ASCII」改为跟随文件既有文字（中文文件的注释/文档保持中文），消除对中文工作区的负倾向；③ Final answer 增补官方 6 代的反 AI 腔写作条款（禁 "In short:" 收尾、禁未经要求的 "X, not Y" 对比框架、禁 delve/leverage 填充词、不用贬低假想替代方案的方式抬高自己的计划）。Autonomy/Destructive/Asking 等自研成熟段未动。配置侧核实：`stepfun-step-plan` 目录条目端点本就是官方 `api.stepfun.com/step_plan/v1`，无需改配置。
+
 ### [0.10.20] - 2026-09-07
 
 > 「等待响应中」两连修 + GUI 性能第一批：快照锁不再把 prompt 堵死在发请求之前、opencode zen 网关恢复可用；打开会话 / 流式输出 / 代码高亮 / bash 大输出四条 GUI 热路径落地。Tauri 迁移栈同批砍除。
