@@ -28,6 +28,27 @@
 
 - **继续排查 GUI 白屏/OOM 与渲染卡顿**：已有 renderer gone、5.6 秒 unresponsive、ResizeObserver 循环和失败 fetch 证据，但尚未确认白屏是否由 renderer 内存耗尽触发；后续先完成根因交叉验证，再分别修白屏和卡顿。
 
+### [0.11.0] - 2026-09-08
+
+> 运行时台阶 + GUI 性能第二批：Electron 跨两个 major（42 → 44，Chromium 152 / Node 24.18），GUI 数据层与渲染热路径的第二轮优化。量级配得上 minor 位的一次跳动。
+
+#### 变更
+
+- **Electron 42.4.1 → 44.2.0**（决策：`docs/notes/implemented/bug-fix/2026-09-08-electron-44-upgrade.md`）：43/44 破坏清单对照后唯一实际命中项是 44 的 clipboard W3C 化——粘贴图片附件从「IPC → 主进程 readImage」改为渲染层 `navigator.clipboard.read()` 直读（权限集加 `clipboard-read`，返回契约不变，调用方零改动）；`console-message` 监听器迁事件对象签名。44 内嵌 Node 24.18.1 仍为 24 线，sidecar 编译缓存与 `@types/node` 对齐不受影响。冒烟实测：sidecar ready 1074ms、ready→healthy 13ms、20MB server bundle 热启动 import 791ms（42 时代 1019-1227ms）。
+
+#### 优化
+
+- **双 SSE firehose 合流为单条**（`packages/app/src/context/server-sdk.tsx`，决策：`docs/notes/implemented/bug-fix/2026-09-07-sse-single-stream.md`）：global-sdk 与 server-sdk 此前各维持一条 `/global/event` 全量订阅（两份 95% 同构的重连/合并代码互相引用），每个事件双份 parse/排队/派发，还常驻占掉同 host 6 连接中的 2 个。保留外层 global 侧连接（通知自启动保证不动），server 侧 event API 整体代理过去，server-sdk 从 ~345 行缩到 ~105 行。
+- **后台预取降载**（`packages/app/src/pages/layout/prefetch.ts`）：邻近会话预取 chunk 200→40（深历史由翻页补），并新增前台消息加载计数器——前台拉消息时预取 pump 延迟 250ms 让路，连接池优先供给用户正在看的会话。
+- **时间线 DiffSummary 补 max-height，虚拟化从被废到生效**（`packages/ui/src/components/session-turn.css`）：diff 容器此前「可滚但永远不滚」，虚拟izer 把全内容当可见，几千行 diff 一展开全量 DOM；加 60vh 上限对齐「上限内滚动」既有模式。
+- **内容图懒加载/懒解码**（五处渲染点）：48px 附件 chip 此前 eager 解码 12MP 原图（data URL 最大 5MB 级），全部补 `loading="lazy" decoding="async"`；灯箱只加懒解码。
+- **markdown 块缓存改字节预算 8MB**（原条数上限 200，长会话滚动互相挤掉缓存重跑主线程 parse）+ **文件虚拟化阈值 500KB→100KB**（write 工具展开不再全量进 DOM）。
+- **轮次目录 `content-visibility: auto`**（几千轮按钮屏外跳过布局绘制）+ **scroll thumb 更新并入 rAF**。
+
+#### 修复
+
+- **`target()` 恒真条件**（`packages/app/src/context/directory-sync.ts`）：参数遮蔽外层同名变量导致 `directory === directory` 恒真，跨目录的 optimistic store 写全部落进当前目录（与按入参目录记账的 optimistic map 错位）。改 `pathKey` 比较，与 child-store 键控一致。顺带移除每次目录会话列表加载都打的生产计时日志。
+
 ### [0.10.20] - 2026-09-07
 
 > 「等待响应中」两连修 + GUI 性能第一批：快照锁不再把 prompt 堵死在发请求之前、opencode zen 网关恢复可用；打开会话 / 流式输出 / 代码高亮 / bash 大输出四条 GUI 热路径落地。Tauri 迁移栈同批砍除。
