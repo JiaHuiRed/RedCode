@@ -18,16 +18,15 @@
 
 #### 新增
 
-- **接入 DeepSeek V4.1 Flash 临时多模态内测别名**（`seed/redcode.home.jsonc`、`packages/opencode/src/provider/{provider,tiered-pricing}.ts`，决策：`docs/notes/implemented/feature/2026-09-08-deepseek-v4-1-flash-alias.md`）：新增到 0910 到期的 `deepseek-v4.1-flash-expires-on-0910`，声明原生图片输入、1M/384K 上下文限制，并复用 Flash/Vision 的人民币工作日峰谷分段价。
+- **接入 DeepSeek V4.1 Flash 临时多模态内测别名**（`seed/redcode.home.jsonc`、`packages/opencode/src/provider/{provider,tiered-pricing}.ts`，决策：`docs/notes/implemented/feature/2026-09-08-deepseek-v4-1-flash-alias.md`）：新增到 0910 到期的 `deepseek-v4.1-flash-expires-on-0910`，声明原生图片输入、1M/384K 上下文限制，并复用 Flash/Vision 的人民币工作日峰谷分段价；已通过 `bun run dev` 实测可用。
 
 #### 修复
 
-- **Windows MCP 裸命令无法启动**（`packages/opencode/src/util/{process,windows-job,windows-job-runner}.ts`、`packages/opencode/src/mcp/{index,stdio}.ts`，决策：`docs/notes/implemented/bug-fix/2026-09-08-windows-job-path-resolution.md`）：自定义 Job runner 不再把裸命令填入 `CreateProcessW` 的 `lpApplicationName`，改由 Windows 按完整命令行搜索 PATH；`node`、`bun`、`fff-mcp`、`markitdown-mcp` 等 MCP 可以走同一条受 Job 管理的启动链。
+- **Windows MCP 裸命令无法启动**（`packages/opencode/src/util/{process,windows-job,windows-job-runner}.ts`、`packages/opencode/src/mcp/{index,stdio}.ts`，决策：`docs/notes/implemented/bug-fix/2026-09-08-windows-job-path-resolution.md`）：自定义 Job runner 不再把裸命令填入 `CreateProcessW` 的 `lpApplicationName`，改由 Windows 按完整命令行搜索 PATH；`node`、`bun`、`fff-mcp`、`markitdown-mcp` 等 MCP 可以走同一条受 Job 管理的启动链，已通过 `bun run dev` 实测接入。
 
 #### 待办
 
-- **重启新版 TUI 宿主并复核 MCP 侧栏**：当前会话仍由旧版 `redcode.exe` 持有，源码修复和旁路构建已验证，但旧进程不会热加载；重启后确认本地 MCP 的真实连接数与错误日志。
-- **继续排查 GUI 白屏/OOM 与渲染卡顿**：已有 renderer gone、5.6 秒 unresponsive、ResizeObserver 循环和失败 fetch 证据，但尚未确认白屏是否由 renderer 内存耗尽触发；回家后先完成根因交叉验证，再分别修白屏和卡顿。
+- **继续排查 GUI 白屏/OOM 与渲染卡顿**：已有 renderer gone、5.6 秒 unresponsive、ResizeObserver 循环和失败 fetch 证据，但尚未确认白屏是否由 renderer 内存耗尽触发；后续先完成根因交叉验证，再分别修白屏和卡顿。
 
 ### [0.10.20] - 2026-09-07
 
