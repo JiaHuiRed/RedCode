@@ -3,7 +3,7 @@ import { Button } from "./button"
 import { DropdownMenu } from "./dropdown-menu"
 import { RadioGroup } from "./radio-group"
 import { DiffChanges } from "./diff-changes"
-import { FileIcon } from "./file-icon"
+import { SealIcon } from "./seal-icon"
 import { Icon } from "./icon"
 import { IconButton } from "./icon-button"
 import { StickyAccordionHeader } from "./sticky-accordion-header"
@@ -513,7 +513,7 @@ export const SessionReview = (props: SessionReviewProps) => {
                           <Accordion.Trigger disabled={!diffCanRender()} class="cursor-default">
                             <div data-slot="session-review-trigger-content">
                               <div data-slot="session-review-file-info">
-                                <FileIcon node={{ path: file, type: "file" }} />
+                                <SealIcon />
                                 <div data-slot="session-review-file-name-container">
                                   <Show when={file.includes("/")}>
                                     <span data-slot="session-review-directory">{`\u202A${getDirectory(file)}\u202C`}</span>

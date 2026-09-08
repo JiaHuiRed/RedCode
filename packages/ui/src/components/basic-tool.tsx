@@ -3,7 +3,7 @@ import { animate, type AnimationPlaybackControls } from "motion"
 import { useI18n } from "../context/i18n"
 import { createStore } from "solid-js/store"
 import { Collapsible } from "./collapsible"
-import { FileIcon } from "./file-icon"
+import { SealIcon } from "./seal-icon"
 import type { IconProps } from "./icon"
 import { TextShimmer } from "./text-shimmer"
 
@@ -201,13 +201,10 @@ export function BasicTool(props: BasicToolProps) {
                       {/* 260831 cc 文件类型图标。必须是 subtitle 的**兄弟节点**：subtitle 那个
                           span 带 overflow:hidden + text-overflow:ellipsis，把 svg 塞进去会被
                           省略号机制波及。点击交给旁边的文件名，图标本身只是装饰。 */}
+                      {/* 260908 Red 工具行文件名前的图标从文件类型标换成朱印：工具行是
+                          agent 的手笔，盖章=落款。文件树/选择器等导航位仍用 FileIcon。 */}
                       <Show when={title().subtitlePath}>
-                        {(path) => (
-                          <FileIcon
-                            data-slot="basic-tool-tool-subtitle-icon"
-                            node={{ path: path(), type: "file" }}
-                          />
-                        )}
+                        <SealIcon data-slot="basic-tool-tool-subtitle-icon" />
                       </Show>
                       <Show when={title().subtitle}>
                         <span

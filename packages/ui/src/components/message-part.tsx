@@ -39,6 +39,7 @@ import { Accordion } from "./accordion"
 import { StickyAccordionHeader } from "./sticky-accordion-header"
 import { Collapsible } from "./collapsible"
 import { FileIcon } from "./file-icon"
+import { SealIcon } from "./seal-icon"
 import { Icon } from "./icon"
 import { ToolErrorCard } from "./tool-error-card"
 import { Checkbox } from "./checkbox"
@@ -1405,7 +1406,7 @@ function ToolFileAccordion(props: { path: string; actions?: JSX.Element; childre
           <Accordion.Trigger>
             <div data-slot="apply-patch-trigger-content">
               <div data-slot="apply-patch-file-info">
-                <FileIcon node={{ path: props.path, type: "file" }} />
+                <SealIcon />
                 <div data-slot="apply-patch-file-name-container">
                   <Show when={props.path.includes("/")}>
                     <span data-slot="apply-patch-directory">{`\u202A${getDirectory(props.path)}\u202C`}</span>
@@ -2290,7 +2291,7 @@ ToolRegistry.register({
                   </span>
                   <Show when={!pending()}>
                     <Show when={path()}>
-                      {(p) => <FileIcon data-slot="message-part-title-icon" node={{ path: p(), type: "file" }} />}
+                      {(p) => <SealIcon data-slot="message-part-title-icon" />}
                     </Show>
                     {/* 260831 cc 点文件名在侧栏开它；没有注入实现时保持纯文本、不显示为可点。 */}
                     <span
@@ -2364,7 +2365,7 @@ ToolRegistry.register({
                   </span>
                   <Show when={!pending()}>
                     <Show when={path()}>
-                      {(p) => <FileIcon data-slot="message-part-title-icon" node={{ path: p(), type: "file" }} />}
+                      {(p) => <SealIcon data-slot="message-part-title-icon" />}
                     </Show>
                     {/* 260831 cc 点文件名在侧栏开它；没有注入实现时保持纯文本、不显示为可点。 */}
                     <span
@@ -2486,7 +2487,7 @@ ToolRegistry.register({
                             <Accordion.Trigger>
                               <div data-slot="apply-patch-trigger-content">
                                 <div data-slot="apply-patch-file-info">
-                                  <FileIcon node={{ path: file.relativePath, type: "file" }} />
+                                  <SealIcon />
                                   <div data-slot="apply-patch-file-name-container">
                                     <Show when={file.relativePath.includes("/")}>
                                       <span data-slot="apply-patch-directory">{`\u202A${getDirectory(file.relativePath)}\u202C`}</span>

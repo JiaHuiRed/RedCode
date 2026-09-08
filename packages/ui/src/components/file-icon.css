@@ -5,6 +5,13 @@
   height: 16px;
 }
 
+/* 260908 Red 朱印小尺寸标（seal-icon.tsx）。默认 16px 由 SVG 属性给出，
+   这里只管布局对齐；带 data-slot 的位置沿用各自 slot 规则。 */
+[data-component="seal-icon"] {
+  display: block;
+  flex-shrink: 0;
+}
+
 /*
   File tree: show monochrome weak icons by default.
   On hover, show the original file-type colors.
