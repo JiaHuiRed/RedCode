@@ -40,7 +40,11 @@ import { DropdownMenu } from "@redcode-ai/ui/dropdown-menu"
 import { Dialog } from "@redcode-ai/ui/dialog"
 import { InlineInput } from "@redcode-ai/ui/inline-input"
 import { Spinner } from "@redcode-ai/ui/spinner"
-import { ChiTaskSticker } from "@redcode-ai/ui/v2/components/chi-task-sticker.jsx"
+import {
+  ChiCodingSticker,
+  ChiTaskSticker,
+  ChiThinkingSticker,
+} from "@redcode-ai/ui/v2/components/chi-task-sticker.jsx"
 import { SessionRetry } from "@redcode-ai/ui/session-retry"
 import { ScrollView } from "@redcode-ai/ui/scroll-view"
 import { StickyAccordionHeader } from "@redcode-ai/ui/sticky-accordion-header"
@@ -80,6 +84,7 @@ const emptyParts: PartType[] = []
 const emptyTools: ToolPart[] = []
 const emptyAssistantMessages: AssistantMessage[] = []
 const idle = { type: "idle" as const }
+const CODING_TOOLS = new Set(["edit", "write", "apply_patch"])
 
 type FramedTimelineRow = Exclude<TimelineRow.TimelineRow, { _tag: "BottomSpacer" }>
 type TimelineRowByTag<T extends TimelineRow.TimelineRow["_tag"]> = Extract<TimelineRow.TimelineRow, { _tag: T }>
@@ -538,6 +543,29 @@ export function MessageTimeline(props: {
     })
     return result
   })
+  // 260908 Red 立绘只跟随当前活动组：思考与编码互斥，已完成的历史组不再重复出现。
+  const activeStickerForGroup = (row: TimelineRowByTag<"AssistantPart">) => {
+    if (!workingTurn(row.userMessageID)) return
+    if (lastAssistantGroupKey().get(row.userMessageID) !== row.group.key) return
+    if (row.group.type !== "part") return
+    const part = getMsgPart(row.group.ref.messageID, row.group.ref.partID)
+    if (part?.type === "reasoning") return "thinking" as const
+    if (
+      part?.type === "tool" &&
+      CODING_TOOLS.has(part.tool) &&
+      (part.state.status === "pending" || part.state.status === "running")
+    )
+      return "coding" as const
+  }
+  const activeStickerForTurn = (userMessageID: string) => {
+    const key = lastAssistantGroupKey().get(userMessageID)
+    if (!key || !workingTurn(userMessageID)) return
+    const row = timelineRows().findLast(
+      (item): item is TimelineRowByTag<"AssistantPart"> =>
+        item._tag === "AssistantPart" && item.userMessageID === userMessageID && item.group.key === key,
+    )
+    return row ? activeStickerForGroup(row) : undefined
+  }
   const keepMounted = createMemo(() => {
     const id = activeMessageID()
     if (!id) return
@@ -1457,9 +1485,16 @@ export function MessageTimeline(props: {
       }
       case "AssistantPart": {
         const assistantPartRow = row as Accessor<TimelineRowByTag<"AssistantPart">>
+        const activeSticker = createMemo(() => activeStickerForGroup(assistantPartRow()))
         return (
           <TimelineRowFrame row={assistantPartRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
+              <Show when={activeSticker() === "thinking"}>
+                <ChiThinkingSticker />
+              </Show>
+              <Show when={activeSticker() === "coding"}>
+                <ChiCodingSticker />
+              </Show>
               <div data-slot="session-turn-assistant-row">
                 <div data-slot="session-turn-assistant-avatar">
                   <Avatar
@@ -1489,6 +1524,14 @@ export function MessageTimeline(props: {
               {/* 260902 cc 看板娘只在会话第一轮的等待期露面：每轮都放就成了周期性闪动 */}
               <Show when={thinkingRow().awaiting && thinkingRow().userMessageID === props.userMessages[0]?.id}>
                 <ChiTaskSticker />
+              </Show>
+              <Show
+                when={
+                  !thinkingRow().awaiting &&
+                  activeStickerForTurn(thinkingRow().userMessageID) !== "coding"
+                }
+              >
+                <ChiThinkingSticker />
               </Show>
               <TimelineThinkingRow
                 reasoningHeading={thinkingRow().reasoningHeading}

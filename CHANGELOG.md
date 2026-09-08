@@ -14,6 +14,7 @@
 
 - **gpt.md 按同代官方提示词去老化**（`packages/opencode/src/session/prompt/gpt.md`）：对照泄漏的 GPT-6 官方 harness 提示词（`system_prompts_leaks/OpenAI/Codex/gpt-6-astra.md`）修订三处——① Formatting rules 删掉 Codex CLI plain-text 时代的格式微操（禁嵌套列表、每列表 4-6 项、`**Title Case**` 表头、「表头后不空行」——最后这条与 CommonMark 相反，本来就会渲染错），改为最小格式化原则 + CommonMark 空行规则；② 「默认 ASCII」改为跟随文件既有文字（中文文件的注释/文档保持中文），消除对中文工作区的负倾向；③ Final answer 增补官方 6 代的反 AI 腔写作条款（禁 "In short:" 收尾、禁未经要求的 "X, not Y" 对比框架、禁 delve/leverage 填充词、不用贬低假想替代方案的方式抬高自己的计划）。Autonomy/Destructive/Asking 等自研成熟段未动。配置侧核实：`stepfun-step-plan` 目录条目端点本就是官方 `api.stepfun.com/step_plan/v1`，无需改配置。
 - **GUI 工具行文件图标换成朱印**（新增 `packages/ui/src/components/seal-icon.tsx`，`basic-tool.tsx` / `message-part.tsx` / `session-review.tsx` 接入）：agent 动过文件的地方——通用工具行、edit/write、apply-patch 触发行与多文件列表头、会话审查的变更文件列表——文件名前的文件类型小图标统一换成 RedCode 朱印（`redcode-mark-simple.svg` 的内联刻本，≤24px 场景钦点版；品牌红固定不随主题）。盖章＝落款：这些行是 agent 的手笔。文件树、文件选择器、@提及下拉与用户消息附件等「识别文件」的导航位保留 `FileIcon` 类型图标。
+- **GUI 会话状态立绘拆分接入**（`packages/ui/src/assets/images/chi-{thinking,coding}.jpg`、`chi-task-sticker.tsx`、`packages/app/src/pages/session/message-timeline.tsx`）：`思考和编码中.png` 按左右两幅裁成独立资源；左图只跟随当前活动的 reasoning 组，右图只在 `edit` / `write` / `apply_patch` 执行时出现，现有「任务已接收」仍保留在首轮等待期，三种状态不会同时显示。
 
 ### [0.10.20] - 2026-09-07
 
