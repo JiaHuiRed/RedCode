@@ -233,7 +233,7 @@ MCP（Model Context Protocol）让 AI 获得外部能力。安装越多 MCP，AI
 | 服务器 | 用途 | 首次使用前 |
 |--------|------|-----------|
 | **Web Search** | 网页搜索：DuckDuckGo + Yahoo 兜底，内置服务，零 API Key | — |
-| **webqa** | 浏览器自动化（Playwright）：截图、点击、填表、断言，做 Web 前端验证闭环 | — |
+| **webqa** | 浏览器自动化（Playwright）：observe 语义快照 + aria-ref 定位、坐标点击（canvas/自绘控件）、滚轮/悬停/多标签、元素级截图，做 Web 前端验证闭环 | — |
 
 ### 4.4 记忆与进程
 
