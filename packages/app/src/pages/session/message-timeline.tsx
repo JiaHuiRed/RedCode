@@ -1009,15 +1009,22 @@ export function MessageTimeline(props: {
 
   const shareMutation = useMutation(() => ({
     mutationFn: (id: string) => serverSDK.client.session.share({ sessionID: id, directory: sdk.directory }),
+    // 260909 Red 失败要有反馈：弹层静默回初始态，用户不知道成没成
     onError: (err) => {
-      console.error("Failed to share session", err)
+      showToast({
+        title: language.t("common.requestFailed"),
+        description: errorMessage(err),
+      })
     },
   }))
 
   const unshareMutation = useMutation(() => ({
     mutationFn: (id: string) => serverSDK.client.session.unshare({ sessionID: id, directory: sdk.directory }),
     onError: (err) => {
-      console.error("Failed to unshare session", err)
+      showToast({
+        title: language.t("common.requestFailed"),
+        description: errorMessage(err),
+      })
     },
   }))
 

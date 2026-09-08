@@ -556,6 +556,7 @@ export const dict = {
   "common.closeTab": "タブを閉じる",
   "common.dismiss": "閉じる",
   "common.requestFailed": "リクエスト失敗",
+  "common.retry": "再試行",
   "common.moreOptions": "その他のオプション",
   "common.learnMore": "詳細",
   "common.rename": "名前変更",

@@ -1749,17 +1749,19 @@ function PromptErrorBanner(props: {
   onRetry: (e: Event) => void
   onDismiss: () => void
 }) {
+  // 260909 Red 横幅按钮走 i18n；长报错 line-clamp-3 可见更多内容（手机上单行 truncate 全是省略号）
+  const language = useLanguage()
   return (
     <Show when={props.error()}>
       <div class="mx-2 mb-2 rounded-lg border border-border-warning-base bg-surface-warning-weak px-3 py-2 text-13-regular text-text-on-warning-strong">
-        <div class="flex items-center gap-2">
-          <span class="flex-1 truncate">{props.error()}</span>
+        <div class="flex items-start gap-2">
+          <span class="flex-1 line-clamp-3 break-words min-w-0">{props.error()}</span>
           <button
             type="button"
             onClick={() => props.onRetry(new Event("submit"))}
             class="shrink-0 rounded px-2 py-0.5 text-13-medium text-text-on-warning-strong hover:bg-surface-warning-base active:bg-surface-warning-strong"
           >
-            Retry
+            {language.t("common.retry")}
           </button>
           <button
             type="button"
