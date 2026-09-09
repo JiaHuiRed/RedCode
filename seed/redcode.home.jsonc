@@ -73,7 +73,7 @@
       "type": "local",
       "command": ["node", "./webqa-server/index.js"],
       "cwd": "$REDCODE_ROOT",
-      "description": "浏览器自动化与视觉验证（Playwright headless）——webqa_interact 单工具走全流程：observe 拿 aria 语义快照（带 [ref=sXeY]，click/fill 直接用 aria-ref 定位）→ click/fill/type/press 动手 → waitFor/再 observe 验证效果；canvas/终端等自绘控件 aria 不可见时用 clickAt 坐标点；另有 scroll/hover/tab 多标签/元素级截图；单步失败返回部分结果。截图落 Temp\webqa，多模态主模型直接 read 读图。替代旧 browsermcp（已移除）。",
+      "description": "WebQA v1.2.0 浏览器自动化与视觉验证（Playwright headless）——webqa_interact 跨调用保留页面状态；先 observe 拿 aria 语义快照（带 [ref=sXeY]），再用 aria-ref 定位。支持 click/fill/type/press、clickAt 坐标点击（canvas/终端等自绘控件）、scroll、hover、waitFor（selector/loadState/url）、tab 多标签（list/new/switch/close）、selector 限定的 observe 与元素截图；单步失败保留已执行结果和 error。截图落 Temp/webqa，多模态主模型直接 read 读图。替代旧 browsermcp（已移除）。",
       "timeout": 120000,
       "enabled": true
     },

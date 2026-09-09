@@ -24,6 +24,8 @@
 
 #### 修复
 
+- **修复 home 配置模板的 webqa 路径转义**（`seed/redcode.home.jsonc`）：远端同步的描述误写成 `Temp\webqa`，导致 `merge-home-config.ts` 解析 JSONC 时把 `\w` 判为非法转义；现改为合法的 `Temp\\webqa`，构建同步步骤恢复正常。
+
 - **Windows MCP 裸命令无法启动**（`packages/opencode/src/util/{process,windows-job,windows-job-runner}.ts`、`packages/opencode/src/mcp/{index,stdio}.ts`，决策：`docs/notes/implemented/bug-fix/2026-09-08-windows-job-path-resolution.md`）：自定义 Job runner 不再把裸命令填入 `CreateProcessW` 的 `lpApplicationName`，改由 Windows 按完整命令行搜索 PATH；`node`、`bun`、`fff-mcp`、`markitdown-mcp` 等 MCP 可以走同一条受 Job 管理的启动链，已通过 `bun run dev` 实测接入。
 
 #### 待办
