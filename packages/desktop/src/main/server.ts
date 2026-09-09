@@ -218,11 +218,17 @@ export async function spawnLocalServer(
     //
     // 他打包版日志里 ready→healthy 的间隔：118 / 123 / 123 / 134 ms（五次），基本全是这 100ms。
     const ready = async () => {
-      while (true) {
+      // 260909 Red 轮询必须能自己停：调用方 30s 超时是纯放弃（不杀 sidecar），
+      // 没有谁会再来消费这个循环——sidecar 活着但 health 一直不过（密码错配、
+      // migration 卡住）时，原实现的 10Hz 空转 fetch 会烧到进程退出。
+      // 预算 120s 覆盖合法慢启动，之后静默停轮（healthy 保持 false 由调用方处置）。
+      const deadline = Date.now() + 120_000
+      while (Date.now() < deadline) {
         if (await checkHealth(url, password)) {
           healthy = true
           return
         }
+        if (exited) return
         await new Promise((resolve) => setTimeout(resolve, 100))
       }
     }
