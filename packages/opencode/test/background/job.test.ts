@@ -124,4 +124,25 @@ describe("background.job", () => {
       expect((yield* jobs.get(job.id))?.metadata?.value).toBe("initial")
     }),
   )
+
+  it.instance("evicts oldest finished jobs beyond the cap", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      // 260909 Red FINISHED_MAX = 50：完成态全程至多保留 50 条（output 是子代理全文，
+      // 此前只进不出），挤出的是最早的完成态；每个任务都 wait 到完成再起下一个，
+      // 保证 prune 看到的是确定的完成态序列
+      const first = yield* jobs.start({ type: "test", run: Effect.succeed("oldest") })
+      yield* jobs.wait({ id: first.id })
+      for (let i = 0; i < 60; i++) {
+        const job = yield* jobs.start({ type: "test", run: Effect.succeed(`out-${i}`) })
+        yield* jobs.wait({ id: job.id })
+      }
+
+      const list = yield* jobs.list()
+
+      expect(list.length).toBeLessThanOrEqual(50)
+      expect(list.every((item) => item.status !== "running")).toBe(true)
+      expect(yield* jobs.get(first.id)).toBeUndefined()
+    }),
+  )
 })

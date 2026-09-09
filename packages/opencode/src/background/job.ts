@@ -72,6 +72,34 @@ function errorText(error: unknown) {
   return String(error)
 }
 
+// 260909 Red 完成态任务保留 30 分钟 / 全程至多 50 条，起任务时顺带回收——output 是
+// 子代理的完整输出文本（可达数 MB），此前 jobs Map 只进不出，长驻 sidecar 进程里
+// 每个后台任务永久滞留一份全文。运行中的任务永不触碰；已持有 done Deferred 引用的
+// waiter 不受回收影响（对象按引用存活）。
+const FINISHED_TTL_MS = 30 * 60 * 1000
+const FINISHED_MAX = 50
+
+function prune(jobs: Map<string, Active>, now: number): Map<string, Active> {
+  const next = new Map(jobs)
+  const finished: Array<{ id: string; at: number }> = []
+  for (const [id, job] of next) {
+    if (job.info.status === "running") continue
+    const at = job.info.completed_at ?? job.info.started_at
+    if (now - at > FINISHED_TTL_MS) {
+      next.delete(id)
+      continue
+    }
+    finished.push({ id, at })
+  }
+  if (finished.length > FINISHED_MAX) {
+    finished
+      .sort((a, b) => a.at - b.at)
+      .slice(0, finished.length - FINISHED_MAX)
+      .forEach(({ id }) => next.delete(id))
+  }
+  return next
+}
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -107,7 +135,9 @@ export const layer = Layer.effect(
               ...(data?.error !== undefined ? { error: data.error } : {}),
             },
           }
-          return [{ info: snapshot(next), done: job.done }, new Map(jobs).set(id, next)]
+          // 260909 Red 完成态在 finish 侧也裁一次：只靠 start 侧裁会稳定超出 1 条。
+          // 注意先把完成态放进 Map 再 prune——先裁后 set 等于没裁
+          return [{ info: snapshot(next), done: job.done }, prune(new Map(jobs).set(id, next), completed_at)]
         },
       )
       if (result.info && result.done) yield* Deferred.succeed(result.done, result.info).pipe(Effect.ignore)
@@ -161,7 +191,7 @@ export const layer = Layer.effect(
                 done,
                 fiber,
               }
-              return [snapshot(job), new Map(jobs).set(id, job)] as const
+              return [snapshot(job), prune(jobs, started_at).set(id, job)] as const
             }),
           )
         }),
