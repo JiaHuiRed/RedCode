@@ -20,6 +20,15 @@ const healthCache = new Map<
   { at: number; done: boolean; fetch: typeof globalThis.fetch; promise: Promise<ServerHealth> }
 >()
 
+// 260909 Red 顺手淘汰过期条目：key 含 url+账密，sidecar 换端口/dev 重启/改密都会
+// 留下死 key，模块级 Map 只进不出是慢性无界增长。缓存期才 750ms，超过 60s 的条目
+// 不可能再被命中。
+function prune(now: number) {
+  for (const [key, entry] of healthCache) {
+    if (entry.done && now - entry.at > 60_000) healthCache.delete(key)
+  }
+}
+
 function cacheKey(server: ServerConnection.HttpBase) {
   return `${server.url}\n${server.username ?? ""}\n${server.password ?? ""}`
 }
@@ -98,8 +107,9 @@ export function useCheckServerHealth() {
 
   return (http: ServerConnection.HttpBase) => {
     const key = cacheKey(http)
-    const hit = healthCache.get(key)
     const now = Date.now()
+    prune(now)
+    const hit = healthCache.get(key)
     if (hit && hit.fetch === fetcher && (!hit.done || now - hit.at < cacheMs)) return hit.promise
     const promise = checkServerHealth(http, fetcher).finally(() => {
       const next = healthCache.get(key)
