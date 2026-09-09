@@ -381,12 +381,12 @@ it.effect("updates global config and omits empty shell key in jsonc", () =>
 )
 
 // 260829 Red GUI「智能体」面板：面板只能用字符串把显式配置改回默认（请求体会丢掉 undefined），
-// 由 updateGlobal 在落盘前把空串 / "default" / 0 翻译成删键。
-it.effect("writes agent model, variant and timeout into global jsonc", () =>
+// 由 updateGlobal 在落盘前把空串 / "default" 翻译成删键。
+it.effect("writes agent model and variant into global jsonc", () =>
   withGlobalConfig({ config: { model: "test/model" }, name: "redcode.jsonc" }, ({ dir }) =>
     Effect.gen(function* () {
       yield* Config.use.updateGlobal({
-        agent: { explore: { model: "anthropic/claude-sonnet-4", variant: "high", timeout_ms: 600_000 } },
+        agent: { explore: { model: "anthropic/claude-sonnet-4", variant: "high" } },
       })
 
       const file = path.join(dir, "redcode.jsonc")
@@ -395,7 +395,6 @@ it.effect("writes agent model, variant and timeout into global jsonc", () =>
       expect(parsed.agent?.explore).toMatchObject({
         model: "anthropic/claude-sonnet-4",
         variant: "high",
-        timeout_ms: 600_000,
       })
     }),
   ),
@@ -409,8 +408,6 @@ it.effect("updates global agent config and omits keys set back to their default"
           explore: {
             model: "anthropic/claude-sonnet-4",
             variant: "high",
-            timeout_ms: 600_000,
-            fallback_model: "openai/gpt-5",
           },
         },
       },
@@ -419,21 +416,17 @@ it.effect("updates global agent config and omits keys set back to their default"
     ({ dir }) =>
       Effect.gen(function* () {
         yield* Config.use.updateGlobal({
-          agent: { explore: { model: "", variant: "default", timeout_ms: 0, fallback_model: "" } },
+          agent: { explore: { model: "", variant: "default" } },
         })
 
         const file = path.join(dir, "redcode.jsonc")
         const written = yield* AppFileSystem.use.readFileString(file)
         expect(written).not.toContain('"model"')
         expect(written).not.toContain('"variant"')
-        expect(written).not.toContain('"timeout_ms"')
-        expect(written).not.toContain('"fallback_model"')
         const parsed = ConfigParse.schema(Config.Info, ConfigParse.jsonc(written, file), file)
-        // 四项全清空后不该在文件里留下空壳 `"explore": {},`
+        // 两项全清空后不该在文件里留下空壳 `"explore": {},`
         expect(parsed.agent?.explore).toBeUndefined()
         expect(parsed.agent?.explore?.variant).toBeUndefined()
-        expect(parsed.agent?.explore?.timeout_ms).toBeUndefined()
-        expect(parsed.agent?.explore?.fallback_model).toBeUndefined()
       }),
   ),
 )
@@ -683,7 +676,7 @@ it.instance("handles agent configuration", () =>
   }),
 )
 
-it.instance("passes subagent timeout_ms and fallback_model through config", () =>
+it.instance("ignores retired subagent timeout and fallback configuration", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
@@ -698,8 +691,9 @@ it.instance("passes subagent timeout_ms and fallback_model through config", () =
     })
     const config = yield* Config.use.get()
     const agent = config.agent?.["test_agent"]
-    expect(agent?.timeout_ms).toBe(300000)
-    expect(agent?.fallback_model).toBe("test-fallback/backup")
+    expect(agent).toMatchObject({ model: "test/model", options: {} })
+    expect(agent).not.toHaveProperty("timeout_ms")
+    expect(agent).not.toHaveProperty("fallback_model")
   }),
 )
 

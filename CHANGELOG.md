@@ -10,6 +10,14 @@
 
 ### [未发布]
 
+#### 修复
+
+- **子代理不再因总时长误触发兜底**（`packages/opencode/src/tool/task.ts`、`packages/opencode/src/session/llm.ts`，决策：`docs/notes/implemented/bug-fix/2026-09-09-subagent-request-watchdog.md`）：移除覆盖整个子代理生命周期的 `timeout_ms` / `fallback_model`，改由请求层按首响应与流静默判定供应商是否卡死；正常的长推理、工具调用和多轮工作不再被切断，也不会从 Step Plan 跨到其他额度池。
+
+#### 界面
+
+- **TUI agent 标记统一使用朱印**（`packages/opencode/src/cli/cmd/tui/component/seal.tsx`、`routes/session/index.tsx`）：assistant 消息头不再使用通用方块符号，改为紧凑的品牌印身与 `>_` 印文，让朱印也参与会话过程。
+
 ### [0.11.1] - 2026-09-09
 
 > DSH 通用机制继续落地：桌面 IPC 与更新流程收紧，Windows Job runner 的进程终止链补强。

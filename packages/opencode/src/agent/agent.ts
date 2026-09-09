@@ -30,7 +30,7 @@ import * as OtelTracer from "@effect/opentelemetry/Tracer"
 import { type DeepMutable } from "@redcode-ai/core/schema"
 
 // 260828 cc 三个子代理工种的**唯一定义来源**是 src/agent/definition/*.md：frontmatter 给
-// mode / description / model / variant / timeout_ms / permission，正文给提示词。这里用
+// mode / description / model / variant / permission，正文给提示词。这里用
 // with { type: "text" } 在**构建期**把整份文件内联进二进制。
 //
 // 不能改成运行时读盘：src/ 不进发布包，而且 Info.prompt 在 llm/request.ts:60 是**替换**模型家族
@@ -92,18 +92,6 @@ export const Info = Schema.Struct({
   prompt: Schema.optional(Schema.String),
   options: Schema.Record(Schema.String, Schema.Unknown),
   steps: Schema.optional(Schema.Finite),
-  // 260818 Red 子代理超时兑底：task 工具层超时后换 fallback 模型重跑一次
-  timeoutMs: Schema.optional(Schema.Finite).annotate({
-    description: "Subagent timeout in ms; on timeout the run is cancelled and retried with fallbackModel",
-  }),
-  fallbackModel: Schema.optional(
-    Schema.Struct({
-      modelID: ModelID,
-      providerID: ProviderID,
-    }),
-  ).annotate({
-    description: "Fallback model for timed-out subagent runs (providerID/modelID)",
-  }),
 }).annotate({ identifier: "Agent" })
 export type Info = DeepMutable<Schema.Schema.Type<typeof Info>>
 
@@ -204,9 +192,7 @@ export const layer = Layer.effect(
             prompt,
             options: {},
             ...(data.model ? { model: Provider.parseModel(data.model) } : {}),
-            ...(data.fallback_model ? { fallbackModel: Provider.parseModel(data.fallback_model) } : {}),
             ...(data.variant !== undefined ? { variant: data.variant } : {}),
-            ...(data.timeout_ms !== undefined ? { timeoutMs: data.timeout_ms } : {}),
             ...(data.temperature !== undefined ? { temperature: data.temperature } : {}),
             ...(data.top_p !== undefined ? { topP: data.top_p } : {}),
             ...(data.steps !== undefined ? { steps: data.steps } : {}),
@@ -390,10 +376,6 @@ export const layer = Layer.effect(
           item.hidden = value.hidden ?? item.hidden
           item.name = value.name ?? item.name
           item.steps = value.steps ?? item.steps
-          // 260818 Red 子代理超时兑底：timeout_ms → timeoutMs（数字毫秒），
-          // fallback_model → fallbackModel（同 model 的 providerID/modelID 解析）
-          item.timeoutMs = value.timeout_ms ?? item.timeoutMs
-          if (value.fallback_model) item.fallbackModel = Provider.parseModel(value.fallback_model)
           item.options = mergeDeep(item.options, value.options ?? {})
           item.permission = Permission.merge(item.permission, Permission.fromConfig(value.permission ?? {}))
         }

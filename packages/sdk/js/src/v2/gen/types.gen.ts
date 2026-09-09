@@ -1084,8 +1084,6 @@ export type AgentConfig = {
   color?: string | "primary" | "secondary" | "accent" | "success" | "warning" | "error" | "info"
   steps?: number
   maxSteps?: number
-  timeout_ms?: number
-  fallback_model?: string
   permission?: PermissionConfig
   [key: string]:
     | unknown
@@ -1109,7 +1107,6 @@ export type AgentConfig = {
     | "warning"
     | "error"
     | "info"
-    | number
     | number
     | PermissionConfig
     | undefined
@@ -1770,11 +1767,6 @@ export type Agent = {
     [key: string]: unknown
   }
   steps?: number
-  timeoutMs?: number
-  fallbackModel?: {
-    modelID: string
-    providerID: string
-  }
 }
 
 export type LspStatus = {

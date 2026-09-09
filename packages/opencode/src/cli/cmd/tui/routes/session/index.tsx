@@ -23,6 +23,7 @@ import { useSync, cmpTime } from "@tui/context/sync"
 import { useEvent } from "@tui/context/event"
 import { SplitBorder } from "@tui/component/border"
 import { Spinner } from "@tui/component/spinner"
+import { SealMark } from "@tui/component/seal"
 import { generateSubtleSyntax, selectedForeground, useTheme } from "@tui/context/theme"
 import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
 import { Prompt, type PromptRef } from "@tui/component/prompt"
@@ -1689,16 +1690,13 @@ export function AssistantMessage(props: { message: AssistantMessageInfo; parts: 
         <Match when={props.last || final() || props.message.error?.name === "MessageAbortedError"}>
           <box paddingLeft={3}>
             <text marginTop={1}>
-              <span
-                style={{
-                  fg:
-                    props.message.error?.name === "MessageAbortedError"
-                      ? theme.textMuted
-                      : local.agent.color(props.message.agent),
-                }}
-              >
-                ▣{" "}
-              </span>{" "}
+               <SealMark
+                 ink={
+                   props.message.error?.name === "MessageAbortedError"
+                     ? theme.textMuted
+                     : undefined
+                 }
+               />{" "}
               <span style={{ fg: theme.text }}>{local.agent.label(props.message.agent)}</span>
               <span style={{ fg: theme.textMuted }}> · {model()}</span>
               <Show when={duration()}>
@@ -2659,4 +2657,3 @@ function input(input: Record<string, any>, omit?: string[]): string {
   if (primitives.length === 0) return ""
   return `[${primitives.map(([key, value]) => `${key}=${value}`).join(", ")}]`
 }
-

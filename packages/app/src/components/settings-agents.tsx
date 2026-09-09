@@ -20,13 +20,6 @@ const modelValue = (key: string) => (key === FOLLOW ? "" : key)
 // "default" 是引擎约定的“不指定档位”：prompt.ts 只认模型 variants 里真实存在的档位名
 const DEFAULT_VARIANT = "default"
 
-const TIMEOUTS = [
-  { id: "none", ms: 0 },
-  { id: "5m", ms: 300_000 },
-  { id: "10m", ms: 600_000 },
-  { id: "30m", ms: 1_800_000 },
-]
-
 type ModelOption = { key: string; label: string; group: string }
 
 export const SettingsAgents: Component = () => {
@@ -67,7 +60,6 @@ export const SettingsAgents: Component = () => {
       model ? `${model.providerID}/${model.modelID}` : FOLLOW
 
     const modelKey = () => key(props.agent.model) || FOLLOW
-    const fallbackKey = () => key(props.agent.fallbackModel) || FOLLOW
     const variant = () => props.agent.variant ?? DEFAULT_VARIANT
 
     // 档位集合按模型变（models.dev 的 reasoning_options）：Hy4 preview 只有 none/high，别家是
@@ -95,19 +87,6 @@ export const SettingsAgents: Component = () => {
         )
         .map((m) => ({ key: `${m.provider.id}/${m.id}`, label: m.name, group: m.provider.name }))
       return [first, ...items]
-    }
-
-    // 手改配置可以写出任意毫秒数，预设档盖不住时把当前值补成一项，别让下拉显示空白
-    const timeoutOptions = () => {
-      const current = props.agent.timeoutMs ?? 0
-      const items = TIMEOUTS.some((x) => x.ms === current) ? TIMEOUTS : [{ id: String(current), ms: current }, ...TIMEOUTS]
-      return items.map((x) => ({
-        ...x,
-        label:
-          x.ms === 0
-            ? language.t("settings.agents.timeout.none")
-            : language.t("settings.agents.timeout.minutes", { count: x.ms / 60_000 }),
-      }))
     }
 
     const selectModel = (option: ModelOption | undefined) => {
@@ -172,43 +151,6 @@ export const SettingsAgents: Component = () => {
           </SettingsRow>
         </Show>
 
-        <Show when={props.agent.mode !== "primary"}>
-          <SettingsRow
-            title={language.t("settings.agents.timeout.title")}
-            description={language.t("settings.agents.timeout.description")}
-          >
-            <Select
-              data-action={`settings-agent-timeout-${props.agent.name}`}
-              options={timeoutOptions()}
-              current={timeoutOptions().find((o) => o.ms === (props.agent.timeoutMs ?? 0))}
-              value={(o) => o.id}
-              label={(o) => o.label}
-              onSelect={(option) => {
-                if (!option) return
-                update(props.agent.name, { timeout_ms: option.ms })
-              }}
-              variant="secondary"
-              size="small"
-              triggerVariant="settings"
-              triggerStyle={{ "min-width": "180px" }}
-            />
-          </SettingsRow>
-
-          <SettingsRow
-            title={language.t("settings.agents.fallback.title")}
-            description={language.t("settings.agents.fallback.description")}
-          >
-            {modelSelect(
-              `settings-agent-fallback-${props.agent.name}`,
-              fallbackKey(),
-              language.t("settings.agents.fallback.none"),
-              (option) => {
-                if (option.key === fallbackKey()) return
-                update(props.agent.name, { fallback_model: modelValue(option.key) })
-              },
-            )}
-          </SettingsRow>
-        </Show>
       </SettingsList>
     )
   }

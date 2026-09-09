@@ -445,16 +445,14 @@ function writableGlobal(info: Info) {
   return { ...next, agent: patched as Info["agent"] }
 }
 
-// 260829 Red GUI「智能体」面板用空串 / 0 / "default" 表达「回到默认」——HTTP 请求体会把 undefined
-// 丢掉，删键只能由服务端在落盘前翻译。这三者与「未配置」同义：agent.ts 对 model / fallback_model
-// 做真值判断，prompt.ts 丢弃不在模型 variants 里的档位（"default" 必然不在），timeout_ms 的 0 就是无超时。
+// 260829 Red GUI「智能体」面板用空串 / "default" 表达「回到默认」——HTTP 请求体会把 undefined
+// 丢掉，删键只能由服务端在落盘前翻译。model 的空串与「未配置」同义，prompt.ts 丢弃不在模型
+// variants 里的档位（"default" 必然不在）。
 function writableAgent(value: ConfigAgent.Info): ConfigAgent.Info | undefined {
   const next = { ...value }
   if (next.model === "") next.model = undefined
-  if (next.fallback_model === "") next.fallback_model = undefined
   if (next.variant === "default") next.variant = undefined
-  if (next.timeout_ms === 0) next.timeout_ms = undefined
-  // 四项全改回默认后别留一个空壳 `"redmind": {},`。normalize() 总会往配置里塞 options / permission，
+  // 两项全改回默认后别留一个空壳 `"redmind": {},`。normalize() 总会往配置里塞 options / permission，
   // 所以它俩是空对象时也要算“空”，否则每个 agent 都显得还有东西、删不掉整个键。
   const blank = (x: unknown) => x === undefined || (isRecord(x) && Object.keys(x).length === 0)
   return Object.values(next).some((x) => !blank(x)) ? next : undefined

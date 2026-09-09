@@ -14713,13 +14713,6 @@
             "type": "integer",
             "exclusiveMinimum": 0
           },
-          "timeout_ms": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "fallback_model": {
-            "type": "string"
-          },
           "permission": {
             "$ref": "#/components/schemas/PermissionConfig"
           }
@@ -16635,22 +16628,6 @@
           },
           "steps": {
             "type": "number"
-          },
-          "timeoutMs": {
-            "type": "number"
-          },
-          "fallbackModel": {
-            "type": "object",
-            "properties": {
-              "modelID": {
-                "type": "string"
-              },
-              "providerID": {
-                "type": "string"
-              }
-            },
-            "required": ["modelID", "providerID"],
-            "additionalProperties": false
           }
         },
         "required": ["name", "mode", "permission", "options"],

@@ -61,12 +61,12 @@ plan    = defaults + { question: allow, plan_exit: allow,
 
 ### 子代理工种：2 个
 
-带 model + prompt + 工具白名单 + 超时/fallback。（起草时是 3 个，`advise` 在 08-28 落地当天并回了 `explore`，理由见修正十四。）
+带 model + prompt + 工具白名单。请求是否卡死由 session 层的请求级看门狗判定，不在工种定义里重复计时或跨供应商兜底。（起草时是 3 个，`advise` 在 08-28 落地当天并回了 `explore`，理由见修正十四。）
 
 | 工种 | 写 | 吸收 | 模型 |
 | --- | --- | --- | --- |
-| `explore` | 只读 | `scout` + `architect` + `reviewer` + `advise` | `stepfun-step-plan/step-3.7-flash`，`timeout_ms: 600000` |
-| `execute` | 可写 | `general` + `fixer` | `opencode-go/glm-5.3-flash`，`timeout_ms: 900000` |
+| `explore` | 只读 | `scout` + `architect` + `reviewer` + `advise` | `stepfun-step-plan/step-3.7-flash` |
+| `execute` | 可写 | `general` + `fixer` | `opencode-go/glm-5.3-flash` |
 
 合并的统一理由：这些角色的**权限逐条相同**，差别只在提示词，而 `task` 调用本来就带 prompt——靠调用方的 prompt 区分 FIND / DESIGN / REVIEW 即可。模型是唯一无法按次表达的东西，所以只有「需要不同模型」才构成拆分理由。
 
@@ -278,6 +278,12 @@ prompt），模型才是唯一按次表达不了的东西。所以：**只有「
   对比 general 15 / reviewer 1），换主力模型是一笔真实开销。**如果审查/出方案的质量不够**，改 md 里
   `model:` 一行即可，这是独立一笔、可以看效果再定。
 - 256K 上下文对「审一个大 diff」可能是上限。真撞到了同样是改一行。
+
+### 修正十七：子代理改用请求级看门狗（09-09）
+
+08-28 的“完整子代理超时 + fallback”设计被实际运行推翻：`timeout_ms` 罩住了整个多轮循环，不能区分供应商请求卡住和本地工具/正常推理。两个真实 Step Plan 子会话精确在 300 秒被切走，随后跨到普通 Step 额度池，制造了“Step Plan 额度明明充足却 quota 不足”的假象。
+
+现行规则见 `docs/notes/implemented/bug-fix/2026-09-09-subagent-request-watchdog.md`：`task` 不再拥有生命周期超时或跨供应商 fallback；`session/llm.ts` 的首响应/流静默看门狗负责请求级 stall，工具执行和权限等待不计入静默。
 
 ## 迁移步骤
 

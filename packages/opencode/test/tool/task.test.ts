@@ -203,6 +203,21 @@ const SUBAGENT_FILES = {
   ".redcode/agent/alpha.md": subagentMd("Alpha"),
 }
 
+// 260909 Red 旧配置字段仍能被读取但不再控制子代理生命周期；这条用 1ms 旧超时跑一个
+// 20ms prompt，专门锁住“正常完成，不 cancel、不换模型”的行为。
+const RETIRED_TIMEOUT_AGENT_FILES = {
+  ".redcode/agent/slow.md": `---
+description: Slow agent
+mode: subagent
+model: test/test
+timeout_ms: 1
+fallback_model: test/backup
+---
+
+Slow agent prompt
+`,
+}
+
 describe("tool.task", () => {
   noBackground.instance(
     "description sorts subagents by name and is stable across calls",
@@ -440,6 +455,51 @@ describe("tool.task", () => {
       expect(result.output).toContain(`task_id: ${result.metadata.sessionId}`)
       expect(seen?.sessionID).toBe(result.metadata.sessionId)
     }),
+  )
+
+  it.instance(
+    "does not impose a lifetime timeout on a subagent",
+    () =>
+      Effect.gen(function* () {
+        const { chat, assistant } = yield* seed()
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        let cancelCount = 0
+        const promptOps: TaskPromptOps = {
+          ...stubOps(),
+          cancel: () =>
+            Effect.sync(() => {
+              cancelCount++
+            }),
+          prompt: (input) =>
+            Effect.gen(function* () {
+              yield* Effect.sleep("20 millis")
+              return reply(input, "finished")
+            }),
+        }
+
+        const result = yield* def.execute(
+          {
+            description: "slow task",
+            prompt: "finish the slow task",
+            subagent_type: "slow",
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+        expect(result.output).toContain("finished")
+        expect(cancelCount).toBe(0)
+      }),
+    { files: RETIRED_TIMEOUT_AGENT_FILES },
   )
 
   it.instance(

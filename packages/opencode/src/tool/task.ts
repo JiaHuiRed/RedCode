@@ -90,52 +90,6 @@ function output(sessionID: SessionID, text: string) {
 
 const log = Log.create({ service: "tool.task" })
 
-/**
- * 260904 cc 超时时把子代理已经产出的东西捞回来。
- *
- * `Effect.timeoutOption` 只告诉你「没在时限内完成」，中途产出的一律丢弃。实祸：09-04 一次
- * explore 审计被 180s 掐断，子会话里已有 6 条助手消息、38 个 part 的真实结论，父会话却只
- * 收到一句 "timed out"，只能自己从头重做——主备各掐一次，六分钟白烧。
- *
- * 子代理的产出本来就落库了（会话在 TUI 里 ctrl+x 就能翻），所以这里不需要新的收集机制，
- * 读回来即可。给不出内容时（真卡死、一个 token 都没吐）返回 undefined，调用方仍按失败处理。
- *
- * 上限 SALVAGE_MAX_CHARS：这段直接进父模型上下文，**没有上限就是缺陷**（AGENTS.md 四问之④）。
- * 超限保留**尾部**——子代理的结论累积在后面，开头多是复述任务和检索过程——并在截断处
- * 明写丢了多少，别让父模型以为自己看到的是全部。
- */
-const SALVAGE_MAX_CHARS = 24_000
-
-function salvageOutput(sessions: Session.Interface, sessionID: SessionID) {
-  return Effect.gen(function* () {
-    const messages = yield* sessions.messages({ sessionID })
-    const text = messages
-      .filter((item) => item.info.role === "assistant")
-      .flatMap((item) => item.parts.filter((part) => part.type === "text").map((part) => part.text))
-      .map((item) => item.trim())
-      .filter((item) => item.length > 0)
-      .join("\n\n")
-      .trim()
-    if (text.length === 0) return undefined
-    if (text.length <= SALVAGE_MAX_CHARS) return text
-    const dropped = text.length - SALVAGE_MAX_CHARS
-    return `[...前 ${dropped} 个字符已截断，只保留末尾 ${SALVAGE_MAX_CHARS} 个字符...]\n\n${text.slice(-SALVAGE_MAX_CHARS)}`
-  }).pipe(Effect.catch(() => Effect.succeed(undefined)))
-}
-
-function timedOutOutput(sessionID: SessionID, salvaged: string, detail: string) {
-  return [
-    `task_id: ${sessionID} (for resuming to continue this task if needed)`,
-    `⚠️ ${detail} The result below is what the subagent had produced before it was cut off —`,
-    "it is INCOMPLETE. Judge whether it covers what you asked; if not, resume the task or redo the",
-    "missing part yourself. Do not present it as a finished investigation.",
-    "",
-    "<partial_task_result>",
-    salvaged,
-    "</partial_task_result>",
-  ].join("\n")
-}
-
 function isolatedOutput(sessionID: SessionID, text: string, worktree: { directory: string; branch?: string }) {
   return [
     `task_id: ${sessionID} (for resuming to continue this task if needed)`,
@@ -303,9 +257,9 @@ export const TaskTool = Tool.define(
       const runCancel = yield* EffectBridge.make()
 
       const runTask = Effect.fn("TaskTool.runTask")(function* () {
-        // 260818 Red 子代理超时兑底：agent 配置 timeout_ms + fallback_model 时，
-        // 主模型跑超时 → cancel 当前子代理会话 → 换 fallback 模型在**同一会话**重跑。
-        // 放在 runTask 内部 = background 与 foreground 分支共享同一行为。
+        // 260909 Red 请求级 stall guard 已在 session/llm.ts：它区分首响应、流静默与本地工具执行。
+        // task 层不能再按整个子代理寿命计时，否则长任务会在正常推进时被误杀。
+        // 决策：docs/notes/implemented/bug-fix/2026-09-09-subagent-request-watchdog.md
         const runWithModel = Effect.fn("TaskTool.runWithModel")(function* (useModel: {
           modelID: ModelID
           providerID: ProviderID
@@ -342,40 +296,7 @@ export const TaskTool = Tool.define(
           return text
         })
 
-        const timeoutMs = next.timeoutMs && next.timeoutMs > 0 ? Math.round(next.timeoutMs) : undefined
-        const attempt = (useModel: { modelID: ModelID; providerID: ProviderID }) =>
-          timeoutMs
-            ? runWithModel(useModel).pipe(Effect.timeoutOption(`${timeoutMs} millis`))
-            : runWithModel(useModel).pipe(Effect.map(Option.some))
-
-        const first = yield* attempt(model)
-        if (Option.isSome(first)) return first.value
-
-        // 主模型超时：cancel 当前运行，避免残留的进行中请求继续占住会话
-        yield* ops.cancel(nextSession.id).pipe(Effect.ignore)
-
-        // 超时后不再是「一句错误了事」：先把已产出的内容捞回来（见 salvageOutput）。
-        // 捞得到就带着「不完整」的告诫交给父会话，捞不到才按硬失败报。
-        const giveUp = Effect.fn("TaskTool.giveUp")(function* (detail: string) {
-          const salvaged = yield* salvageOutput(sessions, nextSession.id)
-          if (!salvaged) return yield* Effect.fail(new Error(detail))
-          log.warn("subagent timed out, returning partial output", {
-            sessionID: nextSession.id,
-            timeoutMs,
-            chars: salvaged.length,
-          })
-          return timedOutOutput(nextSession.id, salvaged, detail)
-        })
-
-        if (next.fallbackModel) {
-          const fallback = yield* attempt(next.fallbackModel)
-          if (Option.isSome(fallback)) return fallback.value
-          yield* ops.cancel(nextSession.id).pipe(Effect.ignore)
-          return yield* giveUp(
-            `Subagent timed out after ${timeoutMs}ms on both primary (${model.modelID}) and fallback (${next.fallbackModel.modelID}).`,
-          )
-        }
-        return yield* giveUp(`Subagent timed out after ${timeoutMs}ms (no fallback model configured).`)
+        return yield* runWithModel(model)
       })
 
       // 260903 cc 等父会话空闲的上限。原来是无上限的 300ms 递归：会话若因别的原因永不 idle，

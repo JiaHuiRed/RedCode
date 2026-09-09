@@ -9,14 +9,8 @@ model: opencode-go/glm-5.3-flash
 # ⚠ 不要写 variant：glm-5.3-flash 的 effort 只有 low/high/max，**没有 none**，关不掉推理
 #（hy3 才有 none，原来那句 variant: none 就是为它写的）。
 #
-# 260828 cc 超时兑底。机制见 tool/task.ts：timeout_ms 罩的是**整个子代理运行**（不是单次请求），
-# 超时先 cancel、再用 fallback_model 在**同一个子会话**里重发一次同样的 prompt，两次都超时才报错。
-# 15 分钟是给「跑测试 / 跑构建」留的余量，不是期望值——它只该在真卡死时触发，别调小到会误杀慢活。
-# ⚠ execute 是可写的：重试时 fallback 模型会看到第一次留下的历史（含已经落盘的改动），所以是「接着
-# 干」而不是「从头来」。真出现半截改动+换模型的情况，看它的汇报别只看结果。
-timeout_ms: 900000
-# 兑底特意换族（glm -> mimo）：同族同一种卡法，换了等于没换。mimo-v2.5 是 0.14/0.28 的多模态 1M。
-fallback_model: opencode-go/mimo-v2.5
+# 260909 Red 请求级看门狗在 session/llm.ts 区分首响应、流静默和本地执行；工种不再按总寿命计时。
+# 决策：docs/notes/implemented/bug-fix/2026-09-09-subagent-request-watchdog.md
 # 260828 cc 这份 md 是本工种**唯一的定义来源**：frontmatter 给 mode/description/model/权限，正文给
 # 提示词。agent.ts 用 with { type: "text" } 在**构建期**把整份文件内联进二进制，运行时用 gray-matter
 # 剥出来 —— 不是读盘（src 不进发布包）。这份 md **不会**被 sync-home 播到 ~/.redcode/agent/：一旦那里

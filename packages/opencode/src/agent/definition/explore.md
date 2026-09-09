@@ -9,15 +9,9 @@ description: >-
   bugs, risks, and quality problems. It never writes code. For FIND, also state the thoroughness
   level: "quick", "medium", or "very thorough".
 model: stepfun-step-plan/step-3.7-flash
-# 260828 cc 180s -> 600s：explore 吸收了 advise 的出方案/做审查之后，「读一圈再出结论」比纯搜索慢得多，
-# 180s 会误杀真在干活的运行。超时只该在卡死时触发，Effect.timeoutOption 对跑得快的搜索零成本。
-# 代价是真卡死时最坏等 600s x 2（主 + 兑底）。
-timeout_ms: 600000
-# 260828 cc 补 fallback_model：原先只有 timeout_ms，超时就是一次硬失败（tool/task.ts 会直接报
-# 「timed out after 180000ms (no fallback model configured)」），白等三分钟还什么都没拿到。
-# 换族又换供应商（阶跃 -> opencode-go），顺带绕开阶跃额度本身的抖动。
-fallback_model: opencode-go/glm-5.3-flash
-# 260828 cc 这份 md 是本工种**唯一的定义来源**：frontmatter 给 mode/description/model/超时与权限，
+# 260909 Red 请求级看门狗在 session/llm.ts 区分首响应、流静默和本地执行；工种不再按总寿命计时。
+# 决策：docs/notes/implemented/bug-fix/2026-09-09-subagent-request-watchdog.md
+# 260828 cc 这份 md 是本工种**唯一的定义来源**：frontmatter 给 mode/description/model 与权限，
 # 正文给提示词。agent.ts 用 with { type: "text" } 在**构建期**把整份文件内联进二进制，运行时用
 # gray-matter 剥出来 —— 不是读盘（seed 与 src 都不进发布包；而且 Info.prompt 在 llm/request.ts 是
 # **替换**模型家族提示词而非追加，文件缺失不报错、只静默回落）。改这里就够了。

@@ -887,7 +887,7 @@ export const dict = {
   "settings.models.description": "模型设置将在此处可配置。",
 
   "settings.agents.title": "智能体",
-  "settings.agents.description": "为已有智能体覆盖模型、推理档与超时。选「默认」即不覆盖，交回智能体自带的定义。",
+  "settings.agents.description": "为已有智能体覆盖模型与推理档。选「默认」即不覆盖，交回智能体自带的定义。",
   "settings.agents.section.primary": "主智能体",
   "settings.agents.section.subagent": "子代理",
   "settings.agents.group.default": "默认",
@@ -896,14 +896,6 @@ export const dict = {
   "settings.agents.model.follow": "默认（不覆盖）",
   "settings.agents.variant.title": "推理档",
   "settings.agents.variant.description": "只在这个智能体使用自己配置的模型时生效",
-  "settings.agents.timeout.title": "超时",
-  "settings.agents.timeout.description": "子代理超过时限就取消，并改用兜底模型重试",
-  "settings.agents.timeout.none": "默认（不覆盖）",
-  "settings.agents.timeout.minutes": "{{count}} 分钟",
-  "settings.agents.fallback.title": "兜底模型",
-  "settings.agents.fallback.description": "子代理超时后用这个模型重试",
-  "settings.agents.fallback.none": "默认（不覆盖）",
-
   "settings.commands.title": "命令",
   "settings.commands.description": "命令设置将在此处可配置。",
 

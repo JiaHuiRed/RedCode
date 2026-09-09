@@ -2,7 +2,7 @@ export * as ConfigAgent from "./agent"
 
 import path from "path"
 import { Exit, Schema, SchemaGetter } from "effect"
-import { NonNegativeInt, PositiveInt } from "@redcode-ai/core/schema"
+import { PositiveInt } from "@redcode-ai/core/schema"
 import * as Log from "@redcode-ai/core/util/log"
 import { Glob } from "@redcode-ai/core/util/glob"
 import { configEntryNameFromPath } from "./entry-name"
@@ -44,17 +44,6 @@ const AgentSchema = Schema.StructWithRest(
       description: "Maximum number of agentic iterations before forcing text-only response",
     }),
     maxSteps: Schema.optional(PositiveInt).annotate({ description: "@deprecated Use 'steps' field instead." }),
-    // 260829 Red 用 NonNegativeInt 而不是 PositiveInt：注释从写下那天起就是「0/omitted = no timeout」，
-    // 但 PositiveInt 把 0 挡在门外，于是 GUI 面板没法把超时改回「不覆盖」——选默认发 0，服务端直接 400。
-    // 0 与「没写这一行」同义，落盘前由 config.ts 的 writableAgent 翻译成删键，文件里不留 0。
-    timeout_ms: Schema.optional(NonNegativeInt).annotate({
-      description:
-        "Subagent timeout in milliseconds. When a subagent run exceeds this, it is cancelled and retried with fallback_model (if set). 0/omitted = no timeout.",
-    }),
-    fallback_model: Schema.optional(ConfigModelID).annotate({
-      description:
-        "Fallback model (providerID/modelID) used to retry a subagent run that timed out. Only applies to subagents with timeout_ms set.",
-    }),
     permission: Schema.optional(ConfigPermission.Info),
   }),
   [Schema.Record(Schema.String, Schema.Any)],
@@ -77,8 +66,6 @@ const KNOWN_KEYS = new Set([
   "permission",
   "disable",
   "tools",
-  "timeout_ms",
-  "fallback_model",
 ])
 
 // Post-parse normalisation:
@@ -88,13 +75,22 @@ const KNOWN_KEYS = new Set([
 //    `permission` shape (write-adjacent tools collapse into `permission.edit`).
 //  - Coalesce `steps ?? maxSteps` so downstream can ignore the deprecated alias.
 const normalize = (agent: Schema.Schema.Type<typeof AgentSchema>): Schema.Schema.Type<typeof AgentSchema> => {
-  const options: Record<string, unknown> = { ...agent.options }
-  for (const [key, value] of Object.entries(agent)) {
+  // 260909 Red 旧配置继续可解析，但必须响：总生命周期超时已经被请求级守护取代，不能再悄悄传给模型。
+  // 决策：docs/notes/implemented/bug-fix/2026-09-09-subagent-request-watchdog.md
+  const { timeout_ms, fallback_model, ...next } = agent
+  if (timeout_ms !== undefined || fallback_model !== undefined) {
+    log.warn("ignoring retired agent timeout/fallback configuration", {
+      timeout_ms: timeout_ms !== undefined,
+      fallback_model: fallback_model !== undefined,
+    })
+  }
+  const options: Record<string, unknown> = { ...next.options }
+  for (const [key, value] of Object.entries(next)) {
     if (!KNOWN_KEYS.has(key)) options[key] = value
   }
 
   const permission: ConfigPermission.Info = {}
-  for (const [tool, enabled] of Object.entries(agent.tools ?? {})) {
+  for (const [tool, enabled] of Object.entries(next.tools ?? {})) {
     const action = enabled ? "allow" : "deny"
     if (tool === "write" || tool === "edit" || tool === "patch") {
       permission.edit = action
@@ -102,10 +98,10 @@ const normalize = (agent: Schema.Schema.Type<typeof AgentSchema>): Schema.Schema
     }
     permission[tool] = action
   }
-  globalThis.Object.assign(permission, agent.permission)
+  globalThis.Object.assign(permission, next.permission)
 
-  const steps = agent.steps ?? agent.maxSteps
-  return { ...agent, options, permission, ...(steps !== undefined ? { steps } : {}) }
+  const steps = next.steps ?? next.maxSteps
+  return { ...next, options, permission, ...(steps !== undefined ? { steps } : {}) }
 }
 
 export const Info = AgentSchema.pipe(

@@ -26,21 +26,30 @@ const LINES = ["╭────╮", "│ >_ │", "╰────╯"] as cons
 const INK_LIGHT = RGBA.fromHex("#C8322B")
 const INK_DARK = RGBA.fromHex("#E4534A")
 
+function brandInk(background: RGBA, override?: RGBA) {
+  if (override) return override
+  const luma = background.r * 0.299 + background.g * 0.587 + background.b * 0.114
+  return luma < 0.5 ? INK_DARK : INK_LIGHT
+}
+
 export function Seal(props: { ink?: RGBA }) {
   const { theme } = useTheme()
 
   // 品牌色不跟主题调色板走（那是标志不是 UI 元素），但深色底上 #C8322B 压不住，
   // 按背景亮度在两档官方用色之间切一次。RGBA 分量是 0–1。
-  const ink = createMemo(() => {
-    if (props.ink) return props.ink
-    const bg = theme.background
-    const luma = bg.r * 0.299 + bg.g * 0.587 + bg.b * 0.114
-    return luma < 0.5 ? INK_DARK : INK_LIGHT
-  })
+  const ink = createMemo(() => brandInk(theme.background, props.ink))
 
   return (
     <box flexDirection="column" flexShrink={0}>
       <For each={LINES}>{(line) => <text fg={ink()}>{line}</text>}</For>
     </box>
   )
+}
+
+// 260909 Red 单行场景不能放三行完整朱印；用同一枚印身和 `>_` 印文做紧凑落款。
+export function SealMark(props: { ink?: RGBA }) {
+  const { theme } = useTheme()
+  const ink = createMemo(() => brandInk(theme.background, props.ink))
+
+  return <span style={{ bg: ink(), fg: theme.background, bold: true }}>{">_"}</span>
 }
