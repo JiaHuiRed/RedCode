@@ -290,6 +290,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     })
   }
 
+  // 260909 Red 新会话创建窗口的防重入标志
+  let creatingSession = false
+
   const handleSubmit = async (event: Event) => {
     clearSendError()
     event.preventDefault()
@@ -382,23 +385,34 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     let session = input.info()
     if (!session && isNewSession) {
-      const created = await client.session
-        .create()
-        .then((x) => x.data ?? undefined)
-        .catch((err) => {
-          showToast({
-            title: language.t("prompt.toast.sessionCreateFailed.title"),
-            description: errorMessage(err),
+      // 260909 Red 防重入：session.create 往返期间（局域网可到秒级）二次 Enter
+      // 会并发建出两个会话。只圈创建窗口——排队补消息的语义不受影响。
+      if (creatingSession) {
+        event.preventDefault()
+        return
+      }
+      creatingSession = true
+      try {
+        const created = await client.session
+          .create()
+          .then((x) => x.data ?? undefined)
+          .catch((err) => {
+            showToast({
+              title: language.t("prompt.toast.sessionCreateFailed.title"),
+              description: errorMessage(err),
+            })
+            return undefined
           })
-          return undefined
-        })
-      if (created) {
-        seed(sessionDirectory, created)
-        session = created
-        if (shouldAutoAccept) permission.enableAutoAccept(session.id, sessionDirectory)
-        local.session.promote(sessionDirectory, session.id)
-        layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
-        navigate(`/${base64Encode(sessionDirectory)}/session/${session.id}`)
+        if (created) {
+          seed(sessionDirectory, created)
+          session = created
+          if (shouldAutoAccept) permission.enableAutoAccept(session.id, sessionDirectory)
+          local.session.promote(sessionDirectory, session.id)
+          layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
+          navigate(`/${base64Encode(sessionDirectory)}/session/${session.id}`)
+        }
+      } finally {
+        creatingSession = false
       }
     }
     if (!session) {
