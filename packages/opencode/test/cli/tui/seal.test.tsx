@@ -20,3 +20,17 @@ test("朱印是 6 列 × 3 行的方印，印文是终端提示符", async () =>
   for (const line of lines) expect([...line].length).toBe(6)
   expect(lines[1]).toContain(">_")
 })
+
+// 260909 Red 会话页脚的紧凑档：6 列 → 5 列（字符格下最接近"调小 15%"的一档），
+// 印形仍是三行，印文 `>_` 与全尺寸版同列起点（左边留一格呼吸位，右收一格）
+test("朱印紧凑档是 5 列 × 3 行，印文与全尺寸同列", async () => {
+  const full = await renderFrame(() => <Seal />, { width: 12, height: 4 })
+  const frame = await renderFrame(() => <Seal size="compact" />, { width: 12, height: 4 })
+  const lines = frame.split("\n")
+  expect(lines).toHaveLength(3)
+  for (const line of lines) expect([...line].length).toBe(5)
+  expect(lines[0]).toBe("╭───╮")
+  expect(lines[1]).toBe("│ >_│")
+  expect(lines[2]).toBe("╰───╯")
+  expect(lines[1].indexOf(">")).toBe(full.split("\n")[1].indexOf(">"))
+})

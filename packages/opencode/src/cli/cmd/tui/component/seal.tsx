@@ -22,6 +22,11 @@ import { useTheme } from "@tui/context/theme"
  */
 const LINES = ["╭────╮", "│ >_ │", "╰────╯"] as const
 
+// 260909 Red 会话页脚用紧凑档：哥哥反馈完整方印大了 15%。字符格是离散的，最接近的
+// 一档就是 6 列 → 5 列（−16.7%）；高度 3 行是印形的下限（上框/印文/下框），再矮就
+// 不成印了。印文 `>_` 保持与全尺寸版同列起点（左边留一格呼吸位，右收一格）。
+const COMPACT_LINES = ["╭───╮", "│ >_│", "╰───╯"] as const
+
 /** 主色 / 深色界面用色，与 redcode-mark.svg 头部注释同源 */
 const INK_LIGHT = RGBA.fromHex("#C8322B")
 const INK_DARK = RGBA.fromHex("#E4534A")
@@ -32,7 +37,7 @@ function brandInk(background: RGBA, override?: RGBA) {
   return luma < 0.5 ? INK_DARK : INK_LIGHT
 }
 
-export function Seal(props: { ink?: RGBA }) {
+export function Seal(props: { ink?: RGBA; size?: "full" | "compact" }) {
   const { theme } = useTheme()
 
   // 品牌色不跟主题调色板走（那是标志不是 UI 元素），但深色底上 #C8322B 压不住，
@@ -41,7 +46,7 @@ export function Seal(props: { ink?: RGBA }) {
 
   return (
     <box flexDirection="column" flexShrink={0}>
-      <For each={LINES}>{(line) => <text fg={ink()}>{line}</text>}</For>
+      <For each={props.size === "compact" ? COMPACT_LINES : LINES}>{(line) => <text fg={ink()}>{line}</text>}</For>
     </box>
   )
 }

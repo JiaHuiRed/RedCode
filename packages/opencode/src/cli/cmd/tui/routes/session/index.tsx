@@ -1690,6 +1690,7 @@ export function AssistantMessage(props: { message: AssistantMessageInfo; parts: 
         <Match when={props.last || final() || props.message.error?.name === "MessageAbortedError"}>
           <box flexDirection="row" alignItems="center" gap={1} paddingLeft={3} marginTop={1}>
             <Seal
+              size="compact"
               ink={
                 props.message.error?.name === "MessageAbortedError"
                   ? theme.textMuted
