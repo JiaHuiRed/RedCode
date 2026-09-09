@@ -8,7 +8,7 @@ import { homedir, tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event, ProcessMetric } from "electron"
-import { app, BrowserWindow, nativeTheme, shell } from "electron"
+import { app, BrowserWindow, dialog, nativeTheme, shell } from "electron"
 
 import contextMenu from "electron-context-menu"
 
@@ -39,7 +39,7 @@ import {
   setDockIcon,
 } from "./windows"
 import { checkUpdate, checkForUpdates, installUpdate, setupAutoUpdater } from "./updater"
-import { Deferred, Effect, Fiber } from "effect"
+import { Cause, Deferred, Effect, Fiber } from "effect"
 
 const APP_NAMES: Record<string, string> = {
   dev: "RedCode Dev",
@@ -477,7 +477,8 @@ const main = Effect.gen(function* () {
   const loadingComplete = Deferred.makeUnsafe<void>()
   // 260901 cc sidecar 就绪信号。窗口现在早于 sidecar 创建（见下方 createMainWindow 那段），
   //   所以 awaitInitialization 不能再立刻 resolve —— 渲染层拿到 url 就会去连，连早了必然失败。
-  const serverReady = Deferred.makeUnsafe<void>()
+  // 260909 Red 错误通道放宽到 Error：启动失败时 serverReady 要能 fail（渲染层拿到拒绝而非干等）。
+  const serverReady = Deferred.makeUnsafe<void, Error>()
 
   registerIpcHandlers({
     killSidecar: () => killSidecar(),
@@ -701,7 +702,25 @@ const main = Effect.gen(function* () {
 
   // Fiber.await 仍然留在 main 的末尾，位置不能再往前收：loadingTask 是 Effect.forkChild，
   // 生命周期挂在父 fiber 上，main 一结束它就会被打断。这里只是不再让**建窗**等它。
-  yield* Fiber.await(loadingTask)
+  //
+  // 260909 Red 启动失败必须响：原先 loadingTask 一失败（spawn 抛错/提前退出被打穿），
+  // Fiber.await 把错误重新抛进 main，Effect.runFork 静默吞掉——serverReady 永不完成，
+  // 加载窗永远停在"正在启动服务器"；猝死自愈（handleSidecarExit）又因 server 未赋值
+  // 直接返回，没有任何出路。现在弹窗写明原因后干净退出，重启可清掉瞬时故障；
+  // serverReady 先 fail，渲染层的 awaitInitialization 拿到拒绝而不是干等。
+  const loadExit = yield* Fiber.await(loadingTask).pipe(Effect.exit)
+  if (loadExit._tag === "Failure") {
+    const detail = Cause.squash(loadExit.cause)
+    const message = detail instanceof Error ? detail.message : String(detail)
+    logger.error("sidecar startup failed", { error: message })
+    Deferred.failSync(serverReady, () => detail instanceof Error ? detail : new Error(message))
+    dialog.showErrorBox(
+      "RedCode 启动失败",
+      `服务进程未能启动：${message}\n\n请重启 RedCode 重试；若反复出现，请在反馈里附上这条原因。`,
+    )
+    app.quit()
+    return
+  }
   setInitStep({ phase: "done" })
   Deferred.doneUnsafe(serverReady, Effect.void)
 })
