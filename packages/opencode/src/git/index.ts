@@ -1,6 +1,7 @@
 import { AppProcess } from "@redcode-ai/core/process"
 import { Duration, Effect, Layer, Context, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
+import { join } from "node:path"
 import * as Log from "@redcode-ai/core/util/log"
 
 const log = Log.create({ service: "git" })
@@ -319,25 +320,28 @@ export const layer = Layer.effect(
       return { text: result.truncated ? "" : result.text(), truncated: result.truncated } satisfies Patch
     })
 
+    // 260909 Red 进程内计数替换 git diff --no-index 子进程：vcs.diff 对每个 untracked
+    // 文件各起一个 git（预算 60 个），agent 干活时每秒一次防抖重算，Windows 上单次
+    // spawn 15-40ms，60 个就是 1-2.5s 的进程风暴压在 sidecar 事件循环上。新文件的
+    // additions 就是行数——单遍数 0x0A 字节即可，无需起进程。
     const statUntracked = Effect.fn("Git.statUntracked")(function* (cwd: string, file: string) {
-      const result = yield* run(["diff", "--no-index", "--numstat", "--", "/dev/null", file], {
-        cwd,
-        maxOutputBytes: 4096,
-      })
-
-      if (result.truncated) return
-      const text = result.text()
-
-      const parts = text.split("\t")
-      if (parts.length < 2) return
-
-      const additions = parts[0] === "-" ? 0 : Number.parseInt(parts[0] || "0", 10)
-      const deletions = parts[1] === "-" ? 0 : Number.parseInt(parts[1] || "0", 10)
-      return {
-        file,
-        additions: Number.isFinite(additions) ? additions : 0,
-        deletions: Number.isFinite(deletions) ? deletions : 0,
-      } satisfies Stat
+      const path = join(cwd, file)
+      const bytes = yield* Effect.tryPromise({
+        try: () => Bun.file(path).arrayBuffer(),
+        catch: () => undefined,
+      }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+      // status 与 stat 之间文件可能已被删——按"统计不到"处理，与 numstat 空输出同义
+      if (!bytes) return undefined
+      const view = new Uint8Array(bytes)
+      // 32MB 上限：行数统计只为 UI 角标，超大文件直接放弃统计（patch 层有自己的字节预算）
+      if (view.byteLength > 32 * 1024 * 1024) return undefined
+      // git 对含 NUL 的文件按二进制处理（numstat 输出 "-"）——同样放弃统计
+      const head = view.subarray(0, 8000)
+      for (let i = 0; i < head.length; i++) if (head[i] === 0) return undefined
+      let additions = 0
+      for (let i = 0; i < view.length; i++) if (view[i] === 10) additions++
+      if (view.length > 0 && view[view.length - 1] !== 10) additions++
+      return { file, additions, deletions: 0 } satisfies Stat
     })
 
     const applyPatch = Effect.fn("Git.applyPatch")(function* (cwd: string, patch: string) {
