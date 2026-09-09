@@ -10,6 +10,10 @@
 
 ### [未发布]
 
+### [0.11.1] - 2026-09-09
+
+> DSH 通用机制继续落地：桌面 IPC 与更新流程收紧，Windows Job runner 的进程终止链补强。
+
 #### 变更
 
 - **webqa v1.2.0：对齐 browser-use 实战缺口**（`webqa-server/index.js`）：`webqa_interact` 新增 `clickAt`（坐标点击，canvas/终端等 aria 快照不可见的自绘控件唯一落点——260908 用坐标点开 xterm.js 工作区选择器验证了这条路）、`scroll`（滚轮，带合成器沉降，紧跟的 eval 不再读到旧 scrollY）、`hover`、`tab`（多标签 list/new/switch/close）；`screenshot` 支持 `selector` 元素级特写并在结果附带视口尺寸供坐标换算；`observe` 支持 `selector` 限定子树并返回 title；单步失败返回已执行结果 + 该步 error 并中止，不再整批蒸发；浏览器改显式 context（隐式 context 禁止 `newPage()`，多标签因此抛错，顺带让标签页共享 cookie/localStorage）。`describe` 全面改写为「观察优先」纪律：observe（便宜）→ aria-ref 定位 → waitFor/再 observe 验证效果 → 只有需要视觉判断才截图。
@@ -23,6 +27,8 @@
 - **接入 DeepSeek V4.1 Flash 临时多模态内测别名**（`seed/redcode.home.jsonc`、`packages/opencode/src/provider/{provider,tiered-pricing}.ts`，决策：`docs/notes/implemented/feature/2026-09-08-deepseek-v4-1-flash-alias.md`）：新增到 0910 到期的 `deepseek-v4.1-flash-expires-on-0910`，声明原生图片输入、1M/384K 上下文限制，并复用 Flash/Vision 的人民币工作日峰谷分段价；已通过 `bun run dev` 实测可用。
 
 #### 修复
+
+- **Windows Job runner 终止 IPC 失败不再悬挂**（`packages/opencode/src/util/{windows-job,windows-job-runner}.ts`，决策：`docs/notes/implemented/bug-fix/2026-09-09-windows-job-runner-ipc-termination.md`）：对齐 DSH 最新子进程边界处理——父进程发送终止消息时覆盖 IPC 在连接检查后同步抛错与异步 callback 失败，两种情况都立即结束 runner；runner 侧发送结果也捕获连接竞态，避免留下未处理 rejection 或永远没有 `exited` 结局。
 
 - **修复 home 配置模板的 webqa 路径转义**（`seed/redcode.home.jsonc`）：远端同步的描述误写成 `Temp\webqa`，导致 `merge-home-config.ts` 解析 JSONC 时把 `\w` 判为非法转义；现改为合法的 `Temp\\webqa`，构建同步步骤恢复正常。
 

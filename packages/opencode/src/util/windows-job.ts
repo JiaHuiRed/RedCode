@@ -63,6 +63,30 @@ function errorFromMessage(error: Extract<Message, { type: "error" }>["error"]) {
   })
 }
 
+function killRunner(runner: Runner) {
+  try {
+    runner.kill("SIGKILL")
+  } catch {
+    // 260909 Red Runner 可能已在关闭，close 事件会负责收敛目标进程状态。
+  }
+}
+
+function terminateRunner(runner: Runner) {
+  if (!runner.connected) return
+  if (runner.send === undefined) {
+    killRunner(runner)
+    return
+  }
+  try {
+    runner.send({ type: "terminate" } satisfies Message, (error) => {
+      if (error !== null) killRunner(runner)
+    })
+  } catch {
+    // 260909 Red IPC 可能在 connected 检查后瞬间关闭，直接结束 runner。
+    killRunner(runner)
+  }
+}
+
 function isMessage(value: unknown): value is Extract<Message, { type: "ready" | "exit" | "error" }> {
   if (!value || typeof value !== "object") return false
   if ("type" in value && value.type === "ready") return true
@@ -120,7 +144,7 @@ export function spawn(command: string, args: string[], opts: Options): Child {
   })
   managed.kill = () => {
     if (state.targetExited || !child.connected) return false
-    child.send?.({ type: "terminate" } satisfies Message)
+    terminateRunner(child)
     return true
   }
   managed.exited = direct.promise
@@ -179,8 +203,7 @@ export function exited(child: Managed) {
 }
 
 export function terminate(child: Managed) {
-  if (!child[MANAGED].runner.connected) return
-  child[MANAGED].runner.send?.({ type: "terminate" } satisfies Message)
+  terminateRunner(child[MANAGED].runner)
 }
 
 export * as WindowsJob from "./windows-job"

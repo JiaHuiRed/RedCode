@@ -1,4 +1,5 @@
 import { dlopen } from "bun:ffi"
+import { closeSync } from "node:fs"
 
 const RUNNER_ENV = "REDCODE_WINDOWS_JOB_RUNNER"
 const STARTF_USESTDHANDLES = 0x100
@@ -113,6 +114,16 @@ function startMessage(value: unknown): value is Start {
   )
 }
 
+function releaseRunnerStdio() {
+  for (const fd of [0, 1, 2]) {
+    try {
+      closeSync(fd)
+    } catch (reason) {
+      if ((reason as NodeJS.ErrnoException).code !== "EBADF") throw reason
+    }
+  }
+}
+
 function native() {
   const kernel32 = dlopen("kernel32.dll", {
     AssignProcessToJobObject: { args: ["ptr", "ptr"], returns: "i32" },
@@ -181,7 +192,12 @@ export async function run() {
         resolve(false)
         return
       }
-      process.send(result, (failure) => resolve(failure === null))
+      try {
+        process.send(result, (failure) => resolve(failure === null))
+      } catch {
+        // 260909 Red 父进程可能在连接检查后关闭 IPC，失败由调用方收敛 runner。
+        resolve(false)
+      }
     })
   const fail = async (reason: unknown) => {
     if (finished) return
@@ -293,6 +309,7 @@ export async function run() {
         if (api.assignProcessToJobObject(job, target) === 0)
           throw new Error(`AssignProcessToJobObject failed (${api.getLastError()})`)
         if (api.resumeThread(thread) === 0xffffffff) throw new Error(`ResumeThread failed (${api.getLastError()})`)
+        releaseRunnerStdio()
         api.closeHandle(thread)
       } finally {
         for (const handle of handles) api.setHandleInformation(handle, HANDLE_FLAG_INHERIT, 0)

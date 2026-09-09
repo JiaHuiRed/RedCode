@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process"
 import { mkdir, writeFile } from "node:fs/promises"
 import { join, resolve, sep } from "node:path"
-import { BrowserWindow, Notification, app, dialog, ipcMain, shell } from "electron"
+import { BrowserWindow, Notification, app, dialog, ipcMain as electronIpcMain, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { DesktopMenuAction } from "@redcode-ai/app/desktop-menu"
 
@@ -15,6 +15,7 @@ import type {
   WslConfig,
 } from "../preload/types"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
+import { isTrustedRendererUrl } from "./renderer-url"
 import { getStore } from "./store"
 import { getPinchZoomEnabled, openExternalURL, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
 
@@ -48,7 +49,33 @@ type Deps = {
   recordFatalRendererError: (error: FatalRendererError) => Promise<void> | void
 }
 
+function assertTrustedIpcSender(event: Pick<IpcMainEvent | IpcMainInvokeEvent, "senderFrame">) {
+  if (isTrustedRendererUrl(event.senderFrame?.url)) return
+  throw new Error("Rejected IPC from an untrusted renderer")
+}
+
 export function registerIpcHandlers(deps: Deps) {
+  const ipcMain = {
+    handle<Args extends unknown[], Result>(
+      channel: string,
+      listener: (event: IpcMainInvokeEvent, ...args: Args) => Result,
+    ) {
+      electronIpcMain.handle(channel, (event, ...args: Args) => {
+        assertTrustedIpcSender(event)
+        return listener(event, ...args)
+      })
+    },
+    on<Args extends unknown[]>(
+      channel: string,
+      listener: (event: IpcMainEvent, ...args: Args) => void,
+    ) {
+      electronIpcMain.on(channel, (event, ...args: Args) => {
+        assertTrustedIpcSender(event)
+        listener(event, ...args)
+      })
+    },
+  }
+
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
   ipcMain.handle("await-initialization", (event: IpcMainInvokeEvent) => {
     const send = (step: InitStep) => event.sender.send("init-step", step)

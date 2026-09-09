@@ -95,3 +95,7 @@ ffi_otui_*.log
 
 # 260831 cc storybook 调试日志（2026-05-25 初始导入时误入仓的产物，跑一次 storybook 就重写一次）
 packages/storybook/debug-storybook.log
+
+# Local desktop wallpapers
+packages/desktop/日间壁纸.png
+packages/desktop/夜间壁纸.png

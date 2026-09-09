@@ -7,13 +7,12 @@ import type { TitlebarTheme } from "../preload/types"
 import { PINCH_ZOOM_ENABLED_KEY } from "./constants"
 import { resolveExternalURL } from "./external-url"
 import { exportDebugLogs, write as writeLog } from "./logging"
+import { isTrustedRendererUrl, rendererHost, rendererProtocol } from "./renderer-url"
 import { getStore } from "./store"
 import { createUnresponsiveSampler } from "./unresponsive"
 
 const root = dirname(fileURLToPath(import.meta.url))
 const rendererRoot = join(root, "../renderer")
-const rendererProtocol = "oc"
-const rendererHost = "renderer"
 const clipboardWritePermission = "clipboard-sanitized-write"
 // 260907 ZCode Electron 44 clipboard W3C 化：read-clipboard-image 改走渲染层
 // navigator.clipboard.read()（读图需要 clipboard-read；此前只有 sanitize-write）
@@ -261,11 +260,11 @@ export function openExternalURL(value: string) {
 // 一律 deny 并转系统浏览器。will-navigate 只放行应用自身 URL（reload 场景）。
 function wireNavigationPolicy(win: BrowserWindow) {
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (!isRendererUrl(url)) openExternalURL(url)
+    if (!isTrustedRendererUrl(url)) openExternalURL(url)
     return { action: "deny" }
   })
   win.webContents.on("will-navigate", (event, url) => {
-    if (isRendererUrl(url)) return
+    if (isTrustedRendererUrl(url)) return
     event.preventDefault()
     openExternalURL(url)
   })
@@ -427,24 +426,10 @@ function allowRendererPermissions(win: BrowserWindow) {
   })
 }
 
-function isTrustedRendererUrl(value?: string) {
-  return isRendererUrl(value)
-}
-
 function addRendererHeaders(value: string, headers: Record<string, any>) {
   upsertKeyValue(headers, "Access-Control-Allow-Origin", ["*"])
   upsertKeyValue(headers, "Access-Control-Allow-Headers", ["*"])
-  if (isRendererUrl(value, true)) upsertKeyValue(headers, documentPolicyHeader, [jsCallStacksDocumentPolicy])
-}
-
-function isRendererUrl(value?: string, html = false) {
-  if (!value || !URL.canParse(value)) return false
-  const url = new URL(value)
-  if (html && !url.pathname.endsWith(".html")) return false
-  if (url.protocol === `${rendererProtocol}:` && url.host === rendererHost) return true
-  const devUrl = process.env.ELECTRON_RENDERER_URL
-  if (!devUrl || !URL.canParse(devUrl)) return false
-  return url.origin === new URL(devUrl).origin
+  if (isTrustedRendererUrl(value, true)) upsertKeyValue(headers, documentPolicyHeader, [jsCallStacksDocumentPolicy])
 }
 
 function wireZoom(win: BrowserWindow) {
