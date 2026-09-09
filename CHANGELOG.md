@@ -10,13 +10,30 @@
 
 ### [未发布]
 
+### [0.11.2] - 2026-09-10
+
+> 手机/平板经局域网用 RedCode 的可用性大轮：复制与触屏交互全面兜底、桌面启动失败有了出路；服务端同步压缩、untracked 文件统计与 summarize 三件性能账清掉。
+
 #### 修复
 
 - **子代理不再因总时长误触发兜底**（`packages/opencode/src/tool/task.ts`、`packages/opencode/src/session/llm.ts`，决策：`docs/notes/implemented/bug-fix/2026-09-09-subagent-request-watchdog.md`）：移除覆盖整个子代理生命周期的 `timeout_ms` / `fallback_model`，改由请求层按首响应与流静默判定供应商是否卡死；正常的长推理、工具调用和多轮工作不再被切断，也不会从 Step Plan 跨到其他额度池。
 
-#### 界面
+- **新会话创建窗口防重入**（`packages/app/src/components/prompt-input/submit.ts`）：`session.create` 往返期间（局域网可到秒级）二次 Enter 会并发建出两个会话——此前「多出来的神秘会话」的来源。防重入只圈创建窗口到 navigate 这一段，创建完成后立即放行，运行中排队补消息的语义不受影响（空文本提交仍是停止、非空提交仍是排队）。
+- **后台任务完成态回收**（`packages/opencode/src/background/job.ts`）：jobs Map 此前只进不出，`output` 是子代理完整输出文本（可达数 MB），而后台是 task 工具的默认推荐路径——长驻 sidecar 进程里每个任务永久滞留一份全文。完成态保留 30 分钟、全程至多 50 条，start 与 finish 两侧都裁（只裁 start 侧会稳定超出 1 条）；运行中任务永不触碰。
+- **sidecar 健康轮询自终止**（`packages/desktop/src/main/server.ts`）：ready 循环是 `while(true)` 10Hz 轮询，但 race 输掉后循环本身不会停——调用方 30s 超时是纯放弃（不杀 sidecar），sidecar 活着但 health 一直不过（密码错配、migration 卡住）时空转 fetch 会烧到进程退出。改为 120s 总预算 + exit 即停。
+- **桌面启动失败弹窗并干净退出**（`packages/desktop/src/main/index.ts`）：原先 loadingTask 一失败，`Fiber.await` 把错误打穿 main 后被 `Effect.runFork` 静默吞掉——serverReady 永不完成，加载窗永远停在「正在启动服务器」，猝死自愈又因 server 未赋值直接返回。现在 serverReady 先 fail（渲染层拿到拒绝而非干等），弹窗写明原因后退出，重启可清掉瞬时故障。
+- **服务器健康检查缓存淘汰死 key**（`packages/app/src/utils/server-health.ts`）：key 含 url+账密，换端口/重启/改密都会留死条目，模块级 Map 只进不出；缓存期才 750ms，超 60s 的条目不可能再命中，顺手全量扫一遍开销可忽略。
+- **复制全面兜底 + 代码块复制按钮触屏常显**（`packages/ui/src/utils/clipboard.ts` 新增，五处调用点接入）：局域网 HTTP 不是 secure context，`navigator.clipboard` 为 undefined——这正是手机/平板访问 webui 的主用路径。markdown 代码块复制原先静默 return、text-field 分享链接复制与工具报错复制直接抛 TypeError；统一收敛为 `copyText`（execCommand 优先、clipboard API 兜底），并补 `@media (hover: none)` 下按钮常显。
+- **触屏不可见控件常显 + 键盘可达**（`image-attachments.tsx` / `titlebar.tsx` / `settings-providers.tsx` / `session-turn.tsx` / `message-timeline.tsx` / `context-items.tsx`）：一批 `opacity-0 + group-hover` 显形的控件（图片移除、页签关闭、diff 显示全部/收起、环境提示）在触屏上永久不可见，补 `[@media(hover:none)]` 常显，移除按钮放大命中区；diff 折叠 span/div 改 button、上下文 chip 补 role/tabindex/Enter。
+- **发送错误横幅可读 + Retry 走 i18n，发布失败弹 toast**（`packages/app/src/components/prompt-input.tsx`、`message-timeline.tsx`、i18n en/zh/ja）：错误横幅单行 truncate 改 line-clamp-3；硬编码英文 "Retry" 新增 `common.retry`；share/unshare 失败原先只 console.error，对齐 titleMutation 的 toast 模式。
 
-- **TUI agent 标记统一使用朱印**（`packages/opencode/src/cli/cmd/tui/component/seal.tsx`、`routes/session/index.tsx`）：assistant 消息头不再使用通用方块符号，改为紧凑的品牌印身与 `>_` 印文，让朱印也参与会话过程。
+#### 变更
+
+- **TUI 会话页脚朱印换 5 列紧凑档**（`packages/opencode/src/cli/cmd/tui/component/seal.tsx`、`routes/session/index.tsx`）：完整方印偏大约 15%，字符格离散缩放下最接近的一档是 6 列 → 5 列（−16.7%）；高度 3 行是印形下限。印文 `>_` 与全尺寸同列起点，首页品牌印保持 6×3 不动。`Seal` 新增 `size: "full" | "compact"`。
+- **响应压缩移出事件循环**（`packages/opencode/src/server/routes/instance/httpapi/middleware/compression.ts`）：`gzipSync/deflateSync` 换异步 zlib——>1KB 的 JSON 响应全走该中间件，/provider 热态 5.8MB 同步压缩阻塞事件循环 30-80ms，同进程还要泵 SSE 心跳。压缩失败退回原样返回。实测 5.8MB→369KB。
+- **statUntracked 进程内计数，消除 untracked 文件的 git 进程风暴**（`packages/opencode/src/git/index.ts`）：vcs.diff 对每个 untracked 文件各起一个 `git diff --no-index --numstat`（预算 60 个），agent 干活时每秒一次防抖重算，Windows 单次 spawn 15-40ms。新文件的 additions 就是行数——单遍数 0x0A 字节，32MB 上限放弃统计、含 NUL 按二进制跳过，语义与 numstat 一致（已实测）。
+- **summarize 只查最后一条 user 的 agent**（`packages/opencode/src/session/message-v2.ts` 新增 `lastUserAgent`，`handlers/session.ts` 接入）：原先经 Session.messages 无 limit 全量翻页把整会话消息连 base64 parts 拖进内存只为读一个字符串字段，而 compaction 恰发生在会话最长的时候。单行 `json_extract` 走既有索引，语义与 `findLast` 完全一致（真库已验证）。
+- **DiffViewer 体积判定与 patch 缓存键不再复制整份内容**（`packages/ui/src/components/file.tsx`、`session-diff.ts`）：large 判定把删除/新增两侧各 join 成整文件字符串再取 length（单文件 500KB 时每次白分配 1MB）；归一化缓存的键拼整份 patch（存量可达 MB 级），命中判定本身就要分配并哈希等长字符串——前者改逐行求长度和，后者键改长度 + `sampledChecksum`。（`packages/opencode/src/cli/cmd/tui/component/seal.tsx`、`routes/session/index.tsx`）：assistant 消息头不再使用通用方块符号，改为紧凑的品牌印身与 `>_` 印文，让朱印也参与会话过程。
 
 ### [0.11.1] - 2026-09-09
 
