@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { afterEach, expect, test } from "bun:test"
-import { Seal, SealMark } from "@tui/component/seal"
+import { Seal } from "@tui/component/seal"
 import { destroyFrame, renderFrame } from "./lib/transcript"
 
 afterEach(destroyFrame)
@@ -19,16 +19,4 @@ test("朱印是 6 列 × 3 行的方印，印文是终端提示符", async () =>
   expect(lines).toHaveLength(3)
   for (const line of lines) expect([...line].length).toBe(6)
   expect(lines[1]).toContain(">_")
-})
-
-test("朱印单行落款保留印文", async () => {
-  const frame = await renderFrame(
-    () => (
-      <text>
-        <SealMark />
-      </text>
-    ),
-    { width: 12, height: 1 },
-  )
-  expect(frame).toBe(">_")
 })

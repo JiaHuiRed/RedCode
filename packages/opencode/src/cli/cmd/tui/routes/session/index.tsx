@@ -23,7 +23,7 @@ import { useSync, cmpTime } from "@tui/context/sync"
 import { useEvent } from "@tui/context/event"
 import { SplitBorder } from "@tui/component/border"
 import { Spinner } from "@tui/component/spinner"
-import { SealMark } from "@tui/component/seal"
+import { Seal } from "@tui/component/seal"
 import { generateSubtleSyntax, selectedForeground, useTheme } from "@tui/context/theme"
 import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
 import { Prompt, type PromptRef } from "@tui/component/prompt"
@@ -1688,15 +1688,15 @@ export function AssistantMessage(props: { message: AssistantMessageInfo; parts: 
       </Show>
       <Switch>
         <Match when={props.last || final() || props.message.error?.name === "MessageAbortedError"}>
-          <box paddingLeft={3}>
-            <text marginTop={1}>
-               <SealMark
-                 ink={
-                   props.message.error?.name === "MessageAbortedError"
-                     ? theme.textMuted
-                     : undefined
-                 }
-               />{" "}
+          <box flexDirection="row" alignItems="center" gap={1} paddingLeft={3} marginTop={1}>
+            <Seal
+              ink={
+                props.message.error?.name === "MessageAbortedError"
+                  ? theme.textMuted
+                  : undefined
+              }
+            />
+            <text>
               <span style={{ fg: theme.text }}>{local.agent.label(props.message.agent)}</span>
               <span style={{ fg: theme.textMuted }}> · {model()}</span>
               <Show when={duration()}>

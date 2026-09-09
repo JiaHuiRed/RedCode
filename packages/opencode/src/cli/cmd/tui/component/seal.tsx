@@ -45,11 +45,3 @@ export function Seal(props: { ink?: RGBA }) {
     </box>
   )
 }
-
-// 260909 Red 单行场景不能放三行完整朱印；用同一枚印身和 `>_` 印文做紧凑落款。
-export function SealMark(props: { ink?: RGBA }) {
-  const { theme } = useTheme()
-  const ink = createMemo(() => brandInk(theme.background, props.ink))
-
-  return <span style={{ bg: ink(), fg: theme.background, bold: true }}>{">_"}</span>
-}
