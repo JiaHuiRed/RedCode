@@ -328,9 +328,11 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof SummarizePayload.Type
     }) {
       yield* revertSvc.cleanup(yield* requireSession(ctx.params.sessionID))
-      const messages = yield* SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID }))
       const defaultAgent = yield* agentSvc.defaultAgent()
-      const currentAgent = messages.findLast((message) => message.info.role === "user")?.info.agent ?? defaultAgent
+      // 260909 Red 换 MessageV2.lastUserAgent 单行查询：全量翻页只为读最后一个
+      // user 消息的 agent 字段，compaction 时会话最长、代价最大。会话存在性已由
+      // 上面的 requireSession 保证。
+      const currentAgent = (yield* MessageV2.lastUserAgent(ctx.params.sessionID)) ?? defaultAgent
 
       yield* compactSvc.create({
         sessionID: ctx.params.sessionID,

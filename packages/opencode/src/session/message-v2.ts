@@ -1014,6 +1014,24 @@ export function toModelMessages(
   return Effect.runPromise(toModelMessagesEffect(input, model, options).pipe(Effect.provide(EffectLogger.layer)))
 }
 
+// 260909 Red summarize/compact 只需要最后一条 user 消息的 agent。此前走
+// Session.messages 无 limit 全量翻页——compaction 恰恰发生在会话最长的时候，
+// 等于把几百 MB 级历史（含 base64 parts）整体拖进内存只为读一个字符串字段。
+// 单行 SQL 走 (session_id, time_created, id) 既有索引，语义与
+// messages.findLast(role === "user") 完全一致。
+export const lastUserAgent = Effect.fn("MessageV2.lastUserAgent")(function* (sessionID: SessionID) {
+  const row = Database.use((db) =>
+    db
+      .select({ agent: sql<string | null>`json_extract(${MessageTable.data}, '$.agent')` })
+      .from(MessageTable)
+      .where(and(eq(MessageTable.session_id, sessionID), sql`json_extract(${MessageTable.data}, '$.role') = 'user'`))
+      .orderBy(desc(MessageTable.time_created), desc(MessageTable.id))
+      .limit(1)
+      .get(),
+  )
+  return row?.agent ?? undefined
+})
+
 export const page = Effect.fn("MessageV2.page")(function* (input: {
   sessionID: SessionID
   limit: number
