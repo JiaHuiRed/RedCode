@@ -44,6 +44,9 @@ const DS_PEAK_WEEKDAYS: Array<0 | 1 | 2 | 3 | 4 | 5 | 6> = [1, 2, 3, 4, 5]
 // 2026-08-17 00:00 北京时间 = 2026-08-16T16:00:00Z
 const DS_PEAK_PRICING_FROM = Date.parse("2026-08-16T16:00:00Z")
 
+// 2026-09-10 12:00 北京时间 = 2026-09-10T04:00:00Z
+const DS_FLASH_20260910_FROM = Date.parse("2026-09-10T04:00:00Z")
+
 const DS_V4_FLASH_SEGMENTS: TieredPricingSegment[] = [
   {
     effectiveFrom: 0,
@@ -53,6 +56,17 @@ const DS_V4_FLASH_SEGMENTS: TieredPricingSegment[] = [
     effectiveFrom: DS_PEAK_PRICING_FROM,
     peak: { input: 3, output: 9, cache: { read: 0.1, write: 3 } },
     offpeak: { input: 1.5, output: 4.5, cache: { read: 0.05, write: 1.5 } },
+    peakWindows: DS_PEAK_WINDOWS,
+    peakWeekdays: DS_PEAK_WEEKDAYS,
+  },
+  // 260910 Red 官方公告（北京时间 2026-09-10 12:00 起调整 flash 系列定价）：
+  // 空闲时段 输入缓存命中 0.02 元 / 未命中 1 元 / 输出 4 元，高峰时段为空闲的 2 倍。
+  // 峰谷窗口与工作日规则沿用 260823 细则（周一至周五 9-12、14-18 为高峰，周末全天空闲）。
+  // 记账不回溯：旧消息的 cost 在请求时刻已固化，这里只影响新请求。
+  {
+    effectiveFrom: DS_FLASH_20260910_FROM,
+    peak: { input: 2, output: 8, cache: { read: 0.04, write: 2 } },
+    offpeak: { input: 1, output: 4, cache: { read: 0.02, write: 1 } },
     peakWindows: DS_PEAK_WINDOWS,
     peakWeekdays: DS_PEAK_WEEKDAYS,
   },

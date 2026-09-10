@@ -22,9 +22,13 @@ import { useTheme } from "@tui/context/theme"
  */
 const LINES = ["╭────╮", "│ >_ │", "╰────╯"] as const
 
-// 260910 Red 会话页脚宽度保持 5 列，把印文放回印面压成两行；终端没有独立行高可调。
-// 这样保留完整印的内收关系，`>` 与全尺寸版同列，不让印文撞到上框。
-const COMPACT_LINES = ["╭───╮", "╰ >_╯"] as const
+// 260910 Red 紧凑档改为**实心印**（会话页脚）：实心印身 + 印文挖空成底色，与 GUI 品牌标
+// （redcode-mark*.svg：实心印身、`>_` 挖空、印边留白）同构，也是「朱印」本来的样子。
+// 上一版是线条框 `╭───╮ / ╰ >_╯`——5 列 × 2 行里印文必然咬掉一条边框（终端字符格无法再细分），
+// 底边于是成了破口，看着不像印。宽度与印文列位是设计约束，导出供测试钉住。
+export const COMPACT_SEAL_WIDTH = 5
+// `>` 落在 index 2，与全尺寸印 `│ >_ │` 同列。
+export const COMPACT_SEAL_TEXT = "  >_ "
 
 /** 主色 / 深色界面用色，与 redcode-mark.svg 头部注释同源 */
 const INK_LIGHT = RGBA.fromHex("#C8322B")
@@ -43,9 +47,23 @@ export function Seal(props: { ink?: RGBA; size?: "full" | "compact" }) {
   // 按背景亮度在两档官方用色之间切一次。RGBA 分量是 0–1。
   const ink = createMemo(() => brandInk(theme.background, props.ink))
 
+  // 紧凑档：两行实心块，第二行用底色写字＝挖空印文（同 MIME 徽标的底色挖空手法）。
+  if (props.size === "compact") {
+    return (
+      <box flexDirection="column" flexShrink={0}>
+        <text>
+          <span style={{ bg: ink() }}>{" ".repeat(COMPACT_SEAL_WIDTH)}</span>
+        </text>
+        <text>
+          <span style={{ bg: ink(), fg: theme.background }}>{COMPACT_SEAL_TEXT}</span>
+        </text>
+      </box>
+    )
+  }
+
   return (
     <box flexDirection="column" flexShrink={0}>
-      <For each={props.size === "compact" ? COMPACT_LINES : LINES}>{(line) => <text fg={ink()}>{line}</text>}</For>
+      <For each={LINES}>{(line) => <text fg={ink()}>{line}</text>}</For>
     </box>
   )
 }

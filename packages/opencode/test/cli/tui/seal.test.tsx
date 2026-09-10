@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { afterEach, expect, test } from "bun:test"
-import { Seal } from "@tui/component/seal"
+import { COMPACT_SEAL_TEXT, COMPACT_SEAL_WIDTH, Seal } from "@tui/component/seal"
 import { destroyFrame, renderFrame } from "./lib/transcript"
 
 afterEach(destroyFrame)
@@ -21,14 +21,13 @@ test("朱印是 6 列 × 3 行的方印，印文是终端提示符", async () =>
   expect(lines[1]).toContain(">_")
 })
 
-// 260910 Red 会话页脚保持 5 列宽，把紧凑档压为两行；印文回到印面且与全尺寸同列。
-test("朱印紧凑档保持 5 列宽并压低为 2 行", async () => {
+// 260910 Red 紧凑档是**实心印**：印身由背景色铺满、印文用底色挖空。字符帧抓不到背景色，
+// 所以宽度与列位直接钉导出常量，帧里验行数与印文落点。
+test("朱印紧凑档是 5 列 × 2 行的实心印，印文与全尺寸同列", async () => {
   const full = await renderFrame(() => <Seal />, { width: 12, height: 4 })
   const frame = await renderFrame(() => <Seal size="compact" />, { width: 12, height: 4 })
   const lines = frame.split("\n")
   expect(lines).toHaveLength(2)
-  for (const line of lines) expect([...line].length).toBe(5)
-  expect(lines[0]).toBe("╭───╮")
-  expect(lines[1]).toBe("╰ >_╯")
+  expect(COMPACT_SEAL_TEXT).toHaveLength(COMPACT_SEAL_WIDTH)
   expect(lines[1].indexOf(">")).toBe(full.split("\n")[1].indexOf(">"))
 })
