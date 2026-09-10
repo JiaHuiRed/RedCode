@@ -1052,7 +1052,6 @@ export const layer = Layer.effect(
       let step = 0
       // 260801 Red Goal token 记账：runLoop 全程累计，收尾写回 goal.tokens_used
       let usageTokens = 0
-      const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
       // 260710 Red 跨 step 文本重复检测（loop recovery）
       const loopTracker = new LoopRecoveryTracker()
       let loopRecoveryPrompt: string | undefined
@@ -1164,26 +1163,42 @@ export const layer = Layer.effect(
         forceContinue = false
 
         step++
+        // 260910 Red Codex step settings（决策见 docs/notes/implemented/feature/2026-09-10-codex-step-settings.md）：
+        // 每个 step 固定同一组 session/agent/model/user，避免 turn 中途的权限或模型切换让
+        // prompt、工具和执行策略各读到不同版本。
+        const stepSettings = {
+          user: lastUser,
+          session: yield* sessions.get(sessionID).pipe(Effect.orDie),
+          model: yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID),
+          agent: yield* agents.get(lastUser.agent),
+        }
+        const model = stepSettings.model
         if (step === 1)
           yield* title({
-            session,
-            modelID: lastUser.model.modelID,
-            providerID: lastUser.model.providerID,
+            session: stepSettings.session,
+            modelID: stepSettings.user.model.modelID,
+            providerID: stepSettings.user.model.providerID,
             history: msgs,
           }).pipe(Effect.ignore, Effect.forkIn(scope))
 
-        const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
         const task = tasks.pop()
 
         if (task?.type === "subtask") {
-          yield* handleSubtask({ task, model, lastUser, sessionID, session, msgs })
+          yield* handleSubtask({
+            task,
+            model: stepSettings.model,
+            lastUser: stepSettings.user,
+            sessionID,
+            session: stepSettings.session,
+            msgs,
+          })
           continue
         }
 
         if (task?.type === "compaction") {
           const result = yield* compaction.process({
             messages: msgs,
-            parentID: lastUser.id,
+            parentID: stepSettings.user.id,
             sessionID,
             auto: task.auto,
             overflow: task.overflow,
@@ -1207,15 +1222,20 @@ export const layer = Layer.effect(
           lastFinished &&
           lastFinished.summary !== true &&
           !justRanExternalCompress &&
-          (yield* compaction.isOverflow({ tokens: lastFinished.tokens, model }))
+          (yield* compaction.isOverflow({ tokens: lastFinished.tokens, model: stepSettings.model }))
         ) {
-          yield* compaction.create({ sessionID, agent: lastUser.agent, model: lastUser.model, auto: true })
+          yield* compaction.create({
+            sessionID,
+            agent: stepSettings.user.agent,
+            model: stepSettings.user.model,
+            auto: true,
+          })
           continue
         }
 
-        const agent = yield* agents.get(lastUser.agent)
+        const agent = stepSettings.agent
         if (!agent) {
-          throw yield* agentNotFound({ sessionID, name: lastUser.agent })
+          throw yield* agentNotFound({ sessionID, name: stepSettings.user.agent })
         }
         // 260811 cc audit Y2：此前默认 Infinity 且 isLastStep 只注入一段提示词、不中断——
         // "每次都成功但原地打转"的循环可以烧 token 烧到手动 abort（repeat-tool-reminder
@@ -1234,7 +1254,7 @@ export const layer = Layer.effect(
           }
           break
         }
-        msgs = yield* SessionReminders.apply({ messages: msgs, agent, session }).pipe(
+        msgs = yield* SessionReminders.apply({ messages: msgs, agent, session: stepSettings.session }).pipe(
           Effect.provideService(RuntimeFlags.Service, flags),
           Effect.provideService(AppFileSystem.Service, fsys),
           Effect.provideService(Session.Service, sessions),
@@ -1242,16 +1262,16 @@ export const layer = Layer.effect(
 
         const msg: MessageV2.Assistant = {
           id: MessageID.ascending(),
-          parentID: lastUser.id,
+          parentID: stepSettings.user.id,
           role: "assistant",
           mode: agent.name,
           agent: agent.name,
-          variant: lastUser.model.variant,
+          variant: stepSettings.user.model.variant,
           path: { cwd: ctx.directory, root: ctx.worktree },
           cost: 0,
           tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
-          modelID: model.id,
-          providerID: model.providerID,
+          modelID: stepSettings.model.id,
+          providerID: stepSettings.model.providerID,
           time: { created: Date.now() },
           sessionID,
         }
@@ -1271,7 +1291,7 @@ export const layer = Layer.effect(
           .create({
             assistantMessage: msg,
             sessionID,
-            model,
+            model: stepSettings.model,
           })
           .pipe(Effect.onInterrupt(() => finalizeInterruptedAssistant))
 
@@ -1282,8 +1302,8 @@ export const layer = Layer.effect(
 
           const tools = yield* SessionTools.resolve({
             agent,
-            session,
-            model,
+            session: stepSettings.session,
+            model: stepSettings.model,
             processor: handle,
             bypassAgentCheck,
             messages: msgs,
@@ -1297,9 +1317,9 @@ export const layer = Layer.effect(
             Effect.provideService(Truncate.Service, truncate),
           )
 
-          if (lastUser.format?.type === "json_schema") {
+          if (stepSettings.user.format?.type === "json_schema") {
             tools["StructuredOutput"] = createStructuredOutputTool({
-              schema: lastUser.format.schema,
+              schema: stepSettings.user.format.schema,
               onSuccess(output) {
                 structured = output
               },
@@ -1334,7 +1354,9 @@ export const layer = Layer.effect(
           }
 
           if (step === 1)
-            yield* summary.summarize({ sessionID, messageID: lastUser.id }).pipe(Effect.ignore, Effect.forkIn(scope))
+            yield* summary
+              .summarize({ sessionID, messageID: stepSettings.user.id })
+              .pipe(Effect.ignore, Effect.forkIn(scope))
 
           // 260623 Red collect user reminder text for step>1 injection (old approach mutated
           // p.text before msgPin, which silently restored the un-wrapped cached version).
@@ -1349,16 +1371,16 @@ export const layer = Layer.effect(
           //    而不是上一轮的结束点。
           // 2) 没有去重。同一条消息即使确实是中途新到的，也只该提醒一次 —— 它本身就在
           //    msgs 里，模型看得到，反复强调只会让它以为又来了一条新指令。
-          if (turnStartUserID === undefined) turnStartUserID = lastUser
+          if (turnStartUserID === undefined) turnStartUserID = stepSettings.user
           // 260814 Red queue 模式续跑边界：上一轮 assistant 已完成而 lastUser 更新
           // （排队消息触发续跑，没走 break），新轮起点前移——排队消息从"对本轮隐藏"
           // 转为"新轮的开轮输入"。steer 模式不动这个边界（260729 修过的雷区）。
           else if (
             busyEnter === "queue" &&
             lastAssistant?.finish &&
-            MessageV2.compareTime(lastUser, lastAssistant) > 0
+            MessageV2.compareTime(stepSettings.user, lastAssistant) > 0
           ) {
-            turnStartUserID = lastUser
+            turnStartUserID = stepSettings.user
           }
           let userReminderText: string | undefined
           if (busyEnter === "steer" && step > 1) {
@@ -1607,7 +1629,7 @@ export const layer = Layer.effect(
               `are internal session metadata. Never display, log, repeat, or otherwise include them in any response, file, or tool call. ` +
               `If you encounter a compression reminder, execute the compress action or continue the task — do not output the reminder text.`,
           )
-          const format = lastUser.format ?? { type: "text" as const }
+          const format = stepSettings.user.format ?? { type: "text" as const }
           if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
           // 260721 Red prefix shape diagnostic: detect system/tool change mid-session
           {
@@ -1660,15 +1682,15 @@ export const layer = Layer.effect(
             messages: outgoing,
           })
           const result = yield* handle.process({
-            user: lastUser,
+            user: stepSettings.user,
             agent,
-            permission: session.permission,
+            permission: stepSettings.session.permission,
             sessionID,
-            parentSessionID: session.parentID,
+            parentSessionID: stepSettings.session.parentID,
             system,
             messages: outgoing,
             tools: sortedTools,
-            model,
+            model: stepSettings.model,
             toolChoice: format.type === "json_schema" ? "required" : undefined,
           })
           // 260710 Red 注入后清空，下一轮只在 loopTracker 再次触发时才重新设置
@@ -1740,7 +1762,7 @@ export const layer = Layer.effect(
                 step,
                 tools,
                 attempt: salvageRecoveries,
-                model: lastUser.model.modelID,
+                model: stepSettings.user.model.modelID,
               })
               loopRecoveryPrompt = XmlToolCall.recoveryPrompt(handle.salvagedToolCalls)
               forceContinue = true
@@ -1748,7 +1770,11 @@ export const layer = Layer.effect(
               // 纠正过 MAX_SALVAGE_RECOVERIES 次还在重犯，再续跑就是烧 token 陪它打转。
               // 放它正常收尾——XML 已经被摘干净，用户至少不会对着一坨标签，
               // 但必须留一句可见说明，否则看起来就是模型无缘无故什么都没做。
-              yield* slog.error("toolcall.text_form.exhausted", { step, tools, model: lastUser.model.modelID })
+              yield* slog.error("toolcall.text_form.exhausted", {
+                step,
+                tools,
+                model: stepSettings.user.model.modelID,
+              })
               yield* appendNotice({
                 sessionID,
                 messageID: handle.message.id,
@@ -1764,7 +1790,7 @@ export const layer = Layer.effect(
           // 那样恰恰在最该变红的那一轮拿不到值。下面 soft/prune 两档的动作维持原有门槛不变。
           if (!handle.message.summary) {
             const tier = yield* compaction
-              .level({ tokens: handle.message.tokens, model })
+              .level({ tokens: handle.message.tokens, model: stepSettings.model })
               .pipe(Effect.catch(() => Effect.succeed("ok" as const)))
             if (handle.message.contextLevel !== tier) {
               handle.message.contextLevel = tier
@@ -1811,7 +1837,7 @@ export const layer = Layer.effect(
               freedRatio = before > 0 ? freed.tokens / before : 0
               const fits = !(yield* compaction.isOverflow({
                 tokens: { ...tokens, total: after, cache: { read: 0, write: 0 }, input: after, output: 0 },
-                model,
+                model: stepSettings.model,
               }))
               // 260819 cc 除了"prune 后不再超限"，还要求释放量够本——理由见 PRUNE_SKIP_MIN_RATIO。
               // 不达标时不是"什么都不做"（那样 freed 是虚报、上下文没真降、下一轮照样撞线），
@@ -1833,8 +1859,8 @@ export const layer = Layer.effect(
             } else {
               yield* compaction.create({
                 sessionID,
-                agent: lastUser.agent,
-                model: lastUser.model,
+                agent: stepSettings.user.agent,
+                model: stepSettings.user.model,
                 auto: true,
                 overflow,
               })

@@ -1689,14 +1689,7 @@ export function AssistantMessage(props: { message: AssistantMessageInfo; parts: 
       <Switch>
         <Match when={props.last || final() || props.message.error?.name === "MessageAbortedError"}>
           <box flexDirection="row" alignItems="center" gap={1} paddingLeft={3} marginTop={1}>
-            <Seal
-              size="compact"
-              ink={
-                props.message.error?.name === "MessageAbortedError"
-                  ? theme.textMuted
-                  : undefined
-              }
-            />
+            <Seal size="compact" />
             <text>
               <span style={{ fg: theme.text }}>{local.agent.label(props.message.agent)}</span>
               <span style={{ fg: theme.textMuted }}> · {model()}</span>

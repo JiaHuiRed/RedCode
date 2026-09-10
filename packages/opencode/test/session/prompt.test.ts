@@ -573,6 +573,54 @@ it.instance("static loop consumes queued replies across turns", () =>
   }),
 )
 
+it.instance(
+  "refreshes session permissions at the start of each step",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const registry = yield* ToolRegistry.Service
+      const { directory } = yield* TestInstance
+      const chat = yield* sessions.create({
+        title: "Step settings",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      const file = path.join(directory, "step-settings.txt")
+      yield* writeText(file, "step settings")
+
+      const { read } = yield* registry.named()
+      const original = read.execute
+      let executions = 0
+      read.execute = (args, context) =>
+        Effect.gen(function* () {
+          executions++
+          if (executions === 1) {
+            yield* sessions.setPermission({
+              sessionID: chat.id,
+              permission: [{ permission: "read", pattern: "*", action: "deny" }],
+            })
+          }
+          return yield* original(args, context)
+        })
+      yield* Effect.addFinalizer(() => Effect.sync(() => void (read.execute = original)))
+
+      yield* llm.tool("read", { filePath: file })
+      yield* llm.tool("read", { filePath: file })
+      yield* llm.text("done")
+
+      const result = yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        parts: [{ type: "text", text: "read the file twice" }],
+      })
+
+      expect(result.info.role).toBe("assistant")
+      expect(executions).toBe(1)
+    }),
+)
+
 it.instance("loop continues when finish is tool-calls", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)

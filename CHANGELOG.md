@@ -13,6 +13,8 @@
 #### 变更
 
 - **模型切换写入模型可见的历史边界**（`packages/opencode/src/session/message-v2.ts`，决策：`docs/notes/implemented/feature/2026-09-10-model-switch-history-notice.md`）：用户选择与上一次 assistant 不同的 provider/model 时，在该 user turn 前投影稳定的 `[model changed: ...]` 通知；跨模型重放剥离 provider metadata 后，目标模型仍能识别上方 assistant 回合的来源。
+- **每个模型 step 冻结当时的会话设置**（`packages/opencode/src/session/prompt.ts`，决策：`docs/notes/implemented/feature/2026-09-10-codex-step-settings.md`）：后续 step 不再复用 turn 开始时的旧 session 权限；prompt、工具解析、审批与执行统一消费同一份 step 快照。它不改变 provider KV cache，也不保证模型切换后的首次命中。
+- **TUI 会话页脚朱印重做**（`packages/opencode/src/cli/cmd/tui/component/seal.tsx`、`routes/session/index.tsx`）：紧凑档保持 5 列但压为 2 行，`>_` 回到印面且中断态仍使用品牌红；首页完整朱印不变。
 
 ### [0.11.2] - 2026-09-10
 

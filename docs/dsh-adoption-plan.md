@@ -40,6 +40,7 @@
   - [ ] 变更/移除通知：~~260817 曾落地~~ **已回退（260818）**——每轮读盘对比 + system 尾注入通知会破坏前缀缓存（哥哥在家实测 19b2bed3 对命中率造成破坏性损伤）；需另想不破前缀的通知方式
 - [ ] **翻 `dsh-trim-cot-leakage` skill**,对照 step-3.7 思维链泄漏三条防线补手法。
 - [x] **模型切换历史通知**:用户选到不同模型时，在对应 user turn 前投影一条持久的 `[model changed: ...]` 消息；跨模型的 provider metadata 已剥离，目标模型仍能知道上方 assistant 回合属于谁。参考 `core/agent/model-selection.ts`，落点 `session/message-v2.ts` + 回归测试。
+- [x] **step 级设置快照**:每个模型 step 冻结当时的 user、model、agent 与 session 权限，避免 turn 内模型/策略串用；不改变 provider KV cache 命名。参考 Codex `session/step_settings.rs`，落点 `session/prompt.ts` + 权限回归测试。决策见 `docs/notes/implemented/feature/2026-09-10-codex-step-settings.md`
 
 ## 第三批(结构性)
 
