@@ -71,7 +71,7 @@
   1. `packages/opencode/package.json` + `packages/desktop/package.json` — **同号同升**（TUI 运行时与 GUI 标题栏徽章各自从这两处注入，缺一则显示分裂）
   2. 其余 `@redcode-ai/*` 包、`packages/sdk/js`、`sdks/vscode` 的 `version` — 同号跟升（互引均为 `workspace:*`，该字段仅作标签；Sentry release 与 GUI `Platform.version` 读 `packages/app` 的号）
   3. `README.md` — 中文版"版本"徽章更新
-  4. `README.en.md` — **英文版 Version 徽章同步更新**（容易漏！双语必须一起动）
+  4. `README.en.md` — **英文版 Version 徽章同步更新**
   5. `CHANGELOG.md` — 新条目写在顶部说明之下（合并线区域），**不再**写进 `## TUI`/`## GUI` 历史段
   6. 标题栏徽章 — 自动注入（`packages/desktop/package.json` → `__RC_VERSION__` 占位符），无需手改
   7. 自检脚本 — `script/check-version-consistency.ts`，build.bat 编译前校验（含全仓同号断言）
@@ -82,15 +82,13 @@
 - **模型可见改动的四问**（改提示词 / 注入段 / 工具 schema 与 description / 工具输出格式，必答）：在 commit 说明里逐条回答，有 note 的写进 note。
   1. **模型看到什么变了**——加了删了还是移了哪一段，给原文对照。
   2. **token 影响**——固定前缀增减多少（`session/prefix-shape.ts` 能直接量）。
-  3. **KV cache 影响**——从哪一段起前缀作废，还是完全不动。**这条最容易漏、代价最大**：`19b2bed3`「每轮读盘对比 + system 尾部注入变更通知」就是没答这条落的地，在家实测对命中率造成破坏性损伤后整条回退；`image/image.ts` 的 resize 通知文案至今被钉成"只由尺寸推导、不含时间戳"，同一笔账——掺进去会让同一张历史图每轮生成不同文本，命中率线性掉到 50% 且不自愈。
-  4. **注入项有没有硬上限**——任何进入模型上下文的东西都必须有确定的字节或 token 上限，**没有上限就是缺陷不是待办**。单项超过 1K token 在 commit 里单独点名；超过 10K 要说明为什么不能截断。本仓两次栽在这条：`tool/read.ts` 的文本分支有 `MAX_BYTES = 50KB` 而**图片分支一个上限都没有**（库里最大单条 3.23MB）；`summary.diffs` 无上限写回消息行（单行 32MB，占 message 表 79%）。两处都是"写的时候没人问上限"。来源：codex 的 Model visible context 第 3–5 条。
-  段落顺序也算模型可见改动：**移动一段的代价是从它开始往后的整个前缀作废**，不是只有那一段。来源：deepseek-harness 的 "Model Experience 三问" 文档规矩，其 `sparse-first-party-prompt-section-orders` 一条就是在 Consequences 里主动写明了这个作废点。
+  3. **KV cache 影响**——从哪一段起前缀作废，还是完全不动。**这条最容易漏、代价最大**。
+  4. **注入项有没有硬上限**——任何进入模型上下文的东西都必须有确定的字节或 token 上限，**没有上限就是缺陷不是待办**。单项超过 1K token 在 commit 里单独点名；超过 10K 要说明为什么不能截断。本仓两次栽在这条：`tool/read.ts` 的文本分支有 `MAX_BYTES = 50KB` 而**图片分支一个上限都没有**（库里最大单条 3.23MB）；`summary.diffs` 无上限写回消息行（单行 32MB，占 message 表 79%）。两处都是"写的时候没人问上限"。段落顺序也算模型可见改动：**移动一段的代价是从它开始往后的整个前缀作废**，不是只有那一段。
 
 # 项目指令
 
-- 默认分支 `dev`；`main` 可能不存在，对比用 `origin/dev`
 - Commit scope（types 与前缀规则见全局 AGENTS.md）：`core` `redcode` `tui` `app` `desktop` `sdk` `plugin`
-- **重新生成 SDK 是两条命令，只跑第一条会漏掉 `packages/sdk/openapi.json`**（260820 cc 实测）：
+- **重新生成 SDK 是两条命令，只跑第一条会漏掉 `packages/sdk/openapi.json`**：
 
   ```bash
   bun ./packages/sdk/js/script/build.ts                              # → packages/sdk/js/src/v2/gen/**
