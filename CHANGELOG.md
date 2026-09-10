@@ -12,6 +12,8 @@
 
 #### 修复
 
+- **DeepSeek 提示词补一条思考链纪律**（`packages/opencode/src/session/prompt/deepseek.md`）：满屏「嗯…」「emmm」的填充式自言自语只在 DeepSeek V4.1 Flash 上出现，属模型输出风格、不是 soul 该管的身份语气，故落在 per-model 提示词而非 `Tsoul.md`。新增 `Reasoning is judgment, not self-talk out loud.` —— 权衡可以，「把权衡的过程念出来」不行。模型可见改动四问：① 新增一条 bullet，位置在 `# Output channels` 的 "Reason in Chinese" 之后；② 约 +240 字符（≈55 token）固定前缀；③ 只对 deepseek 系会话生效，且该 bullet 之后的前缀作废一次，对新会话无影响；④ 该文件编译期嵌入、大小确定，不随会话增长。
+
 - **`/recall` 恢复可用：数据源从 MEMORY.md 换到 supermemory.db**（`seed/scripts/recall-memory.mjs`、`seed/command/recall.md`，决策：`docs/notes/implemented/bug-fix/2026-09-10-recall-supermemory-db.md`）：MEMORY.md 自 260812 起只留索引行（全文在库），旧脚本的「`### 教训块`」解析器从此恒空——`/recall 关键词` 一律回「没搜到」，而它仍被当作自动召回失败后的手动兜底（实测「MCP」召不回任何一条，库里有几十条）。检索口径改为与自动召回插件 `memory-recall.js` 对齐：分句 → 中英文查询词 → FTS5 命中 + 子串校验 → 按票数排序；默认搜 global + 当前项目（项目名由 cwd 推断），`--all` 搜全库。trigram 索引最小 3 字（实测 2 字查询恒 0 行），2 字词改走 LIKE。顺带删掉 embedding 预计算那套（缓存键基于 MEMORY.md 的块，与新数据源不兼容且无调用方）、`--index` 只留废弃提示，命令加 `--no-warnings` 压掉 `node:sqlite` 的实验特性警告。
 
 #### 变更
