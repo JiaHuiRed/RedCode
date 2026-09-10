@@ -1148,10 +1148,13 @@ const openaiCompatVariants: VariantFn = ({ model, id }) => {
   // sensenova 那条保持原样：它是中转、档位集合本就与官方不同（有 medium/xhigh、无 max），
   // 手头没有该 provider 的凭据可复测，不在没有证据的情况下改动它。
   if (id.includes("deepseek") || model.api.id.toLowerCase().includes("deepseek")) {
-    // 非 v4 一律不给档位。DeepSeek 官方现在**只剩 v4 系列**（deepseek-chat 等 260807 前后
-    // 已下线），所以这条实际是给陈旧模型目录兜底的防线，不是活跃路径——也正因为没人再用，
-    // `variants > deepseek returns empty object` 这个用例一直红着也没人管。
-    if (!model.api.id.toLowerCase().includes("deepseek-v4")) return {}
+    // 260910 Red: 官方 0910 公告把 V4.1 Flash 的正式 wire model ID 定为 `deepseek-flash`，
+    // 名字里不再有 `deepseek-v4`。原判断只认 `deepseek-v4`，会把正式名判成
+    // "非 v4 不给档位"，页脚因此丢掉整个推理强度（2026-09-10 实测）。
+    // 放行标准改成 DeepSeek 现行 v4 家族的两个形态：`deepseek-v4*` 与 `deepseek-flash`；
+    // 挡陈旧目录（deepseek-chat / deepseek-reasoner，260807 前后已下线）的作用保留。
+    const apiId = model.api.id.toLowerCase()
+    if (!apiId.includes("deepseek-v4") && !apiId.includes("deepseek-flash")) return {}
     return effortVariants(
       model.providerID === "sensenova" ? [...WIDELY_SUPPORTED_EFFORTS, "xhigh"] : ["low", "high", "max"],
     )

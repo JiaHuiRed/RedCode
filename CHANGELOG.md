@@ -20,6 +20,10 @@
 - **DeepSeek 系思考链要求用中文**（`packages/opencode/src/session/prompt/deepseek.md`）：新模型思考链里英文比例上升，而 260731 撤掉逐步注入后就再没有中文约束在生效。改在稳定的 per-model 提示词里收口——从第一个词起用中文、整轮不漂移，代码/标识符/命令保持原样，正文仍随用户语言。只影响 deepseek 系会话的固定前缀（约 +20 token）。
 - **DeepSeek 正式模型名 `deepseek-flash` 替换临时内测别名**（`seed/redcode.home.jsonc`、`packages/opencode/src/provider/{provider,tiered-pricing}.ts`，决策：`docs/notes/implemented/feature/2026-09-10-deepseek-flash-rename.md`）：官方 0910 公告明确 V4.1 Flash 的正式 wire model ID 为 `deepseek-flash`（旧名 `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` 已下线，服务端仍接受但一律路由到 V4.1 Flash 按 Flash 计价），260908 注册的临时别名 `deepseek-v4.1-flash-expires-on-0910` 随之退役——配置只留正式名，计价表两处同步加键（旧别名键保留，仅为仍在跑旧 ID 的会话记账兜底）。同轮补齐两笔此前遗漏的账：flash 的静态兜底价 `DS_V4_COST_FLASH` 从 0817 高峰价 3/9/0.1 跟到 0910 新高峰价 2/8/0.04（tiered 记账表上一 commit 7d4e9e02 已改，静态表当时漏动），以及为 `deepseek-v4-pro` 补 2026-09-14 12:00 起转 Flash 计价的峰谷分段。wire ID 已实测返回 200。
 
+#### 修复
+
+- **修复 `deepseek-flash` 丢掉推理强度档位**（`packages/opencode/src/provider/transform.ts`）：官方 0910 把 V4.1 Flash 的正式 wire model ID 定为 `deepseek-flash` 后，openai-compat 的档位特判仍要求 `model.api.id` 含 `deepseek-v4` 才给档位（这条防线原本用来挡 `deepseek-chat` / `deepseek-reasoner` 等 260807 前后下线的陈旧目录），正式名不含该前缀、直接 `return {}`，页脚因此看不到任何推理强度。放行标准改为现行 v4 家族的两个形态：`deepseek-v4*` 与 `deepseek-flash`。验证：low/high/max 三档实测均 200（`medium` 仍不暴露——官方已删该档、实测等同 high）；`test/provider/reasoning-effort-variants.test.ts` 39 passed。
+
 ### [0.11.2] - 2026-09-10
 
 > 手机/平板经局域网用 RedCode 的可用性大轮：复制与触屏交互全面兜底、桌面启动失败有了出路；服务端同步压缩、untracked 文件统计与 summarize 三件性能账清掉。
