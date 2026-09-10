@@ -136,7 +136,6 @@
   // 而本地模型是按各机显存挑的，随 provider.ollama 一起下沉。留在这里会被 merge-home-config
   // 当"用户缺的键"补回 redcode.jsonc——260811/260812 两次回潮正是如此。
   "compaction": { "threshold": 400000 },
-  "tools": { "github-triage": false, "github-pr-search": false },
  "provider": {
    // 260802 Red 接入 SenseNova：tokenplan 套餐定价全 0。apiKey 走 {env:} 占位符，
    // 值由用户级环境变量 SENSENOVA_API_KEY 提供（setx 设置，配置同步模板时不会泄漏明文 key）。

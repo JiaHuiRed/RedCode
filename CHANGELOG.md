@@ -20,6 +20,8 @@
 
 #### 变更
 
+- **删除 `seed/tool/` 里两个上游 CI 工具**（`github-pr-search.ts`、`github-triage.ts`）：它们读 `ISSUE_NUMBER` 环境变量、团队名单全是上游成员（kommander / Hona / jlongster 那批），是 fork 时从上游带过来的 GitHub Actions 帮手，在本地从没生效过——`~/.redcode/tool/` 里从来没有它们，而 `redcode.jsonc` 里那行 `"tools": { "github-triage": false, "github-pr-search": false }` 一直在替它们「把关」。这行配置一并删掉（种子模板 `seed/redcode.home.jsonc` 与 live `~/.redcode/redcode.jsonc` 两处同删，该键只列了这两个不存在的工具，删掉等价于不再禁用任何工具）；两份 JSONC 已用 `jsonc-parser` 验过语法。
+
 - **删除已废弃的 `plugins/mcp-sqlite-query/`**：260904 把 sqlite 能力搬成引擎侧的原生工具（`~/.redcode/tool/sqlite.ts`，in-process、写操作带权限闸门）时，MCP 配置块已整块删除——`redcode.jsonc` 里那句注释还写着「该目录已经不存在」，可插件源码一直躺在仓库里，两边互相矛盾。实测全仓除历史 CHANGELOG 条目外零引用（配置、脚本、workspace、tsconfig 皆无），删除不影响现在生效的原生 `sqlite_query` / `sqlite_schema`。
 
 ### [0.11.3] - 2026-09-10
