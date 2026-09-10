@@ -16,6 +16,7 @@
 - **每个模型 step 冻结当时的会话设置**（`packages/opencode/src/session/prompt.ts`，决策：`docs/notes/implemented/feature/2026-09-10-codex-step-settings.md`）：后续 step 不再复用 turn 开始时的旧 session 权限；prompt、工具解析、审批与执行统一消费同一份 step 快照。它不改变 provider KV cache，也不保证模型切换后的首次命中。
 - **DeepSeek flash 系列按 2026-09-10 12:00 新价计费**（`packages/opencode/src/provider/tiered-pricing.ts`）：官方公告「空闲时段输入缓存命中 0.02 元 / 未命中 1 元 / 输出 4 元，高峰为空闲的 2 倍」落成新价段，12:00 前仍按旧价；沿用周一至周五 9-12、14-18 的高峰窗口与周末全天空闲（260823 细则）。覆盖 V4 Flash、V4 Flash Vision 与 V4.1 Flash 临时别名（含 `opencode-go` 网关）。记账不回溯——历史消息的 cost 在请求时刻已固化。
 - **TUI 会话页脚朱印改为实心印**（`packages/opencode/src/cli/cmd/tui/component/seal.tsx`）：紧凑档改成 5 列 × 2 行的实心印身 + 底色挖空的印文，与 GUI 品牌标（实心印身、`>_` 挖空）同构；上一版线条框在 2 行里必然被印文咬掉一条边框、底边破口，看着不像印。中断态仍用品牌红，首页完整朱印不变。
+- **删除无消费者的 `reasoning_language` 配置项**（`packages/opencode/src/config/config.ts`）：260731 起思考链语言约束已改挂稳定的 per-model 提示词，配置读取随之作废，但字段一直留在 schema 上。Effect Schema 默认忽略多余键，旧配置里带着它既不报错也不产生任何效果——是个会误导人的空设定。现在连同 SDK 生成物一并删除。
 
 ### [0.11.2] - 2026-09-10
 

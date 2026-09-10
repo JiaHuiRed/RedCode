@@ -337,13 +337,11 @@ export const Info = Schema.Struct({
       }),
     }),
   ),
-  // 260729 Red 可见思考文本的语言（见 session/reasoning-language.ts）。auto = 用户这轮说中文
-  // 就要求中文思考，英文/拿不准则不注入（保持旧行为）。刻意做成 user-turn 注入而非 system
-  // prompt，改设置不会打掉 prefix cache。
-  reasoning_language: Schema.optional(Schema.Literals(["auto", "zh", "en"])).annotate({
-    description:
-      "Language for visible reasoning/thinking text: 'auto' (match the user's language, default), 'zh', or 'en'. Does not affect the final answer's language.",
-  }),
+  // 260910 Red 原 `reasoning_language`（"auto" | "zh" | "en"）已删。它自 260731 起就没有消费者——
+  // 唯一读它的「每步注入 <reasoning-language> 块」已撤除（原因见 session/prompt.ts:1408-1422），
+  // 此后一直悬空。思考链语言改为由 per-model 提示词约束（prompt/deepseek.md），不再做成会话
+  // 可切换配置：写进稳定前缀既不占用户回合，也不引入 prefix cache 抖动。
+  // 历史会话里已存的 <reasoning-language> 块仍由 instruction-echo.ts 的剥离逻辑处理，不受影响。
   experimental: Schema.optional(
     Schema.Struct({
       disable_paste_summary: Schema.optional(Schema.Boolean),

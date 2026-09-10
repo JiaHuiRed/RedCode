@@ -1405,7 +1405,6 @@ export type Config = {
     reserved?: number
     threshold?: number
   }
-  reasoning_language?: "auto" | "zh" | "en"
   experimental?: {
     disable_paste_summary?: boolean
     batch_tool?: boolean

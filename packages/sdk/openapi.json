@@ -15546,10 +15546,6 @@
             },
             "additionalProperties": false
           },
-          "reasoning_language": {
-            "type": "string",
-            "enum": ["auto", "zh", "en"]
-          },
           "experimental": {
             "type": "object",
             "properties": {
