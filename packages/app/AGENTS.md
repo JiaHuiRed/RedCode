@@ -5,9 +5,9 @@
 ## Commands
 
 - `bun run typecheck` (from `packages/app`)
-- Dev: `bun dev -- --port 4444`
-- Backend (from `packages/opencode`): `bun run --conditions=browser ./src/index.ts serve --port 4096`
-- Open `http://localhost:4444` to verify UI changes (it targets the backend at `http://localhost:4096`).
+- Dev: `bun run dev` (from `packages/app`)
+- Backend (from `packages/opencode`): `bun run --conditions=browser ./src/index.ts serve --port 4097`
+- Open `http://localhost:5173` to verify UI changes (it targets the backend at `http://localhost:4097`).
 - `redcode web` starts a local server and opens the local web UI — it proxies nothing hosted.
 
 ## SolidJS
