@@ -25,7 +25,7 @@
 | `packages/desktop/` | **GUI** — Electron、main/renderer、sidecar | `packages/desktop/AGENTS.md` |
 | `packages/app/` | **SolidJS Web UI** — 组件、路由、i18n | `packages/app/AGENTS.md` |
 | `packages/plugin/` | Plugin SDK 类型定义 | - |
-| `seed/` | **种子/暂存目录**（原 `.opencode/`，260805 改名）——skill、command、agent、配置模板。引擎**不**加载它，由 `script/sync-home.bat` 播种到 `~/.redcode/` 才生效。注意两个同步方向：`seed/scripts` 经 `sync-home-scripts.bat` **真镜像**（改 `~/.redcode/scripts/` 侧会被下次构建物理删除，必须改 seed），`seed/{skill,command}` 是 **seed-only**（本机已有同名则不覆盖，只改 seed 本机永不生效）| - |
+| `seed/` | **种子/暂存目录**（原 `.opencode/` 改名）——skill、command、agent、配置模板。引擎**不**加载它，由 `script/sync-home.bat` 播种到 `~/.redcode/` 才生效。注意两个同步方向：`seed/scripts` 经 `sync-home-scripts.bat` **真镜像**（改 `~/.redcode/scripts/` 侧会被下次构建物理删除，必须改 seed），`seed/{skill,command}` 是 **seed-only**（本机已有同名则不覆盖，只改 seed 本机永不生效）| - |
 
 改所在 package 前先读**根 AGENTS.md + 对应 package 的 AGENTS.md**。两者都生效，scoped 规则覆盖根的代码细节。
 注意包级 AGENTS.md **不自动注入**（引擎只取全局 + 第一个命中的项目级，见 `instruction.ts:127`），要自己 read。
@@ -36,7 +36,7 @@
   - 改 TUI → `cd packages/opencode && bun run typecheck`
   - 改 GUI → `cd packages/desktop && bun run typecheck`
 - 各 package 的代码风格/构建细节见该 package 的 AGENTS.md
-- 跑单测**必须带完整文件路径过滤**：不带过滤的 `bun test` 会碰 live 配置（260811 已修根因，但 plugin-loader 那类直接操作 live 文件名的用例仍靠路径隔离兜着）
+- 跑单测**必须带完整文件路径过滤**：不带过滤的 `bun test` 会碰 live 配置（已修根因，但 plugin-loader 那类直接操作 live 文件名的用例仍靠路径隔离兜着）
 - `bun run typecheck` 走 `script/typecheck.ts`：先跑 tsgo，崩溃（OOM/panic）时自动回退 TypeScript 5.x 重跑
 - **子进程超时不变量**：`bun run check:subprocess-timeout`（已挂 pre-push）。新增 `appProcess.run` 调用点必须显式给 `timeout`，或在调用行上方写 `// subprocess-timeout: none — <理由>`。无界的子进程等待不触发 evloop drift 探针，挂起时日志里一个字都没有
 
@@ -50,9 +50,9 @@
 
 ## 证据面匹配（永不默认全量）
 
-**跑的检查必须匹配改动面，永远不要默认跑全量测试套件。**（260810 事故：想验一个测试却跑了全量 `bun test`，测试套件洗掉 live 配置——见 `docs/notes/`）
+**跑的检查必须匹配改动面，永远不要默认跑全量测试套件。**（事故：想验一个测试却跑了全量 `bun test`，测试套件洗掉 live 配置——见 `docs/notes/`）
 
-- 行为改动 → 只跑对应的测试文件（带路径过滤），**必须带包脚本的超时 `--timeout 30000`**——裸 `bun test <file>` 是默认 5 秒，session 套件会大面积假超时（判定指纹：失败耗时齐刷刷贴着超时值＝命令用错，不是回归；260808 实测，260814 复踩）
+- 行为改动 → 只跑对应的测试文件（带路径过滤），**必须带包脚本的超时 `--timeout 30000`**——裸 `bun test <file>` 是默认 5 秒，session 套件会大面积假超时（判定指纹：失败耗时齐刷刷贴着超时值＝命令用错，不是回归）
 - 提示词/模型可见内容改动 → 对照该模型的实际会话验证
 - 文档/版本号改动 → `check-version-consistency.ts`
 - 构建路径改动 → 该 package 的 build
@@ -66,7 +66,7 @@
 
 # 版本与文档
 
-- **单一版本线（2026-08-14 起）**：TUI 与 GUI 合并维护，全仓一个版本号，从 0.8.16 继续递增。历史双线（TUI ≤0.8.16 / GUI ≤0.7.20）只存在于 CHANGELOG 的 `## TUI`/`## GUI` 两段，**历史条目不改**。
+- **单一版本线**：TUI 与 GUI 合并维护，全仓一个版本号，从 0.8.16 继续递增。历史双线（TUI ≤0.8.16 / GUI ≤0.7.20）只存在于 CHANGELOG 的 `## TUI`/`## GUI` 两段，**历史条目不改**。
 - **版本更新 checklist（每次升版必须全过）**：
   1. `packages/opencode/package.json` + `packages/desktop/package.json` — **同号同升**（TUI 运行时与 GUI 标题栏徽章各自从这两处注入，缺一则显示分裂）
   2. 其余 `@redcode-ai/*` 包、`packages/sdk/js`、`sdks/vscode` 的 `version` — 同号跟升（互引均为 `workspace:*`，该字段仅作标签；Sentry release 与 GUI `Platform.version` 读 `packages/app` 的号）
@@ -78,7 +78,7 @@
 - 文档（版本号/徽章/CHANGELOG/README）可直接改好；**push / 打包 release 需用户确认**。
 - **决策记录 `docs/notes/`，写完必须回链**（规则与模板见其 README）：
   - **写**：非平凡改动同 commit 附 note。判据：一个月后会有人问"当时为什么这么做"就写。CHANGELOG 记 what，note 记 why。
-  - **链**：note 落地时**必须**在对应代码头注释 / CHANGELOG 条目回链其路径。notes 不进上下文，**只能靠链接网被撞见**——没有回链的 note 等于没写。（此处原有「动子系统前先 ls/grep 查一遍」一条，260904 查库：实际读取 0 次、跑了一个月零命中，已删。那个动作没有触发点，别加回来。）
+  - **链**：note 落地时**必须**在对应代码头注释 / CHANGELOG 条目回链其路径。notes 不进上下文，**只能靠链接网被撞见**——没有回链的 note 等于没写。（此处原有「动子系统前先 ls/grep 查一遍」一条，查库：实际读取 0 次、跑了一个月零命中，已删。那个动作没有触发点，别加回来。）
 - **模型可见改动的四问**（改提示词 / 注入段 / 工具 schema 与 description / 工具输出格式，必答）：在 commit 说明里逐条回答，有 note 的写进 note。
   1. **模型看到什么变了**——加了删了还是移了哪一段，给原文对照。
   2. **token 影响**——固定前缀增减多少（`session/prefix-shape.ts` 能直接量）。
