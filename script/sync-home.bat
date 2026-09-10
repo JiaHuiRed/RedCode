@@ -26,6 +26,14 @@ rem Private-repo edits (persona commands etc.) are never overwritten.
 if not exist "%USERPROFILE%\.redcode\command" mkdir "%USERPROFILE%\.redcode\command" >nul 2>&1
 if exist "seed\command" for %%F in (seed\command\*) do if not exist "%USERPROFILE%\.redcode\command\%%~nxF" copy /y "%%F" "%USERPROFILE%\.redcode\command\%%~nxF" >nul
 
+rem global native tools: repo staging -> ~/.redcode/tool (engine scans {tool,tools}/*.{js,ts}).
+rem Selective copy on purpose, same reason as seed\plugins below: the other files in seed\tool are
+rem upstream CI helpers (they read ISSUE_NUMBER and import @redcode-ai/plugin, which does not
+rem resolve from ~/.redcode/tool). registry.ts imports every match via Effect.promise with no
+rem per-file recovery, so one unloadable file takes down the whole tool table. Do not mirror the dir.
+if not exist "%USERPROFILE%\.redcode\tool" mkdir "%USERPROFILE%\.redcode\tool" >nul 2>&1
+if exist "seed\tool\sqlite.ts" copy /y "seed\tool\sqlite.ts" "%USERPROFILE%\.redcode\tool\sqlite.ts" >nul
+
 rem 260828 no agent seeding on purpose: the three built-in subagents (explore/advise/execute) are
 rem defined in packages/opencode/src/agent/definition/*.md and inlined at BUILD time. Seeding a
 rem byte-identical copy into ~/.redcode/agent/ would make ConfigAgent.load append the same flat

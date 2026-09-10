@@ -16,6 +16,8 @@
 
 - **`/recall` 恢复可用：数据源从 MEMORY.md 换到 supermemory.db**（`seed/scripts/recall-memory.mjs`、`seed/command/recall.md`，决策：`docs/notes/implemented/bug-fix/2026-09-10-recall-supermemory-db.md`）：MEMORY.md 自 260812 起只留索引行（全文在库），旧脚本的「`### 教训块`」解析器从此恒空——`/recall 关键词` 一律回「没搜到」，而它仍被当作自动召回失败后的手动兜底（实测「MCP」召不回任何一条，库里有几十条）。检索口径改为与自动召回插件 `memory-recall.js` 对齐：分句 → 中英文查询词 → FTS5 命中 + 子串校验 → 按票数排序；默认搜 global + 当前项目（项目名由 cwd 推断），`--all` 搜全库。trigram 索引最小 3 字（实测 2 字查询恒 0 行），2 字词改走 LIKE。顺带删掉 embedding 预计算那套（缓存键基于 MEMORY.md 的块，与新数据源不兼容且无调用方）、`--index` 只留废弃提示，命令加 `--no-warnings` 压掉 `node:sqlite` 的实验特性警告。
 
+- **补上 `seed/tool/` 的同步链路**（`script/sync-home.bat`、`seed/tool/sqlite.ts`）：`seed/tool/` 一直没有同步步骤（`script/*.bat` 里搜不到 `tool`），两头都断着——引擎侧的原生工具 `~/.redcode/tool/sqlite.ts`（260904 从 MCP 搬过来）不在仓里，重装换机即丢；`seed/tool/` 里那两个 github 工具则永远到不了 `~/.redcode/tool/`。补的这段是**选择性单文件复制**，不整目录镜像：那两个 github 工具是上游 CI 帮手（读 `ISSUE_NUMBER`、import `@redcode-ai/plugin`），实测从 `~/.redcode/tool/` 解析不了这个包名，而 `tool/registry.ts:208` 对扫到的每个文件 `Effect.promise(() => import(...))` **没有逐文件兜底**——一个加载失败会以 defect 连累整张工具表，不只是少一个工具。`sqlite.ts` 同时收进 seed，此前只活在本机。
+
 #### 变更
 
 - **删除已废弃的 `plugins/mcp-sqlite-query/`**：260904 把 sqlite 能力搬成引擎侧的原生工具（`~/.redcode/tool/sqlite.ts`，in-process、写操作带权限闸门）时，MCP 配置块已整块删除——`redcode.jsonc` 里那句注释还写着「该目录已经不存在」，可插件源码一直躺在仓库里，两边互相矛盾。实测全仓除历史 CHANGELOG 条目外零引用（配置、脚本、workspace、tsconfig 皆无），删除不影响现在生效的原生 `sqlite_query` / `sqlite_schema`。
