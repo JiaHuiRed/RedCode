@@ -10,6 +10,10 @@
 
 ### [未发布]
 
+#### 变更
+
+- **模型切换写入模型可见的历史边界**（`packages/opencode/src/session/message-v2.ts`，决策：`docs/notes/implemented/feature/2026-09-10-model-switch-history-notice.md`）：用户选择与上一次 assistant 不同的 provider/model 时，在该 user turn 前投影稳定的 `[model changed: ...]` 通知；跨模型重放剥离 provider metadata 后，目标模型仍能识别上方 assistant 回合的来源。
+
 ### [0.11.2] - 2026-09-10
 
 > 手机/平板经局域网用 RedCode 的可用性大轮：复制与触屏交互全面兜底、桌面启动失败有了出路；服务端同步压缩、untracked 文件统计与 summarize 三件性能账清掉。
