@@ -22,17 +22,17 @@ import { useTheme } from "@tui/context/theme"
  */
 const LINES = ["╭────╮", "│ >_ │", "╰────╯"] as const
 
-// 260910 Red 紧凑档改为**实心印**（会话页脚）：实心印身 + 印文挖空成底色，与 GUI 品牌标
-// （redcode-mark*.svg：实心印身、`>_` 挖空、印边留白）同构，也是「朱印」本来的样子。
-// 上一版是线条框 `╭───╮ / ╰ >_╯`——5 列 × 2 行里印文必然咬掉一条边框（终端字符格无法再细分），
-// 底边于是成了破口，看着不像印。宽度与印文列位是设计约束，导出供测试钉住。
-// 260910 Red: 5 列太宽——终端字符约 1:2，5 列 × 2 行视觉上是 5:4 的横长方形，
-// `>_` 只占中间 2 列、左右各空 1.5 格，印身显得空、印文显得小（哥哥："朱印太大，
-// 里面的 >_ 很不协调"）。收成 4 列 × 2 行：4:4 正好视觉正方形，`>_` 居中占一半宽。
-// 宽度与印文列位是设计约束，导出供测试钉住。
-export const COMPACT_SEAL_WIDTH = 4
-// `>_` 左右各留 1 格居中。
-export const COMPACT_SEAL_TEXT = " >_ "
+// 260910 Red 紧凑档（会话页脚）压成**单行实心印**：终端字符约 1:2，2 列 × 1 行就是
+// 视觉正方形，对应 GUI 的 `redcode-mark-simple.svg`（16px 档去掉印边留白与崩口，
+// 那个尺寸下留白只会让边缘发毛）——紧凑档就该是它的终端刻本。
+//
+// 为什么不是 2 行：页脚那行文字只有 1 行高，flex 居中的取整对「偶数高的印
+// vs 奇数高的文字」必然落到某一行，印总是多探出半行。上两版（5 列 × 2 行、4 列 × 2 行）
+// 哥哥都反馈「agent 前面的朱印偏高」，根因不是列宽与内部留白，是**行数不匹配**。
+// 压成 1 行后印与文字同高，对齐不再是取整问题。
+// 宽度与印文是设计约束，导出供测试钉住。
+export const COMPACT_SEAL_WIDTH = 2
+export const COMPACT_SEAL_TEXT = ">_"
 
 /** 主色 / 深色界面用色，与 redcode-mark.svg 头部注释同源 */
 const INK_LIGHT = RGBA.fromHex("#C8322B")
@@ -51,13 +51,10 @@ export function Seal(props: { ink?: RGBA; size?: "full" | "compact" }) {
   // 按背景亮度在两档官方用色之间切一次。RGBA 分量是 0–1。
   const ink = createMemo(() => brandInk(theme.background, props.ink))
 
-  // 紧凑档：两行实心块，第二行用底色写字＝挖空印文（同 MIME 徽标的底色挖空手法）。
+  // 紧凑档：单行实心块，印文用底色挖空（同 MIME 徽标的底色挖空手法）。
   if (props.size === "compact") {
     return (
-      <box flexDirection="column" flexShrink={0}>
-        <text>
-          <span style={{ bg: ink() }}>{" ".repeat(COMPACT_SEAL_WIDTH)}</span>
-        </text>
+      <box flexShrink={0}>
         <text>
           <span style={{ bg: ink(), fg: theme.background }}>{COMPACT_SEAL_TEXT}</span>
         </text>

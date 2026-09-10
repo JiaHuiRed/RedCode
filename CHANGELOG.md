@@ -24,7 +24,7 @@
 
 #### 修复
 
-- **TUI 紧凑朱印收成 4 列**（`packages/opencode/src/cli/cmd/tui/component/seal.tsx`）：原为 5 列 × 2 行，而终端字符约 1:2，视觉上是 5:4 的横长方形——`>_` 只占中间 2 列、左右各空 1.5 格，印身显空、印文显小。收成 4 列 × 2 行（4:4 正好视觉正方形），印文改 `" >_ "` 让 `>_` 居中占一半宽。全尺寸首页印不动。
+- **TUI 紧凑朱印压成单行**（`packages/opencode/src/cli/cmd/tui/component/seal.tsx`）：会话页脚那行文字只有 1 行高，而印是 2 行——flex 居中的取整对「偶数高的印 vs 奇数高的文字」必然落到某一行，印总是多探出半行，哥哥连着两版（5 列 × 2 行、4 列 × 2 行）都反馈「agent 前面的朱印偏高」，根因是**行数不匹配**而非列宽与内部留白。压成 2 列 × 1 行（终端字符约 1:2，2 列 × 1 行即视觉正方形），与页脚文字必然同行；形态对应 GUI 的 `redcode-mark-simple.svg`（16px 档去掉印边留白与崩口，该尺寸下留白只会让边缘发毛）。全尺寸首页印不动。
 - **GUI 历史会话点开空白 / 其他工作区会话加载失败 / 卡片闪烁**（`packages/app/src/context/server-sync.tsx`、`packages/app/src/context/global-sync/eviction.ts`）：三个症状同一个因——child-store 的目录淘汰在每次 pin/mark 之后都会重跑一遍，而 `onDispose` 对每一次淘汰都无条件发一发 `/instance/dispose`，实测页面加载十几秒内发出 2400-3100 次（每个目录被反复淘汰上百轮）。Chromium 随即报 `net::ERR_INSUFFICIENT_RESOURCES`，此后会话列表、消息、乃至 Vite 的懒加载模块请求全部 `Failed to fetch`——这正是历史会话点进去空白、其他工作区连列表都拉不到、卡片反复闪的来源。修复两处：① 同一目录的 dispose 请求做 60s 去重（服务端实例本来也只需销毁一次）；② `pickDirectoriesToEvict` 的 `lastAccessAt ?? 0` 改为无记录即跳过——没有 lifecycle 记录不等于「空闲 20 分钟」，原写法让从未被 mark 过的 store 每次淘汰都中招。实测 `/instance/dispose` 从 3100 次降到 44 次（≈目录数），三个症状消失。
 - **修复 `deepseek-flash` 丢掉推理强度档位**（`packages/opencode/src/provider/transform.ts`）：官方 0910 把 V4.1 Flash 的正式 wire model ID 定为 `deepseek-flash` 后，openai-compat 的档位特判仍要求 `model.api.id` 含 `deepseek-v4` 才给档位（这条防线原本用来挡 `deepseek-chat` / `deepseek-reasoner` 等 260807 前后下线的陈旧目录），正式名不含该前缀、直接 `return {}`，页脚因此看不到任何推理强度。放行标准改为现行 v4 家族的两个形态：`deepseek-v4*` 与 `deepseek-flash`。验证：low/high/max 三档实测均 200（`medium` 仍不暴露——官方已删该档、实测等同 high）；`test/provider/reasoning-effort-variants.test.ts` 39 passed。
 
