@@ -18,6 +18,7 @@
 - **TUI 会话页脚朱印改为实心印**（`packages/opencode/src/cli/cmd/tui/component/seal.tsx`）：紧凑档改成 5 列 × 2 行的实心印身 + 底色挖空的印文，与 GUI 品牌标（实心印身、`>_` 挖空）同构；上一版线条框在 2 行里必然被印文咬掉一条边框、底边破口，看着不像印。中断态仍用品牌红，首页完整朱印不变。
 - **删除无消费者的 `reasoning_language` 配置项**（`packages/opencode/src/config/config.ts`）：260731 起思考链语言约束已改挂稳定的 per-model 提示词，配置读取随之作废，但字段一直留在 schema 上。Effect Schema 默认忽略多余键，旧配置里带着它既不报错也不产生任何效果——是个会误导人的空设定。现在连同 SDK 生成物一并删除。
 - **DeepSeek 系思考链要求用中文**（`packages/opencode/src/session/prompt/deepseek.md`）：新模型思考链里英文比例上升，而 260731 撤掉逐步注入后就再没有中文约束在生效。改在稳定的 per-model 提示词里收口——从第一个词起用中文、整轮不漂移，代码/标识符/命令保持原样，正文仍随用户语言。只影响 deepseek 系会话的固定前缀（约 +20 token）。
+- **DeepSeek 正式模型名 `deepseek-flash` 替换临时内测别名**（`seed/redcode.home.jsonc`、`packages/opencode/src/provider/{provider,tiered-pricing}.ts`，决策：`docs/notes/implemented/feature/2026-09-10-deepseek-flash-rename.md`）：官方 0910 公告明确 V4.1 Flash 的正式 wire model ID 为 `deepseek-flash`（旧名 `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` 已下线，服务端仍接受但一律路由到 V4.1 Flash 按 Flash 计价），260908 注册的临时别名 `deepseek-v4.1-flash-expires-on-0910` 随之退役——配置只留正式名，计价表两处同步加键（旧别名键保留，仅为仍在跑旧 ID 的会话记账兜底）。同轮补齐两笔此前遗漏的账：flash 的静态兜底价 `DS_V4_COST_FLASH` 从 0817 高峰价 3/9/0.1 跟到 0910 新高峰价 2/8/0.04（tiered 记账表上一 commit 7d4e9e02 已改，静态表当时漏动），以及为 `deepseek-v4-pro` 补 2026-09-14 12:00 起转 Flash 计价的峰谷分段。wire ID 已实测返回 200。
 
 ### [0.11.2] - 2026-09-10
 

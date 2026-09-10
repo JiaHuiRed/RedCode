@@ -1256,7 +1256,10 @@ export const layer = Layer.effect(
         // 按高峰价记（费用显示为保守上限）；空闲时段实际费用约为表中一半。
         // 公告只给 cache hit / miss / output 三列，cache write 按惯例 = 未命中输入价。
         // 旧价：flash 1/2/0.02、pro 3/6/0.025 —— 高峰价约为旧价 3-4.5 倍。
-        const DS_V4_COST_FLASH = { input: 3, output: 9, cache: { read: 0.1, write: 3 } }
+        // 260910 Red 官方 09-10 12:00 起调价（flash 空闲 0.02/1/4，高峰为其 2 倍），
+        // flash 静态兜底值随之下调到新高峰价；pro 价未变，但 09-14 12:00 后会被路由到
+        // V4.1 Flash 并按 Flash 计价——时间维度差异由 tiered-pricing.ts 的 pro 分段表达。
+        const DS_V4_COST_FLASH = { input: 2, output: 8, cache: { read: 0.04, write: 2 } }
         const DS_V4_COST_PRO = { input: 9, output: 27, cache: { read: 0.3, write: 9 } }
         // 260829 cc 腾讯 Hy4 preview 官方定价（每百万 token，见 hy.tencent.com 发布页）：
         // 输入 6 元、输出 18 元、命中缓存 0.3 元。cache write 按本表惯例 = 未命中输入价。
@@ -1271,6 +1274,8 @@ export const layer = Layer.effect(
             "deepseek-v4-flash-vision-exp": DS_V4_COST_FLASH,
             // 260908 Red: V4.1 Flash 临时别名与 V4 Flash 同价，复用官方 CNY 价。
             "deepseek-v4.1-flash-expires-on-0910": DS_V4_COST_FLASH,
+            // 260910 Red: 官方正式模型名；旧 flash 名已下线但服务端仍路由到 V4.1 Flash。
+            "deepseek-flash": DS_V4_COST_FLASH,
             "deepseek-v4-pro": DS_V4_COST_PRO,
           },
           "opencode-go": {

@@ -47,6 +47,9 @@ const DS_PEAK_PRICING_FROM = Date.parse("2026-08-16T16:00:00Z")
 // 2026-09-10 12:00 北京时间 = 2026-09-10T04:00:00Z
 const DS_FLASH_20260910_FROM = Date.parse("2026-09-10T04:00:00Z")
 
+// 2026-09-14 12:00 北京时间 = 2026-09-14T04:00:00Z
+const DS_PRO_ROUTE_TO_FLASH_FROM = Date.parse("2026-09-14T04:00:00Z")
+
 const DS_V4_FLASH_SEGMENTS: TieredPricingSegment[] = [
   {
     effectiveFrom: 0,
@@ -84,6 +87,16 @@ const DS_V4_PRO_SEGMENTS: TieredPricingSegment[] = [
     peakWindows: DS_PEAK_WINDOWS,
     peakWeekdays: DS_PEAK_WEEKDAYS,
   },
+  // 260910 Red 官方公告：V4 Pro 有序下线——北京时间 2026-09-14 12:00 起，
+  // deepseek-v4-pro 的请求全部路由到 V4.1 Flash，并按 V4.1 Flash 单价计费。
+  // 记账端只看到 modelID、看不到服务端路由结果，所以为 pro 补一段 Flash 价。
+  {
+    effectiveFrom: DS_PRO_ROUTE_TO_FLASH_FROM,
+    peak: { input: 2, output: 8, cache: { read: 0.04, write: 2 } },
+    offpeak: { input: 1, output: 4, cache: { read: 0.02, write: 1 } },
+    peakWindows: DS_PEAK_WINDOWS,
+    peakWeekdays: DS_PEAK_WEEKDAYS,
+  },
 ]
 
 export const TIERED_PRICING: Record<string, Record<string, TieredPricingSegment[]>> = {
@@ -93,6 +106,9 @@ export const TIERED_PRICING: Record<string, Record<string, TieredPricingSegment[
     "deepseek-v4-flash-vision-exp": DS_V4_FLASH_SEGMENTS,
     // 260908 Red: V4.1 Flash 临时别名与 Flash 同价，复用峰谷/工作日分段。
     "deepseek-v4.1-flash-expires-on-0910": DS_V4_FLASH_SEGMENTS,
+    // 260910 Red 官方正式模型名。旧名 deepseek-v4-flash / -vision-exp 已下线，
+    // 服务端仍接受但一律由 V4.1 Flash 提供服务，价格同此表。
+    "deepseek-flash": DS_V4_FLASH_SEGMENTS,
     "deepseek-v4-pro": DS_V4_PRO_SEGMENTS,
   },
   "opencode-go": {
