@@ -1,245 +1,182 @@
 #!/usr/bin/env node
-// 260609 Red 教训按需召回 —— 解析 ~/.redcode/MEMORY.md 的 ### 教训块，按 query 打分，只输出命中的几条。
-// 260623 Red 语义搜索增强 —— 双路召回：关键词打分 + Ollama embedding cosine similarity，分数融合排序。
-// 中文友好打分：英文按词、中文按 2/3 字窗口；不需要 db，纯现场解析（教训规模小，毫秒级）。
-// 纯 JS(.mjs)：只用 node:fs/path/os，node 与 bun 都能跑。用 node 调用以绕过 PowerShell 对 bun.ps1 的执行策略封禁。
-// 用法：node recall-memory.mjs <关键词...>     由 /recall 斜杠命令通过 !`...` 内联调用。
-//       node recall-memory.mjs --index          预计算 embedding 缓存（写 MEMORY.md 后运行一次）。
-import { readFileSync, writeFileSync, existsSync, statSync, mkdirSync } from "node:fs"
-import path from "node:path"
-import os from "node:os"
+// 260910 Red 改走 supermemory.db —— MEMORY.md 自 260812 起只剩索引行（全文在库），旧的
+// 「### 教训块」解析器从此恒空，/recall 静默失效（实测「MCP」召不回任何条目）。
+// 数据源换成 ~/.redcode/supermemory.db（FTS5 trigram），查询口径与自动召回插件
+// memory-recall.js 对齐：分句 → 中英文查询词 → FTS 命中 + 子串校验 → 按票数排序。
+// trigram 索引最小 3 字，2 字查询物理上搜不到（实测 MATCH '"代理"' 恒 0 行，'"代理三件套"' 命中）
+// → 该长度直接走 LIKE；库只有几百条，全表扫毫秒级。
+// 纯 JS(.mjs)：node 与 bun 都能跑，两边 sqlite 模块名/只读选项名不同，按运行时分支。
+// 用法：node recall-memory.mjs <关键词...>        搜 global + 当前项目
+//       node recall-memory.mjs --all <关键词...>  搜全库（含其他项目）
+// 决策记录：docs/notes/implemented/bug-fix/2026-09-10-recall-supermemory-db.md
+import { homedir } from "node:os"
+import { basename, dirname, join, resolve } from "node:path"
+import * as fs from "node:fs"
 
-const MEMORY_PATH = process.env.REDCODE_MEMORY || path.join(os.homedir(), ".redcode", "MEMORY.md")
-const EMBED_CACHE = process.env.REDCODE_EMBED_CACHE || path.join(path.dirname(MEMORY_PATH), "memory", "embeddings.json")
-const OLLAMA_URL = process.env.OLLAMA_URL || "http://localhost:11434"
-const EMBED_MODEL = process.env.EMBED_MODEL || "nomic-embed-text"
+const DB_PATH = process.env.REDCODE_MEMORY_DB || join(homedir(), ".redcode", "supermemory.db")
 const LIMIT = Number(process.env.RECALL_LIMIT) || 5
-const MAX_CHARS = 4500 // 注入上限，超出截断，避免召回反而撑爆上下文
-const SEMANTIC_WEIGHT = 0.6 // 语义分数权重（关键词 0.4）
-const EMBED_TIMEOUT = 3000 // Ollama 超时 ms
+const MAX_CHARS = Number(process.env.RECALL_MAX_CHARS) || 4500 // 注入上限，超出截断，避免召回反而撑爆上下文
+const MAX_QUERIES = 24 // 与 memory-recall.js 同上限：查询词再多只是票数噪声
+const isBun = typeof globalThis.Bun !== "undefined"
 
-// ── 解析 ──────────────────────────────────────────────
-// 把 MEMORY.md 切成 ### 教训块（遇到下一个 ### 或顶层 # 收束）
-function parse(md) {
-  const blocks = []
-  let cur = null
-  for (const line of md.split("\n")) {
-    if (line.startsWith("### ")) {
-      if (cur) blocks.push(cur)
-      cur = { header: line.slice(4).trim(), body: "" }
-      continue
+// 260907 Red 项目记忆只对所属工作区可见（同 memory-recall.js）：linked worktree 的 basename
+// 是临时分支名，需沿 .git 指针回到主 worktree 名称。
+function projectFromWorktree(worktree) {
+  if (!worktree) return ""
+  const fallback = basename(worktree)
+  try {
+    const dotGit = join(worktree, ".git")
+    if (!fs.statSync(dotGit).isFile()) return fallback
+    const target = fs.readFileSync(dotGit, "utf8").match(/^gitdir:\s*(.+)\s*$/m)?.[1]
+    if (!target) return fallback
+    const gitdir = resolve(worktree, target)
+    if (basename(dirname(gitdir)).toLowerCase() !== "worktrees") return fallback
+    return basename(dirname(dirname(dirname(gitdir)))) || fallback
+  } catch {
+    return fallback
+  }
+}
+
+let db = null
+async function getDb() {
+  if (db) return db
+  const mod = isBun ? await import("bun:sqlite") : await import("node:sqlite")
+  // 双运行时导出名不同：bun:sqlite 是 Database，node:sqlite 是 DatabaseSync
+  const Ctor = isBun ? mod.Database : mod.DatabaseSync
+  // 只读选项名两边不一样：bun 认小写 readonly，node:sqlite 认驼峰 readOnly。传错 bun 直接抛
+  // TypeError，传错 node 会被静默忽略、以读写方式打开（memory-recall.js 260813 踩过）
+  db = new Ctor(DB_PATH, isBun ? { readonly: true } : { readOnly: true })
+  return db
+}
+
+// 分句：中英文标点/换行切分
+function splitSentences(text) {
+  return text
+    .split(/[。；！？!?\n\r]+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 2)
+}
+
+// 关键词提取：中文段滑 3/4 字窗口（trigram 短语匹配对长句必 miss，必须把粒度降到 3-6 字），
+// 2 字段整段（交给 LIKE），英文整词。与 memory-recall.js 的 extractQueries 同口径。
+function extractQueries(sentence) {
+  const queries = []
+  for (const seg of sentence.match(/[\u4e00-\u9fff]{2,}/g) || []) {
+    if (seg.length >= 5) {
+      for (let i = 0; i + 4 <= seg.length; i += 2) queries.push(seg.slice(i, i + 4))
+      for (let i = 0; i + 3 <= seg.length; i += 1) queries.push(seg.slice(i, i + 3))
+    } else {
+      queries.push(seg)
     }
-    if (line.startsWith("# ") || line.startsWith("## ")) {
-      if (cur) blocks.push(cur)
-      cur = null
-      continue
+  }
+  queries.push(...(sentence.match(/[a-zA-Z][a-zA-Z0-9._-]{2,}/g) || []))
+  return [...new Set(queries)]
+}
+
+// project 为空串 = 搜全库（--all，或 cwd 推断不出项目名）
+function scopeSql(project, fts) {
+  const from = fts
+    ? "FROM memories_fts f JOIN memories m ON m.id = f.rowid WHERE memories_fts MATCH ?"
+    : "FROM memories m WHERE m.content LIKE ?"
+  if (!project) return `SELECT m.id, m.content, m.project ${from} ORDER BY bm25(memories_fts) LIMIT ?`
+  return (
+    `SELECT m.id, m.content, m.project ${from} AND (m.project = 'global' COLLATE NOCASE OR m.project = ? COLLATE NOCASE)` +
+    (fts ? " ORDER BY bm25(memories_fts) LIMIT ?" : " LIMIT ?")
+  )
+}
+
+function ftsQuery(d, match, limit, project) {
+  const stmt = isBun ? d.query(scopeSql(project, true)) : d.prepare(scopeSql(project, true))
+  return stmt.all(`"${match.replace(/"/g, '""')}"`, ...(project ? [project] : []), limit)
+}
+
+function likeQuery(d, term, limit, project) {
+  const stmt = isBun ? d.query(scopeSql(project, false)) : d.prepare(scopeSql(project, false))
+  return stmt.all(`%${term}%`, ...(project ? [project] : []), limit)
+}
+
+// 260813 cc trigram 是 3 字滑窗索引，"AB C" 与 "A BC" 共享 trigram 就会互相命中，bm25 只排序
+// 不设下限 → 只要返回任何行就注入（前车：「写个插件要注意什么」命中的是一条无关旧 MCP 笔记）。
+// 这里要求查询词真的出现在正文里；LIKE 分支本身就是子串匹配，天然满足。
+function verify(rows, q) {
+  const needle = q.toLowerCase()
+  return rows.filter((r) => String(r.content ?? "").toLowerCase().includes(needle))
+}
+
+const HITS_PER_QUERY = 3
+
+async function recall(d, userText, project) {
+  const sentences = splitSentences(userText).slice(0, 6)
+  // memory id -> { row, votes } —— 被多个不同查询词命中的条目更可能真相关，用票数排序
+  const scored = new Map()
+  let queried = 0
+  for (const s of sentences) {
+    for (const q of extractQueries(s)) {
+      if (queried >= MAX_QUERIES) break
+      queried++
+      let rows = []
+      if (q.length >= 3) {
+        try {
+          rows = verify(ftsQuery(d, q, HITS_PER_QUERY, project), q)
+        } catch {
+          rows = [] // FTS 语法/索引异常都不该打断召回
+        }
+      }
+      if (rows.length === 0) {
+        try {
+          rows = verify(likeQuery(d, q, HITS_PER_QUERY, project), q)
+        } catch {
+          rows = []
+        }
+      }
+      for (const r of rows) {
+        const cur = scored.get(r.id)
+        if (cur) cur.votes++
+        else scored.set(r.id, { ...r, votes: 1 })
+      }
     }
-    if (cur) cur.body += line + "\n"
+    if (queried >= MAX_QUERIES) break
   }
-  if (cur) blocks.push(cur)
-  return blocks
-}
-
-// ── 关键词打分 ────────────────────────────────────────
-// query -> 加权检索词：英文整词；中文 2/3 字滑窗。长词权重更高。
-function terms(q) {
-  const out = new Map()
-  const bump = (t, w) => out.set(t, Math.max(out.get(t) ?? 0, w))
-  const lower = q.toLowerCase()
-  for (const w of lower.match(/[a-z0-9]{2,}/g) ?? []) bump(w, w.length)
-  for (const run of lower.match(/[\u4e00-\u9fff]{2,}/g) ?? [])
-    for (let len = 2; len <= 3; len++)
-      for (let i = 0; i + len <= run.length; i++) bump(run.slice(i, i + len), len)
-  return out
-}
-
-function keywordScore(block, ts) {
-  const hay = (block.header + "\n" + block.body).toLowerCase()
-  const head = block.header.toLowerCase()
-  let s = 0
-  for (const [t, w] of ts) {
-    const hits = hay.split(t).length - 1
-    if (hits > 0) s += hits * w + (head.includes(t) ? w * 3 : 0) // 命中标题额外加权
-  }
-  return s
-}
-
-// ── Embedding / 语义搜索 ─────────────────────────────
-function cosine(a, b) {
-  let dot = 0, na = 0, nb = 0
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i]
-    na += a[i] * a[i]
-    nb += b[i] * b[i]
-  }
-  return dot / (Math.sqrt(na) * Math.sqrt(nb) || 1)
-}
-
-async function ollamaEmbed(texts) {
-  const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), EMBED_TIMEOUT)
-  try {
-    const res = await fetch(`${OLLAMA_URL}/api/embed`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: EMBED_MODEL, input: texts }),
-      signal: ctrl.signal,
-    })
-    if (!res.ok) return null
-    const data = await res.json()
-    return data.embeddings ?? null
-  } catch {
-    return null // Ollama not running — silent fallback
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
-async function ollamaAvailable() {
-  try {
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), 1500)
-    const res = await fetch(`${OLLAMA_URL}/api/tags`, { signal: ctrl.signal })
-    clearTimeout(timer)
-    return res.ok
-  } catch {
-    return false
-  }
-}
-
-// 读 embedding 缓存 { version, memoryMtime, model, blocks: [{key, embedding}] }
-function loadCache() {
-  if (!existsSync(EMBED_CACHE)) return null
-  try {
-    return JSON.parse(readFileSync(EMBED_CACHE, "utf-8"))
-  } catch {
-    return null
-  }
-}
-
-function saveCache(cache) {
-  const dir = path.dirname(EMBED_CACHE)
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-  writeFileSync(EMBED_CACHE, JSON.stringify(cache), "utf-8")
-}
-
-// 块的缓存 key = header + body 前 200 字（避免 body 微调就全量失效）
-function blockKey(b) {
-  return b.header + "|" + b.body.trim().slice(0, 200)
-}
-
-// 预计算所有块的 embedding，写入缓存
-async function indexEmbeddings(blocks) {
-  if (!(await ollamaAvailable())) {
-    console.error(`(Ollama 未运行 ${OLLAMA_URL}，跳过 embedding 预计算)`)
-    return null
-  }
-  const texts = blocks.map((b) => b.header + "\n" + b.body.trim())
-  const embeddings = await ollamaEmbed(texts)
-  if (!embeddings || embeddings.length !== blocks.length) {
-    console.error("(embedding 计算失败，跳过语义搜索)")
-    return null
-  }
-  const memoryMtime = existsSync(MEMORY_PATH) ? statSync(MEMORY_PATH).mtimeMs : 0
-  const cache = {
-    version: 1,
-    memoryMtime,
-    model: EMBED_MODEL,
-    blocks: blocks.map((b, i) => ({ key: blockKey(b), embedding: embeddings[i] })),
-  }
-  saveCache(cache)
-  return cache
-}
-
-// 获取缓存（有效则复用，过期则重建）
-async function getEmbeddings(blocks) {
-  const cache = loadCache()
-  const memoryMtime = existsSync(MEMORY_PATH) ? statSync(MEMORY_PATH).mtimeMs : 0
-  if (cache && cache.model === EMBED_MODEL && cache.memoryMtime === memoryMtime) {
-    // 缓存有效，按 blockKey 匹配（顺序可能变）
-    const map = new Map(cache.blocks.map((b) => [b.key, b.embedding]))
-    const matched = blocks.map((b) => map.get(blockKey(b)) ?? null)
-    // 全部命中才复用
-    if (matched.every((e) => e !== null)) return matched
-  }
-  // 缓存过期或不完整，重建
-  const rebuilt = await indexEmbeddings(blocks)
-  if (!rebuilt) return null
-  return rebuilt.blocks.map((b) => b.embedding)
-}
-
-// ── 双路融合 ──────────────────────────────────────────
-function normalize(scores) {
-  const max = Math.max(...scores)
-  return max > 0 ? scores.map((s) => s / max) : scores
+  // 同票按 id 降序：编号只增，新的记忆更可能是当下要找的
+  const ranked = [...scored.values()].sort((a, b) => b.votes - a.votes || b.id - a.id).slice(0, LIMIT)
+  return { ranked, queried }
 }
 
 // ── 主流程 ────────────────────────────────────────────
 const args = process.argv.slice(2)
 
-// --index 模式：只预计算 embedding，不召回
 if (args[0] === "--index") {
-  if (!existsSync(MEMORY_PATH)) {
-    console.log(`(未找到 ${MEMORY_PATH})`)
-    process.exit(0)
-  }
-  const blocks = parse(readFileSync(MEMORY_PATH, "utf-8"))
-  console.log(`解析到 ${blocks.length} 个教训块，开始计算 embedding...`)
-  const result = await indexEmbeddings(blocks)
-  if (result) {
-    console.log(`embedding 缓存已写入 ${EMBED_CACHE}（${result.blocks.length} 条，模型 ${EMBED_MODEL}）`)
-  }
+  console.log("(--index 已废弃：记忆全文存于 supermemory.db，检索走 FTS5，无需预计算 embedding)")
   process.exit(0)
 }
 
-const query = args.join(" ").trim()
+const all = args.includes("--all")
+const query = args.filter((a) => a !== "--all").join(" ").trim()
 if (!query) {
-  console.log("用法：/recall <关键词>　例：/recall 代理 / /recall MCP 进程泄漏\n      --index　预计算 embedding 缓存")
+  console.log(
+    "用法：/recall <关键词>　例：/recall 代理 / /recall MCP 进程泄漏\n      --all　连其他项目的记忆一起搜",
+  )
   process.exit(0)
 }
-if (!existsSync(MEMORY_PATH)) {
-  console.log(`(未找到 ${MEMORY_PATH}，无教训可召回)`)
+if (!fs.existsSync(DB_PATH)) {
+  console.log(`(未找到记忆库 ${DB_PATH}，无记忆可召回)`)
   process.exit(0)
 }
 
-const blocks = parse(readFileSync(MEMORY_PATH, "utf-8"))
-const ts = terms(query)
-
-// 关键词打分
-const kwScores = blocks.map((b) => keywordScore(b, ts))
-
-// 语义打分（尝试，失败则纯关键词）
-let semScores = null
-const embeddings = await getEmbeddings(blocks)
-if (embeddings) {
-  const qEmb = await ollamaEmbed([query])
-  if (qEmb && qEmb[0]) {
-    semScores = embeddings.map((e) => (e ? Math.max(0, cosine(qEmb[0], e)) : 0))
-  }
-}
-
-// 融合排序
-const kwNorm = normalize(kwScores)
-const semNorm = semScores ? normalize(semScores) : null
-const ranked = blocks
-  .map((b, i) => {
-    const kw = kwNorm[i]
-    const sem = semNorm ? semNorm[i] : 0
-    // 有语义时加权融合；无语义时纯关键词
-    const final = semNorm ? kw * (1 - SEMANTIC_WEIGHT) + sem * SEMANTIC_WEIGHT : kw
-    return { b, s: final, kwRaw: kwScores[i], sem: semScores?.[i] ?? 0 }
-  })
-  .filter((x) => x.s > 0)
-  .sort((a, b) => b.s - a.s)
-  .slice(0, LIMIT)
+const project = all ? "" : projectFromWorktree(process.cwd())
+const d = await getDb()
+const { ranked } = await recall(d, query, project)
 
 if (ranked.length === 0) {
-  console.log(`(没搜到与「${query}」相关的教训。可换个关键词，或直接读 ${MEMORY_PATH})`)
+  console.log(`(没搜到与「${query}」相关的记忆。换个关键词，或直接查库：${DB_PATH})`)
   process.exit(0)
 }
 
-const mode = semNorm ? "关键词+语义" : "仅关键词"
-const parts = [`## 召回「${query}」相关教训（${ranked.length} 条，${mode}）\n`]
-for (const { b } of ranked) parts.push(`### ${b.header}\n${b.body.trim()}`)
+const scope = all ? "全库" : `global + ${project || "（项目名未识别，仅 global）"}`
+const parts = [`## 召回「${query}」相关记忆（${ranked.length} 条，${scope}）`]
+for (const [i, r] of ranked.entries()) {
+  const [head, ...rest] = String(r.content).split("\n")
+  parts.push(`### ${i + 1}. [${r.project}] ${head.trim()}\n${rest.join("\n").trim()}`)
+}
 const text = parts.join("\n\n")
 console.log(text.length > MAX_CHARS ? text.slice(0, MAX_CHARS) + "\n…(已截断)" : text)
