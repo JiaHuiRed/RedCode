@@ -536,3 +536,46 @@ description: A skill in the .redcode/skills directory.
     ),
   )
 })
+
+// 260911 Red skill description 硬上限：来源不可控（用户/第三方 SKILL.md frontmatter），
+// 且随 <available_skills> 每轮全量注入系统提示词。超限必须尾部截断并标注，短描述逐字节不变。
+describe("Skill.fmt description budget", () => {
+  const shortSkill: Skill.Info = {
+    name: "short-skill",
+    description: "short one",
+    location: "/tmp/short/SKILL.md",
+    content: "",
+  }
+  const longSkill: Skill.Info = {
+    name: "long-skill",
+    description: "x".repeat(Skill.MAX_DESCRIPTION_CHARS + 123),
+    location: "/tmp/long/SKILL.md",
+    content: "",
+  }
+  const skills = [shortSkill, longSkill]
+
+  it.effect("caps an over-long description in the verbose prompt block and annotates the cut", () =>
+    Effect.sync(() => {
+      const out = Skill.fmt(skills, { verbose: true })
+      expect(out).toContain("[...truncated 123 chars]")
+      expect(out).toContain("<name>long-skill</name>")
+      expect(out).toContain("<description>short one</description>")
+    }),
+  )
+
+  it.effect("caps an over-long description in the plain tool-description list too", () =>
+    Effect.sync(() => {
+      const out = Skill.fmt(skills, { verbose: false })
+      expect(out).toContain("**long-skill**: ")
+      expect(out).toContain("[...truncated 123 chars]")
+    }),
+  )
+
+  it.effect("keeps short descriptions byte-identical", () =>
+    Effect.sync(() => {
+      const out = Skill.fmt([shortSkill], { verbose: true })
+      expect(out).toContain("<description>short one</description>")
+      expect(out).not.toContain("truncated")
+    }),
+  )
+})

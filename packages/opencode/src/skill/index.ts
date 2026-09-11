@@ -357,8 +357,21 @@ export const defaultLayer = layer.pipe(
   Layer.provide(RuntimeFlags.defaultLayer),
 )
 
+// 260911 Red skill description 硬上限（模型可见四问之④）。description 来源是用户/第三方
+// SKILL.md frontmatter，长度不受控，而它随 <available_skills> 每轮全量注入系统提示词——
+// 没有上限就是缺陷不是待办。与 mcp/index.ts 的 MAX_INSTRUCTION_CHARS 同一纪律：超限从
+// 尾部截断并标注，别让模型以为自己看到的是全部。1024 对齐 Pi 的 MAX_DESCRIPTION_LENGTH；
+// 本机 24 个 skill 实测最长 118 字符（seed 12 个最长 118），给足 8 倍余量。
+// 决策：docs/notes/implemented/bug-fix/2026-09-11-skill-description-budget.md
+export const MAX_DESCRIPTION_CHARS = 1024
+
+function capDescription(text: string): string {
+  if (text.length <= MAX_DESCRIPTION_CHARS) return text
+  return text.slice(0, MAX_DESCRIPTION_CHARS) + `\n[...truncated ${text.length - MAX_DESCRIPTION_CHARS} chars]`
+}
+
 export function fmt(list: Info[], opts: { verbose: boolean; namesOnly?: boolean }) {
-  const described = list.filter((skill) => skill.description !== undefined)
+  const described = list.filter((skill): skill is Info & { description: string } => skill.description !== undefined)
   if (described.length === 0) return "No skills are currently available."
   if (opts.verbose) {
     return [
@@ -370,7 +383,7 @@ export function fmt(list: Info[], opts: { verbose: boolean; namesOnly?: boolean 
           `    <name>${skill.name}</name>`,
           // 260827 cc 不发 <location>：模型按 name 调用，加载后工具输出会再给一次 base directory，
           // 这行每条约 27 token 没人读。
-          `    <description>${skill.description}</description>`,
+          `    <description>${capDescription(skill.description)}</description>`,
           "  </skill>",
         ]),
       "</available_skills>",
@@ -391,7 +404,7 @@ export function fmt(list: Info[], opts: { verbose: boolean; namesOnly?: boolean 
     "## Available Skills",
     ...described
       .toSorted((a, b) => a.name.localeCompare(b.name))
-      .map((skill) => `- **${skill.name}**: ${skill.description}`),
+      .map((skill) => `- **${skill.name}**: ${capDescription(skill.description)}`),
   ].join("\n")
 }
 

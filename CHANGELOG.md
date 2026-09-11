@@ -12,6 +12,8 @@
 
 #### 修复
 
+- **skill 描述加上限，补齐模型可见注入面最后一个无界项**（`packages/opencode/src/skill/index.ts`，决策：`docs/notes/implemented/bug-fix/2026-09-11-skill-description-budget.md`）：`description` 来自用户/第三方 SKILL.md frontmatter、加载时原样入库，却随 `<available_skills>` 每轮全量注入系统提示词。审计全部注入路径（工具输出、shell、压缩摘要、MCP instructions、项目指令、patch、图片、子代理打捞）后确认它是唯一没有硬边界的。新增 `MAX_DESCRIPTION_CHARS = 1024`（对齐 Pi 的 `MAX_DESCRIPTION_LENGTH`），超限尾部截断并追加 `[...truncated N chars]`，与 `mcp/index.ts` 的 `capInstructions` 同纪律。模型可见改动四问：① 仅超 1024 字符的描述尾部被截断并加一行标注，verbose 块与工具描述列表两处同步；② 本机 24 个 skill 实测最长 118 字符、描述总长 397，token 增量为 0；③ 未触发截断时逐字节不变，无前缀作废、无 cache 影响；④ 上限即本条目产出——此前该路径无任何边界。
+
 - **DeepSeek 提示词补一条思考链纪律**（`packages/opencode/src/session/prompt/deepseek.md`）：满屏「嗯…」「emmm」的填充式自言自语只在 DeepSeek V4.1 Flash 上出现，属模型输出风格、不是 soul 该管的身份语气，故落在 per-model 提示词而非 `Tsoul.md`。新增 `Reasoning is judgment, not self-talk out loud.` —— 权衡可以，「把权衡的过程念出来」不行。模型可见改动四问：① 新增一条 bullet，位置在 `# Output channels` 的 "Reason in Chinese" 之后；② 约 +240 字符（≈55 token）固定前缀；③ 只对 deepseek 系会话生效，且该 bullet 之后的前缀作废一次，对新会话无影响；④ 该文件编译期嵌入、大小确定，不随会话增长。
 
 - **`/recall` 恢复可用：数据源从 MEMORY.md 换到 supermemory.db**（`seed/scripts/recall-memory.mjs`、`seed/command/recall.md`，决策：`docs/notes/implemented/bug-fix/2026-09-10-recall-supermemory-db.md`）：MEMORY.md 自 260812 起只留索引行（全文在库），旧脚本的「`### 教训块`」解析器从此恒空——`/recall 关键词` 一律回「没搜到」，而它仍被当作自动召回失败后的手动兜底（实测「MCP」召不回任何一条，库里有几十条）。检索口径改为与自动召回插件 `memory-recall.js` 对齐：分句 → 中英文查询词 → FTS5 命中 + 子串校验 → 按票数排序；默认搜 global + 当前项目（项目名由 cwd 推断），`--all` 搜全库。trigram 索引最小 3 字（实测 2 字查询恒 0 行），2 字词改走 LIKE。顺带删掉 embedding 预计算那套（缓存键基于 MEMORY.md 的块，与新数据源不兼容且无调用方）、`--index` 只留废弃提示，命令加 `--no-warnings` 压掉 `node:sqlite` 的实验特性警告。
