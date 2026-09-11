@@ -8,7 +8,9 @@
 
 ---
 
-### [未发布]
+### [0.11.4] - 2026-09-11
+
+> 模型可见注入面预算审计收口（skill 描述补上最后一个无界项的上限）；TUI 交互两件——Think 行流式期跟随最新思考行、压缩 checkpoint 原位折叠展开摘要与 token 估算；seed/tool 同步链路补齐、两处死代码清理，/recall 恢复可用。
 
 #### 修复
 
@@ -25,6 +27,8 @@
 - **TUI Think 行流式期跟随最新思考行**（`packages/opencode/src/cli/cmd/tui/routes/session/index.tsx`）：hide 模式流式期此前只显示「思考中: 标题」，而标题只在思考开头出现一次——长思考期间这行静止，最新进展不可见。现在把思考流的最新非空行作为滚动 summary 与标题叠加（优先级：标题 > 最新行），按渲染宽度截断；点开全文即停止跟随。完成后的折叠行（`🧠 已思考: 标题 · 时长`）行为不变。
 
 - **TUI 压缩 checkpoint 原位折叠**（`packages/opencode/src/cli/cmd/tui/routes/session/index.tsx`）：压缩分割线现在可点击——折叠态带 caret 与 token 对比（`Compaction 534k → 120k ▸`），点击展开摘要正文（`mode="compaction"` 的 assistant 消息）与 token 估算（`before → after tokens · 释放 N%`）。压缩进行中由 `session.time.compacting` 呈现「压缩中…」——token 数字在 process 末尾才回填，此前这段窗口既读不到数字也无进度反馈。
+
+- **TUI 会话页脚朱印紧凑档加宽到 3 列**（`packages/opencode/src/cli/cmd/tui/component/seal.tsx`）：2 列单行印右侧补一列实心留白（印文 `>_` 原位、高度不变），只把印身稍微加宽，页脚布局与垂直对齐零改动。
 
 - **删除 `seed/tool/` 里两个上游 CI 工具**（`github-pr-search.ts`、`github-triage.ts`）：它们读 `ISSUE_NUMBER` 环境变量、团队名单全是上游成员（kommander / Hona / jlongster 那批），是 fork 时从上游带过来的 GitHub Actions 帮手，在本地从没生效过——`~/.redcode/tool/` 里从来没有它们，而 `redcode.jsonc` 里那行 `"tools": { "github-triage": false, "github-pr-search": false }` 一直在替它们「把关」。这行配置一并删掉（种子模板 `seed/redcode.home.jsonc` 与 live `~/.redcode/redcode.jsonc` 两处同删，该键只列了这两个不存在的工具，删掉等价于不再禁用任何工具）；两份 JSONC 已用 `jsonc-parser` 验过语法。
 
