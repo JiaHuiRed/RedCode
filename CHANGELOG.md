@@ -22,6 +22,10 @@
 
 #### 变更
 
+- **TUI Think 行流式期跟随最新思考行**（`packages/opencode/src/cli/cmd/tui/routes/session/index.tsx`）：hide 模式流式期此前只显示「思考中: 标题」，而标题只在思考开头出现一次——长思考期间这行静止，最新进展不可见。现在把思考流的最新非空行作为滚动 summary 与标题叠加（优先级：标题 > 最新行），按渲染宽度截断；点开全文即停止跟随。完成后的折叠行（`🧠 已思考: 标题 · 时长`）行为不变。
+
+- **TUI 压缩 checkpoint 原位折叠**（`packages/opencode/src/cli/cmd/tui/routes/session/index.tsx`）：压缩分割线现在可点击——折叠态带 caret 与 token 对比（`Compaction 534k → 120k ▸`），点击展开摘要正文（`mode="compaction"` 的 assistant 消息）与 token 估算（`before → after tokens · 释放 N%`）。压缩进行中由 `session.time.compacting` 呈现「压缩中…」——token 数字在 process 末尾才回填，此前这段窗口既读不到数字也无进度反馈。
+
 - **删除 `seed/tool/` 里两个上游 CI 工具**（`github-pr-search.ts`、`github-triage.ts`）：它们读 `ISSUE_NUMBER` 环境变量、团队名单全是上游成员（kommander / Hona / jlongster 那批），是 fork 时从上游带过来的 GitHub Actions 帮手，在本地从没生效过——`~/.redcode/tool/` 里从来没有它们，而 `redcode.jsonc` 里那行 `"tools": { "github-triage": false, "github-pr-search": false }` 一直在替它们「把关」。这行配置一并删掉（种子模板 `seed/redcode.home.jsonc` 与 live `~/.redcode/redcode.jsonc` 两处同删，该键只列了这两个不存在的工具，删掉等价于不再禁用任何工具）；两份 JSONC 已用 `jsonc-parser` 验过语法。
 
 - **删除已废弃的 `plugins/mcp-sqlite-query/`**：260904 把 sqlite 能力搬成引擎侧的原生工具（`~/.redcode/tool/sqlite.ts`，in-process、写操作带权限闸门）时，MCP 配置块已整块删除——`redcode.jsonc` 里那句注释还写着「该目录已经不存在」，可插件源码一直躺在仓库里，两边互相矛盾。实测全仓除历史 CHANGELOG 条目外零引用（配置、脚本、workspace、tsconfig 皆无），删除不影响现在生效的原生 `sqlite_query` / `sqlite_schema`。

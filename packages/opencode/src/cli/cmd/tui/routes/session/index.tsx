@@ -1478,6 +1478,7 @@ export function UserMessage(props: {
   steerState?: "queued" | "delivered"
 }) {
   const ctx = use()
+  const sync = useSync()
   const local = useLocal()
   const dimensions = useTerminalDimensions()
   const text = createMemo(() => {
@@ -1492,7 +1493,7 @@ export function UserMessage(props: {
     return texts.join("\n\n")
   })
   const files = createMemo(() => props.parts.flatMap((x) => (x.type === "file" ? [x] : [])))
-  const { theme } = useTheme()
+  const { theme, syntax } = useTheme()
   const [hover, setHover] = createSignal(false)
   const color = createMemo(() => local.agent.color(props.message.agent))
   const queuedFg = createMemo(() => selectedForeground(theme, color()))
@@ -1500,6 +1501,39 @@ export function UserMessage(props: {
 
   const compaction = createMemo(() => props.parts.find((x) => x.type === "compaction"))
 
+  // 260911 Red 压缩 checkpoint 原位折叠行（参考 DSH ui-conversation）：点击分割线展开
+  // 摘要与 token 估算。摘要 = mode "compaction" 的 assistant 消息（process 的 parentID
+  // 即本条 user 消息）；"压缩中"以 session.time.compacting 判断 —— tokens 在 process
+  // 末尾一次写入，之前读不到任何数字。260813 的折叠态 token 对比保留。
+  const [compactionOpen, setCompactionOpen] = createSignal(false)
+  const compacting = createMemo(() => sync.session.get(props.message.sessionID)?.time.compacting !== undefined)
+  const compactionSummary = createMemo(() => {
+    const part = compaction()
+    if (!part || part.type !== "compaction") return undefined
+    const summaryMsg = (sync.data.message[props.message.sessionID] ?? []).findLast(
+      (m): m is AssistantMessageInfo =>
+        m.role === "assistant" &&
+        (m as AssistantMessageInfo).mode === "compaction" &&
+        (m as AssistantMessageInfo).parentID === props.message.id,
+    )
+    if (!summaryMsg) return undefined
+    return (
+      (sync.data.part[summaryMsg.id] ?? [])
+        .flatMap((p) => (p.type === "text" ? [p.text] : []))
+        .join("\n\n")
+        .trim() || undefined
+    )
+  })
+  const compactionStats = createMemo(() => {
+    const part = compaction()
+    if (!part || part.type !== "compaction") return undefined
+    const withTokens = part as CompactionPart & { tokens_before?: number; tokens_after?: number }
+    if (withTokens.tokens_before === undefined) return undefined
+    if (withTokens.tokens_after === undefined) return `${withTokens.tokens_before.toLocaleString()} tokens · 压缩中…`
+    const freed =
+      withTokens.tokens_before > 0 ? Math.round((1 - withTokens.tokens_after / withTokens.tokens_before) * 100) : 0
+    return `${withTokens.tokens_before.toLocaleString()} → ${withTokens.tokens_after.toLocaleString()} tokens · 释放 ${freed}%`
+  })
   // 260813 Red compaction 分割线带 token 对比：part 由后端 process 回填 tokens_before/after。
   // SDK 的 Part 类型是 OpenAPI 生成的（无这两个字段），这里用本地扩展接口断言读取。
   const compactionTitle = createMemo(() => {
@@ -1507,9 +1541,11 @@ export function UserMessage(props: {
     if (!part || part.type !== "compaction") return " Compaction "
     const withTokens = part as CompactionPart & { tokens_before?: number; tokens_after?: number }
     const fmt = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : `${n}`)
+    const caret = compactionOpen() ? " ▾ " : " ▸ "
+    if (compacting()) return ` Compaction 压缩中…${caret}`
     if (withTokens.tokens_before !== undefined && withTokens.tokens_after !== undefined)
-      return ` Compaction ${fmt(withTokens.tokens_before)} → ${fmt(withTokens.tokens_after)} `
-    if (withTokens.tokens_before !== undefined) return ` Compaction ${fmt(withTokens.tokens_before)} → … `
+      return ` Compaction ${fmt(withTokens.tokens_before)} → ${fmt(withTokens.tokens_after)}${caret}`
+    if (withTokens.tokens_before !== undefined) return ` Compaction ${fmt(withTokens.tokens_before)} → …${caret}`
     return " Compaction "
   })
 
@@ -1596,7 +1632,26 @@ export function UserMessage(props: {
           title={compactionTitle()}
           titleAlignment="center"
           borderColor={theme.borderActive}
+          onMouseUp={() => setCompactionOpen((prev) => !prev)}
         />
+        <Show when={compactionOpen()}>
+          <box flexDirection="column" paddingLeft={2} paddingRight={2} paddingTop={1} gap={1} flexShrink={0}>
+            <Show when={compactionSummary()}>
+              <markdown
+                syntaxStyle={syntax()}
+                streaming={true}
+                internalBlockMode="top-level"
+                content={compactionSummary()!}
+                conceal={ctx.conceal()}
+                fg={theme.textMuted}
+                bg={theme.background}
+              />
+            </Show>
+            <Show when={compactionStats()}>
+              <text fg={theme.textMuted}>{compactionStats()!}</text>
+            </Show>
+          </box>
+        </Show>
       </Show>
     </>
   )

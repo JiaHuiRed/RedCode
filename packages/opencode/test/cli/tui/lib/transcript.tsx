@@ -71,6 +71,8 @@ const sync = {
     lsp: {},
     permission: {},
   },
+  // 压缩折叠行读 sync.session.get(…).time.compacting；未知会话 = 未在压缩。
+  session: { get: () => undefined },
 }
 
 const session = {
@@ -121,16 +123,20 @@ export function Providers(props: ParentProps<{ session?: Record<string, unknown>
   )
 }
 
+type FrameOptions = {
+  width: number
+  height: number
+  session?: Record<string, unknown>
+  sync?: Record<string, unknown>
+}
+
 /**
- * 渲染一帧并返回去掉行尾空白的纯文本。
+ * 只挂载不取样 —— 需要与页面交互（如 app.mockMouse.click）时用它，随后用 frameText 取帧。
  *
  * 两次 renderOnce 之间给 25ms —— 消息组件里有 createEffect/异步测量，只渲染一次会
  * 拍到未定型的中间态（既有的 inline-tool-wrap 快照用的是同一手法）。
  */
-export async function renderFrame(
-  component: () => JSX.Element,
-  options: { width: number; height: number; session?: Record<string, unknown>; sync?: Record<string, unknown> },
-) {
+export async function mountFrame(component: () => JSX.Element, options: FrameOptions) {
   active = await testRender(
     () => (
       <Providers session={options.session} sync={options.sync}>
@@ -142,11 +148,20 @@ export async function renderFrame(
   await active.renderOnce()
   await Bun.sleep(25)
   await active.renderOnce()
-
   return active
+}
+
+/** 把 renderer 当前帧取成去掉行尾空白的纯文本（与 renderFrame 的返回同构）。 */
+export function frameText(app: Awaited<ReturnType<typeof testRender>>) {
+  return app
     .captureCharFrame()
     .split("\n")
     .map((line) => line.trimEnd())
     .join("\n")
     .trimEnd()
+}
+
+/** 渲染一帧并返回纯文本 —— 不交互的既有调用方走这条。 */
+export async function renderFrame(component: () => JSX.Element, options: FrameOptions) {
+  return frameText(await mountFrame(component, options))
 }
