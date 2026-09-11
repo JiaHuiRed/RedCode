@@ -8,6 +8,12 @@
 
 ---
 
+### [未发布]
+
+#### 修复
+
+- **windows-job runner 短路提前到模块加载之前，消除每个 MCP 宿主 178MB 冗余**（`packages/opencode/src/index.ts`，决策：`docs/notes/implemented/bug-fix/2026-09-11-windows-job-runner-boot.md`）：编译 exe 下每个 MCP 服务器经 `util/windows-job.ts` 包一层 job-runner 进程（让 MCP 随主进程退出），而 runner 跑的就是 index.ts 自身——旧写法把 runner 短路放在第四十六行、四十多个重 import 留在顶部，而 ESM 静态 import 在模块体执行前全部求值，等于没短路：每个宿主白背整套 TUI/server/session/DB 模块图。实测 9 个 MCP 宿主各占 218-219MB（合计约 2.0GB），16GB 机器上叠加第二个 TUI 即触发 opentui 原生内存分配失败（`Failed to create TextBuffer`）致命崩溃——同机同期另有独立的 `Failed to create renderer: error.OutOfMemory` 佐证。现在把短路提到文件最前，其余 import 按原顺序改为 top-level `await import()`（仅 `node:os`/`node:path` 与 `Log.Level` 的 type import 保留静态，后者编译期擦除）。实测 runner 工作集 **229.2MB → 51.5MB**（每个省 177.7MB，9 个 MCP 合计约 1.6GB）；`--version` smoke test 与 runner 端到端（ready → start → exit code=0）复验通过。防回归识别签名：`--windows-job-runner` 进程工作集超过 100MB 即为回归。
+
 ### [0.11.4] - 2026-09-11
 
 > 模型可见注入面预算审计收口（skill 描述补上最后一个无界项的上限）；TUI 交互两件——Think 行流式期跟随最新思考行、压缩 checkpoint 原位折叠展开摘要与 token 估算；seed/tool 同步链路补齐、两处死代码清理，/recall 恢复可用。

@@ -1,52 +1,64 @@
-import yargs from "yargs"
-import { hideBin } from "yargs/helpers"
-import { RunCommand } from "./cli/cmd/run"
-import { GenerateCommand } from "./cli/cmd/generate"
-import * as Log from "@redcode-ai/core/util/log"
-import { ConsoleCommand } from "./cli/cmd/account"
-import { ProvidersCommand } from "./cli/cmd/providers"
-import { AgentCommand } from "./cli/cmd/agent"
-import { UpgradeCommand } from "./cli/cmd/upgrade"
-import { UninstallCommand } from "./cli/cmd/uninstall"
-import { ModelsCommand } from "./cli/cmd/models"
-import { UI } from "./cli/ui"
-import { Installation } from "./installation"
-import { InstallationVersion } from "@redcode-ai/core/installation/version"
-import { NamedError } from "@redcode-ai/core/util/error"
-import { FormatError } from "./cli/error"
-import { ServeCommand } from "./cli/cmd/serve"
-import { Filesystem } from "@/util/filesystem"
-import { DebugCommand } from "./cli/cmd/debug"
-import { StatsCommand } from "./cli/cmd/stats"
-import { McpCommand } from "./cli/cmd/mcp"
-import { GithubCommand } from "./cli/cmd/github"
-import { ExportCommand } from "./cli/cmd/export"
-import { ImportCommand } from "./cli/cmd/import"
-import { AttachCommand } from "./cli/cmd/tui/attach"
-import { TuiThreadCommand } from "./cli/cmd/tui/thread"
-import { AcpCommand } from "./cli/cmd/acp"
-import { EOL } from "os"
-import { WebCommand } from "./cli/cmd/web"
-import { PrCommand } from "./cli/cmd/pr"
-import { SessionCommand } from "./cli/cmd/session"
-import { DbCommand } from "./cli/cmd/db"
-import path from "path"
-import { Global } from "@redcode-ai/core/global"
-import { JsonMigration } from "@/storage/json-migration"
-import { Database } from "@/storage/db"
-import { SessionDiffGc } from "@/session/session-diff-gc"
-import { errorMessage } from "./util/error"
-import { PluginCommand } from "./cli/cmd/plug"
-import { DoctorCommand } from "./cli/cmd/doctor"
-import { Heap } from "./cli/heap"
-import { drizzle } from "drizzle-orm/bun-sqlite"
-import { ensureProcessMetadata } from "@redcode-ai/core/util/redcode-process"
-import { isRecord } from "@/util/record"
-
+// 260911 Red runner 短路必须早于一切重模块的加载。ESM 的静态 import 在模块体执行前
+// 全部求值 —— 旧写法把短路放在第 46 行、四十多个重 import 留在顶部，等于没短路：
+// 每个 MCP 宿主进程（--windows-job-runner）白背整套 TUI/server/session/DB 模块图。
+// 实测 219MB/进程，9 个 MCP 约 2GB；16GB 机器上叠加第二个 TUI 即触发 opentui 原生
+// 内存分配失败（Failed to create TextBuffer）致命崩溃。
+// 全部改动态 import 后，runner 路径只加载 windows-job-runner（bun:ffi + node:fs）。
+// 决策记录：docs/notes/implemented/bug-fix/2026-09-11-windows-job-runner-boot.md
 if (process.env.REDCODE_WINDOWS_JOB_RUNNER === "1") {
   await import("./util/windows-job-runner")
   process.exit()
 }
+
+// node 内置模块零成本，保留静态导入；其余按原顺序延迟到 runner 短路之后。
+import { EOL } from "os"
+import path from "path"
+
+// Log.Level 只在类型位置出现；type import 编译期擦除，不会把模块拉进 runner 进程。
+import type { Level as LogLevel } from "@redcode-ai/core/util/log"
+
+const yargs = (await import("yargs")).default
+const { hideBin } = await import("yargs/helpers")
+const { RunCommand } = await import("./cli/cmd/run")
+const { GenerateCommand } = await import("./cli/cmd/generate")
+const Log = await import("@redcode-ai/core/util/log")
+const { ConsoleCommand } = await import("./cli/cmd/account")
+const { ProvidersCommand } = await import("./cli/cmd/providers")
+const { AgentCommand } = await import("./cli/cmd/agent")
+const { UpgradeCommand } = await import("./cli/cmd/upgrade")
+const { UninstallCommand } = await import("./cli/cmd/uninstall")
+const { ModelsCommand } = await import("./cli/cmd/models")
+const { UI } = await import("./cli/ui")
+const { Installation } = await import("./installation")
+const { InstallationVersion } = await import("@redcode-ai/core/installation/version")
+const { NamedError } = await import("@redcode-ai/core/util/error")
+const { FormatError } = await import("./cli/error")
+const { ServeCommand } = await import("./cli/cmd/serve")
+const { Filesystem } = await import("@/util/filesystem")
+const { DebugCommand } = await import("./cli/cmd/debug")
+const { StatsCommand } = await import("./cli/cmd/stats")
+const { McpCommand } = await import("./cli/cmd/mcp")
+const { GithubCommand } = await import("./cli/cmd/github")
+const { ExportCommand } = await import("./cli/cmd/export")
+const { ImportCommand } = await import("./cli/cmd/import")
+const { AttachCommand } = await import("./cli/cmd/tui/attach")
+const { TuiThreadCommand } = await import("./cli/cmd/tui/thread")
+const { AcpCommand } = await import("./cli/cmd/acp")
+const { WebCommand } = await import("./cli/cmd/web")
+const { PrCommand } = await import("./cli/cmd/pr")
+const { SessionCommand } = await import("./cli/cmd/session")
+const { DbCommand } = await import("./cli/cmd/db")
+const { Global } = await import("@redcode-ai/core/global")
+const { JsonMigration } = await import("@/storage/json-migration")
+const { Database } = await import("@/storage/db")
+const { SessionDiffGc } = await import("@/session/session-diff-gc")
+const { errorMessage } = await import("./util/error")
+const { PluginCommand } = await import("./cli/cmd/plug")
+const { DoctorCommand } = await import("./cli/cmd/doctor")
+const { Heap } = await import("./cli/heap")
+const { drizzle } = await import("drizzle-orm/bun-sqlite")
+const { ensureProcessMetadata } = await import("@redcode-ai/core/util/redcode-process")
+const { isRecord } = await import("@/util/record")
 
 const processMetadata = ensureProcessMetadata("main")
 
@@ -104,7 +116,7 @@ const cli = yargs(args)
       print: process.argv.includes("--print-logs"),
       dev: Installation.isLocal(),
       level: (() => {
-        if (opts.logLevel) return opts.logLevel as Log.Level
+        if (opts.logLevel) return opts.logLevel as LogLevel
         if (Installation.isLocal()) return "DEBUG"
         return "INFO"
       })(),
