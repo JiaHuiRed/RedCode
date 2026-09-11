@@ -14,6 +14,8 @@
 
 - **windows-job runner 短路提前到模块加载之前，消除每个 MCP 宿主 178MB 冗余**（`packages/opencode/src/index.ts`，决策：`docs/notes/implemented/bug-fix/2026-09-11-windows-job-runner-boot.md`）：编译 exe 下每个 MCP 服务器经 `util/windows-job.ts` 包一层 job-runner 进程（让 MCP 随主进程退出），而 runner 跑的就是 index.ts 自身——旧写法把 runner 短路放在第四十六行、四十多个重 import 留在顶部，而 ESM 静态 import 在模块体执行前全部求值，等于没短路：每个宿主白背整套 TUI/server/session/DB 模块图。实测 9 个 MCP 宿主各占 218-219MB（合计约 2.0GB），16GB 机器上叠加第二个 TUI 即触发 opentui 原生内存分配失败（`Failed to create TextBuffer`）致命崩溃——同机同期另有独立的 `Failed to create renderer: error.OutOfMemory` 佐证。现在把短路提到文件最前，其余 import 按原顺序改为 top-level `await import()`（仅 `node:os`/`node:path` 与 `Log.Level` 的 type import 保留静态，后者编译期擦除）。实测 runner 工作集 **229.2MB → 51.5MB**（每个省 177.7MB，9 个 MCP 合计约 1.6GB）；`--version` smoke test 与 runner 端到端（ready → start → exit code=0）复验通过。防回归识别签名：`--windows-job-runner` 进程工作集超过 100MB 即为回归。
 
+- **记忆快照收窄到跨机共享范围**（`seed/scripts/export-memory-backup.mjs`，决策：`docs/notes/implemented/bug-fix/2026-09-11-memory-snapshot-scope.md`）：导出此前是整库一把导（`SELECT ... FROM memories ORDER BY id`，无 `project` 过滤），而入库快照的共享面本该只有跨机通用的那一档（`global`），于是使用者其它工作区的私有项目也被一并写进了入库文件。现在入库快照只装共享项目（默认 `global`，`REDCODE_BACKUP_PROJECTS` 可扩展），全库另导一份到 `memory/local-backup.<host>.md` 并加进私仓 `.gitignore`——保留「db 被写坏时可回滚」的原始目的，又不把共享面之外的记忆写进仓。存量历史条目的清理不在本次范围内。
+
 ### [0.11.4] - 2026-09-11
 
 > 模型可见注入面预算审计收口（skill 描述补上最后一个无界项的上限）；TUI 交互两件——Think 行流式期跟随最新思考行、压缩 checkpoint 原位折叠展开摘要与 token 估算；seed/tool 同步链路补齐、两处死代码清理，/recall 恢复可用。
