@@ -11,8 +11,10 @@
 > Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev), with deep enhancements in **prefix cache optimization, multi-model pricing, Chinese UX, and runtime stability**.
 
 [![Version](https://badgen.net/badge/Version/0.11.4/blue)](CHANGELOG.md)
-[![License](https://badgen.net/badge/License/MIT/grey)](LICENSE)
 [![Platform](https://badgen.net/badge/Platform/Windows%2010%2F11/green)](https://github.com/JiaHuiRed/RedCode)
+[![TypeScript](https://badgen.net/badge/TypeScript/7.x/3178c6)](https://typescriptlang.org)
+[![Bun](https://badgen.net/badge/Bun/1.3.x/fb6e19)](https://bun.sh)
+[![License](https://badgen.net/badge/License/MIT/grey)](LICENSE)
 
 ---
 
@@ -42,7 +44,7 @@ Reads code, writes code, fixes bugs, runs commands.
 | **Models** | DeepSeek / OpenAI / Anthropic / GLM / Qwen / MiniMax / Ollama… assignable per role |
 | **Context** | Prefix cache freshness · automatic compaction · context usage visualization |
 | **Organization** | Session management · goal tracking · automated memory system · Skill system |
-| **Agents** | Four-role subagents (explore / architect / fixer / reviewer) · custom AI personas |
+| **Agents** | Two subagents (explore — read-only research · execute — read/write implementation) · custom AI personas |
 | **Safety** | Permission gating and guard rails — three postures below |
 
 ### Three permission postures
@@ -55,7 +57,9 @@ The dropdown under the prompt box *is* the permission axis. The three postures *
 | **RedMind** 🟥 | The default. Acts, but asks first for destructive commands, directories outside the worktree, and `.env` reads. |
 | **Auto** 🟧 | No interruptions; everything above is auto-approved. Only for tasks you've already vetted. |
 
-### Highlights
+---
+
+## 🎯 What's different from upstream
 
 - **Prefix cache freshness**: multi-layer caching (msgPin → modelMsgs → tools → system) keeps input cost low
 - **Model pricing**: full DeepSeek cache billing tiers, fixes upstream `cacheReadInputTokens=0` under-report; ChatGPT / Codex plan quotas (5-hour window, 7-day window, reserve pool) get panels in both the TUI sidebar and the GUI context tab
@@ -69,6 +73,8 @@ The dropdown under the prompt box *is* the permission axis. The three postures *
 
 ## 🚀 Run from Source
 
+Prerequisites: [Bun](https://bun.sh) 1.3+
+
 ```bash
 git clone https://github.com/JiaHuiRed/RedCode.git
 cd RedCode
@@ -81,10 +87,16 @@ bun dev
 cd packages/desktop && bun run dev
 ```
 
-### Build (Windows single-file exe)
+### Build (Windows single-file executable)
+
+One-click bat files also work: TUI `packages/opencode/build.bat` / GUI `packages/desktop/build-and-package.bat`.
 
 ```bash
+# TUI single-file exe
 cd packages/opencode && bun run build
+
+# Desktop GUI
+cd packages/desktop && bun run build && bun run package
 ```
 
 Output: `packages/opencode/dist/redcode-windows-x64/bin/redcode.exe` — double-click to run.
@@ -115,14 +127,19 @@ Listed in load order — **later entries override earlier ones**:
 ### Add Custom Provider
 
 ```jsonc
-// redcode.jsonc
 {
   "$schema": "https://redcode.dev/config.json",
   "provider": {
     "my-provider": {
-      "type": "openai",
-      "apiKey": "sk-xxx",
-      "baseURL": "https://api.example.com/v1"
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "My Provider",
+      "options": {
+        "baseURL": "https://api.example.com/v1",
+        "apiKey": "sk-xxx"
+      },
+      "models": {
+        "my-model": { "name": "My Model", "tool_call": true }
+      }
     }
   },
   "model": "my-provider/my-model"
@@ -151,6 +168,17 @@ Listed in load order — **later entries override earlier ones**:
   }
 }
 ```
+
+---
+
+## 📖 User Manual
+
+Full guides live in **[MANUAL.md](MANUAL.md)** (written in Chinese), covering:
+
+1. Quick start · 2. First-time setup (model / name / AI persona) · 3. Model configuration (adapters / switching / local Ollama)
+4. MCP servers (enabling preconfigured ones) · 5. AI persona system · 6. Memory system (two layers: indexed `MEMORY.md` injection + `supermemory.db` full-text store)
+7. Configuration reference (layers / permission gating / custom MCP) · 8. Built-in commands · 9. Skill system
+10. Privacy and multi-machine sync — including the **machine-local override layer** that solves the "same config, two machines, endless back-and-forth" loop
 
 ---
 

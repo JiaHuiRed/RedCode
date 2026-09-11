@@ -44,7 +44,7 @@ AI 编程助手。**两个入口、同一引擎**——同一个服务端、同�
 | **多模型** | DeepSeek / OpenAI / Anthropic / GLM / Qwen / MiniMax / Ollama… 按角色分配不同模型 |
 | **上下文** | 前缀缓存保鲜 · 自动压缩 · 上下文用量可视化 |
 | **组织** | 会话管理 · 目标管理 · 自动化记忆系统 · Skill 技能系统 |
-| **代理** | 四角色子代理（explore / architect / fixer / reviewer）· 自定义 AI 人格 |
+| **代理** | 两个子代理（explore 只读调研 · execute 读写执行）· 自定义 AI 人格 |
 | **安全** | 权限门控与防护环，三档姿态见下 |
 
 ### 三档权限姿态
@@ -113,14 +113,71 @@ redcode web --hostname 0.0.0.0
 
 ---
 
+## ⚙️ 配置
+
+### 配置文件位置
+
+按加载顺序列出——**后面的覆盖前面的**：
+
+| 位置 | 用途 |
+| --- | --- |
+| `~/.redcode/redcode.jsonc` | 全局配置（跨项目） |
+| `~/.redcode/redcode.local.jsonc` | 机器本地覆盖层——绝对路径、按显存挑的模型档位、只属于这台机器的 MCP。同步 `~/.redcode/` 时把它排除在版本控制外 |
+| `项目目录/redcode.jsonc` | 项目级配置 |
+| `项目目录/.redcode/redcode.jsonc` | 项目级配置（`redcode.local.jsonc` 在这里同样生效，优先级规则一致） |
+
+### 添加自定义 Provider
+
+```jsonc
+// redcode.jsonc
+{
+  "$schema": "https://redcode.dev/config.json",
+  "provider": {
+    "my-provider": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "My Provider",
+      "options": {
+        "baseURL": "https://api.example.com/v1",
+        "apiKey": "sk-xxx"
+      },
+      "models": {
+        "my-model": { "name": "My Model", "tool_call": true }
+      }
+    }
+  },
+  "model": "my-provider/my-model"
+}
+```
+
+### MCP 服务器
+
+预装服务器与 MCP 配置的完整指引见 [MANUAL.md](MANUAL.md) 第 4 章。
+
+---
+
 ## 📖 用户手册
 
 全部操作指南在 **[MANUAL.md](MANUAL.md)**，涵盖：
 
 1. 快速启动 · 2. 首次设置（模型 / 称呼 / AI 人格）· 3. 配置模型（适配器 / 切换 / 本地 Ollama）
-4. MCP 服务器（预配置服务的启用）· 5. AI 人格系统 · 6. 记忆系统（自动日志 / 长期库 / 启动注入）
+4. MCP 服务器（预配置服务的启用）· 5. AI 人格系统 · 6. 记忆系统（双层：`MEMORY.md` 索引注入 + `supermemory.db` 全文库）
 7. 配置详解（配置层次 / 权限门控 / 自定义 MCP）· 8. 内置命令 · 9. Skill 技能系统
 10. 隐私与多机同步——含**机器本地覆盖层**，解决"同一份配置在两台机器上来回改"的死循环
+
+---
+
+## 🛠 技术栈
+
+| 层 | 技术 |
+| --- | --- |
+| 运行时 | Bun |
+| 语言 | TypeScript |
+| 终端 UI | SolidJS (OpenTUI) |
+| 桌面 GUI | Electron + SolidJS |
+| AI SDK | Vercel AI SDK |
+| 数据库 | SQLite (Drizzle ORM) |
+| 构建 | Turborepo（monorepo） |
+| MCP | TypeGraph + jCodeMunch |
 
 ---
 
