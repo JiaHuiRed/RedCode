@@ -1744,6 +1744,30 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
   // blocks. Surface the title both while streaming and after settling so the
   // collapsed line carries real signal, not just a duration.
   const title = createMemo(() => reasoningTitle(content()))
+  // 260911 Red Think 行跟随（参考 DSH ui-conversation）：hide 模式流式期把思考流的
+  // 最新非空行作为滚动 summary —— 长思考不再是黑盒。与标题叠加（优先级：标题 > 最新行），
+  // 点开全文即停止跟随（expanded 走全量分支），符合"单行不跳"的布局承诺：按 ctx.width 截断。
+  const latestLine = createMemo(() => {
+    const lines = content().split("\n")
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i].trim()
+      if (line) return line.replace(/\*\*/g, "").replace(/^#+\s*/, "").trim()
+    }
+    return ""
+  })
+  const streamingLabel = createMemo(() => {
+    const t = title()
+    const line = latestLine()
+    const label = t
+      ? line && line !== t
+        ? `思考中: ${t} — ${line}`
+        : `思考中: ${t}`
+      : line
+        ? `思考中: ${line}`
+        : "思考中"
+    const max = Math.max(24, ctx.width - 12)
+    return label.length > max ? label.slice(0, max - 1) + "…" : label
+  })
   // Keep markdown emphasis for the existing thinking color/concealment, but render it without italics.
   const syntax = createMemo(() => generateSubtleSyntax(theme, { "markup.italic": { italic: false } }))
 
@@ -1778,7 +1802,7 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
         </Match>
         <Match when={true}>
           <box id={"text-" + props.part.id} paddingLeft={3} marginTop={1} flexShrink={0} onMouseUp={toggle}>
-            <Spinner color={theme.textMuted}>{title() ? "思考中: " + title() : "思考中"}</Spinner>
+            <Spinner color={theme.textMuted}>{streamingLabel()}</Spinner>
           </box>
         </Match>
       </Switch>

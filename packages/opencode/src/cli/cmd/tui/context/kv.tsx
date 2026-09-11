@@ -7,7 +7,9 @@ import { createStore, unwrap } from "solid-js/store"
 import { createSimpleContext } from "./helper"
 import path from "path"
 
-export const { use: useKV, provider: KVProvider } = createSimpleContext({
+// 260911 Red 导出 context 供测试喂假值（同 helper.tsx 260828 的理由）：消息快照测试要渲染
+// Spinner（Think 行流式态），而真 provider 会读写 live 的 ~/.redcode/state/kv.json。
+export const { use: useKV, provider: KVProvider, context } = createSimpleContext({
   name: "KV",
   init: () => {
     const [ready, setReady] = createSignal(false)

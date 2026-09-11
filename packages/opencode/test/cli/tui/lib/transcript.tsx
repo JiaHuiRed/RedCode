@@ -15,6 +15,7 @@ import { testRender, useRenderer, type JSX } from "@opentui/solid"
 import { context as ThemeContext } from "@tui/context/theme"
 import { context as LocalContext } from "@tui/context/local"
 import { context as SyncContext } from "@tui/context/sync"
+import { context as KVContext } from "@tui/context/kv"
 import { TuiConfigProvider } from "@tui/context/tui-config"
 import { OpencodeKeymapProvider } from "@tui/keymap"
 import { SessionRenderContext } from "@tui/routes/session/index"
@@ -86,24 +87,35 @@ const session = {
   providers: () => new Map(),
 }
 
+// Spinner（Think 行流式态）用 KV 判断动画开关 —— 真 provider 会读写 live 的
+// ~/.redcode/state/kv.json，测试不能碰。喂 animations_enabled: false，Spinner 走静态
+// ⋯ 前缀，断言与快照不依赖动画帧相位。
+const kv = {
+  get: (key: string, fallback?: unknown) => (key === "animations_enabled" ? false : fallback),
+}
+
 /**
  * Keymap 与 TuiConfig 用**真** provider —— `useCommandShortcut` 要从 keymap 里查实际
  * 绑定，喂假值等于把"快捷键提示显示成什么"这件事从快照里摘出去，而它就在消息行上。
- * 其余三个（Theme / Local / Session）喂假值，理由见文件头。
+ * 其余（KV / Theme / Local / Session / Sync）喂假值，理由见文件头。
  */
-export function Providers(props: ParentProps) {
+export function Providers(props: ParentProps<{ session?: Record<string, unknown>; sync?: Record<string, unknown> }>) {
   const renderer = useRenderer()
   const keymap = createDefaultOpenTuiKeymap(renderer)
   return (
     <OpencodeKeymapProvider keymap={keymap}>
       <TuiConfigProvider config={createTuiResolvedConfig()}>
-        <ThemeContext.Provider value={{ theme, syntax: () => syntax } as never}>
-          <LocalContext.Provider value={local as never}>
-            <SyncContext.Provider value={sync as never}>
-              <SessionRenderContext.Provider value={session as never}>{props.children}</SessionRenderContext.Provider>
-            </SyncContext.Provider>
-          </LocalContext.Provider>
-        </ThemeContext.Provider>
+        <KVContext.Provider value={kv as never}>
+          <ThemeContext.Provider value={{ theme, syntax: () => syntax } as never}>
+            <LocalContext.Provider value={local as never}>
+              <SyncContext.Provider value={{ ...sync, ...props.sync } as never}>
+                <SessionRenderContext.Provider value={{ ...session, ...props.session } as never}>
+                  {props.children}
+                </SessionRenderContext.Provider>
+              </SyncContext.Provider>
+            </LocalContext.Provider>
+          </ThemeContext.Provider>
+        </KVContext.Provider>
       </TuiConfigProvider>
     </OpencodeKeymapProvider>
   )
@@ -115,8 +127,18 @@ export function Providers(props: ParentProps) {
  * 两次 renderOnce 之间给 25ms —— 消息组件里有 createEffect/异步测量，只渲染一次会
  * 拍到未定型的中间态（既有的 inline-tool-wrap 快照用的是同一手法）。
  */
-export async function renderFrame(component: () => JSX.Element, options: { width: number; height: number }) {
-  active = await testRender(() => <Providers>{component()}</Providers>, options)
+export async function renderFrame(
+  component: () => JSX.Element,
+  options: { width: number; height: number; session?: Record<string, unknown>; sync?: Record<string, unknown> },
+) {
+  active = await testRender(
+    () => (
+      <Providers session={options.session} sync={options.sync}>
+        {component()}
+      </Providers>
+    ),
+    { width: options.width, height: options.height },
+  )
   await active.renderOnce()
   await Bun.sleep(25)
   await active.renderOnce()
