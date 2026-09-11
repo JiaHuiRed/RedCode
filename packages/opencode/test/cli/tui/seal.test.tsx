@@ -21,13 +21,13 @@ test("朱印是 6 列 × 3 行的方印，印文是终端提示符", async () =>
   expect(lines[1]).toContain(">_")
 })
 
-// 260910 Red 紧凑档是**单行实心印**：印身由背景色铺满、印文用底色挖空。字符帧抓不到背景色，
+// 260911 Red 紧凑档是**单行实心印**：印身由背景色铺满、印文用底色挖空。字符帧抓不到背景色，
 // 所以宽度直接钉导出常量，帧里验行数与印文确实渲染出来。
-test("朱印紧凑档是 2 列 × 1 行的实心印，与页脚文字同高", async () => {
+test("朱印紧凑档是 3 列 × 1 行的实心印，与页脚文字同高", async () => {
   const frame = await renderFrame(() => <Seal size="compact" />, { width: 12, height: 4 })
   const lines = frame.split("\n")
   expect(lines).toHaveLength(1)
-  expect(COMPACT_SEAL_WIDTH).toBe(2)
-  expect(COMPACT_SEAL_TEXT).toBe(">_")
+  expect(COMPACT_SEAL_WIDTH).toBe(3)
+  expect(COMPACT_SEAL_TEXT).toBe(">_ ")
   expect(lines[0]).toContain(">_")
 })

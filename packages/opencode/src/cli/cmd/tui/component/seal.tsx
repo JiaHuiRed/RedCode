@@ -22,17 +22,18 @@ import { useTheme } from "@tui/context/theme"
  */
 const LINES = ["╭────╮", "│ >_ │", "╰────╯"] as const
 
-// 260910 Red 紧凑档（会话页脚）压成**单行实心印**：终端字符约 1:2，2 列 × 1 行就是
-// 视觉正方形，对应 GUI 的 `redcode-mark-simple.svg`（16px 档去掉印边留白与崩口，
-// 那个尺寸下留白只会让边缘发毛）——紧凑档就该是它的终端刻本。
+// 260910 Red 紧凑档（会话页脚）压成**单行实心印**：对应 GUI 的
+// `redcode-mark-simple.svg`（16px 档去掉印边留白与崩口，那个尺寸下留白只会让边缘发毛）——
+// 紧凑档就该是它的终端刻本。
 //
 // 为什么不是 2 行：页脚那行文字只有 1 行高，flex 居中的取整对「偶数高的印
 // vs 奇数高的文字」必然落到某一行，印总是多探出半行。上两版（5 列 × 2 行、4 列 × 2 行）
 // 哥哥都反馈「agent 前面的朱印偏高」，根因不是列宽与内部留白，是**行数不匹配**。
 // 压成 1 行后印与文字同高，对齐不再是取整问题。
+// 260911 Red 右侧补一列实心留白，保留 `>_` 原位，只把印身稍微加宽。
 // 宽度与印文是设计约束，导出供测试钉住。
-export const COMPACT_SEAL_WIDTH = 2
-export const COMPACT_SEAL_TEXT = ">_"
+export const COMPACT_SEAL_WIDTH = 3
+export const COMPACT_SEAL_TEXT = ">_ "
 
 /** 主色 / 深色界面用色，与 redcode-mark.svg 头部注释同源 */
 const INK_LIGHT = RGBA.fromHex("#C8322B")
