@@ -25,16 +25,6 @@
   // 260804 Red 不设这个键会 fallback 到内置 build（见 config.ts 的 default_agent 注释）。
   "default_agent": "redmind",
   "mcp": {
-    "typegraph": {
-      "type": "local",
-      "command": ["node", "./plugins/typegraph-mcp/node_modules/tsx/dist/cli.mjs", "./plugins/typegraph-mcp/server.ts"],
-      "cwd": "$REDCODE_ROOT",
-      "environment": { "TYPEGRAPH_PROJECT_ROOT": ".", "TYPEGRAPH_TSCONFIG": "./tsconfig.json" },
-      "timeout": 60000,
-      "description": "TS 类型真相查询（等价 VS Code 悬停）——ts_type_info 按符号名或行列取推断类型与文档；改接口/泛型/联合类型前先确认真实签名，别照着调用处猜。找定义/引用/调用链用 jcodemunch，读整文件用 read。",
-      "tools": ["ts_type_info"],
-      "enabled": true
-    },
     // 260813 cc tools 白名单（与 live 同改）：三个月调用统计 16/19 个用过，砍掉零调用的
     // index_file/set_tool_tier/announce_model；description 修正旧版工具名（get_repo_map 等
     // 已不存在）。⚠ #103：块结构必须完整（type/command 必填），tools 是内嵌白名单。
