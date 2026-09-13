@@ -165,7 +165,8 @@ if (!fs.existsSync(DB_PATH)) {
   process.exit(0)
 }
 
-const project = all ? "" : projectFromWorktree(process.cwd())
+// 260913 Red 引擎传入的项目根优先于服务器进程 cwd：GUI 切项目后 cwd 与工作区不一致。
+const project = all ? "" : projectFromWorktree(process.env.REDCODE_PROJECT_ROOT || process.cwd())
 const d = await getDb()
 const { ranked } = await recall(d, query, project)
 

@@ -1,14 +1,15 @@
 import { expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
-import { mkdtempSync } from "node:fs"
+import { mkdirSync, mkdtempSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import os from "node:os"
 import path from "node:path"
 
 // 260913 Red 隔离库核对召回脚本自身的查询路径，不碰 live 记忆库。
 const SCRIPT = fileURLToPath(new URL("../../../../seed/scripts/recall-memory.mjs", import.meta.url))
+const NEWLINE = String.fromCharCode(10)
 
-function fixture() {
+function fixture(entries: Array<{ id: number; project: string; content: string }>) {
   const dir = mkdtempSync(path.join(os.tmpdir(), "recall-memory-"))
   const db = path.join(dir, "supermemory.db")
   const sqlite = new Database(db)
@@ -16,17 +17,17 @@ function fixture() {
   sqlite.exec(
     "CREATE VIRTUAL TABLE memories_fts USING fts5(content, content='memories', content_rowid='id', tokenize='trigram')",
   )
-  sqlite.run(
-    "INSERT INTO memories (id, project, content) VALUES (20, 'global', '#20 代理配置（260901）' || char(10) || '按需代理三件套')",
-  )
+  for (const entry of entries) {
+    sqlite.run("INSERT INTO memories (id, project, content) VALUES (?, ?, ?)", [entry.id, entry.project, entry.content])
+  }
   sqlite.run("INSERT INTO memories_fts (rowid, content) SELECT id, content FROM memories")
   sqlite.close()
-  return db
+  return { dir, db }
 }
 
-function recall(db: string, args: string[]) {
+function recall(db: string, args: string[], env: Record<string, string> = {}) {
   const proc = Bun.spawnSync(["bun", SCRIPT, ...args], {
-    env: { ...process.env, REDCODE_MEMORY_DB: db },
+    env: { ...process.env, REDCODE_MEMORY_DB: db, ...env },
     stdout: "pipe",
     stderr: "pipe",
   })
@@ -38,8 +39,22 @@ function recall(db: string, args: string[]) {
 }
 
 test("两字中文查询在 --all 下走子串分支并能命中", () => {
-  const result = recall(fixture(), ["--all", "代理"])
+  const { db } = fixture([{ id: 20, project: "global", content: `#20 代理配置（260901）${NEWLINE}按需代理三件套` }])
+  const result = recall(db, ["--all", "代理"])
 
   expect(result.stdout).toContain("代理配置")
   expect(result.stdout).not.toContain("没搜到")
+})
+
+test("REDCODE_PROJECT_ROOT 决定召回作用域而不是 cwd", () => {
+  const { dir, db } = fixture([
+    { id: 20, project: "global", content: `#20 代理配置（260901）${NEWLINE}按需代理三件套` },
+    { id: 21, project: "ProjectX", content: `#21 项目专属（260901）${NEWLINE}代理相关项目记忆` },
+  ])
+  const projectRoot = path.join(dir, "ProjectX")
+  mkdirSync(projectRoot)
+
+  const result = recall(db, ["代理"], { REDCODE_PROJECT_ROOT: projectRoot })
+
+  expect(result.stdout).toContain("ProjectX")
 })

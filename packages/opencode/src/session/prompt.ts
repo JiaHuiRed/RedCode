@@ -50,6 +50,7 @@ import * as EffectLogger from "@redcode-ai/core/effect/logger"
 import { InstanceState } from "@/effect/instance-state"
 import { InstanceRef } from "@/effect/instance-ref"
 import { InstanceStore } from "@/project/instance-store"
+import { projectRoot } from "@/project/root"
 import { Worktree } from "@/worktree"
 import { TaskTool, type TaskPromptOps } from "@/tool/task"
 import { SessionRunState } from "./run-state"
@@ -1935,9 +1936,21 @@ export const layer = Layer.effect(
       if (shellMatches.length > 0) {
         const cfg = yield* config.get()
         const sh = Shell.preferred(cfg.shell)
+        // 260913 Red 命令模板里的 shell 应在会话项目目录执行；REDCODE_PROJECT_ROOT 供 recall 等脚本定位项目。
+        const ctx = yield* InstanceState.context
         const results = yield* Effect.promise(() =>
           Promise.all(
-            shellMatches.map(async ([, cmd]) => (await Process.text([cmd], { shell: sh, nothrow: true })).text),
+            shellMatches.map(
+              async ([, cmd]) =>
+                (
+                  await Process.text([cmd], {
+                    shell: sh,
+                    nothrow: true,
+                    cwd: ctx.directory,
+                    env: { REDCODE_PROJECT_ROOT: projectRoot(ctx) },
+                  })
+                ).text,
+            ),
           ),
         )
         let index = 0
