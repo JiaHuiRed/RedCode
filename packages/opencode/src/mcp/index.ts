@@ -27,6 +27,7 @@ import * as fs from "fs"
 import { McpOAuthProvider, OAUTH_CALLBACK_PATH } from "./oauth-provider"
 import { McpOAuthCallback } from "./oauth-callback"
 import { McpAuth } from "./auth"
+import { checkHealthCycle, type HealthFailure } from "./health"
 import { BusEvent } from "../bus/bus-event"
 import { Bus } from "@/bus"
 import { TuiEvent } from "@/cli/cmd/tui/event"
@@ -924,34 +925,30 @@ export const layer = Layer.effect(
 
         // 260603 Red P0: MCP 健康监控 — 每 30s 检查，连续 3 次失败标记断开
         const HEALTH_CHECK_INTERVAL = 30_000
-        const MAX_FAILURES = 3
-        const healthFailures = new Map<string, number>()
+        const healthFailures = new Map<string, HealthFailure<MCPClient>>()
 
         yield* Effect.forkScoped(
           Effect.forever(
             Effect.gen(function* () {
               yield* Effect.sleep(HEALTH_CHECK_INTERVAL)
-              const connected = Object.entries(s.clients).filter(([name]) => s.status[name]?.status === "connected")
-              for (const [name, client] of connected) {
-                try {
-                  yield* Effect.tryPromise({
-                    try: () => client.request({ method: "tools/list", params: {} }, ListToolsResultSchema),
-                    catch: () => new Error("health check failed"),
-                  })
-                  healthFailures.delete(name)
-                } catch {
-                  const failures = (healthFailures.get(name) ?? 0) + 1
-                  healthFailures.set(name, failures)
-                  log.warn("MCP health check failed", { name, failures })
-                  if (failures >= MAX_FAILURES) {
-                    log.error("MCP server unhealthy, marking disconnected", { name })
-                    healthFailures.delete(name)
-                    yield* closeClient(s, name)
-                    delete s.clients[name]
-                    s.status[name] = { status: "failed", error: "health check failed" }
-                  }
-                }
-              }
+              yield* checkHealthCycle({
+                clients: s.clients,
+                connected: (name) => s.status[name]?.status === "connected",
+                failures: healthFailures,
+                request: (client, signal) =>
+                  client.request({ method: "tools/list", params: {} }, ListToolsResultSchema, {
+                    signal,
+                    timeout: 10_000,
+                  }),
+                warn: (name, failures) => log.warn("MCP health check failed", { name, failures }),
+                unhealthy: (name) => {
+                  log.error("MCP server unhealthy, marking disconnected", { name })
+                  const closing = closeClient(s, name)
+                  delete s.clients[name]
+                  s.status[name] = { status: "failed", error: "health check failed" }
+                  return closing.pipe(Effect.ignore)
+                },
+              })
             }),
           ),
         )
