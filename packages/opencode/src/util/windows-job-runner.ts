@@ -1,5 +1,6 @@
 import { dlopen } from "bun:ffi"
 import { closeSync } from "node:fs"
+import { windowsCommand } from "./windows-command"
 
 const RUNNER_ENV = "REDCODE_WINDOWS_JOB_RUNNER"
 const STARTF_USESTDHANDLES = 0x100
@@ -42,23 +43,6 @@ type Result =
 
 function wide(value: string) {
   return Buffer.from(value + "\0", "utf16le")
-}
-
-function quote(argument: string) {
-  if (argument === "") return '""'
-  if (!/[\s"]/u.test(argument)) return argument
-  let result = '"'
-  for (let index = 0; index < argument.length; index++) {
-    let slashes = 0
-    while (index < argument.length && argument[index] === "\\") {
-      slashes += 1
-      index += 1
-    }
-    if (index === argument.length) result += "\\".repeat(slashes * 2)
-    else if (argument[index] === '"') result += "\\".repeat(slashes * 2 + 1) + '"'
-    else result += "\\".repeat(slashes) + argument[index]
-  }
-  return result + '"'
 }
 
 function environment(env: Record<string, string>) {
@@ -137,6 +121,7 @@ function native() {
     SetHandleInformation: { args: ["ptr", "u32", "u32"], returns: "i32" },
     SetInformationJobObject: { args: ["ptr", "i32", "ptr", "u32"], returns: "i32" },
     TerminateJobObject: { args: ["ptr", "u32"], returns: "i32" },
+    TerminateProcess: { args: ["ptr", "u32"], returns: "i32" },
     WaitForSingleObject: { args: ["ptr", "u32"], returns: "u32" },
   })
   const current = dlopen(process.execPath, {
@@ -154,6 +139,7 @@ function native() {
     setHandleInformation: kernel32.symbols.SetHandleInformation,
     setInformationJobObject: kernel32.symbols.SetInformationJobObject,
     terminateJobObject: kernel32.symbols.TerminateJobObject,
+    terminateProcess: kernel32.symbols.TerminateProcess,
     uvGetOsfhandle: current.symbols.uv_get_osfhandle,
     waitForSingleObject: kernel32.symbols.WaitForSingleObject,
   }
@@ -202,6 +188,8 @@ export async function run() {
   const fail = async (reason: unknown) => {
     if (finished) return
     if (job !== undefined) api.terminateJobObject(job, 1)
+    // 260913 Red AssignProcessToJobObject 失败时目标尚未入 Job，单独终止避免悬挂进程泄漏。
+    if (target !== undefined) api.terminateProcess(target, 1)
     await send({ type: "error", error: error(reason) })
     finish(127)
   }
@@ -260,6 +248,7 @@ export async function run() {
     }
     if (ready) clearInterval(ready)
     try {
+      const invocation = windowsCommand(value.command, value.args, { cwd: value.cwd, env: value.env })
       const createdJob = api.createJobObjectW(null, null)
       if (!createdJob) throw new Error(`CreateJobObjectW failed (${api.getLastError()})`)
       job = createdJob
@@ -290,10 +279,10 @@ export async function run() {
       const information = Buffer.alloc(24)
       try {
         const created = api.createProcessW(
-          // 260908 Red: 留空 lpApplicationName，让 Windows 按命令行执行 PATH 搜索。
-          // 决策记录：docs/notes/implemented/bug-fix/2026-09-08-windows-job-path-resolution.md
-          null,
-          wide([value.command, ...value.args].map(quote).join(" ")),
+          // 260913 Red 先按目标 cwd/PATH 解析可执行文件；批处理在同一个 Job 内由 cmd.exe 执行。
+          // PATH 解析历史：docs/notes/implemented/bug-fix/2026-09-08-windows-job-path-resolution.md
+          wide(invocation.executable),
+          wide(invocation.commandLine),
           null,
           null,
           1,
@@ -306,11 +295,15 @@ export async function run() {
         if (created === 0) throw spawnError(value.command, api.getLastError())
         target = Number(information.readBigUInt64LE(0)) as unknown as Handle
         const thread = Number(information.readBigUInt64LE(8)) as unknown as Handle
-        if (api.assignProcessToJobObject(job, target) === 0)
-          throw new Error(`AssignProcessToJobObject failed (${api.getLastError()})`)
-        if (api.resumeThread(thread) === 0xffffffff) throw new Error(`ResumeThread failed (${api.getLastError()})`)
-        releaseRunnerStdio()
-        api.closeHandle(thread)
+        try {
+          if (api.assignProcessToJobObject(job, target) === 0)
+            throw new Error(`AssignProcessToJobObject failed (${api.getLastError()})`)
+          if (api.resumeThread(thread) === 0xffffffff) throw new Error(`ResumeThread failed (${api.getLastError()})`)
+          releaseRunnerStdio()
+        } finally {
+          // 260913 Red 创建成功后每条失败路径也必须释放初始线程句柄。
+          api.closeHandle(thread)
+        }
       } finally {
         for (const handle of handles) api.setHandleInformation(handle, HANDLE_FLAG_INHERIT, 0)
       }
