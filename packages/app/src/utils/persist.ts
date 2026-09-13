@@ -234,6 +234,9 @@ function write(
     if (!quota(error)) throw error
   }
 
+  // 260913 Red 先删自己那份再写：草稿原地变大时这一步常常刚好腾出空间。但删之前留底——
+  // 写不进去就放回去，否则 opt-out（evictOnQuota:false）会让旧草稿凭空消失。
+  const previous = storage.getItem(key)
   try {
     storage.removeItem(key)
     cacheDelete(key)
@@ -242,6 +245,15 @@ function write(
     return true
   } catch (error) {
     if (!quota(error)) throw error
+    if (previous !== null) {
+      try {
+        storage.setItem(key, previous)
+        cacheSet(key, previous)
+      } catch {
+        // 260913 Red 放不回去说明配额确实不够。缓存与 storage 此时一致（都没有这个键），
+        // 内存里的 store 仍是新值，本次会话不受影响，只是这份草稿不再持久化。
+      }
+    }
   }
 
   // 260913 Red 大块写入（草稿）不允许靠删别人的键腾地方：配额满就直接失败并提示。

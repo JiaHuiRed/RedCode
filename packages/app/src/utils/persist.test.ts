@@ -44,6 +44,39 @@ class MemoryStorage implements Storage {
   }
 }
 
+// 260913 Red 可控容量存储：写入超过 limit 就抛 QuotaExceededError，用来复现
+// 「配额已满、删掉自己那份也写不下」的真实路径。
+class LimitedStorage implements Storage {
+  private values = new Map<string, string>()
+  limit = Number.POSITIVE_INFINITY
+
+  clear() {
+    this.values.clear()
+  }
+
+  get length() {
+    return this.values.size
+  }
+
+  key(index: number) {
+    return Array.from(this.values.keys())[index] ?? null
+  }
+
+  getItem(key: string) {
+    return this.values.get(key) ?? null
+  }
+
+  setItem(key: string, value: string) {
+    const total = Array.from(this.values.entries()).reduce((sum, [k, v]) => sum + (k === key ? 0 : v.length), 0)
+    if (total + value.length > this.limit) throw new DOMException("quota", "QuotaExceededError")
+    this.values.set(key, value)
+  }
+
+  removeItem(key: string) {
+    this.values.delete(key)
+  }
+}
+
 const storage = new MemoryStorage()
 
 let persistTesting: PersistTestingType
@@ -192,5 +225,19 @@ describe("persist localStorage resilience", () => {
     draft.setItem("value", '{"value":1}')
 
     expect(storage.events).toContain("remove:RedCode.other.evict:keep")
+  })
+
+  test("keeps the previous value when a quota-failed write cannot free room", () => {
+    const limited = new LimitedStorage()
+    Object.defineProperty(globalThis, "localStorage", { value: limited, configurable: true })
+
+    const draft = persistTesting.localStorageWithPrefix("RedCode.limited", { evictOnQuota: false })
+    draft.setItem("value", '{"value":"old"}')
+
+    // 容量压到刚好装得下旧值：新值写不进去，删掉旧值后再写也不行。
+    limited.limit = '{"value":"old"}'.length
+    draft.setItem("value", `{"value":"${"x".repeat(200)}"}`)
+
+    expect(limited.getItem("RedCode.limited:value")).toBe('{"value":"old"}')
   })
 })
