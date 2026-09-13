@@ -4,8 +4,9 @@
 // Comments and formatting in the user's file are preserved.
 // Called by sync-home.bat instead of a blind `copy /y`.
 
-import { readFileSync, writeFileSync, existsSync } from "fs"
+import { readFileSync, existsSync } from "fs"
 import { join } from "path"
+import { writeAtomic } from "./home-files"
 import { homedir } from "os"
 
 const repoRoot = join(import.meta.dirname, "..")
@@ -300,7 +301,7 @@ function patchNewKeys(
 if (!existsSync(templatePath)) process.exit(0)
 
 if (!existsSync(homePath)) {
-  writeFileSync(homePath, readFileSync(templatePath, "utf-8"), "utf-8")
+  await writeAtomic(homePath, readFileSync(templatePath, "utf-8"))
   console.log("[merge-config] seeded", homePath)
   process.exit(0)
 }
@@ -317,5 +318,5 @@ if (JSON.stringify(user) === JSON.stringify(merged)) {
 
 // 260625 Red Patch new keys into raw JSONC (preserves comments + formatting)
 const patched = patchNewKeys(rawUser, user, merged)
-writeFileSync(homePath, patched, "utf-8")
+await writeAtomic(homePath, patched)
 console.log("[merge-config] merged template into", homePath)

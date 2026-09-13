@@ -9,22 +9,32 @@ cd /d "%~dp0.."
 call bun run script/check-version-consistency.ts
 if %errorlevel% neq 0 exit /b %errorlevel%
 if not exist "%USERPROFILE%\.redcode" mkdir "%USERPROFILE%\.redcode" >nul 2>&1
+if errorlevel 1 exit /b 1
 echo [sync] shared config/skills to %USERPROFILE%\.redcode
 
 rem hub injector: merge template into ~/.redcode/redcode.jsonc (user keys preserved, new template keys added)
 call bun run script/merge-home-config.ts
+if errorlevel 1 exit /b 1
 
 rem global skill: home/.redcode/skill is the WORKING SOURCE OF TRUTH (personas write skills there,
 rem tracked by the private repo). Repo staging only SEEDS skills MISSING in home - never wipe,
 rem never overwrite - so local/private edits are never clobbered by an older repo copy on rebuild.
 if not exist "%USERPROFILE%\.redcode\skill" mkdir "%USERPROFILE%\.redcode\skill" >nul 2>&1
-if exist "seed\skill" for /d %%S in (seed\skill\*) do if not exist "%USERPROFILE%\.redcode\skill\%%~nxS" xcopy /e /i /q /y "%%S" "%USERPROFILE%\.redcode\skill\%%~nxS\" >nul
+if errorlevel 1 exit /b 1
+if exist "seed\skill" for /d %%S in (seed\skill\*) do if not exist "%USERPROFILE%\.redcode\skill\%%~nxS" (
+  xcopy /e /i /q /y "%%S" "%USERPROFILE%\.redcode\skill\%%~nxS\" >nul
+  if errorlevel 1 exit /b 1
+)
 
 rem global commands: repo staging -> ~/.redcode/command (engine scans .redcode only)
 rem Seed-only: copy each file only if it does NOT already exist in home.
 rem Private-repo edits (persona commands etc.) are never overwritten.
 if not exist "%USERPROFILE%\.redcode\command" mkdir "%USERPROFILE%\.redcode\command" >nul 2>&1
-if exist "seed\command" for %%F in (seed\command\*) do if not exist "%USERPROFILE%\.redcode\command\%%~nxF" copy /y "%%F" "%USERPROFILE%\.redcode\command\%%~nxF" >nul
+if errorlevel 1 exit /b 1
+if exist "seed\command" for %%F in (seed\command\*) do if not exist "%USERPROFILE%\.redcode\command\%%~nxF" (
+  copy /y "%%F" "%USERPROFILE%\.redcode\command\%%~nxF" >nul
+  if errorlevel 1 exit /b 1
+)
 
 rem global native tools: repo staging -> ~/.redcode/tool (engine scans {tool,tools}/*.{js,ts}).
 rem Selective copy on purpose, same reason as seed\plugins below: the other files in seed\tool are
@@ -32,7 +42,9 @@ rem upstream CI helpers (they read ISSUE_NUMBER and import @redcode-ai/plugin, w
 rem resolve from ~/.redcode/tool). registry.ts imports every match via Effect.promise with no
 rem per-file recovery, so one unloadable file takes down the whole tool table. Do not mirror the dir.
 if not exist "%USERPROFILE%\.redcode\tool" mkdir "%USERPROFILE%\.redcode\tool" >nul 2>&1
+if errorlevel 1 exit /b 1
 if exist "seed\tool\sqlite.ts" copy /y "seed\tool\sqlite.ts" "%USERPROFILE%\.redcode\tool\sqlite.ts" >nul
+if errorlevel 1 exit /b 1
 
 rem 260828 no agent seeding on purpose: the three built-in subagents (explore/advise/execute) are
 rem defined in packages/opencode/src/agent/definition/*.md and inlined at BUILD time. Seeding a
@@ -46,11 +58,14 @@ rem 260904 cc split out so it can also be run on its own after a plain "git pull
 rem this mirror used to be reachable only through a full build, and since the private
 rem repo stopped tracking these scripts, pulling deletes them with nothing to put them back.
 call "%~dp0sync-home-scripts.bat"
+if errorlevel 1 exit /b 1
 
 rem global plugin: only memory.ts (CORE per-turn injector). Engine scans ~/.redcode/plugin for every project.
 rem Selective copy on purpose: do NOT mirror the whole seed\plugins (smoke/stub files stay repo-local).
 if not exist "%USERPROFILE%\.redcode\plugin" mkdir "%USERPROFILE%\.redcode\plugin" >nul 2>&1
+if errorlevel 1 exit /b 1
 if exist "seed\plugins\memory.ts" copy /y "seed\plugins\memory.ts" "%USERPROFILE%\.redcode\plugin\memory.ts" >nul
+if errorlevel 1 exit /b 1
 
 echo [sync] done
 exit /b 0
