@@ -59,11 +59,16 @@ const v2ApiLayer = HttpRouter.serve(
 const noAuthLayer = ServerAuth.Config.layer({ password: Option.none(), username: "redcode" })
 const secretLayer = ServerAuth.Config.layer({ password: Option.some("secret"), username: "redcode" })
 const kitSecretLayer = ServerAuth.Config.layer({ password: Option.some("secret"), username: "kit" })
+const colonSecretLayer = ServerAuth.Config.layer({
+  password: Option.some("secret:with:colons:"),
+  username: "redcode",
+})
 
 const it = testEffect(apiLayer.pipe(Layer.provide(noAuthLayer)))
 const itSecret = testEffect(apiLayer.pipe(Layer.provide(secretLayer)))
 const itKitSecret = testEffect(apiLayer.pipe(Layer.provide(kitSecretLayer)))
 const itV2Secret = testEffect(v2ApiLayer.pipe(Layer.provide(secretLayer)))
+const itColonSecret = testEffect(apiLayer.pipe(Layer.provide(colonSecretLayer)))
 
 const basic = (username: string, password: string) => ServerAuth.header({ username, password }) ?? ""
 
@@ -76,6 +81,23 @@ const getProbe = (headers?: Record<string, string>) =>
   )
 
 describe("HttpApi authorization middleware", () => {
+  itColonSecret.live("accepts colons in passwords", () =>
+    Effect.gen(function* () {
+      const [header, query, truncated] = yield* Effect.all(
+        [
+          getProbe({ authorization: basic("redcode", "secret:with:colons:") }),
+          HttpClient.get(`/probe?auth_token=${encodeURIComponent(token("redcode", "secret:with:colons:"))}`),
+          getProbe({ authorization: basic("redcode", "secret:with:colons") }),
+        ],
+        { concurrency: "unbounded" },
+      )
+
+      expect(header.status).toBe(200)
+      expect(query.status).toBe(200)
+      expect(truncated.status).toBe(401)
+    }),
+  )
+
   it.live("allows requests when server password is not configured", () =>
     Effect.gen(function* () {
       const response = yield* getProbe()
