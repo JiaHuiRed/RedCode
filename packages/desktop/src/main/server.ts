@@ -1,6 +1,13 @@
+import { killSidecarTree, killSidecarTreeSync } from "./sidecar-process"
+
+// 260913 Red sidecar 进程树清理提取到 sidecar-process.ts：
+//   - 严格 PID guard（NaN / <=1 / process.pid 全拦截）
+//   - Windows taskkill /T 返回可等待 Promise，有界 timeout 10s
+//   - 同步路径 spawnSync 带 timeout，防止主进程 exit 卡死
+// 旧 fire-and-forget 逻辑见 git history；竞态见 sidecar-process.test.ts
+
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { spawn, spawnSync } from "node:child_process"
 import { app, session, utilityProcess } from "electron"
 import type { Details } from "electron"
 import { DEFAULT_SERVER_URL_KEY, WSL_ENABLED_KEY } from "./constants"
@@ -20,36 +27,6 @@ type SidecarMessage =
 
 export type SidecarListener = { stop: () => Promise<void>; pid: number | undefined }
 
-// 260609 CC sidecar 的 MCP 孙进程（npx→tsx→node）不在任何 job 里：sidecar 一旦被掐死
-//   （dev 热重启 / stop 超时回退 / 崩溃）就成孤儿，堆积打满 commit charge → 渲染进程 OOM 白屏。
-//   引擎侧 killProcessTree 的 taskkill /F /T 没机会跑（finalizer 不触发），故在主进程兜底：
-//   趁 sidecar 还活着，按其 PID 杀整棵树（/T 连孙进程一起清）。taskkill 必须趁父进程未死才走得下去。
-function killSidecarTreeWith(pid: number | undefined, sync: boolean) {
-  if (typeof pid !== "number") return
-  // 260724 Red 拒绝杀退化目标（同 core/cross-spawn-spawner.ts 今天的改动）：sidecarPid 万一
-  // 因为某个 bug 被记错成主进程自己的 pid，/T /F 会把整个 Electron 主进程连自己一起带走。
-  if (pid <= 1 || pid === process.pid) return
-  if (process.platform === "win32") {
-    const args = ["/F", "/T", "/PID", String(pid)]
-    try {
-      if (sync) spawnSync("taskkill", args, { stdio: "ignore", windowsHide: true })
-      else spawn("taskkill", args, { stdio: "ignore", windowsHide: true }).unref()
-    } catch {}
-    return
-  }
-  try {
-    process.kill(pid, "SIGTERM")
-  } catch {}
-}
-
-export function killSidecarTree(pid: number | undefined) {
-  killSidecarTreeWith(pid, false)
-}
-
-// 同步版：仅供主进程 exit/SIGINT/SIGTERM 处理器使用（这些回调里只能跑同步代码）。
-export function killSidecarTreeSync(pid: number | undefined) {
-  killSidecarTreeWith(pid, true)
-}
 
 const SIDECAR_SERVICE_NAME = "redcode server"
 const SIDECAR_START_STALL_TIMEOUT = 60_000
@@ -193,10 +170,19 @@ export async function spawnLocalServer(
       userDataPath: options.userDataPath,
       needsMigration: options.needsMigration,
     })
-  }).catch((error) => {
+  }).catch(async (error) => {
     if (!exited) {
-      killSidecarTree(child.pid)
-      child.kill()
+      // 260913 Red 启动失败也要等待 tree kill，避免孙进程成孤儿
+      try {
+        await killSidecarTree(child.pid)
+      } catch {
+        // 忽略：sidecar 可能已经退出
+      }
+      try {
+        child.kill()
+      } catch {
+        // 忽略
+      }
     }
     throw error
   })
@@ -244,17 +230,28 @@ export async function spawnLocalServer(
         if (stopping) return stopping
         if (exited) return Promise.resolve()
         child.postMessage({ type: "stop" })
-        stopping = Promise.race([
-          exit.promise.then(() => undefined),
-          delay(SIDECAR_STOP_TIMEOUT).then(() => {
-            // 260609 CC 优雅 stop 超时：旧逻辑 child.kill() 只杀 sidecar 自己，MCP 孙进程留下成孤儿。
-            //   趁 sidecar 还在，taskkill /T 杀整树再 kill。
-            if (!exited) {
-              killSidecarTree(child.pid)
-              child.kill()
+        stopping = (async () => {
+          await Promise.race([
+            exit.promise.then(() => undefined),
+            delay(SIDECAR_STOP_TIMEOUT),
+          ])
+          if (!exited) {
+            // 260913 Red 等待 tree kill 完成，再 fallback kill sidecar 自己；
+            // 避免 fire-and-forget taskkill 在父进程退出时被带走。
+            try {
+              await killSidecarTree(child.pid)
+            } catch {
+              // 忽略：sidecar 可能已经退出，taskkill 找不到 PID
             }
-          }),
-        ])
+            try {
+              child.kill()
+            } catch {
+              // 忽略：sidecar 可能已经退出
+            }
+          }
+          // 有界确认：等 sidecar 退出事件，最多再等 5 秒
+          await Promise.race([exit.promise.then(() => undefined), delay(5_000)]).catch(() => undefined)
+        })()
         return stopping
       },
       pid: child.pid,

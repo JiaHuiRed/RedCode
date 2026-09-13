@@ -27,9 +27,9 @@ import {
   setDefaultServerUrl,
   setWslConfig,
   spawnLocalServer,
-  killSidecarTreeSync,
   type SidecarListener,
 } from "./server"
+import { killSidecarTreeSync } from "./sidecar-process"
 import {
   createMainWindow,
   iconPath,
