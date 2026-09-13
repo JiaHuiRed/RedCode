@@ -17,6 +17,7 @@ import type {
 import type { State, VcsCache } from "./types"
 import { trimSessions } from "./session-trim"
 import { dropSessionCaches } from "./session-cache"
+import { messageWindowLimit } from "@/context/message-window"
 import { diffs as list, message as clean } from "@/utils/diffs"
 import { compareTime } from "@/utils/id"
 
@@ -302,7 +303,10 @@ export function applyDirectoryEvent(input: {
       //   ⚠️ 已知局限：拉回来之后若会话仍在流式推进，下一条 message.updated 会再砍一次。
       //   彻底解法是让上限跟着「用户显式加载过的长度」走，不在本次范围内。
       const updated = input.store.message[info.sessionID]
-      if (updated.length > MAX_MESSAGES_PER_SESSION) {
+      // 260913 Red 用户正在读旧历史（message-window 持有）时把上限放宽到有界的 HELD 值：
+      // 否则每条流式消息都会 shift 掉最旧一条，把用户正在看的行从视口脚下抽走。
+      const cap = messageWindowLimit(input.directory, info.sessionID, MAX_MESSAGES_PER_SESSION)
+      if (updated.length > cap) {
         const oldest = updated[0]
         batch(() => {
           input.setStore(

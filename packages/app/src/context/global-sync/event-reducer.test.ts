@@ -3,6 +3,7 @@ import type { Message, Part, PermissionRequest, Project, QuestionRequest, Sessio
 import { createStore } from "solid-js/store"
 import type { State } from "./types"
 import { applyDirectoryEvent, applyGlobalEvent, cleanupDroppedSessionCaches } from "./event-reducer"
+import { holdMessageWindow } from "@/context/message-window"
 
 const rootSession = (input: { id: string; parentID?: string; archived?: number }) =>
   ({
@@ -647,5 +648,36 @@ describe("applyDirectoryEvent", () => {
 
     expect(store.message[sessionID]).toHaveLength(2)
     expect(store.message_trimmed[sessionID]).toBeUndefined()
+  })
+
+  // 260913 Red 用户正在往回翻（message-window 持有）时上限放宽到有界的 HELD 值：
+  // 100 条之上再来新消息不再 shift 最旧一条，正在阅读的视口不会被从脚下抽走。
+  test("keeps older messages while the session window is held", () => {
+    const sessionID = "ses_held"
+    const seeded = Array.from({ length: 100 }, (_, i) => userMessage(`msg_${String(i).padStart(3, "0")}`, sessionID))
+    const [store, setStore] = createStore(
+      baseState({
+        session: [rootSession({ id: sessionID })],
+        message: { [sessionID]: seeded },
+      }),
+    )
+
+    const release = holdMessageWindow("/tmp", sessionID)
+    try {
+      applyDirectoryEvent({
+        event: { type: "message.updated", properties: { info: userMessage("msg_100", sessionID) } },
+        store,
+        setStore,
+        push() {},
+        directory: "/tmp",
+        loadLsp() {},
+      })
+
+      expect(store.message[sessionID]).toHaveLength(101)
+      expect(store.message[sessionID][0].id).toBe("msg_000")
+      expect(store.message_trimmed[sessionID]).toBeUndefined()
+    } finally {
+      release()
+    }
   })
 })

@@ -40,6 +40,7 @@ import { setActiveMcpDirectory } from "@/context/global-sync/child-store"
 import { decodeDirectory } from "./directory-layout"
 import { createReconnectRefresh } from "@/context/reconnect"
 import { useServerSync } from "@/context/server-sync"
+import { holdMessageWindow } from "@/context/message-window"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { usePrompt } from "@/context/prompt"
@@ -631,6 +632,16 @@ export default function Page() {
       stop()
       reconnect.dispose()
     })
+  })
+
+  // 260913 Red 往回翻（userScrolled）时放宽消息上限：立即 shift 最旧消息会把用户正在读的行
+  // 从视口脚下抽走。仍然有界——只放宽到 HELD_MESSAGES_PER_SESSION，长时间流式不会无界增长。
+  createEffect(() => {
+    const id = params.id
+    const directory = sdk.directory
+    if (!id || !autoScroll.userScrolled()) return
+    const release = holdMessageWindow(directory, id)
+    onCleanup(release)
   })
 
   const stopVcs = sdk.event.listen((evt) => {
