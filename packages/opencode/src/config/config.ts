@@ -278,6 +278,25 @@ export const Info = Schema.Struct({
   instructions: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
     description: "Additional instruction files or patterns to include",
   }),
+  // 260913 Red 指令前缀预算做成配置字段：注入面是固定前缀，阈值必须能从配置改，
+  // 不能靠代码里的常量（见 AGENTS.md「不许有硬编码可调项」）。
+  instruction_budget: Schema.optional(
+    Schema.Struct({
+      max_source_bytes: Schema.optional(PositiveInt).annotate({
+        description:
+          "Maximum size of one instruction source. Sources larger than this are skipped instead of injected in full (default: 1048576)",
+      }),
+      max_total_bytes: Schema.optional(PositiveInt).annotate({
+        description:
+          "Warning threshold for the total instruction prefix. Sources are still injected in full; crossing it logs which sources are largest (default: 65536)",
+      }),
+      fetch_timeout_ms: Schema.optional(PositiveInt).annotate({
+        description: "Timeout for fetching a remote instruction URL, covering the response body as well as the request (default: 5000)",
+      }),
+    }),
+  ).annotate({
+    description: "Instruction prefix budget and remote fetch timeout",
+  }),
   layout: Schema.optional(ConfigLayout.Layout).annotate({ description: "@deprecated Always uses stretch layout." }),
   permission: Schema.optional(ConfigPermission.Info),
   tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),

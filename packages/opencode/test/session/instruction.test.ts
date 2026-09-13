@@ -14,14 +14,17 @@ import { RuntimeFlags } from "../../src/effect/runtime-flags"
 import { provideInstance, provideTmpdirInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { TestConfig } from "../fixture/config"
+import type { Config } from "@/config/config"
 
 const it = testEffect(Layer.mergeAll(CrossSpawnSpawner.defaultLayer, NodeFileSystem.layer))
 
-const configLayer = TestConfig.layer()
-
-const instructionLayer = (global: Partial<Global.Interface>, flags: Partial<RuntimeFlags.Info> = {}) =>
+const instructionLayer = (
+  global: Partial<Global.Interface>,
+  flags: Partial<RuntimeFlags.Info> = {},
+  config: Config.Info = {},
+) =>
   Instruction.layer.pipe(
-    Layer.provide(configLayer),
+    Layer.provide(TestConfig.layer({ get: () => Effect.succeed(config) })),
     Layer.provide(AppFileSystem.defaultLayer),
     Layer.provide(FetchHttpClient.layer),
     Layer.provide(Global.layerWith(global)),
@@ -29,9 +32,9 @@ const instructionLayer = (global: Partial<Global.Interface>, flags: Partial<Runt
   )
 
 const provideInstruction =
-  (global: Partial<Global.Interface>, flags?: Partial<RuntimeFlags.Info>) =>
+  (global: Partial<Global.Interface>, flags?: Partial<RuntimeFlags.Info>, config?: Config.Info) =>
   <A, E, R>(self: Effect.Effect<A, E, R>) =>
-    self.pipe(Effect.provide(instructionLayer(global, flags)))
+    self.pipe(Effect.provide(instructionLayer(global, flags, config)))
 
 const write = (filepath: string, content: string) =>
   Effect.gen(function* () {
@@ -308,6 +311,48 @@ describe("Instruction.systemPaths global config", () => {
         const paths = yield* svc.systemPaths()
         expect(paths.has(path.join(globalTmp, "AGENTS.md"))).toBe(true)
       }).pipe(provideInstance(projectTmp), provideInstruction({ home: globalTmp, config: globalTmp }))
+    }),
+  )
+})
+
+// 260913 Red instruction_budget 是配置字段，必须验证它真被读到，而不是恒用缺省值。
+describe("Instruction.system instruction_budget", () => {
+  const big = "x".repeat(2000)
+
+  it.live("skips a source larger than max_source_bytes", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpWithFiles({ "AGENTS.md": "# Global Instructions" })
+      const projectTmp = yield* tmpWithFiles({ "AGENTS.md": big })
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const rules = yield* svc.system()
+        expect(rules.some((r) => r.includes("# Global Instructions"))).toBe(true)
+        expect(rules.some((r) => r.includes(big))).toBe(false)
+      }).pipe(
+        provideInstance(projectTmp),
+        provideInstruction({ home: globalTmp, config: globalTmp }, undefined, {
+          instruction_budget: { max_source_bytes: 1024 },
+        }),
+      )
+    }),
+  )
+
+  it.live("injects a source within the configured limit", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpdirScoped()
+      const projectTmp = yield* tmpWithFiles({ "AGENTS.md": big })
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const rules = yield* svc.system()
+        expect(rules.some((r) => r.includes(big))).toBe(true)
+      }).pipe(
+        provideInstance(projectTmp),
+        provideInstruction({ home: globalTmp, config: globalTmp }, undefined, {
+          instruction_budget: { max_source_bytes: 8192 },
+        }),
+      )
     }),
   )
 })

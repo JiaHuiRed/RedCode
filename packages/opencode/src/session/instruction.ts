@@ -15,6 +15,14 @@ import type { MessageID } from "./schema"
 
 // 260613 Red removed recentSessionDigest — replaced by chat room, was token-heavy
 
+// 260913 Red 指令注入面预算。三个阈值都能从配置的 instruction_budget 覆盖，
+// 这里只是缺省值：单来源超限跳过（不注入半截内容）、总量超限告警、远程抓取限时。
+const DEFAULT_INSTRUCTION_BUDGET = {
+  maxSourceBytes: 1024 * 1024,
+  maxTotalBytes: 64 * 1024,
+  fetchTimeoutMs: 5_000,
+} as const
+
 const files = (disableClaudeCodePrompt: boolean) => [
   "AGENTS.md",
   ...(disableClaudeCodePrompt ? [] : ["CLAUDE.md"]),
@@ -100,13 +108,18 @@ export const layer: Layer.Layer<
     })
 
     const fetch = Effect.fnUntraced(function* (url: string) {
-      const res = yield* http.execute(HttpClientRequest.get(url)).pipe(
-        Effect.timeout(5000),
-        Effect.catch(() => Effect.succeed(null)),
+      const config = yield* cfg.get()
+      const timeout = config.instruction_budget?.fetch_timeout_ms ?? DEFAULT_INSTRUCTION_BUDGET.fetchTimeoutMs
+      // 260913 Red timeout 必须罩住响应体读取：原实现只包 execute，慢速吐 body 的服务器
+      // 会让这一轮 system prompt 组装无界挂住（没有上限就是缺陷）。
+      return yield* Effect.gen(function* () {
+        const res = yield* http.execute(HttpClientRequest.get(url))
+        const body = yield* res.arrayBuffer
+        return new TextDecoder().decode(body)
+      }).pipe(
+        Effect.timeout(timeout),
+        Effect.catch(() => Effect.succeed("")),
       )
-      if (!res) return ""
-      const body = yield* res.arrayBuffer.pipe(Effect.catch(() => Effect.succeed(new ArrayBuffer(0))))
-      return new TextDecoder().decode(body)
     })
 
     const clear = Effect.fn("Instruction.clear")(function* (messageID: MessageID) {
@@ -192,6 +205,8 @@ export const layer: Layer.Layer<
 
     const system = Effect.fn("Instruction.system")(function* () {
       const config = yield* cfg.get()
+      const maxSourceBytes = config.instruction_budget?.max_source_bytes ?? DEFAULT_INSTRUCTION_BUDGET.maxSourceBytes
+      const maxTotalBytes = config.instruction_budget?.max_total_bytes ?? DEFAULT_INSTRUCTION_BUDGET.maxTotalBytes
       const paths = yield* systemPaths()
       const urls = (config.instructions ?? []).filter(
         (item) => item.startsWith("https://") || item.startsWith("http://"),
@@ -200,23 +215,38 @@ export const layer: Layer.Layer<
       const files = yield* Effect.forEach(Array.from(paths), read, { concurrency: 8 })
       const remote = yield* Effect.forEach(urls, fetch, { concurrency: 4 })
 
+      // 260913 Red 单来源硬上限：超限整份跳过，既不注入半截指令，也不无声吞掉。
+      // 上限可配置（instruction_budget.max_source_bytes），默认 1MiB 足够宽松。
+      const skipped: string[] = []
+      const include = (source: string, content: string) => {
+        if (!content) return []
+        if (content.length > maxSourceBytes) {
+          skipped.push(`${content.length} chars: ${source}`)
+          return []
+        }
+        return [`Instructions from: ${source}\n${content}`]
+      }
       const parts = [
-        ...Array.from(paths).flatMap((item, i) => (files[i] ? [`Instructions from: ${item}\n${files[i]}`] : [])),
-        ...urls.flatMap((item, i) => (remote[i] ? [`Instructions from: ${item}\n${remote[i]}`] : [])),
+        ...Array.from(paths).flatMap((item, i) => include(item, files[i])),
+        ...urls.flatMap((item, i) => include(item, remote[i])),
       ]
+      for (const item of skipped) {
+        yield* Console.warn(
+          `Instruction source skipped, over instruction_budget.max_source_bytes (${maxSourceBytes}): ${item}`,
+        )
+      }
 
       // 260813 Red 前缀注入预算：逐来源统计大小，总量超限时告警并点名最肥来源。
       // 不截断——截断会丢指令（漏掉铁律比前缀长更糟），告警只是把膨胀暴露出来，
       // 让"哪段在悄悄变肥"可定位（配合 prompt.ts 的 sysLen 日志看整体趋势）。
-      const budgetChars = 64 * 1024
       const totalChars = parts.reduce((sum, p) => sum + p.length, 0)
-      if (totalChars > budgetChars) {
+      if (totalChars > maxTotalBytes) {
         const top = parts
           .map((p) => ({ chars: p.length, src: p.slice(0, 80).split("\n")[0] }))
           .toSorted((a, b) => b.chars - a.chars)
           .slice(0, 5)
         yield* Console.warn(
-          `Instruction prefix over budget: ${totalChars} chars (~${Math.ceil(totalChars / 3)} tok) > ${budgetChars}`,
+          `Instruction prefix over budget: ${totalChars} chars (~${Math.ceil(totalChars / 3)} tok) > ${maxTotalBytes}`,
         )
         for (const t of top) yield* Console.warn(`  ${t.chars} chars: ${t.src}`)
       }
