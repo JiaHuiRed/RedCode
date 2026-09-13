@@ -71,12 +71,13 @@ async function openDb(dbPath: string, readOnly: boolean): Promise<Db> {
   if (!fs.existsSync(abs)) throw new Error(`Database not found: ${abs}`)
   if (isBun) {
     const { Database } = await import("bun:sqlite")
-    const db = new Database(abs, { create: false, strict: true })
-    db.exec(`PRAGMA query_only = ${readOnly ? 1 : 0}`)
+    const db = new Database(abs, { create: false, strict: true, readonly: readOnly })
+    if (readOnly) db.exec("PRAGMA query_only = 1")
     return db as unknown as Db
   }
   const { DatabaseSync } = await import("node:sqlite")
   const db = new DatabaseSync(abs, { readOnly })
+  if (readOnly) db.exec("PRAGMA query_only = 1")
   return db as unknown as Db
 }
 
@@ -122,8 +123,8 @@ export const query = tool({
     if (ro && !read) {
       return `Error: only read statements are allowed while readOnly=true.\nGot: ${sql.trim().slice(0, 120)}`
     }
-    // 写操作要用户点头。MCP 版没有这道闸门——这是搬进来之后白拿的。
-    if (!read) {
+    // 260912 Red 授权由连接模式决定：readOnly=false 时无论 SQL 首词是什么，都先问 sqlite_write。
+    if (!ro) {
       await ctx.ask({
         permission: "sqlite_write",
         patterns: [path.resolve(dbPath)],
