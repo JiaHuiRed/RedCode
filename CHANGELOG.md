@@ -8,6 +8,14 @@
 
 ---
 
+### [未发布]
+
+#### 修复
+
+- **隔离子代理不再能写穿 worktree 或提交进主仓库**（`packages/opencode/src/tool/external-directory.ts`、`src/tool/shell.ts`、`src/effect/instance-ref.ts`、`src/session/prompt.ts`，决策：`docs/notes/implemented/bug-fix/2026-09-13-worktree-isolation-boundary.md`）：`isolation:"worktree"` 此前只把默认 cwd 换到 worktree，不约束写入目标也不约束提交目标——拿到父工作区绝对路径就能绕过隔离，本次事故中并行子代理直接在主仓库抢着 commit、产出互相污染的提交。现在隔离 run 内越界的写类工具调用（write / edit / apply_patch）直接拒绝，不再走 `external_directory` 授权；shell 注入 `GIT_DIR` / `GIT_WORK_TREE` 把 git 命令钉在 worktree 上（实测压过命令行的 `git -C <父仓库>`）。读操作不拦，普通会话行为不变。识别签名：新增写文件工具必须传 `{ write: true }`。
+
+---
+
 ### [0.11.5] - 2026-09-13
 
 > 安全与进程收尾一轮：SQLite 写连接权限、Windows 命令后缀与 Job 强杀、desktop sidecar 树清理、MCP 健康检查各自补上真实缺口；记忆召回作用域与双写冲突、草稿配额保护、重连补拉一并落地。
