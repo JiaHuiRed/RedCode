@@ -22,7 +22,7 @@ import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { ShellPrompt, type Parameters } from "./shell/prompt"
 import { BashArity } from "@/permission/arity"
-import { commandName } from "./command-name"
+import { commandName, isWindowsExecutable } from "./command-name"
 
 export { Parameters } from "./shell/prompt"
 
@@ -545,7 +545,8 @@ export const ShellTool = Tool.define(
         const tokens = command.map((item) => item.text)
         const rawCmd = tokens[0]
         const cmd = ps || shellKind === "cmd" ? commandName(rawCmd)?.toLowerCase() : commandName(rawCmd)
-        const isWindowsExe = /\.(exe|com|cmd|bat)$/i.test(rawCmd || "")
+        // 260913 Red 带引号的 "cd.exe" 也要认出是外部可执行文件，不能享受 CWD 内建豁免。
+        const isWindowsExe = isWindowsExecutable(rawCmd)
 
         // git 不在 FILES 里，单独判：写操作走 destructive 门，只读子命令照常放行
         if (cmd === "git" && destructiveGit(tokens)) scan.destructive = true
