@@ -10,6 +10,7 @@ import {
 } from "./global-sync/session-prefetch"
 import { useServerSync, type ServerSyncContext } from "./server-sync"
 import { trackForegroundMessageLoad } from "./foreground-loads"
+import { fetchMessageGap } from "./reconnect"
 import type { Message, OpencodeClient, Part } from "@redcode-ai/sdk/v2/client"
 import { SESSION_CACHE_LIMIT, dropSessionCaches, pickSessionCacheEvictions } from "./global-sync/session-cache"
 import { diffs as list, message as clean } from "@/utils/diffs"
@@ -368,13 +369,22 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
     sessionID: string
     limit: number
     before?: string
+    anchor?: string
     mode?: "replace" | "prepend" | "refresh"
   }) => {
     const key = keyFor(input.directory, input.sessionID)
     if (meta.loading[key]) return
 
     setMeta("loading", key, true)
-    await fetchMessages(input)
+    // 260913 Red 重连后从最新页往回补到断线前锚点：断线期间服务端仍在写消息，
+    // 只刷元数据会把这段永久留在缺口里，任何 DOM 事件都不会再把它补回来。
+    const fetched = input.anchor
+      ? fetchMessageGap(
+          (before) => fetchMessages({ client: input.client, sessionID: input.sessionID, limit: input.limit, before }),
+          input.anchor,
+        )
+      : fetchMessages(input)
+    await fetched
       .then((page) => {
         if (!tracked(input.directory, input.sessionID)) return
         const next = mergeOptimisticPage(page, getOptimistic(input.directory, input.sessionID))
@@ -485,7 +495,7 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
           parts: input.parts,
         })
       },
-      async sync(sessionID: string, opts?: { force?: boolean }) {
+      async sync(sessionID: string, opts?: { force?: boolean; anchor?: string }) {
         const [store, setStore] = globalSync.child(directory)
         const key = keyFor(directory, sessionID)
 
@@ -563,6 +573,8 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
                   sessionID,
                   limit: refreshing ? initialMessagePageSize : limit,
                   ...(refreshing ? { mode: "refresh" as const } : {}),
+                  // 260913 Red 重连补拉只认断线前的锚点：从最新页往回补齐缺口，不重放整段历史。
+                  ...(opts?.anchor ? { anchor: opts.anchor } : {}),
                 })
 
           await Promise.all([sessionReq, messagesReq])

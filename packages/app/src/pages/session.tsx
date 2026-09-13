@@ -38,6 +38,7 @@ import { useComments } from "@/context/comments"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
 import { setActiveMcpDirectory } from "@/context/global-sync/child-store"
 import { decodeDirectory } from "./directory-layout"
+import { createReconnectRefresh } from "@/context/reconnect"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
@@ -594,6 +595,43 @@ export default function Page() {
       { defer: true },
     ),
   )
+
+  // 260913 Red SSE 重连补拉：断线期间服务端仍在写消息，重连后按断线前锚点补齐缺口，
+  // 不重放整段历史；连续重连先合并，避免网络抖动时反复拉页。
+  createEffect(() => {
+    const id = params.id
+    const directory = sdk.directory
+    if (!id) return
+
+    const lastConfirmed = () => {
+      const list = untrack(() => sync.data.message[id] ?? [])
+      for (let index = list.length - 1; index >= 0; index--) {
+        const message = list[index]
+        if (message && !sync.session.optimistic.isPending(message.id)) return message.id
+      }
+      return undefined
+    }
+
+    const reconnect = createReconnectRefresh({
+      refresh: async () => {
+        if (params.id !== id || sdk.directory !== directory) return
+        const anchor = lastConfirmed()
+        await untrack(() => sync.session.sync(id, { force: true, ...(anchor ? { anchor } : {}) }))
+      },
+      error: (error) => console.error("[session] reconnect refresh failed", error),
+    })
+
+    const stop = sdk.event.listen((event) => {
+      if (event.name !== directory) return
+      if (event.details.type !== "server.connected") return
+      reconnect.request()
+    })
+
+    onCleanup(() => {
+      stop()
+      reconnect.dispose()
+    })
+  })
 
   const stopVcs = sdk.event.listen((evt) => {
     if (evt.details.type !== "file.watcher.updated") return
