@@ -19,6 +19,7 @@ import { Plugin } from "../../src/plugin"
 import { testEffect } from "../lib/effect"
 import { Tool } from "@/tool/tool"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { IsolationBoundaryRef } from "@/effect/instance-ref"
 
 const shellLayer = Layer.mergeAll(
   CrossSpawnSpawner.defaultLayer,
@@ -1346,5 +1347,35 @@ describe("tool.shell truncation", () => {
         expect(lines[lineCount - 1]).toBe(String(lineCount))
       }),
     ),
+  )
+})
+
+// 260913 Red 隔离 run 的 git 命令必须落在被分配的 worktree 上：shellEnv 注入的
+// GIT_DIR/GIT_WORK_TREE 会压过命令行的 git -C <父仓库>（实测），否则子代理的 add/commit
+// 会把别的改动提交进主仓库——并行子代理互相污染的根因之一。
+describe("tool.shell isolation boundary", () => {
+  it.live("pins git to the isolation boundary even with git -C elsewhere", () =>
+    Effect.gen(function* () {
+      const main = yield* tmpdirScoped({ git: true })
+      const other = yield* tmpdirScoped({ git: true })
+      const mainName = path.basename(main)
+      const otherName = path.basename(other)
+
+      yield* runIn(
+        main,
+        Effect.gen(function* () {
+          const result = yield* run(
+            {
+              command: `git -C "${other.replaceAll("\\", "/")}" rev-parse --show-toplevel`,
+              description: "probe isolation boundary",
+            },
+            capture([]),
+          ).pipe(Effect.provideService(IsolationBoundaryRef, main))
+
+          expect(result.output).toContain(mainName)
+          expect(result.output).not.toContain(otherName)
+        }),
+      )
+    }),
   )
 })

@@ -1,6 +1,7 @@
 import { describe, expect } from "bun:test"
 import path from "path"
-import { Effect } from "effect"
+import { Effect, Exit } from "effect"
+import { IsolationBoundaryRef } from "../../src/effect/instance-ref"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 import type { Tool } from "@/tool/tool"
 import { assertExternalDirectoryEffect } from "../../src/tool/external-directory"
@@ -152,6 +153,66 @@ describe("tool.assertExternalDirectory", () => {
           expect(req!.always).toEqual([expected])
         }),
       { git: true },
-    )
+  )
   }
+})
+
+describe("tool.assertExternalDirectory isolation boundary", () => {
+  const boundary = "/tmp/worktree"
+
+  it.live("still asks for writes outside when no boundary is set", () =>
+    provideInstance(boundary)(
+      Effect.gen(function* () {
+        const { requests, ctx } = makeCtx()
+
+        yield* assertExternalDirectoryEffect(ctx, "/tmp/outside/file.txt", { write: true })
+
+        expect(requests.length).toBe(1)
+      }),
+    ),
+  )
+
+  it.live("rejects writes outside the isolation boundary", () =>
+    provideInstance(boundary)(
+      Effect.gen(function* () {
+        const { requests, ctx } = makeCtx()
+
+        const exit = yield* assertExternalDirectoryEffect(ctx, "/tmp/outside/file.txt", { write: true }).pipe(
+          Effect.provideService(IsolationBoundaryRef, boundary),
+          Effect.exit,
+        )
+
+        expect(Exit.isFailure(exit)).toBe(true)
+        expect(requests.length).toBe(0)
+      }),
+    ),
+  )
+
+  it.live("allows writes inside the isolation boundary", () =>
+    provideInstance(boundary)(
+      Effect.gen(function* () {
+        const { requests, ctx } = makeCtx()
+
+        yield* assertExternalDirectoryEffect(ctx, path.join(boundary, "src/file.txt"), { write: true }).pipe(
+          Effect.provideService(IsolationBoundaryRef, boundary),
+        )
+
+        expect(requests.length).toBe(0)
+      }),
+    ),
+  )
+
+  it.live("still asks for reads outside the isolation boundary", () =>
+    provideInstance(boundary)(
+      Effect.gen(function* () {
+        const { requests, ctx } = makeCtx()
+
+        yield* assertExternalDirectoryEffect(ctx, "/tmp/outside/file.txt").pipe(
+          Effect.provideService(IsolationBoundaryRef, boundary),
+        )
+
+        expect(requests.length).toBe(1)
+      }),
+    ),
+  )
 })

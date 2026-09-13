@@ -5,12 +5,15 @@ import { InstanceState } from "@/effect/instance-state"
 import type * as Tool from "./tool"
 import { containsPath } from "../project/instance-context"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
+import { IsolationBoundaryRef } from "@/effect/instance-ref"
 
 type Kind = "file" | "directory"
 
 type Options = {
   bypass?: boolean
   kind?: Kind
+  /** 260913 Red 写操作标记：隔离 run 中边界外目标直接拒绝，不接受 external_directory 授权突破隔离。 */
+  write?: boolean
 }
 
 export const assertExternalDirectoryEffect = Effect.fn("Tool.assertExternalDirectory")(function* (
@@ -30,6 +33,20 @@ export const assertExternalDirectoryEffect = Effect.fn("Tool.assertExternalDirec
   const resolved = AppFileSystem.resolveFrom(ins.directory, target)
   const full = process.platform === "win32" ? AppFileSystem.normalizePath(resolved) : resolved
   if (containsPath(full, ins)) return
+
+  // 260913 Red 隔离 run 的硬边界：写操作越界直接拒绝，不再走 external_directory 询问。
+  // 事故：子代理拿到父工作区的绝对路径，写穿了被分配的 worktree、把改动提交进主仓库。
+  // 读操作不拦（子代理仍可参考父工作区代码），保持原有询问语义。
+  if (options?.write) {
+    const boundary = yield* IsolationBoundaryRef
+    if (boundary !== undefined) {
+      return yield* Effect.die(
+        new Error(
+          `Blocked: this subagent runs in an isolated worktree (${boundary}); refusing to write outside it: ${full}`,
+        ),
+      )
+    }
+  }
 
   const kind = options?.kind ?? "file"
   const dir = kind === "directory" ? full : path.dirname(full)

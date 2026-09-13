@@ -48,7 +48,7 @@ import { Process } from "@/util/process"
 import { Cause, Effect, Exit, Latch, Layer, Option, Scope, Context, Schema, Types } from "effect"
 import * as EffectLogger from "@redcode-ai/core/effect/logger"
 import { InstanceState } from "@/effect/instance-state"
-import { InstanceRef } from "@/effect/instance-ref"
+import { InstanceRef, IsolationBoundaryRef } from "@/effect/instance-ref"
 import { InstanceStore } from "@/project/instance-store"
 import { projectRoot } from "@/project/root"
 import { Worktree } from "@/worktree"
@@ -215,7 +215,12 @@ export const layer = Layer.effect(
         // 会在 InstanceStore（capacity: Infinity）里永久累积——GUI sidecar 长驻进程尤其明显
         const store = yield* Effect.serviceOption(InstanceStore.Service)
         const disposeCtx = Option.isSome(store) ? store.value.dispose(ctx) : Effect.void
-        const result = yield* run.pipe(Effect.provideService(InstanceRef, ctx), Effect.ensuring(disposeCtx))
+        const result = yield* run.pipe(
+          Effect.provideService(InstanceRef, ctx),
+          // 260913 Red 隔离边界：子代理只能写这个 worktree，shell 里的 git 也钉在这里。
+          Effect.provideService(IsolationBoundaryRef, ctx.directory),
+          Effect.ensuring(disposeCtx),
+        )
         return { worktree: info, result }
       })
 

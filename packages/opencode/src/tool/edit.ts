@@ -132,7 +132,7 @@ export const EditTool = Tool.define(
           // 260810 cc: isAbsolute 对 "\users\foo" 有根无盘符路径返回 true，原样放行会让
           // 后续兜底 resolve 按 process.cwd() 补错盘；resolveFrom 对全绝对路径是透传
           const filePath = AppFileSystem.resolveFrom(instance.directory, params.filePath)
-          yield* assertExternalDirectoryEffect(ctx, filePath)
+          yield* assertExternalDirectoryEffect(ctx, filePath, { write: true })
 
           // Narrow optional params for TS inside nested callbacks
           const oldString: string = params.oldString
@@ -573,7 +573,7 @@ const executeHashline = (
 
     const { filePath, expectedHash, ops } = parseHashline(input)
     const resolvedPath = AppFileSystem.resolveFrom(instance.directory, filePath)
-    yield* assertExternalDirectoryEffect(ctx, resolvedPath)
+    yield* assertExternalDirectoryEffect(ctx, resolvedPath, { write: true })
 
     let contentOld = ""
     let contentNew = ""

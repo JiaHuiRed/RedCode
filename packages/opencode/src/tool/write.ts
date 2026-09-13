@@ -41,7 +41,7 @@ export const WriteTool = Tool.define(
           const instance = yield* InstanceState.context
           // 260810 cc: isAbsolute 对 "\users\foo" 有根无盘符路径返回 true，见 AppFileSystem.resolveFrom
           const filepath = AppFileSystem.resolveFrom(instance.directory, params.filePath)
-          yield* assertExternalDirectoryEffect(ctx, filepath)
+          yield* assertExternalDirectoryEffect(ctx, filepath, { write: true })
 
           const exists = yield* fs.existsSafe(filepath)
           // 260810 cc audit R2: 覆盖已有文件前必须本会话 read 过且此后无外部改动，

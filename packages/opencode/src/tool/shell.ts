@@ -5,6 +5,7 @@ import * as Tool from "./tool"
 import path from "path"
 import * as Log from "@redcode-ai/core/util/log"
 import { containsPath, type InstanceContext } from "../project/instance-context"
+import { IsolationBoundaryRef } from "@/effect/instance-ref"
 import { InstanceState } from "@/effect/instance-state"
 import { lazy } from "@/util/lazy"
 import { Language, type Node } from "web-tree-sitter"
@@ -600,8 +601,20 @@ export const ShellTool = Tool.define(
         { cwd, sessionID: ctx.sessionID, callID: ctx.callID },
         { env: {} },
       )
+      // 260913 Red 隔离 run 里把 git 钉在被分配的 worktree 上：GIT_DIR 指向 worktree 的 .git
+      // gitfile、GIT_WORK_TREE 指向 worktree 根。实测 GIT_DIR 会压过命令行的 git -C <父仓库>，
+      // 所以 add/commit 落不到主仓库 index，并行子代理的提交不会再互相污染。
+      const boundary = yield* IsolationBoundaryRef
+      const isolation =
+        boundary === undefined
+          ? {}
+          : {
+              GIT_DIR: path.join(boundary, ".git"),
+              GIT_WORK_TREE: boundary,
+            }
       return {
         ...process.env,
+        ...isolation,
         ...extra.env,
       }
     })
