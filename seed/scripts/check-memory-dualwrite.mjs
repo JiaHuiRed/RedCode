@@ -11,7 +11,7 @@ import path from "node:path"
 import { Database } from "bun:sqlite"
 
 const MEMORY_PATH = process.env.REDCODE_MEMORY || path.join(homedir(), ".redcode", "MEMORY.md")
-const DB_PATH = path.join(homedir(), ".redcode", "supermemory.db")
+const DB_PATH = process.env.REDCODE_MEMORY_DB || path.join(homedir(), ".redcode", "supermemory.db")
 
 if (!existsSync(MEMORY_PATH)) {
   console.log(`(未找到 ${MEMORY_PATH})`)
@@ -32,30 +32,48 @@ for (const m of md.matchAll(/#(\d+(?:\/\d+)*)(?=\s|$)/g))
 
 // ── 查库：project='global' 的 content 首行格式为 "#NN 标题（YYMMDD）" ──
 const db = new Database(DB_PATH, { readonly: true })
-const rows = db.query("SELECT content FROM memories WHERE project = ?").all("global")
-const have = new Set() // db 里已存在全文的 #NN
-const dbAll = new Set() // db 里全部以 #NN 开头的编号（含 history）
-for (const { content } of rows) {
-  const m = content.match(/^#(\d+)\s/)
-  if (m) {
-    dbAll.add(m[1])
-    have.add(m[1])
+const rows = db.query("SELECT id, content FROM memories WHERE project = ?").all("global")
+// 260913 Red 编号必须唯一：同号多条会被 Set 折叠成一个元素，漏检正文冲突（两机独立编号各写各的会撞号）。
+const have = new Map() // #NN -> 首个出现的 row id
+const duplicates = new Map() // #NN -> { count, ids, conflict }
+const same = db.prepare(
+  "SELECT content IS (SELECT content FROM memories WHERE id = ?) AS equal FROM memories WHERE id = ?",
+)
+for (const row of rows) {
+  const m = String(row.content).match(/^#(\d+)\s/)
+  if (!m) continue
+  const number = m[1]
+  const first = have.get(number)
+  if (first === undefined) {
+    have.set(number, row.id)
+    continue
   }
+  const duplicate = duplicates.get(number) || { count: 1, ids: [first], conflict: false }
+  duplicate.count++
+  if (duplicate.ids.length < 10) duplicate.ids.push(row.id)
+  duplicate.conflict = duplicate.conflict || !same.get(first, row.id).equal
+  duplicates.set(number, duplicate)
 }
 db.close()
 
 // ── 正向：索引行缺全文（这是硬伤——删除唯一入口） ──
-const missing = [...nums].filter((n) => !have.has(n)).sort((a, b) => Number(a) - Number(b))
+const numeric = (a, b) => Number(a) - Number(b)
+const missing = [...nums].filter((n) => !have.has(n)).sort(numeric)
 // ── 反向：db 有全文但索引没了（可能是合法归档——consolidate 删索引前先入库的条目） ──
-const orphan = [...dbAll].filter((n) => !nums.has(n)).sort((a, b) => Number(a) - Number(b))
+const orphan = [...have.keys()].filter((n) => !nums.has(n)).sort(numeric)
 
-const ok = missing.length === 0
+const ok = missing.length === 0 && duplicates.size === 0
 if (ok) {
-  console.log(`✓ 记忆双写核对通过：MEMORY.md ${nums.size} 个索引行全部有全文（${rows.length} 条 global 记录）`)
+  console.log(`✓ 记忆双写核对通过：MEMORY.md ${nums.size} 个索引行全部有唯一全文（${rows.length} 条 global 记录）`)
 } else {
-  console.error(`✗ 记忆双写核对失败：${missing.length}/${nums.size} 个索引行缺全文`)
+  console.error(`✗ 记忆双写核对失败：${missing.length}/${nums.size} 个索引行缺全文，${duplicates.size} 个编号重复或冲突`)
   for (const n of missing) {
     console.error(`  #${n}  在 MEMORY.md 有索引，但 supermemory.db（project='global'）无 content LIKE '#${n} %' 全文——请双写补齐（INSERT memories）`)
+  }
+  for (const [n, duplicate] of [...duplicates].sort(([a], [b]) => numeric(a, b))) {
+    console.error(
+      `  #${n} ${duplicate.conflict ? "全文内容冲突" : "重复全文"}：${duplicate.count} 条记录，id=${duplicate.ids.join(", ")}${duplicate.count > duplicate.ids.length ? "…" : ""}——请核对编号或显式修订，不能自动选一条`,
+    )
   }
 }
 if (orphan.length > 0) {
