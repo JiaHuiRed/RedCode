@@ -102,3 +102,47 @@ describe("tool.sqlite write permission", () => {
     expect(result).toHaveProperty("title")
   })
 })
+
+function makeRows(dir: string, count: number, text = "x"): string {
+  const file = join(dir, `rows-${Date.now()}-${Math.random().toString(36).slice(2)}.db`)
+  const db = new Database(file)
+  db.run("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)")
+  const insert = db.prepare("INSERT INTO t (v) VALUES (?)")
+  for (let index = 0; index < count; index++) insert.run(text)
+  db.close()
+  return file
+}
+
+describe("tool.sqlite read output", () => {
+  test("paginates with rowOffset and points at the next page", async () => {
+    const dbFile = makeRows(tmpdir(), 5)
+
+    const first = (await query.execute(
+      { dbPath: dbFile, sql: "SELECT id, v FROM t ORDER BY id", maxRows: 2 },
+      baseCtx,
+    )) as { output: string }
+    expect(first.output).toContain("#1 id=1")
+    expect(first.output).toContain("rowOffset=2")
+
+    const second = (await query.execute(
+      { dbPath: dbFile, sql: "SELECT id, v FROM t ORDER BY id", maxRows: 2, rowOffset: 2 },
+      baseCtx,
+    )) as { output: string }
+    expect(second.output).toContain("#3 id=3")
+    expect(second.output).not.toContain("#1 id=1")
+  })
+
+  test("keeps long values instead of clipping them to 60 chars", async () => {
+    const dbFile = makeRows(tmpdir(), 1, "y".repeat(500))
+
+    const result = (await query.execute({ dbPath: dbFile, sql: "SELECT v FROM t" }, baseCtx)) as { output: string }
+    expect(result.output).toContain("y".repeat(500))
+  })
+
+  test("caps a single cell and reports how much was dropped", async () => {
+    const dbFile = makeRows(tmpdir(), 1, "z".repeat(2500))
+
+    const result = (await query.execute({ dbPath: dbFile, sql: "SELECT v FROM t" }, baseCtx)) as { output: string }
+    expect(result.output).toContain("(truncated 500 chars)")
+  })
+})

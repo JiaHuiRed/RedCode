@@ -83,27 +83,44 @@ async function openDb(dbPath: string, readOnly: boolean): Promise<Db> {
 
 const quote = (name: string) => `"${name.replace(/"/g, '""')}"`
 
-/** 定宽文本表格；单列宽度上限 60，避免长文本撑破终端 */
-function formatTable(rows: Record<string, unknown>[]) {
+// 260913 Red 输出改为逐行 col=value + 确定字符预算。
+// 原定宽表格为了对齐每行补大量空格，还把单列硬裁到 60 字符——记忆全文这类长值直接看不见。
+const MAX_OUTPUT_CHARS = 32_000
+const MAX_CELL_CHARS = 2_000
+
+const cellText = (value: unknown) =>
+  value === null || value === undefined ? "NULL" : typeof value === "bigint" ? value.toString() : String(value)
+
+const clipCell = (text: string) =>
+  text.length <= MAX_CELL_CHARS
+    ? text
+    : `${text.slice(0, MAX_CELL_CHARS)}…(truncated ${text.length - MAX_CELL_CHARS} chars)`
+
+function formatRows(rows: Row[], offset: number) {
   if (rows.length === 0) return "(empty result set)"
   const cols = Object.keys(rows[0]!)
-  const cell = (v: unknown) => (v === null || v === undefined ? "NULL" : typeof v === "bigint" ? v.toString() : String(v))
-  const widths = cols.map((c, i) =>
-    Math.min(60, Math.max(c.length, ...rows.map((r) => cell(r[cols[i]!]).length))),
-  )
-  const clip = (s: string, w: number) => (s.length > w ? s.slice(0, w - 1) + "…" : s)
-  const sep = `+${widths.map((w) => "-".repeat(w + 2)).join("+")}+`
-  const head = `| ${cols.map((c, i) => c.padEnd(widths[i]!)).join(" | ")} |`
-  const body = rows.map(
-    (r) => `| ${cols.map((c, i) => clip(cell(r[c]), widths[i]!).padEnd(widths[i]!)).join(" | ")} |`,
-  )
-  return [sep, head, sep, ...body, sep, `(${rows.length} row${rows.length !== 1 ? "s" : ""})`].join("\n")
+  const lines: string[] = []
+  let used = 0
+  for (const [index, row] of rows.entries()) {
+    const line = `#${offset + index + 1} ${cols.map((c) => `${c}=${clipCell(cellText(row[c]))}`).join(" | ")}`
+    // 至少输出一行：单行就超预算时也要让调用方看到内容，剩下的靠 rowOffset 取。
+    if (lines.length > 0 && used + line.length + 1 > MAX_OUTPUT_CHARS) break
+    lines.push(line)
+    used += line.length + 1
+  }
+  if (lines.length < rows.length) {
+    lines.push(
+      `⚠️ output budget reached: showing ${lines.length} of ${rows.length} rows in this page — continue with rowOffset=${offset + lines.length}.`,
+    )
+  }
+  return lines.join("\n")
 }
 
 export const query = tool({
   description:
     "Run SQL against a SQLite database. Defaults to read-only (only SELECT/PRAGMA/WITH/EXPLAIN/ANALYZE). " +
     "Set readOnly=false to allow INSERT/UPDATE/DELETE — that path asks the user for permission first. " +
+    "Read results render one row per line as col=value under a fixed output budget; page with rowOffset and maxRows. " +
     "Multiple statements separated by ';' run as one batch via exec (no rows returned, params not accepted).",
   args: {
     dbPath: tool.schema.string().describe("Absolute or relative path to the SQLite .db file"),
@@ -113,10 +130,17 @@ export const query = tool({
       .optional()
       .describe("Positional parameters for ? placeholders. Use 0/1 for booleans."),
     maxRows: tool.schema.number().int().min(1).max(10000).optional().describe("Max rows to return (default 200)"),
+    rowOffset: tool.schema
+      .number()
+      .int()
+      .min(0)
+      .optional()
+      .describe("Rows to skip before returning results (default 0); use with maxRows to page through long results"),
     readOnly: tool.schema.boolean().optional().describe("Default true; false allows writes (asks permission)"),
   },
-  async execute({ dbPath, sql, params, maxRows, readOnly }, ctx) {
+  async execute({ dbPath, sql, params, maxRows, rowOffset, readOnly }, ctx) {
     const limit = maxRows ?? 200
+    const skip = rowOffset ?? 0
     const ro = readOnly ?? true
     const read = isReadStatement(sql)
 
@@ -149,15 +173,15 @@ export const query = tool({
       const stmt = db.prepare(sql)
       if (read) {
         const rows = (params?.length ? stmt.all(...(params as any[])) : stmt.all()) as Record<string, unknown>[]
-        const shown = rows.slice(0, limit)
+        const page = rows.slice(skip, skip + limit)
         const note =
-          rows.length > limit
-            ? `\n⚠️ Showing ${limit} of ${rows.length} rows — narrow the query or raise maxRows.`
+          rows.length > skip + page.length
+            ? `\n⚠️ Showing rows ${skip + 1}-${skip + page.length} of ${rows.length} — continue with rowOffset=${skip + page.length}.`
             : ""
         return {
           title: `${rows.length} row${rows.length !== 1 ? "s" : ""}`,
-          output: formatTable(shown) + note,
-          metadata: { rows: rows.length, shown: shown.length, db: path.resolve(dbPath) },
+          output: formatRows(page, skip) + note,
+          metadata: { rows: rows.length, shown: page.length, offset: skip, db: path.resolve(dbPath) },
         }
       }
       const res = (params?.length ? stmt.run(...(params as any[])) : stmt.run()) as { changes: number }
