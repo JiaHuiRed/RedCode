@@ -339,6 +339,44 @@ describe("tool.shell permissions", () => {
     }),
   )
 
+  // 260913 Karina Windows 可执行文件后缀绕过：`git.exe` / `taskkill.exe` 带后缀时
+  // 分类逻辑 stripped 成裸命令名后再匹配，避免 `.exe` 让 destructive / CWD 判定失效。
+  each("Windows 可执行后缀不绕过 destructive 门", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const err = new Error("stop after permission")
+          const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+          for (const command of ["git.exe reset --hard HEAD~1", "taskkill.exe /F /IM python.exe"]) {
+            yield* fail({ command, description: "windows exe suffix" }, capture(requests, err))
+          }
+          expect(requests.some((r) => r.permission === "destructive")).toBe(true)
+        }),
+      )
+    }),
+  )
+
+  each("Windows 可执行后缀的 cd 不被当 builtin 豁免", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const err = new Error("stop after permission")
+          const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+          // `cd.exe` 带 `.exe` 后缀时应被视为外部命令，不应享受 shell builtin `cd` 的
+          // CWD 豁免。这里用裸命令（不带路径参数），避免 `external_directory` 抢先，
+          // 直接验证至少弹一次 `bash` 授权。
+          yield* fail({ command: "cd.exe", description: "cd.exe as external" }, capture(requests, err))
+          const bashReq = requests.find((r) => r.permission === "bash")
+          expect(bashReq).toBeDefined()
+        }),
+      )
+    }),
+  )
+
   // 260730 Karina 回归测试：Windows PowerShell 5.1 的 Get-Content 默认按系统 ANSI 代码页
   // 解码，中文 Windows 上读 UTF-8 文件直接读成乱码（"中文测试" → "涓枃娴嬭瘯"），
   // 之后写回去就把原文毁了。shell.ts 里的 PS_READ_UTF8 把读侧默认编码钉成 UTF-8。

@@ -22,6 +22,7 @@ import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { ShellPrompt, type Parameters } from "./shell/prompt"
 import { BashArity } from "@/permission/arity"
+import { commandName } from "./command-name"
 
 export { Parameters } from "./shell/prompt"
 
@@ -542,7 +543,9 @@ export const ShellTool = Tool.define(
         seen++
         const command = parts(node)
         const tokens = command.map((item) => item.text)
-        const cmd = ps || shellKind === "cmd" ? tokens[0]?.toLowerCase() : tokens[0]
+        const rawCmd = tokens[0]
+        const cmd = ps || shellKind === "cmd" ? commandName(rawCmd)?.toLowerCase() : commandName(rawCmd)
+        const isWindowsExe = /\.(exe|com|cmd|bat)$/i.test(rawCmd || "")
 
         // git 不在 FILES 里，单独判：写操作走 destructive 门，只读子命令照常放行
         if (cmd === "git" && destructiveGit(tokens)) scan.destructive = true
@@ -561,7 +564,7 @@ export const ShellTool = Tool.define(
           }
         }
 
-        if (tokens.length && (!cmd || !CWD.has(cmd))) {
+        if (tokens.length && (!cmd || !(CWD.has(cmd) && !isWindowsExe))) {
           scan.patterns.add(source(node))
           scan.always.add(BashArity.prefix(tokens).join(" ") + " *")
         }
@@ -580,7 +583,8 @@ export const ShellTool = Tool.define(
           // 结构解析不出来，至少按空白切一遍跑同样的破坏性判定 —— 否则 `git checkout -- .`
           // 这种真该拦的命令，会因为"解析失败"反而降级成最轻的授权。
           const tokens = raw.split(/\s+/)
-          const first = ps || shellKind === "cmd" ? tokens[0]?.toLowerCase() : tokens[0]
+          const rawFirst = tokens[0]
+          const first = ps || shellKind === "cmd" ? commandName(rawFirst)?.toLowerCase() : commandName(rawFirst)
           if (first === "git" && destructiveGit(tokens)) scan.destructive = true
           if (first && DESTRUCTIVE.has(first)) scan.destructive = true
         }
