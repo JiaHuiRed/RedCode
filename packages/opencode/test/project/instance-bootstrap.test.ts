@@ -10,6 +10,7 @@ import { InstanceStore } from "../../src/project/instance-store"
 import { disposeAllInstances, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { waitGlobalBusEvent } from "../server/global-bus"
+import { projectRoot } from "../../src/project/root"
 
 const it = testEffect(Layer.mergeAll(InstanceLayer.layer, CrossSpawnSpawner.defaultLayer))
 
@@ -106,5 +107,20 @@ it.live("InstanceStore.reload runs InstanceBootstrap", () =>
     yield* store.reload({ directory: tmp.directory })
 
     expect(existsSync(tmp.marker)).toBe(true)
+  }),
+)
+
+it.live("InstanceBootstrap uses project directory for non-git worktree", () =>
+  Effect.gen(function* () {
+    const dir = yield* tmpdirScoped({ bare: true })
+    const store = yield* InstanceStore.Service
+
+    yield* store.load({ directory: dir })
+
+    // 260913 Red 非 Git 项目 worktree 是 "/"，bootstrap 应该用 projectRoot 回退到
+    // ctx.directory，而不是在盘符根创建 .redcode/。
+    const projectRedcode = path.join(dir, ".redcode", "MEMORY.md")
+    expect(existsSync(projectRedcode)).toBe(true)
+    expect(projectRoot({ worktree: "/", directory: dir })).toBe(dir)
   }),
 )

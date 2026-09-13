@@ -9,6 +9,7 @@ import { Flag } from "@redcode-ai/core/flag/flag"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { withTransientReadRetry } from "@/util/effect-http-client"
 import { Global } from "@redcode-ai/core/global"
+import { projectRoot } from "@/project/root"
 import type { MessageV2 } from "./message-v2"
 import type { MessageID } from "./schema"
 
@@ -157,8 +158,7 @@ export const layer: Layer.Layer<
           // 后果是双向的：读会去盘符根读，写也会写到盘符根。本机 C:/D:/E: 三个盘根下都留着
           // 一整套被 scaffold 出来的 .redcode/（MEMORY.md + .gitignore + package.json +
           // node_modules），就是这么来的。非 git 项目退回 ctx.directory 作为项目根。
-          const root = ctx.worktree && ctx.worktree !== path.parse(ctx.worktree).root ? ctx.worktree : ctx.directory
-          const projectMemory = path.join(root, ".redcode", "MEMORY.md")
+          const projectMemory = path.join(projectRoot(ctx), ".redcode", "MEMORY.md")
           if (yield* fs.existsSafe(projectMemory)) paths.add(path.resolve(projectMemory))
         }
       }

@@ -17,6 +17,7 @@ import { Reference } from "@/reference/reference"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Global } from "@redcode-ai/core/global"
 import path from "path"
+import { projectRoot } from "./root"
 import TEMPLATE_TSOUL from "./template/Tsoul.md" with { type: "text" }
 import TEMPLATE_GSOUL from "./template/Gsoul.md" with { type: "text" }
 import TEMPLATE_MEMORY from "./template/MEMORY.md" with { type: "text" }
@@ -124,12 +125,13 @@ export const layer = Layer.effect(
         )
       }).pipe(Effect.catchCause(Effect.logWarning))
       // 260611 Red project-level .redcode/ auto-init with empty MEMORY.md
-      if (!Flag.REDCODE_DISABLE_PROJECT_CONFIG && ctx.worktree !== Global.Path.home) {
+      if (!Flag.REDCODE_DISABLE_PROJECT_CONFIG && projectRoot(ctx) !== Global.Path.home) {
         yield* Effect.gen(function* () {
-          const hasOpencode = yield* fs.existsSafe(path.join(ctx.worktree, ".opencode"))
-          const hasRedcode = yield* fs.existsSafe(path.join(ctx.worktree, ".redcode"))
+          const root = projectRoot(ctx)
+          const hasOpencode = yield* fs.existsSafe(path.join(root, ".opencode"))
+          const hasRedcode = yield* fs.existsSafe(path.join(root, ".redcode"))
           if (hasOpencode || hasRedcode) return
-          const projectRedcode = path.join(ctx.worktree, ".redcode")
+          const projectRedcode = path.join(root, ".redcode")
           yield* fs.ensureDir(projectRedcode)
           yield* fs.writeFileString(
             path.join(projectRedcode, "MEMORY.md"),
