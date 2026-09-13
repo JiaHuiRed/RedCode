@@ -17,7 +17,7 @@ type Runner = ChildProcess & {
 type Managed = Child & {
   [MANAGED]: {
     targetExited: boolean
-    runner: Runner
+    nativeKill: ChildProcess["kill"]
   }
 }
 
@@ -63,17 +63,18 @@ function errorFromMessage(error: Extract<Message, { type: "error" }>["error"]) {
   })
 }
 
-function killRunner(runner: Runner) {
+function killRunner(runner: Managed) {
   try {
-    runner.kill("SIGKILL")
+    // 260913 Red managed 与 runner 是同一对象，强杀必须使用覆盖前绑定的原生方法。
+    return runner[MANAGED].nativeKill("SIGKILL")
   } catch {
     // 260909 Red Runner 可能已在关闭，close 事件会负责收敛目标进程状态。
+    return false
   }
 }
 
-function terminateRunner(runner: Runner) {
-  if (!runner.connected) return
-  if (runner.send === undefined) {
+function terminateRunner(runner: Managed) {
+  if (!runner.connected || runner.send === undefined) {
     killRunner(runner)
     return
   }
@@ -128,12 +129,16 @@ export function spawn(command: string, args: string[], opts: Options): Child {
     if (ignoredStdout !== undefined) closeSync(ignoredStdout)
     if (ignoredStderr !== undefined) closeSync(ignoredStderr)
   }
+  return manage(child, command, args, opts)
+}
 
+// 260913 Red 将进程启动与生命周期绑定分开，故障测试直接覆盖生产使用的绑定逻辑。
+export function manage(child: ChildProcess, command: string, args: string[], opts: Options): Child {
   const direct = Promise.withResolvers<number>()
   const managed = child as Managed
   const state = {
     targetExited: false,
-    runner: child,
+    nativeKill: child.kill.bind(child),
   }
   let started = false
   Object.defineProperty(managed, MANAGED, { value: state })
@@ -142,9 +147,11 @@ export function spawn(command: string, args: string[], opts: Options): Child {
     stdout: { value: opts.stdout === "pipe" ? child.stdout : null },
     stderr: { value: opts.stderr === "pipe" ? child.stderr : null },
   })
-  managed.kill = () => {
-    if (state.targetExited || !child.connected) return false
-    terminateRunner(child)
+  managed.kill = (signal) => {
+    if (signal === 0) return state.nativeKill(0)
+    if (signal === "SIGKILL" || signal === 9) return killRunner(managed)
+    if (state.targetExited) return false
+    terminateRunner(managed)
     return true
   }
   managed.exited = direct.promise
@@ -152,7 +159,7 @@ export function spawn(command: string, args: string[], opts: Options): Child {
   child.once("spawn", () => {
     if (child.send === undefined) {
       direct.reject(new Error("Windows Job runner has no IPC channel"))
-      child.kill("SIGKILL")
+      killRunner(managed)
     }
   })
   child.once("error", (error) => {
@@ -167,20 +174,26 @@ export function spawn(command: string, args: string[], opts: Options): Child {
     if (value.type === "ready") {
       if (started || child.send === undefined) return
       started = true
-      child.send(
-        {
-          type: "start",
-          command,
-          args,
-          cwd: opts.cwd ?? process.cwd(),
-          env: targetEnvironment(opts),
-        } satisfies Message,
-        (error) => {
-          if (error === null || state.targetExited) return
-          direct.reject(error)
-          child.kill("SIGKILL")
-        },
-      )
+      try {
+        child.send(
+          {
+            type: "start",
+            command,
+            args,
+            cwd: opts.cwd ?? process.cwd(),
+            env: targetEnvironment(opts),
+          } satisfies Message,
+          (error) => {
+            if (error === null || state.targetExited) return
+            direct.reject(error)
+            killRunner(managed)
+          },
+        )
+      } catch (error) {
+        // 260913 Red IPC 在 ready 后关闭时 send 也会同步抛错，不能逃出事件回调。
+        direct.reject(error)
+        killRunner(managed)
+      }
       return
     }
     state.targetExited = true
@@ -203,7 +216,7 @@ export function exited(child: Managed) {
 }
 
 export function terminate(child: Managed) {
-  terminateRunner(child[MANAGED].runner)
+  terminateRunner(child)
 }
 
 export * as WindowsJob from "./windows-job"
