@@ -1,9 +1,11 @@
 import { createSimpleContext } from "@redcode-ai/ui/context"
+import { showToast } from "@redcode-ai/ui/toast"
 import { checksum } from "@redcode-ai/core/util/encode"
 import { useParams } from "@solidjs/router"
 import { batch, createMemo, createRoot, getOwner, onCleanup } from "solid-js"
 import { createStore, type SetStoreFunction } from "solid-js/store"
 import type { FileSelection } from "@/context/file"
+import { useLanguage } from "@/context/language"
 import { Persist, persisted } from "@/utils/persist"
 
 interface PartBase {
@@ -170,11 +172,28 @@ function serializePromptStore(value: unknown) {
   return JSON.stringify({ ...store, prompt: store.prompt.filter((part) => part.type !== "image") })
 }
 
+// 260913 Red 草稿配额满只提示一次，避免每次按键重复弹 toast。
+let storageWarned = false
+
 function createPromptSession(dir: string, id: string | undefined) {
   const legacy = `${dir}/prompt${id ? "/" + id : ""}.v2`
+  const language = useLanguage()
 
   const [store, setStore, _, ready] = persisted(
-    { ...Persist.scoped(dir, id, "prompt", [legacy]), serialize: serializePromptStore },
+    {
+      ...Persist.scoped(dir, id, "prompt", [legacy]),
+      serialize: serializePromptStore,
+      // 260913 Red 草稿可能很大，配额满时不允许删除 settings/layout 等其它 RedCode.* 键。
+      evictOnQuota: false,
+      onQuota: () => {
+        if (storageWarned) return
+        storageWarned = true
+        showToast({
+          title: language.t("prompt.toast.draftStorageFull.title"),
+          description: language.t("prompt.toast.draftStorageFull.description"),
+        })
+      },
+    },
     createStore<{
       prompt: Prompt
       cursor?: number

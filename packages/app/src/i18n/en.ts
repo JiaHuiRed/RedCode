@@ -322,6 +322,9 @@ export const dict = {
   "prompt.toast.commandSendFailed.title": "Failed to send command",
   "prompt.toast.promptSendFailed.title": "Failed to send prompt",
   "prompt.toast.promptSendFailed.description": "Unable to retrieve session",
+  "prompt.toast.draftStorageFull.title": "Draft storage full",
+  "prompt.toast.draftStorageFull.description":
+    "Local storage is full, so this draft cannot be saved. Free up space or send it to keep your work.",
 
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "{{enabled}} of {{total}} enabled",

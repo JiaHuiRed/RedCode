@@ -21,6 +21,10 @@ type PersistTarget = {
   migrate?: (value: unknown) => unknown
   /** 写盘前的自定义序列化（如剔除不该持久化的大字段）；缺省为 JSON.stringify */
   serialize?: (value: unknown) => string
+  /** 260913 Red 配额满时是否允许删除其它 RedCode.* 键腾地方；草稿这类大块写入设 false */
+  evictOnQuota?: boolean
+  /** 260913 Red 因配额放弃写入时的回调（用于提示用户） */
+  onQuota?: () => void
 }
 
 const LEGACY_STORAGE = "default.dat"
@@ -216,7 +220,12 @@ function evict(storage: Storage, keep: string, value: string) {
   return false
 }
 
-function write(storage: Storage, key: string, value: string) {
+function write(
+  storage: Storage,
+  key: string,
+  value: string,
+  options?: Pick<PersistTarget, "evictOnQuota" | "onQuota">,
+) {
   try {
     storage.setItem(key, value)
     cacheSet(key, value)
@@ -233,6 +242,12 @@ function write(storage: Storage, key: string, value: string) {
     return true
   } catch (error) {
     if (!quota(error)) throw error
+  }
+
+  // 260913 Red 大块写入（草稿）不允许靠删别人的键腾地方：配额满就直接失败并提示。
+  if (options?.evictOnQuota === false) {
+    options.onQuota?.()
+    return false
   }
 
   const ok = evict(storage, key, value)
@@ -436,7 +451,7 @@ function legacyWorkspaceStorage(dir: string) {
   return [...result]
 }
 
-function localStorageWithPrefix(prefix: string): SyncStorage {
+function localStorageWithPrefix(prefix: string, options?: Pick<PersistTarget, "evictOnQuota" | "onQuota">): SyncStorage {
   const base = `${prefix}:`
   const scope = `prefix:${prefix}`
   const item = (key: string) => base + key
@@ -462,11 +477,13 @@ function localStorageWithPrefix(prefix: string): SyncStorage {
       const name = item(key)
       if (fallbackDisabled(scope)) return
       try {
-        if (write(localStorage, name, value)) return
+        if (write(localStorage, name, value, options)) return
       } catch {
         fallbackSet(scope)
         return
       }
+      // 260913 Red opt-out 时配额失败只提示，不把整个 scope 降级成内存缓存。
+      if (options?.evictOnQuota === false) return
       fallbackSet(scope)
     },
     removeItem: (key) => {
@@ -482,7 +499,7 @@ function localStorageWithPrefix(prefix: string): SyncStorage {
   }
 }
 
-function localStorageDirect(): SyncStorage {
+function localStorageDirect(options?: Pick<PersistTarget, "evictOnQuota" | "onQuota">): SyncStorage {
   const scope = "direct"
   return {
     getItem: (key) => {
@@ -504,11 +521,13 @@ function localStorageDirect(): SyncStorage {
     setItem: (key, value) => {
       if (fallbackDisabled(scope)) return
       try {
-        if (write(localStorage, key, value)) return
+        if (write(localStorage, key, value, options)) return
       } catch {
         fallbackSet(scope)
         return
       }
+      // 260913 Red 同 localStorageWithPrefix：opt-out 时不降级整个 scope。
+      if (options?.evictOnQuota === false) return
       fallbackSet(scope)
     },
     removeItem: (key) => {
@@ -613,12 +632,12 @@ export function persisted<T>(
 
   const currentStorage = (() => {
     if (isDesktop) return platform.storage?.(config.storage)
-    if (!config.storage) return localStorageDirect()
-    return localStorageWithPrefix(config.storage)
+    if (!config.storage) return localStorageDirect(config)
+    return localStorageWithPrefix(config.storage, config)
   })()
 
   const legacyStorage = (() => {
-    if (!isDesktop) return localStorageDirect()
+    if (!isDesktop) return localStorageDirect(config)
     if (!config.storage) return platform.storage?.()
     return platform.storage?.(LEGACY_STORAGE)
   })()
@@ -629,7 +648,7 @@ export function persisted<T>(
     if (!isDesktop) {
       const current = currentStorage as SyncStorage
       const legacyStore = legacyStorage as SyncStorage
-      const legacyStores = legacyStorageNames.map(localStorageWithPrefix)
+      const legacyStores = legacyStorageNames.map((name) => localStorageWithPrefix(name, config))
 
       const api: SyncStorage = {
         getItem: (key) => {

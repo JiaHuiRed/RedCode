@@ -289,6 +289,9 @@ export const dict = {
   "prompt.toast.commandSendFailed.title": "コマンドの送信に失敗しました",
   "prompt.toast.promptSendFailed.title": "プロンプトの送信に失敗しました",
   "prompt.toast.promptSendFailed.description": "セッションを取得できませんでした",
+  "prompt.toast.draftStorageFull.title": "下書きの保存領域が不足しています",
+  "prompt.toast.draftStorageFull.description":
+    "ローカルストレージの空きが足りず下書きを保存できません。空き容量を確保するか、送信して内容を保持してください。",
   "dialog.mcp.title": "MCP",
   "dialog.mcp.description": "{{total}}個中{{enabled}}個が有効",
   "dialog.mcp.empty": "MCPが設定されていません",

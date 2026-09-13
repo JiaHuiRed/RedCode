@@ -164,4 +164,33 @@ describe("persist localStorage resilience", () => {
     expect(storage.getItem(`${target.storage}:${target.key}`)).toBeNull()
     expect(storage.getItem(`${target.legacyStorageNames![0]}:${target.key}`)).toBeNull()
   })
+
+  test("does not evict other RedCode keys when the target opts out of quota eviction", () => {
+    const other = persistTesting.localStorageWithPrefix("RedCode.other.evict")
+    other.setItem("keep", '{"value":"keep"}')
+
+    let notices = 0
+    const draft = persistTesting.localStorageWithPrefix("RedCode.quota.evict-off", {
+      evictOnQuota: false,
+      onQuota: () => {
+        notices += 1
+      },
+    })
+    draft.setItem("value", '{"value":1}')
+
+    expect(notices).toBe(1)
+    expect(storage.getItem("RedCode.other.evict:keep")).toBe('{"value":"keep"}')
+    expect(storage.events).not.toContain("remove:RedCode.other.evict:keep")
+    expect(storage.getItem("RedCode.quota.evict-off:value")).toBeNull()
+  })
+
+  test("default quota handling still evicts other RedCode keys to make room", () => {
+    const other = persistTesting.localStorageWithPrefix("RedCode.other.evict")
+    other.setItem("keep", '{"value":"keep"}')
+
+    const draft = persistTesting.localStorageWithPrefix("RedCode.quota.evict-default")
+    draft.setItem("value", '{"value":1}')
+
+    expect(storage.events).toContain("remove:RedCode.other.evict:keep")
+  })
 })
