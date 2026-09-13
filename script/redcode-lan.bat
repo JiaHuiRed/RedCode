@@ -30,6 +30,27 @@ if not defined ROOT (
 set "SHOWPASS=RedCode0429 (built-in default)"
 if defined REDCODE_SERVER_PASSWORD set "SHOWPASS=%REDCODE_SERVER_PASSWORD% (from REDCODE_SERVER_PASSWORD)"
 
+rem --- already listening? just tell the user where to go, do not start a second server ---
+rem goto instead of a parenthesised block: the password echoed below comes from the env and
+rem may contain `)`, which would break a block's parsing.
+netstat -ano | findstr /r /c:":%PORT% .*LISTENING" >nul 2>&1
+if errorlevel 1 goto start_server
+
+echo ==============================================================
+echo   RedCode - phone access (LAN) - already running
+echo ==============================================================
+echo   Port %PORT% is already listening. On your phone, open:
+powershell -NoProfile -Command "Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notmatch '^(127\.|169\.254\.|172\.|198\.18\.|198\.19\.)' } | ForEach-Object { '       http://' + $_.IPAddress + ':%PORT%' }"
+echo   Username :  redcode
+echo   Password :  %SHOWPASS%
+echo.
+echo   Close the other RedCode window to stop the server.
+echo ==============================================================
+pause
+exit /b 0
+
+:start_server
+
 echo ==============================================================
 echo   RedCode - phone access (LAN)
 echo ==============================================================
