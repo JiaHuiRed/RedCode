@@ -15471,6 +15471,24 @@
               "type": "string"
             }
           },
+          "instruction_budget": {
+            "type": "object",
+            "properties": {
+              "max_source_bytes": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "max_total_bytes": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "fetch_timeout_ms": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              }
+            },
+            "additionalProperties": false
+          },
           "layout": {
             "$ref": "#/components/schemas/LayoutConfig"
           },

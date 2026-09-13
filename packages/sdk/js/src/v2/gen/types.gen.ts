@@ -1381,6 +1381,11 @@ export type Config = {
             }
       }
   instructions?: Array<string>
+  instruction_budget?: {
+    max_source_bytes?: number
+    max_total_bytes?: number
+    fetch_timeout_ms?: number
+  }
   layout?: LayoutConfig
   permission?: PermissionConfig
   tools?: {
