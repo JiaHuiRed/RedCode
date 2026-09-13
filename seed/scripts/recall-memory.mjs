@@ -78,10 +78,12 @@ function scopeSql(project, fts) {
   const from = fts
     ? "FROM memories_fts f JOIN memories m ON m.id = f.rowid WHERE memories_fts MATCH ?"
     : "FROM memories m WHERE m.content LIKE ?"
-  if (!project) return `SELECT m.id, m.content, m.project ${from} ORDER BY bm25(memories_fts) LIMIT ?`
+  // 260913 Red 子串分支没有 join FTS 表，引用 bm25(memories_fts) 会直接报错；此分支按编号降序当新的优先。
+  const order = fts ? " ORDER BY bm25(memories_fts)" : " ORDER BY m.id DESC"
+  if (!project) return `SELECT m.id, m.content, m.project ${from}${order} LIMIT ?`
   return (
     `SELECT m.id, m.content, m.project ${from} AND (m.project = 'global' COLLATE NOCASE OR m.project = ? COLLATE NOCASE)` +
-    (fts ? " ORDER BY bm25(memories_fts) LIMIT ?" : " LIMIT ?")
+    `${order} LIMIT ?`
   )
 }
 
