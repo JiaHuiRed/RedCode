@@ -8,13 +8,57 @@
 
 ---
 
-### [未发布]
+### [0.11.5] - 2026-09-13
+
+> 安全与进程收尾一轮：SQLite 写连接权限、Windows 命令后缀与 Job 强杀、desktop sidecar 树清理、MCP 健康检查各自补上真实缺口；记忆召回作用域与双写冲突、草稿配额保护、重连补拉一并落地。
 
 #### 修复
 
 - **windows-job runner 短路提前到模块加载之前，消除每个 MCP 宿主 178MB 冗余**（`packages/opencode/src/index.ts`，决策：`docs/notes/implemented/bug-fix/2026-09-11-windows-job-runner-boot.md`）：编译 exe 下每个 MCP 服务器经 `util/windows-job.ts` 包一层 job-runner 进程（让 MCP 随主进程退出），而 runner 跑的就是 index.ts 自身——旧写法把 runner 短路放在第四十六行、四十多个重 import 留在顶部，而 ESM 静态 import 在模块体执行前全部求值，等于没短路：每个宿主白背整套 TUI/server/session/DB 模块图。实测 9 个 MCP 宿主各占 218-219MB（合计约 2.0GB），16GB 机器上叠加第二个 TUI 即触发 opentui 原生内存分配失败（`Failed to create TextBuffer`）致命崩溃——同机同期另有独立的 `Failed to create renderer: error.OutOfMemory` 佐证。现在把短路提到文件最前，其余 import 按原顺序改为 top-level `await import()`（仅 `node:os`/`node:path` 与 `Log.Level` 的 type import 保留静态，后者编译期擦除）。实测 runner 工作集 **229.2MB → 51.5MB**（每个省 177.7MB，9 个 MCP 合计约 1.6GB）；`--version` smoke test 与 runner 端到端（ready → start → exit code=0）复验通过。防回归识别签名：`--windows-job-runner` 进程工作集超过 100MB 即为回归。
 
 - **记忆快照收窄到跨机共享范围**（`seed/scripts/export-memory-backup.mjs`，决策：`docs/notes/implemented/bug-fix/2026-09-11-memory-snapshot-scope.md`）：导出此前是整库一把导（`SELECT ... FROM memories ORDER BY id`，无 `project` 过滤），而入库快照的共享面本该只有跨机通用的那一档（`global`），于是使用者其它工作区的私有项目也被一并写进了入库文件。现在入库快照只装共享项目（默认 `global`，`REDCODE_BACKUP_PROJECTS` 可扩展），全库另导一份到 `memory/local-backup.<host>.md` 并加进私仓 `.gitignore`——保留「db 被写坏时可回滚」的原始目的，又不把共享面之外的记忆写进仓。存量历史条目的清理不在本次范围内。
+
+- **Windows 命令后缀不再绕过危险分类**（`packages/opencode/src/tool/shell.ts`、新增 `src/tool/command-name.ts`）：`git.exe reset --hard`、`taskkill.exe` 这类写法此前只做小写、不剥后缀，既绕过 `DESTRUCTIVE` 判定，也让 `cd.exe` 白蹭 shell builtin 的 CWD 豁免。命令名归一化抽出 `commandName()`，主循环与 fallback 两条路径统一使用；后缀判定改由 `isWindowsExecutable()` 剥掉包裹引号后再做（`"cd.exe"` 同样按外部命令处理）。
+
+- **Basic Auth 密码中的冒号不再被截断**（`packages/opencode/src/server/routes/instance/httpapi/middleware/authorization.ts`）：解码按 `split(":")` 且要求恰好两段，密码含冒号时一律判为无效凭据。改为只切第一个冒号，其余原样留给密码。
+
+- **SQLite 写连接一律先过权限闸门**（`seed/tool/sqlite.ts`）：授权此前按 SQL 首词判断，`WITH ... UPDATE` 与 `SELECT 1; DELETE ...` 都被当成读语句，`readOnly:false` 下 `sqlite_write` 审批被跳过。现在授权只由连接模式决定——开的是可写连接就先审批；只读连接改从驱动层强制（Bun `readonly` / Node `readOnly`，另加 `PRAGMA query_only=1`）。
+
+- **SQLite 查询输出给出确定预算与分页**（`seed/tool/sqlite.ts`）：输出此前单列截到 60 字、整表直出，没有任何总量边界。改为逐行 `#N col=value`、单格 2000 字符、单次 32000 字符预算，超出给 `rowOffset` 续页提示。模型可见改动四问：新增 `rowOffset` 参数并改变输出格式（约 +40 token 固定前缀）；tools 段变化使 KV cache 自工具定义处失效；32000 / 2000 均为确定上限。
+
+- **Windows Job 强杀不再递归回自身，`.cmd` 也能启动**（`packages/opencode/src/util/windows-job.ts`、新增 `src/util/windows-command.ts`、`src/util/windows-job-runner.ts`）：`managed.kill` 覆盖了子进程原生 `kill`，收尾路径又调 `runner.kill("SIGKILL")`，等于绕回 IPC 优雅路径（实测 nativeKills=0 / ipcSends=2850，强杀从未真正生效）。现在覆写前先存 `child.kill.bind(child)`，SIGKILL/9 与兜底走原生、signal 0 保持探活语义。同批修 `.cmd` / `.bat` 启动：`CreateProcessW` 不认 PATHEXT，改用 cross-spawn 的解析结果显式传 `lpApplicationName` / `lpCommandLine`（集中在适配器内调用）。
+
+- **Windows 可执行名带引号时不再绕过内建豁免**（`packages/opencode/src/tool/command-name.ts`、`src/tool/shell.ts`）：后缀正则测的是原始 token，而命令名归一化会先剥引号，`"cd.exe"` 因此既被归一化成 `cd` 命中内建集合、又通不过后缀判定。抽出 `isWindowsExecutable()` 与 `commandName()` 共用剥引号逻辑。
+
+- **desktop sidecar 退出时等进程树清理完成**（新增 `packages/desktop/src/main/sidecar-process.ts`、`packages/desktop/src/main/server.ts`）：旧实现 `spawn("taskkill").unref()` 发射后不管，父进程先退出时 taskkill 被一并带走，sidecar 的 MCP 孙进程留成孤儿。现在按「优雅退出 → 有界等待 → await 树清理 → 父进程兜底 → 退出确认」顺序执行，PID guard 也更严（拒绝 undefined / ≤1 / 自身 PID）。
+
+- **MCP 健康检查走 Effect 失败通道并认客户端身份**（新增 `packages/opencode/src/mcp/health.ts`、`src/mcp/index.ts`）：原先用 JS `try/catch` 包 Effect，失败计数与陈旧结果都不受控——客户端被替换后，迟到的响应会把新客户端记成不健康。改用 `Effect.tryPromise → Effect.timeout → Effect.match`，写回前先比对客户端身份与连接状态。
+
+- **非 Git 项目的根目录不再落到盘符根**（新增 `packages/opencode/src/project/root.ts`、`src/project/bootstrap.ts`、`src/session/instruction.ts`）：没有 git 时 `ctx.worktree` 是文件系统根，`path.join("/", ".redcode", ...)` 会算成盘符根下的 `.redcode`，读与写都跑偏。抽出 `projectRoot(ctx)` 统一解析，非 Git 项目退回 `ctx.directory`。
+
+- **`/recall --all` 的两字查询不再假阴性**（`seed/scripts/recall-memory.mjs`）：`--all` 分支无条件拼 `ORDER BY bm25(memories_fts)`，而 LIKE 子串分支没有 join FTS 表，SQL 报错后被 catch 吞成「没搜到」。改为按是否走 FTS 选排序。
+
+- **召回作用域跟随引擎传入的项目根**（`seed/scripts/recall-memory.mjs`、`packages/opencode/src/session/prompt.ts`）：脚本只看 `process.cwd()`，GUI 切项目后会话目录与服务器目录不同，召回会 scope 到错误项目。命令执行现在传 `cwd: ctx.directory` 与 `REDCODE_PROJECT_ROOT`。
+
+- **记忆双写核对检出同编号冲突**（`seed/scripts/check-memory-dualwrite.mjs`）：编号此前只登记在 `Set` 里，两台机器或两个会话撞号时不同正文会折叠，核对照样通过。改用 Map 记录首行 id，并用 SQLite `IS` 比对全文，同号即失败并区分「重复全文」与「内容冲突」。两个记忆脚本同时支持 `REDCODE_MEMORY_DB` 注入库路径，回归测试在临时库上跑，不碰 live 记忆库。
+
+- **草稿配额满时不再驱逐其它存储键**（`packages/app/src/utils/persist.ts`、`packages/app/src/context/prompt.tsx`）：localStorage 配额超限时通用写路径会删掉其它 `RedCode.*` 键腾地方——草稿这种大块写入会把 settings / layout 一起挤掉。`PersistTarget` 新增 `evictOnQuota` 与 `onQuota`，草稿目标声明 opt-out 并给出提示。桌面异步存储不走这条配额路径，该选项只在 web / localStorage 生效。
+
+- **配额写失败时保住旧草稿**（`packages/app/src/utils/persist.ts`）：opt-out 路径有个窗口——「先删自己那份再写」已经执行，若再写仍失败就直接放弃，旧草稿已经没了。现在删除前留底，写不进去就原样放回去。
+
+- **SSE 重连后按锚点补拉漏掉的消息**（新增 `packages/app/src/context/reconnect.ts`、`packages/app/src/context/directory-sync.ts`、`packages/app/src/pages/session.tsx`）：断线期间产生的消息此前永远不会补齐，重连只刷新元数据。现在监听 `server.connected`，以断线前最后一条非乐观消息为锚点从最新页往回翻（封顶 50 页、重复游标报错），并与历史分页串行化。
+
+- **阅读旧历史时放宽消息上限**（新增 `packages/app/src/context/message-window.ts`、`packages/app/src/context/global-sync/event-reducer.ts`）：流式新消息此前会无条件把最旧的挤出 100 条窗口，用户正在往回翻也照挤。改为持有期间放宽到 400 条（有界，不是取消上限），按会话引用计数，切走即释放。
+
+- **附件读取前先做体积与数量预算**（新增 `packages/app/src/components/prompt-input/attachment-budget.ts`、`attachments.ts`）：此前没有单文件、单次总量与数量上限，也没有读取后的作用域校验。新增 10MiB / 文件、20MiB / 次、8 个 / 次三道闸门，正在读盘的附件用会话级 pending 额度占位；读取后若已切会话则拒绝写入，避免跨会话落文件。
+
+- **发送失败恢复草稿时不再覆盖其它会话**（`packages/app/src/components/prompt-input/submit.ts`、`packages/app/src/context/prompt.tsx`）：失败恢复此前无条件写回当前路由会话并抢焦点，迟到的失败会覆盖用户新输入或别的会话的草稿。现在按提交时的 scope 定向恢复，目标已被新内容占用时改为提示、不覆盖。取舍：未引入参考实现的失败草稿列表 UI。
+
+- **home 同步失败要响，配置写盘改成原子替换**（新增 `script/home-files.ts`、`script/sync-home.bat`、`script/merge-home-config.ts`）：同步脚本此前每一步都不检查退出码，复制失败也照样 `exit /b 0`；配置写盘是就地覆盖。新增 `writeAtomic()`（同目录临时文件 + rename，Windows 锁占用退避重试）与逐步的 errorlevel 检查。
+
+- **home 配置合并改用 JSONC 语法树编辑**（`script/merge-home-config.ts`，决策：`docs/notes/implemented/bug-fix/2026-09-13-jsonc-ast-merge.md`）：手写扫描器在单行对象带块注释时会把新键插进注释里，还照样报「已合并」。改用 `jsonc-parser` 的 `modify` / `applyEdits`，写盘前重新解析并做 `isDeepStrictEqual` 比对。
+
+- **指令注入预算改为可配置并约束远程抓取**（`packages/opencode/src/config/config.ts`、`packages/opencode/src/session/instruction.ts`）：新增 `instruction_budget`（`max_source_bytes` 默认 1MiB、`max_total_bytes` 默认 64KiB、`fetch_timeout_ms` 默认 5s）。单来源超限整份跳过并告警，总量超限维持「不截断只告警」；远程抓取超时此前只罩 `http.execute`，响应体读取没有上限，现在罩住整段请求到解码。模型可见改动四问：缺省值下注入内容逐字节不变、token 与 KV cache 均无影响，只有调小 `max_source_bytes` 才会改变前缀。
 
 ### [0.11.4] - 2026-09-11
 
