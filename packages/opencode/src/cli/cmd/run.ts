@@ -14,10 +14,10 @@
 import type { Argv } from "yargs"
 import path from "path"
 import { pathToFileURL } from "url"
-import { networkInterfaces } from "os"
 import { Effect } from "effect"
 import { UI } from "../ui"
 import { effectCmd } from "../effect-cmd"
+import { assertPasswordForExposure, resolveLanDefaultPassword, getLanIPs } from "../network"
 import { ServerAuth } from "@/server/auth"
 import { EOL } from "os"
 import { Server } from "@/server/server"
@@ -848,6 +848,10 @@ export const RunCommand = effectCmd({
         const hostname = args.hostname ?? "127.0.0.1"
         const port = args.port ?? 0
         if (hostname !== "127.0.0.1" || port !== 0) {
+          // 260913 Red 这个分支原先直调 Server.listen，绕过了 cli/network.ts 的密码闸门——
+          // 同一个 --hostname 0.0.0.0，serve/web 会拦（或兜底注入默认密码），TUI 直连却裸奔。
+          resolveLanDefaultPassword(hostname)
+          assertPasswordForExposure(hostname)
           try {
             const listener = await Server.listen({ hostname, port })
             UI.empty()
@@ -857,18 +861,7 @@ export const RunCommand = effectCmd({
                 UI.Style.TEXT_NORMAL,
                 `http://localhost:${listener.port}`,
               )
-              const nets = networkInterfaces()
-              const ips: string[] = []
-              for (const name of Object.keys(nets)) {
-                const net = nets[name]
-                if (!net) continue
-                for (const info of net) {
-                  if (info.internal || info.family !== "IPv4") continue
-                  if (info.address.startsWith("172.")) continue
-                  ips.push(info.address)
-                }
-              }
-              for (const ip of ips) {
+              for (const ip of getLanIPs()) {
                 UI.println(
                   UI.Style.TEXT_INFO_BOLD + "  Network access: ",
                   UI.Style.TEXT_NORMAL,

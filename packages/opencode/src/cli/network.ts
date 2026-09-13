@@ -2,6 +2,7 @@ import type { Argv, InferredOptionTypes } from "yargs"
 import { Config } from "@/config/config"
 import { Effect } from "effect"
 import { UI } from "./ui"
+import { networkInterfaces } from "os"
 
 const options = {
   port: {
@@ -58,7 +59,7 @@ const LAN_DEFAULT_PASSWORD = "RedCode0429"
  * 默认密码比裸奔强。gate 保留给显式置空串的场景。这里必须运行期读 process.env 而不是
  * Flag —— Flag 是模块加载时的快照，兜底注入发生在命令执行期，读快照永远看不见。
  */
-function assertPasswordForExposure(hostname: string) {
+export function assertPasswordForExposure(hostname: string) {
   if (LOOPBACK.has(hostname)) return
   if (process.env["REDCODE_SERVER_PASSWORD"]) return
   UI.error(`拒绝在 ${hostname} 上监听：REDCODE_SERVER_PASSWORD 未设或被显式置空。`)
@@ -75,7 +76,7 @@ function assertPasswordForExposure(hostname: string) {
 
 // 260908 Red 只对非回环绑定兜底：回环用法（本地脚本、SDK 直连 localhost）保持无鉴权，
 // 测试与桌面 sidecar（自带随机密码 env）都不经过这条路径。
-function resolveLanDefaultPassword(hostname: string) {
+export function resolveLanDefaultPassword(hostname: string) {
   if (LOOPBACK.has(hostname)) return
   if (process.env["REDCODE_SERVER_PASSWORD"] !== undefined) return
   process.env["REDCODE_SERVER_PASSWORD"] = LAN_DEFAULT_PASSWORD
@@ -107,4 +108,32 @@ export function resolveNetworkOptionsNoConfig(args: NetworkOptions, config?: Con
   const cors = [...configCors, ...argsCors]
 
   return { hostname, port, mdns, mdnsDomain, cors }
+}
+
+
+// 260913 Red web.ts 和 run.ts 原先各有一份同形状的网卡枚举，且都只跳过了 172.*。
+// 那两份会把 link-local（169.254.x.x，手机不可达）和代理 TUN 常见的 RFC 2544 基准段
+// （198.18/198.19）一起打给用户，照着敲一个连不上一个。统一到一处，也顺手消掉重复。
+export function isUsableLanAddress(address: string) {
+  return !(
+    address.startsWith("172.") ||
+    address.startsWith("169.254.") ||
+    address.startsWith("198.18.") ||
+    address.startsWith("198.19.")
+  )
+}
+
+export function getLanIPs() {
+  const nets = networkInterfaces()
+  const results: string[] = []
+  for (const name of Object.keys(nets)) {
+    const net = nets[name]
+    if (!net) continue
+    for (const info of net) {
+      if (info.internal || info.family !== "IPv4") continue
+      if (!isUsableLanAddress(info.address)) continue
+      results.push(info.address)
+    }
+  }
+  return results
 }

@@ -2,31 +2,8 @@ import { Effect } from "effect"
 import { Server } from "../../server/server"
 import { UI } from "../ui"
 import { effectCmd } from "../effect-cmd"
-import { withNetworkOptions, resolveNetworkOptions } from "../network"
+import { withNetworkOptions, resolveNetworkOptions, getLanIPs } from "../network"
 import open from "open"
-import { networkInterfaces } from "os"
-
-function getNetworkIPs() {
-  const nets = networkInterfaces()
-  const results: string[] = []
-
-  for (const name of Object.keys(nets)) {
-    const net = nets[name]
-    if (!net) continue
-
-    for (const netInfo of net) {
-      // Skip internal and non-IPv4 addresses
-      if (netInfo.internal || netInfo.family !== "IPv4") continue
-
-      // Skip Docker bridge networks (typically 172.x.x.x)
-      if (netInfo.address.startsWith("172.")) continue
-
-      results.push(netInfo.address)
-    }
-  }
-
-  return results
-}
 
 export const WebCommand = effectCmd({
   command: "web",
@@ -51,7 +28,7 @@ export const WebCommand = effectCmd({
       UI.println(UI.Style.TEXT_INFO_BOLD + "  Local access:      ", UI.Style.TEXT_NORMAL, localhostUrl)
 
       // Show network IPs for remote access
-      const networkIPs = getNetworkIPs()
+      const networkIPs = getLanIPs()
       if (networkIPs.length > 0) {
         for (const ip of networkIPs) {
           UI.println(
