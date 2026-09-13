@@ -294,6 +294,9 @@ export const dict = {
     "ローカルストレージの空きが足りず下書きを保存できません。空き容量を確保するか、送信して内容を保持してください。",
   "prompt.toast.attachmentTooLarge.title": "添付ファイルが大きすぎます",
   "prompt.toast.attachmentTooLarge.description": "1 ファイル 10MB、合計 20MB、1 プロンプトあたり 8 個までです。",
+  "prompt.toast.draftRestoreSkipped.title": "下書きを復元しませんでした",
+  "prompt.toast.draftRestoreSkipped.description":
+    "送信に失敗しましたが、このセッションには新しい入力があるため、上書きを避けて下書きは書き戻していません。",
   "dialog.mcp.title": "MCP",
   "dialog.mcp.description": "{{total}}個中{{enabled}}個が有効",
   "dialog.mcp.empty": "MCPが設定されていません",

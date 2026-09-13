@@ -107,6 +107,7 @@ beforeAll(async () => {
   mock.module("@/context/prompt", () => ({
     usePrompt: () => ({
       current: () => promptValue,
+      dirty: () => false,
       reset: () => undefined,
       set: () => undefined,
       context: {

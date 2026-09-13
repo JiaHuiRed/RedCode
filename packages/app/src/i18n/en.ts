@@ -328,6 +328,9 @@ export const dict = {
   "prompt.toast.attachmentTooLarge.title": "Attachment too large",
   "prompt.toast.attachmentTooLarge.description":
     "Attachments are limited to 10 MB each and 20 MB in total, with at most 8 per prompt.",
+  "prompt.toast.draftRestoreSkipped.title": "Draft not restored",
+  "prompt.toast.draftRestoreSkipped.description":
+    "Sending failed, but this session already has new text, so the failed draft was not written back to avoid overwriting it.",
 
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "{{enabled}} of {{total}} enabled",

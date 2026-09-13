@@ -10,7 +10,7 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useLocal } from "@/context/local"
 import { usePermission } from "@/context/permission"
-import { type ContextItem, type ImageAttachmentPart, type Prompt, usePrompt } from "@/context/prompt"
+import { type ContextItem, type ImageAttachmentPart, type Prompt, type Scope, usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { Identifier } from "@/utils/id"
@@ -439,14 +439,28 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       variant,
     }
 
+    // 260913 Red 清空与恢复都必须钉在**提交时那个会话**上：sendFollowupDraft 是异步的，
+    // 失败回调可能在用户切到别的会话、甚至已经打了新字之后才到。原实现走的是"当前路由"
+    // 的 prompt store，于是迟到的失败会把另一个会话的输入覆盖掉。
+    const scope: Scope = { dir: sessionDirectory, id: session.id }
+
     const clearInput = () => {
-      prompt.reset()
+      prompt.reset(scope)
       input.setMode("normal")
       input.setPopover(null)
     }
 
     const restoreInput = () => {
-      prompt.set(currentPrompt, input.promptLength(currentPrompt))
+      // 260913 Red 目标会话已被重新输入时不再写回：宁可提示草稿未恢复，也不能吃掉用户新写的内容。
+      if (prompt.dirty(scope)) {
+        showToast({
+          title: language.t("prompt.toast.draftRestoreSkipped.title"),
+          description: language.t("prompt.toast.draftRestoreSkipped.description"),
+        })
+        return
+      }
+      prompt.set(currentPrompt, input.promptLength(currentPrompt), scope)
+      if (params.dir !== scope.dir || params.id !== scope.id) return
       input.setMode(mode)
       input.setPopover(null)
       requestAnimationFrame(() => {

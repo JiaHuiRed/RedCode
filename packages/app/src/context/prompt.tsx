@@ -156,7 +156,7 @@ const MAX_PROMPT_SESSIONS = 20
 
 type PromptSession = ReturnType<typeof createPromptSession>
 
-type Scope = {
+export type Scope = {
   dir: string
   id?: string
 }
@@ -315,7 +315,9 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
       ready,
       current: () => session().current(),
       cursor: () => session().cursor(),
-      dirty: () => session().dirty(),
+      // 260913 Red 支持按 scope 查询草稿是否为空：异步失败要恢复草稿时得先确认目标会话
+      // 没有被用户重新输入过，否则会把新内容覆盖掉。
+      dirty: (scope?: Scope) => pick(scope).dirty(),
       context: {
         items: () => session().context.items(),
         add: (item: ContextItem) => session().context.add(item),

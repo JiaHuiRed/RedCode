@@ -342,6 +342,9 @@ export const dict = {
   "prompt.toast.draftStorageFull.description": "本地存储空间不足，草稿无法保存。请清理空间，或直接发送以保留内容。",
   "prompt.toast.attachmentTooLarge.title": "附件超出上限",
   "prompt.toast.attachmentTooLarge.description": "单个附件最多 10MB，同一条提示合计不超过 20MB、最多 8 个。",
+  "prompt.toast.draftRestoreSkipped.title": "草稿未恢复",
+  "prompt.toast.draftRestoreSkipped.description":
+    "发送失败，但该会话已经有了新的输入，为避免覆盖，这次未发送的内容没有写回输入框。",
 
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "已启用 {{enabled}} / {{total}}",
