@@ -35,6 +35,8 @@ export interface ImageAttachmentPart {
   filename: string
   mime: string
   dataUrl: string
+  // 260913 Red 原始字节数：预算核算用它，别再从 dataUrl 反推（base64 换算有误差）。
+  size?: number
   path?: string
 }
 

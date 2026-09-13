@@ -5,6 +5,7 @@ import { usePrompt, type ContentPart, type ImageAttachmentPart } from "@/context
 import { useLanguage } from "@/context/language"
 import { uuid } from "@/utils/uuid"
 import { getCursorPosition } from "./editor-dom"
+import { attachmentFits } from "./attachment-budget"
 import { attachmentMime } from "./files"
 import { normalizePaste, pasteMode } from "./paste"
 
@@ -47,7 +48,28 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     })
   }
 
+  const warnSize = () => {
+    showToast({
+      title: language.t("prompt.toast.attachmentTooLarge.title"),
+      description: language.t("prompt.toast.attachmentTooLarge.description"),
+    })
+  }
+
+  // 260913 Red 正在读盘的附件先占额度：只看 prompt.current() 的话，同时粘贴的两个大文件
+  // 互相看不见，会双双通过检查。key 取会话目录，跨会话不共享额度。
+  const pendingBudget = new Map<string, { bytes: number; count: number }>()
+  const budgetKey = () => input.sessionDirectory ?? "default"
+  const budgetFor = (key: string) => pendingBudget.get(key) ?? { bytes: 0, count: 0 }
+
   const add = async (file: File, toast = true) => {
+    // 260913 Red 预算检查放在读内容和落盘之前：先读 10MB+ 再拒绝是白花的时间和内存。
+    const key = budgetKey()
+    const existing = prompt.current().filter((part): part is ImageAttachmentPart => part.type === "image")
+    if (!attachmentFits(file.size, existing, budgetFor(key))) {
+      if (toast) warnSize()
+      return false
+    }
+
     const mime = await attachmentMime(file)
     if (!mime) {
       if (toast) warn()
@@ -57,32 +79,43 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     const editor = input.editor()
     if (!editor) return false
 
-    const url = await dataUrl(file, mime)
-    if (!url) return false
+    const pending = budgetFor(key)
+    pendingBudget.set(key, { bytes: pending.bytes + file.size, count: pending.count + 1 })
+    try {
+      const url = await dataUrl(file, mime)
+      if (!url) return false
 
-    // 260629 Red: 落盘到 .attachments/，让 build-request-parts 走 file:// URL 而非 base64 dataUrl
-    let attachmentPath: string | undefined
-    if (input.sessionDirectory && input.writeAttachment) {
-      const ext = mime.split("/")[1]?.split("+")[0] || "bin"
-      const filename = `${uuid()}.${ext}`
-      attachmentPath = await input.writeAttachment(
-        input.sessionDirectory,
-        filename,
-        new Uint8Array(await file.arrayBuffer()),
-      )
-    }
+      // 260629 Red: 落盘到 .attachments/，让 build-request-parts 走 file:// URL 而非 base64 dataUrl
+      let attachmentPath: string | undefined
+      if (input.sessionDirectory && input.writeAttachment) {
+        const ext = mime.split("/")[1]?.split("+")[0] || "bin"
+        const filename = `${uuid()}.${ext}`
+        attachmentPath = await input.writeAttachment(
+          input.sessionDirectory,
+          filename,
+          new Uint8Array(await file.arrayBuffer()),
+        )
+      }
 
-    const attachment: ImageAttachmentPart = {
-      type: "image",
-      id: uuid(),
-      filename: file.name,
-      mime,
-      dataUrl: url,
-      path: attachmentPath,
+      const attachment: ImageAttachmentPart = {
+        type: "image",
+        id: uuid(),
+        filename: file.name,
+        mime,
+        dataUrl: url,
+        size: file.size,
+        path: attachmentPath,
+      }
+      const cursor = prompt.cursor() ?? getCursorPosition(editor)
+      prompt.set([...prompt.current(), attachment], cursor)
+      return true
+    } finally {
+      // 260913 Red 只在真的占过额度之后才释放；提前 return 的路径不会走到这里。
+      const now = budgetFor(key)
+      const next = { bytes: Math.max(0, now.bytes - file.size), count: Math.max(0, now.count - 1) }
+      if (next.bytes === 0 && next.count === 0) pendingBudget.delete(key)
+      else pendingBudget.set(key, next)
     }
-    const cursor = prompt.cursor() ?? getCursorPosition(editor)
-    prompt.set([...prompt.current(), attachment], cursor)
-    return true
   }
 
   const addAttachment = (file: File) => add(file)

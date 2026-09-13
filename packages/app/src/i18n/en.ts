@@ -325,6 +325,9 @@ export const dict = {
   "prompt.toast.draftStorageFull.title": "Draft storage full",
   "prompt.toast.draftStorageFull.description":
     "Local storage is full, so this draft cannot be saved. Free up space or send it to keep your work.",
+  "prompt.toast.attachmentTooLarge.title": "Attachment too large",
+  "prompt.toast.attachmentTooLarge.description":
+    "Attachments are limited to 10 MB each and 20 MB in total, with at most 8 per prompt.",
 
   "dialog.mcp.title": "MCPs",
   "dialog.mcp.description": "{{enabled}} of {{total}} enabled",
