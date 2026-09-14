@@ -7,7 +7,7 @@
 // - 没有 stdio JSON-RPC 往返，也不占一个常驻子进程（启动期不再参与"等所有 MCP 起来"）
 // - 拿得到 ctx.ask，写操作能弹权限；MCP 版只能靠 readOnly 自律
 // - 改完不用重编 RedCode，下次开会话即生效
-import { tool } from "@opencode-ai/plugin"
+import { tool } from "@redcode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
 
