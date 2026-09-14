@@ -643,6 +643,8 @@ namespace TestLLMServer {
   export interface Service {
     readonly url: string
     readonly push: (...input: (Item | Reply)[]) => Effect.Effect<void>
+    readonly title: (...input: string[]) => Effect.Effect<void>
+    readonly titleError: (message?: unknown) => Effect.Effect<void>
     readonly pushMatch: (match: Match, ...input: (Item | Reply)[]) => Effect.Effect<void>
     readonly textMatch: (match: Match, value: string, opts?: { usage?: Usage }) => Effect.Effect<void>
     readonly toolMatch: (match: Match, name: string, input: unknown) => Effect.Effect<void>
@@ -673,6 +675,7 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
 
       let hits: Hit[] = []
       let list: Queue[] = []
+      let titleResponses: Item[] = []
       let waits: Wait[] = []
       let misses: Hit[] = []
 
@@ -709,7 +712,12 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
         if (isTitleRequest(body)) {
           hits = [...hits, current]
           yield* notify()
-          const auto: Sse = { type: "sse", head: [role()], tail: [textLine("E2E Title"), finishLine("stop")] }
+          const auto = titleResponses.shift() ?? {
+            type: "sse" as const,
+            head: [role()],
+            tail: [textLine("E2E Title"), finishLine("stop")],
+          }
+          if (auto.type !== "sse") return fail(auto)
           if (mode === "responses") return send(responses(auto, modelFrom(body)))
           if (!streaming) return completion(auto)
           return send(auto)
@@ -747,6 +755,21 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
             : `unix://${server.address.path}/v1`,
         push: Effect.fn("TestLLMServer.push")(function* (...input: (Item | Reply)[]) {
           queue(...input)
+        }),
+        title: Effect.fn("TestLLMServer.title")(function* (...input: string[]) {
+          titleResponses = input.map((text) => ({
+            type: "sse",
+            head: [role()],
+            tail: [...(text ? [textLine(text)] : []), finishLine("stop")],
+          }))
+        }),
+        titleError: Effect.fn("TestLLMServer.titleError")(function* (message: unknown = "boom") {
+          titleResponses = Array.from({ length: 4 }, () => ({
+            type: "sse" as const,
+            head: [role()],
+            tail: [],
+            error: message,
+          }))
         }),
         pushMatch: Effect.fn("TestLLMServer.pushMatch")(function* (match: Match, ...input: (Item | Reply)[]) {
           queueMatch(match, ...input)
@@ -795,6 +818,7 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
         reset: Effect.sync(() => {
           hits = []
           list = []
+          titleResponses = []
           waits = []
           misses = []
         }),

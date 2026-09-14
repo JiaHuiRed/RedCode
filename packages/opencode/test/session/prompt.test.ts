@@ -2,6 +2,7 @@ import { NodeFileSystem } from "@effect/platform-node"
 import { FetchHttpClient } from "effect/unstable/http"
 import { expect } from "bun:test"
 import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
+import * as TestConsole from "effect/testing/TestConsole"
 import path from "path"
 import { fileURLToPath, pathToFileURL } from "url"
 import { NamedError } from "@redcode-ai/core/util/error"
@@ -456,6 +457,97 @@ const boot = Effect.fn("test.boot")(function* (input?: { title?: string }) {
   const chat = yield* sessions.create(input ?? { title: "Pinned" })
   return { prompt, run, sessions, chat }
 })
+
+it.instance(
+  "generates an automatic session title",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const { prompt, sessions, chat } = yield* boot({})
+      yield* llm.text("world")
+
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "hello" }],
+      })
+      yield* prompt.loop({ sessionID: chat.id })
+
+      const title = yield* pollWithTimeout(
+        sessions
+          .get(chat.id)
+          .pipe(Effect.map((session) => (Session.isDefaultTitle(session.title) ? undefined : session.title))),
+        "automatic title was not persisted",
+      )
+      expect(title).toContain("E2E Title")
+    }),
+  { config: cfg },
+)
+
+it.instance(
+  "reports automatic title responses without text",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const { prompt, sessions, chat } = yield* boot({})
+      yield* llm.title("")
+      yield* llm.text("world")
+
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "hello" }],
+      })
+      yield* prompt.loop({ sessionID: chat.id })
+
+      yield* pollWithTimeout(
+        TestConsole.logLines.pipe(
+          Effect.map((lines) =>
+            lines.some((line) => typeof line === "string" && line.includes("title response empty"))
+              ? (true as const)
+              : undefined,
+          ),
+        ),
+        "empty title response was not logged",
+      )
+      expect(Session.isDefaultTitle((yield* sessions.get(chat.id)).title)).toBe(true)
+    }),
+  { config: cfg },
+)
+
+it.instance(
+  "reports automatic title stream failures",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const { prompt, sessions, chat } = yield* boot({})
+      yield* llm.titleError("title boom")
+      yield* llm.text("world")
+
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "hello" }],
+      })
+      yield* prompt.loop({ sessionID: chat.id })
+
+      yield* pollWithTimeout(
+        TestConsole.logLines.pipe(
+          Effect.map((lines) =>
+            lines.some((line) => typeof line === "string" && line.includes("failed to generate title"))
+              ? (true as const)
+              : undefined,
+          ),
+        ),
+        "title stream failure was not logged",
+      )
+      expect(Session.isDefaultTitle((yield* sessions.get(chat.id)).title)).toBe(true)
+    }),
+  { config: cfg },
+)
 
 // Loop semantics
 

@@ -417,19 +417,26 @@ export const layer = Layer.effect(
               Stream.mkString,
             )
         })
-      const text = yield* generate(mainModel).pipe(Effect.orDie)
+      const text = yield* generate(mainModel)
       const cleaned = text
         .replace(/<think>[\s\S]*?<\/think>\s*/g, "")
         .split("\n")
         .map((line) => line.trim())
         .find((line) => line.length > 0)
-      if (!cleaned) return
+      if (!cleaned) {
+        yield* elog.warn("title response empty", {
+          sessionID: input.session.id,
+          providerID: input.providerID,
+          modelID: input.modelID,
+          textLength: text.length,
+          hasThinkBlock: text.includes("<think>"),
+        })
+        return
+      }
       // 260616 Red 标题加来源前缀，区分 TUI(敏敏)/GUI(小宋) 的会话
       const withPrefix = `[${sessionSourceLabel(flags.client)}] ${cleaned}`
       const t = withPrefix.length > 100 ? withPrefix.substring(0, 97) + "..." : withPrefix
-      yield* sessions
-        .setTitle({ sessionID: input.session.id, title: t })
-        .pipe(Effect.catchCause((cause) => elog.error("failed to generate title", { error: Cause.squash(cause) })))
+      yield* sessions.setTitle({ sessionID: input.session.id, title: t })
     })
 
     const handleSubtask = Effect.fn("SessionPrompt.handleSubtask")(function* (input: {
@@ -1185,7 +1192,19 @@ export const layer = Layer.effect(
             modelID: stepSettings.user.model.modelID,
             providerID: stepSettings.user.model.providerID,
             history: msgs,
-          }).pipe(Effect.ignore, Effect.forkIn(scope))
+          }).pipe(
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.void
+                : elog.error("failed to generate title", {
+                    sessionID: stepSettings.session.id,
+                    providerID: stepSettings.user.model.providerID,
+                    modelID: stepSettings.user.model.modelID,
+                    error: Cause.squash(cause),
+                  }),
+            ),
+            Effect.forkIn(scope),
+          )
 
         const task = tasks.pop()
 
