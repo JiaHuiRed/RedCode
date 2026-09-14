@@ -94,6 +94,7 @@
     "@types/mime-types": "3.0.1",
     "glob": "13.0.6",
     "husky": "9.1.7",
+    "jsonc-parser": "3.3.1",
     "oxlint": "1.77.0",
     "oxlint-tsgolint": "7.0.2001",
     "prettier": "3.9.6",
