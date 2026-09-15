@@ -21,6 +21,8 @@ import type { JSONSchema7, JSONSchema7Definition } from "@ai-sdk/provider"
 import { Schema } from "effect"
 import z from "zod"
 import { Plugin } from "../plugin"
+import { installSdkModule } from "../plugin/sdk-shim"
+import { errorMessage } from "@/util/error"
 import { Provider } from "@/provider/provider"
 import { ProviderID, type ModelID } from "../provider/schema"
 import { WebSearchTool } from "./websearch"
@@ -201,11 +203,25 @@ export const layer = Layer.effect(
           Glob.scanSync("{tool,tools}/*.{js,ts}", { cwd: dir, absolute: true, dot: true, symlink: true }),
         )
         if (matches.length) yield* config.waitForDependencies()
+        // 260915 Red 用户文件 import "@redcode-ai/plugin" 在 home 解析不到（该包只在 repo
+        // workspace、未发 npm），由进程内虚拟模块兜底，seed 工具不再依赖 npm 安装。
+        installSdkModule()
         for (const match of matches) {
           const namespace = path.basename(match, path.extname(match))
           // `match` is an absolute filesystem path from `Glob.scanSync(..., { absolute: true })`.
           // Import it as `file://` so Node on Windows accepts the dynamic import.
-          const mod = yield* Effect.promise(() => import(pathToFileURL(match).href))
+          // 260915 Red 单文件失败只弃该文件：原为 Effect.promise，rejection 变 defect 直接
+          // 打断整张工具表的构建 → prompt 一起死，UI 永远停在"等待模型响应"且 token 全 0
+          // （实测 260914 ses_fr8o…，sqlite.ts 的 ResolveMessage 连累全部内建工具）。
+          const mod = yield* Effect.tryPromise(() => import(pathToFileURL(match).href)).pipe(
+            Effect.catch((error) =>
+              Effect.sync(() => {
+                log.error("custom tool file failed to load, skipping", { file: match, error: errorMessage(error) })
+                return null
+              }),
+            ),
+          )
+          if (!mod) continue
           for (const [id, def] of Object.entries(mod)) {
             if (!isPluginTool(def)) continue
             custom.push(fromPlugin(id === "default" ? namespace : `${namespace}_${id}`, def))

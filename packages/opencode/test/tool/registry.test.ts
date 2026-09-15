@@ -273,6 +273,70 @@ describe("tool.registry", () => {
     }),
   )
 
+  // 260915 Red 回归（ses_fr8o… 卡死）：单个自定义工具文件加载失败（import 了 home 解析
+  // 不到的包）只许弃该文件，不许把整张工具表连带 prompt 一起打死——修前 Effect.promise
+  // 把 rejection 当 defect，registry 构建直接中断，UI 永远停在"等待模型响应"且 token 全 0。
+  it.instance("skips a custom tool file that fails to import, keeps the rest", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const tool = path.join(test.directory, ".redcode", "tool")
+      yield* Effect.promise(() => fs.mkdir(tool, { recursive: true }))
+      yield* Effect.promise(() =>
+        Bun.write(
+          path.join(tool, "broken.ts"),
+          'import { query } from "@does-not-exist/zero"\nexport { query }\n',
+        ),
+      )
+      yield* Effect.promise(() =>
+        Bun.write(
+          path.join(tool, "healthy.ts"),
+          [
+            "export default {",
+            "  description: 'healthy tool',",
+            "  args: {},",
+            "  execute: async () => 'ok',",
+            "}",
+            "",
+          ].join("\n"),
+        ),
+      )
+      const registry = yield* ToolRegistry.Service
+      const ids = yield* registry.ids()
+      expect(ids).toContain("healthy")
+      // 内建工具必须还在
+      expect(ids).toContain("read")
+      expect(ids).not.toContain("broken")
+    }),
+  )
+
+  // 260915 Red：seed/tool/sqlite.ts import "@redcode-ai/plugin"——该包只在 repo workspace，
+  // home 的 node_modules 解析不到，由引擎的进程内虚拟模块兜底（plugin/sdk-shim.ts），
+  // 用户工具文件从此不依赖 npm 安装或 home package.json 声明。
+  it.instance("resolves @redcode-ai/plugin imports in custom tool files via the in-process shim", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const tool = path.join(test.directory, ".redcode", "tool")
+      yield* Effect.promise(() => fs.mkdir(tool, { recursive: true }))
+      yield* Effect.promise(() =>
+        Bun.write(
+          path.join(tool, "sdkbacked.ts"),
+          [
+            'import { tool } from "@redcode-ai/plugin"',
+            "export default tool({",
+            "  description: 'sdk-backed tool',",
+            "  args: {},",
+            "  execute: async () => 'ok',",
+            "})",
+            "",
+          ].join("\n"),
+        ),
+      )
+      const registry = yield* ToolRegistry.Service
+      const ids = yield* registry.ids()
+      expect(ids).toContain("sdkbacked")
+    }),
+  )
+
   it.instance("ignores non-tool exports in .redcode/tool files", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
