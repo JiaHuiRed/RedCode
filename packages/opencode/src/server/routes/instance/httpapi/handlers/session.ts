@@ -371,8 +371,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       yield* promptSvc.prompt({ ...ctx.payload, sessionID: ctx.params.sessionID }).pipe(
         Effect.catchCause((cause) =>
           Effect.gen(function* () {
+            // 260915 Red cause 对象直接进日志会被 JSON 序列化成 defect:{}（Error 的
+            // message 不可枚举），现场全丢；必须落 Cause.pretty 全文才有诊断价值。
             yield* Effect.logError("prompt_async failed").pipe(
-              Effect.annotateLogs({ sessionID: ctx.params.sessionID, cause }),
+              Effect.annotateLogs({ sessionID: ctx.params.sessionID, cause: Cause.pretty(cause) }),
             )
             yield* bus.publish(Session.Event.Error, {
               sessionID: ctx.params.sessionID,
