@@ -8,6 +8,7 @@
 // 纯 JS(.mjs)：node 与 bun 都能跑，两边 sqlite 模块名/只读选项名不同，按运行时分支。
 // 用法：node recall-memory.mjs <关键词...>        搜 global + 当前项目
 //       node recall-memory.mjs --all <关键词...>  搜全库（含其他项目）
+// 决策记录：docs/notes/implemented/bug-fix/2026-09-15-recall-token-packing.md
 // 决策记录：docs/notes/implemented/bug-fix/2026-09-10-recall-supermemory-db.md
 import { homedir } from "node:os"
 import { basename, dirname, join, resolve } from "node:path"
@@ -15,7 +16,7 @@ import * as fs from "node:fs"
 
 const DB_PATH = process.env.REDCODE_MEMORY_DB || join(homedir(), ".redcode", "supermemory.db")
 const LIMIT = Number(process.env.RECALL_LIMIT) || 5
-const MAX_CHARS = Number(process.env.RECALL_MAX_CHARS) || 4500 // 注入上限，超出截断，避免召回反而撑爆上下文
+const MAX_TOKENS = Number(process.env.RECALL_MAX_TOKENS) || 1125
 const MAX_QUERIES = 24 // 与 memory-recall.js 同上限：查询词再多只是票数噪声
 const isBun = typeof globalThis.Bun !== "undefined"
 
@@ -105,6 +106,26 @@ function verify(rows, q) {
   return rows.filter((r) => String(r.content ?? "").toLowerCase().includes(needle))
 }
 
+function estimateTokens(text) {
+  return Math.max(0, Math.round((text || "").length / 4))
+}
+
+function packResults(header, ranked) {
+  const parts = [header]
+  let used = estimateTokens(header)
+
+  for (const [i, r] of ranked.entries()) {
+    const [head, ...rest] = String(r.content).split("\n")
+    const entry = `### ${i + 1}. [${r.project}] ${head.trim()}\n${rest.join("\n").trim()}`
+    const next = `\n\n${entry}`
+    if (used + estimateTokens(next) > MAX_TOKENS) continue
+    parts.push(entry)
+    used += estimateTokens(next)
+  }
+
+  return parts.join("\n\n")
+}
+
 const HITS_PER_QUERY = 3
 
 async function recall(d, userText, project) {
@@ -176,10 +197,4 @@ if (ranked.length === 0) {
 }
 
 const scope = all ? "全库" : `global + ${project || "（项目名未识别，仅 global）"}`
-const parts = [`## 召回「${query}」相关记忆（${ranked.length} 条，${scope}）`]
-for (const [i, r] of ranked.entries()) {
-  const [head, ...rest] = String(r.content).split("\n")
-  parts.push(`### ${i + 1}. [${r.project}] ${head.trim()}\n${rest.join("\n").trim()}`)
-}
-const text = parts.join("\n\n")
-console.log(text.length > MAX_CHARS ? text.slice(0, MAX_CHARS) + "\n…(已截断)" : text)
+console.log(packResults(`## 召回「${query}」相关记忆（${ranked.length} 条，${scope}）`, ranked))

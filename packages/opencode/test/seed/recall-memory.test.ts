@@ -58,3 +58,16 @@ test("REDCODE_PROJECT_ROOT 决定召回作用域而不是 cwd", () => {
 
   expect(result.stdout).toContain("ProjectX")
 })
+
+test("token budget skips an oversized hit and keeps a later complete memory", () => {
+  const { db } = fixture([
+    { id: 30, project: "global", content: `#30 超大记忆${NEWLINE}alpha ${"x".repeat(2000)}` },
+    { id: 20, project: "global", content: `#20 完整短记忆${NEWLINE}alpha 的可执行教训` },
+  ])
+
+  const result = recall(db, ["alpha"], { RECALL_MAX_TOKENS: "100" })
+
+  expect(result.stdout).toContain("#20 完整短记忆")
+  expect(result.stdout).not.toContain("#30 超大记忆")
+  expect(result.stdout).not.toContain("…(已截断)")
+})
