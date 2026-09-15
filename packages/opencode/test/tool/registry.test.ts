@@ -568,7 +568,7 @@ describe("tool.registry", () => {
       yield* Effect.promise(() => fs.mkdir(customTools, { recursive: true }))
       yield* Effect.promise(() =>
         Bun.write(
-          path.join(customTools, "image.ts"),
+          path.join(customTools, "pic.ts"),
           [
             `import { tool } from ${JSON.stringify(pluginTool)}`,
             "export default tool({",
@@ -585,7 +585,7 @@ describe("tool.registry", () => {
       )
 
       const registry = yield* ToolRegistry.Service
-      const loaded = (yield* registry.all()).find((tool) => tool.id === "image")
+      const loaded = (yield* registry.all()).find((tool) => tool.id === "pic")
       if (!loaded) throw new Error("custom image tool was not loaded")
       const agents = yield* Agent.Service
       const result = yield* loaded.execute({}, {
