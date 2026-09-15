@@ -157,6 +157,9 @@ const MAX_PROMPT_SESSIONS = 20
 type PromptSession = ReturnType<typeof createPromptSession>
 
 export type Scope = {
+  // 260915 Red 必须传路由 `:dir` 段同一形态的值（base64Encode 后的目录），不是原始
+  // 文件路径——缓存键直接用 params.dir 拼（见下方 load()），形态不一致会静默落到
+  // 另一个条目上（事故：d522c4b8 传原始路径，发送后输入框"复活"已发消息）。
   dir: string
   id?: string
 }

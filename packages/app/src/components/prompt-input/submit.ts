@@ -442,7 +442,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     // 260913 Red 清空与恢复都必须钉在**提交时那个会话**上：sendFollowupDraft 是异步的，
     // 失败回调可能在用户切到别的会话、甚至已经打了新字之后才到。原实现走的是"当前路由"
     // 的 prompt store，于是迟到的失败会把另一个会话的输入覆盖掉。
-    const scope: Scope = { dir: sessionDirectory, id: session.id }
+    // 260915 Red scope.dir 必须是路由同一形态（base64Encode 后的目录）——prompt store
+    // 的缓存键用的是 params.dir（编码值，见 context/prompt.tsx 的 load），这里塞原始
+    // 文件路径后键对不上，reset/set 全落在凭空新建的条目上：发送后输入框"复活"已发
+    // 消息（clearInput 清的是空气），失败恢复草稿也静默失效。
+    const scope: Scope = { dir: base64Encode(sessionDirectory), id: session.id }
 
     const clearInput = () => {
       prompt.reset(scope)
