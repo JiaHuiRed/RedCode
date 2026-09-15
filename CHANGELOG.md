@@ -12,6 +12,8 @@
 
 #### 修复
 
+- **前缀变更日志定位到首个 system 区块，且不泄露模型可见原文**（`packages/opencode/src/session/{prefix-shape,prompt}.ts`，决策：`docs/notes/implemented/feature/2026-09-15-prefix-section-attribution.md`）：原来的 `prefix cache changed: system` 只说 system 变了，排查长会话命中率从 98% 下滑时无法分辨是 AGENTS/MEMORY、MCP 指南还是动态尾段。现在仅在最终 system hash 已变化时，从进程内 sidecar 比较首个不同区块，日志写安全标签与位置；绝不改发给模型的 system/messages/tool schema，也不把 canary 或指令正文写入日志。
+
 - **MCP 健康失败保留真实错误，工具调用也有一致默认超时**（`packages/opencode/src/mcp/{health,index}.ts`、`src/config/mcp.ts`）：健康探针此前把 timeout / transport 异常统一压成 `health check failed`，连续三次后 UI 只能显示这句泛化状态，日志也无法区分启动、健康探针和一次工具调用。现在失败状态保留原始错误、日志带 `phase` 与生效 timeout；工具调用补齐和连接/资源路径一致的 30 秒默认值，schema 文档同步更正。jcodemunch 显式提高到 300 秒，并允许轮询其后台索引 job，避免大仓重建撞上宿主 30 秒请求上限。
 
 - **隔离子代理不再能写穿 worktree 或提交进主仓库**（`packages/opencode/src/tool/external-directory.ts`、`src/tool/shell.ts`、`src/effect/instance-ref.ts`、`src/session/prompt.ts`，决策：`docs/notes/implemented/bug-fix/2026-09-13-worktree-isolation-boundary.md`）：`isolation:"worktree"` 此前只把默认 cwd 换到 worktree，不约束写入目标也不约束提交目标——拿到父工作区绝对路径就能绕过隔离，本次事故中并行子代理直接在主仓库抢着 commit、产出互相污染的提交。现在隔离 run 内越界的写类工具调用（write / edit / apply_patch）直接拒绝，不再走 `external_directory` 授权；shell 注入 `GIT_DIR` / `GIT_WORK_TREE` 把 git 命令钉在 worktree 上（实测压过命令行的 `git -C <父仓库>`）。读操作不拦，普通会话行为不变。识别签名：新增写文件工具必须传 `{ write: true }`。

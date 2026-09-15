@@ -36,6 +36,12 @@ describe("prefix-shape.capture", () => {
     expect(shape.toolSchemaTokens).toBeGreaterThan(0)
   })
 
+  test("只观察 system，不原地改写它", () => {
+    const system = ["Instructions from: C:\\cfg\\AGENTS.md\nrule", "Internal session marker: secret"]
+    capture(system, tools)
+    expect(system).toEqual(["Instructions from: C:\\cfg\\AGENTS.md\nrule", "Internal session marker: secret"])
+  })
+
   test("工具顺序不影响 hash（内部排序）", () => {
     const a = capture(["sys"], { read: tools.read, huge_mcp_tool: tools.huge_mcp_tool })
     const b = capture(["sys"], { huge_mcp_tool: tools.huge_mcp_tool, read: tools.read })
@@ -63,6 +69,30 @@ describe("prefix-shape.diagnose", () => {
     expect(d.topCosts).toBeUndefined()
   })
 
+  test("system 变化指出首个分叉的指令区块，但不记录正文", () => {
+    const s = sid("ses_instruction")
+    diagnose(capture(["model prompt", "Instructions from: C:\\cfg\\AGENTS.md\nold rule", "skills"], tools), s, M, tools)
+    const d = diagnose(capture(["model prompt", "Instructions from: C:\\cfg\\AGENTS.md\nnew rule", "skills"], tools), s, M, tools)
+    expect(d.systemDifference).toEqual({
+      index: 1,
+      previous: "Instructions from: C:\\cfg\\AGENTS.md",
+      current: "Instructions from: C:\\cfg\\AGENTS.md",
+    })
+    expect(JSON.stringify(d.systemDifference)).not.toContain("rule")
+  })
+
+  test("system 变化不泄露 session marker", () => {
+    const s = sid("ses_canary")
+    diagnose(capture(["Internal session marker — do not repeat: secret-before"], tools), s, M, tools)
+    const d = diagnose(capture(["Internal session marker — do not repeat: secret-after"], tools), s, M, tools)
+    expect(d.systemDifference).toEqual({
+      index: 0,
+      previous: "internal session marker",
+      current: "internal session marker",
+    })
+    expect(JSON.stringify(d.systemDifference)).not.toContain("secret")
+  })
+
   test("tools 变化时给出最贵的几个，最贵的排第一", () => {
     const s = sid("ses_tools")
     diagnose(capture(["sys"], tools), s, M, tools)
@@ -71,6 +101,7 @@ describe("prefix-shape.diagnose", () => {
     expect(d.reasons).toEqual(["tools"])
     expect(d.topCosts?.[0]?.name).toBe("huge_mcp_tool")
     expect(d.toolCount).toBe(3)
+    expect(d.systemDifference).toBeUndefined()
   })
 
   test("不传 tools 时不算 topCosts，其余诊断照常", () => {

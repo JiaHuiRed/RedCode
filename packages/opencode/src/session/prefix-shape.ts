@@ -25,11 +25,50 @@ export interface PrefixDiagnostic {
   toolCount: number
   /** tools 变化时给出的最贵几个工具，便于一眼看出是谁在吃前缀预算 */
   topCosts?: ToolSchemaCost[]
+  /** system 变化时最早断开的区块，不含原文，避免把 canary 或指令正文写进日志 */
+  systemDifference?: SystemDifference
 }
 
 export interface ToolSchemaCost {
   name: string
   tokens: number
+}
+
+export interface SystemDifference {
+  index: number
+  previous?: string
+  current?: string
+}
+
+// 260915 Red 诊断必须基于最终送往模型的 system 数组，但绝不能把其原文（尤其是 canary）
+// 写进日志。用 shape 身份作 WeakMap key，只在整段 hash 真变时比较首个不同区块。
+const systemSections = new WeakMap<PrefixShape, string[]>()
+
+function sectionLabel(text: string, index: number) {
+  const first = text.trimStart().split("\n", 1)[0] ?? ""
+  if (first.startsWith("Instructions from:")) return first
+  if (first.startsWith("You are powered by the model")) return "environment"
+  if (first.startsWith("Skills provide specialized instructions")) return "skills"
+  if (first.startsWith("Today's date:")) return "today's date"
+  if (first.startsWith("Internal session marker")) return "internal session marker"
+  if (first.startsWith("DCP metadata tags")) return "DCP metadata"
+  if (first.startsWith("▸ ")) return first.slice(2).split(":", 1)[0] ?? `system section ${index + 1}`
+  return `system section ${index + 1}`
+}
+
+function firstSystemDifference(previous: PrefixShape, current: PrefixShape): SystemDifference | undefined {
+  const before = systemSections.get(previous)
+  const after = systemSections.get(current)
+  if (!before || !after) return
+
+  for (let index = 0; index < Math.max(before.length, after.length); index++) {
+    if (before[index] === after[index]) continue
+    return {
+      index,
+      ...(before[index] ? { previous: sectionLabel(before[index], index) } : {}),
+      ...(after[index] ? { current: sectionLabel(after[index], index) } : {}),
+    }
+  }
 }
 
 /**
@@ -77,12 +116,14 @@ function hash(data: unknown): string {
 export function capture(system: string[], tools: Record<string, unknown>): PrefixShape {
   const sortedKeys = Object.keys(tools).sort()
   const toolDefs = sortedKeys.map((k) => ({ name: k, def: tools[k] }))
-  return {
+  const shape = {
     systemHash: hash(system),
     toolsHash: hash(toolDefs),
     toolSchemaTokens: Token.estimate(JSON.stringify(toolDefs) ?? ""),
     toolCount: sortedKeys.length,
   }
+  systemSections.set(shape, system)
+  return shape
 }
 
 const TOP_COSTS = 5
@@ -107,7 +148,14 @@ export function diagnose(
   if (prev.toolsHash !== shape.toolsHash) reasons.push("tools")
   // 只在 tools 真的变了时才算逐工具成本 —— 这一步要序列化全部 schema，不必每轮都做
   const topCosts = reasons.includes("tools") && tools ? schemaCosts(tools).slice(0, TOP_COSTS) : undefined
-  return { changed: reasons.length > 0, reasons, ...base, ...(topCosts ? { topCosts } : {}) }
+  const systemDifference = reasons.includes("system") ? firstSystemDifference(prev, shape) : undefined
+  return {
+    changed: reasons.length > 0,
+    reasons,
+    ...base,
+    ...(topCosts ? { topCosts } : {}),
+    ...(systemDifference ? { systemDifference } : {}),
+  }
 }
 
 export * as PrefixShape from "./prefix-shape"

@@ -1669,6 +1669,12 @@ export const layer = Layer.effect(
                 toolCount: diag.toolCount,
                 toolSchemaTokens: diag.toolSchemaTokens,
                 ...(diag.topCosts ? { topCosts: diag.topCosts.map((c) => `${c.name}=${c.tokens}`).join(" ") } : {}),
+                // 260915 Red 只记录首个分叉段的安全标签，定位 system miss 又不泄露 canary/指令原文。
+                ...(diag.systemDifference
+                  ? {
+                      systemDifference: `${diag.systemDifference.index + 1}: ${diag.systemDifference.previous ?? "∅"} → ${diag.systemDifference.current ?? "∅"}`,
+                    }
+                  : {}),
               })
             }
           }
