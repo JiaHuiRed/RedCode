@@ -337,6 +337,8 @@ function convertMcpTool(
             server: serverName,
             tool: mcpTool.name,
             attempt: attempt + 1,
+            phase: "tool_call",
+            timeout,
             error: err instanceof Error ? err.message : String(err),
           })
           if (attempt < MAX_RETRIES - 1) {
@@ -380,7 +382,7 @@ function convertMcpToolCached(mcpTool: MCPToolDef, serverName: string): Tool {
 function defs(key: string, client: MCPClient, timeout?: number) {
   return listTools(key, client, timeout ?? DEFAULT_TIMEOUT).pipe(
     Effect.catch((err) => {
-      log.error("failed to get tools from client", { key, error: err })
+      log.error("failed to get tools from client", { key, phase: "startup", error: err })
       return Effect.succeed(undefined)
     }),
   )
@@ -710,7 +712,14 @@ export const layer = Layer.effect(
         })),
         Effect.catch((error): Effect.Effect<{ client: MCPClient | undefined; status: Status }> => {
           const msg = error instanceof Error ? error.message : String(error)
-          log.error("local mcp startup failed", { key, command: mcp.command, cwd, error: msg })
+          log.error("local mcp startup failed", {
+            key,
+            command: mcp.command,
+            cwd,
+            phase: "startup",
+            timeout: connectTimeout,
+            error: msg,
+          })
           // 260620 Red kill orphaned process — without this, failed MCP servers become
           // orphans that accumulate on every reconnect/reconcile cycle (8+ copies observed).
           if (spawnedPid) {
@@ -940,12 +949,13 @@ export const layer = Layer.effect(
                     signal,
                     timeout: 10_000,
                   }),
-                warn: (name, failures) => log.warn("MCP health check failed", { name, failures }),
-                unhealthy: (name) => {
-                  log.error("MCP server unhealthy, marking disconnected", { name })
+                warn: (name, failures, error) =>
+                  log.warn("MCP health check failed", { name, failures, phase: "health", error }),
+                unhealthy: (name, _client, error) => {
+                  log.error("MCP server unhealthy, marking disconnected", { name, phase: "health", error })
                   const closing = closeClient(s, name)
                   delete s.clients[name]
-                  s.status[name] = { status: "failed", error: "health check failed" }
+                  s.status[name] = { status: "failed", error: `MCP health check failed: ${error}` }
                   return closing.pipe(Effect.ignore)
                 },
               })
@@ -1147,7 +1157,7 @@ export const layer = Layer.effect(
               return
             }
 
-            const timeout = entry?.timeout ?? defaultTimeout
+            const timeout = entry?.timeout ?? defaultTimeout ?? DEFAULT_TIMEOUT
             // 260603 Red P1: 用 EffectBridge 避免依赖 AppRuntime
             const toolBridge = yield* EffectBridge.make()
             const doReconnect = () => toolBridge.promise(reconnectServer(clientName))

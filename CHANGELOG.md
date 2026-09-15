@@ -12,6 +12,8 @@
 
 #### 修复
 
+- **MCP 健康失败保留真实错误，工具调用也有一致默认超时**（`packages/opencode/src/mcp/{health,index}.ts`、`src/config/mcp.ts`）：健康探针此前把 timeout / transport 异常统一压成 `health check failed`，连续三次后 UI 只能显示这句泛化状态，日志也无法区分启动、健康探针和一次工具调用。现在失败状态保留原始错误、日志带 `phase` 与生效 timeout；工具调用补齐和连接/资源路径一致的 30 秒默认值，schema 文档同步更正。jcodemunch 显式提高到 300 秒，并允许轮询其后台索引 job，避免大仓重建撞上宿主 30 秒请求上限。
+
 - **隔离子代理不再能写穿 worktree 或提交进主仓库**（`packages/opencode/src/tool/external-directory.ts`、`src/tool/shell.ts`、`src/effect/instance-ref.ts`、`src/session/prompt.ts`，决策：`docs/notes/implemented/bug-fix/2026-09-13-worktree-isolation-boundary.md`）：`isolation:"worktree"` 此前只把默认 cwd 换到 worktree，不约束写入目标也不约束提交目标——拿到父工作区绝对路径就能绕过隔离，本次事故中并行子代理直接在主仓库抢着 commit、产出互相污染的提交。现在隔离 run 内越界的写类工具调用（write / edit / apply_patch）直接拒绝，不再走 `external_directory` 授权；shell 注入 `GIT_DIR` / `GIT_WORK_TREE` 把 git 命令钉在 worktree 上（实测压过命令行的 `git -C <父仓库>`）。读操作不拦，普通会话行为不变。识别签名：新增写文件工具必须传 `{ write: true }`。
 
 - **手机远程访问入口：桌面 bat 与 /lan 命令**（新增 `script/redcode-lan.bat`、`seed/command/lan.md`）：躺床上要用手机连过来时，此前只能自己拼 `redcode web --hostname 0.0.0.0` 再翻环境变量找密码。现在桌面双击 `RedCode-LAN.bat`，或在 TUI 里敲 `/lan`，都会给出手机地址、用户名与当前生效的密码。bat 会先探测仓库根、再 cd 到 `packages/opencode` 后启动——exe 的内嵌 web UI 在运行期未生效，靠该目录下的 `redcode-web-ui.gen.ts` 兜底，换目录启动根路径会 500。已在监听时再双击不会起第二个服务，直接打印手机地址（用 `goto` 而非括号块，避免密码里的 `)` 破坏批处理解析）。`/lan` 的端口状态用内联 shell 注入（命令里刻意不写 `$` 变量：模板经 PowerShell 执行时会被外层先展开成空串）。

@@ -8,7 +8,7 @@ type Client = { request: (signal: AbortSignal) => Promise<unknown> }
 function fixture(clients: Record<string, Client>) {
   const failures = new Map<string, HealthFailure<Client>>()
   const unhealthy: string[] = []
-  const warnings: Array<[string, number]> = []
+  const warnings: Array<[string, number, string]> = []
   return {
     failures,
     unhealthy,
@@ -24,8 +24,8 @@ function fixture(clients: Record<string, Client>) {
             unhealthy.push(name)
             delete clients[name]
           }),
-        warn: (name, count) => {
-          warnings.push([name, count])
+        warn: (name, count, error) => {
+          warnings.push([name, count, error])
         },
         timeout: 5,
       }),
@@ -52,9 +52,9 @@ test("MCP health failure survives later cycles and does not suppress other clien
     expect(good).toBe(3)
     expect(input.unhealthy).toEqual(["bad"])
     expect(input.warnings).toEqual([
-      ["bad", 1],
-      ["bad", 2],
-      ["bad", 3],
+      ["bad", 1, "offline"],
+      ["bad", 2, "offline"],
+      ["bad", 3, "offline"],
     ])
   }).pipe(Effect.scoped, Effect.runPromise))
 
@@ -99,6 +99,7 @@ test("MCP timeout cancels the request and keeps the cycle alive", () =>
     yield* input.cycle()
     expect(aborted).toBe(true)
     expect(input.failures.get("server")?.count).toBe(1)
+    expect(input.failures.get("server")?.error).toBeTruthy()
   }).pipe(Effect.scoped, Effect.runPromise))
 
 test("MCP delayed result cannot mark a replacement client unhealthy", () =>

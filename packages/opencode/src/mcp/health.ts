@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 
-export type HealthFailure<Client> = { client: Client; count: number }
+export type HealthFailure<Client> = { client: Client; count: number; error: string }
 
 const MAX_FAILURES = 3
 
@@ -10,33 +10,43 @@ export function checkHealthCycle<Client>(input: {
   connected: (name: string) => boolean
   failures: Map<string, HealthFailure<Client>>
   request: (client: Client, signal: AbortSignal) => Promise<unknown>
-  unhealthy: (name: string, client: Client) => Effect.Effect<void>
-  warn: (name: string, failures: number) => void
+  unhealthy: (name: string, client: Client, error: string) => Effect.Effect<void>
+  warn: (name: string, failures: number, error: string) => void
   timeout?: number
 }) {
   return Effect.forEach(
     Object.entries(input.clients).filter(([name]) => input.connected(name)),
     ([name, client]) =>
       Effect.gen(function* () {
-        const healthy = yield* Effect.tryPromise({
+        const timeout = input.timeout ?? 10_000
+        const result = yield* Effect.tryPromise({
           try: (signal) => input.request(client, signal),
-          catch: () => new Error("health check failed"),
+          catch: (error) => (error instanceof Error ? error : new Error(String(error))),
         }).pipe(
-          Effect.timeout(input.timeout ?? 10_000),
-          Effect.match({ onSuccess: () => true, onFailure: () => false }),
+          Effect.timeoutOption(timeout),
+          Effect.match({
+            onSuccess: (response) =>
+              response._tag === "Some"
+                ? { healthy: true as const }
+                : { healthy: false as const, error: `Timed out after ${timeout}ms` },
+            onFailure: (error) => ({
+              healthy: false as const,
+              error: error instanceof Error ? error.message : String(error),
+            }),
+          }),
         )
         if (input.clients[name] !== client || !input.connected(name)) return
-        if (healthy) {
+        if (result.healthy) {
           input.failures.delete(name)
           return
         }
         const previous = input.failures.get(name)
         const count = (previous?.client === client ? previous.count : 0) + 1
-        input.failures.set(name, { client, count })
-        input.warn(name, count)
+        input.failures.set(name, { client, count, error: result.error })
+        input.warn(name, count, result.error)
         if (count < MAX_FAILURES) return
         input.failures.delete(name)
-        yield* input.unhealthy(name, client)
+        yield* input.unhealthy(name, client, result.error)
       }),
     { concurrency: "unbounded", discard: true },
   )
