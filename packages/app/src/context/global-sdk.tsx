@@ -2,7 +2,7 @@ import type { Event } from "@redcode-ai/sdk/v2/client"
 import { createSimpleContext } from "@redcode-ai/ui/context"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import { batch, createSignal, onCleanup, onMount } from "solid-js"
+import { batch, createEffect, createSignal, on, onCleanup, onMount } from "solid-js"
 import { createSdkForServer } from "@/utils/server"
 import { useLanguage } from "./language"
 import { usePlatform } from "./platform"
@@ -289,6 +289,21 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
         if (Date.now() - lastEventAt < HEARTBEAT_TIMEOUT_MS) return
         attempt?.abort()
       })
+
+      // 260916 Red Electron 的 Network Service 崩溃后 fetch 是静默挂住的：既不复位也不结束，
+      //   只能等 HEARTBEAT_TIMEOUT_MS(90s) 心跳超时才判定断线（实测 22:47:26 崩溃 → 22:48:54
+      //   才重连，这段空白就是用户看到的白屏）。主进程能立刻感知崩溃并推计数过来，这里收到就
+      //   拆掉旧流——abort 走既有重连路径，重连成功后的 server.connected 再触发会话补拉。
+      createEffect(
+        on(
+          () => platform.networkServiceRestart?.(),
+          (count, previous) => {
+            if (count === undefined || count === previous) return
+            attempt?.abort()
+          },
+          { defer: true },
+        ),
+      )
     })
 
     onCleanup(() => {

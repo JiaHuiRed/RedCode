@@ -58,6 +58,8 @@ export type ElectronAPI = {
   onSqliteMigrationProgress: (cb: (progress: SqliteMigrationProgress) => void) => () => void
   onMenuCommand: (cb: (id: string) => void) => () => void
   onDeepLink: (cb: (urls: string[]) => void) => () => void
+  // 260916 Red Electron Network Service 崩溃通知（见 main/ipc.ts sendNetworkServiceRestart）
+  onNetworkServiceRestart: (cb: () => void) => () => void
 
   openDirectoryPicker: (opts?: {
     multiple?: boolean

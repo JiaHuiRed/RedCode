@@ -16,7 +16,13 @@ import type { InitStep, ServerReadyData, SqliteMigrationProgress, WslConfig } fr
 import { checkAppExists, resolveAppPath, wslPath } from "./apps"
 import { listFonts } from "./fonts"
 import { CHANNEL, UPDATER_ENABLED } from "./constants"
-import { registerIpcHandlers, sendDeepLinks, sendMenuCommand, sendSqliteMigrationProgress } from "./ipc"
+import {
+  registerIpcHandlers,
+  sendDeepLinks,
+  sendMenuCommand,
+  sendNetworkServiceRestart,
+  sendSqliteMigrationProgress,
+} from "./ipc"
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
 import { parseMarkdown } from "./markdown"
 import { createMenu } from "./menu"
@@ -456,6 +462,10 @@ const main = Effect.gen(function* () {
 
   app.on("child-process-gone", (_event, details) => {
     writeLog("utility", "child process gone", { details }, "error")
+    if (details.type !== "Utility" || details.serviceName !== "network.mojom.NetworkService") return
+    // 260916 Red Network Service 崩溃渲染层是无感的（连接静默挂死，不报错），只能靠 90s 心跳超时
+    //   才重连；这里立刻推一条通知，让渲染层主动拆掉旧事件流重建，把恢复时间从 90s 压到秒级。
+    for (const win of BrowserWindow.getAllWindows()) sendNetworkServiceRestart(win)
   })
 
   app.on("render-process-gone", (_event, webContents, details) => {

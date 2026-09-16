@@ -93,6 +93,10 @@ export type Platform = {
   /** Webview zoom level (desktop only) */
   webviewZoom?: Accessor<number>
 
+  /** 桌面端 Network Service 子进程崩溃重启的次数（desktop only）。
+      递增即代表本地请求刚被整批掐断，事件流需要立刻重建。 */
+  networkServiceRestart?: Accessor<number>
+
   /** Get whether native pinch/Ctrl-scroll zoom gestures are enabled (desktop only) */
   getPinchZoomEnabled?(): Promise<boolean> | boolean
 

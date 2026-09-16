@@ -277,3 +277,11 @@ export function sendMenuCommand(win: BrowserWindow, id: string) {
 export function sendDeepLinks(win: BrowserWindow, urls: string[]) {
   win.webContents.send("deep-link", urls)
 }
+
+// 260916 Red Electron 的 Network Service 子进程崩溃后，渲染层所有请求会静默挂住
+//   （fetch 既不 resolve 也不 reject），要等 90s 心跳超时才判定断线——实测
+//   22:47:26 崩溃、22:48:54 才重连，中间那段空白就是用户看到的白屏。
+//   崩溃本身只有主进程能感知（child-process-gone），所以在这里主动告诉渲染层立刻重建事件流。
+export function sendNetworkServiceRestart(win: BrowserWindow) {
+ win.webContents.send("network-service-restart")
+}

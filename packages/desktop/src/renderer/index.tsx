@@ -20,7 +20,7 @@ import {
 import * as Sentry from "@sentry/solid"
 import type { AsyncStorage } from "@solid-primitives/storage"
 import { MemoryRouter } from "@solidjs/router"
-import { createEffect, createResource, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { render } from "solid-js/web"
 import pkg from "../../package.json"
 import { initI18n, t } from "./i18n"
@@ -281,6 +281,8 @@ const createPlatform = (): Platform => {
 
     webviewZoom,
 
+    networkServiceRestart,
+
     getPinchZoomEnabled: () => window.api.getPinchZoomEnabled(),
 
     setPinchZoomEnabled,
@@ -326,6 +328,12 @@ window.api.onMenuCommand((id) => {
   menuTrigger?.(id)
 })
 listenForDeepLinks()
+
+// 260916 Red Electron 的 Network Service 子进程崩溃后，渲染层所有请求会静默挂住，要等 90s
+//   心跳超时才重连（实测 22:47:26 崩溃 → 22:48:54 才重连，那 90 秒就是白屏）。主进程能立刻
+//   感知崩溃（child-process-gone），把它转成计数交给 app 层，由 app 主动拆掉旧事件流重建。
+const [networkServiceRestart, setNetworkServiceRestart] = createSignal(0)
+window.api.onNetworkServiceRestart(() => setNetworkServiceRestart((count) => count + 1))
 
 render(() => {
   const platform = createPlatform()

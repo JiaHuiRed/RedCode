@@ -26,6 +26,7 @@
 
 - **LLM 流看门狗改按在途工具集合判定豁免**（`packages/opencode/src/session/llm.ts`、`packages/opencode/test/session/llm-idle-guard.test.ts`，决策：`docs/notes/implemented/bug-fix/2026-09-16-watchdog-pending-tools.md`）：原实现用单个布尔表示"本地工具阶段"，一个 step 内并行多个工具时，先返回的工具会清掉本地态，仍在执行的慢工具因此被 120 秒闲置看门狗误判成「网关停摆」并中断整轮（实测两次，被掐掉的慢工具是 `redcode doctor --json`）。改为按 toolCallId 记账的在途工具集合，全部工具结束才恢复计时，并删除 `text-` / `reasoning-` / `step-` 顺带清本地态的分支——那些事件只证明网关在说话，不能证明本地工具已跑完。同时把测试从"逐行复刻 shadow 实现"改为直调导出的真实现（阈值可注入），新增并行工具与"豁免不得变成永久免疫"两条用例。
 
+- **Network Service 崩溃后不再白屏约 90 秒**（`packages/desktop/src/main/{index,ipc}.ts`、`packages/desktop/src/preload/{index,types}.ts`、`packages/desktop/src/renderer/index.tsx`、`packages/app/src/context/{global-sdk.tsx,platform.tsx}`）：Electron 的 Network Service 子进程崩溃后，渲染层的 fetch 会**静默挂住**——既不 resolve 也不 reject，只能等 90 秒心跳超时才会判定断线重连。实测 09-16 22:47:26 崩溃、22:48:54 才重连，这段空白正是反复出现的白屏（renderer 侧无异常、无 crash dump、主进程无 unresponsive，不是渲染或性能问题）。崩溃只有主进程能感知（`child-process-gone`），现在把它转成计数推给渲染层，渲染层收到即主动 abort 旧事件流、走既有重连路径，重连成功后的 `server.connected` 再触发会话补拉（`pages/session.tsx` 既有逻辑）。恢复时间从约 90 秒压到秒级。决策：`docs/notes/implemented/bug-fix/2026-09-16-network-service-crash-recovery.md`。
 
 ### [0.11.6] - 2026-09-16
 
