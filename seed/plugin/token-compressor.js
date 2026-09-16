@@ -255,7 +255,10 @@ export default {
       if (toolName !== "bash" && toolName !== "shell" && !command) return
 
       const rule = matchRule(toolName, command, argv)
-      const compacted = compact(output.output, rule, 0)
+      // 260916 Red shell already reports its exit code; failures need the wider
+      // retention window configured by failHead/failTail to preserve diagnostics.
+      const exit = Number(output.metadata?.exit)
+      const compacted = compact(output.output, rule, Number.isFinite(exit) ? exit : 0)
 
       // pass-through safety: only apply if meaningfully smaller
       if (compacted.length >= output.output.length * MIN_COMPACT_RATIO) return
