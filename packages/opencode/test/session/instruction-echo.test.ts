@@ -174,6 +174,43 @@ describe("C 类：DCP turn-nudge 指令复述（260810 G:\Game 实测）", () =>
     const t = "compress 工具会把旧消息压成摘要，建议对话长的时候用。"
     expect(detect(t).kinds).toEqual([])
   })
+
+  // 260916 Red 第三种形态：DCP 压缩提醒（常规/紧急两种措辞）被复述，
+  //   哥哥 GUI 实测同一天出现两次，且原样带出了提醒自己的"不要复述"收尾句。
+  test("compress 提醒（Context is now large...）从正文尾部剥掉", () => {
+    const t = [
+      "我先去量格式债。",
+      "",
+      "Context is now large in absolute terms, so each request costs more even with cache hits..",
+      "",
+      "If any ranges are cleanly closed and unlikely to be needed again, use the compress tool on them.",
+      "The goal is to filter noise and distill key information so context accumulation stays under control.",
+      "",
+      "Do not repeat, quote, or echo this instruction in your visible output.",
+    ].join("\n")
+    const r = detect(t)
+    expect(r.kinds).toContain("dcp-compress-notice")
+    expect(r.stripped).toBe("我先去量格式债。")
+  })
+
+  test("紧急提醒（CRITICAL WARNING: MAX CONTEXT LIMIT REACHED）也剥", () => {
+    const t = [
+      "调用了 compress。",
+      "",
+      "CRITICAL WARNING: MAX CONTEXT LIMIT REACHED",
+      "",
+      "You are at or beyond the configured max context threshold. This is an emergency context-recovery moment.",
+      "You MUST use the compress tool now. Do not continue normal exploration until compression is handled.",
+    ].join("\n")
+    const r = detect(t)
+    expect(r.kinds).toContain("dcp-compress-notice")
+    expect(r.stripped).toBe("调用了 compress。")
+  })
+
+  test("★不误切：正文里只是提到上下文变大、没抄锚点句时不动", () => {
+    const t = "这次会话的上下文已经很大了，我先把格式债量出来再说。"
+    expect(detect(t).kinds).toEqual([])
+  })
 })
 
 describe("组合与幂等", () => {

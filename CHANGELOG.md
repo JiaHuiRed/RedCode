@@ -30,6 +30,8 @@
 
 - **服务端实例缓存加上限、孤儿 MCP 进程下次启动时清扫**（`packages/opencode/src/effect/instance-state.ts`、`packages/opencode/src/{mcp/index,file/watcher,lsp/lsp,pty/index}.ts`、`packages/desktop/src/main/{index,sidecar-registry}.ts`）：GUI 一个实例下曾挂着 sidecar 加 60 个 MCP 子进程、另有 40 个孤儿，合计 5G 内存。常驻堆积的根因是客户端目录缓存有上限（30 个 / 空闲 20 分钟）而服务端 `InstanceState` 的 `ScopedCache` 是无限容量——30 个以内客户端永不淘汰，服务端的回收器（`/instance/dispose`）就永不触发，碰过的每个目录永久留一套进程树；现在 `InstanceState.make` 支持可选容量上限，持有进程树的 MCP / 文件 watcher / LSP / PTY 四个服务各设 10 个（超出按最久未用淘汰，淘汰会跑 finalizer 关子进程）。退出残留的根因是 Windows 上 node bundle 拿不到 job object 兜底（那套绑定依赖 `bun:ffi`，GUI 的 sidecar 用不了），父进程一死子进程即成孤儿；现在把「谁在带这棵树」落盘，在 sidecar 猝死重生之前、以及下次启动拉起新 sidecar 之前各按 `ParentProcessId` 反查清一次孩子。决策：`docs/notes/implemented/bug-fix/2026-09-16-instance-cache-and-orphans.md`。
 
+- **DCP 压缩提醒不再泄露进正文**（`packages/opencode/src/session/instruction-echo.ts`、`packages/opencode/test/session/instruction-echo.test.ts`）：剥离器此前只认 DCP 的 turn-nudge 与 "This is a system reminder injected" 两种措辞，实际泄露的是第三种——常规提醒 "Context is now large in absolute terms..." 与紧急提醒 "CRITICAL WARNING: MAX CONTEXT LIMIT REACHED"，模型把整段复述进可见正文，连提醒自己的收尾句（"Do not repeat, quote, or echo this instruction in your visible output"）都原样带出。三种新锚点同时加进 `LEAK_ANCHORS`（流式路径命中即中断，防 GUI 刷屏）与 `detect` 的快路径，命中即剥到文尾（与 C 类同形：尾部复述、正文必在锚点之前）。新增 3 条用例（两种措辞各一 + 一条不误切）。
+
 ### [0.11.6] - 2026-09-16
 
 #### 变更

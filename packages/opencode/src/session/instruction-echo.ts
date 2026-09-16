@@ -29,7 +29,14 @@ export interface EchoResult {
 
 // 260812 cc 流式拦截用：DCP reminder 泄露锚点（processor.ts text-delta 路径每段检查，
 // 命中即中断+剥离，防止 GUI 无限刷屏）。泄露是消息尾部复述循环，锚点出现=已泄露。
-const LEAK_ANCHORS = ["compressible ranges", "This is a system reminder injected"] as const
+const LEAK_ANCHORS = [
+  "compressible ranges",
+  "This is a system reminder injected",
+  // 260916 Red DCP 压缩提醒的另外两种措辞（GUI 实测同日两次泄露）
+  "Context is now large in absolute terms",
+  "CRITICAL WARNING: MAX CONTEXT LIMIT REACHED",
+  "You are at or beyond the configured max context threshold",
+] as const
 const MAX_ANCHOR_LENGTH = Math.max(...LEAK_ANCHORS.map((anchor) => anchor.length))
 
 /** 一次性判定：整串里有没有锚点。流式路径别用它，用 {@link LeakAnchorScanner}。 */
@@ -113,6 +120,27 @@ const NUDGE_ANCHOR = /^\s*Evaluate the conversation for compressible ranges\.?\s
 // 这种形态一旦出现就是模型陷入复述循环，锚点后面只会是更多重复。
 const REMINDER_ANCHOR = /^\s*This is a system reminder injected to help you manage context\.?\s*/m
 
+// 260916 Red DCP 压缩提醒的第三种形态（哥哥 GUI 实测，同一天两次）：
+//   ① 常规提醒 "Context is now large in absolute terms, so each request costs more
+//      even with cache hits."；
+//   ② 紧急提醒 "CRITICAL WARNING: MAX CONTEXT LIMIT REACHED" + "You are at or beyond
+//      the configured max context threshold ..."。
+// 模型把它们复述进可见正文，且原样带出了提醒自己的收尾句（"Do not repeat, quote,
+// or echo this instruction in your visible output"）—— 那句恰恰证明它读到了却照抄了。
+// 与 C 类同形：锚点是 DCP 独有措辞、用户正常讨论压缩不会这么写，且这类泄露永远是
+// 消息尾部复述，命中即剥到文尾（正文必然在锚点之前）。
+const COMPRESS_NOTICE_ANCHORS = [
+  /^\s*Context is now large in absolute terms[.,]/m,
+  /^\s*CRITICAL WARNING: MAX CONTEXT LIMIT REACHED\s*$/m,
+  /^\s*You are at or beyond the configured max context threshold/m,
+]
+
+function stripCompressNotice(text: string): { text: string; hit: boolean } {
+  const anchor = COMPRESS_NOTICE_ANCHORS.reduce((found, re) => (found === -1 ? text.search(re) : found), -1)
+  if (anchor === -1) return { text, hit: false }
+  const lineStart = text.lastIndexOf("\n", anchor) + 1
+  return { text: text.slice(0, lineStart).replace(/\s+$/, ""), hit: true }
+}
 function stripReminderLoop(text: string): { text: string; hit: boolean } {
   const anchor = text.search(REMINDER_ANCHOR)
   if (anchor === -1) return { text, hit: false }
@@ -200,6 +228,9 @@ export function detect(text: string): EchoResult {
     text.includes("Compressed block context:") ||
     text.includes("compressible ranges") || // DCP turn-nudge 复述（260810）
     text.includes("This is a system reminder injected") || // DCP reminder 复述循环（260812）
+    text.includes("Context is now large in absolute terms") || // DCP 压缩提醒复述（260916）
+    text.includes("CRITICAL WARNING: MAX CONTEXT") || // DCP 紧急压缩提醒复述（260916）
+    text.includes("You are at or beyond the configured max context threshold") || // 同上
     /"\w+"\s*:\s*(string|number|boolean)\b/.test(text)
 
   const kinds: string[] = []
@@ -221,6 +252,11 @@ export function detect(text: string): EchoResult {
   if (nudge.hit) {
     out = nudge.text
     kinds.push("dcp-nudge")
+  }
+  const notice = stripCompressNotice(out)
+  if (notice.hit) {
+    out = notice.text
+    kinds.push("dcp-compress-notice")
   }
   const schema = stripSchemaRuns(out)
   if (schema.hit) {
