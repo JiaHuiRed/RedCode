@@ -8,6 +8,16 @@
 
 ---
 
+### [未发布]
+
+#### 变更
+
+- **诊断与前端设计 skill 收敛**（`seed/skill/diagnose/SKILL.md`、`seed/skill/frontend-design/SKILL.md`）：普通问题可走 Fast Path，复杂问题保留反馈循环；前端设计改为按项目语境、视觉优先级和真实内容密度判断，减少固定 Apple 模板、截图 JSON 中间产物与绝对化反模式。
+
+#### 修复
+
+- **LLM 流看门狗增加生命周期诊断与回归覆盖**（`packages/opencode/src/session/llm.ts`、`packages/opencode/test/session/llm-idle-guard.test.ts`）：记录 watchdog 实例年龄、最后事件静默时长、是否收到事件及是否处于本地工具阶段，补充流结束后看门狗必须停止的两条测试；不改变超时阈值、错误文案或中断行为。
+
 ### [0.11.6] - 2026-09-16
 
 #### 变更
