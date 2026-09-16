@@ -17,22 +17,29 @@ Verify a refactor is safe before making changes by checking call chains, circula
 ## Workflow
 
 ### Step 1: Trace the Chain
+
 Call `ts_trace_chain` on the symbol being refactored to understand its full definition chain. This reveals all the layers of indirection the refactor needs to preserve.
 
 ### Step 2: Check for Cycles
+
 Call `ts_import_cycles` filtered to the file being refactored. If the file participates in a cycle, the refactor must not break or worsen it.
 
 ### Step 3: Assess Boundaries
+
 Call `ts_module_boundary` with the files involved in the refactor (source + destination). Check:
+
 - **Incoming edges**: Other code that imports from these files (must be preserved)
 - **Outgoing edges**: Dependencies these files need (must be available at new location)
 - **Isolation score**: How self-contained the module is
 
 ### Step 4: Verify References
+
 Call `ts_references` on the key symbol to get the complete list of call sites that need updating.
 
 ### Step 5: Report
+
 Present a safety assessment:
+
 1. **Definition chain** (what indirection exists)
 2. **Cycle involvement** (any circular dependencies to be aware of)
 3. **Boundary analysis** (incoming/outgoing edges, isolation)

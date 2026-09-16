@@ -149,7 +149,10 @@ const stepSchema = z.object({
   fullPage: z.boolean().optional(),
   width: z.number().int().positive().optional(),
   height: z.number().int().positive().optional(),
-  x: z.number().optional().describe("clickAt/scroll 的视口内 CSS 像素横坐标（截图左上角为原点，1 截图像素 = 1 CSS 像素）"),
+  x: z
+    .number()
+    .optional()
+    .describe("clickAt/scroll 的视口内 CSS 像素横坐标（截图左上角为原点，1 截图像素 = 1 CSS 像素）"),
   y: z.number().optional().describe("clickAt/scroll 的视口内 CSS 像素纵坐标"),
   deltaX: z.number().optional().describe("scroll 横向滚轮量，正=右"),
   deltaY: z.number().optional().describe("scroll 纵向滚轮量，正=下"),
@@ -297,7 +300,8 @@ server.tool(
                 const pages = ctx.pages()
                 const target =
                   (s.index !== undefined ? pages[s.index] : pages.find((pg) => pg.url().includes(s.url ?? ""))) ?? null
-                if (!target) throw new Error(`no page matches ${s.index !== undefined ? `index ${s.index}` : `url ${s.url}`}`)
+                if (!target)
+                  throw new Error(`no page matches ${s.index !== undefined ? `index ${s.index}` : `url ${s.url}`}`)
                 await target.bringToFront()
                 page = target
                 results.push({ action: "tab", mode, ok: true, url: page.url() })

@@ -45,80 +45,88 @@ const exec = Effect.fn("WebFetchToolTest.exec")(function* (args: Tool.InferParam
 })
 
 describe("tool.webfetch", () => {
-  it.instance("returns image responses as file attachments", () =>
-    Effect.gen(function* () {
-      const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
-      yield* withFetch(
-        () => new Response(bytes, { status: 200, headers: { "content-type": "IMAGE/PNG; charset=binary" } }),
+  it.instance(
+    "returns image responses as file attachments",
+    () =>
+      Effect.gen(function* () {
+        const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
+        yield* withFetch(
+          () => new Response(bytes, { status: 200, headers: { "content-type": "IMAGE/PNG; charset=binary" } }),
+          (url) =>
+            Effect.gen(function* () {
+              const result = yield* exec({ url: new URL("/image.png", url).toString(), format: "markdown" })
+              expect(result.output).toBe("Image fetched successfully")
+              expect(result.attachments).toBeDefined()
+              expect(result.attachments?.length).toBe(1)
+              expect(result.attachments?.[0].type).toBe("file")
+              expect(result.attachments?.[0].mime).toBe("image/png")
+              expect(result.attachments?.[0].url.startsWith("data:image/png;base64,")).toBe(true)
+              expect(result.attachments?.[0]).not.toHaveProperty("id")
+              expect(result.attachments?.[0]).not.toHaveProperty("sessionID")
+              expect(result.attachments?.[0]).not.toHaveProperty("messageID")
+            }),
+        )
+      }),
+    allowLocal,
+  )
+
+  it.instance(
+    "keeps svg as text output",
+    () =>
+      withFetch(
+        () =>
+          new Response('<svg xmlns="http://www.w3.org/2000/svg"><text>hello</text></svg>', {
+            status: 200,
+            headers: { "content-type": "image/svg+xml; charset=UTF-8" },
+          }),
         (url) =>
           Effect.gen(function* () {
-            const result = yield* exec({ url: new URL("/image.png", url).toString(), format: "markdown" })
-            expect(result.output).toBe("Image fetched successfully")
-            expect(result.attachments).toBeDefined()
-            expect(result.attachments?.length).toBe(1)
-            expect(result.attachments?.[0].type).toBe("file")
-            expect(result.attachments?.[0].mime).toBe("image/png")
-            expect(result.attachments?.[0].url.startsWith("data:image/png;base64,")).toBe(true)
-            expect(result.attachments?.[0]).not.toHaveProperty("id")
-            expect(result.attachments?.[0]).not.toHaveProperty("sessionID")
-            expect(result.attachments?.[0]).not.toHaveProperty("messageID")
+            const result = yield* exec({ url: new URL("/image.svg", url).toString(), format: "html" })
+            expect(result.output).toContain("<svg")
+            expect(result.attachments).toBeUndefined()
           }),
-      )
-    }),
+      ),
     allowLocal,
   )
 
-  it.instance("keeps svg as text output", () =>
-    withFetch(
-      () =>
-        new Response('<svg xmlns="http://www.w3.org/2000/svg"><text>hello</text></svg>', {
-          status: 200,
-          headers: { "content-type": "image/svg+xml; charset=UTF-8" },
-        }),
-      (url) =>
-        Effect.gen(function* () {
-          const result = yield* exec({ url: new URL("/image.svg", url).toString(), format: "html" })
-          expect(result.output).toContain("<svg")
-          expect(result.attachments).toBeUndefined()
-        }),
-    ),
-    allowLocal,
-  )
-
-  it.instance("keeps text responses as text output", () =>
-    withFetch(
-      () =>
-        new Response("hello from webfetch", {
-          status: 200,
-          headers: { "content-type": "text/plain; charset=utf-8" },
-        }),
-      (url) =>
-        Effect.gen(function* () {
-          const result = yield* exec({ url: new URL("/file.txt", url).toString(), format: "text" })
-          expect(result.output).toBe("hello from webfetch")
-          expect(result.attachments).toBeUndefined()
-        }),
-    ),
-    allowLocal,
-  )
-
-  it.instance("extracts text from html without scripts or styles", () =>
-    withFetch(
-      () =>
-        new Response(
-          "<html><head><style>.hidden{}</style><script>alert('x')</script></head><body>Hello <b>world</b></body></html>",
-          {
+  it.instance(
+    "keeps text responses as text output",
+    () =>
+      withFetch(
+        () =>
+          new Response("hello from webfetch", {
             status: 200,
-            headers: { "content-type": "text/html; charset=utf-8" },
-          },
-        ),
-      (url) =>
-        Effect.gen(function* () {
-          const result = yield* exec({ url: new URL("/page.html", url).toString(), format: "text" })
-          expect(result.output).toBe("Hello world")
-          expect(result.attachments).toBeUndefined()
-        }),
-    ),
+            headers: { "content-type": "text/plain; charset=utf-8" },
+          }),
+        (url) =>
+          Effect.gen(function* () {
+            const result = yield* exec({ url: new URL("/file.txt", url).toString(), format: "text" })
+            expect(result.output).toBe("hello from webfetch")
+            expect(result.attachments).toBeUndefined()
+          }),
+      ),
+    allowLocal,
+  )
+
+  it.instance(
+    "extracts text from html without scripts or styles",
+    () =>
+      withFetch(
+        () =>
+          new Response(
+            "<html><head><style>.hidden{}</style><script>alert('x')</script></head><body>Hello <b>world</b></body></html>",
+            {
+              status: 200,
+              headers: { "content-type": "text/html; charset=utf-8" },
+            },
+          ),
+        (url) =>
+          Effect.gen(function* () {
+            const result = yield* exec({ url: new URL("/page.html", url).toString(), format: "text" })
+            expect(result.output).toBe("Hello world")
+            expect(result.attachments).toBeUndefined()
+          }),
+      ),
     allowLocal,
   )
 
@@ -139,16 +147,14 @@ describe("tool.webfetch", () => {
     ),
   )
 
-  it.instance(
-    "names the blocked address so the model can tell what happened",
-    () =>
-      Effect.gen(function* () {
-        const exit = yield* Effect.exit(exec({ url: "http://169.254.169.254/latest/meta-data/", format: "text" }))
-        expect(exit._tag).toBe("Failure")
-        const cause = String((exit as { cause: unknown }).cause)
-        expect(cause).toContain("169.254.169.254")
-        expect(cause).toContain("link-local")
-      }),
+  it.instance("names the blocked address so the model can tell what happened", () =>
+    Effect.gen(function* () {
+      const exit = yield* Effect.exit(exec({ url: "http://169.254.169.254/latest/meta-data/", format: "text" }))
+      expect(exit._tag).toBe("Failure")
+      const cause = String((exit as { cause: unknown }).cause)
+      expect(cause).toContain("169.254.169.254")
+      expect(cause).toContain("link-local")
+    }),
   )
 
   it.instance(

@@ -182,9 +182,9 @@ export interface Interface {
     messageID?: MessageID
     patch?: boolean
   }) => Effect.Effect<Snapshot.FileDiff[]>
-  readonly computeDiff: (
-    input: { messages: MessageV2.WithParts[] },
-  ) => Effect.Effect<Snapshot.FileDiff[], Snapshot.DiffError>
+  readonly computeDiff: (input: {
+    messages: MessageV2.WithParts[]
+  }) => Effect.Effect<Snapshot.FileDiff[], Snapshot.DiffError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@redcode/SessionSummary") {}

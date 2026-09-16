@@ -21,7 +21,11 @@ describe("prefix-shape.schemaCosts", () => {
   })
 
   test("每个工具都有条目", () => {
-    expect(schemaCosts(tools).map((c) => c.name).sort()).toEqual(["huge_mcp_tool", "read"])
+    expect(
+      schemaCosts(tools)
+        .map((c) => c.name)
+        .sort(),
+    ).toEqual(["huge_mcp_tool", "read"])
   })
 
   test("空工具表返回空数组", () => {
@@ -72,7 +76,12 @@ describe("prefix-shape.diagnose", () => {
   test("system 变化指出首个分叉的指令区块，但不记录正文", () => {
     const s = sid("ses_instruction")
     diagnose(capture(["model prompt", "Instructions from: C:\\cfg\\AGENTS.md\nold rule", "skills"], tools), s, M, tools)
-    const d = diagnose(capture(["model prompt", "Instructions from: C:\\cfg\\AGENTS.md\nnew rule", "skills"], tools), s, M, tools)
+    const d = diagnose(
+      capture(["model prompt", "Instructions from: C:\\cfg\\AGENTS.md\nnew rule", "skills"], tools),
+      s,
+      M,
+      tools,
+    )
     expect(d.systemDifference).toEqual({
       index: 1,
       previous: "Instructions from: C:\\cfg\\AGENTS.md",

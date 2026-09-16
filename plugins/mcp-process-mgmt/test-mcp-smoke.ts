@@ -31,7 +31,10 @@ console.log(`[diag raw] ${JSON.stringify(diagText.output.slice(0, 200))}`)
 const writeResp = await client.callTool({ name: "pty_write", arguments: { session_id, data: "6*7\r\n" } })
 console.log(`[write resp] ${JSON.stringify(writeResp)}`)
 await new Promise((r) => setTimeout(r, 800))
-const readRaw = await client.callTool({ name: "pty_read", arguments: { session_id, limit: 40, strip_ansi: false, offset: 0 } })
+const readRaw = await client.callTool({
+  name: "pty_read",
+  arguments: { session_id, limit: 40, strip_ansi: false, offset: 0 },
+})
 const rawParsed = JSON.parse((readRaw.content as Array<{ type: string; text: string }>)[0].text)
 console.log(`[read raw offset0] ${JSON.stringify(rawParsed.output.slice(0, 300))}`)
 const read = await client.callTool({ name: "pty_read", arguments: { session_id, limit: 20 } })

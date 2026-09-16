@@ -250,9 +250,7 @@ export const layer: Layer.Layer<
           .map((p) => ({ bytes: bytes(p), src: p.slice(0, 80).split("\n")[0] }))
           .toSorted((a, b) => b.bytes - a.bytes)
           .slice(0, 5)
-        yield* Console.warn(
-          `Instruction prefix over budget: ${totalBytes} bytes > ${maxTotalBytes}`,
-        )
+        yield* Console.warn(`Instruction prefix over budget: ${totalBytes} bytes > ${maxTotalBytes}`)
         for (const t of top) yield* Console.warn(`  ${t.bytes} bytes: ${t.src}`)
       }
       return parts

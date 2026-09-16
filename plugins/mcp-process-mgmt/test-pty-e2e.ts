@@ -39,7 +39,11 @@ async function testRepl() {
   m.write(sessionId, "\\x03")
   await sleep(800)
   const afterCtrlC = m.read(sessionId, { limit: 10 })
-  check("\\x03 解码生效（REPL 收到 Ctrl+C 后无异常崩溃）", afterCtrlC.exited === false || afterCtrlC.exitCode !== null, JSON.stringify(afterCtrlC).slice(0, 120))
+  check(
+    "\\x03 解码生效（REPL 收到 Ctrl+C 后无异常崩溃）",
+    afterCtrlC.exited === false || afterCtrlC.exitCode !== null,
+    JSON.stringify(afterCtrlC).slice(0, 120),
+  )
 
   m.kill(sessionId, true)
   check("kill 后会话移除", m.list().length === 0)
@@ -49,7 +53,9 @@ async function testRepl() {
 async function testWait() {
   console.log("== 2. 长进程 wait ==")
   const m = new PtyManager()
-  const { sessionId } = await m.spawnPty("node", ["-e", "setTimeout(() => console.log('DONE_' + (2+3)), 1500)"], { title: "wait" })
+  const { sessionId } = await m.spawnPty("node", ["-e", "setTimeout(() => console.log('DONE_' + (2+3)), 1500)"], {
+    title: "wait",
+  })
   const t0 = Date.now()
   const result = await m.wait(sessionId, { timeout: 10_000 })
   const elapsed = Date.now() - t0
@@ -64,17 +70,32 @@ async function testWait() {
 async function testPattern() {
   console.log("== 3. pattern 过滤 ==")
   const m = new PtyManager()
-  const { sessionId } = await m.spawnPty("node", ["-e", `
+  const { sessionId } = await m.spawnPty(
+    "node",
+    [
+      "-e",
+      `
     for (let i = 0; i < 50; i++) console.log(i % 2 === 0 ? 'INFO line ' + i : 'ERROR line ' + i)
-  `], { title: "pattern" })
+  `,
+    ],
+    { title: "pattern" },
+  )
   await m.wait(sessionId, { timeout: 10_000 })
 
   const errors = m.read(sessionId, { pattern: "ERROR", limit: 100 })
-  check("过滤后全是 ERROR 行", errors.output.split("\n").every((l) => l.startsWith("ERROR")), errors.output.slice(0, 100))
+  check(
+    "过滤后全是 ERROR 行",
+    errors.output.split("\n").every((l) => l.startsWith("ERROR")),
+    errors.output.slice(0, 100),
+  )
   check("匹配 25 行", errors.matched === 25, String(errors.matched))
 
   const page = m.read(sessionId, { offset: 0, limit: 5 })
-  check("offset/limit 分页取前 5 行", page.output.split("\n").length === 5 && page.output.startsWith("INFO line 0"), page.output)
+  check(
+    "offset/limit 分页取前 5 行",
+    page.output.split("\n").length === 5 && page.output.startsWith("INFO line 0"),
+    page.output,
+  )
 
   const raw = m.read(sessionId, { stripAnsi: false, limit: 1, offset: 0 })
   check("strip_ansi=false 保留原始 ANSI", raw.output.includes("\u001b["), JSON.stringify(raw.output.slice(0, 40)))
@@ -85,11 +106,18 @@ async function testPattern() {
 async function testChineseAndRolling() {
   console.log("== 4. 中文输出 + 大输出滚动 ==")
   const m = new PtyManager()
-  const { sessionId } = await m.spawnPty("node", ["-e", `
+  const { sessionId } = await m.spawnPty(
+    "node",
+    [
+      "-e",
+      `
     console.log('中文测试：你好世界 🚀');
     for (let i = 0; i < 5000; i++) console.log('line' + i);
     console.log('TAIL_MARKER');
-  `], { title: "chinese" })
+  `,
+    ],
+    { title: "chinese" },
+  )
   await m.wait(sessionId, { timeout: 15_000 })
 
   const all = m.read(sessionId, { limit: 6000, offset: 0 })
@@ -103,7 +131,10 @@ async function testChineseAndRolling() {
 async function testTimeout() {
   console.log("== 5. timeoutSeconds 自毁 ==")
   const m = new PtyManager()
-  const { sessionId } = await m.spawnPty("node", ["-e", "setInterval(()=>{}, 1000)"], { title: "hang", timeoutSeconds: 2 })
+  const { sessionId } = await m.spawnPty("node", ["-e", "setInterval(()=>{}, 1000)"], {
+    title: "hang",
+    timeoutSeconds: 2,
+  })
   await sleep(3000)
   const list = m.list()
   check("超时后 exited", list.find((s) => s.id === sessionId)?.running === false, JSON.stringify(list))
@@ -134,4 +165,3 @@ await testSessionRetention()
 
 console.log(`\n结果: ${passed} passed, ${failed} failed`)
 process.exit(failed === 0 ? 0 : 1)
-

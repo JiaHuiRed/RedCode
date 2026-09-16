@@ -54,8 +54,7 @@ function parseIPv6(input: string): number[] | undefined {
   const toGroups = (part: string) => (part === "" ? [] : part.split(":").map((g) => parseInt(g, 16)))
   const head = toGroups(halves[0] ?? "")
   const rest = halves.length === 2 ? toGroups(halves[1] ?? "") : []
-  const groups =
-    halves.length === 2 ? [...head, ...Array(8 - head.length - rest.length).fill(0), ...rest] : head
+  const groups = halves.length === 2 ? [...head, ...Array(8 - head.length - rest.length).fill(0), ...rest] : head
   if (groups.length !== 8 || groups.some((g) => Number.isNaN(g) || g < 0 || g > 0xffff)) return undefined
 
   const bytes = groups.flatMap((g) => [g >> 8, g & 0xff])

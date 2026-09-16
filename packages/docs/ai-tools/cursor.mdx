@@ -163,7 +163,7 @@ Example of step-by-step instructions:
 <Steps>
 <Step title="Install dependencies">
   Run `npm install` to install required packages.
-  
+
   <Check>
   Verify installation by running `npm list`.
   </Check>
@@ -171,11 +171,11 @@ Example of step-by-step instructions:
 
 <Step title="Configure environment">
   Create a `.env` file with your API credentials.
-  
-  ```bash
-  API_KEY=your_api_key_here
-  ```
-  
+
+```bash
+API_KEY=your_api_key_here
+```
+
   <Warning>
   Never commit API keys to version control.
   </Warning>
@@ -296,15 +296,16 @@ Complete user object with all associated data.
 <Expandable title="User properties">
   <ResponseField name="profile" type="object">
   User profile information including personal details.
-  
+
   <Expandable title="Profile details">
     <ResponseField name="first_name" type="string">
     User's first name as entered during registration.
     </ResponseField>
-    
+
     <ResponseField name="avatar_url" type="string | null">
     URL to user's profile picture. Returns null if no avatar is set.
     </ResponseField>
+
   </Expandable>
   </ResponseField>
 </Expandable>

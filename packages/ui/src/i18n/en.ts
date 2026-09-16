@@ -171,8 +171,8 @@ export const dict: Record<string, string> = {
   "ui.tool.bash.showAll": "Show all",
   "ui.tool.bash.collapse": "Collapse",
   "ui.message.queued": "Queued",
- "ui.message.steerQueued": "Stepped in · waiting for current step",
- "ui.message.steerDelivered": "Delivered",
+  "ui.message.steerQueued": "Stepped in · waiting for current step",
+  "ui.message.steerDelivered": "Delivered",
   "ui.message.attachment.alt": "attachment",
 
   "ui.patch.action.deleted": "Deleted",

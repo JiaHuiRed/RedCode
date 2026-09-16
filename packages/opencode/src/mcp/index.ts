@@ -484,10 +484,7 @@ export const layer = Layer.effect(
     const bus = yield* Bus.Service
 
     type Transport =
-      | StdioClientTransport
-      | WindowsJobStdioClientTransport
-      | StreamableHTTPClientTransport
-      | SSEClientTransport
+      StdioClientTransport | WindowsJobStdioClientTransport | StreamableHTTPClientTransport | SSEClientTransport
 
     /**
      * Connect a client via the given transport with resource safety:

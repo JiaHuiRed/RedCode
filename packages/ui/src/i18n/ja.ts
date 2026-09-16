@@ -146,8 +146,8 @@ export const dict = {
   "ui.tool.bash.showAll": "すべて表示",
   "ui.tool.bash.collapse": "折りたたむ",
   "ui.message.queued": "待機中",
- "ui.message.steerQueued": "割り込み済み・現在のステップの完了を待機中",
- "ui.message.steerDelivered": "反映済み",
+  "ui.message.steerQueued": "割り込み済み・現在のステップの完了を待機中",
+  "ui.message.steerDelivered": "反映済み",
   "ui.message.attachment.alt": "添付ファイル",
 
   "ui.patch.action.deleted": "削除済み",

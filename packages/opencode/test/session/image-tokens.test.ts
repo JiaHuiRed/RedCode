@@ -52,7 +52,10 @@ describe("estimateModelMessages", () => {
   test("charges each image once and keeps the surrounding text", () => {
     const one = [{ role: "user", content: [{ type: "text", text: "look" }, inlineImage(1024)] }]
     const three = [
-      { role: "user", content: [{ type: "text", text: "look" }, inlineImage(1024), inlineImage(1024), inlineImage(1024)] },
+      {
+        role: "user",
+        content: [{ type: "text", text: "look" }, inlineImage(1024), inlineImage(1024), inlineImage(1024)],
+      },
     ]
     expect(estimateModelMessages(three, model) - estimateModelMessages(one, model)).toBeGreaterThanOrEqual(768)
     expect(estimateModelMessages(three, model) - estimateModelMessages(one, model)).toBeLessThan(768 + 100)
@@ -73,7 +76,9 @@ describe("estimateModelMessages", () => {
     const messages = [
       {
         role: "user",
-        content: [{ type: "file", mediaType: "application/pdf", url: `data:application/pdf;base64,${"A".repeat(4000)}` }],
+        content: [
+          { type: "file", mediaType: "application/pdf", url: `data:application/pdf;base64,${"A".repeat(4000)}` },
+        ],
       },
     ]
     expect(estimateModelMessages(messages, model)).toBe(Token.estimate(JSON.stringify(messages)))

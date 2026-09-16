@@ -207,7 +207,8 @@ Avoid unnecessary destructuring. Use dot notation to preserve context.
 
 ```ts
 // Good
-obj.a; obj.b
+obj.a
+obj.b
 // Bad
 const { a, b } = obj
 ```

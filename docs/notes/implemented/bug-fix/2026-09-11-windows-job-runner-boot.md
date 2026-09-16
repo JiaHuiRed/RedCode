@@ -12,10 +12,10 @@
 2. 同机同期独立证据：同日跑测试时得到 `Failed to create renderer: error.OutOfMemory`。
 3. 内存账（实测，同一时刻）：
 
-| 进程 | 数量 | 每个 | 小计 |
-|---|---|---|---|
-| `redcode.exe --windows-job-runner`（MCP 宿主） | 9 | 218-219MB | ~2.0GB |
-| `redcode.exe`（主 TUI） | 1 | 831MB | 0.8GB |
+| 进程                                           | 数量 | 每个      | 小计   |
+| ---------------------------------------------- | ---- | --------- | ------ |
+| `redcode.exe --windows-job-runner`（MCP 宿主） | 9    | 218-219MB | ~2.0GB |
+| `redcode.exe`（主 TUI）                        | 1    | 831MB     | 0.8GB  |
 
 机器 16GB，且用户会同时开多个 TUI 实例——叠加第二个实例即触顶。
 
@@ -45,10 +45,10 @@ ESM 的静态 import 在模块体执行前全部求值，所以第 46 行的「�
 
 实测收益（同一脚本对两个 exe 各起一个 `--windows-job-runner` 进程采样工作集）：
 
-| exe | runner 工作集 |
-|---|---|
-| 旧（静态 import） | **229.2MB** |
-| 新（动态 import） | **51.5MB** |
+| exe               | runner 工作集 |
+| ----------------- | ------------- |
+| 旧（静态 import） | **229.2MB**   |
+| 新（动态 import） | **51.5MB**    |
 
 每个 runner 省 177.7MB（-78%）；9 个 MCP 宿主合计约 **1.6GB**。
 

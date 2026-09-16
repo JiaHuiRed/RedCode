@@ -81,9 +81,7 @@ export const SettingsAgents: Component = () => {
       const items = models
         .list()
         .filter(
-          (m) =>
-            `${m.provider.id}/${m.id}` === current ||
-            models.visible({ providerID: m.provider.id, modelID: m.id }),
+          (m) => `${m.provider.id}/${m.id}` === current || models.visible({ providerID: m.provider.id, modelID: m.id }),
         )
         .map((m) => ({ key: `${m.provider.id}/${m.id}`, label: m.name, group: m.provider.name }))
       return [first, ...items]
@@ -125,7 +123,12 @@ export const SettingsAgents: Component = () => {
           title={language.t("settings.agents.model.title")}
           description={language.t("settings.agents.model.description")}
         >
-          {modelSelect(`settings-agent-model-${props.agent.name}`, modelKey(), language.t("settings.agents.model.follow"), selectModel)}
+          {modelSelect(
+            `settings-agent-model-${props.agent.name}`,
+            modelKey(),
+            language.t("settings.agents.model.follow"),
+            selectModel,
+          )}
         </SettingsRow>
 
         <Show when={modelKey() !== FOLLOW && variantOptions().length > 1}>
@@ -150,7 +153,6 @@ export const SettingsAgents: Component = () => {
             />
           </SettingsRow>
         </Show>
-
       </SettingsList>
     )
   }

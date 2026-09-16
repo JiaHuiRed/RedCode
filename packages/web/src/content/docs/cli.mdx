@@ -75,7 +75,7 @@ This command will guide you through creating a new agent with a custom system pr
 
 | Flag                                        | Short | Description                                                                                                                                                                                                                |
 | ------------------------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <nobr><code>{"--path"}</code></nobr>        |       | Directory to write the agent file to (defaults to global or `.redcode/agent` based on the prompt)                                                                                                                         |
+| <nobr><code>{"--path"}</code></nobr>        |       | Directory to write the agent file to (defaults to global or `.redcode/agent` based on the prompt)                                                                                                                          |
 | <nobr><code>{"--description"}</code></nobr> |       | What the agent should do                                                                                                                                                                                                   |
 | <nobr><code>{"--mode"}</code></nobr>        |       | Agent mode: `all`, `primary`, or `subagent`                                                                                                                                                                                |
 | <nobr><code>{"--permissions"}</code></nobr> |       | Comma-separated list of permissions to allow (default: all). Available: `bash`, `read`, `edit`, `glob`, `grep`, `webfetch`, `task`, `todowrite`, `websearch`, `lsp`, `skill`. Anything omitted is denied. Alias: `--tools` |
@@ -115,13 +115,13 @@ redcode attach http://10.20.30.40:4096
 
 #### Flags
 
-| Flag                                     | Short | Description                                                                |
-| ---------------------------------------- | ----- | -------------------------------------------------------------------------- |
-| <nobr><code>{"--dir"}</code></nobr>      |       | Working directory to start TUI in                                          |
-| <nobr><code>{"--continue"}</code></nobr> | `-c`  | Continue the last session                                                  |
-| <nobr><code>{"--session"}</code></nobr>  | `-s`  | Session ID to continue                                                     |
-| <nobr><code>{"--fork"}</code></nobr>     |       | Fork the session when continuing (use with `--continue` or `--session`)    |
-| <nobr><code>{"--password"}</code></nobr> | `-p`  | Basic auth password (defaults to `OPENCODE_SERVER_PASSWORD`)               |
+| Flag                                     | Short | Description                                                               |
+| ---------------------------------------- | ----- | ------------------------------------------------------------------------- |
+| <nobr><code>{"--dir"}</code></nobr>      |       | Working directory to start TUI in                                         |
+| <nobr><code>{"--continue"}</code></nobr> | `-c`  | Continue the last session                                                 |
+| <nobr><code>{"--session"}</code></nobr>  | `-s`  | Session ID to continue                                                    |
+| <nobr><code>{"--fork"}</code></nobr>     |       | Fork the session when continuing (use with `--continue` or `--session`)   |
+| <nobr><code>{"--password"}</code></nobr> | `-p`  | Basic auth password (defaults to `OPENCODE_SERVER_PASSWORD`)              |
 | <nobr><code>{"--username"}</code></nobr> | `-u`  | Basic auth username (defaults to `OPENCODE_SERVER_USERNAME` or `redcode`) |
 
 ---
@@ -361,26 +361,26 @@ redcode run --attach http://localhost:4096 "Explain async/await in JavaScript"
 
 #### Flags
 
-| Flag                                                         | Short | Description                                                                |
-| ------------------------------------------------------------ | ----- | -------------------------------------------------------------------------- |
-| <nobr><code>{"--command"}</code></nobr>                      |       | The command to run, use message for args                                   |
-| <nobr><code>{"--continue"}</code></nobr>                     | `-c`  | Continue the last session                                                  |
-| <nobr><code>{"--session"}</code></nobr>                      | `-s`  | Session ID to continue                                                     |
-| <nobr><code>{"--fork"}</code></nobr>                         |       | Fork the session when continuing (use with `--continue` or `--session`)    |
-| <nobr><code>{"--share"}</code></nobr>                        |       | Share the session                                                          |
-| <nobr><code>{"--model"}</code></nobr>                        | `-m`  | Model to use in the form of provider/model                                 |
-| <nobr><code>{"--agent"}</code></nobr>                        |       | Agent to use                                                               |
-| <nobr><code>{"--file"}</code></nobr>                         | `-f`  | File(s) to attach to message                                               |
-| <nobr><code>{"--format"}</code></nobr>                       |       | Format: default (formatted) or json (raw JSON events)                      |
-| <nobr><code>{"--title"}</code></nobr>                        |       | Title for the session (uses truncated prompt if no value provided)         |
+| Flag                                                         | Short | Description                                                               |
+| ------------------------------------------------------------ | ----- | ------------------------------------------------------------------------- |
+| <nobr><code>{"--command"}</code></nobr>                      |       | The command to run, use message for args                                  |
+| <nobr><code>{"--continue"}</code></nobr>                     | `-c`  | Continue the last session                                                 |
+| <nobr><code>{"--session"}</code></nobr>                      | `-s`  | Session ID to continue                                                    |
+| <nobr><code>{"--fork"}</code></nobr>                         |       | Fork the session when continuing (use with `--continue` or `--session`)   |
+| <nobr><code>{"--share"}</code></nobr>                        |       | Share the session                                                         |
+| <nobr><code>{"--model"}</code></nobr>                        | `-m`  | Model to use in the form of provider/model                                |
+| <nobr><code>{"--agent"}</code></nobr>                        |       | Agent to use                                                              |
+| <nobr><code>{"--file"}</code></nobr>                         | `-f`  | File(s) to attach to message                                              |
+| <nobr><code>{"--format"}</code></nobr>                       |       | Format: default (formatted) or json (raw JSON events)                     |
+| <nobr><code>{"--title"}</code></nobr>                        |       | Title for the session (uses truncated prompt if no value provided)        |
 | <nobr><code>{"--attach"}</code></nobr>                       |       | Attach to a running redcode server (e.g., http://localhost:4096)          |
-| <nobr><code>{"--password"}</code></nobr>                     | `-p`  | Basic auth password (defaults to `OPENCODE_SERVER_PASSWORD`)               |
+| <nobr><code>{"--password"}</code></nobr>                     | `-p`  | Basic auth password (defaults to `OPENCODE_SERVER_PASSWORD`)              |
 | <nobr><code>{"--username"}</code></nobr>                     | `-u`  | Basic auth username (defaults to `OPENCODE_SERVER_USERNAME` or `redcode`) |
-| <nobr><code>{"--dir"}</code></nobr>                          |       | Directory to run in, or path on the remote server when attaching           |
-| <nobr><code>{"--port"}</code></nobr>                         |       | Port for the local server (defaults to random port)                        |
-| <nobr><code>{"--variant"}</code></nobr>                      |       | Model variant (provider-specific reasoning effort)                         |
-| <nobr><code>{"--thinking"}</code></nobr>                     |       | Show thinking blocks                                                       |
-| <nobr><code>{"--dangerously-skip-permissions"}</code></nobr> |       | Auto-approve permissions that are not explicitly denied (dangerous!)       |
+| <nobr><code>{"--dir"}</code></nobr>                          |       | Directory to run in, or path on the remote server when attaching          |
+| <nobr><code>{"--port"}</code></nobr>                         |       | Port for the local server (defaults to random port)                       |
+| <nobr><code>{"--variant"}</code></nobr>                      |       | Model variant (provider-specific reasoning effort)                        |
+| <nobr><code>{"--thinking"}</code></nobr>                     |       | Show thinking blocks                                                      |
+| <nobr><code>{"--dangerously-skip-permissions"}</code></nobr> |       | Auto-approve permissions that are not explicitly denied (dangerous!)      |
 
 ---
 
@@ -676,33 +676,33 @@ The redcode CLI takes the following global flags.
 
 RedCode can be configured using environment variables.
 
-| Variable                              | Type    | Description                                       |
-| ------------------------------------- | ------- | ------------------------------------------------- |
-| `OPENCODE_AUTO_SHARE`                 | boolean | Automatically share sessions                      |
-| `OPENCODE_GIT_BASH_PATH`              | string  | Path to Git Bash executable on Windows            |
-| `OPENCODE_CONFIG`                     | string  | Path to config file                               |
-| `OPENCODE_TUI_CONFIG`                 | string  | Path to TUI config file                           |
-| `OPENCODE_CONFIG_DIR`                 | string  | Path to config directory                          |
-| `OPENCODE_CONFIG_CONTENT`             | string  | Inline json config content                        |
-| `OPENCODE_DISABLE_AUTOUPDATE`         | boolean | Disable automatic update checks                   |
-| `OPENCODE_DISABLE_PRUNE`              | boolean | Disable pruning of old data                       |
-| `OPENCODE_DISABLE_TERMINAL_TITLE`     | boolean | Disable automatic terminal title updates          |
-| `OPENCODE_PERMISSION`                 | string  | Inlined json permissions config                   |
-| `OPENCODE_DISABLE_DEFAULT_PLUGINS`    | boolean | Disable default plugins                           |
-| `OPENCODE_DISABLE_LSP_DOWNLOAD`       | boolean | Disable automatic LSP server downloads            |
-| `OPENCODE_ENABLE_EXPERIMENTAL_MODELS` | boolean | Enable experimental models                        |
-| `OPENCODE_DISABLE_AUTOCOMPACT`        | boolean | Disable automatic context compaction              |
-| `OPENCODE_DISABLE_CLAUDE_CODE`        | boolean | Disable reading from `.claude` (prompt + skills)  |
-| `OPENCODE_DISABLE_CLAUDE_CODE_PROMPT` | boolean | Disable reading `~/.claude/CLAUDE.md`             |
-| `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS` | boolean | Disable loading `.claude/skills`                  |
-| `OPENCODE_DISABLE_MODELS_FETCH`       | boolean | Disable fetching models from remote sources       |
-| `OPENCODE_DISABLE_MOUSE`              | boolean | Disable mouse capture in the TUI                  |
-| `OPENCODE_FAKE_VCS`                   | string  | Fake VCS provider for testing purposes            |
-| `OPENCODE_CLIENT`                     | string  | Client identifier (defaults to `cli`)             |
-| `OPENCODE_ENABLE_EXA`                 | boolean | Enable Exa web search tools                       |
-| `OPENCODE_SERVER_PASSWORD`            | string  | Enable basic auth for `serve`/`web`               |
+| Variable                              | Type    | Description                                      |
+| ------------------------------------- | ------- | ------------------------------------------------ |
+| `OPENCODE_AUTO_SHARE`                 | boolean | Automatically share sessions                     |
+| `OPENCODE_GIT_BASH_PATH`              | string  | Path to Git Bash executable on Windows           |
+| `OPENCODE_CONFIG`                     | string  | Path to config file                              |
+| `OPENCODE_TUI_CONFIG`                 | string  | Path to TUI config file                          |
+| `OPENCODE_CONFIG_DIR`                 | string  | Path to config directory                         |
+| `OPENCODE_CONFIG_CONTENT`             | string  | Inline json config content                       |
+| `OPENCODE_DISABLE_AUTOUPDATE`         | boolean | Disable automatic update checks                  |
+| `OPENCODE_DISABLE_PRUNE`              | boolean | Disable pruning of old data                      |
+| `OPENCODE_DISABLE_TERMINAL_TITLE`     | boolean | Disable automatic terminal title updates         |
+| `OPENCODE_PERMISSION`                 | string  | Inlined json permissions config                  |
+| `OPENCODE_DISABLE_DEFAULT_PLUGINS`    | boolean | Disable default plugins                          |
+| `OPENCODE_DISABLE_LSP_DOWNLOAD`       | boolean | Disable automatic LSP server downloads           |
+| `OPENCODE_ENABLE_EXPERIMENTAL_MODELS` | boolean | Enable experimental models                       |
+| `OPENCODE_DISABLE_AUTOCOMPACT`        | boolean | Disable automatic context compaction             |
+| `OPENCODE_DISABLE_CLAUDE_CODE`        | boolean | Disable reading from `.claude` (prompt + skills) |
+| `OPENCODE_DISABLE_CLAUDE_CODE_PROMPT` | boolean | Disable reading `~/.claude/CLAUDE.md`            |
+| `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS` | boolean | Disable loading `.claude/skills`                 |
+| `OPENCODE_DISABLE_MODELS_FETCH`       | boolean | Disable fetching models from remote sources      |
+| `OPENCODE_DISABLE_MOUSE`              | boolean | Disable mouse capture in the TUI                 |
+| `OPENCODE_FAKE_VCS`                   | string  | Fake VCS provider for testing purposes           |
+| `OPENCODE_CLIENT`                     | string  | Client identifier (defaults to `cli`)            |
+| `OPENCODE_ENABLE_EXA`                 | boolean | Enable Exa web search tools                      |
+| `OPENCODE_SERVER_PASSWORD`            | string  | Enable basic auth for `serve`/`web`              |
 | `OPENCODE_SERVER_USERNAME`            | string  | Override basic auth username (default `redcode`) |
-| `OPENCODE_MODELS_URL`                 | string  | Custom URL for fetching models configuration      |
+| `OPENCODE_MODELS_URL`                 | string  | Custom URL for fetching models configuration     |
 
 ---
 

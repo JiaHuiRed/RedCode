@@ -235,8 +235,7 @@ const discoverSkills = Effect.fnUntraced(function* (
     }
   }
   const matches = all.filter((match) => !isNested(match))
-  if (matches.length !== all.length)
-    log.info("skipped nested skills", { count: all.length - matches.length })
+  if (matches.length !== all.length) log.info("skipped nested skills", { count: all.length - matches.length })
 
   const nestedDirs = new Set(all.filter(isNested).map((match) => path.dirname(match)))
   return {

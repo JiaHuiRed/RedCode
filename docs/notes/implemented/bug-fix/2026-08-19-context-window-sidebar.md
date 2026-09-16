@@ -13,7 +13,7 @@
 **真 bug**：那个 19% 的分子拿错了。
 
 ```ts
-const tokens = last.tokens.total ?? (input + output + reasoning + cache.read + cache.write)
+const tokens = last.tokens.total ?? input + output + reasoning + cache.read + cache.write
 percent = modelInfo?.limit.context ? Math.round((tokens / modelInfo.limit.context) * 100) : null
 ```
 
@@ -22,7 +22,7 @@ percent = modelInfo?.limit.context ? Math.round((tokens / modelInfo.limit.contex
 代码里留着这件事被看见过的痕迹：
 
 ```ts
-if (p > 200) return `${p}% ⚠`   // percentLabel
+if (p > 200) return `${p}% ⚠` // percentLabel
 ```
 
 有人见过它飙到 200% 以上，加了个 ⚠ 糊过去，没动口径。

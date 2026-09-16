@@ -1,6 +1,6 @@
 ---
 description: Run a comprehensive 7-phase codebase analysis producing a detailed report
-argument-hint: [--skip-phases 4,6]
+argument-hint: [--skip-phases 4, 6]
 ---
 
 # TypeGraph Deep Survey
@@ -13,7 +13,7 @@ Follow the phases below in order. Each phase produces findings.
 
 **Report output:** Write a markdown report to `<project_root>/typegraph-exploration-report.md` as you go. After each phase checkpoint, append that phase's findings to the report. Structure the report with the same phase headings used below. Include raw data (file counts, edge counts, cycle lists, blast radius numbers) alongside your interpretive analysis.
 
-**Tool usage:** Call typegraph-mcp tools via the MCP tool interface (e.g., `ts_dependency_tree`, `ts_import_cycles`, etc.). Use `Glob` and `Grep` for file discovery steps. Use `Read` sparingly — only when a phase explicitly requires reading source to verify a hypothesis. The point is to learn as much as possible *from the graph* before reading code.
+**Tool usage:** Call typegraph-mcp tools via the MCP tool interface (e.g., `ts_dependency_tree`, `ts_import_cycles`, etc.). Use `Glob` and `Grep` for file discovery steps. Use `Read` sparingly — only when a phase explicitly requires reading source to verify a hypothesis. The point is to learn as much as possible _from the graph_ before reading code.
 
 **Parallelism:** Within each phase, make independent tool calls in parallel. Between phases, respect the sequencing — later phases depend on earlier findings.
 
@@ -22,11 +22,13 @@ Follow the phases below in order. Each phase produces findings.
 ## Prerequisites
 
 Run the health check first:
+
 ```bash
 "__TYPEGRAPH_NODE__" "${CLAUDE_PLUGIN_ROOT}/node_modules/tsx/dist/cli.mjs" "${CLAUDE_PLUGIN_ROOT}/cli.ts" check
 ```
 
 Record three numbers from the output:
+
 - **File count** — calibrates expectations (200 files = afternoon, 2000 = days)
 - **Edge count** — total import relationships
 - **Edge density** (edges / files) — coupling indicator (<2 = loosely coupled, 2-3 = moderate, >4 = tightly coupled)
@@ -40,6 +42,7 @@ Record three numbers from the output:
 ### 1a. Find the entry points
 
 Use `Glob` to find likely entry points:
+
 ```
 Glob: **/index.ts, **/main.ts, **/entry*.ts, **/worker*.ts, **/server.ts, **/app.ts
 ```
@@ -49,11 +52,13 @@ Exclude `node_modules/` hits. The results are your starting nodes.
 ### 1b. Dependency tree from every entry point (depth 2)
 
 For each entry point, run:
+
 ```
 ts_dependency_tree(file: "<entry_point>", depth: 2)
 ```
 
 Compare the results:
+
 - **File counts** reveal which entry points are heavy orchestrators vs lean workers
 - **Overlap** between trees reveals shared infrastructure (files that appear in multiple trees)
 - **Disjoint trees** reveal isolated subsystems that don't talk to each other
@@ -67,6 +72,7 @@ ts_import_cycles()
 ```
 
 This is the single most important diagnostic call. Record:
+
 - **Cycle count** — 0 is pristine, 1-3 is normal, 10+ indicates structural problems
 - **Cycle locations** — which directories/modules participate in cycles?
 - **Cycle sizes** — 2-file cycles are usually intentional; 5+ file cycles are usually accidental
@@ -75,7 +81,8 @@ Cycles are places where you cannot reason about files independently. They're the
 
 ### 1d. Cross-boundary isolation — do the intended boundaries hold?
 
-For each pair of entry points/apps that seem like they *should* be independent, run:
+For each pair of entry points/apps that seem like they _should_ be independent, run:
+
 ```
 ts_shortest_path(from: "<app_a_entry>", to: "<app_b_entry>")
 ```
@@ -95,6 +102,7 @@ A `null` result proves compile-time isolation. A non-null result reveals the cha
 From Phase 1, note files that appeared in multiple dependency trees. These are shared infrastructure. Common examples: schema files, type definitions, barrel exports, utility modules.
 
 For each, run:
+
 ```
 ts_dependents(file: "<shared_file>", depth: 1)
 ```
@@ -104,11 +112,13 @@ Files with 20+ direct dependents are **foundational types** — changing them af
 ### 2b. Module exports — what does each key file provide?
 
 For every file identified as important (entry points, high-fanout files, files in cycle groups), run:
+
 ```
 ts_module_exports(file: "<important_file>")
 ```
 
 Record for each:
+
 - **Export count** — files with 15+ exports may be doing too much
 - **Export types** — classes, interfaces, types, constants, functions. A file that exports 8 interfaces is a contract definition. A file that exports 8 constants is a configuration. A file that exports a mix of class + error + test layer is a service module.
 - **Naming patterns** — do exports follow consistent naming (`*Service`, `*Error`, `*Test`, `*Live`)? Consistency across files is evidence of intentional patterns.
@@ -118,11 +128,13 @@ Record for each:
 Identify 3-5 directories that look like they should be self-contained modules (e.g., `services/billing/`, `providers/email/`, `middleware/`).
 
 For each, list the files in the directory and run:
+
 ```
 ts_module_boundary(files: ["<dir>/file1.ts", "<dir>/file2.ts", ...])
 ```
 
 Record:
+
 - **Isolation score** — 0.0 = zero isolation (everything flows through), 1.0 = perfectly encapsulated
 - **Incoming edges** — who depends on this module? (consumers)
 - **Outgoing edges** — what does this module depend on? (dependencies)
@@ -145,6 +157,7 @@ A module with many in both directions is a **coupling hotspot**.
 Pick a "role" — e.g., all files named `*Service.ts`, or all files in a `services/` directory. Run `ts_module_exports` on 4-5 of them.
 
 Compare the export shapes:
+
 - Do they all export `[Name]`, `[Name]Error`, `[Name]Test`? → Intentional service pattern
 - Do they all export a `Layer.Layer<...>` factory? → Intentional DI pattern
 - Does one file export 5 symbols while others export 15? → The outlier is either newer, older, or doing something different
@@ -152,6 +165,7 @@ Compare the export shapes:
 ### 3b. Pattern prevalence via navigate_to
 
 For suspected patterns, use `ts_navigate_to` to measure prevalence:
+
 ```
 ts_navigate_to(symbol: "Layer")         // How pervasive is DI?
 ts_navigate_to(symbol: "Error")         // How many typed errors exist?
@@ -168,6 +182,7 @@ Low counts (2-3) in one directory = localized experiment or one-off.
 If the project uses a DI pattern (Effect Layers, classes with interfaces, etc.), check whether test implementations exist alongside production ones.
 
 For each service file found in 3a:
+
 ```
 ts_module_exports(file: "<service_file>")
 ```
@@ -185,11 +200,13 @@ Look for paired exports: `ServiceLive` + `ServiceTest`, or `Service` + `Service.
 ### 4a. Orphan file detection
 
 For every file in directories that seem to have accumulated code over time, run:
+
 ```
 ts_dependents(file: "<suspect_file>", depth: 0)
 ```
 
 Files with 0 dependents that are NOT entry points are **orphan files** — nothing imports them. They're either:
+
 - Dead code (most likely)
 - Dynamically imported (check for `import()` expressions)
 - Entry points not recognized by the build system
@@ -200,11 +217,13 @@ Files with 0 dependents that are NOT entry points are **orphan files** — nothi
 For files with 0 dependents, you're done — the whole file is dead. For files that ARE imported, check for partially dead exports.
 
 Take high-export files from Phase 2b (those with 10+ exports) and run:
+
 ```
 ts_references(file: "<file>", symbol: "<exported_symbol>")
 ```
 
 ...for each export. Exports with 0-1 references (only the export itself) are dead exports. This is tedious for large files, so prioritize:
+
 - Files that feel overstuffed (15+ exports)
 - Barrel/index files (which may re-export symbols nothing actually uses)
 - Files in directories flagged as potentially stale
@@ -224,20 +243,23 @@ Barrel files (`index.ts` that re-export from submodules) often accumulate dead r
 ### 5a. Entity identification from schema/type files
 
 Find schema or type definition files:
+
 ```
 Glob: **/schemas/*.ts, **/types/*.ts, **/models/*.ts, **/domain/*.ts
 ```
 
-Run `ts_module_exports` on each. The exported type/interface names *are* the domain vocabulary: `User`, `Tenant`, `Todo`, `Invoice`, `Subscription`, etc.
+Run `ts_module_exports` on each. The exported type/interface names _are_ the domain vocabulary: `User`, `Tenant`, `Todo`, `Invoice`, `Subscription`, etc.
 
 ### 5b. Entity relationship mapping via dependency_tree
 
 For each domain entity's primary service file, run:
+
 ```
 ts_dependency_tree(file: "<entity_service>", depth: 1)
 ```
 
 The direct dependencies reveal domain relationships:
+
 - `TodoShareService` depends on `AddressService` and `ClaimTokenService` → sharing requires addresses and tokens
 - `BillingService` depends on `CoreApiClient` and `StripeCheckoutClient` → billing bridges internal data with an external API
 - `NotificationService` depends on `EmailProvider` and `SmsProvider` → notifications are multi-channel
@@ -247,6 +269,7 @@ Draw a mental graph: entities are nodes, service-to-service imports are edges. T
 ### 5c. Domain boundary verification
 
 For domain areas that seem like they should be independent (e.g., billing vs notifications, auth vs todo), run:
+
 ```
 ts_shortest_path(from: "<domain_a_service>", to: "<domain_b_service>")
 ```
@@ -256,6 +279,7 @@ Null = truly independent domains. A path = one domain depends on the other (and 
 ### 5d. Entity access patterns via blast_radius
 
 For the central domain entity (usually a `User`, `Account`, or core API client), run:
+
 ```
 ts_blast_radius(file: "<entity_file>", symbol: "<EntityName>")
 ```
@@ -273,6 +297,7 @@ The caller list, grouped by file, shows which parts of the system access the ent
 ### 6a. Request flow tracing
 
 For each RPC/HTTP handler or API route, run:
+
 ```
 ts_trace_chain(file: "<handler_file>", symbol: "<HandlerOrRouteGroup>")
 ```
@@ -285,21 +310,24 @@ Deep chains (4-5 hops) = layered architecture with middleware, decorators, or ad
 ### 6b. Layer composition analysis
 
 For the main entry point / composition root (typically the file with the most Phase 1 dependencies), run:
+
 ```
 ts_module_exports(file: "<composition_root>")
 ```
 
-Then for each exported Layer or provider, use `ts_trace_chain` to see what it wires together. In DI-heavy codebases, the Layer/provider composition *is* the runtime wiring — following the chain tells you exactly what services are live.
+Then for each exported Layer or provider, use `ts_trace_chain` to see what it wires together. In DI-heavy codebases, the Layer/provider composition _is_ the runtime wiring — following the chain tells you exactly what services are live.
 
 ### 6c. Service implementation mapping
 
-For every service *interface* file, use `ts_navigate_to` to find its implementations:
+For every service _interface_ file, use `ts_navigate_to` to find its implementations:
+
 ```
 ts_navigate_to(symbol: "<ServiceName>Live")
 ts_navigate_to(symbol: "<ServiceName>Test")
 ```
 
 This reveals:
+
 - How many implementations exist per interface (1 = standard, 2+ = strategy pattern or platform-specific)
 - Which services have test doubles (intentionally testable) vs which don't (may rely on integration tests)
 - Where implementations live relative to interfaces (same package = co-located, different app = platform-specific)
@@ -307,6 +335,7 @@ This reveals:
 ### 6d. Queue/event handler discovery
 
 For async or event-driven systems, find queue consumers, event handlers, or scheduled jobs:
+
 ```
 Glob: **/jobs/*.ts, **/handlers/*.ts, **/consumers/*.ts, **/workers/*.ts
 ```
@@ -316,6 +345,7 @@ Run `ts_dependency_tree(depth: 1)` on each. Their dependencies reveal what domai
 ### 6e. Feature flag / conditional path detection
 
 This is the hardest to detect statically. Use `Grep` for common patterns:
+
 ```
 Grep: "feature", "flag", "toggle", "experiment", "enabled", "FF_", "FEATURE_"
 ```
@@ -333,6 +363,7 @@ Then for any files found, use `ts_dependents` to see how far the conditional rea
 ### 7a. Blast radius ranking
 
 For the top 5-10 most-referenced symbols discovered in earlier phases, run:
+
 ```
 ts_blast_radius(file: "<file>", symbol: "<symbol>")
 ```
@@ -342,16 +373,18 @@ Sort by `filesAffected`. The top 5 are your highest-risk changes. Plan these car
 ### 7b. Dependency inversion check
 
 For high-risk symbols, check if the coupling goes through an abstraction:
+
 ```
 ts_dependents(file: "<interface_file>", depth: 1)
 ts_dependents(file: "<implementation_file>", depth: 1)
 ```
 
-If dependents point to the *interface* file (not the implementation), the system is properly inverted — you can change implementations without affecting consumers. If dependents point to the *implementation* directly, changing it will break callers.
+If dependents point to the _interface_ file (not the implementation), the system is properly inverted — you can change implementations without affecting consumers. If dependents point to the _implementation_ directly, changing it will break callers.
 
 ### 7c. Change propagation preview
 
 For a planned change, combine tools:
+
 1. `ts_blast_radius` — who references this symbol?
 2. `ts_dependents` on the file — who imports this file?
 3. `ts_module_boundary` on the affected directory — how does this change propagate to the module boundary?
@@ -366,63 +399,98 @@ Write the report to `<project_root>/typegraph-exploration-report.md` using this 
 
 ```markdown
 # Codebase Exploration Report
+
 > Generated: <date>
 > Project: <project_root>
 > Files: <count> | Edges: <count> | Density: <ratio>
 
 ## Executive Summary
+
 <!-- 3-5 bullet points: the most important findings across all phases -->
 
 ## Phase 1: Structural Skeleton
+
 ### Entry Points
+
 ### Import Cycles
+
 ### Boundary Verification
+
 ### Checkpoint
 
 ## Phase 2: Module Anatomy
+
 ### High-Fanout Files
+
 ### Module Export Profiles
+
 ### Module Boundaries
+
 ### Checkpoint
 
 ## Phase 3: Pattern Discovery
+
 ### Consistency Analysis
+
 ### Pattern Prevalence
+
 ### Test Layer Coverage
+
 ### Checkpoint
 
 ## Phase 4: Dead Code Detection
+
 ### Orphan Files
+
 ### Dead Exports
+
 ### Barrel File Audit
+
 ### Checkpoint
 
 ## Phase 5: Domain Topology
+
 ### Domain Vocabulary
+
 ### Entity Relationships
+
 ### Domain Independence
+
 ### Entity Access Patterns
+
 ### Checkpoint
 
 ## Phase 6: Runtime Behavior Approximation
+
 ### Request Flow Traces
+
 ### Layer Composition
+
 ### Implementation Map
+
 ### Async Paths
+
 ### Feature Flags
+
 ### Checkpoint
 
 ## Phase 7: Risk Assessment
+
 ### Blast Radius Ranking
+
 ### Dependency Inversion Health
+
 ### Change Propagation Hotspots
+
 ### Checkpoint
 
 ## Appendix: Raw Data
+
 <!-- Full tool outputs under <details> tags -->
 ```
 
 Guidelines:
+
 - Include actual numbers, file paths, and tool outputs — not vague summaries
 - Use tables for structured data (blast radius rankings, module boundaries, etc.)
 - Add a "Notable Findings" subsection after any checkpoint where something unexpected appeared
@@ -431,12 +499,12 @@ Guidelines:
 
 ## Quick Reference
 
-| Phase | Tools | Answers |
-|-------|-------|---------|
-| 1. Skeleton | `dependency_tree`, `import_cycles`, `shortest_path` | Architecture shape, boundaries, tangles |
-| 2. Anatomy | `dependents`, `module_exports`, `module_boundary` | What modules provide, how they connect |
-| 3. Patterns | `module_exports` (comparative), `navigate_to` | Intentional vs accidental conventions |
-| 4. Dead Code | `dependents` (0 check), `references` (per export) | Orphan files, dead exports |
-| 5. Domain | `dependency_tree`, `shortest_path`, `blast_radius` | Entity relationships, domain topology |
-| 6. Runtime | `trace_chain`, `navigate_to`, `dependency_tree` | Execution paths, wiring, async flows |
-| 7. Risk | `blast_radius`, `dependents`, `module_boundary` | Change impact, coupling direction |
+| Phase        | Tools                                               | Answers                                 |
+| ------------ | --------------------------------------------------- | --------------------------------------- |
+| 1. Skeleton  | `dependency_tree`, `import_cycles`, `shortest_path` | Architecture shape, boundaries, tangles |
+| 2. Anatomy   | `dependents`, `module_exports`, `module_boundary`   | What modules provide, how they connect  |
+| 3. Patterns  | `module_exports` (comparative), `navigate_to`       | Intentional vs accidental conventions   |
+| 4. Dead Code | `dependents` (0 check), `references` (per export)   | Orphan files, dead exports              |
+| 5. Domain    | `dependency_tree`, `shortest_path`, `blast_radius`  | Entity relationships, domain topology   |
+| 6. Runtime   | `trace_chain`, `navigate_to`, `dependency_tree`     | Execution paths, wiring, async flows    |
+| 7. Risk      | `blast_radius`, `dependents`, `module_boundary`     | Change impact, coupling direction       |

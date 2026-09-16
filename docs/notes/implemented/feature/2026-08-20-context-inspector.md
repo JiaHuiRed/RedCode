@@ -21,11 +21,11 @@
 
 候选源头有三个：
 
-| 源头 | 问题 |
-| --- | --- |
-| `session_message` 表 | 空的（见上） |
-| `PromptCaches` | 缓存的是 system 的**原料**（env/instructions/skills），不是最终数组 |
-| 发出前的那几个变量 | ✅ |
+| 源头                 | 问题                                                                |
+| -------------------- | ------------------------------------------------------------------- |
+| `session_message` 表 | 空的（见上）                                                        |
+| `PromptCaches`       | 缓存的是 system 的**原料**（env/instructions/skills），不是最终数组 |
+| 发出前的那几个变量   | ✅                                                                  |
 
 `PromptCaches.system` 只存 env/instructions/skills 三份原料；`runLoop` 每轮还要往 `system` 上追加
 日期、WORK RULES、按模型家族分支的若干锚（step/flash 各一套）、canary、DCP 说明。拿原料拼一遍

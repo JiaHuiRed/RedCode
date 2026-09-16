@@ -17,21 +17,27 @@ Analyze the impact of changing a TypeScript symbol by combining blast radius, de
 ## Workflow
 
 ### Step 1: Blast Radius
+
 Call `ts_blast_radius` with the file and symbol to get direct callers and affected files.
 
 ### Step 2: Assess Scope
+
 - If **< 5 callers**: Low impact. Report the callers and you're done.
 - If **5-20 callers**: Medium impact. Proceed to step 3 for package breakdown.
 - If **> 20 callers**: High impact. Proceed to steps 3 and 4.
 
 ### Step 3: Package Breakdown
+
 Call `ts_dependents` on the file to see the transitive impact grouped by package. This shows whether the change is contained to one package or crosses boundaries.
 
 ### Step 4: Module Boundary (for high-impact changes)
+
 Call `ts_module_boundary` with the affected files to understand the coupling. A low isolation score means the change is tightly coupled to external code.
 
 ### Step 5: Report
+
 Present findings as:
+
 1. **Direct callers** (count + file list)
 2. **Packages affected** (from dependents breakdown)
 3. **Risk assessment** (low/medium/high based on caller count and cross-package spread)

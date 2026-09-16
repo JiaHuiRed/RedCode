@@ -38,9 +38,7 @@ describe("messageWindowLimit", () => {
 
   test("never lowers a fallback that is already above the held value", () => {
     const release = holdMessageWindow("/dir", "ses_wide")
-    expect(messageWindowLimit("/dir", "ses_wide", HELD_MESSAGES_PER_SESSION + 50)).toBe(
-      HELD_MESSAGES_PER_SESSION + 50,
-    )
+    expect(messageWindowLimit("/dir", "ses_wide", HELD_MESSAGES_PER_SESSION + 50)).toBe(HELD_MESSAGES_PER_SESSION + 50)
     release()
   })
 })

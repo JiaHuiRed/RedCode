@@ -79,7 +79,7 @@ for (const file of files) {
   // 从 ".run" 往前跳空白再取接收者标识符：调用可能被 prettier 折成
   // appProcess 换行再 .run( ——直接找 "appProcess.run(" 会漏掉它。
   // 第一版就是这么漏掉 format/index.ts 那处的，下面的盲区断言就是为它加的。
-  for (let from = 0; ; ) {
+  for (let from = 0; ;) {
     const dot = text.indexOf(".run", from)
     if (dot < 0) break
     from = dot + 4
@@ -127,4 +127,6 @@ if (violations.length) {
   process.exit(1)
 }
 
-console.log("check-subprocess-timeout: " + checked + " 处 appProcess.run 调用全部声明了超时（" + bindings + " 个服务绑定）")
+console.log(
+  "check-subprocess-timeout: " + checked + " 处 appProcess.run 调用全部声明了超时（" + bindings + " 个服务绑定）",
+)

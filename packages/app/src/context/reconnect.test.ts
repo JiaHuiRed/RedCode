@@ -64,9 +64,7 @@ describe("fetchMessageGap", () => {
 
   test("caps recovery at 50 pages", async () => {
     let index = 0
-    await expect(
-      fetchMessageGap(async () => page(["m4"], `c${index++}`), "m1"),
-    ).rejects.toThrow("exceeded 50 pages")
+    await expect(fetchMessageGap(async () => page(["m4"], `c${index++}`), "m1")).rejects.toThrow("exceeded 50 pages")
   })
 })
 

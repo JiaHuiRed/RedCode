@@ -33,7 +33,7 @@ See [MANUAL.md](MANUAL.md) for configuration, MCP servers and skills, and [AGENT
 - TypeScript, Effect v4 (a beta line — the API moves; check the version installed in `node_modules`)
 - Follow the surrounding style; do not add abstraction layers without a concrete reason
 - Typecheck before committing
-- Comments explain *why*, especially where the code works around a specific trap
+- Comments explain _why_, especially where the code works around a specific trap
 
 ## Commits
 

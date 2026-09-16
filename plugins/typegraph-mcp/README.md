@@ -25,16 +25,16 @@ Every wrong turn burns context tokens and degrades the agent's output.
 
 Measured on a real 440-file TypeScript monorepo:
 
-| | grep | typegraph-mcp |
-|---|---|---|
-| **Context tokens** | ~113,000 | 1,006 |
-| **Files touched** | 47 | 3 |
-| **False positives** | dozens | 0 |
-| **Barrel file resolution** | reads 6 files, still guessing | 1 tool call, exact source |
-| **Cross-package impact** | 1,038 string matches | 31 direct + 158 transitive, by package |
-| **Circular dependency detection** | impossible | instant |
-| **Avg latency (semantic)** | n/a | 16.9ms |
-| **Avg latency (graph)** | n/a | 0.1ms |
+|                                   | grep                          | typegraph-mcp                          |
+| --------------------------------- | ----------------------------- | -------------------------------------- |
+| **Context tokens**                | ~113,000                      | 1,006                                  |
+| **Files touched**                 | 47                            | 3                                      |
+| **False positives**               | dozens                        | 0                                      |
+| **Barrel file resolution**        | reads 6 files, still guessing | 1 tool call, exact source              |
+| **Cross-package impact**          | 1,038 string matches          | 31 direct + 158 transitive, by package |
+| **Circular dependency detection** | impossible                    | instant                                |
+| **Avg latency (semantic)**        | n/a                           | 16.9ms                                 |
+| **Avg latency (graph)**           | n/a                           | 0.1ms                                  |
 
 **99% context reduction. 100% accuracy. [Full benchmarks](./BENCHMARKS.md).**
 
@@ -76,7 +76,7 @@ The interactive setup auto-detects your AI agents, installs the plugin into `./p
 claude --plugin-dir ./plugins/typegraph-mcp
 ```
 
-This gives you 14 MCP tools, 5 workflow skills that teach Claude *when* and *how* to chain tools, `/typegraph:check`, `/typegraph:test`, and `/typegraph:bench` slash commands, and a SessionStart hook for dependency verification.
+This gives you 14 MCP tools, 5 workflow skills that teach Claude _when_ and _how_ to chain tools, `/typegraph:check`, `/typegraph:test`, and `/typegraph:bench` slash commands, and a SessionStart hook for dependency verification.
 
 **Other agents** (Cursor, Codex CLI, Gemini CLI, GitHub Copilot) — restart your agent session. The MCP server and skills are already configured.
 
@@ -94,26 +94,26 @@ First query takes ~2s (tsserver warmup). Subsequent queries: 1-60ms.
 
 ### Semantic queries (tsserver)
 
-| Tool | Description |
-|---|---|
-| `ts_find_symbol` | Find a symbol's location in a file by name |
-| `ts_definition` | Go to definition — resolves through imports, re-exports, barrel files, generics |
-| `ts_references` | Find all semantic references (not string matches) |
-| `ts_type_info` | Get type and documentation — same as VS Code hover |
-| `ts_navigate_to` | Search for a symbol across the entire project |
-| `ts_trace_chain` | Follow definition hops automatically, building a call chain |
-| `ts_blast_radius` | Analyze impact of changing a symbol — all usage sites and affected files |
-| `ts_module_exports` | List all exports from a module with resolved types |
+| Tool                | Description                                                                     |
+| ------------------- | ------------------------------------------------------------------------------- |
+| `ts_find_symbol`    | Find a symbol's location in a file by name                                      |
+| `ts_definition`     | Go to definition — resolves through imports, re-exports, barrel files, generics |
+| `ts_references`     | Find all semantic references (not string matches)                               |
+| `ts_type_info`      | Get type and documentation — same as VS Code hover                              |
+| `ts_navigate_to`    | Search for a symbol across the entire project                                   |
+| `ts_trace_chain`    | Follow definition hops automatically, building a call chain                     |
+| `ts_blast_radius`   | Analyze impact of changing a symbol — all usage sites and affected files        |
+| `ts_module_exports` | List all exports from a module with resolved types                              |
 
 ### Import graph queries (oxc-parser + oxc-resolver)
 
-| Tool | Description |
-|---|---|
-| `ts_dependency_tree` | Transitive dependency tree of a file |
-| `ts_dependents` | All files that depend on a given file, grouped by package |
-| `ts_import_cycles` | Detect circular import dependencies |
-| `ts_shortest_path` | Shortest import path between two files |
-| `ts_subgraph` | Extract the neighborhood around seed files |
+| Tool                 | Description                                                       |
+| -------------------- | ----------------------------------------------------------------- |
+| `ts_dependency_tree` | Transitive dependency tree of a file                              |
+| `ts_dependents`      | All files that depend on a given file, grouped by package         |
+| `ts_import_cycles`   | Detect circular import dependencies                               |
+| `ts_shortest_path`   | Shortest import path between two files                            |
+| `ts_subgraph`        | Extract the neighborhood around seed files                        |
 | `ts_module_boundary` | Analyze module coupling: incoming/outgoing edges, isolation score |
 
 ## CLI
@@ -143,14 +143,14 @@ Run the health check first — it catches most issues:
 npx typegraph-mcp check
 ```
 
-| Symptom | Fix |
-|---|---|
-| Server won't start | `cd plugins/typegraph-mcp && npm install --include=optional` |
-| "TypeScript not found" | Run `pnpm install` or `npm install`; if TypeScript is not declared, add it to devDependencies first |
-| Tools return empty results | Check `TYPEGRAPH_TSCONFIG` points to the right tsconfig |
-| Build errors from plugins/ | Add `"plugins/**"` to tsconfig.json `exclude` array |
-| `@esbuild/*` or `@rollup/*` package missing | Reinstall with Node 22: `npm install --include=optional` |
-| "npm warn Unknown project config" | Safe to ignore — caused by pnpm settings in your `.npmrc` that npm doesn't recognize |
+| Symptom                                     | Fix                                                                                                 |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Server won't start                          | `cd plugins/typegraph-mcp && npm install --include=optional`                                        |
+| "TypeScript not found"                      | Run `pnpm install` or `npm install`; if TypeScript is not declared, add it to devDependencies first |
+| Tools return empty results                  | Check `TYPEGRAPH_TSCONFIG` points to the right tsconfig                                             |
+| Build errors from plugins/                  | Add `"plugins/**"` to tsconfig.json `exclude` array                                                 |
+| `@esbuild/*` or `@rollup/*` package missing | Reinstall with Node 22: `npm install --include=optional`                                            |
+| "npm warn Unknown project config"           | Safe to ignore — caused by pnpm settings in your `.npmrc` that npm doesn't recognize                |
 
 ## Manual MCP configuration
 

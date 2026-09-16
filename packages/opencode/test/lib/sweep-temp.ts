@@ -31,7 +31,11 @@ async function directorySize(dir: string): Promise<number> {
   for (const entry of entries) {
     const full = path.join(dir, entry.name)
     if (entry.isDirectory()) total += await directorySize(full)
-    else if (entry.isFile()) total += await fs.stat(full).then((s) => s.size).catch(() => 0)
+    else if (entry.isFile())
+      total += await fs
+        .stat(full)
+        .then((s) => s.size)
+        .catch(() => 0)
   }
   return total
 }

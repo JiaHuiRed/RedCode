@@ -82,7 +82,8 @@ function locate(buf: Uint8Array, offset: number) {
     })
     .join("")
   const from = Math.max(0, column - 40)
-  const snippet = (from > 0 ? "…" : "") + visible.slice(from, from + 100).trim() + (visible.length > from + 100 ? "…" : "")
+  const snippet =
+    (from > 0 ? "…" : "") + visible.slice(from, from + 100).trim() + (visible.length > from + 100 ? "…" : "")
   return { line, column, snippet }
 }
 
@@ -189,12 +190,13 @@ if (nul.length || other.length) {
     for (const v of nul) console.error("  " + v.path + ":" + v.line + ":" + v.column + "  " + v.snippet)
     console.error("")
     console.error("  裸 NUL 会让 file(1) 把文件报成 data、grep/ripgrep 判二进制直接静默跳过，")
-    console.error("  只吐 \"Binary file ... matches\" 不给行号——这个文件对全仓代码搜索就此隐身。")
+    console.error('  只吐 "Binary file ... matches" 不给行号——这个文件对全仓代码搜索就此隐身。')
   }
   if (other.length) {
     if (nul.length) console.error("")
     console.error("check-control-bytes: " + other.length + " 处裸控制字节：")
-    for (const v of other) console.error("  " + v.path + ":" + v.line + ":" + v.column + "  " + hex(v.byte) + "  " + v.snippet)
+    for (const v of other)
+      console.error("  " + v.path + ":" + v.line + ":" + v.column + "  " + hex(v.byte) + "  " + v.snippet)
     console.error("")
     console.error("  多半是转义序列写成了裸字节（本意 \\1 落成 0x01 那种），正文已经损坏。")
   }

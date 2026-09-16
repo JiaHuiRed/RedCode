@@ -63,7 +63,9 @@ function recordCulprits(entry: LoAF) {
   } else {
     // 一帧里可能有多段脚本，只记最贵的那段——找瓶颈看头部就够。
     const worst = scripts.reduce((hi, item) => (item.duration > hi.duration ? item : hi), scripts[0])
-    const where = worst.sourceURL ? `${worst.sourceURL}${worst.sourceCharPosition ? `:${worst.sourceCharPosition}` : ""}` : ""
+    const where = worst.sourceURL
+      ? `${worst.sourceURL}${worst.sourceCharPosition ? `:${worst.sourceCharPosition}` : ""}`
+      : ""
     culprits.push({
       at: entry.startTime,
       frame: entry.duration,

@@ -15,7 +15,7 @@ Describe the subject first, then the style, then anything to exclude. Concrete n
 
 ## Editing
 
-Pass `image` with a path to edit that file instead of generating from scratch. Say what should change *and* what should stay: "change the background to solid red, keep the person unchanged" holds the subject still, while "change the background" alone has been observed to recolour adjacent things instead.
+Pass `image` with a path to edit that file instead of generating from scratch. Say what should change _and_ what should stay: "change the background to solid red, keep the person unchanged" holds the subject still, while "change the background" alone has been observed to recolour adjacent things instead.
 
 Source images are capped at 10MB.
 

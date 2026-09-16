@@ -169,7 +169,9 @@ const files = Effect.fnUntraced(function* (
   for (const item of list.toSorted((a, b) => a.file.localeCompare(b.file))) {
     const added = item.status === "added"
     const budgeted = !added || untracked++ < MAX_UNTRACKED_FILE_PROCESSES
-    const stat = budgeted ? (map.get(item.file) ?? (added ? yield* git.statUntracked(cwd, item.file) : undefined)) : undefined
+    const stat = budgeted
+      ? (map.get(item.file) ?? (added ? yield* git.statUntracked(cwd, item.file) : undefined))
+      : undefined
     const patch = budgeted ? yield* patchForItem(git, cwd, ref, item, batch, capped) : emptyPatch(item.file)
     const result: { patch: string; capped: boolean } = capped
       ? { patch, capped: true }

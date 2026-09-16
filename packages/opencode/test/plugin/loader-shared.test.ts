@@ -88,10 +88,7 @@ describe("plugin.loader.shared", () => {
           ].join("\n"),
         )
 
-        await Bun.write(
-          path.join(dir, "redcode.json"),
-          JSON.stringify({ plugin: [pathToFileURL(file).href] }, null, 2),
-        )
+        await Bun.write(path.join(dir, "redcode.json"), JSON.stringify({ plugin: [pathToFileURL(file).href] }, null, 2))
 
         return { mark }
       },
@@ -123,10 +120,7 @@ describe("plugin.loader.shared", () => {
           ].join("\n"),
         )
 
-        await Bun.write(
-          path.join(dir, "redcode.json"),
-          JSON.stringify({ plugin: [pathToFileURL(file).href] }, null, 2),
-        )
+        await Bun.write(path.join(dir, "redcode.json"), JSON.stringify({ plugin: [pathToFileURL(file).href] }, null, 2))
 
         return { mark }
       },
@@ -161,10 +155,7 @@ describe("plugin.loader.shared", () => {
           ].join("\n"),
         )
 
-        await Bun.write(
-          path.join(dir, "redcode.json"),
-          JSON.stringify({ plugin: [pathToFileURL(file).href] }, null, 2),
-        )
+        await Bun.write(path.join(dir, "redcode.json"), JSON.stringify({ plugin: [pathToFileURL(file).href] }, null, 2))
 
         return { mark }
       },
@@ -194,10 +185,7 @@ describe("plugin.loader.shared", () => {
           ].join("\n"),
         )
 
-        await Bun.write(
-          path.join(dir, "redcode.json"),
-          JSON.stringify({ plugin: [pathToFileURL(file).href] }, null, 2),
-        )
+        await Bun.write(path.join(dir, "redcode.json"), JSON.stringify({ plugin: [pathToFileURL(file).href] }, null, 2))
 
         return { mark }
       },
@@ -236,10 +224,7 @@ describe("plugin.loader.shared", () => {
           ].join("\n"),
         )
 
-        await Bun.write(
-          path.join(dir, "redcode.json"),
-          JSON.stringify({ plugin: [pathToFileURL(file).href] }, null, 2),
-        )
+        await Bun.write(path.join(dir, "redcode.json"), JSON.stringify({ plugin: [pathToFileURL(file).href] }, null, 2))
 
         return { mark }
       },
@@ -511,10 +496,7 @@ describe("plugin.loader.shared", () => {
           ].join("\n"),
         )
 
-        await Bun.write(
-          path.join(dir, "redcode.json"),
-          JSON.stringify({ plugin: [pathToFileURL(mod).href] }, null, 2),
-        )
+        await Bun.write(path.join(dir, "redcode.json"), JSON.stringify({ plugin: [pathToFileURL(mod).href] }, null, 2))
 
         return { mark }
       },
@@ -572,10 +554,7 @@ describe("plugin.loader.shared", () => {
           ].join("\n"),
         )
 
-        await Bun.write(
-          path.join(dir, "redcode.json"),
-          JSON.stringify({ plugin: [pathToFileURL(mod).href] }, null, 2),
-        )
+        await Bun.write(path.join(dir, "redcode.json"), JSON.stringify({ plugin: [pathToFileURL(mod).href] }, null, 2))
 
         return { mark }
       },
@@ -965,10 +944,7 @@ describe("plugin.loader.shared", () => {
           ].join("\n"),
         )
 
-        await Bun.write(
-          path.join(dir, "redcode.json"),
-          JSON.stringify({ plugin: [pathToFileURL(file).href] }, null, 2),
-        )
+        await Bun.write(path.join(dir, "redcode.json"), JSON.stringify({ plugin: [pathToFileURL(file).href] }, null, 2))
 
         return { mark }
       },
@@ -1090,10 +1066,7 @@ export default {
           ].join("\n"),
         )
 
-        await Bun.write(
-          path.join(dir, "redcode.json"),
-          JSON.stringify({ plugin: [pathToFileURL(file).href] }, null, 2),
-        )
+        await Bun.write(path.join(dir, "redcode.json"), JSON.stringify({ plugin: [pathToFileURL(file).href] }, null, 2))
 
         return { mark }
       },

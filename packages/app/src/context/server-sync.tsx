@@ -1,4 +1,12 @@
-import type { Config, OpencodeClient, Path, Project, ProviderAuthResponse, ProviderQuota, Todo } from "@redcode-ai/sdk/v2/client"
+import type {
+  Config,
+  OpencodeClient,
+  Path,
+  Project,
+  ProviderAuthResponse,
+  ProviderQuota,
+  Todo,
+} from "@redcode-ai/sdk/v2/client"
 import { showToast } from "@redcode-ai/ui/toast"
 import { getFilename } from "@redcode-ai/core/util/path"
 import {
@@ -142,9 +150,7 @@ export function createServerSyncContext() {
     if (typeof idle === "function") {
       const handle = idle(() => wantProviderCatalog(), { timeout: 10_000 })
       onCleanup(() =>
-        (
-          globalThis as unknown as { cancelIdleCallback?: (h: number) => void }
-        ).cancelIdleCallback?.(handle),
+        (globalThis as unknown as { cancelIdleCallback?: (h: number) => void }).cancelIdleCallback?.(handle),
       )
       return
     }

@@ -118,7 +118,8 @@ export function stream(text: string, live: boolean) {
 
   // 最后一个顶层块还在长，它是活跃尾块；它之前的都已经定型。
   const tailOffset = lineStart(text, starts[starts.length - 1]!)
-  if (tailOffset <= 0 || tailOffset >= text.length) return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
+  if (tailOffset <= 0 || tailOffset >= text.length)
+    return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
 
   const blocks: Block[] = []
   let cut = 0

@@ -348,14 +348,14 @@
 
 - **用量看板的聚合按指纹短路**（`packages/opencode/src/session/usage.ts`）：`/session/usage` 的五个聚合查询 WHERE 完全相同，各自把同一批 message 行扫一遍，而**每一条都要读 `message.data`**。本机副本实测该列合计 171MB，光把它读出来就要 1462ms。逐项冷态：
 
-  | 查询 | 冷态 |
-  |---|---|
-  | base | 1664 ms |
-  | daily | 292 ms |
-  | byModel | 296 ms |
-  | dailyByModel | 310 ms |
-  | peakHour | 204 ms |
-  | 合计 | 2766 ms（热态 1307 ms） |
+  | 查询         | 冷态                    |
+  | ------------ | ----------------------- |
+  | base         | 1664 ms                 |
+  | daily        | 292 ms                  |
+  | byModel      | 296 ms                  |
+  | dailyByModel | 310 ms                  |
+  | peakHour     | 204 ms                  |
+  | 合计         | 2766 ms（热态 1307 ms） |
 
   瓶颈是读 blob，不是 `json_extract` 本身：同一批行不碰 data 只 count 是 **6ms**，一加 role 过滤就跳到 172ms。所以加索引救不了——`sum` 无论如何都要把行读出来。
 
@@ -375,12 +375,12 @@
 
 - **头像与壁纸搬出设置文件，改个字号不再重写 3.4MB**（`packages/app/src/context/settings.tsx`、`utils/persist.ts`，新增 `Persist.media`）：`persisted` 是**写穿**的——每次 setStore 都同步序列化整个 store 并走一条 IPC，主进程那边 electron-store 底下的 conf 对 get 和 set **都**要 readFileSync 整个文件 + JSON.parse（set 还要再 stringify + 原子写）。本机实测 `default.dat` 3.40MB，其中 `settings.v3` 占 3397.9KB，而这 3.4MB 全是四张 base64 JPEG：
 
-  | 字段 | 大小 |
-  |---|---|
-  | `assistantProfile.avatar` | 1331.4 KB |
-  | `appearance.homeBackground` | 754.4 KB |
-  | `userProfile.avatar` | 695.7 KB |
-  | `appearance.chatBackground` | 615.5 KB |
+  | 字段                        | 大小      |
+  | --------------------------- | --------- |
+  | `assistantProfile.avatar`   | 1331.4 KB |
+  | `appearance.homeBackground` | 754.4 KB  |
+  | `userProfile.avatar`        | 695.7 KB  |
+  | `appearance.chatBackground` | 615.5 KB  |
 
   于是改个字号、换个主题、切个开关，都要把这 3.4MB 在**主进程**上连读带写过一遍；主进程一卡，标题栏拖动、菜单、所有 IPC 一起卡——这也是为什么在渲染进程抓 CPU profile 只看得到 idle。
 
@@ -403,7 +403,6 @@
 ### [0.10.15] - 2026-09-04
 
 > A1 收口：`summary.diffs` 这条线的四步一次做完——先修好「打开老会话统计全归零」，再把每 step 的全量加载、重复重算、无上限增长、孤儿文件逐个拆掉。**不做 schema 迁移**（三份迁移方案的机制全拿 fatal，且 95% 历史快照已被 gc，存量不可重算），全部改在写入侧与读取侧。
-
 
 #### 修复
 
@@ -603,12 +602,12 @@
 
 - **泄漏锚点检测改成增量扫描**（`session/instruction-echo.ts` 新增 `LeakAnchorScanner`、`session/processor.ts`）：text-delta 路径每条 delta 都拿 `hasLeakAnchor(ctx.currentText.text)` 扫**已写出的全文**，O(n²)。整轮累计实测（delta 24 字符，「纯累积」是同一循环去掉检查的对照）：
 
-  | 一轮写出 | delta 数 | 纯累积 | 改前 | 改后 |
-  |---|---|---|---|---|
-  | 20K | 834 | 0.1ms | 8.1ms | 0.4ms |
-  | 60K | 2,500 | 0.1ms | 40.6ms | 0.6ms |
-  | 120K | 5,000 | 0.1ms | 179ms | 1.0ms |
-  | 240K | 10,000 | 0.2ms | 833ms | 1.9ms |
+  | 一轮写出 | delta 数 | 纯累积 | 改前   | 改后  |
+  | -------- | -------- | ------ | ------ | ----- |
+  | 20K      | 834      | 0.1ms  | 8.1ms  | 0.4ms |
+  | 60K      | 2,500    | 0.1ms  | 40.6ms | 0.6ms |
+  | 120K     | 5,000    | 0.1ms  | 179ms  | 1.0ms |
+  | 240K     | 10,000   | 0.2ms  | 833ms  | 1.9ms |
 
   用法与相邻的 `NgramDetector` 一致（`feed(delta)`），只留锚点长度那么长的尾巴、完全不碰累积串。**中途试过「只 slice 尾窗再 includes」，240K 那档只从 833ms 降到 451ms** —— 累积串在流式期间是 rope，对它 `includes` 或 `slice` 都要先摊平，省掉的是比较不是摊平；滚动尾巴才真正是 O(delta)。等价性：能整段落在旧文本里的锚点在它到达那条 delta 上就已命中（命中即 `leakTripped` + `shouldBreak`），所以每轮只需看结尾落在新 delta 里的那些。补 7 条用例（逐字符喂、锚点跨 delta 交界的每一种切法、reset 语义、五种切片粒度下与全文扫描比对首次命中位置）。
 
@@ -778,7 +777,7 @@
 
   入参形状在**两个边界**上归一（freeform 回来的 input 是裸字符串）：进执行器前 → `{ patchText }`；落库前 → 否则掉进 `{ value }` 兜底，`apply_patch` 的 diff 视图渲染不出来。另外 native runtime 让位——它的 `nativeTools` 会把 provider 工具压成「参数是字符串的普通函数工具」静默发错，所以带 provider 工具时判 unsupported 回落 ai-sdk。线上形状用探针实测过：下行 `{type:"custom",name:"apply_patch",format:{grammar,lark}}`，上行 `custom_tool_call` 的 input 原样是补丁字符串。
 
-- **hy4 推理档从数据路径提升到特判（实测 none/high）**（`packages/opencode/src/provider/transform.ts`、`test/provider/transform.test.ts`）：opencode-go 网关上同一道需要推理的题、`temperature 0`、`max_tokens 1200`，每档跑两轮只变 `reasoning_effort`，看 `reasoning_tokens`——**只有 `none` 是真的**（恒为 0、completion ~289）；`minimal/low/medium/high/xhigh/max` 与「完全不发这个参数」落在同一区间（421~1200），且不单调（medium 427/421 反而低于 low 615/541），是噪声不是分档。
+- **hy4 推理档从数据路径提升到特判（实测 none/high）**（`packages/opencode/src/provider/transform.ts`、`test/provider/transform.test.ts`）：opencode-go 网关上同一道需要推理的题、`temperature 0`、`max_tokens 1200`，每档跑两轮只变 `reasoning_effort`，看 `reasoning_tokens`——**只有 `none` 是真的**（恒为 0、completion ~~289）；`minimal/low/medium/high/xhigh/max` 与「完全不发这个参数」落在同一区间（421~~1200），且不单调（medium 427/421 反而低于 low 615/541），是噪声不是分档。
 
   网关对任何值都回 200，连它压根不认的 `xhigh`/`max` 也回 200——**所以只能按行为判、不能按报错判**，这也正是提升到特判的理由：走数据路径时，models.dev 写错了不会有任何信号，UI 上会长出几个滑得动但什么都不改变的档位。值与当前 models.dev 数据一致（`["none","high"]`），提升的意义是**钉住**它，测试里直接喂一份「上游改成五档」的假数据断言仍只出两档。只认 hy4，hy3 的 `["none","low","high"]` 没实测过、继续走数据路径；id 匹配锚在串首或分隔符上（`hy4-preview` / `tencent/hy4-preview` 都认），并钉了 `hy40` 不被误伤。
 
@@ -795,6 +794,7 @@
   三块各自独立：① **数据**走新增的 `GET /session/:id/outline`，直接查库、与窗口无关；不做上游那套投影折叠（本仓是 SQLite 不是事件溯源），预览在 SQL 里就截断，part 表按 `group by message_id` + `min(id)` 压成每条消息一行，否则长会话要拉几千行只为每条消息的头几十个字。② **跳转** `loadThrough(messageID)` 一路翻到目标进窗口；**无进展时不当场放弃而是等一拍再试** —— `loadMessages` 对并发调用是静默 no-op，"没进展"最常见的原因是用户同时在往上滚、pager 被占着（上游的 `fix(ui-chat): hold jumps while a plain pull owns the pager` 修的就是这种情况下退化成"落在最近一条"）；翻不到就 toast 明说。滚动放 rAF 里，因为 prepend 刚插的行还没被 virtua 测量。③ **UI** 不另起面板，加进右侧现成的标签组，内容包在 `<Show when={activeTab() === "outline"}>` 里——目录请求只在真的打开这个标签时才发，不给「点开会话」那条热路径加往返。
 
   实测（真实库只读探针，最长会话）：两条 SQL 共 414ms，1418 行 part 压成每消息一行，379 轮，载荷 107.2KB。测试 7 例，折叠逻辑抽成纯函数 `fold()` 与库解耦，覆盖轮次编号、「最后一条带文字的 assistant 才算回答」、孤儿 assistant 不造轮次、截断按码点不按码元、空会话。**界面未做视觉验证**（起 desktop dev server 在这台机器上曾把内存打到 2.9GB）。note 见 `docs/notes/implemented/feature/2026-09-01-session-turn-outline.md`。
+
 ---
 
 ### [0.10.2] - 2026-09-02
@@ -870,7 +870,6 @@
   视觉侧：面板与侧边栏共用同一条 `data-frost-surface` 磨砂规则（并进 `index.css` 的同一个选择器，以后调 frost 参数两边不会分叉），指标块用 `bg-layer-01` 上的 `layer-02`。图表选型按 dataviz 规范走：热力图是顺序编码、单色相、**0 走底色而不是最浅一档**（「没用过」和「用得少」是两回事）、分档用**分位数**不是等距（token 用量重尾，等距会把绝大多数格子压进最浅一档）；堆叠柱是分类编码、固定色序**不循环**、超出的折进「其他」（该项目历史上有 30 个模型，不折叠必然两个模型同色）。调色板按本仓 yuqi 主题底色（浅 `#faf2f6` / 暗 `#321a34`）跑过验证器：暗色五项全 PASS，浅色四项 PASS + 对比度 WARN（4 个低于 3:1）——**那条 WARN 规范里不可豁免、必须配可见标签兑现**，所以图例每行强制带 in / out / 占比三个数字，不是装饰。同一个 modelID 可能来自不同 provider（`deepseek-v4-flash` 同时挂在 opencode-go 与 deepseek 下），重名时带 provider 前缀，否则身份就只能靠颜色区分了。
 
   生成链已重跑，`openapi.json` 与 `sdk.gen`/`types.gen` 均为纯新增。数值字段用 `Schema.Finite` 而不是 `Schema.Number`——后者会生成 `number | "NaN" | "Infinity" | ...` 的联合，仓里既有字段用的都是 Finite。
-
 
 - **记录 ChatGPT/Codex 套餐额度**（`packages/opencode/src/provider/quota.ts` 新增、`plugin/codex.ts`）：订阅认证下 Codex 后端把用量窗口放在**响应头**里，此前 `return fetch(...)` 原样丢弃。实测（Plus 账号，一次真实请求取证）带回 `x-codex-plan-type` / `-active-limit`、`x-codex-primary-*`（`window-minutes: 300` = 5 小时档）、`x-codex-secondary-*`（`10080` = 7 天档）、`x-codex-credits-*`，外加 `x-base-model-inference-*` 这组独立的 `gpt-reserve` 储备池——与 Claude Code 用量面板的三条进度条一一对应。现在解析并存进内存，日志可见。只读头、**绝不碰 `response.body`**（那是要交给 AI SDK / 原生运行时消费的 SSE 流）；`record()` 内部吞掉全部异常，解析失败不会把模型请求带走。存储刻意做成模块级而非 `InstanceState`——写入点是 AI SDK 起的裸 promise，没有 fiber 也没有 `InstanceRef`，`InstanceState.get` 会静默落到 `process.cwd()` 键上（见 `effect/instance-state.ts` 的 `fallbackContext`），写进去没人读得到且不报错；何况凭据本身就是进程级的。捕获点选在插件的 fetch 而不是 `provider.ts` 的 AI SDK 包装，因为原生运行时会绕过后者（`session/llm/native-runtime.ts:97` 那道 `openai` + `oauth` 闸门），插件 fetch 是两条运行时唯一的交汇点。
 - **ChatGPT/Codex 套餐额度 GUI 面板**（`provider/quota.ts`、`server/routes/instance/httpapi/groups/provider.ts`、`handlers/provider.ts`、`app` 的 `server-sync.tsx` / `global-sync/bootstrap.ts` / `global-sync/event-reducer.ts` / `components/session/session-context-tab.tsx`）：额度从「记录在内存里」到「看得见」。服务端：`record()` 捕获后经 `GlobalBus` 广播 `provider.quota.updated` —— 额度是账号级事实，走 `GlobalBus` 不至于盖上某个实例的 directory/project 章、只在那个项目里可见；新增 `GET /provider/quota` 供首次拉取与刷新，`success` 用 `Schema.Array`（legacy OpenAPI transform 会在非 `/api` 路径剥掉 null 分支，空数组表示尚未捕获）。GUI：会话上下文页新增「ChatGPT / Codex 套餐额度」区块，primary（5 小时档）/ secondary（7 天档）/ reserve（`gpt-reserve` 储备池）三条进度条，颜色按用量分档（≥90% 告急 / ≥60% 警告 / 其余提示色），重置时间渲染成 `resetAt`（unix **秒** ×1000）的绝对本地时刻——零定时器、零周期重绘、不闪。事件接进 `applyGlobalEvent`：同 `providerID + accountID` 替换否则追加；新客户端首次进场由 `bootstrap` 拉一次，接上长跑服务端时面板不为空。文案走 i18n 三语。
@@ -1146,7 +1145,7 @@
 
 #### 优化
 
-- **固定前缀瘦身 ~9.5k token/请求**（`skill/index.ts`、`tool/registry.ts`、`effect/runtime-flags.ts`、`session/prompt/deepseek.md`）：拆一条真实请求体（287KB）量出固定前缀 **46,052 token**——system 提示词 21,209 + 内置工具 14,483 + MCP 工具 10,337，最肥的单项是 skill 工具定义 **4,990 token**，而 skill 工具七天只被调用 11 次。四处下刀：① skill 工具描述只列名字（`fmt` 加 `namesOnly`）——完整描述在系统提示词的 `<available_skills>` 里已经发过一遍，路由决策看的是那份，工具描述够拼出合法 name 即可，省 ~4,350；② 剔除嵌套 skill——`**/SKILL.md` 深度不设限，skill 自带的样例目录会被当成顶层技能注册（本机 `nuwa-skill/examples/` 下 15 个样例，比真装的 27 个描述加起来还长），判据与 glob 写法无关：`SKILL.md` 落在另一个 `SKILL.md` 的目录之下就是附属资源；③ `<available_skills>` 不再发 `<location>`——模型按 name 调用，加载后工具输出会再给一次 base directory，这行每条约 27 token 没人读，省 ~650；④ `goal_set/done/clear` 上 `enableGoalTools` 开关且默认关——goal 表 0 行、90 天零调用，三个定义却每请求付 214 token，引擎侧目标注入本就只在有 active goal 时才发，`REDCODE_ENABLE_GOAL_TOOLS=true` 可恢复。固定前缀 46,052 → 约 36,500。另有配置侧改动不在本仓（`~/.redcode/redcode.jsonc`：jcodemunch 白名单删 4 个 90 天零调用工具、mcp-process-mgmt 禁用 `pty_resize`）。同批把 `deepseek.md` 的批处理规则写实：79.9% 的 step 只带一个工具调用，而每多一步就把整个上下文重发一遍；同引擎下 step-3.7-flash 多工具率 32.5%、deepseek 只有 12~15%，是习惯问题不是被卡住。
+- **固定前缀瘦身 ~9.5k token/请求**（`skill/index.ts`、`tool/registry.ts`、`effect/runtime-flags.ts`、`session/prompt/deepseek.md`）：拆一条真实请求体（287KB）量出固定前缀 **46,052 token**——system 提示词 21,209 + 内置工具 14,483 + MCP 工具 10,337，最肥的单项是 skill 工具定义 **4,990 token**，而 skill 工具七天只被调用 11 次。四处下刀：① skill 工具描述只列名字（`fmt` 加 `namesOnly`）——完整描述在系统提示词的 `<available_skills>` 里已经发过一遍，路由决策看的是那份，工具描述够拼出合法 name 即可，省 ~4,350；② 剔除嵌套 skill——`**/SKILL.md` 深度不设限，skill 自带的样例目录会被当成顶层技能注册（本机 `nuwa-skill/examples/` 下 15 个样例，比真装的 27 个描述加起来还长），判据与 glob 写法无关：`SKILL.md` 落在另一个 `SKILL.md` 的目录之下就是附属资源；③ `<available_skills>` 不再发 `<location>`——模型按 name 调用，加载后工具输出会再给一次 base directory，这行每条约 27 token 没人读，省 ~~650；④ `goal_set/done/clear` 上 `enableGoalTools` 开关且默认关——goal 表 0 行、90 天零调用，三个定义却每请求付 214 token，引擎侧目标注入本就只在有 active goal 时才发，`REDCODE_ENABLE_GOAL_TOOLS=true` 可恢复。固定前缀 46,052 → 约 36,500。另有配置侧改动不在本仓（`~/.redcode/redcode.jsonc`：jcodemunch 白名单删 4 个 90 天零调用工具、mcp-process-mgmt 禁用 `pty_resize`）。同批把 `deepseek.md` 的批处理规则写实：79.9% 的 step 只带一个工具调用，而每多一步就把整个上下文重发一遍；同引擎下 step-3.7-flash 多工具率 32.5%、deepseek 只有 12~~15%，是习惯问题不是被卡住。
 - **重复 read 同一文件时折叠未变区段**（`tool/read.ts`）：实测每周 **928 次**「同会话内重复 read 同一文件」，其中 902 次文件确实变了，每次把整份文件重新灌进上下文，这些副本此后每一步都要被重读一遍，放大约 **195M token/周**的缓存读。**不发 diff，发折叠**——hashline 补丁靠 `replace N..M` 定位，纯 diff 会让模型自己数行号，等于把刚修掉的标签失效换个形式请回来；折叠保留绝对行号，只把连续未变区段收成一行 `... (lines A-B unchanged since your last read) ...`。旧内容不另开缓存，直接从对话历史里上一条 read 的输出反解（`recoverPriorLines`），好处是失效逻辑自带：那条若已被压缩掉（`part.state.time.compacted`）就找不到、自动退回发全文，不存在「模型看不见旧内容却收到折叠件」的形态。三道保守闸：只在整文件、未截断的读上生效（分段读行号基准对不上）；反解要求行号从 1 连续递增，因此折叠过的输出不能当下次的基准（`priorReadLines` 会继续往前找可反解的那条，第三、四次读仍能折）；省不到三成就不折，原样发全文。新增 6 条纯函数单测。
 - **hashline 标签失效时把当前内容带回来，省掉一趟 read**（`tool/edit.ts`）：近 30 天 edit 调用 4,532 次、失败 525 次（11.6%），其中标签/哈希失效 286 次占 **54%**，是最大的一类；协议类失败合计 395 次（75%），模型真正「改错内容」只占 18%。原来只回一句 "Re-read the file to get the current hash."，一次失效烧三步（失败 → read → 重试），而文件内容此刻就在手上（`contentOld` 刚读完），那趟 read 还会把整份文件重新灌进上下文。改成把当前内容按 read 的排版（`[path#TAG]` + 行号）带进错误消息，模型可直接重建补丁重试；一并记 `FileTime`，否则重试会再撞「必须先 read」那道守卫（那一类另占 58 次）。上限沿用 read 的 50KB——带回来的绝不会比它本来要跑的那趟 read 更大，超限才退回让它自己读。
 
@@ -1205,7 +1204,7 @@
 - **② 同文件两处 `text.includes("")` 空串**（`session/instruction-echo.ts`）：`suspicious` 快路径的标记列表里，紧跟 `<system-reminder>`/`<reasoning-language>` 的两项自 `0eed39fc` 引入时**就是空字符串**——原意显然是 `OWN_BLOCKS` 里对应的 `<dcp-message-id>` 与 `<dcp-system-reminder>`。空串使 `includes` 恒为真。已补回，并补上列表漏掉的 `Compressed block context:`（`SCHEMA_STRONG` 有它、`suspicious` 没有）。**注意 `suspicious` 目前计算了却没人用**——`detect()` 的文档注释承诺的"快路径"并不存在，每次调用都走全量扫描；oxlint 没开 `no-unused-vars` 所以一直没报。没有顺手接上去：`SCHEMA_STRONG` 里还有 `- Do not invent` / `IDs must exist` / `Pick startId` / `OUTPUT FORMAT` 四个强特征不在该列表中，直接启用会漏剥，得先补全再启用。
 - **③ `tui sync` 的 scope 断言陈旧，不是代码错**（`test/cli/cmd/tui/sync.test.tsx`）：`f25f0b29`（0.4.4，2026-06-07）**有意**把"关掉目录过滤"的语义从"放宽到本项目"改成"放宽到全局"，同批改了服务端 `session.ts`、HTTP 路由与 SDK 生成类型共 5 个文件，CHANGELOG 作为新功能记着。而该测试来自仓库初始快照 `d6d579c4`，从没跟着更新。断言与用例名一并改为 `global`。
 - **④ 三个录制夹具漂移**（`test/fixtures/recordings/session/*.json`）：`$.max_tokens 32000→50000`（claude-haiku-4-5）与 `$.max_output_tokens 32000→128000`（gpt-5.2-codex）是**本轮 `ee9cc7be`「输出预算按目录推导」改出来的**——旧公式一律 32000，新公式对 200k 上下文的 Claude 算 50000。`$.include ["reasoning.encrypted_content"]` 则来自 `3aba7738`（08-22）。三个夹具的请求匹配已按代码当前真实下发内容手工对齐（录制响应的输出量为 54/36/43 token，远低于任一新上限，语义安全）。**这是手工更新匹配、不是重录**：真正的重录需要 OpenAI / Anthropic / Zen 的 live 凭证，仍然欠着——欠的那部分是 `encrypted_content` 的响应侧覆盖。
-- **⑤ `snapshot race` 在 Windows 上从来没通过过**（`test/session/snapshot-tool-race.test.ts`）：命令是 ``echo '...' > ${path.join(dir, "race-test.txt")}``，把 `path.join()` 产出的 Windows 路径**裸插**进 shell 命令，而跑它的是 POSIX 系 shell——反斜杠被当转义吃掉，`C:\Users\...\race-test.txt` 塌成 cwd 下的单个文件 `CUsersAdministratorAppDataLocalTemp...race-test.txt`（探针实测的真实文件名）。工具还自报 `status=completed`，因为重定向本身成功了、只是写去了别处。改为引号 + 正斜杠，bash 与 PowerShell 下都成立。这条同样来自 `d6d579c4`。
+- **⑤ `snapshot race` 在 Windows 上从来没通过过**（`test/session/snapshot-tool-race.test.ts`）：命令是 `echo '...' > ${path.join(dir, "race-test.txt")}`，把 `path.join()` 产出的 Windows 路径**裸插**进 shell 命令，而跑它的是 POSIX 系 shell——反斜杠被当转义吃掉，`C:\Users\...\race-test.txt` 塌成 cwd 下的单个文件 `CUsersAdministratorAppDataLocalTemp...race-test.txt`（探针实测的真实文件名）。工具还自报 `status=completed`，因为重定向本身成功了、只是写去了别处。改为引号 + 正斜杠，bash 与 PowerShell 下都成立。这条同样来自 `d6d579c4`。
 
 ### [0.9.6] - 2026-08-24
 
@@ -1511,6 +1510,7 @@
 ---
 
 ## TUI
+
 ### [0.8.16] - 2026-08-11
 
 > 审计收尾日：msgPin 与 prune 停战（compact 边界分代结算，缓存优先）；HttpApi 假门禁转正并当场修掉门禁自己的冷启动竞速缺陷；两个静默失效的依赖补丁分道处置；apply_patch 补写前守卫；edit 锁表止漏；read 跨盘路径岔修复。
@@ -1639,6 +1639,7 @@
 #### 新增
 
 - **续跑提醒插件**（`.opencode/plugins/continuation-enforcement.ts`）：监听 `session.idle` 事件 → `client.session.todo` 查未完成任务（pending/in_progress）→ 注入 `synthetic: true` 的提醒消息（列前 3 项 + 总数）触发 agent 继续。`session.stop` 冷却期（15s）内不提醒，避免打扰用户主动打断；`session.end` 清理状态。默认开启（`.opencode/plugins/` 自动加载）。
+
 ---
 
 ### [0.8.9] - 2026-08-03
@@ -1648,11 +1649,12 @@
 #### 新增
 
 - **四角色子代理体系**（`.opencode/agents/architect.md`、`fixer.md`、`reviewer.md`）：在内置 explore（检索）基础上新增 architect（只读，出方案/架构设计）、fixer（读写，直接实现）、reviewer（只读，severity 分级审查报告，commit 永远用户拍板）。按角色路由模型：explore=opencode-go/mimo-v2.5（原生多模态识图）、architect/fixer=opencode-go/deepseek-v4-flash（聚合商额度多）、reviewer=step_plan/step-3.7-flash。
-- **子代理放行 MCP 检索工具**（`agent/profile/types.ts` 权限体系）：markdown agent frontmatter 的 `"*": deny` 通配会把 MCP 工具（jcodemunch_*/typegraph_*/indexgraph_*/web-search_*/vision_*）一起禁用，三个新角色和内置 explore 均补 `: allow` 放行——子代理现在能用代码检索 MCP。
+- **子代理放行 MCP 检索工具**（`agent/profile/types.ts` 权限体系）：markdown agent frontmatter 的 `"*": deny` 通配会把 MCP 工具（jcodemunch__/typegraph__/indexgraph__/web-search__/vision_*）一起禁用，三个新角色和内置 explore 均补 `: allow` 放行——子代理现在能用代码检索 MCP。
 
 #### 修复
 
 - **DCP 元数据标签正文泄漏双防线**（`session/instruction-echo.ts`、`session/prompt.ts`）：模型偶发把 `<dcp-message-id>`/`<dcp-system-reminder>` 元数据标签抄进可见正文（实测 `<m0364</m0364>`、整段压缩提醒）。提示词层明确禁止输出标签、遇压缩提醒继续任务；输出层 instruction-echo 快路径 + A 类整块剥离兜底。测试 +2 条。
+
 ---
 
 ### [0.8.8] - 2026-08-03
@@ -1662,6 +1664,7 @@
 #### 变更
 
 - **Write 工具 markdown 渲染视图**（`cli/cmd/tui/routes/session/index.tsx`、`cli/cmd/tui/feature-plugins/system/session-v2.tsx`）：Write 组件对 `filetype === "markdown"` 的文件内容改用 OpenTUI `<markdown>` 组件（MarkdownRenderable，marked 块级解析 + inline 渲染，conceal=true 隐藏 ** 显示粗体），其余文件保持 `<code conceal={false}>` 源码视图。Edit 的 diff 组件不支持 markdown 渲染视图，保持原样。
+
 ---
 
 ### [0.8.7] - 2026-08-03
@@ -1675,7 +1678,9 @@
 #### 修复
 
 - **defaultAgent 4 个测试对齐 fork 行为**（`test/agent/agent.test.ts`）：05890af（260725）把默认 agent 从 build 改为 redmind 且 `list()` 将 redmind 排第一；92ab606（260712）YAML profile 功能引入了 primary "agent"（字母序最前）。无配置默认断言改为 redmind；"只禁 build+redmind 后默认 plan"改为需再禁 agent；"全禁抛错"补禁 agent。41 pass 0 fail。
+
 ---
+
 ### [0.8.6] - 2026-08-01
 
 > Goal 功能从「半实装」补成完整闭环：钉目标 → 系统提示词注入 → 会话空闲自动续跑（防跑飞三闸门）→ token 记账收尾。同批把标题生成从本地小模型切回当前会话主模型——额度管够，不再受 small_model 掉线拖累。
@@ -1687,7 +1692,9 @@
 #### 变更
 
 - **标题生成改用当前会话主模型**（`session/prompt.ts` ensureTitle）：此前标题走 `small_model`（本地 ollama/qwen3.5）兜底主模型，qwen 掉线会失败重试。哥哥拍板"额度管够"——直接 `provider.getModel(input.providerID, input.modelID)` 主模型生成，删除 getSmallModel fallback 分支与 isMain 判断，失败直接 orDie。
+
 ---
+
 ### [0.8.5] - 2026-08-01
 
 > DeepSeek V4 Flash 输出上限提到 64K——max_tokens 覆盖 reasoning_content + content 总和，思考链一长正文就被 32K 共享预算挤断，多次中断的根因。同批把 Windsurf 式主动记忆条款写进 system 尾部，遇持久事件不等收工立刻落盘。
@@ -1699,6 +1706,7 @@
 #### 新增
 
 - **Windsurf 式主动记忆条款**（`session/prompt.ts`）：上下文会被压缩，两层 MEMORY.md 是连接下一个会话的唯一桥梁——之前只靠 AGENTS.md 的记忆规则触发，遵守率低。在 system 尾部铁律之后、canary 之前插入静态条款：遇用户决策/项目坑/被纠正/架构选择立即写入、无需用户许可；`read + edit` 追加、禁用 `write` 覆盖；只有跨项目通用教训才进全局。纯静态文本插在 canary 之前，前缀缓存零影响。
+
 ---
 
 > redmind 品牌名修正（Redmind → RedMind），destructive 授权门补全进程/系统级高危命令——此前只拦文件操作和 git 写操作，`taskkill`/`shutdown` 这类命令会静默执行。
@@ -1710,15 +1718,17 @@
 - **火山引擎 Doubao 新增专属提示词**（`session/prompt/doubao.md`、`session/system.ts`）：Doubao-Seed 系列此前落 `default.md` 兜底，那句「不超过 4 行、单词回答最好」会把强模型的输出能力压扁，和 grok 是同款坑（0.8.3 已给 grok 补过）。新增 `doubao.md` 参照 `deepseek.md` 的精炼结构，补全五条铁律、Engineering judgment、Windows GBK 环境事实、Task management、并行工具调用等，且保留 soul 人格房规（语气/称呼/详略不双立法）。匹配走 `providerID` 包含 `"volcengine"` 判断，支持火山方舟所有 Doubao 模型。
 
 - **attention 新增任务栏闪烁提醒**（`cli/cmd/tui/attention.ts`、`cli/cmd/tui/config/tui-schema.ts`、`cli/cmd/tui/config/tui.ts`）：打游戏/离开时不知道 agent 在等权限或任务已完成。Windows 下通知触发（失焦 + 非 subagent）时输出 BEL（`\x07`），配合 Windows Terminal `bellStyle: "taskbar"` 让任务栏图标像微信一样闪烁；BEL 是控制字符不占格子、不干扰 OpenTUI 渲染缓冲，console-hijack 不劫持 stdout 所以通道干净。新增 `attention.bell` 配置开关（默认开，`attention.enabled` 默认仍为关）。
+
 #### 修复
 
 - **destructive 授权门漏掉进程/系统级命令**（`tool/shell.ts`）：破坏性判定原先挂在 `FILES`（文件命令）分支里，只覆盖文件操作 + git 写操作（260730 白名单反向判定），`taskkill`、`Stop-Process`、`shutdown`、`Stop-Computer`、`Restart-Computer`、`Clear-Content`、`reg`、`format`、`format-volume`、`diskpart`、`sc`、`schtasks`、`vssadmin`、`bcdedit` 共 14 个进程/系统级高危命令在 redmind 下会静默执行。判定逻辑拆成独立行（`if (cmd && DESTRUCTIVE.has(cmd)) scan.destructive = true`，不再依赖 FILES 分支），DESTRUCTIVE 表补齐这些命令——`reg`/`sc`/`schtasks`/`vssadmin`/`bcdedit` 有只读用法（query/list/enum），但 agent 极少用它们做只读诊断，整命令进门宁可多问一次。PowerShell/cmd 的命令名已先行小写化，bash 分支不受影响。
 
 - **所有 `.md` 提示词/工具描述在导入时被转成 HTML 送进模型**（`session/system.ts` 等 27 个文件、51 处导入）：Bun 的内置 `.md` loader 把 markdown 转成 HTML，编译产物里存的就是 `` var qI=`<p>You are RedCode, an interactive code agent…` ``。实测 `# Tone and style` → `<h1>Tone and style</h1>`、`- ctrl+p…` → `<li>ctrl+p…</li>`、`` `file_path:line_number` `` → `<code>…</code>`；`anthropic.md` 8197 字节进、8638 字节出。仓库里没注册任何 `.md` loader，是 Bun 默认行为，多半是某次升级后静默变的；`src/markdown.d.ts` 声明的是 `const content: string`，HTML 也是 string，类型检查从不报。**后果**：每份提示词多约 5% 体积的标签，精心调过的 markdown 结构落到模型眼里全是 HTML——之前调提示词排版的工作有一部分是白做的。**修法**：导入处加 `with { type: "text" }`，实测拿到一字节不差的原文。**执行**：按 0.8.3 待办的建议分两步走——先改 `system.ts` 里 15 个 per-model 提示词（anthropic/default/beast/deepseek/gemini/gpt/kimi/mimo/minimax/codex/trinity/glm/grok/step/ollama），验证 typecheck + bun build 产物均拿到原文（8197 字节、无 `<h1>`）后，再推平其余 35 处工具描述导入。全仓 51 处（含 skill/index.ts 原本就带 `with` 的 1 处）无一遗漏。typecheck exit=0，编译产物验证原文。
 
-
 - **火山引擎 volcengine-ark 手动补 CNY 定价**（`provider/provider.ts`）：火山方舟是国产 provider 且不在 models.dev（纯 config 自定义 provider），`CNY_PRICING` 表里没它 → config 循环 cost 兜底全 0 → 费用恒显示 ¥0.00（stepfun-step-plan 同款坑，0.8.1 修过）。按官方定价补 Doubao-Seed-2.1-turbo（输入 ¥3.00、缓存读 ¥0.60、输出 ¥15.00）和 Doubao-Seed-2.1-pro（¥6.00/¥1.20/¥30.00），cache write 按惯例 = input。国产 provider checklist（历史教训 #62）：新增时必须同步 `CNY_PRICING`（服务端 cost 落库）和显示层币种判断——volcengine 走 `model.cost.currency`（`provider.ts` 设 `currency: "CNY"`），显示层读 cost.currency 不需要另加名单。
+
 ---
+
 ### [0.8.3] - 2026-07-31
 
 > 0.8.0/0.8.2 为了治 step-3.7-flash 的通道纪律，往每一步注入了一条「可见思考的语言 + 称呼」约束。这一版把它整条撤了——实测它是「模型以为用户一直在催」「把答复写进思考链、不展开根本看不见」「无人发话时反复做无用功」三个现象的共同来源，比它要修的那个偶发 XML 泄漏严重得多。同批还有首页视觉调整。
@@ -1988,6 +1998,7 @@
 - **Today's date 位置优化**（`session/prompt.ts`、`session/system.ts`）：date 从缓存的 `<env>` 头部移至每次刷新的小段尾部，减少 provider prefix cache 每日失效开销。
 
 ---
+
 ### [0.7.30] - 2026-07-17
 
 > GUI session list 跨 project 显示——不传 scope 时有 directory 就走 listGlobal，不限 project_id。
@@ -2000,6 +2011,7 @@
 - **v2 session handler middleware**（`server/routes/.../v2/session.ts`）：添加 `InstanceContextMiddleware` + `WorkspaceRoutingMiddleware`，directory fallback 从路由上下文读取。
 
 ---
+
 ### [0.7.29] - 2026-07-17
 
 > 事件钩子系统类型修复——stash 中的钩子代码（compact.post、session.start/end、user.prompt.submit、session.stop、tool.execute 三阶段）通过 typecheck。
@@ -2234,6 +2246,7 @@
 - **DeepSeek V4 Flash 成本计算少报**：`getUsage()` 中 `adjustedInputTokens = inputTokens - cacheReadInputTokens`，DeepSeek 返回 `cached_tokens > prompt_tokens`（比例 1.5x–20x），导致非缓存 input 未被计费，仅输出计费。将 `cacheReadInputTokens` cap 在 `inputTokens` 范围内（`session.ts:418`），同时修正 `ai-sdk.ts` 中 DeepSeek `prompt_cache_hit_tokens` 解析。
 
 ---
+
 ### [0.7.8] - 2026-07-05
 
 > 修复 `@opentui/keymap` 双份类型冲突 + 首页项目分区选择器。
@@ -2425,7 +2438,7 @@
 
 #### 修复
 
-- **StepFun prefix cache 命中率偏低**：`stepfun` / `step-plan` provider 缺少 `promptCacheKey`，导致 Step 3.7 Flash 跨调用缓存命中率仅 63~82%，远低于 DeepSeek/MiMo 的 94~97%。在 `transform.ts` 的 `promptCacheKey` 条件中补入两个 providerID，实测命中率上升至 88%+（`packages/opencode/src/provider/transform.ts`）。
+- **StepFun prefix cache 命中率偏低**：`stepfun` / `step-plan` provider 缺少 `promptCacheKey`，导致 Step 3.7 Flash 跨调用缓存命中率仅 63~~82%，远低于 DeepSeek/MiMo 的 94~~97%。在 `transform.ts` 的 `promptCacheKey` 条件中补入两个 providerID，实测命中率上升至 88%+（`packages/opencode/src/provider/transform.ts`）。
 
 #### 变更
 
@@ -2847,9 +2860,10 @@
 ### [0.6.1] - 2026-06-14
 
 #### 修复
- - **粘贴图片被 LLM 拒绝后 vision MCP 找不到文件**：非多模态模型（DeepSeek）提交图片时，`unsupportedParts()` 只替换 base64 data URL 为错误文本，从不落盘。现改为在抛弃前将 base64 解码写入 `%TEMP%/redcode-vision-{timestamp}.{ext}`，并在错误文本追加 `TEMP_FILE:<path>` 供 vision-autoagent 直接读取（`provider/transform.ts`）
- - **修复数据字段名错误**：`savePartToTemp` 最初读取 `FilePart.url`（始终 undefined），AI SDK v4 FilePart 实际使用 `data` 字段。同时 `ImagePart.image` 可能是 `Buffer`/`Uint8Array`，非纯 base64 字符串，现已原生处理二进制数据。修完后图片正确落盘，`TEMP_FILE:` 路径正常输出（`provider/transform.ts`）
- - **vision-autoagent SKILL.md 缺少 TEMP_FILE 路径优先检查**：新增第 2 步——从错误消息中提取 `TEMP_FILE:` 路径直接调用 vision MCP，不再盲目按文件名搜索（`~/.redcode/skill/vision-autoagent/SKILL.md`）
+
+- **粘贴图片被 LLM 拒绝后 vision MCP 找不到文件**：非多模态模型（DeepSeek）提交图片时，`unsupportedParts()` 只替换 base64 data URL 为错误文本，从不落盘。现改为在抛弃前将 base64 解码写入 `%TEMP%/redcode-vision-{timestamp}.{ext}`，并在错误文本追加 `TEMP_FILE:<path>` 供 vision-autoagent 直接读取（`provider/transform.ts`）
+- **修复数据字段名错误**：`savePartToTemp` 最初读取 `FilePart.url`（始终 undefined），AI SDK v4 FilePart 实际使用 `data` 字段。同时 `ImagePart.image` 可能是 `Buffer`/`Uint8Array`，非纯 base64 字符串，现已原生处理二进制数据。修完后图片正确落盘，`TEMP_FILE:` 路径正常输出（`provider/transform.ts`）
+- **vision-autoagent SKILL.md 缺少 TEMP_FILE 路径优先检查**：新增第 2 步——从错误消息中提取 `TEMP_FILE:` 路径直接调用 vision MCP，不再盲目按文件名搜索（`~/.redcode/skill/vision-autoagent/SKILL.md`）
 
 ---
 
@@ -2919,6 +2933,7 @@
 - **TextNodeRenderable 裸 number 渲染崩溃（全面修复）**：OpenTUI `<text>` 只接受 string，多处直接渲染 number 导致致命错误。全面审计 TUI 所有 tsx 文件，共 16 处全部改为模板字符串。涉及：底栏 cacheHitPct/mcp count、侧边栏 messageCount/mcp on/bad、session-v2 numResults/questions count/grep count/matches count、dialog-status MCP/LSP/formatter/plugin count、footer permissions/lsp/mcp length、index reverted/diagnostic/webSearch numResults、subagent-footer index/total、diff-viewer files count（`prompt/index.tsx`、`sidebar/context.tsx`、`sidebar/mcp.tsx`、`session-v2.tsx`、`dialog-status.tsx`、`routes/session/footer.tsx`、`routes/session/index.tsx`、`routes/session/subagent-footer.tsx`、`feature-plugins/home/footer.tsx`、`diff-viewer.tsx`）
 - **FFF MCP 配置缺失**：0.5.6 全局目录整合后，`~/.redcode/redcode.jsonc` 的 MCP 段未包含 fff，TUI 找不到该服务器。补回 `~/.redcode/redcode.jsonc` `mcp.fff` 定义（本地 exe，cwd `$REDCODE_ROOT`，60s timeout）
 - **默认主题被 getCustomThemes 错误覆盖为 opencode**：`init()` 中 `getCustomThemes()` 扫描已不存在的 `~/.config/redcode/themes/` 目录后抛错，catch 将其强制设为 `"opencode"`，覆盖了 store 默认的 `"karina"`。改为 fallback 到 `"karina"`（`theme.tsx` catch handler）
+
 #### 变更
 
 - **侧边栏缓存百分比移至底栏**：侧边栏 `cache X,XXX,XXX (98.5%)` 因 row 宽不足换行，去掉百分比显示，仅保留 token 数字。百分比移到底栏 color-coded 显示（≥80 绿 / ≥50 黄 / ≥20 灰 / <20 红），一眼判断缓存效率（`sidebar/context.tsx`、`prompt/index.tsx`）
@@ -3634,6 +3649,7 @@
 - **任务栏闪烁提醒**（`packages/desktop/` 五处链路）：仿 TUI `attention.bell` 的微信式提醒——`platform.notify` 失焦触发时 `window.api.flashFrame(true)`（`renderer/index.tsx`），经 preload `flash-frame` 通道（`preload/index.ts`、`preload/types.ts`）到 main 进程 `BrowserWindow.fromWebContents` + `isFocused()` 守卫（`main/ipc.ts`），窗口聚焦自动停闪（`main/windows.ts`）；Tauri shim noop 占位（`renderer/tauri-api-shim.ts`）。桌面端所有通知（turn-complete/error/permission/question）汇聚于 `platform.notify` 一处生效。
 
 ---
+
 ### [0.7.10] - 2026-07-31
 
 > 输入框补上主 agent 切换控件 —— 此前 GUI 只能停在 build，plan / redmind 在界面上选不到。
@@ -4159,16 +4175,20 @@
 - **缓存命中率二次修正（GUI 侧）**：同 TUI 0.5.0，`session-context-metrics.ts` 的公式从 `read/(read+write)` 改回 `read/(input+read+write)`，与 DeepSeek 平台数字对齐（`session-context-metrics.ts`）
 
 #### 新增
+
 - **代码审查技能（ce-code-review）**：移植自 EveryInc/compound-engineering-plugin（20.9k stars），14 个人格化审查员，onfidence-gated 去重流水线，P0-P3 严重性分级 + autofix 分类，双模式（交互式自动修复 / mode:agent 仅报告）
 - **opencode-snip 插件**：自动为 git/npm/docker 等命令输出加 snip 前缀，过滤冗余输出，减少 60-90% token 消耗
 - **local-stats 本地编码统计插件**：纯本地编码活动追踪，记录每次 edit/write/read 调用，统计文件变更行数，按天存 JSON 到 `.redcode/stats/`，无需外部 API
 
 #### 修复
+
 - **DCP 插件配置恢复**：.opencode/redcode.home.jsonc 源模板补回 plugin 字段，修复 build 后 DCP 插件丢失问题
 
 #### 变更
+
 - **移除 /deepwork 引用**：goal-automation skill 中删除未实现的 /deepwork 手动模式段落
 - **技能打磨**：goal-automation / simplify / diagnose 三个技能修复编码损坏，simplify 新增 RedCode 工具链提示
+
 ### [0.5.5] - 2026-06-11
 
 #### 新增
@@ -4190,10 +4210,10 @@
 - **ecc-shell-stub.js** 复制到 `~/.redcode/plugin/` 目录，作为全局 ECC 三件套（memory-automation / guardrail-profiles / defensive-agent）
 - **@tarquinen/opencode-dcp** 通过 npm 全局安装（v3.1.12），提供动态上下文裁剪功能
 
- #### 修复
- 
- - **缓存 token 分母为 0 问题**：`session-context-tab.tsx` 中 cacheTokens 的 `read / write` 显示在 write=0 时展示 `168,704 / 0` 看起来像除法 bug。改为按缓存命中率展示：`read / write (XX%)`，write=0 时只显示 `read (XX%)`，无缓存活动时 `—`。命中率计算公式 `cacheRead / (input + cacheRead + cacheWrite)`，取自 TUI 已有实现（`prompt/index.tsx:338`）
- 
+#### 修复
+
+- **缓存 token 分母为 0 问题**：`session-context-tab.tsx` 中 cacheTokens 的 `read / write` 显示在 write=0 时展示 `168,704 / 0` 看起来像除法 bug。改为按缓存命中率展示：`read / write (XX%)`，write=0 时只显示 `read (XX%)`，无缓存活动时 `—`。命中率计算公式 `cacheRead / (input + cacheRead + cacheWrite)`，取自 TUI 已有实现（`prompt/index.tsx:338`）
+
 #### 构建说明
 
 ```bash

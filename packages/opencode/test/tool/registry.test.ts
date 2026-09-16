@@ -203,8 +203,9 @@ describe("tool.registry", () => {
       const model = { providerID: ProviderID.redcode, modelID: ModelID.make("test") }
 
       // Agent.Info.permission 是 Ruleset（构造时已由 fromConfig 转换），追加规则=末条优先
-      const withRules = (...rules: Array<{ permission: string; pattern: string; action: "allow" | "deny" | "ask" }>) =>
-        ({ ...build, permission: [...build.permission, ...rules] })
+      const withRules = (
+        ...rules: Array<{ permission: string; pattern: string; action: "allow" | "deny" | "ask" }>
+      ) => ({ ...build, permission: [...build.permission, ...rules] })
 
       const baseline = yield* registry.tools({ ...model, agent: build })
       expect(baseline.some((tool) => tool.id === "env")).toBe(true)
@@ -282,10 +283,7 @@ describe("tool.registry", () => {
       const tool = path.join(test.directory, ".redcode", "tool")
       yield* Effect.promise(() => fs.mkdir(tool, { recursive: true }))
       yield* Effect.promise(() =>
-        Bun.write(
-          path.join(tool, "broken.ts"),
-          'import { query } from "@does-not-exist/zero"\nexport { query }\n',
-        ),
+        Bun.write(path.join(tool, "broken.ts"), 'import { query } from "@does-not-exist/zero"\nexport { query }\n'),
       )
       yield* Effect.promise(() =>
         Bun.write(

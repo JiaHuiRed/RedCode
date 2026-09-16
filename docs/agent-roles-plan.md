@@ -8,13 +8,13 @@
 
 ## 现状一：五条装载路径、三层覆盖
 
-| # | 路径 | 全机实际内容 |
-| --- | --- | --- |
-| 1 | 内建 native（`agent/agent.ts` 硬编码） | 默认 **8** 个（含 3 个 hidden）；开 `REDCODE_EXPERIMENTAL_SCOUT` 才是 9 个 |
-| 2 | 随包 YAML profile `agent/profile/default/*.yaml` + 用户 `.opencode/profiles/` | 随包 3 份；**用户目录全机为空** |
-| 3 | `{agent,agents}/**/*.md`（`ConfigAgent.load`） | 本机 3 份：architect / fixer / reviewer |
-| 4 | `{mode,modes}/*.md`（`ConfigAgent.loadMode`） | **全机零文件** —— 只有 loader 还在跑 |
-| 5 | 配置 `agent.*` | 能 `disable` 删掉任何一个，也能**凭空创建**（`mode` 默认 `all`） |
+| #   | 路径                                                                          | 全机实际内容                                                               |
+| --- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| 1   | 内建 native（`agent/agent.ts` 硬编码）                                        | 默认 **8** 个（含 3 个 hidden）；开 `REDCODE_EXPERIMENTAL_SCOUT` 才是 9 个 |
+| 2   | 随包 YAML profile `agent/profile/default/*.yaml` + 用户 `.opencode/profiles/` | 随包 3 份；**用户目录全机为空**                                            |
+| 3   | `{agent,agents}/**/*.md`（`ConfigAgent.load`）                                | 本机 3 份：architect / fixer / reviewer                                    |
+| 4   | `{mode,modes}/*.md`（`ConfigAgent.loadMode`）                                 | **全机零文件** —— 只有 loader 还在跑                                       |
+| 5   | 配置 `agent.*`                                                                | 能 `disable` 删掉任何一个，也能**凭空创建**（`mode` 默认 `all`）           |
 
 3/4/5 全部 `mergeDeep` 进同一个 `cfg.agent`，且**每个扫描目录各跑一遍** 3 和 4；第 2 层覆盖时 `mode: profile.mode` 是**无条件赋值**（不是 `??`）。
 
@@ -22,13 +22,13 @@
 
 ## 现状二：三种语义共用一张表
 
-| 语义 | 成员 | 有什么 | 没有什么 |
-| --- | --- | --- | --- |
-| **会话姿态**（人切换） | redmind / build / plan | 只有权限档位 | 不带模型、不带超时 |
-| **子代理工种**（`task` 派） | explore / general / architect / fixer / reviewer / scout | 自己的模型 + prompt + 工具白名单 + 超时/fallback，跑独立会话 | 人切不到 |
-| **内部机件**（引擎自调） | compaction / title / summary | 固定 prompt、`*: deny` | 不进任何列表 |
+| 语义                        | 成员                                                     | 有什么                                                       | 没有什么           |
+| --------------------------- | -------------------------------------------------------- | ------------------------------------------------------------ | ------------------ |
+| **会话姿态**（人切换）      | redmind / build / plan                                   | 只有权限档位                                                 | 不带模型、不带超时 |
+| **子代理工种**（`task` 派） | explore / general / architect / fixer / reviewer / scout | 自己的模型 + prompt + 工具白名单 + 超时/fallback，跑独立会话 | 人切不到           |
+| **内部机件**（引擎自调）    | compaction / title / summary                             | 固定 prompt、`*: deny`                                       | 不进任何列表       |
 
-**硬证据**：上游那条至今还在跑的 loader 就叫 `{mode,modes}/*.md` —— 第一类本来就叫 *mode*，不叫 agent。是后来被并进同一张 `Info` 表的，而 `mode: "primary" | "subagent" | "all"` 这个字段名本身就是那次合并留下的疤：第三类被迫标成 `primary`，只能靠 `hidden: true` 从列表里藏起来，`defaultInfo()` 里还得专门写代码跳过它们（`agent.ts:437-443`）。
+**硬证据**：上游那条至今还在跑的 loader 就叫 `{mode,modes}/*.md` —— 第一类本来就叫 _mode_，不叫 agent。是后来被并进同一张 `Info` 表的，而 `mode: "primary" | "subagent" | "all"` 这个字段名本身就是那次合并留下的疤：第三类被迫标成 `primary`，只能靠 `hidden: true` 从列表里藏起来，`defaultInfo()` 里还得专门写代码跳过它们（`agent.ts:437-443`）。
 
 ## 现状三：build 与 redmind 的唯一差别是 `plan_enter`
 
@@ -52,10 +52,10 @@ plan    = defaults + { question: allow, plan_exit: allow,
 
 结构里**不带 `model` / `prompt` / `timeoutMs` / `fallbackModel` 字段**，只有权限。从类型上杜绝与工种互相污染。
 
-| 姿态 | 权限 |
-| --- | --- |
+| 姿态              | 权限                                                   |
+| ----------------- | ------------------------------------------------------ |
 | `redmind`（默认） | defaults + `question: allow` + **`plan_enter: allow`** |
-| `plan` | 现状不变 |
+| `plan`            | 现状不变                                               |
 
 `build` 合并删除。
 
@@ -63,10 +63,10 @@ plan    = defaults + { question: allow, plan_exit: allow,
 
 带 model + prompt + 工具白名单。请求是否卡死由 session 层的请求级看门狗判定，不在工种定义里重复计时或跨供应商兜底。（起草时是 3 个，`advise` 在 08-28 落地当天并回了 `explore`，理由见修正十四。）
 
-| 工种 | 写 | 吸收 | 模型 |
-| --- | --- | --- | --- |
+| 工种      | 写   | 吸收                                          | 模型                               |
+| --------- | ---- | --------------------------------------------- | ---------------------------------- |
 | `explore` | 只读 | `scout` + `architect` + `reviewer` + `advise` | `stepfun-step-plan/step-3.7-flash` |
-| `execute` | 可写 | `general` + `fixer` | `opencode-go/glm-5.3-flash` |
+| `execute` | 可写 | `general` + `fixer`                           | `opencode-go/glm-5.3-flash`        |
 
 合并的统一理由：这些角色的**权限逐条相同**，差别只在提示词，而 `task` 调用本来就带 prompt——靠调用方的 prompt 区分 FIND / DESIGN / REVIEW 即可。模型是唯一无法按次表达的东西，所以只有「需要不同模型」才构成拆分理由。
 
@@ -87,17 +87,17 @@ scout 的招牌能力是 `repo_clone` / `repo_overview`（把依赖仓 clone 进
 
 ## 装载路径收敛后的形态
 
-| | 唯一入口 | 配置能做什么 |
-| --- | --- | --- |
-| 姿态 | 内建 2 个 | 只能调权限，**不能新增**（姿态是引擎语义，不是用户内容） |
+|      | 唯一入口                                                         | 配置能做什么                                                                                                                     |
+| ---- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| 姿态 | 内建 2 个                                                        | 只能调权限，**不能新增**（姿态是引擎语义，不是用户内容）                                                                         |
 | 工种 | 内建，定义在 `src/agent/definition/*.md`（构建期内联，见修正九） | 覆写 model / variant / timeout / permission 走 `agent.<name>`；`disable` 保留。用户仍可自建 `~/.redcode/agent/*.md` 造**新**工种 |
-| 机件 | 纯内建 | 碰不到 |
+| 机件 | 纯内建                                                           | 碰不到                                                                                                                           |
 
 ## 2026-08-28 调研修正（五路并行 + 反驳式复核）
 
 上面「目标形态」不变，但第 4 步的**做法**被两轮调研推翻了多处。以下每条都带 file:line，是复核后净下来的判断。
 
-修正一~六出自 08-28 上午（五路并行 + 反驳式复核），落地了 4a/4b。**修正七~十二出自 08-28 下午的第二轮**（六路并行 + 三路反驳式复核，含真构建产物字节扫描、权限 findLast 实测矩阵、live 库只读统计），它推翻了修正五、补齐了修正三的行号与清单，是第 4c 步的直接依据。
+修正一~~六出自 08-28 上午（五路并行 + 反驳式复核），落地了 4a/4b。**修正七~~十二出自 08-28 下午的第二轮**（六路并行 + 三路反驳式复核，含真构建产物字节扫描、权限 findLast 实测矩阵、live 库只读统计），它推翻了修正五、补齐了修正三的行号与清单，是第 4c 步的直接依据。
 
 ### 修正一：底本自相矛盾，已定死为「姿态不写 md」
 
@@ -121,14 +121,14 @@ md 路线表达不了别名——`config/agent.ts:143` 是 `result[config.name] 
 
 **但别名表够不到这六处，必须逐个改**：
 
-| # | 位置 | 不改的后果 | 必要性 |
-| --- | --- | --- | --- |
-| 1 | `cli/cmd/tui/routes/session/index.tsx:319` `local.agent.set("build")` | 客户端字面量，`local.tsx:85` 先校验 name 在 list 里，不中弹 toast → **plan_exit 后 TUI 卡在 plan 姿态出不来** | 必须 |
-| 2 | `session/reminders.ts:37` `input.agent.name === "build"` | BUILD_SWITCH 提醒**静默失效**（不抛错、不降级，最难发现） | 必须 |
-| 3 | `agent/agent.ts` 的 `defaultInfo` 与 `list` 排序谓词 | `default_agent: "build"` 的配置升级后直接抛错；只修一处则排序退化、默认姿态静默变 plan。**行号与做法见修正十** | 必须 |
-| 4 | `tool/plan.ts:57` `agent: "build"` 写进**新造的** MessageV2.User | 写入侧不改就一直在生产老名字（但别名删不掉另有更硬的原因，见修正十二） | 应该 |
-| 5 | `session/goal-continuation.ts:64/96` `?? "build"` | 兜底指向已下线的名字（**不是**「唯一无条件跑到」的——`:47` 的 `goal_auto_continue !== true` 同样默认关，与 plan.ts:57 可达性同级） | 应该 |
-| 6 | `config/config.ts:222-227` 具名 key `build`/`general`/`scout` | 经 `cli/cmd/generate.ts:10` 的 `Server.openapi()` 出仓（**不经 handlers**，schema 在 `groups/config.ts:17/27/28`）、生成进 `sdk/openapi.json:14546/14549/14555`。**这张表已漏了 redmind**，本来就该修 | 应该 |
+| #   | 位置                                                                  | 不改的后果                                                                                                                                                                                            | 必要性 |
+| --- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| 1   | `cli/cmd/tui/routes/session/index.tsx:319` `local.agent.set("build")` | 客户端字面量，`local.tsx:85` 先校验 name 在 list 里，不中弹 toast → **plan_exit 后 TUI 卡在 plan 姿态出不来**                                                                                         | 必须   |
+| 2   | `session/reminders.ts:37` `input.agent.name === "build"`              | BUILD_SWITCH 提醒**静默失效**（不抛错、不降级，最难发现）                                                                                                                                             | 必须   |
+| 3   | `agent/agent.ts` 的 `defaultInfo` 与 `list` 排序谓词                  | `default_agent: "build"` 的配置升级后直接抛错；只修一处则排序退化、默认姿态静默变 plan。**行号与做法见修正十**                                                                                        | 必须   |
+| 4   | `tool/plan.ts:57` `agent: "build"` 写进**新造的** MessageV2.User      | 写入侧不改就一直在生产老名字（但别名删不掉另有更硬的原因，见修正十二）                                                                                                                                | 应该   |
+| 5   | `session/goal-continuation.ts:64/96` `?? "build"`                     | 兜底指向已下线的名字（**不是**「唯一无条件跑到」的——`:47` 的 `goal_auto_continue !== true` 同样默认关，与 plan.ts:57 可达性同级）                                                                     | 应该   |
+| 6   | `config/config.ts:222-227` 具名 key `build`/`general`/`scout`         | 经 `cli/cmd/generate.ts:10` 的 `Server.openapi()` 出仓（**不经 handlers**，schema 在 `groups/config.ts:17/27/28`）、生成进 `sdk/openapi.json:14546/14549/14555`。**这张表已漏了 redmind**，本来就该修 | 应该   |
 
 第 7~11 处（调研新发现）见**修正十一**。
 
@@ -158,7 +158,6 @@ live 的 `~/.redcode/agent/` 是**私仓工作树**，三份都在版本控制�
 
 `"build"` 在 `packages/opencode/test/` 下是 **42 个文件 / 162 行**，不是三个。确定会红的：`test/tool/task.test.ts:222`（不是 :221——:221 只比 explore 与 alpha，:223 因 `general=-1` 反而假绿通过）、`test/session/prompt.test.ts:1910` 的 `toEqual(["build"])`、`test/config/agent-color.test.ts:35` 的 `get("build")`。而 architect/reviewer/fixer **零调用零断言**，改名几乎免费。
 
-
 ### 修正七：advise / execute **必须内建**，md-only 在发布二进制里根本不存在
 
 拿 `packages/opencode/dist/redcode-windows-x64/bin/redcode.exe`（08-27 16:22 的真构建产物）做字节扫描：静态导入的 md（`src/agent/prompt/scout.md` 正文）**在**；构建时就已存在的三份 md-only 角色的 ASCII 标记（`name: architect`、`model: opencode-go/hy3`）**全部不在**。`~/.redcode/agent/` 的唯一写入者是 `script/sync-home.bat:33`，只被 `packages/opencode/build.bat:2` 与 `packages/desktop/build-and-package.bat:2` 调用；`project/bootstrap.ts` 只播 souls/MEMORY 与 skill，一行都不碰 agent/。
@@ -178,8 +177,12 @@ live 的 `~/.redcode/agent/` 是**私仓工作树**，三份都在版本控制�
 修法：`read` 在 md 里写成对象形式即可（静态可表达）；`external_directory` 依赖 `ctx.directory` 与 `skill.dirs()`，静态表达不了，**只能由代码在 md 块之后、`user` 之前重新宣告**：
 
 ```ts
-Permission.merge(defaults, Permission.fromConfig(fm.permission),
-                 Permission.fromConfig({ external_directory: readonlyExternalDirectory }), user)
+Permission.merge(
+  defaults,
+  Permission.fromConfig(fm.permission),
+  Permission.fromConfig({ external_directory: readonlyExternalDirectory }),
+  user,
+)
 ```
 
 被实测否掉的两个替代：放进 `agent.ts:371-385` 那个循环后补丁，会把用户自己在 `permission.external_directory` 里配的白名单从 allow 压成 ask（`instance-context.ts:23` 就是这个用法的官方示例）；循环后再补一遍 `user`，会把「per-agent > 全局」的优先级颠倒过来。
@@ -205,13 +208,13 @@ Permission.merge(defaults, Permission.fromConfig(fm.permission),
 
 修正三表里的 1~6 之外，调研另找到五处：
 
-| # | 位置 | 不改的后果 | 必要性 |
-| --- | --- | --- | --- |
-| 7 | `agent/agent.ts:338-351` 配置循环不规范化 key | 见修正十：老配置复活一个权限更宽的幽灵 build，而且从配置里删条目也删不掉 | 必须 |
-| 8 | `seed/command/subtask.md:4` `agent: general` | 走 `prompt.ts:1856` → `:1909` **硬抛** `agentNotFound`（live 已装同一份）。别名能接住，但它是老名字的永久生产者 | 必须（等同级） |
-| 9 | `cli/cmd/run/runtime.lifecycle.ts:118` `?? "build"` | `redcode run` 不带 `--agent` 时页脚显示一个已不存在的角色名 | 应该 |
-| 10 | 两处提示词「call the task tool with subagent **scout**」 | 指使模型去调一个 `describeTask` 里不存在的名字 | 应该 |
-| 11 | `skill/prompt/customize-redcode.md` 的内建 agent 清单 | **今天就已经错**（写成 `OPENCODE_` 前缀、漏了 redmind）；这是进模型上下文的提示词，说错内建角色直接误导模型 | 应该 |
+| #   | 位置                                                     | 不改的后果                                                                                                      | 必要性         |
+| --- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------- |
+| 7   | `agent/agent.ts:338-351` 配置循环不规范化 key            | 见修正十：老配置复活一个权限更宽的幽灵 build，而且从配置里删条目也删不掉                                        | 必须           |
+| 8   | `seed/command/subtask.md:4` `agent: general`             | 走 `prompt.ts:1856` → `:1909` **硬抛** `agentNotFound`（live 已装同一份）。别名能接住，但它是老名字的永久生产者 | 必须（等同级） |
+| 9   | `cli/cmd/run/runtime.lifecycle.ts:118` `?? "build"`      | `redcode run` 不带 `--agent` 时页脚显示一个已不存在的角色名                                                     | 应该           |
+| 10  | 两处提示词「call the task tool with subagent **scout**」 | 指使模型去调一个 `describeTask` 里不存在的名字                                                                  | 应该           |
+| 11  | `skill/prompt/customize-redcode.md` 的内建 agent 清单    | **今天就已经错**（写成 `OPENCODE_` 前缀、漏了 redmind）；这是进模型上下文的提示词，说错内建角色直接误导模型     | 应该           |
 
 另有约五处纯文案/注释兜底（`tool/plan.ts` 的 "Build Agent" 文案、`cli/cmd/run/tool.ts` 与 `subagent-data.ts` 的 `subagent_type || "general"` 兜底、`demo.ts:892`、`github.ts:955` 注释），零功能影响，顺手改。
 
@@ -231,11 +234,11 @@ live 规模（只读查 `~/.redcode/data/redcode.db`）：session.agent `build` 
 ——主会话直读。所以 4b 给 `advise` 选官方源 vision、以及中途给 `execute` 选多模态 mimo 的那条理由
 （「审查/设计要看截图」）**已经不成立**，多模态从此只是顺带属性，不是选型依据。
 
-| 工种 | 模型 | in / out | ctx / out上限 | timeout | fallback |
-| --- | --- | --- | --- | --- | --- |
-| `explore` | `stepfun-step-plan/step-3.7-flash` | 走阶跃额度 | 256K / 256K | 180s | `opencode-go/glm-5.3-flash` |
-| `advise` | `deepseek/deepseek-v4-flash-vision-exp` | 0.14 / 0.28 | 1M / 384K | 600s | `opencode-go/glm-5.3-flash` |
-| `execute` | `opencode-go/glm-5.3-flash` | **0.075 / 0.25** | 1M / 131K | 900s | `opencode-go/mimo-v2.5` |
+| 工种      | 模型                                    | in / out         | ctx / out上限 | timeout | fallback                    |
+| --------- | --------------------------------------- | ---------------- | ------------- | ------- | --------------------------- |
+| `explore` | `stepfun-step-plan/step-3.7-flash`      | 走阶跃额度       | 256K / 256K   | 180s    | `opencode-go/glm-5.3-flash` |
+| `advise`  | `deepseek/deepseek-v4-flash-vision-exp` | 0.14 / 0.28      | 1M / 384K     | 600s    | `opencode-go/glm-5.3-flash` |
+| `execute` | `opencode-go/glm-5.3-flash`             | **0.075 / 0.25** | 1M / 131K     | 900s    | `opencode-go/mimo-v2.5`     |
 
 三条要点：
 
@@ -287,19 +290,19 @@ prompt），模型才是唯一按次表达不了的东西。所以：**只有「
 
 ## 迁移步骤
 
-| 步 | 内容 | 风险 | 状态 |
-| --- | --- | --- | --- |
-| 1 | 删 `ConfigAgent.loadMode` 与 `config.ts:714` 的调用 | **零**——全机零文件 | **已做 2026-08-28** |
-| 2 | 删随包 YAML profile 三份 + `agent/profile/{load,resolve,types,index}.ts`；`explore`/`general` 的 description/prompt 收回内建 | **零**——`agent.yaml` 已被 disable，另两份与内建重复，用户目录空 | **已做 2026-08-28**（连带清掉 seed 里那条已失效的 `agent.disable`；live 配置同步见私仓） |
-| 3 | `{agent,agents}` 收成只认 `agent/`（顺带清掉审计记的「seed 单复数双套」） | 低 | **已做 2026-08-28**（复数目录存在时打 warning，不静默丢定义） |
-| 4a | `explore` 的提示词与权限并成一份 md，验证「prompt 搬进 md」这条机制 | 低 | **已做 2026-08-28**（`0419c3a8`） |
-| 4b | 新增合并后的 `advise` 与 `execute`（只新增、不删旧） | 低 | **已做 2026-08-28**（`5b48e1af`） |
-| 4c-1 | 三个工种**全部内建**（连 frontmatter 一起吃，见修正七）；md 移进 `src/agent/definition/`、退出 sync-home（修正九）；权限按修正八补 `external_directory` 与 `read`；删 `seed/agent/{architect,fixer,reviewer}.md` | 中 | **已做 2026-08-28**（`f952f07b`） |
-| 4c-2 | 别名表 + 三处共用 resolve + 配置 key 规范化（修正十）；删内建 `build`/`general`/`scout` 与 `PROMPT_SCOUT`/`scout.md`；`redmind` 补 `plan_enter: allow`；十一处硬编码（修正十一） | 中 | **已做 2026-08-28**（`236d0bc4`，测试面并进同一提交，见下注） |
-| 4c-3 | `config.ts` 具名 key 换成 redmind/plan/explore/advise/execute + 机件三件套，重跑 `gen:openapi` 与 SDK | 低 | **已做 2026-08-28**（`dc34fe97`） |
-| 4 | live 对齐（**私仓**）：`git rm agent/{architect,fixer,reviewer}.md`；`command/subtask.md:4` 改 `agent: execute` | 低 | **已做 2026-08-28**（私仓 `32adb92`，未 push） |
-| 5 | 三种语义各拆出自己的构造器（`posture` / `subagent` / `machine`），定义处不再互相污染 | 中 | **已做 2026-08-28**（做法与原文不同，见修正十五） |
-| 6 | `agent.*` 去掉「创建」分支，只留覆写 + disable | 低 | **已做 2026-08-28**（含 fixture 的 `files` 选项与插件通道，见修正十六） |
+| 步   | 内容                                                                                                                                                                                                             | 风险                                                            | 状态                                                                                     |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| 1    | 删 `ConfigAgent.loadMode` 与 `config.ts:714` 的调用                                                                                                                                                              | **零**——全机零文件                                              | **已做 2026-08-28**                                                                      |
+| 2    | 删随包 YAML profile 三份 + `agent/profile/{load,resolve,types,index}.ts`；`explore`/`general` 的 description/prompt 收回内建                                                                                     | **零**——`agent.yaml` 已被 disable，另两份与内建重复，用户目录空 | **已做 2026-08-28**（连带清掉 seed 里那条已失效的 `agent.disable`；live 配置同步见私仓） |
+| 3    | `{agent,agents}` 收成只认 `agent/`（顺带清掉审计记的「seed 单复数双套」）                                                                                                                                        | 低                                                              | **已做 2026-08-28**（复数目录存在时打 warning，不静默丢定义）                            |
+| 4a   | `explore` 的提示词与权限并成一份 md，验证「prompt 搬进 md」这条机制                                                                                                                                              | 低                                                              | **已做 2026-08-28**（`0419c3a8`）                                                        |
+| 4b   | 新增合并后的 `advise` 与 `execute`（只新增、不删旧）                                                                                                                                                             | 低                                                              | **已做 2026-08-28**（`5b48e1af`）                                                        |
+| 4c-1 | 三个工种**全部内建**（连 frontmatter 一起吃，见修正七）；md 移进 `src/agent/definition/`、退出 sync-home（修正九）；权限按修正八补 `external_directory` 与 `read`；删 `seed/agent/{architect,fixer,reviewer}.md` | 中                                                              | **已做 2026-08-28**（`f952f07b`）                                                        |
+| 4c-2 | 别名表 + 三处共用 resolve + 配置 key 规范化（修正十）；删内建 `build`/`general`/`scout` 与 `PROMPT_SCOUT`/`scout.md`；`redmind` 补 `plan_enter: allow`；十一处硬编码（修正十一）                                 | 中                                                              | **已做 2026-08-28**（`236d0bc4`，测试面并进同一提交，见下注）                            |
+| 4c-3 | `config.ts` 具名 key 换成 redmind/plan/explore/advise/execute + 机件三件套，重跑 `gen:openapi` 与 SDK                                                                                                            | 低                                                              | **已做 2026-08-28**（`dc34fe97`）                                                        |
+| 4    | live 对齐（**私仓**）：`git rm agent/{architect,fixer,reviewer}.md`；`command/subtask.md:4` 改 `agent: execute`                                                                                                  | 低                                                              | **已做 2026-08-28**（私仓 `32adb92`，未 push）                                           |
+| 5    | 三种语义各拆出自己的构造器（`posture` / `subagent` / `machine`），定义处不再互相污染                                                                                                                             | 中                                                              | **已做 2026-08-28**（做法与原文不同，见修正十五）                                        |
+| 6    | `agent.*` 去掉「创建」分支，只留覆写 + disable                                                                                                                                                                   | 低                                                              | **已做 2026-08-28**（含 fixture 的 `files` 选项与插件通道，见修正十六）                  |
 
 每步独立可回退。1、2 当天可落可验。
 
@@ -322,11 +325,11 @@ prompt），模型才是唯一按次表达不了的东西。所以：**只有「
 
 **实际做法**：`agent/agent.ts` 里三个构造器，各自结构上拿不到对方的字段：
 
-| 构造器 | 语义 | 能给什么 |
-| --- | --- | --- |
-| `posture({ name, description, displayName?, color?, permission })` | 会话姿态 | 只有权限与展示。**没有** model / prompt / timeout / variant / steps |
-| `subagent(name)` | 子代理工种 | 整份定义来自 `src/agent/definition/*.md` 的 frontmatter |
-| `machine({ name, prompt, temperature? })` | 内部机件 | 固定 prompt + 全 deny + `hidden: true` |
+| 构造器                                                             | 语义       | 能给什么                                                            |
+| ------------------------------------------------------------------ | ---------- | ------------------------------------------------------------------- |
+| `posture({ name, description, displayName?, color?, permission })` | 会话姿态   | 只有权限与展示。**没有** model / prompt / timeout / variant / steps |
+| `subagent(name)`                                                   | 子代理工种 | 整份定义来自 `src/agent/definition/*.md` 的 frontmatter             |
+| `machine({ name, prompt, temperature? })`                          | 内部机件   | 固定 prompt + 全 deny + `hidden: true`                              |
 
 `agents` 记录从约 110 行手写字面量收成 40 行。新增一条运行时守卫用例（三类角色的形态各自成立、
 机件不进可见列表、可见列表恰好是 redmind/plan/explore/execute 四个）。

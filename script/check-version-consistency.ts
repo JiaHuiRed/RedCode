@@ -51,9 +51,9 @@ const readmeEN = read("README.en.md")
 const changelog = read("CHANGELOG.md")
 const html = read("packages/desktop/src/renderer/index.html")
 
-const mismatched = VERSIONED_PACKAGES
-  .map((file) => ({ file, v: extractPkgVersion(file) }))
-  .filter((p) => p.v !== version)
+const mismatched = VERSIONED_PACKAGES.map((file) => ({ file, v: extractPkgVersion(file) })).filter(
+  (p) => p.v !== version,
+)
 
 const checks = [
   {

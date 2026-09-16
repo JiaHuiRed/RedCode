@@ -146,8 +146,12 @@ function applyThemeCss(theme: DesktopTheme, themeId: string, mode: "light" | "da
   const fullCss = `:root {
   color-scheme: ${mode};
   --text-mix-blend-mode: ${isDark ? "plus-lighter" : "multiply"};
-  ${css}${v2 ? `
-  ${v2}` : ""}
+  ${css}${
+    v2
+      ? `
+  ${v2}`
+      : ""
+  }
 }`
 
   document.getElementById("oc-theme-preload")?.remove()
@@ -178,10 +182,13 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     const colorScheme = (read(STORAGE_KEYS.COLOR_SCHEME) as ColorScheme | null) ?? "system"
     const resolveMode = (scheme: ColorScheme): "light" | "dark" => {
       switch (scheme) {
-        case "system": return getSystemMode()
+        case "system":
+          return getSystemMode()
         case "dark":
-        case "deepblue": return "dark"
-        default: return "light" // light, cream, green
+        case "deepblue":
+          return "dark"
+        default:
+          return "light" // light, cream, green
       }
     }
     const mode = resolveMode(colorScheme)

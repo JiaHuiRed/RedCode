@@ -346,7 +346,9 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
   const fetchMessages = async (input: { client: typeof client; sessionID: string; limit: number; before?: string }) => {
     // 260907 ZCode 在途登记给 prefetch pump 让路用，见 context/foreground-loads.ts
     const messages = await trackForegroundMessageLoad(
-      retry(() => input.client.session.messages({ sessionID: input.sessionID, limit: input.limit, before: input.before })),
+      retry(() =>
+        input.client.session.messages({ sessionID: input.sessionID, limit: input.limit, before: input.before }),
+      ),
     )
     const items = (messages.data ?? []).filter((x) => !!x?.info?.id)
     const session = items.map((x) => clean(x.info)).sort(byTime)

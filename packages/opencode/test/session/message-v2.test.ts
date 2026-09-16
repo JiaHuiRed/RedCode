@@ -1792,8 +1792,7 @@ describe("ProviderTransform.unsupportedParts - 附件落盘", () => {
   // ② 文案却无条件写 "…at the path below" 再拼一个空的 pathHint，于是模型被告知
   // "去读下面那个路径"但下面什么都没有，只能自己去 prompt-history.jsonl 刨 base64
   // 手动解码。两处都修了，这个用例把"路径存在且文件可读"钉死。
-  const PNG =
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+  const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 
   test("图片写入临时文件，占位文本给出真实路径", async () => {
     const mid = "m-attach"
@@ -1896,17 +1895,11 @@ describe("session.message-v2.compareTime id wrap-around", () => {
   test("latest() picks newest finished assistant by created, not by id", () => {
     const msgs: MessageV2.WithParts[] = [
       {
-        info: withCreated(
-          { ...assistantInfo(preWrap, preWrap), finish: "stop" },
-          1_786_706_303_700,
-        ),
+        info: withCreated({ ...assistantInfo(preWrap, preWrap), finish: "stop" }, 1_786_706_303_700),
         parts: [],
       },
       {
-        info: withCreated(
-          { ...assistantInfo(postWrap, postWrap), finish: "stop" },
-          1_786_706_407_100,
-        ),
+        info: withCreated({ ...assistantInfo(postWrap, postWrap), finish: "stop" }, 1_786_706_407_100),
         parts: [],
       },
     ]
@@ -1916,10 +1909,7 @@ describe("session.message-v2.compareTime id wrap-around", () => {
   })
 
   test("tasks filter uses created boundary: compaction on newer user stays a task", () => {
-    const olderFinished = withCreated(
-      { ...assistantInfo("msg_ffffffffffff01AA", preWrap), finish: "stop" },
-      2_000,
-    )
+    const olderFinished = withCreated({ ...assistantInfo("msg_ffffffffffff01AA", preWrap), finish: "stop" }, 2_000)
     const newerUser = withCreated(userInfo(postWrap), 3_000)
     const compactionPart: MessageV2.CompactionPart = {
       ...basePart(postWrap, "p-compact"),

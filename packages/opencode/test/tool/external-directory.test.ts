@@ -153,7 +153,7 @@ describe("tool.assertExternalDirectory", () => {
           expect(req!.always).toEqual([expected])
         }),
       { git: true },
-  )
+    )
   }
 })
 

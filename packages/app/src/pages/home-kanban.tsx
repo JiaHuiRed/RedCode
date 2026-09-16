@@ -162,16 +162,16 @@ export function HomeKanban(props: {
                       onUnarchive={() => props.onUnarchive?.(record.session)}
                     />
                   )}
-                 </For>
-                 {/* 260829 Red 折叠提示。静悄悄少给一截卡片是最坏的做法 —— 用户会以为会话丢了
+                </For>
+                {/* 260829 Red 折叠提示。静悄悄少给一截卡片是最坏的做法 —— 用户会以为会话丢了
                      （归档入口在右键菜单里，看板又没分页）。一句话说清还有多少、为什么没有。 */}
-                 <Show when={column.hidden}>
-                   <div class="px-2 pt-0.5 pb-1 text-[11px] text-v2-text-text-faint [font-weight:440]">
-                     {language.t("home.kanban.hidden", { count: column.hidden ?? 0 })}
-                   </div>
-                 </Show>
-               </Show>
-             </div>
+                <Show when={column.hidden}>
+                  <div class="px-2 pt-0.5 pb-1 text-[11px] text-v2-text-text-faint [font-weight:440]">
+                    {language.t("home.kanban.hidden", { count: column.hidden ?? 0 })}
+                  </div>
+                </Show>
+              </Show>
+            </div>
           </div>
         )}
       </For>

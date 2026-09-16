@@ -39,14 +39,14 @@ bun run script/check-version-consistency.ts   # 版本号一致性自检
 
 Conventional Commits：`type(scope): summary`
 
-| 类型 | 说明 |
-|------|------|
-| `feat` | 新功能 |
-| `fix` | Bug 修复 |
-| `docs` | 文档更新 |
-| `chore` | 构建/工具变更 |
-| `refactor` | 重构 |
-| `test` | 测试相关 |
+| 类型       | 说明          |
+| ---------- | ------------- |
+| `feat`     | 新功能        |
+| `fix`      | Bug 修复      |
+| `docs`     | 文档更新      |
+| `chore`    | 构建/工具变更 |
+| `refactor` | 重构          |
+| `test`     | 测试相关      |
 
 scope 常用：`core` `redcode` `tui` `app` `desktop` `sdk` `plugin`
 

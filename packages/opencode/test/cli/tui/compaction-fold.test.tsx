@@ -78,7 +78,9 @@ describe("TUI 压缩 checkpoint 折叠行", () => {
 
   test("点击分割线展开摘要与 token 估算", async () => {
     const app = await mountFrame(
-      () => <UserMessage message={message} parts={[compactionPart(12000, 3000)] as never} onMouseUp={() => {}} index={0} />,
+      () => (
+        <UserMessage message={message} parts={[compactionPart(12000, 3000)] as never} onMouseUp={() => {}} index={0} />
+      ),
       { width: WIDTH, height: 12, sync: syncWith(notCompacting) },
     )
 

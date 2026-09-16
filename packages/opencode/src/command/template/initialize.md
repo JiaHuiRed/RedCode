@@ -8,6 +8,7 @@ $ARGUMENTS
 ## How to investigate
 
 Read the highest-value sources first:
+
 - `README*`, root manifests, workspace config, lockfiles
 - build, test, lint, formatter, typecheck, and codegen config
 - CI workflows and pre-commit / task runner config
@@ -21,6 +22,7 @@ Prefer executable sources of truth over prose. If docs conflict with config or s
 ## What to extract
 
 Look for the highest-signal facts for an agent working in this repo:
+
 - exact developer commands, especially non-obvious ones
 - how to run a single test, a single package, or a focused verification step
 - required command order when it matters, such as `lint -> typecheck -> test`
@@ -37,6 +39,7 @@ Good `AGENTS.md` content is usually hard-earned context that took reading multip
 Only ask the user questions if the repo cannot answer something important. Use the `question` tool for one short batch at most.
 
 Good questions:
+
 - undocumented team conventions
 - branch / PR / release expectations
 - missing setup or test prerequisites that are known but not written down
@@ -46,6 +49,7 @@ Do not ask about anything the repo already makes clear.
 ## Writing rules
 
 Include only high-signal, repo-specific guidance such as:
+
 - exact commands and shortcuts the agent would otherwise guess wrong
 - architecture notes that are not obvious from filenames
 - conventions that differ from language or framework defaults
@@ -53,6 +57,7 @@ Include only high-signal, repo-specific guidance such as:
 - references to existing instruction sources that matter
 
 Exclude:
+
 - generic software advice
 - long tutorials or exhaustive file trees
 - obvious language conventions

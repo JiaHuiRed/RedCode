@@ -463,7 +463,10 @@ function legacyWorkspaceStorage(dir: string) {
   return [...result]
 }
 
-function localStorageWithPrefix(prefix: string, options?: Pick<PersistTarget, "evictOnQuota" | "onQuota">): SyncStorage {
+function localStorageWithPrefix(
+  prefix: string,
+  options?: Pick<PersistTarget, "evictOnQuota" | "onQuota">,
+): SyncStorage {
   const base = `${prefix}:`
   const scope = `prefix:${prefix}`
   const item = (key: string) => base + key

@@ -366,77 +366,77 @@ function HomeDesign() {
         <div class="mt-3 flex min-h-0 flex-1 gap-3">
           <HomeUsagePanel directory={selectedProject()?.worktree} />
           <div class="flex min-w-0 flex-1 flex-col overflow-auto">
-          <Show when={!sessionLoad.isLoading} fallback={<HomeSessionSkeleton label={language.t("common.loading")} />}>
-            <Show
-              when={records().length > 0}
-              fallback={
-                <div class="flex min-w-0 flex-col items-center gap-4 py-12">
-                  <div class="flex size-12 items-center justify-center rounded-full bg-v2-background-bg-deep">
-                    <IconV2 name="edit" size="large" class="text-v2-text-text-muted" />
-                  </div>
-                  <div class="flex flex-col items-center gap-1 text-center">
-                    <div class="text-14-normal font-medium text-v2-text-text-base">
-                      {language.t(state.archived ? "home.sessions.archived.empty" : "home.sessions.empty")}
+            <Show when={!sessionLoad.isLoading} fallback={<HomeSessionSkeleton label={language.t("common.loading")} />}>
+              <Show
+                when={records().length > 0}
+                fallback={
+                  <div class="flex min-w-0 flex-col items-center gap-4 py-12">
+                    <div class="flex size-12 items-center justify-center rounded-full bg-v2-background-bg-deep">
+                      <IconV2 name="edit" size="large" class="text-v2-text-text-muted" />
                     </div>
+                    <div class="flex flex-col items-center gap-1 text-center">
+                      <div class="text-14-normal font-medium text-v2-text-text-base">
+                        {language.t(state.archived ? "home.sessions.archived.empty" : "home.sessions.empty")}
+                      </div>
+                      <Show when={!state.archived}>
+                        <div class="text-12-regular text-v2-text-text-muted">{language.t("command.session.new")}</div>
+                      </Show>
+                    </div>
+                    {/* 归档视图为空时不提示"新建会话"——那不是这个视图该做的事 */}
                     <Show when={!state.archived}>
-                      <div class="text-12-regular text-v2-text-text-muted">{language.t("command.session.new")}</div>
+                      <ButtonV2
+                        data-action="home-new-session-empty"
+                        variant="contrast"
+                        size="normal"
+                        icon="edit"
+                        class="mt-2"
+                        onClick={openNewSession}
+                      >
+                        {language.t("command.session.new")}
+                      </ButtonV2>
                     </Show>
                   </div>
-                  {/* 归档视图为空时不提示"新建会话"——那不是这个视图该做的事 */}
-                  <Show when={!state.archived}>
-                    <ButtonV2
-                      data-action="home-new-session-empty"
-                      variant="contrast"
-                      size="normal"
-                      icon="edit"
-                      class="mt-2"
-                      onClick={openNewSession}
-                    >
-                      {language.t("command.session.new")}
-                    </ButtonV2>
-                  </Show>
-                </div>
-              }
-            >
-              <Switch>
-                <Match when={state.view === "kanban"}>
-                  <HomeKanban
-                    records={records()}
-                    selectedProjectName={selectedProject() ? displayName(selectedProject()!) : undefined}
-                    openSession={openSession}
-                    onArchive={archiveSession}
-                    onUnarchive={(session) => void unarchiveSession(session)}
-                  />
-                </Match>
-                <Match when={state.view === "list"}>
-                  <div class="pt-3 flex flex-col gap-6">
-                    <For each={groups()}>
-                      {(group, index) => (
-                        <div class="flex min-w-0 flex-col gap-4">
-                          <HomeSessionGroupHeader
-                            title={group.title}
-                            onNewSession={index() === 0 ? openNewSession : undefined}
-                          />
-                          <div class="flex min-w-0 flex-col gap-px">
-                            <For each={group.sessions}>
-                              {(record) => (
-                                <HomeSessionRow
-                                  record={record}
-                                  openSession={openSession}
-                                  onArchive={archiveSession}
-                                  onUnarchive={(session) => void unarchiveSession(session)}
-                                />
-                              )}
-                            </For>
+                }
+              >
+                <Switch>
+                  <Match when={state.view === "kanban"}>
+                    <HomeKanban
+                      records={records()}
+                      selectedProjectName={selectedProject() ? displayName(selectedProject()!) : undefined}
+                      openSession={openSession}
+                      onArchive={archiveSession}
+                      onUnarchive={(session) => void unarchiveSession(session)}
+                    />
+                  </Match>
+                  <Match when={state.view === "list"}>
+                    <div class="pt-3 flex flex-col gap-6">
+                      <For each={groups()}>
+                        {(group, index) => (
+                          <div class="flex min-w-0 flex-col gap-4">
+                            <HomeSessionGroupHeader
+                              title={group.title}
+                              onNewSession={index() === 0 ? openNewSession : undefined}
+                            />
+                            <div class="flex min-w-0 flex-col gap-px">
+                              <For each={group.sessions}>
+                                {(record) => (
+                                  <HomeSessionRow
+                                    record={record}
+                                    openSession={openSession}
+                                    onArchive={archiveSession}
+                                    onUnarchive={(session) => void unarchiveSession(session)}
+                                  />
+                                )}
+                              </For>
+                            </div>
                           </div>
-                        </div>
-                      )}
-                    </For>
-                  </div>
-                </Match>
-              </Switch>
+                        )}
+                      </For>
+                    </div>
+                  </Match>
+                </Switch>
+              </Show>
             </Show>
-          </Show>
           </div>
         </div>
       </section>
@@ -497,7 +497,6 @@ function HomeShortcutBar() {
     </div>
   )
 }
-
 
 function HomeProjectColumn(props: {
   projects: LocalProject[]

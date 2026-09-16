@@ -6,10 +6,7 @@
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js"
+import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 import { TerminalManager } from "./terminal-manager"
 import { PtyManager } from "./pty-manager"
 
@@ -21,12 +18,14 @@ const ptyManager = new PtyManager()
 const TOOLS = [
   {
     name: "start_process",
-    description:
-      "Start a shell command in a new process. Returns a session ID for subsequent I/O.",
+    description: "Start a shell command in a new process. Returns a session ID for subsequent I/O.",
     inputSchema: {
       type: "object",
       properties: {
-        command: { type: "string", description: "Shell command to run (optional — omit to start an interactive shell)" },
+        command: {
+          type: "string",
+          description: "Shell command to run (optional — omit to start an interactive shell)",
+        },
         cwd: { type: "string", description: "Working directory (optional)" },
         timeout: { type: "number", description: "Timeout in ms (default 30000)" },
       },
@@ -65,7 +64,8 @@ const TOOLS = [
   },
   {
     name: "wait_for_prompt",
-    description: "Wait for a REPL prompt or process completion. Use after send_input to wait for the process to be ready for more input.",
+    description:
+      "Wait for a REPL prompt or process completion. Use after send_input to wait for the process to be ready for more input.",
     inputSchema: {
       type: "object",
       properties: {
@@ -106,8 +106,7 @@ const TOOLS = [
   },
   {
     name: "pty_write",
-    description:
-      "Send input to a PTY session. Escape sequences supported: \\x03 (Ctrl+C), \\x1b (ESC), etc.",
+    description: "Send input to a PTY session. Escape sequences supported: \\x03 (Ctrl+C), \\x1b (ESC), etc.",
     inputSchema: {
       type: "object",
       properties: {
@@ -193,7 +192,16 @@ function setupHandlers(srv: Server): void {
           const { command, cwd, timeout } = args as { command?: string; cwd?: string; timeout?: number }
           const result = await manager.startProcess(command, { cwd, timeout })
           return {
-            content: [{ type: "text", text: JSON.stringify({ session_id: result.sessionId, pid: result.pid, initial_output: result.initialOutput }) }],
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  session_id: result.sessionId,
+                  pid: result.pid,
+                  initial_output: result.initialOutput,
+                }),
+              },
+            ],
           }
         }
 
@@ -205,7 +213,18 @@ function setupHandlers(srv: Server): void {
           const { session_id, offset, limit } = args as { session_id: string; offset?: number; limit?: number }
           const result = manager.readOutput(session_id, { offset, limit })
           return {
-            content: [{ type: "text", text: JSON.stringify({ output: result.output, offset: result.offset, total_length: result.totalLength, exited: result.exited, exit_code: result.exitCode }) }],
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  output: result.output,
+                  offset: result.offset,
+                  total_length: result.totalLength,
+                  exited: result.exited,
+                  exit_code: result.exitCode,
+                }),
+              },
+            ],
           }
         }
 
@@ -218,17 +237,34 @@ function setupHandlers(srv: Server): void {
         case "wait_for_prompt": {
           const { session_id, timeout } = args as { session_id: string; timeout?: number }
           const result = await manager.waitForPrompt(session_id, { timeout })
-          return { content: [{ type: "text", text: JSON.stringify({ output: result.output, prompt_detected: result.prompt, ok: result.ok }) }] }
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({ output: result.output, prompt_detected: result.prompt, ok: result.ok }),
+              },
+            ],
+          }
         }
 
         case "stop_process": {
           const { session_id } = args as { session_id: string }
           const result = manager.forceTerminate(session_id)
-          return { content: [{ type: "text", text: JSON.stringify({ exited: result.exited, exit_code: result.exitCode }) }] }
+          return {
+            content: [{ type: "text", text: JSON.stringify({ exited: result.exited, exit_code: result.exitCode }) }],
+          }
         }
 
         case "pty_spawn": {
-          const { command, args: ptyArgs, cwd, title, cols, rows, timeoutSeconds } = args as {
+          const {
+            command,
+            args: ptyArgs,
+            cwd,
+            title,
+            cols,
+            rows,
+            timeoutSeconds,
+          } = args as {
             command: string
             args?: string[]
             cwd?: string
@@ -288,7 +324,9 @@ function setupHandlers(srv: Server): void {
         case "pty_kill": {
           const { session_id, cleanup } = args as { session_id: string; cleanup?: boolean }
           const result = ptyManager.kill(session_id, cleanup)
-          return { content: [{ type: "text", text: JSON.stringify({ exited: result.exited, exit_code: result.exitCode }) }] }
+          return {
+            content: [{ type: "text", text: JSON.stringify({ exited: result.exited, exit_code: result.exitCode }) }],
+          }
         }
 
         case "pty_wait": {
@@ -331,10 +369,7 @@ function setupHandlers(srv: Server): void {
 // -- Entry points ---------------------------------------------------------
 
 export function createServer(): Server {
-  const srv = new Server(
-    { name: "mcp-process-mgmt", version: "0.1.0" },
-    { capabilities: { tools: {} } },
-  )
+  const srv = new Server({ name: "mcp-process-mgmt", version: "0.1.0" }, { capabilities: { tools: {} } })
   setupHandlers(srv)
   return srv
 }

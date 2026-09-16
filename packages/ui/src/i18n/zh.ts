@@ -154,8 +154,8 @@ export const dict = {
   "ui.tool.bash.showAll": "展开全部",
   "ui.tool.bash.collapse": "收起",
   "ui.message.queued": "排队中",
- "ui.message.steerQueued": "已插队 · 等待当前步骤完成",
- "ui.message.steerDelivered": "已送达",
+  "ui.message.steerQueued": "已插队 · 等待当前步骤完成",
+  "ui.message.steerDelivered": "已送达",
   "ui.message.attachment.alt": "附件",
 
   "ui.patch.action.deleted": "已删除",

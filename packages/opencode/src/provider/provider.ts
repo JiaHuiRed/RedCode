@@ -1328,9 +1328,9 @@ export const layer = Layer.effect(
             "Doubao-Seed-2.1-turbo": { input: 3, output: 15, cache: { read: 0.6, write: 3 } },
             "Doubao-Seed-2.1-pro": { input: 6, output: 30, cache: { read: 1.2, write: 6 } },
           },
-         }
-         // 260827 Red tokenrhythm 是 config.cost.currency（见上方 fallback）的首个用户——
-         // 曾整表硬编码在这里，机制上线后撤出：自定义 provider 的 CNY 报价从此纯配置声明。
+        }
+        // 260827 Red tokenrhythm 是 config.cost.currency（见上方 fallback）的首个用户——
+        // 曾整表硬编码在这里，机制上线后撤出：自定义 provider 的 CNY 报价从此纯配置声明。
         // 260802 Red: 已知多模态模型列表——models.dev API 可能不声明 modalities，
         // 但实际支持图片输入。强制覆盖 capabilities.input.image = true，
         // 避免 transform.ts unsupportedParts() 误触发 vision MCP。

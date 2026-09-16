@@ -9,9 +9,7 @@ import { hostname, homedir } from "node:os"
 import { join } from "node:path"
 
 const db = new Database(join(homedir(), ".redcode", "supermemory.db"), { readonly: true })
-const rows = db
-  .query("SELECT id, content, project, source, created_at FROM memories ORDER BY id")
-  .all()
+const rows = db.query("SELECT id, content, project, source, created_at FROM memories ORDER BY id").all()
 
 const sharedProjects = (process.env.REDCODE_BACKUP_PROJECTS ?? "global")
   .split(",")

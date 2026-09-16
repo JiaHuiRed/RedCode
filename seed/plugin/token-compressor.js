@@ -14,8 +14,17 @@ const STRIP_ANSI_RE = /\x1b\[[0-9;]*[a-zA-Z]/g
 
 // Protected tools — output is never compacted
 const PROTECTED = new Set([
-  "skill", "read", "write", "edit", "task",
-  "todowrite", "todoread", "glob", "grep", "websearch", "webfetch",
+  "skill",
+  "read",
+  "write",
+  "edit",
+  "task",
+  "todowrite",
+  "todoread",
+  "glob",
+  "grep",
+  "websearch",
+  "webfetch",
 ])
 
 // ── builtin rules (ported from tokenjuice vendor/rules/) ───────────────
@@ -32,7 +41,8 @@ const RULES = [
       /^nothing added to commit/,
       /^nothing to commit/,
     ],
-    head: 10, tail: 4,
+    head: 10,
+    tail: 4,
     counters: [
       { name: "modified", pattern: /^\s*modified:|^[MTRU ][MTRU]\s+/i },
       { name: "new file", pattern: /^\s*new file:|^A.\s+/i },
@@ -43,13 +53,16 @@ const RULES = [
   {
     id: "git/log-oneline",
     match: { argv0: "git", argvIncludes: "log" },
-    head: 10, tail: 4,
+    head: 10,
+    tail: 4,
   },
   {
     id: "git/diff-stat",
     match: { argv0: "git", argvIncludes: "diff" },
-    head: 20, tail: 10,
-    failHead: 30, failTail: 20,
+    head: 20,
+    tail: 10,
+    failHead: 30,
+    failTail: 20,
     counters: [
       { name: "file changed", pattern: /^diff --git/ },
       { name: "addition", pattern: /^\+[^+]/ },
@@ -59,20 +72,17 @@ const RULES = [
   {
     id: "git/show",
     match: { argv0: "git", argvIncludes: "show" },
-    head: 20, tail: 10,
+    head: 20,
+    tail: 10,
   },
   {
     id: "build/cargo",
     match: { argv0: "cargo", argvIncludesAny: ["build", "check"] },
-    skip: [
-      /^\s*Compiling /,
-      /^\s*Checking /,
-      /^\s*Downloading /,
-      /^\s*Downloaded /,
-      /^\s*Fresh /,
-      /^\s*Locking /,
-    ],
-    head: 12, tail: 8, failHead: 16, failTail: 16,
+    skip: [/^\s*Compiling /, /^\s*Checking /, /^\s*Downloading /, /^\s*Downloaded /, /^\s*Fresh /, /^\s*Locking /],
+    head: 12,
+    tail: 8,
+    failHead: 16,
+    failTail: 16,
     onEmpty: "cargo: build succeeded",
     counters: [
       { name: "error", pattern: /^error/i },
@@ -83,7 +93,10 @@ const RULES = [
     id: "build/cargo-test",
     match: { argv0: "cargo", argvIncludes: "test" },
     skip: [/^\s*running \d+ tests?$/, /^\s*Compiling /, /^\s*Finished /],
-    head: 12, tail: 12, failHead: 20, failTail: 20,
+    head: 12,
+    tail: 12,
+    failHead: 20,
+    failTail: 20,
     counters: [
       { name: "passed", pattern: /\.\.\. ok$/i },
       { name: "FAILED", pattern: /\.\.\. FAILED$/i },
@@ -93,51 +106,59 @@ const RULES = [
     id: "build/tsc",
     match: { argv0: "tsc" },
     skip: [/^\s*$/],
-    head: 12, tail: 8,
-    counters: [
-      { name: "error", pattern: /error TS\d+/i },
-    ],
+    head: 12,
+    tail: 8,
+    counters: [{ name: "error", pattern: /error TS\d+/i }],
   },
   {
     id: "build/npm-install",
     match: { argv0: "npm", argvIncludesAny: ["install", "update", "ci"] },
     skip: [/^npm warn /, /^added \d+ packages/],
-    head: 8, tail: 4,
+    head: 8,
+    tail: 4,
     onEmpty: "npm: install succeeded",
   },
   {
     id: "build/bun-install",
     match: { argv0: "bun", argvIncludes: "install" },
-    head: 8, tail: 4,
+    head: 8,
+    tail: 4,
     onEmpty: "bun: install succeeded",
   },
   {
     id: "docker/ps",
     match: { argv0: "docker", argvIncludes: "ps" },
-    head: 15, tail: 5,
+    head: 15,
+    tail: 5,
   },
   {
     id: "filesystem/find",
     match: { argv0: "find" },
-    head: 8, tail: 6,
+    head: 8,
+    tail: 6,
     counters: [{ name: "match", pattern: /^(?!find: ).+\S.*$/ }],
   },
   {
     id: "filesystem/ls",
     match: { argv0: "ls" },
-    head: 30, tail: 10,
+    head: 30,
+    tail: 10,
   },
   {
     id: "search/grep",
     match: { argv0AnyOf: ["grep", "rg"] },
-    head: 30, tail: 10,
+    head: 30,
+    tail: 10,
     counters: [{ name: "match", pattern: /^.+$/ }],
   },
   // generic fallback — always last
   {
     id: "generic/fallback",
     match: {},
-    head: 8, tail: 8, failHead: 12, failTail: 20,
+    head: 8,
+    tail: 8,
+    failHead: 12,
+    failTail: 20,
     counters: [
       { name: "error", pattern: /error/i },
       { name: "warning", pattern: /warning/i },
@@ -164,7 +185,7 @@ function matchRule(toolName, command, argv) {
     if (m.argv0 && a0 !== m.argv0) continue
     if (m.argv0AnyOf && !m.argv0AnyOf.includes(a0)) continue
     if (m.argvIncludes && !argv.includes(m.argvIncludes)) continue
-    if (m.argvIncludesAny && !m.argvIncludesAny.some(k => argv.includes(k))) continue
+    if (m.argvIncludesAny && !m.argvIncludesAny.some((k) => argv.includes(k))) continue
     return rule
   }
   return RULES[RULES.length - 1] // generic/fallback
@@ -180,7 +201,8 @@ function dedupeAdjacent(lines) {
 }
 
 function trimEmptyEdges(lines) {
-  let start = 0, end = lines.length - 1
+  let start = 0,
+    end = lines.length - 1
   while (start <= end && !lines[start].trim()) start++
   while (end >= start && !lines[end].trim()) end--
   return lines.slice(start, end + 1)
@@ -190,24 +212,20 @@ function headTail(lines, head, tail) {
   if (lines.length <= head + tail) return { result: lines, omitted: 0 }
   const omitted = lines.length - head - tail
   return {
-    result: [
-      ...lines.slice(0, head),
-      `... (${omitted} lines omitted)`,
-      ...lines.slice(-tail),
-    ],
+    result: [...lines.slice(0, head), `... (${omitted} lines omitted)`, ...lines.slice(-tail)],
     omitted,
   }
 }
 
 function runCounters(lines, counters) {
   if (!counters?.length) return ""
-  const counts = counters.map(c => ({ name: c.name, count: 0 }))
+  const counts = counters.map((c) => ({ name: c.name, count: 0 }))
   for (const line of lines) {
     for (let i = 0; i < counters.length; i++) {
       if (counters[i].pattern.test(line)) counts[i].count++
     }
   }
-  const parts = counts.filter(c => c.count > 0).map(c => `${c.count} ${c.name}${c.count > 1 ? "s" : ""}`)
+  const parts = counts.filter((c) => c.count > 0).map((c) => `${c.count} ${c.name}${c.count > 1 ? "s" : ""}`)
   return parts.length ? ` [${parts.join(", ")}]` : ""
 }
 
@@ -216,8 +234,8 @@ function compact(output, rule, exitCode) {
   let lines = text.split("\n")
 
   // apply filters
-  if (rule.skip) lines = lines.filter(l => !rule.skip.some(p => p.test(l)))
-  if (rule.keep) lines = lines.filter(l => rule.keep.some(p => p.test(l)))
+  if (rule.skip) lines = lines.filter((l) => !rule.skip.some((p) => p.test(l)))
+  if (rule.keep) lines = lines.filter((l) => rule.keep.some((p) => p.test(l)))
 
   lines = dedupeAdjacent(lines)
   lines = trimEmptyEdges(lines)

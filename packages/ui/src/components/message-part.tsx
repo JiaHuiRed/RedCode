@@ -167,7 +167,6 @@ export type PartComponent = Component<MessagePartProps>
 
 export const PART_MAPPING: Record<string, PartComponent | undefined> = {}
 
-
 function PacedMarkdown(props: { text: string; cacheKey: string; streaming: boolean }) {
   // 260812 Red 直刷 + 自适应节流：
   // 1) 砍掉 24ms 打字机 reveal —— 本地小模型已弃用（5080 上 50+ token/s 逐字追不上，
@@ -199,15 +198,18 @@ function PacedMarkdown(props: { text: string; cacheKey: string; streaming: boole
         renderMs = performance.now() - start
       })
     } else if (!mdTimer) {
-      mdTimer = setTimeout(() => {
-        mdTimer = undefined
-        const start = performance.now()
-        mdLast = start
-        setMdText(props.text)
-        requestAnimationFrame(() => {
-          renderMs = performance.now() - start
-        })
-      }, interval - (now - mdLast))
+      mdTimer = setTimeout(
+        () => {
+          mdTimer = undefined
+          const start = performance.now()
+          mdLast = start
+          setMdText(props.text)
+          requestAnimationFrame(() => {
+            renderMs = performance.now() - start
+          })
+        },
+        interval - (now - mdLast),
+      )
     }
   })
   onCleanup(() => clearTimeout(mdTimer))
@@ -785,7 +787,12 @@ export function Message(props: MessageProps) {
     <Switch>
       <Match when={props.message.role === "user" && props.message}>
         {(userMessage) => (
-          <UserMessageDisplay message={userMessage() as UserMessage} parts={props.parts} actions={props.actions} userProfile={props.userProfile} />
+          <UserMessageDisplay
+            message={userMessage() as UserMessage}
+            parts={props.parts}
+            actions={props.actions}
+            userProfile={props.userProfile}
+          />
         )}
       </Match>
       <Match when={props.message.role === "assistant" && props.message}>
@@ -982,7 +989,12 @@ export function ContextToolGroup(props: { parts: ToolPart[]; busy?: boolean }) {
   )
 }
 
-export function UserMessageDisplay(props: { message: UserMessage; parts: PartType[]; actions?: UserActions; userProfile?: { avatar: string; displayName: string } }) {
+export function UserMessageDisplay(props: {
+  message: UserMessage
+  parts: PartType[]
+  actions?: UserActions
+  userProfile?: { avatar: string; displayName: string }
+}) {
   const data = useData()
   const dialog = useDialog()
   const i18n = useI18n()
@@ -1752,7 +1764,11 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   )
   const text = () => readPartText(data.store.part_text_accum_delta, part())
   // OpenRouter 加密的 reasoning 块是空壳占位，摘除后再判定（与 TUI ReasoningPart 同法）
-  const content = createMemo(() => text().replace(/\[REDACTED\]/g, "").trim())
+  const content = createMemo(() =>
+    text()
+      .replace(/\[REDACTED\]/g, "")
+      .trim(),
+  )
   const isDone = createMemo(() => typeof part().time?.end === "number")
   const title = createMemo(() => reasoningTitle(content()))
   // 260830 Red 思考链折叠：默认收起（折叠态固定一行高度，流式期间布局不抖动）
@@ -2199,11 +2215,7 @@ ToolRegistry.register({
                 <span data-slot="bash-truncate-note">
                   {i18n.t("ui.tool.bash.truncated", { size: `${Math.round(view().clipped / 1024)} KB` })}
                 </span>
-                <button
-                  data-slot="bash-truncate-toggle"
-                  type="button"
-                  onClick={() => setExpanded((value) => !value)}
-                >
+                <button data-slot="bash-truncate-toggle" type="button" onClick={() => setExpanded((value) => !value)}>
                   {expanded() ? i18n.t("ui.tool.bash.collapse") : i18n.t("ui.tool.bash.showAll")}
                 </button>
               </div>
@@ -2267,9 +2279,7 @@ ToolRegistry.register({
                     <TextShimmer text={i18n.t("ui.messagePart.title.edit")} active={pending()} />
                   </span>
                   <Show when={!pending()}>
-                    <Show when={path()}>
-                      {(p) => <SealIcon data-slot="message-part-title-icon" />}
-                    </Show>
+                    <Show when={path()}>{(p) => <SealIcon data-slot="message-part-title-icon" />}</Show>
                     {/* 260831 cc 点文件名在侧栏开它；没有注入实现时保持纯文本、不显示为可点。 */}
                     <span
                       data-slot="message-part-title-filename"
@@ -2310,7 +2320,7 @@ ToolRegistry.register({
               <Dynamic component={fileComponent} mode="diff" {...fileCompProps()} />
             </div>
           </Show>
-        <DiagnosticsDisplay diagnostics={diagnostics()} />
+          <DiagnosticsDisplay diagnostics={diagnostics()} />
         </BasicTool>
       </div>
     )
@@ -2341,9 +2351,7 @@ ToolRegistry.register({
                     <TextShimmer text={i18n.t("ui.messagePart.title.write")} active={pending()} />
                   </span>
                   <Show when={!pending()}>
-                    <Show when={path()}>
-                      {(p) => <SealIcon data-slot="message-part-title-icon" />}
-                    </Show>
+                    <Show when={path()}>{(p) => <SealIcon data-slot="message-part-title-icon" />}</Show>
                     {/* 260831 cc 点文件名在侧栏开它；没有注入实现时保持纯文本、不显示为可点。 */}
                     <span
                       data-slot="message-part-title-filename"

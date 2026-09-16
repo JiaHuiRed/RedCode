@@ -110,7 +110,6 @@ export function resolveNetworkOptionsNoConfig(args: NetworkOptions, config?: Con
   return { hostname, port, mdns, mdnsDomain, cors }
 }
 
-
 // 260913 Red web.ts 和 run.ts 原先各有一份同形状的网卡枚举，且都只跳过了 172.*。
 // 那两份会把 link-local（169.254.x.x，手机不可达）和代理 TUN 常见的 RFC 2544 基准段
 // （198.18/198.19）一起打给用户，照着敲一个连不上一个。统一到一处，也顺手消掉重复。

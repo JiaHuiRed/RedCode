@@ -214,7 +214,8 @@ export const Info = Schema.Struct({
       }),
       model: Schema.optional(Schema.String).annotate({ description: "Model id used by the image tool" }),
       size: Schema.optional(Schema.String).annotate({
-        description: "Default output size, e.g. '1024x1024'. Backends accept different sets; a rejected value is reported as-is.",
+        description:
+          "Default output size, e.g. '1024x1024'. Backends accept different sets; a rejected value is reported as-is.",
       }),
     }),
   ).annotate({
@@ -295,7 +296,8 @@ export const Info = Schema.Struct({
           "Maximum total UTF-8 bytes of nearby instructions attached by one read tool result. Sources that do not fit are skipped in full (default: 32768)",
       }),
       fetch_timeout_ms: Schema.optional(PositiveInt).annotate({
-        description: "Timeout for fetching a remote instruction URL, covering the response body as well as the request (default: 5000)",
+        description:
+          "Timeout for fetching a remote instruction URL, covering the response body as well as the request (default: 5000)",
       }),
     }),
   ).annotate({

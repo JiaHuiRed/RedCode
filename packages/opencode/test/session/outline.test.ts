@@ -37,7 +37,11 @@ describe("Session outline fold", () => {
   // 历史被压缩或从中间截断时，第一条可能就是 assistant。它不属于任何轮次，
   // 凭空造一轮会让导航栏出现一条点不动的行（跳转锚点是 user 消息 id）。
   test("没有前导 user 的孤儿 assistant 不造轮次", () => {
-    const info = fold("ses_1", [row("a0", "assistant"), row("u1", "user"), row("a1", "assistant")], text({ a0: "孤儿", u1: "问", a1: "答" }))
+    const info = fold(
+      "ses_1",
+      [row("a0", "assistant"), row("u1", "user"), row("a1", "assistant")],
+      text({ a0: "孤儿", u1: "问", a1: "答" }),
+    )
     expect(info.entries).toHaveLength(1)
     expect(info.entries[0]!.messageID).toBe("u1")
     expect(info.entries[0]!.response).toBe("答")

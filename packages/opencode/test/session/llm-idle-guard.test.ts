@@ -22,7 +22,9 @@ type Ev = { type: string; id: string; output?: string }
 describe("LLM 流看门狗", () => {
   test("正常流：全部事件原样通过，不误杀", async () => {
     const ctrl = new AbortController()
-    const src = Stream.fromIterable([1, 2, 3, 4, 5]).pipe(Stream.mapEffect((n) => Effect.as(Effect.sleep(Duration.millis(20)), n)))
+    const src = Stream.fromIterable([1, 2, 3, 4, 5]).pipe(
+      Stream.mapEffect((n) => Effect.as(Effect.sleep(Duration.millis(20)), n)),
+    )
     const out = await collect(src, ctrl)
     expect(out._tag).toBe("Success")
     if (out._tag === "Success") expect(Array.from(out.success)).toEqual([1, 2, 3, 4, 5])
@@ -82,7 +84,9 @@ describe("LLM 流看门狗", () => {
     const src = Stream.concat(
       Stream.fromIterable(head),
       // 慢工具还在执行：这段静默（700ms）远超 idle 阈值（400ms）
-      Stream.fromEffect(Effect.as(Effect.sleep(Duration.millis(700)), { type: "tool-result", id: "slow", output: "ok" })),
+      Stream.fromEffect(
+        Effect.as(Effect.sleep(Duration.millis(700)), { type: "tool-result", id: "slow", output: "ok" }),
+      ),
     )
     const out = await collect(src, ctrl)
     expect(out._tag).toBe("Success")
@@ -141,8 +145,11 @@ describe("LLM 流看门狗", () => {
     const src = Stream.fromIterable([1, 2, 3]).pipe(
       Stream.mapEffect((n) => Effect.as(Effect.sleep(Duration.millis(20)), n)),
     )
-    const out = await Stream.runCollect(Stream.scoped(guardFirstEvent(src, ctrl, OPTS)))
-      .pipe(Effect.scoped, Effect.result, Effect.runPromise)
+    const out = await Stream.runCollect(Stream.scoped(guardFirstEvent(src, ctrl, OPTS))).pipe(
+      Effect.scoped,
+      Effect.result,
+      Effect.runPromise,
+    )
     expect(out._tag).toBe("Success")
     await new Promise((resolve) => setTimeout(resolve, Duration.toMillis(OPTS.idle) * 2))
     expect(ctrl.signal.aborted).toBe(false)

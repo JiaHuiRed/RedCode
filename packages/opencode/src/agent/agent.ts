@@ -409,11 +409,7 @@ export const layer = Layer.effect(
         const list = Effect.fnUntraced(function* () {
           const cfg = yield* config.get()
           const preferred = cfg.default_agent ? (resolve(cfg.default_agent)?.name ?? cfg.default_agent) : "redmind"
-          return pipe(
-            agents,
-            values(),
-            sortBy([(x) => x.name === preferred, "desc"], [(x) => x.name, "asc"]),
-          )
+          return pipe(agents, values(), sortBy([(x) => x.name === preferred, "desc"], [(x) => x.name, "asc"]))
         })
 
         const defaultInfo = Effect.fnUntraced(function* () {

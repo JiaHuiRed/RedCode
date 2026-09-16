@@ -4,8 +4,7 @@ import { JSX } from "solid-js"
 import "./icon-button-v2.css"
 
 export interface IconButtonV2Props
-  extends ComponentProps<typeof Kobalte>,
-    Pick<ComponentProps<"button">, "class" | "classList"> {
+  extends ComponentProps<typeof Kobalte>, Pick<ComponentProps<"button">, "class" | "classList"> {
   // temporary
   icon?: JSX.Element
   // icon: IconProps["name"]

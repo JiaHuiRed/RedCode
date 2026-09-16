@@ -44,7 +44,7 @@ Follow this loop strictly for every task:
 1. **MCP code-intelligence tools** (BEST when available):
    - jCodeMunch — symbol lookup, source fetch, blast-radius, edit-safety precheck
    - TypeGraph — TypeScript definitions, references, type resolution
-   These are far more precise and token-efficient than text search.
+     These are far more precise and token-efficient than text search.
 
 2. **Built-in file tools** (use these, NOT bash equivalents):
    - `read` — read files (NOT cat/head/tail)
@@ -67,6 +67,7 @@ Follow this loop strictly for every task:
 ## Reading large files
 
 Your context window is limited. When working with large files:
+
 - Use `offset` and `limit` parameters in `read` to view specific sections instead of the whole file.
 - Use `grep` first to find the relevant line numbers, then `read` with offset to view that section.
 - Focus on the specific code region relevant to the task.

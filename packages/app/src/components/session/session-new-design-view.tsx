@@ -65,9 +65,7 @@ export function NewSessionDesignView(props: { worktree: string; children: JSX.El
           </div>
           {/* 260828 cc 问候语。字标是品牌、输入框是功能，中间这一句是唯一说人话的地方，
               所以放这儿。字号刻意压在 15px：它是陪衬，抢了输入框的注意力就本末倒置了。 */}
-          <div class="mt-5 text-center text-[15px] font-[440] text-v2-text-text-muted">
-            {language.t(greetingKey())}
-          </div>
+          <div class="mt-5 text-center text-[15px] font-[440] text-v2-text-text-muted">{language.t(greetingKey())}</div>
           <div class="mt-8">
             {props.children}
             <div class="mt-3 flex h-7 items-center gap-0 pl-2">

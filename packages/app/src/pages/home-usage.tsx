@@ -58,7 +58,12 @@ function compact(value: number) {
   return String(Math.round(value))
 }
 
-function Segmented<T extends string>(props: { value: T; options: readonly T[]; label: (v: T) => string; onChange: (v: T) => void }) {
+function Segmented<T extends string>(props: {
+  value: T
+  options: readonly T[]
+  label: (v: T) => string
+  onChange: (v: T) => void
+}) {
   return (
     <div class="flex shrink-0 gap-0.5 rounded-[6px] bg-v2-background-bg-deep p-0.5">
       <For each={props.options}>
@@ -135,7 +140,12 @@ function Heatmap(props: { usage: Usage; dark: boolean; formatNumber: (n: number)
   )
 }
 
-function StackedBars(props: { usage: Usage; slices: ModelSlice[]; color: (slice: ModelSlice) => string; formatNumber: (n: number) => string }) {
+function StackedBars(props: {
+  usage: Usage
+  slices: ModelSlice[]
+  color: (slice: ModelSlice) => string
+  formatNumber: (n: number) => string
+}) {
   const buckets = createMemo(() => stackByDay(props.usage, props.slices))
   const max = createMemo(() => Math.max(1, ...buckets().map((b) => b.total)))
 
@@ -258,7 +268,9 @@ function HomeUsagePanelInner(props: { directory: string | undefined }) {
   const color = (slice: ModelSlice) => {
     if (slice.isOther) return dark() ? SERIES_OTHER_DARK : SERIES_OTHER_LIGHT
     const palette = dark() ? SERIES_DARK : SERIES_LIGHT
-    const index = slices().filter((s) => !s.isOther).findIndex((s) => s.key === slice.key)
+    const index = slices()
+      .filter((s) => !s.isOther)
+      .findIndex((s) => s.key === slice.key)
     return palette[Math.max(0, index) % palette.length]!
   }
 
@@ -326,7 +338,9 @@ function HomeUsagePanelInner(props: { directory: string | undefined }) {
               <Segmented
                 value={range()}
                 options={RANGES}
-                label={(v) => t(v === "all" ? "home.usage.range.all" : v === "30d" ? "home.usage.range.30d" : "home.usage.range.7d")}
+                label={(v) =>
+                  t(v === "all" ? "home.usage.range.all" : v === "30d" ? "home.usage.range.30d" : "home.usage.range.7d")
+                }
                 onChange={setRange}
               />
             </div>
@@ -348,8 +362,7 @@ function HomeUsagePanelInner(props: { directory: string | undefined }) {
               </Tooltip>
               <div class="flex min-w-0 flex-col gap-0.5">
                 <span class="text-11-regular text-v2-text-text-muted">
-                  {t("home.stats.cacheHit")}{" "}
-                  {ring().cacheHitPct !== null ? `${ring().cacheHitPct!.toFixed(2)}%` : "—"}
+                  {t("home.stats.cacheHit")} {ring().cacheHitPct !== null ? `${ring().cacheHitPct!.toFixed(2)}%` : "—"}
                 </span>
                 <span class="text-12-regular tabular-nums text-v2-text-text-base [font-weight:530]">
                   {t("home.stats.cost")} {formatter().cost(ring().costCNY, "CNY")}

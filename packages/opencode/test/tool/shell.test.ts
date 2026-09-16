@@ -32,8 +32,7 @@ const shellLayer = Layer.mergeAll(
 )
 const it = testEffect(shellLayer)
 type ShellTestServices =
-  | (typeof shellLayer extends Layer.Layer<infer ROut, infer _E, infer _RIn> ? ROut : never)
-  | Scope.Scope
+  (typeof shellLayer extends Layer.Layer<infer ROut, infer _E, infer _RIn> ? ROut : never) | Scope.Scope
 
 const initShell = Effect.fn("ShellToolTest.init")(function* () {
   const info = yield* ShellTool
@@ -296,7 +295,15 @@ describe("tool.shell permissions", () => {
       yield* runIn(
         tmp,
         Effect.gen(function* () {
-          for (const command of ["git status", "git log --oneline -5", "git diff HEAD", "git rev-parse HEAD", "git branch", "git branch --show-current", "git fetch"]) {
+          for (const command of [
+            "git status",
+            "git log --oneline -5",
+            "git diff HEAD",
+            "git rev-parse HEAD",
+            "git branch",
+            "git branch --show-current",
+            "git fetch",
+          ]) {
             const err = new Error("stop after permission")
             const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
             yield* fail({ command, description: "read-only git" }, capture(requests, err))
@@ -382,26 +389,28 @@ describe("tool.shell permissions", () => {
   // 解码，中文 Windows 上读 UTF-8 文件直接读成乱码（"中文测试" → "涓枃娴嬭瘯"），
   // 之后写回去就把原文毁了。shell.ts 里的 PS_READ_UTF8 把读侧默认编码钉成 UTF-8。
   for (const item of ps) {
-    it.live(`Get-Content 按 UTF-8 读中文文件而不是系统代码页 [${item.label}]`, () =>
-      withShell(
-        item,
-        Effect.gen(function* () {
-          const tmp = yield* tmpdirScoped()
-          yield* runIn(
-            tmp,
-            Effect.gen(function* () {
-              const target = path.join(tmp, "chinese.txt")
-              yield* Effect.promise(() => fs.writeFile(target, "中文测试 UTF-8 内容\n", "utf8"))
-              const result = yield* run({
-                command: `Get-Content '${target.replaceAll("'", "''")}'`,
-                description: "Read a UTF-8 Chinese file",
-              })
-              expect(result.output).toContain("中文测试")
-              expect(result.output).not.toContain("�")
-            }),
-          )
-        }),
-      ),
+    it.live(
+      `Get-Content 按 UTF-8 读中文文件而不是系统代码页 [${item.label}]`,
+      () =>
+        withShell(
+          item,
+          Effect.gen(function* () {
+            const tmp = yield* tmpdirScoped()
+            yield* runIn(
+              tmp,
+              Effect.gen(function* () {
+                const target = path.join(tmp, "chinese.txt")
+                yield* Effect.promise(() => fs.writeFile(target, "中文测试 UTF-8 内容\n", "utf8"))
+                const result = yield* run({
+                  command: `Get-Content '${target.replaceAll("'", "''")}'`,
+                  description: "Read a UTF-8 Chinese file",
+                })
+                expect(result.output).toContain("中文测试")
+                expect(result.output).not.toContain("�")
+              }),
+            )
+          }),
+        ),
       // 这条要真的把 powershell.exe 拉起来，冷启动就要 5s 上下，默认超时不够
       30_000,
     )

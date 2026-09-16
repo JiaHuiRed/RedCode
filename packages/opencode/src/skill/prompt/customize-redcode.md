@@ -37,15 +37,15 @@ already-loaded config until then.
 
 ## Where files live
 
-| Scope                         | Path                                                                                                                      |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Scope                         | Path                                                                                                                 |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | Project config                | `./redcode.json`, `./redcode.jsonc`, or `.redcode/redcode.json` (redcode walks up from the cwd to the worktree root) |
-| Global config                 | `~/.redcode/redcode.json` (this fork unified the XDG dirs into `~/.redcode`, see core/global.ts)                        |
-| Project agents                | `.redcode/agent/<name>.md` (singular only)                                                                              |
-| Global agents                 | `~/.redcode/agent/<name>.md` (singular only)                                                                             |
-| Project skills                | `.redcode/skill(s)/<name>/SKILL.md`                                                                                      |
-| Global skills                 | `~/.redcode/skill(s)/<name>/SKILL.md`                                                                                    |
-| External skills (auto-loaded) | `~/.claude/skills/<name>/SKILL.md`, `~/.agents/skills/<name>/SKILL.md`                                                    |
+| Global config                 | `~/.redcode/redcode.json` (this fork unified the XDG dirs into `~/.redcode`, see core/global.ts)                     |
+| Project agents                | `.redcode/agent/<name>.md` (singular only)                                                                           |
+| Global agents                 | `~/.redcode/agent/<name>.md` (singular only)                                                                         |
+| Project skills                | `.redcode/skill(s)/<name>/SKILL.md`                                                                                  |
+| Global skills                 | `~/.redcode/skill(s)/<name>/SKILL.md`                                                                                |
+| External skills (auto-loaded) | `~/.claude/skills/<name>/SKILL.md`, `~/.agents/skills/<name>/SKILL.md`                                               |
 
 Configs from each scope are deep-merged. Project overrides global. Unknown
 top-level keys in `redcode.json` are rejected with `ConfigInvalidError`.

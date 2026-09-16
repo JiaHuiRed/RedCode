@@ -133,7 +133,8 @@ export const dict = {
   "settings.general.row.image.description": "生图工具走哪个 API。换供应商在这里改，不用动代码。",
   "settings.general.row.image.custom": "自定义",
   "settings.general.row.imageEndpoint.title": "生图接口",
-  "settings.general.row.imageEndpoint.description": "依次为接口地址、模型 id、取密钥的 auth 条目。密钥本身不写在这里——走 auth 或 REDCODE_IMAGE_API_KEY。",
+  "settings.general.row.imageEndpoint.description":
+    "依次为接口地址、模型 id、取密钥的 auth 条目。密钥本身不写在这里——走 auth 或 REDCODE_IMAGE_API_KEY。",
   "settings.general.row.busyEnter.title": "繁忙时消息送达",
   "settings.general.row.busyEnter.description": "AI 运行中你发送的消息如何处理；立即生效",
   "settings.general.row.busyEnter.steer": "插话（立即送达）",

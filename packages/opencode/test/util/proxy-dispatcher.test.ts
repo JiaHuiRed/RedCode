@@ -63,7 +63,11 @@ describe("shouldProxy · 非 http(s) 与畸形输入保持直连", () => {
 describe("真 Node 进程里的出网行为", () => {
   test("装了策略之后全局 fetch 走代理，loopback 仍直连", () => {
     const probe = path.join(import.meta.dir, "proxy-egress-probe.cjs")
-    const proc = Bun.spawnSync(["node", probe], { cwd: path.join(import.meta.dir, "..", ".."), stdout: "pipe", stderr: "pipe" })
+    const proc = Bun.spawnSync(["node", probe], {
+      cwd: path.join(import.meta.dir, "..", ".."),
+      stdout: "pipe",
+      stderr: "pipe",
+    })
     const stdout = new TextDecoder().decode(proc.stdout).trim()
     const stderr = new TextDecoder().decode(proc.stderr).trim()
     expect(stdout, `stderr: ${stderr}`).not.toBe("")

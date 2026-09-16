@@ -1617,13 +1617,13 @@ export default function Page() {
 
   return (
     <FileOpenProvider onOpen={openFileFromTranscript}>
-    <div
-      id="session-root"
-      class="relative size-full overflow-hidden flex flex-col"
-      // 260610 Red 毛玻璃 B：设了聊天背景图则会话页根容器去实色底，露出根布局整窗壁纸做毛玻璃；否则维持原实色
-      classList={{ "bg-background-base": !settings.appearance.chatBackground() }}
-    >
-      {/* 260901 cc 这行在 JSX 里读 sessionSync 但什么都不渲染，唯一作用是触发挂起。
+      <div
+        id="session-root"
+        class="relative size-full overflow-hidden flex flex-col"
+        // 260610 Red 毛玻璃 B：设了聊天背景图则会话页根容器去实色底，露出根布局整窗壁纸做毛玻璃；否则维持原实色
+        classList={{ "bg-background-base": !settings.appearance.chatBackground() }}
+      >
+        {/* 260901 cc 这行在 JSX 里读 sessionSync 但什么都不渲染，唯一作用是触发挂起。
           问题是它离最近的 Suspense 边界是 app.tsx 里那个**包住整个应用**的（fallback 是满屏
           Splash），而 sessionSync 的依赖是 [sdk.directory, params.id]——点一次会话卡片、切一次
           工作区它就重跑一次。于是每次切换都把整扇窗换成 Splash 再换回来，组件树整棵拆掉重搭。
@@ -1633,172 +1633,174 @@ export default function Page() {
           挂起对界面完全不可见，标题栏、侧边栏、消息区保持原样，数据到了由 store 驱动逐步更新。
           注意不能把边界加到路由层（cb3b8b4e 试过，已撤回）——那会废掉 solid-router 的
           transition，反而从「保持旧画面」退化成「立刻清空」。边界必须贴着挂起源。 */}
-      <Suspense>{sessionSync() ?? ""}</Suspense>
-      <SessionHeader />
-      <div class="flex-1 min-h-0 flex flex-col md:flex-row">
-        <Show when={!isDesktop() && !!params.id}>
-          <Tabs value={store.mobileTab} class="h-auto">
-            <Tabs.List>
-              <Tabs.Trigger
-                value="session"
-                class="!w-1/2 !max-w-none"
-                classes={{ button: "w-full" }}
-                onClick={() => setStore("mobileTab", "session")}
-              >
-                {language.t("session.tab.session")}
-              </Tabs.Trigger>
-              <Tabs.Trigger
-                value="changes"
-                class="!w-1/2 !max-w-none !border-r-0"
-                classes={{ button: "w-full" }}
-                onClick={() => setStore("mobileTab", "changes")}
-              >
-                {hasReview()
-                  ? language.t("session.review.filesChanged", { count: reviewCount() })
-                  : language.t("session.review.change.other")}
-              </Tabs.Trigger>
-            </Tabs.List>
-          </Tabs>
-        </Show>
-
-        <FileTreePanel
-          diffsReady={reviewReady}
-          diffs={reviewDiffs}
-          reviewCount={reviewCount}
-          hasReview={hasReview}
-          activeDiff={tree.activeDiff}
-          focusReviewDiff={focusReviewDiff}
-          size={size}
-        />
-        <div
-          id="session-chat-panel"
-          classList={{
-            "@container relative shrink-0 flex flex-col min-h-0 h-full flex-1 md:flex-none": true,
-            // 260610 Red 毛玻璃 B：设了背景图则聊天栏去实色底，露出主卡片整窗毛玻璃；无背景图维持原实色
-            "bg-background-stronger": !settings.appearance.chatBackground(),
-            "duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
-              !size.active() && !ui.reviewSnap,
-            "transition-[width]": !isV2NewSessionPage(),
-          }}
-          style={{
-            width: sessionPanelWidth(),
-          }}
-          // 260608 Red 毛玻璃 A 触发钩子：设了聊天背景图才打标记，CSS 据此让气泡/输入框半透明模糊透出背景图
-          data-chat-frost={settings.appearance.chatBackground() ? "" : undefined}
-        >
-          {/* 260610 Red 背景图已上移到根布局整窗铺底（layout.tsx），此处仅保留遮罩压暗保证对话可读 */}
-          <Show when={settings.appearance.chatBackground()}>
-            {/* 260608 Yuqi 半透明遮罩：压低壁纸亮度确保文字可读，同时过渡到两侧面板的实色背景 */}
-            {/* 260609 Yuqi 0.4→0.62：哥哥实测 0.4 仍偏亮压不住文字，加深遮罩保证对话可读 */}
-            {/* 260610 Red 0.5.0 refine#1：0.62→0.3，两侧栏已改深色磨砂当暗壳，聊天区作为更亮的焦点区，弱化暗罩 */}
-            {/* 260823 Yuqi 0.3→深紫粉渐变：纯黑遮罩把壁纸的粉紫色调全部压灰，改用主题色相
-                的渐变罩（顶部保留壁纸亮度、底部压深保证输入区对比），压暗但保色。 */}
-            <div
-              aria-hidden="true"
-              class="absolute inset-0 z-0 pointer-events-none"
-              style={{
-                background:
-                  "linear-gradient(180deg, rgba(60,32,58,0.30) 0%, rgba(40,22,44,0.45) 45%, rgba(22,12,28,0.62) 100%)",
-              }}
-            />
+        <Suspense>{sessionSync() ?? ""}</Suspense>
+        <SessionHeader />
+        <div class="flex-1 min-h-0 flex flex-col md:flex-row">
+          <Show when={!isDesktop() && !!params.id}>
+            <Tabs value={store.mobileTab} class="h-auto">
+              <Tabs.List>
+                <Tabs.Trigger
+                  value="session"
+                  class="!w-1/2 !max-w-none"
+                  classes={{ button: "w-full" }}
+                  onClick={() => setStore("mobileTab", "session")}
+                >
+                  {language.t("session.tab.session")}
+                </Tabs.Trigger>
+                <Tabs.Trigger
+                  value="changes"
+                  class="!w-1/2 !max-w-none !border-r-0"
+                  classes={{ button: "w-full" }}
+                  onClick={() => setStore("mobileTab", "changes")}
+                >
+                  {hasReview()
+                    ? language.t("session.review.filesChanged", { count: reviewCount() })
+                    : language.t("session.review.change.other")}
+                </Tabs.Trigger>
+              </Tabs.List>
+            </Tabs>
           </Show>
-          {/* 260829 cc data-frost-edge：会话滚动区上下两条渐变模糊带的挂载点，
-              规则见 index.css 的「③ 边缘渐变模糊带」。有壁纸才生效。 */}
-          <div data-frost-edge="" class="relative z-[1] flex-1 min-h-0 overflow-hidden">
-            <Show when={params.id && !mobileChanges()}>
-              <SessionMessageRail
-                directory={sdk.directory}
-                sessionID={params.id!}
-                activeMessageID={store.messageId}
-                busy={jumpingTurn()}
-                onJump={(id) => void jumpToTurn(id)}
-              />
-            </Show>
-            <Switch>
-              <Match when={params.id && mobileChanges()}>
-                <div class="relative h-full overflow-hidden">
-                  {reviewContent({
-                    diffStyle: "unified",
-                    classes: {
-                      root: "pb-8",
-                      header: "px-4",
-                      container: "px-4",
-                    },
-                    loadingClass: "px-4 py-4 text-text-weak",
-                    emptyClass: "h-full pb-64 -mt-4 flex flex-col items-center justify-center text-center gap-6",
-                  })}
-                </div>
-              </Match>
-              <Match when={params.id}>
-                <Show when={messagesReady()}>
-                  <MessageTimeline
-                    actions={actions}
-                    scroll={ui.scroll}
-                    onResumeScroll={resumeScroll}
-                    setScrollRef={setScrollRef}
-                    onScheduleScrollState={scheduleScrollState}
-                    onAutoScrollHandleScroll={autoScroll.handleScroll}
-                    onMarkScrollGesture={markScrollGesture}
-                    hasScrollGesture={hasScrollGesture}
-                    onUserScroll={nav.markScroll}
-                    onHistoryScroll={historyLoader.onScrollerScroll}
-                    onAutoScrollInteraction={autoScroll.handleInteraction}
-                    shouldAnchorBottom={() =>
-                      !location.hash && !store.messageId && !ui.pendingMessage && !autoScroll.userScrolled()
-                    }
-                    centered={centered()}
-                    setContentRef={(el) => {
-                      content = el
-                      autoScroll.contentRef(el)
 
-                      const root = scroller
-                      if (root) scheduleScrollState(root)
-                    }}
-                    historyShift={historyLoader.shift()}
-                    userMessages={historyLoader.userMessages()}
-                    anchor={nav.anchor}
-                    setRevealMessage={(fn) => {
-                      revealMessage = fn
-                    }}
-                  />
-                </Show>
-              </Match>
-              <Match when={true}>
-                <NewSessionDesignView worktree={newSessionWorktree()}>{composerRegion("inline")}</NewSessionDesignView>
-              </Match>
-            </Switch>
-          </div>
-
-          <Show when={params.id}>{composerRegion("dock")}</Show>
-
-          <Show when={desktopReviewOpen()}>
-            <div onPointerDown={() => size.start()}>
-              <ResizeHandle
-                direction="horizontal"
-                invert={true}
-                size={layout.session.width()}
-                min={340}
-                max={typeof window === "undefined" ? 1000 : window.innerWidth * 0.45}
-                onResize={(width) => {
-                  size.touch()
-                  layout.session.resize(width)
+          <FileTreePanel
+            diffsReady={reviewReady}
+            diffs={reviewDiffs}
+            reviewCount={reviewCount}
+            hasReview={hasReview}
+            activeDiff={tree.activeDiff}
+            focusReviewDiff={focusReviewDiff}
+            size={size}
+          />
+          <div
+            id="session-chat-panel"
+            classList={{
+              "@container relative shrink-0 flex flex-col min-h-0 h-full flex-1 md:flex-none": true,
+              // 260610 Red 毛玻璃 B：设了背景图则聊天栏去实色底，露出主卡片整窗毛玻璃；无背景图维持原实色
+              "bg-background-stronger": !settings.appearance.chatBackground(),
+              "duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
+                !size.active() && !ui.reviewSnap,
+              "transition-[width]": !isV2NewSessionPage(),
+            }}
+            style={{
+              width: sessionPanelWidth(),
+            }}
+            // 260608 Red 毛玻璃 A 触发钩子：设了聊天背景图才打标记，CSS 据此让气泡/输入框半透明模糊透出背景图
+            data-chat-frost={settings.appearance.chatBackground() ? "" : undefined}
+          >
+            {/* 260610 Red 背景图已上移到根布局整窗铺底（layout.tsx），此处仅保留遮罩压暗保证对话可读 */}
+            <Show when={settings.appearance.chatBackground()}>
+              {/* 260608 Yuqi 半透明遮罩：压低壁纸亮度确保文字可读，同时过渡到两侧面板的实色背景 */}
+              {/* 260609 Yuqi 0.4→0.62：哥哥实测 0.4 仍偏亮压不住文字，加深遮罩保证对话可读 */}
+              {/* 260610 Red 0.5.0 refine#1：0.62→0.3，两侧栏已改深色磨砂当暗壳，聊天区作为更亮的焦点区，弱化暗罩 */}
+              {/* 260823 Yuqi 0.3→深紫粉渐变：纯黑遮罩把壁纸的粉紫色调全部压灰，改用主题色相
+                的渐变罩（顶部保留壁纸亮度、底部压深保证输入区对比），压暗但保色。 */}
+              <div
+                aria-hidden="true"
+                class="absolute inset-0 z-0 pointer-events-none"
+                style={{
+                  background:
+                    "linear-gradient(180deg, rgba(60,32,58,0.30) 0%, rgba(40,22,44,0.45) 45%, rgba(22,12,28,0.62) 100%)",
                 }}
               />
+            </Show>
+            {/* 260829 cc data-frost-edge：会话滚动区上下两条渐变模糊带的挂载点，
+              规则见 index.css 的「③ 边缘渐变模糊带」。有壁纸才生效。 */}
+            <div data-frost-edge="" class="relative z-[1] flex-1 min-h-0 overflow-hidden">
+              <Show when={params.id && !mobileChanges()}>
+                <SessionMessageRail
+                  directory={sdk.directory}
+                  sessionID={params.id!}
+                  activeMessageID={store.messageId}
+                  busy={jumpingTurn()}
+                  onJump={(id) => void jumpToTurn(id)}
+                />
+              </Show>
+              <Switch>
+                <Match when={params.id && mobileChanges()}>
+                  <div class="relative h-full overflow-hidden">
+                    {reviewContent({
+                      diffStyle: "unified",
+                      classes: {
+                        root: "pb-8",
+                        header: "px-4",
+                        container: "px-4",
+                      },
+                      loadingClass: "px-4 py-4 text-text-weak",
+                      emptyClass: "h-full pb-64 -mt-4 flex flex-col items-center justify-center text-center gap-6",
+                    })}
+                  </div>
+                </Match>
+                <Match when={params.id}>
+                  <Show when={messagesReady()}>
+                    <MessageTimeline
+                      actions={actions}
+                      scroll={ui.scroll}
+                      onResumeScroll={resumeScroll}
+                      setScrollRef={setScrollRef}
+                      onScheduleScrollState={scheduleScrollState}
+                      onAutoScrollHandleScroll={autoScroll.handleScroll}
+                      onMarkScrollGesture={markScrollGesture}
+                      hasScrollGesture={hasScrollGesture}
+                      onUserScroll={nav.markScroll}
+                      onHistoryScroll={historyLoader.onScrollerScroll}
+                      onAutoScrollInteraction={autoScroll.handleInteraction}
+                      shouldAnchorBottom={() =>
+                        !location.hash && !store.messageId && !ui.pendingMessage && !autoScroll.userScrolled()
+                      }
+                      centered={centered()}
+                      setContentRef={(el) => {
+                        content = el
+                        autoScroll.contentRef(el)
+
+                        const root = scroller
+                        if (root) scheduleScrollState(root)
+                      }}
+                      historyShift={historyLoader.shift()}
+                      userMessages={historyLoader.userMessages()}
+                      anchor={nav.anchor}
+                      setRevealMessage={(fn) => {
+                        revealMessage = fn
+                      }}
+                    />
+                  </Show>
+                </Match>
+                <Match when={true}>
+                  <NewSessionDesignView worktree={newSessionWorktree()}>
+                    {composerRegion("inline")}
+                  </NewSessionDesignView>
+                </Match>
+              </Switch>
             </div>
-          </Show>
+
+            <Show when={params.id}>{composerRegion("dock")}</Show>
+
+            <Show when={desktopReviewOpen()}>
+              <div onPointerDown={() => size.start()}>
+                <ResizeHandle
+                  direction="horizontal"
+                  invert={true}
+                  size={layout.session.width()}
+                  min={340}
+                  max={typeof window === "undefined" ? 1000 : window.innerWidth * 0.45}
+                  onResize={(width) => {
+                    size.touch()
+                    layout.session.resize(width)
+                  }}
+                />
+              </div>
+            </Show>
+          </div>
+
+          <SessionSidePanel
+            canReview={canReview}
+            reviewPanel={reviewPanel}
+            outlinePanel={outlinePanel}
+            reviewSnap={ui.reviewSnap}
+            size={size}
+          />
         </div>
 
-        <SessionSidePanel
-          canReview={canReview}
-          reviewPanel={reviewPanel}
-          outlinePanel={outlinePanel}
-          reviewSnap={ui.reviewSnap}
-          size={size}
-        />
+        <TerminalPanel />
       </div>
-
-      <TerminalPanel />
-    </div>
     </FileOpenProvider>
   )
 }

@@ -7,11 +7,5 @@
   },
   "repository": "https://github.com/guyowen/typegraph-mcp",
   "license": "MIT",
-  "keywords": [
-    "typescript",
-    "navigation",
-    "mcp",
-    "tsserver",
-    "monorepo"
-  ]
+  "keywords": ["typescript", "navigation", "mcp", "tsserver", "monorepo"]
 }

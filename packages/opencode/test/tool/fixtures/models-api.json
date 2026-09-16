@@ -21085,10 +21085,10 @@
           "output": ["text"]
         },
         "open_weights": false,
-         "limit": {
-           "context": 131072,
-           "output": 33000
-         },
+        "limit": {
+          "context": 131072,
+          "output": 33000
+        },
         "cost": {
           "input": 0.086,
           "output": 0.086
@@ -92098,10 +92098,10 @@
           "output": ["text"]
         },
         "open_weights": false,
-         "limit": {
-           "context": 131072,
-           "output": 33000
-         },
+        "limit": {
+          "context": 131072,
+          "output": 33000
+        },
         "cost": {
           "input": 0.086,
           "output": 0.086

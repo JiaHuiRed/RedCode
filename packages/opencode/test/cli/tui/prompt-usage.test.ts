@@ -32,7 +32,10 @@ function fakeSync(input: {
         ? [
             {
               id: input.sessionID,
-              tokens: { input: input.record.input, cache: { read: input.record.cacheRead, write: input.record.cacheWrite } },
+              tokens: {
+                input: input.record.input,
+                cache: { read: input.record.cacheRead, write: input.record.cacheWrite },
+              },
             },
           ]
         : [],

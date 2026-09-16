@@ -16,7 +16,8 @@ describe("instruction-echo 快路径", () => {
 
 describe("A 类：自己注入的包装块整块剥离", () => {
   test("system-reminder 被复述出来 —— 剥掉，保留真正的回答", () => {
-    const t = "先看状态。\n<system-reminder>\nThe user sent the following message:\n继续\n</system-reminder>\n已经提交了。"
+    const t =
+      "先看状态。\n<system-reminder>\nThe user sent the following message:\n继续\n</system-reminder>\n已经提交了。"
     const r = detect(t)
     expect(r.kinds).toContain("system-reminder")
     expect(r.stripped).not.toContain("system-reminder")
@@ -89,7 +90,7 @@ describe("B 类：工具说明 / JSON schema 成片泄漏", () => {
       "这个接口返回的字段是这样的：",
       "",
       "```ts",
-      'type Resp = { id: string; name: string }',
+      "type Resp = { id: string; name: string }",
       "```",
       "",
       "所以 `id` 用的是字符串不是数字。",
@@ -105,7 +106,7 @@ describe("B 类：工具说明 / JSON schema 成片泄漏", () => {
   })
 
   test("★不误切：有 schema 行但没有强特征标题时不动", () => {
-    const t = ['修改后的类型：', '  "a": string,', '  "b": number,', '  "c": boolean,'].join("\n")
+    const t = ["修改后的类型：", '  "a": string,', '  "b": number,', '  "c": boolean,'].join("\n")
     expect(detect(t).kinds).toEqual([])
   })
 })
@@ -162,10 +163,9 @@ describe("C 类：DCP turn-nudge 指令复述（260810 G:\Game 实测）", () =>
   })
 
   test("★不误切：正文中间没有完整块只有锚点句时只剥锚点行", () => {
-    const t = [
-      "刚才看到 Evaluate the conversation for compressible ranges. 这句话，",
-      "应该是 DCP 的提示词。",
-    ].join("\n")
+    const t = ["刚才看到 Evaluate the conversation for compressible ranges. 这句话，", "应该是 DCP 的提示词。"].join(
+      "\n",
+    )
     // 锚点句不在行首且不是独立行 —— 不该命中
     expect(detect(t).kinds).toEqual([])
   })
@@ -178,7 +178,8 @@ describe("C 类：DCP turn-nudge 指令复述（260810 G:\Game 实测）", () =>
 
 describe("组合与幂等", () => {
   test("A 类与 B 类同时出现，两类都记录", () => {
-    const t = "<system-reminder>x</system-reminder>\nRules:\n- Do not invent IDs.\n- IDs must exist in the current visible context.\n- Pick startId and endId directly."
+    const t =
+      "<system-reminder>x</system-reminder>\nRules:\n- Do not invent IDs.\n- IDs must exist in the current visible context.\n- Pick startId and endId directly."
     const r = detect(t)
     expect(r.kinds).toContain("system-reminder")
     expect(r.kinds).toContain("tool-schema")

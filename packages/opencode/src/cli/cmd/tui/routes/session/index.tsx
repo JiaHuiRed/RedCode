@@ -255,9 +255,7 @@ export function Session() {
     }
     return result
   })
-  const working = createMemo(
-    () => (sync.data.session_status[route.sessionID] ?? { type: "idle" }).type !== "idle",
-  )
+  const working = createMemo(() => (sync.data.session_status[route.sessionID] ?? { type: "idle" }).type !== "idle")
   const activeMessageID = createMemo(() => {
     const parentID = pending()?.parentID
     if (parentID) {
@@ -1806,7 +1804,11 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
     const lines = content().split("\n")
     for (let i = lines.length - 1; i >= 0; i--) {
       const line = lines[i].trim()
-      if (line) return line.replace(/\*\*/g, "").replace(/^#+\s*/, "").trim()
+      if (line)
+        return line
+          .replace(/\*\*/g, "")
+          .replace(/^#+\s*/, "")
+          .trim()
     }
     return ""
   })
@@ -2382,7 +2384,8 @@ function Read(props: ToolProps<typeof ReadTool>) {
         spinner={isRunning()}
         part={props.part}
       >
-        Read {fileEmoji(props.input.filePath)} {pathFormatter.format(props.input.filePath)} {input(props.input, ["filePath"])}
+        Read {fileEmoji(props.input.filePath)} {pathFormatter.format(props.input.filePath)}{" "}
+        {input(props.input, ["filePath"])}
       </InlineTool>
       <For each={loaded()}>
         {(filepath) => (
@@ -2553,7 +2556,8 @@ function Edit(props: ToolProps<typeof EditTool>) {
       </Match>
       <Match when={true}>
         <InlineTool icon="✎" pending="Preparing edit..." complete={props.input.filePath} part={props.part}>
-          Edit {fileEmoji(props.input.filePath)} {pathFormatter.format(props.input.filePath)} {input({ replaceAll: props.input.replaceAll })}
+          Edit {fileEmoji(props.input.filePath)} {pathFormatter.format(props.input.filePath)}{" "}
+          {input({ replaceAll: props.input.replaceAll })}
         </InlineTool>
       </Match>
     </Switch>

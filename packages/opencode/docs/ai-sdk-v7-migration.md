@@ -7,12 +7,12 @@
 
 `package.json` 声明了约 20 个 `@ai-sdk/*` provider 包，但按 models 缓存实测，**本机实际会被加载的只有一个**：
 
-| 在用的 provider | 解析到的包 |
-| --- | --- |
+| 在用的 provider                     | 解析到的包                  |
+| ----------------------------------- | --------------------------- |
 | opencode-go（DeepSeek / MiMo 网关） | `@ai-sdk/openai-compatible` |
-| deepseek（直连） | `@ai-sdk/openai-compatible` |
-| stepfun / stepfun-step-plan | `@ai-sdk/openai-compatible` |
-| xiaomi-token-plan-cn | `@ai-sdk/openai-compatible` |
+| deepseek（直连）                    | `@ai-sdk/openai-compatible` |
+| stepfun / stepfun-step-plan         | `@ai-sdk/openai-compatible` |
+| xiaomi-token-plan-cn                | `@ai-sdk/openai-compatible` |
 
 **DeepSeek 没有自己的 SDK 包**，与其余国产模型一样走 openai-compatible。所以验证面 = `ai` + `@ai-sdk/openai-compatible` + 二者共同依赖的 `provider` / `provider-utils`。
 
@@ -32,12 +32,12 @@ anthropic / google / bedrock / mistral / cohere / groq 等十余个包在本机�
 
 ### B 档 — 必须人工核对（语义变了，codemod 帮不上），共 4 处
 
-| 位置 | 变化 | 风险 |
-| --- | --- | --- |
-| **`session/llm/ai-sdk.ts`** | 顶层 `usage`/`toolCalls`/`content` 改为**跨步骤聚合**；`providerMetadata`/`reasoning`/`response` 移入 `finalStep` | **最高**。该文件把 SDK 流转成 `LLMEvent`，是 token 记账与缓存命中统计的唯一入口。DeepSeek 的 cache miss/write/hit 三档计费、状态栏 Turn/Conn/Hit 三个指标全依赖它 |
-| `session/message-v2.ts` | `{type:"image"}` → `{type:"file", mediaType}`；工具结果的 `image-*`/`file-*` 变体合并为单一 `file` | vision 附件链路，全仓 30 处 `type: "image"` |
-| `session/llm.ts:356` | `experimental_telemetry` → `telemetry`；OpenTelemetry 拆到独立包 `@ai-sdk/otel`，改用 `registerTelemetry()`；遥测由 opt-in 变 opt-out | 牵动对外配置项 `experimental.openTelemetry`（`config.ts:313` 有文档描述） |
-| `session/llm.ts:7,340,396,487,521` | `system` → `instructions`；`.fullStream` → `.stream`；中间件 `specificationVersion: "v3"` 需实测 v7 是否仍接受 | 主调用点，漏一处即全线不可用 |
+| 位置                               | 变化                                                                                                                                  | 风险                                                                                                                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`session/llm/ai-sdk.ts`**        | 顶层 `usage`/`toolCalls`/`content` 改为**跨步骤聚合**；`providerMetadata`/`reasoning`/`response` 移入 `finalStep`                     | **最高**。该文件把 SDK 流转成 `LLMEvent`，是 token 记账与缓存命中统计的唯一入口。DeepSeek 的 cache miss/write/hit 三档计费、状态栏 Turn/Conn/Hit 三个指标全依赖它 |
+| `session/message-v2.ts`            | `{type:"image"}` → `{type:"file", mediaType}`；工具结果的 `image-*`/`file-*` 变体合并为单一 `file`                                    | vision 附件链路，全仓 30 处 `type: "image"`                                                                                                                       |
+| `session/llm.ts:356`               | `experimental_telemetry` → `telemetry`；OpenTelemetry 拆到独立包 `@ai-sdk/otel`，改用 `registerTelemetry()`；遥测由 opt-in 变 opt-out | 牵动对外配置项 `experimental.openTelemetry`（`config.ts:313` 有文档描述）                                                                                         |
+| `session/llm.ts:7,340,396,487,521` | `system` → `instructions`；`.fullStream` → `.stream`；中间件 `specificationVersion: "v3"` 需实测 v7 是否仍接受                        | 主调用点，漏一处即全线不可用                                                                                                                                      |
 
 其余零散：`agent/agent.ts:5` 的 `experimental_output` → `output`（全仓 6 处）。
 

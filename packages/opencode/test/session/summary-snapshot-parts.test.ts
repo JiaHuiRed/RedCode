@@ -78,7 +78,11 @@ const step = Effect.fn("Test.step")(function* (
     type,
     ...(snapshot ? { snapshot } : {}),
     ...(type === "step-finish"
-      ? { reason: "stop", cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } } }
+      ? {
+          reason: "stop",
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
+        }
       : {}),
   } as unknown as MessageV2.Part)
 })

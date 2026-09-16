@@ -26,10 +26,10 @@ An AI coding assistant. **Two entry points, one engine** — same server, same s
   <img src="docs/assets/screenshot.png" width="760" alt="RedCode TUI screenshot">
 </p>
 
-| | |
-| --- | --- |
-| **TUI** `packages/opencode` | Terminal interface, single-file exe. A bare launch opens a workspace selector (mouse-clickable, scrollable, or type any path). Pluggable sidebar. |
-| **GUI** `packages/desktop` | Electron desktop window. Home screen carries a **usage dashboard**; sessions get diff review, file preview (image / audio / PDF), and a context-usage tab. |
+|                             |                                                                                                                                                            |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **TUI** `packages/opencode` | Terminal interface, single-file exe. A bare launch opens a workspace selector (mouse-clickable, scrollable, or type any path). Pluggable sidebar.          |
+| **GUI** `packages/desktop`  | Electron desktop window. Home screen carries a **usage dashboard**; sessions get diff review, file preview (image / audio / PDF), and a context-usage tab. |
 
 Reads code, writes code, fixes bugs, runs commands.
 
@@ -37,25 +37,25 @@ Reads code, writes code, fixes bugs, runs commands.
 
 ## 🧠 Core capabilities
 
-| Area | What you get |
-| --- | --- |
-| **Code understanding** | jCodeMunch / TypeGraph indexing, cross-file navigation and blast-radius analysis |
-| **Doing** | File read/write/edit · terminal execution · web search · vision (multimodal models read images directly; a subagent can also be delegated) |
-| **Models** | DeepSeek / OpenAI / Anthropic / GLM / Qwen / MiniMax / Ollama… assignable per role |
-| **Context** | Prefix cache freshness · automatic compaction · context usage visualization |
-| **Organization** | Session management · goal tracking · automated memory system · Skill system |
-| **Agents** | Two subagents (explore — read-only research · execute — read/write implementation) · custom AI personas |
-| **Safety** | Permission gating and guard rails — three postures below |
+| Area                   | What you get                                                                                                                               |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Code understanding** | jCodeMunch / TypeGraph indexing, cross-file navigation and blast-radius analysis                                                           |
+| **Doing**              | File read/write/edit · terminal execution · web search · vision (multimodal models read images directly; a subagent can also be delegated) |
+| **Models**             | DeepSeek / OpenAI / Anthropic / GLM / Qwen / MiniMax / Ollama… assignable per role                                                         |
+| **Context**            | Prefix cache freshness · automatic compaction · context usage visualization                                                                |
+| **Organization**       | Session management · goal tracking · automated memory system · Skill system                                                                |
+| **Agents**             | Two subagents (explore — read-only research · execute — read/write implementation) · custom AI personas                                    |
+| **Safety**             | Permission gating and guard rails — three postures below                                                                                   |
 
 ### Three permission postures
 
-The dropdown under the prompt box *is* the permission axis. The three postures **differ only in permissions** — same prompt, same model:
+The dropdown under the prompt box _is_ the permission axis. The three postures **differ only in permissions** — same prompt, same model:
 
-| Posture | What it can do |
-| --- | --- |
-| **Plan** 🟦 | Read and propose only. `edit: deny` — it can hand you a plan but cannot land it. |
+| Posture        | What it can do                                                                                                  |
+| -------------- | --------------------------------------------------------------------------------------------------------------- |
+| **Plan** 🟦    | Read and propose only. `edit: deny` — it can hand you a plan but cannot land it.                                |
 | **RedMind** 🟥 | The default. Acts, but asks first for destructive commands, directories outside the worktree, and `.env` reads. |
-| **Auto** 🟧 | No interruptions; everything above is auto-approved. Only for tasks you've already vetted. |
+| **Auto** 🟧    | No interruptions; everything above is auto-approved. Only for tasks you've already vetted.                      |
 
 ---
 
@@ -117,12 +117,12 @@ Open the `Network access` URL printed in the terminal from any browser on the sa
 
 Listed in load order — **later entries override earlier ones**:
 
-| Location | Purpose |
-|----------|---------|
-| `~/.redcode/redcode.jsonc` | Global config (cross-project) |
-| `~/.redcode/redcode.local.jsonc` | Machine-local overrides — absolute paths, VRAM-dependent model tiers, machine-only MCP servers. Keep it out of version control when syncing `~/.redcode/` across machines |
-| `project_dir/redcode.jsonc` | Project-level config |
-| `project_dir/.redcode/redcode.jsonc` | Project-level config (`redcode.local.jsonc` works here too, same precedence rule) |
+| Location                             | Purpose                                                                                                                                                                   |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `~/.redcode/redcode.jsonc`           | Global config (cross-project)                                                                                                                                             |
+| `~/.redcode/redcode.local.jsonc`     | Machine-local overrides — absolute paths, VRAM-dependent model tiers, machine-only MCP servers. Keep it out of version control when syncing `~/.redcode/` across machines |
+| `project_dir/redcode.jsonc`          | Project-level config                                                                                                                                                      |
+| `project_dir/.redcode/redcode.jsonc` | Project-level config (`redcode.local.jsonc` works here too, same precedence rule)                                                                                         |
 
 ### Add Custom Provider
 
@@ -135,14 +135,14 @@ Listed in load order — **later entries override earlier ones**:
       "name": "My Provider",
       "options": {
         "baseURL": "https://api.example.com/v1",
-        "apiKey": "sk-xxx"
+        "apiKey": "sk-xxx",
       },
       "models": {
-        "my-model": { "name": "My Model", "tool_call": true }
-      }
-    }
+        "my-model": { "name": "My Model", "tool_call": true },
+      },
+    },
   },
-  "model": "my-provider/my-model"
+  "model": "my-provider/my-model",
 }
 ```
 
@@ -156,16 +156,16 @@ Listed in load order — **later entries override earlier ones**:
       "command": ["npx", "tsx", "path/to/typegraph-mcp/server.ts"],
       "environment": {
         "TYPEGRAPH_PROJECT_ROOT": ".",
-        "TYPEGRAPH_TSCONFIG": "./tsconfig.json"
+        "TYPEGRAPH_TSCONFIG": "./tsconfig.json",
       },
-      "enabled": true
+      "enabled": true,
     },
     "jcodemunch": {
       "type": "local",
       "command": ["uvx", "jcodemunch-mcp"], // or: pipx run jcodemunch-mcp / pip install jcodemunch-mcp
-      "enabled": true
-    }
-  }
+      "enabled": true,
+    },
+  },
 }
 ```
 
@@ -176,24 +176,24 @@ Listed in load order — **later entries override earlier ones**:
 Full guides live in **[MANUAL.md](MANUAL.md)** (written in Chinese), covering:
 
 1. Quick start · 2. First-time setup (model / name / AI persona) · 3. Model configuration (adapters / switching / local Ollama)
-4. MCP servers (enabling preconfigured ones) · 5. AI persona system · 6. Memory system (two layers: indexed `MEMORY.md` injection + `supermemory.db` full-text store)
-7. Configuration reference (layers / permission gating / custom MCP) · 8. Built-in commands · 9. Skill system
-10. Privacy and multi-machine sync — including the **machine-local override layer** that solves the "same config, two machines, endless back-and-forth" loop
+2. MCP servers (enabling preconfigured ones) · 5. AI persona system · 6. Memory system (two layers: indexed `MEMORY.md` injection + `supermemory.db` full-text store)
+3. Configuration reference (layers / permission gating / custom MCP) · 8. Built-in commands · 9. Skill system
+4. Privacy and multi-machine sync — including the **machine-local override layer** that solves the "same config, two machines, endless back-and-forth" loop
 
 ---
 
 ## 🛠 Tech Stack
 
-| Layer | Technology |
-|-------|------------|
-| Runtime | Bun |
-| Language | TypeScript |
-| Terminal UI | SolidJS (OpenTUI) |
-| Desktop GUI | Electron + SolidJS |
-| AI SDK | Vercel AI SDK |
-| Database | SQLite (Drizzle ORM) |
-| Build | Turborepo (monorepo) |
-| MCP | TypeGraph + jCodeMunch |
+| Layer       | Technology             |
+| ----------- | ---------------------- |
+| Runtime     | Bun                    |
+| Language    | TypeScript             |
+| Terminal UI | SolidJS (OpenTUI)      |
+| Desktop GUI | Electron + SolidJS     |
+| AI SDK      | Vercel AI SDK          |
+| Database    | SQLite (Drizzle ORM)   |
+| Build       | Turborepo (monorepo)   |
+| MCP         | TypeGraph + jCodeMunch |
 
 ---
 

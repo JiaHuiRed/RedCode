@@ -463,7 +463,10 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
     // 260830 global 虚拟项目（worktree="/"、无 name/icon）不渲染在工作区列表，
     //   displayName 对其返回空串 = 空白行；桌面/浏览器种子里都不该出现它
     const enriched = createMemo(() =>
-      server.projects.list().filter((project) => project.worktree !== "/").map(enrich),
+      server.projects
+        .list()
+        .filter((project) => project.worktree !== "/")
+        .map(enrich),
     )
     const list = createMemo(() => {
       const projects = enriched()

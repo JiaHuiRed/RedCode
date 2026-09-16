@@ -9,12 +9,12 @@
 
 2026-09-03 性能体检的取证（打包版 0.10.x，15 次启动）：
 
-| 证据 | 值 |
-|---|---|
-| `compile-cache/v24.16.0-x64-<hash>/` 目录 | 09-01 建出来，此后 **0 个文件** |
-| `[sidecar-timing] import virtual:redcode-server` p50 | **1227ms** |
-| 同口径 0.9.x（启用缓存之前） | 1222ms |
-| 48 次退出中 `code 1 / reason: 'killed'` | **34 次** |
+| 证据                                                 | 值                              |
+| ---------------------------------------------------- | ------------------------------- |
+| `compile-cache/v24.16.0-x64-<hash>/` 目录            | 09-01 建出来，此后 **0 个文件** |
+| `[sidecar-timing] import virtual:redcode-server` p50 | **1227ms**                      |
+| 同口径 0.9.x（启用缓存之前）                         | 1222ms                          |
+| 48 次退出中 `code 1 / reason: 'killed'`              | **34 次**                       |
 
 也就是说 import 耗时一毫秒没省，而缓存目录是空的——目录被创建只说明
 `enableCompileCache()` 返回了 ENABLED，不说明有任何东西写进去。
@@ -39,14 +39,14 @@ utilityProcess，`main/index.ts` 的 `before-quit` 里是 `void killSidecar()`�
 
 同版本 Node（v24.16.0，与 Electron 42.4.1 内置一致）上用 2.36MB 的合成 ESM 模块验过机制：
 
-| 阶段 | 结果 |
-|---|---|
-| `enableCompileCache` 之后 | 子目录 1、文件 **0** |
-| import 之后（未 flush） | 文件 **0** |
-| 空转 1.5s（未 flush） | 文件 **0** |
-| `flushCompileCache()` | **3ms**，文件 1、2.44MB |
-| 下次进程 import（热） | 103ms → **26–28ms** |
-| 热态再 flush | 0ms（无新增即无操作） |
+| 阶段                      | 结果                    |
+| ------------------------- | ----------------------- |
+| `enableCompileCache` 之后 | 子目录 1、文件 **0**    |
+| import 之后（未 flush）   | 文件 **0**              |
+| 空转 1.5s（未 flush）     | 文件 **0**              |
+| `flushCompileCache()`     | **3ms**，文件 1、2.44MB |
+| 下次进程 import（热）     | 103ms → **26–28ms**     |
+| 热态再 flush              | 0ms（无新增即无操作）   |
 
 真实 bundle 的收益会小于这个合成模块的 4 倍——它 1.3 秒里大部分是模块**执行**
 不是编译，编译缓存只能吃掉编译那部分，0.10.0 量到的量级是约 260ms。

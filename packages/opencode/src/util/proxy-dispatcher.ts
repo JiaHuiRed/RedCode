@@ -113,7 +113,8 @@ export function installGlobalProxy(): (() => void) | undefined {
   // 判据与 shouldProxy 同源——两者一旦分歧，就会出现「dispatcher 隧道转发、
   // 而调用方以为直连」这类查不出来的现象。
   const agent = new Agent({
-    factory: (origin, opts) => (shouldProxy(String(origin)) ? new ProxyAgent({ ...opts, uri: proxy }) : new Agent(opts)),
+    factory: (origin, opts) =>
+      shouldProxy(String(origin)) ? new ProxyAgent({ ...opts, uri: proxy }) : new Agent(opts),
   })
   setGlobalDispatcher(agent)
   installed = { proxy, previous }

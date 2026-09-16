@@ -10,10 +10,10 @@
 
 ## 战线一览
 
-| 战线 | 状态 | 结论 |
-| --- | --- | --- |
-| HTTP API v1/v2 | **已关闭** | 不是半截迁移，是两个受众 |
-| UI 组件 v1/v2 | **待排期** | 地基铺了房子没盖，应做完不应砍 |
+| 战线             | 状态                   | 结论                                 |
+| ---------------- | ---------------------- | ------------------------------------ |
+| HTTP API v1/v2   | **已关闭**             | 不是半截迁移，是两个受众             |
+| UI 组件 v1/v2    | **待排期**             | 地基铺了房子没盖，应做完不应砍       |
 | 会话事件系统双写 | **已摘（2026-08-19）** | 双写摘除、退回单写；详见下节执行记录 |
 
 ---
@@ -26,9 +26,9 @@
 
 > Smoke test: **v1 SDK (the plugin contract)** can actually reach core endpoints … **v1 generation has been frozen since #5216 (2025-12-07)**
 
-| | v1（未版本化，2496 行 / 19 组） | v2（327 行 / 5 组） |
-| --- | --- | --- |
-| 面向 | **插件契约**，已冻结 | 一方客户端 |
+|        | v1（未版本化，2496 行 / 19 组）                                                                     | v2（327 行 / 5 组）          |
+| ------ | --------------------------------------------------------------------------------------------------- | ---------------------------- |
+| 面向   | **插件契约**，已冻结                                                                                | 一方客户端                   |
 | 消费者 | plugin 宿主、`packages/plugin`、`packages/slack`、第三方插件（含自家 DCP 经 `@opencode-ai/plugin`） | app **72** 处、TUI **43** 处 |
 
 app 与 TUI 已 **100% 在 v2 上，零处非 v2**。两套服务两个受众，「迁移完成」等于砸掉全部插件。`packages/plugin/src/index.ts` 同时从两边取类型（多数走 v1，`Provider`/`Model`/`Auth` 走 v2）是刻意的混合。
@@ -41,13 +41,13 @@ app 与 TUI 已 **100% 在 v2 上，零处非 v2**。两套服务两个受众，
 
 **现状：地基铺了，房子没盖。**
 
-| | 数量 |
-| --- | --- |
-| 老组件 | 63 |
-| v2 组件（已建） | 27 |
+|                             | 数量                                                                 |
+| --------------------------- | -------------------------------------------------------------------- |
+| 老组件                      | 63                                                                   |
+| v2 组件（已建）             | 27                                                                   |
 | v2 组件（app/TUI 真正用到） | **5**（icon / icon-button-v2 / avatar-v2 / wordmark-v2 / button-v2） |
-| 未被使用的 v2 组件 | **22，合计 2448 行**（不含 stories/css） |
-| `v2-*` token 在 app 的用量 | **101 处 / 9 文件** |
+| 未被使用的 v2 组件          | **22，合计 2448 行**（不含 stories/css）                             |
+| `v2-*` token 在 app 的用量  | **101 处 / 9 文件**                                                  |
 
 token 层已铺开而组件层几乎没动——这是「应做完」的依据：砍掉组件层也**砍不掉 token 层**，砍完仍是混合状态，只是少了半套可用件。
 
@@ -62,10 +62,10 @@ tool-error-card / line-comment / basic-tool 各 0
 
 **API 不是等价替换**（抽查）：
 
-| | 老 | v2 |
-| --- | --- | --- |
+|        | 老                                       | v2                                                 |
+| ------ | ---------------------------------------- | -------------------------------------------------- |
 | Button | `variant: primary \| secondary \| ghost` | `ButtonV2` `variant: neutral \| contrast \| ghost` |
-| Toast | `showToast()` | `showToastV2()` |
+| Toast  | `showToast()`                            | `showToastV2()`                                    |
 
 导出符号名、variant 枚举都变了 —— **没有批量替换的可能**，每个调用点要人判断新 variant，这是设计决策不是重命名。
 
@@ -84,18 +84,19 @@ tool-error-card / line-comment / basic-tool 各 0
 
 ## 战线 3：会话事件系统双写 —— 待判决
 
-| | 数量 |
-| --- | --- |
-| `experimentalEventSystem` 分支 | **23 处 / 6 文件** |
-| 涉及文件 | `session/processor.ts`、`session/prompt.ts`、`session/prompt/shell.ts`、`session/compaction.ts`、`cli/cmd/tui/plugin/internal.ts`、`effect/runtime-flags.ts` |
-| v2 会话实现 | `src/v2/session.ts` 372 行 |
-| 投影层 | `session/projectors.ts` + `projectors-next.ts` 合计 403 行 |
-| 规格文档 | `specs/v2/`（api.ts、message-shape.md、notifications.md）+ `src/v2/provider-parity-checklist.md` |
-| 默认状态 | **关**（`REDCODE_EXPERIMENTAL_EVENT_SYSTEM`） |
+|                                | 数量                                                                                                                                                         |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `experimentalEventSystem` 分支 | **23 处 / 6 文件**                                                                                                                                           |
+| 涉及文件                       | `session/processor.ts`、`session/prompt.ts`、`session/prompt/shell.ts`、`session/compaction.ts`、`cli/cmd/tui/plugin/internal.ts`、`effect/runtime-flags.ts` |
+| v2 会话实现                    | `src/v2/session.ts` 372 行                                                                                                                                   |
+| 投影层                         | `session/projectors.ts` + `projectors-next.ts` 合计 403 行                                                                                                   |
+| 规格文档                       | `specs/v2/`（api.ts、message-shape.md、notifications.md）+ `src/v2/provider-parity-checklist.md`                                                             |
+| 默认状态                       | **关**（`REDCODE_EXPERIMENTAL_EVENT_SYSTEM`）                                                                                                                |
 
 **代价不在行数，在那 23 个分支落在 `processor.ts` 与 `prompt.ts`** —— 全仓改动最频繁的两个文件。每次改这两处都要判断「双写那边跟不跟」，而绕过是零成本的，于是两边会悄悄不一致。
 
 **两条路**：
+
 - **排期打开** —— 需先跑通 `provider-parity-checklist.md`，把默认值翻正。
 - **摘掉双写退回单写** —— 删 23 个分支，`src/v2/` 与 `projectors-next.ts` 保留或移入 `specs/`，`specs/v2/` 全部保留备将来。
 
@@ -120,6 +121,7 @@ tool-error-card / line-comment / basic-tool 各 0
      > `client.v2.session.*`（`sdk.gen.ts` 的 `class Session3`，经 `class V2` 挂载）。
      > 「客户端无法调用」不成立，成立的只有「没有客户端在调用」——**零调用方，不是零能力**。
      > 这条写在「记下防复述」里，反而成了最容易被复述的错误，08-20 就是照它下的判断。
+
   3. 「SDK v2」≠「路由组 v2」：sdk/js/src/v2 是**整个 API** 的新生成客户端（app 72 处 / TUI 43 处
      指的是它）；路由组 v2 是事件系统实验面。此前把两者混在一起说了。
 - 既有失败不背锅：`snapshot-tool-race` 的 "non-empty session diff" 在 HEAD 基线上同样失败，
@@ -136,18 +138,19 @@ tool-error-card / line-comment / basic-tool 各 0
   对任何真实会话都返回空数组。它在 openapi 里、SDK 里都有，只是**答案是空的**。
 - 替代品已落地：`GET /session/:sessionID/context-inspect`（`session/context-snapshot.ts`），
   在请求真正发出的那一刻记账，不依赖 `session_message`。
+
 ### `/v2` 路由组体检（2026-08-20）
 
 9 个操作，**零调用方**（`client.v2.` 全仓搜遍 app / TUI / desktop / ui / vscode-sdk 无命中；
 `SessionV2.list` 里那句 `This is a load bearing sort, desktop relies on this` 是上游带来的，
 在本仓不成立）：
 
-| 端点 | 实现 | 状态 |
-| --- | --- | --- |
-| `GET /api/session` | 读真 `session` 表 | 能用 |
-| `GET /api/model` · `/api/provider` · `/api/provider/{id}` | 读真 Catalog / provider | 能用 |
-| `GET /api/session/{id}/message` · `/context` | 读 `session_message` 投影 | **空壳** |
-| `POST /api/session/{id}/prompt` · `/compact` · `/wait` | 恒抛 `OperationUnavailableError` | **恒 503** |
+| 端点                                                      | 实现                             | 状态       |
+| --------------------------------------------------------- | -------------------------------- | ---------- |
+| `GET /api/session`                                        | 读真 `session` 表                | 能用       |
+| `GET /api/model` · `/api/provider` · `/api/provider/{id}` | 读真 Catalog / provider          | 能用       |
+| `GET /api/session/{id}/message` · `/context`              | 读 `session_message` 投影        | **空壳**   |
+| `POST /api/session/{id}/prompt` · `/compact` · `/wait`    | 恒抛 `OperationUnavailableError` | **恒 503** |
 
 **判决：标 `deprecated` 而不是删。** 后五个已加 `deprecated: true` + 说明「未实现 / 返回空 +
 替代端点」，生成的 SDK 方法带 `@deprecated`，编辑器里直接划掉。理由是 `specs/v2/api.ts` 描述

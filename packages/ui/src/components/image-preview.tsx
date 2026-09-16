@@ -17,16 +17,24 @@ export interface ImageGalleryPreviewProps {
 
 export function ImagePreview(props: ImagePreviewProps | ImageGalleryPreviewProps) {
   const i18n = useI18n()
-  const images = () => "images" in props ? props.images : [{ src: props.src, alt: (props as ImagePreviewProps).alt }]
-  const [index, setIndex] = createSignal("initialIndex" in props ? (props as ImageGalleryPreviewProps).initialIndex ?? 0 : 0)
+  const images = () => ("images" in props ? props.images : [{ src: props.src, alt: (props as ImagePreviewProps).alt }])
+  const [index, setIndex] = createSignal(
+    "initialIndex" in props ? ((props as ImageGalleryPreviewProps).initialIndex ?? 0) : 0,
+  )
   const current = () => images()[index()]
   const hasPrev = () => index() > 0
   const hasNext = () => index() < images().length - 1
   const total = () => images().length
 
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "ArrowLeft" && hasPrev()) { e.stopPropagation(); setIndex((i) => i - 1) }
-    if (e.key === "ArrowRight" && hasNext()) { e.stopPropagation(); setIndex((i) => i + 1) }
+    if (e.key === "ArrowLeft" && hasPrev()) {
+      e.stopPropagation()
+      setIndex((i) => i - 1)
+    }
+    if (e.key === "ArrowRight" && hasNext()) {
+      e.stopPropagation()
+      setIndex((i) => i + 1)
+    }
   }
 
   return (
@@ -49,11 +57,7 @@ export function ImagePreview(props: ImagePreviewProps | ImageGalleryPreviewProps
           </div>
           <div data-slot="image-preview-body">
             <Show when={hasPrev()}>
-              <button
-                type="button"
-                data-slot="image-preview-nav-prev"
-                onClick={() => setIndex((i) => i - 1)}
-              >
+              <button type="button" data-slot="image-preview-nav-prev" onClick={() => setIndex((i) => i - 1)}>
                 <IconButton icon="chevron-left" variant="ghost" size="large" as="span" />
               </button>
             </Show>
@@ -65,12 +69,14 @@ export function ImagePreview(props: ImagePreviewProps | ImageGalleryPreviewProps
               decoding="async"
             />
             <Show when={hasNext()}>
-              <button
-                type="button"
-                data-slot="image-preview-nav-next"
-                onClick={() => setIndex((i) => i + 1)}
-              >
-                <IconButton icon="chevron-left" variant="ghost" size="large" as="span" style={{ transform: "rotate(180deg)" }} />
+              <button type="button" data-slot="image-preview-nav-next" onClick={() => setIndex((i) => i + 1)}>
+                <IconButton
+                  icon="chevron-left"
+                  variant="ghost"
+                  size="large"
+                  as="span"
+                  style={{ transform: "rotate(180deg)" }}
+                />
               </button>
             </Show>
           </div>

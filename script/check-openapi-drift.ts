@@ -54,7 +54,13 @@ const [fresh, stderr, exitCode] = await Promise.all([
 if (exitCode !== 0 || fresh.length === 0) {
   fail([
     `generate 执行失败（exit=${exitCode}${proc.killed ? "，已超时" : ""}）`,
-    ...(stderr.trim() ? stderr.trim().split("\n").slice(0, 15).map((l) => `  ${l}`) : ["  （无 stderr 输出）"]),
+    ...(stderr.trim()
+      ? stderr
+          .trim()
+          .split("\n")
+          .slice(0, 15)
+          .map((l) => `  ${l}`)
+      : ["  （无 stderr 输出）"]),
   ])
 }
 

@@ -26,10 +26,10 @@ AI 编程助手。**两个入口、同一引擎**——同一个服务端、同�
   <img src="docs/assets/screenshot.png" width="760" alt="RedCode TUI 截图">
 </p>
 
-| | |
-| --- | --- |
+|                             |                                                                                                                  |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | **TUI** `packages/opencode` | 终端界面，单文件 exe。无参数启动会先出工作区选择器（鼠标可点、滚轮可滚，也能手输任意目录）。侧边栏可插件化扩展。 |
-| **GUI** `packages/desktop` | Electron 桌面窗口。首页带**用量看板**，会话内有 diff 审阅、文件预览（图片 / 音频 / PDF）、上下文用量页。 |
+| **GUI** `packages/desktop`  | Electron 桌面窗口。首页带**用量看板**，会话内有 diff 审阅、文件预览（图片 / 音频 / PDF）、上下文用量页。         |
 
 读代码、写代码、改 bug、跑命令。你说中文，它干活。
 
@@ -37,25 +37,25 @@ AI 编程助手。**两个入口、同一引擎**——同一个服务端、同�
 
 ## 🧠 核心能力
 
-| 类别 | 内容 |
-| --- | --- |
-| **代码理解** | jCodeMunch / TypeGraph 索引，跨文件跳转与影响面分析 |
-| **动手** | 文件读写编辑 · 终端执行 · Web 搜索 · 视觉分析（多模态模型直接识图，也可指定子代理代劳） |
-| **多模型** | DeepSeek / OpenAI / Anthropic / GLM / Qwen / MiniMax / Ollama… 按角色分配不同模型 |
-| **上下文** | 前缀缓存保鲜 · 自动压缩 · 上下文用量可视化 |
-| **组织** | 会话管理 · 目标管理 · 自动化记忆系统 · Skill 技能系统 |
-| **代理** | 两个子代理（explore 只读调研 · execute 读写执行）· 自定义 AI 人格 |
-| **安全** | 权限门控与防护环，三档姿态见下 |
+| 类别         | 内容                                                                                    |
+| ------------ | --------------------------------------------------------------------------------------- |
+| **代码理解** | jCodeMunch / TypeGraph 索引，跨文件跳转与影响面分析                                     |
+| **动手**     | 文件读写编辑 · 终端执行 · Web 搜索 · 视觉分析（多模态模型直接识图，也可指定子代理代劳） |
+| **多模型**   | DeepSeek / OpenAI / Anthropic / GLM / Qwen / MiniMax / Ollama… 按角色分配不同模型       |
+| **上下文**   | 前缀缓存保鲜 · 自动压缩 · 上下文用量可视化                                              |
+| **组织**     | 会话管理 · 目标管理 · 自动化记忆系统 · Skill 技能系统                                   |
+| **代理**     | 两个子代理（explore 只读调研 · execute 读写执行）· 自定义 AI 人格                       |
+| **安全**     | 权限门控与防护环，三档姿态见下                                                          |
 
 ### 三档权限姿态
 
 输入框下拉那一栏就是权限轴，三档**只差权限**，不换提示词也不换模型：
 
-| 姿态 | 能做什么 |
-| --- | --- |
-| **Plan** 🟦 | 只读、只建议。`edit: deny`，所以它给得出方案但落不了地。 |
+| 姿态           | 能做什么                                                            |
+| -------------- | ------------------------------------------------------------------- |
+| **Plan** 🟦    | 只读、只建议。`edit: deny`，所以它给得出方案但落不了地。            |
 | **RedMind** 🟥 | 默认档。动手，但破坏性操作、工作树之外的目录、`.env` 读取会先问你。 |
-| **Auto** 🟧 | 不打断，上面那些全部自动放行。只适合你已经确认安全的任务。 |
+| **Auto** 🟧    | 不打断，上面那些全部自动放行。只适合你已经确认安全的任务。          |
 
 ---
 
@@ -119,12 +119,12 @@ redcode web --hostname 0.0.0.0
 
 按加载顺序列出——**后面的覆盖前面的**：
 
-| 位置 | 用途 |
-| --- | --- |
-| `~/.redcode/redcode.jsonc` | 全局配置（跨项目） |
-| `~/.redcode/redcode.local.jsonc` | 机器本地覆盖层——绝对路径、按显存挑的模型档位、只属于这台机器的 MCP。同步 `~/.redcode/` 时把它排除在版本控制外 |
-| `项目目录/redcode.jsonc` | 项目级配置 |
-| `项目目录/.redcode/redcode.jsonc` | 项目级配置（`redcode.local.jsonc` 在这里同样生效，优先级规则一致） |
+| 位置                              | 用途                                                                                                          |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `~/.redcode/redcode.jsonc`        | 全局配置（跨项目）                                                                                            |
+| `~/.redcode/redcode.local.jsonc`  | 机器本地覆盖层——绝对路径、按显存挑的模型档位、只属于这台机器的 MCP。同步 `~/.redcode/` 时把它排除在版本控制外 |
+| `项目目录/redcode.jsonc`          | 项目级配置                                                                                                    |
+| `项目目录/.redcode/redcode.jsonc` | 项目级配置（`redcode.local.jsonc` 在这里同样生效，优先级规则一致）                                            |
 
 ### 添加自定义 Provider
 
@@ -138,14 +138,14 @@ redcode web --hostname 0.0.0.0
       "name": "My Provider",
       "options": {
         "baseURL": "https://api.example.com/v1",
-        "apiKey": "sk-xxx"
+        "apiKey": "sk-xxx",
       },
       "models": {
-        "my-model": { "name": "My Model", "tool_call": true }
-      }
-    }
+        "my-model": { "name": "My Model", "tool_call": true },
+      },
+    },
   },
-  "model": "my-provider/my-model"
+  "model": "my-provider/my-model",
 }
 ```
 
@@ -160,24 +160,24 @@ redcode web --hostname 0.0.0.0
 全部操作指南在 **[MANUAL.md](MANUAL.md)**，涵盖：
 
 1. 快速启动 · 2. 首次设置（模型 / 称呼 / AI 人格）· 3. 配置模型（适配器 / 切换 / 本地 Ollama）
-4. MCP 服务器（预配置服务的启用）· 5. AI 人格系统 · 6. 记忆系统（双层：`MEMORY.md` 索引注入 + `supermemory.db` 全文库）
-7. 配置详解（配置层次 / 权限门控 / 自定义 MCP）· 8. 内置命令 · 9. Skill 技能系统
-10. 隐私与多机同步——含**机器本地覆盖层**，解决"同一份配置在两台机器上来回改"的死循环
+2. MCP 服务器（预配置服务的启用）· 5. AI 人格系统 · 6. 记忆系统（双层：`MEMORY.md` 索引注入 + `supermemory.db` 全文库）
+3. 配置详解（配置层次 / 权限门控 / 自定义 MCP）· 8. 内置命令 · 9. Skill 技能系统
+4. 隐私与多机同步——含**机器本地覆盖层**，解决"同一份配置在两台机器上来回改"的死循环
 
 ---
 
 ## 🛠 技术栈
 
-| 层 | 技术 |
-| --- | --- |
-| 运行时 | Bun |
-| 语言 | TypeScript |
-| 终端 UI | SolidJS (OpenTUI) |
-| 桌面 GUI | Electron + SolidJS |
-| AI SDK | Vercel AI SDK |
-| 数据库 | SQLite (Drizzle ORM) |
-| 构建 | Turborepo（monorepo） |
-| MCP | TypeGraph + jCodeMunch |
+| 层       | 技术                   |
+| -------- | ---------------------- |
+| 运行时   | Bun                    |
+| 语言     | TypeScript             |
+| 终端 UI  | SolidJS (OpenTUI)      |
+| 桌面 GUI | Electron + SolidJS     |
+| AI SDK   | Vercel AI SDK          |
+| 数据库   | SQLite (Drizzle ORM)   |
+| 构建     | Turborepo（monorepo）  |
+| MCP      | TypeGraph + jCodeMunch |
 
 ---
 

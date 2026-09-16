@@ -5,10 +5,12 @@
 - Searches are performed automatically within a single API call
 
 Usage notes:
-  - Supports live crawling modes when available: 'fallback' (backup if cached unavailable) or 'preferred' (prioritize live crawling)
-  - Search types when available: 'auto' (balanced), 'fast' (quick results), 'deep' (comprehensive search)
-  - Configurable context length for optimal LLM integration
-  - Domain filtering and advanced search options available
+
+- Supports live crawling modes when available: 'fallback' (backup if cached unavailable) or 'preferred' (prioritize live crawling)
+- Search types when available: 'auto' (balanced), 'fast' (quick results), 'deep' (comprehensive search)
+- Configurable context length for optimal LLM integration
+- Domain filtering and advanced search options available
 
 The current year is {{year}}. You MUST use this year when searching for recent information or current events
+
 - Example: If the current year is 2026 and the user asks for "latest AI news", search for "AI news 2026", NOT "AI news 2025"

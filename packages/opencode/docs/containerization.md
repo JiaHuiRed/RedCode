@@ -53,7 +53,7 @@ escapes, isolates at the kernel level), run RedCode inside a disposable VM:
 
 ## Pattern 3 (not implemented): route only tool calls into isolation
 
-Both patterns above put the *entire* process — TUI/GUI rendering, session
+Both patterns above put the _entire_ process — TUI/GUI rendering, session
 state, and provider auth — inside the boundary, which means credentials
 have to enter the sandbox too. A tighter design keeps `redcode` and provider
 auth on the host, and routes only the tools that touch the outside world

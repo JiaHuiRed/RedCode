@@ -120,36 +120,35 @@ describe("GLM thinking 参数注入", () => {
   })
 })
 
+// 260802 Red: deepseek-v4 系列最强档按 provider 区分——官方 DeepSeek API 与
+// opencode-go 聚合供应商支持 max；sensenova 只认 low/medium/high/xhigh/none，
+// 用 xhigh 代替 max 作最强档。
+describe("deepseek-v4 走 openai-compatible 的档位", () => {
+  const ds = (id: string, providerID: string) =>
+    ({
+      id,
+      providerID,
+      api: { id, npm: "@ai-sdk/openai-compatible" },
+      capabilities: { reasoning: true, temperature: true },
+      limit: { context: 1_000_000, output: 64_000 },
+    }) as Provider.Model
 
-  // 260802 Red: deepseek-v4 系列最强档按 provider 区分——官方 DeepSeek API 与
-  // opencode-go 聚合供应商支持 max；sensenova 只认 low/medium/high/xhigh/none，
-  // 用 xhigh 代替 max 作最强档。
-  describe("deepseek-v4 走 openai-compatible 的档位", () => {
-    const ds = (id: string, providerID: string) =>
-      ({
-        id,
-        providerID,
-        api: { id, npm: "@ai-sdk/openai-compatible" },
-        capabilities: { reasoning: true, temperature: true },
-        limit: { context: 1_000_000, output: 64_000 },
-      }) as Provider.Model
+  test("官方 deepseek 的 deepseek-v4-pro 保留 max 档", () => {
+    const v = ProviderTransform.variants(ds("deepseek-v4-pro", "deepseek"))
+    expect(v["max"]).toEqual({ reasoningEffort: "max" })
+  })
 
-    test("官方 deepseek 的 deepseek-v4-pro 保留 max 档", () => {
-      const v = ProviderTransform.variants(ds("deepseek-v4-pro", "deepseek"))
-      expect(v["max"]).toEqual({ reasoningEffort: "max" })
-    })
+  test("opencode-go 聚合供应商的 deepseek-v4 也保留 max 档", () => {
+    const v = ProviderTransform.variants(ds("deepseek-v4-flash", "opencode-go"))
+    expect(v["max"]).toEqual({ reasoningEffort: "max" })
+  })
 
-    test("opencode-go 聚合供应商的 deepseek-v4 也保留 max 档", () => {
-      const v = ProviderTransform.variants(ds("deepseek-v4-flash", "opencode-go"))
-      expect(v["max"]).toEqual({ reasoningEffort: "max" })
-    })
-
-    test("sensenova 的 deepseek-v4-flash 用 xhigh 代替 max（API 只认 low/medium/high/xhigh/none）", () => {
-      const v = ProviderTransform.variants(ds("deepseek-v4-flash", "sensenova"))
-      expect(Object.keys(v)).toEqual(["low", "medium", "high", "xhigh"])
-      expect(v["xhigh"]).toEqual({ reasoningEffort: "xhigh" })
-      expect(v["max"]).toBeUndefined()
-    })
+  test("sensenova 的 deepseek-v4-flash 用 xhigh 代替 max（API 只认 low/medium/high/xhigh/none）", () => {
+    const v = ProviderTransform.variants(ds("deepseek-v4-flash", "sensenova"))
+    expect(Object.keys(v)).toEqual(["low", "medium", "high", "xhigh"])
+    expect(v["xhigh"]).toEqual({ reasoningEffort: "xhigh" })
+    expect(v["max"]).toBeUndefined()
+  })
 })
 
 // 260814 Red 推理档位数据驱动（models.dev reasoning_options）——决策：数据打底、硬编码表覆盖。
@@ -192,7 +191,12 @@ describe("reasoning_options 数据驱动档位", () => {
 
   test("deepseek-v4 校准表压住错误数据", () => {
     const v = ProviderTransform.variants(
-      make("deepseek-v4-pro", [{ type: "effort", values: ["wrong-a", "wrong-b"] }], "@ai-sdk/openai-compatible", "deepseek"),
+      make(
+        "deepseek-v4-pro",
+        [{ type: "effort", values: ["wrong-a", "wrong-b"] }],
+        "@ai-sdk/openai-compatible",
+        "deepseek",
+      ),
     )
     expect(Object.keys(v)).toEqual(["low", "high", "max"])
   })
@@ -210,7 +214,9 @@ describe("reasoning_options 数据驱动档位", () => {
   })
 
   test("未知 npm + effort 数据：数据是唯一线索，生效", () => {
-    const v = ProviderTransform.variants(make("novel-model", [{ type: "effort", values: ["low", "high"] }], "@ai-sdk/brand-new"))
+    const v = ProviderTransform.variants(
+      make("novel-model", [{ type: "effort", values: ["low", "high"] }], "@ai-sdk/brand-new"),
+    )
     expect(Object.keys(v)).toEqual(["low", "high"])
   })
 
@@ -219,14 +225,22 @@ describe("reasoning_options 数据驱动档位", () => {
   })
 
   test("垃圾数据不炸：非数组 / 空 values / 非字符串值 / 空字符串 全部退回硬编码", () => {
-    for (const junk of ["effort", { type: "effort" }, [{ type: "effort", values: [] }], [{ type: "effort", values: [42, ""] }], [null]]) {
+    for (const junk of [
+      "effort",
+      { type: "effort" },
+      [{ type: "effort", values: [] }],
+      [{ type: "effort", values: [42, ""] }],
+      [null],
+    ]) {
       const v = ProviderTransform.variants(make("future-model-9", junk))
       expect(Object.keys(v)).toEqual(["low", "medium", "high"])
     }
   })
 
   test("重复档位值去重", () => {
-    const v = ProviderTransform.variants(make("future-model-9", [{ type: "effort", values: ["high", "high", null, null] }]))
+    const v = ProviderTransform.variants(
+      make("future-model-9", [{ type: "effort", values: ["high", "high", null, null] }]),
+    )
     expect(Object.keys(v)).toEqual(["high", "none"])
   })
 })

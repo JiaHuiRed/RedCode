@@ -89,12 +89,7 @@ export namespace AppFileSystem {
         return
       } catch (cause) {
         const code = (cause as NodeJS.ErrnoException).code
-        if (
-          platform !== "win32" ||
-          !code ||
-          !ATOMIC_RETRY_CODES.has(code) ||
-          attempt >= ATOMIC_RETRY_DELAYS.length
-        )
+        if (platform !== "win32" || !code || !ATOMIC_RETRY_CODES.has(code) || attempt >= ATOMIC_RETRY_DELAYS.length)
           throw cause
         await sleep(ATOMIC_RETRY_DELAYS[attempt]!)
       }

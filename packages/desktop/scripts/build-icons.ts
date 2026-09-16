@@ -52,8 +52,7 @@ async function findBadges(file: string): Promise<Box[]> {
   const { data, info } = await sharp(file).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
   const { width: W, height: H, channels: C } = info
   const colHas = new Array<boolean>(W).fill(false)
-  for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++) if (data[(y * W + x) * C + 3]! > ALPHA_MIN) colHas[x] = true
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (data[(y * W + x) * C + 3]! > ALPHA_MIN) colHas[x] = true
 
   const runs: [number, number][] = []
   let start = -1
@@ -164,6 +163,8 @@ for (const [i, box] of badges.entries()) {
       }
       fs.writeFileSync(path.join(dir, "128x128@2x.png"), await render(full, 256, false))
     }
-    console.log(`gui → icons/{${CHANNELS.join(",")}}/icon.ico  ${frames.length} 帧  ${(ico.length / 1024).toFixed(0)}KB`)
+    console.log(
+      `gui → icons/{${CHANNELS.join(",")}}/icon.ico  ${frames.length} 帧  ${(ico.length / 1024).toFixed(0)}KB`,
+    )
   }
 }

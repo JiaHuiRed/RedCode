@@ -99,9 +99,7 @@ export const layer = Layer.effect(
           const destExists = yield* fs.existsSafe(destSkillDir)
           // 目标目录已经有东西（构建机上 sync-home.bat 拷过）就不用吵
           if (!destExists)
-            yield* Effect.logWarning(
-              `skill seeding skipped: no seed/skill found (tried ${candidates.join(", ")})`,
-            )
+            yield* Effect.logWarning(`skill seeding skipped: no seed/skill found (tried ${candidates.join(", ")})`)
           return
         }
         yield* fs.ensureDir(destSkillDir)

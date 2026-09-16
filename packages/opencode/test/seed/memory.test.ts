@@ -26,11 +26,7 @@ function makeFixture(entries: Array<{ id: string; content: string }>) {
   const db = path.join(dir, "supermemory.db")
 
   const numbers = [...new Set(entries.map((entry) => entry.content.match(/^#(\d+)/)![1]))]
-  writeFileSync(
-    md,
-    numbers.map((number) => `#${number} 测试条目（260913）`).join("\n") + "\n",
-    "utf-8",
-  )
+  writeFileSync(md, numbers.map((number) => `#${number} 测试条目（260913）`).join("\n") + "\n", "utf-8")
 
   const sqlite = new Database(db)
   sqlite.exec("CREATE TABLE memories (id TEXT PRIMARY KEY, project TEXT, content TEXT)")

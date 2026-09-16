@@ -271,20 +271,51 @@ describe("Timeline.constructMessageRows — 非活动轮对 status 不敏感", (
   const shapes: Array<[string, () => ReturnType<typeof Timeline.constructMessageRows>[]]> = [
     [
       "有 assistant 骨架但无可渲染 parts",
-      () => STATUSES.map((st) => Timeline.constructMessageRows(userMessage("u1", 1), () => [], [assistantMessage("a1", 2, "u1")], 0, false, st, false)),
+      () =>
+        STATUSES.map((st) =>
+          Timeline.constructMessageRows(
+            userMessage("u1", 1),
+            () => [],
+            [assistantMessage("a1", 2, "u1")],
+            0,
+            false,
+            st,
+            false,
+          ),
+        ),
     ],
     [
       "正常一问一答",
       () => {
         const parts = (id: string) => (id === "a1" ? [textPart("p1", "a1")] : [])
-        return STATUSES.map((st) => Timeline.constructMessageRows(userMessage("u1", 1), parts, [assistantMessage("a1", 2, "u1")], 0, false, st, false))
+        return STATUSES.map((st) =>
+          Timeline.constructMessageRows(
+            userMessage("u1", 1),
+            parts,
+            [assistantMessage("a1", 2, "u1")],
+            0,
+            false,
+            st,
+            false,
+          ),
+        )
       },
     ],
     [
       "带工具调用",
       () => {
         const parts = (id: string) => (id === "a1" ? [textPart("p1", "a1"), toolPart("p2", "a1")] : [])
-        return STATUSES.map((st) => Timeline.constructMessageRows(userMessage("u1", 1), parts, [assistantMessage("a1", 2, "u1")], 1, true, st, false))
+        return STATUSES.map((st) =>
+          Timeline.constructMessageRows(
+            userMessage("u1", 1),
+            parts,
+            [assistantMessage("a1", 2, "u1")],
+            1,
+            true,
+            st,
+            false,
+          ),
+        )
       },
     ],
     [
@@ -294,12 +325,15 @@ describe("Timeline.constructMessageRows — 非活动轮对 status 不敏感", (
           ...userMessage("u1", 1),
           summary: { diffs: [{ file: "a.ts", added: 3, removed: 1 }] },
         } as unknown as UserMessage
-        return STATUSES.map((st) => Timeline.constructMessageRows(withDiffs, () => [], [assistantMessage("a1", 2, "u1")], 0, false, st, false))
+        return STATUSES.map((st) =>
+          Timeline.constructMessageRows(withDiffs, () => [], [assistantMessage("a1", 2, "u1")], 0, false, st, false),
+        )
       },
     ],
     [
       "无 assistant 消息",
-      () => STATUSES.map((st) => Timeline.constructMessageRows(userMessage("u1", 1), () => [], [], 0, false, st, false)),
+      () =>
+        STATUSES.map((st) => Timeline.constructMessageRows(userMessage("u1", 1), () => [], [], 0, false, st, false)),
     ],
   ]
 
@@ -316,9 +350,33 @@ describe("Timeline.constructMessageRows — 非活动轮对 status 不敏感", (
   }
 
   test("对照：活动轮对 status 是敏感的（否则上面那组是空断言）", () => {
-    const idle = Timeline.constructMessageRows(userMessage("u1", 1), () => [], [assistantMessage("a1", 2, "u1")], 0, false, "idle", true)
-    const busy = Timeline.constructMessageRows(userMessage("u1", 1), () => [], [assistantMessage("a1", 2, "u1")], 0, false, "busy", true)
-    const retry = Timeline.constructMessageRows(userMessage("u1", 1), () => [], [assistantMessage("a1", 2, "u1")], 0, false, "retry", true)
+    const idle = Timeline.constructMessageRows(
+      userMessage("u1", 1),
+      () => [],
+      [assistantMessage("a1", 2, "u1")],
+      0,
+      false,
+      "idle",
+      true,
+    )
+    const busy = Timeline.constructMessageRows(
+      userMessage("u1", 1),
+      () => [],
+      [assistantMessage("a1", 2, "u1")],
+      0,
+      false,
+      "busy",
+      true,
+    )
+    const retry = Timeline.constructMessageRows(
+      userMessage("u1", 1),
+      () => [],
+      [assistantMessage("a1", 2, "u1")],
+      0,
+      false,
+      "retry",
+      true,
+    )
     expect(tags(idle)).not.toEqual(tags(busy))
     expect(tags(retry)).not.toEqual(tags(idle))
   })

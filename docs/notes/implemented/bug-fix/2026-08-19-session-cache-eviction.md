@@ -6,12 +6,12 @@
 
 2026-08-19 全仓审计发现三处按 sessionID 累积、**没有任何删除点**的进程内 Map：
 
-| 位置 | 每会话留下什么 |
-| --- | --- |
+| 位置                                 | 每会话留下什么                                       |
+| ------------------------------------ | ---------------------------------------------------- |
 | `session/prompt-caches.ts` `.system` | skills + env + instructions 全文，再按 modelKey 分桶 |
-| 同上 `.tools` | 全部工具的 description + inputSchema |
-| 同上 `.msgPin` / `.modelMsgs` | 整段被钉死的消息历史，长会话可达数 MB |
-| `file/time.ts` `state` | 一整张「本会话读过的文件 → mtime」表 |
+| 同上 `.tools`                        | 全部工具的 description + inputSchema                 |
+| 同上 `.msgPin` / `.modelMsgs`        | 整段被钉死的消息历史，长会话可达数 MB                |
+| `file/time.ts` `state`               | 一整张「本会话读过的文件 → mtime」表                 |
 
 `settlePromptCaches` 只删 `msgPin` / `modelMsgs`，且只在 compact 边界触发；`system` / `tools` / `FileTime.state` 全无删除路径。全仓 grep 也确认没有任何 `Session.Event.Deleted` 订阅者做缓存清理（订阅它的只有 projectors / share-next / pty，都不碰这些）。
 

@@ -9,6 +9,7 @@
 实测代价：每次压缩固定 2 次全灭 ≈22.6 万 token 全价（压缩代理轮 ~177K + 恢复轮 ~49K）。缓存命中率面板（`cacheRead / (cacheRead + miss + write)`，`packages/app/src/pages/home-stats.tsx:53-55`）被全灭轮持续拉低——长会话命中率从 97% 一路掉到 93%。
 
 双来源拆分（这是第 ② 个，代码侧）：
+
 - ① opencode-go 网关 Cloudflare 多节点路由：`cf-placement` 节点切换、节点间 prefix cache 不共享（429 GoUsageLimitError 佐证）。**换官方直连已根治，非代码问题。**
 - ② 内置压缩边界（本次修）：压缩代理请求体体积 + 恢复轮体积都过大。
 
@@ -25,7 +26,6 @@
 ## 同日回退记录（2026-08-17 晚）
 
 466bb79 落地当晚复盘（本机实测 + 代码核对）发现决策 1 负优化：摘要轮与恢复轮 head 前缀不一致 → 恢复轮二次全灭，总账 267K > 回退前 177K。已回退 reasoning 过滤（`compaction.ts` 恢复 `structuredClone(selected.head)`），测试断言改为 `toContain("REASONING_SECRET")`（改名为 `compaction request keeps reasoning parts in head for prefix cache consistency`）。50K tail 预算保留。教训：**摘要代理请求体必须与压缩后恢复轮的请求体逐字节同构，任何"轻量化"改造先验证两侧前缀一致性**。
-
 
 ## 后果
 

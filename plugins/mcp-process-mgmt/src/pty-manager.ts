@@ -90,9 +90,10 @@ export class PtyManager {
     const sessionId = randomUUID()
 
     // bun-pty 的 env 要求 Record<string, string>；process.env 允许 undefined，过滤掉
-    const baseEnv = Object.fromEntries(
-      Object.entries(process.env).filter(([, v]) => v !== undefined),
-    ) as Record<string, string>
+    const baseEnv = Object.fromEntries(Object.entries(process.env).filter(([, v]) => v !== undefined)) as Record<
+      string,
+      string
+    >
 
     const pty = spawn(command, args, {
       name: options.title ?? "redcode-pty",

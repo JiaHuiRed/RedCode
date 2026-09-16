@@ -14,7 +14,7 @@ const labelsPath = option("--labels")
 if (args.includes("--help")) {
   console.log(
     "用法：analyze-memory-recall-audit.mjs [--audit <audit.jsonl>] [--labels <labels.jsonl>]\n" +
-      "标签行格式：{\"message_id\":\"...\",\"expected_ids\":[1,2]}",
+      '标签行格式：{"message_id":"...","expected_ids":[1,2]}',
   )
   process.exit(0)
 }

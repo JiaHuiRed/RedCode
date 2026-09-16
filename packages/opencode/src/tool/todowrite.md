@@ -1,7 +1,9 @@
 Create and maintain a structured task list for the current coding session. Tracks progress, organizes multi-step work, and surfaces status to the user.
 
 ## When to use
+
 Use proactively when:
+
 - The task requires 3+ distinct steps or actions (not just 3 tool calls for a single conceptual step)
 - The work is non-trivial and benefits from planning
 - The user provides multiple tasks (numbered or comma-separated) or explicitly asks for a todo list
@@ -10,18 +12,22 @@ Use proactively when:
 - You finish a task - mark it `completed` and add any follow-ups discovered during the work
 
 ## When NOT to use
+
 Skip when:
+
 - The work is a single, straightforward task (or <3 trivial steps)
 - The request is purely informational or conversational
 - Tracking adds no organizational value
 
 ## States
+
 - `pending` - not started
 - `in_progress` - actively working (exactly ONE at a time)
 - `completed` - finished successfully
 - `cancelled` - no longer needed
 
 ## Rules
+
 - Update status in real time; don't batch completions
 - Mark `completed` only after the required work is actually done, including any required verification. Never based on intent.
 - Keep exactly one `in_progress` while work remains
@@ -30,17 +36,20 @@ Skip when:
 - Items should be specific and actionable; break large work into smaller steps
 
 ## Hierarchy (optional)
+
 Give an item an `id` (e.g. `"1"`, `"2"`) to reference it as a parent. Give a sub-task a `parent_id` matching that id to nest it (e.g. `"2.1"`, `"2.2"`) — free-form strings, not enforced numbering. Always resend the full list on every call, ids and all; there is no partial update.
 Skip `id`/`parent_id` entirely for a flat list — this is the default and most tasks don't need nesting.
 
 ## Examples
 
 Use it:
+
 - "Add a dark mode toggle and run the tests" -> multi-step feature + explicit verification
 - "Rename getCwd -> getCurrentWorkingDirectory across the repo" -> grep reveals 15 occurrences in 8 files
 - "Implement registration, catalog, cart, checkout" -> multiple complex features
 
 Skip it:
+
 - "How do I print Hello World in Python?" -> informational
 - "Add a comment to calculateTotal" -> single edit
 - "Run npm install and tell me what happened" -> one command

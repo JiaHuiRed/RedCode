@@ -6,10 +6,8 @@ import type { Provider } from "../src/provider/provider"
 type StreamResult = Awaited<ReturnType<typeof streamText>>
 type StreamPart = StreamResult["fullStream"] extends AsyncIterable<infer T> ? T : never
 
-const textDelta = (text: string): StreamPart =>
-  ({ type: "text-delta", id: "t", text }) as StreamPart
-const reasoningDelta = (text: string): StreamPart =>
-  ({ type: "reasoning-delta", id: "r", text }) as StreamPart
+const textDelta = (text: string): StreamPart => ({ type: "text-delta", id: "t", text }) as StreamPart
+const reasoningDelta = (text: string): StreamPart => ({ type: "reasoning-delta", id: "r", text }) as StreamPart
 
 function fakeResult(parts: StreamPart[], finishReason: string): StreamResult {
   const fullStream = (async function* () {

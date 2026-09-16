@@ -8,12 +8,12 @@
 
 `config/config.ts` 六处写盘全是 `fs.writeFileString` 直写，没有临时文件、没有 rename：
 
-| 位置 | 写什么 |
-|---|---|
+| 位置                         | 写什么                                                         |
+| ---------------------------- | -------------------------------------------------------------- |
 | `loadFile` 的 `$schema` 回填 | 用户的配置文件本体 —— **而且这一步发生在「加载」配置的过程里** |
-| 旧版 TOML 迁移 | 全局 `config.json` |
-| `Config.update` | 项目 `config.json` |
-| `updateGlobal` × 2 | 全局 `.json` / `.jsonc`（多机同步的那一份） |
+| 旧版 TOML 迁移               | 全局 `config.json`                                             |
+| `Config.update`              | 项目 `config.json`                                             |
+| `updateGlobal` × 2           | 全局 `.json` / `.jsonc`（多机同步的那一份）                    |
 
 直写被打断（关机、崩溃、磁盘满），留下的就是半截 JSON；下一次启动读不出来。`$schema` 回填那条尤其别扭：它不是用户主动保存，是**读配置的副作用**在改用户的文件。
 

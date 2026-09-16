@@ -25,15 +25,15 @@ If you need true isolation, run RedCode inside a Docker container or VM - see [c
 
 ### Tool Permissions
 
-| Tool      | Requires Approval | Notes                |
-| --------- | ----------------- | -------------------- |
-| Read      | ❌                |                      |
-| Write     | ⚠️  Configurable |                      |
-| Edit      | ⚠️  Configurable |                      |
-| Grep/Glob | ❌                |                      |
-| Shell     | ✅                |                      |
-| Web       | ⚠️  Configurable |                      |
-| MCP Tools | ⚠️  Configurable | Depends on MCP server|
+| Tool      | Requires Approval | Notes                 |
+| --------- | ----------------- | --------------------- |
+| Read      | ❌                |                       |
+| Write     | ⚠️ Configurable   |                       |
+| Edit      | ⚠️ Configurable   |                       |
+| Grep/Glob | ❌                |                       |
+| Shell     | ✅                |                       |
+| Web       | ⚠️ Configurable   |                       |
+| MCP Tools | ⚠️ Configurable   | Depends on MCP server |
 
 ### Reporting a Vulnerability
 

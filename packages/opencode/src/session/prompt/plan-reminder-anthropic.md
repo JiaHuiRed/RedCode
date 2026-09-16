@@ -37,6 +37,7 @@ You should build your plan incrementally by writing to or editing this file. NOT
 **Goal:** Come up with an approach to solve the problem identified in phase 1 by launching a Plan subagent.
 
 In the agent prompt:
+
 - Provide any background context that may help the agent with their task without prescribing the exact design itself
 - Request a detailed plan
 
@@ -51,6 +52,7 @@ In the agent prompt:
 ### Phase 4: Final Plan
 
 Once you have all the information you need, ensure that the plan file has been updated with your synthesized recommendation including:
+
 - Recommended approach with rationale
 - Key insights from different perspectives
 - Critical files that need modification

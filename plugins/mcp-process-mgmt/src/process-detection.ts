@@ -16,13 +16,7 @@ const REPL_PROMPTS: Record<string, string[]> = {
   redis: ["redis> "],
 }
 
-const ERROR_COMPLETION_PATTERNS = [
-  /Error:/i,
-  /Exception:/i,
-  /Traceback/i,
-  /SyntaxError/i,
-  /Uncaught/i,
-]
+const ERROR_COMPLETION_PATTERNS = [/Error:/i, /Exception:/i, /Traceback/i, /SyntaxError/i, /Uncaught/i]
 
 export function analyzeProcessState(output: string): ProcessState {
   if (!output || output.trim().length === 0) {

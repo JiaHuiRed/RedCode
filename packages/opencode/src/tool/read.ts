@@ -86,7 +86,11 @@ export function collapseUnchanged(prev: string[], cur: string[]): string | undef
   const keep = new Array<boolean>(cur.length).fill(false)
   for (let i = 0; i < cur.length; i++) {
     if (same[i]) continue
-    for (let j = Math.max(0, i - COLLAPSE_CONTEXT_LINES); j <= Math.min(cur.length - 1, i + COLLAPSE_CONTEXT_LINES); j++)
+    for (
+      let j = Math.max(0, i - COLLAPSE_CONTEXT_LINES);
+      j <= Math.min(cur.length - 1, i + COLLAPSE_CONTEXT_LINES);
+      j++
+    )
       keep[j] = true
   }
   // 行数变化时尾部也可能整体位移，上面按下标比对已覆盖；这里只再保证首尾各留一点锚

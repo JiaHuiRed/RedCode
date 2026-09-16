@@ -27,9 +27,7 @@ test("会话数超过上限时最冷的被挤掉，总量有界", async () => {
   for (let i = 0; i < 40; i++) await Effect.runPromise(FileTime.record(`ses_${i}`, file))
   expect(FileTime.sessionCount()).toBe(32)
   // 最早的被挤掉：assert 落到"没读过"分支
-  await expect(Effect.runPromise(FileTime.assert("ses_0", file))).rejects.toThrow(
-    /must read file/i,
-  )
+  await expect(Effect.runPromise(FileTime.assert("ses_0", file))).rejects.toThrow(/must read file/i)
   // 最近的仍在，assert 正常通过
   await Effect.runPromise(FileTime.assert("ses_39", file))
 })
@@ -46,14 +44,10 @@ test("持续活跃的会话不会被别人挤掉", async () => {
 
 // 回收不能把守卫本身改松：没读过仍要拦，读过之后被外部改动仍要拦。
 test("守卫语义不受回收影响", async () => {
-  await expect(Effect.runPromise(FileTime.assert("ses_unread", file))).rejects.toThrow(
-    /must read file/i,
-  )
+  await expect(Effect.runPromise(FileTime.assert("ses_unread", file))).rejects.toThrow(/must read file/i)
   await Effect.runPromise(FileTime.record("ses_read", file))
   await Effect.runPromise(FileTime.assert("ses_read", file))
   await new Promise((r) => setTimeout(r, 10))
   await fs.writeFile(file, "changed externally")
-  await expect(Effect.runPromise(FileTime.assert("ses_read", file))).rejects.toThrow(
-    /modified externally/i,
-  )
+  await expect(Effect.runPromise(FileTime.assert("ses_read", file))).rejects.toThrow(/modified externally/i)
 })

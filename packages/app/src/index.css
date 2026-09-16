@@ -647,7 +647,6 @@
   -webkit-mask-image: linear-gradient(0deg, #000 0%, transparent 100%);
 }
 
-
 /* 260829 cc 这里原本有一段手写的 yuqi v2 色板覆盖（260823，11 个 token）。已删除：
    v2 的原始色阶现在由主题的 neutral 生成，见 packages/ui/src/theme/v2-neutrals.ts。
    那 11 个 token 全部由生成的 --v2-grey-* / --v2-alpha-light-* 覆盖到，另外 49 个此前
@@ -660,11 +659,7 @@
 [data-app-frost] [data-component="sticky-accordion-header"] {
   background-color: color-mix(
     in srgb,
-    color-mix(
-        in srgb,
-        var(--frost-tint-summary),
-        var(--v2-background-bg-layer-01) var(--frost-tint-summary-amount)
-      )
+    color-mix(in srgb, var(--frost-tint-summary), var(--v2-background-bg-layer-01) var(--frost-tint-summary-amount))
       calc(var(--frost-alpha-bubble) * var(--frost-strength)),
     transparent
   );

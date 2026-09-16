@@ -9,6 +9,7 @@ The skill will inject detailed instructions, workflows, and access to bundled re
 The skill name must match one of the skills listed in the system prompt.
 
 **When NOT to load a skill:**
+
 - For one-line fixes, typo corrections, or quick lookups — just do it directly
 - For exploration questions ("what is X") — search first, load skill only if the search reveals you need it
 - If the skill was already loaded this session

@@ -62,7 +62,6 @@ const normalizeDiffs = (diffs: readonly (VcsFileDiff | SnapshotFileDiff)[]): Dif
       : [],
   )
 
-
 function storedView(value: unknown): DiffView | undefined {
   if (value === "split" || value === "unified") return value
 }

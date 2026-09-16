@@ -66,10 +66,7 @@ export function registerIpcHandlers(deps: Deps) {
         return listener(event, ...args)
       })
     },
-    on<Args extends unknown[]>(
-      channel: string,
-      listener: (event: IpcMainEvent, ...args: Args) => void,
-    ) {
+    on<Args extends unknown[]>(channel: string, listener: (event: IpcMainEvent, ...args: Args) => void) {
       electronIpcMain.on(channel, (event, ...args: Args) => {
         assertTrustedIpcSender(event)
         listener(event, ...args)
@@ -283,5 +280,5 @@ export function sendDeepLinks(win: BrowserWindow, urls: string[]) {
 //   22:47:26 崩溃、22:48:54 才重连，中间那段空白就是用户看到的白屏。
 //   崩溃本身只有主进程能感知（child-process-gone），所以在这里主动告诉渲染层立刻重建事件流。
 export function sendNetworkServiceRestart(win: BrowserWindow) {
- win.webContents.send("network-service-restart")
+  win.webContents.send("network-service-restart")
 }

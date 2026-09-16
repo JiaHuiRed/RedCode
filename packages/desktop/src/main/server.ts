@@ -30,7 +30,6 @@ type SidecarMessage =
 
 export type SidecarListener = { stop: () => Promise<void>; pid: number | undefined }
 
-
 const SIDECAR_SERVICE_NAME = "redcode server"
 const SIDECAR_START_STALL_TIMEOUT = 60_000
 const SIDECAR_HEALTH_TIMEOUT_MS = 30_000
@@ -211,10 +210,7 @@ export async function spawnLocalServer(
         if (exited) return Promise.resolve()
         child.postMessage({ type: "stop" })
         stopping = (async () => {
-          await Promise.race([
-            exit.promise.then(() => undefined),
-            delay(SIDECAR_STOP_TIMEOUT),
-          ])
+          await Promise.race([exit.promise.then(() => undefined), delay(SIDECAR_STOP_TIMEOUT)])
           if (!exited) {
             // 260913 Red 等待 tree kill 完成，再 fallback kill sidecar 自己；
             // 避免 fire-and-forget taskkill 在父进程退出时被带走。

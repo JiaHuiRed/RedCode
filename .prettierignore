@@ -15,3 +15,18 @@ packages/*/dist/
 packages/opencode/dist/
 **/.artifacts/
 **/node_modules/
+
+
+# 260916 Red 四处解析失败，全量 --write / --check 会在这里中断：
+#   前三个是 git symlink，Windows 检出成普通文本文件（内容只是指向真身的路径），
+#   prettier 当 JSON 解析就炸；最后一个是无扩展名的 TS 脚本，prettier 按 JS 解析
+#   看不懂类型注解。真身（packages/sdk/openapi.json、packages/ui/src/assets/favicon/
+#   site.webmanifest）仍然参与格式检查。
+packages/docs/openapi.json
+packages/enterprise/public/site.webmanifest
+packages/web/public/site.webmanifest
+packages/opencode/script/run-workspace-server
+
+# 260916 Red storybook 构建产物（被 packages/storybook/.gitignore 忽略，
+# 但 prettier 3 不读 .gitignore，压过的 runtime.js 永远不符合源码格式）。
+packages/storybook/storybook-static/

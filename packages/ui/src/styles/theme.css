@@ -620,41 +620,41 @@
      (file tree, chat, review) also follow the chosen scheme. */
 
   [data-color-scheme="cream"] {
-    --background-base: #FEFCF3;
-    --background-weak: #F7F3E8;
-    --background-strong: #F7F3E8;
-    --background-stronger: #FBF6E9;
-    --text-base: #7A7058;
-    --text-strong: #3C3524;
-    --text-stronger: #2A251A;
+    --background-base: #fefcf3;
+    --background-weak: #f7f3e8;
+    --background-strong: #f7f3e8;
+    --background-stronger: #fbf6e9;
+    --text-base: #7a7058;
+    --text-strong: #3c3524;
+    --text-stronger: #2a251a;
     --border-base: rgba(60, 53, 36, 0.12);
-    --border-weak-base: #E4DECD;
-    --border-weaker-base: #EFEADC;
+    --border-weak-base: #e4decd;
+    --border-weaker-base: #efeadc;
   }
 
   [data-color-scheme="green"] {
-    --background-base: #F2F9F0;
-    --background-weak: #E8F3E4;
-    --background-strong: #E8F3E4;
-    --background-stronger: #EEF7EA;
-    --text-base: #4A7A4A;
-    --text-strong: #1C3A1C;
-    --text-stronger: #0F2A0F;
+    --background-base: #f2f9f0;
+    --background-weak: #e8f3e4;
+    --background-strong: #e8f3e4;
+    --background-stronger: #eef7ea;
+    --text-base: #4a7a4a;
+    --text-strong: #1c3a1c;
+    --text-stronger: #0f2a0f;
     --border-base: rgba(28, 58, 28, 0.12);
-    --border-weak-base: #D0E4CA;
-    --border-weaker-base: #DFEDDA;
+    --border-weak-base: #d0e4ca;
+    --border-weaker-base: #dfedda;
   }
 
   [data-color-scheme="deepblue"] {
-    --background-base: #0D111A;
-    --background-weak: #080B12;
+    --background-base: #0d111a;
+    --background-weak: #080b12;
     --background-strong: #121724;
-    --background-stronger: #1A2030;
-    --text-base: #8B95A8;
-    --text-strong: #D0D7E7;
-    --text-stronger: #E8ECF4;
+    --background-stronger: #1a2030;
+    --text-base: #8b95a8;
+    --text-strong: #d0d7e7;
+    --text-stronger: #e8ecf4;
     --border-base: rgba(208, 215, 231, 0.12);
-    --border-weak-base: #1A2030;
+    --border-weak-base: #1a2030;
     --border-weaker-base: #121724;
   }
 }

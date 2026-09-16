@@ -21,10 +21,7 @@ describe("deep link delivery", () => {
     expect(sent).toEqual([["redcode://open-project?directory=/live"]])
 
     delivery.markReady()
-    expect(sent).toEqual([
-      ["redcode://open-project?directory=/live"],
-      ["redcode://open-project?directory=/reload"],
-    ])
+    expect(sent).toEqual([["redcode://open-project?directory=/live"], ["redcode://open-project?directory=/reload"]])
   })
 
   test("keeps links queued when the renderer cannot receive them", () => {

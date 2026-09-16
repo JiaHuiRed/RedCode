@@ -6,11 +6,17 @@ import { dropSession, PromptCaches, settlePromptCaches, touchSession } from "../
 
 function seed(sessionID: string) {
   PromptCaches.msgPin.set(sessionID, { sessionID, messages: new Map([["m1", [{ type: "text", text: "hi" }]]]) })
-  PromptCaches.modelMsgs.set(sessionID, new Map([["p/m", { sessionID, modelKey: "p/m", messages: [{ role: "user", content: "hi" }] }]]))
+  PromptCaches.modelMsgs.set(
+    sessionID,
+    new Map([["p/m", { sessionID, modelKey: "p/m", messages: [{ role: "user", content: "hi" }] }]]),
+  )
   PromptCaches.system.set(
     sessionID,
     new Map([
-      ["p/m", { sessionID, modelKey: "p/m", skills: undefined, env: ["env"], instructions: ["ins"], mcpGuide: undefined }],
+      [
+        "p/m",
+        { sessionID, modelKey: "p/m", skills: undefined, env: ["env"], instructions: ["ins"], mcpGuide: undefined },
+      ],
     ]),
   )
   PromptCaches.tools.set(sessionID, { sessionID, defs: new Map() })

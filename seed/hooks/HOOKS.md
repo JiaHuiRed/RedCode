@@ -4,14 +4,14 @@ ECC 有 hook 系统，OpenCode 没有原生 hooks。这里定义 RedCode 的 hoo
 
 ## 生命周期
 
-| 阶段 | 触发时机 | 执行者 | 行为 |
-|------|---------|--------|------|
-| **SessionStart** | 每次对话启动 | Plugin + Agent | 注入最近记忆、项目类型、profile |
-| **PreToolUse** | 每次工具调用前 | Agent | 检查 gateguard、profile 许可 |
-| **PostToolUse** | 每次工具调用后 | Plugin | 追踪编辑文件 |
-| **PreCompact** | Context 压缩前 | Agent | 保存当前状态到 `.session-last.json` |
-| **Stop** | 对话结束/收工 | Agent | 提取教训、更新长期库 |
-| **Compact** | Plugin 处理压缩 | Plugin | 注入关键上下文到压缩后空间 |
+| 阶段             | 触发时机        | 执行者         | 行为                                |
+| ---------------- | --------------- | -------------- | ----------------------------------- |
+| **SessionStart** | 每次对话启动    | Plugin + Agent | 注入最近记忆、项目类型、profile     |
+| **PreToolUse**   | 每次工具调用前  | Agent          | 检查 gateguard、profile 许可        |
+| **PostToolUse**  | 每次工具调用后  | Plugin         | 追踪编辑文件                        |
+| **PreCompact**   | Context 压缩前  | Agent          | 保存当前状态到 `.session-last.json` |
+| **Stop**         | 对话结束/收工   | Agent          | 提取教训、更新长期库                |
+| **Compact**      | Plugin 处理压缩 | Plugin         | 注入关键上下文到压缩后空间          |
 
 ## Agent 手动遵守的部分
 

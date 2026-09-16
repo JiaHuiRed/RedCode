@@ -7,7 +7,7 @@
 `SessionCompaction.estimate` 是：
 
 ```ts
-const msgs = yield* MessageV2.toModelMessagesEffect(input.messages, input.model)
+const msgs = yield * MessageV2.toModelMessagesEffect(input.messages, input.model)
 return Token.estimate(JSON.stringify(msgs))
 ```
 

@@ -19,12 +19,13 @@
 ### 成因 2：清理失败被静默吞掉
 
 ```ts
-yield* Effect.addFinalizer(() =>
-  Effect.promise(async () => {
-    if (options?.git) await stop(dir).catch(() => undefined)
-    await clean(dir).catch(() => undefined)      // ← 失败静默
-  }),
-)
+yield *
+  Effect.addFinalizer(() =>
+    Effect.promise(async () => {
+      if (options?.git) await stop(dir).catch(() => undefined)
+      await clean(dir).catch(() => undefined) // ← 失败静默
+    }),
+  )
 ```
 
 `clean()` 自带 `maxRetries: 5`，但 Windows 上 `rm -r` 撞到未释放的句柄（SQLite WAL、git 子进程、node_modules 链接）会 EBUSY/EPERM，重试跑完仍可能失败 —— 而 `.catch(() => undefined)` 把结果整个吞掉。**漏了多少年都不会有人知道。**
@@ -82,12 +83,12 @@ yield* Effect.addFinalizer(() =>
 
 ### 逃逸的后台工作
 
-| 位置 | 判定 |
-|---|---|
-| `config/config.ts` 的插件依赖安装 | **就是本条的病灶**，已修 |
-| `control-plane/workspace.ts:1005` 的 `forkDetach` | 干净 —— 它 `log.warn` 了失败，且不写临时目录；分离是设计意图（长活的同步连接） |
-| `cli/cmd/tui/config/tui.ts:285` | **同一个安装的第二份并行拷贝**（`forkScoped` + `concurrency: "unbounded"`）。测试里不触发（实测 delta=0），但生产上不受 `REDCODE_DISABLE_PLUGIN_DEP_INSTALL` 约束 —— 离线用户设了开关，TUI 那条路照样去装。**本轮一并收口。** |
-| `project/bootstrap.ts:118` 写项目 `MEMORY.md` | 干净 —— 有 `catchCause(logWarning)`，且写的是项目工作树不是临时目录 |
+| 位置                                              | 判定                                                                                                                                                                                                                          |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `config/config.ts` 的插件依赖安装                 | **就是本条的病灶**，已修                                                                                                                                                                                                      |
+| `control-plane/workspace.ts:1005` 的 `forkDetach` | 干净 —— 它 `log.warn` 了失败，且不写临时目录；分离是设计意图（长活的同步连接）                                                                                                                                                |
+| `cli/cmd/tui/config/tui.ts:285`                   | **同一个安装的第二份并行拷贝**（`forkScoped` + `concurrency: "unbounded"`）。测试里不触发（实测 delta=0），但生产上不受 `REDCODE_DISABLE_PLUGIN_DEP_INSTALL` 约束 —— 离线用户设了开关，TUI 那条路照样去装。**本轮一并收口。** |
+| `project/bootstrap.ts:118` 写项目 `MEMORY.md`     | 干净 —— 有 `catchCause(logWarning)`，且写的是项目工作树不是临时目录                                                                                                                                                           |
 
 `Effect.forkDetach` 全仓只有 2 处；后台 fiber 里直接碰文件系统的只有上表这 4 处。
 

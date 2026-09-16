@@ -276,24 +276,15 @@ export interface Hooks {
   /**
    * Called when a session is removed
    */
-  "session.end"?: (
-    input: { sessionID: string; reason?: string },
-    output: {},
-  ) => Promise<void>
+  "session.end"?: (input: { sessionID: string; reason?: string }, output: {}) => Promise<void>
   /**
    * Called when a session is stopped/aborted
    */
-  "session.stop"?: (
-    input: { sessionID: string; reason?: string },
-    output: {},
-  ) => Promise<void>
+  "session.stop"?: (input: { sessionID: string; reason?: string }, output: {}) => Promise<void>
   /**
    * Called when a user submits a prompt
    */
-  "user.prompt.submit"?: (
-    input: { sessionID: string; text: string },
-    output: {},
-  ) => Promise<void>
+  "user.prompt.submit"?: (input: { sessionID: string; text: string }, output: {}) => Promise<void>
   /**
    * Called when a tool execution fails
    */
@@ -311,10 +302,7 @@ export interface Hooks {
   /**
    * Called after session compaction completes
    */
-  "compact.post"?: (
-    input: { sessionID: string },
-    output: {},
-  ) => Promise<void>
+  "compact.post"?: (input: { sessionID: string }, output: {}) => Promise<void>
   /**
    * Called when a subagent is created
    */
@@ -332,7 +320,7 @@ export interface Hooks {
   /**
    * Called for TUI/OS notifications
    */
-  "notification"?: (
+  notification?: (
     input: { sessionID?: string; title?: string; message: string; type: "info" | "warning" | "error" | "success" },
     output: { suppressed?: boolean },
   ) => Promise<void>

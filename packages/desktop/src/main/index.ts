@@ -36,12 +36,7 @@ import {
   type SidecarListener,
 } from "./server"
 import { killSidecarTreeSync } from "./sidecar-process"
-import {
-  forgetSidecarTree,
-  killOrphanChildren,
-  rememberSidecarTree,
-  sweepStaleSidecarTree,
-} from "./sidecar-registry"
+import { forgetSidecarTree, killOrphanChildren, rememberSidecarTree, sweepStaleSidecarTree } from "./sidecar-registry"
 import {
   createMainWindow,
   iconPath,
@@ -549,9 +544,9 @@ const main = Effect.gen(function* () {
 
   yield* Effect.promise(() => app.whenReady())
 
-// 260916 Red 上一次会话如果是崩溃或被强杀退出的，它的 sidecar 树还留在系统里——
-//   这种退出跑不到任何 cleanup 钩子，只能在下次启动、拉起新 sidecar 之前清一遍。
-sweepStaleSidecarTree()
+  // 260916 Red 上一次会话如果是崩溃或被强杀退出的，它的 sidecar 树还留在系统里——
+  //   这种退出跑不到任何 cleanup 钩子，只能在下次启动、拉起新 sidecar 之前清一遍。
+  sweepStaleSidecarTree()
 
   // 260903 cc 只有打包版才登记 `redcode://`。
   //   `setAsDefaultProtocolClient` 不传 path/args 时默认用 `process.execPath` + 空参数，
@@ -576,14 +571,7 @@ sweepStaleSidecarTree()
   // second-instance 事件 show+focus。每次启动覆盖写，入口路径变了自动跟上；文件名带
   // (dev) 后缀，避免覆盖 260903 取证里打包版的 RedCode Dev.lnk。
   if (process.platform === "win32" && !app.isPackaged && process.argv.length >= 2) {
-    const lnk = join(
-      app.getPath("appData"),
-      "Microsoft",
-      "Windows",
-      "Start Menu",
-      "Programs",
-      "RedCode Dev (dev).lnk",
-    )
+    const lnk = join(app.getPath("appData"), "Microsoft", "Windows", "Start Menu", "Programs", "RedCode Dev (dev).lnk")
     try {
       // 图标用 RedCode ico（windows.ts 同源），不是裸 electron.exe 的原子图标
       shell.writeShortcutLink(lnk, "create", {
@@ -741,7 +729,7 @@ sweepStaleSidecarTree()
     const detail = Cause.squash(loadExit.cause)
     const message = detail instanceof Error ? detail.message : String(detail)
     logger.error("sidecar startup failed", { error: message })
-    Deferred.failSync(serverReady, () => detail instanceof Error ? detail : new Error(message))
+    Deferred.failSync(serverReady, () => (detail instanceof Error ? detail : new Error(message)))
     dialog.showErrorBox(
       "RedCode 启动失败",
       `服务进程未能启动：${message}\n\n请重启 RedCode 重试；若反复出现，请在反馈里附上这条原因。`,

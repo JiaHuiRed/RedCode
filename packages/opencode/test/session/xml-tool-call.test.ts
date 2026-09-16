@@ -36,7 +36,8 @@ describe("xml-tool-call.detect", () => {
   })
 
   test("没有外层包裹也能认出来", () => {
-    const text = "读一下。\n<function=read>\n<parameter=filePath>\nE:\\AI\\RedCode\\package.json\n</parameter>\n</function>"
+    const text =
+      "读一下。\n<function=read>\n<parameter=filePath>\nE:\\AI\\RedCode\\package.json\n</parameter>\n</function>"
     const result = detect(text, TOOLS)
     expect(result.calls).toEqual([{ name: "read", params: { filePath: "E:\\AI\\RedCode\\package.json" } }])
     expect(result.stripped).toBe("读一下。")
@@ -56,7 +57,8 @@ describe("xml-tool-call.detect", () => {
   })
 
   test("未注册的工具名不算命中 —— 讨论这个 bug 本身时的主要防线", () => {
-    const text = "泄漏长这样：<tool_call>\n<function=some_unknown_tool>\n<parameter=x>\n1\n</parameter>\n</function>\n</tool_call>"
+    const text =
+      "泄漏长这样：<tool_call>\n<function=some_unknown_tool>\n<parameter=x>\n1\n</parameter>\n</function>\n</tool_call>"
     const result = detect(text, TOOLS)
     expect(result.calls).toEqual([])
     expect(result.stripped).toBe(text)
@@ -203,7 +205,7 @@ describe("detect —— 命名空间 <tool_calls:NS> 形状", () => {
       "<tool_calls:6124c78e>",
       "<tool_call:6124c78e>bash",
       "<arg_key:6124c78e>command</arg_key:6124c78e>",
-      "<arg_value:6124c78e>Start-Process -FilePath \"D:\\AI\\ComfyUI\\venv\\Scripts\\python.exe\" -ArgumentList \"main.py\"</arg_value:6124c78e>",
+      '<arg_value:6124c78e>Start-Process -FilePath "D:\\AI\\ComfyUI\\venv\\Scripts\\python.exe" -ArgumentList "main.py"</arg_value:6124c78e>',
       "<arg_key:6124c78e>description</arg_key:6124c78e>",
       "<arg_value:6124c78e>Starts ComfyUI server in background</arg_value:6124c78e>",
       "</tool_call:6124c78e>",
@@ -221,8 +223,7 @@ describe("detect —— 命名空间 <tool_calls:NS> 形状", () => {
     const out = detect(text, KNOWN)
     expect(out.calls.map((c) => c.name)).toEqual(["bash", "bash", "read"])
     expect(out.calls[0].params).toEqual({
-      command:
-        "Start-Process -FilePath \"D:\\AI\\ComfyUI\\venv\\Scripts\\python.exe\" -ArgumentList \"main.py\"",
+      command: 'Start-Process -FilePath "D:\\AI\\ComfyUI\\venv\\Scripts\\python.exe" -ArgumentList "main.py"',
       description: "Starts ComfyUI server in background",
     })
     expect(out.calls[2].params).toEqual({ filePath: "D:\\AI\\Galgame\\gen.py" })
@@ -263,7 +264,8 @@ describe("detect —— 命名空间 <tool_calls:NS> 形状", () => {
   })
 
   test("光杆工具名无参数不算命中（模型引用格式骨架）", () => {
-    const text = "我认为 XML 是这样写的：<tool_calls:6124c78e><tool_call:6124c78e>bash<arg_key:6124c78e>command</arg_key:6124c78e>"
+    const text =
+      "我认为 XML 是这样写的：<tool_calls:6124c78e><tool_call:6124c78e>bash<arg_key:6124c78e>command</arg_key:6124c78e>"
     const r = detect(text, new Set(["bash", "read"]))
     expect(r.calls).toEqual([])
     expect(r.stripped).toBe(text)

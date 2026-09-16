@@ -40,11 +40,7 @@ import { DropdownMenu } from "@redcode-ai/ui/dropdown-menu"
 import { Dialog } from "@redcode-ai/ui/dialog"
 import { InlineInput } from "@redcode-ai/ui/inline-input"
 import { Spinner } from "@redcode-ai/ui/spinner"
-import {
-  ChiCodingSticker,
-  ChiTaskSticker,
-  ChiThinkingSticker,
-} from "@redcode-ai/ui/v2/components/chi-task-sticker.jsx"
+import { ChiCodingSticker, ChiTaskSticker, ChiThinkingSticker } from "@redcode-ai/ui/v2/components/chi-task-sticker.jsx"
 import { SessionRetry } from "@redcode-ai/ui/session-retry"
 import { ScrollView } from "@redcode-ai/ui/scroll-view"
 import { StickyAccordionHeader } from "@redcode-ai/ui/sticky-accordion-header"
@@ -197,9 +193,7 @@ function TimelineThinkingRow(props: {
       {/* 260901 cc 一个 part 都没到的时候这行量的是「等供应商首 token」，叫「思考中」是错的
           —— 真在想的时候下面推理块自己会写「思考中」，随后变「已思考」，两处撞名 */}
       <TextShimmer
-        text={language.t(
-          props.awaiting ? "ui.sessionTurn.status.awaitingResponse" : "ui.sessionTurn.status.thinking",
-        )}
+        text={language.t(props.awaiting ? "ui.sessionTurn.status.awaitingResponse" : "ui.sessionTurn.status.thinking")}
       />
       <img src="/hamster.png" alt="" class="w-5 h-5 shrink-0 animate-hamster select-none" aria-hidden="true" />
       {/* 260608 Red 仓鼠改透明底直接平铺：原 mix-blend-mode:screen+深色盒在浅色主题会被洗白 */}
@@ -417,30 +411,30 @@ export function MessageTimeline(props: {
 
     return undefined
   })
- // 260828 Red 插队送达状态:busy 中发送且无 assistant 子消息的 user 消息,
- // 时间上其后已有 assistant 消息 = 下个 step 组装上下文已吃进 → delivered;否则等待 → queued
- const steerStateByID = createMemo(() => {
-   const result = new Map<string, "queued" | "delivered">()
-   const messages = sessionMessages()
-   const busy = working()
-   const activeID = activeMessageID()
-   let maxAssistantTime = 0
-   for (let i = messages.length - 1; i >= 0; i--) {
-     const message = messages[i]
-     if (message.role === "assistant") {
-       maxAssistantTime = Math.max(maxAssistantTime, message.time?.created ?? 0)
-       continue
-     }
-     if (message.role !== "user") continue
-     // 正常轮首:有自己的 assistant 子消息 → 不标记
-     if ((assistantMessagesByParent().get(message.id) ?? []).length > 0) continue
-     // 当前活跃轮首 → 不标记(它在跑,不是插队)
-     if (busy && activeID === message.id) continue
-     if (maxAssistantTime > (message.time?.created ?? 0)) result.set(message.id, "delivered")
-     else if (busy) result.set(message.id, "queued")
-   }
-   return result
- })
+  // 260828 Red 插队送达状态:busy 中发送且无 assistant 子消息的 user 消息,
+  // 时间上其后已有 assistant 消息 = 下个 step 组装上下文已吃进 → delivered;否则等待 → queued
+  const steerStateByID = createMemo(() => {
+    const result = new Map<string, "queued" | "delivered">()
+    const messages = sessionMessages()
+    const busy = working()
+    const activeID = activeMessageID()
+    let maxAssistantTime = 0
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i]
+      if (message.role === "assistant") {
+        maxAssistantTime = Math.max(maxAssistantTime, message.time?.created ?? 0)
+        continue
+      }
+      if (message.role !== "user") continue
+      // 正常轮首:有自己的 assistant 子消息 → 不标记
+      if ((assistantMessagesByParent().get(message.id) ?? []).length > 0) continue
+      // 当前活跃轮首 → 不标记(它在跑,不是插队)
+      if (busy && activeID === message.id) continue
+      if (maxAssistantTime > (message.time?.created ?? 0)) result.set(message.id, "delivered")
+      else if (busy) result.set(message.id, "queued")
+    }
+    return result
+  })
 
   const info = createMemo(() => {
     const id = sessionID()
@@ -1452,18 +1446,16 @@ export function MessageTimeline(props: {
                         displayName: settings.userProfile.displayName(),
                       }}
                     />
-                   <Show when={steerStateByID().get(userMessageRow().userMessageID)}>
-                     {(state) => (
-                       <div class="mt-1 flex w-full items-center gap-1.5 px-1 text-11-regular text-text-tertiary">
-                         <Icon name={state() === "queued" ? "arrow-down-to-line" : "check-small"} size="small" />
-                         <span>
-                           {language.t(
-                             state() === "queued" ? "ui.message.steerQueued" : "ui.message.steerDelivered",
-                           )}
-                         </span>
-                       </div>
-                     )}
-                   </Show>
+                    <Show when={steerStateByID().get(userMessageRow().userMessageID)}>
+                      {(state) => (
+                        <div class="mt-1 flex w-full items-center gap-1.5 px-1 text-11-regular text-text-tertiary">
+                          <Icon name={state() === "queued" ? "arrow-down-to-line" : "check-small"} size="small" />
+                          <span>
+                            {language.t(state() === "queued" ? "ui.message.steerQueued" : "ui.message.steerDelivered")}
+                          </span>
+                        </div>
+                      )}
+                    </Show>
                   </div>
                 </div>
               )}
@@ -1533,12 +1525,7 @@ export function MessageTimeline(props: {
               <Show when={thinkingRow().awaiting && thinkingRow().userMessageID === props.userMessages[0]?.id}>
                 <ChiTaskSticker />
               </Show>
-              <Show
-                when={
-                  !thinkingRow().awaiting &&
-                  activeStickerForTurn(thinkingRow().userMessageID) !== "coding"
-                }
-              >
+              <Show when={!thinkingRow().awaiting && activeStickerForTurn(thinkingRow().userMessageID) !== "coding"}>
                 <ChiThinkingSticker />
               </Show>
               <TimelineThinkingRow

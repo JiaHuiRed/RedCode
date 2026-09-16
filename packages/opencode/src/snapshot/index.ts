@@ -70,9 +70,7 @@ export interface Interface {
   readonly track: () => Effect.Effect<string | undefined>
   readonly patch: (hash: string) => Effect.Effect<Patch>
   /** step-finish 专用：一次 add() 同时出完成快照与相对 from 的补丁。见实现处的说明。 */
-  readonly finish: (
-    from: string | undefined,
-  ) => Effect.Effect<{ hash: string | undefined; patch: Patch | undefined }>
+  readonly finish: (from: string | undefined) => Effect.Effect<{ hash: string | undefined; patch: Patch | undefined }>
   readonly restore: (snapshot: string) => Effect.Effect<void>
   readonly revert: (patches: Patch[]) => Effect.Effect<void>
   readonly diff: (hash: string) => Effect.Effect<string>
@@ -226,7 +224,9 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                   )
                   if (lease) {
                     yield* Effect.addFinalizer(() =>
-                      Effect.promise(() => lease.release().catch(() => undefined)).pipe(Effect.withSpan("Flock.release")),
+                      Effect.promise(() => lease.release().catch(() => undefined)).pipe(
+                        Effect.withSpan("Flock.release"),
+                      ),
                     )
                     return yield* lock(state.gitdir).withPermits(1)(fx)
                   }
@@ -773,7 +773,13 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                   { cwd: state.directory },
                 )
                 if (statuses.code !== 0) {
-                  log.warn("diffFull failed", { from, to, step: "name-status", exitCode: statuses.code, stderr: statuses.stderr })
+                  log.warn("diffFull failed", {
+                    from,
+                    to,
+                    step: "name-status",
+                    exitCode: statuses.code,
+                    stderr: statuses.stderr,
+                  })
                   return yield* new DiffError({ from, to, exitCode: statuses.code, stderr: statuses.stderr })
                 }
 
@@ -791,7 +797,13 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                   },
                 )
                 if (numstat.code !== 0) {
-                  log.warn("diffFull failed", { from, to, step: "numstat", exitCode: numstat.code, stderr: numstat.stderr })
+                  log.warn("diffFull failed", {
+                    from,
+                    to,
+                    step: "numstat",
+                    exitCode: numstat.code,
+                    stderr: numstat.stderr,
+                  })
                   return yield* new DiffError({ from, to, exitCode: numstat.code, stderr: numstat.stderr })
                 }
 

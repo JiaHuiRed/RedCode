@@ -132,7 +132,7 @@ it.instance(
   { config: { default_agent: "build" } },
 )
 
-it.instance("legacy \"build\" resolves to redmind with the same default properties", () =>
+it.instance('legacy "build" resolves to redmind with the same default properties', () =>
   Effect.gen(function* () {
     const build = yield* load((svc) => svc.get("build"))
     expect(build).toBeDefined()
@@ -312,7 +312,7 @@ scout.instance(
   },
 )
 
-it.instance("legacy \"general\" resolves to execute, which still denies todo tools", () =>
+it.instance('legacy "general" resolves to execute, which still denies todo tools', () =>
   Effect.gen(function* () {
     const general = yield* load((svc) => svc.get("general"))
     expect(general).toBeDefined()
@@ -380,8 +380,7 @@ it.instance(
   {
     config: { permission: { question: "deny", bash: "deny", websearch: "deny" } },
     files: {
-      ".redcode/agent/mine.md":
-        "---\ndescription: mine\nmode: subagent\npermission:\n  bash: allow\n---\n\nprompt\n",
+      ".redcode/agent/mine.md": "---\ndescription: mine\nmode: subagent\npermission:\n  bash: allow\n---\n\nprompt\n",
     },
   },
 )

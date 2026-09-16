@@ -311,8 +311,8 @@ export const TaskTool = Tool.define(
       // 「存在但没人验过的开关」在本仓有过前车（appProcess.run 的 timeout），与 background/job.ts 一致。
       const RESUME_IDLE_TIMEOUT_MS = 30 * 60_000
       type ResumeInput = { userID: MessageID; state: "completed" | "error"; deadline?: number }
-      const resumeWhenIdle: (input: ResumeInput) => Effect.Effect<void> =
-        Effect.fn("TaskTool.resumeWhenIdle")(function* (input: ResumeInput) {
+      const resumeWhenIdle: (input: ResumeInput) => Effect.Effect<void> = Effect.fn("TaskTool.resumeWhenIdle")(
+        function* (input: ResumeInput) {
           const deadline = input.deadline ?? (yield* Clock.currentTimeMillis) + RESUME_IDLE_TIMEOUT_MS
           const latest = yield* sessions
             .findMessage(ctx.sessionID, (item) => item.info.role === "user")
@@ -351,7 +351,8 @@ export const TaskTool = Tool.define(
           yield* ops
             .loop({ sessionID: ctx.sessionID })
             .pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))
-        })
+        },
+      )
 
       const continueIfIdle = Effect.fn("TaskTool.continueIfIdle")(function* (input: {
         userID: MessageID

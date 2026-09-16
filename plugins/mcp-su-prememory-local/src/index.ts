@@ -34,9 +34,9 @@ db.exec(`
 // FTS5 full-text index on content
 // 260609 Red trigram 分词器：默认 unicode61 不切中文，trigram 用 3 字窗口对中英混合都友好。
 // IF NOT EXISTS 不会替换已存在的旧分词器表，所以先检测旧表 SQL，非 trigram 就 drop 重建。
-const ftsInfo = db.query("SELECT sql FROM sqlite_master WHERE type='table' AND name='memories_fts'").get() as
-  | { sql: string }
-  | null
+const ftsInfo = db.query("SELECT sql FROM sqlite_master WHERE type='table' AND name='memories_fts'").get() as {
+  sql: string
+} | null
 if (ftsInfo && !ftsInfo.sql.includes("trigram")) db.exec("DROP TABLE memories_fts;")
 db.exec(`
   CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
@@ -79,16 +79,9 @@ server.tool(
   "memory",
   "Save or forget information. Use 'save' when user shares facts, preferences, or anything worth remembering. Use 'forget' to remove outdated info.",
   {
-    content: z
-      .string()
-      .max(200000, "Content too long")
-      .describe("The memory content to save or forget"),
+    content: z.string().max(200000, "Content too long").describe("The memory content to save or forget"),
     action: z.enum(["save", "forget"]).optional().default("save"),
-    project: z
-      .string()
-      .max(128)
-      .optional()
-      .describe("Optional project scope (e.g. 'redcode', 'personal')"),
+    project: z.string().max(128).optional().describe("Optional project scope (e.g. 'redcode', 'personal')"),
   },
   async ({ content, action, project }) => {
     try {
@@ -103,9 +96,7 @@ server.tool(
         if (existing) {
           db.query("DELETE FROM memories WHERE id = ?").run(existing.id)
           return {
-            content: [
-              { type: "text" as const, text: `Forgot: "${existing.content.slice(0, 100)}"` },
-            ],
+            content: [{ type: "text" as const, text: `Forgot: "${existing.content.slice(0, 100)}"` }],
           }
         }
 
@@ -136,9 +127,7 @@ server.tool(
       // save (default to "default" project)
       const saveProject = project || "default"
       const result = db
-        .query(
-          "INSERT INTO memories (content, project, source) VALUES ($content, $project, 'mcp') RETURNING id",
-        )
+        .query("INSERT INTO memories (content, project, source) VALUES ($content, $project, 'mcp') RETURNING id")
         .get({ $content: content, $project: saveProject }) as { id: number }
 
       return {
@@ -161,16 +150,9 @@ server.tool(
   "recall",
   "Search saved memories by query. Returns relevant memories with similarity scores.",
   {
-    query: z
-      .string()
-      .max(1000)
-      .describe("The search query to find relevant memories"),
+    query: z.string().max(1000).describe("The search query to find relevant memories"),
     limit: z.number().min(1).max(50).optional().default(10),
-    project: z
-      .string()
-      .max(128)
-      .optional()
-      .describe("Optional: scope search to a specific project"),
+    project: z.string().max(128).optional().describe("Optional: scope search to a specific project"),
   },
   async ({ query, limit = 10, project }) => {
     try {
@@ -221,10 +203,7 @@ server.tool(
             type: "text" as const,
             text: [
               `## Memories (${rows.length} results)\n`,
-              ...rows.map(
-                (r, i) =>
-                  `### ${i + 1}\n**Project:** ${r.project}\n**When:** ${r.created_at}\n${r.content}`,
-              ),
+              ...rows.map((r, i) => `### ${i + 1}\n**Project:** ${r.project}\n**When:** ${r.created_at}\n${r.content}`),
             ].join("\n\n"),
           },
         ],
@@ -291,31 +270,27 @@ server.tool(
 
 // ── stats tool ───────────────────────────────────────────────────
 // ── stats tool ───────────────────────────────────────────────────
-server.tool(
-  "stats",
-  "Get memory statistics — total count, per-project breakdown.",
-  async () => {
-    try {
-      const total = db.query("SELECT COUNT(*) as c FROM memories").get() as { c: number }
-      const byProject = db
-        .query("SELECT project, COUNT(*) as c FROM memories GROUP BY project ORDER BY c DESC")
-        .all() as Array<{ project: string; c: number }>
+server.tool("stats", "Get memory statistics — total count, per-project breakdown.", async () => {
+  try {
+    const total = db.query("SELECT COUNT(*) as c FROM memories").get() as { c: number }
+    const byProject = db
+      .query("SELECT project, COUNT(*) as c FROM memories GROUP BY project ORDER BY c DESC")
+      .all() as Array<{ project: string; c: number }>
 
-      const lines = [`**Total memories:** ${total.c}`, ""]
-      if (byProject.length > 0) {
-        lines.push("**By project:**")
-        for (const p of byProject) {
-          lines.push(`- ${p.project}: ${p.c}`)
-        }
+    const lines = [`**Total memories:** ${total.c}`, ""]
+    if (byProject.length > 0) {
+      lines.push("**By project:**")
+      for (const p of byProject) {
+        lines.push(`- ${p.project}: ${p.c}`)
       }
-
-      return { content: [{ type: "text" as const, text: lines.join("\n") }] }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      return { content: [{ type: "text" as const, text: `Error: ${msg}` }], isError: true }
     }
-  },
-)
+
+    return { content: [{ type: "text" as const, text: lines.join("\n") }] }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { content: [{ type: "text" as const, text: `Error: ${msg}` }], isError: true }
+  }
+})
 
 // ── start ────────────────────────────────────────────────────────
 const transport = new StdioServerTransport()

@@ -171,7 +171,7 @@ describe("session.llm.hasToolCalls", () => {
 describe("session.llm.routedVia", () => {
   test("normalizes current and legacy route response headers", () => {
     expect(LLM.routedVia({ "X-Routed-Via": "edge-a" })).toBe("edge-a")
-    expect(LLM.routedVia({ "_routed_via": "edge-b" })).toBe("edge-b")
+    expect(LLM.routedVia({ _routed_via: "edge-b" })).toBe("edge-b")
   })
 
   test("waits for response metadata before emitting finish", async () => {
@@ -183,9 +183,7 @@ describe("session.llm.routedVia", () => {
     })
     let finished = false
     const finish = { type: "finish", finishReason: "stop" } as Parameters<typeof LLMAISDK.toLLMEvents>[1]
-    const result = Effect.runPromise(
-      LLMAISDK.toLLMEvents(state, finish),
-    ).then((events) => {
+    const result = Effect.runPromise(LLMAISDK.toLLMEvents(state, finish)).then((events) => {
       finished = true
       return events
     })
@@ -244,7 +242,16 @@ describe("session.llm.ai-sdk adapter", () => {
       },
       {
         type: "finish-step",
-        performance: { responseTimeMs: 0, effectiveOutputTokensPerSecond: 0, outputTokensPerSecond: 0, inputTokensPerSecond: 0, effectiveTotalTokensPerSecond: 0, stepTimeMs: 0, toolExecutionMs: {}, timeToFirstOutputMs: 0 },
+        performance: {
+          responseTimeMs: 0,
+          effectiveOutputTokensPerSecond: 0,
+          outputTokensPerSecond: 0,
+          inputTokensPerSecond: 0,
+          effectiveTotalTokensPerSecond: 0,
+          stepTimeMs: 0,
+          toolExecutionMs: {},
+          timeToFirstOutputMs: 0,
+        },
         response: { id: "response-1", timestamp: new Date(0), modelId: "gpt-test" },
         finishReason: "other",
         rawFinishReason: "other",
@@ -387,7 +394,16 @@ describe("session.llm.ai-sdk adapter", () => {
     const events = await adapt([
       {
         type: "finish-step",
-        performance: { responseTimeMs: 0, effectiveOutputTokensPerSecond: 0, outputTokensPerSecond: 0, inputTokensPerSecond: 0, effectiveTotalTokensPerSecond: 0, stepTimeMs: 0, toolExecutionMs: {}, timeToFirstOutputMs: 0 },
+        performance: {
+          responseTimeMs: 0,
+          effectiveOutputTokensPerSecond: 0,
+          outputTokensPerSecond: 0,
+          inputTokensPerSecond: 0,
+          effectiveTotalTokensPerSecond: 0,
+          stepTimeMs: 0,
+          toolExecutionMs: {},
+          timeToFirstOutputMs: 0,
+        },
         response: { id: "response-1", timestamp: new Date(0), modelId: "gpt-test" },
         finishReason: "stop",
         rawFinishReason: "stop",
@@ -428,7 +444,16 @@ describe("session.llm.ai-sdk adapter", () => {
       uncheckedAdapterEvent({ type: "reasoning-end" }),
       {
         type: "finish-step",
-        performance: { responseTimeMs: 0, effectiveOutputTokensPerSecond: 0, outputTokensPerSecond: 0, inputTokensPerSecond: 0, effectiveTotalTokensPerSecond: 0, stepTimeMs: 0, toolExecutionMs: {}, timeToFirstOutputMs: 0 },
+        performance: {
+          responseTimeMs: 0,
+          effectiveOutputTokensPerSecond: 0,
+          outputTokensPerSecond: 0,
+          inputTokensPerSecond: 0,
+          effectiveTotalTokensPerSecond: 0,
+          stepTimeMs: 0,
+          toolExecutionMs: {},
+          timeToFirstOutputMs: 0,
+        },
         response: { id: "r1", timestamp: new Date(0), modelId: "gpt-test" },
         finishReason: "stop",
         rawFinishReason: "stop",
@@ -479,7 +504,16 @@ describe("session.llm.ai-sdk adapter", () => {
     const events = await adapt([
       {
         type: "finish-step",
-        performance: { responseTimeMs: 0, effectiveOutputTokensPerSecond: 0, outputTokensPerSecond: 0, inputTokensPerSecond: 0, effectiveTotalTokensPerSecond: 0, stepTimeMs: 0, toolExecutionMs: {}, timeToFirstOutputMs: 0 },
+        performance: {
+          responseTimeMs: 0,
+          effectiveOutputTokensPerSecond: 0,
+          outputTokensPerSecond: 0,
+          inputTokensPerSecond: 0,
+          effectiveTotalTokensPerSecond: 0,
+          stepTimeMs: 0,
+          toolExecutionMs: {},
+          timeToFirstOutputMs: 0,
+        },
         response: { id: "msg_test", timestamp: new Date(0), modelId: "claude-3-5-sonnet" },
         finishReason: "stop",
         rawFinishReason: "stop",
@@ -1875,8 +1909,7 @@ describe("session.llm.stream", () => {
         const capture = yield* Effect.promise(() => request)
         const body = capture.body
         const config = body.generationConfig as
-          | { temperature?: number; topP?: number; maxOutputTokens?: number }
-          | undefined
+          { temperature?: number; topP?: number; maxOutputTokens?: number } | undefined
 
         expect(capture.url.pathname).toBe(pathSuffix)
         expect(config?.temperature).toBe(0.3)

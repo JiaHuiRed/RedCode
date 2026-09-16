@@ -38,59 +38,62 @@ function readCatalogVersion(pkg: string): string | undefined {
 }
 
 function detectTargetInstance(): string | undefined {
- const bunDir = join(ROOT, "node_modules", ".bun")
- // 260808 Red hoisted 布局（CI `bun install --linker hoisted`）没有 .bun 目录，
- // keymap 单实例平铺在 node_modules/@opentui/keymap，不存在双实例问题 → 跳过
- if (!existsSync(bunDir)) {
-   console.log("[fix-keymap] no .bun dir (hoisted layout) — keymap is single instance, skip")
-   return undefined
- }
- const all: Array<{ dir: string; version: string; solidReal?: string }> = []
- for (const name of readdirSync(bunDir)) {
-   if (!name.startsWith("@opentui+keymap@")) continue
-   const inst = join(bunDir, name, "node_modules", "@opentui", "keymap")
-   if (!existsSync(inst)) continue
-   let solidReal: string | undefined
-   try {
-     // realpathSync 一步到位：readlink 返回相对路径，手工 resolve 必须先拼所在目录，容易错
-     solidReal = realpathSync(join(bunDir, name, "node_modules", "solid-js"))
-   } catch {}
-   all.push({ dir: inst, version: name.slice("@opentui+keymap@".length).split("+")[0]!, solidReal })
- }
- if (!all.length) {
-   console.log("[fix-keymap] no keymap instance under .bun — nothing to fix, skip")
-   return undefined
- }
+  const bunDir = join(ROOT, "node_modules", ".bun")
+  // 260808 Red hoisted 布局（CI `bun install --linker hoisted`）没有 .bun 目录，
+  // keymap 单实例平铺在 node_modules/@opentui/keymap，不存在双实例问题 → 跳过
+  if (!existsSync(bunDir)) {
+    console.log("[fix-keymap] no .bun dir (hoisted layout) — keymap is single instance, skip")
+    return undefined
+  }
+  const all: Array<{ dir: string; version: string; solidReal?: string }> = []
+  for (const name of readdirSync(bunDir)) {
+    if (!name.startsWith("@opentui+keymap@")) continue
+    const inst = join(bunDir, name, "node_modules", "@opentui", "keymap")
+    if (!existsSync(inst)) continue
+    let solidReal: string | undefined
+    try {
+      // realpathSync 一步到位：readlink 返回相对路径，手工 resolve 必须先拼所在目录，容易错
+      solidReal = realpathSync(join(bunDir, name, "node_modules", "solid-js"))
+    } catch {}
+    all.push({ dir: inst, version: name.slice("@opentui+keymap@".length).split("+")[0]!, solidReal })
+  }
+  if (!all.length) {
+    console.log("[fix-keymap] no keymap instance under .bun — nothing to fix, skip")
+    return undefined
+  }
 
- // 单实例无需消歧（全新 worktree 常态）。多实例时按 solid 同源筛：
- // 锚点依次试根/opencode 的 node_modules/solid-js（bun 的提升布局因树而异，
- // worktree 实测没有根级 solid-js），都没有则退到 .bun 里唯一的 solid 实例。
- // 260809 Red 锚点必须真实命中 .bun 实例才算数：hoisted 布局残留的根级真实
- // 目录（realpathSync 返回自身路径）匹配不到任何实例，误判为「有锚点」会
- // 让 matched 空、退化到 all[0] 选错实例 → junction 指向错误 solid → 运行时
- // createContext 身份对不上 → TUI 启动即崩 "Keymap not found"。
- let pool = all
- if (all.length > 1) {
-   let anchor: string | undefined
-   for (const p of [join(ROOT, "node_modules", "solid-js"), join(ROOT, "packages", "opencode", "node_modules", "solid-js")]) {
-     try {
-       const real = realpathSync(p)
-       // 只有能匹配到至少一个 .bun 实例的锚点才有效，否则继续试下一个
-       if (all.some((c) => c.solidReal === real)) {
-         anchor = real
-         break
-       }
-     } catch {}
-   }
-   if (!anchor) {
-     const solids = readdirSync(bunDir).filter((n) => n.startsWith("solid-js@"))
-     if (solids.length === 1) anchor = realpathSync(join(bunDir, solids[0]!, "node_modules", "solid-js"))
-   }
-   if (anchor) {
-     const matched = all.filter((c) => c.solidReal === anchor)
-     if (matched.length) pool = matched
-   }
- }
+  // 单实例无需消歧（全新 worktree 常态）。多实例时按 solid 同源筛：
+  // 锚点依次试根/opencode 的 node_modules/solid-js（bun 的提升布局因树而异，
+  // worktree 实测没有根级 solid-js），都没有则退到 .bun 里唯一的 solid 实例。
+  // 260809 Red 锚点必须真实命中 .bun 实例才算数：hoisted 布局残留的根级真实
+  // 目录（realpathSync 返回自身路径）匹配不到任何实例，误判为「有锚点」会
+  // 让 matched 空、退化到 all[0] 选错实例 → junction 指向错误 solid → 运行时
+  // createContext 身份对不上 → TUI 启动即崩 "Keymap not found"。
+  let pool = all
+  if (all.length > 1) {
+    let anchor: string | undefined
+    for (const p of [
+      join(ROOT, "node_modules", "solid-js"),
+      join(ROOT, "packages", "opencode", "node_modules", "solid-js"),
+    ]) {
+      try {
+        const real = realpathSync(p)
+        // 只有能匹配到至少一个 .bun 实例的锚点才有效，否则继续试下一个
+        if (all.some((c) => c.solidReal === real)) {
+          anchor = real
+          break
+        }
+      } catch {}
+    }
+    if (!anchor) {
+      const solids = readdirSync(bunDir).filter((n) => n.startsWith("solid-js@"))
+      if (solids.length === 1) anchor = realpathSync(join(bunDir, solids[0]!, "node_modules", "solid-js"))
+    }
+    if (anchor) {
+      const matched = all.filter((c) => c.solidReal === anchor)
+      if (matched.length) pool = matched
+    }
+  }
   // 260824 Red 想要的版本从 catalog 现取，不写死。
   // 教训：这里原本硬编码 `0.2.`（"catalog 钉的是 0.2.15"），于是 catalog 升到 0.5.7 后，
   // core/solid 都上去了、keymap 却被这一行按回 0.2.15 的旧实例——core 与 keymap 跨大版本

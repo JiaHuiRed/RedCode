@@ -11,6 +11,7 @@ IMPORTANT: This tool is for terminal operations like git, npm, docker, etc. DO N
 ${commandSection}
 
 # Git and GitHub
+
 - Only commit, amend, push, or create PRs when explicitly requested.
 - Before committing, inspect `git status`, `git diff`, and `git log --oneline -10`; stage only intended files and never commit secrets.
 - Write a concise commit message that matches the repo style.

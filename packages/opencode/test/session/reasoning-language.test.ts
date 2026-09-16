@@ -74,7 +74,8 @@ describe("reasoning-language.infer", () => {
   })
 
   test("中文里嵌英文日志仍判为 zh —— 这是最常见的真实形态", () => {
-    const s = "这个报错看不懂：\n```\nTypeError: undefined is not an object (evaluating 'model.api.id')\n```\n帮我查一下"
+    const s =
+      "这个报错看不懂：\n```\nTypeError: undefined is not an object (evaluating 'model.api.id')\n```\n帮我查一下"
     expect(infer(s)).toBe("zh")
   })
 

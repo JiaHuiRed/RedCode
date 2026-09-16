@@ -6,12 +6,12 @@
 
 冻结 bug 家族支线 B（子进程/外部调用缺超时 → 无界 async 等待）自 2026-07-24 只修了实际踩到的那一处（`format/index.ts` 的 `formatFile`），其余调用点一直挂账。2026-08-21 逐个核过，`appProcess.run` 共 8 个调用点，**超时上限为零**：
 
-| 位置 | 原本传了什么 |
-|---|---|
-| `git/index.ts` | 只有 `maxOutputBytes` |
-| `snapshot/index.ts` ×2 | 只有 `stdin` |
-| `worktree/index.ts` ×2 | 什么都没传 |
-| `installation/index.ts` ×3 | 什么都没传 |
+| 位置                       | 原本传了什么          |
+| -------------------------- | --------------------- |
+| `git/index.ts`             | 只有 `maxOutputBytes` |
+| `snapshot/index.ts` ×2     | 只有 `stdin`          |
+| `worktree/index.ts` ×2     | 什么都没传            |
+| `installation/index.ts` ×3 | 什么都没传            |
 
 危险程度不均等，`snapshot` 最高：它在**每一次编辑**都跑 git，是全仓最热的子进程路径。git 挂起有一堆真实成因——`index.lock` 锁等待、Windows 凭据管理器弹窗、远程 TCP 黑洞、`cat-file --batch` 的 stdin 管道半开。挂起时事件循环并没有被阻塞，evloop drift 探针一声不响（这正是支线 B 的静默签名），日志里一个字都没有，用户只能杀进程重开、丢掉整个会话上下文。
 
@@ -58,4 +58,5 @@
   写这个脚本时自己先踩了一次它要防的坑：第一版用 `indexOf("appProcess.run(")` 找调用，漏掉了 `format/index.ts` 里被 prettier 折成两行的那处（`appProcess` 换行再 `.run(`），报出的是「9 处里只看到 8 处、全部合规」这种看着很干净的假通过。修法有两层——接收者改成从 `.run` 往前跳空白再取标识符；更重要的是加了**盲区断言**：一个文件绑定了服务、文本里也有 `.run(`、却一处都没归因上，直接判失败并要求先修检测。这是 help 快照那次（测试从没比对过基线却报 1 pass）的同形状教训。
 
   三条路径都实测过有牙：拿掉 snapshot 一处 timeout → 报违规并 exit 1；补上豁免注释 → 放行；把 format 的接收者改名模拟归因失败 → 盲区断言开火。
+
 - 借自 deepseek-harness `docs/defensive-patterns.md` 的第一条 "Report orthogonal outcomes independently"；那份文档整体进仓的提议见 DSH 采纳路线图。

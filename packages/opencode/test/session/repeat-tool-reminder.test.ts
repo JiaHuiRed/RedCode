@@ -4,7 +4,11 @@ import { chainLength, reminderFor, THRESHOLDS, EXCLUDED_TOOLS } from "@/session/
 import type { Part } from "@/session/message-v2"
 
 let seq = 0
-function toolPart(tool: string, input: Record<string, unknown>, status: "completed" | "error" | "running" = "completed"): Part {
+function toolPart(
+  tool: string,
+  input: Record<string, unknown>,
+  status: "completed" | "error" | "running" = "completed",
+): Part {
   seq++
   const state =
     status === "completed"

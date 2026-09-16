@@ -113,9 +113,7 @@ function messageFacts(message: ModelMessage): { text: number; images: number } {
   if (cached !== undefined) return cached
   const content = message.content
   const facts =
-    typeof content === "string"
-      ? { text: Token.estimate(content), images: 0 }
-      : countModelMessageContent(content)
+    typeof content === "string" ? { text: Token.estimate(content), images: 0 } : countModelMessageContent(content)
   memo.set(message, facts)
   return facts
 }
@@ -187,7 +185,13 @@ async function prune() {
   const names = await fs.readdir(base).catch(() => [] as string[])
   if (names.length <= DISK_MAX) return
   const stats = await Promise.all(
-    names.map(async (name) => ({ name, at: await fs.stat(path.join(base, name)).then((x) => x.mtimeMs, () => 0) })),
+    names.map(async (name) => ({
+      name,
+      at: await fs.stat(path.join(base, name)).then(
+        (x) => x.mtimeMs,
+        () => 0,
+      ),
+    })),
   )
   const stale = stats.sort((a, b) => b.at - a.at).slice(DISK_MAX)
   await Promise.all(stale.map((x) => fs.rm(path.join(base, x.name), { force: true }).catch(() => {})))

@@ -121,11 +121,7 @@ describe("TUI 会话记录整帧", () => {
   })
 
   test("多轮连续渲染时相邻消息的间隔", async () => {
-    const turns = [
-      userMessage("第一问", "msg_u1"),
-      userMessage("第二问", "msg_u2"),
-      userMessage("第三问", "msg_u3"),
-    ]
+    const turns = [userMessage("第一问", "msg_u1"), userMessage("第二问", "msg_u2"), userMessage("第三问", "msg_u3")]
     expect(
       await renderFrame(
         () => (

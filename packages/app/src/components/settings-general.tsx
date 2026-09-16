@@ -539,8 +539,6 @@ export const SettingsGeneral: Component = () => {
     </div>
   )
 
-
-
   const AppearanceSection = () => {
     // 260608 Red 0.4.5 聊天背景图：复用 avatar 的 FileReader→dataURL→settings 模式
     let chatBgInput: HTMLInputElement | undefined
@@ -634,8 +632,7 @@ export const SettingsGeneral: Component = () => {
             // 260829 Red 字体选择改自定义下拉：每项以自身字体渲染预览，交互走 Kobalte 弹层
             // （原生 datalist 样式不可控、点输入框不弹、点按钮收不回——哥哥实测三连败）
             const fontItem = (kind: "sans" | "mono") => (font: string | undefined) => {
-              if (font === FONT_UNDEFINED)
-                return <span>{language.t("settings.general.row.font.undefined")}</span>
+              if (font === FONT_UNDEFINED) return <span>{language.t("settings.general.row.font.undefined")}</span>
               if (!font) return null
               return (
                 <span style={{ "font-family": `"${font}", ${kind === "sans" ? "sans-serif" : "monospace"}` }}>

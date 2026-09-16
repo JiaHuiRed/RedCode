@@ -78,11 +78,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   // 260829 cc 条用的分档色。与圈共用 strokeTier()，但**常态档不同**：圈在常态刻意不上色
   // （「没事发生时圈就该是平时的样子」，见上），而条的职责是把占比画出来，没有填充色就
   // 什么都看不到，所以常态给 info 蓝。警戒两档与圈完全一致。
-  const TIER_BAR = [
-    "var(--v2-state-fg-info)",
-    "var(--v2-state-fg-warning)",
-    "var(--v2-state-fg-danger)",
-  ] as const
+  const TIER_BAR = ["var(--v2-state-fg-info)", "var(--v2-state-fg-warning)", "var(--v2-state-fg-danger)"] as const
   const usageTier = (usage: number | null) => {
     if (usage === null) return 0
     if (usage >= 80) return 2

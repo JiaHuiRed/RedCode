@@ -13,21 +13,21 @@
 
 ## 已落地
 
-| 项 | DSH 来源 | RedCode 落点 | 提交 |
-|---|---|---|---|
-| 重复调用递进提醒软层(3/5/8,tool output 尾部注入,todo 工具对链透明,与 doom_loop 硬层互补) | `guard/repeat-tool-reminder` | `session/repeat-tool-reminder.ts` + processor 接线 | 89e85f3 |
-| 压缩摘要截断 head-only → head+tail 4:1(尾部错误栈/退出码保住) | `compaction/compaction-tool-result-pruner` | `message-v2.ts` `truncateToolOutput` | 17a7304a |
-| 提示词减脂:机制落地后删对应规则条(不再占固定前缀) | "行为规范写代码不写提示词"哲学 | deepseek.md 删 re-fetching 条 | 89e85f3 |
-| 测试纪律"证据面匹配 + 永不默认全量"入规 | 根 AGENTS.md "Run relevant checks locally" | AGENTS.md | 9981d03e |
-| 决策记录制度(notes) | `.agents/notes/`(1369 篇,四态,同 PR 附 note) | `docs/notes/` | 9981d03e |
-| timeout-policy(工具自声明 timeoutMs + wrap 层 cooperative 拦截,首个声明方 repo_clone) | `guard/timeout-policy` | `tool/tool.ts` TimeoutError | 16f606b2 |
-| 插话/排队可选(`busy_enter`:steer=中途注入(原行为),queue=真排队;附 stall nudge 退役收敛三层空转提醒为两层) | `ui-input-trigger` 双模 | `config.ts` + `session/prompt.ts`,note ×2 | 0856fb9b |
-| webfetch 目的地守卫:拒非公网地址、审批在 DNS 解析之前、**逐跳**校验重定向(fetch 默认 follow 只看得到第一跳)。分两档 —— 环回/RFC1918/CGNAT/ULA 可由配置放行,link-local(云元数据)等永不放行 | `web/web-fetch-http/src/network.ts`(上游 `b2219bba`/`709e5eda`) | `util/net-address.ts` + `tool/webfetch.ts`,配置 `webfetch.allow_private_hosts` | 5c121d7b |
-| 图片按路由计价进上下文估算(此前按内联 base64 长度算,一张 400KB JPEG = 约 13 万 token,把**保留范围**与**用量面板**都带偏;触发线锚在 provider usage 上未动) | `route-priced-image-request-pressure` | `session/image-tokens.ts`,接 `compaction.estimate` 与 `context-snapshot` | 9286a867 |
-| 图片尺寸从每边盒子改**总像素预算**(2000x20000 长截图 200px 宽 → 632px)+ 候选懒求值 + 按 alpha 路由(JPEG 源不再排 PNG 候选) | `alpha-routed-image-quality-ladders` | `image/image.ts`,配置 `attachment.image.max_pixels`/`max_dimension` | fefc7ce2 |
-| 工具读到的图片直接画在卡片里(`part.state.attachments` 一直带到客户端、只缺渲染器;live 库里已有 14 条带图记录) | `feat(ui-tool): render read_image results as the image` + 补嵌套调用 | `ui/components/message-part.tsx` `ToolAttachmentImages` | 6a12b8a7 |
-| 圆角改画超椭圆 `superellipse(1.5)`,通配选择器铺满 + 全圆形逐条 opt-out,扫描防回潮 | `2026-09-01-web-superellipse-corner-smoothing` | `ui/styles/corner-shape.css` + `.test.ts` | fe9578b4 |
-| 浮层描边统一画进 box-shadow(`--shadow-md-border`),反色面保留真 border,扫描防回潮。**刻意不跟 0.5px**——实测 DPR=1 下 `border:0.5px` 根本不画 | `2026-09-01-web-elevation-stroke-shadows` | `ui/styles/theme.css` + `dropdown-menu`/`popover`/`hover-card` | a93e1b46 |
+| 项                                                                                                                                                                                        | DSH 来源                                                             | RedCode 落点                                                                   | 提交     |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------- |
+| 重复调用递进提醒软层(3/5/8,tool output 尾部注入,todo 工具对链透明,与 doom_loop 硬层互补)                                                                                                  | `guard/repeat-tool-reminder`                                         | `session/repeat-tool-reminder.ts` + processor 接线                             | 89e85f3  |
+| 压缩摘要截断 head-only → head+tail 4:1(尾部错误栈/退出码保住)                                                                                                                             | `compaction/compaction-tool-result-pruner`                           | `message-v2.ts` `truncateToolOutput`                                           | 17a7304a |
+| 提示词减脂:机制落地后删对应规则条(不再占固定前缀)                                                                                                                                         | "行为规范写代码不写提示词"哲学                                       | deepseek.md 删 re-fetching 条                                                  | 89e85f3  |
+| 测试纪律"证据面匹配 + 永不默认全量"入规                                                                                                                                                   | 根 AGENTS.md "Run relevant checks locally"                           | AGENTS.md                                                                      | 9981d03e |
+| 决策记录制度(notes)                                                                                                                                                                       | `.agents/notes/`(1369 篇,四态,同 PR 附 note)                         | `docs/notes/`                                                                  | 9981d03e |
+| timeout-policy(工具自声明 timeoutMs + wrap 层 cooperative 拦截,首个声明方 repo_clone)                                                                                                     | `guard/timeout-policy`                                               | `tool/tool.ts` TimeoutError                                                    | 16f606b2 |
+| 插话/排队可选(`busy_enter`:steer=中途注入(原行为),queue=真排队;附 stall nudge 退役收敛三层空转提醒为两层)                                                                                 | `ui-input-trigger` 双模                                              | `config.ts` + `session/prompt.ts`,note ×2                                      | 0856fb9b |
+| webfetch 目的地守卫:拒非公网地址、审批在 DNS 解析之前、**逐跳**校验重定向(fetch 默认 follow 只看得到第一跳)。分两档 —— 环回/RFC1918/CGNAT/ULA 可由配置放行,link-local(云元数据)等永不放行 | `web/web-fetch-http/src/network.ts`(上游 `b2219bba`/`709e5eda`)      | `util/net-address.ts` + `tool/webfetch.ts`,配置 `webfetch.allow_private_hosts` | 5c121d7b |
+| 图片按路由计价进上下文估算(此前按内联 base64 长度算,一张 400KB JPEG = 约 13 万 token,把**保留范围**与**用量面板**都带偏;触发线锚在 provider usage 上未动)                                 | `route-priced-image-request-pressure`                                | `session/image-tokens.ts`,接 `compaction.estimate` 与 `context-snapshot`       | 9286a867 |
+| 图片尺寸从每边盒子改**总像素预算**(2000x20000 长截图 200px 宽 → 632px)+ 候选懒求值 + 按 alpha 路由(JPEG 源不再排 PNG 候选)                                                                | `alpha-routed-image-quality-ladders`                                 | `image/image.ts`,配置 `attachment.image.max_pixels`/`max_dimension`            | fefc7ce2 |
+| 工具读到的图片直接画在卡片里(`part.state.attachments` 一直带到客户端、只缺渲染器;live 库里已有 14 条带图记录)                                                                             | `feat(ui-tool): render read_image results as the image` + 补嵌套调用 | `ui/components/message-part.tsx` `ToolAttachmentImages`                        | 6a12b8a7 |
+| 圆角改画超椭圆 `superellipse(1.5)`,通配选择器铺满 + 全圆形逐条 opt-out,扫描防回潮                                                                                                         | `2026-09-01-web-superellipse-corner-smoothing`                       | `ui/styles/corner-shape.css` + `.test.ts`                                      | fe9578b4 |
+| 浮层描边统一画进 box-shadow(`--shadow-md-border`),反色面保留真 border,扫描防回潮。**刻意不跟 0.5px**——实测 DPR=1 下 `border:0.5px` 根本不画                                               | `2026-09-01-web-elevation-stroke-shadows`                            | `ui/styles/theme.css` + `dropdown-menu`/`popover`/`hover-card`                 | a93e1b46 |
 
 ## 第二批(小机制,高性价比)
 
@@ -45,7 +45,6 @@
 ## 第三批(结构性)
 
 - [~] **界面文本快照**(部分落地 260828):TUI 侧已落 —— `test/cli/tui/conversation-snapshot.test.tsx` 5 个场景用**真** `UserMessage`/`AssistantMessage` 渲染整帧,`test/cli/tui/prompt-usage.test.ts` 10 例钉住三档命中率与冻结判据。harness 靠给 `createSimpleContext` 加 `context` 返回字段绕过 7 层 provider 链。**GUI 侧未做**(对应 Playwright `toMatchAriaSnapshot()`)。上游是 33 个场景,本仓 5 个。note 见 `docs/notes/implemented/testing/2026-08-28-tui-transcript-snapshots.md`
-
 
 - [ ] **动态上下文快照通道**:会变的内容不进 system prompt,走"supersedes 早先快照"的独立消息、只在变化时重发。先对照 prefix-debug.log 找该走此通道的断裂源。参考 `core/system-prompt` PromptContext + agent-loop runtime-context。
 - [ ] **hooks 声明式 subprocess 层**:kimi-hooks 研究的未竟半边;DSH `hooks/hook-protocol` + `hooks-claude-code` 是现成参考(7 个 hook 点映射、fail-open 不崩 boot、CC hooks.json 直接兼容可白嫖生态)。

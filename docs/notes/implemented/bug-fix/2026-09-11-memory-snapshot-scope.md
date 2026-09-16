@@ -14,10 +14,10 @@
 
 `export-memory-backup.mjs` 拆成两份输出：
 
-| 输出 | 内容 | 入库 |
-|---|---|---|
-| `memory/lessons-backup.<host>.md` | 只含共享项目（默认 `global`） | 是 |
-| `memory/local-backup.<host>.md` | 全库，含私有工作项目 | 否（私仓 `.gitignore`） |
+| 输出                              | 内容                          | 入库                    |
+| --------------------------------- | ----------------------------- | ----------------------- |
+| `memory/lessons-backup.<host>.md` | 只含共享项目（默认 `global`） | 是                      |
+| `memory/local-backup.<host>.md`   | 全库，含私有工作项目          | 否（私仓 `.gitignore`） |
 
 共享范围由环境变量 `REDCODE_BACKUP_PROJECTS`（逗号分隔）扩展，默认 `"global"`——不写死。
 

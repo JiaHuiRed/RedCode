@@ -5,21 +5,21 @@
  * and smoke-test.ts into a single module.
  */
 
-import * as path from "node:path";
+import * as path from "node:path"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface TypegraphConfig {
   /** Absolute path to the target project root */
-  projectRoot: string;
+  projectRoot: string
   /** Relative tsconfig path (e.g. "./tsconfig.json") */
-  tsconfigPath: string;
+  tsconfigPath: string
   /** Absolute path to the typegraph-mcp tool directory */
-  toolDir: string;
+  toolDir: string
   /** Whether typegraph-mcp is embedded inside the project (e.g. plugins/typegraph-mcp/) */
-  toolIsEmbedded: boolean;
+  toolIsEmbedded: boolean
   /** Path to tool dir — relative to projectRoot if embedded, else absolute */
-  toolRelPath: string;
+  toolRelPath: string
 }
 
 // ─── Resolution ──────────────────────────────────────────────────────────────
@@ -33,18 +33,18 @@ export interface TypegraphConfig {
  *   3. Otherwise, use cwd (standalone deployment, run from target project)
  */
 export function resolveConfig(toolDir: string): TypegraphConfig {
-  const cwd = process.cwd();
+  const cwd = process.cwd()
 
   const projectRoot = process.env["TYPEGRAPH_PROJECT_ROOT"]
     ? path.resolve(cwd, process.env["TYPEGRAPH_PROJECT_ROOT"])
     : path.basename(path.dirname(toolDir)) === "plugins"
       ? path.resolve(toolDir, "../..")
-      : cwd;
+      : cwd
 
-  const tsconfigPath = process.env["TYPEGRAPH_TSCONFIG"] || "./tsconfig.json";
+  const tsconfigPath = process.env["TYPEGRAPH_TSCONFIG"] || "./tsconfig.json"
 
-  const toolIsEmbedded = toolDir.startsWith(projectRoot + path.sep);
-  const toolRelPath = toolIsEmbedded ? path.relative(projectRoot, toolDir) : toolDir;
+  const toolIsEmbedded = toolDir.startsWith(projectRoot + path.sep)
+  const toolRelPath = toolIsEmbedded ? path.relative(projectRoot, toolDir) : toolDir
 
-  return { projectRoot, tsconfigPath, toolDir, toolIsEmbedded, toolRelPath };
+  return { projectRoot, tsconfigPath, toolDir, toolIsEmbedded, toolRelPath }
 }

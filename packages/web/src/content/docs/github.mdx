@@ -105,14 +105,14 @@ Or you can set it up manually.
 
 RedCode can be triggered by the following GitHub events:
 
-| Event Type                    | Triggered By                           | Details                                                                                                           |
-| ----------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Event Type                    | Triggered By                           | Details                                                                                                         |
+| ----------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `issue_comment`               | Comment on an issue or PR              | Mention `/redcode` or `/oc` in your comment. RedCode reads context and can create branches, open PRs, or reply. |
 | `pull_request_review_comment` | Comment on specific code lines in a PR | Mention `/redcode` or `/oc` while reviewing code. RedCode receives file path, line numbers, and diff context.   |
-| `issues`                      | Issue opened or edited                 | Automatically trigger RedCode when issues are created or modified. Requires `prompt` input.                      |
-| `pull_request`                | PR opened or updated                   | Automatically trigger RedCode when PRs are opened, synchronized, or reopened. Useful for automated reviews.      |
-| `schedule`                    | Cron-based schedule                    | Run RedCode on a schedule. Requires `prompt` input. Output goes to logs and PRs (no issue to comment on).        |
-| `workflow_dispatch`           | Manual trigger from GitHub UI          | Trigger RedCode on demand via Actions tab. Requires `prompt` input. Output goes to logs and PRs.                 |
+| `issues`                      | Issue opened or edited                 | Automatically trigger RedCode when issues are created or modified. Requires `prompt` input.                     |
+| `pull_request`                | PR opened or updated                   | Automatically trigger RedCode when PRs are opened, synchronized, or reopened. Useful for automated reviews.     |
+| `schedule`                    | Cron-based schedule                    | Run RedCode on a schedule. Requires `prompt` input. Output goes to logs and PRs (no issue to comment on).       |
+| `workflow_dispatch`           | Manual trigger from GitHub UI          | Trigger RedCode on demand via Actions tab. Requires `prompt` input. Output goes to logs and PRs.                |
 
 ### Schedule Example
 

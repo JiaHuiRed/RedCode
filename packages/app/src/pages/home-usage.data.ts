@@ -67,9 +67,7 @@ export function topModels(models: Usage["models"], limit = MAX_MODEL_SERIES): Mo
   //   opencode-go 与 deepseek 下），只显示 modelID 会让图例出现两行同名不同色 ——
   //   那正是「身份不能只靠颜色区分」失败的样子。只在真的重名时才带上 provider 前缀，
   //   不重名的保持短标签。
-  const duplicated = new Set(
-    sorted.map((m) => m.modelID).filter((id, i, all) => all.indexOf(id) !== i),
-  )
+  const duplicated = new Set(sorted.map((m) => m.modelID).filter((id, i, all) => all.indexOf(id) !== i))
 
   const head = sorted.slice(0, limit).map((m) => ({
     key: modelKey(m.providerID, m.modelID),

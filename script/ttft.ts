@@ -18,9 +18,7 @@ const sessionID = argv.find((a) => a.startsWith("ses_"))
 
 const db = new Database(dbPath, { readonly: true })
 const rows = sessionID
-  ? db
-      .query<{ data: string }, [string]>(`SELECT data FROM message WHERE session_id = ? ORDER BY id`)
-      .all(sessionID)
+  ? db.query<{ data: string }, [string]>(`SELECT data FROM message WHERE session_id = ? ORDER BY id`).all(sessionID)
   : db.query<{ data: string }, []>(`SELECT data FROM message ORDER BY time_created DESC LIMIT 200`).all()
 
 type Row = {

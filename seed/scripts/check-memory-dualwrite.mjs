@@ -27,8 +27,7 @@ const md = readFileSync(MEMORY_PATH, "utf-8")
 const nums = new Set()
 // 260830 Red 合并索引行 "#NN/NN"（#71/114、#87/88/106 等）按 "/" 拆开逐个登记；
 // 原正则只抓到 "#71"，"/114" 前无 "#" 字符不匹配 → 114 被反向检查误判 orphan
-for (const m of md.matchAll(/#(\d+(?:\/\d+)*)(?=\s|$)/g))
-  for (const n of m[1].split("/")) nums.add(n)
+for (const m of md.matchAll(/#(\d+(?:\/\d+)*)(?=\s|$)/g)) for (const n of m[1].split("/")) nums.add(n)
 
 // ── 查库：project='global' 的 content 首行格式为 "#NN 标题（YYMMDD）" ──
 const db = new Database(DB_PATH, { readonly: true })
@@ -66,9 +65,13 @@ const ok = missing.length === 0 && duplicates.size === 0
 if (ok) {
   console.log(`✓ 记忆双写核对通过：MEMORY.md ${nums.size} 个索引行全部有唯一全文（${rows.length} 条 global 记录）`)
 } else {
-  console.error(`✗ 记忆双写核对失败：${missing.length}/${nums.size} 个索引行缺全文，${duplicates.size} 个编号重复或冲突`)
+  console.error(
+    `✗ 记忆双写核对失败：${missing.length}/${nums.size} 个索引行缺全文，${duplicates.size} 个编号重复或冲突`,
+  )
   for (const n of missing) {
-    console.error(`  #${n}  在 MEMORY.md 有索引，但 supermemory.db（project='global'）无 content LIKE '#${n} %' 全文——请双写补齐（INSERT memories）`)
+    console.error(
+      `  #${n}  在 MEMORY.md 有索引，但 supermemory.db（project='global'）无 content LIKE '#${n} %' 全文——请双写补齐（INSERT memories）`,
+    )
   }
   for (const [n, duplicate] of [...duplicates].sort(([a], [b]) => numeric(a, b))) {
     console.error(
@@ -77,6 +80,8 @@ if (ok) {
   }
 }
 if (orphan.length > 0) {
-  console.log(`(提示：db 有 ${orphan.length} 条全文但索引已不在 MEMORY.md——多为 consolidate 删索引前的合法归档${orphan.length <= 20 ? "：" + orphan.map((n) => "#" + n).join(" ") : ""})`)
+  console.log(
+    `(提示：db 有 ${orphan.length} 条全文但索引已不在 MEMORY.md——多为 consolidate 删索引前的合法归档${orphan.length <= 20 ? "：" + orphan.map((n) => "#" + n).join(" ") : ""})`,
+  )
 }
 process.exit(ok ? 0 : 1)

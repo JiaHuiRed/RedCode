@@ -226,7 +226,7 @@ describe("structured-output.createStructuredOutputTool", () => {
       toolCallId: "test-call-id",
       messages: [],
       abortSignal: undefined as any,
-        context: {},
+      context: {},
     })
 
     expect(capturedOutput).toEqual(testArgs)

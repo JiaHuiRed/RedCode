@@ -185,7 +185,11 @@ describe("Image pixel budget", () => {
   it.effect("keeps the short edge of a tall screenshot instead of crushing it", () =>
     Effect.gen(function* () {
       const photon = yield* Effect.promise(() => import("@silvia-odwyer/photon-node"))
-      const source = new photon.PhotonImage(new Uint8Array(Array.from({ length: 100 * 2_400 * 4 }, () => 255)), 100, 2_400)
+      const source = new photon.PhotonImage(
+        new Uint8Array(Array.from({ length: 100 * 2_400 * 4 }, () => 255)),
+        100,
+        2_400,
+      )
       const image = yield* Image.Service
       const result = yield* image.normalize(part("image/png", Buffer.from(source.get_bytes()).toString("base64")))
       const out = photon.PhotonImage.new_from_byteslice(
@@ -203,7 +207,11 @@ describe("Image pixel budget", () => {
   it.effect("leaves a square image at the budget boundary exactly as before", () =>
     Effect.gen(function* () {
       const photon = yield* Effect.promise(() => import("@silvia-odwyer/photon-node"))
-      const source = new photon.PhotonImage(new Uint8Array(Array.from({ length: 2_100 * 2_100 * 4 }, () => 255)), 2_100, 2_100)
+      const source = new photon.PhotonImage(
+        new Uint8Array(Array.from({ length: 2_100 * 2_100 * 4 }, () => 255)),
+        2_100,
+        2_100,
+      )
       const image = yield* Image.Service
       const result = yield* image.normalize(part("image/png", Buffer.from(source.get_bytes()).toString("base64")))
       const out = photon.PhotonImage.new_from_byteslice(
@@ -226,10 +234,16 @@ describe("Image alpha routing", () => {
   it.effect("never offers a PNG candidate for a JPEG source", () =>
     Effect.gen(function* () {
       const photon = yield* Effect.promise(() => import("@silvia-odwyer/photon-node"))
-      const source = new photon.PhotonImage(new Uint8Array(Array.from({ length: 3_000 * 100 * 4 }, () => 255)), 3_000, 100)
+      const source = new photon.PhotonImage(
+        new Uint8Array(Array.from({ length: 3_000 * 100 * 4 }, () => 255)),
+        3_000,
+        100,
+      )
       const image = yield* Image.Service
       // 全白图的 PNG 极小，旧实现里它一定排第一且在预算内 —— 所以这条断言能区分两种实现。
-      const result = yield* image.normalize(part("image/jpeg", Buffer.from(source.get_bytes_jpeg(90)).toString("base64")))
+      const result = yield* image.normalize(
+        part("image/jpeg", Buffer.from(source.get_bytes_jpeg(90)).toString("base64")),
+      )
       source.free()
 
       expect(result.part.mime).toBe("image/jpeg")
@@ -239,7 +253,11 @@ describe("Image alpha routing", () => {
   it.effect("still offers PNG first for a source that may carry alpha", () =>
     Effect.gen(function* () {
       const photon = yield* Effect.promise(() => import("@silvia-odwyer/photon-node"))
-      const source = new photon.PhotonImage(new Uint8Array(Array.from({ length: 3_000 * 100 * 4 }, () => 255)), 3_000, 100)
+      const source = new photon.PhotonImage(
+        new Uint8Array(Array.from({ length: 3_000 * 100 * 4 }, () => 255)),
+        3_000,
+        100,
+      )
       const image = yield* Image.Service
       const result = yield* image.normalize(part("image/png", Buffer.from(source.get_bytes()).toString("base64")))
       source.free()

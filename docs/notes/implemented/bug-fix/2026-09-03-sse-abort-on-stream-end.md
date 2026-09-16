@@ -43,12 +43,12 @@ SSE 断掉不该让 POST 失败。两者一起死，说明有个**共用资源**
 
 四个前提都已核实：
 
-| 前提 | 实测 |
-|---|---|
-| sidecar 是 HTTP/1.1 | `server.ts` 用 `node:http` 的 `createServer()`，无 h2 |
+| 前提                                       | 实测                                                                                                    |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| sidecar 是 HTTP/1.1                        | `server.ts` 用 `node:http` 的 `createServer()`，无 h2                                                   |
 | 本地场景 SSE 走 renderer 的 Chromium fetch | `eventFetch` 只在**非 loopback** 才返回 `platform.fetch`（`global-sdk.tsx` 开头），本地一律 `undefined` |
-| **两条**常驻 SSE 流 | `global-sdk` 与 `server-sdk` 各调一次 `global.event` |
-| 重连是紧循环 | `RECONNECT_BASE_MS = 256`，上限 2000 |
+| **两条**常驻 SSE 流                        | `global-sdk` 与 `server-sdk` 各调一次 `global.event`                                                    |
+| 重连是紧循环                               | `RECONNECT_BASE_MS = 256`，上限 2000                                                                    |
 
 Chromium 对同一 host 是 **6 个连接**。两条 SSE 常驻占 2 个，剩 4 个给文件树、上下文面板、
 消息 POST、终止请求。旧连接不释放 + 256ms 起步的重连 ⇒ 槽位吃光 ⇒ **之后所有到该 origin
@@ -87,6 +87,7 @@ SDK 那圈的起始退避是 **3 秒**，应用层这套是 **256ms** —— 同
   天然豁免。所以 **`!loopback` 不是在保护 loopback，只是在说"本机不需要这个逃生口"**，
   跟连接池无关。日志里那行 `fetch: eventFetch ? "platform" : "webview"` 是**误导性标签**：
   两边都是 webview 的 fetch，查日志时别拿它当传输方式的判据。
+
 - **加大重连退避**：否决——那是把症状往后推，不是修泄漏；而且会让真实断连的恢复变慢。
 - **等复发再修**：否决——收尾不对称是确定的错误，不该拿它当观测手段。
 
@@ -100,14 +101,14 @@ SDK 那圈的起始退避是 **3 秒**，应用层这套是 **256ms** —— 同
 
 对照 `D:\AI\opencode`（26-09-02 HEAD，已分叉两个多月）的 `packages/app/src/context/server-sdk.tsx`：
 
-| | opencode | RedCode（改前） |
-|---|---|---|
-| SSE 流数量 | **1** 条 | **2** 条（`global-sdk` + `server-sdk`） |
-| 并发重连守卫 | **有** `generation` 计数 | **没有** |
-| 重连延迟 | 固定 250ms | 256ms→2000ms 指数 |
-| 心跳 | 无 | 有，90s abort（RedCode 自己加的，是真改进） |
-| `finally` 里 abort | **也没有**（同样的缺陷） | 本 note 上半段已补 |
-| 测试 | `server-sdk.test.ts` 196 行 | 无 |
+|                    | opencode                    | RedCode（改前）                             |
+| ------------------ | --------------------------- | ------------------------------------------- |
+| SSE 流数量         | **1** 条                    | **2** 条（`global-sdk` + `server-sdk`）     |
+| 并发重连守卫       | **有** `generation` 计数    | **没有**                                    |
+| 重连延迟           | 固定 250ms                  | 256ms→2000ms 指数                           |
+| 心跳               | 无                          | 有，90s abort（RedCode 自己加的，是真改进） |
+| `finally` 里 abort | **也没有**（同样的缺陷）    | 本 note 上半段已补                          |
+| 测试               | `server-sdk.test.ts` 196 行 | 无                                          |
 
 **那处收尾不对称是从上游继承的，不是本仓写错的** —— opencode 现在仍是 `attempt = undefined`。
 
@@ -121,6 +122,7 @@ start() 被连着调两次，**挡不住 stop() 之后再 start() 时旧循环�
 最久要 2 秒才醒来检查，窗口比上游固定 250ms 大八倍。
 
 已补两处（两个文件各一套）：
+
 - `let generation = 0`；start 里 `const active = ++generation`；循环条件与退出检查点都带上
   `generation === active` / `generation !== active`；stop 里 `generation++`。
 - 连带抄了 opencode 的 `run !== current` 守卫：**旧循环的 `finally` 不能把新 run 的引用清掉**

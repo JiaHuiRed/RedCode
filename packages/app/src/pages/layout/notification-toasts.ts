@@ -84,7 +84,10 @@ export function createSDKNotificationToasts(deps: {
       if (e.details?.type === "session.compacted") {
         const props = e.details.properties as { sessionID: string }
         const [store] = globalSync.child(e.name, { bootstrap: false })
-        const last = findLastCompaction(store.message[props.sessionID] ?? [], (messageID) => store.part[messageID] ?? [])
+        const last = findLastCompaction(
+          store.message[props.sessionID] ?? [],
+          (messageID) => store.part[messageID] ?? [],
+        )
         const fmt = (n: number) => n.toLocaleString(language.intl())
         showToast({
           icon: "collapse" as any,

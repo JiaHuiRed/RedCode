@@ -12,12 +12,12 @@ error: NotFound: FileSystem.readFile (C:\Users\...\Temp\redcode-test-xxxx\openco
 
 看上去像"测试写 `opencode.jsonc`、代码读 `redcode.jsonc`"一条根因。**实际不是**：31 条里只有 4 条是这个签名，其余 27 条另有来源。逐条验完，31 条分成四类：
 
-| 类 | 条数 | 真实根因 |
-|---|---|---|
-| A 环境变量名 | 大头 | 测试设 `OPENCODE_*`，代码只认 `REDCODE_*`，**无回退** |
-| B 目录名 | 若干 | 测试造 `.opencode/`，加载器只扫 `.redcode/` |
-| C 全局/托管层文件名 | 4 | 全局配置目录只认 `redcode.*`，测试写 `opencode.jsonc` |
-| D 非重命名欠账 | 6 | 见下，两个是 src 真 bug |
+| 类                  | 条数 | 真实根因                                              |
+| ------------------- | ---- | ----------------------------------------------------- |
+| A 环境变量名        | 大头 | 测试设 `OPENCODE_*`，代码只认 `REDCODE_*`，**无回退** |
+| B 目录名            | 若干 | 测试造 `.opencode/`，加载器只扫 `.redcode/`           |
+| C 全局/托管层文件名 | 4    | 全局配置目录只认 `redcode.*`，测试写 `opencode.jsonc` |
+| D 非重命名欠账      | 6    | 见下，两个是 src 真 bug                               |
 
 关键分辨点：**项目级 `opencode.json(c)` 至今仍被加载**（`src/config/config.ts:687` 为 MCP 兼容显式再扫一遍 `opencode` 前缀），所以不能对 `opencode.json` 做无差别全局替换——只有**全局配置目录**和**托管目录**没有 `opencode.*` 回退。同理 `provider.opencode`（供应商 id）、`oh-my-opencode`（npm 包名）、`DEFAULT_THEMES.opencode`（主题名）、`https://config.example.com/opencode.json`（纯 mock URL）都不是文件名欠账，一个都不能动。
 

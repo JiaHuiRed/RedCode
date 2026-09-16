@@ -1,5 +1,5 @@
-import { defineConfig } from "tsup";
-import { readFileSync, writeFileSync, readdirSync } from "node:fs";
+import { defineConfig } from "tsup"
+import { readFileSync, writeFileSync, readdirSync } from "node:fs"
 
 export default defineConfig({
   entry: [
@@ -18,23 +18,17 @@ export default defineConfig({
   outDir: "dist",
   splitting: false,
   clean: true,
-  external: [
-    "@clack/prompts",
-    "@modelcontextprotocol/sdk",
-    "oxc-parser",
-    "oxc-resolver",
-    "zod",
-  ],
+  external: ["@clack/prompts", "@modelcontextprotocol/sdk", "oxc-parser", "oxc-resolver", "zod"],
   async onSuccess() {
     // Strip shebangs from all compiled files, then add node shebang to cli.js
     for (const file of readdirSync("dist").filter((f) => f.endsWith(".js"))) {
-      const filePath = `dist/${file}`;
-      let content = readFileSync(filePath, "utf-8");
-      content = content.replace(/^#!.*\n/gm, "");
+      const filePath = `dist/${file}`
+      let content = readFileSync(filePath, "utf-8")
+      content = content.replace(/^#!.*\n/gm, "")
       if (file === "cli.js") {
-        content = "#!/usr/bin/env node\n" + content;
+        content = "#!/usr/bin/env node\n" + content
       }
-      writeFileSync(filePath, content);
+      writeFileSync(filePath, content)
     }
   },
-});
+})

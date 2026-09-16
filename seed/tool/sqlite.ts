@@ -61,7 +61,11 @@ function countStatements(sql: string): number {
 // 所以改成运行时按需 import：Bun 用 bun:sqlite，Node 用 node:sqlite（24 起内置，
 // prepare/all/get/run 形状一致，实测同一个库输出相同）。
 type Row = Record<string, unknown>
-type Stmt = { all: (...a: unknown[]) => Row[]; get: (...a: unknown[]) => Row; run: (...a: unknown[]) => { changes: number } }
+type Stmt = {
+  all: (...a: unknown[]) => Row[]
+  get: (...a: unknown[]) => Row
+  run: (...a: unknown[]) => { changes: number }
+}
 type Db = { prepare: (sql: string) => Stmt; exec: (sql: string) => void; close: () => void }
 
 const isBun = typeof (globalThis as { Bun?: unknown }).Bun !== "undefined"
@@ -162,7 +166,8 @@ export const query = tool({
       // 260910 Red 多语句走 exec：prepare 静默只跑第一条，事务会假装成功。
       const count = countStatements(sql)
       if (count > 1) {
-        if (params?.length) return "Error: multi-statement SQL cannot take parameters — split it or use a single statement."
+        if (params?.length)
+          return "Error: multi-statement SQL cannot take parameters — split it or use a single statement."
         db.exec(sql)
         return {
           title: `executed ${count} statements`,

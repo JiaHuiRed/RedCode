@@ -803,8 +803,8 @@ describe("tool.edit", () => {
   describe("编码护栏", () => {
     // GBK 编码的两行：「中文测试内容」「第二行：项目报表」
     const GBK = new Uint8Array([
-      0xd6, 0xd0, 0xce, 0xc4, 0xb2, 0xe2, 0xca, 0xd4, 0xc4, 0xda, 0xc8, 0xdd, 0x0a, 0xb5, 0xda,
-      0xb6, 0xfe, 0xd0, 0xd0, 0xa3, 0xba, 0xcf, 0xee, 0xc4, 0xbf, 0xb1, 0xa8, 0xb1, 0xed, 0x0a,
+      0xd6, 0xd0, 0xce, 0xc4, 0xb2, 0xe2, 0xca, 0xd4, 0xc4, 0xda, 0xc8, 0xdd, 0x0a, 0xb5, 0xda, 0xb6, 0xfe, 0xd0, 0xd0,
+      0xa3, 0xba, 0xcf, 0xee, 0xc4, 0xbf, 0xb1, 0xa8, 0xb1, 0xed, 0x0a,
     ])
 
     const putBytes = Effect.fn("EditToolTest.putBytes")(function* (p: string, bytes: Uint8Array) {
@@ -905,135 +905,134 @@ describe("tool.edit", () => {
   })
 })
 
+// 260808 Red UnicodeNormalizedReplacer：模型写的 oldString 常与文件实际字符有细微
+// 差异（智能引号/全角字符/特殊空格/Unicode 破折号），精确匹配失败后应归一化降级命中。
+// 与 Pi 的 contentForReplacement 不同：只替换匹配区，匹配区外的字符保持原样。
+describe("unicode fuzzy matching", () => {
+  it.instance("matches smart double quotes against ASCII quotes", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "quotes.txt")
+      yield* put(filepath, 'const s = "it\'s fine";')
 
-  // 260808 Red UnicodeNormalizedReplacer：模型写的 oldString 常与文件实际字符有细微
-  // 差异（智能引号/全角字符/特殊空格/Unicode 破折号），精确匹配失败后应归一化降级命中。
-  // 与 Pi 的 contentForReplacement 不同：只替换匹配区，匹配区外的字符保持原样。
-  describe("unicode fuzzy matching", () => {
-    it.instance("matches smart double quotes against ASCII quotes", () =>
-      Effect.gen(function* () {
-        const test = yield* TestInstance
-        const filepath = path.join(test.directory, "quotes.txt")
-        yield* put(filepath, 'const s = "it\'s fine";')
+      yield* run({ filePath: filepath, oldString: "\u201Cit\u2019s fine\u201D", newString: "\u201Cit\u2019s ok\u201D" })
 
-        yield* run({ filePath: filepath, oldString: "\u201Cit\u2019s fine\u201D", newString: "\u201Cit\u2019s ok\u201D" })
+      expect(yield* load(filepath)).toBe("const s = \u201Cit\u2019s ok\u201D;")
+    }),
+  )
 
-        expect(yield* load(filepath)).toBe('const s = \u201Cit\u2019s ok\u201D;')
-      }),
-    )
+  it.instance("matches smart single quotes against ASCII quotes", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "quotes.txt")
+      yield* put(filepath, "const s = 'it's fine';")
 
-    it.instance("matches smart single quotes against ASCII quotes", () =>
-      Effect.gen(function* () {
-        const test = yield* TestInstance
-        const filepath = path.join(test.directory, "quotes.txt")
-        yield* put(filepath, "const s = 'it's fine';")
+      yield* run({ filePath: filepath, oldString: "\u2018it\u2019s fine\u2019", newString: "ok" })
 
-        yield* run({ filePath: filepath, oldString: "\u2018it\u2019s fine\u2019", newString: "ok" })
+      expect(yield* load(filepath)).toBe("const s = ok;")
+    }),
+  )
 
-        expect(yield* load(filepath)).toBe("const s = ok;")
-      }),
-    )
+  it.instance("matches full-width chars (Chinese scene) against half-width", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "cn.txt")
+      yield* put(filepath, "console.log\uFF08\u4E2D\u6587\uFF09")
 
-    it.instance("matches full-width chars (Chinese scene) against half-width", () =>
-      Effect.gen(function* () {
-        const test = yield* TestInstance
-        const filepath = path.join(test.directory, "cn.txt")
-        yield* put(filepath, "console.log\uFF08\u4E2D\u6587\uFF09")
+      yield* run({ filePath: filepath, oldString: "(\u4E2D\u6587)", newString: "(CN)" })
 
-        yield* run({ filePath: filepath, oldString: "(\u4E2D\u6587)", newString: "(CN)" })
+      expect(yield* load(filepath)).toBe("console.log(CN)")
+    }),
+  )
 
-        expect(yield* load(filepath)).toBe("console.log(CN)")
-      }),
-    )
+  it.instance("matches NBSP against regular space", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "nbsp.txt")
+      yield* put(filepath, "const a = 1\u00A0+ 2;")
 
-    it.instance("matches NBSP against regular space", () =>
-      Effect.gen(function* () {
-        const test = yield* TestInstance
-        const filepath = path.join(test.directory, "nbsp.txt")
-        yield* put(filepath, "const a = 1\u00A0+ 2;")
+      yield* run({ filePath: filepath, oldString: "1 + 2", newString: "3" })
 
-        yield* run({ filePath: filepath, oldString: "1 + 2", newString: "3" })
+      expect(yield* load(filepath)).toBe("const a = 3;")
+    }),
+  )
 
-        expect(yield* load(filepath)).toBe("const a = 3;")
-      }),
-    )
+  it.instance("matches unicode dash against ASCII hyphen", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "dash.txt")
+      yield* put(filepath, "const b = a\u2014b;")
 
-    it.instance("matches unicode dash against ASCII hyphen", () =>
-      Effect.gen(function* () {
-        const test = yield* TestInstance
-        const filepath = path.join(test.directory, "dash.txt")
-        yield* put(filepath, "const b = a\u2014b;")
+      yield* run({ filePath: filepath, oldString: "a-b", newString: "ab" })
 
-        yield* run({ filePath: filepath, oldString: "a-b", newString: "ab" })
+      expect(yield* load(filepath)).toBe("const b = ab;")
+    }),
+  )
 
-        expect(yield* load(filepath)).toBe("const b = ab;")
-      }),
-    )
+  it.instance("replaceAll replaces every unicode-equivalent occurrence", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "multi.txt")
+      yield* put(filepath, 'const x = "a" + "a";')
 
-    it.instance("replaceAll replaces every unicode-equivalent occurrence", () =>
-      Effect.gen(function* () {
-        const test = yield* TestInstance
-        const filepath = path.join(test.directory, "multi.txt")
-        yield* put(filepath, 'const x = "a" + "a";')
+      yield* run({ filePath: filepath, oldString: "\u201Ca\u201D", newString: "Q", replaceAll: true })
 
-        yield* run({ filePath: filepath, oldString: "\u201Ca\u201D", newString: "Q", replaceAll: true })
+      expect(yield* load(filepath)).toBe("const x = Q + Q;")
+    }),
+  )
 
-        expect(yield* load(filepath)).toBe("const x = Q + Q;")
-      }),
-    )
+  it.instance("only replaces the matched region, leaves other chars untouched", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "preserve.txt")
+      yield* put(filepath, "'keep' \"target\" 'keep'")
 
-    it.instance("only replaces the matched region, leaves other chars untouched", () =>
-      Effect.gen(function* () {
-        const test = yield* TestInstance
-        const filepath = path.join(test.directory, "preserve.txt")
-        yield* put(filepath, "'keep' \"target\" 'keep'")
+      yield* run({ filePath: filepath, oldString: "\u201Ctarget\u201D", newString: "TARGET" })
 
-        yield* run({ filePath: filepath, oldString: "\u201Ctarget\u201D", newString: "TARGET" })
+      expect(yield* load(filepath)).toBe("'keep' TARGET 'keep'")
+    }),
+  )
+})
 
-        expect(yield* load(filepath)).toBe("'keep' TARGET 'keep'")
-      }),
-    )
+describe("BlockAnchorReplacer 区间吞并回归", () => {
+  // 260812 事故：app.py 3599→1803 行，edit 吞掉两个同形 except 结尾之间的 1800 行。
+  test("oldString 尾行锚点在首锚点块内缺失时，不吞两锚点间的巨大区间", () => {
+    const middle = Array.from(
+      { length: 30 },
+      (_, i) => `@app.route("/api/${i}")\ndef api_${i}():\n    return "ok"`,
+    ).join("\n")
+    const content = [
+      "def qpf_import_template():",
+      "    try:",
+      "        pass",
+      "    except Exception as e:",
+      '        logger.error(f"模板导入失败: {e}")',
+      "",
+      middle,
+      "def import_parse_capital_report():",
+      "    try:",
+      "        pass",
+      "    except Exception as e:",
+      '        logger.error(f"报表导入失败: {e}")',
+      '        return jsonify({"success": False, "message": str(e)})',
+    ].join("\n")
+
+    // 完整 3 行在文件里精确出现 0 次：qpf 块缺 return 尾行，capital 块中间行不同
+    const oldString = [
+      "except Exception as e:",
+      '        logger.error(f"模板导入失败: {e}")',
+      '        return jsonify({"success": False, "message": str(e)})',
+    ].join("\n")
+
+    const result = replace(content, oldString, "REPLACED")
+    // 事故行为：qpf 锚点扫到 capital 的 return，30 个中间函数全被吞成一段 REPLACED。
+    // 修复后：巨大候选被行数检查挡住，最多只替换相似块本身，中间内容必须原样保留。
+    expect(result).toContain("def api_15():")
+    expect(result).toContain('@app.route("/api/29")')
+    expect(result).toContain('logger.error(f"模板导入失败: {e}")')
+    expect(result).toContain("REPLACED")
   })
-
-  describe("BlockAnchorReplacer 区间吞并回归", () => {
-    // 260812 事故：app.py 3599→1803 行，edit 吞掉两个同形 except 结尾之间的 1800 行。
-    test("oldString 尾行锚点在首锚点块内缺失时，不吞两锚点间的巨大区间", () => {
-      const middle = Array.from(
-        { length: 30 },
-        (_, i) => `@app.route("/api/${i}")\ndef api_${i}():\n    return "ok"`,
-      ).join("\n")
-      const content = [
-        "def qpf_import_template():",
-        "    try:",
-        "        pass",
-        "    except Exception as e:",
-        '        logger.error(f"模板导入失败: {e}")',
-        "",
-        middle,
-        "def import_parse_capital_report():",
-        "    try:",
-        "        pass",
-        "    except Exception as e:",
-        '        logger.error(f"报表导入失败: {e}")',
-        '        return jsonify({"success": False, "message": str(e)})',
-      ].join("\n")
-
-      // 完整 3 行在文件里精确出现 0 次：qpf 块缺 return 尾行，capital 块中间行不同
-      const oldString = [
-        "except Exception as e:",
-        '        logger.error(f"模板导入失败: {e}")',
-        '        return jsonify({"success": False, "message": str(e)})',
-      ].join("\n")
-
-      const result = replace(content, oldString, "REPLACED")
-      // 事故行为：qpf 锚点扫到 capital 的 return，30 个中间函数全被吞成一段 REPLACED。
-      // 修复后：巨大候选被行数检查挡住，最多只替换相似块本身，中间内容必须原样保留。
-      expect(result).toContain('def api_15():')
-      expect(result).toContain('@app.route("/api/29")')
-      expect(result).toContain('logger.error(f"模板导入失败: {e}")')
-      expect(result).toContain("REPLACED")
-    })
-  })
+})
 
 describe("replacer 复杂度与终止性回归", () => {
   // 260819 cc audit：BlockAnchorReplacer 是「无界算法跑在任意文件内容上」这一支的第四例

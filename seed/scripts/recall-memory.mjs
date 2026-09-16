@@ -103,7 +103,11 @@ function likeQuery(d, term, limit, project) {
 // 这里要求查询词真的出现在正文里；LIKE 分支本身就是子串匹配，天然满足。
 function verify(rows, q) {
   const needle = q.toLowerCase()
-  return rows.filter((r) => String(r.content ?? "").toLowerCase().includes(needle))
+  return rows.filter((r) =>
+    String(r.content ?? "")
+      .toLowerCase()
+      .includes(needle),
+  )
 }
 
 function estimateTokens(text) {
@@ -174,11 +178,12 @@ if (args[0] === "--index") {
 }
 
 const all = args.includes("--all")
-const query = args.filter((a) => a !== "--all").join(" ").trim()
+const query = args
+  .filter((a) => a !== "--all")
+  .join(" ")
+  .trim()
 if (!query) {
-  console.log(
-    "用法：/recall <关键词>　例：/recall 代理 / /recall MCP 进程泄漏\n      --all　连其他项目的记忆一起搜",
-  )
+  console.log("用法：/recall <关键词>　例：/recall 代理 / /recall MCP 进程泄漏\n      --all　连其他项目的记忆一起搜")
   process.exit(0)
 }
 if (!fs.existsSync(DB_PATH)) {

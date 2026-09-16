@@ -6,18 +6,18 @@
 
 260911 对「进入模型上下文的所有注入路径」做了一次预算审计（触发点是 AGENTS.md 四问之④：没有上限就是缺陷不是待办；本仓已两次栽在这条——`tool/read.ts` 图片分支曾无上限、`summary.diffs` 曾无上限写回消息行）。逐条核实后的现状：
 
-| 注入路径 | 上限 | 位置 |
-|---|---|---|
-| 工具输出（全部工具，统一包装） | 2000 行 / 50KB，可经 `tool_output.*` 配置；双端 4:1 预览；全文落盘 + 7 天清理 | `tool/truncate.ts` + `tool/tool.ts` 的 `wrap` |
-| shell 输出 | 同上（走 `trunc.limits()`） | `tool/shell.ts` |
-| 压缩摘要中的工具输出 | 2000 字符，head/tail 80:20 | `session/compaction.ts` + `session/message-v2.ts` 的 `truncateToolOutput` |
-| 子代理超时打捞 | 24000 字符，保留尾部 | `tool/task.ts` |
-| MCP server instructions | 2000 字符 + 尾部标注 | `mcp/index.ts` 的 `capInstructions` |
-| 项目指令（AGENTS.md / MEMORY.md / soul） | 64KB **告警不截断**（有意，见下） | `session/instruction.ts` |
-| patch / diffs | 会话级 + 单轮级 `capPatches` | `session/summary.ts` |
-| 图片 / PDF | 文件 32MB 上限 | `tool/read.ts` |
-| hash mismatch 报错 | 50KB | `tool/edit.ts` |
-| **skill description** | **无 —— 本次补上** | `skill/index.ts` 的 `fmt` |
+| 注入路径                                 | 上限                                                                          | 位置                                                                      |
+| ---------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| 工具输出（全部工具，统一包装）           | 2000 行 / 50KB，可经 `tool_output.*` 配置；双端 4:1 预览；全文落盘 + 7 天清理 | `tool/truncate.ts` + `tool/tool.ts` 的 `wrap`                             |
+| shell 输出                               | 同上（走 `trunc.limits()`）                                                   | `tool/shell.ts`                                                           |
+| 压缩摘要中的工具输出                     | 2000 字符，head/tail 80:20                                                    | `session/compaction.ts` + `session/message-v2.ts` 的 `truncateToolOutput` |
+| 子代理超时打捞                           | 24000 字符，保留尾部                                                          | `tool/task.ts`                                                            |
+| MCP server instructions                  | 2000 字符 + 尾部标注                                                          | `mcp/index.ts` 的 `capInstructions`                                       |
+| 项目指令（AGENTS.md / MEMORY.md / soul） | 64KB **告警不截断**（有意，见下）                                             | `session/instruction.ts`                                                  |
+| patch / diffs                            | 会话级 + 单轮级 `capPatches`                                                  | `session/summary.ts`                                                      |
+| 图片 / PDF                               | 文件 32MB 上限                                                                | `tool/read.ts`                                                            |
+| hash mismatch 报错                       | 50KB                                                                          | `tool/edit.ts`                                                            |
+| **skill description**                    | **无 —— 本次补上**                                                            | `skill/index.ts` 的 `fmt`                                                 |
 
 唯一无界项是 skill 的 `description`：来源是用户或第三方 SKILL.md 的 frontmatter（`skill/index.ts` 加载时原样入库，无任何校验），却随 `<available_skills>` 每轮全量注入系统提示词——固定前缀，最贵的位置。一个写长篇描述的 skill 会永久抬高每轮输入，且从会话里完全看不出来。
 

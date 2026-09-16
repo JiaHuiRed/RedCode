@@ -203,8 +203,7 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
 
     // 与 marked 时代一致的链接样式：external-link + 新窗口打开
     const defaultLinkOpen =
-      md.renderer.rules.link_open ??
-      ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))
+      md.renderer.rules.link_open ?? ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))
     md.renderer.rules.link_open = (tokens, idx, options, _env, self) => {
       const token = tokens[idx]
       token.attrJoin("class", "external-link")
@@ -213,12 +212,12 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
       return defaultLinkOpen(tokens, idx, options, _env, self)
     }
 
-      return {
-        async parse(markdown: string, opts?: MarkdownParseOptions): Promise<string> {
-          const html = md.render(stripNamespacedTags(markdown))
-          const withMath = await renderMathExpressions(html)
-          return highlightCodeBlocks(withMath, opts?.highlight === false)
-        },
-      }
+    return {
+      async parse(markdown: string, opts?: MarkdownParseOptions): Promise<string> {
+        const html = md.render(stripNamespacedTags(markdown))
+        const withMath = await renderMathExpressions(html)
+        return highlightCodeBlocks(withMath, opts?.highlight === false)
+      },
+    }
   },
 })
