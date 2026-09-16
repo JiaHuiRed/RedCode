@@ -152,6 +152,8 @@ export const layer = Layer.effect(
           return Effect.void
         }),
       ),
+      // 260916 Red 与 MCP 同理：watcher 按目录常驻，服务端实例无上限时不活跃目录的 watcher 永不释放。
+      10,
     )
 
     return Service.of({

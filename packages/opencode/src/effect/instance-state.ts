@@ -49,10 +49,16 @@ export const directory = Effect.map(context, (ctx) => ctx.directory)
 
 export const make = <A, E = never, R = never>(
   init: (ctx: InstanceContext) => Effect.Effect<A, E, R | Scope.Scope>,
+  // 260916 Red 默认保持无限（既有行为不变）。**持有子进程树的服务必须显式传上限**：
+  //   服务端实例只在客户端目录淘汰时才通过 /instance/dispose 回收（客户端上限 30 个、空闲 20 分钟），
+  //   不设上限就等于「访问过的每个目录永久留一套 MCP/LSP/watcher」，实测 10 目录 × 6 MCP = 60 进程常驻。
+  //   超出容量的按最久未用淘汰，淘汰会跑 finalizer（关子进程），下次 get 再重建。
+  //   决策记录：docs/notes/implemented/bug-fix/2026-09-16-instance-cache-and-orphans.md
+  capacity = Number.POSITIVE_INFINITY,
 ): Effect.Effect<InstanceState<A, E, Exclude<R, Scope.Scope>>, never, R | Scope.Scope> =>
   Effect.gen(function* () {
     const cache = yield* ScopedCache.make<string, A, E, R>({
-      capacity: Number.POSITIVE_INFINITY,
+      capacity,
       lookup: () =>
         Effect.gen(function* () {
           return yield* init(yield* context)

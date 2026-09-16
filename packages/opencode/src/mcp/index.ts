@@ -1003,6 +1003,11 @@ export const layer = Layer.effect(
 
         return s
       }),
+      // 260916 Red 服务端实例原本无上限：客户端目录缓存（上限 30 + 空闲 20 分钟）在 30 个以内永不
+      //   淘汰，也就永不调 /instance/dispose，服务端于是「访问过的每个目录永久留一套 MCP」——
+      //   实测 10 目录 × 6 server = 60 个常驻子进程。这里给 10 个目录，超出按最久未用回收
+      //   （淘汰会跑 finalizer 杀掉整个 MCP 进程树），下次进入该目录再重建。
+      10,
     )
 
     function closeClient(s: State, name: string) {

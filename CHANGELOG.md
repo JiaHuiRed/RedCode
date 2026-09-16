@@ -28,6 +28,8 @@
 
 - **Network Service 崩溃后不再白屏约 90 秒**（`packages/desktop/src/main/{index,ipc}.ts`、`packages/desktop/src/preload/{index,types}.ts`、`packages/desktop/src/renderer/index.tsx`、`packages/app/src/context/{global-sdk.tsx,platform.tsx}`）：Electron 的 Network Service 子进程崩溃后，渲染层的 fetch 会**静默挂住**——既不 resolve 也不 reject，只能等 90 秒心跳超时才会判定断线重连。实测 09-16 22:47:26 崩溃、22:48:54 才重连，这段空白正是反复出现的白屏（renderer 侧无异常、无 crash dump、主进程无 unresponsive，不是渲染或性能问题）。崩溃只有主进程能感知（`child-process-gone`），现在把它转成计数推给渲染层，渲染层收到即主动 abort 旧事件流、走既有重连路径，重连成功后的 `server.connected` 再触发会话补拉（`pages/session.tsx` 既有逻辑）。恢复时间从约 90 秒压到秒级。决策：`docs/notes/implemented/bug-fix/2026-09-16-network-service-crash-recovery.md`。
 
+- **服务端实例缓存加上限、孤儿 MCP 进程下次启动时清扫**（`packages/opencode/src/effect/instance-state.ts`、`packages/opencode/src/{mcp/index,file/watcher,lsp/lsp,pty/index}.ts`、`packages/desktop/src/main/{index,sidecar-registry}.ts`）：GUI 一个实例下曾挂着 sidecar 加 60 个 MCP 子进程、另有 40 个孤儿，合计 5G 内存。常驻堆积的根因是客户端目录缓存有上限（30 个 / 空闲 20 分钟）而服务端 `InstanceState` 的 `ScopedCache` 是无限容量——30 个以内客户端永不淘汰，服务端的回收器（`/instance/dispose`）就永不触发，碰过的每个目录永久留一套进程树；现在 `InstanceState.make` 支持可选容量上限，持有进程树的 MCP / 文件 watcher / LSP / PTY 四个服务各设 10 个（超出按最久未用淘汰，淘汰会跑 finalizer 关子进程）。退出残留的根因是 Windows 上 node bundle 拿不到 job object 兜底（那套绑定依赖 `bun:ffi`，GUI 的 sidecar 用不了），父进程一死子进程即成孤儿；现在把「谁在带这棵树」落盘，在 sidecar 猝死重生之前、以及下次启动拉起新 sidecar 之前各按 `ParentProcessId` 反查清一次孩子。决策：`docs/notes/implemented/bug-fix/2026-09-16-instance-cache-and-orphans.md`。
+
 ### [0.11.6] - 2026-09-16
 
 #### 变更

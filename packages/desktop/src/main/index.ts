@@ -37,6 +37,12 @@ import {
 } from "./server"
 import { killSidecarTreeSync } from "./sidecar-process"
 import {
+  forgetSidecarTree,
+  killOrphanChildren,
+  rememberSidecarTree,
+  sweepStaleSidecarTree,
+} from "./sidecar-registry"
+import {
   createMainWindow,
   iconPath,
   registerRendererProtocol,
@@ -215,6 +221,8 @@ async function killSidecar() {
   server = null
   await current.stop()
   sidecarPid = undefined
+  // 260916 Red 树已经连孩子一起杀掉（taskkill /T），记录留着只会让下次启动白扫一遍。
+  forgetSidecarTree()
 }
 
 // 260813 cc sidecar 猝死自愈。死因层出不穷（FILEWATCHER V8 崩已修一种；今晨又见
@@ -246,6 +254,9 @@ function handleSidecarExit(code: number) {
   sidecarStartedAt = undefined
   writeLog("utility", "sidecar exited", { code, aliveMs }, "warn")
   if (quitting || !server || !sidecarSpawnCfg) return
+  // 260916 Red sidecar 死了，但它拉起的 MCP 子进程还活着（Windows 上没有 job object 兜底），
+  //   接下来 respawn 会把新的一套拉起来，旧的就永远留成孤儿。趁还知道旧 PID，先清掉它的孩子。
+  if (sidecarPid !== undefined) killOrphanChildren(sidecarPid)
   server = null
   sidecarPid = undefined
   void respawnSidecar(code)
@@ -288,6 +299,7 @@ async function respawnSidecar(code: number) {
     server = listener
     sidecarPid = listener.pid
     sidecarStartedAt = Date.now()
+    rememberSidecarTree(process.pid, listener.pid)
     const healthy = await health.waitUntilHealthy().then(
       () => true,
       () => false,
@@ -537,6 +549,10 @@ const main = Effect.gen(function* () {
 
   yield* Effect.promise(() => app.whenReady())
 
+// 260916 Red 上一次会话如果是崩溃或被强杀退出的，它的 sidecar 树还留在系统里——
+//   这种退出跑不到任何 cleanup 钩子，只能在下次启动、拉起新 sidecar 之前清一遍。
+sweepStaleSidecarTree()
+
   // 260903 cc 只有打包版才登记 `redcode://`。
   //   `setAsDefaultProtocolClient` 不传 path/args 时默认用 `process.execPath` + 空参数，
   //   未打包时那就是裸 electron.exe —— 注册完之后系统里的 redcode:// 全部指向它，
@@ -659,6 +675,7 @@ const main = Effect.gen(function* () {
     sidecarPid = listener.pid
     sidecarStartedAt = Date.now()
     hookSidecarCleanup()
+    rememberSidecarTree(process.pid, listener.pid)
     logger.log("[timing] sidecar ready", { ms: Math.round(performance.now() - tSpawn) })
 
     // 260916 Red only a confirmed health probe reaches the healthy log; timeout/exit

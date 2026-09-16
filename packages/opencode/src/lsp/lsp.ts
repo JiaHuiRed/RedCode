@@ -209,6 +209,8 @@ export const layer = Layer.effect(
 
         return s
       }),
+      // 260916 Red 与 MCP 同理：LSP server 是子进程，服务端实例无上限时不活跃项目的 LSP 永不退出。
+      10,
     )
 
     const getClients = Effect.fnUntraced(function* (file: string) {

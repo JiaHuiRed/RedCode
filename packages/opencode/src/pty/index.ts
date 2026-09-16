@@ -158,6 +158,8 @@ export const layer = Layer.effect(
 
         return state
       }),
+      // 260916 Red 与 MCP 同理：PTY 是子进程，服务端实例无上限时不活跃目录的终端永不回收。
+      10,
     )
 
     const remove = Effect.fn("Pty.remove")(function* (id: PtyID) {
