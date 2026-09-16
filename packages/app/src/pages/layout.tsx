@@ -16,6 +16,7 @@ import { useMatch, useNavigate, useParams } from "@solidjs/router"
 import { useQuery } from "@tanstack/solid-query"
 import { useLayout, LocalProject } from "@/context/layout"
 import { useServerSync } from "@/context/server-sync"
+import { setActiveMcpDirectory } from "@/context/global-sync/child-store"
 import { Persist, persisted } from "@/utils/persist"
 import { base64Encode } from "@redcode-ai/core/util/encode"
 import { decode64 } from "@/utils/base64"
@@ -129,6 +130,11 @@ export default function Layout(props: ParentProps) {
   const availableThemeEntries = createMemo(() => theme.ids().map((id) => [id, theme.themes()[id]] as const))
   const colorSchemeLabel = (scheme: ColorScheme) => language.t(colorSchemeKey[scheme])
   const currentDir = createMemo(() => route().dir)
+
+  // 260916 Red Layout owns the route-derived MCP directory; leaving the route clears it.
+  // See docs/notes/implemented/bug-fix/2026-09-16-active-mcp-directory-owner.md.
+  createEffect(() => setActiveMcpDirectory(currentDir()))
+  onCleanup(() => setActiveMcpDirectory(""))
 
   const [state, setState] = createStore({
     autoselect: false,

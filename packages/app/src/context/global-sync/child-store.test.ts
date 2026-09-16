@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { createRoot, getOwner } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { State } from "./types"
-import { createChildStoreManager } from "./child-store"
+import { activeMcpDirectory, createChildStoreManager, setActiveMcpDirectory } from "./child-store"
 
 const child = () => createStore({} as State)
 
@@ -36,5 +36,15 @@ describe("createChildStoreManager", () => {
     manager.mark(directory)
 
     expect(manager.children[directory]).toBeDefined()
+  })
+})
+
+describe("activeMcpDirectory", () => {
+  test("clears when the active route leaves its project", () => {
+    setActiveMcpDirectory("/project")
+    expect(activeMcpDirectory()).toBe("/project")
+
+    setActiveMcpDirectory("")
+    expect(activeMcpDirectory()).toBe("")
   })
 })

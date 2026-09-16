@@ -1,4 +1,4 @@
-import { createEffect, createMemo, For, mapArray, Match, on, Show, startTransition, Switch, untrack } from "solid-js"
+import { createEffect, createMemo, For, mapArray, Match, Show, startTransition, Switch, untrack } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { useLocation, useMatch, useNavigate, useParams } from "@solidjs/router"
 import { IconButton } from "@redcode-ai/ui/icon-button"
@@ -19,7 +19,6 @@ import { WindowsAppMenu } from "./windows-app-menu"
 import { applyPath, backPath, forwardPath } from "./titlebar-history"
 import { useServerSync } from "@/context/server-sync"
 import { decodeDirectory } from "@/pages/directory-layout"
-import { setActiveMcpDirectory } from "@/context/global-sync/child-store"
 import { iife } from "@redcode-ai/core/util/iife"
 import { base64Encode } from "@redcode-ai/core/util/encode"
 import { Avatar as AvatarV2 } from "@redcode-ai/ui/v2/components/avatar-v2.jsx"
@@ -255,8 +254,8 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
 
   // 260609 Red 当前路由所在项目目录（params.dir 是 base64，解码成真实路径）。
   //   新会话页(无 params.id)既无 currentSessionTab 也未必在 tabsStore，必须直接认 params.dir，
-  //   否则 statusDir/activeMcpDir 都会兜底到 projects()[0]——多项目时那是"别的项目"，
-  //   导致 popover 读 A 项目 store、却 enable 了 B 项目的 MCP query，永远对不上→"未配置 MCPs"。
+  //   否则 statusDir 会兜底到 projects()[0]——多项目时那是"别的项目"，导致 popover 读 A 项目 store、
+  //   却展示 B 项目的 MCP 状态，永远对不上→"未配置 MCPs"。
   const routeDir = createMemo(() => (params.dir ? decodeDirectory(params.dir) : undefined))
 
   // 260608 Yuqi 首页也显示 MCP 状态：当前路由项目 → 当前会话 dir → 第一个 tabs → 第一个项目的目录；都不存在则隐藏
@@ -270,16 +269,8 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
     return projects()[0]?.worktree
   })
 
-  // 260609 Red 只在真有进入的项目(routeDir/session/tab)时激活 MCP；首页(无 params.dir)一律不连。
-  //   恢复 0.4.6 延迟连接的"首页不 spawn"语义——首页 routeDir 为空且不取 projects()[0]，落空不连；
-  //   进项目即用 routeDir 与 statusDir 对齐到同一个 store，popover 才能显示真实 MCP 状态。
-  const activeMcpDir = createMemo(() => routeDir() ?? currentSessionTab()?.dir ?? tabsStore[0]?.dir)
-  createEffect(
-    on(activeMcpDir, (dir) => {
-      if (dir) setActiveMcpDirectory(dir)
-    }),
-  )
-
+  // 260609 Red titlebar 只负责按 routeDir/session/tab 选择状态展示目录；MCP query 的激活由 Layout
+  //   的 route-derived activeMcpDirectory 单独负责。首页不再通过 titlebar 触发连接。
   // 260610 Red 方案 A：标题栏状态圆点点击 → 打开右侧面板的 status 标签页（仅在有会话时）
   const openStatusTab = () => {
     if (!params.dir || !params.id) return

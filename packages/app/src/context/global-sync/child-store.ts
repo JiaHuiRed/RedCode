@@ -22,7 +22,7 @@ import { NormalizedProviderListResponse } from "@redcode-ai/ui/context"
 // 260608 Red 当前进入的项目目录；只有它的 mcp/path/lsp/provider query enabled→连接
 //   （260706 扩到后三者，见下方 useQuery 注释）。首页列项目阶段一律不连
 //   （避免 N 项目 × M server 并发 spawn 风暴/黑窗——含 InstanceStore.load() 拉起的 LSP 子进程），
-//   进项目时由 session 页 setActiveMcpDirectory 触发这些 query 拉取（数据直接进各自 query.data，面板可见）。
+//   进项目时由 Layout 按当前路由设置 activeMcpDirectory 触发这些 query 拉取（数据直接进各自 query.data，面板可见）。
 const [activeMcpDirectory, setActiveMcpDirectory] = createSignal<string>("")
 export { setActiveMcpDirectory, activeMcpDirectory }
 

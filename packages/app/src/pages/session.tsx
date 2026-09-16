@@ -36,8 +36,6 @@ import { useLocation, useNavigate, useSearchParams } from "@solidjs/router"
 import { NewSessionDesignView, SessionHeader } from "@/components/session"
 import { useComments } from "@/context/comments"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
-import { setActiveMcpDirectory } from "@/context/global-sync/child-store"
-import { decodeDirectory } from "./directory-layout"
 import { createReconnectRefresh } from "@/context/reconnect"
 import { useServerSync } from "@/context/server-sync"
 import { holdMessageWindow } from "@/context/message-window"
@@ -134,21 +132,6 @@ export default function Page() {
 
   const workspaceKey = createMemo(() => params.dir ?? "")
   const workspaceTabs = createMemo(() => layout.tabs(workspaceKey))
-
-  // 260608 Red 进入项目才连该实例 MCP（首页列项目阶段不连，避免 N×M 并发 spawn 风暴/黑窗）
-  // 260609 Red params.dir 是 base64 编码，必须 decodeDirectory 还原真实路径再 set——
-  //   否则 child-store 的 directoryKey(activeMcpDirectory()) 拿编码串算 key，永不等于真实目录 key，
-  //   MCP query 恒 enabled:false → 对话页"未配置 MCPs"（titlebar 那条用解码后的 tab.dir 才对）。
-  createEffect(
-    on(
-      () => params.dir,
-      (dir) => {
-        if (!dir) return
-        const decoded = decodeDirectory(dir)
-        if (decoded) setActiveMcpDirectory(decoded)
-      },
-    ),
-  )
 
   createEffect(
     on(

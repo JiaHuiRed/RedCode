@@ -16,6 +16,10 @@
 
 #### 修复
 
+- **sidecar 健康检查不再伪报成功**（`packages/desktop/src/main/{server,index}.ts`）：健康等待改为明确的成功/失败契约，启动超时或进程退出会进入既有失败路径，只有真实探针成功后才记录 `sidecar healthy`；respawn 日志也保留真实的 `healthy: false`。决策：`docs/notes/implemented/bug-fix/2026-09-16-sidecar-health-contract.md`。
+
+- **MCP 当前目录收敛为单一路由 owner**（`packages/app/src/{pages/layout.tsx,components/titlebar.tsx,pages/session.tsx}`）：由 Layout 根据当前路由统一设置 `activeMcpDirectory`，回到首页或 Layout 清理时主动清空，移除 Titlebar 与 SessionPage 的重复写入。决策：`docs/notes/implemented/bug-fix/2026-09-16-active-mcp-directory-owner.md`。
+
 - **LLM 流看门狗增加生命周期诊断与回归覆盖**（`packages/opencode/src/session/llm.ts`、`packages/opencode/test/session/llm-idle-guard.test.ts`）：记录 watchdog 实例年龄、最后事件静默时长、是否收到事件及是否处于本地工具阶段，补充流结束后看门狗必须停止的两条测试；不改变超时阈值、错误文案或中断行为。
 
 ### [0.11.6] - 2026-09-16

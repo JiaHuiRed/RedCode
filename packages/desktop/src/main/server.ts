@@ -1,4 +1,5 @@
 import { killSidecarTree, killSidecarTreeSync } from "./sidecar-process"
+import { waitForSidecarHealth } from "./server-health"
 
 // 260913 Red sidecar 进程树清理提取到 sidecar-process.ts：
 //   - 严格 PID guard（NaN / <=1 / process.pid 全拦截）
@@ -17,7 +18,9 @@ import type { SqliteMigrationProgress } from "../preload/types"
 
 export type WslConfig = { enabled: boolean }
 
-export type HealthCheck = { wait: Promise<void> }
+export type HealthCheck = {
+  waitUntilHealthy: (options?: { timeoutMs?: number }) => Promise<void>
+}
 
 type SidecarMessage =
   | { type: "sqlite"; progress: SqliteMigrationProgress }
@@ -30,6 +33,7 @@ export type SidecarListener = { stop: () => Promise<void>; pid: number | undefin
 
 const SIDECAR_SERVICE_NAME = "redcode server"
 const SIDECAR_START_STALL_TIMEOUT = 60_000
+const SIDECAR_HEALTH_TIMEOUT_MS = 30_000
 const SIDECAR_STOP_TIMEOUT = 6_000
 
 type SpawnLocalServerOptions = {
@@ -92,6 +96,7 @@ export async function spawnLocalServer(
     stdio: "pipe",
   })
   let exited = false
+  let exitCode: number | undefined
   const exit = defer<number>()
 
   const onProcessGone = (_event: unknown, details: Details) => {
@@ -102,6 +107,7 @@ export async function spawnLocalServer(
   app.on("child-process-gone", onProcessGone)
   child.once("exit", (code) => {
     exited = true
+    exitCode = code
     app.off("child-process-gone", onProcessGone)
     options.onExit?.(code)
     exit.resolve(code)
@@ -187,40 +193,14 @@ export async function spawnLocalServer(
     throw error
   })
 
-  const wait = (async () => {
-    const url = `http://${hostname}:${port}`
-    let healthy = false
-    const gone = exit.promise.then((code) => {
-      if (healthy) return
-      throw new Error(`Sidecar exited before health check passed with code ${code}`)
+  const url = `http://${hostname}:${port}`
+  const waitUntilHealthy = (options: { timeoutMs?: number } = {}) =>
+    waitForSidecarHealth({
+      timeoutMs: options.timeoutMs ?? SIDECAR_HEALTH_TIMEOUT_MS,
+      check: () => checkHealth(url, password),
+      getFailure: () =>
+        exited ? new Error(`Sidecar exited before health check passed with code ${exitCode}`) : undefined,
     })
-
-    // 260901 cc 先探一次再睡，别先睡再探。
-    //
-    // 这个循环是在收到 sidecar 的 "ready" 之后才开始跑的（上面那个 await new Promise
-    // 等的就是它），而 sidecar 是 `await Server.listen(...)` 成功之后才 postMessage("ready")
-    // 的（sidecar.ts:119 → :127）。也就是说循环启动时端口 100% 已经在监听，第一次
-    // checkHealth 必然成功 —— 原先那句放在循环头的 sleep(100) 是纯粹的固定损耗。
-    //
-    // 他打包版日志里 ready→healthy 的间隔：118 / 123 / 123 / 134 ms（五次），基本全是这 100ms。
-    const ready = async () => {
-      // 260909 Red 轮询必须能自己停：调用方 30s 超时是纯放弃（不杀 sidecar），
-      // 没有谁会再来消费这个循环——sidecar 活着但 health 一直不过（密码错配、
-      // migration 卡住）时，原实现的 10Hz 空转 fetch 会烧到进程退出。
-      // 预算 120s 覆盖合法慢启动，之后静默停轮（healthy 保持 false 由调用方处置）。
-      const deadline = Date.now() + 120_000
-      while (Date.now() < deadline) {
-        if (await checkHealth(url, password)) {
-          healthy = true
-          return
-        }
-        if (exited) return
-        await new Promise((resolve) => setTimeout(resolve, 100))
-      }
-    }
-
-    await Promise.race([ready(), gone])
-  })()
 
   let stopping: Promise<void> | undefined
 
@@ -256,7 +236,7 @@ export async function spawnLocalServer(
       },
       pid: child.pid,
     },
-    health: { wait },
+    health: { waitUntilHealthy },
   }
 }
 

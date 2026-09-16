@@ -282,10 +282,10 @@ async function respawnSidecar(code: number) {
     server = listener
     sidecarPid = listener.pid
     sidecarStartedAt = Date.now()
-    const healthy = await Promise.race([
-      health.wait.then(() => true),
-      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 30_000)),
-    ])
+    const healthy = await health.waitUntilHealthy().then(
+      () => true,
+      () => false,
+    )
     // 只有真过了健康检查才清零重试计数——否则"起来又死"会无限循环
     if (healthy) respawnAttempts = 0
     writeLog("utility", "sidecar respawned", { pid: listener.pid, healthy }, "warn")
@@ -651,14 +651,10 @@ const main = Effect.gen(function* () {
     hookSidecarCleanup()
     logger.log("[timing] sidecar ready", { ms: Math.round(performance.now() - tSpawn) })
 
-    yield* Effect.promise(() => health.wait).pipe(
-      Effect.timeout("30 seconds"),
-      Effect.catch((e) =>
-        Effect.sync(() => {
-          logger.error("sidecar health check failed", e.toString())
-        }),
-      ),
-    )
+    // 260916 Red only a confirmed health probe reaches the healthy log; timeout/exit
+    // rejects startup and is handled by the loading-task failure path below.
+    // See docs/notes/implemented/bug-fix/2026-09-16-sidecar-health-contract.md.
+    yield* Effect.promise(() => health.waitUntilHealthy())
     logger.log("[timing] sidecar healthy", { ms: Math.round(performance.now() - tSpawn) })
 
     logger.log("loading task finished")

@@ -198,7 +198,7 @@ export function createServerSyncContext() {
     if (eventTimer !== undefined) clearTimeout(eventTimer)
   })
 
-  // 260609 Red 进入项目时主动拉一次该目录的 MCP 状态。child-store 的 mcpQuery 靠动态 enabled
+  // 260609 Red 进入项目时主动拉一次该目录的 MCP 状态。Layout 设置 activeMcpDirectory 后，child-store 的 mcpQuery 靠动态 enabled
   //   false→true 触发拉取，但 @tanstack/solid-query 的 useQuery 对 enabled 翻转不会自动 fetch
   //   （observer 卡在 status=pending/fetch=idle，对话页恒"未配置 MCP"）。这里用 queryClient.fetchQuery
   //   按同一 queryKey 灌入缓存，child 的 observer 即可读到——只拉当前激活目录，不引发 N×M 风暴。
