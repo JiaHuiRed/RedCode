@@ -490,13 +490,22 @@ export class StreamIdleTimeoutError extends Error {
   }
 }
 
-function guardFirstEvent<S, E>(
+// 260916 Red 导出 + 阈值注入：测试直接跑真实现（毫秒级用例），不再在测试里复刻第二份
+// shadow 实现——260916 的并行工具误杀恰恰因为"复刻版没跟上实现"（复刻版从来没有
+// local 逻辑）而在测试里隐形。复刻即漂移源，改掉。
+// 决策记录：docs/notes/implemented/bug-fix/2026-09-16-watchdog-pending-tools.md
+export function guardFirstEvent<S, E>(
   stream: Stream.Stream<S, E>,
   ctrl: AbortController,
+  limits: { first: Duration.Duration; idle: Duration.Duration; tick: Duration.Duration } = {
+    first: FIRST_EVENT_TIMEOUT,
+    idle: IDLE_EVENT_TIMEOUT,
+    tick: WATCHDOG_TICK,
+  },
 ): Stream.Stream<S, E | FirstEventTimeoutError | StreamIdleTimeoutError> {
   return Stream.unwrap(
     Effect.gen(function* () {
-      const state = { last: Date.now(), seen: false, local: false, start: Date.now() }
+      const state = { last: Date.now(), seen: false, pending: new Set<string>(), start: Date.now() }
       const timeoutSignal = yield* Deferred.make<never, FirstEventTimeoutError | StreamIdleTimeoutError>()
       // 看门狗 fiber：每 tick 比一次"距上一个事件多久"。超过当前档位的阈值就先 abort
       // 底层请求，再向 timeoutSignal 失败，merge 收到后让整体流失败。
@@ -509,7 +518,7 @@ function guardFirstEvent<S, E>(
       yield* Effect.forkScoped(
         Effect.gen(function* () {
           while (true) {
-            yield* Effect.sleep(WATCHDOG_TICK)
+            yield* Effect.sleep(limits.tick)
             // 260904 cc **本地在干活时不计时。** AI SDK 的工具执行跑在流内部：
             //   `tool-call` 之后到 `tool-result` 之前，流上一个事件都不会来。那段时间
             //   长短完全由本地决定——工具自己可以跑 10 分钟（bash 上限 600s、repo_clone
@@ -518,9 +527,16 @@ function guardFirstEvent<S, E>(
             //   看门狗 120s 到点把整轮掐了（日志「静默 124 秒」），中断连带触发
             //   permission 的 replied 兜底，表现成「弹窗点了没反应、然后会话停摆」。
             //   看门狗要守的是「网关不再发」，不是「我们自己在忙」。
-            if (state.local) continue
+            // 260916 Red 判据从"单个布尔"改成"在途工具集合"。布尔方案在并行工具下必错：
+            //   一个 step 里可以同时发出多个 tool-call，各自的 tool-result 陆续返回——快工具
+            //   先生就把本地态清掉，慢工具（或"等用户点权限"）还在跑时看门狗恢复计时，
+            //   120 秒后误杀整轮。实测 260915 两次 StreamIdleTimeoutError：同一条消息里
+            //   read / 快 bash 已 completed，慢的 `redcode doctor --json`（timeout 180000）
+            //   被 abort（state.error="Tool execution aborted"）。只有全部工具都回来了
+            //   （集合空）才重新开始计时。
+            if (state.pending.size > 0) continue
             const idle = Date.now() - state.last
-            const limit = Duration.toMillis(state.seen ? IDLE_EVENT_TIMEOUT : FIRST_EVENT_TIMEOUT)
+            const limit = Duration.toMillis(state.seen ? limits.idle : limits.first)
             if (idle < limit) continue
             ctrl.abort()
             // 260916 Red 诊断埋点：把"这个看门狗实例自己活了多久"与"最后事件距今多久"分开记。
@@ -532,7 +548,7 @@ function guardFirstEvent<S, E>(
               idleMs: idle,
               streamAgeMs: Date.now() - state.start,
               seen: state.seen,
-              local: state.local,
+              pendingTools: state.pending.size,
             })
             yield* Deferred.fail(
               timeoutSignal,
@@ -548,18 +564,18 @@ function guardFirstEvent<S, E>(
             Effect.sync(() => {
               state.last = Date.now()
               state.seen = true
-              // 260904 cc 整个工具阶段都算本地，不依赖事件顺序。
-              //   第一版只在 `tool-call` 这一个事件上进入本地态。AI SDK 6.0.208 实测确实是
-              //   先 enqueue tool-call 再执行工具，所以第一版逻辑上成立、现场也没被证伪
-              //   （重启后日志里没有任何 idle 超时；截图里那条「123 秒」是重进会话时的旧滚屏）。
-              //   但把正确性押在上游的 enqueue 顺序上没必要：任何 tool-* 输入/调用事件都
-              //   进入本地态，tool-result / tool-error 退出；只有网关才发得出的事件
-              //   （text / reasoning / step-*）也顺带清掉——那说明网关正在说话。
-              const type = (event as { type?: string })?.type ?? ""
-              if (type.startsWith("tool-input-") || type === "tool-call") state.local = true
-              else if (type === "tool-result" || type === "tool-error") state.local = false
-              else if (type.startsWith("text-") || type.startsWith("reasoning-") || type.startsWith("step-"))
-                state.local = false
+              // 260916 Red 在途工具集合：tool-call 进、tool-result/tool-error 出，按 toolCallId
+              //   记账（LLMEvent 的 id 即 toolCallId，同一次调用的几条事件共用）。
+              //   为什么入口是 tool-call 而不是 tool-input-*：tool-call 才代表"参数齐了、本地
+              //   开始干活"；参数流（tool-input-delta）期间流上一直有事件在刷新 last，不需要
+              //   豁免。反过来若把参数流也算作在途，参数中途断掉时集合永不清空 = 永久免疫，
+              //   那比误杀更糟（看门狗彻底失效）。
+              //   为什么删掉原来"text-/reasoning-/step- 顺带清本地态"那条：那些事件只证明网关
+              //   在说话，不能证明本地工具已经跑完——并行工具场景下正是它把慢工具的豁免放跑了。
+              const e = event as { type?: string; id?: string }
+              const type = e?.type ?? ""
+              if (type === "tool-call" && e.id) state.pending.add(e.id)
+              else if ((type === "tool-result" || type === "tool-error") && e.id) state.pending.delete(e.id)
             }),
           ),
         ),

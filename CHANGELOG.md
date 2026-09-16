@@ -22,6 +22,8 @@
 
 - **LLM 流看门狗增加生命周期诊断与回归覆盖**（`packages/opencode/src/session/llm.ts`、`packages/opencode/test/session/llm-idle-guard.test.ts`）：记录 watchdog 实例年龄、最后事件静默时长、是否收到事件及是否处于本地工具阶段，补充流结束后看门狗必须停止的两条测试；不改变超时阈值、错误文案或中断行为。
 
+- **LLM 流看门狗改按在途工具集合判定豁免**（`packages/opencode/src/session/llm.ts`、`packages/opencode/test/session/llm-idle-guard.test.ts`，决策：`docs/notes/implemented/bug-fix/2026-09-16-watchdog-pending-tools.md`）：原实现用单个布尔表示"本地工具阶段"，一个 step 内并行多个工具时，先返回的工具会清掉本地态，仍在执行的慢工具因此被 120 秒闲置看门狗误判成「网关停摆」并中断整轮（实测两次，被掐掉的慢工具是 `redcode doctor --json`）。改为按 toolCallId 记账的在途工具集合，全部工具结束才恢复计时，并删除 `text-` / `reasoning-` / `step-` 顺带清本地态的分支——那些事件只证明网关在说话，不能证明本地工具已跑完。同时把测试从"逐行复刻 shadow 实现"改为直调导出的真实现（阈值可注入），新增并行工具与"豁免不得变成永久免疫"两条用例。
+
 ### [0.11.6] - 2026-09-16
 
 #### 变更
