@@ -29,6 +29,7 @@ type Deps = {
   awaitInitialization: (sendStep: (step: InitStep) => void) => Promise<ServerReadyData>
   getWindowConfig: () => Promise<WindowConfig> | WindowConfig
   consumeInitialDeepLinks: () => Promise<string[]> | string[]
+  markDeepLinksReady: () => Promise<void> | void
   getDefaultServerUrl: () => Promise<string | null> | string | null
   setDefaultServerUrl: (url: string | null) => Promise<void> | void
   getWslConfig: () => Promise<WslConfig>
@@ -83,6 +84,7 @@ export function registerIpcHandlers(deps: Deps) {
   })
   ipcMain.handle("get-window-config", () => deps.getWindowConfig())
   ipcMain.handle("consume-initial-deep-links", () => deps.consumeInitialDeepLinks())
+  ipcMain.handle("mark-deep-links-ready", () => deps.markDeepLinksReady())
   ipcMain.handle("get-default-server-url", () => deps.getDefaultServerUrl())
   ipcMain.handle("set-default-server-url", (_event: IpcMainInvokeEvent, url: string | null) =>
     deps.setDefaultServerUrl(url),

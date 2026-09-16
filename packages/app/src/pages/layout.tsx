@@ -74,6 +74,7 @@ import {
   collectOpenProjectDeepLinks,
   deepLinkEvent,
   drainPendingDeepLinks,
+  setDeepLinkListenerReady,
 } from "./layout/deep-links"
 
 export default function Layout(props: ParentProps) {
@@ -946,6 +947,8 @@ export default function Layout(props: ParentProps) {
 
     handleDeepLinks(drainPendingDeepLinks(window))
     makeEventListener(window, deepLinkEvent, handler as EventListener)
+    setDeepLinkListenerReady(window, true)
+    onCleanup(() => setDeepLinkListenerReady(window, false))
   })
 
   async function chooseProject() {

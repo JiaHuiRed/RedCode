@@ -5,12 +5,15 @@ import {
   ACCEPTED_FILE_TYPES,
   AppBaseProviders,
   AppInterface,
+  deepLinkEvent,
   handleNotificationClick,
+  isDeepLinkListenerReady,
   loadLocaleDict,
   normalizeLocale,
   type Locale,
   type Platform,
   PlatformProvider,
+  queuePendingDeepLinks,
   ServerConnection,
   useCommand,
 } from "@redcode-ai/app"
@@ -56,19 +59,19 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 
 void initI18n()
 
-const deepLinkEvent = "redcode:deep-link"
-
 const emitDeepLinks = (urls: string[]) => {
   if (urls.length === 0) return
-  window.__REDCODE__ ??= {}
-  const pending = window.__REDCODE__.deepLinks ?? []
-  window.__REDCODE__.deepLinks = [...pending, ...urls]
+  if (!isDeepLinkListenerReady(window)) queuePendingDeepLinks(window, urls)
   window.dispatchEvent(new CustomEvent(deepLinkEvent, { detail: { urls } }))
 }
 
 const listenForDeepLinks = () => {
-  void window.api.consumeInitialDeepLinks().then((urls) => emitDeepLinks(urls))
-  return window.api.onDeepLink((urls) => emitDeepLinks(urls))
+  const unsubscribe = window.api.onDeepLink((urls) => emitDeepLinks(urls))
+  void window.api.consumeInitialDeepLinks().then((urls) => {
+    emitDeepLinks(urls)
+    void window.api.markDeepLinksReady()
+  })
+  return unsubscribe
 }
 
 const createPlatform = (): Platform => {

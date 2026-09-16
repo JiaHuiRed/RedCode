@@ -39,6 +39,7 @@ import {
   setDockIcon,
 } from "./windows"
 import { checkUpdate, checkForUpdates, installUpdate, setupAutoUpdater } from "./updater"
+import { createDeepLinkDelivery } from "./deep-link-delivery"
 import { Cause, Deferred, Effect, Fiber } from "effect"
 
 const APP_NAMES: Record<string, string> = {
@@ -177,7 +178,11 @@ function hookSidecarCleanup() {
 const initEmitter = new EventEmitter()
 let initStep: InitStep = { phase: "server_waiting" }
 
-const pendingDeepLinks: string[] = []
+const deepLinks = createDeepLinkDelivery((urls) => {
+  if (!mainWindow) return false
+  sendDeepLinks(mainWindow, urls)
+  return true
+})
 
 function useEnvProxy() {
   try {
@@ -189,9 +194,7 @@ function useEnvProxy() {
 }
 
 function emitDeepLinks(urls: string[]) {
-  if (urls.length === 0) return
-  pendingDeepLinks.push(...urls)
-  if (mainWindow) sendDeepLinks(mainWindow, urls)
+  deepLinks.emit(urls)
 }
 
 function setInitStep(step: InitStep) {
@@ -500,7 +503,8 @@ const main = Effect.gen(function* () {
       return { url, username: "redcode", password }
     },
     getWindowConfig: () => ({ updaterEnabled: UPDATER_ENABLED }),
-    consumeInitialDeepLinks: () => pendingDeepLinks.splice(0),
+    consumeInitialDeepLinks: () => deepLinks.consumeInitial(),
+    markDeepLinksReady: () => deepLinks.markReady(),
     getDefaultServerUrl: () => getDefaultServerUrl(),
     setDefaultServerUrl: (url) => setDefaultServerUrl(url),
     getWslConfig: () => Promise.resolve(getWslConfig()),
@@ -681,6 +685,7 @@ const main = Effect.gen(function* () {
   //   ② renderer/index.tsx 那个包住整个 UI 的 <Show> 必须补 fallback —— 它原先没有，
   //      窗口提前出现会变成「1.4 秒空白窗」，比没窗口更糟（仓里 ca2eebea 打过一次这种黑窗）。
   mainWindow = createMainWindow()
+  mainWindow.webContents.on("did-start-loading", () => deepLinks.reset())
   startMetricsLogging()
   if (mainWindow) {
     createMenu({

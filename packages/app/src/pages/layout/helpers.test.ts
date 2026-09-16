@@ -2,9 +2,13 @@ import { describe, expect, test } from "bun:test"
 import {
   collectNewSessionDeepLinks,
   collectOpenProjectDeepLinks,
+  deepLinkEvent,
   drainPendingDeepLinks,
+  isDeepLinkListenerReady,
   parseDeepLink,
   parseNewSessionDeepLink,
+  queuePendingDeepLinks,
+  setDeepLinkListenerReady,
 } from "./deep-links"
 import { type Session } from "@redcode-ai/sdk/v2/client"
 import {
@@ -29,6 +33,21 @@ const session = (input: Partial<Session> & Pick<Session, "id" | "directory">) =>
   }) as Session
 
 describe("layout deep links", () => {
+  test("uses the canonical renderer event name", () => {
+    expect(deepLinkEvent).toBe("redcode:deep-link")
+  })
+
+  test("queues links only until the layout listener is ready", () => {
+    const target = {} as Window & { __REDCODE__?: { deepLinks?: string[]; deepLinkListenerReady?: boolean } }
+
+    queuePendingDeepLinks(target, ["RedCode://open-project?directory=/a"])
+    expect(drainPendingDeepLinks(target)).toEqual(["RedCode://open-project?directory=/a"])
+    expect(isDeepLinkListenerReady(target)).toBe(false)
+
+    setDeepLinkListenerReady(target, true)
+    expect(isDeepLinkListenerReady(target)).toBe(true)
+  })
+
   test("parses open-project deep links", () => {
     expect(parseDeepLink("RedCode://open-project?directory=/tmp/demo")).toBe("/tmp/demo")
   })
@@ -95,7 +114,7 @@ describe("layout deep links", () => {
       __REDCODE__: {
         deepLinks: ["RedCode://open-project?directory=/a"],
       },
-    } as unknown as Window & { __REDCODE__?: { deepLinks?: string[] } }
+    } as unknown as Window & { __REDCODE__?: { deepLinks?: string[]; deepLinkListenerReady?: boolean } }
 
     expect(drainPendingDeepLinks(target)).toEqual(["RedCode://open-project?directory=/a"])
     expect(drainPendingDeepLinks(target)).toEqual([])

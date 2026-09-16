@@ -1,4 +1,4 @@
-export const deepLinkEvent = "RedCode:deep-link"
+export const deepLinkEvent = "redcode:deep-link"
 
 const parseUrl = (input: string) => {
   if (!input.startsWith("RedCode://")) return
@@ -39,7 +39,21 @@ export const collectNewSessionDeepLinks = (urls: string[]) =>
 type RedCodeWindow = Window & {
   __REDCODE__?: {
     deepLinks?: string[]
+    deepLinkListenerReady?: boolean
   }
+}
+
+export const queuePendingDeepLinks = (target: RedCodeWindow, urls: string[]) => {
+  if (urls.length === 0) return
+  target.__REDCODE__ ??= {}
+  target.__REDCODE__.deepLinks = [...(target.__REDCODE__.deepLinks ?? []), ...urls]
+}
+
+export const isDeepLinkListenerReady = (target: RedCodeWindow) => target.__REDCODE__?.deepLinkListenerReady === true
+
+export const setDeepLinkListenerReady = (target: RedCodeWindow, ready: boolean) => {
+  target.__REDCODE__ ??= {}
+  target.__REDCODE__.deepLinkListenerReady = ready
 }
 
 export const drainPendingDeepLinks = (target: RedCodeWindow) => {

@@ -14,6 +14,7 @@ const api: ElectronAPI = {
   },
   getWindowConfig: () => ipcRenderer.invoke("get-window-config"),
   consumeInitialDeepLinks: () => ipcRenderer.invoke("consume-initial-deep-links"),
+  markDeepLinksReady: () => ipcRenderer.invoke("mark-deep-links-ready"),
   getDefaultServerUrl: () => ipcRenderer.invoke("get-default-server-url"),
   setDefaultServerUrl: (url) => ipcRenderer.invoke("set-default-server-url", url),
   getWslConfig: () => ipcRenderer.invoke("get-wsl-config"),
