@@ -14,7 +14,31 @@
 
 - **模型提示词边界与行为收敛**（`packages/opencode/src/session/prompt/{gpt,deepseek,glm}.md`，决策：`docs/notes/implemented/feature/2026-09-16-deepseek-glm-prompt-tuning.md`）：GPT 明确 soul 只负责表达、工程指令负责判断与执行，工具描述改为能力级并把前端细则交给现有 skill；DeepSeek 增加防止错误方向叠加补丁、顺手扩大范围与不必要委派的约束；GLM 增加推理停止条件、循环抑制、按风险取最低充分证据与 meaningful checkpoint，减少 Max reasoning 空转。各模型仍保留独立提示词路由，不改变运行时 reasoning 档位。
 
+- **按时段问候语扩充**（`packages/app/src/utils/greeting.ts`、`packages/app/src/i18n/{en,ja,zh}.ts`）：早、午、下午、晚、深夜五档从每档 2 条扩至 8 条，同档随机抽取；保持原有开发陪伴语气，深夜档继续以劝睡为主，三语键集合由 parity 测试约束。
+
+- **新建会话页字标升级**（`packages/ui/src/v2/components/wordmark-v2.tsx`）：RED 改为纵向渐变并加柔辉，CODE 改为透明填充加 `currentColor` 描边；字距、Space Grotesk、分段、逐字母动画和 reduced-motion 支持保持不变。
+
+- **记忆召回增加有界精度回放分析**（新增 `seed/scripts/analyze-memory-recall-audit.mjs` 及对应测试和决策记录）：把持久化召回决策与人工标签对照，输出 precision、recall 和 no-memory false-positive 指标，用可重复数据衡量排序变化，而不是把注入次数当成效果。
+
+- **指令预算同步 SDK 与 OpenAPI 生成物**（`packages/sdk/openapi.json`、`packages/sdk/js/src/v2/gen/types.gen.ts`）：补齐 `instruction_budget` 的生成结果，避免 schema 已变而 SDK 漂移；`check:openapi-drift` 通过。
+
+- **补齐根脚本与 Slack 的类型依赖**（`package.json`、`packages/slack/package.json`）：根目录声明 `jsonc-parser`，使 `script/merge-home-config.ts` 不依赖 workspace 偶然解析；Slack 本地声明 `@types/bun`，保证其 typecheck 可复现。
+
+- **注册表测试自定义工具避开内建命名**（`packages/opencode/test/tool/registry.test.ts`）：将测试工具从 `image` 改为 `pic`，避免 `registry.all()` 优先命中内建 `image` 导致测试缺少 `prompt` 参数。
+
 #### 修复
+
+- **召回结果按 token 预算完整打包**（`seed/scripts/recall-memory.mjs`、`packages/opencode/test/seed/recall-memory.test.ts`，决策：`docs/notes/implemented/bug-fix/2026-09-15-recall-token-packing.md`）：保持单条记忆完整，超大命中不会吞掉后续更相关结果；预算使用与核心 prompt 相同的四字符 token 估算，并由隔离 SQLite 回归测试钉住。
+
+- **发送后草稿清理与恢复使用正确的会话作用域**（`packages/app/src/components/prompt-input/submit.ts`、`packages/app/src/context/prompt.tsx`）：`Scope.dir` 改用与路由一致的 base64 目录键，修复发送后输入框复活已发消息及失败恢复静默失效。
+
+- **异步 prompt 失败日志保留完整 Cause**（`packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts`）：Error 对象直接序列化会变成 `defect:{}`，现在记录 `Cause.pretty`，并保留原有非阻塞行为。
+
+- **seed 工具加载失败不再拖垮整张工具表**（`packages/opencode/src/plugin/sdk-shim.ts`、`packages/opencode/src/tool/registry.ts`，含回归测试）：为 Bun 与 Node/Electron 注册随 RedCode 打包的 `@redcode-ai/plugin` 虚拟模块；单个外置工具加载失败会点名记录并跳过，其余工具和会话继续可用。
+
+- **seed SQLite 工具改用 RedCode plugin 包名**（`seed/tool/sqlite.ts`）：从已退役的 `@opencode-ai/plugin` 改为仓库实际使用的 `@redcode-ai/plugin`，保证新鲜工具加载与类型检查一致。
+
+- **TUI 标题生成失败变得可观测**（`packages/opencode/src/session/prompt.ts`、`packages/opencode/test/session/prompt.test.ts`、`packages/opencode/test/lib/llm-server.ts`）：自动标题仍不阻塞主流程，但空响应、流错误和持久化失败会记录 session、provider、model 上下文；诊断只保留有界长度和标志，不记录模型原文。
 
 - **前缀变更日志定位到首个 system 区块，且不泄露模型可见原文**（`packages/opencode/src/session/{prefix-shape,prompt}.ts`，决策：`docs/notes/implemented/feature/2026-09-15-prefix-section-attribution.md`）：原来的 `prefix cache changed: system` 只说 system 变了，排查长会话命中率从 98% 下滑时无法分辨是 AGENTS/MEMORY、MCP 指南还是动态尾段。现在仅在最终 system hash 已变化时，从进程内 sidecar 比较首个不同区块，日志写安全标签与位置；绝不改发给模型的 system/messages/tool schema，也不把 canary 或指令正文写入日志。
 
