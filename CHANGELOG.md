@@ -8,13 +8,15 @@
 
 ---
 
-### [未发布]
+### [0.11.7] - 2026-09-17
 
 #### 变更
 
 - **诊断与前端设计 skill 收敛**（`seed/skill/diagnose/SKILL.md`、`seed/skill/frontend-design/SKILL.md`）：普通问题可走 Fast Path，复杂问题保留反馈循环；前端设计改为按项目语境、视觉优先级和真实内容密度判断，减少固定 Apple 模板、截图 JSON 中间产物与绝对化反模式。
 
 - **会话侧边消息轨道**（`packages/app/src/pages/session/turn-outline.tsx`、`packages/ui/src/components/message-nav.tsx`、`packages/app/src/pages/session.tsx`）：长会话里想回到某轮提问只能往上翻，很费劲。桌面端会话区左侧新增常驻窄轨道，每个用户轮次一个刻度，hover 出预览、点击直达该消息。复用 UI 包既有的 `MessageNav` compact 形态与既有的 `GET /session/:id/outline` 查询（与「轮次」标签同 query key，不产生第二次请求），点击走既有的 `jumpToTurn`（分页补齐 + `revealMessage`），不复制正文、移动端不显示。决策：`docs/notes/implemented/feature/2026-09-16-session-message-rail.md`。
+
+- **仓库统一格式化入口**（`package.json`、`.prettierignore`、全仓 292 个文件）：仓库此前没有格式流程，`prettier --check .` 有 306 个文件不通过（历史遗留，非某次改动引入）。补上 `bun run format` 与 `bun run format:check` 两个脚本，把三个在 Windows 上被检出成普通文本的 git symlink 与 storybook 构建产物加进 `.prettierignore`，并跑了一次全量 `--write`。
 
 #### 修复
 
