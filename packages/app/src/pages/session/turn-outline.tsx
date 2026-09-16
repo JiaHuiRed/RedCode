@@ -1,5 +1,7 @@
 import { For, Show, createMemo } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
+import { createMediaQuery } from "@solid-primitives/media"
+import { MessageNav } from "@redcode-ai/ui/message-nav"
 import { useLanguage } from "@/context/language"
 import { useQueryOptions } from "@/context/server-sync"
 import { pathKey } from "@/utils/path-key"
@@ -39,6 +41,55 @@ export function SessionTurnOutline(props: {
       busy={props.busy}
       onJump={props.onJump}
     />
+  )
+}
+
+/**
+ * 260916 Red 侧边消息轨道的取数与跳转决策见
+ * `docs/notes/implemented/feature/2026-09-16-session-message-rail.md`。
+ */
+export function SessionMessageRail(props: {
+  directory: string
+  sessionID: string
+  activeMessageID?: string
+  busy: boolean
+  onJump: (messageID: string) => void
+}) {
+  const options = useQueryOptions()
+  const isDesktop = createMediaQuery("(min-width: 768px)")
+  const query = useQuery(() => ({
+    ...options.sessionOutline(pathKey(props.directory), props.sessionID),
+    enabled: !!props.sessionID && isDesktop(),
+  }))
+
+  const entries = () => (query.isLoading ? EMPTY : (query.data ?? EMPTY))
+
+  const language = useLanguage()
+  const rows = createMemo(() => entries().map((entry) => ({ id: entry.messageID })))
+  const entryByID = createMemo(() => new Map(entries().map((entry) => [entry.messageID, entry] as const)))
+  const current = createMemo(() => rows().find((message) => message.id === props.activeMessageID))
+
+  return (
+    <Show when={rows().length > 1}>
+      <div
+        data-component="session-message-rail"
+        class="pointer-events-none absolute inset-y-0 left-1 z-[3] hidden w-6 md:flex"
+        classList={{ "opacity-60": props.busy }}
+      >
+        <MessageNav
+          class="pointer-events-auto h-full max-h-full overflow-y-auto py-8 pl-1 no-scrollbar"
+          messages={rows()}
+          current={current()}
+          size="compact"
+          aria-label={language.t("session.tab.outline")}
+          onMessageSelect={(message) => {
+            if (props.busy) return
+            props.onJump(message.id)
+          }}
+          getLabel={(message) => entryByID().get(message.id)?.prompt}
+        />
+      </div>
+    </Show>
   )
 }
 

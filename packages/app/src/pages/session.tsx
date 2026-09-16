@@ -53,7 +53,7 @@ import { createSessionKeyboard } from "@/pages/session/session-keyboard"
 import { MessageTimeline } from "@/pages/session/message-timeline"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { useSessionLayout } from "@/pages/session/session-layout"
-import { SessionTurnOutline } from "@/pages/session/turn-outline"
+import { SessionMessageRail, SessionTurnOutline } from "@/pages/session/turn-outline"
 import { syncSessionModel } from "@/pages/session/session-model-helpers"
 import { SessionSidePanel } from "@/pages/session/session-side-panel"
 import { FileTreePanel } from "@/pages/session/file-tree-panel"
@@ -1705,6 +1705,15 @@ export default function Page() {
           {/* 260829 cc data-frost-edge：会话滚动区上下两条渐变模糊带的挂载点，
               规则见 index.css 的「③ 边缘渐变模糊带」。有壁纸才生效。 */}
           <div data-frost-edge="" class="relative z-[1] flex-1 min-h-0 overflow-hidden">
+            <Show when={params.id && !mobileChanges()}>
+              <SessionMessageRail
+                directory={sdk.directory}
+                sessionID={params.id!}
+                activeMessageID={store.messageId}
+                busy={jumpingTurn()}
+                onJump={(id) => void jumpToTurn(id)}
+              />
+            </Show>
             <Switch>
               <Match when={params.id && mobileChanges()}>
                 <div class="relative h-full overflow-hidden">

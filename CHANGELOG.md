@@ -14,6 +14,8 @@
 
 - **诊断与前端设计 skill 收敛**（`seed/skill/diagnose/SKILL.md`、`seed/skill/frontend-design/SKILL.md`）：普通问题可走 Fast Path，复杂问题保留反馈循环；前端设计改为按项目语境、视觉优先级和真实内容密度判断，减少固定 Apple 模板、截图 JSON 中间产物与绝对化反模式。
 
+- **会话侧边消息轨道**（`packages/app/src/pages/session/turn-outline.tsx`、`packages/ui/src/components/message-nav.tsx`、`packages/app/src/pages/session.tsx`）：长会话里想回到某轮提问只能往上翻，很费劲。桌面端会话区左侧新增常驻窄轨道，每个用户轮次一个刻度，hover 出预览、点击直达该消息。复用 UI 包既有的 `MessageNav` compact 形态与既有的 `GET /session/:id/outline` 查询（与「轮次」标签同 query key，不产生第二次请求），点击走既有的 `jumpToTurn`（分页补齐 + `revealMessage`），不复制正文、移动端不显示。决策：`docs/notes/implemented/feature/2026-09-16-session-message-rail.md`。
+
 #### 修复
 
 - **sidecar 健康检查不再伪报成功**（`packages/desktop/src/main/{server,index}.ts`）：健康等待改为明确的成功/失败契约，启动超时或进程退出会进入既有失败路径，只有真实探针成功后才记录 `sidecar healthy`；respawn 日志也保留真实的 `healthy: false`。决策：`docs/notes/implemented/bug-fix/2026-09-16-sidecar-health-contract.md`。
@@ -23,6 +25,7 @@
 - **LLM 流看门狗增加生命周期诊断与回归覆盖**（`packages/opencode/src/session/llm.ts`、`packages/opencode/test/session/llm-idle-guard.test.ts`）：记录 watchdog 实例年龄、最后事件静默时长、是否收到事件及是否处于本地工具阶段，补充流结束后看门狗必须停止的两条测试；不改变超时阈值、错误文案或中断行为。
 
 - **LLM 流看门狗改按在途工具集合判定豁免**（`packages/opencode/src/session/llm.ts`、`packages/opencode/test/session/llm-idle-guard.test.ts`，决策：`docs/notes/implemented/bug-fix/2026-09-16-watchdog-pending-tools.md`）：原实现用单个布尔表示"本地工具阶段"，一个 step 内并行多个工具时，先返回的工具会清掉本地态，仍在执行的慢工具因此被 120 秒闲置看门狗误判成「网关停摆」并中断整轮（实测两次，被掐掉的慢工具是 `redcode doctor --json`）。改为按 toolCallId 记账的在途工具集合，全部工具结束才恢复计时，并删除 `text-` / `reasoning-` / `step-` 顺带清本地态的分支——那些事件只证明网关在说话，不能证明本地工具已跑完。同时把测试从"逐行复刻 shadow 实现"改为直调导出的真实现（阈值可注入），新增并行工具与"豁免不得变成永久免疫"两条用例。
+
 
 ### [0.11.6] - 2026-09-16
 

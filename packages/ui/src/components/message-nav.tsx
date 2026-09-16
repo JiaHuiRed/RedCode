@@ -1,23 +1,25 @@
-import { UserMessage } from "@redcode-ai/sdk/v2"
+import type { UserMessage } from "@redcode-ai/sdk/v2"
 import { HoverCard } from "@kobalte/core/hover-card"
 import { ComponentProps, For, Match, Show, createSignal, splitProps, Switch } from "solid-js"
 import { DiffChanges } from "./diff-changes"
 import { useI18n } from "../context/i18n"
 
+type MessageNavMessage = Pick<UserMessage, "id" | "summary">
+
 export function MessageNav(
   props: ComponentProps<"ul"> & {
-    messages: UserMessage[]
-    current?: UserMessage
+    messages: MessageNavMessage[]
+    current?: MessageNavMessage
     size: "normal" | "compact"
-    onMessageSelect: (message: UserMessage) => void
-    getLabel?: (message: UserMessage) => string | undefined
+    onMessageSelect: (message: MessageNavMessage) => void
+    getLabel?: (message: MessageNavMessage) => string | undefined
   },
 ) {
   const i18n = useI18n()
   const [local, others] = splitProps(props, ["messages", "current", "size", "onMessageSelect", "getLabel", "class"])
   const [hovercardOpen, setHovercardOpen] = createSignal(false)
 
-  const selectMessage = (message: UserMessage) => {
+  const selectMessage = (message: MessageNavMessage) => {
     setHovercardOpen(false)
     local.onMessageSelect(message)
   }
@@ -41,6 +43,11 @@ export function MessageNav(
                   <div
                     data-slot="message-nav-tick-button"
                     data-active={message.id === local.current?.id || undefined}
+                    aria-current={message.id === local.current?.id ? "true" : undefined}
+                    aria-label={
+                      local.getLabel?.(message) ?? message.summary?.title ?? i18n.t("ui.messageNav.newMessage")
+                    }
+                    title={local.getLabel?.(message) ?? message.summary?.title ?? i18n.t("ui.messageNav.newMessage")}
                     role="button"
                     tabindex={0}
                     onClick={handleClick}
