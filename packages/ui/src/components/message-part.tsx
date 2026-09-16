@@ -1771,6 +1771,31 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   )
   const isDone = createMemo(() => typeof part().time?.end === "number")
   const title = createMemo(() => reasoningTitle(content()))
+  // 260917 Red 流式期思考行跟随（对齐 TUI hide 模式 260911 的 latestLine）：收起态此前
+  //   只显示 **Title**，长思考在流式期间像黑盒。改为跟随最后一行非空文本，与标题叠加
+  //   （优先级：标题 > 最新行），点开全文即停止跟随，保持"单行不跳"的布局承诺。
+  const latestLine = createMemo(() => {
+    const lines = content().split("\n")
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i].trim()
+      if (line) {
+        return line
+          .replace(/\*\*/g, "")
+          .replace(/^#+\s*/, "")
+          .trim()
+      }
+    }
+    return ""
+  })
+  // 完成后只剩标题（与 TUI CollapsedReasoningText 同形），流式期间标题与最新行同行呈现，
+  //   时长与 chevron 的位置不变。
+  const collapsedLabel = createMemo(() => {
+    if (isDone()) return title()
+    const heading = title()
+    const line = latestLine()
+    if (heading && line && line !== heading) return `${heading} — ${line}`
+    return heading ?? (line || null)
+  })
   // 260830 Red 思考链折叠：默认收起（折叠态固定一行高度，流式期间布局不抖动）
   const [expanded, setExpanded] = createSignal(false)
   // 260811 Red 思考计时：流式期间每秒刷新已用时，结束后定格 end-start
@@ -1801,9 +1826,9 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
           <span data-slot="reasoning-state" class="text-12-medium">
             {isDone() ? i18n.t("ui.sessionTurn.status.thinkingDone") : i18n.t("ui.sessionTurn.status.thinking")}
           </span>
-          <Show when={title()}>
+          <Show when={collapsedLabel()}>
             <span data-slot="reasoning-title" class="truncate text-12-regular">
-              {title()}
+              {collapsedLabel()}
             </span>
           </Show>
           <Show when={elapsed()}>
