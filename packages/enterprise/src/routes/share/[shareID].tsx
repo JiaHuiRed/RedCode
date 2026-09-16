@@ -322,7 +322,12 @@ export default function () {
                                       messages={messages()}
                                       current={activeMessage()}
                                       size="compact"
-                                      onMessageSelect={setActiveMessage}
+                                      onMessageSelect={(message) => {
+                                        // 260916 Red MessageNav 的 message 现在是最小的 { id, summary } 结构类型
+                                        //   （GUI 侧边轨道只需要这么多），这里查回完整 UserMessage 再存，
+                                        //   上面的 activeMessage() signal 保持原样不动。
+                                        setActiveMessage(messages().find((item) => item.id === message.id))
+                                      }}
                                       getLabel={(message) =>
                                         data()
                                           .part[message.id]?.find((part) => part.type === "text")
