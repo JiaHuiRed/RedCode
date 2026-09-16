@@ -83,6 +83,25 @@ describe("ProviderTransform.options - setCacheKey", () => {
     expect(result.promptCacheKey).toBe(sessionID)
   })
 
+  test("should use parent session ID for prompt cache affinity", () => {
+    const openaiModel = {
+      ...mockModel,
+      providerID: "openai",
+      api: {
+        id: "gpt-4",
+        url: "https://api.openai.com",
+        npm: "@ai-sdk/openai",
+      },
+    }
+    const result = ProviderTransform.options({
+      model: openaiModel,
+      sessionID,
+      parentSessionID: "parent-session-456",
+      providerOptions: {},
+    })
+    expect(result.promptCacheKey).toBe("parent-session-456")
+  })
+
   test("should set store=false for openai provider", () => {
     const openaiModel = {
       ...mockModel,

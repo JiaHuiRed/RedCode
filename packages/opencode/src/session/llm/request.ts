@@ -86,6 +86,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     : ProviderTransform.options({
         model: input.model,
         sessionID: input.sessionID,
+        parentSessionID: input.parentSessionID,
         providerOptions: input.provider.options,
       })
   const options = mergeOptions(mergeOptions(mergeOptions(base, input.model.options), input.agent.options), variant)

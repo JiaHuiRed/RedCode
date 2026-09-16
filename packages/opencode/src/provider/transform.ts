@@ -1449,9 +1449,15 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
 export function options(input: {
   model: Provider.Model
   sessionID: string
+  parentSessionID?: string
   providerOptions?: Record<string, any>
 }): Record<string, any> {
   const result: Record<string, any> = {}
+  // 260916 Red 子会话继承父会话的缓存亲和键。provider 侧的 promptCacheKey 决定请求被
+  // 路由到哪台机器（缓存条目本身仍按前缀逐字节匹配）。一次派出的多个子代理 system
+  // prompt 完全相同、只有任务描述不同，各自独立 key 会让它们互相看不见对方焐热的前缀
+  // 缓存——子代理首请求平均带 62K 上下文，这笔 prefill 本来可以省掉。
+  const cacheKey = input.parentSessionID ?? input.sessionID
 
   if (
     input.model.api.npm === "@ai-sdk/google-vertex/anthropic" ||
@@ -1471,7 +1477,7 @@ export function options(input: {
 
   if (input.model.api.npm === "@ai-sdk/azure") {
     result["store"] = false
-    result["promptCacheKey"] = input.sessionID
+    result["promptCacheKey"] = cacheKey
   }
 
   if (input.model.api.npm === "@openrouter/ai-sdk-provider" || input.model.api.npm === "@llmgateway/ai-sdk-provider") {
@@ -1528,7 +1534,7 @@ export function options(input: {
     input.model.providerID === "step-plan" ||
     input.providerOptions?.setCacheKey
   ) {
-    result["promptCacheKey"] = input.sessionID
+    result["promptCacheKey"] = cacheKey
   }
 
   if (input.model.api.npm === "@ai-sdk/google" || input.model.api.npm === "@ai-sdk/google-vertex") {
@@ -1599,18 +1605,18 @@ export function options(input: {
     }
 
     if (input.model.providerID.startsWith("redcode")) {
-      result["promptCacheKey"] = input.sessionID
+      result["promptCacheKey"] = cacheKey
       result["include"] = ["reasoning.encrypted_content"]
       result["reasoningSummary"] = "auto"
     }
   }
 
   if (input.model.providerID === "venice") {
-    result["promptCacheKey"] = input.sessionID
+    result["promptCacheKey"] = cacheKey
   }
 
   if (input.model.providerID === "openrouter") {
-    result["prompt_cache_key"] = input.sessionID
+    result["prompt_cache_key"] = cacheKey
   }
   if (input.model.api.npm === "@ai-sdk/gateway") {
     result["gateway"] = {
