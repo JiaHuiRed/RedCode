@@ -49,11 +49,15 @@ const writeFiles = (dir: string, files: Record<string, string>) =>
     { discard: true },
   )
 
-const withFiles = <A, E, R>(files: Record<string, string>, self: (dir: string) => Effect.Effect<A, E, R>) =>
+const withFiles = <A, E, R>(
+  files: Record<string, string>,
+  self: (dir: string) => Effect.Effect<A, E, R>,
+  config: Config.Info = {},
+) =>
   provideTmpdirInstance((dir) =>
     Effect.gen(function* () {
       yield* writeFiles(dir, files)
-      return yield* self(dir).pipe(provideInstruction({ home: dir, config: dir }))
+      return yield* self(dir).pipe(provideInstruction({ home: dir, config: dir }, undefined, config))
     }),
   )
 
@@ -195,6 +199,50 @@ describe("Instruction.resolve", () => {
         const results = yield* svc.resolve(loaded(agents), filepath, id)
         expect(results).toEqual([])
       }),
+    ),
+  )
+
+  it.live("skips a nested instruction larger than max_source_bytes", () =>
+    withFiles(
+      {
+        "subdir/AGENTS.md": "敏".repeat(400),
+        "subdir/nested/file.ts": "const x = 1",
+      },
+      (dir) =>
+        Effect.gen(function* () {
+          const svc = yield* Instruction.Service
+          const results = yield* svc.resolve(
+            [],
+            path.join(dir, "subdir", "nested", "file.ts"),
+            MessageID.make("msg_message-budget-source-1"),
+          )
+
+          expect(results).toEqual([])
+        }),
+      { instruction_budget: { max_source_bytes: 1024 } },
+    ),
+  )
+
+  it.live("caps the total bytes attached from nested instructions", () =>
+    withFiles(
+      {
+        "subdir/AGENTS.md": "outer".repeat(140),
+        "subdir/nested/AGENTS.md": "inner".repeat(140),
+        "subdir/nested/file.ts": "const x = 1",
+      },
+      (dir) =>
+        Effect.gen(function* () {
+          const svc = yield* Instruction.Service
+          const results = yield* svc.resolve(
+            [],
+            path.join(dir, "subdir", "nested", "file.ts"),
+            MessageID.make("msg_message-budget-total-1"),
+          )
+
+          expect(results).toHaveLength(1)
+          expect(results[0].filepath).toBe(path.join(dir, "subdir", "nested", "AGENTS.md"))
+        }),
+      { instruction_budget: { max_resolved_bytes: 1024 } },
     ),
   )
 

@@ -15,13 +15,18 @@ import type { MessageID } from "./schema"
 
 // 260613 Red removed recentSessionDigest — replaced by chat room, was token-heavy
 
-// 260913 Red 指令注入面预算。三个阈值都能从配置的 instruction_budget 覆盖，
-// 这里只是缺省值：单来源超限跳过（不注入半截内容）、总量超限告警、远程抓取限时。
+// 260916 Red 指令注入面预算。四个阈值都能从配置的 instruction_budget 覆盖，
+// 这里只是缺省值：单来源超限跳过（不注入半截内容）、系统总量超限告警、
+// read 附带的 nearby 指令总量硬上限、远程抓取限时。
+// See docs/notes/implemented/bug-fix/2026-09-16-nearby-instruction-budget.md.
 const DEFAULT_INSTRUCTION_BUDGET = {
   maxSourceBytes: 1024 * 1024,
   maxTotalBytes: 64 * 1024,
+  maxResolvedBytes: 32 * 1024,
   fetchTimeoutMs: 5_000,
 } as const
+
+const bytes = (content: string) => new TextEncoder().encode(content).byteLength
 
 const files = (disableClaudeCodePrompt: boolean) => [
   "AGENTS.md",
@@ -220,8 +225,8 @@ export const layer: Layer.Layer<
       const skipped: string[] = []
       const include = (source: string, content: string) => {
         if (!content) return []
-        if (content.length > maxSourceBytes) {
-          skipped.push(`${content.length} chars: ${source}`)
+        if (bytes(content) > maxSourceBytes) {
+          skipped.push(`${bytes(content)} bytes: ${source}`)
           return []
         }
         return [`Instructions from: ${source}\n${content}`]
@@ -239,16 +244,16 @@ export const layer: Layer.Layer<
       // 260813 Red 前缀注入预算：逐来源统计大小，总量超限时告警并点名最肥来源。
       // 不截断——截断会丢指令（漏掉铁律比前缀长更糟），告警只是把膨胀暴露出来，
       // 让"哪段在悄悄变肥"可定位（配合 prompt.ts 的 sysLen 日志看整体趋势）。
-      const totalChars = parts.reduce((sum, p) => sum + p.length, 0)
-      if (totalChars > maxTotalBytes) {
+      const totalBytes = parts.reduce((sum, p) => sum + bytes(p), 0)
+      if (totalBytes > maxTotalBytes) {
         const top = parts
-          .map((p) => ({ chars: p.length, src: p.slice(0, 80).split("\n")[0] }))
-          .toSorted((a, b) => b.chars - a.chars)
+          .map((p) => ({ bytes: bytes(p), src: p.slice(0, 80).split("\n")[0] }))
+          .toSorted((a, b) => b.bytes - a.bytes)
           .slice(0, 5)
         yield* Console.warn(
-          `Instruction prefix over budget: ${totalChars} chars (~${Math.ceil(totalChars / 3)} tok) > ${maxTotalBytes}`,
+          `Instruction prefix over budget: ${totalBytes} bytes > ${maxTotalBytes}`,
         )
-        for (const t of top) yield* Console.warn(`  ${t.chars} chars: ${t.src}`)
+        for (const t of top) yield* Console.warn(`  ${t.bytes} bytes: ${t.src}`)
       }
       return parts
     })
@@ -266,9 +271,14 @@ export const layer: Layer.Layer<
       filepath: string,
       messageID: MessageID,
     ) {
+      const config = yield* cfg.get()
+      const maxSourceBytes = config.instruction_budget?.max_source_bytes ?? DEFAULT_INSTRUCTION_BUDGET.maxSourceBytes
+      const maxResolvedBytes =
+        config.instruction_budget?.max_resolved_bytes ?? DEFAULT_INSTRUCTION_BUDGET.maxResolvedBytes
       const sys = yield* systemPaths()
       const already = extract(messages)
       const results: { filepath: string; content: string }[] = []
+      let resolvedBytes = 0
       const s = yield* InstanceState.get(state)
       const root = path.resolve(yield* InstanceState.directory)
 
@@ -295,8 +305,21 @@ export const layer: Layer.Layer<
 
         set.add(found)
         const content = yield* read(found)
-        if (content) {
-          results.push({ filepath: found, content: `Instructions from: ${found}\n${content}` })
+        if (content && bytes(content) > maxSourceBytes) {
+          yield* Console.warn(
+            `Nearby instruction skipped, over instruction_budget.max_source_bytes (${maxSourceBytes}): ${bytes(content)} bytes: ${found}`,
+          )
+        } else if (content) {
+          const formatted = `Instructions from: ${found}\n${content}`
+          const size = bytes(formatted)
+          if (resolvedBytes + size > maxResolvedBytes) {
+            yield* Console.warn(
+              `Nearby instruction skipped, over instruction_budget.max_resolved_bytes (${maxResolvedBytes}): ${size} bytes: ${found}`,
+            )
+          } else {
+            resolvedBytes += size
+            results.push({ filepath: found, content: formatted })
+          }
         }
 
         current = path.dirname(current)

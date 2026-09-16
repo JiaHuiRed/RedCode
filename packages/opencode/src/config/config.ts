@@ -290,6 +290,10 @@ export const Info = Schema.Struct({
         description:
           "Warning threshold for the total instruction prefix. Sources are still injected in full; crossing it logs which sources are largest (default: 65536)",
       }),
+      max_resolved_bytes: Schema.optional(PositiveInt).annotate({
+        description:
+          "Maximum total UTF-8 bytes of nearby instructions attached by one read tool result. Sources that do not fit are skipped in full (default: 32768)",
+      }),
       fetch_timeout_ms: Schema.optional(PositiveInt).annotate({
         description: "Timeout for fetching a remote instruction URL, covering the response body as well as the request (default: 5000)",
       }),
