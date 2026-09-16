@@ -496,7 +496,7 @@ function guardFirstEvent<S, E>(
 ): Stream.Stream<S, E | FirstEventTimeoutError | StreamIdleTimeoutError> {
   return Stream.unwrap(
     Effect.gen(function* () {
-      const state = { last: Date.now(), seen: false, local: false }
+      const state = { last: Date.now(), seen: false, local: false, start: Date.now() }
       const timeoutSignal = yield* Deferred.make<never, FirstEventTimeoutError | StreamIdleTimeoutError>()
       // 看门狗 fiber：每 tick 比一次"距上一个事件多久"。超过当前档位的阈值就先 abort
       // 底层请求，再向 timeoutSignal 失败，merge 收到后让整体流失败。
@@ -523,6 +523,17 @@ function guardFirstEvent<S, E>(
             const limit = Duration.toMillis(state.seen ? IDLE_EVENT_TIMEOUT : FIRST_EVENT_TIMEOUT)
             if (idle < limit) continue
             ctrl.abort()
+            // 260916 Red 诊断埋点：把"这个看门狗实例自己活了多久"与"最后事件距今多久"分开记。
+            // 真实事故（explore 子代理 ses_ffe5f57481d3cffe，05:36:58 创建）：idle 精确落回该
+            // 会话第一条 llm.stream 的启动时刻（125 秒），可那个会话 33 条 message 全程健康、
+            // 每条都有 completed——单看 idle 无法区分"看门狗活过了自己的流"和"provider 真的
+            // 静默"。streamAgeMs 远大于它守护的那条流的时长时，答案就明确了。
+            yield* Effect.logWarning("llm.stream idle watchdog fired", {
+              idleMs: idle,
+              streamAgeMs: Date.now() - state.start,
+              seen: state.seen,
+              local: state.local,
+            })
             yield* Deferred.fail(
               timeoutSignal,
               state.seen ? new StreamIdleTimeoutError(idle) : new FirstEventTimeoutError(),
