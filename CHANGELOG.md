@@ -18,6 +18,8 @@
 
 #### 修复
 
+- **隔离 worktree 不再无限累积**（`packages/opencode/src/worktree/index.ts`）：`task` 工具的 `isolation: "worktree"` 每个任务会建一份**完整仓库副本**（含 node_modules），而 `session/prompt.ts` 的 `runIsolated` 跑完后只释放实例缓存、从不删目录——bootstrap 失败时反而有清理，成功却没人管。实测本机 `~/.redcode/data/worktree` 攒到 **9.5 GB / 36 个副本**，占整份私仓 11.6 GB 的绝大部分。现在每次创建新副本前顺手回收同项目下超过 7 天的旧副本；保留窗口是因为 task 输出里会给出 worktree 路径，短期内仍应可查。决策：`docs/notes/implemented/bug-fix/2026-09-17-worktree-retention.md`。
+
 - **sidecar 健康检查不再伪报成功**（`packages/desktop/src/main/{server,index}.ts`）：健康等待改为明确的成功/失败契约，启动超时或进程退出会进入既有失败路径，只有真实探针成功后才记录 `sidecar healthy`；respawn 日志也保留真实的 `healthy: false`。决策：`docs/notes/implemented/bug-fix/2026-09-16-sidecar-health-contract.md`。
 
 - **MCP 当前目录收敛为单一路由 owner**（`packages/app/src/{pages/layout.tsx,components/titlebar.tsx,pages/session.tsx}`）：由 Layout 根据当前路由统一设置 `activeMcpDirectory`，回到首页或 Layout 清理时主动清空，移除 Titlebar 与 SessionPage 的重复写入。决策：`docs/notes/implemented/bug-fix/2026-09-16-active-mcp-directory-owner.md`。
@@ -1651,7 +1653,7 @@
 #### 新增
 
 - **四角色子代理体系**（`.opencode/agents/architect.md`、`fixer.md`、`reviewer.md`）：在内置 explore（检索）基础上新增 architect（只读，出方案/架构设计）、fixer（读写，直接实现）、reviewer（只读，severity 分级审查报告，commit 永远用户拍板）。按角色路由模型：explore=opencode-go/mimo-v2.5（原生多模态识图）、architect/fixer=opencode-go/deepseek-v4-flash（聚合商额度多）、reviewer=step_plan/step-3.7-flash。
-- **子代理放行 MCP 检索工具**（`agent/profile/types.ts` 权限体系）：markdown agent frontmatter 的 `"*": deny` 通配会把 MCP 工具（jcodemunch__/typegraph__/indexgraph__/web-search__/vision_*）一起禁用，三个新角色和内置 explore 均补 `: allow` 放行——子代理现在能用代码检索 MCP。
+- **子代理放行 MCP 检索工具**（`agent/profile/types.ts` 权限体系）：markdown agent frontmatter 的 `"*": deny` 通配会把 MCP 工具（jcodemunch**/typegraph**/indexgraph**/web-search**/vision\_\*）一起禁用，三个新角色和内置 explore 均补 `: allow` 放行——子代理现在能用代码检索 MCP。
 
 #### 修复
 
@@ -1665,7 +1667,7 @@
 
 #### 变更
 
-- **Write 工具 markdown 渲染视图**（`cli/cmd/tui/routes/session/index.tsx`、`cli/cmd/tui/feature-plugins/system/session-v2.tsx`）：Write 组件对 `filetype === "markdown"` 的文件内容改用 OpenTUI `<markdown>` 组件（MarkdownRenderable，marked 块级解析 + inline 渲染，conceal=true 隐藏 ** 显示粗体），其余文件保持 `<code conceal={false}>` 源码视图。Edit 的 diff 组件不支持 markdown 渲染视图，保持原样。
+- **Write 工具 markdown 渲染视图**（`cli/cmd/tui/routes/session/index.tsx`、`cli/cmd/tui/feature-plugins/system/session-v2.tsx`）：Write 组件对 `filetype === "markdown"` 的文件内容改用 OpenTUI `<markdown>` 组件（MarkdownRenderable，marked 块级解析 + inline 渲染，conceal=true 隐藏 \*\* 显示粗体），其余文件保持 `<code conceal={false}>` 源码视图。Edit 的 diff 组件不支持 markdown 渲染视图，保持原样。
 
 ---
 
@@ -2684,7 +2686,7 @@
 
 ### [0.6.13] - 2026-06-18
 
-> DeepSeek 前缀缓存退化修复 — _systemCache / _chatCtxCache 重建，命中率从 70% 恢复到 98%。
+> DeepSeek 前缀缓存退化修复 — \_systemCache / \_chatCtxCache 重建，命中率从 70% 恢复到 98%。
 
 #### 修复
 
@@ -3556,7 +3558,7 @@
 
 #### 变更
 
-- **语种裁剪 18 → 中/日/英三语**（`packages/app/src/i18n/`、`packages/ui/src/i18n/`、`context/language.tsx`）：其余 15 语维护成本高且长期漏翻（每语相对 en 缺 84 key，日/德/法用户首屏整片回退英文），整体下架——app 与 ui 两层各删 15 个语言文件，净 -16320 行。Locale 类型/加载器/浏览器语言探测收缩到三语；历史配置里的 zht 在 normalizeLocale 优雅降级到 zh（zh-Hant 浏览器探测同落简中），其余已下架语种回退 en。存量缺口一次补平：app/ja 补 83 键（home 全屏、计划页、审查空态、TTS 与桌面设置行）、ui/zh 补 6 键、ui/ja 补 8 键；三语词典同步清掉已下架语种的 language.* 标签键。`parity.test` 从"手挑 2 个键"升级为全键集 diff（en 基准，zh/ja 缺键或孤儿键都红，app/ui 两层一起管），漏翻从此挡在 CI。
+- **语种裁剪 18 → 中/日/英三语**（`packages/app/src/i18n/`、`packages/ui/src/i18n/`、`context/language.tsx`）：其余 15 语维护成本高且长期漏翻（每语相对 en 缺 84 key，日/德/法用户首屏整片回退英文），整体下架——app 与 ui 两层各删 15 个语言文件，净 -16320 行。Locale 类型/加载器/浏览器语言探测收缩到三语；历史配置里的 zht 在 normalizeLocale 优雅降级到 zh（zh-Hant 浏览器探测同落简中），其余已下架语种回退 en。存量缺口一次补平：app/ja 补 83 键（home 全屏、计划页、审查空态、TTS 与桌面设置行）、ui/zh 补 6 键、ui/ja 补 8 键；三语词典同步清掉已下架语种的 language.\* 标签键。`parity.test` 从"手挑 2 个键"升级为全键集 diff（en 基准，zh/ja 缺键或孤儿键都红，app/ui 两层一起管），漏翻从此挡在 CI。
 
 #### 修复
 

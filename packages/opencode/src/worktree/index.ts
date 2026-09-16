@@ -13,7 +13,7 @@ import { errorMessage } from "../util/error"
 import { BusEvent } from "@/bus/bus-event"
 import { GlobalBus } from "@/bus/global"
 import { Git } from "@/git"
-import { Duration, Effect, Exit, Layer, Path, Schema, Scope, Context } from "effect"
+import { DateTime, Duration, Effect, Exit, Layer, Option, Path, Schema, Scope, Context } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { NodePath } from "@effect/platform-node"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
@@ -21,6 +21,11 @@ import { AppProcess } from "@redcode-ai/core/process"
 import { InstanceState } from "@/effect/instance-state"
 
 const log = Log.create({ service: "worktree" })
+// 260917 Red 隔离 worktree 用完不删会无限累积：实测本机 data/worktree 曾达 9.5 GB / 36 个副本，
+//   每个都是含 node_modules 的完整仓库副本。任务结束立刻删会丢掉子代理的产出——task 输出里会
+//   告知 worktree 路径，使用者可能回去检查——所以保留一个时间窗，每次创建新副本前顺手回收同项目
+//   下超过该窗口的旧副本。
+const WORKTREE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
 
 export const Event = {
   Ready: BusEvent.define(
@@ -316,6 +321,10 @@ export const layer: Layer.Layer<
     })
 
     const createFromInfo = Effect.fn("Worktree.createFromInfo")(function* (info: Info, startCommand?: string) {
+      // 260917 Red 后台跑：创建路径本身不能等回收——删目录要过 git（worktree remove + branch -D），
+      //   同步串在这里会把每次 task 启动拖慢数秒（实测把测试拖到 30s 超时）。forkIn(scope) 与相邻
+      //   的 bootstrap 同一模式。
+      yield* reap().pipe(Effect.forkIn(scope))
       yield* setup(info)
       yield* bootWithCleanup(info, startCommand).pipe(
         Effect.asVoid,
@@ -325,6 +334,7 @@ export const layer: Layer.Layer<
     })
 
     const createAndWait = Effect.fn("Worktree.createAndWait")(function* (info: Info, startCommand?: string) {
+      yield* reap().pipe(Effect.forkIn(scope))
       yield* setup(info)
       const instance = yield* bootWithCleanup(info, startCommand)
       if (!instance) return yield* new CreateFailedError({ message: "Failed to initialize isolated worktree" })
@@ -489,6 +499,33 @@ export const layer: Layer.Layer<
             }),
           ),
         ),
+      )
+    })
+
+    // 260917 Red 走 remove 而不是直接 fs.remove：remove 会注销 git 注册、删分支、停 fsmonitor，
+    //   也能处理"注册已注销只剩目录"的残骸（git worktree remove 走不通时它自己会降级清目录）。
+    const reap = Effect.fnUntraced(function* () {
+      const ctx = yield* InstanceState.context
+      const root = pathSvc.join(Global.Path.data, "worktree", ctx.project.id)
+      const names = yield* fs.readDirectory(root).pipe(Effect.catch(() => Effect.succeed([] as string[])))
+      if (names.length === 0) return
+      const cutoff = DateTime.toEpochMillis(yield* DateTime.now) - WORKTREE_RETENTION_MS
+      yield* Effect.forEach(
+        names,
+        (name) =>
+          Effect.gen(function* () {
+            const target = pathSvc.join(root, name)
+            const info = yield* fs.stat(target).pipe(Effect.catch(() => Effect.succeed(undefined)))
+            if (!info || info.type !== "Directory") return
+            const mtime = Option.getOrUndefined(info.mtime)
+            if (mtime === undefined || mtime.getTime() >= cutoff) return
+            yield* remove({ directory: target }).pipe(
+              Effect.catchCause((cause) =>
+                Effect.sync(() => log.error("worktree reap failed", { directory: target, cause })),
+              ),
+            )
+          }),
+        { concurrency: 1 },
       )
     })
 

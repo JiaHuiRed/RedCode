@@ -9,7 +9,7 @@ import { InstanceRef } from "../../src/effect/instance-ref"
 import { InstanceRuntime } from "../../src/project/instance-runtime"
 import { Worktree } from "../../src/worktree"
 import { disposeAllInstances, provideInstance, TestInstance } from "../fixture/fixture"
-import { testEffect } from "../lib/effect"
+import { pollWithTimeout, testEffect } from "../lib/effect"
 
 const it = testEffect(
   Layer.mergeAll(Worktree.defaultLayer, AppFileSystem.defaultLayer, CrossSpawnSpawner.defaultLayer, Git.defaultLayer),
@@ -227,6 +227,48 @@ describe("Worktree", () => {
     )
   })
 
+  describe("retention", () => {
+    it.instance(
+      "reaps worktrees older than the retention window",
+      () =>
+        Effect.gen(function* () {
+          const svc = yield* Worktree.Service
+          const fs = yield* AppFileSystem.Service
+
+          // 260917 Red 造旧目录必须用 createAndWait：create 只是把 bootstrap fork 出去就返回，
+          //   后台仍在往 worktree 里写文件，目录 mtime 随后被系统刷成"现在"——utimes 设的旧时间
+          //   当场被覆盖，reap 判定它没过期就跳过了。createAndWait 等到 bootstrap 真正落定。
+          const stale = yield* svc.makeWorktreeInfo({ name: "stale-one" })
+          yield* svc.createAndWait(stale)
+          expect(yield* fs.exists(stale.directory)).toBe(true)
+          const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+          yield* fs.utimes(stale.directory, old, old)
+
+          yield* svc.createAndWait(yield* svc.makeWorktreeInfo({ name: "fresh-one" }))
+
+          yield* pollWithTimeout(
+            fs.exists(stale.directory).pipe(Effect.map((exists) => (exists ? undefined : (true as const)))),
+            "stale worktree was never reaped",
+          )
+        }),
+      { git: true },
+    )
+
+    it.instance(
+      "keeps worktrees inside the retention window",
+      () =>
+        Effect.gen(function* () {
+          const svc = yield* Worktree.Service
+          const fs = yield* AppFileSystem.Service
+
+          const fresh = yield* svc.create({ name: "fresh-two" })
+          yield* svc.create({ name: "fresh-three" })
+
+          expect(yield* fs.exists(fresh.directory)).toBe(true)
+        }),
+      { git: true },
+    )
+  })
   describe("createFromInfo", () => {
     wintest(
       "creates git worktree and boots asynchronously",
