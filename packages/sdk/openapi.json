@@ -15482,6 +15482,10 @@
                 "type": "integer",
                 "exclusiveMinimum": 0
               },
+              "max_resolved_bytes": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
               "fetch_timeout_ms": {
                 "type": "integer",
                 "exclusiveMinimum": 0
