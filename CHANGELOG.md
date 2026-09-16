@@ -8,7 +8,11 @@
 
 ---
 
-### [未发布]
+### [0.11.6] - 2026-09-16
+
+#### 变更
+
+- **模型提示词边界与行为收敛**（`packages/opencode/src/session/prompt/{gpt,deepseek,glm}.md`，决策：`docs/notes/implemented/feature/2026-09-16-deepseek-glm-prompt-tuning.md`）：GPT 明确 soul 只负责表达、工程指令负责判断与执行，工具描述改为能力级并把前端细则交给现有 skill；DeepSeek 增加防止错误方向叠加补丁、顺手扩大范围与不必要委派的约束；GLM 增加推理停止条件、循环抑制、按风险取最低充分证据与 meaningful checkpoint，减少 Max reasoning 空转。各模型仍保留独立提示词路由，不改变运行时 reasoning 档位。
 
 #### 修复
 
