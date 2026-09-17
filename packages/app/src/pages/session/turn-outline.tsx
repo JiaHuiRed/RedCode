@@ -73,7 +73,11 @@ export function SessionMessageRail(props: {
     <Show when={rows().length > 1}>
       <div
         data-component="session-message-rail"
-        class="pointer-events-none absolute inset-y-0 left-1 z-[3] hidden w-6 md:flex"
+        // 260917 Red 顶部让开会话标题栏那 64px（h-12 + pb-4）：它是 sticky z-30
+        // （message-timeline.tsx:1656），压在 z-[3] 的轨道上，把最上面几个 tick 的
+        // 点击与悬停整个吃掉 —— 用户点最早的几轮（最需要跳转的那批）会完全没反应。
+        // 让位比抬 z-index 稳：抬 z 会把轨道盖到标题左边缘 parent 链接上，抢掉那边的点击。
+        class="pointer-events-none absolute bottom-0 left-1 top-16 z-[3] hidden w-6 md:flex"
         classList={{ "opacity-60": props.busy }}
       >
         <MessageNav

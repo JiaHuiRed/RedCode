@@ -59,6 +59,16 @@ export type Info = typeof Info.Type
 const ROLE = sql<string>`json_extract(${MessageTable.data}, '$.role')`
 
 /**
+ * 260917 Red 真实内容 part 的判据：用户自己写下的，不是合成注入、也没被标记忽略。
+ *
+ * task 工具的后台完成通知（`Background task completed: …`）与系统提醒都挂在 text part 的
+ * `synthetic` 上，而它们同样是 role=user 的消息 —— 只按 role 建轮次，导航里就会冒出
+ * 「不是我发的消息」。TUI 的 dialog-timeline 与 GUI 的 extractPromptFromParts / dialog-fork
+ * 早就是这条口径（`!synthetic && !ignored`），这里与它们对齐。
+ */
+const REAL_PART = sql`not (json_extract(${PartTable.data}, '$.synthetic') is 1 or json_extract(${PartTable.data}, '$.ignored') is 1)`
+
+/**
  * 每条消息取**第一个** text part 的开头。
  *
  * `group by message_id` + select 里带 `min(id)`：这是 SQLite 有明文保证的写法 —— 同一
@@ -74,7 +84,10 @@ function previews(sessionID: SessionID) {
         text: sql<string | null>`substr(json_extract(${PartTable.data}, '$.text'), 1, ${SQL_CLIP})`,
       })
       .from(PartTable)
-      .where(and(eq(PartTable.session_id, sessionID), sql`json_extract(${PartTable.data}, '$.type') = 'text'`))
+      // 260917 Red 只取真实正文：合成 part 的文本要掉，否则预览直接显示 task 通知的正文。
+      .where(
+        and(eq(PartTable.session_id, sessionID), sql`json_extract(${PartTable.data}, '$.type') = 'text'`, REAL_PART),
+      )
       .groupBy(PartTable.message_id)
       .all(),
   )
@@ -85,7 +98,15 @@ function messages(sessionID: SessionID) {
     db
       .select({ id: MessageTable.id, time: MessageTable.time_created, role: ROLE })
       .from(MessageTable)
-      .where(eq(MessageTable.session_id, sessionID))
+      .where(
+        and(
+          eq(MessageTable.session_id, sessionID),
+          // 260917 Red assistant 全留；user 只在「至少有一个真实 part」时才算一轮。
+          // 整条只有合成 text 的 user 消息（task 后台通知）不是用户发起的一轮，
+          // 列进目录只会让人点进去发现不是自己说过的话。
+          sql`(json_extract(${MessageTable.data}, '$.role') <> 'user' or exists (select 1 from ${PartTable} where ${PartTable.message_id} = ${MessageTable.id} and ${REAL_PART}))`,
+        ),
+      )
       .orderBy(asc(MessageTable.time_created), asc(MessageTable.id))
       .all(),
   )
