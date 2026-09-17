@@ -118,17 +118,48 @@
       "enabled": true,
     },
   },
-  // 260821 Karina 解除 opencode 禁用：zen/v1 网关 27 个免费模型，key 同 opencode-go
   // 260822 cc 清空 ollama-cloud：残留，不禁用它也不会加载 —— 它需要 OLLAMA_API_KEY
   // 且 auth.json 里无条目，而 provider.ts 里根本没有 ollama 的自动发现代码。实测清空后
   // `redcode models ollama-cloud` 仍是 Provider not found。保留空数组而不是删键：
   // merge-home-config 是 deepMergeUserWins，删掉会让用户侧的空数组被当"缺键"补回来。
-  "disabled_providers": [],
+  // 260917 Red opencode 订阅已到期，且其 free tier 不允许从 RedCode 使用；
+  // 配置块与 auth.json 凭据已移除，显式禁用 models.dev 自动发现，避免无配置复活。
+  "disabled_providers": ["opencode"],
   // small_model 挪到本地层 redcode.local.jsonc（260812 cc）：它引用本机 ollama 模型，
   // 而本地模型是按各机显存挑的，随 provider.ollama 一起下沉。留在这里会被 merge-home-config
   // 当"用户缺的键"补回 redcode.jsonc——260811/260812 两次回潮正是如此。
   "compaction": { "threshold": 400000 },
   "provider": {
+    // 260917 Red OpenRouter key 仅存本机 auth.json；白名单来自当日 GET /api/v1/models
+    // 中 prompt/completion 均为 0 的 24 个条目，包含 stealth/union-alpha。
+    "openrouter": {
+      "whitelist": [
+        "cohere/north-mini-code:free",
+        "dots-studio/dots-3-note-preview:free",
+        "google/gemma-4-26b-a4b-it:free",
+        "google/gemma-4-31b-it:free",
+        "google/lyria-3-clip-preview",
+        "google/lyria-3-pro-preview",
+        "inclusionai/ling-3.0-flash-fin:free",
+        "inclusionai/ling-3.0-flash-sante:free",
+        "inclusionai/ling-3.0-flash-vl:free",
+        "liquid/lfm-2.5-2.6b:free",
+        "nex-agi/nex-n2.5-mini:free",
+        "nex-agi/nex-n2.5-pro:free",
+        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+        "nvidia/nemotron-3-super-120b-a12b:free",
+        "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "nvidia/nemotron-3.5-content-safety:free",
+        "nvidia/nemotron-3.5-lightning:free",
+        "openrouter/free",
+        "poolside/laguna-s-2.1:free",
+        "poolside/laguna-xs-2.1:free",
+        "stealth/union-alpha",
+        "thinkingmachines/inkling-small:free",
+        "thinkingmachines/inkling:free",
+        "z-ai/glm-5.2:free"
+      ]
+    },
     // 260802 Red 接入 SenseNova：tokenplan 套餐定价全 0。apiKey 走 {env:} 占位符，
     // 值由用户级环境变量 SENSENOVA_API_KEY 提供（setx 设置，配置同步模板时不会泄漏明文 key）。
     // 本模板会反向覆盖 live 配置，两处必须保持一致。
@@ -173,16 +204,6 @@
           "modalities": { "input": ["text"], "output": ["image"] },
           "limit": { "context": 262144, "output": 65536 },
         },
-      },
-    },
-    // 260821 Karina opencode 官方 zen/v1 网关白嫖：key 复用 opencode-go（auth.json 已配）。
-    // whitelist 只暴露实测可用的 4 个免费模型（provider.ts:1631-1635 白名单过滤），
-    // 其余 89 个（付费全家桶 + 不可用 free）不显示。laguna 在 models.dev 标了 deprecated
-    // 会被提前删掉（provider.ts:1630），故用 models 覆盖 status 救回。
-    "opencode": {
-      "whitelist": ["x-preview-f-free", "hy3-free", "mimo-v2.5-free", "laguna-s-2.1-free"],
-      "models": {
-        "laguna-s-2.1-free": { "status": "active" },
       },
     },
     // 260821 cc 官方 DeepSeek 覆盖块。models.dev 目录与线上对不上，两处都得纠。
