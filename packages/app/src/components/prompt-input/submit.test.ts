@@ -20,6 +20,7 @@ const storedSessions: Record<string, Array<{ id: string; title?: string }>> = {}
 const promoted: Array<{ directory: string; sessionID: string }> = []
 const sentShell: string[] = []
 const syncedDirectories: string[] = []
+const resetScopes: Array<{ dir: string; id?: string } | undefined> = []
 
 let params: { id?: string } = {}
 let selected = "/repo/worktree-a"
@@ -105,10 +106,13 @@ beforeAll(async () => {
   }))
 
   mock.module("@/context/prompt", () => ({
+    DEFAULT_PROMPT: [{ type: "text", content: "", start: 0, end: 0 }],
     usePrompt: () => ({
       current: () => promptValue,
       dirty: () => false,
-      reset: () => undefined,
+      reset: (scope?: { dir: string; id?: string }) => {
+        resetScopes.push(scope)
+      },
       set: () => undefined,
       context: {
         add: () => undefined,
@@ -213,6 +217,7 @@ beforeEach(() => {
   params = {}
   sentShell.length = 0
   syncedDirectories.length = 0
+  resetScopes.length = 0
   selected = "/repo/worktree-a"
   variant = undefined
   for (const key of Object.keys(storedSessions)) delete storedSessions[key]
@@ -343,5 +348,29 @@ describe("prompt submit worktree selection", () => {
 
     expect(storedSessions["/repo/worktree-a"]).toEqual([{ id: "session-1", title: "New session 1" }])
     expect(optimisticSeeded).toEqual([true])
+  })
+
+  test("clears the workspace draft after creating a new session", async () => {
+    const submit = createPromptSubmit({
+      info: () => undefined,
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+    })
+
+    const event = { preventDefault: () => undefined } as unknown as Event
+
+    await submit.handleSubmit(event)
+
+    expect(resetScopes).toEqual([{ dir: "/repo/main", id: "session-1" }, { dir: "/repo/main" }])
   })
 })

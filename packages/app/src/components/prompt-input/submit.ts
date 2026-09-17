@@ -450,6 +450,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     const clearInput = () => {
       prompt.reset(scope)
+      // 260917 Red 新会话提交前读的是目录级草稿；会话创建后只清 session scope 会让已发内容在下次新建时复活。
+      if (isNewSession) prompt.reset({ dir: scope.dir })
       input.setMode("normal")
       input.setPopover(null)
     }
