@@ -31,6 +31,27 @@ TEST_PROFILE_GLOB='test/server/**/*.test.ts' bun run profile:test
 TEST_PROFILE_LIMIT=20 bun run profile:test
 ```
 
+## Performance budget gate
+
+Run the narrow production-path gate from `packages/opencode`:
+
+```sh
+bun run bench:budget
+```
+
+This uses an isolated temporary SQLite database and the production
+`MessageV2.filterCompactedEffect` path. It compares a 128-message session with
+a 2,612-message session, both with a recent compaction boundary, and reports:
+
+- median wall time after two warmups and five measured runs;
+- large-to-small scaling ratio;
+- combined JS-heap and external/native memory growth while the result is materialized.
+
+The budget constants live in `packages/opencode/script/bench-performance-budget.ts`:
+50 ms for the large session, a scaling ratio of 6, and 16 MiB of memory growth.
+The command exits non-zero when any budget is exceeded. It does not read the
+user database, network, or ambient project files.
+
 ## Primary Metric
 
 `METRIC test_suite_seconds=<median wall clock seconds>`
