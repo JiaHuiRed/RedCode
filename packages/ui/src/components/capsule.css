@@ -1,0 +1,183 @@
+/* 胶囊：一个分组一张卡。两种挂载形态共用同一套标题行与行样式，
+   区别只在「卡片表面」——浮层里是实底卡，侧栏/面板里是浅表面分组。 */
+[data-component="capsule"] {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+
+  /* text-14-regular */
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-base);
+  font-style: normal;
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-large);
+  letter-spacing: var(--letter-spacing-normal);
+  color: var(--text-base);
+
+  &[data-attach="floating"] {
+    align-self: flex-start;
+    width: fit-content;
+    max-width: 100%;
+    padding: 6px;
+    border-radius: var(--radius-xl);
+    background: var(--surface-raised-stronger-non-alpha);
+    background-clip: padding-box;
+    box-shadow: var(--shadow-lg-border-base);
+  }
+
+  &[data-attach="inline"] {
+    padding: 6px;
+    border-radius: var(--radius-lg);
+    background: var(--surface-raised-base);
+    /* 分组要一眼看出边界：浅色面板上单靠色差不够，借既有那条弱描边 shadow token */
+    box-shadow: var(--shadow-xs-border-base);
+  }
+
+  [data-slot="capsule-header"] {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 8px;
+    color: var(--text-weak);
+
+    /* text-12-medium */
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-medium);
+
+    [data-slot="capsule-title"] {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    [data-slot="capsule-action"] {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+    }
+  }
+}
+
+[data-component="capsule-row"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 28px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-base);
+  font: inherit;
+  text-align: left;
+
+  &[data-interactive] {
+    cursor: default;
+    transition: background-color 120ms ease;
+
+    &:hover {
+      background: var(--surface-raised-base-hover);
+    }
+
+    &:active {
+      background: var(--surface-raised-base-active);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--border-selected);
+      outline-offset: -2px;
+    }
+  }
+
+  &:focus-visible {
+    outline: none;
+  }
+
+  &[data-selected] {
+    background: var(--surface-raised-base-active);
+  }
+
+  &[data-disabled] {
+    opacity: 0.5;
+  }
+
+  [data-slot="capsule-row-dot"] {
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--text-weaker);
+  }
+
+  &[data-tone="success"] [data-slot="capsule-row-dot"] {
+    background: var(--icon-success-base);
+  }
+
+  &[data-tone="warning"] [data-slot="capsule-row-dot"] {
+    background: var(--icon-warning-base);
+  }
+
+  &[data-tone="critical"] [data-slot="capsule-row-dot"] {
+    background: var(--icon-critical-base);
+  }
+
+  [data-slot="capsule-row-icon"] {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-weak);
+  }
+
+  [data-slot="capsule-row-main"] {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  /* 自定义主体（children）：保持横向、可收缩，好让复合主体（带 tooltip/截断检测的行）直接放进槽里 */
+  [data-slot="capsule-row-body"] {
+    display: flex;
+    align-items: center;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  [data-slot="capsule-row-label"] {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--text-strong);
+  }
+
+  [data-slot="capsule-row-description"] {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--text-weak);
+
+    /* text-12-regular */
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-regular);
+  }
+
+  [data-slot="capsule-row-trailing"] {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-weak);
+  }
+
+  [data-slot="capsule-row-chevron"] {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-weak);
+  }
+}
