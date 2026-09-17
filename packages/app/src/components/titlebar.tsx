@@ -271,15 +271,6 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
 
   // 260609 Red titlebar 只负责按 routeDir/session/tab 选择状态展示目录；MCP query 的激活由 Layout
   //   的 route-derived activeMcpDirectory 单独负责。首页不再通过 titlebar 触发连接。
-  // 260610 Red 方案 A：标题栏状态圆点点击 → 打开右侧面板的 status 标签页（仅在有会话时）
-  const openStatusTab = () => {
-    if (!params.dir || !params.id) return
-    const key = `${params.dir}/${params.id}`
-    layout.view(key).reviewPanel.open()
-    void layout.tabs(key).open("status")
-    layout.tabs(key).setActive("status")
-  }
-
   const closeCurrentSessionTab = () => {
     const tab = currentSessionTab()
     if (!tab) return false
@@ -440,7 +431,7 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
         {(dir) => (
           <SDKProvider directory={dir}>
             <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
-              <StatusPopover openInPanel={params.dir && params.id ? openStatusTab : undefined} />
+              <StatusPopover />
             </Tooltip>
           </SDKProvider>
         )}

@@ -9,8 +9,7 @@ import { useSync } from "@/context/sync"
 
 const Body = lazy(() => import("./status-popover-body").then((x) => ({ default: x.StatusPopoverBody })))
 
-// 260610 Red openInPanel：传入则点圆点不开弹层，改为打开右侧面板的 status 标签页（标题栏方案 A）
-export function StatusPopover(props: { openInPanel?: () => void }) {
+export function StatusPopover() {
   const language = useLanguage()
   const server = useServer()
   const sync = useSync()
@@ -61,50 +60,32 @@ export function StatusPopover(props: { openInPanel?: () => void }) {
     </div>
   )
 
-  // Show 而非 early-return：openInPanel 切换（首页↔会话）能响应式重渲染
   return (
-    <Show
-      when={props.openInPanel}
-      fallback={
-        <Popover
-          open={shown()}
-          onOpenChange={setShown}
-          triggerAs={Button}
-          triggerProps={{
-            variant: "ghost",
-            class: "titlebar-icon w-8 h-6 p-0 box-border",
-            "aria-label": triggerLabel(),
-            style: { scale: 1 },
-          }}
-          trigger={dot(shown())}
-          class="[&_[data-slot=popover-body]]:p-0 w-[360px] max-w-[calc(100vw-40px)] bg-transparent border-0 shadow-none rounded-xl"
-          gutter={4}
-          placement="bottom-end"
-          shift={-168}
-        >
-          <Show when={shown()}>
-            <Suspense
-              fallback={
-                <div class="w-[360px] h-14 rounded-xl bg-background-strong shadow-[var(--shadow-lg-border-base)]" />
-              }
-            >
-              <Body shown={shown} />
-            </Suspense>
-          </Show>
-        </Popover>
-      }
+    <Popover
+      open={shown()}
+      onOpenChange={setShown}
+      triggerAs={Button}
+      triggerProps={{
+        variant: "ghost",
+        class: "titlebar-icon w-8 h-6 p-0 box-border",
+        "aria-label": triggerLabel(),
+        style: { scale: 1 },
+      }}
+      trigger={dot(shown())}
+      class="[&_[data-slot=popover-body]]:p-0 w-[360px] max-w-[calc(100vw-40px)] bg-transparent border-0 shadow-none rounded-xl"
+      gutter={4}
+      placement="bottom-end"
+      shift={-168}
     >
-      {(open) => (
-        <Button
-          variant="ghost"
-          class="titlebar-icon w-8 h-6 p-0 box-border"
-          aria-label={triggerLabel()}
-          style={{ scale: 1 }}
-          onClick={() => open()()}
+      <Show when={shown()}>
+        <Suspense
+          fallback={
+            <div class="w-[360px] h-14 rounded-xl bg-background-strong shadow-[var(--shadow-lg-border-base)]" />
+          }
         >
-          {dot(false)}
-        </Button>
-      )}
-    </Show>
+          <Body shown={shown} />
+        </Suspense>
+      </Show>
+    </Popover>
   )
 }

@@ -25,7 +25,6 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { messageAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
 import { Persist, persisted } from "@/utils/persist"
-import { StatusPopover } from "../status-popover"
 
 const OPEN_APPS = [
   "vscode",
@@ -157,7 +156,6 @@ export function SessionHeader() {
   const search = createMemo(() => true)
   const tree = createMemo(() => true)
   const term = createMemo(() => true)
-  const status = createMemo(() => true)
 
   const [exists, setExists] = createStore<Partial<Record<OpenApp, boolean>>>({
     finder: true,
@@ -428,11 +426,6 @@ export function SessionHeader() {
                 </div>
               </Show>
               <div class="flex items-center gap-1">
-                <Show when={status()}>
-                  <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
-                    <StatusPopover />
-                  </Tooltip>
-                </Show>
                 <Show when={term()}>
                   <TooltipKeybind
                     title={language.t("command.terminal.toggle")}

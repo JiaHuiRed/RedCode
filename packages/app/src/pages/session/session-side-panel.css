@@ -1,0 +1,71 @@
+#review-panel.session-side-panel {
+  .session-side-panel__surface {
+    border: 1px solid var(--border-weaker-base);
+    border-radius: var(--radius-xl);
+    background: var(--background-stronger);
+    box-shadow: var(--shadow-xs-border-base);
+  }
+
+  [data-component="tabs"][data-variant="normal"][data-orientation="horizontal"] {
+    background: transparent;
+
+    [data-slot="tabs-list"] {
+      height: 44px;
+      padding: 8px 8px 4px;
+      gap: 4px;
+      border-bottom: none;
+      background: transparent;
+
+      &::after {
+        display: none;
+      }
+    }
+
+    [data-slot="tabs-trigger-wrapper"] {
+      height: 28px;
+      margin: 0;
+      padding: 0 8px;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      background: transparent;
+      gap: 6px;
+      color: var(--text-weak);
+      transition:
+        color 120ms ease,
+        background-color 120ms ease,
+        border-color 120ms ease;
+
+      &::after {
+        display: none;
+      }
+
+      [data-slot="tabs-trigger"] {
+        height: 100%;
+        padding: 0 !important;
+      }
+
+      &:has([data-selected]) {
+        color: var(--text-strong);
+        background: var(--surface-base-active);
+        border-color: var(--border-weak-base);
+      }
+
+      &:hover:not(:disabled):not(:has([data-selected])) {
+        color: var(--text-base);
+        background: var(--surface-base-hover);
+      }
+
+      &:has([data-slot="tabs-trigger-close-button"]) {
+        padding-right: 5px;
+      }
+    }
+  }
+
+  .session-side-panel__tab-end {
+    background: transparent;
+  }
+
+  [data-slot="tabs-content"] {
+    background: transparent;
+  }
+}

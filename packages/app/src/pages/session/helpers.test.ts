@@ -178,4 +178,22 @@ describe("createSessionTabs", () => {
       dispose()
     })
   })
+
+  test("falls back when an old status tab is still active", () => {
+    createRoot((dispose) => {
+      const [state] = createStore({
+        active: "status",
+        all: ["status", "context"],
+      })
+      const tabs = createMemo(() => ({ active: () => state.active, all: () => state.all }))
+      const result = createSessionTabs({
+        tabs,
+        pathFromTab: () => undefined,
+        normalizeTab: (tab) => tab,
+      })
+
+      expect(result.activeTab()).toBe("context")
+      dispose()
+    })
+  })
 })

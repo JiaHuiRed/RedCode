@@ -11,7 +11,6 @@ import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { SessionContextTab, SessionPlanTab, SortableTab, FileVisual } from "@/components/session"
-import { StatusPopoverBody } from "@/components/status-popover-body"
 import { useCommand } from "@/context/command"
 import { useFile, type SelectedLineRange } from "@/context/file"
 import { useLanguage } from "@/context/language"
@@ -131,10 +130,11 @@ export function SessionSidePanel(props: {
     <Show when={isDesktop()}>
       <aside
         id="review-panel"
+        data-component="session-side-panel"
         aria-label={language.t("session.tab.review")}
         aria-hidden={!open()}
         inert={!open()}
-        class="relative min-w-0 h-full flex shrink-0 overflow-hidden bg-background-base"
+        class="session-side-panel relative min-w-0 h-full flex shrink-0 overflow-hidden bg-transparent"
         classList={{
           "pointer-events-none": !open(),
           "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
@@ -143,16 +143,16 @@ export function SessionSidePanel(props: {
         style={{ width: panelWidth() }}
       >
         <Show when={open()}>
-          <div class="size-full flex border-l border-border-weaker-base">
+          <div class="size-full flex px-2 py-2">
             <div
               aria-hidden={!reviewOpen()}
               inert={!reviewOpen()}
-              class="relative min-w-0 h-full flex-1 overflow-hidden bg-background-base"
+              class="session-side-panel__surface relative min-w-0 h-full flex-1 overflow-hidden"
               classList={{
                 "pointer-events-none": !reviewOpen(),
               }}
             >
-              <div class="size-full min-w-0 h-full bg-background-base">
+              <div class="size-full min-w-0 h-full">
                 <DragDropProvider
                   onDragStart={handleDragStart}
                   onDragEnd={handleDragEnd}
@@ -164,6 +164,7 @@ export function SessionSidePanel(props: {
                   <Tabs value={activeTab()} onChange={openTab}>
                     <div class="sticky top-0 shrink-0 flex">
                       <Tabs.List
+                        class="session-side-panel__tab-list"
                         ref={(el: HTMLDivElement) => {
                           const stop = createFileTabListSync({ el, contextOpen })
                           onCleanup(stop)
@@ -204,12 +205,6 @@ export function SessionSidePanel(props: {
                             </div>
                           </Tabs.Trigger>
                         </Show>
-                        {/* 260610 Red 服务器/MCP/LSP/插件状态标签：常驻，由标题栏圆点或点击此处打开 */}
-                        <Tabs.Trigger value="status">
-                          <div class="flex items-center gap-1.5">
-                            <div>{language.t("session.tab.status")}</div>
-                          </div>
-                        </Tabs.Trigger>
                         {/* 260901 cc 轮次标签：整份日志的轮次目录，点一条翻页并跳过去 */}
                         <Tabs.Trigger value="outline">
                           <div class="flex items-center gap-1.5">
@@ -225,7 +220,7 @@ export function SessionSidePanel(props: {
                         <SortableProvider ids={openedTabs()}>
                           <For each={openedTabs()}>{(tab) => <SortableTab tab={tab} onTabClose={tabs().close} />}</For>
                         </SortableProvider>
-                        <div class="bg-background-stronger h-full shrink-0 sticky right-0 z-10 flex items-center justify-center pr-3">
+                        <div class="session-side-panel__tab-end h-full shrink-0 sticky right-0 z-10 flex items-center justify-center pl-1 pr-2">
                           <TooltipKeybind
                             title={language.t("command.file.open")}
                             keybind={command.keybind("file.open")}
@@ -282,15 +277,6 @@ export function SessionSidePanel(props: {
                           </Show>
                         </Tabs.Content>
                       </Show>
-
-                      {/* 260610 Red status 标签页内容：复用标题栏弹层的 StatusPopoverBody（fill 自适应宽度） */}
-                      <Tabs.Content value="status" class="flex flex-col h-full overflow-hidden contain-strict">
-                        <Show when={activeTab() === "status"}>
-                          <div class="relative pt-2 flex-1 min-h-0 overflow-auto px-2">
-                            <StatusPopoverBody shown={() => true} fill />
-                          </div>
-                        </Show>
-                      </Tabs.Content>
 
                       {/* 260901 cc 轮次标签页内容。Show 保证只在激活时挂载 —— 目录请求因此
                           只在真的打开这个标签时才发，不给「点开会话」那条热路径加往返。 */}

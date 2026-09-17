@@ -1,14 +1,14 @@
 import { Button } from "@redcode-ai/ui/button"
+import { Capsule, CapsuleRow, type CapsuleTone } from "@redcode-ai/ui/capsule"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { Icon } from "@redcode-ai/ui/icon"
 import { Switch } from "@redcode-ai/ui/switch"
-import { Tabs } from "@redcode-ai/ui/tabs"
 import { useMutation, useQueryClient } from "@tanstack/solid-query"
 import { showToast } from "@redcode-ai/ui/toast"
 import { useNavigate } from "@solidjs/router"
 import { type Accessor, createEffect, createMemo, For, type JSXElement, onCleanup, Show } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
-import { ServerHealthIndicator, ServerRow } from "@/components/server/server-row"
+import { ServerRow } from "@/components/server/server-row"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
@@ -19,6 +19,21 @@ import { useQueryOptions } from "@/context/server-sync"
 import { pathKey } from "@/utils/path-key"
 
 const pollMs = 10_000
+
+/** 服务器健康 → 状态点语义；未探到状态落在中性色。 */
+const healthTone = (value: ServerHealth | undefined): CapsuleTone => {
+  if (value?.healthy === true) return "success"
+  if (value?.healthy === false) return "critical"
+  return "idle"
+}
+
+/** 同步数据里的连接状态 → 状态点语义。 */
+const connectionTone = (value: string | undefined): CapsuleTone => {
+  if (value === "connected") return "success"
+  if (value === "failed" || value === "error") return "critical"
+  if (value === "needs_auth" || value === "needs_client_registration") return "warning"
+  return "idle"
+}
 
 const pluginEmptyMessage = (value: string, file: string): JSXElement => {
   const parts = value.split(file)
@@ -168,7 +183,7 @@ const useMcpToggleMutation = () => {
 }
 
 // 260610 Red fill：用作右侧面板标签页时宽度自适应、去掉弹层专用阴影/圆角
-export function StatusPopoverBody(props: { shown: Accessor<boolean>; fill?: boolean }) {
+export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
   const sync = useSync()
   const server = useServer()
   const platform = usePlatform()
@@ -217,219 +232,172 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean>; fill?: bool
   const pluginEmpty = createMemo(() => pluginEmptyMessage(language.t("dialog.plugins.empty"), "redcode.json"))
 
   return (
-    <div
-      classList={{
-        "flex items-center gap-1": true,
-        "w-[360px] rounded-xl shadow-[var(--shadow-lg-border-base)]": !props.fill,
-        "w-full": props.fill,
-      }}
-    >
-      <Tabs
+    <div class="flex min-w-0 w-[360px]">
+      <Capsule
+        attach="floating"
+        title={language.t("session.tab.status")}
+        class="status-popover-capsule"
         aria-label={language.t("status.popover.ariaLabel")}
-        classList={{
-          "tabs overflow-hidden": true,
-          "bg-background-strong rounded-xl": !props.fill,
-          "bg-transparent w-full": props.fill,
-        }}
-        data-component="tabs"
-        data-active="servers"
-        defaultValue="servers"
-        variant="alt"
       >
-        <Tabs.List data-slot="tablist" class="bg-transparent border-b-0 px-4 pt-2 pb-0 gap-4 h-10">
-          <Tabs.Trigger value="servers" data-slot="tab" class="text-12-regular">
-            {sortedServers().length > 0 ? `${sortedServers().length} ` : ""}
-            {language.t("status.popover.tab.servers")}
-          </Tabs.Trigger>
-          <Tabs.Trigger value="mcp" data-slot="tab" class="text-12-regular">
-            {mcpConnected() > 0 ? `${mcpConnected()} ` : ""}
-            {language.t("status.popover.tab.mcp")}
-          </Tabs.Trigger>
-          <Tabs.Trigger value="lsp" data-slot="tab" class="text-12-regular">
-            {lspCount() > 0 ? `${lspCount()} ` : ""}
-            {language.t("status.popover.tab.lsp")}
-          </Tabs.Trigger>
-          <Tabs.Trigger value="plugins" data-slot="tab" class="text-12-regular">
-            {pluginCount() > 0 ? `${pluginCount()} ` : ""}
-            {language.t("status.popover.tab.plugins")}
-          </Tabs.Trigger>
-        </Tabs.List>
-
-        <Tabs.Content value="servers">
-          <div class="flex flex-col px-2 pb-2">
-            <div class="flex flex-col p-3 bg-background-base rounded-sm min-h-14">
-              <For each={sortedServers()}>
-                {(s) => {
-                  const key = ServerConnection.key(s)
-                  const blocked = () => health[key]?.healthy === false
-                  return (
-                    <button
-                      type="button"
-                      class="flex items-center gap-2 w-full h-8 pl-3 pr-1.5 py-1.5 rounded-md transition-colors text-left"
-                      classList={{
-                        "hover:bg-surface-raised-base-hover": !blocked(),
-                        "cursor-not-allowed": blocked(),
-                      }}
-                      aria-disabled={blocked()}
-                      onClick={() => {
-                        if (blocked()) return
-                        navigate("/")
-                        queueMicrotask(() => server.setActive(key))
-                      }}
-                    >
-                      <ServerHealthIndicator health={health[key]} />
-                      <ServerRow
-                        conn={s}
-                        dimmed={blocked()}
-                        status={health[key]}
-                        class="flex items-center gap-2 w-full min-w-0"
-                        nameClass="text-14-regular text-text-base truncate"
-                        versionClass="text-12-regular text-text-weak truncate"
-                        badge={
-                          <Show when={key === defaultServer.key()}>
-                            <span class="text-11-regular text-text-base bg-surface-base px-1.5 py-0.5 rounded-md">
-                              {language.t("common.default")}
-                            </span>
-                          </Show>
-                        }
-                      >
-                        <div class="flex-1" />
-                        <Show when={server.current && key === ServerConnection.key(server.current)}>
-                          <Icon name="check" size="small" class="text-icon-weak shrink-0" />
-                        </Show>
-                      </ServerRow>
-                    </button>
-                  )
-                }}
-              </For>
-
-              <Button
-                variant="secondary"
-                class="mt-3 self-start h-8 px-3 py-1.5"
-                onClick={() => {
-                  const run = ++dialogRun
-                  void import("./dialog-select-server").then((x) => {
-                    if (dialogDead || dialogRun !== run) return
-                    dialog.show(() => <x.DialogSelectServer />, defaultServer.refresh)
-                  })
-                }}
-              >
-                {language.t("status.popover.action.manageServers")}
-              </Button>
-            </div>
+        <section data-slot="capsule-section">
+          <div
+            data-slot="capsule-section-header"
+            class="flex items-center justify-between h-7 px-2 text-12-regular text-text-weak"
+          >
+            <span>
+              {sortedServers().length > 0 ? `${sortedServers().length} ` : ""}
+              {language.t("status.popover.tab.servers")}
+            </span>
           </div>
-        </Tabs.Content>
+          <For each={sortedServers()}>
+            {(s) => {
+              const key = ServerConnection.key(s)
+              const blocked = () => health[key]?.healthy === false
+              return (
+                <CapsuleRow
+                  status={healthTone(health[key])}
+                  disabled={blocked()}
+                  onClick={() => {
+                    if (blocked()) return
+                    navigate("/")
+                    queueMicrotask(() => server.setActive(key))
+                  }}
+                >
+                  <ServerRow
+                    conn={s}
+                    dimmed={blocked()}
+                    status={health[key]}
+                    class="flex items-center gap-2 w-full min-w-0"
+                    nameClass="text-14-regular text-text-base truncate"
+                    versionClass="text-12-regular text-text-weak truncate"
+                    badge={
+                      <Show when={key === defaultServer.key()}>
+                        <span class="text-11-regular text-text-base bg-surface-base px-1.5 py-0.5 rounded-md">
+                          {language.t("common.default")}
+                        </span>
+                      </Show>
+                    }
+                  >
+                    <div class="flex-1" />
+                    <Show when={server.current && key === ServerConnection.key(server.current)}>
+                      <Icon name="check" size="small" class="text-icon-weak shrink-0" />
+                    </Show>
+                  </ServerRow>
+                </CapsuleRow>
+              )
+            }}
+          </For>
+          <Button
+            variant="secondary"
+            class="mt-2 self-start h-8 px-3 py-1.5"
+            onClick={() => {
+              const run = ++dialogRun
+              void import("./dialog-select-server").then((x) => {
+                if (dialogDead || dialogRun !== run) return
+                dialog.show(() => <x.DialogSelectServer />, defaultServer.refresh)
+              })
+            }}
+          >
+            {language.t("status.popover.action.manageServers")}
+          </Button>
+        </section>
 
-        <Tabs.Content value="mcp">
-          <div class="flex flex-col px-2 pb-2">
-            <div class="flex flex-col p-3 bg-background-base rounded-sm min-h-14">
-              <Show
-                when={mcpNames().length > 0}
-                fallback={
-                  <div class="text-14-regular text-text-base text-center my-auto">{language.t("dialog.mcp.empty")}</div>
-                }
-              >
-                <For each={mcpNames()}>
-                  {(name) => {
-                    const status = () => mcpStatus(name)
-                    const enabled = () => status() === "connected"
-                    return (
-                      <button
-                        type="button"
-                        class="flex items-center gap-2 w-full min-h-8 pl-3 pr-2 py-1 rounded-md hover:bg-surface-raised-base-hover transition-colors text-left"
-                        onClick={() => {
-                          if (toggleMcp.isPending) return
-                          toggleMcp.mutate(name)
-                        }}
-                        disabled={toggleMcp.isPending && toggleMcp.variables === name}
-                      >
-                        <div
-                          classList={{
-                            "size-1.5 rounded-full shrink-0": true,
-                            "bg-icon-success-base": status() === "connected",
-                            "bg-icon-critical-base": status() === "failed",
-                            "bg-border-weak-base": status() === "disabled",
-                            "bg-icon-warning-base":
-                              status() === "needs_auth" || status() === "needs_client_registration",
+        <div data-slot="capsule-divider" class="h-px my-2 bg-border-weaker-base" />
+
+        <section data-slot="capsule-section">
+          <div
+            data-slot="capsule-section-header"
+            class="flex items-center justify-between h-7 px-2 text-12-regular text-text-weak"
+          >
+            <span>
+              {mcpConnected() > 0 ? `${mcpConnected()} ` : ""}
+              {language.t("status.popover.tab.mcp")}
+            </span>
+          </div>
+          <Show
+            when={mcpNames().length > 0}
+            fallback={
+              <div class="text-14-regular text-text-base text-center py-2">{language.t("dialog.mcp.empty")}</div>
+            }
+          >
+            <For each={mcpNames()}>
+              {(name) => {
+                const status = () => mcpStatus(name)
+                const enabled = () => status() === "connected"
+                const pending = () => toggleMcp.isPending && toggleMcp.variables === name
+                return (
+                  <CapsuleRow
+                    status={connectionTone(status())}
+                    label={name}
+                    description={status() === "needs_auth" ? language.t("mcp.auth.clickToAuthenticate") : undefined}
+                    disabled={pending()}
+                    onClick={() => {
+                      if (toggleMcp.isPending) return
+                      toggleMcp.mutate(name)
+                    }}
+                    trailing={
+                      <div onClick={(event) => event.stopPropagation()}>
+                        <Switch
+                          checked={enabled()}
+                          disabled={pending()}
+                          onChange={() => {
+                            if (toggleMcp.isPending) return
+                            toggleMcp.mutate(name)
                           }}
                         />
-                        <span class="flex flex-col min-w-0 flex-1">
-                          <span class="flex items-center gap-2 min-w-0">
-                            <span class="text-14-regular text-text-base truncate">{name}</span>
-                          </span>
-                          <Show when={status() === "needs_auth"}>
-                            <span class="text-11-regular text-text-weaker truncate">
-                              {language.t("mcp.auth.clickToAuthenticate")}
-                            </span>
-                          </Show>
-                        </span>
-                        <div onClick={(event) => event.stopPropagation()}>
-                          <Switch
-                            checked={enabled()}
-                            disabled={toggleMcp.isPending && toggleMcp.variables === name}
-                            onChange={() => {
-                              if (toggleMcp.isPending) return
-                              toggleMcp.mutate(name)
-                            }}
-                          />
-                        </div>
-                      </button>
-                    )
-                  }}
-                </For>
-              </Show>
-            </div>
-          </div>
-        </Tabs.Content>
+                      </div>
+                    }
+                  />
+                )
+              }}
+            </For>
+          </Show>
+        </section>
 
-        <Tabs.Content value="lsp">
-          <div class="flex flex-col px-2 pb-2">
-            <div class="flex flex-col p-3 bg-background-base rounded-sm min-h-14">
-              <Show
-                when={lspItems().length > 0}
-                fallback={
-                  <div class="text-14-regular text-text-base text-center my-auto">{language.t("dialog.lsp.empty")}</div>
-                }
-              >
-                <For each={lspItems()}>
-                  {(item) => (
-                    <div class="flex items-center gap-2 w-full px-2 py-1">
-                      <div
-                        classList={{
-                          "size-1.5 rounded-full shrink-0": true,
-                          "bg-icon-success-base": item.status === "connected",
-                          "bg-icon-critical-base": item.status === "error",
-                        }}
-                      />
-                      <span class="text-14-regular text-text-base truncate">{item.name || item.id}</span>
-                    </div>
-                  )}
-                </For>
-              </Show>
-            </div>
-          </div>
-        </Tabs.Content>
+        <div data-slot="capsule-divider" class="h-px my-2 bg-border-weaker-base" />
 
-        <Tabs.Content value="plugins">
-          <div class="flex flex-col px-2 pb-2">
-            <div class="flex flex-col p-3 bg-background-base rounded-sm min-h-14">
-              <Show
-                when={plugins().length > 0}
-                fallback={<div class="text-14-regular text-text-base text-center my-auto">{pluginEmpty()}</div>}
-              >
-                <For each={plugins()}>
-                  {(plugin) => (
-                    <div class="flex items-center gap-2 w-full px-2 py-1">
-                      <div class="size-1.5 rounded-full shrink-0 bg-icon-success-base" />
-                      <span class="text-14-regular text-text-base truncate">{plugin}</span>
-                    </div>
-                  )}
-                </For>
-              </Show>
-            </div>
+        <section data-slot="capsule-section">
+          <div
+            data-slot="capsule-section-header"
+            class="flex items-center justify-between h-7 px-2 text-12-regular text-text-weak"
+          >
+            <span>
+              {lspCount() > 0 ? `${lspCount()} ` : ""}
+              {language.t("status.popover.tab.lsp")}
+            </span>
           </div>
-        </Tabs.Content>
-      </Tabs>
+          <Show
+            when={lspItems().length > 0}
+            fallback={
+              <div class="text-14-regular text-text-base text-center py-2">{language.t("dialog.lsp.empty")}</div>
+            }
+          >
+            <For each={lspItems()}>
+              {(item) => <CapsuleRow status={connectionTone(item.status)} label={item.name || item.id} />}
+            </For>
+          </Show>
+        </section>
+
+        <div data-slot="capsule-divider" class="h-px my-2 bg-border-weaker-base" />
+
+        <section data-slot="capsule-section">
+          <div
+            data-slot="capsule-section-header"
+            class="flex items-center justify-between h-7 px-2 text-12-regular text-text-weak"
+          >
+            <span>
+              {pluginCount() > 0 ? `${pluginCount()} ` : ""}
+              {language.t("status.popover.tab.plugins")}
+            </span>
+          </div>
+          <Show
+            when={plugins().length > 0}
+            fallback={<div class="text-14-regular text-text-base text-center py-2">{pluginEmpty()}</div>}
+          >
+            <For each={plugins()}>{(plugin) => <CapsuleRow status="success" label={plugin} />}</For>
+          </Show>
+        </section>
+      </Capsule>
     </div>
   )
 }

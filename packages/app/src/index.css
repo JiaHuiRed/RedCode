@@ -1,5 +1,6 @@
 @import "@redcode-ai/ui/styles/tailwind";
 @import "@redcode-ai/ui/v2/styles/tailwind.css";
+@import "./pages/session/session-side-panel.css";
 
 @font-face {
   font-family: "JetBrainsMono Nerd Font Mono";
