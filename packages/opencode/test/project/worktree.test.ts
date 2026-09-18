@@ -1,4 +1,5 @@
 import { afterEach, describe, expect } from "bun:test"
+import { realpathSync } from "fs"
 import path from "path"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
@@ -232,8 +233,12 @@ describe("Worktree", () => {
       "reaps worktrees older than the retention window",
       () =>
         Effect.gen(function* () {
+          const test = yield* TestInstance
           const svc = yield* Worktree.Service
           const fs = yield* AppFileSystem.Service
+          yield* Effect.promise(() => Bun.write(path.join(test.directory, ".gitignore"), ".redcode/\n"))
+          yield* git(test.directory, ["add", ".gitignore"])
+          yield* git(test.directory, ["commit", "-m", "ignore runtime files"])
 
           // 260917 Red 造旧目录必须用 createAndWait：create 只是把 bootstrap fork 出去就返回，
           //   后台仍在往 worktree 里写文件，目录 mtime 随后被系统刷成"现在"——utimes 设的旧时间
@@ -265,6 +270,79 @@ describe("Worktree", () => {
           yield* svc.create({ name: "fresh-three" })
 
           expect(yield* fs.exists(fresh.directory)).toBe(true)
+        }),
+      { git: true },
+    )
+
+    it.instance(
+      "keeps dirty worktrees out of automatic reap",
+      () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const svc = yield* Worktree.Service
+          const fs = yield* AppFileSystem.Service
+          yield* Effect.promise(() => Bun.write(path.join(test.directory, ".gitignore"), ".redcode/\n"))
+          yield* git(test.directory, ["add", ".gitignore"])
+          yield* git(test.directory, ["commit", "-m", "ignore runtime files"])
+
+          const clean = yield* svc.makeWorktreeInfo({ name: "stale-clean-signal" })
+          const dirty = yield* svc.makeWorktreeInfo({ name: "stale-dirty" })
+          yield* svc.createAndWait(clean)
+          yield* svc.createAndWait(dirty)
+          yield* Effect.promise(() => Bun.write(path.join(dirty.directory, "dirty.txt"), "keep\n"))
+
+          const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+          yield* fs.utimes(clean.directory, old, old)
+          yield* fs.utimes(dirty.directory, old, old)
+          yield* svc.createAndWait(yield* svc.makeWorktreeInfo({ name: "fresh-dirty-signal" }))
+
+          yield* pollWithTimeout(
+            fs.exists(clean.directory).pipe(Effect.map((exists) => (exists ? undefined : (true as const)))),
+            "clean signal worktree was never reaped",
+          )
+          expect(yield* fs.exists(dirty.directory)).toBe(true)
+          yield* svc.remove({ directory: dirty.directory })
+        }),
+      { git: true },
+    )
+
+    it.instance(
+      "keeps worktrees whose HEAD is unique to their branch",
+      () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const svc = yield* Worktree.Service
+          const fs = yield* AppFileSystem.Service
+          yield* Effect.promise(() => Bun.write(path.join(test.directory, ".gitignore"), ".redcode/\n"))
+          yield* git(test.directory, ["add", ".gitignore"])
+          yield* git(test.directory, ["commit", "-m", "ignore runtime files"])
+
+          const clean = yield* svc.makeWorktreeInfo({ name: "stale-ref-signal" })
+          const unique = yield* svc.makeWorktreeInfo({ name: "stale-unique" })
+          yield* svc.createAndWait(clean)
+          yield* svc.createAndWait(unique)
+          yield* Effect.promise(() => Bun.write(path.join(unique.directory, "unique.txt"), "unique\n"))
+          yield* git(unique.directory, ["add", "unique.txt"])
+          yield* git(unique.directory, ["commit", "-m", "unique worktree commit"])
+
+          const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+          yield* fs.utimes(clean.directory, old, old)
+          yield* fs.utimes(unique.directory, old, old)
+          yield* svc.createAndWait(yield* svc.makeWorktreeInfo({ name: "fresh-ref-signal" }))
+
+          yield* pollWithTimeout(
+            fs.exists(clean.directory).pipe(Effect.map((exists) => (exists ? undefined : (true as const)))),
+            "clean ref signal worktree was never reaped",
+          )
+          expect(yield* fs.exists(unique.directory)).toBe(true)
+          const branch = yield* gitResult(test.directory, [
+            "show-ref",
+            "--verify",
+            "--quiet",
+            `refs/heads/${unique.branch}`,
+          ])
+          expect(branch.exitCode).toBe(0)
+          yield* svc.remove({ directory: unique.directory })
         }),
       { git: true },
     )
@@ -316,7 +394,8 @@ describe("Worktree", () => {
             directory: normalize(directory),
           })
 
-          yield* svc.remove({ directory: target })
+          yield* git(test.directory, ["worktree", "remove", "--force", target])
+          yield* git(test.directory, ["branch", "-D", branch])
         }),
       { git: true },
     )
@@ -327,9 +406,10 @@ describe("Worktree", () => {
       "remove non-existent directory succeeds silently",
       () =>
         Effect.gen(function* () {
-          const test = yield* TestInstance
           const svc = yield* Worktree.Service
-          const ok = yield* svc.remove({ directory: path.join(test.directory, "does-not-exist") })
+          const info = yield* svc.makeWorktreeInfo({ name: "does-not-exist" })
+          const managedRoot = realpathSync.native(path.dirname(info.directory))
+          const ok = yield* svc.remove({ directory: path.join(managedRoot, info.name) })
           expect(ok).toBe(true)
         }),
       { git: true },

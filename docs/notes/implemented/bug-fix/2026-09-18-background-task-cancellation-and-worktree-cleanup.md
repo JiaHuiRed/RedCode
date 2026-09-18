@@ -37,3 +37,14 @@ MCP/LSP 子进程和 worktree。
 取消会等待失败路径的 Git worktree 移除完成，最坏受既有 Git 子进程超时约束；这以一次取消较慢
 换取不留进程和目录残骸。成功 worktree 在 sidecar 连续运行时到期主动删除；sidecar 重启会中断
 未到期的延时 fiber，随后首次创建 worktree 时的既有扫除仍会删除过期目录。
+
+## 补记（260918）：自动回收安全门
+
+- `packages/opencode/src/worktree/index.ts` 的 `remove` 现在只接受
+  `Global.Path.data/worktree/<project-id>` 下的子目录，拒绝 managed root 本身和越界路径；
+  Windows 8.3 短路径与 Git 返回的长路径统一后再比较。
+- `reap` 与成功任务的延时回收在删除前都要求目录仍是 Git registered worktree、工作树 clean、
+  `HEAD` 可读，且该 commit 仍被其他 ref 保留。dirty、唯一 commit、未注册目录或 Git 检查失败时只记
+  warning 并保留目录；显式 `remove` 仍保留原有 force 语义。
+- 回归覆盖越界目录拒绝、Windows 路径别名、clean 回收，以及 dirty/唯一 commit 自动保留。
+  ABA generation identity、失败后的持久重试队列仍是后续独立批次，不与本次安全门混改。

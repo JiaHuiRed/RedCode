@@ -2,7 +2,7 @@ import { $ } from "bun"
 import { describe, expect } from "bun:test"
 import * as fs from "fs/promises"
 import path from "path"
-import { Effect, Layer } from "effect"
+import { Cause, Effect, Exit, Layer } from "effect"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 import { Worktree } from "../../src/worktree"
 import { provideTmpdirInstance } from "../fixture/fixture"
@@ -18,12 +18,13 @@ describe("Worktree.remove", () => {
         Effect.gen(function* () {
           const svc = yield* Worktree.Service
           const name = `remove-regression-${Date.now().toString(36)}`
-          const branch = `redcode/${name}`
-          const dir = path.join(root, "..", name)
+          const info = yield* svc.makeWorktreeInfo({ name })
+          const branch = info.branch
+          const dir = info.directory
+          if (!branch) return yield* Effect.die(new Error("expected a branch-backed worktree"))
 
           yield* Effect.promise(() => $`git worktree add --no-checkout -b ${branch} ${dir}`.cwd(root).quiet())
           yield* Effect.promise(() => $`git reset --hard`.cwd(dir).quiet())
-
           const real = (yield* Effect.promise(() => $`which git`.quiet().text())).trim()
           expect(real).toBeTruthy()
 
@@ -90,8 +91,10 @@ describe("Worktree.remove", () => {
         Effect.gen(function* () {
           const svc = yield* Worktree.Service
           const name = `remove-fsmonitor-${Date.now().toString(36)}`
-          const branch = `redcode/${name}`
-          const dir = path.join(root, "..", name)
+          const info = yield* svc.makeWorktreeInfo({ name })
+          const branch = info.branch
+          const dir = info.directory
+          if (!branch) return yield* Effect.die(new Error("expected a branch-backed worktree"))
 
           yield* Effect.promise(() => $`git worktree add --no-checkout -b ${branch} ${dir}`.cwd(root).quiet())
           yield* Effect.promise(() => $`git reset --hard`.cwd(dir).quiet())
@@ -119,6 +122,29 @@ describe("Worktree.remove", () => {
             $`git show-ref --verify --quiet refs/heads/${branch}`.cwd(root).quiet().nothrow(),
           )
           expect(ref.exitCode).not.toBe(0)
+        }),
+      { git: true },
+    ),
+  )
+
+  it.live("rejects an existing directory outside the managed root", () =>
+    provideTmpdirInstance(
+      (root) =>
+        Effect.gen(function* () {
+          const svc = yield* Worktree.Service
+          const outside = path.join(root, "outside-worktree")
+          const marker = path.join(outside, "keep.txt")
+          yield* Effect.promise(() => fs.mkdir(outside, { recursive: true }))
+          yield* Effect.promise(() => fs.writeFile(marker, "keep\n"))
+
+          const exit = yield* Effect.exit(svc.remove({ directory: outside }))
+
+          expect(Exit.isFailure(exit)).toBe(true)
+          if (Exit.isFailure(exit)) {
+            const error = Cause.squash(exit.cause)
+            expect(error).toBeInstanceOf(Worktree.RemoveFailedError)
+          }
+          expect(yield* Effect.promise(() => fs.readFile(marker, "utf8"))).toBe("keep\n")
         }),
       { git: true },
     ),

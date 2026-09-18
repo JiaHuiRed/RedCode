@@ -19,6 +19,7 @@ import { NodePath } from "@effect/platform-node"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { AppProcess } from "@redcode-ai/core/process"
 import { InstanceState } from "@/effect/instance-state"
+import { realpathSync } from "fs"
 
 const log = Log.create({ service: "worktree" })
 // 260917 Red 隔离 worktree 用完不删会无限累积：实测本机 data/worktree 曾达 9.5 GB / 36 个副本，
@@ -350,7 +351,15 @@ export const layer: Layer.Layer<
 
     const canonical = Effect.fnUntraced(function* (input: string) {
       const abs = pathSvc.resolve(input)
-      const real = yield* fs.realPath(abs).pipe(Effect.catch(() => Effect.succeed(abs)))
+      // 260918 Red Bun 下 FileSystem.realPath 可能保留 Windows 8.3 短路径；
+      // Git worktree list 返回长路径，身份比较必须使用 native realpath 统一两者。
+      const real = yield* Effect.try({
+        try: () => realpathSync.native(abs),
+        catch: () => {
+          const parent = pathSvc.dirname(abs)
+          return `${realpathSync.native(parent)}${pathSvc.sep}${pathSvc.basename(abs)}`
+        },
+      }).pipe(Effect.catch(() => Effect.succeed(abs)))
       const normalized = pathSvc.normalize(real)
       return process.platform === "win32" ? normalized.toLowerCase() : normalized
     })
@@ -384,6 +393,13 @@ export const layer: Layer.Layer<
         if (key === directory) return item
       }
       return undefined
+    })
+
+    const resolveManagedDirectory = Effect.fnUntraced(function* (ctx: InstanceContext, input: string) {
+      const directory = yield* canonical(input)
+      const root = yield* canonical(pathSvc.join(Global.Path.data, "worktree", ctx.project.id))
+      if (directory === root || !directory.startsWith(`${root}${pathSvc.sep}`)) return undefined
+      return directory
     })
 
     const list = Effect.fn("Worktree.list")(function* () {
@@ -438,7 +454,10 @@ export const layer: Layer.Layer<
         return yield* new NotGitError({ message: "Worktrees are only supported for git projects" })
       }
 
-      const directory = yield* canonical(input.directory)
+      const directory = yield* resolveManagedDirectory(ctx, input.directory)
+      if (!directory) {
+        return yield* new RemoveFailedError({ message: "Worktree directory is outside the managed worktree root" })
+      }
 
       const list = yield* git(["worktree", "list", "--porcelain"], { cwd: ctx.worktree })
       if (list.code !== 0) {
@@ -490,11 +509,76 @@ export const layer: Layer.Layer<
       return true
     })
 
+    // 260918 Red 自动回收先确认受管边界、clean 状态和 commit 仍有其他 ref 保留；
+    // 显式 remove 仍保留 force 语义，避免把用户删除和后台 GC 混成同一安全等级。
+    const safeToAutoRemove = Effect.fnUntraced(function* (input: RemoveInput) {
+      const ctx = yield* InstanceState.context
+      const directory = yield* resolveManagedDirectory(ctx, input.directory)
+      if (!directory) {
+        log.warn("worktree auto-removal skipped outside managed root", { directory: input.directory })
+        return false
+      }
+
+      const list = yield* git(["worktree", "list", "--porcelain"], { cwd: ctx.worktree })
+      if (list.code !== 0) {
+        log.warn("worktree auto-removal skipped because worktree list failed", {
+          directory,
+          message: list.stderr || list.text,
+        })
+        return false
+      }
+
+      const entry = yield* locateWorktree(parseWorktreeList(list.text), directory)
+      if (!entry?.path) {
+        log.warn("worktree auto-removal skipped for unregistered directory", { directory })
+        return false
+      }
+
+      const status = yield* git(["-c", "core.fsmonitor=false", "status", "--porcelain=v1", "--untracked-files=all"], {
+        cwd: entry.path,
+      })
+      if (status.code !== 0 || status.text.trim()) {
+        log.warn("worktree auto-removal skipped for dirty worktree", { directory })
+        return false
+      }
+
+      const head = yield* git(["rev-parse", "HEAD"], { cwd: entry.path })
+      if (head.code !== 0 || !head.text.trim()) {
+        log.warn("worktree auto-removal skipped because HEAD could not be read", { directory })
+        return false
+      }
+
+      const refs = yield* git(["for-each-ref", "--contains", head.text.trim(), "--format=%(refname)"], {
+        cwd: ctx.worktree,
+      })
+      if (refs.code !== 0) {
+        log.warn("worktree auto-removal skipped because refs could not be inspected", { directory })
+        return false
+      }
+
+      const ownRef = entry.branch
+      const retainedRefs = refs.text
+        .split(/\r?\n/)
+        .map((ref) => ref.trim())
+        .filter((ref) => ref.length > 0 && ref !== ownRef)
+      if (retainedRefs.length === 0) {
+        log.warn("worktree auto-removal skipped for unique commit", { directory, head: head.text.trim() })
+        return false
+      }
+
+      return true
+    })
+
     // 260918 Red 成功的隔离任务保留七天供审计，时间到后由 parent instance 的长寿 scope 主动回收；
     // 决策: docs/notes/implemented/bug-fix/2026-09-18-background-task-cancellation-and-worktree-cleanup.md
     const scheduleRemove = Effect.fn("Worktree.scheduleRemove")(function* (input: RemoveInput) {
       yield* Effect.sleep(`${WORKTREE_RETENTION_MS} millis`).pipe(
-        Effect.andThen(remove(input)),
+        Effect.andThen(
+          Effect.gen(function* () {
+            if (!(yield* safeToAutoRemove(input))) return
+            yield* remove(input)
+          }),
+        ),
         Effect.catchCause((cause) =>
           Effect.sync(() => log.error("scheduled worktree cleanup failed", { directory: input.directory, cause })),
         ),
@@ -532,6 +616,7 @@ export const layer: Layer.Layer<
             if (!info || info.type !== "Directory") return
             const mtime = Option.getOrUndefined(info.mtime)
             if (mtime === undefined || mtime.getTime() >= cutoff) return
+            if (!(yield* safeToAutoRemove({ directory: target }))) return
             yield* remove({ directory: target }).pipe(
               Effect.catchCause((cause) =>
                 Effect.sync(() => log.error("worktree reap failed", { directory: target, cause })),
