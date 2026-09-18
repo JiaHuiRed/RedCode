@@ -19,6 +19,10 @@ type SessionHistoryWindowInput = {
 export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
   const historyScrollThreshold = 200
   let shiftFrame: number | undefined
+  // 260918 Red 自动填充失败后停手：historyLoading 的 true→false 会让 session.tsx 的 effect 重跑
+  // fill()，而 fill() 的进入条件（内容填不满视口）在拉取失败后依然成立 —— 每轮网络往返就再发一次，
+  // 实测渲染日志里 7 分钟同一个请求重试 12000 次（全部 400）。用户滚动是显式意图，允许强制重试。
+  let stalled = false
 
   const [state, setState] = createStore({
     shift: false,
@@ -42,9 +46,10 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
     })
   }
 
-  const fetchOlderMessages = async () => {
+  const fetchOlderMessages = async (force = false) => {
     const id = input.sessionID()
     if (!id) return
+    if (stalled && !force) return
     if (!input.historyMore() || input.historyLoading()) return
 
     const beforeVisible = input.visibleUserMessages().length
@@ -54,19 +59,29 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
     cancelShiftReset()
     setState("shift", true)
 
-    while (true) {
-      await input.loadMore(id)
-      if (input.sessionID() !== id) return
+    try {
+      while (true) {
+        await input.loadMore(id)
+        if (input.sessionID() !== id) return
 
-      const nextLoaded = input.loaded()
-      const raw = nextLoaded - loaded
-      loaded = nextLoaded
-      growth = input.visibleUserMessages().length - beforeVisible
+        const nextLoaded = input.loaded()
+        const raw = nextLoaded - loaded
+        loaded = nextLoaded
+        growth = input.visibleUserMessages().length - beforeVisible
 
-      if (growth > 0) break
-      if (raw <= 0) break
-      if (!input.historyMore()) break
+        if (growth > 0) break
+        if (raw <= 0) break
+        if (!input.historyMore()) break
+      }
+    } catch {
+      // 260918 Red 拉历史失败（后端 4xx / 网络抖动）：以前错误冒成 uncaught promise 且不留任何状态，
+      // 上层 fill() 被 loading 翻转重新唤醒 → 请求风暴。停手，等滚动或切会话再试。
+      stalled = true
+      setState("shift", false)
+      return
     }
+
+    stalled = false
 
     if (growth > 0) {
       scheduleShiftReset()
@@ -128,6 +143,9 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
         await new Promise((resolve) => setTimeout(resolve, STALL_WAIT_MS))
       }
       return arrived()
+    } catch {
+      // 260918 Red 跳转途中拉页失败：当作"够不到"返回 false，别把 rejection 冒给 void 调用方变 uncaught。
+      return false
     } finally {
       scheduleShiftReset()
     }
@@ -139,7 +157,8 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
     if (!el) return
     if (el.scrollTop >= historyScrollThreshold) return
 
-    void fetchOlderMessages()
+    // 260918 Red 滚动是用户显式意图，允许越过 stalled 重试。
+    void fetchOlderMessages(true)
   }
 
   createEffect(
@@ -147,6 +166,7 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
       input.sessionID,
       () => {
         cancelShiftReset()
+        stalled = false
         setState({ shift: false })
       },
       { defer: true },
