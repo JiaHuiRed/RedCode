@@ -140,3 +140,20 @@ Before calling the UI finished:
 - layout works at the actual target viewport sizes
 - keyboard and contrast behavior are appropriate for interactive UI
 - implementation matches project conventions and requested scope
+
+## User's preferred visual family: spacious, atmospheric product UI
+
+When a reference has this family of qualities, treat it as a soft preference rather than a
+fixed template:
+
+- Favor a spacious, composed canvas with a clear focal workspace and deliberate variation in
+  layout. Do not force every product into a dashboard or card grid.
+- Use a calm, atmospheric palette with layered color fields or subtle geometric depth when it
+  supports the product. Derive the hue and contrast from the context instead of defaulting to
+  one prescribed color.
+- Prefer surfaces with restrained depth, coherent shape language, and purposeful translucency.
+  Avoid turning every layer into glass or every element into a rounded container.
+- Keep hierarchy strong and density calm: clear titles, quiet metadata, generous breathing room,
+  and selective color accents for meaningful icons or actions.
+- Extract the underlying qualities—spatial composition, controlled contrast, quiet utility, and
+  polish—rather than copying a reference's labels, icons, geometry, or exact tokens.
