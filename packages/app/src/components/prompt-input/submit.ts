@@ -13,6 +13,7 @@ import { usePermission } from "@/context/permission"
 import { type ContextItem, type ImageAttachmentPart, type Prompt, type Scope, usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import { setSessionHandoff } from "@/pages/session/handoff"
 import { Identifier } from "@/utils/id"
 import { Worktree as WorktreeState } from "@/utils/worktree"
 import { buildRequestParts } from "./build-request-parts"
@@ -337,6 +338,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     input.resetHistoryNavigation()
 
     const projectDirectory = sdk.directory
+    const routeDir = params.dir
     const isNewSession = !params.id
     const shouldAutoAccept = isNewSession && input.autoAccept()
     const worktreeSelection = input.newSessionWorktree?.() || "main"
@@ -452,6 +454,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       prompt.reset(scope)
       // 260917 Red 新会话提交前读的是目录级草稿；会话创建后只清 session scope 会让已发内容在下次新建时复活。
       if (isNewSession) prompt.reset({ dir: scope.dir })
+      // 260918 Red 目录级 handoff 是「store 未就绪时输入框的占位快照」，只在当前 sessionKey 上写。
+      // 提交后 sessionKey 换成新会话 id，这条会永远停在最后一次输入的内容上；下次进新建页若
+      // store 未 ready（条目被 LRU 淘汰后要异步读盘），fallback 就把它当占位渲染出来——看起来
+      // 就是「输入框自动填了上一次对话开头说的话」。清的是提交时所在的那个路由键。
+      if (isNewSession && routeDir) setSessionHandoff(routeDir, { prompt: "" })
       input.setMode("normal")
       input.setPopover(null)
     }
