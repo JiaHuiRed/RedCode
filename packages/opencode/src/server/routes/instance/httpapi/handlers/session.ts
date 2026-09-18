@@ -100,6 +100,24 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return yield* SessionError.mapStorageNotFound(session.get(sessionID))
     })
 
+    // 260918 Red before 接受两种形态：服务端游标，或一条消息的 id。
+    //   前端在 message_trimmed 场景手里只有「内存里最旧那条」的 id 与 time——游标对客户端不透明，
+    //   不该让它复刻 base64url(JSON) 编码；以前把裸 id 直接喂 cursor.decode，JSON.parse 抛错 →
+    //   每轮 400（9/15 与 9/17 各爆过一次上万次请求的自动重试风暴）。这里把 id 补上 time_created
+    //   换成游标——分页比较用的是 (time_created, id) 复合键，两者缺一不可。
+    const messagesBefore = Effect.fnUntraced(function* (sessionID: SessionID, raw: string) {
+      const decoded = yield* Effect.try({
+        try: () => MessageV2.cursor.decode(raw),
+        catch: () => "not-a-cursor" as const,
+      }).pipe(Effect.orElseSucceed(() => undefined))
+      if (decoded) return MessageV2.cursor.encode(decoded)
+      const found = yield* MessageV2.get({ sessionID, messageID: raw as MessageID }).pipe(
+        Effect.orElseSucceed(() => undefined),
+      )
+      if (!found) return undefined
+      return MessageV2.cursor.encode({ id: found.info.id, time: found.info.time.created })
+    })
+
     const get = Effect.fn("SessionHttpApi.get")(function* (ctx: { params: { sessionID: SessionID } }) {
       return yield* requireSession(ctx.params.sessionID)
     })
@@ -160,26 +178,21 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       query: typeof MessagesQuery.Type
     }) {
       if (ctx.query.before && ctx.query.limit === undefined) return yield* new HttpApiError.BadRequest({})
-      if (ctx.query.before) {
-        const before = ctx.query.before
-        yield* Effect.try({
-          try: () => MessageV2.cursor.decode(before),
-          catch: () => new HttpApiError.BadRequest({}),
-        })
-      }
+      const before = ctx.query.before ? yield* messagesBefore(ctx.params.sessionID, ctx.query.before) : undefined
+      if (ctx.query.before && !before) return yield* new HttpApiError.BadRequest({})
       yield* requireSession(ctx.params.sessionID)
       if (ctx.query.limit === undefined || ctx.query.limit === 0) {
         return yield* SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID }))
       }
 
       // 260529 Red compacted 会话初始加载只返回 compaction summary 及之后的消息
-      const compactionAfter = ctx.query.before ? undefined : yield* session.latestCompactionCursor(ctx.params.sessionID)
+      const compactionAfter = before ? undefined : yield* session.latestCompactionCursor(ctx.params.sessionID)
 
       const page = yield* SessionError.mapStorageNotFound(
         MessageV2.page({
           sessionID: ctx.params.sessionID,
           limit: ctx.query.limit,
-          before: ctx.query.before,
+          before,
           after: compactionAfter,
         }),
       )

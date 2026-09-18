@@ -351,6 +351,17 @@ describe("session HttpApi", () => {
           })).status,
         ).toBe(400)
 
+        // 260918 Red before 也接受一条消息的 id。前端 message_trimmed 场景手里只有「内存里最旧
+        //   那条」的 id 与 time，游标对它不透明；以前这条路径必 400（9/15、9/17 各爆过一次上万次
+        //   请求的自动重试风暴）。这里用刚取到的最旧一条的 id 当 before，应当能继续往回翻。
+        expect(messagePage[0]).toBeTruthy()
+        const byMessageID = yield* request(
+          `${pathFor(SessionPaths.messages, { sessionID: parent.id })}?limit=1&before=${messagePage[0]!.info.id}`,
+          { headers },
+        )
+        expect(byMessageID.status).toBe(200)
+        expect((yield* json<MessageV2.WithParts[]>(byMessageID)).length).toBeGreaterThan(0)
+
         expect(
           yield* requestJson<MessageV2.WithParts>(
             pathFor(SessionPaths.message, { sessionID: parent.id, messageID: message.info.id }),
