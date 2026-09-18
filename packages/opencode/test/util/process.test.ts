@@ -70,6 +70,17 @@ describe("util.process", () => {
     expect(Date.now() - started).toBeLessThan(1000)
   }, 3000)
 
+  test("aborts a running process after timeout", async () => {
+    const started = Date.now()
+    const out = await Process.run(node("setInterval(() => {}, 1000)"), {
+      nothrow: true,
+      timeout: 25,
+    })
+
+    expect(out.code).not.toBe(0)
+    expect(Date.now() - started).toBeLessThan(1000)
+  }, 3000)
+
   test("kills after timeout when process ignores terminate signal", async () => {
     if (process.platform === "win32") return
 

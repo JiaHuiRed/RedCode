@@ -72,7 +72,8 @@ export function spawn(cmd: string[], opts: Options = {}): Child {
         })
 
   let closed = false
-  let timer: ReturnType<typeof setTimeout> | undefined
+  let timeoutTimer: ReturnType<typeof setTimeout> | undefined
+  let killTimer: ReturnType<typeof setTimeout> | undefined
 
   const abort = () => {
     if (closed) return
@@ -84,12 +85,13 @@ export function spawn(cmd: string[], opts: Options = {}): Child {
 
     const ms = opts.timeout ?? 5_000
     if (ms <= 0) return
-    timer = setTimeout(() => proc.kill("SIGKILL"), ms)
+    killTimer = setTimeout(() => proc.kill("SIGKILL"), ms)
   }
 
   const done = () => {
     opts.abort?.removeEventListener("abort", abort)
-    if (timer) clearTimeout(timer)
+    if (timeoutTimer) clearTimeout(timeoutTimer)
+    if (killTimer) clearTimeout(killTimer)
   }
 
   const exited = WindowsJob.isManaged(proc)
@@ -112,6 +114,7 @@ export function spawn(cmd: string[], opts: Options = {}): Child {
     opts.abort.addEventListener("abort", abort, { once: true })
     if (opts.abort.aborted) abort()
   }
+  if (opts.timeout !== undefined) timeoutTimer = setTimeout(abort, opts.timeout)
 
   const child = proc as Child
   child.exited = exited
