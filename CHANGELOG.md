@@ -8,11 +8,29 @@
 
 ---
 
-### [未发布]
+### [0.11.8] - 2026-09-18
 
 #### 变更
 
 - **GUI 思考链收起态跟随最新思考行**（`packages/ui/src/components/message-part.tsx`）：收起态此前只显示 `**Title**` 提取的摘要标题，思考流式期间看不出进展（长思考像黑盒）。现对齐 TUI hide 模式既有的 `latestLine` 行为：流式期间标题与最后一行非空文本同行呈现（优先级：标题 > 最新行），完成后回到只有标题；点开全文即停止跟随，保持单行高度不跳动。
+
+- **状态入口收敛为标题栏胶囊**（`packages/ui/src/components/{capsule,primitives}.tsx`、`packages/app/src/pages/layout.tsx`）：服务器、MCP、LSP 与插件状态合并为一张分组的浮动胶囊，只保留标题栏入口；会话页与侧栏不再重复状态 Tab，原有操作和已持久化的旧状态 Tab 都能继续使用。
+
+- **OpenRouter 免费模型目录更新**（`seed/redcode.home.jsonc`）：移除已过期的 OpenCode provider 并关闭其自动发现，补齐 OpenRouter 当前返回的 24 个零价格模型；密钥继续只保留在本机 `auth.json`，不进入种子配置。
+
+- **生产路径增加性能预算回归门禁**（`script/bench-performance-budget.ts`）：以隔离 SQLite 直调消息压缩过滤的生产实现，固定采样规模并约束中位耗时、缩放比与内存增长，防止长会话路径被无意回退。
+
+- **记忆审计补齐模型能力演进判据**（`seed/skill/memory/SKILL.md`）：索引层审计现在能识别只为较弱模型准备的行为矫正提醒；约束环境事实的规则保留，模型能力已覆盖的提醒可在复核后退出固定前缀。
+
+#### 修复
+
+- **新建会话加载期不再闪回上一轮的首句**（`packages/app/src/components/prompt-input/submit.ts`）：成功创建会话后同时清理目录级 handoff 快照，防止异步草稿恢复窗口将上一次新会话输入误显示为当前草稿。
+
+- **历史消息分页兼容内存边界的消息 ID**（`packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts`、`packages/app/src/context/directory-sync.ts`）：前端内存裁剪后只保留最旧消息的 ID，服务端现据此补齐创建时间并构造规范游标；无效游标仍按原契约返回 400，不再触发自动补页的 400 重试风暴。
+
+- **历史补页失败不再造成消息区布局振荡**（`packages/app/src/pages/session/session-history-loader.ts`、`packages/ui/src/components/{message-part,basic-tool,file}.css`）：自动填充遇到请求失败会停手，只有用户主动继续滚动才重试；离屏消息、工具和文件补上固有尺寸，避免虚拟列表量到零高后反复补偿、内容视觉叠压。
+
+- **会话轨道只计真实用户轮次且顶部可点击**（`packages/app/src/pages/session/turn-outline.tsx`、`packages/app/src/pages/session.tsx`）：过滤 synthetic / ignored 用户消息，后台 task 通知不再混入轮次；轨道避开 sticky 标题栏，首个刻度不再被遮挡。
 
 ---
 
