@@ -23,6 +23,22 @@ import { Goal } from "./goal"
 
 const log = Log.create({ service: "session.tools" })
 
+// 260918 Red MCP 附件闸门。此前这里是全仓唯一一条第三方服务器可以把无界字节塞进
+// attachments 的路径：`result.content` 循环里 image / resource.blob 直接拼成 data: URL
+// 就入列，既无字节线也无条数线，而 truncate.output 只作用于 textParts。
+//
+// 两条线对齐 tool/read.ts 的既有语义（260904 那批立的闸门）：
+//   · 单条 5MB base64 —— 与 read.ts 的 MAX_PDF_BASE64_BYTES 同源。processor.ts 的
+//     tool-result 分支只对 `image/*` 跑 Image.normalize（内部同一条 5MB 输入线 + 像素
+//     预算 + 质量阶梯），**非图片 mime 原样透传给模型**，所以这条线画在这里才盖得住
+//     PDF / octet-stream 这类绕开缩放器的附件。
+//   · 条数 32 —— 上游没有可比对象，取宽松值：单条 5MB 已属极大，32 条远超任何模型的
+//     上下文预算，先挡「一次带回几百个附件」的突发。
+//
+// 超限不报错（与 read.ts 同）：附件不内联，output 说明情况，模型可以换别的方式取。
+const MAX_ATTACHMENT_BASE64_BYTES = 5 * 1024 * 1024
+const MAX_ATTACHMENTS = 32
+
 export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   agent: Agent.Info
   model: Provider.Model
@@ -247,9 +263,16 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
 
           const textParts: string[] = []
           const attachments: Omit<MessageV2.FilePart, "id" | "sessionID" | "messageID">[] = []
+          let droppedAttachments = 0
+          const acceptAttachment = (base64Bytes: number) =>
+            base64Bytes <= MAX_ATTACHMENT_BASE64_BYTES && attachments.length < MAX_ATTACHMENTS
           for (const contentItem of result.content) {
             if (contentItem.type === "text") textParts.push(contentItem.text)
             else if (contentItem.type === "image") {
+              if (!acceptAttachment(contentItem.data.length)) {
+                droppedAttachments++
+                continue
+              }
               attachments.push({
                 type: "file",
                 mime: contentItem.mimeType,
@@ -259,6 +282,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               const { resource } = contentItem
               if (resource.text) textParts.push(resource.text)
               if (resource.blob) {
+                if (!acceptAttachment(resource.blob.length)) {
+                  droppedAttachments++
+                  continue
+                }
                 attachments.push({
                   type: "file",
                   mime: resource.mimeType ?? "application/octet-stream",
@@ -279,7 +306,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           const output = {
             title: "",
             metadata,
-            output: truncated.content,
+            output: droppedAttachments
+              ? `${truncated.content}\n\n[${droppedAttachments} attachment${droppedAttachments === 1 ? "" : "s"} dropped: over the ${MAX_ATTACHMENTS}-attachment limit or the ${MAX_ATTACHMENT_BASE64_BYTES / (1024 * 1024)} MB single-attachment budget. The tool result was left unchanged.]`
+              : truncated.content,
             attachments: attachments.map((attachment) => ({
               ...attachment,
               id: PartID.ascending(),
