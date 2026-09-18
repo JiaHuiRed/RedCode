@@ -36,6 +36,17 @@ describe("util.process", () => {
     expect(out.stderr.toString()).toBe("err")
   })
 
+  test("bounds captured stdout and stderr", async () => {
+    const out = await Process.run(node('process.stdout.write("0123456789");process.stderr.write("abcdefghij")'), {
+      maxOutputBytes: 5,
+      maxErrorBytes: 4,
+    })
+    expect(out.stdout.toString()).toBe("01234")
+    expect(out.stderr.toString()).toBe("abcd")
+    expect(out.stdoutTruncated).toBe(true)
+    expect(out.stderrTruncated).toBe(true)
+  })
+
   test("resolves bare commands through PATH on Windows", async () => {
     if (process.platform !== "win32") return
 

@@ -1979,21 +1979,29 @@ export const layer = Layer.effect(
       if (shellMatches.length > 0) {
         const cfg = yield* config.get()
         const sh = Shell.preferred(cfg.shell)
+        const limits = yield* truncate.limits()
+        // 260918 Red 命令替换直接进入 prompt，沿用 shell 工具的可配置上限和超时上限；见审计 §2.3。
+        const timeout = Math.min(flags.bashDefaultTimeoutMs ?? 2 * 60 * 1000, flags.bashMaxTimeoutMs ?? 10 * 60 * 1000)
         // 260913 Red 命令模板里的 shell 应在会话项目目录执行；REDCODE_PROJECT_ROOT 供 recall 等脚本定位项目。
         const ctx = yield* InstanceState.context
         const results = yield* Effect.promise(() =>
           Promise.all(
-            shellMatches.map(
-              async ([, cmd]) =>
-                (
-                  await Process.text([cmd], {
-                    shell: sh,
-                    nothrow: true,
-                    cwd: ctx.directory,
-                    env: { REDCODE_PROJECT_ROOT: projectRoot(ctx) },
-                  })
-                ).text,
-            ),
+            shellMatches.map(async ([, cmd]) => {
+              const result = await Process.text([cmd], {
+                shell: sh,
+                nothrow: true,
+                cwd: ctx.directory,
+                env: { REDCODE_PROJECT_ROOT: projectRoot(ctx) },
+                timeout,
+                maxOutputBytes: limits.maxBytes,
+                maxErrorBytes: limits.maxBytes,
+              })
+              const notices = [
+                result.stdoutTruncated ? `Command output truncated after ${limits.maxBytes} bytes.` : undefined,
+                result.code === 0 ? undefined : `Command failed with exit code ${result.code}.`,
+              ].filter((item): item is string => item !== undefined)
+              return notices.length ? `${result.text}\n\n[${notices.join(" ")}]` : result.text
+            }),
           ),
         )
         let index = 0

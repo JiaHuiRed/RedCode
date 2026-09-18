@@ -1663,6 +1663,36 @@ unix(
   30_000,
 )
 
+it.instance(
+  "command ! expansion marks non-zero exit",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        command: {
+          probe: {
+            template: "Probe: !`node -e \"process.stdout.write('ok'); process.exit(7)\"`",
+          },
+        },
+      }))
+
+      const { prompt, chat } = yield* boot()
+      yield* llm.text("done")
+
+      const result = yield* prompt.command({
+        sessionID: chat.id,
+        command: "probe",
+        arguments: "",
+      })
+
+      expect(result.info.role).toBe("assistant")
+      const inputs = yield* llm.inputs
+      expect(JSON.stringify(inputs.at(-1)?.messages)).toMatch(/Command failed with exit code \d+\./)
+    }),
+  { config: cfg },
+  30_000,
+)
+
 unixNoLLMServer(
   "cancel interrupts shell and resolves cleanly",
   () =>
