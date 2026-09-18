@@ -1,5 +1,10 @@
 [data-component="assistant-message"] {
   content-visibility: auto;
+  /* 260918 Red 必须配 contain-intrinsic-size：缺它时离屏元素高度按 0 算，
+     message-timeline 的 virtua 用 ResizeObserver 量到 0 → 行高反复 塌缩/恢复
+     （renderer.log 里成片的 "ResizeObserver loop completed with undelivered
+     notifications"），相邻行定位错乱 → 视觉叠压。auto 让浏览器记住真实尺寸。 */
+  contain-intrinsic-size: auto 200px;
   width: 100%;
   display: flex;
   flex-direction: column;

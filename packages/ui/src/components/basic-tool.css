@@ -1,5 +1,8 @@
 [data-component="tool-trigger"] {
   content-visibility: auto;
+  /* 260918 Red 同 message-part.css：缺 contain-intrinsic-size 时离屏高度算 0，
+     工具行会被 virtua 量成 0 → 相邻行叠压。 */
+  contain-intrinsic-size: auto 40px;
   width: 100%;
   display: flex;
   align-items: center;
