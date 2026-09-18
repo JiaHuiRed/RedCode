@@ -60,3 +60,18 @@
   三条路径都实测过有牙：拿掉 snapshot 一处 timeout → 报违规并 exit 1；补上豁免注释 → 放行；把 format 的接收者改名模拟归因失败 → 盲区断言开火。
 
 - 借自 deepseek-harness `docs/defensive-patterns.md` 的第一条 "Report orthogonal outcomes independently"；那份文档整体进仓的提议见 DSH 采纳路线图。
+
+## 补记（260918 Karina）：同形状的漏网兄弟，以及门检的两个盲区
+
+上面第 5 条的盲区断言只管得住**绑定到 `AppProcess.Service` 的文件**。审计（`2026-09-18-full-repo-audit.md` 附核验批注）翻出了这套机制外的两条路：
+
+**一、`packages/opencode/src/util/process.ts` 的 `timeout` 曾经是死参数。** 它是与 `AppProcess.run` 并列的另一套子进程封装（`Process.run/text/lines/spawn`，MCP stdio、LSP 启动、剪贴板、pager 等走这条）。原来只有一个 `timer`，仅在 `abort()` 内部被 arm——也就是说 `timeout` 从来没有作为墙钟上限生效过，它实际是「abort 已触发之后，SIGTERM 到 SIGKILL 之间的强杀宽限」。没有 AbortSignal 的调用点传了等于没传，`Promise.all([exited, stdout, stderr])` 可以永远挂住，正是本 note 行 16 描述的那种"evloop drift 探针一声不响、日志里一个字都没有"的静默签名。
+
+260918 修复（`73fdfeae`）：单 `timer` 拆成 `timeoutTimer` + `killTimer`，`timeout` 存在就在 spawn 尾部无条件 arm 墙钟并复用既有的 abort→SIGTERM→宽限→SIGKILL 路径，旧语义不变；**没有加缺省值**，行 48 的否决依然生效。回归用例只给 timeout、不给 abort，钉住这条以前没人走过的路径。
+
+**二、门检对这两类形态仍然全盲（挂账）：**
+
+- 无 `const` 绑定的用法：`AppProcess.Service.use((svc) => svc.run(...))`（如 `cli/cmd/tui/util/clipboard.ts:14`）不产生 `bound` 条目，而 `if (!bound.size) continue` 排在盲区断言**之前**，整文件被跳过。
+- `Process.*` 全族：`Process.run/text/lines/spawn` 一个都不在 `BINDING` 的匹配面内。
+
+所以 `bun run check:subprocess-timeout` 报「9 处全部声明了超时」时，它证明的只是 `AppProcess` 这一面干净，**不代表全仓子进程有界**。扩门检（认 `AppProcess.Service.use(` 与 `Process.*`，并让归因不依赖 `bound.size` 早退）仍是挂账项。
