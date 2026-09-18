@@ -20,6 +20,11 @@ const Parameters = Schema.Struct({
   timeout_ms: Schema.optional(PositiveInt).annotate({
     description: "Maximum milliseconds to wait when wait=true (default: 60000)",
   }),
+  // 260918 Red 后台 task 需要按 parentSessionId 级联取消，不能只停止状态轮询；
+  // 决策: docs/notes/implemented/bug-fix/2026-09-18-background-task-cancellation-and-worktree-cleanup.md
+  cancel: Schema.optional(Schema.Boolean).annotate({
+    description: "When true, cancel the task and its nested background tasks before checking status",
+  }),
 })
 
 type State = BackgroundJob.Status
@@ -131,6 +136,8 @@ export const TaskStatusTool = Tool.define(
           }),
         }
       }
+
+      if (params.cancel) yield* jobs.cancelTree(params.task_id)
 
       const waited =
         params.wait === true

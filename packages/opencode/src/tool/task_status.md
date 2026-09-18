@@ -7,6 +7,7 @@ Parameters:
 - `task_id` (required): the task session id returned by the task tool
 - `wait` (optional): when true, wait for completion
 - `timeout_ms` (optional): max wait duration in milliseconds when `wait=true`
+- `cancel` (optional): when true, cancel this task and its nested background tasks before checking status
 
 Returns compact, parseable output:
 

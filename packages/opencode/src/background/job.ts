@@ -56,6 +56,7 @@ export interface Interface {
   readonly start: (input: StartInput) => Effect.Effect<Info>
   readonly wait: (input: WaitInput) => Effect.Effect<WaitResult>
   readonly cancel: (id: string) => Effect.Effect<Info | undefined>
+  readonly cancelTree: (id: string) => Effect.Effect<void>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@redcode/BackgroundJob") {}
@@ -221,7 +222,37 @@ export const layer = Layer.effect(
       return info
     })
 
-    return Service.of({ list, get, start, wait, cancel })
+    const cancelTree: Interface["cancelTree"] = Effect.fn("BackgroundJob.cancelTree")(function* (id) {
+      const pending = new Set([id])
+      const cancelled = new Set<string>()
+      const matches = (job: Info) => {
+        if (job.status !== "running") return false
+        if (cancelled.has(job.id)) return false
+        if (pending.has(job.id)) return true
+        if (typeof job.metadata?.sessionId === "string" && pending.has(job.metadata.sessionId)) return true
+        return typeof job.metadata?.parentSessionId === "string" && pending.has(job.metadata.parentSessionId)
+      }
+      let batch = (yield* list()).filter(matches)
+      while (batch.length > 0) {
+        yield* Effect.forEach(
+          batch,
+          (job) =>
+            cancel(job.id).pipe(
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  cancelled.add(job.id)
+                  pending.add(job.id)
+                  if (typeof job.metadata?.sessionId === "string") pending.add(job.metadata.sessionId)
+                }),
+              ),
+            ),
+          { concurrency: "unbounded", discard: true },
+        )
+        batch = (yield* list()).filter(matches)
+      }
+    })
+
+    return Service.of({ list, get, start, wait, cancel, cancelTree })
   }),
 )
 

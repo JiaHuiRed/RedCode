@@ -87,6 +87,43 @@ describe("tool.task_status", () => {
       expect(result.output).toContain("state: running")
       expect(result.output).toContain("Timed out after 50ms")
       expect(result.metadata.timed_out).toBe(true)
+      yield* jobs.cancel(chat.id)
+    }),
+  )
+
+  it.instance("cancels a running task and its background job", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const sessions = yield* Session.Service
+      const tool = yield* TaskStatusTool
+      const def = yield* tool.init()
+      const chat = yield* sessions.create({})
+      const child = yield* sessions.create({})
+
+      yield* jobs.start({ id: chat.id, type: "task", run: Effect.never })
+      yield* jobs.start({
+        id: child.id,
+        type: "task",
+        metadata: { parentSessionId: chat.id },
+        run: Effect.never,
+      })
+
+      const result = yield* def.execute(
+        { task_id: chat.id, cancel: true },
+        {
+          sessionID: chat.id,
+          messageID: MessageID.ascending(),
+          agent: "build",
+          abort: new AbortController().signal,
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      expect(result.output).toContain("state: cancelled")
+      expect((yield* jobs.get(chat.id))?.status).toBe("cancelled")
+      expect((yield* jobs.get(child.id))?.status).toBe("cancelled")
     }),
   )
 })

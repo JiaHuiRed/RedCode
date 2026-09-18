@@ -147,6 +147,7 @@ export interface Interface {
   readonly create: (input?: CreateInput) => Effect.Effect<Info, Error>
   readonly list: () => Effect.Effect<(Omit<Info, "branch"> & { branch?: string })[], Error>
   readonly remove: (input: RemoveInput) => Effect.Effect<boolean, Error>
+  readonly scheduleRemove: (input: RemoveInput) => Effect.Effect<void>
   readonly reset: (input: ResetInput) => Effect.Effect<boolean, Error>
 }
 
@@ -489,6 +490,18 @@ export const layer: Layer.Layer<
       return true
     })
 
+    // 260918 Red 成功的隔离任务保留七天供审计，时间到后由 parent instance 的长寿 scope 主动回收；
+    // 决策: docs/notes/implemented/bug-fix/2026-09-18-background-task-cancellation-and-worktree-cleanup.md
+    const scheduleRemove = Effect.fn("Worktree.scheduleRemove")(function* (input: RemoveInput) {
+      yield* Effect.sleep(`${WORKTREE_RETENTION_MS} millis`).pipe(
+        Effect.andThen(remove(input)),
+        Effect.catchCause((cause) =>
+          Effect.sync(() => log.error("scheduled worktree cleanup failed", { directory: input.directory, cause })),
+        ),
+        Effect.forkIn(scope),
+      )
+    })
+
     const cleanupFailed = Effect.fnUntraced(function* (info: Info) {
       yield* remove({ directory: info.directory }).pipe(
         Effect.catchCause((cause) =>
@@ -705,7 +718,7 @@ export const layer: Layer.Layer<
       return true
     })
 
-    return Service.of({ makeWorktreeInfo, createFromInfo, createAndWait, create, list, remove, reset })
+    return Service.of({ makeWorktreeInfo, createFromInfo, createAndWait, create, list, remove, scheduleRemove, reset })
   }),
 )
 

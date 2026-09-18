@@ -220,7 +220,20 @@ export const layer = Layer.effect(
           // 260913 Red 隔离边界：子代理只能写这个 worktree，shell 里的 git 也钉在这里。
           Effect.provideService(IsolationBoundaryRef, ctx.directory),
           Effect.ensuring(disposeCtx),
+          Effect.onExit((exit) => {
+            if (Exit.isSuccess(exit)) return Effect.void
+            // 260918 Red 失败/取消没有可审计产出，InstanceStore 已在上面的 ensuring 释放子进程；
+            // 决策: docs/notes/implemented/bug-fix/2026-09-18-background-task-cancellation-and-worktree-cleanup.md
+            return Effect.uninterruptible(
+              wt.remove({ directory: info.directory }).pipe(
+                Effect.catchCause((cause) =>
+                  Effect.sync(() => log.error("failed isolated task worktree cleanup failed", { directory: info.directory, cause })),
+                ),
+              ),
+            )
+          }),
         )
+        yield* wt.scheduleRemove({ directory: info.directory })
         return { worktree: info, result }
       })
 
