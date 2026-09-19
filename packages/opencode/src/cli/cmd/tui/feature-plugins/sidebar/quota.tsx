@@ -1,14 +1,22 @@
 import type { TuiPlugin, TuiPluginApi } from "@redcode-ai/plugin/tui"
 import type { InternalTuiPlugin } from "../../plugin/internal"
-import { createMemo, For, Show } from "solid-js"
+import { createMemo, For, onCleanup, onMount, Show } from "solid-js"
 
 const id = "internal:sidebar-quota"
 
-// 260831 Red 额度面板：GET /provider/quota + provider.quota.updated 全局事件
-// （服务端 quota.ts 捕获 x-codex-* 响应头；该数据只在此展示，无定时器、无轮询）
+// 260919 Red 额度面板：GET /provider/quota + provider.quota.updated 全局事件。
+// 服务端同时捕获 GPT 响应头并查询 GLM Coding Plan 监控接口；这里每分钟触发一次刷新。
 function View(props: { api: TuiPluginApi }) {
   const theme = () => props.api.theme.current
   const list = createMemo(() => props.api.state.provider_quota())
+
+  onMount(() => {
+    const timer = setInterval(() => {
+      // 监控接口失败不应打断侧栏，旧快照仍由全局事件保留。
+      void props.api.client.provider.quota({ directory: props.api.state.path.directory }).catch(() => {})
+    }, 60_000)
+    onCleanup(() => clearInterval(timer))
+  })
 
   const color = (pct: number) => {
     if (pct >= 90) return theme().error

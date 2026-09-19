@@ -230,6 +230,24 @@ export function createServerSyncContext() {
     setGlobalStore("provider_quota", next)
   }
 
+  onMount(() => {
+    // 260919 Red 全局额度快照每分钟刷新一次，让 GUI 的 GLM 5 小时/周窗口不会停在启动时的旧值
+    const refreshProviderQuota = () => {
+      void queryClient
+        .fetchQuery({
+          ...loadProviderQuotaQuery(null, serverSDK.client),
+          staleTime: 0,
+        })
+        .then(
+          (data) => setProviderQuota(data),
+          // 保留上一次成功快照；额度接口暂时不可用不应清空 GUI 已显示的数据
+          () => undefined,
+        )
+    }
+    const timer = setInterval(refreshProviderQuota, 60_000)
+    onCleanup(() => clearInterval(timer))
+  })
+
   const setBootStore = ((...input: unknown[]) => {
     if (input[0] === "project" && Array.isArray(input[1])) {
       setProjects(input[1] as Project[])

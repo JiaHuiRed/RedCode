@@ -2,6 +2,7 @@ import { Schema } from "effect"
 import * as Log from "@redcode-ai/core/util/log"
 import { BusEvent } from "@/bus/bus-event"
 import { GlobalBus } from "@/bus/global"
+import { fetchWithProxy } from "@/util/proxy"
 import type { ProviderID } from "./schema"
 
 const log = Log.create({ service: "provider.quota" })
@@ -62,6 +63,74 @@ export const Info = Schema.Struct({
   credits: Schema.optional(Credits),
 }).annotate({ identifier: "ProviderQuota" })
 export type Info = Schema.Schema.Type<typeof Info>
+
+export const CODING_PLAN_PROVIDER_IDS = ["zhipuai-coding-plan", "zai-coding-plan"] as const
+
+type CodingPlanObject = Record<string, unknown>
+
+function object(value: unknown): CodingPlanObject | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined
+  return value as CodingPlanObject
+}
+
+function number(value: unknown): number | undefined {
+  const result = typeof value === "number" ? value : Number(value)
+  return Number.isFinite(result) ? result : undefined
+}
+
+function codingPlanWindow(
+  limit: CodingPlanObject | undefined,
+  unit: number,
+  windowMinutes: number,
+  now: number,
+): Window | undefined {
+  if (limit?.type !== "TOKENS_LIMIT" || number(limit.unit) !== unit) return undefined
+  const usedPercent = number(limit.percentage)
+  const nextResetTime = number(limit.nextResetTime)
+  if (usedPercent === undefined || nextResetTime === undefined) return undefined
+
+  const resetAt = Math.floor(nextResetTime / 1000)
+  if (resetAt <= 0) return undefined
+  return {
+    usedPercent,
+    windowMinutes,
+    resetAfterSeconds: Math.max(0, resetAt - Math.floor(now / 1000)),
+    resetAt,
+  }
+}
+
+/**
+ * 将智谱 Coding Plan 监控接口映射到现有 quota 快照。现有共享快照只承载百分比、窗口和重置时间，
+ * 因此先保留这些字段；接口返回的绝对积分字段暂不塞进 GPT 同构模型。
+ */
+export function parseCodingPlan(
+  providerID: ProviderID | string,
+  body: unknown,
+  now = Date.now(),
+): Info | undefined {
+  const root = object(body)
+  if (root?.success === false) return undefined
+  const data = object(root?.data)
+  if (!data || !Array.isArray(data.limits)) return undefined
+
+  const limits = data.limits.map(object).filter((item): item is CodingPlanObject => item !== undefined)
+  const primary = limits
+    .map((limit) => codingPlanWindow(limit, 3, 300, now))
+    .find((item): item is Window => item !== undefined)
+  const secondary = limits
+    .map((limit) => codingPlanWindow(limit, 6, 10080, now))
+    .find((item): item is Window => item !== undefined)
+  if (!primary && !secondary) return undefined
+
+  const level = typeof data.level === "string" && data.level.length > 0 ? data.level.toUpperCase() : "GLM"
+  return {
+    providerID,
+    capturedAt: now,
+    planType: level,
+    ...(primary ? { primary } : {}),
+    ...(secondary ? { secondary } : {}),
+  }
+}
 
 /**
  * 额度快照更新广播。走 GlobalBus（而不是 Bus.publish(ctx, …)）：额度是账号级事实，
@@ -144,6 +213,44 @@ const store = new Map<string, Info>()
 
 function key(providerID: string, accountID: string | undefined) {
   return `${providerID}:${accountID ?? ""}`
+}
+
+/**
+ * 按需查询 Coding Plan 监控接口。失败只丢弃本次刷新，不能影响模型请求或现有 GPT 额度。
+ */
+export async function refreshCodingPlan(providerID: (typeof CODING_PLAN_PROVIDER_IDS)[number], apiKey: string) {
+  const baseURL = providerID === "zai-coding-plan" ? "https://api.z.ai" : "https://open.bigmodel.cn"
+
+  try {
+    const response = await fetchWithProxy(`${baseURL}/api/monitor/usage/quota/limit`, {
+      headers: {
+        authorization: apiKey,
+        "accept-language": "zh-CN,zh",
+        "content-type": "application/json",
+      },
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!response.ok) {
+      log.debug("coding plan quota request failed", { provider: providerID, status: response.status })
+      return
+    }
+
+    const quota = parseCodingPlan(providerID, await response.json())
+    if (!quota) return
+    store.set(key(providerID, undefined), quota)
+    GlobalBus.emit("event", {
+      directory: "global",
+      payload: { type: QuotaUpdated.type, properties: quota },
+    })
+    log.info("coding plan quota", {
+      provider: providerID,
+      plan: quota.planType,
+      primary: quota.primary ? `${quota.primary.usedPercent}% / ${quota.primary.windowMinutes}min` : undefined,
+      secondary: quota.secondary ? `${quota.secondary.usedPercent}% / ${quota.secondary.windowMinutes}min` : undefined,
+    })
+  } catch (error) {
+    log.debug("coding plan quota refresh failed", { provider: providerID, error })
+  }
 }
 
 /**

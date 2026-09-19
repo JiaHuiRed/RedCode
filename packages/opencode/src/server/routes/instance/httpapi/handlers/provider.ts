@@ -1,3 +1,4 @@
+import { Auth } from "@/auth"
 import { ProviderAuth } from "@/provider/auth"
 import { Config } from "@/config/config"
 import { ModelsDev } from "@redcode-ai/core/models-dev"
@@ -49,6 +50,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
     const cfg = yield* Config.Service
     const provider = yield* Provider.Service
     const svc = yield* ProviderAuth.Service
+    const authSvc = yield* Auth.Service
 
     const list = Effect.fn("ProviderHttpApi.list")(function* () {
       const config = yield* cfg.get()
@@ -88,6 +90,11 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
     })
 
     const quota = Effect.fn("ProviderHttpApi.quota")(function* () {
+      for (const providerID of ProviderQuota.CODING_PLAN_PROVIDER_IDS) {
+        const auth = yield* authSvc.get(providerID).pipe(Effect.orElseSucceed(() => undefined))
+        const apiKey = process.env.ZHIPU_API_KEY ?? (auth?.type === "api" ? auth.key : undefined)
+        if (apiKey) yield* Effect.promise(() => ProviderQuota.refreshCodingPlan(providerID, apiKey))
+      }
       return ProviderQuota.list()
     })
 

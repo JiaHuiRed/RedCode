@@ -1,4 +1,4 @@
-import { createMemo, createEffect, on, onCleanup, For, Show } from "solid-js"
+import { createMemo, createEffect, createSignal, on, onCleanup, For, Show } from "solid-js"
 import type { JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { useQuery } from "@tanstack/solid-query"
@@ -9,6 +9,7 @@ import { findLast } from "@redcode-ai/core/util/array"
 import { same } from "@/utils/same"
 import { compareTime } from "@/utils/id"
 import { Icon } from "@redcode-ai/ui/icon"
+import { Capsule, CapsuleRow, type CapsuleTone } from "@redcode-ai/ui/capsule"
 import { Accordion } from "@redcode-ai/ui/accordion"
 import { StickyAccordionHeader } from "@redcode-ai/ui/sticky-accordion-header"
 import { useFileComponent } from "@redcode-ai/ui/context/file"
@@ -129,6 +130,98 @@ function QuotaWindow(props: { label: string; window?: QuotaWindowData }) {
         }}
       </Show>
     </div>
+  )
+}
+
+const quotaTone = (quotas: ProviderQuota[]): CapsuleTone => {
+  const percent = Math.max(
+    0,
+    ...quotas.flatMap((quota) =>
+      [quota.primary, quota.secondary, quota.reserve]
+        .filter((window): window is QuotaWindowData => !!window)
+        .map((window) => quotaNum(window.usedPercent)),
+    ),
+  )
+  return percent >= 90 ? "critical" : percent >= 60 ? "warning" : "success"
+}
+
+const quotaCompactSummary = (quota: ProviderQuota, locale: string) => {
+  const windows = [quota.primary, quota.secondary].filter(
+    (window): window is QuotaWindowData => !!window,
+  )
+  return [
+    quota.planType,
+    ...windows.map(
+      (window) => `${quotaDuration(quotaNum(window.windowMinutes))} ${quotaPercent(quotaNum(window.usedPercent), locale)}%`,
+    ),
+  ].join(" · ")
+}
+
+function QuotaCapsule(props: { quotas: ProviderQuota[] }) {
+  const language = useLanguage()
+  const [expanded, setExpanded] = createSignal(false)
+  const summary = () => props.quotas.map((quota) => quotaCompactSummary(quota, language.intl())).join(" / ")
+
+  return (
+    <Capsule
+      attach="floating"
+      class="max-w-full"
+      style={{
+        width: expanded() ? "100%" : "fit-content",
+        "border-radius": expanded() ? "var(--radius-xl)" : "999px",
+      }}
+    >
+      <CapsuleRow
+        status={quotaTone(props.quotas)}
+        label={language.t("context.quota.title")}
+        description={<span class="truncate">{summary()}</span>}
+        trailing={
+          <Icon
+            name="chevron-down"
+            class={expanded() ? "rotate-180 transition-transform" : "transition-transform"}
+          />
+        }
+        selected={expanded()}
+        aria-expanded={expanded()}
+        aria-controls="provider-quota-details"
+        onClick={() => setExpanded((value) => !value)}
+      />
+      <Show when={expanded()}>
+        <div
+          id="provider-quota-details"
+          class="mt-1 flex flex-col gap-3 border-t border-border-weaker-base px-2 pt-2 pb-1"
+        >
+          <For each={props.quotas}>
+            {(quota) => (
+              <div class="flex flex-col gap-2">
+                <div class="flex items-baseline justify-between gap-2">
+                  <div class="text-11-regular text-text-weak">{quota.planType}</div>
+                  <Show when={quota.accountID}>
+                    {(accountID) => <div class="text-11-regular text-text-weaker select-text">{accountID()}</div>}
+                  </Show>
+                </div>
+                <div class="flex flex-col gap-3">
+                  <QuotaWindow label={language.t("context.quota.window.primary")} window={quota.primary} />
+                  <QuotaWindow label={language.t("context.quota.window.secondary")} window={quota.secondary} />
+                  <Show when={quota.reserve}>
+                    {(reserve) => (
+                      <QuotaWindow
+                        label={
+                          quota.reserveName
+                            ? `${language.t("context.quota.window.reserve")} · ${quota.reserveName}`
+                            : language.t("context.quota.window.reserve")
+                        }
+                        window={reserve()}
+                      />
+                    )}
+                  </Show>
+                </div>
+              </div>
+            )}
+          </For>
+        </div>
+      </Show>
+    </Capsule>
   )
 }
 
@@ -593,41 +686,16 @@ export function SessionContextTab() {
         </div>
 
         <div class="flex flex-col gap-2">
-          <div class="text-12-regular text-text-weak">{language.t("context.quota.title")}</div>
           <Show
             when={quotaList().length > 0}
-            fallback={<div class="text-11-regular text-text-weaker">{language.t("context.quota.empty")}</div>}
+            fallback={
+              <div class="flex flex-col gap-2">
+                <div class="text-12-regular text-text-weak">{language.t("context.quota.title")}</div>
+                <div class="text-11-regular text-text-weaker">{language.t("context.quota.empty")}</div>
+              </div>
+            }
           >
-            <div class="flex flex-col gap-4">
-              <For each={quotaList()}>
-                {(quota) => (
-                  <div class="flex flex-col gap-2">
-                    <div class="flex items-baseline justify-between gap-2">
-                      <div class="text-11-regular text-text-weak">{quota.planType}</div>
-                      <Show when={quota.accountID}>
-                        {(accountID) => <div class="text-11-regular text-text-weaker select-text">{accountID()}</div>}
-                      </Show>
-                    </div>
-                    <div class="flex flex-col gap-3">
-                      <QuotaWindow label={language.t("context.quota.window.primary")} window={quota.primary} />
-                      <QuotaWindow label={language.t("context.quota.window.secondary")} window={quota.secondary} />
-                      <Show when={quota.reserve}>
-                        {(reserve) => (
-                          <QuotaWindow
-                            label={
-                              quota.reserveName
-                                ? `${language.t("context.quota.window.reserve")} · ${quota.reserveName}`
-                                : language.t("context.quota.window.reserve")
-                            }
-                            window={reserve()}
-                          />
-                        )}
-                      </Show>
-                    </div>
-                  </div>
-                )}
-              </For>
-            </div>
+            <QuotaCapsule quotas={quotaList()} />
           </Show>
         </div>
 
