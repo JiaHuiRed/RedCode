@@ -156,7 +156,9 @@ export function ScrollView(props: ScrollViewProps) {
       local.viewportRef(viewportRef)
     }
 
-    createResizeObserver([viewportRef, viewportRef.firstElementChild], updateThumb)
+    // 260919 Red ResizeObserver 回调里同步写 thumb 状态，会和 virtua 的内容重测量挤在同一布局帧；
+    //   延到下一帧计算，避免观察回调触发布局-观察循环和可见闪烁。
+    createResizeObserver([viewportRef, viewportRef.firstElementChild], scheduleThumb)
 
     updateThumb()
   })

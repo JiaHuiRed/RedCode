@@ -294,7 +294,7 @@ export function SessionContextTab() {
   // 260831 Red 额度是账号级事实（GlobalBus 广播 + bootstrap 首次拉取），直接从全局 store 读
   const quotaList = () => globalSync.data.provider_quota
   const providers = useProviders()
-  const { params, view } = useSessionLayout()
+  const { params, sessionKey, view } = useSessionLayout()
 
   const info = createMemo(() => (params.id ? sync.session.get(params.id) : undefined))
 
@@ -611,7 +611,11 @@ export function SessionContextTab() {
     if (!el) return
 
     const s = view().scroll("context")
-    if (!s) return
+    if (!s) {
+      if (el.scrollTop !== 0) el.scrollTop = 0
+      if (el.scrollLeft !== 0) el.scrollLeft = 0
+      return
+    }
 
     if (el.scrollTop !== s.y) el.scrollTop = s.y
     if (el.scrollLeft !== s.x) el.scrollLeft = s.x
@@ -638,6 +642,18 @@ export function SessionContextTab() {
   createEffect(
     on(
       () => messages().length,
+      () => {
+        requestAnimationFrame(restoreScroll)
+      },
+      { defer: true },
+    ),
+  )
+
+  // 260919 Red 会话切换时即使消息数量相同，滚动容器也不会重建；
+  //   必须按 sessionKey 重新恢复，否则旧会话的 context scrollTop 会带到新会话。
+  createEffect(
+    on(
+      sessionKey,
       () => {
         requestAnimationFrame(restoreScroll)
       },

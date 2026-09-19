@@ -8,6 +8,26 @@
 
 ---
 
+### [0.11.9] - 2026-09-19
+
+#### 变更
+
+- **智谱 Coding Plan 额度接入 GUI 与 TUI**（`packages/opencode/src/provider/quota.ts`、`packages/app/src/components/session/session-context-tab.tsx`）：共享 5 小时与周额度快照，GUI 以可展开胶囊显示，密钥不进入模型或前端数据。
+
+- **后台任务与隔离 worktree 生命周期收敛**（`packages/opencode/src/background/job.ts`、`packages/opencode/src/session/prompt.ts`、`packages/opencode/src/tool/task_status.ts`、`packages/opencode/src/worktree/index.ts`）：取消任务时同步停止嵌套后台任务，失败或取消的隔离 worktree 在资源释放后回收，成功副本保留七天；自动清理增加 managed root、dirty 与唯一 worktree 安全闸门。
+
+- **子进程、MCP 附件与 slash 命令增加硬边界**（`packages/opencode/src/util/process.ts`、`packages/opencode/src/session/tools.ts`、`packages/opencode/src/session/prompt.ts`）：timeout 改为真实墙钟截止，MCP 附件限制单条 5 MB、总数 32 条，shell 模板展开限制输出字节、超时和退出标记，避免无界内容进入模型。
+
+- **设计与审计文档同步**（`seed/skill/frontend-design/SKILL.md`、`docs/notes/implemented/2026-09-18-studio-mode.md` 及审计记录）：前端视觉偏好改为弹性方向，Studio soul 按姿态选择的缓存粒度与配置边界定稿，并核验超时与内容边界审计。
+
+#### 修复
+
+- **GUI 会话上下文不再沿用旧会话滚动位置**（`packages/app/src/components/session/session-context-tab.tsx`）：按 `sessionKey` 恢复右侧面板滚动，没有持久化位置时回到顶部，避免 stats、额度和构成被误认为未渲染。
+
+- **虚拟列表滚动 thumb 更新避开 ResizeObserver 当前布局帧**（`packages/ui/src/components/scroll-view.tsx`）：复用 rAF 节流，降低 virtua 重测量引起的布局循环与视觉闪烁。
+
+---
+
 ### [0.11.8] - 2026-09-18
 
 #### 变更
