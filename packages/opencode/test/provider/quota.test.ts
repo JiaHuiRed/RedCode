@@ -12,8 +12,8 @@ describe("ProviderQuota.parseCodingPlan", () => {
           level: "lite",
           limits: [
             { type: "TIME_LIMIT", percentage: 12, nextResetTime: now + 86_400_000 },
-            { type: "TOKENS_LIMIT", unit: 6, percentage: 61, nextResetTime: now + 5_400_000 },
-            { type: "TOKENS_LIMIT", unit: 3, percentage: 5, nextResetTime: now + 1_800_000 },
+            { type: "CREDIT_LIMIT", unit: 6, percentage: 61, nextResetTime: now + 5_400_000 },
+            { type: "CREDIT_LIMIT", unit: 3, percentage: 5, nextResetTime: now + 1_800_000 },
           ],
         },
       },

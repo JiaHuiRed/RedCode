@@ -84,7 +84,9 @@ function codingPlanWindow(
   windowMinutes: number,
   now: number,
 ): Window | undefined {
-  if (limit?.type !== "TOKENS_LIMIT" || number(limit.unit) !== unit) return undefined
+  // 260920 Red Coding Plan 实测返回 CREDIT_LIMIT；保留 TOKENS_LIMIT 兼容旧版响应。
+  if (limit?.type !== "CREDIT_LIMIT" && limit?.type !== "TOKENS_LIMIT") return undefined
+  if (number(limit.unit) !== unit) return undefined
   const usedPercent = number(limit.percentage)
   const nextResetTime = number(limit.nextResetTime)
   if (usedPercent === undefined || nextResetTime === undefined) return undefined
