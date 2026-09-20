@@ -1161,6 +1161,8 @@ export default function Layout(props: ParentProps) {
           class="absolute inset-0 z-0 pointer-events-none bg-cover bg-center bg-no-repeat"
           style={{ "background-image": `url(${appBackground()})` }}
         />
+        {/* 260920 Red 壁纸只负责提供氛围，统一遮罩把正文从人物和高亮景物前面托出来。 */}
+        <div aria-hidden="true" data-wallpaper-veil class="absolute inset-0 z-0 pointer-events-none" />
       </Show>
       {/* 260901 cc 常驻路径上最后一处「读 resource 只为触发挂起」的写法，而且它就在外壳里、
           紧挨着 Titlebar——一挂起，连标题栏和侧边栏一起被应用级 Suspense 换成满屏 Splash。

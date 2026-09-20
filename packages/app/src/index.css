@@ -286,6 +286,8 @@
   --frost-alpha-surface: 55%; /* 主卡 / 会话区 */
   --frost-alpha-bubble: 55%; /* 用户气泡 / diff 摘要条 */
   --frost-alpha-inline: 50%; /* 输入框 */
+  --frost-alpha-veil: 18%; /* 壁纸环境层 */
+  --frost-alpha-usage: 58%; /* 首页用量：次级信息，比项目侧栏轻一档 */
 
   /* 掺色：让磨砂底不是一块纯灰。内层先把主色掺进底色，外层再整体透明化。
      ⚠️ 与 --frost-strength 耦合：强度调大掺色会跟着更显。参照的 DSH Aqua 插件明确
@@ -352,6 +354,17 @@
     in srgb,
     var(--frost-tint-aside),
     var(--v2-background-bg-layer-01) var(--frost-tint-amount)
+  );
+}
+
+/* 260920 Red Wallpaper Veil：壁纸退到环境层，不再与消息、代码和看板争第一视觉焦点。
+   通过主题背景 token 调色，不额外引入一套固定黑色；上方略重、下方略轻，保留壁纸的
+   识别度和空间感。 */
+[data-wallpaper-veil] {
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--v2-background-bg-deep) calc(var(--frost-alpha-veil) + 8%), transparent),
+    color-mix(in srgb, var(--v2-background-bg-deep) var(--frost-alpha-veil), transparent)
   );
 }
 
@@ -463,6 +476,15 @@
   );
   backdrop-filter: blur(var(--frost-blur-chrome));
   -webkit-backdrop-filter: blur(var(--frost-blur-chrome));
+}
+/* 260920 Red Usage 是辅助信息，保持同一磨砂材质但降低面板存在感，把注意力还给会话看板。 */
+[data-app-frost] [data-frost-surface="home-usage"] {
+  background-color: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--frost-tint-aside), var(--v2-background-bg-layer-01) var(--frost-tint-amount))
+      calc(var(--frost-alpha-usage) * var(--frost-strength)),
+    transparent
+  );
 }
 [data-app-frost] #file-tree-panel .bg-background-stronger,
 [data-app-frost] #review-panel .bg-background-base,

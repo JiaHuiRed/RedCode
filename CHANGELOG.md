@@ -21,6 +21,16 @@
 - **外部审计指出的执行边界完成首轮修复**（`packages/opencode/src/{mcp,session,permission,provider}`）：MCP 取消信号贯通重试链，工具 policy 改看最终参数，quota 防止越界与旧凭据快照覆盖，Permission 批量 always 放行同步清理 owner。
 - **R2 执行边界完成二阶收口**（`packages/opencode/src/{mcp,permission,provider}`）：修复 quota 凭据 A→B→A 的 generation 竞态，取消 MCP 工具时同步中断 reconnect fiber，并让 Permission requester 在事件发布前完成 terminal；补充真实 MCP 工具链路与生命周期回归测试。
 
+#### GUI 打磨待办
+
+- **首页 Usage 首屏反馈与性能**（`packages/app/src/pages/home-usage.tsx`、`packages/opencode/src/session/usage.ts`）：当前 `session.usage` 未返回前整个面板不渲染，旧版 exe 也存在“空白一段时间后突然出现”的问题；补稳定的面板骨架/加载态，保留可用快照，并继续压低冷缓存聚合 `message.data` 的首屏耗时。
+- **项目重载失败与资源压力**（`packages/app/src/context/global-sync/bootstrap.ts`、`packages/app/src/context/global-sync/{child-store,eviction}.ts*`、`packages/desktop/src/main`）：`quiet-circuit` 曾出现通用 reload Toast，日志已见 `spawn ENOMEM`、VCS `spawn UNKNOWN` 及 MCP 启动失败；需继续核对实例淘汰、MCP/LSP/文件 watcher 子进程上限与错误分层，避免资源压力只表现为模糊提示。
+- **主界面视觉层级**：保留 Wallpaper 的氛围感但增加 Veil；Usage 作为次级信息降权或可收起，Kanban 与项目侧栏建立更明确的主次关系，避免背景、卡片和高亮同时争夺第一焦点。
+- **会话页层级与状态**：按 L1/L2/L3 收敛消息、工具、辅助信息的视觉权重；Composer 做成可识别的状态化区域；标题栏、Context/Review、服务器/MCP/LSP/插件状态避免重复抢占注意力。
+- **新建会话页**：复核项目、模型、提示入口和主操作的空间分组、默认焦点、空状态与提交反馈，让首次进入时先理解“选什么、输入什么、如何开始”。
+- **设计 token 与可访问性**：优先统一现有 `--frost-*` 与 `--v2-*` 体系，不再平行铺第三套 token；同步检查对比度、键盘焦点、窄窗口、减少动效和长时间使用下的密度。
+- **实施顺序**：第一阶段先做背景/层级/透明度等纯视觉调整；第二阶段处理 Usage/Context 的折叠与摘要；第三阶段再做 Composer、赤状态反馈和更细的交互动效。每阶段都用 Home、Session、新建会话三张基准图回归，避免继续叠加 Glow 或大范围重写。
+
 ---
 
 ### [0.11.9] - 2026-09-19
