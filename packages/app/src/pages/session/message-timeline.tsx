@@ -858,8 +858,7 @@ export function MessageTimeline(props: {
   // 离开前那批行：内容在 DOM 里、位置却在视口外几万像素，看到的就是整片空白。这里做一次 1px
   // 滚动往返把它唤醒（视觉不可见）；已在底部/顶部时反向取，避免赋值被 clamp 成等值而不触发事件。
   onMount(() => {
-    const onVisibility = () => {
-      if (document.visibilityState !== "visible") return
+    const nudge = () => {
       const root = listRoot
       if (!root || !virtualizer) return
       const top = root.scrollTop
@@ -867,8 +866,21 @@ export function MessageTimeline(props: {
       root.scrollTop = top + (atBottom ? -1 : 1)
       root.scrollTop = top
     }
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") return
+      nudge()
+    }
+    // 260920 Red 遮挡（occlusion）场景下 visibilityState 恒为 visible——backgroundThrottling: false
+    // 关掉的是 Page Visibility 那一层，关不掉 Chromium 把 rAF 节流到 1Hz 的遮挡判定（实测窗口
+    // 被完全盖住时帧间隔恒定卡在 1007ms，拉回前台立刻回到 19ms）。virtua 的初始化与底部锚定都
+    // 走 rAF，被节流后区间停在空区间；窗口重新获得焦点是这一层唯一可用的恢复信号。
+    const onFocus = () => nudge()
     document.addEventListener("visibilitychange", onVisibility)
-    onCleanup(() => document.removeEventListener("visibilitychange", onVisibility))
+    window.addEventListener("focus", onFocus)
+    onCleanup(() => {
+      document.removeEventListener("visibilitychange", onVisibility)
+      window.removeEventListener("focus", onFocus)
+    })
   })
 
   function scheduleMeasuredBottomAnchor(options?: { force?: boolean }) {
