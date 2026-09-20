@@ -64,12 +64,35 @@ export const ResultPacketSchema = Schema.Struct({
       output: Schema.String,
     }),
   ),
-  toolCalls: Schema.Number,
+  toolCalls: Schema.optional(Schema.Number),
   elapsedMs: Schema.Number,
   termination: Schema.Literals(["normal", "cancelled", "timeout", "scope_denied", "persistence_failed"]),
 })
 
 export type ResultPacket = Schema.Schema.Type<typeof ResultPacketSchema>
+
+export function createChildResultPacket(input: {
+  packet: TaskPacket
+  status: ResultStatus
+  summary: string
+  elapsedMs: number
+  termination: ResultPacket["termination"]
+}): ResultPacket {
+  return {
+    status: input.status,
+    summary: input.summary,
+    requestedScope: [...input.packet.scope.directories, ...input.packet.scope.files],
+    uncertainties: ["Runtime did not independently execute Task Packet verification."],
+    changedFiles: [],
+    verification: input.packet.verification.map((command) => ({
+      command,
+      status: "not_run" as const,
+      output: "",
+    })),
+    elapsedMs: input.elapsedMs,
+    termination: input.termination,
+  }
+}
 
 export const MAX_MAIN_PROJECTION_BYTES = 32 * 1024
 
@@ -140,7 +163,6 @@ export function boundedTaskText(text: string): string {
     uncertainties: [],
     changedFiles: [],
     verification: [],
-    toolCalls: 0,
     elapsedMs: 0,
     termination: "normal",
   }).text

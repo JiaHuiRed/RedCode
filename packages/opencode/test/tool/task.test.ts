@@ -31,6 +31,7 @@ import { TaskTool, type TaskPromptOps } from "../../src/tool/task"
 import { Truncate } from "@/tool/truncate"
 import { ToolRegistry } from "@/tool/registry"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { Storage } from "@/storage/storage"
 import { disposeAllInstances } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
@@ -106,6 +107,7 @@ const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
   )
 
 const it = testEffect(layer())
+const explore = testEffect(Layer.mergeAll(layer(), Storage.defaultLayer))
 const background = testEffect(layer({ experimentalBackgroundSubagents: true }))
 // Description-content tests below assert on the task tool's subagent listing, not on
 // background mode — pin the flag off so they don't pay task_status's extra registry
@@ -317,6 +319,44 @@ describe("tool.task", () => {
       expect(result.metadata.sessionId).toBe(child.id)
       expect(result.output).toContain(`task_id: ${child.id}`)
       expect(seen?.sessionID).toBe(child.id)
+    }),
+  )
+
+  explore.instance("persists an Explore result before returning it", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const storage = yield* Storage.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const result = yield* def.execute(
+        {
+          description: "inspect provider",
+          prompt: "inspect the provider resolution path",
+          subagent_type: "explore",
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps: stubOps({ text: "evidence" }), bypassAgentCheck: true },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      const child = (yield* sessions.children(chat.id))[0]
+      if (!child) throw new Error("Explore child was not created")
+      const record = yield* storage.read<{ result?: { status: string; summary: string; toolCalls?: number } }>([
+        "task-runtime",
+        String(child.id),
+      ])
+      expect(record.result?.status).toBe("ready_for_review")
+      expect(record.result?.summary).toBe("evidence")
+      expect(record.result?.toolCalls).toBeUndefined()
+      expect(result.output).toContain("ready_for_review")
     }),
   )
 

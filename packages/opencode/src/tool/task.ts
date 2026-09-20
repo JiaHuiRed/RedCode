@@ -18,7 +18,13 @@ import { Cause, Clock, Effect, Exit, Option, Schema, Scope } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Storage } from "@/storage/storage"
-import { boundedTaskText, compileExploreTaskPacket, createChildTaskRecord } from "./task-runtime"
+import {
+  boundedTaskText,
+  compileExploreTaskPacket,
+  createChildResultPacket,
+  createChildTaskRecord,
+  type ChildTaskRecord,
+} from "./task-runtime"
 import * as Log from "@redcode-ai/core/util/log"
 
 export interface TaskPromptOps {
@@ -268,6 +274,40 @@ export const TaskTool = Tool.define(
           )
       }
       const projectResult = (text: string) => (explorePacket ? boundedTaskText(text) : text)
+      const runtimeKey = ["task-runtime", String(nextSession.id)]
+      const startedAt = Date.now()
+      const persistResult = Effect.fn("TaskTool.persistResult")(function* (input: {
+        status: "ready_for_review" | "failed" | "cancelled"
+        summary: string
+        termination: "normal" | "cancelled" | "timeout" | "scope_denied" | "persistence_failed"
+      }) {
+        if (!explorePacket) return
+        if (Option.isNone(storage)) return yield* Effect.fail(new Error("Explore task runtime storage is unavailable"))
+        yield* storage.value.update<ChildTaskRecord>(runtimeKey, (record) => {
+          record.result = createChildResultPacket({
+            packet: explorePacket,
+            status: input.status,
+            summary: input.summary,
+            elapsedMs: Date.now() - startedAt,
+            termination: input.termination,
+          })
+        })
+      })
+      type TrackedRun = {
+        result: string
+        output: string
+        worktree?: { directory: string; branch?: string }
+      }
+      const runTracked = (run: Effect.Effect<TrackedRun, unknown>) =>
+        run.pipe(
+          Effect.tap(({ result }) =>
+            persistResult({
+              status: "ready_for_review",
+              summary: result,
+              termination: "normal",
+            }),
+          ),
+        )
 
       yield* plugin
         .trigger(
@@ -445,11 +485,18 @@ export const TaskTool = Tool.define(
       if (runInBackground) {
         // 260904 Red 隔离必须包在后台 job 内，否则后台任务会误跑进 parent instance。
         // 决策: docs/notes/implemented/bug-fix/2026-09-04-isolated-subagent-startup.md
-        const backgroundRun = isolated
+        const childRun = isolated
           ? ops
               .runIsolated({ name: params.description }, runTask())
-              .pipe(Effect.map(({ result, worktree }) => isolatedOutput(nextSession.id, projectResult(result), worktree)))
-          : runTask().pipe(Effect.map(projectResult))
+              .pipe(
+                Effect.map(({ result, worktree }) => ({
+                  result,
+                  output: isolatedOutput(nextSession.id, result, worktree),
+                  worktree,
+                })),
+              )
+          : runTask().pipe(Effect.map((result) => ({ result, output: result })))
+        const backgroundRun = runTracked(childRun).pipe(Effect.map(({ output }) => projectResult(output)))
         const info = yield* background.start({
           id: nextSession.id,
           type: id,
@@ -459,8 +506,19 @@ export const TaskTool = Tool.define(
             Effect.tap((text) => inject("completed", text).pipe(Effect.ignore)),
             Effect.catchCause((cause) =>
               (Cause.hasInterruptsOnly(cause)
-                ? Effect.void
-                : inject("error", projectResult(errorText(Cause.squash(cause)))).pipe(Effect.ignore)
+                ? persistResult({
+                    status: "cancelled",
+                    summary: "Explore child was cancelled before producing a final result.",
+                    termination: "cancelled",
+                  }).pipe(Effect.catch(() => Effect.void))
+                : persistResult({
+                    status: "failed",
+                    summary: errorText(Cause.squash(cause)),
+                    termination: "normal",
+                  }).pipe(
+                    Effect.andThen(inject("error", projectResult(errorText(Cause.squash(cause)))).pipe(Effect.ignore)),
+                    Effect.catch(() => inject("error", projectResult(errorText(Cause.squash(cause)))).pipe(Effect.ignore)),
+                  )
               ).pipe(Effect.andThen(Effect.failCause(cause))),
             ),
           ),
@@ -489,7 +547,17 @@ export const TaskTool = Tool.define(
         () =>
           Effect.gen(function* () {
             if (isolated) {
-              const { worktree, result: text } = yield* ops.runIsolated({ name: params.description }, runTask())
+              const childRun = ops
+                .runIsolated({ name: params.description }, runTask())
+                .pipe(
+                  Effect.map(({ result, worktree }) => ({
+                    result,
+                    output: isolatedOutput(nextSession.id, result, worktree),
+                    worktree,
+                  })),
+                )
+              const { output: text, worktree } = yield* runTracked(childRun)
+              if (!worktree) return yield* Effect.fail(new Error("Isolated child did not return its worktree"))
               return {
                 title: params.description,
                 metadata: {
@@ -497,10 +565,10 @@ export const TaskTool = Tool.define(
                   worktree: worktree.directory,
                   ...(worktree.branch ? { branch: worktree.branch } : {}),
                 },
-                output: isolatedOutput(nextSession.id, projectResult(text), worktree),
+                output: projectResult(text),
               }
             }
-            const text = yield* runTask()
+            const { output: text } = yield* runTracked(runTask().pipe(Effect.map((result) => ({ result, output: result }))))
             return {
               title: params.description,
               metadata,
@@ -509,7 +577,14 @@ export const TaskTool = Tool.define(
           }),
         (_, exit) =>
           Effect.gen(function* () {
-            if (Exit.hasInterrupts(exit)) yield* cancel
+            if (Exit.hasInterrupts(exit)) {
+              yield* cancel
+              yield* persistResult({
+                status: "cancelled",
+                summary: "Explore child was cancelled before producing a final result.",
+                termination: "cancelled",
+              }).pipe(Effect.catch(() => Effect.void))
+            }
           }).pipe(
             Effect.ensuring(
               Effect.sync(() => {

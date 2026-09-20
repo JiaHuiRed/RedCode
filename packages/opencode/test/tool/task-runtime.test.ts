@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   boundedResultProjection,
   compileExploreTaskPacket,
+  createChildResultPacket,
   decodeTaskPacket,
   MAX_MAIN_PROJECTION_BYTES,
   ResultPacketSchema,
@@ -74,6 +75,22 @@ describe("child task runtime contract", () => {
 
     expect(Schema.is(ResultPacketSchema)(result)).toBe(true)
     expect(result.status).not.toBe("completed")
+  })
+
+  test("creates an honest result when runtime has not run verification", () => {
+    const result = createChildResultPacket({
+      packet: validPacket,
+      status: "ready_for_review",
+      summary: "Inspected the provider path",
+      elapsedMs: 1200,
+      termination: "normal",
+    })
+
+    expect(result.toolCalls).toBeUndefined()
+    expect(result.verification).toEqual([
+      { command: "Run a read-only model listing", status: "not_run", output: "" },
+    ])
+    expect(result.uncertainties).toHaveLength(1)
   })
 
   test("caps the Main projection and records truncation", () => {
