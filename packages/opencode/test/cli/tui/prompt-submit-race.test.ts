@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
+import { createSubmissionController } from "../../../src/cli/cmd/tui/component/prompt/submission"
 
 // Regression test for the prompt submit race in
-// packages/redcode/src/cli/cmd/tui/component/prompt/index.tsx (`submit`).
+// packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx (`submit`).
 //
 // Before the fix, two concurrent `submit()` calls (e.g. a double-pressed
 // Enter, or the input's native onSubmit racing another dispatch) each
@@ -14,10 +15,8 @@ import { describe, expect, test } from "bun:test"
 // user's actual text and a phantom session visible to the user containing
 // only an assistant reply.
 //
-// `submitMirror` below has the exact shape of the production `submit()`
-// after the fix: an in-flight `submitting` guard wraps the original body.
-// Two concurrent invocations must result in exactly one submission carrying
-// the user's text, with no empty-text submission.
+// The submit harness uses the production submission controller so this test
+// fails if the production gate or revision-safe consumption contract regresses.
 
 type Store = { input: string }
 
@@ -26,17 +25,22 @@ type SubmitResult = { sessionID: string; text: string }
 type Harness = {
   store: Store
   submissions: SubmitResult[]
+  setSendError(error?: Error): void
   createSession(): Promise<string>
   sendPrompt(sessionID: string, text: string): Promise<void>
 }
 
 function createHarness(opts: { sessionCreateDelayMs: number }): Harness {
   let sessionCounter = 0
+  let sendError: Error | undefined
   const submissions: SubmitResult[] = []
 
   return {
     store: { input: "" },
     submissions,
+    setSendError(error) {
+      sendError = error
+    },
     async createSession() {
       sessionCounter += 1
       const id = `ses_${sessionCounter}`
@@ -44,26 +48,31 @@ function createHarness(opts: { sessionCreateDelayMs: number }): Harness {
       return id
     },
     async sendPrompt(sessionID, text) {
+      if (sendError) throw sendError
       submissions.push({ sessionID, text })
     },
   }
 }
 
 function createSubmit() {
-  let submitting = false
-  return async function submit(h: Harness) {
-    if (submitting) return false
-    submitting = true
-    try {
-      if (!h.store.input) return false
-      const sessionID = await h.createSession()
-      const inputText = h.store.input
-      await h.sendPrompt(sessionID, inputText)
-      h.store.input = ""
-      return true
-    } finally {
-      submitting = false
-    }
+  const controller = createSubmissionController()
+  return {
+    changed() {
+      controller.changed()
+    },
+    submit: async (h: Harness) => {
+      if (!controller.acquire()) return false
+      try {
+        if (!h.store.input) return false
+        const submission = controller.snapshot(h.store.input)
+        const sessionID = await h.createSession()
+        await h.sendPrompt(sessionID, submission.payload)
+        if (controller.canConsume(submission)) h.store.input = ""
+        return true
+      } finally {
+        controller.release()
+      }
+    },
   }
 }
 
@@ -74,7 +83,7 @@ describe("Prompt.submit race", () => {
     h.store.input = "Hello there."
 
     // Two invocations back-to-back, mimicking a double-Enter.
-    await Promise.all([submit(h), submit(h)])
+    await Promise.all([submit.submit(h), submit.submit(h)])
 
     // Every submission that did make it through must carry the actual user
     // text, and no submission may have an empty text payload.
@@ -87,12 +96,41 @@ describe("Prompt.submit race", () => {
     const h = createHarness({ sessionCreateDelayMs: 1 })
     h.store.input = "Hello there."
 
-    await submit(h)
+    await submit.submit(h)
     // After the first submission completes, the store is cleared; a second
     // Enter on an empty input must not create a phantom session.
-    await submit(h)
+    await submit.submit(h)
 
     expect(h.submissions).toHaveLength(1)
     expect(h.submissions[0].text).toBe("Hello there.")
+  })
+
+  test("freezes the payload and preserves a newer draft revision", async () => {
+    const submit = createSubmit()
+    const h = createHarness({ sessionCreateDelayMs: 5 })
+    h.store.input = "A"
+
+    const pending = submit.submit(h)
+    h.store.input = "B"
+    submit.changed()
+    await pending
+
+    expect(h.submissions[0].text).toBe("A")
+    expect(h.store.input).toBe("B")
+  })
+
+  test("preserves the draft and releases the gate when sending fails", async () => {
+    const submit = createSubmit()
+    const h = createHarness({ sessionCreateDelayMs: 1 })
+    h.store.input = "Keep this draft."
+    h.setSendError(new Error("transport failed"))
+
+    await expect(submit.submit(h)).rejects.toThrow("transport failed")
+    expect(h.store.input).toBe("Keep this draft.")
+
+    h.setSendError()
+    await submit.submit(h)
+    expect(h.submissions[0].text).toBe("Keep this draft.")
+    expect(h.store.input).toBe("")
   })
 })

@@ -40,6 +40,7 @@ export function Home() {
   const editor = useEditorContext()
   const promptMaxWidth = usePromptMaxWidth()
   let sent = false
+  let attempting = false
 
   onMount(() => {
     editor.clearSelection()
@@ -62,13 +63,19 @@ export function Home() {
   // Wait for sync and model store to be ready before auto-submitting --prompt
   createEffect(() => {
     const r = ref()
-    if (sent) return
+    if (sent || attempting) return
     if (!r) return
     if (!sync.ready || !local.model.ready) return
     if (!args.prompt) return
     if (r.current.input !== args.prompt) return
-    sent = true
-    r.submit()
+    attempting = true
+    void Promise.resolve(r.submit())
+      .then((submitted) => {
+        if (submitted) sent = true
+      })
+      .finally(() => {
+        attempting = false
+      })
   })
 
   return (

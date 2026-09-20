@@ -16,8 +16,8 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
   const sdk = useSDK()
   // 260904 cc 同 permission.tsx：回复失败不能静默。见那边 send() 的完整因由。
   const toast = useToast()
-  const send = (input: Parameters<typeof sdk.client.question.reply>[0]) =>
-    void sdk.client.question.reply(input).catch((err) => toast.error(err))
+  const sendRequest = (request: Promise<unknown>) => void request.catch((err) => toast.error(err))
+  const send = (input: Parameters<typeof sdk.client.question.reply>[0]) => sendRequest(sdk.client.question.reply(input))
   const sync = useSync()
   const project = useProject()
   const { theme } = useTheme()
@@ -65,10 +65,12 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
   }
 
   function reject() {
-    void sdk.client.question.reject({
-      requestID: props.request.id,
-      workspace: workspace(),
-    })
+    sendRequest(
+      sdk.client.question.reject({
+        requestID: props.request.id,
+        workspace: workspace(),
+      }),
+    )
   }
 
   function pick(answer: string, custom: boolean = false) {

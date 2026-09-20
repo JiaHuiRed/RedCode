@@ -28,6 +28,7 @@ import { editorSelectionKey, useEditorContext, type EditorSelection } from "@tui
 import { MessageID, PartID } from "@/session/schema"
 import { createStore, produce, unwrap } from "solid-js/store"
 import { usePromptHistory, type PromptInfo } from "./history"
+import { createSubmissionController } from "./submission"
 import { computePromptTraits } from "./traits"
 import { assign, expandPastedTextPlaceholders } from "./part"
 import { usePromptUsage } from "./usage"
@@ -97,7 +98,7 @@ export type PromptRef = {
   reset(): void
   blur(): void
   focus(): void
-  submit(): void
+  submit(): void | Promise<boolean>
 }
 
 const DRAFT_RETENTION_MIN_CHARS = 20
@@ -384,6 +385,21 @@ export function Prompt(props: PromptProps) {
     extmarkToPartIndex: new Map(),
     interrupt: 0,
   })
+  const submissionController = createSubmissionController()
+
+  function markDraftChanged() {
+    submissionController.changed()
+  }
+
+  function setPrompt(prompt: PromptInfo) {
+    markDraftChanged()
+    setStore("prompt", prompt)
+  }
+
+  function setMode(mode: "normal" | "shell") {
+    markDraftChanged()
+    setStore("mode", mode)
+  }
 
   createEffect(
     on(
@@ -494,7 +510,7 @@ export function Prompt(props: PromptProps) {
           if (!input.focused) return
           // TODO: this should be its own command
           if (store.mode === "shell") {
-            setStore("mode", "normal")
+            setMode("normal")
             return
           }
           if (!props.sessionID) return
@@ -588,7 +604,7 @@ export function Prompt(props: PromptProps) {
             })
             .filter((part) => part !== null)
 
-          setStore("prompt", {
+          setPrompt({
             input: content,
             // keep only the non-text parts because the text parts were
             // already expanded inline
@@ -608,7 +624,7 @@ export function Prompt(props: PromptProps) {
             <DialogSkill
               onSelect={(skill) => {
                 input.setText(`/${skill} `)
-                setStore("prompt", {
+                setPrompt({
                   input: `/${skill} `,
                   parts: [],
                 })
@@ -680,21 +696,21 @@ export function Prompt(props: PromptProps) {
     },
     set(prompt) {
       input.setText(prompt.input)
-      setStore("prompt", prompt)
+      setPrompt(prompt)
       restoreExtmarksFromParts(prompt.parts)
       input.gotoBufferEnd()
     },
     reset() {
       input.clear()
       input.extmarks.clear()
-      setStore("prompt", {
+      setPrompt({
         input: "",
         parts: [],
       })
       setStore("extmarkToPartIndex", new Map())
     },
     submit() {
-      void submit()
+      return submit()
     },
   }
 
@@ -704,7 +720,7 @@ export function Prompt(props: PromptProps) {
     if (store.prompt.input) return
     if (saved && saved.prompt.input) {
       input.setText(saved.prompt.input)
-      setStore("prompt", saved.prompt)
+      setPrompt(saved.prompt)
       restoreExtmarksFromParts(saved.prompt.parts)
       input.cursorOffset = saved.cursor
     }
@@ -796,6 +812,7 @@ export function Prompt(props: PromptProps) {
 
   function syncExtmarksWithPromptParts() {
     const allExtmarks = input.extmarks.getAllForTypeId(promptPartTypeId)
+    markDraftChanged()
     setStore(
       produce((draft) => {
         const newMap = new Map<number, number>()
@@ -843,7 +860,7 @@ export function Prompt(props: PromptProps) {
           })
           input.extmarks.clear()
           input.clear()
-          setStore("prompt", { input: "", parts: [] })
+          setPrompt({ input: "", parts: [] })
           setStore("extmarkToPartIndex", new Map())
           dialog.clear()
         },
@@ -857,7 +874,7 @@ export function Prompt(props: PromptProps) {
           const entry = stash.pop()
           if (entry) {
             input.setText(entry.input)
-            setStore("prompt", { input: entry.input, parts: entry.parts })
+            setPrompt({ input: entry.input, parts: entry.parts })
             restoreExtmarksFromParts(entry.parts)
             input.gotoBufferEnd()
           }
@@ -874,7 +891,7 @@ export function Prompt(props: PromptProps) {
             <DialogStash
               onSelect={(entry) => {
                 input.setText(entry.input)
-                setStore("prompt", { input: entry.input, parts: entry.parts })
+                setPrompt({ input: entry.input, parts: entry.parts })
                 restoreExtmarksFromParts(entry.parts)
                 input.gotoBufferEnd()
               }}
@@ -924,7 +941,7 @@ export function Prompt(props: PromptProps) {
           group: "Prompt",
           cmd: () => {
             setStore("placeholder", randomIndex(shell().length))
-            setStore("mode", "shell")
+            setMode("shell")
           },
         },
       ],
@@ -935,7 +952,7 @@ export function Prompt(props: PromptProps) {
     return {
       target: inputTarget,
       enabled: inputTarget() !== undefined && store.mode === "shell",
-      bindings: [{ key: "escape", desc: "Exit shell mode", group: "Prompt", cmd: () => setStore("mode", "normal") }],
+      bindings: [{ key: "escape", desc: "Exit shell mode", group: "Prompt", cmd: () => setMode("normal") }],
     }
   })
 
@@ -943,7 +960,7 @@ export function Prompt(props: PromptProps) {
     return {
       target: inputTarget,
       enabled: () => inputTarget() !== undefined && store.mode === "shell" && input?.visualCursor.offset === 0,
-      bindings: [{ key: "backspace", desc: "Exit shell mode", group: "Prompt", cmd: () => setStore("mode", "normal") }],
+      bindings: [{ key: "backspace", desc: "Exit shell mode", group: "Prompt", cmd: () => setMode("normal") }],
     }
   })
 
@@ -965,8 +982,8 @@ export function Prompt(props: PromptProps) {
             const item = history.move(-1, input.plainText)
             if (!item) return false
             input.setText(item.input)
-            setStore("prompt", item)
-            setStore("mode", item.mode ?? "normal")
+            setPrompt(item)
+            setMode(item.mode ?? "normal")
             restoreExtmarksFromParts(item.parts)
             input.cursorOffset = 0
           },
@@ -998,8 +1015,8 @@ export function Prompt(props: PromptProps) {
             const item = history.move(1, input.plainText)
             if (!item) return false
             input.setText(item.input)
-            setStore("prompt", item)
-            setStore("mode", item.mode ?? "normal")
+            setPrompt(item)
+            setMode(item.mode ?? "normal")
             restoreExtmarksFromParts(item.parts)
             input.cursorOffset = input.plainText.length
           },
@@ -1009,7 +1026,6 @@ export function Prompt(props: PromptProps) {
     }
   })
 
-  let submitting = false
   async function submit() {
     // Prevent overlapping invocations (e.g. a double-pressed Enter, or the
     // input's native onSubmit racing another dispatch). Without this guard,
@@ -1017,12 +1033,11 @@ export function Prompt(props: PromptProps) {
     // clears `store.prompt.input`, then awaits its own `session.create` and
     // ultimately reads the now-empty store — sending a phantom empty prompt
     // to a freshly created session.
-    if (submitting) return false
-    submitting = true
+    if (!submissionController.acquire()) return false
     try {
       return await submitInner()
     } finally {
-      submitting = false
+      submissionController.release()
     }
   }
 
@@ -1033,6 +1048,7 @@ export function Prompt(props: PromptProps) {
     // composed character (e.g. Korean hangul) to the store, so read
     // plainText directly and sync before any downstream reads.
     if (input && !input.isDestroyed && input.plainText !== store.prompt.input) {
+      markDraftChanged()
       setStore("prompt", "input", input.plainText)
       syncExtmarksWithPromptParts()
     }
@@ -1078,42 +1094,17 @@ export function Prompt(props: PromptProps) {
     }
 
     const variant = local.model.variant.current()
-    let sessionID = props.sessionID
-    if (sessionID == null) {
-      const workspace = workspaceSelection()
-      const workspaceID = iife(() => {
-        if (!workspace) return undefined
-        if (workspace.type === "none") return undefined
-        if (workspace.type === "existing") return workspace.workspaceID
-        return undefined
-      })
-
-      const res = await sdk.client.session.create({
-        workspace: workspaceID,
-        agent: agent.name,
-        model: {
-          providerID: selectedModel.providerID,
-          id: selectedModel.modelID,
-          variant,
-        },
-      })
-
-      if (res.error) {
-        console.log("Creating a session failed:", res.error)
-
-        toast.show({
-          message: "创建会话失败，打开控制台查看详情。",
-          variant: "error",
-        })
-
-        return true
-      }
-
-      sessionID = res.data.id
-    }
-
+    const isNewSession = props.sessionID == null
+    const workspace = workspaceSelection()
+    const newSessionWorkspaceID = iife(() => {
+      if (!workspace) return undefined
+      if (workspace.type === "none") return undefined
+      if (workspace.type === "existing") return workspace.workspaceID
+      return undefined
+    })
+    const promptSnapshot = structuredClone(unwrap(store.prompt))
     const messageID = MessageID.ascending()
-    let inputText = store.prompt.input
+    let inputText = promptSnapshot.input
 
     // Expand pasted text inline before submitting
     const allExtmarks = input.extmarks.getAllForTypeId(promptPartTypeId)
@@ -1122,7 +1113,7 @@ export function Prompt(props: PromptProps) {
     for (const extmark of sortedExtmarks) {
       const partIndex = store.extmarkToPartIndex.get(extmark.id)
       if (partIndex !== undefined) {
-        const part = store.prompt.parts[partIndex]
+        const part = promptSnapshot.parts[partIndex]
         if (part?.type === "text" && part.text) {
           const before = inputText.slice(0, extmark.start)
           const after = inputText.slice(extmark.end)
@@ -1132,12 +1123,12 @@ export function Prompt(props: PromptProps) {
     }
 
     // Filter out text parts (pasted content) since they're now expanded inline
-    const nonTextParts = store.prompt.parts.filter((part) => part.type !== "text")
+    const nonTextParts = promptSnapshot.parts.filter((part) => part.type !== "text")
 
     // Capture mode before it gets reset
     const currentMode = store.mode
     const editorSelection = editorContext()
-    const editorParts =
+    const editorParts = structuredClone(
       editorSelection && editor.labelState() === "pending"
         ? [
             {
@@ -1153,86 +1144,133 @@ export function Prompt(props: PromptProps) {
               },
             },
           ]
-        : []
-
-    if (store.mode === "shell") {
-      void sdk.client.session.shell({
-        sessionID,
-        agent: agent.name,
-        model: {
-          providerID: selectedModel.providerID,
-          modelID: selectedModel.modelID,
-        },
-        command: inputText,
-      })
-      setStore("mode", "normal")
-    } else if (
-      inputText.startsWith("/") &&
-      iife(() => {
-        const firstLine = inputText.split("\n")[0]
-        const command = firstLine.split(" ")[0].slice(1)
-        return sync.data.command.some((x) => x.name === command)
-      })
-    ) {
-      // Parse command from first line, preserve multi-line content in arguments
-      const firstLineEnd = inputText.indexOf("\n")
-      const firstLine = firstLineEnd === -1 ? inputText : inputText.slice(0, firstLineEnd)
-      const [command, ...firstLineArgs] = firstLine.split(" ")
-      const restOfInput = firstLineEnd === -1 ? "" : inputText.slice(firstLineEnd + 1)
-      const args = firstLineArgs.join(" ") + (restOfInput ? "\n" + restOfInput : "")
-
-      void sdk.client.session.command({
-        sessionID,
-        command: command.slice(1),
-        arguments: args,
-        agent: agent.name,
-        model: `${selectedModel.providerID}/${selectedModel.modelID}`,
-        messageID,
-        variant,
-        parts: nonTextParts
-          .filter((x) => x.type === "file")
-          .map((x) => ({
-            id: PartID.ascending(),
-            ...x,
-          })),
-      })
-    } else {
-      sdk.client.session
-        .prompt({
-          sessionID,
-          ...selectedModel,
-          messageID,
-          agent: agent.name,
-          model: selectedModel,
-          variant,
-          parts: [
-            ...editorParts,
-            {
-              id: PartID.ascending(),
-              type: "text",
-              text: inputText,
-            },
-            ...nonTextParts.map(assign),
-          ],
-        })
-        .catch(() => {})
-      if (editorParts.length > 0) editor.markSelectionSent()
-    }
-    history.append({
-      ...store.prompt,
+        : [],
+    )
+    const firstLineEnd = inputText.indexOf("\n")
+    const firstLine = firstLineEnd === -1 ? inputText : inputText.slice(0, firstLineEnd)
+    const [commandName, ...firstLineArgs] = firstLine.split(" ")
+    const isCommand = inputText.startsWith("/") && sync.data.command.some((x) => x.name === commandName.slice(1))
+    const commandArguments =
+      firstLineArgs.join(" ") + (firstLineEnd === -1 ? "" : "\n" + inputText.slice(firstLineEnd + 1))
+    const submission = submissionController.snapshot({
+      history: {
+        ...promptSnapshot,
+        mode: currentMode,
+      },
+      agentName: agent.name,
+      model: {
+        providerID: selectedModel.providerID,
+        modelID: selectedModel.modelID,
+      },
+      variant,
+      inputText,
       mode: currentMode,
+      messageID,
+      editorParts,
+      promptParts: [
+        ...editorParts,
+        {
+          id: PartID.ascending(),
+          type: "text" as const,
+          text: inputText,
+        },
+        ...nonTextParts.map(assign),
+      ],
+      commandParts: nonTextParts
+        .filter((x) => x.type === "file")
+        .map((x) => ({
+          id: PartID.ascending(),
+          ...x,
+        })),
+      selectionKey: editorSelection ? editorSelectionKey(editorSelection) : undefined,
     })
-    input.extmarks.clear()
-    setStore("prompt", {
-      input: "",
-      parts: [],
-    })
-    setStore("extmarkToPartIndex", new Map())
+
+    let sessionID = props.sessionID
+    if (isNewSession) {
+      const res = await sdk.client.session.create({
+        workspace: newSessionWorkspaceID,
+        agent: submission.payload.agentName,
+        model: {
+          providerID: submission.payload.model.providerID,
+          id: submission.payload.model.modelID,
+          variant: submission.payload.variant,
+        },
+      })
+
+      if (res.error) {
+        toast.error(res.error)
+        return false
+      }
+
+      sessionID = res.data.id
+    }
+    if (!sessionID) return false
+
+    if (submission.payload.mode === "shell") {
+      const result = await sdk.client.session.shell({
+        sessionID,
+        agent: submission.payload.agentName,
+        model: {
+          providerID: submission.payload.model.providerID,
+          modelID: submission.payload.model.modelID,
+        },
+        command: submission.payload.inputText,
+      })
+      if (result.error) {
+        toast.error(result.error)
+        return false
+      }
+    } else if (isCommand) {
+      const result = await sdk.client.session.command({
+        sessionID,
+        command: commandName.slice(1),
+        arguments: commandArguments,
+        agent: submission.payload.agentName,
+        model: `${submission.payload.model.providerID}/${submission.payload.model.modelID}`,
+        messageID: submission.payload.messageID,
+        variant: submission.payload.variant,
+        parts: submission.payload.commandParts,
+      })
+      if (result.error) {
+        toast.error(result.error)
+        return false
+      }
+    } else {
+      const result = await sdk.client.session.promptAsync({
+        sessionID,
+        messageID: submission.payload.messageID,
+        agent: submission.payload.agentName,
+        model: submission.payload.model,
+        variant: submission.payload.variant,
+        parts: submission.payload.promptParts,
+      })
+      if (result.error) {
+        toast.error(result.error)
+        return false
+      }
+    }
+
+    history.append(submission.payload.history)
+    const consumed = submissionController.canConsume(submission)
+    if (consumed) {
+      const currentSelection = editorContext()
+      const selectionUnchanged =
+        submission.payload.selectionKey === (currentSelection ? editorSelectionKey(currentSelection) : undefined)
+      if (submission.payload.editorParts.length > 0 && selectionUnchanged) editor.markSelectionSent()
+      if (submission.payload.mode === "shell") setMode("normal")
+      input.extmarks.clear()
+      setPrompt({
+        input: "",
+        parts: [],
+      })
+      setStore("extmarkToPartIndex", new Map())
+      input.clear()
+    }
     props.onSubmit?.()
 
     // temporary hack to make sure the message is sent
-    if (!props.sessionID) {
-      if (editorParts.length > 0) editor.preserveSelectionFromNewSession()
+    if (isNewSession) {
+      if (submission.payload.editorParts.length > 0) editor.preserveSelectionFromNewSession()
       setTimeout(() => {
         route.navigate({
           type: "session",
@@ -1240,7 +1278,6 @@ export function Prompt(props: PromptProps) {
         })
       }, 50)
     }
-    input.clear()
     return true
   }
   const exit = useExit()
@@ -1260,6 +1297,7 @@ export function Prompt(props: PromptProps) {
       typeId: promptPartTypeId,
     })
 
+    markDraftChanged()
     setStore(
       produce((draft) => {
         const partIndex = draft.prompt.parts.length
@@ -1377,6 +1415,7 @@ export function Prompt(props: PromptProps) {
         },
       },
     }
+    markDraftChanged()
     setStore(
       produce((draft) => {
         const partIndex = draft.prompt.parts.length
@@ -1396,7 +1435,7 @@ export function Prompt(props: PromptProps) {
     }
     input.clear()
     input.extmarks.clear()
-    setStore("prompt", {
+    setPrompt({
       input: "",
       parts: [],
     })
@@ -1504,6 +1543,7 @@ export function Prompt(props: PromptProps) {
               maxHeight={maxHeight()}
               onContentChange={() => {
                 const value = input.plainText
+                markDraftChanged()
                 setStore("prompt", "input", value)
                 auto()?.onInput(value)
                 syncExtmarksWithPromptParts()
@@ -1878,6 +1918,7 @@ export function Prompt(props: PromptProps) {
         anchor={() => anchor}
         input={() => input}
         setPrompt={(cb) => {
+          markDraftChanged()
           setStore("prompt", produce(cb))
         }}
         setExtmark={(partIndex, extmarkId) => {
