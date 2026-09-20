@@ -34,8 +34,6 @@ type Deps = {
   setDefaultServerUrl: (url: string | null) => Promise<void> | void
   getWslConfig: () => Promise<WslConfig>
   setWslConfig: (config: WslConfig) => Promise<void> | void
-  getDisplayBackend: () => Promise<string | null>
-  setDisplayBackend: (backend: string | null) => Promise<void> | void
   parseMarkdown: (markdown: string) => Promise<string> | string
   checkAppExists: (appName: string) => Promise<boolean> | boolean
   listFonts: () => Promise<string[]>
@@ -88,10 +86,6 @@ export function registerIpcHandlers(deps: Deps) {
   )
   ipcMain.handle("get-wsl-config", () => deps.getWslConfig())
   ipcMain.handle("set-wsl-config", (_event: IpcMainInvokeEvent, config: WslConfig) => deps.setWslConfig(config))
-  ipcMain.handle("get-display-backend", () => deps.getDisplayBackend())
-  ipcMain.handle("set-display-backend", (_event: IpcMainInvokeEvent, backend: string | null) =>
-    deps.setDisplayBackend(backend),
-  )
   ipcMain.handle("parse-markdown", (_event: IpcMainInvokeEvent, markdown: string) => deps.parseMarkdown(markdown))
   ipcMain.handle("check-app-exists", (_event: IpcMainInvokeEvent, appName: string) => deps.checkAppExists(appName))
   ipcMain.handle("list-fonts", () => deps.listFonts())

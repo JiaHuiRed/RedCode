@@ -81,12 +81,6 @@ export type Platform = {
   /** Set the configured WSL integration (desktop only) */
   setWslEnabled?(config: boolean): Promise<void> | void
 
-  /** Get the preferred display backend (desktop only) */
-  getDisplayBackend?(): Promise<DisplayBackend | null> | DisplayBackend | null
-
-  /** Set the preferred display backend (desktop only) */
-  setDisplayBackend?(backend: DisplayBackend): Promise<void>
-
   /** Parse markdown to HTML using native parser (desktop only, returns unprocessed code blocks) */
   parseMarkdown?(markdown: string): Promise<string>
 
@@ -124,8 +118,6 @@ export type Platform = {
   /** Record a fatal renderer error in platform logs (desktop only) */
   recordFatalRendererError?(error: FatalRendererErrorLog): Promise<void>
 }
-
-export type DisplayBackend = "auto" | "wayland"
 
 export const { use: usePlatform, provider: PlatformProvider } = createSimpleContext({
   name: "Platform",

@@ -269,14 +269,6 @@ const createPlatform = (): Platform => {
       await window.api.setDefaultServerUrl(url)
     },
 
-    getDisplayBackend: async () => {
-      return window.api.getDisplayBackend().catch(() => null)
-    },
-
-    setDisplayBackend: async (backend) => {
-      await window.api.setDisplayBackend(backend)
-    },
-
     parseMarkdown: (markdown: string) => window.api.parseMarkdownCommand(markdown),
 
     webviewZoom,

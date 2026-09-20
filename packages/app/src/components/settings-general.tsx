@@ -12,7 +12,7 @@ import { showToast } from "@redcode-ai/ui/toast"
 import { useParams } from "@solidjs/router"
 import { useLanguage } from "@/context/language"
 import { usePermission } from "@/context/permission"
-import { usePlatform, type DisplayBackend } from "@/context/platform"
+import { usePlatform } from "@/context/platform"
 import { useServerSync } from "@/context/server-sync"
 import { useGlobalSDK } from "@/context/global-sdk"
 import {
@@ -201,12 +201,6 @@ export const SettingsGeneral: Component = () => {
     { initialValue: [] as ShellOption[] },
   )
 
-  const [displayBackend, { refetch: refetchDisplayBackend }] = createResource(
-    () => (linux() && platform.getDisplayBackend ? true : false),
-    () => Promise.resolve(platform.getDisplayBackend?.() ?? null).catch(() => null as DisplayBackend | null),
-    { initialValue: null as DisplayBackend | null },
-  )
-
   const [pinchZoom, { mutate: setPinchZoom }] = createResource(
     () => (desktop() && platform.getPinchZoomEnabled ? true : false),
     () => Promise.resolve(platform.getPinchZoomEnabled?.() ?? false).catch(() => false),
@@ -260,14 +254,6 @@ export const SettingsGeneral: Component = () => {
 
     return options
   })
-
-  const onDisplayBackendChange = (checked: boolean) => {
-    const update = platform.setDisplayBackend?.(checked ? "wayland" : "auto")
-    if (!update) return
-    void update.finally(() => {
-      void refetchDisplayBackend()
-    })
-  }
 
   const onPinchZoomChange = (checked: boolean) => {
     setPinchZoom(checked)
@@ -1203,25 +1189,6 @@ export const SettingsGeneral: Component = () => {
             </div>
           </SettingsRow>
 
-          <Show when={linux()}>
-            <SettingsRow
-              title={
-                <div class="flex items-center gap-2">
-                  <span>{language.t("settings.general.row.wayland.title")}</span>
-                  <Tooltip value={language.t("settings.general.row.wayland.tooltip")} placement="top">
-                    <span class="text-text-weak">
-                      <Icon name="help" size="small" />
-                    </span>
-                  </Tooltip>
-                </div>
-              }
-              description={language.t("settings.general.row.wayland.description")}
-            >
-              <div data-action="settings-wayland">
-                <Switch checked={displayBackend.latest === "wayland"} onChange={onDisplayBackendChange} />
-              </div>
-            </SettingsRow>
-          </Show>
         </SettingsList>
       </div>
     </Show>
