@@ -21,6 +21,9 @@ export const Local = Schema.Struct({
   timeout: Schema.optional(PositiveInt).annotate({
     description: "Timeout in ms for MCP server requests. Defaults to 30000 (30 seconds) if not specified.",
   }),
+  retry: Schema.optional(Schema.Literals(["default", "none"])).annotate({
+    description: "Retry policy for tool calls. Use none for non-idempotent MCP actions.",
+  }),
   disabledTools: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
     description: "Tool names to hide from this MCP server. Only tools not in this list will be exposed.",
   }),
@@ -64,6 +67,9 @@ export const Remote = Schema.Struct({
   }),
   timeout: Schema.optional(PositiveInt).annotate({
     description: "Timeout in ms for MCP server requests. Defaults to 30000 (30 seconds) if not specified.",
+  }),
+  retry: Schema.optional(Schema.Literals(["default", "none"])).annotate({
+    description: "Retry policy for tool calls. Use none for non-idempotent MCP actions.",
   }),
   tools: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
     description:

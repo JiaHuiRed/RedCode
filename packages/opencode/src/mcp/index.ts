@@ -39,6 +39,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 import { createStdioClientTransport, WindowsJobStdioClientTransport } from "./stdio"
+import { McpRetry } from "./retry"
 
 const log = Log.create({ service: "mcp" })
 const DEFAULT_TIMEOUT = 30_000
@@ -288,6 +289,7 @@ function convertMcpTool(
   serverName: string,
   reconnectFn?: () => Promise<void>,
   timeout?: number,
+  retryMode?: McpRetry.Mode,
 ): Tool {
   const inputSchema = mcpTool.inputSchema
 
@@ -299,15 +301,13 @@ function convertMcpTool(
     additionalProperties: false,
   }
 
-  // 260603 Red P1: 工具调用失败自动重连（最多 3 次）
-  const MAX_RETRIES = 3
   return dynamicTool({
     description: mcpTool.description ?? "",
     inputSchema: jsonSchema(schema),
-    execute: async (args: unknown) => {
-      let lastError: unknown
-      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-        try {
+    execute: async (args: unknown) =>
+      McpRetry.run({
+        mode: retryMode,
+        call: async () => {
           // 260807 Red: 每次调用从 clients 表取最新 client（s.clients[name] 由 storeClient 更新）
           const client = getClient()
           if (!client) {
@@ -331,29 +331,19 @@ function convertMcpTool(
               timeout,
             },
           )
-        } catch (err) {
-          lastError = err
+        },
+        reconnect: reconnectFn,
+        onFailure: ({ error, attempt }) => {
           log.warn("MCP tool call failed", {
             server: serverName,
             tool: mcpTool.name,
-            attempt: attempt + 1,
+            attempt,
             phase: "tool_call",
             timeout,
-            error: err instanceof Error ? err.message : String(err),
+            error: error instanceof Error ? error.message : String(error),
           })
-          if (attempt < MAX_RETRIES - 1) {
-            if (reconnectFn) {
-              try {
-                await reconnectFn()
-              } catch {}
-            }
-            // 260716 Red 指数退避（1s/2s）：网络型瞬时故障给更多恢复时间，别在同一秒内连打三炮
-            await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt))
-          }
-        }
-      }
-      throw lastError
-    },
+        },
+      }),
   })
 }
 
@@ -1176,6 +1166,7 @@ export const layer = Layer.effect(
                 clientName,
                 doReconnect,
                 timeout,
+                entry?.retry,
               )
             }
           }),
