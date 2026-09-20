@@ -51,6 +51,7 @@ import { queryOptions, useMutation, useQueries, useQuery, useQueryClient } from 
 import { createRefreshQueue } from "./global-sync/queue"
 import { activeMcpDirectory } from "./global-sync/child-store"
 import { directoryKey } from "./global-sync/utils"
+import { createInstanceDisposer } from "./global-sync/instance-dispose"
 import { PathKey } from "@/utils/path-key"
 import { compareTime } from "@/utils/id"
 import { createDirSyncContext } from "./directory-sync"
@@ -303,8 +304,10 @@ export function createServerSyncContext() {
     bootstrapInstance,
   })
 
-  // 260910 Red: 同一目录的 /instance/dispose 请求去重表（见下方 onDispose 注释）。
-  const disposeRequests = new Map<string, number>()
+  const disposeInstance = createInstanceDisposer({
+    key: directoryKey,
+    dispose: (directory) => serverSDK.client.instance.dispose({ directory }),
+  })
 
   const children = createChildStoreManager({
     owner,
@@ -323,18 +326,9 @@ export function createServerSyncContext() {
       // 260706 Red 目录淘汰只清了客户端缓存，服务端 InstanceState(MCP/LSP/watcher 整套
       //   子进程)从没人告诉它可以关——常驻 GUI 碰过的每个目录都会永久攒一份子进程树。
       //   这里补调现成的 /instance/dispose，忽略失败（实例可能已经不在了）。
-      // 260910 Red: 同一目录短时间内可能被反复淘汰——child-store 的淘汰在每次
-      //   pin/mark 之后都会重跑一遍，overflow 分支会成批吐出目录。原实现每次淘汰
-      //   都无条件打一发 /instance/dispose：实测页面加载十几秒内发出 2400-3100 次，
-      //   Chromium 随即报 net::ERR_INSUFFICIENT_RESOURCES，此后会话列表、消息与
-      //   懒加载模块全部 Failed to fetch（GUI 三症状：历史会话空白 / 其他工作区
-      //   会话加载不出来 / 卡片闪烁）。服务端实例本来也只需销毁一次，这里对同一
-      //   目录做 60s 去重，杜绝请求风暴。
-      const now = Date.now()
-      const last = disposeRequests.get(key)
-      if (last !== undefined && now - last < 60_000) return
-      disposeRequests.set(key, now)
-      void serverSDK.client.instance.dispose({ directory }).catch(() => {})
+      // 260920 Red 只合并同一 Instance 的 in-flight dispose；请求结束后释放 key，
+      //   避免旧 Instance 的 cooldown 压掉同目录新 Instance 的清理。
+      void disposeInstance(directory)
     },
     translate: language.t,
     queryOptions: queryOptionsApi,
