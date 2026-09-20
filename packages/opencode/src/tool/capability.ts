@@ -21,6 +21,10 @@ export function capabilitySet(values: Iterable<ChildCapability>): Set<ChildCapab
   return new Set(values)
 }
 
+export function profileCapabilitySet(profile: ChildProfile): ReadonlySet<ChildCapability> {
+  return profileCapabilities[profile]
+}
+
 export function effectiveCapabilities(input: {
   parent: ReadonlySet<ChildCapability>
   profile: ChildProfile
@@ -62,4 +66,10 @@ export function capabilityDenied(profile: ChildProfile, tool: string): string | 
   const capability = capabilityForTool(tool)
   if (capability && isCapabilityAllowed(new Set(profileCapabilities[profile]), capability)) return undefined
   return `Tool "${tool}" is not available to the ${profile} child profile.`
+}
+
+export function capabilityDeniedForSet(capabilities: ReadonlySet<ChildCapability>, tool: string): string | undefined {
+  const capability = capabilityForTool(tool)
+  if (capability && isCapabilityAllowed(capabilities, capability)) return undefined
+  return `Tool "${tool}" is not available to the child capability set.`
 }

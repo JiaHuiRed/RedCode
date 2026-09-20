@@ -14,6 +14,7 @@
 
 - **Child Runtime 首阶段收紧 Explore 子任务边界**（`packages/opencode/src/tool/{capability,task-runtime,task}.ts`、`packages/opencode/src/session/tools.ts`）：先校验 Task Packet 并写入 canonical record，再启动 Child；Explore 通过 shared capability guard 拒绝写入、shell、嵌套委派和提交操作，返回 Main 的结果投影限制为 32 KB。
 - **Explore Child 结果写回 canonical record**（`packages/opencode/src/tool/{task,task-runtime}.ts`）：成功、失败和取消分别记录真实摘要与终态；未观测到的 tool-call 数和 verification 不填假值，结果投影继续受 32 KB 硬上限约束。
+- **Explore 能力边界改由 canonical record 决定**（`packages/opencode/src/session/tools.ts`、`packages/opencode/src/tool/capability.ts`）：工具放行不再只看 agent 名称，而是读取 Task Packet 记录里的能力集合；记录不可读时退回等价上限的 profile 白名单，既不扩大权限也不会把子代理锁死。
 
 #### 修复
 

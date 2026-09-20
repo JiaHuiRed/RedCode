@@ -12,15 +12,17 @@ import { ModelID } from "@/provider/schema"
 import { Plugin } from "@/plugin"
 import type { TaskPromptOps } from "@/tool/task"
 import { type Tool as AITool, tool, jsonSchema, type ToolExecutionOptions, asSchema } from "ai"
-import { Effect } from "effect"
+import { Effect, Option } from "effect"
 import { MessageV2 } from "./message-v2"
 import * as Session from "./session"
 import { SessionProcessor } from "./processor"
-import { PartID } from "./schema"
+import { PartID, SessionID } from "./schema"
 import * as Log from "@redcode-ai/core/util/log"
 import { EffectBridge } from "@/effect/bridge"
 import { Goal } from "./goal"
-import { capabilityDenied } from "@/tool/capability"
+import { capabilityDeniedForSet, capabilitySet, profileCapabilitySet } from "@/tool/capability"
+import type { ChildTaskRecord } from "@/tool/task-runtime"
+import { Storage } from "@/storage/storage"
 
 const log = Log.create({ service: "session.tools" })
 
@@ -40,6 +42,21 @@ const log = Log.create({ service: "session.tools" })
 const MAX_ATTACHMENT_BASE64_BYTES = 5 * 1024 * 1024
 const MAX_ATTACHMENTS = 32
 
+// 260920 Red Explore capability 的权威来源是 TaskTool 写下的 canonical record。
+// Storage 不可见或 record 缺失时退回 profile 白名单（explore 仅 read/search）——
+// 上限相同、不扩大权限，也不会因为一次读盘失败把子代理整个锁死。
+const exploreCapabilities = Effect.fn("SessionTools.exploreCapabilities")(function* (sessionID: SessionID) {
+  const fallback = capabilitySet(profileCapabilitySet("explore"))
+  const storage = yield* Effect.serviceOption(Storage.Service)
+  if (Option.isNone(storage)) return fallback
+  return yield* storage.value
+    .read<ChildTaskRecord>(["task-runtime", String(sessionID)])
+    .pipe(
+      Effect.map((record) => capabilitySet(record.capabilities)),
+      Effect.catch(() => Effect.succeed(fallback)),
+    )
+})
+
 export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   agent: Agent.Info
   model: Provider.Model
@@ -58,7 +75,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const registry = yield* ToolRegistry.Service
   const mcp = yield* MCP.Service
   const truncate = yield* Truncate.Service
-  const childProfile = input.agent.name === "explore" ? ("explore" as const) : undefined
+  const childCapabilities =
+    input.agent.name === "explore" ? yield* exploreCapabilities(input.session.id) : undefined
 
   const context = (
     name: string,
@@ -136,12 +154,14 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               metadata: { blocked: true },
             } as any
           }
-          const capabilityReason = childProfile ? capabilityDenied(childProfile, item.id) : undefined
+          const capabilityReason = childCapabilities
+            ? capabilityDeniedForSet(childCapabilities, item.id)
+            : undefined
           if (capabilityReason) {
             return {
               title: "Blocked",
               output: capabilityReason,
-              metadata: { blocked: true, capability: childProfile },
+              metadata: { blocked: true, capability: "child-record" },
             } as any
           }
           const result = yield* item.execute(args, ctx).pipe(
@@ -237,12 +257,12 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               content: [],
             } as any
           }
-          const capabilityReason = childProfile ? capabilityDenied(childProfile, key) : undefined
+          const capabilityReason = childCapabilities ? capabilityDeniedForSet(childCapabilities, key) : undefined
           if (capabilityReason) {
             return {
               title: "Blocked",
               output: capabilityReason,
-              metadata: { blocked: true, capability: childProfile },
+              metadata: { blocked: true, capability: "child-record" },
               content: [],
             } as any
           }

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   capabilitySet,
   capabilityDenied,
+  capabilityDeniedForSet,
   capabilityForTool,
   effectiveCapabilities,
   isCapabilityAllowed,
@@ -69,5 +70,12 @@ describe("child capability policy", () => {
     expect(capabilityDenied("explore", "grep")).toBeUndefined()
     expect(capabilityDenied("explore", "bash")).toContain("not available")
     expect(capabilityDenied("explore", "mcp__unknown__click")).toContain("not available")
+  })
+
+  test("enforces the canonical capability set instead of the profile name", () => {
+    const capabilities = capabilitySet(["read"])
+
+    expect(capabilityDeniedForSet(capabilities, "read")).toBeUndefined()
+    expect(capabilityDeniedForSet(capabilities, "grep")).toContain("not available")
   })
 })
