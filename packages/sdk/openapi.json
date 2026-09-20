@@ -15000,6 +15000,10 @@
             "type": "integer",
             "exclusiveMinimum": 0
           },
+          "retry": {
+            "type": "string",
+            "enum": ["default", "none"]
+          },
           "disabledTools": {
             "type": "array",
             "items": {
@@ -15075,6 +15079,10 @@
           "timeout": {
             "type": "integer",
             "exclusiveMinimum": 0
+          },
+          "retry": {
+            "type": "string",
+            "enum": ["default", "none"]
           },
           "tools": {
             "type": "array",

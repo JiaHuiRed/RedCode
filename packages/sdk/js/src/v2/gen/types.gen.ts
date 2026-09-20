@@ -1213,6 +1213,7 @@ export type McpLocalConfig = {
   }
   enabled?: boolean
   timeout?: number
+  retry?: "default" | "none"
   disabledTools?: Array<string>
   tools?: Array<string>
 }
@@ -1243,6 +1244,7 @@ export type McpRemoteConfig = {
    */
   oauth?: McpOAuthConfig | false
   timeout?: number
+  retry?: "default" | "none"
   tools?: Array<string>
 }
 
@@ -1384,6 +1386,7 @@ export type Config = {
   instruction_budget?: {
     max_source_bytes?: number
     max_total_bytes?: number
+    max_resolved_bytes?: number
     fetch_timeout_ms?: number
   }
   layout?: LayoutConfig
