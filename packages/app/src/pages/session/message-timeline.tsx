@@ -1982,6 +1982,10 @@ export function MessageTimeline(props: {
                   return
                 }
                 virtualizer = handle
+                // 260920 Red virtua 的首个 viewportSize 来自 window resize 回调，
+                // 首屏同步渲染会把这次初始化推迟到阻塞结束之后，期间可视区间为空
+                // （内部 S=false → [0,-1]）→ 整屏空白。挂载后主动唤醒一次。
+                requestAnimationFrame(() => window.dispatchEvent(new Event("resize")))
                 virtualizerSessionKey = cacheSessionKey
                 virtualizerRowKeys = cacheRowKeys
                 maybeAnchorBottom()
