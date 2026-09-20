@@ -381,3 +381,44 @@ describe("Timeline.constructMessageRows — 非活动轮对 status 不敏感", (
     expect(tags(retry)).not.toEqual(tags(idle))
   })
 })
+
+// 260920 Red 会话页「滚动一下内容就消失」的几何根因回归：cache 有效域此前只看 row key 前缀，
+// 不含 viewport 宽度 —— 宽度一变行高就变（Markdown / 代码块 / diff 行重排），而 key 一个都没变。
+describe("TimelineRow.cacheReusable — timeline cache 有效域", () => {
+  const keys = ["user-message:u1", "assistant-part:u1:p1"]
+
+  test("row key 与宽度都没变 → 复用", () => {
+    expect(TimelineRow.cacheReusable({ keys, width: 800 }, keys, 800)).toBe(true)
+  })
+
+  test("row key 相同但 viewport 宽度变了 → 不复用", () => {
+    expect(TimelineRow.cacheReusable({ keys, width: 800 }, keys, 640)).toBe(false)
+  })
+
+  test("尚未测量（任一侧宽度为 0）时保持宽松，不退化成每次都失效", () => {
+    expect(TimelineRow.cacheReusable({ keys, width: 0 }, keys, 800)).toBe(true)
+    expect(TimelineRow.cacheReusable({ keys, width: 800 }, keys, 0)).toBe(true)
+  })
+
+  test("行只追加在末尾 → 仍可复用（旧索引尺寸有效）", () => {
+    expect(TimelineRow.cacheReusable({ keys, width: 800 }, [...keys, "bottom-spacer"], 800)).toBe(true)
+  })
+
+  test("末位 bottom-spacer 被新行顶走时不算变更", () => {
+    expect(
+      TimelineRow.cacheReusable(
+        { keys: [...keys, "bottom-spacer"], width: 800 },
+        [...keys, "assistant-part:u1:p2", "bottom-spacer"],
+        800,
+      ),
+    ).toBe(true)
+  })
+
+  test("中部变更（历史 prepend / compaction 截断）→ 不复用", () => {
+    expect(TimelineRow.cacheReusable({ keys, width: 800 }, ["user-message:u0", ...keys], 800)).toBe(false)
+  })
+
+  test("宽度变化与中部变更叠加 → 不复用", () => {
+    expect(TimelineRow.cacheReusable({ keys, width: 800 }, ["user-message:u0", ...keys], 640)).toBe(false)
+  })
+})

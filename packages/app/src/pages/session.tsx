@@ -518,6 +518,38 @@ export default function Page() {
     },
   )
 
+  // 260920 Red 中心区三态。此前 messagesReady() 为假时这里什么都不渲染 —— 整块空白 wallpaper，
+  // 用户既等不到「正在加载」，也分不出是在加载还是已经出错（哥哥截图里的第一张正是这个状态）。
+  //
+  // 注意这里**不动 messagesReady 的语义**：它同时被 composer 的 ready 与 fill() 的自动翻页判据
+  // 消费，把「空数组」改成 not ready 会让真·空会话的输入框永远不就绪。状态区分放在渲染层做。
+  const timelineLoading = () => (
+    <div class="h-full w-full flex items-center justify-center">
+      <span class="text-12-regular text-text-weak" aria-busy="true">
+        {language.t("common.loading")}
+        {language.t("common.loading.ellipsis")}
+      </span>
+    </div>
+  )
+
+  const retryTimeline = () => {
+    const id = params.id
+    if (!id) return
+    void untrack(() => sync.session.sync(id, { force: true }))
+  }
+
+  const timelineFallback = () =>
+    sessionSync.error ? (
+      <div class="h-full w-full flex flex-col items-center justify-center gap-3">
+        <span class="text-12-regular text-text-weak">{language.t("common.requestFailed")}</span>
+        <Button size="small" variant="secondary" onClick={retryTimeline}>
+          {language.t("common.retry")}
+        </Button>
+      </div>
+    ) : (
+      timelineLoading()
+    )
+
   createEffect(
     on(
       () => {
@@ -1730,7 +1762,7 @@ export default function Page() {
                   </div>
                 </Match>
                 <Match when={params.id}>
-                  <Show when={messagesReady()}>
+                  <Show when={messagesReady()} fallback={timelineFallback()}>
                     <MessageTimeline
                       actions={actions}
                       scroll={ui.scroll}

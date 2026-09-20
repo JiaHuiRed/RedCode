@@ -153,6 +153,27 @@ export namespace TimelineRow {
     })
     return changed ? result : previous
   }
+
+  /**
+   * 260920 Red timeline cache 能否复用。
+   *
+   * 原判据只看 row key 前缀（见 message-timeline.tsx 的 readTimelineCache），**不含 viewport 宽度**。
+   * 行高与宽度强相关（Markdown 段落、代码块换行、diff 行都在变宽时重排），宽度一变而 key 没变，
+   * 旧测量值仍被接受 → Virtua 用错误的 offset 计算可视区间 → 大片 virtual 空白 + 极少真实行挂载。
+   * 用户看到的就是「滚动一下内容就消失/只剩稀疏条带」。
+   *
+   * 宽度无法判定（0 = 尚未测量）时保持原 key 前缀判据，避免把未测量状态误判成失效。
+   */
+  export function cacheReusable(
+    entry: { keys: readonly string[]; width: number },
+    keys: readonly string[],
+    width: number,
+  ) {
+    if (width > 0 && entry.width > 0 && entry.width !== width) return false
+    const prev = entry.keys.at(-1) === "bottom-spacer" ? entry.keys.slice(0, -1) : entry.keys
+    const next = keys.at(-1) === "bottom-spacer" ? keys.slice(0, -1) : keys
+    return next.length >= prev.length && prev.every((key, index) => next[index] === key)
+  }
 }
 
 export namespace Timeline {

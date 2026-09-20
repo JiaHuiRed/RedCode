@@ -29,6 +29,8 @@
 - **会话页层级与状态**（`packages/app/src/pages/session/composer/session-composer-region.tsx`）：Composer 增加轻量边界和 busy/retry 状态提示；标题栏既有的服务器、MCP、LSP、插件单一状态入口与 Context/Review 浮层保持不重复。
 - **新建会话页信息分组**（`packages/app/src/components/session/session-new-design-view.tsx`）：补语义化主区域和标题，将项目/分支元信息与主输入用低强调分隔线归组；保留现有默认焦点、空态和错误重试行为，不虚构分支选择器。
 - **设计 token 与可访问性**（`packages/app/src/index.css`、`packages/app/src/i18n/{en,zh,ja}.ts`）：继续使用现有 `--frost-*`/`--v2-*` 体系，补齐收起/错误文案、键盘焦点、窄窗口与 reduced-motion 处理，不新增第三套视觉 token。
+- **会话页渲染缺口修复**（`packages/app/src/pages/session/{session,file-tree-panel,message-timeline}.tsx`、`packages/app/src/pages/session/message-timeline.data.ts`）：外部审计确认「进会话空白、滚动后内容消失」是三处独立缺口 —— 虚拟列表 cache 有效域补上 viewport 宽度（宽度变化后行高改变而 row key 不变，旧测量值会让 Virtua 用错误 offset 算出大片空白）、中心区未就绪或出错不再渲染空白而是加载与重试态、文件树区分 diff 就绪与 root 列表就绪（此前 root children 未到时只显示空容器）。`messagesReady` 语义保持不变，避免真·空会话的输入框永远不就绪。审计材料见 `.redcode/gui-session-render-audit.md`。
+
 - **实施与回归边界**：按背景层级、Usage 状态、Composer 状态的顺序小步落地；app/opencode 类型检查、定向测试和格式检查已通过，Home/Session/新建会话的实际截图闭环仍需在目标运行环境复核。
 
 ---

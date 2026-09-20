@@ -94,28 +94,27 @@ function sameKeys(a: readonly string[] | undefined, b: readonly string[] | undef
 
 const timelineCacheLimit = 16
 const timelineFallbackItemSize = 60
-const timelineCache = new Map<string, { keys: readonly string[]; cache: VirtualizerHandle["cache"] }>()
+const timelineCache = new Map<string, { keys: readonly string[]; width: number; cache: VirtualizerHandle["cache"] }>()
 
-function readTimelineCache(id: string, keys: readonly string[]) {
+// 260821 Red 前缀判据的来历：BottomSpacer 恒在最后一行，行插入时它被新行顶后一位——比较前先剔除
+// 末位 spacer，否则每次行插入（工具行等）都 invalidate → 60px 整列塌缩。行只追加在末尾时旧缓存
+// 按索引存的尺寸仍然有效：严格相等会让一次插入丢掉全部缓存 → virtualizer 回落到 60px 估算 →
+// 整列塌缩再逐行测量恢复 → 内容跳变（屏幕闪一下）+ 吞键。
+//
+// 260920 Red 判据整体收进 TimelineRow.cacheReusable（纯模块、能单测），并补上此前缺失的
+// **viewport 宽度**有效域：宽度一变，Markdown/代码块/diff 行的换行全部重排，行高随之改变，
+// 而 row key 一个都没变 —— 旧测量值被接受后 Virtua 会用错误 offset 计算可视区间。
+function readTimelineCache(id: string, keys: readonly string[], width: number) {
   const entry = timelineCache.get(id)
   if (!entry) return
-  // 260821 Red：BottomSpacer 恒在最后一行（timelineRows 472 行），行插入时它被新行顶后一位——
-  // 前缀比较前先剔除末位 spacer，否则每次行插入（工具行等）都 invalidate → 60px 整列塌缩。
-  // 顶部加载历史 / compaction 截断 / 回滚等真中间变更（prefixDiffAt 落在中部）照旧失效。
-  const prev = entry.keys.at(-1) === "bottom-spacer" ? entry.keys.slice(0, -1) : entry.keys
-  const next = keys.at(-1) === "bottom-spacer" ? keys.slice(0, -1) : keys
-  // 260821 Red：行只追加在末尾（消息 append）时，旧缓存按索引存的尺寸仍有效。
-  // 原 sameKeys 严格相等会让一次新行插入丢弃全部缓存 → virtualizer 回落到 60px 估算，
-  // 工具行（默认展开、几百 px）插入瞬间整列塌缩再逐行测量恢复 → 内容跳变（屏幕闪一下）+ 吞键。
-  // 放宽为前缀匹配：顶部加载历史/compaction 截断/回滚等非末尾变更照旧失效。
-  if (next.length >= prev.length && prev.every((key, i) => next[i] === key)) return entry.cache
+  if (TimelineRow.cacheReusable(entry, keys, width)) return entry.cache
   timelineCache.delete(id)
 }
 
-function writeTimelineCache(id: string, keys: readonly string[], handle: VirtualizerHandle | undefined) {
+function writeTimelineCache(id: string, keys: readonly string[], width: number, handle: VirtualizerHandle | undefined) {
   if (!handle || keys.length === 0) return
   timelineCache.delete(id)
-  timelineCache.set(id, { keys: keys.slice(), cache: handle.cache })
+  timelineCache.set(id, { keys: keys.slice(), width, cache: handle.cache })
   while (timelineCache.size > timelineCacheLimit) timelineCache.delete(timelineCache.keys().next().value!)
 }
 
@@ -342,6 +341,9 @@ export function MessageTimeline(props: {
   const platform = usePlatform()
 
   let virtualizer: VirtualizerHandle | undefined
+  // 260920 Red viewport 宽度参与 timeline cache 有效域（见 readTimelineCache）。宽度变化由
+  // scrollRoot 上的 ResizeObserver 写回；尚未测量时为 0，cacheReusable 对 0 保持宽松判据。
+  const [listWidth, setListWidth] = createSignal(0)
   const sessionID = createMemo(() => params.id)
   // 260831 cc 顺序由 store 保证（见 directory-sync 的 byTime）。下面 lastUserMessageID 是
   //   从后往前扫数组找最后一条 user——它依赖的正是那个顺序。
@@ -520,7 +522,7 @@ export function MessageTimeline(props: {
     return reuseTimelineRows(previous, [...rows, new TimelineRow.BottomSpacer()])
   })
   const timelineRowKeys = createMemo(() => timelineRows().map(TimelineRow.key), [] as string[], { equals: sameKeys })
-  const virtualCache = createMemo(() => readTimelineCache(sessionKey(), timelineRowKeys()))
+  const virtualCache = createMemo(() => readTimelineCache(sessionKey(), timelineRowKeys(), listWidth()))
   const messageRowIndex = createMemo(() => {
     const result = new Map<string, number>()
     timelineRows().forEach((row, index) => {
@@ -714,7 +716,7 @@ export function MessageTimeline(props: {
     on(
       () => [sessionKey(), timelineRowKeys()] as const,
       (next, prev) => {
-        if (prev && prev[0] !== next[0]) writeTimelineCache(prev[0], prev[1], virtualizer)
+        if (prev && prev[0] !== next[0]) writeTimelineCache(prev[0], prev[1], listWidth(), virtualizer)
         cacheSessionKey = next[0]
         cacheRowKeys = next[1]
         if (virtualizer) {
@@ -724,7 +726,7 @@ export function MessageTimeline(props: {
           // readTimelineCache 恒 miss → virtualCache 恒 undefined → itemSize 恒 60px fallback →
           // 每次行插入（如工具行）60px 起步 + RO 整列重测 → 布局跳变闪烁。
           // 写入的是 handle.cache 对象引用，virtua 自身会持续往同一对象更新新行实测尺寸。
-          writeTimelineCache(next[0], next[1], virtualizer)
+          writeTimelineCache(next[0], next[1], listWidth(), virtualizer)
           maybeAnchorBottom()
         }
       },
@@ -733,7 +735,7 @@ export function MessageTimeline(props: {
   )
 
   onCleanup(() => {
-    writeTimelineCache(virtualizerSessionKey, virtualizerRowKeys, virtualizer)
+    writeTimelineCache(virtualizerSessionKey, virtualizerRowKeys, listWidth(), virtualizer)
     props.setRevealMessage?.(() => {})
   })
 
@@ -775,6 +777,13 @@ export function MessageTimeline(props: {
   }
 
   createResizeObserver(() => head, updateTitleMetrics)
+
+  // 260920 Red 记录 viewport 宽度：宽度变化必须让 timeline cache 失效（Markdown/代码块换行改行高），
+  // 而 row key 一个都不会变。观察滚动容器本体 —— 和 head 的标题节奏度量是两件事。
+  createResizeObserver(
+    () => scrollRoot(),
+    () => setListWidth(scrollRoot()?.clientWidth ?? 0),
+  )
 
   const isMeasuredBottom = (root: HTMLDivElement) => root.scrollHeight - root.clientHeight - root.scrollTop <= 4
 
@@ -912,6 +921,7 @@ export function MessageTimeline(props: {
 
     props.setScrollRef(root)
     measuredBottomAnchored = isMeasuredBottom(root)
+    setListWidth(root.clientWidth)
     setScrollRoot(root)
     scheduleContentRoot(root)
   }
@@ -1948,7 +1958,7 @@ export function MessageTimeline(props: {
               startMargin={64}
               ref={(handle) => {
                 if (!handle) {
-                  writeTimelineCache(virtualizerSessionKey, virtualizerRowKeys, virtualizer)
+                  writeTimelineCache(virtualizerSessionKey, virtualizerRowKeys, listWidth(), virtualizer)
                   virtualizer = undefined
                   return
                 }

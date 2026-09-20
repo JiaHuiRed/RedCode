@@ -1,4 +1,4 @@
-import { createMemo, Match, Show, Switch } from "solid-js"
+import { createEffect, createMemo, Match, Show, Switch } from "solid-js"
 import { Tabs } from "@redcode-ai/ui/tabs"
 import { ResizeHandle } from "@redcode-ai/ui/resize-handle"
 import type { SnapshotFileDiff, VcsFileDiff } from "@redcode-ai/sdk/v2"
@@ -92,6 +92,35 @@ export function FileTreePanel(props: {
     layout.fileTree.setTab(value)
   }
 
+  // 260920 Red 文件树 root 就绪态：diff 数量就绪 ≠ 目录列表就绪。
+  // 此前 root children 未到时 changes tab 渲染的是一个空 <div> —— 用户看到「182 更改」
+  // 下面整片空白，且没有任何加载反馈（滚动只是恰好撞上数据到达，不是滚动救回了内容）。
+  // 这里只补「未就绪 / 出错」两态；「已加载但过滤后为空」仍由调用方判断，
+  // 避免和 all tab 的 nofiles() 空态重复。
+  const rootDir = () => file.tree.state("")
+  const rootReady = () => !!rootDir()?.loaded
+  const rootError = () => rootDir()?.error
+
+  // root 列表原本只由 FileTree 挂载后的 props.path effect 触发；现在挂载前就要判断就绪态，
+  // 所以由面板自己发起。listDir 对已加载目录与在途请求都直接返回，不会重复请求。
+  createEffect(() => {
+    if (!fileOpen()) return
+    if (fileTreeTab() === "all" || props.hasReview()) void file.tree.list("")
+  })
+
+  const treeLoading = () => (
+    <div class="px-2 py-2 text-12-regular text-text-weak">
+      {language.t("common.loading")}
+      {language.t("common.loading.ellipsis")}
+    </div>
+  )
+
+  const treeFailure = () => (
+    <div class="px-2 py-2 text-12-regular text-text-weak" role="alert">
+      {language.t("toast.file.listFailed.title")}
+    </div>
+  )
+
   return (
     <div
       id="file-tree-panel"
@@ -126,30 +155,30 @@ export function FileTreePanel(props: {
             <Tabs.Content value="changes" class="bg-background-stronger px-3 py-0">
               <Switch>
                 <Match when={props.hasReview() || !props.diffsReady()}>
-                  <Show
-                    when={props.diffsReady()}
-                    fallback={
-                      <div class="px-2 py-2 text-12-regular text-text-weak">
-                        {language.t("common.loading")}
-                        {language.t("common.loading.ellipsis")}
-                      </div>
-                    }
-                  >
-                    <FileTree
-                      path=""
-                      class="pt-3"
-                      allowed={diffFiles()}
-                      kinds={kinds()}
-                      draggable={false}
-                      active={props.activeDiff}
-                      onFileClick={(node) => props.focusReviewDiff(node.path)}
-                    />
+                  <Show when={props.diffsReady()} fallback={treeLoading()}>
+                    <Switch>
+                      <Match when={rootError()}>{treeFailure()}</Match>
+                      <Match when={!rootReady()}>{treeLoading()}</Match>
+                      <Match when={true}>
+                        <FileTree
+                          path=""
+                          class="pt-3"
+                          allowed={diffFiles()}
+                          kinds={kinds()}
+                          draggable={false}
+                          active={props.activeDiff}
+                          onFileClick={(node) => props.focusReviewDiff(node.path)}
+                        />
+                      </Match>
+                    </Switch>
                   </Show>
                 </Match>
               </Switch>
             </Tabs.Content>
             <Tabs.Content value="all" class="bg-background-stronger px-3 py-0">
               <Switch>
+                <Match when={rootError()}>{treeFailure()}</Match>
+                <Match when={!rootReady()}>{treeLoading()}</Match>
                 <Match when={nofiles()}>{empty(language.t("session.files.empty"))}</Match>
                 <Match when={true}>
                   <FileTree
