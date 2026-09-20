@@ -344,6 +344,10 @@ export function MessageTimeline(props: {
   // 260920 Red viewport 宽度参与 timeline cache 有效域（见 readTimelineCache）。宽度变化由
   // scrollRoot 上的 ResizeObserver 写回；尚未测量时为 0，cacheReusable 对 0 保持宽松判据。
   const [listWidth, setListWidth] = createSignal(0)
+  // 260921 Red 遮挡恢复兜底：窗口被遮挡期间 document.hidden 为真，浏览器跳过布局，
+  // virtua 的 ResizeObserver 不回调，viewportSize 停在 0（内部区间门 S=false）→ 可视区间
+  // 恒为空且不会自愈。恢复可见/聚焦时若仍是 0，换一个新对象触发重建，让它重新 observe。
+  const [timelineEpoch, setTimelineEpoch] = createSignal<object>({})
   const sessionID = createMemo(() => params.id)
   // 260831 cc 顺序由 store 保证（见 directory-sync 的 byTime）。下面 lastUserMessageID 是
   //   从后往前扫数组找最后一条 user——它依赖的正是那个顺序。
@@ -866,15 +870,23 @@ export function MessageTimeline(props: {
       root.scrollTop = top + (atBottom ? -1 : 1)
       root.scrollTop = top
     }
+    const wake = () => {
+      // 视口尺寸没拿到时 virtua 不响应滚动，nudge 无效，只能重建（见 timelineEpoch）
+      if (virtualizer && virtualizer.viewportSize === 0) {
+        setTimelineEpoch({})
+        return
+      }
+      nudge()
+    }
     const onVisibility = () => {
       if (document.visibilityState !== "visible") return
-      nudge()
+      wake()
     }
     // 260920 Red 遮挡（occlusion）场景下 visibilityState 恒为 visible——backgroundThrottling: false
     // 关掉的是 Page Visibility 那一层，关不掉 Chromium 把 rAF 节流到 1Hz 的遮挡判定（实测窗口
     // 被完全盖住时帧间隔恒定卡在 1007ms，拉回前台立刻回到 19ms）。virtua 的初始化与底部锚定都
     // 走 rAF，被节流后区间停在空区间；窗口重新获得焦点是这一层唯一可用的恢复信号。
-    const onFocus = () => nudge()
+    const onFocus = () => wake()
     document.addEventListener("visibilitychange", onVisibility)
     window.addEventListener("focus", onFocus)
     onCleanup(() => {
@@ -1977,13 +1989,20 @@ export function MessageTimeline(props: {
             </div>
           </div>
         </Show>
-        <Show when={scrollRoot()}>
-          {(root) => (
+        <Show
+          when={(() => {
+            const root = scrollRoot()
+            if (!root) return
+            return { root, epoch: timelineEpoch() }
+          })()}
+          keyed
+        >
+          {(v) => (
             <Virtualizer
               data={timelineRows()}
               cache={virtualCache()}
               itemSize={virtualCache() ? undefined : timelineFallbackItemSize}
-              scrollRef={root()}
+              scrollRef={v.root}
               shift={props.historyShift}
               keepMounted={keepMounted()}
               startMargin={64}
@@ -1994,14 +2013,10 @@ export function MessageTimeline(props: {
                   return
                 }
                 virtualizer = handle
-                // 260920 Red virtua 的首个 viewportSize 来自 window resize 回调，
-                // 首屏同步渲染会把这次初始化推迟到阻塞结束之后，期间可视区间为空
-                // （内部 S=false → [0,-1]）→ 整屏空白。挂载后主动唤醒一次。
-                requestAnimationFrame(() => window.dispatchEvent(new Event("resize")))
                 virtualizerSessionKey = cacheSessionKey
                 virtualizerRowKeys = cacheRowKeys
                 maybeAnchorBottom()
-                scheduleContentRoot(root())
+                scheduleContentRoot(v.root)
               }}
             >
               {(row) => <TimelineRowView row={row} />}

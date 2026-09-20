@@ -429,6 +429,17 @@ const main = Effect.gen(function* () {
   //   Chromium 默认就旁路 loopback，外部请求仍走系统代理，去掉此行即恢复本机回环直连。
   const features = app.commandLine.getSwitchValue("enable-features")
   app.commandLine.appendSwitch("enable-features", features ? `${jsCallStackFeature},${features}` : jsCallStackFeature)
+  // 260921 Red Windows 原生窗口遮挡计算：窗口被盖住时 Chromium 判定页面不可见，跳过布局，
+  //   ResizeObserver 不再回调 → virtua 的 viewportSize 停在 0 → 可视区间恒为空 → 整片空白，
+  //   且遮挡解除前不自愈（实测 window.innerHeight/innerH 均正常、RO 回调数为 0，一次性对照
+  //   实验：不关时被遮挡窗口 document.hidden 恒 true，关掉后恒 false）。
+  //   Electron 没有对应 webPreferences——backgroundThrottling 只覆盖 Page Visibility 那一层，
+  //   实测打开后 document.hidden 仍为 true。单独关这一个 feature 即可，无需再关遮挡后台化。
+  const disabledFeatures = app.commandLine.getSwitchValue("disable-features")
+  app.commandLine.appendSwitch(
+    "disable-features",
+    disabledFeatures ? `CalculateNativeWinOcclusion,${disabledFeatures}` : "CalculateNativeWinOcclusion",
+  )
   if (!app.isPackaged) app.commandLine.appendSwitch("remote-debugging-port", "9222")
 
   if (!app.requestSingleInstanceLock()) {
