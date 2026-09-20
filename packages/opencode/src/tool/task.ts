@@ -17,6 +17,8 @@ import { TuiEvent } from "@/cli/cmd/tui/event"
 import { Cause, Clock, Effect, Exit, Option, Schema, Scope } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { Storage } from "@/storage/storage"
+import { boundedTaskText, compileExploreTaskPacket, createChildTaskRecord } from "./task-runtime"
 import * as Log from "@redcode-ai/core/util/log"
 
 export interface TaskPromptOps {
@@ -145,6 +147,7 @@ export const TaskTool = Tool.define(
     const status = yield* SessionStatus.Service
     const flags = yield* RuntimeFlags.Service
     const plugin = yield* Plugin.Service
+    const storage = yield* Effect.serviceOption(Storage.Service)
 
     const run = Effect.fn("TaskTool.execute")(function* (
       params: Schema.Schema.Type<typeof Parameters>,
@@ -177,6 +180,17 @@ export const TaskTool = Tool.define(
         }
       }
 
+      const explorePacket =
+        params.subagent_type === "explore"
+          ? compileExploreTaskPacket({ goal: params.prompt, directory: parent.directory })
+          : undefined
+      if (params.subagent_type === "explore" && !explorePacket) {
+        return yield* Effect.fail(new Error("Explore task packet is invalid and was not started"))
+      }
+      if (explorePacket && params.task_id) {
+        return yield* Effect.fail(new Error("Explore task resume requires its canonical task packet"))
+      }
+
       if (!ctx.extra?.bypassAgentCheck) {
         yield* ctx.ask({
           permission: id,
@@ -203,10 +217,8 @@ export const TaskTool = Tool.define(
         : undefined
       const nextSession =
         session ??
-        (yield* sessions.create({
-          parentID: ctx.sessionID,
-          title: params.description + ` (@${next.name} subagent)`,
-          permission: [
+        (yield* Effect.gen(function* () {
+          const permission = [
             ...deriveSubagentSessionPermission({
               parentSessionPermission: parent.permission ?? [],
               parentAgent,
@@ -217,8 +229,45 @@ export const TaskTool = Tool.define(
               action: "allow" as const,
               permission: item,
             })) ?? []),
-          ],
+            ...(explorePacket
+              ? ["edit", "write", "apply_patch", "bash", "task", "commit", "push"].map((permission) => ({
+                  pattern: "*",
+                  action: "deny" as const,
+                  permission,
+                }))
+              : []),
+          ]
+          return yield* sessions
+            .create({
+              parentID: ctx.sessionID,
+              title: params.description + ` (@${next.name} subagent)`,
+              permission,
+            })
         }))
+
+      if (explorePacket) {
+        if (Option.isNone(storage)) {
+          yield* sessions.remove(nextSession.id).pipe(Effect.ignore)
+          return yield* Effect.fail(new Error("Explore task runtime storage is unavailable"))
+        }
+        yield* storage.value
+          .write(
+            ["task-runtime", String(nextSession.id)],
+            createChildTaskRecord({
+              taskID: nextSession.id,
+              parentSessionID: ctx.sessionID,
+              childSessionID: nextSession.id,
+              packet: explorePacket,
+              capabilities: ["read", "search"],
+              profile: "explore",
+              createdAt: Date.now(),
+            }),
+          )
+          .pipe(
+            Effect.tapError(() => sessions.remove(nextSession.id).pipe(Effect.ignore)),
+          )
+      }
+      const projectResult = (text: string) => (explorePacket ? boundedTaskText(text) : text)
 
       yield* plugin
         .trigger(
@@ -378,7 +427,7 @@ export const TaskTool = Tool.define(
                 sessionID: nextSession.id,
                 description: params.description,
                 state,
-                text,
+                text: projectResult(text),
               }),
             },
           ],
@@ -399,8 +448,8 @@ export const TaskTool = Tool.define(
         const backgroundRun = isolated
           ? ops
               .runIsolated({ name: params.description }, runTask())
-              .pipe(Effect.map(({ result, worktree }) => isolatedOutput(nextSession.id, result, worktree)))
-          : runTask()
+              .pipe(Effect.map(({ result, worktree }) => isolatedOutput(nextSession.id, projectResult(result), worktree)))
+          : runTask().pipe(Effect.map(projectResult))
         const info = yield* background.start({
           id: nextSession.id,
           type: id,
@@ -411,7 +460,7 @@ export const TaskTool = Tool.define(
             Effect.catchCause((cause) =>
               (Cause.hasInterruptsOnly(cause)
                 ? Effect.void
-                : inject("error", errorText(Cause.squash(cause))).pipe(Effect.ignore)
+                : inject("error", projectResult(errorText(Cause.squash(cause)))).pipe(Effect.ignore)
               ).pipe(Effect.andThen(Effect.failCause(cause))),
             ),
           ),
@@ -448,14 +497,14 @@ export const TaskTool = Tool.define(
                   worktree: worktree.directory,
                   ...(worktree.branch ? { branch: worktree.branch } : {}),
                 },
-                output: isolatedOutput(nextSession.id, text, worktree),
+                output: isolatedOutput(nextSession.id, projectResult(text), worktree),
               }
             }
             const text = yield* runTask()
             return {
               title: params.description,
               metadata,
-              output: output(nextSession.id, text),
+              output: output(nextSession.id, projectResult(text)),
             }
           }),
         (_, exit) =>

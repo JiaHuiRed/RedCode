@@ -20,6 +20,7 @@ import { PartID } from "./schema"
 import * as Log from "@redcode-ai/core/util/log"
 import { EffectBridge } from "@/effect/bridge"
 import { Goal } from "./goal"
+import { capabilityDenied } from "@/tool/capability"
 
 const log = Log.create({ service: "session.tools" })
 
@@ -57,6 +58,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const registry = yield* ToolRegistry.Service
   const mcp = yield* MCP.Service
   const truncate = yield* Truncate.Service
+  const childProfile = input.agent.name === "explore" ? ("explore" as const) : undefined
 
   const context = (
     name: string,
@@ -132,6 +134,14 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               title: "Blocked",
               output: `Tool "${item.id}" was blocked by hook.${preToolUse.reason ? ` Reason: ${preToolUse.reason}` : ""}`,
               metadata: { blocked: true },
+            } as any
+          }
+          const capabilityReason = childProfile ? capabilityDenied(childProfile, item.id) : undefined
+          if (capabilityReason) {
+            return {
+              title: "Blocked",
+              output: capabilityReason,
+              metadata: { blocked: true, capability: childProfile },
             } as any
           }
           const result = yield* item.execute(args, ctx).pipe(
@@ -224,6 +234,15 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               title: "Blocked",
               output: `Tool "${key}" was blocked by hook.${preToolUse.reason ? ` Reason: ${preToolUse.reason}` : ""}`,
               metadata: { blocked: true },
+              content: [],
+            } as any
+          }
+          const capabilityReason = childProfile ? capabilityDenied(childProfile, key) : undefined
+          if (capabilityReason) {
+            return {
+              title: "Blocked",
+              output: capabilityReason,
+              metadata: { blocked: true, capability: childProfile },
               content: [],
             } as any
           }

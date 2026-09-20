@@ -10,6 +10,10 @@
 
 ### [未发布]
 
+#### 变更
+
+- **Child Runtime 首阶段收紧 Explore 子任务边界**（`packages/opencode/src/tool/{capability,task-runtime,task}.ts`、`packages/opencode/src/session/tools.ts`）：先校验 Task Packet 并写入 canonical record，再启动 Child；Explore 通过 shared capability guard 拒绝写入、shell、嵌套委派和提交操作，返回 Main 的结果投影限制为 32 KB。
+
 #### 修复
 
 - **外部审计指出的执行边界完成首轮修复**（`packages/opencode/src/{mcp,session,permission,provider}`）：MCP 取消信号贯通重试链，工具 policy 改看最终参数，quota 防止越界与旧凭据快照覆盖，Permission 批量 always 放行同步清理 owner。
