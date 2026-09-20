@@ -852,6 +852,25 @@ export function MessageTimeline(props: {
     })
   })
 
+  // 260920 Red 页面从不可见恢复时补一次区间重算。桌面端已在 windows.ts 关掉 backgroundThrottling，
+  // 但窗口最小化或被遮挡时 rAF 仍可能停摆，而 virtua 只在 scroll / resize 事件上重算可视区间
+  // （virtua/lib/solid 只监听这两类事件，没有 visibility 感知）—— 恢复后若不再滚一下，它仍挂着
+  // 离开前那批行：内容在 DOM 里、位置却在视口外几万像素，看到的就是整片空白。这里做一次 1px
+  // 滚动往返把它唤醒（视觉不可见）；已在底部/顶部时反向取，避免赋值被 clamp 成等值而不触发事件。
+  onMount(() => {
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") return
+      const root = listRoot
+      if (!root || !virtualizer) return
+      const top = root.scrollTop
+      const atBottom = top >= root.scrollHeight - root.clientHeight - 1
+      root.scrollTop = top + (atBottom ? -1 : 1)
+      root.scrollTop = top
+    }
+    document.addEventListener("visibilitychange", onVisibility)
+    onCleanup(() => document.removeEventListener("visibilitychange", onVisibility))
+  })
+
   function scheduleMeasuredBottomAnchor(options?: { force?: boolean }) {
     // Workaround for virtua issue #301: virtua does not expose a synchronous item-resize hook for
     // "stay at bottom if already at bottom". Tool rows can briefly outgrow the measured virtual

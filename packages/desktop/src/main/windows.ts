@@ -148,6 +148,11 @@ export function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // 260920 Red 窗口被完全遮挡时 Chromium 会把页面判成 hidden：停 rAF、把定时器压到 1Hz。
+      // 虚拟列表（virtua / pierre）只在 scroll/resize 时重算可视区间，离开前算出的那批行于是
+      // 一直挂在原地 —— 切回窗口看到的是整片空白，滚一下才对上。关掉节流后 Page Visibility
+      // API 恒为 visible，渲染链路不再被遮挡打断（代价是遮挡期间仍走正常帧预算，桌面端可接受）。
+      backgroundThrottling: false,
     },
   })
 
@@ -205,6 +210,11 @@ export function createLoadingWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // 260920 Red 窗口被完全遮挡时 Chromium 会把页面判成 hidden：停 rAF、把定时器压到 1Hz。
+      // 虚拟列表（virtua / pierre）只在 scroll/resize 时重算可视区间，离开前算出的那批行于是
+      // 一直挂在原地 —— 切回窗口看到的是整片空白，滚一下才对上。关掉节流后 Page Visibility
+      // API 恒为 visible，渲染链路不再被遮挡打断（代价是遮挡期间仍走正常帧预算，桌面端可接受）。
+      backgroundThrottling: false,
     },
   })
 

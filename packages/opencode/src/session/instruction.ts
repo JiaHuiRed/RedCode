@@ -1,6 +1,5 @@
 import path from "path"
 import { Effect, Layer, Context } from "effect"
-import * as Console from "effect/Console"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { Config } from "@/config/config"
 import { InstanceState } from "@/effect/instance-state"
@@ -9,6 +8,7 @@ import { Flag } from "@redcode-ai/core/flag/flag"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { withTransientReadRetry } from "@/util/effect-http-client"
 import { Global } from "@redcode-ai/core/global"
+import * as Log from "@redcode-ai/core/util/log"
 import { projectRoot } from "@/project/root"
 import type { MessageV2 } from "./message-v2"
 import type { MessageID } from "./schema"
@@ -236,7 +236,7 @@ export const layer: Layer.Layer<
         ...urls.flatMap((item, i) => include(item, remote[i])),
       ]
       for (const item of skipped) {
-        yield* Console.warn(
+        Log.Default.warn(
           `Instruction source skipped, over instruction_budget.max_source_bytes (${maxSourceBytes}): ${item}`,
         )
       }
@@ -244,14 +244,17 @@ export const layer: Layer.Layer<
       // 260813 Red 前缀注入预算：逐来源统计大小，总量超限时告警并点名最肥来源。
       // 不截断——截断会丢指令（漏掉铁律比前缀长更糟），告警只是把膨胀暴露出来，
       // 让"哪段在悄悄变肥"可定位（配合 prompt.ts 的 sysLen 日志看整体趋势）。
+      // 260920 Red 告警改走 Log 而不是 Console：worker 线程的 console 不受 TUI
+      // console-hijack 保护，会经 Worker stderr 继承直接打到终端、污染全屏渲染
+      // （与 worker.ts 抑制 MaxListenersExceededWarning 同一类事故）。
       const totalBytes = parts.reduce((sum, p) => sum + bytes(p), 0)
       if (totalBytes > maxTotalBytes) {
         const top = parts
           .map((p) => ({ bytes: bytes(p), src: p.slice(0, 80).split("\n")[0] }))
           .toSorted((a, b) => b.bytes - a.bytes)
           .slice(0, 5)
-        yield* Console.warn(`Instruction prefix over budget: ${totalBytes} bytes > ${maxTotalBytes}`)
-        for (const t of top) yield* Console.warn(`  ${t.bytes} bytes: ${t.src}`)
+        Log.Default.warn(`Instruction prefix over budget: ${totalBytes} bytes > ${maxTotalBytes}`)
+        for (const t of top) Log.Default.warn(`  ${t.bytes} bytes: ${t.src}`)
       }
       return parts
     })
@@ -304,14 +307,14 @@ export const layer: Layer.Layer<
         set.add(found)
         const content = yield* read(found)
         if (content && bytes(content) > maxSourceBytes) {
-          yield* Console.warn(
+          Log.Default.warn(
             `Nearby instruction skipped, over instruction_budget.max_source_bytes (${maxSourceBytes}): ${bytes(content)} bytes: ${found}`,
           )
         } else if (content) {
           const formatted = `Instructions from: ${found}\n${content}`
           const size = bytes(formatted)
           if (resolvedBytes + size > maxResolvedBytes) {
-            yield* Console.warn(
+            Log.Default.warn(
               `Nearby instruction skipped, over instruction_budget.max_resolved_bytes (${maxResolvedBytes}): ${size} bytes: ${found}`,
             )
           } else {
