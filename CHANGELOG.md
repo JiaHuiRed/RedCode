@@ -31,6 +31,8 @@
 - **设计 token 与可访问性**（`packages/app/src/index.css`、`packages/app/src/i18n/{en,zh,ja}.ts`）：继续使用现有 `--frost-*`/`--v2-*` 体系，补齐收起/错误文案、键盘焦点、窄窗口与 reduced-motion 处理，不新增第三套视觉 token。
 - **会话页渲染缺口修复**（`packages/app/src/pages/session/{session,file-tree-panel,message-timeline}.tsx`、`packages/app/src/pages/session/message-timeline.data.ts`）：外部审计确认「进会话空白、滚动后内容消失」是三处独立缺口 —— 虚拟列表 cache 有效域补上 viewport 宽度（宽度变化后行高改变而 row key 不变，旧测量值会让 Virtua 用错误 offset 算出大片空白）、中心区未就绪或出错不再渲染空白而是加载与重试态、文件树区分 diff 就绪与 root 列表就绪（此前 root children 未到时只显示空容器）。`messagesReady` 语义保持不变，避免真·空会话的输入框永远不就绪。审计材料见 `.redcode/gui-session-render-audit.md`。
 
+- **压缩续跑阶段不再全表扫描会话**（`packages/opencode/src/session/compaction.ts`）：原先续跑分支两次 `session.messages()` 不带 limit 载入整个会话，只为按主键取同一条消息，而压缩恰好发生在会话最长的时刻（决策记录 `docs/notes/proposed/architecture/2026-09-18-full-repo-audit.md` §4.4）。改为一次主键点查并复用结果，`NotFound` 时退回内存中的消息对象，行为不变。实测最长会话（1962 条 / 47.4 MB）：单次全量加载含解析 152ms，单条点查 0.067ms，一次压缩省下约 304ms 主线程阻塞与两份 47 MB 级 JSON 物化。
+
 - **实施与回归边界**：按背景层级、Usage 状态、Composer 状态的顺序小步落地；app/opencode 类型检查、定向测试和格式检查已通过，Home/Session/新建会话的实际截图闭环仍需在目标运行环境复核。
 
 ---
@@ -299,9 +301,6 @@
 - **修复 home 配置模板的 webqa 路径转义**（`seed/redcode.home.jsonc`）：远端同步的描述误写成 `Temp\webqa`，导致 `merge-home-config.ts` 解析 JSONC 时把 `\w` 判为非法转义；现改为合法的 `Temp\\webqa`，构建同步步骤恢复正常。
 
 - **Windows MCP 裸命令无法启动**（`packages/opencode/src/util/{process,windows-job,windows-job-runner}.ts`、`packages/opencode/src/mcp/{index,stdio}.ts`，决策：`docs/notes/implemented/bug-fix/2026-09-08-windows-job-path-resolution.md`）：自定义 Job runner 不再把裸命令填入 `CreateProcessW` 的 `lpApplicationName`，改由 Windows 按完整命令行搜索 PATH；`node`、`bun`、`fff-mcp`、`markitdown-mcp` 等 MCP 可以走同一条受 Job 管理的启动链，已通过 `bun run dev` 实测接入。
-
-#### 待办
-
 
 ### [0.11.0] - 2026-09-08
 

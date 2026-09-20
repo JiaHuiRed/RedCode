@@ -697,14 +697,14 @@ export const layer = Layer.effect(
 
       if (processor.message.error) return "stop"
       if (result === "continue") {
-        const summary = summaryText(
-          (yield* session.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)).find(
-            (item) => item.info.id === msg.id,
-          ) ?? {
-            info: msg,
-            parts: [],
-          },
+        // 260920 Red 压缩期不做全表扫描：原先两处 `session.messages()` 不带 limit 载入整个会话，
+        // 只为按主键找同一条消息，而压缩恰好发生在会话最长的时刻（note：
+        // docs/notes/proposed/architecture/2026-09-18-full-repo-audit.md §4.4）。改成主键点查并
+        // 复用结果；NotFound 时退回内存里的 msg，与旧 `find(...) ?? { info: msg, parts: [] }` 等价。
+        const summaryMessage = yield* MessageV2.get({ sessionID: input.sessionID, messageID: msg.id }).pipe(
+          Effect.orElseSucceed((): MessageV2.WithParts => ({ info: msg, parts: [] })),
         )
+        const summary = summaryText(summaryMessage)
         // 260808 Red 文件清单追加（Pi 借鉴第 3 项）：机械提取被压缩消息里真实 read/write
         // 过的文件，与上次摘要标签合并后 append 到摘要文本 —— 压缩后模型不用重新探索
         // 已读文件，也不依赖模型在 Relevant Files 里凭记忆写路径。
@@ -716,10 +716,7 @@ export const layer = Layer.effect(
         }
         if (files.read.length || files.modified.length) {
           const tagged = appendFileTags(summary ?? "", files)
-          const parts =
-            (yield* session.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)).find(
-              (item) => item.info.id === msg.id,
-            )?.parts ?? []
+          const parts = summaryMessage.parts
           const textPart = parts.findLast((part) => part.type === "text" && !!part.text.trim())
           if (textPart && textPart.type === "text") {
             yield* session.updatePart({
