@@ -262,33 +262,38 @@ export const layer = Layer.effect(
 
       owners.delete(input.requestID)
       pending.delete(input.requestID)
-      yield* bus.publish(Event.Replied, {
-        sessionID: existing.info.sessionID,
-        requestID: existing.info.id,
-        reply: input.reply,
-      })
 
       if (input.reply === "reject") {
         yield* Deferred.fail(
           existing.deferred,
           input.message ? new CorrectedError({ feedback: input.message }) : new RejectedError(),
         )
+        yield* bus.publish(Event.Replied, {
+          sessionID: existing.info.sessionID,
+          requestID: existing.info.id,
+          reply: input.reply,
+        })
 
         for (const [id, item] of pending.entries()) {
           if (item.info.sessionID !== existing.info.sessionID) continue
           owners.delete(id)
           pending.delete(id)
+          yield* Deferred.fail(item.deferred, new RejectedError())
           yield* bus.publish(Event.Replied, {
             sessionID: item.info.sessionID,
             requestID: item.info.id,
             reply: "reject",
           })
-          yield* Deferred.fail(item.deferred, new RejectedError())
         }
         return
       }
 
       yield* Deferred.succeed(existing.deferred, undefined)
+      yield* bus.publish(Event.Replied, {
+        sessionID: existing.info.sessionID,
+        requestID: existing.info.id,
+        reply: input.reply,
+      })
       if (input.reply === "once") return
 
       for (const pattern of existing.info.always) {
@@ -328,12 +333,12 @@ export const layer = Layer.effect(
         if (!ok) continue
         owners.delete(id)
         pending.delete(id)
+        yield* Deferred.succeed(item.deferred, undefined)
         yield* bus.publish(Event.Replied, {
           sessionID: item.info.sessionID,
           requestID: item.info.id,
           reply: "always",
         })
-        yield* Deferred.succeed(item.deferred, undefined)
       }
     })
 

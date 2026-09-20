@@ -29,14 +29,14 @@ function response(level: string, status = 200) {
 }
 
 async function waitForRequest(authorization: string) {
-  for (let attempt = 0; attempt < 20 && !pending.has(authorization); attempt++) {
+  for (let attempt = 0; attempt < 20 && !(pending.get(authorization)?.length); attempt++) {
     await Bun.sleep(0)
   }
-  expect(pending.has(authorization)).toBe(true)
+  expect(pending.get(authorization)?.length).toBeGreaterThan(0)
 }
 
 function resolvePending(authorization: string, level: string, status = 200) {
-  for (const resolve of pending.get(authorization) ?? []) resolve(response(level, status))
+  pending.get(authorization)?.shift()?.(response(level, status))
 }
 
 test("does not let an older credential refresh overwrite the latest snapshot", async () => {
@@ -88,4 +88,26 @@ test("shares a refresh already in flight for the same credential", async () => {
 
   expect(calls).toBe(1)
   expect(ProviderQuota.get("zhipuai-coding-plan")?.planType).toBe("SAME")
+})
+
+test("starts a new refresh when a credential is restored after switching away", async () => {
+  ProviderQuota.clear()
+  pending.clear()
+  calls = 0
+
+  const firstA = ProviderQuota.refreshCodingPlan("zhipuai-coding-plan", "a-key")
+  await waitForRequest("a-key")
+  const b = ProviderQuota.refreshCodingPlan("zhipuai-coding-plan", "b-key")
+  await waitForRequest("b-key")
+  const secondA = ProviderQuota.refreshCodingPlan("zhipuai-coding-plan", "a-key")
+  await waitForRequest("a-key")
+
+  resolvePending("b-key", "B")
+  resolvePending("a-key", "A1")
+  await waitForRequest("a-key")
+  resolvePending("a-key", "A2")
+  await Promise.all([firstA, b, secondA])
+
+  expect(calls).toBe(3)
+  expect(ProviderQuota.get("zhipuai-coding-plan")?.planType).toBe("A2")
 })

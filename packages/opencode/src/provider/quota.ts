@@ -233,10 +233,10 @@ function credentialID(apiKey: string) {
 export async function refreshCodingPlan(providerID: (typeof CODING_PLAN_PROVIDER_IDS)[number], apiKey: string) {
   const credential = credentialID(apiKey)
   const flightKey = `${providerID}:${credential}`
-  const existing = inFlight.get(flightKey)
-  if (existing) return existing
-
   const previous = refreshState.get(providerID)
+  const existing = inFlight.get(flightKey)
+  if (existing && previous?.credentialID === credential) return existing
+
   const generation = ++nextGeneration
   if (previous && previous.credentialID !== credential) store.delete(key(providerID, undefined))
   refreshState.set(providerID, { credentialID: credential, generation })

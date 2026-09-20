@@ -349,6 +349,47 @@ function convertMcpTool(
   })
 }
 
+function abortReason(signal: AbortSignal) {
+  return signal.reason ?? new DOMException("Aborted", "AbortError")
+}
+
+// 260920 Red: reconnect belongs to the tool call, so abort must interrupt the
+// Effect fiber rather than only rejecting the outer Promise.
+function abortableReconnect(bridge: EffectBridge.Shape, effect: Effect.Effect<void>, signal?: AbortSignal) {
+  if (!signal) return bridge.promise(effect)
+  if (signal.aborted) return Promise.reject(abortReason(signal))
+
+  const fiber = bridge.fork(effect)
+  return new Promise<void>((resolve, reject) => {
+    let settled = false
+    const cleanup = () => signal.removeEventListener("abort", onAbort)
+    const onAbort = () => {
+      if (settled) return
+      settled = true
+      cleanup()
+      Effect.runFork(Fiber.interrupt(fiber))
+      reject(abortReason(signal))
+    }
+
+    signal.addEventListener("abort", onAbort, { once: true })
+    Effect.runPromise(Fiber.join(fiber)).then(
+      () => {
+        if (settled) return
+        settled = true
+        cleanup()
+        resolve()
+      },
+      (error) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        reject(error)
+      },
+    )
+    if (signal.aborted) onAbort()
+  })
+}
+
 // Convert cached MCP tool definition to a disconnected stub (server not yet connected)
 function convertMcpToolCached(mcpTool: MCPToolDef, serverName: string): Tool {
   const inputSchema = mcpTool.inputSchema
@@ -1154,7 +1195,7 @@ export const layer = Layer.effect(
             const timeout = entry?.timeout ?? defaultTimeout ?? DEFAULT_TIMEOUT
             // 260603 Red P1: 用 EffectBridge 避免依赖 AppRuntime
             const toolBridge = yield* EffectBridge.make()
-            const doReconnect = () => toolBridge.promise(reconnectServer(clientName))
+            const doReconnect = (signal?: AbortSignal) => abortableReconnect(toolBridge, reconnectServer(clientName), signal)
             const disabled = entry?.type === "local" ? entry.disabledTools : undefined
             // 260807 Red: tools 白名单——只注入列出的工具，省略则全量（prefix 成本控制）
             const allow = entry?.tools

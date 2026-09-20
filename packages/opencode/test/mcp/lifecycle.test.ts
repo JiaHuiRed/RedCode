@@ -1,7 +1,7 @@
 import { expect, mock, beforeEach } from "bun:test"
-import { Effect, Exit } from "effect"
+import { Effect, Exit, Fiber, Option } from "effect"
 import type { MCP as MCPNS } from "../../src/mcp/index"
-import { testEffect } from "../lib/effect"
+import { pollWithTimeout, testEffect } from "../lib/effect"
 
 // --- Mock infrastructure ---
 
@@ -14,6 +14,9 @@ interface MockClientState {
   listToolsError: string
   listPromptsShouldFail: boolean
   listResourcesShouldFail: boolean
+  callToolCalls: number
+  callToolSignals: Array<AbortSignal | undefined>
+  callToolShouldFail: boolean
   prompts: Array<{ name: string; description?: string }>
   resources: Array<{ name: string; uri: string; description?: string }>
   closed: boolean
@@ -42,6 +45,9 @@ function getOrCreateClientState(name?: string): MockClientState {
       listToolsError: "listTools failed",
       listPromptsShouldFail: false,
       listResourcesShouldFail: false,
+      callToolCalls: 0,
+      callToolSignals: [],
+      callToolShouldFail: false,
       prompts: [],
       resources: [],
       closed: false,
@@ -152,6 +158,21 @@ void mock.module("@modelcontextprotocol/sdk/client/index.js", () => ({
       throw new Error(`unsupported request: ${request.method}`)
     }
 
+    async callTool(
+      _request: unknown,
+      _schema: unknown,
+      options?: {
+        signal?: AbortSignal
+      },
+    ) {
+      if (this._state) {
+        this._state.callToolCalls++
+        this._state.callToolSignals.push(options?.signal)
+        if (this._state.callToolShouldFail) throw new Error("tool call failed")
+      }
+      return { content: [], isError: false }
+    }
+
     async listPrompts() {
       if (this._state?.listPromptsShouldFail) {
         throw new Error("listPrompts failed")
@@ -229,6 +250,84 @@ it.instance(
       }),
     ),
   { config: { mcp: {} } },
+)
+
+it.instance(
+  "converted MCP tools pass the abort signal to SDK callTool",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        lastCreatedClientName = "signal-server"
+        const serverState = getOrCreateClientState("signal-server")
+        yield* mcp.add("signal-server", {
+          type: "local",
+          command: ["echo", "test"],
+        })
+
+        const tool = (yield* mcp.tools())["signal-server_test_tool"]
+        expect(tool?.execute).toBeDefined()
+        if (!tool?.execute) return
+        const controller = new AbortController()
+        const options = { abortSignal: controller.signal } as Parameters<typeof tool.execute>[1]
+        yield* Effect.promise(() => tool.execute!({}, options))
+
+        expect(serverState.callToolSignals[0]).toBe(controller.signal)
+      }),
+    ),
+  { config: { mcp: {} } },
+)
+
+it.instance(
+  "aborting during MCP reconnect interrupts the reconnect fiber",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        lastCreatedClientName = "abort-server"
+        const serverState = getOrCreateClientState("abort-server")
+        yield* mcp.add("abort-server", {
+          type: "local",
+          command: ["echo", "test"],
+        })
+
+        const tool = (yield* mcp.tools())["abort-server_test_tool"]
+        expect(tool?.execute).toBeDefined()
+        if (!tool?.execute) return
+        serverState.callToolShouldFail = true
+        connectShouldHang = true
+        const controller = new AbortController()
+        const reason = new DOMException("Aborted", "AbortError")
+        const options = { abortSignal: controller.signal } as Parameters<typeof tool.execute>[1]
+        const call = yield* Effect.promise(() => tool.execute!({}, options)).pipe(Effect.forkChild)
+
+        yield* pollWithTimeout(
+          Effect.sync(() => (serverState.callToolCalls >= 1 ? true : undefined)),
+          "MCP tool call did not start",
+        )
+        yield* pollWithTimeout(
+          Effect.sync(() => (clientCreateCount >= 3 ? true : undefined)),
+          "MCP reconnect did not start",
+        )
+        controller.abort(reason)
+        const completed = yield* Effect.exit(Fiber.join(call)).pipe(Effect.timeoutOption("1 second"))
+
+        expect(Option.isSome(completed)).toBe(true)
+        if (Option.isNone(completed)) return
+        expect(Exit.isFailure(completed.value)).toBe(true)
+        expect(serverState.callToolCalls).toBe(1)
+      }),
+    ),
+  {
+    config: {
+      mcp: {
+        "abort-server": {
+          type: "local",
+          command: ["echo", "test"],
+          enabled: true,
+          retry: "default",
+        },
+      },
+    },
+  },
 )
 
 // ========================================================================

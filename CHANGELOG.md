@@ -13,6 +13,7 @@
 #### 修复
 
 - **外部审计指出的执行边界完成首轮修复**（`packages/opencode/src/{mcp,session,permission,provider}`）：MCP 取消信号贯通重试链，工具 policy 改看最终参数，quota 防止越界与旧凭据快照覆盖，Permission 批量 always 放行同步清理 owner。
+- **R2 执行边界完成二阶收口**（`packages/opencode/src/{mcp,permission,provider}`）：修复 quota 凭据 A→B→A 的 generation 竞态，取消 MCP 工具时同步中断 reconnect fiber，并让 Permission requester 在事件发布前完成 terminal；补充真实 MCP 工具链路与生命周期回归测试。
 
 ---
 
