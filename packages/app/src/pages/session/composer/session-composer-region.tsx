@@ -55,6 +55,14 @@ export function SessionComposerRegion(props: {
   const info = createMemo(() => (route.params.id ? sync.session.get(route.params.id) : undefined))
   const parentID = createMemo(() => info()?.parentID)
   const child = createMemo(() => !!parentID())
+  const status = createMemo(
+    () => (route.params.id ? sync.data.session_status[route.params.id]?.type : "idle") ?? "idle",
+  )
+  const statusLabel = createMemo(() => {
+    if (status() === "busy") return language.t("ui.sessionTurn.status.thinking")
+    if (status() === "retry") return language.t("app.server.retrying")
+    return undefined
+  })
   // 260808 Red: 输入框不再随权限/提问弹窗卸载。原来是 `!blocked() || child()`，
   // 弹窗一出现整个 <PromptInput> 被卸载，正在编辑的内容随组件销毁——用户打到一半
   // 被冲掉，且必须先处理弹窗才能继续打。GUI 的弹窗是鼠标点按钮，与输入没有按键冲突
@@ -139,8 +147,10 @@ export function SessionComposerRegion(props: {
         // 260812 Red 去掉 bg-background-stronger：dock 整条底色就是"输入框外多余颜色"的根源——
         // 输入框两侧/底部透出主题底色（Yuqi=紫条、浅色主题=灰条），哥哥指出输入框外不该有任何
         // 底色，应直接透出聊天背景。index.css 毛玻璃 A 的 dock 背景规则已同步删除。
-        "shrink-0 pb-3": props.placement !== "inline",
+        "shrink-0 border-t border-v2-border-border-base/50 pb-3 pt-2": props.placement !== "inline",
       }}
+      data-state={status()}
+      aria-busy={status() === "busy"}
     >
       <div
         classList={{
@@ -170,6 +180,19 @@ export function SessionComposerRegion(props: {
               />
             </div>
           )}
+        </Show>
+
+        {/* 260920 Red 把 Composer 变成轻量状态区：正文时间线保留完整 thinking 细节，这里只
+            告诉用户输入框当前是否仍在工作/重试，避免底部像一块无状态的浮卡。 */}
+        <Show when={props.placement !== "inline" && statusLabel()}>
+          <div
+            class="mb-1 flex items-center gap-1.5 px-1 text-11-regular text-v2-text-text-muted"
+            role="status"
+            aria-live="polite"
+          >
+            <span class="size-1.5 animate-pulse rounded-full bg-v2-background-bg-accent motion-reduce:animate-none" />
+            <span>{statusLabel()}</span>
+          </div>
         </Show>
 
         <Show when={showComposer()}>

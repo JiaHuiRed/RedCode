@@ -16,10 +16,11 @@
  * home-stats.tsx 同一套口径，避免第三份汇率常量。
  */
 import { Database } from "@/storage/db"
-import { and, desc, eq, gte, sql } from "drizzle-orm"
+import { and, eq, gte, sql } from "drizzle-orm"
 import { Schema } from "effect"
 import { MessageTable, SessionTable } from "./session.sql"
 import type { ProjectID } from "../project/schema"
+import type { Assistant } from "./message-v2"
 
 export const RangeSchema = Schema.Literals(["all", "30d", "7d"])
 export type Range = typeof RangeSchema.Type
@@ -84,21 +85,6 @@ function since(range: Range, now: number) {
 
 /** assistant 消息才带 cost/tokens，其余角色不进任何统计。 */
 const ASSISTANT = sql`json_extract(${MessageTable.data}, '$.role') = 'assistant'`
-const DAY = sql<string>`date(${MessageTable.time_created} / 1000, 'unixepoch', 'localtime')`
-const HOUR = sql<number>`cast(strftime('%H', ${MessageTable.time_created} / 1000, 'unixepoch', 'localtime') as integer)`
-const PROVIDER = sql<string>`coalesce(json_extract(${MessageTable.data}, '$.providerID'), 'unknown')`
-const MODEL = sql<string>`coalesce(json_extract(${MessageTable.data}, '$.modelID'), 'unknown')`
-
-const num = (path: string) => sql<number>`coalesce(sum(json_extract(${MessageTable.data}, ${path})), 0)`
-
-const TOKENS = {
-  input: num("$.tokens.input"),
-  output: num("$.tokens.output"),
-  reasoning: num("$.tokens.reasoning"),
-  cacheRead: num("$.tokens.cache.read"),
-  cacheWrite: num("$.tokens.cache.write"),
-  cost: num("$.cost"),
-}
 
 function scope(projectID: ProjectID, range: Range, now: number) {
   const start = since(range, now)
@@ -107,77 +93,11 @@ function scope(projectID: ProjectID, range: Range, now: number) {
   return and(...conditions)
 }
 
-function base(projectID: ProjectID, range: Range, now: number) {
-  return Database.use((db) =>
-    db
-      .select({
-        sessions: sql<number>`count(distinct ${MessageTable.session_id})`,
-        messages: sql<number>`count(*)`,
-        ...TOKENS,
-      })
-      .from(MessageTable)
-      .innerJoin(SessionTable, eq(MessageTable.session_id, SessionTable.id))
-      .where(scope(projectID, range, now))
-      .get(),
-  )
-}
-
-function daily(projectID: ProjectID, range: Range, now: number) {
-  return Database.use((db) =>
-    db
-      .select({ day: DAY, messages: sql<number>`count(*)`, ...TOKENS })
-      .from(MessageTable)
-      .innerJoin(SessionTable, eq(MessageTable.session_id, SessionTable.id))
-      .where(scope(projectID, range, now))
-      .groupBy(DAY)
-      .all(),
-  )
-}
-
-function byModel(projectID: ProjectID, range: Range, now: number) {
-  return Database.use((db) =>
-    db
-      .select({ providerID: PROVIDER, modelID: MODEL, messages: sql<number>`count(*)`, ...TOKENS })
-      .from(MessageTable)
-      .innerJoin(SessionTable, eq(MessageTable.session_id, SessionTable.id))
-      .where(scope(projectID, range, now))
-      .groupBy(PROVIDER, MODEL)
-      .all(),
-  )
-}
-
-/** 堆叠柱要的「某天某模型多少 token」。只出 output+reasoning，柱子高度对应产出量。 */
-function dailyByModel(projectID: ProjectID, range: Range, now: number) {
-  return Database.use((db) =>
-    db
-      .select({
-        day: DAY,
-        providerID: PROVIDER,
-        modelID: MODEL,
-        output: TOKENS.output,
-        reasoning: TOKENS.reasoning,
-      })
-      .from(MessageTable)
-      .innerJoin(SessionTable, eq(MessageTable.session_id, SessionTable.id))
-      .where(scope(projectID, range, now))
-      .groupBy(DAY, PROVIDER, MODEL)
-      .all(),
-  )
-}
-
-function peakHour(projectID: ProjectID, range: Range, now: number) {
-  const row = Database.use((db) =>
-    db
-      .select({ hour: HOUR, messages: sql<number>`count(*)` })
-      .from(MessageTable)
-      .innerJoin(SessionTable, eq(MessageTable.session_id, SessionTable.id))
-      .where(scope(projectID, range, now))
-      .groupBy(HOUR)
-      .orderBy(desc(sql`count(*)`))
-      .limit(1)
-      .get(),
-  )
-  return row?.hour ?? undefined
+function localDay(timestamp: number) {
+  const date = new Date(timestamp)
+  return [date.getFullYear(), date.getMonth() + 1, date.getDate()]
+    .map((value, index) => (index === 0 ? String(value) : String(value).padStart(2, "0")))
+    .join("-")
 }
 
 /**
@@ -288,55 +208,117 @@ export function aggregate(input: { projectID: ProjectID; range: Range; now: numb
 
 function compute(input: { projectID: ProjectID; range: Range; now: number }) {
   const { projectID, range, now } = input
-  const overview = base(projectID, range, now)
-  const days = daily(projectID, range, now)
-  const models = byModel(projectID, range, now)
-  const perDayModel = dailyByModel(projectID, range, now)
-  const today = new Date(now - new Date(now).getTimezoneOffset() * 60_000).toISOString().slice(0, 10)
+  // 260920 Red 五个 SQL 聚合原本各自读取同一批 message.data；冷缓存时 blob 重读占掉
+  //   绝大部分时间。一次只取必要列，再在内存里复用同一份已解码消息，保持原有统计口径。
+  const rows = Database.use((db) =>
+    db
+      .select({
+        sessionID: MessageTable.session_id,
+        timeCreated: MessageTable.time_created,
+        data: MessageTable.data,
+      })
+      .from(MessageTable)
+      .innerJoin(SessionTable, eq(MessageTable.session_id, SessionTable.id))
+      .where(scope(projectID, range, now))
+      .all(),
+  )
+  const sessions = new Set<string>()
+  const totals = {
+    input: 0,
+    output: 0,
+    reasoning: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    cost: 0,
+    messages: 0,
+  }
+  const daily = new Map<string, { messages: number; output: number; cost: number }>()
+  const models = new Map<
+    string,
+    { providerID: string; modelID: string; messages: number; input: number; output: number; cost: number }
+  >()
+  const dailyByModel = new Map<string, { day: string; providerID: string; modelID: string; output: number }>()
+  const hours = new Map<number, number>()
+
+  for (const row of rows) {
+    if (row.data.role !== "assistant") continue
+    const message = row.data as Omit<Assistant, "id" | "sessionID">
+    const day = localDay(row.timeCreated)
+    const output = message.tokens.output + message.tokens.reasoning
+    const input = message.tokens.input + message.tokens.cache.read + message.tokens.cache.write
+    const modelKey = `${message.providerID}\u0000${message.modelID}`
+    const dailyModelKey = `${day}\u0000${modelKey}`
+
+    sessions.add(row.sessionID)
+    totals.messages += 1
+    totals.input += message.tokens.input
+    totals.output += message.tokens.output
+    totals.reasoning += message.tokens.reasoning
+    totals.cacheRead += message.tokens.cache.read
+    totals.cacheWrite += message.tokens.cache.write
+    totals.cost += message.cost
+
+    const dayValue = daily.get(day) ?? { messages: 0, output: 0, cost: 0 }
+    dayValue.messages += 1
+    dayValue.output += output
+    dayValue.cost += message.cost
+    daily.set(day, dayValue)
+
+    const modelValue = models.get(modelKey) ?? {
+      providerID: message.providerID,
+      modelID: message.modelID,
+      messages: 0,
+      input: 0,
+      output: 0,
+      cost: 0,
+    }
+    modelValue.messages += 1
+    modelValue.input += input
+    modelValue.output += output
+    modelValue.cost += message.cost
+    models.set(modelKey, modelValue)
+
+    const dailyModelValue = dailyByModel.get(dailyModelKey) ?? {
+      day,
+      providerID: message.providerID,
+      modelID: message.modelID,
+      output: 0,
+    }
+    dailyModelValue.output += output
+    dailyByModel.set(dailyModelKey, dailyModelValue)
+
+    const hour = new Date(row.timeCreated).getHours()
+    hours.set(hour, (hours.get(hour) ?? 0) + 1)
+  }
+
+  const days = [...daily.entries()]
+    .map(([day, value]) => ({ day, ...value }))
+    .sort((a, b) => a.day.localeCompare(b.day))
+  const today = localDay(now)
   const streak = streaks(
-    days.map((d) => d.day),
+    days.map((day) => day.day),
     today,
   )
+  const peakHour = [...hours.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]?.[0]
 
   return {
     range,
-    sessions: Number(overview?.sessions ?? 0),
-    messages: Number(overview?.messages ?? 0),
+    sessions: sessions.size,
+    messages: totals.messages,
     tokens: {
-      input: Number(overview?.input ?? 0),
-      output: Number(overview?.output ?? 0),
-      reasoning: Number(overview?.reasoning ?? 0),
-      cacheRead: Number(overview?.cacheRead ?? 0),
-      cacheWrite: Number(overview?.cacheWrite ?? 0),
+      input: totals.input,
+      output: totals.output,
+      reasoning: totals.reasoning,
+      cacheRead: totals.cacheRead,
+      cacheWrite: totals.cacheWrite,
     },
-    cost: Number(overview?.cost ?? 0),
+    cost: totals.cost,
     activeDays: days.length,
     currentStreak: streak.current,
     longestStreak: streak.longest,
-    peakHour: peakHour(projectID, range, now),
-    daily: days.map((d) => ({
-      day: d.day,
-      messages: Number(d.messages),
-      output: Number(d.output) + Number(d.reasoning),
-      cost: Number(d.cost),
-    })),
-    models: models
-      .map((m) => ({
-        providerID: m.providerID,
-        modelID: m.modelID,
-        messages: Number(m.messages),
-        input: Number(m.input) + Number(m.cacheRead) + Number(m.cacheWrite),
-        output: Number(m.output) + Number(m.reasoning),
-        cost: Number(m.cost),
-      }))
-      .sort((a, b) => b.output - a.output),
-    dailyByModel: perDayModel
-      .map((d) => ({
-        day: d.day,
-        providerID: d.providerID,
-        modelID: d.modelID,
-        output: Number(d.output) + Number(d.reasoning),
-      }))
-      .filter((d) => d.output > 0),
+    peakHour,
+    daily: days,
+    models: [...models.values()].sort((a, b) => b.output - a.output),
+    dailyByModel: [...dailyByModel.values()].filter((day) => day.output > 0),
   }
 }

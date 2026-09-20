@@ -47,7 +47,11 @@ export function NewSessionDesignView(props: { worktree: string; children: JSX.El
   // 清底交给 index.css 的 [data-app-frost] [data-component="session-new-design"] 规则，
   // 无壁纸时这里的实色照常生效。
   return (
-    <div data-component="session-new-design" class="relative size-full overflow-hidden bg-v2-background-bg-deep">
+    <main
+      data-component="session-new-design"
+      class="relative size-full overflow-hidden bg-v2-background-bg-deep"
+      aria-label={language.t("command.session.new")}
+    >
       {/* 260828 cc 原来是 `absolute inset-x-0 top-[25.375%]` —— 一个精确到小数点后三位的
           百分比，像是照着某个特定窗口高度的设计稿量出来的。它把整块钉死在上四分之一：
           1100px 高的窗口里内容到 500px 就结束，下面 600px 全空，而且窗口越高空白越大。
@@ -65,10 +69,16 @@ export function NewSessionDesignView(props: { worktree: string; children: JSX.El
           </div>
           {/* 260828 cc 问候语。字标是品牌、输入框是功能，中间这一句是唯一说人话的地方，
               所以放这儿。字号刻意压在 15px：它是陪衬，抢了输入框的注意力就本末倒置了。 */}
-          <div class="mt-5 text-center text-[15px] font-[440] text-v2-text-text-muted">{language.t(greetingKey())}</div>
+          <h1 class="mt-5 text-center text-[15px] font-[440] text-v2-text-text-muted">{language.t(greetingKey())}</h1>
           <div class="mt-8">
             {props.children}
-            <div class="mt-3 flex h-7 items-center gap-0 pl-2">
+            {/* 260920 Red 把项目选择与当前分支归为一组上下文元信息，和主输入保持一条
+                清晰的分隔线；它们是开始前的选择，不再和提交动作抢同一层级。 */}
+            <div
+              data-component="new-session-context"
+              class="mt-4 flex min-h-8 flex-wrap items-center gap-0 border-t border-v2-border-border-base/50 pl-2 pt-2"
+              aria-label={language.t("command.session.new")}
+            >
               <Select
                 size="normal"
                 variant="ghost"
@@ -92,6 +102,6 @@ export function NewSessionDesignView(props: { worktree: string; children: JSX.El
           </div>
         </div>
       </div>
-    </div>
+    </main>
   )
 }

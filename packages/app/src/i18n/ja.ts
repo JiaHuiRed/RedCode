@@ -454,6 +454,10 @@ export const dict = {
   "error.chain.retryable": "再試行可能: {{retryable}}",
   "error.chain.responseBody": "レスポンス本文:\n{{body}}",
   "error.chain.didYouMean": "もしかして: {{suggestions}}",
+  "error.chain.resources":
+    "プロジェクトのシステムリソースが不足しています。使用していないプロジェクトを閉じて再試行してください。",
+  "error.chain.processStart":
+    "プロジェクトの補助プロセスを起動できませんでした。使用していないプロジェクトを閉じて再試行してください。",
   "error.chain.modelNotFound": "モデルが見つかりません: {{provider}}/{{model}}",
   "error.chain.checkConfig": "config (RedCode.json) のプロバイダー/モデル名を確認してください",
   "error.chain.mcpFailed": 'MCPサーバー "{{name}}" が失敗しました。注意: RedCodeはまだMCP認証をサポートしていません。',
@@ -976,6 +980,8 @@ export const dict = {
   "home.kanban.hidden": "古いセッション {{count}} 件は非表示",
   "home.usage.tab.overview": "概要",
   "home.usage.tab.models": "モデル",
+  "home.usage.collapse": "使用量を隠す",
+  "home.usage.expand": "使用量を表示",
   "home.usage.range.all": "全期間",
   "home.usage.range.30d": "30日",
   "home.usage.range.7d": "7日",

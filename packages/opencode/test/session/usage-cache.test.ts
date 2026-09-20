@@ -127,4 +127,28 @@ describe("SessionUsage.aggregate 指纹短路", () => {
       }),
     ),
   )
+
+  it.instance("一次扫描同时生成日线、模型和峰值维度", () =>
+    withSession((sessionID) =>
+      Effect.gen(function* () {
+        const project = yield* projectID
+        SessionUsage.invalidate()
+        const now = Date.now()
+        yield* assistant(sessionID, now, 100)
+
+        const result = SessionUsage.aggregate({ projectID: project, range: "all", now })
+        const date = new Date(now)
+        const day = [date.getFullYear(), date.getMonth() + 1, date.getDate()]
+          .map((value, index) => (index === 0 ? String(value) : String(value).padStart(2, "0")))
+          .join("-")
+
+        expect(result.daily).toEqual([{ day, messages: 1, output: 100, cost: 1 }])
+        expect(result.models).toEqual([
+          { providerID: "test-provider", modelID: "test-model", messages: 1, input: 10, output: 100, cost: 1 },
+        ])
+        expect(result.dailyByModel).toEqual([{ day, providerID: "test-provider", modelID: "test-model", output: 100 }])
+        expect(result.peakHour).toBe(date.getHours())
+      }),
+    ),
+  )
 })

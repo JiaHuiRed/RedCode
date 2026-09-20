@@ -19,6 +19,8 @@ function useLanguageMock() {
     "error.chain.modelNotFound": "Modelo nao encontrado: {{provider}}/{{model}}",
     "error.chain.didYouMean": "Voce quis dizer: {{suggestions}}",
     "error.chain.checkConfig": "Revise provider/model no config",
+    "error.chain.resources": "Recursos do projeto esgotados",
+    "error.chain.processStart": "Processo auxiliar nao iniciou",
   }
   return {
     t(key: string, vars?: Record<string, string | number>) {
@@ -84,6 +86,17 @@ describe("formatServerError", () => {
     expect(formatServerError(new Error("Request failed with status 503"), language.t)).toBe(
       "Request failed with status 503",
     )
+  })
+
+  test("classifies exhausted system resources", () => {
+    expect(formatServerError(new Error("spawn ENOMEM"), language.t)).toBe("Recursos do projeto esgotados")
+    expect(formatServerError(new Error("ERR_INSUFFICIENT_RESOURCES"), language.t)).toBe("Recursos do projeto esgotados")
+  })
+
+  test("classifies helper process startup failures", () => {
+    expect(formatServerError(new Error("spawn UNKNOWN"), language.t)).toBe("Processo auxiliar nao iniciou")
+    expect(formatServerError(new Error("spawn git UNKNOWN"), language.t)).toBe("Processo auxiliar nao iniciou")
+    expect(formatServerError(new Error("spawn EAGAIN"), language.t)).toBe("Processo auxiliar nao iniciou")
   })
 
   test("returns provided string errors", () => {

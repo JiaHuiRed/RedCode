@@ -15,6 +15,7 @@
  * 文字一律用 v2 text token，**不用系列色**——系列色只出现在色块上，标签旁边配色块来带身份。
  */
 import { createMemo, createSignal, For, Show, Suspense } from "solid-js"
+import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
 import { Tooltip } from "@redcode-ai/ui/tooltip"
 import { useTheme } from "@redcode-ai/ui/theme"
@@ -23,6 +24,7 @@ import { useQueryOptions } from "@/context/server-sync"
 import { pathKey } from "@/utils/path-key"
 import { createSessionContextFormatter } from "@/components/session/session-context-format"
 import { useProviders } from "@/hooks/use-providers"
+import { formatServerError } from "@/utils/server-errors"
 import { RING_SEGMENTS, StatsRing, USD_TO_CNY } from "./home-stats"
 import {
   calendarDays,
@@ -209,23 +211,93 @@ function StackedBars(props: {
   )
 }
 
-/**
- * 对外的入口只做一件事：**把挂起就地兜住**。
- *
- * 260901 cc 这层无 fallback 的 Suspense 不是可选的。面板在首页常驻路径上，里面有 useQuery；
- * 任何一次挂起漏出去，都会冒到 app.tsx ConnectionGate 那个 fallback 是满屏 Splash 的边界，
- * 表现就是「切工作区整扇窗变成猫猫加载页」。内层已经用 isLoading 先判过一道，这里是第二道。
- * 无 fallback 是刻意的：面板没画出来时这块地方留空即可，不该有任何一闪而过的占位。
- */
-export function HomeUsagePanel(props: { directory: string | undefined }) {
+const USAGE_SURFACE =
+  "flex w-full max-w-[620px] shrink-0 flex-col gap-3 self-start rounded-pane border border-v2-border-border-base bg-v2-background-bg-layer-01 p-3 shadow-[var(--v2-elevation-floating)] xl:w-[620px]"
+
+function HomeUsageSkeleton() {
+  const language = useLanguage()
   return (
-    <Suspense>
-      <HomeUsagePanelInner directory={props.directory} />
-    </Suspense>
+    <div
+      data-frost-surface="home-usage"
+      class={USAGE_SURFACE}
+      aria-busy="true"
+      aria-label={language.t("common.loading")}
+    >
+      <div class="flex items-center justify-between">
+        <div class="h-6 w-24 animate-pulse rounded-[6px] bg-v2-background-bg-layer-02 motion-reduce:animate-none" />
+        <div class="h-6 w-28 animate-pulse rounded-[6px] bg-v2-background-bg-layer-02 motion-reduce:animate-none" />
+      </div>
+      <div class="flex items-center gap-3">
+        <div class="size-20 animate-pulse rounded-full bg-v2-background-bg-layer-02 motion-reduce:animate-none" />
+        <div class="flex min-w-0 flex-1 flex-col gap-2">
+          <div class="h-3 w-28 animate-pulse rounded bg-v2-background-bg-layer-02 motion-reduce:animate-none" />
+          <div class="h-3 w-20 animate-pulse rounded bg-v2-background-bg-layer-02 motion-reduce:animate-none" />
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-2 min-[560px]:grid-cols-4">
+        <For each={Array.from({ length: 8 })}>
+          {() => (
+            <div class="h-12 animate-pulse rounded-[6px] bg-v2-background-bg-layer-02 motion-reduce:animate-none" />
+          )}
+        </For>
+      </div>
+    </div>
   )
 }
 
-function HomeUsagePanelInner(props: { directory: string | undefined }) {
+function HomeUsageError(props: { error: unknown; onRetry: () => void }) {
+  const language = useLanguage()
+  return (
+    <div data-frost-surface="home-usage" class={`${USAGE_SURFACE} min-h-40`} role="alert">
+      <div class="flex items-start gap-3">
+        <div class="min-w-0 flex-1">
+          <div class="text-13-medium text-v2-text-text-base">{language.t("common.requestFailed")}</div>
+          <div class="mt-1 break-words text-12-regular text-v2-text-text-muted">
+            {formatServerError(props.error, language.t)}
+          </div>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-md border border-v2-border-border-base px-2.5 py-1 text-12-medium text-v2-text-text-base transition-colors hover:bg-v2-background-bg-layer-02 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-v2-border-border-focus"
+          onClick={props.onRetry}
+        >
+          {language.t("common.retry")}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 入口同时兜住挂起与空数据：切项目时保留稳定骨架，已有数据则由 solid-query 的
+ * placeholderData 留在原位，避免首页从“有面板”退成一块空白。
+ */
+export function HomeUsagePanel(props: { directory: string | undefined }) {
+  const language = useLanguage()
+  const [state, setState] = createStore({ collapsed: false })
+  return (
+    <Show
+      when={!state.collapsed}
+      fallback={
+        <button
+          type="button"
+          class="flex min-h-9 w-full shrink-0 items-center justify-center rounded-pane border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 text-11-medium text-v2-text-text-muted shadow-[var(--v2-elevation-floating)] transition-colors hover:text-v2-text-text-base focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-v2-border-border-focus xl:min-h-[180px] xl:w-9"
+          onClick={() => setState("collapsed", false)}
+          aria-label={language.t("home.usage.expand")}
+          title={language.t("home.usage.expand")}
+        >
+          <span class="xl:[writing-mode:vertical-rl]">{language.t("home.usage.tab.overview")}</span>
+        </button>
+      }
+    >
+      <Suspense fallback={<HomeUsageSkeleton />}>
+        <HomeUsagePanelInner directory={props.directory} onCollapse={() => setState("collapsed", true)} />
+      </Suspense>
+    </Show>
+  )
+}
+
+function HomeUsagePanelInner(props: { directory: string | undefined; onCollapse: () => void }) {
   const language = useLanguage()
   const theme = useTheme()
   const providers = useProviders()
@@ -239,6 +311,7 @@ function HomeUsagePanelInner(props: { directory: string | undefined }) {
   const key = createMemo(() => pathKey(props.directory ?? ""))
   const query = useQuery(() => ({
     ...options.usage(key(), range()),
+    placeholderData: (previous) => previous,
     enabled: !!props.directory,
   }))
 
@@ -248,7 +321,7 @@ function HomeUsagePanelInner(props: { directory: string | undefined }) {
   //   queryKey 变 → 重新拉取 → 整扇窗被猫猫加载页顶掉。这正是 260901 上午清掉的那类病
   //   （见 project_gui_desktop_perf 的「常驻路径上不能有挂起源」）。
   //   仓里既有写法就是这样防的：server-sync.tsx:136 的 `if (providerQuery.isLoading) return EMPTY`。
-  //   下面 HomeUsagePanel 外面那层无 fallback 的 Suspense 是第二道保险，两道都要留。
+  //   下面 HomeUsagePanel 外面那层带稳定骨架的 Suspense 是第二道保险，两道都要留。
   const usage = () => (query.isLoading ? undefined : (query.data as Usage | undefined))
   const dark = () => theme.mode() === "dark"
 
@@ -312,7 +385,16 @@ function HomeUsagePanelInner(props: { directory: string | undefined }) {
   )
 
   return (
-    <Show when={usage()}>
+    <Show
+      when={usage()}
+      fallback={
+        query.isError ? (
+          <HomeUsageError error={query.error} onRetry={() => void query.refetch()} />
+        ) : (
+          <HomeUsageSkeleton />
+        )
+      }
+    >
       {(data) => (
         // 260901 cc 面与侧边栏取同一套：bg-layer-01 + data-frost-surface（CSS 规则并在
         //   index.css 里的同一个选择器上）+ rounded-pane + floating 阴影。bg-base 是实色，
@@ -323,10 +405,7 @@ function HomeUsagePanelInner(props: { directory: string | undefined }) {
         //   他这块主区约 1820，减掉 1110 与列间距，面板最多能到 ~680，取 620 留余量。
         //   走过的两个极端：880px 横跨整个主区太稀（八个格子各装一个三位数）、
         //   340px 窄列又太挤（指标块只剩两列、热力图要横滚）。
-        <div
-          data-frost-surface="home-usage"
-          class="flex w-[620px] shrink-0 flex-col gap-3 self-start rounded-pane border border-v2-border-border-base bg-v2-background-bg-layer-01 p-3 shadow-[var(--v2-elevation-floating)]"
-        >
+        <div data-frost-surface="home-usage" class={USAGE_SURFACE} aria-busy={query.isFetching}>
           <div class="flex flex-wrap items-center gap-2">
             <Segmented
               value={tab()}
@@ -335,14 +414,36 @@ function HomeUsagePanelInner(props: { directory: string | undefined }) {
               onChange={setTab}
             />
             <div class="ml-auto">
-              <Segmented
-                value={range()}
-                options={RANGES}
-                label={(v) =>
-                  t(v === "all" ? "home.usage.range.all" : v === "30d" ? "home.usage.range.30d" : "home.usage.range.7d")
-                }
-                onChange={setRange}
-              />
+              <div class="flex items-center gap-1.5">
+                <Show when={query.isFetching}>
+                  <span class="text-11-regular text-v2-text-text-muted" role="status">
+                    {t("common.loading")}
+                  </span>
+                </Show>
+                <Segmented
+                  value={range()}
+                  options={RANGES}
+                  label={(v) =>
+                    t(
+                      v === "all"
+                        ? "home.usage.range.all"
+                        : v === "30d"
+                          ? "home.usage.range.30d"
+                          : "home.usage.range.7d",
+                    )
+                  }
+                  onChange={setRange}
+                />
+                <button
+                  type="button"
+                  class="flex size-6 items-center justify-center rounded-md text-14-medium text-v2-text-text-muted transition-colors hover:bg-v2-background-bg-layer-02 hover:text-v2-text-text-base focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-v2-border-border-focus"
+                  onClick={props.onCollapse}
+                  aria-label={t("home.usage.collapse")}
+                  title={t("home.usage.collapse")}
+                >
+                  −
+                </button>
+              </div>
             </div>
           </div>
 

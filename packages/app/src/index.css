@@ -254,6 +254,21 @@
     animation: hamster-run 1.2s ease-in-out infinite;
     display: inline-block;
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-hamster,
+    [data-component="session-progress-bar"] {
+      animation: none !important;
+    }
+
+    [data-component="session-progress-bar"] {
+      clip-path: inset(0 round 999px);
+    }
+
+    [data-component="session-progress"] {
+      transition: none;
+    }
+  }
 }
 
 /* ============================================================================

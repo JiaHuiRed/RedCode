@@ -29,6 +29,9 @@ export function formatServerError(error: unknown, translate?: Translator, fallba
   const unwrapped = unwrapNamedError(error)
   if (isConfigInvalidErrorLike(unwrapped)) return parseReadableConfigInvalidError(unwrapped, translate)
   if (isProviderModelNotFoundErrorLike(unwrapped)) return parseReadableProviderModelNotFoundError(unwrapped, translate)
+  const resourceMessage =
+    parseReadableResourceError(error, translate) ?? parseReadableResourceError(unwrapped, translate)
+  if (resourceMessage) return resourceMessage
   if (error instanceof Error && error.message) return error.message
   if (typeof error === "string" && error) return error
   if (fallback) return fallback
@@ -52,6 +55,31 @@ function isProviderModelNotFoundErrorLike(error: unknown): error is ProviderMode
   if (typeof error !== "object" || error === null) return false
   const o = error as Record<string, unknown>
   return o.name === "ProviderModelNotFoundError" && typeof o.data === "object" && o.data !== null
+}
+
+function parseReadableResourceError(error: unknown, translator?: Translator) {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"
+          ? error.message
+          : ""
+  if (/ENOMEM|ERR_INSUFFICIENT_RESOURCES/i.test(message)) {
+    return tr(
+      translator,
+      "error.chain.resources",
+      "The project ran out of system resources. Close unused projects and retry.",
+    )
+  }
+  if (/\bspawn(?:\s+\S+)?\s+(UNKNOWN|EAGAIN)\b/i.test(message)) {
+    return tr(
+      translator,
+      "error.chain.processStart",
+      "A project helper process could not start. Close unused projects and retry.",
+    )
+  }
 }
 
 export function parseReadableConfigInvalidError(errorInput: ConfigInvalidError, translator?: Translator) {

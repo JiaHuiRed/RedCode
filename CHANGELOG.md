@@ -21,15 +21,15 @@
 - **外部审计指出的执行边界完成首轮修复**（`packages/opencode/src/{mcp,session,permission,provider}`）：MCP 取消信号贯通重试链，工具 policy 改看最终参数，quota 防止越界与旧凭据快照覆盖，Permission 批量 always 放行同步清理 owner。
 - **R2 执行边界完成二阶收口**（`packages/opencode/src/{mcp,permission,provider}`）：修复 quota 凭据 A→B→A 的 generation 竞态，取消 MCP 工具时同步中断 reconnect fiber，并让 Permission requester 在事件发布前完成 terminal；补充真实 MCP 工具链路与生命周期回归测试。
 
-#### GUI 打磨待办
+#### GUI 打磨
 
-- **首页 Usage 首屏反馈与性能**（`packages/app/src/pages/home-usage.tsx`、`packages/opencode/src/session/usage.ts`）：当前 `session.usage` 未返回前整个面板不渲染，旧版 exe 也存在“空白一段时间后突然出现”的问题；补稳定的面板骨架/加载态，保留可用快照，并继续压低冷缓存聚合 `message.data` 的首屏耗时。
-- **项目重载失败与资源压力**（`packages/app/src/context/global-sync/bootstrap.ts`、`packages/app/src/context/global-sync/{child-store,eviction}.ts*`、`packages/desktop/src/main`）：`quiet-circuit` 曾出现通用 reload Toast，日志已见 `spawn ENOMEM`、VCS `spawn UNKNOWN` 及 MCP 启动失败；需继续核对实例淘汰、MCP/LSP/文件 watcher 子进程上限与错误分层，避免资源压力只表现为模糊提示。
-- **主界面视觉层级**：保留 Wallpaper 的氛围感但增加 Veil；Usage 作为次级信息降权或可收起，Kanban 与项目侧栏建立更明确的主次关系，避免背景、卡片和高亮同时争夺第一焦点。
-- **会话页层级与状态**：按 L1/L2/L3 收敛消息、工具、辅助信息的视觉权重；Composer 做成可识别的状态化区域；标题栏、Context/Review、服务器/MCP/LSP/插件状态避免重复抢占注意力。
-- **新建会话页**：复核项目、模型、提示入口和主操作的空间分组、默认焦点、空状态与提交反馈，让首次进入时先理解“选什么、输入什么、如何开始”。
-- **设计 token 与可访问性**：优先统一现有 `--frost-*` 与 `--v2-*` 体系，不再平行铺第三套 token；同步检查对比度、键盘焦点、窄窗口、减少动效和长时间使用下的密度。
-- **实施顺序**：第一阶段先做背景/层级/透明度等纯视觉调整；第二阶段处理 Usage/Context 的折叠与摘要；第三阶段再做 Composer、赤状态反馈和更细的交互动效。每阶段都用 Home、Session、新建会话三张基准图回归，避免继续叠加 Glow 或大范围重写。
+- **首页 Usage 首屏与聚合性能收口**（`packages/app/src/pages/home-usage.tsx`、`packages/opencode/src/session/usage.ts`）：补稳定骨架、旧快照占位、错误重试和可收起入口；服务端改为一次 SQL 读取 assistant 消息后在内存中完成总览、日线、模型、堆叠柱与峰值聚合，保留指纹短路和有界缓存。
+- **项目重载与资源错误分层**（`packages/app/src/utils/server-errors.ts`、`packages/app/src/components/status-popover-body.tsx`）：复核既有目录淘汰、队列去重、实例上限、sidecar 闸门与 Network Service 恢复链路；对 `ENOMEM`、`ERR_INSUFFICIENT_RESOURCES`、`spawn UNKNOWN/EAGAIN` 给出可执行提示，并统一 MCP 状态入口的错误展示。
+- **主界面视觉层级**（`packages/app/src/pages/home.tsx`、`packages/app/src/pages/home-usage.tsx`）：沿用已有 Wallpaper Veil 与 Usage 降权，增加 Usage 收起态；窄窗口改为 Usage 与 Kanban 上下排布，避免主要看板被挤成窄列。
+- **会话页层级与状态**（`packages/app/src/pages/session/composer/session-composer-region.tsx`）：Composer 增加轻量边界和 busy/retry 状态提示；标题栏既有的服务器、MCP、LSP、插件单一状态入口与 Context/Review 浮层保持不重复。
+- **新建会话页信息分组**（`packages/app/src/components/session/session-new-design-view.tsx`）：补语义化主区域和标题，将项目/分支元信息与主输入用低强调分隔线归组；保留现有默认焦点、空态和错误重试行为，不虚构分支选择器。
+- **设计 token 与可访问性**（`packages/app/src/index.css`、`packages/app/src/i18n/{en,zh,ja}.ts`）：继续使用现有 `--frost-*`/`--v2-*` 体系，补齐收起/错误文案、键盘焦点、窄窗口与 reduced-motion 处理，不新增第三套视觉 token。
+- **实施与回归边界**：按背景层级、Usage 状态、Composer 状态的顺序小步落地；app/opencode 类型检查、定向测试和格式检查已通过，Home/Session/新建会话的实际截图闭环仍需在目标运行环境复核。
 
 ---
 
@@ -300,7 +300,6 @@
 
 #### 待办
 
-- **继续排查 GUI 白屏/OOM 与渲染卡顿**：已有 renderer gone、5.6 秒 unresponsive、ResizeObserver 循环和失败 fetch 证据，但尚未确认白屏是否由 renderer 内存耗尽触发；后续先完成根因交叉验证，再分别修白屏和卡顿。
 
 ### [0.11.0] - 2026-09-08
 
