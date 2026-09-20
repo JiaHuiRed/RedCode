@@ -223,6 +223,8 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
   const inflightDiff = new Map<string, Promise<void>>()
   const inflightTodo = new Map<string, Promise<void>>()
   const inflightGoal = new Map<string, Promise<void>>()
+  // 260921 Red 审计回信 P2：消息分页的并发请求改成 join（原先静默丢弃，见 loadMessages）。
+  const inflightMessagePages = new Map<string, Promise<void>>()
   const optimistic = new Map<string, Map<string, OptimisticItem>>()
   const maxDirs = 30
   const seen = new Map<string, Set<string>>()
@@ -375,63 +377,67 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
     mode?: "replace" | "prepend" | "refresh"
   }) => {
     const key = keyFor(input.directory, input.sessionID)
-    if (meta.loading[key]) return
-
-    setMeta("loading", key, true)
-    // 260913 Red 重连后从最新页往回补到断线前锚点：断线期间服务端仍在写消息，
-    // 只刷元数据会把这段永久留在缺口里，任何 DOM 事件都不会再把它补回来。
-    const fetched = input.anchor
-      ? fetchMessageGap(
-          (before) => fetchMessages({ client: input.client, sessionID: input.sessionID, limit: input.limit, before }),
-          input.anchor,
-        )
-      : fetchMessages(input)
-    await fetched
-      .then((page) => {
-        if (!tracked(input.directory, input.sessionID)) return
-        const next = mergeOptimisticPage(page, getOptimistic(input.directory, input.sessionID))
-        for (const messageID of next.confirmed) {
-          clearOptimistic(input.directory, input.sessionID, messageID)
-        }
-        const [store] = globalSync.child(input.directory, { bootstrap: false })
-        // 260829 cc refresh 与 prepend 一样并集合并，区别只在游标：prepend 拉的是更老的一页，
-        // 游标要往前推；refresh 拉的是最新一页，若手上已有更深的历史，推游标等于把历史窗口
-        // 的回溯位置重置到很近的地方，下次往回翻会重复拉已有的消息。
-        const isMerge = input.mode === "prepend" || input.mode === "refresh"
-        const cached = isMerge ? (store.message[input.sessionID] ?? []) : []
-        const message = isMerge ? merge(cached, next.session) : next.session
-        const keepCursor = input.mode === "refresh" && cached.length > next.session.length
-        const cursor = keepCursor ? (meta.cursor[key] ?? next.cursor) : next.cursor
-        const complete = keepCursor ? (meta.complete[key] ?? next.complete) : next.complete
-        batch(() => {
-          input.setStore("message", input.sessionID, reconcile(message, { key: "id" }))
-          for (const p of next.part) {
-            const filtered = p.part.filter((x) => !SKIP_PARTS.has(x.type))
-            if (filtered.length) input.setStore("part", p.id, filtered)
+    // 260921 Red 审计回信 P2：原先是 `if (meta.loading[key]) return` —— 并发调用被静默丢弃，
+    // 调用方分不清「我的请求跑完了」和「我的请求根本没执行」。改成 runInflight join：请求仍然
+    // 只发一次，但每个调用方 await 到的是真实完成信号（session-history-loader 的 loadThrough
+    // 因此不必再用 60ms 等待 + 最多 8 次 stall 去猜 pager 何时可用）。
+    return runInflight(inflightMessagePages, key, async () => {
+      setMeta("loading", key, true)
+      // 260913 Red 重连后从最新页往回补到断线前锚点：断线期间服务端仍在写消息，
+      // 只刷元数据会把这段永久留在缺口里，任何 DOM 事件都不会再把它补回来。
+      const fetched = input.anchor
+        ? fetchMessageGap(
+            (before) => fetchMessages({ client: input.client, sessionID: input.sessionID, limit: input.limit, before }),
+            input.anchor,
+          )
+        : fetchMessages(input)
+      await fetched
+        .then((page) => {
+          if (!tracked(input.directory, input.sessionID)) return
+          const next = mergeOptimisticPage(page, getOptimistic(input.directory, input.sessionID))
+          for (const messageID of next.confirmed) {
+            clearOptimistic(input.directory, input.sessionID, messageID)
           }
-          setMeta("limit", key, message.length)
-          setMeta("cursor", key, cursor)
-          setMeta("complete", key, complete)
-          setSessionPrefetch({
-            directory: input.directory,
-            sessionID: input.sessionID,
-            limit: message.length,
-            cursor,
-            complete,
+          const [store] = globalSync.child(input.directory, { bootstrap: false })
+          // 260829 cc refresh 与 prepend 一样并集合并，区别只在游标：prepend 拉的是更老的一页，
+          // 游标要往前推；refresh 拉的是最新一页，若手上已有更深的历史，推游标等于把历史窗口
+          // 的回溯位置重置到很近的地方，下次往回翻会重复拉已有的消息。
+          const isMerge = input.mode === "prepend" || input.mode === "refresh"
+          const cached = isMerge ? (store.message[input.sessionID] ?? []) : []
+          const message = isMerge ? merge(cached, next.session) : next.session
+          const keepCursor = input.mode === "refresh" && cached.length > next.session.length
+          const cursor = keepCursor ? (meta.cursor[key] ?? next.cursor) : next.cursor
+          const complete = keepCursor ? (meta.complete[key] ?? next.complete) : next.complete
+          batch(() => {
+            input.setStore("message", input.sessionID, reconcile(message, { key: "id" }))
+            for (const p of next.part) {
+              const filtered = p.part.filter((x) => !SKIP_PARTS.has(x.type))
+              if (filtered.length) input.setStore("part", p.id, filtered)
+            }
+            setMeta("limit", key, message.length)
+            setMeta("cursor", key, cursor)
+            setMeta("complete", key, complete)
+            setSessionPrefetch({
+              directory: input.directory,
+              sessionID: input.sessionID,
+              limit: message.length,
+              cursor,
+              complete,
+            })
           })
         })
-      })
-      .finally(() => {
-        setMeta(
-          produce((draft) => {
-            if (!tracked(input.directory, input.sessionID)) {
-              delete draft.loading[key]
-              return
-            }
-            draft.loading[key] = false
-          }),
-        )
-      })
+        .finally(() => {
+          setMeta(
+            produce((draft) => {
+              if (!tracked(input.directory, input.sessionID)) {
+                delete draft.loading[key]
+                return
+              }
+              draft.loading[key] = false
+            }),
+          )
+        })
+    })
   }
 
   return {
@@ -667,7 +673,9 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
           touch(directory, setStore, sessionID)
           const key = keyFor(directory, sessionID)
           const step = count ?? historyMessagePageSize
-          if (meta.loading[key]) return
+          // 260921 Red 审计回信 P2：原先这里和 loadMessages 各有一道 `if (meta.loading[key]) return`，
+          // 并发调用被静默丢弃 —— 上层 loadThrough 只能用 60ms 等待 + 最多 8 次 stall 去猜 pager
+          // 何时可用。这里放开，由 loadMessages 的 runInflight 把并发请求 join 到同一个 Promise。
           // 260904 cc 被截断过的会话走另一套游标：meta.cursor 停在服务端最后一页的位置，
           // 对内存里被 shift 掉的那些一无所知，而且 complete 多半已是 true 会直接挡在这里。
           // 改用现存最旧的那条当 before，往回补的正是被砍掉的那一段。

@@ -92,6 +92,13 @@ function sameKeys(a: readonly string[] | undefined, b: readonly string[] | undef
   return a.every((key, index) => key === b[index])
 }
 
+// 260921 Red native timeline 实验分支（外部审计回信 P1）：virtua 是主时间线唯一的渲染路径，
+// 它一旦测量失败就是整片空白且没有降级。这里加一条普通 DOM flow 作为可对照的第二条渲染路径：
+// 两种渲染共用同一份 timelineRows / TimelineRowView / 分页 / history loader，只换最外层容器。
+// 开关走 localStorage（改完刷新页面即切换），不碰用户配置。
+const nativeTimelineEnabled = () =>
+  typeof localStorage !== "undefined" && localStorage.getItem("redcode:native-timeline") === "1"
+
 const timelineCacheLimit = 16
 const timelineFallbackItemSize = 60
 const timelineCache = new Map<string, { keys: readonly string[]; width: number; cache: VirtualizerHandle["cache"] }>()
@@ -626,7 +633,9 @@ export function MessageTimeline(props: {
   })
 
   const canAnchorBottom = () => {
-    if (!virtualizer) return false
+    // 260921 Red virtua 路径必须有 handle 才能算底部；native 路径没有 handle，
+    // 但锚定本身只写 listRoot.scrollTop（见 anchorMeasuredBottom），不依赖 virtua。
+    if (nativeTimelineEnabled() ? false : !virtualizer) return false
     if (!props.shouldAnchorBottom() && !measuredBottomAnchored) return false
     return timelineRowKeys().length > 0
   }
@@ -693,7 +702,7 @@ export function MessageTimeline(props: {
 
   const maybeAnchorBottom = () => {
     const key = sessionKey()
-    if (!virtualizer) return
+    if (nativeTimelineEnabled() ? false : !virtualizer) return
     const keys = timelineRowKeys()
     if (keys.length === 0) return
     // 260829 cc 「每会话只锚一次」不够。一次刷新若把窗口从 1671 行砍回 12 行，内容整段
@@ -709,7 +718,8 @@ export function MessageTimeline(props: {
     bottomAnchorSessionKey = key
     bottomAnchorRows = keys.length
     if (!props.shouldAnchorBottom()) return
-    virtualizer.scrollToIndex(keys.length - 1, { align: "end" })
+    // native 路径没有 handle：上面那次 scrollToIndex 是虚拟估算落点，这里交给实测锚定。
+    virtualizer?.scrollToIndex(keys.length - 1, { align: "end" })
     // 260822 cc scrollToIndex 用的是虚拟**估算**尺寸：缓存未命中时每行按 timelineFallbackItemSize
     //   估，落点可以离真底部很远。再补一轮以实测高度为准的锚定（scrollTop = scrollHeight），
     //   沉降完自动收工。少了这一步就是"切回会话掉在历史中间"。
@@ -1989,39 +1999,52 @@ export function MessageTimeline(props: {
             </div>
           </div>
         </Show>
+        {/* 260921 Red native 渲染路径（审计回信 P1 的 A/B 对照）：行全部真实挂在 DOM 里，
+            seek 的 getElementById 天然命中，viewportSize / virtual range / measurement cache
+            那一整类「测量失败就整片空白」的失败模式整体不存在。contentRef 仍要绑定 ——
+            createAutoScroll 靠它的 ResizeObserver 在流式内容变高时锁底。 */}
         <Show
-          when={(() => {
-            const root = scrollRoot()
-            if (!root) return
-            return { root, epoch: timelineEpoch() }
-          })()}
-          keyed
+          when={!nativeTimelineEnabled()}
+          fallback={
+            <div ref={(el) => props.setContentRef(el)} data-component="timeline-native">
+              <For each={timelineRows()}>{(row) => <TimelineRowView row={row} />}</For>
+            </div>
+          }
         >
-          {(v) => (
-            <Virtualizer
-              data={timelineRows()}
-              cache={virtualCache()}
-              itemSize={virtualCache() ? undefined : timelineFallbackItemSize}
-              scrollRef={v.root}
-              shift={props.historyShift}
-              keepMounted={keepMounted()}
-              startMargin={64}
-              ref={(handle) => {
-                if (!handle) {
-                  writeTimelineCache(virtualizerSessionKey, virtualizerRowKeys, listWidth(), virtualizer)
-                  virtualizer = undefined
-                  return
-                }
-                virtualizer = handle
-                virtualizerSessionKey = cacheSessionKey
-                virtualizerRowKeys = cacheRowKeys
-                maybeAnchorBottom()
-                scheduleContentRoot(v.root)
-              }}
-            >
-              {(row) => <TimelineRowView row={row} />}
-            </Virtualizer>
-          )}
+          <Show
+            when={(() => {
+              const root = scrollRoot()
+              if (!root) return
+              return { root, epoch: timelineEpoch() }
+            })()}
+            keyed
+          >
+            {(v) => (
+              <Virtualizer
+                data={timelineRows()}
+                cache={virtualCache()}
+                itemSize={virtualCache() ? undefined : timelineFallbackItemSize}
+                scrollRef={v.root}
+                shift={props.historyShift}
+                keepMounted={keepMounted()}
+                startMargin={64}
+                ref={(handle) => {
+                  if (!handle) {
+                    writeTimelineCache(virtualizerSessionKey, virtualizerRowKeys, listWidth(), virtualizer)
+                    virtualizer = undefined
+                    return
+                  }
+                  virtualizer = handle
+                  virtualizerSessionKey = cacheSessionKey
+                  virtualizerRowKeys = cacheRowKeys
+                  maybeAnchorBottom()
+                  scheduleContentRoot(v.root)
+                }}
+              >
+                {(row) => <TimelineRowView row={row} />}
+              </Virtualizer>
+            )}
+          </Show>
         </Show>
       </ScrollView>
     </div>
