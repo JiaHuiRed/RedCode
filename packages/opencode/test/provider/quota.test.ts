@@ -47,4 +47,45 @@ describe("ProviderQuota.parseCodingPlan", () => {
       }),
     ).toBeUndefined()
   })
+
+  test("drops coding plan windows outside business ranges", () => {
+    const now = Date.parse("2026-09-19T08:00:00Z")
+    const result = ProviderQuota.parseCodingPlan(
+      "zhipuai-coding-plan",
+      {
+        success: true,
+        data: {
+          level: "lite",
+          limits: [
+            { type: "CREDIT_LIMIT", unit: 3, percentage: -1, nextResetTime: now + 1_800_000 },
+            { type: "CREDIT_LIMIT", unit: 6, percentage: 101, nextResetTime: now + 5_400_000 },
+          ],
+        },
+      },
+      now,
+    )
+
+    expect(result).toBeUndefined()
+  })
+
+  test("drops invalid response-header windows without dropping valid windows", () => {
+    const result = ProviderQuota.parse(
+      "openai",
+      undefined,
+      new Headers({
+        "x-codex-plan-type": "plus",
+        "x-codex-primary-used-percent": "101",
+        "x-codex-primary-window-minutes": "300",
+        "x-codex-primary-reset-after-seconds": "1800",
+        "x-codex-primary-reset-at": "1758270600",
+        "x-codex-secondary-used-percent": "20",
+        "x-codex-secondary-window-minutes": "10080",
+        "x-codex-secondary-reset-after-seconds": "5400",
+        "x-codex-secondary-reset-at": "1758274200",
+      }),
+    )
+
+    expect(result?.primary).toBeUndefined()
+    expect(result?.secondary?.usedPercent).toBe(20)
+  })
 })

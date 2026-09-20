@@ -112,8 +112,16 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       let args = Freeform.normalizeInput(item.id, rawArgs) ?? (rawArgs as Record<string, unknown>)
       return run.promise(
         Effect.gen(function* () {
+          // 260811 cc audit Y5：返回值此前被丢弃，插件 SDK 承诺的 output.args 改写
+          // （整体赋值写法）完全无效，只有原地 mutate 碰巧生效。接住返回值让两种写法都成立。
+          const beforeHook = yield* plugin.trigger(
+            "tool.execute.before",
+            { tool: item.id, sessionID: input.session.id, callID: options.toolCallId },
+            { args },
+          )
+          args = beforeHook.args
+          // 260920 Red policy must inspect the final arguments after plugin rewriting.
           const ctx = context(item.id, args, options)
-          // 260717 Red pre-tool-use: 前置拦截钩子
           const preToolUse = yield* plugin.trigger(
             "tool.use.pre",
             { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID, args },
@@ -126,14 +134,6 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               metadata: { blocked: true },
             } as any
           }
-          // 260811 cc audit Y5：返回值此前被丢弃，插件 SDK 承诺的 output.args 改写
-          // （整体赋值写法）完全无效，只有原地 mutate 碰巧生效。接住返回值让两种写法都成立。
-          const beforeHook = yield* plugin.trigger(
-            "tool.execute.before",
-            { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
-            { args },
-          )
-          args = beforeHook.args
           const result = yield* item.execute(args, ctx).pipe(
             Effect.tapError((error) =>
               plugin
@@ -205,8 +205,15 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     item.execute = (args, opts) => {
       return run.promise(
         Effect.gen(function* () {
+          // 260811 cc audit Y5：同上，MCP 路径的 args 改写同样要接住返回值
+          const beforeHook = yield* plugin.trigger(
+            "tool.execute.before",
+            { tool: key, sessionID: input.session.id, callID: opts.toolCallId },
+            { args },
+          )
+          args = beforeHook.args
+          // 260920 Red policy must inspect the final arguments after plugin rewriting.
           const ctx = context(key, args, opts)
-          // 260717 Red pre-tool-use: 前置拦截钩子
           const preToolUse = yield* plugin.trigger(
             "tool.use.pre",
             { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId, args },
@@ -220,13 +227,6 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               content: [],
             } as any
           }
-          // 260811 cc audit Y5：同上，MCP 路径的 args 改写同样要接住返回值
-          const beforeHook = yield* plugin.trigger(
-            "tool.execute.before",
-            { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId },
-            { args },
-          )
-          args = beforeHook.args
           const result: Awaited<ReturnType<NonNullable<typeof execute>>> = yield* Effect.gen(function* () {
             yield* ctx.ask({ permission: key, metadata: {}, patterns: ["*"], always: ["*"] })
             return yield* Effect.promise(() => execute(args, opts))

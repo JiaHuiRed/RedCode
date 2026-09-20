@@ -26,6 +26,8 @@
 
 - **虚拟列表滚动 thumb 更新避开 ResizeObserver 当前布局帧**（`packages/ui/src/components/scroll-view.tsx`）：复用 rAF 节流，降低 virtua 重测量引起的布局循环与视觉闪烁。
 
+- **外部审计指出的执行边界完成首轮修复**（`packages/opencode/src/{mcp,session,permission,provider}`）：MCP 取消信号贯通重试链，工具 policy 改看最终参数，quota 防止越界与旧凭据快照覆盖，Permission 批量 always 放行同步清理 owner。
+
 ---
 
 ### [0.11.8] - 2026-09-18

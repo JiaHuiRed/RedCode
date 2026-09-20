@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { createHash } from "node:crypto"
 import * as Log from "@redcode-ai/core/util/log"
 import { BusEvent } from "@/bus/bus-event"
 import { GlobalBus } from "@/bus/global"
@@ -90,6 +91,7 @@ function codingPlanWindow(
   const usedPercent = number(limit.percentage)
   const nextResetTime = number(limit.nextResetTime)
   if (usedPercent === undefined || nextResetTime === undefined) return undefined
+  if (usedPercent < 0 || usedPercent > 100) return undefined
 
   const resetAt = Math.floor(nextResetTime / 1000)
   if (resetAt <= 0) return undefined
@@ -166,7 +168,8 @@ function window(headers: Headers, prefix: string): Window | undefined {
 
   if (usedPercent === undefined || windowMinutes === undefined) return undefined
   if (resetAfterSeconds === undefined || resetAt === undefined) return undefined
-  if (windowMinutes <= 0) return undefined
+  if (usedPercent < 0 || usedPercent > 100) return undefined
+  if (windowMinutes <= 0 || resetAfterSeconds < 0 || resetAt <= 0) return undefined
 
   return { usedPercent, windowMinutes, resetAfterSeconds, resetAt }
 }
@@ -212,15 +215,46 @@ export function parse(
 }
 
 const store = new Map<string, Info>()
+const refreshState = new Map<string, { credentialID: string; generation: number }>()
+const inFlight = new Map<string, Promise<void>>()
+let nextGeneration = 0
 
 function key(providerID: string, accountID: string | undefined) {
   return `${providerID}:${accountID ?? ""}`
+}
+
+function credentialID(apiKey: string) {
+  return createHash("sha256").update(apiKey).digest("hex")
 }
 
 /**
  * 按需查询 Coding Plan 监控接口。失败只丢弃本次刷新，不能影响模型请求或现有 GPT 额度。
  */
 export async function refreshCodingPlan(providerID: (typeof CODING_PLAN_PROVIDER_IDS)[number], apiKey: string) {
+  const credential = credentialID(apiKey)
+  const flightKey = `${providerID}:${credential}`
+  const existing = inFlight.get(flightKey)
+  if (existing) return existing
+
+  const previous = refreshState.get(providerID)
+  const generation = ++nextGeneration
+  if (previous && previous.credentialID !== credential) store.delete(key(providerID, undefined))
+  refreshState.set(providerID, { credentialID: credential, generation })
+
+  const refresh = refreshCodingPlanRequest(providerID, apiKey, generation)
+  let request: Promise<void>
+  request = refresh.finally(() => {
+    if (inFlight.get(flightKey) === request) inFlight.delete(flightKey)
+  })
+  inFlight.set(flightKey, request)
+  return request
+}
+
+async function refreshCodingPlanRequest(
+  providerID: (typeof CODING_PLAN_PROVIDER_IDS)[number],
+  apiKey: string,
+  generation: number,
+) {
   const baseURL = providerID === "zai-coding-plan" ? "https://api.z.ai" : "https://open.bigmodel.cn"
 
   try {
@@ -239,6 +273,7 @@ export async function refreshCodingPlan(providerID: (typeof CODING_PLAN_PROVIDER
 
     const quota = parseCodingPlan(providerID, await response.json())
     if (!quota) return
+    if (refreshState.get(providerID)?.generation !== generation) return
     store.set(key(providerID, undefined), quota)
     GlobalBus.emit("event", {
       directory: "global",
@@ -290,4 +325,6 @@ export function list(): Info[] {
 /** 仅供测试：模块级存储跨用例会串。 */
 export function clear(): void {
   store.clear()
+  refreshState.clear()
+  inFlight.clear()
 }

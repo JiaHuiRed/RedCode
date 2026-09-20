@@ -304,9 +304,10 @@ function convertMcpTool(
   return dynamicTool({
     description: mcpTool.description ?? "",
     inputSchema: jsonSchema(schema),
-    execute: async (args: unknown) =>
+    execute: async (args: unknown, toolOptions) =>
       McpRetry.run({
         mode: retryMode,
+        signal: toolOptions?.abortSignal,
         call: async () => {
           // 260807 Red: 每次调用从 clients 表取最新 client（s.clients[name] 由 storeClient 更新）
           const client = getClient()
@@ -329,6 +330,7 @@ function convertMcpTool(
               },
               resetTimeoutOnProgress: true,
               timeout,
+              signal: toolOptions?.abortSignal,
             },
           )
         },

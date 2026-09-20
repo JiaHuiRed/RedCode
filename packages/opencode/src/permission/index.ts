@@ -326,6 +326,7 @@ export const layer = Layer.effect(
           (pattern) => evaluate(item.info.permission, pattern, approved).action === "allow",
         )
         if (!ok) continue
+        owners.delete(id)
         pending.delete(id)
         yield* bus.publish(Event.Replied, {
           sessionID: item.info.sessionID,
