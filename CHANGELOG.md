@@ -8,6 +8,14 @@
 
 ---
 
+### [未发布]
+
+#### 修复
+
+- **外部审计指出的执行边界完成首轮修复**（`packages/opencode/src/{mcp,session,permission,provider}`）：MCP 取消信号贯通重试链，工具 policy 改看最终参数，quota 防止越界与旧凭据快照覆盖，Permission 批量 always 放行同步清理 owner。
+
+---
+
 ### [0.11.9] - 2026-09-19
 
 #### 变更
@@ -25,8 +33,6 @@
 - **GUI 会话上下文不再沿用旧会话滚动位置**（`packages/app/src/components/session/session-context-tab.tsx`）：按 `sessionKey` 恢复右侧面板滚动，没有持久化位置时回到顶部，避免 stats、额度和构成被误认为未渲染。
 
 - **虚拟列表滚动 thumb 更新避开 ResizeObserver 当前布局帧**（`packages/ui/src/components/scroll-view.tsx`）：复用 rAF 节流，降低 virtua 重测量引起的布局循环与视觉闪烁。
-
-- **外部审计指出的执行边界完成首轮修复**（`packages/opencode/src/{mcp,session,permission,provider}`）：MCP 取消信号贯通重试链，工具 policy 改看最终参数，quota 防止越界与旧凭据快照覆盖，Permission 批量 always 放行同步清理 owner。
 
 ---
 
