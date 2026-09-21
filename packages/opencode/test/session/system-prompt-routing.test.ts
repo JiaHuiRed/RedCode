@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { provider, wantsFlashAnchor, wantsStepAnchor } from "../../src/session/system"
 import PROMPT_GLM from "../../src/session/prompt/glm.md" with { type: "text" }
 import PROMPT_DEEPSEEK from "../../src/session/prompt/deepseek.md" with { type: "text" }
+import PROMPT_GPT from "../../src/session/prompt/gpt.md" with { type: "text" }
 import PROMPT_STEP from "../../src/session/prompt/step.md" with { type: "text" }
 import PROMPT_HY from "../../src/session/prompt/hy.md" with { type: "text" }
 import PROMPT_DEFAULT from "../../src/session/prompt/default.md" with { type: "text" }
@@ -14,9 +15,13 @@ const model = (apiID: string, providerID = "zhipuai-coding-plan") =>
   ({ api: { id: apiID }, providerID, id: apiID }) as unknown as Parameters<typeof provider>[0]
 
 describe("system prompt routing", () => {
-  test("GLM 系走 glm.md", () => {
+  test("GLM 系走 default.md + glm.md", () => {
     for (const id of ["glm-5.3-flash", "glm-5.3", "glm-5.2", "GLM-5.3-Flash"])
-      expect(provider(model(id))).toEqual([PROMPT_GLM])
+      expect(provider(model(id))).toEqual([PROMPT_DEFAULT, PROMPT_GLM])
+  })
+
+  test("GPT 系走 default.md + gpt.md", () => {
+    expect(provider(model("gpt-5.6-luna", "openai"))).toEqual([PROMPT_DEFAULT, PROMPT_GPT])
   })
 
   // 260829 cc hy 的判据是 `hy` + 数字并带边界。写成 includes("hy") 会命中任何名字里
@@ -33,7 +38,7 @@ describe("system prompt routing", () => {
   })
 
   test("deepseek / step 路由不受波及", () => {
-    expect(provider(model("deepseek-v4-flash-vision-exp", "deepseek"))).toEqual([PROMPT_DEEPSEEK])
+    expect(provider(model("deepseek-v4-flash-vision-exp", "deepseek"))).toEqual([PROMPT_DEFAULT, PROMPT_DEEPSEEK])
     expect(provider(model("step-3.7-flash", "stepfun-step-plan"))).toEqual([PROMPT_STEP])
   })
 })

@@ -49,6 +49,10 @@ export const wantsFlashAnchor = (modelID: string) => {
 export const wantsStepAnchor = (modelID: string, providerID: string) =>
   providerID.toLowerCase().includes("stepfun") || modelID.toLowerCase().includes("step")
 
+// 260921 Red: 主力模型提示词采用公共基线 + 专属 Delta，决策见
+// docs/notes/implemented/architecture/2026-09-21-prompt-common-base.md。
+const withDefaultPrompt = (prompt: string) => [PROMPT_DEFAULT, prompt]
+
 export function provider(model: Provider.Model) {
   if (experimentNoModelPrompt()) return [PROMPT_DEFAULT]
   // 260902 cc beast.md（gpt-4 / o1 / o3 专属档）已删：哥哥判定不会再拿上上代模型干活。
@@ -57,14 +61,14 @@ export function provider(model: Provider.Model) {
   // sao10k/*（"Sa-o1-0K"）与 solar-pro3（"pr-o3"）这 13 个跟 OpenAI 毫无关系的模型
   // 一直在吃 beast 档。判据写死在名字里就会这样，同 wantsFlashAnchor 那处的教训。
   // 260902 Red GPT 系列统一走 gpt.md。原 codex.md 是 Codex CLI 的遗留，其独有内容已并入
-  // gpt.md（后者才是按 GPT-5.6 重做的那份）；分开维护只会让同系列的 sol/terra/luna 与
-  // *-codex 拿到两套工程约束。
-  if (model.api.id.includes("gpt")) return [PROMPT_GPT]
+  // gpt.md（后者与 default.md 合并）；分开维护只会让同系列的 sol/terra/luna 与 *-codex
+  // 拿到两套工程约束。
+  if (model.api.id.includes("gpt")) return withDefaultPrompt(PROMPT_GPT)
   if (model.api.id.includes("gemini-")) return [PROMPT_GEMINI]
   if (model.api.id.includes("claude")) return [PROMPT_ANTHROPIC]
   if (model.api.id.toLowerCase().includes("trinity")) return [PROMPT_TRINITY]
   if (model.api.id.toLowerCase().includes("kimi")) return [PROMPT_KIMI]
-  if (model.api.id.toLowerCase().includes("deepseek")) return [PROMPT_DEEPSEEK]
+  if (model.api.id.toLowerCase().includes("deepseek")) return withDefaultPrompt(PROMPT_DEEPSEEK)
   if (model.api.id.toLowerCase().includes("mimo")) return [PROMPT_MIMO]
   // 260610 Red minimax(m3 及以后) 专属提示词 — 与 mimo(小米) 非同厂，独立成文件便于后续单独调优
   if (model.api.id.toLowerCase().includes("minimax")) return [PROMPT_MINIMAX]
@@ -76,7 +80,8 @@ export function provider(model: Provider.Model) {
   // providerID 含 ollama 或 model.id 含 ":latest"/":Xb" 等 ollama 命名特征
   if (model.providerID.toLowerCase().includes("ollama")) return [PROMPT_OLLAMA]
   // 260625 Red GLM(智谱) + Qwen(通义) — 准一线，复用精炼档
-  if (model.api.id.toLowerCase().includes("glm") || model.api.id.toLowerCase().includes("qwen")) return [PROMPT_GLM]
+  if (model.api.id.toLowerCase().includes("glm") || model.api.id.toLowerCase().includes("qwen"))
+    return withDefaultPrompt(PROMPT_GLM)
   // 260829 cc 腾讯混元 Hy 系列（hy4-preview / hy3 …）。用 `hy` + 数字并带边界，不能写成
   // includes("hy") —— 那会命中任何名字里带 hy 的模型。provider 侧的 id 形态见 models.dev：
   // opencode-go 是 `hy4-preview`、nano-gpt 是 `tencent/hy4-preview`，所以边界要允许 `/`。
