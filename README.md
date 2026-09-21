@@ -6,7 +6,7 @@
 
 <p align="center"><sub><b>赤</b> — RedCode 的看板娘。两个 exe 的图标、GUI 的启动画面都是她。</sub></p>
 
-> **中文母语的 AI 编程助手。** 终端（TUI）或桌面（GUI），说中文，插你喜欢的模型——DeepSeek、OpenAI、Anthropic、Ollama，国产优先。
+> **中文母语的 AI 编程助手。** 终端（TUI）或桌面（GUI），说中文，接你惯用的任意供应商——OpenAI / Anthropic 兼容接口，云端 Coding Plan 与本地模型都行。
 >
 > 基于 [opencode](https://github.com/anomalyco/opencode)（sst.dev）深度二次开发，侧重**前缀缓存优化、多模型适配、中文体验和稳定性**。
 
@@ -41,10 +41,10 @@ AI 编程助手。**两个入口、同一引擎**——同一个服务端、同�
 | ------------ | --------------------------------------------------------------------------------------- |
 | **代码理解** | jCodeMunch / TypeGraph 索引，跨文件跳转与影响面分析                                     |
 | **动手**     | 文件读写编辑 · 终端执行 · Web 搜索 · 视觉分析（多模态模型直接识图，也可指定子代理代劳） |
-| **多模型**   | DeepSeek / OpenAI / Anthropic / GLM / Qwen / MiniMax / Ollama… 按角色分配不同模型       |
-| **上下文**   | 前缀缓存保鲜 · 自动压缩 · 上下文用量可视化                                              |
-| **组织**     | 会话管理 · 目标管理 · 自动化记忆系统 · Skill 技能系统                                   |
-| **代理**     | 两个子代理（explore 只读调研 · execute 读写执行）· 自定义 AI 人格                       |
+| **多供应商** | 任意 OpenAI / Anthropic 兼容接入——云端 Coding Plan、自建端点、本地模型（Ollama）均可，按角色分配不同模型 |
+| **上下文**   | 前缀缓存保鲜 · 自动压缩 · 上下文用量可视化                                                              |
+| **组织**     | 会话管理 · 目标管理 · 双层记忆（工作区记进度与教训，长期记通用经验）· Skill 技能系统                    |
+| **代理**     | 两个子代理（explore 只读调研 · execute 读写执行）· 自定义 AI 人格（语气与行为由人格文件驱动）           |
 | **安全**     | 权限门控与防护环，三档姿态见下                                                          |
 
 ### 三档权限姿态
@@ -62,10 +62,11 @@ AI 编程助手。**两个入口、同一引擎**——同一个服务端、同�
 ## 🎯 相比上游做了什么
 
 - **前缀缓存保鲜**：多层缓存（msgPin → modelMsgs → tools → system）压低输入成本
-- **多模型计价适配**：支持 DeepSeek cache 计价阶梯，修复上游 `cacheReadInputTokens` 为 0 的漏报；套餐额度（ChatGPT / Codex 的 5 小时档、7 天档、储备池）在 TUI 侧边栏和 GUI 上下文页都有面板
+- **多供应商计价适配**：DeepSeek cache 计价阶梯，修复上游 `cacheReadInputTokens` 为 0 的漏报；Coding Plan 套餐额度（5 小时档、每周档、储备池）按所用供应商自动显示在 TUI 侧边栏和 GUI 上下文页
 - **用量看板**：首页直接看项目级总账——缓存命中环、会话/请求/产出 Token、活跃天数与连续天数、活动热力图、按模型分天的堆叠柱。数据走服务端聚合端点，不是前端把已加载的那批会话 reduce 一遍（那样只会得到「已加载部分」的和）
 - **中文体验**：完整中文文档、中文 UI，三语 i18n（zh / en / ja）
-- **国产模型优先**：零配置支持 DeepSeek、GLM、Qwen、MiniMax、Zhipu 等
+- **多供应商接入**：OpenAI 兼容接口通吃自建与第三方端点，Anthropic 接口同样兼容；DeepSeek、GLM、Qwen、MiniMax、Zhipu 等各家 Coding Plan 开箱即用
+- **双层记忆系统**：工作区记忆沉淀当前项目的进度、决策与踩坑，长期记忆提炼跨项目通用教训——索引随会话注入、全文按需召回，换个会话仍接得上上下文
 - **多机同步**：机器本地覆盖层 `redcode.local.jsonc`，同步的配置只留机器无关内容
 - **稳定性专项**：0.10.0 起做过一轮桌面端性能定案——「慢」的主因是主进程的同步 I/O 而非渲染，逐条实测修完后启动到渲染层连上 7.28s → 5.71s，首屏 chunk 累计减 1.26MB，流式渲染每 tick 的重算量降到 1/16。细节全部记在 [CHANGELOG.md](CHANGELOG.md)
 
@@ -151,6 +152,27 @@ redcode web --hostname 0.0.0.0
 
 ### MCP 服务器
 
+```jsonc
+{
+  "mcp": {
+    "typegraph": {
+      "type": "local",
+      "command": ["npx", "tsx", "path/to/typegraph-mcp/server.ts"],
+      "environment": {
+        "TYPEGRAPH_PROJECT_ROOT": ".",
+        "TYPEGRAPH_TSCONFIG": "./tsconfig.json",
+      },
+      "enabled": true,
+    },
+    "jcodemunch": {
+      "type": "local",
+      "command": ["uvx", "jcodemunch-mcp"], // 或 pipx run jcodemunch-mcp / pip install jcodemunch-mcp
+      "enabled": true,
+    },
+  },
+}
+```
+
 预装服务器与 MCP 配置的完整指引见 [MANUAL.md](MANUAL.md) 第 4 章。
 
 ---
@@ -160,9 +182,9 @@ redcode web --hostname 0.0.0.0
 全部操作指南在 **[MANUAL.md](MANUAL.md)**，涵盖：
 
 1. 快速启动 · 2. 首次设置（模型 / 称呼 / AI 人格）· 3. 配置模型（适配器 / 切换 / 本地 Ollama）
-2. MCP 服务器（预配置服务的启用）· 5. AI 人格系统 · 6. 记忆系统（双层：`MEMORY.md` 索引注入 + `supermemory.db` 全文库）
-3. 配置详解（配置层次 / 权限门控 / 自定义 MCP）· 8. 内置命令 · 9. Skill 技能系统
-4. 隐私与多机同步——含**机器本地覆盖层**，解决"同一份配置在两台机器上来回改"的死循环
+4. MCP 服务器（预配置服务的启用）· 5. AI 人格系统 · 6. 记忆系统（双层：`MEMORY.md` 索引注入 + `supermemory.db` 全文库）
+7. 配置详解（配置层次 / 权限门控 / 自定义 MCP）· 8. 内置命令 · 9. Skill 技能系统
+10. 隐私与多机同步——含**机器本地覆盖层**，解决“同一份配置在两台机器上来回改”的死循环
 
 ---
 

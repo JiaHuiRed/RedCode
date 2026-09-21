@@ -6,7 +6,7 @@
 
 <p align="center"><sub><b>Chi</b> (赤) — RedCode's mascot. She's also both exe icons and the GUI splash.</sub></p>
 
-> **A Chinese-native AI coding agent.** TUI (terminal) or GUI (desktop), speaks your language, plug in any model — DeepSeek, OpenAI, Anthropic, Ollama, domestic-first.
+> **A Chinese-native AI coding agent.** TUI (terminal) or GUI (desktop), speaks your language, plug in any provider — OpenAI / Anthropic-compatible interfaces cover cloud coding plans and local endpoints alike.
 >
 > Forked from [opencode](https://github.com/anomalyco/opencode) (sst.dev), with deep enhancements in **prefix cache optimization, multi-model pricing, Chinese UX, and runtime stability**.
 
@@ -41,10 +41,10 @@ Reads code, writes code, fixes bugs, runs commands.
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Code understanding** | jCodeMunch / TypeGraph indexing, cross-file navigation and blast-radius analysis                                                           |
 | **Doing**              | File read/write/edit · terminal execution · web search · vision (multimodal models read images directly; a subagent can also be delegated) |
-| **Models**             | DeepSeek / OpenAI / Anthropic / GLM / Qwen / MiniMax / Ollama… assignable per role                                                         |
-| **Context**            | Prefix cache freshness · automatic compaction · context usage visualization                                                                |
-| **Organization**       | Session management · goal tracking · automated memory system · Skill system                                                                |
-| **Agents**             | Two subagents (explore — read-only research · execute — read/write implementation) · custom AI personas                                    |
+| **Providers**          | Any OpenAI / Anthropic-compatible endpoint — cloud coding plans, self-hosted APIs, or local models (Ollama); assignable per role            |
+| **Context**            | Prefix cache freshness · automatic compaction · context usage visualization                                                                 |
+| **Organization**       | Session management · goal tracking · two-layer memory (workspace progress & lessons, cross-project experience) · Skill system               |
+| **Agents**             | Two subagents (explore — read-only research · execute — read/write implementation) · custom AI personas (tone and behavior driven by persona files) |
 | **Safety**             | Permission gating and guard rails — three postures below                                                                                   |
 
 ### Three permission postures
@@ -62,10 +62,11 @@ The dropdown under the prompt box _is_ the permission axis. The three postures *
 ## 🎯 What's different from upstream
 
 - **Prefix cache freshness**: multi-layer caching (msgPin → modelMsgs → tools → system) keeps input cost low
-- **Model pricing**: full DeepSeek cache billing tiers, fixes upstream `cacheReadInputTokens=0` under-report; ChatGPT / Codex plan quotas (5-hour window, 7-day window, reserve pool) get panels in both the TUI sidebar and the GUI context tab
+- **Provider pricing**: full DeepSeek cache billing tiers, fixes upstream `cacheReadInputTokens=0` under-report; coding-plan quotas (5-hour window, weekly window, reserve pool) show up automatically per active provider in the TUI sidebar and the GUI context tab
 - **Usage dashboard**: project-level totals on the home screen — cache-hit ring, sessions / requests / output tokens, active and streak days, an activity heatmap, and per-model stacked bars by day. Backed by a server-side aggregation endpoint rather than a client-side reduce over whatever sessions happen to be loaded
 - **Chinese UX**: full Chinese docs and UI, trilingual i18n (zh / en / ja)
-- **Domestic models first**: zero-config for DeepSeek, GLM, Qwen, MiniMax, Zhipu
+- **Multi-provider access**: one OpenAI-compatible surface for any self-hosted or third-party endpoint, Anthropic-compatible too; DeepSeek, GLM, Qwen, MiniMax, Zhipu and other coding plans work out of the box
+- **Two-layer memory**: workspace memory keeps project progress, decisions, and pitfalls; long-term memory distills cross-project lessons — indexed lines injected each session, full text recalled on demand, so context survives across sessions
 - **Multi-machine sync**: machine-local override layer `redcode.local.jsonc` keeps synced configs machine-neutral
 - **Stability work**: 0.10.0 landed a desktop performance pass — the bottleneck was synchronous I/O on the main process, not rendering. Startup-to-connected went 7.28s → 5.71s, first-screen chunk shrank by 1.26MB, and streaming re-parse per tick dropped to 1/16. Details in [CHANGELOG.md](CHANGELOG.md)
 
@@ -176,9 +177,9 @@ Listed in load order — **later entries override earlier ones**:
 Full guides live in **[MANUAL.md](MANUAL.md)** (written in Chinese), covering:
 
 1. Quick start · 2. First-time setup (model / name / AI persona) · 3. Model configuration (adapters / switching / local Ollama)
-2. MCP servers (enabling preconfigured ones) · 5. AI persona system · 6. Memory system (two layers: indexed `MEMORY.md` injection + `supermemory.db` full-text store)
-3. Configuration reference (layers / permission gating / custom MCP) · 8. Built-in commands · 9. Skill system
-4. Privacy and multi-machine sync — including the **machine-local override layer** that solves the "same config, two machines, endless back-and-forth" loop
+4. MCP servers (enabling preconfigured ones) · 5. AI persona system · 6. Memory system (two layers: indexed `MEMORY.md` injection + `supermemory.db` full-text store)
+7. Configuration reference (layers / permission gating / custom MCP) · 8. Built-in commands · 9. Skill system
+10. Privacy and multi-machine sync — including the **machine-local override layer** that solves the "same config, two machines, endless back-and-forth" loop
 
 ---
 
