@@ -62,6 +62,7 @@ import { ProviderV2 } from "@redcode-ai/core/provider"
 import { Reference } from "@/reference/reference"
 import * as DateTime from "effect/DateTime"
 import { eq } from "@/storage/db"
+import { Storage } from "@/storage/storage"
 import * as Database from "@/storage/db"
 import { SessionTable } from "./session.sql"
 import { referenceTextPart } from "./prompt/reference"
@@ -2114,6 +2115,7 @@ export const defaultLayer = Layer.suspend(() =>
         CrossSpawnSpawner.defaultLayer,
         RuntimeFlags.defaultLayer,
         Goal.defaultLayer,
+        Storage.defaultLayer, // 260921 Red task 工具的 explorePacket 写 canonical record 依赖 Storage；此前 prompt 运行环境不可见导致 explore 子代理全灭
       ),
     ),
   ),

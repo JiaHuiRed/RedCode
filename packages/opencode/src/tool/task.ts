@@ -253,6 +253,9 @@ export const TaskTool = Tool.define(
 
       if (explorePacket) {
         if (Option.isNone(storage)) {
+          // 260921 Red runtime 缺 Storage 本该被 prompt defaultLayer 兜住；走到这=新调用方绕过了
+          // 它。此前 explore 任务在这里静默全灭（无日志），先响一条再 fail。
+          log.warn("explore packet without storage service", { sessionID: nextSession.id })
           yield* sessions.remove(nextSession.id).pipe(Effect.ignore)
           return yield* Effect.fail(new Error("Explore task runtime storage is unavailable"))
         }
