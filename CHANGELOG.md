@@ -8,6 +8,32 @@
 
 ---
 
+### [0.11.11] - 2026-09-21
+
+#### 变更
+
+- **接入 Step 5 Preview**（`seed/redcode.home.jsonc`、`packages/opencode/src/provider/provider.ts`）：新增 `stepfun-step-plan/step-5-preview`（1M 上下文、64K 输出、文本/图像/视频输入、reasoning_effort 三档、提示缓存），按官方定价补 CNY 计费表，DCP 触发线成对补齐 140k/210k，凭据沿用既有 Step Plan 条目。
+
+- **模型提示词收敛为公共基线 + 专属 Delta**（`packages/opencode/src/session/{system.ts,llm/request.ts}`、`packages/opencode/src/session/prompt/*.md`）：gpt / deepseek / glm / step 四条路由改为「公共基线 + 实测偏差 Delta」，Delta 只保留本系列验证过的差异（GPT 的 apply_patch 契约、DeepSeek 的结论化中文推理、GLM 的证据足够后收敛、Step 的原生 tool-call 通道与交付护栏）；面板 prompt 数组改为显式 join，避免数组隐式逗号。
+
+- **step 提示词翻新**（`packages/opencode/src/session/prompt/step.md`）：原先是 step-3.7-flash 时代的完整独立提示词，接入 step-5-preview 后仍在生效；改为公共基线上的系列 Delta，只保留实测偏差（XML 工具调用泄漏、纯思考轮次、简洁不等于沉默）。
+
+- **记忆双写 helper 进 seed/scripts**（`seed/scripts/add-memory.mjs`）：一条命令完成全文入库、编号分配与索引行追加，编号从随仓索引的最大号推导，避免两机撞号。
+
+- **README 重定位**（`README.md`、`README.en.md`）：叙事从单一供应商转向多供应商接入（OpenAI / Anthropic 兼容接口皆可），主推记忆机制——项目级与长期级两层、工作区进度与经验教训的召回。
+
+- **工作流规则去重与条件加载**（`packages/opencode/src/session/prompt.ts`、`AGENTS.md`）：引擎里的 MEMORY 写入政策压成一句运行时事实、政策归注入的 AGENTS.md；WORK RULES 的纠正条款改结果导向（落实并验证，而非限定第一条必须是工具调用）；两次失败语义与 diagnose 触发条件改为按证据重检与条件加载。
+
+#### 修复
+
+- **explore 子代理全灭**（`packages/opencode/src/session/prompt.ts`、`packages/opencode/src/tool/task.ts`）：task 工具的运行环境漏 provide `Storage`，explore 分支必然失败且不落日志；装配链补齐依赖，失败分支补哨兵日志。
+
+#### GUI 打磨
+
+- **会话右栏折叠胶囊**（`packages/app/src/pages/session/{session-side-panel.tsx,session-side-panel.css,session.tsx}`、`packages/app/src/components/session/session-context-{summary.ts,tab.tsx}`、`packages/app/src/i18n/*`）：右栏合并为单个容器——常态是贴右上的矮胶囊（切换行 + 上下文 / 套餐额度 / 真实构成 / 原始消息四段摘要），点击展开为原侧边栏全高；四段摘要与上下文 tab 共用 `useSessionContextSummaries` 一份数据源；切换行在两种状态都可见，折叠态不再是没有入口的死状态；展开态改为浮层覆盖，不再从会话宽度里扣面板宽度，中桌面（<1280px）与移动端保持原有参与布局的行为。
+
+---
+
 ### [0.11.10] - 2026-09-21
 
 #### 变更
