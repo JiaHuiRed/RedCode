@@ -1548,13 +1548,16 @@ export const layer = Layer.effect(
           // 260728 Red expanded rule 3 with concrete forbidden phrases (Chinese+English).
           // User caught another agent telling him "go rest" after hours of no progress — that phrasing
           // is a form of "put it aside" and is explicitly banned at the model level.
+          // 260921 Red GPT 审计 P0-4：rule 4 原「纠正后第一条必须 tool call」约束的是
+          // 动作形状不是结果——纠正可能只是需求理解/事实澄清，强行 grep/read 制造无意义
+          // 动作。改为结果导向：纠正涉及可执行工作就落实并验证，不许只口头承诺。
           system.push(
             `▸ WORK RULES (CORE — must obey, never violate):
   1. READ CODE FIRST — never guess file paths, APIs, or function names. Investigate before acting.
   2. FAIL → DIAGNOSE → PIVOT — after 2 same-direction failures, force-switch approach AND report facts/cause/new-plan to user.
   3. NEVER suggest the user rest / give up / pause / resume later / ask someone else — in ANY language (e.g. "去休息吧", "下次继续", "叫别人来做", "let's stop for today", "put it aside", "come back to this later"). That is the WORST violation: you are making the user's decision for them. Instead: admit "I cannot" + reason + alternative, or switch approach and keep working.
-   4. APOLOGIES WITHOUT ACTION = ZERO — after being corrected, first message MUST be a tool call (read/grep/bash/write). Pure text = non-acknowledgment.
-            5. AFTER ANALYSIS → EXECUTE YOURSELF — download, extract, modify config, run scripts. NEVER tell the user to do what you can do. Only ask for: irreversible ops, missing info, physical actions.`,
+  4. CORRECTIONS ARE ACTIONABLE — when the user corrects work in progress, implement the correction and verify it; do not respond with promises or apologies alone.
+  5. AFTER ANALYSIS → EXECUTE YOURSELF — download, extract, modify config, run scripts. NEVER tell the user to do what you can do. Only ask for: irreversible ops, missing info, physical actions.`
           )
           // 260805 Red step 模型专用：step 经常无视 DCP nudge 不调用 compress，
           // 这里直接用铁律约束，不依赖 soft nudge。非 step 模型不动。
@@ -1616,14 +1619,13 @@ export const layer = Layer.effect(
   3. The visible reply is the deliverable. Keep a steady rhythm of action → verify → report; consistency beats one brilliant turn followed by stalls.`,
             )
           }
-          // 260801 Red Windsurf-inspired memory clause: write now, not later.
-          // Context gets compacted; the two MEMORY.md files are the only bridge to the next session.
-          system.push(
-            `▸ MEMORY (WRITE NOW, NOT LATER):
- 1. You have persistent memory (project \`.redcode/MEMORY.md\` + global \`~/.redcode/MEMORY.md\`). On any durable event — user decision, project-specific pitfall, being corrected, architecture choice — write it down IMMEDIATELY, never wait for wrap-up. No user permission needed.
- 2. Context WILL be compacted; memory is the only bridge to the next session. Anything that survives only in this conversation is lost. Write liberally.
- 3. Append via read + edit, NEVER write (write overwrites the file). Project file for this project's facts; only cross-project, reusable lessons go to global.`,
-          )
+         // 260801 Red Windsurf-inspired memory clause: write now, not later.
+         // 260921 Red GPT 审计 P0-1：原三条（immediately/liberally/append-not-write）与
+         // 全局 AGENTS.md「记忆写入五问：不确定默认不写」正面冲突——同一行为两个 owner。
+         // 记忆政策的唯一 owner 是注入的 AGENTS.md，引擎只保留一句 runtime fact。
+         system.push(
+           `▸ MEMORY: Persistent project (\`.redcode/MEMORY.md\`) and global (\`~/.redcode/MEMORY.md\`) memory is available. Follow the injected memory policy when a durable lesson or decision needs recording.`,
+         )
           // 260801 Red active goal 注入：钉住目标时让模型持续推进，完成调 goal_done 收尾。
           // 放 memory 条款后 canary 前——goal 状态变化只 bust 尾部缓存，不影响前缀大块。
           // 260817 Red goal 语义三件套①+②（对齐 DSH goal guidance）：blocked 判定标准与
