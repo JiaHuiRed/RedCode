@@ -37,9 +37,10 @@ describe("system prompt routing", () => {
       expect(provider(model(id, "opencode-go"))).toEqual([PROMPT_DEFAULT])
   })
 
-  test("deepseek / step 路由不受波及", () => {
+  test("deepseek / Step 路由使用公共基线与专属 Delta", () => {
     expect(provider(model("deepseek-v4-flash-vision-exp", "deepseek"))).toEqual([PROMPT_DEFAULT, PROMPT_DEEPSEEK])
-    expect(provider(model("step-3.7-flash", "stepfun-step-plan"))).toEqual([PROMPT_STEP])
+    for (const id of ["step-3.7-flash", "step-5-preview"])
+      expect(provider(model(id, "stepfun-step-plan"))).toEqual([PROMPT_DEFAULT, PROMPT_STEP])
   })
 })
 

@@ -88,7 +88,7 @@ export function provider(model: Provider.Model) {
   // 专属档的存在理由是官方自陈的两个已知问题（长思考、过度自我验证），不是逃开兜底——
   // 260822 重写后的 default.md 本身已是一线水准，hy.md 就是以它为骨加那两条。
   if (/(?:^|[/\-_])hy[0-9]/i.test(model.api.id)) return [PROMPT_HY]
-  // 260623 Red Step(阶跃星辰)
+  // 260921 Red Step 5 与旧 Step 系列共用公共基线；step.md 只保留 Step 系列实测的通道与交付护栏。
   // 260729 Red grok 此前无专属提示词、落 default.md —— 而当时的 default.md 强制「不超过 4 行、
   // 单词回答最好」，会直接碾平 soul 的人格。见 grok.md。
   // ⚠ 260822 cc default.md 已重写，那套限制**不复存在**（见文件末尾兜底分支的注释）。
@@ -97,7 +97,7 @@ export function provider(model: Provider.Model) {
   //   需要逐份看过再决定。doubao.md 已删——哥哥确认不再用火山方舟，且那份逐条读下来
   //   没有任何 Doubao 特有内容，全部被重写后的 default.md 覆盖。
   if (model.api.id.toLowerCase().includes("grok")) return [PROMPT_GROK]
-  if (model.api.id.toLowerCase().includes("step")) return [PROMPT_STEP]
+  if (model.api.id.toLowerCase().includes("step")) return withDefaultPrompt(PROMPT_STEP)
   // 260802 Red sensenova 自家模型（flash-lite / u1-fast 等）——当时是为了不落 default.md
   // 那套「不超过 4 行、单词回答最好」的旧限制（260822 已移除，见上）。
   // deepseek/glm 模型已在上面命中各自专属，不会走到这里。
