@@ -351,6 +351,7 @@ export const dict = {
   "dialog.project.edit.worktree.startup.description":
     "新しいワークスペース (ワークツリー) を作成した後に実行されます。",
   "dialog.project.edit.worktree.startup.placeholder": "例: bun install",
+  "context.summary.title": "コンテキスト",
   "context.quota.title": "プラン残量",
   "context.quota.window.primary": "プライマリ枠",
   "context.quota.window.secondary": "セカンダリ枠",

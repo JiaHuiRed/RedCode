@@ -1,8 +1,6 @@
 import { createMemo, createEffect, createSignal, on, onCleanup, For, Show } from "solid-js"
 import type { JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
-import { useQuery } from "@tanstack/solid-query"
-import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { checksum } from "@redcode-ai/core/util/encode"
 import { findLast } from "@redcode-ai/core/util/array"
@@ -18,11 +16,16 @@ import { ScrollView } from "@redcode-ai/ui/scroll-view"
 import type { Message, Part, ProviderQuota, UserMessage } from "@redcode-ai/sdk/v2/client"
 import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
-import { useProviders } from "@/hooks/use-providers"
 import { useSessionLayout } from "@/pages/session/session-layout"
-import { findLastCompaction, getSessionContextMetrics } from "./session-context-metrics"
+import {
+  useSessionContextSummaries,
+  quotaColor,
+  quotaDuration,
+  quotaNum,
+  quotaPercent,
+  QuotaWindowData,
+} from "./session-context-summary"
 import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "./session-context-breakdown"
-import { createSessionContextFormatter } from "./session-context-format"
 
 // 260820 cc 真实构成三块的配色。刻意与下面 BREAKDOWN_COLOR 的 system 同色（都是 info）——
 // 两块讲的是同一件事的估算版与实测版，颜色一致才看得出对应关系。
@@ -52,31 +55,6 @@ function Stat(props: { label: string; value: JSX.Element; color?: string }) {
     </div>
   )
 }
-
-type QuotaWindowData = NonNullable<ProviderQuota["primary"]>
-// 260831 Red hey-api 把数字字段生成为 number | "NaN" | "Infinity" | "-Infinity" 的 union，
-//   归一化成 number 才能做百分比/时长/时间运算
-type QuotaNumeric = number | "NaN" | "Infinity" | "-Infinity"
-const quotaNum = (v: QuotaNumeric) => (typeof v === "number" ? v : 0)
-
-// 260902 cc 百分比显示保护。实测（plus 账号连发四次请求）x-codex-*-used-percent 回的一直是
-// 整数 3 / 4，codex 侧同源的那条 JSON 路在 OpenAPI 里也直接声明成 i32，说明服务端自己就
-// round 过。但整条链路（响应头 → Number() → Schema.Number → openapi 的 number）没有任何
-// 一处取整，服务端哪天不 round 了，面板会原样渲染出 33.333333333333336%。
-// 跟 session-context-format.ts 的 percent() 一个路数：toLocaleString 而不是 toFixed，
-// 整数不会被补成 "3.0"。
-const quotaPercent = (percent: number, locale: string) => percent.toLocaleString(locale, { maximumFractionDigits: 1 })
-
-// 260831 Red 额度进度条颜色分档：接近用完才告急，不然整页都是红色
-const quotaColor = (percent: number) =>
-  percent >= 90 ? "var(--syntax-critical)" : percent >= 60 ? "var(--syntax-warning)" : "var(--syntax-info)"
-
-const quotaDuration = (minutes: number) =>
-  minutes >= 1440 && minutes % 1440 === 0
-    ? `${minutes / 1440}d`
-    : minutes % 60 === 0
-      ? `${minutes / 60}h`
-      : `${minutes}m`
 
 function QuotaWindow(props: { label: string; window?: QuotaWindowData }) {
   const language = useLanguage()
@@ -145,26 +123,13 @@ const quotaTone = (quotas: ProviderQuota[]): CapsuleTone => {
   return percent >= 90 ? "critical" : percent >= 60 ? "warning" : "success"
 }
 
-const quotaCompactSummary = (quota: ProviderQuota, locale: string) => {
-  const windows = [quota.primary, quota.secondary].filter(
-    (window): window is QuotaWindowData => !!window,
-  )
-  return [
-    quota.planType,
-    ...windows.map(
-      (window) => `${quotaDuration(quotaNum(window.windowMinutes))} ${quotaPercent(quotaNum(window.usedPercent), locale)}%`,
-    ),
-  ].join(" · ")
-}
-
-function QuotaCapsule(props: { quotas: ProviderQuota[] }) {
+function QuotaCapsule(props: { quotas: ProviderQuota[]; summary: string }) {
   const language = useLanguage()
   const [expanded, setExpanded] = createSignal(false)
-  const summary = () => props.quotas.map((quota) => quotaCompactSummary(quota, language.intl())).join(" / ")
 
   return (
     <Capsule
-      attach="floating"
+      attach="inline"
       class="max-w-full"
       style={{
         width: expanded() ? "100%" : "fit-content",
@@ -174,12 +139,9 @@ function QuotaCapsule(props: { quotas: ProviderQuota[] }) {
       <CapsuleRow
         status={quotaTone(props.quotas)}
         label={language.t("context.quota.title")}
-        description={<span class="truncate">{summary()}</span>}
+        description={<span class="truncate">{props.summary}</span>}
         trailing={
-          <Icon
-            name="chevron-down"
-            class={expanded() ? "rotate-180 transition-transform" : "transition-transform"}
-          />
+          <Icon name="chevron-down" class={expanded() ? "rotate-180 transition-transform" : "transition-transform"} />
         }
         selected={expanded()}
         aria-expanded={expanded()}
@@ -222,6 +184,35 @@ function QuotaCapsule(props: { quotas: ProviderQuota[] }) {
         </div>
       </Show>
     </Capsule>
+  )
+}
+
+// 260921 Red 大胶囊里的可折叠分组。折叠态一行摘要 + chevron，展开态接完整内容；
+// 形态对齐 status-popover 的 section 与 QuotaCapsule 的行——外层已经是浮起胶囊，
+// 分组自身不再叠表面，否则就是「卡中卡」。
+function CollapsibleSection(props: {
+  title: string
+  summary?: JSX.Element
+  defaultOpen?: boolean
+  children: JSX.Element
+}) {
+  const [expanded, setExpanded] = createSignal(props.defaultOpen ?? false)
+  return (
+    <section data-slot="capsule-section" class="flex flex-col">
+      <CapsuleRow
+        label={props.title}
+        description={props.summary ? <span class="truncate">{props.summary}</span> : undefined}
+        trailing={
+          <Icon name="chevron-down" class={expanded() ? "rotate-180 transition-transform" : "transition-transform"} />
+        }
+        selected={expanded()}
+        aria-expanded={expanded()}
+        onClick={() => setExpanded((value) => !value)}
+      />
+      <Show when={expanded()}>
+        <div class="px-2 pb-2 pt-1 flex flex-col gap-3">{props.children}</div>
+      </Show>
+    </section>
   )
 }
 
@@ -284,7 +275,6 @@ function RawMessage(props: {
   )
 }
 
-const emptyMessages: Message[] = []
 const emptyUserMessages: UserMessage[] = []
 
 export function SessionContextTab() {
@@ -293,23 +283,13 @@ export function SessionContextTab() {
   const globalSync = useServerSync()
   // 260831 Red 额度是账号级事实（GlobalBus 广播 + bootstrap 首次拉取），直接从全局 store 读
   const quotaList = () => globalSync.data.provider_quota
-  const providers = useProviders()
+  const summaries = useSessionContextSummaries()
   const { params, sessionKey, view } = useSessionLayout()
 
   const info = createMemo(() => (params.id ? sync.session.get(params.id) : undefined))
 
-  const messages = createMemo(
-    () => {
-      const id = params.id
-      if (!id) return emptyMessages
-      return (sync.data.message[id] ?? []) as Message[]
-    },
-    emptyMessages,
-    { equals: same },
-  )
-
   const userMessages = createMemo(
-    () => messages().filter((m) => m.role === "user") as UserMessage[],
+    () => summaries.messages().filter((m) => m.role === "user") as UserMessage[],
     emptyUserMessages,
     { equals: same },
   )
@@ -327,9 +307,12 @@ export function SessionContextTab() {
     { equals: same },
   )
 
-  const metrics = createMemo(() => getSessionContextMetrics(messages(), [...providers.all().values()]))
-  const ctx = createMemo(() => metrics().context)
-  const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
+  // 260921 Red 数据集与四段摘要收单个 owner（useSessionContextSummaries）：折叠矮胶囊与
+  // 本 tab 消费同一份，避免两边各写一份摘要字符串后漂移。
+  const metrics = summaries.metrics
+  const ctx = summaries.ctx
+  const formatter = summaries.formatter
+  const counts = summaries.counts
 
   // 260706 Red: 子代理(Task/Agent 工具)创建的子 session 的 LLM 调用成本在 DeepSeek 平台真实计费，
   // 但原 metrics 只统计父 session 自身消息——面板显示"总成本"严重偏低。
@@ -352,17 +335,6 @@ export function SessionContextTab() {
   const cost = createMemo(() => {
     const m = metrics()
     return formatter().cost(m.totalCost + childCost(), m.costCurrency)
-  })
-
-  const counts = createMemo(() => {
-    const all = messages()
-    const user = all.reduce((count, x) => count + (x.role === "user" ? 1 : 0), 0)
-    const assistant = all.reduce((count, x) => count + (x.role === "assistant" ? 1 : 0), 0)
-    return {
-      all: all.length,
-      user,
-      assistant,
-    }
   })
 
   const systemPrompt = createMemo(() => {
@@ -398,12 +370,12 @@ export function SessionContextTab() {
 
   const breakdown = createMemo(
     on(
-      () => [ctx()?.message.id, ctx()?.input, messages().length, systemPrompt()],
+      () => [ctx()?.message.id, ctx()?.input, summaries.messages().length, systemPrompt()],
       () => {
         const c = ctx()
         if (!c?.input) return []
         return estimateSessionContextBreakdown({
-          messages: messages(),
+          messages: summaries.messages(),
           parts: sync.data.part as Record<string, Part[] | undefined>,
           input: c.input,
           systemPrompt: systemPrompt(),
@@ -427,38 +399,8 @@ export function SessionContextTab() {
   //
   // 快照只在服务端内存、只留最后一轮：会话还没在本进程发过请求时是 404，那不是错误，
   // 按「暂无」显示。key 跟着最后一条 assistant 的 id 与 context 走，一轮请求落定才重取。
-  const sdk = useSDK()
-  const inspect = useQuery(() => ({
-    queryKey: ["session", params.id ?? "", ctx()?.message.id ?? "", ctx()?.window ?? 0, "context-inspect"] as const,
-    enabled: () => !!params.id,
-    // 260822 cc **这一行是在修「模型一调工具，整个界面闪一下变成主题底色再回来」**。
-    //
-    // 上面这个 key 每轮都会变（带着最后一条 assistant 的 id 与 tokens.context，而
-    // tokens.context 是服务端每个 step 覆写一次的）。solid-query 的 useQuery 内部就是
-    // createResource：key 一变就成了一个「全新且无缓存」的 pending 查询，此时读 .data
-    // （inspectGroups 里）会**向上抛给最近的 Suspense**。而最近的那个是 app.tsx:198
-    // 包住**整个应用**的那一个，它的 fallback 是满屏 bg-background-base + Splash ——
-    // 于是每次工具调用，整棵树被卸载换成一块满屏色块再重挂。伴随症状：CLS 爆表、
-    // 没有任何长任务（不是算卡了，是真的换掉了）、正在输入的 IME 组合被强行提交成拼音。
-    // 只在本 tab 激活时出现，因为侧栏 tab 内容是 <Show when={activeTab()===...}> 真卸载的。
-    //
-    // 保留上一轮数据即可让它永远不进入「无数据 pending」：换 key 时先拿旧快照顶着，
-    // 新的取回来再替换。旧快照短暂偏一轮，远好过整个界面闪。
-    placeholderData: (previous) => previous,
-    queryFn: async () => {
-      const id = params.id
-      if (!id) return null
-      try {
-        const result = await sdk.client.session.contextInspect({ sessionID: id })
-        return result.data ?? null
-      } catch {
-        return null
-      }
-    },
-  }))
-
   const inspectGroups = createMemo(() => {
-    const snapshot = inspect.data
+    const snapshot = summaries.inspectData()
     if (!snapshot || snapshot.total <= 0) return []
     const groups: {
       key: InspectKey
@@ -489,7 +431,7 @@ export function SessionContextTab() {
   // 标着「真实构成」却不说是什么时候的，那是在误导——纯内存时它必然是本进程刚记的，
   // 不标时间尚可，落盘之后必须标。
   const inspectTime = createMemo(() => {
-    const at = inspect.data?.time
+    const at = summaries.inspectData()?.time
     if (!at) return ""
     return new Date(at).toLocaleString(language.intl(), {
       month: "numeric",
@@ -641,7 +583,7 @@ export function SessionContextTab() {
 
   createEffect(
     on(
-      () => messages().length,
+      () => summaries.messages().length,
       () => {
         requestAnimationFrame(restoreScroll)
       },
@@ -680,7 +622,7 @@ export function SessionContextTab() {
           "起始于此"的标签，参差不齐所以不成墙，右边是"结束在此"的值，等距反而更挤。
           右侧多给一档让整块浮在面板里；改这里而不是改单个区块，是为了让所有区块共用同一条
           右边界，否则错开的两条边界比贴边更难看。 */}
-      <div class="pl-6 pr-10 pt-4 pb-10 flex flex-col gap-10">
+      <div class="px-2 py-2 flex flex-col gap-2">
         <Show when={hasMoreHistory()}>
           <div class="flex items-start gap-2 border border-border-base rounded-md bg-surface-base px-3 py-2">
             <Icon name="warning" size="small" class="shrink-0 mt-0.5" style={{ color: "var(--syntax-warning)" }} />
@@ -689,17 +631,20 @@ export function SessionContextTab() {
             </div>
           </div>
         </Show>
-        <div class="grid grid-cols-1 @[32rem]:grid-cols-2 gap-4">
-          <For each={stats}>
-            {(stat) => (
-              <Stat
-                label={language.t(stat.label as Parameters<typeof language.t>[0])}
-                value={stat.value()}
-                color={stat.color}
-              />
-            )}
-          </For>
-        </div>
+
+        <CollapsibleSection title={language.t("context.summary.title")} summary={summaries.context()} defaultOpen>
+          <div class="grid grid-cols-1 @[32rem]:grid-cols-2 gap-4">
+            <For each={stats}>
+              {(stat) => (
+                <Stat
+                  label={language.t(stat.label as Parameters<typeof language.t>[0])}
+                  value={stat.value()}
+                  color={stat.color}
+                />
+              )}
+            </For>
+          </div>
+        </CollapsibleSection>
 
         <div class="flex flex-col gap-2">
           <Show
@@ -711,127 +656,126 @@ export function SessionContextTab() {
               </div>
             }
           >
-            <QuotaCapsule quotas={quotaList()} />
+            <QuotaCapsule quotas={quotaList()} summary={summaries.quota()} />
           </Show>
         </div>
 
-        <Show
-          when={inspectGroups().length > 0}
-          fallback={
-            <div class="flex flex-col gap-2">
-              <div class="text-12-regular text-text-weak">{language.t("context.inspect.title")}</div>
-              <div class="text-11-regular text-text-weaker">{language.t("context.inspect.empty")}</div>
-            </div>
-          }
-        >
-          <div class="flex flex-col gap-2">
-            <div class="flex items-baseline justify-between gap-2">
-              <div class="text-12-regular text-text-weak">{language.t("context.inspect.title")}</div>
-              <div class="text-11-regular text-text-weaker">
-                {formatter().number(inspect.data?.total)} · {inspect.data?.modelID}
-                <Show when={inspectTime()}>{(t) => <> · {t()}</>}</Show>
+        <CollapsibleSection title={language.t("context.inspect.title")} summary={summaries.inspect()}>
+          <Show
+            when={inspectGroups().length > 0}
+            fallback={
+              <div class="flex flex-col gap-2">
+                <div class="text-11-regular text-text-weaker">{language.t("context.inspect.empty")}</div>
               </div>
-            </div>
-            <div class="h-2 w-full rounded-full bg-surface-base overflow-hidden flex">
-              <For each={inspectGroups()}>
-                {(group) => (
-                  <div
-                    class="h-full"
-                    style={{ width: `${group.percent}%`, "background-color": INSPECT_COLOR[group.key] }}
-                  />
-                )}
-              </For>
-            </div>
-            <div class="grid grid-cols-1 @[32rem]:grid-cols-3 gap-4">
-              <For each={inspectGroups()}>
-                {(group) => (
-                  <div class="flex flex-col gap-1">
-                    <div class="flex items-center gap-1 text-11-regular text-text-weak">
-                      <div class="size-2 rounded-sm" style={{ "background-color": INSPECT_COLOR[group.key] }} />
-                      <div>{inspectLabel(group.key)}</div>
-                      <div class="text-text-weaker">
-                        {formatter().number(group.tokens)} · {group.percent.toLocaleString(language.intl())}%
-                      </div>
-                    </div>
-                    <For each={group.items}>
-                      {(item) => (
-                        <div class="flex items-baseline justify-between gap-2 text-11-regular">
-                          <div class="text-text-weaker truncate select-text" title={item.label}>
-                            {item.label}
-                          </div>
-                          <div class="text-text-weak shrink-0">{formatter().number(item.tokens)}</div>
+            }
+          >
+            <div class="flex flex-col gap-2">
+              <div class="flex items-baseline justify-between gap-2">
+                <div class="text-11-regular text-text-weaker">
+                 {formatter().number(summaries.inspectData()?.total)} · {summaries.inspectData()?.modelID}
+                 <Show when={inspectTime()}>{(t) => <> · {t()}</>}</Show>
+                </div>
+              </div>
+              <div class="h-2 w-full rounded-full bg-surface-base overflow-hidden flex">
+                <For each={inspectGroups()}>
+                  {(group) => (
+                    <div
+                      class="h-full"
+                      style={{ width: `${group.percent}%`, "background-color": INSPECT_COLOR[group.key] }}
+                    />
+                  )}
+                </For>
+              </div>
+              <div class="grid grid-cols-1 @[32rem]:grid-cols-3 gap-4">
+                <For each={inspectGroups()}>
+                  {(group) => (
+                    <div class="flex flex-col gap-1">
+                      <div class="flex items-center gap-1 text-11-regular text-text-weak">
+                        <div class="size-2 rounded-sm" style={{ "background-color": INSPECT_COLOR[group.key] }} />
+                        <div>{inspectLabel(group.key)}</div>
+                        <div class="text-text-weaker">
+                          {formatter().number(group.tokens)} · {group.percent.toLocaleString(language.intl())}%
                         </div>
-                      )}
-                    </For>
-                    <Show when={group.key === "tools" && group.count > group.items.length}>
-                      <div class="text-11-regular text-text-weaker">
-                        {language.t("context.inspect.more", { count: (group.count - group.items.length).toString() })}
                       </div>
-                    </Show>
-                  </div>
-                )}
-              </For>
-            </div>
-            <div class="text-11-regular text-text-weaker">{language.t("context.inspect.note")}</div>
-          </div>
-        </Show>
-
-        {/* 260829 cc 估算只在**没有真实构成**时出现。此前两块无条件并列，而快照存在时
-            估算是被完全支配的：快照把系统提示与工具定义拆到了每一条，估算却把同一坨
-            囫囵报成「其他 99.5%」——同一份东西上面拆开了、下面又报一遍还报错了名字。
-            快照是内存态、只留最后一轮，所以估算仍要留着兜底，只是让位。 */}
-        <Show when={inspectGroups().length === 0 && breakdown().length > 0}>
-          <div class="flex flex-col gap-2">
-            <div class="text-12-regular text-text-weak">{language.t("context.breakdown.title")}</div>
-            <div class="h-2 w-full rounded-full bg-surface-base overflow-hidden flex">
-              <For each={breakdown()}>
-                {(segment) => (
-                  <div
-                    class="h-full"
-                    style={{
-                      width: `${segment.width}%`,
-                      "background-color": BREAKDOWN_COLOR[segment.key],
-                    }}
-                  />
-                )}
-              </For>
-            </div>
-            <div class="flex flex-wrap gap-x-3 gap-y-1">
-              <For each={breakdown()}>
-                {(segment) => (
-                  <div class="flex items-center gap-1 text-11-regular text-text-weak">
-                    <div class="size-2 rounded-sm" style={{ "background-color": BREAKDOWN_COLOR[segment.key] }} />
-                    <div>{breakdownLabel(segment.key)}</div>
-                    <div class="text-text-weaker">{segment.percent.toLocaleString(language.intl())}%</div>
-                  </div>
-                )}
-              </For>
-            </div>
-            <div class="text-11-regular text-text-weaker">{language.t("context.breakdown.note")}</div>
-          </div>
-        </Show>
-
-        <Show when={systemPrompt()}>
-          {(prompt) => (
-            <div class="flex flex-col gap-2">
-              <div class="text-12-regular text-text-weak">{language.t("context.systemPrompt.title")}</div>
-              <div class="border border-border-base rounded-md bg-surface-base px-3 py-2 select-text">
-                <Markdown text={prompt()} class="text-12-regular" />
+                      <For each={group.items}>
+                        {(item) => (
+                          <div class="flex items-baseline justify-between gap-2 text-11-regular">
+                            <div class="text-text-weaker truncate select-text" title={item.label}>
+                              {item.label}
+                            </div>
+                            <div class="text-text-weak shrink-0">{formatter().number(item.tokens)}</div>
+                          </div>
+                        )}
+                      </For>
+                      <Show when={group.key === "tools" && group.count > group.items.length}>
+                        <div class="text-11-regular text-text-weaker">
+                          {language.t("context.inspect.more", { count: (group.count - group.items.length).toString() })}
+                        </div>
+                      </Show>
+                    </div>
+                  )}
+                </For>
               </div>
+              <div class="text-11-regular text-text-weaker">{language.t("context.inspect.note")}</div>
             </div>
-          )}
-        </Show>
+          </Show>
 
-        <div class="flex flex-col gap-2">
-          <div class="text-12-regular text-text-weak">{language.t("context.rawMessages.title")}</div>
+          {/* 260829 cc 估算只在**没有真实构成**时出现。此前两块无条件并列，而快照存在时
+              估算是被完全支配的：快照把系统提示与工具定义拆到了每一条，估算却把同一坨
+              囫囵报成「其他 99.5%」——同一份东西上面拆开了、下面又报一遍还报错了名字。
+              快照是内存态、只留最后一轮，所以估算仍要留着兜底，只是让位。 */}
+          <Show when={inspectGroups().length === 0 && breakdown().length > 0}>
+            <div class="flex flex-col gap-2">
+              <div class="text-11-regular text-text-weak">{language.t("context.breakdown.title")}</div>
+              <div class="h-2 w-full rounded-full bg-surface-base overflow-hidden flex">
+                <For each={breakdown()}>
+                  {(segment) => (
+                    <div
+                      class="h-full"
+                      style={{
+                        width: `${segment.width}%`,
+                        "background-color": BREAKDOWN_COLOR[segment.key],
+                      }}
+                    />
+                  )}
+                </For>
+              </div>
+              <div class="flex flex-wrap gap-x-3 gap-y-1">
+                <For each={breakdown()}>
+                  {(segment) => (
+                    <div class="flex items-center gap-1 text-11-regular text-text-weak">
+                      <div class="size-2 rounded-sm" style={{ "background-color": BREAKDOWN_COLOR[segment.key] }} />
+                      <div>{breakdownLabel(segment.key)}</div>
+                      <div class="text-text-weaker">{segment.percent.toLocaleString(language.intl())}%</div>
+                    </div>
+                  )}
+                </For>
+              </div>
+              <div class="text-11-regular text-text-weaker">{language.t("context.breakdown.note")}</div>
+            </div>
+          </Show>
+
+          <Show when={systemPrompt()}>
+            {(prompt) => (
+              <div class="flex flex-col gap-2">
+                <div class="text-11-regular text-text-weak">{language.t("context.systemPrompt.title")}</div>
+                <div class="border border-border-base rounded-md bg-surface-base px-3 py-2 select-text">
+                  <Markdown text={prompt()} class="text-12-regular" />
+                </div>
+              </div>
+            )}
+          </Show>
+        </CollapsibleSection>
+
+        <CollapsibleSection title={language.t("context.rawMessages.title")} summary={summaries.rawMessages()}>
           <Accordion multiple>
-            <For each={messages()}>
+            <For each={summaries.messages()}>
               {(message) => (
                 <RawMessage message={message} getParts={getParts} onRendered={restoreScroll} time={formatter().time} />
               )}
             </For>
           </Accordion>
-        </div>
+        </CollapsibleSection>
       </div>
     </ScrollView>
   )

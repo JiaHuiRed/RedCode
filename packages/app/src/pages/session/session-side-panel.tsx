@@ -1,6 +1,9 @@
-import { For, Show, Suspense, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
+import { For, Show, Suspense, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
+import { CapsuleRow } from "@redcode-ai/ui/capsule"
+import { Icon } from "@redcode-ai/ui/icon"
+import { ResizeHandle } from "@redcode-ai/ui/resize-handle"
 import { Tabs } from "@redcode-ai/ui/tabs"
 import { IconButton } from "@redcode-ai/ui/icon-button"
 import { TooltipKeybind } from "@redcode-ai/ui/tooltip"
@@ -11,6 +14,7 @@ import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { SessionContextTab, SessionPlanTab, SortableTab, FileVisual } from "@/components/session"
+import { useSessionContextSummaries } from "@/components/session/session-context-summary"
 import { useCommand } from "@/context/command"
 import { useFile, type SelectedLineRange } from "@/context/file"
 import { useLanguage } from "@/context/language"
@@ -23,6 +27,34 @@ import { FileTabContent } from "@/pages/session/file-tabs"
 import { createOpenSessionFileTab, createSessionTabs, getTabReorderIndex, type Sizing } from "@/pages/session/helpers"
 import { setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
+
+// 260921 Red 折叠矮胶囊的四段摘要行。与上下文 tab 的折叠分组共用
+// useSessionContextSummaries，两边字符串不会漂移；行本身是纯展示（无 onClick，
+// CapsuleRow 退化成 div），交互只有 header 那一行的展开/收起。
+function SessionCapsuleSummaryRows() {
+  const language = useLanguage()
+  const summaries = useSessionContextSummaries()
+  const rows = () => [
+    { label: language.t("context.summary.title"), value: summaries.context() },
+    { label: language.t("context.quota.title"), value: summaries.quota() || language.t("context.quota.empty") },
+    { label: language.t("context.inspect.title"), value: summaries.inspect() },
+    { label: language.t("context.rawMessages.title"), value: summaries.rawMessages() },
+  ]
+  return (
+    <div class="session-side-panel__summary-rows">
+      <For each={rows()}>
+        {(row) => (
+          <CapsuleRow>
+            <div class="flex items-center justify-between gap-3 w-full min-w-0">
+              <span class="text-12-regular text-text-weak shrink-0">{row.label}</span>
+              <span class="text-12-regular text-text-base truncate">{row.value}</span>
+            </div>
+          </CapsuleRow>
+        )}
+      </For>
+    </div>
+  )
+}
 
 export function SessionSidePanel(props: {
   canReview: () => boolean
@@ -43,13 +75,14 @@ export function SessionSidePanel(props: {
   const { sessionKey, tabs, view, params } = useSessionLayout()
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
+  const isWideDesktop = createMediaQuery("(min-width: 1280px)")
   const reviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const open = reviewOpen
   const reviewTab = createMemo(() => isDesktop())
   const panelWidth = createMemo(() => {
-    if (!reviewOpen()) return "0px"
     return `${layout.session.width()}px`
   })
+  const flowPanelWidth = createMemo(() => (reviewOpen() ? panelWidth() : "0px"))
 
   const normalizeTab = (tab: string) => {
     if (!tab.startsWith("file://")) return tab
@@ -80,6 +113,68 @@ export function SessionSidePanel(props: {
   const openedTabs = tabState.openedTabs
   const activeTab = tabState.activeTab
   const activeFileTab = tabState.activeFileTab
+
+  const activeTabLabel = createMemo(() => {
+    const tab = activeTab()
+    if (!tab) return language.t("session.panel.reviewAndFiles")
+    if (tab === "review") return language.t("session.tab.review")
+    if (tab === "context") return language.t("session.tab.context")
+    if (tab === "outline") return language.t("session.tab.outline")
+    if (tab === "plan") return language.t("session.tab.plan")
+    return file.pathFromTab(tab) ?? language.t("session.panel.reviewAndFiles")
+  })
+
+  let drawer: HTMLElement | undefined
+  let summaryButton: HTMLElement | undefined
+  let focusFrame: number | undefined
+  let wasOpen = open()
+
+  // 260921 Red 收起时不能立刻卸载内容：aside 上的 opacity/transform 过渡需要 DOM 载体
+  // 才播得出来，直接 <Show when={open()}> 会在关闭的那一帧清空子树，视觉上就是"瞬间消失"。
+  // 延后一段过渡时长再摘，展开时同步恢复。
+  const [rendered, setRendered] = createSignal(open())
+  createEffect(() => {
+    if (open()) {
+      setRendered(true)
+      return
+    }
+    const timer = setTimeout(() => setRendered(false), 240)
+    onCleanup(() => clearTimeout(timer))
+  })
+
+  createEffect(() => {
+    const next = open()
+    if (
+      wasOpen &&
+      !next &&
+      typeof document !== "undefined" &&
+      drawer?.contains(document.activeElement) &&
+      summaryButton
+    ) {
+      if (focusFrame !== undefined) cancelAnimationFrame(focusFrame)
+      focusFrame = requestAnimationFrame(() => {
+        focusFrame = undefined
+        summaryButton?.focus()
+      })
+    }
+    wasOpen = next
+  })
+
+  onCleanup(() => {
+    if (focusFrame !== undefined) cancelAnimationFrame(focusFrame)
+  })
+
+  // 260921 Red 宽桌面下展开态是浮层胶囊，Esc 关闭是 popover 的标配；中等桌面仍是参与
+  // 布局的面板，沿用标题栏按钮与 mod+shift+r，不在这里抢按键。
+  createEffect(() => {
+    if (!open() || !isWideDesktop()) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      view().reviewPanel.close()
+    }
+    document.addEventListener("keydown", onKeyDown)
+    onCleanup(() => document.removeEventListener("keydown", onKeyDown))
+  })
 
   const [store, setStore] = createStore({
     activeDraggable: undefined as string | undefined,
@@ -128,196 +223,286 @@ export function SessionSidePanel(props: {
 
   return (
     <Show when={isDesktop()}>
-      <aside
-        id="review-panel"
-        data-component="session-side-panel"
-        aria-label={language.t("session.tab.review")}
-        aria-hidden={!open()}
-        inert={!open()}
-        class="session-side-panel relative min-w-0 h-full flex shrink-0 overflow-hidden bg-transparent"
+      <div
+        class="session-side-panel__rail relative min-w-0 h-full flex shrink-0 overflow-hidden bg-transparent"
         classList={{
-          "pointer-events-none": !open(),
+          "session-side-panel__rail--wide": isWideDesktop(),
           "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
-            !props.size.active() && !props.reviewSnap,
+            !isWideDesktop() && !props.size.active() && !props.reviewSnap,
         }}
-        style={{ width: panelWidth() }}
+        style={{ width: isWideDesktop() ? "0px" : flowPanelWidth() }}
       >
-        <Show when={open()}>
-          <div class="size-full flex px-2 py-2">
-            <div
-              aria-hidden={!reviewOpen()}
-              inert={!reviewOpen()}
-              class="session-side-panel__surface relative min-w-0 h-full flex-1 overflow-hidden"
-              classList={{
-                "pointer-events-none": !reviewOpen(),
-              }}
-            >
-              <div class="size-full min-w-0 h-full">
-                <DragDropProvider
-                  onDragStart={handleDragStart}
-                  onDragEnd={handleDragEnd}
-                  onDragOver={handleDragOver}
-                  collisionDetector={closestCenter}
-                >
-                  <DragDropSensors />
-                  <ConstrainDragYAxis />
-                  <Tabs value={activeTab()} onChange={openTab}>
-                    <div class="sticky top-0 shrink-0 flex">
-                      <Tabs.List
-                        class="session-side-panel__tab-list"
-                        ref={(el: HTMLDivElement) => {
-                          const stop = createFileTabListSync({ el, contextOpen })
-                          onCleanup(stop)
-                        }}
-                      >
-                        <Show when={reviewTab() && props.canReview()}>
-                          <Tabs.Trigger value="review">
-                            <div class="flex items-center gap-1.5">
-                              <div>{language.t("session.tab.review")}</div>
-                            </div>
-                          </Tabs.Trigger>
-                        </Show>
-                        <Show when={contextOpen()}>
-                          <Tabs.Trigger
-                            value="context"
-                            closeButton={
-                              <TooltipKeybind
-                                title={language.t("common.closeTab")}
-                                keybind={command.keybind("tab.close")}
-                                placement="bottom"
-                                gutter={10}
-                              >
-                                <IconButton
-                                  icon="close-small"
-                                  variant="ghost"
-                                  class="h-5 w-5"
-                                  onClick={() => tabs().close("context")}
-                                  aria-label={language.t("common.closeTab")}
-                                />
-                              </TooltipKeybind>
-                            }
-                            hideCloseButton
-                            onMiddleClick={() => tabs().close("context")}
-                          >
-                            <div class="flex items-center gap-2">
-                              <SessionContextUsage variant="indicator" />
-                              <div>{language.t("session.tab.context")}</div>
-                            </div>
-                          </Tabs.Trigger>
-                        </Show>
-                        {/* 260901 cc 轮次标签：整份日志的轮次目录，点一条翻页并跳过去 */}
-                        <Tabs.Trigger value="outline">
-                          <div class="flex items-center gap-1.5">
-                            <div>{language.t("session.tab.outline")}</div>
-                          </div>
-                        </Tabs.Trigger>
-                        {/* 260615 Red Plan 标签：展示当前会话 todo 计划进度 */}
-                        <Tabs.Trigger value="plan">
-                          <div class="flex items-center gap-1.5">
-                            <div>{language.t("session.tab.plan")}</div>
-                          </div>
-                        </Tabs.Trigger>
-                        <SortableProvider ids={openedTabs()}>
-                          <For each={openedTabs()}>{(tab) => <SortableTab tab={tab} onTabClose={tabs().close} />}</For>
-                        </SortableProvider>
-                        <div class="session-side-panel__tab-end h-full shrink-0 sticky right-0 z-10 flex items-center justify-center pl-1 pr-2">
-                          <TooltipKeybind
-                            title={language.t("command.file.open")}
-                            keybind={command.keybind("file.open")}
-                            class="flex items-center"
-                          >
-                            <IconButton
-                              icon="plus-small"
-                              variant="ghost"
-                              iconSize="large"
-                              class="!rounded-md"
-                              onClick={() => {
-                                void import("@/components/dialog-select-file").then((x) => {
-                                  dialog.show(() => <x.DialogSelectFile mode="files" />)
-                                })
-                              }}
-                              aria-label={language.t("command.file.open")}
-                            />
-                          </TooltipKeybind>
-                        </div>
-                      </Tabs.List>
-                    </div>
+        <aside
+          ref={(el) => {
+            drawer = el
+          }}
+          id="review-panel"
+          data-component="session-side-panel"
+          aria-label={language.t("session.tab.review")}
+          aria-hidden={!open() && !isWideDesktop()}
+          inert={!open() && !isWideDesktop()}
+          class="session-side-panel__capsule relative min-w-0 h-full flex flex-col shrink-0 overflow-hidden bg-transparent"
+          classList={{
+            "session-side-panel__capsule--wide": isWideDesktop(),
+            "session-side-panel__capsule--open": open(),
+            "session-side-panel__capsule--closed": !open(),
+          }}
+          style={{
+            "--panel-width": `${layout.session.width()}px`,
+            width: isWideDesktop() ? undefined : "100%",
+            // 260921 Red wide 态高度走 inline：aside class 上的 h-full（height:100%）会跟
+            // CSS 里的分态高度打架，曾出现「矮胶囊内容露顶、全高壳留在下面」一屏黑。
+            // inline 优先级最高，折叠矮胶囊 ↔ 展开全高从此不受类名竞争影响。
+            // 折叠态刻意压到 ~1/4 屏以下：这是常态态，要做成贴边小胶囊而不是小卡片。
+            height: isWideDesktop() ? (open() ? "calc(100% - 68px)" : "clamp(180px, 24vh, 280px)") : undefined,
+          }}
+        >
+          {/* 260921 Red 宽桌面下的切换行：折叠态它是矮胶囊的 header，展开态它是抽屉
+             顶部的一行——必须永驻可见。曾经把它和四段摘要一起淡出，结果展开后再也
+             没有可见的收起入口，折叠态直接变成触发不到的死状态。中桌面不渲染。 */}
+          <Show when={isWideDesktop()}>
+            <div class="session-side-panel__header">
+              <CapsuleRow
+                ref={(el) => {
+                  summaryButton = el
+                }}
+                icon={open() ? "review-active" : "review"}
+                label={language.t("session.panel.reviewAndFiles")}
+                description={activeTabLabel()}
+                trailing={
+                  <Icon
+                    name="chevron-down"
+                    size="small"
+                    class={open() ? "rotate-180 transition-transform" : "transition-transform"}
+                  />
+                }
+                selected={open()}
+                aria-expanded={open()}
+                aria-controls="review-panel"
+                onClick={() => view().reviewPanel.toggle()}
+              />
+            </div>
+          </Show>
 
-                    {/* 260822 cc 面板自己的 Suspense 边界。少了它，任何一个 tab 里的异步读
+          <div class="session-side-panel__body">
+            {/* 折叠态（宽桌面）：四段摘要行，与上下文 tab 的折叠分组同源
+                （useSessionContextSummaries）。展开时淡出让位给面板层。 */}
+            <Show when={isWideDesktop()}>
+              <div
+                class="session-side-panel__rows"
+                classList={{ "session-side-panel__rows--hidden": open() }}
+                aria-hidden={open()}
+              >
+                {/* inspect 查询首轮无缓存时会向最近的 Suspense 抛；这层在面板自己的
+                    Suspense 之外，必须自带边界，否则会一路抛到 app 级 Splash */}
+                <Suspense fallback={<div class="flex-1 min-h-0" />}>
+                  <SessionCapsuleSummaryRows />
+                </Suspense>
+              </div>
+            </Show>
+
+            <Show when={rendered()}>
+              <div
+                class="session-side-panel__panel"
+                aria-hidden={!open()}
+                inert={!open()}
+                classList={{ "pointer-events-none": !open() }}
+              >
+                <div class="size-full flex px-2 py-2">
+                  <div
+                    aria-hidden={!reviewOpen()}
+                    inert={!reviewOpen()}
+                    class="session-side-panel__surface relative min-w-0 h-full flex-1 overflow-hidden"
+                    classList={{
+                      "pointer-events-none": !reviewOpen(),
+                    }}
+                  >
+                    <div class="size-full min-w-0 h-full">
+                      <DragDropProvider
+                        onDragStart={handleDragStart}
+                        onDragEnd={handleDragEnd}
+                        onDragOver={handleDragOver}
+                        collisionDetector={closestCenter}
+                      >
+                        <DragDropSensors />
+                        <ConstrainDragYAxis />
+                        <Tabs value={activeTab()} onChange={openTab}>
+                          <div class="sticky top-0 shrink-0 flex">
+                            <Tabs.List
+                              class="session-side-panel__tab-list"
+                              ref={(el: HTMLDivElement) => {
+                                const stop = createFileTabListSync({ el, contextOpen })
+                                onCleanup(stop)
+                              }}
+                            >
+                              <Show when={reviewTab() && props.canReview()}>
+                                <Tabs.Trigger value="review">
+                                  <div class="flex items-center gap-1.5">
+                                    <div>{language.t("session.tab.review")}</div>
+                                  </div>
+                                </Tabs.Trigger>
+                              </Show>
+                              <Show when={contextOpen()}>
+                                <Tabs.Trigger
+                                  value="context"
+                                  closeButton={
+                                    <TooltipKeybind
+                                      title={language.t("common.closeTab")}
+                                      keybind={command.keybind("tab.close")}
+                                      placement="bottom"
+                                      gutter={10}
+                                    >
+                                      <IconButton
+                                        icon="close-small"
+                                        variant="ghost"
+                                        class="h-5 w-5"
+                                        onClick={() => tabs().close("context")}
+                                        aria-label={language.t("common.closeTab")}
+                                      />
+                                    </TooltipKeybind>
+                                  }
+                                  hideCloseButton
+                                  onMiddleClick={() => tabs().close("context")}
+                                >
+                                  <div class="flex items-center gap-2">
+                                    <SessionContextUsage variant="indicator" />
+                                    <div>{language.t("session.tab.context")}</div>
+                                  </div>
+                                </Tabs.Trigger>
+                              </Show>
+                              {/* 260901 cc 轮次标签：整份日志的轮次目录，点一条翻页并跳过去 */}
+                              <Tabs.Trigger value="outline">
+                                <div class="flex items-center gap-1.5">
+                                  <div>{language.t("session.tab.outline")}</div>
+                                </div>
+                              </Tabs.Trigger>
+                              {/* 260615 Red Plan 标签：展示当前会话 todo 计划进度 */}
+                              <Tabs.Trigger value="plan">
+                                <div class="flex items-center gap-1.5">
+                                  <div>{language.t("session.tab.plan")}</div>
+                                </div>
+                              </Tabs.Trigger>
+                              <SortableProvider ids={openedTabs()}>
+                                <For each={openedTabs()}>
+                                  {(tab) => <SortableTab tab={tab} onTabClose={tabs().close} />}
+                                </For>
+                              </SortableProvider>
+                              <div class="session-side-panel__tab-end h-full shrink-0 sticky right-0 z-10 flex items-center justify-center pl-1 pr-2">
+                                <TooltipKeybind
+                                  title={language.t("command.file.open")}
+                                  keybind={command.keybind("file.open")}
+                                  class="flex items-center"
+                                >
+                                  <IconButton
+                                    icon="plus-small"
+                                    variant="ghost"
+                                    iconSize="large"
+                                    class="!rounded-md"
+                                    onClick={() => {
+                                      void import("@/components/dialog-select-file").then((x) => {
+                                        dialog.show(() => <x.DialogSelectFile mode="files" />)
+                                      })
+                                    }}
+                                    aria-label={language.t("command.file.open")}
+                                  />
+                                </TooltipKeybind>
+                              </div>
+                            </Tabs.List>
+                          </div>
+
+                          {/* 260822 cc 面板自己的 Suspense 边界。少了它，任何一个 tab 里的异步读
                         （useQuery/createResource）一进入无数据 pending，就会一路抛到 app.tsx:198
                         那个包住**整个应用**的 Suspense，把整扇窗换成满屏 Splash 再换回来 ——
                         「上下文」tab 的 context-inspect 查询就这么干过（见该文件里 placeholderData
                         上方那段）。边界放在这里，最坏情况也只是面板这一块空一下。 */}
-                    <Suspense fallback={<div class="flex-1 min-h-0" />}>
-                      <Show when={reviewTab() && props.canReview()}>
-                        <Tabs.Content value="review" class="flex flex-col h-full overflow-hidden contain-strict">
-                          <Show when={reviewOpen() && activeTab() === "review"}>{props.reviewPanel()}</Show>
-                        </Tabs.Content>
-                      </Show>
+                          <Suspense fallback={<div class="flex-1 min-h-0" />}>
+                            <Show when={reviewTab() && props.canReview()}>
+                              <Tabs.Content value="review" class="flex flex-col h-full overflow-hidden contain-strict">
+                                <Show when={reviewOpen() && activeTab() === "review"}>{props.reviewPanel()}</Show>
+                              </Tabs.Content>
+                            </Show>
 
-                      <Tabs.Content value="empty" class="flex flex-col h-full overflow-hidden contain-strict">
-                        <Show when={activeTab() === "empty"}>
-                          <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
-                            <div class="h-full px-6 pb-42 -mt-4 flex flex-col items-center justify-center text-center gap-6">
-                              <Mark class="w-14 opacity-10" />
-                              <div class="text-14-regular text-text-weak max-w-56">
-                                {language.t("session.files.selectToOpen")}
-                              </div>
-                            </div>
-                          </div>
-                        </Show>
-                      </Tabs.Content>
+                            <Tabs.Content value="empty" class="flex flex-col h-full overflow-hidden contain-strict">
+                              <Show when={activeTab() === "empty"}>
+                                <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
+                                  <div class="h-full px-6 pb-42 -mt-4 flex flex-col items-center justify-center text-center gap-6">
+                                    <Mark class="w-14 opacity-10" />
+                                    <div class="text-14-regular text-text-weak max-w-56">
+                                      {language.t("session.files.selectToOpen")}
+                                    </div>
+                                  </div>
+                                </div>
+                              </Show>
+                            </Tabs.Content>
 
-                      <Show when={contextOpen()}>
-                        <Tabs.Content value="context" class="flex flex-col h-full overflow-hidden contain-strict">
-                          <Show when={activeTab() === "context"}>
-                            <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
-                              <SessionContextTab />
-                            </div>
-                          </Show>
-                        </Tabs.Content>
-                      </Show>
+                            <Show when={contextOpen()}>
+                              <Tabs.Content value="context" class="flex flex-col h-full overflow-hidden contain-strict">
+                                <Show when={activeTab() === "context"}>
+                                  <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
+                                    <SessionContextTab />
+                                  </div>
+                                </Show>
+                              </Tabs.Content>
+                            </Show>
 
-                      {/* 260901 cc 轮次标签页内容。Show 保证只在激活时挂载 —— 目录请求因此
+                            {/* 260901 cc 轮次标签页内容。Show 保证只在激活时挂载 —— 目录请求因此
                           只在真的打开这个标签时才发，不给「点开会话」那条热路径加往返。 */}
-                      <Tabs.Content value="outline" class="flex flex-col h-full overflow-hidden contain-strict">
-                        <Show when={activeTab() === "outline"}>
-                          <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">{props.outlinePanel()}</div>
-                        </Show>
-                      </Tabs.Content>
+                            <Tabs.Content value="outline" class="flex flex-col h-full overflow-hidden contain-strict">
+                              <Show when={activeTab() === "outline"}>
+                                <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">{props.outlinePanel()}</div>
+                              </Show>
+                            </Tabs.Content>
 
-                      {/* 260615 Red Plan 标签页内容 */}
-                      <Tabs.Content value="plan" class="flex flex-col h-full overflow-hidden contain-strict">
-                        <Show when={activeTab() === "plan"}>
-                          <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
-                            <SessionPlanTab />
-                          </div>
-                        </Show>
-                      </Tabs.Content>
+                            {/* 260615 Red Plan 标签页内容 */}
+                            <Tabs.Content value="plan" class="flex flex-col h-full overflow-hidden contain-strict">
+                              <Show when={activeTab() === "plan"}>
+                                <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
+                                  <SessionPlanTab />
+                                </div>
+                              </Show>
+                            </Tabs.Content>
 
-                      <Show when={activeFileTab()} keyed>
-                        {(tab) => <FileTabContent tab={tab} />}
-                      </Show>
-                    </Suspense>
-                  </Tabs>
-                  <DragOverlay>
-                    <Show when={store.activeDraggable} keyed>
-                      {(tab) => {
-                        const path = file.pathFromTab(tab)
-                        return (
-                          <div data-component="tabs-drag-preview">
-                            <Show when={path}>{(p) => <FileVisual active path={p()} />}</Show>
-                          </div>
-                        )
-                      }}
-                    </Show>
-                  </DragOverlay>
-                </DragDropProvider>
+                            <Show when={activeFileTab()} keyed>
+                              {(tab) => <FileTabContent tab={tab} />}
+                            </Show>
+                          </Suspense>
+                        </Tabs>
+                        <DragOverlay>
+                          <Show when={store.activeDraggable} keyed>
+                            {(tab) => {
+                              const path = file.pathFromTab(tab)
+                              return (
+                                <div data-component="tabs-drag-preview">
+                                  <Show when={path}>{(p) => <FileVisual active path={p()} />}</Show>
+                                </div>
+                              )
+                            }}
+                          </Show>
+                        </DragOverlay>
+                      </DragDropProvider>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
+            </Show>
+            <Show when={open() && !isWideDesktop()}>
+              <div onPointerDown={() => props.size.start()}>
+                <ResizeHandle
+                  direction="horizontal"
+                  edge="start"
+                  size={layout.session.width()}
+                  min={340}
+                  max={typeof window === "undefined" ? 1000 : window.innerWidth * 0.45}
+                  onResize={(width) => {
+                    props.size.touch()
+                    layout.session.resize(width)
+                  }}
+                />
+              </div>
+            </Show>
           </div>
-        </Show>
-      </aside>
+        </aside>
+      </div>
     </Show>
   )
 }

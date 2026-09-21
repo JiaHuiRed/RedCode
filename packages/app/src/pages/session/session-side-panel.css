@@ -1,9 +1,151 @@
-#review-panel.session-side-panel {
+.session-side-panel__rail--wide {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  z-index: 20;
+  width: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* 260921 Red 合并后的单容器：原「小 summary 胶囊 + 大抽屉」两个元素合一。
+   折叠态是贴边矮胶囊（约占 1/4~1/3 视口高，header + 四段摘要行），
+   展开态恢复原侧边栏全高（tabs + 完整内容）。高度过渡，两层内容交叉淡入，
+   aside 是 absolute 定位，高度动画不牵动会话区的 flex 布局。 */
+.session-side-panel__capsule {
+  transition:
+    transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 160ms ease-out;
+  transform-origin: top right;
+
+  &.session-side-panel__capsule--wide {
+    position: absolute;
+    /* 260921 Red top 56px：避开会话标题栏，折叠矮胶囊不再压住它 */
+    inset-block-start: 56px;
+    inset-inline-end: 12px;
+    width: min(var(--panel-width, 420px), calc(100vw - 24px));
+    z-index: 1;
+    overflow: hidden;
+    border: 1px solid var(--border-weaker-base);
+    border-radius: var(--radius-xl);
+    background: var(--surface-raised-stronger-non-alpha);
+    box-shadow: var(--shadow-lg-border-base);
+    transition:
+      height 240ms cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 160ms ease-out;
+
+    /* 折叠：可见的矮胶囊。大圆角往胶囊形靠，高度压到 1/4 屏以下 */
+    &.session-side-panel__capsule--closed {
+      height: clamp(180px, 24vh, 280px);
+      border-radius: 28px;
+      transform: none;
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* 展开：原侧边栏全高（top 56 + bottom 12） */
+    &.session-side-panel__capsule--open {
+      height: calc(100% - 68px);
+      transform: none;
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+
+  /* 中桌面（<1280px）：参与布局的面板，收起即隐形，沿用原行为 */
+  &.session-side-panel__capsule--open {
+    pointer-events: auto;
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+
+  &.session-side-panel__capsule--closed {
+    pointer-events: none;
+    transform: translateY(-8px) scale(0.98);
+    opacity: 0;
+  }
+}
+
+/* 切换行：宽桌面永驻。折叠态是矮胶囊 header，展开态是抽屉顶部一行 */
+.session-side-panel__header {
+  flex: 0 0 auto;
+  padding: 6px 6px 2px;
+}
+
+.session-side-panel__header [data-component="capsule-row"] {
+  min-height: 32px;
+}
+
+/* body：两层内容的容器。宽桌面下 rows/panel 绝对定位互叠，中桌面 panel 在 flex
+   流内、ResizeHandle 跟在后面，保持原面板布局 */
+.session-side-panel__body {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+/* 折叠态层：四段摘要行，展开时淡出让位给面板层 */
+.session-side-panel__rows {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 6px 6px;
+  transition: opacity 140ms ease-out;
+}
+
+.session-side-panel__rows--hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.session-side-panel__summary-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 2px;
+}
+
+/* 折叠矮胶囊里的摘要行压紧：常态态要小，行高按一行字加呼吸即可 */
+.session-side-panel__summary-rows [data-component="capsule-row"] {
+  min-height: 24px;
+  padding: 2px 8px;
+}
+
+/* 展开态层：中桌面在 flex 流内（原布局），宽桌面绝对定位铺满胶囊 */
+.session-side-panel__panel {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  transition: opacity 160ms ease-out;
+}
+
+.session-side-panel__capsule--wide .session-side-panel__panel {
+  position: absolute;
+  inset: 0;
+}
+
+.session-side-panel__capsule--closed .session-side-panel__panel {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#review-panel.session-side-panel__capsule {
   .session-side-panel__surface {
     border: 1px solid var(--border-weaker-base);
     border-radius: var(--radius-xl);
     background: var(--background-stronger);
     box-shadow: var(--shadow-xs-border-base);
+  }
+
+  /* 宽桌面下表面由外层胶囊承担，内层壳退成透明，否则会是「卡里再嵌一张卡」 */
+  &.session-side-panel__capsule--wide .session-side-panel__surface {
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
   }
 
   [data-component="tabs"][data-variant="normal"][data-orientation="horizontal"] {
@@ -67,5 +209,14 @@
 
   [data-slot="tabs-content"] {
     background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-side-panel__rows,
+  .session-side-panel__summary-rows,
+  .session-side-panel__panel,
+  .session-side-panel__capsule {
+    transition: none;
   }
 }

@@ -410,6 +410,7 @@ export const dict = {
   "dialog.project.edit.worktree.startup.description": "在创建新的工作区 (worktree) 后运行。",
   "dialog.project.edit.worktree.startup.placeholder": "例如 bun install",
 
+  "context.summary.title": "上下文",
   "context.quota.title": "套餐额度",
   "context.quota.window.primary": "5小时额度",
   "context.quota.window.secondary": "周额度",

@@ -24,7 +24,6 @@ import { debounce } from "@solid-primitives/scheduled"
 import { useLocal } from "@/context/local"
 import { selectionFromLines, useFile, type FileSelection, type SelectedLineRange } from "@/context/file"
 import { createStore } from "solid-js/store"
-import { ResizeHandle } from "@redcode-ai/ui/resize-handle"
 import { Select } from "@redcode-ai/ui/select"
 import { Tabs } from "@redcode-ai/ui/tabs"
 import { createAutoScroll } from "@redcode-ai/ui/hooks"
@@ -170,19 +169,21 @@ export default function Page() {
   )
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
+  const isWideDesktop = createMediaQuery("(min-width: 1280px)")
   const size = createSizing()
   const isV2NewSessionPage = () => !params.id
   const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened() && !isV2NewSessionPage())
   const desktopFileTreeOpen = createMemo(() => isDesktop() && layout.fileTree.opened() && !isV2NewSessionPage())
+  const sessionReviewInFlow = createMemo(() => desktopReviewOpen() && !isWideDesktop())
   const sessionPanelWidth = createMemo(() => {
-    if (desktopReviewOpen() && desktopFileTreeOpen()) {
+    if (sessionReviewInFlow() && desktopFileTreeOpen()) {
       return `calc(100% - ${layout.fileTree.width()}px - ${layout.session.width()}px)`
     }
-    if (desktopReviewOpen()) return `calc(100% - ${layout.session.width()}px)`
+    if (sessionReviewInFlow()) return `calc(100% - ${layout.session.width()}px)`
     if (desktopFileTreeOpen()) return `calc(100% - ${layout.fileTree.width()}px)`
     return "100%"
   })
-  const centered = createMemo(() => isDesktop() && !desktopReviewOpen() && !desktopFileTreeOpen())
+  const centered = createMemo(() => isDesktop() && !sessionReviewInFlow() && !desktopFileTreeOpen())
 
   function normalizeTab(tab: string) {
     if (!tab.startsWith("file://")) return tab
@@ -333,7 +334,7 @@ export default function Page() {
   let diffTimer: number | undefined
 
   createComputed((prev) => {
-    const open = desktopReviewOpen()
+    const open = sessionReviewInFlow()
     if (prev === undefined || prev === open) return open
 
     if (reviewFrame !== undefined) cancelAnimationFrame(reviewFrame)
@@ -1667,7 +1668,7 @@ export default function Page() {
           transition，反而从「保持旧画面」退化成「立刻清空」。边界必须贴着挂起源。 */}
         <Suspense>{sessionSync() ?? ""}</Suspense>
         <SessionHeader />
-        <div class="flex-1 min-h-0 flex flex-col md:flex-row">
+        <div class="relative flex-1 min-h-0 flex flex-col md:flex-row">
           <Show when={!isDesktop() && !!params.id}>
             <Tabs value={store.mobileTab} class="h-auto">
               <Tabs.List>
@@ -1804,22 +1805,6 @@ export default function Page() {
             </div>
 
             <Show when={params.id}>{composerRegion("dock")}</Show>
-
-            <Show when={desktopReviewOpen()}>
-              <div onPointerDown={() => size.start()}>
-                <ResizeHandle
-                  direction="horizontal"
-                  invert={true}
-                  size={layout.session.width()}
-                  min={340}
-                  max={typeof window === "undefined" ? 1000 : window.innerWidth * 0.45}
-                  onResize={(width) => {
-                    size.touch()
-                    layout.session.resize(width)
-                  }}
-                />
-              </div>
-            </Show>
           </div>
 
           <SessionSidePanel

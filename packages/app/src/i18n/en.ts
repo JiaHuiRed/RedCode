@@ -410,6 +410,7 @@ export const dict = {
   "dialog.releaseNotes.action.hideFuture": "Don't show these in the future",
   "dialog.releaseNotes.media.alt": "Release preview",
 
+  "context.summary.title": "Context",
   "context.quota.title": "Plan Quota",
   "context.quota.window.primary": "Primary window",
   "context.quota.window.secondary": "Secondary window",
