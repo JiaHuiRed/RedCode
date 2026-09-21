@@ -1304,6 +1304,9 @@ export const layer = Layer.effect(
           },
           "stepfun-step-plan": {
             "step-3.7-flash": { input: 1.35, output: 8.1, cache: { read: 0.27, write: 1.35 } },
+            // 260921 Red step-5-preview（260920 发布旗舰）：官方 pricing/details
+            // 输入未命中 7 元 / 缓存命中 0.35 元 / 输出 20 元每 1M。cache.write 惯例 = input。
+            "step-5-preview": { input: 7, output: 20, cache: { read: 0.35, write: 7 } },
           },
           zhipuai: {
             "glm-5.2": { input: 8, output: 28, cache: { read: 2, write: 8 } },

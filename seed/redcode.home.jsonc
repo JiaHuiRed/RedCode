@@ -160,6 +160,23 @@
         "z-ai/glm-5.2:free"
       ]
     },
+    // 260921 Red step-5-preview 接入：models.dev 未收录，走 config 扩展内置
+    // stepfun-step-plan（mergeDeep，凭据沿用 auth.json 的 step_plan 条目）。
+    // 规格：1M 上下文 / 64k 输出 / 文本+图片输入 / 提示缓存 / reasoning_effort 三档。
+    // 定价 7/0.35/20 元每 1M（官方 pricing/details），CNY 表在 provider.ts 同步补行。
+    "stepfun-step-plan": {
+      "models": {
+        "step-5-preview": {
+          "name": "Step 5 Preview",
+          "temperature": true,
+          "reasoning": true,
+          "tool_call": true,
+          "attachment": true,
+          "modalities": { "input": ["text", "image"], "output": ["text"] },
+          "limit": { "context": 1048576, "output": 65536 }
+        }
+      }
+    },
     // 260802 Red 接入 SenseNova：tokenplan 套餐定价全 0。apiKey 走 {env:} 占位符，
     // 值由用户级环境变量 SENSENOVA_API_KEY 提供（setx 设置，配置同步模板时不会泄漏明文 key）。
     // 本模板会反向覆盖 live 配置，两处必须保持一致。
