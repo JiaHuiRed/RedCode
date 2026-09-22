@@ -69,7 +69,8 @@ export function provider(model: Provider.Model) {
   if (model.api.id.toLowerCase().includes("trinity")) return [PROMPT_TRINITY]
   if (model.api.id.toLowerCase().includes("kimi")) return [PROMPT_KIMI]
   if (model.api.id.toLowerCase().includes("deepseek")) return withDefaultPrompt(PROMPT_DEEPSEEK)
-  if (model.api.id.toLowerCase().includes("mimo")) return [PROMPT_MIMO]
+  // 260922 Red MiMo v2.6 继承公共基线，mimo.md 只保留模型专属执行 Delta。
+  if (model.api.id.toLowerCase().includes("mimo")) return withDefaultPrompt(PROMPT_MIMO)
   // 260610 Red minimax(m3 及以后) 专属提示词 — 与 mimo(小米) 非同厂，独立成文件便于后续单独调优
   if (model.api.id.toLowerCase().includes("minimax")) return [PROMPT_MINIMAX]
   // 260818 Red 本地 Qwen3.8 27B（ollama）专属提示词 —— 必须放在 ollama 通用路由之前，
