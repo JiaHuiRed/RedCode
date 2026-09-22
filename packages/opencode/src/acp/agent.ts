@@ -543,8 +543,14 @@ export class Agent implements ACPAgent {
       },
       authMethods: [authMethod],
       agentInfo: {
-        name: "RedCode",
-        version: InstallationVersion,
+        // 260923 Karina: Codex Bridge probes OpenCode installations by identity —
+        // agentName must equal "OpenCode" and the version must land in
+        // [1.18.20, 1.19.0) (BridgeOpenCodeACP/OpenCodeACPProfile.swift:validate).
+        // When launched by the Bridge it always sets OPENCODE_DB, so use that as
+        // the detection signal and introduce ourselves under the OpenCode
+        // identity. Direct clients (Zed, plain stdio) keep seeing RedCode.
+        name: process.env.OPENCODE_DB ? "OpenCode" : "RedCode",
+        version: process.env.OPENCODE_DB ? "1.18.20" : InstallationVersion,
       },
     }
   }
