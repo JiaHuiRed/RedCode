@@ -677,21 +677,18 @@ export function MessageTimeline(props: {
     if (scrollToEndFrame !== undefined) return
     scrollToEndFrame = requestAnimationFrame(() => {
       scrollToEndFrame = undefined
-      if (!virtualizer || !listRoot) return
+      if (!listRoot) return
       if (isMeasuredBottom(listRoot)) return
       const keys = timelineRowKeys()
       if (keys.length === 0) return
+      if (nativeTimelineEnabled()) {
+        listRoot.scrollTop = listRoot.scrollHeight
+        return
+      }
+      if (!virtualizer) return
       virtualizer.scrollToIndex(keys.length - 1, { align: "end" })
     })
   }
-
-  createEffect(() => {
-    props.setRevealMessage?.((id) => {
-      const index = messageRowIndex().get(id)
-      if (index === undefined) return
-      virtualizer?.scrollToIndex(index, { align: "center" })
-    })
-  })
 
   let cacheSessionKey = sessionKey()
   let cacheRowKeys = timelineRowKeys()
@@ -784,6 +781,33 @@ export function MessageTimeline(props: {
   // 260822 cc IME 组合期暂停底部锚定。见 scheduleMeasuredBottomAnchor 上方注释。
   let imeComposing = false
   const [scrollRoot, setScrollRoot] = createSignal<HTMLDivElement>()
+
+  // 260922 Red：revealMessage 的契约是「让消息进入当前 renderer 的视口」，不能绑死 Virtua。
+  // native timeline 没有 virtualizer，直接按 hash scroll 的同一套 sticky 标题偏移计算 DOM 落点；
+  // 否则 outline / message rail 在 native A/B 下会静默 no-op，比较结果不公平。
+  const revealMessage = (id: string) => {
+    const index = messageRowIndex().get(id)
+    if (!nativeTimelineEnabled()) {
+      if (index === undefined) return
+      virtualizer?.scrollToIndex(index, { align: "center" })
+      return
+    }
+
+    const root = listRoot
+    const target = root?.ownerDocument.getElementById(props.anchor(id))
+    if (!root || !target || !root.contains(target)) return
+
+    const rootBox = root.getBoundingClientRect()
+    const targetBox = target.getBoundingClientRect()
+    const sticky = root.querySelector("[data-session-title]")
+    const inset = sticky instanceof HTMLElement ? sticky.offsetHeight : 0
+    const top = Math.max(0, targetBox.top - rootBox.top + root.scrollTop - inset)
+    root.scrollTo({ top, behavior: "auto" })
+  }
+
+  createEffect(() => {
+    props.setRevealMessage?.(revealMessage)
+  })
 
   const updateTitleMetrics = () => {
     if (!head || head.clientWidth <= 0) return

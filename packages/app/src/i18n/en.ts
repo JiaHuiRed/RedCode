@@ -447,6 +447,7 @@ export const dict = {
   "context.stats.reasoningTokens": "Reasoning Tokens",
   "context.stats.sessionID": "Session ID",
   "context.stats.cacheTokens": "Cache hit / miss",
+  "context.summary.cacheHit": "Cache hit",
   "context.stats.turnCacheHit": "Last Turn Cache Hit",
   "context.stats.userMessages": "User Messages",
   "context.stats.assistantMessages": "Assistant Messages",

@@ -444,6 +444,7 @@ export const dict = {
   "context.stats.reasoningTokens": "推理 token",
   "context.stats.sessionID": "会话 ID",
   "context.stats.cacheTokens": "命中 / 未命中",
+  "context.summary.cacheHit": "缓存命中",
   "context.stats.turnCacheHit": "单次命中率",
   "context.stats.userMessages": "用户消息",
   "context.stats.assistantMessages": "助手消息",

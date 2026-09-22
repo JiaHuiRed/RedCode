@@ -288,7 +288,7 @@ function RawMessage(props: {
 
 const emptyUserMessages: UserMessage[] = []
 
-export function SessionContextTab() {
+export function SessionContextTab(props: { setViewportRef?: (el: HTMLDivElement | undefined) => void } = {}) {
   const sync = useSync()
   const language = useLanguage()
   const globalSync = useServerSync()
@@ -602,6 +602,7 @@ export function SessionContextTab() {
     <ScrollView
       class="@container h-full"
       viewportRef={(el) => {
+        props.setViewportRef?.(el)
         scroll = el
         restoreScroll()
       }}

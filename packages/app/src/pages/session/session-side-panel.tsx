@@ -30,46 +30,59 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 
 // 260922 Red 折叠矮胶囊的分组行。形态对齐 Codex 侧栏：收起时每段只有一行
 // （图标 + 段名 + 关键数字 + chevron），点开才铺明细。数据全部来自
-// useCapsuleSummaryGroups（与上下文 tab 的四段摘要同源），这里只管渲染。
+// useCapsuleSummaryGroups（与上下文 tab 同源），这里只管渲染。
 function CapsuleSummarySection(props: { group: CapsuleSummaryGroup }) {
-  // 折叠态默认铺开的组（「上下文」）在胶囊里直接列读数，不必先点一下
   const [expanded, setExpanded] = createSignal(props.group.defaultExpanded ?? false)
   const expandable = () => props.group.details.length > 0
+  const primary = () => props.group.id === "context" || props.group.id === "cacheHit" || props.group.id === "cost"
   return (
-    <div class="session-side-panel__summary-group">
+    <div
+      classList={{
+        "session-side-panel__summary-group": true,
+        "session-side-panel__summary-group--primary": primary(),
+      }}
+    >
       <CapsuleRow
         icon={props.group.icon}
         selected={expanded()}
         aria-expanded={expandable() ? expanded() : undefined}
         onClick={expandable() ? () => setExpanded((value) => !value) : undefined}
-         trailing={expandable() ? (
-             <Icon
-               name="chevron-down"
-               size="small"
-               class={expanded() ? "rotate-180 transition-transform" : "transition-transform"}
-             />
-           ) : undefined}
+        trailing={
+          expandable() ? (
+            <Icon
+              name="chevron-down"
+              size="small"
+              class={expanded() ? "rotate-180 transition-transform" : "transition-transform"}
+            />
+          ) : undefined
+        }
       >
         <div class="flex items-center justify-between gap-3 w-full min-w-0">
           <span class="text-12-regular text-text-weak shrink-0">{props.group.label}</span>
-           <span class="flex items-center gap-2 min-w-0">
-             {/* 260922 Red 真实构成收起时只剩一个总数，看不出构成，补一条占比条 */}
-             <Show when={props.group.bar && props.group.bar.length > 0}>
-               <span class="session-side-panel__summary-bar">
-                 <For each={props.group.bar}>
-                   {(segment) => (
-                     <span style={{ width: `${segment.percent}%`, "background-color": segment.color }} />
-                   )}
-                 </For>
-               </span>
-             </Show>
-             <span
-               class="text-12-regular text-text-base truncate"
-               style={props.group.valueColor ? { color: props.group.valueColor } : undefined}
-             >
-               {props.group.value}
-             </span>
-           </span>
+          <span class="flex items-center gap-2 min-w-0">
+            {/* 260922 Red 真实构成收起时只剩一个总数，看不出构成，补一条占比条 */}
+            <Show when={props.group.bar && props.group.bar.length > 0}>
+              <span class="session-side-panel__summary-bar">
+                <For each={props.group.bar}>
+                  {(segment) => (
+                    <span style={{ width: `${segment.percent}%`, "background-color": segment.color }} />
+                  )}
+                </For>
+              </span>
+            </Show>
+            <span
+              classList={{
+                "session-side-panel__summary-value": true,
+                "session-side-panel__summary-value--primary": primary(),
+                "text-12-regular": !primary(),
+                "text-12-medium": primary(),
+                "text-text-base truncate": true,
+              }}
+              style={props.group.valueColor ? { color: props.group.valueColor } : undefined}
+            >
+              {props.group.value}
+            </span>
+          </span>
         </div>
       </CapsuleRow>
       <Show when={expanded()}>
@@ -174,6 +187,34 @@ export function SessionSidePanel(props: {
   let summaryButton: HTMLElement | undefined
   let focusFrame: number | undefined
   let wasOpen = open()
+  let contextResizeObserver: ResizeObserver | undefined
+  const [contextPanelHeight, setContextPanelHeight] = createSignal<number>()
+
+  // 260922 Red 上下文 tab 保留原有 full-height 能力，但内容较短时把外层高度收至
+  // 实际内容；原始消息展开后 scrollHeight 变大，min() 自动回到完整可滚动面板。
+  const setContextViewport = (viewport: HTMLDivElement | undefined) => {
+    contextResizeObserver?.disconnect()
+    contextResizeObserver = undefined
+    setContextPanelHeight(undefined)
+    if (!viewport) return
+
+    const content = viewport.firstElementChild
+    if (!(content instanceof HTMLElement)) return
+
+    const measure = () => {
+      const panel = drawer?.querySelector<HTMLElement>(".session-side-panel__panel")
+      if (!panel) return
+      const extra = Math.max(0, panel.getBoundingClientRect().height - viewport.getBoundingClientRect().height)
+      // 260922 Red 给最后一行摘要留出余量，避免测量值刚好贴住视口边缘，
+      // 原始消息收起时标题落在滚动区下方，必须再向下滑才能看到。
+      setContextPanelHeight(Math.ceil(viewport.scrollHeight + extra + 96))
+    }
+
+    contextResizeObserver = new ResizeObserver(measure)
+    contextResizeObserver.observe(viewport)
+    contextResizeObserver.observe(content)
+    measure()
+  }
 
   // 260921 Red 收起时不能立刻卸载内容：aside 上的 opacity/transform 过渡需要 DOM 载体
   // 才播得出来，直接 <Show when={open()}> 会在关闭的那一帧清空子树，视觉上就是"瞬间消失"。
@@ -208,6 +249,7 @@ export function SessionSidePanel(props: {
 
   onCleanup(() => {
     if (focusFrame !== undefined) cancelAnimationFrame(focusFrame)
+    contextResizeObserver?.disconnect()
   })
 
   // 260921 Red 宽桌面下展开态是浮层胶囊，Esc 关闭是 popover 的标配；中等桌面仍是参与
@@ -299,10 +341,16 @@ export function SessionSidePanel(props: {
             // 260921 Red wide 态高度走 inline：aside class 上的 h-full（height:100%）会跟
             // CSS 里的分态高度打架，曾出现「矮胶囊内容露顶、全高壳留在下面」一屏黑。
             // inline 优先级最高，折叠矮胶囊 ↔ 展开全高从此不受类名竞争影响。
-            // 折叠态刻意压到 ~1/4 屏以下：这是常态态，要做成贴边小胶囊而不是小卡片。
-            // 260922 Red 折叠态改「竖长横窄」：高度与 CSS 里的分态值保持一致，
+            // 折叠态刻意压到摘要内容附近：这是常态态，要做成贴边 HUD 而不是小卡片。
+            // 260922 Red 折叠态收短：高度与 CSS 里的分态值保持一致，
             // 别让 inline 和 class 各说一套（这个 inline 优先级压过 CSS，改一面等于没改）。
-            height: isWideDesktop() ? (open() ? "calc(100% - 68px)" : "clamp(300px, 52vh, 560px)") : undefined,
+            height: isWideDesktop()
+              ? open()
+                ? activeTab() === "context" && contextPanelHeight() !== undefined
+                  ? `min(${contextPanelHeight()}px, calc(100% - 68px))`
+                  : "calc(100% - 68px)"
+                : "clamp(240px, 28vh, 320px)"
+              : undefined,
           }}
         >
           {/* 260921 Red 宽桌面下的切换行：折叠态它是矮胶囊的 header，展开态它是抽屉
@@ -333,7 +381,7 @@ export function SessionSidePanel(props: {
           </Show>
 
           <div class="session-side-panel__body">
-            {/* 折叠态（宽桌面）：四段可展开的分组行，与上下文 tab 的四段摘要同源
+            {/* 折叠态（宽桌面）：HUD 分组行，与上下文 tab 的摘要同源
                 （useCapsuleSummaryGroups）。展开时淡出让位给面板层。 */}
             <Show when={isWideDesktop()}>
               <div
@@ -487,7 +535,7 @@ export function SessionSidePanel(props: {
                               <Tabs.Content value="context" class="flex flex-col h-full overflow-hidden contain-strict">
                                 <Show when={activeTab() === "context"}>
                                   <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
-                                    <SessionContextTab />
+                                    <SessionContextTab setViewportRef={setContextViewport} />
                                   </div>
                                 </Show>
                               </Tabs.Content>

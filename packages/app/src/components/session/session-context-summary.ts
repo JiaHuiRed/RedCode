@@ -180,14 +180,14 @@ export type CapsuleSummaryDetail = { label: string; value: string; color?: strin
 
 /** 折叠矮胶囊的一段分组：收起只有一行关键数字，点开才铺明细。 */
 export type CapsuleSummaryGroup = {
-  id: "context" | "quota" | "inspect" | "rawMessages"
+  id: "context" | "cacheHit" | "cost" | "quota" | "inspect" | "rawMessages"
   icon: IconProps["name"]
   label: string
   value: string
   valueColor?: string
   /** 收起态也要一眼看出占比的堆叠条（目前只有「真实构成」用）。 */
   bar?: InspectSegment[]
-  /** 折叠态默认铺开明细（「上下文」用：那几个读数比组名本身重要）。 */
+  /** 折叠态默认铺开明细；默认收起，让胶囊只承担 HUD 摘要。 */
   defaultExpanded?: boolean
   details: CapsuleSummaryDetail[]
 }
@@ -205,8 +205,8 @@ const quotaPeakPercent = (quotas: ProviderQuota[]) =>
   )
 
 /**
- * 260922 Red 折叠矮胶囊的四段分组明细，形态对齐 Codex 侧栏：收起一行只留关键数字，
- * 点开才铺明细。与四段摘要同一个 owner（useSessionContextSummaries），侧栏只负责渲染
+ * 260922 Red 折叠矮胶囊的状态分组明细，形态对齐 Codex 侧栏：收起一行只留关键数字，
+ * 点开才铺明细。与上下文摘要同一个 owner（useSessionContextSummaries），侧栏只负责渲染
  * ——两边各算一份明细必然漂移。
  *
  * 收起态的 value 刻意只取**一个**字段，其余全部下放到 details：胶囊竖长横窄之后，
@@ -221,9 +221,15 @@ export function useCapsuleSummaryGroups() {
   const ctx = summaries.ctx
   const locale = () => language.intl()
 
-  // 260922 Red 收起态的「上下文」默认铺开（哥哥圈定的这五项才是最关键的读数），
-  // 顺序按重要性排：量 → 用量 → 缓存 → 命中质量 → 成本。
+  // 260922 Red 折叠态改成状态 HUD：主行常驻总量、缓存命中、成本，
+  // 详情里保留完整 token；消息数由「原始消息」行唯一承载，避免重复。
   const contextDetails = createMemo<CapsuleSummaryDetail[]>(() => {
+    const current = ctx()
+    const f = formatter()
+    return [{ label: language.t("context.stats.totalTokens"), value: f.number(current?.total) }]
+  })
+
+  const cacheDetails = createMemo<CapsuleSummaryDetail[]>(() => {
     const current = ctx()
     const f = formatter()
     const cacheRead = current?.cacheRead ?? 0
@@ -231,8 +237,6 @@ export function useCapsuleSummaryGroups() {
     const cacheHit = current?.cacheHit != null ? ` (${f.percent(current.cacheHit)})` : ""
     const turnHit = current?.turnHitPct
     return [
-      { label: language.t("context.stats.messages"), value: counts().all.toLocaleString(locale()) },
-      { label: language.t("context.stats.totalTokens"), value: f.number(current?.total) },
       {
         label: language.t("context.stats.cacheTokens"),
         value:
@@ -246,9 +250,7 @@ export function useCapsuleSummaryGroups() {
       {
         label: language.t("context.stats.turnCacheHit"),
         value: turnHit == null ? "—" : current?.stalled ? `${f.percent(turnHit)} · 缓存未延伸` : f.percent(turnHit),
-        color: "var(--syntax-critical)",
       },
-      { label: language.t("context.stats.totalCost"), value: summaries.cost(), color: "var(--syntax-critical)" },
     ]
   })
 
@@ -309,9 +311,24 @@ export function useCapsuleSummaryGroups() {
         id: "context",
         icon: "brain",
         label: language.t("context.summary.title"),
-        value: formatter().number(ctx()?.total),
-        defaultExpanded: true,
+        value: formatter().compact(ctx()?.total),
         details: contextDetails(),
+      },
+      {
+        id: "cacheHit",
+        icon: "check-small",
+        label: language.t("context.summary.cacheHit"),
+        value: ctx()?.cacheHit == null ? "—" : formatter().percent(ctx()?.cacheHit),
+        valueColor: "var(--syntax-info)",
+        details: cacheDetails(),
+      },
+      {
+        id: "cost",
+        icon: "status",
+        label: language.t("context.stats.totalCost"),
+        value: summaries.cost(),
+        valueColor: "var(--syntax-critical)",
+        details: [],
       },
       {
         id: "quota",
@@ -325,7 +342,7 @@ export function useCapsuleSummaryGroups() {
         id: "inspect",
         icon: "bullet-list",
         label: language.t("context.inspect.title"),
-        value: snapshot && snapshot.total > 0 ? formatter().number(snapshot.total) : "—",
+        value: snapshot && snapshot.total > 0 ? formatter().compact(snapshot.total) : "—",
         bar: inspectBarSegments(snapshot),
         details: inspectDetails(),
       },

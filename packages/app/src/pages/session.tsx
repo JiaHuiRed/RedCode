@@ -1181,7 +1181,14 @@ export default function Page() {
       }
       // loadThrough 已经确认它进窗口了，这里必然找得到；setActiveMessage 收的是消息对象不是 id。
       nav.setActiveMessage(visibleUserMessages().find((message) => message.id === messageID))
-      requestAnimationFrame(() => revealMessage(messageID))
+      // 260922 Red：busy 覆盖到真正发出 renderer reveal，避免 rAF 尚未执行时
+      // jumpingTurn 提前释放，长帧/虚拟列表重测量期间可以并发触发第二次跳转。
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => {
+          revealMessage(messageID)
+          resolve()
+        }),
+      )
     } finally {
       setJumpingTurn(false)
     }
