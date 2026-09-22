@@ -3,7 +3,7 @@ export * as TuiConfig from "./tui"
 import path from "path"
 import { createBindingLookup } from "@opentui/keymap/extras"
 import { mergeDeep, unique } from "remeda"
-import { Cause, Context, Effect, Fiber, Layer, Schema } from "effect"
+import { Cause, Context, Effect, Exit, Fiber, Layer, Schema } from "effect"
 import { ConfigParse } from "@/config/parse"
 import * as ConfigPaths from "@/config/paths"
 import { migrateTuiConfig } from "./tui-migrate"
@@ -307,7 +307,23 @@ export const layer = Layer.effect(
               },
             ],
           })
-          .pipe(Effect.forkScoped),
+          // 260922 Red 这份安装原本没有失败出口：waitForDependencies 末尾的 Effect.ignore()
+          // 会把错误一起吞掉，而 TUI 侧调用（cli/cmd/tui/plugin/runtime.ts 的
+          // resolveExternalPlugins）没有 plugin/index.ts 那条 2 秒 timeout 兜底，
+          // 于是安装失败只表现为「插件静默不加载」、日志里一个字都没有。
+          // Effect.exit 不改控制流（原先失败也是被外层 ignore），只把失败记下来，
+          // 与 config.ts 那份插件的写法对齐。
+          .pipe(
+            Effect.exit,
+            Effect.tap((exit) =>
+              Exit.isFailure(exit)
+                ? Effect.sync(() =>
+                    log.warn("tui plugin dependency install failed", { dir, error: Cause.pretty(exit.cause) }),
+                  )
+                : Effect.void,
+            ),
+            Effect.forkScoped,
+          ),
       {
         concurrency: "unbounded",
       },

@@ -18,7 +18,7 @@ import { isRecord } from "@/util/record"
 import type { ConsoleState } from "./console-state"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { InstanceState } from "@/effect/instance-state"
-import { Context, Duration, Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
+import { Cause, Context, Duration, Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { EffectFlock } from "@redcode-ai/core/util/effect-flock"
 import { containsPath, type InstanceContext } from "../project/instance-context"
@@ -781,7 +781,10 @@ export const layer = Layer.effect(
                   Exit.isFailure(exit)
                     ? Effect.sync(() => {
                         depInstallFailureAt.set(dir, Date.now())
-                        log.warn("background dependency install failed", { dir, error: String(exit.cause) })
+                        // 260922 Red cause 不能 String()：InstallFailedError 走 Exit.cause 打印时只剩
+                        // 一行 `Fail(NpmInstallFailedError (...))`，原始 Error 的堆栈被吃掉，
+                        // 导致 npm 安装失败只能看到症状、看不到是哪一帧抛的。
+                        log.warn("background dependency install failed", { dir, error: Cause.pretty(exit.cause) })
                       })
                     : Effect.sync(() => {
                         depInstallFailureAt.delete(dir)
