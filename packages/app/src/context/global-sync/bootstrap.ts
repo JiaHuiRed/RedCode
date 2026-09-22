@@ -242,6 +242,10 @@ export const loadUsageQuery = (directory: string, range: "all" | "30d" | "7d", s
  * 界面上的失效点在 message.updated（见 server-sync.tsx 的 invalidate）。给个 staleTime 只会
  * 让刚发的那条在导航栏里迟到。整份日志一次查完，长会话实测也只有几十 KB（预览在 SQL 里
  * 就截断了，见 session/outline.ts）。
+ *
+ * 260922 Red 上句里那个失效点曾经**只写在注释里**、实现从未接上，配合 refetchOnMount:false
+ *   让目录永久冻结在会话打开那一刻的快照（轨道只列最早那两条）。现已接上，见
+ *   docs/notes/implemented/bug-fix/2026-09-22-outline-event-invalidation.md
  */
 export const loadSessionOutlineQuery = (directory: string, sessionID: string, sdk: OpencodeClient) =>
   queryOptions({

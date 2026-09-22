@@ -506,6 +506,24 @@ export function createServerSyncContext() {
       // 260706 Red server.instance.disposed 只对当前 pinned 目录重新 bootstrap，见 event-reducer.ts 注释
       isPinned: children.pinned(key),
     })
+
+    // 260922 Red 轮次目录的失效通道。bootstrap.ts 的 loadSessionOutlineQuery 注释写着
+    //   「失效点在 message.updated（见 server-sync.tsx 的 invalidate）」，但那条通道从没接上——
+    //   配合 app.tsx 的 refetchOnMount:false，只要轨道（SessionMessageRail）挂着不卸载，
+    //   目录就永远停在会话打开那一刻的快照上：长会话里表现为侧边轨道只列最早那两条，
+    //   而轮次早就上百了（exe 12:30 打开、当时两条，于是一直两条）。
+    //
+    // 只在 user 消息落地时失效：轮次由 user 消息定义（见 session/outline.ts 的锚点口径），
+    //   assistant 只改同一轮的预览；给流式期间每条消息都加一次失效不值得。
+    //   决策记录：docs/notes/implemented/bug-fix/2026-09-22-outline-event-invalidation.md
+    if (event.type === "message.updated") {
+      const info = (event.properties as { info?: { sessionID?: string; role?: string } }).info
+      if (info?.role === "user" && info.sessionID) {
+        void queryClient.invalidateQueries({
+          queryKey: [directoryKey(directory), "sessionOutline", info.sessionID],
+        })
+      }
+    }
   })
 
   onCleanup(unsub)
