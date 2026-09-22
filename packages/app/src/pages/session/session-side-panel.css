@@ -273,32 +273,15 @@
   }
 }
 
-/* 260922 Red 折叠态胶囊浮在会话区右上角，而消息行本身是居中限宽的（md 800 / 2xl 1400），
-   窄一点的视口下行会伸到胶囊底下被压住。
-   让位量必须用**包含块百分比**（100% = 会话区实宽）而不是 100vw：文件树展开时会话区比视口窄，
-   100vw 会算出过小的让位量——实测文件树展开时列伸进胶囊约 195px，那条用户消息就是被裁掉的。
-   margin-inline-end 固定 348（胶囊 320 + 右边距 12 + 呼吸 16）并把 max-width 一起减掉，
-   于是不论文件树开不开、视口多宽，行右缘恒在「视口右 − 348」，位置不再随文件树跳。
-   两个限宽档位各写一条；改列宽档位时这两个数字要跟着改
-   （message-timeline.tsx / session-composer-region.tsx）。
-   只挂在 --closed：展开态是用户主动打开的面板，不该反过来把消息挤窄。
-   这两条选择器以 body 开头，必须留在顶层，写进嵌套块会被前缀成后代选择器。 */
+/* 260922 Red 折叠态胶囊是会话区右上角的 overlay，不能把单个 timeline row 向右钉死。
+   给 chat panel 的内容盒统一扣掉 348px（胶囊 320 + 右边距 12 + 呼吸 16），
+   Timeline / Header / Composer 便会在同一块剩余区域内各自居中；文件树的宽度
+   已由 sessionPanelWidth 和同级 flex 项从 chat panel 外侧扣除。展开态不留这段空间，
+   因为展开面板是用户主动打开的内容层，不应反过来改变消息列宽。 */
 @media (min-width: 1280px) {
   body:has(#review-panel.session-side-panel__capsule--wide.session-side-panel__capsule--closed)
-    [data-timeline-row] {
-    width: auto;
-    max-width: min(800px, calc(100% - 348px));
-    margin-inline-start: auto;
-    margin-inline-end: 348px;
-  }
-}
-
-@media (min-width: 1536px) {
-  body:has(#review-panel.session-side-panel__capsule--wide.session-side-panel__capsule--closed)
-    [data-timeline-row] {
-    width: auto;
-    max-width: min(1400px, calc(100% - 348px));
-    margin-inline-start: auto;
-    margin-inline-end: 348px;
+    #session-chat-panel {
+    box-sizing: border-box;
+    padding-inline-end: 348px;
   }
 }

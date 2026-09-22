@@ -183,7 +183,7 @@ export default function Page() {
     if (desktopFileTreeOpen()) return `calc(100% - ${layout.fileTree.width()}px)`
     return "100%"
   })
-  const centered = createMemo(() => isDesktop() && !sessionReviewInFlow() && !desktopFileTreeOpen())
+  const centered = createMemo(() => isDesktop() && !sessionReviewInFlow())
 
   function normalizeTab(tab: string) {
     if (!tab.startsWith("file://")) return tab
