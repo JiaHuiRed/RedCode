@@ -1475,15 +1475,3 @@
     color: var(--icon-weak);
   }
 }
-
-/* 260922 Red 宽桌面下会话区右上是浮层胶囊（折叠态宽 320 + 右侧 12 边距），而用户消息
-   整块右对齐、头像贴着内容区右缘，往上滚就会被胶囊压住。折叠态时给消息行让出这段宽度。
-   特意只挂在 --closed 上：展开态是用户主动打开的面板，不该再挤窄消息宽度。
-   这条选择器以 body 开头，必须留在顶层——写进任何嵌套块都会被前缀成后代选择器。 */
-@media (min-width: 1280px) {
-  body:has(#review-panel.session-side-panel__capsule--wide.session-side-panel__capsule--closed)
-    [data-component="user-message"]
-    [data-slot="user-message-body-row"] {
-    padding-inline-end: 340px;
-  }
-}
