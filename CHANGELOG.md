@@ -8,6 +8,30 @@
 
 ---
 
+### [0.11.12] - 2026-09-22
+
+#### 变更
+
+- **TUI 提示词与模型身份对齐**（`packages/opencode/src/session/{prompt,system}.ts`）：收敛 MiMo 路由的身份与提示词行为，保持可见输出和对应 soul 一致。
+
+#### 修复
+
+- **Explore 子代理装配失败**（`packages/opencode/src/tool/task.ts`、`packages/opencode/src/server/server.ts`）：Storage 依赖改为 execute 期求值，避免服务端装配路径下 explore 子代理因捕获错误的服务形状而全部失败。
+
+- **插件依赖安装失败可诊断**（`packages/opencode/src/config/config.ts`、`packages/opencode/src/cli/cmd/tui/config/tui.ts`）：保留结构化 Cause 信息，并为 TUI 后台安装补上失败日志。
+
+- **轮次导航不再冻结在旧快照**（`packages/app/src/context/{server-sync.tsx,global-sync/bootstrap.ts}`、`docs/notes/implemented/bug-fix/2026-09-22-outline-event-invalidation.md`）：用户消息落地时失效对应 session outline 查询，长会话可以持续显示新轮次。
+
+#### GUI 打磨
+
+- **会话主区域重新回到有效区域中心**（`packages/app/src/pages/session.tsx`、`packages/app/src/pages/session/session-side-panel.css`）：文件树展开时不再关闭内容列居中；折叠胶囊的让位提升到 chat panel 内容盒，Timeline、Header 和 Composer 共用同一条视觉中心线。
+
+- **消息导航卡片收敛为胶囊式窄卡片**（`packages/ui/src/components/message-nav.css`）：统一圆角、边框和间距，滚动条改为窄而低对比度，长消息列表仍可滚动但不抢视觉焦点。
+
+- **会话消息让位与右栏胶囊继续收口**（`packages/app/src/pages/session/{message-timeline.tsx,composer/session-composer-region.tsx,session-side-panel.css}`、`packages/ui/src/components/message-part.css`）：用户与 assistant 共用同一条内容列避让规则，文件树开合不再让消息位置漂移。
+
+---
+
 ### [0.11.11] - 2026-09-21
 
 #### 变更
