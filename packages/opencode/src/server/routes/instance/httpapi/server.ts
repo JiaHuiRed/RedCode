@@ -49,6 +49,7 @@ import { ShareNext } from "@/share/share-next"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Skill } from "@/skill"
 import { Snapshot } from "@/snapshot"
+import { Storage } from "@/storage/storage"
 import { SyncEvent } from "@/sync"
 import { ToolRegistry } from "@/tool/registry"
 import { lazy } from "@/util/lazy"
@@ -262,6 +263,7 @@ export function createRoutes(
       SyncEvent.defaultLayer,
       EventV2Bridge.defaultLayer,
       Skill.defaultLayer,
+      Storage.defaultLayer, // 260922 Red task 工具 execute 期 serviceOption 从本装配的运行 Context 取 Storage；缺成员时 explore 子代理全灭（对齐 app-runtime 既有成员）
       Todo.defaultLayer,
       Goal.defaultLayer,
       ToolRegistry.defaultLayer,

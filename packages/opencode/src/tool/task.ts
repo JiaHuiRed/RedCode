@@ -153,13 +153,19 @@ export const TaskTool = Tool.define(
     const status = yield* SessionStatus.Service
     const flags = yield* RuntimeFlags.Service
     const plugin = yield* Plugin.Service
-    const storage = yield* Effect.serviceOption(Storage.Service)
 
     const run = Effect.fn("TaskTool.execute")(function* (
       params: Schema.Schema.Type<typeof Parameters>,
       ctx: Tool.Context,
     ) {
       const cfg = yield* config.get()
+      // 260922 Red serviceOption 此前在 init（ToolRegistry 构建期）求值并闭包捕获——构建
+      // 环境是否含 Storage 完全取决于消费方的装配形状（mergeAll 平级成员可见、provide 链
+      // 与 defaultLayer 内部 provide 均不可见，探针实测），fac7d556 只补 prompt 层装配，
+      // server.ts 等路径下 explore 子代理仍全灭。改为 execute 期动态求值：执行 fiber 的
+      // Context ⊇ 装配输出全集，prompt/server/app-runtime 三条路径一律可见。走到这=环境
+      // 真缺 Storage，先响一条再 fail。
+      const storage = yield* Effect.serviceOption(Storage.Service)
       const runInBackground = params.background === true
       if (runInBackground && !flags.experimentalBackgroundSubagents) {
         return yield* Effect.fail(
@@ -253,8 +259,6 @@ export const TaskTool = Tool.define(
 
       if (explorePacket) {
         if (Option.isNone(storage)) {
-          // 260921 Red runtime 缺 Storage 本该被 prompt defaultLayer 兜住；走到这=新调用方绕过了
-          // 它。此前 explore 任务在这里静默全灭（无日志），先响一条再 fail。
           log.warn("explore packet without storage service", { sessionID: nextSession.id })
           yield* sessions.remove(nextSession.id).pipe(Effect.ignore)
           return yield* Effect.fail(new Error("Explore task runtime storage is unavailable"))
