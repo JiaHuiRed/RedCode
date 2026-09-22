@@ -14,7 +14,7 @@ import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { SessionContextTab, SessionPlanTab, SortableTab, FileVisual } from "@/components/session"
-import { useSessionContextSummaries } from "@/components/session/session-context-summary"
+import { useCapsuleSummaryGroups, type CapsuleSummaryGroup } from "@/components/session/session-context-summary"
 import { useCommand } from "@/context/command"
 import { useFile, type SelectedLineRange } from "@/context/file"
 import { useLanguage } from "@/context/language"
@@ -28,30 +28,76 @@ import { createOpenSessionFileTab, createSessionTabs, getTabReorderIndex, type S
 import { setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
 
-// 260921 Red 折叠矮胶囊的四段摘要行。与上下文 tab 的折叠分组共用
-// useSessionContextSummaries，两边字符串不会漂移；行本身是纯展示（无 onClick，
-// CapsuleRow 退化成 div），交互只有 header 那一行的展开/收起。
+// 260922 Red 折叠矮胶囊的分组行。形态对齐 Codex 侧栏：收起时每段只有一行
+// （图标 + 段名 + 关键数字 + chevron），点开才铺明细。数据全部来自
+// useCapsuleSummaryGroups（与上下文 tab 的四段摘要同源），这里只管渲染。
+function CapsuleSummarySection(props: { group: CapsuleSummaryGroup }) {
+  // 折叠态默认铺开的组（「上下文」）在胶囊里直接列读数，不必先点一下
+  const [expanded, setExpanded] = createSignal(props.group.defaultExpanded ?? false)
+  const expandable = () => props.group.details.length > 0
+  return (
+    <div class="session-side-panel__summary-group">
+      <CapsuleRow
+        icon={props.group.icon}
+        selected={expanded()}
+        aria-expanded={expandable() ? expanded() : undefined}
+        onClick={expandable() ? () => setExpanded((value) => !value) : undefined}
+         trailing={expandable() ? (
+             <Icon
+               name="chevron-down"
+               size="small"
+               class={expanded() ? "rotate-180 transition-transform" : "transition-transform"}
+             />
+           ) : undefined}
+      >
+        <div class="flex items-center justify-between gap-3 w-full min-w-0">
+          <span class="text-12-regular text-text-weak shrink-0">{props.group.label}</span>
+           <span class="flex items-center gap-2 min-w-0">
+             {/* 260922 Red 真实构成收起时只剩一个总数，看不出构成，补一条占比条 */}
+             <Show when={props.group.bar && props.group.bar.length > 0}>
+               <span class="session-side-panel__summary-bar">
+                 <For each={props.group.bar}>
+                   {(segment) => (
+                     <span style={{ width: `${segment.percent}%`, "background-color": segment.color }} />
+                   )}
+                 </For>
+               </span>
+             </Show>
+             <span
+               class="text-12-regular text-text-base truncate"
+               style={props.group.valueColor ? { color: props.group.valueColor } : undefined}
+             >
+               {props.group.value}
+             </span>
+           </span>
+        </div>
+      </CapsuleRow>
+      <Show when={expanded()}>
+        <div class="session-side-panel__summary-details">
+          <For each={props.group.details}>
+            {(detail) => (
+              <div class="session-side-panel__summary-detail">
+                <span class="text-11-regular text-text-weaker">{detail.label}</span>
+                <span
+                  class="text-11-regular text-text-base truncate select-text"
+                  style={detail.color ? { color: detail.color } : undefined}
+                >
+                  {detail.value}
+                </span>
+              </div>
+            )}
+          </For>
+        </div>
+      </Show>
+    </div>
+  )
+}
+
 function SessionCapsuleSummaryRows() {
-  const language = useLanguage()
-  const summaries = useSessionContextSummaries()
-  const rows = () => [
-    { label: language.t("context.summary.title"), value: summaries.context() },
-    { label: language.t("context.quota.title"), value: summaries.quota() || language.t("context.quota.empty") },
-    { label: language.t("context.inspect.title"), value: summaries.inspect() },
-    { label: language.t("context.rawMessages.title"), value: summaries.rawMessages() },
-  ]
+  const groups = useCapsuleSummaryGroups()
   return (
     <div class="session-side-panel__summary-rows">
-      <For each={rows()}>
-        {(row) => (
-          <CapsuleRow>
-            <div class="flex items-center justify-between gap-3 w-full min-w-0">
-              <span class="text-12-regular text-text-weak shrink-0">{row.label}</span>
-              <span class="text-12-regular text-text-base truncate">{row.value}</span>
-            </div>
-          </CapsuleRow>
-        )}
-      </For>
+      <For each={groups()}>{(group) => <CapsuleSummarySection group={group} />}</For>
     </div>
   )
 }
@@ -254,7 +300,9 @@ export function SessionSidePanel(props: {
             // CSS 里的分态高度打架，曾出现「矮胶囊内容露顶、全高壳留在下面」一屏黑。
             // inline 优先级最高，折叠矮胶囊 ↔ 展开全高从此不受类名竞争影响。
             // 折叠态刻意压到 ~1/4 屏以下：这是常态态，要做成贴边小胶囊而不是小卡片。
-            height: isWideDesktop() ? (open() ? "calc(100% - 68px)" : "clamp(180px, 24vh, 280px)") : undefined,
+            // 260922 Red 折叠态改「竖长横窄」：高度与 CSS 里的分态值保持一致，
+            // 别让 inline 和 class 各说一套（这个 inline 优先级压过 CSS，改一面等于没改）。
+            height: isWideDesktop() ? (open() ? "calc(100% - 68px)" : "clamp(300px, 52vh, 560px)") : undefined,
           }}
         >
           {/* 260921 Red 宽桌面下的切换行：折叠态它是矮胶囊的 header，展开态它是抽屉
@@ -285,8 +333,8 @@ export function SessionSidePanel(props: {
           </Show>
 
           <div class="session-side-panel__body">
-            {/* 折叠态（宽桌面）：四段摘要行，与上下文 tab 的折叠分组同源
-                （useSessionContextSummaries）。展开时淡出让位给面板层。 */}
+            {/* 折叠态（宽桌面）：四段可展开的分组行，与上下文 tab 的四段摘要同源
+                （useCapsuleSummaryGroups）。展开时淡出让位给面板层。 */}
             <Show when={isWideDesktop()}>
               <div
                 class="session-side-panel__rows"

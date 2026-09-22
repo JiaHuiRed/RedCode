@@ -24,18 +24,15 @@ import {
   quotaNum,
   quotaPercent,
   QuotaWindowData,
+  INSPECT_COLOR,
+  inspectBarSegments,
+  type InspectKey,
+  type InspectSegment,
 } from "./session-context-summary"
 import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "./session-context-breakdown"
 
-// 260820 cc 真实构成三块的配色。刻意与下面 BREAKDOWN_COLOR 的 system 同色（都是 info）——
-// 两块讲的是同一件事的估算版与实测版，颜色一致才看得出对应关系。
-const INSPECT_COLOR = {
-  system: "var(--syntax-info)",
-  tools: "var(--syntax-warning)",
-  messages: "var(--syntax-property)",
-} as const
-
-type InspectKey = keyof typeof INSPECT_COLOR
+// 260922 Red 真实构成的三块配色（INSPECT_COLOR）与比例算法（inspectBarSegments）随
+// 折叠态比例条一起迁到 session-context-summary：右栏胶囊的收起行也要用同一套色与算法。
 
 const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
   system: "var(--syntax-info)",
@@ -190,9 +187,12 @@ function QuotaCapsule(props: { quotas: ProviderQuota[]; summary: string }) {
 // 260921 Red 大胶囊里的可折叠分组。折叠态一行摘要 + chevron，展开态接完整内容；
 // 形态对齐 status-popover 的 section 与 QuotaCapsule 的行——外层已经是浮起胶囊，
 // 分组自身不再叠表面，否则就是「卡中卡」。
+// 260922 Red 收起态可再挂一条比例条（bar）：只剩一个总数时看不出构成，而「真实构成」
+// 恰恰是看比例比看数字有用的分组。展开态的条由 children 自己渲染。
 function CollapsibleSection(props: {
   title: string
   summary?: JSX.Element
+  bar?: InspectSegment[]
   defaultOpen?: boolean
   children: JSX.Element
 }) {
@@ -209,6 +209,17 @@ function CollapsibleSection(props: {
         aria-expanded={expanded()}
         onClick={() => setExpanded((value) => !value)}
       />
+      <Show when={!expanded() && props.bar && props.bar.length > 0}>
+        <div class="px-2 pt-1.5 flex">
+          <div class="h-1.5 w-full flex overflow-hidden rounded-full bg-surface-base">
+            <For each={props.bar}>
+              {(segment) => (
+                <div class="h-full" style={{ width: `${segment.percent}%`, "background-color": segment.color }} />
+              )}
+            </For>
+          </div>
+        </div>
+      </Show>
       <Show when={expanded()}>
         <div class="px-2 pb-2 pt-1 flex flex-col gap-3">{props.children}</div>
       </Show>
@@ -309,33 +320,12 @@ export function SessionContextTab() {
 
   // 260921 Red 数据集与四段摘要收单个 owner（useSessionContextSummaries）：折叠矮胶囊与
   // 本 tab 消费同一份，避免两边各写一份摘要字符串后漂移。
-  const metrics = summaries.metrics
   const ctx = summaries.ctx
   const formatter = summaries.formatter
   const counts = summaries.counts
-
-  // 260706 Red: 子代理(Task/Agent 工具)创建的子 session 的 LLM 调用成本在 DeepSeek 平台真实计费，
-  // 但原 metrics 只统计父 session 自身消息——面板显示"总成本"严重偏低。
-  // 通过 SSE 全局事件流同步到 store 的子 session 消息汇总其 cost 一并显示。
-  const childCost = createMemo(() => {
-    const id = params.id
-    if (!id) return 0
-    let total = 0
-    for (const s of sync.data.session) {
-      if (s.parentID !== id) continue
-      const msgs = sync.data.message[s.id]
-      if (!msgs) continue
-      for (const m of msgs) {
-        if (m.role === "assistant") total += m.cost
-      }
-    }
-    return total
-  })
-
-  const cost = createMemo(() => {
-    const m = metrics()
-    return formatter().cost(m.totalCost + childCost(), m.costCurrency)
-  })
+  // 260922 Red 总成本（含子 session）随 childCost 一起迁进 useSessionContextSummaries——
+  // 折叠胶囊也要显示它，两处各算一份必然漂移。metrics 只被它用，一并去掉。
+  const cost = summaries.cost
 
   const systemPrompt = createMemo(() => {
     const msg = findLast(visibleUserMessages(), (m) => !!m.system)
@@ -660,7 +650,11 @@ export function SessionContextTab() {
           </Show>
         </div>
 
-        <CollapsibleSection title={language.t("context.inspect.title")} summary={summaries.inspect()}>
+        <CollapsibleSection
+          title={language.t("context.inspect.title")}
+          summary={summaries.inspect()}
+          bar={inspectBarSegments(summaries.inspectData())}
+        >
           <Show
             when={inspectGroups().length > 0}
             fallback={

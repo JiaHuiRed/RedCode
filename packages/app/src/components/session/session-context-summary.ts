@@ -1,6 +1,7 @@
 import { createMemo } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import type { Message, ProviderQuota } from "@redcode-ai/sdk/v2/client"
+import type { IconProps } from "@redcode-ai/ui/icon"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { useLanguage } from "@/context/language"
@@ -118,10 +119,35 @@ export function useSessionContextSummaries() {
     },
   }))
 
+  // 260706 Red 子代理(Task/Agent 工具)创建的子 session 的 LLM 调用成本在 DeepSeek 平台真实计费，
+  // 但原 metrics 只统计父 session 自身消息——面板显示"总成本"严重偏低。
+  // 通过 SSE 全局事件流同步到 store 的子 session 消息汇总其 cost 一并显示。
+  // 260922 Red 从 session-context-tab.tsx 迁来：折叠胶囊也要显示总成本，两处各算一份必然漂移。
+  const childCost = createMemo(() => {
+    const id = params.id
+    if (!id) return 0
+    let total = 0
+    for (const s of sync.data.session) {
+      if (s.parentID !== id) continue
+      const msgs = sync.data.message[s.id]
+      if (!msgs) continue
+      for (const message of msgs) {
+        if (message.role === "assistant") total += message.cost
+      }
+    }
+    return total
+  })
+
+  const cost = createMemo(() => {
+    const m = metrics()
+    return formatter().cost(m.totalCost + childCost(), m.costCurrency)
+  })
+
   return {
     messages,
     counts,
     metrics,
+    cost,
     ctx,
     formatter,
     inspectData: () => inspect.data,
@@ -147,4 +173,206 @@ export function useSessionContextSummaries() {
     /** 「原始消息」段摘要：消息数 */
     rawMessages: () => messages().length.toLocaleString(language.intl()),
   }
+}
+
+/** 折叠矮胶囊里一段分组的明细行。value 已格式化；color 走 --syntax-* token，不给就用默认色。 */
+export type CapsuleSummaryDetail = { label: string; value: string; color?: string }
+
+/** 折叠矮胶囊的一段分组：收起只有一行关键数字，点开才铺明细。 */
+export type CapsuleSummaryGroup = {
+  id: "context" | "quota" | "inspect" | "rawMessages"
+  icon: IconProps["name"]
+  label: string
+  value: string
+  valueColor?: string
+  /** 收起态也要一眼看出占比的堆叠条（目前只有「真实构成」用）。 */
+  bar?: InspectSegment[]
+  /** 折叠态默认铺开明细（「上下文」用：那几个读数比组名本身重要）。 */
+  defaultExpanded?: boolean
+  details: CapsuleSummaryDetail[]
+}
+
+// 260922 Red 收起态显示哪个数字由「用得最狠的那个窗口」决定：胶囊收窄到 ~280px 后，
+// 「planType · 5h 62% · 7d 31%」会被截成半截，只有单个百分比活得下来。
+const quotaPeakPercent = (quotas: ProviderQuota[]) =>
+  Math.max(
+    0,
+    ...quotas.flatMap((quota) =>
+      [quota.primary, quota.secondary, quota.reserve]
+        .filter((window): window is QuotaWindowData => !!window)
+        .map((window) => quotaNum(window.usedPercent)),
+    ),
+  )
+
+/**
+ * 260922 Red 折叠矮胶囊的四段分组明细，形态对齐 Codex 侧栏：收起一行只留关键数字，
+ * 点开才铺明细。与四段摘要同一个 owner（useSessionContextSummaries），侧栏只负责渲染
+ * ——两边各算一份明细必然漂移。
+ *
+ * 收起态的 value 刻意只取**一个**字段，其余全部下放到 details：胶囊竖长横窄之后，
+ * 「102 消息数 · 13.4M · 单次命中率 96.7%」这种串在这一行里只剩半截，满值没意义。
+ */
+export function useCapsuleSummaryGroups() {
+  const language = useLanguage()
+  const globalSync = useServerSync()
+  const summaries = useSessionContextSummaries()
+  const formatter = summaries.formatter
+  const counts = summaries.counts
+  const ctx = summaries.ctx
+  const locale = () => language.intl()
+
+  // 260922 Red 收起态的「上下文」默认铺开（哥哥圈定的这五项才是最关键的读数），
+  // 顺序按重要性排：量 → 用量 → 缓存 → 命中质量 → 成本。
+  const contextDetails = createMemo<CapsuleSummaryDetail[]>(() => {
+    const current = ctx()
+    const f = formatter()
+    const cacheRead = current?.cacheRead ?? 0
+    const cacheWrite = current?.cacheWrite ?? 0
+    const cacheHit = current?.cacheHit != null ? ` (${f.percent(current.cacheHit)})` : ""
+    const turnHit = current?.turnHitPct
+    return [
+      { label: language.t("context.stats.messages"), value: counts().all.toLocaleString(locale()) },
+      { label: language.t("context.stats.totalTokens"), value: f.number(current?.total) },
+      {
+        label: language.t("context.stats.cacheTokens"),
+        value:
+          cacheRead <= 0 && cacheWrite <= 0
+            ? "—"
+             : cacheWrite
+               ? `${f.compact(cacheRead)} / ${f.compact(cacheWrite)}${cacheHit}`
+               : `${f.compact(cacheRead)}${cacheHit}`,
+        color: "var(--syntax-info)",
+      },
+      {
+        label: language.t("context.stats.turnCacheHit"),
+        value: turnHit == null ? "—" : current?.stalled ? `${f.percent(turnHit)} · 缓存未延伸` : f.percent(turnHit),
+        color: "var(--syntax-critical)",
+      },
+      { label: language.t("context.stats.totalCost"), value: summaries.cost(), color: "var(--syntax-critical)" },
+    ]
+  })
+
+  const quotaDetails = createMemo<CapsuleSummaryDetail[]>(() =>
+    globalSync.data.provider_quota.flatMap((quota) =>
+      [
+        { label: language.t("context.quota.window.primary"), window: quota.primary },
+        { label: language.t("context.quota.window.secondary"), window: quota.secondary },
+        {
+          label: quota.reserveName
+            ? `${language.t("context.quota.window.reserve")} · ${quota.reserveName}`
+            : language.t("context.quota.window.reserve"),
+          window: quota.reserve,
+        },
+      ]
+        .filter((entry): entry is { label: string; window: QuotaWindowData } => !!entry.window)
+        .map((entry) => {
+          const percent = quotaNum(entry.window.usedPercent)
+          return {
+            label: entry.label,
+            value: `${quotaPercent(percent, locale())}% · ${quotaDuration(quotaNum(entry.window.windowMinutes))}`,
+            color: quotaColor(percent),
+          }
+        }),
+    ),
+  )
+
+  const inspectDetails = createMemo<CapsuleSummaryDetail[]>(() => {
+    const snapshot = summaries.inspectData()
+    if (!snapshot || snapshot.total <= 0) return []
+    const f = formatter()
+    return [
+      { label: language.t("context.inspect.system"), tokens: snapshot.system.tokens },
+      { label: language.t("context.inspect.tools"), tokens: snapshot.tools.tokens },
+      { label: language.t("context.inspect.messages"), tokens: snapshot.messages.tokens },
+    ]
+      .filter((entry) => entry.tokens > 0)
+      .map((entry) => ({
+        label: entry.label,
+        value: `${f.number(entry.tokens)} · ${Math.round((entry.tokens / snapshot.total) * 100)}%`,
+      }))
+  })
+
+  const rawMessageDetails = createMemo<CapsuleSummaryDetail[]>(() => {
+    const stats = counts()
+    return [
+      { label: language.t("context.breakdown.user"), value: stats.user.toLocaleString(locale()) },
+      { label: language.t("context.breakdown.assistant"), value: stats.assistant.toLocaleString(locale()) },
+    ]
+  })
+
+  return (): CapsuleSummaryGroup[] => {
+    const quotas = globalSync.data.provider_quota
+    const quotaPeak = quotaPeakPercent(quotas)
+    const snapshot = summaries.inspectData()
+    return [
+      {
+        id: "context",
+        icon: "brain",
+        label: language.t("context.summary.title"),
+        value: formatter().number(ctx()?.total),
+        defaultExpanded: true,
+        details: contextDetails(),
+      },
+      {
+        id: "quota",
+        icon: "volume",
+        label: language.t("context.quota.title"),
+        value: quotas.length ? `${quotaPercent(quotaPeak, locale())}%` : "—",
+        valueColor: quotas.length ? quotaColor(quotaPeak) : undefined,
+        details: quotaDetails(),
+      },
+      {
+        id: "inspect",
+        icon: "bullet-list",
+        label: language.t("context.inspect.title"),
+        value: snapshot && snapshot.total > 0 ? formatter().number(snapshot.total) : "—",
+        bar: inspectBarSegments(snapshot),
+        details: inspectDetails(),
+      },
+      {
+        id: "rawMessages",
+        icon: "code-lines",
+        label: language.t("context.rawMessages.title"),
+        value: summaries.rawMessages(),
+        details: rawMessageDetails(),
+      },
+    ]
+  }
+}
+
+// 260820 cc 真实构成三块的配色。与上下文 tab 里估算版（BREAKDOWN_COLOR.system）刻意同色
+// （都是 info）——两块讲的是同一件事的估算版与实测版，颜色一致才看得出对应关系。
+// 260922 Red 从 session-context-tab.tsx 迁来：折叠态的比例条要给同一套色，
+// 两处各留一份定义必然漂移。
+export const INSPECT_COLOR = {
+  system: "var(--syntax-info)",
+  tools: "var(--syntax-warning)",
+  messages: "var(--syntax-property)",
+} as const
+
+export type InspectKey = keyof typeof INSPECT_COLOR
+
+/** 真实构成的一段占比。percent 不取整，精度由渲染方决定。 */
+export type InspectSegment = { key: InspectKey; percent: number; color: string }
+
+/**
+ * 260922 Red 真实构成的比例条。折叠态只剩一个总数时看不出构成，
+ * 把 system/tools/messages 三块的占比抽出来给两个折叠面（右栏胶囊的行、上下文 tab 的
+ * CollapsibleSection）共用——比例算法只此一份。
+ */
+export function inspectBarSegments(
+  snapshot:
+    | { total: number; system: { tokens: number }; tools: { tokens: number }; messages: { tokens: number } }
+    | null
+    | undefined,
+): InspectSegment[] {
+  if (!snapshot || snapshot.total <= 0) return []
+  return (["system", "tools", "messages"] as const)
+    .map((key) => ({ key, tokens: snapshot[key].tokens }))
+    .filter((entry) => entry.tokens > 0)
+    .map((entry) => ({
+      key: entry.key,
+      percent: (entry.tokens / snapshot.total) * 100,
+      color: INSPECT_COLOR[entry.key],
+    }))
 }

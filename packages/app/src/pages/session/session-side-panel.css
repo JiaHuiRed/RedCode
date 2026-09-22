@@ -23,6 +23,7 @@
     /* 260921 Red top 56px：避开会话标题栏，折叠矮胶囊不再压住它 */
     inset-block-start: 56px;
     inset-inline-end: 12px;
+    /* 展开态宽度跟随用户拖拽的面板宽；折叠态在下面覆写成固定窄宽 */
     width: min(var(--panel-width, 420px), calc(100vw - 24px));
     z-index: 1;
     overflow: hidden;
@@ -31,13 +32,18 @@
     background: var(--surface-raised-stronger-non-alpha);
     box-shadow: var(--shadow-lg-border-base);
     transition:
+      width 240ms cubic-bezier(0.22, 1, 0.36, 1),
       height 240ms cubic-bezier(0.22, 1, 0.36, 1),
       opacity 160ms ease-out;
 
-    /* 折叠：可见的矮胶囊。大圆角往胶囊形靠，高度压到 1/4 屏以下 */
-    &.session-side-panel__capsule--closed {
-      height: clamp(180px, 24vh, 280px);
-      border-radius: 28px;
+     /* 260922 Red 折叠态改「竖长横窄」：宽度不再跟抽屉走、收到固定值，高度超过宽度约 1.5 倍
+         （对齐 Codex 侧栏的比例）——四段摘要竖排，每行才不至于都被截断。
+         320 是实测下限：280 时「2,691.9万 / 42.5万 (98.44%)」这类值尾部会被切掉。
+         24px 圆角在这个宽上已经接近药丸，再圆就成椭圆了。 */
+     &.session-side-panel__capsule--closed {
+       width: min(320px, calc(100vw - 24px));
+      height: clamp(300px, 52vh, 560px);
+      border-radius: 24px;
       transform: none;
       opacity: 1;
       pointer-events: auto;
@@ -45,6 +51,7 @@
 
     /* 展开：原侧边栏全高（top 56 + bottom 12） */
     &.session-side-panel__capsule--open {
+      width: min(var(--panel-width, 420px), calc(100vw - 24px));
       height: calc(100% - 68px);
       transform: none;
       opacity: 1;
@@ -87,12 +94,16 @@
 }
 
 /* 折叠态层：四段摘要行，展开时淡出让位给面板层 */
+/* 折叠态层：四段摘要行，展开时淡出让位给面板层 */
 .session-side-panel__rows {
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
+  min-height: 0;
   padding: 0 6px 6px;
+  /* 竖长之后四段全展开可能超出胶囊高度，超出就滚 */
+  overflow-y: auto;
   transition: opacity 140ms ease-out;
 }
 
@@ -104,7 +115,8 @@
 .session-side-panel__summary-rows {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 6px;
+  min-height: 0;
   padding: 0 2px;
 }
 
@@ -112,6 +124,46 @@
 .session-side-panel__summary-rows [data-component="capsule-row"] {
   min-height: 24px;
   padding: 2px 8px;
+}
+
+/* 260922 Red 一段 = 一行摘要 + 可展开的明细。收起时只留关键数字（对齐 Codex 侧栏），
+   点开才铺明细。 */
+.session-side-panel__summary-group {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 左缩进 34px = rows 2 + row 8 + 图标 16 + gap 8，让明细与行内文字对齐 */
+.session-side-panel__summary-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 4px;
+  padding: 0 8px 0 34px;
+}
+
+.session-side-panel__summary-detail {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* 260922 Red 真实构成在收起态也要看得出三块占比：值左侧一条 64px 的堆叠条。
+   段宽用 percent、段色由 inspectBarSegments 给（与上下文 tab 同源）。 */
+.session-side-panel__summary-bar {
+  display: flex;
+  flex: none;
+  width: 64px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-base);
+}
+
+.session-side-panel__summary-bar > span {
+  height: 100%;
 }
 
 /* 展开态层：中桌面在 flex 流内（原布局），宽桌面绝对定位铺满胶囊 */
