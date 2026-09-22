@@ -1425,7 +1425,7 @@ export function MessageTimeline(props: {
         data-timeline-row={input.row()._tag}
         classList={{
           "min-w-0 w-full max-w-full": true,
-          "md:max-w-200 2xl:max-w-[1000px]": props.centered,
+          "md:max-w-200 2xl:max-w-[1400px]": props.centered,
           "md:mx-auto": props.centered,
           "pt-6": previousUserMessage(),
           "pt-3": previousAssistantPart(),
@@ -1720,7 +1720,7 @@ export function MessageTimeline(props: {
               "w-full": true,
               "pb-4": true,
               "pl-2 pr-3 md:pl-4 md:pr-3": true,
-              "md:max-w-200 md:mx-auto 2xl:max-w-[1000px]": props.centered,
+              "md:max-w-200 md:mx-auto 2xl:max-w-[1400px]": props.centered,
             }}
             style={{
               "background-color": "rgba(18, 18, 18, 0.15)",

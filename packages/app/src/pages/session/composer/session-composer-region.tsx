@@ -156,7 +156,7 @@ export function SessionComposerRegion(props: {
         classList={{
           "w-full px-3 pointer-events-auto": true,
           "max-w-[720px] px-0": props.placement === "inline",
-          "md:max-w-200 md:mx-auto 2xl:max-w-[1000px]": props.centered,
+          "md:max-w-200 md:mx-auto 2xl:max-w-[1400px]": props.centered,
         }}
       >
         <Show when={props.state.questionRequest()} keyed>
