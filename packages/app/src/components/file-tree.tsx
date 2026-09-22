@@ -230,9 +230,11 @@ export default function FileTree(props: {
 
     for (const item of allowed) {
       const parts = item.split("/")
-      const parents = parts.slice(0, -1)
-      for (const [idx] of parents.entries()) {
-        const dir = parents.slice(0, idx + 1).join("/")
+      // 260923 Red 逐段累加父路径，替代每个父级 slice+join 的 O(depth²) 字符串构造；
+      // 首段为空（绝对路径）时保持 join 语义：第二段起得到 "/foo" 而不是 "foo"
+      let dir = ""
+      for (let i = 0; i < parts.length - 1; i++) {
+        dir = i === 0 ? parts[0]! : `${dir}/${parts[i]}`
         if (dir) dirs.add(dir)
       }
     }

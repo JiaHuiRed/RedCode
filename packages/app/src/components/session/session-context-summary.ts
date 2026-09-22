@@ -91,10 +91,15 @@ export function useSessionContextSummaries() {
   const ctx = createMemo(() => metrics().context)
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
 
+  // 260923 Red 原来 user / assistant 各一趟 reduce，合一个循环少付一趟 O(N)
   const counts = createMemo(() => {
     const all = messages()
-    const user = all.reduce((count, x) => count + (x.role === "user" ? 1 : 0), 0)
-    const assistant = all.reduce((count, x) => count + (x.role === "assistant" ? 1 : 0), 0)
+    let user = 0
+    let assistant = 0
+    for (const x of all) {
+      if (x.role === "user") user++
+      else if (x.role === "assistant") assistant++
+    }
     return { all: all.length, user, assistant }
   })
 

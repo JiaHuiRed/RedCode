@@ -61,50 +61,25 @@ const tokenTotal = (msg: AssistantMessage) => {
   return msg.tokens.input + msg.tokens.output + msg.tokens.reasoning + msg.tokens.cache.read + msg.tokens.cache.write
 }
 
-// 260822 cc 速度指标取「最近一条**跑完且真的吐过字**的 assistant」，与上面那条
-// lastAssistantWithTokens 刻意分开：正在流式的那条 time.completed 还没写，纯工具往返的
-// 那条 output+reasoning 是 0 —— 两种都算不出速率。分开取的效果是流式期间稳定显示上一轮
-// 的数字，而不是闪成空白。
-const lastAssistantWithSpeed = (messages: Message[]) => {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i]
-    if (msg?.role !== "assistant") continue
-    if (!msg.time.firstChunk || !msg.time.completed) continue
-    if (msg.tokens.output + msg.tokens.reasoning <= 0) continue
-    return msg
-  }
-}
-
-const lastAssistantWithTokens = (messages: Message[]) => {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i]
-    if (msg.role !== "assistant") continue
-    if (tokenTotal(msg) <= 0) continue
-    return msg
-  }
-}
-
-// 260615 Red 币种判定原为硬编码 providerID 名单（CNY_PROVIDERS）。
-// 260730 Karina TUI footer 已改读 model.cost.currency；260827 Red 这里跟进并退役名单：
-// provider.ts 落 CNY_PRICING 覆盖与 config.cost.currency 两条路都会在 model.cost.currency
-// 写标记（providers 入参一直在，"拿不到 model 报价"的旧前提不成立），无标记 = USD，
-// USD→CNY 折算由消费方（session-context-tab.tsx 的 formatter）按 costCurrency 做。
-
+// 260923 Red 单趟遍历：原实现 totalCost / lastAssistantWithTokens / agg / lastAssistantWithSpeed /
+// cacheHit 各扫一遍，长会话一次 metrics 重算要付 5 趟 O(N)，而流式期间每批 SSE 都会触发重算。
+// 合并成一趟；「取最后一条满足条件的」两个语义用正序覆盖（后者覆盖前者）保持等价。
 const build = (messages: Message[] = [], providers: Provider[] = []): Metrics => {
-  const totalCost = messages.reduce((sum, msg) => sum + (msg.role === "assistant" ? msg.cost : 0), 0)
-  const message = lastAssistantWithTokens(messages)
-  if (!message) return { totalCost, costCurrency: "USD", context: undefined }
-
-  const provider = providers.find((item) => item.id === message.providerID)
-  const model = provider?.models[message.modelID]
-  const limit = model?.limit.context
-
+  let totalCost = 0
+  let tokenMessage: AssistantMessage | undefined
+  let speedMessage: AssistantMessage | undefined
   // Aggregate across all assistant messages (not just the last one)
   const agg = { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 }
   // 260805 Red 逐轮 read/bad 序列，供 turnHitPct 与 stalled 判据使用
   const turns: Array<{ read: number; bad: number }> = []
+  let sumRead = 0
+  let sumMiss = 0
+  let sumWrite = 0
   for (const m of messages) {
     if (m.role !== "assistant") continue
+    totalCost += m.cost
+    if (tokenTotal(m) > 0) tokenMessage = m
+    if (m.time.firstChunk && m.time.completed && m.tokens.output + m.tokens.reasoning > 0) speedMessage = m
     agg.input += m.tokens.input ?? 0
     agg.output += m.tokens.output ?? 0
     agg.reasoning += m.tokens.reasoning ?? 0
@@ -113,7 +88,16 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
     const read = m.tokens.cache.read ?? 0
     const bad = (m.tokens.cache.miss ?? 0) + (m.tokens.cache.write ?? 0)
     if (read + bad > 0) turns.push({ read, bad })
+    sumRead += m.tokens.cache.read
+    sumMiss += m.tokens.cache.miss ?? 0
+    sumWrite += m.tokens.cache.write
   }
+  const message = tokenMessage
+  if (!message) return { totalCost, costCurrency: "USD", context: undefined }
+
+  const provider = providers.find((item) => item.id === message.providerID)
+  const model = provider?.models[message.modelID]
+  const limit = model?.limit.context
   const total = agg.input + agg.output + agg.reasoning + agg.cacheRead + agg.cacheWrite
   const window = message.tokens.context
   const lastTurn = turns[turns.length - 1]
@@ -126,7 +110,6 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
   //      预填，长上下文下能把 60 tok/s 稀释成 20，量出来的就不是解码速度而是排队时间。
   // 两段分开显示也是刻意的：首字慢 = 排队/预填（供应商负载、上下文长度），
   // 解码慢 = 吐字本身，混成一个「总速度」会让两种完全不同的问题看起来一样。
-  const speedMessage = lastAssistantWithSpeed(messages)
   const decoded = speedMessage ? speedMessage.tokens.output + speedMessage.tokens.reasoning : 0
   const decodeMs = speedMessage ? speedMessage.time.completed! - speedMessage.time.firstChunk! : 0
   const decodeRate = decodeMs > 0 && decoded > 0 ? Math.round((decoded / decodeMs) * 1000 * 10) / 10 : null
@@ -156,17 +139,8 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
       // (tokens.cache.miss === tokens.input by construction in session.ts), so summing read+miss+write
       // gives the true total instead of an either/or pick that silently drops whichever bucket the
       // buggy path skipped — this was inflating hit% (e.g. 99% vs the real ~96%).
+      // 260923 Red read/miss/write 已随主循环一趟累计，这里只做归一
       cacheHit: (() => {
-        let sumRead = 0,
-          sumMiss = 0,
-          sumWrite = 0
-        for (const m of messages) {
-          if (m.role === "assistant") {
-            sumRead += m.tokens.cache.read
-            sumMiss += m.tokens.cache.miss ?? 0
-            sumWrite += m.tokens.cache.write
-          }
-        }
         const denom = sumRead + sumMiss + sumWrite
         return denom > 0 && sumRead > 0 ? Math.round((sumRead / denom) * 10000) / 100 : null
       })(),
