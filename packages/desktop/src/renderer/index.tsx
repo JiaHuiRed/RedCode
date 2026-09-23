@@ -291,16 +291,17 @@ const createPlatform = (): Platform => {
       // 260907 ZCode Electron 44 把主进程 clipboard.readImage 移除（W3C 化），
       // 改用渲染层 Web API；clipboard-read 权限已在 windows.ts 放行。
       // 返回形状（File | null）与旧 IPC 路径一致，调用方零改动。
+      // 260923 Red 删掉 createImageBitmap 那一轮解码：bitmap 只被 close，宽高/格式
+      // 从没读过，也不参与 File 构造——纯粹多解一次位图。不可解码的坏图由此改到
+      // 上传/附件环节才报错，可接受。
       try {
         const items = await navigator.clipboard.read()
         for (const item of items) {
           const type = item.types.find((t) => t.startsWith("image/"))
           if (!type) continue
           const blob = await item.getType(type)
-          const bitmap = await createImageBitmap(blob)
           const ext = type === "image/png" ? "png" : type === "image/jpeg" ? "jpg" : (type.split("/")[1] ?? "png")
           const file = new File([blob], `pasted-image-${Date.now()}.${ext}`, { type })
-          bitmap.close()
           return file
         }
       } catch {
