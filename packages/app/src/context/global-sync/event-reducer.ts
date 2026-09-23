@@ -333,8 +333,11 @@ export function applyDirectoryEvent(input: {
         produce((draft) => {
           const messages = draft.message[props.sessionID]
           if (messages) {
-            const result = Binary.search(messages, props.messageID, (m) => m.id)
-            if (result.found) messages.splice(result.index, 1)
+            // 260923 Red 线性定位，与 message.updated 统一：数组按 compareTime 排序，
+            //   而 message ID 是时间编码、48 位 795 天回绕，回绕后字典序不再单调，
+            //   Binary.search 按 id 字典序二分会定位到错误下标（漏删 → ghost message）。
+            const index = messages.findIndex((m) => m.id === props.messageID)
+            if (index >= 0) messages.splice(index, 1)
           }
           const parts = draft.part[props.messageID]
           if (parts) {

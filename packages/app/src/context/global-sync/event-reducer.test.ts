@@ -382,6 +382,39 @@ describe("applyDirectoryEvent", () => {
     expect(store.part.msg_2).toBeUndefined()
   })
 
+  // 260923 Red message ID 是时间编码、48 位 795 天回绕，回绕后字典序不再单调，而 message
+  // 数组按 compareTime 维护。此前 message.removed 用 Binary.search 按 id 字典序二分，
+  // 字典序与时间序不一致时定位不到真实存在的消息，漏删成 ghost message。定位统一改线性
+  // find（与 message.updated 一致）。本用例在旧实现下 found=false、一条都删不掉。
+  test("removes a message whose id order disagrees with the time-sorted array", () => {
+    const sessionID = "ses_wrap"
+    // created 升序（数组真实顺序）与 id 字典序相反：字典序看是 [msg_a, msg_m, msg_y, msg_z]。
+    const seeded = [
+      { ...userMessage("msg_z", sessionID), time: { created: 1 } },
+      { ...userMessage("msg_y", sessionID), time: { created: 2 } },
+      { ...userMessage("msg_m", sessionID), time: { created: 3 } },
+      { ...userMessage("msg_a", sessionID), time: { created: 4 } },
+    ] as Message[]
+    const [store, setStore] = createStore(
+      baseState({
+        message: { [sessionID]: seeded },
+        part: { msg_m: [textPart("prt_1", sessionID, "msg_m")] },
+      }),
+    )
+
+    applyDirectoryEvent({
+      event: { type: "message.removed", properties: { sessionID, messageID: "msg_m" } },
+      store,
+      setStore,
+      push() {},
+      directory: "/tmp",
+      loadLsp() {},
+    })
+
+    expect(store.message[sessionID]?.map((x) => x.id)).toEqual(["msg_z", "msg_y", "msg_a"])
+    expect(store.part.msg_m).toBeUndefined()
+  })
+
   test("upserts and prunes message parts", () => {
     const sessionID = "ses_1"
     const messageID = "msg_1"
