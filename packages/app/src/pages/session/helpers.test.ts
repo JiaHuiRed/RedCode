@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { createMemo, createRoot } from "solid-js"
 import { createStore } from "solid-js/store"
 import {
+  SYSTEM_TABS,
   createOpenReviewFile,
   createOpenSessionFileTab,
   createSessionTabs,
@@ -117,6 +118,12 @@ describe("getTabReorderIndex", () => {
   })
 })
 
+describe("SYSTEM_TABS", () => {
+  test("pins the five fixed tabs", () => {
+    expect([...SYSTEM_TABS].sort()).toEqual(["context", "outline", "plan", "review", "status"])
+  })
+})
+
 describe("createSessionTabs", () => {
   test("normalizes the effective file tab", () => {
     createRoot((dispose) => {
@@ -193,6 +200,50 @@ describe("createSessionTabs", () => {
       })
 
       expect(result.activeTab()).toBe("context")
+      dispose()
+    })
+  })
+
+  // 260923 Red C2：五个固定 system tab 都不进 openedTabs（此前 outline 漏网，会被当成
+  // 文件标签渲染进 SortableProvider——可拖拽、可关闭，且 strip 上出现两份标签）。
+  test("keeps every system tab out of openedTabs", () => {
+    createRoot((dispose) => {
+      const [state] = createStore({
+        active: "outline" as string | undefined,
+        all: ["context", "review", "outline", "plan", "status", "file://src/a.ts"],
+      })
+      const tabs = createMemo(() => ({ active: () => state.active, all: () => state.all }))
+      const result = createSessionTabs({
+        tabs,
+        pathFromTab: (tab) => (tab.startsWith("file://") ? tab.slice("file://".length) : undefined),
+        normalizeTab: (tab) => tab,
+        review: () => true,
+        hasReview: () => true,
+      })
+
+      expect(result.openedTabs()).toEqual(["file://src/a.ts"])
+      expect(result.activeTab()).toBe("outline")
+      expect(result.activeFileTab()).toBeUndefined()
+      expect(result.closableTab()).toBeUndefined()
+      dispose()
+    })
+  })
+
+  test("normalizes an old session whose stored tabs still contain outline", () => {
+    createRoot((dispose) => {
+      const [state] = createStore({
+        active: "outline" as string | undefined,
+        all: ["outline", "context"],
+      })
+      const tabs = createMemo(() => ({ active: () => state.active, all: () => state.all }))
+      const result = createSessionTabs({
+        tabs,
+        pathFromTab: () => undefined,
+        normalizeTab: (tab) => tab,
+      })
+
+      expect(result.openedTabs()).toEqual([])
+      expect(result.activeTab()).toBe("outline")
       dispose()
     })
   })

@@ -20,6 +20,14 @@ type TabsInput = {
 
 export const getSessionKey = (dir: string | undefined, id: string | undefined) => `${dir ?? ""}${id ? `/${id}` : ""}`
 
+// 260923 Red C2：固定 system tabs 与动态 file tabs 分离。五项永远存在、不需要 open
+// 才出现、不可关闭、不参与排序、不进 openedTabs。此前 createSessionTabs 的特殊标签
+// 过滤散落着 context/review/status/plan 四个字符串，漏了 outline——outline 于是被
+// 当成文件标签：既进 SortableProvider 的文件列表（可拖拽、可关闭），又有一个写死的
+// Tabs.Trigger，同一个标签在 strip 上出现两份。集中成一份 Set 统一使用。
+export const SYSTEM_TABS = new Set<string>(["review", "context", "outline", "plan", "status"])
+export type SystemTab = "review" | "context" | "outline" | "plan" | "status"
+
 export const createSessionTabs = (input: TabsInput) => {
   const review = input.review ?? (() => false)
   const hasReview = input.hasReview ?? (() => false)
@@ -31,9 +39,8 @@ export const createSessionTabs = (input: TabsInput) => {
         .tabs()
         .all()
         .flatMap((tab) => {
-          // 260610 Red status 与 context/review 同属特殊标签，不当文件标签渲染
-          // 260615 Red plan 同属特殊标签
-          if (tab === "context" || tab === "review" || tab === "status" || tab === "plan") return []
+          // 260923 Red C2 统一走 SYSTEM_TABS（含 outline，此前漏网会被当成文件标签）
+          if (SYSTEM_TABS.has(tab)) return []
           const value = input.pathFromTab(tab) ? input.normalizeTab(tab) : tab
           if (seen.has(value)) return []
           seen.add(value)
