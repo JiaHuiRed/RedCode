@@ -156,6 +156,10 @@ export const {
     const kv = useKV()
 
     const fullSyncedSessions = new Set<string>()
+    // 260923 Red 当前会话 = 最后一次 sync/reconcile 的目标（进会话与子会话导航都走
+    // sync）；server.connected 计数用于区分首连（bootstrap 已全量加载）与重连补拉。
+    let currentSessionID: string | undefined
+    let serverConnections = 0
 
     function sessionListQuery(): { scope?: "project" | "global"; path?: string } {
       if (!kv.get("session_directory_filter_enabled", true)) return { scope: "global" }
@@ -186,6 +190,16 @@ export const {
         case "server.instance.disposed":
           void bootstrap()
           break
+
+        case "server.connected": {
+          // 260923 Red 服务端 SSE id: undefined，没有 Last-Event-ID replay，断线期间的
+          // 事件不会补发；fullSyncedSessions 又会让 sync() 直接 return——恢复后当前
+          // session 会永久缺一截。首连数据由 bootstrap 全量加载；第二次起每次重连只对
+          // 当前 session 做窄范围补拉，不做整个项目的全量 bootstrap。
+          serverConnections += 1
+          if (serverConnections > 1) reconcileCurrentSession()
+          break
+        }
         case "permission.replied": {
           forgetRequestWorkspace(event.properties.requestID)
           const requests = store.permission[event.properties.sessionID]
@@ -520,84 +534,82 @@ export const {
             })
           })
         })
-       .then(() => {
-         if (store.status !== "complete") setStore("status", "partial")
-         // 260923 Red 第二阶段 fail-soft：辅助状态接口任一失败只记日志，不再让 status 永远停在
-         // partial。此前 void Promise.all 既没接回外层链也没有独立 catch——单个 rejection
-         // （200 响应体解析失败、listSessions 形状不符、任何显式 throwOnError 的可选请求）都会让
-         // complete 永不触发，而外层 .catch 看不见这条 void 链。SDK client 默认已把网络错误吞成
-         // { data: undefined }，这里兜的是剩下的 reject 口子。
-         const optionalRequests: { name: string; promise: Promise<unknown> }[] = [
-           ...(args.continue
-             ? []
-             : [
-                 {
-                   name: "session.list",
-                   promise: sessionListPromise.then((sessions) => setStore("session", reconcile(sessions))),
-                 },
-               ]),
-           {
-             name: "console.state",
-             promise: consoleStatePromise.then((consoleState) =>
-               setStore("console_state", reconcile(consoleState)),
-             ),
-           },
-           {
-             name: "command.list",
-             promise: sdk.client.command.list({ workspace }).then((x) => setStore("command", reconcile(x.data ?? []))),
-           },
-           {
-             name: "lsp.status",
-             promise: sdk.client.lsp.status({ workspace }).then((x) => setStore("lsp", reconcile(x.data ?? []))),
-           },
-           {
-             name: "mcp.status",
-             promise: sdk.client.mcp.status({ workspace }).then((x) => setStore("mcp", reconcile(x.data ?? {}))),
-           },
-           {
-             name: "resource.list",
-             promise: sdk.client.experimental.resource
-               .list({ workspace })
-               .then((x) => setStore("mcp_resource", reconcile(x.data ?? {}))),
-           },
-           {
-             name: "formatter.status",
-             promise: sdk.client.formatter
-               .status({ workspace })
-               .then((x) => setStore("formatter", reconcile(x.data ?? []))),
-           },
-           {
-             name: "session.status",
-             promise: sdk.client.session.status({ workspace }).then((x) => {
-               setStore("session_status", reconcile(x.data ?? {}))
-             }),
-           },
-           {
-             name: "provider.auth",
-             promise: sdk.client.provider
-               .auth({ workspace })
-               .then((x) => setStore("provider_auth", reconcile(x.data ?? {}))),
-           },
-           {
-             name: "provider.quota",
-             promise: sdk.client.provider
-               .quota({ workspace })
-               .then((x) => setStore("provider_quota", reconcile(x.data ?? []))),
-           },
-           {
-             name: "vcs.get",
-             promise: sdk.client.vcs.get({ workspace }).then((x) => setStore("vcs", reconcile(x.data))),
-           },
-           { name: "project.workspace.sync", promise: project.workspace.sync() },
-         ]
-         void Promise.allSettled(optionalRequests.map((r) => r.promise)).then((settled) => {
-           // 与阻塞阶段同一套 labeled 聚合，但可选失败只记日志——这些接口没有资格
-           // 把 TUI 拦在 complete 之外。
-           const failure = aggregateFailures(optionalRequests.map((r, i) => ({ name: r.name, result: settled[i] })))
-           if (failure) Log.Default.warn("tui optional bootstrap requests failed", { error: failure.message })
-           setStore("status", "complete")
-         })
-       })
+        .then(() => {
+          if (store.status !== "complete") setStore("status", "partial")
+          // 260923 Red 第二阶段 fail-soft：辅助状态接口任一失败只记日志，不再让 status 永远停在
+          // partial。此前 void Promise.all 既没接回外层链也没有独立 catch——单个 rejection
+          // （200 响应体解析失败、listSessions 形状不符、任何显式 throwOnError 的可选请求）都会让
+          // complete 永不触发，而外层 .catch 看不见这条 void 链。SDK client 默认已把网络错误吞成
+          // { data: undefined }，这里兜的是剩下的 reject 口子。
+          const optionalRequests: { name: string; promise: Promise<unknown> }[] = [
+            ...(args.continue
+              ? []
+              : [
+                  {
+                    name: "session.list",
+                    promise: sessionListPromise.then((sessions) => setStore("session", reconcile(sessions))),
+                  },
+                ]),
+            {
+              name: "console.state",
+              promise: consoleStatePromise.then((consoleState) => setStore("console_state", reconcile(consoleState))),
+            },
+            {
+              name: "command.list",
+              promise: sdk.client.command.list({ workspace }).then((x) => setStore("command", reconcile(x.data ?? []))),
+            },
+            {
+              name: "lsp.status",
+              promise: sdk.client.lsp.status({ workspace }).then((x) => setStore("lsp", reconcile(x.data ?? []))),
+            },
+            {
+              name: "mcp.status",
+              promise: sdk.client.mcp.status({ workspace }).then((x) => setStore("mcp", reconcile(x.data ?? {}))),
+            },
+            {
+              name: "resource.list",
+              promise: sdk.client.experimental.resource
+                .list({ workspace })
+                .then((x) => setStore("mcp_resource", reconcile(x.data ?? {}))),
+            },
+            {
+              name: "formatter.status",
+              promise: sdk.client.formatter
+                .status({ workspace })
+                .then((x) => setStore("formatter", reconcile(x.data ?? []))),
+            },
+            {
+              name: "session.status",
+              promise: sdk.client.session.status({ workspace }).then((x) => {
+                setStore("session_status", reconcile(x.data ?? {}))
+              }),
+            },
+            {
+              name: "provider.auth",
+              promise: sdk.client.provider
+                .auth({ workspace })
+                .then((x) => setStore("provider_auth", reconcile(x.data ?? {}))),
+            },
+            {
+              name: "provider.quota",
+              promise: sdk.client.provider
+                .quota({ workspace })
+                .then((x) => setStore("provider_quota", reconcile(x.data ?? []))),
+            },
+            {
+              name: "vcs.get",
+              promise: sdk.client.vcs.get({ workspace }).then((x) => setStore("vcs", reconcile(x.data))),
+            },
+            { name: "project.workspace.sync", promise: project.workspace.sync() },
+          ]
+          void Promise.allSettled(optionalRequests.map((r) => r.promise)).then((settled) => {
+            // 与阻塞阶段同一套 labeled 聚合，但可选失败只记日志——这些接口没有资格
+            // 把 TUI 拦在 complete 之外。
+            const failure = aggregateFailures(optionalRequests.map((r, i) => ({ name: r.name, result: settled[i] })))
+            if (failure) Log.Default.warn("tui optional bootstrap requests failed", { error: failure.message })
+            setStore("status", "complete")
+          })
+        })
         .catch(async (e) => {
           Log.Default.error("tui bootstrap failed", {
             error: e instanceof Error ? e.message : String(e),
@@ -615,6 +627,48 @@ export const {
     onMount(() => {
       void bootstrap()
     })
+
+    // 260923 Red sync 与 reconcile 共用：拉当前 session 快照并整体写入 store。
+    // 服务端快照权威，message 数组整体替换——重复调用天然幂等，不叠消息/part。
+    async function loadSessionSnapshot(sessionID: string) {
+      const [session, messages, todo, diff, goal] = await Promise.all([
+        sdk.client.session.get({ sessionID }, { throwOnError: true }),
+        sdk.client.session.messages({ sessionID, limit: 100 }),
+        sdk.client.session.todo({ sessionID }),
+        // 260904 cc 只拉元数据（patch=false），Files 侧栏只要文件名与增删数。260903 因为带正文的那份
+        // 能到 33MB、卡 23s 把这条 fetch 删了；此后侧栏只靠 session.diff 事件填充，服务端为此
+        // 在指纹命中时也照发大 payload。现在 fetch 回来了、事件只在 diff 真变时才发。
+        sdk.client.session.diff({ sessionID, patch: false }).catch(() => undefined),
+        // 没钉目标时服务端 404，这是常态不是错误
+        sdk.client.session.goal({ sessionID }).catch(() => undefined),
+      ])
+      setStore(
+        produce((draft) => {
+          const match = Binary.search(draft.session, sessionID, (s) => s.id)
+          if (match.found) draft.session[match.index] = session.data!
+          if (!match.found) draft.session.splice(match.index, 0, session.data!)
+          draft.todo[sessionID] = todo.data ?? []
+          draft.goal[sessionID] = goal?.data ?? undefined
+          const infos: (typeof draft.message)[string] = []
+          for (const message of messages.data ?? []) {
+            infos.push(message.info)
+            draft.part[message.info.id] = message.parts
+          }
+          draft.message[sessionID] = infos
+          if (diff?.data) draft.session_diff[sessionID] = sidebarDiff(diff.data)
+        }),
+      )
+    }
+
+    // 260923 Red 重连补拉入口：只补当前 session，失败只记日志——补拉是恢复手段，
+    // 不是新一轮加载，不该把 TUI 再拖进错误路径。
+    function reconcileCurrentSession() {
+      const sessionID = currentSessionID
+      if (!sessionID) return
+      void result.session.reconcile(sessionID).catch((e) => {
+        Log.Default.warn("tui session reconcile failed", { error: e instanceof Error ? e.message : String(e) })
+      })
+    }
 
     const result = {
       data: store,
@@ -653,34 +707,17 @@ export const {
           return last.time.completed ? "idle" : "working"
         },
         async sync(sessionID: string) {
+          currentSessionID = sessionID
           if (fullSyncedSessions.has(sessionID)) return
-          const [session, messages, todo, diff, goal] = await Promise.all([
-            sdk.client.session.get({ sessionID }, { throwOnError: true }),
-            sdk.client.session.messages({ sessionID, limit: 100 }),
-            sdk.client.session.todo({ sessionID }),
-            // 260904 cc 只拉元数据（patch=false），Files 侧栏只要文件名与增删数。260903 因为带正文的那份
-            // 能到 33MB、卡 23s 把这条 fetch 删了；此后侧栏只靠 session.diff 事件填充，服务端为此
-            // 在指纹命中时也照发大 payload。现在 fetch 回来了、事件只在 diff 真变时才发。
-            sdk.client.session.diff({ sessionID, patch: false }).catch(() => undefined),
-            // 没钉目标时服务端 404，这是常态不是错误
-            sdk.client.session.goal({ sessionID }).catch(() => undefined),
-          ])
-          setStore(
-            produce((draft) => {
-              const match = Binary.search(draft.session, sessionID, (s) => s.id)
-              if (match.found) draft.session[match.index] = session.data!
-              if (!match.found) draft.session.splice(match.index, 0, session.data!)
-              draft.todo[sessionID] = todo.data ?? []
-              draft.goal[sessionID] = goal?.data ?? undefined
-              const infos: (typeof draft.message)[string] = []
-              for (const message of messages.data ?? []) {
-                infos.push(message.info)
-                draft.part[message.info.id] = message.parts
-              }
-              draft.message[sessionID] = infos
-              if (diff?.data) draft.session_diff[sessionID] = sidebarDiff(diff.data)
-            }),
-          )
+          await loadSessionSnapshot(sessionID)
+          fullSyncedSessions.add(sessionID)
+        },
+        // 260923 Red 断线恢复补拉：绕过 fullSyncedSessions 短路（sync 对已加载会话直接
+        // return），服务端快照整体替换本地。与 sync 的「首次完整加载」语义分开，不共用
+        // 一个开关。
+        async reconcile(sessionID: string) {
+          currentSessionID = sessionID
+          await loadSessionSnapshot(sessionID)
           fullSyncedSessions.add(sessionID)
         },
       },
