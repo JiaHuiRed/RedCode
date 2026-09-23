@@ -122,6 +122,12 @@ describe("SYSTEM_TABS", () => {
   test("pins the five fixed tabs", () => {
     expect([...SYSTEM_TABS].sort()).toEqual(["context", "outline", "plan", "review", "status"])
   })
+
+  // 260923 Red C5：strip 按这个顺序渲染（审查 | 上下文 | 轮次 | 计划 | 状态）。
+  // Set 本身保序，所以顺序也是契约的一部分，别让人随手改乱。
+  test("keeps the documented strip order", () => {
+    expect([...SYSTEM_TABS]).toEqual(["review", "context", "outline", "plan", "status"])
+  })
 })
 
 describe("createSessionTabs", () => {

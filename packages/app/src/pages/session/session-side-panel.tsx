@@ -24,7 +24,13 @@ import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { createFileTabListSync } from "@/pages/session/file-tab-scroll"
 import { FileTabContent } from "@/pages/session/file-tabs"
-import { createOpenSessionFileTab, createSessionTabs, getTabReorderIndex, type Sizing } from "@/pages/session/helpers"
+import {
+  createOpenSessionFileTab,
+  createSessionTabs,
+  getTabReorderIndex,
+  type Sizing,
+  type SystemTab,
+} from "@/pages/session/helpers"
 import { setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
 
@@ -113,6 +119,27 @@ function SessionCapsuleSummaryRows() {
   )
 }
 
+// 260923 Red C5：固定 system tab strip 里的一个入口（文档第 7 节）。当前 tab 高亮；
+// 点击后的统一行为在 selectSystemTab（文档第 8 节）。折叠态与展开态共用这一份。
+function SystemTabButton(props: { tab: SystemTab; active: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={props.active}
+      data-system-tab={props.tab}
+      classList={{
+        "flex-1 min-w-0 truncate rounded-md px-2 py-1 text-center transition-colors": true,
+        "text-12-medium text-text-base bg-surface-raised-base": props.active,
+        "text-12-regular text-text-weak hover:text-text-base": !props.active,
+      }}
+      onClick={props.onClick}
+    >
+      {props.label}
+    </button>
+  )
+}
+
 export function SessionSidePanel(props: {
   canReview: () => boolean
   reviewPanel: () => JSX.Element
@@ -171,18 +198,20 @@ export function SessionSidePanel(props: {
   const activeTab = tabState.activeTab
   const activeFileTab = tabState.activeFileTab
 
-  const activeTabLabel = createMemo(() => {
-    const tab = activeTab()
-    if (!tab) return language.t("session.panel.reviewAndFiles")
-    if (tab === "review") return language.t("session.tab.review")
-    if (tab === "context") return language.t("session.tab.context")
-    if (tab === "outline") return language.t("session.tab.outline")
-    if (tab === "plan") return language.t("session.tab.plan")
-    return file.pathFromTab(tab) ?? language.t("session.panel.reviewAndFiles")
-  })
+  // 260923 Red C5：点 system tab 的统一行为（文档第 8 节）——tab 本身就是 launcher +
+  // selector：当前 tab 且已展开时再点一次即收起；否则切到该 tab，折叠态下顺带展开。
+  // 有了它，strip 不需要再挂一个单独的 chevron 大开关。
+  const selectSystemTab = (tab: SystemTab) => {
+    if (activeTab() === tab && open()) {
+      view().reviewPanel.close()
+      return
+    }
+    tabs().setActive(tab)
+    if (!open()) view().reviewPanel.open()
+  }
 
   let drawer: HTMLElement | undefined
-  let summaryButton: HTMLElement | undefined
+  let systemTabStrip: HTMLElement | undefined
   let focusFrame: number | undefined
   let wasOpen = open()
   let contextResizeObserver: ResizeObserver | undefined
@@ -234,12 +263,16 @@ export function SessionSidePanel(props: {
       !next &&
       typeof document !== "undefined" &&
       drawer?.contains(document.activeElement) &&
-      summaryButton
+      systemTabStrip
     ) {
       if (focusFrame !== undefined) cancelAnimationFrame(focusFrame)
       focusFrame = requestAnimationFrame(() => {
         focusFrame = undefined
-        summaryButton?.focus()
+        // 260923 Red C5：收起入口从单个按钮变成 strip，焦点回到当前选中的那个 tab
+        const target =
+          systemTabStrip?.querySelector<HTMLElement>('[aria-selected="true"]') ??
+          systemTabStrip?.querySelector("button")
+        target?.focus()
       })
     }
     wasOpen = next
@@ -352,29 +385,50 @@ export function SessionSidePanel(props: {
           }}
         >
           {/* 260921 Red 宽桌面下的切换行：折叠态它是矮胶囊的 header，展开态它是抽屉
-             顶部的一行——必须永驻可见。曾经把它和四段摘要一起淡出，结果展开后再也
-             没有可见的收起入口，折叠态直接变成触发不到的死状态。中桌面不渲染。 */}
+             顶部的一行——必须永驻可见。曾把它和四段摘要一起淡出，结果展开后再没有
+             可见的收起入口，折叠态直接变成触发不到的死状态。中桌面不渲染。
+             260923 Red C5：这行换成固定 system tab strip（文档第 7 节），compact 与
+             expanded 都在；收起不再靠单独的 chevron 大开关，而是「再点当前 tab」
+             （文档第 8 节：tab 本身就是 launcher + selector）。status 待 C6/C7 把内容
+             拆进来后再补上——现在渲染它只会是一个点进去没有内容的死项。 */}
           <Show when={isWideDesktop()}>
             <div class="session-side-panel__header">
-              <CapsuleRow
+              <div
                 ref={(el) => {
-                  summaryButton = el
+                  systemTabStrip = el
                 }}
-                icon={open() ? "review-active" : "review"}
-                label={language.t("session.panel.reviewAndFiles")}
-                description={activeTabLabel()}
-                trailing={
-                  <Icon
-                    name="chevron-down"
-                    size="small"
-                    class={open() ? "rotate-180 transition-transform" : "transition-transform"}
-                  />
-                }
-                selected={open()}
-                aria-expanded={open()}
+                role="tablist"
                 aria-controls="review-panel"
-                onClick={() => view().reviewPanel.toggle()}
-              />
+                aria-label={language.t("session.panel.reviewAndFiles")}
+                class="flex items-center gap-0.5 min-h-8"
+              >
+                <Show when={reviewTab() && props.canReview()}>
+                  <SystemTabButton
+                    tab="review"
+                    active={activeTab() === "review"}
+                    label={language.t("session.tab.review")}
+                    onClick={() => selectSystemTab("review")}
+                  />
+                </Show>
+                <SystemTabButton
+                  tab="context"
+                  active={activeTab() === "context"}
+                  label={language.t("session.tab.context")}
+                  onClick={() => selectSystemTab("context")}
+                />
+                <SystemTabButton
+                  tab="outline"
+                  active={activeTab() === "outline"}
+                  label={language.t("session.tab.outline")}
+                  onClick={() => selectSystemTab("outline")}
+                />
+                <SystemTabButton
+                  tab="plan"
+                  active={activeTab() === "plan"}
+                  label={language.t("session.tab.plan")}
+                  onClick={() => selectSystemTab("plan")}
+                />
+              </div>
             </div>
           </Show>
 
