@@ -8,9 +8,9 @@
 
 ## 决策
 
-一个 Capsule 由固定的 Review、Context、Outline、Plan、Status 五项导航与当前 active tab 的内容 viewport 组成。compact 与 expanded 共用同一条导航和当前内容；动态文件 tab 与打开文件入口只在 expanded 态出现。点击固定 tab 会选中并展开胶囊，再点当前 tab 可折叠；Kobalte `Tabs.Trigger` 保留 tab/tabpanel 关联和方向键导航。
+一个 Capsule 由固定的 Review、Context、Outline、Plan、Status 五项导航与当前 active tab 的内容 viewport 组成。compact 与 expanded 共用同一条导航和当前内容；compact 隐藏动态文件 tab，但保留打开文件入口。宽桌面 compact 态点击其他固定 tab 只切换内容、不展开胶囊；点击当前 tab 才切换开合。中桌面选 tab 仍会打开参与布局的面板。Kobalte `Tabs.Trigger` 保留 tab/tabpanel 关联和方向键导航。
 
-Context tab 承载原来独立显示的摘要行，并保留完整会话统计、quota、真实构成与估算 fallback、system prompt 和原始消息。摘要数据与详情共用同一份 `useSessionContextSummaries()` 结果；固定顺序的 `<Index>` 让摘要行在流式数据更新时保持展开状态。
+Context tab 承载原来独立显示的摘要行，并保留完整会话统计、quota、真实构成与估算 fallback、system prompt 和原始消息。compact 态默认收起六组明细，只露关键摘要；点行仍可展开详情。摘要数据与详情共用同一份 `useSessionContextSummaries()` 结果；固定顺序的 `<Index>` 让摘要行在流式数据更新时保持展开状态。切换到其他 tab 时，compact 胶囊展示该 tab 自己的内容，不固定显示 Context。
 
 Status 成为第五个固定 tab，Server、MCP、LSP、Plugins 各自可折叠；服务器与 MCP 操作保留在 session directory 对应的 SDKProvider 内。标题栏只保留健康/SSE 指示器，在会话页点击后选择 Status 并展开胶囊。
 
@@ -22,6 +22,6 @@ Status 成为第五个固定 tab，Server、MCP、LSP、Plugins 各自可折叠�
 
 ## 后果
 
-- compact 态仍可浏览当前固定 tab 内容；Context 可滚动，Status 数据轮询仅在 Status 可见时运行。
+- compact 态五项固定导航仍可点击，打开文件入口仍可用；Context 以摘要模式显示，其他固定 tab 显示各自内容。Status 数据轮询仅在 Status 可见时运行。
 - 当前不在会话页时健康指示器没有可跳转的 Capsule，按钮禁用；健康状态本身仍可见。
 - 未启动或重启应用；本次没有运行中的 UI 可供人工视觉验收，行为验证以定向测试和 typecheck 为准。

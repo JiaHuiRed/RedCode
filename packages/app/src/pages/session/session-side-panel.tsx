@@ -87,6 +87,7 @@ export function SessionSidePanel(props: {
   const isWideDesktop = createMediaQuery("(min-width: 1280px)")
   const open = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const panelVisible = createMemo(() => isWideDesktop() || open())
+  const compact = createMemo(() => isWideDesktop() && !open())
   const reviewTab = createMemo(() => isDesktop())
   const sessionDirectory = createMemo(() => (params.dir ? decodeDirectory(params.dir) : undefined))
   const panelWidth = createMemo(() => {
@@ -130,7 +131,8 @@ export function SessionSidePanel(props: {
       return
     }
     tabs().setActive(tab)
-    if (!open()) view().reviewPanel.open()
+    // 260924 Red 宽桌面折叠时切 tab 只换内容，保持胶囊折叠。
+    if (!open() && !isWideDesktop()) view().reviewPanel.open()
   }
 
   const repeatSystemTab = (tab: SystemTab) => {
@@ -344,6 +346,7 @@ export function SessionSidePanel(props: {
                         <Tabs value={activeTab()} onChange={changeTab}>
                           <Tabs.List
                             class="session-side-panel__tab-list session-side-panel__header"
+                            classList={{ "session-side-panel__header--compact": compact() }}
                             aria-label={language.t("session.panel.workspace")}
                             ref={(el: HTMLDivElement) => {
                               systemTabStrip = el
@@ -392,27 +395,27 @@ export function SessionSidePanel(props: {
                                   {(tab) => <SortableTab tab={tab} onTabClose={tabs().close} />}
                                 </For>
                               </SortableProvider>
-                              <div class="session-side-panel__tab-end h-full shrink-0 sticky right-0 z-10 flex items-center justify-center pl-1 pr-2">
-                                <TooltipKeybind
-                                  title={language.t("command.file.open")}
-                                  keybind={command.keybind("file.open")}
-                                  class="flex items-center"
-                                >
-                                  <IconButton
-                                    icon="plus-small"
-                                    variant="ghost"
-                                    iconSize="large"
-                                    class="!rounded-md"
-                                    onClick={() => {
-                                      void import("@/components/dialog-select-file").then((x) => {
-                                        dialog.show(() => <x.DialogSelectFile mode="files" />)
-                                      })
-                                    }}
-                                    aria-label={language.t("command.file.open")}
-                                  />
-                                </TooltipKeybind>
-                              </div>
                             </Show>
+                            <div class="session-side-panel__tab-end h-full shrink-0 sticky right-0 z-10 flex items-center justify-center pl-1 pr-2">
+                              <TooltipKeybind
+                                title={language.t("command.file.open")}
+                                keybind={command.keybind("file.open")}
+                                class="flex items-center"
+                              >
+                                <IconButton
+                                  icon="plus-small"
+                                  variant="ghost"
+                                  iconSize="large"
+                                  class="!rounded-md"
+                                  onClick={() => {
+                                    void import("@/components/dialog-select-file").then((x) => {
+                                      dialog.show(() => <x.DialogSelectFile mode="files" />)
+                                    })
+                                  }}
+                                  aria-label={language.t("command.file.open")}
+                                />
+                              </TooltipKeybind>
+                            </div>
                           </Tabs.List>
 
                           {/* 260822 cc 面板自己的 Suspense 边界。少了它，任何一个 tab 里的异步读
@@ -444,7 +447,7 @@ export function SessionSidePanel(props: {
                             <Tabs.Content value="context" class="flex flex-col h-full overflow-hidden contain-strict">
                               <Show when={activeTab() === "context"}>
                                 <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
-                                  <SessionContextTab setViewportRef={setContextViewport} />
+                                  <SessionContextTab setViewportRef={setContextViewport} compact={compact} />
                                 </div>
                               </Show>
                             </Tabs.Content>

@@ -79,6 +79,20 @@
   min-height: 28px;
 }
 
+.session-side-panel__header--compact {
+  .session-side-panel__system-tab {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .session-side-panel__tab-end {
+    flex: 0 0 34px;
+    width: 34px;
+    padding-inline: 0;
+  }
+}
+
 /* body：宽桌面用胶囊容纳导航与内容，中桌面仍保持参与布局的面板 */
 .session-side-panel__body {
   position: relative;

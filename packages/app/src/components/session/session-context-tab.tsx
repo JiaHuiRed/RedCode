@@ -141,8 +141,19 @@ function QuotaDetails(props: { quotas: ProviderQuota[] }) {
   )
 }
 
-function CapsuleSummarySection(props: { group: CapsuleSummaryGroup; expandedContent?: JSX.Element }) {
-  const [expanded, setExpanded] = createSignal(props.group.defaultExpanded ?? false)
+function CapsuleSummarySection(props: {
+  group: CapsuleSummaryGroup
+  compact?: () => boolean
+  expandedContent?: JSX.Element
+}) {
+  const [expanded, setExpanded] = createSignal(!props.compact?.() && (props.group.defaultExpanded ?? false))
+  createEffect(
+    on(
+      () => !!props.compact?.(),
+      (compact) => setExpanded(!compact && (props.group.defaultExpanded ?? false)),
+      { defer: true },
+    ),
+  )
   const expandable = () => !!props.expandedContent || props.group.details.length > 0
   const primary = () => props.group.id === "context" || props.group.id === "cacheHit" || props.group.id === "cost"
 
@@ -284,7 +295,9 @@ function RawMessage(props: {
 
 const emptyUserMessages: UserMessage[] = []
 
-export function SessionContextTab(props: { setViewportRef?: (el: HTMLDivElement | undefined) => void } = {}) {
+export function SessionContextTab(
+  props: { setViewportRef?: (el: HTMLDivElement | undefined) => void; compact?: () => boolean } = {},
+) {
   const sync = useSync()
   const language = useLanguage()
   const globalSync = useServerSync()
@@ -620,6 +633,7 @@ export function SessionContextTab(props: { setViewportRef?: (el: HTMLDivElement 
             {(group) => (
               <CapsuleSummarySection
                 group={group()}
+                compact={props.compact}
                 expandedContent={
                   group().id === "context" ? (
                     <div class="grid grid-cols-1 @[32rem]:grid-cols-2 gap-4">

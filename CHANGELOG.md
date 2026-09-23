@@ -13,6 +13,10 @@
 
 - **GUI 标题栏状态灯不再因缺少 SDK context 启动报错**（`packages/app/src/components/titlebar.tsx`）：状态灯读取目录级同步状态，但标题栏位于 `DirectoryLayout` 的 `SDKProvider` 外；现在按当前 `statusDir` 提供目录 context，并在项目切换时重建，避免 renderer 启动即进入错误页。
 
+#### 变更
+
+- **会话胶囊折叠态保留五项导航**：折叠时仍可切换 Review、Context、Outline、Plan、Status；Context 默认只显示六项关键摘要，其他 tab 继续呈现各自内容，切换 tab 不会意外展开胶囊。
+
 ---
 ### [0.11.13] - 2026-09-24
 
