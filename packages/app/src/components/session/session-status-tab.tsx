@@ -1,12 +1,12 @@
 import { Button } from "@redcode-ai/ui/button"
-import { Capsule, CapsuleRow, type CapsuleTone } from "@redcode-ai/ui/capsule"
+import { CapsuleRow, type CapsuleTone } from "@redcode-ai/ui/capsule"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { Icon } from "@redcode-ai/ui/icon"
 import { Switch } from "@redcode-ai/ui/switch"
 import { useMutation, useQueryClient } from "@tanstack/solid-query"
 import { showToast } from "@redcode-ai/ui/toast"
 import { useNavigate } from "@solidjs/router"
-import { type Accessor, createEffect, createMemo, For, type JSXElement, onCleanup, Show } from "solid-js"
+import { type Accessor, createEffect, createMemo, createSignal, For, type JSXElement, onCleanup, Show } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { ServerRow } from "@/components/server/server-row"
 import { useLanguage } from "@/context/language"
@@ -183,8 +183,33 @@ const useMcpToggleMutation = () => {
   }))
 }
 
-// 260610 Red fill：用作右侧面板标签页时宽度自适应、去掉弹层专用阴影/圆角
-export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
+function StatusSection(props: { id: string; label: string; summary: string; children: JSXElement }) {
+  const [expanded, setExpanded] = createSignal(false)
+
+  return (
+    <section data-slot="capsule-section">
+      <CapsuleRow
+        label={props.label}
+        description={<span class="truncate">{props.summary}</span>}
+        trailing={
+          <Icon name="chevron-down" class={expanded() ? "rotate-180 transition-transform" : "transition-transform"} />
+        }
+        selected={expanded()}
+        aria-expanded={expanded()}
+        aria-controls={`session-status-${props.id}`}
+        onClick={() => setExpanded((value) => !value)}
+      />
+      <Show when={expanded()}>
+        <div id={`session-status-${props.id}`} class="flex flex-col gap-2 px-2 pb-2 pt-1">
+          {props.children}
+        </div>
+      </Show>
+    </section>
+  )
+}
+
+// 260924 Red Status 的四段详情改为可折叠 section，复用原有数据和操作。
+export function SessionStatusTab(props: { shown: Accessor<boolean> }) {
   const sync = useSync()
   const server = useServer()
   const platform = usePlatform()
@@ -199,10 +224,6 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
       description: formatServerError(err, language.t),
     })
   }
-
-  createEffect(() => {
-    if (!props.shown()) return
-  })
 
   let dialogRun = 0
   let dialogDead = false
@@ -219,6 +240,9 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
   })
   const health = useServerHealth(servers, props.shown)
   const sortedServers = createMemo(() => listServersByHealth(servers(), server.key, health))
+  const healthyServers = createMemo(
+    () => sortedServers().filter((conn) => health[ServerConnection.key(conn)]?.healthy === true).length,
+  )
   const toggleMcp = useMcpToggleMutation()
   const defaultServer = useDefaultServerKey(platform.getDefaultServer)
   const mcpNames = createMemo(() => Object.keys(sync.data.mcp ?? {}).sort((a, b) => a.localeCompare(b)))
@@ -233,23 +257,13 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
   const pluginEmpty = createMemo(() => pluginEmptyMessage(language.t("dialog.plugins.empty"), "redcode.json"))
 
   return (
-    <div class="flex min-w-0 w-[360px]">
-      <Capsule
-        attach="floating"
-        title={language.t("session.tab.status")}
-        class="status-popover-capsule"
-        aria-label={language.t("status.popover.ariaLabel")}
-      >
-        <section data-slot="capsule-section">
-          <div
-            data-slot="capsule-section-header"
-            class="flex items-center justify-between h-7 px-2 text-12-regular text-text-weak"
-          >
-            <span>
-              {sortedServers().length > 0 ? `${sortedServers().length} ` : ""}
-              {language.t("status.popover.tab.servers")}
-            </span>
-          </div>
+    <div class="h-full min-w-0 overflow-y-auto px-2 py-2" aria-label={language.t("session.tab.status")}>
+      <div class="flex flex-col gap-1">
+        <StatusSection
+          id="servers"
+          label={language.t("status.popover.tab.servers")}
+          summary={`${healthyServers()} / ${sortedServers().length}`}
+        >
           <For each={sortedServers()}>
             {(s) => {
               const key = ServerConnection.key(s)
@@ -293,7 +307,7 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
             class="mt-2 self-start h-8 px-3 py-1.5"
             onClick={() => {
               const run = ++dialogRun
-              void import("./dialog-select-server").then((x) => {
+              void import("../dialog-select-server").then((x) => {
                 if (dialogDead || dialogRun !== run) return
                 dialog.show(() => <x.DialogSelectServer />, defaultServer.refresh)
               })
@@ -301,20 +315,13 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
           >
             {language.t("status.popover.action.manageServers")}
           </Button>
-        </section>
+        </StatusSection>
 
-        <div data-slot="capsule-divider" class="h-px my-2 bg-border-weaker-base" />
-
-        <section data-slot="capsule-section">
-          <div
-            data-slot="capsule-section-header"
-            class="flex items-center justify-between h-7 px-2 text-12-regular text-text-weak"
-          >
-            <span>
-              {mcpConnected() > 0 ? `${mcpConnected()} ` : ""}
-              {language.t("status.popover.tab.mcp")}
-            </span>
-          </div>
+        <StatusSection
+          id="mcp"
+          label={language.t("status.popover.tab.mcp")}
+          summary={`${mcpConnected()} / ${mcpNames().length}`}
+        >
           <Show
             when={mcpNames().length > 0}
             fallback={
@@ -353,20 +360,13 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
               }}
             </For>
           </Show>
-        </section>
+        </StatusSection>
 
-        <div data-slot="capsule-divider" class="h-px my-2 bg-border-weaker-base" />
-
-        <section data-slot="capsule-section">
-          <div
-            data-slot="capsule-section-header"
-            class="flex items-center justify-between h-7 px-2 text-12-regular text-text-weak"
-          >
-            <span>
-              {lspCount() > 0 ? `${lspCount()} ` : ""}
-              {language.t("status.popover.tab.lsp")}
-            </span>
-          </div>
+        <StatusSection
+          id="lsp"
+          label={language.t("status.popover.tab.lsp")}
+          summary={lspCount().toLocaleString(language.intl())}
+        >
           <Show
             when={lspItems().length > 0}
             fallback={
@@ -377,28 +377,21 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
               {(item) => <CapsuleRow status={connectionTone(item.status)} label={item.name || item.id} />}
             </For>
           </Show>
-        </section>
+        </StatusSection>
 
-        <div data-slot="capsule-divider" class="h-px my-2 bg-border-weaker-base" />
-
-        <section data-slot="capsule-section">
-          <div
-            data-slot="capsule-section-header"
-            class="flex items-center justify-between h-7 px-2 text-12-regular text-text-weak"
-          >
-            <span>
-              {pluginCount() > 0 ? `${pluginCount()} ` : ""}
-              {language.t("status.popover.tab.plugins")}
-            </span>
-          </div>
+        <StatusSection
+          id="plugins"
+          label={language.t("status.popover.tab.plugins")}
+          summary={pluginCount().toLocaleString(language.intl())}
+        >
           <Show
             when={plugins().length > 0}
             fallback={<div class="text-14-regular text-text-base text-center py-2">{pluginEmpty()}</div>}
           >
             <For each={plugins()}>{(plugin) => <CapsuleRow status="success" label={plugin} />}</For>
           </Show>
-        </section>
-      </Capsule>
+        </StatusSection>
+      </div>
     </div>
   )
 }

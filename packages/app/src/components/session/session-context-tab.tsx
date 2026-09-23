@@ -1,4 +1,4 @@
-import { createMemo, createEffect, createSignal, on, onCleanup, For, Show } from "solid-js"
+import { createMemo, createEffect, createSignal, on, onCleanup, For, Index, Show } from "solid-js"
 import type { JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { useSync } from "@/context/sync"
@@ -7,7 +7,7 @@ import { findLast } from "@redcode-ai/core/util/array"
 import { same } from "@/utils/same"
 import { compareTime } from "@/utils/id"
 import { Icon } from "@redcode-ai/ui/icon"
-import { Capsule, CapsuleRow, type CapsuleTone } from "@redcode-ai/ui/capsule"
+import { CapsuleRow } from "@redcode-ai/ui/capsule"
 import { Accordion } from "@redcode-ai/ui/accordion"
 import { StickyAccordionHeader } from "@redcode-ai/ui/sticky-accordion-header"
 import { useFileComponent } from "@redcode-ai/ui/context/file"
@@ -25,14 +25,11 @@ import {
   quotaPercent,
   QuotaWindowData,
   INSPECT_COLOR,
-  inspectBarSegments,
+  useCapsuleSummaryGroups,
+  type CapsuleSummaryGroup,
   type InspectKey,
-  type InspectSegment,
 } from "./session-context-summary"
 import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "./session-context-breakdown"
-
-// 260922 Red 真实构成的三块配色（INSPECT_COLOR）与比例算法（inspectBarSegments）随
-// 折叠态比例条一起迁到 session-context-summary：右栏胶囊的收起行也要用同一套色与算法。
 
 const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
   system: "var(--syntax-info)",
@@ -108,125 +105,124 @@ function QuotaWindow(props: { label: string; window?: QuotaWindowData }) {
   )
 }
 
-const quotaTone = (quotas: ProviderQuota[]): CapsuleTone => {
-  const percent = Math.max(
-    0,
-    ...quotas.flatMap((quota) =>
-      [quota.primary, quota.secondary, quota.reserve]
-        .filter((window): window is QuotaWindowData => !!window)
-        .map((window) => quotaNum(window.usedPercent)),
-    ),
+function QuotaDetails(props: { quotas: ProviderQuota[] }) {
+  const language = useLanguage()
+  return (
+    <div class="flex flex-col gap-3">
+      <For each={props.quotas}>
+        {(quota) => (
+          <div class="flex flex-col gap-2">
+            <div class="flex items-baseline justify-between gap-2">
+              <div class="text-11-regular text-text-weak">{quota.planType}</div>
+              <Show when={quota.accountID}>
+                {(accountID) => <div class="text-11-regular text-text-weaker select-text">{accountID()}</div>}
+              </Show>
+            </div>
+            <div class="flex flex-col gap-3">
+              <QuotaWindow label={language.t("context.quota.window.primary")} window={quota.primary} />
+              <QuotaWindow label={language.t("context.quota.window.secondary")} window={quota.secondary} />
+              <Show when={quota.reserve}>
+                {(reserve) => (
+                  <QuotaWindow
+                    label={
+                      quota.reserveName
+                        ? `${language.t("context.quota.window.reserve")} · ${quota.reserveName}`
+                        : language.t("context.quota.window.reserve")
+                    }
+                    window={reserve()}
+                  />
+                )}
+              </Show>
+            </div>
+          </div>
+        )}
+      </For>
+    </div>
   )
-  return percent >= 90 ? "critical" : percent >= 60 ? "warning" : "success"
 }
 
-function QuotaCapsule(props: { quotas: ProviderQuota[]; summary: string }) {
-  const language = useLanguage()
-  const [expanded, setExpanded] = createSignal(false)
+function CapsuleSummarySection(props: { group: CapsuleSummaryGroup; expandedContent?: JSX.Element }) {
+  const [expanded, setExpanded] = createSignal(props.group.defaultExpanded ?? false)
+  const expandable = () => !!props.expandedContent || props.group.details.length > 0
+  const primary = () => props.group.id === "context" || props.group.id === "cacheHit" || props.group.id === "cost"
 
   return (
-    <Capsule
-      attach="inline"
-      class="max-w-full"
-      style={{
-        width: expanded() ? "100%" : "fit-content",
-        "border-radius": expanded() ? "var(--radius-xl)" : "999px",
+    <div
+      classList={{
+        "session-side-panel__summary-group": true,
+        "session-side-panel__summary-group--primary": primary(),
       }}
     >
       <CapsuleRow
-        status={quotaTone(props.quotas)}
-        label={language.t("context.quota.title")}
-        description={<span class="truncate">{props.summary}</span>}
-        trailing={
-          <Icon name="chevron-down" class={expanded() ? "rotate-180 transition-transform" : "transition-transform"} />
-        }
+        icon={props.group.icon}
         selected={expanded()}
-        aria-expanded={expanded()}
-        aria-controls="provider-quota-details"
-        onClick={() => setExpanded((value) => !value)}
-      />
+        aria-expanded={expandable() ? expanded() : undefined}
+        aria-controls={expandable() ? `session-context-${props.group.id}-details` : undefined}
+        onClick={expandable() ? () => setExpanded((value) => !value) : undefined}
+        trailing={
+          expandable() ? (
+            <Icon
+              name="chevron-down"
+              size="small"
+              class={expanded() ? "rotate-180 transition-transform" : "transition-transform"}
+            />
+          ) : undefined
+        }
+      >
+        <div class="flex items-center justify-between gap-3 w-full min-w-0">
+          <span class="text-12-regular text-text-weak shrink-0">{props.group.label}</span>
+          <span class="flex items-center gap-2 min-w-0">
+            <Show when={props.group.bar && props.group.bar.length > 0}>
+              <span class="session-side-panel__summary-bar">
+                <For each={props.group.bar}>
+                  {(segment) => <span style={{ width: `${segment.percent}%`, "background-color": segment.color }} />}
+                </For>
+              </span>
+            </Show>
+            <span
+              classList={{
+                "session-side-panel__summary-value": true,
+                "session-side-panel__summary-value--primary": primary(),
+                "text-12-regular": !primary(),
+                "text-12-medium": primary(),
+                "text-text-base truncate": true,
+              }}
+              style={props.group.valueColor ? { color: props.group.valueColor } : undefined}
+            >
+              {props.group.value}
+            </span>
+          </span>
+        </div>
+      </CapsuleRow>
       <Show when={expanded()}>
-        <div
-          id="provider-quota-details"
-          class="mt-1 flex flex-col gap-3 border-t border-border-weaker-base px-2 pt-2 pb-1"
-        >
-          <For each={props.quotas}>
-            {(quota) => (
-              <div class="flex flex-col gap-2">
-                <div class="flex items-baseline justify-between gap-2">
-                  <div class="text-11-regular text-text-weak">{quota.planType}</div>
-                  <Show when={quota.accountID}>
-                    {(accountID) => <div class="text-11-regular text-text-weaker select-text">{accountID()}</div>}
-                  </Show>
-                </div>
-                <div class="flex flex-col gap-3">
-                  <QuotaWindow label={language.t("context.quota.window.primary")} window={quota.primary} />
-                  <QuotaWindow label={language.t("context.quota.window.secondary")} window={quota.secondary} />
-                  <Show when={quota.reserve}>
-                    {(reserve) => (
-                      <QuotaWindow
-                        label={
-                          quota.reserveName
-                            ? `${language.t("context.quota.window.reserve")} · ${quota.reserveName}`
-                            : language.t("context.quota.window.reserve")
-                        }
-                        window={reserve()}
-                      />
-                    )}
-                  </Show>
-                </div>
-              </div>
-            )}
-          </For>
+        <div id={`session-context-${props.group.id}-details`}>
+          <Show when={!props.expandedContent && props.group.details.length > 0}>
+            <div class="session-side-panel__summary-details">
+              <For each={props.group.details}>
+                {(detail) => (
+                  <div class="session-side-panel__summary-detail">
+                    <span class="text-11-regular text-text-weaker">{detail.label}</span>
+                    <span
+                      class="text-11-regular text-text-base truncate select-text"
+                      style={detail.color ? { color: detail.color } : undefined}
+                    >
+                      {detail.value}
+                    </span>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+          <Show when={props.expandedContent}>
+            <div class="px-2 pb-2 pt-1 flex flex-col gap-3">{props.expandedContent}</div>
+          </Show>
         </div>
       </Show>
-    </Capsule>
+    </div>
   )
 }
 
-// 260921 Red 大胶囊里的可折叠分组。折叠态一行摘要 + chevron，展开态接完整内容；
-// 形态对齐 status-popover 的 section 与 QuotaCapsule 的行——外层已经是浮起胶囊，
-// 分组自身不再叠表面，否则就是「卡中卡」。
-// 260922 Red 收起态可再挂一条比例条（bar）：只剩一个总数时看不出构成，而「真实构成」
-// 恰恰是看比例比看数字有用的分组。展开态的条由 children 自己渲染。
-function CollapsibleSection(props: {
-  title: string
-  summary?: JSX.Element
-  bar?: InspectSegment[]
-  defaultOpen?: boolean
-  children: JSX.Element
-}) {
-  const [expanded, setExpanded] = createSignal(props.defaultOpen ?? false)
-  return (
-    <section data-slot="capsule-section" class="flex flex-col">
-      <CapsuleRow
-        label={props.title}
-        description={props.summary ? <span class="truncate">{props.summary}</span> : undefined}
-        trailing={
-          <Icon name="chevron-down" class={expanded() ? "rotate-180 transition-transform" : "transition-transform"} />
-        }
-        selected={expanded()}
-        aria-expanded={expanded()}
-        onClick={() => setExpanded((value) => !value)}
-      />
-      <Show when={!expanded() && props.bar && props.bar.length > 0}>
-        <div class="px-2 pt-1.5 flex">
-          <div class="h-1.5 w-full flex overflow-hidden rounded-full bg-surface-base">
-            <For each={props.bar}>
-              {(segment) => (
-                <div class="h-full" style={{ width: `${segment.percent}%`, "background-color": segment.color }} />
-              )}
-            </For>
-          </div>
-        </div>
-      </Show>
-      <Show when={expanded()}>
-        <div class="px-2 pb-2 pt-1 flex flex-col gap-3">{props.children}</div>
-      </Show>
-    </section>
-  )
-}
-
+// 260924 Red 摘要分组直接构成 Context tab；展开态继续保留完整账本、额度、构成和原始消息。
 function RawMessageContent(props: { message: Message; getParts: (id: string) => Part[]; onRendered: () => void }) {
   // 260901 cc 这里原本是 `import { File } from "@redcode-ai/ui/file"` 直接用。
   //   app.tsx 把 File 改成动态加载之后，**这一处静态引入就是那个改动的漏底**：
@@ -295,6 +291,7 @@ export function SessionContextTab(props: { setViewportRef?: (el: HTMLDivElement 
   // 260831 Red 额度是账号级事实（GlobalBus 广播 + bootstrap 首次拉取），直接从全局 store 读
   const quotaList = () => globalSync.data.provider_quota
   const summaries = useSessionContextSummaries()
+  const capsuleGroups = useCapsuleSummaryGroups(summaries)
   const { params, sessionKey, view } = useSessionLayout()
 
   const info = createMemo(() => (params.id ? sync.session.get(params.id) : undefined))
@@ -318,14 +315,10 @@ export function SessionContextTab(props: { setViewportRef?: (el: HTMLDivElement 
     { equals: same },
   )
 
-  // 260921 Red 数据集与四段摘要收单个 owner（useSessionContextSummaries）：折叠矮胶囊与
-  // 本 tab 消费同一份，避免两边各写一份摘要字符串后漂移。
+  // 260924 Red 摘要行与展开明细共用 useSessionContextSummaries，避免两处各算一份后漂移。
   const ctx = summaries.ctx
   const formatter = summaries.formatter
   const counts = summaries.counts
-  // 260922 Red 总成本（含子 session）随 childCost 一起迁进 useSessionContextSummaries——
-  // 折叠胶囊也要显示它，两处各算一份必然漂移。metrics 只被它用，一并去掉。
-  const cost = summaries.cost
 
   const systemPrompt = createMemo(() => {
     const msg = findLast(visibleUserMessages(), (m) => !!m.system)
@@ -510,7 +503,6 @@ export function SessionContextTab(props: { setViewportRef?: (el: HTMLDivElement 
       value: () => counts().assistant.toLocaleString(language.intl()),
       color: "var(--syntax-type)",
     },
-    { label: "context.stats.totalCost", value: cost, color: "var(--syntax-critical)" },
     {
       // 260831 cc 换掉原来的「上次压缩」与「自动压缩」两格（哥哥 260831 定）：前者绝大多数
       //   会话是个破折号，后者是**配置回显**而不是会话数据——压缩状态属于「状态」tab，不属于
@@ -623,154 +615,161 @@ export function SessionContextTab(props: { setViewportRef?: (el: HTMLDivElement 
           </div>
         </Show>
 
-        <CollapsibleSection title={language.t("context.summary.title")} summary={summaries.context()} defaultOpen>
-          <div class="grid grid-cols-1 @[32rem]:grid-cols-2 gap-4">
-            <For each={stats}>
-              {(stat) => (
-                <Stat
-                  label={language.t(stat.label as Parameters<typeof language.t>[0])}
-                  value={stat.value()}
-                  color={stat.color}
-                />
-              )}
-            </For>
-          </div>
-        </CollapsibleSection>
-
-        <div class="flex flex-col gap-2">
-          <Show
-            when={quotaList().length > 0}
-            fallback={
-              <div class="flex flex-col gap-2">
-                <div class="text-12-regular text-text-weak">{language.t("context.quota.title")}</div>
-                <div class="text-11-regular text-text-weaker">{language.t("context.quota.empty")}</div>
-              </div>
-            }
-          >
-            <QuotaCapsule quotas={quotaList()} summary={summaries.quota()} />
-          </Show>
-        </div>
-
-        <CollapsibleSection
-          title={language.t("context.inspect.title")}
-          summary={summaries.inspect()}
-          bar={inspectBarSegments(summaries.inspectData())}
-        >
-          <Show
-            when={inspectGroups().length > 0}
-            fallback={
-              <div class="flex flex-col gap-2">
-                <div class="text-11-regular text-text-weaker">{language.t("context.inspect.empty")}</div>
-              </div>
-            }
-          >
-            <div class="flex flex-col gap-2">
-              <div class="flex items-baseline justify-between gap-2">
-                <div class="text-11-regular text-text-weaker">
-                 {formatter().number(summaries.inspectData()?.total)} · {summaries.inspectData()?.modelID}
-                 <Show when={inspectTime()}>{(t) => <> · {t()}</>}</Show>
-                </div>
-              </div>
-              <div class="h-2 w-full rounded-full bg-surface-base overflow-hidden flex">
-                <For each={inspectGroups()}>
-                  {(group) => (
-                    <div
-                      class="h-full"
-                      style={{ width: `${group.percent}%`, "background-color": INSPECT_COLOR[group.key] }}
-                    />
-                  )}
-                </For>
-              </div>
-              <div class="grid grid-cols-1 @[32rem]:grid-cols-3 gap-4">
-                <For each={inspectGroups()}>
-                  {(group) => (
-                    <div class="flex flex-col gap-1">
-                      <div class="flex items-center gap-1 text-11-regular text-text-weak">
-                        <div class="size-2 rounded-sm" style={{ "background-color": INSPECT_COLOR[group.key] }} />
-                        <div>{inspectLabel(group.key)}</div>
-                        <div class="text-text-weaker">
-                          {formatter().number(group.tokens)} · {group.percent.toLocaleString(language.intl())}%
-                        </div>
-                      </div>
-                      <For each={group.items}>
-                        {(item) => (
-                          <div class="flex items-baseline justify-between gap-2 text-11-regular">
-                            <div class="text-text-weaker truncate select-text" title={item.label}>
-                              {item.label}
-                            </div>
-                            <div class="text-text-weak shrink-0">{formatter().number(item.tokens)}</div>
-                          </div>
+        <div class="session-side-panel__summary-rows">
+          <Index each={capsuleGroups()}>
+            {(group) => (
+              <CapsuleSummarySection
+                group={group()}
+                expandedContent={
+                  group().id === "context" ? (
+                    <div class="grid grid-cols-1 @[32rem]:grid-cols-2 gap-4">
+                      <For each={stats}>
+                        {(stat) => (
+                          <Stat
+                            label={language.t(stat.label as Parameters<typeof language.t>[0])}
+                            value={stat.value()}
+                            color={stat.color}
+                          />
                         )}
                       </For>
-                      <Show when={group.key === "tools" && group.count > group.items.length}>
-                        <div class="text-11-regular text-text-weaker">
-                          {language.t("context.inspect.more", { count: (group.count - group.items.length).toString() })}
+                    </div>
+                  ) : group().id === "quota" ? (
+                    <Show
+                      when={quotaList().length > 0}
+                      fallback={<div class="text-11-regular text-text-weaker">{language.t("context.quota.empty")}</div>}
+                    >
+                      <QuotaDetails quotas={quotaList()} />
+                    </Show>
+                  ) : group().id === "inspect" ? (
+                    <>
+                      <Show
+                        when={inspectGroups().length > 0}
+                        fallback={
+                          <div class="text-11-regular text-text-weaker">{language.t("context.inspect.empty")}</div>
+                        }
+                      >
+                        <div class="flex flex-col gap-2">
+                          <div class="flex items-baseline justify-between gap-2">
+                            <div class="text-11-regular text-text-weaker">
+                              {formatter().number(summaries.inspectData()?.total)} · {summaries.inspectData()?.modelID}
+                              <Show when={inspectTime()}>{(time) => <> · {time()}</>}</Show>
+                            </div>
+                          </div>
+                          <div class="h-2 w-full rounded-full bg-surface-base overflow-hidden flex">
+                            <For each={inspectGroups()}>
+                              {(item) => (
+                                <div
+                                  class="h-full"
+                                  style={{ width: `${item.percent}%`, "background-color": INSPECT_COLOR[item.key] }}
+                                />
+                              )}
+                            </For>
+                          </div>
+                          <div class="grid grid-cols-1 @[32rem]:grid-cols-3 gap-4">
+                            <For each={inspectGroups()}>
+                              {(item) => (
+                                <div class="flex flex-col gap-1">
+                                  <div class="flex items-center gap-1 text-11-regular text-text-weak">
+                                    <div
+                                      class="size-2 rounded-sm"
+                                      style={{ "background-color": INSPECT_COLOR[item.key] }}
+                                    />
+                                    <div>{inspectLabel(item.key)}</div>
+                                    <div class="text-text-weaker">
+                                      {formatter().number(item.tokens)} · {item.percent.toLocaleString(language.intl())}
+                                      %
+                                    </div>
+                                  </div>
+                                  <For each={item.items}>
+                                    {(entry) => (
+                                      <div class="flex items-baseline justify-between gap-2 text-11-regular">
+                                        <div class="text-text-weaker truncate select-text" title={entry.label}>
+                                          {entry.label}
+                                        </div>
+                                        <div class="text-text-weak shrink-0">{formatter().number(entry.tokens)}</div>
+                                      </div>
+                                    )}
+                                  </For>
+                                  <Show when={item.key === "tools" && item.count > item.items.length}>
+                                    <div class="text-11-regular text-text-weaker">
+                                      {language.t("context.inspect.more", {
+                                        count: (item.count - item.items.length).toString(),
+                                      })}
+                                    </div>
+                                  </Show>
+                                </div>
+                              )}
+                            </For>
+                          </div>
+                          <div class="text-11-regular text-text-weaker">{language.t("context.inspect.note")}</div>
                         </div>
                       </Show>
-                    </div>
-                  )}
-                </For>
-              </div>
-              <div class="text-11-regular text-text-weaker">{language.t("context.inspect.note")}</div>
-            </div>
-          </Show>
 
-          {/* 260829 cc 估算只在**没有真实构成**时出现。此前两块无条件并列，而快照存在时
-              估算是被完全支配的：快照把系统提示与工具定义拆到了每一条，估算却把同一坨
-              囫囵报成「其他 99.5%」——同一份东西上面拆开了、下面又报一遍还报错了名字。
-              快照是内存态、只留最后一轮，所以估算仍要留着兜底，只是让位。 */}
-          <Show when={inspectGroups().length === 0 && breakdown().length > 0}>
-            <div class="flex flex-col gap-2">
-              <div class="text-11-regular text-text-weak">{language.t("context.breakdown.title")}</div>
-              <div class="h-2 w-full rounded-full bg-surface-base overflow-hidden flex">
-                <For each={breakdown()}>
-                  {(segment) => (
-                    <div
-                      class="h-full"
-                      style={{
-                        width: `${segment.width}%`,
-                        "background-color": BREAKDOWN_COLOR[segment.key],
-                      }}
-                    />
-                  )}
-                </For>
-              </div>
-              <div class="flex flex-wrap gap-x-3 gap-y-1">
-                <For each={breakdown()}>
-                  {(segment) => (
-                    <div class="flex items-center gap-1 text-11-regular text-text-weak">
-                      <div class="size-2 rounded-sm" style={{ "background-color": BREAKDOWN_COLOR[segment.key] }} />
-                      <div>{breakdownLabel(segment.key)}</div>
-                      <div class="text-text-weaker">{segment.percent.toLocaleString(language.intl())}%</div>
-                    </div>
-                  )}
-                </For>
-              </div>
-              <div class="text-11-regular text-text-weaker">{language.t("context.breakdown.note")}</div>
-            </div>
-          </Show>
+                      {/* 260829 cc 估算只在没有真实构成时出现，真实快照不可用时仍留估算兜底。 */}
+                      <Show when={inspectGroups().length === 0 && breakdown().length > 0}>
+                        <div class="flex flex-col gap-2">
+                          <div class="text-11-regular text-text-weak">{language.t("context.breakdown.title")}</div>
+                          <div class="h-2 w-full rounded-full bg-surface-base overflow-hidden flex">
+                            <For each={breakdown()}>
+                              {(segment) => (
+                                <div
+                                  class="h-full"
+                                  style={{
+                                    width: `${segment.width}%`,
+                                    "background-color": BREAKDOWN_COLOR[segment.key],
+                                  }}
+                                />
+                              )}
+                            </For>
+                          </div>
+                          <div class="flex flex-wrap gap-x-3 gap-y-1">
+                            <For each={breakdown()}>
+                              {(segment) => (
+                                <div class="flex items-center gap-1 text-11-regular text-text-weak">
+                                  <div
+                                    class="size-2 rounded-sm"
+                                    style={{ "background-color": BREAKDOWN_COLOR[segment.key] }}
+                                  />
+                                  <div>{breakdownLabel(segment.key)}</div>
+                                  <div class="text-text-weaker">{segment.percent.toLocaleString(language.intl())}%</div>
+                                </div>
+                              )}
+                            </For>
+                          </div>
+                          <div class="text-11-regular text-text-weaker">{language.t("context.breakdown.note")}</div>
+                        </div>
+                      </Show>
 
-          <Show when={systemPrompt()}>
-            {(prompt) => (
-              <div class="flex flex-col gap-2">
-                <div class="text-11-regular text-text-weak">{language.t("context.systemPrompt.title")}</div>
-                <div class="border border-border-base rounded-md bg-surface-base px-3 py-2 select-text">
-                  <Markdown text={prompt()} class="text-12-regular" />
-                </div>
-              </div>
+                      <Show when={systemPrompt()}>
+                        {(prompt) => (
+                          <div class="flex flex-col gap-2">
+                            <div class="text-11-regular text-text-weak">{language.t("context.systemPrompt.title")}</div>
+                            <div class="border border-border-base rounded-md bg-surface-base px-3 py-2 select-text">
+                              <Markdown text={prompt()} class="text-12-regular" />
+                            </div>
+                          </div>
+                        )}
+                      </Show>
+                    </>
+                  ) : group().id === "rawMessages" ? (
+                    <Accordion multiple>
+                      <For each={summaries.messages()}>
+                        {(message) => (
+                          <RawMessage
+                            message={message}
+                            getParts={getParts}
+                            onRendered={restoreScroll}
+                            time={formatter().time}
+                          />
+                        )}
+                      </For>
+                    </Accordion>
+                  ) : undefined
+                }
+              />
             )}
-          </Show>
-        </CollapsibleSection>
-
-        <CollapsibleSection title={language.t("context.rawMessages.title")} summary={summaries.rawMessages()}>
-          <Accordion multiple>
-            <For each={summaries.messages()}>
-              {(message) => (
-                <RawMessage message={message} getParts={getParts} onRendered={restoreScroll} time={formatter().time} />
-              )}
-            </For>
-          </Accordion>
-        </CollapsibleSection>
+          </Index>
+        </div>
       </div>
     </ScrollView>
   )

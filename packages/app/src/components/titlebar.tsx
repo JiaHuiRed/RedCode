@@ -24,8 +24,7 @@ import { base64Encode } from "@redcode-ai/core/util/encode"
 import { Avatar as AvatarV2 } from "@redcode-ai/ui/v2/components/avatar-v2.jsx"
 import { displayName, getProjectAvatarSource, projectForSession } from "@/pages/layout/helpers"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import { StatusPopover } from "./status-popover"
-import { SDKProvider } from "@/context/sdk"
+import { StatusIndicator } from "./status-indicator"
 
 const legacyTitlebarHeight = 40
 const v2TitlebarHeight = 44
@@ -252,13 +251,11 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
     return tabsStore.find((tab) => tab.href === href)
   }
 
-  // 260609 Red 当前路由所在项目目录（params.dir 是 base64，解码成真实路径）。
-  //   新会话页(无 params.id)既无 currentSessionTab 也未必在 tabsStore，必须直接认 params.dir，
-  //   否则 statusDir 会兜底到 projects()[0]——多项目时那是"别的项目"，导致 popover 读 A 项目 store、
-  //   却展示 B 项目的 MCP 状态，永远对不上→"未配置 MCPs"。
+  // 260924 Red 当前路由所在项目目录（params.dir 是 base64，解码成真实路径）。
+  //   新会话页(无 params.id)没有胶囊入口，但仍显示全局健康状态。
   const routeDir = createMemo(() => (params.dir ? decodeDirectory(params.dir) : undefined))
 
-  // 260608 Yuqi 首页也显示 MCP 状态：当前路由项目 → 当前会话 dir → 第一个 tabs → 第一个项目的目录；都不存在则隐藏
+  // 260924 Red 当前项目 → 当前会话 → 已打开会话 → 首个项目；都不存在时隐藏健康状态入口。
   const statusDir = createMemo(() => {
     const fromRoute = routeDir()
     if (fromRoute) return fromRoute
@@ -269,8 +266,14 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
     return projects()[0]?.worktree
   })
 
-  // 260609 Red titlebar 只负责按 routeDir/session/tab 选择状态展示目录；MCP query 的激活由 Layout
-  //   的 route-derived activeMcpDirectory 单独负责。首页不再通过 titlebar 触发连接。
+  const openStatus = () => {
+    if (!(params.dir && params.id)) return
+    const key = `${params.dir}/${params.id}`
+    layout.tabs(key).setActive("status")
+    layout.view(key).reviewPanel.open()
+  }
+
+  // 260924 Red titlebar 保留健康灯；会话内点击切换到固定 Status tab 并展开胶囊。
   const closeCurrentSessionTab = () => {
     const tab = currentSessionTab()
     if (!tab) return false
@@ -427,14 +430,10 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
         </Show>
         <div class="min-w-0 flex-1" />
       </div>
-      <Show when={statusDir()} keyed>
-        {(dir) => (
-          <SDKProvider directory={dir}>
-            <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
-              <StatusPopover />
-            </Tooltip>
-          </SDKProvider>
-        )}
+      <Show when={statusDir()}>
+        <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
+          <StatusIndicator onClick={params.id ? openStatus : undefined} />
+        </Tooltip>
       </Show>
       <TitlebarUpdatePill update={props.update} />
     </div>

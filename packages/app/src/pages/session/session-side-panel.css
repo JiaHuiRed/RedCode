@@ -8,10 +8,8 @@
   pointer-events: none;
 }
 
-/* 260921 Red 合并后的单容器：原「小 summary 胶囊 + 大抽屉」两个元素合一。
-   折叠态是贴边 HUD（header + 六段摘要行），
-   展开态恢复原侧边栏全高（tabs + 完整内容）。高度过渡，两层内容交叉淡入，
-   aside 是 absolute 定位，高度动画不牵动会话区的 flex 布局。 */
+/* 260924 Red 合并后的单容器：compact 与 expanded 共用固定 tab strip 和 active content。
+   高度过渡，aside 是 absolute 定位，高度动画不牵动会话区的 flex 布局。 */
 .session-side-panel__capsule {
   transition:
     transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
@@ -36,22 +34,21 @@
       height 240ms cubic-bezier(0.22, 1, 0.36, 1),
       opacity 160ms ease-out;
 
-     /* 260922 Red 折叠态改「横窄、不过度竖长」：六段 HUD 摘要已经能填满上部，
-         不再用原先 52vh 给下半段留出大块空黑；展开态仍恢复全高侧栏。
-         24px 圆角在这个宽上已经接近药丸，再圆就成椭圆了。 */
-      &.session-side-panel__capsule--closed {
-        width: min(320px, calc(100vw - 24px));
-       height: clamp(240px, 28vh, 320px);
-       border-radius: 24px;
+    /* 260924 Red compact 显示当前 tab 的可滚动 viewport，展开态仍恢复全高侧栏。
+          24px 圆角在这个宽上已经接近药丸，再圆就成椭圆了。 */
+    &.session-side-panel__capsule--closed {
+      width: min(320px, calc(100vw - 24px));
+      height: clamp(240px, 28vh, 320px);
+      border-radius: 24px;
       transform: none;
       opacity: 1;
       pointer-events: auto;
     }
 
     /* 展开：原侧边栏全高（top 56 + bottom 12） */
-  &.session-side-panel__capsule--open {
+    &.session-side-panel__capsule--open {
       width: min(var(--panel-width, 420px), 560px, calc(100vw - 24px));
-    height: calc(100% - 68px);
+      height: calc(100% - 68px);
       transform: none;
       opacity: 1;
       pointer-events: auto;
@@ -70,45 +67,25 @@
     transform: translateY(-8px) scale(0.98);
     opacity: 0;
   }
-
 }
 
-/* 切换行：宽桌面永驻。折叠态是矮胶囊 header，展开态是抽屉顶部一行 */
+/* 固定导航：compact 与 expanded 共用同一条 tab strip */
 .session-side-panel__header {
   flex: 0 0 auto;
-  padding: 6px 6px 2px;
+  min-width: 0;
 }
 
-.session-side-panel__header [data-component="capsule-row"] {
-  min-height: 32px;
+.session-side-panel__header [data-system-tab] {
+  min-height: 28px;
 }
 
-/* body：两层内容的容器。宽桌面下 rows/panel 绝对定位互叠，中桌面 panel 在 flex
-   流内、ResizeHandle 跟在后面，保持原面板布局 */
+/* body：宽桌面用胶囊容纳导航与内容，中桌面仍保持参与布局的面板 */
 .session-side-panel__body {
   position: relative;
   display: flex;
   min-width: 0;
   flex: 1 1 auto;
   overflow: hidden;
-}
-
-/* 折叠态层：摘要行，展开时淡出让位给面板层 */
-.session-side-panel__rows {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  padding: 0 6px 6px;
-  /* 竖长之后四段全展开可能超出胶囊高度，超出就滚 */
-  overflow-y: auto;
-  transition: opacity 140ms ease-out;
-}
-
-.session-side-panel__rows--hidden {
-  opacity: 0;
-  pointer-events: none;
 }
 
 .session-side-panel__summary-rows {
@@ -119,7 +96,7 @@
   padding: 0 2px;
 }
 
-/* 折叠矮胶囊里的摘要行压紧：常态态要小，行高按一行字加呼吸即可 */
+/* Context tab 摘要行压紧：常态高度按一行字加呼吸即可 */
 .session-side-panel__summary-rows [data-component="capsule-row"] {
   min-height: 24px;
   padding: 2px 8px;
@@ -149,7 +126,7 @@
   min-width: 0;
 }
 
-/* 260922 Red 真实构成在收起态也要看得出三块占比：值左侧一条 64px 的堆叠条。
+/* 260922 Red 真实构成摘要行要看得出三块占比：值左侧一条 64px 的堆叠条。
    段宽用 percent、段色由 inspectBarSegments 给（与上下文 tab 同源）。 */
 .session-side-panel__summary-bar {
   display: flex;
@@ -182,9 +159,14 @@
   inset: 0;
 }
 
-.session-side-panel__capsule--closed .session-side-panel__panel {
+.session-side-panel__capsule--closed:not(.session-side-panel__capsule--wide) .session-side-panel__panel {
   opacity: 0;
   pointer-events: none;
+}
+
+.session-side-panel__capsule--wide.session-side-panel__capsule--closed .session-side-panel__panel {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 #review-panel.session-side-panel__capsule {
@@ -256,6 +238,13 @@
         padding-right: 5px;
       }
     }
+
+    .session-side-panel__system-tab {
+      flex: 0 0 20%;
+      max-width: none;
+      justify-content: center;
+      padding-inline: 0;
+    }
   }
 
   .session-side-panel__tab-end {
@@ -268,7 +257,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .session-side-panel__rows,
   .session-side-panel__summary-rows,
   .session-side-panel__panel,
   .session-side-panel__capsule {

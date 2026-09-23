@@ -1,8 +1,6 @@
-import { For, Show, Suspense, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
+import { For, Show, Suspense, createEffect, createMemo, createSignal, lazy, onCleanup, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
-import { CapsuleRow } from "@redcode-ai/ui/capsule"
-import { Icon } from "@redcode-ai/ui/icon"
 import { ResizeHandle } from "@redcode-ai/ui/resize-handle"
 import { Tabs } from "@redcode-ai/ui/tabs"
 import { IconButton } from "@redcode-ai/ui/icon-button"
@@ -12,131 +10,58 @@ import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, close
 import type { DragEvent } from "@thisbeyond/solid-dnd"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
-import { SessionContextUsage } from "@/components/session-context-usage"
 import { SessionContextTab, SessionPlanTab, SortableTab, FileVisual } from "@/components/session"
-import { useCapsuleSummaryGroups, type CapsuleSummaryGroup } from "@/components/session/session-context-summary"
 import { useCommand } from "@/context/command"
+import { SDKProvider } from "@/context/sdk"
 import { useFile, type SelectedLineRange } from "@/context/file"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
+import { decodeDirectory } from "@/pages/directory-layout"
 import { createFileTabListSync } from "@/pages/session/file-tab-scroll"
 import { FileTabContent } from "@/pages/session/file-tabs"
 import {
   createOpenSessionFileTab,
   createSessionTabs,
   getTabReorderIndex,
+  SYSTEM_TABS,
   type Sizing,
   type SystemTab,
 } from "@/pages/session/helpers"
 import { setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
 
-// 260922 Red 折叠矮胶囊的分组行。形态对齐 Codex 侧栏：收起时每段只有一行
-// （图标 + 段名 + 关键数字 + chevron），点开才铺明细。数据全部来自
-// useCapsuleSummaryGroups（与上下文 tab 同源），这里只管渲染。
-function CapsuleSummarySection(props: { group: CapsuleSummaryGroup }) {
-  const [expanded, setExpanded] = createSignal(props.group.defaultExpanded ?? false)
-  const expandable = () => props.group.details.length > 0
-  const primary = () => props.group.id === "context" || props.group.id === "cacheHit" || props.group.id === "cost"
-  return (
-    <div
-      classList={{
-        "session-side-panel__summary-group": true,
-        "session-side-panel__summary-group--primary": primary(),
-      }}
-    >
-      <CapsuleRow
-        icon={props.group.icon}
-        selected={expanded()}
-        aria-expanded={expandable() ? expanded() : undefined}
-        onClick={expandable() ? () => setExpanded((value) => !value) : undefined}
-        trailing={
-          expandable() ? (
-            <Icon
-              name="chevron-down"
-              size="small"
-              class={expanded() ? "rotate-180 transition-transform" : "transition-transform"}
-            />
-          ) : undefined
-        }
-      >
-        <div class="flex items-center justify-between gap-3 w-full min-w-0">
-          <span class="text-12-regular text-text-weak shrink-0">{props.group.label}</span>
-          <span class="flex items-center gap-2 min-w-0">
-            {/* 260922 Red 真实构成收起时只剩一个总数，看不出构成，补一条占比条 */}
-            <Show when={props.group.bar && props.group.bar.length > 0}>
-              <span class="session-side-panel__summary-bar">
-                <For each={props.group.bar}>
-                  {(segment) => <span style={{ width: `${segment.percent}%`, "background-color": segment.color }} />}
-                </For>
-              </span>
-            </Show>
-            <span
-              classList={{
-                "session-side-panel__summary-value": true,
-                "session-side-panel__summary-value--primary": primary(),
-                "text-12-regular": !primary(),
-                "text-12-medium": primary(),
-                "text-text-base truncate": true,
-              }}
-              style={props.group.valueColor ? { color: props.group.valueColor } : undefined}
-            >
-              {props.group.value}
-            </span>
-          </span>
-        </div>
-      </CapsuleRow>
-      <Show when={expanded()}>
-        <div class="session-side-panel__summary-details">
-          <For each={props.group.details}>
-            {(detail) => (
-              <div class="session-side-panel__summary-detail">
-                <span class="text-11-regular text-text-weaker">{detail.label}</span>
-                <span
-                  class="text-11-regular text-text-base truncate select-text"
-                  style={detail.color ? { color: detail.color } : undefined}
-                >
-                  {detail.value}
-                </span>
-              </div>
-            )}
-          </For>
-        </div>
-      </Show>
-    </div>
-  )
-}
+const SessionStatusTab = lazy(() =>
+  import("@/components/session/session-status-tab").then((module) => ({ default: module.SessionStatusTab })),
+)
 
-function SessionCapsuleSummaryRows() {
-  const groups = useCapsuleSummaryGroups()
-  return (
-    <div class="session-side-panel__summary-rows">
-      <For each={groups()}>{(group) => <CapsuleSummarySection group={group} />}</For>
-    </div>
-  )
-}
+// 260924 Red 固定入口仍用 Tabs.Trigger，保留 tab/tabpanel 关联与原生方向键导航。
+function SystemTabButton(props: {
+  tab: SystemTab
+  active: () => boolean
+  children: JSX.Element
+  onRepeat: () => void
+}) {
+  const repeat = () => {
+    if (props.active()) props.onRepeat()
+  }
 
-// 260923 Red C5：固定 system tab strip 里的一个入口（文档第 7 节）。当前 tab 高亮；
-// 点击后的统一行为在 selectSystemTab（文档第 8 节）。折叠态与展开态共用这一份。
-function SystemTabButton(props: { tab: SystemTab; active: boolean; label: string; onClick: () => void }) {
   return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={props.active}
+    <Tabs.Trigger
+      value={props.tab}
       data-system-tab={props.tab}
-      classList={{
-        "flex-1 min-w-0 truncate rounded-md px-2 py-1 text-center transition-colors": true,
-        "text-12-medium text-text-base bg-surface-raised-base": props.active,
-        "text-12-regular text-text-weak hover:text-text-base": !props.active,
+      class="session-side-panel__system-tab"
+      onPointerDown={repeat}
+      onKeyDown={(event) => {
+        if (!props.active() || (event.key !== "Enter" && event.key !== " ")) return
+        event.preventDefault()
+        repeat()
       }}
-      onClick={props.onClick}
     >
-      {props.label}
-    </button>
+      {props.children}
+    </Tabs.Trigger>
   )
 }
 
@@ -160,13 +85,14 @@ export function SessionSidePanel(props: {
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const isWideDesktop = createMediaQuery("(min-width: 1280px)")
-  const reviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
-  const open = reviewOpen
+  const open = createMemo(() => isDesktop() && view().reviewPanel.opened())
+  const panelVisible = createMemo(() => isWideDesktop() || open())
   const reviewTab = createMemo(() => isDesktop())
+  const sessionDirectory = createMemo(() => (params.dir ? decodeDirectory(params.dir) : undefined))
   const panelWidth = createMemo(() => {
     return `${layout.session.width()}px`
   })
-  const flowPanelWidth = createMemo(() => (reviewOpen() ? panelWidth() : "0px"))
+  const flowPanelWidth = createMemo(() => (open() ? panelWidth() : "0px"))
 
   const normalizeTab = (tab: string) => {
     if (!tab.startsWith("file://")) return tab
@@ -198,16 +124,19 @@ export function SessionSidePanel(props: {
   const activeTab = tabState.activeTab
   const activeFileTab = tabState.activeFileTab
 
-  // 260923 Red C5：点 system tab 的统一行为（文档第 8 节）——tab 本身就是 launcher +
-  // selector：当前 tab 且已展开时再点一次即收起；否则切到该 tab，折叠态下顺带展开。
-  // 有了它，strip 不需要再挂一个单独的 chevron 大开关。
-  const selectSystemTab = (tab: SystemTab) => {
-    if (activeTab() === tab && open()) {
-      view().reviewPanel.close()
+  const changeTab = (tab: string) => {
+    if (!SYSTEM_TABS.has(tab)) {
+      openTab(tab)
       return
     }
     tabs().setActive(tab)
     if (!open()) view().reviewPanel.open()
+  }
+
+  const repeatSystemTab = (tab: SystemTab) => {
+    if (activeTab() !== tab) return
+    if (open()) view().reviewPanel.close()
+    else view().reviewPanel.open()
   }
 
   let drawer: HTMLElement | undefined
@@ -243,12 +172,10 @@ export function SessionSidePanel(props: {
     measure()
   }
 
-  // 260921 Red 收起时不能立刻卸载内容：aside 上的 opacity/transform 过渡需要 DOM 载体
-  // 才播得出来，直接 <Show when={open()}> 会在关闭的那一帧清空子树，视觉上就是"瞬间消失"。
-  // 延后一段过渡时长再摘，展开时同步恢复。
-  const [rendered, setRendered] = createSignal(open())
+  // 260924 Red 宽桌面 compact 仍要显示当前 tab 内容；中桌面收起时延迟卸载以保留关闭过渡。
+  const [rendered, setRendered] = createSignal(open() || isWideDesktop())
   createEffect(() => {
-    if (open()) {
+    if (open() || isWideDesktop()) {
       setRendered(true)
       return
     }
@@ -276,6 +203,11 @@ export function SessionSidePanel(props: {
       })
     }
     wasOpen = next
+  })
+
+  createEffect(() => {
+    if (!isWideDesktop() || open() || !activeFileTab()) return
+    tabs().setActive("context")
   })
 
   onCleanup(() => {
@@ -357,7 +289,7 @@ export function SessionSidePanel(props: {
           }}
           id="review-panel"
           data-component="session-side-panel"
-          aria-label={language.t("session.tab.review")}
+          aria-label={language.t("session.panel.workspace")}
           aria-hidden={!open() && !isWideDesktop()}
           inert={!open() && !isWideDesktop()}
           class="session-side-panel__capsule relative min-w-0 h-full flex flex-col shrink-0 overflow-hidden bg-transparent"
@@ -372,7 +304,6 @@ export function SessionSidePanel(props: {
             // 260921 Red wide 态高度走 inline：aside class 上的 h-full（height:100%）会跟
             // CSS 里的分态高度打架，曾出现「矮胶囊内容露顶、全高壳留在下面」一屏黑。
             // inline 优先级最高，折叠矮胶囊 ↔ 展开全高从此不受类名竞争影响。
-            // 折叠态刻意压到摘要内容附近：这是常态态，要做成贴边 HUD 而不是小卡片。
             // 260922 Red 折叠态收短：高度与 CSS 里的分态值保持一致，
             // 别让 inline 和 class 各说一套（这个 inline 优先级压过 CSS，改一面等于没改）。
             height: isWideDesktop()
@@ -384,85 +315,21 @@ export function SessionSidePanel(props: {
               : undefined,
           }}
         >
-          {/* 260921 Red 宽桌面下的切换行：折叠态它是矮胶囊的 header，展开态它是抽屉
-             顶部的一行——必须永驻可见。曾把它和四段摘要一起淡出，结果展开后再没有
-             可见的收起入口，折叠态直接变成触发不到的死状态。中桌面不渲染。
-             260923 Red C5：这行换成固定 system tab strip（文档第 7 节），compact 与
-             expanded 都在；收起不再靠单独的 chevron 大开关，而是「再点当前 tab」
-             （文档第 8 节：tab 本身就是 launcher + selector）。status 待 C6/C7 把内容
-             拆进来后再补上——现在渲染它只会是一个点进去没有内容的死项。 */}
-          <Show when={isWideDesktop()}>
-            <div class="session-side-panel__header">
-              <div
-                ref={(el) => {
-                  systemTabStrip = el
-                }}
-                role="tablist"
-                aria-controls="review-panel"
-                aria-label={language.t("session.panel.reviewAndFiles")}
-                class="flex items-center gap-0.5 min-h-8"
-              >
-                <Show when={reviewTab() && props.canReview()}>
-                  <SystemTabButton
-                    tab="review"
-                    active={activeTab() === "review"}
-                    label={language.t("session.tab.review")}
-                    onClick={() => selectSystemTab("review")}
-                  />
-                </Show>
-                <SystemTabButton
-                  tab="context"
-                  active={activeTab() === "context"}
-                  label={language.t("session.tab.context")}
-                  onClick={() => selectSystemTab("context")}
-                />
-                <SystemTabButton
-                  tab="outline"
-                  active={activeTab() === "outline"}
-                  label={language.t("session.tab.outline")}
-                  onClick={() => selectSystemTab("outline")}
-                />
-                <SystemTabButton
-                  tab="plan"
-                  active={activeTab() === "plan"}
-                  label={language.t("session.tab.plan")}
-                  onClick={() => selectSystemTab("plan")}
-                />
-              </div>
-            </div>
-          </Show>
-
           <div class="session-side-panel__body">
-            {/* 折叠态（宽桌面）：HUD 分组行，与上下文 tab 的摘要同源
-                （useCapsuleSummaryGroups）。展开时淡出让位给面板层。 */}
-            <Show when={isWideDesktop()}>
-              <div
-                class="session-side-panel__rows"
-                classList={{ "session-side-panel__rows--hidden": open() }}
-                aria-hidden={open()}
-              >
-                {/* inspect 查询首轮无缓存时会向最近的 Suspense 抛；这层在面板自己的
-                    Suspense 之外，必须自带边界，否则会一路抛到 app 级 Splash */}
-                <Suspense fallback={<div class="flex-1 min-h-0" />}>
-                  <SessionCapsuleSummaryRows />
-                </Suspense>
-              </div>
-            </Show>
-
             <Show when={rendered()}>
               <div
                 class="session-side-panel__panel"
-                aria-hidden={!open()}
-                inert={!open()}
-                classList={{ "pointer-events-none": !open() }}
+                aria-hidden={!panelVisible()}
+                inert={!panelVisible()}
+                classList={{ "pointer-events-none": !panelVisible() }}
               >
                 <div class="size-full flex px-2 py-2">
                   <div
-                    aria-hidden={!reviewOpen()}
-                    inert={!reviewOpen()}
+                    aria-hidden={!panelVisible()}
+                    inert={!panelVisible()}
                     class="session-side-panel__surface relative min-w-0 h-full flex-1 overflow-hidden"
                     classList={{
-                      "pointer-events-none": !reviewOpen(),
+                      "pointer-events-none": !panelVisible(),
                     }}
                   >
                     <div class="size-full min-w-0 h-full">
@@ -474,43 +341,52 @@ export function SessionSidePanel(props: {
                       >
                         <DragDropSensors />
                         <ConstrainDragYAxis />
-                        <Tabs value={activeTab()} onChange={openTab}>
-                          <div class="sticky top-0 shrink-0 flex">
-                            <Tabs.List
-                              class="session-side-panel__tab-list"
-                              ref={(el: HTMLDivElement) => {
-                                const stop = createFileTabListSync({ el, contextOpen })
-                                onCleanup(stop)
-                              }}
+                        <Tabs value={activeTab()} onChange={changeTab}>
+                          <Tabs.List
+                            class="session-side-panel__tab-list session-side-panel__header"
+                            aria-label={language.t("session.panel.workspace")}
+                            ref={(el: HTMLDivElement) => {
+                              systemTabStrip = el
+                              const stop = createFileTabListSync({ el, contextOpen })
+                              onCleanup(stop)
+                            }}
+                          >
+                            <SystemTabButton
+                              tab="review"
+                              active={() => activeTab() === "review"}
+                              onRepeat={() => repeatSystemTab("review")}
                             >
-                              <Show when={reviewTab() && props.canReview()}>
-                                <Tabs.Trigger value="review">
-                                  <div class="flex items-center gap-1.5">
-                                    <div>{language.t("session.tab.review")}</div>
-                                  </div>
-                                </Tabs.Trigger>
-                              </Show>
-                              {/* 260923 Red C4：Context 是固定 system tab——入口永在、不可关闭
-                            （文档第 14 节）。不再由 contextOpen() 决定存在，也不再挂关闭按钮与
-                            中键关闭：入口的存在性从此与状态解耦。 */}
-                              <Tabs.Trigger value="context">
-                                <div class="flex items-center gap-2">
-                                  <SessionContextUsage variant="indicator" />
-                                  <div>{language.t("session.tab.context")}</div>
-                                </div>
-                              </Tabs.Trigger>
-                              {/* 260901 cc 轮次标签：整份日志的轮次目录，点一条翻页并跳过去 */}
-                              <Tabs.Trigger value="outline">
-                                <div class="flex items-center gap-1.5">
-                                  <div>{language.t("session.tab.outline")}</div>
-                                </div>
-                              </Tabs.Trigger>
-                              {/* 260615 Red Plan 标签：展示当前会话 todo 计划进度 */}
-                              <Tabs.Trigger value="plan">
-                                <div class="flex items-center gap-1.5">
-                                  <div>{language.t("session.tab.plan")}</div>
-                                </div>
-                              </Tabs.Trigger>
+                              {language.t("session.tab.review")}
+                            </SystemTabButton>
+                            <SystemTabButton
+                              tab="context"
+                              active={() => activeTab() === "context"}
+                              onRepeat={() => repeatSystemTab("context")}
+                            >
+                              {language.t("session.tab.context")}
+                            </SystemTabButton>
+                            <SystemTabButton
+                              tab="outline"
+                              active={() => activeTab() === "outline"}
+                              onRepeat={() => repeatSystemTab("outline")}
+                            >
+                              {language.t("session.tab.outline")}
+                            </SystemTabButton>
+                            <SystemTabButton
+                              tab="plan"
+                              active={() => activeTab() === "plan"}
+                              onRepeat={() => repeatSystemTab("plan")}
+                            >
+                              {language.t("session.tab.plan")}
+                            </SystemTabButton>
+                            <SystemTabButton
+                              tab="status"
+                              active={() => activeTab() === "status"}
+                              onRepeat={() => repeatSystemTab("status")}
+                            >
+                              {language.t("session.tab.status")}
+                            </SystemTabButton>
+                            <Show when={!isWideDesktop() || open()}>
                               <SortableProvider ids={openedTabs()}>
                                 <For each={openedTabs()}>
                                   {(tab) => <SortableTab tab={tab} onTabClose={tabs().close} />}
@@ -536,8 +412,8 @@ export function SessionSidePanel(props: {
                                   />
                                 </TooltipKeybind>
                               </div>
-                            </Tabs.List>
-                          </div>
+                            </Show>
+                          </Tabs.List>
 
                           {/* 260822 cc 面板自己的 Suspense 边界。少了它，任何一个 tab 里的异步读
                         （useQuery/createResource）一进入无数据 pending，就会一路抛到 app.tsx:198
@@ -545,11 +421,9 @@ export function SessionSidePanel(props: {
                         「上下文」tab 的 context-inspect 查询就这么干过（见该文件里 placeholderData
                         上方那段）。边界放在这里，最坏情况也只是面板这一块空一下。 */}
                           <Suspense fallback={<div class="flex-1 min-h-0" />}>
-                            <Show when={reviewTab() && props.canReview()}>
-                              <Tabs.Content value="review" class="flex flex-col h-full overflow-hidden contain-strict">
-                                <Show when={reviewOpen() && activeTab() === "review"}>{props.reviewPanel()}</Show>
-                              </Tabs.Content>
-                            </Show>
+                            <Tabs.Content value="review" class="flex flex-col h-full overflow-hidden contain-strict">
+                              <Show when={panelVisible() && activeTab() === "review"}>{props.reviewPanel()}</Show>
+                            </Tabs.Content>
 
                             <Tabs.Content value="empty" class="flex flex-col h-full overflow-hidden contain-strict">
                               <Show when={activeTab() === "empty"}>
@@ -589,6 +463,20 @@ export function SessionSidePanel(props: {
                                 <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
                                   <SessionPlanTab />
                                 </div>
+                              </Show>
+                            </Tabs.Content>
+
+                            <Tabs.Content value="status" class="flex flex-col h-full overflow-hidden contain-strict">
+                              <Show when={activeTab() === "status"}>
+                                <Suspense fallback={<div class="flex-1 min-h-0" />}>
+                                  <Show when={sessionDirectory()}>
+                                    {(directory) => (
+                                      <SDKProvider directory={directory()}>
+                                        <SessionStatusTab shown={() => panelVisible() && activeTab() === "status"} />
+                                      </SDKProvider>
+                                    )}
+                                  </Show>
+                                </Suspense>
                               </Show>
                             </Tabs.Content>
 

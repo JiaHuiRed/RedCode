@@ -12,10 +12,8 @@ import { same } from "@/utils/same"
 import { getSessionContextMetrics } from "./session-context-metrics"
 import { createSessionContextFormatter } from "./session-context-format"
 
-// 260921 Red 从 session-context-tab.tsx 迁出。右侧审查栏的常态态是「贴边矮胶囊」，
-// 要显示四段摘要（上下文 / 套餐额度 / 真实构成 / 原始消息），而同一批摘要字符串
-// 上下文 tab 的折叠分组也在用——两边各写一份必然漂移，摘要是共享概念，收单个 owner。
-// quota 辅助函数被摘要与 tab 的展开态同时消费，随迁。
+// 260921 Red 从 session-context-tab.tsx 迁出。Context tab 的摘要行与展开明细共用一份数据，
+// quota 辅助函数也由摘要和额度明细共同消费，避免重复计算后漂移。
 
 export type QuotaWindowData = NonNullable<ProviderQuota["primary"]>
 // 260831 Red hey-api 把数字字段生成为 number | "NaN" | "Infinity" | "-Infinity" 的 union，
@@ -58,16 +56,14 @@ const quotaCompactSummary = (quota: ProviderQuota, locale: string) => {
 const emptyMessages: Message[] = []
 
 /**
- * 右侧审查栏共用的一组会话上下文数据与四段摘要。
+ * Context tab 共用的一组会话上下文数据与摘要。
  *
  * 消费方：
- * - `SessionSidePanel` 折叠态矮胶囊：只读 context/quota/inspect/rawMessages 四个摘要
- * - `SessionContextTab` 展开态：摘要 + messages/counts/metrics/formatter/inspectData 明细
+ * - `SessionContextTab`：摘要行及其展开明细
  *
  * inspect 查询带 placeholderData：solid-query 的 useQuery 内部是 createResource，
  * key 一变（每轮请求都变）就成「无缓存 pending」，直接读 .data 会向最近的 Suspense 抛。
- * 折叠胶囊在 app 级 Suspense 之内、面板自己的 Suspense 之外，少了这一行，
- * 每次工具调用都会把整棵树换成满屏 Splash（见 session-context-tab.tsx 同款注释）。
+ * Context 内容有自己的 Suspense 边界，少了这一行，每次工具调用都会把整棵树换成满屏 Splash。
  */
 export function useSessionContextSummaries() {
   const sync = useSync()
@@ -180,10 +176,10 @@ export function useSessionContextSummaries() {
   }
 }
 
-/** 折叠矮胶囊里一段分组的明细行。value 已格式化；color 走 --syntax-* token，不给就用默认色。 */
+/** Context tab 一段分组的明细行。value 已格式化；color 走 --syntax-* token，不给就用默认色。 */
 export type CapsuleSummaryDetail = { label: string; value: string; color?: string }
 
-/** 折叠矮胶囊的一段分组：收起只有一行关键数字，点开才铺明细。 */
+/** Context tab 的摘要分组：收起显示关键数字，展开显示明细。 */
 export type CapsuleSummaryGroup = {
   id: "context" | "cacheHit" | "cost" | "quota" | "inspect" | "rawMessages"
   icon: IconProps["name"]
@@ -192,7 +188,7 @@ export type CapsuleSummaryGroup = {
   valueColor?: string
   /** 收起态也要一眼看出占比的堆叠条（目前只有「真实构成」用）。 */
   bar?: InspectSegment[]
-  /** 折叠态默认铺开明细；默认收起，让胶囊只承担 HUD 摘要。 */
+  /** 默认铺开明细；适用于进入 Context 后优先展示账本。 */
   defaultExpanded?: boolean
   details: CapsuleSummaryDetail[]
 }
@@ -210,24 +206,22 @@ const quotaPeakPercent = (quotas: ProviderQuota[]) =>
   )
 
 /**
- * 260922 Red 折叠矮胶囊的状态分组明细，形态对齐 Codex 侧栏：收起一行只留关键数字，
- * 点开才铺明细。与上下文摘要同一个 owner（useSessionContextSummaries），侧栏只负责渲染
- * ——两边各算一份明细必然漂移。
+ * 260924 Red Context tab 的摘要分组明细，收起一行只留关键数字，点开才铺明细。
+ * 与上下文账本同一个 owner（useSessionContextSummaries），避免重复计算后漂移。
  *
- * 收起态的 value 刻意只取**一个**字段，其余全部下放到 details：胶囊竖长横窄之后，
+ * 收起态的 value 刻意只取**一个**字段，其余全部下放到 details：行宽有限时，
  * 「102 消息数 · 13.4M · 单次命中率 96.7%」这种串在这一行里只剩半截，满值没意义。
  */
-export function useCapsuleSummaryGroups() {
+export function useCapsuleSummaryGroups(summaries: ReturnType<typeof useSessionContextSummaries>) {
   const language = useLanguage()
   const globalSync = useServerSync()
-  const summaries = useSessionContextSummaries()
   const formatter = summaries.formatter
   const counts = summaries.counts
   const ctx = summaries.ctx
   const locale = () => language.intl()
 
-  // 260922 Red 折叠态改成状态 HUD：主行常驻总量、缓存命中、成本，
-  // 详情里保留完整 token；消息数由「原始消息」行唯一承载，避免重复。
+  // 260924 Red 主行常驻总量、缓存命中、成本，详情里保留完整 token；
+  // 消息数由「原始消息」行唯一承载，避免重复。
   const contextDetails = createMemo<CapsuleSummaryDetail[]>(() => {
     const current = ctx()
     const f = formatter()
@@ -247,9 +241,9 @@ export function useCapsuleSummaryGroups() {
         value:
           cacheRead <= 0 && cacheWrite <= 0
             ? "—"
-             : cacheWrite
-               ? `${f.compact(cacheRead)} / ${f.compact(cacheWrite)}${cacheHit}`
-               : `${f.compact(cacheRead)}${cacheHit}`,
+            : cacheWrite
+              ? `${f.compact(cacheRead)} / ${f.compact(cacheWrite)}${cacheHit}`
+              : `${f.compact(cacheRead)}${cacheHit}`,
         color: "var(--syntax-info)",
       },
       {
@@ -317,6 +311,7 @@ export function useCapsuleSummaryGroups() {
         icon: "brain",
         label: language.t("context.summary.title"),
         value: formatter().compact(ctx()?.total),
+        defaultExpanded: true,
         details: contextDetails(),
       },
       {

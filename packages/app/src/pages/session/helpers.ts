@@ -63,8 +63,7 @@ export const createSessionTabs = (input: TabsInput) => {
     const active = input.tabs().active()
     if (active === "context") return active
     if (active === "review" && review()) return active
-    // 260917 Red 状态改为标题栏唯一 floating 入口；旧会话若仍保存 status，回到可用标签而不是空白页。
-    if (active === "status") return fallbackTab()
+    if (active === "status") return active
     if (active && input.pathFromTab(active)) return input.normalizeTab(active)
     if (active && active !== "review") return active
 

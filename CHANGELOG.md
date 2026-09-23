@@ -23,6 +23,10 @@
 
 - **Codex OAuth 模型白名单补上 GPT-6 Sol/Luna**（`packages/opencode/src/plugin/codex.ts`，回归 `test/plugin/codex.test.ts`）：上游 260922 发布后 models.dev openai 目录已收录 `gpt-6-sol` / `gpt-6-luna`（reasoning_options 到 `max`），但订阅认证路径的 `ALLOWED_MODELS` 还停在 Astra 那一批，两个新模型在进入 GUI 前被过滤掉——官方 codex 选得到、RedCode 选不到。与 260907 Astra 同一处筛选、同一种修法：白名单是产品筛选不是版本快照，新模型确认可用后放行，旧型号依旧挡住。
 
+#### GUI 打磨
+
+- **会话胶囊五项导航与状态内容收口**（`packages/app/src/pages/session/{session-side-panel.tsx,session-side-panel.css,helpers.ts}`、`packages/app/src/components/{titlebar.tsx,status-indicator.tsx,session/session-status-tab.tsx,session/session-context-{summary.ts,tab.tsx}}`、`packages/app/src/i18n/*`；决策：`docs/notes/implemented/feature/2026-09-24-session-capsule-five-tab-navigation.md`）：compact/expanded 共用 Review、Context、Outline、Plan、Status 固定导航与当前内容；动态文件 tab 仅在展开态出现。Context 保留完整账本、额度、真实构成/估算、system prompt 与原始消息；Status 按 Server/MCP/LSP/Plugins 分段折叠，标题栏健康灯在会话内直达 Status。
+
 ---
 
 ### [0.11.12] - 2026-09-22

@@ -193,7 +193,7 @@ describe("createSessionTabs", () => {
     })
   })
 
-  test("falls back when an old status tab is still active", () => {
+  test("keeps status active as the fifth fixed tab", () => {
     createRoot((dispose) => {
       const [state] = createStore({
         active: "status",
@@ -206,7 +206,9 @@ describe("createSessionTabs", () => {
         normalizeTab: (tab) => tab,
       })
 
-      expect(result.activeTab()).toBe("context")
+      expect(result.activeTab()).toBe("status")
+      expect(result.activeFileTab()).toBeUndefined()
+      expect(result.closableTab()).toBeUndefined()
       dispose()
     })
   })

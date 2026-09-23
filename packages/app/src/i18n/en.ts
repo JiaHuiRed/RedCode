@@ -646,7 +646,7 @@ export const dict = {
   "session.outline.empty": "No turns in this session yet",
   "session.outline.noPrompt": "(no text)",
   "session.outline.unreachable": "Could not page back to that turn — the history may have been compacted",
-  "session.panel.reviewAndFiles": "Review and files",
+  "session.panel.workspace": "Session workspace",
   "session.review.filesChanged": "{{count}} Files Changed",
   "session.review.change.one": "Change",
   "session.review.change.other": "Changes",
