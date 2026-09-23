@@ -520,30 +520,84 @@ export const {
             })
           })
         })
-        .then(() => {
-          if (store.status !== "complete") setStore("status", "partial")
-          // non-blocking
-          void Promise.all([
-            ...(args.continue ? [] : [sessionListPromise.then((sessions) => setStore("session", reconcile(sessions)))]),
-            consoleStatePromise.then((consoleState) => setStore("console_state", reconcile(consoleState))),
-            sdk.client.command.list({ workspace }).then((x) => setStore("command", reconcile(x.data ?? []))),
-            sdk.client.lsp.status({ workspace }).then((x) => setStore("lsp", reconcile(x.data ?? []))),
-            sdk.client.mcp.status({ workspace }).then((x) => setStore("mcp", reconcile(x.data ?? {}))),
-            sdk.client.experimental.resource
-              .list({ workspace })
-              .then((x) => setStore("mcp_resource", reconcile(x.data ?? {}))),
-            sdk.client.formatter.status({ workspace }).then((x) => setStore("formatter", reconcile(x.data ?? []))),
-            sdk.client.session.status({ workspace }).then((x) => {
-              setStore("session_status", reconcile(x.data ?? {}))
-            }),
-            sdk.client.provider.auth({ workspace }).then((x) => setStore("provider_auth", reconcile(x.data ?? {}))),
-            sdk.client.provider.quota({ workspace }).then((x) => setStore("provider_quota", reconcile(x.data ?? []))),
-            sdk.client.vcs.get({ workspace }).then((x) => setStore("vcs", reconcile(x.data))),
-            project.workspace.sync(),
-          ]).then(() => {
-            setStore("status", "complete")
-          })
-        })
+       .then(() => {
+         if (store.status !== "complete") setStore("status", "partial")
+         // 260923 Red 第二阶段 fail-soft：辅助状态接口任一失败只记日志，不再让 status 永远停在
+         // partial。此前 void Promise.all 既没接回外层链也没有独立 catch——单个 rejection
+         // （200 响应体解析失败、listSessions 形状不符、任何显式 throwOnError 的可选请求）都会让
+         // complete 永不触发，而外层 .catch 看不见这条 void 链。SDK client 默认已把网络错误吞成
+         // { data: undefined }，这里兜的是剩下的 reject 口子。
+         const optionalRequests: { name: string; promise: Promise<unknown> }[] = [
+           ...(args.continue
+             ? []
+             : [
+                 {
+                   name: "session.list",
+                   promise: sessionListPromise.then((sessions) => setStore("session", reconcile(sessions))),
+                 },
+               ]),
+           {
+             name: "console.state",
+             promise: consoleStatePromise.then((consoleState) =>
+               setStore("console_state", reconcile(consoleState)),
+             ),
+           },
+           {
+             name: "command.list",
+             promise: sdk.client.command.list({ workspace }).then((x) => setStore("command", reconcile(x.data ?? []))),
+           },
+           {
+             name: "lsp.status",
+             promise: sdk.client.lsp.status({ workspace }).then((x) => setStore("lsp", reconcile(x.data ?? []))),
+           },
+           {
+             name: "mcp.status",
+             promise: sdk.client.mcp.status({ workspace }).then((x) => setStore("mcp", reconcile(x.data ?? {}))),
+           },
+           {
+             name: "resource.list",
+             promise: sdk.client.experimental.resource
+               .list({ workspace })
+               .then((x) => setStore("mcp_resource", reconcile(x.data ?? {}))),
+           },
+           {
+             name: "formatter.status",
+             promise: sdk.client.formatter
+               .status({ workspace })
+               .then((x) => setStore("formatter", reconcile(x.data ?? []))),
+           },
+           {
+             name: "session.status",
+             promise: sdk.client.session.status({ workspace }).then((x) => {
+               setStore("session_status", reconcile(x.data ?? {}))
+             }),
+           },
+           {
+             name: "provider.auth",
+             promise: sdk.client.provider
+               .auth({ workspace })
+               .then((x) => setStore("provider_auth", reconcile(x.data ?? {}))),
+           },
+           {
+             name: "provider.quota",
+             promise: sdk.client.provider
+               .quota({ workspace })
+               .then((x) => setStore("provider_quota", reconcile(x.data ?? []))),
+           },
+           {
+             name: "vcs.get",
+             promise: sdk.client.vcs.get({ workspace }).then((x) => setStore("vcs", reconcile(x.data))),
+           },
+           { name: "project.workspace.sync", promise: project.workspace.sync() },
+         ]
+         void Promise.allSettled(optionalRequests.map((r) => r.promise)).then((settled) => {
+           // 与阻塞阶段同一套 labeled 聚合，但可选失败只记日志——这些接口没有资格
+           // 把 TUI 拦在 complete 之外。
+           const failure = aggregateFailures(optionalRequests.map((r, i) => ({ name: r.name, result: settled[i] })))
+           if (failure) Log.Default.warn("tui optional bootstrap requests failed", { error: failure.message })
+           setStore("status", "complete")
+         })
+       })
         .catch(async (e) => {
           Log.Default.error("tui bootstrap failed", {
             error: e instanceof Error ? e.message : String(e),
