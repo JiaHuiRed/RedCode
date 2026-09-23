@@ -121,7 +121,7 @@ export function attachmentRequestTokens(mime: string, model: { providerID: strin
  * 「估算不超预算」这个承诺就不成立了。
  */
 export function truncateToTokens(text: string, maxTokens: number): string {
-  const usable = Math.max(0, Math.max(0, maxTokens) * CHARS_PER_TOKEN - MARKER_RESERVE)
+  const usable = Math.max(0, maxTokens * CHARS_PER_TOKEN - MARKER_RESERVE)
   if (text.length <= usable) return text
   const head = Math.floor(usable * 0.8)
   const tail = usable - head
