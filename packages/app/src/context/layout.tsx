@@ -94,12 +94,26 @@ export function pruneSessionKeys(input: {
     .slice(input.max)
 }
 
-function nextSessionTabsForOpen(current: SessionTabs | undefined, tab: string): SessionTabs {
+// 260923 Red C1：sessionTabs 的「getter 虚拟默认」与「写入路径 seed」此前是两个世界——
+// getter 虚拟 {all:["context"]}（没有 active），而 setActive seed {all:[]}、open 从
+// undefined 出发（nextSessionTabsForOpen 的 current?.all ?? [] 得到 []）。第一次
+// tabs().open("outline") 于是把虚拟默认里的 context 丢掉，all 变 ["outline"]，
+// contextOpen() 转 false，Context Trigger/Content 一起被卸载。system tabs 从 all[]
+// 完全分离是 C2 的范围，本轮先让两个世界共用同一份带 active 的兼容 seed。
+export const DEFAULT_SESSION_TABS: SessionTabs = { all: ["context"], active: "context" }
+
+export function nextSessionTabsForOpen(current: SessionTabs | undefined, tab: string): SessionTabs {
   const all = current?.all ?? []
   if (tab === "review") return { all: all.filter((x) => x !== "review"), active: tab }
   if (tab === "context") return { all: [tab, ...all.filter((x) => x !== tab)], active: tab }
   if (!all.includes(tab)) return { all: [...all, tab], active: tab }
   return { all, active: tab }
+}
+
+// 260923 Red C1：tabs().open 的统一入口——store 里还没有该 session 的状态时以
+// DEFAULT_SESSION_TABS 为起点，虚拟默认与真实 store 从此是同一个世界。
+export function sessionTabsForOpen(current: SessionTabs | undefined, tab: string): SessionTabs {
+  return nextSessionTabsForOpen(current ?? DEFAULT_SESSION_TABS, tab)
 }
 
 const sessionPath = (key: string) => {
@@ -890,7 +904,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       tabs(sessionKey: string | Accessor<string>) {
         const key = createSessionKeyReader(sessionKey, ensureKey)
         const path = createMemo(() => sessionPath(key()))
-        const tabs = createMemo(() => store.sessionTabs[key()] ?? { all: ["context"] })
+        const tabs = createMemo(() => store.sessionTabs[key()] ?? DEFAULT_SESSION_TABS)
         const normalize = (tab: string) => normalizeSessionTab(path(), tab)
         const normalizeAll = (all: string[]) => normalizeSessionTabList(path(), all)
         return {
@@ -901,7 +915,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             const session = key()
             const next = tab ? normalize(tab) : tab
             if (!store.sessionTabs[session]) {
-              setStore("sessionTabs", session, { all: [], active: next })
+              setStore("sessionTabs", session, { ...DEFAULT_SESSION_TABS, active: next })
             } else {
               setStore("sessionTabs", session, "active", next)
             }
@@ -910,14 +924,14 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             const session = key()
             const next = normalizeAll(all).filter((tab) => tab !== "review")
             if (!store.sessionTabs[session]) {
-              setStore("sessionTabs", session, { all: next, active: undefined })
+              setStore("sessionTabs", session, { ...DEFAULT_SESSION_TABS, all: next })
             } else {
               setStore("sessionTabs", session, "all", next)
             }
           },
           async open(tab: string) {
             const session = key()
-            const next = nextSessionTabsForOpen(store.sessionTabs[session], normalize(tab))
+            const next = sessionTabsForOpen(store.sessionTabs[session], normalize(tab))
             setStore("sessionTabs", session, next)
           },
           close(tab: string) {
