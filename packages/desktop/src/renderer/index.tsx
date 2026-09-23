@@ -24,6 +24,7 @@ import { createEffect, createResource, createSignal, onCleanup, onMount, Show } 
 import { render } from "solid-js/web"
 import pkg from "../../package.json"
 import { initI18n, t } from "./i18n"
+import { platformFetch } from "./fetch"
 import { resetZoom, setPinchZoomEnabled, webviewZoom, zoomIn, zoomOut } from "./webview-zoom"
 import "./styles.css"
 import { useTheme } from "@redcode-ai/ui/theme"
@@ -248,10 +249,7 @@ const createPlatform = (): Platform => {
       }
     },
 
-    fetch: (input, init) => {
-      if (input instanceof Request) return fetch(input)
-      return fetch(input, init)
-    },
+    fetch: platformFetch,
 
     getWslEnabled: () => isWslEnabled(),
 
