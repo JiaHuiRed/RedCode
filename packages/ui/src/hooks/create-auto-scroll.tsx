@@ -230,6 +230,16 @@ export function createAutoScroll(options: AutoScrollOptions) {
       if (store.userScrolled) setStore("userScrolled", false)
       scrollToBottom(true)
     },
+    // 260923 Red session 切换时只清交互状态、不主动滚动：userScrolled 是「用户正在看
+    //   历史」的单会话状态，Page() 级别的 autoScroll 实例跨会话复用会把它带给下一个会话，
+    //   shouldAnchorBottom() 随之恒假、入场不锚底。auto 记录一并清掉，避免旧元素的
+    //   scrollTop 被拿去和新会话比对。是否重新到底交给调用方的 hash / pendingMessage 链路。
+    reset: () => {
+      if (autoTimer) clearTimeout(autoTimer)
+      autoTimer = undefined
+      auto = undefined
+      if (store.userScrolled) setStore("userScrolled", false)
+    },
     scrollToBottom: () => scrollToBottom(false),
     forceScrollToBottom: () => scrollToBottom(true),
     userScrolled: () => store.userScrolled,

@@ -608,6 +608,11 @@ export default function Page() {
         setStore("messageId", undefined)
         setStore("changes", "git")
         setUi("pendingMessage", undefined)
+        // 260923 Red userScrolled 是单会话状态：A 会话往上翻过再切走，旧值会让 B 的
+        //   shouldAnchorBottom() 恒假、入场不锚底（视口停在旧 virtual offset）。
+        //   reset 只清状态；hash 指定消息、outline 跳转、pendingMessage 仍由
+        //   use-session-hash-scroll 自行 pause + 滚动，不受这里影响。
+        autoScroll.reset()
       },
       { defer: true },
     ),
