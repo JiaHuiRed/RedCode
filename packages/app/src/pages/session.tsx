@@ -655,12 +655,16 @@ export default function Page() {
     })
   })
 
-  // 260913 Red 往回翻（userScrolled）时放宽消息上限：立即 shift 最旧消息会把用户正在读的行
-  // 从视口脚下抽走。仍然有界——只放宽到 HELD_MESSAGES_PER_SESSION，长时间流式不会无界增长。
+  // 260923 Red 当前 mounted 会话常驻 hold（此前只在 userScrolled 时 hold）：默认 100 条
+  //   上限下，长会话每进一条新消息就从头部 shift 一条，timeline row 前缀随之变化 →
+  //   cache 失效 + Virtua 重估 + 底部锚定同时发生，白屏高风险；而「日常在底部聊天」
+  //   恰恰是最高频路径。mounted 即 held，离开时 release 自然回落到 100。仍以
+  //   HELD_MESSAGES_PER_SESSION 为界，不无界增长。userScrolled 场景被本 effect 覆盖
+  //   （引用计数支持多方持有，无需再单独 hold）。
   createEffect(() => {
     const id = params.id
     const directory = sdk.directory
-    if (!id || !autoScroll.userScrolled()) return
+    if (!id) return
     const release = holdMessageWindow(directory, id)
     onCleanup(release)
   })
