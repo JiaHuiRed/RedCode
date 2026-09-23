@@ -1,7 +1,11 @@
 import { batch, createMemo, onCleanup, onMount, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
+import { SYSTEM_TABS, type SystemTab } from "@/context/layout"
 import { same } from "@/utils/same"
+
+export { SYSTEM_TABS }
+export type { SystemTab }
 
 const emptyTabs: string[] = []
 
@@ -20,14 +24,12 @@ type TabsInput = {
 
 export const getSessionKey = (dir: string | undefined, id: string | undefined) => `${dir ?? ""}${id ? `/${id}` : ""}`
 
-// 260923 Red C2：固定 system tabs 与动态 file tabs 分离。五项永远存在、不需要 open
-// 才出现、不可关闭、不参与排序、不进 openedTabs。此前 createSessionTabs 的特殊标签
-// 过滤散落着 context/review/status/plan 四个字符串，漏了 outline——outline 于是被
-// 当成文件标签：既进 SortableProvider 的文件列表（可拖拽、可关闭），又有一个写死的
-// Tabs.Trigger，同一个标签在 strip 上出现两份。集中成一份 Set 统一使用。
-export const SYSTEM_TABS = new Set<string>(["review", "context", "outline", "plan", "status"])
-export type SystemTab = "review" | "context" | "outline" | "plan" | "status"
-
+// 260923 Red C2：固定 system tabs（review/context/outline/plan/status）永远存在、不需要 open
+// 才出现、不可关闭、不参与排序、不进 openedTabs。此前 createSessionTabs 的特殊标签过滤散落
+// 着 context/review/status/plan 四个字符串，漏了 outline——outline 于是被当成文件标签：既进
+// SortableProvider 的文件列表（可拖拽、可关闭），又有一个写死的 Tabs.Trigger，同一个标签在
+// strip 上出现两份。C2 起统一走 SYSTEM_TABS；C4 起定义与 close 守卫都在 layout（tabs 状态
+// 模型的 owner），这里 re-export 保持既有调用面。
 export const createSessionTabs = (input: TabsInput) => {
   const review = input.review ?? (() => false)
   const hasReview = input.hasReview ?? (() => false)
@@ -73,9 +75,11 @@ export const createSessionTabs = (input: TabsInput) => {
     if (!openedTabs().includes(active)) return
     return active
   })
+  // 260923 Red C4：五项固定 system tab 不可关闭（此前 context 是唯一例外——它一旦被
+  // close 就从 all[] 里消失，入口跟着没）。active 落在 system tab 上时这里返回 undefined，
+  // tab.close 命令与 SortableTab 的关闭按钮随之无操作。
   const closableTab = createMemo(() => {
     const active = activeTab()
-    if (active === "context") return active
     if (!openedTabs().includes(active)) return
     return active
   })

@@ -161,7 +161,8 @@ describe("createSessionTabs", () => {
       })
 
       expect(result.activeTab()).toBe("context")
-      expect(result.closableTab()).toBe("context")
+      // 260923 Red C4：Context 成为固定 system tab 后也不再可关闭（此前是唯一例外）
+      expect(result.closableTab()).toBeUndefined()
       dispose()
     })
 

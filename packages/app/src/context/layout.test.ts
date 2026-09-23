@@ -4,6 +4,7 @@ import {
   DEFAULT_SESSION_TABS,
   createSessionKeyReader,
   ensureSessionKey,
+  nextSessionTabsForClose,
   nextSessionTabsForOpen,
   pruneSessionKeys,
   sessionTabsForOpen,
@@ -121,5 +122,42 @@ describe("DEFAULT_SESSION_TABS", () => {
     expect(next.all).toEqual(["context"])
     expect(next.all.includes("review")).toBe(false)
     expect(next.active).toBe("review")
+  })
+})
+
+// 260923 Red C4：五项固定 system tab 全部不可关闭（文档第 14 节）。此前 close("context")
+// 会把它从 all[] 里删掉，Context 入口随之消失。
+describe("nextSessionTabsForClose", () => {
+  test("refuses to close any fixed system tab", () => {
+    for (const tab of ["review", "context", "outline", "plan", "status"]) {
+      expect(nextSessionTabsForClose({ all: ["context", "outline", "file://a.ts"], active: tab }, tab)).toBeUndefined()
+    }
+  })
+
+  test("removes a closed file tab without touching the active tab", () => {
+    const next = nextSessionTabsForClose(
+      { all: ["context", "file://a.ts", "file://b.ts"], active: "context" },
+      "file://a.ts",
+    )
+
+    expect(next?.all).toEqual(["context", "file://b.ts"])
+    expect(next?.active).toBe("context")
+  })
+
+  test("falls back to the left neighbour when the active file tab is closed", () => {
+    const next = nextSessionTabsForClose(
+      { all: ["context", "file://a.ts", "file://b.ts"], active: "file://a.ts" },
+      "file://a.ts",
+    )
+
+    expect(next?.all).toEqual(["context", "file://b.ts"])
+    expect(next?.active).toBe("context")
+  })
+
+  test("seeds the default list when the store has no tab state for the session", () => {
+    const next = nextSessionTabsForClose(undefined, "file://a.ts")
+
+    expect(next?.all).toEqual(["context"])
+    expect(next?.active).toBe("context")
   })
 })

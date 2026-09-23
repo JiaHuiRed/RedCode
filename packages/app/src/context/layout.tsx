@@ -94,6 +94,12 @@ export function pruneSessionKeys(input: {
     .slice(input.max)
 }
 
+// 260923 Red C2/C4：固定 system tabs——永远存在、不需要 open 才出现、不可关闭、不参与
+// 排序、不参与动态文件 all[]。定义放在 tabs 状态模型的 owner（layout）里：它同时被
+// helpers 的 openedTabs 过滤与 close 守卫使用，页面层从 helpers re-export 取用。
+export const SYSTEM_TABS = new Set<string>(["review", "context", "outline", "plan", "status"])
+export type SystemTab = "review" | "context" | "outline" | "plan" | "status"
+
 // 260923 Red C1：sessionTabs 的「getter 虚拟默认」与「写入路径 seed」此前是两个世界——
 // getter 虚拟 {all:["context"]}（没有 active），而 setActive seed {all:[]}、open 从
 // undefined 出发（nextSessionTabsForOpen 的 current?.all ?? [] 得到 []）。第一次
@@ -114,6 +120,21 @@ export function nextSessionTabsForOpen(current: SessionTabs | undefined, tab: st
 // DEFAULT_SESSION_TABS 为起点，虚拟默认与真实 store 从此是同一个世界。
 export function sessionTabsForOpen(current: SessionTabs | undefined, tab: string): SessionTabs {
   return nextSessionTabsForOpen(current ?? DEFAULT_SESSION_TABS, tab)
+}
+
+// 260923 Red C4：close 的纯函数入口（与 nextSessionTabsForOpen 同形状）。文档第 14 节：
+// 五项固定 system tab 全部不可关闭——返回 undefined 表示「不改动」。此前 close("context")
+// 会把它从 all[] 里删掉，contextOpen() 转 false，Context 入口跟着消失：入口的存在由状态
+// 决定，正是文档禁止的耦合。文件标签保持原语义：从 all[] 移除，若它正是 active 则回退到
+// 相邻标签（先左后右，最后兜底 all[0]）。
+export function nextSessionTabsForClose(current: SessionTabs | undefined, tab: string): SessionTabs | undefined {
+  if (SYSTEM_TABS.has(tab)) return undefined
+  const base = current ?? DEFAULT_SESSION_TABS
+  const all = base.all.filter((x) => x !== tab)
+  if (base.active !== tab) return { ...base, all }
+  const index = base.all.findIndex((f) => f === tab)
+  const next = base.all[index - 1] ?? base.all[index + 1] ?? all[0]
+  return { ...base, all, active: next }
 }
 
 const sessionPath = (key: string) => {
@@ -936,27 +957,9 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           },
           close(tab: string) {
             const session = key()
-            const current = store.sessionTabs[session]
-            if (!current) return
-
-            if (tab === "review") {
-              if (current.active !== tab) return
-              setStore("sessionTabs", session, "active", current.all[0])
-              return
-            }
-
-            const all = current.all.filter((x) => x !== tab)
-            if (current.active !== tab) {
-              setStore("sessionTabs", session, "all", all)
-              return
-            }
-
-            const index = current.all.findIndex((f) => f === tab)
-            const next = current.all[index - 1] ?? current.all[index + 1] ?? all[0]
-            batch(() => {
-              setStore("sessionTabs", session, "all", all)
-              setStore("sessionTabs", session, "active", next)
-            })
+            const next = nextSessionTabsForClose(store.sessionTabs[session], tab)
+            if (!next) return
+            setStore("sessionTabs", session, next)
           },
           move(tab: string, to: number) {
             const session = key()

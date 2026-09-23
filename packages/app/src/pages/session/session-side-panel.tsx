@@ -64,9 +64,7 @@ function CapsuleSummarySection(props: { group: CapsuleSummaryGroup }) {
             <Show when={props.group.bar && props.group.bar.length > 0}>
               <span class="session-side-panel__summary-bar">
                 <For each={props.group.bar}>
-                  {(segment) => (
-                    <span style={{ width: `${segment.percent}%`, "background-color": segment.color }} />
-                  )}
+                  {(segment) => <span style={{ width: `${segment.percent}%`, "background-color": segment.color }} />}
                 </For>
               </span>
             </Show>
@@ -438,34 +436,15 @@ export function SessionSidePanel(props: {
                                   </div>
                                 </Tabs.Trigger>
                               </Show>
-                              <Show when={contextOpen()}>
-                                <Tabs.Trigger
-                                  value="context"
-                                  closeButton={
-                                    <TooltipKeybind
-                                      title={language.t("common.closeTab")}
-                                      keybind={command.keybind("tab.close")}
-                                      placement="bottom"
-                                      gutter={10}
-                                    >
-                                      <IconButton
-                                        icon="close-small"
-                                        variant="ghost"
-                                        class="h-5 w-5"
-                                        onClick={() => tabs().close("context")}
-                                        aria-label={language.t("common.closeTab")}
-                                      />
-                                    </TooltipKeybind>
-                                  }
-                                  hideCloseButton
-                                  onMiddleClick={() => tabs().close("context")}
-                                >
-                                  <div class="flex items-center gap-2">
-                                    <SessionContextUsage variant="indicator" />
-                                    <div>{language.t("session.tab.context")}</div>
-                                  </div>
-                                </Tabs.Trigger>
-                              </Show>
+                              {/* 260923 Red C4：Context 是固定 system tab——入口永在、不可关闭
+                            （文档第 14 节）。不再由 contextOpen() 决定存在，也不再挂关闭按钮与
+                            中键关闭：入口的存在性从此与状态解耦。 */}
+                              <Tabs.Trigger value="context">
+                                <div class="flex items-center gap-2">
+                                  <SessionContextUsage variant="indicator" />
+                                  <div>{language.t("session.tab.context")}</div>
+                                </div>
+                              </Tabs.Trigger>
                               {/* 260901 cc 轮次标签：整份日志的轮次目录，点一条翻页并跳过去 */}
                               <Tabs.Trigger value="outline">
                                 <div class="flex items-center gap-1.5">
@@ -531,15 +510,16 @@ export function SessionSidePanel(props: {
                               </Show>
                             </Tabs.Content>
 
-                            <Show when={contextOpen()}>
-                              <Tabs.Content value="context" class="flex flex-col h-full overflow-hidden contain-strict">
-                                <Show when={activeTab() === "context"}>
-                                  <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
-                                    <SessionContextTab setViewportRef={setContextViewport} />
-                                  </div>
-                                </Show>
-                              </Tabs.Content>
-                            </Show>
+                            {/* 260923 Red C4：内容仍按 active 挂载（文档第 15 节「内容可卸载、
+                          入口不能消失」），但外层不再用 contextOpen() 门控——那层 Show 正是
+                          入口被状态带走的旧耦合。 */}
+                            <Tabs.Content value="context" class="flex flex-col h-full overflow-hidden contain-strict">
+                              <Show when={activeTab() === "context"}>
+                                <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
+                                  <SessionContextTab setViewportRef={setContextViewport} />
+                                </div>
+                              </Show>
+                            </Tabs.Content>
 
                             {/* 260901 cc 轮次标签页内容。Show 保证只在激活时挂载 —— 目录请求因此
                           只在真的打开这个标签时才发，不给「点开会话」那条热路径加往返。 */}

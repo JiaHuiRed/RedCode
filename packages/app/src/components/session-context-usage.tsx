@@ -46,11 +46,13 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
 
   const metrics = createMemo(() => getSessionContextMetrics(messages(), [...providers.all().values()]))
   const context = createMemo(() => metrics().context)
+  // 260923 Red C4：Context 不可关闭（文档第 14 节），所以再点一次是「收起面板」而不是
+  // 「关标签」——与占位条上同 tab 再点即折叠的语义一致。
   const openContext = () => {
     if (!params.id) return
 
     if (tabState.activeTab() === "context") {
-      tabs().close("context")
+      view().reviewPanel.close()
       return
     }
     openSessionContext({
