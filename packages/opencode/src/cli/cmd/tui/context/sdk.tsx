@@ -91,10 +91,18 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
             await sdk.sync.start().catch(() => {})
           }
 
-          for await (const event of events.stream) {
-            if (ctrl.signal.aborted) break
-            handleEvent(event)
-          }
+         // 260923 Red 建连成功≠流健康：收到本连接第一条事件才把 attempt 归零。
+         // 否则历史断线攒下的指数会让下一次重连白等 4s/8s/30s，中间稳定运行多久都
+         // 洗不掉。连上但一个事件都没收到的空流不重置——它没证明自己健康。
+         let received = false
+         for await (const event of events.stream) {
+           if (ctrl.signal.aborted) break
+           if (!received) {
+             received = true
+             attempt = 0
+           }
+           handleEvent(event)
+         }
 
           if (timer) clearTimeout(timer)
           if (queue.length > 0) flush()
