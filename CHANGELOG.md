@@ -7,28 +7,35 @@
 版本线历史分三段：0.3.0 及之前 TUI 与 GUI 共同历史；0.3.0 起两线独立维护（TUI 至 0.8.16，GUI 至 0.7.20），分别记录在下方 `## TUI` 与 `## GUI` 两段；**2026-08-14 起两线重新合并**，单一版本号覆盖全部组件，从 TUI 的 0.8.16 继续递增，新条目直接记录在本说明之下、不再按组件分段。
 
 ---
-### [未发布]
+### [0.11.13] - 2026-09-24
+
+#### 新增
+
+- **工具结果增加模型侧多模态 token 预算与可恢复 spill**：工具输出超过预算时不再无界挤入上下文；完整结果可通过 spill 恢复，兼顾模型侧硬边界与工具结果可用性。
 
 #### 变更
 
-- **GPT-6 家族全链路适配**（`packages/opencode/src/{tool/freeform.ts,provider/transform.ts,session/prompt/gpt.md}`、回归 `test/{tool/freeform,provider/reasoning-effort-variants,provider/transform}.test.ts`）：260922 上游发布 gpt-6-sol / -luna 后逐层核了一遍官方 openai 接入的适配，四层门全部写死在 gpt-5 上——模型进了目录也拿不到同代待遇。① **freeform apply_patch**：`tool/freeform.ts` 判据只认 gpt-5，gpt-6 全系退回 JSON 包裹形态（token 更多、离训练分布更远、转义错一个字符整轮作废）；官方 catalog（`codex-rs/models-manager/models.json`）对 gpt-6-astra/sol/luna 声明的 `apply_patch_tool_type` 就是 "freeform"，判据并入 gpt-6。② **max 推理档**：`transform.ts` 版号路径只解 `gpt-5.x`，gpt-6 落到底部通用路径产出 none/low/medium/high/xhigh，models.dev 与官方客户端都有的 `max` 拿不到；整代并入 5.6+ 档。**加档依据**（本仓纪律：加档前必须真请求验，不读字段）：260923 用本机 Codex OAuth 对 sol/luna/astra 各打同一报文只换 effort，xhigh 与 max 全部 200；旁证两项——models.dev reasoning_options 到 max、官方客户端强度滑块顶档「最高」。ultra 依旧不给。③ **默认参数组**：`transform.ts` options() 的 gpt-5 分支（默认 effort medium、reasoningSummary auto、textVerbosity low）gpt-6 一概吃不到，官方 catalog 对 gpt-6-* 声明 support_verbosity=true / default_verbosity=low，一并并入（verbosity 参数同批实测 200）。④ **提示词**：0.11.1 对照泄漏的 GPT-6 官方 harness 提示词加进 gpt.md 的三处（中文文件保持中文、Final answer 反 AI 腔、CommonMark 空行规则），在 260921「公共基线 + Delta」重构时被当成重复文本删掉、而 default.md 并没有覆盖它们——本次恢复，经哥哥两轮修订定稿：apply_patch 条改为「优先 + 豁免」（generated / mechanical 的编辑可走脚本，补回 260902 并入 codex.md 时被抹掉的 nuance）；Final answer 补「报告长度匹配实际工作量」；另补回旧 gpt.md 里三段未被 default.md / AGENTS.md / 工具描述覆盖的内容——工具使用细则（不拿 Python 读写文件、不 >60s 阻塞等待、不 repurpose `$HOME`；原节另三条「专用工具优于 shell」「Bash 用于终端操作」「并行调用」已分别被工具描述与 default.md Tools 节覆盖，不重复恢复）、mid-turn 用户消息处理、进度更新纪律。试写过的 Reasoning 段（effort 当预算）按哥哥决定删除——模型看不到 configured effort 参数，预算校准交给变体档位本身。
-
-  模型可见改动四问：模型看到什么变了——GPT 家族 delta 从 5 行/230 字符扩到 41 行/2956 字符（仅走 default.md+gpt.md 路由的会话），工具侧 gpt-6 的 apply_patch 从 JSON 函数工具变为 Lark 文法 custom tool（description 追加一句 freeform 提示）；token 影响——固定前缀 +2726 字符 ≈ +680 tokens（按 4 字符/token 估；此前两版记的 150/215 是低估，以实测字符数为准）；KV cache——delta 为整段新写入，自 delta 起的注入前缀作废，发布后新会话重建一次即恢复稳定；硬上限——gpt.md 41 行定长，无动态输入。
-
-  顺带把 `provider.ts` 默认模型排序的 priority 表补上 `gpt-6`（该表方向是反的：sortBy 对 findIndex 取 desc，**列表末尾才是最高优先级**——原列表里 claude-sonnet-4 压 gpt-5 即此机制，已在源码注明）：新装机/无 recent 记录时默认模型先挑 gpt-6，不列则被 gpt-5 挤在后面。`getSmallModel` 的 nano 档 gpt-6 无对应型号，不动。
-
-- **DCP 压缩阈值补 gpt-6 两表**（`~/.redcode/dcp.jsonc`，live 配置、随私仓不同步）：`compress.modelMinLimits` / `modelMaxLimits` 补 `openai/gpt-6-{astra,luna,sol}` = 140000/210000。gpt-6 全家 context 1.05M，漏补的后果与 260910 deepseek-flash 同因——静默回落全局 50k/100k 线，1M 窗口跑在半程目标上，compress 永远判「还差一截」。opencode-go 侧暂无 gpt-6 条目（models.dev 未收录），不补。
+- **GPT-6 家族全链路适配**（`packages/opencode/src/{tool/freeform.ts,provider/{provider,transform}.ts,session/prompt/gpt.md}`、回归 `test/{tool/freeform,provider/reasoning-effort-variants,provider/transform}.test.ts`）：补齐 freeform apply_patch、`max` 推理档、默认参数与模型优先级；Codex OAuth 放行 Sol/Luna。GPT-6 提示词 delta 从 5 行扩为 41 行（+2726 字符，约 +680 tokens），工具说明新增 freeform 提示；固定内容有界，发布后只需重建一次前缀缓存。本机 DCP 两张阈值表同步加入 GPT-6 的 140k/210k 触发线（live 配置，不随仓库同步）。
+- **TUI 模型提示词与执行纪律定稿**（`packages/opencode/src/session/prompt/{gpt,step}.md`）：GPT 提示词按反馈恢复必要的工具与交付规则；Step 提示词重写为 11 条执行纪律。同步修正 token 预算说明中的口径。
 
 #### 修复
 
-- **Codex OAuth 模型白名单补上 GPT-6 Sol/Luna**（`packages/opencode/src/plugin/codex.ts`，回归 `test/plugin/codex.test.ts`）：上游 260922 发布后 models.dev openai 目录已收录 `gpt-6-sol` / `gpt-6-luna`（reasoning_options 到 `max`），但订阅认证路径的 `ALLOWED_MODELS` 还停在 Astra 那一批，两个新模型在进入 GUI 前被过滤掉——官方 codex 选得到、RedCode 选不到。与 260907 Astra 同一处筛选、同一种修法：白名单是产品筛选不是版本快照，新模型确认可用后放行，旧型号依旧挡住。
+- **SSE 断线恢复闭环**：heartbeat watchdog 识别半死连接，重连后重置 backoff 并按锚点补拉当前 session，避免断线期间的消息永久缺失。
+- **可选 bootstrap 接口失败不再卡住初始化**：第二阶段改为 fail-soft，非关键接口失败时仍能完成可用状态。
+- **会话切换与流式消息窗口稳定化**：切换 session 时重置 autoScroll 状态；Virtualizer identity 纳入 sessionKey；mounted 会话持有有界消息窗口，流式期间不再逐条裁旧消息；`message.removed` 采用可处理 ID 回绕的线性定位。
+- **桌面请求契约与 CORS 修复**：renderer fetch 正确转发 `Request` 与 `init`，Electron 不再统一改写 CORS；粘贴图片移除无意义的 bitmap 解码。
+- **Codex Bridge ACP 握手身份修正**：由 Codex Bridge 启动时以 OpenCode 身份响应，避免 ACP 客户端识别错误。
 
 #### GUI 打磨
 
-- **会话胶囊五项导航与状态内容收口**（`packages/app/src/pages/session/{session-side-panel.tsx,session-side-panel.css,helpers.ts}`、`packages/app/src/components/{titlebar.tsx,status-indicator.tsx,session/session-status-tab.tsx,session/session-context-{summary.ts,tab.tsx}}`、`packages/app/src/i18n/*`；决策：`docs/notes/implemented/feature/2026-09-24-session-capsule-five-tab-navigation.md`）：compact/expanded 共用 Review、Context、Outline、Plan、Status 固定导航与当前内容；动态文件 tab 仅在展开态出现。Context 保留完整账本、额度、真实构成/估算、system prompt 与原始消息；Status 按 Server/MCP/LSP/Plugins 分段折叠，标题栏健康灯在会话内直达 Status。
+- **会话统计与文件树过滤改为单趟计算**，减少重复遍历；宽桌面胶囊几何和会话切换状态同步收稳。
+- **会话胶囊统一五项导航与内容视口**（`packages/app/src/pages/session/{session-side-panel.tsx,session-side-panel.css,helpers.ts}`、`packages/app/src/components/{titlebar.tsx,status-indicator.tsx,session/session-status-tab.tsx,session/session-context-{summary.ts,tab.tsx}}`、`packages/app/src/i18n/*`；决策：`docs/notes/implemented/feature/2026-09-24-session-capsule-five-tab-navigation.md`）：Review、Context、Outline、Plan、Status 在 compact/expanded 下共用导航与当前内容；动态文件 tab 仅在展开态显示。Context 保留完整账本、额度、真实构成/估算、system prompt 与原始消息；Status 四组独立折叠，标题栏健康灯在会话内直达 Status。
+
+#### 重构
+
+- **清理无行为变化的实现与说明**：移除 token 截断路径冗余的 `Math.max`，并修正 token 预算文档表述。
 
 ---
-
 ### [0.11.12] - 2026-09-22
 
 #### 变更
