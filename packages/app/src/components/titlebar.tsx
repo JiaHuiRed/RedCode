@@ -25,6 +25,7 @@ import { Avatar as AvatarV2 } from "@redcode-ai/ui/v2/components/avatar-v2.jsx"
 import { displayName, getProjectAvatarSource, projectForSession } from "@/pages/layout/helpers"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { StatusIndicator } from "./status-indicator"
+import { SDKProvider } from "@/context/sdk"
 
 const legacyTitlebarHeight = 40
 const v2TitlebarHeight = 44
@@ -430,10 +431,14 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
         </Show>
         <div class="min-w-0 flex-1" />
       </div>
-      <Show when={statusDir()}>
-        <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
-          <StatusIndicator onClick={params.id ? openStatus : undefined} />
-        </Tooltip>
+      <Show when={statusDir()} keyed>
+        {(directory) => (
+          <SDKProvider directory={directory}>
+            <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
+              <StatusIndicator onClick={params.id ? openStatus : undefined} />
+            </Tooltip>
+          </SDKProvider>
+        )}
       </Show>
       <TitlebarUpdatePill update={props.update} />
     </div>
