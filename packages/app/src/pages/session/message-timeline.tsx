@@ -2039,7 +2039,13 @@ export function MessageTimeline(props: {
             when={(() => {
               const root = scrollRoot()
               if (!root) return
-              return { root, epoch: timelineEpoch() }
+              // 260923 Red keyed identity 含 sessionKey：此前 scrollRoot 与 timelineEpoch
+              //   都不变时，换会话会复用同一个 Virtualizer 实例热替换整份会话数据——实例内部
+              //   的 viewport range / measurement state / 待处理 ResizeObserver 仍是旧会话的，
+              //   叠加新 rows 与新 cache 就是混合状态（Virtua 测量失败即整片空白）。
+              //   带上 session 后，切会话走「销毁旧实例 → 写回旧 session cache → 建新实例
+              //   → 读新 session cache」，而不是在同一个实例里热替换。
+              return { root, epoch: timelineEpoch(), session: sessionKey() }
             })()}
             keyed
           >
