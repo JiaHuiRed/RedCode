@@ -1,8 +1,9 @@
 import { describe, test, expect } from "bun:test"
-import { NodeFileSystem } from "@effect/platform-node"
+import { NodeFileSystem, NodePath } from "@effect/platform-node"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Effect, FileSystem, Layer } from "effect"
 import { Truncate } from "@/tool/truncate"
+import { ImageTokens } from "@/session/image-tokens"
 import { Config } from "@/config/config"
 import { Identifier } from "../../src/id/id"
 import { Process } from "@/util/process"
@@ -259,6 +260,88 @@ describe("Truncate", () => {
 
       expect(out.code).toBe(0)
     }, 20000)
+  })
+
+  describe("result", () => {
+    const image = (label: string) => ({
+      mime: "image/png",
+      url: `data:image/png;base64,${Buffer.from(label).toString("base64")}`,
+    })
+
+    // spill 写盘一律失败：验证 fail-soft —— 预览仍然有界，且如实说「没能保存」
+    const spillFailIt = testEffect(
+      Truncate.layer.pipe(
+        Layer.provide(
+          Layer.mock(AppFileSystem.Service)({
+            ensureDir: () => Effect.die("simulated spill failure"),
+            writeFileString: () => Effect.die("simulated spill failure"),
+            writeWithDirs: () => Effect.die("simulated spill failure"),
+            readDirectory: () => Effect.succeed([]),
+          // PartialEffectful 只把 Effect 方法变可选，globMatch / sink / [TypeId] 这类
+          // 非 Effect 成员仍然要求齐 —— 文件系统 mock 填不出有意义的值，只覆盖本用例
+          // 真正走到的四个方法
+        } as any),
+        ),
+        Layer.provide(NodePath.layer),
+      ),
+    )
+
+    it.live("keeps text and images within the model-visible token budget and spills the rest", () =>
+      Effect.gen(function* () {
+        const svc = yield* Truncate.Service
+        const fsys = yield* AppFileSystem.Service
+        const text = "x".repeat(52_000)
+        const images = Array.from({ length: 32 }, (_, i) => image(`image-${i}`))
+        const result = yield* svc.result({ output: text, attachments: images }, { model: { providerID: "deepseek" } })
+
+        expect(result.metadata.truncated).toBe(true)
+        const model = { providerID: "deepseek" }
+        expect(
+          ImageTokens.estimateToolResult({ text: result.output, attachments: result.attachments ?? [] }, model),
+        ).toBeLessThanOrEqual(ImageTokens.TOOL_RESULT_TOKEN_BUDGET)
+        // 32 张装得下（32 × 416 ≤ 14000 − 400），文本被截，notice 自己也占预算
+        expect(result.attachments).toHaveLength(32)
+        expect(result.output).toContain("chars omitted")
+        expect(result.output).toContain("Full output saved to:")
+
+        const written = yield* fsys.readFileString(result.metadata.outputPath!)
+        expect(written).toBe(text)
+      }),
+    )
+
+    it.live("drops attachments from the tail and saves them beside the text", () =>
+      Effect.gen(function* () {
+        const svc = yield* Truncate.Service
+        const fsys = yield* AppFileSystem.Service
+        const text = "y".repeat(52_000)
+        const images = Array.from({ length: 40 }, (_, i) => image(`image-${i}`))
+        const result = yield* svc.result({ output: text, attachments: images }, { model: { providerID: "deepseek" } })
+
+        expect(result.metadata.truncated).toBe(true)
+        expect(result.attachments!.length).toBeLessThan(40)
+        expect(result.metadata.mediaPath).toBeDefined()
+        const saved = yield* fsys.readDirectory(result.metadata.mediaPath!)
+        expect(saved.length).toBe(40 - result.attachments!.length)
+        expect(saved.some((name) => name.endsWith(".png"))).toBe(true)
+      }),
+    )
+
+    spillFailIt.live("keeps the preview bounded and reports that the spill failed", () =>
+      Effect.gen(function* () {
+        const svc = yield* Truncate.Service
+        const text = "z".repeat(80_000)
+        const result = yield* svc.result({ output: text }, { model: { providerID: "deepseek" } })
+
+        expect(result.metadata.truncated).toBe(true)
+        expect(result.metadata.outputPath).toBeUndefined()
+        expect(result.output).toContain("could not be saved")
+        expect(result.output).toContain("model-visible token budget")
+        expect(result.output).not.toContain(text)
+        expect(ImageTokens.estimateToolResult({ text: result.output }, { providerID: "deepseek" })).toBeLessThanOrEqual(
+          ImageTokens.TOOL_RESULT_TOKEN_BUDGET,
+        )
+      }),
+    )
   })
 
   describe("cleanup", () => {

@@ -1,5 +1,6 @@
 import { BusEvent } from "@/bus/bus-event"
 import { SessionID, MessageID, PartID } from "./schema"
+import { ImageTokens } from "@/session/image-tokens"
 import { NamedError } from "@redcode-ai/core/util/error"
 import { APICallError, convertToModelMessages, LoadAPIKeyError, type ModelMessage, type UIMessage } from "ai"
 import { LSP } from "@/lsp/lsp"
@@ -37,6 +38,10 @@ interface FetchDecompressionError extends Error {
 }
 
 export const SYNTHETIC_ATTACHMENT_PROMPT = "Attached media from tool result:"
+
+// 260923 Red 工具结果被模型侧 token 预算裁掉时给模型的短标记。它自己走 fitToolResult
+// 的 notice 入账，占的是同一笔预算，不会把总账顶过线。
+const BUDGET_NOTICE = "\n[tool result truncated to fit the model-visible token budget]"
 export { isMedia }
 
 /**
@@ -892,10 +897,22 @@ export const toUIMessages = Effect.fn("Message.toUIMessages")(function* (
         if (part.type === "tool") {
           toolNames.add(part.tool)
           if (part.state.status === "completed") {
-            const outputText = part.state.time.compacted
-              ? "[Old tool result content cleared]"
-              : truncateToolOutput(part.state.output, options?.toolOutputMaxChars)
-            const attachments = part.state.time.compacted || options?.stripMedia ? [] : (part.state.attachments ?? [])
+            // 260923 Red 模型侧硬预算：工具结果在**落地那一刻**已经过 tool/truncate.ts
+            // 的 result() 闸门，这里是历史消息的第二道 —— 覆盖本次改动之前落库的结果，
+            // 以及绕过 truncate 的写入方。纯函数、不碰 fs，所以这里只能丢不能存。
+            const fitted = ImageTokens.fitToolResult(
+              {
+                text: part.state.time.compacted
+                  ? "[Old tool result content cleared]"
+                  : truncateToolOutput(part.state.output, options?.toolOutputMaxChars),
+                attachments:
+                  part.state.time.compacted || options?.stripMedia ? [] : (part.state.attachments ?? []),
+              },
+              model,
+              { notice: BUDGET_NOTICE },
+            )
+            const outputText = fitted.truncated ? `${fitted.text}${BUDGET_NOTICE}` : fitted.text
+            const attachments = fitted.attachments
 
             // For providers that don't support media in tool results, extract media files
             // (images, PDFs) to be sent as a separate user message

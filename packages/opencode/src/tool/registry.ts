@@ -174,15 +174,19 @@ export const layer = Layer.effect(
                 const metadata = typeof result === "string" ? {} : (result.metadata ?? {})
                 const attachments = typeof result === "string" ? undefined : result.attachments
                 const info = yield* agent.get(toolCtx.agent)
-                const out = yield* truncate.output(output, {}, info)
+                const out = yield* truncate.result(
+                  { output, attachments },
+                  { model: toolCtx.extra?.model as { providerID: string } | undefined },
+                  info,
+                )
                 return {
                   title: typeof result === "string" ? "" : (result.title ?? ""),
-                  output: out.truncated ? out.content : output,
-                  attachments,
+                  output: out.output,
+                  attachments: out.attachments as typeof attachments,
                   metadata: {
                     ...metadata,
-                    truncated: out.truncated,
-                    ...(out.truncated && { outputPath: out.outputPath }),
+                    truncated: out.metadata.truncated,
+                    ...(out.metadata.outputPath && { outputPath: out.metadata.outputPath }),
                   },
                 }
               }).pipe(

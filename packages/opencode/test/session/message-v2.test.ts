@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { existsSync, readFileSync } from "node:fs"
 import { APICallError } from "ai"
 import { MessageV2 } from "../../src/session/message-v2"
+import { ImageTokens } from "@/session/image-tokens"
 import { ProviderTransform } from "@/provider/transform"
 import type { Provider } from "@/provider/provider"
 import { ModelID, ProviderID } from "../../src/provider/schema"
@@ -902,6 +903,57 @@ describe("session.message-v2.toModelMessage", () => {
         ],
       },
     ])
+  })
+
+  test("keeps historical multimodal tool results within the hard token budget", async () => {
+    const userID = "m-user-budget"
+    const assistantID = "m-assistant-budget"
+    const output = "x".repeat(52_000)
+    const attachments = Array.from({ length: 32 }, (_, index) => ({
+      ...basePart(assistantID, `budget-file-${index}`),
+      type: "file" as const,
+      mime: "image/png",
+      filename: `image-${index}.png`,
+      url: "data:image/png;base64,Zm9v",
+    }))
+    const input: MessageV2.WithParts[] = [
+      {
+        info: userInfo(userID),
+        parts: [{ ...basePart(userID, "budget-user"), type: "text", text: "inspect tool output" }] as MessageV2.Part[],
+      },
+      {
+        info: assistantInfo(assistantID, userID),
+        parts: [
+          {
+            ...basePart(assistantID, "budget-tool"),
+            type: "tool",
+            callID: "call-budget",
+            tool: "read",
+            state: {
+              status: "completed",
+              input: { filePath: "large-output.txt" },
+              output,
+              title: "Read",
+              metadata: {},
+              time: { start: 0, end: 1 },
+              attachments,
+            },
+          },
+        ] as MessageV2.Part[],
+      },
+    ]
+
+    const messages = await MessageV2.toModelMessages(input, model)
+    const toolMessage = messages.find((message) => message.role === "tool")!
+    const result = (toolMessage.content as any[])[0].output
+
+    expect(ImageTokens.estimateModelMessages(result.value, model)).toBeLessThanOrEqual(14_000)
+    expect((input[1]!.parts[0] as MessageV2.ToolPart).state.status).toBe("completed")
+    const stored = (input[1]!.parts[0] as MessageV2.ToolPart).state
+    if (stored.status === "completed") {
+      expect(stored.output).toBe(output)
+      expect(stored.attachments).toHaveLength(32)
+    }
   })
 
   test("converts assistant tool error into error-text tool result", async () => {

@@ -9,6 +9,7 @@ import { Identifier } from "../id/id"
 import * as Log from "@redcode-ai/core/util/log"
 import { ToolID } from "./schema"
 import { TRUNCATION_DIR } from "./truncation-dir"
+import { ImageTokens } from "@/session/image-tokens"
 
 const log = Log.create({ service: "truncation" })
 const RETENTION = Duration.days(7)
@@ -27,6 +28,19 @@ export interface Options {
   direction?: "head" | "tail" | "both"
 }
 
+/** 工具结果附件的最小形状：预算只需要 mime 与 url。 */
+export interface Attachment {
+  mime: string
+  url: string
+  filename?: string
+}
+
+export interface ResultOutput<T extends Attachment = Attachment> {
+  output: string
+  attachments?: T[]
+  metadata: { truncated: boolean; outputPath?: string; mediaPath?: string }
+}
+
 function hasTaskTool(agent?: Agent.Info) {
   if (!agent?.permission) return false
   return evaluate("task", "*", agent.permission).action !== "deny"
@@ -40,6 +54,17 @@ export interface Interface {
    * to the truncation directory and returns a preview plus a hint to inspect the saved file.
    */
   readonly output: (text: string, options?: Options, agent?: Agent.Info) => Effect.Effect<Result>
+  /**
+   * 模型侧硬预算版本：文本与附件一起按 token 估价（见 ImageTokens），超预算的部分
+   * spill 到磁盘供恢复。与 output() 的分工：output() 管字节/行数，这个管模型可见 token。
+   *
+   * 260923 Red 决策记录：docs/notes/implemented/feature/2026-09-23-tool-result-token-budget.md
+   */
+  readonly result: (
+    input: { output: string; attachments?: Attachment[] },
+    options?: { model?: { providerID: string } },
+    agent?: Agent.Info,
+  ) => Effect.Effect<ResultOutput>
   /**
    * Resolved truncation limits: values from `tool_output` in redcode config, or MAX_LINES / MAX_BYTES if unset.
    */
@@ -62,8 +87,11 @@ export const layer = Layer.effect(
         Effect.catch(() => Effect.succeed([])),
       )
       for (const entry of entries) {
-        if (Identifier.timestamp(entry) >= cutoff) continue
-        yield* fs.remove(path.join(TRUNCATION_DIR, entry)).pipe(Effect.catch(() => Effect.void))
+        // 260923 Red spill 的附件目录叫 tool_<id>_media，剥掉后缀再按 ID 取时间戳；
+        // 目录要递归删（默认 remove 对非空目录会失败）
+        const id = entry.endsWith("_media") ? entry.slice(0, -"_media".length) : entry
+        if (Identifier.timestamp(id) >= cutoff) continue
+        yield* fs.remove(path.join(TRUNCATION_DIR, entry), { recursive: true }).pipe(Effect.catch(() => Effect.void))
       }
     })
 
@@ -133,6 +161,61 @@ export const layer = Layer.effect(
       } as const
     })
 
+    // 260923 Red spill 一律 fail-soft：写盘失败只回报「没能保存」，预览仍然有界。
+    // 刻意不学 deepseek-harness ab102138c8 那个形状 —— 它 catch 后返回 undefined，
+    // 调用方于是拿到未截断的原始结果，等于把预算整个作废。
+    const spill = <A, E>(effect: Effect.Effect<A, E>) => effect.pipe(Effect.catchCause(() => Effect.succeed(undefined)))
+
+    const writeMedia = Effect.fn("Truncate.writeMedia")(function* (attachments: Attachment[]) {
+      const dir = path.join(TRUNCATION_DIR, `${ToolID.ascending()}_media`)
+      yield* Effect.forEach(attachments, (attachment, index) =>
+        fs.writeWithDirs(path.join(dir, `${index + 1}${mediaExtension(attachment.mime)}`), attachmentBytes(attachment)),
+      )
+      return dir
+    })
+
+    const result = Effect.fn("Truncate.result")(function* (
+      input: { output: string; attachments?: Attachment[] },
+      options: { model?: { providerID: string } } = {},
+      agent?: Agent.Info,
+    ) {
+      const attachments = input.attachments ?? []
+      const model = options.model ?? { providerID: "" }
+      const fitted = ImageTokens.fitToolResult({ text: input.output, attachments }, model)
+      if (!fitted.truncated) return { output: input.output, attachments, metadata: { truncated: false } }
+
+      // 完整文本一定写：notice 要占预算，第二遍 fit 可能把第一遍还放得下的正文也裁掉，
+      // 那时完整内容必须已经留在盘上。
+      const outputPath = yield* spill(write(input.output))
+      const mediaPath = fitted.dropped.length > 0 ? yield* spill(writeMedia(fitted.dropped)) : undefined
+
+      const saved = [
+        outputPath ? `Full output saved to: ${outputPath}` : "The full output could not be saved to disk.",
+        fitted.dropped.length > 0
+          ? `${fitted.dropped.length} attachment(s) omitted to fit the model-visible token budget${
+              mediaPath ? `; saved to: ${mediaPath}` : " and could not be saved"
+            }.`
+          : undefined,
+      ].filter((line): line is string => line !== undefined)
+
+      const hint = hasTaskTool(agent)
+        ? "Use the Task tool to have explore agent process this file with Grep and Read (with offset/limit). Do NOT read the full file yourself - delegate to save context."
+        : "Use Grep to search the full content or Read with offset/limit to view specific sections."
+      const notice = `The tool call succeeded but the output was truncated to fit the model-visible token budget. ${saved.join(" ")}\n${hint}`
+
+      // notice 本身也进模型上下文，带着它重新 fit 一遍，别让提示把总账顶过线
+      const final = ImageTokens.fitToolResult({ text: input.output, attachments }, model, { notice })
+      return {
+        output: `${final.text}\n\n${notice}`,
+        attachments: final.attachments,
+        metadata: {
+          truncated: true,
+          ...(outputPath && { outputPath }),
+          ...(mediaPath && { mediaPath }),
+        },
+      }
+    })
+
     yield* cleanup().pipe(
       Effect.catchCause((cause) => {
         log.error("truncation cleanup failed", { cause: Cause.pretty(cause) })
@@ -143,7 +226,7 @@ export const layer = Layer.effect(
       Effect.forkScoped,
     )
 
-    return Service.of({ cleanup, write, output, limits })
+    return Service.of({ cleanup, write, output, result, limits })
   }),
 )
 
@@ -183,6 +266,27 @@ function collectPreview(
     }
   }
   return { preview, bytes, hitBytes, count: preview.length }
+}
+
+const MEDIA_EXTENSIONS: Record<string, string> = {
+  "image/png": ".png",
+  "image/jpeg": ".jpg",
+  "image/gif": ".gif",
+  "image/webp": ".webp",
+  "image/bmp": ".bmp",
+  "image/svg+xml": ".svg",
+  "application/pdf": ".pdf",
+}
+
+function mediaExtension(mime: string) {
+  return MEDIA_EXTENSIONS[mime] ?? ".bin"
+}
+
+/** data: URL 解码成字节；非 data: URL（远程地址）就把 URL 本身当文本留下。 */
+function attachmentBytes(attachment: Attachment): Uint8Array {
+  if (!attachment.url.startsWith("data:")) return new TextEncoder().encode(attachment.url)
+  const comma = attachment.url.indexOf(",")
+  return new Uint8Array(Buffer.from(comma === -1 ? attachment.url : attachment.url.slice(comma + 1), "base64"))
 }
 
 export * as Truncate from "./truncate"

@@ -156,14 +156,19 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
             return result
           }
           const agent = yield* agents.get(ctx.agent)
-          const truncated = yield* truncate.output(result.output, {}, agent)
+          const fitted = yield* truncate.result(
+            { output: result.output, attachments: result.attachments },
+            { model: ctx.extra?.model as { providerID: string } | undefined },
+            agent,
+          )
           return {
             ...result,
-            output: truncated.content,
+            output: fitted.output,
+            attachments: fitted.attachments as typeof result.attachments,
             metadata: {
               ...result.metadata,
-              truncated: truncated.truncated,
-              ...(truncated.truncated && { outputPath: truncated.outputPath }),
+              truncated: fitted.metadata.truncated,
+              ...(fitted.metadata.outputPath && { outputPath: fitted.metadata.outputPath }),
             },
           }
         }).pipe(Effect.orDie, Effect.withSpan("Tool.execute", { attributes: attrs }))

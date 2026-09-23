@@ -335,20 +335,25 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             }
           }
 
-          const truncated = yield* truncate.output(textParts.join("\n\n"), {}, input.agent)
+          const fitted = yield* truncate.result(
+            { output: textParts.join("\n\n"), attachments },
+            { model: ctx.extra?.model as { providerID: string } | undefined },
+            input.agent,
+          )
           const metadata = {
             ...result.metadata,
-            truncated: truncated.truncated,
-            ...(truncated.truncated && { outputPath: truncated.outputPath }),
+            truncated: fitted.metadata.truncated,
+            ...(fitted.metadata.outputPath && { outputPath: fitted.metadata.outputPath }),
           }
 
           const output = {
             title: "",
             metadata,
             output: droppedAttachments
-              ? `${truncated.content}\n\n[${droppedAttachments} attachment${droppedAttachments === 1 ? "" : "s"} dropped: over the ${MAX_ATTACHMENTS}-attachment limit or the ${MAX_ATTACHMENT_BASE64_BYTES / (1024 * 1024)} MB single-attachment budget. The tool result was left unchanged.]`
-              : truncated.content,
-            attachments: attachments.map((attachment) => ({
+              ? `${fitted.output}\n\n[${droppedAttachments} attachment${droppedAttachments === 1 ? "" : "s"} dropped: over the ${MAX_ATTACHMENTS}-attachment limit or the ${MAX_ATTACHMENT_BASE64_BYTES / (1024 * 1024)} MB single-attachment budget. The tool result was left unchanged.]`
+              : fitted.output,
+            // fitToolResult 原样保留附件对象引用（只筛掉一部分），type: "file" 还在
+            attachments: ((fitted.attachments ?? attachments) as typeof attachments).map((attachment) => ({
               ...attachment,
               id: PartID.ascending(),
               sessionID: ctx.sessionID,
