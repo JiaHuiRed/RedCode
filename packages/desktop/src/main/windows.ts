@@ -160,12 +160,6 @@ export function createMainWindow() {
   wireWindowRecovery(win, "main")
   wireNavigationPolicy(win)
 
-  win.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
-    const { requestHeaders } = details
-    upsertKeyValue(requestHeaders, "Access-Control-Allow-Origin", ["*"])
-    callback({ requestHeaders })
-  })
-
   win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
     const { responseHeaders = {} } = details
     addRendererHeaders(details.url, responseHeaders)
@@ -436,9 +430,12 @@ function allowRendererPermissions(win: BrowserWindow) {
   })
 }
 
+// 260923 Red CORS 归 sidecar/server 所有：httpapi 的 global cors 中间件按 origin 白名单
+// （oc://renderer / localhost / redcode.ai，见 opencode src/server/cors.ts）反射 ACAO，
+// SSE/PTY/API 全走这一层。Electron 层不再统一写 `*`——既会把服务端反射回的具体
+// origin 覆盖掉，也会给无关网络响应放开 CORS。这里只保留自身 HTML 文档需要的
+// Document-Policy。
 function addRendererHeaders(value: string, headers: Record<string, any>) {
-  upsertKeyValue(headers, "Access-Control-Allow-Origin", ["*"])
-  upsertKeyValue(headers, "Access-Control-Allow-Headers", ["*"])
   if (isTrustedRendererUrl(value, true)) upsertKeyValue(headers, documentPolicyHeader, [jsCallStacksDocumentPolicy])
 }
 
