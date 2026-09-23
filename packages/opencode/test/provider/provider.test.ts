@@ -664,13 +664,18 @@ test("provider.sort prioritizes preferred models", () => {
     { id: "random-model", name: "Random" },
     { id: "claude-sonnet-4-latest", name: "Claude Sonnet 4" },
     { id: "gpt-5-turbo", name: "GPT-5 Turbo" },
+    { id: "gpt-6-sol", name: "GPT-6 Sol" },
     { id: "other-model", name: "Other" },
   ] as any[]
 
   const sorted = Provider.sort(models)
-  expect(sorted[0].id).toContain("sonnet-4")
-  expect(sorted[0].id).toContain("latest")
-  expect(sorted[sorted.length - 1].id).not.toContain("gpt-5")
+  // 260923 Red gpt-6 进优先级表末尾（sortBy 对 index 取 desc，末尾=最高优先级）：
+  // gpt-6 > sonnet-4 > gpt-5 > 无优先级
+  expect(sorted[0].id).toBe("gpt-6-sol")
+  expect(sorted[1].id).toContain("sonnet-4")
+  expect(sorted[1].id).toContain("latest")
+  expect(sorted[2].id).toBe("gpt-5-turbo")
+  expect(sorted[sorted.length - 1].id).not.toContain("gpt-")
   expect(sorted[sorted.length - 1].id).not.toContain("sonnet-4")
 })
 

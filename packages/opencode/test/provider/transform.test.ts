@@ -398,6 +398,81 @@ describe("ProviderTransform.options - gpt-5 reasoningEffort", () => {
   })
 })
 
+// 260923 Red gpt-6 家族并入 gpt-5 默认参数组：官方 catalog 对 gpt-6-* 声明
+// support_verbosity=true / default_verbosity=low，Codex 后端 260923 实测 verbosity
+// 参数与 max effort 均返回 200。不放进来新模型就没有默认 effort / summary / verbosity。
+describe("ProviderTransform.options - gpt-6 默认参数", () => {
+  const sessionID = "test-session-123"
+
+  const createGpt6Model = (apiId: string) =>
+    ({
+      id: `openai/${apiId}`,
+      providerID: "openai",
+      api: {
+        id: apiId,
+        url: "https://api.openai.com",
+        npm: "@ai-sdk/openai",
+      },
+      name: apiId,
+      capabilities: {
+        temperature: true,
+        reasoning: true,
+        attachment: true,
+        toolcall: true,
+        input: { text: true, audio: false, image: true, video: false, pdf: false },
+        output: { text: true, audio: false, image: false, video: false, pdf: false },
+        interleaved: false,
+      },
+      cost: { input: 0.03, output: 0.06, cache: { read: 0.001, write: 0.002 } },
+      limit: { context: 128000, output: 4096 },
+      status: "active",
+      options: {},
+      headers: {},
+    }) as any
+
+  test("gpt-6-sol 得到默认 effort / reasoning summary / verbosity", () => {
+    const result = ProviderTransform.options({
+      model: createGpt6Model("gpt-6-sol"),
+      sessionID,
+      providerOptions: {},
+    })
+    expect(result.reasoningEffort).toBe("medium")
+    expect(result.reasoningSummary).toBe("auto")
+    expect(result.textVerbosity).toBe("low")
+  })
+
+  test("luna / astra 同样待遇", () => {
+    for (const id of ["gpt-6-luna", "gpt-6-astra"]) {
+      const result = ProviderTransform.options({
+        model: createGpt6Model(id),
+        sessionID,
+        providerOptions: {},
+      })
+      expect(result.reasoningEffort).toBe("medium")
+      expect(result.textVerbosity).toBe("low")
+    }
+  })
+
+  test("gpt-6 也拿 promptCacheKey（openai 分支对所有型号生效）", () => {
+    const result = ProviderTransform.options({
+      model: createGpt6Model("gpt-6-sol"),
+      sessionID,
+      providerOptions: {},
+    })
+    expect(result.promptCacheKey).toBeDefined()
+  })
+
+  test("gpt-6-chat 若出现也不吃这套默认值（-chat 排除）", () => {
+    const result = ProviderTransform.options({
+      model: createGpt6Model("gpt-6-chat"),
+      sessionID,
+      providerOptions: {},
+    })
+    expect(result.reasoningEffort).toBeUndefined()
+    expect(result.textVerbosity).toBeUndefined()
+  })
+})
+
 describe("ProviderTransform.options - gateway", () => {
   const sessionID = "test-session-123"
 

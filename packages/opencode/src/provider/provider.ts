@@ -2053,7 +2053,10 @@ export const defaultLayer = Layer.suspend(() =>
   ),
 )
 
-const priority = ["gpt-5", "claude-sonnet-4", "big-pickle", "gemini-3-pro"]
+// 260923 Red gpt-6 进优先级表（主力家族换代）：新装机/无 recent 记录时默认模型先看它。
+// ⚠️ 方向是反的——sortBy 对 findIndex 结果取 desc，**列表末尾才是最高优先级**（原列表里
+// claude-sonnet-4 压 gpt-5 一头就是这个原因，不是笔误）。加新主力往末尾追加。
+const priority = ["gpt-5", "claude-sonnet-4", "big-pickle", "gemini-3-pro", "gpt-6"]
 export function sort<T extends { id: string }>(models: T[]) {
   return sortBy(
     models,

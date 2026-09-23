@@ -6,13 +6,17 @@
  * 发的工具就是 apply_patch —— 见 codex-rs/core/src/tools/handlers/apply_patch_spec.rs 和
  * core/assets/tools/apply_patch.lark。
  *
+ * 260923 Red gpt-6 家族并入判据：官方 catalog（codex-rs/models-manager/models.json）对
+ * gpt-6-astra / -sol / -luna 声明的 `apply_patch_tool_type` 就是 "freeform"，与 gpt-5 系
+ * 同一条 Responses custom tool 通道；260902 写死 gpt-5 的判据把整代新模型漏成 JSON 形态。
+ *
  * 为什么值得单独做一份形态：补丁正文本来就是纯文本，包进 JSON 字符串等于给每个换行和引号
  * 加一层转义。两处代价——① token 明显变多；② 离模型训练时的输出分布更远，转义错一个字符
  * 整条工具调用就废了（JSON 解析失败 → repairToolCall → 一轮白跑）。文法约束这条路上，
  * 解码器在采样阶段就被 Lark 挡住，语法上不可能吐出不合法的补丁。
  *
  * 适用面刻意收窄：只有 `sdk.responses()` 那条路（provider.ts 里 openai 走的就是它）才有
- * custom tool，chat completions 没有这个概念。所以判据 = 官方 openai provider + gpt-5 家族。
+ * custom tool，chat completions 没有这个概念。所以判据 = 官方 openai provider + gpt-5/6 家族。
  */
 
 /** codex core/assets/tools/apply_patch.lark 原样搬运（不含 environment_id 那个可选扩展）。 */
@@ -55,8 +59,8 @@ export const SPECS: Record<string, Spec> = {
   },
 }
 
-/** 与 transform.ts 的 GPT5_FAMILY_RE 同源：锚在串首或 "/" 上，避免误伤 gpt-50 / gpt-5o。 */
-const GPT5_FAMILY_RE = /(?:^|\/)gpt-5(?:[.-]|$)/
+/** 与 transform.ts 的 GPT5/GPT6_FAMILY_RE 同源：锚在串首或 "/" 上，避免误伤 gpt-50 / gpt-5o。 */
+const GPT_FAMILY_RE = /(?:^|\/)gpt-[56](?:[.-]|$)/
 
 type ModelLike = {
   readonly providerID: string
@@ -72,8 +76,8 @@ export function supported(model: ModelLike): boolean {
   // 别的 provider（含 azure / copilot / 各家中转）没验过，不放进来。
   if (model.providerID !== "openai" || model.api.npm !== "@ai-sdk/openai") return false
   const id = model.api.id
-  // gpt-5-chat 不是 reasoning 模型、也不吃 custom tool，排除。
-  return GPT5_FAMILY_RE.test(id) && !id.includes("-chat")
+  // -chat 不是 reasoning 模型、也不吃 custom tool，排除（gpt-5-chat 与未来的 gpt-6-chat 都算）。
+  return GPT_FAMILY_RE.test(id) && !id.includes("-chat")
 }
 
 /** 该模型该工具是否走 freeform；不走则返回 undefined。 */

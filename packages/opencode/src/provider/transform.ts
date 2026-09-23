@@ -941,6 +941,10 @@ const OPENAI_XHIGH_EFFORT_RELEASE_DATE = "2025-12-04"
 //   "gpt-5", "gpt-5-nano", "gpt-5.4", "openai/gpt-5.4-codex".
 // Anchored to start-of-string or "/" so it doesn't false-match "gpt-50" or "gpt-5o".
 const GPT5_FAMILY_RE = /(?:^|\/)gpt-5(?:[.-]|$)/
+// 260923 Red gpt-6 家族（gpt-6-sol / -luna / -astra，无 minor 版本号）。max 推理档的放行判据：
+// models.dev reasoning_options 到 max，Codex 后端 260923 对三个型号实测 xhigh/max 全 200
+// （同一报文只换 effort 对照），官方 catalog（codex-rs models.json）亦已收录。
+const GPT6_FAMILY_RE = /(?:^|\/)gpt-6(?:[.-]|$)/
 const GPT5_VERSION_RE = /(?:^|\/)gpt-5[.-](\d+)(?:[.-]|$)/
 const GPT5_PRO_RE = /(?:^|\/)gpt-5[.-]?pro(?:[.-]|$)/
 const GPT5_VERSIONED_PRO_RE = /(?:^|\/)gpt-5[.-]\d+[.-]pro(?:[.-]|$)/
@@ -951,6 +955,9 @@ function gpt5Version(apiId: string) {
 
 function versionedGpt5ReasoningEfforts(apiId: string) {
   if (GPT5_VERSIONED_PRO_RE.test(apiId)) return OPENAI_GPT5_PRO_2_PLUS_EFFORTS
+  // 260923 Red gpt-6 整代直接落 5.6+ 档（none/low/medium/high/xhigh/max）——没有 minor
+  // 版本号可解，实测依据见 GPT6_FAMILY_RE 注释。
+  if (GPT6_FAMILY_RE.test(apiId)) return OPENAI_GPT5_6_PLUS_EFFORTS
   const version = gpt5Version(apiId)
   if (version === undefined) return undefined
   if (version === 1) return OPENAI_GPT5_1_EFFORTS
@@ -1587,7 +1594,15 @@ export function options(input: {
     return result
   }
 
-  if (input.model.api.id.includes("gpt-5") && !input.model.api.id.includes("gpt-5-chat")) {
+  // 260923 Red gpt-6 家族并入 gpt-5 的默认参数组：官方 catalog 对 gpt-6-* 声明
+  // support_verbosity=true / default_verbosity=low，与 gpt-5.x 同构；不放进来新模型就
+  // 没有默认 effort、reasoning summary 和 verbosity（260923 实测 verbosity 参数在 Codex
+  // 后端对三个 gpt-6 型号均返回 200）。
+  const isGpt6Family = GPT6_FAMILY_RE.test(input.model.api.id)
+  if (
+    (input.model.api.id.includes("gpt-5") && !input.model.api.id.includes("gpt-5-chat")) ||
+    (isGpt6Family && !input.model.api.id.includes("-chat"))
+  ) {
     if (!input.model.api.id.includes("gpt-5-pro")) {
       result["reasoningEffort"] = "medium"
       result["reasoningSummary"] = "auto"
@@ -1596,7 +1611,7 @@ export function options(input: {
     // Only set textVerbosity for non-chat gpt-5.x models
     // Chat models (e.g. gpt-5.2-chat-latest) only support "medium" verbosity
     if (
-      input.model.api.id.includes("gpt-5.") &&
+      (input.model.api.id.includes("gpt-5.") || isGpt6Family) &&
       !input.model.api.id.includes("codex") &&
       !input.model.api.id.includes("-chat") &&
       input.model.providerID !== "azure"

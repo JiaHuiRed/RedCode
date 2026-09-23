@@ -23,7 +23,17 @@ const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000
 // —— gpt-5.2 / gpt-5.3-codex / gpt-5.3-codex-spark / gpt-5.5-pro / **裸 gpt-5.6** 全部实测被拒。
 // 260907 Red 这是产品筛选白名单，不是版本号猜测：旧型号不加入；新发布且已确认可用的型号要放行，
 // 否则更新后的模型会被旧列表挡在 GUI 之外。
-const ALLOWED_MODELS = new Set(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra"])
+// 260923 Red 补 gpt-6-sol / gpt-6-luna：上游 260922 随 GPT-6 Sol/Luna 发布进入 models.dev openai
+// 目录（gpt-6-astra 之后同批，reasoning_options 到 max），codex 官方 catalog（#47332/#47347）亦已
+// 收录且 supported_in_api；本机 models.dev 缓存 260923 已刷新在列，哥哥的 codex 客户端也能选到。
+const ALLOWED_MODELS = new Set([
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
+  "gpt-6-astra",
+  "gpt-6-sol",
+  "gpt-6-luna",
+])
 
 interface PkceCodes {
   verifier: string

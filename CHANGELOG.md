@@ -7,6 +7,23 @@
 版本线历史分三段：0.3.0 及之前 TUI 与 GUI 共同历史；0.3.0 起两线独立维护（TUI 至 0.8.16，GUI 至 0.7.20），分别记录在下方 `## TUI` 与 `## GUI` 两段；**2026-08-14 起两线重新合并**，单一版本号覆盖全部组件，从 TUI 的 0.8.16 继续递增，新条目直接记录在本说明之下、不再按组件分段。
 
 ---
+### [未发布]
+
+#### 变更
+
+- **GPT-6 家族全链路适配**（`packages/opencode/src/{tool/freeform.ts,provider/transform.ts,session/prompt/gpt.md}`、回归 `test/{tool/freeform,provider/reasoning-effort-variants,provider/transform}.test.ts`）：260922 上游发布 gpt-6-sol / -luna 后逐层核了一遍官方 openai 接入的适配，四层门全部写死在 gpt-5 上——模型进了目录也拿不到同代待遇。① **freeform apply_patch**：`tool/freeform.ts` 判据只认 gpt-5，gpt-6 全系退回 JSON 包裹形态（token 更多、离训练分布更远、转义错一个字符整轮作废）；官方 catalog（`codex-rs/models-manager/models.json`）对 gpt-6-astra/sol/luna 声明的 `apply_patch_tool_type` 就是 "freeform"，判据并入 gpt-6。② **max 推理档**：`transform.ts` 版号路径只解 `gpt-5.x`，gpt-6 落到底部通用路径产出 none/low/medium/high/xhigh，models.dev 与官方客户端都有的 `max` 拿不到；整代并入 5.6+ 档。**加档依据**（本仓纪律：加档前必须真请求验，不读字段）：260923 用本机 Codex OAuth 对 sol/luna/astra 各打同一报文只换 effort，xhigh 与 max 全部 200；旁证两项——models.dev reasoning_options 到 max、官方客户端强度滑块顶档「最高」。ultra 依旧不给。③ **默认参数组**：`transform.ts` options() 的 gpt-5 分支（默认 effort medium、reasoningSummary auto、textVerbosity low）gpt-6 一概吃不到，官方 catalog 对 gpt-6-* 声明 support_verbosity=true / default_verbosity=low，一并并入（verbosity 参数同批实测 200）。④ **提示词**：0.11.1 对照泄漏的 GPT-6 官方 harness 提示词加进 gpt.md 的三处（中文文件保持中文、Final answer 反 AI 腔、CommonMark 空行规则），在 260921「公共基线 + Delta」重构时被当成重复文本删掉、而 default.md 并没有覆盖它们——原样恢复。
+
+  模型可见改动四问：模型看到什么变了——GPT 家族 delta 增加三段共约 150 tokens（仅走 default.md+gpt.md 路由的会话），工具侧 gpt-6 的 apply_patch 从 JSON 函数工具变为 Lark 文法 custom tool（description 追加一句 freeform 提示）；token 影响——固定前缀 +150 tokens；KV cache——delta 追加在文件末尾，自 delta 起的注入前缀作废，发布后新会话重建一次即恢复稳定；硬上限——gpt.md 14 行定长，无动态输入。
+
+  顺带把 `provider.ts` 默认模型排序的 priority 表补上 `gpt-6`（该表方向是反的：sortBy 对 findIndex 取 desc，**列表末尾才是最高优先级**——原列表里 claude-sonnet-4 压 gpt-5 即此机制，已在源码注明）：新装机/无 recent 记录时默认模型先挑 gpt-6，不列则被 gpt-5 挤在后面。`getSmallModel` 的 nano 档 gpt-6 无对应型号，不动。
+
+- **DCP 压缩阈值补 gpt-6 两表**（`~/.redcode/dcp.jsonc`，live 配置、随私仓不同步）：`compress.modelMinLimits` / `modelMaxLimits` 补 `openai/gpt-6-{astra,luna,sol}` = 140000/210000。gpt-6 全家 context 1.05M，漏补的后果与 260910 deepseek-flash 同因——静默回落全局 50k/100k 线，1M 窗口跑在半程目标上，compress 永远判「还差一截」。opencode-go 侧暂无 gpt-6 条目（models.dev 未收录），不补。
+
+#### 修复
+
+- **Codex OAuth 模型白名单补上 GPT-6 Sol/Luna**（`packages/opencode/src/plugin/codex.ts`，回归 `test/plugin/codex.test.ts`）：上游 260922 发布后 models.dev openai 目录已收录 `gpt-6-sol` / `gpt-6-luna`（reasoning_options 到 `max`），但订阅认证路径的 `ALLOWED_MODELS` 还停在 Astra 那一批，两个新模型在进入 GUI 前被过滤掉——官方 codex 选得到、RedCode 选不到。与 260907 Astra 同一处筛选、同一种修法：白名单是产品筛选不是版本快照，新模型确认可用后放行，旧型号依旧挡住。
+
+---
 
 ### [0.11.12] - 2026-09-22
 

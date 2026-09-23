@@ -187,52 +187,64 @@ describe("plugin.codex", () => {
     })
   })
 
-  test("keeps newly released Astra while excluding older models", async () => {
-    const hooks = await CodexAuthPlugin({
-      client: {} as never,
-      project: {} as never,
-      directory: "",
-      worktree: "",
-      experimental_workspace: {
-        register() {},
-      },
-      serverUrl: new URL("https://example.com"),
-      $: {} as never,
-    })
+ // 260923 Red 随白名单补 gpt-6-sol / gpt-6-luna 扩充：Astra 那条只覆盖到 gpt-6-astra，
+ // 上游 260922 发布 Sol/Luna 后同样会被旧断言放过的形状——加进同一用例的两侧。
+ test("keeps newly released GPT-6 models while excluding older models", async () => {
+   const hooks = await CodexAuthPlugin({
+     client: {} as never,
+     project: {} as never,
+     directory: "",
+     worktree: "",
+     experimental_workspace: {
+       register() {},
+     },
+     serverUrl: new URL("https://example.com"),
+     $: {} as never,
+   })
 
-    const models = await hooks.provider!.models!(
-      {
-        id: "openai",
-        models: {
-          "gpt-5.5": {
-            id: "gpt-5.5",
-            providerID: "openai",
-            api: { id: "gpt-5.5", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
-          },
-          "gpt-5.6-luna": {
-            id: "gpt-5.6-luna",
-            providerID: "openai",
-            api: { id: "gpt-5.6-luna", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
-          },
-          "gpt-6-astra": {
-            id: "gpt-6-astra",
-            providerID: "openai",
-            api: { id: "gpt-6-astra", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
-          },
-        },
-      } as never,
-      {
-        auth: {
-          type: "oauth",
-          refresh: "refresh",
-          access: "access",
-          expires: Date.now() + 60_000,
-        } as never,
-      },
-    )
+   const models = await hooks.provider!.models!(
+     {
+       id: "openai",
+       models: {
+         "gpt-5.5": {
+           id: "gpt-5.5",
+           providerID: "openai",
+           api: { id: "gpt-5.5", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
+         },
+         "gpt-5.6-luna": {
+           id: "gpt-5.6-luna",
+           providerID: "openai",
+           api: { id: "gpt-5.6-luna", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
+         },
+         "gpt-6-astra": {
+           id: "gpt-6-astra",
+           providerID: "openai",
+           api: { id: "gpt-6-astra", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
+         },
+         "gpt-6-sol": {
+           id: "gpt-6-sol",
+           providerID: "openai",
+           api: { id: "gpt-6-sol", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
+         },
+         "gpt-6-luna": {
+           id: "gpt-6-luna",
+           providerID: "openai",
+           api: { id: "gpt-6-luna", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
+         },
+       },
+     } as never,
+     {
+       auth: {
+         type: "oauth",
+         refresh: "refresh",
+         access: "access",
+         expires: Date.now() + 60_000,
+       } as never,
+     },
+   )
 
-    expect(Object.keys(models)).toEqual(["gpt-5.6-luna", "gpt-6-astra"])
-  })
+   expect(Object.keys(models)).toEqual(["gpt-5.6-luna", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"])
+ })
 
   test("deduplicates concurrent Codex token refreshes", async () => {
     let auth = {

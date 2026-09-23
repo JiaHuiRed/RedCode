@@ -10,11 +10,20 @@ const model = (over: { providerID?: string; id?: string; npm?: string } = {}) =>
 })
 
 describe("Freeform.supported", () => {
-  test("官方 openai provider 上的 gpt-5 家族走 freeform", () => {
+  test("官方 openai provider 上的 gpt-5/gpt-6 家族走 freeform", () => {
     expect(Freeform.supported(model())).toBe(true)
     expect(Freeform.supported(model({ id: "gpt-5" }))).toBe(true)
     expect(Freeform.supported(model({ id: "gpt-5-nano" }))).toBe(true)
     expect(Freeform.supported(model({ id: "gpt-5.4" }))).toBe(true)
+    // 260923 Red gpt-6 整代并入：官方 catalog（codex-rs models.json）对 gpt-6-* 声明的
+    // apply_patch_tool_type 就是 freeform，260902 写死 gpt-5 的判据把整代漏成 JSON 形态。
+    expect(Freeform.supported(model({ id: "gpt-6-sol" }))).toBe(true)
+    expect(Freeform.supported(model({ id: "gpt-6-luna" }))).toBe(true)
+    expect(Freeform.supported(model({ id: "gpt-6-astra" }))).toBe(true)
+  })
+
+  test("gpt-6-chat 同样不吃 custom tool", () => {
+    expect(Freeform.supported(model({ id: "gpt-6-chat" }))).toBe(false)
   })
 
   test("gpt-5-chat 不吃 custom tool", () => {
@@ -25,6 +34,7 @@ describe("Freeform.supported", () => {
   test("锚在串首或 / 上，不误伤形近 id", () => {
     expect(Freeform.supported(model({ id: "gpt-50" }))).toBe(false)
     expect(Freeform.supported(model({ id: "gpt-5o" }))).toBe(false)
+    expect(Freeform.supported(model({ id: "gpt-60" }))).toBe(false)
     expect(Freeform.supported(model({ id: "gpt-4.1" }))).toBe(false)
   })
 
