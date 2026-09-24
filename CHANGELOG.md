@@ -16,6 +16,7 @@
 
 #### 变更
 
+- **提示词职责边界收敛**（`AGENTS.md`、`packages/opencode/src/session/{prompt,system,reasoning-language}.ts`）：修正全局工作规则冲突，移除项目级通用 CORE 与有静态 owner 的纠错/代执行重复条款；称呼仅作为最多 128 个 Unicode 码位的偏好事实注入，表达方式归 soul。决策与前缀影响：`docs/notes/implemented/architecture/2026-09-24-prompt-instruction-ownership.md`。
 - **工具参数流增加非正文进度日志**（`packages/opencode/src/session/llm.ts`）：长参数生成可见计数与耗时，区分完整生成和断流收尾，不记录参数内容，也不改变看门狗超时策略。
 - **GPT 提示词精简重复规则并保留 soul 声线**（`packages/opencode/src/session/prompt/gpt.md`）：压缩与公共提示词重复的编辑、续接和表达要求，并明确简洁结构不应抹掉自然语气（仓内字符估算约 −193 tokens）。
 - **会话胶囊折叠态保留五项导航**：折叠时仍可切换 Review、Context、Outline、Plan、Status；Context 默认只显示六项关键摘要，其他 tab 继续呈现各自内容，切换 tab 不会意外展开胶囊。

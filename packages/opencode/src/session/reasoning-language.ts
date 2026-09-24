@@ -82,12 +82,16 @@ export function block(mode: Mode, address?: string): string | undefined {
 }
 
 /**
- * 从 config.username 取思考里该用的称呼。
+ * 从 config.username 取模型可见的称呼偏好。
  *
  * config 在读取时会把空缺的 username 填成电脑名（config.ts 里 `if (!result.username)`），
  * 所以这里必须把"等于系统用户名或电脑名"当成没设过 —— 否则会注入「称呼用户为 Administrator」，
  * 比不注入更糟。
  */
+// 260924 Red Bound the config-derived address fact before prompt injection.
+// See docs/notes/implemented/architecture/2026-09-24-prompt-instruction-ownership.md.
+const MAX_ADDRESS_LENGTH = 128
+
 export function addressFrom(username: string | undefined): string | undefined {
   const name = username?.trim()
   if (!name) return undefined
@@ -95,7 +99,7 @@ export function addressFrom(username: string | undefined): string | undefined {
     // 260803 Red username 兜底从系统用户名改为电脑名，判据同步排除 hostname
     if (name === os.userInfo().username || name === os.hostname()) return undefined
   } catch {}
-  return name
+  return Array.from(name).slice(0, MAX_ADDRESS_LENGTH).join("")
 }
 
 // 剥掉不代表"用户在用什么语言说话"的内容：RedCode 注入的包装块、粘贴的文件/代码。

@@ -157,31 +157,9 @@ export const layer = Layer.effect(
             // Today's date is appended fresh every turn near the end of the prompt instead
             // (session/prompt.ts, next to the canary marker) so only that small tail busts daily.
             `</env>`,
-            // 260731 Red 正文称呼。2661b06 下线 USER.md 时把称呼来源指定为 config.username，
-            // 但当时唯一的消费者是每步注入的 <reasoning-language> 块 —— 那条已于本日撤除
-            // （原因见 session/prompt.ts），username 就此悬空、实际没人读。这里把它接回来。
-            //
-            // 位置是刻意选的：跟着 env 块走，随 _caches.system 一次性缓存，**不占用户回合、
-            // 不每步重复**。被撤除的那条正是栽在这两点上 —— 每步一条 role:"user" 让模型
-            // 以为用户一直在说话。
-            //
-            // 措辞是刻意的。原来那句「与正文保持一致…从第一句思考开始就这么称呼」等于让模型
-            // 把思考写成正文，通道纪律弱的模型照做了，话全说进了思考里。这里两条分开写，并且
-            // 明确点出「思考是你自己的推理，不是对他说话」—— 保留称呼、切断"思考=正文"的暗示。
-            //
-            // 思考那条留着是因为用户实测 V4-Flash 收益明显（07-31：「思考链中文也多了起来，
-            // 也会叫我哥哥，工作流也很规范」）。撤掉的从来不是这个效果，是承载它的坏机制。
-            // soul 里其实已经规定了称呼，这里是兜底 —— 实测 soul 说了「叫哥哥」，正文仍会
-            // 冒出"再给你结论"。
-            ...(address
-              ? [
-                  ``,
-                  `正文回复里称呼用户为「${address}」，尽量用这个称呼而不是「你」。`,
-                  `可见思考文本里提到用户时同样用「${address}」，不要用「用户」「the user」这类第三人称指代。` +
-                    `但思考是你写给自己的推理过程，不是对${address}说的话 —— 不要在思考里向${address}汇报、` +
-                    `解释或提问，要对${address}说的内容一律写进正文回复。`,
-                ]
-              : []),
+            // 260924 Red Soul owns address style; runtime supplies only the capped preference fact.
+            // See docs/notes/implemented/architecture/2026-09-24-prompt-instruction-ownership.md.
+            ...(address ? [`Preferred form of address: ${address}`] : []),
           ].join("\n"),
         ]
       }),
@@ -207,7 +185,7 @@ export const layer = Layer.effect(
 export const defaultLayer = layer.pipe(
   Layer.provide(Skill.defaultLayer),
   Layer.provide(RuntimeFlags.defaultLayer),
-  // 260731 Red env 块要读 config.username 做正文称呼，见 environment()
+  // 260924 Red env 块提供有界的称呼偏好事实，表达方式归 soul。
   Layer.provide(Config.defaultLayer),
 )
 

@@ -1548,16 +1548,13 @@ export const layer = Layer.effect(
           // 260728 Red expanded rule 3 with concrete forbidden phrases (Chinese+English).
           // User caught another agent telling him "go rest" after hours of no progress — that phrasing
           // is a form of "put it aside" and is explicitly banned at the model level.
-          // 260921 Red GPT 审计 P0-4：rule 4 原「纠正后第一条必须 tool call」约束的是
-          // 动作形状不是结果——纠正可能只是需求理解/事实澄清，强行 grep/read 制造无意义
-          // 动作。改为结果导向：纠正涉及可执行工作就落实并验证，不许只口头承诺。
+          // 260924 Red Correction/execution ownership stays with AGENTS.md and default.md; see
+          // docs/notes/implemented/architecture/2026-09-24-prompt-instruction-ownership.md.
           system.push(
             `▸ WORK RULES (CORE — must obey, never violate):
   1. READ CODE FIRST — never guess file paths, APIs, or function names. Investigate before acting.
   2. FAIL → DIAGNOSE → PIVOT — after 2 same-direction failures, force-switch approach AND report facts/cause/new-plan to user.
-  3. NEVER suggest the user rest / give up / pause / resume later / ask someone else — in ANY language (e.g. "去休息吧", "下次继续", "叫别人来做", "let's stop for today", "put it aside", "come back to this later"). That is the WORST violation: you are making the user's decision for them. Instead: admit "I cannot" + reason + alternative, or switch approach and keep working.
-  4. CORRECTIONS ARE ACTIONABLE — when the user corrects work in progress, implement the correction and verify it; do not respond with promises or apologies alone.
-  5. AFTER ANALYSIS → EXECUTE YOURSELF — download, extract, modify config, run scripts. NEVER tell the user to do what you can do. Only ask for: irreversible ops, missing info, physical actions.`
+  3. NEVER suggest the user rest / give up / pause / resume later / ask someone else — in ANY language (e.g. "去休息吧", "下次继续", "叫别人来做", "let's stop for today", "put it aside", "come back to this later"). That is the WORST violation: you are making the user's decision for them. Instead: admit "I cannot" + reason + alternative, or switch approach and keep working.`,
           )
           // 260805 Red step 模型专用：step 经常无视 DCP nudge 不调用 compress，
           // 这里直接用铁律约束，不依赖 soft nudge。非 step 模型不动。
