@@ -505,8 +505,41 @@ export function guardFirstEvent<S, E>(
 ): Stream.Stream<S, E | FirstEventTimeoutError | StreamIdleTimeoutError> {
   return Stream.unwrap(
     Effect.gen(function* () {
-      const state = { last: Date.now(), seen: false, pending: new Set<string>(), start: Date.now() }
+      const state = {
+        last: Date.now(),
+        seen: false,
+        pending: new Set<string>(),
+        start: Date.now(),
+        inputs: new Map<
+          string,
+          {
+            tool: string
+            start: number
+            lastDelta: number
+            lastReport: number
+            chars: number
+            chunks: number
+            ended: boolean
+          }
+        >(),
+      }
       const timeoutSignal = yield* Deferred.make<never, FirstEventTimeoutError | StreamIdleTimeoutError>()
+      // 260924 Red 参数 delta 不落库；只记长度与耗时，断流时留下证据但不泄露工具参数。
+      yield* Effect.addFinalizer(() =>
+        Effect.forEach(
+          state.inputs.values(),
+          (input) =>
+            Effect.logWarning("llm.tool-input unfinished", {
+              tool: input.tool,
+              chars: input.chars,
+              chunks: input.chunks,
+              elapsedMs: Date.now() - input.start,
+              sinceLastDeltaMs: Date.now() - input.lastDelta,
+              inputEnded: input.ended,
+            }),
+          { discard: true },
+        ),
+      )
       // 看门狗 fiber：每 tick 比一次"距上一个事件多久"。超过当前档位的阈值就先 abort
       // 底层请求，再向 timeoutSignal 失败，merge 收到后让整体流失败。
       //
@@ -519,6 +552,20 @@ export function guardFirstEvent<S, E>(
         Effect.gen(function* () {
           while (true) {
             yield* Effect.sleep(limits.tick)
+            const now = Date.now()
+            // 260924 Red 流持续吐参数时不会触发 idle 看门狗；按既有 idle 周期留下非正文进度。
+            for (const input of state.inputs.values()) {
+              if (now - input.lastReport < Duration.toMillis(limits.idle)) continue
+              input.lastReport = now
+              yield* Effect.logInfo("llm.tool-input progress", {
+                tool: input.tool,
+                chars: input.chars,
+                chunks: input.chunks,
+                elapsedMs: now - input.start,
+                sinceLastDeltaMs: now - input.lastDelta,
+                inputEnded: input.ended,
+              })
+            }
             // 260904 cc **本地在干活时不计时。** AI SDK 的工具执行跑在流内部：
             //   `tool-call` 之后到 `tool-result` 之前，流上一个事件都不会来。那段时间
             //   长短完全由本地决定——工具自己可以跑 10 分钟（bash 上限 600s、repo_clone
@@ -561,8 +608,9 @@ export function guardFirstEvent<S, E>(
       return Stream.merge(
         stream.pipe(
           Stream.tap((event) =>
-            Effect.sync(() => {
-              state.last = Date.now()
+            Effect.gen(function* () {
+              const now = Date.now()
+              state.last = now
               state.seen = true
               // 260916 Red 在途工具集合：tool-call 进、tool-result/tool-error 出，按 toolCallId
               //   记账（LLMEvent 的 id 即 toolCallId，同一次调用的几条事件共用）。
@@ -572,10 +620,45 @@ export function guardFirstEvent<S, E>(
               //   那比误杀更糟（看门狗彻底失效）。
               //   为什么删掉原来"text-/reasoning-/step- 顺带清本地态"那条：那些事件只证明网关
               //   在说话，不能证明本地工具已经跑完——并行工具场景下正是它把慢工具的豁免放跑了。
-              const e = event as { type?: string; id?: string }
+              const e = event as { type?: string; id?: string; name?: string; text?: string }
               const type = e?.type ?? ""
-              if (type === "tool-call" && e.id) state.pending.add(e.id)
-              else if ((type === "tool-result" || type === "tool-error") && e.id) state.pending.delete(e.id)
+              if (type === "tool-input-start" && e.id) {
+                state.inputs.set(e.id, {
+                  tool: e.name ?? "unknown",
+                  start: now,
+                  lastDelta: now,
+                  lastReport: now,
+                  chars: 0,
+                  chunks: 0,
+                  ended: false,
+                })
+              }
+              if (type === "tool-input-delta" && e.id) {
+                const input = state.inputs.get(e.id)
+                if (input) {
+                  input.chars += e.text?.length ?? 0
+                  input.chunks++
+                  input.lastDelta = now
+                }
+              }
+              if (type === "tool-input-end" && e.id) {
+                const input = state.inputs.get(e.id)
+                if (input) input.ended = true
+              }
+              if (type === "tool-call" && e.id) {
+                const input = state.inputs.get(e.id)
+                if (input) {
+                  yield* Effect.logInfo("llm.tool-input complete", {
+                    tool: input.tool,
+                    chars: input.chars,
+                    chunks: input.chunks,
+                    elapsedMs: now - input.start,
+                  })
+                  state.inputs.delete(e.id)
+                }
+                state.pending.add(e.id)
+              }
+              if ((type === "tool-result" || type === "tool-error") && e.id) state.pending.delete(e.id)
             }),
           ),
         ),

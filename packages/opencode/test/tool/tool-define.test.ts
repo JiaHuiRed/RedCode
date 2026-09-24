@@ -2,11 +2,28 @@ import { describe, expect } from "bun:test"
 import { Cause, Effect, Exit, Layer, Schema } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { MessageID, SessionID } from "../../src/session/schema"
+import { ImageTokens } from "@/session/image-tokens"
 import { Tool } from "@/tool/tool"
 import { Truncate } from "@/tool/truncate"
 import { testEffect } from "../lib/effect"
 
 const it = testEffect(Layer.mergeAll(Truncate.defaultLayer, Agent.defaultLayer))
+const budgetIt = testEffect(
+  Layer.mergeAll(
+    Layer.mock(Truncate.Service)({
+      result: (input) =>
+        Effect.succeed({
+          output: `${input.output}\n[fit]`,
+          attachments: input.attachments,
+          metadata: {
+            truncated: true,
+            outputPath: input.outputPath ?? "spill.txt",
+          },
+        }),
+    }),
+    Agent.defaultLayer,
+  ),
+)
 
 const params = Schema.Struct({ input: Schema.String })
 
@@ -38,6 +55,61 @@ function makeTool(id: string, executeFn?: () => void) {
 }
 
 describe("Tool.define", () => {
+  it.live("limits a tool result that reports truncated false", () =>
+    Effect.gen(function* () {
+      const original = "r".repeat(80_000)
+      const info = yield* Tool.define(
+        "tool-pretruncated",
+        Effect.succeed({
+          description: "test tool",
+          parameters: params,
+          execute() {
+            return Effect.succeed({ title: "test", output: original, metadata: { truncated: false } })
+          },
+        }),
+      )
+      const tool = yield* info.init()
+      const result = yield* tool.execute({ input: "value" }, makeCtx())
+
+      expect(result.metadata.truncated).toBe(true)
+      expect(result.output).not.toBe(original)
+      expect(result.output).toContain("Full output saved to:")
+      const outputPath = "outputPath" in result.metadata ? result.metadata.outputPath : undefined
+      expect(typeof outputPath).toBe("string")
+      if (typeof outputPath !== "string") return
+      expect(yield* Effect.promise(() => Bun.file(outputPath).text())).toBe(original)
+      expect(ImageTokens.estimateToolResult({ text: result.output }, { providerID: "" })).toBeLessThanOrEqual(
+        ImageTokens.TOOL_RESULT_TOKEN_BUDGET,
+      )
+    }),
+  )
+
+  budgetIt.effect("applies the model-visible budget even when tool metadata already defines truncated", () =>
+    Effect.gen(function* () {
+      for (const [id, metadata] of [
+        ["truncated-false", { truncated: false }],
+        ["truncated-with-path", { truncated: true, outputPath: "existing.txt" }],
+      ] as const) {
+        const info = yield* Tool.define(
+          id,
+          Effect.succeed({
+            description: "test tool",
+            parameters: params,
+            execute() {
+              return Effect.succeed({ title: id, output: "raw", metadata })
+            },
+          }),
+        )
+        const tool = yield* info.init()
+        const execute = tool.execute as unknown as (args: unknown, ctx: Tool.Context) => ReturnType<typeof tool.execute>
+        const result = yield* execute({ input: "value" }, makeCtx())
+
+        expect(result.output).toBe("raw\n[fit]")
+        expect(result.metadata.outputPath).toBe("outputPath" in metadata ? metadata.outputPath : "spill.txt")
+      }
+    }),
+  )
+
   it.effect("object-defined tool does not mutate the original init object", () =>
     Effect.gen(function* () {
       const original = makeTool("test")

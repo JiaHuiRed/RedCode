@@ -8,7 +8,7 @@
 // 此前这里是"逐行复刻"的一份 shadow 实现，而 260916 的并行工具误杀恰恰因为复刻版没
 // 跟上实现（复刻版从来没有 local 逻辑）而在测试里隐形——复刻即漂移源，不再复刻。
 import { describe, expect, test } from "bun:test"
-import { Effect, Duration, Stream } from "effect"
+import { Effect, Duration, Logger, Stream } from "effect"
 import { FirstEventTimeoutError, StreamIdleTimeoutError, guardFirstEvent } from "../../src/session/llm"
 
 const OPTS = { first: Duration.millis(300), idle: Duration.millis(400), tick: Duration.millis(25) }
@@ -20,6 +20,56 @@ const collect = <S, E>(s: Stream.Stream<S, E>, ctrl: AbortController) =>
 type Ev = { type: string; id: string; output?: string }
 
 describe("LLM 流看门狗", () => {
+  test("长时间生成工具参数时记录计数进度，不记录参数正文", async () => {
+    const ctrl = new AbortController()
+    const logs: string[] = []
+    const secret = "private-summary-fragment"
+    const events = [
+      { type: "tool-input-start", id: "call-1", name: "compress" },
+      ...Array.from({ length: 12 }, () => ({ type: "tool-input-delta", id: "call-1", text: secret })),
+      { type: "tool-call", id: "call-1" },
+      { type: "tool-result", id: "call-1" },
+    ]
+    const src = Stream.fromIterable(events).pipe(
+      Stream.mapEffect((event) => Effect.as(Effect.sleep(Duration.millis(70)), event)),
+    )
+    const out = await Stream.runCollect(guardFirstEvent(src, ctrl, OPTS)).pipe(
+      Effect.scoped,
+      Effect.result,
+      Effect.provide(Logger.layer([Logger.make(({ message }) => logs.push(JSON.stringify(message)))])),
+      Effect.runPromise,
+    )
+
+    expect(out._tag).toBe("Success")
+    expect(logs.some((entry) => entry.includes("llm.tool-input progress"))).toBe(true)
+    expect(logs.some((entry) => entry.includes("llm.tool-input complete"))).toBe(true)
+    expect(logs.join(" ")).not.toContain(secret)
+    expect(ctrl.signal.aborted).toBe(false)
+  })
+
+  test("工具参数未生成完就断流时留下可区分的收尾记录", async () => {
+    const ctrl = new AbortController()
+    const logs: string[] = []
+    const src = Stream.concat(
+      Stream.fromIterable([
+        { type: "tool-input-start", id: "call-1", name: "compress" },
+        { type: "tool-input-delta", id: "call-1", text: "private-fragment" },
+      ]),
+      Stream.fromEffect(Effect.as(Effect.sleep(Duration.seconds(30)), { type: "tool-input-end", id: "call-1" })),
+    )
+    const out = await Stream.runCollect(guardFirstEvent(src, ctrl, OPTS)).pipe(
+      Effect.scoped,
+      Effect.result,
+      Effect.provide(Logger.layer([Logger.make(({ message }) => logs.push(JSON.stringify(message)))])),
+      Effect.runPromise,
+    )
+
+    expect(out._tag).toBe("Failure")
+    expect(logs.some((entry) => entry.includes("llm.tool-input unfinished"))).toBe(true)
+    expect(logs.join(" ")).not.toContain("private-fragment")
+    expect(ctrl.signal.aborted).toBe(true)
+  })
+
   test("正常流：全部事件原样通过，不误杀", async () => {
     const ctrl = new AbortController()
     const src = Stream.fromIterable([1, 2, 3, 4, 5]).pipe(

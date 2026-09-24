@@ -93,7 +93,8 @@ export interface Info<
 }
 
 type Init<Parameters extends Schema.Decoder<unknown>, M extends Metadata> =
-  DefWithoutID<Parameters, M> | (() => Effect.Effect<DefWithoutID<Parameters, M>>)
+  | DefWithoutID<Parameters, M>
+  | (() => Effect.Effect<DefWithoutID<Parameters, M>>)
 
 export type InferParameters<T> =
   T extends Info<infer P, any>
@@ -152,12 +153,14 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
                 }),
               )
             : run
-          if (result.metadata.truncated !== undefined) {
-            return result
-          }
+          // 260924 Red truncated:false 只表示工具自己的字节闸门未触发，仍须过模型侧合成预算。
           const agent = yield* agents.get(ctx.agent)
           const fitted = yield* truncate.result(
-            { output: result.output, attachments: result.attachments },
+            {
+              output: result.output,
+              attachments: result.attachments,
+              ...(typeof result.metadata.outputPath === "string" ? { outputPath: result.metadata.outputPath } : {}),
+            },
             { model: ctx.extra?.model as { providerID: string } | undefined },
             agent,
           )
@@ -167,7 +170,7 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
             attachments: fitted.attachments as typeof result.attachments,
             metadata: {
               ...result.metadata,
-              truncated: fitted.metadata.truncated,
+              truncated: result.metadata.truncated === true || fitted.metadata.truncated,
               ...(fitted.metadata.outputPath && { outputPath: fitted.metadata.outputPath }),
             },
           }

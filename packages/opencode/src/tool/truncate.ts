@@ -61,7 +61,7 @@ export interface Interface {
    * 260923 Red 决策记录：docs/notes/implemented/feature/2026-09-23-tool-result-token-budget.md
    */
   readonly result: (
-    input: { output: string; attachments?: Attachment[] },
+    input: { output: string; attachments?: Attachment[]; outputPath?: string },
     options?: { model?: { providerID: string } },
     agent?: Agent.Info,
   ) => Effect.Effect<ResultOutput>
@@ -175,7 +175,7 @@ export const layer = Layer.effect(
     })
 
     const result = Effect.fn("Truncate.result")(function* (
-      input: { output: string; attachments?: Attachment[] },
+      input: { output: string; attachments?: Attachment[]; outputPath?: string },
       options: { model?: { providerID: string } } = {},
       agent?: Agent.Info,
     ) {
@@ -184,9 +184,8 @@ export const layer = Layer.effect(
       const fitted = ImageTokens.fitToolResult({ text: input.output, attachments }, model)
       if (!fitted.truncated) return { output: input.output, attachments, metadata: { truncated: false } }
 
-      // 完整文本一定写：notice 要占预算，第二遍 fit 可能把第一遍还放得下的正文也裁掉，
-      // 那时完整内容必须已经留在盘上。
-      const outputPath = yield* spill(write(input.output))
+      // 260924 Red 已由工具保存的完整输出不能用预览覆盖；新结果则先写盘再为 notice 做第二遍预算。
+      const outputPath = input.outputPath || (yield* spill(write(input.output)))
       const mediaPath = fitted.dropped.length > 0 ? yield* spill(writeMedia(fitted.dropped)) : undefined
 
       const saved = [

@@ -277,10 +277,10 @@ describe("Truncate", () => {
             writeFileString: () => Effect.die("simulated spill failure"),
             writeWithDirs: () => Effect.die("simulated spill failure"),
             readDirectory: () => Effect.succeed([]),
-          // PartialEffectful 只把 Effect 方法变可选，globMatch / sink / [TypeId] 这类
-          // 非 Effect 成员仍然要求齐 —— 文件系统 mock 填不出有意义的值，只覆盖本用例
-          // 真正走到的四个方法
-        } as any),
+            // PartialEffectful 只把 Effect 方法变可选，globMatch / sink / [TypeId] 这类
+            // 非 Effect 成员仍然要求齐 —— 文件系统 mock 填不出有意义的值，只覆盖本用例
+            // 真正走到的四个方法
+          } as any),
         ),
         Layer.provide(NodePath.layer),
       ),
@@ -340,6 +340,25 @@ describe("Truncate", () => {
         expect(ImageTokens.estimateToolResult({ text: result.output }, { providerID: "deepseek" })).toBeLessThanOrEqual(
           ImageTokens.TOOL_RESULT_TOKEN_BUDGET,
         )
+      }),
+    )
+
+    it.live("reuses an existing full-output file without overwriting it with the preview", () =>
+      Effect.gen(function* () {
+        const svc = yield* Truncate.Service
+        const fsys = yield* AppFileSystem.Service
+        const full = "full output from tool before its preview"
+        const outputPath = yield* svc.write(full)
+        const result = yield* svc.result(
+          { output: "z".repeat(80_000), outputPath },
+          { model: { providerID: "deepseek" } },
+        )
+
+        expect(result.metadata.truncated).toBe(true)
+        expect(result.metadata.outputPath).toBe(outputPath)
+        expect(result.output).toContain(`Full output saved to: ${outputPath}`)
+        expect(result.output).not.toContain("could not be saved")
+        expect(yield* fsys.readFileString(outputPath)).toBe(full)
       }),
     )
   })

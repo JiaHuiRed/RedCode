@@ -11,10 +11,13 @@
 
 #### 修复
 
+- **工具结果预算覆盖所有包装结果**（`packages/opencode/src/tool/{tool,truncate}.ts`）：`metadata.truncated` 不再绕过模型侧预算；已有完整输出路径会复用，避免 spill 预览覆盖恢复源（审计复核：`docs/notes/proposed/architecture/2026-09-24-incremental-audit.md` §3.1）。
 - **GUI 标题栏状态灯不再因缺少 SDK context 启动报错**（`packages/app/src/components/titlebar.tsx`）：状态灯读取目录级同步状态，但标题栏位于 `DirectoryLayout` 的 `SDKProvider` 外；现在按当前 `statusDir` 提供目录 context，并在项目切换时重建，避免 renderer 启动即进入错误页。
 
 #### 变更
 
+- **工具参数流增加非正文进度日志**（`packages/opencode/src/session/llm.ts`）：长参数生成可见计数与耗时，区分完整生成和断流收尾，不记录参数内容，也不改变看门狗超时策略。
+- **GPT 提示词精简重复规则并保留 soul 声线**（`packages/opencode/src/session/prompt/gpt.md`）：压缩与公共提示词重复的编辑、续接和表达要求，并明确简洁结构不应抹掉自然语气（仓内字符估算约 −193 tokens）。
 - **会话胶囊折叠态保留五项导航**：折叠时仍可切换 Review、Context、Outline、Plan、Status；Context 默认只显示六项关键摘要，其他 tab 继续呈现各自内容，切换 tab 不会意外展开胶囊。
 
 ---
