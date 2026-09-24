@@ -28,7 +28,6 @@ import {
   getTabReorderIndex,
   SYSTEM_TABS,
   type Sizing,
-  type SystemTab,
 } from "@/pages/session/helpers"
 import { setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
@@ -36,34 +35,6 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 const SessionStatusTab = lazy(() =>
   import("@/components/session/session-status-tab").then((module) => ({ default: module.SessionStatusTab })),
 )
-
-// 260924 Red 固定入口仍用 Tabs.Trigger，保留 tab/tabpanel 关联与原生方向键导航。
-function SystemTabButton(props: {
-  tab: SystemTab
-  active: () => boolean
-  children: JSX.Element
-  onRepeat: () => void
-}) {
-  const repeat = () => {
-    if (props.active()) props.onRepeat()
-  }
-
-  return (
-    <Tabs.Trigger
-      value={props.tab}
-      data-system-tab={props.tab}
-      class="session-side-panel__system-tab"
-      onPointerDown={repeat}
-      onKeyDown={(event) => {
-        if (!props.active() || (event.key !== "Enter" && event.key !== " ")) return
-        event.preventDefault()
-        repeat()
-      }}
-    >
-      {props.children}
-    </Tabs.Trigger>
-  )
-}
 
 export function SessionSidePanel(props: {
   canReview: () => boolean
@@ -135,9 +106,10 @@ export function SessionSidePanel(props: {
     if (!open() && !isWideDesktop()) view().reviewPanel.open()
   }
 
-  const repeatSystemTab = (tab: SystemTab) => {
-    if (activeTab() !== tab) return
-    if (open()) view().reviewPanel.close()
+  // 260924 Red L1/L2：胶囊尺寸切换独立成 Action 按钮，active tab 与尺寸状态正交——
+  // 重复点击当前 tab 不再承担开合语义（原 repeatSystemTab 已删）。
+  const togglePanel = () => {
+    if (view().reviewPanel.opened()) view().reviewPanel.close()
     else view().reviewPanel.open()
   }
 
@@ -344,79 +316,95 @@ export function SessionSidePanel(props: {
                         <DragDropSensors />
                         <ConstrainDragYAxis />
                         <Tabs value={activeTab()} onChange={changeTab}>
-                          <Tabs.List
-                            class="session-side-panel__tab-list session-side-panel__header"
+                          {/* 260924 Red L3/L4：header 拆成「导航行 + 文件行」两级，actions 移出
+                        Tabs.List。Tab 管内容、Action 管行为，「+」不再靠 sticky+z-index
+                        覆盖最后一个系统 tab，命中区从结构上分家。 */}
+                          <div
+                            class="session-side-panel__header"
                             classList={{ "session-side-panel__header--compact": compact() }}
-                            aria-label={language.t("session.panel.workspace")}
-                            ref={(el: HTMLDivElement) => {
-                              systemTabStrip = el
-                              const stop = createFileTabListSync({ el, contextOpen })
-                              onCleanup(stop)
-                            }}
                           >
-                            <SystemTabButton
-                              tab="review"
-                              active={() => activeTab() === "review"}
-                              onRepeat={() => repeatSystemTab("review")}
-                            >
-                              {language.t("session.tab.review")}
-                            </SystemTabButton>
-                            <SystemTabButton
-                              tab="context"
-                              active={() => activeTab() === "context"}
-                              onRepeat={() => repeatSystemTab("context")}
-                            >
-                              {language.t("session.tab.context")}
-                            </SystemTabButton>
-                            <SystemTabButton
-                              tab="outline"
-                              active={() => activeTab() === "outline"}
-                              onRepeat={() => repeatSystemTab("outline")}
-                            >
-                              {language.t("session.tab.outline")}
-                            </SystemTabButton>
-                            <SystemTabButton
-                              tab="plan"
-                              active={() => activeTab() === "plan"}
-                              onRepeat={() => repeatSystemTab("plan")}
-                            >
-                              {language.t("session.tab.plan")}
-                            </SystemTabButton>
-                            <SystemTabButton
-                              tab="status"
-                              active={() => activeTab() === "status"}
-                              onRepeat={() => repeatSystemTab("status")}
-                            >
-                              {language.t("session.tab.status")}
-                            </SystemTabButton>
-                            <Show when={!isWideDesktop() || open()}>
-                              <SortableProvider ids={openedTabs()}>
-                                <For each={openedTabs()}>
-                                  {(tab) => <SortableTab tab={tab} onTabClose={tabs().close} />}
-                                </For>
-                              </SortableProvider>
-                            </Show>
-                            <div class="session-side-panel__tab-end h-full shrink-0 sticky right-0 z-10 flex items-center justify-center pl-1 pr-2">
-                              <TooltipKeybind
-                                title={language.t("command.file.open")}
-                                keybind={command.keybind("file.open")}
-                                class="flex items-center"
+                            <div class="session-side-panel__header-row">
+                              <Tabs.List
+                                class="session-side-panel__tab-list"
+                                aria-label={language.t("session.panel.workspace")}
+                                ref={(el: HTMLDivElement) => {
+                                  systemTabStrip = el
+                                }}
                               >
-                                <IconButton
-                                  icon="plus-small"
-                                  variant="ghost"
-                                  iconSize="large"
-                                  class="!rounded-md"
-                                  onClick={() => {
-                                    void import("@/components/dialog-select-file").then((x) => {
-                                      dialog.show(() => <x.DialogSelectFile mode="files" />)
-                                    })
-                                  }}
-                                  aria-label={language.t("command.file.open")}
-                                />
-                              </TooltipKeybind>
+                                <Tabs.Trigger value="review" data-system-tab="review" class="session-side-panel__system-tab">
+                                  {language.t("session.tab.review")}
+                                </Tabs.Trigger>
+                                <Tabs.Trigger value="context" data-system-tab="context" class="session-side-panel__system-tab">
+                                  {language.t("session.tab.context")}
+                                </Tabs.Trigger>
+                                <Tabs.Trigger value="outline" data-system-tab="outline" class="session-side-panel__system-tab">
+                                  {language.t("session.tab.outline")}
+                                </Tabs.Trigger>
+                                <Tabs.Trigger value="plan" data-system-tab="plan" class="session-side-panel__system-tab">
+                                  {language.t("session.tab.plan")}
+                                </Tabs.Trigger>
+                                <Tabs.Trigger value="status" data-system-tab="status" class="session-side-panel__system-tab">
+                                  {language.t("session.tab.status")}
+                                </Tabs.Trigger>
+                              </Tabs.List>
+                              <div class="session-side-panel__actions">
+                                <Show when={isWideDesktop()}>
+                                  <TooltipKeybind
+                                    title={open() ? language.t("session.panel.collapse") : language.t("session.panel.expand")}
+                                    keybind={command.keybind("review.toggle")}
+                                    class="flex items-center"
+                                  >
+                                    <IconButton
+                                      icon={open() ? "collapse" : "expand"}
+                                      variant="ghost"
+                                      iconSize="large"
+                                      class="!rounded-md"
+                                      onClick={togglePanel}
+                                      aria-label={
+                                        open() ? language.t("session.panel.collapse") : language.t("session.panel.expand")
+                                      }
+                                    />
+                                  </TooltipKeybind>
+                                </Show>
+                                <TooltipKeybind
+                                  title={language.t("command.file.open")}
+                                  keybind={command.keybind("file.open")}
+                                  class="flex items-center"
+                                >
+                                  <IconButton
+                                    icon="plus-small"
+                                    variant="ghost"
+                                    iconSize="large"
+                                    class="!rounded-md"
+                                    onClick={() => {
+                                      void import("@/components/dialog-select-file").then((x) => {
+                                        dialog.show(() => <x.DialogSelectFile mode="files" />)
+                                      })
+                                    }}
+                                    aria-label={language.t("command.file.open")}
+                                  />
+                                </TooltipKeybind>
+                              </div>
                             </div>
-                          </Tabs.List>
+                            {/* 260924 Red L5：动态文件 tabs 只在展开且有文件时占第二行，
+                          compact 保持五项固定入口 + 两个 action 的极简形态。 */}
+                            <Show when={open() && openedTabs().length > 0}>
+                              <Tabs.List
+                                class="session-side-panel__file-tab-list"
+                                aria-label={language.t("session.panel.files")}
+                                ref={(el: HTMLDivElement) => {
+                                  const stop = createFileTabListSync({ el, contextOpen })
+                                  onCleanup(stop)
+                                }}
+                              >
+                                <SortableProvider ids={openedTabs()}>
+                                  <For each={openedTabs()}>
+                                    {(tab) => <SortableTab tab={tab} onTabClose={tabs().close} />}
+                                  </For>
+                                </SortableProvider>
+                              </Tabs.List>
+                            </Show>
+                          </div>
 
                           {/* 260822 cc 面板自己的 Suspense 边界。少了它，任何一个 tab 里的异步读
                         （useQuery/createResource）一进入无数据 pending，就会一路抛到 app.tsx:198

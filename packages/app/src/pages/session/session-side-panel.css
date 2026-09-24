@@ -69,8 +69,11 @@
   }
 }
 
-/* 固定导航：compact 与 expanded 共用同一条 tab strip */
+/* 260924 Red L4 固定导航分两级：行 1 = 系统 tabs + actions，行 2 = 动态文件 tabs。
+   左边导航、右边操作——「+」不再是 strip 内的 sticky 覆盖层，命中区从结构上分家。 */
 .session-side-panel__header {
+  display: flex;
+  flex-direction: column;
   flex: 0 0 auto;
   min-width: 0;
 }
@@ -79,18 +82,32 @@
   min-height: 28px;
 }
 
-.session-side-panel__header--compact {
-  .session-side-panel__system-tab {
-    flex: 1 1 0;
-    min-width: 0;
-    max-width: none;
-  }
+.session-side-panel__header-row {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-width: 0;
+}
 
-  .session-side-panel__tab-end {
-    flex: 0 0 34px;
-    width: 34px;
-    padding-inline: 0;
-  }
+.session-side-panel__tab-list {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.session-side-panel__file-tab-list {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.session-side-panel__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+}
+
+.session-side-panel__header--compact .session-side-panel__actions {
+  padding-inline: 2px 6px;
 }
 
 /* body：宽桌面用胶囊容纳导航与内容，中桌面仍保持参与布局的面板 */
@@ -212,6 +229,12 @@
       &::after {
         display: none;
       }
+
+      /* 260924 Red L5 文件行矮一截，贴在导航行下方 */
+      &.session-side-panel__file-tab-list {
+        height: 36px;
+        padding-block: 0 4px;
+      }
     }
 
     [data-slot="tabs-trigger-wrapper"] {
@@ -259,10 +282,19 @@
       justify-content: center;
       padding-inline: 0;
     }
-  }
 
-  .session-side-panel__tab-end {
-    background: transparent;
+    /* 260924 Red L4 compact：五项 pill 均分导航行并收窄内边距，给右侧两个 action
+       让出命中区；选择器嵌在 tabs 树下以压过上面的深层规则。 */
+    .session-side-panel__header--compact [data-slot="tabs-list"] {
+      gap: 2px;
+      padding-inline: 4px 0;
+    }
+
+    .session-side-panel__header--compact [data-slot="tabs-trigger-wrapper"] {
+      flex: 1 1 0;
+      min-width: 0;
+      padding-inline: 4px;
+    }
   }
 
   [data-slot="tabs-content"] {
