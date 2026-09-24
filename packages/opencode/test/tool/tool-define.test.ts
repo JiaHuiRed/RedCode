@@ -105,7 +105,7 @@ describe("Tool.define", () => {
         const result = yield* execute({ input: "value" }, makeCtx())
 
         expect(result.output).toBe("raw\n[fit]")
-        expect(result.metadata.outputPath).toBe("outputPath" in metadata ? metadata.outputPath : "spill.txt")
+        expect(String(result.metadata.outputPath)).toBe("outputPath" in metadata ? metadata.outputPath : "spill.txt")
       }
     }),
   )
