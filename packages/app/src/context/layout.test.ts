@@ -8,6 +8,8 @@ import {
   nextSessionTabsForOpen,
   pruneSessionKeys,
   sessionTabsForOpen,
+  clampWorkbenchFloat,
+  workbenchDockWidth,
 } from "./layout"
 
 describe("layout session-key helpers", () => {
@@ -73,6 +75,21 @@ describe("pruneSessionKeys", () => {
     })
 
     expect(drop).toEqual([])
+  })
+})
+
+describe("session workbench geometry", () => {
+  test("shares the dock width expression between the chat and the side panel", () => {
+    expect(workbenchDockWidth(600, 240)).toBe("min(600px, max(280px, calc(100% - 240px - 480px)))")
+  })
+
+  test("keeps a floating panel reachable when the viewport shrinks", () => {
+    expect(clampWorkbenchFloat({ x: 900, y: 700, width: 600, height: 700 }, { width: 1100, height: 800 })).toEqual({
+      x: 488,
+      y: 88,
+      width: 600,
+      height: 700,
+    })
   })
 })
 

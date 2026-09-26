@@ -503,7 +503,9 @@
 }
 [data-app-frost] #file-tree-panel .bg-background-stronger,
 [data-app-frost] #review-panel .bg-background-base,
-[data-app-frost] #review-panel .bg-background-stronger {
+[data-app-frost] #review-panel .bg-background-stronger,
+/* 260926 Red 并排工作台的实色内壳会盖住 #review-panel 上已有的磨砂；只在壁纸模式退成透明。 */
+[data-app-frost] #review-panel.session-side-panel__capsule--docked .session-side-panel__surface {
   background-color: transparent;
 }
 /* 260813 Red 会话区对齐毛玻璃 B：全局壁纸存在时会话区去实色底，透出主卡片磨砂，与文件树/审查栏一致。
@@ -591,6 +593,11 @@
   box-shadow:
     inset 0 1px 0 var(--frost-edge-highlight),
     var(--v2-elevation-floating);
+}
+
+/* 260926 Red 卡片两侧有 8px 脱边：并排时卡片宽度需从 rail 宽度内扣，而非 100% 再加外边距。 */
+[data-app-frost] #review-panel.session-side-panel__capsule--docked {
+  width: calc(100% - var(--frost-card-inset) * 2);
 }
 
 /* 成卡之后文件树内层那条 border-r 变成多余的第五条边（正好压在卡的右边框里侧）。

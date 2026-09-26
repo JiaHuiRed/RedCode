@@ -4,6 +4,7 @@ import { createMediaQuery } from "@solid-primitives/media"
 import { ResizeHandle } from "@redcode-ai/ui/resize-handle"
 import { Tabs } from "@redcode-ai/ui/tabs"
 import { IconButton } from "@redcode-ai/ui/icon-button"
+import { Icon } from "@redcode-ai/ui/icon"
 import { TooltipKeybind } from "@redcode-ai/ui/tooltip"
 import { Mark } from "@redcode-ai/ui/logo"
 import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, closestCenter } from "@thisbeyond/solid-dnd"
@@ -15,7 +16,7 @@ import { useCommand } from "@/context/command"
 import { SDKProvider } from "@/context/sdk"
 import { useFile, type SelectedLineRange } from "@/context/file"
 import { useLanguage } from "@/context/language"
-import { useLayout } from "@/context/layout"
+import { clampWorkbenchFloat, useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
@@ -28,6 +29,7 @@ import {
   getTabReorderIndex,
   SYSTEM_TABS,
   type Sizing,
+  type SystemTab,
 } from "@/pages/session/helpers"
 import { setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
@@ -43,6 +45,8 @@ export function SessionSidePanel(props: {
   outlinePanel: () => JSX.Element
   reviewSnap: boolean
   size: Sizing
+  docked: () => boolean
+  dockWidth: () => string
 }) {
   const layout = useLayout()
   const platform = usePlatform()
@@ -56,6 +60,7 @@ export function SessionSidePanel(props: {
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const isWideDesktop = createMediaQuery("(min-width: 1280px)")
+  const isWorkbenchDesktop = createMediaQuery("(min-width: 1600px)")
   const open = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const panelVisible = createMemo(() => isWideDesktop() || open())
   const compact = createMemo(() => isWideDesktop() && !open())
@@ -65,6 +70,123 @@ export function SessionSidePanel(props: {
     return `${layout.session.width()}px`
   })
   const flowPanelWidth = createMemo(() => (open() ? panelWidth() : "0px"))
+  // 260926 Red 三种形态只变布局、不搬文件 DOM；决策见
+  // docs/notes/implemented/feature/2026-09-26-session-file-workbench.md。
+  const floating = createMemo(() => isWorkbenchDesktop() && open() && view().workbench.mode() === "floating")
+  const overlay = createMemo(() => isWideDesktop() && !props.docked() && !floating())
+  const systemTab = (value: SystemTab, label: string, icon: JSX.Element) => (
+    <Tabs.Trigger
+      value={value}
+      data-system-tab={value}
+      class="session-side-panel__system-tab"
+      aria-label={label}
+      title={overlay() ? label : undefined}
+    >
+      <Show when={overlay()} fallback={label}>
+        {icon}
+      </Show>
+    </Tabs.Trigger>
+  )
+  const [gesture, setGesture] = createStore({
+    preview: undefined as { x: number; y: number; width: number; height: number } | undefined,
+  })
+  const viewport = () => ({ width: window.innerWidth, height: window.innerHeight })
+  const floatingRect = () => {
+    const width = Math.min(600, window.innerWidth - 24)
+    return clampWorkbenchFloat(
+      gesture.preview ??
+        view().workbench.floating() ?? {
+          x: window.innerWidth - width - 24,
+          y: 80,
+          width,
+          height: Math.min(720, window.innerHeight - 104),
+        },
+      viewport(),
+    )
+  }
+
+  let stopGesture: (() => void) | undefined
+  const startGesture = (event: PointerEvent, resize: boolean) => {
+    if (event.button !== 0 || !floating()) return
+    event.preventDefault()
+    stopGesture?.()
+    const target = event.currentTarget as HTMLElement
+    const key = sessionKey()
+    const start = floatingRect()
+    const origin = { x: event.clientX, y: event.clientY }
+    const pointer = event.pointerId
+    target.setPointerCapture(pointer)
+    const move = (next: PointerEvent) => {
+      if (next.pointerId !== pointer) return
+      const dx = next.clientX - origin.x
+      const dy = next.clientY - origin.y
+      setGesture(
+        "preview",
+        clampWorkbenchFloat(
+          resize
+            ? { ...start, width: start.width + dx, height: start.height + dy }
+            : { ...start, x: start.x + dx, y: start.y + dy },
+          viewport(),
+        ),
+      )
+    }
+    const finish = (next: PointerEvent) => {
+      if (next.pointerId !== pointer) return
+      if (next.type === "pointerup" && key === sessionKey()) {
+        view().workbench.setFloating(gesture.preview ?? start)
+      }
+      stopGesture?.()
+    }
+    stopGesture = () => {
+      target.removeEventListener("pointermove", move)
+      target.removeEventListener("pointerup", finish)
+      target.removeEventListener("pointercancel", finish)
+      if (target.hasPointerCapture(pointer)) target.releasePointerCapture(pointer)
+      setGesture("preview", undefined)
+      stopGesture = undefined
+    }
+    target.addEventListener("pointermove", move)
+    target.addEventListener("pointerup", finish)
+    target.addEventListener("pointercancel", finish)
+  }
+  const setMode = (mode: "capsule" | "docked" | "floating") => {
+    if (mode === "floating" && !view().workbench.floating() && drawer) {
+      const rect = drawer.getBoundingClientRect()
+      view().workbench.setFloating(
+        clampWorkbenchFloat(
+          {
+            x: rect.x,
+            y: rect.y,
+            width: Math.max(340, rect.width),
+            height: Math.min(720, window.innerHeight - 104),
+          },
+          viewport(),
+        ),
+      )
+    }
+    view().workbench.setMode(mode)
+  }
+  const nudge = (event: KeyboardEvent, resize: boolean) => {
+    const direction = {
+      ArrowLeft: [-1, 0],
+      ArrowRight: [1, 0],
+      ArrowUp: [0, -1],
+      ArrowDown: [0, 1],
+    }[event.key]
+    if (!direction) return
+    event.preventDefault()
+    const [dx, dy] = direction
+    const step = event.shiftKey ? 40 : 10
+    const rect = floatingRect()
+    view().workbench.setFloating(
+      clampWorkbenchFloat(
+        resize
+          ? { ...rect, width: rect.width + dx * step, height: rect.height + dy * step }
+          : { ...rect, x: rect.x + dx * step, y: rect.y + dy * step },
+        viewport(),
+      ),
+    )
+  }
 
   const normalizeTab = (tab: string) => {
     if (!tab.startsWith("file://")) return tab
@@ -187,6 +309,7 @@ export function SessionSidePanel(props: {
   onCleanup(() => {
     if (focusFrame !== undefined) cancelAnimationFrame(focusFrame)
     contextResizeObserver?.disconnect()
+    stopGesture?.()
   })
 
   // 260921 Red 宽桌面下展开态是浮层胶囊，Esc 关闭是 popover 的标配；中等桌面仍是参与
@@ -251,11 +374,15 @@ export function SessionSidePanel(props: {
       <div
         class="session-side-panel__rail relative min-w-0 h-full flex shrink-0 overflow-hidden bg-transparent"
         classList={{
-          "session-side-panel__rail--wide": isWideDesktop(),
+          "session-side-panel__rail--wide": overlay(),
+          "session-side-panel__rail--docked": props.docked(),
+          "session-side-panel__rail--floating": floating(),
           "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
             !isWideDesktop() && !props.size.active() && !props.reviewSnap,
         }}
-        style={{ width: isWideDesktop() ? "0px" : flowPanelWidth() }}
+        style={{
+          width: floating() || overlay() ? "0px" : props.docked() ? props.dockWidth() : flowPanelWidth(),
+        }}
       >
         <aside
           ref={(el) => {
@@ -268,25 +395,31 @@ export function SessionSidePanel(props: {
           inert={!open() && !isWideDesktop()}
           class="session-side-panel__capsule relative min-w-0 h-full flex flex-col shrink-0 overflow-hidden bg-transparent"
           classList={{
-            "session-side-panel__capsule--wide": isWideDesktop(),
+            "session-side-panel__capsule--wide": overlay(),
+            "session-side-panel__capsule--docked": props.docked(),
+            "session-side-panel__capsule--floating": floating(),
             "session-side-panel__capsule--open": open(),
             "session-side-panel__capsule--closed": !open(),
           }}
           style={{
             "--panel-width": `${layout.session.width()}px`,
-            width: isWideDesktop() ? undefined : "100%",
+            width: floating() ? `${floatingRect().width}px` : overlay() || props.docked() ? undefined : "100%",
+            left: floating() ? `${floatingRect().x}px` : undefined,
+            top: floating() ? `${floatingRect().y}px` : undefined,
             // 260921 Red wide 态高度走 inline：aside class 上的 h-full（height:100%）会跟
             // CSS 里的分态高度打架，曾出现「矮胶囊内容露顶、全高壳留在下面」一屏黑。
             // inline 优先级最高，折叠矮胶囊 ↔ 展开全高从此不受类名竞争影响。
             // 260922 Red 折叠态收短：高度与 CSS 里的分态值保持一致，
             // 别让 inline 和 class 各说一套（这个 inline 优先级压过 CSS，改一面等于没改）。
-            height: isWideDesktop()
-              ? open()
-                ? activeTab() === "context" && contextPanelHeight() !== undefined
-                  ? `min(${contextPanelHeight()}px, calc(100% - 68px))`
-                  : "calc(100% - 68px)"
-                : "clamp(240px, 28vh, 320px)"
-              : undefined,
+            height: floating()
+              ? `${floatingRect().height}px`
+              : overlay()
+                ? open()
+                  ? activeTab() === "context" && contextPanelHeight() !== undefined
+                    ? `min(${contextPanelHeight()}px, calc(100% - 68px))`
+                    : "calc(100% - 68px)"
+                  : "clamp(240px, 28vh, 320px)"
+                : undefined,
           }}
         >
           <div class="session-side-panel__body">
@@ -331,26 +464,79 @@ export function SessionSidePanel(props: {
                                   systemTabStrip = el
                                 }}
                               >
-                                <Tabs.Trigger value="review" data-system-tab="review" class="session-side-panel__system-tab">
-                                  {language.t("session.tab.review")}
-                                </Tabs.Trigger>
-                                <Tabs.Trigger value="context" data-system-tab="context" class="session-side-panel__system-tab">
-                                  {language.t("session.tab.context")}
-                                </Tabs.Trigger>
-                                <Tabs.Trigger value="outline" data-system-tab="outline" class="session-side-panel__system-tab">
-                                  {language.t("session.tab.outline")}
-                                </Tabs.Trigger>
-                                <Tabs.Trigger value="plan" data-system-tab="plan" class="session-side-panel__system-tab">
-                                  {language.t("session.tab.plan")}
-                                </Tabs.Trigger>
-                                <Tabs.Trigger value="status" data-system-tab="status" class="session-side-panel__system-tab">
-                                  {language.t("session.tab.status")}
-                                </Tabs.Trigger>
+                                {systemTab(
+                                  "review",
+                                  language.t("session.tab.review"),
+                                  <Icon name="review" size="small" />,
+                                )}
+                                {systemTab(
+                                  "context",
+                                  language.t("session.tab.context"),
+                                  <Icon name="brain" size="small" />,
+                                )}
+                                {systemTab(
+                                  "outline",
+                                  language.t("session.tab.outline"),
+                                  <Icon name="bullet-list" size="small" />,
+                                )}
+                                {systemTab(
+                                  "plan",
+                                  language.t("session.tab.plan"),
+                                  <Icon name="checklist" size="small" />,
+                                )}
+                                {systemTab(
+                                  "status",
+                                  language.t("session.tab.status"),
+                                  <Icon name="status" size="small" />,
+                                )}
                               </Tabs.List>
                               <div class="session-side-panel__actions">
+                                <Show when={isWorkbenchDesktop() && open()}>
+                                  <div class="session-side-panel__mode-actions">
+                                    <IconButton
+                                      icon={props.docked() ? "layout-right-full" : "layout-right-partial"}
+                                      variant="ghost"
+                                      iconSize="large"
+                                      class="session-side-panel__mode-button"
+                                      data-active={props.docked()}
+                                      onClick={() => setMode(props.docked() ? "capsule" : "docked")}
+                                      aria-label={language.t(
+                                        props.docked() ? "session.panel.undock" : "session.panel.dock",
+                                      )}
+                                      title={language.t(props.docked() ? "session.panel.undock" : "session.panel.dock")}
+                                    />
+                                    <IconButton
+                                      icon="square-arrow-top-right"
+                                      variant="ghost"
+                                      iconSize="large"
+                                      class="session-side-panel__mode-button"
+                                      data-active={floating()}
+                                      onClick={() => setMode(floating() ? "capsule" : "floating")}
+                                      aria-label={language.t(
+                                        floating() ? "session.panel.undock" : "session.panel.float",
+                                      )}
+                                      title={language.t(floating() ? "session.panel.undock" : "session.panel.float")}
+                                    />
+                                    <Show when={floating()}>
+                                      <button
+                                        type="button"
+                                        class="session-side-panel__move"
+                                        aria-label={language.t("session.panel.move")}
+                                        title={language.t("session.panel.move")}
+                                        onPointerDown={(event) => startGesture(event, false)}
+                                        onKeyDown={(event) => nudge(event, false)}
+                                      >
+                                        <Icon name="dot-grid" size="small" />
+                                      </button>
+                                    </Show>
+                                  </div>
+                                  <span class="session-side-panel__action-divider" aria-hidden="true" />
+                                </Show>
                                 <Show when={isWideDesktop()}>
                                   <TooltipKeybind
-                                    title={open() ? language.t("session.panel.collapse") : language.t("session.panel.expand")}
+                                    title={
+                                      open() ? language.t("session.panel.collapse") : language.t("session.panel.expand")
+                                    }
                                     keybind={command.keybind("review.toggle")}
                                     class="flex items-center"
                                   >
@@ -361,7 +547,9 @@ export function SessionSidePanel(props: {
                                       class="!rounded-md"
                                       onClick={togglePanel}
                                       aria-label={
-                                        open() ? language.t("session.panel.collapse") : language.t("session.panel.expand")
+                                        open()
+                                          ? language.t("session.panel.collapse")
+                                          : language.t("session.panel.expand")
                                       }
                                     />
                                   </TooltipKeybind>
@@ -494,14 +682,33 @@ export function SessionSidePanel(props: {
                 </div>
               </div>
             </Show>
-            <Show when={open() && !isWideDesktop()}>
+            {/* 260926 Red 并排态也要挂载同一根左侧拖宽手柄；只排除覆盖聊天的胶囊/浮动。 */}
+            <Show when={open() && (!isWideDesktop() || props.docked())}>
               <div onPointerDown={() => props.size.start()}>
                 <ResizeHandle
                   direction="horizontal"
                   edge="start"
-                  size={layout.session.width()}
-                  min={340}
-                  max={typeof window === "undefined" ? 1000 : window.innerWidth * 0.45}
+                  size={
+                    props.docked()
+                      ? (drawer?.getBoundingClientRect().width ?? layout.session.width())
+                      : layout.session.width()
+                  }
+                  min={props.docked() ? 280 : 340}
+                  max={
+                    props.docked()
+                      ? Math.max(
+                          280,
+                          Math.min(
+                            window.innerWidth * 0.45,
+                            (drawer?.parentElement?.parentElement?.clientWidth ?? window.innerWidth) -
+                              (layout.fileTree.opened() ? layout.fileTree.width() : 0) -
+                              480,
+                          ),
+                        )
+                      : typeof window === "undefined"
+                        ? 1000
+                        : window.innerWidth * 0.45
+                  }
                   onResize={(width) => {
                     props.size.touch()
                     layout.session.resize(width)
@@ -510,6 +717,15 @@ export function SessionSidePanel(props: {
               </div>
             </Show>
           </div>
+          <Show when={floating()}>
+            <button
+              type="button"
+              class="session-side-panel__resize"
+              aria-label={language.t("session.panel.resize")}
+              onPointerDown={(event) => startGesture(event, true)}
+              onKeyDown={(event) => nudge(event, true)}
+            />
+          </Show>
         </aside>
       </div>
     </Show>

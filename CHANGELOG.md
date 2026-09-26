@@ -9,6 +9,10 @@
 ---
 ### [未发布]
 
+#### 新增
+
+- **会话文件工作台支持并排与浮动**：宽桌面可把现有文件标签与五项会话导航并排放在聊天右侧，或将同一面板拖出为可调整大小的浮动工作区；窄窗口沿用胶囊。设计取舍：`docs/notes/implemented/feature/2026-09-26-session-file-workbench.md`。
+
 #### 修复
 
 - **工具结果预算覆盖所有包装结果**（`packages/opencode/src/tool/{tool,truncate}.ts`）：`metadata.truncated` 不再绕过模型侧预算；已有完整输出路径会复用，避免 spill 预览覆盖恢复源（审计复核：`docs/notes/proposed/architecture/2026-09-24-incremental-audit.md` §3.1）。

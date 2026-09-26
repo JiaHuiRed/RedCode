@@ -8,6 +8,137 @@
   pointer-events: none;
 }
 
+/* 260926 Red 并排与浮动共享同一份 tab/content DOM；只有悬浮模式脱离流。 */
+.session-side-panel__rail--docked {
+  position: relative;
+  z-index: 20;
+  overflow: visible;
+}
+
+.session-side-panel__rail--floating {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.session-side-panel__capsule--docked {
+  width: 100%;
+  border-inline-start: 1px solid var(--border-weaker-base);
+  overflow: visible;
+}
+
+.session-side-panel__capsule--docked .session-side-panel__body {
+  overflow: visible;
+}
+
+/* 260926 Red 手柄跨在聊天与工作台的分界线上，不能被面板自身的 overflow-hidden 裁成半条。 */
+.session-side-panel__capsule--docked [data-component="resize-handle"][data-edge="start"] {
+  width: 16px;
+}
+
+.session-side-panel__capsule--docked [data-component="resize-handle"][data-edge="start"]::after {
+  opacity: 0.45;
+  background: var(--border-weak-base);
+}
+
+.session-side-panel__capsule--docked [data-component="resize-handle"][data-edge="start"]:hover::after {
+  opacity: 1;
+}
+
+.session-side-panel__capsule--floating {
+  position: fixed;
+  z-index: 1;
+  border: 1px solid var(--border-weaker-base);
+  border-radius: var(--radius-xl);
+  background: var(--surface-raised-stronger-non-alpha);
+  box-shadow: var(--shadow-lg-border-base);
+  pointer-events: auto;
+}
+
+.session-side-panel__capsule--floating .session-side-panel__panel {
+  position: absolute;
+  inset: 0;
+}
+
+.session-side-panel__move {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--text-weak);
+  cursor: grab;
+  touch-action: none;
+  border-radius: 6px;
+}
+
+.session-side-panel__mode-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-weaker-base);
+  border-radius: 9px;
+  background: var(--surface-base);
+}
+
+#review-panel .session-side-panel__mode-actions [data-component="icon-button"] {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+}
+
+#review-panel .session-side-panel__mode-actions [data-component="icon-button"][data-active="true"] {
+  background: var(--surface-base-active);
+}
+
+#review-panel
+  .session-side-panel__mode-actions
+  [data-component="icon-button"][data-active="true"]
+  [data-slot="icon-svg"] {
+  color: var(--text-strong);
+}
+
+.session-side-panel__action-divider {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  margin-inline: 3px 1px;
+  background: var(--border-weak-base);
+}
+
+.session-side-panel__move:hover {
+  background: var(--surface-base-hover);
+  color: var(--text-base);
+}
+
+.session-side-panel__move:active {
+  cursor: grabbing;
+}
+
+.session-side-panel__resize {
+  position: absolute;
+  inset-inline-end: 0;
+  inset-block-end: 0;
+  z-index: 2;
+  width: 24px;
+  height: 24px;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.session-side-panel__resize::after {
+  content: "";
+  position: absolute;
+  inset-inline-end: 6px;
+  inset-block-end: 6px;
+  width: 8px;
+  height: 8px;
+  border-inline-end: 1px solid var(--text-weak);
+  border-block-end: 1px solid var(--text-weak);
+}
+
 /* 260924 Red 合并后的单容器：compact 与 expanded 共用固定 tab strip 和 active content。
    高度过渡，aside 是 absolute 定位，高度动画不牵动会话区的 flex 布局。 */
 .session-side-panel__capsule {
@@ -104,10 +235,11 @@
   flex: 0 0 auto;
   align-items: center;
   gap: 2px;
+  padding-inline-end: 6px;
 }
 
 .session-side-panel__header--compact .session-side-panel__actions {
-  padding-inline: 2px 6px;
+  padding-inline-start: 2px;
 }
 
 /* body：宽桌面用胶囊容纳导航与内容，中桌面仍保持参与布局的面板 */
@@ -209,7 +341,8 @@
   }
 
   /* 宽桌面下表面由外层胶囊承担，内层壳退成透明，否则会是「卡里再嵌一张卡」 */
-  &.session-side-panel__capsule--wide .session-side-panel__surface {
+  &.session-side-panel__capsule--wide .session-side-panel__surface,
+  &.session-side-panel__capsule--floating .session-side-panel__surface {
     border: none;
     border-radius: 0;
     background: transparent;
@@ -277,10 +410,21 @@
     }
 
     .session-side-panel__system-tab {
-      flex: 0 0 20%;
+      flex: 1 1 0;
+      min-width: 0;
       max-width: none;
       justify-content: center;
       padding-inline: 0;
+
+      [data-component="icon"] {
+        color: currentColor;
+      }
+    }
+
+    .session-side-panel__tab-list [data-slot="tabs-trigger-wrapper"] {
+      flex: 1 1 0;
+      min-width: 0;
+      padding-inline: 4px;
     }
 
     /* 260924 Red L4 compact：五项 pill 均分导航行并收窄内边距，给右侧两个 action

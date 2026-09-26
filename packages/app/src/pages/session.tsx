@@ -39,7 +39,7 @@ import { createReconnectRefresh } from "@/context/reconnect"
 import { useServerSync } from "@/context/server-sync"
 import { holdMessageWindow } from "@/context/message-window"
 import { useLanguage } from "@/context/language"
-import { useLayout } from "@/context/layout"
+import { useLayout, workbenchDockWidth } from "@/context/layout"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSettings } from "@/context/settings"
@@ -170,16 +170,26 @@ export default function Page() {
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const isWideDesktop = createMediaQuery("(min-width: 1280px)")
+  const isWorkbenchDesktop = createMediaQuery("(min-width: 1600px)")
   const size = createSizing()
   const isV2NewSessionPage = () => !params.id
   const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened() && !isV2NewSessionPage())
   const desktopFileTreeOpen = createMemo(() => isDesktop() && layout.fileTree.opened() && !isV2NewSessionPage())
-  const sessionReviewInFlow = createMemo(() => desktopReviewOpen() && !isWideDesktop())
+  // 260926 Red 文件工作台与聊天区并排时，宽度扣除量必须和右栏使用同一 CSS 表达式。
+  const workbenchDocked = createMemo(
+    () => desktopReviewOpen() && isWorkbenchDesktop() && view().workbench.mode() === "docked",
+  )
+  const sessionReviewInFlow = createMemo(() => desktopReviewOpen() && (!isWideDesktop() || workbenchDocked()))
+  const reviewWidth = createMemo(() =>
+    workbenchDocked()
+      ? workbenchDockWidth(layout.session.width(), desktopFileTreeOpen() ? layout.fileTree.width() : 0)
+      : `${layout.session.width()}px`,
+  )
   const sessionPanelWidth = createMemo(() => {
     if (sessionReviewInFlow() && desktopFileTreeOpen()) {
-      return `calc(100% - ${layout.fileTree.width()}px - ${layout.session.width()}px)`
+      return `calc(100% - ${layout.fileTree.width()}px - ${reviewWidth()})`
     }
-    if (sessionReviewInFlow()) return `calc(100% - ${layout.session.width()}px)`
+    if (sessionReviewInFlow()) return `calc(100% - ${reviewWidth()})`
     if (desktopFileTreeOpen()) return `calc(100% - ${layout.fileTree.width()}px)`
     return "100%"
   })
@@ -1829,6 +1839,8 @@ export default function Page() {
             outlinePanel={outlinePanel}
             reviewSnap={ui.reviewSnap}
             size={size}
+            docked={workbenchDocked}
+            dockWidth={reviewWidth}
           />
         </div>
 

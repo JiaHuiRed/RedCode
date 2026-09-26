@@ -45,6 +45,29 @@ type SessionView = {
   reviewOpen?: string[]
   pendingMessage?: string
   pendingMessageAt?: number
+  workbench?: {
+    mode: "capsule" | "docked" | "floating"
+    floating?: { x: number; y: number; width: number; height: number }
+  }
+}
+
+// 260926 Red 并排宽度和聊天栏扣除量共用同一表达式，避免 flex 宽度与面板视觉宽度分叉。
+export function workbenchDockWidth(width: number, treeWidth: number) {
+  return `min(${width}px, max(280px, calc(100% - ${treeWidth}px - 480px)))`
+}
+
+export function clampWorkbenchFloat(
+  rect: { x: number; y: number; width: number; height: number },
+  viewport: { width: number; height: number },
+) {
+  const width = Math.min(Math.max(rect.width, 340), Math.max(340, viewport.width - 24))
+  const height = Math.min(Math.max(rect.height, 240), Math.max(240, viewport.height - 24))
+  return {
+    x: Math.max(12, Math.min(rect.x, viewport.width - width - 12)),
+    y: Math.max(12, Math.min(rect.y, viewport.height - height - 12)),
+    width,
+    height,
+  }
 }
 
 type TabHandoff = {
@@ -854,6 +877,30 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             },
             toggle() {
               setReviewPanelOpened(!reviewPanelOpened())
+            },
+          },
+          workbench: {
+            mode: createMemo(() => s().workbench?.mode ?? "capsule"),
+            floating: createMemo(() => s().workbench?.floating),
+            setMode(mode: "capsule" | "docked" | "floating") {
+              const session = key()
+              const current = store.sessionView[session]
+              setStore("sessionView", session, {
+                ...current,
+                scroll: current?.scroll ?? {},
+                workbench: { ...current?.workbench, mode },
+              })
+              prune(usage.active ?? session)
+            },
+            setFloating(floating: { x: number; y: number; width: number; height: number }) {
+              const session = key()
+              const current = store.sessionView[session]
+              setStore("sessionView", session, {
+                ...current,
+                scroll: current?.scroll ?? {},
+                workbench: { mode: current?.workbench?.mode ?? "floating", floating },
+              })
+              prune(usage.active ?? session)
             },
           },
           review: {
