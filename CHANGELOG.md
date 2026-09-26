@@ -11,6 +11,7 @@
 
 #### 新增
 
+- **轮次导航多页跳转合并时间线更新**：跳到尚未加载的旧消息时，历史页继续写入同步缓存，主时间线等目标进窗后再一次性更新；普通向上滚动仍逐页显示。设计取舍：`docs/notes/implemented/feature/2026-09-26-atomic-turn-history-projection.md`。
 - **会话文件工作台支持并排与浮动**：宽桌面可把现有文件标签与五项会话导航并排放在聊天右侧，或将同一面板拖出为可调整大小的浮动工作区；窄窗口沿用胶囊。设计取舍：`docs/notes/implemented/feature/2026-09-26-session-file-workbench.md`。
 
 #### 修复

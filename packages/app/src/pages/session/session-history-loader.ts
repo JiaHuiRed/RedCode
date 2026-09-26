@@ -1,9 +1,6 @@
-import { createMemo, createEffect, on, onCleanup } from "solid-js"
+import { createEffect, on, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { UserMessage } from "@redcode-ai/sdk/v2"
-import { same } from "@/utils/same"
-
-const emptyUserMessages: UserMessage[] = []
 
 type SessionHistoryWindowInput = {
   sessionID: () => string | undefined
@@ -26,11 +23,14 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
 
   const [state, setState] = createStore({
     shift: false,
+    stagedHistory: undefined as { sessionID: string; token: object; messages: UserMessage[] } | undefined,
   })
 
-  const userMessages = createMemo(() => input.visibleUserMessages(), emptyUserMessages, {
-    equals: same,
-  })
+  const userMessages = () => {
+    const staged = state.stagedHistory
+    if (staged && staged.sessionID === input.sessionID()) return staged.messages
+    return input.visibleUserMessages()
+  }
 
   const cancelShiftReset = () => {
     if (shiftFrame === undefined) return
@@ -123,6 +123,11 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
 
     cancelShiftReset()
     setState("shift", true)
+    // 260926 Red 多页远跳期间先冻结时间线投影，所有页面仍正常进入同步 store；目标进窗后
+    //   一次发布完整列表，避免虚拟列表每页都重建行结构。普通上滚仍逐页呈现。
+    //   取舍见 docs/notes/implemented/feature/2026-09-26-atomic-turn-history-projection.md。
+    const token = {}
+    setState("stagedHistory", { sessionID: id, token, messages: input.visibleUserMessages() })
     try {
       let loaded = input.loaded()
       let stalls = 0
@@ -147,6 +152,7 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
       // 260918 Red 跳转途中拉页失败：当作"够不到"返回 false，别把 rejection 冒给 void 调用方变 uncaught。
       return false
     } finally {
+      if (state.stagedHistory?.token === token) setState("stagedHistory", undefined)
       scheduleShiftReset()
     }
   }
@@ -167,7 +173,7 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
       () => {
         cancelShiftReset()
         stalled = false
-        setState({ shift: false })
+        setState({ shift: false, stagedHistory: undefined })
       },
       { defer: true },
     ),
