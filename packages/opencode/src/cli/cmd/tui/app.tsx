@@ -339,11 +339,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
   renderer.console.onCopySelection = async (text: string) => {
     if (!text || text.length === 0) return
 
-    await Clipboard.copy(text)
-      .then(() => toast.show({ message: "已复制到剪贴板", variant: "info" }))
-      .catch(toast.error)
-
-    renderer.clearSelection()
+    await Selection.copyText(renderer, toast, text)
   }
   const [terminalTitleEnabled, setTerminalTitleEnabled] = createSignal(kv.get("terminal_title_enabled", true))
   const [pasteSummaryEnabled, setPasteSummaryEnabled] = createSignal(

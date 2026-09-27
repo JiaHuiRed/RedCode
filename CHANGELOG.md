@@ -18,6 +18,7 @@
 
 #### 修复
 
+- **TUI 复制完成后才清除选区**：剪贴板写入失败时保留选区；异步写入结束时若用户已换选内容，不清除新选区。决策：`docs/notes/implemented/bug-fix/2026-09-27-tui-selection-copy-completion.md`。
 - **GUI 草稿切换后保留图片附件**：图片数据改为按会话单独持久化，只在附件增删时写入，不再随每次输入反复序列化。
 - **工具结果预算覆盖所有包装结果**（`packages/opencode/src/tool/{tool,truncate}.ts`）：`metadata.truncated` 不再绕过模型侧预算；已有完整输出路径会复用，避免 spill 预览覆盖恢复源（审计复核：`docs/notes/proposed/architecture/2026-09-24-incremental-audit.md` §3.1）。
 - **GUI 标题栏状态灯不再因缺少 SDK context 启动报错**（`packages/app/src/components/titlebar.tsx`）：状态灯读取目录级同步状态，但标题栏位于 `DirectoryLayout` 的 `SDKProvider` 外；现在按当前 `statusDir` 提供目录 context，并在项目切换时重建，避免 renderer 启动即进入错误页。
