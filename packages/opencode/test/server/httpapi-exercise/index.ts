@@ -1058,6 +1058,72 @@ const scenarios: Scenario[] = [
       }),
     ),
   http.protected
+    .post("/session/{sessionID}/message/{messageID}/deliver", "session.deliverQueuedMessage")
+    .mutating()
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const session = yield* ctx.session({ title: "Deliver queued message" })
+        const message = yield* ctx.message(session.id, { text: "deliver me", delivery: "queued" })
+        return { session, message }
+      }),
+    )
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/message/{messageID}/deliver", {
+        sessionID: ctx.state.session.id,
+        messageID: ctx.state.message.info.id,
+      }),
+      headers: ctx.headers(),
+    }))
+    .json(200, boolean),
+  http.protected
+    .patch("/session/{sessionID}/message/{messageID}/queued", "session.editQueuedMessage")
+    .mutating()
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const session = yield* ctx.session({ title: "Edit queued message" })
+        const message = yield* ctx.message(session.id, { text: "before", delivery: "queued" })
+        return { session, message }
+      }),
+    )
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/message/{messageID}/queued", {
+        sessionID: ctx.state.session.id,
+        messageID: ctx.state.message.info.id,
+      }),
+      headers: ctx.headers(),
+      body: { text: "after" },
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(
+        Array.isArray(body.parts) && body.parts.some((part) => isRecord(part) && part.text === "after"),
+        "queued edit should persist",
+      )
+    }),
+  http.protected
+    .delete("/session/{sessionID}/message/{messageID}/queued", "session.cancelQueuedMessage")
+    .mutating()
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const session = yield* ctx.session({ title: "Cancel queued message" })
+        const message = yield* ctx.message(session.id, { text: "cancel me", delivery: "queued" })
+        return { session, message }
+      }),
+    )
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/message/{messageID}/queued", {
+        sessionID: ctx.state.session.id,
+        messageID: ctx.state.message.info.id,
+      }),
+      headers: ctx.headers(),
+    }))
+    .jsonEffect(200, (body, ctx) =>
+      Effect.gen(function* () {
+        check(body === true, "cancel queued should return true")
+        check((yield* ctx.messages(ctx.state.session.id)).length === 0, "canceled message should be gone")
+      }),
+    ),
+  http.protected
     .post("/session/{sessionID}/fork", "session.fork")
     .mutating()
     .seeded((ctx) => ctx.session({ title: "Fork source" }))

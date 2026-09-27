@@ -226,11 +226,15 @@ export const layer = Layer.effect(
             // 260918 Red 失败/取消没有可审计产出，InstanceStore 已在上面的 ensuring 释放子进程；
             // 决策: docs/notes/implemented/bug-fix/2026-09-18-background-task-cancellation-and-worktree-cleanup.md
             return Effect.uninterruptible(
-              wt.remove({ directory: info.directory }).pipe(
-                Effect.catchCause((cause) =>
-                  Effect.sync(() => log.error("failed isolated task worktree cleanup failed", { directory: info.directory, cause })),
+              wt
+                .remove({ directory: info.directory })
+                .pipe(
+                  Effect.catchCause((cause) =>
+                    Effect.sync(() =>
+                      log.error("failed isolated task worktree cleanup failed", { directory: info.directory, cause }),
+                    ),
+                  ),
                 ),
-              ),
             )
           }),
         )
@@ -687,6 +691,7 @@ export const layer = Layer.effect(
         role: "user",
         sessionID: input.sessionID,
         time: { created: Date.now() },
+        delivery: input.delivery === "queue" ? "queued" : input.delivery,
         tools: input.tools,
         agent: ag.name,
         model: {
@@ -1061,6 +1066,19 @@ export const layer = Layer.effect(
         )
         .pipe(Effect.catch(() => Effect.void))
 
+      const result = yield* loop({ sessionID: input.sessionID })
+      if (!input.delivery) return result
+      // 260927 Red Runner 在旧工作收尾期间会丢弃并发 loop；如果本消息仍未被当前轮读取，
+      // 由提交方在旧 Runner 退出后重试，避免 queue/steer 落在最后一步的竞态中被遗留。
+      const current = yield* MessageV2.get({ sessionID: input.sessionID, messageID: message.info.id }).pipe(
+        Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)),
+      )
+      if (
+        !current ||
+        current.info.role !== "user" ||
+        (input.delivery === "queue" ? current.info.delivery !== "queued" : current.info.delivery !== "steer")
+      )
+        return result
       return yield* loop({ sessionID: input.sessionID })
     })
 
@@ -1098,6 +1116,7 @@ export const layer = Layer.effect(
       // 260814 Red 起点改存消息本体：ID 48 位编码 795 天回绕后字典序失真（见 MessageV2.compareTime），
       // 边界比较必须走 time.created。
       let turnStartUserID: MessageV2.User | undefined
+      let claimedUserID: MessageID | undefined
       const remindedUserIDs = new Set<MessageID>()
       // 260814 Red stall nudge（260803）退役：同指纹口径（tool+stringify(input)）的空转检测
       // 已由 repeat-tool-reminder 软层接管（3/5/8 递进、贴 result 尾部、todo 透明、跨轮），
@@ -1113,9 +1132,22 @@ export const layer = Layer.effect(
 
         let msgs = yield* MessageV2.filterCompactedEffect(sessionID)
 
-        const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = MessageV2.latest(msgs)
+        const {
+          user: lastUser,
+          assistant: lastAssistant,
+          finished: lastFinished,
+          tasks,
+        } = MessageV2.latest(msgs.filter((m) => m.info.role !== "user" || m.info.delivery !== "queued"))
 
-        if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
+        if (!lastUser) {
+          const next = yield* sessions.claimQueuedMessage(sessionID)
+          if (next) {
+            claimedUserID = next.id
+            _caches.modelMsgs.delete(sessionID)
+            continue
+          }
+          throw new Error("No user message found in stream. This should never happen.")
+        }
 
         const lastAssistantMsg = msgs.findLast(
           (msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id,
@@ -1132,6 +1164,8 @@ export const layer = Layer.effect(
           !["tool-calls"].includes(lastAssistant.finish) &&
           !hasToolCalls &&
           MessageV2.compareTime(lastUser, lastAssistant) < 0 &&
+          // 260927 Red 排队消息的 created 早于上一轮 assistant，领取后要等它自己的回复。
+          (claimedUserID !== lastUser.id || lastAssistant.parentID === lastUser.id) &&
           // 260728 Red 打捞到文本态工具调用时不走正常退出，强制再跑一轮（下面 A 处设置）
           !forceContinue
         ) {
@@ -1182,6 +1216,18 @@ export const layer = Layer.effect(
                 messageID: lastAssistant.id,
                 text: "（模型本轮没有返回任何内容，已自动重试一次仍为空。可以直接重发上一条消息。）",
               })
+            }
+            const next = yield* sessions.claimQueuedMessage(sessionID)
+            if (next) {
+              claimedUserID = next.id
+              // 260927 Red 排队消息创建早于上一轮 assistant，领取后会插进历史中段；
+              // 长度式前缀拼接不再安全，重新序列化该会话的模型消息。
+              _caches.modelMsgs.delete(sessionID)
+              turnStartUserID = undefined
+              remindedUserIDs.clear()
+              reasoningOnlyRetried = false
+              emptyTurnRetried = false
+              continue
             }
             yield* slog.info("exiting loop")
             break
@@ -1425,7 +1471,13 @@ export const layer = Layer.effect(
           if (busyEnter === "steer" && step > 1) {
             const parts: string[] = []
             for (const m of msgs) {
-              if (m.info.role !== "user" || MessageV2.compareTime(m.info, turnStartUserID) <= 0) continue
+              if (
+                m.info.role !== "user" ||
+                m.info.delivery === "queued" ||
+                MessageV2.compareTime(m.info, turnStartUserID) <= 0
+              )
+                continue
+              if (busyEnter !== "steer" && m.info.delivery !== "steer") continue
               if (remindedUserIDs.has(m.info.id)) continue
               const text = m.parts
                 .filter((p) => p.type === "text" && !p.ignored && !p.synthetic)
@@ -1475,6 +1527,8 @@ export const layer = Layer.effect(
             let pinned = 0,
               cached = 0
             for (const msg of msgs) {
+              // 260927 Red 待发文本仍可编辑；未领取前不能把它的旧 parts 钉进模型前缀。
+              if (msg.info.role === "user" && msg.info.delivery === "queued") continue
               const mid = msg.info.id
               const parts = pinnedMessages.messages.get(mid)
               if (parts) {
@@ -1506,10 +1560,16 @@ export const layer = Layer.effect(
           // 滤掉整条，不动 msgs 本体——compaction/reminder/msgPin 仍按全量算），留到轮末
           // 续跑边界作为新轮输入。steer 模式恒等于 msgs。
           const turnStart = turnStartUserID
-          const visibleMsgs =
-            busyEnter === "queue" && turnStart !== undefined
-              ? msgs.filter((m) => !(m.info.role === "user" && MessageV2.compareTime(m.info, turnStart) > 0))
-              : msgs
+          const visibleMsgs = msgs.filter(
+            (m) =>
+              m.info.role !== "user" ||
+              (m.info.delivery !== "queued" &&
+                (m.info.delivery === "steer" ||
+                  m.info.delivery === "delivered" ||
+                  busyEnter !== "queue" ||
+                  turnStart === undefined ||
+                  MessageV2.compareTime(m.info, turnStart) <= 0)),
+          )
           const [skills, env, instructions, mcpGuide, modelMsgs] = yield* Effect.all([
             cachedSystem ? Effect.succeed(cachedSystem.skills) : sys.skills(agent),
             cachedSystem ? Effect.succeed(cachedSystem.env) : sys.environment(model),
@@ -1616,13 +1676,13 @@ export const layer = Layer.effect(
   3. The visible reply is the deliverable. Keep a steady rhythm of action → verify → report; consistency beats one brilliant turn followed by stalls.`,
             )
           }
-         // 260801 Red Windsurf-inspired memory clause: write now, not later.
-         // 260921 Red GPT 审计 P0-1：原三条（immediately/liberally/append-not-write）与
-         // 全局 AGENTS.md「记忆写入五问：不确定默认不写」正面冲突——同一行为两个 owner。
-         // 记忆政策的唯一 owner 是注入的 AGENTS.md，引擎只保留一句 runtime fact。
-         system.push(
-           `▸ MEMORY: Persistent project (\`.redcode/MEMORY.md\`) and global (\`~/.redcode/MEMORY.md\`) memory is available. Follow the injected memory policy when a durable lesson or decision needs recording.`,
-         )
+          // 260801 Red Windsurf-inspired memory clause: write now, not later.
+          // 260921 Red GPT 审计 P0-1：原三条（immediately/liberally/append-not-write）与
+          // 全局 AGENTS.md「记忆写入五问：不确定默认不写」正面冲突——同一行为两个 owner。
+          // 记忆政策的唯一 owner 是注入的 AGENTS.md，引擎只保留一句 runtime fact。
+          system.push(
+            `▸ MEMORY: Persistent project (\`.redcode/MEMORY.md\`) and global (\`~/.redcode/MEMORY.md\`) memory is available. Follow the injected memory policy when a durable lesson or decision needs recording.`,
+          )
           // 260801 Red active goal 注入：钉住目标时让模型持续推进，完成调 goal_done 收尾。
           // 放 memory 条款后 canary 前——goal 状态变化只 bust 尾部缓存，不影响前缀大块。
           // 260817 Red goal 语义三件套①+②（对齐 DSH goal guidance）：blocked 判定标准与
@@ -1715,6 +1775,10 @@ export const layer = Layer.effect(
             // 已撤除，原因见本文件上方「可见思考的语言/称呼约束注入已撤除」那段注释。
             ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : []),
           ]
+          for (const msg of visibleMsgs) {
+            if (msg.info.role !== "user" || msg.info.delivery !== "steer") continue
+            yield* sessions.updateMessage({ ...msg.info, delivery: "delivered" })
+          }
           // 260820 cc 上下文构成快照，供 /session/:id/context-inspect 查看。与上面两个探针
           // 的区别：它们比对「跟上一轮比变了什么」，这个回答「现在窗口里装的是什么」。
           ContextSnapshot.record({
@@ -2124,12 +2188,14 @@ const ModelRef = Schema.Struct({
   modelID: ModelID,
 })
 
+// 260927 Red 单条 delivery 覆盖 busy_enter 默认策略;服务端状态和并发边界见 docs/notes/implemented/feature/2026-08-14-busy-enter-steer-or-queue.md。
 export const PromptInput = Schema.Struct({
   sessionID: SessionID,
   messageID: Schema.optional(MessageID),
   model: Schema.optional(ModelRef),
   agent: Schema.optional(Schema.String),
   noReply: Schema.optional(Schema.Boolean),
+  delivery: Schema.optional(Schema.Literals(["queue", "steer"])),
   tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)).annotate({
     description:
       "@deprecated tools and permissions have been merged, you can set permissions on the session itself now",

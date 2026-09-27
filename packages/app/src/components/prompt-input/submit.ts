@@ -43,6 +43,7 @@ type FollowupSendInput = {
   sync: ReturnType<typeof useSync>
   draft: FollowupDraft
   messageID?: string
+  delivery?: "queue" | "steer"
   optimisticBusy?: boolean
   before?: () => Promise<boolean> | boolean
 }
@@ -122,6 +123,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     time: { created: Date.now() },
     agent: input.draft.agent,
     model: { ...input.draft.model, variant: input.draft.variant },
+    delivery: input.delivery === "queue" ? "queued" : input.delivery,
   }
 
   const add = () =>
@@ -153,14 +155,18 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       return false
     }
 
-    await input.client.session.promptAsync({
-      sessionID: input.draft.sessionID,
-      agent: input.draft.agent,
-      model: input.draft.model,
-      messageID,
-      parts: requestParts,
-      variant: input.draft.variant,
-    })
+    await input.client.session.promptAsync(
+      {
+        sessionID: input.draft.sessionID,
+        agent: input.draft.agent,
+        model: input.draft.model,
+        messageID,
+        parts: requestParts,
+        variant: input.draft.variant,
+        delivery: input.delivery,
+      },
+      { throwOnError: true },
+    )
     return true
   } catch (err) {
     batch(() => {
@@ -188,7 +194,8 @@ type PromptSubmitInput = {
   newSessionWorktree?: Accessor<string | undefined>
   onNewSessionWorktreeReset?: () => void
   shouldQueue?: Accessor<boolean>
-  onQueue?: (draft: FollowupDraft) => void
+  delivery?: Accessor<"queue" | "steer">
+  onDeliveryReset?: () => void
   onAbort?: () => void
   onSubmit?: () => void
 }
@@ -485,12 +492,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       })
     }
 
-    if (!isNewSession && mode === "normal" && input.shouldQueue?.()) {
-      input.onQueue?.(draft)
-      clearContext()
-      clearInput()
-      return
-    }
+    // 260927 Red 忙时每条消息单独决定排队或插队，始终先落服务端，不再本地 hold 新消息。
+    const delivery =
+      !isNewSession && mode === "normal" && input.shouldQueue?.() ? (input.delivery?.() ?? "queue") : undefined
 
     input.onSubmit?.()
 
@@ -621,22 +625,27 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       globalSync,
       draft,
       messageID,
-      optimisticBusy: sessionDirectory === projectDirectory,
+      delivery,
+      optimisticBusy: delivery !== "queue" && sessionDirectory === projectDirectory,
       before: waitForWorktree,
-    }).catch((err) => {
-      pending.delete(session.id)
-      if (sessionDirectory === projectDirectory) {
-        sync.set("session_status", session.id, { type: "idle" })
-      }
-      showToast({
-        title: language.t("prompt.toast.promptSendFailed.title"),
-        description: errorMessage(err),
-      })
-      removeOptimisticMessage()
-      restoreCommentItems(commentItems)
-      restoreInput()
-      setSendError(errorMessage(err))
     })
+      .then((sent) => {
+        if (sent) input.onDeliveryReset?.()
+      })
+      .catch((err) => {
+        pending.delete(session.id)
+        if (sessionDirectory === projectDirectory) {
+          sync.set("session_status", session.id, { type: "idle" })
+        }
+        showToast({
+          title: language.t("prompt.toast.promptSendFailed.title"),
+          description: errorMessage(err),
+        })
+        removeOptimisticMessage()
+        restoreCommentItems(commentItems)
+        restoreInput()
+        setSendError(errorMessage(err))
+      })
   }
 
   return {

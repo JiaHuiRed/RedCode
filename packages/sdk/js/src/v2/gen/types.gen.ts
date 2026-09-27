@@ -470,6 +470,7 @@ export type UserMessage = {
   time: {
     created: number
   }
+  delivery?: "queued" | "steer" | "delivered"
   format?: OutputFormat
   summary?: {
     title?: string
@@ -1994,6 +1995,12 @@ export type SessionBusyError = {
   _tag: "SessionBusyError"
   sessionID: string
   message: string
+}
+
+export type ConflictError = {
+  _tag: "ConflictError"
+  message: string
+  resource?: string
 }
 
 export type V2SessionsResponse = {
@@ -6853,6 +6860,7 @@ export type SessionPromptData = {
     }
     agent?: string
     noReply?: boolean
+    delivery?: "queue" | "steer"
     tools?: {
       [key: string]: boolean
     }
@@ -7229,6 +7237,7 @@ export type SessionPromptAsyncData = {
     }
     agent?: string
     noReply?: boolean
+    delivery?: "queue" | "steer"
     tools?: {
       [key: string]: boolean
     }
@@ -7485,6 +7494,132 @@ export type PermissionRespondResponses = {
 }
 
 export type PermissionRespondResponse = PermissionRespondResponses[keyof PermissionRespondResponses]
+
+export type SessionDeliverQueuedMessageData = {
+  body?: never
+  path: {
+    sessionID: string
+    messageID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/message/{messageID}/deliver"
+}
+
+export type SessionDeliverQueuedMessageErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type SessionDeliverQueuedMessageError =
+  SessionDeliverQueuedMessageErrors[keyof SessionDeliverQueuedMessageErrors]
+
+export type SessionDeliverQueuedMessageResponses = {
+  /**
+   * Queued message promoted for the next model step
+   */
+  200: boolean
+}
+
+export type SessionDeliverQueuedMessageResponse =
+  SessionDeliverQueuedMessageResponses[keyof SessionDeliverQueuedMessageResponses]
+
+export type SessionCancelQueuedMessageData = {
+  body?: never
+  path: {
+    sessionID: string
+    messageID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/message/{messageID}/queued"
+}
+
+export type SessionCancelQueuedMessageErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type SessionCancelQueuedMessageError = SessionCancelQueuedMessageErrors[keyof SessionCancelQueuedMessageErrors]
+
+export type SessionCancelQueuedMessageResponses = {
+  /**
+   * Queued message canceled
+   */
+  200: boolean
+}
+
+export type SessionCancelQueuedMessageResponse =
+  SessionCancelQueuedMessageResponses[keyof SessionCancelQueuedMessageResponses]
+
+export type SessionEditQueuedMessageData = {
+  body?: {
+    text: string
+  }
+  path: {
+    sessionID: string
+    messageID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/message/{messageID}/queued"
+}
+
+export type SessionEditQueuedMessageErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type SessionEditQueuedMessageError = SessionEditQueuedMessageErrors[keyof SessionEditQueuedMessageErrors]
+
+export type SessionEditQueuedMessageResponses = {
+  /**
+   * Edited queued message
+   */
+  200: {
+    info: Message
+    parts: Array<Part>
+  }
+}
+
+export type SessionEditQueuedMessageResponse =
+  SessionEditQueuedMessageResponses[keyof SessionEditQueuedMessageResponses]
 
 export type PartDeleteData = {
   body?: never

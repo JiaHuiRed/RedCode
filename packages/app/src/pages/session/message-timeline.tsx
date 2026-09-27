@@ -418,7 +418,8 @@ export function MessageTimeline(props: {
     if (status.type !== "idle") {
       const messages = sessionMessages()
       for (let i = messages.length - 1; i >= 0; i--) {
-        if (messages[i].role === "user") return messages[i].id
+        const message = messages[i]
+        if (message.role === "user" && message.delivery !== "queued") return message.id
       }
     }
 
@@ -443,6 +444,14 @@ export function MessageTimeline(props: {
       if ((assistantMessagesByParent().get(message.id) ?? []).length > 0) continue
       // 当前活跃轮首 → 不标记(它在跑,不是插队)
       if (busy && activeID === message.id) continue
+      if (message.delivery === "queued") {
+        result.set(message.id, "queued")
+        continue
+      }
+      if (message.delivery === "steer" || message.delivery === "delivered") {
+        result.set(message.id, "delivered")
+        continue
+      }
       if (maxAssistantTime > (message.time?.created ?? 0)) result.set(message.id, "delivered")
       else if (busy) result.set(message.id, "queued")
     }

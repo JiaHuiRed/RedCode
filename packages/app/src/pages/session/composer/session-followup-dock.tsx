@@ -6,17 +6,25 @@ import { IconButton } from "@redcode-ai/ui/icon-button"
 import { useLanguage } from "@/context/language"
 
 export function SessionFollowupDock(props: {
-  items: { id: string; text: string }[]
+  items: { id: string; text: string; source: "legacy" | "server" }[]
   sending?: string
+  action?: string
   onSend: (id: string) => void
   onEdit: (id: string) => void
+  onUpdate: (id: string, text: string) => Promise<boolean>
+  onCancel: (id: string) => void
 }) {
   const language = useLanguage()
   const [store, setStore] = createStore({
     collapsed: false,
+    editing: undefined as string | undefined,
+    editText: "",
   })
 
   const toggle = () => setStore("collapsed", (value) => !value)
+  const save = async (id: string) => {
+    if (await props.onUpdate(id, store.editText)) setStore({ editing: undefined, editText: "" })
+  }
   const total = createMemo(() => props.items.length)
   const label = createMemo(() =>
     language.t(total() === 1 ? "session.followupDock.summary.one" : "session.followupDock.summary.other", {
@@ -79,26 +87,83 @@ export function SessionFollowupDock(props: {
         <div class="px-3 pb-7 flex flex-col gap-1.5 max-h-42 overflow-y-auto no-scrollbar">
           <For each={props.items}>
             {(item) => (
-              <div class="flex items-center gap-2 min-w-0 py-1">
-                <span class="min-w-0 flex-1 truncate text-13-regular text-text-strong">{item.text}</span>
-                <Button
-                  size="small"
-                  variant="secondary"
-                  class="shrink-0"
-                  disabled={!!props.sending}
-                  onClick={() => props.onSend(item.id)}
+              <div class="flex min-w-0 items-center gap-2 py-1">
+                <Show
+                  when={store.editing === item.id}
+                  fallback={<span class="min-w-0 flex-1 truncate text-13-regular text-text-strong">{item.text}</span>}
                 >
-                  {language.t("session.followupDock.sendNow")}
-                </Button>
-                <Button
-                  size="small"
-                  variant="ghost"
-                  class="shrink-0"
-                  disabled={!!props.sending}
-                  onClick={() => props.onEdit(item.id)}
+                  <textarea
+                    rows={2}
+                    value={store.editText}
+                    class="min-w-0 flex-1 resize-y rounded-md border border-border-weak-base bg-background-base px-2 py-1 text-13-regular text-text-strong outline-none focus:border-border-weak-hover"
+                    onInput={(event) => setStore("editText", event.currentTarget.value)}
+                    onKeyDown={(event) => {
+                      event.stopPropagation()
+                      if (!event.ctrlKey && !event.metaKey) return
+                      if (event.key !== "Enter") return
+                      event.preventDefault()
+                      void save(item.id)
+                    }}
+                  />
+                </Show>
+                <Show
+                  when={store.editing === item.id}
+                  fallback={
+                    <>
+                      <Button
+                        size="small"
+                        variant="secondary"
+                        class="shrink-0"
+                        disabled={props.sending === item.id || props.action === item.id}
+                        onClick={() => props.onSend(item.id)}
+                      >
+                        {language.t("session.followupDock.sendNow")}
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="ghost"
+                        class="shrink-0"
+                        disabled={props.sending === item.id || props.action === item.id}
+                        onClick={() => {
+                          if (item.source === "legacy") {
+                            props.onEdit(item.id)
+                            return
+                          }
+                          setStore({ editing: item.id, editText: item.text })
+                        }}
+                      >
+                        {language.t("session.followupDock.edit")}
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="ghost"
+                        class="shrink-0"
+                        disabled={props.sending === item.id || props.action === item.id}
+                        onClick={() => props.onCancel(item.id)}
+                      >
+                        {language.t("session.followupDock.cancel")}
+                      </Button>
+                    </>
+                  }
                 >
-                  {language.t("session.followupDock.edit")}
-                </Button>
+                  <Button
+                    size="small"
+                    variant="secondary"
+                    class="shrink-0"
+                    disabled={props.action === item.id}
+                    onClick={() => void save(item.id)}
+                  >
+                    {language.t("session.followupDock.save")}
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="ghost"
+                    class="shrink-0"
+                    onClick={() => setStore({ editing: undefined, editText: "" })}
+                  >
+                    {language.t("session.followupDock.cancel")}
+                  </Button>
+                </Show>
               </div>
             )}
           </For>

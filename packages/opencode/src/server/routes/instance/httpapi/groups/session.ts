@@ -23,7 +23,7 @@ import {
   WorkspaceRoutingQuery,
   WorkspaceRoutingQueryFields,
 } from "../middleware/workspace-routing"
-import { ApiNotFoundError, PermissionNotFoundError, SessionBusyError } from "../errors"
+import { ApiNotFoundError, ConflictError, PermissionNotFoundError, SessionBusyError } from "../errors"
 import { described } from "./metadata"
 import { QueryBoolean } from "./query"
 
@@ -88,6 +88,7 @@ export const TtsPayload = Schema.Struct({
   modelID: ModelID,
 })
 export const PromptPayload = Schema.Struct(Struct.omit(SessionPrompt.PromptInput.fields, ["sessionID"]))
+export const EditQueuedPayload = Schema.Struct({ text: Schema.String })
 export const CommandPayload = Schema.Struct(Struct.omit(SessionPrompt.CommandInput.fields, ["sessionID"]))
 export const ShellPayload = Schema.Struct(Struct.omit(SessionPrompt.ShellInput.fields, ["sessionID"]))
 export const RevertPayload = Schema.Struct(Struct.omit(SessionRevert.RevertInput.fields, ["sessionID"]))
@@ -111,6 +112,9 @@ export const SessionPaths = {
   outline: `${root}/:sessionID/outline`,
   messages: `${root}/:sessionID/message`,
   message: `${root}/:sessionID/message/:messageID`,
+  deliverQueuedMessage: `${root}/:sessionID/message/:messageID/deliver`,
+  editQueuedMessage: `${root}/:sessionID/message/:messageID/queued`,
+  cancelQueuedMessage: `${root}/:sessionID/message/:messageID/queued`,
   create: root,
   remove: `${root}/:sessionID`,
   update: `${root}/:sessionID`,
@@ -506,6 +510,40 @@ export const SessionApi = HttpApi.make("session")
             summary: "Delete message",
             description:
               "Permanently delete a specific message and all of its parts from a session without reverting file changes.",
+          }),
+        ),
+        HttpApiEndpoint.post("deliverQueuedMessage", SessionPaths.deliverQueuedMessage, {
+          params: { sessionID: SessionID, messageID: MessageID },
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Boolean, "Queued message promoted for the next model step"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError, ConflictError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.deliverQueuedMessage",
+            summary: "Promote queued message",
+          }),
+        ),
+        HttpApiEndpoint.patch("editQueuedMessage", SessionPaths.editQueuedMessage, {
+          params: { sessionID: SessionID, messageID: MessageID },
+          query: WorkspaceRoutingQuery,
+          payload: EditQueuedPayload,
+          success: described(MessageV2.WithParts, "Edited queued message"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError, ConflictError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.editQueuedMessage",
+            summary: "Edit queued message",
+          }),
+        ),
+        HttpApiEndpoint.delete("cancelQueuedMessage", SessionPaths.cancelQueuedMessage, {
+          params: { sessionID: SessionID, messageID: MessageID },
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Boolean, "Queued message canceled"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError, ConflictError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.cancelQueuedMessage",
+            summary: "Cancel queued message",
           }),
         ),
         HttpApiEndpoint.delete("deletePart", SessionPaths.deletePart, {

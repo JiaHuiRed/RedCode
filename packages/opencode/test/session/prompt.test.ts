@@ -665,6 +665,123 @@ it.instance("static loop consumes queued replies across turns", () =>
   }),
 )
 
+it.instance("claims explicit queued messages one turn at a time in FIFO order", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Queue turns" })
+    const first = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "first" }],
+    })
+    const second = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      delivery: "queue",
+      parts: [{ type: "text", text: "second" }],
+    })
+    const third = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      delivery: "queue",
+      parts: [{ type: "text", text: "third" }],
+    })
+    expect(second.info.role === "user" && second.info.delivery).toBe("queued")
+    yield* sessions.editQueuedMessage({ sessionID: chat.id, messageID: second.info.id, text: "second edited" })
+    yield* llm.text("reply one")
+    yield* llm.text("reply two")
+    yield* llm.text("reply three")
+    yield* prompt.loop({ sessionID: chat.id })
+    const hits = yield* llm.hits
+    expect(hits.length).toBe(3)
+    const sent = hits.map((hit) => JSON.stringify(hit.body))
+    expect(sent[0]).toContain("first")
+    expect(sent[0]).not.toContain("second edited")
+    expect(sent[1]).toContain("second edited")
+    expect(sent[1]).not.toContain("third")
+    expect(sent[2]).toContain("third")
+    expect((yield* MessageV2.get({ sessionID: chat.id, messageID: second.info.id })).info).toMatchObject({
+      delivery: "delivered",
+    })
+    expect((yield* MessageV2.get({ sessionID: chat.id, messageID: third.info.id })).info).toMatchObject({
+      delivery: "delivered",
+    })
+    expect(first.info.role).toBe("user")
+    const error = yield* sessions
+      .cancelQueuedMessage({ sessionID: chat.id, messageID: second.info.id })
+      .pipe(Effect.flip)
+    expect(error).toBeInstanceOf(Session.QueuedMessageConflict)
+  }),
+)
+
+it.instance("queued messages can be canceled before claim and promoted for the next step", () =>
+  Effect.gen(function* () {
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pending actions" })
+    const one = yield* user(chat.id, "normal")
+    const queued = yield* sessions.updateMessage({
+      ...one,
+      id: MessageID.ascending(),
+      delivery: "queued" as const,
+    })
+    yield* sessions.updatePart({
+      id: PartID.ascending(),
+      sessionID: chat.id,
+      messageID: queued.id,
+      type: "text",
+      text: "queued",
+    })
+    yield* sessions.deliverQueuedMessage({ sessionID: chat.id, messageID: queued.id })
+    expect((yield* MessageV2.get({ sessionID: chat.id, messageID: queued.id })).info).toMatchObject({
+      delivery: "steer",
+    })
+    const removed = yield* sessions.updateMessage({
+      ...queued,
+      id: MessageID.ascending(),
+      delivery: "queued" as const,
+    })
+    yield* sessions.cancelQueuedMessage({ sessionID: chat.id, messageID: removed.id })
+    const error = yield* sessions
+      .editQueuedMessage({
+        sessionID: chat.id,
+        messageID: removed.id,
+        text: "late",
+      })
+      .pipe(Effect.flip)
+    expect(error._tag).toBe("NotFoundError")
+  }),
+)
+
+it.instance("marks explicitly steered messages delivered when assembling the provider request", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Steer delivery" })
+    const messageID = MessageID.ascending()
+    yield* llm.text("steer response")
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      messageID,
+      agent: "build",
+      delivery: "steer",
+      parts: [{ type: "text", text: "steer now" }],
+    })
+
+    expect((yield* MessageV2.get({ sessionID: chat.id, messageID })).info).toMatchObject({
+      delivery: "delivered",
+    })
+    const hits = yield* llm.hits
+    expect(hits).toHaveLength(1)
+    expect(JSON.stringify(hits[0].body)).toContain("steer now")
+  }),
+)
+
 it.instance("refreshes session permissions at the start of each step", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)

@@ -13,9 +13,11 @@ const optimistic: Array<{
     agent: string
     model: { providerID: string; modelID: string }
     variant?: string
+    delivery?: "queued" | "steer"
   }
 }> = []
 const optimisticSeeded: boolean[] = []
+const sentPrompts: Array<{ sessionID: string; delivery?: "queue" | "steer" }> = []
 const storedSessions: Record<string, Array<{ id: string; title?: string }>> = {}
 const promoted: Array<{ directory: string; sessionID: string }> = []
 const sentShell: string[] = []
@@ -46,7 +48,10 @@ const clientFor = (directory: string) => {
         return { data: undefined }
       },
       prompt: async () => ({ data: undefined }),
-      promptAsync: async () => ({ data: undefined }),
+      promptAsync: async (input?: { sessionID: string; delivery?: "queue" | "steer" }) => {
+        if (input) sentPrompts.push(input)
+        return { data: undefined }
+      },
       command: async () => ({ data: undefined }),
       abort: async () => ({ data: undefined }),
     },
@@ -213,6 +218,7 @@ beforeEach(() => {
   enabledAutoAccept.length = 0
   optimistic.length = 0
   optimisticSeeded.length = 0
+  sentPrompts.length = 0
   promoted.length = 0
   params = {}
   sentShell.length = 0
@@ -320,6 +326,40 @@ describe("prompt submit worktree selection", () => {
         model: { providerID: "provider", modelID: "model", variant: "high" },
       },
     })
+  })
+
+  test("sends busy messages with the selected per-message delivery", async () => {
+    params = { id: "session-1" }
+    let delivery: "queue" | "steer" = "queue"
+
+    const submit = createPromptSubmit({
+      info: () => ({ id: "session-1" }),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => true,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      shouldQueue: () => true,
+      delivery: () => delivery,
+      onSubmit: () => undefined,
+    })
+
+    const event = { preventDefault: () => undefined } as unknown as Event
+    await submit.handleSubmit(event)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    delivery = "steer"
+    await submit.handleSubmit(event)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(sentPrompts.map((item) => item.delivery)).toEqual(["queue", "steer"])
+    expect(optimistic.map((item) => item.message.delivery)).toEqual(["queued", "steer"])
   })
 
   test("seeds new sessions before optimistic prompts are added", async () => {

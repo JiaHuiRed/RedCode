@@ -146,6 +146,7 @@ function withContext<A, E>(
                 sessionID,
                 role: "user",
                 time: { created: Date.now() },
+                delivery: input?.delivery,
                 agent: "build",
                 model: {
                   providerID: ProviderID.redcode,

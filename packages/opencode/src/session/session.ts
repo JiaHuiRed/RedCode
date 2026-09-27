@@ -40,7 +40,7 @@ import type { Provider } from "@/provider/provider"
 import { Permission } from "@/permission"
 import { Plugin } from "@/plugin"
 import { Global } from "@redcode-ai/core/global"
-import { Effect, Layer, Option, Context, Schema, Types } from "effect"
+import { Effect, Layer, Option, Context, Schema, Semaphore, Types } from "effect"
 import { NonNegativeInt, optionalOmitUndefined } from "@redcode-ai/core/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 
@@ -501,6 +501,10 @@ export class BusyError extends Schema.TaggedErrorClass<BusyError>()("SessionBusy
 
 export type NotFound = NotFoundError
 
+export class QueuedMessageConflict extends Schema.TaggedErrorClass<QueuedMessageConflict>()("QueuedMessageConflict", {
+  messageID: MessageID,
+}) {}
+
 export interface Interface {
   readonly list: (input?: ListInput) => Effect.Effect<Info[]>
   readonly create: (input?: {
@@ -530,6 +534,20 @@ export interface Interface {
   readonly children: (parentID: SessionID) => Effect.Effect<Info[]>
   readonly remove: (sessionID: SessionID) => Effect.Effect<void, NotFound>
   readonly updateMessage: <T extends MessageV2.Info>(msg: T) => Effect.Effect<T>
+  readonly claimQueuedMessage: (sessionID: SessionID) => Effect.Effect<MessageV2.User | undefined>
+  readonly deliverQueuedMessage: (input: {
+    sessionID: SessionID
+    messageID: MessageID
+  }) => Effect.Effect<void, QueuedMessageConflict | NotFoundError>
+  readonly editQueuedMessage: (input: {
+    sessionID: SessionID
+    messageID: MessageID
+    text: string
+  }) => Effect.Effect<MessageV2.WithParts, QueuedMessageConflict | NotFoundError>
+  readonly cancelQueuedMessage: (input: {
+    sessionID: SessionID
+    messageID: MessageID
+  }) => Effect.Effect<void, QueuedMessageConflict | NotFoundError>
   readonly removeMessage: (input: { sessionID: SessionID; messageID: MessageID }) => Effect.Effect<MessageID>
   readonly removePart: (input: { sessionID: SessionID; messageID: MessageID; partID: PartID }) => Effect.Effect<PartID>
   readonly getPart: (input: {
@@ -575,6 +593,14 @@ export const layer: Layer.Layer<
     const storage = yield* Storage.Service
     const sync = yield* SyncEvent.Service
     const flags = yield* RuntimeFlags.Service
+    const queueLocks = new Map<SessionID, Semaphore.Semaphore>()
+    const queueLock = (sessionID: SessionID) => {
+      const existing = queueLocks.get(sessionID)
+      if (existing) return existing
+      const lock = Semaphore.makeUnsafe(1)
+      queueLocks.set(sessionID, lock)
+      return lock
+    }
 
     const createNext = Effect.fn("Session.createNext")(function* (input: {
       id?: SessionID
@@ -723,6 +749,83 @@ export const layer: Layer.Layer<
         yield* sync.run(MessageV2.Event.Updated, { sessionID: msg.sessionID, info: msg })
         return msg
       }).pipe(Effect.withSpan("Session.updateMessage"))
+
+    const queuedMessage = Effect.fn("Session.queuedMessage")(function* (input: {
+      sessionID: SessionID
+      messageID: MessageID
+    }) {
+      const message = yield* MessageV2.get(input)
+      if (message.info.role !== "user" || message.info.delivery !== "queued")
+        return yield* new QueuedMessageConflict({ messageID: input.messageID })
+      return message
+    })
+
+    // 260927 Red 队列的领取、编辑、撤销、插队共用同一把会话锁；持久状态在 message JSON，
+    // 领取先落盘再进入模型，领取之后任何客户端都不能再修改该待发项。
+    const claimQueuedMessage: Interface["claimQueuedMessage"] = Effect.fn("Session.claimQueuedMessage")(
+      function* (sessionID) {
+        return yield* queueLock(sessionID).withPermits(1)(
+          Effect.gen(function* () {
+            const row = Database.use((db) =>
+              db
+                .select()
+                .from(MessageTable)
+                .where(
+                  and(
+                    eq(MessageTable.session_id, sessionID),
+                    sql`json_extract(${MessageTable.data}, '$.delivery') = 'queued'`,
+                  ),
+                )
+                .orderBy(MessageTable.time_created, MessageTable.id)
+                .limit(1)
+                .get(),
+            )
+            if (!row) return
+            const message = row.data as MessageV2.User
+            return yield* updateMessage({ ...message, id: MessageID.make(row.id), sessionID, delivery: "delivered" })
+          }),
+        )
+      },
+    )
+
+    const deliverQueuedMessage: Interface["deliverQueuedMessage"] = Effect.fn("Session.deliverQueuedMessage")(
+      function* (input) {
+        yield* queueLock(input.sessionID).withPermits(1)(
+          Effect.gen(function* () {
+            const message = yield* queuedMessage(input)
+            yield* updateMessage({ ...message.info, delivery: "steer" })
+          }),
+        )
+      },
+    )
+
+    const editQueuedMessage: Interface["editQueuedMessage"] = Effect.fn("Session.editQueuedMessage")(function* (input) {
+      return yield* queueLock(input.sessionID).withPermits(1)(
+        Effect.gen(function* () {
+          const message = yield* queuedMessage(input)
+          const part = message.parts.find(
+            (part): part is MessageV2.TextPart => part.type === "text" && !part.synthetic && !part.ignored,
+          )
+          if (!part) return yield* new QueuedMessageConflict({ messageID: input.messageID })
+          yield* updatePart({ ...part, text: input.text })
+          return {
+            ...message,
+            parts: message.parts.map((item) => (item.id === part.id ? { ...part, text: input.text } : item)),
+          }
+        }),
+      )
+    })
+
+    const cancelQueuedMessage: Interface["cancelQueuedMessage"] = Effect.fn("Session.cancelQueuedMessage")(
+      function* (input) {
+        yield* queueLock(input.sessionID).withPermits(1)(
+          Effect.gen(function* () {
+            yield* queuedMessage(input)
+            yield* sync.run(MessageV2.Event.Removed, input)
+          }),
+        )
+      },
+    )
 
     const updatePart = <T extends MessageV2.Part>(part: T): Effect.Effect<T> =>
       Effect.gen(function* () {
@@ -998,6 +1101,10 @@ export const layer: Layer.Layer<
       children,
       remove,
       updateMessage,
+      claimQueuedMessage,
+      deliverQueuedMessage,
+      editQueuedMessage,
+      cancelQueuedMessage,
       removeMessage,
       removePart,
       updatePart,

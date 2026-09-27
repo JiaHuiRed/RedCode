@@ -166,6 +166,8 @@ import type {
   QuestionReplyResponses,
   SessionAbortErrors,
   SessionAbortResponses,
+  SessionCancelQueuedMessageErrors,
+  SessionCancelQueuedMessageResponses,
   SessionChildrenErrors,
   SessionChildrenResponses,
   SessionCommandErrors,
@@ -178,9 +180,13 @@ import type {
   SessionDeleteMessageErrors,
   SessionDeleteMessageResponses,
   SessionDeleteResponses,
+  SessionDeliverQueuedMessageErrors,
+  SessionDeliverQueuedMessageResponses,
   SessionDelivery,
   SessionDiffErrors,
   SessionDiffResponses,
+  SessionEditQueuedMessageErrors,
+  SessionEditQueuedMessageResponses,
   SessionForkErrors,
   SessionForkResponses,
   SessionGetErrors,
@@ -3661,6 +3667,7 @@ export class Session2 extends HeyApiClient {
       }
       agent?: string
       noReply?: boolean
+      delivery?: "queue" | "steer"
       tools?: {
         [key: string]: boolean
       }
@@ -3683,6 +3690,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "model" },
             { in: "body", key: "agent" },
             { in: "body", key: "noReply" },
+            { in: "body", key: "delivery" },
             { in: "body", key: "tools" },
             { in: "body", key: "format" },
             { in: "body", key: "system" },
@@ -4051,6 +4059,7 @@ export class Session2 extends HeyApiClient {
       }
       agent?: string
       noReply?: boolean
+      delivery?: "queue" | "steer"
       tools?: {
         [key: string]: boolean
       }
@@ -4073,6 +4082,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "model" },
             { in: "body", key: "agent" },
             { in: "body", key: "noReply" },
+            { in: "body", key: "delivery" },
             { in: "body", key: "tools" },
             { in: "body", key: "format" },
             { in: "body", key: "system" },
@@ -4270,6 +4280,121 @@ export class Session2 extends HeyApiClient {
       url: "/session/{sessionID}/unrevert",
       ...options,
       ...params,
+    })
+  }
+
+  /**
+   * Promote queued message
+   */
+  public deliverQueuedMessage<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      messageID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "messageID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionDeliverQueuedMessageResponses,
+      SessionDeliverQueuedMessageErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/message/{messageID}/deliver",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Cancel queued message
+   */
+  public cancelQueuedMessage<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      messageID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "messageID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<
+      SessionCancelQueuedMessageResponses,
+      SessionCancelQueuedMessageErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/message/{messageID}/queued",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Edit queued message
+   */
+  public editQueuedMessage<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      messageID: string
+      directory?: string
+      workspace?: string
+      text?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "messageID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "text" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<
+      SessionEditQueuedMessageResponses,
+      SessionEditQueuedMessageErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/message/{messageID}/queued",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 }

@@ -74,6 +74,7 @@ import { FileOpenProvider } from "@redcode-ai/ui/context/file"
 const emptyUserMessages: UserMessage[] = []
 type FollowupItem = FollowupDraft & { id: string }
 type FollowupEdit = Pick<FollowupItem, "id" | "prompt" | "context">
+type FollowupDockItem = { id: string; text: string; source: "legacy" | "server" }
 const emptyFollowups: FollowupItem[] = []
 
 type ChangeMode = "git" | "branch" | "turn"
@@ -323,6 +324,7 @@ export default function Page() {
       edit: {},
     }),
   )
+  const [queuedAction, setQueuedAction] = createSignal<string>()
 
   createComputed((prev) => {
     const key = sessionKey()
@@ -1310,6 +1312,7 @@ export default function Page() {
     if (!id) return emptyFollowups
     return followup.items[id] ?? emptyFollowups
   })
+  const queuedMessages = createMemo(() => userMessages().filter((message) => message.delivery === "queued"))
 
   const editingFollowup = createMemo(() => {
     const id = params.id
@@ -1330,6 +1333,8 @@ export default function Page() {
         sync,
         globalSync,
         draft: item,
+        // 260927 Red 旧版本的本地草稿自动迁移到服务端队列；用户点“立即发送”则显式走 steer。
+        delivery: input.manual ? "steer" : "queue",
         optimisticBusy: item.sessionDirectory === sdk.directory,
       }).catch((err) => {
         setFollowup("failed", input.sessionID, input.id)
@@ -1356,7 +1361,7 @@ export default function Page() {
   const queueEnabled = createMemo(() => {
     const id = params.id
     if (!id) return false
-    return settings.general.followup() === "queue" && busy(id) && !composer.blocked() && !isChildSession()
+    return busy(id) && !isChildSession()
   })
 
   const followupText = (item: FollowupDraft) => {
@@ -1376,16 +1381,54 @@ export default function Page() {
     return `[${language.t("common.attachment")}]`
   }
 
-  const queueFollowup = (draft: FollowupDraft) => {
-    setFollowup("items", draft.sessionID, (items) => [
-      ...(items ?? []),
-      { id: Identifier.ascending("message"), ...draft },
-    ])
-    setFollowup("failed", draft.sessionID, undefined)
-    setFollowup("paused", draft.sessionID, undefined)
+  const followupDock = createMemo<FollowupDockItem[]>(() => [
+    ...queuedMessages().map((message) => ({ id: message.id, text: line(message.id), source: "server" as const })),
+    ...queuedFollowups().map((item) => ({ id: item.id, text: followupText(item), source: "legacy" as const })),
+  ])
+
+  const runQueuedAction = async (id: string, action: () => Promise<unknown>) => {
+    if (queuedAction()) return false
+    setQueuedAction(id)
+    try {
+      await action()
+      return true
+    } catch (err) {
+      fail(err)
+      return false
+    } finally {
+      setQueuedAction(undefined)
+    }
   }
 
-  const followupDock = createMemo(() => queuedFollowups().map((item) => ({ id: item.id, text: followupText(item) })))
+  const deliverQueued = (id: string) => {
+    const sessionID = params.id
+    if (!sessionID) return Promise.resolve(false)
+    return runQueuedAction(id, () =>
+      sdk.client.session.deliverQueuedMessage({ sessionID, messageID: id }, { throwOnError: true }),
+    )
+  }
+
+  const updateQueued = (id: string, text: string) => {
+    const sessionID = params.id
+    if (!sessionID) return Promise.resolve(false)
+    return runQueuedAction(id, () =>
+      sdk.client.session.editQueuedMessage({ sessionID, messageID: id, text }, { throwOnError: true }),
+    )
+  }
+
+  const cancelFollowup = (id: string) => {
+    const sessionID = params.id
+    if (!sessionID) return Promise.resolve(false)
+    const item = followupDock().find((entry) => entry.id === id)
+    if (item?.source === "legacy") {
+      setFollowup("items", sessionID, (items) => (items ?? []).filter((entry) => entry.id !== id))
+      setFollowup("failed", sessionID, (value) => (value === id ? undefined : value))
+      return Promise.resolve(true)
+    }
+    return runQueuedAction(id, () =>
+      sdk.client.session.cancelQueuedMessage({ sessionID, messageID: id }, { throwOnError: true }),
+    )
+  }
 
   const sendFollowup = (sessionID: string, id: string, opts?: { manual?: boolean }) => {
     if (sync.session.get(sessionID)?.parentID) return Promise.resolve()
@@ -1394,6 +1437,16 @@ export default function Page() {
     if (followupBusy(sessionID)) return Promise.resolve()
 
     return followupMutation.mutateAsync({ sessionID, id, manual: opts?.manual })
+  }
+
+  const sendDockItem = (id: string) => {
+    const sessionID = params.id
+    if (!sessionID) return
+    if (followupDock().find((item) => item.id === id)?.source === "server") {
+      void deliverQueued(id)
+      return
+    }
+    void sendFollowup(sessionID, id, { manual: true })
   }
 
   const editFollowup = (id: string) => {
@@ -1538,6 +1591,7 @@ export default function Page() {
     const sessionID = params.id
     if (!sessionID) return
 
+    if (queuedMessages().length > 0) return
     const item = queuedFollowups()[0]
     if (!item) return
     if (followupBusy(sessionID)) return
@@ -1644,16 +1698,16 @@ export default function Page() {
               items: followupDock(),
               sending: sendingFollowup(),
               edit: editingFollowup(),
-              onQueue: queueFollowup,
               onAbort: () => {
                 const id = params.id
                 if (!id) return
                 setFollowup("paused", id, true)
               },
-              onSend: (id) => {
-                void sendFollowup(params.id!, id, { manual: true })
-              },
+              action: queuedAction(),
+              onSend: sendDockItem,
               onEdit: editFollowup,
+              onUpdate: updateQueued,
+              onCancel: (id) => void cancelFollowup(id),
               onEditLoaded: clearFollowupEdit,
             }
           : undefined

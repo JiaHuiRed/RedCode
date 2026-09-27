@@ -41,7 +41,7 @@ import {
   UpdatePayload,
   UsageQuery,
 } from "../groups/session"
-import { PermissionNotFoundError, notFound } from "../errors"
+import { ConflictError, PermissionNotFoundError, notFound } from "../errors"
 import * as SessionError from "./session-errors"
 
 const tryParseJson = (text: string) =>
@@ -462,6 +462,56 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return true
     })
 
+    const queuedError = <A, R>(effect: Effect.Effect<A, Session.QueuedMessageConflict | Session.NotFound, R>) =>
+      effect.pipe(
+        Effect.catchTag("QueuedMessageConflict", (error) =>
+          Effect.fail(new ConflictError({ message: `Message is no longer queued: ${error.messageID}` })),
+        ),
+        Effect.catchTag("NotFoundError", (error) => Effect.fail(notFound(error.message))),
+      )
+
+    const deliverQueuedMessage = Effect.fn("SessionHttpApi.deliverQueuedMessage")(function* (ctx: {
+      params: { sessionID: SessionID; messageID: MessageID }
+    }) {
+      yield* requireSession(ctx.params.sessionID)
+      yield* queuedError(session.deliverQueuedMessage(ctx.params))
+      yield* Effect.gen(function* () {
+        yield* promptSvc.loop({ sessionID: ctx.params.sessionID })
+        // 260927 Red 若 ensureRunning 只等待了即将结束的旧 Runner，显式送达状态仍为 steer；
+        // 让本 handler 在旧 Runner 退出后再接手一次，覆盖最后一步的竞争窗口。
+        const current = yield* MessageV2.get(ctx.params).pipe(
+          Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)),
+        )
+        if (current?.info.role === "user" && current.info.delivery === "steer") {
+          yield* promptSvc.loop({ sessionID: ctx.params.sessionID })
+        }
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logError("queued delivery failed").pipe(
+            Effect.annotateLogs({ sessionID: ctx.params.sessionID, cause: Cause.pretty(cause) }),
+          ),
+        ),
+        Effect.forkIn(scope, { startImmediately: true }),
+      )
+      return true
+    })
+
+    const editQueuedMessage = Effect.fn("SessionHttpApi.editQueuedMessage")(function* (ctx: {
+      params: { sessionID: SessionID; messageID: MessageID }
+      payload: { text: string }
+    }) {
+      yield* requireSession(ctx.params.sessionID)
+      return yield* queuedError(session.editQueuedMessage({ ...ctx.params, text: ctx.payload.text }))
+    })
+
+    const cancelQueuedMessage = Effect.fn("SessionHttpApi.cancelQueuedMessage")(function* (ctx: {
+      params: { sessionID: SessionID; messageID: MessageID }
+    }) {
+      yield* requireSession(ctx.params.sessionID)
+      yield* queuedError(session.cancelQueuedMessage(ctx.params))
+      return true
+    })
+
     const deletePart = Effect.fn("SessionHttpApi.deletePart")(function* (ctx: {
       params: { sessionID: SessionID; messageID: MessageID; partID: PartID }
     }) {
@@ -550,6 +600,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("unrevert", unrevert)
       .handle("permissionRespond", permissionRespond)
       .handle("deleteMessage", deleteMessage)
+      .handle("deliverQueuedMessage", deliverQueuedMessage)
+      .handle("editQueuedMessage", editQueuedMessage)
+      .handle("cancelQueuedMessage", cancelQueuedMessage)
       .handle("deletePart", deletePart)
       .handle("updatePart", updatePart)
       .handle("tts", tts)

@@ -375,6 +375,7 @@ export const User = Schema.Struct({
   time: Schema.Struct({
     created: NonNegativeInt,
   }),
+  delivery: Schema.optional(Schema.Literals(["queued", "steer", "delivered"])),
   format: Schema.optional(Format),
   summary: Schema.optional(
     Schema.Struct({
@@ -905,8 +906,7 @@ export const toUIMessages = Effect.fn("Message.toUIMessages")(function* (
                 text: part.state.time.compacted
                   ? "[Old tool result content cleared]"
                   : truncateToolOutput(part.state.output, options?.toolOutputMaxChars),
-                attachments:
-                  part.state.time.compacted || options?.stripMedia ? [] : (part.state.attachments ?? []),
+                attachments: part.state.time.compacted || options?.stripMedia ? [] : (part.state.attachments ?? []),
               },
               model,
               { notice: BUDGET_NOTICE },

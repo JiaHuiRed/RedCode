@@ -93,7 +93,6 @@ interface PromptInputProps {
   edit?: { id: string; prompt: Prompt; context: FollowupDraft["context"] }
   onEditLoaded?: () => void
   shouldQueue?: () => boolean
-  onQueue?: (draft: FollowupDraft) => void
   onAbort?: () => void
   onSubmit?: () => void
 }
@@ -279,6 +278,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     placeholder: number
     draggingType: "image" | "@mention" | null
     mode: "normal" | "shell"
+    delivery: "queue" | "steer"
     applyingHistory: boolean
   }>({
     popover: null,
@@ -287,7 +287,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     placeholder: Math.floor(Math.random() * EXAMPLES.length),
     draggingType: null,
     mode: "normal",
+    delivery: "queue",
     applyingHistory: false,
+  })
+
+  createEffect(() => {
+    if (props.shouldQueue?.() || store.delivery === "queue") return
+    setStore("delivery", "queue")
   })
 
   const buttonsSpring = useSpring(() => (store.mode === "normal" ? 1 : 0), { visualDuration: 0.2, bounce: 0 })
@@ -1143,7 +1149,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     newSessionWorktree: () => props.newSessionWorktree,
     onNewSessionWorktreeReset: props.onNewSessionWorktreeReset,
     shouldQueue: props.shouldQueue,
-    onQueue: props.onQueue,
+    delivery: () => store.delivery,
+    onDeliveryReset: () => setStore("delivery", "queue"),
     onAbort: props.onAbort,
     onSubmit: props.onSubmit,
   })
@@ -1721,6 +1728,19 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 <Show when={params.id}> 守卫，新建会话页没有 id 时整块不渲染。 */}
             <SessionContextUsage placement="top" />
           </div>
+          <Show when={store.mode === "normal" && props.shouldQueue?.() && !blank()}>
+            <Button
+              data-action="prompt-delivery"
+              type="button"
+              variant="ghost"
+              size="small"
+              class="max-w-32 shrink-0 truncate text-12-medium text-v2-text-text-faint"
+              aria-pressed={store.delivery === "steer"}
+              onClick={() => setStore("delivery", store.delivery === "queue" ? "steer" : "queue")}
+            >
+              {language.t(store.delivery === "queue" ? "prompt.delivery.queue" : "prompt.delivery.steer")}
+            </Button>
+          </Show>
           <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
             <IconButton
               data-action="prompt-submit"

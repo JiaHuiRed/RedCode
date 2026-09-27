@@ -76,6 +76,7 @@ export type PromptProps = {
   visible?: boolean
   disabled?: boolean
   onSubmit?: () => void
+  onQueue?: (messageID: string, text: string) => void
   ref?: (ref: PromptRef | undefined) => void
   hint?: JSX.Element
   right?: JSX.Element
@@ -1206,6 +1207,14 @@ export function Prompt(props: PromptProps) {
     }
     if (!sessionID) return false
 
+    const delivery =
+      props.sessionID &&
+      submission.payload.mode === "normal" &&
+      !isCommand &&
+      (sync.data.session_status[sessionID]?.type ?? "idle") !== "idle"
+        ? "queue"
+        : undefined
+
     if (submission.payload.mode === "shell") {
       const result = await sdk.client.session.shell({
         sessionID,
@@ -1243,11 +1252,16 @@ export function Prompt(props: PromptProps) {
         model: submission.payload.model,
         variant: submission.payload.variant,
         parts: submission.payload.promptParts,
+        delivery,
       })
       if (result.error) {
         toast.error(result.error)
         return false
       }
+    }
+
+    if (delivery === "queue") {
+      props.onQueue?.(submission.payload.messageID, submission.payload.inputText)
     }
 
     history.append(submission.payload.history)

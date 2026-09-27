@@ -58,6 +58,8 @@ import { useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
 import { useSDK } from "@tui/context/sdk"
 import { useEditorContext } from "@tui/context/editor"
 import { useDialog } from "../../ui/dialog"
+import { DialogSelect } from "@tui/ui/dialog-select"
+import { DialogPrompt } from "@tui/ui/dialog-prompt"
 import { TodoItem } from "../../component/todo-item"
 import { DialogMessage } from "./dialog-message"
 import type { PromptInfo } from "../../component/prompt/history"
@@ -202,6 +204,11 @@ export function Session() {
     )
   })
   const messages = createMemo(() => sync.data.message[route.sessionID] ?? [])
+  const queuedMessages = createMemo(() =>
+    messages().filter(
+      (message): message is UserMessageInfo => message.role === "user" && message.delivery === "queued",
+    ),
+  )
 
   // 260708 Red TUI 消息级 windowing — 只渲染最近 N 条，屏外不进 yoga 树
   const MSG_WINDOW_DEFAULT = 50
@@ -265,7 +272,8 @@ export function Session() {
     if (working()) {
       const msgs = messages()
       for (let i = msgs.length - 1; i >= 0; i--) {
-        if (msgs[i].role === "user") return msgs[i].id
+        const message = msgs[i]
+        if (message.role === "user" && message.delivery !== "queued") return message.id
       }
     }
     return undefined
@@ -287,6 +295,14 @@ export function Session() {
       if ((assistantByParent().get(message.id) ?? []).length > 0) continue
       // 当前活跃轮首 → 不标记(它在跑,不是插队)
       if (busy && activeID === message.id) continue
+      if (message.delivery === "queued") {
+        result.set(message.id, "queued")
+        continue
+      }
+      if (message.delivery === "steer" || message.delivery === "delivered") {
+        result.set(message.id, "delivered")
+        continue
+      }
       if (maxAssistantTime > (message.time?.created ?? 0)) result.set(message.id, "delivered")
       else if (busy) result.set(message.id, "queued")
     }
@@ -323,6 +339,133 @@ export function Session() {
   const toast = useToast()
   const sdk = useSDK()
   const editor = useEditorContext()
+
+  const queuedText = (messageID: string) =>
+    (sync.data.part[messageID] ?? [])
+      .filter((part) => part.type === "text" && !part.synthetic && !part.ignored)
+      .map((part) => (part.type === "text" ? part.text : ""))
+      .join("")
+      .replace(/\s+/g, " ")
+      .trim() || "[attachment]"
+
+  const reportQueueError = (error: unknown) => toast.show({ message: errorMessage(error), variant: "error" })
+
+  const deliverQueued = (sessionID: string, messageID: string) =>
+    sdk.client.session
+      .deliverQueuedMessage({ sessionID, messageID })
+      .then((result) => {
+        if (result.error) {
+          reportQueueError(result.error)
+          return false
+        }
+        return true
+      })
+      .catch((error) => {
+        reportQueueError(error)
+        return false
+      })
+
+  const editQueued = (sessionID: string, messageID: string, text: string) =>
+    sdk.client.session
+      .editQueuedMessage({ sessionID, messageID, text })
+      .then((result) => {
+        if (result.error) {
+          reportQueueError(result.error)
+          return false
+        }
+        return true
+      })
+      .catch((error) => {
+        reportQueueError(error)
+        return false
+      })
+
+  const cancelQueued = (sessionID: string, messageID: string) =>
+    sdk.client.session
+      .cancelQueuedMessage({ sessionID, messageID })
+      .then((result) => {
+        if (result.error) {
+          reportQueueError(result.error)
+          return false
+        }
+        return true
+      })
+      .catch((error) => {
+        reportQueueError(error)
+        return false
+      })
+
+  const pendingActions = (sessionID: string, messageID: string, text = queuedText(messageID)) => (
+    <DialogSelect
+      title={`Queued: ${Locale.truncate(text, 48)}`}
+      options={[
+        {
+          title: "Keep queued",
+          value: "keep",
+          description: "Leave this message for the next turn",
+          onSelect: (ctx) => ctx.clear(),
+        },
+        {
+          title: "Deliver at next safe step",
+          value: "deliver",
+          description: "Do not interrupt the current model call",
+          onSelect: (ctx) => {
+            void deliverQueued(sessionID, messageID).then((ok) => {
+              if (ok) ctx.clear()
+            })
+          },
+        },
+        {
+          title: "Edit",
+          value: "edit",
+          description: "Change this queued message",
+          onSelect: (ctx) => {
+            void DialogPrompt.show(ctx, "Edit queued message", { value: text }).then((updated) => {
+              if (updated === null) {
+                ctx.replace(() => pendingActions(sessionID, messageID))
+                return
+              }
+              void editQueued(sessionID, messageID, updated).then((ok) => {
+                if (ok) ctx.clear()
+                else ctx.replace(() => pendingActions(sessionID, messageID))
+              })
+            })
+          },
+        },
+        {
+          title: "Cancel queued message",
+          value: "cancel",
+          description: "Remove this message before it is delivered",
+          onSelect: (ctx) => {
+            void cancelQueued(sessionID, messageID).then((ok) => {
+              if (ok) ctx.clear()
+            })
+          },
+        },
+      ]}
+    />
+  )
+
+  const showPendingMessages = () => {
+    const sessionID = route.sessionID
+    const pending = queuedMessages()
+    if (pending.length === 0) {
+      toast.show({ message: "No queued messages", variant: "info", duration: 2000 })
+      dialog.clear()
+      return
+    }
+    dialog.replace(() => (
+      <DialogSelect
+        title="Queued messages"
+        options={pending.map((message) => ({
+          title: Locale.truncate(queuedText(message.id) || "Queued message", 56),
+          value: message.id,
+          description: `#${message.id.slice(-8)} · choose to deliver, edit, or cancel`,
+          onSelect: (ctx) => ctx.replace(() => pendingActions(sessionID, message.id)),
+        }))}
+      />
+    ))
+  }
 
   createEffect(() => {
     const sessionID = route.sessionID
@@ -1176,6 +1319,15 @@ export function Session() {
         dialog.clear()
       }),
     },
+    {
+      title: "Manage queued messages",
+      value: "session.pending",
+      category: "Session",
+      slash: {
+        name: "pending",
+      },
+      run: showPendingMessages,
+    },
   ])
 
   const sessionCommands = createMemo(() =>
@@ -1422,8 +1574,25 @@ export function Session() {
                       onSubmit={() => {
                         toBottom()
                       }}
+                      onQueue={(messageID, text) => {
+                        toast.show({
+                          message: "Queued. Run /pending to deliver, edit, or cancel.",
+                          variant: "info",
+                          duration: 5000,
+                        })
+                        // 260927 Red 不覆盖工具权限弹窗；队列操作之后仍可从 /pending 打开。
+                        if (dialog.stack.length === 0)
+                          dialog.replace(() => pendingActions(route.sessionID, messageID, text))
+                      }}
                       sessionID={route.sessionID}
-                      right={<TuiPluginRuntime.Slot name="session_prompt_right" session_id={route.sessionID} />}
+                      right={
+                        <>
+                          <Show when={queuedMessages().length > 0}>
+                            <text fg={theme.textMuted}>{queuedMessages().length} queued · /pending</text>
+                          </Show>
+                          <TuiPluginRuntime.Slot name="session_prompt_right" session_id={route.sessionID} />
+                        </>
+                      }
                     />
                   </TuiPluginRuntime.Slot>
                 </Show>
