@@ -397,18 +397,18 @@ export function Session() {
 
   const pendingActions = (sessionID: string, messageID: string, text = queuedText(messageID)) => (
     <DialogSelect
-      title={`Queued: ${Locale.truncate(text, 48)}`}
+      title={`待发送：${Locale.truncate(text, 28)}`}
       options={[
         {
-          title: "Keep queued",
+          title: "继续等待",
           value: "keep",
-          description: "Leave this message for the next turn",
+          description: "留到下一轮发送",
           onSelect: (ctx) => ctx.clear(),
         },
         {
-          title: "Deliver at next safe step",
+          title: "尽快送达",
           value: "deliver",
-          description: "Do not interrupt the current model call",
+          description: "在下一个安全步骤送达，不打断当前调用",
           onSelect: (ctx) => {
             void deliverQueued(sessionID, messageID).then((ok) => {
               if (ok) ctx.clear()
@@ -416,11 +416,11 @@ export function Session() {
           },
         },
         {
-          title: "Edit",
+          title: "编辑",
           value: "edit",
-          description: "Change this queued message",
+          description: "修改待发送消息",
           onSelect: (ctx) => {
-            void DialogPrompt.show(ctx, "Edit queued message", { value: text }).then((updated) => {
+            void DialogPrompt.show(ctx, "编辑待发送消息", { value: text }).then((updated) => {
               if (updated === null) {
                 ctx.replace(() => pendingActions(sessionID, messageID))
                 return
@@ -433,9 +433,9 @@ export function Session() {
           },
         },
         {
-          title: "Cancel queued message",
+          title: "撤销待发送消息",
           value: "cancel",
-          description: "Remove this message before it is delivered",
+          description: "在送达前移除这条消息",
           onSelect: (ctx) => {
             void cancelQueued(sessionID, messageID).then((ok) => {
               if (ok) ctx.clear()
@@ -450,17 +450,17 @@ export function Session() {
     const sessionID = route.sessionID
     const pending = queuedMessages()
     if (pending.length === 0) {
-      toast.show({ message: "No queued messages", variant: "info", duration: 2000 })
+      toast.show({ message: "没有待发送消息", variant: "info", duration: 2000 })
       dialog.clear()
       return
     }
     dialog.replace(() => (
       <DialogSelect
-        title="Queued messages"
+        title="待发送消息"
         options={pending.map((message) => ({
-          title: Locale.truncate(queuedText(message.id) || "Queued message", 56),
+          title: Locale.truncate(queuedText(message.id) || "待发送消息", 28),
           value: message.id,
-          description: `#${message.id.slice(-8)} · choose to deliver, edit, or cancel`,
+          description: `#${message.id.slice(-8)} · 可送达、编辑或撤销`,
           onSelect: (ctx) => ctx.replace(() => pendingActions(sessionID, message.id)),
         }))}
       />
@@ -1576,7 +1576,7 @@ export function Session() {
                       }}
                       onQueue={(messageID, text) => {
                         toast.show({
-                          message: "Queued. Run /pending to deliver, edit, or cancel.",
+                          message: "消息已排队；可用 /pending 送达、编辑或撤销。",
                           variant: "info",
                           duration: 5000,
                         })
@@ -1588,7 +1588,7 @@ export function Session() {
                       right={
                         <>
                           <Show when={queuedMessages().length > 0}>
-                            <text fg={theme.textMuted}>{queuedMessages().length} queued · /pending</text>
+                            <text fg={theme.textMuted}>{queuedMessages().length} 条待发送 · /pending</text>
                           </Show>
                           <TuiPluginRuntime.Slot name="session_prompt_right" session_id={route.sessionID} />
                         </>
