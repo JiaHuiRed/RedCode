@@ -18,6 +18,7 @@
 
 #### 修复
 
+- **GUI 草稿切换后保留图片附件**：图片数据改为按会话单独持久化，只在附件增删时写入，不再随每次输入反复序列化。
 - **工具结果预算覆盖所有包装结果**（`packages/opencode/src/tool/{tool,truncate}.ts`）：`metadata.truncated` 不再绕过模型侧预算；已有完整输出路径会复用，避免 spill 预览覆盖恢复源（审计复核：`docs/notes/proposed/architecture/2026-09-24-incremental-audit.md` §3.1）。
 - **GUI 标题栏状态灯不再因缺少 SDK context 启动报错**（`packages/app/src/components/titlebar.tsx`）：状态灯读取目录级同步状态，但标题栏位于 `DirectoryLayout` 的 `SDKProvider` 外；现在按当前 `statusDir` 提供目录 context，并在项目切换时重建，避免 renderer 启动即进入错误页。
 
@@ -26,6 +27,7 @@
 - **提示词职责边界收敛**（`AGENTS.md`、`packages/opencode/src/session/{prompt,system,reasoning-language}.ts`）：修正全局工作规则冲突，移除项目级通用 CORE 与有静态 owner 的纠错/代执行重复条款；称呼仅作为最多 128 个 Unicode 码位的偏好事实注入，表达方式归 soul。决策与前缀影响：`docs/notes/implemented/architecture/2026-09-24-prompt-instruction-ownership.md`。
 - **工具参数流增加非正文进度日志**（`packages/opencode/src/session/llm.ts`）：长参数生成可见计数与耗时，区分完整生成和断流收尾，不记录参数内容，也不改变看门狗超时策略。
 - **GPT 提示词精简重复规则并保留 soul 声线**（`packages/opencode/src/session/prompt/gpt.md`）：压缩与公共提示词重复的编辑、续接和表达要求，并明确简洁结构不应抹掉自然语气（仓内字符估算约 −193 tokens）。
+- **GPT 技术回复保留 soul 声线**（`packages/opencode/src/session/prompt/default.md`、`packages/opencode/src/session/prompt/gpt.md`）：默认规则把情绪与关系线索纳入用户意图；GPT Delta 明确人格语气属于可见交付，并删除重复的 Final answer 规则，不再堆叠例句。设计取舍：`docs/notes/implemented/architecture/2026-09-27-gpt-soul-visibility.md`。
 - **会话胶囊折叠态保留五项导航**：折叠时仍可切换 Review、Context、Outline、Plan、Status；Context 默认只显示六项关键摘要，其他 tab 继续呈现各自内容，切换 tab 不会意外展开胶囊。
 
 ---

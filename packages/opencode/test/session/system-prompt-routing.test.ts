@@ -24,6 +24,12 @@ describe("system prompt routing", () => {
     expect(provider(model("gpt-5.6-luna", "openai"))).toEqual([PROMPT_DEFAULT, PROMPT_GPT])
   })
 
+  test("GPT Delta 把 soul 声线定义为可见交付", () => {
+    expect(PROMPT_DEFAULT).toContain("First sentence responds to the user's actual intent.")
+    expect(PROMPT_GPT).toContain("The soul is part of the visible deliverable, not decoration.")
+    expect(PROMPT_GPT).not.toContain("## Final answer")
+  })
+
   // 260829 cc hy 的判据是 `hy` + 数字并带边界。写成 includes("hy") 会命中任何名字里
   // 带 hy 的模型，这一组就是钉住那条边界。
   test("Hy 系走 hy.md，两家 provider 的 id 形态都要命中", () => {

@@ -2,11 +2,18 @@ import { createSimpleContext } from "@redcode-ai/ui/context"
 import { showToast } from "@redcode-ai/ui/toast"
 import { checksum } from "@redcode-ai/core/util/encode"
 import { useParams } from "@solidjs/router"
-import { batch, createMemo, createRoot, getOwner, onCleanup } from "solid-js"
+import { batch, createEffect, createMemo, createRoot, getOwner, onCleanup, untrack } from "solid-js"
 import { createStore, type SetStoreFunction } from "solid-js/store"
 import type { FileSelection } from "@/context/file"
 import { useLanguage } from "@/context/language"
 import { Persist, persisted } from "@/utils/persist"
+import {
+  mergePromptImages,
+  migratePromptImages,
+  samePromptImages,
+  serializePromptStore,
+  splitPromptImages,
+} from "./prompt-persistence"
 
 interface PartBase {
   content: string
@@ -169,35 +176,29 @@ type PromptCacheEntry = {
   dispose: VoidFunction
 }
 
-// 草稿落盘时剔除图片 part：dataUrl 是整张图的 base64，跟着 store 每次按键都被
-// JSON.stringify 一遍（贴图后打字卡顿的根因）。代价是重开应用后草稿丢图、文字保留。
-function serializePromptStore(value: unknown) {
-  const store = value as { prompt?: ContentPart[] }
-  if (!Array.isArray(store?.prompt)) return JSON.stringify(value)
-  return JSON.stringify({ ...store, prompt: store.prompt.filter((part) => part.type !== "image") })
-}
-
 // 260913 Red 草稿配额满只提示一次，避免每次按键重复弹 toast。
 let storageWarned = false
 
 function createPromptSession(dir: string, id: string | undefined) {
   const legacy = `${dir}/prompt${id ? "/" + id : ""}.v2`
   const language = useLanguage()
+  const target = Persist.scoped(dir, id, "prompt", [legacy])
+  const onQuota = () => {
+    if (storageWarned) return
+    storageWarned = true
+    showToast({
+      title: language.t("prompt.toast.draftStorageFull.title"),
+      description: language.t("prompt.toast.draftStorageFull.description"),
+    })
+  }
 
-  const [store, setStore, _, ready] = persisted(
+  const [store, setStore, _, promptReady] = persisted(
     {
-      ...Persist.scoped(dir, id, "prompt", [legacy]),
+      ...target,
       serialize: serializePromptStore,
       // 260913 Red 草稿可能很大，配额满时不允许删除 settings/layout 等其它 RedCode.* 键。
       evictOnQuota: false,
-      onQuota: () => {
-        if (storageWarned) return
-        storageWarned = true
-        showToast({
-          title: language.t("prompt.toast.draftStorageFull.title"),
-          description: language.t("prompt.toast.draftStorageFull.description"),
-        })
-      },
+      onQuota,
     },
     createStore<{
       prompt: Prompt
@@ -213,14 +214,66 @@ function createPromptSession(dir: string, id: string | undefined) {
       },
     }),
   )
+  // 260927 Red 草稿文字与图片分开落盘：dataUrl 只在附件增删时写入媒体 store，不随每次按键重复序列化。
+  const [media, setMedia, __, mediaReady] = persisted(
+    {
+      ...Persist.media(`prompt:${target.storage ?? "default"}:${target.key}:images.v1`),
+      evictOnQuota: false,
+      onQuota,
+    },
+    createStore<{ attachments: ImageAttachmentPart[] }>({ attachments: [] }),
+  )
+
+  createEffect(() => {
+    if (!promptReady() || !mediaReady()) return
+    untrack(() => {
+      const migration = migratePromptImages(store.prompt, media.attachments)
+      if (!migration.changed) return
+      batch(() => {
+        if (!samePromptImages(media.attachments, migration.images)) {
+          setMedia(
+            "attachments",
+            migration.images.map((image) => ({ ...image })),
+          )
+        }
+        setStore("prompt", migration.text)
+      })
+    })
+  })
 
   const actions = createPromptActions(setStore)
+  const readyPromises = [promptReady.promise, mediaReady.promise].filter(
+    (promise): promise is Promise<unknown> => promise !== undefined,
+  )
+  const readyPromise = readyPromises.length ? Promise.all(readyPromises) : undefined
+  const ready = Object.defineProperty(() => promptReady() && mediaReady(), "promise", {
+    get: () => readyPromise,
+  }) as (() => boolean) & { readonly promise: Promise<unknown> | undefined }
+  const set = (prompt: Prompt, cursorPosition?: number) => {
+    const split = splitPromptImages(prompt)
+    batch(() => {
+      if (!samePromptImages(media.attachments, split.images)) {
+        setMedia(
+          "attachments",
+          split.images.map((image) => ({ ...image })),
+        )
+      }
+      actions.set(split.text, cursorPosition)
+    })
+  }
+  const reset = () => {
+    batch(() => {
+      if (media.attachments.length > 0) setMedia("attachments", [])
+      actions.reset()
+    })
+  }
+  const current = createMemo(() => mergePromptImages(store.prompt, media.attachments))
 
   return {
     ready,
-    current: () => store.prompt,
+    current,
     cursor: createMemo(() => store.cursor),
-    dirty: () => !isPromptEqual(store.prompt, DEFAULT_PROMPT),
+    dirty: () => !isPromptEqual(current(), DEFAULT_PROMPT),
     context: {
       items: createMemo(() => store.context.items),
       add(item: ContextItem) {
@@ -252,8 +305,8 @@ function createPromptSession(dir: string, id: string | undefined) {
         ])
       },
     },
-    set: actions.set,
-    reset: actions.reset,
+    set,
+    reset,
   }
 }
 
