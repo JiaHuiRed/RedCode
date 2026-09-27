@@ -3,6 +3,23 @@ export type PromptSubmission<T> = Readonly<{
   revision: number
 }>
 
+export function scheduleNewSessionHandoff(
+  handoff: {
+    navigate: () => void
+    canConsume: () => boolean
+    clear: () => void
+  },
+  schedule: (callback: () => void) => unknown = (callback) => setTimeout(callback, 50),
+) {
+  return new Promise<void>((resolve) => {
+    schedule(() => {
+      handoff.navigate()
+      if (handoff.canConsume()) handoff.clear()
+      resolve()
+    })
+  })
+}
+
 export function createSubmissionController() {
   let submitting = false
   let revision = 0

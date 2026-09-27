@@ -28,7 +28,7 @@ import { editorSelectionKey, useEditorContext, type EditorSelection } from "@tui
 import { MessageID, PartID } from "@/session/schema"
 import { createStore, produce, unwrap } from "solid-js/store"
 import { usePromptHistory, type PromptInfo } from "./history"
-import { createSubmissionController } from "./submission"
+import { createSubmissionController, scheduleNewSessionHandoff } from "./submission"
 import { computePromptTraits } from "./traits"
 import { assign, expandPastedTextPlaceholders } from "./part"
 import { usePromptUsage } from "./usage"
@@ -1265,13 +1265,7 @@ export function Prompt(props: PromptProps) {
     }
 
     history.append(submission.payload.history)
-    const consumed = submissionController.canConsume(submission)
-    if (consumed) {
-      const currentSelection = editorContext()
-      const selectionUnchanged =
-        submission.payload.selectionKey === (currentSelection ? editorSelectionKey(currentSelection) : undefined)
-      if (submission.payload.editorParts.length > 0 && selectionUnchanged) editor.markSelectionSent()
-      if (submission.payload.mode === "shell") setMode("normal")
+    const clearPrompt = () => {
       input.extmarks.clear()
       setPrompt({
         input: "",
@@ -1280,17 +1274,28 @@ export function Prompt(props: PromptProps) {
       setStore("extmarkToPartIndex", new Map())
       input.clear()
     }
+    const consumed = submissionController.canConsume(submission)
+    if (consumed) {
+      const currentSelection = editorContext()
+      const selectionUnchanged =
+        submission.payload.selectionKey === (currentSelection ? editorSelectionKey(currentSelection) : undefined)
+      if (submission.payload.editorParts.length > 0 && selectionUnchanged) editor.markSelectionSent()
+      if (submission.payload.mode === "shell" && !isNewSession) setMode("normal")
+      if (!isNewSession) clearPrompt()
+    }
     props.onSubmit?.()
 
     // temporary hack to make sure the message is sent
     if (isNewSession) {
       if (submission.payload.editorParts.length > 0) editor.preserveSelectionFromNewSession()
-      setTimeout(() => {
-        route.navigate({
-          type: "session",
-          sessionID,
-        })
-      }, 50)
+      await scheduleNewSessionHandoff({
+        navigate: () => route.navigate({ type: "session", sessionID }),
+        canConsume: () => submissionController.canConsume(submission),
+        clear: () => {
+          clearPrompt()
+          if (submission.payload.mode === "shell") setMode("normal")
+        },
+      })
     }
     return true
   }

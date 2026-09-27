@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { createSubmissionController } from "../../../src/cli/cmd/tui/component/prompt/submission"
+import {
+  createSubmissionController,
+  scheduleNewSessionHandoff,
+} from "../../../src/cli/cmd/tui/component/prompt/submission"
 
 // Regression test for the prompt submit race in
 // packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx (`submit`).
@@ -132,5 +135,72 @@ describe("Prompt.submit race", () => {
     await submit.submit(h)
     expect(h.submissions[0].text).toBe("Keep this draft.")
     expect(h.store.input).toBe("")
+  })
+
+  test("keeps a new-session draft visible until navigation, then clears it", async () => {
+    const controller = createSubmissionController()
+    const submission = controller.snapshot("sent text")
+    const order: string[] = []
+    let input = submission.payload
+    let handoff: (() => void) | undefined
+
+    let complete = false
+    const pending = scheduleNewSessionHandoff(
+      {
+        navigate: () => order.push("navigate"),
+        canConsume: () => controller.canConsume(submission),
+        clear: () => {
+          order.push("clear")
+          input = ""
+        },
+      },
+      (callback) => {
+        handoff = callback
+      },
+    ).then(() => {
+      complete = true
+    })
+
+    expect(input).toBe("sent text")
+    expect(order).toEqual([])
+    expect(complete).toBe(false)
+    if (!handoff) throw new Error("New-session handoff was not scheduled")
+    handoff()
+    await pending
+
+    expect(order).toEqual(["navigate", "clear"])
+    expect(complete).toBe(true)
+    expect(input).toBe("")
+  })
+
+  test("does not clear a newer draft typed during the new-session handoff", async () => {
+    const controller = createSubmissionController()
+    const submission = controller.snapshot("sent text")
+    const order: string[] = []
+    let input = submission.payload
+    let handoff: (() => void) | undefined
+
+    const pending = scheduleNewSessionHandoff(
+      {
+        navigate: () => order.push("navigate"),
+        canConsume: () => controller.canConsume(submission),
+        clear: () => {
+          order.push("clear")
+          input = ""
+        },
+      },
+      (callback) => {
+        handoff = callback
+      },
+    )
+
+    input = "sent text with newer draft"
+    controller.changed()
+    if (!handoff) throw new Error("New-session handoff was not scheduled")
+    handoff()
+    await pending
+
+    expect(order).toEqual(["navigate"])
+    expect(input).toBe("sent text with newer draft")
   })
 })
