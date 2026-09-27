@@ -83,7 +83,7 @@ import { PermissionPrompt } from "./permission"
 import { QuestionPrompt } from "./question"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
 import * as Model from "../../util/model"
-import { formatTranscript } from "../../util/transcript"
+import { copyAssistantText, formatTranscript } from "../../util/transcript"
 import { UI } from "@/cli/ui.ts"
 import { useTuiConfig } from "../../context/tui-config"
 import { next思考中Mode, reasoningTitle, use思考中Mode, type 思考中Mode } from "../../context/thinking"
@@ -1151,17 +1151,13 @@ export function Session() {
         }
 
         const parts = sync.data.part[lastAssistantMessage.id] ?? []
-        const textParts = parts.filter((part) => part.type === "text")
-        if (textParts.length === 0) {
+        const text = copyAssistantText(parts)
+        if (text === undefined) {
           toast.show({ message: "最近的助手消息中没有文本内容", variant: "error" })
           dialog.clear()
           return
         }
 
-        const text = textParts
-          .map((part) => part.text)
-          .join("\n")
-          .trim()
         if (!text) {
           toast.show({
             message: "No text content found in last assistant message",

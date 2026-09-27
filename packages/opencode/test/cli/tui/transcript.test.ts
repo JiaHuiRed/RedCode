@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  copyAssistantText,
   formatAssistantHeader,
   formatMessage,
   formatPart,
@@ -67,6 +68,29 @@ const providers: Provider[] = [
 ]
 
 describe("transcript", () => {
+  test("copies assistant Markdown source without changing tables, hard breaks, or code whitespace", () => {
+    const markdown = [
+      "| Name | Value |",
+      "| --- | --- |",
+      "| item | 1 |",
+      "",
+      "line one  ",
+      "line two",
+      "",
+      "```txt",
+      "  padded  text  ",
+      "```",
+    ].join("\n")
+
+    const parts: Part[] = [
+      { id: "p1", sessionID: "ses_123", messageID: "msg_123", type: "text", text: markdown },
+      { id: "p2", sessionID: "ses_123", messageID: "msg_123", type: "text", text: "next block" },
+    ]
+
+    expect(copyAssistantText(parts)).toBe(`${markdown}\nnext block`)
+    expect(copyAssistantText([])).toBeUndefined()
+  })
+
   describe("formatAssistantHeader", () => {
     const baseMsg: AssistantMessage = {
       id: "msg_123",

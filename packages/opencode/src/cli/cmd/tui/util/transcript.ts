@@ -24,6 +24,12 @@ export type MessageWithParts = {
   parts: Part[]
 }
 
+export function copyAssistantText(parts: Part[]): string | undefined {
+  const textParts = parts.filter((part) => part.type === "text")
+  if (textParts.length === 0) return
+  return textParts.map((part) => part.text).join("\n").trim()
+}
+
 export function formatTranscript(
   session: SessionInfo,
   messages: MessageWithParts[],
