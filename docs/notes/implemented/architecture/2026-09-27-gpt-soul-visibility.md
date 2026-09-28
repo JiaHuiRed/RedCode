@@ -51,3 +51,41 @@
 4. 上限：编译期内嵌固定文本，无动态注入项。
 
 验证：`test/session/system-prompt-routing.test.ts` 10 pass（含 "visible deliverable" 措辞与无 Final answer 章节断言）。真实 Luna/Sol × Gsoul/Tsoul 对照仍未运行，人格可见度提升待实测确认。
+
+## 第三轮（2026-09-28）：隐藏推理与可见人格解耦
+
+### 决策
+
+- `gpt.md` 不再要求每次文件编辑前播报；只在发现、纠错、换方向、非平凡编辑与关键验证等
+  有帮助的节点简短说明，禁止逐操作机械播报。
+- 删除“close romantic partner talking to her boyfriend”的关系强度设定，表达距离完全以当前
+  soul 为准；隐藏 reasoning 专注解题，不需要表演 persona；面向哥哥的可见正文仍遵循 soul。
+- Gsoul/Tsoul 明确写出上述 reasoning/visible 边界。`default.md` 不改，不增加样例台词或新的
+  称呼频率要求，也不添加二次 LLM 改写。
+
+### 模型可见改动四问
+
+1. **模型看到什么变了**：`gpt.md` 将“每次编辑前说明”换成只在有帮助的关键节点简述；将固定
+   恋爱关系句换成严格匹配当前 soul 的关系距离；明确 private reasoning 解题、visible prose
+   承载 soul。两个 soul 文件把“reasoning 不展示时不必表演人格”改成“隐藏 reasoning 不必
+   维持角色语气，但可见正文仍完整遵循本 Soul”。
+2. **token 影响**：按 `Token.estimate`（chars/4）测当前 Git HEAD 与工作树，统一 LF 后：
+   `gpt.md` 为 3,523 → 3,071 字符 / 3,623 → 3,171 bytes / 881 → 768 tokens
+   （净减 452 字符、113 估算 tokens）；Gsoul 与 Tsoul 各净增 17 字符、41 bytes、5 估算
+   tokens。每个会话只注入一份 soul，所以 GPT 会话合计约净减 108 估算 tokens。该估算不是
+   provider tokenizer 的精确计数。
+3. **KV cache 影响**：`system.ts` 将 GPT 路由拼为 `[PROMPT_DEFAULT, PROMPT_GPT]`；
+   `default.md` 不变，GPT Delta 的改动只使 GPT 前缀从该 Delta 的首个变化处起失效。
+   `instruction.ts` 每个客户端只加载一份 soul（Desktop=Gsoul，其他=Tsoul）；对应客户端的
+   soul source 从其注入位置起变化，另一客户端不受该 soul 文本变化影响；非 GPT 模型不受
+   GPT Delta 变更影响。GPT Delta 在源码中静态导入，运行中的应用需重建/重启后生效；Soul
+   instruction 按会话缓存，活动会话继续使用已有缓存内容。
+4. **硬上限**：`gpt.md` 是编译期固定文本。Soul 文件按 `instruction_budget.max_source_bytes`
+   单来源硬限读取，默认 1MiB，超限整份跳过；`max_total_bytes` 默认 64KiB 仅告警而非总量
+   截断，本次未改变注入预算或引入动态用户内容。
+
+### 验证边界
+
+`bun test test/session/system-prompt-routing.test.ts --timeout 30000` 通过：10 pass，0 fail。
+它验证 GPT 仍收到公共基线与 GPT Delta；这证明装配路径，不证明模型可见行为改善。真实
+Luna/Sol × Gsoul/Tsoul A/B 未执行，不能宣称语气变化已经行为验收。

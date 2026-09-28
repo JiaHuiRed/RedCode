@@ -12,11 +12,15 @@
 
 #### 修复
 
+- **工具结果附件统一受字节与数量硬限**（`packages/opencode/src/session/{image-tokens,tools}.ts`）：所有工具共享 5MiB 单件、最多 32 件限制；大小无法确认的远程附件不进入模型上下文，PDF 仍按原设计不猜 token。决策：`docs/notes/implemented/feature/2026-09-23-tool-result-token-budget.md`。
+- **缺失的普通 `@path` 不再静默消失**（`packages/opencode/src/session/prompt.ts`）：追加固定长度诊断文本，说明引用未附加。决策：`docs/notes/implemented/bug-fix/2026-09-28-missing-path-reference-diagnostic.md`。
+- **edit 补丁在 PartTable 中只存一份**（`packages/opencode/src/session/{message-v2,projectors,session}.ts`）：持久化时去重，读取时恢复 TUI/Web 原有的双字段契约。决策：`docs/notes/implemented/bug-fix/2026-09-28-edit-part-patch-dedup.md`。
+- **移除无消费者的 Desktop Markdown parser IPC 链与依赖**（`packages/desktop`）：渲染端仍使用共享 MarkdownIt parser；不再维护旧的 marked 主进程实现。取舍：`docs/notes/implemented/bug-fix/2026-09-07-markdown-highlight-worker.md`。
 - **TUI 不再静默丢失推理档位**（`packages/opencode/src/cli/cmd/tui/component/prompt/{local,index}.tsx`）：provider 列表未就绪时信任持久化档位，不再把有效选择打成 NULL；会话切换恢复时跳过空档位消息，NULL 历史不再把档位存回 "default" 自我延续。该问题使 GPT 会话在未切档时缓存命中率骤降为 0（Codex 按推理档位分缓存键）。
 
 #### 变更
 
-- **GPT 提示词补称呼规则与叙事豁免**（`packages/opencode/src/session/prompt/gpt.md`）：narrate 禁令收窄为低层工具机制播报，明确简短第一人称框架（意图、发现、纠错、换方向）有价值；Voice 增补不压平成匿名工程腔、中文直接称呼优先 soul 称呼而非泛化「你」（不必要时省略）。设计取舍：`docs/notes/implemented/architecture/2026-09-27-gpt-soul-visibility.md` 第二轮。
+- **GPT 隐藏推理与可见声线解耦**（`packages/opencode/src/session/prompt/gpt.md`、`~/.redcode/souls/{Gsoul,Tsoul}.md`）：取消每次编辑前播报和固定恋爱强度，隐藏 reasoning 专注解题，可见正文仍遵循当前 soul；GPT Delta 净减约 113 tokens。设计取舍：`docs/notes/implemented/architecture/2026-09-27-gpt-soul-visibility.md` 第三轮。
 
 ### [0.11.14] - 2026-09-27
 
