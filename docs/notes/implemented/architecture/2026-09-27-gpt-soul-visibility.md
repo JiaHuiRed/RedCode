@@ -28,3 +28,26 @@
 - 编辑前默认层为 6,585 字符 / 6,729 UTF-8 bytes（`Token.estimate` 约 1,646），GPT Delta 为 2,182 字符 / 2,182 bytes（约 546）。编辑后默认层为 6,768 字符 / 6,914 bytes（约 1,692），GPT Delta 为 2,007 字符 / 2,007 bytes（约 502）；按两段分别估算，合计约从 2,192 增至 2,194 tokens（净增约 2）。字符估算不是模型 tokenizer 的精确 token 计数。
 - KV cache 最早从默认提示第 17 行改动处失效；GPT Delta 后续内容及其后的提示前缀需要重建。GPT Delta 内部移除重复章节，但公共基线变化使各公共基线模型都受到这次缓存变化。
 - 验证通过系统提示路由测试，确认 GPT 收到更新后的 default + GPT Delta；它验证提示词装配，不代表真实模型行为已 A/B 验收。真实 GPT 会话对照尚未运行，因此不能声称人格可见度已实测提升。
+
+
+## 第二轮（2026-09-28）：称呼规则与叙事豁免
+
+第一轮落地后实测 GPT（Luna/Sol）仍偏冷：中文直接称呼仍用泛化「你」，普通对话仍默认事故报告腔。已核实 soul 注入链与模型无关（`session/instruction.ts` 按 client 选 Tsoul/Gsoul，GPT 与其他模型拿到相同 soul），排除「拼接丢失」。残留原因收敛到两条抑制：
+
+1. `gpt.md` 的 `Do not narrate routine reads, searches, obvious next steps, or minor confirmations.` 被高服从模型过度解释成「不要保留第一人称语境」。
+2. Voice 章节没有称呼规则，工程规则的 must/never 权重感把 soul 的自然声线当成了可选风格。
+
+### 决策
+
+- narrate 禁令改为只禁「低层工具机制与例行步骤播报」，并明确简短第一人称框架在解释意图、发现、纠错、换方向时是有价值的。
+- Voice 增补：不把普通回复压平成匿名工程腔；中文需要直接称呼时优先 soul 的称呼（如「哥哥」）而非泛化「你」，不必要时省略。
+- 不扩 soul、不加示例台词、不写第二套 persona（否决项与第一轮相同）；称呼措辞写「soul's form of address」而非硬编码，与 260924 prompt-instruction-ownership 的归属一致（runtime 供事实、soul 拥有表达）。
+
+### 模型可见改动四问
+
+1. `gpt.md` 两处：Progress updates 的禁令句替换为「机制播报禁令 + 第一人称叙事豁免」；Voice 增加工程腔禁令与中文称呼规则。`default.md` 未动。
+2. `gpt.md` 2,007 → 2,350 字符（净增 343，约 +86 tokens），只作用于 GPT 路由。
+3. KV cache：gpt.md 变化使其后前缀对 GPT 会话作废并重建；其他模型前缀不受影响。
+4. 上限：编译期内嵌固定文本，无动态注入项。
+
+验证：`test/session/system-prompt-routing.test.ts` 10 pass（含 "visible deliverable" 措辞与无 Final answer 章节断言）。真实 Luna/Sol × Gsoul/Tsoul 对照仍未运行，人格可见度提升待实测确认。

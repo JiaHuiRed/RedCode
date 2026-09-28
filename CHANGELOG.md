@@ -14,6 +14,10 @@
 
 - **TUI 不再静默丢失推理档位**（`packages/opencode/src/cli/cmd/tui/component/prompt/{local,index}.tsx`）：provider 列表未就绪时信任持久化档位，不再把有效选择打成 NULL；会话切换恢复时跳过空档位消息，NULL 历史不再把档位存回 "default" 自我延续。该问题使 GPT 会话在未切档时缓存命中率骤降为 0（Codex 按推理档位分缓存键）。
 
+#### 变更
+
+- **GPT 提示词补称呼规则与叙事豁免**（`packages/opencode/src/session/prompt/gpt.md`）：narrate 禁令收窄为低层工具机制播报，明确简短第一人称框架（意图、发现、纠错、换方向）有价值；Voice 增补不压平成匿名工程腔、中文直接称呼优先 soul 称呼而非泛化「你」（不必要时省略）。设计取舍：`docs/notes/implemented/architecture/2026-09-27-gpt-soul-visibility.md` 第二轮。
+
 ### [0.11.14] - 2026-09-27
 
 #### 新增
