@@ -379,15 +379,18 @@ export const {
             const key = `${m.providerID}/${m.modelID}`
             return modelStore.variant[key]
           },
-          current() {
-            const v = this.selected()
-            if (!v) return undefined
-            // 260731 Red: "default" 是 DialogVariant 的合法选项（不指定推理强度）。
-            // 之前它不在 variants 列表里导致 current() 返回 undefined → footer 按钮
-            // 消失且没有 UI 入口恢复（切模型也被 dialog-model 的 default 分支跳过）。
-            if (v === "default" || this.list().includes(v)) return v
-            return undefined
-          },
+         current() {
+           const v = this.selected()
+           if (!v) return undefined
+           // 260731 Red: "default" 是 DialogVariant 的合法选项（不指定推理强度）。
+           // 之前它不在 variants 列表里导致 current() 返回 undefined → footer 按钮
+           // 消失且没有 UI 入口恢复（切模型也被 dialog-model 的 default 分支跳过）。
+           // 260928 Red: provider 数据未就绪时 list() 为空，此时信任持久化的选择；
+           // 空列表会把有效档位打成 undefined，提交即丢 variant（Codex 线路缓存全断）
+           const list = this.list()
+           if (v === "default" || list.length === 0 || list.includes(v)) return v
+           return undefined
+         },
           list() {
             const m = currentModel()
             if (!m) return []

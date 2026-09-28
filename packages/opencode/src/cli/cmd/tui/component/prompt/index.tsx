@@ -435,10 +435,12 @@ export function Prompt(props: PromptProps) {
       if (msg.agent && isPrimaryAgent) {
         // Keep command line --agent if specified.
         if (!args.agent) local.agent.set(msg.agent)
-        if (msg.model) {
-          local.model.set(msg.model)
-          local.model.variant.set(msg.model.variant)
-        }
+       if (msg.model) {
+         local.model.set(msg.model)
+         // 260928 Red: 上一条消息无 variant 时不再回写 store——否则 store 被污染成
+         // "default"，此后每轮提交都丢档位，NULL 会从历史消息自我复制（Codex 线路每次全量 miss）
+         if (msg.model.variant) local.model.variant.set(msg.model.variant)
+       }
       }
     }
   })

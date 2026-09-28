@@ -8,6 +8,12 @@
 
 ---
 
+### [0.11.15] - 未发布
+
+#### 修复
+
+- **TUI 不再静默丢失推理档位**（`packages/opencode/src/cli/cmd/tui/component/prompt/{local,index}.tsx`）：provider 列表未就绪时信任持久化档位，不再把有效选择打成 NULL；会话切换恢复时跳过空档位消息，NULL 历史不再把档位存回 "default" 自我延续。该问题使 GPT 会话在未切档时缓存命中率骤降为 0（Codex 按推理档位分缓存键）。
+
 ### [0.11.14] - 2026-09-27
 
 #### 新增
