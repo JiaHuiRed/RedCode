@@ -39,7 +39,6 @@ export type ElectronAPI = {
   setDefaultServerUrl: (url: string | null) => Promise<void>
   getWslConfig: () => Promise<WslConfig>
   setWslConfig: (config: WslConfig) => Promise<void>
-  parseMarkdownCommand: (markdown: string) => Promise<string>
   checkAppExists: (appName: string) => Promise<boolean>
   listFonts: () => Promise<string[]>
   wslPath: (path: string, mode: "windows" | "linux" | null) => Promise<string>

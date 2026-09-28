@@ -163,8 +163,6 @@ async function highlightCodeBlocks(html: string, skip: boolean): Promise<string>
   return result + html.slice(last)
 }
 
-export type NativeMarkdownParser = (markdown: string) => Promise<string>
-
 export type MarkdownParseOptions = {
   // 260811 Red 流式期间跳过 Shiki 高亮（方案 1），结束后补全，避免每 300ms 全量 codeToHtml
   highlight?: boolean
@@ -172,18 +170,7 @@ export type MarkdownParseOptions = {
 
 export const { use: useMarked, provider: MarkedProvider } = createSimpleContext({
   name: "Marked",
-  init: (props: { nativeParser?: NativeMarkdownParser }) => {
-    if (props.nativeParser) {
-      const nativeParser = props.nativeParser
-      return {
-        async parse(markdown: string, opts?: MarkdownParseOptions): Promise<string> {
-          const html = await nativeParser(markdown)
-          const withMath = await renderMathExpressions(html)
-          return highlightCodeBlocks(withMath, opts?.highlight === false)
-        },
-      }
-    }
-
+  init: () => {
     // 260802 Red: marked → markdown-it（marked 对长文本 O(n²)，50KB 纯文本 587ms → 1.2ms）
     const md = new MarkdownIt({
       html: true,

@@ -81,9 +81,6 @@ export type Platform = {
   /** Set the configured WSL integration (desktop only) */
   setWslEnabled?(config: boolean): Promise<void> | void
 
-  /** Parse markdown to HTML using native parser (desktop only, returns unprocessed code blocks) */
-  parseMarkdown?(markdown: string): Promise<string>
-
   /** Webview zoom level (desktop only) */
   webviewZoom?: Accessor<number>
 

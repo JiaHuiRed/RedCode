@@ -24,7 +24,6 @@ import {
   sendSqliteMigrationProgress,
 } from "./ipc"
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
-import { parseMarkdown } from "./markdown"
 import { createMenu } from "./menu"
 import {
   getDefaultServerUrl,
@@ -537,7 +536,6 @@ const main = Effect.gen(function* () {
     setDefaultServerUrl: (url) => setDefaultServerUrl(url),
     getWslConfig: () => Promise.resolve(getWslConfig()),
     setWslConfig: (config: WslConfig) => setWslConfig(config),
-    parseMarkdown: async (markdown) => parseMarkdown(markdown),
     checkAppExists: (appName) => checkAppExists(appName),
     listFonts: () => listFonts(),
     wslPath: async (path, mode) => wslPath(path, mode),

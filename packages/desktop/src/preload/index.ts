@@ -19,7 +19,6 @@ const api: ElectronAPI = {
   setDefaultServerUrl: (url) => ipcRenderer.invoke("set-default-server-url", url),
   getWslConfig: () => ipcRenderer.invoke("get-wsl-config"),
   setWslConfig: (config) => ipcRenderer.invoke("set-wsl-config", config),
-  parseMarkdownCommand: (markdown) => ipcRenderer.invoke("parse-markdown", markdown),
   checkAppExists: (appName) => ipcRenderer.invoke("check-app-exists", appName),
   listFonts: () => ipcRenderer.invoke("list-fonts"),
   wslPath: (path, mode) => ipcRenderer.invoke("wsl-path", path, mode),
