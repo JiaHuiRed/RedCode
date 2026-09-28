@@ -23,12 +23,12 @@ import { Goal } from "./goal"
 import { capabilityDeniedForSet, capabilitySet, profileCapabilitySet } from "@/tool/capability"
 import type { ChildTaskRecord } from "@/tool/task-runtime"
 import { Storage } from "@/storage/storage"
+import { ImageTokens } from "./image-tokens"
 
 const log = Log.create({ service: "session.tools" })
 
-// 260918 Red MCP 附件闸门。此前这里是全仓唯一一条第三方服务器可以把无界字节塞进
-// attachments 的路径：`result.content` 循环里 image / resource.blob 直接拼成 data: URL
-// 就入列，既无字节线也无条数线，而 truncate.output 只作用于 textParts。
+// 260918 Red MCP 入口闸门，避免构造 data: URL 前就把无界内容放进内存；
+// ImageTokens.fitToolResult 还会在所有工具的共同出口再次执行同样的限制。
 //
 // 两条线对齐 tool/read.ts 的既有语义（260904 那批立的闸门）：
 //   · 单条 5MB base64 —— 与 read.ts 的 MAX_PDF_BASE64_BYTES 同源。processor.ts 的
@@ -39,9 +39,6 @@ const log = Log.create({ service: "session.tools" })
 //     上下文预算，先挡「一次带回几百个附件」的突发。
 //
 // 超限不报错（与 read.ts 同）：附件不内联，output 说明情况，模型可以换别的方式取。
-const MAX_ATTACHMENT_BASE64_BYTES = 5 * 1024 * 1024
-const MAX_ATTACHMENTS = 32
-
 // 260920 Red Explore capability 的权威来源是 TaskTool 写下的 canonical record。
 // Storage 不可见或 record 缺失时退回 profile 白名单（explore 仅 read/search）——
 // 上限相同、不扩大权限，也不会因为一次读盘失败把子代理整个锁死。
@@ -304,7 +301,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           const attachments: Omit<MessageV2.FilePart, "id" | "sessionID" | "messageID">[] = []
           let droppedAttachments = 0
           const acceptAttachment = (base64Bytes: number) =>
-            base64Bytes <= MAX_ATTACHMENT_BASE64_BYTES && attachments.length < MAX_ATTACHMENTS
+            base64Bytes <= ImageTokens.MAX_ATTACHMENT_BASE64_BYTES && attachments.length < ImageTokens.MAX_ATTACHMENTS
           for (const contentItem of result.content) {
             if (contentItem.type === "text") textParts.push(contentItem.text)
             else if (contentItem.type === "image") {
@@ -350,7 +347,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             title: "",
             metadata,
             output: droppedAttachments
-              ? `${fitted.output}\n\n[${droppedAttachments} attachment${droppedAttachments === 1 ? "" : "s"} dropped: over the ${MAX_ATTACHMENTS}-attachment limit or the ${MAX_ATTACHMENT_BASE64_BYTES / (1024 * 1024)} MB single-attachment budget. The tool result was left unchanged.]`
+              ? `${fitted.output}\n\n[${droppedAttachments} attachment${droppedAttachments === 1 ? "" : "s"} dropped: over the ${ImageTokens.MAX_ATTACHMENTS}-attachment limit or the ${ImageTokens.MAX_ATTACHMENT_BASE64_BYTES / (1024 * 1024)} MB single-attachment budget. The tool result was left unchanged.]`
               : fitted.output,
             // fitToolResult 原样保留附件对象引用（只筛掉一部分），type: "file" 还在
             attachments: ((fitted.attachments ?? attachments) as typeof attachments).map((attachment) => ({

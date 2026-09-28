@@ -88,6 +88,9 @@ export function estimateModelMessages(messages: unknown, model: { providerID: st
    「文本 + 附件」的合成结果生效。
    -------------------------------------------------------------------------- */
 export const TOOL_RESULT_TOKEN_BUDGET = 14_000
+// 260928 Red MCP limits do not cover plugin and replay paths, so the shared fitter enforces them too.
+export const MAX_ATTACHMENT_BASE64_BYTES = 5 * 1024 * 1024
+export const MAX_ATTACHMENTS = 32
 
 // 附件全占满时仍给文本留的预览额度。附件不可拆，文本可以两头截，所以丢附件之前
 // 先把这段额度保住，否则一个纯图结果会把正文挤成空串，模型失去全部上下文。
@@ -105,12 +108,21 @@ const MARKER_RESERVE = 120
 /**
  * 一条附件在预算里占多少：视觉投影 + JSON 包壳。
  *
- * 260923 Red **非图片媒体（PDF）刻意计 0**：它已经被字节线（5MB base64）与条数线
- * （32）限住，而真实开销按页计、从字节推不出来。按 base64/4 计的话 5MB 就是约
- * 1.7M token，会把每一个合法 PDF 都判出局 —— 比这点不精确更糟。
+ * 260923 Red **非图片媒体（PDF）刻意计 0**：真实开销按页计、从字节推不出来。按
+ * base64/4 计的话 5MB 就是约 1.7M token，会把每一个合法 PDF 都判出局。
  */
 export function attachmentRequestTokens(mime: string, model: { providerID: string }): number {
   return mime.startsWith("image/") ? imageRequestTokens(model) + ATTACHMENT_ENVELOPE_TOKENS : 0
+}
+
+function attachmentPayloadBytes(url: string) {
+  if (url.startsWith("data:")) {
+    const comma = url.indexOf(",")
+    return comma === -1 ? Number.POSITIVE_INFINITY : Buffer.byteLength(url.slice(comma + 1), "utf8")
+  }
+  // 260928 Red tool URLs are not fetched here, so non-data schemes have no verifiable payload size.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return Number.POSITIVE_INFINITY
+  return Buffer.byteLength(url, "utf8")
 }
 
 /**
@@ -133,7 +145,7 @@ export function truncateToTokens(text: string, maxTokens: number): string {
 export interface FittedToolResult<T> {
   text: string
   attachments: T[]
-  /** 被预算挡在门外的附件（尾部），按原顺序，供调用方另存。 */
+  /** 被附件硬限或模型预算挡在门外的附件（尾部），按原顺序，供调用方另存。 */
   dropped: T[]
   truncated: boolean
 }
@@ -141,21 +153,29 @@ export interface FittedToolResult<T> {
 /**
  * 把一条工具结果（文本 + 附件）压进 TOOL_RESULT_TOKEN_BUDGET。
  *
+ * 附件先按字节数和数量硬限保留前缀，再按 token 预算分配；未知大小的 scheme URL 不发送。
  * 取舍顺序是刻意的：**先截文本、后丢附件**。文本可拆（两头各留一段），附件不可拆；
- * 所以附件只在「自己就装不下」时才从尾部丢，且丢之前先保住 TEXT_FLOOR 的正文预览。
+ * 因此 token 限制丢附件前先保住 TEXT_FLOOR 的正文预览。
  *
  * `options.notice` 是调用方打算追加的提示（比如「完整内容在 <路径>」）。那条提示本身
  * 也进模型上下文，所以显式从预算里扣掉，而不是猜一个固定预留值。
  */
-export function fitToolResult<T extends { mime: string }>(
+export function fitToolResult<T extends { mime: string; url: string }>(
   input: { text: string; attachments?: T[] },
   model: { providerID: string },
   options?: { notice?: string },
 ): FittedToolResult<T> {
-  const attachments = input.attachments ?? []
+  const allAttachments = input.attachments ?? []
+  const attachments: T[] = []
+  for (const attachment of allAttachments) {
+    if (attachments.length >= MAX_ATTACHMENTS || attachmentPayloadBytes(attachment.url) > MAX_ATTACHMENT_BASE64_BYTES)
+      break
+    attachments.push(attachment)
+  }
+  const hardLimitTruncated = attachments.length < allAttachments.length
   const price = (item: T) => attachmentRequestTokens(item.mime, model)
   const total = attachments.reduce((sum, item) => sum + price(item), 0)
-  if (Token.estimate(input.text) + total <= TOOL_RESULT_TOKEN_BUDGET)
+  if (!hardLimitTruncated && Token.estimate(input.text) + total <= TOOL_RESULT_TOKEN_BUDGET)
     return { text: input.text, attachments, dropped: [], truncated: false }
 
   const budget = TOOL_RESULT_TOKEN_BUDGET - Token.estimate(options?.notice ?? "")
@@ -170,7 +190,7 @@ export function fitToolResult<T extends { mime: string }>(
   return {
     text: truncateToTokens(input.text, budget - spent),
     attachments: kept,
-    dropped: attachments.slice(kept.length),
+    dropped: allAttachments.slice(kept.length),
     truncated: true,
   }
 }

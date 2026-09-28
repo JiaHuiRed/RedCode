@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { estimateModelMessages, imageRequestTokens } from "@/session/image-tokens"
+import { estimateModelMessages, estimateToolResult, fitToolResult, imageRequestTokens } from "@/session/image-tokens"
 import { Token } from "@/util/token"
 
 const model = { providerID: "deepseek" }
@@ -94,5 +94,46 @@ describe("estimateModelMessages", () => {
   test("survives messages that are not objects", () => {
     expect(estimateModelMessages([], model)).toBe(Token.estimate("[]"))
     expect(estimateModelMessages(undefined, model)).toBe(0)
+  })
+})
+
+describe("fitToolResult", () => {
+  const pdf = (base64Bytes: number) => ({
+    mime: "application/pdf",
+    url: `data:application/pdf;base64,${"A".repeat(base64Bytes)}`,
+  })
+
+  test("bounds the number of non-image attachments without estimating PDF tokens", () => {
+    const fitted = fitToolResult({ text: "report", attachments: Array.from({ length: 33 }, () => pdf(4)) }, model)
+
+    expect(fitted.truncated).toBe(true)
+    expect(fitted.attachments).toHaveLength(32)
+    expect(fitted.dropped).toHaveLength(1)
+    expect(estimateToolResult({ text: fitted.text, attachments: fitted.attachments }, model)).toBeLessThanOrEqual(
+      14_000,
+    )
+    expect(estimateToolResult({ text: "", attachments: [pdf(4)] }, model)).toBe(0)
+  })
+
+  test("bounds an individual non-image data payload", () => {
+    const fitted = fitToolResult(
+      { text: "report", attachments: [pdf(5 * 1024 * 1024 + 1)] },
+      model,
+    )
+
+    expect(fitted.truncated).toBe(true)
+    expect(fitted.attachments).toHaveLength(0)
+    expect(fitted.dropped).toHaveLength(1)
+  })
+
+  test("drops remote attachments whose payload size cannot be bounded", () => {
+    const fitted = fitToolResult(
+      { text: "report", attachments: [{ mime: "application/pdf", url: "https://example.com/report.pdf" }] },
+      model,
+    )
+
+    expect(fitted.truncated).toBe(true)
+    expect(fitted.attachments).toHaveLength(0)
+    expect(fitted.dropped).toHaveLength(1)
   })
 })

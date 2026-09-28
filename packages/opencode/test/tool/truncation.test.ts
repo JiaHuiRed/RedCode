@@ -326,6 +326,24 @@ describe("Truncate", () => {
       }),
     )
 
+    it.live("bounds non-image attachment count and spills the omitted files", () =>
+      Effect.gen(function* () {
+        const svc = yield* Truncate.Service
+        const fsys = yield* AppFileSystem.Service
+        const attachments = Array.from({ length: 33 }, (_, i) => ({
+          mime: "application/pdf",
+          url: `data:application/pdf;base64,${Buffer.from(`pdf-${i}`).toString("base64")}`,
+        }))
+        const result = yield* svc.result({ output: "report", attachments }, { model: { providerID: "deepseek" } })
+
+        expect(result.metadata.truncated).toBe(true)
+        expect(result.attachments).toHaveLength(32)
+        expect(result.output).toContain("1 attachment(s) omitted")
+        expect(result.metadata.mediaPath).toBeDefined()
+        expect(yield* fsys.readDirectory(result.metadata.mediaPath!)).toHaveLength(1)
+      }),
+    )
+
     spillFailIt.live("keeps the preview bounded and reports that the spill failed", () =>
       Effect.gen(function* () {
         const svc = yield* Truncate.Service
