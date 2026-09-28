@@ -137,17 +137,21 @@ describe("Prompt.submit race", () => {
     expect(h.store.input).toBe("")
   })
 
-  test("keeps a new-session draft visible until navigation, then clears it", async () => {
+  test("clears a sent draft before navigation can hand it to the next prompt", async () => {
     const controller = createSubmissionController()
     const submission = controller.snapshot("sent text")
     const order: string[] = []
     let input = submission.payload
+    let restoredInput = ""
     let handoff: (() => void) | undefined
 
     let complete = false
     const pending = scheduleNewSessionHandoff(
       {
-        navigate: () => order.push("navigate"),
+        navigate: () => {
+          order.push("navigate")
+          restoredInput = input
+        },
         canConsume: () => controller.canConsume(submission),
         clear: () => {
           order.push("clear")
@@ -168,9 +172,10 @@ describe("Prompt.submit race", () => {
     handoff()
     await pending
 
-    expect(order).toEqual(["navigate", "clear"])
+    expect(order).toEqual(["clear", "navigate"])
     expect(complete).toBe(true)
     expect(input).toBe("")
+    expect(restoredInput).toBe("")
   })
 
   test("does not clear a newer draft typed during the new-session handoff", async () => {
@@ -178,11 +183,15 @@ describe("Prompt.submit race", () => {
     const submission = controller.snapshot("sent text")
     const order: string[] = []
     let input = submission.payload
+    let restoredInput = ""
     let handoff: (() => void) | undefined
 
     const pending = scheduleNewSessionHandoff(
       {
-        navigate: () => order.push("navigate"),
+        navigate: () => {
+          order.push("navigate")
+          restoredInput = input
+        },
         canConsume: () => controller.canConsume(submission),
         clear: () => {
           order.push("clear")
@@ -202,5 +211,6 @@ describe("Prompt.submit race", () => {
 
     expect(order).toEqual(["navigate"])
     expect(input).toBe("sent text with newer draft")
+    expect(restoredInput).toBe("sent text with newer draft")
   })
 })

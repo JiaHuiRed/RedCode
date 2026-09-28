@@ -13,8 +13,8 @@ export function scheduleNewSessionHandoff(
 ) {
   return new Promise<void>((resolve) => {
     schedule(() => {
-      handoff.navigate()
       if (handoff.canConsume()) handoff.clear()
+      handoff.navigate()
       resolve()
     })
   })
