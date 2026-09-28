@@ -110,6 +110,56 @@ function basePart(messageID: string, id: string) {
   }
 }
 
+describe("session.message-v2 stored parts", () => {
+  test("stores an edit patch once and restores both public metadata fields", () => {
+    const patch = "UNIQUE-EDIT-PATCH-CONTENT"
+    const part: MessageV2.ToolPart = {
+      ...basePart("edit-message", "edit-part"),
+      type: "tool",
+      callID: "call_edit",
+      tool: "edit",
+      state: {
+        status: "completed",
+        input: {},
+        output: "Edit applied successfully.",
+        title: "file.ts",
+        metadata: {
+          diff: patch,
+          filediff: { file: "file.ts", patch, additions: 1, deletions: 0 },
+        },
+        time: { start: 1, end: 2 },
+      },
+    }
+
+    const stored = MessageV2.toStoredPart(part)
+    const serialized = JSON.stringify(stored)
+    expect(serialized.split(patch).length - 1).toBe(1)
+    expect(MessageV2.fromStoredPart(JSON.parse(serialized) as MessageV2.Part)).toEqual(part)
+  })
+
+  test("does not synthesize a missing patch on legacy edit metadata", () => {
+    const part: MessageV2.ToolPart = {
+      ...basePart("legacy-edit-message", "legacy-edit-part"),
+      type: "tool",
+      callID: "call_legacy_edit",
+      tool: "edit",
+      state: {
+        status: "completed",
+        input: {},
+        output: "Edit applied successfully.",
+        title: "file.ts",
+        metadata: {
+          diff: "UNIQUE-EDIT-PATCH-CONTENT",
+          filediff: { file: "file.ts", additions: 1, deletions: 0 },
+        },
+        time: { start: 1, end: 2 },
+      },
+    }
+
+    expect(MessageV2.fromStoredPart(part)).toEqual(part)
+  })
+})
+
 describe("session.message-v2.toModelMessage", () => {
   test("filters out messages with no parts", async () => {
     const input: MessageV2.WithParts[] = [

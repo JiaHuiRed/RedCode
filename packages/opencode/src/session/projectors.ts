@@ -171,7 +171,8 @@ export default [
   }),
 
   SyncEvent.project(MessageV2.Event.PartUpdated, (db, data) => {
-    const { id, messageID, sessionID, ...rest } = data.part
+    const storedPart = MessageV2.toStoredPart(data.part)
+    const { id, messageID, sessionID, ...rest } = storedPart
     // 260903 cc 这一行原先是无条件 `select *`，把整行 data 读出来再 JSON.parse —— 而它
     //   唯一的用处是 `usage(row.data)`，即「旧值若是 step-finish 就把它的用量冲抵掉」。
     //   带 3MB base64 图片的 tool/read 分片，光这一步实测就要 7.5ms，**每次 updatePart 都付**。

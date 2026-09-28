@@ -647,13 +647,58 @@ const info = (row: typeof MessageTable.$inferSelect) =>
     sessionID: row.session_id,
   }) as Info
 
+// 260928 Red Mark compact rows so legacy missing patch fields are never synthesized.
+const STORED_PATCH_MARKER = "_redcodePatchStoredOnce"
+
+export function toStoredPart(part: Part): Part {
+  if (part.type !== "tool" || part.tool !== "edit" || part.state.status === "pending") return part
+  const metadata = part.state.metadata
+  const filediff = metadata?.filediff
+  if (typeof metadata?.diff !== "string" || !filediff || typeof filediff !== "object" || Array.isArray(filediff))
+    return part
+  if (filediff.patch !== metadata.diff) return part
+  return {
+    ...part,
+    state: {
+      ...part.state,
+      metadata: { ...metadata, filediff: { ...filediff, patch: undefined, [STORED_PATCH_MARKER]: true } },
+    },
+  }
+}
+
+export function fromStoredPart(part: Part): Part {
+  if (part.type !== "tool" || part.tool !== "edit" || part.state.status === "pending") return part
+  const metadata = part.state.metadata
+  const filediff = metadata?.filediff
+  if (
+    typeof metadata?.diff !== "string" ||
+    !filediff ||
+    typeof filediff !== "object" ||
+    Array.isArray(filediff) ||
+    filediff[STORED_PATCH_MARKER] !== true ||
+    filediff.patch !== undefined
+  )
+    return part
+  const restoredFilediff = { ...filediff, patch: metadata.diff }
+  delete restoredFilediff[STORED_PATCH_MARKER]
+  return {
+    ...part,
+    state: {
+      ...part.state,
+      metadata: { ...metadata, filediff: restoredFilediff },
+    },
+  }
+}
+
 const part = (row: typeof PartTable.$inferSelect) =>
-  ({
-    ...row.data,
-    id: row.id,
-    sessionID: row.session_id,
-    messageID: row.message_id,
-  }) as Part
+  fromStoredPart(
+    {
+      ...row.data,
+      id: row.id,
+      sessionID: row.session_id,
+      messageID: row.message_id,
+    } as Part,
+  )
 
 const older = (row: Cursor) =>
   or(lt(MessageTable.time_created, row.time), and(eq(MessageTable.time_created, row.time), lt(MessageTable.id, row.id)))
@@ -1144,15 +1189,7 @@ export function parts(message_id: MessageID) {
   const rows = Database.use((db) =>
     db.select().from(PartTable).where(eq(PartTable.message_id, message_id)).orderBy(PartTable.id).all(),
   )
-  return rows.map(
-    (row) =>
-      ({
-        ...row.data,
-        id: row.id,
-        sessionID: row.session_id,
-        messageID: row.message_id,
-      }) as Part,
-  )
+  return rows.map(part)
 }
 
 // 260806 Red 会话级最近工具分片（按时间正序返回）。空转检测原本只看当前助手消息内部的
@@ -1172,9 +1209,9 @@ export function recentToolParts(session_id: SessionID, limit: number) {
   )
   const out: Part[] = []
   for (const row of rows) {
-    const part = { ...row.data, id: row.id, sessionID: row.session_id, messageID: row.message_id } as Part
-    if (part.type !== "tool") continue
-    out.push(part)
+    const item = part(row)
+    if (item.type !== "tool") continue
+    out.push(item)
     if (out.length >= limit) break
   }
   return out.reverse()

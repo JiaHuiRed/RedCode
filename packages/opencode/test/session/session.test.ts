@@ -13,6 +13,8 @@ import { Storage } from "@/storage/storage"
 import { SyncEvent } from "@/sync"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { BackgroundJob } from "@/background/job"
+import { Database, eq } from "@/storage/db"
+import { PartTable } from "@/session/session.sql"
 
 void Log.init({ print: false })
 
@@ -163,6 +165,65 @@ describe("step-finish token propagation via Bus event", () => {
         expect(finish.tokens.cache.write).toBe(50)
         expect(finish.cost).toBe(0.005)
         expect(receivedPart).not.toBe(partInput)
+
+        yield* session.remove(info.id)
+      }),
+    { timeout: 30000 },
+  )
+})
+
+describe("edit part storage", () => {
+  it.instance(
+    "stores an edit patch once and restores it for part readers",
+    () =>
+      Effect.gen(function* () {
+        const session = yield* SessionNs.Service
+        const info = yield* session.create({})
+        const messageID = MessageID.ascending()
+        yield* session.updateMessage({
+          id: messageID,
+          sessionID: info.id,
+          role: "user",
+          time: { created: Date.now() },
+          agent: "user",
+          model: { providerID: "test", modelID: "test" },
+          tools: {},
+          mode: "",
+        } as unknown as MessageV2.Info)
+
+        const patch = "UNIQUE-PERSISTED-EDIT-PATCH"
+        const part: MessageV2.ToolPart = {
+          id: PartID.ascending(),
+          sessionID: info.id,
+          messageID,
+          type: "tool",
+          callID: "call_edit",
+          tool: "edit",
+          state: {
+            status: "completed",
+            input: {},
+            output: "Edit applied successfully.",
+            title: "file.ts",
+            metadata: {
+              diff: patch,
+              filediff: { file: "file.ts", patch, additions: 1, deletions: 0 },
+            },
+            time: { start: 1, end: 2 },
+          },
+        }
+        yield* session.updatePart(part)
+
+        const row = Database.use((db) =>
+          db.select().from(PartTable).where(eq(PartTable.id, part.id)).get(),
+        )
+        expect(row).toBeDefined()
+        if (!row) throw new Error("edit part was not persisted")
+        expect(JSON.stringify(row.data).split(patch).length - 1).toBe(1)
+
+        expect(yield* session.getPart({ sessionID: info.id, messageID, partID: part.id })).toEqual(part)
+        expect(MessageV2.parts(messageID).find((item) => item.id === part.id)).toEqual(part)
+        const page = yield* MessageV2.page({ sessionID: info.id, limit: 10 })
+        expect(page.items.flatMap((item) => item.parts).find((item) => item.id === part.id)).toEqual(part)
 
         yield* session.remove(info.id)
       }),
