@@ -2216,6 +2216,21 @@ noLLMServer.instance(
   },
 )
 
+noLLMServer.instance("reports missing local path mentions", () =>
+  Effect.gen(function* () {
+    const prompt = yield* SessionPrompt.Service
+    const parts = yield* prompt.resolvePromptParts("Read @missing-redcode-test.md")
+    const problem = parts.find(
+      (part): part is MessageV2.TextPartInput => part.type === "text" && part.synthetic === true,
+    )
+
+    expect(problem).toBeDefined()
+    if (!problem) throw new Error("missing local path should produce a synthetic diagnostic")
+    expect(problem.text).toContain("Path does not exist")
+  }),
+  { config: cfg },
+)
+
 noLLMServer.instance(
   "injects metadata for bare configured reference mentions",
   () =>

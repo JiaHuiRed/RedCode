@@ -370,7 +370,15 @@ export const layer = Layer.effect(
           const info = yield* fsys.stat(filepath).pipe(Effect.option)
           if (Option.isNone(info)) {
             const found = yield* agents.get(name)
-            if (found) parts.push({ type: "agent", name: found.name })
+            if (found) {
+              parts.push({ type: "agent", name: found.name })
+              return
+            }
+            parts.push({
+              type: "text",
+              synthetic: true,
+              text: "Path does not exist; the reference was not attached.",
+            })
             return
           }
           const stat = info.value
