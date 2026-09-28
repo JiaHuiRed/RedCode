@@ -20,6 +20,7 @@
 
 #### 变更
 
+- **推理强度控件按模型实际档位显示**（`packages/ui/src/v2/components/effort-slider-v2.tsx`、`packages/app/src/components/prompt-input.tsx`）：移除不透明的 Default 停靠点，未显式选择时仍由模型/Agent 决定；单档用按钮、多档用滑杆，颜色跟随日间/夜间主题。决策：`docs/notes/implemented/feature/2026-09-28-model-reasoning-effort-slider.md`。
 - **GPT 隐藏推理与可见声线解耦**（`packages/opencode/src/session/prompt/gpt.md`、`~/.redcode/souls/{Gsoul,Tsoul}.md`）：取消每次编辑前播报和固定恋爱强度，隐藏 reasoning 专注解题，可见正文仍遵循当前 soul；GPT Delta 净减约 113 tokens。设计取舍：`docs/notes/implemented/architecture/2026-09-27-gpt-soul-visibility.md` 第三轮。
 
 ### [0.11.14] - 2026-09-27

@@ -35,7 +35,7 @@ import { Icon } from "@redcode-ai/ui/icon"
 import { ProviderIcon } from "@redcode-ai/ui/provider-icon"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { Tooltip, TooltipKeybind } from "@redcode-ai/ui/tooltip"
-import { EffortSliderV2 } from "@redcode-ai/ui/v2/components/effort-slider-v2.jsx"
+import { availableEffortSteps, EffortSliderV2 } from "@redcode-ai/ui/v2/components/effort-slider-v2.jsx"
 import { Popover } from "@redcode-ai/ui/popover"
 import { IconButton } from "@redcode-ai/ui/icon-button"
 import { Select } from "@redcode-ai/ui/select"
@@ -1122,8 +1122,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     />
   )
 
-  const variants = createMemo(() => ["default", ...local.model.variant.list()])
-  const variantLabel = (value: string) => (value === "default" ? language.t("common.default") : value)
+  const variants = createMemo(() => availableEffortSteps(local.model.variant.list()))
+  const variantLabel = (value: string) => value
+  const currentVariant = () => {
+    const value = local.model.variant.current()
+    return value === "default" ? undefined : value
+  }
+  const currentVariantLabel = () => {
+    const value = currentVariant()
+    return value ? variantLabel(value) : language.t("settings.agents.variant.title")
+  }
   const accepting = createMemo(() => {
     const id = params.id
     if (!id) return permission.isAutoAcceptingDirectory(sdk.directory)
@@ -1409,18 +1417,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   )
 
   const variantControl = () => (
-    <Show when={variants().length > 1}>
+    <Show when={variants().length > 0}>
       <div
         data-component="prompt-variant-control"
         style={providersShouldFadeIn() ? { animation: "fade-in 0.3s" } : undefined}
         class="flex items-center"
       >
-        {/* 260902 cc 下拉 → 弹窗里的滑杆。两步：
-            ① 档位本来就是有序的一条轴（low→high），下拉把它呈现成无序候选，滑杆才是它的形状；
-            ② 滑杆必须放进弹窗。第一版直接嵌在底栏，64px 宽根本滑不出"滚动感"，而且这排
-               控件（模型选择器等）本来就都是弹窗，嵌一个异类进去也不成体统。
-            "default" 保留为最左一档：它是"交给模型/agent 自己定"不是"最低强度"，
-            但它是唯一能滑回未设置状态的路径，放在轴的起点当原点。 */}
+        {/* 260928 Red：滑条只显示模型真实支持的档位。未显式选择时保留模型/Agent 默认，不伪装成最低档。 */}
         <TooltipKeybind
           placement="top"
           gutter={4}
@@ -1445,10 +1448,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   name="brain"
                   size="small"
                   class={
-                    local.model.variant.current() ? "shrink-0 text-yellow-400" : "shrink-0 text-v2-icon-icon-muted"
+                    currentVariant() ? "shrink-0 text-v2-text-text-accent" : "shrink-0 text-v2-icon-icon-muted"
                   }
                 />
-                <span class="truncate capitalize">{variantLabel(local.model.variant.current() ?? "default")}</span>
+                <span class="truncate capitalize">{currentVariantLabel()}</span>
                 <Icon name="chevron-down" size="small" class="shrink-0 text-v2-icon-icon-muted" />
               </>
             }
@@ -1459,24 +1462,27 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             <div class="flex flex-col gap-2">
               <div class="flex items-baseline justify-between gap-2">
                 <span class="text-11-regular text-text-weak">{language.t("settings.agents.variant.title")}</span>
-                <span
-                  class={`capitalize text-12-medium truncate ${
-                    local.model.variant.current() ? "text-yellow-400" : "text-text-base"
-                  }`}
-                >
-                  {variantLabel(local.model.variant.current() ?? "default")}
-                </span>
+                <Show when={currentVariant()}>
+                  {(value) => (
+                    <span class="capitalize text-12-medium truncate text-v2-text-text-accent">
+                      {variantLabel(value())}
+                    </span>
+                  )}
+                </Show>
               </div>
-              <div class="flex items-baseline justify-between gap-2 text-11-regular text-text-weaker">
-                <span>{language.t("prompt.variant.faster")}</span>
-                <span>{language.t("prompt.variant.smarter")}</span>
-              </div>
+              <Show when={variants().length > 1}>
+                <div class="flex items-baseline justify-between gap-2 text-11-regular text-text-weaker">
+                  <span>{language.t("prompt.variant.faster")}</span>
+                  <span>{language.t("prompt.variant.smarter")}</span>
+                </div>
+              </Show>
               <EffortSliderV2
                 steps={variants()}
-                current={local.model.variant.current() ?? "default"}
+                current={currentVariant()}
                 label={variantLabel}
                 title={language.t("settings.agents.variant.title")}
-                onChange={(value) => local.model.variant.set(value === "default" ? undefined : value)}
+                unselectedLabel={language.t("prompt.variant.modelDefault")}
+                onChange={(value) => local.model.variant.set(value)}
                 style={{ "--effort-slider-v2-width": "100%", "--effort-slider-v2-height": "20px" }}
               />
             </div>

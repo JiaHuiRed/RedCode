@@ -229,9 +229,10 @@ export const dict = {
   "common.saving": "保存中...",
   "common.default": "デフォルト",
   "common.attachment": "添付ファイル",
-  // 260902 cc 推理强度弹窗里滑杆两端的标签
+  // 260928 Red 推理强度滑杆标签与未指定状态的无障碍描述
   "prompt.variant.faster": "高速",
-  "prompt.variant.smarter": "高精度",
+  "prompt.variant.smarter": "より深く",
+  "prompt.variant.modelDefault": "モデルまたはエージェントに任せる",
   "prompt.placeholder.shell": "シェルコマンドを入力... {{example}}",
   "prompt.placeholder.normal": '何でも聞いてください... "{{example}}"',
   "prompt.placeholder.simple": "何でも聞いてください...",

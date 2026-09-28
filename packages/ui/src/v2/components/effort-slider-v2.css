@@ -52,9 +52,8 @@
   pointer-events: none;
 }
 
-/* 260902 cc 刻度点放大并提亮。原来 2px + icon-muted + 0.45 透明度，在这条深色轨道上
-   肉眼基本看不见——刻度是"有几档、现在第几档"的唯一线索，看不见等于没做。
-   区分用明度不用色相：这排控件不该出现第二种颜色。 */
+/* 260928 Red 未选中的刻度保持中性；已选进度使用主题焦点 token，在不同配色下都能看清，
+   同时不加一条整段强调色填充。 */
 [data-slot="effort-slider-v2-ticks"] span {
   width: 3px;
   height: 3px;
@@ -62,11 +61,19 @@
   corner-shape: round;
   background: var(--v2-icon-icon-base);
   opacity: 0.4;
-  transition: opacity 120ms ease-out;
+  transition:
+    opacity 120ms ease-out,
+    background-color 120ms ease-out,
+    transform 120ms ease-out;
 }
 
 [data-slot="effort-slider-v2-ticks"] span[data-on] {
-  opacity: 0.9;
+  background: var(--v2-border-border-focus);
+  opacity: 1;
+}
+
+[data-slot="effort-slider-v2-ticks"] span[data-current] {
+  transform: scale(1.35);
 }
 
 [data-slot="effort-slider-v2-thumb"] {
@@ -99,11 +106,61 @@
     left 140ms cubic-bezier(0.22, 1, 0.36, 1),
     width 90ms ease-out,
     height 90ms ease-out,
-    border-radius 90ms ease-out;
+    border-radius 90ms ease-out,
+    border-color 90ms ease-out,
+    opacity 100ms ease-out;
+}
+
+[data-slot="effort-slider-v2"]:not([data-unselected]) [data-slot="effort-slider-v2-thumb"] {
+  border-color: var(--v2-border-border-focus);
+}
+
+[data-slot="effort-slider-v2"][data-unselected] [data-slot="effort-slider-v2-thumb"] {
+  opacity: 0;
+}
+
+[data-slot="effort-slider-v2"][data-unselected]:hover [data-slot="effort-slider-v2-thumb"],
+[data-slot="effort-slider-v2"][data-unselected] [data-slot="effort-slider-v2-thumb"]:focus-visible {
+  opacity: 1;
+}
+
+[data-slot="effort-slider-v2-single"] {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--effort-slider-v2-width, 64px);
+  height: var(--effort-slider-v2-height, 12px);
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  corner-shape: round;
+  background: var(--v2-background-bg-layer-03);
+  box-shadow: var(--v2-elevation-switch-off);
+  color: var(--v2-text-text-base);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease-out,
+    background-color 120ms ease-out;
+}
+
+[data-slot="effort-slider-v2-single"]:hover,
+[data-slot="effort-slider-v2-single"][data-selected] {
+  border-color: var(--v2-border-border-focus);
+}
+
+[data-slot="effort-slider-v2-single"]:focus-visible {
+  outline: 2px solid var(--v2-border-border-focus);
+  outline-offset: 1px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-slot="effort-slider-v2-thumb"] {
+  [data-slot="effort-slider-v2"],
+  [data-slot="effort-slider-v2-thumb"],
+  [data-slot="effort-slider-v2-ticks"] span,
+  [data-slot="effort-slider-v2-single"] {
     transition: none;
   }
 }

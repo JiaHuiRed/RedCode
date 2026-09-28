@@ -278,9 +278,10 @@ export const dict = {
   "common.default": "默认",
   "common.attachment": "附件",
 
-  // 260902 cc 推理强度弹窗里滑杆两端的标签
+  // 260928 Red 推理强度滑杆标签与未指定状态的无障碍描述
   "prompt.variant.faster": "更快",
-  "prompt.variant.smarter": "更强",
+  "prompt.variant.smarter": "更深入",
+  "prompt.variant.modelDefault": "由模型或 Agent 决定",
   "prompt.placeholder.shell": "输入 shell 命令... {{example}}",
   "prompt.placeholder.normal": '随便问点什么... "{{example}}"',
   "prompt.placeholder.simple": "随便问点什么...",
