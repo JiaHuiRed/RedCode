@@ -170,4 +170,46 @@ describe("applyPetEvent", () => {
     expect(state.flash).toEqual({ kind: "error", at: NOW })
     expect(Object.keys(state.sessions)).toHaveLength(0)
   })
+
+  // 260929 Red 下面三条钉 A6/A7：旧实现在同一回合内每个 step 的 busy 都复位 worked，
+  // 而 agent loop 每个 step 顶部都发 busy（session/prompt.ts:1138 在 while(true) 里）。
+  // 原有测试每回合只喂一次 busy，所以这个漏洞一条都没抓到。
+  test("多步回合：下一步的 busy 不抹掉上一步的 worked", () => {
+    const state = createPetState()
+    feed(state, "session.status", { sessionID: "s1", status: { type: "busy" } })
+    tool(state, "s1", "grep", "running")
+    tool(state, "s1", "grep", "completed")
+    // 第二步开张：又一条 busy，但这一步模型只剩纯文本要吐
+    feed(state, "session.status", { sessionID: "s1", status: { type: "busy" } })
+    feed(state, "message.part.updated", { part: { sessionID: "s1", type: "text", text: "done" } })
+    expect(state.worked["s1"]).toBe(true)
+    feed(state, "session.status", { sessionID: "s1", status: { type: "idle" } })
+    expect(resolvePet(state, NOW)).toEqual({ kind: "success" })
+  })
+
+  test("新回合仍复位 worked：上一回合干过活，这一回合纯问答不庆祝", () => {
+    const state = createPetState()
+    feed(state, "session.status", { sessionID: "s1", status: { type: "busy" } })
+    tool(state, "s1", "grep", "completed")
+    feed(state, "session.status", { sessionID: "s1", status: { type: "idle" } })
+    expect(resolvePet(state, NOW)).toEqual({ kind: "success" })
+    // 让上一回合的 success flash 过期，否则下面分不清是谁在闪
+    feed(state, "session.status", { sessionID: "s1", status: { type: "busy" } }, NOW + FLASH_MS + 1)
+    expect(state.worked["s1"]).toBe(false)
+    feed(state, "session.status", { sessionID: "s1", status: { type: "idle" } }, NOW + FLASH_MS + 2)
+    // flash 本身不删、只按时间失效，所以这里验展示态而不是内部字段
+    expect(resolvePet(state, NOW + FLASH_MS + 2)).toEqual({ kind: "idle" })
+  })
+
+  test("过期 entry 在下一个事件时被清掉，不再只跳不删", () => {
+    // resolvePet 是 createMemo 里的纯投影，不能让它顺手删状态；清理放在写入点。
+    const state = createPetState()
+    feed(state, "session.status", { sessionID: "s1", status: { type: "busy" } })
+    feed(state, "session.status", { sessionID: "s2", status: { type: "busy" } })
+    expect(Object.keys(state.sessions)).toHaveLength(2)
+    // s1 早已过期，s2 是刚来的活会话——一次无关事件的写入应只扫掉 s1
+    feed(state, "session.status", { sessionID: "s2", status: { type: "busy" } }, NOW + STALE_MS + 1)
+    expect(Object.keys(state.sessions)).toEqual(["s2"])
+    expect(state.worked["s1"]).toBeUndefined()
+  })
 })

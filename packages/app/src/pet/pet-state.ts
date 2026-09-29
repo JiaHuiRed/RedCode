@@ -138,17 +138,39 @@ export function resolvePet(state: PetState, now: number): PetDisplay {
 }
 
 /**
+ * 清理过期 entry。
+ *
+ * 260929 Red resolvePet 对过期 entry 只 `continue` 不删，state.sessions 于是只增不减——
+ * 流中断、切走后再也不发 idle 的会话会永久留下一条记录，且每次 resolvePet 都要全量遍历
+ * 它们。改 resolvePet 成会删状态的读函数不行（它是 createMemo 里的纯投影），所以在唯一
+ * 的写入点 applyPetEvent 开头顺手扫一遍：事件频率足够高，成本是 O(会话数)。
+ *
+ * worked 一起删——它同样只在 idle/error 时清，entry 过期说明这一轮的下场没人知道，
+ * 留着会在下一次 busy 时被当成「本回合用过工具」。
+ */
+function pruneStale(state: PetState, now: number): void {
+  for (const [id, activity] of Object.entries(state.sessions)) {
+    if (activity && entryExpired(activity, now)) {
+      delete state.sessions[id]
+      delete state.worked[id]
+    }
+  }
+}
+
+/**
  * 事件归一化。直接原地修改 state（调用方持有 store 时套 produce）。
  *
  * 状态迁移原则（260929 Red 起只认活事件，见文件头）：
  * - message.part.updated：tool part pending/running 按工具名分类；completed/error 记 worked
  *   并回 thinking（agent 继续生成）；compaction part 进 compacting；text/reasoning 兜底 thinking
- * - session.status busy/retry：新回合开张，重置 worked，无 entry 时兜底 thinking
+ * - session.status busy/retry：**新回合**开张时复位 worked，无 entry 时兜底 thinking
+ *   （同一回合内后续 step 的 busy 不再复位，见下方注释）
  * - session.status idle：清 entry；本回合动过工具（worked）才触发 success flash——纯问答不庆祝
  * - permission/question 等用户交互事件替换当前 entry，回应后回 thinking（会话仍 busy）
  * - session.error 触发 error flash 并清 entry（错误通常伴随回合终止）
  */
 export function applyPetEvent(state: PetState, event: PetEvent, now: number): void {
+  pruneStale(state, now)
   const props = (event.properties ?? {}) as SessionProps
   const sessionID = props.sessionID
   const setEntry = (activity: PetActivity) => {
@@ -201,8 +223,15 @@ export function applyPetEvent(state: PetState, event: PetEvent, now: number): vo
         return
       }
       // busy / retry：无 entry 时兜底 thinking（retry 也是 agent 在努力）
-      state.worked[sessionID] = false
-      if (!state.sessions[sessionID]) setEntry({ kind: "thinking", at: now })
+      // 260929 Red worked 只在**新回合**开张时复位。agent loop 每个 step 顶部都发 busy
+      // （session/prompt.ts:1138 那条 status.set 在 while(true) 里），旧实现无条件
+      // worked=false，于是「第一步用工具、第二步只剩纯文本」的多步回合到 idle 时
+      // 庆祝不了——agent 明明干了活。idle 会删 entry，所以「没有 entry」正是
+      // idle→busy 的那条边沿；error 也删 entry，重试同样算新回合。
+      if (!state.sessions[sessionID]) {
+        state.worked[sessionID] = false
+        setEntry({ kind: "thinking", at: now })
+      }
       return
     }
     case "session.compacted":
