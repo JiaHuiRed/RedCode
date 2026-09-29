@@ -41,6 +41,7 @@ import {
 } from "./global-sync/bootstrap"
 import { createChildStoreManager } from "./global-sync/child-store"
 import { applyDirectoryEvent, applyGlobalEvent, cleanupDroppedSessionCaches } from "./global-sync/event-reducer"
+import { feedPetEvent } from "@/pet/pet-store"
 import { clearSessionPrefetchDirectory } from "./global-sync/session-prefetch"
 import { estimateRootSessionTotal, loadRootSessionsWithFallback } from "./global-sync/session-load"
 import { trimSessions } from "./global-sync/session-trim"
@@ -459,6 +460,8 @@ export function createServerSyncContext() {
     const directory = e.name
     const key = directoryKey(directory)
     const event = e.details
+    // 260929 Red Pet Layer 订阅同一条流做状态归一化；pet-store 自行过滤，此处零成本透传
+    feedPetEvent(event)
     const recent = bootingRoot || Date.now() - bootedAt < 1500
 
     if (directory === "global") {

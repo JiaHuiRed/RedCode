@@ -1,0 +1,121 @@
+/* Pet Layer — 右下角常驻视觉层。
+   克制原则：idle 呼吸、working 微动、permission 急促提醒；prefers-reduced-motion 全关。 */
+
+.pet-layer {
+  /* 视口 fixed + 显式偏移：absolute 挂 main 的 containing block 在桌面端实测未生效（赤落回视口最左，
+     压住侧边栏设置按钮）。left 320 = 侧边栏宽 ~240 + 余量，落在哥哥圈定的主区左下空白带 */
+  position: fixed;
+  left: 320px;
+  bottom: 24px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  /* 容器可交互：hover 关闭钮依赖容器 :hover；赤是「活物」本就允许点击，
+     包围盒（含透明区）挡下层点击是预期行为 */
+  pointer-events: auto;
+}
+
+.pet-layer-sprite {
+  pointer-events: auto;
+  width: 106px;
+  height: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+  filter: drop-shadow(0 4px 12px rgb(0 0 0 / 25%));
+  cursor: default;
+  animation: pet-breathe 4s ease-in-out infinite;
+}
+
+.pet-layer[data-kind="permission"] .pet-layer-sprite {
+  animation: pet-nudge 0.6s ease-in-out infinite;
+}
+
+.pet-layer[data-kind="success"] .pet-layer-sprite {
+  animation: pet-hop 0.5s ease-out 2;
+}
+
+.pet-layer[data-kind="error"] .pet-layer-sprite {
+  animation: pet-shake 0.4s ease-in-out 2;
+}
+
+.pet-layer-bubble {
+  pointer-events: auto;
+  max-width: 180px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border-bottom-left-radius: 2px;
+  background: var(--surface-base, #1a1a1a);
+  color: var(--text-primary, #eee);
+  font-size: 12px;
+  line-height: 1.4;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
+}
+
+.pet-layer-close {
+  pointer-events: auto;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 55%);
+  color: #fff;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+  cursor: pointer;
+}
+
+@keyframes pet-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.03);
+  }
+}
+
+@keyframes pet-nudge {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-2px);
+  }
+  75% {
+    transform: translateX(2px);
+  }
+}
+
+@keyframes pet-hop {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes pet-shake {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  25% {
+    transform: rotate(-3deg);
+  }
+  75% {
+    transform: rotate(3deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pet-layer-sprite {
+    animation: none;
+  }
+}
