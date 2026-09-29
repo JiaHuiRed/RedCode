@@ -13,6 +13,60 @@ const MAX_LARGE_MEDIAN_MS = 50
 const MAX_SCALING_RATIO = 6
 const MAX_LARGE_MEMORY_GROWTH_BYTES = 16 * 1024 * 1024
 const USER_PAYLOAD = "x".repeat(4_096)
+type BudgetMetrics = {
+  largeMedianMs: number
+  scalingRatio: number
+  largeMemoryGrowthBytes: number
+}
+type BudgetLimits = BudgetMetrics
+
+// 260929 Red 预算判定收敛成纯函数 + 开机自检（学 deepseek-harness 的正负控制用例）：
+// 门禁自己没被测过就不算门禁。三组控制：超限必须拒、边界（==）必须过（<= 语义）、
+// 全零预算下正常样本必须拒（防比较方向写反）。自检失败直接退出，不跑正式基准。
+function evaluateBudgets(metrics: BudgetMetrics, limits: BudgetLimits) {
+  const violations: string[] = []
+  if (metrics.largeMedianMs > limits.largeMedianMs)
+    violations.push(`filter_compacted_large_median_ms ${metrics.largeMedianMs.toFixed(2)} > ${limits.largeMedianMs}`)
+  if (metrics.scalingRatio > limits.scalingRatio)
+    violations.push(`filter_compacted_scaling_ratio ${metrics.scalingRatio.toFixed(2)} > ${limits.scalingRatio}`)
+  if (metrics.largeMemoryGrowthBytes > limits.largeMemoryGrowthBytes)
+    violations.push(
+      `filter_compacted_large_memory_growth_bytes ${metrics.largeMemoryGrowthBytes} > ${limits.largeMemoryGrowthBytes}`,
+    )
+  return { passed: violations.length === 0, violations }
+}
+
+function selfCheckBudgets() {
+  const limits: BudgetLimits = {
+    largeMedianMs: MAX_LARGE_MEDIAN_MS,
+    scalingRatio: MAX_SCALING_RATIO,
+    largeMemoryGrowthBytes: MAX_LARGE_MEMORY_GROWTH_BYTES,
+  }
+  const overLimit: BudgetMetrics = {
+    largeMedianMs: limits.largeMedianMs + 1,
+    scalingRatio: limits.scalingRatio + 1,
+    largeMemoryGrowthBytes: limits.largeMemoryGrowthBytes + 1,
+  }
+  const atLimit: BudgetMetrics = { ...limits }
+  const zeroAllowance: BudgetLimits = { largeMedianMs: 0, scalingRatio: 0, largeMemoryGrowthBytes: 0 }
+  const normalSample: BudgetMetrics = { largeMedianMs: 1, scalingRatio: 1, largeMemoryGrowthBytes: 1 }
+
+  const overVerdict = evaluateBudgets(overLimit, limits)
+  const controls = [
+    ["over-limit rejected with 3 violations", overVerdict.passed === false && overVerdict.violations.length === 3],
+    ["at-limit accepted (<= semantics)", evaluateBudgets(atLimit, limits).passed],
+    ["zero allowance rejects normal sample", evaluateBudgets(normalSample, zeroAllowance).passed === false],
+  ] as const
+  const failed = controls.filter(([, ok]) => !ok).map(([name]) => name)
+  if (failed.length > 0) {
+    console.error(`bench:budget self-check failed: ${failed.join("; ")}`)
+    return false
+  }
+  console.log("bench:budget self-check passed (3/3 controls)")
+  return true
+}
+
+if (!selfCheckBudgets()) process.exit(1)
 
 const root = await mkdtemp(path.join(os.tmpdir(), "redcode-performance-"))
 process.env["REDCODE_DB"] = path.join(root, "benchmark.db")
@@ -231,15 +285,16 @@ try {
   console.log(`BUDGET filter_compacted_large_median_ms<=${MAX_LARGE_MEDIAN_MS}`)
   console.log(`BUDGET filter_compacted_scaling_ratio<=${MAX_SCALING_RATIO}`)
   console.log(`BUDGET filter_compacted_large_memory_growth_bytes<=${MAX_LARGE_MEMORY_GROWTH_BYTES}`)
-
-  if (
-    large.medianMs > MAX_LARGE_MEDIAN_MS ||
-    scalingRatio > MAX_SCALING_RATIO ||
-    large.maxMemoryGrowthBytes > MAX_LARGE_MEMORY_GROWTH_BYTES
-  ) {
+  const evaluation = evaluateBudgets(
+    { largeMedianMs: large.medianMs, scalingRatio, largeMemoryGrowthBytes: large.maxMemoryGrowthBytes },
+    { largeMedianMs: MAX_LARGE_MEDIAN_MS, scalingRatio: MAX_SCALING_RATIO, largeMemoryGrowthBytes: MAX_LARGE_MEMORY_GROWTH_BYTES },
+  )
+  for (const violation of evaluation.violations) console.error(`BUDGET VIOLATION ${violation}`)
+  if (!evaluation.passed) {
     console.error("bench:budget failed")
     process.exitCode = 1
   }
+
 } finally {
   Database.close()
   await cleanup()

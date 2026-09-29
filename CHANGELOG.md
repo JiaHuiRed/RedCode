@@ -24,6 +24,8 @@
 - **推理强度控件按模型实际档位显示**（`packages/ui/src/v2/components/effort-slider-v2.tsx`、`packages/app/src/components/prompt-input.tsx`）：移除不透明的 Default 停靠点，未显式选择时仍由模型/Agent 决定；单档用按钮、多档用滑杆，颜色跟随日间/夜间主题。决策：`docs/notes/implemented/feature/2026-09-28-model-reasoning-effort-slider.md`。
 - **GPT 隐藏推理与可见声线解耦**（`packages/opencode/src/session/prompt/gpt.md`、`~/.redcode/souls/{Gsoul,Tsoul}.md`）：取消每次编辑前播报和固定恋爱强度，隐藏 reasoning 专注解题，可见正文仍遵循当前 soul；GPT Delta 净减约 113 tokens。设计取舍：`docs/notes/implemented/architecture/2026-09-27-gpt-soul-visibility.md` 第三轮。
 
+- **性能预算门禁自带正负控制自检**（`packages/opencode/script/bench-performance-budget.ts`）：预算判定收敛为纯函数 `evaluateBudgets`，跑基准前先过三组控制用例（超限必拒、边界必过、零预算方向验证），自检失败直接退出不跑正式基准；越限时逐条打印违规项。实践学自 deepseek-harness 0.2.0 周期的 performance gate（预算带正负控制用例）。
+- **测试 lane 清单可再生成，AGENTS.md 立 lane 表**（`packages/opencode/script/lane-inventory.ts`、根 `AGENTS.md`）：新增脚本扫描 test/ 下写 `process.env` 的「进程绑定」测试文件（当前 41/308，清单会漂移、随时重新生成）；AGENTS.md 验证命令区固化五条 lane（unit/httpapi/套件计时/profiler/性能预算）的跑法与适用时机。bun test 无 exclude，暂不做物理拆分——现状无真实炸点，拆分成本大于收益。
 ### [0.11.14] - 2026-09-27
 
 #### 新增

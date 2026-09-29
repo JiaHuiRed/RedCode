@@ -46,6 +46,15 @@
 - 文档/版本号改动 → `check-version-consistency.ts`
 - 构建路径改动 → 该 package 的 build
 - 全量套件只在用户明确要求、或改动确属仓库级时才跑
+### 测试 lane（bun test 无 exclude，lane = package.json scripts 分组，260929 立）
+
+| lane | 命令（packages/opencode 下） | 用途 |
+|---|---|---|
+| unit（默认） | `bun run test` | 全量单进程顺序跑。写 `process.env` 的「进程绑定」文件与全局态耦合，排污染前先 `bun run script/lane-inventory.ts` 重新生成清单（约 41 个，会漂移，别背） |
+| httpapi | `bun run test:httpapi` | 真服务器 HTTP 覆盖 / auth / Effect 三模式 |
+| 套件计时 | `bun run bench:test` | 全套件耗时 sanity check，见 `perf/test-suite.md` |
+| 逐文件 profiler | `bun run profile:test` | 定位慢测试候选（`TEST_PROFILE_GLOB` 过滤） |
+| 性能预算 | `bun run bench:budget` | `filterCompactedEffect` 预算门禁（隔离临时 DB），开机先跑正负控制自检，门禁逻辑坏了直接拒跑 |
 
 # 本仓红线（通用红线见全局 AGENTS.md）
 
