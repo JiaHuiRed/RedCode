@@ -643,8 +643,65 @@ describe("tool.edit", () => {
         yield* run({ input: patch(filepath, content, "replace 2..2:", "+B", "+", "+B2") })
 
         expect(yield* load(filepath)).toBe("a\nB\n\nB2\nc\n")
-      }),
-    )
+     }),
+   )
+
+   // 260929 Karina hashline 的 `+ ` 前缀里，那个空格是分隔符、不是内容。写一个自身以
+   // N 个空格开头的内容行，需要在 `+` 后放 N+1 个空格。这条语义此前只被 CRLF 用例间接
+   // 覆盖（"+     <p>" → 4 空格），从没有单钉过；而 edit.md 通篇没有缩进示例，模型照
+   // 「给每行内容加个 +」去写就会每行少一个空格，且工具照常报成功。
+   // 本会话连错三次（instruction.ts 两处 + 测试一处），靠 oxlint 才发现，故立此钉。
+   it.instance("`+ ` 是分隔符：N 空格内容需要 N+1 空格，写少一个空格就是内容少一格", () =>
+     Effect.gen(function* () {
+       const test = yield* TestInstance
+       const filepath = path.join(test.directory, "indent.ts")
+       const content = ["function f() {", "  return 1", "}"].join("\n")
+       yield* put(filepath, content)
+
+       // 3 个空格 = `+ ` 分隔符 + 2 个空格内容
+       yield* run({ input: patch(filepath, content, "replace 2..2:", "+   return 2") })
+
+       expect(yield* load(filepath)).toBe(["function f() {", "  return 2", "}"].join("\n"))
+     }),
+   )
+
+   it.instance("少写一个空格时内容就是少一格——错误形态可复现，不是解析器抖动", () =>
+     Effect.gen(function* () {
+       const test = yield* TestInstance
+       const filepath = path.join(test.directory, "indent2.ts")
+       const content = ["function f() {", "  return 1", "}"].join("\n")
+       yield* put(filepath, content)
+
+       // 2 个空格 = `+ ` 分隔符 + 1 个空格内容 → 写进去的是 1 空格缩进
+       yield* run({ input: patch(filepath, content, "replace 2..2:", "+  return 2") })
+
+       expect(yield* load(filepath)).toBe(["function f() {", " return 2", "}"].join("\n"))
+     }),
+   )
+
+   it.instance("多层缩进的 insert 同样逐字保留", () =>
+     Effect.gen(function* () {
+       const test = yield* TestInstance
+       const filepath = path.join(test.directory, "indent3.ts")
+       const content = ["class A {", "  m() {", "  }", "}"].join("\n")
+       yield* put(filepath, content)
+
+       yield* run({
+         input: patch(
+           filepath,
+           content,
+           "insert after 2:",
+           "+     if (x) {",
+           "+       return 1",
+           "+     }",
+         ),
+       })
+
+       expect(yield* load(filepath)).toBe(
+         ["class A {", "  m() {", "    if (x) {", "      return 1", "    }", "  }", "}"].join("\n"),
+       )
+     }),
+   )
 
     it.instance("CRLF 文件上的 insert/delete 同样不膨胀", () =>
       Effect.gen(function* () {

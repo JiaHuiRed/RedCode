@@ -24,9 +24,21 @@ insert tail:
 + content at end
 ```
 
+Indented content — the space immediately after `+` is the separator and is NOT part of the content.
+To write a line that itself begins with two spaces, put three spaces after the `+`:
+
+```
+[path/to/file#A1B2]
+replace 3..4:
++   const x = 1
++   return x
+```
+
+That patch writes lines with exactly two leading spaces.
+
 Rules:
 
-- Body lines start with `+ ` (one space after the plus)
+- Body lines start with `+ ` (one space after the plus). That separator space is not content: a line whose content begins with N spaces needs N+1 spaces after the `+`. Miscounting shifts every written line one space to the left and still reports success — count carefully.
 - Line numbers are 1-indexed from the Read tool output
 - The TAG comes from the Read tool's `[path#TAG]` header — it's a content hash. If the file changed since you last read it, the edit will fail with a hash mismatch; re-read the file to get the current tag.
 - Supports multiple operations per file in one call
