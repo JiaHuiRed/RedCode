@@ -422,7 +422,19 @@ export const layer = Layer.effect(
             return agent
           }
           const sorted = yield* list()
-          const visible = sorted.find((a) => a.mode !== "subagent" && a.hidden !== true)
+          // 260929 Red 回落顺序钉成 redmind → plan → auto，不沿用 list 的字母序：无配置时首选
+          // 仍是产品默认档 redmind；它被禁用时往保守方向落 plan，而不是字母序凑巧排前的 auto
+          //（最激进档）——禁默认档的动机通常是保守化，回落不能反向。非姿态 primary
+          //（用户自定义）排三档之后。
+          const FALLBACK = ["redmind", "plan", "auto"]
+          const rank = (name: string) => {
+            const index = FALLBACK.indexOf(name)
+            return index === -1 ? FALLBACK.length : index
+          }
+          const visible = sorted
+            .filter((a) => a.mode !== "subagent" && a.hidden !== true)
+            .toSorted((a, b) => rank(a.name) - rank(b.name) || a.name.localeCompare(b.name))
+            .at(0)
           if (!visible) throw new Error("no primary visible agent found")
           return visible
         })

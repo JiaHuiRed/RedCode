@@ -326,7 +326,7 @@ it.instance('legacy "general" resolves to execute, which still denies todo tools
 // 拿不到对方的字段。类型上的隔离编译期就守住了，这条守的是**运行时形态**没被别处偷偷改回去。
 it.instance("the three role kinds keep their shapes separate", () =>
   Effect.gen(function* () {
-    for (const name of ["redmind", "plan"]) {
+    for (const name of ["plan", "redmind", "auto"]) {
       const p = yield* load((svc) => svc.get(name))
       expect(p?.mode).toBe("primary")
       expect(p?.hidden).toBeUndefined()
@@ -352,7 +352,7 @@ it.instance("the three role kinds keep their shapes separate", () =>
       // 机件不进任何对用户可见的列表
       expect(listed).not.toContain(name)
     }
-    expect(listed.sort()).toEqual(["execute", "explore", "plan", "redmind"])
+    expect(listed.sort()).toEqual(["auto", "execute", "explore", "plan", "redmind"])
   }),
 )
 
@@ -961,6 +961,7 @@ it.instance(
         build: { disable: true },
         plan: { disable: true },
         redmind: { disable: true },
+        auto: { disable: true },
         agent: { disable: true },
       },
     },
