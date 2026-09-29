@@ -10,6 +10,11 @@
 
 ### [0.11.15] - 未发布
 
+#### 新增
+
+- **Desktop fatal 场景先落诊断报告，弹窗直接给出路径**（`packages/desktop/src/main/{logging,index,windows}.ts`）：sidecar 启动失败、渲染进程崩溃、主框架加载失败、渲染层 fatal 错误四类场景，弹窗前先把错误详情与本次运行 main/renderer/server/utility 四份日志的 tail（各 32KB 截断，报告整体有界）写成 `logs/crashes/crash-<时间戳>.md`，弹窗文案附报告路径。实践学自 deepseek-harness 0.2.0 的 crash report before fatal recovery dialog。
+- **Windows 关窗改为隐藏，退出收口到托盘并带确认**（同上）：X/Alt+F4 只藏窗口不再退出（sidecar 与后台任务继续跑），托盘图标提供显示/退出入口；退出前确认（提示后台可能还有运行中的任务，退出会停掉 sidecar 及其全部子进程），可勾选「不再询问」。Windows 无应用菜单（menu.ts 仅 darwin），托盘是 close→hide 之后的唯一退出入口，二者配套落地。
+
 #### 修复
 
 - **工具结果附件统一受字节与数量硬限**（`packages/opencode/src/session/{image-tokens,tools}.ts`）：所有工具共享 5MiB 单件、最多 32 件限制；大小无法确认的远程附件不进入模型上下文，PDF 仍按原设计不猜 token。决策：`docs/notes/implemented/feature/2026-09-23-tool-result-token-budget.md`。

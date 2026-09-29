@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
 import { PINCH_ZOOM_ENABLED_KEY } from "./constants"
 import { resolveExternalURL } from "./external-url"
-import { exportDebugLogs, write as writeLog } from "./logging"
+import { exportDebugLogs, write as writeLog, writeCrashReport } from "./logging"
 import { isTrustedRendererUrl, rendererHost, rendererProtocol } from "./renderer-url"
 import { getStore } from "./store"
 import { createUnresponsiveSampler } from "./unresponsive"
@@ -352,9 +352,20 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
     )
 
     if (!isMainFrame || errorCode === -3) return
+    // 260929 Red fatal 弹窗前落诊断报告（学 deepseek-harness），路径直接给到弹窗；unresponsive
+    // 可自愈不落报告，render-process-gone 同理在下方各自落。
+    const reportPath = writeCrashReport("renderer load failed", {
+      window: name,
+      event,
+      errorCode,
+      errorDescription,
+      validatedURL,
+    })
     void show(
       "RedCode failed to load",
-      [`Window: ${name}`, `URL: ${validatedURL}`, `Error: ${errorCode} ${errorDescription}`].join("\n"),
+      [`Window: ${name}`, `URL: ${validatedURL}`, `Error: ${errorCode} ${errorDescription}`, reportPath ? `诊断报告: ${reportPath}` : undefined]
+        .filter(Boolean)
+        .join("\n"),
       false,
     )
   }
@@ -373,9 +384,22 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
       { window: name, currentURL: win.webContents.getURL(), details },
       "error",
     )
+    const reportPath = writeCrashReport("renderer process gone", {
+      window: name,
+      reason: details.reason,
+      exitCode: details.exitCode,
+      currentURL: win.webContents.getURL(),
+    })
     void show(
       "RedCode window terminated unexpectedly",
-      [`Window: ${name}`, `Reason: ${details.reason}`, `Code: ${details.exitCode ?? "<unknown>"}`].join("\n"),
+      [
+        `Window: ${name}`,
+        `Reason: ${details.reason}`,
+        `Code: ${details.exitCode ?? "<unknown>"}`,
+        reportPath ? `诊断报告: ${reportPath}` : undefined,
+      ]
+        .filter(Boolean)
+        .join("\n"),
       false,
     )
   })

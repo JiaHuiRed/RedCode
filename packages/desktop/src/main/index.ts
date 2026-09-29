@@ -8,14 +8,13 @@ import { homedir, tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event, ProcessMetric } from "electron"
-import { app, BrowserWindow, dialog, nativeTheme, shell } from "electron"
+import { app, BrowserWindow, dialog, Menu, nativeTheme, shell, Tray } from "electron"
 
 import contextMenu from "electron-context-menu"
-
+import { CHANNEL, QUIT_CONFIRM_DISABLED_KEY, UPDATER_ENABLED } from "./constants"
 import type { InitStep, ServerReadyData, SqliteMigrationProgress, WslConfig } from "../preload/types"
 import { checkAppExists, resolveAppPath, wslPath } from "./apps"
 import { listFonts } from "./fonts"
-import { CHANNEL, UPDATER_ENABLED } from "./constants"
 import {
   registerIpcHandlers,
   sendDeepLinks,
@@ -23,7 +22,7 @@ import {
   sendNetworkServiceRestart,
   sendSqliteMigrationProgress,
 } from "./ipc"
-import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
+import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog, writeCrashReport } from "./logging"
 import { createMenu } from "./menu"
 import {
   getDefaultServerUrl,
@@ -34,6 +33,7 @@ import {
   spawnLocalServer,
   type SidecarListener,
 } from "./server"
+import { getStore } from "./store"
 import { killSidecarTreeSync } from "./sidecar-process"
 import { forgetSidecarTree, killOrphanChildren, rememberSidecarTree, sweepStaleSidecarTree } from "./sidecar-registry"
 import {
@@ -256,6 +256,53 @@ function handleSidecarExit(code: number) {
   void respawnSidecar(code)
 }
 
+
+// 260929 Red Windows 没有应用菜单（menu.ts 仅 darwin），close→hide 之后 X/Alt+F4 不再是
+// 退出入口，必须配套托盘（学 deepseek-harness 的 close-to-background + tray + quit
+// confirmation）：托盘提供显示/退出，退出前确认一次——后台可能还有会话任务在跑，
+// 退出会停掉 sidecar 及其全部子进程。可勾选「不再询问」。
+let tray: Tray | undefined
+
+function confirmQuit() {
+  void (async () => {
+    if (getStore().get(QUIT_CONFIRM_DISABLED_KEY) !== true) {
+      const result = await dialog.showMessageBox({
+        type: "question",
+        buttons: ["退出", "取消"],
+        defaultId: 1,
+        cancelId: 1,
+        checkboxLabel: "不再询问",
+        message: "确定退出 RedCode？",
+        detail: "后台可能还有正在运行的任务（模型生成、工具执行）。退出会停止服务进程及其全部子进程。",
+      })
+      if (result.response !== 0) return
+      if (result.checkboxChecked) getStore().set(QUIT_CONFIRM_DISABLED_KEY, true)
+    }
+    quitting = true
+    app.quit()
+  })()
+}
+
+function showTray() {
+  const menu = Menu.buildFromTemplate([
+    {
+      label: "显示 RedCode",
+      click: () => {
+        mainWindow?.show()
+        mainWindow?.focus()
+      },
+    },
+    { type: "separator" },
+    { label: "退出", click: confirmQuit },
+  ])
+  tray = new Tray(iconPath())
+  tray.setToolTip("RedCode")
+  tray.setContextMenu(menu)
+  tray.on("click", () => {
+    mainWindow?.show()
+    mainWindow?.focus()
+  })
+}
 async function respawnSidecar(code: number) {
   const cfg = sidecarSpawnCfg
   if (!cfg) return
@@ -546,10 +593,17 @@ const main = Effect.gen(function* () {
     installUpdate: async () => installUpdate(killSidecar),
     setBackgroundColor: (color) => setBackgroundColor(color),
     exportDebugLogs: () => exportDebugLogs(),
-    recordFatalRendererError: (error) => writeLog("renderer", "fatal renderer error", { ...error }, "error"),
+    recordFatalRendererError: (error) => {
+      // 260929 Red 渲染层 fatal 也落诊断报告（error boundary 捕到的顶部异常），不只是日志
+      const reportPath = writeCrashReport("fatal renderer error", { ...error })
+      writeLog("renderer", "fatal renderer error", { ...error, reportPath }, "error")
+    },
   })
 
   yield* Effect.promise(() => app.whenReady())
+
+  // 260929 Red 托盘只 Windows 需要（darwin 有 Dock）；close→hide 见下方 mainWindow close 监听
+  if (process.platform === "win32") showTray()
 
   // 260916 Red 上一次会话如果是崩溃或被强杀退出的，它的 sidecar 树还留在系统里——
   //   这种退出跑不到任何 cleanup 钩子，只能在下次启动、拉起新 sidecar 之前清一遍。
@@ -704,6 +758,14 @@ const main = Effect.gen(function* () {
   //      窗口提前出现会变成「1.4 秒空白窗」，比没窗口更糟（仓里 ca2eebea 打过一次这种黑窗）。
   mainWindow = createMainWindow()
   mainWindow.webContents.on("did-start-loading", () => deepLinks.reset())
+  // 260929 Red close→hide：X/Alt+F4 只藏窗不退出，后台任务继续跑；真正退出收口到托盘
+  //「退出」（confirmQuit）。quitting 为 true（confirmQuit/SIGINT/relaunch/启动失败）时不拦。
+  // 仅 win32——darwin 红按钮本就只是关窗，hide 后无 Dock activate 唤醒路径，保持原行为。
+  mainWindow.on("close", (event) => {
+    if (quitting || process.platform !== "win32") return
+    event.preventDefault()
+    mainWindow?.hide()
+  })
   startMetricsLogging()
   if (mainWindow) {
     createMenu({
@@ -737,13 +799,16 @@ const main = Effect.gen(function* () {
     const message = detail instanceof Error ? detail.message : String(detail)
     logger.error("sidecar startup failed", { error: message })
     Deferred.failSync(serverReady, () => (detail instanceof Error ? detail : new Error(message)))
+    // 260929 Red 弹窗前落诊断报告，路径直接给到弹窗里，省去「该看哪个日志」的排查弯路
+    const reportPath = writeCrashReport("sidecar startup failed", { error: message })
     dialog.showErrorBox(
       "RedCode 启动失败",
-      `服务进程未能启动：${message}\n\n请重启 RedCode 重试；若反复出现，请在反馈里附上这条原因。`,
+      `服务进程未能启动：${message}\n\n${reportPath ? `诊断报告：${reportPath}\n\n` : ""}请重启 RedCode 重试；若反复出现，请在反馈里附上这条原因。`,
     )
     app.quit()
     return
   }
+  setInitStep({ phase: "done" })
   setInitStep({ phase: "done" })
   Deferred.doneUnsafe(serverReady, Effect.void)
 })

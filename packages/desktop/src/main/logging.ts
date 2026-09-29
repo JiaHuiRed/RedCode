@@ -51,6 +51,55 @@ export function initCrashReporter() {
 // 关掉不影响导出调试日志：exportDebugLogs 是靠 `netLog.currentlyLogging` 判断要不要重启的，
 // 没开就跳过；manifest 里的 netLog 字段是 undefined 会被 JSON.stringify 省掉；
 // network.netlog 本来就落在 run 目录里，由 collect(root) 顺带收，没有就没有。
+
+// 260929 Red fatal 弹窗前落 crash report（学 deepseek-harness 的 crash report before fatal
+// recovery dialog）：把错误详情与本次运行各日志的 tail 汇成一个带时间戳的 markdown，返回路径
+// 给弹窗展示——排查时不用再猜该看哪个文件（#184 Network Service 白屏那次靠进程创建时间
+// 倒推才发现该看 utility.log）。各段有 32KB 截断，报告整体有界。
+const CRASH_TAIL_CHARS = 32 * 1024
+const CRASH_LOG_SCOPES = ["main", "renderer", "server", "utility"] as const
+
+export function writeCrashReport(headline: string, detail: Record<string, unknown>): string | undefined {
+  if (!root) return undefined
+  try {
+    const dir = join(root, "crashes")
+    mkdirSync(dir, { recursive: true })
+    const content = [
+      `# ${headline}`,
+      "",
+      `- time: ${new Date().toISOString()}`,
+      `- version: ${app.getVersion()}`,
+      `- run: ${run}`,
+      "",
+      "## detail",
+      "",
+      "```",
+      JSON.stringify(detail, null, 2),
+      "```",
+      "",
+      ...CRASH_LOG_SCOPES.map(
+        (scope) => `## ${scope}.log\n\n\`\`\`\n${tailFile(join(run, `${scope}.log`))}\n\`\`\``,
+      ),
+    ].join("\n")
+    const path = join(dir, `crash-${stamp()}.md`)
+    writeFileSync(path, content)
+    return path
+  } catch (error) {
+    write("crash", "failed to write crash report", { error: String(error) }, "warn")
+    return undefined
+  }
+}
+
+function tailFile(path: string): string {
+  try {
+    if (!existsSync(path)) return "(not written this run)"
+    const contents = readFileSync(path, "utf8")
+    if (contents.length <= CRASH_TAIL_CHARS) return contents
+    return `…(truncated)\n${contents.slice(-CRASH_TAIL_CHARS)}`
+  } catch {
+    return "(unreadable)"
+  }
+}
 const NET_LOG_ENABLED = process.env.REDCODE_NETLOG === "1"
 
 export async function startNetLog() {
