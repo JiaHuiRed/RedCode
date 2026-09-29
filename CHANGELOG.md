@@ -17,6 +17,7 @@
 - **edit 补丁在 PartTable 中只存一份**（`packages/opencode/src/session/{message-v2,projectors,session}.ts`）：持久化时去重，读取时恢复 TUI/Web 原有的双字段契约。决策：`docs/notes/implemented/bug-fix/2026-09-28-edit-part-patch-dedup.md`。
 - **移除无消费者的 Desktop Markdown parser IPC 链与依赖**（`packages/desktop`）：渲染端仍使用共享 MarkdownIt parser；不再维护旧的 marked 主进程实现。取舍：`docs/notes/implemented/bug-fix/2026-09-07-markdown-highlight-worker.md`。
 - **TUI 不再静默丢失推理档位**（`packages/opencode/src/cli/cmd/tui/component/prompt/{local,index}.tsx`）：provider 列表未就绪时信任持久化档位，不再把有效选择打成 NULL；会话切换恢复时跳过空档位消息，NULL 历史不再把档位存回 "default" 自我延续。该问题使 GPT 会话在未切档时缓存命中率骤降为 0（Codex 按推理档位分缓存键）。
+- **explore 子代理权限白名单与 runtime guard 对齐**（`packages/opencode/src/agent/definition/explore.md`）：443c92b1 的 explore child runtime guard 在运行层硬 deny bash，但白名单仍声明 `bash: allow`——Permission.evaluate 按 findLast 取后者，deny 掀翻 allow，子代理每次调 bash 都吃 DeniedError（配置层发假门票、运行层兑现失败）。删除白名单中的 bash 并同步提示词与红线段，git 统计类工作明确交还调用方代跑。
 
 #### 变更
 

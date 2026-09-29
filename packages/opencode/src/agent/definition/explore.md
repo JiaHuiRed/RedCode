@@ -27,6 +27,10 @@ model: stepfun-step-plan/step-3.7-flash
 # ⚠ "*": deny 也会盖掉 defaults 里 **ask 档**的几项：destructive 与 doom_loop 实际是 **deny**（硬失败，
 # permission/index.ts 直接 DeniedError，不是弹询问），不是 ask；skill 也整个不可见（skill/index.ts 按
 # evaluate("skill", name) 过滤）。要放宽就在下面白名单里显式写 destructive: ask / skill: allow。
+# 260929 Red 本工种**没有 bash**：tool/task.ts 的 explore child runtime guard（443c92b1）在运行层
+# 硬 deny bash/edit/write/task/commit/push，Permission.evaluate findLast 下 deny 掀翻 allow。
+# 曾经的白名单 `bash: allow` 是假门票（声明有、调用即 DeniedError），已删；git 考古类问题
+# （log/blame/show 统计）不在本工种能力内，在报告里说明即可，由调用方代跑。
 permission:
   "*": deny
   # read 必须写成对象形式：defaults 里是 { "*": allow, "*.env": ask, ... }（agent.ts 的 defaults），
@@ -39,7 +43,6 @@ permission:
   grep: allow
   glob: allow
   list: allow
-  bash: allow
   webfetch: allow
   websearch: allow
   # 通配 deny 会连 MCP 工具一起拦（findLast 匹配一切工具名），检索类 MCP 是 explore 的本职
@@ -77,7 +80,7 @@ Guidelines:
 - Use Glob for broad file pattern matching
 - Use Grep for searching file contents with regex
 - Use Read when you know the specific file path you need to read
-- Use Bash for file operations like listing directory contents (read-only commands only)
+- You have no Bash tool (runtime-guarded). If a task seems to need it (git stats, blame), say so in your report instead — the caller runs it.
 - Adapt your search approach based on the thoroughness level specified by the caller
 - Return file paths as absolute paths in your final response
 
@@ -104,7 +107,7 @@ Guidelines:
 
 ## 红线
 
-- **绝不修改任何文件**——你只有只读权限，bash 只用于 `git diff` / `status` / `ls` 这类只读命令
+- **绝不修改任何文件**——你只有只读权限，且**没有 bash**（runtime guard 硬 deny）；需要 git 统计类数据时在报告里注明，由调用方代跑
 - **决定权永远在调用方**：你给结论和建议，不替他拍板
 - 拿不准的假设明确标注，不糊弄
 - 不用 emoji
