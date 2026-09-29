@@ -13,6 +13,7 @@
     "lint": "oxlint",
     "typecheck": "bun turbo typecheck",
     "check:subprocess-timeout": "bun run script/check-subprocess-timeout.ts",
+    "module:context": "bun run script/module-context.ts",
     "check:control-bytes": "bun run script/check-control-bytes.ts",
     "check:openapi-drift": "bun run script/check-openapi-drift.ts",
     "format": "prettier --write .",
