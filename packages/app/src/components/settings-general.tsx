@@ -521,6 +521,17 @@ export const SettingsGeneral: Component = () => {
             />
           </div>
         </SettingsRow>
+       <SettingsRow
+         title={language.t("settings.general.row.petEnabled.title")}
+         description={language.t("settings.general.row.petEnabled.description")}
+       >
+         <div data-action="settings-pet-enabled">
+           <Switch
+             checked={settings.general.petEnabled()}
+             onChange={(checked) => settings.general.setPetEnabled(checked)}
+           />
+         </div>
+       </SettingsRow>
       </SettingsList>
     </div>
   )

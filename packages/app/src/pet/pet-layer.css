@@ -3,9 +3,11 @@
 
 .pet-layer {
   /* 视口 fixed + 显式偏移：absolute 挂 main 的 containing block 在桌面端实测未生效（赤落回视口最左，
-     压住侧边栏设置按钮）。left 320 = 侧边栏宽 ~240 + 余量，落在哥哥圈定的主区左下空白带 */
+     压住侧边栏设置按钮）。left 320 = 侧边栏宽 ~240 + 余量，落在哥哥圈定的主区左下空白带。
+     260929 Red clamp 兜底：320px 是桌面实测值，窗口变窄/侧栏折叠时会把赤推出可视区或压内容——
+     max 保证右边至少留 120px（sprite 106 + 余量）；窄屏（侧栏大概率收起）改贴右下角。 */
   position: fixed;
-  left: 320px;
+  left: clamp(12px, 320px, calc(100vw - 120px));
   bottom: 24px;
   z-index: 40;
   display: flex;
@@ -118,4 +120,13 @@
   .pet-layer-sprite {
     animation: none;
   }
+}
+
+
+/* 260929 Red 窄屏（Web/手机，侧栏收起）：贴右下角，不再依赖侧边栏宽度的左偏移 */
+@media (max-width: 768px) {
+ .pet-layer {
+   left: auto;
+   right: 16px;
+ }
 }

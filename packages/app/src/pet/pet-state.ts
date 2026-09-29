@@ -5,6 +5,14 @@
  * 设计原则（REDCode_PET_SYSTEM_DESIGN.md #31）：Pet 不参与推理、不污染 Conversation、
  * 状态零持久化（进程内存态、重启归零）、终态必须超时回落（dsh-pet issue #59 教训）。
  *
+ * 260929 Red 事件源换血：原订阅的 session.next.tool.* / reasoning.started /
+ * compaction.* 属于 EventV2 双写体系，发布者已在 688c31cf（摘除双写）整体移除——
+ * 有定义、有投影、无发布，coding/searching/tool/compacting/success 五态实际永不触发。
+ * 现全部改走活流：
+ *   message.part.updated（part 自带 sessionID；ToolPart state.status 为
+ *                        pending/running/completed/error，另有 compaction part）
+ *   session.status / session.compacted / permission.* / question.* / session.error
+ *
  * 本文件保持零 SolidJS 依赖，便于纯函数测试。
  */
 
@@ -23,6 +31,12 @@ export type PetFlash = { kind: "success" | "error"; at: number }
 
 export type PetState = {
   sessions: Record<string, PetActivity | undefined>
+  /**
+   * 260929 Red 回合内是否动过工具——success flash 的判据（busy 时重置、idle 时消费）。
+   * 旧实现看「idle 时最后一个 activity 是不是工具型」：工具完成后 entry 已回 thinking，
+   * 正常干完活的回合永远庆祝不了，只有被打断的回合才庆祝——判据本身就是反的。
+   */
+  worked: Record<string, boolean | undefined>
   flash: PetFlash | undefined
 }
 
@@ -46,7 +60,7 @@ export const STALE_MS = 90_000
 export const COMPACTING_STALE_MS = 180_000
 
 export function createPetState(): PetState {
-  return { sessions: {}, flash: undefined }
+  return { sessions: {}, worked: {}, flash: undefined }
 }
 
 export type PetEvent = { type: string; properties?: unknown }
@@ -59,7 +73,19 @@ export function classifyTool(tool: string): "coding" | "searching" | "tool" {
   return "tool"
 }
 
-type SessionProps = { sessionID?: string }
+/** message.part.updated 的 part（只取 Pet 用得到的字段；其余 part 类型走 default 忽略）。 */
+type PetPart = {
+  sessionID?: string
+  type?: string
+  tool?: string
+  state?: { status?: string }
+}
+
+type SessionProps = {
+  sessionID?: string
+  status?: { type?: string }
+  part?: PetPart
+}
 
 function activityKind(activity: PetActivity): PetDisplay["kind"] {
   return activity.kind
@@ -91,14 +117,16 @@ function flashActive(flash: PetFlash | undefined, now: number): boolean {
  * 会话级视角（赤 = Agent 本体的化身）：任一会话的最高优先级活动就是赤的当前状态。
  */
 export function resolvePet(state: PetState, now: number): PetDisplay {
-  if (flashActive(state.flash, now)) return { kind: state.flash!.kind }
-
   let best: PetActivity | undefined
   for (const activity of Object.values(state.sessions)) {
     if (!activity) continue
     if (entryExpired(activity, now)) continue
     if (!best || PRIORITY[activity.kind]! > PRIORITY[best.kind]!) best = activity
   }
+  // 260929 Red 用户交互压过 flash：旧实现第一行就 return flash，error flash 的 5 秒窗口内
+  // 到来的 permission/question 会被整段盖住——而「需要你允许一下」恰是最不能错过的提醒。
+  if (best && (best.kind === "permission" || best.kind === "waiting")) return { kind: best.kind }
+  if (flashActive(state.flash, now)) return { kind: state.flash!.kind }
   if (best) {
     const kind = activityKind(best)
     if (kind === "coding" || kind === "searching" || kind === "tool") {
@@ -112,10 +140,12 @@ export function resolvePet(state: PetState, now: number): PetDisplay {
 /**
  * 事件归一化。直接原地修改 state（调用方持有 store 时套 produce）。
  *
- * 状态迁移原则：
- * - tool.called 覆盖 thinking；tool.success/failed 回 thinking（agent 继续生成文本）
+ * 状态迁移原则（260929 Red 起只认活事件，见文件头）：
+ * - message.part.updated：tool part pending/running 按工具名分类；completed/error 记 worked
+ *   并回 thinking（agent 继续生成）；compaction part 进 compacting；text/reasoning 兜底 thinking
+ * - session.status busy/retry：新回合开张，重置 worked，无 entry 时兜底 thinking
+ * - session.status idle：清 entry；本回合动过工具（worked）才触发 success flash——纯问答不庆祝
  * - permission/question 等用户交互事件替换当前 entry，回应后回 thinking（会话仍 busy）
- * - status idle 清 entry；若刚才是工具型活动，触发 success flash（干完活才庆祝，纯问答不庆祝）
  * - session.error 触发 error flash 并清 entry（错误通常伴随回合终止）
  */
 export function applyPetEvent(state: PetState, event: PetEvent, now: number): void {
@@ -127,39 +157,54 @@ export function applyPetEvent(state: PetState, event: PetEvent, now: number): vo
   }
 
   switch (event.type) {
+   case "message.part.updated": {
+     // 260929 Red 注意：sessionID 在 part 上而不是 properties 顶层，必须用 id 归属会话——
+     // 用外层 setEntry（抓 props.sessionID）会整个静默跳过。
+     const part = props.part
+     const id = part?.sessionID
+     if (!part || !id) return
+     const setEntryByPart = (activity: PetActivity) => {
+       state.sessions[id] = activity
+     }
+     switch (part.type) {
+       case "tool": {
+         const status = part.state?.status
+         if (status === "completed" || status === "error") {
+           state.worked[id] = true
+           setEntryByPart({ kind: "thinking", at: now })
+           return
+         }
+         // pending / running（状态缺失也按运行中展示：宁可多动，不可假死）
+         const tool = part.tool ?? ""
+         setEntryByPart({ kind: classifyTool(tool), tool, at: now })
+         return
+       }
+       case "compaction":
+         setEntryByPart({ kind: "compacting", at: now })
+         return
+       case "reasoning":
+       case "text":
+         // 模型在产出；已有更具体的 entry（工具/压缩中）时不覆盖
+         if (!state.sessions[id]) setEntryByPart({ kind: "thinking", at: now })
+         return
+       default:
+         return
+     }
+    }
     case "session.status": {
       if (!sessionID) return
-      const status = (props as { status?: { type?: string } }).status?.type
+      const status = props.status?.type
       if (status === "idle") {
-        const prev = state.sessions[sessionID]
         delete state.sessions[sessionID]
-        if (prev && (prev.kind === "coding" || prev.kind === "searching" || prev.kind === "tool")) {
-          state.flash = { kind: "success", at: now }
-        }
+        if (state.worked[sessionID]) state.flash = { kind: "success", at: now }
+        delete state.worked[sessionID]
         return
       }
       // busy / retry：无 entry 时兜底 thinking（retry 也是 agent 在努力）
-      const current = state.sessions[sessionID]
-      if (!current) setEntry({ kind: "thinking", at: now })
+      state.worked[sessionID] = false
+      if (!state.sessions[sessionID]) setEntry({ kind: "thinking", at: now })
       return
     }
-    case "session.next.reasoning.started":
-      setEntry({ kind: "thinking", at: now })
-      return
-    case "session.next.tool.called": {
-      const tool = (props as { tool?: string }).tool ?? ""
-      setEntry({ kind: classifyTool(tool), tool, at: now })
-      return
-    }
-    case "session.next.tool.success":
-    case "session.next.tool.failed":
-      // 回到生成态；失败不直接 error（agent 通常会自恢复，连续失败由 session.error 兜底）
-      setEntry({ kind: "thinking", at: now })
-      return
-    case "session.next.compaction.started":
-      setEntry({ kind: "compacting", at: now })
-      return
-    case "session.next.compaction.ended":
     case "session.compacted":
       setEntry({ kind: "thinking", at: now })
       return
@@ -178,7 +223,10 @@ export function applyPetEvent(state: PetState, event: PetEvent, now: number): vo
       return
     case "session.error": {
       state.flash = { kind: "error", at: now }
-      if (sessionID) delete state.sessions[sessionID]
+      if (sessionID) {
+        delete state.sessions[sessionID]
+        delete state.worked[sessionID]
+      }
       return
     }
     default:
