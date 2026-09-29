@@ -28,6 +28,22 @@ const DEFAULT_INSTRUCTION_BUDGET = {
 
 const bytes = (content: string) => new TextEncoder().encode(content).byteLength
 
+// 260929 Red 按字节数截断且不切坏多字节字符。直接 slice(length) 会把 CJK 的
+// 3 字节序列切成乱码，模型看到的是替换字符而不是指令；二分找最后一个不超限的
+// 字符边界，代价是 O(log n) 次编码，只在上限被击穿时走一次。
+const truncateToBytes = (text: string, limit: number) => {
+  const encoder = new TextEncoder()
+  if (encoder.encode(text).byteLength <= limit) return text
+  let lo = 0
+  let hi = text.length
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1
+    if (encoder.encode(text.slice(0, mid)).byteLength <= limit) lo = mid
+    else hi = mid - 1
+  }
+  return text.slice(0, lo)
+}
+
 const files = (disableClaudeCodePrompt: boolean) => [
   "AGENTS.md",
   ...(disableClaudeCodePrompt ? [] : ["CLAUDE.md"]),
@@ -223,17 +239,25 @@ export const layer: Layer.Layer<
       // 260913 Red 单来源硬上限：超限整份跳过，既不注入半截指令，也不无声吞掉。
       // 上限可配置（instruction_budget.max_source_bytes），默认 1MiB 足够宽松。
       const skipped: string[] = []
-      const include = (source: string, content: string) => {
-        if (!content) return []
-        if (bytes(content) > maxSourceBytes) {
-          skipped.push(`${bytes(content)} bytes: ${source}`)
-          return []
-        }
-        return [`Instructions from: ${source}\n${content}`]
-      }
-      const parts = [
-        ...Array.from(paths).flatMap((item, i) => include(item, files[i])),
-        ...urls.flatMap((item, i) => include(item, remote[i])),
+      const sources = [
+        ...Array.from(paths).flatMap((item, i) => {
+          const content = files[i]
+          if (!content) return []
+          if (bytes(content) > maxSourceBytes) {
+            skipped.push(`${bytes(content)} bytes: ${item}`)
+            return []
+          }
+          return [{ source: item, text: `Instructions from: ${item}\n${content}` }]
+        }),
+        ...urls.flatMap((item, i) => {
+          const content = remote[i]
+          if (!content) return []
+          if (bytes(content) > maxSourceBytes) {
+            skipped.push(`${bytes(content)} bytes: ${item}`)
+            return []
+          }
+          return [{ source: item, text: `Instructions from: ${item}\n${content}` }]
+        }),
       ]
       for (const item of skipped) {
         Log.Default.warn(
@@ -241,20 +265,47 @@ export const layer: Layer.Layer<
         )
       }
 
-      // 260813 Red 前缀注入预算：逐来源统计大小，总量超限时告警并点名最肥来源。
-      // 不截断——截断会丢指令（漏掉铁律比前缀长更糟），告警只是把膨胀暴露出来，
-      // 让"哪段在悄悄变肥"可定位（配合 prompt.ts 的 sysLen 日志看整体趋势）。
-      // 260920 Red 告警改走 Log 而不是 Console：worker 线程的 console 不受 TUI
-      // console-hijack 保护，会经 Worker stderr 继承直接打到终端、污染全屏渲染
-      // （与 worker.ts 抑制 MaxListenersExceededWarning 同一类事故）。
-      const totalBytes = parts.reduce((sum, p) => sum + bytes(p), 0)
-      if (totalBytes > maxTotalBytes) {
-        const top = parts
-          .map((p) => ({ bytes: bytes(p), src: p.slice(0, 80).split("\n")[0] }))
-          .toSorted((a, b) => b.bytes - a.bytes)
-          .slice(0, 5)
-        Log.Default.warn(`Instruction prefix over budget: ${totalBytes} bytes > ${maxTotalBytes}`)
-        for (const t of top) Log.Default.warn(`  ${t.bytes} bytes: ${t.src}`)
+      // 260929 Red 总量从「只告警」改为执行。260813 刻意不截断，理由是截断会丢指令
+      // （漏掉铁律比前缀长更糟）——那个判断没错，错的是把「不截断」执行成了「不设防」：
+      // 本机五份注入实测合计 56.4KiB / 预算 64KiB，已用 88%，越线后除了日志什么都没发生，
+      // 前缀继续涨。「有上限」退化成了「有告警」。
+      // 现在按优先级从尾部整份丢弃来源（sources 的顺序即 systemPaths 的注入顺序：
+      // 全局 AGENTS → 项目 AGENTS → 全局 MEMORY → 项目 MEMORY → soul → config instructions），
+      // 绝不切半截文件——那正是 260813 要避免的静默丢铁律。被丢的来源进模型可见声明行，
+      // 模型知道指令不完整；只剩一个来源仍超限时才截断它本身并带显式标记，
+      // 保证输出字节有确定上界（maxTotalBytes + 标记行）。
+      let total = sources.reduce((sum, s) => sum + bytes(s.text), 0)
+      const dropped: string[] = []
+      while (sources.length > 1 && total > maxTotalBytes) {
+        const removed = sources.pop()!
+        total -= bytes(removed.text)
+        dropped.push(removed.source)
+      }
+      if (dropped.length > 0) {
+        Log.Default.warn(
+          `Instruction sources dropped, over instruction_budget.max_total_bytes (${maxTotalBytes}): ${dropped.join(", ")}`,
+        )
+      }
+      if (sources.length === 1 && total > maxTotalBytes) {
+        const only = sources[0]
+        only.text = `${truncateToBytes(only.text, maxTotalBytes)}\n[instruction budget] truncated at ${maxTotalBytes} bytes (instruction_budget.max_total_bytes); the tail of ${only.source} was cut. Raise the limit in config if a rule you need is missing.`
+        total = bytes(only.text)
+        Log.Default.warn(
+          `Instruction source truncated to instruction_budget.max_total_bytes (${maxTotalBytes}): ${only.source}`,
+        )
+      }
+
+     // 260929 Red 显式优先级声明。没有这句时，用户自己写的 AGENTS.md 与引擎默认提示词
+     // 冲突，谁赢全靠模型自己猜；放在所有来源之前，位置稳定、不随后续增删而移动。
+     // 没有任何来源时不输出——没有"下面的指令"时这句话是纯噪音，还白占 token。
+     const parts = [
+       ...(sources.length > 0 ? ["The instructions below OVERRIDE any default behavior when they conflict."] : []),
+       ...sources.map((s) => s.text),
+     ]
+      if (dropped.length > 0) {
+        parts.push(
+          `[instruction budget] ${dropped.length} instruction source(s) dropped for exceeding instruction_budget.max_total_bytes (${maxTotalBytes}): ${dropped.join(", ")}. Their rules are absent from this session - raise the limit in config if one of them matters.`,
+        )
       }
       return parts
     })

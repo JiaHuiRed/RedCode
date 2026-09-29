@@ -262,9 +262,10 @@ describe("Instruction.system", () => {
         expect(paths.has(path.join(globalTmp, "AGENTS.md"))).toBe(true)
 
         const rules = yield* svc.system()
-        expect(rules).toHaveLength(2)
-        expect(rules[0]).toBe(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}\n# Global Instructions`)
-        expect(rules[1]).toBe(`Instructions from: ${path.join(projectTmp, "AGENTS.md")}\n# Project Instructions`)
+        // 260929 Red rules[0] 是引擎加的 OVERRIDE 声明行，来源从 1 开始。
+        expect(rules[0]).toBe("The instructions below OVERRIDE any default behavior when they conflict.")
+        expect(rules[1]).toBe(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}\n# Global Instructions`)
+        expect(rules[2]).toBe(`Instructions from: ${path.join(projectTmp, "AGENTS.md")}\n# Project Instructions`)
       }).pipe(provideInstance(projectTmp), provideInstruction({ home: globalTmp, config: globalTmp }))
     }),
   )
@@ -403,4 +404,104 @@ describe("Instruction.system instruction_budget", () => {
       )
     }),
   )
+})
+
+// 260929 Red 总量上限从「只告警」改为执行，必须验证它真的执行，并且执行方式是对的：
+// 丢整份来源（不切半截）、被丢的进模型可见声明行、优先级低的先丢。
+describe("Instruction.system max_total_bytes", () => {
+ const agents = (n: number) => `# ${"x".repeat(n)}`
+
+ it.live("drops the lowest-priority source when the total exceeds the budget", () =>
+   Effect.gen(function* () {
+     const globalTmp = yield* tmpWithFiles({ "AGENTS.md": agents(1000) })
+     const projectTmp = yield* tmpWithFiles({ "AGENTS.md": agents(1000) })
+
+     yield* Effect.gen(function* () {
+       const svc = yield* Instruction.Service
+       const rules = yield* svc.system()
+       // 两份各约 1KB，预算 1.5KB → 后注入的项目级被整份丢掉，全局级完整保留
+       expect(rules.some((r) => r.includes(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}`))).toBe(true)
+       expect(rules.some((r) => r.includes(`Instructions from: ${path.join(projectTmp, "AGENTS.md")}`))).toBe(false)
+       // 被丢的来源必须进模型可见声明行——静默丢弃比前缀长更糟
+       const notice = rules.find((r) => r.includes("[instruction budget]"))
+       expect(notice).toBeDefined()
+       expect(notice).toContain(path.join(projectTmp, "AGENTS.md"))
+       // 保留的那份必须是完整的，没有被切半截
+       const kept = rules.find((r) => r.includes(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}`))!
+       expect(kept).toContain(agents(1000))
+     }).pipe(
+       provideInstance(projectTmp),
+       provideInstruction({ home: globalTmp, config: globalTmp }, undefined, {
+         instruction_budget: { max_total_bytes: 1500 },
+       }),
+     )
+   }),
+ )
+
+ it.live("truncates the only source with an explicit marker instead of dropping everything", () =>
+   Effect.gen(function* () {
+     const globalTmp = yield* tmpWithFiles({ "AGENTS.md": agents(4000) })
+     const projectTmp = yield* tmpdirScoped()
+
+     yield* Effect.gen(function* () {
+       const svc = yield* Instruction.Service
+       const rules = yield* svc.system()
+       // 只剩一个来源仍然超限：不能整份丢光（那就什么指令都没了），截断它本身并带标记
+       expect(rules.some((r) => r.includes(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}`))).toBe(true)
+       expect(rules.some((r) => r.includes("truncated at 2000 bytes"))).toBe(true)
+       // 截断后的正文必须短于上限 + 标记行，不会把整个超限内容原样留下
+       const kept = rules.find((r) => r.includes(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}`))!
+       expect(new TextEncoder().encode(kept).byteLength).toBeLessThan(2000 + 400)
+     }).pipe(
+       provideInstance(projectTmp),
+       provideInstruction({ home: globalTmp, config: globalTmp }, undefined, {
+         instruction_budget: { max_total_bytes: 2000 },
+       }),
+     )
+   }),
+ )
+
+ it.live("keeps everything when the total is within the budget", () =>
+   Effect.gen(function* () {
+     const globalTmp = yield* tmpWithFiles({ "AGENTS.md": agents(100) })
+     const projectTmp = yield* tmpWithFiles({ "AGENTS.md": agents(100) })
+
+     yield* Effect.gen(function* () {
+       const svc = yield* Instruction.Service
+       const rules = yield* svc.system()
+       expect(rules.some((r) => r.includes(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}`))).toBe(true)
+       expect(rules.some((r) => r.includes(`Instructions from: ${path.join(projectTmp, "AGENTS.md")}`))).toBe(true)
+       // 预算内不出现任何声明行
+       expect(rules.some((r) => r.includes("[instruction budget]"))).toBe(false)
+     }).pipe(
+       provideInstance(projectTmp),
+       provideInstruction({ home: globalTmp, config: globalTmp }, undefined, {
+         instruction_budget: { max_total_bytes: 64 * 1024 },
+       }),
+     )
+   }),
+ )
+
+ // 260929 Red CJK 截断必须按字节而不是字符数：一个汉字 3 字节，按字符切会把
+ // 多字节序列切成乱码，模型看到替换字符而不是指令。
+ it.live("truncates CJK content on a character boundary", () =>
+   Effect.gen(function* () {
+     const globalTmp = yield* tmpWithFiles({ "AGENTS.md": "敏".repeat(2000) })
+     const projectTmp = yield* tmpdirScoped()
+
+     yield* Effect.gen(function* () {
+       const svc = yield* Instruction.Service
+       const rules = yield* svc.system()
+       const kept = rules.find((r) => r.includes(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}`))!
+       // 6000 字节的中文被截到 3000：不能出现 U+FFFD 替换字符
+       expect(kept).not.toContain("\uFFFD")
+       expect(new TextEncoder().encode(kept).byteLength).toBeLessThan(3000 + 400)
+     }).pipe(
+       provideInstance(projectTmp),
+       provideInstruction({ home: globalTmp, config: globalTmp }, undefined, {
+         instruction_budget: { max_total_bytes: 3000 },
+       }),
+     )
+   }),
+ )
 })
