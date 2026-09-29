@@ -16,11 +16,28 @@ function read(path: string): string {
   }
 }
 
-function readJson(path: string): any {
+// 260929 Red 刻意不用 any：A3 那个 bug（workspace globs 读目标包自己的 package.json）
+// 之所以静默，正是因为 readJson 返回 any —— 读错字段编译器一声不响，运行时拿到
+// undefined 就走 ?? [] 兜底，输出恒为「(none)」而没有任何东西报错。
+interface PackageJson {
+  name?: string
+  version?: string
+  main?: string
+  module?: string
+  types?: string
+  scripts?: Record<string, string>
+  exports?: Record<string, unknown>
+  dependencies?: Record<string, string>
+  devDependencies?: Record<string, string>
+  peerDependencies?: Record<string, string>
+  workspaces?: { packages?: string[] } | string[]
+}
+
+function readJson(path: string): PackageJson | undefined {
   const text = read(path)
   if (!text) return undefined
   try {
-    return JSON.parse(text)
+    return JSON.parse(text) as PackageJson
   } catch {
     return undefined
   }
@@ -33,7 +50,13 @@ function countLines(path: string): number {
   return text.endsWith("\n") ? text.split("\n").length - 1 : text.split("\n").length
 }
 
-function walk(dir: string, depth: number, out: string[] = []): string[] {
+// 260929 Red 构建产物不进源码地图。SKIP_DIR 原先只被 notes 遍历用着，walk 这边另写了
+// 一份「node_modules + 点开头」——于是 dist / coverage 被当成源码统计（实测 packages/app
+// 一个包的 Source map 里 698 files / 4008 lines 全是 dist/assets）。点开头的目录
+// （.artifacts / .git / .vscode）统一在这里判，不再依赖调用方各自记得。
+const SKIP_DIR = new Set(["node_modules", "dist", ".artifacts", "coverage"])
+
+function walk(dir: string, depth: number, out: string[] = [], skip: ReadonlySet<string> = SKIP_DIR): string[] {
   if (depth < 0) return out
   let entries: ReturnType<typeof readdirSync>
   try {
@@ -42,11 +65,11 @@ function walk(dir: string, depth: number, out: string[] = []): string[] {
     return out
   }
   for (const entry of entries) {
-    if (entry.name === "node_modules" || entry.name.startsWith(".")) continue
+    if (skip.has(entry.name) || entry.name.startsWith(".")) continue
     const full = join(dir, entry.name)
     if (entry.isDirectory()) {
       out.push(`${full}/`)
-      walk(full, depth - 1, out)
+      walk(full, depth - 1, out, skip)
     } else {
       out.push(full)
     }
@@ -86,7 +109,14 @@ if (!pkg?.name) {
 const moduleRel = posix(relative(pkgRoot, modulePath)) || "."
 
 // ---------------------------------------------------------------- workspace 包表
-const globs: string[] = pkg.workspaces?.packages ?? []
+// 260929 Red globs 必须取**根** package.json。原先读的是 pkg（目标包自己的），而 workspace
+// 包自己不定义 workspaces 字段 → globs 恒为 [] → byName 是空 Map → internalDeps 与
+// internalConsumers **恒为空**。实测 packages/app 明明依赖 @redcode-ai/core，输出却是
+// (none)。rootPkg 读不到时退化成空表（脚本仍可跑，只是没有依赖分析）。
+const rootPkg = readJson(join(root, "package.json"))
+const globs: string[] = Array.isArray(rootPkg?.workspaces)
+  ? rootPkg.workspaces
+  : (rootPkg?.workspaces?.packages ?? [])
 const pkgDirs: string[] = []
 for (const pattern of globs) {
   const star = pattern.indexOf("*")
@@ -109,7 +139,6 @@ for (const dir of pkgDirs) {
 }
 
 // ---------------------------------------------------------------- 源码地图
-const SKIP_DIR = new Set(["node_modules", "dist", ".artifacts", "coverage"])
 const files = walk(modulePath, 6).filter((f) => !f.endsWith("/"))
 const codeFiles = files.filter((f) => /\.(ts|tsx|js|jsx|mjs|cjs|css)$/.test(f))
 const byDir = new Map<string, { files: number; lines: number }>()
@@ -151,7 +180,8 @@ if (existsSync(noteDir)) {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const full = join(dir, entry.name)
       if (entry.isDirectory()) {
-        if (!SKIP_DIR.has(entry.name)) stack.push(full)
+        // 与 walk 同一套跳过规则：notes 遍历漏跳 dist 会让产物里的 md 也进清单
+        if (!SKIP_DIR.has(entry.name) && !entry.name.startsWith(".")) stack.push(full)
         continue
       }
       if (!entry.name.endsWith(".md")) continue
@@ -190,14 +220,19 @@ line("## Public entrypoints")
 const exportMap = pkg.exports
 if (exportMap && typeof exportMap === "object") {
   for (const [key, value] of Object.entries(exportMap)) {
-    const target = typeof value === "string" ? value : ((value as any)?.import ?? (value as any)?.default)
+    const nested = typeof value === "string" ? undefined : (value as { import?: unknown; default?: unknown })
+    const target =
+      typeof value === "string" ? value : typeof nested?.import === "string" ? nested.import : typeof nested?.default === "string" ? nested.default : undefined
     if (typeof target !== "string") continue
     const resolved = resolve(pkgRoot, target.replace(/^\.\//, ""))
     line(`- ${key} → ${posix(relative(root, resolved))}${existsSync(resolved) ? "" : "  (missing)"}`)
   }
 } else {
-  for (const field of ["main", "module", "types"]) {
-    if (typeof pkg[field] === "string") line(`- ${field} → ${pkg[field]}`)
+  // as const 让 field 收窄成字面量联合，pkg[field] 才有确定类型——写成 string[] 会撞
+  // TS7053（PackageJson 没有索引签名），而那正是 any 时代被静默吞掉的一类错。
+  for (const field of ["main", "module", "types"] as const) {
+    const target = pkg[field]
+    if (typeof target === "string") line(`- ${field} → ${target}`)
   }
 }
 const moduleIndex = ["index.ts", "index.tsx", "index.js"].map((f) => join(modulePath, f)).find(existsSync)
