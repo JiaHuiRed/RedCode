@@ -326,7 +326,13 @@ export type QuestionInfo = {
    * Available choices
    */
   options: Array<QuestionOption>
+  /**
+   * Allow selecting multiple choices
+   */
   multiple?: boolean
+  /**
+   * Allow typing a custom answer (default: true)
+   */
   custom?: boolean
 }
 
@@ -1005,10 +1011,25 @@ export type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR"
  * Server configuration for redcode serve and web commands
  */
 export type ServerConfig = {
+  /**
+   * Port to listen on
+   */
   port?: number
+  /**
+   * Hostname to listen on
+   */
   hostname?: string
+  /**
+   * Enable mDNS service discovery
+   */
   mdns?: boolean
+  /**
+   * Custom domain name for mDNS service (default: redcode.local)
+   */
   mdnsDomain?: string
+  /**
+   * Additional domains to allow for CORS
+   */
   cors?: Array<string>
 }
 
@@ -1019,6 +1040,9 @@ export type ReferenceConfigEntry =
        * Git repository URL, host/path reference, or GitHub owner/repo shorthand
        */
       repository: string
+      /**
+       * Branch or ref Scout should clone and inspect
+       */
       branch?: string
     }
   | {
@@ -1065,16 +1089,28 @@ export type PermissionConfig =
 
 export type AgentConfig = {
   model?: string
+  /**
+   * Default model variant for this agent (applies only when using the agent's configured model).
+   */
   variant?: string
   temperature?: number
   top_p?: number
   prompt?: string
+  /**
+   * @deprecated Use 'permission' field instead
+   */
   tools?: {
     [key: string]: boolean
   }
   disable?: boolean
+  /**
+   * Description of when to use the agent
+   */
   description?: string
   mode?: "subagent" | "primary" | "all"
+  /**
+   * Hide this subagent from the @ autocomplete menu (default: false, only applies to mode: subagent)
+   */
   hidden?: boolean
   options?: {
     [key: string]: unknown
@@ -1083,7 +1119,13 @@ export type AgentConfig = {
    * Hex color code (e.g., #FF5733) or theme color (e.g., primary)
    */
   color?: string | "primary" | "secondary" | "accent" | "success" | "warning" | "error" | "info"
+  /**
+   * Maximum number of agentic iterations before forcing text-only response
+   */
   steps?: number
+  /**
+   * @deprecated Use 'steps' field instead.
+   */
   maxSteps?: number
   permission?: PermissionConfig
   [key: string]:
@@ -1124,12 +1166,21 @@ export type ProviderConfig = {
   options?: {
     apiKey?: string
     baseURL?: string
+    /**
+     * GitHub Enterprise URL for copilot authentication
+     */
     enterpriseUrl?: string
+    /**
+     * Enable promptCacheKey for this provider (default false)
+     */
     setCacheKey?: boolean
     /**
      * Timeout in milliseconds for requests to this provider. Default is 300000 (5 minutes). Set to false to disable timeout.
      */
     timeout?: number | false
+    /**
+     * Timeout in milliseconds between streamed SSE chunks for this provider. If no chunk arrives within this window, the request is aborted.
+     */
     chunkTimeout?: number
     [key: string]: unknown | string | boolean | number | false | number | undefined
   }
@@ -1152,6 +1203,9 @@ export type ProviderConfig = {
       cost?: {
         input: number
         output: number
+        /**
+         * Currency these prices are quoted in. "CNY" skips the USD→CNY conversion in cost display (TUI footer, TUI sidebar, GUI context panel, home stats). Custom CNY-priced providers declare this here — no source-code change needed.
+         */
         currency?: "USD" | "CNY"
         cache_read?: number
         cache_write?: number
@@ -1183,6 +1237,9 @@ export type ProviderConfig = {
       headers?: {
         [key: string]: string
       }
+      /**
+       * Explicitly enable/disable tools for this model (e.g. {"apply_patch": true, "edit": false}). Overrides the built-in model-family heuristic that picks apply_patch vs edit/write by model id. Keyed by the model's API id.
+       */
       tools?: {
         [key: string]: boolean
       }
@@ -1191,6 +1248,9 @@ export type ProviderConfig = {
        */
       variants?: {
         [key: string]: {
+          /**
+           * Disable this variant for the model
+           */
           disabled?: boolean
           [key: string]: unknown | boolean | undefined
         }
@@ -1208,22 +1268,58 @@ export type McpLocalConfig = {
    * Command and arguments to run the MCP server
    */
   command: Array<string>
+  /**
+   * Working directory for resolving relative paths in the command and environment. Supports ~/ expansion for the user's home directory. Defaults to the project root of the directory being worked on.
+   */
   cwd?: string
+  /**
+   * Environment variables to set when running the MCP server
+   */
   environment?: {
     [key: string]: string
   }
+  /**
+   * Enable or disable the MCP server on startup
+   */
   enabled?: boolean
+  /**
+   * Timeout in ms for MCP server requests. Defaults to 30000 (30 seconds) if not specified.
+   */
   timeout?: number
+  /**
+   * Retry policy for tool calls. Use none for non-idempotent MCP actions.
+   */
   retry?: "default" | "none"
+  /**
+   * Tool names to hide from this MCP server. Only tools not in this list will be exposed.
+   */
   disabledTools?: Array<string>
+  /**
+   * Whitelist: only these tool names are injected into the prompt. Omit to expose all tools. Empty array hides every tool (server stays connected but contributes nothing).
+   */
   tools?: Array<string>
 }
 
 export type McpOAuthConfig = {
+  /**
+   * OAuth client ID. If not provided, dynamic client registration (RFC 7591) will be attempted.
+   */
   clientId?: string
+  /**
+   * OAuth client secret (if required by the authorization server)
+   */
   clientSecret?: string
+  /**
+   * OAuth scopes to request during authorization
+   */
   scope?: string
+  /**
+   * Port for the local OAuth callback server (default: 19876). Shorthand for redirectUri when only the port needs changing. Ignored if redirectUri is set.
+   */
   callbackPort?: number
+  /**
+   * OAuth redirect URI (default: http://127.0.0.1:19876/mcp/oauth/callback).
+   */
   redirectUri?: string
 }
 
@@ -1236,7 +1332,13 @@ export type McpRemoteConfig = {
    * URL of the remote MCP server
    */
   url: string
+  /**
+   * Enable or disable the MCP server on startup
+   */
   enabled?: boolean
+  /**
+   * Headers to send with the request
+   */
   headers?: {
     [key: string]: string
   }
@@ -1244,8 +1346,17 @@ export type McpRemoteConfig = {
    * OAuth authentication configuration for the MCP server. Set to false to disable OAuth auto-detection.
    */
   oauth?: McpOAuthConfig | false
+  /**
+   * Timeout in ms for MCP server requests. Defaults to 30000 (30 seconds) if not specified.
+   */
   timeout?: number
+  /**
+   * Retry policy for tool calls. Use none for non-idempotent MCP actions.
+   */
   retry?: "default" | "none"
+  /**
+   * Whitelist: only these tool names are injected into the prompt. Omit to expose all tools. Empty array hides every tool (server stays connected but contributes nothing).
+   */
   tools?: Array<string>
 }
 
@@ -1255,23 +1366,59 @@ export type McpRemoteConfig = {
 export type LayoutConfig = "auto" | "stretch"
 
 export type ImageAttachmentConfig = {
+  /**
+   * Resize images before sending them to the model when they exceed configured limits (default: true)
+   */
   auto_resize?: boolean
+  /**
+   * @deprecated Scaling is driven by max_pixels; this now only contributes to the default pixel budget (max_width * max_height) when max_pixels is unset.
+   */
   max_width?: number
+  /**
+   * @deprecated Scaling is driven by max_pixels; this now only contributes to the default pixel budget (max_width * max_height) when max_pixels is unset.
+   */
   max_height?: number
+  /**
+   * Total pixel budget for an attached image (default: 4000000, i.e. 2000x2000). The raster is scaled proportionally to fit this budget, so an extreme aspect ratio such as a tall page screenshot keeps its short-edge resolution instead of being crushed by a per-side box.
+   */
   max_pixels?: number
+  /**
+   * Hard per-side cap applied after the pixel budget (default: 8192). Guards against extreme single-axis sizes that providers reject.
+   */
   max_dimension?: number
+  /**
+   * Maximum base64 payload bytes for an image attachment (default: 5242880)
+   */
   max_base64_bytes?: number
 }
 
 export type AttachmentConfig = {
+  /**
+   * Image attachment configuration
+   */
   image?: ImageAttachmentConfig
 }
 
 export type Config = {
+  /**
+   * JSON schema reference for configuration validation
+   */
   $schema?: string
+  /**
+   * Default shell to use for terminal and bash tool
+   */
   shell?: string
+  /**
+   * Log level
+   */
   logLevel?: LogLevel
+  /**
+   * Server configuration for redcode serve and web commands
+   */
   server?: ServerConfig
+  /**
+   * Command configuration, see https://redcode.dev/docs/commands
+   */
   command?: {
     [key: string]: {
       template: string
@@ -1281,14 +1428,29 @@ export type Config = {
       subtask?: boolean
     }
   }
+  /**
+   * Additional skill folder paths
+   */
   skills?: {
+    /**
+     * Additional paths to skill folders
+     */
     paths?: Array<string>
+    /**
+     * URLs to fetch skills from (e.g., https://example.com/.well-known/skills/)
+     */
     urls?: Array<string>
   }
+  /**
+   * Named git or local directory references that can be mentioned as @alias or @alias/path
+   */
   reference?: ReferenceConfig
   watcher?: {
     ignore?: Array<string>
   }
+  /**
+   * Enable or disable snapshot tracking. When false, filesystem snapshots are not recorded and undoing or reverting will not undo/redo file changes. Defaults to true.
+   */
   snapshot?: boolean
   plugin?: Array<
     | string
@@ -1300,31 +1462,82 @@ export type Config = {
       ]
   >
   dcp?: unknown
+  /**
+   * Control sharing behavior:'manual' allows manual sharing via commands, 'auto' enables automatic sharing, 'disabled' disables all sharing
+   */
   share?: "manual" | "auto" | "disabled"
+  /**
+   * @deprecated Use 'share' field instead. Share newly created sessions automatically
+   */
   autoshare?: boolean
   /**
    * Automatically update to the latest version. Set to true to auto-update, false to disable, or 'notify' to show update notifications
    */
   autoupdate?: boolean | "notify"
+  /**
+   * Disable providers that are loaded automatically
+   */
   disabled_providers?: Array<string>
+  /**
+   * When set, ONLY these providers will be enabled. All other providers will be ignored
+   */
   enabled_providers?: Array<string>
+  /**
+   * Model to use in the format of provider/model, eg anthropic/claude-2
+   */
   model?: string
+  /**
+   * Small model to use for tasks like title generation in the format of provider/model
+   */
   small_model?: string
+  /**
+   * Default agent to use when none is specified. Must be a primary agent. Falls back to 'redmind' if not set or if the specified agent is invalid.
+   */
   default_agent?: string
+  /**
+   * Maximum subagent nesting depth. Defaults to 1, which prevents subagents from launching subagents.
+   */
   subagent_depth?: number
+  /**
+   * Custom username to display in conversations instead of the machine hostname
+   */
   username?: string
+  /**
+   * Backend for the image tool. Swapping providers is a config change, not a code change — the tool only assumes an OpenAI-shaped /images/generations and /images/edits.
+   */
   image?: {
+    /**
+     * Auth entry to take the API key from, by provider id (e.g. 'step_plan'). Falls back to REDCODE_IMAGE_API_KEY when unset.
+     */
     provider?: string
+    /**
+     * Base URL of an OpenAI-compatible image API. Generation posts to {baseURL}/images/generations, editing to {baseURL}/images/edits.
+     */
     baseURL?: string
+    /**
+     * Model id used by the image tool
+     */
     model?: string
+    /**
+     * Default output size, e.g. '1024x1024'. Backends accept different sets; a rejected value is reported as-is.
+     */
     size?: string
   }
+  /**
+   * How a message sent while the agent is busy reaches the model. 'steer' (default): injected into the running turn at the next step, so you can redirect work in flight. 'queue': hidden from the running turn and processed as the input of a fresh turn after the current one finishes.
+   */
   busy_enter?: "steer" | "queue"
+  /**
+   * @deprecated Use `agent` field instead.
+   */
   mode?: {
     build?: AgentConfig
     plan?: AgentConfig
     [key: string]: AgentConfig | undefined
   }
+  /**
+   * Agent configuration, see https://redcode.dev/docs/agents
+   */
   agent?: {
     redmind?: AgentConfig
     plan?: AgentConfig
@@ -1335,9 +1548,15 @@ export type Config = {
     compaction?: AgentConfig
     [key: string]: AgentConfig | undefined
   }
+  /**
+   * Custom provider configurations and model overrides
+   */
   provider?: {
     [key: string]: ProviderConfig
   }
+  /**
+   * MCP (Model Context Protocol) server configurations
+   */
   mcp?: {
     [key: string]:
       | McpLocalConfig
@@ -1383,45 +1602,126 @@ export type Config = {
               }
             }
       }
+  /**
+   * Additional instruction files or patterns to include
+   */
   instructions?: Array<string>
+  /**
+   * Instruction prefix budget and remote fetch timeout
+   */
   instruction_budget?: {
+    /**
+     * Maximum size of one instruction source. Sources larger than this are skipped instead of injected in full (default: 1048576)
+     */
     max_source_bytes?: number
+    /**
+     * Hard cap on the total instruction prefix. When exceeded, whole sources are dropped lowest-retention-first (soul, then config instructions, then MEMORY.md, then AGENTS.md) until the total fits - never a partial file. Dropped sources are named in a model-visible notice; a lone remaining source that still exceeds is truncated with a marker (default: 65536)
+     */
     max_total_bytes?: number
+    /**
+     * Maximum total UTF-8 bytes of nearby instructions attached by one read tool result. Sources that do not fit are skipped in full (default: 32768)
+     */
     max_resolved_bytes?: number
+    /**
+     * Timeout for fetching a remote instruction URL, covering the response body as well as the request (default: 5000)
+     */
     fetch_timeout_ms?: number
   }
+  /**
+   * @deprecated Always uses stretch layout.
+   */
   layout?: LayoutConfig
   permission?: PermissionConfig
   tools?: {
     [key: string]: boolean
   }
+  /**
+   * Attachment processing configuration, including image size limits and resizing behavior
+   */
   attachment?: AttachmentConfig
   enterprise?: {
+    /**
+     * Enterprise URL
+     */
     url?: string
   }
+  /**
+   * webfetch tool configuration
+   */
   webfetch?: {
+    /**
+     * Allow the webfetch tool to reach loopback, private, link-local and other non-public addresses (default: false). Leaving this off keeps a model-supplied URL from reaching your LAN or a cloud metadata endpoint; use a shell command when you genuinely need a local address.
+     */
     allow_private_hosts?: boolean
   }
+  /**
+   * Thresholds for truncating tool output. When output exceeds either limit, the full text is written to the truncation directory and a preview is returned.
+   */
   tool_output?: {
+    /**
+     * Maximum lines of tool output before it is truncated and saved to disk (default: 2000)
+     */
     max_lines?: number
+    /**
+     * Maximum bytes of tool output before it is truncated and saved to disk (default: 51200)
+     */
     max_bytes?: number
   }
   compaction?: {
+    /**
+     * Enable automatic compaction when context is full (default: true)
+     */
     auto?: boolean
+    /**
+     * Enable pruning of old tool outputs (default: false)
+     */
     prune?: boolean
+    /**
+     * Number of recent user turns, including their following assistant/tool responses, to keep verbatim during compaction (default: 2)
+     */
     tail_turns?: number
+    /**
+     * Maximum number of tokens from recent turns to preserve verbatim after compaction
+     */
     preserve_recent_tokens?: number
+    /**
+     * Token buffer for compaction. Leaves enough window to avoid overflow during compaction.
+     */
     reserved?: number
+    /**
+     * Hard token ceiling for compaction. When total tokens exceed this value, compaction triggers regardless of the model's declared context limit. Replaces DCP's auto-compress role. (default: none — uses model limit)
+     */
     threshold?: number
   }
   experimental?: {
     disable_paste_summary?: boolean
+    /**
+     * Enable the batch tool
+     */
     batch_tool?: boolean
+    /**
+     * Enable OpenTelemetry spans for AI SDK calls (using the 'experimental_telemetry' flag)
+     */
     openTelemetry?: boolean
+    /**
+     * Tools that should only be available to primary agents.
+     */
     primary_tools?: Array<string>
+    /**
+     * Continue the agent loop when a tool call is denied
+     */
     continue_loop_on_deny?: boolean
+    /**
+     * Timeout in milliseconds for model context protocol (MCP) requests
+     */
     mcp_timeout?: number
+    /**
+     * Automatically continue the agent loop while a goal is active (default off)
+     */
     goal_auto_continue?: boolean
+    /**
+     * Token budget for a goal before it is marked budget_limited
+     */
     goal_token_budget?: number
   }
 }
@@ -4134,6 +4434,9 @@ export type AppLogData = {
      * Log message
      */
     message: string
+    /**
+     * Additional metadata for the log entry
+     */
     extra?: {
       [key: string]: unknown
     }
@@ -6273,6 +6576,9 @@ export type ProviderOauthAuthorizeData = {
      * Auth method index
      */
     method: number
+    /**
+     * Prompt inputs
+     */
     inputs?: {
       [key: string]: string
     }
@@ -6311,6 +6617,9 @@ export type ProviderOauthCallbackData = {
      * Auth method index
      */
     method: number
+    /**
+     * OAuth authorization code
+     */
     code?: string
   }
   path: {
@@ -6873,6 +7182,9 @@ export type SessionPromptData = {
     agent?: string
     noReply?: boolean
     delivery?: "queue" | "steer"
+    /**
+     * @deprecated tools and permissions have been merged, you can set permissions on the session itself now
+     */
     tools?: {
       [key: string]: boolean
     }
@@ -7250,6 +7562,9 @@ export type SessionPromptAsyncData = {
     agent?: string
     noReply?: boolean
     delivery?: "queue" | "steer"
+    /**
+     * @deprecated tools and permissions have been merged, you can set permissions on the session itself now
+     */
     tools?: {
       [key: string]: boolean
     }
@@ -7851,6 +8166,9 @@ export type V2SessionListData = {
     directory?: string
     workspace?: string
     limit?: number
+    /**
+     * Session order for the first page. Use desc for newest first or asc for oldest first.
+     */
     order?: "asc" | "desc"
     path?: string
     roots?: boolean | "true" | "false"
@@ -8066,6 +8384,9 @@ export type V2SessionMessagesData = {
     directory?: string
     workspace?: string
     limit?: number
+    /**
+     * Message order for the first page. Use desc for newest first or asc for oldest first.
+     */
     order?: "asc" | "desc"
     /**
      * Opaque pagination cursor returned as cursor.previous or cursor.next in the previous response. Do not combine with order.

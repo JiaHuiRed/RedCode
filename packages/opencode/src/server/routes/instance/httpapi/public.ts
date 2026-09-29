@@ -464,13 +464,25 @@ function stripOptionalNull(schema: OpenApiSchema): OpenApiSchema {
     return stripOptionalNull({ ...schema, ...constraint })
   }
   if (isEmptyObjectUnion(schema)) return { type: "object", properties: {} }
-  const options = flattenOptions(schema.anyOf ?? schema.oneOf)
-  if (options) {
-    const withoutNull = options.filter((item) => item.type !== "null")
-    if (withoutNull.length === 1) return stripOptionalNull(withoutNull[0])
-    if (schema.anyOf) schema.anyOf = withoutNull.map(stripOptionalNull)
-    if (schema.oneOf) schema.oneOf = withoutNull.map(stripOptionalNull)
-  }
+ const options = flattenOptions(schema.anyOf ?? schema.oneOf)
+ if (options) {
+   const withoutNull = options.filter((item) => item.type !== "null")
+   // 260930 Karina 单臂塌缩时把外层的 description 带回去。Schema.optional(X).annotate({description})
+   // 在 OpenAPI 里是 {anyOf:[X,{type:"null"}], description}，而这里过滤掉 null 后只剩
+   // 一个臂，原先直接 return 那个臂——外层连同它的 description 一起被丢掉。后果不是
+   // 「个别字段没描述」，而是 Config 40 个字段里 37 个的描述凭空消失：instructions /
+   // instruction_budget / enterprise / webfetch / attachment / compaction 全是单臂 optional，
+   // ProviderConfig 的 chunkTimeout、setCacheKey 同理；只有 autoupdate / formatter / lsp
+   // 这种 union 有多个非 null 臂的能活下来。ProviderConfig.timeout 之所以有描述，是作者
+   // 把同一句话抄在了内层 union 和外层 optional 上——那个重复抄写就是本 bug 的工号。
+   // 臂自己带描述时以臂为准（更具体），否则才用外层的。
+   if (withoutNull.length === 1) {
+     const only = stripOptionalNull(withoutNull[0])
+     return schema.description && !only.description ? { ...only, description: schema.description } : only
+   }
+   if (schema.anyOf) schema.anyOf = withoutNull.map(stripOptionalNull)
+   if (schema.oneOf) schema.oneOf = withoutNull.map(stripOptionalNull)
+ }
   if (schema.allOf) {
     const allOf = schema.allOf.map(stripOptionalNull)
     if (schema.type) {

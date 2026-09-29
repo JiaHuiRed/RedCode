@@ -195,7 +195,8 @@
                     "description": "Log message"
                   },
                   "extra": {
-                    "type": "object"
+                    "type": "object",
+                    "description": "Additional metadata for the log entry"
                   }
                 },
                 "required": ["service", "level", "message"],
@@ -5002,7 +5003,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProviderAuthAuthorization"
+                  "$ref": "#/components/schemas/ProviderAuthAuthorization",
+                  "description": "Authorization URL and method"
                 }
               }
             }
@@ -5041,7 +5043,8 @@
                     "type": "object",
                     "additionalProperties": {
                       "type": "string"
-                    }
+                    },
+                    "description": "Prompt inputs"
                   }
                 },
                 "required": ["method"],
@@ -5131,7 +5134,8 @@
                     "description": "Auth method index"
                   },
                   "code": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "OAuth authorization code"
                   }
                 },
                 "required": ["method"],
@@ -6646,7 +6650,8 @@
                     "type": "object",
                     "additionalProperties": {
                       "type": "boolean"
-                    }
+                    },
+                    "description": "@deprecated tools and permissions have been merged, you can set permissions on the session itself now"
                   },
                   "format": {
                     "$ref": "#/components/schemas/OutputFormat"
@@ -7600,7 +7605,8 @@
                     "type": "object",
                     "additionalProperties": {
                       "type": "boolean"
-                    }
+                    },
+                    "description": "@deprecated tools and permissions have been merged, you can set permissions on the session itself now"
                   },
                   "format": {
                     "$ref": "#/components/schemas/OutputFormat"
@@ -9167,7 +9173,8 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "enum": ["asc", "desc"]
+              "enum": ["asc", "desc"],
+              "description": "Session order for the first page. Use desc for newest first or asc for oldest first."
             },
             "required": false
           },
@@ -9705,7 +9712,8 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "enum": ["asc", "desc"]
+              "enum": ["asc", "desc"],
+              "description": "Message order for the first page. Use desc for newest first or asc for oldest first."
             },
             "required": false
           },
@@ -11295,7 +11303,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Workspace"
+                  "$ref": "#/components/schemas/Workspace",
+                  "description": "Workspace removed"
                 }
               }
             }
@@ -12739,10 +12748,12 @@
             "description": "Available choices"
           },
           "multiple": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Allow selecting multiple choices"
           },
           "custom": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Allow typing a custom answer (default: true)"
           }
         },
         "required": ["question", "header", "options"],
@@ -14843,22 +14854,27 @@
         "properties": {
           "port": {
             "type": "integer",
-            "exclusiveMinimum": 0
+            "exclusiveMinimum": 0,
+            "description": "Port to listen on"
           },
           "hostname": {
-            "type": "string"
+            "type": "string",
+            "description": "Hostname to listen on"
           },
           "mdns": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Enable mDNS service discovery"
           },
           "mdnsDomain": {
-            "type": "string"
+            "type": "string",
+            "description": "Custom domain name for mDNS service (default: redcode.local)"
           },
           "cors": {
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Additional domains to allow for CORS"
           }
         },
         "additionalProperties": false,
@@ -14877,7 +14893,8 @@
                 "description": "Git repository URL, host/path reference, or GitHub owner/repo shorthand"
               },
               "branch": {
-                "type": "string"
+                "type": "string",
+                "description": "Branch or ref Scout should clone and inspect"
               }
             },
             "required": ["repository"],
@@ -14995,7 +15012,8 @@
             "type": "string"
           },
           "variant": {
-            "type": "string"
+            "type": "string",
+            "description": "Default model variant for this agent (applies only when using the agent's configured model)."
           },
           "temperature": {
             "type": "number"
@@ -15010,20 +15028,23 @@
             "type": "object",
             "additionalProperties": {
               "type": "boolean"
-            }
+            },
+            "description": "@deprecated Use 'permission' field instead"
           },
           "disable": {
             "type": "boolean"
           },
           "description": {
-            "type": "string"
+            "type": "string",
+            "description": "Description of when to use the agent"
           },
           "mode": {
             "type": "string",
             "enum": ["subagent", "primary", "all"]
           },
           "hidden": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Hide this subagent from the @ autocomplete menu (default: false, only applies to mode: subagent)"
           },
           "options": {
             "type": "object"
@@ -15043,11 +15064,13 @@
           },
           "steps": {
             "type": "integer",
-            "exclusiveMinimum": 0
+            "exclusiveMinimum": 0,
+            "description": "Maximum number of agentic iterations before forcing text-only response"
           },
           "maxSteps": {
             "type": "integer",
-            "exclusiveMinimum": 0
+            "exclusiveMinimum": 0,
+            "description": "@deprecated Use 'steps' field instead."
           },
           "permission": {
             "$ref": "#/components/schemas/PermissionConfig"
@@ -15098,10 +15121,12 @@
                 "type": "string"
               },
               "enterpriseUrl": {
-                "type": "string"
+                "type": "string",
+                "description": "GitHub Enterprise URL for copilot authentication"
               },
               "setCacheKey": {
-                "type": "boolean"
+                "type": "boolean",
+                "description": "Enable promptCacheKey for this provider (default false)"
               },
               "timeout": {
                 "anyOf": [
@@ -15118,7 +15143,8 @@
               },
               "chunkTimeout": {
                 "type": "integer",
-                "exclusiveMinimum": 0
+                "exclusiveMinimum": 0,
+                "description": "Timeout in milliseconds between streamed SSE chunks for this provider. If no chunk arrives within this window, the request is aborted."
               }
             },
             "additionalProperties": {}
@@ -15183,7 +15209,8 @@
                     },
                     "currency": {
                       "type": "string",
-                      "enum": ["USD", "CNY"]
+                      "enum": ["USD", "CNY"],
+                      "description": "Currency these prices are quoted in. \"CNY\" skips the USD→CNY conversion in cost display (TUI footer, TUI sidebar, GUI context panel, home stats). Custom CNY-priced providers declare this here — no source-code change needed."
                     },
                     "cache_read": {
                       "type": "number"
@@ -15283,7 +15310,8 @@
                   "type": "object",
                   "additionalProperties": {
                     "type": "boolean"
-                  }
+                  },
+                  "description": "Explicitly enable/disable tools for this model (e.g. {\"apply_patch\": true, \"edit\": false}). Overrides the built-in model-family heuristic that picks apply_patch vs edit/write by model id. Keyed by the model's API id."
                 },
                 "variants": {
                   "type": "object",
@@ -15291,7 +15319,8 @@
                     "type": "object",
                     "properties": {
                       "disabled": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "description": "Disable this variant for the model"
                       }
                     },
                     "additionalProperties": {}
@@ -15321,36 +15350,43 @@
             "description": "Command and arguments to run the MCP server"
           },
           "cwd": {
-            "type": "string"
+            "type": "string",
+            "description": "Working directory for resolving relative paths in the command and environment. Supports ~/ expansion for the user's home directory. Defaults to the project root of the directory being worked on."
           },
           "environment": {
             "type": "object",
             "additionalProperties": {
               "type": "string"
-            }
+            },
+            "description": "Environment variables to set when running the MCP server"
           },
           "enabled": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Enable or disable the MCP server on startup"
           },
           "timeout": {
             "type": "integer",
-            "exclusiveMinimum": 0
+            "exclusiveMinimum": 0,
+            "description": "Timeout in ms for MCP server requests. Defaults to 30000 (30 seconds) if not specified."
           },
           "retry": {
             "type": "string",
-            "enum": ["default", "none"]
+            "enum": ["default", "none"],
+            "description": "Retry policy for tool calls. Use none for non-idempotent MCP actions."
           },
           "disabledTools": {
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Tool names to hide from this MCP server. Only tools not in this list will be exposed."
           },
           "tools": {
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Whitelist: only these tool names are injected into the prompt. Omit to expose all tools. Empty array hides every tool (server stays connected but contributes nothing)."
           }
         },
         "required": ["type", "command"],
@@ -15360,21 +15396,26 @@
         "type": "object",
         "properties": {
           "clientId": {
-            "type": "string"
+            "type": "string",
+            "description": "OAuth client ID. If not provided, dynamic client registration (RFC 7591) will be attempted."
           },
           "clientSecret": {
-            "type": "string"
+            "type": "string",
+            "description": "OAuth client secret (if required by the authorization server)"
           },
           "scope": {
-            "type": "string"
+            "type": "string",
+            "description": "OAuth scopes to request during authorization"
           },
           "callbackPort": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 65535
+            "maximum": 65535,
+            "description": "Port for the local OAuth callback server (default: 19876). Shorthand for redirectUri when only the port needs changing. Ignored if redirectUri is set."
           },
           "redirectUri": {
-            "type": "string"
+            "type": "string",
+            "description": "OAuth redirect URI (default: http://127.0.0.1:19876/mcp/oauth/callback)."
           }
         },
         "additionalProperties": false
@@ -15392,13 +15433,15 @@
             "description": "URL of the remote MCP server"
           },
           "enabled": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Enable or disable the MCP server on startup"
           },
           "headers": {
             "type": "object",
             "additionalProperties": {
               "type": "string"
-            }
+            },
+            "description": "Headers to send with the request"
           },
           "oauth": {
             "anyOf": [
@@ -15414,17 +15457,20 @@
           },
           "timeout": {
             "type": "integer",
-            "exclusiveMinimum": 0
+            "exclusiveMinimum": 0,
+            "description": "Timeout in ms for MCP server requests. Defaults to 30000 (30 seconds) if not specified."
           },
           "retry": {
             "type": "string",
-            "enum": ["default", "none"]
+            "enum": ["default", "none"],
+            "description": "Retry policy for tool calls. Use none for non-idempotent MCP actions."
           },
           "tools": {
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Whitelist: only these tool names are injected into the prompt. Omit to expose all tools. Empty array hides every tool (server stays connected but contributes nothing)."
           }
         },
         "required": ["type", "url"],
@@ -15439,27 +15485,33 @@
         "type": "object",
         "properties": {
           "auto_resize": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Resize images before sending them to the model when they exceed configured limits (default: true)"
           },
           "max_width": {
             "type": "integer",
-            "exclusiveMinimum": 0
+            "exclusiveMinimum": 0,
+            "description": "@deprecated Scaling is driven by max_pixels; this now only contributes to the default pixel budget (max_width * max_height) when max_pixels is unset."
           },
           "max_height": {
             "type": "integer",
-            "exclusiveMinimum": 0
+            "exclusiveMinimum": 0,
+            "description": "@deprecated Scaling is driven by max_pixels; this now only contributes to the default pixel budget (max_width * max_height) when max_pixels is unset."
           },
           "max_pixels": {
             "type": "integer",
-            "exclusiveMinimum": 0
+            "exclusiveMinimum": 0,
+            "description": "Total pixel budget for an attached image (default: 4000000, i.e. 2000x2000). The raster is scaled proportionally to fit this budget, so an extreme aspect ratio such as a tall page screenshot keeps its short-edge resolution instead of being crushed by a per-side box."
           },
           "max_dimension": {
             "type": "integer",
-            "exclusiveMinimum": 0
+            "exclusiveMinimum": 0,
+            "description": "Hard per-side cap applied after the pixel budget (default: 8192). Guards against extreme single-axis sizes that providers reject."
           },
           "max_base64_bytes": {
             "type": "integer",
-            "exclusiveMinimum": 0
+            "exclusiveMinimum": 0,
+            "description": "Maximum base64 payload bytes for an image attachment (default: 5242880)"
           }
         },
         "additionalProperties": false
@@ -15468,7 +15520,8 @@
         "type": "object",
         "properties": {
           "image": {
-            "$ref": "#/components/schemas/ImageAttachmentConfig"
+            "$ref": "#/components/schemas/ImageAttachmentConfig",
+            "description": "Image attachment configuration"
           }
         },
         "additionalProperties": false
@@ -15477,16 +15530,20 @@
         "type": "object",
         "properties": {
           "$schema": {
-            "type": "string"
+            "type": "string",
+            "description": "JSON schema reference for configuration validation"
           },
           "shell": {
-            "type": "string"
+            "type": "string",
+            "description": "Default shell to use for terminal and bash tool"
           },
           "logLevel": {
-            "$ref": "#/components/schemas/LogLevel"
+            "$ref": "#/components/schemas/LogLevel",
+            "description": "Log level"
           },
           "server": {
-            "$ref": "#/components/schemas/ServerConfig"
+            "$ref": "#/components/schemas/ServerConfig",
+            "description": "Server configuration for redcode serve and web commands"
           },
           "command": {
             "type": "object",
@@ -15511,7 +15568,8 @@
               },
               "required": ["template"],
               "additionalProperties": false
-            }
+            },
+            "description": "Command configuration, see https://redcode.dev/docs/commands"
           },
           "skills": {
             "type": "object",
@@ -15520,19 +15578,23 @@
                 "type": "array",
                 "items": {
                   "type": "string"
-                }
+                },
+                "description": "Additional paths to skill folders"
               },
               "urls": {
                 "type": "array",
                 "items": {
                   "type": "string"
-                }
+                },
+                "description": "URLs to fetch skills from (e.g., https://example.com/.well-known/skills/)"
               }
             },
-            "additionalProperties": false
+            "additionalProperties": false,
+            "description": "Additional skill folder paths"
           },
           "reference": {
-            "$ref": "#/components/schemas/ReferenceConfig"
+            "$ref": "#/components/schemas/ReferenceConfig",
+            "description": "Named git or local directory references that can be mentioned as @alias or @alias/path"
           },
           "watcher": {
             "type": "object",
@@ -15547,7 +15609,8 @@
             "additionalProperties": false
           },
           "snapshot": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Enable or disable snapshot tracking. When false, filesystem snapshots are not recorded and undoing or reverting will not undo/redo file changes. Defaults to true."
           },
           "plugin": {
             "type": "array",
@@ -15575,10 +15638,12 @@
           "dcp": {},
           "share": {
             "type": "string",
-            "enum": ["manual", "auto", "disabled"]
+            "enum": ["manual", "auto", "disabled"],
+            "description": "Control sharing behavior:'manual' allows manual sharing via commands, 'auto' enables automatic sharing, 'disabled' disables all sharing"
           },
           "autoshare": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "@deprecated Use 'share' field instead. Share newly created sessions automatically"
           },
           "autoupdate": {
             "anyOf": [
@@ -15596,51 +15661,64 @@
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Disable providers that are loaded automatically"
           },
           "enabled_providers": {
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "When set, ONLY these providers will be enabled. All other providers will be ignored"
           },
           "model": {
-            "type": "string"
+            "type": "string",
+            "description": "Model to use in the format of provider/model, eg anthropic/claude-2"
           },
           "small_model": {
-            "type": "string"
+            "type": "string",
+            "description": "Small model to use for tasks like title generation in the format of provider/model"
           },
           "default_agent": {
-            "type": "string"
+            "type": "string",
+            "description": "Default agent to use when none is specified. Must be a primary agent. Falls back to 'redmind' if not set or if the specified agent is invalid."
           },
           "subagent_depth": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "description": "Maximum subagent nesting depth. Defaults to 1, which prevents subagents from launching subagents."
           },
           "username": {
-            "type": "string"
+            "type": "string",
+            "description": "Custom username to display in conversations instead of the machine hostname"
           },
           "image": {
             "type": "object",
             "properties": {
               "provider": {
-                "type": "string"
+                "type": "string",
+                "description": "Auth entry to take the API key from, by provider id (e.g. 'step_plan'). Falls back to REDCODE_IMAGE_API_KEY when unset."
               },
               "baseURL": {
-                "type": "string"
+                "type": "string",
+                "description": "Base URL of an OpenAI-compatible image API. Generation posts to {baseURL}/images/generations, editing to {baseURL}/images/edits."
               },
               "model": {
-                "type": "string"
+                "type": "string",
+                "description": "Model id used by the image tool"
               },
               "size": {
-                "type": "string"
+                "type": "string",
+                "description": "Default output size, e.g. '1024x1024'. Backends accept different sets; a rejected value is reported as-is."
               }
             },
-            "additionalProperties": false
+            "additionalProperties": false,
+            "description": "Backend for the image tool. Swapping providers is a config change, not a code change — the tool only assumes an OpenAI-shaped /images/generations and /images/edits."
           },
           "busy_enter": {
             "type": "string",
-            "enum": ["steer", "queue"]
+            "enum": ["steer", "queue"],
+            "description": "How a message sent while the agent is busy reaches the model. 'steer' (default): injected into the running turn at the next step, so you can redirect work in flight. 'queue': hidden from the running turn and processed as the input of a fresh turn after the current one finishes."
           },
           "mode": {
             "type": "object",
@@ -15654,7 +15732,8 @@
             },
             "additionalProperties": {
               "$ref": "#/components/schemas/AgentConfig"
-            }
+            },
+            "description": "@deprecated Use `agent` field instead."
           },
           "agent": {
             "type": "object",
@@ -15683,13 +15762,15 @@
             },
             "additionalProperties": {
               "$ref": "#/components/schemas/AgentConfig"
-            }
+            },
+            "description": "Agent configuration, see https://redcode.dev/docs/agents"
           },
           "provider": {
             "type": "object",
             "additionalProperties": {
               "$ref": "#/components/schemas/ProviderConfig"
-            }
+            },
+            "description": "Custom provider configurations and model overrides"
           },
           "mcp": {
             "type": "object",
@@ -15712,7 +15793,8 @@
                   "additionalProperties": false
                 }
               ]
-            }
+            },
+            "description": "MCP (Model Context Protocol) server configurations"
           },
           "formatter": {
             "anyOf": [
@@ -15813,32 +15895,39 @@
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Additional instruction files or patterns to include"
           },
           "instruction_budget": {
             "type": "object",
             "properties": {
               "max_source_bytes": {
                 "type": "integer",
-                "exclusiveMinimum": 0
+                "exclusiveMinimum": 0,
+                "description": "Maximum size of one instruction source. Sources larger than this are skipped instead of injected in full (default: 1048576)"
               },
               "max_total_bytes": {
                 "type": "integer",
-                "exclusiveMinimum": 0
+                "exclusiveMinimum": 0,
+                "description": "Hard cap on the total instruction prefix. When exceeded, whole sources are dropped lowest-retention-first (soul, then config instructions, then MEMORY.md, then AGENTS.md) until the total fits - never a partial file. Dropped sources are named in a model-visible notice; a lone remaining source that still exceeds is truncated with a marker (default: 65536)"
               },
               "max_resolved_bytes": {
                 "type": "integer",
-                "exclusiveMinimum": 0
+                "exclusiveMinimum": 0,
+                "description": "Maximum total UTF-8 bytes of nearby instructions attached by one read tool result. Sources that do not fit are skipped in full (default: 32768)"
               },
               "fetch_timeout_ms": {
                 "type": "integer",
-                "exclusiveMinimum": 0
+                "exclusiveMinimum": 0,
+                "description": "Timeout for fetching a remote instruction URL, covering the response body as well as the request (default: 5000)"
               }
             },
-            "additionalProperties": false
+            "additionalProperties": false,
+            "description": "Instruction prefix budget and remote fetch timeout"
           },
           "layout": {
-            "$ref": "#/components/schemas/LayoutConfig"
+            "$ref": "#/components/schemas/LayoutConfig",
+            "description": "@deprecated Always uses stretch layout."
           },
           "permission": {
             "$ref": "#/components/schemas/PermissionConfig"
@@ -15850,13 +15939,15 @@
             }
           },
           "attachment": {
-            "$ref": "#/components/schemas/AttachmentConfig"
+            "$ref": "#/components/schemas/AttachmentConfig",
+            "description": "Attachment processing configuration, including image size limits and resizing behavior"
           },
           "enterprise": {
             "type": "object",
             "properties": {
               "url": {
-                "type": "string"
+                "type": "string",
+                "description": "Enterprise URL"
               }
             },
             "additionalProperties": false
@@ -15865,49 +15956,60 @@
             "type": "object",
             "properties": {
               "allow_private_hosts": {
-                "type": "boolean"
+                "type": "boolean",
+                "description": "Allow the webfetch tool to reach loopback, private, link-local and other non-public addresses (default: false). Leaving this off keeps a model-supplied URL from reaching your LAN or a cloud metadata endpoint; use a shell command when you genuinely need a local address."
               }
             },
-            "additionalProperties": false
+            "additionalProperties": false,
+            "description": "webfetch tool configuration"
           },
           "tool_output": {
             "type": "object",
             "properties": {
               "max_lines": {
                 "type": "integer",
-                "exclusiveMinimum": 0
+                "exclusiveMinimum": 0,
+                "description": "Maximum lines of tool output before it is truncated and saved to disk (default: 2000)"
               },
               "max_bytes": {
                 "type": "integer",
-                "exclusiveMinimum": 0
+                "exclusiveMinimum": 0,
+                "description": "Maximum bytes of tool output before it is truncated and saved to disk (default: 51200)"
               }
             },
-            "additionalProperties": false
+            "additionalProperties": false,
+            "description": "Thresholds for truncating tool output. When output exceeds either limit, the full text is written to the truncation directory and a preview is returned."
           },
           "compaction": {
             "type": "object",
             "properties": {
               "auto": {
-                "type": "boolean"
+                "type": "boolean",
+                "description": "Enable automatic compaction when context is full (default: true)"
               },
               "prune": {
-                "type": "boolean"
+                "type": "boolean",
+                "description": "Enable pruning of old tool outputs (default: false)"
               },
               "tail_turns": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "description": "Number of recent user turns, including their following assistant/tool responses, to keep verbatim during compaction (default: 2)"
               },
               "preserve_recent_tokens": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "description": "Maximum number of tokens from recent turns to preserve verbatim after compaction"
               },
               "reserved": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "description": "Token buffer for compaction. Leaves enough window to avoid overflow during compaction."
               },
               "threshold": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "description": "Hard token ceiling for compaction. When total tokens exceed this value, compaction triggers regardless of the model's declared context limit. Replaces DCP's auto-compress role. (default: none — uses model limit)"
               }
             },
             "additionalProperties": false
@@ -15919,30 +16021,37 @@
                 "type": "boolean"
               },
               "batch_tool": {
-                "type": "boolean"
+                "type": "boolean",
+                "description": "Enable the batch tool"
               },
               "openTelemetry": {
-                "type": "boolean"
+                "type": "boolean",
+                "description": "Enable OpenTelemetry spans for AI SDK calls (using the 'experimental_telemetry' flag)"
               },
               "primary_tools": {
                 "type": "array",
                 "items": {
                   "type": "string"
-                }
+                },
+                "description": "Tools that should only be available to primary agents."
               },
               "continue_loop_on_deny": {
-                "type": "boolean"
+                "type": "boolean",
+                "description": "Continue the agent loop when a tool call is denied"
               },
               "mcp_timeout": {
                 "type": "integer",
-                "exclusiveMinimum": 0
+                "exclusiveMinimum": 0,
+                "description": "Timeout in milliseconds for model context protocol (MCP) requests"
               },
               "goal_auto_continue": {
-                "type": "boolean"
+                "type": "boolean",
+                "description": "Automatically continue the agent loop while a goal is active (default off)"
               },
               "goal_token_budget": {
                 "type": "integer",
-                "exclusiveMinimum": 0
+                "exclusiveMinimum": 0,
+                "description": "Token budget for a goal before it is marked budget_limited"
               }
             },
             "additionalProperties": false
