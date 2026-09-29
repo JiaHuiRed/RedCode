@@ -1,6 +1,6 @@
 import type { TuiPlugin, TuiPluginApi } from "@redcode-ai/plugin/tui"
 import type { InternalTuiPlugin } from "../../plugin/internal"
-import { createMemo, For, onCleanup, onMount, Show } from "solid-js"
+import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 
 const id = "internal:sidebar-quota"
 
@@ -8,6 +8,9 @@ const id = "internal:sidebar-quota"
 // 服务端同时捕获 GPT 响应头并查询 GLM Coding Plan 监控接口；这里每分钟触发一次刷新。
 function View(props: { api: TuiPluginApi }) {
   const theme = () => props.api.theme.current
+  // 260929 Red 第三个账单面板（Step Plan）进来后，三套餐齐显会挤爆侧栏；对齐 MCP 的折叠模式，
+  // 多于一个套餐才出箭头，单套餐保持原样不折。
+  const [open, setOpen] = createSignal(true)
   const list = createMemo(() => props.api.state.provider_quota())
 
   onMount(() => {
@@ -94,32 +97,43 @@ function View(props: { api: TuiPluginApi }) {
         titleAlignment="left"
         paddingTop={0}
       >
-        <For each={list()}>
-          {(q) => (
-            <box flexDirection="column" gap={0}>
-              <box flexDirection="row" justifyContent="space-between" gap={1}>
-                <text flexShrink={0} fg={theme().text}>
-                  <b>{q.planType}</b>
-                </text>
-                <Show when={q.accountID}>
-                  {(accountID) => <text fg={theme().textMuted}>{shortAccount(accountID())}</text>}
+        <box
+          flexDirection="row"
+          gap={1}
+          onMouseDown={() => list().length > 1 && setOpen((x) => !x)}
+        >
+          <Show when={list().length > 1}>
+            <text fg={theme().textMuted}>{open() ? "▾" : "▸"}</text>
+          </Show>
+        </box>
+        <Show when={list().length <= 1 || open()}>
+          <For each={list()}>
+            {(q) => (
+              <box flexDirection="column" gap={0}>
+                <box flexDirection="row" justifyContent="space-between" gap={1}>
+                  <text flexShrink={0} fg={theme().text}>
+                    <b>{q.planType}</b>
+                  </text>
+                  <Show when={q.accountID}>
+                    {(accountID) => <text fg={theme().textMuted}>{shortAccount(accountID())}</text>}
+                  </Show>
+                </box>
+                <Show when={q.primary}>
+                  <WindowRow label="Primary" window={q.primary!} />
+                </Show>
+                <Show when={q.secondary}>
+                  <WindowRow label="Weekly" window={q.secondary!} showDuration={false} />
+                </Show>
+                <Show when={q.reserve}>
+                  <WindowRow label={q.reserveName ?? "Reserve"} window={q.reserve!} />
+                </Show>
+                <Show when={!q.primary && !q.secondary && !q.reserve}>
+                  <text fg={theme().textMuted}>—</text>
                 </Show>
               </box>
-              <Show when={q.primary}>
-                <WindowRow label="Primary" window={q.primary!} />
-              </Show>
-              <Show when={q.secondary}>
-                <WindowRow label="Weekly" window={q.secondary!} showDuration={false} />
-              </Show>
-              <Show when={q.reserve}>
-                <WindowRow label={q.reserveName ?? "Reserve"} window={q.reserve!} />
-              </Show>
-              <Show when={!q.primary && !q.secondary && !q.reserve}>
-                <text fg={theme().textMuted}>—</text>
-              </Show>
-            </box>
-          )}
-        </For>
+            )}
+          </For>
+        </Show>
       </box>
     </Show>
   )
