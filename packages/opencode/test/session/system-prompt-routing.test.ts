@@ -48,6 +48,14 @@ describe("system prompt routing", () => {
     for (const id of ["step-3.7-flash", "step-5-preview"])
       expect(provider(model(id, "stepfun-step-plan"))).toEqual([PROMPT_DEFAULT, PROMPT_STEP])
   })
+
+ // 260929 Red step-5-preview 实战三样本（伪 tool-call 文本 ×2、长思考中断、reasoning
+ // 泄漏进正文）后，把「native tool-call 通道」条款提到 step.md 第一条。这条断言钉住
+ // 它不被后续编辑挪回中段——官方 Step-Code 的 operating contract 同样把它放在第一条。
+ test("step.md 把工具通道条款放在第一条", () => {
+   const firstBullet = PROMPT_STEP.split("\n").find((line) => line.startsWith("- "))
+   expect(firstBullet).toContain("native tool-call channel only")
+ })
 })
 
 describe("推理锚归属", () => {

@@ -1624,9 +1624,13 @@ export const layer = Layer.effect(
   2. FAIL → DIAGNOSE → PIVOT — after 2 same-direction failures, force-switch approach AND report facts/cause/new-plan to user.
   3. NEVER suggest the user rest / give up / pause / resume later / ask someone else — in ANY language (e.g. "去休息吧", "下次继续", "叫别人来做", "let's stop for today", "put it aside", "come back to this later"). That is the WORST violation: you are making the user's decision for them. Instead: admit "I cannot" + reason + alternative, or switch approach and keep working.`,
           )
-          // 260805 Red step 模型专用：step 经常无视 DCP nudge 不调用 compress，
-          // 这里直接用铁律约束，不依赖 soft nudge。非 step 模型不动。
-          if (model.providerID === "stepfun" || model.id.toLowerCase().includes("step")) {
+          // 260929 Red 收窄到 step-3.x：铁律本是 step-3.7-flash 实测坑（无视 compress nudge
+          // 不调用 compress）；step-5-preview 指令遵循已跟上，1M 窗口 + DCP 新线
+          // （min 140k / max 220k）下不需要 MUST 级压迫，absoluteNudge 16k 收益档兜底。
+          if (
+            (model.providerID === "stepfun" || model.id.toLowerCase().includes("step")) &&
+            !model.id.toLowerCase().includes("step-5")
+          ) {
             system.push(
               `▸ CONTEXT COMPRESSION (MUST follow when receiving  warnings):
   1. When you see "MAX CONTEXT LIMIT REACHED" or similar context warnings, you MUST call the compress tool immediately.
