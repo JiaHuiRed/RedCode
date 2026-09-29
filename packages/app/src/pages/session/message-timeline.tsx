@@ -73,7 +73,7 @@ import { useSync } from "@/context/sync"
 import { messageAgentColor } from "@/utils/agent"
 import { sessionTitle } from "@/utils/session-title"
 import { makeTimer } from "@solid-primitives/timer"
-import { MessageComment, SummaryDiff, Timeline, TimelineRow, TimelineRowMap } from "./message-timeline.data"
+import { MessageComment, SummaryDiff, Timeline, TimelineCache, TimelineRow, TimelineRowMap } from "./message-timeline.data"
 
 const emptyMessages: MessageType[] = []
 const emptyParts: PartType[] = []
@@ -101,7 +101,7 @@ const nativeTimelineEnabled = () =>
 
 const timelineCacheLimit = 16
 const timelineFallbackItemSize = 60
-const timelineCache = new Map<string, { keys: readonly string[]; width: number; cache: VirtualizerHandle["cache"] }>()
+const timelineCache = new TimelineCache.CacheTable<VirtualizerHandle["cache"]>(timelineCacheLimit)
 
 // 260821 Red 前缀判据的来历：BottomSpacer 恒在最后一行，行插入时它被新行顶后一位——比较前先剔除
 // 末位 spacer，否则每次行插入（工具行等）都 invalidate → 60px 整列塌缩。行只追加在末尾时旧缓存
@@ -111,20 +111,6 @@ const timelineCache = new Map<string, { keys: readonly string[]; width: number; 
 // 260920 Red 判据整体收进 TimelineRow.cacheReusable（纯模块、能单测），并补上此前缺失的
 // **viewport 宽度**有效域：宽度一变，Markdown/代码块/diff 行的换行全部重排，行高随之改变，
 // 而 row key 一个都没变 —— 旧测量值被接受后 Virtua 会用错误 offset 计算可视区间。
-function readTimelineCache(id: string, keys: readonly string[], width: number) {
-  const entry = timelineCache.get(id)
-  if (!entry) return
-  if (TimelineRow.cacheReusable(entry, keys, width)) return entry.cache
-  timelineCache.delete(id)
-}
-
-function writeTimelineCache(id: string, keys: readonly string[], width: number, handle: VirtualizerHandle | undefined) {
-  if (!handle || keys.length === 0) return
-  timelineCache.delete(id)
-  timelineCache.set(id, { keys: keys.slice(), width, cache: handle.cache })
-  while (timelineCache.size > timelineCacheLimit) timelineCache.delete(timelineCache.keys().next().value!)
-}
-
 // 260901 cc 搬到 message-timeline.data.ts 的 TimelineRow.reuse，那边是纯模块、能单测。
 const reuseTimelineRows = TimelineRow.reuse
 
@@ -347,7 +333,13 @@ export function MessageTimeline(props: {
   const { params, sessionKey } = useSessionKey()
   const platform = usePlatform()
 
-  let virtualizer: VirtualizerHandle | undefined
+  // 260929 Red handle 与 session 的唯一配对点：只有 Virtualizer 自己的 ref 能同时看到两者。
+// 此前组件级 let virtualizer 与 cacheSessionKey/cacheRowKeys/virtualizerSessionKey/
+// virtualizerRowKeys 四个 let 分散配对，切会话必然产出「新 key + 旧 handle」的别名条目，
+// 而 cacheReusable 只比 key 前缀、比对必然通过 → 切回会话把别人的实测尺寸当自己的用。
+// mounted 之外的代码一律不许碰 handle。
+let mounted: { session: string; keys: readonly string[]; handle: VirtualizerHandle } | undefined
+let cacheWriteFrame: number | undefined
   // 260920 Red viewport 宽度参与 timeline cache 有效域（见 readTimelineCache）。宽度变化由
   // scrollRoot 上的 ResizeObserver 写回；尚未测量时为 0，cacheReusable 对 0 保持宽松判据。
   const [listWidth, setListWidth] = createSignal(0)
@@ -542,7 +534,7 @@ export function MessageTimeline(props: {
     return reuseTimelineRows(previous, [...rows, new TimelineRow.BottomSpacer()])
   })
   const timelineRowKeys = createMemo(() => timelineRows().map(TimelineRow.key), [] as string[], { equals: sameKeys })
-  const virtualCache = createMemo(() => readTimelineCache(sessionKey(), timelineRowKeys(), listWidth()))
+  const virtualCache = createMemo(() => timelineCache.read(sessionKey(), timelineRowKeys(), listWidth()))
   const messageRowIndex = createMemo(() => {
     const result = new Map<string, number>()
     timelineRows().forEach((row, index) => {
@@ -644,7 +636,7 @@ export function MessageTimeline(props: {
   const canAnchorBottom = () => {
     // 260921 Red virtua 路径必须有 handle 才能算底部；native 路径没有 handle，
     // 但锚定本身只写 listRoot.scrollTop（见 anchorMeasuredBottom），不依赖 virtua。
-    if (nativeTimelineEnabled() ? false : !virtualizer) return false
+    if (nativeTimelineEnabled() ? false : !mounted) return false
     if (!props.shouldAnchorBottom() && !measuredBottomAnchored) return false
     return timelineRowKeys().length > 0
   }
@@ -694,21 +686,17 @@ export function MessageTimeline(props: {
         listRoot.scrollTop = listRoot.scrollHeight
         return
       }
-      if (!virtualizer) return
-      virtualizer.scrollToIndex(keys.length - 1, { align: "end" })
+      if (!mounted) return
+      mounted.handle.scrollToIndex(keys.length - 1, { align: "end" })
     })
   }
 
-  let cacheSessionKey = sessionKey()
-  let cacheRowKeys = timelineRowKeys()
-  let virtualizerSessionKey = cacheSessionKey
-  let virtualizerRowKeys = cacheRowKeys
   let bottomAnchorSessionKey = ""
   let bottomAnchorRows = 0
 
   const maybeAnchorBottom = () => {
     const key = sessionKey()
-    if (nativeTimelineEnabled() ? false : !virtualizer) return
+    if (nativeTimelineEnabled() ? false : !mounted) return
     const keys = timelineRowKeys()
     if (keys.length === 0) return
     // 260829 cc 「每会话只锚一次」不够。一次刷新若把窗口从 1671 行砍回 12 行，内容整段
@@ -725,37 +713,50 @@ export function MessageTimeline(props: {
     bottomAnchorRows = keys.length
     if (!props.shouldAnchorBottom()) return
     // native 路径没有 handle：上面那次 scrollToIndex 是虚拟估算落点，这里交给实测锚定。
-    virtualizer?.scrollToIndex(keys.length - 1, { align: "end" })
+    mounted?.handle.scrollToIndex(keys.length - 1, { align: "end" })
     // 260822 cc scrollToIndex 用的是虚拟**估算**尺寸：缓存未命中时每行按 timelineFallbackItemSize
     //   估，落点可以离真底部很远。再补一轮以实测高度为准的锚定（scrollTop = scrollHeight），
     //   沉降完自动收工。少了这一步就是"切回会话掉在历史中间"。
     scheduleMeasuredBottomAnchor({ force: true })
   }
 
+  // 260929 Red 缓存只从「当前挂载实例自己的 session」这一条路写（§3.5 跨会话别名）。
+  // listWidth 也进依赖：此前只依赖 [sessionKey, timelineRowKeys]，resize 后读路径把条目删掉
+  // 而没人再写，下一次行插入又走 60px 兜底整列塌缩（§3.7 resize 只删不写）。
   createEffect(
     on(
-      () => [sessionKey(), timelineRowKeys()] as const,
-      (next, prev) => {
-        if (prev && prev[0] !== next[0]) writeTimelineCache(prev[0], prev[1], listWidth(), virtualizer)
-        cacheSessionKey = next[0]
-        cacheRowKeys = next[1]
-        if (virtualizer) {
-          virtualizerSessionKey = cacheSessionKey
-          virtualizerRowKeys = cacheRowKeys
-          // 260821 Red 同会话行变化也持续写缓：此前只在切会话时写旧会话，当前会话从未写入 →
-          // readTimelineCache 恒 miss → virtualCache 恒 undefined → itemSize 恒 60px fallback →
-          // 每次行插入（如工具行）60px 起步 + RO 整列重测 → 布局跳变闪烁。
-          // 写入的是 handle.cache 对象引用，virtua 自身会持续往同一对象更新新行实测尺寸。
-          writeTimelineCache(next[0], next[1], listWidth(), virtualizer)
-          maybeAnchorBottom()
-        }
+      () => [sessionKey(), timelineRowKeys(), listWidth()] as const,
+      ([session, keys, width]) => {
+        // 会话已切走时 mounted 还挂着旧实例：此时写会把新会话的 keys 配旧 handle
+        if (!mounted || mounted.session !== session) return
+        mounted.keys = keys
+        // handle.cache 是活引用，virtua 持续往里写新行的实测尺寸
+        if (timelineCache.write(session, keys, width, mounted.handle.cache)) return
+        // 宽度刚变：handle 里还是旧宽度的实测值，直接写会被 cacheReusable 接受后用错误
+        // offset 算可视区间。先淘汰，推一帧等 virtua 重测完再写。
+        timelineCache.invalidate(session)
+        scheduleCacheWrite()
       },
       { defer: true },
     ),
   )
 
+  // 260929 Red 宽度变化后 virtua 需要重测，写早了就把旧宽度的实测值存进新宽度条目。
+  // 推一帧再写；期间宽度又变则继续推（write 的宽度守卫会再拒一次，不会写成错值）。
+  const scheduleCacheWrite = () => {
+    if (cacheWriteFrame !== undefined) return
+    cacheWriteFrame = requestAnimationFrame(() => {
+      cacheWriteFrame = undefined
+      if (!mounted) return
+      if (timelineCache.write(mounted.session, mounted.keys, listWidth(), mounted.handle.cache)) return
+      timelineCache.invalidate(mounted.session)
+      scheduleCacheWrite()
+    })
+  }
+
+  // 260929 Red 缓存写回已挪到 Virtualizer 自己的 ref（实例销毁即写，配对天然正确），
+  // 这里不再重复写一次。
   onCleanup(() => {
-    writeTimelineCache(virtualizerSessionKey, virtualizerRowKeys, listWidth(), virtualizer)
     props.setRevealMessage?.(() => {})
   })
 
@@ -798,7 +799,7 @@ export function MessageTimeline(props: {
     const index = messageRowIndex().get(id)
     if (!nativeTimelineEnabled()) {
       if (index === undefined) return
-      virtualizer?.scrollToIndex(index, { align: "center" })
+      mounted?.handle.scrollToIndex(index, { align: "center" })
       return
     }
 
@@ -907,7 +908,7 @@ export function MessageTimeline(props: {
   onMount(() => {
     const nudge = () => {
       const root = listRoot
-      if (!root || !virtualizer) return
+      if (!root || !mounted) return
       const top = root.scrollTop
       const atBottom = top >= root.scrollHeight - root.clientHeight - 1
       root.scrollTop = top + (atBottom ? -1 : 1)
@@ -915,7 +916,7 @@ export function MessageTimeline(props: {
     }
     const wake = () => {
       // 视口尺寸没拿到时 virtua 不响应滚动，nudge 无效，只能重建（见 timelineEpoch）
-      if (virtualizer && virtualizer.viewportSize === 0) {
+      if (mounted && mounted.handle.viewportSize === 0) {
         setTimelineEpoch({})
         return
       }
@@ -2069,13 +2070,15 @@ export function MessageTimeline(props: {
                 startMargin={64}
                 ref={(handle) => {
                   if (!handle) {
-                    writeTimelineCache(virtualizerSessionKey, virtualizerRowKeys, listWidth(), virtualizer)
-                    virtualizer = undefined
+                    // 实例销毁：只写这个实例自己的 session。此刻 timelineRowKeys 可能
+                    // 已经属于新会话，所以 keys 取挂载期间记录的 mounted.keys。
+                    if (mounted) {
+                      timelineCache.write(mounted.session, mounted.keys, listWidth(), mounted.handle.cache)
+                    }
+                    mounted = undefined
                     return
                   }
-                  virtualizer = handle
-                  virtualizerSessionKey = cacheSessionKey
-                  virtualizerRowKeys = cacheRowKeys
+                  mounted = { session: v.session, keys: timelineRowKeys(), handle }
                   maybeAnchorBottom()
                   scheduleContentRoot(v.root)
                 }}

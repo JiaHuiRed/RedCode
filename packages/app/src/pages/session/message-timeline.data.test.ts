@@ -18,7 +18,7 @@ mock.module("@redcode-ai/ui/message-part", () => {
   return { groupParts, renderable }
 })
 
-const { Timeline, TimelineRow } = await import("./message-timeline.data")
+const { Timeline, TimelineCache, TimelineRow } = await import("./message-timeline.data")
 
 import type { AssistantMessage, Part, UserMessage } from "@redcode-ai/sdk/v2"
 
@@ -420,5 +420,69 @@ describe("TimelineRow.cacheReusable — timeline cache 有效域", () => {
 
   test("宽度变化与中部变更叠加 → 不复用", () => {
     expect(TimelineRow.cacheReusable({ keys, width: 800 }, ["user-message:u0", ...keys], 640)).toBe(false)
+  })
+})
+
+// 260929 Red 行高缓存表回归。背景：docs/notes/proposed/architecture/2026-09-24-incremental-audit.md
+// §3.5（跨会话别名）与 §3.7（读路径在 createMemo 体内 delete、resize 只删不写）。
+describe("TimelineCache.CacheTable — 行高缓存表", () => {
+  const keys = ["user-message:u1", "assistant-part:u1:p1"]
+  const other = ["user-message:u1", "assistant-part:u1:p2"]
+
+  test("write 后 read 命中同一引用（存的是 virtua 活 cache 对象）", () => {
+    const table = new TimelineCache.CacheTable<string>(4)
+    expect(table.write("s1", keys, 800, "cacheA")).toBe(true)
+    expect(table.read("s1", keys, 800)).toBe("cacheA")
+  })
+
+  test("read 是纯函数：不可复用也不淘汰条目", () => {
+    const table = new TimelineCache.CacheTable<string>(4)
+    table.write("s1", keys, 800, "cacheA")
+    // 宽度变了 → 不复用。旧读路径会在这里 delete，导致同帧再算即 undefined、整列塌缩
+    expect(table.read("s1", keys, 640)).toBeUndefined()
+    // 宽度回来后条目还在：淘汰只能走显式 invalidate
+    expect(table.read("s1", keys, 800)).toBe("cacheA")
+  })
+
+  test("宽度守卫：宽度不同的 write 被拒且不覆盖旧条目", () => {
+    const table = new TimelineCache.CacheTable<string>(4)
+    table.write("s1", keys, 800, "cacheA")
+    // virtua 尚未重测就写，会把旧宽度的实测值存进新宽度条目，之后被 cacheReusable 接受
+    expect(table.write("s1", keys, 640, "stale")).toBe(false)
+    expect(table.read("s1", keys, 800)).toBe("cacheA")
+  })
+
+  test("宽度没变时 write 刷新 keys（行追加后旧索引尺寸仍有效）", () => {
+    const table = new TimelineCache.CacheTable<string>(4)
+    table.write("s1", keys, 800, "cacheA")
+    expect(table.write("s1", [...keys, "bottom-spacer"], 800, "cacheA")).toBe(true)
+    expect(table.read("s1", [...keys, "bottom-spacer"], 800)).toBe("cacheA")
+  })
+
+  test("invalidate 后 read miss，重测落地后可再写", () => {
+    const table = new TimelineCache.CacheTable<string>(4)
+    table.write("s1", keys, 800, "cacheA")
+    table.invalidate("s1")
+    expect(table.read("s1", keys, 800)).toBeUndefined()
+    expect(table.write("s1", keys, 640, "fresh")).toBe(true)
+    expect(table.read("s1", keys, 640)).toBe("fresh")
+  })
+
+  test("不同会话条目互不串台", () => {
+    const table = new TimelineCache.CacheTable<string>(4)
+    table.write("s1", keys, 800, "cacheA")
+    table.write("s2", other, 800, "cacheB")
+    expect(table.read("s1", keys, 800)).toBe("cacheA")
+    expect(table.read("s2", other, 800)).toBe("cacheB")
+  })
+
+  test("超出 limit 淘汰最久未写入的条目", () => {
+    const table = new TimelineCache.CacheTable<string>(2)
+    table.write("s1", keys, 800, "cacheA")
+    table.write("s2", keys, 800, "cacheB")
+    table.write("s3", keys, 800, "cacheC")
+    expect(table.read("s1", keys, 800)).toBeUndefined()
+    expect(table.read("s2", keys, 800)).toBe("cacheB")
+    expect(table.read("s3", keys, 800)).toBe("cacheC")
   })
 })

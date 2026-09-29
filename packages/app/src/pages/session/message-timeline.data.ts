@@ -474,3 +474,50 @@ export namespace MessageComment {
     }
   }
 }
+
+export namespace TimelineCache {
+  /**
+   * 260929 Red timeline 行高缓存表 —— 全仓唯一 owner。
+   *
+   * 收编原 message-timeline.tsx 里的模块级 Map + readTimelineCache/writeTimelineCache：
+   * 读路径在 createMemo 体内 delete（副作用）、写路径有三处且都能拿组件级 handle 配另一条
+   * 会话的 key，见 docs/notes/proposed/architecture/2026-09-24-incremental-audit.md
+   * §3.5（跨会话别名）与 §3.7（resize 只删不写）。现在表内聚在这里：read 纯净化，
+   * write 带宽度守卫，淘汰只能走显式 invalidate。
+   */
+  export class CacheTable<S> {
+    private readonly entries = new Map<string, { keys: readonly string[]; width: number; cache: S }>()
+
+    constructor(private readonly limit: number) {}
+
+    /** 纯读：不淘汰、不改表。不可复用返回 undefined，由调用方决定是否回落估算值。 */
+    read(id: string, keys: readonly string[], width: number): S | undefined {
+    const entry = this.entries.get(id)
+    if (!entry) return undefined
+    return TimelineRow.cacheReusable(entry, keys, width) ? entry.cache : undefined
+    }
+
+    /**
+     * 宽度未变才允许写。宽度刚变时 handle 里的实测值还是旧宽度的（virtua 尚未重测），
+     * 存进去会被 cacheReusable 接受，然后用错误 offset 计算可视区间。返回 false 表示
+     * 拒绝写入：调用方应先 invalidate，等重测落地再写。
+     */
+    write(id: string, keys: readonly string[], width: number, cache: S): boolean {
+      const entry = this.entries.get(id)
+      if (entry && entry.width !== width) return false
+      this.entries.delete(id)
+      this.entries.set(id, { keys: keys.slice(), width, cache })
+      while (this.entries.size > this.limit) {
+        const oldest = this.entries.keys().next()
+        if (oldest.done) break
+        this.entries.delete(oldest.value)
+      }
+      return true
+    }
+
+    /** 显式淘汰（宽度变了、会话被删）。读路径不再有副作用。 */
+    invalidate(id: string) {
+      this.entries.delete(id)
+    }
+  }
+}
