@@ -55,7 +55,9 @@ function detectTargetInstance(): string | undefined {
       // realpathSync 一步到位：readlink 返回相对路径，手工 resolve 必须先拼所在目录，容易错
       solidReal = realpathSync(join(bunDir, name, "node_modules", "solid-js"))
     } catch {}
-    all.push({ dir: inst, version: name.slice("@opentui+keymap@".length).split("+")[0]!, solidReal })
+   // 260930 Karina 去掉 [0]!：script/ 第一次进类型检查，noUncheckedIndexedAccess 是
+   // false，这个断言本来就是多余的（此前没有 tsconfig 覆盖，规则看不见它）。
+   all.push({ dir: inst, version: name.slice("@opentui+keymap@".length).split("+")[0], solidReal })
   }
   if (!all.length) {
     console.log("[fix-keymap] no keymap instance under .bun — nothing to fix, skip")
@@ -106,8 +108,12 @@ function detectTargetInstance(): string | undefined {
   return final[0]!.dir
 }
 
-const TARGET_INSTANCE = detectTargetInstance()
-if (TARGET_INSTANCE === undefined) process.exit(0)
+const detected = detectTargetInstance()
+if (detected === undefined) process.exit(0)
+// 260930 Karina 必须显式收窄成 string：isJunctionToTarget 是函数声明，提升后 TS 在它
+// 体内看不到上面那次 undefined 早退，resolve(TARGET_INSTANCE) 于是报 TS2345。运行时
+// 上一行已经退出，这里是把同一个不变量讲给编译器听，行为不变。
+const TARGET_INSTANCE: string = detected
 console.log(`[fix-keymap] target: ${TARGET_INSTANCE.replace(ROOT, "<root>")}`)
 // 需要统一指向的位置：opencode（运行时）与 plugin（SDK 类型链）
 const LINKS = [

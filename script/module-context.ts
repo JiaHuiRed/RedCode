@@ -56,15 +56,22 @@ function countLines(path: string): number {
 // （.artifacts / .git / .vscode）统一在这里判，不再依赖调用方各自记得。
 const SKIP_DIR = new Set(["node_modules", "dist", ".artifacts", "coverage"])
 
+// 260930 Karina 读不出来的目录（不存在 / 无权限）按空处理，调用方各自判空。
+// 这里刻意不写 `let entries: ReturnType<typeof readdirSync>`：那个注解取的是重载表里
+// 最后一个签名（Dirent<NonSharedBuffer>[]），而 withFileTypes 这次调用实际返回
+// Dirent<string>[]，两者不相交——script/tsconfig.json 第一次跑起来时，这行注解就是
+// 4 条类型错误的来源。让返回类型从调用点推断出来，别手工指名。
+function listDir(dir: string) {
+  try {
+    return readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return []
+  }
+}
+
 function walk(dir: string, depth: number, out: string[] = [], skip: ReadonlySet<string> = SKIP_DIR): string[] {
   if (depth < 0) return out
-  let entries: ReturnType<typeof readdirSync>
-  try {
-    entries = readdirSync(dir, { withFileTypes: true })
-  } catch {
-    return out
-  }
-  for (const entry of entries) {
+  for (const entry of listDir(dir)) {
     if (skip.has(entry.name) || entry.name.startsWith(".")) continue
     const full = join(dir, entry.name)
     if (entry.isDirectory()) {

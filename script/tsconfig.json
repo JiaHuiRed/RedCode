@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "@tsconfig/bun/tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "noUncheckedIndexedAccess": false,
+    "types": ["bun", "node"],
+    "noEmit": true
+  },
+  // 260930 Karina 根目录脚本原来不在任何 tsconfig 的 include 里：根 tsconfig.json 没有
+  // include/files 字段（谁真去跑它就会把整个仓库连同 packages 一起拖进来，所以没人跑），
+  // 而 `bun typecheck` = `bun turbo typecheck` 只覆盖 workspace 包，script/ 不是 workspace
+  // 成员。结果是这批脚本从来没进过类型检查——module-context.ts 的 readJson 返回 any、
+  // 读错字段编译器一声不响，runtime 拿 undefined 走 ?? [] 兜底、输出恒 (none)，就是在这
+  // 个盲区里活下来的。这份 tsconfig 把盲区补上，并由根 package.json 的 typecheck:scripts
+  // 接进 CI 的 `bun typecheck`。
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "**/*.d.ts"]
+}
