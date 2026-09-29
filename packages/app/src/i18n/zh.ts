@@ -421,7 +421,8 @@ export const dict = {
   "context.quota.resetsAt": "重置于 {{time}}",
   "context.quota.empty": "尚无额度记录——下一次供应商请求后会显示",
   "context.inspect.title": "真实构成",
-  "context.inspect.note": "取自本会话最后一次真正发出的请求，含系统提示与工具定义。",
+  "context.inspect.note":
+    "取自本会话最后一次真正发出的请求，含系统提示与工具定义。token 数为估算：中文按 2 倍权重，工具定义的结构性 token 偏差更大。",
   "context.inspect.empty": "暂无（本会话下一轮请求后显示）。",
   "context.inspect.system": "系统提示",
   "context.inspect.tools": "工具定义",

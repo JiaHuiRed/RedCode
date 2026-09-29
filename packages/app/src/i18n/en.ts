@@ -422,7 +422,7 @@ export const dict = {
   "context.quota.empty": "No quota captured yet — will appear after the next provider request",
   "context.inspect.title": "Actual Composition",
   "context.inspect.note":
-    "Measured from the request this session last sent — it includes the system prompt and tool schemas.",
+    "Measured from the request this session last sent — it includes the system prompt and tool schemas. Token counts are estimates: CJK is weighted 2x, and tool schemas are the least reliable of the three.",
   "context.inspect.empty": "Not available yet (shown after this session's next request).",
   "context.inspect.system": "System Prompt",
   "context.inspect.tools": "Tool Schemas",

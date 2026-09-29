@@ -1902,7 +1902,7 @@ export type ContextSegment = {
    */
   label: string
   /**
-   * Estimated tokens (chars / 4)
+   * Estimated tokens (CJK-weighted, not chars / 4)
    */
   tokens: number
 }
@@ -1921,6 +1921,10 @@ export type ContextSnapshot = {
   system: {
     tokens: number
     /**
+     * Trust level for this group's estimate: plain text, CJK weighting applies
+     */
+    confidence: "low" | "medium"
+    /**
      * One entry per system-prompt block, largest first
      */
     segments: Array<ContextSegment>
@@ -1929,6 +1933,10 @@ export type ContextSnapshot = {
     count: number
     tokens: number
     /**
+     * Trust level for this group's estimate: JSON schema, structural tokens dominate so CJK weighting barely applies
+     */
+    confidence: "low" | "medium"
+    /**
      * Most expensive tool schemas, largest first
      */
     top: Array<ContextSegment>
@@ -1936,6 +1944,10 @@ export type ContextSnapshot = {
   messages: {
     count: number
     tokens: number
+    /**
+     * Trust level for this group's estimate: text weighted, images priced separately by provider rate
+     */
+    confidence: "low" | "medium"
     /**
      * Conversation tokens grouped by role, largest first
      */

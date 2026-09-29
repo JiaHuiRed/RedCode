@@ -17361,7 +17361,7 @@
           "tokens": {
             "type": "integer",
             "minimum": 0,
-            "description": "Estimated tokens (chars / 4)"
+            "description": "Estimated tokens (CJK-weighted, not chars / 4)"
           }
         },
         "required": ["label", "tokens"],
@@ -17393,6 +17393,11 @@
                 "type": "integer",
                 "minimum": 0
               },
+              "confidence": {
+                "type": "string",
+                "enum": ["low", "medium"],
+                "description": "Trust level for this group's estimate: plain text, CJK weighting applies"
+              },
               "segments": {
                 "type": "array",
                 "items": {
@@ -17401,7 +17406,7 @@
                 "description": "One entry per system-prompt block, largest first"
               }
             },
-            "required": ["tokens", "segments"],
+            "required": ["tokens", "confidence", "segments"],
             "additionalProperties": false
           },
           "tools": {
@@ -17415,6 +17420,11 @@
                 "type": "integer",
                 "minimum": 0
               },
+              "confidence": {
+                "type": "string",
+                "enum": ["low", "medium"],
+                "description": "Trust level for this group's estimate: JSON schema, structural tokens dominate so CJK weighting barely applies"
+              },
               "top": {
                 "type": "array",
                 "items": {
@@ -17423,7 +17433,7 @@
                 "description": "Most expensive tool schemas, largest first"
               }
             },
-            "required": ["count", "tokens", "top"],
+            "required": ["count", "tokens", "confidence", "top"],
             "additionalProperties": false
           },
           "messages": {
@@ -17437,6 +17447,11 @@
                 "type": "integer",
                 "minimum": 0
               },
+              "confidence": {
+                "type": "string",
+                "enum": ["low", "medium"],
+                "description": "Trust level for this group's estimate: text weighted, images priced separately by provider rate"
+              },
               "byRole": {
                 "type": "array",
                 "items": {
@@ -17445,7 +17460,7 @@
                 "description": "Conversation tokens grouped by role, largest first"
               }
             },
-            "required": ["count", "tokens", "byRole"],
+            "required": ["count", "tokens", "confidence", "byRole"],
             "additionalProperties": false
           }
         },

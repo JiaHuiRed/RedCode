@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from "bun:test"
 import type { ModelMessage } from "ai"
 import { Effect } from "effect"
 import { get, label, load, record, reset } from "../../src/session/context-snapshot"
+import { Token } from "../../src/util/token"
 
 const base = {
   sessionID: "ses_context_snapshot",
@@ -198,5 +199,42 @@ describe("context-snapshot 落盘", () => {
 
   test("从来没记过的会话返回 undefined，而不是空构成", async () => {
     expect(await Effect.runPromise(load("ses_never_recorded"))).toBeUndefined()
+  })
+})
+
+// 260929 Red CJK 加权。estimateReporting 只进诊断侧：行为侧的 Token.estimate 被工具结果
+// 硬限和压缩触发线依赖，且与 CHARS_PER_TOKEN 的逆换算耦合，动它是行为变更（见 token.ts）。
+describe("context-snapshot CJK 加权估算", () => {
+  test("中文段按 2 倍权重计入，不再被 chars/4 低估一半", () => {
+    const snapshot = record({ ...base, system: ["中".repeat(400)] })
+    expect(snapshot.system.tokens).toBe(200) // 400 字 × 2 / 4
+    expect(Token.estimate("中".repeat(400))).toBe(100) // 对照组：老估算器正好低一半
+  })
+
+  test("纯 ASCII 段两种估算器结果一致，上面那些既有断言不漂移", () => {
+    expect(record({ ...base, system: ["a".repeat(400)] }).system.tokens).toBe(100)
+  })
+
+  test("confidence 按分组标，值差在数据形态", () => {
+    const snapshot = record({
+      ...base,
+      system: ["中文"],
+      tools: { read: { description: "x" } },
+      messages: [{ role: "user", content: "中文" }],
+    })
+    expect(snapshot.system.confidence).toBe("medium")
+    expect(snapshot.tools.confidence).toBe("low")
+    expect(snapshot.messages.confidence).toBe("medium")
+  })
+
+  test("落盘往返后 confidence 不丢", async () => {
+    const sessionID = "ses_context_snapshot_confidence"
+    record({ ...base, sessionID, system: ["中文"], tools: { bash: { description: "x" } } })
+    await new Promise((r) => setTimeout(r, 120))
+    reset()
+    const back = await Effect.runPromise(load(sessionID))
+    expect(back?.system.confidence).toBe("medium")
+    expect(back?.tools.confidence).toBe("low")
+    expect(back?.messages.confidence).toBe("medium")
   })
 })

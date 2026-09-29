@@ -77,7 +77,7 @@ function firstSystemDifference(previous: PrefixShape, current: PrefixShape): Sys
  */
 export function schemaCosts(tools: Record<string, unknown>): ToolSchemaCost[] {
   return Object.keys(tools)
-    .map((name) => ({ name, tokens: Token.estimate(JSON.stringify({ name, def: tools[name] }) ?? "") }))
+    .map((name) => ({ name, tokens: Token.estimateReporting(JSON.stringify({ name, def: tools[name] }) ?? "") }))
     .sort((a, b) => b.tokens - a.tokens)
 }
 
@@ -119,7 +119,7 @@ export function capture(system: string[], tools: Record<string, unknown>): Prefi
   const shape = {
     systemHash: hash(system),
     toolsHash: hash(toolDefs),
-    toolSchemaTokens: Token.estimate(JSON.stringify(toolDefs) ?? ""),
+    toolSchemaTokens: Token.estimateReporting(JSON.stringify(toolDefs) ?? ""),
     toolCount: sortedKeys.length,
   }
   systemSections.set(shape, system)

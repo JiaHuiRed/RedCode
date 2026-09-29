@@ -41,14 +41,14 @@ import { MAX_SESSIONS, SESSION_TTL_MS, sessionEvictor } from "@/util/session-evi
 // 写入是 fire-and-forget、错误全吞：快照是可有可无的观测数据，不该让写盘失败打断请求。
 // 逐 step 落盘没有另做 flush 合并——JSON 只有几 KB，紧接着就是一次几秒的 LLM 请求。
 //
-// 成本：system 段只做 length/4，免费；tools 每轮按工具序列化一次（PrefixShape.capture
+// 成本：system 段只多一次 CJK 正则匹配，免费；tools 每轮按工具序列化一次（PrefixShape.capture
 // 本就整体序列化一次，这里是同一批数据换成逐个）；messages 靠 WeakMap 按**对象引用**
 // 记忆——modelMsgs 的前缀是钉死的同一批对象（prompt.ts 的 stabilizedMsgs 直接展开缓存
 // 数组），所以稳态下只算新增的那几条，不是每轮全量。
 
 export const Segment = Schema.Struct({
   label: Schema.String.annotate({ description: "Human-readable name of this slice of the prompt" }),
-  tokens: NonNegativeInt.annotate({ description: "Estimated tokens (chars / 4)" }),
+  tokens: NonNegativeInt.annotate({ description: "Estimated tokens (CJK-weighted, not chars / 4)" }),
 }).annotate({ identifier: "ContextSegment" })
 export type Segment = Schema.Schema.Type<typeof Segment>
 
@@ -57,18 +57,34 @@ export const Info = Schema.Struct({
   modelID: Schema.String,
   time: NonNegativeInt.annotate({ description: "When this request was assembled" }),
   total: NonNegativeInt.annotate({ description: "system + tools + messages" }),
+  // 260929 Red confidence 按**分组**标、不按 segment 标：同一快照里每个段用的是同一个
+  // 估算器，逐段标注等于给每段重复同一个常量。三个分组的差在数据形态、不在大小——
+  // system 是纯文本，CJK 加权基本适用 = medium；tools 是 JSON schema，结构性 token
+  //（键名、引号、嵌套括号）主导，CJK 加权对它们几乎无意义 = low；messages 文本 medium，
+  // 图片另走 image-tokens 的 provider 定价，不掺在这个数里。取自 ZCode 的 context-usage
+  // breakdown（apps/zcode-cli/packages/core/src/runtime/methods/context-usage.ts:119-253）。
   system: Schema.Struct({
     tokens: NonNegativeInt,
+    confidence: Schema.Literals(["low", "medium"]).annotate({
+      description: "Trust level for this group's estimate: plain text, CJK weighting applies",
+    }),
     segments: Schema.Array(Segment).annotate({ description: "One entry per system-prompt block, largest first" }),
   }),
   tools: Schema.Struct({
     count: NonNegativeInt,
     tokens: NonNegativeInt,
+    confidence: Schema.Literals(["low", "medium"]).annotate({
+      description:
+        "Trust level for this group's estimate: JSON schema, structural tokens dominate so CJK weighting barely applies",
+    }),
     top: Schema.Array(Segment).annotate({ description: "Most expensive tool schemas, largest first" }),
   }),
   messages: Schema.Struct({
     count: NonNegativeInt,
     tokens: NonNegativeInt,
+    confidence: Schema.Literals(["low", "medium"]).annotate({
+      description: "Trust level for this group's estimate: text weighted, images priced separately by provider rate",
+    }),
     byRole: Schema.Array(Segment).annotate({ description: "Conversation tokens grouped by role, largest first" }),
   }),
 }).annotate({ identifier: "ContextSnapshot" })
@@ -113,7 +129,9 @@ function messageFacts(message: ModelMessage): { text: number; images: number } {
   if (cached !== undefined) return cached
   const content = message.content
   const facts =
-    typeof content === "string" ? { text: Token.estimate(content), images: 0 } : countModelMessageContent(content)
+    typeof content === "string"
+      ? { text: Token.estimateReporting(content), images: 0 }
+      : countModelMessageContent(content)
   memo.set(message, facts)
   return facts
 }
@@ -135,7 +153,7 @@ export function record(input: {
   now?: number
 }): Info {
   const segments = input.system
-    .map((text) => ({ label: label(text), tokens: Token.estimate(text) }))
+    .map((text) => ({ label: label(text), tokens: Token.estimateReporting(text) }))
     .filter((item) => item.tokens > 0)
     .sort(bySize)
   const systemTokens = segments.reduce((sum, item) => sum + item.tokens, 0)
@@ -143,7 +161,7 @@ export function record(input: {
   const toolCosts = Object.keys(input.tools)
     .map((name) => ({
       label: name,
-      tokens: Token.estimate(JSON.stringify({ name, def: input.tools[name] }) ?? ""),
+      tokens: Token.estimateReporting(JSON.stringify({ name, def: input.tools[name] }) ?? ""),
     }))
     .sort(bySize)
   const toolTokens = toolCosts.reduce((sum, item) => sum + item.tokens, 0)
@@ -162,9 +180,9 @@ export function record(input: {
     modelID: input.modelID,
     time: input.now ?? Date.now(),
     total: systemTokens + toolTokens + messageTotal,
-    system: { tokens: systemTokens, segments },
-    tools: { count: toolCosts.length, tokens: toolTokens, top: toolCosts.slice(0, TOP_TOOLS) },
-    messages: { count: input.messages.length, tokens: messageTotal, byRole },
+    system: { tokens: systemTokens, confidence: "medium", segments },
+    tools: { count: toolCosts.length, tokens: toolTokens, confidence: "low", top: toolCosts.slice(0, TOP_TOOLS) },
+    messages: { count: input.messages.length, tokens: messageTotal, confidence: "medium", byRole },
   }
   store.set(input.sessionID, snapshot)
   evictor.touch(input.sessionID)

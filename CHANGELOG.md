@@ -33,7 +33,7 @@
 
 #### 变更
 
-- **推理强度控件按模型实际档位显示**（`packages/ui/src/v2/components/effort-slider-v2.tsx`、`packages/app/src/components/prompt-input.tsx`）：移除不透明的 Default 停靠点，未显式选择时仍由模型/Agent 决定；单档用按钮、多档用滑杆，颜色跟随日间/夜间主题。决策：`docs/notes/implemented/feature/2026-09-28-model-reasoning-effort-slider.md`。
+- **上下文构成快照改用 CJK 加权估算，三个分组标上置信度**（`packages/opencode/src/util/token.ts`、`src/session/{context-snapshot,prefix-shape}.ts`、`packages/app/src/i18n/{zh,en,ja}.ts`、`packages/sdk/openapi.json`）：`Token.estimate` 是纯字符数除法，本机五份注入实测低估 **36%**（7892 vs 10696 token，纯中文的 soul 偏得最狠 1.75×）。新增 `estimateReporting` 只进诊断侧——`estimate` 被工具结果硬限和压缩触发线依赖，且与 `CHARS_PER_TOKEN` 的逆换算耦合，改它是行为变更；两个估算器并存是故意不对称，理由写进了 `token.ts` 头注释。`ContextSnapshot.Info` 的 system/tools/messages 各加 `confidence`（medium/low/medium，按数据形态定：工具 schema 的结构性 token 主导，CJK 加权对它们几乎无意义）。`context.inspect.note` 三语文案补明 token 数为估算。模型可见四问：不进模型上下文、固定前缀 0 增量、KV cache 不动、无新增注入项；SDK 生成物已重生（`Segment.tokens` 原 description 写死 "chars / 4"，不改即是假话）。决策：`docs/notes/implemented/process/2026-09-29-token-estimate-cjk-confidence.md`。
 - **推理强度控件按模型实际档位显示**（`packages/ui/src/v2/components/effort-slider-v2.tsx`、`packages/app/src/components/prompt-input.tsx`）：移除不透明的 Default 停靠点，未显式选择时仍由模型/Agent 决定；单档用按钮、多档用滑杆，颜色跟随日间/夜间主题。决策：`docs/notes/implemented/feature/2026-09-28-model-reasoning-effort-slider.md`。
 - **GPT 隐藏推理与可见声线解耦**（`packages/opencode/src/session/prompt/gpt.md`、`~/.redcode/souls/{Gsoul,Tsoul}.md`）：取消每次编辑前播报和固定恋爱强度，隐藏 reasoning 专注解题，可见正文仍遵循当前 soul；GPT Delta 净减约 113 tokens。设计取舍：`docs/notes/implemented/architecture/2026-09-27-gpt-soul-visibility.md` 第三轮。
 
