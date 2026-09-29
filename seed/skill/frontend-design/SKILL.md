@@ -157,3 +157,62 @@ fixed template:
   and selective color accents for meaningful icons or actions.
 - Extract the underlying qualities—spatial composition, controlled contrast, quiet utility, and
   polish—rather than copying a reference's labels, icons, geometry, or exact tokens.
+
+### Cards: gentle lift with a breathing feel
+
+For interactive cards (explicitly stated by the user, 260921): hovering or clicking a card
+should make it float up slowly and softly—translateY of a few pixels with a soft shadow,
+transitioning over ~0.3s with an ease-out curve, never snapping. The overall feel is "breathing":
+generous padding, calm borders, depth expressed through a gradual shadow rather than instant
+state flips. Reserve this treatment for cards and primary interactive surfaces, not every element.
+
+## Typography scale is a hard constraint
+
+When a project defines a font scale, that scale is a closed set. Sizes outside it are
+design-system defects, not style preferences.
+
+- There is exactly one scale entry point. Scaling the UI means changing that variable —
+  never the root font size, never a per-component override.
+- Every size comes from the scale. An off-scale value is an undesigned tier: it does not
+  participate in the rhythm, and it is the first thing that makes two screens of one
+  product look like two products.
+- The smallest tier carries a usage ban. Name the single role it may serve. Without a
+  ban the smallest tier migrates into everything, which is how a hierarchy collapses.
+- Code, diff, and terminal rendering may keep their own numeric sizes; the controls,
+  labels, and metadata around them still use the scale.
+
+RedCode's scale is `--font-size-small/base/large/x-large` in
+`packages/ui/src/styles/theme.css`, exposed to Tailwind as `--text-sm/base/lg/xl` in
+`packages/ui/src/styles/tailwind/index.css`. Use those, not `text-[13px]`. Two things
+to know before touching type here: `--font-size-x-small` is referenced in six places
+and defined in none, so those six rules silently fall back to inherited size — if you
+are near one, either define the tier or drop the reference. And roughly a hundred
+`font-size: Npx` literals in `packages/ui/src/components` and `v2/components`
+already sit outside the scale; matching the neighbours is not a reason to add another.
+
+## Semantic tokens carry usage bans
+
+A token is not just a value; it is a value plus the roles it is allowed to serve. Two
+tokens with the same color but different roles are not interchangeable.
+
+- The elevation chain is ordered: background → inset → raised → float → overlay. Choose
+  the tier for the surface's role. Do not mix tiers inside one component to fake
+  separation, and do not use a structural surface as a generic card fill.
+- Status color is never the only channel. Each status carries a paired foreground token
+  so a colorblind user is not required to read hue. A status distinguishable only by its
+  background is incomplete.
+- Radius follows the nearest actual rounded container, not DOM depth. Outer surfaces and
+  what they contain are concentric: outer larger, inner smaller.
+- Repeated values do not imply intent. Confirm the token exists in source before using
+  it, and write an uncertain observation as a role, not an invented token name.
+
+RedCode's tokens live in `packages/ui/src/styles/theme.css` (surfaces, text, border,
+icon, syntax, markdown). The radius scale has a single definition in
+`packages/ui/src/styles/tailwind/index.css` — xs/sm/md/lg/xl plus `pane`, which is
+named for its role rather than its size.
+
+## Enforcement
+
+A rule nothing checks is documentation, and it erodes. When you add one of these
+constraints, either give it a check or write down that it has none — a scale with no
+gate behind it is a preference, and the first off-scale value is the one that proves it.

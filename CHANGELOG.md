@@ -39,6 +39,7 @@
 
 - **性能预算门禁自带正负控制自检**（`packages/opencode/script/bench-performance-budget.ts`）：预算判定收敛为纯函数 `evaluateBudgets`，跑基准前先过三组控制用例（超限必拒、边界必过、零预算方向验证），自检失败直接退出不跑正式基准；越限时逐条打印违规项。实践学自 deepseek-harness 0.2.0 周期的 performance gate（预算带正负控制用例）。
 - **测试 lane 清单可再生成，AGENTS.md 立 lane 表**（`packages/opencode/script/lane-inventory.ts`、根 `AGENTS.md`）：新增脚本扫描 test/ 下写 `process.env` 的「进程绑定」测试文件（当前 41/308，清单会漂移、随时重新生成）；AGENTS.md 验证命令区固化五条 lane（unit/httpapi/套件计时/profiler/性能预算）的跑法与适用时机。bun test 无 exclude，暂不做物理拆分——现状无真实炸点，拆分成本大于收益。
+- **设计系统硬约束写进 frontend-design skill**（`seed/skill/frontend-design/SKILL.md`、`~/.redcode/skill/frontend-design/SKILL.md`）：字阶封闭集（禁任意值、唯一入口）、最小档用途禁令、语义 token 用途禁令三条硬约束，每条锚到 RedCode 自己的 token 名与文件行号，使规则在本仓可直接执行。学自 ZCode 的 `DESIGN.md`，但载体选 skill 而非新建文档体系——skill body 只在被 skill 工具加载时进上下文，不进每轮固定前缀。顺带修掉一处 seed/live 分叉（live 多出的 260921 卡片偏好段并回 seed，两份现逐字节相同）。实证：`--font-size-x-small` 全仓 6 处引用、0 处定义；100 处 `font-size: Npx` 字面量绕过标度（44 处是 11–14px，而 11/12 不在标度上）。决策与未做项：`docs/notes/implemented/process/2026-09-29-design-system-hard-constraints.md`。
 ### [0.11.14] - 2026-09-27
 
 #### 新增
