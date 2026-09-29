@@ -482,6 +482,81 @@ describe("Instruction.system max_total_bytes", () => {
    }),
  )
 
+  // 260929 Red 保留优先级与注入顺序是两个维度，必须分开验证。顺序没变（输出仍是
+  // 全局 AGENTS → 项目 AGENTS → 全局 MEMORY → 项目 MEMORY → soul → config），
+  // 但「谁先被丢」现在是显式设计的结果，不再是数组尾部的偶然。
+  it.live("drops soul before AGENTS.md and MEMORY.md when the budget is tight", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpWithFiles({
+        "AGENTS.md": agents(1000),
+        // 全局 MEMORY 是 <config>/MEMORY.md（不是 .redcode/ 下那份——那是项目级）
+        "MEMORY.md": agents(100),
+        ".redcode/souls/Tsoul.md": agents(1000),
+      })
+      const projectTmp = yield* tmpdirScoped()
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const rules = yield* svc.system()
+        // 必须只看来源本体：声明行里也含被丢来源的路径，混在一起会让断言因错误的原因通过
+        const kept = rules.filter((r) => r.startsWith("Instructions from:"))
+        // soul 保留优先级最低（人格与声线，丢了不改变行为边界），最先被丢
+        expect(kept.some((r) => r.includes("Tsoul.md"))).toBe(false)
+        // AGENTS(0) 与 MEMORY(1) 完整保留——漏一条硬规则比前缀长更糟
+        expect(kept.some((r) => r.includes(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}`))).toBe(true)
+        expect(kept.some((r) => r.includes("MEMORY.md"))).toBe(true)
+        // 被丢的 soul 仍要进模型可见声明行，不能静默
+        const notice = rules.find((r) => r.includes("instruction source(s) dropped"))!
+        expect(notice).toContain("Tsoul.md")
+      }).pipe(
+        provideInstance(projectTmp),
+        provideInstruction({ home: globalTmp, config: globalTmp }, undefined, {
+          instruction_budget: { max_total_bytes: 2000 },
+        }),
+      )
+    }),
+  )
+
+  // 260929 Red 声明行自己也要有硬上限。dropped 的来源名来自 config.instructions，
+  // 那是 Schema.Array(String)、没有长度上限——12 条 150 字符的路径直接 join 会得到
+  // 2.8KB 的声明行，把「输出 ≤ maxTotalBytes + 有界标记」这个承诺变成假话。
+  // 上一轮我正是这么写的，那句是过度乐观。
+  it.live("caps the dropped-source notice so the marker itself cannot blow the budget", () =>
+    Effect.gen(function* () {
+      const long = "z".repeat(150)
+      const globalTmp = yield* tmpWithFiles({ "AGENTS.md": agents(4000) })
+      const projectTmp = yield* tmpdirScoped()
+      const extra = yield* tmpdirScoped()
+      yield* writeFiles(
+        extra,
+        Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`${long}${i}.md`, agents(50)])),
+      )
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const rules = yield* svc.system()
+        const notice = rules.find((r) => r.includes("instruction source(s) dropped"))!
+        expect(notice).toBeDefined()
+        // 12 条来源，每条路径 200+ 字节：无上限时声明行约 2.8KB
+        expect(new TextEncoder().encode(notice).byteLength).toBeLessThanOrEqual(2048)
+        // 必须真的折叠了——12 条全列出来才是原缺陷（dropped.join(", ")）
+        const names = Array.from({ length: 12 }, (_, i) => `${long}${i}.md`)
+        const listed = names.filter((name) => notice.includes(name)).length
+        expect(listed).toBeLessThan(12)
+        expect(notice).toMatch(/and \d+ more/)
+        // 上界由列举阶段保证，所以不该走到兜底截断：结尾必须是完整句子，
+        // 而不是被切成看似合法路径前缀的省略形态
+        expect(notice.endsWith("if one of them matters.")).toBe(true)
+      }).pipe(
+        provideInstance(projectTmp),
+        provideInstruction({ home: globalTmp, config: globalTmp }, undefined, {
+          instructions: Array.from({ length: 12 }, (_, i) => path.join(extra, `${long}${i}.md`)),
+          instruction_budget: { max_total_bytes: 2000 },
+        }),
+      )
+    }),
+  )
+
  // 260929 Red CJK 截断必须按字节而不是字符数：一个汉字 3 字节，按字符切会把
  // 多字节序列切成乱码，模型看到替换字符而不是指令。
  it.live("truncates CJK content on a character boundary", () =>

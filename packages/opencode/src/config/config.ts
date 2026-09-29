@@ -289,7 +289,7 @@ export const Info = Schema.Struct({
       }),
       max_total_bytes: Schema.optional(PositiveInt).annotate({
         description:
-          "Warning threshold for the total instruction prefix. Sources are still injected in full; crossing it logs which sources are largest (default: 65536)",
+          "Hard cap on the total instruction prefix. When exceeded, whole sources are dropped lowest-retention-first (soul, then config instructions, then MEMORY.md, then AGENTS.md) until the total fits - never a partial file. Dropped sources are named in a model-visible notice; a lone remaining source that still exceeds is truncated with a marker (default: 65536)",
       }),
       max_resolved_bytes: Schema.optional(PositiveInt).annotate({
         description:

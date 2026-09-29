@@ -28,6 +28,29 @@ const DEFAULT_INSTRUCTION_BUDGET = {
 
 const bytes = (content: string) => new TextEncoder().encode(content).byteLength
 
+// 260929 Red 保留优先级与注入顺序是两个维度。顺序决定输出（也决定前缀缓存从哪里断），
+// 优先级决定超预算时谁先被丢。原先两者是同一条数组的次序——于是「先丢 config
+// instructions 和 soul」这个后果没有任何人设计过，它只是数组尾部的偶然。
+//
+// 优先级按「模型要正确干活，最不能少的是什么」排：
+//   0 AGENTS.md（全局/项目）——硬规则，漏一条可能直接违反映该不该做某件事
+//   1 MEMORY.md（全局/项目）——教训索引，丢了少一些触发提醒，规则本身还在别处
+//   2 config.instructions——用户显式配置的额外指令，内容是用户自己选过的
+//   3 soul——人格与声线，丢了不改变行为边界，只改变说话方式
+const RETENTION = { agents: 0, memory: 1, config: 2, soul: 3 } as const
+type SourceKind = keyof typeof RETENTION
+
+// 260929 Red 声明行自己也要有硬上限。dropped 的来源名可能来自 config.instructions，
+// 而那是 Schema.Array(String)、没有长度上限——一条足够长的 glob 就能让声明行本身
+// 突破 maxTotalBytes。上一轮我写「输出 ≤ maxTotalBytes + 有界标记行」，那句是过度
+// 乐观：标记行当时一个字节的上界都没有。
+// 上界由列举阶段保证：列满 MARKER_ITEMS 条或吃满字节额度就停，其余折叠成计数。
+// 前缀/后缀只随 maxTotalBytes 的数字变长，512 字节对它们是 2.5 倍余量。
+const MAX_BUDGET_MARKER_BYTES = 2048
+const MARKER_ITEMS = 8
+const MARKER_RESERVE = 512
+const CUT_MARKER = "[…]"
+
 // 260929 Red 按字节数截断且不切坏多字节字符。直接 slice(length) 会把 CJK 的
 // 3 字节序列切成乱码，模型看到的是替换字符而不是指令；二分找最后一个不超限的
 // 字符边界，代价是 O(log n) 次编码，只在上限被击穿时走一次。
@@ -42,6 +65,22 @@ const truncateToBytes = (text: string, limit: number) => {
     else hi = mid - 1
   }
   return text.slice(0, lo)
+}
+
+// 260929 Red 声明行与日志共用的来源列举：列满 MARKER_ITEMS 条或吃满字节额度就停，
+// 其余折叠成计数。日志侧同样要收——来源名可以任意长，无界列举既是日志噪音也是注入面的影子。
+const budgetList = (items: string[], maxBytes: number) => {
+  const shown: string[] = []
+  let used = 0
+  for (const item of items) {
+    if (shown.length >= MARKER_ITEMS) break
+    const size = bytes(item) + 2
+    if (used + size > maxBytes) break
+    shown.push(item)
+    used += size
+  }
+  const rest = items.length - shown.length
+  return shown.join(", ") + (rest > 0 ? `, and ${rest} more` : "")
 }
 
 const files = (disableClaudeCodePrompt: boolean) => [
@@ -148,14 +187,23 @@ export const layer: Layer.Layer<
       s.claims.delete(messageID)
     })
 
-    const systemPaths = Effect.fn("Instruction.systemPaths")(function* () {
+    // 260929 Red 唯一的发现实现，两个投影：systemPaths() 只要路径集合（给 resolve 判重），
+    // system() 要路径 + 保留优先级（超预算时决定丢谁）。原来是同一个函数只返回 Set，
+    // 优先级无处安放；按路径字符串反推类别又脆又容易和发现逻辑漂移。
+    const discover = Effect.fnUntraced(function* () {
       const config = yield* cfg.get()
       const ctx = yield* InstanceState.context
-      const paths = new Set<string>()
+      const found: { path: string; kind: SourceKind }[] = []
+      const add = (file: string, kind: SourceKind) => {
+        const resolved = path.resolve(file)
+        // 同一路径只留第一次出现——与原来 Set 的去重语义一致
+        if (found.some((item) => item.path === resolved)) return
+        found.push({ path: resolved, kind })
+      }
 
       for (const file of globalFiles) {
         if (yield* fs.existsSafe(file)) {
-          paths.add(path.resolve(file))
+          add(file, "agents")
           break
         }
       }
@@ -167,7 +215,7 @@ export const layer: Layer.Layer<
             .findUp(file, ctx.directory, ctx.worktree)
             .pipe(Effect.catch(() => Effect.succeed([])))
           if (matches.length > 0) {
-            matches.forEach((item) => paths.add(path.resolve(item)))
+            matches.forEach((item) => add(item, "agents"))
             break
           }
         }
@@ -184,7 +232,7 @@ export const layer: Layer.Layer<
       // paths 是 Set 且存的是 resolve 后的绝对路径，万一两者指向同一个文件会自动去重。
       {
         const globalMemory = path.join(global.config, "MEMORY.md")
-        if (yield* fs.existsSafe(globalMemory)) paths.add(path.resolve(globalMemory))
+        if (yield* fs.existsSafe(globalMemory)) add(globalMemory, "memory")
 
         if (!Flag.REDCODE_DISABLE_PROJECT_CONFIG) {
           // 260729 Red 不能直接用 ctx.worktree —— 目录不是 git 仓库时它是文件系统根 "/"，
@@ -193,7 +241,7 @@ export const layer: Layer.Layer<
           // 一整套被 scaffold 出来的 .redcode/（MEMORY.md + .gitignore + package.json +
           // node_modules），就是这么来的。非 git 项目退回 ctx.directory 作为项目根。
           const projectMemory = path.join(projectRoot(ctx), ".redcode", "MEMORY.md")
-          if (yield* fs.existsSafe(projectMemory)) paths.add(path.resolve(projectMemory))
+          if (yield* fs.existsSafe(projectMemory)) add(projectMemory, "memory")
         }
       }
 
@@ -201,7 +249,7 @@ export const layer: Layer.Layer<
       {
         const soulFile = flags.client === "desktop" ? "Gsoul.md" : "Tsoul.md"
         const soulPath = path.join(global.home, ".redcode", "souls", soulFile)
-        if (yield* fs.existsSafe(soulPath)) paths.add(path.resolve(soulPath))
+        if (yield* fs.existsSafe(soulPath)) add(soulPath, "soul")
       }
 
       if (config.instructions) {
@@ -217,37 +265,54 @@ export const layer: Layer.Layer<
                 })
               : relative(instruction)
           ).pipe(Effect.catch(() => Effect.succeed([] as string[])))
-          matches.forEach((item) => paths.add(path.resolve(item)))
+          matches.forEach((item) => add(item, "config"))
         }
       }
 
-      return paths
+      return found
+    })
+
+    const systemPaths = Effect.fn("Instruction.systemPaths")(function* () {
+      const found = yield* discover()
+      return new Set(found.map((item) => item.path))
     })
 
     const system = Effect.fn("Instruction.system")(function* () {
       const config = yield* cfg.get()
       const maxSourceBytes = config.instruction_budget?.max_source_bytes ?? DEFAULT_INSTRUCTION_BUDGET.maxSourceBytes
       const maxTotalBytes = config.instruction_budget?.max_total_bytes ?? DEFAULT_INSTRUCTION_BUDGET.maxTotalBytes
-      const paths = yield* systemPaths()
+      const discovered = yield* discover()
       const urls = (config.instructions ?? []).filter(
         (item) => item.startsWith("https://") || item.startsWith("http://"),
       )
 
-      const files = yield* Effect.forEach(Array.from(paths), read, { concurrency: 8 })
+      const files = yield* Effect.forEach(
+        discovered.map((item) => item.path),
+        read,
+        { concurrency: 8 },
+      )
       const remote = yield* Effect.forEach(urls, fetch, { concurrency: 4 })
 
       // 260913 Red 单来源硬上限：超限整份跳过，既不注入半截指令，也不无声吞掉。
       // 上限可配置（instruction_budget.max_source_bytes），默认 1MiB 足够宽松。
       const skipped: string[] = []
+      // order 是注入次序（决定输出与缓存断点），priority 是保留优先级（决定谁先被丢）。
       const sources = [
-        ...Array.from(paths).flatMap((item, i) => {
+        ...discovered.flatMap((item, i) => {
           const content = files[i]
           if (!content) return []
           if (bytes(content) > maxSourceBytes) {
-            skipped.push(`${bytes(content)} bytes: ${item}`)
+            skipped.push(`${bytes(content)} bytes: ${item.path}`)
             return []
           }
-          return [{ source: item, text: `Instructions from: ${item}\n${content}` }]
+          return [
+            {
+              source: item.path,
+              text: `Instructions from: ${item.path}\n${content}`,
+              order: i,
+              priority: RETENTION[item.kind],
+            },
+          ]
         }),
         ...urls.flatMap((item, i) => {
           const content = remote[i]
@@ -256,7 +321,14 @@ export const layer: Layer.Layer<
             skipped.push(`${bytes(content)} bytes: ${item}`)
             return []
           }
-          return [{ source: item, text: `Instructions from: ${item}\n${content}` }]
+          return [
+            {
+              source: item,
+              text: `Instructions from: ${item}\n${content}`,
+              order: discovered.length + i,
+              priority: RETENTION.config,
+            },
+          ]
         }),
       ]
       for (const item of skipped) {
@@ -269,21 +341,32 @@ export const layer: Layer.Layer<
       // （漏掉铁律比前缀长更糟）——那个判断没错，错的是把「不截断」执行成了「不设防」：
       // 本机五份注入实测合计 56.4KiB / 预算 64KiB，已用 88%，越线后除了日志什么都没发生，
       // 前缀继续涨。「有上限」退化成了「有告警」。
-      // 现在按优先级从尾部整份丢弃来源（sources 的顺序即 systemPaths 的注入顺序：
-      // 全局 AGENTS → 项目 AGENTS → 全局 MEMORY → 项目 MEMORY → soul → config instructions），
-      // 绝不切半截文件——那正是 260813 要避免的静默丢铁律。被丢的来源进模型可见声明行，
-      // 模型知道指令不完整；只剩一个来源仍超限时才截断它本身并带显式标记，
-      // 保证输出字节有确定上界（maxTotalBytes + 标记行）。
+      // 现在按 RETENTION 优先级整份丢弃来源，绝不切半截文件——那正是 260813 要避免的
+      // 静默丢铁律。被丢的来源进模型可见声明行，模型知道指令不完整；只剩一个来源仍超限时
+      // 才截断它本身并带显式标记，保证输出字节有确定上界。
       let total = sources.reduce((sum, s) => sum + bytes(s.text), 0)
       const dropped: string[] = []
+      // 每轮丢当前最该丢的那一份：priority 大的先丢，并列时丢 order 大的（让靠前的
+      // 已缓存前缀尽量不动）。splice 保序，所以循环结束后 sources 仍是注入顺序。
       while (sources.length > 1 && total > maxTotalBytes) {
-        const removed = sources.pop()!
+        let worst = 0
+        for (let i = 1; i < sources.length; i++) {
+          const candidate = sources[i]
+          const current = sources[worst]
+          if (
+            candidate.priority > current.priority ||
+            (candidate.priority === current.priority && candidate.order > current.order)
+          ) {
+            worst = i
+          }
+        }
+        const removed = sources.splice(worst, 1)[0]
         total -= bytes(removed.text)
         dropped.push(removed.source)
       }
       if (dropped.length > 0) {
         Log.Default.warn(
-          `Instruction sources dropped, over instruction_budget.max_total_bytes (${maxTotalBytes}): ${dropped.join(", ")}`,
+          `Instruction sources dropped, over instruction_budget.max_total_bytes (${maxTotalBytes}): ${budgetList(dropped, Number.MAX_SAFE_INTEGER)}`,
         )
       }
       if (sources.length === 1 && total > maxTotalBytes) {
@@ -303,9 +386,14 @@ export const layer: Layer.Layer<
        ...sources.map((s) => s.text),
      ]
       if (dropped.length > 0) {
-        parts.push(
-          `[instruction budget] ${dropped.length} instruction source(s) dropped for exceeding instruction_budget.max_total_bytes (${maxTotalBytes}): ${dropped.join(", ")}. Their rules are absent from this session - raise the limit in config if one of them matters.`,
-        )
+        const list = budgetList(dropped, MAX_BUDGET_MARKER_BYTES - MARKER_RESERVE)
+        const marker =
+          `[instruction budget] ${dropped.length} instruction source(s) dropped for exceeding instruction_budget.max_total_bytes (${maxTotalBytes}): ${list}` +
+          `. Their rules are absent from this session - raise the limit in config if one of them matters.`
+        // 兜底：正常情况下列举阶段已经把它收进 2048 内，走不到这里。留着是防有人把
+        // 前缀/后缀写长——那时宁可截断带省略标记，也不能让声明行突破上界。
+        const capped = truncateToBytes(marker, MAX_BUDGET_MARKER_BYTES - CUT_MARKER.length)
+        parts.push(capped === marker ? marker : capped + CUT_MARKER)
       }
       return parts
     })
