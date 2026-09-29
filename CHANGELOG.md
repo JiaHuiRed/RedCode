@@ -23,10 +23,11 @@
 - **移除无消费者的 Desktop Markdown parser IPC 链与依赖**（`packages/desktop`）：渲染端仍使用共享 MarkdownIt parser；不再维护旧的 marked 主进程实现。取舍：`docs/notes/implemented/bug-fix/2026-09-07-markdown-highlight-worker.md`。
 - **TUI 不再静默丢失推理档位**（`packages/opencode/src/cli/cmd/tui/component/prompt/{local,index}.tsx`）：provider 列表未就绪时信任持久化档位，不再把有效选择打成 NULL；会话切换恢复时跳过空档位消息，NULL 历史不再把档位存回 "default" 自我延续。该问题使 GPT 会话在未切档时缓存命中率骤降为 0（Codex 按推理档位分缓存键）。
 - **explore 子代理权限白名单与 runtime guard 对齐**（`packages/opencode/src/agent/definition/explore.md`）：443c92b1 的 explore child runtime guard 在运行层硬 deny bash，但白名单仍声明 `bash: allow`——Permission.evaluate 按 findLast 取后者，deny 掀翻 allow，子代理每次调 bash 都吃 DeniedError（配置层发假门票、运行层兑现失败）。删除白名单中的 bash 并同步提示词与红线段，git 统计类工作明确交还调用方代跑。
-
-#### 变更
 - **修复 desktop 测试套件的 electron 顺序污染**（`packages/desktop/src/main/shell-env.test.ts`）：shell-env 顶层 `import "./logging"` 而 logging 顶层 import electron，bun test 下 electron 无命名导出，静态链接直接失败；更隐蔽的是它先跑会把坏掉的 electron 缓存进模块 registry，让 updater.test.ts 的 `mock.module("electron")` 注册失效——单跑各自全绿、全量必挂 2 fail。改为 mock `./logging` + 动态导入（updater.test.ts 既有惯例），套件 25 pass/2 fail → 31 pass/0 fail。
 
+#### 变更
+
+- **推理强度控件按模型实际档位显示**（`packages/ui/src/v2/components/effort-slider-v2.tsx`、`packages/app/src/components/prompt-input.tsx`）：移除不透明的 Default 停靠点，未显式选择时仍由模型/Agent 决定；单档用按钮、多档用滑杆，颜色跟随日间/夜间主题。决策：`docs/notes/implemented/feature/2026-09-28-model-reasoning-effort-slider.md`。
 - **推理强度控件按模型实际档位显示**（`packages/ui/src/v2/components/effort-slider-v2.tsx`、`packages/app/src/components/prompt-input.tsx`）：移除不透明的 Default 停靠点，未显式选择时仍由模型/Agent 决定；单档用按钮、多档用滑杆，颜色跟随日间/夜间主题。决策：`docs/notes/implemented/feature/2026-09-28-model-reasoning-effort-slider.md`。
 - **GPT 隐藏推理与可见声线解耦**（`packages/opencode/src/session/prompt/gpt.md`、`~/.redcode/souls/{Gsoul,Tsoul}.md`）：取消每次编辑前播报和固定恋爱强度，隐藏 reasoning 专注解题，可见正文仍遵循当前 soul；GPT Delta 净减约 113 tokens。设计取舍：`docs/notes/implemented/architecture/2026-09-27-gpt-soul-visibility.md` 第三轮。
 
