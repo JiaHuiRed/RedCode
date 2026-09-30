@@ -24,6 +24,7 @@
 - **成功输出循环检测真正生效，用户新消息重置计数**（`packages/opencode/src/session/{processor,message-v2,repeat-tool-reminder}.ts`）：修复当前 running 调用导致成功输出判据永远为假的问题；比较此前完成结果时排除软提醒后缀，变化中的轮询不拦。软硬两层统一深层参数键排序，数组顺序不变，两处取样限制在当前用户轮次；工具名与参数预览都有硬限，注记小于 4KiB。决策更新：`docs/notes/implemented/feature/2026-08-14-repeat-tool-reminder-soft-layer.md`。
 - **工具自身 timeout 会取消局部 ctx.abort，不误伤调用方**（`packages/opencode/src/tool/tool.ts`）：信号作用域包住整个 timeout 竞速，deadline 和外层中断都能取消监听该信号的操作；外层取消保持 interruption，未声明预算的工具行为不变。真实包装回归 5 条通过。决策：`docs/notes/implemented/bug-fix/2026-09-30-tool-deadline-abort-scope.md`。
 - **会话面板费用与累计 token 读真实全量账，币种按贡献金额判定**（`packages/app/src/components/session/session-context-metrics.ts`、`session-context-summary.ts`）：费用与累计 token 改用服务端会话行聚合（随每条消息增量维护），不再随前端已加载的消息子集缩水，子会话成本同样改读聚合行；费用币种按各模型实际花费贡献判定，混用零费用套餐模型时不再把人民币账当美元折算（实测 ¥69.21 曾显示为 ¥465.12）。缓存命中率与解码速率仍按已加载消息计算。回归 18 条通过。
+- **目录按钮与文件树标签列表分离**（`packages/app/src/pages/session/file-tree-panel.tsx`）：目录操作移到 tablist 的兄弟节点，视觉仍居中，原按钮与两侧间距不变。方向键只切换标签，Tab 可到达目录按钮，Enter 打开目录而不切换标签；远程工作区仍隐藏入口。
 
 ### [0.11.16] - 2026-09-29
 

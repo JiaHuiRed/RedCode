@@ -173,13 +173,22 @@ export function FileTreePanel(props: {
             class="h-full"
             data-scope="filetree"
           >
-            <Tabs.List>
-              <Tabs.Trigger value="changes" class="flex-1" classes={{ button: "w-full" }}>
-                {props.reviewCount()}{" "}
-                {language.t(props.reviewCount() === 1 ? "session.review.change.one" : "session.review.change.other")}
-              </Tabs.Trigger>
+            {/* 260930 Red 操作按钮不归 tablist 所有；中间预留原 24px 按钮及两侧 8px 间距。 */}
+            <div class="relative shrink-0">
+              <Tabs.List style={{ gap: canOpenDirectory() ? "40px" : undefined }}>
+                <Tabs.Trigger value="changes" class="flex-1" classes={{ button: "w-full" }}>
+                  {props.reviewCount()}{" "}
+                  {language.t(props.reviewCount() === 1 ? "session.review.change.one" : "session.review.change.other")}
+                </Tabs.Trigger>
+                <Tabs.Trigger value="all" class="flex-1" classes={{ button: "w-full" }}>
+                  {language.t("session.files.all")}
+                </Tabs.Trigger>
+              </Tabs.List>
               <Show when={canOpenDirectory()}>
-                <Tooltip value={language.t("home.project.revealInExplorer")} class="shrink-0">
+                <Tooltip
+                  value={language.t("home.project.revealInExplorer")}
+                  class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+                >
                   <IconButton
                     icon="folder"
                     size="small"
@@ -192,10 +201,7 @@ export function FileTreePanel(props: {
                   />
                 </Tooltip>
               </Show>
-              <Tabs.Trigger value="all" class="flex-1" classes={{ button: "w-full" }}>
-                {language.t("session.files.all")}
-              </Tabs.Trigger>
-            </Tabs.List>
+            </div>
             <Tabs.Content value="changes" class="bg-background-stronger px-3 py-0">
               <Switch>
                 <Match when={props.hasReview() || !props.diffsReady()}>
