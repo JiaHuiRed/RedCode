@@ -1194,6 +1194,7 @@ export function parts(message_id: MessageID) {
 // 分片，但 step 类模型的重复是「每步各生成一条独立助手消息、每条里只有一个 tool 分片」，
 // 单条消息内永远凑不满阈值 → 检测器从未触发。这里跨消息取样，并跳过 step-start/reasoning
 // 等中间分片，只留 tool。
+// 260930 Red SQL 过滤与回归边界见 docs/notes/implemented/feature/2026-08-14-repeat-tool-reminder-soft-layer.md
 export function recentToolParts(session_id: SessionID, limit: number, parentID?: MessageID) {
   const rows = Database.use((db) =>
     db
@@ -1203,21 +1204,20 @@ export function recentToolParts(session_id: SessionID, limit: number, parentID?:
       .where(
         and(
           eq(PartTable.session_id, session_id),
+          sql`json_extract(${PartTable.data}, '$.type') = 'tool'`,
           // 260930 Red 只取当前用户轮次；读 parentID 投影，不加载整份 message.data。
           parentID === undefined ? undefined : sql`json_extract(${MessageTable.data}, '$.parentID') = ${parentID}`,
         ),
       )
       .orderBy(desc(MessageTable.time_created), desc(MessageTable.id), desc(PartTable.id))
-      // 每步除 tool 外还会写 step-start/step-finish/reasoning，多取几倍再过滤
-      .limit(limit * 8)
+      .limit(limit)
       .all(),
   )
-  const out: Part[] = []
+  const out: ToolPart[] = []
   for (const row of rows) {
     const item = part(row.part)
     if (item.type !== "tool") continue
     out.push(item)
-    if (out.length >= limit) break
   }
   return out.reverse()
 }

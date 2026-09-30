@@ -39,6 +39,14 @@
 
 回归使用真实 processor、真实权限事件与回复：此前相同成功结果不触发权限的用例先红，修改后通过；变化中的轮询不触发，用户新消息后的同参重试不带上一轮提醒。纯函数测试覆盖嵌套键重排、数组顺序、错误计数、长工具名/CJK 载荷硬上限。
 
+`recentToolParts` 在 SQL 中按 `json_extract(part.data, '$.type') = 'tool'` 过滤后直接 `LIMIT limit`，再用 `part(row.part)` 解码并确认 `ToolPart`；时间、message ID、part ID 的倒序和最终 reverse、parentID 边界不变，也不增加索引或迁移。隔离 DB 回归覆盖 `limit*8` 个以上更新的非工具分片、跨 assistant 消息与新 user 边界、limit 0、时间排序与回绕 ID 的相反顺序。
+
+性能核对仅代表以下合成 SQLite 场景，不外推为全仓加速：`:memory:` 数据库复刻现有三个 message/part 索引；512 个 message / 6,144 个 part，同一个 session 与 parentID，当前轮 1,200 个 part（24 tool、1,176 non-tool），part JSON 各约 16.4KB（non-tool 16,409 字节、tool 16,411 字节，合计约 96.1 MiB）。旧/新 SQL 都保留 `JOIN message` 与 `time_created DESC, message.id DESC, part.id DESC`。6 次预热后交错采集 21 个样本；limit 6 的旧/新中位数为 17.576/22.015 ms（样本范围 16.003–27.908/19.921–28.593 ms），limit 24 为 84.472/28.396 ms（70.656–119.925/23.462–44.125 ms）。limit 6 的合成密集文本场景反而更慢，说明 JSON 类型过滤成本受 payload 和 limit 影响；结果不是普遍性能结论。
+
+两个 limit 的 `EXPLAIN QUERY PLAN` 对新旧 SQL 相同：`SEARCH part USING INDEX part_session_id_id_idx (session_id=?)`、`SEARCH message USING INDEX sqlite_autoindex_message_1 (id=?)`、`USE TEMP B-TREE FOR ORDER BY`。主工作区复核同一合成数据与采样方式，limit 6 旧/新中位数 18.844/26.707 ms，limit 24 为 69.339/25.247 ms；旧查询分别读回 48/192 条非工具分片后返回零条工具，新查询准确返回 6/24 条工具，因此较小窗口的额外过滤开销换取的是正确结果，不能视作等价工作的提速对比。
+
+回归测试源在 `packages/opencode/test/session/recent-tool-parts.test.ts`。依赖完整的主工作区中，高密度用例在旧实现下先失败（期望六条工具、实际为空），SQL 修复后四条 DB 回归通过；与真实 processor、提醒测试合跑为 37 条通过。只修取样漏项，沿用既有动态提醒与拦截阈值；固定提示词、工具 schema 与历史消息不变，既有每条提醒的 4KiB 硬限不增加。
+
 模型可见四问：
 
 1. 无新增固定提示词。按修正后的判据触发原有 tool-output 注记；详细版参数预览改为稳定键序，超过 500 字符的工具名带省略号。

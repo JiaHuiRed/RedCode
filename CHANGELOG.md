@@ -28,6 +28,8 @@
 
 - **工具裁剪审计明确归内部日志所有**（`packages/opencode/src/tool/truncate.ts`）：移除 `Truncate.result()` 返回 metadata 中未传播的 audit 字段，保留真实持久日志与恢复定位；回归改读隔离子进程日志，核验最终预览大小、CJK 估算及无原文泄漏，并确认工具结果不暴露 audit 契约。决策：`docs/notes/implemented/feature/2026-09-30-tool-output-fitting-audit.md`。
 
+- **工具循环取样不再被密集非工具分片挤出**（`packages/opencode/src/session/message-v2.ts`）：在 SQL 过滤工具类型后直接按工具数量取样，移除 `limit*8` 分片窗口的漏取风险；当前用户轮次和时间顺序保持不变。真实 DB 回归覆盖密度、用户边界、零数量与时间排序；合成查询基准记录了小窗口的过滤开销，不宣称普遍加速。决策：`docs/notes/implemented/feature/2026-08-14-repeat-tool-reminder-soft-layer.md`。
+
 ### [0.11.16] - 2026-09-29
 
 #### 修复
