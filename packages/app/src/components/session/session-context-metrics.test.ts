@@ -104,6 +104,87 @@ describe("getSessionContextMetrics", () => {
   })
 })
 
+// 260930 Red 币种按贡献金额判定 + 会话行聚合覆盖。真实事故：step5（人民币计价）与
+// GLM 套餐（cost 恒 0、无币种标记）混用，最后一条是 GLM → 按 USD 兜底，
+// ¥69.21 被显示成 ¥465.12（×6.72）。
+describe("费用币种与全量聚合", () => {
+  const providers = [
+    {
+      id: "stepfun-step-plan",
+      name: "Step Plan",
+      models: {
+        "step-5-preview": {
+          name: "Step 5",
+          limit: { context: 1_000_000 },
+          cost: { currency: "CNY" },
+        },
+      },
+    },
+    {
+      id: "zhipuai-coding-plan",
+      name: "GLM Plan",
+      models: {
+        "glm-5.3-flash": {
+          name: "GLM Flash",
+          limit: { context: 200_000 },
+        },
+      },
+    },
+  ] as any[]
+
+  test("免费套餐模型是最后一条时，币种仍按真实花费的贡献者判定", () => {
+    const messages = [
+      assistant(
+        "a1",
+        { input: 2_000, output: 500, reasoning: 0, read: 90_000, write: 0 },
+        69.21,
+        "stepfun-step-plan",
+        "step-5-preview",
+      ),
+      assistant(
+        "a2",
+        { input: 100, output: 50, reasoning: 0, read: 1_000, write: 0 },
+        0,
+        "zhipuai-coding-plan",
+        "glm-5.3-flash",
+      ),
+    ]
+
+    const metrics = getSessionContextMetrics(messages, providers)
+
+    expect(metrics.totalCost).toBe(69.21)
+    expect(metrics.costCurrency).toBe("CNY")
+    // 最后一轮的模型展示不跟着变：context 仍描述最近一条（GLM）
+    expect(metrics.context?.message.id).toBe("a2")
+    expect(metrics.context?.modelLabel).toBe("GLM Flash")
+  })
+
+  test("会话行聚合覆盖子集：费用与累计 token 用全量账", () => {
+    const messages = [assistant("a1", { input: 300, output: 100, reasoning: 50, read: 25, write: 25 }, 1.25)]
+    const aggregate = {
+      cost: 69.2146,
+      tokens: { input: 2_884_114, output: 674_975, reasoning: 0, cache: { read: 101_503_744, write: 0 } },
+    }
+
+    const metrics = getSessionContextMetrics(messages, providers, aggregate)
+
+    expect(metrics.totalCost).toBe(69.2146)
+    expect(metrics.context?.total).toBe(105_062_833)
+    // 窗口/速率仍来自已加载消息（聚合行没有这些字段）
+    expect(metrics.context?.message.id).toBe("a1")
+  })
+
+  test("消息尚未加载时聚合费用仍走早退路径", () => {
+    const metrics = getSessionContextMetrics([], providers, {
+      cost: 12.34,
+      tokens: { input: 1, output: 2, reasoning: 0, cache: { read: 3, write: 0 } },
+    })
+
+    expect(metrics.totalCost).toBe(12.34)
+    expect(metrics.context).toBeUndefined()
+  })
+})
+
 // 260819 cc audit：usage 原来是「会话累计 / 窗口」，长会话下能到 1500%，而 ProgressCircle
 // 内部钳到 [0,100]，那个圈从超过一个窗口起就永远是满的。改用 tokens.context。
 describe("上下文窗口口径", () => {

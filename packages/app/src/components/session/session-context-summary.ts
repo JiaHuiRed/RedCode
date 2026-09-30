@@ -83,7 +83,11 @@ export function useSessionContextSummaries() {
     { equals: same },
   )
 
-  const metrics = createMemo(() => getSessionContextMetrics(messages(), [...providers.all().values()]))
+  // 260930 Red 费用与累计 token 改读服务端会话行聚合（全量账）。sync.data.message 只是
+  // 已加载子集，长会话下「Session total」能比真实累计小一个数量级（1.35 亿 vs 2400 万）。
+  // 命中率/解码速率等比率仍按已加载消息算（聚合行没有 miss 分桶）。
+  const sessionRow = createMemo(() => sync.data.session.find((s) => s.id === params.id))
+  const metrics = createMemo(() => getSessionContextMetrics(messages(), [...providers.all().values()], sessionRow()))
   const ctx = createMemo(() => metrics().context)
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
 
@@ -122,19 +126,14 @@ export function useSessionContextSummaries() {
 
   // 260706 Red 子代理(Task/Agent 工具)创建的子 session 的 LLM 调用成本在 DeepSeek 平台真实计费，
   // 但原 metrics 只统计父 session 自身消息——面板显示"总成本"严重偏低。
-  // 通过 SSE 全局事件流同步到 store 的子 session 消息汇总其 cost 一并显示。
+  // 260930 Red 子会话成本同样改读会话行聚合：原来遍历子会话已加载消息，没加载到的子会话直接漏计。
   // 260922 Red 从 session-context-tab.tsx 迁来：折叠胶囊也要显示总成本，两处各算一份必然漂移。
   const childCost = createMemo(() => {
     const id = params.id
     if (!id) return 0
     let total = 0
     for (const s of sync.data.session) {
-      if (s.parentID !== id) continue
-      const msgs = sync.data.message[s.id]
-      if (!msgs) continue
-      for (const message of msgs) {
-        if (message.role === "assistant") total += message.cost
-      }
+      if (s.parentID === id) total += s.cost ?? 0
     }
     return total
   })

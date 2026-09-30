@@ -56,6 +56,15 @@ type Metrics = {
   costCurrency: "USD" | "CNY"
   context: Context | undefined
 }
+/**
+ * 260930 Red 服务端会话行聚合（projectors 随每条消息写入/回退增量维护）。
+ * 费用与累计 token 是全量账；前端 sync.data.message 只是已加载子集（分页窗口），
+ * 长会话下两者能差一个数量级。缓存命中率、解码速率这类比率仍由已加载消息计算。
+ */
+export type SessionAggregate = {
+  cost?: number
+  tokens?: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
+}
 
 const tokenTotal = (msg: AssistantMessage) => {
   return msg.tokens.input + msg.tokens.output + msg.tokens.reasoning + msg.tokens.cache.read + msg.tokens.cache.write
@@ -64,8 +73,8 @@ const tokenTotal = (msg: AssistantMessage) => {
 // 260923 Red 单趟遍历：原实现 totalCost / lastAssistantWithTokens / agg / lastAssistantWithSpeed /
 // cacheHit 各扫一遍，长会话一次 metrics 重算要付 5 趟 O(N)，而流式期间每批 SSE 都会触发重算。
 // 合并成一趟；「取最后一条满足条件的」两个语义用正序覆盖（后者覆盖前者）保持等价。
-const build = (messages: Message[] = [], providers: Provider[] = []): Metrics => {
-  let totalCost = 0
+const build = (messages: Message[] = [], providers: Provider[] = [], aggregate?: SessionAggregate): Metrics => {
+  let subsetCost = 0
   let tokenMessage: AssistantMessage | undefined
   let speedMessage: AssistantMessage | undefined
   // Aggregate across all assistant messages (not just the last one)
@@ -75,9 +84,27 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
   let sumRead = 0
   let sumMiss = 0
   let sumWrite = 0
+  // 260930 Red 币种按贡献金额判定。原来的「最后一条有 token 的消息」在混用套餐模型时
+  // 会拿到免费模型的币种当账本币种——GLM 套餐 cost 恒 0、models.dev 里也没有币种标记，
+  // 按美元兜底就把 step5 的人民币账当美元再乘 6.72（实测 ¥69.21 显示成 ¥465.12）。
+  // 按模型累计真实花费，取贡献最大的模型定币种；多币种混合仍取大头（分币种记账待有真实场景再说）。
+  const costByModel = new Map<string, { cost: number; currency: "USD" | "CNY" }>()
+  const currencyOf = new Map<string, "USD" | "CNY">()
   for (const m of messages) {
     if (m.role !== "assistant") continue
-    totalCost += m.cost
+    subsetCost += m.cost
+    if (m.cost > 0) {
+      const key = `${m.providerID}/${m.modelID}`
+      let currency = currencyOf.get(key)
+      if (currency === undefined) {
+        currency = (providers.find((p) => p.id === m.providerID)?.models[m.modelID]?.cost?.currency ?? "USD") as
+          "USD" | "CNY"
+        currencyOf.set(key, currency)
+      }
+      const entry = costByModel.get(key)
+      if (entry) entry.cost += m.cost
+      else costByModel.set(key, { cost: m.cost, currency })
+    }
     if (tokenTotal(m) > 0) tokenMessage = m
     if (m.time.firstChunk && m.time.completed && m.tokens.output + m.tokens.reasoning > 0) speedMessage = m
     agg.input += m.tokens.input ?? 0
@@ -93,12 +120,27 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
     sumWrite += m.tokens.cache.write
   }
   const message = tokenMessage
-  if (!message) return { totalCost, costCurrency: "USD", context: undefined }
+  // 币种在早退前算好：有费用但尚未加载到 token 消息时（子集窗口），账面仍要用对币种
+  const costCurrency = (() => {
+    let best: { cost: number; currency: "USD" | "CNY" } | undefined
+    for (const entry of costByModel.values()) {
+      if (!best || entry.cost > best.cost) best = entry
+    }
+    return best?.currency ?? ("USD" as const)
+  })()
+  if (!message) return { totalCost: aggregate?.cost ?? subsetCost, costCurrency, context: undefined }
 
   const provider = providers.find((item) => item.id === message.providerID)
   const model = provider?.models[message.modelID]
   const limit = model?.limit.context
-  const total = agg.input + agg.output + agg.reasoning + agg.cacheRead + agg.cacheWrite
+  const subsetTotal = agg.input + agg.output + agg.reasoning + agg.cacheRead + agg.cacheWrite
+  const total = aggregate?.tokens
+    ? aggregate.tokens.input +
+      aggregate.tokens.output +
+      aggregate.tokens.reasoning +
+      aggregate.tokens.cache.read +
+      aggregate.tokens.cache.write
+    : subsetTotal
   const window = message.tokens.context
   const lastTurn = turns[turns.length - 1]
 
@@ -116,9 +158,8 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
   const firstChunkMs = speedMessage ? speedMessage.time.firstChunk! - speedMessage.time.created : null
 
   return {
-    totalCost,
-    // 260827 Red 币种读 model.cost.currency（无标记按 USD 折算，USD_TO_CNY 见上）
-    costCurrency: (model?.cost?.currency ?? "USD") === "CNY" ? ("CNY" as const) : ("USD" as const),
+    totalCost: aggregate?.cost ?? subsetCost,
+    costCurrency,
     context: {
       message,
       provider,
@@ -171,8 +212,12 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Metrics =>
   }
 }
 
-export function getSessionContextMetrics(messages: Message[] = [], providers: Provider[] = []) {
-  return build(messages, providers)
+export function getSessionContextMetrics(
+  messages: Message[] = [],
+  providers: Provider[] = [],
+  aggregate?: SessionAggregate,
+) {
+  return build(messages, providers, aggregate)
 }
 
 /**
