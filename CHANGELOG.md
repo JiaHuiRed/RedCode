@@ -16,6 +16,7 @@
 - **工具截断新增可核验收益审计**（`packages/opencode/src/tool/truncate.ts`）：沿用现有 head/tail 与 spill，持久记录裁剪前后字节、含恢复提示的文本估算 token 差、附件数量与原文定位状态；使用诊断侧 CJK 启发式，不改变预算或计费。日志不重复存原文。决策：`docs/notes/implemented/feature/2026-09-30-tool-output-fitting-audit.md`。
 - **文件树中间可直接打开工作区目录**（`packages/app/src/pages/session/file-tree-panel.tsx`）：在“更改”和“所有文件”之间加入文件夹按钮，点击通过现有桌面入口打开当前本地工作区的系统文件管理器；沿用已有悬浮提示，打开中防止重复点击，失败显示提示。网页版与远程工作区不显示该入口。
 - **推理强度弹层与滑条打磨**（`packages/app/src/components/prompt-input.tsx`、`packages/ui/src/v2/components/effort-slider-v2.{tsx,css}`）：档位居中突出、模型名作副标题，24px 胶囊轨道配 28px 圆形白滑块与主题色进度填充；默认档仍不伪装成最低档，模型真实档位、拖动吸附与键盘操作保持不变，键盘和减少动效模式不等待位置过渡。
+- **模型与推理强度合为一个入口**（`packages/app/src/components/prompt-input.tsx`、`dialog-select-model.tsx`）：底栏统一显示“模型 · 推理档”，同一弹层内切换概览和模型列表，选完模型返回概览继续调强度；左上推理图标与右上供应商标志对应。模型真实档位、默认档、搜索分组、连接/管理入口与快捷键保持原有逻辑；不支持推理档的模型隐藏滑条。
 
 #### 修复
 

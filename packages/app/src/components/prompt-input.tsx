@@ -36,7 +36,6 @@ import { ProviderIcon } from "@redcode-ai/ui/provider-icon"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { Tooltip, TooltipKeybind } from "@redcode-ai/ui/tooltip"
 import { availableEffortSteps, EffortSliderV2 } from "@redcode-ai/ui/v2/components/effort-slider-v2.jsx"
-import { Popover } from "@redcode-ai/ui/popover"
 import { IconButton } from "@redcode-ai/ui/icon-button"
 import { Select } from "@redcode-ai/ui/select"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
@@ -1130,7 +1129,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
   const currentVariantLabel = () => {
     const value = currentVariant()
-    return value ? variantLabel(value) : language.t("settings.agents.variant.title")
+    return value ? variantLabel(value) : language.t("common.default")
   }
   const accepting = createMemo(() => {
     const id = params.id
@@ -1378,7 +1377,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   // 控件，于是永远停在 local.agent.list()[0]（build），plan / redmind 在界面上选不到。
   // 底层早就是通的：local.agent 的 list/current/set 在 @提及子代理时就在用，
   // agent.cycle 命令也早注册了（use-session-commands.tsx）、有快捷键、命令面板里能调，
-  // 缺的只是这个可见控件。照 variantControl 的样式做，保持一排控件观感一致。
+  //   缺的只是这个可见控件。照模型入口的样式做，保持一排控件观感一致。
   const agentControl = () => (
     <Show when={local.agent.list().length > 1}>
       <div
@@ -1416,119 +1415,80 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     </Show>
   )
 
-  const variantControl = () => (
-    <Show when={variants().length > 0}>
-      <div
-        data-component="prompt-variant-control"
-        style={providersShouldFadeIn() ? { animation: "fade-in 0.3s" } : undefined}
-        class="flex items-center"
-      >
-        {/* 260928 Red：滑条只显示模型真实支持的档位。未显式选择时保留模型/Agent 默认，不伪装成最低档。 */}
-        <TooltipKeybind
-          placement="top"
-          gutter={4}
-          title={language.t("command.model.variant.cycle")}
-          keybind={command.keybind("model.variant.cycle")}
-        >
-          <Popover
-            placement="top"
-            gutter={8}
-            class="w-[260px] max-w-[calc(100vw-24px)] rounded-xl"
-            triggerAs={Button}
-            triggerProps={{
-              variant: "ghost",
-              size: "normal",
-              style: control(),
-              class: "min-w-0 max-w-[160px] justify-start text-sm font-medium leading-4 text-v2-text-text-faint",
-              "data-action": "prompt-model-variant",
-            }}
-            trigger={
-              <>
-                <Icon
-                  name="brain"
-                  size="small"
-                  class={currentVariant() ? "shrink-0 text-v2-text-text-accent" : "shrink-0 text-v2-icon-icon-muted"}
-                />
-                <span class="truncate capitalize">{currentVariantLabel()}</span>
-                <Icon name="chevron-down" size="small" class="shrink-0 text-v2-icon-icon-muted" />
-              </>
+  // 260930 Red 一个入口选择模型与推理档，供应商标志与推理图标在概览两侧对应。
+  const modelOverview = (selectModel: () => void) => (
+    <div class="flex flex-col gap-3 py-1">
+      <div class="relative flex min-w-0 flex-col items-center gap-0.5 px-5 text-center">
+        <Show when={variants().length > 0}>
+          <div class="absolute left-0 top-0.5">
+            <Icon name="brain" size="small" class="text-v2-icon-icon-muted" />
+          </div>
+        </Show>
+        <Show when={local.model.current()?.provider?.id}>
+          <div class="absolute right-0 top-0.5">
+            <ProviderIcon
+              id={local.model.current()?.provider?.id ?? ""}
+              class="size-4 text-v2-icon-icon-muted"
+              role="img"
+              aria-label={local.model.current()?.provider?.name}
+            />
+          </div>
+        </Show>
+        <Show when={variants().length > 0}>
+          <span class="w-full truncate capitalize text-base font-medium text-v2-text-text-accent">
+            {currentVariant() ? currentVariantLabel() : language.t("prompt.variant.modelDefault")}
+          </span>
+        </Show>
+        <Button
+          variant="ghost"
+          size="small"
+          data-action="prompt-choose-model"
+          class="h-auto min-w-0 max-w-full gap-1 px-0 py-0.5 text-sm font-medium text-v2-text-text-muted"
+          aria-label={language.t("dialog.model.select.title")}
+          onClick={() => {
+            if (providers.paid().length > 0) {
+              selectModel()
+              return
             }
-            onOpenChange={(open: boolean) => {
-              if (!open) restoreFocus()
-            }}
-          >
-            <div class="flex flex-col gap-3 py-1">
-              <div class="relative flex min-w-0 flex-col items-center gap-0.5 px-5 text-center">
-                <div class="absolute left-0 top-0.5">
-                  <Icon name="brain" size="small" class="text-v2-icon-icon-muted" />
-                </div>
-                <span class="w-full truncate capitalize text-base font-medium text-v2-text-text-accent">
-                  {currentVariant() ? currentVariantLabel() : language.t("prompt.variant.modelDefault")}
-                </span>
-                <span class="w-full truncate text-sm text-v2-text-text-muted">{local.model.current()?.name}</span>
-              </div>
-              <EffortSliderV2
-                steps={variants()}
-                current={currentVariant()}
-                label={variantLabel}
-                title={language.t("settings.agents.variant.title")}
-                unselectedLabel={language.t("prompt.variant.modelDefault")}
-                onChange={(value) => local.model.variant.set(value)}
-                style={{
-                  "--effort-slider-v2-width": "100%",
-                  "--effort-slider-v2-height": "24px",
-                  "--effort-slider-v2-thumb-size": "28px",
-                }}
-              />
-              <Show when={variants().length > 1}>
-                <div class="flex items-baseline justify-between gap-2 text-sm text-v2-text-text-muted">
-                  <span>{language.t("prompt.variant.faster")}</span>
-                  <span>{language.t("prompt.variant.smarter")}</span>
-                </div>
-              </Show>
-            </div>
-          </Popover>
-        </TooltipKeybind>
+            void import("@/components/dialog-select-model-unpaid").then((x) => {
+              dialog.show(() => <x.DialogSelectModelUnpaid model={local.model} />)
+            })
+          }}
+        >
+          <span class="truncate">{local.model.current()?.name ?? language.t("dialog.model.select.title")}</span>
+          <Icon name="chevron-down" size="small" class="shrink-0 text-v2-icon-icon-muted" />
+        </Button>
       </div>
-    </Show>
+      <Show when={variants().length > 0}>
+        <EffortSliderV2
+          steps={variants()}
+          current={currentVariant()}
+          label={variantLabel}
+          title={language.t("settings.agents.variant.title")}
+          unselectedLabel={language.t("prompt.variant.modelDefault")}
+          onChange={(value) => local.model.variant.set(value)}
+          style={{
+            "--effort-slider-v2-width": "100%",
+            "--effort-slider-v2-height": "24px",
+            "--effort-slider-v2-thumb-size": "28px",
+          }}
+        />
+        <Show when={variants().length > 1}>
+          <div class="flex items-baseline justify-between gap-2 text-sm text-v2-text-text-muted">
+            <span>{language.t("prompt.variant.faster")}</span>
+            <span>{language.t("prompt.variant.smarter")}</span>
+          </div>
+        </Show>
+      </Show>
+    </div>
   )
 
   const modelControl = () => (
     <Show when={!providersLoading()}>
-      <Show
-        when={providers.paid().length > 0}
-        fallback={
-          <TooltipKeybind
-            placement="top"
-            gutter={4}
-            title={language.t("command.model.choose")}
-            keybind={command.keybind("model.choose")}
-          >
-            <Button
-              data-action="prompt-model"
-              as="div"
-              variant="ghost"
-              size="normal"
-              class="min-w-0 max-w-[220px] justify-start text-[13px] font-[440] leading-4 text-v2-text-text-faint group"
-              style={control()}
-              onClick={() => {
-                void import("@/components/dialog-select-model-unpaid").then((x) => {
-                  dialog.show(() => <x.DialogSelectModelUnpaid model={local.model} />)
-                })
-              }}
-            >
-              <Show when={local.model.current()?.provider?.id}>
-                <ProviderIcon
-                  id={local.model.current()?.provider?.id ?? ""}
-                  class="size-4 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity duration-150"
-                  style={{ "will-change": "opacity", transform: "translateZ(0)" }}
-                />
-              </Show>
-              <span class="truncate">{local.model.current()?.name ?? language.t("dialog.model.select.title")}</span>
-              <Icon name="chevron-down" size="small" class="shrink-0 text-v2-icon-icon-muted" />
-            </Button>
-          </TooltipKeybind>
-        }
+      <div
+        data-component="prompt-model-control"
+        style={providersShouldFadeIn() ? { animation: "fade-in 0.3s" } : undefined}
+        class="flex min-w-0 items-center"
       >
         <TooltipKeybind
           placement="top"
@@ -1538,13 +1498,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         >
           <ModelSelectorPopover
             model={local.model}
+            overview={modelOverview}
             triggerAs={Button}
             triggerProps={{
               variant: "ghost",
               size: "normal",
               style: control(),
-              class:
-                "min-w-0 max-w-[220px] justify-start text-[13px] font-[440] leading-4 text-v2-text-text-faint group",
+              class: "min-w-0 max-w-[280px] justify-start text-sm font-medium leading-4 text-v2-text-text-faint group",
               "data-action": "prompt-model",
             }}
             onClose={restoreFocus}
@@ -1557,10 +1517,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               />
             </Show>
             <span class="truncate">{local.model.current()?.name ?? language.t("dialog.model.select.title")}</span>
+            <Show when={variants().length > 0}>
+              <span class="shrink-0 text-v2-text-text-muted" aria-hidden="true">
+                ·
+              </span>
+              <span class="shrink-0 capitalize text-v2-text-text-accent">{currentVariantLabel()}</span>
+            </Show>
             <Icon name="chevron-down" size="small" class="shrink-0 text-v2-icon-icon-muted" />
           </ModelSelectorPopover>
         </TooltipKeybind>
-      </Show>
+      </div>
     </Show>
   )
 
@@ -1729,7 +1695,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             </Show>
             {agentControl()}
             {modelControl()}
-            {variantControl()}
             {/* 260819 cc 上下文窗口指示器紧跟模型/档位——与 timeline 顶栏那个是同一个组件，
                 这里只是把它放到用户真正在看的位置（选模型的那一行）。组件自带
                 <Show when={params.id}> 守卫，新建会话页没有 id 时整块不渲染。 */}

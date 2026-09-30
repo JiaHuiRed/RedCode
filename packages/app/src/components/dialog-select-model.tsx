@@ -96,17 +96,31 @@ export function ModelSelectorPopover(props: {
   children?: JSX.Element
   triggerAs?: ValidComponent
   triggerProps?: ModelSelectorTriggerProps
+  overview?: (selectModel: () => void) => JSX.Element
   onClose?: (cause: "escape" | "select") => void
 }) {
   const [store, setStore] = createStore<{
     open: boolean
     dismiss: Dismiss | null
+    selecting: boolean
   }>({
     open: false,
     dismiss: null,
+    selecting: false,
   })
   const dialog = useDialog()
   const globalSync = useServerSync()
+  let overviewRef: HTMLDivElement | undefined
+
+  // 260930 Red 模型列表与推理概览共用一个弹层；选完模型返回概览，继续调整强度。
+  const showModels = () => {
+    globalSync.wantProviderCatalog()
+    setStore("selecting", true)
+  }
+  const showOverview = () => {
+    setStore("selecting", false)
+    requestAnimationFrame(() => overviewRef?.focus())
+  }
 
   const close = (dismiss: Dismiss) => {
     setStore("dismiss", dismiss)
@@ -132,8 +146,8 @@ export function ModelSelectorPopover(props: {
     <Kobalte
       open={store.open}
       onOpenChange={(next) => {
-        if (next) globalSync.wantProviderCatalog()
-        if (next) setStore("dismiss", null)
+        if (next && !props.overview) globalSync.wantProviderCatalog()
+        if (next) setStore({ dismiss: null, selecting: !props.overview })
         setStore("open", next)
       }}
       modal={false}
@@ -145,9 +159,15 @@ export function ModelSelectorPopover(props: {
       </Kobalte.Trigger>
       <Kobalte.Portal>
         <Kobalte.Content
-          class="w-72 h-80 flex flex-col p-2 rounded-md border border-border-base bg-surface-raised-stronger-non-alpha shadow-md z-50 outline-none overflow-hidden"
+          data-component={props.overview ? "popover-content" : undefined}
+          class={
+            props.overview
+              ? `max-w-[calc(100vw-24px)] flex flex-col rounded-xl z-50 outline-none overflow-hidden ${store.selecting ? "w-72 h-80 p-2" : "w-[260px]"}`
+              : "w-72 h-80 flex flex-col p-2 rounded-md border border-border-base bg-surface-raised-stronger-non-alpha shadow-md z-50 outline-none overflow-hidden"
+          }
           onEscapeKeyDown={(event) => {
-            close("escape")
+            if (props.overview && store.selecting) showOverview()
+            else close("escape")
             event.preventDefault()
             event.stopPropagation()
           }}
@@ -163,37 +183,69 @@ export function ModelSelectorPopover(props: {
             setStore("dismiss", null)
           }}
         >
-          <Kobalte.Title class="sr-only">{language.t("dialog.model.select.title")}</Kobalte.Title>
-          <ModelList
-            provider={props.provider}
-            model={props.model}
-            onSelect={() => close("select")}
-            class="p-1"
-            action={
-              <div class="flex items-center gap-1">
-                <Tooltip placement="top" value={language.t("command.provider.connect")}>
-                  <IconButton
-                    icon="plus-small"
-                    variant="ghost"
-                    iconSize="normal"
-                    class="size-6"
-                    aria-label={language.t("command.provider.connect")}
-                    onClick={handleConnectProvider}
-                  />
-                </Tooltip>
-                <Tooltip placement="top" value={language.t("dialog.model.manage")}>
-                  <IconButton
-                    icon="sliders"
-                    variant="ghost"
-                    iconSize="normal"
-                    class="size-6"
-                    aria-label={language.t("dialog.model.manage")}
-                    onClick={handleManage}
-                  />
-                </Tooltip>
+          {/* 260930 Red 读屏标题跟随弹层状态：概览是调推理档，列表才是选模型。 */}
+          <Kobalte.Title class="sr-only">
+            {props.overview && !store.selecting
+              ? language.t("settings.agents.variant.title")
+              : language.t("dialog.model.select.title")}
+          </Kobalte.Title>
+          <Show
+            when={!props.overview || store.selecting}
+            fallback={
+              <div
+                ref={overviewRef}
+                data-slot="popover-body"
+                data-component="model-effort-overview"
+                tabIndex={-1}
+                class="outline-none"
+              >
+                {props.overview?.(showModels)}
               </div>
             }
-          />
+          >
+            <Show when={props.overview}>
+              <div class="flex shrink-0 items-center gap-1 pb-1">
+                <IconButton
+                  icon="chevron-left"
+                  variant="ghost"
+                  size="small"
+                  aria-label={language.t("common.goBack")}
+                  onClick={showOverview}
+                />
+                <span class="text-sm font-medium text-text-base">{language.t("dialog.model.select.title")}</span>
+              </div>
+            </Show>
+            <ModelList
+              provider={props.provider}
+              model={props.model}
+              onSelect={() => (props.overview ? showOverview() : close("select"))}
+              class="p-1"
+              action={
+                <div class="flex items-center gap-1">
+                  <Tooltip placement="top" value={language.t("command.provider.connect")}>
+                    <IconButton
+                      icon="plus-small"
+                      variant="ghost"
+                      iconSize="normal"
+                      class="size-6"
+                      aria-label={language.t("command.provider.connect")}
+                      onClick={handleConnectProvider}
+                    />
+                  </Tooltip>
+                  <Tooltip placement="top" value={language.t("dialog.model.manage")}>
+                    <IconButton
+                      icon="sliders"
+                      variant="ghost"
+                      iconSize="normal"
+                      class="size-6"
+                      aria-label={language.t("dialog.model.manage")}
+                      onClick={handleManage}
+                    />
+                  </Tooltip>
+                </div>
+              }
+            />
+          </Show>
         </Kobalte.Content>
       </Kobalte.Portal>
     </Kobalte>
