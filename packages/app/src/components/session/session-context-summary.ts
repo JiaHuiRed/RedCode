@@ -128,20 +128,31 @@ export function useSessionContextSummaries() {
   // 但原 metrics 只统计父 session 自身消息——面板显示"总成本"严重偏低。
   // 260930 Red 子会话成本同样改读会话行聚合：原来遍历子会话已加载消息，没加载到的子会话直接漏计。
   // 260922 Red 从 session-context-tab.tsx 迁来：折叠胶囊也要显示总成本，两处各算一份必然漂移。
-  const childCost = createMemo(() => {
-    const id = params.id
-    if (!id) return 0
-    let total = 0
-    for (const s of sync.data.session) {
-      if (s.parentID === id) total += s.cost ?? 0
-    }
-    return total
-  })
+ // 260930 Red 子会话成本同样按桶走：裸数字相加再套父会话单一币种，会把 child 的
+ // CNY 账按 USD 显示。桶缺失的旧行仍走标量 + 旧币种，过渡期与 metrics 同一判据。
+ const childBuckets = createMemo(() => {
+   const id = params.id
+   const buckets = { cny: 0, usd: 0 }
+   if (!id) return buckets
+   for (const s of sync.data.session) {
+     if (s.parentID !== id) continue
+     buckets.cny += s.costCny ?? 0
+     buckets.usd += s.costUsd ?? 0
+   }
+   return buckets
+ })
 
-  const cost = createMemo(() => {
-    const m = metrics()
-    return formatter().cost(m.totalCost + childCost(), m.costCurrency)
-  })
+ const cost = createMemo(() => {
+   const m = metrics()
+   if (m.costBuckets) {
+     return formatter().costBuckets({
+       cny: m.costBuckets.cny + childBuckets().cny,
+       usd: m.costBuckets.usd + childBuckets().usd,
+     })
+   }
+   const childCost = childBuckets().cny + childBuckets().usd
+   return formatter().cost(m.totalCost + childCost, m.costCurrency)
+ })
 
   return {
     messages,

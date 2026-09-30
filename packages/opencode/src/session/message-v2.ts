@@ -264,6 +264,9 @@ export const StepFinishPart = Schema.Struct({
   reason: Schema.String,
   snapshot: Schema.optional(Schema.String),
   cost: Schema.Finite,
+ // 260930 Red 记账时刻的币种定格（与 cost 同时写入，语义同 260816 的取价定格）：
+ //  session 行按它把费用分进 cost_cny / cost_usd 桶。老消息无此字段，回填写 UNKNOWN→USD 并留日志。
+ currency: Schema.optional(Schema.Literals(["USD", "CNY"])),
   tokens: Schema.Struct({
     total: Schema.optional(Schema.Finite),
     // 260819 cc: 本次请求的提示词总量 = 这一刻的真实上下文大小。与 total 的区别要紧：

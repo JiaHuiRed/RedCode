@@ -21,27 +21,35 @@ function foreign(err: unknown) {
 
 export type DeepPartial<T> = T extends object ? { [K in keyof T]?: DeepPartial<T[K]> | null } : T
 
-type Usage = Pick<MessageV2.StepFinishPart, "cost" | "tokens">
+type Usage = Pick<MessageV2.StepFinishPart, "cost" | "tokens" | "currency">
 
 function usage(part: MessageV2.Part | (typeof PartTable.$inferSelect)["data"]): Usage | undefined {
   if (part.type !== "step-finish") return undefined
   if (!("cost" in part) || !("tokens" in part)) return undefined
-  return { cost: part.cost, tokens: part.tokens }
+ return { cost: part.cost, tokens: part.tokens, currency: part.currency }
 }
 
 function applyUsage(db: TxOrDb, sessionID: Session.Info["id"], value: Usage, sign = 1) {
-  db.update(SessionTable)
-    .set({
-      cost: sql`${SessionTable.cost} + ${value.cost * sign}`,
-      tokens_input: sql`${SessionTable.tokens_input} + ${value.tokens.input * sign}`,
-      tokens_output: sql`${SessionTable.tokens_output} + ${value.tokens.output * sign}`,
-      tokens_reasoning: sql`${SessionTable.tokens_reasoning} + ${value.tokens.reasoning * sign}`,
-      tokens_cache_read: sql`${SessionTable.tokens_cache_read} + ${value.tokens.cache.read * sign}`,
-      tokens_cache_write: sql`${SessionTable.tokens_cache_write} + ${value.tokens.cache.write * sign}`,
-      time_updated: sql`${SessionTable.time_updated}`,
-    })
-    .where(eq(SessionTable.id, sessionID))
-    .run()
+ const delta = value.cost * sign
+ // 260930 Red 分币种桶只动归属那一桶：无币种按 USD（processor 侧 warn 留痕），另一桶
+ // 保持原值不动。coalesce 兜住未回填的旧行；sign=-1 的 revert 天然覆盖两桶。
+ const bucket =
+   value.currency === "CNY"
+     ? { cost_cny: sql`coalesce(${SessionTable.cost_cny}, 0) + ${delta}` }
+     : { cost_usd: sql`coalesce(${SessionTable.cost_usd}, 0) + ${delta}` }
+ db.update(SessionTable)
+   .set({
+     cost: sql`${SessionTable.cost} + ${delta}`,
+     ...bucket,
+     tokens_input: sql`${SessionTable.tokens_input} + ${value.tokens.input * sign}`,
+     tokens_output: sql`${SessionTable.tokens_output} + ${value.tokens.output * sign}`,
+     tokens_reasoning: sql`${SessionTable.tokens_reasoning} + ${value.tokens.reasoning * sign}`,
+     tokens_cache_read: sql`${SessionTable.tokens_cache_read} + ${value.tokens.cache.read * sign}`,
+     tokens_cache_write: sql`${SessionTable.tokens_cache_write} + ${value.tokens.cache.write * sign}`,
+     time_updated: sql`${SessionTable.time_updated}`,
+   })
+   .where(eq(SessionTable.id, sessionID))
+   .run()
 }
 
 function grab<T extends object, K1 extends keyof T, X>(
@@ -80,6 +88,8 @@ export function toPartialRow(info: DeepPartial<Session.Info>) {
     summary_files: grab(info, "summary", (v) => grab(v, "files")),
     summary_diffs: grab(info, "summary", (v) => grab(v, "diffs")),
     cost: grab(info, "cost"),
+   cost_cny: grab(info, "costCny"),
+   cost_usd: grab(info, "costUsd"),
     tokens_input: grab(info, "tokens", (v) => grab(v, "input")),
     tokens_output: grab(info, "tokens", (v) => grab(v, "output")),
     tokens_reasoning: grab(info, "tokens", (v) => grab(v, "reasoning")),

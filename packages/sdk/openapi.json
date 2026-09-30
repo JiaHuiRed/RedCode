@@ -13912,6 +13912,10 @@
           "cost": {
             "type": "number"
           },
+          "currency": {
+            "type": "string",
+            "enum": ["USD", "CNY"]
+          },
           "tokens": {
             "type": "object",
             "properties": {
@@ -14254,6 +14258,12 @@
             "additionalProperties": false
           },
           "cost": {
+            "type": "number"
+          },
+          "costCny": {
+            "type": "number"
+          },
+          "costUsd": {
             "type": "number"
           },
           "tokens": {
@@ -16567,6 +16577,12 @@
             "additionalProperties": false
           },
           "cost": {
+            "type": "number"
+          },
+          "costCny": {
+            "type": "number"
+          },
+          "costUsd": {
             "type": "number"
           },
           "tokens": {

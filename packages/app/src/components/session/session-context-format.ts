@@ -34,5 +34,15 @@ export function createSessionContextFormatter(locale: string) {
       if (currency === "CNY") return cny.format(value)
       return cny.format(value * USD_TO_CNY)
     },
+   // 260930 Red 分桶显示：每桶按原币种格式化，「¥69.21 + $0.30」。不换算不混算——
+   // provider 账单原币种是事实，汇率换算是产品策略（决策见 docs/notes 的 costByCurrency note）。
+   // 两桶皆 0（纯免费套餐会话）按 ¥0.00 显示，与中文界面一致。
+   costBuckets(buckets: { cny: number; usd: number }) {
+     const parts: string[] = []
+     if (buckets.cny > 0) parts.push(cny.format(buckets.cny))
+     if (buckets.usd > 0) parts.push(usd.format(buckets.usd))
+     if (parts.length === 0) return cny.format(0)
+     return parts.join(" + ")
+   },
   }
 }

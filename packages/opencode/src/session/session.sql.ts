@@ -34,6 +34,13 @@ export const SessionTable = sqliteTable(
     summary_files: integer(),
     summary_diffs: text({ mode: "json" }).$type<Snapshot.FileDiff[]>(),
     cost: real().notNull().default(0),
+   // 260930 Red 分币种费用桶。NULL = 未归属（旧行，回填见 data-migration.ts 的
+   // session_cost_currency_from_messages）；projector 每条 step-finish 按 part 上的
+   // currency 增量，sign=-1 的 revert 天然覆盖两桶。总账仍是 cost 列：归属完成后
+   // cost_cny + cost_usd 之和等于 cost。决策：docs/notes/implemented/bug-fix/
+   // 2026-09-30-session-cost-currency-truth.md
+   cost_cny: real(),
+   cost_usd: real(),
     tokens_input: integer().notNull().default(0),
     tokens_output: integer().notNull().default(0),
     tokens_reasoning: integer().notNull().default(0),

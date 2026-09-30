@@ -94,6 +94,8 @@ export function fromRow(row: SessionRow): Info {
     version: row.version,
     summary,
     cost: row.cost,
+   costCny: row.cost_cny ?? undefined,
+   costUsd: row.cost_usd ?? undefined,
     tokens: {
       input: row.tokens_input,
       output: row.tokens_output,
@@ -135,6 +137,8 @@ export function toRow(info: Info) {
     summary_files: info.summary?.files,
     summary_diffs: info.summary?.diffs,
     cost: info.cost ?? 0,
+   cost_cny: info.costCny ?? null,
+   cost_usd: info.costUsd ?? null,
     tokens_input: (info.tokens ?? EmptyTokens).input,
     tokens_output: (info.tokens ?? EmptyTokens).output,
     tokens_reasoning: (info.tokens ?? EmptyTokens).reasoning,
@@ -221,6 +225,10 @@ export const Info = Schema.Struct({
   parentID: optionalOmitUndefined(SessionID),
   summary: optionalOmitUndefined(Summary),
   cost: optionalOmitUndefined(Schema.Finite),
+ // 260930 Red 分币种账。双双为 undefined = 未回填的旧行（backfill 见 data-migration.ts）；
+ // 归属完成后 costCny + costUsd 之和等于 cost。客户端据此按桶显示，不再从消息窗口猜币种。
+ costCny: optionalOmitUndefined(Schema.Finite),
+ costUsd: optionalOmitUndefined(Schema.Finite),
   tokens: optionalOmitUndefined(Tokens),
   share: optionalOmitUndefined(Share),
   title: Schema.String,
@@ -492,7 +500,9 @@ export const getUsage = (input: {
       .toNumber(),
   )
 
-  return { cost, tokens }
+ // 260930 Red 币种随价格一起定：model.cost.currency 是唯一权威（峰谷旁路表 tiered-pricing
+ // 不带币种，CNY_PRICING 覆盖与 config 声明都写在这一处）。undefined = 模型未声明币种。
+ return { cost, tokens, currency: input.model.cost?.currency }
 }
 
 export class BusyError extends Schema.TaggedErrorClass<BusyError>()("SessionBusyError", {

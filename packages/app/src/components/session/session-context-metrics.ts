@@ -54,6 +54,11 @@ type Metrics = {
   totalCost: number
   // 260615 Red: "CNY" when session uses DeepSeek/Xiaomi (official RMB pricing), "USD" otherwise
   costCurrency: "USD" | "CNY"
+ /**
+  * 260930 Red 分币种账。两桶之和在归属完成后等于 totalCost。undefined = 未回填的旧行
+  * （服务端 data-migration 回填中或失败），此时 costCurrency 仍是从消息窗口猜的旧值。
+  */
+ costBuckets: { cny: number; usd: number } | undefined
   context: Context | undefined
 }
 /**
@@ -64,6 +69,9 @@ type Metrics = {
 export type SessionAggregate = {
   cost?: number
   tokens?: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
+ // 260930 Red 服务端 projector 按 part 的 currency 分桶写入；双双为 undefined = 未回填的旧行。
+ costCny?: number
+ costUsd?: number
 }
 
 const tokenTotal = (msg: AssistantMessage) => {
@@ -121,14 +129,21 @@ const build = (messages: Message[] = [], providers: Provider[] = [], aggregate?:
   }
   const message = tokenMessage
   // 币种在早退前算好：有费用但尚未加载到 token 消息时（子集窗口），账面仍要用对币种
-  const costCurrency = (() => {
-    let best: { cost: number; currency: "USD" | "CNY" } | undefined
-    for (const entry of costByModel.values()) {
-      if (!best || entry.cost > best.cost) best = entry
-    }
-    return best?.currency ?? ("USD" as const)
-  })()
-  if (!message) return { totalCost: aggregate?.cost ?? subsetCost, costCurrency, context: undefined }
+ // 260930 Red 币种两路：聚合桶（全量、正确）优先；桶缺失的旧行才退回消息窗口启发式。
+ // 启发式保留只为过渡期回溯兼容，它的两个死穴（窗口无付费模型 → 错 USD；多币种 → 取大头）
+ // 正是本次要修的东西，回填完成后随旧行一起退休。
+ const aggregateBuckets =
+   aggregate && (aggregate.costCny !== undefined || aggregate.costUsd !== undefined)
+     ? { cny: aggregate.costCny ?? 0, usd: aggregate.costUsd ?? 0 }
+     : undefined
+ const legacyCurrency = (() => {
+   let best: { cost: number; currency: "USD" | "CNY" } | undefined
+   for (const entry of costByModel.values()) {
+     if (!best || entry.cost > best.cost) best = entry
+   }
+   return best?.currency ?? ("USD" as const)
+ })()
+ if (!message) return { totalCost: aggregate?.cost ?? subsetCost, costBuckets: aggregateBuckets, costCurrency: legacyCurrency, context: undefined }
 
   const provider = providers.find((item) => item.id === message.providerID)
   const model = provider?.models[message.modelID]
@@ -158,8 +173,9 @@ const build = (messages: Message[] = [], providers: Provider[] = [], aggregate?:
   const firstChunkMs = speedMessage ? speedMessage.time.firstChunk! - speedMessage.time.created : null
 
   return {
-    totalCost: aggregate?.cost ?? subsetCost,
-    costCurrency,
+   totalCost: aggregate?.cost ?? subsetCost,
+   costBuckets: aggregateBuckets,
+   costCurrency: legacyCurrency,
     context: {
       message,
       provider,

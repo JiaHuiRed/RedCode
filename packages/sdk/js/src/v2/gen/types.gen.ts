@@ -730,6 +730,7 @@ export type StepFinishPart = {
   reason: string
   snapshot?: string
   cost: number
+  currency?: "USD" | "CNY"
   tokens: {
     total?: number
     context?: number
@@ -837,6 +838,8 @@ export type Session = {
     diffs?: Array<SnapshotFileDiff>
   }
   cost?: number
+  costCny?: number
+  costUsd?: number
   tokens?: {
     input: number
     output: number
@@ -1903,6 +1906,8 @@ export type GlobalSession = {
     diffs?: Array<SnapshotFileDiff>
   }
   cost?: number
+  costCny?: number
+  costUsd?: number
   tokens?: {
     input: number
     output: number

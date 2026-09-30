@@ -39,6 +39,8 @@ const DOOM_LOOP_THRESHOLD = 3
 // 极少超过此量（step-3.7-flash 实测约 3.5K 字符），3 万是约 8 倍余量。
 const REASONING_STALL_CHARS = 30000
 const log = Log.create({ service: "session.processor" })
+// 260930 Red 未声明币种却报了的付费模型，每模型只 warn 一次（同进程内）。
+const warnedMissingCurrency = new Set<string>()
 
 export type Result = "compact" | "stop" | "continue"
 
@@ -762,6 +764,20 @@ export const layer = Layer.effect(
                 miss: (prevTokens.cache.miss ?? 0) + (usage.tokens.cache.miss ?? 0),
               },
             }
+           // 260930 Red 未声明币种却产生费用：按 USD 入桶且每个模型只吵一次。models.dev 未标
+           // 币种的模型费率全 0，能走到这里说明是自定义 provider 报了价却没声明 currency——
+           // 「没声明就当美元」正是 260615 那起 ¥69.21→¥465.12 事故的默认值，兜底可以，必须留痕。
+           if (!usage.currency && usage.cost > 0) {
+             const warnKey = `${ctx.model.providerID}/${ctx.model.id}`
+             if (!warnedMissingCurrency.has(warnKey)) {
+               warnedMissingCurrency.add(warnKey)
+               log.warn("step_finish.missing_currency", {
+                 providerID: ctx.model.providerID,
+                 modelID: ctx.model.id,
+                 cost: usage.cost,
+               })
+             }
+           }
             yield* session.updatePart({
               id: PartID.ascending(),
               reason: value.reason,
@@ -771,6 +787,9 @@ export const layer = Layer.effect(
               type: "step-finish",
               tokens: usage.tokens,
               cost: usage.cost,
+             // 260930 Red 币种与 cost 同时刻定格，session 行据此分桶记账（见 session.sql.ts）。
+             // 未声明币种的模型若产生了费用，记账侧按 USD 入桶（warn 见上方）。
+             ...(usage.currency ? { currency: usage.currency } : {}),
             })
             yield* session.updateMessage(ctx.assistantMessage)
             if (ctx.snapshot) {

@@ -183,6 +183,73 @@ describe("费用币种与全量聚合", () => {
     expect(metrics.totalCost).toBe(12.34)
     expect(metrics.context).toBeUndefined()
   })
+
+  // 260930 Red 聚合桶是新的唯一权威。三个用例对应旧启发式的三个死法：
+  // 窗口为空、窗口只剩免费模型（无币种标记 → 旧代码兜底 USD）、双币种混算。
+  test("窗口为空时聚合桶定币种，不退回 USD 兜底", () => {
+    const metrics = getSessionContextMetrics([], providers, {
+      cost: 69.21,
+      costCny: 69.21,
+      costUsd: 0,
+      tokens: { input: 1, output: 2, reasoning: 0, cache: { read: 3, write: 0 } },
+    })
+
+    expect(metrics.totalCost).toBe(69.21)
+    expect(metrics.costBuckets).toEqual({ cny: 69.21, usd: 0 })
+    expect(metrics.context).toBeUndefined()
+  })
+
+  test("窗口只剩免费模型时，聚合桶 CNY 优先于消息窗口启发式", () => {
+    // 旧路径：窗口内唯一模型无 currency 标记 → 兜底 USD → ¥69.21 显示成 ¥465.12。
+    // 事故发生在会话中途换模型之后，这一步就是那次事故本身。
+    const messages = [
+      assistant(
+        "a1",
+        { input: 2_000, output: 500, reasoning: 0, read: 90_000, write: 0 },
+        0,
+        "zhipuai-coding-plan",
+        "glm-5.3-flash",
+      ),
+    ]
+    const metrics = getSessionContextMetrics(messages, providers, {
+      cost: 69.21,
+      costCny: 69.21,
+      costUsd: 0,
+      tokens: { input: 2, output: 3, reasoning: 0, cache: { read: 4, write: 0 } },
+    })
+
+    expect(metrics.costCurrency).toBe("USD") // 旧启发式的答案（留着证明它仍然是兜底）
+    expect(metrics.costBuckets).toEqual({ cny: 69.21, usd: 0 }) // 桶优先，展示层走桶
+  })
+
+  test("双币种分桶保留两桶原值，不合并成单一数字", () => {
+    const metrics = getSessionContextMetrics([], providers, {
+      cost: 69.51,
+      costCny: 69.21,
+      costUsd: 0.3,
+      tokens: { input: 1, output: 2, reasoning: 0, cache: { read: 3, write: 0 } },
+    })
+
+    expect(metrics.costBuckets).toEqual({ cny: 69.21, usd: 0.3 })
+    // 总和仍与总账一致，展示层据此渲染「¥69.21 + $0.30」
+    expect(metrics.costBuckets!.cny + metrics.costBuckets!.usd).toBeCloseTo(metrics.totalCost, 10)
+  })
+
+  test("未回填的旧行（两桶皆 undefined）才走旧启发式", () => {
+    const messages = [
+      assistant(
+        "a1",
+        { input: 100, output: 50, reasoning: 0, read: 1_000, write: 0 },
+        69.21,
+        "stepfun-step-plan",
+        "step-5-preview",
+      ),
+    ]
+    const metrics = getSessionContextMetrics(messages, providers, { cost: 69.21 })
+
+    expect(metrics.costBuckets).toBeUndefined()
+    expect(metrics.costCurrency).toBe("CNY")
+  })
 })
 
 // 260819 cc audit：usage 原来是「会话累计 / 窗口」，长会话下能到 1500%，而 ProgressCircle

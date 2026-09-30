@@ -16,6 +16,10 @@ const money = new Intl.NumberFormat("zh-CN", {
   style: "currency",
   currency: "CNY",
 })
+const moneyUsd = new Intl.NumberFormat("zh-CN", {
+ style: "currency",
+ currency: "USD",
+})
 
 const tokenColor = {
   current: "#ff5252",
@@ -94,6 +98,17 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const msg = createMemo(() => props.api.state.session.messages(props.session_id))
   const session = createMemo(() => props.api.state.session.get(props.session_id))
   const cost = createMemo(() => session()?.cost ?? 0)
+ // 260930 Red 分桶优先：每桶按原币种显示（「¥69.21 + $0.30」），不换算不混算。
+ // 桶缺失的旧行退回「当前模型币种 + 全局折 CNY」的旧口径——那是 260615/260827 两轮
+ // 都没根治的启发式，只作过渡期兜底，回填完成后随旧行一起退休。
+ const costLabel = createMemo(() => {
+   const buckets = state().costBuckets
+   if (!buckets) return money.format(state().costCurrency === "CNY" ? cost() : cost() * USD_TO_CNY)
+   const parts: string[] = []
+   if (buckets.cny > 0) parts.push(money.format(buckets.cny))
+   if (buckets.usd > 0) parts.push(moneyUsd.format(buckets.usd))
+   return parts.length > 0 ? parts.join(" + ") : money.format(0)
+ })
 
   const state = createMemo(() => {
     const last = msg().findLast((item): item is AssistantMessage => item.role === "assistant" && item.tokens.output > 0)
@@ -117,6 +132,14 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         provider: null as string | null,
         providerID: null as string | null,
         costCurrency: null as "USD" | "CNY" | null,
+       // 260930 Red 分币种账直接来自 session 行聚合（服务端 projector 按 part 的 currency
+       // 分桶）。null = 未回填的旧行，此时 costCurrency 仍是「当前模型币种」的旧启发式——
+       // 会话中途换过模型它就错，只作过渡期兜底。
+       costBuckets: (() => {
+         const s = session()
+         if (s?.costCny === undefined && s?.costUsd === undefined) return null
+         return { cny: s?.costCny ?? 0, usd: s?.costUsd ?? 0 }
+       })(),
         messageCount: msg().length,
         sessionTotal: 0,
       }
@@ -288,12 +311,9 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
           </span>
         </text>
       </Show>
-      <text fg={theme()?.textMuted}>
-        <span style={{ fg: tokenColor.cost }}>
-          {money.format(state().costCurrency === "CNY" ? cost() : cost() * USD_TO_CNY)}
-        </span>{" "}
-        · {`${state().messageCount} msgs`}
-      </text>
+     <text fg={theme()?.textMuted}>
+       <span style={{ fg: tokenColor.cost }}>{costLabel()}</span> · {`${state().messageCount} msgs`}
+     </text>
       <Show when={agent()}>
         <text fg={theme()?.textMuted}>
           agent <span style={{ fg: theme()?.accent }}>{agent()}</span>
