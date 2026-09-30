@@ -8,6 +8,12 @@
 
 ---
 
+### [未发布]
+
+#### 新增
+
+- **Codex OAuth 白名单补上 GPT-6.1 Sol**（`packages/opencode/src/plugin/codex.ts`，回归 `test/plugin/codex.test.ts`、`test/provider/reasoning-effort-variants.test.ts`、`test/tool/freeform.test.ts`）：后端名单端点实测 `client_version ≥ 1.0.0` 才返回非空列表，`gpt-6.1-sol` 在列且 `apply_patch_tool_type` 仍为 freeform。freeform（`gpt-[56](?:[.-]|$)`）与 max 推理档（`gpt-6(?:[.-]|$)`）的家族正则对带 minor 的 id 天然命中，无需改判据；推理档维持 none..max——后端 `supported_reasoning_levels` 声称到 ultra，按 260907 教训不采信（ultra 实测 400 的前科）。`gpt-6.1-sol` max 档真请求 200 验证通过；DCP 两表（`~/.redcode/dcp.jsonc` 的 modelMinLimits/modelMaxLimits）已按家族同档成对补键（140k/220k，后端报 context 272000，校验过），改后需重启生效。
+
 ### [0.11.16] - 2026-09-29
 
 #### 修复

@@ -9,6 +9,8 @@
  * 260923 Red gpt-6 家族并入判据：官方 catalog（codex-rs/models-manager/models.json）对
  * gpt-6-astra / -sol / -luna 声明的 `apply_patch_tool_type` 就是 "freeform"，与 gpt-5 系
  * 同一条 Responses custom tool 通道；260902 写死 gpt-5 的判据把整代新模型漏成 JSON 形态。
+ * 260930 Red gpt-6.1-sol 后端名单实测同为 freeform，`gpt-[56](?:[.-]|$)` 对带 minor 的
+ * id 天然命中，判据无需改动。
  *
  * 为什么值得单独做一份形态：补丁正文本来就是纯文本，包进 JSON 字符串等于给每个换行和引号
  * 加一层转义。两处代价——① token 明显变多；② 离模型训练时的输出分布更远，转义错一个字符

@@ -189,6 +189,7 @@ describe("plugin.codex", () => {
 
  // 260923 Red 随白名单补 gpt-6-sol / gpt-6-luna 扩充：Astra 那条只覆盖到 gpt-6-astra，
  // 上游 260922 发布 Sol/Luna 后同样会被旧断言放过的形状——加进同一用例的两侧。
+ // 260930 Red 补 gpt-6.1-sol（GPT-6.1 Sol 发布，后端名单实测在列），同侧第三次扩充。
  test("keeps newly released GPT-6 models while excluding older models", async () => {
    const hooks = await CodexAuthPlugin({
      client: {} as never,
@@ -221,6 +222,11 @@ describe("plugin.codex", () => {
            providerID: "openai",
            api: { id: "gpt-6-astra", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
          },
+         "gpt-6.1-sol": {
+           id: "gpt-6.1-sol",
+           providerID: "openai",
+           api: { id: "gpt-6.1-sol", url: "https://api.openai.com/v1", npm: "@ai-sdk/openai" },
+         },
          "gpt-6-sol": {
            id: "gpt-6-sol",
            providerID: "openai",
@@ -243,7 +249,13 @@ describe("plugin.codex", () => {
      },
    )
 
-   expect(Object.keys(models)).toEqual(["gpt-5.6-luna", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"])
+    expect(Object.keys(models)).toEqual([
+      "gpt-5.6-luna",
+      "gpt-6-astra",
+      "gpt-6.1-sol",
+      "gpt-6-sol",
+      "gpt-6-luna",
+    ])
  })
 
   test("deduplicates concurrent Codex token refreshes", async () => {

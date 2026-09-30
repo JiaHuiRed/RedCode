@@ -944,6 +944,8 @@ const GPT5_FAMILY_RE = /(?:^|\/)gpt-5(?:[.-]|$)/
 // 260923 Red gpt-6 家族（gpt-6-sol / -luna / -astra，无 minor 版本号）。max 推理档的放行判据：
 // models.dev reasoning_options 到 max，Codex 后端 260923 对三个型号实测 xhigh/max 全 200
 // （同一报文只换 effort 对照），官方 catalog（codex-rs models.json）亦已收录。
+// 260930 Red gpt-6.1-sol（GPT-6.1 Sol，首个带 minor 的 gpt-6 型号）同样被此正则命中：
+// `gpt-6` 后跟 `.` 满足 `(?:[.-]|$)`，落 OPENAI_GPT5_6_PLUS_EFFORTS，行为无需改动。
 const GPT6_FAMILY_RE = /(?:^|\/)gpt-6(?:[.-]|$)/
 const GPT5_VERSION_RE = /(?:^|\/)gpt-5[.-](\d+)(?:[.-]|$)/
 const GPT5_PRO_RE = /(?:^|\/)gpt-5[.-]?pro(?:[.-]|$)/

@@ -301,26 +301,28 @@ describe("gpt-5.6 的 max 档", () => {
 // 到 max、官方客户端强度滑块顶档「最高」、Codex 后端 260923 对 sol/luna/astra 实测
 // xhigh 与 max 全 200（同一报文只换 effort 对照）。260904 那条「gpt-6 不给 max」的前瞻
 // 断言是版本判据只认 gpt-5 的产物，本次整代并入 5.6+ 档后翻转。
+// 260930 Red gpt-6.1-sol（GPT-6.1 Sol 发布）并入同一档——GPT6_FAMILY_RE 对带 minor 的
+// id 同样命中，落 OPENAI_GPT5_6_PLUS_EFFORTS（none..max），ultra 仍按 260907 纪律不采信。
 describe("gpt-6 家族的 max 档", () => {
-  const gpt = (id: string) => variantsOf(id, "@ai-sdk/openai")
+ const gpt = (id: string) => variantsOf(id, "@ai-sdk/openai")
 
-  test("sol / luna / astra 都到 max", () => {
-    for (const id of ["gpt-6-sol", "gpt-6-luna", "gpt-6-astra"]) {
-      expect(gpt(id)).toEqual(["none", "low", "medium", "high", "xhigh", "max"])
-    }
-  })
+ test("sol / 6.1-sol / luna / astra 都到 max", () => {
+   for (const id of ["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-6-astra"]) {
+     expect(gpt(id)).toEqual(["none", "low", "medium", "high", "xhigh", "max"])
+   }
+ })
 
-  test("一个都不给 ultra —— 与 5.6 同纪律，加档前必须真请求", () => {
-    for (const id of ["gpt-6-sol", "gpt-6-luna", "gpt-6-astra"]) {
-      expect(gpt(id)).not.toContain("ultra")
-    }
-  })
+ test("一个都不给 ultra —— 与 5.6 同纪律，加档前必须真请求", () => {
+   for (const id of ["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-6-astra"]) {
+     expect(gpt(id)).not.toContain("ultra")
+   }
+ })
 
-  test("不带 minimal —— gpt-6 的档位表里没有这一档", () => {
-    for (const id of ["gpt-6-sol", "gpt-6-luna", "gpt-6-astra"]) {
-      expect(gpt(id)).not.toContain("minimal")
-    }
-  })
+ test("不带 minimal —— gpt-6 的档位表里没有这一档", () => {
+   for (const id of ["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-6-astra"]) {
+     expect(gpt(id)).not.toContain("minimal")
+   }
+ })
 
   test("旧型号不受影响", () => {
     expect(gpt("gpt-5.5")).not.toContain("max")

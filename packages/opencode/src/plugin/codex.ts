@@ -33,6 +33,10 @@ const ALLOWED_MODELS = new Set([
   "gpt-6-astra",
   "gpt-6-sol",
   "gpt-6-luna",
+ // 260930 Red 补 gpt-6.1-sol：随 GPT-6.1 Sol 发布进入名单。后端
+ // `GET /backend-api/codex/models?client_version=1.2.0`（≥1.0.0 才返回非空名单）实测在列，
+ // apply_patch_tool_type 仍为 freeform，efforts 声称到 ultra（按 260907 教训不采信，档位表维持 none..max）。
+ "gpt-6.1-sol",
 ])
 
 interface PkceCodes {
