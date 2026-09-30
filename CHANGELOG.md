@@ -14,6 +14,8 @@
 
 - **Codex OAuth 白名单补上 GPT-6.1 Sol**（`packages/opencode/src/plugin/codex.ts`，回归 `test/plugin/codex.test.ts`、`test/provider/reasoning-effort-variants.test.ts`、`test/tool/freeform.test.ts`）：后端名单端点实测 `client_version ≥ 1.0.0` 才返回非空列表，`gpt-6.1-sol` 在列且 `apply_patch_tool_type` 仍为 freeform。freeform（`gpt-[56](?:[.-]|$)`）与 max 推理档（`gpt-6(?:[.-]|$)`）的家族正则对带 minor 的 id 天然命中，无需改判据；推理档维持 none..max——后端 `supported_reasoning_levels` 声称到 ultra，按 260907 教训不采信（ultra 实测 400 的前科）。`gpt-6.1-sol` max 档真请求 200 验证通过；DCP 两表（`~/.redcode/dcp.jsonc` 的 modelMinLimits/modelMaxLimits）已按家族同档成对补键（140k/220k，后端报 context 272000，校验过），改后需重启生效。
 - **工具截断新增可核验收益审计**（`packages/opencode/src/tool/truncate.ts`）：沿用现有 head/tail 与 spill，持久记录裁剪前后字节、含恢复提示的文本估算 token 差、附件数量与原文定位状态；使用诊断侧 CJK 启发式，不改变预算或计费。日志不重复存原文。决策：`docs/notes/implemented/feature/2026-09-30-tool-output-fitting-audit.md`。
+- **文件树中间可直接打开工作区目录**（`packages/app/src/pages/session/file-tree-panel.tsx`）：在“更改”和“所有文件”之间加入文件夹按钮，点击通过现有桌面入口打开当前本地工作区的系统文件管理器；沿用已有悬浮提示，打开中防止重复点击，失败显示提示。网页版与远程工作区不显示该入口。
+- **推理强度弹层与滑条打磨**（`packages/app/src/components/prompt-input.tsx`、`packages/ui/src/v2/components/effort-slider-v2.{tsx,css}`）：档位居中突出、模型名作副标题，24px 胶囊轨道配 28px 圆形白滑块与主题色进度填充；默认档仍不伪装成最低档，模型真实档位、拖动吸附与键盘操作保持不变，键盘和减少动效模式不等待位置过渡。
 
 #### 修复
 

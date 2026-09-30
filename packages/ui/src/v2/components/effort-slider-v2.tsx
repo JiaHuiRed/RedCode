@@ -15,7 +15,7 @@ export interface EffortSliderV2Props {
   /** 未显式选择时只提供给辅助技术的值名，不在界面显示。 */
   unselectedLabel?: string
   class?: string
-  /** 尺寸走 --effort-slider-v2-width / --effort-slider-v2-height 两个自定义属性。 */
+  /** 尺寸走 --effort-slider-v2-width / --effort-slider-v2-height / --effort-slider-v2-thumb-size。 */
   style?: JSX.CSSProperties
 }
 
@@ -138,9 +138,7 @@ export function EffortSliderV2(props: EffortSliderV2Props) {
           maxValue={last()}
           step={STEP}
           value={[position()]}
-          getValueLabel={() =>
-            hasSelection() ? text(nearest()) : (local.unselectedLabel ?? "")
-          }
+          getValueLabel={() => (hasSelection() ? text(nearest()) : (local.unselectedLabel ?? ""))}
           onChange={(next) => setDrag(next[0] ?? 0)}
           onChangeEnd={(next) => {
             // 先落 drag 再提交：先提交的话这一帧 data-dragging 还在，吸附那段过渡会被吃掉。
@@ -148,9 +146,10 @@ export function EffortSliderV2(props: EffortSliderV2Props) {
             commit(next[0] ?? 0)
           }}
         >
-          {/* 没有 Kobalte.Fill 是刻意的。Fill 只能长在 Track 里，而 Track 被内缩了半个滑块宽
-              （否则滑块滑到两端会探出胶囊外），Fill 跟着内缩就会在左端留一截填不到的空当。
-              档位进度由"点亮到第几个刻度"表达，够用，也比一条强调色的填充更安静。 */}
+          {/* 260930 Red 填充单独贴满胶囊，避免内缩 Track 留白；只裁剪填充，不裁剪圆形滑块。 */}
+          <div data-slot="effort-slider-v2-fill-clip" aria-hidden="true">
+            <div data-slot="effort-slider-v2-fill" style={{ transform: `scaleX(${position() / last()})` }} />
+          </div>
           <Kobalte.Track data-slot="effort-slider-v2-track">
             {/* 刻度只是视觉提示，不接事件——点击/拖拽全部由 Track 处理，
                 盖在上面的元素若吃掉 pointer 事件，点到刻度上就滑不动了。 */}

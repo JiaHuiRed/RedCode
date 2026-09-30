@@ -1433,13 +1433,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           <Popover
             placement="top"
             gutter={8}
-            class="w-[236px]"
+            class="w-[260px] max-w-[calc(100vw-24px)] rounded-xl"
             triggerAs={Button}
             triggerProps={{
               variant: "ghost",
               size: "normal",
               style: control(),
-              class: "min-w-0 max-w-[160px] justify-start text-[13px] font-[440] leading-4 text-v2-text-text-faint",
+              class: "min-w-0 max-w-[160px] justify-start text-sm font-medium leading-4 text-v2-text-text-faint",
               "data-action": "prompt-model-variant",
             }}
             trigger={
@@ -1447,9 +1447,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 <Icon
                   name="brain"
                   size="small"
-                  class={
-                    currentVariant() ? "shrink-0 text-v2-text-text-accent" : "shrink-0 text-v2-icon-icon-muted"
-                  }
+                  class={currentVariant() ? "shrink-0 text-v2-text-text-accent" : "shrink-0 text-v2-icon-icon-muted"}
                 />
                 <span class="truncate capitalize">{currentVariantLabel()}</span>
                 <Icon name="chevron-down" size="small" class="shrink-0 text-v2-icon-icon-muted" />
@@ -1459,23 +1457,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               if (!open) restoreFocus()
             }}
           >
-            <div class="flex flex-col gap-2">
-              <div class="flex items-baseline justify-between gap-2">
-                <span class="text-11-regular text-text-weak">{language.t("settings.agents.variant.title")}</span>
-                <Show when={currentVariant()}>
-                  {(value) => (
-                    <span class="capitalize text-12-medium truncate text-v2-text-text-accent">
-                      {variantLabel(value())}
-                    </span>
-                  )}
-                </Show>
-              </div>
-              <Show when={variants().length > 1}>
-                <div class="flex items-baseline justify-between gap-2 text-11-regular text-text-weaker">
-                  <span>{language.t("prompt.variant.faster")}</span>
-                  <span>{language.t("prompt.variant.smarter")}</span>
+            <div class="flex flex-col gap-3 py-1">
+              <div class="relative flex min-w-0 flex-col items-center gap-0.5 px-5 text-center">
+                <div class="absolute left-0 top-0.5">
+                  <Icon name="brain" size="small" class="text-v2-icon-icon-muted" />
                 </div>
-              </Show>
+                <span class="w-full truncate capitalize text-base font-medium text-v2-text-text-accent">
+                  {currentVariant() ? currentVariantLabel() : language.t("prompt.variant.modelDefault")}
+                </span>
+                <span class="w-full truncate text-sm text-v2-text-text-muted">{local.model.current()?.name}</span>
+              </div>
               <EffortSliderV2
                 steps={variants()}
                 current={currentVariant()}
@@ -1483,8 +1474,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 title={language.t("settings.agents.variant.title")}
                 unselectedLabel={language.t("prompt.variant.modelDefault")}
                 onChange={(value) => local.model.variant.set(value)}
-                style={{ "--effort-slider-v2-width": "100%", "--effort-slider-v2-height": "20px" }}
+                style={{
+                  "--effort-slider-v2-width": "100%",
+                  "--effort-slider-v2-height": "24px",
+                  "--effort-slider-v2-thumb-size": "28px",
+                }}
               />
+              <Show when={variants().length > 1}>
+                <div class="flex items-baseline justify-between gap-2 text-sm text-v2-text-text-muted">
+                  <span>{language.t("prompt.variant.faster")}</span>
+                  <span>{language.t("prompt.variant.smarter")}</span>
+                </div>
+              </Show>
             </div>
           </Popover>
         </TooltipKeybind>

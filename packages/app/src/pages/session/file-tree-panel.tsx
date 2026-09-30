@@ -1,11 +1,18 @@
 import { createEffect, createMemo, Match, Show, Switch } from "solid-js"
+import { createStore } from "solid-js/store"
+import { IconButton } from "@redcode-ai/ui/icon-button"
 import { Tabs } from "@redcode-ai/ui/tabs"
 import { ResizeHandle } from "@redcode-ai/ui/resize-handle"
+import { showToast } from "@redcode-ai/ui/toast"
+import { Tooltip } from "@redcode-ai/ui/tooltip"
 import type { SnapshotFileDiff, VcsFileDiff } from "@redcode-ai/sdk/v2"
 import FileTree from "@/components/file-tree"
 import { useFile } from "@/context/file"
 import { FILE_TREE_WIDTH_MIN, useLayout } from "@/context/layout"
 import { useLanguage } from "@/context/language"
+import { usePlatform } from "@/context/platform"
+import { useServer } from "@/context/server"
+import { decode64 } from "@/utils/base64"
 import { createOpenSessionFileTab, type Sizing } from "./helpers"
 import { useSessionLayout } from "./session-layout"
 
@@ -27,7 +34,30 @@ export function FileTreePanel(props: {
   const layout = useLayout()
   const file = useFile()
   const language = useLanguage()
-  const { tabs } = useSessionLayout()
+  const platform = usePlatform()
+  const server = useServer()
+  const { params, tabs } = useSessionLayout()
+  const [state, setState] = createStore({ opening: false })
+
+  // 260930 Red 文件树直接打开当前本地工作区，复用桌面平台的系统文件管理器入口。
+  const directory = createMemo(() => decode64(params.dir) ?? "")
+  const canOpenDirectory = createMemo(
+    () => platform.platform === "desktop" && !!platform.openPath && server.isLocal() && !!directory(),
+  )
+  const openDirectory = () => {
+    if (!canOpenDirectory() || state.opening || !platform.openPath) return
+    setState("opening", true)
+    void platform
+      .openPath(directory())
+      .catch((err: unknown) =>
+        showToast({
+          variant: "error",
+          title: language.t("common.requestFailed"),
+          description: err instanceof Error ? err.message : String(err),
+        }),
+      )
+      .finally(() => setState("opening", false))
+  }
 
   const fileOpen = createMemo(() => layout.fileTree.opened())
   // layout.fileTree.width() 已在 context 侧钳到 FILE_TREE_WIDTH_MIN
@@ -148,6 +178,20 @@ export function FileTreePanel(props: {
                 {props.reviewCount()}{" "}
                 {language.t(props.reviewCount() === 1 ? "session.review.change.one" : "session.review.change.other")}
               </Tabs.Trigger>
+              <Show when={canOpenDirectory()}>
+                <Tooltip value={language.t("home.project.revealInExplorer")} class="shrink-0">
+                  <IconButton
+                    icon="folder"
+                    size="small"
+                    variant="ghost"
+                    data-action="filetree-open-directory"
+                    aria-label={language.t("home.project.revealInExplorer")}
+                    aria-busy={state.opening}
+                    disabled={state.opening}
+                    onClick={openDirectory}
+                  />
+                </Tooltip>
+              </Show>
               <Tabs.Trigger value="all" class="flex-1" classes={{ button: "w-full" }}>
                 {language.t("session.files.all")}
               </Tabs.Trigger>
