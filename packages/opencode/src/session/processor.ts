@@ -544,31 +544,49 @@ export const layer = Layer.effect(
             // 260806 Red 取样范围从「当前助手消息内部」改为「本会话最近的 tool 分片（跨消息）」。
             // step-3.7-flash 实测会把同一个工具调用逐步重发 3–8 次，每步各是一条独立助手消息、
             // 每条只含一个 tool 分片，旧取样在单条消息内永远凑不满阈值，检测器一次都没触发过。
-            const parts = MessageV2.recentToolParts(ctx.sessionID, DOOM_LOOP_THRESHOLD * 2)
+            const parts = MessageV2.recentToolParts(
+              ctx.sessionID,
+              DOOM_LOOP_THRESHOLD * 2,
+              ctx.assistantMessage.parentID,
+            )
             const recentParts = parts.slice(-DOOM_LOOP_THRESHOLD)
+            const inputJSON = RepeatToolReminder.inputKey(input)
 
-            const outputKey = (part: (typeof recentParts)[number]) =>
-              part.type === "tool" && part.state.status === "completed" ? JSON.stringify(part.state.output ?? "") : null
+            const outputKey = (part: (typeof recentParts)[number]) => {
+              if (part.type !== "tool" || part.state.status !== "completed") return null
+              const output = part.state.output ?? ""
+              const reminder = part.state.metadata?.repeatReminder
+              const suffix = typeof reminder === "string" ? `\n\n${reminder}` : undefined
+              return suffix && output.endsWith(suffix) ? output.slice(0, -suffix.length) : output
+            }
 
-            // Existing: exact same tool × DOOM_LOOP_THRESHOLD consecutive
-            const exactLoop =
-              recentParts.length === DOOM_LOOP_THRESHOLD &&
-              recentParts.every(
+            // 260930 Red 当前调用已是 running；成功输出必须比较前三次完成结果，再拦下一次调用。
+            const completedParts = parts.filter((part) => part.id !== toolCall.part.id).slice(-DOOM_LOOP_THRESHOLD)
+            const completedLoop =
+              completedParts.length === DOOM_LOOP_THRESHOLD &&
+              completedParts.every(
                 (part) =>
                   part.type === "tool" &&
                   part.tool === value.name &&
-                  part.state.status !== "pending" &&
-                  JSON.stringify(part.state.input) === JSON.stringify(input),
+                  part.state.status === "completed" &&
+                  RepeatToolReminder.inputKey(part.state.input) === inputJSON,
               ) &&
-              // 260725 至少一次报错 —— 原判据保留
-              (recentParts.some((part) => part.type === "tool" && part.state.status === "error") ||
-                // 260806 Red 新增：同工具 + 同输入 + **同输出**连续 3 次，即使全部成功也算空转
-                // （模型收到结果仍原样重发；实测 grep/read 各重复 4–8 次，输出每次一模一样）。
-                // 要求输出也相同，是为了不误伤轮询类调用——那种每次输出都在变。
-                (() => {
-                  const outs = recentParts.map(outputKey)
-                  return outs[0] !== null && outs.every((o) => o === outs[0])
-                })())
+              (() => {
+                const outputs = completedParts.map(outputKey)
+                return outputs[0] !== null && outputs.every((output) => output === outputs[0])
+              })()
+
+            const exactLoop =
+              completedLoop ||
+              (recentParts.length === DOOM_LOOP_THRESHOLD &&
+                recentParts.every(
+                  (part) =>
+                    part.type === "tool" &&
+                    part.tool === value.name &&
+                    part.state.status !== "pending" &&
+                    RepeatToolReminder.inputKey(part.state.input) === inputJSON,
+                ) &&
+                recentParts.some((part) => part.type === "tool" && part.state.status === "error"))
 
             // Extended: cycling pattern (A→B→A→B or A→B→C→A→B→C)
             const CYCLE_WINDOW = DOOM_LOOP_THRESHOLD * 2
@@ -582,7 +600,7 @@ export const layer = Layer.effect(
               [2, 3].some((len) => {
                 if (CYCLE_WINDOW % len !== 0) return false
                 const key = (p: (typeof cycleParts)[number]) =>
-                  p.type === "tool" ? `${p.tool}\0${JSON.stringify(p.state.input)}` : ""
+                  p.type === "tool" ? `${p.tool}\0${RepeatToolReminder.inputKey(p.state.input)}` : ""
                 const pattern = cycleParts.slice(0, len).map(key)
                 return cycleParts.every((p, i) => key(p) === pattern[i % len])
               })
@@ -657,8 +675,8 @@ export const layer = Layer.effect(
             // tool-call case 的 doom_loop 硬层弹窗兜底。贴 output 尾部，不伪装 user 角色。
             // 取舍与口径详见 repeat-tool-reminder.ts。
             if (toolCall && !RepeatToolReminder.EXCLUDED_TOOLS.has(toolCall.part.tool)) {
-              const inputJSON = JSON.stringify(toolCall.part.state.input)
-              const priorParts = MessageV2.recentToolParts(ctx.sessionID, 24).filter(
+              const inputJSON = RepeatToolReminder.inputKey(toolCall.part.state.input)
+              const priorParts = MessageV2.recentToolParts(ctx.sessionID, 24, ctx.assistantMessage.parentID).filter(
                 (part) => part.id !== toolCall.part.id,
               )
               const reminder = RepeatToolReminder.reminderFor(
@@ -669,6 +687,7 @@ export const layer = Layer.effect(
               if (reminder) {
                 slog.info("repeat.reminder", { sessionID: ctx.sessionID, tool: toolCall.part.tool })
                 output.output = `${output.output}\n\n${reminder}`
+                output.metadata = { ...output.metadata, repeatReminder: reminder }
               }
             }
             yield* completeToolCall(value.id, output)

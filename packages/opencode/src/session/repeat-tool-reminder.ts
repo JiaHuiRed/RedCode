@@ -10,11 +10,11 @@
 // append-only 不破前缀缓存。
 //
 // 链口径：
-// - 参数键与硬层 exactLoop 同口径（原序 JSON.stringify，不做 key-sort），两层判据不打架。
+// - 参数键与硬层 exactLoop 同口径（深层 key-sort），对象键重排不洗掉计数，数组顺序保留。
 // - todowrite/todoread 对链透明——记账工具插在循环中间不该洗掉计数（grep→todowrite→grep
 //   仍算连续两次 grep）。
 // - pending/running 分片跳过不断链（并行同参调用会双计，保守略过）。
-// - user 插话不重置链：插话后参数几乎必变、链自然断；为这个边缘给取样加 role join 不值。
+// - 调用方按 assistant.parentID 取当前用户轮次，用户新消息重置链。
 // - 超过最高阈值后沉默（DSH 同款取舍）：持续轮询是合法行为，真空转有硬层弹窗。
 
 import type { Part } from "./message-v2"
@@ -40,10 +40,19 @@ export function chainLength(parts: readonly Part[], tool: string, inputJSON: str
     if (EXCLUDED_TOOLS.has(part.tool)) continue
     if (part.state.status === "pending" || part.state.status === "running") continue
     if (part.tool !== tool) break
-    if (JSON.stringify(part.state.input) !== inputJSON) break
+    if (inputKey(part.state.input) !== inputJSON) break
     count++
   }
   return count
+}
+
+// 260930 Red 软层、exactLoop、cycleLoop 共用参数键，避免只改一处造成判据漂移。
+export function inputKey(input: unknown): string {
+  return JSON.stringify(input, (_key: string, value: unknown) =>
+    value !== null && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : value,
+  )
 }
 
 /**
@@ -52,9 +61,11 @@ export function chainLength(parts: readonly Part[], tool: string, inputJSON: str
  */
 export function reminderFor(tool: string, inputJSON: string, count: number): string | null {
   if (!(THRESHOLDS as readonly number[]).includes(count)) return null
+  // 260930 Red 工具名也来自外部定义，和参数预览一起限长，整条注记保持在 4KiB 内。
+  const toolPreview = tool.length > PREVIEW_CHARS ? `${tool.slice(0, PREVIEW_CHARS)}…` : tool
   if (count === THRESHOLDS[0]) {
     return (
-      `[System notice] You have called "${tool}" with identical arguments ${count} times in a row. ` +
+      `[System notice] You have called "${toolPreview}" with identical arguments ${count} times in a row. ` +
       `Carefully analyze the previous result before calling again: if the task is not complete, ` +
       `try a different approach or different arguments instead of repeating the call.`
     )
@@ -65,7 +76,7 @@ export function reminderFor(tool: string, inputJSON: string, count: number): str
       : inputJSON
   return (
     `[System notice] Repeated tool call detected:\n` +
-    `- tool: ${tool}\n` +
+    `- tool: ${toolPreview}\n` +
     `- consecutive_calls: ${count}\n` +
     `- arguments: ${preview}\n` +
     `The repeated calls are not making progress. Do not call this tool with these exact arguments again. ` +

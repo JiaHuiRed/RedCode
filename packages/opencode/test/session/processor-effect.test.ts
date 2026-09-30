@@ -30,6 +30,8 @@ import { SyncEvent } from "@/sync"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Snippet } from "@/session/snippet"
+import * as Stream from "effect/Stream"
+import { reminderFor } from "@/session/repeat-tool-reminder"
 
 void Log.init({ print: false })
 
@@ -209,6 +211,81 @@ const boot = Effect.fn("test.boot")(function* () {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+for (const scenario of [
+  { name: "identical completed outputs", sameTurn: true, sameOutput: true, asked: 1 },
+  { name: "a new user turn", sameTurn: false, sameOutput: true, asked: 0 },
+  { name: "changing polling outputs", sameTurn: true, sameOutput: false, asked: 0 },
+]) {
+  it.live(`session.processor loop guard respects ${scenario.name}`, () =>
+    provideTmpdirServer(
+      ({ dir, llm }) =>
+        Effect.gen(function* () {
+          const { processors, session, provider } = yield* boot()
+          const permission = yield* Permission.Service
+          const bus = yield* Bus.Service
+          const requests: string[] = []
+          const asked = yield* bus.subscribe(Permission.Event.Asked)
+          yield* Stream.runForEach(asked, (event) =>
+            Effect.gen(function* () {
+              requests.push(event.properties.permission)
+              yield* permission.reply({ requestID: event.properties.id, reply: "once" })
+            }),
+          ).pipe(Effect.forkScoped)
+
+          const chat = yield* session.create({})
+          const previous = yield* user(chat.id, "look up weather")
+          for (let i = 0; i < (scenario.sameTurn ? 3 : 2); i++) {
+            const past = yield* assistant(chat.id, previous.id, path.resolve(dir))
+            const reminder = i === 2 ? reminderFor("lookup", JSON.stringify({ query: "weather" }), 3) : null
+            yield* session.updatePart({
+              id: PartID.ascending(),
+              messageID: past.id,
+              sessionID: chat.id,
+              type: "tool",
+              tool: "lookup",
+              callID: `past_${i}`,
+              state: {
+                status: "completed",
+                input: { query: "weather" },
+                output: `${scenario.sameOutput ? "same" : `result:${i}`}${reminder ? `\n\n${reminder}` : ""}`,
+                title: "lookup",
+                metadata: reminder ? { repeatReminder: reminder } : {},
+                time: { start: Date.now(), end: Date.now() },
+              },
+            })
+          }
+          const parent = scenario.sameTurn ? previous : yield* user(chat.id, "repeat that lookup")
+          const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+          const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+          const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model: mdl })
+          yield* llm.tool("lookup", { query: "weather" })
+          yield* handle.process({
+            user: parent,
+            sessionID: chat.id,
+            model: mdl,
+            agent: agent(),
+            system: [],
+            messages: [{ role: "user", content: "look up weather" }],
+            tools: {
+              lookup: tool({
+                description: "Look up information",
+                inputSchema: z.object({ query: z.string() }),
+                execute: async () => ({ title: "lookup", output: "same", metadata: {} }),
+              }),
+            },
+          })
+          expect(requests.filter((name) => name === "doom_loop")).toHaveLength(scenario.asked)
+          if (!scenario.sameTurn) {
+            const part = MessageV2.parts(msg.id).find((part) => part.type === "tool")
+            expect(part?.state.status).toBe("completed")
+            if (part?.state.status === "completed") expect(part.state.output).not.toContain("[System notice]")
+          }
+        }),
+      { config: (url) => ({ ...providerCfg(url), agent: { redmind: { permission: { doom_loop: "ask" } } } }) },
+    ),
+  )
+}
 
 it.live("session.processor effect tests capture llm input cleanly", () =>
   provideTmpdirServer(

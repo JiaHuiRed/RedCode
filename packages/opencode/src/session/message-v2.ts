@@ -691,14 +691,12 @@ export function fromStoredPart(part: Part): Part {
 }
 
 const part = (row: typeof PartTable.$inferSelect) =>
-  fromStoredPart(
-    {
-      ...row.data,
-      id: row.id,
-      sessionID: row.session_id,
-      messageID: row.message_id,
-    } as Part,
-  )
+  fromStoredPart({
+    ...row.data,
+    id: row.id,
+    sessionID: row.session_id,
+    messageID: row.message_id,
+  } as Part)
 
 const older = (row: Cursor) =>
   or(lt(MessageTable.time_created, row.time), and(eq(MessageTable.time_created, row.time), lt(MessageTable.id, row.id)))
@@ -1196,20 +1194,27 @@ export function parts(message_id: MessageID) {
 // 分片，但 step 类模型的重复是「每步各生成一条独立助手消息、每条里只有一个 tool 分片」，
 // 单条消息内永远凑不满阈值 → 检测器从未触发。这里跨消息取样，并跳过 step-start/reasoning
 // 等中间分片，只留 tool。
-export function recentToolParts(session_id: SessionID, limit: number) {
+export function recentToolParts(session_id: SessionID, limit: number, parentID?: MessageID) {
   const rows = Database.use((db) =>
     db
-      .select()
+      .select({ part: PartTable })
       .from(PartTable)
-      .where(eq(PartTable.session_id, session_id))
-      .orderBy(desc(PartTable.id))
+      .innerJoin(MessageTable, eq(MessageTable.id, PartTable.message_id))
+      .where(
+        and(
+          eq(PartTable.session_id, session_id),
+          // 260930 Red 只取当前用户轮次；读 parentID 投影，不加载整份 message.data。
+          parentID === undefined ? undefined : sql`json_extract(${MessageTable.data}, '$.parentID') = ${parentID}`,
+        ),
+      )
+      .orderBy(desc(MessageTable.time_created), desc(MessageTable.id), desc(PartTable.id))
       // 每步除 tool 外还会写 step-start/step-finish/reasoning，多取几倍再过滤
       .limit(limit * 8)
       .all(),
   )
   const out: Part[] = []
   for (const row of rows) {
-    const item = part(row)
+    const item = part(row.part)
     if (item.type !== "tool") continue
     out.push(item)
     if (out.length >= limit) break

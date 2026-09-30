@@ -17,6 +17,7 @@
 #### 修复
 
 - **智能体模型选择保存后不再被旧实例缓存覆盖**（`packages/app/src/components/settings-agents.tsx`、`src/context/server-sync.tsx`、`src/context/global-sync/event-reducer.ts`）：保存中显示目标选择并防止重复提交，成功更新已确认字段；后端实例失效与重连时独立刷新智能体查询，不受 bootstrap/MCP 冷却抑制。失败提示并回滚显示。explore/execute 的 live 与 seed 配置统一为 GPT-6 Luna / xhigh，运行 API 与实际子代理消息已确认。回归 21 条通过；决策：`docs/notes/implemented/bug-fix/2026-09-30-agent-settings-cache.md`。
+- **成功输出循环检测真正生效，用户新消息重置计数**（`packages/opencode/src/session/{processor,message-v2,repeat-tool-reminder}.ts`）：修复当前 running 调用导致成功输出判据永远为假的问题；比较此前完成结果时排除软提醒后缀，变化中的轮询不拦。软硬两层统一深层参数键排序，数组顺序不变，两处取样限制在当前用户轮次；工具名与参数预览都有硬限，注记小于 4KiB。决策更新：`docs/notes/implemented/feature/2026-08-14-repeat-tool-reminder-soft-layer.md`。
 - **工具自身 timeout 会取消局部 ctx.abort，不误伤调用方**（`packages/opencode/src/tool/tool.ts`）：信号作用域包住整个 timeout 竞速，deadline 和外层中断都能取消监听该信号的操作；外层取消保持 interruption，未声明预算的工具行为不变。真实包装回归 5 条通过。决策：`docs/notes/implemented/bug-fix/2026-09-30-tool-deadline-abort-scope.md`。
 
 ### [0.11.16] - 2026-09-29

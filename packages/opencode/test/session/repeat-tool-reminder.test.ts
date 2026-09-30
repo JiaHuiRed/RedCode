@@ -1,6 +1,6 @@
 // 260814 Red 重复调用递进提醒——纯函数层测试(链数/透明工具/断链/阈值/预览截断)
 import { describe, expect, test } from "bun:test"
-import { chainLength, reminderFor, THRESHOLDS, EXCLUDED_TOOLS } from "@/session/repeat-tool-reminder"
+import { chainLength, inputKey, reminderFor, THRESHOLDS, EXCLUDED_TOOLS } from "@/session/repeat-tool-reminder"
 import type { Part } from "@/session/message-v2"
 
 let seq = 0
@@ -32,32 +32,50 @@ const grep = (pattern: string) => toolPart("grep", { pattern })
 describe("chainLength", () => {
   test("counts consecutive identical calls from the tail", () => {
     const parts = [grep("a"), grep("b"), grep("b"), grep("b")]
-    expect(chainLength(parts, "grep", JSON.stringify({ pattern: "b" }))).toBe(3)
+    expect(chainLength(parts, "grep", inputKey({ pattern: "b" }))).toBe(3)
   })
 
   test("breaks on different arguments", () => {
     const parts = [grep("b"), grep("a")]
-    expect(chainLength(parts, "grep", JSON.stringify({ pattern: "b" }))).toBe(0)
+    expect(chainLength(parts, "grep", inputKey({ pattern: "b" }))).toBe(0)
   })
 
   test("breaks on different tool", () => {
     const parts = [grep("b"), toolPart("read", { filePath: "x" })]
-    expect(chainLength(parts, "grep", JSON.stringify({ pattern: "b" }))).toBe(0)
+    expect(chainLength(parts, "grep", inputKey({ pattern: "b" }))).toBe(0)
   })
 
   test("excluded bookkeeping tools are transparent, not chain breakers", () => {
     const parts = [grep("b"), toolPart("todowrite", { todos: [] }), grep("b")]
-    expect(chainLength(parts, "grep", JSON.stringify({ pattern: "b" }))).toBe(2)
+    expect(chainLength(parts, "grep", inputKey({ pattern: "b" }))).toBe(2)
   })
 
   test("running parts are skipped without breaking the chain", () => {
     const parts = [grep("b"), toolPart("grep", { pattern: "b" }, "running"), grep("b")]
-    expect(chainLength(parts, "grep", JSON.stringify({ pattern: "b" }))).toBe(2)
+    expect(chainLength(parts, "grep", inputKey({ pattern: "b" }))).toBe(2)
   })
 
   test("errored calls count toward the chain", () => {
     const parts = [toolPart("grep", { pattern: "b" }, "error"), grep("b")]
-    expect(chainLength(parts, "grep", JSON.stringify({ pattern: "b" }))).toBe(2)
+    expect(chainLength(parts, "grep", inputKey({ pattern: "b" }))).toBe(2)
+  })
+
+  test("object-key ordering at any depth does not break the chain", () => {
+    const parts = [
+      toolPart("grep", { query: { pattern: "b", options: { case: true, path: "src" } }, limit: 20 }),
+      toolPart("grep", { limit: 20, query: { options: { path: "src", case: true }, pattern: "b" } }),
+    ]
+    expect(
+      chainLength(
+        parts,
+        "grep",
+        inputKey({ query: { options: { case: true, path: "src" }, pattern: "b" }, limit: 20 }),
+      ),
+    ).toBe(2)
+  })
+
+  test("array order remains significant", () => {
+    expect(chainLength([toolPart("grep", { paths: ["a", "b"] })], "grep", inputKey({ paths: ["b", "a"] }))).toBe(0)
   })
 })
 
@@ -97,6 +115,14 @@ describe("reminderFor", () => {
     expect(text).toContain("… (+")
     expect(text).toContain("more chars")
     expect(text.length).toBeLessThan(big.length)
+  })
+
+  test("long external tool names and CJK arguments keep every notice below 4KiB", () => {
+    for (const count of THRESHOLDS) {
+      const text = reminderFor("工具".repeat(10_000), JSON.stringify({ content: "中文".repeat(10_000) }), count)
+      expect(text).not.toBeNull()
+      expect(Buffer.byteLength(text ?? "", "utf8")).toBeLessThan(4096)
+    }
   })
 })
 
