@@ -7,6 +7,8 @@ import { ImageTokens } from "@/session/image-tokens"
 import { Config } from "@/config/config"
 import { Identifier } from "../../src/id/id"
 import { Process } from "@/util/process"
+import fs from "node:fs/promises"
+import os from "node:os"
 import path from "path"
 import { testEffect } from "../lib/effect"
 import { writeFileStringScoped } from "../lib/filesystem"
@@ -28,24 +30,54 @@ const configuredLayer = (cfg: Config.Info) =>
 const configuredIt = (cfg: Config.Info) => testEffect(configuredLayer(cfg))
 
 describe("Truncate", () => {
-  it.live("reports fitting savings including the recovery notice without recording raw content", () =>
+  it.live("logs fitting savings without exposing audit metadata or raw content", () =>
     Effect.gen(function* () {
+      const logDir = yield* Effect.promise(() => fs.mkdtemp(path.join(os.tmpdir(), "redcode-truncation-log-")))
+      yield* Effect.addFinalizer(() => Effect.promise(() => fs.rm(logDir, { recursive: true, force: true })))
       const original = "中文".repeat(40_000)
-      const result = yield* (yield* Truncate.Service).result({ output: original })
-      const audit = "audit" in result.metadata ? result.metadata.audit : undefined
+      const script = `
+        import { mkdir } from "node:fs/promises"
+        import { NodeFileSystem } from "@effect/platform-node"
+        import { AppFileSystem } from "@redcode-ai/core/filesystem"
+        import { Global } from "@redcode-ai/core/global"
+        import * as Log from "@redcode-ai/core/util/log"
+        import { Effect, Layer } from "effect"
+        import { Truncate } from "@/tool/truncate"
 
-      expect(audit).toEqual({
-        originalBytes: Buffer.byteLength(original),
-        visibleBytes: Buffer.byteLength(result.output),
-        estimatedTextTokensBefore: Token.estimateReporting(original),
-        estimatedTextTokensAfter: Token.estimateReporting(result.output),
-        estimatedTextTokensSaved: Token.estimateReporting(original) - Token.estimateReporting(result.output),
-        estimator: "heuristic-cjk",
-        spillSaved: true,
-        attachmentsBefore: 0,
-        attachmentsAfter: 0,
-      })
-      expect(JSON.stringify(audit)).not.toContain(original.slice(0, 100))
+        const logDir = ${JSON.stringify(logDir)}
+        await mkdir(logDir, { recursive: true })
+        Global.Path.log = logDir
+        await Log.init({ print: false, dev: true })
+        const result = await Effect.runPromise(
+          Effect.gen(function* () {
+            const svc = yield* Truncate.Service
+            return yield* svc.result({ output: "中文".repeat(40_000) })
+          }).pipe(Effect.provide(Layer.mergeAll(Truncate.defaultLayer, NodeFileSystem.layer, AppFileSystem.defaultLayer))),
+        )
+        process.stdout.write(JSON.stringify(result))
+      `
+      const child = yield* Effect.promise(() =>
+        Process.run([process.execPath, "-e", script], { cwd: ROOT, timeout: 30_000 }),
+      )
+      const result = JSON.parse(child.stdout.toString())
+      const log = yield* Effect.promise(() => fs.readFile(path.join(logDir, "dev.log"), "utf8"))
+
+      expect(child.code).toBe(0)
+      expect("audit" in result.metadata).toBe(false)
+      expect(log).toContain("service=truncation")
+      expect(log).toContain("stage=model-budget")
+      expect(log).toContain(`originalBytes=${Buffer.byteLength(original)}`)
+      expect(log).toContain(`visibleBytes=${Buffer.byteLength(result.output)}`)
+      expect(log).toContain(`estimatedTextTokensBefore=${Token.estimateReporting(original)}`)
+      expect(log).toContain(`estimatedTextTokensAfter=${Token.estimateReporting(result.output)}`)
+      expect(log).toContain(
+        `estimatedTextTokensSaved=${Token.estimateReporting(original) - Token.estimateReporting(result.output)}`,
+      )
+      expect(log).toContain("estimator=heuristic-cjk")
+      expect(log).toContain("spillSaved=true")
+      expect(log).toContain("attachmentsBefore=0")
+      expect(log).toContain("attachmentsAfter=0")
+      expect(log).not.toContain(original)
     }),
   )
 
@@ -374,7 +406,7 @@ describe("Truncate", () => {
 
         expect(result.metadata.truncated).toBe(true)
         expect(result.metadata.outputPath).toBeUndefined()
-        expect(result.metadata.audit?.spillSaved).toBe(false)
+        expect("audit" in result.metadata).toBe(false)
         expect(result.output).toContain("could not be saved")
         expect(result.output).toContain("model-visible token budget")
         expect(result.output).not.toContain(text)
@@ -397,7 +429,7 @@ describe("Truncate", () => {
 
         expect(result.metadata.truncated).toBe(true)
         expect(result.metadata.outputPath).toBe(outputPath)
-        expect(result.metadata.audit?.spillSaved).toBe(true)
+        expect("audit" in result.metadata).toBe(false)
         expect(result.output).toContain(`Full output saved to: ${outputPath}`)
         expect(result.output).not.toContain("could not be saved")
         expect(yield* fsys.readFileString(outputPath)).toBe(full)

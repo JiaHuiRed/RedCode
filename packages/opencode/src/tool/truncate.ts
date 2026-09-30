@@ -43,11 +43,6 @@ export interface ResultOutput<T extends Attachment = Attachment> {
     truncated: boolean
     outputPath?: string
     mediaPath?: string
-    audit?: ReturnType<typeof outputAudit> & {
-      spillSaved: boolean
-      attachmentsBefore: number
-      attachmentsAfter: number
-    }
   }
 }
 
@@ -223,6 +218,7 @@ export const layer = Layer.effect(
       const output = `${final.text}\n\n${notice}`
       // 260930 Red 审计按最终预览（含恢复提示）计价，不把启发式文本节省量冒充实际计费 token。
       // 决策：docs/notes/implemented/feature/2026-09-30-tool-output-fitting-audit.md
+      // 260930 Red audit 只归持久日志所有，不作为工具 metadata 契约向上游传递。
       const audit = {
         ...outputAudit(input.output, output),
         spillSaved: !!outputPath,
@@ -237,7 +233,6 @@ export const layer = Layer.effect(
           truncated: true,
           ...(outputPath && { outputPath }),
           ...(mediaPath && { mediaPath }),
-          audit,
         },
       }
     })

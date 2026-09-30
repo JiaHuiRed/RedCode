@@ -26,6 +26,8 @@
 - **会话面板费用与累计 token 读真实全量账，币种按贡献金额判定**（`packages/app/src/components/session/session-context-metrics.ts`、`session-context-summary.ts`）：费用与累计 token 改用服务端会话行聚合（随每条消息增量维护），不再随前端已加载的消息子集缩水，子会话成本同样改读聚合行；费用币种按各模型实际花费贡献判定，混用零费用套餐模型时不再把人民币账当美元折算（实测 ¥69.21 曾显示为 ¥465.12）。缓存命中率与解码速率仍按已加载消息计算。回归 18 条通过。
 - **目录按钮与文件树标签列表分离**（`packages/app/src/pages/session/file-tree-panel.tsx`）：目录操作移到 tablist 的兄弟节点，视觉仍居中，原按钮与两侧间距不变。方向键只切换标签，Tab 可到达目录按钮，Enter 打开目录而不切换标签；远程工作区仍隐藏入口。
 
+- **工具裁剪审计明确归内部日志所有**（`packages/opencode/src/tool/truncate.ts`）：移除 `Truncate.result()` 返回 metadata 中未传播的 audit 字段，保留真实持久日志与恢复定位；回归改读隔离子进程日志，核验最终预览大小、CJK 估算及无原文泄漏，并确认工具结果不暴露 audit 契约。决策：`docs/notes/implemented/feature/2026-09-30-tool-output-fitting-audit.md`。
+
 ### [0.11.16] - 2026-09-29
 
 #### 修复

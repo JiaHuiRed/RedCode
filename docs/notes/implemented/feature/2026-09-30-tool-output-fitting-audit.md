@@ -8,7 +8,7 @@ RedCode 已有双端预览、工具结果 token 估算预算、原文/附件落�
 
 ## 决策
 
-`Truncate.output()` 与 `result()` 在裁剪后写持久日志 `service=truncation`、`output.truncated`。字段包含原文/最终预览 UTF-8 字节数、文本估算 token 前后值与差值、是否有原文定位；模型预算阶段还记录附件前后数量及定位路径，并返回 audit 元数据。
+`Truncate.output()` 与 `result()` 在裁剪后写持久日志 `service=truncation`、`output.truncated`。字段包含原文/最终预览 UTF-8 字节数、文本估算 token 前后值与差值、是否有原文定位；模型预算阶段还记录附件前后数量及定位路径。审计只作为内部持久日志观测，不返回为 `Truncate.result()` 的 metadata。
 
 预览大小包含恢复提示。文本估算使用现有诊断侧 CJK 加权函数，明确标记 `heuristic-cjk`，不改行为侧预算、附件估价或计费口径。差值不强行截成非负数；小预览加恢复提示可能比原文长，审计照实反映。原文内容不进入审计字段。复用已有原文文件不覆盖它；落盘失败仍保留有界预览并记录失败状态。
 
@@ -22,6 +22,6 @@ RedCode 已有双端预览、工具结果 token 估算预算、原文/附件落�
 
 该指标只描述各裁剪阶段的文本变化，不代表 provider 实际 token 或费用，也不能把不同阶段的记录直接相加。附件数量单独记录。
 
-新增真实 `Truncate.result()` 回归先失败（audit 未定义），修改后通过；验证 CJK 估算、恢复提示计入预览、成功/失败 spill 与原文复用。
+真实 `Truncate.result()` 回归通过隔离子进程的临时日志文件检查持久日志字段，并确认返回 metadata 不含 audit；另验证 CJK 估算、恢复提示计入预览、成功/失败 spill 与原文复用。
 
-模型可见四问：输出文本与 schema 不变；固定前缀增量 0；KV cache 不动；没有新增模型注入项，审计是固定字段的数值/布尔对象，定位沿用已有输出路径。
+模型可见四问：输出文本、provider-facing schema 均不变；固定前缀增量 0；KV cache 不动；没有新增模型注入项。内部 `ResultOutput` metadata 收窄不经 `Tool.wrap` 传播，不构成公共 metadata 契约。
