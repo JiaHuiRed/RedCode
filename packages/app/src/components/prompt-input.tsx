@@ -1499,6 +1499,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           <ModelSelectorPopover
             model={local.model}
             overview={modelOverview}
+            overviewTitle={
+              variants().length > 0
+                ? language.t("settings.agents.variant.title")
+                : language.t("dialog.model.select.title")
+            }
             triggerAs={Button}
             triggerProps={{
               variant: "ghost",

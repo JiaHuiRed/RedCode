@@ -97,6 +97,9 @@ export function ModelSelectorPopover(props: {
   triggerAs?: ValidComponent
   triggerProps?: ModelSelectorTriggerProps
   overview?: (selectModel: () => void) => JSX.Element
+  /** 260930 Red 概览态的读屏标题。无 reasoning 档的模型概览里没有 slider，
+   *  标题不能恒为「推理档」，由调用方按当前模型有没有 variants 决定；缺省沿用「推理档」。 */
+  overviewTitle?: string
   onClose?: (cause: "escape" | "select") => void
 }) {
   const [store, setStore] = createStore<{
@@ -183,10 +186,11 @@ export function ModelSelectorPopover(props: {
             setStore("dismiss", null)
           }}
         >
-          {/* 260930 Red 读屏标题跟随弹层状态：概览是调推理档，列表才是选模型。 */}
+          {/* 260930 Red 读屏标题跟随弹层状态与可见内容：概览是调推理档，列表才是选模型；
+              无 reasoning 档的模型概览只剩选模型入口，标题由调用方经 overviewTitle 给出。 */}
           <Kobalte.Title class="sr-only">
             {props.overview && !store.selecting
-              ? language.t("settings.agents.variant.title")
+              ? (props.overviewTitle ?? language.t("settings.agents.variant.title"))
               : language.t("dialog.model.select.title")}
           </Kobalte.Title>
           <Show
