@@ -23,5 +23,6 @@ RedCode 已有双端预览、工具结果 token 估算预算、原文/附件落�
 该指标只描述各裁剪阶段的文本变化，不代表 provider 实际 token 或费用，也不能把不同阶段的记录直接相加。附件数量单独记录。
 
 真实 `Truncate.result()` 回归通过隔离子进程的临时日志文件检查持久日志字段，并确认返回 metadata 不含 audit；另验证 CJK 估算、恢复提示计入预览、成功/失败 spill 与原文复用。
+260930 泄漏断言升级：`not.toContain(整条原文)` 只能挡全量泄漏，挡不住 `preview = original.slice(0, 500)` 这类头尾预览回归。改为唯一 sentinel 置于原文头部 + 头/尾 slice 双向断言，任何一段原文进日志都会红。注记：整条原文 JSON 内联进 `-e` 子进程脚本会超 Windows CreateProcess 32K 命令行上限（spawn errno UNKNOWN），sentinel 与重复次数单独内联、构造公式在测试与子进程两端保持一致。
 
 模型可见四问：输出文本、provider-facing schema 均不变；固定前缀增量 0；KV cache 不动；没有新增模型注入项。内部 `ResultOutput` metadata 收窄不经 `Tool.wrap` 传播，不构成公共 metadata 契约。

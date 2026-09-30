@@ -34,7 +34,13 @@ describe("Truncate", () => {
     Effect.gen(function* () {
       const logDir = yield* Effect.promise(() => fs.mkdtemp(path.join(os.tmpdir(), "redcode-truncation-log-")))
       yield* Effect.addFinalizer(() => Effect.promise(() => fs.rm(logDir, { recursive: true, force: true })))
-      const original = "中文".repeat(40_000)
+      // 260930 Red 唯一 sentinel：原文任何一段（哪怕只是头尾预览）漏进日志都能被 slice 断言抓到。
+      // 只靠 not.toContain(整条原文) 挡不住「 preview = original.slice(0, 500) 」这类回归。
+      // sentinel 与重复次数单独内联进子进程脚本——整条原文 JSON 化会超 Windows CreateProcess
+      // 32K 命令行上限（表现为 spawn errno UNKNOWN），构造公式在测试与子进程两端保持一致。
+      const sentinel = `RAW_OUTPUT_SENTINEL_${crypto.randomUUID()}`
+      const repeat = 40_000
+      const original = sentinel + "中文".repeat(repeat)
       const script = `
         import { mkdir } from "node:fs/promises"
         import { NodeFileSystem } from "@effect/platform-node"
@@ -51,7 +57,7 @@ describe("Truncate", () => {
         const result = await Effect.runPromise(
           Effect.gen(function* () {
             const svc = yield* Truncate.Service
-            return yield* svc.result({ output: "中文".repeat(40_000) })
+            return yield* svc.result({ output: ${JSON.stringify(sentinel)} + "中文".repeat(${repeat}) })
           }).pipe(Effect.provide(Layer.mergeAll(Truncate.defaultLayer, NodeFileSystem.layer, AppFileSystem.defaultLayer))),
         )
         process.stdout.write(JSON.stringify(result))
@@ -77,7 +83,12 @@ describe("Truncate", () => {
       expect(log).toContain("spillSaved=true")
       expect(log).toContain("attachmentsBefore=0")
       expect(log).toContain("attachmentsAfter=0")
+      // 260930 Red 审计契约（docs/notes/implemented/feature/2026-09-30-tool-output-fitting-audit.md）：
+      // 统计字段（上方已逐条断言）允许存在；原文、头尾预览、附件原文一律不得出现。
       expect(log).not.toContain(original)
+      expect(log).not.toContain(sentinel)
+      expect(log).not.toContain(original.slice(0, 100))
+      expect(log).not.toContain(original.slice(-100))
     }),
   )
 
