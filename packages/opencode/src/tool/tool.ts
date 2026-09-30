@@ -33,6 +33,7 @@ export class InvalidArgumentsError extends Schema.TaggedErrorClass<InvalidArgume
 // orDie 变 defect、AI SDK 把 message 转成 tool error result，模型拿到结构化文案自纠,
 // 整轮不再被一个挂死的工具吊死。Effect fiber 中断是协作式的：不配合取消的底层操作
 // （如已 spawn 的子进程）超时后可能继续跑完，但模型侧已解锁——防挂死是目的，不是硬杀。
+// 260930 Red 取消作用域：docs/notes/implemented/bug-fix/2026-09-30-tool-deadline-abort-scope.md
 export class TimeoutError extends Schema.TaggedErrorClass<TimeoutError>()("ToolTimeoutError", {
   tool: Schema.String,
   ms: Schema.Number,
@@ -143,16 +144,25 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
                 }),
             ),
           )
-          const run = execute(decoded as Schema.Schema.Type<Parameters>, ctx)
-          // 260814 Red 声明了 timeoutMs 的工具在此统一拦截，超时 fail 结构化 TimeoutError
-          const result = yield* toolInfo.timeoutMs
-            ? run.pipe(
-                Effect.timeoutOrElse({
-                  duration: toolInfo.timeoutMs,
-                  orElse: () => Effect.fail(new TimeoutError({ tool: id, ms: toolInfo.timeoutMs! })),
+          // 260930 Red signal 的作用域包在 timeout 外面；调用方中断也必须先取消底层操作再返回。
+          const timeoutMs = toolInfo.timeoutMs
+          const result = yield* timeoutMs === undefined
+            ? execute(decoded as Schema.Schema.Type<Parameters>, ctx)
+            : Effect.scoped(
+                Effect.gen(function* () {
+                  const signal = yield* Effect.abortSignal
+                  const run = execute(decoded as Schema.Schema.Type<Parameters>, {
+                    ...ctx,
+                    abort: AbortSignal.any([ctx.abort, signal]),
+                  })
+                  return yield* run.pipe(
+                    Effect.timeoutOrElse({
+                      duration: timeoutMs,
+                      orElse: () => Effect.fail(new TimeoutError({ tool: id, ms: timeoutMs })),
+                    }),
+                  )
                 }),
               )
-            : run
           // 260924 Red truncated:false 只表示工具自己的字节闸门未触发，仍须过模型侧合成预算。
           const agent = yield* agents.get(ctx.agent)
           const fitted = yield* truncate.result(
