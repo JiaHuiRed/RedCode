@@ -2,6 +2,7 @@ import { Select } from "@redcode-ai/ui/select"
 import { showToast } from "@redcode-ai/ui/toast"
 import { useQuery, useQueryClient } from "@tanstack/solid-query"
 import { createMemo, For, Show, type Component } from "solid-js"
+import { createStore } from "solid-js/store"
 import type { Agent } from "@redcode-ai/sdk/v2/client"
 import { useLanguage } from "@/context/language"
 import { useModels } from "@/context/models"
@@ -21,6 +22,7 @@ const modelValue = (key: string) => (key === FOLLOW ? "" : key)
 const DEFAULT_VARIANT = "default"
 
 type ModelOption = { key: string; label: string; group: string }
+type AgentPatch = { model?: string; variant?: string }
 
 export const SettingsAgents: Component = () => {
   const language = useLanguage()
@@ -45,22 +47,47 @@ export const SettingsAgents: Component = () => {
     ].filter((section) => section.items.length > 0),
   )
 
-  const update = (name: string, patch: Record<string, string | number>) => {
-    globalSync
-      .updateConfig({ agent: { [name]: patch } })
-      .then(() => queryClient.invalidateQueries({ queryKey: agentsQuery().queryKey }))
-      .catch((err: unknown) => {
-        const message = err instanceof Error ? err.message : String(err)
-        showToast({ title: language.t("common.requestFailed"), description: message })
-      })
+  const update = async (name: string, patch: AgentPatch) => {
+    await globalSync.updateConfig({ agent: { [name]: patch } })
+    // 260930 Red 保存响应先更新已确认的字段；后端异步 dispose 完成后再由事件刷新真实定义。
+    queryClient.setQueryData(agentsQuery().queryKey, (previous: Agent[] | undefined) =>
+      previous?.map((agent) => {
+        if (agent.name !== name) return agent
+        const separator = patch.model?.indexOf("/") ?? -1
+        return {
+          ...agent,
+          ...(patch.model === undefined
+            ? {}
+            : {
+                model:
+                  separator < 0
+                    ? undefined
+                    : { providerID: patch.model.slice(0, separator), modelID: patch.model.slice(separator + 1) },
+              }),
+          ...(patch.variant === undefined ? {} : { variant: patch.variant }),
+        }
+      }),
+    )
   }
 
   const AgentCard: Component<{ agent: Agent }> = (props) => {
+    const [state, setState] = createStore<{ saving: boolean; model?: string; variant?: string }>({ saving: false })
     const key = (model?: { providerID: string; modelID: string }) =>
       model ? `${model.providerID}/${model.modelID}` : FOLLOW
 
-    const modelKey = () => key(props.agent.model) || FOLLOW
-    const variant = () => props.agent.variant ?? DEFAULT_VARIANT
+    const modelKey = () => state.model ?? (key(props.agent.model) || FOLLOW)
+    const variant = () => state.variant ?? props.agent.variant ?? DEFAULT_VARIANT
+
+    const save = async (patch: AgentPatch, model = modelKey()) => {
+      if (state.saving) return
+      setState({ saving: true, model, variant: patch.variant ?? variant() })
+      await update(props.agent.name, patch)
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err)
+          showToast({ title: language.t("common.requestFailed"), description: message })
+        })
+        .finally(() => setState({ saving: false, model: undefined, variant: undefined }))
+    }
 
     // 档位集合按模型变（models.dev 的 reasoning_options）：Hy4 preview 只有 none/high，别家是
     // low/medium/high/max。换模型后旧档位可能不存在——prompt.ts 会丢掉无效值，这里同步改回默认。
@@ -89,9 +116,9 @@ export const SettingsAgents: Component = () => {
 
     const selectModel = (option: ModelOption | undefined) => {
       if (!option || option.key === modelKey()) return
-      const patch: Record<string, string | number> = { model: modelValue(option.key) }
+      const patch: AgentPatch = { model: modelValue(option.key) }
       if (!variantsFor(option.key).includes(variant())) patch.variant = DEFAULT_VARIANT
-      update(props.agent.name, patch)
+      void save(patch, option.key)
     }
 
     const modelSelect = (action: string, current: string, empty: string, onSelect: (o: ModelOption) => void) => (
@@ -103,6 +130,8 @@ export const SettingsAgents: Component = () => {
         label={(o: ModelOption) => o.label}
         groupBy={(o: ModelOption) => o.group}
         onSelect={(option: ModelOption | undefined) => option && onSelect(option)}
+        disabled={state.saving}
+        triggerProps={{ "aria-busy": state.saving }}
         variant="secondary"
         size="small"
         triggerVariant="settings"
@@ -144,8 +173,10 @@ export const SettingsAgents: Component = () => {
               label={(o: string) => (o === DEFAULT_VARIANT ? language.t("common.default") : o)}
               onSelect={(option: string | undefined) => {
                 if (!option || option === variant()) return
-                update(props.agent.name, { variant: option })
+                void save({ variant: option })
               }}
+              disabled={state.saving}
+              triggerProps={{ "aria-busy": state.saving }}
               variant="secondary"
               size="small"
               triggerVariant="settings"

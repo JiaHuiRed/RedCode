@@ -48,8 +48,11 @@ export function applyGlobalEvent(input: {
   setGlobalProject: (next: Project[] | ((draft: Project[]) => Project[])) => void
   setProviderQuota?: (next: ProviderQuota[] | ((draft: ProviderQuota[]) => ProviderQuota[])) => void
   refresh: () => void
+  refreshAgents?: () => void
 }) {
   if (input.event.type === "global.disposed" || input.event.type === "server.connected") {
+    // 260930 Red 智能体缓存跟随后端实例失效，不受 bootstrap/MCP 刷新冷却影响。
+    input.refreshAgents?.()
     input.refresh()
     return
   }

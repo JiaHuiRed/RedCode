@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { Message, Part, PermissionRequest, Project, QuestionRequest, Session } from "@redcode-ai/sdk/v2/client"
 import { createStore } from "solid-js/store"
+import { QueryClient } from "@tanstack/solid-query"
 import type { State } from "./types"
 import { applyDirectoryEvent, applyGlobalEvent, cleanupDroppedSessionCaches } from "./event-reducer"
 import { holdMessageWindow } from "@/context/message-window"
@@ -89,6 +90,32 @@ const baseState = (input: Partial<State> = {}) =>
   }) as State
 
 describe("applyGlobalEvent", () => {
+  test.each(["global.disposed", "server.connected"])(
+    "%s invalidates agent queries even when bootstrap is suppressed",
+    (type) => {
+      const client = new QueryClient()
+      client.setQueryData([null, "agents"], [{ name: "explore", model: "step" }])
+      client.setQueryData(["project", "agents"], [{ name: "explore", model: "step" }])
+      client.setQueryData(["project", "mcp"], {})
+      const input = {
+        event: { type },
+        project: [],
+        refresh() {},
+        refreshAgents() {
+          void client.invalidateQueries({ predicate: (query) => query.queryKey[1] === "agents" })
+        },
+        setGlobalProject() {},
+      }
+
+      applyGlobalEvent(input)
+
+      expect(client.getQueryState([null, "agents"])?.isInvalidated).toBe(true)
+      expect(client.getQueryState(["project", "agents"])?.isInvalidated).toBe(true)
+      expect(client.getQueryState(["project", "mcp"])?.isInvalidated).toBe(false)
+      client.clear()
+    },
+  )
+
   test("upserts project.updated in sorted position", () => {
     const project = [{ id: "a" }, { id: "c" }] as Project[]
     let refreshCount = 0

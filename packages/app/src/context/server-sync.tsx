@@ -472,6 +472,9 @@ export function createServerSyncContext() {
           if (recent) return
           bootstrap.refetch()
         },
+        refreshAgents: () => {
+          void queryClient.invalidateQueries({ predicate: (query) => query.queryKey[1] === "agents" })
+        },
         setGlobalProject: setProjects,
         setProviderQuota,
       })
