@@ -11,6 +11,7 @@ import path from "path"
 import { testEffect } from "../lib/effect"
 import { writeFileStringScoped } from "../lib/filesystem"
 import { TestConfig } from "../fixture/config"
+import { Token } from "@/util/token"
 
 const FIXTURES_DIR = path.join(import.meta.dir, "fixtures")
 const ROOT = path.resolve(import.meta.dir, "..", "..")
@@ -27,6 +28,27 @@ const configuredLayer = (cfg: Config.Info) =>
 const configuredIt = (cfg: Config.Info) => testEffect(configuredLayer(cfg))
 
 describe("Truncate", () => {
+  it.live("reports fitting savings including the recovery notice without recording raw content", () =>
+    Effect.gen(function* () {
+      const original = "中文".repeat(40_000)
+      const result = yield* (yield* Truncate.Service).result({ output: original })
+      const audit = "audit" in result.metadata ? result.metadata.audit : undefined
+
+      expect(audit).toEqual({
+        originalBytes: Buffer.byteLength(original),
+        visibleBytes: Buffer.byteLength(result.output),
+        estimatedTextTokensBefore: Token.estimateReporting(original),
+        estimatedTextTokensAfter: Token.estimateReporting(result.output),
+        estimatedTextTokensSaved: Token.estimateReporting(original) - Token.estimateReporting(result.output),
+        estimator: "heuristic-cjk",
+        spillSaved: true,
+        attachmentsBefore: 0,
+        attachmentsAfter: 0,
+      })
+      expect(JSON.stringify(audit)).not.toContain(original.slice(0, 100))
+    }),
+  )
+
   describe("output", () => {
     it.live("truncates large json file by bytes", () =>
       Effect.gen(function* () {
@@ -352,6 +374,7 @@ describe("Truncate", () => {
 
         expect(result.metadata.truncated).toBe(true)
         expect(result.metadata.outputPath).toBeUndefined()
+        expect(result.metadata.audit?.spillSaved).toBe(false)
         expect(result.output).toContain("could not be saved")
         expect(result.output).toContain("model-visible token budget")
         expect(result.output).not.toContain(text)
@@ -374,6 +397,7 @@ describe("Truncate", () => {
 
         expect(result.metadata.truncated).toBe(true)
         expect(result.metadata.outputPath).toBe(outputPath)
+        expect(result.metadata.audit?.spillSaved).toBe(true)
         expect(result.output).toContain(`Full output saved to: ${outputPath}`)
         expect(result.output).not.toContain("could not be saved")
         expect(yield* fsys.readFileString(outputPath)).toBe(full)

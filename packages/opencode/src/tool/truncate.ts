@@ -10,6 +10,7 @@ import * as Log from "@redcode-ai/core/util/log"
 import { ToolID } from "./schema"
 import { TRUNCATION_DIR } from "./truncation-dir"
 import { ImageTokens } from "@/session/image-tokens"
+import { Token } from "@/util/token"
 
 const log = Log.create({ service: "truncation" })
 const RETENTION = Duration.days(7)
@@ -38,7 +39,16 @@ export interface Attachment {
 export interface ResultOutput<T extends Attachment = Attachment> {
   output: string
   attachments?: T[]
-  metadata: { truncated: boolean; outputPath?: string; mediaPath?: string }
+  metadata: {
+    truncated: boolean
+    outputPath?: string
+    mediaPath?: string
+    audit?: ReturnType<typeof outputAudit> & {
+      spillSaved: boolean
+      attachmentsBefore: number
+      attachmentsAfter: number
+    }
+  }
 }
 
 function hasTaskTool(agent?: Agent.Info) {
@@ -154,6 +164,12 @@ export const layer = Layer.effect(
             ? `...${removed} ${unit} truncated...\n\n${hint}\n\n${tailPreview}`
             : `${headPreview}\n\n...${removed} ${unit} truncated...\n\n${hint}`
 
+      log.info("output.truncated", {
+        stage: "line-byte",
+        ...outputAudit(text, content),
+        spillSaved: true,
+        outputPath: file,
+      })
       return {
         content,
         truncated: true,
@@ -204,13 +220,24 @@ export const layer = Layer.effect(
 
       // notice 本身也进模型上下文，带着它重新 fit 一遍，别让提示把总账顶过线
       const final = ImageTokens.fitToolResult({ text: input.output, attachments }, model, { notice })
+      const output = `${final.text}\n\n${notice}`
+      // 260930 Red 审计按最终预览（含恢复提示）计价，不把启发式文本节省量冒充实际计费 token。
+      // 决策：docs/notes/implemented/feature/2026-09-30-tool-output-fitting-audit.md
+      const audit = {
+        ...outputAudit(input.output, output),
+        spillSaved: !!outputPath,
+        attachmentsBefore: attachments.length,
+        attachmentsAfter: final.attachments.length,
+      }
+      log.info("output.truncated", { stage: "model-budget", ...audit, outputPath, mediaPath })
       return {
-        output: `${final.text}\n\n${notice}`,
+        output,
         attachments: final.attachments,
         metadata: {
           truncated: true,
           ...(outputPath && { outputPath }),
           ...(mediaPath && { mediaPath }),
+          audit,
         },
       }
     })
@@ -230,6 +257,19 @@ export const layer = Layer.effect(
 )
 
 export const defaultLayer = layer.pipe(Layer.provide(AppFileSystem.defaultLayer), Layer.provide(NodePath.layer))
+
+function outputAudit(original: string, visible: string) {
+  const before = Token.estimateReporting(original)
+  const after = Token.estimateReporting(visible)
+  return {
+    originalBytes: Buffer.byteLength(original, "utf8"),
+    visibleBytes: Buffer.byteLength(visible, "utf8"),
+    estimatedTextTokensBefore: before,
+    estimatedTextTokensAfter: after,
+    estimatedTextTokensSaved: before - after,
+    estimator: "heuristic-cjk" as const,
+  }
+}
 
 // 260817 Red 双端预览 helper：单端收集预览行。
 // fromTail=false 从前往后；skip 跳过前 N 行（tail 收集时避免与 head 重叠）。
