@@ -362,6 +362,10 @@ export async function DigitalOceanAuthPlugin(input: PluginInput): Promise<Hooks>
             await startOAuthServer()
             const state = generateState()
             const callbackPromise = waitForOAuthCallback(state)
+           // 260930 Red 用户放弃登录时 callback() 永不被调用，超时 reject 无人
+           // 消费会以 unhandledRejection 杀死整个 sidecar（同 codex 实证 crash）。
+           // 预挂空 catch 兜底；callback 内的 await 仍能收到原始 rejection。
+           callbackPromise.catch(() => {})
             return {
               url: buildAuthorizeUrl(state),
               instructions:

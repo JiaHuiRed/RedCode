@@ -171,18 +171,24 @@ export async function ensureRunning(redirectUri?: string): Promise<void> {
 }
 
 export function waitForCallback(oauthState: string, mcpName?: string): Promise<string> {
-  if (mcpName) mcpNameToState.set(mcpName, oauthState)
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      if (pendingAuths.has(oauthState)) {
-        pendingAuths.delete(oauthState)
-        if (mcpName) mcpNameToState.delete(mcpName)
-        reject(new Error("OAuth callback timeout - authorization took too long"))
-      }
-    }, CALLBACK_TIMEOUT_MS)
+ if (mcpName) mcpNameToState.set(mcpName, oauthState)
+ const promise = new Promise<string>((resolve, reject) => {
+   const timeout = setTimeout(() => {
+     if (pendingAuths.has(oauthState)) {
+       pendingAuths.delete(oauthState)
+       if (mcpName) mcpNameToState.delete(mcpName)
+       reject(new Error("OAuth callback timeout - authorization took too long"))
+     }
+   }, CALLBACK_TIMEOUT_MS)
 
-    pendingAuths.set(oauthState, { resolve, reject, timeout })
-  })
+   pendingAuths.set(oauthState, { resolve, reject, timeout })
+ })
+ // 260930 Red 调用方可能在 await 前被中断（连接取消/实例销毁），此时超时、
+ // stop() 或 cancelPending 的 reject 无人消费，会以 unhandledRejection 杀死
+ // 整个 sidecar（260930 实证 crash）。预挂空 catch 兜底；真正的 await 仍能
+ // 收到原始 rejection。
+  promise.catch(() => {})
+ return promise
 }
 
 export function cancelPending(mcpName: string): void {

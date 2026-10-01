@@ -540,6 +540,11 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
             const authUrl = buildAuthorizeUrl(redirectUri, pkce, state)
 
             const callbackPromise = waitForOAuthCallback(pkce, state)
+           // 260930 Red 用户放弃登录时 callback() 永不被调用，5 分钟超时的
+           // reject 无人消费会以 unhandledRejection 杀死整个 sidecar（实证
+           // crash）。预挂空 catch 兜底；callback 内的 await 仍能收到原始
+           // rejection。
+           callbackPromise.catch(() => {})
 
             return {
               url: authUrl,
