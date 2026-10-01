@@ -32,6 +32,7 @@ export function createSDKNotificationToasts(deps: {
   onMount(() => {
     const toastBySession = new Map<string, number>()
     const alertedAtBySession = new Map<string, number>()
+    const pendingBySession = new Map<string, object>()
     const cooldownMs = 5000
 
     const dismissSessionAlert = (sessionKey: string) => {
@@ -39,10 +40,9 @@ export function createSDKNotificationToasts(deps: {
       if (toastId === undefined) return
       toaster.dismiss(toastId)
       toastBySession.delete(sessionKey)
-      alertedAtBySession.delete(sessionKey)
     }
 
-    const unsub = globalSDK.event.listen((e) => {
+    const unsub = globalSDK.event.listen(async (e) => {
       if (e.details?.type === "worktree.ready") {
         setBusy(e.name, false)
         WorktreeState.ready(e.name)
@@ -61,7 +61,9 @@ export function createSDKNotificationToasts(deps: {
         e.details?.type === "permission.replied"
       ) {
         const props = e.details.properties as { sessionID: string }
-        const sessionKey = `${e.name}:${props.sessionID}`
+        const sessionKey = `${pathKey(e.name)}:${props.sessionID}`
+        pendingBySession.delete(sessionKey)
+        alertedAtBySession.delete(sessionKey)
         dismissSessionAlert(sessionKey)
         return
       }
@@ -115,7 +117,7 @@ export function createSDKNotificationToasts(deps: {
 
       const [store] = globalSync.child(directory, { bootstrap: false })
       const session = store.session.find((s: any) => s.id === props.sessionID)
-      const sessionKey = `${directory}:${props.sessionID}`
+      const sessionKey = `${pathKey(directory)}:${props.sessionID}`
 
       const sessionTitle = session?.title ?? language.t("command.session.new")
       const projectName = getFilename(directory)
@@ -134,14 +136,24 @@ export function createSDKNotificationToasts(deps: {
         if (settings.sounds.permissionsEnabled()) {
           void playSoundById(settings.sounds.permissions())
         }
-        if (settings.notifications.permissions()) {
-          void platform.notify(title, description, href)
-        }
       }
 
-      if (e.details.type === "question.asked") {
-        if (settings.notifications.agent()) {
-          void platform.notify(title, description, href)
+      const notificationsEnabled =
+        e.details.type === "permission.asked" ? settings.notifications.permissions() : settings.notifications.agent()
+      if (notificationsEnabled) {
+        const request = {}
+        pendingBySession.set(sessionKey, request)
+        let notified = false
+        try {
+          notified = (await platform.notify(title, description, href)) === true
+        } catch {
+          // 260930 Red 系统通知失败时回退应用内提示，避免 promise rejection 漏出。
+        }
+        if (pendingBySession.get(sessionKey) !== request) return
+        pendingBySession.delete(sessionKey)
+        if (notified) {
+          dismissSessionAlert(sessionKey)
+          return
         }
       }
 
@@ -169,17 +181,28 @@ export function createSDKNotificationToasts(deps: {
       })
       toastBySession.set(sessionKey, toastId)
     })
-    onCleanup(unsub)
+    onCleanup(() => {
+      unsub()
+      pendingBySession.clear()
+      for (const toastId of toastBySession.values()) {
+        toaster.dismiss(toastId)
+      }
+      toastBySession.clear()
+    })
 
     createEffect(() => {
       const currentSession = params.id
       if (!currentDir() || !currentSession) return
-      const sessionKey = `${currentDir()}:${currentSession}`
+      const directory = pathKey(currentDir())
+      const sessionKey = `${directory}:${currentSession}`
+      pendingBySession.delete(sessionKey)
       dismissSessionAlert(sessionKey)
       const [store] = globalSync.child(currentDir(), { bootstrap: false })
       const childSessions = store.session.filter((s: any) => s.parentID === currentSession)
       for (const child of childSessions) {
-        dismissSessionAlert(`${currentDir()}:${child.id}`)
+        const childKey = `${directory}:${child.id}`
+        pendingBySession.delete(childKey)
+        dismissSessionAlert(childKey)
       }
     })
   })

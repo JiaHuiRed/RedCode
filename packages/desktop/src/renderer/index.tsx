@@ -25,6 +25,7 @@ import { render } from "solid-js/web"
 import pkg from "../../package.json"
 import { initI18n, t } from "./i18n"
 import { platformFetch } from "./fetch"
+import { notifyDesktop } from "./notifications"
 import { resetZoom, setPinchZoomEnabled, webviewZoom, zoomIn, zoomOut } from "./webview-zoom"
 import "./styles.css"
 import { useTheme } from "@redcode-ai/ui/theme"
@@ -230,24 +231,16 @@ const createPlatform = (): Platform => {
       window.api.relaunch()
     },
 
-    notify: async (title, description, href) => {
-      const focused = await window.api.getWindowFocused().catch(() => document.hasFocus())
-      if (focused) return
-      // 260801 Red 任务栏闪烁：所有通知（turn-complete/error/permission/question）汇聚于此一处生效
-      window.api.flashFrame(true)
-
-      const notification = new Notification(title, {
-        body: description ?? "",
-        // 本地打包图标，避免请求未注册的 redcode.dev（DNS 解析失败 → 控制台 ERR_NAME_NOT_RESOLVED）
-        icon: new URL("favicon-96x96-v3.png", document.baseURI).href,
-      })
-      notification.onclick = () => {
-        void window.api.showWindow()
-        void window.api.setWindowFocus()
-        handleNotificationClick(href)
-        notification.close()
-      }
-    },
+    notify: (title, description, href) =>
+      notifyDesktop({
+        title,
+        description,
+        href,
+        api: window.api,
+        document,
+        Notification,
+        handleNotificationClick,
+      }),
 
     fetch: platformFetch,
 

@@ -45,8 +45,8 @@ export type Platform = {
   /** Navigate forward in history */
   forward(): void
 
-  /** Send a system notification (optional deep link) */
-  notify(title: string, description?: string, href?: string): Promise<void>
+  /** Send a system notification (optional deep link); true means created, false/void means not sent */
+  notify(title: string, description?: string, href?: string): Promise<boolean | void>
 
   /** Open directory picker dialog (native on desktop, server-backed on web) */
   openDirectoryPickerDialog?(opts?: OpenDirectoryPickerOptions): Promise<PickerPaths>

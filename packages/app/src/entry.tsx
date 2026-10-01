@@ -55,17 +55,17 @@ const readDefaultServerUrl = () => getStorage(DEFAULT_SERVER_URL_KEY)
 const writeDefaultServerUrl = (url: string | null) => setStorage(DEFAULT_SERVER_URL_KEY, url)
 
 const notify: Platform["notify"] = async (title, description, href) => {
-  if (!("Notification" in window)) return
+  if (!("Notification" in window)) return false
 
   const permission =
     Notification.permission === "default"
       ? await Notification.requestPermission().catch(() => "denied")
       : Notification.permission
 
-  if (permission !== "granted") return
+  if (permission !== "granted") return false
 
   const inView = document.visibilityState === "visible" && document.hasFocus()
-  if (inView) return
+  if (inView) return false
 
   const notification = new Notification(title, {
     body: description ?? "",
@@ -78,6 +78,7 @@ const notify: Platform["notify"] = async (title, description, href) => {
     handleNotificationClick(href)
     notification.close()
   }
+  return true
 }
 
 const openLink: Platform["openLink"] = (url) => {
