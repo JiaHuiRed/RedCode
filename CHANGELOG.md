@@ -10,6 +10,10 @@
 
 ### [未发布]
 
+#### 变更
+
+- **frontend-design skill 路由 description 精简**（`seed/skill/frontend-design/SKILL.md`，live 同步）：三句中英重复的路由枚举缩为一句（构建/重整 UI、按截图实现、审查分流 frontend-qa），省每轮约 90 固定 tokens；正文（间距/行高/对比度等设计规范）未动。模型可见四问：① 列表注入面该行 description 缩短，触发语义不变；② 约 -90 tokens/轮；③ available_skills 段前缀自该段起作废重建一次；④ description 现一句收敛即上限，正文仅触发加载时进上下文。
+
 #### 修复
 
 - **放弃 OAuth 登录不再以 unhandledRejection 杀死 sidecar**（`packages/opencode/src/plugin/{codex,xai,digitalocean}.ts`、`packages/opencode/src/mcp/oauth-callback.ts`）：浏览器登录被放弃时授权 promise 的 callback 永不被调用，5 分钟超时（或 MCP 场景 `stop()`/`cancelPending`）的 reject 无人消费，会以 unhandledRejection 触发 sidecar 退出（260930 实证：Codex 登录超时导致后端崩溃后自动重生）。四个同形状 producer 统一在 promise 创建点预挂空 catch 兜底，迟到或正常的消费者仍收到原始 rejection；MCP `waitForCallback` 覆盖所有调用方。回归 `test/mcp/oauth-callback.test.ts` 6 条（含无消费者 stop() 不产生 unhandled 的红测验证）。

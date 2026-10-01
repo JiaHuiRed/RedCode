@@ -1,6 +1,6 @@
 ---
 name: frontend-design
-description: 构建高质量前端界面、组件和页面的设计规范，或根据参考图/设计稿实现视觉风格。Use when building, restyling, or refining UI (pages, components, landing pages, dashboards, tools), implementing from a screenshot/mockup/reference image, or extracting a design language from an existing project. 已有界面的质量审查使用 frontend-qa。
+description: 构建或重整前端界面与组件，按截图/设计稿实现视觉风格。已有界面的质量审查使用 frontend-qa。
 ---
 
 # Frontend Design
