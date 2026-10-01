@@ -8,6 +8,12 @@
 
 ---
 
+### [未发布]
+
+#### 修复
+
+- **费用币种回填重写为 part 表全量重算，堵住竞态丢账与 revert 扣错桶**（`packages/opencode/src/data-migration.ts`、`packages/app/src/components/session/session-context-summary.ts`）：旧迁移只扫「两桶皆 NULL」的会话——回填窗口内 projector 先写过任一桶的会话永久退出扫描集，旧费用永远没人归位。权威源换成 part 表（step-finish 分片与桶增量同事务写入，聚合与覆盖同事务执行，SQLite 串行事务下与 projector 写天然互斥），全量重算覆盖两桶与标量 cost，顺带自愈漂移；无币种旧 part 按目录回写 currency，revert 负冲抵从此落对桶，已有币种的分片按自身归桶不受目录漂移影响。迁移改名 `session_cost_currency_from_parts` 强制重跑（旧完成行不阻塞）。前端子会话聚合改三通道，旧行子账不再 `?? 0` 丢失。回归 `test/session/cost-currency-migration.test.ts` 7 条 + metrics 22 条。决策：`docs/notes/implemented/bug-fix/2026-10-01-cost-currency-backfill-from-parts.md`。
+
 ### [0.11.17] - 2026-10-01
 
 #### 新增

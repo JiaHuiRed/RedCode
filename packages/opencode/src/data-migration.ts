@@ -1,11 +1,11 @@
 import { Context, Effect, Layer } from "effect"
-import { Database } from "./storage/db"
+import { Database, type TxOrDb } from "./storage/db"
 import { DataMigrationTable } from "./data-migration.sql"
 import * as Log from "@redcode-ai/core/util/log"
 import { and, asc, eq, gt, inArray, sql } from "drizzle-orm"
 import { Provider } from "@/provider/provider"
 import type { ProviderID } from "@/provider/schema"
-import { MessageTable, SessionTable } from "./session/session.sql"
+import { MessageTable, PartTable, SessionTable } from "./session/session.sql"
 import type { SessionID } from "./session/schema"
 
 export type Migration<R = never> = {
@@ -14,6 +14,96 @@ export type Migration<R = never> = {
 }
 
 const log = Log.create({ service: "data-migration" })
+// 260930 Red 会话费用币种回填核心：以 part 表为权威源重算两桶并覆盖。
+// step-finish part 的写入与桶增量在同一个事务（projectors.ts 的 PartUpdated
+// projector），所以「part 聚合 == 桶投影终态」由事务原子性保证；本函数的聚合
+// 与覆盖又由调用方包进同一个事务，SQLite 串行事务让两者与 projector 写天然
+// 互斥，不存在「回填窗口内 projector 先写、会话永久退出扫描集」的丢账窗口。
+// 覆盖式写入还顺带自愈桶与标量 cost 的历史漂移；无币种旧 part 的 currency 按
+// 同一目录边界写回，此后 revert 的负冲抵落在正确桶里。
+export function backfillSessionCostCurrency(
+  tx: TxOrDb,
+  sessionIDs: SessionID[],
+  currencyOf: (providerID: string, modelID: string) => "USD" | "CNY" | undefined,
+): { attributed: number; unresolved: number } {
+  // part × message 聚合，按 会话 × 供应商 × 模型 × part币种 定币种，一次映射避免逐条查目录
+  const rows = tx
+    .select({
+      session_id: PartTable.session_id,
+      provider_id: sql<string>`json_extract(${MessageTable.data}, '$.providerID')`,
+      model_id: sql<string>`json_extract(${MessageTable.data}, '$.modelID')`,
+      part_currency: sql<string | null>`json_extract(${PartTable.data}, '$.currency')`,
+      cost: sql<number>`coalesce(sum(coalesce(json_extract(${PartTable.data}, '$.cost'), 0)), 0)`,
+    })
+    .from(PartTable)
+    .innerJoin(MessageTable, eq(MessageTable.id, PartTable.message_id))
+    .where(
+      and(inArray(PartTable.session_id, sessionIDs), sql`json_extract(${PartTable.data}, '$.type') = 'step-finish'`),
+    )
+    .groupBy(
+      PartTable.session_id,
+      sql`json_extract(${MessageTable.data}, '$.providerID')`,
+      sql`json_extract(${MessageTable.data}, '$.modelID')`,
+      sql`json_extract(${PartTable.data}, '$.currency')`,
+    )
+    .all()
+
+  const buckets = new Map<SessionID, { cny: number; usd: number; unresolved: boolean }>()
+  for (const row of rows) {
+    const entry = buckets.get(row.session_id) ?? { cny: 0, usd: 0, unresolved: false }
+    // 已定格币种的 part 按自身走（与 projector 增量同界，目录后来改了也不改写历史）；
+    // 无币种旧 part 才按目录近似。目录查不到按 USD；cost>0 才记 unresolved——
+    // 免费模型的 0 账吃 USD 边界不算「未解析」，汇总日志不虚报
+    const currency = row.part_currency ?? currencyOf(row.provider_id, row.model_id)
+    if (currency === "CNY") entry.cny += row.cost
+    else {
+      entry.usd += row.cost
+      if (row.cost > 0 && row.part_currency == null) entry.unresolved = true
+    }
+    buckets.set(row.session_id, entry)
+  }
+
+  let unresolved = 0
+  for (const id of sessionIDs) {
+    const value = buckets.get(id) ?? { cny: 0, usd: 0, unresolved: false }
+    // 桶 = part 聚合（无条件覆盖），标量 cost = 两桶之和；time_updated 保持原值，
+    // 回填不算会话活动
+    tx.update(SessionTable)
+      .set({
+        cost: value.cny + value.usd,
+        cost_cny: value.cny,
+        cost_usd: value.usd,
+        time_updated: sql`${SessionTable.time_updated}`,
+      })
+      .where(eq(SessionTable.id, id))
+      .run()
+    if (value.unresolved) unresolved += 1
+  }
+
+  // 无币种旧 part 写回 currency（cost≠0 才动，+0 分片无桶差异）；此后 projector
+  // 读 part 的 usage() 拿到确定币种，revert/负冲抵与桶边界一致。
+  // part_currency 非空的组整体已有币种，整组跳过
+  for (const row of rows) {
+    if (row.part_currency != null || row.cost === 0) continue
+    const currency = currencyOf(row.provider_id, row.model_id) ?? "USD"
+    tx.update(PartTable)
+      .set({ data: sql`json_set(${PartTable.data}, '$.currency', ${currency})` })
+      .where(
+        and(
+          eq(PartTable.session_id, row.session_id),
+          sql`json_extract(${PartTable.data}, '$.type') = 'step-finish'`,
+          sql`json_extract(${PartTable.data}, '$.currency') is null`,
+          sql`coalesce(json_extract(${PartTable.data}, '$.cost'), 0) != 0`,
+          sql`${PartTable.message_id} in (select ${MessageTable.id} from ${MessageTable}
+             where json_extract(${MessageTable.data}, '$.providerID') = ${row.provider_id}
+               and json_extract(${MessageTable.data}, '$.modelID') = ${row.model_id})`,
+        ),
+      )
+      .run()
+  }
+
+  return { attributed: sessionIDs.length, unresolved }
+}
 
 export interface Interface {}
 
@@ -22,10 +112,10 @@ export class Service extends Context.Service<Service, Interface>()("@redcode/Dat
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-   // 260930 Red 币种回填要读 Provider 目录（models.dev 原值 + CNY_PRICING 覆盖 +
-   // config 声明的并集）——分桶的正确性是「写时刻定格」，回填只能按当前目录近似，
-   // 无法命中的模型按 USD 并入桶并在汇总日志里计数，不静默。
-   const provider = yield* Provider.Service
+    // 260930 Red 币种回填要读 Provider 目录（models.dev 原值 + CNY_PRICING 覆盖 +
+    // config 声明的并集）——分桶的正确性是「写时刻定格」，回填只能按当前目录近似，
+    // 无法命中的模型按 USD 并入桶并在汇总日志里计数，不静默。
+    const provider = yield* Provider.Service
     const migrations: Migration[] = [
       {
         name: "session_usage_from_messages",
@@ -129,119 +219,67 @@ export const layer = Layer.effect(
           }
         }),
       },
-     {
-       name: "session_cost_currency_from_messages",
-       run: Effect.gen(function* () {
-         const providers = yield* provider.list()
-         const currencyOf = (providerID: string, modelID: string) =>
-           providers[providerID as ProviderID]?.models[modelID]?.cost?.currency
+      {
+        name: "session_cost_currency_from_parts",
+        run: Effect.gen(function* () {
+          const providers = yield* provider.list()
+          const currencyOf = (providerID: string, modelID: string) =>
+            providers[providerID as ProviderID]?.models[modelID]?.cost?.currency
 
-         let attributed = 0
-         let unresolved = 0
-         for (let cursor: SessionID | undefined, page = 1; ; page++) {
-           const next = yield* Effect.gen(function* () {
-             // 只扫未归属的旧行（两桶皆 NULL）。回填与 projector 写并发时以本迁移的
-             // WHERE 兜底：projector 已写过任意一桶的行不在扫描集里，不会互相覆盖。
-             const sessions = yield* Effect.sync(() =>
-               Database.use((db) =>
-                 db
-                   .select({ id: SessionTable.id })
-                   .from(SessionTable)
-                   .where(
-                     and(
-                       cursor ? gt(SessionTable.id, cursor) : undefined,
-                       sql`${SessionTable.cost_cny} is null and ${SessionTable.cost_usd} is null`,
-                     ),
-                   )
-                   .orderBy(asc(SessionTable.id))
-                   .limit(100)
-                   .all(),
-               ),
-             )
-             if (sessions.length === 0) return
+          // 260930 Red 旧版 session_cost_currency_from_messages 只扫「桶双 NULL」且按
+          // 消息行聚合：projector 在回填窗口内写过任一桶的会话会永久退出扫描集，旧
+          // 费用永远没人归位（attributed 还在 guard 未命中时虚增）。换名重跑——旧完成
+          // 行不阻塞新迁移——改为全量重算 + 覆盖，权威源换成 part 表，事务原子性
+          // 论证见 backfillSessionCostCurrency。
+          let attributed = 0
+          let unresolved = 0
+          for (let cursor: SessionID | undefined, page = 1; ; page++) {
+            const next = yield* Effect.gen(function* () {
+              const sessions = yield* Effect.sync(() =>
+                Database.use((db) =>
+                  db
+                    .select({ id: SessionTable.id })
+                    .from(SessionTable)
+                    .where(cursor ? gt(SessionTable.id, cursor) : undefined)
+                    .orderBy(asc(SessionTable.id))
+                    .limit(100)
+                    .all(),
+                ),
+              )
+              if (sessions.length === 0) return
 
-             yield* Effect.sync(() =>
-               Database.transaction((db) => {
-                 // 消息级 cost 是该消息所有 step 之和，与 part 级增量等价；按
-                 // session × provider × model 聚合后一次映射定桶，避免逐条查目录。
-                 const rows = db
-                   .select({
-                     session_id: MessageTable.session_id,
-                     provider_id: sql<string>`json_extract(${MessageTable.data}, '$.providerID')`,
-                     model_id: sql<string>`json_extract(${MessageTable.data}, '$.modelID')`,
-                     cost: sql<number>`coalesce(sum(coalesce(json_extract(${MessageTable.data}, '$.cost'), 0)), 0)`,
-                   })
-                   .from(MessageTable)
-                   .where(
-                     and(
-                       inArray(
-                         MessageTable.session_id,
-                         sessions.map((session) => session.id),
-                       ),
-                       sql`json_extract(${MessageTable.data}, '$.role') = 'assistant'`,
-                     ),
-                   )
-                   .groupBy(
-                     MessageTable.session_id,
-                     sql`json_extract(${MessageTable.data}, '$.providerID')`,
-                     sql`json_extract(${MessageTable.data}, '$.modelID')`,
-                   )
-                   .all()
+              const counted = yield* Effect.sync(() =>
+                Database.transaction((tx) =>
+                  backfillSessionCostCurrency(
+                    tx,
+                    sessions.map((session) => session.id),
+                    currencyOf,
+                  ),
+                ),
+              )
+              attributed += counted.attributed
+              unresolved += counted.unresolved
 
-                 const buckets = new Map<SessionID, { cny: number; usd: number; unresolved: boolean }>()
-                 for (const row of rows) {
-                   const entry = buckets.get(row.session_id) ?? { cny: 0, usd: 0, unresolved: false }
-                   // 目录里找不到的模型按 USD 并入桶——与 projector 的边界一致；
-                   // 但记下 unresolved，汇总日志按会话计数，不静默。
-                   if (currencyOf(row.provider_id, row.model_id) === "CNY") entry.cny += row.cost
-                   else {
-                     entry.usd += row.cost
-                     if (row.cost > 0) entry.unresolved = true
-                   }
-                   buckets.set(row.session_id, entry)
-                 }
-
-                 for (const session of sessions) {
-                   const value = buckets.get(session.id) ?? { cny: 0, usd: 0, unresolved: false }
-                   db.update(SessionTable)
-                     .set({
-                       cost_cny: value.cny,
-                       cost_usd: value.usd,
-                       time_updated: sql`${SessionTable.time_updated}`,
-                     })
-                     .where(
-                       and(
-                         eq(SessionTable.id, session.id),
-                         sql`${SessionTable.cost_cny} is null and ${SessionTable.cost_usd} is null`,
-                       ),
-                     )
-                     .run()
-                   attributed += 1
-                   if (value.unresolved) unresolved += 1
-                 }
-               }),
-             )
-
-             return sessions.at(-1)?.id
-           }).pipe(
-             Effect.withSpan("DataMigration.sessionCostCurrency.page", {
-               attributes: {
-                 "data_migration.name": "session_cost_currency_from_messages",
-                 "data_migration.page": page,
-                 "data_migration.cursor": cursor ?? "",
-               },
-             }),
-           )
-           if (!next) {
-             // 汇总一行：回填了多少会话、其中多少吃了「目录查不到按 USD」的近似。
-             log.info("session cost currency backfill done", { attributed, unresolved })
-             return
-           }
-           cursor = next
-           yield* Effect.sleep("10 millis")
-         }
-       }),
-     },
+              return sessions.at(-1)?.id
+            }).pipe(
+              Effect.withSpan("DataMigration.sessionCostCurrency.page", {
+                attributes: {
+                  "data_migration.name": "session_cost_currency_from_parts",
+                  "data_migration.page": page,
+                  "data_migration.cursor": cursor ?? "",
+                },
+              }),
+            )
+            if (!next) {
+              // 汇总一行：重算了多少会话、其中多少吃了「目录查不到按 USD」的近似
+              log.info("session cost currency backfill done", { attributed, unresolved })
+              return
+            }
+            cursor = next
+            yield* Effect.sleep("10 millis")
+          }
+        }),
+      },
     ]
 
     yield* Effect.gen(function* () {
