@@ -27,13 +27,23 @@ export function formatNumber(value: number, locale: string) {
   return new Intl.NumberFormat(normalizeLocale(locale)).format(value)
 }
 
-export function formatCurrency(value: number, locale: string) {
+export function formatCurrency(value: number, locale: string, currency: "USD" | "CNY" = "USD") {
   return new Intl.NumberFormat(normalizeLocale(locale), {
     style: "currency",
-    currency: "USD",
+    currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value)
+}
+
+// 260930 Red 币种随消息归桶，混合并排展示、绝不求和（语义同 opencode 的
+// session/cost-bucket.ts：undefined→USD 同界；web 不运行时 import opencode
+// 源码，本地保持同界实现）。返回非零分量字符串，顺序 USD 在前。
+export function formatCostParts(cny: number, usd: number, locale: string): string[] {
+  const parts: string[] = []
+  if (usd !== 0) parts.push(formatCurrency(usd, locale, "USD"))
+  if (cny !== 0) parts.push(formatCurrency(cny, locale, "CNY"))
+  return parts
 }
 
 export function formatCount(value: number, locale: string, singular: string, plural: string) {

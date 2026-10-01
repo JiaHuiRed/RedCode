@@ -598,6 +598,34 @@ describe("run session data", () => {
     }
   })
 
+  // 260930 Red 币种只在 step-finish part 上，footer usage 按它选货币
+  test("formats footer usage in the step-finish currency", () => {
+    let data = createSessionData()
+    data = reduce(data, {
+      type: "message.part.updated",
+      properties: {
+        part: {
+          id: "finish-1",
+          messageID: "msg-1",
+          sessionID: "session-1",
+          type: "step-finish",
+          reason: "stop",
+          cost: 1.5,
+          currency: "CNY",
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+      },
+    }).data
+
+    const out = reduce(data, assistant("msg-1", { cost: 1.5 }))
+    expect(out.footer?.patch?.usage).toContain("CN¥1.50")
+  })
+
+  test("falls back to USD when no step-finish currency arrived", () => {
+    const out = reduce(createSessionData(), assistant("msg-1", { cost: 1.5 }))
+    expect(out.footer?.patch?.usage).toContain("$1.50")
+  })
+
   test("surfaces session errors as error commits", () => {
     const out = reduce(createSessionData(), {
       type: "session.error",

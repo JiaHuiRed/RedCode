@@ -29,10 +29,18 @@ import * as Locale from "@/util/locale"
 import { toolView } from "./tool"
 import type { FooterOutput, FooterPatch, FooterView, StreamCommit } from "./types"
 
-const money = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-})
+// 260930 Red 币种随消息走：历史消息无 currency 按 USD（与投影器/迁移同界），不再一律 $ 格式化
+const moneyCache = new Map<string, Intl.NumberFormat>()
+
+function moneyOf(currency: string | undefined): Intl.NumberFormat {
+  const key = currency === "CNY" ? "CNY" : "USD"
+  let fmt = moneyCache.get(key)
+  if (!fmt) {
+    fmt = new Intl.NumberFormat("en-US", { style: "currency", currency: key })
+    moneyCache.set(key, fmt)
+  }
+  return fmt
+}
 
 type Tokens = {
   input?: number
@@ -85,6 +93,9 @@ export type SessionData = {
   sent: Map<string, number>
   end: Set<string>
   echo: Map<string, Set<string>>
+  // messageID → 最近一次 step-finish part 的币种（260930 Red：币种只在 step-finish
+  // part 上，message info 只有 cost 标量；footer usage 按它选货币，缺省 USD）
+  finishCurrency: Map<string, string>
 }
 
 export type SessionDataInput = {
@@ -122,6 +133,7 @@ export function createSessionData(
     sent: new Map(),
     end: new Set(),
     echo: new Map(),
+    finishCurrency: new Map(),
   }
 }
 
@@ -133,7 +145,9 @@ function formatUsage(
   tokens: Tokens | undefined,
   limit: number | undefined,
   cost: number | undefined,
+  currency: string | undefined,
 ): string | undefined {
+  const money = moneyOf(currency)
   const total =
     (tokens?.input ?? 0) +
     (tokens?.output ?? 0) +
@@ -859,6 +873,7 @@ export function reduceSessionData(input: SessionDataInput): SessionDataOutput {
       info.tokens,
       input.limits[modelKey(info.providerID, info.modelID)],
       typeof info.cost === "number" ? info.cost : undefined,
+      typeof info.id === "string" ? data.finishCurrency.get(info.id) : undefined,
     )
     if (usage) {
       next = {
@@ -950,6 +965,14 @@ export function reduceSessionData(input: SessionDataInput): SessionDataOutput {
   if (event.type === "message.part.updated") {
     const part = event.properties.part
     if (part.sessionID !== input.sessionID) {
+      return out(data, commits)
+    }
+
+    // 260930 Red step-finish 带记账币种，记下供 footer usage 选货币
+    if (part.type === "step-finish") {
+      if (typeof part.messageID === "string" && part.currency) {
+        data.finishCurrency.set(part.messageID, part.currency)
+      }
       return out(data, commits)
     }
 

@@ -51,6 +51,7 @@ import type { AssistantMessage, Event, OpencodeClient, SessionMessageResponse, T
 import { applyPatch } from "diff"
 import { InstallationVersion } from "@redcode-ai/core/installation/version"
 import { ShellID } from "@/tool/shell/id"
+import { addCost, emptyCostBucket, singleCurrencyAmount } from "@/session/cost-bucket"
 
 type ModeOption = { id: string; name: string; description?: string }
 type ModelOption = { modelId: string; name: string }
@@ -112,7 +113,18 @@ async function sendUsageUpdate(
   }
 
   const used = msg.tokens.input + (msg.tokens.cache?.read ?? 0)
-  const totalCost = assistantMessages.reduce((sum, m) => sum + m.info.cost, 0)
+  // 260930 Red 币种只在 step-finish part 上（part 是记账权威源，与投影器/迁移同界）。
+  // ACP usage_update 的 cost 只收单一币种（协议字段可选）：混合或全零时省略 cost
+  // ——宁可不给也不伪装 69.21CNY + 0.30USD = 69.51USD。
+  const bucket = emptyCostBucket()
+  for (const m of assistantMessages) {
+    for (const part of m.parts) {
+      if (part.type === "step-finish") {
+        addCost(bucket, part.currency, part.cost)
+      }
+    }
+  }
+  const cost = singleCurrencyAmount(bucket)
 
   await connection
     .sessionUpdate({
@@ -121,7 +133,7 @@ async function sendUsageUpdate(
         sessionUpdate: "usage_update",
         used,
         size,
-        cost: { amount: totalCost, currency: "USD" },
+        ...(cost ? { cost: { amount: cost.amount, currency: cost.currency } } : {}),
       },
     })
     .catch((error) => {

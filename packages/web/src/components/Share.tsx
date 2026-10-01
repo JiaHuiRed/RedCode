@@ -3,7 +3,7 @@ import { DateTime } from "luxon"
 import { createStore, reconcile } from "solid-js/store"
 import { IconArrowDown } from "./icons"
 import { IconOpencode } from "./icons/custom"
-import { ShareI18nProvider, formatCurrency, formatNumber, normalizeLocale } from "./share/common"
+import { ShareI18nProvider, formatCostParts, formatNumber, normalizeLocale } from "./share/common"
 import styles from "./share.module.css"
 import type { MessageV2 } from "redcode/session/message-v2"
 import type { Message } from "redcode/session/message"
@@ -261,6 +261,8 @@ export default function Share(props: {
       messages: [] as MessageWithParts[],
       models: {} as Record<string, string[]>,
       cost: 0,
+      costCny: 0,
+      costUsd: 0,
       tokens: {
         input: 0,
         output: 0,
@@ -280,6 +282,14 @@ export default function Share(props: {
 
       if (msg.role === "assistant") {
         result.cost += msg.cost
+        // 260930 Red 币种只在 step-finish part 上（part 是记账权威源），按它归桶
+        // （undefined→USD 与投影器同界），前端不再默认全 USD
+        for (const part of msg.parts) {
+          if (part.type === "step-finish") {
+            if (part.currency === "CNY") result.costCny += part.cost
+            else result.costUsd += part.cost
+          }
+        }
         result.tokens.input += msg.tokens.input
         result.tokens.output += msg.tokens.output
         result.tokens.reasoning += msg.tokens.reasoning
@@ -398,11 +408,14 @@ export default function Share(props: {
                     <ul data-section="stats">
                       <li>
                         <span data-element-label>{props.messages.cost}</span>
-                        {data().cost !== undefined ? (
-                          <span>{formatCurrency(data().cost, props.messages.locale)}</span>
-                        ) : (
-                          <span data-placeholder>&mdash;</span>
-                        )}
+                        {(() => {
+                          const parts = formatCostParts(data().costCny, data().costUsd, props.messages.locale)
+                          return parts.length > 0 ? (
+                            <span>{parts.join(" + ")}</span>
+                          ) : (
+                            <span data-placeholder>&mdash;</span>
+                          )
+                        })()}
                       </li>
                       <li>
                         <span data-element-label>{props.messages.input_tokens}</span>

@@ -6,11 +6,14 @@ import { Database } from "@/storage/db"
 import { SessionTable } from "../../session/session.sql"
 import { Project } from "@/project/project"
 import { InstanceRef } from "@/effect/instance-ref"
+import { addCost, emptyCostBucket, formatCost, type CostBucket } from "@/session/cost-bucket"
 
 interface SessionStats {
   totalSessions: number
   totalMessages: number
   totalCost: number
+  costCny: number
+  costUsd: number
   totalTokens: {
     input: number
     output: number
@@ -36,6 +39,7 @@ interface SessionStats {
         }
       }
       cost: number
+      bucket: CostBucket
     }
   >
   dateRange: {
@@ -126,6 +130,8 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
     totalSessions: filteredSessions.length,
     totalMessages: 0,
     totalCost: 0,
+    costCny: 0,
+    costUsd: 0,
     totalTokens: {
       input: 0,
       output: 0,
@@ -184,6 +190,7 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
             messages: number
             tokens: { input: number; output: number; cache: { read: number; write: number; miss: number } }
             cost: number
+            bucket: CostBucket
           }
         > = {}
 
@@ -195,11 +202,16 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
                 messages: 0,
                 tokens: { input: 0, output: 0, cache: { read: 0, write: 0, miss: 0 } },
                 cost: 0,
+                bucket: emptyCostBucket(),
               }
             }
             sessionModelUsage[modelKey].messages++
-            sessionModelUsage[modelKey].cost += message.info.cost || 0
-
+            // 260930 Red 币种只在 step-finish part 上（part 是记账权威源），按它归桶
+            for (const part of message.parts) {
+              if (part.type === "step-finish") {
+                addCost(sessionModelUsage[modelKey].bucket, part.currency, part.cost)
+              }
+            }
             if (message.info.tokens) {
               sessionModelUsage[modelKey].tokens.input += message.info.tokens.input || 0
               sessionModelUsage[modelKey].tokens.output +=
@@ -219,6 +231,8 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
         return {
           messageCount: messages.length,
           sessionCost,
+          sessionCostCny: session.costCny ?? 0,
+          sessionCostUsd: session.costUsd ?? 0,
           sessionTokens,
           sessionTotalTokens:
             sessionTokens.input +
@@ -242,6 +256,8 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
 
     stats.totalMessages += result.messageCount
     stats.totalCost += result.sessionCost
+    stats.costCny += result.sessionCostCny
+    stats.costUsd += result.sessionCostUsd
     stats.totalTokens.input += result.sessionTokens.input
     stats.totalTokens.output += result.sessionTokens.output
     stats.totalTokens.reasoning += result.sessionTokens.reasoning
@@ -258,6 +274,7 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
           messages: 0,
           tokens: { input: 0, output: 0, cache: { read: 0, write: 0, miss: 0 } },
           cost: 0,
+          bucket: emptyCostBucket(),
         }
       }
       stats.modelUsage[model].messages += usage.messages
@@ -266,6 +283,8 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
       stats.modelUsage[model].tokens.cache.read += usage.tokens.cache.read
       stats.modelUsage[model].tokens.cache.write += usage.tokens.cache.write
       stats.modelUsage[model].cost += usage.cost
+      stats.modelUsage[model].bucket.cny += usage.bucket.cny
+      stats.modelUsage[model].bucket.usd += usage.bucket.usd
     }
   }
 
@@ -320,11 +339,17 @@ export function displayStats(stats: SessionStats, toolLimit?: number, modelLimit
   console.log("┌────────────────────────────────────────────────────────┐")
   console.log("│                    COST & TOKENS                       │")
   console.log("├────────────────────────────────────────────────────────┤")
-  const cost = isNaN(stats.totalCost) ? 0 : stats.totalCost
-  const costPerDay = isNaN(stats.costPerDay) ? 0 : stats.costPerDay
   const tokensPerSession = isNaN(stats.tokensPerSession) ? 0 : stats.tokensPerSession
-  console.log(renderRow("Total Cost", `$${cost.toFixed(2)}`))
-  console.log(renderRow("Avg Cost/Day", `$${costPerDay.toFixed(2)}`))
+  // 260930 Red 桶显示：单币种显示单行，混合并排（cost-bucket.ts），不裸加
+  console.log(renderRow("Total Cost", formatCost({ cny: stats.costCny, usd: stats.costUsd })))
+  console.log(
+    renderRow(
+      "Avg Cost/Day",
+      stats.days > 0
+        ? formatCost({ cny: stats.costCny / stats.days, usd: stats.costUsd / stats.days })
+        : formatCost({ cny: 0, usd: 0 }),
+    ),
+  )
   console.log(renderRow("Avg Tokens/Session", formatNumber(Math.round(tokensPerSession))))
   const medianTokensPerSession = isNaN(stats.medianTokensPerSession) ? 0 : stats.medianTokensPerSession
   console.log(renderRow("Median Tokens/Session", formatNumber(Math.round(medianTokensPerSession))))
@@ -351,7 +376,7 @@ export function displayStats(stats: SessionStats, toolLimit?: number, modelLimit
       console.log(renderRow("  Output Tokens", formatNumber(usage.tokens.output)))
       console.log(renderRow("  Cache Read", formatNumber(usage.tokens.cache.read)))
       console.log(renderRow("  Cache Write", formatNumber(usage.tokens.cache.write)))
-      console.log(renderRow("  Cost", `$${usage.cost.toFixed(4)}`))
+      console.log(renderRow("  Cost", formatCost(usage.bucket)))
       console.log("├────────────────────────────────────────────────────────┤")
     }
     // Remove last separator and add bottom border
