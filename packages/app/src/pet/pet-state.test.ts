@@ -1,13 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  applyPetEvent,
-  classifyTool,
-  createPetState,
-  FLASH_MS,
-  resolvePet,
-  STALE_MS,
-  type PetState,
-} from "./pet-state"
+import { applyPetEvent, classifyTool, createPetState, FLASH_MS, resolvePet, STALE_MS, type PetState } from "./pet-state"
 
 const NOW = 1_000_000
 
@@ -45,7 +37,7 @@ describe("applyPetEvent", () => {
   test("status busy 兜底 thinking 并重置 worked；纯问答 idle 不庆祝", () => {
     const state = createPetState()
     feed(state, "session.status", { sessionID: "s1", status: { type: "busy" } })
-    expect(resolvePet(state, NOW)).toEqual({ kind: "thinking" })
+    expect(resolvePet(state, NOW)).toEqual({ kind: "thinking", sessionID: "s1" })
     feed(state, "session.status", { sessionID: "s1", status: { type: "idle" } })
     expect(resolvePet(state, NOW)).toEqual({ kind: "idle" })
     expect(state.flash).toBeUndefined()
@@ -55,9 +47,9 @@ describe("applyPetEvent", () => {
     const state = createPetState()
     feed(state, "session.status", { sessionID: "s1", status: { type: "busy" } })
     tool(state, "s1", "edit", "running")
-    expect(resolvePet(state, NOW)).toEqual({ kind: "coding", tool: "edit" })
+    expect(resolvePet(state, NOW)).toEqual({ kind: "coding", tool: "edit", sessionID: "s1" })
     tool(state, "s1", "edit", "completed")
-    expect(resolvePet(state, NOW)).toEqual({ kind: "thinking" })
+    expect(resolvePet(state, NOW)).toEqual({ kind: "thinking", sessionID: "s1" })
     expect(state.worked["s1"]).toBe(true)
   })
 
@@ -68,7 +60,7 @@ describe("applyPetEvent", () => {
     feed(state, "session.status", { sessionID: "s1", status: { type: "busy" } })
     tool(state, "s1", "grep", "running")
     tool(state, "s1", "grep", "completed")
-    expect(resolvePet(state, NOW)).toEqual({ kind: "thinking" })
+    expect(resolvePet(state, NOW)).toEqual({ kind: "thinking", sessionID: "s1" })
     feed(state, "session.status", { sessionID: "s1", status: { type: "idle" } })
     expect(resolvePet(state, NOW)).toEqual({ kind: "success" })
     expect(resolvePet(state, NOW + FLASH_MS + 1)).toEqual({ kind: "idle" })
@@ -78,7 +70,7 @@ describe("applyPetEvent", () => {
     const state = createPetState()
     feed(state, "session.status", { sessionID: "s1", status: { type: "busy" } })
     tool(state, "s1", "bash", "error")
-    expect(resolvePet(state, NOW)).toEqual({ kind: "thinking" })
+    expect(resolvePet(state, NOW)).toEqual({ kind: "thinking", sessionID: "s1" })
     expect(state.flash).toBeUndefined()
     feed(state, "session.status", { sessionID: "s1", status: { type: "idle" } })
     expect(resolvePet(state, NOW)).toEqual({ kind: "success" })
@@ -100,53 +92,53 @@ describe("applyPetEvent", () => {
     const state = createPetState()
     feed(state, "session.error", { sessionID: "s1", error: { type: "unknown", message: "boom" } })
     feed(state, "permission.asked", { sessionID: "s2", id: "p1" })
-    expect(resolvePet(state, NOW)).toEqual({ kind: "permission" })
+    expect(resolvePet(state, NOW)).toEqual({ kind: "permission", sessionID: "s2" })
     feed(state, "permission.replied", { sessionID: "s2", requestID: "p1" })
     expect(resolvePet(state, NOW)).toEqual({ kind: "error" })
     feed(state, "question.asked", { sessionID: "s2", id: "q1" })
-    expect(resolvePet(state, NOW)).toEqual({ kind: "waiting" })
+    expect(resolvePet(state, NOW)).toEqual({ kind: "waiting", sessionID: "s2" })
   })
 
   test("permission.asked 提到 permission，replied 回 thinking", () => {
     const state = createPetState()
     tool(state, "s1", "bash", "running")
     feed(state, "permission.asked", { sessionID: "s1", id: "p1" })
-    expect(resolvePet(state, NOW)).toEqual({ kind: "permission" })
+    expect(resolvePet(state, NOW)).toEqual({ kind: "permission", sessionID: "s1" })
     feed(state, "permission.replied", { sessionID: "s1", requestID: "p1" })
-    expect(resolvePet(state, NOW)).toEqual({ kind: "thinking" })
+    expect(resolvePet(state, NOW)).toEqual({ kind: "thinking", sessionID: "s1" })
   })
 
   test("question.asked 进入 waiting，replied 回 thinking", () => {
     const state = createPetState()
     feed(state, "session.status", { sessionID: "s1", status: { type: "busy" } })
     feed(state, "question.asked", { sessionID: "s1", id: "q1" })
-    expect(resolvePet(state, NOW)).toEqual({ kind: "waiting" })
+    expect(resolvePet(state, NOW)).toEqual({ kind: "waiting", sessionID: "s1" })
     feed(state, "question.replied", { sessionID: "s1", requestID: "q1" })
-    expect(resolvePet(state, NOW)).toEqual({ kind: "thinking" })
+    expect(resolvePet(state, NOW)).toEqual({ kind: "thinking", sessionID: "s1" })
   })
 
   test("compaction part 进 compacting，session.compacted 回 thinking", () => {
     const state = createPetState()
     feed(state, "message.part.updated", { part: { sessionID: "s1", type: "compaction", auto: true } })
-    expect(resolvePet(state, NOW)).toEqual({ kind: "compacting" })
+    expect(resolvePet(state, NOW)).toEqual({ kind: "compacting", sessionID: "s1" })
     feed(state, "session.compacted", { sessionID: "s1" })
-    expect(resolvePet(state, NOW)).toEqual({ kind: "thinking" })
+    expect(resolvePet(state, NOW)).toEqual({ kind: "thinking", sessionID: "s1" })
   })
 
   test("text part 无 entry 时兜底 thinking，不覆盖工具态", () => {
     const state = createPetState()
     feed(state, "message.part.updated", { part: { sessionID: "s1", type: "text", text: "hi" } })
-    expect(resolvePet(state, NOW)).toEqual({ kind: "thinking" })
+    expect(resolvePet(state, NOW)).toEqual({ kind: "thinking", sessionID: "s1" })
     tool(state, "s1", "bash", "running")
     feed(state, "message.part.updated", { part: { sessionID: "s1", type: "text", text: "more" } })
-    expect(resolvePet(state, NOW)).toEqual({ kind: "tool", tool: "bash" })
+    expect(resolvePet(state, NOW)).toEqual({ kind: "tool", tool: "bash", sessionID: "s1" })
   })
 
   test("多会话聚合取最高优先级（permission > coding）", () => {
     const state = createPetState()
     tool(state, "s1", "edit", "running")
     feed(state, "permission.asked", { sessionID: "s2", id: "p1" })
-    expect(resolvePet(state, NOW)).toEqual({ kind: "permission" })
+    expect(resolvePet(state, NOW)).toEqual({ kind: "permission", sessionID: "s2" })
   })
 
   test("stale 兜底：thinking 超过 STALE_MS 后回落 idle", () => {
@@ -158,7 +150,7 @@ describe("applyPetEvent", () => {
   test("waiting/permission 不 stale（等用户不限时）", () => {
     const state = createPetState()
     feed(state, "permission.asked", { sessionID: "s1", id: "p1" })
-    expect(resolvePet(state, NOW + STALE_MS * 10)).toEqual({ kind: "permission" })
+    expect(resolvePet(state, NOW + STALE_MS * 10)).toEqual({ kind: "permission", sessionID: "s1" })
   })
 
   test("无 sessionID 的事件安全忽略（含已死的 session.next.* 命名空间）", () => {
@@ -211,5 +203,67 @@ describe("applyPetEvent", () => {
     feed(state, "session.status", { sessionID: "s2", status: { type: "busy" } }, NOW + STALE_MS + 1)
     expect(Object.keys(state.sessions)).toEqual(["s2"])
     expect(state.worked["s1"]).toBeUndefined()
+  })
+
+  // 260930 Red 下面一组钉流式心跳与获胜归属：产出期真正的高频事件是 message.part.delta，
+  // 旧实现不认它，长回复中途 entry 90s 超时被打回 idle，worked 连坐被清，success 也丢了。
+  test("delta 心跳续命：长流式回合不超时，idle 后 success 保留", () => {
+    const state = createPetState()
+    feed(state, "session.status", { sessionID: "s1", status: { type: "busy" } })
+    tool(state, "s1", "edit", "completed") // worked=true，之后纯文本生成
+    for (let t = 10_000; t <= 120_000; t += 10_000) {
+      feed(
+        state,
+        "message.part.delta",
+        { sessionID: "s1", messageID: "m1", partID: "p1", field: "text", delta: "x" },
+        NOW + t,
+      )
+    }
+    expect(resolvePet(state, NOW + 125_000)).toEqual({ kind: "thinking", sessionID: "s1" })
+    expect(state.worked["s1"]).toBe(true)
+    feed(state, "session.status", { sessionID: "s1", status: { type: "idle" } }, NOW + 126_000)
+    expect(resolvePet(state, NOW + 126_000)).toEqual({ kind: "success" })
+  })
+
+  test("delta 不覆盖工具态，也不打扰等用户的 waiting/permission", () => {
+    const state = createPetState()
+    tool(state, "s1", "edit", "running")
+    feed(
+      state,
+      "message.part.delta",
+      { sessionID: "s1", messageID: "m1", partID: "p1", field: "text", delta: "x" },
+      NOW + 50_000,
+    )
+    expect(resolvePet(state, NOW + 50_000)).toEqual({ kind: "coding", tool: "edit", sessionID: "s1" })
+    feed(state, "question.asked", { sessionID: "s1", id: "q1" }, NOW + 51_000)
+    feed(
+      state,
+      "message.part.delta",
+      { sessionID: "s1", messageID: "m1", partID: "p1", field: "text", delta: "x" },
+      NOW + 52_000,
+    )
+    expect(resolvePet(state, NOW + 52_000)).toEqual({ kind: "waiting", sessionID: "s1" })
+  })
+
+  test("text part.updated 刷新已有 thinking（低频定型事件之间不再超时）", () => {
+    const state = createPetState()
+    feed(state, "session.status", { sessionID: "s1", status: { type: "busy" } })
+    feed(state, "message.part.updated", { part: { sessionID: "s1", type: "text", text: "half" } }, NOW + 80_000)
+    expect(resolvePet(state, NOW + 85_000)).toEqual({ kind: "thinking", sessionID: "s1" })
+  })
+
+  test("后续 step 的 busy 刷新 thinking 心跳，但 worked 不复位", () => {
+    const state = createPetState()
+    feed(state, "session.status", { sessionID: "s1", status: { type: "busy" } })
+    tool(state, "s1", "grep", "completed")
+    feed(state, "session.status", { sessionID: "s1", status: { type: "busy" } }, NOW + 80_000)
+    expect(resolvePet(state, NOW + 85_000)).toEqual({ kind: "thinking", sessionID: "s1" })
+    expect(state.worked["s1"]).toBe(true)
+  })
+
+  test("无 sessionID 的 delta 安全忽略", () => {
+    const state = createPetState()
+    feed(state, "message.part.delta", { messageID: "m1", partID: "p1", field: "text", delta: "x" })
+    expect(Object.keys(state.sessions)).toHaveLength(0)
   })
 })

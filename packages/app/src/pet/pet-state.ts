@@ -41,7 +41,7 @@ export type PetState = {
 }
 
 /** 聚合后对外展示的状态（PetLayer 消费）。 */
-export type PetDisplay =
+type PetDisplayBase =
   | { kind: "idle" }
   | { kind: "thinking" }
   | { kind: "coding"; tool: string }
@@ -52,6 +52,11 @@ export type PetDisplay =
   | { kind: "compacting" }
   | { kind: "success" }
   | { kind: "error" }
+
+export type PetDisplay = PetDisplayBase & {
+  /** 260930 Red 获胜会话：表现层（V0.2 装扮/语境）按它取模型上下文。flash 全局无归属，idle 为空。 */
+  sessionID?: string
+}
 
 export const FLASH_MS = 5_000
 /** thinking/tool 型 entry 超时兜底：引擎事件链断了也能回落 idle（dsh-pet「永远卡在工作」教训）。 */
@@ -118,21 +123,26 @@ function flashActive(flash: PetFlash | undefined, now: number): boolean {
  */
 export function resolvePet(state: PetState, now: number): PetDisplay {
   let best: PetActivity | undefined
-  for (const activity of Object.values(state.sessions)) {
+  let bestSession: string | undefined
+  for (const [id, activity] of Object.entries(state.sessions)) {
     if (!activity) continue
     if (entryExpired(activity, now)) continue
-    if (!best || PRIORITY[activity.kind]! > PRIORITY[best.kind]!) best = activity
+    if (!best || PRIORITY[activity.kind]! > PRIORITY[best.kind]!) {
+      best = activity
+      bestSession = id
+    }
   }
   // 260929 Red 用户交互压过 flash：旧实现第一行就 return flash，error flash 的 5 秒窗口内
   // 到来的 permission/question 会被整段盖住——而「需要你允许一下」恰是最不能错过的提醒。
-  if (best && (best.kind === "permission" || best.kind === "waiting")) return { kind: best.kind }
+  if (best && (best.kind === "permission" || best.kind === "waiting"))
+    return { kind: best.kind, sessionID: bestSession }
   if (flashActive(state.flash, now)) return { kind: state.flash!.kind }
   if (best) {
     const kind = activityKind(best)
     if (kind === "coding" || kind === "searching" || kind === "tool") {
-      return { kind, tool: (best as { tool: string }).tool }
+      return { kind, tool: (best as { tool: string }).tool, sessionID: bestSession }
     }
-    return { kind }
+    return { kind, sessionID: bestSession }
   }
   return { kind: "idle" }
 }
@@ -179,39 +189,56 @@ export function applyPetEvent(state: PetState, event: PetEvent, now: number): vo
   }
 
   switch (event.type) {
-   case "message.part.updated": {
-     // 260929 Red 注意：sessionID 在 part 上而不是 properties 顶层，必须用 id 归属会话——
-     // 用外层 setEntry（抓 props.sessionID）会整个静默跳过。
-     const part = props.part
-     const id = part?.sessionID
-     if (!part || !id) return
-     const setEntryByPart = (activity: PetActivity) => {
-       state.sessions[id] = activity
-     }
-     switch (part.type) {
-       case "tool": {
-         const status = part.state?.status
-         if (status === "completed" || status === "error") {
-           state.worked[id] = true
-           setEntryByPart({ kind: "thinking", at: now })
-           return
-         }
-         // pending / running（状态缺失也按运行中展示：宁可多动，不可假死）
-         const tool = part.tool ?? ""
-         setEntryByPart({ kind: classifyTool(tool), tool, at: now })
-         return
-       }
-       case "compaction":
-         setEntryByPart({ kind: "compacting", at: now })
-         return
-       case "reasoning":
-       case "text":
-         // 模型在产出；已有更具体的 entry（工具/压缩中）时不覆盖
-         if (!state.sessions[id]) setEntryByPart({ kind: "thinking", at: now })
-         return
-       default:
-         return
-     }
+    case "message.part.updated": {
+      // 260929 Red 注意：sessionID 在 part 上而不是 properties 顶层，必须用 id 归属会话——
+      // 用外层 setEntry（抓 props.sessionID）会整个静默跳过。
+      const part = props.part
+      const id = part?.sessionID
+      if (!part || !id) return
+      const setEntryByPart = (activity: PetActivity) => {
+        state.sessions[id] = activity
+      }
+      switch (part.type) {
+        case "tool": {
+          const status = part.state?.status
+          if (status === "completed" || status === "error") {
+            state.worked[id] = true
+            setEntryByPart({ kind: "thinking", at: now })
+            return
+          }
+          // pending / running（状态缺失也按运行中展示：宁可多动，不可假死）
+          const tool = part.tool ?? ""
+          setEntryByPart({ kind: classifyTool(tool), tool, at: now })
+          return
+        }
+        case "compaction":
+          setEntryByPart({ kind: "compacting", at: now })
+          return
+        case "reasoning":
+        case "text": {
+          // 模型在产出；已有更具体的 entry（工具/压缩中/等用户）时不覆盖。
+          // 260930 Red 已有 thinking entry 也要刷新——part.updated 是产出期的低频定型
+          // 事件，只创建不刷新的话，长回合两次定型之间 entry 照样超时。
+          const existing = state.sessions[id]
+          if (!existing) setEntryByPart({ kind: "thinking", at: now })
+          else if (existing.kind === "thinking") existing.at = now
+          return
+        }
+        default:
+          return
+      }
+    }
+    case "message.part.delta": {
+      // 260930 Red 流式心跳：产出期真正的高频事件是 delta（processor.ts 的 reasoning-delta/
+      // text-delta），part.updated 只在 part 定型时才来——旧实现收不到心跳，长回复中途
+      // entry 就 90s 超时被打回 idle。delta 的 properties 顶层自带 sessionID
+      // （EventMessagePartDelta），O(1) 刷时间戳；渲染节奏在 PetLayer 的 1s tick，
+      // 这里不触发任何动画。等用户（waiting/permission）与具体工具态不被心跳打扰。
+      if (!sessionID) return
+      const current = state.sessions[sessionID]
+      if (!current) state.sessions[sessionID] = { kind: "thinking", at: now }
+      else if (current.kind === "thinking") current.at = now
+      return
     }
     case "session.status": {
       if (!sessionID) return
@@ -228,9 +255,13 @@ export function applyPetEvent(state: PetState, event: PetEvent, now: number): vo
       // worked=false，于是「第一步用工具、第二步只剩纯文本」的多步回合到 idle 时
       // 庆祝不了——agent 明明干了活。idle 会删 entry，所以「没有 entry」正是
       // idle→busy 的那条边沿；error 也删 entry，重试同样算新回合。
-      if (!state.sessions[sessionID]) {
+      const current = state.sessions[sessionID]
+      if (!current) {
         state.worked[sessionID] = false
         setEntry({ kind: "thinking", at: now })
+      } else if (current.kind === "thinking") {
+        // 260930 Red 后续 step 的 busy 同样是活动：刷新 thinking 心跳（worked 复位仍只在新回合）。
+        current.at = now
       }
       return
     }
