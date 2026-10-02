@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
+import { spawnSync } from "node:child_process"
 
 type PersistTestingType = typeof import("./persist").PersistTesting
 type PersistType = typeof import("./persist").Persist
@@ -239,5 +240,79 @@ describe("persist localStorage resilience", () => {
     draft.setItem("value", `{"value":"${"x".repeat(200)}"}`)
 
     expect(limited.getItem("RedCode.limited:value")).toBe('{"value":"old"}')
+  })
+})
+
+// 261002 Red 独立 browser 进程运行真实 persisted，隔离 Solid SSR 与本文件的 web 平台 mock；存储只用内存。
+test("desktop remounts read queued draft updates and clears without leaking across scopes", () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--conditions=browser",
+      "-e",
+      `
+        import { mock } from "bun:test"
+        import { createRoot } from "solid-js"
+        import { createStore } from "solid-js/store"
+
+        const stores = new Map()
+        const storage = (name = "") => {
+          if (!stores.has(name)) stores.set(name, new Map())
+          const values = stores.get(name)
+          return {
+            getItem: async (key) => values.get(key) ?? null,
+            setItem: async (key, value) => { values.set(key, value) },
+            removeItem: async (key) => { values.delete(key) },
+          }
+        }
+        mock.module("@/context/platform", () => ({
+          usePlatform: () => ({ platform: "desktop", storage }),
+        }))
+        const { persisted, Persist, flushPersistedWrites } = await import("./persist.ts")
+        const disposers = []
+        const mount = (target) => createRoot((dispose) => {
+          disposers.push(dispose)
+          return persisted(target, createStore({ prompt: "" }))
+        })
+        const targets = [
+          Persist.workspace("draft-probe-a", "prompt"),
+          Persist.session("draft-probe-a", "session-one", "prompt"),
+          Persist.workspace("draft-probe-b", "prompt"),
+          { key: "prompt" },
+        ]
+        for (const target of targets) {
+          await storage(target.storage).setItem(target.key, JSON.stringify({ prompt: "old sent text" }))
+        }
+        const first = targets.map(mount)
+        await Promise.all(first.map((item) => item[2]))
+        first[0][1]("prompt", "intermediate edit")
+        first[0][1]("prompt", "")
+        first[1][1]("prompt", "new unsent text")
+        first[3][1]("prompt", "default storage draft")
+        const beforeFlush = await Promise.all(targets.map((target) => storage(target.storage).getItem(target.key)))
+        const remounted = targets.map(mount)
+        await Promise.all(remounted.map((item) => item[2]))
+        const restored = remounted.map((item) => item[0].prompt)
+        flushPersistedWrites()
+        const afterFlush = targets.map(mount)
+        await Promise.all(afterFlush.map((item) => item[2]))
+        console.log(JSON.stringify({
+          beforeFlush: beforeFlush.map((item) => JSON.parse(item).prompt),
+          restored,
+          afterFlush: afterFlush.map((item) => item[0].prompt),
+        }))
+        for (const dispose of disposers) dispose()
+      `,
+    ],
+    { cwd: import.meta.dir, encoding: "utf8", timeout: 10_000 },
+  )
+
+  expect(result.error).toBeUndefined()
+  expect(result.status).toBe(0)
+  expect(result.stderr).toBe("")
+  expect(JSON.parse(result.stdout)).toEqual({
+    beforeFlush: ["old sent text", "old sent text", "old sent text", "old sent text"],
+    restored: ["", "new unsent text", "old sent text", "default storage draft"],
+    afterFlush: ["", "new unsent text", "old sent text", "default storage draft"],
   })
 })

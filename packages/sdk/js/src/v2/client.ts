@@ -45,21 +45,18 @@ function rewrite(request: Request, values: { directory?: string; workspace?: str
 }
 
 export function createOpencodeClient(config?: Config & { directory?: string; experimental_workspaceID?: string }) {
-  if (!config?.fetch) {
-    const customFetch: any = (req: any) => {
-      // SSE 长连接端点（/global/event、/event）：不设超时，靠 signal 断开
-      if (new URL(req.url).pathname.endsWith("/event")) {
-        // @ts-ignore
-        req.timeout = false
-        return fetch(req)
+  const transport = config?.fetch ?? globalThis.fetch
+  config = {
+    ...config,
+    fetch: Object.assign((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const request = input instanceof Request && !init ? input : new Request(input, init)
+      // SSE 长连接端点（/global/event、/event）：不设超时，靠 signal 断开。
+      if (new URL(request.url).pathname.endsWith("/event")) {
+        return transport(Object.assign(request, { timeout: false }))
       }
-      // 260831 Red 请求级超时兜底：服务端挂起/不响应时避免 GUI 乐观消息永驻、abort 静默失效
-      return fetch(new Request(req, { signal: AbortSignal.timeout(60_000) }))
-    }
-    config = {
-      ...config,
-      fetch: customFetch,
-    }
+      // 261002 Red 桌面自定义 fetch 同样套用既有超时兜底，合并 signal 保留调用方主动取消。
+      return transport(new Request(request, { signal: AbortSignal.any([request.signal, AbortSignal.timeout(60_000)]) }))
+    }, transport),
   }
 
   if (config?.directory) {

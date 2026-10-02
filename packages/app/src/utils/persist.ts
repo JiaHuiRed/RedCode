@@ -698,9 +698,8 @@ export function persisted<T>(
 
     const api: AsyncStorage = {
       getItem: async (key) => {
-        // 还排在队里没落盘的那一版才是最新的，直接给它——否则会读到旧值。
-        // 现在 makePersisted 只在初始化时读一次，这条是防御性的，不是已知路径。
-        const queued = pendingWrites.get(`${config.storage ?? ""} ${key}`)
+        // 261002 Red 重挂载优先读未落盘的新值；分隔符须与 setItem/removeItem 一致，避免旧草稿复活。
+        const queued = pendingWrites.get(`${config.storage ?? ""}\u0000${key}`)
         if (queued) return queued.value
         const value = await readCurrentAsync({ storage: current, key, defaults, migrate: config.migrate })
         if (value !== undefined) return value
