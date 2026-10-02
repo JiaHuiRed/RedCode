@@ -78,12 +78,19 @@ type GlobalStore = {
 export const loadMcpQuery = (directory: string, sdk: OpencodeClient) =>
   queryOptions({
     queryKey: [directory, "mcp"] as const,
+    // 261002 Red child-store 的 mcp/lsp 查询 enabled 门控在当前目录，首载失败后重进目录
+    //   不再有任何触发点，会话页会永远显示「未配置 MCP」。局部放开挂载重取自愈，
+    //   30s 内不重复打；enabled 只对 active 目录开，不会造成跨项目请求风暴。
+    staleTime: 30_000,
+    refetchOnMount: true,
     queryFn: () => sdk.mcp.status().then((r) => r.data ?? {}),
   })
 
 export const loadLspQuery = (directory: string, sdk: OpencodeClient) =>
   queryOptions({
     queryKey: [directory, "lsp"] as const,
+    staleTime: 30_000,
+    refetchOnMount: true,
     queryFn: () => sdk.lsp.status().then((r) => r.data ?? []),
   })
 
@@ -145,7 +152,13 @@ export function createServerSyncContext() {
     ...loadProviderCatalogQuery(serverSDK.client),
     enabled: catalogWanted(),
   }))
-  const wantProviderCatalog = () => setCatalogWanted(true)
+  // 261002 Red catalog 钉死 staleTime:Infinity 且 enabled 翻转只此一次（idle 后恒 true），
+  //   首载失败后这个 signal 就再无效果——所有对话框入口都只会拿到空目录。error 态下
+  //   显式 refetch 一次，成功态零额外成本，Infinity 语义不动。
+  const wantProviderCatalog = () => {
+    if (catalogQuery.isError) void catalogQuery.refetch()
+    setCatalogWanted(true)
+  }
   onMount(() => {
     const idle = (globalThis as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number })
       .requestIdleCallback

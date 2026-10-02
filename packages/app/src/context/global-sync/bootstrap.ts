@@ -234,6 +234,10 @@ export const loadUsageQuery = (directory: string, range: "all" | "30d" | "7d", s
   queryOptions({
     queryKey: [directory, "usage", range] as const,
     staleTime: 60_000,
+    // 261002 Red 全局默认 refetchOnMount:false（app.tsx QueryProvider），staleTime 没有
+    //   挂载重取配合就是死字：usage 没有任何失效通道，看板数字会永远停在首载快照，
+    //   首载失败则永久空白。放开挂载重取，60s 内不重复打请求（原注释的意图这才成立）。
+    refetchOnMount: true,
     queryFn: () => retry(() => sdk.session.usage({ range }).then((x) => x.data!)),
   })
 
@@ -273,6 +277,11 @@ export const loadAgentsQuery = (directory: string | null, sdk: OpencodeClient) =
 export const loadPathQuery = (directory: string | null, sdk: OpencodeClient) =>
   queryOptions<Path>({
     queryKey: [directory, "path"],
+    // 261002 Red child-store 的 path 查询被 enabled 门控在当前目录，首载失败后重进目录
+    //   不再有任何触发点，getter 只能永远吃 EMPTY 兜底。与 agents 同款局部放开：
+    //   失败后重进自愈；path 内容进程内基本恒定，60s 内不重复打请求。
+    staleTime: 60_000,
+    refetchOnMount: true,
     queryFn: () => retry(() => sdk.path.get().then((x) => x.data!)),
   })
 

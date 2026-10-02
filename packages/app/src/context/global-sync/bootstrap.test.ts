@@ -3,7 +3,7 @@ import { createStore } from "solid-js/store"
 import { QueryClient } from "@tanstack/solid-query"
 import type { Config, OpencodeClient, Project } from "@redcode-ai/sdk/v2/client"
 import type { NormalizedProviderListResponse } from "@redcode-ai/ui/context"
-import { bootstrapDirectory, loadAgentsQuery } from "./bootstrap"
+import { bootstrapDirectory, loadAgentsQuery, loadPathQuery, loadUsageQuery } from "./bootstrap"
 import type { State, VcsCache } from "./types"
 
 const provider = { all: new Map(), connected: [], default: {} } satisfies NormalizedProviderListResponse
@@ -100,5 +100,25 @@ describe("loadAgentsQuery", () => {
     expect(options.staleTime).toBe(30_000)
     // queryKey 是带 dataTag 的品牌数组，toEqual 的重载不认，走序列化比较。
     expect(JSON.stringify(options.queryKey)).toBe(JSON.stringify([null, "agents"]))
+  })
+})
+
+describe("self-healing query options", () => {
+  // 261002 Red A1 审计：全局 QueryProvider 三处 refetch 全关后，凡是「无失效通道 + 门控/
+  //   低频挂载」的查询，首载失败就永久冻结、首载成功也永远吃旧快照（usage 看板数字不更新、
+  //   path/mcp/lsp 失败后重进目录无触发点）。本批给 usage/path 补了局部 refetchOnMount +
+  //   staleTime（mcp/lsp 在 server-sync.tsx，同构改动）。字段是自愈路径本身，误删无声复发。
+  test("loadUsageQuery refetches on mount within its 60s stale window", () => {
+    const options = loadUsageQuery("/project", "all", {} as OpencodeClient)
+    expect(options.refetchOnMount).toBe(true)
+    expect(options.staleTime).toBe(60_000)
+    expect(JSON.stringify(options.queryKey)).toBe(JSON.stringify(["/project", "usage", "all"]))
+  })
+
+  test("loadPathQuery opts out of the global no-refetch defaults", () => {
+    const options = loadPathQuery("/project", {} as OpencodeClient)
+    expect(options.refetchOnMount).toBe(true)
+    expect(options.staleTime).toBe(60_000)
+    expect(JSON.stringify(options.queryKey)).toBe(JSON.stringify(["/project", "path"]))
   })
 })

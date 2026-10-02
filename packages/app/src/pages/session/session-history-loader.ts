@@ -103,10 +103,10 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
    * 三个终止条件缺一不可：
    * ① `historyMore()` 为假 —— 历史翻到底了，目标不在这个会话里（或已被压缩掉）。
    * ② **无进展**：翻了一页但 `loaded()` 没涨。这里**不当场放弃**，而是等一拍再试 ——
-   *    `directory-sync` 的 `loadMessages` 对并发调用是静默 no-op（`if (meta.loading[key]) return`），
-   *    所以"没进展"最常见的原因是用户同时往上滚触发了另一次翻页，pager 被占着。
-   *    上游那条 `fix(ui-chat): hold jumps while a plain pull owns the pager` 修的正是
-   *    这种情况下跳转退化成"落在最近一条"。连续 MAX_STALLS 次都没进展才算真的空页。
+   *    260921（d41ca4c2）起 `directory-sync` 的 `loadMessages`/`loadMore` 对并发调用是
+   *    runInflight join，「pager 被占着导致请求被静默丢弃」已不存在；现在无进展通常
+   *    意味着 `loadMore` 因 complete 或空页直接短路返回。连续 MAX_STALLS 次无进展
+   *    才算真的到底（保留为兜底，不再承担并发修复职责）。
    * ③ 页数上限，纯兜底：无进展保护才是真正的终止器，这条只防我没想到的循环。
    *
    * 返回是否真的把目标带进了窗口 —— 调用方据此决定滚过去还是提示够不到。

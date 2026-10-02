@@ -108,6 +108,10 @@ function HomeDesign() {
   //   这里改为只主动加载主 worktree，sandbox 一律 peek 只读缓存，不强制拉起。
   const sessionLoad = useQuery(() => ({
     queryKey: ["home", "sessions", selectedProject()?.worktree] as const,
+    // 261002 Red 同项目首载失败后回首页不再触发任何请求，会话列表永远空白。局部放开
+    //   挂载重取自愈，30s 内不重复打请求。
+    staleTime: 30_000,
+    refetchOnMount: true,
     queryFn: async () => {
       const project = selectedProject()
       if (project) await sync.project.loadSessions(project.worktree)
@@ -121,6 +125,9 @@ function HomeDesign() {
   const archivedLoad = useQuery(() => ({
     queryKey: ["home", "archived", selectedProject()?.worktree, state.archived] as const,
     enabled: state.archived,
+    // 261002 Red 同 sessionLoad：开关翻回来时若首载已失败，不放开就永远空列表。
+    staleTime: 30_000,
+    refetchOnMount: true,
     queryFn: async () => {
       const project = selectedProject()
       if (!project) return [] as Session[]
