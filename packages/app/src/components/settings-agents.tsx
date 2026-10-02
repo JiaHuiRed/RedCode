@@ -1,3 +1,4 @@
+import { Button } from "@redcode-ai/ui/button"
 import { Select } from "@redcode-ai/ui/select"
 import { showToast } from "@redcode-ai/ui/toast"
 import { useQuery, useQueryClient } from "@tanstack/solid-query"
@@ -198,6 +199,21 @@ export const SettingsAgents: Component = () => {
       </div>
 
       <div class="flex flex-col gap-8 max-w-[720px]">
+        {/* 261002 Red 查询挂掉时别再静默空白：pending 给文案，error 给原始信息 + 重试入口。
+            重试能自愈的前提是 loadAgentsQuery 放开了 refetchOnMount，两处要一起在。 */}
+        <Show when={agents.isPending}>
+          <p class="text-14-regular text-text-weak">{language.t("common.loading")}</p>
+        </Show>
+        <Show when={agents.isError}>
+          <div class="flex flex-col items-start gap-2">
+            <p class="text-14-regular text-text-danger-base">
+              {agents.error instanceof Error ? agents.error.message : language.t("common.requestFailed")}
+            </p>
+            <Button size="small" variant="secondary" onClick={() => void agents.refetch()}>
+              {language.t("common.retry")}
+            </Button>
+          </div>
+        </Show>
         <For each={sections()}>
           {(section) => (
             <div class="flex flex-col gap-1">

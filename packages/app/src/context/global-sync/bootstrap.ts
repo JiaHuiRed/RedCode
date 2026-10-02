@@ -262,6 +262,11 @@ export const loadProviderQuotaQuery = (directory: string | null, sdk: OpencodeCl
 export const loadAgentsQuery = (directory: string | null, sdk: OpencodeClient) =>
   queryOptions({
     queryKey: [directory, "agents"],
+    // 261002 Red 全局默认三处 refetch 全关（app.tsx QueryProvider），这条查询首次挂载若失败
+    // 会永久冻结在无数据态：设置→智能体页曾因此整页空白，且重开页面也不重取。这里局部放开
+    // 挂载重取并给 30s staleTime——失败的查询每次重开都能自愈，成功后 30s 内不重复打请求。
+    staleTime: 30_000,
+    refetchOnMount: true,
     queryFn: () => retry(() => sdk.app.agents().then((x) => normalizeAgentList(x.data))),
   })
 

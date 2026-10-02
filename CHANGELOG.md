@@ -17,6 +17,7 @@
 
 #### 修复
 
+- **智能体设置页查询失败不再静默空白**（`packages/app/src/context/global-sync/bootstrap.ts`、`packages/app/src/components/settings-agents.tsx`）：该页使用的 `[null, "agents"]` 查询启动时不预热、首次挂载才发请求，而全局 QueryClient 三处 refetch 全关，首次请求一旦失败（传输抖动、请求丢失）查询就永久冻结在无数据态——页面只剩标题，重开也不重取。现给该查询局部放开 `refetchOnMount` 并设 30s staleTime（成功后 30s 内不重复请求），失败后每次重开可自愈；页面补 pending 与 error 渲染态，错误显示原始信息并提供重试按钮。回归 `bootstrap.test.ts` 钉住自愈配置防漂移。打包版请求级超时兜底随 SDK 修复（60s deadline）下次打包生效。
 - **SDK 自定义 fetch 恢复 60s 请求级超时兜底，调用方取消不再被覆盖**（`packages/sdk/js/src/v2/client.ts`）：超时只在未传自定义 fetch 时安装，桌面 platformFetch 因此完全绕过兜底，挂起的 `/file` 请求让文件树永驻 Loading；且旧默认路径用裸 timeout 信号整体替换 Request，调用方主动 abort 一并丢失。现包装任意 transport：普通请求以 `AbortSignal.any([caller, timeout(60s)])` 合并信号，`/event`、`/global/event` SSE 长连接维持豁免。回归 `test/client.test.ts` 14 条（默认/自定义 transport、挂起请求与挂起响应体、预 abort、payload 保真、SSE 豁免）。
 - **桌面草稿重挂载不再读回待写队列之前的旧值**（`packages/app/src/utils/persist.ts`）：读取待写草稿使用的分隔符与写入、删除不一致，导致 250ms 合并窗口内重挂载时跳过最新值，已清空的旧草稿也会恢复。统一缓存键，保留原有落盘节奏和工作区/会话隔离；内存存储回归覆盖清空、未发送编辑、跨作用域隔离及落盘后的读取。不涉及尚未定因的新建会话页刷新。
 - **放弃 OAuth 登录不再以 unhandledRejection 杀死 sidecar**（`packages/opencode/src/plugin/{codex,xai,digitalocean}.ts`、`packages/opencode/src/mcp/oauth-callback.ts`）：浏览器登录被放弃时授权 promise 的 callback 永不被调用，5 分钟超时（或 MCP 场景 `stop()`/`cancelPending`）的 reject 无人消费，会以 unhandledRejection 触发 sidecar 退出（260930 实证：Codex 登录超时导致后端崩溃后自动重生）。四个同形状 producer 统一在 promise 创建点预挂空 catch 兜底，迟到或正常的消费者仍收到原始 rejection；MCP `waitForCallback` 覆盖所有调用方。回归 `test/mcp/oauth-callback.test.ts` 6 条（含无消费者 stop() 不产生 unhandled 的红测验证）。

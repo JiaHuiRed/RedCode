@@ -3,7 +3,7 @@ import { createStore } from "solid-js/store"
 import { QueryClient } from "@tanstack/solid-query"
 import type { Config, OpencodeClient, Project } from "@redcode-ai/sdk/v2/client"
 import type { NormalizedProviderListResponse } from "@redcode-ai/ui/context"
-import { bootstrapDirectory } from "./bootstrap"
+import { bootstrapDirectory, loadAgentsQuery } from "./bootstrap"
 import type { State, VcsCache } from "./types"
 
 const provider = { all: new Map(), connected: [], default: {} } satisfies NormalizedProviderListResponse
@@ -88,5 +88,17 @@ describe("bootstrapDirectory", () => {
 
     expect(store.agent_ready).toBe(true)
     expect(store.agent.map((item) => item.name)).toEqual(["build"])
+  })
+})
+
+describe("loadAgentsQuery", () => {
+  // 261002 Red 设置→智能体页曾因全局 refetchOnMount:false + 本查询无自愈路径，首次请求失败后
+  // 整页永久空白。下面两个字段就是自愈路径本身，误删会无声复发，钉在断言里防漂移。
+  test("opts out of the global no-refetch defaults with a 30s stale window", () => {
+    const options = loadAgentsQuery(null, {} as OpencodeClient)
+    expect(options.refetchOnMount).toBe(true)
+    expect(options.staleTime).toBe(30_000)
+    // queryKey 是带 dataTag 的品牌数组，toEqual 的重载不认，走序列化比较。
+    expect(JSON.stringify(options.queryKey)).toBe(JSON.stringify([null, "agents"]))
   })
 })
