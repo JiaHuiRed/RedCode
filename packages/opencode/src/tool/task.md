@@ -1,20 +1,9 @@
-Launch a new agent to handle complex, multistep tasks autonomously.
+Delegate a broad investigation or a well-scoped implementation to an available agent. Use file/search tools directly for a focused known-file or symbol lookup; do not delegate when no agent fits.
 
-When using the Task tool, you must specify a subagent_type parameter to select which agent type to use.
-
-When NOT to use the Task tool:
-
-- If you want to read a specific file path, use the Read or Glob tool instead of the Task tool, to find the match more quickly
-- If you are searching for a specific class definition like "class Foo", use the Grep tool instead, to find the match more quickly
-- If you are searching for code within a specific file or set of 2-3 files, use the Read tool instead of the Task tool, to find the match more quickly
-- If no available agent is a good fit for the task, use other tools directly
-
-Usage notes:
-
-1. Launch multiple agents concurrently whenever possible, to maximize performance; to do that, use a single message with multiple tool uses
-2. When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result. The output includes a task_id you can reuse later to continue the same subagent session.
-3. Each agent invocation starts with a fresh context unless you provide task_id to resume the same subagent session (which continues with its previous messages and tool outputs). When starting fresh, your prompt should contain a highly detailed task description for the agent to perform autonomously and you should specify exactly what information the agent should return back to you in its final and only message to you.
-4. The agent's outputs should generally be trusted
-5. Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.), since it is not aware of the user's intent. Tell it how to verify its work if possible (e.g., relevant test commands).
-6. If the agent description mentions that it should be used proactively, then you should try your best to use it without the user having to ask for it first. Use your judgement.
-7. When delegating long-running work, tell the subagent explicitly: difficulty, uncertainty, or remaining useful work is not a reason to stop or stall — only report being blocked after the same concrete condition has persisted for several consecutive attempts, and state that condition. Subagents that hit a wall must pivot (read more code, try a different approach) instead of quitting early.
+- Set `subagent_type` to an available agent type.
+- A fresh invocation has a fresh context. Give it the objective, exact scope, constraints, read-only versus implementation mode, expected result, and verification. Do not assume it sees the parent conversation.
+- Set `task_id` only to resume a supported subagent session; its prior context is preserved. `explore` does not accept `task_id` resumes.
+- `isolation="worktree"` gives the agent a separate directory and branch. Its edits stay there; inspect and integrate them before treating the parent workspace as changed. Omit isolation for read-only investigation unless a separate environment is needed.
+- Subagent output is not a user-facing reply. Inspect its evidence, verify consequential conclusions, then report the result to the user.
+- Independent agents may run concurrently. Do not assign overlapping files or shared resources to concurrent mutating agents.
+- Difficulty or the first failed attempt is not a stopping condition. Ask the agent to pivot on evidence and report only a concrete persistent blocker.

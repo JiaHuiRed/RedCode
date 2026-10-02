@@ -49,13 +49,13 @@ describe("system prompt routing", () => {
       expect(provider(model(id, "stepfun-step-plan"))).toEqual([PROMPT_DEFAULT, PROMPT_STEP])
   })
 
- // 260929 Red step-5-preview 实战三样本（伪 tool-call 文本 ×2、长思考中断、reasoning
- // 泄漏进正文）后，把「native tool-call 通道」条款提到 step.md 第一条。这条断言钉住
- // 它不被后续编辑挪回中段——官方 Step-Code 的 operating contract 同样把它放在第一条。
- test("step.md 把工具通道条款放在第一条", () => {
-   const firstBullet = PROMPT_STEP.split("\n").find((line) => line.startsWith("- "))
-   expect(firstBullet).toContain("native tool-call channel only")
- })
+  // 260929 Red step-5-preview 实战三样本（伪 tool-call 文本 ×2、长思考中断、reasoning
+  // 泄漏进正文）后，把「native tool-call 通道」条款提到 step.md 第一条。这条断言钉住
+  // 它不被后续编辑挪回中段——官方 Step-Code 的 operating contract 同样把它放在第一条。
+  test("step.md 把工具通道条款放在第一条", () => {
+    const firstBullet = PROMPT_STEP.split("\n").find((line) => line.startsWith("- "))
+    expect(firstBullet).toContain("native tool-call channel only")
+  })
 })
 
 describe("推理锚归属", () => {
@@ -79,5 +79,24 @@ describe("推理锚归属", () => {
   test("GLM-5.3-Flash 两条锚都不吃（与它以 ox-alpha 名义在跑时一致）", () => {
     expect(wantsFlashAnchor("glm-5.3-flash")).toBe(false)
     expect(wantsStepAnchor("glm-5.3-flash", "zhipuai-coding-plan")).toBe(false)
+  })
+})
+
+// 261001 Red Shared state transitions must not remain GPT-only after the contract migration.
+describe("shared agent contract", () => {
+  test("intent, completion, context and continuity belong to the common prompt", () => {
+    for (const section of [
+      "# Intent and scope",
+      "# Autonomy and completion",
+      "# Context efficiency",
+      "# Steering and continuity",
+    ])
+      expect(PROMPT_DEFAULT).toContain(section)
+    expect(PROMPT_DEFAULT).toContain("For inquiries, investigate and answer")
+    expect(PROMPT_DEFAULT).toContain("Delegation transfers ownership")
+    expect(PROMPT_DEFAULT).toContain("Do not ask again for authorization already granted")
+    expect(PROMPT_DEFAULT).toContain("Compaction is context maintenance, not a task boundary")
+    expect(PROMPT_GPT).not.toContain("## Mid-turn user messages")
+    expect(PROMPT_GPT).not.toContain("When the conversation is summarized")
   })
 })
