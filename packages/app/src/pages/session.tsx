@@ -40,7 +40,7 @@ import { useServerSync } from "@/context/server-sync"
 import { holdMessageWindow } from "@/context/message-window"
 import { useLanguage } from "@/context/language"
 import { useLayout, workbenchDockWidth } from "@/context/layout"
-import { usePrompt } from "@/context/prompt"
+import { isPromptEqual, usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
@@ -1487,6 +1487,8 @@ export default function Page() {
         roll(input.sessionID, { messageID: input.messageID })
         prompt.set(value, undefined, scope)
       })
+      // 261003 Red 乐观值快照：失败回滚只在等待期无人编辑时执行。
+      const snapshot = prompt.current(scope).slice()
       await halt(input.sessionID)
         .then(() => sdk.client.session.revert(input))
         .then((result) => {
@@ -1495,7 +1497,8 @@ export default function Page() {
         .catch((err) => {
           batch(() => {
             roll(input.sessionID, last)
-            prompt.set(prev, undefined, scope)
+            // 261003 Red 失败也不盖用户等待期输入：只有快照未变才回滚编辑器。
+            if (isPromptEqual(prompt.current(scope), snapshot)) prompt.set(prev, undefined, scope)
           })
           fail(err)
         })
@@ -1523,6 +1526,8 @@ export default function Page() {
         }
         prompt.reset(scope)
       })
+      // 261003 Red 乐观值快照：失败回滚只在等待期无人编辑时执行。
+      const snapshot = prompt.current(scope).slice()
 
       const task = !next
         ? halt(sessionID).then(() => sdk.client.session.unrevert({ sessionID }))
@@ -1540,7 +1545,8 @@ export default function Page() {
         .catch((err) => {
           batch(() => {
             roll(sessionID, last)
-            prompt.set(prev, undefined, scope)
+            // 261003 Red 同上：失败也不盖用户等待期输入。
+            if (isPromptEqual(prompt.current(scope), snapshot)) prompt.set(prev, undefined, scope)
           })
           fail(err)
         })

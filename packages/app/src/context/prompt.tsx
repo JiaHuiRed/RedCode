@@ -369,7 +369,9 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
 
     return {
       ready,
-      current: () => session().current(),
+      // 261003 Red 支持按 scope 读草稿：undo/redo/revert/restore 的迟到写入要用
+      // 「发起时快照 vs 返回时内容」判断等待期用户是否已输入，避免覆盖新内容。
+      current: (scope?: Scope) => pick(scope).current(),
       cursor: () => session().cursor(),
       // 260913 Red 支持按 scope 查询草稿是否为空：异步失败要恢复草稿时得先确认目标会话
       // 没有被用户重新输入过，否则会把新内容覆盖掉。

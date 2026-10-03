@@ -9,7 +9,7 @@ import { useLayout } from "@/context/layout"
 import { useLocal } from "@/context/local"
 import { usePermission } from "@/context/permission"
 import { usePlatform } from "@/context/platform"
-import { usePrompt } from "@/context/prompt"
+import { isPromptEqual, usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
@@ -316,6 +316,8 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     // 261003 Red 回写钉在操作发起时的会话上：await revert 期间用户可能已切走，
     // 无 scope 的 set 走「当前路由」，会把本会话的恢复文本写进别的会话的草稿。
     const scope = { dir: base64Encode(sdk.directory), id: sessionID }
+    // 261003 Red 发起时快照：revert 返回前用户若在本会话又打了字，恢复文本不得覆盖。
+    const snapshot = prompt.current(scope).slice()
 
     if (sync.data.session_working(params.id ?? "")) {
       await sdk.client.session.abort({ sessionID }).catch(() => {})
@@ -331,7 +333,8 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     const parts = sync.data.part[message.id]
     if (parts) {
       const restored = extractPromptFromParts(parts, { directory: sdk.directory })
-      prompt.set(restored, undefined, scope)
+      // 261003 Red 等待期用户已在本会话输入（快照不一致）时不覆盖；消息回退照常。
+      if (isPromptEqual(prompt.current(scope), snapshot)) prompt.set(restored, undefined, scope)
     }
 
     const prev = findLast(userMessages(), (x) => compareTime(x, message) < 0)
@@ -351,8 +354,10 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     const revertMsg = userMessages().find((x) => x.id === revertMessageID)
     const next = revertMsg ? userMessages().find((x) => compareTime(x, revertMsg) > 0) : undefined
     if (!next) {
+      // 261003 Red 快照须在 await 前：unrevert 返回后的 reset 不得抹掉等待期新输入。
+      const snapshot = prompt.current(scope).slice()
       await sdk.client.session.unrevert({ sessionID })
-      prompt.reset(scope)
+      if (isPromptEqual(prompt.current(scope), snapshot)) prompt.reset(scope)
       const last = revertMsg ? findLast(userMessages(), (x) => compareTime(x, revertMsg) >= 0) : undefined
       setActiveMessage(last)
       return
