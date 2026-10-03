@@ -8,7 +8,7 @@
 
 ---
 
-### [未发布]
+### [0.11.18] - 2026-10-03
 
 #### 变更
 
@@ -31,6 +31,7 @@
 - **放弃 OAuth 登录不再以 unhandledRejection 杀死 sidecar**（`packages/opencode/src/plugin/{codex,xai,digitalocean}.ts`、`packages/opencode/src/mcp/oauth-callback.ts`）：浏览器登录被放弃时授权 promise 的 callback 永不被调用，5 分钟超时（或 MCP 场景 `stop()`/`cancelPending`）的 reject 无人消费，会以 unhandledRejection 触发 sidecar 退出（260930 实证：Codex 登录超时导致后端崩溃后自动重生）。四个同形状 producer 统一在 promise 创建点预挂空 catch 兜底，迟到或正常的消费者仍收到原始 rejection；MCP `waitForCallback` 覆盖所有调用方。回归 `test/mcp/oauth-callback.test.ts` 6 条（含无消费者 stop() 不产生 unhandled 的红测验证）。
 - **桌宠长流式回合不再中途打回 idle，success 庆祝不再丢失**（`packages/app/src/pet/pet-state.ts`）：产出期真正的高频事件是 `message.part.delta`（processor 的 reasoning/text delta），旧实现不认它，thinking entry 无心跳 90s 超时被清、worked 连坐删除——超过一分半的长回复中途赤就变 idle，回合正常结束也没有 success。delta 现按 O(1) 时间戳心跳续命，text/reasoning 定型事件与后续 step 的 busy 同样刷新已有 thinking entry；等用户（waiting/permission）与具体工具态不被心跳打扰。`resolvePet` 顺带暴露获胜会话 sessionID，V0.2 表现层按它取模型装扮语境（flash 全局无归属）。不逐 token 驱动动画，渲染节奏仍在 PetLayer 的 1s tick。回归 `src/pet/pet-state.test.ts` 25 条（新增心跳续命、防覆盖、归属 5 条）。决策：`docs/notes/implemented/bug-fix/2026-10-01-pet-stream-heartbeat-winner.md`。
 - **费用币种回填重写为 part 表全量重算，堵住竞态丢账与 revert 扣错桶**（`packages/opencode/src/data-migration.ts`、`packages/app/src/components/session/session-context-summary.ts`）：旧迁移只扫「两桶皆 NULL」的会话——回填窗口内 projector 先写过任一桶的会话永久退出扫描集，旧费用永远没人归位。权威源换成 part 表（step-finish 分片与桶增量同事务写入，聚合与覆盖同事务执行，SQLite 串行事务下与 projector 写天然互斥），全量重算覆盖两桶与标量 cost，顺带自愈漂移；无币种旧 part 按目录回写 currency，revert 负冲抵从此落对桶，已有币种的分片按自身归桶不受目录漂移影响。迁移改名 `session_cost_currency_from_parts` 强制重跑（旧完成行不阻塞）。前端子会话聚合改三通道，旧行子账不再 `?? 0` 丢失。回归 `test/session/cost-currency-migration.test.ts` 7 条 + metrics 22 条。决策：`docs/notes/implemented/bug-fix/2026-10-01-cost-currency-backfill-from-parts.md`。
+- **桌宠赤右移并放大 20%**（`packages/app/src/pet/pet-layer.css`）：舞台位置与尺寸微调。
 
 ### [0.11.17] - 2026-10-01
 
