@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, spyOn, test } from "bun:test"
 import MarkdownIt from "markdown-it"
 import { stream } from "./markdown-stream"
 
@@ -133,5 +133,51 @@ describe("markdown stream —— 分段不变量", () => {
       .map((b) => md.render(b.src))
       .join("")
     expect(joined).toBe(md.render(full))
+  })
+
+  test("顶层块定位只单向扫描换行，不为每一块重扫全文前缀", () => {
+    const text = build(80)
+    // 261003 Red 保存原函数供 spy 委托；下方始终以 .call(this) 恢复接收者。
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const indexOf = String.prototype.indexOf
+    let scans = 0
+    const spy = spyOn(String.prototype, "indexOf").mockImplementation(function (
+      this: string,
+      search: string,
+      position?: number,
+    ) {
+      if (search === "\n" && this === text) scans++
+      return indexOf.call(this, search, position)
+    })
+    try {
+      stream(text, true)
+    } finally {
+      spy.mockRestore()
+    }
+    expect(scans).toBeGreaterThan(0)
+    expect(scans).toBeLessThanOrEqual(text.split("\n").length * 2)
+  })
+
+  test("字符偏移定位保留 4KB 分段边界、列表和表格的整体性", () => {
+    const first = "a".repeat(2000) + "\n\n"
+    const second = "b".repeat(2200) + "\n\n"
+    const settled = "## 标题\n\n- 第一点\n- 第二点\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\n"
+    const tail = "最后一段"
+    const blocks = stream(first + second + settled + tail, true)
+    expect(blocks.map((block) => block.raw)).toEqual([first + second, settled, tail])
+    expect(blocks.map((block) => md.render(block.src)).join("")).toBe(md.render(first + second + settled + tail))
+  })
+
+  test("CRLF 行尾和嵌套块不改变字符切片与渲染结果", () => {
+    const samples = [
+      "# 标题\r\n\r\n第一段\r\n\r\n> 引用\r\n> 第二行\r\n\r\n尾段",
+      "intro\n\n- parent\n  - child\n\n> quote\n>\n> - item\n\ntail",
+      "intro\n\n```ts\nconst x = 1\n```\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\ntail",
+    ]
+    for (const text of samples) {
+      const blocks = stream(text, true)
+      expect(blocks.map((block) => block.raw).join("")).toBe(text)
+      expect(blocks.map((block) => md.render(block.src)).join("")).toBe(md.render(text))
+    }
   })
 })

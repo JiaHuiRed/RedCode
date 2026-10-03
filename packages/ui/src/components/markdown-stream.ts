@@ -40,23 +40,31 @@ function lineStart(text: string, line: number) {
 }
 
 /**
- * 最后一个**顶层**块级 token 的起始行。
+ * 各个**顶层**块级 token 的起始字符偏移。
  *
  * 260901 cc 用来把「已经定型的前缀」和「还在长的那一块」切开。判据是 markdown-it 的
  * token 层级：level === 0 才是顶层，nesting >= 0 排掉 _close。列表/引用整体是一个顶层
  * token 序列（bullet_list_open 在 level 0，list_item 在 level 1），所以这条判据**不会切进
  * 列表内部**——那正是这里最怕的事：把一个列表切成两个 <ul>，松散/紧凑语义还会跟着变。
  */
-function topLevelStarts(tokens: ReturnType<typeof md.parse>) {
-  const lines: number[] = []
+function topLevelStarts(tokens: ReturnType<typeof md.parse>, text: string) {
+  const offsets: number[] = []
+  let line = 0
+  let offset = 0
+  // 261003 Red 顶层 token 的行号递增，只单向扫描换行；逐块从头定位会退化为平方成本。
+  // 见 docs/notes/implemented/bug-fix/2026-09-07-markdown-block-dom.md。
   for (const token of tokens) {
     if (token.level !== 0 || token.nesting < 0) continue
-    const line = token.map?.[0]
-    if (typeof line !== "number") continue
-    if (lines.at(-1) === line) continue
-    lines.push(line)
+    const target = token.map?.[0]
+    if (typeof target !== "number") continue
+    for (; line < target; line++) {
+      const nl = text.indexOf("\n", offset)
+      offset = nl === -1 ? text.length : nl + 1
+    }
+    if (offsets.at(-1) === offset) continue
+    offsets.push(offset)
   }
-  return lines
+  return offsets
 }
 
 /**
@@ -113,18 +121,18 @@ export function stream(text: string, live: boolean) {
   // 一个 display:contents 子容器，只有 HTML 变了的块（正在长的 settled 尾段 + 活跃尾块）
   // 重跑 innerHTML+morphdom，已定型前缀一个字节不动。见
   // docs/notes/implemented/bug-fix/2026-09-07-markdown-block-dom.md
-  const starts = topLevelStarts(tokens)
+  const starts = topLevelStarts(tokens, text)
   if (starts.length < 2) return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
 
   // 最后一个顶层块还在长，它是活跃尾块；它之前的都已经定型。
-  const tailOffset = lineStart(text, starts[starts.length - 1]!)
+  const tailOffset = starts[starts.length - 1]
   if (tailOffset <= 0 || tailOffset >= text.length)
     return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
 
   const blocks: Block[] = []
   let cut = 0
   for (let i = 1; i < starts.length - 1; i++) {
-    const offset = lineStart(text, starts[i]!)
+    const offset = starts[i]
     if (offset - cut < CHUNK_BYTES) continue
     const chunk = text.slice(cut, offset)
     blocks.push({ raw: chunk, src: heal(chunk), mode: "live" })
