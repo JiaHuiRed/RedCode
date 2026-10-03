@@ -1477,12 +1477,15 @@ export default function Page() {
 
   const revertMutation = useMutation(() => ({
     mutationFn: async (input: { sessionID: string; messageID: string }) => {
+      // 261003 Red prompt 写入钉 input.sessionID：await 窗口期用户可能切走，
+      // 无 scope 的 set 会把乐观值/回滚值写进当前路由的草稿。
+      const scope = { dir: base64Encode(sdk.directory), id: input.sessionID }
       const prev = prompt.current().slice()
       const last = info()?.revert
       const value = draft(input.messageID)
       batch(() => {
         roll(input.sessionID, { messageID: input.messageID })
-        prompt.set(value)
+        prompt.set(value, undefined, scope)
       })
       await halt(input.sessionID)
         .then(() => sdk.client.session.revert(input))
@@ -1492,7 +1495,7 @@ export default function Page() {
         .catch((err) => {
           batch(() => {
             roll(input.sessionID, last)
-            prompt.set(prev)
+            prompt.set(prev, undefined, scope)
           })
           fail(err)
         })
@@ -1503,6 +1506,8 @@ export default function Page() {
     mutationFn: async (id: string) => {
       const sessionID = params.id
       if (!sessionID) return
+      // 261003 Red 同上：乐观写入与失败回滚都钉发起时的会话。
+      const scope = { dir: base64Encode(sdk.directory), id: sessionID }
 
       // 260814 Red 边界比较改 compareTime（ID 回绕后字典序失真）
       const target = userMessages().find((item) => item.id === id)
@@ -1513,10 +1518,10 @@ export default function Page() {
       batch(() => {
         roll(sessionID, next ? { messageID: next.id } : undefined)
         if (next) {
-          prompt.set(draft(next.id))
+          prompt.set(draft(next.id), undefined, scope)
           return
         }
-        prompt.reset()
+        prompt.reset(scope)
       })
 
       const task = !next
@@ -1535,7 +1540,7 @@ export default function Page() {
         .catch((err) => {
           batch(() => {
             roll(sessionID, last)
-            prompt.set(prev)
+            prompt.set(prev, undefined, scope)
           })
           fail(err)
         })

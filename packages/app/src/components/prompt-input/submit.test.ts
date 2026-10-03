@@ -23,8 +23,12 @@ const promoted: Array<{ directory: string; sessionID: string }> = []
 const sentShell: string[] = []
 const syncedDirectories: string[] = []
 const resetScopes: Array<{ dir: string; id?: string } | undefined> = []
+const setCalls: Array<{ scope?: { dir: string; id?: string } }> = []
+const toasts: string[] = []
+let createFails = false
+let dirtyValue = false
 
-let params: { id?: string } = {}
+let params: { id?: string; dir?: string } = {}
 let selected = "/repo/worktree-a"
 let variant: string | undefined
 
@@ -36,6 +40,7 @@ const clientFor = (directory: string) => {
     session: {
       create: async () => {
         createdSessions.push(directory)
+        if (createFails) throw new Error("synthetic create failure")
         return {
           data: {
             id: `session-${createdSessions.length}`,
@@ -67,6 +72,9 @@ beforeAll(async () => {
   mock.module("@solidjs/router", () => ({
     useNavigate: () => () => undefined,
     useParams: () => params,
+    // 261003 Red 必须含 useLocation：同进程里本文件先于其他测试文件 mock "@solidjs/router"，
+    // router 首次链接后其他文件的再注册不生效，后加载的 hook 会直接消费这一版 mock。
+    useLocation: () => ({ pathname: "/", search: "", hash: "" }),
   }))
 
   mock.module("@redcode-ai/sdk/v2/client", () => ({
@@ -77,7 +85,10 @@ beforeAll(async () => {
   }))
 
   mock.module("@redcode-ai/ui/toast", () => ({
-    showToast: () => 0,
+    showToast: (options: { title?: string } = {}) => {
+      toasts.push(options.title ?? "")
+      return 0
+    },
   }))
 
   mock.module("@redcode-ai/core/util/encode", () => ({
@@ -114,11 +125,13 @@ beforeAll(async () => {
     DEFAULT_PROMPT: [{ type: "text", content: "", start: 0, end: 0 }],
     usePrompt: () => ({
       current: () => promptValue,
-      dirty: () => false,
+      dirty: () => dirtyValue,
       reset: (scope?: { dir: string; id?: string }) => {
         resetScopes.push(scope)
       },
-      set: () => undefined,
+      set: (_prompt: unknown, _cursor?: number, scope?: { dir: string; id?: string }) => {
+        setCalls.push({ scope })
+      },
       context: {
         add: () => undefined,
         remove: () => undefined,
@@ -224,6 +237,10 @@ beforeEach(() => {
   sentShell.length = 0
   syncedDirectories.length = 0
   resetScopes.length = 0
+  setCalls.length = 0
+  toasts.length = 0
+  createFails = false
+  dirtyValue = false
   selected = "/repo/worktree-a"
   variant = undefined
   for (const key of Object.keys(storedSessions)) delete storedSessions[key]
@@ -390,7 +407,64 @@ describe("prompt submit worktree selection", () => {
     expect(optimisticSeeded).toEqual([true])
   })
 
-  test("clears the workspace draft after creating a new session", async () => {
+  test("clears the route workspace draft before creating a new session", async () => {
+    params = { dir: "/repo/main" }
+    const submit = createPromptSubmit({
+      info: () => undefined,
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+    })
+
+    const event = { preventDefault: () => undefined } as unknown as Event
+
+    await submit.handleSubmit(event)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(resetScopes).toEqual([{ dir: "/repo/main" }, { dir: "/repo/main", id: "session-1" }])
+  })
+
+  test("clears the route draft, not the target worktree draft, when a worktree is selected", async () => {
+    params = { dir: "/repo/main" }
+    selected = "/repo/worktree-b"
+    const submit = createPromptSubmit({
+      info: () => undefined,
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      newSessionWorktree: () => selected,
+      onNewSessionWorktreeReset: () => undefined,
+    })
+
+    const event = { preventDefault: () => undefined } as unknown as Event
+
+    await submit.handleSubmit(event)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(resetScopes).toEqual([{ dir: "/repo/main" }, { dir: "/repo/worktree-b", id: "session-1" }])
+  })
+
+  test("restores the route draft when session creation fails without newer input", async () => {
+    params = { dir: "/repo/main" }
+    createFails = true
     const submit = createPromptSubmit({
       info: () => undefined,
       imageAttachments: () => [],
@@ -411,6 +485,36 @@ describe("prompt submit worktree selection", () => {
 
     await submit.handleSubmit(event)
 
-    expect(resetScopes).toEqual([{ dir: "/repo/main", id: "session-1" }, { dir: "/repo/main" }])
+    expect(setCalls).toEqual([{ scope: { dir: "/repo/main" } }])
+    expect(toasts).toContain("prompt.toast.promptSendFailed.title")
+    expect(toasts).not.toContain("prompt.toast.draftRestoreSkipped.title")
+  })
+
+  test("keeps newer input instead of restoring the route draft when creation fails", async () => {
+    params = { dir: "/repo/main" }
+    createFails = true
+    dirtyValue = true
+    const submit = createPromptSubmit({
+      info: () => undefined,
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+    })
+
+    const event = { preventDefault: () => undefined } as unknown as Event
+
+    await submit.handleSubmit(event)
+
+    expect(setCalls).toEqual([])
+    expect(toasts).toContain("prompt.toast.draftRestoreSkipped.title")
   })
 })

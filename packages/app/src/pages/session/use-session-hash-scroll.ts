@@ -26,6 +26,9 @@ export const useSessionHashScroll = (input: {
   const messageById = createMemo(() => new Map(visibleUserMessages().map((m) => [m.id, m])))
   let pendingKey = ""
   let clearing = false
+  // 261003 Red 失败 latch：loadMore 被拒后 loading 翻转会让下面的 effect 重进并无限重发
+  //（fill 路径有 stalled 保护，这条 hash 深链路径不经过它）。同一目标只放行一次。
+  let failedLoadKey = ""
 
   const location = useLocation()
   const navigate = useNavigate()
@@ -183,7 +186,12 @@ export const useSessionHashScroll = (input: {
     if (messageById().has(targetId)) return
     if (!input.historyMore() || input.historyLoading()) return
 
-    void input.loadMore(sessionID)
+    const key = `${sessionID}:${targetId}`
+    if (failedLoadKey === key) return
+    input.loadMore(sessionID).catch(() => {
+      // 历史加载失败的细节由 directory-sync 记录；这里只上锁防止 effect 级重发风暴，不重复报错。
+      failedLoadKey = key
+    })
   })
 
   onMount(() => {

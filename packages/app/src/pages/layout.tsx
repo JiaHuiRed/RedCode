@@ -841,8 +841,13 @@ export default function Layout(props: ParentProps) {
     return root
   }
 
+  // 261003 Red 导航票：navigateToProject 的多个 await（session.list/get）返回后不再校验
+  // "这是不是最后一次选择"，慢响应会把用户后来的选择顶掉。取票自增，每次导航前验票。
+  let navigationTicket = 0
+
   async function navigateToProject(directory: string | undefined) {
     if (!directory) return
+    const ticket = ++navigationTicket
     const root = projectRoot(directory)
     server.projects.touch(root)
     const project = layout.projects.list().find((item) => item.worktree === root)
@@ -863,6 +868,7 @@ export default function Layout(props: ParentProps) {
       return canOpen(target)
     }
     const openSession = async (target: { directory: string; id: string }) => {
+      if (ticket !== navigationTicket) return false
       if (!canOpen(target.directory)) return false
       const [data] = globalSync.child(target.directory, { bootstrap: false })
       if (data.session.some((item) => item.id === target.id)) {
@@ -874,6 +880,7 @@ export default function Layout(props: ParentProps) {
         .get({ sessionID: target.id })
         .then((x) => x.data)
         .catch(() => undefined)
+      if (ticket !== navigationTicket) return false
       if (!resolved?.directory) return false
       if (!canOpen(resolved.directory)) return false
       setStore("lastProjectSession", root, { directory: resolved.directory, id: resolved.id, at: Date.now() })
@@ -886,6 +893,7 @@ export default function Layout(props: ParentProps) {
       await refreshDirs(projectSession.directory)
       const opened = await openSession(projectSession)
       if (opened) return
+      if (ticket !== navigationTicket) return
       clearLastProjectSession(root)
     }
 
@@ -896,6 +904,7 @@ export default function Layout(props: ParentProps) {
     if (latest && (await openSession(latest))) {
       return
     }
+    if (ticket !== navigationTicket) return
 
     const fetched = latestRootSession(
       await Promise.all(
@@ -912,6 +921,7 @@ export default function Layout(props: ParentProps) {
     if (fetched && (await openSession(fetched))) {
       return
     }
+    if (ticket !== navigationTicket) return
 
     navigateWithSidebarReset(`/${base64Encode(root)}/session`)
   }

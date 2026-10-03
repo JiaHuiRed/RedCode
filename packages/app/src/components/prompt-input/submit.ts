@@ -392,6 +392,12 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       input.onNewSessionWorktreeReset?.()
     }
 
+    // 261003 Red 新会话草稿清理提前到这里：session.create 往返期间（局域网可到秒级）用户
+    // 可能继续输入，清理若仍放在发送前，会把等待期间的新输入一并抹掉；且原实现对
+    // scope.dir 做 workspace reset，选 worktree 时清的是目标目录、用户实际输入的原目录
+    // 草稿永远清不掉，下次新建页就会「复活」。创建失败时在下方 !session 分支用快照恢复。
+    if (isNewSession && routeDir) prompt.reset({ dir: routeDir })
+
     let session = input.info()
     if (!session && isNewSession) {
       // 260909 Red 防重入：session.create 往返期间（局域网可到秒级）二次 Enter
@@ -425,6 +431,18 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       }
     }
     if (!session) {
+      // 261003 Red 草稿已在创建前清空；创建失败必须把快照写回原目录，否则静默丢稿。
+      // 若等待期间用户已重新输入（dirty），新内容优先——不覆盖，只提示草稿未恢复。
+      if (isNewSession && routeDir) {
+        if (prompt.dirty({ dir: routeDir })) {
+          showToast({
+            title: language.t("prompt.toast.draftRestoreSkipped.title"),
+            description: language.t("prompt.toast.draftRestoreSkipped.description"),
+          })
+        } else {
+          prompt.set(currentPrompt, input.promptLength(currentPrompt), { dir: routeDir })
+        }
+      }
       showToast({
         title: language.t("prompt.toast.promptSendFailed.title"),
         description: language.t("prompt.toast.promptSendFailed.description"),
@@ -459,8 +477,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     const clearInput = () => {
       prompt.reset(scope)
-      // 260917 Red 新会话提交前读的是目录级草稿；会话创建后只清 session scope 会让已发内容在下次新建时复活。
-      if (isNewSession) prompt.reset({ dir: scope.dir })
+      // 261003 Red 目录级草稿清理已提前到 session.create 之前（见上方注释）：此处再对
+      // scope.dir 做 workspace reset 会在选 worktree 时清错目录、在 main 时吃掉创建等待
+      // 期间用户新输入的字。260917 的「已发内容复活」现在由提前清理覆盖。
       // 260918 Red 目录级 handoff 是「store 未就绪时输入框的占位快照」，只在当前 sessionKey 上写。
       // 提交后 sessionKey 换成新会话 id，这条会永远停在最后一次输入的内容上；下次进新建页若
       // store 未 ready（条目被 LRU 淘汰后要异步读盘），fallback 就把它当占位渲染出来——看起来

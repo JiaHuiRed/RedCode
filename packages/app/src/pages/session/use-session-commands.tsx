@@ -22,6 +22,7 @@ import { extractPromptFromParts } from "@/utils/prompt"
 import { UserMessage } from "@redcode-ai/sdk/v2"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { compareTime } from "@/utils/id"
+import { base64Encode } from "@redcode-ai/core/util/encode"
 
 export type SessionCommandContext = {
   navigateMessageByOffset: (offset: number) => void
@@ -312,6 +313,9 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const undo = async () => {
     const sessionID = params.id
     if (!sessionID) return
+    // 261003 Red 回写钉在操作发起时的会话上：await revert 期间用户可能已切走，
+    // 无 scope 的 set 走「当前路由」，会把本会话的恢复文本写进别的会话的草稿。
+    const scope = { dir: base64Encode(sdk.directory), id: sessionID }
 
     if (sync.data.session_working(params.id ?? "")) {
       await sdk.client.session.abort({ sessionID }).catch(() => {})
@@ -327,7 +331,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     const parts = sync.data.part[message.id]
     if (parts) {
       const restored = extractPromptFromParts(parts, { directory: sdk.directory })
-      prompt.set(restored)
+      prompt.set(restored, undefined, scope)
     }
 
     const prev = findLast(userMessages(), (x) => compareTime(x, message) < 0)
@@ -337,6 +341,8 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const redo = async () => {
     const sessionID = params.id
     if (!sessionID) return
+    // 261003 Red 同上：unrevert 返回后的 reset 也必须钉发起时的会话。
+    const scope = { dir: base64Encode(sdk.directory), id: sessionID }
 
     const revertMessageID = info()?.revert?.messageID
     if (!revertMessageID) return
@@ -346,7 +352,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     const next = revertMsg ? userMessages().find((x) => compareTime(x, revertMsg) > 0) : undefined
     if (!next) {
       await sdk.client.session.unrevert({ sessionID })
-      prompt.reset()
+      prompt.reset(scope)
       const last = revertMsg ? findLast(userMessages(), (x) => compareTime(x, revertMsg) >= 0) : undefined
       setActiveMessage(last)
       return
