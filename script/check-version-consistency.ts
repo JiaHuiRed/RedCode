@@ -1,6 +1,6 @@
 // 260603 Red 版本一致性自检：编译前自动扫描
 // 260814 Red 版本线合并改造：TUI/GUI 不再分线，全仓单一版本号（以 packages/opencode 为准）
-// 检查范围：全部 @redcode-ai/* 包 + sdk + vscode 同号、README 双语徽章、CHANGELOG 条目、GUI 标题栏徽章
+// 检查范围：全部 @redcode-ai/* 包 + sdk 同号、README 双语徽章、CHANGELOG 条目、GUI 标题栏徽章
 import { readFileSync } from "fs"
 import { join, dirname } from "path"
 import { fileURLToPath } from "url"
@@ -43,7 +43,6 @@ const VERSIONED_PACKAGES = [
   "packages/http-recorder/package.json",
   "packages/effect-drizzle-sqlite/package.json",
   "packages/sdk/js/package.json",
-  "sdks/vscode/package.json",
 ]
 
 const readmeZH = read("README.md")

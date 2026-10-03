@@ -15,6 +15,7 @@
 - **GUI 流式 Markdown 分段消除重复前缀扫描**（`packages/ui/src/components/markdown-stream.ts`）：借鉴 Codex 对已完成内容不重复付成本的思路，顶层块行号转字符偏移改为单向扫描，保留既有 4KB 分段、列表/引用整体性与 DOM 更新规则。约 189KB 混合 Markdown 的隔离预处理基准由 55.8ms/次降至 15.0–15.2ms/次（约 3.7 倍）；仅为合成文本预处理，不等同于 GUI 整体帧率。回归钉住线性查找预算及切片/渲染等价。决策：`docs/notes/implemented/bug-fix/2026-09-07-markdown-block-dom.md`。
 - **固定前缀共享契约与工具描述收敛**：明确行动/只读询问/模糊意图、授权与完成边界，把 GPT 的中途消息和摘要续接迁入共享 core；保留四家必要 delta、soul 与 Git 安全规则，精简四种 shell 和 task 的重复说明，未改执行权限、工具集合或缓存机制。pwsh + task 的同集合局部估算净减 GPT 约 619–738、GLM/DeepSeek/Step 约 484–603 tokens（随 background 附加说明开关变化，非全前缀精确 tokenizer）。新增隔离虚拟工具的真实模型评测入口与 18 个固定用例；四家单轮对照各 18 例，GLM 16→17、DeepSeek 15→16、GPT 17→17、Step 16→17，不宣称普遍提速或缓存收益。定向回归 36 条及 typecheck 通过。模型可见四问、原文对照、失效边界、字节上限与未通过用例：`docs/notes/implemented/architecture/2026-10-01-fixed-prefix-contract.md`。
 - **frontend-design skill 路由 description 精简**（`seed/skill/frontend-design/SKILL.md`，live 同步）：三句中英重复的路由枚举缩为一句（构建/重整 UI、按截图实现、审查分流 frontend-qa），省每轮约 90 固定 tokens；正文（间距/行高/对比度等设计规范）未动。模型可见四问：① 列表注入面该行 description 缩短，触发语义不变；② 约 -90 tokens/轮；③ available_skills 段前缀自该段起作废重建一次；④ description 现一句收敛即上限，正文仅触发加载时进上下文。
+- **砍掉从未发布的 VSCode 扩展目录**（fork 遗产，无发布与维护计划）：删除 `sdks/vscode/` 整目录（16 个 tracked 文件）、`check-version-consistency.ts` 的同号断言条目（全仓同号清单 14→13 包）、`raw-changelog.ts` 的 vscode 归类分支与 git log 路径、根 AGENTS.md 版本清单中的 `sdks/vscode` 字样；`github/` 目录保留，其提交改挂 `github` 区域（显示名仍为 Extensions，输出不变）。不发布 vsix，不影响任何构建产物。
 
 #### 修复
 

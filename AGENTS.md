@@ -67,7 +67,7 @@
 - **单一版本线**：TUI 与 GUI 合并维护，全仓一个版本号，从 0.8.16 继续递增。历史双线（TUI ≤0.8.16 / GUI ≤0.7.20）只存在于 CHANGELOG 的 `## TUI`/`## GUI` 两段，**历史条目不改**。
 - **版本更新 checklist（每次升版必须全过）**：
   1. `packages/opencode/package.json` + `packages/desktop/package.json` — **同号同升**（TUI 运行时与 GUI 标题栏徽章各自从这两处注入，缺一则显示分裂）
-  2. 其余 `@redcode-ai/*` 包、`packages/sdk/js`、`sdks/vscode` 的 `version` — 同号跟升（互引均为 `workspace:*`，该字段仅作标签；Sentry release 与 GUI `Platform.version` 读 `packages/app` 的号）
+  2. 其余 `@redcode-ai/*` 包、`packages/sdk/js` 的 `version` — 同号跟升（互引均为 `workspace:*`，该字段仅作标签；Sentry release 与 GUI `Platform.version` 读 `packages/app` 的号）
   3. `README.md` — 中文版"版本"徽章更新
   4. `README.en.md` — **英文版 Version 徽章同步更新**
   5. `CHANGELOG.md` — 新条目写在顶部说明之下（合并线区域），**不再**写进 `## TUI`/`## GUI` 历史段
