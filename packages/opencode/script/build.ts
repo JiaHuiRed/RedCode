@@ -14,8 +14,19 @@ process.chdir(dir)
 
 const generated = await import("./generate.ts")
 
-import { Script } from "@redcode-ai/script"
 import pkg from "../package.json"
+
+// 261003 Red 内联自 @redcode-ai/script（原包已删，唯一消费者是本构建脚本）
+// bun 版本 qualifier：与 .husky/pre-push 同题，两处改动需同步
+const rootPkg = await Bun.file(path.resolve(dir, "../../package.json")).json()
+const expectedBunVersion = rootPkg.packageManager?.split("@")[1]
+if (!expectedBunVersion) throw new Error("packageManager field not found in root package.json")
+if (!Bun.semver.satisfies(process.versions.bun, `^${expectedBunVersion}`))
+  throw new Error(`This script requires bun@^${expectedBunVersion}, but you are using bun@${process.versions.bun}`)
+
+// channel/version：本地构建取当前 git 分支与本包版本；发布环境可经 env 覆盖
+const channel = process.env.REDCODE_CHANNEL ?? (await $`git branch --show-current`.text()).trim()
+const version = process.env.REDCODE_VERSION ?? pkg.version
 
 // Load migrations from migration directories
 const migrationDirs = (
@@ -55,7 +66,7 @@ const createEmbeddedWebUIBundle = async () => {
   console.log(`Building Web UI to embed in the binary`)
   const appDir = path.join(import.meta.dirname, "../../app")
   const dist = path.join(appDir, "dist")
-  await $`REDCODE_CHANNEL=${Script.channel} bun run --cwd ${appDir} build`
+  await $`REDCODE_CHANNEL=${channel} bun run --cwd ${appDir} build`
   const files = (await Array.fromAsync(new Bun.Glob("**/*").scan({ cwd: dist })))
     .map((file) => file.replaceAll("\\", "/"))
     .filter((file) => !file.endsWith(".map"))
@@ -111,7 +122,7 @@ await Bun.build({
     autoloadPackageJson: true,
     target: "bun-windows-x64" as any,
     outfile: `dist/${name}/bin/redcode`,
-    execArgv: [`--user-agent=redcode/${Script.version}`, "--use-system-ca", "--"],
+    execArgv: [`--user-agent=redcode/${version}`, "--use-system-ca", "--"],
     windows: {
       icon: path.resolve(dir, "../desktop/赤.ico"),
     },
@@ -119,12 +130,12 @@ await Bun.build({
   files: embeddedFileMap ? { "redcode-web-ui.gen.ts": embeddedFileMap } : {},
   entrypoints: ["./src/index.ts", parserWorker, workerPath, ...(embeddedFileMap ? ["redcode-web-ui.gen.ts"] : [])],
   define: {
-    REDCODE_VERSION: `'${Script.version}'`,
+    REDCODE_VERSION: `'${version}'`,
     REDCODE_MIGRATIONS: JSON.stringify(migrations),
     REDCODE_MODELS_DEV: generated.modelsData,
     OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + workerRelativePath,
     REDCODE_WORKER_PATH: workerPath,
-    REDCODE_CHANNEL: `'${Script.channel}'`,
+    REDCODE_CHANNEL: `'${channel}'`,
     REDCODE_LIBC: "",
   },
 })
@@ -149,7 +160,7 @@ await Bun.file(`dist/${name}/package.json`).write(
   JSON.stringify(
     {
       name,
-      version: Script.version,
+      version,
       preferUnplugged: true,
       os: ["win32"],
       cpu: ["x64"],
@@ -158,11 +169,6 @@ await Bun.file(`dist/${name}/package.json`).write(
     2,
   ),
 )
-binaries[name] = Script.version
-
-if (Script.release) {
-  await $`zip -r ../../${name}.zip *`.cwd(`dist/${name}/bin`)
-  await $`gh release upload v${Script.version} ./dist/*.zip --clobber --repo ${process.env.GH_REPO}`
-}
+binaries[name] = version
 
 export { binaries }
