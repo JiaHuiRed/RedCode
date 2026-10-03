@@ -1,5 +1,6 @@
 import { describe, expect, test, beforeAll } from "bun:test"
 import { Database } from "bun:sqlite"
+import type { SQLQueryBindings } from "bun:sqlite"
 import { drizzle } from "drizzle-orm/bun-sqlite"
 import { migrate } from "drizzle-orm/bun-sqlite/migrator"
 import { readFileSync, readdirSync } from "fs"
@@ -102,6 +103,30 @@ const partData = (partID: string) =>
   >
 
 describe("session cost currency backfill (part-table rewrite)", () => {
+  test("legacy part stamping looks up its message by primary key without scanning other sessions", () => {
+    const s = "s_stamp_query_plan"
+    seed(s, { parts: [{ id: `${s}_p`, data: { type: "step-finish", cost: 1, tokens } }] })
+    const queries: { query: string; params: unknown[] }[] = []
+    const tx = drizzle({
+      client: sqlite,
+      logger: { logQuery: (query, params) => queries.push({ query, params }) },
+    })
+
+    backfillSessionCostCurrency(tx as unknown as TxOrDb, [s as SessionID], currencyOf)
+
+    // 261003 Red 检查真实执行 SQL 的查询计划，防止启动迁移按费用分组扫描全库。
+    const statement = queries.find((entry) => entry.query.startsWith('update "part"'))
+    if (!statement) throw new Error("Missing legacy part update")
+    const plan = sqlite
+      .query(`EXPLAIN QUERY PLAN ${statement.query}`)
+      .all(...(statement.params as SQLQueryBindings[])) as {
+      detail: string
+    }[]
+    expect(plan.some((row) => row.detail.includes("SCAN message"))).toBe(false)
+    expect(plan.some((row) => row.detail.includes("SEARCH message"))).toBe(true)
+    expect(partData(`${s}_p`).currency).toBe("CNY")
+  })
+
   test("backfills legacy CNY part into CNY bucket and stamps part currency", () => {
     const s = "s_legacy_cny"
     seed(s, {

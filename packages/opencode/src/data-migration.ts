@@ -94,8 +94,10 @@ export function backfillSessionCostCurrency(
           sql`json_extract(${PartTable.data}, '$.type') = 'step-finish'`,
           sql`json_extract(${PartTable.data}, '$.currency') is null`,
           sql`coalesce(json_extract(${PartTable.data}, '$.cost'), 0) != 0`,
-          sql`${PartTable.message_id} in (select ${MessageTable.id} from ${MessageTable}
-             where json_extract(${MessageTable.data}, '$.providerID') = ${row.provider_id}
+          // 261003 Red 按当前 part 的消息主键查找，避免每组扫描全库；见 docs/notes/implemented/bug-fix/2026-10-03-cost-currency-migration-startup-scan.md。
+          sql`exists (select 1 from ${MessageTable}
+             where ${MessageTable.id} = ${PartTable.message_id}
+               and json_extract(${MessageTable.data}, '$.providerID') = ${row.provider_id}
                and json_extract(${MessageTable.data}, '$.modelID') = ${row.model_id})`,
         ),
       )
