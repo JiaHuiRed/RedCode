@@ -328,7 +328,9 @@ export function createServerSyncContext() {
     isBooting: (directory) => booting.has(directory),
     isLoadingSessions: (directory) => sessionLoads.has(directory),
     onBootstrap: (directory) => {
-      void bootstrapInstance(directory)
+      // 261004 Red 首次加载也走两目录队列；ensureChild 在队列任务内触发时不再重复入队。
+      if (booting.has(directoryKey(directory))) return
+      queue.push(directory)
     },
     onDispose: (directory) => {
       const key = directoryKey(directory)

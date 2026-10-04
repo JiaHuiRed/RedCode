@@ -2,92 +2,161 @@ import { describe, expect, test } from "bun:test"
 import { createStore } from "solid-js/store"
 import { QueryClient } from "@tanstack/solid-query"
 import type { Config, OpencodeClient, Project } from "@redcode-ai/sdk/v2/client"
+import { createOpencodeClient } from "@redcode-ai/sdk/v2/client"
 import type { NormalizedProviderListResponse } from "@redcode-ai/ui/context"
 import { bootstrapDirectory, loadAgentsQuery, loadPathQuery, loadUsageQuery } from "./bootstrap"
+import { createRefreshQueue } from "./queue"
 import type { State, VcsCache } from "./types"
 
 const provider = { all: new Map(), connected: [], default: {} } satisfies NormalizedProviderListResponse
 
-describe("bootstrapDirectory", () => {
-  // 260901 cc 原名与断言是「status: loading → partial → complete」，但本仓历史上**从未**有过
-  // 写这个字段的代码（git log -S setStore("status") 在 global-sync 下零命中），child-store 初始化
-  // 直接给的就是 "complete"，bootstrap 里读它的那个 loading 变量也没人用（已一并删掉）。
-  // 断言一个不存在的状态机没有意义，改成断言 bootstrap 真正做到的事：把后台那批慢请求跑完、
-  // 把 agent 装进 store 并置 ready——那才是 submit gate 依赖的信号。
-  test("populates agents and flips agent_ready after the slow bootstrap pass", async () => {
-    const [store, setStore] = createStore<State>({
-      status: "loading",
-      agent: [],
-      agent_ready: false,
-      command: [],
-      project: "",
-      projectMeta: undefined,
-      icon: undefined,
-      provider_ready: true,
+// 261004 Red 使用真实 SDK 与隔离 transport，回归覆盖实际加载完成信号和刷新队列的并发上限。
+function bootstrapInput(directory = "/project", handle = async (_request: Request) => {}) {
+  const [store, setStore] = createStore<State>({
+    status: "loading",
+    agent: [],
+    agent_ready: false,
+    command: [],
+    project: "",
+    projectMeta: undefined,
+    icon: undefined,
+    provider_ready: true,
+    provider,
+    config: {},
+    path: { state: "", config: "", worktree: "/project", directory: "/project", home: "/home" },
+    session: [],
+    sessionTotal: 0,
+    session_status: {},
+    session_working(id: string) {
+      return this.session_status[id]?.type !== "idle"
+    },
+    session_diff: {},
+    message_trimmed: {},
+    todo: {},
+    goal: {},
+    permission: {},
+    question: {},
+    mcp_ready: true,
+    mcp: {},
+    lsp_ready: true,
+    lsp: [],
+    vcs: undefined,
+    limit: 64,
+    message: {},
+    part: {},
+    part_text_accum_delta: {},
+  })
+
+  const responses: Record<string, unknown> = {
+    "/agent": [{ name: "build", mode: "primary" }],
+    "/config": {},
+    "/config/providers": { providers: [], default: {} },
+    "/session/status": {},
+    "/vcs": null,
+    "/command": [],
+    "/permission": [],
+    "/question": [],
+  }
+  return {
+    directory,
+    global: {
+      config: {} satisfies Config,
+      path: { state: "", config: "", worktree: directory, directory, home: "/home" },
+      project: [{ id: "project", worktree: directory } as Project],
       provider,
-      config: {},
-      path: { state: "", config: "", worktree: "/project", directory: "/project", home: "/home" },
-      session: [],
-      sessionTotal: 0,
-      session_status: {},
-      session_working(id: string) {
-        return this.session_status[id]?.type !== "idle"
-      },
-      session_diff: {},
-      message_trimmed: {},
-      todo: {},
-      goal: {},
-      permission: {},
-      question: {},
-      mcp_ready: true,
-      mcp: {},
-      lsp_ready: true,
-      lsp: [],
-      vcs: undefined,
-      limit: 64,
-      message: {},
-      part: {},
-      part_text_accum_delta: {},
+    },
+    sdk: createOpencodeClient({
+      baseUrl: "http://bootstrap.test",
+      directory,
+      throwOnError: true,
+      fetch: Object.assign(async (input: Parameters<typeof fetch>[0]) => {
+        const request = input instanceof Request ? input : new Request(input)
+        const route = new URL(request.url).pathname
+        if (!(route in responses)) throw new Error(`Unexpected bootstrap request: ${route}`)
+        await handle(request)
+        return Response.json(responses[route])
+      }, globalThis.fetch),
+    }),
+    store,
+    setStore,
+    vcsCache: { setStore() {} } as unknown as VcsCache,
+    loadSessions() {},
+    translate: (key: string) => key,
+    queryClient: new QueryClient(),
+  } satisfies Parameters<typeof bootstrapDirectory>[0]
+}
+
+describe("bootstrapDirectory", () => {
+  test("populates agents and flips agent_ready before resolving", async () => {
+    const input = bootstrapInput()
+    try {
+      await bootstrapDirectory(input)
+      expect(input.store.agent_ready).toBe(true)
+      expect(input.store.agent.map((item) => item.name)).toEqual(["build"])
+    } finally {
+      input.queryClient.clear()
+    }
+  })
+
+  test("stays pending until the real slow requests finish", async () => {
+    const started = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    const input = bootstrapInput("/project", async (request) => {
+      if (new URL(request.url).pathname !== "/config") return
+      started.resolve()
+      await release.promise
     })
-
-    await bootstrapDirectory({
-      directory: "/project",
-      global: {
-        config: {} satisfies Config,
-        path: { state: "", config: "", worktree: "/project", directory: "/project", home: "/home" },
-        project: [{ id: "project", worktree: "/project" } as Project],
-        provider,
-      },
-      sdk: {
-        app: { agents: async () => ({ data: [{ name: "build", mode: "primary" }] }) },
-        config: { get: async () => ({ data: {} }) },
-        session: { status: async () => ({ data: {} }) },
-        vcs: { get: async () => ({ data: undefined }) },
-        command: { list: async () => ({ data: [] }) },
-        permission: { list: async () => ({ data: [] }) },
-        question: { list: async () => ({ data: [] }) },
-        mcp: { status: async () => ({ data: {} }) },
-        provider: {
-          list: async () => ({ data: { all: [], connected: [], default: {} } }),
-          // 260901 cc bootstrap 从 4c8b9e9d 起还会拉套餐额度（bootstrap.ts:197）。夹具漏了这个
-          // mock，sdk.provider.quota 是 undefined → 整条 bootstrap 链抛错 → status 卡在 loading。
-          quota: async () => ({ data: [] }),
-        },
-      } as unknown as OpencodeClient,
-      store,
-      setStore,
-      vcsCache: { setStore() {} } as unknown as VcsCache,
-      loadSessions() {},
-      translate: (key) => key,
-      queryClient: new QueryClient(),
+    let settled = false
+    const pending = bootstrapDirectory(input).then(() => {
+      settled = true
     })
+    try {
+      await started.promise
+      expect(settled).toBe(false)
+    } finally {
+      release.resolve()
+      await pending
+      input.queryClient.clear()
+    }
+    expect(settled).toBe(true)
+  })
 
-    expect(store.agent_ready).toBe(false)
-
-    await new Promise((resolve) => setTimeout(resolve, 80))
-
-    expect(store.agent_ready).toBe(true)
-    expect(store.agent.map((item) => item.name)).toEqual(["build"])
+  test("keeps the third directory queued while two real bootstraps are loading", async () => {
+    const started = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    const finished = Promise.withResolvers<void>()
+    const directories: string[] = []
+    const inputs = ["/A", "/B", "/C"].map((directory) =>
+      bootstrapInput(directory, async (request) => {
+        if (new URL(request.url).pathname !== "/config") return
+        directories.push(directory)
+        if (directories.length === 2) started.resolve()
+        await release.promise
+      }),
+    )
+    let completed = 0
+    const queue = createRefreshQueue({
+      paused: () => false,
+      bootstrap: async () => {},
+      bootstrapInstance: async (directory) => {
+        await bootstrapDirectory(inputs.find((input) => input.directory === directory)!)
+        completed += 1
+        if (completed === inputs.length) finished.resolve()
+      },
+    })
+    inputs.forEach((input) => queue.push(input.directory))
+    try {
+      await started.promise
+      await new Promise((resolve) => setTimeout(resolve, 80))
+      expect(directories).toEqual(["/A", "/B"])
+      expect(completed).toBe(0)
+    } finally {
+      release.resolve()
+      await finished.promise
+      queue.dispose()
+      inputs.forEach((input) => input.queryClient.clear())
+    }
+    expect(directories).toEqual(["/A", "/B", "/C"])
   })
 })
 
