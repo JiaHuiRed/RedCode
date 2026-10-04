@@ -603,6 +603,70 @@ describe("tool.registry", () => {
     }),
   )
 
+  for (const scenario of [
+    { name: "string", result: "'unchanged output'", title: "callback title", source: "callback" },
+    {
+      name: "structured",
+      result: "{ output: 'unchanged output', title: 'result title', metadata: { source: 'result' } }",
+      title: "result title",
+      source: "result",
+    },
+  ]) {
+    it.instance(`preserves plugin metadata callbacks with ${scenario.name} results`, () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const customTools = path.join(test.directory, ".redcode", "tools")
+        yield* Effect.promise(() => fs.mkdir(customTools, { recursive: true }))
+        yield* Effect.promise(() =>
+          Bun.write(
+            path.join(customTools, "evidence.ts"),
+            [
+              "export default {",
+              "  description: 'metadata evidence tool',",
+              "  args: {},",
+              "  execute: async (_args, ctx) => {",
+              "    ctx.metadata({ title: 'callback title', metadata: { source: 'callback' } })",
+              "    ctx.metadata({ metadata: { dcpCompression: { version: 1, runId: 3, blockCount: 1,",
+              "      inputTokensEstimated: 5000, summaryTokensEstimated: 1000, netSavingsEstimated: 4000 } } })",
+              `    return ${scenario.result}`,
+              "  },",
+              "}",
+            ].join("\n"),
+          ),
+        )
+        const registry = yield* ToolRegistry.Service
+        const loaded = (yield* registry.all()).find((tool) => tool.id === "evidence")
+        if (!loaded) throw new Error("custom evidence tool was not loaded")
+        const agents = yield* Agent.Service
+        const updates: Array<{ title?: string; metadata?: Record<string, unknown> }> = []
+        const result = yield* loaded.execute({}, {
+          sessionID: SessionID.make("ses_evidence"),
+          messageID: MessageID.make("msg_evidence"),
+          agent: (yield* agents.defaultInfo()).name,
+          abort: new AbortController().signal,
+          messages: [],
+          metadata: (value) => Effect.sync(() => { updates.push(value) }),
+          ask: () => Effect.void,
+        } satisfies Tool.Context)
+        expect(result.output).toBe("unchanged output")
+        expect(result.title).toBe(scenario.title)
+        expect(result.metadata).toMatchObject({
+          source: scenario.source,
+          dcpCompression: {
+            version: 1,
+            runId: 3,
+            blockCount: 1,
+            inputTokensEstimated: 5000,
+            summaryTokensEstimated: 1000,
+            netSavingsEstimated: 4000,
+          },
+        })
+        expect(updates).toHaveLength(1)
+        expect(updates[0]?.title).toBe("callback title")
+      }),
+    )
+  }
+
   it.instance("loads legacy JSON-schema-shaped custom tools with wire schema", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance

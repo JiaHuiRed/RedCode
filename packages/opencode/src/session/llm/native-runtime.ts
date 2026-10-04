@@ -33,6 +33,7 @@ type StreamInput = {
   readonly providerOptions?: Record<string, any>
   readonly headers: Record<string, string>
   readonly abort: AbortSignal
+  readonly observeRequest?: (body: unknown) => void
 }
 
 export function status(input: Pick<StreamInput, "model" | "provider" | "auth">): RuntimeStatus {
@@ -65,6 +66,7 @@ function statusWithFetch(
 
 export function stream(input: StreamInput): StreamResult {
   const fetch = providerFetch(input)
+  const actualFetch = fetch ?? globalThis.fetch
   const current = statusWithFetch(input, fetch)
   if (current.type === "unsupported") return current
 
@@ -93,9 +95,31 @@ export function stream(input: StreamInput): StreamResult {
     tools: nativeTools(input.tools, input),
   })
 
+  const observedFetch: typeof globalThis.fetch = new Proxy(actualFetch, {
+    apply(target, thisArg, args) {
+      const init = args[1] as Parameters<typeof globalThis.fetch>[1]
+      // 261004 Red 只读 body 做 诊断观察；Request 流、headers 与 fetch 语义原样透传。
+      const body = init?.body
+      const observed =
+        typeof body === "string"
+          ? body
+          : body instanceof Uint8Array
+            ? new TextDecoder().decode(body)
+            : undefined
+      if (observed !== undefined) {
+        try {
+          input.observeRequest?.(observed)
+        } catch {
+          // 261004 Red Diagnostic failures must never prevent the configured provider fetch from running.
+        }
+      }
+      return Reflect.apply(target, thisArg, args) as ReturnType<typeof globalThis.fetch>
+    },
+  })
+
   return {
     ...current,
-    stream: fetch ? stream.pipe(Stream.provideService(FetchHttpClient.Fetch, fetch)) : stream,
+    stream: stream.pipe(Stream.provideService(FetchHttpClient.Fetch, observedFetch)),
   }
 }
 

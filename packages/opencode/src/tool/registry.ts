@@ -163,15 +163,23 @@ export const layer = Layer.effect(
                 // Bridge the host's Effect-based `ask` into a Promise-returning
                 // function for the plugin to make sure context persists
                 const bridge = yield* EffectBridge.make()
+                // 261004 Red 插件的 void metadata 回调不能直接返回未执行的 Effect。
+                // 收集同步回执，结束前提交，并与结果合并；见 docs/notes/implemented/feature/2026-10-04-compression-request-evidence.md。
+                const update: Parameters<PluginToolContext["metadata"]>[0] = {}
                 const pluginCtx: PluginToolContext = {
                   ...toolCtx,
                   ask: (req) => bridge.promise(toolCtx.ask(req)),
+                  metadata: (value) => {
+                    if (value.title !== undefined) update.title = value.title
+                    if (value.metadata) update.metadata = { ...update.metadata, ...value.metadata }
+                  },
                   directory: ctx.directory,
                   worktree: ctx.worktree,
                 }
                 const result = yield* Effect.promise(() => def.execute(args as any, pluginCtx))
+                if (update.title !== undefined || update.metadata) yield* toolCtx.metadata(update)
                 const output = typeof result === "string" ? result : result.output
-                const metadata = typeof result === "string" ? {} : (result.metadata ?? {})
+                const metadata = { ...update.metadata, ...(typeof result === "string" ? {} : result.metadata) }
                 const attachments = typeof result === "string" ? undefined : result.attachments
                 const info = yield* agent.get(toolCtx.agent)
                 const out = yield* truncate.result(
@@ -180,7 +188,7 @@ export const layer = Layer.effect(
                   info,
                 )
                 return {
-                  title: typeof result === "string" ? "" : (result.title ?? ""),
+                  title: (typeof result === "string" ? undefined : result.title) ?? update.title ?? "",
                   output: out.output,
                   attachments: out.attachments as typeof attachments,
                   metadata: {
