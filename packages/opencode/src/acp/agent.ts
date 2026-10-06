@@ -15,6 +15,7 @@ import {
   type ModelOption,
 } from "./model-options"
 import { completedToolContent, completedToolRawOutput } from "./content"
+import { getNewContent, parseUri } from "./uri"
 import { getContextLimit, sendUsageUpdate } from "./usage"
 import {
   RequestError,
@@ -66,7 +67,6 @@ import { Todo } from "@/session/todo"
 import { Result, Schema } from "effect"
 import { LoadAPIKeyError } from "ai"
 import type { AssistantMessage, Event, OpencodeClient, SessionMessageResponse, ToolPart } from "@redcode-ai/sdk/v2"
-import { applyPatch } from "diff"
 import { InstallationVersion } from "@redcode-ai/core/installation/version"
 import { ShellID } from "@/tool/shell/id"
 import { addCost, emptyCostBucket, singleCurrencyAmount } from "@/session/cost-bucket"
@@ -1585,51 +1585,4 @@ async function lastUsedModel(
   }
 }
 
-function parseUri(
-  uri: string,
-): { type: "file"; url: string; filename: string; mime: string } | { type: "text"; text: string } {
-  try {
-    if (uri.startsWith("file://")) {
-      const path = uri.slice(7)
-      const name = path.split("/").pop() || path
-      return {
-        type: "file",
-        url: uri,
-        filename: name,
-        mime: "text/plain",
-      }
-    }
-    if (uri.startsWith("zed://")) {
-      const url = new URL(uri)
-      const path = url.searchParams.get("path")
-      if (path) {
-        const name = path.split("/").pop() || path
-        return {
-          type: "file",
-          url: pathToFileURL(path).href,
-          filename: name,
-          mime: "text/plain",
-        }
-      }
-    }
-    return {
-      type: "text",
-      text: uri,
-    }
-  } catch {
-    return {
-      type: "text",
-      text: uri,
-    }
-  }
-}
-
-function getNewContent(fileOriginal: string, unifiedDiff: string): string | undefined {
-  const result = applyPatch(fileOriginal, unifiedDiff)
-  if (result === false) {
-    log.error("Failed to apply unified diff (context mismatch)")
-    return undefined
-  }
-  return result
-}
 export * as ACP from "./agent"

@@ -19,6 +19,8 @@
 
 - **存量测试修正：edit 契约迁移 + bash 快照同步**（`packages/opencode/test/tool/parameters.test.ts`、`test/tool/__snapshots__/parameters.test.ts.snap`）：审计基线（bb8d5eac）上 `bun test` 的两条存量红——① `edit > rejects missing filePath` 期望 schema 拒收，但 `filePath` 改 optional 是 hashline `input` 模式的刻意契约（路径在补丁头 `[path#TAG]` 里），拒绝点已挪到 execute 层（`edit.ts:120`）；测试改钉真实形状（hashline 无 filePath 放行、classic 无 filePath 仅 schema 合法、执行层另有守卫）。② `JSON Schema (wire shape) > bash` 快照未随 bash 描述改版（command 精简、timeout 补 clamp、workdir 改写）同步；净变更仅 bash 一处三段 description。修正后 59 pass / 0 fail、typecheck 过。
 
+- **ACP 下一刀：URI/path mapping 拆出 `acp/uri.ts`**（`packages/opencode/src/acp/{uri.ts,agent.ts}`、`test/acp/uri.test.ts` 新建）：延续 0.12.0 既定的「只拆明确协议/纯逻辑边界」原则，把 `parseUri`（`file://` / `zed://` / 纯文本 / 异常兜底四路径）与 `getNewContent`（unified diff 应用，context 不匹配返回 undefined）从 1486 行的 `agent.ts` 末尾迁出。验收原则命中三条：降低 Agent 内部状态耦合（两函数本就零 `this` 引用，迁出后 URI→文件/text 映射显式成独立协议层，与 `content.ts` 同族）、增加独立单测能力（原先必须引入整份 agent.ts 才能间接覆盖，现有 8 条直测）、形成清晰协议边界。`applyPatch` import 随之从 agent.ts 移除；`log` 服务名保持 `acp-agent` 不断运维 grep。审计同时判定 permission translation（`permission.asked` 分支）深度耦合 5 个私有字段、不该拆，本次未动。行为零变化：ACP 全套 21 条（含 event-subscription 重型用例）+ typecheck 过。
+
 ### [0.12.0] - 2026-10-06
 
 - **opencode 上游反向吸收批次（261006）**：对上游 1.18.34（5 月 fork 以来 3797 commits）做三路调研后按「先验现状再动手」逐项落地——已落地见下；确认早已存在/不落后而跳过的：perf 假设循环文档（`perf/test-suite.md` 36 条）、markdown 高亮 worker 池（`highlight-worker/pool` + `worker-pool`）、TS 主题系统（`theme/resolve.ts` 502 行 vs 上游 v2 139 行，且 `--v2-agent-*` 角色色暂无消费者）；大项（ACP 全量模块化、prompt-input 拆分、terminal-panel-v2、pierre 缺失件、httpapi-codegen、LayerNode、recorded-test、sdk-next）评估结论记录于 `.redcode/idea-backlog.md` 待后续批次。
