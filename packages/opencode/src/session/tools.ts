@@ -27,6 +27,16 @@ import { ImageTokens } from "./image-tokens"
 
 const log = Log.create({ service: "session.tools" })
 
+// 261006 Red MCP resource tools 常量（移植上游）。MIME 白名单 = 模型可消费的附件类型
+// （processor 的 tool-result 分支只对 image/* 缩放，PDF 原样透传）；大小/条数限额不走
+// 上游的 10MB 常量，统一用 ImageTokens（5MB/32 条，与 MCP 工具循环、tool/read 同源）。
+const MCP_RESOURCE_TOOLS = {
+  list: "list_mcp_resources",
+  listTemplates: "list_mcp_resource_templates",
+  read: "read_mcp_resource",
+} as const
+const MCP_RESOURCE_ATTACHMENT_MIMES = new Set(["application/pdf", "image/gif", "image/jpeg", "image/png", "image/webp"])
+
 // 260918 Red MCP 入口闸门，避免构造 data: URL 前就把无界内容放进内存；
 // ImageTokens.fitToolResult 还会在所有工具的共同出口再次执行同样的限制。
 //
@@ -46,12 +56,10 @@ const exploreCapabilities = Effect.fn("SessionTools.exploreCapabilities")(functi
   const fallback = capabilitySet(profileCapabilitySet("explore"))
   const storage = yield* Effect.serviceOption(Storage.Service)
   if (Option.isNone(storage)) return fallback
-  return yield* storage.value
-    .read<ChildTaskRecord>(["task-runtime", String(sessionID)])
-    .pipe(
-      Effect.map((record) => capabilitySet(record.capabilities)),
-      Effect.catch(() => Effect.succeed(fallback)),
-    )
+  return yield* storage.value.read<ChildTaskRecord>(["task-runtime", String(sessionID)]).pipe(
+    Effect.map((record) => capabilitySet(record.capabilities)),
+    Effect.catch(() => Effect.succeed(fallback)),
+  )
 })
 
 export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
@@ -72,8 +80,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const registry = yield* ToolRegistry.Service
   const mcp = yield* MCP.Service
   const truncate = yield* Truncate.Service
-  const childCapabilities =
-    input.agent.name === "explore" ? yield* exploreCapabilities(input.session.id) : undefined
+  const childCapabilities = input.agent.name === "explore" ? yield* exploreCapabilities(input.session.id) : undefined
 
   const context = (
     name: string,
@@ -151,9 +158,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               metadata: { blocked: true },
             } as any
           }
-          const capabilityReason = childCapabilities
-            ? capabilityDeniedForSet(childCapabilities, item.id)
-            : undefined
+          const capabilityReason = childCapabilities ? capabilityDeniedForSet(childCapabilities, item.id) : undefined
           if (capabilityReason) {
             return {
               title: "Blocked",
@@ -220,6 +225,236 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           inputSchema: jsonSchema(schema),
           execute,
         })
+  }
+
+  // 261006 Red 移植上游 MCP resource tools：resources 是 MCP 协议里 tool calling 之外的
+  // 另一半数据通道（文件/schema/应用信息）。底层 clients/resources/resourceTemplates/
+  // readResource 早已在 mcp/index.ts（260610 #31612 超时、260624 listing），这里只补
+  // 工具装配。执行闸门与下方 MCP 工具循环一致（before/pre 钩子 + explore capability）。
+  const mcpClients = yield* mcp.clients()
+  if (Object.values(mcpClients).some((client) => !!client.getServerCapabilities()?.resources)) {
+    const resourceServers = Object.entries(mcpClients)
+      .filter(([, client]) => !!client.getServerCapabilities()?.resources)
+      .map(([name]) => name)
+      .sort((a, b) => a.localeCompare(b))
+
+    // 公共闸门：args 改写 → pre 钩子 → explore capability → read permission。
+    // blocked 时 output 已是最终工具结果，调用方直接 return。
+    const resourceGate = Effect.fn("SessionTools.mcpResourceGate")(function* (
+      name: string,
+      rawArgs: Record<string, unknown>,
+      opts: ToolExecutionOptions<Record<string, unknown>>,
+      permissionReq: { metadata: Record<string, unknown>; patterns: string[]; always: string[] },
+    ) {
+      const beforeHook = yield* plugin.trigger(
+        "tool.execute.before",
+        { tool: name, sessionID: input.session.id, callID: opts.toolCallId },
+        { args: rawArgs },
+      )
+      const args = beforeHook.args
+      const ctx = context(name, args, opts)
+      const preToolUse = yield* plugin.trigger(
+        "tool.use.pre",
+        { tool: name, sessionID: ctx.sessionID, callID: ctx.callID, args },
+        { denied: false as boolean, reason: undefined as string | undefined },
+      )
+      if (preToolUse.denied) {
+        return {
+          blocked: true as const,
+          output: {
+            title: "Blocked",
+            output: `Tool "${name}" was blocked by hook.${preToolUse.reason ? ` Reason: ${preToolUse.reason}` : ""}`,
+            metadata: { blocked: true },
+          },
+        }
+      }
+      const capabilityReason = childCapabilities ? capabilityDeniedForSet(childCapabilities, name) : undefined
+      if (capabilityReason) {
+        return {
+          blocked: true as const,
+          output: {
+            title: "Blocked",
+            output: capabilityReason,
+            metadata: { blocked: true, capability: "child-record" },
+          },
+        }
+      }
+      yield* ctx.ask({ permission: "read", ...permissionReq })
+      return { blocked: false as const, ctx, args }
+    })
+
+    // list / listTemplates 同形状：列出（mcp 层已并发收集全部 connected server 并带 client
+    // 字段）→ 按 server 过滤 → 排序 → JSON 输出。
+    const listTool = <T extends { client: string; name: string }>(
+      name: string,
+      description: string,
+      label: string,
+      list: () => Effect.Effect<Record<string, T>>,
+      format: (item: T) => Record<string, unknown>,
+    ) =>
+      tool({
+        description,
+        inputSchema: jsonSchema(
+          ProviderTransform.schema(input.model, {
+            type: "object",
+            properties: {
+              server: {
+                type: "string",
+                description: `Optional MCP server name. When omitted, lists ${label} from every connected server.`,
+              },
+            },
+            additionalProperties: false,
+          }),
+        ),
+        execute(args: unknown, opts: ToolExecutionOptions<Record<string, unknown>>) {
+          return run.promise(
+            Effect.gen(function* () {
+              const parsed = parseMcpResourceListArgs(args)
+              if (parsed.server && !resourceServers.includes(parsed.server))
+                throw new Error(
+                  resourceServers.length === 0
+                    ? `MCP server "${parsed.server}" does not support resources`
+                    : `MCP server "${parsed.server}" does not support resources. Available resource servers: ${resourceServers.join(", ")}`,
+                )
+              const patterns = parsed.server
+                ? [`mcp:${parsed.server}:*`]
+                : resourceServers.map((server) => `mcp:${server}:*`)
+              const gate = yield* resourceGate(name, toMcpRecord(args), opts, {
+                metadata: parsed.server ? { server: parsed.server } : {},
+                patterns,
+                always: patterns,
+              })
+              if (gate.blocked) return gate.output
+              const entries = Object.values(yield* list()).filter(
+                (item) => !parsed.server || item.client === parsed.server,
+              )
+              entries.sort((a, b) => (a.client + "\u0000" + a.name).localeCompare(b.client + "\u0000" + b.name))
+              const formatted = entries.map((item) => format(item))
+              const fitted = yield* truncate.result(
+                { output: JSON.stringify({ [label]: formatted }, null, 2) },
+                { model: gate.ctx.extra?.model as { providerID: string } | undefined },
+                input.agent,
+              )
+              const output = {
+                title: parsed.server ? `MCP ${label}: ${parsed.server}` : `MCP ${label}`,
+                metadata: {
+                  count: entries.length,
+                  servers: resourceServers,
+                  ...(parsed.server ? { server: parsed.server } : {}),
+                  truncated: fitted.metadata.truncated,
+                  ...(fitted.metadata.outputPath && { outputPath: fitted.metadata.outputPath }),
+                },
+                output: fitted.output,
+              }
+              yield* plugin.trigger(
+                "tool.execute.after",
+                { tool: name, sessionID: gate.ctx.sessionID, callID: gate.ctx.callID, args: gate.args },
+                output,
+              )
+              if (opts.abortSignal?.aborted) yield* input.processor.completeToolCall(opts.toolCallId, output)
+              return output
+            }),
+          )
+        },
+      })
+
+    tools[MCP_RESOURCE_TOOLS.list] = listTool(
+      MCP_RESOURCE_TOOLS.list,
+      "Lists resources provided by connected MCP servers. Resources provide context such as files, database schemas, or application-specific information.",
+      "resources",
+      () => mcp.resources(),
+      formatMcpResource,
+    )
+    tools[MCP_RESOURCE_TOOLS.listTemplates] = listTool(
+      MCP_RESOURCE_TOOLS.listTemplates,
+      "Lists resource templates provided by connected MCP servers. Resource templates are parameterized resources that can be read after filling in their URI template.",
+      "resourceTemplates",
+      () => mcp.resourceTemplates(),
+      formatMcpResourceTemplate,
+    )
+
+    tools[MCP_RESOURCE_TOOLS.read] = tool({
+      description:
+        "Read a specific resource from an MCP server using the server name and resource URI. The URI is an MCP identifier and does not need to be a file URL.",
+      inputSchema: jsonSchema(
+        ProviderTransform.schema(input.model, {
+          type: "object",
+          properties: {
+            server: { type: "string", description: "MCP server name exactly as returned by list_mcp_resources." },
+            uri: {
+              type: "string",
+              description: "Resource URI to read. Use the exact URI string returned by list_mcp_resources.",
+            },
+          },
+          required: ["server", "uri"],
+          additionalProperties: false,
+        }),
+      ),
+      execute(args: unknown, opts: ToolExecutionOptions<Record<string, unknown>>) {
+        return run.promise(
+          Effect.gen(function* () {
+            const parsed = parseMcpResourceReadArgs(args)
+            const client = mcpClients[parsed.server]
+            if (!client) throw new Error(`MCP server "${parsed.server}" is not connected`)
+            if (!client.getServerCapabilities()?.resources)
+              throw new Error(`MCP server "${parsed.server}" does not support resources`)
+            const gate = yield* resourceGate(MCP_RESOURCE_TOOLS.read, toMcpRecord(args), opts, {
+              metadata: { server: parsed.server, uri: parsed.uri },
+              patterns: [`mcp:${parsed.server}:${parsed.uri}`],
+              always: [`mcp:${parsed.server}:*`],
+            })
+            if (gate.blocked) return gate.output
+            const content = yield* mcp.readResource(parsed.server, parsed.uri)
+            if (!content) throw new Error(`Failed to read MCP resource: ${parsed.server}/${parsed.uri}`)
+            const attachments: Omit<MessageV2.FilePart, "id" | "sessionID" | "messageID">[] = []
+            const formatted = formatMcpResourceContent(
+              parsed.server,
+              parsed.uri,
+              content,
+             (_mime, size) =>
+               size <= ImageTokens.MAX_ATTACHMENT_BASE64_BYTES &&
+               attachments.length < ImageTokens.MAX_ATTACHMENTS,
+              attachments,
+            )
+            const fitted = yield* truncate.result(
+              { output: formatted.text, attachments },
+              { model: gate.ctx.extra?.model as { providerID: string } | undefined },
+              input.agent,
+            )
+            const output = {
+              title: `MCP resource: ${parsed.uri}`,
+              metadata: {
+                server: parsed.server,
+                uri: parsed.uri,
+                contents: formatted.contents,
+                attachments: formatted.attachments,
+                truncated: fitted.metadata.truncated,
+                ...(fitted.metadata.outputPath && { outputPath: fitted.metadata.outputPath }),
+              },
+              output: fitted.output,
+              attachments: ((fitted.attachments ?? attachments) as typeof attachments).map((attachment) => ({
+                ...attachment,
+                id: PartID.ascending(),
+                sessionID: gate.ctx.sessionID,
+                messageID: input.processor.message.id,
+              })),
+            }
+            yield* plugin.trigger(
+              "tool.execute.after",
+              {
+                tool: MCP_RESOURCE_TOOLS.read,
+                sessionID: gate.ctx.sessionID,
+                callID: gate.ctx.callID,
+                args: gate.args,
+              },
+              output,
+            )
+            if (opts.abortSignal?.aborted) yield* input.processor.completeToolCall(opts.toolCallId, output)
+            return output
+          }),
+        )
+      },
+    })
   }
 
   for (const [key, item] of Object.entries(yield* mcp.tools())) {
@@ -370,5 +605,112 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
 
   return tools
 })
+
+function toMcpRecord(value: unknown): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {}
+  return value as Record<string, unknown>
+}
+
+function optionalMcpString(args: Record<string, unknown>, key: string) {
+  const value = args[key]
+  if (value === undefined || value === null || value === "") return undefined
+  if (typeof value !== "string") throw new Error(`${key} must be a string`)
+  return value
+}
+
+function requiredMcpString(args: Record<string, unknown>, key: string) {
+  const value = optionalMcpString(args, key)
+  if (value) return value
+  throw new Error(`${key} is required`)
+}
+
+function parseMcpResourceListArgs(value: unknown) {
+  return { server: optionalMcpString(toMcpRecord(value), "server") }
+}
+
+function parseMcpResourceReadArgs(value: unknown) {
+  const args = toMcpRecord(value)
+  return { server: requiredMcpString(args, "server"), uri: requiredMcpString(args, "uri") }
+}
+
+// 261006 Red client 字段对模型暴露时改名 server（与上游一致：模型 schema 里只有 server 概念）。
+function formatMcpResource(item: Record<string, unknown> & { client: string }) {
+  const result = Object.fromEntries(Object.entries(item).filter((entry) => entry[0] !== "client"))
+  return { ...result, server: item.client }
+}
+
+function formatMcpResourceTemplate(item: Record<string, unknown> & { client: string }) {
+  const result = Object.fromEntries(Object.entries(item).filter((entry) => entry[0] !== "client"))
+  return { ...result, server: item.client }
+}
+
+/**
+ * 261006 Red 把 readResource 结果格式化成模型可读文本 + 附件。blob 附件的类型看
+ * MCP_RESOURCE_ATTACHMENT_MIMES，大小/条数由 accept 回调判定（ImageTokens 闸门），
+ * 拒收不报错：文本里说明情况，模型可以换方式取（与 tool/read、MCP 工具循环同语义）。
+ */
+function formatMcpResourceContent(
+  server: string,
+  uri: string,
+  content: { contents: unknown },
+  accept: (mime: string, base64Bytes: number) => boolean,
+  attachments: { type: "file"; mime: string; url: string; filename?: string }[],
+) {
+  const items = (Array.isArray(content.contents) ? content.contents : [content.contents]).filter(
+    (item): item is Record<string, unknown> => typeof item === "object" && item !== null,
+  )
+  const text: string[] = []
+  let attached = 0
+  for (const item of items) {
+    const itemUri = typeof item.uri === "string" ? item.uri : uri
+    const mime = typeof item.mimeType === "string" ? item.mimeType : "application/octet-stream"
+    if (typeof item.text === "string") {
+      text.push(`Resource: ${itemUri}\nMIME: ${mime}\n${item.text}`)
+      continue
+    }
+    if (typeof item.blob === "string") {
+      const size = mcpBase64Size(item.blob)
+      if (!MCP_RESOURCE_ATTACHMENT_MIMES.has(mime)) {
+        text.push(
+          `[Binary MCP resource omitted: ${itemUri} (${mime}, ${mcpFormatBytes(size)}) is not a supported attachment type]`,
+        )
+        continue
+      }
+      if (!accept(mime, size)) {
+        text.push(
+          `[Binary MCP resource omitted: ${itemUri} (${mime}, ${mcpFormatBytes(size)}) exceeds the attachment size/count budget]`,
+        )
+        continue
+      }
+      text.push(`[Binary MCP resource attached: ${itemUri} (${mime})]`)
+      attached++
+      attachments.push({
+        type: "file",
+        mime,
+        url: `data:${mime};base64,${item.blob}`,
+        filename: itemUri,
+      })
+      continue
+    }
+    text.push(`[MCP resource content without text or blob: ${itemUri}]`)
+  }
+  return {
+    contents: items.length,
+    attachments: attached,
+    text: text.join("\n\n") || `MCP resource ${uri} from ${server} returned no contents.`,
+  }
+}
+
+function mcpBase64Size(value: string) {
+  const trimmed = value.replace(/\s/g, "")
+  const padding = trimmed.endsWith("==") ? 2 : trimmed.endsWith("=") ? 1 : 0
+  return Math.max(0, Math.floor((trimmed.length * 3) / 4) - padding)
+}
+
+function mcpFormatBytes(value: number) {
+  if (value < 1024) return `${value} B`
+  if (value < 1024 * 1024) return `${Math.ceil(value / 1024)} KB`
+  return `${Math.ceil(value / (1024 * 1024))} MB`
+}
 
 export * as SessionTools from "./tools"

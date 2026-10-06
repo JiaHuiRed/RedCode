@@ -251,25 +251,56 @@ function isOutputSchemaValidationError(error: Error) {
   )
 }
 
+// 261006 Red 移植上游 paginate：SDK 的 list* 只返回单页（默认页大小 ~100），工具/资源多的
+// server 会静默丢条目。防重复 cursor 循环 + 页数上限（防恶意 server 用重复 cursor 挂死）。
+const MAX_LIST_PAGES = 1_000
+
+async function paginate<T, R extends { nextCursor?: string }>(
+  list: (cursor?: string) => Promise<R>,
+  items: (result: R) => T[],
+) {
+  const result: T[] = []
+  const cursors = new Set<string>()
+  let cursor: string | undefined
+  for (let page = 0; page < MAX_LIST_PAGES; page++) {
+    const current = await list(cursor)
+    result.push(...items(current))
+    if (current.nextCursor === undefined) return result
+    if (cursors.has(current.nextCursor)) throw new Error(`MCP list returned duplicate cursor: ${current.nextCursor}`)
+    cursors.add(current.nextCursor)
+    cursor = current.nextCursor
+  }
+  throw new Error(`MCP list exceeded ${MAX_LIST_PAGES} pages`)
+}
+
 function listTools(key: string, client: MCPClient, timeout: number) {
   return Effect.tryPromise({
-    try: () => client.listTools(undefined, { timeout }),
+    try: () =>
+      paginate(
+        (cursor) => client.listTools(cursor === undefined ? undefined : { cursor }, { timeout }),
+        (r) => r.tools,
+      ),
     catch: (err) => (err instanceof Error ? err : new Error(String(err))),
-  }).pipe(
-    Effect.map((result) => result.tools),
-    Effect.catch((error) => {
+ }).pipe(
+   Effect.catch((error) => {
       if (!isOutputSchemaValidationError(error)) return Effect.fail(error)
 
       log.warn("failed to validate MCP tool output schemas, retrying without output schema validation", { key, error })
       return Effect.tryPromise({
         try: () =>
-          client.request({ method: "tools/list" }, TolerantListToolsResultSchema, {
-            timeout,
-          }),
+          paginate(
+            (cursor) =>
+              client.request(
+                { method: "tools/list", params: cursor === undefined ? {} : { cursor } },
+                TolerantListToolsResultSchema,
+                { timeout },
+              ),
+            (r) => r.tools,
+          ),
         catch: (err) => (err instanceof Error ? err : new Error(String(err))),
       }).pipe(
-        Effect.map((result) =>
-          result.tools.map((tool) => ({
+        Effect.map((tools) =>
+          tools.map((tool) => ({
             name: tool.name,
             description: tool.description,
             inputSchema: tool.inputSchema,
@@ -517,7 +548,10 @@ export const layer = Layer.effect(
     const bus = yield* Bus.Service
 
     type Transport =
-      StdioClientTransport | WindowsJobStdioClientTransport | StreamableHTTPClientTransport | SSEClientTransport
+      | StdioClientTransport
+      | WindowsJobStdioClientTransport
+      | StreamableHTTPClientTransport
+      | SSEClientTransport
 
     /**
      * Connect a client via the given transport with resource safety:
@@ -1195,7 +1229,8 @@ export const layer = Layer.effect(
             const timeout = entry?.timeout ?? defaultTimeout ?? DEFAULT_TIMEOUT
             // 260603 Red P1: 用 EffectBridge 避免依赖 AppRuntime
             const toolBridge = yield* EffectBridge.make()
-            const doReconnect = (signal?: AbortSignal) => abortableReconnect(toolBridge, reconnectServer(clientName), signal)
+            const doReconnect = (signal?: AbortSignal) =>
+              abortableReconnect(toolBridge, reconnectServer(clientName), signal)
             const disabled = entry?.type === "local" ? entry.disabledTools : undefined
             // 260807 Red: tools 白名单——只注入列出的工具，省略则全量（prefix 成本控制）
             const allow = entry?.tools
@@ -1281,12 +1316,28 @@ export const layer = Layer.effect(
 
     const prompts = Effect.fn("MCP.prompts")(function* () {
       const s = yield* InstanceState.get(state)
-      return yield* collectFromConnected(s, (c) => c.listPrompts().then((r) => r.prompts), "prompts")
+      return yield* collectFromConnected(
+        s,
+        (c) =>
+          paginate(
+            (cursor) => c.listPrompts(cursor === undefined ? undefined : { cursor }),
+            (r) => r.prompts,
+          ),
+        "prompts",
+      )
     })
 
     const resources = Effect.fn("MCP.resources")(function* () {
       const s = yield* InstanceState.get(state)
-      return yield* collectFromConnected(s, (c) => c.listResources().then((r) => r.resources), "resources")
+      return yield* collectFromConnected(
+        s,
+        (c) =>
+          paginate(
+            (cursor) => c.listResources(cursor === undefined ? undefined : { cursor }),
+            (r) => r.resources,
+          ),
+        "resources",
+      )
     })
 
     // 260624 Red 上游移植: MCP resource template listing
@@ -1294,7 +1345,11 @@ export const layer = Layer.effect(
       const s = yield* InstanceState.get(state)
       return yield* collectFromConnected(
         s,
-        (c) => c.listResourceTemplates().then((r) => r.resourceTemplates),
+        (c) =>
+          paginate(
+            (cursor) => c.listResourceTemplates(cursor === undefined ? undefined : { cursor }),
+            (r) => r.resourceTemplates,
+          ),
         "resourceTemplates",
       )
     })
