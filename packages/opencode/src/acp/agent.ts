@@ -14,6 +14,8 @@ import {
   type ModeOption,
   type ModelOption,
 } from "./model-options"
+import { completedToolContent, completedToolRawOutput } from "./content"
+import { getContextLimit, sendUsageUpdate } from "./usage"
 import {
   RequestError,
   type Agent as ACPAgent,
@@ -72,86 +74,6 @@ import { addCost, emptyCostBucket, singleCurrencyAmount } from "@/session/cost-b
 const decodeTodos = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Array(Todo.Info)))
 
 const log = Log.create({ service: "acp-agent" })
-
-async function getContextLimit(
-  sdk: OpencodeClient,
-  providerID: ProviderID,
-  modelID: ModelID,
-  directory: string,
-): Promise<number | null> {
-  const providers = await sdk.config
-    .providers({ directory })
-    .then((x) => x.data?.providers ?? [])
-    .catch((error) => {
-      log.error("failed to get providers for context limit", { error })
-      return []
-    })
-
-  const provider = providers.find((p) => p.id === providerID)
-  const model = provider?.models[modelID]
-  return model?.limit.context ?? null
-}
-
-async function sendUsageUpdate(
-  connection: AgentSideConnection,
-  sdk: OpencodeClient,
-  sessionID: string,
-  directory: string,
-): Promise<void> {
-  const messages = await sdk.session
-    .messages({ sessionID, directory }, { throwOnError: true })
-    .then((x) => x.data)
-    .catch((error) => {
-      log.error("failed to fetch messages for usage update", { error })
-      return undefined
-    })
-
-  if (!messages) return
-
-  const assistantMessages = messages.filter(
-    (m): m is { info: AssistantMessage; parts: SessionMessageResponse["parts"] } => m.info.role === "assistant",
-  )
-
-  const lastAssistant = assistantMessages[assistantMessages.length - 1]
-  if (!lastAssistant) return
-
-  const msg = lastAssistant.info
-  if (!msg.providerID || !msg.modelID) return
-  const size = await getContextLimit(sdk, ProviderID.make(msg.providerID), ModelID.make(msg.modelID), directory)
-
-  if (!size) {
-    // Cannot calculate usage without known context size
-    return
-  }
-
-  const used = msg.tokens.input + (msg.tokens.cache?.read ?? 0)
-  // 260930 Red 币种只在 step-finish part 上（part 是记账权威源，与投影器/迁移同界）。
-  // ACP usage_update 的 cost 只收单一币种（协议字段可选）：混合或全零时省略 cost
-  // ——宁可不给也不伪装 69.21CNY + 0.30USD = 69.51USD。
-  const bucket = emptyCostBucket()
-  for (const m of assistantMessages) {
-    for (const part of m.parts) {
-      if (part.type === "step-finish") {
-        addCost(bucket, part.currency, part.cost)
-      }
-    }
-  }
-  const cost = singleCurrencyAmount(bucket)
-
-  await connection
-    .sessionUpdate({
-      sessionId: sessionID,
-      update: {
-        sessionUpdate: "usage_update",
-        used,
-        size,
-        ...(cost ? { cost: { amount: cost.amount, currency: cost.currency } } : {}),
-      },
-    })
-    .catch((error) => {
-      log.error("failed to send usage update", { error })
-    })
-}
 
 export function init({ sdk: _sdk }: { sdk: OpencodeClient }) {
   return {
@@ -1569,70 +1491,6 @@ export class Agent implements ACPAgent {
       this.sessionManager.setMode(sessionId, lastUser.agent)
     }
   }
-}
-
-function completedToolContent(part: ToolPart, kind: ToolKind): ToolCallContent[] {
-  if (part.state.status !== "completed") return []
-
-  const content: ToolCallContent[] = [
-    {
-      type: "content",
-      content: {
-        type: "text",
-        text: part.state.output,
-      },
-    },
-  ]
-
-  if (kind === "edit") {
-    const input = part.state.input
-    const filePath = typeof input["filePath"] === "string" ? input["filePath"] : ""
-    const oldText = typeof input["oldString"] === "string" ? input["oldString"] : ""
-    const newText =
-      typeof input["newString"] === "string"
-        ? input["newString"]
-        : typeof input["content"] === "string"
-          ? input["content"]
-          : ""
-    content.push({
-      type: "diff",
-      path: filePath,
-      oldText,
-      newText,
-    })
-  }
-
-  content.push(...imageContents(part.state.attachments ?? []))
-  return content
-}
-
-function completedToolRawOutput(part: ToolPart) {
-  if (part.state.status !== "completed") return {}
-  return {
-    output: part.state.output,
-    metadata: part.state.metadata,
-    ...(part.state.attachments?.length ? { attachments: part.state.attachments } : {}),
-  }
-}
-
-function imageContents(attachments: Array<{ mime: string; url: string }>): ToolCallContent[] {
-  return attachments.flatMap((attachment): ToolCallContent[] => {
-    const match = attachment.url.match(/^data:([^;,]+)(?:;[^,]*)*;base64,(.*)$/)
-    const mime = match?.[1] ?? attachment.mime
-    if (!mime.startsWith("image/")) return []
-    const data = match?.[2]
-    if (data === undefined) return []
-    return [
-      {
-        type: "content" as const,
-        content: {
-          type: "image" as const,
-          mimeType: mime,
-          data,
-        },
-      },
-    ]
-  })
 }
 
 async function defaultModel(config: ACPConfig, cwd?: string): Promise<{ providerID: ProviderID; modelID: ModelID }> {
