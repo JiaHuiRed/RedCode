@@ -110,6 +110,7 @@
     width: 6px;
     height: 6px;
     border-radius: 999px;
+    corner-shape: round;
     background: var(--text-weaker);
   }
 

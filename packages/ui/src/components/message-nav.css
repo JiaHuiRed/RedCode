@@ -135,6 +135,7 @@
 
   &::-webkit-scrollbar-thumb {
     border-radius: 999px;
+    corner-shape: round;
     background: color-mix(in srgb, var(--border-weak-base) 70%, transparent);
   }
 
