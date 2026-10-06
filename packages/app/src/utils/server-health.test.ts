@@ -82,7 +82,11 @@ describe("checkServerHealth", () => {
       signal: abort.signal,
     })
 
-    expect(signal).toBe(abort.signal)
+    expect(signal?.aborted).toBe(false)
+    const reason = new Error("health check cancelled")
+    abort.abort(reason)
+    expect(signal?.aborted).toBe(true)
+    expect(signal?.reason).toBe(reason)
   })
 
   test("retries transient failures and eventually succeeds", async () => {

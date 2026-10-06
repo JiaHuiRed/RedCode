@@ -11,11 +11,12 @@ function transport(handle: (request: Request) => Promise<Response>) {
   )
 }
 
-function client(mode: "default" | "custom", fetcher: typeof fetch) {
+function client(mode: "default" | "custom", fetcher: typeof fetch, signal?: AbortSignal) {
   if (mode === "default") spyOn(globalThis, "fetch").mockImplementation(fetcher)
   return createOpencodeClient({
     baseUrl: "http://localhost",
     fetch: mode === "custom" ? fetcher : undefined,
+    signal,
     throwOnError: true,
   })
 }
@@ -99,6 +100,57 @@ describe.each(["default", "custom"] as const)("%s fetch deadline", (mode) => {
       caller.abort()
       deadline.abort()
       await result
+    }
+  })
+
+  test("retains configured caller cancellation", async () => {
+    spyOn(AbortSignal, "timeout").mockReturnValue(new AbortController().signal)
+    const caller = new AbortController()
+    const requests: Request[] = []
+    const sdk = client(
+      mode,
+      transport(async (request) => {
+        requests.push(request)
+        return Response.json([])
+      }),
+      caller.signal,
+    )
+
+    await sdk.file.list({ path: "" })
+    caller.abort(new Error("configured caller stopped"))
+    expect(requests[0].signal.aborted).toBe(true)
+    expect(requests[0].signal.reason).toBe(caller.signal.reason)
+  })
+
+  test("uses a timer deadline when native timeout is unavailable", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(AbortSignal, "timeout")
+    const original = globalThis.setTimeout
+    const deadlines: Array<() => void> = []
+    spyOn(globalThis, "setTimeout").mockImplementation((handler, ms, ...args) => {
+      if (ms !== 60_000) return original(handler, ms, ...args)
+      deadlines.push(() => handler(...args))
+      return 0 as unknown as ReturnType<typeof setTimeout>
+    })
+    Object.defineProperty(AbortSignal, "timeout", { configurable: true, value: undefined })
+    try {
+      const requests: Request[] = []
+      const sdk = client(
+        mode,
+        transport(async (request) => {
+          requests.push(request)
+          return Response.json([])
+        }),
+      )
+
+      await sdk.file.list({ path: "" })
+      expect(deadlines).toHaveLength(1)
+      expect(requests[0].signal.aborted).toBe(false)
+      deadlines[0]()
+      expect(requests[0].signal.aborted).toBe(true)
+      expect(requests[0].signal.reason.name).toBe("TimeoutError")
+    } finally {
+      if (descriptor) Object.defineProperty(AbortSignal, "timeout", descriptor)
+      else Reflect.deleteProperty(AbortSignal, "timeout")
     }
   })
 
