@@ -255,14 +255,24 @@ function isOutputSchemaValidationError(error: Error) {
 // server 会静默丢条目。防重复 cursor 循环 + 页数上限（防恶意 server 用重复 cursor 挂死）。
 const MAX_LIST_PAGES = 1_000
 
-async function paginate<T, R extends { nextCursor?: string }>(
+// 261006 Red 整次分页的墙钟上限。页数上限管"页数多"、per-page timeout（随 MCP 配置，
+// 见 collectFromConnected）管"单页挂死"，这条管"每页都慢"：1000 页 × 30s 的理论上限
+// 仍是 8 小时，模型侧一次列资源/工具等不起。取 60s：健康列表通常 <2s，正好覆盖两页
+// 慢请求的合法情形；被它挡下的是本来也产不出可用答案的列表。
+const MAX_LIST_DEADLINE = 60_000
+
+// 261006 Red 导出仅供测试直调真实现（阈值可注入，见 test/mcp/paginate.test.ts）。
+export async function paginate<T, R extends { nextCursor?: string }>(
   list: (cursor?: string) => Promise<R>,
   items: (result: R) => T[],
+  now: () => number = Date.now,
 ) {
+  const deadline = now() + MAX_LIST_DEADLINE
   const result: T[] = []
   const cursors = new Set<string>()
   let cursor: string | undefined
   for (let page = 0; page < MAX_LIST_PAGES; page++) {
+    if (now() >= deadline) throw new Error(`MCP list exceeded ${MAX_LIST_DEADLINE}ms deadline`)
     const current = await list(cursor)
     result.push(...items(current))
     if (current.nextCursor === undefined) return result
@@ -1303,7 +1313,7 @@ export const layer = Layer.effect(
 
     function collectFromConnected<T extends { name: string }>(
       s: State,
-      listFn: (c: Client) => Promise<T[]>,
+      listFn: (c: Client, timeout: number) => Promise<T[]>,
       label: string,
       only?: string,
     ) {
@@ -1311,23 +1321,38 @@ export const layer = Layer.effect(
       // server 就意味着只想要它的数据，此前无论指不指定都并发扇出全部 connected
       // server 再在调用方过滤——无关 server 慢/挂/返回异常 cursor 会拖垮本次列出，
       // 且网络访问面超出 permission 申请的 mcp:<server>:* 范围。
-      return Effect.forEach(
-        Object.entries(s.clients).filter(
-          ([name]) => (only === undefined || name === only) && s.status[name]?.status === "connected",
-        ),
-        ([clientName, client]) =>
-          fetchFromClient(clientName, client, listFn, label).pipe(Effect.map((items) => Object.entries(items ?? {}))),
-        { concurrency: "unbounded" },
-      ).pipe(Effect.map((results) => Object.fromEntries<T & { client: string }>(results.flat())))
+      return Effect.gen(function* () {
+        // 261006 Red per-page 超时按 server 配置取（与 withClient 同优先级）：分页链此前
+        // 一个超时都没有，某一页挂起能让整个 list* 永久卡住。
+        const cfg = yield* cfgSvc.get()
+        const timeoutFor = (clientName: string) => {
+          const configured = cfg.mcp?.[clientName]
+          return (
+            (configured && isMcpConfigured(configured) ? configured.timeout : undefined) ??
+            cfg.experimental?.mcp_timeout ??
+            DEFAULT_TIMEOUT
+          )
+        }
+        return yield* Effect.forEach(
+          Object.entries(s.clients).filter(
+            ([name]) => (only === undefined || name === only) && s.status[name]?.status === "connected",
+          ),
+          ([clientName, client]) =>
+            fetchFromClient(clientName, client, (c) => listFn(c, timeoutFor(clientName)), label).pipe(
+              Effect.map((items) => Object.entries(items ?? {})),
+            ),
+          { concurrency: "unbounded" },
+        ).pipe(Effect.map((results) => Object.fromEntries<T & { client: string }>(results.flat())))
+      })
     }
 
     const prompts = Effect.fn("MCP.prompts")(function* () {
       const s = yield* InstanceState.get(state)
       return yield* collectFromConnected(
         s,
-        (c) =>
+        (c, timeout) =>
           paginate(
-            (cursor) => c.listPrompts(cursor === undefined ? undefined : { cursor }),
+            (cursor) => c.listPrompts(cursor === undefined ? undefined : { cursor }, { timeout }),
             (r) => r.prompts,
           ),
         "prompts",
@@ -1338,9 +1363,9 @@ export const layer = Layer.effect(
       const s = yield* InstanceState.get(state)
       return yield* collectFromConnected(
         s,
-        (c) =>
+        (c, timeout) =>
           paginate(
-            (cursor) => c.listResources(cursor === undefined ? undefined : { cursor }),
+            (cursor) => c.listResources(cursor === undefined ? undefined : { cursor }, { timeout }),
             (r) => r.resources,
           ),
         "resources",
@@ -1353,9 +1378,9 @@ export const layer = Layer.effect(
       const s = yield* InstanceState.get(state)
       return yield* collectFromConnected(
         s,
-        (c) =>
+        (c, timeout) =>
           paginate(
-            (cursor) => c.listResourceTemplates(cursor === undefined ? undefined : { cursor }),
+            (cursor) => c.listResourceTemplates(cursor === undefined ? undefined : { cursor }, { timeout }),
             (r) => r.resourceTemplates,
           ),
         "resourceTemplates",
