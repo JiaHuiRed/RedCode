@@ -44,8 +44,24 @@ function rewrite(request: Request, values: { directory?: string; workspace?: str
   return next
 }
 
+// 261006 Red 与 app 侧 server-health 的 timeoutSignal 同款兜底：AbortSignal.timeout
+// 不可用时退化为 controller+setTimeout，不因运行时缺位直接炸。
+function requestTimeoutSignal(ms: number) {
+  const timeout = (AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal }).timeout
+  if (typeof timeout === "function") {
+    try {
+      // 防 polyfill 对同款调用行为不一致；退化兜底语义不变
+      return timeout.call(AbortSignal, ms)
+    } catch {}
+  }
+  const controller = new AbortController()
+  setTimeout(() => controller.abort(), ms)
+  return controller.signal
+}
+
 export function createOpencodeClient(config?: Config & { directory?: string; experimental_workspaceID?: string }) {
   const transport = config?.fetch ?? globalThis.fetch
+  const clientSignal = config?.signal
   config = {
     ...config,
     fetch: Object.assign((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
@@ -54,8 +70,12 @@ export function createOpencodeClient(config?: Config & { directory?: string; exp
       if (new URL(request.url).pathname.endsWith("/event")) {
         return transport(Object.assign(request, { timeout: false }))
       }
-      // 261002 Red 桌面自定义 fetch 同样套用既有超时兜底，合并 signal 保留调用方主动取消。
-      return transport(new Request(request, { signal: AbortSignal.any([request.signal, AbortSignal.timeout(60_000)]) }))
+      // 261006 Red 调用方经 config.signal 显式给了 signal：身份透传，超时归调用方管
+      // （server-health 30s、SSE 不设，都是显式生命周期）；只有无人管生命周期的请求
+      // 才套 60s 兜底。此前 261002 无条件 AbortSignal.any 合成新 signal，丢调用方身份，
+      // 且裸调 AbortSignal.timeout 在缺位运行时直接 TypeError。
+      if (clientSignal && request.signal === clientSignal) return transport(request)
+      return transport(new Request(request, { signal: requestTimeoutSignal(60_000) }))
     }, transport),
   }
 
