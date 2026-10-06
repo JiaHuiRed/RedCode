@@ -21,7 +21,10 @@ export default defineMain({
     "@storybook/addon-a11y",
     "@storybook/addon-vitest",
   ],
-  stories: ["../../ui/src/**/*.stories.@(js|jsx|mjs|ts|tsx)"],
+  stories: [
+    "../../ui/src/**/*.stories.@(js|jsx|mjs|ts|tsx)",
+    "../../app/src/**/*.stories.@(js|jsx|mjs|ts|tsx)",
+  ],
   async viteFinal(config) {
     const { mergeConfig, searchForWorkspaceRoot } = await import("vite")
     return mergeConfig(config, {
@@ -36,6 +39,8 @@ export default defineMain({
           { find: /^@\/context\/layout$/, replacement: path.resolve(mocks, "app/context/layout.ts") },
           { find: /^@\/context\/sdk$/, replacement: path.resolve(mocks, "app/context/sdk.ts") },
           { find: /^@\/context\/sync$/, replacement: path.resolve(mocks, "app/context/sync.ts") },
+          { find: /^@\/context\/server-sync$/, replacement: path.resolve(mocks, "app/context/server-sync.ts") },
+          { find: /^@\/context\/server-sdk$/, replacement: path.resolve(mocks, "app/context/server-sdk.ts") },
           { find: /^@\/context\/comments$/, replacement: path.resolve(mocks, "app/context/comments.ts") },
           { find: /^@\/context\/command$/, replacement: path.resolve(mocks, "app/context/command.ts") },
           { find: /^@\/context\/permission$/, replacement: path.resolve(mocks, "app/context/permission.ts") },
