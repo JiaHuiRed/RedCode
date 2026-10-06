@@ -8,6 +8,13 @@
 
 ---
 
+### [0.12.0] - 2026-10-06
+
+- **opencode 上游反向吸收批次（261006）**：对上游 1.18.34（5 月 fork 以来 3797 commits）做三路调研后按「先验现状再动手」逐项落地——已落地见下；确认早已存在/不落后而跳过的：perf 假设循环文档（`perf/test-suite.md` 36 条）、markdown 高亮 worker 池（`highlight-worker/pool` + `worker-pool`）、TS 主题系统（`theme/resolve.ts` 502 行 vs 上游 v2 139 行，且 `--v2-agent-*` 角色色暂无消费者）；大项（ACP 全量模块化、prompt-input 拆分、terminal-panel-v2、pierre 缺失件、httpapi-codegen、LayerNode、recorded-test、sdk-next）评估结论记录于 `.redcode/idea-backlog.md` 待后续批次。
+- **MCP resource tools**（`packages/opencode/src/session/tools.ts`，模型可见）：新增 `list_mcp_resources` / `list_mcp_resource_templates` / `read_mcp_resource` 三个工具——resources 是 MCP 协议里 tool calling 之外的另一半数据通道；底层 `resources()/resourceTemplates()/readResource()` 沿用既有实现（260610 超时、260624 listing），本批补工具装配。执行闸门与 MCP 工具循环一致（`tool.execute.before` 改写、`tool.use.pre` 钩子、explore capability、`read` permission 按 `mcp:{server}:*` patterns）；blob 附件类型白名单 pdf/gif/jpeg/png/webp，大小/条数走 ImageTokens 同款闸门（5MB/32 条，比上游 10MB 更严），拒收不报错、输出里说明。**模型可见四问**：① 模型看到 3 个新工具描述与 JSON schema，仅在存在自报 resources capability 的已连 MCP server 时注入；② 固定前缀 +约 250 tokens（条件性，无此类 server 时零增量）；③ 改变的是会话 tools 段（system 前缀之后），对该 session 从注入点起 KV cache 作废，无 server 会话完全不动；④ 工具描述为固定文案无动态拼接，工具输出一律过 `truncate.result` 限额。
+- **MCP 列表分页**（`packages/opencode/src/mcp/index.ts`）：`listTools`/`listPrompts`/`listResources`/`listResourceTemplates` 此前只拉单页（SDK 默认页大小 ~100），工具/资源多的 server 会静默丢条目；移植上游 `paginate`（cursor 跟随 + 重复 cursor 检测 + 1000 页上限），tools 的 tolerant 重试路径同步分页。健康检查探活路径刻意保持单页。
+- **ACP 纯函数模块拆分（第一刀）**（`packages/opencode/src/acp/`）：从 1984 行 `agent.ts` 单体拆出 `tool-mapping.ts`（工具名 → ACP ToolKind/Location 映射，上游 `acp/tool.ts` 对应物）与 `model-options.ts`（模型/variant 解析与 SessionConfigOption 构造，上游 `acp/config-option.ts` 对应物，含 `ModeOption`/`ModelOption` 类型）；`init()` 主体未动，行为零变化，typecheck + acp 套件 13 条通过。
+- **storybook 存量故障修复 + 扫描扩展**（`packages/storybook/`）：storybook dev 此前必炸（`CriticalPresetLoadError: reading 'Preserve'`，core 10.4.6 与 framework 10.6.0 被 `^` 区间解析成错配组合）——按上游 lock 实装组合钉 `storybook@10.4.1` + `storybook-solidjs-vite@10.1.1` 后恢复；stories 扫描扩到 `app/src/**`（铺路，当前零 stories）；新增 `server-sync`/`server-sdk` mocks 对齐本仓实际接口（`global-sync` 裸路径 alias 不移植——本仓用子路径 import，上游那条无意义）。
 ### [0.11.18] - 2026-10-03
 
 #### 变更
