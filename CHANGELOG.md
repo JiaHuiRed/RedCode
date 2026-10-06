@@ -37,6 +37,8 @@
 
 - **e2e mock 补齐首页用量接口**（`packages/app/e2e/utils/mock-server.ts`）：`/session/usage` 原先落入通用 session 匹配并返回 `{}`，首页读取 `tokens.cacheRead` 时崩溃，使已出现的项目行消失、冒烟点击超时。补符合 SDK `SessionUsageResponse` 的空统计，不改生产页面或服务端行为。
 
+- **e2e mock 补齐会话上下文快照**（`packages/app/e2e/utils/mock-server.ts`）：`context-inspect` 原先返回 `{}`，会话上下文页读取 `system.tokens` 时崩溃。补符合 SDK 响应类型的零 token 快照，保留页面的空快照分支和时间线断言。app 与 mock typecheck 通过；本机已安装 Edge 执行完整冒烟 1/1 通过（41s，含历史分页与 331 个 part 断言），GitHub Chromium 结果另行验证。
+
 ### [0.12.0] - 2026-10-06
 
 - **opencode 上游反向吸收批次（261006）**：对上游 1.18.34（5 月 fork 以来 3797 commits）做三路调研后按「先验现状再动手」逐项落地——已落地见下；确认早已存在/不落后而跳过的：perf 假设循环文档（`perf/test-suite.md` 36 条）、markdown 高亮 worker 池（`highlight-worker/pool` + `worker-pool`）、TS 主题系统（`theme/resolve.ts` 502 行 vs 上游 v2 139 行，且 `--v2-agent-*` 角色色暂无消费者）；大项（ACP 全量模块化、prompt-input 拆分、terminal-panel-v2、pierre 缺失件、httpapi-codegen、LayerNode、recorded-test、sdk-next）评估结论记录于 `.redcode/idea-backlog.md` 待后续批次。

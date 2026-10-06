@@ -1,5 +1,5 @@
 import type { Page, Route } from "@playwright/test"
-import type { SessionUsageResponse } from "@redcode-ai/sdk/v2/client"
+import type { SessionContextInspectResponse, SessionUsageResponse } from "@redcode-ai/sdk/v2/client"
 
 const emptyList = new Set([
   "/skill",
@@ -69,6 +69,18 @@ export async function mockRedCodeServer(page: Page, config: MockServerConfig) {
     }
 
     if (/^\/session\/[^/]+\/(children|todo|diff)$/.test(path)) return json(route, [])
+
+    if (/^\/session\/[^/]+\/context-inspect$/.test(path)) {
+      return json(route, {
+        providerID: "",
+        modelID: "",
+        time: 0,
+        total: 0,
+        system: { tokens: 0, confidence: "low", segments: [] },
+        tools: { count: 0, tokens: 0, confidence: "low", top: [] },
+        messages: { count: 0, tokens: 0, confidence: "low", byRole: [] },
+      } satisfies SessionContextInspectResponse)
+    }
 
     const messagesMatch = path.match(/^\/session\/([^/]+)\/message$/)
     if (messagesMatch) {
