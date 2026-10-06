@@ -33,6 +33,8 @@
 
 - **遥测测试对齐内置属性名**（`packages/core/test/effect/observability.test.ts`）：将旧 `redcode.client` 断言与冲突输入同步改为实际的 `RedCode.client`，继续验证无效环境属性整组丢弃，以及环境变量不能覆盖内置 client 和实例 ID。实现行为未改；定向测试 3/3 通过。
 
+- **Cloudflare User-Agent 测试对齐品牌大小写**（`packages/core/test/plugin/provider-cloudflare-{ai-gateway,workers-ai}.test.ts`）：两处测试仍匹配小写 `redcode/`，实现实际发送 `RedCode/`；修正匹配文本，保留认证、缓存、metadata、自定义 header 与 SDK 后缀验证，生产实现未改。
+
 ### [0.12.0] - 2026-10-06
 
 - **opencode 上游反向吸收批次（261006）**：对上游 1.18.34（5 月 fork 以来 3797 commits）做三路调研后按「先验现状再动手」逐项落地——已落地见下；确认早已存在/不落后而跳过的：perf 假设循环文档（`perf/test-suite.md` 36 条）、markdown 高亮 worker 池（`highlight-worker/pool` + `worker-pool`）、TS 主题系统（`theme/resolve.ts` 502 行 vs 上游 v2 139 行，且 `--v2-agent-*` 角色色暂无消费者）；大项（ACP 全量模块化、prompt-input 拆分、terminal-panel-v2、pierre 缺失件、httpapi-codegen、LayerNode、recorded-test、sdk-next）评估结论记录于 `.redcode/idea-backlog.md` 待后续批次。

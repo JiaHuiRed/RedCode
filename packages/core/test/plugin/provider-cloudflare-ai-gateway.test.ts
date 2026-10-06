@@ -129,7 +129,7 @@ describe("CloudflareAIGatewayPlugin", () => {
             skipCache: true,
             collectLog: false,
             headers: {
-              "User-Agent": expect.stringContaining("redcode/"),
+              "User-Agent": expect.stringContaining("RedCode/"),
             },
           },
         })
