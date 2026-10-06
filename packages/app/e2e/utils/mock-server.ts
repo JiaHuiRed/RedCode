@@ -1,4 +1,5 @@
 import type { Page, Route } from "@playwright/test"
+import type { SessionUsageResponse } from "@redcode-ai/sdk/v2/client"
 
 const emptyList = new Set([
   "/skill",
@@ -35,6 +36,19 @@ export async function mockRedCodeServer(page: Page, config: MockServerConfig) {
     "/agent": [{ name: "build", mode: "primary" }],
     "/vcs": { branch: "main", default_branch: "main" },
     "/session": config.sessions,
+    "/session/usage": {
+      range: "all",
+      sessions: 0,
+      messages: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+      cost: 0,
+      activeDays: 0,
+      currentStreak: 0,
+      longestStreak: 0,
+      daily: [],
+      models: [],
+      dailyByModel: [],
+    } satisfies SessionUsageResponse,
   }
 
   await page.route("**/*", async (route) => {
