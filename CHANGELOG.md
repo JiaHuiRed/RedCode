@@ -8,6 +8,11 @@
 
 ---
 
+### [未发布]
+
+- **桌宠赤 V0.2：台词池与闲时动作**（`packages/app/src/pet/{pet-lines.ts,pet-layer.tsx}`、`src/context/settings.tsx`）：权限、提问和终态按姿态选取台词并持续展示；工作台词受概率和冷却控制，同姿态心跳不重新抽词。连续闲置后概率触发咖啡小憩或碎碎念，接入已有 `02-idle-coffee.png`；工作或用户交互立即打断，关闭后清理 tick，重开恢复必要提醒。表现层调度沿用一个 1s tick，动作与气泡在到期后的下一个 tick 收回；`settings.v3` 的 `general.petBehavior` 可调概率与时长，加载和写入均校验数值。只改 GUI 本地展示，不向引擎或模型添加消息；本批未接 plan/review 两张姿态或独立透明窗口。决策：`docs/notes/implemented/feature/2026-10-06-pet-v02-presentation.md`。
+- **子代理 doom_loop 静态 deny 不再终止整场回复**（`packages/opencode/src/session/processor.ts`，`111ff7ad`）：静态拒绝落为当前工具 part 的错误，让模型继续处理；用户主动拒绝或纠正仍保留中断语义。此修复未阻止 SDK 执行冗余工具调用，其后结果不会覆盖已报错的 part。
+
 ### [0.12.0] - 2026-10-06
 
 - **opencode 上游反向吸收批次（261006）**：对上游 1.18.34（5 月 fork 以来 3797 commits）做三路调研后按「先验现状再动手」逐项落地——已落地见下；确认早已存在/不落后而跳过的：perf 假设循环文档（`perf/test-suite.md` 36 条）、markdown 高亮 worker 池（`highlight-worker/pool` + `worker-pool`）、TS 主题系统（`theme/resolve.ts` 502 行 vs 上游 v2 139 行，且 `--v2-agent-*` 角色色暂无消费者）；大项（ACP 全量模块化、prompt-input 拆分、terminal-panel-v2、pierre 缺失件、httpapi-codegen、LayerNode、recorded-test、sdk-next）评估结论记录于 `.redcode/idea-backlog.md` 待后续批次。

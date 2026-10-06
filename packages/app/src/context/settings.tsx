@@ -2,6 +2,7 @@ import { createStore, reconcile } from "solid-js/store"
 import { createEffect, createMemo, untrack } from "solid-js"
 import { createSimpleContext } from "@redcode-ai/ui/context"
 import { Persist, persisted } from "@/utils/persist"
+import { resolvePetBehavior, type PetBehavior } from "@/pet/pet-lines"
 
 export interface NotificationSettings {
   agent: boolean
@@ -39,7 +40,8 @@ export interface Settings {
    showSessionProgressBar: boolean
    // 260929 Red 桌宠总开关：此前只有 pet-layer 自己的 Persist.global("pet") 键，× 写 false
    // 后整层消失且全仓没有第二个入口能开回来（第三方审计项）。挪进 settings.v3 后设置页可管。
-   petEnabled: boolean
+    petEnabled: boolean
+    petBehavior: PetBehavior
   }
   updates: {
     startup: boolean
@@ -170,7 +172,8 @@ const defaultSettings: Settings = {
     shellToolPartsExpanded: false,
     editToolPartsExpanded: false,
    showSessionProgressBar: true,
-   petEnabled: true,
+    petEnabled: true,
+    petBehavior: resolvePetBehavior(),
   },
   updates: {
     startup: true,
@@ -317,10 +320,15 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         setShowSessionProgressBar(value: boolean) {
           setStore("general", "showSessionProgressBar", value)
         },
-       petEnabled: withFallback(() => store.general?.petEnabled, defaultSettings.general.petEnabled),
-       setPetEnabled(value: boolean) {
-         setStore("general", "petEnabled", value)
-       },
+        petEnabled: withFallback(() => store.general?.petEnabled, defaultSettings.general.petEnabled),
+        setPetEnabled(value: boolean) {
+          setStore("general", "petEnabled", value)
+        },
+        // 261006 Red 沿用 settings.v3 落盘；旧配置缺字段时显式补默认，误配置必须报错。
+        petBehavior: createMemo(() => resolvePetBehavior(store.general?.petBehavior)),
+        setPetBehavior(value: Partial<PetBehavior>) {
+          setStore("general", "petBehavior", resolvePetBehavior({ ...store.general?.petBehavior, ...value }))
+        },
       },
       updates: {
         startup: withFallback(() => store.updates?.startup, defaultSettings.updates.startup),
