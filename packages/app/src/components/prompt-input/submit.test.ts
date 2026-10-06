@@ -77,13 +77,6 @@ beforeAll(async () => {
     useLocation: () => ({ pathname: "/", search: "", hash: "" }),
   }))
 
-  mock.module("@redcode-ai/sdk/v2/client", () => ({
-    createOpencodeClient: (input: { directory: string }) => {
-      createdClients.push(input.directory)
-      return clientFor(input.directory)
-    },
-  }))
-
   mock.module("@redcode-ai/ui/toast", () => ({
     showToast: (options: { title?: string } = {}) => {
       toasts.push(options.title ?? "")

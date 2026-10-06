@@ -40,6 +40,8 @@
 
 - **e2e mock 补齐会话上下文快照**（`packages/app/e2e/utils/mock-server.ts`）：`context-inspect` 原先返回 `{}`，会话上下文页读取 `system.tokens` 时崩溃。补符合 SDK 响应类型的零 token 快照，保留页面的空快照分支和时间线断言。app 与 mock typecheck 通过；本机已安装 Edge 执行完整冒烟 1/1 通过（41s，含历史分页与 331 个 part 断言），GitHub Chromium 结果另行验证。
 
+- **移除提交框单测的过时全局 SDK mock**（`packages/app/src/components/prompt-input/submit.test.ts`）：提交实现已通过 `useSDK().createClient()` 获取客户端，旧的 SDK 工厂 mock 不再被本测试使用，却在同进程覆盖 bootstrap 的真实客户端，导致 `config.get` 缺失、agents 为空与并发测试超时。移除该 mock，保留提交框自身的 context fixtures 与原有断言；生产实现未改。
+
 ### [0.12.0] - 2026-10-06
 
 - **opencode 上游反向吸收批次（261006）**：对上游 1.18.34（5 月 fork 以来 3797 commits）做三路调研后按「先验现状再动手」逐项落地——已落地见下；确认早已存在/不落后而跳过的：perf 假设循环文档（`perf/test-suite.md` 36 条）、markdown 高亮 worker 池（`highlight-worker/pool` + `worker-pool`）、TS 主题系统（`theme/resolve.ts` 502 行 vs 上游 v2 139 行，且 `--v2-agent-*` 角色色暂无消费者）；大项（ACP 全量模块化、prompt-input 拆分、terminal-panel-v2、pierre 缺失件、httpapi-codegen、LayerNode、recorded-test、sdk-next）评估结论记录于 `.redcode/idea-backlog.md` 待后续批次。
