@@ -17,6 +17,8 @@
 
 - **request-evidence 增 whole-wire 顺序证据**（`packages/opencode/src/session/request-evidence.ts`）：分 section 的 fingerprint 回答「哪一段 append/rewind/rewrite」，但 `project()` 把 system 角色消息分家进独立数组后，一个 system 角色消息在 `messages` 里换位置会让 system 与 history 两段条目、顺序均不变，两次 capture 三段全 `unchanged`——跨段重排就这样从证据链里漏掉。现按遭遇顺序（system 字段 → messages 原序 → tools）额外产出 wire 投影，与两段共享同一批 `{field, value}` 条目、不复制正文，capture 对其计算 sha256 + length 并与上次比出 baseline/unchanged/changed，随 `request.prefix` 日志落盘。仍只存 hash 与标量，隐私边界（不落 system/history/compression 正文）不变。回归：system 角色消息换位置 → 两段 unchanged、wire changed；同 body 复捕 → wire unchanged；套件 9 绿、typecheck 过。
 
+- **存量测试修正：edit 契约迁移 + bash 快照同步**（`packages/opencode/test/tool/parameters.test.ts`、`test/tool/__snapshots__/parameters.test.ts.snap`）：审计基线（bb8d5eac）上 `bun test` 的两条存量红——① `edit > rejects missing filePath` 期望 schema 拒收，但 `filePath` 改 optional 是 hashline `input` 模式的刻意契约（路径在补丁头 `[path#TAG]` 里），拒绝点已挪到 execute 层（`edit.ts:120`）；测试改钉真实形状（hashline 无 filePath 放行、classic 无 filePath 仅 schema 合法、执行层另有守卫）。② `JSON Schema (wire shape) > bash` 快照未随 bash 描述改版（command 精简、timeout 补 clamp、workdir 改写）同步；净变更仅 bash 一处三段 description。修正后 59 pass / 0 fail、typecheck 过。
+
 ### [0.12.0] - 2026-10-06
 
 - **opencode 上游反向吸收批次（261006）**：对上游 1.18.34（5 月 fork 以来 3797 commits）做三路调研后按「先验现状再动手」逐项落地——已落地见下；确认早已存在/不落后而跳过的：perf 假设循环文档（`perf/test-suite.md` 36 条）、markdown 高亮 worker 池（`highlight-worker/pool` + `worker-pool`）、TS 主题系统（`theme/resolve.ts` 502 行 vs 上游 v2 139 行，且 `--v2-agent-*` 角色色暂无消费者）；大项（ACP 全量模块化、prompt-input 拆分、terminal-panel-v2、pierre 缺失件、httpapi-codegen、LayerNode、recorded-test、sdk-next）评估结论记录于 `.redcode/idea-backlog.md` 待后续批次。

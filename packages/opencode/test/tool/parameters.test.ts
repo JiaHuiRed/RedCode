@@ -128,8 +128,14 @@ describe("tool parameters", () => {
       const parsed = parse(Edit, { filePath: "/a", oldString: "x", newString: "y" })
       expect(parsed.replaceAll).toBeUndefined()
     })
-    test("rejects missing filePath", () => {
-      expect(accepts(Edit, { oldString: "x", newString: "y" })).toBe(false)
+    // 261006 Karina filePath optional 是 hashline `input` 模式的刻意契约（路径在补丁头
+    // [path#TAG] 里）；缺 filePath 的 classic 调用由 execute 抛 "filePath is required"，
+    // 拒绝点从 schema 层挪到了执行层，这里只钉 schema 层的真实形状
+    test("accepts hashline input without filePath", () => {
+      expect(accepts(Edit, { input: "[a.ts#TAG]\nreplace 1..1:\n+ x" })).toBe(true)
+    })
+    test("keeps classic fields schema-valid without filePath", () => {
+      expect(accepts(Edit, { oldString: "x", newString: "y" })).toBe(true)
     })
   })
 
