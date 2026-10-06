@@ -91,6 +91,11 @@ describe("session.request-evidence", () => {
     expect(rewound.history.change).toBe("rewind")
     expect(rewritten.history.change).toBe("rewrite")
     expect(unchanged.history.change).toBe("unchanged")
+    expect(first.wire.change).toBe("baseline")
+    expect(appended.wire.change).toBe("changed")
+    expect(rewound.wire.change).toBe("changed")
+    expect(rewritten.wire.change).toBe("changed")
+    expect(unchanged.wire.change).toBe("unchanged")
     expect(first.requestID).not.toBe(appended.requestID)
     expect(first.requestID).toMatch(/^[0-9a-f-]{36}$/)
     expect(JSON.stringify([first, appended, rewound, rewritten, unchanged])).not.toContain("private system")
@@ -108,6 +113,36 @@ describe("session.request-evidence", () => {
         toolsObserver.capture(chatBody("first turn", "private system", [{ type: "function", function: { name: "search" } }])),
       ).tools.change,
     ).toBe("rewrite")
+    RequestEvidence.reset()
+  })
+
+  test("detects whole-wire reordering that section diffs report as unchanged", () => {
+    RequestEvidence.reset()
+    const observer = RequestEvidence.create(context())
+    const moved = {
+      messages: [
+        { role: "user", content: "first turn" },
+        { role: "system", content: "private system" },
+      ],
+      tools: [],
+    }
+    const first = captured(observer.capture(chatBody()))
+    const reordered = captured(observer.capture(moved))
+    const same = captured(observer.capture(moved))
+
+    // system 角色消息在 messages 里换了位置：两个 section 的内容和顺序都没变，
+    // 只有 whole-wire 顺序证据能证明这次跨段重排真的发生了
+    expect(first.wire.change).toBe("baseline")
+    expect(first.wire.sha256).toMatch(/^[0-9a-f]{64}$/)
+    expect(reordered.system.change).toBe("unchanged")
+    expect(reordered.history.change).toBe("unchanged")
+    expect(reordered.wire.change).toBe("changed")
+    expect(reordered.wire.sha256).not.toBe(first.wire.sha256)
+    expect(reordered.wire.length).toBeGreaterThan(0)
+    expect(same.wire.change).toBe("unchanged")
+    expect(same.wire.length).toBe(reordered.wire.length)
+    expect(JSON.stringify([first, reordered, same])).not.toContain("private system")
+    expect(JSON.stringify([first, reordered, same])).not.toContain("first turn")
     RequestEvidence.reset()
   })
 

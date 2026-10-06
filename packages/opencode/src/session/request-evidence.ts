@@ -52,6 +52,12 @@ type Fingerprint = {
   readonly system: Sequence
   readonly tools: Sequence
   readonly history: Sequence
+  // 261006 Red whole-wire 只留 sha256 + length：跨段相对顺序变了但两段各自不变时，
+  // section diff 全是 unchanged，只有这条能证明重排真的发生过
+  readonly wire: {
+    readonly sha256: string
+    readonly length: number
+  }
 }
 
 type Bucket = {
@@ -66,6 +72,11 @@ export type CaptureObservation =
       readonly system: SectionObservation
       readonly tools: SectionObservation
       readonly history: SectionObservation
+      readonly wire: {
+        readonly sha256: string
+        readonly length: number
+        readonly change: "baseline" | "unchanged" | "changed"
+      }
       readonly afterCompression: readonly Compression[]
     }
   | {
@@ -211,10 +222,15 @@ function project(body: RecordValue):
       readonly tools: readonly unknown[]
       readonly history: readonly unknown[]
       readonly messageCount: number
+      readonly wire: readonly unknown[]
     }
   | undefined {
   const system: unknown[] = []
   const history: unknown[] = []
+  // 261006 Red wire 与 system/history 共享同一批 {field, value} 条目、按遭遇顺序排列：
+  // system 字段在前，messages 按原数组序（无论落进哪段），tools 在末。分家进 section 之后
+  // 相对顺序就丢了，wire 补的正是这部分信息；只参与 hash，不额外存正文
+  const wire: unknown[] = []
   for (const field of ["system", "instructions", "system_instruction", "systemInstruction"]) {
     if (!Object.hasOwn(body, field) || body[field] === undefined) continue
     const value = body[field]
@@ -225,6 +241,7 @@ function project(body: RecordValue):
     }
     system.push({ field, value })
   }
+  wire.push(...system)
 
   let source: unknown
   let sourceField: string
@@ -240,12 +257,17 @@ function project(body: RecordValue):
   } else return
 
   const messageCount = Array.isArray(source) ? source.length : 1
-  if (typeof source === "string") history.push({ field: sourceField, value: source })
-  else if (Array.isArray(source)) {
+  if (typeof source === "string") {
+    const item = { field: sourceField, value: source }
+    history.push(item)
+    wire.push(item)
+  } else if (Array.isArray(source)) {
     for (const item of source) {
       const role = isRecord(item) ? item.role : undefined
-      if (role === "system" || role === "developer") system.push({ field: sourceField, value: item })
-      else history.push({ field: sourceField, value: item })
+      const projected = { field: sourceField, value: item }
+      if (role === "system" || role === "developer") system.push(projected)
+      else history.push(projected)
+      wire.push(projected)
     }
   } else return
 
@@ -259,11 +281,14 @@ function project(body: RecordValue):
     } else return
   }
 
+  wire.push(...tools)
+
   return {
     system,
     tools,
     history,
     messageCount,
+    wire,
   }
 }
 
@@ -393,12 +418,13 @@ export function create(context: Context): Observer {
       const system = sequence(projected.system)
       const tools = sequence(projected.tools)
       const history = sequence(projected.history)
-      if (!system || !tools || !history) {
+      const wire = sequence(projected.wire)
+      if (!system || !tools || !history || !wire) {
         const observation: CaptureObservation = { status: "unsupported", requestID, reason: "unsupported-shape" }
         record("request.prefix", { ...common(), ...observation })
         return observation
       }
-      const current: Fingerprint = { system, tools, history }
+      const current: Fingerprint = { system, tools, history, wire: { sha256: wire.sha256, length: wire.length } }
 
       const previous = bucket.fingerprint
       const afterCompression = [...bucket.pending.values()]
@@ -410,6 +436,15 @@ export function create(context: Context): Observer {
         system: transition(previous?.system, current.system),
         tools: transition(previous?.tools, current.tools),
         history: transition(previous?.history, current.history),
+        wire: {
+          sha256: current.wire.sha256,
+          length: current.wire.length,
+          change: previous
+            ? previous.wire.sha256 === current.wire.sha256
+              ? "unchanged"
+              : "changed"
+            : "baseline",
+        },
         afterCompression,
       }
 
@@ -419,6 +454,7 @@ export function create(context: Context): Observer {
         system: observation.system,
         tools: observation.tools,
         history: observation.history,
+        wire: observation.wire,
         afterCompression: observation.afterCompression,
       })
       return observation
