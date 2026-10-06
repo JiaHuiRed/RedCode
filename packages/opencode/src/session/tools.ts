@@ -240,11 +240,20 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
 
     // 公共闸门：args 改写 → pre 钩子 → explore capability → read permission。
     // blocked 时 output 已是最终工具结果，调用方直接 return。
+    // 261006 Red permission pattern 经 authorize 回调基于**改写后**的 args 计算：
+    // 此前调用方在闸门外用原始 args 解析 server/uri，before hook 的改写只流进事件流，
+    // client 查找、permission pattern 与 readResource 仍按改写前的值执行——
+    // observability 显示改写成功而执行行为没变。现在闸门先产出最终 args，
+    // 调用方一律从 gate.args 重新解析，parsed 与 permission pattern 同源。
     const resourceGate = Effect.fn("SessionTools.mcpResourceGate")(function* (
       name: string,
       rawArgs: Record<string, unknown>,
       opts: ToolExecutionOptions<Record<string, unknown>>,
-      permissionReq: { metadata: Record<string, unknown>; patterns: string[]; always: string[] },
+      authorize: (rewritten: Record<string, unknown>) => {
+        metadata: Record<string, unknown>
+        patterns: string[]
+        always: string[]
+      },
     ) {
       const beforeHook = yield* plugin.trigger(
         "tool.execute.before",
@@ -279,7 +288,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           },
         }
       }
-      yield* ctx.ask({ permission: "read", ...permissionReq })
+      yield* ctx.ask({ permission: "read", ...authorize(args) })
       return { blocked: false as const, ctx, args }
     })
 
@@ -309,22 +318,22 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         execute(args: unknown, opts: ToolExecutionOptions<Record<string, unknown>>) {
           return run.promise(
             Effect.gen(function* () {
-              const parsed = parseMcpResourceListArgs(args)
+              const gate = yield* resourceGate(name, toMcpRecord(args), opts, (rewritten) => {
+                const parsed = parseMcpResourceListArgs(rewritten)
+                const patterns = parsed.server
+                  ? [`mcp:${parsed.server}:*`]
+                  : resourceServers.map((server) => `mcp:${server}:*`)
+                return { metadata: parsed.server ? { server: parsed.server } : {}, patterns, always: patterns }
+              })
+              if (gate.blocked) return gate.output
+              // 261006 Red unknown server 校验同样基于改写后的最终 args
+              const parsed = parseMcpResourceListArgs(gate.args)
               if (parsed.server && !resourceServers.includes(parsed.server))
                 throw new Error(
                   resourceServers.length === 0
                     ? `MCP server "${parsed.server}" does not support resources`
                     : `MCP server "${parsed.server}" does not support resources. Available resource servers: ${resourceServers.join(", ")}`,
                 )
-              const patterns = parsed.server
-                ? [`mcp:${parsed.server}:*`]
-                : resourceServers.map((server) => `mcp:${server}:*`)
-              const gate = yield* resourceGate(name, toMcpRecord(args), opts, {
-                metadata: parsed.server ? { server: parsed.server } : {},
-                patterns,
-                always: patterns,
-              })
-              if (gate.blocked) return gate.output
               const entries = Object.values(yield* list()).filter(
                 (item) => !parsed.server || item.client === parsed.server,
               )
@@ -393,17 +402,22 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       execute(args: unknown, opts: ToolExecutionOptions<Record<string, unknown>>) {
         return run.promise(
           Effect.gen(function* () {
-            const parsed = parseMcpResourceReadArgs(args)
+            // 261006 Red parsed 永远基于 before hook 改写后的最终 args：client 查找、
+            // capability 校验与 readResource 必须和 permission pattern 同源。
+            const gate = yield* resourceGate(MCP_RESOURCE_TOOLS.read, toMcpRecord(args), opts, (rewritten) => {
+              const parsed = parseMcpResourceReadArgs(rewritten)
+              return {
+                metadata: { server: parsed.server, uri: parsed.uri },
+                patterns: [`mcp:${parsed.server}:${parsed.uri}`],
+                always: [`mcp:${parsed.server}:*`],
+              }
+            })
+            if (gate.blocked) return gate.output
+            const parsed = parseMcpResourceReadArgs(gate.args)
             const client = mcpClients[parsed.server]
             if (!client) throw new Error(`MCP server "${parsed.server}" is not connected`)
             if (!client.getServerCapabilities()?.resources)
               throw new Error(`MCP server "${parsed.server}" does not support resources`)
-            const gate = yield* resourceGate(MCP_RESOURCE_TOOLS.read, toMcpRecord(args), opts, {
-              metadata: { server: parsed.server, uri: parsed.uri },
-              patterns: [`mcp:${parsed.server}:${parsed.uri}`],
-              always: [`mcp:${parsed.server}:*`],
-            })
-            if (gate.blocked) return gate.output
             const content = yield* mcp.readResource(parsed.server, parsed.uri)
             if (!content) throw new Error(`Failed to read MCP resource: ${parsed.server}/${parsed.uri}`)
             const attachments: Omit<MessageV2.FilePart, "id" | "sessionID" | "messageID">[] = []
