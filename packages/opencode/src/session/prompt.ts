@@ -1126,6 +1126,22 @@ export const layer = Layer.effect(
       let turnStartUserID: MessageV2.User | undefined
       let claimedUserID: MessageID | undefined
       const remindedUserIDs = new Set<MessageID>()
+      // 261006 Red queued claims start a fresh turn; rebuild the cached prefix because their messages insert mid-history.
+      // See docs/notes/implemented/feature/2026-08-14-busy-enter-steer-or-queue.md.
+      const resetQueuedTurn = (messageID: MessageID) => {
+        claimedUserID = messageID
+        _caches.modelMsgs.delete(sessionID)
+        step = 0
+        loopTracker.reset()
+        loopRecoveryPrompt = undefined
+        forceContinue = false
+        reasoningOnlyRetried = false
+        emptyTurnRetried = false
+        salvageRecoveries = 0
+        turnStartUserID = undefined
+        remindedUserIDs.clear()
+      }
+      // 261006 Red usageTokens stays cumulative and softContextNoticed stays session-wide across queued turns.
       // 260814 Red stall nudge（260803）退役：同指纹口径（tool+stringify(input)）的空转检测
       // 已由 repeat-tool-reminder 软层接管（3/5/8 递进、贴 result 尾部、todo 透明、跨轮），
       // 8 阈值双响只会文案重复。真空转仍有 doom_loop 硬层弹窗兜底。决策见 docs/notes/。
@@ -1150,8 +1166,7 @@ export const layer = Layer.effect(
         if (!lastUser) {
           const next = yield* sessions.claimQueuedMessage(sessionID)
           if (next) {
-            claimedUserID = next.id
-            _caches.modelMsgs.delete(sessionID)
+            resetQueuedTurn(next.id)
             continue
           }
           throw new Error("No user message found in stream. This should never happen.")
@@ -1227,14 +1242,7 @@ export const layer = Layer.effect(
             }
             const next = yield* sessions.claimQueuedMessage(sessionID)
             if (next) {
-              claimedUserID = next.id
-              // 260927 Red 排队消息创建早于上一轮 assistant，领取后会插进历史中段；
-              // 长度式前缀拼接不再安全，重新序列化该会话的模型消息。
-              _caches.modelMsgs.delete(sessionID)
-              turnStartUserID = undefined
-              remindedUserIDs.clear()
-              reasoningOnlyRetried = false
-              emptyTurnRetried = false
+              resetQueuedTurn(next.id)
               continue
             }
             yield* slog.info("exiting loop")

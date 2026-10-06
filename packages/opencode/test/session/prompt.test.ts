@@ -719,6 +719,60 @@ it.instance("claims explicit queued messages one turn at a time in FIFO order", 
   }),
 )
 
+it.instance("starts queued turns with a fresh step budget in FIFO order", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      agent: { build: { steps: 1 } },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Queue step budget" })
+
+    const first = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "QUEUE_BUDGET_FIRST" }],
+    })
+    const second = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      delivery: "queue",
+      parts: [{ type: "text", text: "QUEUE_BUDGET_SECOND" }],
+    })
+    const third = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      delivery: "queue",
+      parts: [{ type: "text", text: "QUEUE_BUDGET_THIRD" }],
+    })
+
+    yield* llm.text("reply first")
+    yield* llm.text("reply second")
+    yield* llm.text("reply third")
+    yield* prompt.loop({ sessionID: chat.id })
+
+    const hits = yield* llm.hits
+    expect(hits).toHaveLength(3)
+    const sent = hits.map((hit) => JSON.stringify(hit.body))
+    expect(sent[0]).toContain("QUEUE_BUDGET_FIRST")
+    expect(sent[0]).not.toContain("QUEUE_BUDGET_SECOND")
+    expect(sent[1]).toContain("QUEUE_BUDGET_SECOND")
+    expect(sent[1]).not.toContain("QUEUE_BUDGET_THIRD")
+    expect(sent[2]).toContain("QUEUE_BUDGET_THIRD")
+    expect(first.info.role).toBe("user")
+    expect((yield* MessageV2.get({ sessionID: chat.id, messageID: second.info.id })).info).toMatchObject({
+      delivery: "delivered",
+    })
+    expect((yield* MessageV2.get({ sessionID: chat.id, messageID: third.info.id })).info).toMatchObject({
+      delivery: "delivered",
+    })
+  }),
+)
+
 it.instance("queued messages can be canceled before claim and promoted for the next step", () =>
   Effect.gen(function* () {
     const sessions = yield* Session.Service

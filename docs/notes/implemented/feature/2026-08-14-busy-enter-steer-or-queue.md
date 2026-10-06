@@ -37,3 +37,9 @@ config 顶层保留 `busy_enter: "steer" | "queue"`(默认 steer=原行为,一�
 - `UserMessage.delivery` 让新消息状态可由服务端同步给两端;无此字段的历史消息继续用原时间戳启发式显示。
 - 队列操作和领取共用会话锁。用户只能在消息仍为 `queued` 时编辑或撤销;一旦领取,所有客户端操作都会收到冲突而不是误报撤销成功。
 - 领取时必须清掉会话的 `modelMsgs` 增量缓存:排队消息创建早于前一轮 assistant,领取后插入历史而非尾部;保留旧缓存会把新轮用户消息放错位置。另追踪领取的 message ID,防止上一轮已完成的 assistant 被误认为新消息的回复。
+
+## 队列领取重置 turn 预算（261006）
+
+`runLoop` 的 step 计数和恢复状态原本跨越整个 loop。领取一条排队消息虽然开始了新的逻辑用户 turn，却沿用前一 turn 已消耗的 `agent.steps`；当 `steps: 1` 且队列里还有消息时，第一条回复后领取的消息会在模型调用前撞上旧预算，未领取的后续消息也无法继续推进。回归测试 `starts queued turns with a fresh step budget in FIFO order` 在修复前因 provider 请求数少于预期而失败。
+
+两个 `claimQueuedMessage` 领取点现在共用 `resetQueuedTurn(messageID)`：记录领取 ID、清 `modelMsgs` 缓存、将 step 归零，并清除 loop recovery prompt/tracker、force-continue、reasoning-only/empty-turn 重试、XML salvage recovery、turn 起点和已提醒消息 ID。`usageTokens` 仍在整个 run 中累计，`softContextNoticed` 仍只提醒一次；标题生成原有「仅一条真实用户消息」守卫不变，三个用户消息的回归用例同时验证没有额外标题模型请求。实现与变更入口：`packages/opencode/src/session/prompt.ts`、`CHANGELOG.md`。
