@@ -31,6 +31,8 @@
 - **SDK fetch 包装：显式 signal 身份透传，超时兜底不再裸调 `AbortSignal.timeout`**（`packages/sdk/js/src/v2/client.ts`）：261002 给非 SSE 请求套 60s 超时兜底时无条件 `AbortSignal.any([request.signal, AbortSignal.timeout(60_000)])` 合成新 signal，丢掉调用方 signal 的身份——`checkServerHealth` 传给自定义 fetch 的 signal 变成合成品，`server-health.test.ts` 的「uses provided abort signal」身份断言挂；且兜底裸调 `AbortSignal.timeout`，在缺位运行时（测试把该属性置 undefined 验证 fallback 路径）直接 TypeError，「uses timeout fallback」同挂。现改为：经 `config.signal` 显式传入的请求身份透传，超时归调用方管（server-health 30s、SSE 不设，本就是显式生命周期）；只有无人管生命周期的请求才套 60s 兜底，兜底补 `AbortSignal.timeout` 缺位退化（controller+setTimeout，与 app 侧 `timeoutSignal` 同款）。CI unit (windows) 存量红两条由此转绿。
 - **e2e 冒烟种子键名修正**（`packages/app/e2e/smoke/session-timeline.spec.ts`，306e89b4 补登）：localStorage 播种用的 `redcode.global.dat:server` 与应用侧真实键 `RedCode.global.dat:server`（`persist.ts` 的 `GLOBAL_STORAGE` 前缀拼接）大小写不符——localStorage 键区分大小写，种子从未生效，home 项目列表恒空、`selectHomeProject` 点不到 `home-project-row` 超时。此前 webServer 端口错位（见上条）先挂在 120s，这个键名错误直到 bd8b723e 修好 webServer 才第一次暴露。JSON 形状核对无误（`projectsKey()` 对 127.0.0.1/localhost 归 `"local"`），`settings.v3` 种子键亦核对为直存键无误。
 
+- **遥测测试对齐内置属性名**（`packages/core/test/effect/observability.test.ts`）：将旧 `redcode.client` 断言与冲突输入同步改为实际的 `RedCode.client`，继续验证无效环境属性整组丢弃，以及环境变量不能覆盖内置 client 和实例 ID。实现行为未改；定向测试 3/3 通过。
+
 ### [0.12.0] - 2026-10-06
 
 - **opencode 上游反向吸收批次（261006）**：对上游 1.18.34（5 月 fork 以来 3797 commits）做三路调研后按「先验现状再动手」逐项落地——已落地见下；确认早已存在/不落后而跳过的：perf 假设循环文档（`perf/test-suite.md` 36 条）、markdown 高亮 worker 池（`highlight-worker/pool` + `worker-pool`）、TS 主题系统（`theme/resolve.ts` 502 行 vs 上游 v2 139 行，且 `--v2-agent-*` 角色色暂无消费者）；大项（ACP 全量模块化、prompt-input 拆分、terminal-panel-v2、pierre 缺失件、httpapi-codegen、LayerNode、recorded-test、sdk-next）评估结论记录于 `.redcode/idea-backlog.md` 待后续批次。

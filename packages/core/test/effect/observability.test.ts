@@ -29,15 +29,15 @@ describe("resource", () => {
     process.env.OTEL_RESOURCE_ATTRIBUTES = "service.namespace=JiaHuiRed,broken"
 
     expect(resource().attributes["service.namespace"]).toBeUndefined()
-    expect(resource().attributes["redcode.client"]).toBeDefined()
+    expect(resource().attributes["RedCode.client"]).toBeDefined()
   })
 
   test("keeps built-in attributes when env values conflict", () => {
     process.env.REDCODE_CLIENT = "cli"
-    process.env.OTEL_RESOURCE_ATTRIBUTES = "redcode.client=web,service.instance.id=override,service.namespace=JiaHuiRed"
+    process.env.OTEL_RESOURCE_ATTRIBUTES = "RedCode.client=web,service.instance.id=override,service.namespace=JiaHuiRed"
 
     expect(resource().attributes).toMatchObject({
-      "redcode.client": "cli",
+      "RedCode.client": "cli",
       "service.namespace": "JiaHuiRed",
     })
     expect(resource().attributes["service.instance.id"]).not.toBe("override")
