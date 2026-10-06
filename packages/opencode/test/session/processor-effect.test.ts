@@ -287,6 +287,63 @@ for (const scenario of [
   )
 }
 
+// 261006 Red 静态规则把 doom_loop 压成 deny 时（explore 白名单 "*": deny 的真实形态），
+// 拒绝要落成工具报错让模型自救，而不是炸掉整个 step：旧实现 halt 后 assistant 消息
+// 挂 error、process 返回 "stop"，子代理临交报告被拦就整场交白卷。
+it.live("session.processor doom_loop deny fails the tool call instead of the step", () =>
+ provideTmpdirServer(
+   ({ dir, llm }) =>
+     Effect.gen(function* () {
+       const { processors, session, provider } = yield* boot()
+       const chat = yield* session.create({})
+       const previous = yield* user(chat.id, "look up weather")
+       for (let i = 0; i < 3; i++) {
+         const past = yield* assistant(chat.id, previous.id, path.resolve(dir))
+         yield* session.updatePart({
+           id: PartID.ascending(),
+           messageID: past.id,
+           sessionID: chat.id,
+           type: "tool",
+           tool: "lookup",
+           callID: `past_${i}`,
+           state: {
+             status: "completed",
+             input: { query: "weather" },
+             output: "same",
+             title: "lookup",
+             metadata: {},
+             time: { start: Date.now(), end: Date.now() },
+           },
+         })
+       }
+       const msg = yield* assistant(chat.id, previous.id, path.resolve(dir))
+       const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+       const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model: mdl })
+       yield* llm.tool("lookup", { query: "weather" })
+       const outcome = yield* handle.process({
+         user: previous,
+         sessionID: chat.id,
+         model: mdl,
+         agent: agent(),
+         system: [],
+         messages: [{ role: "user", content: "look up weather" }],
+         tools: {
+           lookup: tool({
+             description: "Look up information",
+             inputSchema: z.object({ query: z.string() }),
+             execute: async () => ({ title: "lookup", output: "same", metadata: {} }),
+           }),
+         },
+       })
+       expect(outcome).toBe("continue")
+       expect(handle.message.error == null).toBe(true)
+       const part = MessageV2.parts(msg.id).find((part) => part.type === "tool")
+       expect(part?.state.status).toBe("error")
+       if (part?.state.status === "error") expect(part.state.error).toContain("doom-loop guard")
+     }),
+   { config: (url) => ({ ...providerCfg(url), agent: { redmind: { permission: { doom_loop: "deny" } } } }) },
+ ),
+)
 it.live("session.processor effect tests capture llm input cleanly", () =>
   provideTmpdirServer(
     ({ dir, llm }) =>

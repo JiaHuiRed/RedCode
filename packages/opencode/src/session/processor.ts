@@ -618,15 +618,37 @@ export const layer = Layer.effect(
             // 原来这里直接 `agent.permission`，被 Agent.get 那个「返回 Info」的类型谎言藏住了，真撞上
             // 就是 TypeError。回落到默认姿态的规则集：doom_loop 在 defaults 是 ask，回落只会更谨慎。
             const agent = (yield* agents.get(ctx.assistantMessage.agent)) ?? (yield* agents.defaultInfo())
-            yield* permission.ask({
-              permission: "doom_loop",
-              patterns: cycleTools,
-              sessionID: ctx.assistantMessage.sessionID,
-              metadata: { tool: value.name, input },
-              always: cycleTools,
-              ruleset: agent.permission,
-            })
-            return
+           yield* permission
+             .ask({
+               permission: "doom_loop",
+               patterns: cycleTools,
+               sessionID: ctx.assistantMessage.sessionID,
+               metadata: { tool: value.name, input },
+               always: cycleTools,
+               ruleset: agent.permission,
+             })
+             .pipe(
+               // 261006 Red 静态规则 deny（典型：explore 子代理白名单 "*": deny 把 doom_loop 的
+               // ask 档压成硬 deny，而子代理无人应答弹窗）原先一路炸到 halt —— 整个 step 失败、
+               // assistant 消息挂 error、子代理临交报告被拦后整场交白卷（261006 crosspet 调研
+               // 实测）。落成工具报错与普通权限拒绝对齐：模型看得见、可换路收尾。
+               // 弹窗交互的 Rejected/Corrected 保持中断语义不放行——用户刚点了拒绝，
+               // tap 放行后 SDK 仍会执行该调用，被拒工具不能真跑。冗余执行的结果由
+               // completeToolCall 的 running 状态卫丢弃（守卫前提本就是「已确认结果相同」）。
+               Effect.catchIf(
+                 (error) => error instanceof Permission.DeniedError,
+                 () =>
+                   Effect.asVoid(
+                     failToolCall(
+                       value.id,
+                       new Error(
+                         `Tool call blocked by the doom-loop guard: the same ${value.name} call was already issued repeatedly with identical results. Do not repeat it. Use the results already in context or take a different approach, then continue your task.`,
+                       ),
+                     ),
+                   ),
+               ),
+             )
+           return
           }
 
           case "tool-result": {
