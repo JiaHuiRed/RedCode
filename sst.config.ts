@@ -25,8 +25,6 @@ export default $config({
   // 而 CI 不跑 sst，所以这条死链一直没人踩到。console.ts 已随本次一并删除（要恢复就从
   // 78e86454 之前取，连同 packages/console 一起）。
   async run() {
-    await import("./infra/app.js")
-    await import("./infra/enterprise.js")
     if ($app.stage === "production" || $app.stage === "vimtor") {
       await import("./infra/monitoring.js")
     }

@@ -37,8 +37,6 @@ const VERSIONED_PACKAGES = [
   "packages/web/package.json",
   "packages/llm/package.json",
   "packages/plugin/package.json",
-  "packages/function/package.json",
-  "packages/enterprise/package.json",
   "packages/slack/package.json",
   "packages/http-recorder/package.json",
   "packages/effect-drizzle-sqlite/package.json",
