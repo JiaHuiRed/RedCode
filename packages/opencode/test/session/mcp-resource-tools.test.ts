@@ -18,16 +18,28 @@ import { testEffect } from "../lib/effect"
 
 // 261006 Red MCP resource tools 的 session 层回归。这三个工具是模型可见、带 permission、
 // 可读外部二进制的入口，执行顺序（args 改写 → pre 钩子 → capability → permission →
-// execute）必须逐环可证，而不是只看最终文本。
+// execute）、server 作用域、附件闸门口径与 metadata 一致性都必须逐环可证。
 
 const READ = "read_mcp_resource"
 const LIST = "list_mcp_resources"
+const MB = 1024 * 1024
 
 type Recorder = {
   reads: string[]
   asks: (readonly string[])[]
   afterArgs: unknown[]
   resourceScopes: (string | undefined)[]
+}
+
+type Fixture = {
+  /** tool.execute.before 的改写；返回 undefined 表示不改写 */
+  rewrite?: (name: string) => Record<string, unknown> | undefined
+  /** readResource 返回的 contents；默认一条文本资源 */
+  content?: {
+    contents: ({ uri: string; mimeType: string; text: string } | { uri: string; mimeType: string; blob: string })[]
+  }
+  /** 模拟 fitToolResult 丢掉全部附件（token 预算超限时的真实行为） */
+  dropAttachments?: boolean
 }
 
 const it = testEffect(Layer.empty)
@@ -52,7 +64,7 @@ function createModel(): Provider.Model {
   } as unknown as Provider.Model
 }
 
-function layers(rec: Recorder, rewrite: (name: string) => Record<string, unknown> | undefined) {
+function layers(rec: Recorder, fixture: Fixture) {
   const client = { getServerCapabilities: () => ({ resources: {} }) } as unknown as MCPClient
   return Layer.mergeAll(
     Layer.mock(MCP.Service)({
@@ -72,14 +84,14 @@ function layers(rec: Recorder, rewrite: (name: string) => Record<string, unknown
       resourceTemplates: () => Effect.succeed({}),
       readResource: (clientName: string, resourceUri: string) => {
         rec.reads.push(`${clientName} ${resourceUri}`)
-        return Effect.succeed({
-          contents: [{ uri: resourceUri, mimeType: "text/plain", text: `body from ${clientName}` }],
-        })
+        return Effect.succeed(
+          fixture.content ?? { contents: [{ uri: resourceUri, mimeType: "text/plain", text: `body from ${clientName}` }] },
+        )
       },
     }),
     Layer.mock(Plugin.Service)({
       trigger: <Name extends string, Input, Output>(name: Name, input: Input, output: Output) => {
-        const rewritten = rewrite(name)
+        const rewritten = fixture.rewrite?.(name)
         if (rewritten) return Effect.succeed({ ...output, args: rewritten } as Output)
         // tool.execute.after 的 input 带 { tool, sessionID, callID, args }
         if (name === "tool.execute.after") rec.afterArgs.push((input as { args: unknown }).args)
@@ -96,7 +108,11 @@ function layers(rec: Recorder, rewrite: (name: string) => Record<string, unknown
     }),
     Layer.mock(Truncate.Service)({
       result: (input: { output: string; attachments?: Truncate.Attachment[] }) =>
-        Effect.succeed({ output: input.output, attachments: input.attachments, metadata: { truncated: false } }),
+        Effect.succeed({
+          output: input.output,
+          attachments: fixture.dropAttachments ? [] : input.attachments,
+          metadata: { truncated: fixture.dropAttachments === true },
+        }),
     }),
     Layer.mock(ToolRegistry.Service)({
       tools: () => Effect.succeed([]),
@@ -105,7 +121,6 @@ function layers(rec: Recorder, rewrite: (name: string) => Record<string, unknown
 }
 
 function resolveInput() {
-  const sessionID = SessionID.descending()
   return {
     agent: {
       name: "build",
@@ -116,7 +131,9 @@ function resolveInput() {
       topP: 1,
     } satisfies Agent.Info,
     model: createModel(),
-    session: { id: sessionID, permission: [] } as unknown as Parameters<typeof SessionTools.resolve>[0]["session"],
+    session: { id: SessionID.descending(), permission: [] } as unknown as Parameters<
+      typeof SessionTools.resolve
+    >[0]["session"],
     processor: {
       message: { id: MessageID.ascending() } as unknown as MessageV2.Assistant,
       updateToolCall: () => Effect.succeed(undefined),
@@ -140,21 +157,28 @@ function callTool(tools: Record<string, unknown>, name: string, args: unknown) {
   )
 }
 
+const recorder = (): Recorder => ({ reads: [], asks: [], afterArgs: [], resourceScopes: [] })
+
 describe("session.tools mcp resource tools", () => {
   it.live(
     "read_mcp_resource executes against the hook-rewritten server and uri",
     () =>
       Effect.gen(function* () {
-        const rec: Recorder = { reads: [], asks: [], afterArgs: [], resourceScopes: [] }
+        const rec = recorder()
         const tools = yield* SessionTools.resolve(resolveInput()).pipe(
-          Effect.provide(layers(rec, (name) => (name === "tool.execute.before" ? { server: "B", uri: "foo://new" } : undefined))),
+          Effect.provide(
+            layers(rec, { rewrite: (name) => (name === "tool.execute.before" ? { server: "B", uri: "foo://new" } : undefined) }),
+          ),
         )
         const output = yield* callTool(tools, READ, { server: "A", uri: "foo://old" })
 
         expect(rec.reads).toEqual(["B foo://new"])
         expect(rec.asks).toEqual([["mcp:B:foo://new"]])
         expect(rec.afterArgs).toEqual([{ server: "B", uri: "foo://new" }])
-        expect(output).toMatchObject({ metadata: { server: "B", uri: "foo://new" }, output: expect.stringContaining("body from B") })
+        expect(output).toMatchObject({
+          metadata: { server: "B", uri: "foo://new" },
+          output: expect.stringContaining("body from B"),
+        })
       }),
   )
 
@@ -162,8 +186,8 @@ describe("session.tools mcp resource tools", () => {
     "read_mcp_resource falls through to the raw args when no plugin rewrites them",
     () =>
       Effect.gen(function* () {
-        const rec: Recorder = { reads: [], asks: [], afterArgs: [], resourceScopes: [] }
-        const tools = yield* SessionTools.resolve(resolveInput()).pipe(Effect.provide(layers(rec, () => undefined)))
+        const rec = recorder()
+        const tools = yield* SessionTools.resolve(resolveInput()).pipe(Effect.provide(layers(rec, {})))
         yield* callTool(tools, READ, { server: "A", uri: "foo://old" })
 
         expect(rec.reads).toEqual(["A foo://old"])
@@ -175,9 +199,9 @@ describe("session.tools mcp resource tools", () => {
     "list_mcp_resources scopes permission and filtering to the rewritten server",
     () =>
       Effect.gen(function* () {
-        const rec: Recorder = { reads: [], asks: [], afterArgs: [], resourceScopes: [] }
+        const rec = recorder()
         const tools = yield* SessionTools.resolve(resolveInput()).pipe(
-          Effect.provide(layers(rec, (name) => (name === "tool.execute.before" ? { server: "B" } : undefined))),
+          Effect.provide(layers(rec, { rewrite: (name) => (name === "tool.execute.before" ? { server: "B" } : undefined) })),
         )
         const output = yield* callTool(tools, LIST, { server: "A" })
 
@@ -192,14 +216,84 @@ describe("session.tools mcp resource tools", () => {
     "list_mcp_resources scopes the mcp listing to the requested server",
     () =>
       Effect.gen(function* () {
-        const rec: Recorder = { reads: [], asks: [], afterArgs: [], resourceScopes: [] }
-        const tools = yield* SessionTools.resolve(resolveInput()).pipe(Effect.provide(layers(rec, () => undefined)))
+        const rec = recorder()
+        const tools = yield* SessionTools.resolve(resolveInput()).pipe(Effect.provide(layers(rec, {})))
         yield* callTool(tools, LIST, { server: "A" })
         yield* callTool(tools, LIST, {})
 
         // 指定 server 时把范围传进 mcp 层（只访问 A）；不指定才收集全部 connected server。
         // 修复前两次调用都是无参全量扇出。
         expect(rec.resourceScopes).toEqual(["A", undefined])
+      }),
+  )
+
+  it.live(
+    "read_mcp_resource gates blobs by base64 payload bytes, not decoded size",
+    () =>
+      Effect.gen(function* () {
+        // 口径统一前按解码后的大小判定：这段 base64 解回来只有约 3.75MB（放行），
+        // 但它作为 data URL 进模型上下文是 5MB+——正是两套口径漏过去的那一档。
+        const blob = "A".repeat(5 * MB + 10)
+        const rec = recorder()
+        const tools = yield* SessionTools.resolve(resolveInput()).pipe(
+          Effect.provide(layers(rec, { content: { contents: [{ uri: "foo://big", mimeType: "image/png", blob }] } })),
+        )
+        const output = (yield* callTool(tools, READ, { server: "A", uri: "foo://big" })) as {
+          attachments: unknown[]
+          metadata: { attachments: number }
+          output: string
+        }
+
+        expect(output.attachments).toHaveLength(0)
+        expect(output.metadata.attachments).toBe(0)
+        expect(output.output).toContain("exceeds the attachment size/count budget")
+      }),
+  )
+
+  it.live(
+    "read_mcp_resource attaches a blob that fits the base64 budget",
+    () =>
+      Effect.gen(function* () {
+        const rec = recorder()
+        const tools = yield* SessionTools.resolve(resolveInput()).pipe(
+          Effect.provide(
+            layers(rec, { content: { contents: [{ uri: "foo://ok", mimeType: "image/png", blob: "QQ==" }] } }),
+          ),
+        )
+        const output = (yield* callTool(tools, READ, { server: "A", uri: "foo://ok" })) as {
+          attachments: unknown[]
+          metadata: { attachments: number }
+          output: string
+        }
+
+        expect(output.attachments).toHaveLength(1)
+        expect(output.metadata.attachments).toBe(1)
+        expect(output.output).toContain("[Binary MCP resource attached: foo://ok (image/png)]")
+      }),
+  )
+
+  it.live(
+    "read_mcp_resource metadata counts attachments after the token-budget fit",
+    () =>
+      Effect.gen(function* () {
+        // fitToolResult 按 token 预算丢附件时，metadata 必须报实际发送数（0），
+        // 而不是 fit 前的候选数（1）——否则观测状态与模型输入不一致。
+        const rec = recorder()
+        const tools = yield* SessionTools.resolve(resolveInput()).pipe(
+          Effect.provide(
+            layers(rec, {
+              content: { contents: [{ uri: "foo://ok", mimeType: "image/png", blob: "QQ==" }] },
+              dropAttachments: true,
+            }),
+          ),
+        )
+        const output = (yield* callTool(tools, READ, { server: "A", uri: "foo://ok" })) as {
+          attachments: unknown[]
+          metadata: { attachments: number }
+        }
+
+        expect(output.attachments).toHaveLength(0)
+        expect(output.metadata.attachments).toBe(0)
       }),
   )
 })

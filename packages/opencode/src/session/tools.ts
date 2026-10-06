@@ -437,23 +437,27 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               { model: gate.ctx.extra?.model as { providerID: string } | undefined },
               input.agent,
             )
+            // 261006 Red metadata 的附件数以 fit 后实际发送的为准：此前用
+            // formatted.attachments（fit 前候选数），fitToolResult 按 token 预算
+            // 丢附件时观测计数与真实模型输入不一致。
+            const outputAttachments = ((fitted.attachments ?? attachments) as typeof attachments).map((attachment) => ({
+              ...attachment,
+              id: PartID.ascending(),
+              sessionID: gate.ctx.sessionID,
+              messageID: input.processor.message.id,
+            }))
             const output = {
               title: `MCP resource: ${parsed.uri}`,
               metadata: {
                 server: parsed.server,
                 uri: parsed.uri,
                 contents: formatted.contents,
-                attachments: formatted.attachments,
+                attachments: outputAttachments.length,
                 truncated: fitted.metadata.truncated,
                 ...(fitted.metadata.outputPath && { outputPath: fitted.metadata.outputPath }),
               },
               output: fitted.output,
-              attachments: ((fitted.attachments ?? attachments) as typeof attachments).map((attachment) => ({
-                ...attachment,
-                id: PartID.ascending(),
-                sessionID: gate.ctx.sessionID,
-                messageID: input.processor.message.id,
-              })),
+              attachments: outputAttachments,
             }
             yield* plugin.trigger(
               "tool.execute.after",
@@ -685,7 +689,10 @@ function formatMcpResourceContent(
       continue
     }
     if (typeof item.blob === "string") {
-      const size = mcpBase64Size(item.blob)
+      // 261006 Red 数 base64 串自身字节（与 data URL payload 同口径），不再按
+      // 解码后大小判定：常量名叫 MAX_ATTACHMENT_BASE64_BYTES，read.ts 与 MCP
+      // 工具循环量的都是 base64 串，这里曾是全仓唯一的解码口径。
+      const size = item.blob.length
       if (!MCP_RESOURCE_ATTACHMENT_MIMES.has(mime)) {
         text.push(
           `[Binary MCP resource omitted: ${itemUri} (${mime}, ${mcpFormatBytes(size)}) is not a supported attachment type]`,
@@ -715,12 +722,6 @@ function formatMcpResourceContent(
     attachments: attached,
     text: text.join("\n\n") || `MCP resource ${uri} from ${server} returned no contents.`,
   }
-}
-
-function mcpBase64Size(value: string) {
-  const trimmed = value.replace(/\s/g, "")
-  const padding = trimmed.endsWith("==") ? 2 : trimmed.endsWith("=") ? 1 : 0
-  return Math.max(0, Math.floor((trimmed.length * 3) / 4) - padding)
 }
 
 function mcpFormatBytes(value: number) {
