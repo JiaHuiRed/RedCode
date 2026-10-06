@@ -1,3 +1,19 @@
+// 261006 Red 纯函数区拆出到 tool-mapping.ts / model-options.ts（上游 acp 模块化的增量吸收）；
+// init() 主体未动。
+import { toLocations, toToolKind } from "./tool-mapping"
+import {
+  DEFAULT_VARIANT_VALUE,
+  buildAvailableModels,
+  buildConfigOptions,
+  buildVariantMeta,
+  formatModelIdWithVariant,
+  formatVariantName,
+  modelVariantsFromProviders,
+  parseModelSelection,
+  sortProvidersByName,
+  type ModeOption,
+  type ModelOption,
+} from "./model-options"
 import {
   RequestError,
   type Agent as ACPAgent,
@@ -53,11 +69,7 @@ import { InstallationVersion } from "@redcode-ai/core/installation/version"
 import { ShellID } from "@/tool/shell/id"
 import { addCost, emptyCostBucket, singleCurrencyAmount } from "@/session/cost-bucket"
 
-type ModeOption = { id: string; name: string; description?: string }
-type ModelOption = { modelId: string; name: string }
 const decodeTodos = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Array(Todo.Info)))
-
-const DEFAULT_VARIANT_VALUE = "default"
 
 const log = Log.create({ service: "acp-agent" })
 
@@ -1559,59 +1571,6 @@ export class Agent implements ACPAgent {
   }
 }
 
-function toToolKind(toolName: string): ToolKind {
-  const tool = toolName.toLocaleLowerCase()
-
-  switch (tool) {
-    case ShellID.ToolID:
-      return "execute"
-
-    case "webfetch":
-      return "fetch"
-
-    case "edit":
-    case "patch":
-    case "write":
-      return "edit"
-
-    case "grep":
-    case "glob":
-    case "repo_clone":
-    case "repo_overview":
-    case "context7_resolve_library_id":
-    case "context7_get_library_docs":
-      return "search"
-
-    case "read":
-      return "read"
-
-    default:
-      return "other"
-  }
-}
-
-function toLocations(toolName: string, input: Record<string, any>): { path: string }[] {
-  const tool = toolName.toLocaleLowerCase()
-
-  switch (tool) {
-    case "read":
-    case "edit":
-    case "write":
-      return input["filePath"] ? [{ path: input["filePath"] }] : []
-    case "glob":
-    case "grep":
-      return input["path"] ? [{ path: input["path"] }] : []
-    case "repo_clone":
-      return input["path"] ? [{ path: input["path"] }] : []
-    case "repo_overview":
-      return input["path"] ? [{ path: input["path"] }] : []
-    case ShellID.ToolID:
-      return []
-    default:
-      return []
-  }
-}
-
 function completedToolContent(part: ToolPart, kind: ToolKind): ToolCallContent[] {
   if (part.state.status !== "completed") return []
 
@@ -1815,170 +1774,4 @@ function getNewContent(fileOriginal: string, unifiedDiff: string): string | unde
   }
   return result
 }
-
-function sortProvidersByName<T extends { name: string }>(providers: T[]): T[] {
-  return [...providers].sort((a, b) => {
-    const nameA = a.name.toLowerCase()
-    const nameB = b.name.toLowerCase()
-    if (nameA < nameB) return -1
-    if (nameA > nameB) return 1
-    return 0
-  })
-}
-
-function modelVariantsFromProviders(
-  providers: Array<{ id: string; models: Record<string, { variants?: Record<string, any> }> }>,
-  model: { providerID: ProviderID; modelID: ModelID },
-): string[] {
-  const provider = providers.find((entry) => entry.id === model.providerID)
-  if (!provider) return []
-  const modelInfo = provider.models[model.modelID]
-  if (!modelInfo?.variants) return []
-  return Object.keys(modelInfo.variants)
-}
-
-function buildAvailableModels(
-  providers: Array<{ id: string; name: string; models: Record<string, any> }>,
-  options: { includeVariants?: boolean } = {},
-): ModelOption[] {
-  const includeVariants = options.includeVariants ?? false
-  return providers.flatMap((provider) => {
-    const unsorted: Array<{ id: string; name: string; variants?: Record<string, any> }> = Object.values(provider.models)
-    const models = Provider.sort(unsorted)
-    return models.flatMap((model) => {
-      const base: ModelOption = {
-        modelId: `${provider.id}/${model.id}`,
-        name: `${provider.name}/${model.name}`,
-      }
-      if (!includeVariants || !model.variants) return [base]
-      const variants = Object.keys(model.variants).filter((variant) => variant !== DEFAULT_VARIANT_VALUE)
-      const variantOptions = variants.map((variant) => ({
-        modelId: `${provider.id}/${model.id}/${variant}`,
-        name: `${provider.name}/${model.name} (${variant})`,
-      }))
-      return [base, ...variantOptions]
-    })
-  })
-}
-
-function formatModelIdWithVariant(
-  model: { providerID: ProviderID; modelID: ModelID },
-  variant: string | undefined,
-  availableVariants: string[],
-  includeVariant: boolean,
-) {
-  const base = `${model.providerID}/${model.modelID}`
-  if (!includeVariant || availableVariants.length === 0) return base
-  const selectedVariant =
-    variant && availableVariants.includes(variant)
-      ? variant
-      : availableVariants.includes(DEFAULT_VARIANT_VALUE)
-        ? DEFAULT_VARIANT_VALUE
-        : availableVariants[0]
-  return `${base}/${selectedVariant}`
-}
-
-function buildVariantMeta(input: {
-  model: { providerID: ProviderID; modelID: ModelID }
-  variant?: string
-  availableVariants: string[]
-}) {
-  return {
-    redcode: {
-      modelId: `${input.model.providerID}/${input.model.modelID}`,
-      variant: input.variant ?? null,
-      availableVariants: input.availableVariants,
-    },
-  }
-}
-
-function parseModelSelection(
-  modelId: string,
-  providers: Array<{ id: string; models: Record<string, { variants?: Record<string, any> }> }>,
-): { model: { providerID: ProviderID; modelID: ModelID }; variant?: string } {
-  const parsed = Provider.parseModel(modelId)
-  const provider = providers.find((p) => p.id === parsed.providerID)
-  if (!provider) {
-    return { model: parsed, variant: undefined }
-  }
-
-  // Check if modelID exists directly
-  if (provider.models[parsed.modelID]) {
-    return { model: parsed, variant: undefined }
-  }
-
-  // Try to extract variant from end of modelID (e.g., "claude-sonnet-4/high" -> model: "claude-sonnet-4", variant: "high")
-  const segments = parsed.modelID.split("/")
-  if (segments.length > 1) {
-    const candidateVariant = segments[segments.length - 1]
-    const baseModelId = segments.slice(0, -1).join("/")
-    const baseModelInfo = provider.models[baseModelId]
-    if (baseModelInfo?.variants && candidateVariant in baseModelInfo.variants) {
-      return {
-        model: { providerID: parsed.providerID, modelID: ModelID.make(baseModelId) },
-        variant: candidateVariant,
-      }
-    }
-  }
-
-  return { model: parsed, variant: undefined }
-}
-
-function buildConfigOptions(input: {
-  currentModelId: string
-  availableModels: ModelOption[]
-  currentVariant?: string
-  availableVariants?: string[]
-  modes?: { availableModes: ModeOption[]; currentModeId: string } | undefined
-}): SessionConfigOption[] {
-  const options: SessionConfigOption[] = [
-    {
-      id: "model",
-      name: "Model",
-      category: "model",
-      type: "select",
-      currentValue: input.currentModelId,
-      options: input.availableModels.map((m) => ({ value: m.modelId, name: m.name })),
-    },
-  ]
-  if (input.availableVariants?.length) {
-    options.push({
-      id: "effort",
-      name: "Effort",
-      description: "Available effort levels for this model",
-      category: "thought_level",
-      type: "select",
-      currentValue:
-        input.currentVariant && input.availableVariants.includes(input.currentVariant)
-          ? input.currentVariant
-          : input.availableVariants.includes(DEFAULT_VARIANT_VALUE)
-            ? DEFAULT_VARIANT_VALUE
-            : input.availableVariants[0],
-      options: input.availableVariants.map((variant) => ({ value: variant, name: formatVariantName(variant) })),
-    })
-  }
-  if (input.modes) {
-    options.push({
-      id: "mode",
-      name: "Session Mode",
-      category: "mode",
-      type: "select",
-      currentValue: input.modes.currentModeId,
-      options: input.modes.availableModes.map((m) => ({
-        value: m.id,
-        name: m.name,
-        ...(m.description ? { description: m.description } : {}),
-      })),
-    })
-  }
-  return options
-}
-
-function formatVariantName(variant: string) {
-  return variant
-    .split(/[_-]/)
-    .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
-    .join(" ")
-}
-
 export * as ACP from "./agent"
