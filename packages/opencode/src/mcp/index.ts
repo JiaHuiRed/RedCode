@@ -513,8 +513,8 @@ export interface Interface {
   /** 各 MCP 服务器自报的用途说明（initialize 的 instructions 字段）；断线时回落磁盘缓存以稳住前缀 */
   readonly instructions: () => Effect.Effect<{ server: string; text: string }[]>
   readonly prompts: () => Effect.Effect<Record<string, PromptInfo & { client: string }>>
-  readonly resources: () => Effect.Effect<Record<string, ResourceInfo & { client: string }>>
-  readonly resourceTemplates: () => Effect.Effect<Record<string, ResourceTemplateInfo & { client: string }>>
+  readonly resources: (clientName?: string) => Effect.Effect<Record<string, ResourceInfo & { client: string }>>
+  readonly resourceTemplates: (clientName?: string) => Effect.Effect<Record<string, ResourceTemplateInfo & { client: string }>>
   readonly add: (name: string, mcp: ConfigMCP.Info) => Effect.Effect<{ status: Record<string, Status> | Status }>
   readonly connect: (name: string) => Effect.Effect<void>
   readonly disconnect: (name: string) => Effect.Effect<void>
@@ -1305,9 +1305,16 @@ export const layer = Layer.effect(
       s: State,
       listFn: (c: Client) => Promise<T[]>,
       label: string,
+      only?: string,
     ) {
+      // 261006 Red only 传入时只访问指定 server：调用方（session resource tools）指定
+      // server 就意味着只想要它的数据，此前无论指不指定都并发扇出全部 connected
+      // server 再在调用方过滤——无关 server 慢/挂/返回异常 cursor 会拖垮本次列出，
+      // 且网络访问面超出 permission 申请的 mcp:<server>:* 范围。
       return Effect.forEach(
-        Object.entries(s.clients).filter(([name]) => s.status[name]?.status === "connected"),
+        Object.entries(s.clients).filter(
+          ([name]) => (only === undefined || name === only) && s.status[name]?.status === "connected",
+        ),
         ([clientName, client]) =>
           fetchFromClient(clientName, client, listFn, label).pipe(Effect.map((items) => Object.entries(items ?? {}))),
         { concurrency: "unbounded" },
@@ -1327,7 +1334,7 @@ export const layer = Layer.effect(
       )
     })
 
-    const resources = Effect.fn("MCP.resources")(function* () {
+    const resources = Effect.fn("MCP.resources")(function* (clientName?: string) {
       const s = yield* InstanceState.get(state)
       return yield* collectFromConnected(
         s,
@@ -1337,11 +1344,12 @@ export const layer = Layer.effect(
             (r) => r.resources,
           ),
         "resources",
+        clientName,
       )
     })
 
     // 260624 Red 上游移植: MCP resource template listing
-    const resourceTemplates = Effect.fn("MCP.resourceTemplates")(function* () {
+    const resourceTemplates = Effect.fn("MCP.resourceTemplates")(function* (clientName?: string) {
       const s = yield* InstanceState.get(state)
       return yield* collectFromConnected(
         s,
@@ -1351,6 +1359,7 @@ export const layer = Layer.effect(
             (r) => r.resourceTemplates,
           ),
         "resourceTemplates",
+        clientName,
       )
     })
 

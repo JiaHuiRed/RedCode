@@ -292,13 +292,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       return { blocked: false as const, ctx, args }
     })
 
-    // list / listTemplates 同形状：列出（mcp 层已并发收集全部 connected server 并带 client
-    // 字段）→ 按 server 过滤 → 排序 → JSON 输出。
+    // list / listTemplates 同形状：列出（指定 server 时 mcp 层只访问该 server，否则
+    // 并发收集全部 connected server，条目带 client 字段）→ 过滤兜底 → 排序 → JSON 输出。
     const listTool = <T extends { client: string; name: string }>(
       name: string,
       description: string,
       label: string,
-      list: () => Effect.Effect<Record<string, T>>,
+      list: (server?: string) => Effect.Effect<Record<string, T>>,
       format: (item: T) => Record<string, unknown>,
     ) =>
       tool({
@@ -334,7 +334,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                     ? `MCP server "${parsed.server}" does not support resources`
                     : `MCP server "${parsed.server}" does not support resources. Available resource servers: ${resourceServers.join(", ")}`,
                 )
-              const entries = Object.values(yield* list()).filter(
+              // 261006 Red server-scoped：指定 server 时只访问该 server，不再全量
+              // 扇出后过滤；不过滤是兜底（防异常 server 把别家条目塞进响应）。
+              const entries = Object.values(yield* list(parsed.server)).filter(
                 (item) => !parsed.server || item.client === parsed.server,
               )
               entries.sort((a, b) => (a.client + "\u0000" + a.name).localeCompare(b.client + "\u0000" + b.name))
@@ -371,14 +373,14 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       MCP_RESOURCE_TOOLS.list,
       "Lists resources provided by connected MCP servers. Resources provide context such as files, database schemas, or application-specific information.",
       "resources",
-      () => mcp.resources(),
+      (server?: string) => mcp.resources(server),
       formatMcpResource,
     )
     tools[MCP_RESOURCE_TOOLS.listTemplates] = listTool(
       MCP_RESOURCE_TOOLS.listTemplates,
       "Lists resource templates provided by connected MCP servers. Resource templates are parameterized resources that can be read after filling in their URI template.",
       "resourceTemplates",
-      () => mcp.resourceTemplates(),
+      (server?: string) => mcp.resourceTemplates(server),
       formatMcpResourceTemplate,
     )
 

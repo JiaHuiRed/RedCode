@@ -27,6 +27,7 @@ type Recorder = {
   reads: string[]
   asks: (readonly string[])[]
   afterArgs: unknown[]
+  resourceScopes: (string | undefined)[]
 }
 
 const it = testEffect(Layer.empty)
@@ -57,11 +58,17 @@ function layers(rec: Recorder, rewrite: (name: string) => Record<string, unknown
     Layer.mock(MCP.Service)({
       tools: () => Effect.succeed({}),
       clients: () => Effect.succeed({ A: client, B: client }),
-      resources: () =>
-        Effect.succeed({
+      resources: (server?: string) => {
+        rec.resourceScopes.push(server)
+        // 与真实 service 同契约：指定 server 时只返回该 server 的条目
+        const all = {
           "foo://a": { uri: "foo://a", name: "a-res", client: "A" },
           "foo://b": { uri: "foo://b", name: "b-res", client: "B" },
-        }),
+        }
+        return Effect.succeed(
+          server === undefined ? all : Object.fromEntries(Object.entries(all).filter(([, v]) => v.client === server)),
+        )
+      },
       resourceTemplates: () => Effect.succeed({}),
       readResource: (clientName: string, resourceUri: string) => {
         rec.reads.push(`${clientName} ${resourceUri}`)
@@ -138,7 +145,7 @@ describe("session.tools mcp resource tools", () => {
     "read_mcp_resource executes against the hook-rewritten server and uri",
     () =>
       Effect.gen(function* () {
-        const rec: Recorder = { reads: [], asks: [], afterArgs: [] }
+        const rec: Recorder = { reads: [], asks: [], afterArgs: [], resourceScopes: [] }
         const tools = yield* SessionTools.resolve(resolveInput()).pipe(
           Effect.provide(layers(rec, (name) => (name === "tool.execute.before" ? { server: "B", uri: "foo://new" } : undefined))),
         )
@@ -155,7 +162,7 @@ describe("session.tools mcp resource tools", () => {
     "read_mcp_resource falls through to the raw args when no plugin rewrites them",
     () =>
       Effect.gen(function* () {
-        const rec: Recorder = { reads: [], asks: [], afterArgs: [] }
+        const rec: Recorder = { reads: [], asks: [], afterArgs: [], resourceScopes: [] }
         const tools = yield* SessionTools.resolve(resolveInput()).pipe(Effect.provide(layers(rec, () => undefined)))
         yield* callTool(tools, READ, { server: "A", uri: "foo://old" })
 
@@ -168,7 +175,7 @@ describe("session.tools mcp resource tools", () => {
     "list_mcp_resources scopes permission and filtering to the rewritten server",
     () =>
       Effect.gen(function* () {
-        const rec: Recorder = { reads: [], asks: [], afterArgs: [] }
+        const rec: Recorder = { reads: [], asks: [], afterArgs: [], resourceScopes: [] }
         const tools = yield* SessionTools.resolve(resolveInput()).pipe(
           Effect.provide(layers(rec, (name) => (name === "tool.execute.before" ? { server: "B" } : undefined))),
         )
@@ -178,6 +185,21 @@ describe("session.tools mcp resource tools", () => {
         expect(output).toMatchObject({ metadata: { count: 1, server: "B" } })
         expect(JSON.stringify(output)).toContain("foo://b")
         expect(JSON.stringify(output)).not.toContain("foo://a")
+      }),
+  )
+
+  it.live(
+    "list_mcp_resources scopes the mcp listing to the requested server",
+    () =>
+      Effect.gen(function* () {
+        const rec: Recorder = { reads: [], asks: [], afterArgs: [], resourceScopes: [] }
+        const tools = yield* SessionTools.resolve(resolveInput()).pipe(Effect.provide(layers(rec, () => undefined)))
+        yield* callTool(tools, LIST, { server: "A" })
+        yield* callTool(tools, LIST, {})
+
+        // 指定 server 时把范围传进 mcp 层（只访问 A）；不指定才收集全部 connected server。
+        // 修复前两次调用都是无参全量扇出。
+        expect(rec.resourceScopes).toEqual(["A", undefined])
       }),
   )
 })
