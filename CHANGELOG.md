@@ -8,7 +8,7 @@
 
 ---
 
-### [未发布]
+### [0.12.1] - 2026-10-06
 
 - **队列领取后重置独立 turn 步数预算**（`packages/opencode/src/session/prompt.ts`、`packages/opencode/test/session/prompt.test.ts`）：每条 FIFO 排队消息领取后重置 step 与轮内恢复状态，`agent.steps: 1` 下也各自获得完整模型回复；Goal token 仍跨 run 累计，软上下文提示仍按会话只发一次。回归验证三个请求按队列顺序送达且均已标记 delivered。决策：`docs/notes/implemented/feature/2026-08-14-busy-enter-steer-or-queue.md`。
 - **桌宠赤 V0.2：台词池与闲时动作**（`packages/app/src/pet/{pet-lines.ts,pet-layer.tsx}`、`src/context/settings.tsx`）：权限、提问和终态按姿态选取台词并持续展示；工作台词受概率和冷却控制，同姿态心跳不重新抽词。连续闲置后概率触发咖啡小憩或碎碎念，接入已有 `02-idle-coffee.png`；工作或用户交互立即打断，关闭后清理 tick，重开恢复必要提醒。表现层调度沿用一个 1s tick，动作与气泡在到期后的下一个 tick 收回；`settings.v3` 的 `general.petBehavior` 可调概率与时长，加载和写入均校验数值。只改 GUI 本地展示，不向引擎或模型添加消息；本批未接 plan/review 两张姿态或独立透明窗口。决策：`docs/notes/implemented/feature/2026-10-06-pet-v02-presentation.md`。
