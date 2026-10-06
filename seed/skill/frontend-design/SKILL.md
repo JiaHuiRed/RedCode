@@ -1,6 +1,6 @@
 ---
 name: frontend-design
-description: 构建或重整前端界面与组件，按截图/设计稿实现视觉风格。已有界面的质量审查使用 frontend-qa。
+description: 构建或重整前端界面与组件，按截图/设计稿实现视觉风格；做完后的设计质检（扫描 + checklist 报告）也在本 skill。动效细节用 apple-design。
 ---
 
 # Frontend Design
@@ -270,3 +270,36 @@ a token usage ban), attach a check to it — a lint rule, a CI gate, a code-revi
 explicitly document that it has none. A rule nothing checks is documentation, and it erodes:
 a scale with no gate behind it is a preference, and the first off-scale value is the one
 that proves it.
+
+## 19. Post-build QA review
+
+When reviewing a finished frontend change — the user asks for 质检/audit/polish, or before a release — run this pass and output a findings report. Review only: check for violations of explicit rules, not subjective taste; do not fix code unless asked.
+
+**Fast static scan** (grep the changed frontend files):
+
+```bash
+# AI-signature fonts and palettes
+grep -nE "Inter|Roboto|Geist|Space Grotesk" <files>
+grep -nE "purple|violet" <files>
+# font sizes below 12px
+grep -nE "font-size:\s*1?[01]px" <files>
+# bounce / layout-property animations
+grep -nE "bounce|elastic" <files>
+grep -nE "transition:[^;]*(width|height|padding|margin)" <files>
+# gradient text
+grep -n "background-clip:\s*text" <files>
+```
+
+**Hard numeric floors** (beyond the section 5–10 rules above):
+
+- body text ≥ 14px; functional text (buttons, labels, table cells) ≥ 11px
+- adjacent font-size steps ≥ 1.25×; body line-height ≥ 1.3×
+- container padding ≥ 8px (ideally 12–16px); prose measure ≤ 75ch
+- no gray text on colored backgrounds — use a darkened version of the background color
+- no zero-offset colored glow shadows (`box-shadow`/`text-shadow`)
+- no bounce/elastic easing — cubic-bezier control points stay within [0,1]
+- loading states carry text, not just a pulsing dot; empty states carry guidance + CTA
+- headings don't skip levels (h1→h2→h3); interactive elements are real `<button>`/`<a>`, not styled `<div>`s
+- tables have `<thead>`/`<tbody>`; focus styles are clearly visible; popups don't overflow or occlude content
+
+**Report format**: header with file / date / scope, a passed-count summary, then per-issue `[P1]` entries with location (`file:line`), symptom, and suggested fix.
