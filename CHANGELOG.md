@@ -8,6 +8,10 @@
 
 ---
 
+### [未发布] - 2026-10-07
+
+- **tool-result 配对净化：修复 steer 下重复 result 导致的 400**（`packages/opencode/src/session/{message-v2,prompt}.ts`、`test/session/message-v2.test.ts`）：插消息（steer）场景下出现过 DeepSeek 400「Messages with role 'tool' must be a response to a preceding message with 'tool_calls'」——现场请求体里同一批 tool-result 被复制了一份（assistant 只声明一次 2 个 tool-call，wire 层却跟了 4 条 tool 消息）。转换链逐 part 忠实（mock server 端到端验证不产生重复），重复由内存态（modelMsgs 单侧缓存拼接）引入、重启后消失，属缓存固化特征；修复不赌根因，在发送数组上做配对净化：每个 tool-call 只接受一次 result 应答，重复/孤儿丢弃并 log.warn 记录，净化后的数组才进缓存。模型可见四问：① 正常数据下恒等（原引用直通，零字节变化）；② token 影响仅异常时（丢的是重复 result）；③ 常态前缀不动；④ 无新增注入项。测试新增 5 用例，typecheck EXIT=0、59 pass / 0 fail。
+
 ### [0.12.2] - 2026-10-07
 
 - **Prompt Patch Registry**（`docs/prompt-patches.yml` + `session/prompt.ts` 注释回链）：审计 §18-19——提示词里为旧模型/场景写的补丁从此有登记与复核期。首批 8 条（WORK RULES 三条、flash/step 锚块、step 压缩块、gpt delta、vision skill）各带 `review_after`；到期复核「约束的对象是否还在」——在则续期，不在则删补丁+删条目。复核与固定前缀审计同批进行。
