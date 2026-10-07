@@ -229,6 +229,12 @@ import type {
   SessionUpdateResponses,
   SessionUsageErrors,
   SessionUsageResponses,
+  SoulDefaultErrors,
+  SoulDefaultResponses,
+  SoulIssuesErrors,
+  SoulIssuesResponses,
+  SoulListErrors,
+  SoulListResponses,
   SubtaskPartInput,
   SyncHistoryListErrors,
   SyncHistoryListResponses,
@@ -3222,6 +3228,7 @@ export class Session2 extends HeyApiClient {
       }
       permission?: PermissionRuleset
       workspaceID?: string
+      soul?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3238,6 +3245,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "model" },
             { in: "body", key: "permission" },
             { in: "body", key: "workspaceID" },
+            { in: "body", key: "soul" },
           ],
         },
       ],
@@ -4476,6 +4484,51 @@ export class Part extends HeyApiClient {
   }
 }
 
+export class Soul extends HeyApiClient {
+  /**
+   * List available Souls
+   *
+   * List available Soul identity summaries without returning Soul content.
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<SoulListResponses, SoulListErrors, ThrowOnError>({
+      url: "/soul",
+      ...options,
+    })
+  }
+
+  /**
+   * List Soul configuration issues
+   *
+   * List invalid or unreadable Soul files so configuration errors remain visible.
+   */
+  public issues<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<SoulIssuesResponses, SoulIssuesErrors, ThrowOnError>({
+      url: "/soul/issues",
+      ...options,
+    })
+  }
+
+  /**
+   * Get a new-session default Soul
+   *
+   * Resolve a client default without changing any existing session identity.
+   */
+  public default<ThrowOnError extends boolean = false>(
+    parameters: {
+      client: "tui" | "desktop"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "client" }] }])
+    return (options?.client ?? this.client).get<SoulDefaultResponses, SoulDefaultErrors, ThrowOnError>({
+      url: "/soul/default",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class History extends HeyApiClient {
   /**
    * List sync events
@@ -5548,6 +5601,11 @@ export class OpencodeClient extends HeyApiClient {
   private _part?: Part
   get part(): Part {
     return (this._part ??= new Part({ client: this.client }))
+  }
+
+  private _soul?: Soul
+  get soul(): Soul {
+    return (this._soul ??= new Soul({ client: this.client }))
   }
 
   private _sync?: Sync

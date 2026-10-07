@@ -64,7 +64,9 @@ export function createOpencodeClient(config?: Config & { directory?: string; exp
         return transport(Object.assign(request, { timeout: false }))
       }
       // 261006 Red Request 会派生 signal；合并取消与 deadline，不能用对象相等判断来源。
-      return transport(new Request(request, { signal: AbortSignal.any([request.signal, requestTimeoutSignal(60_000)]) }))
+      return transport(
+        new Request(request, { signal: AbortSignal.any([request.signal, requestTimeoutSignal(60_000)]) }),
+      )
     }, transport),
   }
 

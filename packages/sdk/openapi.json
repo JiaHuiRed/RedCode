@@ -5309,8 +5309,21 @@
                     },
                     {
                       "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
                     }
                   ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
                 }
               }
             }
@@ -5356,6 +5369,9 @@
                   "workspaceID": {
                     "type": "string",
                     "pattern": "^wrk"
+                  },
+                  "soul": {
+                    "type": "string"
                   }
                 },
                 "additionalProperties": false
@@ -8783,6 +8799,170 @@
           {
             "lang": "js",
             "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.part.update({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/soul": {
+      "get": {
+        "tags": ["soul"],
+        "operationId": "soul.list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Available Soul summaries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "displayName": {
+                        "type": "string"
+                      },
+                      "commitPrefix": {
+                        "type": "string"
+                      },
+                      "avatar": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["id", "name", "displayName", "commitPrefix"],
+                    "additionalProperties": false
+                  },
+                  "description": "Available Soul summaries"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "List available Soul identity summaries without returning Soul content.",
+        "summary": "List available Souls",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.soul.list({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/soul/issues": {
+      "get": {
+        "tags": ["soul"],
+        "operationId": "soul.issues",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Soul registry configuration issues",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string"
+                      },
+                      "message": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["path", "message"],
+                    "additionalProperties": false
+                  },
+                  "description": "Soul registry configuration issues"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "List invalid or unreadable Soul files so configuration errors remain visible.",
+        "summary": "List Soul configuration issues",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.soul.issues({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/soul/default": {
+      "get": {
+        "tags": ["soul"],
+        "operationId": "soul.default",
+        "parameters": [
+          {
+            "name": "client",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["tui", "desktop"]
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Resolve a client default without changing any existing session identity.",
+        "summary": "Get a new-session default Soul",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.soul.default({\n  ...\n})"
           }
         ]
       }
@@ -14317,6 +14497,9 @@
           "client": {
             "type": "string"
           },
+          "soul": {
+            "type": "string"
+          },
           "model": {
             "type": "object",
             "properties": {
@@ -16659,6 +16842,9 @@
             "type": "string"
           },
           "client": {
+            "type": "string"
+          },
+          "soul": {
             "type": "string"
           },
           "model": {
@@ -24570,6 +24756,9 @@
     {
       "name": "session",
       "description": "Experimental HttpApi session routes."
+    },
+    {
+      "name": "soul"
     },
     {
       "name": "sync",

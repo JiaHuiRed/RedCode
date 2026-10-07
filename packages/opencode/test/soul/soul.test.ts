@@ -1,9 +1,11 @@
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import path from "node:path"
+import fs from "node:fs"
 import { testEffect } from "../lib/effect"
 import { TestInstance } from "../fixture/fixture"
 import { Soul } from "@/soul"
+import { migrateLegacySouls } from "@/soul/migration"
 
 const it = testEffect(Layer.mergeAll(Soul.defaultLayer))
 
@@ -60,6 +62,150 @@ describe("soul registry", () => {
     }),
   )
 
+  it.instance("uses displayName for attribution before name when commit_prefix is absent", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      yield* write(path.join(dir, "helper.md"), official("id: helper\nname: Full Name\ndisplay_name: Short Name"))
+      const info = yield* (yield* Soul.Service).get("helper").pipe(Effect.provideService(Soul.directory, dir))
+      expect(info?.commitPrefix).toBe("Short Name")
+    }),
+  )
+
+  it.instance("migrates official and customized legacy files without changing old bodies", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      const karinaBody = "# 柳智敏 · RedCode\n\nuser body\n"
+      const customBody = "# My Assistant\n\ncustom body\n"
+      yield* write(path.join(dir, "Tsoul.md"), karinaBody)
+      yield* write(path.join(dir, "Gsoul.md"), customBody)
+      const result = yield* Effect.sync(() => migrateLegacySouls(dir))
+      expect(result.defaults).toEqual({ tui: "karina", desktop: "legacy-desktop" })
+      expect(result.issues).toEqual([])
+      expect(fs.readFileSync(path.join(dir, "karina.md"), "utf8")).toContain(karinaBody)
+      expect(fs.readFileSync(path.join(dir, "legacy-desktop.md"), "utf8")).toContain(customBody)
+      expect(fs.readFileSync(path.join(dir, "karina.md"), "utf8")).toContain('commit_prefix: "Karina"')
+      expect(fs.readFileSync(path.join(dir, "karina.md"), "utf8")).toContain('display_name: "敏敏"')
+      expect(migrateLegacySouls(dir).defaults).toEqual(result.defaults)
+      expect(
+        yield* (yield* Soul.Service).defaultForClient("desktop").pipe(Effect.provideService(Soul.directory, dir)),
+      ).toBe("legacy-desktop")
+    }),
+  )
+
+  it.instance("uses valid metadata id for a customized legacy Soul", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      yield* write(
+        path.join(dir, "Gsoul.md"),
+        "---\nid: assistant\nname: My Assistant\n---\n\n# My Assistant\n\nbody\n",
+      )
+      expect(migrateLegacySouls(dir).defaults).toEqual({ tui: "karina", desktop: "assistant" })
+    }),
+  )
+
+  it.instance("prefers valid source metadata identity over a conflicting heading", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      yield* write(path.join(dir, "Tsoul.md"), "---\nid: helper\nname: Helper\n---\n\n# 柳智敏\n\nbody\n")
+      const result = migrateLegacySouls(dir)
+      expect(result.defaults).toEqual({ tui: "helper", desktop: "yuqi" })
+      expect(fs.readFileSync(path.join(dir, "helper.md"), "utf8")).toContain('name: "Helper"')
+    }),
+  )
+
+  it.instance("preserves an explicit metadata ID even when its name is official", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      yield* write(path.join(dir, "Tsoul.md"), "---\nid: custom-karina\nname: 柳智敏\n---\n\nbody\n")
+      expect(migrateLegacySouls(dir).defaults).toEqual({ tui: "custom-karina", desktop: "yuqi" })
+    }),
+  )
+
+  it.instance("does not overwrite a V2 destination and makes the conflict visible", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      yield* write(path.join(dir, "Tsoul.md"), "# 柳智敏\n\nold body\n")
+      yield* write(path.join(dir, "karina.md"), official("id: karina\nname: 柳智敏") + "existing\n")
+      const result = yield* Effect.sync(() => migrateLegacySouls(dir))
+      expect(result.defaults).toEqual({ tui: "tsoul", desktop: "yuqi" })
+      expect(result.issues.join(" ")).toContain("already exists")
+      expect(fs.readFileSync(path.join(dir, "karina.md"), "utf8")).toContain("existing")
+    }),
+  )
+
+  it.instance("selects the migrated canonical file before deduplicating metadata aliases", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      yield* write(path.join(dir, "Tsoul.md"), "---\nid: helper\nname: Helper\n---\n\noriginal body\n")
+      migrateLegacySouls(dir)
+      const soul = yield* Soul.Service
+      expect((yield* soul.get("helper").pipe(Effect.provideService(Soul.directory, dir)))?.path).toBe(
+        path.join(dir, "helper.md"),
+      )
+      expect(yield* soul.issues().pipe(Effect.provideService(Soul.directory, dir))).toEqual([])
+    }),
+  )
+
+  it.instance("preserves a conflicting metadata alias instead of selecting a different canonical body", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      yield* write(path.join(dir, "Tsoul.md"), "---\nid: helper\nname: Helper\n---\n\noriginal body\n")
+      yield* write(path.join(dir, "helper.md"), "---\nid: helper\nname: Helper\n---\n\ndifferent body\n")
+      expect(migrateLegacySouls(dir).issues.join(" ")).toContain("already exists")
+      const soul = yield* Soul.Service
+      expect((yield* soul.get("helper").pipe(Effect.provideService(Soul.directory, dir)))?.content).toBe(
+        "original body",
+      )
+      expect(
+        (yield* soul.issues().pipe(Effect.provideService(Soul.directory, dir))).some((issue) =>
+          issue.message.includes("duplicate"),
+        ),
+      ).toBe(true)
+    }),
+  )
+
+  it.instance("does not suppress an alias that is its own marker target", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      yield* write(path.join(dir, "tsoul.md"), "---\nid: tsoul\nname: Helper\n---\n\nbody\n")
+      yield* write(path.join(dir, ".legacy-defaults.json"), JSON.stringify({ version: 1, defaults: { tui: "tsoul" } }))
+      expect(
+        (yield* (yield* Soul.Service).list().pipe(Effect.provideService(Soul.directory, dir))).map((item) => item.id),
+      ).toEqual(["tsoul"])
+    }),
+  )
+
+  it.instance("does not mark conflicting canonical identity metadata as an identical copy", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      yield* write(path.join(dir, "Tsoul.md"), "---\nid: helper\nname: Original\n---\n\nsame body\n")
+      yield* write(path.join(dir, "helper.md"), "---\nid: helper\nname: Different\n---\n\nsame body\n")
+      expect(migrateLegacySouls(dir).issues.join(" ")).toContain("already exists")
+      const info = yield* (yield* Soul.Service).get("helper").pipe(Effect.provideService(Soul.directory, dir))
+      expect(info?.name).toBe("Original")
+      expect(info?.path).toBe(path.join(dir, "Tsoul.md"))
+    }),
+  )
+
+  it.instance("retains compiled legacy defaults when source files are absent without writing a marker", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "absent-souls")
+      expect(migrateLegacySouls(dir).defaults).toEqual({ tui: "karina", desktop: "yuqi" })
+      expect(fs.existsSync(path.join(dir, ".legacy-defaults.json"))).toBe(false)
+    }),
+  )
+
   it.instance("reports invalid id as an issue without listing the soul", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
@@ -103,6 +249,80 @@ describe("soul registry", () => {
       const issues = yield* soul.issues().pipe(Effect.provideService(Soul.directory, dir))
       expect(list).toEqual([])
       expect(issues.map((issue) => issue.message).sort()).toEqual(["empty content", "exceeds 16384 bytes"])
+    }),
+  )
+
+  it.instance("rejects malformed partial metadata and oversized files during get", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      yield* write(path.join(dir, "partial.md"), "---\nid: partial\n---\n\nbody\n")
+      yield* write(path.join(dir, "big.md"), official("id: big\nname: 大") + "x".repeat(17 * 1024))
+      const soul = yield* Soul.Service
+      const issues = yield* soul.issues().pipe(Effect.provideService(Soul.directory, dir))
+      expect(issues.map((issue) => issue.message).sort()).toEqual([
+        "exceeds 16384 bytes",
+        "invalid or incomplete metadata",
+      ])
+      expect(yield* soul.get("partial").pipe(Effect.provideService(Soul.directory, dir))).toBeUndefined()
+      expect(yield* soul.get("big").pipe(Effect.provideService(Soul.directory, dir))).toBeUndefined()
+    }),
+  )
+
+  it.instance("keeps aliases visible unless a valid migration marker points to a canonical target", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      yield* write(path.join(dir, "Tsoul.md"), "# 柳智敏\n\nlegacy\n")
+      yield* write(path.join(dir, "karina.md"), official("id: karina\nname: 柳智敏"))
+      yield* write(path.join(dir, "chi.md"), official("id: chi\nname: 赤"))
+      yield* write(path.join(dir, ".legacy-defaults.json"), JSON.stringify({ version: 1, defaults: { tui: "karina" } }))
+      const list = yield* (yield* Soul.Service).list().pipe(Effect.provideService(Soul.directory, dir))
+      expect(list.map((item) => item.id)).toEqual(["chi", "karina"])
+    }),
+  )
+
+  it.instance("rejects unknown metadata keys and whitespace-only optional values visibly", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      yield* write(path.join(dir, "unknown.md"), official("id: unknown\nname: Unknown\nlegacy_client: tui"))
+      yield* write(path.join(dir, "blank.md"), official("id: blank\nname: Blank\ndisplay_name: '   '"))
+      const soul = yield* Soul.Service
+      expect(yield* soul.list().pipe(Effect.provideService(Soul.directory, dir))).toEqual([])
+      expect((yield* soul.issues().pipe(Effect.provideService(Soul.directory, dir))).length).toBe(2)
+    }),
+  )
+
+  it.instance("reports corrupt legacy marker and does not suppress aliases", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      yield* write(path.join(dir, "Tsoul.md"), "# Legacy\n\nbody\n")
+      yield* write(path.join(dir, ".legacy-defaults.json"), "{broken")
+      const soul = yield* Soul.Service
+      expect((yield* soul.list().pipe(Effect.provideService(Soul.directory, dir))).map((item) => item.id)).toEqual([
+        "tsoul",
+      ])
+      expect(
+        (yield* soul.issues().pipe(Effect.provideService(Soul.directory, dir))).some((issue) =>
+          issue.path.endsWith(".legacy-defaults.json"),
+        ),
+      ).toBe(true)
+    }),
+  )
+
+  it.instance("ignores stale marker defaults and retains the source alias", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      yield* write(path.join(dir, "Tsoul.md"), "# Legacy\n\nbody\n")
+      yield* write(path.join(dir, ".legacy-defaults.json"), JSON.stringify({ version: 1, defaults: { tui: "karina" } }))
+      const soul = yield* Soul.Service
+      expect(yield* soul.defaultForClient("tui").pipe(Effect.provideService(Soul.directory, dir))).toBe("tsoul")
+      expect((yield* soul.list().pipe(Effect.provideService(Soul.directory, dir))).map((item) => item.id)).toEqual([
+        "tsoul",
+      ])
     }),
   )
 

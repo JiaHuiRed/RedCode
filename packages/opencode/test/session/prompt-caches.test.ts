@@ -20,6 +20,12 @@ function seed(sessionID: string) {
     ]),
   )
   PromptCaches.tools.set(sessionID, { sessionID, defs: new Map() })
+  PromptCaches.souls.set(sessionID, {
+    id: "karina",
+    info: undefined,
+    prompt: "pinned soul",
+    missingWarned: false,
+  })
 }
 
 describe("session.prompt-caches", () => {
@@ -85,18 +91,26 @@ describe("session.prompt-caches", () => {
     const HOUR = 60 * 60 * 1000
 
     function fresh() {
-      for (const m of [PromptCaches.system, PromptCaches.msgPin, PromptCaches.modelMsgs, PromptCaches.tools]) m.clear()
+      for (const m of [
+        PromptCaches.system,
+        PromptCaches.msgPin,
+        PromptCaches.modelMsgs,
+        PromptCaches.tools,
+        PromptCaches.souls,
+      ])
+        m.clear()
       PromptCaches.seen.clear()
     }
 
     test("dropSession 四个缓存一起摘干净（settle 只摘两个）", () => {
       fresh()
       seed("ses_x")
-      expect(dropSession("ses_x")).toBe(4)
+      expect(dropSession("ses_x")).toBe(5)
       expect(PromptCaches.msgPin.has("ses_x")).toBe(false)
       expect(PromptCaches.modelMsgs.has("ses_x")).toBe(false)
       expect(PromptCaches.system.has("ses_x")).toBe(false)
       expect(PromptCaches.tools.has("ses_x")).toBe(false)
+      expect(PromptCaches.souls.has("ses_x")).toBe(false)
       expect(PromptCaches.seen.has("ses_x")).toBe(false)
     })
 

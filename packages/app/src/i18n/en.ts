@@ -757,6 +757,9 @@ export const dict = {
 
   "session.header.search.placeholder": "Search {{project}}",
   "session.header.searchFiles": "Search files",
+  "session.header.activeSoul": "Active Soul: {{soul}}",
+  "session.header.defaultSoul": "New-session Soul: {{soul}}",
+  "session.header.noSoul": "No Soul",
   "session.header.openIn": "Open in",
   "session.header.open.action": "Open {{app}}",
   "session.header.open.ariaLabel": "Open in {{app}}",
@@ -955,9 +958,9 @@ export const dict = {
   "settings.general.row.showSessionProgressBar.title": "Show session progress bar",
   "settings.general.row.showSessionProgressBar.description":
     "Display the animated progress bar at the top of the session when the agent is working",
- "settings.general.row.petEnabled.title": "Show desktop pet",
- "settings.general.row.petEnabled.description":
-   "Show Chi (chibi) at the bottom-left of the main content area. You can turn it back on here anytime",
+  "settings.general.row.petEnabled.title": "Show desktop pet",
+  "settings.general.row.petEnabled.description":
+    "Show Chi (chibi) at the bottom-left of the main content area. You can turn it back on here anytime",
   "settings.general.row.pinchZoom.title": "Pinch to zoom",
   "settings.general.row.pinchZoom.description": "Allow trackpad pinch and Ctrl-scroll gestures to zoom",
 
@@ -1070,6 +1073,18 @@ export const dict = {
   "settings.providers.tag.other": "Other",
   "settings.models.title": "Models",
   "settings.models.description": "Model settings will be configurable here.",
+  "settings.personalization.title": "Personalization",
+  "settings.personalization.description": "Choose the Soul used for new sessions.",
+  "settings.personalization.defaultSoul": "Default Soul",
+  "settings.personalization.defaultSoulDescription":
+    "This applies to future sessions. The current session keeps its Soul.",
+  "settings.personalization.serverDefault": "Use server default ({{soul}})",
+  "settings.personalization.unavailableSoul": "Unavailable Soul ({{id}})",
+  "settings.personalization.staleSoul":
+    "The saved Soul “{{id}}” is unavailable. Choose another Soul or use the server default.",
+  "settings.personalization.issuesLoading": "Checking Soul registry…",
+  "settings.personalization.registryIssues": "Soul registry issues",
+
   "settings.agents.title": "Agents",
   "settings.agents.description":
     'Override the model and reasoning effort of the built-in agents. "Default" leaves the agent\'s own definition in charge.',

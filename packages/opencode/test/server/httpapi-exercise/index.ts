@@ -797,9 +797,38 @@ const scenarios: Scenario[] = [
         object(body)
         check(body.title === "Created session", "created session should use requested title")
         check(body.directory === ctx.directory, "created session should use scenario directory")
+        check(body.soul === undefined, "empty registry should leave the session soul unset")
       },
       "status",
     ),
+  http.protected
+    .post("/session", "session.create.unknown-soul")
+    .mutating()
+    .at((ctx) => ({ path: "/session", headers: ctx.headers(), body: { soul: "missing-soul" } }))
+    .status(400),
+  http.protected.get("/soul", "soul.list").json(200, (body) => {
+    array(body)
+    check(
+      body.every((item) => isRecord(item) && !("content" in item)),
+      "Soul list must not return Soul content",
+    )
+  }),
+  http.protected.get("/soul/issues", "soul.issues").json(200, (body) => array(body)),
+  http.protected
+    .get("/soul/default", "soul.default")
+    .at((ctx) => ({ path: "/soul/default?client=tui", headers: ctx.headers() }))
+    .json(200, (body) => {
+      object(body)
+      check(body.id === undefined || typeof body.id === "string", "default Soul must be a valid id or omitted")
+    }),
+  http.protected
+    .get("/soul/default", "soul.default.desktop")
+    .at((ctx) => ({ path: "/soul/default?client=desktop", headers: ctx.headers() }))
+    .json(200, (body) => object(body)),
+  http.protected
+    .get("/soul/default", "soul.default.invalid-client")
+    .at((ctx) => ({ path: "/soul/default?client=other", headers: ctx.headers() }))
+    .status(400),
   http.protected
     .get("/session/{sessionID}", "session.get")
     .seeded((ctx) => ctx.session({ title: "Get me" }))

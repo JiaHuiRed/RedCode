@@ -270,7 +270,7 @@ export interface Hooks {
    * Called when a session is created
    */
   "session.start"?: (
-    input: { sessionID: string; agent?: string; model?: { providerID: string; modelID: string } },
+    input: { sessionID: string; agent?: string; model?: { providerID: string; modelID: string }; soul?: string },
     output: {},
   ) => Promise<void>
   /**

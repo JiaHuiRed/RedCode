@@ -29,19 +29,13 @@ const DEFAULT_INSTRUCTION_BUDGET = {
 const bytes = (content: string) => new TextEncoder().encode(content).byteLength
 
 // 260929 Red 保留优先级与注入顺序是两个维度。顺序决定输出（也决定前缀缓存从哪里断），
-// 优先级决定超预算时谁先被丢。原先两者是同一条数组的次序——于是「先丢 config
-// instructions 和 soul」这个后果没有任何人设计过，它只是数组尾部的偶然。
-//
-// 261007 Red 复核后重排（soul 是身份核心，超预算时第一个被丢说不过去；本机五源合计
-// 已达默认预算约九成，溢出越来越可能真实发生）。重排后丢弃顺序为
-// config → MEMORY → soul → AGENTS，soul 先于 MEMORY 保留。
+// 优先级决定超预算时谁先被丢。Soul 已独立于 Instruction 管理，不参与此来源预算。
 //
 // 优先级按「模型要正确干活，最不能少的是什么」排：
 //   0 AGENTS.md（全局/项目）——硬规则，漏一条可能直接违反映该不该做某件事
-//   1 soul——身份与声线，丢了没有任何补救通道
-//   2 MEMORY.md（全局/项目）——教训索引，丢了少一些触发提醒，全文在召回库可查
-//   3 config.instructions——用户显式配置的额外指令，丢了可在配置里复看
-const RETENTION = { agents: 0, soul: 1, memory: 2, config: 3 } as const
+//   1 MEMORY.md（全局/项目）——教训索引，丢了少一些触发提醒，全文在召回库可查
+//   2 config.instructions——用户显式配置的额外指令，丢了可在配置里复看
+const RETENTION = { agents: 0, memory: 1, config: 2 } as const
 type SourceKind = keyof typeof RETENTION
 
 // 260929 Red 声明行自己也要有硬上限。dropped 的来源名可能来自 config.instructions，
@@ -249,13 +243,6 @@ export const layer: Layer.Layer<
         }
       }
 
-      // 260611 Red auto-inject soul based on TUI/GUI mode
-      {
-        const soulFile = flags.client === "desktop" ? "Gsoul.md" : "Tsoul.md"
-        const soulPath = path.join(global.home, ".redcode", "souls", soulFile)
-        if (yield* fs.existsSafe(soulPath)) add(soulPath, "soul")
-      }
-
       if (config.instructions) {
         for (const raw of config.instructions) {
           if (raw.startsWith("https://") || raw.startsWith("http://")) continue
@@ -382,13 +369,13 @@ export const layer: Layer.Layer<
         )
       }
 
-     // 260929 Red 显式优先级声明。没有这句时，用户自己写的 AGENTS.md 与引擎默认提示词
-     // 冲突，谁赢全靠模型自己猜；放在所有来源之前，位置稳定、不随后续增删而移动。
-     // 没有任何来源时不输出——没有"下面的指令"时这句话是纯噪音，还白占 token。
-     const parts = [
-       ...(sources.length > 0 ? ["The instructions below OVERRIDE any default behavior when they conflict."] : []),
-       ...sources.map((s) => s.text),
-     ]
+      // 260929 Red 显式优先级声明。没有这句时，用户自己写的 AGENTS.md 与引擎默认提示词
+      // 冲突，谁赢全靠模型自己猜；放在所有来源之前，位置稳定、不随后续增删而移动。
+      // 没有任何来源时不输出——没有"下面的指令"时这句话是纯噪音，还白占 token。
+      const parts = [
+        ...(sources.length > 0 ? ["The instructions below OVERRIDE any default behavior when they conflict."] : []),
+        ...sources.map((s) => s.text),
+      ]
       if (dropped.length > 0) {
         const list = budgetList(dropped, MAX_BUDGET_MARKER_BYTES - MARKER_RESERVE)
         const marker =

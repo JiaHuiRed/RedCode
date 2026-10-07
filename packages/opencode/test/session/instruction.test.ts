@@ -409,91 +409,86 @@ describe("Instruction.system instruction_budget", () => {
 // 260929 Red 总量上限从「只告警」改为执行，必须验证它真的执行，并且执行方式是对的：
 // 丢整份来源（不切半截）、被丢的进模型可见声明行、优先级低的先丢。
 describe("Instruction.system max_total_bytes", () => {
- const agents = (n: number) => `# ${"x".repeat(n)}`
+  const agents = (n: number) => `# ${"x".repeat(n)}`
 
- it.live("drops the lowest-priority source when the total exceeds the budget", () =>
-   Effect.gen(function* () {
-     const globalTmp = yield* tmpWithFiles({ "AGENTS.md": agents(1000) })
-     const projectTmp = yield* tmpWithFiles({ "AGENTS.md": agents(1000) })
+  it.live("drops the lowest-priority source when the total exceeds the budget", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpWithFiles({ "AGENTS.md": agents(1000) })
+      const projectTmp = yield* tmpWithFiles({ "AGENTS.md": agents(1000) })
 
-     yield* Effect.gen(function* () {
-       const svc = yield* Instruction.Service
-       const rules = yield* svc.system()
-       // 两份各约 1KB，预算 1.5KB → 后注入的项目级被整份丢掉，全局级完整保留
-       expect(rules.some((r) => r.includes(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}`))).toBe(true)
-       expect(rules.some((r) => r.includes(`Instructions from: ${path.join(projectTmp, "AGENTS.md")}`))).toBe(false)
-       // 被丢的来源必须进模型可见声明行——静默丢弃比前缀长更糟
-       const notice = rules.find((r) => r.includes("[instruction budget]"))
-       expect(notice).toBeDefined()
-       expect(notice).toContain(path.join(projectTmp, "AGENTS.md"))
-       // 保留的那份必须是完整的，没有被切半截
-       const kept = rules.find((r) => r.includes(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}`))!
-       expect(kept).toContain(agents(1000))
-     }).pipe(
-       provideInstance(projectTmp),
-       provideInstruction({ home: globalTmp, config: globalTmp }, undefined, {
-         instruction_budget: { max_total_bytes: 1500 },
-       }),
-     )
-   }),
- )
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const rules = yield* svc.system()
+        // 两份各约 1KB，预算 1.5KB → 后注入的项目级被整份丢掉，全局级完整保留
+        expect(rules.some((r) => r.includes(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}`))).toBe(true)
+        expect(rules.some((r) => r.includes(`Instructions from: ${path.join(projectTmp, "AGENTS.md")}`))).toBe(false)
+        // 被丢的来源必须进模型可见声明行——静默丢弃比前缀长更糟
+        const notice = rules.find((r) => r.includes("[instruction budget]"))
+        expect(notice).toBeDefined()
+        expect(notice).toContain(path.join(projectTmp, "AGENTS.md"))
+        // 保留的那份必须是完整的，没有被切半截
+        const kept = rules.find((r) => r.includes(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}`))!
+        expect(kept).toContain(agents(1000))
+      }).pipe(
+        provideInstance(projectTmp),
+        provideInstruction({ home: globalTmp, config: globalTmp }, undefined, {
+          instruction_budget: { max_total_bytes: 1500 },
+        }),
+      )
+    }),
+  )
 
- it.live("truncates the only source with an explicit marker instead of dropping everything", () =>
-   Effect.gen(function* () {
-     const globalTmp = yield* tmpWithFiles({ "AGENTS.md": agents(4000) })
-     const projectTmp = yield* tmpdirScoped()
+  it.live("truncates the only source with an explicit marker instead of dropping everything", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpWithFiles({ "AGENTS.md": agents(4000) })
+      const projectTmp = yield* tmpdirScoped()
 
-     yield* Effect.gen(function* () {
-       const svc = yield* Instruction.Service
-       const rules = yield* svc.system()
-       // 只剩一个来源仍然超限：不能整份丢光（那就什么指令都没了），截断它本身并带标记
-       expect(rules.some((r) => r.includes(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}`))).toBe(true)
-       expect(rules.some((r) => r.includes("truncated at 2000 bytes"))).toBe(true)
-       // 截断后的正文必须短于上限 + 标记行，不会把整个超限内容原样留下
-       const kept = rules.find((r) => r.includes(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}`))!
-       expect(new TextEncoder().encode(kept).byteLength).toBeLessThan(2000 + 400)
-     }).pipe(
-       provideInstance(projectTmp),
-       provideInstruction({ home: globalTmp, config: globalTmp }, undefined, {
-         instruction_budget: { max_total_bytes: 2000 },
-       }),
-     )
-   }),
- )
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const rules = yield* svc.system()
+        // 只剩一个来源仍然超限：不能整份丢光（那就什么指令都没了），截断它本身并带标记
+        expect(rules.some((r) => r.includes(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}`))).toBe(true)
+        expect(rules.some((r) => r.includes("truncated at 2000 bytes"))).toBe(true)
+        // 截断后的正文必须短于上限 + 标记行，不会把整个超限内容原样留下
+        const kept = rules.find((r) => r.includes(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}`))!
+        expect(new TextEncoder().encode(kept).byteLength).toBeLessThan(2000 + 400)
+      }).pipe(
+        provideInstance(projectTmp),
+        provideInstruction({ home: globalTmp, config: globalTmp }, undefined, {
+          instruction_budget: { max_total_bytes: 2000 },
+        }),
+      )
+    }),
+  )
 
- it.live("keeps everything when the total is within the budget", () =>
-   Effect.gen(function* () {
-     const globalTmp = yield* tmpWithFiles({ "AGENTS.md": agents(100) })
-     const projectTmp = yield* tmpWithFiles({ "AGENTS.md": agents(100) })
+  it.live("keeps everything when the total is within the budget", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpWithFiles({ "AGENTS.md": agents(100) })
+      const projectTmp = yield* tmpWithFiles({ "AGENTS.md": agents(100) })
 
-     yield* Effect.gen(function* () {
-       const svc = yield* Instruction.Service
-       const rules = yield* svc.system()
-       expect(rules.some((r) => r.includes(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}`))).toBe(true)
-       expect(rules.some((r) => r.includes(`Instructions from: ${path.join(projectTmp, "AGENTS.md")}`))).toBe(true)
-       // 预算内不出现任何声明行
-       expect(rules.some((r) => r.includes("[instruction budget]"))).toBe(false)
-     }).pipe(
-       provideInstance(projectTmp),
-       provideInstruction({ home: globalTmp, config: globalTmp }, undefined, {
-         instruction_budget: { max_total_bytes: 64 * 1024 },
-       }),
-     )
-   }),
- )
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const rules = yield* svc.system()
+        expect(rules.some((r) => r.includes(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}`))).toBe(true)
+        expect(rules.some((r) => r.includes(`Instructions from: ${path.join(projectTmp, "AGENTS.md")}`))).toBe(true)
+        // 预算内不出现任何声明行
+        expect(rules.some((r) => r.includes("[instruction budget]"))).toBe(false)
+      }).pipe(
+        provideInstance(projectTmp),
+        provideInstruction({ home: globalTmp, config: globalTmp }, undefined, {
+          instruction_budget: { max_total_bytes: 64 * 1024 },
+        }),
+      )
+    }),
+  )
 
-  // 260929 Red 保留优先级与注入顺序是两个维度，必须分开验证。顺序没变（输出仍是
-  // 全局 AGENTS → 项目 AGENTS → 全局 MEMORY → 项目 MEMORY → soul → config），
-  // 但「谁先被丢」现在是显式设计的结果，不再是数组尾部的偶然。
-  // 261007 Red 重排后 soul 先于 MEMORY 保留（MEMORY 是索引层，全文在召回库可查；
-  // soul 丢了没有任何补救通道），本用例改为验证这条新顺序。
-  it.live("keeps soul ahead of short-term MEMORY when the budget is tight", () =>
+  // 261007 Red Soul 已从 Instruction 独立管理；这里验证其余 instruction 来源的优先级。
+  it.live("keeps AGENTS ahead of MEMORY when the instruction budget is tight", () =>
     Effect.gen(function* () {
       const globalTmp = yield* tmpWithFiles({
         "AGENTS.md": agents(1000),
         // 全局 MEMORY 是 <config>/MEMORY.md（不是 .redcode/ 下那份——那是项目级）
         "MEMORY.md": agents(800),
-        ".redcode/souls/Tsoul.md": agents(300),
       })
       const projectTmp = yield* tmpdirScoped()
 
@@ -502,8 +497,7 @@ describe("Instruction.system max_total_bytes", () => {
         const rules = yield* svc.system()
         // 必须只看来源本体：声明行里也含被丢来源的路径，混在一起会让断言因错误的原因通过
         const kept = rules.filter((r) => r.startsWith("Instructions from:"))
-        // 预算 2000 < 总量约 2.2KB：MEMORY(2) 先于 soul(1) 被丢
-        expect(kept.some((r) => r.includes("Tsoul.md"))).toBe(true)
+        // 预算 1500 < 两个来源正文合计 1800：MEMORY 先丢，AGENTS 完整保留。
         expect(kept.some((r) => r.includes("MEMORY.md"))).toBe(false)
         // AGENTS(0) 完整保留——漏一条硬规则比前缀长更糟
         expect(kept.some((r) => r.includes(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}`))).toBe(true)
@@ -513,7 +507,7 @@ describe("Instruction.system max_total_bytes", () => {
       }).pipe(
         provideInstance(projectTmp),
         provideInstruction({ home: globalTmp, config: globalTmp }, undefined, {
-          instruction_budget: { max_total_bytes: 2000 },
+          instruction_budget: { max_total_bytes: 1500 },
         }),
       )
     }),
@@ -529,10 +523,7 @@ describe("Instruction.system max_total_bytes", () => {
       const globalTmp = yield* tmpWithFiles({ "AGENTS.md": agents(4000) })
       const projectTmp = yield* tmpdirScoped()
       const extra = yield* tmpdirScoped()
-      yield* writeFiles(
-        extra,
-        Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`${long}${i}.md`, agents(50)])),
-      )
+      yield* writeFiles(extra, Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`${long}${i}.md`, agents(50)])))
 
       yield* Effect.gen(function* () {
         const svc = yield* Instruction.Service
@@ -559,26 +550,37 @@ describe("Instruction.system max_total_bytes", () => {
     }),
   )
 
- // 260929 Red CJK 截断必须按字节而不是字符数：一个汉字 3 字节，按字符切会把
- // 多字节序列切成乱码，模型看到替换字符而不是指令。
- it.live("truncates CJK content on a character boundary", () =>
-   Effect.gen(function* () {
-     const globalTmp = yield* tmpWithFiles({ "AGENTS.md": "敏".repeat(2000) })
-     const projectTmp = yield* tmpdirScoped()
+  // 260929 Red CJK 截断必须按字节而不是字符数：一个汉字 3 字节，按字符切会把
+  // 多字节序列切成乱码，模型看到替换字符而不是指令。
+  it.live("truncates CJK content on a character boundary", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpWithFiles({ "AGENTS.md": "敏".repeat(2000) })
+      const projectTmp = yield* tmpdirScoped()
 
-     yield* Effect.gen(function* () {
-       const svc = yield* Instruction.Service
-       const rules = yield* svc.system()
-       const kept = rules.find((r) => r.includes(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}`))!
-       // 6000 字节的中文被截到 3000：不能出现 U+FFFD 替换字符
-       expect(kept).not.toContain("\uFFFD")
-       expect(new TextEncoder().encode(kept).byteLength).toBeLessThan(3000 + 400)
-     }).pipe(
-       provideInstance(projectTmp),
-       provideInstruction({ home: globalTmp, config: globalTmp }, undefined, {
-         instruction_budget: { max_total_bytes: 3000 },
-       }),
-     )
-   }),
- )
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const rules = yield* svc.system()
+        const kept = rules.find((r) => r.includes(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}`))!
+        // 6000 字节的中文被截到 3000：不能出现 U+FFFD 替换字符
+        expect(kept).not.toContain("\uFFFD")
+        expect(new TextEncoder().encode(kept).byteLength).toBeLessThan(3000 + 400)
+      }).pipe(
+        provideInstance(projectTmp),
+        provideInstruction({ home: globalTmp, config: globalTmp }, undefined, {
+          instruction_budget: { max_total_bytes: 3000 },
+        }),
+      )
+    }),
+  )
+
+  it.live("does not discover legacy client-specific Soul files", () =>
+    withFiles({ ".redcode/souls/Tsoul.md": "# TUI", ".redcode/souls/Gsoul.md": "# GUI" }, (dir) =>
+      Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const paths = yield* svc.systemPaths()
+        expect(paths.has(path.join(dir, ".redcode", "souls", "Tsoul.md"))).toBe(false)
+        expect(paths.has(path.join(dir, ".redcode", "souls", "Gsoul.md"))).toBe(false)
+      }),
+    ),
+  )
 })

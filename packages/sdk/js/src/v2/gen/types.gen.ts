@@ -856,6 +856,7 @@ export type Session = {
   title: string
   agent?: string
   client?: string
+  soul?: string
   model?: {
     id: string
     providerID: string
@@ -1941,6 +1942,7 @@ export type GlobalSession = {
   title: string
   agent?: string
   client?: string
+  soul?: string
   model?: {
     id: string
     providerID: string
@@ -6718,6 +6720,7 @@ export type SessionCreateData = {
     }
     permission?: PermissionRuleset
     workspaceID?: string
+    soul?: string
   }
   path?: never
   query?: {
@@ -6732,6 +6735,10 @@ export type SessionCreateErrors = {
    * BadRequest | InvalidRequestError
    */
   400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
 }
 
 export type SessionCreateError = SessionCreateErrors[keyof SessionCreateErrors]
@@ -8041,6 +8048,94 @@ export type PartUpdateResponses = {
 }
 
 export type PartUpdateResponse = PartUpdateResponses[keyof PartUpdateResponses]
+
+export type SoulListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/soul"
+}
+
+export type SoulListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type SoulListError = SoulListErrors[keyof SoulListErrors]
+
+export type SoulListResponses = {
+  /**
+   * Available Soul summaries
+   */
+  200: Array<{
+    id: string
+    name: string
+    displayName: string
+    commitPrefix: string
+    avatar?: string
+  }>
+}
+
+export type SoulListResponse = SoulListResponses[keyof SoulListResponses]
+
+export type SoulIssuesData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/soul/issues"
+}
+
+export type SoulIssuesErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type SoulIssuesError = SoulIssuesErrors[keyof SoulIssuesErrors]
+
+export type SoulIssuesResponses = {
+  /**
+   * Soul registry configuration issues
+   */
+  200: Array<{
+    path: string
+    message: string
+  }>
+}
+
+export type SoulIssuesResponse = SoulIssuesResponses[keyof SoulIssuesResponses]
+
+export type SoulDefaultData = {
+  body?: never
+  path?: never
+  query: {
+    client: "tui" | "desktop"
+  }
+  url: "/soul/default"
+}
+
+export type SoulDefaultErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type SoulDefaultError = SoulDefaultErrors[keyof SoulDefaultErrors]
+
+export type SoulDefaultResponses = {
+  /**
+   * Success
+   */
+  200: {
+    id?: string
+  }
+}
+
+export type SoulDefaultResponse = SoulDefaultResponses[keyof SoulDefaultResponses]
 
 export type SyncStartData = {
   body?: never

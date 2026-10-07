@@ -66,7 +66,9 @@ import { Storage } from "@/storage/storage"
 import * as Database from "@/storage/db"
 import { SessionTable } from "./session.sql"
 import { referenceTextPart } from "./prompt/reference"
-import { sessionSourceLabel, makeShared } from "./prompt/shared"
+import { makeShared } from "./prompt/shared"
+import { sessionSoul, sessionTitlePrefix } from "./soul"
+import * as Soul from "@/soul"
 import { makeShell } from "./prompt/shell"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
@@ -96,11 +98,6 @@ const PRUNE_SKIP_MIN_RATIO = 0.15
 // 260811 cc audit Y2：agent 未配置 steps 时的单轮步数硬顶。300 步按每步 10-30s 算
 // 已是 1.5-2.5 小时的连续自主运行，正常任务远达不到；达到即视为失控打转，强制落地。
 const DEFAULT_MAX_STEPS = 300
-
-// 260616 Red 会话标题来源前缀：从 soul 第一行 "# 名字 · ..." 提取人格名（不写死，
-// 通用 RedCode 无此 soul / 非标准格式则 fallback TUI/GUI），让会话列表一眼区分
-// 是哪个 agent（TUI=敏敏 / GUI=小宋）起的会话。client="desktop" 即 GUI，其余视作 TUI。
-// 260630 Red P1-b: sessionSourceLabel moved to prompt/shared.ts
 
 // 260811 cc audit R4: 缓存本体与"分代结算"抽到 prompt-caches.ts（compact 边界结算
 // 需要在会话循环多点调用，独立模块避免循环依赖）。语义不变：钉死已发送消息保前缀缓存。
@@ -163,6 +160,12 @@ export const layer = Layer.effect(
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
     const scope = yield* Scope.Scope
     const instruction = yield* Instruction.Service
+    const availableSouls = yield* Effect.serviceOption(Soul.Service)
+    const souls = Option.isSome(availableSouls)
+      ? availableSouls.value
+      : yield* Effect.gen(function* () {
+          return yield* Soul.Service
+        }).pipe(Effect.provide(Soul.defaultLayer))
     const state = yield* SessionRunState.Service
     const revert = yield* SessionRevert.Service
     const summary = yield* SessionSummary.Service
@@ -452,8 +455,8 @@ export const layer = Layer.effect(
         })
         return
       }
-      // 260616 Red 标题加来源前缀，区分 TUI(敏敏)/GUI(小宋) 的会话
-      const withPrefix = `[${sessionSourceLabel(flags.client)}] ${cleaned}`
+      // 261007 Red 标题前缀跟随 Session pin 的 Soul metadata，不从 client 推断身份。
+      const withPrefix = `[${yield* sessionTitlePrefix(input.session.id, input.session.soul, souls)}] ${cleaned}`
       const t = withPrefix.length > 100 ? withPrefix.substring(0, 97) + "..." : withPrefix
       yield* sessions.setTitle({ sessionID: input.session.id, title: t })
     })
@@ -1632,7 +1635,10 @@ export const layer = Layer.effect(
               MessageV2.compareTime(m.info, turnStart) <= 0
             )
           })
-          const [skills, env, instructions, mcpGuide, modelMsgs] = yield* Effect.all([
+          const soulID = _caches.souls.has(sessionID)
+            ? undefined
+            : (yield* sessions.get(sessionID).pipe(Effect.orDie)).soul
+          const [skills, env, instructions, mcpGuide, modelMsgs, soul] = yield* Effect.all([
             cachedSystem ? Effect.succeed(cachedSystem.skills) : sys.skills(agent),
             cachedSystem ? Effect.succeed(cachedSystem.env) : sys.environment(model),
             cachedSystem ? Effect.succeed(cachedSystem.instructions) : instruction.system().pipe(Effect.orDie),
@@ -1641,6 +1647,7 @@ export const layer = Layer.effect(
             // 中途出现，把前缀缓存打掉。代价是会话开始后才连上的服务器要等下一个会话才带上说明。
             cachedSystem ? Effect.succeed(cachedSystem.mcpGuide) : mcpGuideText(),
             MessageV2.toModelMessagesEffect(visibleMsgs, model),
+            sessionSoul(sessionID, soulID, souls),
           ])
           if (!cachedSystem) {
             const systemCache = { sessionID, modelKey, skills, env, instructions, mcpGuide }
@@ -1671,7 +1678,15 @@ export const layer = Layer.effect(
           const modelMsgsCache = { sessionID, modelKey, messages: [...stabilizedMsgs] }
           if (sessionModelMsgs) sessionModelMsgs.set(modelKey, modelMsgsCache)
           else _caches.modelMsgs.set(sessionID, new Map([[modelKey, modelMsgsCache]]))
-          const system = [...env, ...instructions, ...(mcpGuide ? [mcpGuide] : []), ...(skills ? [skills] : [])]
+          // Keep the legacy Soul-near-instructions placement. It now follows config instruction sources
+          // (formerly Soul preceded them); it remains before MCP/skills and is independently session-cached.
+          const system = [
+            ...env,
+            ...instructions,
+            ...(soul.prompt ? [soul.prompt] : []),
+            ...(mcpGuide ? [mcpGuide] : []),
+            ...(skills ? [skills] : []),
+          ]
           // 260718 Red today's date lives here, not in the cached <env> block above - this
           // section runs fresh every turn (unlike env/instructions/skills, which are cached per
           // session), so only this small tail invalidates the provider's prefix cache once a day
@@ -2254,7 +2269,7 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Truncate.defaultLayer),
     Layer.provide(Provider.defaultLayer),
     Layer.provide(Config.defaultLayer),
-    Layer.provide(Instruction.defaultLayer),
+    Layer.provide(Layer.mergeAll(Instruction.defaultLayer, Soul.defaultLayer)),
     Layer.provide(AppFileSystem.defaultLayer),
     Layer.provide(Plugin.defaultLayer),
     Layer.provide(Session.defaultLayer),

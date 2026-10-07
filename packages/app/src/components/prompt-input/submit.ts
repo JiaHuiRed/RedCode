@@ -198,6 +198,7 @@ type PromptSubmitInput = {
   onDeliveryReset?: () => void
   onAbort?: () => void
   onSubmit?: () => void
+  lastSoul?: Accessor<string>
 }
 
 type CommentItem = {
@@ -408,8 +409,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       }
       creatingSession = true
       try {
-        const created = await client.session
-          .create()
+        const soul = input.lastSoul?.()
+        const created = await (
+          soul
+            ? Promise.resolve(soul)
+            : client.soul.default({ client: "desktop" }, { throwOnError: true }).then((x) => x.data.id)
+        )
+          .then((soul) => client.session.create({ soul }))
           .then((x) => x.data ?? undefined)
           .catch((err) => {
             showToast({

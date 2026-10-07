@@ -50,7 +50,7 @@ Conventional Commits：`type(scope): summary`
 
 scope 常用：`core` `redcode` `tui` `app` `desktop` `sdk` `plugin`
 
-AI 代理执行的 commit 在常规格式前加 `[Karina] ` 或 `[YuQi] ` 前缀标识执行人；人类自己的 commit 不加。
+AI 代理执行的 commit 在常规格式前加 active Soul 的 `[commit_prefix] `，依次回退到 `display_name`、`name`、`AI`，不由客户端决定署名；人类自己的 commit 不加。
 
 ## CI
 

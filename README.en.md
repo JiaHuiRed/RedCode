@@ -37,15 +37,15 @@ Reads code, writes code, fixes bugs, runs commands.
 
 ## 🧠 Core capabilities
 
-| Area                   | What you get                                                                                                                               |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Code understanding** | jCodeMunch / TypeGraph indexing, cross-file navigation and blast-radius analysis                                                           |
-| **Doing**              | File read/write/edit · terminal execution · web search · vision (multimodal models read images directly; a subagent can also be delegated) |
-| **Providers**          | Any OpenAI / Anthropic-compatible endpoint — cloud coding plans, self-hosted APIs, or local models (Ollama); assignable per role            |
-| **Context**            | Prefix cache freshness · automatic compaction · context usage visualization                                                                 |
-| **Organization**       | Session management · goal tracking · two-layer memory (workspace progress & lessons, cross-project experience) · Skill system               |
-| **Agents**             | Two subagents (explore — read-only research · execute — read/write implementation) · custom AI personas (tone and behavior driven by persona files) |
-| **Safety**             | Permission gating and guard rails — three postures below                                                                                   |
+| Area                   | What you get                                                                                                                                                                        |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Code understanding** | jCodeMunch / TypeGraph indexing, cross-file navigation and blast-radius analysis                                                                                                    |
+| **Doing**              | File read/write/edit · terminal execution · web search · vision (multimodal models read images directly; a subagent can also be delegated)                                          |
+| **Providers**          | Any OpenAI / Anthropic-compatible endpoint — cloud coding plans, self-hosted APIs, or local models (Ollama); assignable per role                                                    |
+| **Context**            | Prefix cache freshness · automatic compaction · context usage visualization                                                                                                         |
+| **Organization**       | Session management · goal tracking · two-layer memory (workspace progress & lessons, cross-project experience) · Skill system                                                       |
+| **Agents**             | Two subagents (explore — read-only research · execute — read/write implementation) · Soul identities pinned per session, selectable in either client; add a file to add an identity |
+| **Safety**             | Permission gating and guard rails — three postures below                                                                                                                            |
 
 ### Three permission postures
 
@@ -177,9 +177,9 @@ Listed in load order — **later entries override earlier ones**:
 Full guides live in **[MANUAL.md](MANUAL.md)** (written in Chinese), covering:
 
 1. Quick start · 2. First-time setup (model / name / AI persona) · 3. Model configuration (adapters / switching / local Ollama)
-4. MCP servers (enabling preconfigured ones) · 5. AI persona system · 6. Memory system (two layers: indexed `MEMORY.md` injection + `supermemory.db` full-text store)
-7. Configuration reference (layers / permission gating / custom MCP) · 8. Built-in commands · 9. Skill system
-10. Privacy and multi-machine sync — including the **machine-local override layer** that solves the "same config, two machines, endless back-and-forth" loop
+2. MCP servers (enabling preconfigured ones) · 5. AI persona system · 6. Memory system (two layers: indexed `MEMORY.md` injection + `supermemory.db` full-text store)
+3. Configuration reference (layers / permission gating / custom MCP) · 8. Built-in commands · 9. Skill system
+4. Privacy and multi-machine sync — including the **machine-local override layer** that solves the "same config, two machines, endless back-and-forth" loop
 
 ---
 

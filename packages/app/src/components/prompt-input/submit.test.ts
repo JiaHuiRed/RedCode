@@ -5,6 +5,7 @@ let createPromptSubmit: typeof import("./submit").createPromptSubmit
 
 const createdClients: string[] = []
 const createdSessions: string[] = []
+const createInputs: Array<{ soul?: string }> = []
 const enabledAutoAccept: Array<{ sessionID: string; directory: string }> = []
 const optimistic: Array<{
   directory?: string
@@ -18,6 +19,8 @@ const optimistic: Array<{
 }> = []
 const optimisticSeeded: boolean[] = []
 const sentPrompts: Array<{ sessionID: string; delivery?: "queue" | "steer" }> = []
+const sentPromptFiles: string[] = []
+const defaultClients: string[] = []
 const storedSessions: Record<string, Array<{ id: string; title?: string }>> = {}
 const promoted: Array<{ directory: string; sessionID: string }> = []
 const sentShell: string[] = []
@@ -27,6 +30,7 @@ const setCalls: Array<{ scope?: { dir: string; id?: string } }> = []
 const toasts: string[] = []
 let createFails = false
 let dirtyValue = false
+let lastSoul = "karina"
 
 let params: { id?: string; dir?: string } = {}
 let selected = "/repo/worktree-a"
@@ -37,9 +41,16 @@ const promptValue: Prompt = [{ type: "text", content: "ls", start: 0, end: 2 }]
 const clientFor = (directory: string) => {
   createdClients.push(directory)
   return {
+    soul: {
+      default: async (input: { client: "tui" | "desktop" }) => {
+        defaultClients.push(input.client)
+        return { data: { id: "yuqi" } }
+      },
+    },
     session: {
-      create: async () => {
+      create: async (input?: { soul?: string }) => {
         createdSessions.push(directory)
+        createInputs.push(input?.soul ? { soul: input.soul } : {})
         if (createFails) throw new Error("synthetic create failure")
         return {
           data: {
@@ -53,8 +64,13 @@ const clientFor = (directory: string) => {
         return { data: undefined }
       },
       prompt: async () => ({ data: undefined }),
-      promptAsync: async (input?: { sessionID: string; delivery?: "queue" | "steer" }) => {
+      promptAsync: async (input?: {
+        sessionID: string
+        delivery?: "queue" | "steer"
+        parts?: Array<{ filename?: string }>
+      }) => {
         if (input) sentPrompts.push(input)
+        sentPromptFiles.push(...(input?.parts ?? []).flatMap((part) => (part.filename ? [part.filename] : [])))
         return { data: undefined }
       },
       command: async () => ({ data: undefined }),
@@ -221,10 +237,13 @@ beforeAll(async () => {
 beforeEach(() => {
   createdClients.length = 0
   createdSessions.length = 0
+  createInputs.length = 0
   enabledAutoAccept.length = 0
   optimistic.length = 0
   optimisticSeeded.length = 0
   sentPrompts.length = 0
+  sentPromptFiles.length = 0
+  defaultClients.length = 0
   promoted.length = 0
   params = {}
   sentShell.length = 0
@@ -234,8 +253,10 @@ beforeEach(() => {
   toasts.length = 0
   createFails = false
   dirtyValue = false
+  lastSoul = "karina"
   selected = "/repo/worktree-a"
   variant = undefined
+  promptValue.splice(0, promptValue.length, { type: "text", content: "ls", start: 0, end: 2 })
   for (const key of Object.keys(storedSessions)) delete storedSessions[key]
 })
 
@@ -275,6 +296,75 @@ describe("prompt submit worktree selection", () => {
       { directory: "/repo/worktree-b", sessionID: "session-2" },
     ])
     expect(syncedDirectories).toEqual(["/repo/worktree-a", "/repo/worktree-a", "/repo/worktree-b", "/repo/worktree-b"])
+  })
+
+  test("pins the saved soul on a new session in the selected directory without changing the preference", async () => {
+    promptValue.push({
+      type: "image",
+      id: "img-1",
+      filename: "diagram.png",
+      mime: "image/png",
+      dataUrl: "data:image/png;base64,AA==",
+    })
+    const submit = createPromptSubmit({
+      info: () => undefined,
+      imageAttachments: () => [
+        {
+          type: "image",
+          id: "img-1",
+          filename: "diagram.png",
+          mime: "image/png",
+          dataUrl: "data:image/png;base64,AA==",
+        },
+      ],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      newSessionWorktree: () => "/repo/worktree-b",
+      onNewSessionWorktreeReset: () => undefined,
+      lastSoul: () => lastSoul,
+    })
+
+    await submit.handleSubmit({ preventDefault: () => undefined } as unknown as Event)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(createInputs).toEqual([{ soul: "karina" }])
+    expect(lastSoul).toBe("karina")
+    expect(createdClients).toEqual(["/repo/worktree-b"])
+    expect(sentPromptFiles).toEqual(["diagram.png"])
+  })
+
+  test("resolves the desktop default explicitly when no preference is saved", async () => {
+    lastSoul = ""
+    const submit = createPromptSubmit({
+      info: () => undefined,
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "shell",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      lastSoul: () => lastSoul,
+    })
+
+    await submit.handleSubmit({ preventDefault: () => undefined } as unknown as Event)
+
+    expect(createInputs).toEqual([{ soul: "yuqi" }])
+    expect(defaultClients).toEqual(["desktop"])
   })
 
   test("applies auto-accept to newly created sessions", async () => {

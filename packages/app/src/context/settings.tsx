@@ -37,9 +37,9 @@ export interface Settings {
     showReasoningSummaries: boolean
     shellToolPartsExpanded: boolean
     editToolPartsExpanded: boolean
-   showSessionProgressBar: boolean
-   // 260929 Red 桌宠总开关：此前只有 pet-layer 自己的 Persist.global("pet") 键，× 写 false
-   // 后整层消失且全仓没有第二个入口能开回来（第三方审计项）。挪进 settings.v3 后设置页可管。
+    showSessionProgressBar: boolean
+    // 260929 Red 桌宠总开关：此前只有 pet-layer 自己的 Persist.global("pet") 键，× 写 false
+    // 后整层消失且全仓没有第二个入口能开回来（第三方审计项）。挪进 settings.v3 后设置页可管。
     petEnabled: boolean
     petBehavior: PetBehavior
   }
@@ -62,6 +62,9 @@ export interface Settings {
   tts: TtsSettings
   userProfile: UserProfile
   assistantProfile: UserProfile
+  personalization: {
+    lastSoul: string
+  }
 }
 
 /**
@@ -171,7 +174,7 @@ const defaultSettings: Settings = {
     showReasoningSummaries: true,
     shellToolPartsExpanded: false,
     editToolPartsExpanded: false,
-   showSessionProgressBar: true,
+    showSessionProgressBar: true,
     petEnabled: true,
     petBehavior: resolvePetBehavior(),
   },
@@ -212,6 +215,9 @@ const defaultSettings: Settings = {
   assistantProfile: {
     avatar: "",
     displayName: "RedCode",
+  },
+  personalization: {
+    lastSoul: "",
   },
 }
 
@@ -457,6 +463,12 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         ),
         setDisplayName(value: string) {
           setStore("assistantProfile", "displayName", value)
+        },
+      },
+      personalization: {
+        lastSoul: withFallback(() => store.personalization?.lastSoul, defaultSettings.personalization.lastSoul),
+        setLastSoul(value: string) {
+          setStore("personalization", "lastSoul", value)
         },
       },
     }

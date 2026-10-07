@@ -1862,7 +1862,9 @@ export function AssistantMessage(props: { message: AssistantMessageInfo; parts: 
   return (
     <>
       <box flexDirection="row" paddingLeft={1}>
-        <text fg={theme.accent}>{local.displayName.agent + ": "}</text>
+        <text fg={theme.accent}>
+          {(local.soul.label(sync.session.get(props.message.sessionID)?.soul) ?? local.displayName.agent) + ": "}
+        </text>
       </box>
       <For each={props.parts}>
         {(part, index) => {

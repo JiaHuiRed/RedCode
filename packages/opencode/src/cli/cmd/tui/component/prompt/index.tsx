@@ -48,6 +48,7 @@ import { formatDuration } from "@/util/format"
 import { useDialog } from "@tui/ui/dialog"
 import { DialogProvider as DialogProviderConnect } from "../dialog-provider"
 import { DialogAgent } from "@tui/component/dialog-agent"
+import { DialogSoul } from "@tui/component/dialog-soul"
 import { DialogModel } from "@tui/component/dialog-model"
 import { DialogVariant } from "@tui/component/dialog-variant"
 import { DialogAlert } from "../../ui/dialog-alert"
@@ -68,6 +69,7 @@ import { type WorkspaceStatus } from "../workspace-label"
 import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useLeaderActive, useOpencodeKeymap } from "../../keymap"
 import { useTuiConfig } from "../../context/tui-config"
 import * as Log from "@redcode-ai/core/util/log"
+import { parseSoulChoice, unknownSoulMessage } from "../../soul"
 
 const log = Log.create({ service: "tui.prompt" })
 
@@ -435,12 +437,12 @@ export function Prompt(props: PromptProps) {
       if (msg.agent && isPrimaryAgent) {
         // Keep command line --agent if specified.
         if (!args.agent) local.agent.set(msg.agent)
-       if (msg.model) {
-         local.model.set(msg.model)
-         // 260928 Red: 上一条消息无 variant 时不再回写 store——否则 store 被污染成
-         // "default"，此后每轮提交都丢档位，NULL 会从历史消息自我复制（Codex 线路每次全量 miss）
-         if (msg.model.variant) local.model.variant.set(msg.model.variant)
-       }
+        if (msg.model) {
+          local.model.set(msg.model)
+          // 260928 Red: 上一条消息无 variant 时不再回写 store——否则 store 被污染成
+          // "default"，此后每轮提交都丢档位，NULL 会从历史消息自我复制（Codex 线路每次全量 miss）
+          if (msg.model.variant) local.model.variant.set(msg.model.variant)
+        }
       }
     }
   })
@@ -1044,6 +1046,23 @@ export function Prompt(props: PromptProps) {
     }
   }
 
+  function selectSoul(id: string, deprecated = false) {
+    const currentSoulID = props.sessionID ? sync.session.get(props.sessionID)?.soul : undefined
+    const currentSoulName = local.soul.label(currentSoulID)
+    toast.show({
+      variant: "info",
+      message: [
+        deprecated ? "Deprecated persona command; use /soul." : undefined,
+        currentSoulID
+          ? `New-session Soul set to ${local.soul.label(id)}; this session remains ${currentSoulName ?? currentSoulID}.`
+          : `New-session Soul set to ${local.soul.label(id) ?? id}.`,
+      ]
+        .filter(Boolean)
+        .join(" "),
+      duration: 5000,
+    })
+  }
+
   async function submitInner() {
     setWarpNotice(undefined)
 
@@ -1064,6 +1083,30 @@ export function Prompt(props: PromptProps) {
     const trimmed = store.prompt.input.trim()
     if (trimmed === "exit" || trimmed === "quit" || trimmed === ":q") {
       void exit()
+      return true
+    }
+    const soulCommand = parseSoulChoice(trimmed)
+    if (soulCommand) {
+      input.clear()
+      setPrompt({ input: "", parts: [] })
+      if (!(await local.soul.refresh())) return true
+      if (soulCommand.selector) {
+        dialog.replace(() => <DialogSoul onSelect={(id) => selectSoul(id, soulCommand.deprecated)} />)
+        return true
+      }
+      const id = soulCommand.id
+      if (!local.soul.select(id)) {
+        toast.show({
+          variant: "warning",
+          message: unknownSoulMessage(
+            id,
+            local.soul.list().map((item) => item.id),
+          ),
+          duration: 6000,
+        })
+        return true
+      }
+      selectSoul(id, soulCommand.deprecated)
       return true
     }
     const selectedModel = local.model.current()
@@ -1190,9 +1233,11 @@ export function Prompt(props: PromptProps) {
 
     let sessionID = props.sessionID
     if (isNewSession) {
+      if (!local.soul.saved() && !(await local.soul.refresh())) return false
       const res = await sdk.client.session.create({
         workspace: newSessionWorkspaceID,
         agent: submission.payload.agentName,
+        soul: local.soul.creationId(),
         model: {
           providerID: submission.payload.model.providerID,
           id: submission.payload.model.modelID,
@@ -1206,6 +1251,7 @@ export function Prompt(props: PromptProps) {
       }
 
       sessionID = res.data.id
+      if (res.data.soul) kv.set("tui.lastSoul", res.data.soul)
     }
     if (!sessionID) return false
 

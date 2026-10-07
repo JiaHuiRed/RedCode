@@ -1,7 +1,4 @@
 // 260630 Red P1-b: 从 prompt.ts 提取的共享工具函数
-import path from "path"
-import os from "os"
-import { readFileSync } from "fs"
 import { Cause, Effect, Exit, Option } from "effect"
 import { SessionID } from "../schema"
 import { ModelID, ProviderID } from "../../provider/schema"
@@ -12,20 +9,6 @@ import { NamedError } from "@redcode-ai/core/util/error"
 import { eq } from "@/storage/db"
 import * as Database from "@/storage/db"
 import { SessionTable } from "../session.sql"
-
-// 260616 Red 会话标题来源前缀：从 soul 第一行 "# 名字 · ..." 提取人格名
-export function sessionSourceLabel(client: string): string {
-  const isGui = client === "desktop"
-  const fallback = isGui ? "GUI" : "TUI"
-  try {
-    const soulFile = isGui ? "Gsoul.md" : "Tsoul.md"
-    const firstLine = readFileSync(path.join(os.homedir(), ".redcode", "souls", soulFile), "utf8").split("\n")[0] ?? ""
-    const matched = firstLine.match(/^#\s*(.+?)\s*·/)
-    return matched?.[1]?.trim() || fallback
-  } catch {
-    return fallback
-  }
-}
 
 export function makeShared(deps: { provider: Provider.Interface; bus: Bus.Interface; sessions: Session.Interface }) {
   const { provider, bus, sessions } = deps

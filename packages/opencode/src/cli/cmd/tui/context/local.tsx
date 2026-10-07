@@ -15,21 +15,8 @@ import { useSDK } from "./sdk"
 import { RGBA } from "@opentui/core"
 import { Filesystem } from "@/util/filesystem"
 import { Locale } from "@/util/locale"
-
-// 260608 Red 读取 agent 显示名
-// 260730 Karina 用户名不再从 ~/.redcode/USER.md 的 "称呼：" 字段解析 —— USER.md 已下线，
-// 内容基本被 souls/Tsoul.md、souls/Gsoul.md 覆盖。用户名改读 config.username（本来就有
-// 这个字段，见 config.ts，缺省会退到系统用户名），比解析一份 markdown 里的粗体字段稳。
-async function readAgentName(): Promise<string> {
-  // 读 agent 名：~/.redcode/souls/Tsoul.md 第一行 "# xxx" 标题
-  try {
-    const soulMd = await Bun.file(path.join(Global.Path.home, ".redcode", "souls", "Tsoul.md")).text()
-    const match = soulMd.match(/^#\s+(.+)/m)
-    // 取 "·" 或空格前的部分，如 "MyAgent · RedCode 灵魂文档" → "MyAgent"
-    if (match) return match[1].split("·")[0].split(" ")[0].trim()
-  } catch {}
-  return "Assistant"
-}
+import { useKV } from "./kv"
+import { resolveNewSessionSoul } from "../soul"
 
 export function parseModel(model: string) {
   const [providerID, ...rest] = model.split("/")
@@ -50,6 +37,7 @@ export const {
     const sync = useSync()
     const sdk = useSDK()
     const toast = useToast()
+    const kv = useKV()
 
     function isModelValid(model: { providerID: string; modelID: string }) {
       const provider = sync.data.provider.find((x) => x.id === model.providerID)
@@ -135,8 +123,72 @@ export const {
       user: "User",
       agent: "Assistant",
     })
-    readAgentName().then((agent) => setDisplayName("agent", agent))
     createEffect(() => setDisplayName("user", sync.data.config.username || "User"))
+
+    const [souls, setSouls] = createStore<{ id: string; name: string; displayName?: string }[]>([])
+    const [serverDefault, setServerDefault] = createStore<{ id?: string }>({})
+    const [soulState, setSoulState] = createStore({ ready: false })
+    function refreshSouls() {
+      return Promise.all([
+        sdk.client.soul.list({ throwOnError: true }),
+        sdk.client.soul.default({ client: "tui" }, { throwOnError: true }),
+        sdk.client.soul.issues({ throwOnError: true }),
+      ])
+        .then(([list, fallback, issues]) => {
+          setSouls(list.data)
+          setServerDefault(fallback.data)
+          setSoulState("ready", true)
+          const saved = kv.get("tui.lastSoul")
+          if (typeof saved === "string" && !list.data.some((item) => item.id === saved)) {
+            toast.show({
+              variant: "warning",
+              message: `Saved Soul not found: ${saved}. Choose /soul to select one.`,
+              duration: 6000,
+            })
+          }
+          if (issues.data.length) {
+            toast.show({
+              variant: "warning",
+              message: `Soul registry: ${issues.data[0].message} (${issues.data.length} issue(s))`,
+              duration: 6000,
+            })
+          }
+          return true
+        })
+        .catch(() => {
+          toast.show({ variant: "warning", message: "Unable to load Souls. Use /soul to retry.", duration: 4000 })
+          return false
+        })
+    }
+    void refreshSouls()
+    const soul = {
+      list: () => souls,
+      ready: () => soulState.ready,
+      refresh: refreshSouls,
+      default: () => serverDefault.id,
+      saved: () => {
+        const saved = kv.get("tui.lastSoul")
+        return typeof saved === "string" ? saved : undefined
+      },
+      current: () => {
+        const saved = soul.saved()
+        if (saved) return souls.find((item) => item.id === saved)
+        return souls.find((item) => item.id === serverDefault.id)
+      },
+      select(id: string) {
+        if (!souls.some((item) => item.id === id)) return false
+        kv.set("tui.lastSoul", id)
+        return true
+      },
+      creationId() {
+        return resolveNewSessionSoul(soul.saved(), serverDefault.id)
+      },
+      label(id: string | undefined) {
+        if (!id) return undefined
+        const item = souls.find((entry) => entry.id === id)
+        return item?.displayName ?? item?.name ?? id
+      },
+    }
 
     const model = iife(() => {
       const [modelStore, setModelStore] = createStore<{
@@ -379,18 +431,18 @@ export const {
             const key = `${m.providerID}/${m.modelID}`
             return modelStore.variant[key]
           },
-         current() {
-           const v = this.selected()
-           if (!v) return undefined
-           // 260731 Red: "default" 是 DialogVariant 的合法选项（不指定推理强度）。
-           // 之前它不在 variants 列表里导致 current() 返回 undefined → footer 按钮
-           // 消失且没有 UI 入口恢复（切模型也被 dialog-model 的 default 分支跳过）。
-           // 260928 Red: provider 数据未就绪时 list() 为空，此时信任持久化的选择；
-           // 空列表会把有效档位打成 undefined，提交即丢 variant（Codex 线路缓存全断）
-           const list = this.list()
-           if (v === "default" || list.length === 0 || list.includes(v)) return v
-           return undefined
-         },
+          current() {
+            const v = this.selected()
+            if (!v) return undefined
+            // 260731 Red: "default" 是 DialogVariant 的合法选项（不指定推理强度）。
+            // 之前它不在 variants 列表里导致 current() 返回 undefined → footer 按钮
+            // 消失且没有 UI 入口恢复（切模型也被 dialog-model 的 default 分支跳过）。
+            // 260928 Red: provider 数据未就绪时 list() 为空，此时信任持久化的选择；
+            // 空列表会把有效档位打成 undefined，提交即丢 variant（Codex 线路缓存全断）
+            const list = this.list()
+            if (v === "default" || list.length === 0 || list.includes(v)) return v
+            return undefined
+          },
           list() {
             const m = currentModel()
             if (!m) return []
@@ -549,6 +601,7 @@ export const {
       mcp,
       session,
       displayName,
+      soul,
     }
     return result
   },

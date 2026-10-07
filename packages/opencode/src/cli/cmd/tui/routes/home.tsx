@@ -106,6 +106,15 @@ export function Home() {
           </box>
         </box>
         <box height={1} minHeight={0} flexShrink={1} />
+        <text>
+          Soul:{" "}
+          {local.soul.label(local.soul.saved() ?? local.soul.default()) ??
+            local.soul.saved() ??
+            local.soul.default() ??
+            "server default"}
+          {local.soul.saved() ? " · last selected" : " · server default"}
+          {local.soul.ready() && local.soul.saved() && !local.soul.current() ? " · unavailable; choose /soul" : ""}
+        </text>
         <box width="100%" flexDirection="row" alignItems="center" justifyContent="center" flexShrink={0}>
           <box width="100%" maxWidth={promptMaxWidth()} zIndex={1000} paddingTop={1} flexShrink={0}>
             <TuiPluginRuntime.Slot name="home_prompt" mode="replace" ref={bind}>

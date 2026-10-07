@@ -57,6 +57,7 @@ import { SyncEvent } from "@/sync"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Snippet } from "@/session/snippet"
+import { Soul } from "@/soul"
 
 void Log.init({ print: false })
 
@@ -463,6 +464,39 @@ const boot = Effect.fn("test.boot")(function* (input?: { title?: string }) {
   const chat = yield* sessions.create(input ?? { title: "Pinned" })
   return { prompt, run, sessions, chat }
 })
+
+it.instance("sends the pinned Soul body and attribution in an actual provider request", () =>
+  Effect.gen(function* () {
+    const { dir, llm } = yield* useServerConfig(providerCfg)
+    const soulsDirectory = path.join(dir, "souls")
+    const sourceFile = process.env.REDCODE_SOUL_ACCEPTANCE_FILE
+    const source = sourceFile
+      ? yield* Effect.promise(() => Bun.file(sourceFile).text())
+      : "---\nid: third\nname: Third\ndisplay_name: Partner\ncommit_prefix: ThirdOwner\n---\n\n# Third persona\n\nwire soul sentinel\n"
+    yield* writeText(path.join(soulsDirectory, "third.md"), source)
+    yield* Effect.gen(function* () {
+      const registry = yield* Effect.gen(function* () {
+        return yield* Soul.Service
+      }).pipe(Effect.provide(Soul.defaultLayer))
+      const info = (yield* registry.list())[0]
+      if (!info) return yield* Effect.die("acceptance Soul did not load")
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Pinned", soul: info.id })
+      yield* Effect.addFinalizer(() => sessions.remove(chat.id).pipe(Effect.orDie))
+      yield* llm.text("wire checked")
+      yield* (yield* SessionPrompt.Service).prompt({
+        sessionID: chat.id,
+        model: ref,
+        parts: [{ type: "text", text: "check the pinned identity" }],
+      })
+      const wire = JSON.stringify((yield* llm.inputs)[0])
+      expect(wire).toContain(info.displayName)
+      expect(wire).toContain(`Commit attribution owner: [${info.commitPrefix}]`)
+      expect(wire).toContain(source.split("---")[2]?.trim().split("\n")[0] ?? "wire soul sentinel")
+      expect(wire).not.toContain("Instructions from: " + path.join(soulsDirectory, "Tsoul.md"))
+    }).pipe(Effect.provideService(Soul.directory, soulsDirectory))
+  }),
+)
 
 it.instance(
   "generates an automatic session title",

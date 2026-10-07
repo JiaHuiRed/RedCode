@@ -1,7 +1,7 @@
 // 261007 Red Soul System V2：Soul Registry —— 发现并解析 ~/.redcode/souls/*.md。
 // "Soul is the sole source of truth for assistant identity"（设计 §56）：凡是回答
 // 「当前 AI 是谁」（注入正文 / 显示名 / commit 前缀）的地方都从这里取，禁止 client→身份推导。
-// 设计文档：docs/notes/implemented/architecture/2026-10-07-soul-system-v2.md。
+// 设计文档：docs/notes/implemented/architecture/2026-10-07-soul-system-v2-design.md。
 import { Global } from "@redcode-ai/core/global"
 import { Context, Effect, Layer } from "effect"
 import fs from "node:fs"
@@ -9,6 +9,7 @@ import path from "node:path"
 import matter from "gray-matter"
 import { ConfigMarkdown } from "@/config/markdown"
 import { ID_PATTERN, MAX_SOUL_BYTES, type Info, type Issue, type Summary } from "./schema"
+import { readLegacyDefaults } from "./migration"
 
 export * from "./schema"
 
@@ -44,17 +45,22 @@ export const layer = Layer.effect(
       const dir = yield* directory
       const found = scan(dir).items.find((item) => item.summary.id === id)
       if (!found) return undefined
-      // 扫描与读取之间文件被删除：视为不存在，不抛错——身份链的兜底由调用方负责（设计 §25）。
-      const raw = readSafe(found.path)
-      if (raw === undefined) return undefined
-      const parsed = parseText(raw)
-      if (!parsed) return undefined
-      return { ...found.summary, path: found.path, content: parsed.content.trim() }
+      return { ...found.summary, path: found.path, content: found.content }
     })
 
     const defaultForClient = Effect.fn("Soul.defaultForClient")(function* (client: string) {
       // 迁移期默认映射（设计 §13）：只作「新会话缺省偏好」，不是身份推理。
-      return client === "desktop" ? "yuqi" : "karina"
+      if (client !== "tui" && client !== "desktop") return ""
+      const dir = yield* directory
+      const state = scan(dir)
+      const marker = readLegacyDefaults(dir)
+      const marked = marker.valid ? marker.defaults[client] : undefined
+      if (marked && state.items.some((item) => item.summary.id === marked)) return marked
+      const alias = client === "desktop" ? "gsoul.md" : "tsoul.md"
+      return (
+        state.items.find((item) => path.basename(item.path).toLowerCase() === alias)?.summary.id ??
+        (client === "desktop" ? "yuqi" : "karina")
+      )
     })
 
     return Service.of({ list, issues, get, defaultForClient })
@@ -65,11 +71,21 @@ export const defaultLayer = layer
 
 // --- helpers：主流程在 layer 里，扫描细节都放这里 ---
 
-type Scanned = { summary: Summary; path: string }
+type Scanned = { summary: Summary; path: string; content: string }
 
 function readSafe(file: string): string | undefined {
   try {
-    return fs.readFileSync(file, "utf8")
+    const fd = fs.openSync(file, "r")
+    try {
+      const size = fs.fstatSync(fd).size
+      if (size > MAX_SOUL_BYTES) return undefined
+      const buffer = Buffer.alloc(MAX_SOUL_BYTES + 1)
+      const bytes = fs.readSync(fd, buffer, 0, MAX_SOUL_BYTES + 1, 0)
+      if (bytes > MAX_SOUL_BYTES) return undefined
+      return buffer.toString("utf8", 0, bytes)
+    } finally {
+      fs.closeSync(fd)
+    }
   } catch {
     // 文件不存在 / 不可读：registry 不因单个文件失败而崩（设计 §39 的「坏 Soul 不炸 Registry」）
     return undefined
@@ -108,10 +124,17 @@ function scan(dir: string): { items: Scanned[]; issues: Issue[] } {
     : []
   const items: Scanned[] = []
   const issues: Issue[] = []
-  const seen = new Set<string>()
 
   for (const entry of entries) {
     const file = path.join(dir, entry)
+    try {
+      if (fs.statSync(file).size > MAX_SOUL_BYTES) {
+        issues.push({ path: file, message: `exceeds ${MAX_SOUL_BYTES} bytes` })
+        continue
+      }
+    } catch {
+      // File vanished between directory enumeration and inspection; report it as unreadable below.
+    }
     const raw = readSafe(file)
     if (raw === undefined) {
       issues.push({ path: file, message: "unreadable" })
@@ -126,12 +149,20 @@ function scan(dir: string): { items: Scanned[]; issues: Issue[] } {
       issues.push({ path: file, message: "failed to parse frontmatter" })
       continue
     }
+    if (raw.startsWith("---") && !hasMetadata(parsed.data)) {
+      issues.push({ path: file, message: "invalid or incomplete metadata" })
+      continue
+    }
     if (parsed.content.trim() === "") {
       issues.push({ path: file, message: "empty content" })
       continue
     }
 
     // 有完整 metadata 但 id 不合法：明示错误（设计 §39 的 invalid id），不走文件名兼容。
+    if (hasMetadata(parsed.data) && !isMetadata(parsed.data)) {
+      issues.push({ path: file, message: "invalid or incomplete metadata" })
+      continue
+    }
     if (isMetadata(parsed.data) && !ID_PATTERN.test(parsed.data.id)) {
       issues.push({ path: file, message: `invalid id "${parsed.data.id}"` })
       continue
@@ -141,7 +172,7 @@ function scan(dir: string): { items: Scanned[]; issues: Issue[] } {
           id: parsed.data.id,
           name: parsed.data.name,
           displayName: parsed.data.display_name ?? parsed.data.name,
-          commitPrefix: parsed.data.commit_prefix ?? parsed.data.name,
+          commitPrefix: parsed.data.commit_prefix ?? parsed.data.display_name ?? parsed.data.name,
           avatar: parsed.data.avatar,
         }
       : legacySummary(file, parsed.content)
@@ -149,27 +180,65 @@ function scan(dir: string): { items: Scanned[]; issues: Issue[] } {
       issues.push({ path: file, message: "invalid frontmatter: missing id" })
       continue
     }
-    if (seen.has(summary.id)) {
-      // 重复 id 必须可见（设计 §39）：保留排序靠前的文件，后一个记 issue，不静默覆盖。
-      issues.push({ path: file, message: `duplicate soul id "${summary.id}"` })
-      continue
-    }
-    seen.add(summary.id)
-    items.push({ summary, path: file })
+    items.push({ summary, path: file, content: parsed.content.trim() })
   }
 
-  return { items, issues }
+  const marker = readLegacyDefaults(dir)
+  if (marker.issue) issues.push({ path: path.join(dir, ".legacy-defaults.json"), message: marker.issue })
+  // 261008 Red 先剥离有迁移凭证的旧副本，再按稳定顺序判重；同 id 冲突不能静默换正文。
+  const seen = new Set<string>()
+  const visible = items.filter((item) => {
+    const filename = path.basename(item.path).toLowerCase()
+    const client = filename === "tsoul.md" ? "tui" : filename === "gsoul.md" ? "desktop" : undefined
+    const targetID = client && marker.valid ? marker.defaults[client] : undefined
+    if (
+      targetID &&
+      items.some(
+        (entry) =>
+          entry.path !== item.path &&
+          entry.summary.id === targetID &&
+          entry.path === path.join(dir, `${targetID}.md`) &&
+          (entry.summary.id !== item.summary.id || (client !== undefined && marker.copies[client] === targetID)),
+      )
+    )
+      return false
+    return true
+  })
+  return {
+    items: visible.filter((item) => {
+      if (seen.has(item.summary.id)) {
+        issues.push({ path: item.path, message: `duplicate soul id "${item.summary.id}"` })
+        return false
+      }
+      seen.add(item.summary.id)
+      return true
+    }),
+    issues,
+  }
 }
 
-function isMetadata(data: unknown): data is { id: string; name: string; display_name?: string; commit_prefix?: string; avatar?: string } {
+function hasMetadata(data: unknown): boolean {
+  return typeof data === "object" && data !== null && Object.keys(data).length > 0
+}
+
+function isMetadata(data: unknown): data is {
+  id: string
+  name: string
+  display_name?: string
+  commit_prefix?: string
+  avatar?: string
+} {
   if (typeof data !== "object" || data === null) return false
   const value = data as Record<string, unknown>
+  if (Object.keys(value).some((key) => !["id", "name", "display_name", "commit_prefix", "avatar"].includes(key)))
+    return false
   return (
     typeof value.id === "string" &&
     typeof value.name === "string" &&
-    (value.display_name === undefined || typeof value.display_name === "string") &&
-    (value.commit_prefix === undefined || typeof value.commit_prefix === "string") &&
-    (value.avatar === undefined || typeof value.avatar === "string")
+    value.name.trim() !== "" &&
+    ["display_name", "commit_prefix", "avatar"].every(
+      (key) => value[key] === undefined || (typeof value[key] === "string" && value[key].trim() !== ""),
+    )
   )
 }
 

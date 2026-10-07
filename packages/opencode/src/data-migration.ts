@@ -2,11 +2,14 @@ import { Context, Effect, Layer } from "effect"
 import { Database, type TxOrDb } from "./storage/db"
 import { DataMigrationTable } from "./data-migration.sql"
 import * as Log from "@redcode-ai/core/util/log"
-import { and, asc, eq, gt, inArray, sql } from "drizzle-orm"
+import { and, asc, eq, gt, inArray, isNull, sql } from "drizzle-orm"
 import { Provider } from "@/provider/provider"
 import type { ProviderID } from "@/provider/schema"
 import { MessageTable, PartTable, SessionTable } from "./session/session.sql"
 import type { SessionID } from "./session/schema"
+import { Global } from "@redcode-ai/core/global"
+import { migrateLegacySouls } from "@/soul/migration"
+import path from "node:path"
 
 export type Migration<R = never> = {
   name: string
@@ -107,6 +110,50 @@ export function backfillSessionCostCurrency(
   return { attributed: sessionIDs.length, unresolved }
 }
 
+// 261007 Red Legacy sessions are interpreted once; runtime identity never derives from client.
+export function backfillSessionSoul(
+  tx: TxOrDb,
+  defaults: { tui?: string; desktop?: string },
+): { assigned: number; unresolved: number } {
+  const rows = tx
+    .select({
+      id: SessionTable.id,
+      parent_id: SessionTable.parent_id,
+      client: SessionTable.client,
+      soul: SessionTable.soul,
+    })
+    .from(SessionTable)
+    .all()
+  const byID = new Map(rows.map((row) => [row.id, row]))
+  const resolved = new Map<SessionID, string>()
+  for (const row of rows) if (row.soul) resolved.set(row.id, row.soul)
+  const resolving = new Set<SessionID>()
+  const resolve = (id: SessionID): string | undefined => {
+    if (resolved.has(id)) return resolved.get(id)
+    const row = byID.get(id)
+    if (!row || resolving.has(id)) return undefined
+    resolving.add(id)
+    const parent = row.parent_id ? resolve(row.parent_id) : undefined
+    resolving.delete(id)
+    const soul =
+      parent ?? (row.client === "desktop" ? defaults.desktop : row.client === "tui" ? defaults.tui : undefined)
+    if (soul) resolved.set(id, soul)
+    return soul
+  }
+  const pending = rows.filter((row) => !row.soul)
+  let assigned = 0
+  for (const row of pending) {
+    const soul = resolve(row.id)
+    if (!soul) continue
+    tx.update(SessionTable)
+      .set({ soul })
+      .where(and(eq(SessionTable.id, row.id), isNull(SessionTable.soul)))
+      .run()
+    assigned++
+  }
+  return { assigned, unresolved: pending.length - assigned }
+}
+
 export interface Interface {}
 
 export class Service extends Context.Service<Service, Interface>()("@redcode/DataMigration") {}
@@ -119,6 +166,17 @@ export const layer = Layer.effect(
     // 无法命中的模型按 USD 并入桶并在汇总日志里计数，不静默。
     const provider = yield* Provider.Service
     const migrations: Migration[] = [
+      {
+        name: "session_soul_from_client",
+        run: Effect.sync(() => {
+          const migration = migrateLegacySouls(path.join(Global.Path.home, ".redcode", "souls"))
+          for (const issue of migration.issues) log.warn(issue)
+          return Database.transaction((tx) => {
+            const result = backfillSessionSoul(tx, migration.defaults)
+            if (result.unresolved) log.warn("sessions without soul/client retained", { unresolved: result.unresolved })
+          })
+        }),
+      },
       {
         name: "session_usage_from_messages",
         run: Effect.gen(function* () {

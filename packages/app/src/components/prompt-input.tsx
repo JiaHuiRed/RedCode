@@ -45,6 +45,7 @@ import { useCommand } from "@/context/command"
 import { Persist, persisted } from "@/utils/persist"
 import { usePermission } from "@/context/permission"
 import { useLanguage } from "@/context/language"
+import { useSettings } from "@/context/settings"
 import { usePlatform } from "@/context/platform"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
@@ -142,6 +143,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const command = useCommand()
   const permission = usePermission()
   const language = useLanguage()
+  const settings = useSettings()
   const platform = usePlatform()
   const { params, tabs, view } = useSessionLayout()
   let editorRef!: HTMLDivElement
@@ -1160,6 +1162,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     onDeliveryReset: () => setStore("delivery", "queue"),
     onAbort: props.onAbort,
     onSubmit: props.onSubmit,
+    lastSoul: () => settings.personalization.lastSoul(),
   })
 
   const handleKeyDown = (event: KeyboardEvent) => {

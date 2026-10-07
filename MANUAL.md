@@ -60,7 +60,7 @@ cd packages/desktop && bun run build && bun run package
 第一次启动时，系统自动：
 
 1. 创建 `~/.redcode/` 目录（存放全局配置和记忆），以及 `souls/` 子目录（`memory/` 只作归档，不再写入）
-2. 播种人格与记忆模板到 `souls/{T,G}soul.md`、`MEMORY.md`——这三份模板**编译时内嵌在二进制里**，所以无论 exe 装在哪儿都能播（已存在的文件不会被覆盖）
+2. 保留式迁移旧 `Tsoul.md` / `Gsoul.md`，再补齐 `souls/karina.md`、`souls/yuqi.md` 与 `MEMORY.md` 的缺省模板——模板**编译时内嵌在二进制里**，已有文件与自定义正文不覆盖，旧文件保留
 3. 若当前目录是 RedCode 仓库的克隆，额外把 `seed/skill/` 下的技能播种到 `~/.redcode/skill/`（同样只补不覆盖）；拿 release 二进制直接用的话这一步跳过，技能可自行放进 `~/.redcode/skill/`
 4. 加载配置、MCP 服务器与 skill 技能
 5. 启动 TUI/GUI 界面
@@ -138,11 +138,11 @@ provider 顶层可用的键只有：`npm`、`options`、`models`、`name`、`api
 
 ### 2.3 自定义 AI 人格
 
-灵魂文件定义 AI 的性格设定。灵魂文件定义 AI 的性格、语气和行为边界。TUI 和 GUI 可以有不同的灵魂：
+Soul 文件定义 AI 的身份、性格、语气与协作方式。TUI 和 GUI 都可以选择同一份 Soul：
 
 ```bash
-$EDITOR ~/.redcode/souls/Tsoul.md   # TUI 终端人格
-$EDITOR ~/.redcode/souls/Gsoul.md   # GUI 桌面人格
+$EDITOR ~/.redcode/souls/karina.md
+$EDITOR ~/.redcode/souls/yuqi.md
 ```
 
 灵魂文件内容自由格式，但建议包括：
@@ -153,7 +153,7 @@ $EDITOR ~/.redcode/souls/Gsoul.md   # GUI 桌面人格
 - 重点帮你做什么
 - 不该碰的话题
 
-**人格自动加载**：每次启动对话时，引擎自动按客户端类型注入对应人格（TUI→Tsoul.md，GUI→Gsoul.md），无需手动命令。也可在对话中输入 `/tui-persona` 或 `/gui-persona` 手动切换。
+**人格自动加载**：新会话保存所选 Soul 的 ID，之后由这个 ID 加载人格，不再由客户端决定身份。TUI 用 `/soul`，GUI 用设置里的 Soul 选择器修改后续新会话的默认值；当前会话不换人格。Soul 文件保存后在新会话生效。
 
 ---
 
@@ -270,26 +270,52 @@ MCP（Model Context Protocol）让 AI 获得外部能力。安装越多 MCP，AI
 
 ### 5.1 工作原理
 
-人格系统分两层：
+Soul 是助手身份的唯一来源，客户端只负责选择新会话的默认值：
 
-**灵魂文件** (`~/.redcode/souls/*.md`) — AI 的性格设定，也包括它怎么称呼你、怎么跟你协作。每次对话启动时按客户端类型自动注入（TUI→Tsoul.md，GUI→Gsoul.md）；也可通过 `/tui-persona` `/gui-persona` 命令手动加载。
+1. **Soul Registry** 发现 `~/.redcode/souls/*.md`，解析身份元数据与人格正文。
+2. **客户端偏好** 分别记住 TUI / GUI 上次选择的 Soul，只影响之后新建的根会话。
+3. **会话绑定** 将 Soul ID 存入 `session.soul`；继续旧会话、fork 和子代理都保留原身份。
+
+显示名、会话标题前缀与 commit 署名都来自所绑定的 Soul，不再根据 TUI / GUI 猜测。文件缺失或无效时会明确提示，并保留原绑定，不偷偷换成另一个人格。
 
 > 0.8.2 之前还有一层 `~/.redcode/USER.md`（用户画像），内容与灵魂文件大量重复，每轮白吃一道加载，已下线。
 
-### 5.2 加载人格
+### 5.2 选择 Soul
 
 在对话中输入：
 
 ```
-/tui-persona  ← 加载 TUI 终端人格
-/gui-persona  ← 加载 GUI 桌面人格
+/soul          # TUI：打开选择器
+/soul karina   # TUI：选择指定 ID
 ```
 
-### 5.3 人格文件模板
+GUI 在 **设置 → 个性化 → Soul** 中选择新会话的默认人格。两端的偏好独立保存，已有会话显示自己绑定的 Soul。
 
-灵魂文件由引擎首次启动时自动播种到 `~/.redcode/souls/`（模板已内嵌进二进制，装在哪儿都能播）。你可以随意修改。
+**选择只影响后续新会话，当前会话保持原人格。** 旧 `/tui-persona`、`/gui-persona` 已弃用，不应再用来向当前会话手动加载另一份人格正文。
 
-如果不想要人格功能，不执行上述命令即可，AI 保持默认行为。
+### 5.3 新增与编辑 Soul
+
+在 `~/.redcode/souls/` 添加一个 Markdown 文件即可，不需要给客户端或核心代码增加人格分支。例如 `chi.md`：
+
+```markdown
+---
+id: chi
+name: 赤
+display_name: 赤
+commit_prefix: Chi
+avatar: chi
+---
+
+# 赤
+
+在这里写身份、语气与协作方式。
+```
+
+`id` 是唯一、稳定的小写标识，只允许字母、数字、`-` 和 `_`，且首字符必须是字母或数字。`name` 必填；`display_name`、`commit_prefix`、`avatar` 可选，`avatar` 只是资源键。Soul 不配置模型、权限、MCP 或执行策略。
+
+每份文件上限 **16 KiB（UTF-8 字节）**，超限整份拒绝，不截断人格正文；无效文件或重复 ID 会显示问题，不影响其它有效 Soul。编辑文件不会热替换当前会话的快照，新会话才使用新正文。
+
+首次启动自动补齐缺省模板。旧 `Tsoul.md` / `Gsoul.md` 迁移时保留原文件与正文；明显自定义的人格使用稳定的 legacy ID，不冒充官方人格，也不覆盖已有目标文件。
 
 ---
 
@@ -350,7 +376,7 @@ RedCode 内置自动化记忆系统（skill `memory-automation`），在启动/�
 | 路径                                    | 内容                                                                   |
 | --------------------------------------- | ---------------------------------------------------------------------- |
 | `~/.redcode/MEMORY.md`                  | 长期记忆，AI 自动读写                                                  |
-| `~/.redcode/souls/*.md`                 | 灵魂文件（人格），启动时按 TUI/GUI 自动注入                            |
+| `~/.redcode/souls/*.md`                 | Soul 元数据与人格正文，按会话保存的 Soul ID 注入                       |
 | `~/.redcode/skill/` `command/` `agent/` | 全局技能、斜杠指令、子代理定义（`agent/` 与 `agents/` 两种目录名都认） |
 | `~/.redcode/plugin/` `themes/`          | 全局插件与自定义主题                                                   |
 

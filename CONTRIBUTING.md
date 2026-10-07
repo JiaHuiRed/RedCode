@@ -42,7 +42,7 @@ Conventional Commits: `type(scope): summary`
 Types: `feat` `fix` `docs` `chore` `refactor` `test`
 Scopes: `core` `redcode` `tui` `app` `desktop` `sdk` `plugin`
 
-Commits made by an AI agent are prefixed with `[Karina] ` or `[YuQi] `; human commits are not.
+Commits made by an AI agent use the active Soul's `commit_prefix` in brackets, falling back to `display_name`, `name`, then `AI`. The client does not determine the author; human commits have no prefix.
 
 ## CI
 

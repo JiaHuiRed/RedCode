@@ -1,6 +1,6 @@
 // 261007 Red Soul System V2：Soul 元数据与摘要类型。
 // Soul 是助手身份的唯一事实源（设计 §2.1）；客户端类型只负责选默认人格，不得用于推断身份。
-// 设计文档：docs/notes/implemented/architecture/2026-10-07-soul-system-v2.md（Soul System V2）。
+// 设计文档：docs/notes/implemented/architecture/2026-10-07-soul-system-v2-design.md。
 export type Metadata = {
   id: string
   name: string

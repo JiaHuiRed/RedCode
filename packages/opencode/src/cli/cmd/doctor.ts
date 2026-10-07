@@ -12,6 +12,10 @@ import * as Console from "effect/Console"
 import * as fs from "node:fs"
 import path from "node:path"
 import { errorMessage } from "@/util/error"
+import { Soul } from "@/soul"
+import { MAX_SOUL_BYTES } from "@/soul/schema"
+import { MAX_SOUL_PROMPT_BYTES, render } from "@/session/soul"
+import { resolveDefaultSoul } from "@/session/session"
 
 type Status = "ok" | "warn" | "error" | "skip"
 
@@ -65,6 +69,30 @@ function skipped(names: string[], why: string): Check[] {
   return names.map((name) => ({ name, status: "skip" as const, detail: why }))
 }
 
+export function soulRegistryCheck(valid: number, issues: number): Check {
+  return {
+    name: "registry",
+    status: issues ? "warn" : "ok",
+    detail: `${valid} valid Soul(s), ${issues} issue(s)`,
+  }
+}
+
+export function soulBudgetCheck(file: string, bytes: number): Check {
+  return {
+    name: "soul-source",
+    status: bytes > MAX_SOUL_BYTES ? "warn" : "ok",
+    detail: `${bytes} B of ${MAX_SOUL_BYTES} B source limit · ${file}`,
+  }
+}
+
+export function soulRenderCheck(bytes: number): Check {
+  return {
+    name: "soul-render",
+    status: bytes > MAX_SOUL_PROMPT_BYTES ? "warn" : "ok",
+    detail: `${bytes} B of ${MAX_SOUL_PROMPT_BYTES} B rendered Soul limit · excluded from instruction budget`,
+  }
+}
+
 export const DoctorCommand = effectCmd({
   command: "doctor",
   describe: "run diagnostics",
@@ -106,6 +134,50 @@ export const DoctorCommand = effectCmd({
           detail: dbExists ? "exists" : "not found (will be created on first run)",
         },
       ],
+    })
+
+    const soulRegistry = yield* attempt(
+      "registry",
+      Effect.gen(function* () {
+        const soul = yield* Soul.Service
+        return { items: yield* soul.list(), issues: yield* soul.issues() }
+      }).pipe(Effect.provide(Soul.defaultLayer)),
+      (result) => soulRegistryCheck(result.items.length, result.issues.length),
+    )
+    const soulBudget = yield* attempt(
+      "soul-budget",
+      Effect.gen(function* () {
+        const soul = yield* Soul.Service
+        const client = process.env.REDCODE_CLIENT === "desktop" ? "desktop" : "tui"
+        const id = yield* resolveDefaultSoul(soul, client)
+        return { id, value: id ? yield* soul.get(id) : undefined }
+      }).pipe(Effect.provide(Soul.defaultLayer)),
+      ({ id, value }) => {
+        if (!value)
+          return {
+            name: "soul-source",
+            status: "warn",
+            detail: id ? `default Soul "${id}" is unavailable` : "no client default Soul",
+          }
+        return soulBudgetCheck(value.path, fs.statSync(value.path).size)
+      },
+    )
+    const soulRenderBudget = yield* attempt(
+      "soul-render",
+      Effect.gen(function* () {
+        const soul = yield* Soul.Service
+        const client = process.env.REDCODE_CLIENT === "desktop" ? "desktop" : "tui"
+        const id = yield* resolveDefaultSoul(soul, client)
+        return id ? yield* soul.get(id) : undefined
+      }).pipe(Effect.provide(Soul.defaultLayer)),
+      (value) =>
+        value
+          ? soulRenderCheck(Buffer.byteLength(render(value).prompt, "utf8"))
+          : { name: "soul-render", status: "warn", detail: "no default Soul to render" },
+    )
+    groups.push({
+      name: "souls",
+      checks: [soulRegistry, soulBudget, soulRenderBudget],
     })
 
     // ---- config ----
@@ -271,8 +343,6 @@ export const DoctorCommand = effectCmd({
         ["project-agents", path.join(worktree, "AGENTS.md")],
         ["global-memory", path.join(home, ".redcode", "MEMORY.md")],
         ["project-memory", path.join(worktree, ".redcode", "MEMORY.md")],
-        ["soul-tui", path.join(home, ".redcode", "souls", "Tsoul.md")],
-        ["soul-gui", path.join(home, ".redcode", "souls", "Gsoul.md")],
         ...(cfg?.instructions ?? [])
           .filter((item) => !item.startsWith("https://") && !item.startsWith("http://"))
           .map((item): [string, string] => ["config", item]),
@@ -288,16 +358,14 @@ export const DoctorCommand = effectCmd({
       groups.push({
         name: "prefix",
         checks: [
-          ...checked.map(
-            (item): Check => ({
-              name: item.label,
-              status: item.size === undefined ? "skip" : "ok",
-              detail:
-                item.size === undefined
-                  ? `not found: ${item.file}`
-                  : `${item.size} B · ${pct(item.size)}% · ${item.file}`,
-            }),
-          ),
+          ...checked.map((item): Check => ({
+            name: item.label,
+            status: item.size === undefined ? "skip" : "ok",
+            detail:
+              item.size === undefined
+                ? `not found: ${item.file}`
+                : `${item.size} B · ${pct(item.size)}% · ${item.file}`,
+          })),
           {
             name: "total",
             status: totalBytes > DEFAULT_TOTAL || totalPct >= 90 ? "warn" : "ok",

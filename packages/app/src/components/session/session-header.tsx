@@ -8,6 +8,7 @@ import { Keybind } from "@redcode-ai/ui/keybind"
 import { Spinner } from "@redcode-ai/ui/spinner"
 import { showToast } from "@redcode-ai/ui/toast"
 import { Tooltip, TooltipKeybind } from "@redcode-ai/ui/tooltip"
+import { useQuery } from "@tanstack/solid-query"
 import { getFilename } from "@redcode-ai/core/util/path"
 import { createEffect, createMemo, createSignal, For, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -15,6 +16,7 @@ import { Portal } from "solid-js/web"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
+import { useGlobalSDK } from "@/context/global-sdk"
 import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
 import { useSettings } from "@/context/settings"
@@ -137,6 +139,7 @@ export function SessionHeader() {
   const language = useLanguage()
   const settings = useSettings()
   const sync = useSync()
+  const globalSDK = useGlobalSDK()
   const terminal = useTerminal()
   const { params, view } = useSessionLayout()
 
@@ -229,6 +232,24 @@ export function SessionHeader() {
   const tint = createMemo(() =>
     messageAgentColor(params.id ? sync.data.message[params.id] : undefined, sync.data.agent),
   )
+  const soulList = useQuery(() => ({
+    queryKey: ["soul", globalSDK.url, "list"],
+    queryFn: async () => (await globalSDK.client.soul.list({ throwOnError: true })).data,
+  }))
+  const defaultSoul = useQuery(() => ({
+    queryKey: ["soul", globalSDK.url, "default", "desktop"],
+    queryFn: async () => (await globalSDK.client.soul.default({ client: "desktop" }, { throwOnError: true })).data,
+    enabled: !params.id,
+  }))
+  const activeSoul = createMemo(() => {
+    const id = params.id
+      ? sync.session.get(params.id)?.soul
+      : settings.personalization.lastSoul() || defaultSoul.data?.id
+    if (!id) return language.t("session.header.noSoul")
+    const summary = soulList.data?.find((soul) => soul.id === id)
+    if (summary) return summary.displayName
+    return soulList.data ? language.t("settings.personalization.unavailableSoul", { id }) : id
+  })
 
   const selectApp = (app: OpenApp) => {
     if (!options().some((item) => item.id === app)) return
@@ -312,6 +333,19 @@ export function SessionHeader() {
         {(mount) => (
           <Portal mount={mount}>
             <div class="flex items-center gap-2">
+              <Show when={activeSoul()} keyed>
+                {(soul) => (
+                  <span
+                    data-testid={params.id ? "active-session-soul" : "default-session-soul"}
+                    class="hidden lg:inline text-12-medium text-text-weak"
+                    aria-label={language.t(params.id ? "session.header.activeSoul" : "session.header.defaultSoul", {
+                      soul,
+                    })}
+                  >
+                    {soul}
+                  </span>
+                )}
+              </Show>
               <Show when={projectDirectory()}>
                 <div class="hidden xl:flex items-center">
                   <Show

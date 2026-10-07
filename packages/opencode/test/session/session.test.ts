@@ -15,11 +15,16 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { BackgroundJob } from "@/background/job"
 import { Database, eq } from "@/storage/db"
 import { PartTable } from "@/session/session.sql"
+import { Soul } from "@/soul"
+import path from "node:path"
+import fs from "node:fs"
+import { TestInstance } from "../fixture/fixture"
 
 void Log.init({ print: false })
 
 const it = testEffect(
   Layer.mergeAll(
+    Soul.defaultLayer,
     SessionNs.layer.pipe(
       Layer.provide(Bus.layer),
       Layer.provide(Storage.defaultLayer),
@@ -101,6 +106,59 @@ describe("session.created event", () => {
       expect(receivedEvents.indexOf("created")).toBeLessThan(receivedEvents.indexOf("updated"))
 
       yield* session.remove(info.id)
+    }),
+  )
+})
+
+describe("session soul", () => {
+  it.instance("falls back to the first valid soul when the client preference is unavailable", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const directory = test.directory
+      yield* Effect.promise(async () => {
+        await Bun.write(path.join(directory, "chi.md"), "---\nid: chi\nname: 赤\n---\n\n# 赤\n\nA valid soul.\n")
+      })
+      const session = yield* SessionNs.Service
+      const created = yield* session.create({}).pipe(Effect.provideService(Soul.directory, directory))
+      expect(created.soul).toBe("chi")
+      yield* session.remove(created.id)
+    }),
+  )
+
+  it.instance("pins an explicit soul and inherits it for child and fork sessions", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const file = path.join(test.directory, "chi.md")
+      yield* Effect.promise(() => Bun.write(file, "---\nid: chi\nname: 赤\n---\n\n# 赤\n\nThird Soul.\n"))
+      const session = yield* SessionNs.Service
+      const parent = yield* session.create({ soul: "chi" }).pipe(Effect.provideService(Soul.directory, test.directory))
+      yield* Effect.sync(() => fs.unlinkSync(file))
+      const child = yield* session.create({ parentID: parent.id, soul: "yuqi" })
+      const fork = yield* session.fork({ sessionID: parent.id })
+
+      expect(parent.soul).toBe("chi")
+      expect(child.soul).toBe("chi")
+      expect(fork.soul).toBe("chi")
+
+      expect((yield* session.get(parent.id)).soul).toBe("chi")
+      expect((yield* session.get(child.id)).soul).toBe("chi")
+      expect((yield* session.get(fork.id)).soul).toBe("chi")
+
+      yield* session.remove(parent.id)
+      yield* session.remove(child.id)
+      yield* session.remove(fork.id)
+    }),
+  )
+
+  it.instance("rejects an unknown root Soul before creating a session", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const session = yield* SessionNs.Service
+      const result = yield* Effect.exit(
+        session.create({ soul: "missing" }).pipe(Effect.provideService(Soul.directory, test.directory)),
+      )
+      expect(result._tag).toBe("Failure")
+      expect(yield* session.list()).toEqual([])
     }),
   )
 })
@@ -213,9 +271,7 @@ describe("edit part storage", () => {
         }
         yield* session.updatePart(part)
 
-        const row = Database.use((db) =>
-          db.select().from(PartTable).where(eq(PartTable.id, part.id)).get(),
-        )
+        const row = Database.use((db) => db.select().from(PartTable).where(eq(PartTable.id, part.id)).get())
         expect(row).toBeDefined()
         if (!row) throw new Error("edit part was not persisted")
         expect(JSON.stringify(row.data).split(patch).length - 1).toBe(1)

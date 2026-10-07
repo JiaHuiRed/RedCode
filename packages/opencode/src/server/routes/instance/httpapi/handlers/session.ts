@@ -41,7 +41,7 @@ import {
   UpdatePayload,
   UsageQuery,
 } from "../groups/session"
-import { ConflictError, PermissionNotFoundError, notFound } from "../errors"
+import { ConflictError, InvalidRequestError, PermissionNotFoundError, notFound } from "../errors"
 import * as SessionError from "./session-errors"
 
 const tryParseJson = (text: string) =>
@@ -222,7 +222,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     })
 
     const create = Effect.fn("SessionHttpApi.create")(function* (ctx: { payload?: Session.CreateInput }) {
-      return yield* shareSvc.create(ctx.payload)
+      return yield* shareSvc.create(ctx.payload).pipe(
+        Effect.catchTag("InvalidSoul", (error) => new InvalidRequestError({ message: error.message, field: "soul" })),
+        Effect.catchTag("NotFoundError", (error) => notFound(error.message)),
+      )
     })
 
     const createRaw = Effect.fn("SessionHttpApi.createRaw")(function* (ctx: {

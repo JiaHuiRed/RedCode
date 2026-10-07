@@ -18,9 +18,10 @@ import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Global } from "@redcode-ai/core/global"
 import path from "path"
 import { projectRoot } from "./root"
-import TEMPLATE_TSOUL from "./template/Tsoul.md" with { type: "text" }
-import TEMPLATE_GSOUL from "./template/Gsoul.md" with { type: "text" }
+import TEMPLATE_KARINA from "./template/souls/karina.md" with { type: "text" }
+import TEMPLATE_YUQI from "./template/souls/yuqi.md" with { type: "text" }
 import TEMPLATE_MEMORY from "./template/MEMORY.md" with { type: "text" }
+import { writeSoulIfAbsent } from "@/soul/migration"
 
 export { Service } from "./bootstrap-service"
 export type { Interface } from "./bootstrap-service"
@@ -54,13 +55,21 @@ export const layer = Layer.effect(
       const redcodeHome = path.join(Global.Path.home, ".redcode")
       yield* fs.ensureDir(path.join(redcodeHome, "memory")).pipe(Effect.catchCause(Effect.logWarning))
       yield* fs.ensureDir(path.join(redcodeHome, "souls")).pipe(Effect.catchCause(Effect.logWarning))
+      const soulDir = path.join(redcodeHome, "souls")
       const templates: Array<[content: string, dest: string]> = [
-        [TEMPLATE_TSOUL, path.join(redcodeHome, "souls", "Tsoul.md")],
-        [TEMPLATE_GSOUL, path.join(redcodeHome, "souls", "Gsoul.md")],
         // 260730 Karina 不再播种 USER.md：用户画像基本被 souls/*.md 覆盖，
         // 每轮多一道加载不值。称呼改用 config 的 username 字段。
         [TEMPLATE_MEMORY, path.join(redcodeHome, "MEMORY.md")],
       ]
+      yield* Effect.forEach(
+        [
+          [TEMPLATE_KARINA, path.join(soulDir, "karina.md")],
+          [TEMPLATE_YUQI, path.join(soulDir, "yuqi.md")],
+        ] as const,
+        ([content, dest]) =>
+          Effect.sync(() => writeSoulIfAbsent(dest, content)).pipe(Effect.catchCause(Effect.logWarning)),
+        { discard: true },
+      )
       yield* Effect.forEach(templates, ([content, dest]) =>
         Effect.gen(function* () {
           const exists = yield* fs.existsSafe(dest)

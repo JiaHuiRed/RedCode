@@ -1,4 +1,4 @@
-> 本包 = **TUI**（`packages/opencode`），对应人格 **TUI 助手**。在此工作即 TUI 的主场。
+> 本包 = **TUI 核心**（`packages/opencode`）。客户端类型不决定人格；当前身份与署名由会话绑定的 Soul 决定。
 
 # opencode database guide
 

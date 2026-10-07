@@ -1,6 +1,7 @@
 import type { ModelMessage } from "ai"
 import * as Log from "@redcode-ai/core/util/log"
 import { MAX_SESSIONS, SESSION_TTL_MS, sessionEvictor } from "@/util/session-evictor"
+import type { Snapshot as SoulSnapshot } from "./soul"
 
 const log = Log.create({ service: "prompt-caches" })
 
@@ -22,6 +23,7 @@ type PromptCacheState = {
   msgPin: Map<string, MessagePinCache>
   modelMsgs: Map<string, Map<string, ModelMessagesCache>>
   tools: Map<string, ToolCache>
+  souls: Map<string, SoulSnapshot>
   // 260819 cc audit：会话最后一次被使用的时刻，供 TTL/数量回收用。跟四个缓存放同一个
   // globalThis 槽 —— 分开放会让「模块被实例化多次」时各实例按各自的视图回收共享的缓存。
   seen: Map<string, number>
@@ -44,10 +46,12 @@ export const PromptCaches = (globalWithCaches.__rc_prompt_caches ??= {
   // if skill/agent lists change mid-session the tool schema JSON mutates → prefix cache breaks.
   // 260804 Red tools cache is model-agnostic (descriptions come from disk, not model) — no modelKey.
   tools: new Map<string, ToolCache>(),
+  souls: new Map<string, SoulSnapshot>(),
   seen: new Map<string, number>(),
 })
 // 老实例先建好对象、新实例只拿到引用时补齐字段（`??=` 只认整个对象存不存在）
 PromptCaches.seen ??= new Map<string, number>()
+PromptCaches.souls ??= new Map<string, SoulSnapshot>()
 
 // 260811 cc audit R4 分代结算（哥哥拍板：缓存优先）：
 // msgPin/modelMsgs 把已发送的消息钉死在首次快照上——这是前缀缓存的命根子，但也意味着
@@ -96,7 +100,8 @@ export function dropSession(sessionID: string) {
   const dropped =
     settlePromptCaches(sessionID, "evict") +
     (PromptCaches.system.delete(sessionID) ? 1 : 0) +
-    (PromptCaches.tools.delete(sessionID) ? 1 : 0)
+    (PromptCaches.tools.delete(sessionID) ? 1 : 0) +
+    (PromptCaches.souls.delete(sessionID) ? 1 : 0)
   evictor.forget(sessionID)
   return dropped
 }

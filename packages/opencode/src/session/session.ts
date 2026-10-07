@@ -43,6 +43,7 @@ import { Global } from "@redcode-ai/core/global"
 import { Effect, Layer, Option, Context, Schema, Semaphore, Types } from "effect"
 import { NonNegativeInt, optionalOmitUndefined } from "@redcode-ai/core/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { Soul } from "@/soul"
 
 const log = Log.create({ service: "session" })
 
@@ -84,6 +85,7 @@ export function fromRow(row: SessionRow): Info {
     title: row.title,
     agent: row.agent ?? undefined,
     client: row.client ?? undefined,
+    soul: row.soul ?? undefined,
     model: row.model
       ? {
           id: ModelID.make(row.model.id),
@@ -129,6 +131,7 @@ export function toRow(info: Info) {
     title: info.title,
     agent: info.agent,
     client: info.client,
+    soul: info.soul,
     model: info.model,
     version: info.version,
     share_url: info.share?.url,
@@ -187,6 +190,14 @@ const Tokens = Schema.Struct({
 
 const EmptyTokens = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } }
 
+export function resolveDefaultSoul(soul: Soul.Interface, client: string) {
+  return Effect.gen(function* () {
+    const preferred = yield* soul.defaultForClient(client)
+    if (yield* soul.get(preferred)) return preferred
+    return (yield* soul.list())[0]?.id
+  })
+}
+
 const Share = Schema.Struct({
   url: Schema.String,
 })
@@ -234,6 +245,7 @@ export const Info = Schema.Struct({
   title: Schema.String,
   agent: optionalOmitUndefined(Schema.String),
   client: optionalOmitUndefined(Schema.String),
+  soul: optionalOmitUndefined(Schema.String),
   model: optionalOmitUndefined(Model),
   version: Schema.String,
   time: Time,
@@ -263,6 +275,7 @@ export const CreateInput = Schema.optional(
     model: Schema.optional(Model),
     permission: Schema.optional(Permission.Ruleset),
     workspaceID: Schema.optional(WorkspaceID),
+    soul: Schema.optional(Schema.String),
   }),
 )
 export type CreateInput = Types.DeepMutable<Schema.Schema.Type<typeof CreateInput>>
@@ -509,6 +522,11 @@ export class BusyError extends Schema.TaggedErrorClass<BusyError>()("SessionBusy
   sessionID: SessionID,
 }) {}
 
+export class InvalidSoul extends Schema.TaggedErrorClass<InvalidSoul>()("InvalidSoul", {
+  soul: Schema.String,
+  message: Schema.String,
+}) {}
+
 export type NotFound = NotFoundError
 
 export class QueuedMessageConflict extends Schema.TaggedErrorClass<QueuedMessageConflict>()("QueuedMessageConflict", {
@@ -524,7 +542,8 @@ export interface Interface {
     model?: Schema.Schema.Type<typeof Model>
     permission?: Permission.Ruleset
     workspaceID?: WorkspaceID
-  }) => Effect.Effect<Info>
+    soul?: string
+  }) => Effect.Effect<Info, InvalidSoul | NotFound>
   readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info, NotFound>
   readonly touch: (sessionID: SessionID) => Effect.Effect<void>
   readonly get: (id: SessionID) => Effect.Effect<Info, NotFound>
@@ -628,6 +647,7 @@ export const layer: Layer.Layer<
       directory: string
       path?: string
       permission?: Permission.Ruleset
+      soul?: string
     }) {
       const ctx = yield* InstanceState.context
       const result: Info = {
@@ -642,6 +662,7 @@ export const layer: Layer.Layer<
         title: input.title ?? createDefaultTitle(!!input.parentID),
         agent: input.agent,
         client: flags.client,
+        soul: input.soul,
         model: input.model,
         permission: input.permission ? [...input.permission] : undefined,
         cost: 0,
@@ -663,6 +684,7 @@ export const layer: Layer.Layer<
               sessionID: result.id,
               agent: result.agent,
               model: result.model ? { providerID: result.model.providerID, modelID: result.model.id } : undefined,
+              soul: result.soul,
             },
             {},
           )
@@ -920,9 +942,23 @@ export const layer: Layer.Layer<
       model?: Schema.Schema.Type<typeof Model>
       permission?: Permission.Ruleset
       workspaceID?: WorkspaceID
+      soul?: string
     }) {
       const ctx = yield* InstanceState.context
       const workspace = yield* InstanceState.workspaceID
+      const parent = input?.parentID ? yield* get(input.parentID) : undefined
+      const available = yield* Effect.serviceOption(Soul.Service)
+      const soulSvc = Option.isSome(available)
+        ? available.value
+        : yield* Effect.gen(function* () {
+            return yield* Soul.Service
+          }).pipe(Effect.provide(Soul.defaultLayer))
+      // 261007 Red Validate at the owning boundary, including non-HTTP callers.
+      if (!parent && input?.soul !== undefined && !(yield* soulSvc.get(input.soul))) {
+        return yield* new InvalidSoul({ soul: input.soul, message: `Unknown or invalid soul: ${input.soul}` })
+      }
+      const soul =
+        parent !== undefined ? parent.soul : (input?.soul ?? (yield* resolveDefaultSoul(soulSvc, flags.client)))
       return yield* createNext({
         parentID: input?.parentID,
         directory: ctx.directory,
@@ -932,6 +968,7 @@ export const layer: Layer.Layer<
         model: input?.model,
         permission: input?.permission,
         workspaceID: input?.workspaceID ?? workspace,
+        soul,
       })
     })
 
@@ -944,6 +981,7 @@ export const layer: Layer.Layer<
         path: sessionPath(ctx.worktree, ctx.directory),
         workspaceID: original.workspaceID,
         title,
+        soul: original.soul,
       })
       const msgs = yield* messages({ sessionID: input.sessionID })
       // 260814 Red 截断边界改 compareTime（ID 48 位编码 795 天回绕后字典序失真）。
@@ -1177,6 +1215,7 @@ export const defaultLayer = layer.pipe(
   Layer.provide(Storage.defaultLayer),
   Layer.provide(SyncEvent.defaultLayer),
   Layer.provide(RuntimeFlags.defaultLayer),
+  Layer.provide(Soul.defaultLayer),
 )
 
 const cancelBackgroundJobs = Effect.fn("Session.cancelBackgroundJobs")(function* (

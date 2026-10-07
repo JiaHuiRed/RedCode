@@ -575,6 +575,9 @@ export const dict = {
   "session.new.worktree.create": "新しいワークツリーを作成",
   "session.header.search.placeholder": "{{project}}を検索",
   "session.header.searchFiles": "ファイルを検索",
+  "session.header.activeSoul": "現在の Soul：{{soul}}",
+  "session.header.defaultSoul": "新規セッションの Soul：{{soul}}",
+  "session.header.noSoul": "Soul なし",
   "session.header.openIn": "で開く",
   "session.header.open.action": "{{app}}を開く",
   "session.header.open.ariaLabel": "{{app}}で開く",
@@ -684,9 +687,9 @@ export const dict = {
   "settings.general.row.showSessionProgressBar.title": "セッション進行状況バーを表示",
   "settings.general.row.showSessionProgressBar.description":
     "エージェントの作業中に、セッション上部にアニメーション付きの進行状況バーを表示します",
- "settings.general.row.petEnabled.title": "デスクトップペットを表示",
- "settings.general.row.petEnabled.description":
-   "メインコンテンツ領域の左下にチー（Q版）を表示します。ここでいつでも再有効化できます",
+  "settings.general.row.petEnabled.title": "デスクトップペットを表示",
+  "settings.general.row.petEnabled.description":
+    "メインコンテンツ領域の左下にチー（Q版）を表示します。ここでいつでも再有効化できます",
   "settings.general.row.wayland.title": "ネイティブWaylandを使用",
   "settings.general.row.wayland.description": "WaylandでのX11フォールバックを無効にします。再起動が必要です。",
   "settings.general.row.wayland.tooltip":
@@ -787,6 +790,18 @@ export const dict = {
   "settings.providers.tag.other": "その他",
   "settings.models.title": "モデル",
   "settings.models.description": "モデル設定はここで構成できます。",
+  "settings.personalization.title": "パーソナライズ",
+  "settings.personalization.description": "新しいセッションで使用する Soul を選択します。",
+  "settings.personalization.defaultSoul": "デフォルト Soul",
+  "settings.personalization.defaultSoulDescription":
+    "今後のセッションに適用されます。現在のセッションの Soul は変わりません。",
+  "settings.personalization.serverDefault": "サーバーのデフォルトを使用（{{soul}}）",
+  "settings.personalization.unavailableSoul": "利用できない Soul（{{id}}）",
+  "settings.personalization.staleSoul":
+    "保存された Soul「{{id}}」は利用できません。別の Soul またはサーバーのデフォルトを選択してください。",
+  "settings.personalization.issuesLoading": "Soul レジストリを確認中…",
+  "settings.personalization.registryIssues": "Soul レジストリの問題",
+
   "settings.agents.title": "エージェント",
   "settings.agents.description":
     "組み込みエージェントのモデル・推論レベルを上書きします。「既定」は上書きせず、エージェント自身の定義に従います。",
