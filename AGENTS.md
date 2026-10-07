@@ -58,7 +58,7 @@
 
 # 本仓红线（通用红线见全局 AGENTS.md）
 
-- **改一个函数前先数它的同形状兄弟。** 无法解释的不对称通常意味着漏了一次抽取，而本仓这件事**已经发生三次**：`edit.ts` 的 replacer 家族，07-22 修了 `fuzzyFindBestMatch`，07-24 号称"补齐其余 5 个"实际漏掉 `BlockAnchorReplacer`，08-19 审计才发现。**"补齐了"这个说法本身要复核——数一遍函数，别信上一次的收尾结论。** 来源：deepseek-harness 的 _unexplained asymmetry usually signals a missed extraction_。
+- **改到函数家族时，先数同形状兄弟。** 无法解释的不对称通常意味着漏了一次抽取，而本仓这件事**已经发生三次**：`edit.ts` 的 replacer 家族，07-22 修了 `fuzzyFindBestMatch`，07-24 号称"补齐其余 5 个"实际漏掉 `BlockAnchorReplacer`，08-19 审计才发现。**"补齐了"这个说法本身要复核——数一遍函数，别信上一次的收尾结论。** 来源：deepseek-harness 的 _unexplained asymmetry usually signals a missed extraction_。
 - **误配置要响。** 自包含的在加载时响，否则在最早能解析的时刻响；**永远不要静默跳过一个解析不到的引用**。0.10.0 修过插件加载的三条静默失败路径（包解析到了但没有 server 入口只有 log.warn、整体超时把所有外置插件一起吞成空数组、`applyPlugin` 抛错处事件被注释掉只剩日志），当时是逐条补，没有立成规矩。
 - **diagnose skill 按触发条件加载，不是每刀编辑的入口税**：触发于——未知根因 bug、回归、跨子系统/时序相关异常、同方向连续失败、高风险行为变化、证据不足又不能安全猜的异常。明确的局部小改（文案、布局微调、局部重命名、条件分支修正、文档）走 Inspect → Act → Verify 即停，不走 diagnose。命中触发条件时走完 Phase 1（建反馈循环/交叉验证）→ Phase 3（假设排序确认）→ Phase 6（完成后复盘）再动手，动手后验证结果。
 
