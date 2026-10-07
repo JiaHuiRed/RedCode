@@ -52,6 +52,10 @@ export const SessionTable = sqliteTable(
     agent: text(),
     // 260616 Red 记录创建会话的客户端类型(desktop/tui)，用于 Office 群聊 TUI/GUI 分类
     client: text(),
+    // 261007 Red Soul V2：会话创建时 pin 的身份 id（Soul Registry 的 id）。NULL = 旧行，
+    // 回填走 data-migration（client→默认 soul 映射，只作缺省偏好、不做身份推理）。
+    // 决策：docs/notes/implemented/architecture/2026-10-07-soul-system-v2.md
+    soul: text(),
     model: text({ mode: "json" }).$type<{
       id: string
       providerID: string
