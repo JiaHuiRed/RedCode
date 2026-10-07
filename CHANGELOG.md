@@ -11,6 +11,7 @@
 ### [未发布]
 
 - **队列消息收到真实模型响应后才确认送达**（`packages/opencode/src/session/{session,prompt,processor,run-state}.ts`、`packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts`、`packages/opencode/test/session/prompt.test.ts`）：领取只保留 reservation，数据库仍为 `queued`；收到真实响应才原子写入 `delivered`，准备失败、响应前 provider 错误或取消会释放 reservation，保留消息供编辑和显式重试。Runner frame 阻止用户取消或权限拒绝后的隐式二次唤醒；修正显式重试重跑旧 turn、较早排队消息 promote 被旧回复误判完成、压缩边界漏掉待发消息三个边界，并验证硬顶工具 turn 向下一条队列交接。主仓先红后绿验证，四个定向测试文件共 117 pass / 13 skip / 0 fail，TUI typecheck 通过。无公开 schema、SDK、UI 或 migration 改动，不承诺远端 exactly-once。决策与模型可见四问：`docs/notes/implemented/feature/2026-08-14-busy-enter-steer-or-queue.md`。
+- **聊天区去掉重复标题栏，顶部标签加宽**：桌面与浏览器入口统一将会话菜单移到顶栏，保留重命名、分享、归档、删除及返回父会话入口；聊天滚动区不再保留标题栏的 64px 占位。标签空间充裕时可展开到 384px，拥挤时仍可收窄，右侧预留关闭按钮空间。
 
 ### [0.12.1] - 2026-10-06
 

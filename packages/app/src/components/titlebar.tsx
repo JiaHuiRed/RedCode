@@ -371,7 +371,7 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
 
   return (
     <div
-      class="h-full flex-1 flex flex-row items-center gap-1.5 pr-3 py-2"
+      class="h-full min-w-0 flex-1 flex flex-row items-center gap-1.5 pr-3 py-2"
       classList={{
         "pl-2": mac(),
         "pl-4": !mac(),
@@ -440,6 +440,8 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
           </SDKProvider>
         )}
       </Show>
+      {/* 261007 Red 会话操作移到顶栏，不再占用聊天区的重复标题行。 */}
+      <div id="redcode-session-actions" class="shrink-0 flex items-center" />
       <TitlebarUpdatePill update={props.update} />
     </div>
   )
@@ -478,7 +480,7 @@ function TabNavItem(props: {
   const isActive = () => !!match()
   return (
     <div
-      class="group relative flex h-7 min-w-24 max-w-[312px] flex-row items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-[6px] bg-[var(--tab-bg)] pl-1.5 [--tab-bg:var(--v2-background-bg-deep)] hover:[--tab-bg:var(--v2-background-bg-layer-02)] data-[active='true']:[--tab-bg:var(--v2-background-bg-layer-02)]"
+      class="group relative flex h-7 min-w-24 w-[384px] max-w-[384px] flex-[1_1_256px] flex-row items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-[6px] bg-[var(--tab-bg)] pl-1.5 pr-8 [--tab-bg:var(--v2-background-bg-deep)] hover:[--tab-bg:var(--v2-background-bg-layer-02)] data-[active='true']:[--tab-bg:var(--v2-background-bg-layer-02)]"
       data-active={isActive()}
     >
       <a
@@ -486,14 +488,16 @@ function TabNavItem(props: {
         class="flex h-full min-w-0 flex-1 flex-row items-center gap-1.5 overflow-hidden text-[13px] font-medium text-v2-text-text-faint group-data-[active='true']:text-v2-text-text-base"
       >
         <ProjectTabAvatar project={props.project} directory={props.directory} />
-        <span class="flex items-center gap-1.5 min-w-0">
+        <span class="flex flex-1 items-center gap-1.5 min-w-0">
           <Show when={props.status === "busy"}>
             <div class="size-1.5 shrink-0 rounded-full bg-surface-warning-strong animate-pulse" />
           </Show>
           <Show when={props.status === "retry"}>
             <div class="size-1.5 shrink-0 rounded-full bg-surface-critical-strong" />
           </Show>
-          <span class="truncate">{props.title}</span>
+          <span class="truncate" title={props.title}>
+            {props.title}
+          </span>
         </span>
       </a>
 

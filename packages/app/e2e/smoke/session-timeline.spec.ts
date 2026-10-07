@@ -420,7 +420,11 @@ async function selectHomeProject(page: Page, projectName: string) {
 
 async function navigateToSession(page: Page, directory: string, sessionId: string, expectedTitle: string) {
   await page.goto(`/${base64Encode(directory)}/session/${sessionId}`)
-  await expect(page.getByRole("heading", { name: expectedTitle })).toBeVisible()
+  await expect(page.locator("#session-chat-panel [data-session-title]")).toHaveCount(0)
+  await page.locator("#redcode-session-actions button").click()
+  await page.getByRole("menuitem", { name: "Rename", exact: true }).click()
+  await expect(page.locator("#redcode-session-actions input")).toHaveValue(expectedTitle)
+  await page.locator("#redcode-session-actions input").press("Escape")
 }
 
 async function expectSessionReady(page: Page) {
