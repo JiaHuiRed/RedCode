@@ -131,7 +131,7 @@ const elog = EffectLogger.create({ service: "session.prompt" })
 export interface Interface {
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
   readonly prompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts, Image.Error>
-  readonly loop: (input: LoopInput) => Effect.Effect<MessageV2.WithParts>
+  readonly loop: (input: LoopInput, onCancelled?: Effect.Effect<void>) => Effect.Effect<MessageV2.WithParts>
   readonly shell: (input: ShellInput) => Effect.Effect<MessageV2.WithParts, Session.BusyError>
   readonly command: (input: CommandInput) => Effect.Effect<MessageV2.WithParts, Image.Error>
   readonly resolvePromptParts: (template: string) => Effect.Effect<PromptInput["parts"]>
@@ -1074,8 +1074,12 @@ export const layer = Layer.effect(
         )
         .pipe(Effect.catch(() => Effect.void))
 
-      const result = yield* loop({ sessionID: input.sessionID })
-      if (!input.delivery) return result
+      let cancelled = false
+      const onCancelled = Effect.sync(() => {
+        cancelled = true
+      })
+      const result = yield* loop({ sessionID: input.sessionID }, onCancelled)
+      if (!input.delivery || cancelled || (result.info.role === "assistant" && result.info.error)) return result
       // 260927 Red Runner 在旧工作收尾期间会丢弃并发 loop；如果本消息仍未被当前轮读取，
       // 由提交方在旧 Runner 退出后重试，避免 queue/steer 落在最后一步的竞态中被遗留。
       const current = yield* MessageV2.get({ sessionID: input.sessionID, messageID: message.info.id }).pipe(
@@ -1087,7 +1091,7 @@ export const layer = Layer.effect(
         (input.delivery === "queue" ? current.info.delivery !== "queued" : current.info.delivery !== "steer")
       )
         return result
-      return yield* loop({ sessionID: input.sessionID })
+      return yield* loop({ sessionID: input.sessionID }, onCancelled)
     })
 
     const lastAssistant = Effect.fnUntraced(function* (sessionID: SessionID) {
@@ -1098,7 +1102,24 @@ export const layer = Layer.effect(
       throw new Error("Impossible")
     })
 
-    const runLoop = Effect.fn("SessionPrompt.run")(function* (sessionID: SessionID) {
+    const runLoop = (sessionID: SessionID) => {
+      const ownership: { messageID?: MessageID } = {}
+      return runLoopImpl(sessionID, ownership).pipe(
+        Effect.ensuring(
+          Effect.suspend(() => {
+            if (!ownership.messageID) return Effect.void
+            const messageID = ownership.messageID
+            ownership.messageID = undefined
+            return sessions.releaseQueuedMessage({ sessionID, messageID })
+          }),
+        ),
+      )
+    }
+
+    const runLoopImpl = Effect.fn("SessionPrompt.run")(function* (
+      sessionID: SessionID,
+      ownership: { messageID?: MessageID },
+    ) {
       const ctx = yield* InstanceState.context
       const slog = elog.with({ sessionID })
       let structured: unknown
@@ -1125,11 +1146,14 @@ export const layer = Layer.effect(
       // 边界比较必须走 time.created。
       let turnStartUserID: MessageV2.User | undefined
       let claimedUserID: MessageID | undefined
+      let ownedQueuedMessageID: MessageID | undefined
       const remindedUserIDs = new Set<MessageID>()
       // 261006 Red queued claims start a fresh turn; rebuild the cached prefix because their messages insert mid-history.
       // See docs/notes/implemented/feature/2026-08-14-busy-enter-steer-or-queue.md.
       const resetQueuedTurn = (messageID: MessageID) => {
         claimedUserID = messageID
+        ownedQueuedMessageID = messageID
+        ownership.messageID = messageID
         _caches.modelMsgs.delete(sessionID)
         step = 0
         loopTracker.reset()
@@ -1155,13 +1179,34 @@ export const layer = Layer.effect(
         yield* slog.info("loop", { step })
 
         let msgs = yield* MessageV2.filterCompactedEffect(sessionID)
+        // 261007 Red 未送达队列可能早于压缩边界；领取后补回当前 turn，不能让摘要裁掉它。
+        const retainedQueuedMessage =
+          claimedUserID && !msgs.some((message) => message.info.id === claimedUserID)
+            ? yield* MessageV2.get({ sessionID, messageID: claimedUserID }).pipe(Effect.orDie)
+            : undefined
+        if (retainedQueuedMessage) msgs.push(retainedQueuedMessage)
 
         const {
-          user: lastUser,
+          user: latestUser,
           assistant: lastAssistant,
           finished: lastFinished,
           tasks,
-        } = MessageV2.latest(msgs.filter((m) => m.info.role !== "user" || m.info.delivery !== "queued"))
+        } = MessageV2.latest(
+          msgs.filter(
+            (m) => m.info.role !== "user" || m.info.delivery !== "queued" || m.info.id === ownedQueuedMessageID,
+          ),
+        )
+        const lastUser = retainedQueuedMessage?.info.role === "user" ? retainedQueuedMessage.info : latestUser
+
+        // 261007 Red 中断或请求失败会留下未完成的 assistant；下一次显式 loop 优先领取仍 queued 的 turn，
+        // 不重放旧用户消息。失败当次不会自动续跑，见 docs/notes/implemented/feature/2026-08-14-busy-enter-steer-or-queue.md。
+        if (lastAssistant?.error && !ownedQueuedMessageID) {
+          const next = yield* sessions.claimQueuedMessage(sessionID)
+          if (next) {
+            resetQueuedTurn(next.id)
+            continue
+          }
+        }
 
         if (!lastUser) {
           const next = yield* sessions.claimQueuedMessage(sessionID)
@@ -1187,6 +1232,8 @@ export const layer = Layer.effect(
           !["tool-calls"].includes(lastAssistant.finish) &&
           !hasToolCalls &&
           MessageV2.compareTime(lastUser, lastAssistant) < 0 &&
+          // 261007 Red promote 保留原消息时间；仍为 steer 表示尚无回执，不能用旧回复判定完成。
+          lastUser.delivery !== "steer" &&
           // 260927 Red 排队消息的 created 早于上一轮 assistant，领取后要等它自己的回复。
           (claimedUserID !== lastUser.id || lastAssistant.parentID === lastUser.id) &&
           // 260728 Red 打捞到文本态工具调用时不走正常退出，强制再跑一轮（下面 A 处设置）
@@ -1352,6 +1399,11 @@ export const layer = Layer.effect(
               messageID: lastAssistant.id,
               text: `（已达到单轮步数上限 ${maxSteps}，强制收束。任务若未完成，直接续发消息即可继续；上限可用 agent 配置的 steps 调整。）`,
             })
+          }
+          const next = yield* sessions.claimQueuedMessage(sessionID)
+          if (next) {
+            resetQueuedTurn(next.id)
+            continue
           }
           break
         }
@@ -1576,16 +1628,17 @@ export const layer = Layer.effect(
           // 滤掉整条，不动 msgs 本体——compaction/reminder/msgPin 仍按全量算），留到轮末
           // 续跑边界作为新轮输入。steer 模式恒等于 msgs。
           const turnStart = turnStartUserID
-          const visibleMsgs = msgs.filter(
-            (m) =>
-              m.info.role !== "user" ||
-              (m.info.delivery !== "queued" &&
-                (m.info.delivery === "steer" ||
-                  m.info.delivery === "delivered" ||
-                  busyEnter !== "queue" ||
-                  turnStart === undefined ||
-                  MessageV2.compareTime(m.info, turnStart) <= 0)),
-          )
+          const visibleMsgs = msgs.filter((m) => {
+            if (m.info.role !== "user") return true
+            if (m.info.delivery === "queued") return m.info.id === ownedQueuedMessageID
+            return (
+              m.info.delivery === "steer" ||
+              m.info.delivery === "delivered" ||
+              busyEnter !== "queue" ||
+              turnStart === undefined ||
+              MessageV2.compareTime(m.info, turnStart) <= 0
+            )
+          })
           const [skills, env, instructions, mcpGuide, modelMsgs] = yield* Effect.all([
             cachedSystem ? Effect.succeed(cachedSystem.skills) : sys.skills(agent),
             cachedSystem ? Effect.succeed(cachedSystem.env) : sys.environment(model),
@@ -1795,10 +1848,6 @@ export const layer = Layer.effect(
             // 已撤除，原因见本文件上方「可见思考的语言/称呼约束注入已撤除」那段注释。
             ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : []),
           ]
-          for (const msg of visibleMsgs) {
-            if (msg.info.role !== "user" || msg.info.delivery !== "steer") continue
-            yield* sessions.updateMessage({ ...msg.info, delivery: "delivered" })
-          }
           // 260820 cc 上下文构成快照，供 /session/:id/context-inspect 查看。与上面两个探针
           // 的区别：它们比对「跟上一轮比变了什么」，这个回答「现在窗口里装的是什么」。
           ContextSnapshot.record({
@@ -1809,18 +1858,33 @@ export const layer = Layer.effect(
             tools: sortedTools as Record<string, unknown>,
             messages: outgoing,
           })
-          const result = yield* handle.process({
-            user: stepSettings.user,
-            agent,
-            permission: stepSettings.session.permission,
-            sessionID,
-            parentSessionID: stepSettings.session.parentID,
-            system,
-            messages: outgoing,
-            tools: sortedTools,
-            model: stepSettings.model,
-            toolChoice: format.type === "json_schema" ? "required" : undefined,
-          })
+          const result = yield* handle.process(
+            {
+              user: stepSettings.user,
+              agent,
+              permission: stepSettings.session.permission,
+              sessionID,
+              parentSessionID: stepSettings.session.parentID,
+              system,
+              messages: outgoing,
+              tools: sortedTools,
+              model: stepSettings.model,
+              toolChoice: format.type === "json_schema" ? "required" : undefined,
+            },
+            Effect.gen(function* () {
+              if (ownedQueuedMessageID) {
+                const messageID = ownedQueuedMessageID
+                yield* sessions.acknowledgeQueuedMessage({ sessionID, messageID }).pipe(Effect.orDie)
+                if (ownedQueuedMessageID === messageID) ownedQueuedMessageID = undefined
+                if (ownership.messageID === messageID) ownership.messageID = undefined
+              }
+              for (const msg of visibleMsgs) {
+                if (msg.info.role !== "user" || msg.info.delivery !== "steer") continue
+                yield* sessions.updateMessage({ ...msg.info, delivery: "delivered" })
+              }
+            }),
+          )
+          if (handle.stoppedByPermission) yield* state.markStopped(sessionID)
           // 260710 Red 注入后清空，下一轮只在 loopTracker 再次触发时才重新设置
           loopRecoveryPrompt = undefined
           // 260801 Red Goal token 记账：累计本步 tokens（无 goal 时无开销）
@@ -2009,10 +2073,15 @@ export const layer = Layer.effect(
       return yield* lastAssistant(sessionID)
     })
 
-    const loop: (input: LoopInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.loop")(function* (
-      input: LoopInput,
-    ) {
-      return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input.sessionID))
+    const loop: (input: LoopInput, onCancelled?: Effect.Effect<void>) => Effect.Effect<MessageV2.WithParts> = Effect.fn(
+      "SessionPrompt.loop",
+    )(function* (input: LoopInput, onCancelled?: Effect.Effect<void>) {
+      return yield* state.ensureRunning(
+        input.sessionID,
+        lastAssistant(input.sessionID),
+        runLoop(input.sessionID),
+        onCancelled,
+      )
     })
 
     const shell: (input: ShellInput) => Effect.Effect<MessageV2.WithParts, Session.BusyError> = Effect.fn(

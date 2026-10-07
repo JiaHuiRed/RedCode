@@ -46,6 +46,7 @@ export type Result = "compact" | "stop" | "continue"
 
 export interface Handle {
   readonly message: MessageV2.Assistant
+  readonly stoppedByPermission?: boolean
   readonly updateToolCall: (
     toolCallID: string,
     name: string,
@@ -60,7 +61,7 @@ export interface Handle {
       attachments?: MessageV2.FilePart[]
     },
   ) => Effect.Effect<void>
-  readonly process: (streamInput: LLM.StreamInput) => Effect.Effect<Result>
+  readonly process: (streamInput: LLM.StreamInput, onResponse?: Effect.Effect<void>) => Effect.Effect<Result>
   // 260728 Red 上一次 process() 从正文/思考链里打捞出的文本态工具调用（见 xml-tool-call.ts）
   readonly salvagedToolCalls: readonly XmlToolCall.ParsedCall[]
 }
@@ -113,6 +114,29 @@ interface ProcessorContext extends Input {
 }
 
 type StreamEvent = LLMEvent
+
+function isModelResponse(value: StreamEvent) {
+  switch (value.type) {
+    case "text-start":
+    case "text-delta":
+    case "reasoning-start":
+    case "reasoning-delta":
+    case "tool-input-start":
+    case "tool-input-delta":
+    case "tool-call":
+      return true
+    case "step-finish":
+    case "finish":
+      return (
+        value.reason === "stop" ||
+        value.reason === "length" ||
+        value.reason === "tool-calls" ||
+        value.reason === "content-filter"
+      )
+    default:
+      return false
+  }
+}
 
 export class Service extends Context.Service<Service, Interface>()("@redcode/SessionProcessor") {}
 
@@ -618,37 +642,37 @@ export const layer = Layer.effect(
             // 原来这里直接 `agent.permission`，被 Agent.get 那个「返回 Info」的类型谎言藏住了，真撞上
             // 就是 TypeError。回落到默认姿态的规则集：doom_loop 在 defaults 是 ask，回落只会更谨慎。
             const agent = (yield* agents.get(ctx.assistantMessage.agent)) ?? (yield* agents.defaultInfo())
-           yield* permission
-             .ask({
-               permission: "doom_loop",
-               patterns: cycleTools,
-               sessionID: ctx.assistantMessage.sessionID,
-               metadata: { tool: value.name, input },
-               always: cycleTools,
-               ruleset: agent.permission,
-             })
-             .pipe(
-               // 261006 Red 静态规则 deny（典型：explore 子代理白名单 "*": deny 把 doom_loop 的
-               // ask 档压成硬 deny，而子代理无人应答弹窗）原先一路炸到 halt —— 整个 step 失败、
-               // assistant 消息挂 error、子代理临交报告被拦后整场交白卷（261006 crosspet 调研
-               // 实测）。落成工具报错与普通权限拒绝对齐：模型看得见、可换路收尾。
-               // 弹窗交互的 Rejected/Corrected 保持中断语义不放行——用户刚点了拒绝，
-               // tap 放行后 SDK 仍会执行该调用，被拒工具不能真跑。冗余执行的结果由
-               // completeToolCall 的 running 状态卫丢弃（守卫前提本就是「已确认结果相同」）。
-               Effect.catchIf(
-                 (error) => error instanceof Permission.DeniedError,
-                 () =>
-                   Effect.asVoid(
-                     failToolCall(
-                       value.id,
-                       new Error(
-                         `Tool call blocked by the doom-loop guard: the same ${value.name} call was already issued repeatedly with identical results. Do not repeat it. Use the results already in context or take a different approach, then continue your task.`,
-                       ),
-                     ),
-                   ),
-               ),
-             )
-           return
+            yield* permission
+              .ask({
+                permission: "doom_loop",
+                patterns: cycleTools,
+                sessionID: ctx.assistantMessage.sessionID,
+                metadata: { tool: value.name, input },
+                always: cycleTools,
+                ruleset: agent.permission,
+              })
+              .pipe(
+                // 261006 Red 静态规则 deny（典型：explore 子代理白名单 "*": deny 把 doom_loop 的
+                // ask 档压成硬 deny，而子代理无人应答弹窗）原先一路炸到 halt —— 整个 step 失败、
+                // assistant 消息挂 error、子代理临交报告被拦后整场交白卷（261006 crosspet 调研
+                // 实测）。落成工具报错与普通权限拒绝对齐：模型看得见、可换路收尾。
+                // 弹窗交互的 Rejected/Corrected 保持中断语义不放行——用户刚点了拒绝，
+                // tap 放行后 SDK 仍会执行该调用，被拒工具不能真跑。冗余执行的结果由
+                // completeToolCall 的 running 状态卫丢弃（守卫前提本就是「已确认结果相同」）。
+                Effect.catchIf(
+                  (error) => error instanceof Permission.DeniedError,
+                  () =>
+                    Effect.asVoid(
+                      failToolCall(
+                        value.id,
+                        new Error(
+                          `Tool call blocked by the doom-loop guard: the same ${value.name} call was already issued repeatedly with identical results. Do not repeat it. Use the results already in context or take a different approach, then continue your task.`,
+                        ),
+                      ),
+                    ),
+                ),
+              )
+            return
           }
 
           case "tool-result": {
@@ -786,20 +810,20 @@ export const layer = Layer.effect(
                 miss: (prevTokens.cache.miss ?? 0) + (usage.tokens.cache.miss ?? 0),
               },
             }
-           // 260930 Red 未声明币种却产生费用：按 USD 入桶且每个模型只吵一次。models.dev 未标
-           // 币种的模型费率全 0，能走到这里说明是自定义 provider 报了价却没声明 currency——
-           // 「没声明就当美元」正是 260615 那起 ¥69.21→¥465.12 事故的默认值，兜底可以，必须留痕。
-           if (!usage.currency && usage.cost > 0) {
-             const warnKey = `${ctx.model.providerID}/${ctx.model.id}`
-             if (!warnedMissingCurrency.has(warnKey)) {
-               warnedMissingCurrency.add(warnKey)
-               log.warn("step_finish.missing_currency", {
-                 providerID: ctx.model.providerID,
-                 modelID: ctx.model.id,
-                 cost: usage.cost,
-               })
-             }
-           }
+            // 260930 Red 未声明币种却产生费用：按 USD 入桶且每个模型只吵一次。models.dev 未标
+            // 币种的模型费率全 0，能走到这里说明是自定义 provider 报了价却没声明 currency——
+            // 「没声明就当美元」正是 260615 那起 ¥69.21→¥465.12 事故的默认值，兜底可以，必须留痕。
+            if (!usage.currency && usage.cost > 0) {
+              const warnKey = `${ctx.model.providerID}/${ctx.model.id}`
+              if (!warnedMissingCurrency.has(warnKey)) {
+                warnedMissingCurrency.add(warnKey)
+                log.warn("step_finish.missing_currency", {
+                  providerID: ctx.model.providerID,
+                  modelID: ctx.model.id,
+                  cost: usage.cost,
+                })
+              }
+            }
             yield* session.updatePart({
               id: PartID.ascending(),
               reason: value.reason,
@@ -809,9 +833,9 @@ export const layer = Layer.effect(
               type: "step-finish",
               tokens: usage.tokens,
               cost: usage.cost,
-             // 260930 Red 币种与 cost 同时刻定格，session 行据此分桶记账（见 session.sql.ts）。
-             // 未声明币种的模型若产生了费用，记账侧按 USD 入桶（warn 见上方）。
-             ...(usage.currency ? { currency: usage.currency } : {}),
+              // 260930 Red 币种与 cost 同时刻定格，session 行据此分桶记账（见 session.sql.ts）。
+              // 未声明币种的模型若产生了费用，记账侧按 USD 入桶（warn 见上方）。
+              ...(usage.currency ? { currency: usage.currency } : {}),
             })
             yield* session.updateMessage(ctx.assistantMessage)
             if (ctx.snapshot) {
@@ -1025,9 +1049,13 @@ export const layer = Layer.effect(
         yield* status.set(ctx.sessionID, { type: "idle" })
       })
 
-      const process = Effect.fn("SessionProcessor.process")(function* (streamInput: LLM.StreamInput) {
+      const process = Effect.fn("SessionProcessor.process")(function* (
+        streamInput: LLM.StreamInput,
+        onResponse?: Effect.Effect<void>,
+      ) {
         slog.info("process")
         ctx.needsCompaction = false
+        let responseReceived = false
         ctx.shouldBreak = (yield* config.get()).experimental?.continue_loop_on_deny !== true
         // 260728 Red 打捞只认本 step 真实注册的工具名，避免把讨论/日志里出现的
         // <tool_call> 字样当成真调用摘掉
@@ -1060,7 +1088,15 @@ export const layer = Layer.effect(
             const stream = llm.stream(streamInput)
 
             yield* stream.pipe(
-              Stream.tap((event) => handleEvent(event)),
+              Stream.tap((event) =>
+                Effect.gen(function* () {
+                  if (onResponse && !responseReceived && isModelResponse(event)) {
+                    responseReceived = true
+                    yield* onResponse
+                  }
+                  yield* handleEvent(event)
+                }),
+              ),
               Stream.takeUntil(() => ctx.needsCompaction || ctx.reasoningStallTripped),
               Stream.runDrain,
             )
@@ -1108,6 +1144,9 @@ export const layer = Layer.effect(
       return {
         get message() {
           return ctx.assistantMessage
+        },
+        get stoppedByPermission() {
+          return ctx.blocked
         },
         get salvagedToolCalls() {
           return ctx.salvaged

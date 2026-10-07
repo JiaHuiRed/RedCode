@@ -14,7 +14,9 @@ export interface Interface {
     sessionID: SessionID,
     onInterrupt: Effect.Effect<MessageV2.WithParts>,
     work: Effect.Effect<MessageV2.WithParts>,
+    onCancelled?: Effect.Effect<void>,
   ) => Effect.Effect<MessageV2.WithParts>
+  readonly markStopped: (sessionID: SessionID) => Effect.Effect<void>
   readonly startShell: (
     sessionID: SessionID,
     onInterrupt: Effect.Effect<MessageV2.WithParts>,
@@ -34,10 +36,11 @@ export const layer = Layer.effect(
     const state = yield* InstanceState.make(
       Effect.fn("SessionRunState.state")(function* () {
         const scope = yield* Scope.Scope
-        const runners = new Map<SessionID, Runner.Runner<MessageV2.WithParts>>()
+        const runners = new Map<SessionID, { runner: Runner.Runner<MessageV2.WithParts>; cancelled: boolean }>()
         yield* Effect.addFinalizer(
           Effect.fnUntraced(function* () {
-            yield* Effect.forEach(runners.values(), (runner) => runner.cancel, {
+            for (const frame of runners.values()) frame.cancelled = true
+            yield* Effect.forEach(runners.values(), (frame) => frame.runner.cancel, {
               concurrency: "unbounded",
               discard: true,
             })
@@ -63,33 +66,45 @@ export const layer = Layer.effect(
         onBusy: status.set(sessionID, { type: "busy" }),
         onInterrupt,
       })
-      data.runners.set(sessionID, next)
-      return next
+      const frame = { runner: next, cancelled: false }
+      data.runners.set(sessionID, frame)
+      return frame
     })
 
     const assertNotBusy = Effect.fn("SessionRunState.assertNotBusy")(function* (sessionID: SessionID) {
       const data = yield* InstanceState.get(state)
       const existing = data.runners.get(sessionID)
-      if (existing?.busy) yield* busyError(sessionID)
+      if (existing?.runner.busy) yield* busyError(sessionID)
     })
 
     const cancel = Effect.fn("SessionRunState.cancel")(function* (sessionID: SessionID) {
-      yield* background.cancelTree(sessionID)
       const data = yield* InstanceState.get(state)
       const existing = data.runners.get(sessionID)
-      if (!existing || !existing.busy) {
+      if (existing?.runner.busy) existing.cancelled = true
+      yield* background.cancelTree(sessionID)
+      if (!existing || !existing.runner.busy) {
         yield* status.set(sessionID, { type: "idle" })
         return
       }
-      yield* existing.cancel
+      yield* existing.runner.cancel
     })
 
     const ensureRunning = Effect.fn("SessionRunState.ensureRunning")(function* (
       sessionID: SessionID,
       onInterrupt: Effect.Effect<MessageV2.WithParts>,
       work: Effect.Effect<MessageV2.WithParts>,
+      onCancelled?: Effect.Effect<void>,
     ) {
-      return yield* (yield* runner(sessionID, onInterrupt)).ensureRunning(work)
+      const frame = yield* runner(sessionID, onInterrupt)
+      const result = yield* frame.runner.ensureRunning(work)
+      if (frame.cancelled && onCancelled) yield* onCancelled
+      return result
+    })
+
+    const markStopped = Effect.fn("SessionRunState.markStopped")(function* (sessionID: SessionID) {
+      const data = yield* InstanceState.get(state)
+      const frame = data.runners.get(sessionID)
+      if (frame?.runner.busy) frame.cancelled = true
     })
 
     const startShell = Effect.fn("SessionRunState.startShell")(function* (
@@ -98,12 +113,13 @@ export const layer = Layer.effect(
       work: Effect.Effect<MessageV2.WithParts>,
       ready?: Latch.Latch,
     ) {
-      return yield* (yield* runner(sessionID, onInterrupt))
+      const frame = yield* runner(sessionID, onInterrupt)
+      return yield* frame.runner
         .startShell(work, ready)
         .pipe(Effect.catchTag("RunnerBusy", () => Effect.fail(busyError(sessionID))))
     })
 
-    return Service.of({ assertNotBusy, cancel, ensureRunning, startShell })
+    return Service.of({ assertNotBusy, cancel, ensureRunning, markStopped, startShell })
   }),
 )
 

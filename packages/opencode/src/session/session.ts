@@ -94,8 +94,8 @@ export function fromRow(row: SessionRow): Info {
     version: row.version,
     summary,
     cost: row.cost,
-   costCny: row.cost_cny ?? undefined,
-   costUsd: row.cost_usd ?? undefined,
+    costCny: row.cost_cny ?? undefined,
+    costUsd: row.cost_usd ?? undefined,
     tokens: {
       input: row.tokens_input,
       output: row.tokens_output,
@@ -137,8 +137,8 @@ export function toRow(info: Info) {
     summary_files: info.summary?.files,
     summary_diffs: info.summary?.diffs,
     cost: info.cost ?? 0,
-   cost_cny: info.costCny ?? null,
-   cost_usd: info.costUsd ?? null,
+    cost_cny: info.costCny ?? null,
+    cost_usd: info.costUsd ?? null,
     tokens_input: (info.tokens ?? EmptyTokens).input,
     tokens_output: (info.tokens ?? EmptyTokens).output,
     tokens_reasoning: (info.tokens ?? EmptyTokens).reasoning,
@@ -225,10 +225,10 @@ export const Info = Schema.Struct({
   parentID: optionalOmitUndefined(SessionID),
   summary: optionalOmitUndefined(Summary),
   cost: optionalOmitUndefined(Schema.Finite),
- // 260930 Red 分币种账。双双为 undefined = 未回填的旧行（backfill 见 data-migration.ts）；
- // 归属完成后 costCny + costUsd 之和等于 cost。客户端据此按桶显示，不再从消息窗口猜币种。
- costCny: optionalOmitUndefined(Schema.Finite),
- costUsd: optionalOmitUndefined(Schema.Finite),
+  // 260930 Red 分币种账。双双为 undefined = 未回填的旧行（backfill 见 data-migration.ts）；
+  // 归属完成后 costCny + costUsd 之和等于 cost。客户端据此按桶显示，不再从消息窗口猜币种。
+  costCny: optionalOmitUndefined(Schema.Finite),
+  costUsd: optionalOmitUndefined(Schema.Finite),
   tokens: optionalOmitUndefined(Tokens),
   share: optionalOmitUndefined(Share),
   title: Schema.String,
@@ -500,9 +500,9 @@ export const getUsage = (input: {
       .toNumber(),
   )
 
- // 260930 Red 币种随价格一起定：model.cost.currency 是唯一权威（峰谷旁路表 tiered-pricing
- // 不带币种，CNY_PRICING 覆盖与 config 声明都写在这一处）。undefined = 模型未声明币种。
- return { cost, tokens, currency: input.model.cost?.currency }
+  // 260930 Red 币种随价格一起定：model.cost.currency 是唯一权威（峰谷旁路表 tiered-pricing
+  // 不带币种，CNY_PRICING 覆盖与 config 声明都写在这一处）。undefined = 模型未声明币种。
+  return { cost, tokens, currency: input.model.cost?.currency }
 }
 
 export class BusyError extends Schema.TaggedErrorClass<BusyError>()("SessionBusyError", {
@@ -545,6 +545,11 @@ export interface Interface {
   readonly remove: (sessionID: SessionID) => Effect.Effect<void, NotFound>
   readonly updateMessage: <T extends MessageV2.Info>(msg: T) => Effect.Effect<T>
   readonly claimQueuedMessage: (sessionID: SessionID) => Effect.Effect<MessageV2.User | undefined>
+  readonly acknowledgeQueuedMessage: (input: {
+    sessionID: SessionID
+    messageID: MessageID
+  }) => Effect.Effect<void, QueuedMessageConflict | NotFoundError>
+  readonly releaseQueuedMessage: (input: { sessionID: SessionID; messageID: MessageID }) => Effect.Effect<void>
   readonly deliverQueuedMessage: (input: {
     sessionID: SessionID
     messageID: MessageID
@@ -604,6 +609,7 @@ export const layer: Layer.Layer<
     const sync = yield* SyncEvent.Service
     const flags = yield* RuntimeFlags.Service
     const queueLocks = new Map<SessionID, Semaphore.Semaphore>()
+    const queuedReservations = new Map<SessionID, MessageID>()
     const queueLock = (sessionID: SessionID) => {
       const existing = queueLocks.get(sessionID)
       if (existing) return existing
@@ -764,18 +770,21 @@ export const layer: Layer.Layer<
       sessionID: SessionID
       messageID: MessageID
     }) {
+      if (queuedReservations.get(input.sessionID) === input.messageID)
+        return yield* new QueuedMessageConflict({ messageID: input.messageID })
       const message = yield* MessageV2.get(input)
       if (message.info.role !== "user" || message.info.delivery !== "queued")
         return yield* new QueuedMessageConflict({ messageID: input.messageID })
       return message
     })
 
-    // 260927 Red 队列的领取、编辑、撤销、插队共用同一把会话锁；持久状态在 message JSON，
-    // 领取先落盘再进入模型，领取之后任何客户端都不能再修改该待发项。
+    // 261007 Red 领取只占用内存 reservation；只有收到真实模型响应后才写 delivered，
+    // 进程中断会让持久 queued 状态留给下一次显式 loop。
     const claimQueuedMessage: Interface["claimQueuedMessage"] = Effect.fn("Session.claimQueuedMessage")(
       function* (sessionID) {
         return yield* queueLock(sessionID).withPermits(1)(
           Effect.gen(function* () {
+            if (queuedReservations.has(sessionID)) return
             const row = Database.use((db) =>
               db
                 .select()
@@ -792,7 +801,41 @@ export const layer: Layer.Layer<
             )
             if (!row) return
             const message = row.data as MessageV2.User
-            return yield* updateMessage({ ...message, id: MessageID.make(row.id), sessionID, delivery: "delivered" })
+            const messageID = MessageID.make(row.id)
+            queuedReservations.set(sessionID, messageID)
+            log.info("queue.claimed", { sessionID, messageID })
+            return { ...message, id: messageID, sessionID }
+          }),
+        )
+      },
+    )
+
+    const acknowledgeQueuedMessage: Interface["acknowledgeQueuedMessage"] = Effect.fn(
+      "Session.acknowledgeQueuedMessage",
+    )(function* (input) {
+      yield* queueLock(input.sessionID).withPermits(1)(
+        Effect.uninterruptible(
+          Effect.gen(function* () {
+            if (queuedReservations.get(input.sessionID) !== input.messageID)
+              return yield* new QueuedMessageConflict({ messageID: input.messageID })
+            const message = yield* MessageV2.get(input)
+            if (message.info.role !== "user" || message.info.delivery !== "queued")
+              return yield* new QueuedMessageConflict({ messageID: input.messageID })
+            yield* updateMessage({ ...message.info, delivery: "delivered" })
+            queuedReservations.delete(input.sessionID)
+            log.info("queue.delivered", { sessionID: input.sessionID, messageID: input.messageID })
+          }),
+        ),
+      )
+    })
+
+    const releaseQueuedMessage: Interface["releaseQueuedMessage"] = Effect.fn("Session.releaseQueuedMessage")(
+      function* (input) {
+        yield* queueLock(input.sessionID).withPermits(1)(
+          Effect.sync(() => {
+            if (queuedReservations.get(input.sessionID) !== input.messageID) return
+            queuedReservations.delete(input.sessionID)
+            log.info("queue.released", { sessionID: input.sessionID, messageID: input.messageID })
           }),
         )
       },
@@ -1112,6 +1155,8 @@ export const layer: Layer.Layer<
       remove,
       updateMessage,
       claimQueuedMessage,
+      acknowledgeQueuedMessage,
+      releaseQueuedMessage,
       deliverQueuedMessage,
       editQueuedMessage,
       cancelQueuedMessage,

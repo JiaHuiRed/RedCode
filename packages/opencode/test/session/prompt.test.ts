@@ -2,6 +2,7 @@ import { NodeFileSystem } from "@effect/platform-node"
 import { FetchHttpClient } from "effect/unstable/http"
 import { expect } from "bun:test"
 import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
+import * as Stream from "effect/Stream"
 import * as TestConsole from "effect/testing/TestConsole"
 import path from "path"
 import { fileURLToPath, pathToFileURL } from "url"
@@ -108,6 +109,11 @@ function errorTool(parts: MessageV2.Part[]) {
   const part = toolPart(parts)
   expect(part?.state.status).toBe("error")
   return part?.state.status === "error" ? (part as ErrorToolPart) : undefined
+}
+
+function userDelivery(message: MessageV2.WithParts) {
+  if (message.info.role !== "user") throw new Error("expected a user message")
+  return message.info.delivery
 }
 
 const mcp = Layer.succeed(
@@ -719,6 +725,307 @@ it.instance("claims explicit queued messages one turn at a time in FIFO order", 
   }),
 )
 
+it.instance("reserved queued messages stay editable only after release", () =>
+  Effect.gen(function* () {
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Queue reservation" })
+    const queued = yield* user(chat.id, "reserved")
+    yield* sessions.updateMessage({ ...queued, delivery: "queued" })
+    const later = yield* user(chat.id, "later queued")
+    yield* sessions.updateMessage({ ...later, delivery: "queued" })
+
+    const claimed = yield* sessions.claimQueuedMessage(chat.id)
+    expect(claimed?.id).toBe(queued.id)
+    expect(yield* sessions.claimQueuedMessage(chat.id)).toBeUndefined()
+    expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: queued.id }))).toBe("queued")
+
+    const edit = yield* sessions
+      .editQueuedMessage({ sessionID: chat.id, messageID: queued.id, text: "too soon" })
+      .pipe(Effect.flip)
+    expect(edit).toBeInstanceOf(Session.QueuedMessageConflict)
+    const cancel = yield* sessions.cancelQueuedMessage({ sessionID: chat.id, messageID: queued.id }).pipe(Effect.flip)
+    expect(cancel).toBeInstanceOf(Session.QueuedMessageConflict)
+    const promote = yield* sessions.deliverQueuedMessage({ sessionID: chat.id, messageID: queued.id }).pipe(Effect.flip)
+    expect(promote).toBeInstanceOf(Session.QueuedMessageConflict)
+
+    yield* sessions.releaseQueuedMessage({ sessionID: chat.id, messageID: queued.id })
+    yield* sessions.editQueuedMessage({ sessionID: chat.id, messageID: queued.id, text: "released" })
+  }),
+)
+
+it.instance("cancelled claimed queue item stays queued until an explicit later loop", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Cancelled queued turn" })
+    yield* seed(chat.id, { finish: "stop" })
+    const queued = yield* user(chat.id, "queued before cancel")
+    yield* sessions.updateMessage({ ...queued, delivery: "queued" })
+    yield* llm.hang
+
+    const running = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+    yield* llm.wait(1)
+    expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: queued.id }))).toBe("queued")
+
+    yield* prompt.cancel(chat.id)
+    yield* Fiber.await(running)
+    expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: queued.id }))).toBe("queued")
+    yield* sessions.editQueuedMessage({ sessionID: chat.id, messageID: queued.id, text: "queued after cancel" })
+    expect(yield* llm.calls).toBe(1)
+
+    yield* llm.text("explicit retry reply")
+    const result = yield* prompt.loop({ sessionID: chat.id })
+    expect(result.info.role).toBe("assistant")
+    expect(result.parts.some((part) => part.type === "text" && part.text === "explicit retry reply")).toBe(true)
+    expect(yield* llm.calls).toBe(2)
+    expect(
+      (yield* llm.inputs)
+        .map((input) => JSON.stringify(input))
+        .filter((input) => input.includes("queued after cancel")),
+    ).toHaveLength(1)
+    expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: queued.id }))).toBe("delivered")
+  }),
+)
+
+raceNoLLMServer.instance(
+  "cancellation before processor creation releases a claimed queued message",
+  () =>
+    Effect.gen(function* () {
+      processorCreateStarted.length = 0
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          processorCreateStarted.length = 0
+        }),
+      )
+
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Claim cancellation" })
+      yield* seed(chat.id, { finish: "stop" })
+      const queued = yield* user(chat.id, "claimed before processor create")
+      yield* sessions.updateMessage({ ...queued, delivery: "queued" })
+
+      const started = defer<void>()
+      processorCreateStarted.push(started.resolve)
+      const running = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      yield* Effect.promise(() => started.promise)
+
+      yield* prompt.cancel(chat.id)
+      const exit = yield* Fiber.await(running)
+      expect(Exit.isSuccess(exit)).toBe(true)
+      expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: queued.id }))).toBe("queued")
+      yield* sessions.editQueuedMessage({ sessionID: chat.id, messageID: queued.id, text: "still pending" })
+    }),
+  { config: cfg },
+  3_000,
+)
+
+it.instance("acknowledges a queued message only after response content arrives", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Queue receipt boundary" })
+    yield* seed(chat.id, { finish: "stop" })
+    const queued = yield* user(chat.id, "wait for response")
+    yield* sessions.updateMessage({ ...queued, delivery: "queued" })
+    const response = defer<void>()
+    yield* llm.hold("receipt response", response.promise)
+
+    const running = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+    yield* llm.wait(1)
+    expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: queued.id }))).toBe("queued")
+
+    response.resolve()
+    yield* Fiber.await(running)
+    expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: queued.id }))).toBe("delivered")
+  }),
+)
+
+it.instance("promotes a message arriving during finish into one subsequent model turn", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Queue promoted at finish" })
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "original turn" }],
+    })
+    const response = defer<void>()
+    yield* llm.hold("original reply", response.promise)
+    yield* llm.text("promoted reply")
+
+    const running = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+    yield* llm.wait(1)
+    const late = yield* user(chat.id, "late promoted message")
+    yield* sessions.updateMessage({ ...late, delivery: "queued" })
+    yield* sessions.deliverQueuedMessage({ sessionID: chat.id, messageID: late.id })
+    response.resolve()
+    yield* Fiber.await(running)
+
+    const inputs = (yield* llm.inputs).map((input) => JSON.stringify(input))
+    expect(inputs).toHaveLength(2)
+    expect(inputs[0]).not.toContain("late promoted message")
+    expect(inputs[1]).toContain("late promoted message")
+    expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: late.id }))).toBe("delivered")
+  }),
+)
+
+it.instance("keeps a queued message after provider failure before response content", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Queue provider failure" })
+    yield* seed(chat.id, { finish: "stop" })
+    const queued = yield* user(chat.id, "retry after provider failure")
+    yield* sessions.updateMessage({ ...queued, delivery: "queued" })
+    yield* llm.error(400, { error: { message: "provider rejected request" } })
+
+    yield* prompt.loop({ sessionID: chat.id })
+    expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: queued.id }))).toBe("queued")
+    yield* sessions.editQueuedMessage({ sessionID: chat.id, messageID: queued.id, text: "still editable" })
+
+    yield* llm.text("explicit retry after provider failure")
+    yield* prompt.loop({ sessionID: chat.id })
+    expect(yield* llm.calls).toBe(2)
+    expect(JSON.stringify((yield* llm.inputs)[1])).toContain("still editable")
+    expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: queued.id }))).toBe("delivered")
+  }),
+)
+
+it.instance("promotes an older queued message without mistaking the active reply for its response", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Older queued promotion" })
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "active original turn" }],
+    })
+    const queued = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      delivery: "queue",
+      parts: [{ type: "text", text: "older queued promotion" }],
+    })
+    const response = defer<void>()
+    yield* llm.hold("original response", response.promise)
+    yield* llm.text("promoted response")
+
+    const running = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+    yield* llm.wait(1)
+    yield* sessions.deliverQueuedMessage({ sessionID: chat.id, messageID: queued.info.id })
+    response.resolve()
+    yield* Fiber.await(running)
+
+    const inputs = (yield* llm.inputs).map((input) => JSON.stringify(input))
+    expect(inputs).toHaveLength(2)
+    expect(inputs[0]).not.toContain("older queued promotion")
+    expect(inputs[1]).toContain("older queued promotion")
+    expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: queued.info.id }))).toBe("delivered")
+  }),
+)
+
+it.instance("keeps an acknowledged queued message delivered after stream interruption", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Queue mid-stream interruption" })
+    yield* seed(chat.id, { finish: "stop" })
+    const queued = yield* user(chat.id, "response starts before cancel")
+    yield* sessions.updateMessage({ ...queued, delivery: "queued" })
+    const deltas = yield* (yield* Bus.Service).subscribe(MessageV2.Event.PartDelta)
+    yield* llm.push(reply().text("partial response").hang())
+
+    const running = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+    yield* llm.wait(1)
+    // 261007 Red 流式正文先发布 delta，结束时才写回完整 part；中断前等真实 delta。
+    yield* awaitWithTimeout(
+      deltas.pipe(
+        Stream.filter(
+          (event) => event.properties.sessionID === chat.id && event.properties.delta === "partial response",
+        ),
+        Stream.runHead,
+      ),
+      "queued response text did not arrive before cancellation",
+    )
+    expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: queued.id }))).toBe("delivered")
+
+    yield* prompt.cancel(chat.id)
+    yield* Fiber.await(running)
+    expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: queued.id }))).toBe("delivered")
+  }),
+)
+
+it.instance("delivers a queued message retained behind a completed compaction boundary", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Queue across compaction" })
+    const queued = yield* user(chat.id, "queued before compaction")
+    yield* sessions.updateMessage({ ...queued, delivery: "queued" })
+    const compacted = yield* seed(chat.id, { finish: "stop" })
+    yield* sessions.updatePart({
+      id: PartID.ascending(),
+      sessionID: chat.id,
+      messageID: compacted.user.id,
+      type: "compaction",
+      auto: true,
+    })
+    yield* sessions.updateMessage({ ...compacted.assistant, summary: true })
+    expect((yield* MessageV2.filterCompactedEffect(chat.id)).some((msg) => msg.info.id === queued.id)).toBe(false)
+    const { directory } = yield* TestInstance
+    const file = path.join(directory, "queue-compaction.txt")
+    yield* writeText(file, "retained queue tool result")
+    yield* llm.tool("read", { filePath: file })
+    yield* llm.text("reply to retained queue")
+
+    const result = yield* prompt.loop({ sessionID: chat.id })
+    expect(yield* llm.calls).toBe(2)
+    expect((yield* llm.inputs).every((input) => JSON.stringify(input).includes("queued before compaction"))).toBe(true)
+    expect(result.info.role === "assistant" && result.info.parentID).toBe(queued.id)
+    expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: queued.id }))).toBe("delivered")
+  }),
+)
+
+it.instance("preparation failure releases a queued reservation for later delivery", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Queue preparation failure" })
+    yield* seed(chat.id, { finish: "stop" })
+    const queued = yield* user(chat.id, "invalid agent")
+    yield* sessions.updateMessage({ ...queued, agent: "missing-agent", delivery: "queued" })
+
+    const failed = yield* Effect.exit(prompt.loop({ sessionID: chat.id }))
+    expect(Exit.isFailure(failed)).toBe(true)
+    expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: queued.id }))).toBe("queued")
+    yield* sessions.editQueuedMessage({ sessionID: chat.id, messageID: queued.id, text: "ready to retry" })
+    const edited = yield* MessageV2.get({ sessionID: chat.id, messageID: queued.id })
+    if (edited.info.role !== "user") throw new Error("queued message changed role")
+    yield* sessions.updateMessage({ ...edited.info, agent: "build" })
+
+    yield* llm.text("retried after preparation failure")
+    const result = yield* prompt.loop({ sessionID: chat.id })
+    expect(result.parts.some((part) => part.type === "text" && part.text === "retried after preparation failure")).toBe(
+      true,
+    )
+    expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: queued.id }))).toBe("delivered")
+  }),
+)
+
 it.instance("starts queued turns with a fresh step budget in FIFO order", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig((url) => ({
@@ -773,6 +1080,44 @@ it.instance("starts queued turns with a fresh step budget in FIFO order", () =>
   }),
 )
 
+it.instance("hands off a capped tool turn to the next queued message with a fresh budget", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      agent: { build: { steps: 1 } },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const { directory } = yield* TestInstance
+    const file = path.join(directory, "queue-capped-tool.txt")
+    yield* writeText(file, "tool step consumes its budget")
+    const chat = yield* sessions.create({ title: "Capped queue handoff" })
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "original tool turn" }],
+    })
+    const queued = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      delivery: "queue",
+      parts: [{ type: "text", text: "queued after capped tool turn" }],
+    })
+    yield* llm.tool("read", { filePath: file })
+    yield* llm.text("queued reply has a fresh budget")
+
+    const result = yield* prompt.loop({ sessionID: chat.id })
+    const inputs = (yield* llm.inputs).map((input) => JSON.stringify(input))
+    expect(inputs).toHaveLength(2)
+    expect(inputs[0]).not.toContain("queued after capped tool turn")
+    expect(inputs[1]).toContain("queued after capped tool turn")
+    expect(result.info.role === "assistant" && result.info.parentID).toBe(queued.info.id)
+    expect(userDelivery(yield* MessageV2.get({ sessionID: chat.id, messageID: queued.info.id }))).toBe("delivered")
+  }),
+)
+
 it.instance("queued messages can be canceled before claim and promoted for the next step", () =>
   Effect.gen(function* () {
     const sessions = yield* Session.Service
@@ -811,7 +1156,7 @@ it.instance("queued messages can be canceled before claim and promoted for the n
   }),
 )
 
-it.instance("marks explicitly steered messages delivered when assembling the provider request", () =>
+it.instance("marks explicitly steered messages delivered after the provider response", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)
     const prompt = yield* SessionPrompt.Service
@@ -833,6 +1178,45 @@ it.instance("marks explicitly steered messages delivered when assembling the pro
     const hits = yield* llm.hits
     expect(hits).toHaveLength(1)
     expect(JSON.stringify(hits[0].body)).toContain("steer now")
+  }),
+)
+
+it.instance("user permission rejection does not restart the queued turn", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const permissions = yield* Permission.Service
+    const bus = yield* Bus.Service
+    const { directory } = yield* TestInstance
+    const file = path.join(directory, "permission-denied.txt")
+    yield* writeText(file, "permission test")
+    const asked = yield* bus.subscribe(Permission.Event.Asked)
+    let rejections = 0
+    yield* Stream.runForEach(asked, (event) =>
+      Effect.gen(function* () {
+        rejections++
+        yield* permissions.reply({ requestID: event.properties.id, reply: "reject" })
+      }),
+    ).pipe(Effect.forkScoped)
+    const chat = yield* sessions.create({
+      title: "Permission rejection",
+      permission: [{ permission: "read", pattern: "*", action: "ask" }],
+    })
+    yield* llm.tool("read", { filePath: file })
+    yield* llm.text("must not be sent after user rejection")
+
+    const result = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      delivery: "queue",
+      parts: [{ type: "text", text: "read the protected file" }],
+    })
+
+    expect(result.info.role).toBe("assistant")
+    expect(rejections).toBe(1)
+    expect(yield* llm.calls).toBe(1)
+    expect(yield* llm.pending).toBe(1)
   }),
 )
 
@@ -2270,18 +2654,20 @@ noLLMServer.instance(
   },
 )
 
-noLLMServer.instance("reports missing local path mentions", () =>
-  Effect.gen(function* () {
-    const prompt = yield* SessionPrompt.Service
-    const parts = yield* prompt.resolvePromptParts("Read @missing-redcode-test.md")
-    const problem = parts.find(
-      (part): part is MessageV2.TextPartInput => part.type === "text" && part.synthetic === true,
-    )
+noLLMServer.instance(
+  "reports missing local path mentions",
+  () =>
+    Effect.gen(function* () {
+      const prompt = yield* SessionPrompt.Service
+      const parts = yield* prompt.resolvePromptParts("Read @missing-redcode-test.md")
+      const problem = parts.find(
+        (part): part is MessageV2.TextPartInput => part.type === "text" && part.synthetic === true,
+      )
 
-    expect(problem).toBeDefined()
-    if (!problem) throw new Error("missing local path should produce a synthetic diagnostic")
-    expect(problem.text).toContain("Path does not exist")
-  }),
+      expect(problem).toBeDefined()
+      if (!problem) throw new Error("missing local path should produce a synthetic diagnostic")
+      expect(problem.text).toContain("Path does not exist")
+    }),
   { config: cfg },
 )
 

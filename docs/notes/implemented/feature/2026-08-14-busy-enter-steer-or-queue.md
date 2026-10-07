@@ -43,3 +43,22 @@ config 顶层保留 `busy_enter: "steer" | "queue"`(默认 steer=原行为,一�
 `runLoop` 的 step 计数和恢复状态原本跨越整个 loop。领取一条排队消息虽然开始了新的逻辑用户 turn，却沿用前一 turn 已消耗的 `agent.steps`；当 `steps: 1` 且队列里还有消息时，第一条回复后领取的消息会在模型调用前撞上旧预算，未领取的后续消息也无法继续推进。回归测试 `starts queued turns with a fresh step budget in FIFO order` 在修复前因 provider 请求数少于预期而失败。
 
 两个 `claimQueuedMessage` 领取点现在共用 `resetQueuedTurn(messageID)`：记录领取 ID、清 `modelMsgs` 缓存、将 step 归零，并清除 loop recovery prompt/tracker、force-continue、reasoning-only/empty-turn 重试、XML salvage recovery、turn 起点和已提醒消息 ID。`usageTokens` 仍在整个 run 中累计，`softContextNoticed` 仍只提醒一次；标题生成原有「仅一条真实用户消息」守卫不变，三个用户消息的回归用例同时验证没有额外标题模型请求。实现与变更入口：`packages/opencode/src/session/prompt.ts`、`CHANGELOG.md`。
+
+## 队列送达回执与取消所有权（261007）
+
+领取与送达拆成两个边界：`claimQueuedMessage` 只在 `Session.layer` 的 session→message map 中保留一条 reservation，数据库仍是 `delivery='queued'`；不会越过已保留的最早消息去领取下一条。编辑、撤销、插队共用的 `queuedMessage` 检查会拒绝这条 reservation。只有模型真实响应事件（正文/思考/工具调用起始或增量，或明确的 stop/length/tool-calls/content-filter 收尾）触发 receipt callback 后，`acknowledgeQueuedMessage` 才在会话锁内校验 reservation 与 queued user row、持久化 `delivered` 并清除 reservation；整个写入与清 map 过程不可中断。provider-error、step-start、未知 finish、合成 tool-result 都不算回执。`runLoop` 持有当前 queue ID：只有它能进 `latest()` 与可见模型消息；所有未拥有的 queued 项继续隐藏。全程 finalizer 释放未确认 reservation，不改数据库状态；进程崩溃同样留下 durable queued 项。
+
+取消标记随 `Runner` 一起存入 `frame { runner, cancelled }`。`ensureRunning` 捕获并等待同一 frame，完成后才触发可选取消回调；`cancel()` 在取消后台任务或 runner 前先标记实际忙碌的 frame，dispose 也先标记全部 frame。没有单独的 epoch/token，因此不存在先取 token、后获取 loop 所造成的竞态；被取消的调用方不自动再跑 queue/steer 第二轮。尾部 assistant 中断或请求失败后，下一次显式 loop 优先重新领取仍 queued 的消息，而不是先重跑旧用户消息。用户权限拒绝通过 processor 的 `stoppedByPermission` 结果标记当前 frame，但静态 doom_loop deny 仍只失败当前工具调用，不被误认为用户拒绝。
+
+本补丁不增加公开状态、schema、SDK、UI 或 DB migration；模型请求与静态提示/工具字段不变。可靠性边界刻意不是远端 exactly-once：它只防止同一 reservation 被并发处理成两个本地 turn；崩溃前若 provider 已收到请求、但未收到可确认的响应，历史与 queued 记录仍可能在下一次显式 loop 中重放。
+
+主仓复审补齐三个边界：promote 保留原排队消息的创建时间，仍为 `steer` 时不能用较新的旧回复判定完成；失败后的显式重试必须直接处理待发消息，避免多发一次旧 turn 请求；排队消息若早于已完成的压缩边界，领取后从持久消息补回当前 turn，后续工具步骤也保留它。达到步数硬顶的旧工具 turn 可以交接下一条排队消息，但请求错误、用户拒绝和主动取消不自动续跑。
+
+验证在主仓完成：临时恢复原实现时，回执时机、领取后取消、provider 失败三条回归均红（应为 queued，实际 delivered）；恢复修复后通过。复审补充的显式重试、较早消息 promote、压缩边界用例也各自先红后绿。最终 `prompt.test.ts`、`processor-effect.test.ts`、`effect/runner.test.ts`、`cli/run/runtime.queue.test.ts` 共 117 pass、13 skip、0 fail；跳过项为既有 Windows 平台门控。TUI typecheck 的 tsgo 崩溃后回退 TypeScript 5.9.3，退出码 0。隔离 worktree 的依赖安装失败不再作为主仓验证结论。实现与测试入口：`packages/opencode/src/session/{session,prompt,processor,run-state}.ts`、`packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts`、`packages/opencode/test/session/prompt.test.ts`、`CHANGELOG.md`。
+
+模型可见四问：
+
+1. 静态提示词、工具描述/schema、公开 wire 字段不变；修正的是既有用户消息何时进入模型历史。
+2. 固定前缀增量为 0；每次请求的历史按实际领取或 promote 的消息变化。
+3. system/tools 前缀不动；排队消息插入历史时沿用 `modelMsgs` 重建，从历史插入点后的缓存不能保证复用。
+4. 无新增提示词或工具输出注入项；补回消息沿用既有消息处理与上下文预算路径。新增队列日志仅存有界 session/message ID，不存正文。
