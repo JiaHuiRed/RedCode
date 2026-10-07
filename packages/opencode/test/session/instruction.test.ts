@@ -485,13 +485,15 @@ describe("Instruction.system max_total_bytes", () => {
   // 260929 Red 保留优先级与注入顺序是两个维度，必须分开验证。顺序没变（输出仍是
   // 全局 AGENTS → 项目 AGENTS → 全局 MEMORY → 项目 MEMORY → soul → config），
   // 但「谁先被丢」现在是显式设计的结果，不再是数组尾部的偶然。
-  it.live("drops soul before AGENTS.md and MEMORY.md when the budget is tight", () =>
+  // 261007 Red 重排后 soul 先于 MEMORY 保留（MEMORY 是索引层，全文在召回库可查；
+  // soul 丢了没有任何补救通道），本用例改为验证这条新顺序。
+  it.live("keeps soul ahead of short-term MEMORY when the budget is tight", () =>
     Effect.gen(function* () {
       const globalTmp = yield* tmpWithFiles({
         "AGENTS.md": agents(1000),
         // 全局 MEMORY 是 <config>/MEMORY.md（不是 .redcode/ 下那份——那是项目级）
-        "MEMORY.md": agents(100),
-        ".redcode/souls/Tsoul.md": agents(1000),
+        "MEMORY.md": agents(800),
+        ".redcode/souls/Tsoul.md": agents(300),
       })
       const projectTmp = yield* tmpdirScoped()
 
@@ -500,14 +502,14 @@ describe("Instruction.system max_total_bytes", () => {
         const rules = yield* svc.system()
         // 必须只看来源本体：声明行里也含被丢来源的路径，混在一起会让断言因错误的原因通过
         const kept = rules.filter((r) => r.startsWith("Instructions from:"))
-        // soul 保留优先级最低（人格与声线，丢了不改变行为边界），最先被丢
-        expect(kept.some((r) => r.includes("Tsoul.md"))).toBe(false)
-        // AGENTS(0) 与 MEMORY(1) 完整保留——漏一条硬规则比前缀长更糟
+        // 预算 2000 < 总量约 2.2KB：MEMORY(2) 先于 soul(1) 被丢
+        expect(kept.some((r) => r.includes("Tsoul.md"))).toBe(true)
+        expect(kept.some((r) => r.includes("MEMORY.md"))).toBe(false)
+        // AGENTS(0) 完整保留——漏一条硬规则比前缀长更糟
         expect(kept.some((r) => r.includes(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}`))).toBe(true)
-        expect(kept.some((r) => r.includes("MEMORY.md"))).toBe(true)
-        // 被丢的 soul 仍要进模型可见声明行，不能静默
+        // 被丢的 MEMORY 仍要进模型可见声明行，不能静默
         const notice = rules.find((r) => r.includes("instruction source(s) dropped"))!
-        expect(notice).toContain("Tsoul.md")
+        expect(notice).toContain("MEMORY.md")
       }).pipe(
         provideInstance(projectTmp),
         provideInstruction({ home: globalTmp, config: globalTmp }, undefined, {

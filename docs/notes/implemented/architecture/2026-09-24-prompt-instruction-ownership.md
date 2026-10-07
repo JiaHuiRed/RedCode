@@ -41,3 +41,19 @@
 - “重复规则会增权”及模型人格变化仍属未验证假设；本 note 只记录静态 owner 变更，不将其写成实测结论。
 - 回归命令 `bun test test/session/system.test.ts test/session/reasoning-language.test.ts test/session/system-prompt-routing.test.ts --timeout 30000`：40 pass；Prettier 检查 `src/session/{system,reasoning-language}.ts` 与 `test/session/system.test.ts` 通过。全局 MEMORY dual-write 检查通过。TUI 全包 typecheck 此前连续两次因 tsgo 崩溃后 TypeScript fallback OOM，未再次运行。
 - 同任务试跑只得到 Luna 样本：两次读文件、一次实现编辑、`bun test test/filter.test.ts` 2/2，随后简短收尾；请求记录显示 context 约 35.5K tokens、缓存读 34.3K、cost=0。Sol 启动后未留下输出、会话或新日志，期间系统可用 commit 从 1.15 GB 降至 0.71 GB；没有证据确认退出根因，因此不重试，也不据单个 Luna 样本推断模型差异。
+
+## 2026-10-07 GPT Delta 精简
+
+- `gpt.md` 的 Progress updates、Voice、Writing style、Formatting 段重复 Soul 与 common prompt 的沟通、称呼和格式 owner；GPT Delta 只保留 GPT 真实的工具/API差异，重复人格规则回归 Soul owner。
+- 旧/新 `gpt.md`：2,531→780 字符，减少 1,751 字符；按 `Token.estimate`（`round(chars / 4)`）估算 633→195，减少约 438 tokens。没有增加任何模型可见内容。
+- 缓存影响：仅对 GPT 请求，从 gpt.md 所在的模型 Delta 起至 system 尾部重建一次；default、AGENTS、MEMORY、Soul 等更前面的字节未改，非 GPT 请求完全不变。
+- 无新增运行时配置或动态注入；该 Delta 是固定源码，token 上限由静态文件长度确定。
+
+
+## 2026-10-07 意图规则收窄与 soul 保留顺序
+
+- `default.md` 意图判断收窄：编码会话中具体 bug 或行为偏差且有明确预期结果时默认做受限修复（哪怕以提问形式提出）；显式 audit/explain-only 保持只读；意图或安全范围不清时先做最小调查再问。旧措辞把「描述问题/提问」一律判为只读分析，是「找到原因却不改」这类抱怨的直接来源。
+- 运行时 WORK RULE #1 改为「不要编造代码事实：只检查与本次请求相关的未知路径/API/行为」——旧措辞与默认提示词重复，且强化了「先调查」的误读。
+- instruction 超预算保留顺序重排为 `{ agents: 0, soul: 1, memory: 2, config: 3 }`（丢序 config → MEMORY → soul → AGENTS）。旧序 soul 最先丢，但它是身份核心、丢了无补救通道；MEMORY 是索引层、全文在召回库可查。本机五源合计已达默认预算约九成，此改在溢出时生效。
+- 模型可见四问：① 内容变化仅 default.md 与 runtime WORK RULES 各一处改写文本，注入结构不变；② 固定前缀 token 为两处单行改写的小幅增减（未做精确 tokenizer 计数）；③ 缓存从两处所在段起各失效一次，RETENTION 只改丢弃顺序、不改输出字节与注入顺序；④ 上限均为固定源码文本，无动态注入。
+- 验证：`instruction.test.ts` 先临时反置 RETENTION 验证新用例红（1 fail），恢复后 22 pass / 0 fail（62 expects）；TUI `bun run typecheck` exit 0。
