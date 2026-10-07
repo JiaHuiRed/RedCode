@@ -1672,6 +1672,8 @@ export const layer = Layer.effect(
           // is a form of "put it aside" and is explicitly banned at the model level.
           // 260924 Red Correction/execution ownership stays with AGENTS.md and default.md; see
           // docs/notes/implemented/architecture/2026-09-24-prompt-instruction-ownership.md.
+          // 261007 Red 本段与相邻锚块（flash/step）是时效性补丁：新增或改动须登记
+          // docs/prompt-patches.yml（固定前缀审计 §18-19），到期复核存废。
           system.push(
             `▸ WORK RULES (CORE — must obey, never violate):
   1. DO NOT INVENT CODE FACTS — inspect only an unknown path, API, or behavior that matters to the requested change.

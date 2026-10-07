@@ -1,0 +1,67 @@
+# Prompt Patch Registry（固定前缀审计 §18-19 的落地）
+#
+# 本表登记「为特定模型/场景写的提示词补丁」及其复核期。规则：
+#   - 新增任何补丁（prompt.ts / default.md / 模型 delta / skill 中的行为矫正段）
+#     都必须在此登记，review_after 给出下次必须重新质疑的日期；
+#   - 到期复核：约束的对象（模型版本/工具/环境）是否还在——
+#     在 → 只更新 review_after；不在 → 删补丁 + 删条目；
+#   - 与 docs/notes/ 分工：notes 记「为什么这么设计」（工程决策），
+#     本表记「这条补丁何时该被重新质疑」（时效性台账）。
+#
+# 复核动作与固定前缀审计同批进行（下一次审计先过来一遍本表）。
+
+review_after_default: 2027-03-01
+
+patches:
+  - id: work-rules-1
+    file: packages/opencode/src/session/prompt.ts
+    anchor: 'WORK RULES #1 — DO NOT INVENT CODE FACTS'
+    intent: 防编造路径/API
+    review_after: 2027-03-01
+    status: '261007 已收窄为仅「不编造代码事实」；意图规则同批收窄（default.md）'
+
+  - id: work-rules-2
+    file: packages/opencode/src/session/prompt.ts
+    anchor: 'WORK RULES #2 — FAIL → DIAGNOSE → PIVOT'
+    intent: 失败两次强制换方向（机器防循环）
+    review_after: 2027-03-01
+    status: '261007 评估：与全局 AGENTS「连续失败 2 次」重复，拟 A/B 实测后决定去留'
+
+  - id: work-rules-3
+    file: packages/opencode/src/session/prompt.ts
+    anchor: 'WORK RULES #3 — NEVER suggest rest/give up'
+    intent: 护栏：不许替用户决定中断
+    review_after: 2027-03-01
+    status: '保留（用户决策权护栏，审计未动）'
+
+  - id: flash-reasoning-anchors
+    file: packages/opencode/src/session/prompt.ts
+    anchor: 'wantsFlashAnchor 三锚（deepseek + flash）'
+    intent: 弱模型的 reasoning 行为矫正
+    review_after: 2027-03-01
+    status: '261007 收窄过判据（system.ts 有测试钉住）'
+
+  - id: step-anchors
+    file: packages/opencode/src/session/prompt.ts
+    anchor: 'wantsStepAnchor 三锚（step 系：收敛/反空转/一致）'
+    intent: step 系行为矫正
+    review_after: 2027-03-01
+
+  - id: step-compress-nudge
+    file: packages/opencode/src/session/prompt.ts
+    anchor: 'step 压缩指引块（providerID=stepfun 且非 step-5 才给）'
+    intent: step 3.x 长会话不主动压缩
+    review_after: 2027-03-01
+    status: '不能按「无真实路径」删——explore 子代理=stepfun-step-plan/step-3.7-flash 仍在本机使用'
+
+  - id: gpt-delta
+    file: packages/opencode/src/session/prompt/gpt.md
+    anchor: 'GPT 专属 delta'
+    review_after: 2027-03-01
+    status: '261007 已删人格重复段（-1,751 chars），只留工具/API 差异'
+
+  - id: vision-skill-fallback
+    file: skill/vision-autoagent/SKILL.md
+    anchor: '模型不支持图片时的兜底流程'
+    review_after: 2027-03-01
+    status: '261007 收缩到兜底路径（与 runtime VISION CAPABILITY 去重）'

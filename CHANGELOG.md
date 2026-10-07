@@ -10,6 +10,8 @@
 
 ### [未发布]
 
+- **Prompt Patch Registry**（`docs/prompt-patches.yml` + `session/prompt.ts` 注释回链）：审计 §18-19——提示词里为旧模型/场景写的补丁从此有登记与复核期。首批 8 条（WORK RULES 三条、flash/step 锚块、step 压缩块、gpt delta、vision skill）各带 `review_after`；到期复核「约束的对象是否还在」——在则续期，不在则删补丁+删条目。复核与固定前缀审计同批进行。
+
 - **`redcode doctor --prefix`：固定前缀预算盘点**（`cli/cmd/doctor.ts` + help 快照）：静态列出各注入源字节数与预算占比（全局/项目 AGENTS、全局/项目 MEMORY、Tsoul/Gsoul、config.instructions；发现链与 `session/instruction.ts` 一致，不含远程 URL 与 read 附带的 nearby），total 超 64 KiB 或 ≥90% 时 warn，并标注超限丢弃顺序（config → MEMORY → soul → AGENTS）。审计 §22 要求的前缀清单入口。
 
 - **注入项聚合上限：skill 描述与 MCP guides**（`skill/index.ts`、`mcp/index.ts`、`session/prompt.ts` 与对应测试，note: `docs/notes/implemented/architecture/2026-10-07-aggregate-injection-caps.md`）：审计 §24——单条 cap 拦不住条目数增长（20 条满额 skill 描述 = 20K chars/轮）。新增聚合预算：skill 描述合计 16,384 chars、MCP guides 合计 8,192 chars，按名字稳定排序，超预算条目整条移出、名字收进末尾 marker（路由不丢）；MCP guides 块组装从 `prompt.ts` 下移到 `MCP.fmtGuides`（与单条 cap 同域，可单测）。模型可见四问：① 常态逐字节不变（现用量：24 skill ≈2K chars、1 服务器 931 chars），仅失控时列表尾部多一行 marker；② token 影响常态 0，触发时以预算封顶；③ 前缀常态不动，触发时从列表段起失效；④ 本改动即为四问之④的补账——给聚合注入补上缺失的硬上限。
