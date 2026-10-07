@@ -6,7 +6,7 @@
 
 Soul 的实际实现是「client→身份」硬绑定：`session/instruction.ts:254` 按 `client === "desktop"` 选 Gsoul/Tsoul 注入；`session/prompt/shared.ts:17` 的 `sessionSourceLabel(client)` 读文件第一行喂标题前缀与 commit 身份，fallback 是「TUI/GUI」——把 UI 当身份；TUI `local.tsx` 写死读 `Tsoul.md`；`project/bootstrap.ts:58` 只播种两个旧文件；`doctor --prefix` 的源清单也按 client 列。
 
-TUI/GUI 是客户端类型，柳智敏/宋雨琦/赤 是身份——两者不在一个维度。加第三人格（赤）时现有二选一模型无法表达「TUI + Chi」「GUI + Karina」等组合。驱动：外部设计文档 `.redcode/temp/RedCode_soul_system_v2_design_2026-10-07.md`（2026-10-07）。
+TUI/GUI 是客户端类型，柳智敏/宋雨琦/赤 是身份——两者不在一个维度。加第三人格（赤）时现有二选一模型无法表达「TUI + Chi」「GUI + Karina」等组合。驱动：设计文档已入仓——`docs/notes/implemented/architecture/2026-10-07-soul-system-v2-design.md`（2026-10-07）。
 
 ## 决策
 
