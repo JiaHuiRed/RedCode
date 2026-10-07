@@ -10,6 +10,8 @@
 
 ### [未发布]
 
+- **固定前缀审计第二批：default.md 根因段收窄、seed 子代理对齐 live**（`prompt/default.md`、`seed/redcode.home.jsonc`、`AGENTS.md`）：① default.md 根因规则从「必须先复现再修」收窄为分层——非平凡修复（竞态/跨模块/性能/高风险）复现或失败用例先行；局部清晰 bug（代码已显示原因）直接修复并验证确认（审计 §17.8）。② seed 模板把 explore 同步为 live 现状：`stepfun-step-plan/step-3.7-flash` + permission 检索放行块（261003 只改了 live、漏了模板）；explore/execute 推理档统一 high。③ AGENTS.md 包级触达说明改为 read 就近注入（instruction.ts:432），删掉「要自己 read」。模型可见四问：①上列三处（default.md 一句改写、seed 块替换、AGENTS 两句合一）；②合计约 +100 字符（default.md +80）；③三处所在段起前缀失效一次；④远低于 64KiB 总预算。
+
 - **固定前缀审计第一批：AGENTS 义务收窄、项目记忆剪枝**（`AGENTS.md`，本地层 `.redcode/MEMORY.md` 与私仓 `~/.redcode/AGENTS.md` 同步执行）：按两份第三方固定前缀审计做减法——① 全局 AGENTS 四条义务从无条件收窄为条件触发（举一反三→仅同形状复制/同类调用/高复发；先算账→仅架构/性能/同步/缓存/不可逆；查 notes→仅涉历史决策或架构/行为边界，局部修 bug 不默认翻；首次编辑调查→仅非平凡改动），删去与 runtime WORK RULE #1 重复的「读到真实代码再动手」（-35B）；② 项目 AGENTS「同形状兄弟」触发域从任何函数收窄到函数家族（±0B）；③ 项目记忆按「删纯状态」清单清除完成态 10 处（队列修复收尾、GUI runtime 摘要、doom_loop 修复、已推送批次状态等）：10,477B → 7,902B，长期教训与未完成待办全保留。模型可见四问：①删/缩上列各段；②合计约 -2.6KB；③改动三处所在段起前缀失效一次；④受 instruction 总预算 64KiB 约束，只减不增。
 
 - **队列消息收到真实模型响应后才确认送达**（`packages/opencode/src/session/{session,prompt,processor,run-state}.ts`、`packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts`、`packages/opencode/test/session/prompt.test.ts`）：领取只保留 reservation，数据库仍为 `queued`；收到真实响应才原子写入 `delivered`，准备失败、响应前 provider 错误或取消会释放 reservation，保留消息供编辑和显式重试。Runner frame 阻止用户取消或权限拒绝后的隐式二次唤醒；修正显式重试重跑旧 turn、较早排队消息 promote 被旧回复误判完成、压缩边界漏掉待发消息三个边界，并验证硬顶工具 turn 向下一条队列交接。主仓先红后绿验证，四个定向测试文件共 117 pass / 13 skip / 0 fail，TUI typecheck 通过。无公开 schema、SDK、UI 或 migration 改动，不承诺远端 exactly-once。决策与模型可见四问：`docs/notes/implemented/feature/2026-08-14-busy-enter-steer-or-queue.md`。

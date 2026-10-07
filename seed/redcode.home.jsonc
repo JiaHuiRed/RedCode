@@ -275,9 +275,18 @@
     // 留在这里会被 merge-home-config 当"用户缺的键"补回 redcode.jsonc——260811/260812 两次
     // 回潮正是如此。同类坑：anthropic 块（见上）、0.7.25 的 vision-mcp、260713 的 FreeLLMAPI。
   },
-  // 260930 Red 两个子代理统一使用 Codex OAuth 的 GPT-6 Luna，推理档 xhigh。
+  // 260930 Red 子代理定 GPT-6 Luna；261003 explore 收敛 stepfun-step-plan（Step Plan 套餐通道），261007 同步进模板；execute 推理档 high。
   "agent": {
-    "explore": { "model": "openai/gpt-6-luna", "variant": "xhigh" },
-    "execute": { "model": "openai/gpt-6-luna", "variant": "xhigh" },
+    "explore": {
+      "model": "stepfun-step-plan/step-3.7-flash",
+      "permission": {
+        "jcodemunch_*": "allow",
+        "indexgraph_*": "allow",
+        "web-search_*": "allow",
+        "vision_*": "allow"
+      },
+      "variant": "high"
+    },
+    "execute": { "model": "openai/gpt-6-luna", "variant": "high" },
   },
 }

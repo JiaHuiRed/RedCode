@@ -16,8 +16,7 @@
 | `packages/plugin/`   | Plugin SDK 类型定义                                                                                                                                                                                                                                                                                                                                                                                                                                                            | -                             |
 | `seed/`              | **种子/暂存目录**（原 `.opencode/` 改名）——skill、command、agent、配置模板。引擎**不**加载它，由 `script/sync-home.bat` 播种到 `~/.redcode/` 才生效。三种同步方向：`seed/scripts` 经 `sync-home-scripts.bat` **真镜像**（改 `~/.redcode/scripts/` 侧会被下次构建物理删除，必须改 seed）；`seed/{skill,command}` 是 **seed-only**（本机已有同名则不覆盖，只改 seed 本机永不生效）；`seed/tool` 只同步 `sqlite.ts`（整目录会带进上游 CI 帮手，在 home 加载失败会连累整张工具表） | -                             |
 
-改所在 package 前先读**根 AGENTS.md + 对应 package 的 AGENTS.md**。两者都生效，scoped 规则覆盖根的代码细节。
-注意包级 AGENTS.md **不自动注入**（引擎只取全局 + 第一个命中的项目级，见 `instruction.ts:127`），要自己 read。
+改某 package 前先 read 一次它的 AGENTS.md：包级不在启动时注入（引擎只取全局 + 第一个项目级，见 `instruction.ts:127`），但 read 包内文件时会就近附带（`instruction.ts:432`），一次 read 即触达；两者都生效，scoped 规则覆盖根的代码细节。
 
 # 验证命令
 
