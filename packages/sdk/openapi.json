@@ -16049,6 +16049,31 @@
                 "type": "boolean",
                 "description": "Continue the agent loop when a tool call is denied"
               },
+              "requestEvidence": {
+                "type": "object",
+                "properties": {
+                  "maxBodyBytes": {
+                    "type": "integer",
+                    "minimum": 1024,
+                    "maximum": 67108864,
+                    "description": "Maximum request body bytes hashed for diagnostics (default: 16777216; maximum: 67108864)."
+                  },
+                  "maxMessages": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 16384,
+                    "description": "Maximum request messages or diagnostic section entries (default: 4096; maximum: 16384)."
+                  },
+                  "maxPendingCompressions": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 128,
+                    "description": "Maximum pending compression receipts per diagnostic bucket (default: 16; maximum: 128)."
+                  }
+                },
+                "additionalProperties": false,
+                "description": "Bounded, hash-only provider request diagnostics. Does not modify model requests or cache keys."
+              },
               "mcp_timeout": {
                 "type": "integer",
                 "exclusiveMinimum": 0,

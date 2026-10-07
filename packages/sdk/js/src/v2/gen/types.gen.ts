@@ -1715,6 +1715,23 @@ export type Config = {
      */
     continue_loop_on_deny?: boolean
     /**
+     * Bounded, hash-only provider request diagnostics. Does not modify model requests or cache keys.
+     */
+    requestEvidence?: {
+      /**
+       * Maximum request body bytes hashed for diagnostics (default: 16777216; maximum: 67108864).
+       */
+      maxBodyBytes?: number
+      /**
+       * Maximum request messages or diagnostic section entries (default: 4096; maximum: 16384).
+       */
+      maxMessages?: number
+      /**
+       * Maximum pending compression receipts per diagnostic bucket (default: 16; maximum: 128).
+       */
+      maxPendingCompressions?: number
+    }
+    /**
      * Timeout in milliseconds for model context protocol (MCP) requests
      */
     mcp_timeout?: number

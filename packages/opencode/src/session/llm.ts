@@ -12,6 +12,7 @@ import type { LLMClientService } from "@redcode-ai/llm/route"
 import { GitLabWorkflowLanguageModel } from "gitlab-ai-provider"
 import { ProviderTransform } from "@/provider/transform"
 import { Config } from "@/config/config"
+import { ConfigRequestEvidence } from "@/config/request-evidence"
 import type { Agent } from "@/agent/agent"
 import type { MessageV2 } from "./message-v2"
 import { Plugin } from "@/plugin"
@@ -248,13 +249,14 @@ const live: Layer.Layer<
 
       // Runtime seam: native is an opt-in adapter over @redcode-ai/llm. It
       // either returns a ready LLMEvent stream or a concrete fallback reason.
+      const evidenceLimits = ConfigRequestEvidence.resolve(cfg.experimental?.requestEvidence)
       if (flags.experimentalNativeLlm) {
         const requestEvidence = RequestEvidence.create({
           sessionID: input.sessionID,
           modelKey: `${input.model.providerID}/${input.model.id}`,
           runtime: "native",
           model: input.model,
-        })
+        }, evidenceLimits)
         const native = LLMNativeRuntime.stream({
           model: input.model,
           provider: item,
@@ -271,6 +273,7 @@ const live: Layer.Layer<
           headers: prepared.headers,
           abort: input.abort,
           observeRequest: requestEvidence.capture,
+          requestEvidence,
         })
         if (native.type === "supported") {
           yield* Effect.logInfo("llm runtime selected").pipe(
@@ -311,7 +314,7 @@ const live: Layer.Layer<
         modelKey: `${input.model.providerID}/${input.model.id}`,
         runtime: "ai-sdk",
         model: input.model,
-      })
+      }, evidenceLimits)
       // Default runtime path: AI SDK owns provider execution and tool dispatch;
       // LLMAISDK.toLLMEvents below normalizes fullStream parts for the processor.
       // 260803 Red DeepSeek 截断续写：max_tokens 撞顶（finish_reason=length）时，

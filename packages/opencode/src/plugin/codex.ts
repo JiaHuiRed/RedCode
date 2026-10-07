@@ -7,6 +7,7 @@ import os from "os"
 import { setTimeout as sleep } from "node:timers/promises"
 import { createServer } from "http"
 import { fetchWithProxy } from "../util/proxy"
+import { RequestEvidence } from "../session/request-evidence"
 export { parseDefaultConnectionSettings } from "../util/proxy"
 
 const log = Log.create({ service: "plugin.codex" })
@@ -514,9 +515,17 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
                 ? new URL(codexApiEndpoint)
                 : parsed
 
+            // 261007 Red 在最终认证与 URL 重写后记录匿名路由；不改请求、header 或缓存键。
+            RequestEvidence.observeTransport({ accountID: authWithAccount.accountId, endpoint: url.href, body: init?.body })
             const response = await fetchWithProxy(url, {
               ...init,
               headers,
+            })
+            RequestEvidence.observeTransport({
+              accountID: authWithAccount.accountId,
+              endpoint: url.href,
+              status: response.status,
+              responseRequestID: response.headers.get("x-request-id") ?? undefined,
             })
 
             // 260831 cc 顺手记下套餐额度：Codex 后端把用量窗口放在**响应头**里

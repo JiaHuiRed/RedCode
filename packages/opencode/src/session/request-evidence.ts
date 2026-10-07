@@ -1,13 +1,19 @@
 import crypto from "crypto"
+import { AsyncLocalStorage } from "node:async_hooks"
 import * as Log from "@redcode-ai/core/util/log"
 import { LLMEvent, type Usage } from "@redcode-ai/llm"
 import type { Provider } from "@/provider/provider"
 import { MAX_SESSIONS, SESSION_TTL_MS, sessionEvictor } from "@/util/session-evictor"
+import { ConfigRequestEvidence } from "@/config/request-evidence"
 
-const MAX_BODY_BYTES = 512 * 1024
-const MAX_MESSAGES = 2048
-const MAX_PENDING_COMPRESSIONS = 16
 const log = Log.create({ service: "request-evidence" })
+const transportScope = new AsyncLocalStorage<{
+  observer: Pick<Observer, "capture"> & Partial<Pick<Observer, "transport">>
+  requestID: string
+  actualCapture?: CaptureObservation
+}>()
+// 261007 Red 进程内匿名关联：不保存账号、端点或缓存亲和键原文，也不跨重启追踪身份。
+const identitySalt = crypto.randomBytes(32)
 
 export type Runtime = "ai-sdk" | "native"
 
@@ -52,6 +58,8 @@ type Fingerprint = {
   readonly system: Sequence
   readonly tools: Sequence
   readonly history: Sequence
+  readonly parameters: Sequence
+  readonly serialized: Entry
   // 261006 Red whole-wire 只留 sha256 + length：跨段相对顺序变了但两段各自不变时，
   // section diff 全是 unchanged，只有这条能证明重排真的发生过
   readonly wire: {
@@ -72,6 +80,9 @@ export type CaptureObservation =
       readonly system: SectionObservation
       readonly tools: SectionObservation
       readonly history: SectionObservation
+      readonly parameters: SectionObservation
+      readonly serialized: Entry & { readonly change: "baseline" | "unchanged" | "changed" }
+      readonly affinity: Readonly<Record<string, string>>
       readonly wire: {
         readonly sha256: string
         readonly length: number
@@ -82,7 +93,7 @@ export type CaptureObservation =
   | {
       readonly status: "unsupported"
       readonly requestID: string
-      readonly reason: "body-too-large" | "body-unavailable" | "invalid-json" | "unsupported-shape" | "message-limit"
+      readonly reason: "body-too-large" | "body-unavailable" | "invalid-json" | "unsupported-shape" | "message-limit" | "field-limit"
     }
 
 export type EventObservation =
@@ -107,8 +118,26 @@ export type EventObservation =
     }
 
 export type Observer = {
-  capture(body: unknown): CaptureObservation
+  readonly limits: ConfigRequestEvidence.Limits
+  capture(body: unknown, source?: "adapter" | "transport"): CaptureObservation
   event(event: LLMEvent): EventObservation | undefined
+  transport(input: TransportInput, requestID: string): TransportObservation
+}
+
+export type TransportInput = {
+  readonly accountID?: string
+  readonly endpoint: string
+  readonly responseRequestID?: string
+  readonly status?: number
+  readonly body?: unknown
+}
+
+export type TransportObservation = {
+  readonly requestID: string
+  readonly accountHash?: string
+  readonly endpointHash: string
+  readonly responseRequestHash?: string
+  readonly status?: number
 }
 
 type RecordValue = Record<string, unknown>
@@ -156,14 +185,23 @@ function hash(text: string): string {
   return crypto.createHash("sha256").update(text).digest("hex")
 }
 
+function identity(text: string): string {
+  return crypto.createHmac("sha256", identitySalt).update(text).digest("hex")
+}
+
 function entry(value: unknown): Entry | undefined {
   const text = serialize(value)
   if (text === undefined) return undefined
   return { sha256: hash(text), length: Buffer.byteLength(text, "utf8") }
 }
 
-function sequence(values: readonly unknown[]): Sequence | undefined {
-  const entries = values.map(entry)
+function sequence(values: readonly unknown[], cache: Map<unknown, Entry>): Sequence | undefined {
+  // 261007 Red section 与 wire 共用条目；只在本次捕获内缓存 hash，避免长消息重复序列化。
+  const entries = values.map((value) => {
+    const known = cache.get(value) ?? entry(value)
+    if (known) cache.set(value, known)
+    return known
+  })
   if (entries.some((value) => value === undefined)) return undefined
   const known = entries as Entry[]
   return {
@@ -350,6 +388,7 @@ type CompressionObservation = Extract<EventObservation, { type: "compression" }>
 function observeCompression(
   bucket: Bucket,
   event: Extract<LLMEvent, { type: "tool-result" }>,
+  maxPending: number,
 ): CompressionObservation | undefined {
   const wrapped = event.result.value
   const metadata = isRecord(wrapped) ? wrapped.metadata : undefined
@@ -359,7 +398,7 @@ function observeCompression(
   if (!value) return { type: "compression", status: "invalid" }
   bucket.pending.delete(event.id)
   bucket.pending.set(event.id, value)
-  while (bucket.pending.size > MAX_PENDING_COMPRESSIONS) {
+  while (bucket.pending.size > maxPending) {
     const oldest = bucket.pending.keys().next().value
     if (oldest === undefined) break
     bucket.pending.delete(oldest)
@@ -367,7 +406,7 @@ function observeCompression(
   return { type: "compression", status: "recorded", ...value }
 }
 
-export function create(context: Context): Observer {
+export function create(context: Context, limits = ConfigRequestEvidence.resolve()): Observer {
   const sessionID = context.sessionID
   const modelKey = context.modelKey
   const runtime = context.runtime
@@ -381,19 +420,31 @@ export function create(context: Context): Observer {
     requestID,
   })
 
-  return {
-    capture(body) {
-      requestID = crypto.randomUUID()
+  const observer: Observer = {
+    limits,
+    capture(body, source = "adapter") {
+      const scoped = transportScope.getStore()
+      if (scoped?.observer === observer && scoped.actualCapture && source !== "transport") return scoped.actualCapture
+      requestID = scoped?.observer === observer ? scoped.requestID : crypto.randomUUID()
       const bucket = buckets.get(id) ?? { pending: new Map<string, Compression>() }
       buckets.set(id, bucket)
       evictor.touch(id)
-      const bodyText = typeof body === "string" ? body : serialize(body)
+      if (body instanceof Uint8Array && body.byteLength > limits.maxBodyBytes) {
+        const observation: CaptureObservation = { status: "unsupported", requestID, reason: "body-too-large" }
+        record("request.prefix", { ...common(), ...observation })
+        return observation
+      }
+      const bodyText = typeof body === "string"
+        ? body
+        : body instanceof Uint8Array
+          ? new TextDecoder().decode(body)
+          : serialize(body)
       if (bodyText === undefined) {
         const observation: CaptureObservation = { status: "unsupported", requestID, reason: "body-unavailable" }
         record("request.prefix", { ...common(), ...observation })
         return observation
       }
-      if (Buffer.byteLength(bodyText, "utf8") > MAX_BODY_BYTES) {
+      if (bodyText.length > limits.maxBodyBytes || Buffer.byteLength(bodyText, "utf8") > limits.maxBodyBytes) {
         const observation: CaptureObservation = { status: "unsupported", requestID, reason: "body-too-large" }
         record("request.prefix", { ...common(), ...observation })
         return observation
@@ -404,27 +455,49 @@ export function create(context: Context): Observer {
         record("request.prefix", { ...common(), ...observation })
         return observation
       }
+      const fields = Object.keys(decoded)
+      if (fields.length > limits.maxMessages) {
+        const observation: CaptureObservation = { status: "unsupported", requestID, reason: "field-limit" }
+        record("request.prefix", { ...common(), ...observation })
+        return observation
+      }
       const projected = project(decoded)
       if (!projected) {
         const observation: CaptureObservation = { status: "unsupported", requestID, reason: "unsupported-shape" }
         record("request.prefix", { ...common(), ...observation })
         return observation
       }
-      if (projected.messageCount > MAX_MESSAGES) {
+      if (projected.messageCount > limits.maxMessages) {
         const observation: CaptureObservation = { status: "unsupported", requestID, reason: "message-limit" }
         record("request.prefix", { ...common(), ...observation })
         return observation
       }
-      const system = sequence(projected.system)
-      const tools = sequence(projected.tools)
-      const history = sequence(projected.history)
-      const wire = sequence(projected.wire)
-      if (!system || !tools || !history || !wire) {
+      if (projected.system.length > limits.maxMessages || projected.tools.length > limits.maxMessages) {
+        const observation: CaptureObservation = { status: "unsupported", requestID, reason: "field-limit" }
+        record("request.prefix", { ...common(), ...observation })
+        return observation
+      }
+      const cache = new Map<unknown, Entry>()
+      const system = sequence(projected.system, cache)
+      const tools = sequence(projected.tools, cache)
+      const history = sequence(projected.history, cache)
+      const wire = sequence(projected.wire, cache)
+      const parameters = sequence(
+        fields.filter((field) => ![
+          "system", "instructions", "system_instruction", "systemInstruction", "messages", "input", "contents", "tools",
+        ].includes(field)).map((field) => ({ field, value: decoded[field] })),
+        cache,
+      )
+      if (!system || !tools || !history || !wire || !parameters) {
         const observation: CaptureObservation = { status: "unsupported", requestID, reason: "unsupported-shape" }
         record("request.prefix", { ...common(), ...observation })
         return observation
       }
-      const current: Fingerprint = { system, tools, history, wire: { sha256: wire.sha256, length: wire.length } }
+      const current: Fingerprint = {
+        system, tools, history, parameters,
+        serialized: { sha256: hash(bodyText), length: Buffer.byteLength(bodyText, "utf8") },
+        wire: { sha256: wire.sha256, length: wire.length },
+      }
 
       const previous = bucket.fingerprint
       const afterCompression = [...bucket.pending.values()]
@@ -436,6 +509,18 @@ export function create(context: Context): Observer {
         system: transition(previous?.system, current.system),
         tools: transition(previous?.tools, current.tools),
         history: transition(previous?.history, current.history),
+        parameters: transition(previous?.parameters, current.parameters),
+        serialized: {
+          ...current.serialized,
+          change: previous
+            ? previous.serialized.sha256 === current.serialized.sha256 ? "unchanged" : "changed"
+            : "baseline",
+        },
+        affinity: Object.fromEntries(
+          ["model", "prompt_cache_key", "prompt_cache_options", "prompt_cache_retention", "service_tier", "reasoning"]
+            .filter((field) => Object.hasOwn(decoded, field))
+            .map((field) => [field, identity(serialize(decoded[field]) ?? "")]),
+        ),
         wire: {
           sha256: current.wire.sha256,
           length: current.wire.length,
@@ -454,6 +539,9 @@ export function create(context: Context): Observer {
         system: observation.system,
         tools: observation.tools,
         history: observation.history,
+        parameters: observation.parameters,
+        serialized: observation.serialized,
+        affinity: observation.affinity,
         wire: observation.wire,
         afterCompression: observation.afterCompression,
       })
@@ -465,7 +553,7 @@ export function create(context: Context): Observer {
         const bucket = buckets.get(id) ?? { pending: new Map<string, Compression>() }
         buckets.set(id, bucket)
         evictor.touch(id)
-        const observed = observeCompression(bucket, event)
+        const observed = observeCompression(bucket, event, limits.maxPendingCompressions)
         if (!observed) return
         if (observed.status === "recorded") {
           lastCompression = {
@@ -511,20 +599,54 @@ export function create(context: Context): Observer {
       })
       return observation
     },
+    transport(input, scopedRequestID) {
+      const observation: TransportObservation = {
+        requestID: scopedRequestID,
+        ...(input.accountID === undefined ? {} : { accountHash: identity(input.accountID) }),
+        endpointHash: identity(input.endpoint),
+        ...(input.responseRequestID === undefined ? {} : { responseRequestHash: identity(input.responseRequestID) }),
+        ...(input.status === undefined ? {} : { status: input.status }),
+      }
+      record("request.transport", { sessionID, modelKey, runtime, ...observation })
+      return observation
+    },
+  }
+  return observer
+}
+
+// 261007 Red 只传播诊断关联号，不加 HTTP header，也不修改 SDK 参数或实际 body。
+export function withRequest<T>(observer: Pick<Observer, "capture"> & Partial<Pick<Observer, "transport">>, work: () => T): T {
+  return transportScope.run({ observer, requestID: crypto.randomUUID() }, work)
+}
+
+export function observeTransport(input: TransportInput): TransportObservation | undefined {
+  const scoped = transportScope.getStore()
+  if (!scoped?.observer.transport) return
+  try {
+    const body = typeof input.body === "string" || input.body instanceof Uint8Array ? input.body : undefined
+    if (body !== undefined && !scoped.actualCapture) {
+      scoped.actualCapture = scoped.observer.capture(body, "transport")
+    }
+    return scoped.observer.transport(input, scoped.requestID)
+  } catch {
+    // 261007 Red 诊断 sink 失败不影响认证、路由及 fetch；账号/端点原文从不落日志。
+    return undefined
   }
 }
 
-export function middleware(observer: Pick<Observer, "capture">) {
+export function middleware(observer: Pick<Observer, "capture"> & Partial<Pick<Observer, "transport">>) {
   return {
     specificationVersion: "v3" as const,
     async wrapStream<T>({ doStream }: { readonly doStream: () => PromiseLike<T> }): Promise<T> {
-      const result = await doStream()
-      try {
-        observer.capture((result as { request?: { body?: unknown } }).request?.body)
-      } catch {
-        // 261004 Red Evidence logging is best-effort and must not fail the provider stream.
-      }
-      return result
+      return withRequest(observer, async () => {
+        const result = await doStream()
+        try {
+          observer.capture((result as { request?: { body?: unknown } }).request?.body)
+        } catch {
+          // 261004 Red Evidence logging is best-effort and must not fail the provider stream.
+        }
+        return result
+      })
     },
   }
 }

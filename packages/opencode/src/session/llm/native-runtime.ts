@@ -10,6 +10,8 @@ import { FetchHttpClient } from "effect/unstable/http"
 import { tool as nativeTool, ToolFailure, type JsonSchema, type LLMEvent } from "@redcode-ai/llm"
 import type { LLMClientShape } from "@redcode-ai/llm/route"
 import { LLMNative } from "./native-request"
+import { RequestEvidence } from "../request-evidence"
+import { ConfigRequestEvidence } from "@/config/request-evidence"
 
 export type RuntimeStatus =
   | { readonly type: "supported"; readonly apiKey: string; readonly baseURL?: string }
@@ -34,6 +36,7 @@ type StreamInput = {
   readonly headers: Record<string, string>
   readonly abort: AbortSignal
   readonly observeRequest?: (body: unknown) => void
+  readonly requestEvidence?: RequestEvidence.Observer
 }
 
 export function status(input: Pick<StreamInput, "model" | "provider" | "auth">): RuntimeStatus {
@@ -104,16 +107,22 @@ export function stream(input: StreamInput): StreamResult {
         typeof body === "string"
           ? body
           : body instanceof Uint8Array
-            ? new TextDecoder().decode(body)
+            ? body.byteLength <= (input.requestEvidence?.limits.maxBodyBytes ?? ConfigRequestEvidence.HARD_MAX_BODY_BYTES)
+              ? new TextDecoder().decode(body)
+              : body
             : undefined
-      if (observed !== undefined) {
-        try {
-          input.observeRequest?.(observed)
-        } catch {
-          // 261004 Red Diagnostic failures must never prevent the configured provider fetch from running.
+      const dispatch = async () => {
+        const result = await Reflect.apply(target, thisArg, args) as Response
+        if (observed !== undefined) {
+          try {
+            input.observeRequest?.(observed)
+          } catch {
+            // 261004 Red Diagnostic failures must never prevent the configured provider fetch from running.
+          }
         }
+        return result
       }
-      return Reflect.apply(target, thisArg, args) as ReturnType<typeof globalThis.fetch>
+      return input.requestEvidence ? RequestEvidence.withRequest(input.requestEvidence, dispatch) : dispatch()
     },
   })
 

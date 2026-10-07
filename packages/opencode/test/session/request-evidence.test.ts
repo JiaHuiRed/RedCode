@@ -3,11 +3,14 @@ import { LLMEvent, ToolResultValue, Usage } from "@redcode-ai/llm"
 import { LLMClient, RequestExecutor, WebSocketExecutor } from "@redcode-ai/llm/route"
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
 import { jsonSchema, streamText, tool, wrapLanguageModel } from "ai"
-import { Effect, Layer, Stream } from "effect"
+import { Effect, Layer, Schema, Stream } from "effect"
+import crypto from "node:crypto"
 import type { Provider } from "@/provider/provider"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { OAUTH_DUMMY_KEY } from "@/auth"
 import { RequestEvidence } from "@/session/request-evidence"
+import { ConfigRequestEvidence } from "@/config/request-evidence"
+import { Config } from "@/config/config"
 import { LLMNativeRuntime } from "@/session/llm/native-runtime"
 import { testEffect } from "../lib/effect"
 
@@ -70,6 +73,132 @@ const chatBody = (history = "first turn", system = "private system", tools: unkn
 })
 
 describe("session.request-evidence", () => {
+  test("validates file-backed diagnostic caps and resolves bounded defaults", () => {
+    expect(ConfigRequestEvidence.resolve()).toEqual({
+      maxBodyBytes: 16 * 1024 * 1024,
+      maxMessages: 4096,
+      maxPendingCompressions: 16,
+    })
+    const decoded = Schema.decodeUnknownSync(Config.Info)({
+      experimental: { requestEvidence: { maxBodyBytes: 1024, maxMessages: 3, maxPendingCompressions: 2 } },
+    })
+    expect(ConfigRequestEvidence.resolve(decoded.experimental?.requestEvidence)).toEqual({
+      maxBodyBytes: 1024, maxMessages: 3, maxPendingCompressions: 2,
+    })
+    for (const input of [
+      { maxBodyBytes: 64 * 1024 * 1024 + 1 }, { maxBodyBytes: 0 },
+      { maxMessages: 16385 }, { maxMessages: 1.5 }, { maxPendingCompressions: 129 },
+    ]) {
+      expect(() => ConfigRequestEvidence.resolve(input)).toThrow()
+      expect(() => Schema.decodeUnknownSync(Config.Info)({ experimental: { requestEvidence: input } })).toThrow()
+    }
+  })
+
+  test("fingerprints actual serialized bytes and control fields without exposing cache keys", () => {
+    RequestEvidence.reset()
+    const observer = RequestEvidence.create(context())
+    const body = { ...chatBody(), model: "fixture-model", prompt_cache_key: "private-cache-key", reasoning: { effort: "high" } }
+    const wire = JSON.stringify(body)
+    const first = captured(observer.capture(wire))
+    const same = captured(observer.capture(wire))
+    const changed = captured(observer.capture({ ...body, prompt_cache_key: "different-private-key" }))
+    const spaced = captured(observer.capture(JSON.stringify({ ...body, prompt_cache_key: "different-private-key" }, null, 2)))
+    expect(first.serialized.sha256).toBe(crypto.createHash("sha256").update(wire).digest("hex"))
+    expect(first.serialized.length).toBe(Buffer.byteLength(wire))
+    expect(same.serialized.change).toBe("unchanged")
+    expect(same.affinity.prompt_cache_key).toBe(first.affinity.prompt_cache_key)
+    expect(changed.affinity.prompt_cache_key).not.toBe(first.affinity.prompt_cache_key)
+    expect(changed.history.change).toBe("unchanged")
+    expect(changed.parameters.change).toBe("rewrite")
+    expect(changed.wire.change).toBe("unchanged")
+    expect(changed.serialized.change).toBe("changed")
+    expect(spaced.parameters.change).toBe("unchanged")
+    expect(spaced.serialized.change).toBe("changed")
+    expect(JSON.stringify([first, same, changed, spaced])).not.toContain("private-cache-key")
+    expect(JSON.stringify([first, same, changed, spaced])).not.toContain("different-private-key")
+    RequestEvidence.reset()
+  })
+
+  test("rejects malformed, cyclic and boundary payloads without resetting the last valid fingerprint", () => {
+    RequestEvidence.reset()
+    const limits = ConfigRequestEvidence.resolve({ maxBodyBytes: 1024, maxMessages: 2 })
+    const observer = RequestEvidence.create(context(), limits)
+    const prefix = '{"messages":[{"role":"user","content":"'
+    const suffix = '"}]}'
+    const body = prefix + "x".repeat(1024 - prefix.length - suffix.length) + suffix
+    expect(captured(observer.capture(body)).serialized.length).toBe(1024)
+    expect(observer.capture(body + " ")).toMatchObject({ status: "unsupported", reason: "body-too-large" })
+    expect(observer.capture("{malformed")).toMatchObject({ status: "unsupported", reason: "invalid-json" })
+    const cyclic: { messages: unknown[] } = { messages: [] }
+    cyclic.messages.push(cyclic)
+    expect(observer.capture(cyclic)).toMatchObject({ status: "unsupported", reason: "body-unavailable" })
+    expect(observer.capture({ messages: Array.from({ length: 3 }, () => ({ role: "user", content: "x" })) }))
+      .toMatchObject({ status: "unsupported", reason: "message-limit" })
+    expect(captured(observer.capture(body)).history.change).toBe("unchanged")
+    RequestEvidence.reset()
+  })
+
+  test("keeps concurrent transport identities scoped and prefers the final transport body", async () => {
+    RequestEvidence.reset()
+    const a = RequestEvidence.create(context({ sessionID: "ses_transport_a" }))
+    const b = RequestEvidence.create(context({ sessionID: "ses_transport_b" }))
+    const account = "private-account"
+    const endpoint = "https://fixture.invalid/secret-route"
+    const dispatch = (observer: typeof a, accountID: string, route: string) =>
+      RequestEvidence.withRequest(observer, async () => {
+        await Promise.resolve()
+        const body = JSON.stringify({ ...chatBody(), prompt_cache_key: "final-private-key" })
+        const transport = RequestEvidence.observeTransport({ accountID, endpoint: route, body })
+        const capture = captured(observer.capture({ ...chatBody(), prompt_cache_key: "wrong-adapter-key" }))
+        expect(transport?.requestID).toBe(capture.requestID)
+        expect(capture.system.change).toBe("baseline")
+        expect(capture.serialized.sha256).toBe(crypto.createHash("sha256").update(body).digest("hex"))
+        return { transport, capture }
+      })
+    const [left, right] = await Promise.all([dispatch(a, account, endpoint), dispatch(b, "other-account", endpoint)])
+    expect(left.transport?.requestID).not.toBe(right.transport?.requestID)
+    expect(left.transport?.accountHash).not.toBe(right.transport?.accountHash)
+    expect(left.transport?.endpointHash).toBe(right.transport?.endpointHash)
+    const next = RequestEvidence.withRequest(a, () => RequestEvidence.observeTransport({ accountID: account, endpoint }))
+    const moved = RequestEvidence.withRequest(a, () => RequestEvidence.observeTransport({ accountID: account, endpoint: endpoint + "/other" }))
+    expect(next?.accountHash).toBe(left.transport?.accountHash)
+    expect(moved?.endpointHash).not.toBe(next?.endpointHash)
+    expect(RequestEvidence.observeTransport({ accountID: account, endpoint })).toBeUndefined()
+    expect(JSON.stringify([left, right, next, moved])).not.toContain(account)
+    expect(JSON.stringify([left, right, next, moved])).not.toContain(endpoint)
+    expect(JSON.stringify([left, right, next, moved])).not.toContain("final-private-key")
+    RequestEvidence.reset()
+  })
+
+  test("diagnostic capture failures do not prevent the original provider response", async () => {
+    const result = { request: { body: "unchanged" }, response: { status: 200 } }
+    const middleware = RequestEvidence.middleware({ capture() { throw new Error("broken diagnostic sink") } })
+    expect(await middleware.wrapStream({ doStream: async () => result })).toBe(result)
+  })
+
+  test("compares long multibyte requests without retaining their contents", () => {
+    RequestEvidence.reset()
+    const observer = RequestEvidence.create(context())
+    const body = chatBody(`private-long-context-${"语境🧠".repeat(80_000)}`)
+    expect(Buffer.byteLength(JSON.stringify(body), "utf8")).toBeGreaterThan(512 * 1024)
+    const before = JSON.stringify(body)
+    const first = captured(observer.capture(body))
+    const appended = captured(observer.capture({
+      ...body,
+      messages: [...body.messages, { role: "assistant", content: "new response" }],
+    }))
+    const rewritten = captured(observer.capture({
+      ...body,
+      messages: [body.messages[0], { role: "user", content: "changed old message" }],
+    }))
+    expect(first.history.change).toBe("baseline")
+    expect(appended.history.change).toBe("append")
+    expect(rewritten.history.change).toBe("rewrite")
+    expect(JSON.stringify([first, appended, rewritten])).not.toContain("private-long-context")
+    expect(JSON.stringify(body)).toBe(before)
+    RequestEvidence.reset()
+  })
+
   test("classifies wire prefix unchanged, appended, rewound, and rewritten without retaining text", () => {
     RequestEvidence.reset()
     const observer = RequestEvidence.create(context())
@@ -165,7 +294,10 @@ describe("session.request-evidence", () => {
 
   test("does not compare oversized or over-limit payloads as stable", () => {
     RequestEvidence.reset()
-    const observer = RequestEvidence.create(context())
+    const observer = RequestEvidence.create(context(), ConfigRequestEvidence.resolve({
+      maxBodyBytes: 512 * 1024,
+      maxMessages: 2048,
+    }))
     expect(captured(observer.capture(chatBody())).status).toBe("captured")
     expect(observer.capture({ messages: [{ role: "user", content: "x".repeat(512 * 1024) }] })).toMatchObject({
       status: "unsupported",
@@ -395,9 +527,15 @@ describe("session.request-evidence", () => {
       let observedBody: unknown
       const observer = RequestEvidence.create(context({ runtime: "native" }))
       const captured: ReturnType<typeof observer.capture>[] = []
+      let transport: RequestEvidence.TransportObservation | undefined
       const customFetch = Object.assign(
         async (_input: Parameters<typeof fetch>[0], init: Parameters<typeof fetch>[1]) => {
           wireBody = init?.body
+          transport = RequestEvidence.observeTransport({
+            accountID: "private-native-account",
+            endpoint: "https://example.test/final-native-route",
+            body: init?.body,
+          })
           return new Response(
             [
               `data: ${JSON.stringify({ type: "response.output_text.delta", item_id: "msg_1", delta: "ok" })}`,
@@ -421,6 +559,7 @@ describe("session.request-evidence", () => {
         providerOptions: { instructions: "private native system" },
         headers: {},
         abort: new AbortController().signal,
+        requestEvidence: observer,
         observeRequest(body) {
           observedBody = body
           captured.push(observer.capture(body))
@@ -436,6 +575,11 @@ describe("session.request-evidence", () => {
         instructions: "private native system",
       })
       expect(JSON.stringify(captured[0])).not.toContain("private native system")
+      const transportID = transport?.requestID
+      if (!transportID) throw new Error("Native transport was not observed")
+      expect(captured[0]?.requestID).toBe(transportID)
+      expect(captured[0]).toMatchObject({ status: "captured", system: { change: "baseline" } })
+      expect(JSON.stringify(transport)).not.toContain("private-native-account")
       RequestEvidence.reset()
     }),
   )

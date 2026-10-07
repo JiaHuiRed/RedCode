@@ -37,3 +37,14 @@ billion-context 调研（2026-10-04）的优先借鉴项是**成本归因**与**
 - native 路径的 tool-result value 目前可能不带 metadata（桥接编码差异），观察器记 `metadata-unavailable`，不伪造。
 - 本批**未**运行真实付费模型验证；Step 5 Preview 隔离冒烟另行执行。
 - TTL/提供商侧缓存缺失不做因果断言：观察器只回答"前缀变没变、变了哪段、压缩回执是多少"，不直接归因 cache miss 原因。
+
+## 长请求诊断补充
+
+GPT 长会话中已核实一次 `96.67% → 17.22% → 96.73%` 的真实 provider 缓存读波动，中间没有 compress 或模型切换；这些请求原来都因 512KiB 限制跳过指纹，因此不能从旧日志判定客户端改写还是提供商路由/缓存变化。本批补证据，不宣称已修复缓存根因。
+
+- `experimental.requestEvidence` 是经过 Schema 校验的配置：默认 body 16MiB、4096 条消息、16 个待定压缩回执；安全上限分别为 64MiB、16384、128。配置拥有方显式 resolve，SDK/native 共用。字节数组在解码前检查大小；仅在预算内解析，不留正文。
+- 保留 section 与投影 wire 指纹，另记录完整序列化 body 的 SHA-256，以及实际出站 model/cache-key/options/retention/service-tier/reasoning 字段的匿名指纹。不是推测 `ProviderTransform` 的默认值。
+- AsyncLocalStorage 将同一次 SDK/native 调用与最终 Codex transport 关联；在实际账号头与 URL 重写后观察 body、账号、目标及响应请求 ID。账号/目标/缓存亲和字段用进程内随机盐 HMAC；不记录账号值、密钥、原始头或正文。缺少账号信息就是未知。同一请求 ID 连接 `request.prefix`、`request.transport` 与用量；不新增 HTTP header，也不改变请求 body、缓存键、fetch 参数或响应对象。
+- 捕获/日志失败不能使请求失败；预算溢出仍明确记录 unsupported。此代码加载后才能采集新证据，不能补回旧请求全文。进程间匿名指纹不可直接比较。
+- 合成指纹耗时探针（单条 ASCII 消息，配置预算 32MiB，三次样本，包含日志调用）：约 1MiB 为 7–11ms、8MiB 为 71–107ms、16MiB 为 121–199ms；不是 provider 延迟或缓存改善证明。
+- 模型可见四问：静态 prompt、工具描述与 provider wire 不变；固定前缀新增 0 token；KV 前缀不因该诊断变化；没有新注入项，只有上述有界哈希和数字日志。

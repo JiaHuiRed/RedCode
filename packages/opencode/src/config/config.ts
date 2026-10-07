@@ -38,6 +38,7 @@ import { ConfigPermission } from "./permission"
 import { ConfigPlugin } from "./plugin"
 import { ConfigProvider } from "./provider"
 import { ConfigReference } from "./reference"
+import { ConfigRequestEvidence } from "./request-evidence"
 import { ConfigServer } from "./server"
 import { ConfigSkills } from "./skills"
 import { ConfigVariable } from "./variable"
@@ -379,6 +380,9 @@ export const Info = Schema.Struct({
       }),
       continue_loop_on_deny: Schema.optional(Schema.Boolean).annotate({
         description: "Continue the agent loop when a tool call is denied",
+      }),
+      requestEvidence: Schema.optional(ConfigRequestEvidence.Info).annotate({
+        description: "Bounded, hash-only provider request diagnostics. Does not modify model requests or cache keys.",
       }),
       mcp_timeout: Schema.optional(PositiveInt).annotate({
         description: "Timeout in milliseconds for model context protocol (MCP) requests",
