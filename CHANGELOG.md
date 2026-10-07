@@ -8,7 +8,7 @@
 
 ---
 
-### [未发布]
+### [0.12.2] - 2026-10-07
 
 - **Prompt Patch Registry**（`docs/prompt-patches.yml` + `session/prompt.ts` 注释回链）：审计 §18-19——提示词里为旧模型/场景写的补丁从此有登记与复核期。首批 8 条（WORK RULES 三条、flash/step 锚块、step 压缩块、gpt delta、vision skill）各带 `review_after`；到期复核「约束的对象是否还在」——在则续期，不在则删补丁+删条目。复核与固定前缀审计同批进行。
 
