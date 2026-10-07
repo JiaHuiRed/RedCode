@@ -1103,6 +1103,46 @@ export function toModelMessages(
   return Effect.runPromise(toModelMessagesEffect(input, model, options).pipe(Effect.provide(EffectLogger.layer)))
 }
 
+// 261007 Red tool-result 配对净化：stabilizedMsgs 的单侧缓存拼接曾在真实会话里让同一批
+// tool-result 被复制一份发出——assistant 只声明一次 tool-call，后面却跟了两条 result
+// （ses_ffe5eeab…，wire 层 4 条 tool 消息 [t,t,t,t]），DeepSeek 直接 400：
+// "Messages with role 'tool' must be a response to a preceding message with 'tool_calls'"。
+// 转换链本身逐 part 忠实（不产生重复），所以净化放在发送数组上：每个 tool-call 只接受
+// 一次 result 应答，重复/孤儿一律丢弃。正确数据下恒等（内容零改动），KV 前缀不受影响。
+export function sanitizeToolResultPairing(messages: ModelMessage[]) {
+  const available = new Set<string>()
+  const consumed = new Set<string>()
+  const droppedIds: string[] = []
+  const result: ModelMessage[] = []
+  for (const message of messages) {
+    if (message.role === "assistant" && Array.isArray(message.content)) {
+      for (const part of message.content)
+        if (part.type === "tool-call") {
+          available.add(part.toolCallId)
+          consumed.delete(part.toolCallId)
+        }
+      result.push(message)
+      continue
+    }
+    if (message.role === "tool" && Array.isArray(message.content)) {
+      const kept = message.content.filter((part) => {
+        if (part.type !== "tool-result") return true
+        if (available.has(part.toolCallId) && !consumed.has(part.toolCallId)) {
+          consumed.add(part.toolCallId)
+          return true
+        }
+        droppedIds.push(part.toolCallId)
+        return false
+      })
+      if (kept.length === message.content.length) result.push(message)
+      else if (kept.length > 0) result.push({ ...message, content: kept })
+      continue
+    }
+    result.push(message)
+  }
+  return { messages: result, droppedIds }
+}
+
 // 260909 Red summarize/compact 只需要最后一条 user 消息的 agent。此前走
 // Session.messages 无 limit 全量翻页——compaction 恰恰发生在会话最长的时候，
 // 等于把几百 MB 级历史（含 base64 parts）整体拖进内存只为读一个字符串字段。

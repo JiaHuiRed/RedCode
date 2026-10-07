@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { existsSync, readFileSync } from "node:fs"
-import { APICallError } from "ai"
+import { APICallError, type ModelMessage } from "ai"
 import { MessageV2 } from "../../src/session/message-v2"
 import { ImageTokens } from "@/session/image-tokens"
 import { ProviderTransform } from "@/provider/transform"
@@ -2027,5 +2027,69 @@ describe("session.message-v2.compareTime id wrap-around", () => {
     expect(postWrap < olderFinished.id).toBe(true)
     const { tasks } = MessageV2.latest(msgs)
     expect(tasks).toHaveLength(1)
+  })
+})
+
+// 261007 Red steer 场景下重复 tool-result 被复制发出的 wire bug（DeepSeek 400）。
+describe("sanitizeToolResultPairing", () => {
+  const assistantCalling = (...ids: string[]): ModelMessage => ({
+    role: "assistant",
+    content: ids.map((toolCallId) => ({
+      type: "tool-call" as const,
+      toolCallId,
+      toolName: "bash",
+      input: {},
+    })),
+  })
+  const toolResults = (...ids: string[]): ModelMessage => ({
+    role: "tool",
+    content: ids.map((toolCallId) => ({
+      type: "tool-result" as const,
+      toolCallId,
+      toolName: "bash",
+      output: { type: "text" as const, value: "ok" },
+    })),
+  })
+
+  test("drops duplicated tool-results when a single declaration is answered twice", () => {
+    const messages = [assistantCalling("a", "b"), toolResults("a", "b"), toolResults("a", "b")]
+    const out = MessageV2.sanitizeToolResultPairing(messages)
+    expect(out.messages).toHaveLength(2)
+    expect(out.droppedIds).toEqual(["a", "b"])
+  })
+
+  test("drops orphan tool-result that has no preceding declaration", () => {
+    const out = MessageV2.sanitizeToolResultPairing([toolResults("orphan")])
+    expect(out.messages).toHaveLength(0)
+    expect(out.droppedIds).toEqual(["orphan"])
+  })
+
+  test("passes correct data through unchanged (identity, same references)", () => {
+    const messages = [
+      assistantCalling("a", "b"),
+      toolResults("a", "b"),
+      { role: "assistant" as const, content: "done" },
+    ]
+    const out = MessageV2.sanitizeToolResultPairing(messages)
+    expect(out.messages).toHaveLength(3)
+    expect(out.messages[0]).toBe(messages[0])
+    expect(out.messages[1]).toBe(messages[1])
+    expect(out.droppedIds).toEqual([])
+  })
+
+  test("keeps matched results and drops unmatched ones inside one tool message", () => {
+    const out = MessageV2.sanitizeToolResultPairing([assistantCalling("a"), toolResults("a", "b")])
+    expect(out.messages).toHaveLength(2)
+    expect(out.messages[1]?.content).toEqual([
+      { type: "tool-result", toolCallId: "a", toolName: "bash", output: { type: "text", value: "ok" } },
+    ])
+    expect(out.droppedIds).toEqual(["b"])
+  })
+
+  test("re-declaration lets the same id be answered again (paired blocks stay)", () => {
+    const messages = [assistantCalling("a"), toolResults("a"), assistantCalling("a"), toolResults("a")]
+    const out = MessageV2.sanitizeToolResultPairing(messages)
+    expect(out.messages).toHaveLength(4)
+    expect(out.droppedIds).toEqual([])
   })
 })

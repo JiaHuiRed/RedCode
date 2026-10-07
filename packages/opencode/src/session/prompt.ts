@@ -1648,8 +1648,18 @@ export const layer = Layer.effect(
             if (sessionSystem) sessionSystem.set(modelKey, systemCache)
             else _caches.system.set(sessionID, new Map([[modelKey, systemCache]]))
           }
+          // 261007 Red tool-result 配对净化：steer 场景下单侧缓存拼接曾让同一批 tool-result
+          // 复制发出（根因分析见 message-v2.ts 的 sanitizeToolResultPairing 注释）。净化放在
+          // 缓存拼接之前，保证缓存里存的与实际发送一致，后续 slice 以净化后下标对齐。
+          const sanitized = MessageV2.sanitizeToolResultPairing(modelMsgs)
+          if (sanitized.droppedIds.length > 0)
+            log.warn("tool-result pairing sanitized", {
+              sessionID,
+              dropped: sanitized.droppedIds.length,
+              ids: sanitized.droppedIds.slice(0, 5),
+            })
           // 260621 Red cache final model messages for prefix stability.
-          let stabilizedMsgs = modelMsgs
+          let stabilizedMsgs = sanitized.messages
           const sessionModelMsgs = _caches.modelMsgs.get(sessionID)
           const cachedModelMsgs = sessionModelMsgs?.get(modelKey)
           if (cachedModelMsgs) {
