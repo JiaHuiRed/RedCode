@@ -95,6 +95,36 @@ function capInstructions(text: string): string {
   return trimmed.slice(0, MAX_INSTRUCTION_CHARS) + `\n[...truncated ${trimmed.length - MAX_INSTRUCTION_CHARS} chars]`
 }
 
+// 261007 Red guides 聚合上限（审计 §24）：单条 2000 拦不住服务器数量增长；预算为 guides
+// 文本合计，超出的服务器整段移出、名字收进末尾 marker（从块里可发现，token 受控）。
+export const MAX_TOTAL_INSTRUCTION_CHARS = 8192
+
+export function fmtGuides(list: readonly { server: string; text: string }[]): string | undefined {
+  if (list.length === 0) return undefined
+  let budget = MAX_TOTAL_INSTRUCTION_CHARS
+  const omitted: string[] = []
+  const entries = list
+    .toSorted((a, b) => a.server.localeCompare(b.server))
+    .flatMap((item) => {
+      if (item.text.length > budget) {
+        omitted.push(item.server)
+        return []
+      }
+      budget -= item.text.length
+      return ["", `## ${item.server}`, item.text]
+    })
+  return [
+    "<mcp_server_guides>",
+    "Usage notes published by the connected MCP servers themselves. They describe what each",
+    "server's tools are collectively for and when to reach for them.",
+    ...entries,
+    ...(omitted.length
+      ? ["", `<!-- ${omitted.length} server(s) omitted by instruction budget: ${omitted.join(", ")} -->`]
+      : []),
+    "</mcp_server_guides>",
+  ].join("\n")
+}
+
 function readMcpToolsCache(serverName: string): MCPToolDef[] | undefined {
   try {
     const raw = fs.readFileSync(mcpToolsCachePath(serverName), "utf-8")

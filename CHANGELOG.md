@@ -10,6 +10,8 @@
 
 ### [未发布]
 
+- **注入项聚合上限：skill 描述与 MCP guides**（`skill/index.ts`、`mcp/index.ts`、`session/prompt.ts` 与对应测试，note: `docs/notes/implemented/architecture/2026-10-07-aggregate-injection-caps.md`）：审计 §24——单条 cap 拦不住条目数增长（20 条满额 skill 描述 = 20K chars/轮）。新增聚合预算：skill 描述合计 16,384 chars、MCP guides 合计 8,192 chars，按名字稳定排序，超预算条目整条移出、名字收进末尾 marker（路由不丢）；MCP guides 块组装从 `prompt.ts` 下移到 `MCP.fmtGuides`（与单条 cap 同域，可单测）。模型可见四问：① 常态逐字节不变（现用量：24 skill ≈2K chars、1 服务器 931 chars），仅失控时列表尾部多一行 marker；② token 影响常态 0，触发时以预算封顶；③ 前缀常态不动，触发时从列表段起失效；④ 本改动即为四问之④的补账——给聚合注入补上缺失的硬上限。
+
 - **固定前缀审计第二批：default.md 根因段收窄、seed 子代理对齐 live**（`prompt/default.md`、`seed/redcode.home.jsonc`、`AGENTS.md`）：① default.md 根因规则从「必须先复现再修」收窄为分层——非平凡修复（竞态/跨模块/性能/高风险）复现或失败用例先行；局部清晰 bug（代码已显示原因）直接修复并验证确认（审计 §17.8）。② seed 模板把 explore 同步为 live 现状：`stepfun-step-plan/step-3.7-flash` + permission 检索放行块（261003 只改了 live、漏了模板）；explore/execute 推理档统一 high。③ AGENTS.md 包级触达说明改为 read 就近注入（instruction.ts:432），删掉「要自己 read」。模型可见四问：①上列三处（default.md 一句改写、seed 块替换、AGENTS 两句合一）；②合计约 +100 字符（default.md +80）；③三处所在段起前缀失效一次；④远低于 64KiB 总预算。
 
 - **固定前缀审计第一批：AGENTS 义务收窄、项目记忆剪枝**（`AGENTS.md`，本地层 `.redcode/MEMORY.md` 与私仓 `~/.redcode/AGENTS.md` 同步执行）：按两份第三方固定前缀审计做减法——① 全局 AGENTS 四条义务从无条件收窄为条件触发（举一反三→仅同形状复制/同类调用/高复发；先算账→仅架构/性能/同步/缓存/不可逆；查 notes→仅涉历史决策或架构/行为边界，局部修 bug 不默认翻；首次编辑调查→仅非平凡改动），删去与 runtime WORK RULE #1 重复的「读到真实代码再动手」（-35B）；② 项目 AGENTS「同形状兄弟」触发域从任何函数收窄到函数家族（±0B）；③ 项目记忆按「删纯状态」清单清除完成态 10 处（队列修复收尾、GUI runtime 摘要、doom_loop 修复、已推送批次状态等）：10,477B → 7,902B，长期教训与未完成待办全保留。模型可见四问：①删/缩上列各段；②合计约 -2.6KB；③改动三处所在段起前缀失效一次；④受 instruction 总预算 64KiB 约束，只减不增。

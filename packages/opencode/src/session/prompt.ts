@@ -182,14 +182,7 @@ export const layer = Layer.effect(
      */
     const mcpGuideText = Effect.fn("SessionPrompt.mcpGuide")(function* () {
       const list = yield* mcp.instructions().pipe(Effect.catch(() => Effect.succeed([])))
-      if (list.length === 0) return undefined
-      return [
-        "<mcp_server_guides>",
-        "Usage notes published by the connected MCP servers themselves. They describe what each",
-        "server's tools are collectively for and when to reach for them.",
-        ...list.flatMap((item) => ["", `## ${item.server}`, item.text]),
-        "</mcp_server_guides>",
-      ].join("\n")
+      return MCP.fmtGuides(list)
     })
     const flags = yield* RuntimeFlags.Service
     const ops = Effect.fn("SessionPrompt.ops")(function* () {

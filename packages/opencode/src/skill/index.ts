@@ -364,6 +364,10 @@ export const defaultLayer = layer.pipe(
 // 决策：docs/notes/implemented/bug-fix/2026-09-11-skill-description-budget.md
 export const MAX_DESCRIPTION_CHARS = 1024
 
+// 261007 Red 聚合上限（审计 §24）：单条 cap 拦不住条目数增长（20 条各 1K = 20K 每轮注入）。
+// 预算为描述文本合计；超出的条目整条移出列表、名字收进末尾一行 marker（路由不丢，token 可控）。
+export const MAX_TOTAL_DESCRIPTION_CHARS = 16_384
+
 function capDescription(text: string): string {
   if (text.length <= MAX_DESCRIPTION_CHARS) return text
   return text.slice(0, MAX_DESCRIPTION_CHARS) + `\n[...truncated ${text.length - MAX_DESCRIPTION_CHARS} chars]`
@@ -373,18 +377,32 @@ export function fmt(list: Info[], opts: { verbose: boolean; namesOnly?: boolean 
   const described = list.filter((skill): skill is Info & { description: string } => skill.description !== undefined)
   if (described.length === 0) return "No skills are currently available."
   if (opts.verbose) {
-    return [
-      "<available_skills>",
-      ...described
-        .toSorted((a, b) => a.name.localeCompare(b.name))
-        .flatMap((skill) => [
+    let budget = MAX_TOTAL_DESCRIPTION_CHARS
+    const omitted: string[] = []
+    const entries = described
+      .toSorted((a, b) => a.name.localeCompare(b.name))
+      .flatMap((skill) => {
+        const description = capDescription(skill.description)
+        if (description.length > budget) {
+          omitted.push(skill.name)
+          return []
+        }
+        budget -= description.length
+        return [
           "  <skill>",
           `    <name>${skill.name}</name>`,
           // 260827 cc 不发 <location>：模型按 name 调用，加载后工具输出会再给一次 base directory，
           // 这行每条约 27 token 没人读。
-          `    <description>${capDescription(skill.description)}</description>`,
+          `    <description>${description}</description>`,
           "  </skill>",
-        ]),
+        ]
+      })
+    return [
+      "<available_skills>",
+      ...entries,
+      ...(omitted.length
+        ? [`  <!-- ${omitted.length} skill(s) omitted by description budget: ${omitted.join(", ")} -->`]
+        : []),
       "</available_skills>",
     ].join("\n")
   }

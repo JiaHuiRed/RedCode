@@ -578,4 +578,21 @@ describe("Skill.fmt description budget", () => {
       expect(out).not.toContain("truncated")
     }),
   )
+
+  it.effect("aggregate budget omits overflow entries, keeping their names in the marker", () =>
+    Effect.sync(() => {
+      // 每条描述 1024=单条上限；预算 16_384 恰好装 16 条，第 17 条起被移出。
+      const many: Skill.Info[] = Array.from({ length: 17 }, (_, i) => ({
+        name: `skill-${String(i).padStart(2, "0")}`,
+        description: "y".repeat(Skill.MAX_TOTAL_DESCRIPTION_CHARS / 16),
+        location: `/tmp/skill-${i}/SKILL.md`,
+        content: "",
+      }))
+      const out = Skill.fmt(many, { verbose: true })
+      expect(out).toContain("<name>skill-00</name>")
+      expect(out).toContain("<name>skill-15</name>")
+      expect(out).not.toContain("<name>skill-16</name>")
+      expect(out).toContain("omitted by description budget: skill-16")
+    }),
+  )
 })
