@@ -10,6 +10,8 @@
 
 ### [未发布]
 
+- **`redcode doctor --prefix`：固定前缀预算盘点**（`cli/cmd/doctor.ts` + help 快照）：静态列出各注入源字节数与预算占比（全局/项目 AGENTS、全局/项目 MEMORY、Tsoul/Gsoul、config.instructions；发现链与 `session/instruction.ts` 一致，不含远程 URL 与 read 附带的 nearby），total 超 64 KiB 或 ≥90% 时 warn，并标注超限丢弃顺序（config → MEMORY → soul → AGENTS）。审计 §22 要求的前缀清单入口。
+
 - **注入项聚合上限：skill 描述与 MCP guides**（`skill/index.ts`、`mcp/index.ts`、`session/prompt.ts` 与对应测试，note: `docs/notes/implemented/architecture/2026-10-07-aggregate-injection-caps.md`）：审计 §24——单条 cap 拦不住条目数增长（20 条满额 skill 描述 = 20K chars/轮）。新增聚合预算：skill 描述合计 16,384 chars、MCP guides 合计 8,192 chars，按名字稳定排序，超预算条目整条移出、名字收进末尾 marker（路由不丢）；MCP guides 块组装从 `prompt.ts` 下移到 `MCP.fmtGuides`（与单条 cap 同域，可单测）。模型可见四问：① 常态逐字节不变（现用量：24 skill ≈2K chars、1 服务器 931 chars），仅失控时列表尾部多一行 marker；② token 影响常态 0，触发时以预算封顶；③ 前缀常态不动，触发时从列表段起失效；④ 本改动即为四问之④的补账——给聚合注入补上缺失的硬上限。
 
 - **固定前缀审计第二批：default.md 根因段收窄、seed 子代理对齐 live**（`prompt/default.md`、`seed/redcode.home.jsonc`、`AGENTS.md`）：① default.md 根因规则从「必须先复现再修」收窄为分层——非平凡修复（竞态/跨模块/性能/高风险）复现或失败用例先行；局部清晰 bug（代码已显示原因）直接修复并验证确认（审计 §17.8）。② seed 模板把 explore 同步为 live 现状：`stepfun-step-plan/step-3.7-flash` + permission 检索放行块（261003 只改了 live、漏了模板）；explore/execute 推理档统一 high。③ AGENTS.md 包级触达说明改为 read 就近注入（instruction.ts:432），删掉「要自己 read」。模型可见四问：①上列三处（default.md 一句改写、seed 块替换、AGENTS 两句合一）；②合计约 +100 字符（default.md +80）；③三处所在段起前缀失效一次；④远低于 64KiB 总预算。

@@ -69,10 +69,15 @@ export const DoctorCommand = effectCmd({
   command: "doctor",
   describe: "run diagnostics",
   builder: (yargs) =>
-    yargs.option("json", {
-      describe: "output as json",
-      type: "boolean",
-    }),
+    yargs
+      .option("json", {
+        describe: "output as json",
+        type: "boolean",
+      })
+      .option("prefix", {
+        describe: "inspect the fixed prompt-prefix sources and their budget",
+        type: "boolean",
+      }),
   // Diagnostics should work without a full project instance; avoids bootstrap hang.
   instance: false,
   handler: Effect.fn("Cli.doctor")(function* (args) {
@@ -252,6 +257,57 @@ export const DoctorCommand = effectCmd({
       })
     } else {
       groups.push({ name: "extensions", checks: skipped(["plugins", "skill-coverage", "mcp"], NO_CONFIG) })
+    }
+
+    // ---- prefix（261007 Red 固定前缀预算）----
+    // 静态盘点各注入源的字节数与预算占比。清单与 session/instruction.ts 的发现链一致：
+    // 全局 AGENTS → 项目 AGENTS → 全局 MEMORY → 项目 MEMORY → soul → config.instructions；
+    // 不含远程 URL 与 read 附带的 nearby 指令。预算默认 64 KiB（instruction_budget.max_total_bytes 可覆盖）。
+    if (args.prefix) {
+      const home = Global.Path.home
+      const DEFAULT_TOTAL = 64 * 1024
+      const candidates: [string, string][] = [
+        ["global-agents", path.join(home, ".redcode", "AGENTS.md")],
+        ["project-agents", path.join(worktree, "AGENTS.md")],
+        ["global-memory", path.join(home, ".redcode", "MEMORY.md")],
+        ["project-memory", path.join(worktree, ".redcode", "MEMORY.md")],
+        ["soul-tui", path.join(home, ".redcode", "souls", "Tsoul.md")],
+        ["soul-gui", path.join(home, ".redcode", "souls", "Gsoul.md")],
+        ...(cfg?.instructions ?? [])
+          .filter((item) => !item.startsWith("https://") && !item.startsWith("http://"))
+          .map((item): [string, string] => ["config", item]),
+      ]
+      const checked = candidates.map(([label, file]) => ({
+        label,
+        file,
+        size: fs.existsSync(file) ? fs.statSync(file).size : undefined,
+      }))
+      const totalBytes = checked.reduce((sum, item) => sum + (item.size ?? 0), 0)
+      const totalPct = Math.round((totalBytes / DEFAULT_TOTAL) * 100)
+      const pct = (size: number) => Math.round((size / DEFAULT_TOTAL) * 100)
+      groups.push({
+        name: "prefix",
+        checks: [
+          ...checked.map(
+            (item): Check => ({
+              name: item.label,
+              status: item.size === undefined ? "skip" : "ok",
+              detail:
+                item.size === undefined
+                  ? `not found: ${item.file}`
+                  : `${item.size} B · ${pct(item.size)}% · ${item.file}`,
+            }),
+          ),
+          {
+            name: "total",
+            status: totalBytes > DEFAULT_TOTAL || totalPct >= 90 ? "warn" : "ok",
+            detail:
+              totalBytes > DEFAULT_TOTAL
+                ? `${totalBytes} B exceeds default budget ${DEFAULT_TOTAL} B — lowest priority dropped first: config → MEMORY → soul → AGENTS`
+                : `${totalBytes} B · ${totalPct}% of default budget ${DEFAULT_TOTAL} B`,
+          },
+        ],
+      })
     }
 
     const all = groups.flatMap((g) => g.checks)

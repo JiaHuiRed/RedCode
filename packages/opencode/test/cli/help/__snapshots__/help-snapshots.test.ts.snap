@@ -425,7 +425,8 @@ Options:
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure        run without external plugins                                           [boolean]
-      --json        output as json                                                         [boolean]"
+      --json        output as json                                                         [boolean]
+      --prefix      inspect the fixed prompt-prefix sources and their budget               [boolean]"
 `;
 
 exports[`redcode CLI help-text snapshots every documented command emits stable help text: redcode mcp list --help 1`] = `
