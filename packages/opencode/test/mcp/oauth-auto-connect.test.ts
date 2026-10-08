@@ -91,6 +91,11 @@ void mock.module("@modelcontextprotocol/sdk/client/index.js", () => ({
 
     setNotificationHandler() {}
 
+    // 261008 Red storeClient 会读 getInstructions()（260904 起），mock 缺方法 = TypeError
+    getInstructions() {
+      return undefined
+    }
+
     async listTools() {
       return { tools: [{ name: "test_tool", inputSchema: { type: "object", properties: {} } }] }
     }

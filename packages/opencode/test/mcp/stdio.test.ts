@@ -1,51 +1,17 @@
 import { expect, test } from "bun:test"
-import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js"
-import { WindowsJobStdioClientTransport } from "../../src/mcp/stdio"
+import path from "node:path"
 
+// 261008 Red 真 transport 练习必须在子进程里跑：lifecycle.test.ts 顶层
+// mock.module 毒化同进程注册表，本文件若直接 import src/mcp/stdio 会拿到假
+// transport（组跑挂、单跑过的指纹）。探针进程注册表干净，退出码即断言。
 test("stdio transport sends and receives JSON-RPC messages", async () => {
-  const server = [
-    'let input = ""',
-    'process.stdin.on("data", (chunk) => {',
-    "  input += chunk",
-    "  let newline",
-    '  while ((newline = input.indexOf("\\n")) !== -1) {',
-    "    const line = input.slice(0, newline)",
-    "    input = input.slice(newline + 1)",
-    "    const message = JSON.parse(line)",
-    '    process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { ok: true } }) + "\\n")',
-    "  }",
-    "})",
-  ].join("\n")
-  const transport = new WindowsJobStdioClientTransport({
-    command: process.platform === "win32" ? "node" : process.execPath,
-    args: ["-e", server],
+  const probe = path.join(import.meta.dir, "fixture", "stdio-probe.ts")
+  const child = Bun.spawn([process.execPath, "run", probe], {
+    cwd: path.join(import.meta.dir, "../../.."),
+    stdout: "pipe",
     stderr: "pipe",
   })
-  const response = new Promise<JSONRPCMessage>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("Timed out waiting for JSON-RPC response")), 5_000)
-    transport.onmessage = (message) => {
-      clearTimeout(timer)
-      resolve(message)
-    }
-    transport.onerror = (error) => {
-      clearTimeout(timer)
-      reject(error)
-    }
-    transport.onclose = () => {
-      clearTimeout(timer)
-      reject(new Error("MCP server closed before response"))
-    }
-  })
-
-  try {
-    await transport.start()
-    await transport.send({ jsonrpc: "2.0", id: 1, method: "ping", params: {} })
-    expect(await response).toEqual({
-      jsonrpc: "2.0",
-      id: 1,
-      result: { ok: true },
-    })
-  } finally {
-    await transport.close()
-  }
-}, 10_000)
+  const [code, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()])
+  if (code !== 0) console.error(stderr)
+  expect(code).toBe(0)
+}, 20_000)
