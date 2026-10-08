@@ -209,3 +209,17 @@ test("prompt.submit selects an explicit Soul without opening the selector", asyn
     prompt.app.renderer.destroy()
   }
 })
+
+// 261008 Red /soul 升级为注册 slash 命令后，补全行回车（dispatchCommand）直开弹窗，无需输入文本
+test("prompt.soul command opens the selector directly like registered slashes", async () => {
+  const prompt = await mountPrompt()
+  try {
+    prompt.dispatchCommand("prompt.soul")
+    expect(await prompt.waitForFrame("选择灵魂", true)).toContain("直率、活泼")
+    prompt.app.mockInput.pressEnter()
+    await prompt.waitForFrame("选择灵魂", false)
+    expect(prompt.selected).toContain("karina")
+  } finally {
+    prompt.app.renderer.destroy()
+  }
+})

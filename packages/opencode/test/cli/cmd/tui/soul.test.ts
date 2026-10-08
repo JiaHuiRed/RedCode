@@ -4,13 +4,8 @@ import { soulOptions } from "../../../../src/cli/cmd/tui/component/dialog-soul"
 
 describe("TUI Soul choices", () => {
   test("opens the picker without an id and parses explicit ids", () => {
-    expect(parseSoulChoice("/soul")).toEqual({ id: "", deprecated: false, selector: true })
-    expect(parseSoulChoice("/soul chi")).toEqual({ id: "chi", deprecated: false, selector: false })
-  })
-
-  test("deprecated persona aliases open the picker without inferring identity", () => {
-    expect(parseSoulChoice("/tui-persona")).toEqual({ id: "", deprecated: true, selector: true })
-    expect(parseSoulChoice("/gui-persona")).toEqual({ id: "", deprecated: true, selector: true })
+    expect(parseSoulChoice("/soul")).toEqual({ id: "", selector: true })
+    expect(parseSoulChoice("/soul chi")).toEqual({ id: "chi", selector: false })
   })
 
   test("does not turn unknown ids into a different Soul", () => {
@@ -34,7 +29,7 @@ describe("TUI Soul choices", () => {
 
   test("does not interpret unrelated slash commands as Soul changes", () => {
     expect(parseSoulChoice("/help")).toBeUndefined()
-    expect(parseSoulChoice("/soul chi extra")).toEqual({ id: "chi extra", deprecated: false, selector: false })
+    expect(parseSoulChoice("/soul chi extra")).toEqual({ id: "chi extra", selector: false })
   })
 
   test("Soul selector displays descriptions and searches by Chinese text or ID", () => {

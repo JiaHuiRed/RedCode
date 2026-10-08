@@ -1,15 +1,14 @@
 export type SoulChoice = {
   id: string
-  deprecated: boolean
   selector: boolean
 }
 
+// 261008 Red 旧 /tui-persona、/gui-persona 已下线（seed 与 home 的命令文件同撤），不再解析别名。
 export function parseSoulChoice(input: string): SoulChoice | undefined {
-  const match = input.trim().match(/^\/(soul|tui-persona|gui-persona)(?:\s+(.+))?$/)
+  const match = input.trim().match(/^\/soul(?:\s+(.+))?$/)
   if (!match) return
-  const deprecated = match[1] !== "soul"
-  const id = match[2]?.trim() ?? ""
-  return { id, deprecated, selector: id.length === 0 }
+  const id = match[1]?.trim() ?? ""
+  return { id, selector: id.length === 0 }
 }
 
 export function resolveNewSessionSoul(saved: string | undefined, clientDefault?: string) {

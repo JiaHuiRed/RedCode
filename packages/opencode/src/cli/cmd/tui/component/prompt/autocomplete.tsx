@@ -544,17 +544,6 @@ export function Autocomplete(props: {
 
   const commands = createMemo((): AutocompleteOption[] => {
     const results: AutocompleteOption[] = [...slashes()]
-    results.push({
-      display: "/soul",
-      description: "选择新会话默认 Soul",
-      onSelect: () => {
-        const newText = "/soul "
-        const cursor = props.input().logicalCursor
-        props.input().deleteRange(0, 0, cursor.row, cursor.col)
-        props.input().insertText(newText)
-        props.input().cursorOffset = Bun.stringWidth(newText)
-      },
-    })
 
     for (const serverCommand of sync.data.command) {
       const label = serverCommand.source === "mcp" ? ":mcp" : ""

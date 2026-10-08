@@ -640,6 +640,17 @@ export function Prompt(props: PromptProps) {
         },
       },
       {
+        // 261008 Red /soul 升级为注册命令：补全行回车与 /mcps 同款直开弹窗，不再只插文本
+        title: "选择新会话默认 Soul",
+        name: "prompt.soul",
+        category: "Prompt",
+        slashName: "soul",
+        run: async () => {
+          if (!(await local.soul.refresh())) return
+          dialog.replace(() => <DialogSoul onSelect={(id) => selectSoul(id)} />)
+        },
+      },
+      {
         title: "切换工作目录",
         desc: "将会话切换到其他工作区",
         name: "workspace.set",
@@ -1046,19 +1057,14 @@ export function Prompt(props: PromptProps) {
     }
   }
 
-  function selectSoul(id: string, deprecated = false) {
+  function selectSoul(id: string) {
     const currentSoulID = props.sessionID ? sync.session.get(props.sessionID)?.soul : undefined
     const currentSoulName = local.soul.label(currentSoulID)
     toast.show({
       variant: "info",
-      message: [
-        deprecated ? "Deprecated persona command; use /soul." : undefined,
-        currentSoulID
-          ? `New-session Soul set to ${local.soul.label(id)}; this session remains ${currentSoulName ?? currentSoulID}.`
-          : `New-session Soul set to ${local.soul.label(id) ?? id}.`,
-      ]
-        .filter(Boolean)
-        .join(" "),
+      message: currentSoulID
+        ? `New-session Soul set to ${local.soul.label(id)}; this session remains ${currentSoulName ?? currentSoulID}.`
+        : `New-session Soul set to ${local.soul.label(id) ?? id}.`,
       duration: 5000,
     })
   }
@@ -1091,7 +1097,7 @@ export function Prompt(props: PromptProps) {
       setPrompt({ input: "", parts: [] })
       if (!(await local.soul.refresh())) return true
       if (soulCommand.selector) {
-        dialog.replace(() => <DialogSoul onSelect={(id) => selectSoul(id, soulCommand.deprecated)} />)
+        dialog.replace(() => <DialogSoul onSelect={(id) => selectSoul(id)} />)
         return false
       }
       const id = soulCommand.id
@@ -1106,7 +1112,7 @@ export function Prompt(props: PromptProps) {
         })
         return true
       }
-      selectSoul(id, soulCommand.deprecated)
+      selectSoul(id)
       return true
     }
     const selectedModel = local.model.current()
