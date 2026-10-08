@@ -1416,6 +1416,8 @@ session.soul = karina
 新 Session 生效
 ```
 
+落地记录：正文冻结已由 `soul_version` 内容寻址版本表 + `session.soul_body_hash` 跨重启/缓存回收成立，见实现记录「持久版本决策」：`docs/notes/implemented/architecture/2026-10-07-soul-system-v2.md`。
+
 未来如真需要，可设计显式：
 
 ```text

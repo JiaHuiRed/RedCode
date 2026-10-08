@@ -45,8 +45,20 @@ TUI/GUI 是客户端类型，柳智敏/宋雨琦/赤 是身份——两者不在
 
 ## 接力边界
 
-- **严格正文冻结尚有缺口**：Session 只持久化 Soul ID，正文快照位于进程内 `PromptCaches.souls`，接入已有数量/TTL 回收；compaction 保留快照，但进程重启或会话被回收后会重新读取同 ID 的文件。因此 §44 的“只对新 Session 生效”目前只覆盖热快照，不覆盖跨重启/回收。后续需要明确版本化/快照持久化方案，不能用“已有 session pin 不变”冒充“正文永不变”。
-- **验收仍需补齐**：live 模型人格回复、完整独立审查；没有重启现有 GUI/sidecar，也未在 live home/DB 执行迁移。浏览器 smoke 依赖 mock API 与桌面标题栏挂载点，不能等同 Electron 打包验收。本地 provider 出站体断言通过 `test/session/prompt.test.ts --test-name-pattern 'actual provider request'` 复验，使用相同的 `REDCODE_SOUL_ACCEPTANCE_FILE`。
-- **本批验证结果**：核心八个定向文件 83 pass / 0 fail / 1 既有 todo，实际 MD Registry/DB 验收 1 pass，本地 provider 出站体 1 pass；GUI submit 11 pass、i18n parity 4 pass；HTTP Soul 六场景与浏览器 1 场景通过；核心/app typecheck、版本一致性通过。未跑全量套件，也未进行 Electron 打包验收。
-- **测试入口**：核心定向文件为 `test/soul/{soul,acceptance}.test.ts`、`test/data-migration/session-soul.test.ts`、`test/session/{session,soul,instruction,prompt-caches}.test.ts`、`test/cli/{doctor,cmd/tui/soul}.test.ts`；均从 `packages/opencode` 跑，路径过滤加 `--timeout 30000`。实际 MD 可通过 `REDCODE_SOUL_ACCEPTANCE_FILE` 指定；默认通用夹具不依赖本机附件。GUI 从 `packages/app` 分别跑 submit/i18n parity，带 `--preload ./happydom.ts`。HTTP exerciser 的 Soul 六场景通过，usage/outline 两个既有 missing 非本次范围。
+- **正文冻结已落地**：`soul_version` 内容寻址版本表 + `session.soul_body_hash` 已实现并验证（机制与决策见下方「持久版本决策」）；官方迁移文件已生成，仅隔离库验证，未在 live home/DB 执行。旧行回填只能按迁移时点可见文件近似，不宣称恢复历史原貌。
+- **验收仍需补齐**：live 模型人格回复、Electron 打包验收；没有重启现有 GUI/sidecar。浏览器 smoke 依赖 mock API 与桌面标题栏挂载点，不能等同 Electron 打包验收。本地 provider 出站体断言通过 `test/session/prompt.test.ts --test-name-pattern 'actual provider request'` 复验，使用相同的 `REDCODE_SOUL_ACCEPTANCE_FILE`。独立复核已完成：外部报告的两项迁移疑点（已 pin 根无 hash、子会话异 Soul 继承）经反例测试证伪为不可达，实现无误；复核期间另以失败测试暴露并修复一个真实边界——缓存回收后调用方省略 Soul ID 时冷读会误判未绑定，现冷读以持久会话归属为准。
+- **本批验证结果**：核心定向八文件（后端 5 + TUI 3）34 pass / 0 fail / 197 expects；修复后元英出站体 1 pass / 4 expects；核心 typecheck 与 SDK typecheck EXIT 0，SDK/OpenAPI 由官方生成器产出（新增只读 `soulBodyHash`）；版本一致性通过。未跑全量套件，也未进行 Electron 打包验收。
+- **测试入口**：核心定向文件为 `test/soul/{soul,acceptance}.test.ts`、`test/data-migration/session-soul.test.ts`、`test/session/{session,soul,soul-restart,instruction,prompt-caches}.test.ts`、`test/cli/{doctor,cmd/tui/soul}.test.ts`、`test/cli/tui/{dialog-soul,prompt-soul-submit}.test.tsx`；其中 `soul-restart.test.ts` 借 `test/fixture/soul-restart.ts` 探针验证真实跨进程冻结（三个真子进程），`prompt-soul-submit.test.tsx` 挂真实 Prompt/keymap 验证 `/soul` 入口不被提交清理。均从 `packages/opencode` 跑，路径过滤加 `--timeout 30000`。实际 MD 可通过 `REDCODE_SOUL_ACCEPTANCE_FILE` 指定；默认通用夹具不依赖本机附件。GUI 从 `packages/app` 分别跑 submit/i18n parity，带 `--preload ./happydom.ts`。HTTP exerciser 的 Soul 六场景通过，usage/outline 两个既有 missing 非本次范围。
 - **跨机配置**：本机 home 下 AGENTS 与旧 persona 命令已同步修改，但它们属于私有配置仓，不包含在本仓提交里；另一台机器需同步该配置，不能只拉本仓就假定所有全局旧规则消失。
+
+## 持久版本决策
+
+采用内容寻址版本表，而不是为每个 Session 复制全文：`soul_version` 保存正文与创建时的身份元数据，`session.soul_body_hash` 固定版本引用。哈希必须覆盖 Soul ID、身份元数据与正文；仅正文相同而显示名或署名前缀不同的两个版本不能相互覆盖。源路径不参与版本身份，description 仍只供 UI 使用。
+
+- 根会话在创建时固定版本，不能延迟到第一次发消息；版本先持久化，再发布带固定引用的会话。fork/child 继承来源版本，不重新选择 Registry 的当前正文。
+- `PromptCaches.souls` 仅是热缓存，缓存回收或进程重启不能改变冷读的版本来源。compaction 不更改版本引用。
+- 旧行只能按迁移时可见的文件补版本，不能恢复未曾保存的历史原文；保留已有引用，优先继承父会话，缺失文件保留 ID 并明确告警，回填不算会话活动。
+- 固定版本丢失或损坏时，明确告警后回退同 ID 的当前文件；这是异常恢复，不是严格冻结保证。禁止默切其他人格或覆盖原版本引用。
+- 不引入版本热切、Registry 正文缓存或自动删除共享版本的机制。本批只生成迁移文件并验证隔离库，不在运行中的 home 数据库执行迁移。
+
+模型可见四问：① 正常路径仍使用原 `render()` 包装，仅正文及身份标签的来源改为固定版本；② 不增加固定前缀段，正文未改时 token 增量为零；③ 正常请求的段落顺序与字节不变，文件编辑不再让旧会话的冷读前缀漂移，旧行回填只能保证迁移之后的稳定；④ 继续使用正文 16 KiB、标签各 256 UTF-8 字节及完整注入 17,462 字节的上限，最终 system 仍走现有持久请求日志链。数据库版本引用不注入模型。

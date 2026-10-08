@@ -857,6 +857,7 @@ export type Session = {
   agent?: string
   client?: string
   soul?: string
+  soulBodyHash?: string
   model?: {
     id: string
     providerID: string
@@ -1943,6 +1944,7 @@ export type GlobalSession = {
   agent?: string
   client?: string
   soul?: string
+  soulBodyHash?: string
   model?: {
     id: string
     providerID: string

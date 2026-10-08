@@ -1,9 +1,21 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import type { Info } from "../../src/soul/schema"
 import { PromptCaches } from "../../src/session/prompt-caches"
 import { render, sessionSoul, sessionTitlePrefix } from "../../src/session/soul"
 import type { Interface as SoulService } from "../../src/soul"
+import { testEffect } from "../lib/effect"
+import { Session as SessionNs } from "@/session/session"
+import { Soul } from "@/soul"
+import { BackgroundJob } from "@/background/job"
+import { Bus } from "@/bus"
+import { Storage } from "@/storage/storage"
+import { SyncEvent } from "@/sync"
+import { RuntimeFlags } from "@/effect/runtime-flags"
+import { TestInstance } from "../fixture/fixture"
+import { Database, eq } from "@/storage/db"
+import { SessionTable, SoulVersionTable } from "@/session/session.sql"
+import path from "node:path"
 
 const info = (overrides: Partial<Info> = {}): Info => ({
   id: "karina",
@@ -14,6 +26,19 @@ const info = (overrides: Partial<Info> = {}): Info => ({
   content: "Voice body",
   ...overrides,
 })
+
+const it = testEffect(
+  Layer.mergeAll(
+    Soul.defaultLayer,
+    SessionNs.layer.pipe(
+      Layer.provide(Bus.layer),
+      Layer.provide(Storage.defaultLayer),
+      Layer.provide(SyncEvent.defaultLayer),
+      Layer.provide(RuntimeFlags.layer({ experimentalWorkspaces: false })),
+      Layer.provide(BackgroundJob.defaultLayer),
+    ),
+  ),
+)
 
 function service(initial?: Info) {
   let current = initial
@@ -120,4 +145,87 @@ describe("session.soul", () => {
     expect(child.prompt).toBe(parent.prompt)
     expect(child).not.toBe(parent)
   })
+
+  it.instance("freezes Soul before session publication and restores the frozen body after restart", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const file = path.join(test.directory, "karina.md")
+      yield* Effect.promise(() =>
+        Bun.write(file, "---\nid: karina\nname: V1\ndisplay_name: Name V1\ncommit_prefix: CommitV1\n---\n\nOriginal body V1"),
+      )
+      const service = yield* SessionNs.Service
+      const parent = yield* service.create({ soul: "karina" }).pipe(Effect.provideService(Soul.directory, test.directory))
+      const stored = Database.use((db) => db.select().from(SoulVersionTable).get())
+      expect(parent.soulBodyHash).toBeTruthy()
+      expect(stored?.body).toContain("Original body V1")
+
+      yield* Effect.promise(() =>
+        Bun.write(file, "---\nid: karina\nname: V2\ndisplay_name: Name V2\ncommit_prefix: CommitV2\n---\n\nOriginal body V2"),
+      )
+      PromptCaches.souls.delete(parent.id)
+      const souls = yield* Soul.Service
+      const restored = yield* sessionSoul(parent.id, parent.soul, souls).pipe(
+        Effect.provideService(Soul.directory, test.directory),
+      )
+      expect(restored.prompt).toContain("# Name V1 [CommitV1]")
+      expect(restored.prompt).toContain("Original body V1")
+      expect(restored.prompt).not.toContain("Original body V2")
+      PromptCaches.souls.delete(parent.id)
+      const withoutHint = yield* sessionSoul(parent.id, undefined, souls)
+      expect(withoutHint.prompt).toBe(restored.prompt)
+      PromptCaches.souls.delete(parent.id)
+      const wrongHint = yield* sessionSoul(parent.id, "yuqi", souls)
+      expect(wrongHint.id).toBe("karina")
+      expect(wrongHint.prompt).toBe(restored.prompt)
+
+      const next = yield* service.create({ soul: "karina" }).pipe(Effect.provideService(Soul.directory, test.directory))
+      yield* Effect.promise(() =>
+        Bun.write(file, "---\nid: karina\nname: V2 metadata\n---\n\nOriginal body V2"),
+      )
+      const metadataOnly = yield* service.create({ soul: "karina" }).pipe(Effect.provideService(Soul.directory, test.directory))
+      expect(metadataOnly.soulBodyHash).not.toBe(next.soulBodyHash)
+      yield* Effect.promise(() =>
+        Bun.write(file, "---\nid: karina\nname: V2\ndisplay_name: Name V2\ncommit_prefix: CommitV2\n---\n\nOriginal body V2"),
+      )
+      const duplicate = yield* service.create({ soul: "karina" }).pipe(Effect.provideService(Soul.directory, test.directory))
+      expect(next.soulBodyHash).not.toBe(parent.soulBodyHash)
+      expect(duplicate.soulBodyHash).toBe(next.soulBodyHash)
+      expect(
+        Database.use((db) =>
+          db
+            .select()
+            .from(SoulVersionTable)
+            .where(eq(SoulVersionTable.hash, parent.soulBodyHash!))
+            .get()?.body,
+        ),
+      ).toContain("Original body V1")
+      yield* Effect.sync(() =>
+        Database.use((db) =>
+          db.delete(SoulVersionTable).where(eq(SoulVersionTable.hash, parent.soulBodyHash!)).run(),
+        ),
+      )
+      PromptCaches.souls.delete(parent.id)
+      const fallback = yield* sessionSoul(parent.id, parent.soul, souls).pipe(
+        Effect.provideService(Soul.directory, test.directory),
+      )
+      expect(fallback.prompt).toContain("Original body V2")
+      expect(
+        Database.use((db) =>
+          db.select({ soul_body_hash: SessionTable.soul_body_hash }).from(SessionTable).where(eq(SessionTable.id, parent.id)).get(),
+        )?.soul_body_hash,
+      ).toBe(parent.soulBodyHash)
+
+      const child = yield* service.create({ parentID: parent.id })
+      const fork = yield* service.fork({ sessionID: parent.id })
+      expect(child.soulBodyHash).toBe(parent.soulBodyHash)
+      expect(fork.soulBodyHash).toBe(parent.soulBodyHash)
+      yield* service.remove(parent.id)
+      yield* service.remove(child.id)
+      yield* service.remove(fork.id)
+      yield* service.remove(next.id)
+      yield* service.remove(metadataOnly.id)
+      yield* service.remove(duplicate.id)
+      PromptCaches.souls.delete(parent.id)
+    }),
+  )
 })

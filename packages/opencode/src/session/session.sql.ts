@@ -1,4 +1,5 @@
-import { sqliteTable, text, integer, index, primaryKey, real } from "drizzle-orm/sqlite-core"
+import { sqliteTable, text, integer, index, primaryKey, real, check } from "drizzle-orm/sqlite-core"
+import { sql } from "drizzle-orm"
 import { ProjectTable } from "../project/project.sql"
 import type { MessageV2 } from "./message-v2"
 import type { SessionMessage } from "@redcode-ai/core/session-message"
@@ -56,6 +57,7 @@ export const SessionTable = sqliteTable(
     // 回填走 data-migration（client→默认 soul 映射，只作缺省偏好、不做身份推理）。
     // 决策：docs/notes/implemented/architecture/2026-10-07-soul-system-v2.md
     soul: text(),
+    soul_body_hash: text(),
     model: text({ mode: "json" }).$type<{
       id: string
       providerID: string
@@ -69,6 +71,32 @@ export const SessionTable = sqliteTable(
     index("session_project_idx").on(table.project_id),
     index("session_workspace_idx").on(table.workspace_id),
     index("session_parent_idx").on(table.parent_id),
+  ],
+)
+
+export const SoulVersionTable = sqliteTable(
+  "soul_version",
+  {
+    hash: text().primaryKey(),
+    soul_id: text().notNull(),
+    name: text().notNull(),
+    display_name: text(),
+    commit_prefix: text(),
+    body: text().notNull(),
+    created_at: integer().notNull(),
+  },
+  (table) => [
+    check("soul_version_hash_length_check", sql`length(${table.hash}) = 64`),
+    check("soul_version_body_bytes_check", sql`length(cast(${table.body} as blob)) <= 16384`),
+    check("soul_version_name_bytes_check", sql`length(cast(${table.name} as blob)) <= 256`),
+    check(
+      "soul_version_display_name_bytes_check",
+      sql`${table.display_name} is null or length(cast(${table.display_name} as blob)) <= 256`,
+    ),
+    check(
+      "soul_version_commit_prefix_bytes_check",
+      sql`${table.commit_prefix} is null or length(cast(${table.commit_prefix} as blob)) <= 256`,
+    ),
   ],
 )
 

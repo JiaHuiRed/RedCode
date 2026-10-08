@@ -1092,7 +1092,7 @@ export function Prompt(props: PromptProps) {
       if (!(await local.soul.refresh())) return true
       if (soulCommand.selector) {
         dialog.replace(() => <DialogSoul onSelect={(id) => selectSoul(id, soulCommand.deprecated)} />)
-        return true
+        return false
       }
       const id = soulCommand.id
       if (!local.soul.select(id)) {

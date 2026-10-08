@@ -1,8 +1,12 @@
 import { Effect } from "effect"
+import { createHash } from "node:crypto"
 import * as Log from "@redcode-ai/core/util/log"
 import { MAX_SOUL_BYTES, type Info } from "@/soul/schema"
 import type { Interface as SoulService } from "@/soul"
 import { PromptCaches } from "./prompt-caches"
+import { Database } from "@/storage/db"
+import { SessionTable, SoulVersionTable } from "./session.sql"
+import { eq, sql } from "drizzle-orm"
 
 const log = Log.create({ service: "session.soul" })
 const MAX_LABEL_BYTES = 256
@@ -22,9 +26,46 @@ function boundedLabel(value: string | undefined) {
 
 export type Snapshot = {
   id: string
+  hash?: string
   info?: Info
   prompt?: string
   missingWarned: boolean
+}
+
+export function hashSoul(info: Info) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        info.id,
+        boundedLabel(info.name),
+        boundedLabel(info.displayName),
+        boundedLabel(info.commitPrefix),
+        info.content,
+      ]),
+      "utf8",
+    )
+    .digest("hex")
+}
+
+export function saveSoulVersion(info: Info) {
+  if (Buffer.byteLength(info.content, "utf8") > MAX_SOUL_BYTES) return undefined
+  const hash = hashSoul(info)
+  Database.use((db) =>
+    db
+      .insert(SoulVersionTable)
+      .values({
+        hash,
+        soul_id: info.id,
+        name: boundedLabel(info.name),
+        display_name: boundedLabel(info.displayName),
+        commit_prefix: boundedLabel(info.commitPrefix),
+        body: info.content,
+        created_at: Date.now(),
+      })
+      .onConflictDoNothing()
+      .run(),
+  )
+  return hash
 }
 
 export function render(info: Info) {
@@ -42,19 +83,53 @@ export function sessionSoul(sessionID: string, soulID: string | undefined, souls
   return Effect.gen(function* () {
     let snapshot = PromptCaches.souls.get(sessionID)
     if (!snapshot) {
-      const info = soulID ? yield* souls.get(soulID) : undefined
+      const row = yield* Effect.sync(() =>
+        Database.use((db) =>
+          db
+            .select({ soul: SessionTable.soul, soul_body_hash: SessionTable.soul_body_hash })
+            .from(SessionTable)
+            .where(sql`${SessionTable.id} = ${sessionID}`)
+            .get(),
+        ),
+      )
+      // 261008 Red 缓存可在调用方检查后回收，冷读必须以持久会话归属为准。
+      const pinnedID = row ? row.soul ?? undefined : soulID
+      const pinnedHash = row?.soul_body_hash ?? undefined
+      const version = pinnedHash
+        ? yield* Effect.sync(() =>
+            Database.use((db) => db.select().from(SoulVersionTable).where(eq(SoulVersionTable.hash, pinnedHash)).get()),
+          )
+        : undefined
+      const stored = version
+        ? {
+            id: version.soul_id,
+            name: version.name,
+            displayName: version.display_name ?? "",
+            commitPrefix: version.commit_prefix ?? "",
+            path: "",
+            content: version.body,
+          }
+        : undefined
+      const versionInfo =
+        stored && stored.id === pinnedID && Buffer.byteLength(stored.content, "utf8") <= MAX_SOUL_BYTES &&
+        pinnedHash === hashSoul(stored)
+          ? stored
+          : undefined
+      if (pinnedHash && !versionInfo) log.warn("pinned soul version is missing or invalid", { sessionID, soulID: pinnedID, hash: pinnedHash })
+      const info = versionInfo ?? (pinnedID ? yield* souls.get(pinnedID) : undefined)
       const valid = info && Buffer.byteLength(info.content, "utf8") <= MAX_SOUL_BYTES ? info : undefined
       snapshot = {
-        id: soulID ?? "",
+        id: pinnedID ?? "",
+        hash: pinnedHash,
         info: valid,
         prompt: valid
           ? render(valid).prompt
-          : `# Session identity\n${soulID ? `The pinned Soul "${boundedLabel(soulID)}" is unavailable.` : "No Soul is bound."} Keep the session binding; do not infer identity from client or use another Soul. Use [AI] for commit attribution.`,
+          : `# Session identity\n${pinnedID ? `The pinned Soul "${boundedLabel(pinnedID)}" is unavailable.` : "No Soul is bound."} Keep the session binding; do not infer identity from client or use another Soul. Use [AI] for commit attribution.`,
         missingWarned: false,
       }
       PromptCaches.souls.set(sessionID, snapshot)
-      if (soulID && !valid) {
-        log.warn("pinned soul is missing or invalid", { sessionID, soulID })
+      if (pinnedID && !valid) {
+        log.warn("pinned soul is missing or invalid", { sessionID, soulID: pinnedID })
         snapshot.missingWarned = true
       }
     } else if (snapshot.id && !snapshot.missingWarned && !(yield* souls.get(snapshot.id))) {

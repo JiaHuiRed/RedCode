@@ -44,6 +44,8 @@ import { Effect, Layer, Option, Context, Schema, Semaphore, Types } from "effect
 import { NonNegativeInt, optionalOmitUndefined } from "@redcode-ai/core/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Soul } from "@/soul"
+import { MAX_SOUL_BYTES, type Info as SoulInfo } from "@/soul/schema"
+import { saveSoulVersion } from "./soul"
 
 const log = Log.create({ service: "session" })
 
@@ -86,6 +88,7 @@ export function fromRow(row: SessionRow): Info {
     agent: row.agent ?? undefined,
     client: row.client ?? undefined,
     soul: row.soul ?? undefined,
+    soulBodyHash: row.soul_body_hash ?? undefined,
     model: row.model
       ? {
           id: ModelID.make(row.model.id),
@@ -132,6 +135,7 @@ export function toRow(info: Info) {
     agent: info.agent,
     client: info.client,
     soul: info.soul,
+    soul_body_hash: info.soulBodyHash,
     model: info.model,
     version: info.version,
     share_url: info.share?.url,
@@ -246,6 +250,7 @@ export const Info = Schema.Struct({
   agent: optionalOmitUndefined(Schema.String),
   client: optionalOmitUndefined(Schema.String),
   soul: optionalOmitUndefined(Schema.String),
+  soulBodyHash: optionalOmitUndefined(Schema.String),
   model: optionalOmitUndefined(Model),
   version: Schema.String,
   time: Time,
@@ -648,6 +653,7 @@ export const layer: Layer.Layer<
       path?: string
       permission?: Permission.Ruleset
       soul?: string
+      soulBodyHash?: string
     }) {
       const ctx = yield* InstanceState.context
       const result: Info = {
@@ -663,6 +669,7 @@ export const layer: Layer.Layer<
         agent: input.agent,
         client: flags.client,
         soul: input.soul,
+        soulBodyHash: input.soulBodyHash,
         model: input.model,
         permission: input.permission ? [...input.permission] : undefined,
         cost: 0,
@@ -953,12 +960,22 @@ export const layer: Layer.Layer<
         : yield* Effect.gen(function* () {
             return yield* Soul.Service
           }).pipe(Effect.provide(Soul.defaultLayer))
-      // 261007 Red Validate at the owning boundary, including non-HTTP callers.
-      if (!parent && input?.soul !== undefined && !(yield* soulSvc.get(input.soul))) {
-        return yield* new InvalidSoul({ soul: input.soul, message: `Unknown or invalid soul: ${input.soul}` })
+      let soul = parent?.soul
+      let soulInfo: SoulInfo | undefined
+      if (!parent) {
+        const requested = input?.soul ?? (yield* soulSvc.defaultForClient(flags.client))
+        soulInfo = requested ? yield* soulSvc.get(requested) : undefined
+        if (!soulInfo && input?.soul !== undefined)
+          return yield* new InvalidSoul({ soul: input.soul, message: `Unknown or invalid soul: ${input.soul}` })
+        if (!soulInfo) {
+          const first = (yield* soulSvc.list())[0]
+          soulInfo = first ? yield* soulSvc.get(first.id) : undefined
+        }
+        soul = soulInfo?.id
       }
-      const soul =
-        parent !== undefined ? parent.soul : (input?.soul ?? (yield* resolveDefaultSoul(soulSvc, flags.client)))
+      const soulBodyHash =
+        parent?.soulBodyHash ??
+        (soulInfo && Buffer.byteLength(soulInfo.content, "utf8") <= MAX_SOUL_BYTES ? saveSoulVersion(soulInfo) : undefined)
       return yield* createNext({
         parentID: input?.parentID,
         directory: ctx.directory,
@@ -969,6 +986,7 @@ export const layer: Layer.Layer<
         permission: input?.permission,
         workspaceID: input?.workspaceID ?? workspace,
         soul,
+        soulBodyHash,
       })
     })
 
@@ -982,6 +1000,7 @@ export const layer: Layer.Layer<
         workspaceID: original.workspaceID,
         title,
         soul: original.soul,
+        soulBodyHash: original.soulBodyHash,
       })
       const msgs = yield* messages({ sessionID: input.sessionID })
       // 260814 Red 截断边界改 compareTime（ID 48 位编码 795 天回绕后字典序失真）。

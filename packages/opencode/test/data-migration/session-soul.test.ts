@@ -23,6 +23,9 @@ it.instance("backfills only unpinned historical sessions and inherits a pinned p
     const inherited = crypto.randomUUID() as SessionID
     const byClient = crypto.randomUUID() as SessionID
     const pinned = crypto.randomUUID() as SessionID
+    const pinnedChild = crypto.randomUUID() as SessionID
+    const differentChild = crypto.randomUUID() as SessionID
+    const missing = crypto.randomUUID() as SessionID
     yield* Effect.sync(() =>
       Database.use((db) => {
         db.insert(ProjectTable)
@@ -38,19 +41,6 @@ it.instance("backfills only unpinned historical sessions and inherits a pinned p
         db.insert(SessionTable)
           .values([
             {
-              id: parent,
-              project_id: project,
-              parent_id: null,
-              slug: parent,
-              directory: test.directory,
-              title: "pinned parent",
-              version: "test",
-              client: "desktop",
-              soul: "chi",
-              time_created: now,
-              time_updated: now,
-            },
-            {
               id: inherited,
               project_id: project,
               parent_id: parent,
@@ -60,7 +50,46 @@ it.instance("backfills only unpinned historical sessions and inherits a pinned p
               version: "test",
               client: "tui",
               time_created: now,
+              time_updated: now + 1,
+            },
+            {
+              id: parent,
+              project_id: project,
+              parent_id: null,
+              slug: parent,
+              directory: test.directory,
+              title: "pinned parent",
+              version: "test",
+              client: "desktop",
+              soul: "chi",
+              soul_body_hash: "pinned-parent-hash",
+              time_created: now,
               time_updated: now,
+            },
+            {
+              id: pinnedChild,
+              project_id: project,
+              parent_id: parent,
+              slug: pinnedChild,
+              directory: test.directory,
+              title: "already pinned child",
+              version: "test",
+              client: "tui",
+              soul: "chi",
+              time_created: now,
+              time_updated: now + 2,
+            },
+            {
+              id: differentChild,
+              project_id: project,
+              parent_id: parent,
+              slug: differentChild,
+              directory: test.directory,
+              title: "child pinned to another Soul",
+              version: "test",
+              soul: "yuqi",
+              time_created: now,
+              time_updated: now + 3,
             },
             {
               id: byClient,
@@ -85,20 +114,51 @@ it.instance("backfills only unpinned historical sessions and inherits a pinned p
               time_created: now,
               time_updated: now,
             },
+            {
+              id: missing,
+              project_id: project,
+              slug: missing,
+              directory: test.directory,
+              title: "missing source",
+              version: "test",
+              soul: "deleted-soul",
+              time_created: now,
+              time_updated: now,
+            },
           ])
           .run()
       }),
     )
+    const versions = new Map([
+      ["chi", "current-chi-hash"],
+      ["legacy-tui", "legacy-tui-hash"],
+      ["yuqi", "yuqi-hash"],
+    ])
     const result = yield* Effect.sync(() =>
-      Database.transaction((tx) => backfillSessionSoul(tx, { tui: "legacy-tui", desktop: "legacy-desktop" })),
+      Database.transaction((tx) => backfillSessionSoul(tx, { tui: "legacy-tui", desktop: "legacy-desktop" }, versions)),
     )
     const rows = Database.use((db) => db.select().from(SessionTable).all())
     const values = new Map(rows.map((row) => [row.id, row.soul]))
-    expect(result).toEqual({ assigned: 2, unresolved: 0 })
+    expect(result).toEqual({ assigned: 5, unresolved: 1 })
     expect(values.get(parent)).toBe("chi")
     expect(values.get(inherited)).toBe("chi")
     expect(values.get(byClient)).toBe("legacy-tui")
     expect(values.get(pinned)).toBe("yuqi")
+    expect(values.get(pinnedChild)).toBe("chi")
+    expect(values.get(differentChild)).toBe("yuqi")
+    expect(values.get(missing)).toBe("deleted-soul")
+    const hashes = new Map(rows.map((row) => [row.id, row.soul_body_hash]))
+    expect(hashes.get(parent)).toBe("pinned-parent-hash")
+    expect(hashes.get(inherited)).toBe("pinned-parent-hash")
+    expect(hashes.get(byClient)).toBe("legacy-tui-hash")
+    expect(hashes.get(pinned)).toBe("yuqi-hash")
+    expect(hashes.get(pinnedChild)).toBe("pinned-parent-hash")
+    expect(hashes.get(differentChild)).toBe("yuqi-hash")
+    expect(rows.find((row) => row.id === inherited)?.time_updated).toBe(now + 1)
+    expect(Database.transaction((tx) => backfillSessionSoul(tx, { tui: "legacy-tui" }, versions))).toEqual({
+      assigned: 0,
+      unresolved: 1,
+    })
   }),
 )
 
@@ -146,7 +206,9 @@ it.instance("uses migrated custom defaults for legacy sessions before DB backfil
           .run()
       }),
     )
-    const backfill = yield* Effect.sync(() => Database.transaction((tx) => backfillSessionSoul(tx, migrated.defaults)))
+    const backfill = yield* Effect.sync(() =>
+      Database.transaction((tx) => backfillSessionSoul(tx, migrated.defaults, new Map())),
+    )
     expect(backfill.assigned).toBe(1)
     expect(
       Database.use(

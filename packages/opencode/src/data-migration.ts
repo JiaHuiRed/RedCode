@@ -10,6 +10,8 @@ import type { SessionID } from "./session/schema"
 import { Global } from "@redcode-ai/core/global"
 import { migrateLegacySouls } from "@/soul/migration"
 import path from "node:path"
+import { Soul } from "@/soul"
+import { saveSoulVersion } from "./session/soul"
 
 export type Migration<R = never> = {
   name: string
@@ -114,6 +116,7 @@ export function backfillSessionCostCurrency(
 export function backfillSessionSoul(
   tx: TxOrDb,
   defaults: { tui?: string; desktop?: string },
+  versions: Map<string, string> = new Map(),
 ): { assigned: number; unresolved: number } {
   const rows = tx
     .select({
@@ -121,37 +124,64 @@ export function backfillSessionSoul(
       parent_id: SessionTable.parent_id,
       client: SessionTable.client,
       soul: SessionTable.soul,
+      soul_body_hash: SessionTable.soul_body_hash,
     })
     .from(SessionTable)
     .all()
   const byID = new Map(rows.map((row) => [row.id, row]))
   const resolved = new Map<SessionID, string>()
-  for (const row of rows) if (row.soul) resolved.set(row.id, row.soul)
-  const resolving = new Set<SessionID>()
-  const resolve = (id: SessionID): string | undefined => {
-    if (resolved.has(id)) return resolved.get(id)
-    const row = byID.get(id)
-    if (!row || resolving.has(id)) return undefined
-    resolving.add(id)
-    const parent = row.parent_id ? resolve(row.parent_id) : undefined
-    resolving.delete(id)
-    const soul =
-      parent ?? (row.client === "desktop" ? defaults.desktop : row.client === "tui" ? defaults.tui : undefined)
-    if (soul) resolved.set(id, soul)
-    return soul
+  const resolvedHash = new Map<SessionID, string>()
+  for (const row of rows) {
+    if (row.soul) resolved.set(row.id, row.soul)
+    if (row.soul_body_hash) resolvedHash.set(row.id, row.soul_body_hash)
   }
-  const pending = rows.filter((row) => !row.soul)
+  const resolving = new Set<SessionID>()
+  const resolve = (id: SessionID): { soul?: string; hash?: string } => {
+    const row = byID.get(id)
+    if (!row) return {}
+    if (resolved.has(id)) {
+      const soul = resolved.get(id)
+      const pinnedHash = resolvedHash.get(id)
+      if (pinnedHash || !soul) return { soul, hash: pinnedHash }
+      if (resolving.has(id)) return { soul }
+      resolving.add(id)
+      const parent = row.parent_id ? resolve(row.parent_id) : {}
+      resolving.delete(id)
+      const hash = (parent.soul === soul ? parent.hash : undefined) ?? versions.get(soul)
+      if (hash) resolvedHash.set(id, hash)
+      return { soul, hash }
+    }
+    if (resolving.has(id)) return {}
+    resolving.add(id)
+    const parent = row.parent_id ? resolve(row.parent_id) : {}
+    resolving.delete(id)
+    const soul = parent.soul ?? (row.client === "desktop" ? defaults.desktop : row.client === "tui" ? defaults.tui : undefined)
+    const hash = parent.hash ?? (soul ? versions.get(soul) : undefined)
+    if (soul) resolved.set(id, soul)
+    if (hash) resolvedHash.set(id, hash)
+    return { soul, hash }
+  }
+  const pending = rows.filter((row) => !row.soul || !row.soul_body_hash)
   let assigned = 0
   for (const row of pending) {
-    const soul = resolve(row.id)
-    if (!soul) continue
+    const result = resolve(row.id)
+    const soul = row.soul ?? result.soul
+    const hash = row.soul_body_hash ?? result.hash
+    if ((!result.soul || row.soul) && (!result.hash || row.soul_body_hash)) continue
     tx.update(SessionTable)
-      .set({ soul })
-      .where(and(eq(SessionTable.id, row.id), isNull(SessionTable.soul)))
+      .set({
+        soul,
+        soul_body_hash: hash,
+        time_updated: sql`${SessionTable.time_updated}`,
+      })
+      .where(eq(SessionTable.id, row.id))
       .run()
     assigned++
   }
-  return { assigned, unresolved: pending.length - assigned }
+  const unresolved = rows.filter(
+    (row) => !(row.soul ?? resolved.get(row.id)) || !(row.soul_body_hash ?? resolvedHash.get(row.id)),
+  ).length
+  return { assigned, unresolved }
 }
 
 export interface Interface {}
@@ -165,16 +195,40 @@ export const layer = Layer.effect(
     // config 声明的并集）——分桶的正确性是「写时刻定格」，回填只能按当前目录近似，
     // 无法命中的模型按 USD 并入桶并在汇总日志里计数，不静默。
     const provider = yield* Provider.Service
+    const soulSvc = yield* Soul.Service
+    const currentSoulVersions = Effect.fn("DataMigration.currentSoulVersions")(function* () {
+      const versions = new Map<string, string>()
+      for (const issue of yield* soulSvc.issues()) log.warn("soul unavailable during session backfill", issue)
+      for (const summary of yield* soulSvc.list()) {
+        const info = yield* soulSvc.get(summary.id)
+        if (!info) {
+          log.warn("soul missing during session backfill", { soulID: summary.id })
+          continue
+        }
+        const hash = yield* Effect.sync(() => saveSoulVersion(info))
+        if (hash) versions.set(summary.id, hash)
+      }
+      return versions
+    })
     const migrations: Migration[] = [
       {
         name: "session_soul_from_client",
-        run: Effect.sync(() => {
+        run: Effect.gen(function* () {
           const migration = migrateLegacySouls(path.join(Global.Path.home, ".redcode", "souls"))
           for (const issue of migration.issues) log.warn(issue)
+          const currentVersions = yield* currentSoulVersions()
           return Database.transaction((tx) => {
-            const result = backfillSessionSoul(tx, migration.defaults)
-            if (result.unresolved) log.warn("sessions without soul/client retained", { unresolved: result.unresolved })
+            const result = backfillSessionSoul(tx, migration.defaults, currentVersions)
+            if (result.unresolved) log.warn("sessions without pinned soul version retained", { unresolved: result.unresolved })
           })
+        }),
+      },
+      {
+        name: "session_soul_body_from_registry",
+        run: Effect.gen(function* () {
+          const versions = yield* currentSoulVersions()
+          const result = Database.transaction((tx) => backfillSessionSoul(tx, {}, versions))
+          if (result.unresolved) log.warn("sessions without soul body snapshot retained", { unresolved: result.unresolved })
         }),
       },
       {
@@ -379,6 +433,6 @@ export const layer = Layer.effect(
 )
 
 // 260930 Red Provider 依赖自供（本仓 defaultLayer 惯例：mergeAll 不做兄弟层消解）。
-export const defaultLayer = layer.pipe(Layer.provide(Provider.defaultLayer))
+export const defaultLayer = layer.pipe(Layer.provide(Layer.mergeAll(Provider.defaultLayer, Soul.defaultLayer)))
 
 export * as DataMigration from "./data-migration"

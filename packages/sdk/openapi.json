@@ -14503,6 +14503,9 @@
           "soul": {
             "type": "string"
           },
+          "soulBodyHash": {
+            "type": "string"
+          },
           "model": {
             "type": "object",
             "properties": {
@@ -16848,6 +16851,9 @@
             "type": "string"
           },
           "soul": {
+            "type": "string"
+          },
+          "soulBodyHash": {
             "type": "string"
           },
           "model": {
