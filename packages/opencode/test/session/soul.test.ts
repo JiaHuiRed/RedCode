@@ -46,6 +46,7 @@ function service(initial?: Info) {
   const souls: SoulService = {
     list: () => Effect.succeed([]),
     issues: () => Effect.succeed([]),
+    details: () => Effect.die(new Error("Session tests must not read GUI Soul details")),
     defaultForClient: () => Effect.succeed(defaultID),
     get: (id) => {
       return Effect.succeed(id === current?.id ? current : undefined)

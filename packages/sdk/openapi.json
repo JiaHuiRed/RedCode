@@ -8866,6 +8866,122 @@
         ]
       }
     },
+    "/soul/{id}": {
+      "get": {
+        "tags": ["soul"],
+        "operationId": "soul.get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Soul details including bounded content and metadata provenance",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "displayName": {
+                      "type": "string"
+                    },
+                    "commitPrefix": {
+                      "type": "string"
+                    },
+                    "avatar": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "content": {
+                      "type": "string"
+                    },
+                    "sources": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "enum": ["frontmatter", "fallback", "absent"]
+                        },
+                        "name": {
+                          "type": "string",
+                          "enum": ["frontmatter", "fallback", "absent"]
+                        },
+                        "displayName": {
+                          "type": "string",
+                          "enum": ["frontmatter", "fallback", "absent"]
+                        },
+                        "commitPrefix": {
+                          "type": "string",
+                          "enum": ["frontmatter", "fallback", "absent"]
+                        },
+                        "avatar": {
+                          "type": "string",
+                          "enum": ["frontmatter", "fallback", "absent"]
+                        },
+                        "description": {
+                          "type": "string",
+                          "enum": ["frontmatter", "fallback", "absent"]
+                        }
+                      },
+                      "required": ["id", "name", "displayName", "commitPrefix", "avatar", "description"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["id", "name", "displayName", "commitPrefix", "path", "content", "sources"],
+                  "additionalProperties": false,
+                  "description": "Soul details including bounded content and metadata provenance"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Get a registered Soul by ID, including content bounded by the registry file-size limit.",
+        "summary": "Get Soul details",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.soul.get({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/soul/issues": {
       "get": {
         "tags": ["soul"],

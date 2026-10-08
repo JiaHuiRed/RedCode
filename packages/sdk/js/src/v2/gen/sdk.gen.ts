@@ -231,6 +231,8 @@ import type {
   SessionUsageResponses,
   SoulDefaultErrors,
   SoulDefaultResponses,
+  SoulGetErrors,
+  SoulGetResponses,
   SoulIssuesErrors,
   SoulIssuesResponses,
   SoulListErrors,
@@ -4494,6 +4496,25 @@ export class Soul extends HeyApiClient {
     return (options?.client ?? this.client).get<SoulListResponses, SoulListErrors, ThrowOnError>({
       url: "/soul",
       ...options,
+    })
+  }
+
+  /**
+   * Get Soul details
+   *
+   * Get a registered Soul by ID, including content bounded by the registry file-size limit.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "id" }] }])
+    return (options?.client ?? this.client).get<SoulGetResponses, SoulGetErrors, ThrowOnError>({
+      url: "/soul/{id}",
+      ...options,
+      ...params,
     })
   }
 

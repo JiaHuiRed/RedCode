@@ -813,6 +813,42 @@ const scenarios: Scenario[] = [
       "Soul list must not return Soul content",
     )
   }),
+  http.protected
+    .get("/soul/{id}", "soul.get")
+    .seeded(() =>
+      Effect.promise(async () => {
+        const fs = await import("node:fs/promises")
+        const directory = path.join(exerciseConfigDirectory, "souls")
+        await fs.mkdir(directory, { recursive: true })
+        await Bun.write(
+          path.join(directory, "httpapi-soul.md"),
+          "---\nid: httpapi-soul\nname: HTTP API Soul\n---\n\n# HTTP API Soul\n\nBounded content\n",
+        )
+      }),
+    )
+    .at((ctx) => ({
+      path: route("/soul/{id}", { id: "httpapi-soul" }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(body.id === "httpapi-soul", "Soul details must resolve the registered id")
+      check(body.content === "# HTTP API Soul\n\nBounded content", "Soul details should return stripped bounded content")
+      check(isRecord(body.sources) && body.sources.id === "frontmatter", "Soul details should expose metadata provenance")
+    }),
+  http.protected
+    .get("/soul/{id}", "soul.get.unknown-id")
+    .at((ctx) => ({
+      path: route("/soul/{id}", { id: "httpapi-soul.md" }),
+      headers: ctx.headers(),
+    }))
+    .json(404, (body) => {
+      object(body)
+      check(
+        isRecord(body.data) && typeof body.data.message === "string" && body.data.message.includes("not found"),
+        "unknown Soul id should use API not-found error",
+      )
+    }, "status"),
   http.protected.get("/soul/issues", "soul.issues").json(200, (body) => array(body)),
   http.protected
     .get("/soul/default", "soul.default")

@@ -8083,6 +8083,54 @@ export type SoulListResponses = {
 
 export type SoulListResponse = SoulListResponses[keyof SoulListResponses]
 
+export type SoulGetData = {
+  body?: never
+  path: {
+    id: string
+  }
+  query?: never
+  url: "/soul/{id}"
+}
+
+export type SoulGetErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SoulGetError = SoulGetErrors[keyof SoulGetErrors]
+
+export type SoulGetResponses = {
+  /**
+   * Soul details including bounded content and metadata provenance
+   */
+  200: {
+    id: string
+    name: string
+    displayName: string
+    commitPrefix: string
+    avatar?: string
+    description?: string
+    path: string
+    content: string
+    sources: {
+      id: "frontmatter" | "fallback" | "absent"
+      name: "frontmatter" | "fallback" | "absent"
+      displayName: "frontmatter" | "fallback" | "absent"
+      commitPrefix: "frontmatter" | "fallback" | "absent"
+      avatar: "frontmatter" | "fallback" | "absent"
+      description: "frontmatter" | "fallback" | "absent"
+    }
+  }
+}
+
+export type SoulGetResponse = SoulGetResponses[keyof SoulGetResponses]
+
 export type SoulIssuesData = {
   body?: never
   path?: never

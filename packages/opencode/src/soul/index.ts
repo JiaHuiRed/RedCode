@@ -16,6 +16,8 @@ import {
   type Info,
   type Issue,
   type Summary,
+  type Details,
+  type MetadataSource,
 } from "./schema"
 import { readLegacyDefaults } from "./migration"
 
@@ -30,6 +32,7 @@ export interface Interface {
   readonly list: () => Effect.Effect<Summary[]>
   readonly issues: () => Effect.Effect<Issue[]>
   readonly get: (id: string) => Effect.Effect<Info | undefined>
+  readonly details: (id: string) => Effect.Effect<Details | undefined>
   readonly defaultForClient: (client: string) => Effect.Effect<string>
 }
 
@@ -56,6 +59,13 @@ export const layer = Layer.effect(
       return { ...found.summary, path: found.path, content: found.content }
     })
 
+    const details = Effect.fn("Soul.details")(function* (id: string) {
+      const dir = yield* directory
+      const found = scan(dir).items.find((item) => item.summary.id === id)
+      if (!found) return undefined
+      return { ...found.summary, path: found.path, content: found.content, sources: found.sources }
+    })
+
     const defaultForClient = Effect.fn("Soul.defaultForClient")(function* (client: string) {
       // 迁移期默认映射（设计 §13）：只作「新会话缺省偏好」，不是身份推理。
       if (client !== "tui" && client !== "desktop") return ""
@@ -71,7 +81,7 @@ export const layer = Layer.effect(
       )
     })
 
-    return Service.of({ list, issues, get, defaultForClient })
+    return Service.of({ list, issues, get, details, defaultForClient })
   }),
 )
 
@@ -79,7 +89,7 @@ export const defaultLayer = layer
 
 // --- helpers：主流程在 layer 里，扫描细节都放这里 ---
 
-type Scanned = { summary: Summary; path: string; content: string }
+type Scanned = { summary: Summary; path: string; content: string; sources: Details["sources"] }
 
 function readSafe(file: string): string | undefined {
   try {
@@ -191,21 +201,36 @@ function scan(dir: string): { items: Scanned[]; issues: Issue[] } {
       issues.push({ path: file, message: `invalid id "${parsed.data.id}"` })
       continue
     }
-    const summary = isMetadata(parsed.data)
+    const metadata = isMetadata(parsed.data) ? parsed.data : undefined
+    const summary = metadata
       ? {
-          id: parsed.data.id,
-          name: parsed.data.name,
-          displayName: parsed.data.display_name ?? parsed.data.name,
-          commitPrefix: parsed.data.commit_prefix ?? parsed.data.display_name ?? parsed.data.name,
-          avatar: parsed.data.avatar,
-          ...(parsed.data.description ? { description: parsed.data.description.trim() } : {}),
+          id: metadata.id,
+          name: metadata.name,
+          displayName: metadata.display_name ?? metadata.name,
+          commitPrefix: metadata.commit_prefix ?? metadata.display_name ?? metadata.name,
+          avatar: metadata.avatar,
+          ...(metadata.description ? { description: metadata.description.trim() } : {}),
         }
       : legacySummary(file, parsed.content)
     if (!summary) {
       issues.push({ path: file, message: "invalid frontmatter: missing id" })
       continue
     }
-    items.push({ summary, path: file, content: parsed.content.trim() })
+    const frontmatter = (present: boolean): MetadataSource =>
+      metadata ? (present ? "frontmatter" : "fallback") : "fallback"
+    items.push({
+      summary,
+      path: file,
+      content: parsed.content.trim(),
+      sources: {
+        id: frontmatter(!!metadata),
+        name: frontmatter(!!metadata),
+        displayName: frontmatter(!!metadata?.display_name),
+        commitPrefix: frontmatter(!!metadata?.commit_prefix),
+        avatar: metadata?.avatar ? "frontmatter" : "absent",
+        description: metadata?.description ? "frontmatter" : "absent",
+      },
+    })
   }
 
   const marker = readLegacyDefaults(dir)

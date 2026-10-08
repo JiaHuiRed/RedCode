@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { ApiNotFoundError } from "../errors"
 import { Authorization } from "../middleware/authorization"
 import { described } from "./metadata"
 
@@ -17,6 +18,20 @@ const Issue = Schema.Struct({
   message: Schema.String,
 })
 
+const Details = Schema.Struct({
+  ...Summary.fields,
+  path: Schema.String,
+  content: Schema.String,
+  sources: Schema.Struct({
+    id: Schema.Literals(["frontmatter", "fallback", "absent"]),
+    name: Schema.Literals(["frontmatter", "fallback", "absent"]),
+    displayName: Schema.Literals(["frontmatter", "fallback", "absent"]),
+    commitPrefix: Schema.Literals(["frontmatter", "fallback", "absent"]),
+    avatar: Schema.Literals(["frontmatter", "fallback", "absent"]),
+    description: Schema.Literals(["frontmatter", "fallback", "absent"]),
+  }),
+})
+
 export const SoulApi = HttpApi.make("soul").add(
   HttpApiGroup.make("soul")
     .add(
@@ -27,6 +42,17 @@ export const SoulApi = HttpApi.make("soul").add(
           identifier: "soul.list",
           summary: "List available Souls",
           description: "List available Soul identity summaries without returning Soul content.",
+        }),
+      ),
+      HttpApiEndpoint.get("get", "/soul/:id", {
+        params: { id: Schema.String },
+        success: described(Details, "Soul details including bounded content and metadata provenance"),
+        error: ApiNotFoundError,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "soul.get",
+          summary: "Get Soul details",
+          description: "Get a registered Soul by ID, including content bounded by the registry file-size limit.",
         }),
       ),
       HttpApiEndpoint.get("issues", "/soul/issues", {

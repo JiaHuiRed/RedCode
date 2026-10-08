@@ -27,6 +27,19 @@ export type Info = Summary & {
   content: string
 }
 
+export type MetadataSource = "frontmatter" | "fallback" | "absent"
+
+export type Details = Info & {
+  sources: {
+    id: MetadataSource
+    name: MetadataSource
+    displayName: MetadataSource
+    commitPrefix: MetadataSource
+    avatar: MetadataSource
+    description: MetadataSource
+  }
+}
+
 // 坏 Soul 不崩整个 Registry：valid 正常列出，invalid 作为 issue 返回（设计 §39）。
 export type Issue = {
   path: string

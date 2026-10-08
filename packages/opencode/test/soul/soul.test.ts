@@ -447,6 +447,48 @@ describe("soul registry", () => {
     }),
   )
 
+  it.instance("details report frontmatter and legacy fallback provenance", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      yield* write(
+        path.join(dir, "helper.md"),
+        official("id: helper\nname: Helper\ndisplay_name: UI Helper\ncommit_prefix: HelperTag\ndescription: Details"),
+      )
+      yield* write(path.join(dir, "sparse.md"), official("id: sparse\nname: Sparse"))
+      yield* write(path.join(dir, "Legacy.md"), "# Legacy Name · note\n\nlegacy body\n")
+
+      const soul = yield* Soul.Service
+      const officialDetails = yield* soul.details("helper").pipe(Effect.provideService(Soul.directory, dir))
+      expect(officialDetails?.sources).toEqual({
+        id: "frontmatter",
+        name: "frontmatter",
+        displayName: "frontmatter",
+        commitPrefix: "frontmatter",
+        avatar: "absent",
+        description: "frontmatter",
+      })
+      const sparseDetails = yield* soul.details("sparse").pipe(Effect.provideService(Soul.directory, dir))
+      expect(sparseDetails?.sources).toEqual({
+        id: "frontmatter",
+        name: "frontmatter",
+        displayName: "fallback",
+        commitPrefix: "fallback",
+        avatar: "absent",
+        description: "absent",
+      })
+      const legacyDetails = yield* soul.details("legacy").pipe(Effect.provideService(Soul.directory, dir))
+      expect(legacyDetails?.sources).toEqual({
+        id: "fallback",
+        name: "fallback",
+        displayName: "fallback",
+        commitPrefix: "fallback",
+        avatar: "absent",
+        description: "absent",
+      })
+    }),
+  )
+
   it.effect("defaultForClient maps tui to karina and desktop to yuqi", () =>
     Effect.gen(function* () {
       const soul = yield* Soul.Service
