@@ -8,6 +8,10 @@
 
 ---
 
+### [Unreleased]
+
+- **GUI Soul 管理与独立聊天头像**：个性化设置增加默认卡、可搜索阵容、默认/当前会话双状态、按需只读详情、字段来源与注册表诊断；新增只读 `GET /soul/{id}` 并同步 SDK/OpenAPI。聊天头像按会话固定的 Soul ID 查找本地媒体，每个自定义 Soul 可独立上传/移除图片，不预设人物，也不把全局助手头像借给缺失的已绑定 Soul。上传前检查格式、体积与尺寸，统一裁切重编码为有界 PNG；不写 Soul 文件、不修改会话身份。无 Soul 的旧会话保留原全局头像。实现边界与验收记录：`docs/notes/implemented/architecture/2026-10-07-soul-system-v2.md`。
+
 ### [0.12.3] - 2026-10-08
 
 - **/soul 升级为注册 slash 命令：补全行回车直开弹窗，删除弃用 persona 命令**（`packages/opencode/src/cli/cmd/tui/{component/prompt/index.tsx,component/prompt/autocomplete.tsx,soul.ts}` + 删除 `seed/command/{tui,gui}-persona.md`）：/soul 原先在补全列表里只往输入框插文本，要再按一次 Enter 才出选择器，与 /mcps 等注册命令的体验不一致；现注册为 `prompt.soul` 命令（同 `prompt.skills` 模板），补全行回车经 `dispatchCommand` 直开 DialogSoul。手输 `/soul <id>` 直接选择的路径不变。弃用的 /tui-persona、/gui-persona 命令文件从 seed 与 home 同撤（其文案本就是同步进去的 markdown 命令，非引擎内建），解析器不再接受别名。需重启 dev TUI 生效。测试：TUI 三文件 13 pass / 0 fail，含新场景「prompt.soul 命令直开选择器」。模型可见四问：① 补全列表少两个弃用条目、/soul 行为变为直开弹窗；② token 零增量；③ 不动任何注入段，前缀缓存不受影响；④ 无新增注入项。

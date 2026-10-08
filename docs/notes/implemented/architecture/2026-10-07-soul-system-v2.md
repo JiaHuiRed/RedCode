@@ -45,7 +45,7 @@ TUI/GUI 是客户端类型，柳智敏/宋雨琦/赤 是身份——两者不在
 
 ## 接力边界
 
-- **正文冻结已落地**：`soul_version` 内容寻址版本表 + `session.soul_body_hash` 已实现并验证（机制与决策见下方「持久版本决策」）；官方迁移文件已生成，仅隔离库验证，未在 live home/DB 执行。旧行回填只能按迁移时点可见文件近似，不宣称恢复历史原貌。
+- **正文冻结已落地**：`soul_version` 内容寻址版本表 + `session.soul_body_hash` 已实现并验证（机制与决策见下方「持久版本决策」）；官方迁移文件已生成并**已在 live home/DB 执行**（261008：`session_soul_from_client` 与 `session_soul_body_from_registry` 完成，262 个绑 Soul 会话 100% 有冻结版本）。旧行回填只能按迁移时点可见文件近似，不宣称恢复历史原貌。同日部署四人格精简修订包（karina/yuqi/wonyoung 正文精简 + 新增 zhiwei），旧版本已备份 `souls/archive/`；替换文件只影响新会话，已有会话冷读继续走冻结版本，doctor 确认 4 valid / 0 issue。
 - **验收仍需补齐**：live 模型人格回复、Electron 打包验收；没有重启现有 GUI/sidecar。浏览器 smoke 依赖 mock API 与桌面标题栏挂载点，不能等同 Electron 打包验收。本地 provider 出站体断言通过 `test/session/prompt.test.ts --test-name-pattern 'actual provider request'` 复验，使用相同的 `REDCODE_SOUL_ACCEPTANCE_FILE`。独立复核已完成：外部报告的两项迁移疑点（已 pin 根无 hash、子会话异 Soul 继承）经反例测试证伪为不可达，实现无误；复核期间另以失败测试暴露并修复一个真实边界——缓存回收后调用方省略 Soul ID 时冷读会误判未绑定，现冷读以持久会话归属为准。
 - **本批验证结果**：核心定向八文件（后端 5 + TUI 3）34 pass / 0 fail / 197 expects；修复后元英出站体 1 pass / 4 expects；核心 typecheck 与 SDK typecheck EXIT 0，SDK/OpenAPI 由官方生成器产出（新增只读 `soulBodyHash`）；版本一致性通过。未跑全量套件，也未进行 Electron 打包验收。
 - **测试入口**：核心定向文件为 `test/soul/{soul,acceptance}.test.ts`、`test/data-migration/session-soul.test.ts`、`test/session/{session,soul,soul-restart,instruction,prompt-caches}.test.ts`、`test/cli/{doctor,cmd/tui/soul}.test.ts`、`test/cli/tui/{dialog-soul,prompt-soul-submit}.test.tsx`；其中 `soul-restart.test.ts` 借 `test/fixture/soul-restart.ts` 探针验证真实跨进程冻结（三个真子进程），`prompt-soul-submit.test.tsx` 挂真实 Prompt/keymap 验证 `/soul` 入口不被提交清理。均从 `packages/opencode` 跑，路径过滤加 `--timeout 30000`。实际 MD 可通过 `REDCODE_SOUL_ACCEPTANCE_FILE` 指定；默认通用夹具不依赖本机附件。GUI 从 `packages/app` 分别跑 submit/i18n parity，带 `--preload ./happydom.ts`。HTTP exerciser 的 Soul 六场景通过，usage/outline 两个既有 missing 非本次范围。
@@ -62,3 +62,16 @@ TUI/GUI 是客户端类型，柳智敏/宋雨琦/赤 是身份——两者不在
 - 不引入版本热切、Registry 正文缓存或自动删除共享版本的机制。本批只生成迁移文件并验证隔离库，不在运行中的 home 数据库执行迁移。
 
 模型可见四问：① 正常路径仍使用原 `render()` 包装，仅正文及身份标签的来源改为固定版本；② 不增加固定前缀段，正文未改时 token 增量为零；③ 正常请求的段落顺序与字节不变，文件编辑不再让旧会话的冷读前缀漂移，旧行回填只能保证迁移之后的稳定；④ 继续使用正文 16 KiB、标签各 256 UTF-8 字节及完整注入 17,462 字节的上限，最终 system 仍走现有持久请求日志链。数据库版本引用不注入模型。
+
+## GUI V1A：管理与会话头像
+
+- 个性化页展示默认 Soul、可搜索阵容、当前会话绑定标记、按需只读详情、字段来源与结构化 issues。详情经只读 `GET /soul/{id}` 按 Registry ID 查询；未知 ID 返回声明的 404，不将 ID 拼接成文件路径。正文沿用 Registry 的 16 KiB 上限，来源分为 `frontmatter`、`fallback`、`absent`。
+- 设置默认仍只更新本机 `desktop.lastSoul`；不添加会话热切、创建/编辑/删除 Soul 文件的写 API。当前会话标记来自路由对应 Session，而非默认偏好。
+- 人格没有产品预设：任意合法 Soul ID 均可独立选择本地头像，存在既有 `RedCode.media.dat` 的 `soulAvatars` 映射，不猜测原全局图片属于谁、不改用户 MD。元数据 `avatar` 只可作为受控本地媒体逻辑 key，未知 URL/路径不直接加载。
+- 聊天完成态与等待态均读取会话绑定 ID；缺失 Registry 条目仍保留 ID 与本地图，否则回退身份文字，不借用另一个人格的全局头像。确实无 Soul 的旧会话保留原全局头像。头像是可更新的本机表现层，同 ID 的旧会话会同步换图；不将头像纳入正文版本、数据库迁移或模型输入。
+- 输入限制：PNG/JPEG/WebP，文件最大 5 MiB、单边 4096 px、1600 万像素，真实头部检查先于浏览器解码；解码后复核尺寸，允许 EXIF 方向交换宽高。居中裁为 256×256 PNG，完整 data URL 最大 256 KiB，坏图保留旧图并显示错误，解码资源在完成后释放。
+- 浏览器验收中发现并修复两个真实缺陷：`readSoulAvatar` 只在键存在时读取，Solid 对新增键不建订阅，第二个 Soul 上传后已有消费者不更新（修为无条件读取键再判存在）；`lastSoul` 原为初始化期 memo，切换默认后发起的新会话仍可能拿到旧值（修为按调用时读取，会话 pin 语义不变）。
+- 定向验证：app typecheck、头像解析/选择/媒体迁移/i18n 四文件 24 pass；核心 Registry 30 pass、Session Soul 9 pass，核心与 SDK typecheck 通过；Soul HTTP exerciser 7 pass。
+- 浏览器验收（真实 app 源码 + 隔离 fixture，见 `.redcode/temp/soul-gui-fixture.ts`，不触 live home/DB/源 MD/照片，无模型调用）：默认卡/可搜索阵容/详情 sources/路径复制/正文预览、默认与会话双徽章、切换默认即时生效且当前会话不变；头像上传 PNG/WebP 成功、坏图拒绝且保留旧图、移除后时间线同 ID 同步换图；issues 结构化列表、空列表引导、registry 500 与详情 404 均可重试恢复；800px 窄窗口无横向溢出；页面错误监听为空（一次 ResizeObserver loop 提示，复载未复现，不判缺陷）。Electron 打包与 live 模型人格回复仍不在本批范围。
+
+本批模型可见四问：① 没有改人格正文、提示词包装、工具 schema 或工具输出；只增加 GUI 只读 HTTP 数据与本地媒体。② 固定前缀 token 增量为零。③ 模型前缀逐字节不变，无 KV cache 失效。④ 没有新增模型注入项，原人格预算与持久日志链不变。

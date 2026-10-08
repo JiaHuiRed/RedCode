@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { spawnSync } from "node:child_process"
 import { planMediaMigration, type SettingsMedia } from "./settings"
 
 // 260904 cc 头像与壁纸从 settings.v3 搬进自己的存储文件（Persist.media）。
@@ -67,4 +68,39 @@ describe("planMediaMigration", () => {
     expect(plan.write).toEqual([["userAvatar", "data:b"]])
     expect(plan.clear).toEqual(["chatBackground", "userAvatar"])
   })
+
+  test("keeps Soul avatars separate from legacy assistant media migration", () => {
+    const media = { ...empty, soulAvatars: { author: "data:image/png;base64,soul" } }
+    expect(planMediaMigration({ legacy: { assistantAvatar: "data:global" }, media }).write).toEqual([
+      ["assistantAvatar", "data:global"],
+    ])
+    expect(media.soulAvatars).toEqual({ author: "data:image/png;base64,soul" })
+  })
+})
+
+test("adding a second Soul avatar updates an existing reactive lookup", () => {
+  // 261008 Red 默认 Bun 条件解析到 Solid SSR；客户端订阅在独立 browser 条件进程验，避免污染套件模块表。
+  const result = spawnSync(process.execPath, ["--conditions=browser", "--eval", `
+    import { createMemo, createRoot } from "solid-js";
+    import { createStore } from "solid-js/store";
+    import { readSoulAvatar } from "./src/context/settings.tsx";
+    createRoot((dispose) => {
+      const [media, setMedia] = createStore({ soulAvatars: { author: "first" } });
+      const editor = createMemo(() => readSoulAvatar(media, "editor"));
+      const values = [editor()];
+      setMedia("soulAvatars", { ...media.soulAvatars, editor: "second" });
+      values.push(editor());
+      setMedia("soulAvatars", { ...media.soulAvatars, editor: "" });
+      values.push(editor(), readSoulAvatar(media, "constructor"));
+      console.log(JSON.stringify(values));
+      dispose();
+    });
+  `], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    timeout: 10000,
+  })
+  expect(result.stderr).toBe("")
+  expect(result.status).toBe(0)
+  expect(JSON.parse(result.stdout)).toEqual(["", "second", "", ""])
 })

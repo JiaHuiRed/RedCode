@@ -78,6 +78,8 @@ export interface SettingsMedia {
   homeBackground: string
   userAvatar: string
   assistantAvatar: string
+  // 261008 Red Soul 头像独立按稳定 ID 保存；不把旧全局助手图猜配给任何人格。
+  soulAvatars?: Record<string, string>
 }
 
 const defaultMedia: SettingsMedia = {
@@ -87,7 +89,14 @@ const defaultMedia: SettingsMedia = {
   assistantAvatar: "",
 }
 
+export function readSoulAvatar(media: Pick<SettingsMedia, "soulAvatars">, id: string | undefined) {
+  // 261008 Red 即使键不存在也要读取它以建立 Solid 订阅，Object.hasOwn 本身不追踪新增键。
+  const image = id ? media.soulAvatars?.[id] : undefined
+  return id && Object.hasOwn(media.soulAvatars ?? {}, id) ? image ?? "" : ""
+}
+
 const MEDIA_KEYS = ["chatBackground", "homeBackground", "userAvatar", "assistantAvatar"] as const
+type LegacyMediaKey = (typeof MEDIA_KEYS)[number]
 
 /**
  * 存量搬家的决策：给定旧 `settings.v3` 里那四个字段的现值与 media store 的现状，
@@ -99,11 +108,11 @@ const MEDIA_KEYS = ["chatBackground", "homeBackground", "userAvatar", "assistant
  *   · 只要旧字段有值就**一定清**（不管有没有写）——不清等于留两份，`default.dat` 不会瘦
  */
 export function planMediaMigration(input: {
-  legacy: Partial<Record<keyof SettingsMedia, string | undefined>>
+  legacy: Partial<Record<LegacyMediaKey, string | undefined>>
   media: SettingsMedia
 }) {
-  const write: Array<[keyof SettingsMedia, string]> = []
-  const clear: Array<keyof SettingsMedia> = []
+  const write: Array<[LegacyMediaKey, string]> = []
+  const clear: Array<LegacyMediaKey> = []
   for (const key of MEDIA_KEYS) {
     const value = input.legacy[key]
     if (!value) continue
@@ -238,7 +247,7 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
     )
 
     // 存量搬家，两个 store 都就绪后跑一次。决策在 planMediaMigration 里（有单测）。
-    const clearLegacy: Record<keyof SettingsMedia, () => void> = {
+    const clearLegacy: Record<LegacyMediaKey, () => void> = {
       chatBackground: () => setStore("appearance", "chatBackground", ""),
       homeBackground: () => setStore("appearance", "homeBackground", ""),
       userAvatar: () => setStore("userProfile", "avatar", ""),
@@ -466,9 +475,20 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         },
       },
       personalization: {
-        lastSoul: withFallback(() => store.personalization?.lastSoul, defaultSettings.personalization.lastSoul),
+        // 261008 Red 按调用时读取默认人格，避免初始化期 memo 缓存使新会话沿用旧选择。
+        lastSoul: () => store.personalization?.lastSoul ?? "",
         setLastSoul(value: string) {
           setStore("personalization", "lastSoul", value)
+        },
+        soulAvatar(id: string | undefined) {
+          return readSoulAvatar(media, id)
+        },
+        setSoulAvatar(id: string, value: string) {
+          if (!/^[a-z0-9][a-z0-9_-]*$/.test(id) || ["__proto__", "constructor", "prototype"].includes(id))
+            throw new Error("Invalid Soul avatar ID")
+          if (value && (!/^data:image\/png;base64,[A-Za-z0-9+/]+=*$/.test(value) || value.length > 256 * 1024))
+            throw new Error("Invalid Soul avatar image")
+          setMedia("soulAvatars", { ...media.soulAvatars, [id]: value })
         },
       },
     }

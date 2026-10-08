@@ -44,7 +44,7 @@ Reads code, writes code, fixes bugs, runs commands.
 | **Providers**          | Any OpenAI / Anthropic-compatible endpoint — cloud coding plans, self-hosted APIs, or local models (Ollama); assignable per role                                                    |
 | **Context**            | Prefix cache freshness · automatic compaction · context usage visualization                                                                                                         |
 | **Organization**       | Session management · goal tracking · two-layer memory (workspace progress & lessons, cross-project experience) · Skill system                                                       |
-| **Agents**             | Two subagents (explore — read-only research · execute — read/write implementation) · Soul identities pinned per session, selectable in either client; add a file to add an identity |
+| **Agents**             | Two subagents (explore — read-only research · execute — read/write implementation) · Soul identities pinned per session, selectable in either client; add a file to add an identity. GUI details and separate local avatars per Soul |
 | **Safety**             | Permission gating and guard rails — three postures below                                                                                                                            |
 
 ### Three permission postures

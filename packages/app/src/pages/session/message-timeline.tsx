@@ -16,10 +16,11 @@ import {
 import { createStore, produce } from "solid-js/store"
 import { Dynamic, Portal } from "solid-js/web"
 import { useNavigate } from "@solidjs/router"
-import { useMutation } from "@tanstack/solid-query"
+import { useMutation, useQuery } from "@tanstack/solid-query"
 import { Virtualizer, type VirtualizerHandle } from "virtua/solid"
 import { Accordion } from "@redcode-ai/ui/accordion"
-import { Avatar } from "@redcode-ai/ui/avatar"
+import { SoulAvatar } from "@/components/soul-avatar"
+import { useGlobalSDK } from "@/context/global-sdk"
 import { Button } from "@redcode-ai/ui/button"
 import { Card } from "@redcode-ai/ui/card"
 import {
@@ -335,6 +336,11 @@ export function MessageTimeline(props: {
   const sdk = useSDK()
   const sync = useSync()
   const settings = useSettings()
+  const globalSDK = useGlobalSDK()
+  const soulList = useQuery(() => ({
+    queryKey: ["soul", globalSDK.url, "list"],
+    queryFn: async () => (await globalSDK.client.soul.list({ throwOnError: true })).data,
+  }))
   const dialog = useDialog()
   const language = useLanguage()
   const { params, sessionKey } = useSessionKey()
@@ -1605,12 +1611,11 @@ export function MessageTimeline(props: {
               </Show>
               <div data-slot="session-turn-assistant-row">
                 <div data-slot="session-turn-assistant-avatar">
-                  <Avatar
-                    fallback="R"
-                    src={settings.assistantProfile.avatar() || undefined}
+                  <SoulAvatar
+                    id={info()?.soul}
+                    soul={soulList.data?.find((soul) => soul.id === info()?.soul)}
+                    unbound={!!info() && !info()?.soul}
                     size="medium"
-                    background="var(--syntax-keyword)"
-                    foreground="var(--text-on-accent)"
                   />
                 </div>
                 <div
@@ -1653,12 +1658,11 @@ export function MessageTimeline(props: {
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
               <div data-slot="session-turn-assistant-row">
                 <div data-slot="session-turn-assistant-avatar">
-                  <Avatar
-                    fallback="R"
-                    src={settings.assistantProfile.avatar() || undefined}
+                  <SoulAvatar
+                    id={info()?.soul}
+                    soul={soulList.data?.find((soul) => soul.id === info()?.soul)}
+                    unbound={!!info() && !info()?.soul}
                     size="medium"
-                    background="var(--syntax-keyword)"
-                    foreground="var(--text-on-accent)"
                   />
                 </div>
                 <div data-slot="session-turn-assistant-content">
