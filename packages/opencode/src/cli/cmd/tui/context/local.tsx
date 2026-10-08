@@ -125,7 +125,9 @@ export const {
     })
     createEffect(() => setDisplayName("user", sync.data.config.username || "User"))
 
-    const [souls, setSouls] = createStore<{ id: string; name: string; displayName?: string }[]>([])
+    const [souls, setSouls] = createStore<
+      { id: string; name: string; displayName?: string; description?: string }[]
+    >([])
     const [serverDefault, setServerDefault] = createStore<{ id?: string }>({})
     const [soulState, setSoulState] = createStore({ ready: false })
     function refreshSouls() {

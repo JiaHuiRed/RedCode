@@ -7,6 +7,7 @@ export type Metadata = {
   displayName?: string
   commitPrefix?: string
   avatar?: string
+  description?: string
 }
 
 // UI/客户端消费的轻量摘要：不携带正文，避免每次把几 KB Soul 传给客户端（设计 §9）。
@@ -16,7 +17,10 @@ export type Summary = {
   displayName: string
   commitPrefix: string
   avatar?: string
+  description?: string
 }
+
+export const MAX_SOUL_DESCRIPTION_BYTES = 256
 
 export type Info = Summary & {
   path: string

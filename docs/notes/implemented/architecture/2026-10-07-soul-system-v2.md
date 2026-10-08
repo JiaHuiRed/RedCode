@@ -18,7 +18,7 @@ TUI/GUI 是客户端类型，柳智敏/宋雨琦/赤 是身份——两者不在
 
 实现进度（随各 phase 同 commit 更新）：
 
-- **Phase 1（已落地）**：`src/soul/` Registry——发现 `~/.redcode/souls/*.md`、解析 frontmatter（`id`/`name`/`display_name`/`commit_prefix`/`avatar`）、stable filename sort；坏文件记 issue 不崩整个 Registry（invalid id / duplicate id / 超 16 KiB / 空正文）；无 frontmatter 旧文件按「文件名 id + 首标题名」兼容，不猜测身份归属；`defaultForClient` 迁移期映射 tui→karina / desktop→yuqi（只作缺省偏好，不是推理）。
+- **Phase 1（已落地）**：`src/soul/` Registry——发现 `~/.redcode/souls/*.md`、解析 frontmatter（`id`/`name`/`display_name`/`commit_prefix`/`avatar`/可选 `description`）、stable filename sort；description 最多 256 UTF-8 字节，仅供选择器展示/搜索，不进人格正文或模型上下文；坏文件记 issue 不崩整个 Registry（invalid id / duplicate id / 超 16 KiB / 空正文 / 无效或超限 description）；无 frontmatter 旧文件按「文件名 id + 首标题名」兼容，不猜测身份归属；`defaultForClient` 迁移期映射 tui→karina / desktop→yuqi（只作缺省偏好，不是推理）。
 - **Phase 2–6（实现与定向验证完成）**：Session 的 Info/CreateInput/DB/plugin 事件贯通；root 显式 ID 在服务边界校验，fork/child 继承存储 pin（包括来源已删除的 ID）；GET `/soul` 仅返回 summaries，另有 issues/default 端点，SDK/OpenAPI 两份均重生成。TUI `/soul` 与 GUI 个性化设置仅改未来默认；两端显式解析各自客户端默认并传创建请求，不能把共享服务端的客户端类型当来访客户端。旧文件独占复制、正文保留、冲突可见；历史回填保留已有 pin，优先继承 parent，未知 client 不猜。无旧文件时只在迁移边界恢复旧内嵌默认。
 - **Phase 7（部分验收，仍有接力项）**：用户提供的 `wonyoung` 原 MD 通过真实临时 Registry/Session/DB 测试，源文件不变，没有加入正式 seed。真实 app 源码浏览器冒烟通过：元英可选且偏好持久化，已有雨琦会话不变，新会话显示元英，pageErrors 为零。另以真实 SessionPrompt 走本地 provider HTTP fixture，捕获出站体并验证元英原正文、显示名与 `[Wonyoung]` 署名。浏览器 API 与模型回复使用隔离 fixture，不代表 live sidecar 或真实模型人格回复。子代理多次空返回/截断，不能算独立审查通过。
 
@@ -33,6 +33,7 @@ TUI/GUI 是客户端类型，柳智敏/宋雨琦/赤 是身份——两者不在
 
 - 身份缺失不静默切换：冷读时保留 pin + 有界 minimal no-soul fallback 加 warning；已有缓存正文时保留原快照并告警，禁止偷偷切 Karina/Yuqi。
 - commit 前缀来源为 `commitPrefix → displayName → name → AI`，永不 fallback 到 TUI/GUI。
+- TUI `/soul` 复用 DialogSelect 展示可选说明并可按名称/ID/说明搜索；旧文件无 description 时保留名称/ID fallback。摘要 API 与 SDK 可选透传该字段，但 prompt/session 注入不变。
 - 「加新 Soul 不改核心」是硬验收：Phase 7 加 chi.md 必须零核心改动，核心中禁止出现 `if soul === "chi"`。
 
 ## 模型可见改动四问

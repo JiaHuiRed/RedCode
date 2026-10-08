@@ -304,6 +304,7 @@ name: 赤
 display_name: 赤
 commit_prefix: Chi
 avatar: chi
+description: 擅长简洁分析与清晰解释
 ---
 
 # 赤
@@ -311,7 +312,7 @@ avatar: chi
 在这里写身份、语气与协作方式。
 ```
 
-`id` 是唯一、稳定的小写标识，只允许字母、数字、`-` 和 `_`，且首字符必须是字母或数字。`name` 必填；`display_name`、`commit_prefix`、`avatar` 可选，`avatar` 只是资源键。Soul 不配置模型、权限、MCP 或执行策略。
+`id` 是唯一、稳定的小写标识，只允许字母、数字、`-` 和 `_`，且首字符必须是字母或数字。`name` 必填；`display_name`、`commit_prefix`、`avatar`、`description` 可选，`avatar` 只是资源键，`description` 是用于 `/soul` 选择器展示与搜索的简短单行说明，最多 256 个 UTF-8 字节。未填写时继续显示名称或 ID。Soul 不配置模型、权限、MCP 或执行策略；description 不会注入模型提示词。
 
 每份文件上限 **16 KiB（UTF-8 字节）**，超限整份拒绝，不截断人格正文；无效文件或重复 ID 会显示问题，不影响其它有效 Soul。编辑文件不会热替换当前会话的快照，新会话才使用新正文。
 

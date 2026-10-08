@@ -1,14 +1,22 @@
 // 261007 Red Soul System V2：Soul Registry —— 发现并解析 ~/.redcode/souls/*.md。
 // "Soul is the sole source of truth for assistant identity"（设计 §56）：凡是回答
 // 「当前 AI 是谁」（注入正文 / 显示名 / commit 前缀）的地方都从这里取，禁止 client→身份推导。
-// 设计文档：docs/notes/implemented/architecture/2026-10-07-soul-system-v2-design.md。
+// 设计与实现记录：docs/notes/implemented/architecture/2026-10-07-soul-system-v2-design.md、
+// docs/notes/implemented/architecture/2026-10-07-soul-system-v2.md。
 import { Global } from "@redcode-ai/core/global"
 import { Context, Effect, Layer } from "effect"
 import fs from "node:fs"
 import path from "node:path"
 import matter from "gray-matter"
 import { ConfigMarkdown } from "@/config/markdown"
-import { ID_PATTERN, MAX_SOUL_BYTES, type Info, type Issue, type Summary } from "./schema"
+import {
+  ID_PATTERN,
+  MAX_SOUL_BYTES,
+  MAX_SOUL_DESCRIPTION_BYTES,
+  type Info,
+  type Issue,
+  type Summary,
+} from "./schema"
 import { readLegacyDefaults } from "./migration"
 
 export * from "./schema"
@@ -153,6 +161,22 @@ function scan(dir: string): { items: Scanned[]; issues: Issue[] } {
       issues.push({ path: file, message: "invalid or incomplete metadata" })
       continue
     }
+    const description =
+      typeof parsed.data === "object" && parsed.data !== null
+        ? (parsed.data as Record<string, unknown>).description
+        : undefined
+    if (
+      typeof description === "string" &&
+      (Buffer.byteLength(description.trim(), "utf8") > MAX_SOUL_DESCRIPTION_BYTES || /[\r\n]/.test(description.trim()))
+    ) {
+      issues.push({
+        path: file,
+        message: /[\r\n]/.test(description.trim())
+          ? "description must be a single line"
+          : `description exceeds ${MAX_SOUL_DESCRIPTION_BYTES} UTF-8 bytes`,
+      })
+      continue
+    }
     if (parsed.content.trim() === "") {
       issues.push({ path: file, message: "empty content" })
       continue
@@ -174,6 +198,7 @@ function scan(dir: string): { items: Scanned[]; issues: Issue[] } {
           displayName: parsed.data.display_name ?? parsed.data.name,
           commitPrefix: parsed.data.commit_prefix ?? parsed.data.display_name ?? parsed.data.name,
           avatar: parsed.data.avatar,
+          ...(parsed.data.description ? { description: parsed.data.description.trim() } : {}),
         }
       : legacySummary(file, parsed.content)
     if (!summary) {
@@ -227,16 +252,23 @@ function isMetadata(data: unknown): data is {
   display_name?: string
   commit_prefix?: string
   avatar?: string
+  description?: string
 } {
   if (typeof data !== "object" || data === null) return false
   const value = data as Record<string, unknown>
-  if (Object.keys(value).some((key) => !["id", "name", "display_name", "commit_prefix", "avatar"].includes(key)))
+  if (
+    Object.keys(value).some(
+      (key) => !["id", "name", "display_name", "commit_prefix", "avatar", "description"].includes(key),
+    )
+  )
+    return false
+  if (typeof value.description === "string" && /[\r\n]/.test(value.description.trim()))
     return false
   return (
     typeof value.id === "string" &&
     typeof value.name === "string" &&
     value.name.trim() !== "" &&
-    ["display_name", "commit_prefix", "avatar"].every(
+    ["display_name", "commit_prefix", "avatar", "description"].every(
       (key) => value[key] === undefined || (typeof value[key] === "string" && value[key].trim() !== ""),
     )
   )

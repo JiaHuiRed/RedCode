@@ -9,6 +9,7 @@ const Summary = Schema.Struct({
   displayName: Schema.String,
   commitPrefix: Schema.String,
   avatar: Schema.optional(Schema.String),
+  description: Schema.optional(Schema.String),
 })
 
 const Issue = Schema.Struct({

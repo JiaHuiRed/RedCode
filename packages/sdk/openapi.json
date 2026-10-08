@@ -8832,6 +8832,9 @@
                       },
                       "avatar": {
                         "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
                       }
                     },
                     "required": ["id", "name", "displayName", "commitPrefix"],

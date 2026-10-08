@@ -8075,6 +8075,7 @@ export type SoulListResponses = {
     displayName: string
     commitPrefix: string
     avatar?: string
+    description?: string
   }>
 }
 

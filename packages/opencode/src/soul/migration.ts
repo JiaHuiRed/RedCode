@@ -3,7 +3,7 @@ import path from "node:path"
 import { randomUUID } from "node:crypto"
 import matter from "gray-matter"
 import { ConfigMarkdown } from "@/config/markdown"
-import { ID_PATTERN, MAX_SOUL_BYTES } from "./schema"
+import { ID_PATTERN, MAX_SOUL_BYTES, MAX_SOUL_DESCRIPTION_BYTES } from "./schema"
 
 export type LegacySoulMigration = {
   issues: string[]
@@ -20,6 +20,7 @@ type FileMetadata = {
   display_name?: string
   commit_prefix?: string
   avatar?: string
+  description?: string
 }
 
 export function writeSoulIfAbsent(file: string, content: string): boolean {
@@ -127,6 +128,7 @@ export function migrateLegacySouls(directory: string): LegacySoulMigration {
         meta?.commit_prefix ??
         (official ? (source.client === "tui" ? "Karina" : "YuQi") : (meta?.display_name ?? name)),
       ...(meta?.avatar ? { avatar: meta.avatar } : {}),
+      ...(meta?.description ? { description: meta.description.trim() } : {}),
     }
     const content = `---\n${Object.entries(metadata)
       .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
@@ -158,6 +160,7 @@ export function migrateLegacySouls(directory: string): LegacySoulMigration {
         (existing.data.display_name ?? existing.data.name) === metadata.display_name &&
         (existing.data.commit_prefix ?? existing.data.display_name ?? existing.data.name) === metadata.commit_prefix &&
         existing.data.avatar === metadata.avatar &&
+        existing.data.description === metadata.description &&
         existing.content === parsed.content
       ) {
         result.defaults[source.client] = id
@@ -242,15 +245,17 @@ function parse(raw: string): { data?: FileMetadata; content: string } | undefine
     const result = matter(raw)
     const hasFrontmatter = raw.startsWith("---")
     if (!hasFrontmatter) return { content: result.content }
-    if (!isMetadata(result.data)) return undefined
-    return { data: result.data, content: result.content }
+    const data = normalizedMetadata(result.data)
+    if (!data) return undefined
+    return { data, content: result.content }
   } catch {
     // gray-matter can reject malformed fences; retry with the shared sanitizer.
     try {
       const result = matter(ConfigMarkdown.fallbackSanitization(raw))
       if (!raw.startsWith("---")) return { content: result.content }
-      if (!isMetadata(result.data)) return undefined
-      return { data: result.data, content: result.content }
+      const data = normalizedMetadata(result.data)
+      if (!data) return undefined
+      return { data, content: result.content }
     } catch {
       // Both parsers rejected the metadata; the caller reports a migration issue.
       return undefined
@@ -261,16 +266,34 @@ function parse(raw: string): { data?: FileMetadata; content: string } | undefine
 function isMetadata(value: unknown): value is FileMetadata {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false
   const data = value as Record<string, unknown>
-  if (Object.keys(data).some((key) => !["id", "name", "display_name", "commit_prefix", "avatar"].includes(key)))
+  if (
+    Object.keys(data).some(
+      (key) => !["id", "name", "display_name", "commit_prefix", "avatar", "description"].includes(key),
+    )
+  )
     return false
+  if (typeof data.description === "string") {
+    const description = data.description.trim()
+    if (
+      !description ||
+      /[\r\n]/.test(description) ||
+      Buffer.byteLength(description, "utf8") > MAX_SOUL_DESCRIPTION_BYTES
+    )
+      return false
+  }
   return (
     validId(data.id) !== undefined &&
     typeof data.name === "string" &&
     data.name.trim() !== "" &&
-    ["display_name", "commit_prefix", "avatar"].every(
+    ["display_name", "commit_prefix", "avatar", "description"].every(
       (key) => data[key] === undefined || (typeof data[key] === "string" && data[key].trim() !== ""),
     )
   )
+}
+
+function normalizedMetadata(value: unknown): FileMetadata | undefined {
+  if (!isMetadata(value)) return undefined
+  return value.description === undefined ? value : { ...value, description: value.description.trim() }
 }
 
 function isMarker(value: unknown): value is Marker {

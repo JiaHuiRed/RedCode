@@ -306,6 +306,7 @@ name: 柳智敏
 display_name: 敏敏
 commit_prefix: Karina
 avatar: karina
+description: 冷静、细致的协作型助手
 ---
 
 # 柳智敏 · RedCode Soul
@@ -322,6 +323,7 @@ name: 宋雨琦
 display_name: 雨琦
 commit_prefix: YuQi
 avatar: yuqi
+description: 直率、活泼的协作型助手
 ---
 
 # 宋雨琦 · RedCode Soul
@@ -338,6 +340,7 @@ name: 赤
 display_name: 赤
 commit_prefix: Chi
 avatar: chi
+description: 擅长简洁分析与清晰解释
 ---
 
 # 赤 · RedCode Soul
@@ -358,8 +361,11 @@ type SoulMetadata = {
   displayName?: string
   commitPrefix?: string
   avatar?: string
+  description?: string
 }
 ```
+
+`description` 是可选的单行选择器说明，最多 256 个 UTF-8 字节；仅用于列表展示与搜索，不进入人格正文或模型上下文。无此字段的旧 Soul 继续以名称 / ID 作选择器说明。
 
 ## `id`
 
@@ -416,6 +422,10 @@ Chi
 只保存逻辑 key / asset ID。
 
 第一版甚至可以不消费，仅为 GUI 后续头像留扩展位。
+
+## `description`
+
+TUI `/soul` 选择器中的简短说明，可按名称、ID 或说明搜索；超过 256 个 UTF-8 字节或类型错误的 metadata 会作为 Registry issue 暴露。
 
 ---
 

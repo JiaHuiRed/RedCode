@@ -10,6 +10,7 @@
 
 ### [未发布] - 2026-10-07
 
+- **Soul 选择器说明**（`packages/opencode/src/soul/`、TUI `/soul` 与摘要 API）：允许 Soul frontmatter 设置可选 `description`，按 256 UTF-8 字节限制并在 `/soul` 中展示，可按中文说明、名称或 ID 搜索；缺省仍显示名称/ID，错误 metadata 进入 issues。字段随摘要 API/SDK/OpenAPI 传递，但不注入人格正文或模型上下文。设计与边界：`docs/notes/implemented/architecture/2026-10-07-soul-system-v2-design.md`、实现记录：`docs/notes/implemented/architecture/2026-10-07-soul-system-v2.md`。
 - **Soul V2：会话固定人格，客户端只选未来默认**：贯通 Session/API/plugin/SDK、独立 Soul 注入与署名、TUI `/soul` 和 GUI 个性化设置；保留旧文件与自定义正文，历史会话一次性回填，迁移副本凭证在有界 sidecar 中，不扩展 Soul 的五字段 metadata。新增人格只需 MD，用户提供的 `wonyoung` 文件已通过真实 Registry/DB 验收和本地 provider 出站体断言；浏览器验证选择持久化、新会话显示元英、原会话仍显示雨琦且无运行时异常。正文快照目前随进程缓存生命周期，跨重启/回收的版本冻结、真实模型人格回复和完整独立审查尚未完成，不宣称全部验收通过。模型可见四问与接力边界：`docs/notes/implemented/architecture/2026-10-07-soul-system-v2.md`。
 
 - **tool-result 配对净化：修复 steer 下重复 result 导致的 400**（`packages/opencode/src/session/{message-v2,prompt}.ts`、`test/session/message-v2.test.ts`）：插消息（steer）场景下出现过 DeepSeek 400「Messages with role 'tool' must be a response to a preceding message with 'tool_calls'」——现场请求体里同一批 tool-result 被复制了一份（assistant 只声明一次 2 个 tool-call，wire 层却跟了 4 条 tool 消息）。转换链逐 part 忠实（mock server 端到端验证不产生重复），重复由内存态（modelMsgs 单侧缓存拼接）引入、重启后消失，属缓存固化特征；修复不赌根因，在发送数组上做配对净化：每个 tool-call 只接受一次 result 应答，重复/孤儿丢弃并 log.warn 记录，净化后的数组才进缓存。模型可见四问：① 正常数据下恒等（原引用直通，零字节变化）；② token 影响仅异常时（丢的是重复 result）；③ 常态前缀不动；④ 无新增注入项。测试新增 5 用例，typecheck EXIT=0、59 pass / 0 fail。

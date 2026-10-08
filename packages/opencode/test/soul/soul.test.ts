@@ -51,6 +51,28 @@ describe("soul registry", () => {
     }),
   )
 
+  it.instance("trims and exposes optional descriptions in summaries and info", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      yield* write(path.join(dir, "chi.md"), official("id: chi\nname: 赤\ndescription: '  擅长简洁分析  '"))
+      yield* write(
+        path.join(dir, "max.md"),
+        official(`id: max\nname: Max\ndescription: '${"a".repeat(256)}'`),
+      )
+      yield* write(path.join(dir, "legacy.md"), official("id: legacy\nname: 旧助手"))
+
+      const soul = yield* Soul.Service
+      const list = yield* soul.list().pipe(Effect.provideService(Soul.directory, dir))
+      expect(list.find((item) => item.id === "chi")?.description).toBe("擅长简洁分析")
+      expect(list.find((item) => item.id === "max")?.description).toBe("a".repeat(256))
+      expect(list.find((item) => item.id === "legacy")?.description).toBeUndefined()
+      expect((yield* soul.get("chi").pipe(Effect.provideService(Soul.directory, dir)))?.description).toBe(
+        "擅长简洁分析",
+      )
+    }),
+  )
+
   it.instance("legacy file without frontmatter uses filename id and heading name", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
@@ -91,6 +113,71 @@ describe("soul registry", () => {
       expect(
         yield* (yield* Soul.Service).defaultForClient("desktop").pipe(Effect.provideService(Soul.directory, dir)),
       ).toBe("legacy-desktop")
+    }),
+  )
+
+  it.instance("migrates trimmed descriptions, preserves the legacy source, and remains idempotent", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      const raw =
+        "---\nid: custom-karina\nname: 自定义助手\ndescription: '  擅长简洁分析  '\n---\n\n# 自定义助手\n\nbody preserved exactly\n"
+      yield* write(path.join(dir, "Tsoul.md"), raw)
+
+      const migrated = migrateLegacySouls(dir)
+      const destination = path.join(dir, "custom-karina.md")
+      const created = fs.readFileSync(destination, "utf8")
+      expect(migrated.defaults.tui).toBe("custom-karina")
+      expect(migrated.issues).toEqual([])
+      expect(created).toContain('description: "擅长简洁分析"')
+      expect(created).toContain("\n\n# 自定义助手\n\nbody preserved exactly\n")
+      expect(fs.readFileSync(path.join(dir, "Tsoul.md"), "utf8")).toBe(raw)
+      expect(migrateLegacySouls(dir).issues).toEqual([])
+      expect(fs.readFileSync(destination, "utf8")).toBe(created)
+      expect(fs.readFileSync(path.join(dir, "Tsoul.md"), "utf8")).toBe(raw)
+    }),
+  )
+
+  it.instance("does not accept a destination copy with a different description", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      const body = "\n\n# Assistant\n\nsame body\n"
+      yield* write(
+        path.join(dir, "Tsoul.md"),
+        `---\nid: helper\nname: Assistant\ndescription: Source description\n---${body}`,
+      )
+      yield* write(
+        path.join(dir, "helper.md"),
+        `---\nid: helper\nname: Assistant\ndescription: Other description\n---${body}`,
+      )
+
+      const result = migrateLegacySouls(dir)
+      expect(result.issues.join(" ")).toContain("was not migrated")
+      expect(fs.readFileSync(path.join(dir, "Tsoul.md"), "utf8")).toContain("description: Source description")
+      expect(fs.readFileSync(path.join(dir, "helper.md"), "utf8")).toContain("description: Other description")
+      expect(JSON.parse(fs.readFileSync(path.join(dir, ".legacy-defaults.json"), "utf8")).copies?.tui).toBeUndefined()
+    }),
+  )
+
+  it.instance("refuses invalid legacy descriptions and preserves each source with an issue", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      for (const [caseName, description] of [
+        ["type", "42"],
+        ["multiline", '"first line\\nsecond line"'],
+        ["oversized", `'${"你".repeat(86)}'`],
+      ] as [string, string][]) {
+        const dir = path.join(test.directory, caseName)
+        fs.mkdirSync(dir)
+        const raw = `---\nid: helper\nname: Assistant\ndescription: ${description}\n---\n\n# Assistant\n\nbody\n`
+        fs.writeFileSync(path.join(dir, "Tsoul.md"), raw)
+
+        const result = migrateLegacySouls(dir)
+        expect(result.issues.join(" ")).toContain("Tsoul.md has malformed metadata")
+        expect(fs.existsSync(path.join(dir, "helper.md"))).toBe(false)
+        expect(fs.readFileSync(path.join(dir, "Tsoul.md"), "utf8")).toBe(raw)
+      }
     }),
   )
 
@@ -291,6 +378,23 @@ describe("soul registry", () => {
       const soul = yield* Soul.Service
       expect(yield* soul.list().pipe(Effect.provideService(Soul.directory, dir))).toEqual([])
       expect((yield* soul.issues().pipe(Effect.provideService(Soul.directory, dir))).length).toBe(2)
+    }),
+  )
+
+  it.instance("reports invalid description type and descriptions over 256 UTF-8 bytes", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const dir = path.join(test.directory, "souls")
+      yield* write(path.join(dir, "bad-type.md"), official("id: bad-type\nname: Bad\ndescription: 42"))
+      yield* write(path.join(dir, "too-long.md"), official(`id: too-long\nname: Long\ndescription: '${"你".repeat(86)}'`))
+      const soul = yield* Soul.Service
+      expect(yield* soul.list().pipe(Effect.provideService(Soul.directory, dir))).toEqual([])
+      const issues = yield* soul.issues().pipe(Effect.provideService(Soul.directory, dir))
+      expect(issues).toHaveLength(2)
+      expect(issues.find((issue) => issue.path.endsWith("too-long.md"))?.message).toContain("description exceeds 256")
+      expect(issues.find((issue) => issue.path.endsWith("bad-type.md"))?.message).toBe(
+        "invalid or incomplete metadata",
+      )
     }),
   )
 
