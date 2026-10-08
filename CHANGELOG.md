@@ -8,7 +8,7 @@
 
 ---
 
-### [未发布] - 2026-10-07
+### [0.12.3] - 2026-10-08
 
 - **/soul 升级为注册 slash 命令：补全行回车直开弹窗，删除弃用 persona 命令**（`packages/opencode/src/cli/cmd/tui/{component/prompt/index.tsx,component/prompt/autocomplete.tsx,soul.ts}` + 删除 `seed/command/{tui,gui}-persona.md`）：/soul 原先在补全列表里只往输入框插文本，要再按一次 Enter 才出选择器，与 /mcps 等注册命令的体验不一致；现注册为 `prompt.soul` 命令（同 `prompt.skills` 模板），补全行回车经 `dispatchCommand` 直开 DialogSoul。手输 `/soul <id>` 直接选择的路径不变。弃用的 /tui-persona、/gui-persona 命令文件从 seed 与 home 同撤（其文案本就是同步进去的 markdown 命令，非引擎内建），解析器不再接受别名。需重启 dev TUI 生效。测试：TUI 三文件 13 pass / 0 fail，含新场景「prompt.soul 命令直开选择器」。模型可见四问：① 补全列表少两个弃用条目、/soul 行为变为直开弹窗；② token 零增量；③ 不动任何注入段，前缀缓存不受影响；④ 无新增注入项。
 - **test/mcp 组跑全绿：stdio 探针子进程隔离 mock 泄漏，补 OAuth mock 缺失方法**（`test/mcp/{stdio.test.ts,fixture/stdio-probe.ts,oauth-auto-connect.test.ts}`）：`test/mcp/` 目录组跑长期 2 红——① lifecycle.test.ts 顶层 `mock.module` 会替换整个进程的模块注册表，stdio.test.ts 的真 transport 练习拿到假实现（单跑过、组跑挂的指纹）；改为仓内既有「探针子进程」模式（同 soul-restart），真 JSON-RPC 往返在干净的子进程注册表里执行，退出码即断言，对今后任何 mock.module 免疫。② oauth-auto-connect 的 MockClient 缺 `getInstructions()`（260904 instructions 功能引入的调用点，lifecycle 的 mock 有、这里漏了），authenticate 成功路径必 TypeError；补上缺方法。`test/mcp/` 全目录 68 pass / 0 fail。模型可见四问：纯测试改动，模型可见内容为零。
