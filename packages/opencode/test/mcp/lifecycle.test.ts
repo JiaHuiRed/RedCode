@@ -1,6 +1,9 @@
 import { expect, mock, beforeEach } from "bun:test"
-import { Effect, Exit, Fiber, Option } from "effect"
+import { Cause, Effect, Exit, Fiber, Option } from "effect"
+import fs from "node:fs"
+import path from "node:path"
 import type { MCP as MCPNS } from "../../src/mcp/index"
+import { Global } from "@redcode-ai/core/global"
 import { pollWithTimeout, testEffect } from "../lib/effect"
 
 // --- Mock infrastructure ---
@@ -27,6 +30,7 @@ const clientStates = new Map<string, MockClientState>()
 let lastCreatedClientName: string | undefined
 let connectShouldFail = false
 let connectShouldHang = false
+let connectDelayMs = 0
 let connectError = "Mock transport cannot connect"
 // Tracks how many Client instances were created (detects leaks)
 let clientCreateCount = 0
@@ -65,6 +69,7 @@ class MockStdioTransport {
   // oxlint-disable-next-line no-useless-constructor
   constructor(_opts: any) {}
   async start() {
+    if (connectDelayMs > 0) await Bun.sleep(connectDelayMs)
     if (connectShouldHang) return new Promise<void>(() => {}) // never resolves
     if (connectShouldFail) throw new Error(connectError)
   }
@@ -202,6 +207,7 @@ beforeEach(() => {
   lastCreatedClientName = undefined
   connectShouldFail = false
   connectShouldHang = false
+  connectDelayMs = 0
   connectError = "Mock transport cannot connect"
   clientCreateCount = 0
   transportCloseCount = 0
@@ -325,6 +331,124 @@ it.instance(
           enabled: true,
           retry: "default",
         },
+      },
+    },
+  },
+)
+
+// ========================================================================
+// Test: cached stub waits for a connecting server instead of failing (261008)
+// ========================================================================
+
+// 261008 Red 预置磁盘缓存：cache-first 分支只有在 readMcpToolsCache 命中时才注入 stub
+function seedToolsCache(serverName: string) {
+  const dir = path.join(Global.Path.cache, "mcp-tools")
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(
+    path.join(dir, `${serverName}.json`),
+    JSON.stringify({
+      tools: [{ name: "test_tool", description: "A test tool", inputSchema: { type: "object", properties: {} } }],
+      cachedAt: Date.now(),
+    }),
+    "utf-8",
+  )
+}
+
+it.instance(
+  "cached stub waits for a slow-connecting server and executes live",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        seedToolsCache("slow-server")
+        // 连接耗时 2000ms > 启动宽限 1500ms：tools() 必然拿到缓存 stub 而非已连接工具
+        connectDelayMs = 2000
+
+        const tool = (yield* mcp.tools())["slow-server_test_tool"]
+        expect(tool?.execute).toBeDefined()
+        if (!tool?.execute) return
+
+        // config 驱动的 init 在测试体之前触发，mock client 绑定在 default 状态上
+        const serverState = getOrCreateClientState()
+        const options = {} as Parameters<typeof tool.execute>[1]
+        const result = yield* Effect.promise(() => tool.execute!({}, options))
+        expect(serverState.callToolCalls).toBe(1)
+        expect(result).toBeDefined()
+      }),
+    ),
+  {
+    config: {
+      mcp: {
+        "slow-server": { type: "local", command: ["echo", "test"], enabled: true },
+      },
+    },
+  },
+)
+
+it.instance(
+  "cached stub fails fast when the server errors",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        seedToolsCache("broken-server")
+        connectShouldFail = true
+
+        const tool = (yield* mcp.tools())["broken-server_test_tool"]
+        expect(tool?.execute).toBeDefined()
+        if (!tool?.execute) return
+
+        const outcome = yield* Effect.exit(
+          Effect.tryPromise({
+            try: () => tool.execute!({}, {} as Parameters<typeof tool.execute>[1]),
+            catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+          }),
+        )
+        expect(Exit.isFailure(outcome)).toBe(true)
+        if (Exit.isFailure(outcome)) {
+          const failure = Cause.findErrorOption(outcome.cause)
+          expect(Option.isSome(failure)).toBe(true)
+          if (Option.isSome(failure)) expect(failure.value.message).toContain("read-only")
+        }
+      }),
+    ),
+  {
+    config: {
+      mcp: {
+        "broken-server": { type: "local", command: ["echo", "test"], enabled: true },
+      },
+    },
+  },
+)
+
+it.instance(
+  "cached stub gives up after the server timeout",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        seedToolsCache("hung-server")
+        connectShouldHang = true
+
+        const tool = (yield* mcp.tools())["hung-server_test_tool"]
+        expect(tool?.execute).toBeDefined()
+        if (!tool?.execute) return
+
+        const outcome = yield* Effect.exit(
+          Effect.tryPromise({
+            try: () => tool.execute!({}, {} as Parameters<typeof tool.execute>[1]),
+            catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+          }),
+        )
+        expect(Exit.isFailure(outcome)).toBe(true)
+        if (Exit.isFailure(outcome)) {
+          const failure = Cause.findErrorOption(outcome.cause)
+          expect(Option.isSome(failure)).toBe(true)
+          if (Option.isSome(failure)) expect(failure.value.message).toContain("read-only")
+        }
+      }),
+    ),
+  {
+    config: {
+      mcp: {
+        "hung-server": { type: "local", command: ["echo", "test"], enabled: true, timeout: 800 },
       },
     },
   },

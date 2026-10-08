@@ -354,6 +354,59 @@ function listTools(key: string, client: MCPClient, timeout: number) {
 // Convert MCP tool definition to AI SDK Tool type
 // 260807 Red: client 参数改为 getClient 闭包——断线重连（reconnectServer→storeClient）会换新 client，
 // 旧实现 execute 捕获当时的 client 引用，超时重连后仍指向已 close 的旧 client → 重试永远 Not connected。
+// 261008 Red: 调用体抽成 mcpToolExecute 供连接版与缓存 stub 共用，stub 只在执行前多一步有界等待。
+function mcpToolExecute(
+  mcpTool: MCPToolDef,
+  serverName: string,
+  getClient: () => MCPClient | undefined,
+  reconnectFn: (() => Promise<void>) | undefined,
+  timeout: number | undefined,
+  retryMode: McpRetry.Mode | undefined,
+) {
+  return async (args: unknown, toolOptions?: { abortSignal?: AbortSignal }) =>
+    McpRetry.run({
+      mode: retryMode,
+      signal: toolOptions?.abortSignal,
+      call: async () => {
+        // 260807 Red: 每次调用从 clients 表取最新 client（s.clients[name] 由 storeClient 更新）
+        const client = getClient()
+        if (!client) {
+          throw new Error(`MCP server "${serverName}" is not connected`)
+        }
+        // 260603 Red 进度推送：实时记录 MCP 工具调用进度
+        let progressLog = ""
+        return await client.callTool(
+          { name: mcpTool.name, arguments: (args || {}) as Record<string, unknown> },
+          CallToolResultSchema,
+          {
+            onprogress: (progress) => {
+              const msg =
+                progress.message ?? `progress ${progress.progress}${progress.total ? "/" + progress.total : ""}`
+              if (msg !== progressLog) {
+                progressLog = msg
+                log.info("MCP tool progress", { server: serverName, tool: mcpTool.name, ...progress })
+              }
+            },
+            resetTimeoutOnProgress: true,
+            timeout,
+            signal: toolOptions?.abortSignal,
+          },
+        )
+      },
+      reconnect: reconnectFn,
+      onFailure: ({ error, attempt }) => {
+        log.warn("MCP tool call failed", {
+          server: serverName,
+          tool: mcpTool.name,
+          attempt,
+          phase: "tool_call",
+          timeout,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      },
+    })
+}
+
 function convertMcpTool(
   mcpTool: MCPToolDef,
   getClient: () => MCPClient | undefined,
@@ -375,48 +428,7 @@ function convertMcpTool(
   return dynamicTool({
     description: mcpTool.description ?? "",
     inputSchema: jsonSchema(schema),
-    execute: async (args: unknown, toolOptions) =>
-      McpRetry.run({
-        mode: retryMode,
-        signal: toolOptions?.abortSignal,
-        call: async () => {
-          // 260807 Red: 每次调用从 clients 表取最新 client（s.clients[name] 由 storeClient 更新）
-          const client = getClient()
-          if (!client) {
-            throw new Error(`MCP server "${serverName}" is not connected`)
-          }
-          // 260603 Red 进度推送：实时记录 MCP 工具调用进度
-          let progressLog = ""
-          return await client.callTool(
-            { name: mcpTool.name, arguments: (args || {}) as Record<string, unknown> },
-            CallToolResultSchema,
-            {
-              onprogress: (progress) => {
-                const msg =
-                  progress.message ?? `progress ${progress.progress}${progress.total ? "/" + progress.total : ""}`
-                if (msg !== progressLog) {
-                  progressLog = msg
-                  log.info("MCP tool progress", { server: serverName, tool: mcpTool.name, ...progress })
-                }
-              },
-              resetTimeoutOnProgress: true,
-              timeout,
-              signal: toolOptions?.abortSignal,
-            },
-          )
-        },
-        reconnect: reconnectFn,
-        onFailure: ({ error, attempt }) => {
-          log.warn("MCP tool call failed", {
-            server: serverName,
-            tool: mcpTool.name,
-            attempt,
-            phase: "tool_call",
-            timeout,
-            error: error instanceof Error ? error.message : String(error),
-          })
-        },
-      }),
+    execute: mcpToolExecute(mcpTool, serverName, getClient, reconnectFn, timeout, retryMode),
   })
 }
 
@@ -461,8 +473,37 @@ function abortableReconnect(bridge: EffectBridge.Shape, effect: Effect.Effect<vo
   })
 }
 
-// Convert cached MCP tool definition to a disconnected stub (server not yet connected)
-function convertMcpToolCached(mcpTool: MCPToolDef, serverName: string): Tool {
+// 261008 Red connecting 期间 s.status[name] 为 undefined；轮询到 connected 才放行，
+// failed/disabled/中止/超时返回 false（错误文案由调用方给）。create 失败与健康检查
+// 都收敛到 "failed"（682/771/785/1103），本模块从不写 "error"。
+function serverWaitConnected(s: State, serverName: string, deadlineMs: number) {
+  return async (signal?: AbortSignal) => {
+    const deadline = Date.now() + deadlineMs
+    while (Date.now() < deadline) {
+      const status = s.status[serverName]?.status
+      if (status === "connected") return true
+      if (status === "failed" || status === "disabled") return false
+      if (signal?.aborted) return false
+      await Bun.sleep(200)
+    }
+    return false
+  }
+}
+
+// Convert cached MCP tool definition to a stub for a server that is not connected yet.
+// 261008 Red worktree 子代理等新实例的首个请求常落在连接宽限窗口内：stub 先有界等待连接，
+// 连上后走与连接版完全相同的调用体（getClient/reconnect/timeout 同源），子代理第一次调
+// jcodemunch 这类慢启动 server 不再必败。等不到（失败/禁用/超时）才按原契约抛只读错误。
+// description 与 schema 仍须字节级一致（260706 前缀缓存约束，execute 行为变化不影响）。
+function convertMcpToolCached(
+  mcpTool: MCPToolDef,
+  serverName: string,
+  waitUntilConnected: (signal?: AbortSignal) => Promise<boolean>,
+  getClient: () => MCPClient | undefined,
+  reconnectFn: (() => Promise<void>) | undefined,
+  timeout: number | undefined,
+  retryMode: McpRetry.Mode | undefined,
+): Tool {
   const inputSchema = mcpTool.inputSchema
   const schema: JSONSchema7 = {
     ...(inputSchema as JSONSchema7),
@@ -470,15 +511,16 @@ function convertMcpToolCached(mcpTool: MCPToolDef, serverName: string): Tool {
     properties: (inputSchema.properties ?? {}) as JSONSchema7["properties"],
     additionalProperties: false,
   }
+  const call = mcpToolExecute(mcpTool, serverName, getClient, reconnectFn, timeout, retryMode)
   return dynamicTool({
-    // 260706 Red: description 必须与 convertMcpTool 保持字节级一致——MCP 连接状态在 session 内
-    // 抖动（断线重连/慢启动）时，同一工具会在 connected/cached 两个转换函数间切换，若 description
-    // 文案不同则 tool schema JSON 变化，打断 DeepSeek 前缀缓存（miss 从新增内容级变成整前缀级）。
-    // "not connected" 提示改放 execute() 抛出的 Error 里，反正断线时调用工具本就会失败。
     description: mcpTool.description ?? "",
     inputSchema: jsonSchema(schema),
-    execute: async () => {
-      throw new Error(`MCP server "${serverName}" is not connected. Tools from disk cache are read-only.`)
+    execute: async (args: unknown, toolOptions?: { abortSignal?: AbortSignal }) => {
+      const connected = await waitUntilConnected(toolOptions?.abortSignal)
+      if (!connected) {
+        throw new Error(`MCP server "${serverName}" is not connected. Tools from disk cache are read-only.`)
+      }
+      return call(args, toolOptions)
     },
   })
 }
@@ -1307,10 +1349,24 @@ export const layer = Layer.effect(
         const disabled = entry.type === "local" ? entry.disabledTools : undefined
         // 260807 Red: 与 live 路径同规则，白名单过滤后落盘工具
         const allow = entry.tools
+        // 261008 Red: stub 与连接版同一套 getClient/reconnect/timeout——等待连接成功后行为等价
+        const cachedTimeout = entry.timeout ?? defaultTimeout ?? DEFAULT_TIMEOUT
+        const cachedBridge = yield* EffectBridge.make()
+        const cachedReconnect = (signal?: AbortSignal) =>
+          abortableReconnect(cachedBridge, reconnectServer(serverName), signal)
+        const waitUntilConnected = serverWaitConnected(s, serverName, cachedTimeout)
         for (const mcpTool of cached) {
           if (allow && !allow.includes(mcpTool.name)) continue
           if (disabled?.includes(mcpTool.name)) continue
-          result[sanitize(serverName) + "_" + sanitize(mcpTool.name)] = convertMcpToolCached(mcpTool, serverName)
+          result[sanitize(serverName) + "_" + sanitize(mcpTool.name)] = convertMcpToolCached(
+            mcpTool,
+            serverName,
+            waitUntilConnected,
+            () => s.clients[serverName],
+            cachedReconnect,
+            cachedTimeout,
+            entry.retry,
+          )
         }
       }
 
