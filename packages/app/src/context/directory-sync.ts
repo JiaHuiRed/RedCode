@@ -16,6 +16,14 @@ import { SESSION_CACHE_LIMIT, dropSessionCaches, pickSessionCacheEvictions } fro
 import { diffs as list, message as clean } from "@/utils/diffs"
 import { compareTime } from "@/utils/id"
 import { pathKey } from "@/utils/path-key"
+import {
+  createSessionChangeJournal,
+  isSessionChangeNotFound,
+  reconcileChangedMessages,
+  removedMessageIDs,
+} from "./session-changes"
+import { useQueryClient } from "@tanstack/solid-query"
+import { messageWindowLimit } from "./message-window"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 
@@ -203,6 +211,7 @@ function setOptimisticRemove(setStore: (...args: unknown[]) => void, input: Opti
 
 export const createDirSyncContext = (client: OpencodeClient, directory: string) => {
   const globalSync: ServerSyncContext = useServerSync()
+  const queryClient = useQueryClient()
 
   type Child = ReturnType<(typeof globalSync)["child"]>
   type Setter = Child[1]
@@ -228,6 +237,7 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
   const optimistic = new Map<string, Map<string, OptimisticItem>>()
   const maxDirs = 30
   const seen = new Map<string, Set<string>>()
+  const changeJournals = new Map<string, ReturnType<typeof createSessionChangeJournal>>()
   const [meta, setMeta] = createStore({
     limit: {} as Record<string, number>,
     cursor: {} as Record<string, string | undefined>,
@@ -308,6 +318,7 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
     if (sessionIDs.length === 0) return
     for (const sessionID of sessionIDs) {
       clearOptimistic(directory, sessionID)
+      changeJournals.delete(keyFor(directory, sessionID))
     }
     setMeta(
       produce((draft) => {
@@ -349,7 +360,10 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
     // 260907 ZCode 在途登记给 prefetch pump 让路用，见 context/foreground-loads.ts
     const messages = await trackForegroundMessageLoad(
       retry(() =>
-        input.client.session.messages({ sessionID: input.sessionID, limit: input.limit, before: input.before }),
+        input.client.session.messages(
+          { sessionID: input.sessionID, limit: input.limit, before: input.before },
+          { throwOnError: true },
+        ),
       ),
     )
     const items = (messages.data ?? []).filter((x) => !!x?.info?.id)
@@ -587,6 +601,167 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
 
           await Promise.all([sessionReq, messagesReq])
         })
+      },
+      async catchup(sessionID: string, active: () => boolean) {
+        const key = keyFor(directory, sessionID)
+        const [, setStore] = globalSync.child(directory, { bootstrap: false })
+        touch(directory, setStore, sessionID)
+        const isCurrent = () => active() && tracked(directory, sessionID)
+        let journal = changeJournals.get(key)
+        if (!journal) {
+          let staged = new Map<string, { message: Message; parts: Part[] } | undefined>()
+          const controller = createSessionChangeJournal({
+            fetch: async (query) => {
+              if (query.until === undefined) staged = new Map()
+              const result = await client.session.changes(
+                {
+                  sessionID,
+                  after: String(query.after),
+                  limit: String(query.limit),
+                  ...(query.until === undefined ? {} : { until: String(query.until) }),
+                },
+                { throwOnError: true },
+              )
+              return result.data
+            },
+            refreshSnapshot: async (isCurrent) => {
+              if (!isCurrent()) return
+              await inflight.get(key)
+              if (!isCurrent()) return
+              await inflightMessagePages.get(key)
+              if (!isCurrent()) return
+              const [snapshot, loaded] = await Promise.all([
+                retry(() => client.session.get({ sessionID }, { throwOnError: true })),
+                fetchMessages({
+                  client,
+                  sessionID,
+                  limit: messageWindowLimit(
+                    directory,
+                    sessionID,
+                    Math.max(meta.limit[key] ?? 0, current()[0].message[sessionID]?.length ?? 0, 200),
+                  ),
+                }),
+              ])
+              if (!isCurrent() || !snapshot.data) return
+              const next = mergeOptimisticPage(loaded, getOptimistic(directory, sessionID))
+              for (const messageID of next.confirmed) clearOptimistic(directory, sessionID, messageID)
+              const [store, setStore] = globalSync.child(directory, { bootstrap: false })
+              const old = store.message[sessionID] ?? []
+              const removed = removedMessageIDs(old, next.session)
+              batch(() => {
+                setStore("session", (items: typeof store.session) => {
+                  const at = Binary.search(items, sessionID, (item) => item.id)
+                  const result = [...items]
+                  if (at.found) result[at.index] = snapshot.data!
+                  else result.splice(at.index, 0, snapshot.data!)
+                  return result
+                })
+                setStore("message", sessionID, reconcile(next.session, { key: "id" }))
+                for (const messageID of removed) {
+                  for (const part of store.part[messageID] ?? []) {
+                    setStore("part_text_accum_delta", part.id, undefined!)
+                  }
+                  setStore("part", messageID, undefined!)
+                }
+                for (const item of next.part) {
+                  for (const part of [...(store.part[item.id] ?? []), ...item.part]) {
+                    setStore("part_text_accum_delta", part.id, undefined!)
+                  }
+                  setStore(
+                    "part",
+                    item.id,
+                    item.part.filter((part) => !SKIP_PARTS.has(part.type)),
+                  )
+                }
+                setMeta("limit", key, Math.max(meta.limit[key] ?? 0, next.session.length, 200))
+                setMeta("cursor", key, loaded.cursor)
+                setMeta("complete", key, loaded.complete)
+                setSessionPrefetch({
+                  directory,
+                  sessionID,
+                  limit: Math.max(meta.limit[key] ?? 0, next.session.length, 200),
+                  cursor: loaded.cursor,
+                  complete: loaded.complete,
+                })
+                void queryClient.invalidateQueries({
+                  queryKey: globalSync.queryOptions.sessionOutline(pathKey(directory), sessionID).queryKey,
+                })
+              })
+            },
+            fetchMessage: async (messageID, isCurrent) => {
+              const pending = staged
+              try {
+                const response = await client.session.message({ sessionID, messageID }, { throwOnError: true })
+                if (!isCurrent()) return
+                const data = response.data
+                if (!data?.info?.id) {
+                  pending.set(messageID, undefined)
+                  return
+                }
+                pending.set(messageID, {
+                  message: clean(data.info),
+                  parts: sortParts(data.parts ?? []),
+                })
+              } catch (error) {
+                if (!isCurrent()) return
+                if (isSessionChangeNotFound(error)) {
+                  pending.set(messageID, undefined)
+                  return
+                }
+                throw error
+              }
+            },
+            apply: async (messageIDs, isCurrent) => {
+              if (!isCurrent()) return
+              const pending = staged
+              const session = await client.session.get({ sessionID }, { throwOnError: true })
+              if (!isCurrent()) return
+              const [store, setStore] = globalSync.child(directory, { bootstrap: false })
+              const updated = reconcileChangedMessages({
+                current: store.message[sessionID] ?? [],
+                ids: messageIDs,
+                staged: pending,
+                limit: messageWindowLimit(directory, sessionID, Math.max(meta.limit[key] ?? 0, 200)),
+              })
+              batch(() => {
+                for (const [messageID, parts] of updated.parts) {
+                  for (const part of [...(store.part[messageID] ?? []), ...(parts ?? [])]) {
+                    setStore("part_text_accum_delta", part.id, undefined!)
+                  }
+                  setStore("part", messageID, parts ? parts.filter((part) => !SKIP_PARTS.has(part.type)) : undefined!)
+                }
+                setStore("message", sessionID, reconcile(updated.messages, { key: "id" }))
+                setStore("session", (items: typeof store.session) => {
+                  const at = Binary.search(items, sessionID, (item) => item.id)
+                  const result = [...items]
+                  if (at.found) result[at.index] = session.data
+                  else result.splice(at.index, 0, session.data)
+                  return result
+                })
+                if (updated.userChanged) {
+                  void queryClient.invalidateQueries({
+                    queryKey: globalSync.queryOptions.sessionOutline(pathKey(directory), sessionID).queryKey,
+                  })
+                }
+              })
+              pending.clear()
+            },
+          })
+          journal = {
+            ...controller,
+            catchup: (isCurrent) => {
+              const promise = controller.catchup(isCurrent)
+              const pending = staged
+              return promise.finally(() => pending.clear())
+            },
+          }
+          changeJournals.set(key, journal)
+          if (changeJournals.size > SESSION_CACHE_LIMIT) changeJournals.delete(changeJournals.keys().next().value!)
+        }
+        return journal.catchup(isCurrent)
+      },
+      invalidateChanges(sessionID: string) {
+        changeJournals.get(keyFor(directory, sessionID))?.invalidate()
       },
       async diff(sessionID: string, opts?: { force?: boolean }) {
         const [store, setStore] = globalSync.child(directory)

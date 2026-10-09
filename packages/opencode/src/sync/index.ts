@@ -9,13 +9,15 @@ import { Bus as ProjectBus } from "@/bus"
 import { BusEvent } from "@/bus/bus-event"
 import { EventSequenceTable, EventTable } from "./event.sql"
 import { EventID } from "./schema"
-import { Context, Effect, Layer, Schema as EffectSchema } from "effect"
+import { Context, Effect, Layer, Option, Schema as EffectSchema } from "effect"
 import type { DeepMutable } from "@redcode-ai/core/schema"
 import { EventV2 } from "@redcode-ai/core/event"
 import { serviceUse } from "@/effect/service-use"
 import { InstanceState } from "@/effect/instance-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EffectBridge } from "@/effect/bridge"
+import { SessionChanges } from "@/session/changes"
+import { Config } from "@/config/config"
 
 // Keep `Event["data"]` mutable because projectors mutate the persisted shape
 // when writing to the database. Bus payloads (`Properties`) stay readonly —
@@ -71,6 +73,7 @@ export const layer = Layer.effect(Service)(
   Effect.gen(function* () {
     const flags = yield* RuntimeFlags.Service
     const bus = yield* ProjectBus.Service
+    const config = yield* Effect.serviceOption(Config.Service)
 
     const replay: Interface["replay"] = Effect.fn("SyncEvent.replay")(function* (event, options) {
       const def = registry.get(event.type)
@@ -101,6 +104,9 @@ export const layer = Layer.effect(Service)(
       }
 
       const publish = !!options?.publish
+      const changeConfig = Option.isSome(config)
+        ? SessionChanges.resolve((yield* config.value.get()).session_changes)
+        : SessionChanges.resolve()
       // Bridge captures handler-fiber refs (InstanceRef/WorkspaceRef) and the
       // full Effect context, so the forked publish + GlobalBus emit run with
       // the right state without a per-call attachWith.
@@ -111,6 +117,7 @@ export const layer = Layer.effect(Service)(
         publish,
         ownerID: options?.ownerID,
         experimentalWorkspaces: flags.experimentalWorkspaces,
+        changeConfig,
       })
     })
 
@@ -147,6 +154,9 @@ export const layer = Layer.effect(Service)(
 
       const { publish = true } = options || {}
       const bridge = yield* EffectBridge.make()
+      const changeConfig = Option.isSome(config)
+        ? SessionChanges.resolve((yield* config.value.get()).session_changes)
+        : SessionChanges.resolve()
 
       // Note that this is an "immediate" transaction which is critical.
       // We need to make sure we can safely read and write with nothing
@@ -162,7 +172,13 @@ export const layer = Layer.effect(Service)(
           const seq = row?.seq != null ? row.seq + 1 : 0
 
           const event = { id, seq, aggregateID: agg, data }
-          process(def, event, { bus, bridge, publish, experimentalWorkspaces: flags.experimentalWorkspaces })
+          process(def, event, {
+            bus,
+            bridge,
+            publish,
+            experimentalWorkspaces: flags.experimentalWorkspaces,
+            changeConfig,
+          })
         },
         {
           behavior: "immediate",
@@ -199,7 +215,9 @@ export const layer = Layer.effect(Service)(
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide([ProjectBus.defaultLayer, RuntimeFlags.defaultLayer]))
+export const defaultLayer = layer.pipe(
+  Layer.provide([ProjectBus.defaultLayer, RuntimeFlags.defaultLayer, Config.defaultLayer]),
+)
 
 export const use = serviceUse(Service)
 
@@ -324,6 +342,7 @@ function process<Def extends Definition>(
     publish: boolean
     ownerID?: string
     experimentalWorkspaces: boolean
+    changeConfig: SessionChanges.Resolved
   },
 ) {
   if (projectors == null) {
@@ -371,6 +390,33 @@ function process<Def extends Definition>(
         })
         .run()
     }
+
+    const data = event.data as Record<string, unknown>
+    const info = data.info && typeof data.info === "object" ? (data.info as Record<string, unknown>) : undefined
+    const part = data.part && typeof data.part === "object" ? (data.part as Record<string, unknown>) : undefined
+    const candidate = [info?.id, data.messageID, part?.messageID].find((value) => typeof value === "string")
+    const boundedMessageID =
+      typeof candidate === "string" &&
+      candidate.length > 0 &&
+      [...candidate].length <= 128 &&
+      Buffer.byteLength(candidate, "utf8") <= 512
+        ? candidate
+        : undefined
+    const messageKind =
+      def.type === "message.updated" ||
+      def.type === "message.removed" ||
+      def.type === "message.part.updated" ||
+      def.type === "message.part.removed"
+    SessionChanges.record({
+      tx,
+      sessionID: event.aggregateID,
+      seq: event.seq,
+      id: event.id,
+      kind: messageKind && boundedMessageID ? "message" : "session",
+      messageID: messageKind ? boundedMessageID : undefined,
+      time: Date.now(),
+      config: options.changeConfig,
+    })
 
     Database.effect(() => {
       if (!options.publish) return

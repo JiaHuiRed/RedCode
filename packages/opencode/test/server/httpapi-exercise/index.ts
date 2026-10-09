@@ -833,8 +833,14 @@ const scenarios: Scenario[] = [
     .json(200, (body) => {
       object(body)
       check(body.id === "httpapi-soul", "Soul details must resolve the registered id")
-      check(body.content === "# HTTP API Soul\n\nBounded content", "Soul details should return stripped bounded content")
-      check(isRecord(body.sources) && body.sources.id === "frontmatter", "Soul details should expose metadata provenance")
+      check(
+        body.content === "# HTTP API Soul\n\nBounded content",
+        "Soul details should return stripped bounded content",
+      )
+      check(
+        isRecord(body.sources) && body.sources.id === "frontmatter",
+        "Soul details should expose metadata provenance",
+      )
     }),
   http.protected
     .get("/soul/{id}", "soul.get.unknown-id")
@@ -842,13 +848,17 @@ const scenarios: Scenario[] = [
       path: route("/soul/{id}", { id: "httpapi-soul.md" }),
       headers: ctx.headers(),
     }))
-    .json(404, (body) => {
-      object(body)
-      check(
-        isRecord(body.data) && typeof body.data.message === "string" && body.data.message.includes("not found"),
-        "unknown Soul id should use API not-found error",
-      )
-    }, "status"),
+    .json(
+      404,
+      (body) => {
+        object(body)
+        check(
+          isRecord(body.data) && typeof body.data.message === "string" && body.data.message.includes("not found"),
+          "unknown Soul id should use API not-found error",
+        )
+      },
+      "status",
+    ),
   http.protected.get("/soul/issues", "soul.issues").json(200, (body) => array(body)),
   http.protected
     .get("/soul/default", "soul.default")
@@ -964,6 +974,29 @@ const scenarios: Scenario[] = [
     }))
     .json(200, (body, ctx) => {
       check(stable(body) === stable(ctx.state.todos), "todos should match seeded state")
+    }),
+  http.protected
+    .get("/session/{sessionID}/changes", "session.changes")
+    .seeded((ctx) => ctx.session({ title: "Session changes" }))
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/changes", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      check(
+        isRecord(body) &&
+          body.latest === 0 &&
+          body.oldest === 0 &&
+          body.cursor === 0 &&
+          body.hasMore === false &&
+          body.reset === false &&
+          Array.isArray(body.changes) &&
+          body.changes.length === 1 &&
+          isRecord(body.changes[0]) &&
+          body.changes[0].seq === 0 &&
+          body.changes[0].kind === "session",
+        "new session should include its committed creation marker",
+      )
     }),
   http.protected
     .get("/session/{sessionID}/goal", "session.goal")

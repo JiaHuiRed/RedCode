@@ -6,6 +6,8 @@ import { Permission } from "@/permission"
 import { PermissionID } from "@/permission/schema"
 import { SessionShare } from "@/share/session"
 import { Session } from "@/session/session"
+import { SessionChanges } from "@/session/changes"
+import { Config } from "@/config/config"
 import { ContextSnapshot } from "@/session/context-snapshot"
 import { Goal } from "@/session/goal"
 import { SessionCompaction } from "@/session/compaction"
@@ -28,6 +30,7 @@ import { HttpApiBuilder, HttpApiError, HttpApiSchema } from "effect/unstable/htt
 import { InstanceHttpApi } from "../api"
 import {
   CommandPayload,
+  ChangesQuery,
   DiffQuery,
   ForkPayload,
   InitPayload,
@@ -53,6 +56,7 @@ const tryParseJson = (text: string) =>
 export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", (handlers) =>
   Effect.gen(function* () {
     const session = yield* Session.Service
+    const config = yield* Config.Service
     const shareSvc = yield* SessionShare.Service
     const promptSvc = yield* SessionPrompt.Service
     const revertSvc = yield* SessionRevert.Service
@@ -120,6 +124,22 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
 
     const get = Effect.fn("SessionHttpApi.get")(function* (ctx: { params: { sessionID: SessionID } }) {
       return yield* requireSession(ctx.params.sessionID)
+    })
+
+    const changes = Effect.fn("SessionHttpApi.changes")(function* (ctx: {
+      params: { sessionID: SessionID }
+      query: typeof ChangesQuery.Type
+    }) {
+      yield* requireSession(ctx.params.sessionID)
+      const resolved = SessionChanges.resolve((yield* config.get()).session_changes)
+      return SessionChanges.page({
+        sessionID: ctx.params.sessionID,
+        after: ctx.query.after ?? -1,
+        until: ctx.query.until,
+        limit: ctx.query.limit ?? resolved.page_size,
+        now: Date.now(),
+        config: resolved,
+      })
     })
 
     const children = Effect.fn("SessionHttpApi.children")(function* (ctx: { params: { sessionID: SessionID } }) {
@@ -590,6 +610,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("diff", diff)
       .handle("outline", outline)
       .handle("messages", messages)
+      .handle("changes", changes)
       .handle("message", message)
       .handleRaw("create", createRaw)
       .handle("remove", remove)

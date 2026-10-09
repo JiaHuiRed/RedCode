@@ -3,7 +3,12 @@ import { OpenApi } from "effect/unstable/httpapi"
 import { PublicApi } from "../../src/server/routes/instance/httpapi/public"
 
 type Method = "get" | "post" | "put" | "delete" | "patch"
-type OpenApiSchema = { readonly $ref?: string }
+type OpenApiSchema = {
+  readonly $ref?: string
+  readonly type?: string
+  readonly anyOf?: OpenApiSchema[]
+  readonly properties?: Record<string, OpenApiSchema>
+}
 type OpenApiResponse = {
   readonly description?: string
   readonly content?: Record<string, { readonly schema?: OpenApiSchema }>
@@ -13,7 +18,10 @@ type OpenApiOperation = {
   readonly security?: unknown
 }
 type OpenApiPathItem = Partial<Record<Method, OpenApiOperation>>
-type OpenApiSpec = { readonly paths: Record<string, OpenApiPathItem> }
+type OpenApiSpec = {
+  readonly paths: Record<string, OpenApiPathItem>
+  readonly components?: { readonly schemas?: Record<string, OpenApiSchema> }
+}
 
 const methods = ["get", "post", "put", "delete", "patch"] as const
 
@@ -43,6 +51,16 @@ function isBuiltInEndpointError(name: string) {
 }
 
 describe("PublicApi OpenAPI v2 errors", () => {
+  test("preserves the genuinely nullable oldest session-change cursor", () => {
+    const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
+    const schema =
+      spec.paths["/session/{sessionID}/changes"]?.get?.responses?.["200"]?.content?.["application/json"]?.schema
+    const properties = schema?.$ref
+      ? spec.components?.schemas?.[componentName(schema.$ref)]?.properties
+      : schema?.properties
+    expect(properties?.oldest?.anyOf?.some((item) => item.type === "null")).toBe(true)
+  })
+
   test("preserves /api auth responses", () => {
     const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
 

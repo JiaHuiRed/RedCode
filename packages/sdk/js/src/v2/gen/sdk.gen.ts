@@ -168,6 +168,8 @@ import type {
   SessionAbortResponses,
   SessionCancelQueuedMessageErrors,
   SessionCancelQueuedMessageResponses,
+  SessionChangesErrors,
+  SessionChangesResponses,
   SessionChildrenErrors,
   SessionChildrenResponses,
   SessionCommandErrors,
@@ -3719,6 +3721,40 @@ export class Session2 extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * Get session change markers
+   *
+   * Read bounded metadata-only invalidation markers since a sequence cursor.
+   */
+  public changes<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      after?: string
+      until?: string
+      limit?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "after" },
+            { in: "query", key: "until" },
+            { in: "query", key: "limit" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionChangesResponses, SessionChangesErrors, ThrowOnError>({
+      url: "/session/{sessionID}/changes",
+      ...options,
+      ...params,
     })
   }
 

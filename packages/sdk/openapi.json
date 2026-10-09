@@ -6712,6 +6712,144 @@
         ]
       }
     },
+    "/session/{sessionID}/changes": {
+      "get": {
+        "tags": ["session"],
+        "operationId": "session.changes",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bounded session change markers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "latest": {
+                      "type": "integer"
+                    },
+                    "oldest": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "cursor": {
+                      "type": "integer"
+                    },
+                    "hasMore": {
+                      "type": "boolean"
+                    },
+                    "reset": {
+                      "type": "boolean"
+                    },
+                    "changes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "seq": {
+                            "type": "integer"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": ["session", "message"]
+                          },
+                          "messageID": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["id", "seq", "kind"],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["latest", "oldest", "cursor", "hasMore", "reset", "changes"],
+                  "additionalProperties": false,
+                  "description": "Bounded session change markers"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Read bounded metadata-only invalidation markers since a sequence cursor.",
+        "summary": "Get session change markers",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@redcode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.session.changes({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/session/{sessionID}/message/{messageID}": {
       "get": {
         "tags": ["session"],
@@ -16328,6 +16466,33 @@
               }
             },
             "additionalProperties": false
+          },
+          "session_changes": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "max_events_per_session": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "max_total_events": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "retention_ms": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "page_size": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 256
+              }
+            },
+            "additionalProperties": false,
+            "description": "Bounds and retention for lightweight session change markers"
           },
           "experimental": {
             "type": "object",

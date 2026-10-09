@@ -55,6 +55,25 @@ export const MessagesQuery = Schema.Struct({
   limit: Schema.optional(Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))),
   before: Schema.optional(Schema.String),
 })
+export const ChangesQuery = Schema.Struct({
+  after: Schema.optional(
+    Schema.NumberFromString.check(
+      Schema.isInt(),
+      Schema.isGreaterThanOrEqualTo(-1),
+      Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER),
+    ),
+  ),
+  until: Schema.optional(
+    Schema.NumberFromString.check(
+      Schema.isInt(),
+      Schema.isGreaterThanOrEqualTo(0),
+      Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER),
+    ),
+  ),
+  limit: Schema.optional(
+    Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(256)),
+  ),
+})
 // 260901 cc 首页用量看板的数据源。前端只加载了最近一批会话，算不出真·累计，见 usage.ts 文件头。
 export const UsageQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
@@ -117,6 +136,7 @@ export const SessionPaths = {
   diff: `${root}/:sessionID/diff`,
   outline: `${root}/:sessionID/outline`,
   messages: `${root}/:sessionID/message`,
+  changes: `${root}/:sessionID/changes`,
   message: `${root}/:sessionID/message/:messageID`,
   deliverQueuedMessage: `${root}/:sessionID/message/:messageID/deliver`,
   editQueuedMessage: `${root}/:sessionID/message/:messageID/queued`,
@@ -273,6 +293,35 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.messages",
             summary: "Get session messages",
             description: "Retrieve all messages in a session, including user prompts and AI responses.",
+          }),
+        ),
+        HttpApiEndpoint.get("changes", SessionPaths.changes, {
+          params: { sessionID: SessionID },
+          query: ChangesQuery,
+          success: described(
+            Schema.Struct({
+              latest: Schema.Int,
+              oldest: Schema.NullOr(Schema.Int),
+              cursor: Schema.Int,
+              hasMore: Schema.Boolean,
+              reset: Schema.Boolean,
+              changes: Schema.Array(
+                Schema.Struct({
+                  id: Schema.String,
+                  seq: Schema.Int,
+                  kind: Schema.Literals(["session", "message"]),
+                  messageID: Schema.optional(Schema.String),
+                }),
+              ),
+            }),
+            "Bounded session change markers",
+          ),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.changes",
+            summary: "Get session change markers",
+            description: "Read bounded metadata-only invalidation markers since a sequence cursor.",
           }),
         ),
         HttpApiEndpoint.get("message", SessionPaths.message, {

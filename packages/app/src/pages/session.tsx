@@ -36,7 +36,9 @@ import { NewSessionDesignView, SessionHeader } from "@/components/session"
 import { useComments } from "@/context/comments"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
 import { createReconnectRefresh } from "@/context/reconnect"
+import { listenForGlobalReconnect } from "@/context/session-changes"
 import { useServerSync } from "@/context/server-sync"
+import { useGlobalSDK } from "@/context/global-sdk"
 import { holdMessageWindow } from "@/context/message-window"
 import { useLanguage } from "@/context/language"
 import { useLayout, workbenchDockWidth } from "@/context/layout"
@@ -82,6 +84,7 @@ type VcsMode = "git" | "branch"
 
 export default function Page() {
   const globalSync = useServerSync()
+  const globalSDK = useGlobalSDK()
   const layout = useLayout()
   const local = useLocal()
   const file = useFile()
@@ -630,39 +633,68 @@ export default function Page() {
     ),
   )
 
-  // 260913 Red SSE 重连补拉：断线期间服务端仍在写消息，重连后按断线前锚点补齐缺口，
-  // 不重放整段历史；连续重连先合并，避免网络抖动时反复拉页。
+  // 261009 Red: See docs/notes/implemented/feature/2026-10-09-session-change-catchup.md.
   createEffect(() => {
     const id = params.id
     const directory = sdk.directory
     if (!id) return
 
-    const lastConfirmed = () => {
-      const list = untrack(() => sync.data.message[id] ?? [])
-      for (let index = list.length - 1; index >= 0; index--) {
-        const message = list[index]
-        if (message && !sync.session.optimistic.isPending(message.id)) return message.id
-      }
-      return undefined
-    }
-
+    let catchingUp = false
+    let disposed = false
+    let invalidations = 0
+    let needsCatchup = false
     const reconnect = createReconnectRefresh({
       refresh: async () => {
         if (params.id !== id || sdk.directory !== directory) return
-        const anchor = lastConfirmed()
-        await untrack(() => sync.session.sync(id, { force: true, ...(anchor ? { anchor } : {}) }))
+        catchingUp = true
+        try {
+          const result = await untrack(() =>
+            sync.session.catchup(id, () => !disposed && params.id === id && sdk.directory === directory),
+          )
+          needsCatchup = result.status === "cancelled"
+          if (needsCatchup) invalidations++
+          else invalidations = 0
+        } finally {
+          catchingUp = false
+        }
       },
       error: (error) => console.error("[session] reconnect refresh failed", error),
     })
 
-    const stop = sdk.event.listen((event) => {
-      if (event.name !== directory) return
-      if (event.details.type !== "server.connected") return
+    const request = () => {
+      invalidations = 0
       reconnect.request()
+    }
+    const stopGlobal = listenForGlobalReconnect(globalSDK.event.listen, request)
+    const stopLive = sdk.event.listen((event) => {
+      const detail = event.details
+      if (detail.type === "session.status") {
+        if (detail.properties.sessionID === id && detail.properties.status.type === "idle" && needsCatchup) request()
+        return
+      }
+      const sessionID =
+        detail.type === "message.updated"
+          ? detail.properties.info.sessionID
+          : detail.type === "message.part.updated"
+            ? detail.properties.part.sessionID
+            : detail.type === "session.updated"
+              ? detail.properties.info.id
+              : detail.type === "message.removed" ||
+                  detail.type === "message.part.removed" ||
+                  detail.type === "message.part.delta"
+                ? detail.properties.sessionID
+                : undefined
+      if (sessionID !== id) return
+      sync.session.invalidateChanges(id)
+      // 261009 Red: Bound streaming-race retries; the idle event finishes catch-up.
+      if (catchingUp && invalidations < 3) reconnect.request()
     })
+    reconnect.request()
 
     onCleanup(() => {
-      stop()
+      disposed = true
+      stopGlobal()
+      stopLive()
       reconnect.dispose()
     })
   })

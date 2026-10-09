@@ -363,6 +363,17 @@ export const Info = Schema.Struct({
       }),
     }),
   ),
+  session_changes: Schema.optional(
+    Schema.Struct({
+      enabled: Schema.optional(Schema.Boolean),
+      max_events_per_session: Schema.optional(PositiveInt),
+      max_total_events: Schema.optional(PositiveInt),
+      retention_ms: Schema.optional(PositiveInt),
+      page_size: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(256))),
+    }),
+  ).annotate({
+    description: "Bounds and retention for lightweight session change markers",
+  }),
   // 260910 Red 原 `reasoning_language`（"auto" | "zh" | "en"）已删。它自 260731 起就没有消费者——
   // 唯一读它的「每步注入 <reasoning-language> 块」已撤除（原因见 session/prompt.ts:1408-1422），
   // 此后一直悬空。思考链语言改为由 per-model 提示词约束（prompt/deepseek.md），不再做成会话

@@ -1698,6 +1698,16 @@ export type Config = {
      */
     threshold?: number
   }
+  /**
+   * Bounds and retention for lightweight session change markers
+   */
+  session_changes?: {
+    enabled?: boolean
+    max_events_per_session?: number
+    max_total_events?: number
+    retention_ms?: number
+    page_size?: number
+  }
   experimental?: {
     disable_paste_summary?: boolean
     /**
@@ -7258,6 +7268,53 @@ export type SessionPromptResponses = {
 }
 
 export type SessionPromptResponse = SessionPromptResponses[keyof SessionPromptResponses]
+
+export type SessionChangesData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    after?: string
+    until?: string
+    limit?: string
+  }
+  url: "/session/{sessionID}/changes"
+}
+
+export type SessionChangesErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionChangesError = SessionChangesErrors[keyof SessionChangesErrors]
+
+export type SessionChangesResponses = {
+  /**
+   * Bounded session change markers
+   */
+  200: {
+    latest: number
+    oldest: number | null
+    cursor: number
+    hasMore: boolean
+    reset: boolean
+    changes: Array<{
+      id: string
+      seq: number
+      kind: "session" | "message"
+      messageID?: string
+    }>
+  }
+}
+
+export type SessionChangesResponse = SessionChangesResponses[keyof SessionChangesResponses]
 
 export type SessionDeleteMessageData = {
   body?: never
