@@ -1,12 +1,13 @@
 import { Config } from "@/config/config"
-import { GlobalBus, type GlobalEvent as GlobalBusEvent } from "@/bus/global"
+import { GlobalBus } from "@/bus/global"
+import { ConfigServer } from "@/config/server"
 import { EffectBridge } from "@/effect/bridge"
 import { Bus } from "@/bus"
 import { Installation } from "@/installation"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
 import { InstallationVersion } from "@redcode-ai/core/installation/version"
 import * as Log from "@redcode-ai/core/util/log"
-import { Effect, Queue, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import * as Stream from "effect/Stream"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
@@ -14,6 +15,7 @@ import * as Sse from "effect/unstable/encoding/Sse"
 import { RootHttpApi } from "../api"
 import { GlobalUpgradeInput } from "../groups/global"
 import { eventData } from "./sse-encode"
+import { globalEventStream } from "./global-event-stream"
 
 const log = Log.create({ service: "server" })
 
@@ -25,24 +27,16 @@ function parseBody(body: string) {
   }
 }
 
-function eventResponse() {
+function eventResponse(limits: ReturnType<typeof ConfigServer.resolveEventBuffer>) {
   log.info("global event connected")
-  const events = Stream.callback<GlobalBusEvent>((queue) => {
-    const handler = (event: GlobalBusEvent) => Queue.offerUnsafe(queue, event)
-    return Effect.acquireRelease(
-      Effect.sync(() => GlobalBus.on("event", handler)),
-      () => Effect.sync(() => GlobalBus.off("event", handler)),
-    )
-  })
   const heartbeat = Stream.tick("10 seconds").pipe(
     Stream.drop(1),
-    Stream.map(() => ({ payload: { id: Bus.createID(), type: "server.heartbeat", properties: {} } })),
+    Stream.map(() => eventData({ payload: { id: Bus.createID(), type: "server.heartbeat", properties: {} } })),
   )
 
   return HttpServerResponse.stream(
-    Stream.make({ payload: { id: Bus.createID(), type: "server.connected", properties: {} } }).pipe(
-      Stream.concat(events.pipe(Stream.merge(heartbeat, { haltStrategy: "left" }))),
-      Stream.map(eventData),
+    globalEventStream(limits).pipe(
+      Stream.merge(heartbeat, { haltStrategy: "left" }),
       Stream.pipeThroughChannel(Sse.encode()),
       Stream.encodeText,
       Stream.ensuring(Effect.sync(() => log.info("global event disconnected"))),
@@ -69,7 +63,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     })
 
     const event = Effect.fn("GlobalHttpApi.event")(function* () {
-      return eventResponse()
+      return eventResponse(ConfigServer.resolveEventBuffer((yield* config.getGlobal()).server))
     })
 
     const configGet = Effect.fn("GlobalHttpApi.configGet")(function* () {

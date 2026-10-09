@@ -7,7 +7,7 @@
 1. **分页合并路径无上限**：`event-reducer` 的每会话消息上限只在流式插入路径执行；`loadMessages` 的 merge（prepend/refresh/anchor 补拉）完全无封顶——往上翻过深历史的会话把整段已加载历史常驻内存，且当前会话在 session 40-LRU 里被 keep 永不淘汰。
 2. **目录乘数 30**：`MAX_DIR_STORES=30` × `SESSION_CACHE_LIMIT=40` × 100~400 条消息+parts；sidecar 侧每目录一整套 InstanceState（`instance-state.ts` capacity 默认 `Infinity`）+ MCP 每目录一整套 stdio server（`mcp/index.ts` 自注实测 10×6=60 进程）。30 是按最坏形态设计的，单项目用户用不满。
 3. `instance-dispose` 失败日志打 `[object Object]`，renderer.log 无法排查。
-4. 未在本批处理：事件面 `/global/event` 每连接队列上限未证；`providerCatalog` `gcTime: Infinity`（有意决策，30-80MB）。
+4. 第一批未处理的 `/global/event` 队列已在后续独立改动加双预算与溢出恢复，见 `2026-10-09-global-sse-buffer.md`；`providerCatalog` `gcTime: Infinity` 的实际对象成本仍需量测。
 
 ## 决策
 

@@ -1036,6 +1036,19 @@ export type ServerConfig = {
    * Additional domains to allow for CORS
    */
   cors?: Array<string>
+  /**
+   * Global SSE buffer limits; overflow closes the stream for authoritative resync
+   */
+  sse?: {
+    /**
+     * Maximum buffered events per global SSE connection (default: 256)
+     */
+    max_events?: number
+    /**
+     * Maximum buffered UTF-8 event data bytes per global SSE connection (default: 8388608)
+     */
+    max_bytes?: number
+  }
 }
 
 export type ReferenceConfigEntry =

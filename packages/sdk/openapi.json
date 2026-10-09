@@ -15328,6 +15328,23 @@
               "type": "string"
             },
             "description": "Additional domains to allow for CORS"
+          },
+          "sse": {
+            "type": "object",
+            "properties": {
+              "max_events": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "description": "Maximum buffered events per global SSE connection (default: 256)"
+              },
+              "max_bytes": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "description": "Maximum buffered UTF-8 event data bytes per global SSE connection (default: 8388608)"
+              }
+            },
+            "additionalProperties": false,
+            "description": "Global SSE buffer limits; overflow closes the stream for authoritative resync"
           }
         },
         "additionalProperties": false,
