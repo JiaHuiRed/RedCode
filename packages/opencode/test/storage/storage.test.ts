@@ -26,7 +26,7 @@ const scope = Effect.fnUntraced(function* () {
 // remap(root) rewrites any path under Global.Path.data to live under `root` instead.
 // Used by remappedFs to build an AppFileSystem that Storage thinks is the real global
 // data dir but actually targets a tmp dir — letting migration tests stage legacy layouts.
-// NOTE: only the 6 methods below are intercepted. If Storage starts using a different
+// NOTE: only the methods below are intercepted. If Storage starts using a different
 // AppFileSystem method that touches Global.Path.data, add it here.
 function remap(root: string, file: string) {
   if (file === Global.Path.data) return root
@@ -34,7 +34,15 @@ function remap(root: string, file: string) {
   return file
 }
 
-function remappedFs(root: string) {
+function remappedFs(
+  root: string,
+  atomic?: (
+    fs: AppFileSystem.Interface,
+    file: string,
+    content: string,
+    mode?: number,
+  ) => Effect.Effect<void, AppFileSystem.Error>,
+) {
   return Layer.effect(
     AppFileSystem.Service,
     Effect.gen(function* () {
@@ -44,6 +52,10 @@ function remappedFs(root: string) {
         isDir: (file) => fs.isDir(remap(root, file)),
         readJson: (file) => fs.readJson(remap(root, file)),
         writeWithDirs: (file, content, mode) => fs.writeWithDirs(remap(root, file), content, mode),
+        writeFileStringAtomic: (file, content, mode) =>
+          atomic
+            ? atomic(fs, remap(root, file), content, mode)
+            : fs.writeFileStringAtomic(remap(root, file), content, mode),
         readFileString: (file) => fs.readFileString(remap(root, file)),
         remove: (file) => fs.remove(remap(root, file)),
         glob: (pattern, options) =>
@@ -56,8 +68,8 @@ function remappedFs(root: string) {
 // Layer.fresh forces a new Storage instance — without it, Effect's in-test layer cache
 // returns the outer testEffect's Storage (which uses the real AppFileSystem), not a new
 // one built on top of remappedFs.
-const remappedStorage = (root: string) =>
-  Layer.fresh(Storage.layer.pipe(Layer.provide(remappedFs(root)), Layer.provide(Git.defaultLayer)))
+const remappedStorage = (root: string, atomic?: Parameters<typeof remappedFs>[1]) =>
+  Layer.fresh(Storage.layer.pipe(Layer.provide(remappedFs(root, atomic)), Layer.provide(Git.defaultLayer)))
 
 describe("Storage", () => {
   it.live("round-trips JSON content", () =>
@@ -103,6 +115,52 @@ describe("Storage", () => {
       yield* svc.write<{ v: number }>(key, { v: 2 })
 
       expect(yield* svc.read<{ v: number }>(key)).toEqual({ v: 2 })
+    }),
+  )
+
+  it.live("preserves the existing JSON file when atomic write and update replacements fail", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      const fs = yield* AppFileSystem.Service
+      let calls = 0
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Storage.Service
+        const key = ["atomic", "replacement"]
+        yield* svc.write(key, { value: "old" })
+        const writeError = yield* svc.write(key, { value: "new" }).pipe(Effect.catch((error) => Effect.succeed(error)))
+        expect(writeError).toBeInstanceOf(AppFileSystem.FileSystemError)
+        expect(yield* svc.read(key)).toEqual({ value: "old" })
+
+        const updateError = yield* svc
+          .update<{ value: string }>(key, (draft) => {
+            draft.value = "updated"
+          })
+          .pipe(Effect.catch((error) => Effect.succeed(error)))
+        expect(updateError).toBeInstanceOf(AppFileSystem.FileSystemError)
+        expect(calls).toBe(3)
+        expect(yield* svc.read(key)).toEqual({ value: "old" })
+      }).pipe(
+        Effect.provide(
+          remappedStorage(tmp, (fs, file, content, mode) => {
+            calls++
+            if (calls === 1) return fs.writeFileStringAtomic(file, content, mode)
+            // 261009 Red 走真实临时文件写入，只注入 rename 失败，不在写盘前伪造错误。
+            return Effect.tryPromise({
+              try: () =>
+                AppFileSystem.writeFileAtomic(file, content, mode, {
+                  rename: async () => {
+                    throw Object.assign(new Error("replacement failed"), { code: "EBUSY" })
+                  },
+                  platform: "win32",
+                  sleep: async () => {},
+                }),
+              catch: (cause) => new AppFileSystem.FileSystemError({ method: "writeFileStringAtomic", cause }),
+            })
+          }),
+        ),
+      )
+      expect(yield* fs.glob("*.tmp", { cwd: path.join(tmp, "storage", "atomic") })).toEqual([])
     }),
   )
 

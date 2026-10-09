@@ -255,7 +255,8 @@ export const layer = Layer.effect(
       body.pipe(Effect.catchIf(missing, () => fail(target)))
 
     const writeJson = Effect.fnUntraced(function* (target: string, content: unknown) {
-      yield* fs.writeWithDirs(target, JSON.stringify(content, null, 2))
+      // 261009 Red 活跃任务记录也须完整替换；边界见 docs/notes/implemented/bug-fix/2026-09-01-atomic-config-writes.md。
+      yield* fs.writeFileStringAtomic(target, JSON.stringify(content, null, 2))
     })
 
     const withResolved = <A, E>(

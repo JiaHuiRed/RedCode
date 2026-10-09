@@ -104,22 +104,20 @@ export const Client = Object.assign(
     db.run("PRAGMA foreign_keys = ON")
     db.run("PRAGMA wal_checkpoint(PASSIVE)")
 
-    // Apply schema migrations
-    const entries =
-      typeof REDCODE_MIGRATIONS !== "undefined"
-        ? REDCODE_MIGRATIONS
-        : migrations(path.join(import.meta.dirname, "../../migration"))
-    if (entries.length > 0) {
-      log.info("applying migrations", {
-        count: entries.length,
-        mode: typeof REDCODE_MIGRATIONS !== "undefined" ? "bundled" : "dev",
-      })
-      if (flags.skipMigrations) {
-        for (const item of entries) {
-          item.sql = "select 1;"
-        }
+    // 261009 Red 跳过迁移不改 SQL、不写 journal；语义见 docs/notes/implemented/bug-fix/2026-10-09-database-audit-safety.md。
+    if (flags.skipMigrations) log.info("skipping schema migrations")
+    if (!flags.skipMigrations) {
+      const entries =
+        typeof REDCODE_MIGRATIONS !== "undefined"
+          ? REDCODE_MIGRATIONS
+          : migrations(path.join(import.meta.dirname, "../../migration"))
+      if (entries.length > 0) {
+        log.info("applying migrations", {
+          count: entries.length,
+          mode: typeof REDCODE_MIGRATIONS !== "undefined" ? "bundled" : "dev",
+        })
+        applyMigrations(db, entries)
       }
-      applyMigrations(db, entries)
     }
 
     client = db

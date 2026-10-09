@@ -42,7 +42,7 @@
 
 - **fsync。** temp+rename 解决的是「读者看到半截文件」，这条已经够了；为掉电那个窄窗口给每次配置写盘加一次 fsync 不划算。
 - **`ensureGitignore` 没换。** 它在 `!hasIgnore` 分支里创建一个**新**文件，没有「替换已有内容」这回事，套原子替换只是多一次临时文件往返。
-- **没碰 `writeJson` / `writeWithDirs`。** 它们的调用点是缓存、快照、临时产物这类「写坏了重新生成即可」的文件。原子替换有成本（一次多余的写 + rename），只给「写坏了就毁掉用户数据」的文件付。
+- **不全局替换 `AppFileSystem.writeJson` / `writeWithDirs`。** 原子替换增加临时文件与 rename 的成本，按数据所有者选择接入，不把所有缓存、快照、临时产物一并改掉。业务 JSON Storage 的后续接入见文末。
 
 ## 测试
 
@@ -55,3 +55,23 @@
 ## 记账
 
 `packages/opencode` 的 `test/config/` 有 31 个既有失败（`opencode.jsonc` 找不到，RedCode→redcode 改名遗留的陈旧断言）。**已用对照确认与本改动无关**：还原到 dev 基线跑同一批，同样是 153 pass / 31 fail。这批断言的修复是单独一件事。
+
+## 扩展到业务 JSON Storage
+
+数据库审计确认 `packages/opencode/src/storage/storage.ts` 的业务 `writeJson` 仍在直写：不只有可重建的 `session_diff`，还承载后台子代理的 `task-runtime` 结果记录。不能把所有调用者都当成丢掉即可重建的缓存。
+
+该业务入口改用已有 `AppFileSystem.Interface.writeFileStringAtomic`，`Storage.write` 与 `Storage.update` 共用它；JSON 格式、文件位置、已有锁与调用方接口不变。历史 JSON 导入与迁移 marker 的 `writeWithDirs` 不在本次修改范围。通用文件系统的 `writeJson` 仍保持原契约，未全局替换。
+
+新增集成回归先在旧实现上失败，再验证修复：通过真实 Storage 服务写入旧值，对下一次 `write` 与 `update` 调用，仅注入底层 rename 的 `EBUSY`，实际临时文件写入、Windows 重试和失败清理由已有原语执行。两次失败均向调用者返回文件系统错误，旧 JSON 内容不变，目录没有残留 `.tmp`。不使用全局模块 mock。
+
+验证命令：
+
+```powershell
+# packages/opencode
+bun test --timeout 30000 ./test/storage/storage.test.ts
+bun run typecheck
+# packages/core
+bun test --timeout 30000 ./test/filesystem/write-atomic.test.ts
+```
+
+结果：Storage 14 pass / 0 fail，底层原语 10 pass / 0 fail，核心类型检查通过。仍不做 fsync；进程被强杀时可能残留临时兄弟文件，突然断电也没有新增持久性保证。此次没有访问真实用户存储。
