@@ -1,6 +1,7 @@
 import { afterEach, expect } from "bun:test"
 import { Cause, Effect, Exit, Fiber, Layer, Queue } from "effect"
 import { Question } from "../../src/question"
+import { GlobalBus } from "../../src/bus/global"
 import { InstanceRef } from "../../src/effect/instance-ref"
 import { InstanceRuntime } from "../../src/project/instance-runtime"
 import { QuestionID } from "../../src/question/schema"
@@ -388,25 +389,62 @@ it.live("questions stay isolated by directory", () =>
       ],
     }).pipe(provideInstance(two), Effect.forkScoped)
 
-    const onePending = yield* waitForPending(1).pipe(provideInstance(one))
-    const twoPending = yield* waitForPending(1).pipe(provideInstance(two))
+    // 261009 Red list 经 owners 回退跨实例互见（恢复拉取依赖它），隔离语义钉在
+    // 归属与路由上：各会话的请求都能定位，reject 各自只影响自己的 fiber。
+    const all = yield* waitForPending(2).pipe(provideInstance(one))
+    const oneReq = all.find((x) => x.sessionID === SessionID.make("ses_one"))
+    const twoReq = all.find((x) => x.sessionID === SessionID.make("ses_two"))
+    if (!oneReq || !twoReq) return yield* Effect.die(new Error("fixture requests missing"))
 
-    expect(onePending.length).toBe(1)
-    expect(twoPending.length).toBe(1)
-    expect(onePending[0].sessionID).toBe(SessionID.make("ses_one"))
-    expect(twoPending[0].sessionID).toBe(SessionID.make("ses_two"))
-
-    yield* rejectEffect(onePending[0].id).pipe(provideInstance(one))
-    yield* rejectEffect(twoPending[0].id).pipe(provideInstance(two))
+    yield* rejectEffect(oneReq.id).pipe(provideInstance(one))
+    yield* rejectEffect(twoReq.id).pipe(provideInstance(two))
 
     expect((yield* Fiber.await(fiber1))._tag).toBe("Failure")
     expect((yield* Fiber.await(fiber2))._tag).toBe("Failure")
   }),
 )
 
+it.live("list - routes to the owning instance like reply does", () =>
+  Effect.gen(function* () {
+    const one = yield* tmpdirScoped({ git: true })
+    const two = yield* tmpdirScoped({ git: true })
+
+    const fiber = yield* askEffect({
+      sessionID: SessionID.make("ses_worktree"),
+      questions: [
+        {
+          question: "Asked from another instance?",
+          header: "Q",
+          options: [{ label: "A", description: "A" }],
+        },
+      ],
+    }).pipe(provideInstance(two), Effect.forkScoped)
+
+    const own = yield* waitForPending(1).pipe(provideInstance(two))
+    expect(own).toHaveLength(1)
+
+    // 261009 Red 恢复拉取的跨实例回退：reply/reject 早已能借 owners 找到别的实例，
+    // list 看不到的话，客户端刷新后就丢弹窗而模型仍在等。
+    const fromOther = yield* listEffect.pipe(provideInstance(one))
+    expect(fromOther.map((x) => x.id)).toContain(own[0].id)
+
+    yield* rejectEffect(own[0].id).pipe(provideInstance(one))
+    expect((yield* Fiber.await(fiber))._tag).toBe("Failure")
+  }),
+)
+
 it.live("pending question rejects on instance dispose", () =>
   Effect.gen(function* () {
     const dir = yield* tmpdirScoped({ git: true })
+    // finalizer 的广播走 GlobalBus（实例条目失效中，Bus.publish 的 get-or-create 不可靠），
+    // 测试断言也对着客户端实际消费的这条通道。
+    const seen: QuestionID[] = []
+    const onRejected = (event: { payload: { type: string; properties: { requestID?: QuestionID } } }) => {
+      if (event.payload.type === "question.rejected" && event.payload.properties.requestID) {
+        seen.push(event.payload.properties.requestID)
+      }
+    }
+    GlobalBus.on("event", onRejected as never)
     const fiber = yield* askEffect({
       sessionID: SessionID.make("ses_dispose"),
       questions: [
@@ -418,7 +456,8 @@ it.live("pending question rejects on instance dispose", () =>
       ],
     }).pipe(provideInstance(dir), Effect.forkScoped)
 
-    expect(yield* waitForPending(1).pipe(provideInstance(dir))).toHaveLength(1)
+    const pending = yield* waitForPending(1).pipe(provideInstance(dir))
+    expect(pending).toHaveLength(1)
     const ctx = yield* Effect.gen(function* () {
       return yield* InstanceRef
     }).pipe(provideInstance(dir))
@@ -428,6 +467,9 @@ it.live("pending question rejects on instance dispose", () =>
     const exit = yield* Fiber.await(fiber)
     expect(Exit.isFailure(exit)).toBe(true)
     if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(Question.RejectedError)
+    // 261009 Red finalizer 必须广播 rejected：否则客户端 store 里的弹窗永久残留。
+    expect(seen).toContain(pending[0].id)
+    GlobalBus.off("event", onRejected as never)
   }),
 )
 

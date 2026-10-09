@@ -1,6 +1,7 @@
 import { Deferred, Effect, Layer, Schema, Context } from "effect"
 import { Bus } from "@/bus"
 import { BusEvent } from "@/bus/bus-event"
+import { GlobalBus } from "@/bus/global"
 import { InstanceState } from "@/effect/instance-state"
 import { SessionID, MessageID } from "@/session/schema"
 import * as Log from "@redcode-ai/core/util/log"
@@ -107,7 +108,9 @@ export const Event = {
 
 export class RejectedError extends Schema.TaggedErrorClass<RejectedError>()("QuestionRejectedError", {}) {
   override get message() {
-    return "The user dismissed this question"
+    // 261009 Red 措辞中性：reject 是用户拒绝，instance 淘汰是系统拆除——统一文案
+    // 不向模型断言「是谁」 dismiss 的，两边都真。
+    return "The question was dismissed"
   }
 }
 
@@ -148,12 +151,35 @@ export const layer = Layer.effect(
     const bus = yield* Bus.Service
     const state = yield* InstanceState.make<State>(
       Effect.fn("Question.state")(function* () {
+        // 261009 Red finalizer 执行时 ScopedCache 条目正在失效，bus.publish 内部的
+        // InstanceState.get（get-or-create）可能落到重建的新 state 上——广播改走
+        // GlobalBus（TUI/GUI 实际消费的通道），实例标识在工厂创建时健康上下文里捕获。
+        const directory = yield* InstanceState.directory
+        const instance = yield* InstanceState.context
         const state = {
           pending: new Map<QuestionID, PendingEntry>(),
         }
 
         yield* Effect.addFinalizer(() =>
           Effect.gen(function* () {
+            // 拆除也要广播：reject() 发 question.rejected 让客户端清弹窗，finalizer
+            // 静默清理（实例淘汰/重载）会留下永久残留弹窗。先广播再 fail，客户端先
+            // 摘弹窗，模型侧随后才恢复。
+            for (const item of state.pending.values()) {
+              GlobalBus.emit("event", {
+                directory,
+                project: instance.project.id,
+                workspace: undefined,
+                payload: {
+                  id: Bus.createID(),
+                  type: Event.Rejected.type,
+                  properties: {
+                    sessionID: item.info.sessionID,
+                    requestID: item.info.id,
+                  },
+                },
+              })
+            }
             for (const item of state.pending.values()) {
               yield* Deferred.fail(item.deferred, new RejectedError())
             }
@@ -236,7 +262,16 @@ export const layer = Layer.effect(
 
     const list = Effect.fn("Question.list")(function* () {
       const pending = (yield* InstanceState.get(state)).pending
-      return Array.from(pending.values(), (x) => x.info)
+      // 261009 Red 与 reply/reject 的 owners 回退对称：隔离 worktree 子代理的问题在线时
+      // 能跨实例回复，恢复拉取（GUI bootstrap / TUI 重连）也要看得到——只读本实例会让
+      // 刷新后的客户端丢弹窗而模型仍在等。
+      const merged = new Map(Array.from(pending, ([id, entry]) => [id, entry.info] as const))
+      for (const [id, owner] of owners) {
+        if (merged.has(id)) continue
+        const entry = owner.pending.get(id)
+        if (entry) merged.set(id, entry.info)
+      }
+      return Array.from(merged.values())
     })
 
     return Service.of({ ask, reply, reject, list })
