@@ -185,6 +185,28 @@ export const {
         }),
       )
 
+    // 261009 Red question.asked 事件与 bootstrap 恢复拉取共用一份插入形状，别抄两份。
+    const upsertQuestion = (request: QuestionRequest, workspace: string | undefined) => {
+      setStore("request_workspace", request.id, workspace)
+      const requests = store.question[request.sessionID]
+      if (!requests) {
+        setStore("question", request.sessionID, [request])
+        return
+      }
+      const match = Binary.search(requests, request.id, (r) => r.id)
+      if (match.found) {
+        setStore("question", request.sessionID, match.index, reconcile(request))
+        return
+      }
+      setStore(
+        "question",
+        request.sessionID,
+        produce((draft) => {
+          draft.splice(match.index, 0, request)
+        }),
+      )
+    }
+
     event.subscribe((event, { workspace }) => {
       switch (event.type) {
         case "server.instance.disposed":
@@ -257,25 +279,7 @@ export const {
         }
 
         case "question.asked": {
-          const request = event.properties
-          setStore("request_workspace", request.id, workspace)
-          const requests = store.question[request.sessionID]
-          if (!requests) {
-            setStore("question", request.sessionID, [request])
-            break
-          }
-          const match = Binary.search(requests, request.id, (r) => r.id)
-          if (match.found) {
-            setStore("question", request.sessionID, match.index, reconcile(request))
-            break
-          }
-          setStore(
-            "question",
-            request.sessionID,
-            produce((draft) => {
-              draft.splice(match.index, 0, request)
-            }),
-          )
+          upsertQuestion(event.properties, workspace)
           break
         }
 
@@ -599,6 +603,16 @@ export const {
             {
               name: "vcs.get",
               promise: sdk.client.vcs.get({ workspace }).then((x) => setStore("vcs", reconcile(x.data))),
+            },
+            {
+              // 261009 Red 重启/重连恢复仍挂起的提问：SSE 只推连接后的事件，不拉的话
+              // 弹窗不出现、输入框不禁、模型无限等（GUI bootstrap 同款恢复早已存在）。
+              name: "question.list",
+              promise: sdk.client.question.list({ workspace }).then((x) => {
+                batch(() => {
+                  for (const request of x.data ?? []) upsertQuestion(request, workspace)
+                })
+              }),
             },
             { name: "project.workspace.sync", promise: project.workspace.sync() },
           ]
