@@ -19,8 +19,8 @@ import { pathKey } from "@/utils/path-key"
 import {
   createSessionChangeJournal,
   isSessionChangeNotFound,
+  mergeSnapshotWindow,
   reconcileChangedMessages,
-  removedMessageIDs,
 } from "./session-changes"
 import { useQueryClient } from "@tanstack/solid-query"
 import { messageWindowLimit } from "./message-window"
@@ -647,7 +647,12 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
               for (const messageID of next.confirmed) clearOptimistic(directory, sessionID, messageID)
               const [store, setStore] = globalSync.child(directory, { bootstrap: false })
               const old = store.message[sessionID] ?? []
-              const removed = removedMessageIDs(old, next.session)
+              const merged = mergeSnapshotWindow({ current: old, fetched: next.session })
+              // 261009 Red 快照回退不能覆盖深层分页游标：合并窗口仍延伸到拉回窗口以下时，
+              // 游标与 complete 留在原处（老窗口更深），只在拉回窗口就是全部时才前进，
+              // 与 loadMessages refresh 的 keepCursor 语义一致。
+              const cursor = merged.keepCursor ? (meta.cursor[key] ?? loaded.cursor) : loaded.cursor
+              const complete = merged.keepCursor ? (meta.complete[key] ?? loaded.complete) : loaded.complete
               batch(() => {
                 setStore("session", (items: typeof store.session) => {
                   const at = Binary.search(items, sessionID, (item) => item.id)
@@ -656,8 +661,8 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
                   else result.splice(at.index, 0, snapshot.data!)
                   return result
                 })
-                setStore("message", sessionID, reconcile(next.session, { key: "id" }))
-                for (const messageID of removed) {
+                setStore("message", sessionID, reconcile(merged.messages, { key: "id" }))
+                for (const messageID of merged.removed) {
                   for (const part of store.part[messageID] ?? []) {
                     setStore("part_text_accum_delta", part.id, undefined!)
                   }
@@ -673,15 +678,15 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
                     item.part.filter((part) => !SKIP_PARTS.has(part.type)),
                   )
                 }
-                setMeta("limit", key, Math.max(meta.limit[key] ?? 0, next.session.length, 200))
-                setMeta("cursor", key, loaded.cursor)
-                setMeta("complete", key, loaded.complete)
+                setMeta("limit", key, Math.max(meta.limit[key] ?? 0, merged.messages.length, 200))
+                setMeta("cursor", key, cursor)
+                setMeta("complete", key, complete)
                 setSessionPrefetch({
                   directory,
                   sessionID,
-                  limit: Math.max(meta.limit[key] ?? 0, next.session.length, 200),
-                  cursor: loaded.cursor,
-                  complete: loaded.complete,
+                  limit: Math.max(meta.limit[key] ?? 0, merged.messages.length, 200),
+                  cursor,
+                  complete,
                 })
                 void queryClient.invalidateQueries({
                   queryKey: globalSync.queryOptions.sessionOutline(pathKey(directory), sessionID).queryKey,
@@ -714,7 +719,8 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
             apply: async (messageIDs, isCurrent) => {
               if (!isCurrent()) return
               const pending = staged
-              const session = await client.session.get({ sessionID }, { throwOnError: true })
+              // 261009 Red 瞬时失败不该作废整轮补拉：同文件其他网络调用都有 retry 包装。
+              const session = await retry(() => client.session.get({ sessionID }, { throwOnError: true }))
               if (!isCurrent()) return
               const [store, setStore] = globalSync.child(directory, { bootstrap: false })
               const updated = reconcileChangedMessages({

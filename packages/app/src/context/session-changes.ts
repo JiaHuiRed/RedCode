@@ -64,6 +64,29 @@ export function removedMessageIDs(current: Message[], next: Message[]) {
   return current.filter((message) => !fresh.has(message.id)).map((message) => message.id)
 }
 
+// 261009 Red 快照回退只覆盖拉回的尾部窗口：老窗口里早于拉回窗口最旧消息的部分并回结果，
+// 用户停在深层历史时不能把已加载的历史从脚下抽走；拉回窗口覆盖到的区域整体替换，已删
+// 消息照常清出（removed 按「current 有、合并后没有」计；窗口外更老的消息在回退路径里
+// 无从得知是否被删，留待下次整窗加载）。keepCursor = 合并后的窗口仍延伸到拉回窗口以下，
+// 分页游标应留在原处（对齐 loadMessages refresh 的 260829 keepCursor 语义）。
+export function mergeSnapshotWindow(input: { current: Message[]; fetched: Message[] }) {
+  const oldest = input.fetched[0]
+  if (!oldest) {
+    return {
+      messages: input.fetched,
+      removed: removedMessageIDs(input.current, input.fetched),
+      keepCursor: false,
+    }
+  }
+  const older = input.current.filter((message) => compareTime(message, oldest) < 0)
+  const messages = [...older, ...input.fetched]
+  return {
+    messages,
+    removed: removedMessageIDs(input.current, messages),
+    keepCursor: older.length > 0,
+  }
+}
+
 const PAGE_SIZE = 256
 const MAX_PAGES = 32
 const MAX_CHANGES = PAGE_SIZE * MAX_PAGES

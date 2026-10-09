@@ -4,6 +4,7 @@ import {
   catchUpSessionChanges,
   createSessionChangeJournal,
   listenForGlobalReconnect,
+  mergeSnapshotWindow,
   reconcileChangedMessages,
   removedMessageIDs,
   type SessionChangesPage,
@@ -288,5 +289,40 @@ describe("session change journal", () => {
     stop()
     emitter.emit("global", { type: "server.connected" })
     expect(requests).toBe(1)
+  })
+})
+
+describe("mergeSnapshotWindow", () => {
+  const msg = (id: string, created: number): Message => ({
+    id,
+    sessionID: "s",
+    role: "user",
+    time: { created },
+    agent: "agent",
+    model: { providerID: "p", modelID: "m" },
+  })
+
+  test("keeps history older than the fetched window and holds the cursor", () => {
+    const current = [msg("m1", 1), msg("m2", 2), msg("m3", 3), msg("m5", 5)]
+    const result = mergeSnapshotWindow({ current, fetched: [msg("m3", 3), msg("m4", 4)] })
+    expect(result.messages.map((message) => message.id)).toEqual(["m1", "m2", "m3", "m4"])
+    expect(result.removed).toEqual(["m5"])
+    expect(result.keepCursor).toBeTrue()
+  })
+
+  test("advances the cursor once the fetched window covers the store", () => {
+    const current = [msg("m2", 2), msg("m3", 3), msg("mX", 4)]
+    const result = mergeSnapshotWindow({ current, fetched: [msg("m2", 2), msg("m3", 3), msg("m4", 4)] })
+    expect(result.messages.map((message) => message.id)).toEqual(["m2", "m3", "m4"])
+    expect(result.removed).toEqual(["mX"])
+    expect(result.keepCursor).toBeFalse()
+  })
+
+  test("an empty fetched window clears everything and follows the returned cursor", () => {
+    const current = [msg("m1", 1), msg("m2", 2)]
+    const result = mergeSnapshotWindow({ current, fetched: [] })
+    expect(result.messages).toEqual([])
+    expect(result.removed).toEqual(["m1", "m2"])
+    expect(result.keepCursor).toBeFalse()
   })
 })

@@ -40,7 +40,7 @@ GUI 从全局通道监听重连。首次先读水位再刷新快照，应用成�
 
 每轮请求有独立 staging 和 generation；导航、更新中的 live 事件及新一轮补拉会淘汰旧请求，失败不推进游标。staging 在结束后释放，游标缓存跟随既有 session cache 上限和淘汰。空会话的窗口容量不取零。流式竞态重试有上限，idle 事件负责最终对齐。
 
-补拉沿用既有 message-window 的历史阅读持有上限。快照回退时分页游标跟随实际返回窗口，不盲留更深的旧游标而跳过两者之间的历史；窗口外的旧消息仍可继续分页加载。
+补拉沿用既有 message-window 的历史阅读持有上限。快照回退只替换拉回窗口覆盖到的区域，窗口外更早的已加载历史并回 store；合并后的窗口仍延伸到拉回窗口以下时，分页游标与 complete 留在原处，否则跟随返回窗口——既不在重叠区跳过历史，也不把用户停驻的深层窗口从脚下抽走（`mergeSnapshotWindow`，260829 loadMessages refresh 的 keepCursor 同语义）。
 
 ## 成本与恢复证据
 
@@ -60,7 +60,8 @@ GUI 从全局通道监听重连。首次先读水位再刷新快照，应用成�
 - `test/session/changes.test.ts`：事务回滚、漏广播、重放幂等、正文不落日志、分页、保留裁剪、缺号 reset、费用读取不变及删除级联。
 - `test/session/changes-config.test.ts`、`test/sync/{invariants,index}.test.ts`：配置及既有同步不变量。
 - `test/server/httpapi-public-openapi.test.ts`：有限整数和可空游标契约；HTTP exercise 有新路由场景。
-- `src/context/session-changes.test.ts`、`reconnect.test.ts`、`global-sync/event-reducer.test.ts`：全局重连、分页、真实 SDK 404 包装、失败/导航/流式竞态、完整消息替换、零窗口和有界回退。
+- `src/context/session-changes.test.ts`、`reconnect.test.ts`、`global-sync/event-reducer.test.ts`：全局重连、分页、真实 SDK 404 包装、失败/导航/流式竞态、完整消息替换、零窗口和有界回退；`mergeSnapshotWindow` 直调真实现（深层历史保留、游标保持/前进、空窗清理）。
+- 真实浏览器漏广播 E2E（261009 补跑完成）：夹具服务端 `script/session-change-fixture-server.ts`（仅绑 127.0.0.1，路径强制锁 `.redcode/temp`，`/__probe/*` 需 token）+ 指向夹具端口的隔离 vite 前端。`publish:false` 改写 part 后 UI 停在旧文本，`server.connected` 触发补拉后显示新文本，费用与 token 不变，changes 游标推进到 latest。首次 catchup 必经 refreshSnapshot（after=-1 路径），该路径实测即合并版行为。
 - opencode、app 类型检查与 SDK 官方生成器。
 
 ## 边界与替代方案
