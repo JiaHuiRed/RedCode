@@ -90,6 +90,38 @@ export function mergeSnapshotWindow(input: { current: Message[]; fetched: Messag
   }
 }
 
+// 261009 Red 日志过期时从正在阅读的窗口首条存活消息续取权威页，不能保留旧内容后直接 ACK。
+// 决策：docs/notes/implemented/bug-fix/2026-10-09-client-recovery-races.md。
+export async function fetchRetainedMessageWindow(input: {
+  ids: string[]
+  limit: number
+  active: () => boolean
+  message: (id: string) => Promise<{ info: Message; parts: Part[] } | undefined>
+  after: (
+    id: string,
+    limit: number,
+  ) => Promise<{
+    session: Message[]
+    part: { id: string; part: Part[] }[]
+    cursor?: string
+    complete: boolean
+  }>
+}) {
+  for (const id of input.ids.slice(0, input.limit)) {
+    if (!input.active()) return
+    const first = await input.message(id)
+    if (!input.active()) return
+    if (!first) continue
+    const page = await input.after(first.info.id, input.limit - 1)
+    if (!input.active()) return
+    return {
+      ...page,
+      session: [first.info, ...page.session],
+      part: [{ id: first.info.id, part: first.parts }, ...page.part],
+    }
+  }
+}
+
 const PAGE_SIZE = 256
 const MAX_PAGES = 32
 const MAX_CHANGES = PAGE_SIZE * MAX_PAGES

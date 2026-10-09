@@ -3,6 +3,7 @@ import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import {
   catchUpSessionChanges,
   createSessionChangeJournal,
+  fetchRetainedMessageWindow,
   listenForGlobalReconnect,
   mergeSnapshotWindow,
   reconcileChangedMessages,
@@ -347,5 +348,77 @@ describe("mergeSnapshotWindow", () => {
     expect(result.messages).toEqual([])
     expect(result.removed).toEqual(["m1", "m2"])
     expect(result.keepCursor).toBeFalse()
+  })
+})
+
+describe("fetchRetainedMessageWindow", () => {
+  const msg = (id: string): Message => ({
+    id,
+    sessionID: "s",
+    role: "user",
+    time: { created: 1 },
+    agent: "agent",
+    model: { providerID: "p", modelID: "m" },
+  })
+
+  test("refreshes an old window from its first surviving anchor, not the latest page", async () => {
+    const lookups: string[] = []
+    const pages: [string, number][] = []
+    const result = await fetchRetainedMessageWindow({
+      ids: ["deleted", "old", "removed", "tail"],
+      limit: 4,
+      active: () => true,
+      message: async (id) => {
+        lookups.push(id)
+        return id === "deleted" ? undefined : { info: msg(id), parts: [] }
+      },
+      after: async (id, limit) => {
+        pages.push([id, limit])
+        return { session: [msg("tail"), msg("adjacent")], part: [], cursor: "newer", complete: false }
+      },
+    })
+    expect(lookups).toEqual(["deleted", "old"])
+    expect(pages).toEqual([["old", 3]])
+    expect(result?.session.map((item) => item.id)).toEqual(["old", "tail", "adjacent"])
+    expect(result?.cursor).toBe("newer")
+  })
+
+  test("an entirely deleted window has no anchor and may fall back to latest", async () => {
+    const result = await fetchRetainedMessageWindow({
+      ids: ["deleted"],
+      limit: 4,
+      active: () => true,
+      message: async () => undefined,
+      after: async () => {
+        throw new Error("must not page from a deleted anchor")
+      },
+    })
+    expect(result).toBeUndefined()
+  })
+
+  test("lookup failures propagate and navigation stops a late page", async () => {
+    await expect(
+      fetchRetainedMessageWindow({
+        ids: ["old"],
+        limit: 4,
+        active: () => true,
+        message: async () => {
+          throw new Error("offline")
+        },
+        after: async () => ({ session: [], part: [], complete: true }),
+      }),
+    ).rejects.toThrow("offline")
+    let active = true
+    const result = await fetchRetainedMessageWindow({
+      ids: ["old"],
+      limit: 4,
+      active: () => active,
+      message: async (id) => ({ info: msg(id), parts: [] }),
+      after: async () => {
+        active = false
+        return { session: [msg("late")], part: [], complete: true }
+      },
+    })
+    expect(result).toBeUndefined()
   })
 })

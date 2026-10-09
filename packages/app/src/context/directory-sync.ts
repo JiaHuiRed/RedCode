@@ -18,9 +18,11 @@ import { compareTime } from "@/utils/id"
 import { pathKey } from "@/utils/path-key"
 import {
   createSessionChangeJournal,
+  fetchRetainedMessageWindow,
   isSessionChangeNotFound,
   mergeSnapshotWindow,
   reconcileChangedMessages,
+  removedMessageIDs,
 } from "./session-changes"
 import { useQueryClient } from "@tanstack/solid-query"
 import {
@@ -459,8 +461,7 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
                 ? false
                 : !!meta.newer[key] || (input.mode === "prepend" && capped.removed.length > 0)
           const retained = new Set(message.map((item) => item.id))
-          const olderRestored =
-            input.mode === "prepend" && (message[0]?.id !== cached[0]?.id || next.complete)
+          const olderRestored = input.mode === "prepend" && (message[0]?.id !== cached[0]?.id || next.complete)
           // 261009 Red cached 是 Solid store 的活数组，reconcile 前先冻结清理名单，否则替换后已找不到旧 ID。
           const discarded = new Set([
             ...capped.removed.map((item) => item.id),
@@ -694,25 +695,57 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
               if (!isCurrent()) return
               await inflightMessagePages.get(key)
               if (!isCurrent()) return
-              const [snapshot, loaded] = await Promise.all([
-                retry(() => client.session.get({ sessionID }, { throwOnError: true })),
-                fetchMessages({
-                  client,
+              const ids = meta.newer[key] ? (current()[0].message[sessionID] ?? []).map((item) => item.id) : undefined
+              const limit = Math.min(
+                HELD_MESSAGES_PER_SESSION,
+                messageWindowLimit(
+                  directory,
                   sessionID,
-                  limit: messageWindowLimit(
-                    directory,
-                    sessionID,
-                    Math.max(meta.limit[key] ?? 0, current()[0].message[sessionID]?.length ?? 0, 200),
-                  ),
-                }),
+                  Math.max(meta.limit[key] ?? 0, current()[0].message[sessionID]?.length ?? 0, 200),
+                ),
+              )
+              const [snapshot, window] = await Promise.all([
+                retry(() => client.session.get({ sessionID }, { throwOnError: true })),
+                (async () => {
+                  const retained = ids
+                    ? await fetchRetainedMessageWindow({
+                        ids,
+                        limit,
+                        active: isCurrent,
+                        message: async (messageID) => {
+                          try {
+                            const result = await client.session.message(
+                              { sessionID, messageID },
+                              { throwOnError: true },
+                            )
+                            return { info: clean(result.data.info), parts: sortParts(result.data.parts) }
+                          } catch (error) {
+                            if (isSessionChangeNotFound(error)) return
+                            throw error
+                          }
+                        },
+                        after: (after, limit) => fetchMessages({ client, sessionID, after, limit }),
+                      })
+                    : undefined
+                  if (!isCurrent()) return
+                  return {
+                    page: retained ?? (await fetchMessages({ client, sessionID, limit })),
+                    anchored: retained !== undefined,
+                  }
+                })(),
               ])
-              if (!isCurrent() || !snapshot.data) return
+              if (!isCurrent() || !snapshot.data || !window) return
+              const loaded = window.page
               const next = mergeOptimisticPage(loaded, getOptimistic(directory, sessionID))
               for (const messageID of next.confirmed) clearOptimistic(directory, sessionID, messageID)
               const [store, setStore] = globalSync.child(directory, { bootstrap: false })
               const old = store.message[sessionID] ?? []
-              const merged = meta.newer[key]
-                ? { messages: old, removed: [] as string[], keepCursor: true }
+              const merged = ids
+                ? {
+                    messages: next.session,
+                    removed: removedMessageIDs(old, next.session),
+                    keepCursor: window.anchored,
+                  }
                 : mergeSnapshotWindow({ current: old, fetched: next.session })
               // 261009 Red 回退合并窗口同样封 HELD 上限（older + fetched 理论可达双倍窗口），
               // 被裁的最旧消息清 parts 并标 message_trimmed，与 loadMessages 同语义。
@@ -720,8 +753,11 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
               // 261009 Red 快照回退不能覆盖深层分页游标：合并窗口仍延伸到拉回窗口以下时，
               // 游标与 complete 留在原处（老窗口更深），只在拉回窗口就是全部时才前进，
               // 与 loadMessages refresh 的 keepCursor 语义一致。
-              const cursor = merged.keepCursor ? (meta.cursor[key] ?? loaded.cursor) : loaded.cursor
+              const cursor = merged.keepCursor
+                ? (meta.cursor[key] ?? (window.anchored ? next.session[0]?.id : loaded.cursor))
+                : loaded.cursor
               const complete = merged.keepCursor ? (meta.complete[key] ?? loaded.complete) : loaded.complete
+              const newer = window.anchored && !loaded.complete
               batch(() => {
                 setStore("session", (items: typeof store.session) => {
                   const at = Binary.search(items, sessionID, (item) => item.id)
@@ -759,15 +795,15 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
                 setMeta("limit", key, Math.max(meta.limit[key] ?? 0, capped.messages.length, 200))
                 setMeta("cursor", key, cursor)
                 setMeta("complete", key, complete)
-                setMeta("newer", key, !!meta.newer[key])
-                setMessageWindowNewerGap(directory, sessionID, !!meta.newer[key])
+                setMeta("newer", key, newer)
+                setMessageWindowNewerGap(directory, sessionID, newer)
                 setSessionPrefetch({
                   directory,
                   sessionID,
                   limit: Math.max(meta.limit[key] ?? 0, capped.messages.length, 200),
                   cursor,
                   complete,
-                  newer: !!meta.newer[key],
+                  newer,
                 })
                 void queryClient.invalidateQueries({
                   queryKey: globalSync.queryOptions.sessionOutline(pathKey(directory), sessionID).queryKey,
