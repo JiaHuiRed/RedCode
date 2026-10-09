@@ -23,7 +23,7 @@ import {
   reconcileChangedMessages,
 } from "./session-changes"
 import { useQueryClient } from "@tanstack/solid-query"
-import { messageWindowLimit } from "./message-window"
+import { HELD_MESSAGES_PER_SESSION, capMessageWindow, messageWindowLimit } from "./message-window"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 
@@ -235,7 +235,10 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
   // 260921 Red 审计回信 P2：消息分页的并发请求改成 join（原先静默丢弃，见 loadMessages）。
   const inflightMessagePages = new Map<string, Promise<void>>()
   const optimistic = new Map<string, Map<string, OptimisticItem>>()
-  const maxDirs = 30
+  // 261009 Red 30→10：与 MAX_DIR_STORES 对齐。这是内存乘数（每目录 40 会话缓存 +
+  // sidecar 每目录一整套 InstanceState/MCP 树），单项目用户用不满 30 个目录，
+  // 多项目来回切 10 个 LRU 也够。
+  const maxDirs = 10
   const seen = new Map<string, Set<string>>()
   const changeJournals = new Map<string, ReturnType<typeof createSessionChangeJournal>>()
   const [meta, setMeta] = createStore({
@@ -418,12 +421,25 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
           // 的回溯位置重置到很近的地方，下次往回翻会重复拉已有的消息。
           const isMerge = input.mode === "prepend" || input.mode === "refresh"
           const cached = isMerge ? (store.message[input.sessionID] ?? []) : []
-          const message = isMerge ? merge(cached, next.session) : next.session
+          const merged = isMerge ? merge(cached, next.session) : next.session
+          // 261009 Red 合并路径统一封顶（原 merge 无长度检查，翻过深历史的会话无限常驻）：
+          // 超出 HELD 上限砍最旧，清 parts、标 message_trimmed，loadMore 可回拉。
+          const capped = capMessageWindow(merged, HELD_MESSAGES_PER_SESSION)
+          const message = capped.messages
           const keepCursor = input.mode === "refresh" && cached.length > next.session.length
           const cursor = keepCursor ? (meta.cursor[key] ?? next.cursor) : next.cursor
           const complete = keepCursor ? (meta.complete[key] ?? next.complete) : next.complete
           batch(() => {
             input.setStore("message", input.sessionID, reconcile(message, { key: "id" }))
+            if (capped.removed.length > 0) {
+              for (const old of capped.removed) {
+                for (const part of store.part[old.id] ?? []) {
+                  input.setStore("part_text_accum_delta", part.id, undefined!)
+                }
+                input.setStore("part", old.id, undefined!)
+              }
+              input.setStore("message_trimmed", input.sessionID, true)
+            }
             for (const p of next.part) {
               const filtered = p.part.filter((x) => !SKIP_PARTS.has(x.type))
               if (filtered.length) input.setStore("part", p.id, filtered)
@@ -648,6 +664,9 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
               const [store, setStore] = globalSync.child(directory, { bootstrap: false })
               const old = store.message[sessionID] ?? []
               const merged = mergeSnapshotWindow({ current: old, fetched: next.session })
+              // 261009 Red 回退合并窗口同样封 HELD 上限（older + fetched 理论可达双倍窗口），
+              // 被裁的最旧消息清 parts 并标 message_trimmed，与 loadMessages 同语义。
+              const capped = capMessageWindow(merged.messages, HELD_MESSAGES_PER_SESSION)
               // 261009 Red 快照回退不能覆盖深层分页游标：合并窗口仍延伸到拉回窗口以下时，
               // 游标与 complete 留在原处（老窗口更深），只在拉回窗口就是全部时才前进，
               // 与 loadMessages refresh 的 keepCursor 语义一致。
@@ -661,13 +680,20 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
                   else result.splice(at.index, 0, snapshot.data!)
                   return result
                 })
-                setStore("message", sessionID, reconcile(merged.messages, { key: "id" }))
+                setStore("message", sessionID, reconcile(capped.messages, { key: "id" }))
                 for (const messageID of merged.removed) {
                   for (const part of store.part[messageID] ?? []) {
                     setStore("part_text_accum_delta", part.id, undefined!)
                   }
                   setStore("part", messageID, undefined!)
                 }
+                for (const old of capped.removed) {
+                  for (const part of store.part[old.id] ?? []) {
+                    setStore("part_text_accum_delta", part.id, undefined!)
+                  }
+                  setStore("part", old.id, undefined!)
+                }
+                if (capped.removed.length > 0) setStore("message_trimmed", sessionID, true)
                 for (const item of next.part) {
                   for (const part of [...(store.part[item.id] ?? []), ...item.part]) {
                     setStore("part_text_accum_delta", part.id, undefined!)
@@ -678,13 +704,13 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
                     item.part.filter((part) => !SKIP_PARTS.has(part.type)),
                   )
                 }
-                setMeta("limit", key, Math.max(meta.limit[key] ?? 0, merged.messages.length, 200))
+                setMeta("limit", key, Math.max(meta.limit[key] ?? 0, capped.messages.length, 200))
                 setMeta("cursor", key, cursor)
                 setMeta("complete", key, complete)
                 setSessionPrefetch({
                   directory,
                   sessionID,
-                  limit: Math.max(meta.limit[key] ?? 0, merged.messages.length, 200),
+                  limit: Math.max(meta.limit[key] ?? 0, capped.messages.length, 200),
                   cursor,
                   complete,
                 })

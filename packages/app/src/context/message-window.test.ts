@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import { HELD_MESSAGES_PER_SESSION, holdMessageWindow, messageWindowLimit } from "./message-window"
+import {
+  HELD_MESSAGES_PER_SESSION,
+  capMessageWindow,
+  holdMessageWindow,
+  messageWindowLimit,
+} from "./message-window"
 
 const BASE = 100
 
@@ -40,5 +45,29 @@ describe("messageWindowLimit", () => {
     const release = holdMessageWindow("/dir", "ses_wide")
     expect(messageWindowLimit("/dir", "ses_wide", HELD_MESSAGES_PER_SESSION + 50)).toBe(HELD_MESSAGES_PER_SESSION + 50)
     release()
+  })
+})
+
+describe("capMessageWindow", () => {
+  const msg = (id: string) => ({ id })
+
+  test("keeps the newest messages and reports the trimmed oldest ones", () => {
+    const input = [1, 2, 3, 4, 5].map((n) => msg(`m${n}`))
+    const result = capMessageWindow(input, 3)
+    expect(result.messages.map((message) => message.id)).toEqual(["m3", "m4", "m5"])
+    expect(result.removed.map((message) => message.id)).toEqual(["m1", "m2"])
+  })
+
+  test("returns the input unchanged when within the cap", () => {
+    const input = [msg("m1"), msg("m2")]
+    const result = capMessageWindow(input, HELD_MESSAGES_PER_SESSION)
+    expect(result.messages.map((message) => message.id)).toEqual(["m1", "m2"])
+    expect(result.removed).toEqual([])
+  })
+
+  test("handles an empty window", () => {
+    const result = capMessageWindow([], 10)
+    expect(result.messages).toEqual([])
+    expect(result.removed).toEqual([])
   })
 })

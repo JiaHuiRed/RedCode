@@ -14,10 +14,11 @@
   「未找到会话」，与真空态不可区分（261009 08:58 现场所见；renderer.log 三波
   instance-dispose 失败 + bootstrap DOMException 与之相关但根因未定）。修法两半：
   错误态可视化 + 保持 261002 已加的重试自愈（refetchOnMount 已生效，所以能自己恢复）。
-- **GUI 内存**：renderer ~2.4GiB + sidecar ~1GiB（261009 实测，TaskManager 聚合峰值 4.3GB
-  含验证子进程），无泄漏实证，需要 heap 快照取证。诊断入口：renderer.log 高频行、
-  `instance-dispose.ts:20` 的 `[object Object]`（需序列化 payload 再查状态码）。
-  属独立优化项，已有 render-audit P0 背包。
+- **GUI 内存**：第一批无界点已钉（261009：分页合并封顶 400、目录乘数 30→10、dispose 日志可读化，见
+  `docs/notes/implemented/bug-fix/2026-10-09-gui-memory-unbounded.md`）。剩余：V8 长跑堆不归还
+  （日常状态拍 snapshot 对照，不复刻 5GB 现场）、sidecar per-dir InstanceState 无上限
+  （`instance-state.ts` capacity 默认 Infinity）、MCP server 跨目录共享化（进程树 ~800MB）、
+  `/global/event` 每连接队列上限未证。
 
 ## 2. opencode v2 大更新调研（261009 最初议题，只做了初勘）
 

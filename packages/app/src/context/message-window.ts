@@ -29,3 +29,17 @@ export function messageWindowLimit(directory: string, sessionID: string, fallbac
   if (!readers.has(keyOf(directory, sessionID))) return fallback
   return Math.max(fallback, HELD_MESSAGES_PER_SESSION)
 }
+
+// 261009 Red 分页合并路径的硬上限。event-reducer 的每会话上限只在流式插入路径执行，
+// loadMessages 的 merge（prepend/refresh/anchor 补拉）与快照回退的合并此前完全无封顶：
+// 往上翻过深历史的会话把整段已加载历史常驻内存，而当前会话在 session 40-LRU 里被
+// keep 永不淘汰——单会话 renderer 2.4GiB 的主嫌疑。这里把按时间升序（最旧在前）的
+// 窗口统一裁到 cap，砍掉的最旧消息交调用方清 parts 并标 message_trimmed（260904
+// 机制复用：标了它，more()/loadMore() 才知道内存里砍过、可以往回拉）。
+export function capMessageWindow<T extends { id: string }>(messages: readonly T[], cap: number) {
+  if (messages.length <= cap) return { messages: [...messages], removed: [] as T[] }
+  return {
+    messages: messages.slice(messages.length - cap),
+    removed: messages.slice(0, messages.length - cap),
+  }
+}
