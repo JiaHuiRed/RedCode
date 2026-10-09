@@ -49,12 +49,13 @@ function sidebarDiff(input: Snapshot.FileDiff[]) {
 import type { Snapshot } from "@/snapshot"
 import { useExit } from "./exit"
 import { useArgs } from "./args"
-import { batch, onMount } from "solid-js"
+import { batch, onCleanup, onMount } from "solid-js"
 import * as Log from "@redcode-ai/core/util/log"
 import { emptyConsoleState, type ConsoleState } from "@/config/console-state"
 import path from "path"
 import { useKV } from "./kv"
 import { aggregateFailures } from "./aggregate-failures"
+import { createQuestionRecovery } from "./question-recovery"
 
 export const {
   use: useSync,
@@ -207,6 +208,31 @@ export const {
       )
     }
 
+    const questionRecovery = createQuestionRecovery<QuestionRequest>({
+      workspace: () => project.workspace.current(),
+      fetch: (workspace) => sdk.client.question.list({ workspace }, { throwOnError: true }).then((x) => x.data),
+      read: () => Object.values(store.question).flat(),
+      apply: (requests, workspace) => {
+        const retained = new Set(requests.map((request) => request.id))
+        const previous = Object.values(store.question).flat()
+        const grouped: Record<string, QuestionRequest[]> = {}
+        for (const request of requests) (grouped[request.sessionID] ??= []).push(request)
+        for (const items of Object.values(grouped)) items.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+        batch(() => {
+          for (const request of previous) {
+            if (!retained.has(request.id)) forgetRequestWorkspace(request.id)
+          }
+          for (const request of requests) {
+            if (!Object.hasOwn(store.request_workspace, request.id)) {
+              setStore("request_workspace", request.id, workspace)
+            }
+          }
+          setStore("question", reconcile(grouped))
+        })
+      },
+    })
+    onCleanup(() => questionRecovery.dispose())
+
     event.subscribe((event, { workspace }) => {
       switch (event.type) {
         case "server.instance.disposed":
@@ -219,7 +245,14 @@ export const {
           // session 会永久缺一截。首连数据由 bootstrap 全量加载；第二次起每次重连只对
           // 当前 session 做窄范围补拉，不做整个项目的全量 bootstrap。
           serverConnections += 1
-          if (serverConnections > 1) reconcileCurrentSession()
+          if (serverConnections > 1) {
+            reconcileCurrentSession()
+            void questionRecovery.recover().catch((error) => {
+              Log.Default.warn("tui question recovery failed", {
+                error: error instanceof Error ? error.message : String(error),
+              })
+            })
+          }
           break
         }
         case "permission.replied": {
@@ -263,6 +296,7 @@ export const {
 
         case "question.replied":
         case "question.rejected": {
+          questionRecovery.changed(event.properties.requestID)
           forgetRequestWorkspace(event.properties.requestID)
           const requests = store.question[event.properties.sessionID]
           if (!requests) break
@@ -279,6 +313,7 @@ export const {
         }
 
         case "question.asked": {
+          questionRecovery.changed(event.properties.id)
           upsertQuestion(event.properties, workspace)
           break
         }
@@ -608,11 +643,7 @@ export const {
               // 261009 Red 重启/重连恢复仍挂起的提问：SSE 只推连接后的事件，不拉的话
               // 弹窗不出现、输入框不禁、模型无限等（GUI bootstrap 同款恢复早已存在）。
               name: "question.list",
-              promise: sdk.client.question.list({ workspace }).then((x) => {
-                batch(() => {
-                  for (const request of x.data ?? []) upsertQuestion(request, workspace)
-                })
-              }),
+              promise: questionRecovery.recover(),
             },
             { name: "project.workspace.sync", promise: project.workspace.sync() },
           ]

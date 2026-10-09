@@ -7,7 +7,7 @@ import { InstanceRuntime } from "../../src/project/instance-runtime"
 import { QuestionID } from "../../src/question/schema"
 import { disposeAllInstances, provideInstance, reloadTestInstance, tmpdirScoped } from "../fixture/fixture"
 import { SessionID } from "../../src/session/schema"
-import { testEffect } from "../lib/effect"
+import { pollWithTimeout, testEffect } from "../lib/effect"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 import { Bus } from "../../src/bus"
 
@@ -50,10 +50,15 @@ const rejectAll = Effect.gen(function* () {
 
 const waitForPending = Effect.fn("QuestionTest.waitForPending")(function* (count: number) {
   const question = yield* Question.Service
-  const bus = yield* Bus.Service
   const asked = yield* Queue.unbounded<void>()
-  const off = yield* bus.subscribeCallback(Question.Event.Asked, () => Queue.offerUnsafe(asked, undefined))
-  yield* Effect.addFinalizer(() => Effect.sync(off))
+  // 261009 Red list 合并进程内所有 owner，等待信号也必须跨实例，不能只订阅当前目录的 Bus。
+  const onAsked = (event: { payload: { type: string } }) => {
+    if (event.payload.type === Question.Event.Asked.type) Queue.offerUnsafe(asked, undefined)
+  }
+  yield* Effect.acquireRelease(
+    Effect.sync(() => GlobalBus.on("event", onAsked)),
+    () => Effect.sync(() => GlobalBus.off("event", onAsked)),
+  )
 
   for (;;) {
     const pending = yield* question.list()
@@ -378,6 +383,14 @@ it.live("questions stay isolated by directory", () =>
       ],
     }).pipe(provideInstance(one), Effect.forkScoped)
 
+    yield* waitForPending(1).pipe(provideInstance(one))
+    const listeners = GlobalBus.listenerCount("event")
+    const waiting = yield* waitForPending(2).pipe(provideInstance(one), Effect.forkScoped)
+    yield* pollWithTimeout(
+      Effect.sync(() => (GlobalBus.listenerCount("event") > listeners ? true : undefined)),
+      "cross-instance question waiter was not subscribed",
+    )
+
     const fiber2 = yield* askEffect({
       sessionID: SessionID.make("ses_two"),
       questions: [
@@ -391,7 +404,7 @@ it.live("questions stay isolated by directory", () =>
 
     // 261009 Red list 经 owners 回退跨实例互见（恢复拉取依赖它），隔离语义钉在
     // 归属与路由上：各会话的请求都能定位，reject 各自只影响自己的 fiber。
-    const all = yield* waitForPending(2).pipe(provideInstance(one))
+    const all = yield* Fiber.join(waiting)
     const oneReq = all.find((x) => x.sessionID === SessionID.make("ses_one"))
     const twoReq = all.find((x) => x.sessionID === SessionID.make("ses_two"))
     if (!oneReq || !twoReq) return yield* Effect.die(new Error("fixture requests missing"))
