@@ -197,23 +197,33 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       query: typeof MessagesQuery.Type
     }) {
-      if (ctx.query.before && ctx.query.limit === undefined) return yield* new HttpApiError.BadRequest({})
-      const before = ctx.query.before ? yield* messagesBefore(ctx.params.sessionID, ctx.query.before) : undefined
-      if (ctx.query.before && !before) return yield* new HttpApiError.BadRequest({})
+      // 261009 Red 按参数存在性校验方向，空字符串也不能绕过互斥与游标校验。
+      if (
+        (ctx.query.before !== undefined || ctx.query.after !== undefined) &&
+        (ctx.query.limit === undefined ||
+          ctx.query.limit === 0 ||
+          (ctx.query.before !== undefined && ctx.query.after !== undefined))
+      )
+        return yield* new HttpApiError.BadRequest({})
+      const before = ctx.query.before !== undefined ? yield* messagesBefore(ctx.params.sessionID, ctx.query.before) : undefined
+      if (ctx.query.before !== undefined && !before) return yield* new HttpApiError.BadRequest({})
+      const after = ctx.query.after !== undefined ? yield* messagesBefore(ctx.params.sessionID, ctx.query.after) : undefined
+      if (ctx.query.after !== undefined && !after) return yield* new HttpApiError.BadRequest({})
       yield* requireSession(ctx.params.sessionID)
       if (ctx.query.limit === undefined || ctx.query.limit === 0) {
         return yield* SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID }))
       }
 
       // 260529 Red compacted 会话初始加载只返回 compaction summary 及之后的消息
-      const compactionAfter = before ? undefined : yield* session.latestCompactionCursor(ctx.params.sessionID)
+      const compactionAfter = before || after ? undefined : yield* session.latestCompactionCursor(ctx.params.sessionID)
 
       const page = yield* SessionError.mapStorageNotFound(
         MessageV2.page({
           sessionID: ctx.params.sessionID,
           limit: ctx.query.limit,
           before,
-          after: compactionAfter,
+          after: after ?? compactionAfter,
+          direction: after ? "newer" : undefined,
         }),
       )
       if (!page.cursor) return page.items
@@ -223,7 +233,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       // header echoes the real origin instead of a hard-coded localhost.
       const url = Option.getOrElse(HttpServerRequest.toURL(request), () => new URL(request.url, "http://localhost"))
       url.searchParams.set("limit", ctx.query.limit.toString())
-      url.searchParams.set("before", page.cursor)
+      url.searchParams.set(after ? "after" : "before", page.cursor)
       return HttpServerResponse.jsonUnsafe(page.items, {
         headers: {
           "Access-Control-Expose-Headers": "Link, X-Next-Cursor",

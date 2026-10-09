@@ -8,6 +8,7 @@
 export const HELD_MESSAGES_PER_SESSION = 400
 
 const readers = new Map<string, number>()
+const newerGaps = new Set<string>()
 
 const keyOf = (directory: string, sessionID: string) => `${directory}\u0000${sessionID}`
 
@@ -30,14 +31,32 @@ export function messageWindowLimit(directory: string, sessionID: string, fallbac
   return Math.max(fallback, HELD_MESSAGES_PER_SESSION)
 }
 
-// 261009 Red 分页合并路径的硬上限。event-reducer 的每会话上限只在流式插入路径执行，
-// loadMessages 的 merge（prepend/refresh/anchor 补拉）与快照回退的合并此前完全无封顶：
-// 往上翻过深历史的会话把整段已加载历史常驻内存，而当前会话在 session 40-LRU 里被
-// keep 永不淘汰——单会话 renderer 2.4GiB 的主嫌疑。这里把按时间升序（最旧在前）的
-// 窗口统一裁到 cap，砍掉的最旧消息交调用方清 parts 并标 message_trimmed（260904
-// 机制复用：标了它，more()/loadMore() 才知道内存里砍过、可以往回拉）。
-export function capMessageWindow<T extends { id: string }>(messages: readonly T[], cap: number) {
+export function setMessageWindowNewerGap(directory: string, sessionID: string, value: boolean) {
+  const key = keyOf(directory, sessionID)
+  if (value) newerGaps.add(key)
+  else newerGaps.delete(key)
+}
+
+export function messageWindowHasNewerGap(directory: string, sessionID: string) {
+  return newerGaps.has(keyOf(directory, sessionID))
+}
+
+export function clearMessageWindow(directory: string, sessionID: string) {
+  const key = keyOf(directory, sessionID)
+  readers.delete(key)
+  newerGaps.delete(key)
+}
+
+// 261009 Red 分页合并上限与方向裁边决策：docs/notes/implemented/bug-fix/2026-10-09-gui-memory-unbounded.md。
+// 按时间升序窗口 older prepend 留最旧边、newer append 留最新边；调用方负责清被裁消息的 parts。
+export function capMessageWindow<T extends { id: string }>(messages: readonly T[], cap: number, direction: "older" | "newer" = "newer") {
   if (messages.length <= cap) return { messages: [...messages], removed: [] as T[] }
+  if (direction === "older") {
+    return {
+      messages: messages.slice(0, cap),
+      removed: messages.slice(cap),
+    }
+  }
   return {
     messages: messages.slice(messages.length - cap),
     removed: messages.slice(0, messages.length - cap),

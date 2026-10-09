@@ -109,6 +109,95 @@ describe("session messages endpoint", () => {
   )
 
   it.instance(
+    "pages newer messages after a cursor without accepting both directions",
+    withoutWatcher(
+      Effect.gen(function* () {
+        const session = yield* sessionScoped
+        const ids = yield* fill(session.id, 7)
+        const first = yield* request(`/session/${session.id}/message?limit=2`)
+        const cursor = first.headers.get("x-next-cursor")!
+        const older = yield* request(
+          `/session/${session.id}/message?limit=2&before=${encodeURIComponent(cursor)}`,
+        )
+        const olderCursor = older.headers.get("x-next-cursor")!
+
+        const newer = yield* request(
+          `/session/${session.id}/message?limit=2&after=${encodeURIComponent(olderCursor)}`,
+        )
+        expect(newer.status).toBe(200)
+        const body = yield* json<MessageV2.WithParts[]>(newer)
+        expect(body.map((item) => item.info.id)).toEqual(ids.slice(4, 6))
+        expect(newer.headers.get("x-next-cursor")).toBeTruthy()
+        const continuation = yield* request(
+          `/session/${session.id}/message?limit=2&after=${encodeURIComponent(newer.headers.get("x-next-cursor")!)}`,
+        )
+        const tail = yield* json<MessageV2.WithParts[]>(continuation)
+        expect(tail.map((item) => item.info.id)).toEqual(ids.slice(6))
+
+        const both = yield* request(
+          `/session/${session.id}/message?limit=2&before=${encodeURIComponent(cursor)}&after=${encodeURIComponent(cursor)}`,
+        )
+        expect(both.status).toBe(400)
+      }),
+    ),
+    { git: true },
+  )
+
+  it.instance(
+    "walks a 1000-message session both ways with time ties and message-id anchors",
+    withoutWatcher(
+      Effect.gen(function* () {
+        const session = yield* sessionScoped
+        const ids = yield* fill(session.id, 1000, (i: number) => 100_000 + Math.floor(i / 5))
+        let olderCursor: string | undefined
+        const olderIDs: string[] = []
+        for (let page = 0; page < 14; page++) {
+          const response = yield* request(
+            `/session/${session.id}/message?limit=80${olderCursor ? `&before=${encodeURIComponent(olderCursor)}` : ""}`,
+          )
+          expect(response.status).toBe(200)
+          const body = yield* json<MessageV2.WithParts[]>(response)
+          olderIDs.unshift(...body.map((item) => item.info.id))
+          olderCursor = response.headers.get("x-next-cursor") ?? undefined
+          if (!olderCursor) break
+        }
+        expect(olderIDs).toEqual(ids)
+        let newerCursor: string = ids[0] ?? ""
+        const newerIDs = [ids[0]]
+        for (let page = 0; page < 14; page++) {
+          const response = yield* request(
+            `/session/${session.id}/message?limit=80&after=${encodeURIComponent(newerCursor)}`,
+          )
+          expect(response.status).toBe(200)
+          const body = yield* json<MessageV2.WithParts[]>(response)
+          newerIDs.push(...body.map((item) => item.info.id))
+          expect(response.headers.get("link") ?? "").not.toContain("before=")
+          const cursor = response.headers.get("x-next-cursor")
+          if (!cursor) break
+          newerCursor = cursor
+        }
+        expect(newerIDs).toEqual(ids)
+      }),
+    ),
+    { git: true },
+  )
+
+  it.instance(
+    "rejects empty boundaries and mixed direction parameter presence",
+    withoutWatcher(
+      Effect.gen(function* () {
+        const session = yield* sessionScoped
+        const ids = yield* fill(session.id, 1)
+        for (const query of [`limit=2&after=`, `limit=2&before=&after=${ids[0]}`, `limit=0&after=${ids[0]}`]) {
+          const response = yield* request(`/session/${session.id}/message?${query}`)
+          expect(response.status).toBe(400)
+        }
+      }),
+    ),
+    { git: true },
+  )
+
+  it.instance(
     "keeps full-history responses when limit is omitted",
     withoutWatcher(
       Effect.gen(function* () {

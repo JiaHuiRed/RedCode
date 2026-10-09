@@ -23,7 +23,13 @@ import {
   reconcileChangedMessages,
 } from "./session-changes"
 import { useQueryClient } from "@tanstack/solid-query"
-import { HELD_MESSAGES_PER_SESSION, capMessageWindow, messageWindowLimit } from "./message-window"
+import {
+  HELD_MESSAGES_PER_SESSION,
+  capMessageWindow,
+  clearMessageWindow,
+  messageWindowLimit,
+  setMessageWindowNewerGap,
+} from "./message-window"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 
@@ -245,6 +251,7 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
     limit: {} as Record<string, number>,
     cursor: {} as Record<string, string | undefined>,
     complete: {} as Record<string, boolean>,
+    newer: {} as Record<string, boolean>,
     loading: {} as Record<string, boolean>,
   })
 
@@ -330,6 +337,7 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
           delete draft.limit[key]
           delete draft.cursor[key]
           delete draft.complete[key]
+          delete draft.newer[key]
           delete draft.loading[key]
         }
       }),
@@ -341,6 +349,7 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
     clearSessionPrefetch(directory, sessionIDs)
     for (const sessionID of sessionIDs) {
       globalSync.todo.set(sessionID, undefined)
+      clearMessageWindow(directory, sessionID)
     }
     setStore(
       produce((draft) => {
@@ -359,12 +368,18 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
     evict(directory, setStore, stale)
   }
 
-  const fetchMessages = async (input: { client: typeof client; sessionID: string; limit: number; before?: string }) => {
+  const fetchMessages = async (input: {
+    client: typeof client
+    sessionID: string
+    limit: number
+    before?: string
+    after?: string
+  }) => {
     // 260907 ZCode 在途登记给 prefetch pump 让路用，见 context/foreground-loads.ts
     const messages = await trackForegroundMessageLoad(
       retry(() =>
         input.client.session.messages(
-          { sessionID: input.sessionID, limit: input.limit, before: input.before },
+          { sessionID: input.sessionID, limit: input.limit, before: input.before, after: input.after },
           { throwOnError: true },
         ),
       ),
@@ -390,8 +405,9 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
     sessionID: string
     limit: number
     before?: string
+    after?: string
     anchor?: string
-    mode?: "replace" | "prepend" | "refresh"
+    mode?: "replace" | "prepend" | "refresh" | "append"
   }) => {
     const key = keyFor(input.directory, input.sessionID)
     // 260921 Red 审计回信 P2：原先是 `if (meta.loading[key]) return` —— 并发调用被静默丢弃，
@@ -419,40 +435,68 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
           // 260829 cc refresh 与 prepend 一样并集合并，区别只在游标：prepend 拉的是更老的一页，
           // 游标要往前推；refresh 拉的是最新一页，若手上已有更深的历史，推游标等于把历史窗口
           // 的回溯位置重置到很近的地方，下次往回翻会重复拉已有的消息。
-          const isMerge = input.mode === "prepend" || input.mode === "refresh"
-          const cached = isMerge ? (store.message[input.sessionID] ?? []) : []
-          const merged = isMerge ? merge(cached, next.session) : next.session
-          // 261009 Red 合并路径统一封顶（原 merge 无长度检查，翻过深历史的会话无限常驻）：
-          // 超出 HELD 上限砍最旧，清 parts、标 message_trimmed，loadMore 可回拉。
-          const capped = capMessageWindow(merged, HELD_MESSAGES_PER_SESSION)
+          const isMerge = input.mode === "prepend" || input.mode === "refresh" || input.mode === "append"
+          const cached = store.message[input.sessionID] ?? []
+          // 261009 Red 旧窗口尾部有缺口时，不把远端最新页跨缺口拼进来。
+          const merged = isMerge
+            ? merge(cached, input.mode === "refresh" && meta.newer[key] ? [] : next.session)
+            : next.session
+          // 261009 Red 合并路径统一封顶：较旧页保留最旧边，其余方向保留最新边。
+          const capped = capMessageWindow(
+            merged,
+            HELD_MESSAGES_PER_SESSION,
+            input.mode === "prepend" ? "older" : "newer",
+          )
           const message = capped.messages
-          const keepCursor = input.mode === "refresh" && cached.length > next.session.length
+          const keepCursor =
+            input.mode === "append" || (input.mode === "refresh" && cached.length > next.session.length)
           const cursor = keepCursor ? (meta.cursor[key] ?? next.cursor) : next.cursor
           const complete = keepCursor ? (meta.complete[key] ?? next.complete) : next.complete
+          const newer =
+            input.mode === "append"
+              ? !!next.cursor
+              : input.mode === "replace"
+                ? false
+                : !!meta.newer[key] || (input.mode === "prepend" && capped.removed.length > 0)
+          const retained = new Set(message.map((item) => item.id))
+          const olderRestored =
+            input.mode === "prepend" && (message[0]?.id !== cached[0]?.id || next.complete)
+          // 261009 Red cached 是 Solid store 的活数组，reconcile 前先冻结清理名单，否则替换后已找不到旧 ID。
+          const discarded = new Set([
+            ...capped.removed.map((item) => item.id),
+            ...(input.mode === "replace" ? cached.filter((item) => !retained.has(item.id)).map((item) => item.id) : []),
+          ])
           batch(() => {
             input.setStore("message", input.sessionID, reconcile(message, { key: "id" }))
-            if (capped.removed.length > 0) {
-              for (const old of capped.removed) {
-                for (const part of store.part[old.id] ?? []) {
+            if (discarded.size > 0) {
+              for (const messageID of discarded) {
+                for (const part of store.part[messageID] ?? []) {
                   input.setStore("part_text_accum_delta", part.id, undefined!)
                 }
-                input.setStore("part", old.id, undefined!)
+                input.setStore("part", messageID, undefined!)
               }
-              input.setStore("message_trimmed", input.sessionID, true)
+              if (input.mode !== "prepend") input.setStore("message_trimmed", input.sessionID, true)
             }
+            if (input.mode === "replace") input.setStore("message_trimmed", input.sessionID, false)
+            // 261009 Red 只由实际执行的旧页请求清标记；并发 join 到更新页的调用不能清掉它。
+            if (olderRestored) input.setStore("message_trimmed", input.sessionID, false)
             for (const p of next.part) {
+              if (!retained.has(p.id)) continue
               const filtered = p.part.filter((x) => !SKIP_PARTS.has(x.type))
-              if (filtered.length) input.setStore("part", p.id, filtered)
+              input.setStore("part", p.id, filtered)
             }
             setMeta("limit", key, message.length)
             setMeta("cursor", key, cursor)
             setMeta("complete", key, complete)
+            setMeta("newer", key, newer)
+            setMessageWindowNewerGap(input.directory, input.sessionID, newer)
             setSessionPrefetch({
               directory: input.directory,
               sessionID: input.sessionID,
               limit: message.length,
               cursor,
               complete,
+              newer,
             })
           })
         })
@@ -551,7 +595,9 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
             setMeta("limit", key, seeded.limit)
             setMeta("cursor", key, seeded.cursor)
             setMeta("complete", key, seeded.complete)
+            setMeta("newer", key, !!seeded.newer)
             setMeta("loading", key, false)
+            setMessageWindowNewerGap(directory, sessionID, !!seeded.newer)
           })
         }
 
@@ -565,7 +611,9 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
                 setMeta("limit", key, seeded.limit)
                 setMeta("cursor", key, seeded.cursor)
                 setMeta("complete", key, seeded.complete)
+                setMeta("newer", key, !!seeded.newer)
                 setMeta("loading", key, false)
+                setMessageWindowNewerGap(directory, sessionID, !!seeded.newer)
               })
             }
           }
@@ -663,7 +711,9 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
               for (const messageID of next.confirmed) clearOptimistic(directory, sessionID, messageID)
               const [store, setStore] = globalSync.child(directory, { bootstrap: false })
               const old = store.message[sessionID] ?? []
-              const merged = mergeSnapshotWindow({ current: old, fetched: next.session })
+              const merged = meta.newer[key]
+                ? { messages: old, removed: [] as string[], keepCursor: true }
+                : mergeSnapshotWindow({ current: old, fetched: next.session })
               // 261009 Red 回退合并窗口同样封 HELD 上限（older + fetched 理论可达双倍窗口），
               // 被裁的最旧消息清 parts 并标 message_trimmed，与 loadMessages 同语义。
               const capped = capMessageWindow(merged.messages, HELD_MESSAGES_PER_SESSION)
@@ -694,7 +744,9 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
                   setStore("part", old.id, undefined!)
                 }
                 if (capped.removed.length > 0) setStore("message_trimmed", sessionID, true)
+                const retained = new Set(capped.messages.map((item) => item.id))
                 for (const item of next.part) {
+                  if (!retained.has(item.id)) continue
                   for (const part of [...(store.part[item.id] ?? []), ...item.part]) {
                     setStore("part_text_accum_delta", part.id, undefined!)
                   }
@@ -707,12 +759,15 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
                 setMeta("limit", key, Math.max(meta.limit[key] ?? 0, capped.messages.length, 200))
                 setMeta("cursor", key, cursor)
                 setMeta("complete", key, complete)
+                setMeta("newer", key, !!meta.newer[key])
+                setMessageWindowNewerGap(directory, sessionID, !!meta.newer[key])
                 setSessionPrefetch({
                   directory,
                   sessionID,
                   limit: Math.max(meta.limit[key] ?? 0, capped.messages.length, 200),
                   cursor,
                   complete,
+                  newer: !!meta.newer[key],
                 })
                 void queryClient.invalidateQueries({
                   queryKey: globalSync.queryOptions.sessionOutline(pathKey(directory), sessionID).queryKey,
@@ -754,15 +809,21 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
                 ids: messageIDs,
                 staged: pending,
                 limit: messageWindowLimit(directory, sessionID, Math.max(meta.limit[key] ?? 0, 200)),
+                allowInsert: !meta.newer[key],
               })
+              const retainedBefore = new Set(store.message[sessionID]?.map((item) => item.id) ?? [])
+              const messages = meta.newer[key]
+                ? updated.messages.filter((item) => retainedBefore.has(item.id))
+                : updated.messages
               batch(() => {
                 for (const [messageID, parts] of updated.parts) {
+                  if (meta.newer[key] && !retainedBefore.has(messageID)) continue
                   for (const part of [...(store.part[messageID] ?? []), ...(parts ?? [])]) {
                     setStore("part_text_accum_delta", part.id, undefined!)
                   }
                   setStore("part", messageID, parts ? parts.filter((part) => !SKIP_PARTS.has(part.type)) : undefined!)
                 }
-                setStore("message", sessionID, reconcile(updated.messages, { key: "id" }))
+                setStore("message", sessionID, reconcile(messages, { key: "id" }))
                 setStore("session", (items: typeof store.session) => {
                   const at = Binary.search(items, sessionID, (item) => item.id)
                   const result = [...items]
@@ -875,6 +936,9 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
           const key = keyFor(directory, sessionID)
           return meta.loading[key] ?? false
         },
+        newer(sessionID: string) {
+          return meta.newer[keyFor(directory, sessionID)] ?? false
+        },
         async loadMore(sessionID: string, count?: number) {
           const [, setStore] = globalSync.child(directory)
           touch(directory, setStore, sessionID)
@@ -888,7 +952,9 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
           // 改用现存最旧的那条当 before，往回补的正是被砍掉的那一段。
           const trimmed = current()[0].message_trimmed[sessionID]
           if (!trimmed && meta.complete[key]) return
-          const before = trimmed ? current()[0].message[sessionID]?.[0]?.id : meta.cursor[key]
+          const oldest = current()[0].message[sessionID]?.[0]?.id
+          // 261009 Red 游标描述已取过的位置，裁边后必须从现存边界接着翻，不能跳过已丢弃的页。
+          const before = oldest ?? meta.cursor[key]
           if (!before) return
 
           await loadMessages({
@@ -900,7 +966,38 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
             before,
             mode: "prepend",
           })
-          if (trimmed) setStore("message_trimmed", sessionID, false)
+        },
+        async loadNewer(sessionID: string, count?: number) {
+          const [store, setStore] = globalSync.child(directory)
+          touch(directory, setStore, sessionID)
+          const newest = store.message[sessionID]?.at(-1)
+          if (!newest || !meta.newer[keyFor(directory, sessionID)]) return
+          await loadMessages({
+            directory,
+            client,
+            setStore,
+            sessionID,
+            limit: count ?? historyMessagePageSize,
+            after: newest.id,
+            mode: "append",
+          })
+        },
+        async loadLatest(sessionID: string) {
+          const key = keyFor(directory, sessionID)
+          // 261009 Red 返回最新不能把在途旧页误当完成；旧请求失败也不取消这个独立的显式意图。
+          while (inflightMessagePages.has(key)) {
+            await inflightMessagePages.get(key)?.catch(() => undefined)
+          }
+          const [, setStore] = globalSync.child(directory)
+          touch(directory, setStore, sessionID)
+          await loadMessages({
+            directory,
+            client,
+            setStore,
+            sessionID,
+            limit: Math.max(meta.limit[keyFor(directory, sessionID)] ?? 0, 200),
+            mode: "replace",
+          })
         },
       },
       evict(sessionID: string, _directory = directory) {

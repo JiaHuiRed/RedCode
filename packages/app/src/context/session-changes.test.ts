@@ -28,6 +28,29 @@ const marker = (seq: number, messageID: string): SessionChangesPage["changes"][n
 })
 
 describe("session change journal", () => {
+  test("newer changes cannot evict a retained old window before being filtered", () => {
+    const message = (n: number): Message => ({
+      id: `m${n}`,
+      sessionID: "s",
+      role: "user",
+      time: { created: n },
+      agent: "agent",
+      model: { providerID: "p", modelID: "m" },
+    })
+    const current = Array.from({ length: 400 }, (_, n) => message(n))
+    const fresh = Array.from({ length: 600 }, (_, n) => message(n + 400))
+    const result = reconcileChangedMessages({
+      current,
+      ids: fresh.map((item) => item.id),
+      staged: new Map(fresh.map((item) => [item.id, { message: item, parts: [] }])),
+      limit: 400,
+      allowInsert: false,
+    })
+    expect(result.messages).toEqual(current)
+    expect(result.parts.size).toBe(0)
+    expect(result.userChanged).toBe(true)
+  })
+
   test("empty-session windows cannot loop indefinitely when their cached size is zero", () => {
     const message: Message = {
       id: "first",

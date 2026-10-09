@@ -127,7 +127,7 @@ export default function Page() {
   const composer = createSessionComposerState()
 
   const autoScroll = createAutoScroll({
-    working: () => true,
+    working: () => !params.id || !sync.session.history.newer(params.id),
     overflowAnchor: "dynamic",
   })
 
@@ -247,6 +247,14 @@ export default function Page() {
     const id = params.id
     if (!id) return false
     return sync.session.history.more(id)
+  })
+  const historyNewer = createMemo(() => {
+    const id = params.id
+    if (!id) return false
+    return sync.session.history.newer(id)
+  })
+  createEffect(() => {
+    if (historyNewer()) autoScroll.pause()
   })
   const historyLoading = createMemo(() => {
     const id = params.id
@@ -1158,6 +1166,10 @@ export default function Page() {
   }
 
   resumeScroll = () => {
+    if (historyNewer()) {
+      void resumeLatest()
+      return
+    }
     setStore("messageId", undefined)
     autoScroll.forceScrollToBottom()
     clearMessageHash()
@@ -1166,12 +1178,29 @@ export default function Page() {
     if (el) scheduleScrollState(el)
   }
 
+  const resumeLatest = async () => {
+    const id = params.id
+    const directory = sdk.directory
+    if (id && historyNewer()) {
+      try {
+        await sync.session.history.loadLatest(id)
+      } catch {
+        if (params.id !== id || sdk.directory !== directory) return
+        showToast({ variant: "error", title: language.t("session.outline.unreachable") })
+        return
+      }
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    }
+    if (params.id !== id || sdk.directory !== directory) return
+    resumeScroll()
+  }
+
   // When the user returns to the bottom, treat the active message as "latest".
   createEffect(
     on(
       autoScroll.userScrolled,
       (scrolled) => {
-        if (scrolled) return
+        if (scrolled || historyNewer()) return
         setStore("messageId", undefined)
         clearMessageHash()
       },
@@ -1200,13 +1229,19 @@ export default function Page() {
     },
   )
 
+  let retainViewport = () => () => {}
   const historyLoader = createSessionHistoryLoader({
     sessionID: () => params.id,
-    loaded: () => messages().length,
+    boundary: () => messages()[0]?.id,
     visibleUserMessages,
     historyMore,
     historyLoading,
     loadMore: (sessionID) => sync.session.history.loadMore(sessionID),
+    newerBoundary: () => messages().at(-1)?.id,
+    historyNewer,
+    loadNewer: (sessionID) => sync.session.history.loadNewer(sessionID),
+    retainViewport: () => retainViewport(),
+    onLoadError: () => showToast({ variant: "error", title: language.t("common.requestFailed") }),
     userScrolled: autoScroll.userScrolled,
     scroller: () => scroller,
   })
@@ -1225,9 +1260,12 @@ export default function Page() {
   const [jumpingTurn, setJumpingTurn] = createSignal(false)
   const jumpToTurn = async (messageID: string) => {
     if (jumpingTurn()) return
+    const id = params.id
+    const directory = sdk.directory
     setJumpingTurn(true)
     try {
       const reached = await historyLoader.loadThrough(messageID)
+      if (params.id !== id || sdk.directory !== directory) return
       if (!reached) {
         showToast({ variant: "error", title: language.t("session.outline.unreachable") })
         return
@@ -1238,7 +1276,7 @@ export default function Page() {
       // jumpingTurn 提前释放，长帧/虚拟列表重测量期间可以并发触发第二次跳转。
       await new Promise<void>((resolve) =>
         requestAnimationFrame(() => {
-          revealMessage(messageID)
+          if (params.id === id && sdk.directory === directory) revealMessage(messageID)
           resolve()
         }),
       )
@@ -1890,16 +1928,22 @@ export default function Page() {
                     <MessageTimeline
                       actions={actions}
                       scroll={ui.scroll}
-                      onResumeScroll={resumeScroll}
+                      onResumeScroll={resumeLatest}
                       setScrollRef={setScrollRef}
                       onScheduleScrollState={scheduleScrollState}
-                      onAutoScrollHandleScroll={autoScroll.handleScroll}
+                      onAutoScrollHandleScroll={() =>
+                        historyNewer() ? autoScroll.pause() : autoScroll.handleScroll()
+                      }
                       onMarkScrollGesture={markScrollGesture}
                       hasScrollGesture={hasScrollGesture}
                       onUserScroll={nav.markScroll}
                       onHistoryScroll={historyLoader.onScrollerScroll}
+                      onNewerScroll={historyLoader.onNewerScroll}
+                      hasNewer={historyNewer}
+                      onLoadNewer={() => void historyLoader.loadNewer(true)}
                       onAutoScrollInteraction={autoScroll.handleInteraction}
                       shouldAnchorBottom={() =>
+                        !historyNewer() &&
                         !location.hash && !store.messageId && !ui.pendingMessage && !autoScroll.userScrolled()
                       }
                       centered={centered()}
@@ -1915,6 +1959,9 @@ export default function Page() {
                       anchor={nav.anchor}
                       setRevealMessage={(fn) => {
                         revealMessage = fn
+                      }}
+                      setRetainViewport={(fn) => {
+                        retainViewport = fn
                       }}
                     />
                   </Show>

@@ -193,6 +193,67 @@ const server: Bun.Server<never> = Bun.serve({
       })
       return probeJSON(request, { emitted: true })
     }
+    // 261009 Red 有界窗口冒烟只造小文本：最多 1000 条，live 只允许单条，仍限定隔离 DB。
+    if (request.method === "POST" && url.pathname === "/__probe/window") {
+      const body: unknown = await request.json()
+      if (typeof body !== "object" || body === null) return probeJSON(request, { error: "invalid body" }, 400)
+      const count = "count" in body ? body.count : 1000
+      const live = "live" in body && body.live === true
+      if (typeof count !== "number" || !Number.isInteger(count) || count < 1 || count > 1000 || (live && count !== 1))
+        return probeJSON(request, { error: "invalid count" }, 400)
+      const existing = "sessionID" in body ? body.sessionID : undefined
+      if (existing !== undefined && (typeof existing !== "string" || !sessions.includes(existing)))
+        return probeJSON(request, { error: "unknown fixture session" }, 400)
+      const target = typeof existing === "string" ? existing : await createSession("Message-window fixture")
+      const base = Date.now() - count * 10
+      const messages: { messageID: string; partID: string }[] = await sessionEffect(
+        Effect.gen(function* () {
+          const id = MessageSchema.SessionID.make(target)
+          const result: { messageID: string; partID: string }[] = []
+          for (let i = 0; i < count; i++) {
+            const messageID = MessageSchema.MessageID.ascending()
+            const partID = MessageSchema.PartID.ascending()
+            yield* SyncEvent.use.run(
+              MessageV2.Event.Updated,
+              {
+                sessionID: id,
+                info: {
+                  id: messageID,
+                  sessionID: id,
+                  role: "user",
+                  time: { created: base + i * 10 },
+                  agent: "user",
+                  model: {
+                    providerID: ProviderSchema.ProviderID.make("test"),
+                    modelID: ProviderSchema.ModelID.make("test"),
+                  },
+                  tools: {},
+                },
+              },
+              { publish: live },
+            )
+            yield* SyncEvent.use.run(
+              MessageV2.Event.PartUpdated,
+              {
+                sessionID: id,
+                part: {
+                  id: partID,
+                  sessionID: id,
+                  messageID,
+                  type: "text",
+                  text: live ? "window live message" : `window message ${i + 1}`,
+                },
+                time: Date.now(),
+              },
+              { publish: live },
+            )
+            result.push({ messageID, partID })
+          }
+          return result
+        }),
+      )
+      return probeJSON(request, { sessionID: target, count, messages })
+    }
     if (request.method === "POST" && url.pathname === "/__probe/modify") {
       await sessionEffect(
         Effect.gen(function* () {

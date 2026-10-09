@@ -58,6 +58,13 @@ describe("capMessageWindow", () => {
     expect(result.removed.map((message) => message.id)).toEqual(["m1", "m2"])
   })
 
+  test("keeps the oldest contiguous messages when prepending an older page", () => {
+    const input = [1, 2, 3, 4, 5].map((n) => msg(`m${n}`))
+    const result = capMessageWindow(input, 3, "older")
+    expect(result.messages.map((message) => message.id)).toEqual(["m1", "m2", "m3"])
+    expect(result.removed.map((message) => message.id)).toEqual(["m4", "m5"])
+  })
+
   test("returns the input unchanged when within the cap", () => {
     const input = [msg("m1"), msg("m2")]
     const result = capMessageWindow(input, HELD_MESSAGES_PER_SESSION)

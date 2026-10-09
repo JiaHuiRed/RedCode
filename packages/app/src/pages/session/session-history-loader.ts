@@ -4,11 +4,16 @@ import type { UserMessage } from "@redcode-ai/sdk/v2"
 
 type SessionHistoryWindowInput = {
   sessionID: () => string | undefined
-  loaded: () => number
+  boundary: () => string | undefined
   visibleUserMessages: () => UserMessage[]
   historyMore: () => boolean
   historyLoading: () => boolean
   loadMore: (sessionID: string) => Promise<void>
+  newerBoundary?: () => string | undefined
+  historyNewer?: () => boolean
+  loadNewer?: (sessionID: string) => Promise<void>
+  retainViewport?: () => () => void
+  onLoadError?: () => void
   userScrolled: () => boolean
   scroller: () => HTMLDivElement | undefined
 }
@@ -20,10 +25,12 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
   // fill()，而 fill() 的进入条件（内容填不满视口）在拉取失败后依然成立 —— 每轮网络往返就再发一次，
   // 实测渲染日志里 7 分钟同一个请求重试 12000 次（全部 400）。用户滚动是显式意图，允许强制重试。
   let stalled = false
+  let newerStalled = false
+  let newerPending: object | undefined
 
   const [state, setState] = createStore({
     shift: false,
-    stagedHistory: undefined as { sessionID: string; token: object; messages: UserMessage[] } | undefined,
+    stagedHistory: undefined as { sessionID: string; token: symbol; messages: UserMessage[] } | undefined,
   })
 
   const userMessages = () => {
@@ -52,26 +59,26 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
     if (stalled && !force) return
     if (!input.historyMore() || input.historyLoading()) return
 
-    const beforeVisible = input.visibleUserMessages().length
-    let loaded = input.loaded()
-    let growth = 0
+    let boundary = input.boundary()
+    let progress = false
 
     cancelShiftReset()
     setState("shift", true)
+    const restore = input.retainViewport?.()
 
     try {
       while (true) {
         await input.loadMore(id)
         if (input.sessionID() !== id) return
 
-        const nextLoaded = input.loaded()
-        const raw = nextLoaded - loaded
-        loaded = nextLoaded
-        growth = input.visibleUserMessages().length - beforeVisible
-
-        if (growth > 0) break
-        if (raw <= 0) break
-        if (!input.historyMore()) break
+        const nextBoundary = input.boundary()
+        progress = nextBoundary !== boundary
+        boundary = nextBoundary
+        if (progress) break
+        // 261009 Red 固定窗口或并发 join 没推进边界时停手，不能形成无界微任务请求循环。
+        stalled = input.historyMore()
+        setState("shift", false)
+        return
       }
     } catch {
       // 260918 Red 拉历史失败（后端 4xx / 网络抖动）：以前错误冒成 uncaught promise 且不留任何状态，
@@ -83,7 +90,8 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
 
     stalled = false
 
-    if (growth > 0) {
+    if (progress) {
+      restore?.()
       scheduleShiftReset()
       return
     }
@@ -92,6 +100,32 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
   }
 
   const loadAndReveal = () => fetchOlderMessages()
+
+  // 261009 Red 更新侧分页也保持视口；失败与空页停手，显式按钮才能重试。
+  const fetchNewerMessages = async (force = false) => {
+    const id = input.sessionID()
+    if (!id || !input.loadNewer || !input.historyNewer?.()) return
+    if (newerPending || input.historyLoading() || (newerStalled && !force)) return
+    const token = {}
+    newerPending = token
+    const boundary = input.newerBoundary?.()
+    const restore = input.retainViewport?.()
+    cancelShiftReset()
+    setState("shift", true)
+    try {
+      await input.loadNewer(id)
+      if (input.sessionID() !== id) return
+      newerStalled = input.newerBoundary?.() === boundary && !!input.historyNewer?.()
+      restore?.()
+    } catch {
+      if (input.sessionID() !== id) return
+      newerStalled = true
+      input.onLoadError?.()
+    } finally {
+      if (newerPending === token) newerPending = undefined
+      if (input.sessionID() === id) scheduleShiftReset()
+    }
+  }
 
   /**
    * 一路往前翻，直到目标用户消息进入已加载窗口。轮次导航栏点一条历史用的就是它。
@@ -102,7 +136,7 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
    *
    * 三个终止条件缺一不可：
    * ① `historyMore()` 为假 —— 历史翻到底了，目标不在这个会话里（或已被压缩掉）。
-   * ② **无进展**：翻了一页但 `loaded()` 没涨。这里**不当场放弃**，而是等一拍再试 ——
+    * ② **无进展**：翻了一页但最旧消息边界没变。这里**不当场放弃**，而是等一拍再试 ——
    *    260921（d41ca4c2）起 `directory-sync` 的 `loadMessages`/`loadMore` 对并发调用是
    *    runInflight join，「pager 被占着导致请求被静默丢弃」已不存在；现在无进展通常
    *    意味着 `loadMore` 因 complete 或空页直接短路返回。连续 MAX_STALLS 次无进展
@@ -126,10 +160,11 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
     // 260926 Red 多页远跳期间先冻结时间线投影，所有页面仍正常进入同步 store；目标进窗后
     //   一次发布完整列表，避免虚拟列表每页都重建行结构。普通上滚仍逐页呈现。
     //   取舍见 docs/notes/implemented/feature/2026-09-26-atomic-turn-history-projection.md。
-    const token = {}
+    // 261009 Red 原始对象进 Solid store 后会被代理，Symbol 保持身份，finally 才能释放冻结投影。
+    const token = Symbol()
     setState("stagedHistory", { sessionID: id, token, messages: input.visibleUserMessages() })
     try {
-      let loaded = input.loaded()
+      let boundary = input.boundary()
       let stalls = 0
       for (let page = 0; page < MAX_JUMP_PAGES; page++) {
         if (arrived()) return true
@@ -138,9 +173,9 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
         await input.loadMore(id)
         if (input.sessionID() !== id) return false
 
-        const next = input.loaded()
-        if (next > loaded) {
-          loaded = next
+        const nextBoundary = input.boundary()
+        if (nextBoundary !== boundary) {
+          boundary = nextBoundary
           stalls = 0
           continue
         }
@@ -153,7 +188,7 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
       return false
     } finally {
       if (state.stagedHistory?.token === token) setState("stagedHistory", undefined)
-      scheduleShiftReset()
+      if (input.sessionID() === id) scheduleShiftReset()
     }
   }
 
@@ -173,6 +208,8 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
       () => {
         cancelShiftReset()
         stalled = false
+        newerStalled = false
+        newerPending = undefined
         setState({ shift: false, stagedHistory: undefined })
       },
       { defer: true },
@@ -186,6 +223,10 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
     shift: () => state.shift,
     loadAndReveal,
     loadThrough,
+    loadNewer: fetchNewerMessages,
+    onNewerScroll: () => {
+      if (input.userScrolled()) void fetchNewerMessages()
+    },
     onScrollerScroll,
   }
 }

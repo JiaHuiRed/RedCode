@@ -1166,6 +1166,7 @@ export const page = Effect.fn("MessageV2.page")(function* (input: {
   limit: number
   before?: string
   after?: string
+  direction?: "newer"
 }) {
   const before = input.before ? cursor.decode(input.before) : undefined
   const after = input.after ? cursor.decode(input.after) : undefined
@@ -1179,7 +1180,10 @@ export const page = Effect.fn("MessageV2.page")(function* (input: {
       .select()
       .from(MessageTable)
       .where(where)
-      .orderBy(desc(MessageTable.time_created), desc(MessageTable.id))
+      .orderBy(
+        input.direction === "newer" ? asc(MessageTable.time_created) : desc(MessageTable.time_created),
+        input.direction === "newer" ? asc(MessageTable.id) : desc(MessageTable.id),
+      )
       .limit(input.limit + 1)
       .all(),
   )
@@ -1197,7 +1201,7 @@ export const page = Effect.fn("MessageV2.page")(function* (input: {
   const more = rows.length > input.limit
   const slice = more ? rows.slice(0, input.limit) : rows
   const items = hydrate(slice)
-  items.reverse()
+  if (input.direction !== "newer") items.reverse()
   const tail = slice.at(-1)
   return {
     items,

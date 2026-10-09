@@ -54,6 +54,7 @@ export const MessagesQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
   limit: Schema.optional(Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))),
   before: Schema.optional(Schema.String),
+  after: Schema.optional(Schema.String),
 })
 export const ChangesQuery = Schema.Struct({
   after: Schema.optional(

@@ -17,7 +17,7 @@ import type {
 import type { State, VcsCache } from "./types"
 import { trimSessions } from "./session-trim"
 import { dropSessionCaches } from "./session-cache"
-import { messageWindowLimit } from "@/context/message-window"
+import { messageWindowHasNewerGap, messageWindowLimit } from "@/context/message-window"
 import { diffs as list, message as clean } from "@/utils/diffs"
 import { compareTime } from "@/utils/id"
 
@@ -281,6 +281,8 @@ export function applyDirectoryEvent(input: {
         input.setStore("message", info.sessionID, at, reconcile(info))
         break
       }
+      if (messageWindowHasNewerGap(input.directory, info.sessionID) && messages.at(-1) && compareTime(info, messages.at(-1)!) > 0)
+        break
       const insertAt = (() => {
         const i = messages.findIndex((m) => compareTime(m, info) > 0)
         return i === -1 ? messages.length : i
@@ -319,6 +321,11 @@ export function applyDirectoryEvent(input: {
               draft.shift()
             }),
           )
+          // 261009 Red 与 message.removed/loadMessages 的裁边路径对齐：丢消息时连流式
+          //   accum 一起清，别让 shift 路径成为唯一漏网的长会话泄漏点。
+          for (const part of input.store.part[oldest.id] ?? []) {
+            input.setStore("part_text_accum_delta", part.id, undefined!)
+          }
           input.setStore(
             "part",
             produce((draft) => {
@@ -356,6 +363,7 @@ export function applyDirectoryEvent(input: {
     case "message.part.updated": {
       const part = (event.properties as { part: Part }).part
       if (SKIP_PARTS.has(part.type)) break
+      if (!input.store.message[part.sessionID]?.some((message) => message.id === part.messageID)) break
       input.setStore(
         produce((draft) => {
           delete draft.part_text_accum_delta[part.id]

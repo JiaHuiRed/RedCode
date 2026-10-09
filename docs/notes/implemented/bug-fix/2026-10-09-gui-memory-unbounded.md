@@ -19,6 +19,16 @@
 
 GUI 定向回归 55 pass / 0 fail（session-changes、reconnect、event-reducer、message-window 含 `capMessageWindow` 3 用例、instance-dispose），typecheck 通过。
 
+## 连续窗口增补
+
+400 条 cap 按分页方向裁边：older prepend 保留最旧边并裁最新边，newer append 保留最新边并裁最旧边；两种裁边都逐条清掉对应 parts 和 delta。固定窗口的历史推进信号取边界变化，而不是数组长度；`loadThrough` 仍保留 200 页安全上限。新的 `after` 页面按 `(time.created,id)` 复合序取紧邻页，`before`/`after` 互斥，不改 schema/migration。
+
+裁掉尾部后用 newer-gap 标记约束重连快照与 live stream：快照只同步会话元数据、不会把远端最新页拼进旧窗口；实时更新和 part 事件只进入当前窗口已有消息。用户滚到底按边界连续补 newer，跳到底明确取最新页后再滚动。既有 `session_change` 短期补拉保留，不开启完整 event 表或载荷双写，见 `2026-10-09-session-change-catchup.md`。
+
+验证在主仓（依赖齐全）完成，隔离子代理草稿的「依赖缺失无法验证」结论不适用：GUI 定向四文件 57 pass / 0 fail（message-window、event-reducer、session-changes、session-history-loader，浏览器态 Solid 运行时），core `session-messages` HTTP 契约 8 tests / 64 expects（1000 条复合序夹逼、raw ID 锚点、双向游标、互斥校验），两包 typecheck 通过；SDK/OpenAPI 走官方两条命令重生成，产物与草稿手动版本无差异。隔离环境真实浏览器 1000 条冒烟：轮次栏跳到第 1 条（13 页复合序回拉，store 与 DOM 一致）、缺口期实时消息不进窗且视口不动、回最新后窗口滑到 [602..1001]、`newer` 归零、无孤儿 parts。无内存压力复现，不宣称解释现场 5GB。
+
+草稿集成时修掉四处浏览器态才暴露的问题：① replace 清理名单在 Solid `reconcile` 之后从活数组派生，已替换的 ID 找不到，80 个 parts 成孤儿——清理名单冻结在 reconcile 之前；② 空过滤数组不再跳过写入，权威清空替代保留旧值；③ `stagedHistory.token` 用 `{}` 进 store 会被代理，`finally` 的身份比对永远失配、冻结投影永不释放（browser 态单测红）——换 `Symbol`；④ `loadMore` 的 trimmed 清标记在并发 join 到更新页时会误清（方向盲），改由 prepend 任务内部按「最旧边界推进或 complete」自行清，`loadLatest` 显式等待在途页再取最新。另补齐 event-reducer shift 路径漏掉的 `part_text_accum_delta` 清理，与其余裁边路径对齐。
+
 ## 边界
 
 不解决：V8 长跑堆不归还（需 snapshot 对照活对象 vs 空闲未归还）；sidecar per-dir InstanceState 无上限（capacity 默认 Infinity，缓存类服务待加预算或 LRU）；MCP server 跨目录共享化；事件队列上限。目录上限收紧后，频繁跨 >10 项目切换会付出 LRU 淘汰后重访重建的成本。

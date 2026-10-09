@@ -320,6 +320,9 @@ export function MessageTimeline(props: {
   hasScrollGesture: () => boolean
   onUserScroll: () => void
   onHistoryScroll: () => void
+  onNewerScroll: () => void
+  hasNewer: () => boolean
+  onLoadNewer: () => void
   onAutoScrollInteraction: (event: MouseEvent) => void
   shouldAnchorBottom: () => boolean
   centered: boolean
@@ -328,6 +331,7 @@ export function MessageTimeline(props: {
   userMessages: UserMessage[]
   anchor: (id: string) => string
   setRevealMessage?: (fn: (id: string) => void) => void
+  setRetainViewport?: (fn: () => () => void) => void
 }) {
   let touchGesture: number | undefined
 
@@ -651,6 +655,7 @@ export function MessageTimeline(props: {
   })
 
   const canAnchorBottom = () => {
+    if (props.hasNewer() || props.historyShift) return false
     // 260921 Red virtua 路径必须有 handle 才能算底部；native 路径没有 handle，
     // 但锚定本身只写 listRoot.scrollTop（见 anchorMeasuredBottom），不依赖 virtua。
     if (nativeTimelineEnabled() ? false : !mounted) return false
@@ -805,6 +810,7 @@ export function MessageTimeline(props: {
   let bottomAnchorHeight = -1
   let bottomAnchorForce = false
   let measuredBottomAnchored = true
+  let viewportFrame: number | undefined
   // 260822 cc IME 组合期暂停底部锚定。见 scheduleMeasuredBottomAnchor 上方注释。
   let imeComposing = false
   const [scrollRoot, setScrollRoot] = createSignal<HTMLDivElement>()
@@ -835,6 +841,39 @@ export function MessageTimeline(props: {
   createEffect(() => {
     props.setRevealMessage?.(revealMessage)
   })
+
+  // 261009 Red 双侧裁边同时增删且总行数不变，virtua 的 shift 不够；按实际可见行恢复相对位置。
+  const retainViewport = () => {
+    const root = listRoot
+    const session = sessionKey()
+    if (!root) return () => {}
+    const box = root.getBoundingClientRect()
+    const row = [...root.querySelectorAll<HTMLElement>("[data-timeline-key]")].find(
+      (item) => item.getBoundingClientRect().bottom > box.top + box.height / 2,
+    )
+    const key = row?.dataset.timelineKey
+    const offset = row ? row.getBoundingClientRect().top - box.top : 0
+    return () => {
+      if (!key || root !== listRoot || sessionKey() !== session) return
+      const index = timelineRowKeys().indexOf(key)
+      if (index < 0) return
+      mounted?.handle.scrollToIndex(index, { align: "start", offset: -offset })
+      if (viewportFrame !== undefined) cancelAnimationFrame(viewportFrame)
+      const correct = () => {
+        viewportFrame = undefined
+        if (root !== listRoot || sessionKey() !== session) return
+        const anchor = [...root.querySelectorAll<HTMLElement>("[data-timeline-key]")].find(
+          (item) => item.dataset.timelineKey === key,
+        )
+        if (anchor) root.scrollTop += anchor.getBoundingClientRect().top - root.getBoundingClientRect().top - offset
+      }
+      viewportFrame = requestAnimationFrame(() => {
+        correct()
+        viewportFrame = requestAnimationFrame(correct)
+      })
+    }
+  }
+  createEffect(() => props.setRetainViewport?.(retainViewport))
 
   const updateTitleMetrics = () => {
     if (!head || head.clientWidth <= 0) return
@@ -1086,12 +1125,15 @@ export function MessageTimeline(props: {
     props.onScheduleScrollState(event.currentTarget)
     props.onHistoryScroll()
     if (!props.hasScrollGesture()) return
+    if (props.hasNewer() && event.currentTarget.scrollHeight - event.currentTarget.clientHeight - event.currentTarget.scrollTop < 120)
+      props.onNewerScroll()
     props.onUserScroll()
     props.onAutoScrollHandleScroll()
     props.onMarkScrollGesture(event.currentTarget)
   }
 
   onCleanup(() => {
+    if (viewportFrame !== undefined) cancelAnimationFrame(viewportFrame)
     if (listFrame !== undefined) cancelAnimationFrame(listFrame)
     if (contentFrame !== undefined) cancelAnimationFrame(contentFrame)
     if (bottomAnchorFrame !== undefined) cancelAnimationFrame(bottomAnchorFrame)
@@ -1474,6 +1516,7 @@ export function MessageTimeline(props: {
         id={anchor() ? props.anchor(input.row().userMessageID) : undefined}
         data-message-id={input.row().userMessageID}
         data-timeline-row={input.row()._tag}
+        data-timeline-key={TimelineRow.key(input.row())}
         classList={{
           "min-w-0 w-full max-w-full": true,
           "md:max-w-200 2xl:max-w-[1400px]": props.centered,
@@ -1731,11 +1774,12 @@ export function MessageTimeline(props: {
       <div
         class="absolute left-1/2 -translate-x-1/2 bottom-6 z-[60] pointer-events-none transition-all duration-200 ease-out"
         classList={{
-          "opacity-100 translate-y-0 scale-100": props.scroll.overflow && props.scroll.jump,
-          "opacity-0 translate-y-2 scale-95 pointer-events-none": !props.scroll.overflow || !props.scroll.jump,
+          "opacity-100 translate-y-0 scale-100": props.hasNewer() || (props.scroll.overflow && props.scroll.jump),
+          "opacity-0 translate-y-2 scale-95 pointer-events-none": !props.hasNewer() && (!props.scroll.overflow || !props.scroll.jump),
         }}
       >
         <button
+          data-action="go-to-latest"
           class="pointer-events-auto flex items-center justify-center w-10 h-8 bg-transparent border-none cursor-pointer p-0 group"
           onClick={props.onResumeScroll}
         >
@@ -1750,6 +1794,18 @@ export function MessageTimeline(props: {
           </div>
         </button>
       </div>
+      <Show when={props.hasNewer()}>
+        <button
+          type="button"
+          data-action="load-newer"
+          aria-label={language.t("common.loadMore")}
+          title={language.t("common.loadMore")}
+          class="absolute left-1/2 -translate-x-1/2 bottom-16 z-[60] rounded-md border border-border-weaker-base bg-surface-raised-stronger px-3 py-1 text-xs text-text-weak shadow-md"
+          onClick={props.onLoadNewer}
+        >
+          {language.t("common.loadMore")}
+        </button>
+      </Show>
       <ScrollView
         viewportRef={bindListRoot}
         onWheel={handleListWheel}

@@ -6,6 +6,7 @@ type Meta = {
   limit: number
   cursor?: string
   complete: boolean
+  newer?: boolean
   at: number
 }
 
@@ -68,12 +69,14 @@ export function setSessionPrefetch(input: {
   limit: number
   cursor?: string
   complete: boolean
+  newer?: boolean
   at?: number
 }) {
   cache.set(key(input.directory, input.sessionID), {
     limit: input.limit,
     cursor: input.cursor,
     complete: input.complete,
+    newer: input.newer,
     at: input.at ?? Date.now(),
   })
 }

@@ -4,7 +4,7 @@ import { createStore } from "solid-js/store"
 import { QueryClient } from "@tanstack/solid-query"
 import type { State } from "./types"
 import { applyDirectoryEvent, applyGlobalEvent, cleanupDroppedSessionCaches } from "./event-reducer"
-import { holdMessageWindow } from "@/context/message-window"
+import { holdMessageWindow, setMessageWindowNewerGap } from "@/context/message-window"
 
 const rootSession = (input: { id: string; parentID?: string; archived?: number }) =>
   ({
@@ -447,6 +447,7 @@ describe("applyDirectoryEvent", () => {
     const messageID = "msg_1"
     const [store, setStore] = createStore(
       baseState({
+        message: { [sessionID]: [userMessage(messageID, sessionID)] },
         part: { [messageID]: [textPart("prt_1", sessionID, messageID), textPart("prt_3", sessionID, messageID)] },
       }),
     )
@@ -507,6 +508,53 @@ describe("applyDirectoryEvent", () => {
     })
 
     expect(store.part[messageID]).toBeUndefined()
+  })
+
+  test("does not retain parts for messages outside the current window", () => {
+    const sessionID = "ses_1"
+    const visibleID = "msg_visible"
+    const [store, setStore] = createStore(
+      baseState({
+        message: { [sessionID]: [userMessage(visibleID, sessionID)] },
+      }),
+    )
+
+    applyDirectoryEvent({
+      event: {
+        type: "message.part.updated",
+        properties: { part: textPart("prt_orphan", sessionID, "msg_trimmed") },
+      },
+      store,
+      setStore,
+      push() {},
+      directory: "/tmp",
+      loadLsp() {},
+    })
+
+    expect(store.part.msg_trimmed).toBeUndefined()
+  })
+
+  test("does not append live newest messages across a retained-window gap", () => {
+    const sessionID = "ses_gap"
+    setMessageWindowNewerGap("/tmp", sessionID, true)
+    const [store, setStore] = createStore(
+      baseState({ message: { [sessionID]: [{ ...userMessage("msg_old", sessionID), time: { created: 1 } }] } }),
+    )
+
+    applyDirectoryEvent({
+      event: {
+        type: "message.updated",
+        properties: { info: { ...userMessage("msg_new", sessionID), time: { created: 2 } } },
+      },
+      store,
+      setStore,
+      push() {},
+      directory: "/tmp",
+      loadLsp() {},
+    })
+
+    expect(store.message[sessionID]?.map((message) => message.id)).toEqual(["msg_old"])
+    setMessageWindowNewerGap("/tmp", sessionID, false)
   })
 
   test("tracks permission and question request lifecycles", () => {

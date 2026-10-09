@@ -23,6 +23,7 @@ export function reconcileChangedMessages(input: {
   ids: string[]
   staged: Map<string, { message: Message; parts: Part[] } | undefined>
   limit: number
+  allowInsert?: boolean
 }) {
   const limit = Math.max(1, input.limit)
   const messages = [...input.current]
@@ -41,6 +42,8 @@ export function reconcileChangedMessages(input: {
     }
     userChanged ||= fresh.message.role === "user"
     if (index === -1) {
+      // 261009 Red 旧窗口有更新侧缺口时，在裁边之前跳过窗口外消息，不能先挤掉正在读的历史。
+      if (input.allowInsert === false) continue
       let at = messages.findIndex((message) => compareTime(message, fresh.message) > 0)
       if (messages.length >= limit) {
         if (at === 0) continue
