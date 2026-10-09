@@ -8,6 +8,11 @@
 
 ---
 
+### [Unreleased]
+
+- **TUI 提问恢复补齐与拉取竞态门禁**（`packages/opencode/src/cli/cmd/tui/context/{sync.tsx,question-recovery.ts}`、`test/cli/tui/question-recovery.test.ts`）：0.12.4 审计确认 TUI 重连只做当前会话 reconcile、不补拉 `question.list`——SSE 无 replay，问题挂起时重启/断线重连，弹窗不出现、输入框不禁、模型无限等；且启动拉取的迟到响应会无条件 upsert，把拉取期间已 reply/reject 的问题复活（弹窗残留、模型收到假拒绝）。抽 `createQuestionRecovery`：拉取期间实时事件按 id 记入请求对象，响应到达后合并（asked 保留、replied/rejected 删除），代次门禁 + workspace 变更/dispose 作废迟到响应；bootstrap 的 question.list 改走 recover()，重连分支在 reconcileCurrentSession() 后追加 recover()（失败仅 warn），apply 改整体替换。行为变化：断线/重启重连后恢复 pending 提问，拉取期间关闭的问题不再被迟到响应复活；恢复失败不阻断重连主链。测试 7 例（启动/重连恢复、断线关闭清除、旧快照不杀新事件、拉取中关闭不复活、失败保态不自动重试、仅最新一轮 apply、workspace 变/dispose 作废）；`question.test.ts` 跨目录用例改订阅 GlobalBus 后 15 pass（修复前整文件跑必超时——waitForPending 只订当前实例 Bus，而 list 经 owners 合并跨实例 pending）。模型可见四问：① 无提示词/工具 schema 改动；② token 零增量；③ 前缀缓存不受影响；④ 无新增注入项。决策与签名：`docs/notes/implemented/bug-fix/2026-10-09-client-recovery-races.md`。
+- **GUI reset 回退后深历史窗口权威刷新**（`packages/app/src/context/{directory-sync.ts,session-changes.ts}`、`test/context/session-changes.test.ts`）：短期变更日志 reset（裁剪/缺号/禁用）时快照合并对深历史窗口（`meta.newer`）直接保留旧窗口并推进游标——已删除消息留在窗内、窗口遮挡外更旧消息的更新丢失，且下一轮补拉已从新 cursor 开始，内容永久陈旧。reset 且深窗口时先以窗内前 limit 个 ID 逐个 `session.message` 找首个存活锚点（404 跳过），再 after 该锚点续拉 limit-1 页拼回；`removedMessageIDs` 清离窗消息，cursor 保留 `meta.cursor`，newer 仅在 anchored 且未到底时置位；全删或无锚回退旧路径。行为变化：reset/快照回退后窗内删除生效、遮挡外更新刷新；代价是回退路径多至 `min(HELD_MESSAGES_PER_SESSION, messageWindowLimit)` 次单条查询（仅 reset 且深窗口时发生）。GUI 定向四文件 52 pass / 0 fail（message-window / session-changes / event-reducer + 真实 `createDirSyncContext` 1000 消息深翻 + reset 集成夹具）。模型可见四问：① 无提示词/工具 schema 改动；② token 零增量；③ 前缀缓存不受影响；④ 无新增注入项。决策与签名：`docs/notes/implemented/bug-fix/2026-10-09-client-recovery-races.md`。
+
 ### [0.12.4] - 2026-10-09
 
 - **问题机制恢复与拆除广播补齐**（`packages/opencode/src/question/index.ts`）：五个月审计发现三处恢复路径缺口——`Question.list` 只读本实例 pending 而 reply/reject 早已能借 owners 跨实例路由（隔离 worktree 子代理的问题在线时可答、刷新后恢复拉取拿不到），现 list 做 owners 回退；实例淘汰/重载的 finalizer 静默清理不发 `question.rejected`（客户端弹窗永久残留、模型收到「用户拒绝」的假话），现先广播再 fail——广播不走 `bus.publish`（finalizer 执行时实例条目正在失效，其内部的 InstanceState get-or-create 可能落到重建的新 state 上），改走 GlobalBus 即 TUI/GUI 实际消费的全局通道，实例标识在工厂创建时的健康上下文里捕获；`RejectedError` 文案中性化，不向模型断言是谁 dismiss 的。测试补 list 跨实例回退与 dispose 广播断言，原隔离用例语义从「list 互不可见」更新为「归属与 reject 各自路由」（互见是本次预期行为）。
