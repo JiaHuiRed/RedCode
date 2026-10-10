@@ -432,7 +432,8 @@ export const layer = Layer.effect(
       sessionID: SessionID
       auto: boolean
     }) {
-      const parent = input.messages.find((message) => message.info.id === input.parentID)
+     const startedAt = Date.now()
+     const parent = input.messages.find((message) => message.info.id === input.parentID)
       if (!parent || parent.info.role !== "user") throw new Error("Native compaction parent is missing")
       const cfg = yield* config.get()
       const agent = yield* agents.get("compaction")
@@ -485,14 +486,26 @@ export const layer = Layer.effect(
         yield* session.updateMessage(processor.message)
         return []
       })))
-      if (!blocks.length) return "stop" as const
+     if (!blocks.length) return "stop" as const
+     const newIDs = new Set(blocks.map((block) => block.id))
       const marker = parent.parts.find((part) => part.type === "compaction")
       if (marker && marker.type === "compaction") yield* session.updatePart({
-        ...marker, native: true, tokens_before: yield* estimate({ messages: view, model: originalModel }),
-        tokens_after: yield* estimate({
-          messages: ContextCompaction.project(NativeContext.removeArtifacts(input.messages), ContextCompaction.list(input.sessionID)),
-          model: originalModel,
-        }),
+       // 261010 Red tokens_before 必须与 legacy 路径同口径：本次压缩前**已折叠**的可见
+       // 历史。此前传 view（刚投影完、尚未含本次摘要），与 tokens_after 差一次折叠，
+       // 实测 exe 上真实 100k→30k 显示成 50k→40k。list 按 committed_at 升序，新块在
+       // 末位，排除它才是"压缩前"。
+       ...marker, native: true, duration_ms: Date.now() - startedAt,
+       tokens_before: yield* estimate({
+         messages: ContextCompaction.project(
+           NativeContext.removeArtifacts(input.messages),
+           ContextCompaction.list(input.sessionID).filter((block) => !newIDs.has(block.id)),
+         ),
+         model: originalModel,
+       }),
+       tokens_after: yield* estimate({
+         messages: ContextCompaction.project(NativeContext.removeArtifacts(input.messages), ContextCompaction.list(input.sessionID)),
+         model: originalModel,
+       }),
       })
       if (input.auto) {
         const followup = yield* session.updateMessage({
@@ -524,7 +537,8 @@ export const layer = Layer.effect(
       // 此前该字段只有搬运与消费（TUI 侧边栏、GUI 看板徽标），两端因此永远不亮。
       // 只在真正的全量摘要压缩上置起：prune 档是纯本地裁剪、不调模型、瞬时完成，
       // 给它挂个"压缩中"只会闪一下，没有信息量。
-      yield* session.setCompacting({ sessionID: input.sessionID, time: Date.now() })
+     yield* session.setCompacting({ sessionID: input.sessionID, time: Date.now() })
+     const startedAt = Date.now()
       if ((yield* config.get()).compaction?.native?.enabled) return yield* processNative(input)
       const userMessage = parent.info
       const compactionPart = parent.parts.find((part): part is MessageV2.CompactionPart => part.type === "compaction")
@@ -822,8 +836,8 @@ export const layer = Layer.effect(
             yield* session.updatePart({
               ...compactionPart,
               tail_start_id: selected.tail_start_id ?? compactionPart.tail_start_id,
-              tokens_before: tokensBefore,
-              tokens_after: tokensAfter,
+             tokens_after: tokensAfter,
+             duration_ms: Date.now() - startedAt,
             })
           }
         }

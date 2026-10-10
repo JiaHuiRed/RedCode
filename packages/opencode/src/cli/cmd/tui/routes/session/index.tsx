@@ -1690,25 +1690,29 @@ export function UserMessage(props: {
   const compactionStats = createMemo(() => {
     const part = compaction()
     if (!part || part.type !== "compaction") return undefined
-    const withTokens = part as CompactionPart & { tokens_before?: number; tokens_after?: number }
+   const withTokens = part as CompactionPart & { tokens_before?: number; tokens_after?: number; duration_ms?: number }
     if (withTokens.tokens_before === undefined) return undefined
     if (withTokens.tokens_after === undefined) return `${withTokens.tokens_before.toLocaleString()} tokens · 压缩中…`
-    const freed =
-      withTokens.tokens_before > 0 ? Math.round((1 - withTokens.tokens_after / withTokens.tokens_before) * 100) : 0
-    return `${withTokens.tokens_before.toLocaleString()} → ${withTokens.tokens_after.toLocaleString()} tokens · 释放 ${freed}%`
+   const freed =
+     withTokens.tokens_before > 0 ? Math.round((1 - withTokens.tokens_after / withTokens.tokens_before) * 100) : 0
+   const dur = withTokens.duration_ms !== undefined ? ` · 耗时 ${withTokens.duration_ms >= 1000 ? `${(withTokens.duration_ms / 1000).toFixed(1)}s` : `${withTokens.duration_ms}ms`}` : ""
+   return `${withTokens.tokens_before.toLocaleString()} → ${withTokens.tokens_after.toLocaleString()} tokens · 释放 ${freed}%${dur}`
   })
   // 260813 Red compaction 分割线带 token 对比：part 由后端 process 回填 tokens_before/after。
   // SDK 的 Part 类型是 OpenAPI 生成的（无这两个字段），这里用本地扩展接口断言读取。
   const compactionTitle = createMemo(() => {
     const part = compaction()
     if (!part || part.type !== "compaction") return " Compaction "
-    const withTokens = part as CompactionPart & { tokens_before?: number; tokens_after?: number }
+   const withTokens = part as CompactionPart & { tokens_before?: number; tokens_after?: number; duration_ms?: number }
+   // 261010 Red 压缩耗时：duration_ms 由 compaction.ts 回填，分割线与详情同源
+   const fmtDuration = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`)
     const fmt = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : `${n}`)
     const caret = compactionOpen() ? " ▾ " : " ▸ "
     if (compacting()) return ` Compaction 压缩中…${caret}`
-    if (withTokens.tokens_before !== undefined && withTokens.tokens_after !== undefined)
-      return ` Compaction ${fmt(withTokens.tokens_before)} → ${fmt(withTokens.tokens_after)}${caret}`
-    if (withTokens.tokens_before !== undefined) return ` Compaction ${fmt(withTokens.tokens_before)} → …${caret}`
+   if (withTokens.tokens_before !== undefined && withTokens.tokens_after !== undefined) {
+     const dur = withTokens.duration_ms !== undefined ? ` · ${fmtDuration(withTokens.duration_ms)}` : ""
+     return ` Compaction ${fmt(withTokens.tokens_before)} → ${fmt(withTokens.tokens_after)}${dur}${caret}`
+   }
     return " Compaction "
   })
 

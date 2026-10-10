@@ -218,9 +218,11 @@ export const CompactionPart = Schema.Struct({
   native: Schema.optional(Schema.Boolean),
   overflow: Schema.optional(Schema.Boolean),
   tail_start_id: Schema.optional(MessageID),
-  // 260813 Red compaction 前后 token 对比：process 完成后回填，UI 分割线展示
-  tokens_before: Schema.optional(NonNegativeInt),
-  tokens_after: Schema.optional(NonNegativeInt),
+ // 260813 Red compaction 前后 token 对比：process 完成后回填，UI 分割线展示
+ tokens_before: Schema.optional(NonNegativeInt),
+ tokens_after: Schema.optional(NonNegativeInt),
+ // 261010 Red 本次压缩耗时（毫秒）：与 token 对比同批回填，分割线展示
+ duration_ms: Schema.optional(NonNegativeInt),
 }).annotate({ identifier: "CompactionPart" })
 export type CompactionPart = Types.DeepMutable<Schema.Schema.Type<typeof CompactionPart>>
 export const SubtaskPart = Schema.Struct({
