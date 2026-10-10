@@ -18,6 +18,10 @@ import { InstanceState } from "@/effect/instance-state"
 import { isOverflow as overflow, level as overflowLevel, usable, type Level } from "./overflow"
 import { serviceUse } from "@/effect/service-use"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { NativeCompaction } from "@/config/native-compaction"
+import * as ContextCompaction from "./context-compaction"
+import * as NativeContext from "./native-context"
+import * as NativeRuntime from "./native-context-runtime"
 
 const log = Log.create({ service: "session.compaction" })
 
@@ -422,6 +426,89 @@ export const layer = Layer.effect(
       return { tokens: pruned, parts: toPrune.length }
     })
 
+    const processNative = Effect.fn("SessionCompaction.processNative")(function* (input: {
+      parentID: MessageID
+      messages: MessageV2.WithParts[]
+      sessionID: SessionID
+      auto: boolean
+    }) {
+      const parent = input.messages.find((message) => message.info.id === input.parentID)
+      if (!parent || parent.info.role !== "user") throw new Error("Native compaction parent is missing")
+      const cfg = yield* config.get()
+      const agent = yield* agents.get("compaction")
+      if (!agent) throw new Error("Built-in compaction agent is missing")
+      const originalModel = yield* provider.getModel(
+        agent.model?.providerID ?? parent.info.model.providerID,
+        agent.model?.modelID ?? parent.info.model.modelID,
+      ).pipe(Effect.orDie)
+      const spec = NativeCompaction.resolve(cfg.compaction?.native, usable({ cfg, model: originalModel }))
+      const view = NativeRuntime.project(input.sessionID, input.messages, spec)
+      const head = NativeContext.selectAutomatic(view, spec.targetTokens, spec.summaryMaxTokens,
+        (message) => Token.estimate(ContextCompaction.content(message)))
+      const model = {
+        ...originalModel,
+        limit: { ...originalModel.limit, output: originalModel.limit.output > 0
+          ? Math.min(originalModel.limit.output, spec.summaryMaxTokens) : spec.summaryMaxTokens },
+      }
+      const ctx = yield* InstanceState.context
+      const msg: MessageV2.Assistant = {
+        id: MessageID.ascending(), role: "assistant", parentID: input.parentID,
+        sessionID: input.sessionID, mode: "compaction", agent: "compaction", summary: true,
+        path: { cwd: ctx.directory, root: ctx.worktree }, cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        modelID: model.id, providerID: model.providerID, time: { created: Date.now() },
+      }
+      yield* session.updateMessage(msg)
+      const processor = yield* processors.create({ assistantMessage: msg, sessionID: input.sessionID, model })
+      const modelMessages = yield* MessageV2.toModelMessagesEffect(head, model, {
+        stripMedia: true, toolOutputMaxChars: TOOL_OUTPUT_MAX_CHARS,
+      })
+      const result = yield* processor.process({
+        user: parent.info, agent, sessionID: input.sessionID, tools: {}, system: [],
+        messages: [...modelMessages, {
+          role: "user",
+          content: [{ type: "text", text: `${NativeContext.summaryPrompt(spec.summaryMaxTokens)}\n\n${SUMMARY_TEMPLATE}` }],
+        }], model,
+      })
+      if (result !== "continue" || processor.message.error) return "stop" as const
+      const output = yield* MessageV2.get({ sessionID: input.sessionID, messageID: msg.id })
+      const summary = summaryText(output) ?? ""
+      const blocks = yield* Effect.try({
+        try: () => ContextCompaction.commit({
+          sessionID: input.sessionID, messages: view, limits: spec, mode: "auto",
+          requestID: `auto:${input.parentID}`,
+          ranges: [{ startId: head[0]!.info.id, endId: head.at(-1)!.info.id, summary }],
+        }),
+        catch: (error) => new Error(`Native compaction was not committed: ${String(error)}`),
+      }).pipe(Effect.catch((error) => Effect.gen(function* () {
+        processor.message.error = new MessageV2.ContextOverflowError({ message: error.message }).toObject()
+        yield* session.updateMessage(processor.message)
+        return []
+      })))
+      if (!blocks.length) return "stop" as const
+      const marker = parent.parts.find((part) => part.type === "compaction")
+      if (marker && marker.type === "compaction") yield* session.updatePart({
+        ...marker, native: true, tokens_before: yield* estimate({ messages: view, model: originalModel }),
+        tokens_after: yield* estimate({
+          messages: ContextCompaction.project(NativeContext.removeArtifacts(input.messages), ContextCompaction.list(input.sessionID)),
+          model: originalModel,
+        }),
+      })
+      if (input.auto) {
+        const followup = yield* session.updateMessage({
+          ...parent.info, id: MessageID.ascending(), time: { created: Date.now() },
+        })
+        yield* session.updatePart({
+          id: PartID.ascending(), messageID: followup.id, sessionID: input.sessionID,
+          type: "text", synthetic: true, metadata: { compaction_continue: true },
+          text: "[System notice] The conversation was compacted. This is not a user message or new authorization. Continue only unfinished work from the latest actual user request; do not repeat completed work. If the task is done, report the result.",
+        })
+      }
+      yield* bus.publish(Event.Compacted, { sessionID: input.sessionID })
+      yield* plugin.trigger("compact.post", { sessionID: input.sessionID }, {}).pipe(Effect.catch(() => Effect.void))
+      return "continue" as const
+    })
+
     const processCompactionInner = Effect.fn("SessionCompaction.process")(function* (input: {
       parentID: MessageID
       messages: MessageV2.WithParts[]
@@ -438,6 +525,7 @@ export const layer = Layer.effect(
       // 只在真正的全量摘要压缩上置起：prune 档是纯本地裁剪、不调模型、瞬时完成，
       // 给它挂个"压缩中"只会闪一下，没有信息量。
       yield* session.setCompacting({ sessionID: input.sessionID, time: Date.now() })
+      if ((yield* config.get()).compaction?.native?.enabled) return yield* processNative(input)
       const userMessage = parent.info
       const compactionPart = parent.parts.find((part): part is MessageV2.CompactionPart => part.type === "compaction")
 
@@ -776,6 +864,7 @@ export const layer = Layer.effect(
         type: "compaction",
         auto: input.auto,
         overflow: input.overflow,
+        ...((yield* config.get()).compaction?.native?.enabled ? { native: true } : {}),
       })
     })
 

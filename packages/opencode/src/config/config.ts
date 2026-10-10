@@ -32,6 +32,7 @@ import { ConfigLSP } from "./lsp"
 import { ConfigManaged } from "./managed"
 import { ConfigMCP } from "./mcp"
 import { ConfigModelID } from "./model-id"
+import * as NativeCompaction from "./native-compaction"
 import { ConfigParse } from "./parse"
 import { ConfigPaths } from "./paths"
 import { ConfigPermission } from "./permission"
@@ -360,6 +361,12 @@ export const Info = Schema.Struct({
       threshold: Schema.optional(NonNegativeInt).annotate({
         description:
           "Hard token ceiling for compaction. When total tokens exceed this value, compaction triggers regardless of the model's declared context limit. Replaces DCP's auto-compress role. (default: none — uses model limit)",
+      }),
+      // 261010 Red native compaction 预算。缺省整块不存在 = 不打开，legacy threshold /
+      // 模型窗口路径逐字节不变；打开后 overflow 的触发点才改看 native trigger。
+      native: Schema.optional(NativeCompaction.Info).annotate({
+        description:
+          "Native compaction budget (trigger/target/reminder tokens, summary and retained-range caps, scan limits). Disabled by default; while off, the legacy threshold and model-window behavior is unchanged.",
       }),
     }),
   ),

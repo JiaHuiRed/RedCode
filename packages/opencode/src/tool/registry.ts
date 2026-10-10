@@ -62,6 +62,8 @@ import { Reference } from "@/reference/reference"
 import { BackgroundJob } from "../background/job"
 import { SessionStatus } from "@/session/status"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { CompressTool, ContextReadTool, ContextSearchTool, ContextRestoreTool } from "./context"
+import { assertExclusive } from "@/session/native-context"
 import { SnippetTool } from "./snippet"
 import { Snippet } from "@/session/snippet"
 
@@ -134,6 +136,10 @@ export const layer = Layer.effect(
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
     const snippet = yield* SnippetTool
+    const compress = yield* CompressTool
+    const contextRead = yield* ContextReadTool
+    const contextSearch = yield* ContextSearchTool
+    const contextRestore = yield* ContextRestoreTool
     const agent = yield* Agent.Service
 
     const state = yield* InstanceState.make<State>(
@@ -247,7 +253,8 @@ export const layer = Layer.effect(
           }
         }
 
-        yield* config.get()
+        const nativeEnabled = (yield* config.get()).compaction?.native?.enabled === true
+        if (nativeEnabled) assertExclusive(custom.map((tool) => tool.id))
         const questionEnabled = ["app", "cli", "desktop"].includes(flags.client) || flags.enableQuestionTool
 
         const tool = yield* Effect.all({
@@ -279,6 +286,10 @@ export const layer = Layer.effect(
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
           plan: Tool.init(plan),
+          compress: Tool.init(compress),
+          context_read: Tool.init(contextRead),
+          context_search: Tool.init(contextSearch),
+          context_restore: Tool.init(contextRestore),
         })
 
         // 260606 Red search helper extracted — avoid closure-capturing all()
@@ -348,6 +359,7 @@ export const layer = Layer.effect(
             ...(flags.experimentalLspTool ? [tool.lsp] : []),
             ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
             searchToolsDef,
+            ...(nativeEnabled ? [tool.compress, tool.context_read, tool.context_search, tool.context_restore] : []),
           ],
           task: tool.task,
           read: tool.read,

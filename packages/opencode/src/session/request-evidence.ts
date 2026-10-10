@@ -392,7 +392,7 @@ function observeCompression(
 ): CompressionObservation | undefined {
   const wrapped = event.result.value
   const metadata = isRecord(wrapped) ? wrapped.metadata : undefined
-  const candidate = isRecord(metadata) ? metadata.dcpCompression : undefined
+  const candidate = isRecord(metadata) ? metadata.nativeCompression ?? metadata.dcpCompression : undefined
   if (!candidate) return { type: "compression", status: "metadata-unavailable" }
   const value = compression(candidate)
   if (!value) return { type: "compression", status: "invalid" }

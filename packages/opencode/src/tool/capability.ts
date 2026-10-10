@@ -45,9 +45,10 @@ export function isCapabilityAllowed(capabilities: ReadonlySet<ChildCapability>, 
 }
 
 export function capabilityForTool(tool: string): ChildCapability | undefined {
-  if (tool === "read") return "read"
+  // 261010 Red 管理自己的会话投影不授予仓库写权限。
+  if (["read", "context_read", "compress", "context_restore"].includes(tool)) return "read"
   if (
-    ["grep", "glob", "list", "webfetch", "websearch"].includes(tool) ||
+    ["grep", "glob", "list", "webfetch", "websearch", "context_search"].includes(tool) ||
     tool.startsWith("jcodemunch_") ||
     tool.startsWith("typegraph_") ||
     tool.startsWith("indexgraph_") ||

@@ -76,6 +76,11 @@ import { Goal } from "./goal"
 import { LLMEvent } from "@redcode-ai/llm"
 import { LoopRecoveryTracker, RECOVERY_PROMPTS } from "./text-loop-detection"
 import * as XmlToolCall from "./xml-tool-call"
+import { NativeCompaction } from "@/config/native-compaction"
+import * as NativeRuntime from "./native-context-runtime"
+import { usable as usableContext } from "./overflow"
+import { estimateModelMessages } from "./image-tokens"
+import { Token } from "@/util/token"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -1136,6 +1141,9 @@ export const layer = Layer.effect(
       let salvageRecoveries = 0
       // 260729 Red soft 档提示每个会话只发一次，别每轮刷屏
       let softContextNoticed = false
+      // 261010 Red native 自动压缩每次运行只自动尝试一次：commit 失败（如预算配错、
+      // 窗口太小）是结构性失败，重试只会反复创建失败的压缩任务；成功后重置允许再压。
+      let nativeAutoAttempted = false
       // 260729 Red 本轮起点的用户消息 + 已提醒过的消息 id。用来区分「开启本轮的那条」
       // 和「回合中途新到的」—— 只有后者才该提醒，且只提醒一次（详见下方注入处的注释）。
       // 260814 Red 起点改存消息本体：ID 48 位编码 795 天回绕后字典序失真（见 MessageV2.compareTime），
@@ -1174,7 +1182,15 @@ export const layer = Layer.effect(
         yield* status.set(sessionID, { type: "busy" })
         yield* slog.info("loop", { step })
 
-        let msgs = yield* MessageV2.filterCompactedEffect(sessionID)
+        const nativeConfig = yield* config.get()
+        const nativeSpec = NativeCompaction.resolve(nativeConfig.compaction?.native)
+        const nativeRevision = nativeSpec.enabled ? NativeRuntime.revision(sessionID) : undefined
+        const oldPin = _caches.msgPin.get(sessionID)
+        if (nativeSpec.enabled && oldPin && oldPin.nativeRevision !== nativeRevision)
+          settlePromptCaches(sessionID, "native-compaction")
+        let msgs = nativeSpec.enabled
+          ? NativeRuntime.history(sessionID, nativeSpec)
+          : yield* MessageV2.filterCompactedEffect(sessionID)
         // 261007 Red 未送达队列可能早于压缩边界；领取后补回当前 turn，不能让摘要裁掉它。
         const retainedQueuedMessage =
           claimedUserID && !msgs.some((message) => message.info.id === claimedUserID)
@@ -1350,7 +1366,7 @@ export const layer = Layer.effect(
           // 260811 cc audit R4 分代结算：摘要已落库、前缀缓存反正要重建——此刻丢弃
           // msgPin/modelMsgs，让累积的 prune 标记与 DCP 改写随下一轮一并生效，
           // 快照双份内存同步释放。
-          settlePromptCaches(sessionID, "compaction")
+          if (!nativeSpec.enabled) settlePromptCaches(sessionID, "compaction")
           if (result === "stop") break
           continue
         }
@@ -1364,6 +1380,7 @@ export const layer = Layer.effect(
 
         if (
           lastFinished &&
+          !nativeSpec.enabled &&
           lastFinished.summary !== true &&
           !justRanExternalCompress &&
           (yield* compaction.isOverflow({ tokens: lastFinished.tokens, model: stepSettings.model }))
@@ -1403,6 +1420,7 @@ export const layer = Layer.effect(
           }
           break
         }
+        if (nativeSpec.enabled) msgs = NativeRuntime.project(sessionID, msgs, nativeSpec)
         msgs = yield* SessionReminders.apply({ messages: msgs, agent, session: stepSettings.session }).pipe(
           Effect.provideService(RuntimeFlags.Service, flags),
           Effect.provideService(AppFileSystem.Service, fsys),
@@ -1585,7 +1603,7 @@ export const layer = Layer.effect(
             // serve 进程按会话数持续堆积。回收口径与阈值见 prompt-caches.ts。
             touchSession(sessionID)
             if (!_caches.msgPin.has(sessionID)) {
-              _caches.msgPin.set(sessionID, { sessionID, messages: new Map() })
+              _caches.msgPin.set(sessionID, { sessionID, messages: new Map(), nativeRevision })
             }
             const pinnedMessages = _caches.msgPin.get(sessionID)!
             let pinned = 0,
@@ -1878,6 +1896,30 @@ export const layer = Layer.effect(
             tools: sortedTools as Record<string, unknown>,
             messages: outgoing,
           })
+        // 261010 Red 上次自动压缩失败（最后一条 summary assistant 带 error）时不再自动触发：
+        // 失败通常是结构性原因（预算配错、窗口太小），重试只会反复堆失败任务；交还用户处置。
+        const lastNativeSummary = msgs.findLast(
+          (message): message is MessageV2.WithParts & { info: MessageV2.Assistant } =>
+            message.info.role === "assistant" && message.info.summary === true,
+        )
+        const nativeFailed = lastNativeSummary !== undefined && lastNativeSummary.info.error !== undefined
+        if (nativeSpec.enabled && !nativeAutoAttempted && !nativeFailed && nativeConfig.compaction?.auto !== false) {
+          const budget = NativeCompaction.resolve(nativeConfig.compaction?.native,
+            usableContext({ cfg: nativeConfig, model, outputTokenMax: flags.outputTokenMax }))
+          const plannedTokens = estimateModelMessages(outgoing, model) +
+            Token.estimate(system.join("\n")) + Token.estimate(JSON.stringify(sortedTools))
+          if (plannedTokens >= budget.triggerTokens) {
+            // 261010 Red 在请求发出前处理新增输入/换小窗口，不等 provider 报溢出。
+            nativeAutoAttempted = true
+            handle.message.finish = "context-preflight"
+              handle.message.time.completed = Date.now()
+              yield* sessions.updateMessage(handle.message)
+              yield* compaction.create({
+                sessionID, agent: stepSettings.user.agent, model: stepSettings.user.model, auto: true,
+              })
+              return "continue" as const
+            }
+          }
           const result = yield* handle.process(
             {
               user: stepSettings.user,
@@ -2012,7 +2054,7 @@ export const layer = Layer.effect(
               softContextNoticed = true
               yield* slog.info("context.soft", { step, note: "保留缓存前缀，暂不做任何重写" })
             }
-            if (result !== "compact" && tier === "prune") {
+            if (!nativeSpec.enabled && result !== "compact" && tier === "prune") {
               const freed = yield* compaction
                 .prune({ sessionID })
                 .pipe(Effect.catch(() => Effect.succeed({ tokens: 0, parts: 0 })))
@@ -2030,7 +2072,33 @@ export const layer = Layer.effect(
             }
           }
 
-          if (result === "compact") {
+          const nativeChanged = nativeSpec.enabled && NativeRuntime.revision(sessionID) !== nativeRevision
+          if (nativeChanged) nativeAutoAttempted = false
+          if (nativeSpec.enabled && !nativeChanged && nativeConfig.compaction?.auto !== false) {
+            const budget = NativeCompaction.resolve(nativeConfig.compaction?.native,
+              usableContext({ cfg: nativeConfig, model, outputTokenMax: flags.outputTokenMax }))
+            const count = handle.message.tokens.total || handle.message.tokens.input +
+              handle.message.tokens.output + handle.message.tokens.cache.read + handle.message.tokens.cache.write
+            if (count >= budget.reminderTokens && !msgs.some((message) => message.parts.some((part) =>
+              part.type === "text" && part.metadata?.native_context_nudge?.revision === nativeRevision,
+            ))) {
+              yield* sessions.updatePart({
+                id: PartID.ascending(), sessionID, messageID: handle.message.id, type: "text", synthetic: true,
+                // 261010 Red metadata 经 providerOptions 下发，值必须是两层对象；裸字符串会让
+                // ai@7 的 providerMetadataSchema 拒掉整条消息。
+                metadata: { native_context_nudge: { revision: nativeRevision } },
+                text: `[Context notice, not a user request] Context is approaching the ${budget.triggerTokens}-token ceiling. Use compress for closed ranges when useful; preserve constraints, verification and unfinished work. Aim below ${budget.targetTokens} tokens. Originals can be recovered with context_read/context_search. Do not compress the latest actual user request or unfinished tools.`,
+              })
+            }
+          }
+          if (result === "compact" && nativeSpec.enabled && !nativeChanged && !nativeAutoAttempted && !nativeFailed) {
+            nativeAutoAttempted = true
+            yield* compaction.create({
+              sessionID, agent: stepSettings.user.agent, model: stepSettings.user.model,
+              auto: true, overflow: !handle.message.finish,
+            })
+          }
+          if (result === "compact" && !nativeSpec.enabled) {
             // 260729 Red prune 先于 summarize（取自 DeepSeek-Reasonix 的 compact.go）：
             // 摘要压缩是一次付费的模型调用，而且会重写前缀、把 prefix cache 整个打掉。
             // 裁剪陈旧工具输出只是本地改写，代价接近零。所以先 prune，如果光这一步就把
@@ -2087,7 +2155,8 @@ export const layer = Layer.effect(
         continue
       }
 
-      yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
+      if (!(yield* config.get()).compaction?.native?.enabled)
+        yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
       // 260801 Red Goal token 记账：无 active goal 时 UPDATE no-op，零成本
       yield* goal.addUsage({ sessionID, tokens: usageTokens }).pipe(Effect.ignore)
       return yield* lastAssistant(sessionID)

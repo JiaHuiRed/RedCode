@@ -6,6 +6,7 @@ import { SyncEvent } from "../sync"
 import * as Log from "@redcode-ai/core/util/log"
 import * as Session from "./session"
 import { MessageV2 } from "./message-v2"
+import * as ContextCompaction from "./context-compaction"
 import { SessionID, MessageID, PartID } from "./schema"
 import { SessionRunState } from "./run-state"
 import { SessionSummary } from "./summary"
@@ -134,6 +135,9 @@ export const layer = Layer.effect(
         }
         remove.push(msg)
       }
+      // 261010 Red 原生压缩账本先于删除失效：引用被删源消息的活跃块直接停用，
+      // 避免投影再引用已不存在的原文。被消费的子块保持停用（父已失效）。
+      if (remove.length) ContextCompaction.invalidate(sessionID, remove.map((msg) => msg.info.id))
       for (const msg of remove) {
         yield* sync.run(MessageV2.Event.Removed, {
           sessionID,

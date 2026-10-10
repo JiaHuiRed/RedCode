@@ -215,6 +215,7 @@ export const CompactionPart = Schema.Struct({
   ...partBase,
   type: Schema.Literal("compaction"),
   auto: Schema.Boolean,
+  native: Schema.optional(Schema.Boolean),
   overflow: Schema.optional(Schema.Boolean),
   tail_start_id: Schema.optional(MessageID),
   // 260813 Red compaction 前后 token 对比：process 完成后回填，UI 分割线展示
@@ -1371,6 +1372,8 @@ export function filterCompactedOrdered(ordered: Iterable<WithParts>) {
     if (msg.info.role === "user" && completed.has(msg.info.id)) {
       const part = msg.parts.find((item): item is CompactionPart => item.type === "compaction")
       if (!part) continue
+      // 261010 Red 原生范围投影由检查点账本拥有，不借 legacy 的单一截断边界裁原文。
+      if (part.native) continue
       if (!part.tail_start_id) break
       retain = part.tail_start_id
       if (msg.info.id === retain) break

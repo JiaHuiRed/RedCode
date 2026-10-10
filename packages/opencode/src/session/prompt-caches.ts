@@ -15,7 +15,7 @@ type SystemCache = {
   // 不缓存的话这段会在会话中途出现，把前缀缓存打掉。没有服务器提供说明时为 undefined。
   mcpGuide: string | undefined
 }
-type MessagePinCache = { sessionID: string; messages: Map<string, unknown[]> }
+type MessagePinCache = { sessionID: string; messages: Map<string, unknown[]>; nativeRevision?: string }
 type ModelMessagesCache = { sessionID: string; modelKey: string; messages: ModelMessage[] }
 type ToolCache = { sessionID: string; defs: Map<string, { description: string; inputSchema: unknown }> }
 type PromptCacheState = {

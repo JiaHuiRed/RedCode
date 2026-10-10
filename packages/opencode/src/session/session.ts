@@ -27,6 +27,7 @@ import { ProjectTable } from "../project/project.sql"
 import { Storage } from "@/storage/storage"
 import * as Log from "@redcode-ai/core/util/log"
 import { MessageV2 } from "./message-v2"
+import * as ContextCompaction from "./context-compaction"
 import type { InstanceContext } from "../project/instance-context"
 import { InstanceState } from "@/effect/instance-state"
 import { Snapshot } from "@/snapshot"
@@ -1034,6 +1035,9 @@ export const layer: Layer.Layer<
           yield* updatePart(p)
         }
       }
+      // 261010 Red 原生压缩账本跟随 fork：只有源消息全部被克隆的块才复制过去，
+      // 溯源与消费 ID 重映射到新会话；部分覆盖的块留在父会话，不半拷贝。
+      ContextCompaction.clone(input.sessionID, session.id, idMap)
       return session
     })
 

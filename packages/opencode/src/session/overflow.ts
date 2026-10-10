@@ -1,4 +1,5 @@
 import type { Config } from "@/config/config"
+import { NativeCompaction } from "@/config/native-compaction"
 import type { Provider } from "@/provider/provider"
 import { ProviderTransform } from "@/provider/transform"
 import type { MessageV2 } from "./message-v2"
@@ -35,6 +36,14 @@ export const RATIOS = { soft: 0.6, prune: 0.8 } as const
 
 export type Level = "ok" | "soft" | "prune" | "compact"
 
+// 261010 Red native compaction 打开时，触发点改看 resolve 出的 native trigger（已按
+// usable 夹过）；legacy threshold 只在 native 关闭时生效，两条路径不叠加。
+function nativeBudget(input: { cfg: Config.Info; model: Provider.Model; outputTokenMax?: number }) {
+  const native = input.cfg.compaction?.native
+  if (!native?.enabled) return undefined
+  return NativeCompaction.resolve(native, usable(input))
+}
+
 /**
  * 真正会触发全量摘要的那个点。
  *
@@ -46,6 +55,8 @@ export type Level = "ok" | "soft" | "prune" | "compact"
  * （usable≈224k，硬顶够不着）一个数都不变。
  */
 export function ceiling(input: { cfg: Config.Info; model: Provider.Model; outputTokenMax?: number }) {
+  const native = nativeBudget(input)
+  if (native) return native.triggerTokens
   const limit = usable(input)
   const threshold = input.cfg.compaction?.threshold
   if (!threshold) return limit
@@ -92,6 +103,10 @@ export function isOverflow(input: {
   // context:0 (provider.ts), which would otherwise disable compaction entirely
   // and let DCP nudge forever without ever triggering. Honor the hard ceiling
   // even when the model's context window is unknown.
+  // 261010 Red native 打开时 trigger 取代 legacy threshold；窗口未知（usable=0）时
+  // resolve 不夹取，trigger 保持配置值/默认 250k，与 legacy 的 context===0 早退不同。
+  const native = nativeBudget(input)
+  if (native) return count >= native.triggerTokens
   const threshold = input.cfg.compaction?.threshold
   if (threshold && count >= threshold) return true
 
