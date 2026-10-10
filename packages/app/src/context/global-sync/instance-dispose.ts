@@ -24,7 +24,10 @@ export function createInstanceDisposer(input: InstanceDisposeInput) {
               ? String((error as { status: unknown }).status)
               : undefined
           const message = error instanceof Error ? error.message : String(error)
-          console.debug("[instance-dispose] request failed", { directory, message, status })
+          // 261010 Red 上一版仍把对象字面量传给 console.debug——electron-log 的
+          // spyRendererConsole 对非字符串参数直接 String()，落盘还是 [object Object]。
+          // 单字符串参数才能完整落盘。
+          console.debug(`[instance-dispose] request failed ${JSON.stringify({ directory, message, status })}`)
         },
       )
       .finally(() => {

@@ -425,7 +425,11 @@ export async function bootstrapDirectory(input: {
   await waitForPaint()
   const slowErrs = errors(await runAll(slow))
   if (slowErrs.length > 0) {
-    console.error("Failed to finish bootstrap instance", slowErrs[0])
+    // 261010 Red 第二个参数是 Error/DOMException 时 electron-log 落成 [object DOMException]，
+    // 单字符串参数才能把 name/message 带进 renderer.log。
+    const first = slowErrs[0]
+    const detail = first instanceof Error ? `${first.name}: ${first.message}` : String(first)
+    console.error(`Failed to finish bootstrap instance ${detail}`)
     const project = getFilename(input.directory)
     showToast({
       variant: "error",

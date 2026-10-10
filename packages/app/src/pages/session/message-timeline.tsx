@@ -701,6 +701,10 @@ export function MessageTimeline(props: {
     scrollToEndFrame = requestAnimationFrame(() => {
       scrollToEndFrame = undefined
       if (!listRoot) return
+      // 261010 Red 组合期让路：scrollToIndex 是同步布局+滚动事件链，与虚拟列表重测量挤帧
+      // 会打断 IME 组合（与 anchorMeasuredBottom 同一门禁语义）。组合结束后由
+      // compositionend 补一次，流式未停时后续 delta 也会再次走到这里。
+      if (imeComposing) return
       if (isMeasuredBottom(listRoot)) return
       const keys = timelineRowKeys()
       if (keys.length === 0) return
@@ -946,7 +950,12 @@ export function MessageTimeline(props: {
     }
     const onCompositionEnd = () => {
       imeComposing = false
-      if (canAnchorBottom()) scheduleMeasuredBottomAnchor()
+      if (canAnchorBottom()) {
+        // 261010 Red 组合期 scheduleScrollToEnd 一直在让路，收工时两条链都要补：
+        // 只补锚定循环不补 scrollToEnd，组合结束后的首屏会停在旧位置直到下个 delta。
+        scheduleScrollToEnd()
+        scheduleMeasuredBottomAnchor()
+      }
     }
     document.addEventListener("compositionstart", onCompositionStart)
     document.addEventListener("compositionend", onCompositionEnd)
@@ -1032,7 +1041,13 @@ export function MessageTimeline(props: {
         if (bottomAnchorSettled >= BOTTOM_ANCHOR_SETTLED_FRAMES) return stop()
       }
 
-      bottomAnchorFrame = requestAnimationFrame(tick)
+      // 261010 Red 隔帧推进：插行期 virtua 的行高实测修正与本循环写 scrollTop 同帧互踢，
+      // 是 ResizeObserver loop 风暴的放大器（renderer.log 风暴期与流式插行强相关）。错开
+      // 一帧让修正先收敛，强制布局频率减半；预算语义从「帧」变「次」，锁定窗口拉长约一倍
+      // （12 次 ≈ 400ms），流式插行间隔是秒级，用户滚动让位路径不受影响。
+      bottomAnchorFrame = requestAnimationFrame(() => {
+        bottomAnchorFrame = requestAnimationFrame(tick)
+      })
     }
 
     bottomAnchorFrame = requestAnimationFrame(tick)
