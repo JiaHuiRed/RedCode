@@ -77,8 +77,10 @@ export function level(input: {
   const limit = ceiling(input)
   if (limit <= 0) return "ok"
   const count = tokenCount(input.tokens)
-  if (count >= limit * RATIOS.prune) return "prune"
-  if (count >= limit * RATIOS.soft) return "soft"
+  // 261010 Red native 颜色预警独立配置；红色仍与真正压缩触发点一致，legacy 比例不变。
+  const native = nativeBudget(input)
+  if (count >= limit * (native?.pruneRatio ?? RATIOS.prune)) return "prune"
+  if (count >= limit * (native?.softRatio ?? RATIOS.soft)) return "soft"
   return "ok"
 }
 

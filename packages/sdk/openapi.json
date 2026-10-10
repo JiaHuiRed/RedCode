@@ -16028,13 +16028,59 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 10000000,
-            "description": "Token count native compaction aims for after summarizing, scaled down with the trigger when the model window is smaller (default: 160000; maximum: 10000000)"
+            "description": "Token count native compaction aims for after summarizing, scaled down with the trigger when the model window is smaller (default: 130000; maximum: 10000000)"
           },
           "reminder_tokens": {
             "type": "integer",
             "minimum": 1,
             "maximum": 10000000,
             "description": "Token count at which the user is reminded to compact before the trigger fires, scaled down with the trigger when the model window is smaller (default: 220000; maximum: 10000000)"
+          },
+          "soft_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "prune_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
           },
           "summary_max_tokens": {
             "type": "integer",

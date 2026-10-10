@@ -41,8 +41,10 @@ describe("NativeCompaction.resolve 默认值", () => {
     expect(NativeCompaction.resolve(undefined)).toEqual({
       enabled: false,
       triggerTokens: 250_000,
-      targetTokens: 160_000,
+      targetTokens: 130_000,
       reminderTokens: 220_000,
+      softRatio: 0.72,
+      pruneRatio: 0.88,
       summaryMaxTokens: 16_000,
       summaryMaxBytes: 98_304,
       activeMaxTokens: 80_000,
@@ -68,6 +70,8 @@ describe("snake_case 配置映射到 camelCase Spec", () => {
         trigger_tokens: 300_000,
         target_tokens: 200_000,
         reminder_tokens: 260_000,
+        soft_ratio: 0.7,
+        prune_ratio: 0.9,
         summary_max_tokens: 8_000,
         summary_max_bytes: 65_536,
         active_max_tokens: 40_000,
@@ -87,6 +91,8 @@ describe("snake_case 配置映射到 camelCase Spec", () => {
       triggerTokens: 300_000,
       targetTokens: 200_000,
       reminderTokens: 260_000,
+      softRatio: 0.7,
+      pruneRatio: 0.9,
       summaryMaxTokens: 8_000,
       summaryMaxBytes: 65_536,
       activeMaxTokens: 40_000,
@@ -105,6 +111,20 @@ describe("snake_case 配置映射到 camelCase Spec", () => {
 })
 
 describe("配置校验", () => {
+  test("预警比例必须有限且满足 0 < soft < prune < 1", () => {
+    for (const bad of [0, -1, 1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => decode({ soft_ratio: bad })).toThrow()
+      expect(() => decode({ prune_ratio: bad })).toThrow()
+    }
+    expect(() => decode({ soft_ratio: 0.9 })).toThrow()
+    expect(() => decode({ prune_ratio: 0.7 })).toThrow()
+    expect(() => decode({ soft_ratio: 0.8, prune_ratio: 0.8 })).toThrow()
+    expect(decode({ soft_ratio: 0.7, prune_ratio: 0.9 })).toMatchObject({
+      soft_ratio: 0.7,
+      prune_ratio: 0.9,
+    })
+  })
+
   test("token 预算必须为正、有限、有上界", () => {
     for (const bad of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 10_000_001]) {
       expect(() => decode({ trigger_tokens: bad })).toThrow()
@@ -135,9 +155,9 @@ describe("配置校验", () => {
     // resolve 也是先拒后夹，不拿夹取悄悄修正配错的意图
     expect(() => NativeCompaction.resolve({ target_tokens: 300_000 }, 100_000)).toThrow()
     // 合法顺序放过
-    expect(
-      decode({ trigger_tokens: 300_000, target_tokens: 200_000, reminder_tokens: 260_000 }).reminder_tokens,
-    ).toBe(260_000)
+    expect(decode({ trigger_tokens: 300_000, target_tokens: 200_000, reminder_tokens: 260_000 }).reminder_tokens).toBe(
+      260_000,
+    )
   })
 })
 
@@ -150,14 +170,14 @@ describe("resolve 的模型夹取", () => {
   test("窗口够大时不夹取", () => {
     const spec = NativeCompaction.resolve({ enabled: true }, 872_000)
     expect(spec.triggerTokens).toBe(250_000)
-    expect(spec.targetTokens).toBe(160_000)
+    expect(spec.targetTokens).toBe(130_000)
     expect(spec.reminderTokens).toBe(220_000)
   })
 
   test("小模型按配置里的比例同步缩小 target/reminder", () => {
     const spec = NativeCompaction.resolve({ enabled: true }, 84_000)
     expect(spec.triggerTokens).toBe(84_000)
-    expect(spec.targetTokens).toBe(53_760)
+    expect(spec.targetTokens).toBe(43_680)
     expect(spec.reminderTokens).toBe(73_920)
     expect(spec.targetTokens).toBeLessThan(spec.reminderTokens)
     expect(spec.reminderTokens).toBeLessThan(spec.triggerTokens)
@@ -216,12 +236,30 @@ describe("overflow native 触发点", () => {
     expect(isOverflow({ cfg: legacy, tokens: tokens(999_999), model: unknownWindow })).toBe(false)
   })
 
-  test("level 三档按 native trigger 分档", () => {
+  test("native 在 180k/220k/250k 分档，只有 250k 触发压缩", () => {
     const cfg = nativeCfg({ enabled: true })
+    expect(level({ cfg, tokens: tokens(179_999), model: big })).toBe("ok")
+    expect(level({ cfg, tokens: tokens(180_000), model: big })).toBe("soft")
+    expect(level({ cfg, tokens: tokens(219_999), model: big })).toBe("soft")
+    expect(level({ cfg, tokens: tokens(220_000), model: big })).toBe("prune")
+    expect(level({ cfg, tokens: tokens(249_999), model: big })).toBe("prune")
     expect(level({ cfg, tokens: tokens(250_000), model: big })).toBe("compact")
-    expect(level({ cfg, tokens: tokens(200_000), model: big })).toBe("prune")
-    expect(level({ cfg, tokens: tokens(150_000), model: big })).toBe("soft")
-    expect(level({ cfg, tokens: tokens(10_000), model: big })).toBe("ok")
+    expect(isOverflow({ cfg, tokens: tokens(220_000), model: big })).toBe(false)
+    expect(isOverflow({ cfg, tokens: tokens(249_999), model: big })).toBe(false)
+    expect(isOverflow({ cfg, tokens: tokens(250_000), model: big })).toBe(true)
+  })
+
+  test("预警比例可覆盖，小窗口保持同一比例，legacy 分档不变", () => {
+    const cfg = nativeCfg({ enabled: true, soft_ratio: 0.5, prune_ratio: 0.9 })
+    expect(level({ cfg, tokens: tokens(125_000), model: big })).toBe("soft")
+    expect(level({ cfg, tokens: tokens(225_000), model: big })).toBe("prune")
+    expect(level({ cfg, tokens: tokens(41_999), model: small })).toBe("ok")
+    expect(level({ cfg, tokens: tokens(42_000), model: small })).toBe("soft")
+    expect(level({ cfg, tokens: tokens(75_600), model: small })).toBe("prune")
+    expect(level({ cfg, tokens: tokens(84_000), model: small })).toBe("compact")
+    const legacy = { compaction: { threshold: 250_000 } } as Config.Info
+    expect(level({ cfg: legacy, tokens: tokens(150_000), model: big })).toBe("soft")
+    expect(level({ cfg: legacy, tokens: tokens(200_000), model: big })).toBe("prune")
   })
 
   test("auto:false 时 native 同样不触发、不分档", () => {

@@ -1429,13 +1429,15 @@ export type NativeCompactionConfig = {
    */
   trigger_tokens?: number
   /**
-   * Token count native compaction aims for after summarizing, scaled down with the trigger when the model window is smaller (default: 160000; maximum: 10000000)
+   * Token count native compaction aims for after summarizing, scaled down with the trigger when the model window is smaller (default: 130000; maximum: 10000000)
    */
   target_tokens?: number
   /**
    * Token count at which the user is reminded to compact before the trigger fires, scaled down with the trigger when the model window is smaller (default: 220000; maximum: 10000000)
    */
   reminder_tokens?: number
+  soft_ratio?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  prune_ratio?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   /**
    * Maximum tokens of one compaction summary (default: 16000; maximum: 1000000)
    */

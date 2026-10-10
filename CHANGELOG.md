@@ -8,6 +8,10 @@
 
 ---
 
+### [Unreleased]
+
+- **原生压缩预算与预警颜色调整**：默认压后目标由 160k 降到 130k，自动触发仍为 250k；新增可配置 `compaction.native.soft_ratio` / `prune_ratio`（默认 0.72 / 0.88），默认分别到 180k 变黄、220k 变橙、250k 变红并触发压缩。小窗口仍按可用触发值同比缩放，旧压缩路径的分档与原生开关不变；原生模式的橙色仅为预警，不执行旧 prune 裁剪。无新增提示词或工具描述，固定前缀与缓存布局不变；预算改变后压缩结果的长度可能变化。同步 SDK/OpenAPI 配置契约与边界回归。
+
 ### [0.12.5] - 2026-10-10
 
 - **原生压缩选段按完整请求口径记账**（`packages/opencode/src/session/{native-context,compaction}.ts`）：现场复核发现压缩深度不足——触发按完整请求（provider 实报 ≥ trigger 250k），`selectAutomatic` 的回收需求却按历史粗估对照 target，且粗估 chars/4 低估 CJK、固定前缀不在账上：250k 实报的会话 `required` 只算出 27k，7 条消息就提前收工（横条 171k→150k，实报 250k→222k 仅降 11%）。现给选段传 provider 实报的完整请求锚点（投影内最后一条非摘要 assistant 的 `tokens.context`，缺失退回粗估同旧），粗估与实报偏差按统一比例归一；latest user 保护、queued/未完工具切断、positive-savings 校验与 revision 缓存结算全部不变。本机覆盖层 target 同步压到 100k（触发仍 250k），仓库默认 160k 不变。测试新增锚点缩放直测与完整请求口径用例，两文件 82 pass / 0 fail、typecheck 通过。证据与模型可见四问：`docs/notes/implemented/feature/2026-10-10-native-compaction.md`。
