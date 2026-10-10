@@ -459,10 +459,18 @@ export const layer = Layer.effect(
       }
       yield* session.updateMessage(msg)
       const active = ContextCompaction.list(input.sessionID)
+      // 261010 Red 选段锚点用 provider 实报的完整请求（触发口径），不是历史粗估——
+      // 现场 250k 实报被 171k 粗估顶替后，回收需求只剩 27k，7 条消息就提前收工。
+      // 实报缺失（首个请求/未回执）退回粗估，行为同旧。
+      const lastAssistant = view.findLast((message) => message.info.role === "assistant" && !message.info.summary)
+      const currentTokens = lastAssistant?.info.role === "assistant" && !lastAssistant.info.summary
+        ? lastAssistant.info.tokens.context ?? 0
+        : 0
       const head = yield* Effect.try({
         try: () => NativeContext.selectAutomatic(view, spec.targetTokens, spec.summaryMaxTokens,
           (message) => Token.estimate(ContextCompaction.content(message)),
-          (message) => ContextCompaction.retainedTokens(message, active, spec)),
+          (message) => ContextCompaction.retainedTokens(message, active, spec),
+          currentTokens),
         catch: (error) => new Error(`Native compaction was not committed: ${String(error)}`),
       }).pipe(Effect.catch((error) => Effect.gen(function* () {
         // 261010 Red 无可回收段同样落失败记录，不发模型请求、不抛出缺少回执的匿名异常。

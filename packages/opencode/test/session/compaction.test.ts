@@ -827,6 +827,58 @@ describe("session.compaction.process", () => {
     }))
   })
 
+  // 261010 Red 现场完整请求已到 250k，历史粗估却低于 target，旧选择器只压了开头 7 条。
+  itCompaction.instance("native selection budgets the complete request rather than history alone", () => {
+    const responses = llm()
+    const inputs: LLM.StreamInput[] = []
+    responses.push(reply("Completed work retained; continue the latest request.", (input) => inputs.push(input)))
+    return Effect.gen(function* () {
+      const ssn = yield* SessionNs.Service
+      const ctx = yield* TestInstance
+      const chat = yield* ssn.create({ title: "Native complete-request budget" })
+      const first = yield* createUserMessage(chat.id, "Preserve this exact requirement.")
+      const completed: MessageID[] = []
+      for (let index = 0; index < 4; index++) {
+        const done = yield* createAssistantMessage(chat.id, first.id, ctx.directory)
+        yield* ssn.updatePart({
+          id: PartID.ascending(), messageID: done.id, sessionID: chat.id, type: "text",
+          text: `Completed work ${index}: ${"evidence ".repeat(5000)}`,
+        })
+        completed.push(done.id)
+        if (index === 3) yield* ssn.updateMessage({
+          ...done, time: { ...done.time, completed: Date.now() },
+          tokens: { context: 60000, total: 60010, input: 1000, output: 10, reasoning: 0,
+            cache: { read: 59000, write: 0 } },
+        })
+      }
+      const latest = yield* createUserMessage(chat.id, "Continue only the unfinished work.")
+      yield* SessionCompaction.use.create({ sessionID: chat.id, agent: "build", model: ref, auto: true })
+      const messages = yield* ssn.messages({ sessionID: chat.id })
+      expect(yield* SessionCompaction.use.process({
+        parentID: messages.at(-1)!.info.id, messages, sessionID: chat.id, auto: true,
+      })).toBe("continue")
+      expect(inputs).toHaveLength(1)
+      const blocks = ContextCompaction.list(chat.id)
+      expect(blocks).toHaveLength(1)
+      // 261010 Red 回收需求按完整请求算（60000-40000+1000=21000），历史粗估只有 ~45k，
+      // 旧口径的 required 仅 6033——只会压到 done[0] 就停；新口径必须覆盖 done[1]。
+      expect(blocks[0]?.sourceMessageIDs).toContain(first.id)
+      expect(blocks[0]?.sourceMessageIDs).toContain(completed[0])
+      expect(blocks[0]?.sourceMessageIDs).toContain(completed[1])
+      expect(blocks[0]?.sourceMessageIDs).not.toContain(latest.id)
+      expect(blocks[0]?.protectedRecords.some((record) => record.text === "Preserve this exact requirement.")).toBe(true)
+      for (const id of completed) expect(ContextCompaction.getRaw(chat.id, id)).toEqual(
+        messages.find((message) => message.info.id === id)!,
+      )
+    }).pipe(withCompaction({
+      llm: responses.layer,
+      config: cfg({ native: {
+        enabled: true, trigger_tokens: 60000, target_tokens: 40000,
+        reminder_tokens: 54000, summary_max_tokens: 1000,
+      } }),
+    }))
+  })
+
   itCompaction.instance("native compaction rejects fully protected history without a model request", () => {
     const responses = llm()
     const inputs: LLM.StreamInput[] = []

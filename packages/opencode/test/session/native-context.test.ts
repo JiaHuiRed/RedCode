@@ -91,6 +91,15 @@ describe("native context boundary", () => {
       .toEqual([message, assistant])
   })
 
+  // 261010 Red 触发按完整请求（含固定前缀），选段回收需求也按完整请求算；缺省退回粗估。
+  test("current anchor scales the recovery requirement beyond the history estimate", () => {
+    const history = [message, ...Array.from({ length: 28 }, () => assistant), latest]
+    // 粗估总量 30000 < target：required 只剩 summaryMax 垫底，压 16 条就够
+    expect(selectAutomatic(history, 40000, 16000, () => 1000)).toHaveLength(16)
+    // 完整请求 100000：required=76000，按 100000/30000 归一后每条释放 3333，需 23 条
+    expect(selectAutomatic(history, 40000, 16000, () => 1000, undefined, 100000)).toHaveLength(23)
+  })
+
   test.each(["pending", "running"] as const)("automatic selection skips %s tools", (status) => {
     const blocked: MessageV2.WithParts = {
       ...assistant,

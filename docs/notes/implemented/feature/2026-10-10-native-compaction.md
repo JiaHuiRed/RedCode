@@ -59,6 +59,9 @@
 3. 未成功提交时不改变投影和修订版；成功提交后仍由原有 revision 结算，从首个改变的历史位置起失效一次，不每轮重置缓存。
 4. 无新增注入项；沿用 `max_messages`、`summary_max_tokens`、`summary_max_bytes`、`active_max_tokens`、`active_max_bytes` 等原有硬预算。默认单份摘要上限 16000 token（超过 10K）：保留长任务的路径、证据和未完成工作，仍按配置封顶，不新增无界内容。
 
+- 提醒过滤之后又发现选段深度不足（现场复核）：IndexGraph 旧会话手动压缩显示 171k→150k（27.0s），但横条是历史粗估、完整请求实报 250,218→222,126 只降 11%。根因是两本账：触发按完整请求（usage ≥ trigger 250k），`selectAutomatic` 的回收需求却按历史粗估对照 target——`required = max(16k, 171k−160k+16k) = 27k`，7 条消息就满足提前收工；粗估 chars/4 低估 CJK（171k 估算 vs ~222k 实际历史），固定前缀（system+tools ≈ 28k）又不在账上。修法：`selectAutomatic` 增加可选 `currentTokens` 锚点（provider 实报 usage，取投影内最后一条非摘要 assistant 的 `tokens.context`，缺失退回粗估同旧），粗估与实报的偏差按统一比例 `total/measured` 归一，released 与 required 保持同单位。保护边界不动：latest user 仍不可压、queued/未完工具仍切断、commit 的 positive-savings 校验原样。本机覆盖层 target 同步压到 100k（用户确认）：250k 触发一次应换回约 150k 余量，仓库默认 160k 不变。测试：`native-context.test.ts` 新增锚点缩放直测（无锚 16 条 / 锚 100k 23 条），`compaction.test.ts` 新增完整请求口径用例（实报 60k 强制覆盖到第二条 completed，旧口径只会压第一条）；两文件 82 pass / 0 fail，typecheck EXIT=0（tsgo 崩溃按脚本回退 TS 5.9.3 复跑通过）。
+- 模型可见四问：① 提示词/工具 schema/保护渲染文字零变化，变的只是被选中压缩的历史段深度；② 固定前缀增量为 0，变量历史随选段加深而减少；③ 未成功提交不动投影；成功提交仍由 revision 结算一次失效，不改变每轮重置行为；④ 无新增注入项，沿用既有硬预算。
+
 ## compress 退役（同日第二批）
 
 - 模型侧 compress 工具整体移除：压缩生产者只剩引擎 `processNative` 与 `/compact` 手动入口，`context_read`/`context_search`/`context_restore` 三工具保留。`assertExclusive` 冲突名单不变——DCP 或用户插件再注册叫 `compress` 的工具仍拒绝共存。实测退役前工具定义（id+description+JSON Schema）序列化 1101 字节 ≈ 275 token，即 native 开启时的固定前缀净减量。

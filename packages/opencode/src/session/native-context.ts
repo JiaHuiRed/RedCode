@@ -55,6 +55,11 @@ export function selectAutomatic(
   summaryMaxTokens: number,
   measure: (message: MessageV2.WithParts) => number,
   retained: (message: MessageV2.WithParts) => number = () => 0,
+  // 261010 Red 完整请求锚点（provider 实报 usage）：触发按完整请求算，选段的回收需求
+  // 也必须按完整请求算，否则固定前缀 + 估算偏差让 250k 现场只压掉 28k。缺省 0 退回
+  // 历史粗估（旧行为）。粗估与实报之间的偏差用统一比例归一，保证 released 与 required
+  // 同单位。
+  currentTokens = 0,
 ) {
   // 261010 Red latestUser 口径必须与 commit 的保护一致：排除 queued（排队输入还不是
   // 「当前请求」，不能作为压缩边界，否则 selected 会罩住 commit 眼里的 latestUser，
@@ -69,8 +74,10 @@ export function selectAutomatic(
   if (last < start) throw new Error("No closed history is available for automatic compaction")
   // 261010 Red 固定前缀超预算时历史回收需求可能为负，不能因此只摘第一条 user。
   // 保护正文不算回收量；queued / 未完工具切断候选段，绝不交给模型再等 commit 拒收。
-  const required = Math.max(summaryMaxTokens,
-    messages.reduce((total, message) => total + measure(message), 0) - targetTokens + summaryMaxTokens)
+  const measured = messages.reduce((total, message) => total + measure(message), 0)
+  const total = currentTokens > 0 ? currentTokens : measured
+  const scale = currentTokens > 0 && measured > 0 ? total / measured : 1
+  const required = Math.max(summaryMaxTokens, total - targetTokens + summaryMaxTokens)
   let released = 0
   let segmentStart = start
   let bestReleased = 0
@@ -84,7 +91,7 @@ export function selectAutomatic(
       released = 0
       continue
     }
-    released += measure(message) - retained(message)
+    released += (measure(message) - retained(message)) * scale
     if (released > 0 && released >= bestReleased) {
       bestReleased = released
       bestStart = segmentStart
