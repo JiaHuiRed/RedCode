@@ -785,6 +785,8 @@ export const ShellTool = Tool.define(
         metadata: {
           output: last || preview(output),
           exit: code,
+          // 261010 Red 双 Shell 后实际执行者不再必然等于工具默认，GUI 与诊断需要真实选择。
+          shell: Shell.name(input.shell),
           description: input.description,
           truncated: cut,
           ...(cut && file ? { outputPath: file } : {}),
@@ -812,21 +814,30 @@ export const ShellTool = Tool.define(
           parameters: prompt.parameters,
           execute: (params: Parameters, ctx: Tool.Context) =>
             Effect.gen(function* () {
+              // 261010 Red 单次显式选择：参数 > shellRouting.agentDefault > 工具默认。
+              // 请求的 Shell 解析不到时明确报错，绝不静默换解释器；选中的值贯穿
+              // 路径解析、语法解析、权限扫描与执行，保证「描述/解析器/执行同源」。
+              const resolved = Shell.choose(params.shell, cfg.shellRouting?.agentDefault, shell)
+              if (!resolved) {
+                throw new Error(
+                  `Shell "${params.shell}" is not available on this machine. Install Git for Windows (bash) or PowerShell 7 (pwsh), or omit the shell parameter to use ${name}.`,
+                )
+              }
               const instanceCtx = yield* InstanceState.context
               const cwd = params.workdir
-                ? yield* resolvePath(params.workdir, instanceCtx.directory, shell)
+                ? yield* resolvePath(params.workdir, instanceCtx.directory, resolved)
                 : instanceCtx.directory
               if (params.timeout !== undefined && params.timeout < 0) {
                 throw new Error(`Invalid timeout value: ${params.timeout}. Timeout must be a positive number.`)
               }
               const timeout = Math.min(params.timeout ?? defaultTimeout, maxTimeout)
-              const ps = Shell.ps(shell)
+              const ps = Shell.ps(resolved)
               yield* Effect.scoped(
                 Effect.gen(function* () {
                   const tree = yield* Effect.acquireRelease(parse(params.command, ps), (tree) =>
                     Effect.sync(() => tree.delete()),
                   )
-                  const scan = yield* collect(tree.rootNode, cwd, ps, shell, instanceCtx)
+                  const scan = yield* collect(tree.rootNode, cwd, ps, resolved, instanceCtx)
                   if (!containsPath(cwd, instanceCtx)) scan.dirs.add(cwd)
                   yield* ask(ctx, scan)
                 }),
@@ -834,7 +845,7 @@ export const ShellTool = Tool.define(
 
               return yield* run(
                 {
-                  shell,
+                  shell: resolved,
                   command: params.command,
                   cwd,
                   env: yield* shellEnv(ctx, cwd),

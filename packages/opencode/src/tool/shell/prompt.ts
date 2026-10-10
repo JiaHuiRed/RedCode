@@ -27,6 +27,10 @@ export function parameterSchema(description: string) {
       description:
         "Working directory; defaults to the current directory. Use this instead of changing directories inside the command.",
     }),
+    shell: Schema.optional(Schema.Literals(["default", "bash", "powershell"])).annotate({
+      description:
+        "Shell to run the command with. 'default' or omitted uses this tool's configured shell. 'bash' and 'powershell' explicitly pick Git Bash or PowerShell 7+ on Windows; ignored on other platforms.",
+    }),
     description: Schema.String.annotate({ description }),
   })
 }
@@ -80,21 +84,23 @@ function chainGuidance(name: string) {
 }
 
 // 261001 Red Shared workflow belongs to default.md; keep execution details and recovery here.
-function outputNotes(limits: Limits) {
+// 261010 Red 输出说明带上默认 Shell 与单次切换参数——描述是静态契约，模型不能只靠工具名推断实际 Shell。
+function outputNotes(name: string, limits: Limits) {
   return `# Parameters and output
 - Supply \`command\` and a concise 5-10 word \`description\`.
+- The default shell for this tool is \`${name}\`. Use the optional \`shell\` parameter ("bash" = Git Bash, "powershell" = PowerShell 7+) only when the command needs the other syntax; omit it otherwise.
 - \`timeout\` is milliseconds: default 120000, maximum 600000 (larger values are clamped).
 - Do not separate commands with newlines; quoted multiline strings are allowed.
 - Output beyond ${limits.maxLines} lines or ${limits.maxBytes} bytes is truncated automatically and saved in full to a file. Use Read/Grep on that file with suitable offsets/context; do not add pagination or truncation commands.`
 }
 
-function bashCommandSection(chain: string, limits: Limits) {
+function bashCommandSection(name: string, chain: string, limits: Limits) {
   return `# Execution
 - Before a command creates files/directories, verify the intended parent exists with \`ls <parent>\`.
 - Quote paths containing spaces, e.g. \`python "path with spaces/script.py"\`.
 - ${chain}
 
-${outputNotes(limits)}`
+${outputNotes(name, limits)}`
 }
 
 function powershellCommandSection(name: string, chain: string, pathSep: string, limits: Limits) {
@@ -105,10 +111,10 @@ function powershellCommandSection(name: string, chain: string, pathSep: string, 
 - Quote paths containing spaces, e.g. \`& "path with spaces${pathSep}script.ps1"\`.
 - ${chain}
 
-${outputNotes(limits)}`
+${outputNotes(name, limits)}`
 }
 
-function cmdCommandSection(chain: string, limits: Limits) {
+function cmdCommandSection(name: string, chain: string, limits: Limits) {
   return `# cmd.exe shell notes
 - Quote paths containing spaces.
 - Use %VAR% for environment variables and \`if exist\` for existence checks.
@@ -118,7 +124,7 @@ function cmdCommandSection(chain: string, limits: Limits) {
 - Before a command creates files/directories, verify the intended parent exists with \`if exist "parent\\" dir "parent"\`.
 - ${chain}
 
-${outputNotes(limits)}`
+${outputNotes(name, limits)}`
 }
 
 function profile(name: string, platform: NodeJS.Platform, limits: Limits) {
@@ -128,7 +134,7 @@ function profile(name: string, platform: NodeJS.Platform, limits: Limits) {
     return {
       intro: `Executes a ${shellDisplayName(name)} command with an optional timeout.`,
       workdirSection: "Commands default to the current directory. Use `workdir`, not an in-command directory change.",
-      commandSection: cmdCommandSection(chain, limits),
+      commandSection: cmdCommandSection(name, chain, limits),
       gitCommands: "git commands",
       gitCommandRestriction: "git commands",
       createPrInstruction: "Create PR using a temporary body file so cmd.exe quoting stays simple.",
@@ -154,7 +160,7 @@ function profile(name: string, platform: NodeJS.Platform, limits: Limits) {
   return {
     intro: "Executes a bash command with an optional timeout.",
     workdirSection: "Commands default to the current directory. Use `workdir`, not an in-command directory change.",
-    commandSection: bashCommandSection(chain, limits),
+    commandSection: bashCommandSection(name, chain, limits),
     gitCommands: "bash commands",
     gitCommandRestriction: "git bash commands",
     createPrInstruction:

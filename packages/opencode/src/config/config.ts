@@ -146,6 +146,19 @@ export const Info = Schema.Struct({
   shell: Schema.optional(Schema.String).annotate({
     description: "Default shell to use for terminal and bash tool",
   }),
+  shellRouting: Schema.optional(
+    Schema.Struct({
+      agentDefault: Schema.optional(
+        Schema.Literals(["git-bash", "powershell", "legacy"]).annotate({
+          description:
+            "Default shell for the agent bash tool on Windows: git-bash, powershell, or legacy (config.shell). Absent = legacy behavior",
+        }),
+      ),
+    }),
+  ).annotate({
+    description:
+      "Optional Windows dual-shell routing for the agent bash tool. Absent = use config.shell as before; user commands and PTY terminals are not affected",
+  }),
   logLevel: Schema.optional(LogLevelRef).annotate({ description: "Log level" }),
   server: Schema.optional(ConfigServer.Server).annotate({
     description: "Server configuration for redcode serve and web commands",

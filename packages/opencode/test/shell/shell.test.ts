@@ -95,5 +95,39 @@ describe("shell", () => {
         expect(Shell.preferred()).toBe(shell)
       })
     })
+
+    // 261010 Red 双 Shell 显式选择（Phase 1）
+    test("pick resolves Git Bash and never degrades powershell to 5.1", () => {
+      const bash = Shell.gitbash()
+      if (!bash) return
+      expect(Shell.pick("bash")).toBe(bash)
+      const picked = Shell.pick("powershell")
+      if (!picked) return
+      expect(Shell.name(picked)).toBe("pwsh")
+    })
+
+    test("choose prefers explicit param over agentDefault over fallback", () => {
+      const fallback = Shell.acceptable()
+      const bash = Shell.gitbash()
+
+      // 缺省参数走 agentDefault；agentDefault 缺省/legacy 走工具默认
+      const viaDefault = Shell.choose(undefined, "git-bash", fallback)
+      if (bash) expect(viaDefault).toBe(bash)
+      else expect(viaDefault).toBeUndefined()
+      expect(Shell.choose("default", "git-bash", fallback)).toBe(viaDefault)
+      expect(Shell.choose(undefined, "legacy", fallback)).toBe(fallback)
+      expect(Shell.choose(undefined, undefined, fallback)).toBe(fallback)
+
+      // 显式参数优先于 agentDefault；解析不到时返回 undefined（调用方报错），绝不静默降级
+      if (bash) {
+        expect(Shell.choose("bash", "legacy", fallback)).toBe(bash)
+        expect(Shell.choose("bash", undefined, fallback)).toBe(bash)
+      }
+      const pwsh = Shell.pick("powershell")
+      if (bash && pwsh) {
+        expect(Shell.name(Shell.choose("bash", "powershell", fallback)!)).toBe("bash")
+        expect(Shell.name(Shell.choose("powershell", "git-bash", fallback)!)).toBe("pwsh")
+      }
+    })
   }
 })

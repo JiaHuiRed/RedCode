@@ -113,13 +113,56 @@ function select(file: string | undefined, opts?: { acceptable?: boolean }) {
   return fallback()
 }
 
+function existingBash(file: string | undefined) {
+  if (!file) return
+  return Filesystem.stat(file)?.size ? file : undefined
+}
+
 export function gitbash() {
   if (process.platform !== "win32") return
-  if (Flag.REDCODE_GIT_BASH_PATH) return Flag.REDCODE_GIT_BASH_PATH
+  // 261010 Red Flag 覆盖路径也要核验存在性：用户迁移 Git 目录后旧 Flag 会给出死路径，
+  // 静默返回它会让后续 spawn 失败且难排查。失效则继续走探测。
+  const flagged = existingBash(Flag.REDCODE_GIT_BASH_PATH)
+  if (flagged) return flagged
   const git = which("git")
-  if (!git) return
-  const file = path.join(git, "..", "..", "bin", "bash.exe")
-  if (Filesystem.stat(file)?.size) return file
+  const derived = existingBash(git ? path.join(git, "..", "..", "bin", "bash.exe") : undefined)
+  if (derived) return derived
+  // 261010 Red git 不在 PATH 时探常见 Git for Windows 安装位置（只认明确的 Git 目录，
+  // 不会把 WSL 的 System32 bash.exe 误判成 Git Bash）。
+  const roots = [
+    process.env["ProgramFiles"],
+    process.env["ProgramFiles(x86)"],
+    process.env["LocalAppData"] && path.join(process.env["LocalAppData"], "Programs"),
+  ]
+  for (const root of roots) {
+    if (!root) continue
+    const found = existingBash(path.join(root, "Git", "bin", "bash.exe"))
+    if (found) return found
+  }
+}
+
+// 261010 Red 双 Shell 显式选择：只返回经过验证的可执行文件，找不到返回 undefined，
+// 由调用方明确报错 —— 绝不静默降级（bash 不落到别的解释器、powershell 不落到 5.1）。
+// 非 Windows 返回 undefined（枚举参数被忽略，沿用平台默认逻辑）。
+export function pick(kind: "bash" | "powershell") {
+  if (process.platform !== "win32") return
+  if (kind === "bash") return gitbash()
+  const pwsh = which("pwsh")
+  if (!pwsh) return
+  return full(pwsh)
+}
+
+// 261010 Red 单次解析顺序：显式参数 > shellRouting.agentDefault > 工具默认（fallback）。
+// "legacy" 与缺省都走 fallback；请求的 Shell 解析不到时返回 undefined 交给调用方报错。
+export function choose(
+  param: "default" | "bash" | "powershell" | undefined,
+  agentDefault: "git-bash" | "powershell" | "legacy" | undefined,
+  fallback: string,
+) {
+  if (process.platform !== "win32") return fallback
+  const want = param && param !== "default" ? param : agentDefault === "git-bash" ? "bash" : agentDefault
+  if (!want || want === "legacy") return fallback
+  return pick(want)
 }
 
 function fallback() {
