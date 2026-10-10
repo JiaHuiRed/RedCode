@@ -444,8 +444,6 @@ export const layer = Layer.effect(
       ).pipe(Effect.orDie)
       const spec = NativeCompaction.resolve(cfg.compaction?.native, usable({ cfg, model: originalModel }))
       const view = NativeRuntime.project(input.sessionID, input.messages, spec)
-      const head = NativeContext.selectAutomatic(view, spec.targetTokens, spec.summaryMaxTokens,
-        (message) => Token.estimate(ContextCompaction.content(message)))
       const model = {
         ...originalModel,
         limit: { ...originalModel.limit, output: originalModel.limit.output > 0
@@ -460,6 +458,23 @@ export const layer = Layer.effect(
         modelID: model.id, providerID: model.providerID, time: { created: Date.now() },
       }
       yield* session.updateMessage(msg)
+      const active = ContextCompaction.list(input.sessionID)
+      const head = yield* Effect.try({
+        try: () => NativeContext.selectAutomatic(view, spec.targetTokens, spec.summaryMaxTokens,
+          (message) => Token.estimate(ContextCompaction.content(message)),
+          (message) => ContextCompaction.retainedTokens(message, active, spec)),
+        catch: (error) => new Error(`Native compaction was not committed: ${String(error)}`),
+      }).pipe(Effect.catch((error) => Effect.gen(function* () {
+        // 261010 Red 无可回收段同样落失败记录，不发模型请求、不抛出缺少回执的匿名异常。
+        const failure = new MessageV2.ContextOverflowError({ message: error.message }).toObject()
+        yield* session.updateMessage({
+          ...msg, finish: "error", time: { ...msg.time, completed: Date.now() },
+          error: failure,
+        })
+        yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: failure })
+        return []
+      })))
+      if (!head.length) return "stop" as const
       const processor = yield* processors.create({ assistantMessage: msg, sessionID: input.sessionID, model })
       const modelMessages = yield* MessageV2.toModelMessagesEffect(head, model, {
         stripMedia: true, toolOutputMaxChars: TOOL_OUTPUT_MAX_CHARS,
@@ -484,6 +499,7 @@ export const layer = Layer.effect(
       }).pipe(Effect.catch((error) => Effect.gen(function* () {
         processor.message.error = new MessageV2.ContextOverflowError({ message: error.message }).toObject()
         yield* session.updateMessage(processor.message)
+        yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: processor.message.error })
         return []
       })))
      if (!blocks.length) return "stop" as const

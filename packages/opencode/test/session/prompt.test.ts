@@ -1033,6 +1033,44 @@ it.instance("delivers a queued message retained behind a completed compaction bo
   }),
 )
 
+// 261010 Red native 投影会隐藏失败摘要；失败守卫必须在投影前读取，跨新 user 仍有效。
+it.instance("does not retry failed native compaction on each new user message", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      compaction: { native: { enabled: true, trigger_tokens: 1, target_tokens: 1, reminder_tokens: 1 } },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Failed native compaction recovery" })
+    const failed = yield* seed(chat.id, { finish: "stop" })
+    yield* sessions.updatePart({
+      id: PartID.ascending(), sessionID: chat.id, messageID: failed.user.id,
+      type: "compaction", auto: true, native: true,
+    })
+    yield* sessions.updateMessage({
+      ...failed.assistant, summary: true, agent: "compaction", mode: "compaction",
+      error: new MessageV2.ContextOverflowError({
+        message: "Native compaction was not committed: Cannot compress queued input or pending tools",
+      }).toObject(),
+    })
+    for (const text of ["continue after failure", "continue without retrying compaction"]) {
+      yield* llm.text(`Response to ${text}`, { usage: { input: 10, output: 5 } })
+      const result = yield* prompt.prompt({
+        sessionID: chat.id, agent: "build", model: ref, parts: [{ type: "text", text }],
+      })
+      expect(result.parts.some((part) => part.type === "text" && part.text === `Response to ${text}`)).toBe(true)
+    }
+    expect(yield* llm.calls).toBe(2)
+    const messages = yield* sessions.messages({ sessionID: chat.id })
+    expect(messages.filter((message) => message.info.role === "assistant" && message.info.summary)).toHaveLength(1)
+    expect((yield* llm.inputs).every((input) => !JSON.stringify(input).includes("Summarize the supplied"))).toBe(true)
+    expect(messages.some((message) => message.parts.some((part) =>
+      part.type === "text" && part.metadata?.native_context_nudge,
+    ))).toBe(false)
+  }),
+)
+
 it.instance("preparation failure releases a queued reservation for later delivery", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)

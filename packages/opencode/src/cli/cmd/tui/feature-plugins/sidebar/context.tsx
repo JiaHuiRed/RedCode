@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "@redcode-ai/sdk/v2"
+import type { AssistantMessage, Message } from "@redcode-ai/sdk/v2"
 import { USD_TO_CNY } from "@redcode-ai/core/currency"
 import type { TuiPlugin, TuiPluginApi } from "@redcode-ai/plugin/tui"
 import type { InternalTuiPlugin } from "../../plugin/internal"
@@ -93,6 +93,50 @@ export function barColor(level: string | undefined): string {
   return LEVEL_COLOR[level ?? "ok"] ?? LEVEL_COLOR.ok
 }
 
+// 261010 Red 上下文取主会话请求；会话累计用量则始终包括摘要调用。
+export function contextSource(messages: ReadonlyArray<Message>) {
+  return messages.findLast((item): item is AssistantMessage =>
+    item.role === "assistant" && !item.summary && item.tokens.output > 0)
+}
+
+export function sessionUsage(messages: ReadonlyArray<Message>) {
+  // 260612 Red session-aggregate cache rate (not last-turn-only which is always ~99%)
+  // 260614 Red: cache hit = read / (read + miss). For DeepSeek, cache.write=0
+  // so use cache.miss from metadata directly; fallback to write, then to input for other providers.
+  // 260707 Red fix: session.ts's DeepSeek cache-cap fallback (260705) can route the real
+  // miss/fresh tokens into cache.write instead of cache.miss depending on which raw metadata
+  // field the SDK response populated for a given step. miss and write never double-count the
+  // same tokens (tokens.cache.miss === tokens.input by construction in session.ts), so summing
+  // read+miss+write gives the true total instead of an either/or pick that silently drops
+  // whichever bucket the buggy path skipped — this was inflating hit% (e.g. 99% vs the real ~96%).
+  let sumRead = 0,
+    sumMiss = 0,
+    sumWrite = 0
+  let sessionTotalInput = 0,
+    sessionTotalOutput = 0,
+    sessionTotalReasoning = 0
+  for (const m of messages) {
+    if (m.role === "assistant") {
+      sumRead += m.tokens.cache.read
+      sumMiss += m.tokens.cache.miss ?? 0
+      sumWrite += m.tokens.cache.write
+      sessionTotalInput += m.tokens.input
+      sessionTotalOutput += m.tokens.output
+      sessionTotalReasoning += m.tokens.reasoning
+    }
+  }
+  const cacheDenom = sumRead + sumMiss + sumWrite
+  return {
+    output: sessionTotalOutput,
+    reasoning: sessionTotalReasoning,
+    cacheRead: sumRead,
+    cacheMiss: sumMiss,
+    cacheWrite: sumWrite,
+    cacheHit: cacheDenom > 0 && sumRead > 0 ? Math.round((sumRead / cacheDenom) * 1000) / 10 : null,
+    sessionTotal: sessionTotalInput + sessionTotalOutput + sessionTotalReasoning + sumRead + sumWrite,
+  }
+}
+
 function View(props: { api: TuiPluginApi; session_id: string }) {
   const theme = () => props.api.theme.current
   const msg = createMemo(() => props.api.state.session.messages(props.session_id))
@@ -100,17 +144,12 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
   const cost = createMemo(() => session()?.cost ?? 0)
 
   const state = createMemo(() => {
-    const last = msg().findLast((item): item is AssistantMessage => item.role === "assistant" && item.tokens.output > 0)
+    const last = contextSource(msg())
+    const usage = sessionUsage(msg())
     if (!last) {
       return {
         tokens: 0,
         input: 0,
-        output: 0,
-        reasoning: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        cacheMiss: 0,
-        cacheHit: null,
         percent: null,
         context: null as number | null,
         limit: null as number | null,
@@ -130,7 +169,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
          return { cny: s?.costCny ?? 0, usd: s?.costUsd ?? 0 }
        })(),
         messageCount: msg().length,
-        sessionTotal: 0,
+        ...usage,
       }
     }
 
@@ -140,43 +179,11 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     const prov = props.api.state.provider.find((item) => item.id === last.providerID)
     const modelInfo = prov?.models[last.modelID]
     const modelName = modelInfo?.name ?? last.modelID
-    // 260612 Red session-aggregate cache rate (not last-turn-only which is always ~99%)
-    // 260614 Red: cache hit = read / (read + miss). For DeepSeek, cache.write=0
-    // so use cache.miss from metadata directly; fallback to write, then to input for other providers.
-    // 260707 Red fix: session.ts's DeepSeek cache-cap fallback (260705) can route the real
-    // miss/fresh tokens into cache.write instead of cache.miss depending on which raw metadata
-    // field the SDK response populated for a given step. miss and write never double-count the
-    // same tokens (tokens.cache.miss === tokens.input by construction in session.ts), so summing
-    // read+miss+write gives the true total instead of an either/or pick that silently drops
-    // whichever bucket the buggy path skipped — this was inflating hit% (e.g. 99% vs the real ~96%).
-    let sumRead = 0,
-      sumMiss = 0,
-      sumWrite = 0
-    let sessionTotalInput = 0,
-      sessionTotalOutput = 0,
-      sessionTotalReasoning = 0
-    for (const m of msg()) {
-      if (m.role === "assistant") {
-        sumRead += m.tokens.cache.read
-        sumMiss += m.tokens.cache.miss ?? 0
-        sumWrite += m.tokens.cache.write
-        sessionTotalInput += m.tokens.input
-        sessionTotalOutput += m.tokens.output
-        sessionTotalReasoning += m.tokens.reasoning
-      }
-    }
-    const cacheDenom = sumRead + sumMiss + sumWrite
-    const cacheHit = cacheDenom > 0 && sumRead > 0 ? Math.round((sumRead / cacheDenom) * 1000) / 10 : null
-    const sessionTotal = sessionTotalInput + sessionTotalOutput + sessionTotalReasoning + sumRead + sumWrite
     return {
       tokens,
       input: last.tokens.input,
-      output: sessionTotalOutput,
-      reasoning: sessionTotalReasoning,
-      cacheRead: sumRead,
-      cacheMiss: sumMiss,
-      cacheWrite: sumWrite,
-      cacheHit,
+      ...usage,
+      costBuckets: undefined,
       // 260819 cc 口径修复：percent 原来拿 tokens（= last.tokens.total）除上下文窗口，而 total 在
       // processor 里跨 step 累加（260706 为让 cost/缓存命中率对账），一次 assistant 消息含几次工具
       // 往返就累加几次请求的 total —— 长工具链下显示成上下文的十几倍。下面 percentLabel 里那句
@@ -214,7 +221,6 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       // 260827 Red 币种判定数据源：model 报价上的 currency 标记（无标记 = USD，显示时折算）
       costCurrency: (modelInfo?.cost as { currency?: "USD" | "CNY" } | undefined)?.currency ?? null,
       messageCount: msg().length,
-      sessionTotal,
     }
   })
 

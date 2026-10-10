@@ -161,6 +161,27 @@ describe("session.message-v2 stored parts", () => {
 })
 
 describe("session.message-v2.toModelMessage", () => {
+  test("omits retired native compress nudges without mutating stored history", async () => {
+    const notice: MessageV2.TextPart = {
+      ...basePart("a1", "native-notice"), type: "text", synthetic: true,
+      text: "[Context notice, not a user request] Use compress for closed ranges.",
+      metadata: { native_context_nudge: { revision: "old-revision" } },
+    }
+    const input: MessageV2.WithParts[] = [{
+      info: assistantInfo("a1", "u1"),
+      parts: [{ ...basePart("a1", "reply"), type: "text", text: "Implementation verified." }, notice],
+    }]
+    const before = structuredClone(input)
+    const output = JSON.stringify(await MessageV2.toModelMessages(input, model))
+    expect(output).toContain("Implementation verified.")
+    expect(output).not.toContain("Use compress")
+    expect(input).toEqual(before)
+    expect(await MessageV2.toModelMessages([{ ...input[0]!, parts: [notice] }], model)).toEqual([])
+    expect(JSON.stringify(await MessageV2.toModelMessages([{
+      ...input[0]!, parts: [{ ...notice, synthetic: false }],
+    }], model))).toContain("Use compress")
+  })
+
   test("filters out messages with no parts", async () => {
     const input: MessageV2.WithParts[] = [
       {
@@ -1703,7 +1724,7 @@ describe("session.message-v2.fromError", () => {
     expect(result).toStrictEqual({
       name: "UnknownError",
       data: {
-        message: "The user dismissed this question",
+        message: "The question was dismissed",
       },
     })
   })

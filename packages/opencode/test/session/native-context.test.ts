@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
+import { ModelID, ProviderID } from "../../src/provider/schema"
 import type { MessageV2 } from "../../src/session/message-v2"
 import { annotate, assertExclusive, summaryPrompt, selectAutomatic } from "../../src/session/native-context"
 
@@ -66,5 +67,60 @@ describe("native context boundary", () => {
       info: { ...message.info, id: MessageID.make("msg_queued"), time: { created: 3 }, delivery: "queued" } as MessageV2.User,
     }
     expect(selectAutomatic([message, delivered, queued], 160000, 16000, () => 150000)).toEqual([message])
+  })
+
+  // 261010 Red 现场：负的回收需求只选第一条 user；遗留 running 工具又让整批提交失败。
+  const assistant: MessageV2.WithParts = {
+    info: {
+      id: MessageID.make("msg_native_assistant"), sessionID, role: "assistant", parentID: messageID,
+      agent: "build", mode: "build", modelID: ModelID.make("test"), providerID: ProviderID.make("test"),
+      path: { cwd: ".", root: "." }, time: { created: 2 }, finish: "stop", cost: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    },
+    parts: [{
+      id: PartID.make("prt_native_assistant"), sessionID, messageID: MessageID.make("msg_native_assistant"),
+      type: "text", text: "Read logs, found the failure, and restored the configuration.",
+    }],
+  }
+  const latest: MessageV2.WithParts = {
+    ...message, info: { ...message.info, id: MessageID.make("msg_latest"), time: { created: 4 } },
+  }
+
+  test("a small history is not reduced to its first user message", () => {
+    expect(selectAutomatic([message, assistant, latest], 40000, 16000, () => 1000))
+      .toEqual([message, assistant])
+  })
+
+  test.each(["pending", "running"] as const)("automatic selection skips %s tools", (status) => {
+    const blocked: MessageV2.WithParts = {
+      ...assistant,
+      info: { ...assistant.info, id: MessageID.make("msg_blocked") },
+      parts: [{
+        id: PartID.make("prt_blocked"), sessionID, messageID: MessageID.make("msg_blocked"),
+        type: "tool", tool: "bash", callID: "call_blocked",
+        state: status === "pending"
+          ? { status, input: {}, raw: "" }
+          : { status, input: {}, time: { start: 1 } },
+      }],
+    }
+    expect(selectAutomatic([message, blocked, assistant, latest], 40000, 16000, () => 20000))
+      .toEqual([assistant])
+  })
+
+  test("image-only input is the latest actual user request", () => {
+    const image: MessageV2.WithParts = {
+      ...latest,
+      parts: [{
+        id: PartID.make("prt_image"), sessionID, messageID: latest.info.id,
+        type: "file", mime: "image/png", url: "data:image/png;base64,AA==",
+      }],
+    }
+    expect(selectAutomatic([message, assistant, image], 40000, 16000, () => 1000))
+      .toEqual([message, assistant])
+  })
+
+  test("fully protected history is rejected before asking for a summary", () => {
+    expect(() => selectAutomatic([message, latest], 40000, 16000, () => 1000, () => 1000))
+      .toThrow("No compressible closed history")
   })
 })

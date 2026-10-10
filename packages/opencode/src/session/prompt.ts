@@ -1191,6 +1191,12 @@ export const layer = Layer.effect(
         let msgs = nativeSpec.enabled
           ? NativeRuntime.history(sessionID, nativeSpec)
           : yield* MessageV2.filterCompactedEffect(sessionID)
+        // 261010 Red 投影会隐藏 native 任务和摘要，失败守卫必须在投影前取证，否则每条新 user 都重试。
+        const lastNativeSummary = msgs.findLast(
+          (message): message is MessageV2.WithParts & { info: MessageV2.Assistant } =>
+            message.info.role === "assistant" && message.info.summary === true,
+        )
+        const nativeFailed = lastNativeSummary !== undefined && lastNativeSummary.info.error !== undefined
         // 261007 Red 未送达队列可能早于压缩边界；领取后补回当前 turn，不能让摘要裁掉它。
         const retainedQueuedMessage =
           claimedUserID && !msgs.some((message) => message.info.id === claimedUserID)
@@ -1898,11 +1904,6 @@ export const layer = Layer.effect(
           })
         // 261010 Red 上次自动压缩失败（最后一条 summary assistant 带 error）时不再自动触发：
         // 失败通常是结构性原因（预算配错、窗口太小），重试只会反复堆失败任务；交还用户处置。
-        const lastNativeSummary = msgs.findLast(
-          (message): message is MessageV2.WithParts & { info: MessageV2.Assistant } =>
-            message.info.role === "assistant" && message.info.summary === true,
-        )
-        const nativeFailed = lastNativeSummary !== undefined && lastNativeSummary.info.error !== undefined
         if (nativeSpec.enabled && !nativeAutoAttempted && !nativeFailed && nativeConfig.compaction?.auto !== false) {
           const budget = NativeCompaction.resolve(nativeConfig.compaction?.native,
             usableContext({ cfg: nativeConfig, model, outputTokenMax: flags.outputTokenMax }))
@@ -2074,23 +2075,6 @@ export const layer = Layer.effect(
 
           const nativeChanged = nativeSpec.enabled && NativeRuntime.revision(sessionID) !== nativeRevision
           if (nativeChanged) nativeAutoAttempted = false
-          if (nativeSpec.enabled && !nativeChanged && nativeConfig.compaction?.auto !== false) {
-            const budget = NativeCompaction.resolve(nativeConfig.compaction?.native,
-              usableContext({ cfg: nativeConfig, model, outputTokenMax: flags.outputTokenMax }))
-            const count = handle.message.tokens.total || handle.message.tokens.input +
-              handle.message.tokens.output + handle.message.tokens.cache.read + handle.message.tokens.cache.write
-            if (count >= budget.reminderTokens && !msgs.some((message) => message.parts.some((part) =>
-              part.type === "text" && part.metadata?.native_context_nudge?.revision === nativeRevision,
-            ))) {
-              yield* sessions.updatePart({
-                id: PartID.ascending(), sessionID, messageID: handle.message.id, type: "text", synthetic: true,
-                // 261010 Red metadata 经 providerOptions 下发，值必须是两层对象；裸字符串会让
-                // ai@7 的 providerMetadataSchema 拒掉整条消息。
-                metadata: { native_context_nudge: { revision: nativeRevision } },
-                text: `[Context notice, not a user request] Context is approaching the ${budget.triggerTokens}-token ceiling. Use compress for closed ranges when useful; preserve constraints, verification and unfinished work. Aim below ${budget.targetTokens} tokens. Originals can be recovered with context_read/context_search. Do not compress the latest actual user request or unfinished tools.`,
-              })
-            }
-          }
           if (result === "compact" && nativeSpec.enabled && !nativeChanged && !nativeAutoAttempted && !nativeFailed) {
             nativeAutoAttempted = true
             yield* compaction.create({

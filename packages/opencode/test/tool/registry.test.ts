@@ -37,11 +37,13 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Snippet } from "@/session/snippet"
 
 const node = CrossSpawnSpawner.defaultLayer
-const configLayer = TestConfig.layer({
+const configLayer = (native = false) => TestConfig.layer({
+  get: () => Effect.succeed(native ? { compaction: { native: { enabled: true } } } : {}),
   directories: () => InstanceState.directory.pipe(Effect.map((dir) => [path.join(dir, ".redcode")])),
 })
 
 type RegistryLayerOptions = {
+  native?: boolean
   flags?: Partial<RuntimeFlags.Info>
   plugin?: Layer.Layer<Plugin.Service>
 }
@@ -71,7 +73,7 @@ const noopPluginLayer = Layer.succeed(
 const registryLayer = (opts: RegistryLayerOptions = {}) =>
   ToolRegistry.layer
     .pipe(
-      Layer.provide(configLayer),
+      Layer.provide(configLayer(opts.native)),
       Layer.provide(opts.plugin ?? noopPluginLayer),
       Layer.provide(Question.defaultLayer),
       Layer.provide(Todo.defaultLayer),
@@ -118,6 +120,7 @@ const brokenPluginLayer = Layer.succeed(
 )
 
 const it = testEffect(Layer.mergeAll(registryLayer(), node, Agent.defaultLayer))
+const native = testEffect(Layer.mergeAll(registryLayer({ native: true }), node, Agent.defaultLayer))
 const scout = testEffect(
   Layer.mergeAll(registryLayer({ flags: { experimentalReference: true } }), node, Agent.defaultLayer),
 )
@@ -138,6 +141,24 @@ afterEach(async () => {
 })
 
 describe("tool.registry", () => {
+  native.instance("native compaction keeps history tools but retires compress from model schemas", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agents = yield* Agent.Service
+      const build = yield* agents.get("build")
+      if (!build) throw new Error("build agent not found")
+      const tools = yield* registry.tools({ providerID: ProviderID.redcode, modelID: ModelID.make("test"), agent: build })
+      const compress = tools.find((tool) => tool.id === "compress")
+      const ids = yield* registry.ids()
+      for (const id of ["context_read", "context_search", "context_restore"]) {
+        expect(ids).toContain(id)
+        expect(tools.some((tool) => tool.id === id)).toBe(true)
+      }
+      expect(ids).not.toContain("compress")
+      expect(compress).toBeUndefined()
+    }),
+  )
+
   it.instance("hides repo research tools unless experimental", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service

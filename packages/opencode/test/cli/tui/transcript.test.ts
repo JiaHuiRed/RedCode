@@ -5,6 +5,7 @@ import {
   formatMessage,
   formatPart,
   formatTranscript,
+  isVisibleTextPart,
 } from "../../../src/cli/cmd/tui/util/transcript"
 import type { Agent, AssistantMessage, Part, Provider, UserMessage } from "@redcode-ai/sdk/v2"
 
@@ -89,6 +90,22 @@ describe("transcript", () => {
 
     expect(copyAssistantText(parts)).toBe(`${markdown}\nnext block`)
     expect(copyAssistantText([])).toBeUndefined()
+  })
+
+  test("keeps native context notices out of assistant copy without stripping real quoted text", () => {
+    const notice: Part = {
+      id: "notice", sessionID: "ses_123", messageID: "msg_123", type: "text",
+      text: "[Context notice, not a user request] Context is approaching the 250000-token ceiling.",
+      synthetic: true,
+      metadata: { native_context_nudge: { revision: "test-revision" } },
+    }
+    const reply: Part = { ...notice, id: "reply", synthetic: false, text: "The fix is verified." }
+    expect(isVisibleTextPart(notice)).toBe(false)
+    expect(isVisibleTextPart(reply)).toBe(true)
+    expect(copyAssistantText([reply, notice])).toBe(reply.text)
+    expect(copyAssistantText([notice])).toBeUndefined()
+    expect(formatPart(notice, { thinking: false, toolDetails: false, assistantMetadata: false })).toBe("")
+    expect(copyAssistantText([{ ...notice, synthetic: false }])).toBe(notice.text)
   })
 
   describe("formatAssistantHeader", () => {

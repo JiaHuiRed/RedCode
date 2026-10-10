@@ -41,3 +41,27 @@
 - **牵连**：`CompactionPart` 加 `native` 可选字段（旧数据兼容）；`filterCompactedOrdered` 对 native 标记不裁原文（账本拥有裁剪权）；SDK/OpenAPI 未重新生成（`native` 字段与 config schema 有公共面，发版前需跑两条生成命令）。
 
 回链：`context-compaction.ts` 头注、`native-context.ts`、`context-import.ts`、`tool/context.ts`。
+
+## 现场失败修复
+
+- 旧会话三次摘要生成均成功，但提交被遗留 `running` 工具拒绝，错误为 `Cannot compress queued input or pending tools`。失败守卫原先放在 `NativeRuntime.project()` 之后，而投影恰好隐藏 native 摘要，导致守卫永远读不到错误。现提前到原始可见历史取证，回归覆盖连续两条新用户消息正常回复、摘要数量不增加。
+- 当前诊断会话的 625 token 是摘要生成请求的输入，不是压缩后的完整上下文。固定前缀与工具定义触发预算时，历史本身低于 target，负的回收需求使选择器只取最初用户提问；摘要自然看不到后续进度，最终被 `Compression has no positive savings after protection` 拒收。随后正常请求实报 74052 token，原始历史未被替换。
+- 自动选择器按连续可提交段搜索，queued/未完工具作为断点；先扣除 `protect()` 或已活跃块的机械保留正文，回收需求至少包含摘要预算，避免只抽受保护用户文字。纯图片的最新请求与 commit 使用同一保护口径。无法找到可回收段时，先写有终态的错误摘要记录，不调用模型；选择或提交失败均广播 `session.error`，避免只静默停止。保留「失败不自动回退 legacy、不在同一轮自动重试」的既有边界。
+- TUI 上下文、模型与速率从非摘要主请求取数，摘要成功/失败都不替换它；会话累计用量继续统计全部 assistant，只有摘要时也不漏记其成本。625 显示不是丢失整段历史的证据。
+- 现场只读回放：旧会话 586 条原始消息、274 条可见消息，新选择器选 144 条、估算可回收 150689 token；未选择 pending/running 工具或最新真实用户请求。当前诊断会话同样验证失败记录仍能被守卫读取。回放只以只读 SQLite 连接读取数据，不调用引擎数据库 Client、不写投影。
+- 验证覆盖 `native-context.test.ts`、`context-compaction.test.ts`、`native-compaction-budget.test.ts`、`compaction.test.ts`、`prompt.test.ts`、`sidebar-context.test.ts`、`transcript.test.ts`；按完整文件路径和 `--timeout 30000` 运行，类型检查走包脚本。并行初跑时既有 250ms 取消计时断言实测 278ms，串行重跑通过，未修改计时阈值。tsgo 崩溃时由既有脚本回退 TypeScript 5.9.3。
+- 部署边界：本机 `redcode.local.jsonc` 已恢复 250000/160000/220000，DCP 继续停用；seed 没有 native 临时数字，无需把本机覆盖层复制进模板。用户当前已改为 `bun run dev` 启动，不应再把该进程称为旧 exe。该 dev 命令不带 watch，编辑不会热替换已加载模块；无需重编 exe，但仍需重启 dev 才能应用后续源码修改。真实 provider 上的压缩后续跑仍需新进程验收，不以只读回放替代。
+- 后续截图里的提醒来自引擎保存的 `synthetic: true` 文本 part（metadata 为 `native_context_nudge.revision`），不是模型复述。用户消息和导出已经过滤 synthetic，助手 `TextPart` 渲染及复制路径却没有过滤。现共用 `isVisibleTextPart`，隐藏模型内部提醒并保留未标记 synthetic 的真实引用文字；不删除数据库 part、不改变模型输入或持久化日志。
+
+模型可见四问：
+1. 提示词、工具 schema/description 和保护记录的渲染文字不变；只纠正被选择的历史段和失败后的发送路径，原先仅最初提问的摘要输入现在包含可压缩进度。
+2. 固定前缀增量为 0；变量历史用量随正确选段变化，没有新增固定注入。
+3. 未成功提交时不改变投影和修订版；成功提交后仍由原有 revision 结算，从首个改变的历史位置起失效一次，不每轮重置缓存。
+4. 无新增注入项；沿用 `max_messages`、`summary_max_tokens`、`summary_max_bytes`、`active_max_tokens`、`active_max_bytes` 等原有硬预算。默认单份摘要上限 16000 token（超过 10K）：保留长任务的路径、证据和未完成工作，仍按配置封顶，不新增无界内容。
+
+## compress 退役（同日第二批）
+
+- 模型侧 compress 工具整体移除：压缩生产者只剩引擎 `processNative` 与 `/compact` 手动入口，`context_read`/`context_search`/`context_restore` 三工具保留。`assertExclusive` 冲突名单不变——DCP 或用户插件再注册叫 `compress` 的工具仍拒绝共存。实测退役前工具定义（id+description+JSON Schema）序列化 1101 字节 ≈ 275 token，即 native 开启时的固定前缀净减量。
+- 「逼近提醒」（`[Context notice, not a user request] … Use compress…`）随工具退役停止生成：它是给模型的手动压缩指引，没有对象就只剩干扰；`message-v2` 对旧会话遗留的提醒 part 在出站副本剥离（判据 `synthetic && metadata.native_context_nudge`），原文、账本指纹、TUI 过滤与导出行为不变。
+- 模型可见四问：① 工具表少 compress、旧提醒不再入模，context_* 三工具 schema 不变；② native 开启固定前缀 −275 token、关闭 0；③ 均在新进程生效，工具区前缀失效一次属预期，账本 revision 不因此变化；④ 无新增注入项，净删除。
+- 顺带修正 `test/session/message-v2.test.ts` 存量断言：RejectedError 文案改为 "The question was dismissed" 时测试未跟更（git show HEAD 证实红灯先于本批存在），按现文案对齐。

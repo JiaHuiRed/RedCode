@@ -1,11 +1,10 @@
 import { Effect, Schema, Option } from "effect"
 import { Config } from "@/config/config"
 import { NativeCompaction } from "@/config/native-compaction"
-import { Token } from "@/util/token"
 import * as Ledger from "@/session/context-compaction"
 import { Tool } from "./tool"
 
-// 261010 Red 共用持久化提交边界，工具不直接清缓存；下一 step 按账本版本结算。
+// 261010 Red 模型只回读/恢复历史，压缩提交归引擎；恢复仍在下一 step 按账本版本结算。
 const options = Effect.gen(function* () {
   const service = yield* Effect.serviceOption(Config.Service)
   if (Option.isNone(service)) throw new Error("Native compaction configuration is unavailable")
@@ -26,40 +25,6 @@ function call<A>(ctx: Tool.Context, permission: string, run: () => A) {
     }).pipe(Effect.orDie)
   })
 }
-
-export const CompressTool = Tool.build({
-  id: "compress",
-  description:
-    "Compress closed conversation ranges into a historical handoff. Use actual msg IDs from history references, or block:<id>. Preserve facts, constraints, decisions, verification and unfinished work. Never select the latest actual user request, queued input or unfinished tools. A consumed block requires {{block:<id>}} in its summary, unless condensedSummaries explicitly replaces its body; original user text and protected tool outputs remain exact. Originals stay available through context_read/context_search; context_restore reverses the projection. The whole batch is atomic and rejected if it exceeds configured budgets or saves no tokens.",
-  parameters: Schema.Struct({
-    topic: Schema.optional(Schema.String),
-    content: Schema.Array(Schema.Struct({
-      startId: Schema.String, endId: Schema.String, summary: Schema.String,
-    })),
-    condensedSummaries: Schema.optional(Schema.Record(Schema.String, Schema.String)),
-  }),
-  execute: (args, ctx) => Effect.gen(function* () {
-    const limits = yield* options
-    const inputTokensEstimated = ctx.messages.reduce((total, message) => total + Token.estimate(Ledger.content(message)), 0)
-    const blocks = yield* call(ctx, "compress", () => Ledger.commit({
-      sessionID: ctx.sessionID, messages: ctx.messages, limits, mode: "model",
-      requestID: `tool:${ctx.messageID}:${ctx.callID ?? "compress"}`,
-      ranges: args.content.map((range) => ({ ...range, topic: args.topic })),
-      condensedSummaries: args.condensedSummaries,
-    }))
-    const summaryTokensEstimated = Ledger.project(ctx.messages, Ledger.list(ctx.sessionID))
-      .reduce((total, message) => total + Token.estimate(Ledger.content(message)), 0)
-    const receipt = {
-      version: 1, runId: blocks[0]!.committedAt, blockCount: blocks.length,
-      inputTokensEstimated, summaryTokensEstimated,
-      netSavingsEstimated: inputTokensEstimated - summaryTokensEstimated,
-    }
-    return {
-      title: "Conversation compressed", metadata: { nativeCompression: receipt },
-      output: JSON.stringify({ blocks: blocks.map((block) => `block:${block.id}`), ...receipt }),
-    }
-  }),
-})
 
 export const ContextReadTool = Tool.build({
   id: "context_read",

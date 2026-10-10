@@ -5,18 +5,19 @@ import { Session } from "../../src/session/session"
 import type { MessageV2 } from "../../src/session/message-v2"
 import { MessageID, PartID } from "../../src/session/schema"
 import { Config } from "../../src/config/config"
+import { NativeCompaction } from "../../src/config/native-compaction"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 import { Agent } from "../../src/agent/agent"
 import { Truncate } from "../../src/tool/truncate"
 import { Tool } from "../../src/tool/tool"
-import { CompressTool, ContextReadTool, ContextRestoreTool } from "../../src/tool/context"
+import { ContextReadTool, ContextSearchTool, ContextRestoreTool } from "../../src/tool/context"
 import * as Ledger from "../../src/session/context-compaction"
 
 const it = testEffect(Layer.mergeAll(
   Session.defaultLayer, CrossSpawnSpawner.defaultLayer, Agent.defaultLayer, Truncate.defaultLayer, Config.defaultLayer,
 ))
 
-it.instance("native tools commit, retrieve and restore with scoped permissions", () => Effect.gen(function* () {
+it.instance("native tools retrieve, search and restore engine compaction with scoped permissions", () => Effect.gen(function* () {
   const session = yield* Session.Service
   const info = yield* session.create({})
   const user = yield* session.updateMessage({
@@ -44,26 +45,29 @@ it.instance("native tools commit, retrieve and restore with scoped permissions",
   const messages = yield* session.messages({ sessionID: info.id })
   const permissions: string[] = []
   const ctx: Tool.Context = {
-    sessionID: info.id, messageID: assistant.id, agent: "build", callID: "compress-one",
+    sessionID: info.id, messageID: assistant.id, agent: "build", callID: "history-read",
     abort: new AbortController().signal, messages,
     metadata: () => Effect.void,
     ask: (request) => Effect.sync(() => { permissions.push(request.permission) }),
   }
   const config = yield* Config.Service
-  const compress = yield* Tool.init(yield* CompressTool)
   const read = yield* Tool.init(yield* ContextReadTool)
+  const search = yield* Tool.init(yield* ContextSearchTool)
   const restore = yield* Tool.init(yield* ContextRestoreTool)
   yield* Effect.gen(function* () {
-    const result = yield* compress.execute({
-      content: [{ startId: user.id, endId: assistant.id, summary: "Implementation verified." }],
-    }, ctx)
-    expect(result.metadata.nativeCompression.netSavingsEstimated).toBeGreaterThan(0)
-    const block = Ledger.list(info.id)[0]!
+    const [block] = yield* Effect.sync(() => Ledger.commit({
+      sessionID: info.id, messages, limits: NativeCompaction.resolve({ enabled: true }), mode: "auto",
+      requestID: "engine-compaction-test",
+      ranges: [{ startId: user.id, endId: assistant.id, summary: "Implementation verified." }],
+    }))
+    if (!block) throw new Error("engine compaction did not create a block")
+    expect(block.mode).toBe("auto")
     const original = yield* read.execute({ ref: assistant.id }, ctx)
     expect(original.output).toContain("Verified implementation evidence")
+    expect((yield* search.execute({ query: "Verified implementation evidence" }, ctx)).output).toContain(assistant.id)
     yield* restore.execute({ ref: `block:${block.id}` }, ctx)
     expect(Ledger.list(info.id)).toHaveLength(0)
-    expect(permissions).toEqual(["compress", "context_read", "context_restore"])
+    expect(permissions).toEqual(["context_read", "context_search", "context_restore"])
   }).pipe(Effect.provideService(Config.Service, {
     ...config, get: () => Effect.succeed({ compaction: { native: { enabled: true } } }),
   }))

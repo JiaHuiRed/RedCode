@@ -31,6 +31,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { LLMEvent, Usage } from "@redcode-ai/llm"
 import { Snippet } from "@/session/snippet"
+import * as ContextCompaction from "../../src/session/context-compaction"
 
 void Log.init({ print: false })
 
@@ -785,6 +786,81 @@ describe("session.compaction.prune", () => {
 })
 
 describe("session.compaction.process", () => {
+  // 261010 Red 原生自动压缩在固定前缀大、历史小的现场只喂了第一条 user；验证真实摘要输入和提交。
+  itCompaction.instance("native summary includes completed work when history is below its target", () => {
+    const responses = llm()
+    const inputs: LLM.StreamInput[] = []
+    responses.push(reply("Logs checked; configuration restored; implementation remains.", (input) => inputs.push(input)))
+    return Effect.gen(function* () {
+      const ssn = yield* SessionNs.Service
+      const ctx = yield* TestInstance
+      const chat = yield* ssn.create({ title: "Native summary input" })
+      const first = yield* createUserMessage(chat.id, "Investigate compaction.")
+      const done = yield* createAssistantMessage(chat.id, first.id, ctx.directory)
+      yield* ssn.updatePart({
+        id: PartID.ascending(), messageID: done.id, sessionID: chat.id, type: "text",
+        text: "Observed pending-tool error in logs. Restored configuration. ".repeat(500),
+      })
+      const latest = yield* createUserMessage(chat.id, "Continue implementation.")
+      yield* SessionCompaction.use.create({ sessionID: chat.id, agent: "build", model: ref, auto: true })
+      const messages = yield* ssn.messages({ sessionID: chat.id })
+      const parent = messages.at(-1)!
+      expect(yield* SessionCompaction.use.process({
+        parentID: parent.info.id, messages, sessionID: chat.id, auto: true,
+      })).toBe("continue")
+      expect(inputs).toHaveLength(1)
+      expect(JSON.stringify(inputs[0]?.messages)).toContain("Observed pending-tool error in logs.")
+      expect(JSON.stringify(inputs[0]?.messages)).not.toContain("Continue implementation.")
+      const blocks = ContextCompaction.list(chat.id)
+      expect(blocks).toHaveLength(1)
+      expect(blocks[0]?.sourceMessageIDs).toContain(done.id)
+      expect(blocks[0]?.sourceMessageIDs).not.toContain(latest.id)
+      expect(ContextCompaction.getRaw(chat.id, done.id).parts).toEqual(
+        messages.filter((message) => message.info.id === done.id).flatMap((message) => message.parts),
+      )
+    }).pipe(withCompaction({
+      llm: responses.layer,
+      config: cfg({ native: {
+        enabled: true, trigger_tokens: 60000, target_tokens: 40000,
+        reminder_tokens: 54000, summary_max_tokens: 1000,
+      } }),
+    }))
+  })
+
+  itCompaction.instance("native compaction rejects fully protected history without a model request", () => {
+    const responses = llm()
+    const inputs: LLM.StreamInput[] = []
+    responses.push(reply("This summary must never be requested.", (input) => inputs.push(input)))
+    return Effect.gen(function* () {
+      const ssn = yield* SessionNs.Service
+      const bus = yield* Bus.Service
+      const chat = yield* ssn.create({ title: "Protected native history" })
+      const notified = yield* Deferred.make<void>()
+      const unsub = yield* bus.subscribeCallback(SessionNs.Event.Error, (event) => {
+        if (event.properties.sessionID === chat.id) Deferred.doneUnsafe(notified, Effect.void)
+      })
+      yield* Effect.addFinalizer(() => Effect.sync(unsub))
+      yield* createUserMessage(chat.id, "Never change this protected requirement.")
+      yield* createUserMessage(chat.id, "Continue.")
+      yield* SessionCompaction.use.create({ sessionID: chat.id, agent: "build", model: ref, auto: true })
+      const messages = yield* ssn.messages({ sessionID: chat.id })
+      expect(yield* SessionCompaction.use.process({
+        parentID: messages.at(-1)!.info.id, messages, sessionID: chat.id, auto: true,
+      })).toBe("stop")
+      expect(inputs).toHaveLength(0)
+      expect(ContextCompaction.list(chat.id)).toEqual([])
+      const summary = (yield* ssn.messages({ sessionID: chat.id })).findLast(
+        (message) => message.info.role === "assistant" && message.info.summary,
+      )
+      expect(summary?.info.role === "assistant" && summary.info.error?.name).toBe("ContextOverflowError")
+      expect(ContextCompaction.getRaw(chat.id, messages[0]!.info.id)).toEqual(messages[0])
+      yield* Deferred.await(notified).pipe(Effect.timeout("500 millis"))
+    }).pipe(withCompaction({
+      llm: responses.layer,
+      config: cfg({ native: { enabled: true } }),
+    }))
+  })
+
   it.instance(
     "throws when parent is not a user message",
     Effect.gen(function* () {

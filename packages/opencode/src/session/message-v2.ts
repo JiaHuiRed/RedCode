@@ -933,6 +933,8 @@ export const toUIMessages = Effect.fn("Message.toUIMessages")(function* (
       })
       for (const part of msg.parts) {
         if (part.type === "text") {
+          // 261010 Red compress 已退役；旧提醒只从模型出站副本剥离，保留原文与账本指纹。
+          if (part.synthetic && part.metadata?.native_context_nudge !== undefined) continue
           const text = part.text === "" && hasSignedReasoning ? " " : part.text
           assistantMessage.parts.push({
             type: "text",

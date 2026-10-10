@@ -1,4 +1,4 @@
-import type { Agent, AssistantMessage, Part, Provider, UserMessage } from "@redcode-ai/sdk/v2"
+import type { Agent, AssistantMessage, Part, Provider, TextPart, UserMessage } from "@redcode-ai/sdk/v2"
 import { Locale } from "@/util/locale"
 import * as Model from "./model"
 
@@ -24,8 +24,13 @@ export type MessageWithParts = {
   parts: Part[]
 }
 
+// 261010 Red 渲染与复制沿用导出的可见性边界，synthetic 内部提醒不冒充助手正文。
+export function isVisibleTextPart(part: Part): part is TextPart {
+  return part.type === "text" && !part.synthetic
+}
+
 export function copyAssistantText(parts: Part[]): string | undefined {
-  const textParts = parts.filter((part) => part.type === "text")
+  const textParts = parts.filter(isVisibleTextPart)
   if (textParts.length === 0) return
   return textParts.map((part) => part.text).join("\n").trim()
 }
@@ -94,7 +99,7 @@ export function formatAssistantHeader(
 }
 
 export function formatPart(part: Part, options: TranscriptOptions): string {
-  if (part.type === "text" && !part.synthetic) {
+  if (isVisibleTextPart(part)) {
     return `${part.text}\n\n`
   }
 

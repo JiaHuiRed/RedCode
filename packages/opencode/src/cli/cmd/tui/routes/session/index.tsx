@@ -83,7 +83,7 @@ import { PermissionPrompt } from "./permission"
 import { QuestionPrompt } from "./question"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
 import * as Model from "../../util/model"
-import { copyAssistantText, formatTranscript } from "../../util/transcript"
+import { copyAssistantText, formatTranscript, isVisibleTextPart } from "../../util/transcript"
 import { UI } from "@/cli/ui.ts"
 import { useTuiConfig } from "../../context/tui-config"
 import { next思考中Mode, reasoningTitle, use思考中Mode, type 思考中Mode } from "../../context/thinking"
@@ -2056,7 +2056,7 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
   const { theme, syntax } = useTheme()
 
   return (
-    <Show when={props.part.text.trim()}>
+    <Show when={isVisibleTextPart(props.part) && props.part.text.trim()}>
       <box id={"text-" + props.part.id} paddingLeft={3} marginTop={1} flexShrink={0}>
         <markdown
           syntaxStyle={syntax()}

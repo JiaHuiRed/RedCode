@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { bar, barColor, compact, formatMs } from "../../../../src/cli/cmd/tui/feature-plugins/sidebar/context"
+import { bar, barColor, compact, contextSource, formatMs, sessionUsage } from "../../../../src/cli/cmd/tui/feature-plugins/sidebar/context"
+import type { AssistantMessage } from "@redcode-ai/sdk/v2"
 
 // 260819 cc: 侧边栏上下文窗口的显示件。侧边栏宽 42 列，紧凑记法和进度条宽度都按这个定的。
 describe("sidebar context window 显示", () => {
@@ -58,5 +59,39 @@ describe("首字延迟格式化", () => {
     for (const ms of [1234, 5678, 12345, 98765]) {
       expect(formatMs(ms)).toMatch(/^\d+(\.\d)?s$/)
     }
+  })
+})
+
+// 261010 Red 625 是摘要请求，不是原会话上下文；摘要成功/失败都不能顶替主请求用量。
+describe("摘要请求与主会话用量分离", () => {
+  function assistant(id: string, context: number, summary = false): AssistantMessage {
+    return {
+      id, sessionID: "ses_sidebar", role: "assistant", parentID: "msg_user",
+      agent: "build", mode: "build", modelID: "test", providerID: "test",
+      path: { cwd: ".", root: "." }, time: { created: 1 }, cost: 1, summary,
+      tokens: { context, input: context, output: 100, reasoning: 0, cache: { read: 0, write: 0, miss: context } },
+    }
+  }
+
+  test.each([false, true])("摘要失败=%s 不改变主会话上下文", (failed) => {
+    const main = assistant("msg_main", 124000)
+    const summary = assistant("msg_summary", 625, true)
+    if (failed) summary.error = { name: "ContextOverflowError", data: { message: "Compression has no positive savings after protection" } }
+    expect(contextSource([main, summary])).toEqual(main)
+  })
+
+  test("只有摘要时不捏造上下文，但仍累计其调用用量", () => {
+    const summary = assistant("msg_summary", 625, true)
+    expect(contextSource([summary])).toBeUndefined()
+    expect(sessionUsage([summary]).sessionTotal).toBe(725)
+  })
+
+  test("主会话续跑更新上下文，摘要用量仍计入总数", () => {
+    const first = assistant("msg_first", 124000)
+    const summary = assistant("msg_summary", 625, true)
+    const next = assistant("msg_next", 130000)
+    expect(contextSource([first, summary, next])).toEqual(next)
+    expect(sessionUsage([first, summary, next]).sessionTotal).toBe(254925)
+    expect(sessionUsage([first, summary, next]).output).toBe(300)
   })
 })

@@ -81,8 +81,7 @@ export function render(block: Block) {
     `[block:${block.id}; sources: ${block.sourceMessageIDs[0]} .. ${block.sourceMessageIDs.at(-1)}]`,
     block.topic,
     block.summary,
-    ...block.protectedRecords.map((record) =>
-      `[Original ${record.kind === "user" ? "user text" : `${record.tool} tool output`}; source: ${record.messageID}; role: ${record.role}]\n${record.text}`),
+    ...block.protectedRecords.map(renderProtected),
   ].filter(Boolean).join("\n\n")
 }
 
@@ -341,6 +340,16 @@ export function content(message: MessageV2.WithParts): string {
     if (part.type === "file") return [`[Attachment: ${part.filename ?? part.mime}]`]
     return []
   }).join("\n")
+}
+
+// 261010 Red 自动选段先扣除机械保留正文；已有块沿用其原始保护记录，不把它们算作可回收。
+export function retainedTokens(message: MessageV2.WithParts, blocks: Block[], limits: Limits): number {
+  const records = blocks.find((block) => block.anchorID === message.info.id)?.protectedRecords ?? protect(message, limits)
+  return Token.estimate(records.map(renderProtected).join("\n\n"))
+}
+
+function renderProtected(record: ProtectedRecord) {
+  return `[Original ${record.kind === "user" ? "user text" : `${record.tool} tool output`}; source: ${record.messageID}; role: ${record.role}]\n${record.text}`
 }
 
 function protect(message: MessageV2.WithParts, limits: Limits): ProtectedRecord[] {

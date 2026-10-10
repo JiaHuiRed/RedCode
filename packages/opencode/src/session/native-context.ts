@@ -54,6 +54,7 @@ export function selectAutomatic(
   targetTokens: number,
   summaryMaxTokens: number,
   measure: (message: MessageV2.WithParts) => number,
+  retained: (message: MessageV2.WithParts) => number = () => 0,
 ) {
   // 261010 Red latestUser 口径必须与 commit 的保护一致：排除 queued（排队输入还不是
   // 「当前请求」，不能作为压缩边界，否则 selected 会罩住 commit 眼里的 latestUser，
@@ -61,19 +62,38 @@ export function selectAutomatic(
   const latestUser = messages.findLastIndex((message) =>
     message.info.role === "user" &&
     message.info.delivery !== "queued" &&
-    message.parts.some((part) => part.type === "text" && !part.synthetic && !part.ignored),
+    message.parts.some((part) => part.type === "text" ? !part.synthetic && !part.ignored : part.type === "file"),
   )
   const start = latestUser > 0 ? 0 : latestUser + 1
   const last = latestUser > 0 ? latestUser - 1 : messages.length - 3
   if (last < start) throw new Error("No closed history is available for automatic compaction")
-  const required = messages.reduce((total, message) => total + measure(message), 0) - targetTokens + summaryMaxTokens
+  // 261010 Red 固定前缀超预算时历史回收需求可能为负，不能因此只摘第一条 user。
+  // 保护正文不算回收量；queued / 未完工具切断候选段，绝不交给模型再等 commit 拒收。
+  const required = Math.max(summaryMaxTokens,
+    messages.reduce((total, message) => total + measure(message), 0) - targetTokens + summaryMaxTokens)
   let released = 0
-  let end = start
-  for (; end <= last; end++) {
-    released += measure(messages[end]!)
-    if (released >= required) break
+  let segmentStart = start
+  let bestReleased = 0
+  let bestStart = -1
+  let bestEnd = -1
+  for (let end = start; end <= last; end++) {
+    const message = messages[end]!
+    if ((message.info.role === "user" && message.info.delivery === "queued") ||
+      message.parts.some((part) => part.type === "tool" && ["pending", "running"].includes(part.state.status))) {
+      segmentStart = end + 1
+      released = 0
+      continue
+    }
+    released += measure(message) - retained(message)
+    if (released > 0 && released >= bestReleased) {
+      bestReleased = released
+      bestStart = segmentStart
+      bestEnd = end
+    }
+    if (released >= required) return messages.slice(bestStart, bestEnd + 1)
   }
-  return messages.slice(start, Math.min(end, last) + 1)
+  if (bestStart < 0) throw new Error("No compressible closed history is available for automatic compaction")
+  return messages.slice(bestStart, bestEnd + 1)
 }
 
 export function removeArtifacts(messages: MessageV2.WithParts[]) {
