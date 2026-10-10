@@ -16173,6 +16173,18 @@
             "type": "string",
             "description": "Default shell to use for terminal and bash tool"
           },
+          "shellRouting": {
+            "type": "object",
+            "properties": {
+              "agentDefault": {
+                "type": "string",
+                "enum": ["git-bash", "powershell", "legacy"],
+                "description": "Default shell for the agent bash tool on Windows: git-bash, powershell, or legacy (config.shell). Absent = legacy behavior"
+              }
+            },
+            "additionalProperties": false,
+            "description": "Optional Windows dual-shell routing for the agent bash tool. Absent = use config.shell as before; user commands and PTY terminals are not affected"
+          },
           "logLevel": {
             "$ref": "#/components/schemas/LogLevel",
             "description": "Log level"
