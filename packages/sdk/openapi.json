@@ -14568,6 +14568,9 @@
           "auto": {
             "type": "boolean"
           },
+          "native": {
+            "type": "boolean"
+          },
           "overflow": {
             "type": "boolean"
           },
@@ -14580,6 +14583,10 @@
             "minimum": 0
           },
           "tokens_after": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "duration_ms": {
             "type": "integer",
             "minimum": 0
           }
@@ -16004,6 +16011,111 @@
         },
         "additionalProperties": false
       },
+      "NativeCompactionConfig": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Enable the native compaction budget (default: false). While off, the legacy compaction.threshold / model-window path is unchanged."
+          },
+          "trigger_tokens": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000000,
+            "description": "Token count that triggers native compaction, clamped to the model's usable window (default: 250000; maximum: 10000000)"
+          },
+          "target_tokens": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000000,
+            "description": "Token count native compaction aims for after summarizing, scaled down with the trigger when the model window is smaller (default: 160000; maximum: 10000000)"
+          },
+          "reminder_tokens": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000000,
+            "description": "Token count at which the user is reminded to compact before the trigger fires, scaled down with the trigger when the model window is smaller (default: 220000; maximum: 10000000)"
+          },
+          "summary_max_tokens": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000,
+            "description": "Maximum tokens of one compaction summary (default: 16000; maximum: 1000000)"
+          },
+          "summary_max_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 67108864,
+            "description": "Maximum bytes of one compaction summary (default: 98304; maximum: 67108864)"
+          },
+          "active_max_tokens": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000000,
+            "description": "Maximum tokens kept active per compaction range (default: 80000; maximum: 10000000)"
+          },
+          "active_max_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 268435456,
+            "description": "Maximum bytes kept active per compaction range (default: 524288; maximum: 268435456)"
+          },
+          "max_ranges": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1024,
+            "description": "Maximum compaction ranges per session (default: 8; maximum: 1024)"
+          },
+          "max_blocks": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 16384,
+            "description": "Maximum blocks scanned per compaction pass (default: 128; maximum: 16384)"
+          },
+          "max_messages": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65536,
+            "description": "Maximum messages considered per compaction pass (default: 4096; maximum: 65536)"
+          },
+          "read_max_tokens": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000,
+            "description": "Maximum tokens read from one retained message (default: 2048; maximum: 1000000)"
+          },
+          "read_max_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 67108864,
+            "description": "Maximum bytes read from one retained message (default: 8192; maximum: 67108864)"
+          },
+          "search_scan_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1073741824,
+            "description": "Maximum bytes scanned when searching retained history (default: 4194304; maximum: 1073741824)"
+          },
+          "search_max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Maximum results returned when searching retained history (default: 10; maximum: 1000)"
+          },
+          "protect_user_messages": {
+            "type": "boolean",
+            "description": "Keep user messages verbatim during native compaction (default: true)"
+          },
+          "protected_tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tool names whose outputs native compaction never drops (default: [task, task_status, skill, todowrite, todoread])"
+          }
+        },
+        "additionalProperties": false
+      },
       "Config": {
         "type": "object",
         "properties": {
@@ -16488,6 +16600,10 @@
                 "type": "integer",
                 "minimum": 0,
                 "description": "Hard token ceiling for compaction. When total tokens exceed this value, compaction triggers regardless of the model's declared context limit. Replaces DCP's auto-compress role. (default: none — uses model limit)"
+              },
+              "native": {
+                "$ref": "#/components/schemas/NativeCompactionConfig",
+                "description": "Native compaction budget (trigger/target/reminder tokens, summary and retained-range caps, scan limits). Disabled by default; while off, the legacy threshold and model-window behavior is unchanged."
               }
             },
             "additionalProperties": false

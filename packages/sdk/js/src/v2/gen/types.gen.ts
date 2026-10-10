@@ -793,10 +793,12 @@ export type CompactionPart = {
   messageID: string
   type: "compaction"
   auto: boolean
+  native?: boolean
   overflow?: boolean
   tail_start_id?: string
   tokens_before?: number
   tokens_after?: number
+  duration_ms?: number
 }
 
 export type Part =
@@ -1417,6 +1419,77 @@ export type AttachmentConfig = {
   image?: ImageAttachmentConfig
 }
 
+export type NativeCompactionConfig = {
+  /**
+   * Enable the native compaction budget (default: false). While off, the legacy compaction.threshold / model-window path is unchanged.
+   */
+  enabled?: boolean
+  /**
+   * Token count that triggers native compaction, clamped to the model's usable window (default: 250000; maximum: 10000000)
+   */
+  trigger_tokens?: number
+  /**
+   * Token count native compaction aims for after summarizing, scaled down with the trigger when the model window is smaller (default: 160000; maximum: 10000000)
+   */
+  target_tokens?: number
+  /**
+   * Token count at which the user is reminded to compact before the trigger fires, scaled down with the trigger when the model window is smaller (default: 220000; maximum: 10000000)
+   */
+  reminder_tokens?: number
+  /**
+   * Maximum tokens of one compaction summary (default: 16000; maximum: 1000000)
+   */
+  summary_max_tokens?: number
+  /**
+   * Maximum bytes of one compaction summary (default: 98304; maximum: 67108864)
+   */
+  summary_max_bytes?: number
+  /**
+   * Maximum tokens kept active per compaction range (default: 80000; maximum: 10000000)
+   */
+  active_max_tokens?: number
+  /**
+   * Maximum bytes kept active per compaction range (default: 524288; maximum: 268435456)
+   */
+  active_max_bytes?: number
+  /**
+   * Maximum compaction ranges per session (default: 8; maximum: 1024)
+   */
+  max_ranges?: number
+  /**
+   * Maximum blocks scanned per compaction pass (default: 128; maximum: 16384)
+   */
+  max_blocks?: number
+  /**
+   * Maximum messages considered per compaction pass (default: 4096; maximum: 65536)
+   */
+  max_messages?: number
+  /**
+   * Maximum tokens read from one retained message (default: 2048; maximum: 1000000)
+   */
+  read_max_tokens?: number
+  /**
+   * Maximum bytes read from one retained message (default: 8192; maximum: 67108864)
+   */
+  read_max_bytes?: number
+  /**
+   * Maximum bytes scanned when searching retained history (default: 4194304; maximum: 1073741824)
+   */
+  search_scan_bytes?: number
+  /**
+   * Maximum results returned when searching retained history (default: 10; maximum: 1000)
+   */
+  search_max_results?: number
+  /**
+   * Keep user messages verbatim during native compaction (default: true)
+   */
+  protect_user_messages?: boolean
+  /**
+   * Tool names whose outputs native compaction never drops (default: [task, task_status, skill, todowrite, todoread])
+   */
+  protected_tools?: Array<string>
+}
+
 export type Config = {
   /**
    * JSON schema reference for configuration validation
@@ -1710,6 +1783,10 @@ export type Config = {
      * Hard token ceiling for compaction. When total tokens exceed this value, compaction triggers regardless of the model's declared context limit. Replaces DCP's auto-compress role. (default: none — uses model limit)
      */
     threshold?: number
+    /**
+     * Native compaction budget (trigger/target/reminder tokens, summary and retained-range caps, scan limits). Disabled by default; while off, the legacy threshold and model-window behavior is unchanged.
+     */
+    native?: NativeCompactionConfig
   }
   /**
    * Bounds and retention for lightweight session change markers
