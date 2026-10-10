@@ -8,9 +8,8 @@
   // merge-home-config 会把本地层已有的键当"用户已有"跳过，不再补回同步层
   // （260812 修，此前下沉的键每次 build 都被打回，见 script/merge-home-config.ts）。
   //
-  // 260809 Red plugin 路径拆到 redcode.local.jsonc（机器相关，不进同步模板）。
-  // 两边各自在本地层维护：E 盘机写 E:/AI/RedCode-dcp，D 盘机写 D:/AI/KLX/Qiu/RedCode-dcp。
-  // 本模板不留硬编码路径，避免 pull 后覆盖对方的 live 配置。
+  // 261010 Red 压缩改由原生 compaction 接管，不再加载 DCP；已有本地层也须移除 DCP 插件项。
+  // 其余机器相关的 plugin 路径仍放 redcode.local.jsonc，不在模板里硬编码。
   // 260718 Red goal-automation/simplify/vision-autoagent/diagnose 之前既是可懒加载的
   // skill、又整篇塞在这里常驻系统提示词，双重注册白吃了 ~2800 token/次对话。这几个
   // 不需要"每次都自动触发"（不像 memory-automation），改成只留 skill 发现路径——
@@ -128,7 +127,19 @@
   // small_model 挪到本地层 redcode.local.jsonc（260812 cc）：它引用本机 ollama 模型，
   // 而本地模型是按各机显存挑的，随 provider.ollama 一起下沉。留在这里会被 merge-home-config
   // 当"用户缺的键"补回 redcode.jsonc——260811/260812 两次回潮正是如此。
-  "compaction": { "threshold": 400000 },
+  // 261010 Red 原生压缩替代 DCP compress；颜色预警不执行旧 prune。
+  "compaction": {
+    "auto": true,
+    "prune": false,
+    "native": {
+      "enabled": true,
+      "trigger_tokens": 250000,
+      "target_tokens": 130000,
+      "reminder_tokens": 220000,
+      "soft_ratio": 0.72,
+      "prune_ratio": 0.88,
+    },
+  },
   "provider": {
     // 260917 Red OpenRouter key 仅存本机 auth.json；白名单来自当日 GET /api/v1/models
     // 中 prompt/completion 均为 0 的 24 个条目，包含 stealth/union-alpha。
