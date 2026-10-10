@@ -52,6 +52,44 @@ describe("A 类：自己注入的包装块整块剥离", () => {
     expect(r.kinds).toContain("system-notice")
     expect(r.stripped).toBe("这是真正的回答。")
   })
+// 261010 Red native 压缩注入的引用标记与逼近提醒被复述（exe 实测整楼回复都是它）。
+// 形态：每条历史消息一个 [History reference: msg_…]，出站副本里成百条，模型照抄。
+test("[History reference: msg_…] 被复述 —— 剥掉，保留真正的回答", () => {
+const t = [
+"先说结论：泄漏已经修了。",
+"",
+"[History reference: msg_001a123fb674001QkKme94oUzr5S]",
+"[History reference: msg_001a123fb674001QkKme94oUzr5S]",
+].join("\n")
+const r = detect(t)
+expect(r.kinds).toContain("native-history-reference")
+expect(r.stripped).toBe("先说结论：泄漏已经修了。")
+})
+
+test("引用标记成片复述（exe 截图原形：同一 ID 数十行且每行翻倍）—— 一次吃干净", () => {
+const marker = "[History reference: msg_001a123fb674001QkKme94oUzr5S]"
+const t = ["真正的回答在这里。", "", ...Array.from({ length: 40 }, () => marker + marker)].join("\n")
+const r = detect(t)
+expect(r.kinds).toContain("native-history-reference")
+expect(r.stripped).toBe("真正的回答在这里。")
+expect(r.stripped).not.toContain("History reference")
+})
+
+test("[Context notice, not a user request] 逼近提醒被复述 —— 剥掉该段", () => {
+const t = [
+"[Context notice, not a user request] Context is approaching the 60000-token ceiling. Use compress for closed ranges when useful; preserve constraints, verification and unfinished work. Aim below 40000 tokens.",
+"",
+"这是真正的回答。",
+].join("\n")
+const r = detect(t)
+expect(r.kinds).toContain("native-context-notice")
+expect(r.stripped).toBe("这是真正的回答。")
+})
+
+test("★不误切：用户正常讨论 history reference 机制、没有引擎标记形状时不动", () => {
+const t = "这个 history reference 机制会把旧消息 ID 暴露给模型，我觉得可以换个写法。"
+expect(detect(t).kinds).toEqual([])
+})
 })
 
 describe("B 类：工具说明 / JSON schema 成片泄漏", () => {
@@ -294,4 +332,9 @@ describe("LeakAnchorScanner 增量扫描", () => {
     expect(scan.feed("")).toBe(false)
     expect(new LeakAnchorScanner().feed(SHORT)).toBe(true)
   })
+test("native 引用标记锚点命中即断流（261010）", () => {
+const scan = new LeakAnchorScanner()
+expect(scan.feed("先正常回答一段。")).toBe(false)
+expect(scan.feed("[History reference: msg_001a123fb674001QkKme94oUzr5S]")).toBe(true)
+})
 })

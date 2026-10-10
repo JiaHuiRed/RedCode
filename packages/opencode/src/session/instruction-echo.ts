@@ -36,6 +36,9 @@ const LEAK_ANCHORS = [
   "Context is now large in absolute terms",
   "CRITICAL WARNING: MAX CONTEXT LIMIT REACHED",
   "You are at or beyond the configured max context threshold",
+// 261010 Red native 压缩的历史引用标记：exe 实测整楼回复都是它（同一 msg ID 复述数十遍），
+// 模型把出站副本里的机读标记当成要输出的内容。锚点出现即已泄露，流式路径中断。
+"[History reference: ",
 ] as const
 const MAX_ANCHOR_LENGTH = Math.max(...LEAK_ANCHORS.map((anchor) => anchor.length))
 
@@ -93,6 +96,12 @@ const OWN_BLOCKS: Array<[string, RegExp]> = [
   // [System notice] 是 text-loop-detection 与 reasoning-only 兜底注入的前缀，
   // 没有闭合标签，切到空行为止 —— 那几条注入本身都是单段。
   ["system-notice", /^\s*\[System notice\][^\n]*(?:\n(?!\n)[^\n]*)*\n?/gm],
+// 261010 Red native 压缩（compaction.native）注入的两种前缀，此前只收了 [System notice]，
+// 漏掉的这两种在 exe 上整楼复述。都是我们自己的注入、有明确起止，同 A 类整块剥。
+// 引用标记：每条历史消息一个，可能连续成百行，用全局替换一次吃干净。
+ ["native-history-reference", /\[History reference: [^\n]*?\]\s*/g],
+// 上下文逼近提醒：单段无闭合标签，与 system-notice 同形，剥到空行为止。
+["native-context-notice", /^\s*\[Context notice, not a user request\][^\n]*(?:\n(?!\n)[^\n]*)*\n?/gm],
 ]
 
 // ── C 类：DCP turn-nudge 指令被复述（260810 哥哥 G:\Game 会话实测）──
@@ -221,6 +230,8 @@ export function detect(text: string): EchoResult {
     text.includes("<dcp-message-id>") ||
     text.includes("<dcp-system-reminder>") ||
     text.includes("[System notice]") ||
+text.includes("[History reference: ") || // native 压缩引用标记复述（261010）
+text.includes("[Context notice, not a user request]") || // native 压缩逼近提醒复述（261010）
     text.includes("Rules:") ||
     text.includes("BATCHING") ||
     text.includes("THE FORMAT OF") ||
