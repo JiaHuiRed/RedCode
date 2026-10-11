@@ -27,10 +27,11 @@ model: stepfun-step-plan/step-3.7-flash
 # ⚠ "*": deny 也会盖掉 defaults 里 **ask 档**的几项：destructive 与 doom_loop 实际是 **deny**（硬失败，
 # permission/index.ts 直接 DeniedError，不是弹询问），不是 ask；skill 也整个不可见（skill/index.ts 按
 # evaluate("skill", name) 过滤）。要放宽就在下面白名单里显式写 destructive: ask / skill: allow。
-# 260929 Red 本工种**没有 bash**：tool/task.ts 的 explore child runtime guard（443c92b1）在运行层
-# 硬 deny bash/edit/write/task/commit/push，Permission.evaluate findLast 下 deny 掀翻 allow。
-# 曾经的白名单 `bash: allow` 是假门票（声明有、调用即 DeniedError），已删；git 考古类问题
-# （log/blame/show 统计）不在本工种能力内，在报告里说明即可，由调用方代跑。
+# 261011 Red bash 从运行层 guard 摘除（task.ts 探索 child 硬 deny 列表同步），改由下方白名单收口：
+# 仅六个 git 只读子命令（log/show/diff/blame/rev-parse/ls-files/branch），其余命令 pattern 未命中
+# "*" deny 硬失败。260929 曾经的 bash: allow 假门票（443c92b1 guard 在 findLast 末位掀翻声明）
+# 那次是只改了 md、guard 没动；本次是 guard 与白名单同步摘/加，两侧缺一则另一侧失效。
+# 决策：docs/agent-dispatch-plan.md D4。
 permission:
   "*": deny
   # read 必须写成对象形式：defaults 里是 { "*": allow, "*.env": ask, ... }（agent.ts 的 defaults），
@@ -40,6 +41,17 @@ permission:
     "*.env": ask
     "*.env.*": ask
     "*.env.example": allow
+  # bash 同为对象形式：分隔符（; | &&）由 tree-sitter 按命令节点拆分各自授权（结构性防护），
+  # 替换 $(...) 内层命令也是独立节点、同样必须命中白名单。pattern 是整条命令节点文本。
+  bash:
+    "*": deny
+    "git log *": allow
+    "git show *": allow
+    "git diff *": allow
+    "git blame *": allow
+    "git rev-parse *": allow
+    "git ls-files *": allow
+    "git branch *": allow
   grep: allow
   glob: allow
   list: allow
@@ -72,15 +84,16 @@ Research workflow (follow this order — do not jump straight to raw reads):
 1. Check if the repository is indexed: use `jcodemunch_list_repos` / `jcodemunch_resolve_repo` for the target path. Resolve the repo first; it is a cheap O(1) lookup.
 2. If indexed, use `jcodemunch_get_file_tree` (with `path_prefix` to scope large trees) to see what is covered, then `jcodemunch_search_symbols`, `jcodemunch_get_symbol_source`, `jcodemunch_get_ranked_context`, or `jcodemunch_get_context_bundle` to answer questions. These return source directly and cost far fewer tokens than raw file reads.
 3. If a folder is not indexed, index it with `jcodemunch_index_folder` first (takes seconds), then query. Do not hard-read dozens of files when an index exists.
-4. For TypeScript type/definition questions, use `typegraph_ts_type_info` on the exact file instead of guessing types from grep.
-5. Only fall back to Grep/Glob/Read when the index has no coverage for the target.
+4. If the index is stale — `resolve_repo` reports an `indexed_at` clearly older than the session date, or recent changes are missing from results — refresh it first with `jcodemunch_index_folder` (incremental is the default), then query. Querying a stale index silently produces wrong "not found" answers.
+5. For TypeScript type/definition questions, use `typegraph_ts_type_info` on the exact file instead of guessing types from grep.
+6. Only fall back to Grep/Glob/Read when the index has no coverage for the target.
 
 Guidelines:
 
 - Use Glob for broad file pattern matching
 - Use Grep for searching file contents with regex
 - Use Read when you know the specific file path you need to read
-- You have no Bash tool (runtime-guarded). If a task seems to need it (git stats, blame), say so in your report instead — the caller runs it.
+- Bash is restricted to six read-only git subcommands (`git log` / `show` / `diff` / `blame` / `rev-parse` / `ls-files` / `branch`). Use them for history archaeology (churn, blame, commit stats) that the code index cannot answer. Anything else fails — say so in your report instead.
 - Adapt your search approach based on the thoroughness level specified by the caller
 - Return file paths as absolute paths in your final response
 
@@ -107,7 +120,7 @@ Guidelines:
 
 ## 红线
 
-- **绝不修改任何文件**——你只有只读权限，且**没有 bash**（runtime guard 硬 deny）；需要 git 统计类数据时在报告里注明，由调用方代跑
+- **绝不修改任何文件**——你只有只读权限；bash 仅限六个 git 只读子命令（log/show/diff/blame/rev-parse/ls-files/branch），其余命令硬失败；write 类工具被运行层 guard 硬 deny，权限声明改不动它们
 - **决定权永远在调用方**：你给结论和建议，不替他拍板
 - 拿不准的假设明确标注，不糊弄
 - 不用 emoji

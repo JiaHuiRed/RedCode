@@ -167,6 +167,31 @@ it.instance("explore agent denies edit and write", () =>
   }),
 )
 
+// 261011 Red explore 的 bash 从运行层 guard 摘除（task.ts），改由 md 白名单收口为六个 git
+// 只读子命令。guard 与白名单同步摘/加，缺一则另一侧失效（260929 假门票的教训）。
+// 决策：docs/agent-dispatch-plan.md D4。
+it.instance("explore agent bash is restricted to read-only git subcommands", () =>
+  Effect.gen(function* () {
+    const explore = yield* load((svc) => svc.get("explore"))
+    expect(explore).toBeDefined()
+    // 白名单内的 git 只读命令逐条 allow
+    expect(Permission.evaluate("bash", "git log --oneline -10", explore!.permission).action).toBe("allow")
+    expect(Permission.evaluate("bash", "git show HEAD", explore!.permission).action).toBe("allow")
+    expect(Permission.evaluate("bash", "git diff dev~3..dev", explore!.permission).action).toBe("allow")
+    expect(Permission.evaluate("bash", "git blame src/main.ts", explore!.permission).action).toBe("allow")
+    expect(Permission.evaluate("bash", "git rev-parse HEAD", explore!.permission).action).toBe("allow")
+    expect(Permission.evaluate("bash", "git ls-files src", explore!.permission).action).toBe("allow")
+    expect(Permission.evaluate("bash", "git branch -a", explore!.permission).action).toBe("allow")
+    // 未命中白名单的命令（含 git 写操作）全 deny
+    expect(Permission.evaluate("bash", "git push origin dev", explore!.permission).action).toBe("deny")
+    expect(Permission.evaluate("bash", "git commit -m x", explore!.permission).action).toBe("deny")
+    expect(Permission.evaluate("bash", "rm -rf src", explore!.permission).action).toBe("deny")
+    expect(Permission.evaluate("bash", "npm test", explore!.permission).action).toBe("deny")
+    // 通配（无具体命令文本）落 deny —— pattern "*" 不匹配 "git log *" 前缀规则
+    expect(evalPerm(explore, "bash")).toBe("deny")
+  }),
+)
+
 it.instance("explore agent asks for external directories and allows whitelisted external paths", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance

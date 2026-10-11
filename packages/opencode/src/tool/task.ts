@@ -238,8 +238,12 @@ export const TaskTool = Tool.define(
               action: "allow" as const,
               permission: item,
             })) ?? []),
+            // 261011 Red bash 从硬 deny 摘除：explore 的 bash 改由 md 白名单收口（仅六个 git
+            // 只读子命令，docs/agent-dispatch-plan.md D4）。运行层仍硬 deny 其余写类工具——
+            // 只读红线不依赖权限层单一闸门。曾经 bash: allow 是假门票（443c92b1 的 guard 在
+            // findLast 末位掀翻声明），本次是 guard 与白名单同步摘/加，缺一则另一侧失效。
             ...(explorePacket
-              ? ["edit", "write", "apply_patch", "bash", "task", "commit", "push"].map((permission) => ({
+              ? ["edit", "write", "apply_patch", "task", "commit", "push"].map((permission) => ({
                   pattern: "*",
                   action: "deny" as const,
                   permission,
