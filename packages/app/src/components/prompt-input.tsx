@@ -34,7 +34,6 @@ import { DockShellForm } from "@redcode-ai/ui/dock-surface"
 import { Icon } from "@redcode-ai/ui/icon"
 import { ProviderIcon } from "@redcode-ai/ui/provider-icon"
 import { SessionContextUsage } from "@/components/session-context-usage"
-import { SessionCompactButton } from "@/components/session-compact-button"
 import { Tooltip, TooltipKeybind } from "@redcode-ai/ui/tooltip"
 import { availableEffortSteps, EffortSliderV2 } from "@redcode-ai/ui/v2/components/effort-slider-v2.jsx"
 import { IconButton } from "@redcode-ai/ui/icon-button"
@@ -1707,13 +1706,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             </Show>
             {agentControl()}
             {modelControl()}
-            {/* 260819 cc 上下文窗口指示器紧跟模型/档位——与 timeline 顶栏那个是同一个组件，
-                这里只是把它放到用户真正在看的位置（选模型的那一行）。组件自带
-                <Show when={params.id}> 守卫，新建会话页没有 id 时整块不渲染。 */}
+            {/* 260819 cc 上下文窗口指示器紧跟模型/档位——用户真正在看的位置（选模型的那一行）。
+                组件自带 <Show when={params.id}> 守卫，新建会话页没有 id 时整块不渲染。
+                261011 Red 与精简键合并：hover 出窗口/首字/解码数据，点击弹确认精简；
+                开上下文面板走右侧常驻 tab。 */}
             <SessionContextUsage placement="top" />
-            {/* 261011 Red 主动压缩键（推理档右侧）：显示当前上下文与档位色，点击弹确认再压。
-                自动兜底线已抬到 360k，日常压缩交给这里手动发起。 */}
-            <SessionCompactButton />
           </div>
           <Show when={store.mode === "normal" && props.shouldQueue?.() && !blank()}>
             <Button

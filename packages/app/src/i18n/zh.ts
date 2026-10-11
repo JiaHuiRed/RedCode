@@ -332,7 +332,7 @@ export const dict = {
   "prompt.action.stop": "停止",
   "prompt.compact.run": "精简",
   "prompt.compact.confirm": "当前上下文 {{window}} / {{limit}}，确认立即精简会话？",
-  "prompt.compact.tooltip": "精简会话（当前 {{window}} / {{limit}}）",
+  "prompt.compact.clickHint": "点击精简会话",
   "prompt.delivery.queue": "本条排队",
   "prompt.delivery.steer": "本条立即送达",
   "prompt.toast.pasteUnsupported.title": "不支持的附件",

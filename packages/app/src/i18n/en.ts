@@ -316,7 +316,7 @@ export const dict = {
   "prompt.action.stop": "Stop",
   "prompt.compact.run": "Compact",
   "prompt.compact.confirm": "Context window {{window}} / {{limit}}. Compact this session now?",
-  "prompt.compact.tooltip": "Compact session (currently {{window}} / {{limit}})",
+  "prompt.compact.clickHint": "Click to compact session",
   "prompt.delivery.queue": "Queue this",
   "prompt.delivery.steer": "Deliver now",
 

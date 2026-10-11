@@ -283,7 +283,7 @@ export const dict = {
   "prompt.action.stop": "停止",
   "prompt.compact.run": "圧縮",
   "prompt.compact.confirm": "現在のコンテキスト {{window}} / {{limit}}。今すぐセッションを圧縮しますか？",
-  "prompt.compact.tooltip": "セッションを圧縮（現在 {{window}} / {{limit}}）",
+  "prompt.compact.clickHint": "クリックでセッションを圧縮",
   "prompt.delivery.queue": "このメッセージを待機",
   "prompt.delivery.steer": "今すぐ送信",
   "prompt.toast.pasteUnsupported.title": "サポートされていない添付ファイル",
