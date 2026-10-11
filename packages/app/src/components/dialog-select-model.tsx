@@ -1,8 +1,8 @@
 import { Popover as Kobalte } from "@kobalte/core/popover"
-import { Component, ComponentProps, createMemo, JSX, Show, ValidComponent } from "solid-js"
+import { Component, ComponentProps, createMemo, onCleanup, JSX, Show, ValidComponent } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLocal } from "@/context/local"
-import { guiDiagnostics } from "@/context/gui-diagnostics"
+import { anonKey, guiDiagnostics } from "@/context/gui-diagnostics"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { popularProviders } from "@/hooks/use-providers"
 import { Button } from "@redcode-ai/ui/button"
@@ -116,10 +116,30 @@ export function ModelSelectorPopover(props: {
   const globalSync = useServerSync()
   let overviewRef: HTMLDivElement | undefined
 
+  // 261011 Red B1.1（审计 ZW-07）：Popover 取证统一走 recordPopover——关闭/打开记录
+  // 此前记 Boolean(props.model)（恒 true，只是"传了 state 对象"），现记真实 current
+  // 存在性与目录匿名 ID；关闭路径补 trigger 再点（toggle）与开着被卸载（unmount）。
+  const hasCurrent = () => Boolean(props.model?.current()?.id)
+  const dirKey = () => {
+    const directory = globalSync.data.path.directory
+    return directory ? anonKey(directory) : "root"
+  }
+  const recordPopover = (action: string, detail: Record<string, string | boolean> = {}) =>
+    guiDiagnostics.record("ui.popover", {
+      name: "model-select",
+      detail: { action, current: hasCurrent(), dir: dirKey(), ...detail },
+    })
+
+  // 弹窗开着时组件被卸载：ZW-06 类「控件消失」的现场信号
+  onCleanup(() => {
+    if (store.open) recordPopover("unmount")
+  })
+
   // 260930 Red 模型列表与推理概览共用一个弹层；选完模型返回概览，继续调整强度。
   const showModels = () => {
     globalSync.wantProviderCatalog()
     setStore("selecting", true)
+    recordPopover("selecting")
   }
   const showOverview = () => {
     setStore("selecting", false)
@@ -128,10 +148,7 @@ export function ModelSelectorPopover(props: {
 
   const close = (dismiss: Dismiss) => {
     // 261011 Red B0: 弹窗关停留痕（关闭原因 + 当时是否已有选中模型）
-    guiDiagnostics.record("ui.popover", {
-      name: "model-select",
-      detail: { action: "close", dismiss, model: Boolean(props.model) },
-    })
+    recordPopover("close", { dismiss })
     setStore("dismiss", dismiss)
     setStore("open", false)
   }
@@ -157,18 +174,24 @@ export function ModelSelectorPopover(props: {
       onOpenChange={(next) => {
         if (next && !props.overview) globalSync.wantProviderCatalog()
         if (next) setStore({ dismiss: null, selecting: !props.overview })
-        if (next)
-          guiDiagnostics.record("ui.popover", {
-            name: "model-select",
-            detail: { action: "open", overview: Boolean(props.overview) },
-          })
+        if (next) recordPopover("open", { overview: Boolean(props.overview) })
+        // 261011 Red B1.1（审计 ZW-07）：trigger 再点击（toggle）的关闭此前无任何记录；
+        // 其余关闭路径（escape/outside/select/manage/provider）都经 close() 已记录——
+        // dismiss 非空即表示本次关闭已记录过，跳过避免重复。
+        if (!next && !store.dismiss) recordPopover("close", { dismiss: "toggle" })
         setStore("open", next)
       }}
       modal={false}
       placement="top-start"
       gutter={4}
     >
-      <Kobalte.Trigger as={props.triggerAs ?? "div"} {...props.triggerProps}>
+      {/* 261011 Red B1.1（审计 ZW-07）：trigger-pointerdown 是最便宜的开合时序锚点。
+          真实调用方仅 prompt-input 一处且未经 triggerProps 传 onPointerDown。 */}
+      <Kobalte.Trigger
+        as={props.triggerAs ?? "div"}
+        {...props.triggerProps}
+        onPointerDown={() => recordPopover("trigger-pointerdown", { open: store.open })}
+      >
         {props.children}
       </Kobalte.Trigger>
       <Kobalte.Portal>

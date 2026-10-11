@@ -1487,7 +1487,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   )
 
   const modelControl = () => (
-    <Show when={!providersLoading()}>
+    // 261011 Red B1.1（审计 ZW-06）：已有 current 模型时保持稳定挂载——不再因 agents/
+    // provider 任一 query 的 loading（首拉或缓存失效）卸载控件，连坐 Popover 的局部
+    // 状态与焦点。仅“首次进入且无模型可显示”时才隐藏。
+    <Show when={Boolean(local.model.current()) || !providersLoading()}>
       <div
         data-component="prompt-model-control"
         style={providersShouldFadeIn() ? { animation: "fade-in 0.3s" } : undefined}
