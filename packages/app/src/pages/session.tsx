@@ -50,6 +50,7 @@ import { useTerminal } from "@/context/terminal"
 import { type FollowupDraft, sendFollowupDraft } from "@/components/prompt-input/submit"
 import { createSessionComposerState, SessionComposerRegion } from "@/pages/session/composer"
 import { createOpenReviewFile, createSessionTabs, createSizing } from "@/pages/session/helpers"
+import { createDeferRender } from "./session-defer-render"
 import { createSessionKeyboard } from "@/pages/session/session-keyboard"
 import { MessageTimeline } from "@/pages/session/message-timeline"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
@@ -337,16 +338,18 @@ export default function Page() {
   )
   const [queuedAction, setQueuedAction] = createSignal<string>()
 
+  // 261011 Red B1-c: 延迟渲染门禁抽到 session-defer-render——旧切换的回调可取消、
+  // 带 key 守卫，只有最后一次切换能解锁（审计 GUI-06）；卸载时清掉未完成调度。
+  const deferRenderGate = createDeferRender({
+    key: sessionKey,
+    set: (value) => setStore("deferRender", value),
+  })
   createComputed((prev) => {
     const key = sessionKey()
-    if (key !== prev) {
-      setStore("deferRender", true)
-      requestAnimationFrame(() => {
-        setTimeout(() => setStore("deferRender", false), 0)
-      })
-    }
+    if (key !== prev) deferRenderGate.arm(key)
     return key
   }, sessionKey())
+  onCleanup(() => deferRenderGate.cancel())
 
   let reviewFrame: number | undefined
   let refreshFrame: number | undefined
