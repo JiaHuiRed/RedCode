@@ -2,7 +2,7 @@ import "./init-projectors"
 
 import { NodeHttpServer } from "@effect/platform-node"
 import * as Log from "@redcode-ai/core/util/log"
-import { ConfigProvider, Context, Duration, Effect, Exit, Layer, Scope } from "effect"
+import { Clock, ConfigProvider, Context, Effect, Exit, Layer, Scope } from "effect"
 import { HttpMiddleware, HttpRouter, HttpServer, HttpServerRequest } from "effect/unstable/http"
 import { OpenApi } from "effect/unstable/httpapi"
 import { createServer } from "node:http"
@@ -23,24 +23,45 @@ const log = Log.create({ service: "server" })
 // deadline 被 499 切断」，而服务端一个字都没记，只能靠 renderer.log 反推是哪个接口慢。
 // 3s 阈值记 method/path/directory/status/ms；被切断请求的 handler 排队时长照实累计
 // （60s 级别）天然命中，正常请求零日志噪音。
+// 261011 Red B0.1（审计 ZW-03）：原实现 Effect.timed(effect) 在 failure/interruption 时
+// 短路整个 gen——失败与中断请求零日志，恰好是事故里最缺证据的两个出口。改 onExit 收口：
+// 三种出口都记录（outcome 分类），计时走 Clock.currentTimeMillis 以便 TestClock 拨动。
 const slowRequestMs = 3_000
 
-const requestLogging: HttpMiddleware.HttpMiddleware = (effect) =>
+export type SlowRequestRecord = {
+  method: string
+  path: string
+  directory: string | undefined
+  outcome: "success" | "failure" | "interrupted"
+  status: number | undefined
+  ms: number
+}
+
+// sink 参数供测试注入；生产默认写入 server 日志（pathname 而非完整 query）
+export const makeRequestLogging = (
+  sink: (record: SlowRequestRecord) => void = (record) => log.warn("slow request", record),
+): HttpMiddleware.HttpMiddleware => (effect) =>
   Effect.gen(function* () {
-    const [duration, response] = yield* Effect.timed(effect)
-    const ms = Duration.toMillis(duration)
-    if (ms < slowRequestMs) return response
     const request = yield* HttpServerRequest.HttpServerRequest
     const url = new URL(request.url, "http://localhost")
-    log.warn("slow request", {
-      method: request.method,
-      path: url.pathname,
-      directory: url.searchParams.get("directory") ?? request.headers["x-redcode-directory"],
-      status: response.status,
-      ms: Math.round(ms),
-    })
-    return response
+    const startedAt = yield* Clock.currentTimeMillis
+    return yield* Effect.onExit(effect, (exit) =>
+      Effect.gen(function* () {
+        const ms = (yield* Clock.currentTimeMillis) - startedAt
+        if (ms < slowRequestMs) return
+        sink({
+          method: request.method,
+          path: url.pathname,
+          directory: url.searchParams.get("directory") ?? request.headers["x-redcode-directory"],
+          outcome: Exit.isSuccess(exit) ? "success" : Exit.hasInterrupts(exit) ? "interrupted" : "failure",
+          status: Exit.isSuccess(exit) ? exit.value.status : undefined,
+          ms: Math.round(ms),
+        })
+      }),
+    )
   })
+
+const requestLogging: HttpMiddleware.HttpMiddleware = makeRequestLogging()
 
 export type Listener = {
   hostname: string
