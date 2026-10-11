@@ -79,10 +79,14 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
         }
       })
       eventBatch.done()
-      guiDiagnostics.record("sse.flush", {
-        duration: performance.now() - started,
-        detail: { events: pulled.events.length, snapshots: pulled.snapshots?.size ?? 0 },
-      })
+      // 261011 Red B0 修订：空批（空闲心跳）不记——真机实测空批约 9 条/秒，2000 条环形缓冲
+      // 6 分钟即被冲光（droppedRecords 1302），注入故障等低频证据反被淘汰；有事件才有信息量。
+      if (pulled.events.length > 0 || (pulled.snapshots?.size ?? 0) > 0) {
+        guiDiagnostics.record("sse.flush", {
+          duration: performance.now() - started,
+          detail: { events: pulled.events.length, snapshots: pulled.snapshots?.size ?? 0 },
+        })
+      }
     }
 
     const schedule = () => {
