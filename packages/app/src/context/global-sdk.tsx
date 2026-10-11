@@ -8,6 +8,7 @@ import { useLanguage } from "./language"
 import { usePlatform } from "./platform"
 import { useServer } from "./server"
 import { SSE_MAX_RETRY_ATTEMPTS, sseLogLine } from "@/utils/sse-log"
+import { createEventBatch, isSupersededDelta } from "./global-sync/event-batch"
 
 const isAbortError = (error: unknown) =>
   error !== null && typeof error === "object" && "name" in error && error.name === "AbortError"
@@ -43,7 +44,6 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
       [key: string]: Event
     }>()
 
-    type Queued = { directory: string; payload: Event }
     const FLUSH_FRAME_MS = 16
     const STREAM_YIELD_MS = 8
 
@@ -55,50 +55,27 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
     // 260901 cc 连接活性对外可见，与 server-sdk 同构。理由见那边的注释。
     const [connection, setConnection] = createSignal<"connecting" | "live" | "reconnecting">("connecting")
 
-    let queue: Queued[] = []
-    let buffer: Queued[] = []
-    const coalesced = new Map<string, number>()
-    const staleDeltas = new Set<string>()
+    // 261011 Red B1-b: 合并窗口状态抽到 event-batch（含 GUI-02 的到达序语义）；
+    // 此文件只保留定时调度与 emitter 转发。
+    const eventBatch = createEventBatch()
     let timer: ReturnType<typeof setTimeout> | undefined
     let last = 0
-
-    const deltaKey = (directory: string, messageID: string, partID: string) => `${directory}:${messageID}:${partID}`
-
-    const key = (directory: string, payload: Event) => {
-      if (payload.type === "session.status") return `session.status:${directory}:${payload.properties.sessionID}`
-      if (payload.type === "lsp.updated") return `lsp.updated:${directory}`
-      if (payload.type === "message.part.updated") {
-        const part = payload.properties.part
-        return `message.part.updated:${directory}:${part.messageID}:${part.id}`
-      }
-    }
 
     const flush = () => {
       if (timer) clearTimeout(timer)
       timer = undefined
 
-      if (queue.length === 0) return
-
-      const events = queue
-      const skip = staleDeltas.size > 0 ? new Set(staleDeltas) : undefined
-      queue = buffer
-      buffer = events
-      queue.length = 0
-      coalesced.clear()
-      staleDeltas.clear()
+      const pulled = eventBatch.pull()
+      if (!pulled) return
 
       last = Date.now()
       batch(() => {
-        for (const event of events) {
-          if (skip && event.payload.type === "message.part.delta") {
-            const props = event.payload.properties
-            if (skip.has(deltaKey(event.directory, props.messageID, props.partID))) continue
-          }
+        for (const event of pulled.events) {
+          if (isSupersededDelta(event, pulled.snapshots)) continue
           emitter.emit(event.directory, event.payload)
         }
       })
-
-      buffer.length = 0
+      eventBatch.done()
     }
 
     const schedule = () => {
@@ -193,20 +170,7 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
 
               const payload = event.payload as Event
 
-              const k = key(directory, payload)
-              if (k) {
-                const i = coalesced.get(k)
-                if (i !== undefined) {
-                  queue[i] = { directory, payload }
-                  if (payload.type === "message.part.updated") {
-                    const part = payload.properties.part
-                    staleDeltas.add(deltaKey(directory, part.messageID, part.id))
-                  }
-                  continue
-                }
-                coalesced.set(k, queue.length)
-              }
-              queue.push({ directory, payload })
+              eventBatch.push(directory, payload)
               schedule()
 
               if (Date.now() - yielded < STREAM_YIELD_MS) continue
