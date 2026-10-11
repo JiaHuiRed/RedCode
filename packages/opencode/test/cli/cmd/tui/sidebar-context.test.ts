@@ -94,4 +94,24 @@ describe("摘要请求与主会话用量分离", () => {
     expect(sessionUsage([first, summary, next]).sessionTotal).toBe(254925)
     expect(sessionUsage([first, summary, next]).output).toBe(300)
   })
+
+  // 261011 Red 现场：TUI 的 Session total 显示 1.8 千万，会话真实累计 1.3 亿——msg() 是分页
+  // 已加载子集，只有服务端会话行聚合才是全量账。口径与 GUI session-context-metrics 同款。
+  test("会话累计优先用服务端会话行聚合（分页子集只覆盖已加载消息）", () => {
+    const first = assistant("msg_first", 124000)
+    const second = assistant("msg_second", 130000)
+    const aggregate = {
+      tokens: { input: 500, output: 2000, reasoning: 1000, cache: { read: 130_000_000, write: 1_500_000 } },
+    }
+    const usage = sessionUsage([first, second], aggregate)
+    expect(usage.sessionTotal).toBe(500 + 2000 + 1000 + 130_000_000 + 1_500_000)
+    // 比率与明细仍按已加载消息算，不受聚合影响
+    expect(usage.output).toBe(200)
+  })
+
+  test("聚合缺失（旧行或尚未回填）退回子集累计", () => {
+    const first = assistant("msg_first", 124000)
+    expect(sessionUsage([first]).sessionTotal).toBe(124100)
+    expect(sessionUsage([first], {}).sessionTotal).toBe(124100)
+  })
 })

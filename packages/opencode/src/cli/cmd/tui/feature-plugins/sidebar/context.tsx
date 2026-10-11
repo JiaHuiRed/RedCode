@@ -99,7 +99,14 @@ export function contextSource(messages: ReadonlyArray<Message>) {
     item.role === "assistant" && !item.summary && item.tokens.output > 0)
 }
 
-export function sessionUsage(messages: ReadonlyArray<Message>) {
+// 261011 Red 会话累计（Session total）优先读服务端会话行聚合：msg() 只是分页已
+// 加载子集，长会话下能比真实累计小一个数量级（本机现场 1.8 千万 vs 1.3 亿）。
+// 口径与 GUI session-context-metrics.ts 的 SessionAggregate 一致（260930 同款修复），
+// 命中率等比率仍按已加载消息算（聚合行没有 miss 分桶）。聚合缺失时退回子集累计。
+export function sessionUsage(
+  messages: ReadonlyArray<Message>,
+  aggregate?: { tokens?: { input: number; output: number; reasoning: number; cache: { read: number; write: number } } },
+) {
   // 260612 Red session-aggregate cache rate (not last-turn-only which is always ~99%)
   // 260614 Red: cache hit = read / (read + miss). For DeepSeek, cache.write=0
   // so use cache.miss from metadata directly; fallback to write, then to input for other providers.
@@ -133,7 +140,13 @@ export function sessionUsage(messages: ReadonlyArray<Message>) {
     cacheMiss: sumMiss,
     cacheWrite: sumWrite,
     cacheHit: cacheDenom > 0 && sumRead > 0 ? Math.round((sumRead / cacheDenom) * 1000) / 10 : null,
-    sessionTotal: sessionTotalInput + sessionTotalOutput + sessionTotalReasoning + sumRead + sumWrite,
+    sessionTotal: aggregate?.tokens
+      ? aggregate.tokens.input +
+        aggregate.tokens.output +
+        aggregate.tokens.reasoning +
+        aggregate.tokens.cache.read +
+        aggregate.tokens.cache.write
+      : sessionTotalInput + sessionTotalOutput + sessionTotalReasoning + sumRead + sumWrite,
   }
 }
 
@@ -145,7 +158,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
 
   const state = createMemo(() => {
     const last = contextSource(msg())
-    const usage = sessionUsage(msg())
+    const usage = sessionUsage(msg(), session())
     if (!last) {
       return {
         tokens: 0,
