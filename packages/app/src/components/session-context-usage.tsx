@@ -8,6 +8,7 @@ import { ProgressCircle } from "@redcode-ai/ui/progress-circle"
 import { Button } from "@redcode-ai/ui/button"
 import { Dialog } from "@redcode-ai/ui/dialog"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
+import { showToast } from "@redcode-ai/ui/toast"
 
 import { useSync } from "@/context/sync"
 import { useLanguage } from "@/context/language"
@@ -16,6 +17,36 @@ import { useProviders } from "@/hooks/use-providers"
 import { getSessionContextMetrics } from "@/components/session/session-context-metrics"
 import { createSessionContextFormatter } from "@/components/session/session-context-format"
 import { useSessionLayout } from "@/pages/session/session-layout"
+
+export type CompactSubmitInput = { sessionID: string; modelID: string; providerID: string }
+
+// 261011 Red C1（审计 RC-GUI-01）：确认后不再裸 `void summarize`——失败走 onError（组件接
+// toast），在途按 sessionID 去重（同会话 settle 前第二发被挡），A 的在途不挡 B，settle 后恢复。
+// busy 语义（压缩进行中）由服务端 ensureRunning 并发保护兜底，拒绝同样走 onError，客户端不
+// 另起压缩状态机。审计门禁：重复点击只形成一次预期请求、失败显式可见、切会话不串扰。
+export function createCompactSubmit(opts: {
+  summarize: (input: CompactSubmitInput) => Promise<unknown>
+  onError: (error: unknown) => void
+}) {
+  const pending = new Map<string, Promise<unknown>>()
+  return (input: CompactSubmitInput): boolean => {
+    if (pending.has(input.sessionID)) return false
+    const request = opts
+      .summarize(input)
+      .then(
+        () => undefined,
+        (error: unknown) => opts.onError(error),
+      )
+      .finally(() => {
+        if (pending.get(input.sessionID) === request) pending.delete(input.sessionID)
+      })
+      // 吞掉的只有 onError（toast 通道）自身的二次故障：请求失败已上报过一次，
+      // toast 挂了不该把 pending 管理一起炸成 unhandled rejection
+      .catch(() => {})
+    pending.set(input.sessionID, request)
+    return true
+  }
+}
 
 interface SessionContextUsageProps {
   placement?: TooltipProps["placement"]
@@ -43,10 +74,15 @@ const TIER_BAR = [
   "var(--v2-state-fg-danger)",
 ] as const
 
-function CompactConfirm(props: { sessionID: string; modelID: string; providerID: string; description: string }) {
+function CompactConfirm(props: {
+  sessionID: string
+  modelID: string
+  providerID: string
+  description: string
+  onConfirm: () => void
+}) {
   const dialog = useDialog()
   const language = useLanguage()
-  const sdk = useSDK()
   return (
     <Dialog title={language.t("command.session.compact")} description={props.description} fit>
       <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
@@ -59,11 +95,7 @@ function CompactConfirm(props: { sessionID: string; modelID: string; providerID:
             size="large"
             onClick={() => {
               dialog.close()
-              void sdk.client.session.summarize({
-                sessionID: props.sessionID,
-                modelID: props.modelID,
-                providerID: props.providerID,
-              })
+              props.onConfirm()
             }}
           >
             {language.t("prompt.compact.run")}
@@ -78,8 +110,21 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   const dialog = useDialog()
   const sync = useSync()
   const language = useLanguage()
+  const sdk = useSDK()
   const providers = useProviders()
   const { params } = useSessionLayout()
+
+  // 261011 Red C1：失败 toast 复用 common.requestFailed（session-header 同款）；
+  // 成功不加 toast——压缩摘要出现在消息流（CompactionPart）里，是天然反馈。
+  const submitCompact = createCompactSubmit({
+    summarize: (input) => sdk.client.session.summarize(input),
+    onError: (error) =>
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      }),
+  })
 
   const messages = createMemo(() => (params.id ? (sync.data.message[params.id] ?? []) : []))
   const metrics = createMemo(() => getSessionContextMetrics(messages(), [...providers.all().values()]))
@@ -143,6 +188,9 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
         modelID={ctx.message.modelID}
         providerID={ctx.message.providerID}
         description={language.t("prompt.compact.confirm", { window: windowText(), limit: limitText() })}
+        onConfirm={() =>
+          submitCompact({ sessionID: id, modelID: ctx.message.modelID, providerID: ctx.message.providerID })
+        }
       />
     ))
   }
