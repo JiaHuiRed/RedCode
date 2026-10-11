@@ -316,6 +316,21 @@ export function createServerSyncContext() {
     key: directoryKey,
     bootstrap: () => queryClient.fetchQuery({ queryKey: ["bootstrap"] }),
     bootstrapInstance,
+    // 261011 Red B1-a: 目录初始化超出重试预算后进入可观察失败态——留 renderer.log
+    // 证据并弹 toast；再次进入该目录会重新入队重试，不影响其他目录。
+    onFail: (directory, error) => {
+      const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+      if (!directory) {
+        console.error(`Failed to refresh root bootstrap: ${detail}`)
+        return
+      }
+      console.error(`Failed to refresh directory ${getFilename(directory)}: ${detail}`)
+      showToast({
+        variant: "error",
+        title: language.t("toast.project.reloadFailed.title", { project: getFilename(directory) }),
+        description: formatServerError(error, language.t),
+      })
+    },
   })
 
   const disposeInstance = createInstanceDisposer({
@@ -463,11 +478,15 @@ export function createServerSyncContext() {
       })
     })
 
-    booting.set(key, promise)
-    void promise.finally(() => {
+    const cleanup = () => {
       booting.delete(key)
       children.unpin(key)
-    })
+    }
+    booting.set(key, promise)
+    // 261011 Red: `.finally()` 派生链继承拒绝，`void` 吞不掉——会变成 unhandled
+    // rejection（B1-a）；then(cleanup, cleanup) 消费拒绝，原始 promise 的失败
+    // 语义原样返回给调用方。
+    void promise.then(cleanup, cleanup)
     return promise
   }
 
