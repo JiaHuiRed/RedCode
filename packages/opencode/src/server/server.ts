@@ -2,8 +2,8 @@ import "./init-projectors"
 
 import { NodeHttpServer } from "@effect/platform-node"
 import * as Log from "@redcode-ai/core/util/log"
-import { ConfigProvider, Context, Effect, Exit, Layer, Scope } from "effect"
-import { HttpRouter, HttpServer } from "effect/unstable/http"
+import { ConfigProvider, Context, Duration, Effect, Exit, Layer, Scope } from "effect"
+import { HttpMiddleware, HttpRouter, HttpServer, HttpServerRequest } from "effect/unstable/http"
 import { OpenApi } from "effect/unstable/httpapi"
 import { createServer } from "node:http"
 import { MDNS } from "./mdns"
@@ -18,6 +18,29 @@ import { lazy } from "@/util/lazy"
 globalThis.AI_SDK_LOG_WARNINGS = false
 
 const log = Log.create({ service: "server" })
+
+// 261011 Red: 慢请求观测——261004/261011 两次 GUI 启动事故都出现过「接口排队到客户端 60s
+// deadline 被 499 切断」，而服务端一个字都没记，只能靠 renderer.log 反推是哪个接口慢。
+// 3s 阈值记 method/path/directory/status/ms；被切断请求的 handler 排队时长照实累计
+// （60s 级别）天然命中，正常请求零日志噪音。
+const slowRequestMs = 3_000
+
+const requestLogging: HttpMiddleware.HttpMiddleware = (effect) =>
+  Effect.gen(function* () {
+    const [duration, response] = yield* Effect.timed(effect)
+    const ms = Duration.toMillis(duration)
+    if (ms < slowRequestMs) return response
+    const request = yield* HttpServerRequest.HttpServerRequest
+    const url = new URL(request.url, "http://localhost")
+    log.warn("slow request", {
+      method: request.method,
+      path: url.pathname,
+      directory: url.searchParams.get("directory") ?? request.headers["x-redcode-directory"],
+      status: response.status,
+      ms: Math.round(ms),
+    })
+    return response
+  })
 
 export type Listener = {
   hostname: string
@@ -102,7 +125,7 @@ const listenEffect: (opts: ListenOptions) => Effect.Effect<EffectListener, unkno
 
 function listenerLayer(opts: ListenOptions, port: number) {
   return HttpRouter.serve(HttpApiApp.createRoutes(opts), {
-    middleware: disposeMiddleware,
+    middleware: (effect) => requestLogging(disposeMiddleware(effect)),
     disableLogger: true,
     disableListenLog: true,
   }).pipe(

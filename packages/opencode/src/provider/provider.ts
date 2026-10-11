@@ -17,7 +17,7 @@ import { iife } from "@/util/iife"
 import { Global } from "@redcode-ai/core/global"
 import path from "path"
 import { pathToFileURL } from "url"
-import { Effect, Layer, Context, Schema, Types } from "effect"
+import { Cause, Effect, Layer, Context, Schema, Types } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { EffectPromise } from "@/effect/promise"
@@ -1225,6 +1225,22 @@ function modelSuggestions(provider: Info | undefined, modelID: ModelID, enableEx
     .map((item) => item.id)
 }
 
+// 261011 Red: provider 状态初始化里的网络能力调用（插件 models/auth 钩子、自定义 loader、
+// gitlab discovery）此前全无超时。出网被代理卡住时一个挂住的调用就让该目录的 provider 状态
+// 永远初始化不完，/config/providers 全排队到客户端 60s deadline 被 499 切断（261011 GUI
+// 启动事故：models.dev 刷新 TimeoutError + MCP github 连续 server unavailable）。每个调用点
+// 10s 小死线：超时跳过该步并留 warn，其余 provider 照常可用；另有 30s 整体兜底（见 list）。
+const INIT_STEP_TIMEOUT = "10 seconds"
+const withinInitStep =
+  (step: string) =>
+  <A, E, R>(self: Effect.Effect<A, E, R>) =>
+    self.pipe(
+      Effect.timeout(INIT_STEP_TIMEOUT),
+      Effect.catchIf(Cause.isTimeoutError, () =>
+        Effect.sync(() => log.warn("provider init step timed out; skipping", { step })).pipe(Effect.as(undefined)),
+      ),
+    )
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -1437,7 +1453,7 @@ export const layer = Layer.effect(
           if (!provider) continue
           const pluginAuth = yield* auth.get(providerID).pipe(Effect.orDie)
 
-          provider.models = yield* Effect.promise(async () => {
+          const hooked = yield* Effect.promise(async () => {
             const next = await models(toPublicInfo(provider), { auth: pluginAuth })
             return Object.fromEntries(
               Object.entries(next).map(([id, model]) => [
@@ -1456,7 +1472,8 @@ export const layer = Layer.effect(
                 },
               ]),
             )
-          })
+          }).pipe(withinInitStep(`plugin models hook (${providerID}`))
+          provider.models = hooked ?? provider.models
         }
 
         // extend database from config
@@ -1609,7 +1626,7 @@ export const layer = Layer.effect(
               () => bridge.promise(auth.get(providerID).pipe(Effect.orDie)) as any,
               toPublicInfo(database[plugin.auth!.provider]),
             ),
-          )
+          ).pipe(withinInitStep(`plugin auth loader (${providerID}`))
           const opts = options ?? {}
           const patch: Partial<Info> = providers[providerID] ? { options: opts } : { source: "custom", options: opts }
           mergeProvider(providerID, patch)
@@ -1623,7 +1640,7 @@ export const layer = Layer.effect(
             log.error("Provider does not exist in model list " + providerID)
             continue
           }
-          const result = yield* fn(data)
+          const result = yield* fn(data).pipe(withinInitStep(`custom loader (${providerID}`))
           if (result && (result.autoload || providers[providerID])) {
             if (result.getModel) modelLoaders[providerID] = result.getModel
             if (result.vars) varsLoaders[providerID] = result.vars
@@ -1657,7 +1674,7 @@ export const layer = Layer.effect(
             } catch (e) {
               log.warn("state discovery error", { id: "gitlab", error: e })
             }
-          })
+          }).pipe(withinInitStep("gitlab discovery"))
         }
 
         for (const [id, provider] of Object.entries(providers)) {
@@ -1722,7 +1739,21 @@ export const layer = Layer.effect(
       }),
     )
 
-    const list = Effect.fn("Provider.list")(() => InstanceState.use(state, (s) => s.providers))
+    // 261011 Red: 整体兜底死线——初始化里若有没数到的挂点（或未来新增），也必须在客户端
+    // 60s deadline 内给出结果。超时后必须作废该目录的 ScopedCache 条目：失败/中断条目会被
+    // 永久缓存，不清掉后续请求只会继续拿到同一个失败，直到淘汰或重启。
+    const list = Effect.fn("Provider.list")(() =>
+      InstanceState.use(state, (s) => s.providers).pipe(
+        Effect.timeout("30 seconds"),
+        Effect.catchIf(Cause.isTimeoutError, (error) =>
+          Effect.gen(function* () {
+            log.warn("provider state init timed out; invalidating for retry")
+            yield* InstanceState.invalidate(state)
+            return yield* Effect.die(error)
+          }),
+        ),
+      ),
+    )
 
     async function resolveSDK(model: Model, s: State, envs: Record<string, string | undefined>) {
       try {
