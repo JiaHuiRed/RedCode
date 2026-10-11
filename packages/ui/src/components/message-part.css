@@ -312,6 +312,67 @@
   }
 }
 
+/* 261011 Red 压缩摘要折叠面板：对齐 reasoning-toggle 的单行折叠交互（260830），
+   全文默认收起；比 TUI 分割线多 token 收益一段。 */
+[data-component="compaction-summary"] {
+  width: 100%;
+  color: var(--text-base);
+  line-height: var(--line-height-normal);
+
+  [data-slot="compaction-summary-toggle"] {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 4px 0;
+    border: none;
+    background: transparent;
+    color: var(--text-weak);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+      color: var(--text-base);
+    }
+
+    [data-slot="compaction-summary-state"] {
+      flex: none;
+    }
+
+    [data-slot="compaction-summary-stats"] {
+      flex: none;
+      color: var(--text-weak);
+    }
+
+    [data-slot="compaction-summary-meta"] {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .compaction-summary-chevron {
+      flex: none;
+      margin-left: auto;
+      transition: transform 0.15s ease;
+
+      &.is-open {
+        transform: rotate(180deg);
+      }
+    }
+  }
+
+  [data-slot="compaction-summary-body"] {
+    padding: 8px 0 4px;
+
+    [data-component="markdown"] {
+      font-size: 13px;
+      color: var(--text-weak);
+    }
+  }
+}
+
 [data-component="reasoning-part"] {
   width: 100%;
   color: var(--text-base);

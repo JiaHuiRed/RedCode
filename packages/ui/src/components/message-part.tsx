@@ -1582,6 +1582,25 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
   )
   const text = () => readPartText(data.store.part_text_accum_delta, part())
+  // 261011 Red 压缩摘要默认折叠：summary=true 的 assistant 消息（压缩产物）此前与普通
+  // 回复同构全量铺开，几百行文件清单直接糊满聊天区。对齐思考链折叠模式（260830）：
+  // 收起为一行（标题+meta+chevron），点击展开全文。
+  const isCompactionSummary = createMemo(
+    () => props.message.role === "assistant" && (props.message as AssistantMessage).summary === true,
+  )
+  const [summaryExpanded, setSummaryExpanded] = createSignal(false)
+  // 261011 Red token 收益行：同消息的 compaction part 带 before/after（native 链回填），
+  // 数据不全则整段隐藏。TUI 分割线只有时长，这里把收益也亮出来。
+  const compactionStats = createMemo(() => {
+    const record = (data.store.part?.[props.message.id] ?? []).find((item) => item?.type === "compaction") as
+      | { tokens_before?: number; tokens_after?: number }
+      | undefined
+    const before = record?.tokens_before
+    const after = record?.tokens_after
+    if (typeof before !== "number" || typeof after !== "number") return ""
+    const numfmt = new Intl.NumberFormat(i18n.locale())
+    return `${numfmt.format(before)} → ${numfmt.format(after)}`
+  })
   const isLastTextPart = createMemo(() => {
     const last = (data.store.part?.[props.message.id] ?? [])
       .filter((item): item is TextPart => item?.type === "text" && !!item.text?.trim())
@@ -1677,6 +1696,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
 
   return (
     <Show when={text()}>
+      <Show when={isCompactionSummary()} fallback={
       <div data-component="text-part" data-timeline-part-id={part().id}>
         <div data-slot="text-part-body">
           {/* 260822 cc 这里原本是 <Show when={streaming()} fallback={<Markdown …/>}>，
@@ -1729,6 +1749,42 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
           </div>
         </Show>
       </div>
+      }>
+      {/* 261011 Red 折叠态：单行「已压缩 + token 收益 + 模型 + 耗时」，点开正文。
+          meta 与正文渲染复用 text-part 既有 memo，数据缺哪段就隐藏哪段。 */}
+      <div data-component="compaction-summary" data-timeline-part-id={part().id}>
+        <button
+          data-slot="compaction-summary-toggle"
+          type="button"
+          aria-expanded={summaryExpanded()}
+          onClick={() => setSummaryExpanded((prev) => !prev)}
+        >
+          <span data-slot="compaction-summary-state" class="text-12-medium">
+            {i18n.t("ui.messagePart.compaction")}
+          </span>
+          <Show when={compactionStats()}>
+            <span data-slot="compaction-summary-stats" class="text-12-regular tabular-nums">
+              {compactionStats()}
+            </span>
+          </Show>
+          <Show when={meta()}>
+            <span data-slot="compaction-summary-meta" class="truncate text-12-regular">
+              {meta()}
+            </span>
+          </Show>
+          <Icon
+            name="chevron-down"
+            size="small"
+            classList={{ "compaction-summary-chevron": true, "is-open": summaryExpanded() }}
+          />
+        </button>
+        <Show when={summaryExpanded()}>
+          <div data-slot="compaction-summary-body">
+            <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
+          </div>
+        </Show>
+      </div>
+      </Show>
     </Show>
   )
 }
