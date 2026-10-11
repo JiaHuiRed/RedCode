@@ -795,6 +795,21 @@ export const dict = {
   "settings.tab.general": "通用",
   "settings.tab.shortcuts": "快捷键",
 
+  "settings.section.diagnostics": "诊断",
+  "settings.tab.diagnostics": "诊断记录",
+  "settings.diagnostics.description":
+    "记录界面事件与耗时用于故障取证。默认关闭；记录只存在内存（有界），导出前经过脱敏——不含提示词、回复、工具参数、凭据与完整路径。",
+  "settings.diagnostics.state.off": "未在录制",
+  "settings.diagnostics.state.on": "正在录制（已记录 {{count}} 条）",
+  "settings.diagnostics.start": "开始录制",
+  "settings.diagnostics.stop": "停止录制",
+  "settings.diagnostics.preview": "预览",
+  "settings.diagnostics.preview.hide": "收起预览",
+  "settings.diagnostics.export": "导出诊断",
+  "settings.diagnostics.exported.bundle": "已写入调试日志并导出 ZIP",
+  "settings.diagnostics.exported.file": "诊断文件已下载",
+  "settings.diagnostics.export.failed": "导出失败",
+
   "settings.desktop.section.wsl": "WSL",
   "settings.desktop.wsl.title": "WSL 集成",
   "settings.desktop.wsl.description": "在 Windows 的 WSL 环境中运行 RedCode 服务器。",

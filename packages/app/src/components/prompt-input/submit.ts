@@ -20,6 +20,7 @@ import { Worktree as WorktreeState } from "@/utils/worktree"
 import { buildRequestParts } from "./build-request-parts"
 import { setCursorPosition } from "./editor-dom"
 import { formatServerError } from "@/utils/server-errors"
+import { anonKey, guiDiagnostics } from "@/context/gui-diagnostics"
 
 type PendingPrompt = {
   abort: AbortController
@@ -56,6 +57,16 @@ const draftImages = (prompt: Prompt) => prompt.filter((part): part is ImageAttac
 export async function sendFollowupDraft(input: FollowupSendInput) {
   const text = draftText(input.draft.prompt)
   const images = draftImages(input.draft.prompt)
+  // 261011 Red B0: 用户提交动作留痕——只记字数/附件数与匿名目录 key，绝不记正文（§11.2）
+  guiDiagnostics.record("ui.input", {
+    name: "submit",
+    detail: {
+      delivery: input.delivery ?? "send",
+      chars: text.length,
+      images: images.length,
+      dir: anonKey(input.draft.sessionDirectory),
+    },
+  })
   const [, setStore] = input.globalSync.child(input.draft.sessionDirectory)
 
   const setBusy = () => {

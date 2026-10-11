@@ -56,6 +56,7 @@ import { createInstanceDisposer } from "./global-sync/instance-dispose"
 import { PathKey } from "@/utils/path-key"
 import { compareTime } from "@/utils/id"
 import { createDirSyncContext } from "./directory-sync"
+import { anonKey, guiDiagnostics } from "./gui-diagnostics"
 import { createSimpleContext, NormalizedProviderListResponse } from "@redcode-ai/ui/context"
 import { createRefCountMap } from "@/utils/refcount"
 
@@ -320,6 +321,12 @@ export function createServerSyncContext() {
     // 证据并弹 toast；再次进入该目录会重新入队重试，不影响其他目录。
     onFail: (directory, error) => {
       const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+      // 261011 Red B0: 目录初始化进入可观察失败态时留取证事件（匿名目录 key + 脱敏错误文本）
+      guiDiagnostics.record("sync.bootstrap", {
+        name: "parked",
+        outcome: "error",
+        detail: { dir: directory ? anonKey(directory) : "root", error: detail },
+      })
       if (!directory) {
         console.error(`Failed to refresh root bootstrap: ${detail}`)
         return
@@ -455,6 +462,7 @@ export function createServerSyncContext() {
     if (pending) return pending
 
     children.pin(key)
+    const started = performance.now()
     const promise = Promise.resolve().then(async () => {
       const child = children.ensureChild(directory)
       const cache = children.vcsCache.get(key)
@@ -476,6 +484,12 @@ export function createServerSyncContext() {
         translate: language.t,
         queryClient,
       })
+      // 261011 Red B0: 成功轮留痕（耗时 + 匿名目录 key，§11.2）
+      guiDiagnostics.record("sync.bootstrap", {
+        duration: performance.now() - started,
+        outcome: "ok",
+        detail: { dir: anonKey(directory) },
+      })
     })
 
     const cleanup = () => {
@@ -486,7 +500,19 @@ export function createServerSyncContext() {
     // 261011 Red: `.finally()` 派生链继承拒绝，`void` 吞不掉——会变成 unhandled
     // rejection（B1-a）；then(cleanup, cleanup) 消费拒绝，原始 promise 的失败
     // 语义原样返回给调用方。
-    void promise.then(cleanup, cleanup)
+    // 261011 Red B0: 失败轮按次留痕；「parked」由队列 onFail 补记，两相结合判定重试与放弃。
+    void promise.then(cleanup, (error) => {
+      cleanup()
+      guiDiagnostics.record("sync.bootstrap", {
+        name: "attempt",
+        outcome: "error",
+        duration: performance.now() - started,
+        detail: {
+          dir: anonKey(directory),
+          error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+        },
+      })
+    })
     return promise
   }
 

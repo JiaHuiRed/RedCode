@@ -2,6 +2,7 @@ import { Popover as Kobalte } from "@kobalte/core/popover"
 import { Component, ComponentProps, createMemo, JSX, Show, ValidComponent } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLocal } from "@/context/local"
+import { guiDiagnostics } from "@/context/gui-diagnostics"
 import { useDialog } from "@redcode-ai/ui/context/dialog"
 import { popularProviders } from "@/hooks/use-providers"
 import { Button } from "@redcode-ai/ui/button"
@@ -126,6 +127,11 @@ export function ModelSelectorPopover(props: {
   }
 
   const close = (dismiss: Dismiss) => {
+    // 261011 Red B0: 弹窗关停留痕（关闭原因 + 当时是否已有选中模型）
+    guiDiagnostics.record("ui.popover", {
+      name: "model-select",
+      detail: { action: "close", dismiss, model: Boolean(props.model) },
+    })
     setStore("dismiss", dismiss)
     setStore("open", false)
   }
@@ -151,6 +157,11 @@ export function ModelSelectorPopover(props: {
       onOpenChange={(next) => {
         if (next && !props.overview) globalSync.wantProviderCatalog()
         if (next) setStore({ dismiss: null, selecting: !props.overview })
+        if (next)
+          guiDiagnostics.record("ui.popover", {
+            name: "model-select",
+            detail: { action: "open", overview: Boolean(props.overview) },
+          })
         setStore("open", next)
       }}
       modal={false}

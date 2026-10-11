@@ -10,6 +10,7 @@ import { SettingsProviders } from "./settings-providers"
 import { SettingsModels } from "./settings-models"
 import { SettingsAgents } from "./settings-agents"
 import { SettingsPersonalization } from "./settings-personalization"
+import { SettingsDiagnostics } from "./settings-diagnostics"
 
 export const DialogSettings: Component = () => {
   const language = useLanguage()
@@ -57,6 +58,16 @@ export const DialogSettings: Component = () => {
                     </Tabs.Trigger>
                   </div>
                 </div>
+
+                <div class="flex flex-col gap-1.5">
+                  <Tabs.SectionTitle>{language.t("settings.section.diagnostics")}</Tabs.SectionTitle>
+                  <div class="flex flex-col gap-1.5 w-full">
+                    <Tabs.Trigger value="diagnostics">
+                      <Icon name="status" />
+                      {language.t("settings.tab.diagnostics")}
+                    </Tabs.Trigger>
+                  </div>
+                </div>
               </div>
             </div>
             <div class="flex flex-col gap-1 pl-1 py-1 text-12-medium text-text-weak">
@@ -82,6 +93,9 @@ export const DialogSettings: Component = () => {
         </Tabs.Content>
         <Tabs.Content value="agents" class="no-scrollbar">
           <SettingsAgents />
+        </Tabs.Content>
+        <Tabs.Content value="diagnostics" class="no-scrollbar">
+          <SettingsDiagnostics />
         </Tabs.Content>
       </Tabs>
     </Dialog>

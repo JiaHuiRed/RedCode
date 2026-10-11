@@ -112,6 +112,9 @@ export type Platform = {
   /** Export collected diagnostic logs (desktop only) */
   exportDebugLogs?(): Promise<string>
 
+  /** Persist the sanitized GUI diagnostics payload into the current log directory so the next debug-log export includes it (desktop only) */
+  saveGuiDiagnostics?(payload: string): Promise<string | null>
+
   /** Record a fatal renderer error in platform logs (desktop only) */
   recordFatalRendererError?(error: FatalRendererErrorLog): Promise<void>
 }

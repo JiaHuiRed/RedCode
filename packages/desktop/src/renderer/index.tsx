@@ -224,6 +224,8 @@ const createPlatform = (): Platform => {
 
     exportDebugLogs: () => window.api.exportDebugLogs(),
 
+    saveGuiDiagnostics: (payload) => window.api.saveGuiDiagnostics(payload),
+
     recordFatalRendererError: (error) => window.api.recordFatalRendererError(error),
 
     restart: async () => {

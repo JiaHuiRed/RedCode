@@ -94,5 +94,6 @@ export type ElectronAPI = {
   installUpdate: () => Promise<void>
   setBackgroundColor: (color: string) => Promise<void>
   exportDebugLogs: () => Promise<string>
+  saveGuiDiagnostics: (payload: string) => Promise<string | null>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>
 }

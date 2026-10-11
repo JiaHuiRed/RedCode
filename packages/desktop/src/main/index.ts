@@ -22,7 +22,15 @@ import {
   sendNetworkServiceRestart,
   sendSqliteMigrationProgress,
 } from "./ipc"
-import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog, writeCrashReport } from "./logging"
+import {
+  exportDebugLogs,
+  initCrashReporter,
+  initLogging,
+  startNetLog,
+  write as writeLog,
+  writeCrashReport,
+  writeGuiDiagnostics,
+} from "./logging"
 import { createMenu } from "./menu"
 import {
   getDefaultServerUrl,
@@ -591,6 +599,7 @@ const main = Effect.gen(function* () {
     installUpdate: async () => installUpdate(killSidecar),
     setBackgroundColor: (color) => setBackgroundColor(color),
     exportDebugLogs: () => exportDebugLogs(),
+    saveGuiDiagnostics: (payload) => writeGuiDiagnostics(payload),
     recordFatalRendererError: (error) => {
       // 260929 Red 渲染层 fatal 也落诊断报告（error boundary 捕到的顶部异常），不只是日志
       const reportPath = writeCrashReport("fatal renderer error", { ...error })

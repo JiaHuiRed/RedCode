@@ -134,6 +134,21 @@ export async function exportDebugLogs() {
   }
 }
 
+// 261011 Red B0（GUI 稳定性审计 §11）：GUI 侧诊断导出载荷写入当前 run 目录——
+// exportDebugLogs() 收集该目录进 ZIP，无需新增导出通道。载荷由渲染端生成（已脱敏、有界）。
+export function writeGuiDiagnostics(payload: string): string | undefined {
+  if (!run) return undefined
+  const path = join(run, "gui-diagnostics.json")
+  try {
+    writeFileSync(path, payload)
+    write("diagnostics", "gui diagnostics exported", { bytes: payload.length })
+    return path
+  } catch (error) {
+    write("diagnostics", "failed to write gui diagnostics", { error: String(error) }, "warn")
+    return undefined
+  }
+}
+
 export function write(
   name: string,
   message: string,

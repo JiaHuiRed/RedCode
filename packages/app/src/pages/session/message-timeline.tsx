@@ -73,6 +73,7 @@ import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { messageAgentColor } from "@/utils/agent"
 import { sessionTitle } from "@/utils/session-title"
+import { guiDiagnostics } from "@/context/gui-diagnostics"
 import { makeTimer } from "@solid-primitives/timer"
 import {
   MessageComment,
@@ -368,9 +369,16 @@ export function MessageTimeline(props: {
   // 260831 cc 顺序由 store 保证（见 directory-sync 的 byTime）。下面 lastUserMessageID 是
   //   从后往前扫数组找最后一条 user——它依赖的正是那个顺序。
   const sessionMessages = createMemo(() => {
+    const started = performance.now()
     const id = sessionID()
-    if (!id) return emptyMessages
-    return sync.data.message[id] ?? emptyMessages
+    const messages = id ? (sync.data.message[id] ?? emptyMessages) : emptyMessages
+    // 261011 Red B0: 消息数组身份变化频率 + 耗时（流式期 recompute 风暴的观测点；关闭时无操作）
+    guiDiagnostics.record("timeline.recompute", {
+      name: "sessionMessages",
+      duration: performance.now() - started,
+      detail: { messages: messages.length },
+    })
+    return messages
   })
   const messageByID = createMemo(() => new Map(sessionMessages().map((message) => [message.id, message] as const)))
   const assistantMessagesByParent = createMemo(() => {
@@ -757,7 +765,13 @@ export function MessageTimeline(props: {
         if (!mounted || mounted.session !== session) return
         mounted.keys = keys
         // handle.cache 是活引用，virtua 持续往里写新行的实测尺寸
-        if (timelineCache.write(session, keys, width, mounted.handle.cache)) return
+        const accepted = timelineCache.write(session, keys, width, mounted.handle.cache)
+        // 261011 Red B0: 实测尺寸回写被接受 / 被宽度守卫拒绝都留痕（GUI-04 测量抖动取证）
+        guiDiagnostics.record("timeline.measure", {
+          name: "cache-write",
+          detail: { rows: keys.length, accepted },
+        })
+        if (accepted) return
         // 宽度刚变：handle 里还是旧宽度的实测值，直接写会被 cacheReusable 接受后用错误
         // offset 算可视区间。先淘汰，推一帧等 virtua 重测完再写。
         timelineCache.invalidate(session)

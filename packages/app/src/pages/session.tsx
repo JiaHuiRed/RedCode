@@ -51,6 +51,7 @@ import { type FollowupDraft, sendFollowupDraft } from "@/components/prompt-input
 import { createSessionComposerState, SessionComposerRegion } from "@/pages/session/composer"
 import { createOpenReviewFile, createSessionTabs, createSizing } from "@/pages/session/helpers"
 import { createDeferRender } from "./session-defer-render"
+import { anonKey, guiDiagnostics, hashId } from "@/context/gui-diagnostics"
 import { createSessionKeyboard } from "@/pages/session/session-keyboard"
 import { MessageTimeline } from "@/pages/session/message-timeline"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
@@ -346,7 +347,14 @@ export default function Page() {
   })
   createComputed((prev) => {
     const key = sessionKey()
-    if (key !== prev) deferRenderGate.arm(key)
+    if (key !== prev) {
+      deferRenderGate.arm(key)
+      // 261011 Red B0: 会话切换留痕（会话/目录按 §11.2 一律匿名 key）
+      guiDiagnostics.record("ui.session.transition", {
+        name: "switch",
+        detail: { session: hashId(params.id ?? ""), dir: anonKey(params.dir ?? "") },
+      })
+    }
     return key
   }, sessionKey())
   onCleanup(() => deferRenderGate.cancel())

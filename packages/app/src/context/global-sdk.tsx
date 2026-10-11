@@ -9,6 +9,7 @@ import { usePlatform } from "./platform"
 import { useServer } from "./server"
 import { SSE_MAX_RETRY_ATTEMPTS, sseLogLine } from "@/utils/sse-log"
 import { createEventBatch, isSupersededDelta } from "./global-sync/event-batch"
+import { guiDiagnostics } from "./gui-diagnostics"
 
 const isAbortError = (error: unknown) =>
   error !== null && typeof error === "object" && "name" in error && error.name === "AbortError"
@@ -68,6 +69,8 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
       const pulled = eventBatch.pull()
       if (!pulled) return
 
+      // 261011 Red B0: sse.flush 取证——批大小与转发耗时（诊断默认关闭，record 是无操作）
+      const started = performance.now()
       last = Date.now()
       batch(() => {
         for (const event of pulled.events) {
@@ -76,6 +79,10 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
         }
       })
       eventBatch.done()
+      guiDiagnostics.record("sse.flush", {
+        duration: performance.now() - started,
+        detail: { events: pulled.events.length, snapshots: pulled.snapshots?.size ?? 0 },
+      })
     }
 
     const schedule = () => {
