@@ -6,11 +6,14 @@
 //   bun add-memory.mjs --index "主题：关键词" "<全文>" # 同时往 MEMORY.md 新增暂存区追加索引行
 //   bun add-memory.mjs --dry-run --index "测试" "测试全文"   # 演练，不落库
 //   bun add-memory.mjs --db <path> ...               # 自定义库路径（测试用）
-// 编号数据源是 ~/.redcode/MEMORY.md 的索引行（随仓同步、含两机条目），不是本机 db——两机撞号防护。
+// 编号数据源是 max(本机 db, MEMORY.md 索引行) 双取最大（261011 修订）：db 兜本机滞后
+// （索引行落后于库，同机并行会话实测 #320 撞号），MEMORY.md 兜跨机（随仓同步、含两机条目）。
+// 单看任何一个都会撞。跨机还需 fetch 私仓比对 origin 快照——见 AGENTS.md「记忆流动」。
 import { Database } from "bun:sqlite"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { readFileSync, existsSync } from "node:fs"
+import { maxMemoryId } from "./next-memory-id.mjs"
 
 const args = process.argv.slice(2)
 let project = "global"
@@ -46,7 +49,8 @@ if (existsSync(memoryPath)) {
 }
 if (project === "global") {
   const nums = [...memoryText.matchAll(/#(\d{1,3})\b/g)].map((m) => parseInt(m[1], 10))
-  nextNum = (nums.length ? Math.max(...nums) : 0) + 1
+  const mdMax = nums.length ? Math.max(...nums) : 0
+  nextNum = Math.max(maxMemoryId(dbPath), mdMax) + 1
 }
 
 const fullText = project === "global" && nextNum !== null ? `#${nextNum} ${content}` : content
