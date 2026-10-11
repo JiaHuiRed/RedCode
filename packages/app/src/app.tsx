@@ -5,6 +5,7 @@ import { DialogProvider } from "@redcode-ai/ui/context/dialog"
 import { FileComponentProvider } from "@redcode-ai/ui/context/file"
 import { MarkedProvider } from "@redcode-ai/ui/context/marked"
 import type { FileProps } from "@redcode-ai/ui/file"
+import { Button } from "@redcode-ai/ui/button"
 import { Font } from "@redcode-ai/ui/font"
 import { Splash } from "@redcode-ai/ui/logo"
 import { ThemeProvider } from "@redcode-ai/ui/theme/context"
@@ -17,7 +18,6 @@ import {
   createMemo,
   createResource,
   createSignal,
-  ErrorBoundary,
   For,
   type JSX,
   lazy,
@@ -45,7 +45,8 @@ import { SettingsProvider } from "@/context/settings"
 import { TerminalProvider } from "@/context/terminal"
 import DirectoryLayout from "@/pages/directory-layout"
 import Layout from "@/pages/layout"
-import { ErrorPage } from "./pages/error"
+import { DiagnosticErrorBoundary } from "./components/diagnostic-error-boundary"
+import { ErrorPage, formatError } from "./pages/error"
 import { useCheckServerHealth } from "./utils/server-health"
 
 const HomeRoute = lazy(() => import("@/pages/home"))
@@ -160,12 +161,34 @@ function SessionProviders(props: ParentProps) {
   )
 }
 
+// 261011 Red B1.1（审计 B1.1-4）：路由内容的局部错误边界 fallback——不顶掉布局壳
+// （侧栏/顶栏保留），带错误详情与重试（reset 重挂子树）。
+function RouteError(props: { error: unknown; reset: () => void }) {
+  const language = useLanguage()
+  return (
+    <div class="flex-1 h-full w-full min-h-0 flex flex-col items-center justify-center gap-4 p-8 text-center">
+      <p class="text-sm font-medium text-text-strong">{language.t("error.page.title")}</p>
+      <p class="text-xs text-text-weak">{language.t("error.page.description")}</p>
+      <pre class="max-h-64 max-w-2xl overflow-auto whitespace-pre-wrap text-xs font-mono text-text-weak">
+        {formatError(props.error, language.t)}
+      </pre>
+      <Button size="large" onClick={() => props.reset()}>
+        {language.t("common.retry")}
+      </Button>
+    </div>
+  )
+}
+
 function RouterRoot(props: ParentProps<{ appChildren?: JSX.Element }>) {
   return (
     <AppShellProviders>
       {/*<Suspense fallback={<Loading />}>*/}
       {props.appChildren}
-      {props.children}
+      {/* 261011 Red B1.1（审计 B1.1-4）：页面级局部隔离——路由内容崩溃时外壳仍在，
+          可切路由或重试；此前唯一边界是整窗 ErrorPage（app 级）。 */}
+      <DiagnosticErrorBoundary scope="route" fallback={(error, reset) => <RouteError error={error} reset={reset} />}>
+        {props.children}
+      </DiagnosticErrorBoundary>
       {/*</Suspense>*/}
     </AppShellProviders>
   )
@@ -182,7 +205,8 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
       >
         <LanguageProvider locale={props.locale}>
           <UiI18nBridge>
-            <ErrorBoundary
+            <DiagnosticErrorBoundary
+              scope="app"
               fallback={(error) => {
                 Sentry.captureException(error)
                 return <ErrorPage error={error} />
@@ -195,7 +219,7 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
                   </MarkedProvider>
                 </DialogProvider>
               </QueryProvider>
-            </ErrorBoundary>
+            </DiagnosticErrorBoundary>
           </UiI18nBridge>
         </LanguageProvider>
       </ThemeProvider>

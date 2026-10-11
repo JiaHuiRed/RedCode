@@ -11,7 +11,8 @@ export type InitError = {
   data: Record<string, unknown>
 }
 
-type Translator = ReturnType<typeof useLanguage>["t"]
+// 261011 Red B1.1：导出供路由级局部错误边界（app.tsx RouteError）复用同一格式化
+export type Translator = ReturnType<typeof useLanguage>["t"]
 const CHAIN_SEPARATOR = "\n" + "─".repeat(40) + "\n"
 
 function isIssue(value: unknown): value is { message: string; path: string[] } {
@@ -208,7 +209,7 @@ function formatErrorChain(error: unknown, t: Translator, depth = 0, parentMessag
   return indent + json(error)
 }
 
-function formatError(error: unknown, t: Translator): string {
+export function formatError(error: unknown, t: Translator): string {
   return formatErrorChain(error, t, 0)
 }
 
