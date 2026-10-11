@@ -237,4 +237,103 @@ describe("createRefreshQueue", () => {
 
     expect(calls).toBe(1)
   })
+
+  // 261011 Red B1.1（审计 ZW-05）：clear(dir) 需令已 take 出、正在运行的目录失效——
+  // 此前只从 queued 删除，in-flight 的 settle 仍会 requeue/上报，把已释放的目录重新
+  // 拉起初始化。以下对应审计 §6 的三条必测 + 一条预算污染变体。
+  test("clear 后 in-flight 失败不得重排或上报", async () => {
+    const calls: string[] = []
+    const failures: unknown[] = []
+    let reject!: (error: Error) => void
+    const queue = createRefreshQueue({
+      paused: () => false,
+      key: directoryKey,
+      bootstrap: async () => {},
+      bootstrapInstance: () => {
+        calls.push("A")
+        return new Promise<void>((_, rej) => {
+          reject = rej
+        })
+      },
+      onFail: (_directory, error) => failures.push(error),
+    })
+
+    queue.push("A")
+    await waitFor(() => calls.length === 1)
+    queue.clear("A")
+    reject(new Error("released"))
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    expect(calls).toEqual(["A"])
+    expect(failures).toEqual([])
+    queue.dispose()
+  })
+
+  test("clear 后再 push：新一轮按完整预算重试，不被旧请求干扰", async () => {
+    const calls: string[] = []
+    const failures: unknown[] = []
+    const handles: Array<{ reject: (error: Error) => void }> = []
+    const queue = createRefreshQueue({
+      paused: () => false,
+      key: directoryKey,
+      bootstrap: async () => {},
+      bootstrapInstance: () => {
+        calls.push("A")
+        return new Promise<void>((_resolve, reject) => {
+          handles.push({ reject })
+        })
+      },
+      onFail: (_directory, error) => failures.push(error),
+    })
+
+    queue.push("A")
+    await waitFor(() => handles.length === 1)
+    // 旧轮失败一次进入重试（attempts=1），重试还挂着
+    handles[0]!.reject(new Error("old-1"))
+    await waitFor(() => handles.length === 2)
+    queue.clear("A")
+    queue.push("A")
+    // 旧重试此刻失败：不得 requeue、不得 onFail、不得污染新一轮预算
+    handles[1]!.reject(new Error("old-2"))
+    await waitFor(() => handles.length === 3)
+    handles[2]!.reject(new Error("new-1"))
+    await waitFor(() => handles.length === 4)
+    handles[3]!.reject(new Error("new-2"))
+    await waitFor(() => handles.length === 5)
+    expect(failures).toEqual([])
+    handles[4]!.reject(new Error("new-3"))
+    await waitFor(() => failures.length === 1)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    expect(calls).toHaveLength(5)
+    expect(failures).toHaveLength(1)
+    queue.dispose()
+  })
+
+  test("dispose 时 in-flight 失败不触发重试与 onFail", async () => {
+    const calls: string[] = []
+    const failures: unknown[] = []
+    let reject!: (error: Error) => void
+    const queue = createRefreshQueue({
+      paused: () => false,
+      key: directoryKey,
+      bootstrap: async () => {},
+      bootstrapInstance: () => {
+        calls.push("A")
+        return new Promise<void>((_, rej) => {
+          reject = rej
+        })
+      },
+      onFail: (_directory, error) => failures.push(error),
+    })
+
+    queue.push("A")
+    await waitFor(() => calls.length === 1)
+    queue.dispose()
+    reject(new Error("after-dispose"))
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    expect(calls).toEqual(["A"])
+    expect(failures).toEqual([])
+  })
 })

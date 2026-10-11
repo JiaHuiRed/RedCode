@@ -18,6 +18,11 @@ export function createRefreshQueue(input: QueueInput) {
   // onFail 进入可观察失败态，等下一次明确触发（push/refresh）才重来。
   const attempts = new Map<string, number>()
   const MAX_ATTEMPTS = 3
+  // 261011 Red B1.1（审计 ZW-05）：per-directory 代数。clear(dir) 递增该目录代数并清
+  // 尝试计数，使已 take 出、正在运行的 bootstrapInstance 失效——完成/失败都不再重排、
+  // 上报或误删新一轮的计数。clear 后再次 push 同目录是新的一轮合法初始化（从零预算），
+  // 不被永久封杀。
+  const epochs = new Map<string, number>()
 
   const key = input.key ?? ((directory: string) => directory)
   const current = (value: number) => !disposed && value === generation
@@ -25,11 +30,11 @@ export function createRefreshQueue(input: QueueInput) {
   const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
   const take = (count: number) => {
-    if (queued.size === 0) return [] as string[]
-    const items: string[] = []
+    if (queued.size === 0) return [] as { directory: string; epoch: number }[]
+    const items: { directory: string; epoch: number }[] = []
     for (const [id, directory] of queued) {
       queued.delete(id)
-      items.push(directory)
+      items.push({ directory, epoch: epochs.get(id) ?? 0 })
       if (items.length >= count) break
     }
     return items
@@ -85,21 +90,25 @@ export function createRefreshQueue(input: QueueInput) {
         const dirs = take(2)
         if (dirs.length === 0) return
         await Promise.all(
-          dirs.map(async (dir) => {
+          dirs.map(async ({ directory: dir, epoch }) => {
+            const k = key(dir)
+            // 完成/失败只有在「drain 代数与目录代数都未变」时才产生副作用；
+            // clear(dir) 之后旧请求的 settle 一律静默丢弃。
+            const active = () => current(drainGeneration) && (epochs.get(k) ?? 0) === epoch
             try {
               await input.bootstrapInstance(dir)
-              attempts.delete(key(dir))
+              if (active()) attempts.delete(k)
             } catch (error) {
-              const k = key(dir)
+              if (!active()) return
               const count = (attempts.get(k) ?? 0) + 1
-              if (count < MAX_ATTEMPTS && current(drainGeneration)) {
+              if (count < MAX_ATTEMPTS) {
                 // 261011 Red: 单目录失败不再中断整批（B/C 照常）；同一触发周期内
                 // 有界自动重试，不紧循环、不无限。
                 attempts.set(k, count)
                 queued.set(k, dir)
               } else {
                 attempts.delete(k)
-                if (current(drainGeneration)) input.onFail?.(dir, error)
+                input.onFail?.(dir, error)
               }
             }
           }),
@@ -120,7 +129,10 @@ export function createRefreshQueue(input: QueueInput) {
     push,
     refresh,
     clear(directory: string) {
-      queued.delete(key(directory))
+      const k = key(directory)
+      queued.delete(k)
+      attempts.delete(k)
+      epochs.set(k, (epochs.get(k) ?? 0) + 1)
     },
     dispose() {
       if (disposed) return
