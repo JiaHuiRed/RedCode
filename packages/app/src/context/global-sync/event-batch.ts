@@ -72,3 +72,27 @@ export const isSupersededDelta = (event: QueuedEvent, snapshots: Map<string, num
   const at = snapshots.get(deltaKey(event.directory, props.messageID, props.partID))
   return at !== undefined && event.at < at
 }
+
+export type BatchStats = { received: number; emitted: number; superseded: number; kinds: Record<string, number> }
+
+// 261011 Red B0.1: 转发 + 真值统计（审计 ZW-01）。必须在 done() 之前调用——done 复用并
+// 清空 pulled.events 指向的同一数组对象（spare 双缓冲），事后读 length 恒为 0（21d0f715 的教训）。
+export const processBatch = (
+  pulled: { events: QueuedEvent[]; snapshots: Map<string, number> | undefined },
+  emit: (event: QueuedEvent) => void,
+): BatchStats => {
+  const received = pulled.events.length
+  const kinds: Record<string, number> = {}
+  let emitted = 0
+  let superseded = 0
+  for (const event of pulled.events) {
+    kinds[event.payload.type] = (kinds[event.payload.type] ?? 0) + 1
+    if (isSupersededDelta(event, pulled.snapshots)) {
+      superseded++
+      continue
+    }
+    emit(event)
+    emitted++
+  }
+  return { received, emitted, superseded, kinds }
+}

@@ -28,7 +28,10 @@ export type GuiDiagnosticType = (typeof GUI_DIAGNOSTIC_TYPES)[number]
 
 export type GuiDiagnosticOutcome = "ok" | "error"
 
-export type GuiDiagnosticDetail = Record<string, string | number | boolean | undefined>
+/** detail 值：标量，或一层数字直方图（如事件类型计数，key 同样过 maskText） */
+export type GuiDiagnosticValue = string | number | boolean | Record<string, number>
+
+export type GuiDiagnosticDetail = Record<string, GuiDiagnosticValue | undefined>
 
 export type GuiDiagnosticRecord = {
   /** 相对 timeOrigin 的单调毫秒（performance.now()），不记墙钟 */
@@ -38,7 +41,7 @@ export type GuiDiagnosticRecord = {
   /** 毫秒，保留两位小数 */
   duration?: number
   outcome?: GuiDiagnosticOutcome
-  detail?: Record<string, string | number | boolean>
+  detail?: Record<string, GuiDiagnosticValue>
 }
 
 export type GuiDiagnosticDurationStats = {
@@ -98,13 +101,18 @@ export function maskText(value: string, maxLength = 300): string {
   return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text
 }
 
-function sanitizeDetail(detail: GuiDiagnosticDetail): Record<string, string | number | boolean> | undefined {
-  const out: Record<string, string | number | boolean> = {}
+function sanitizeDetail(detail: GuiDiagnosticDetail): Record<string, GuiDiagnosticValue> | undefined {
+  const out: Record<string, GuiDiagnosticValue> = {}
   for (const [key, value] of Object.entries(detail)) {
     if (value === undefined) continue
     if (typeof value === "string") out[key] = maskText(value, 200)
     else if (typeof value === "number") out[key] = Number.isFinite(value) ? Math.round(value * 100) / 100 : 0
-    else out[key] = value
+    else if (typeof value === "object") {
+      // 261011 Red B0.1: 一层数字直方图——key 过 maskText，值只留有限数
+      const histogram: Record<string, number> = {}
+      for (const [k, v] of Object.entries(value)) histogram[maskText(k, 80)] = Number.isFinite(v) ? v : 0
+      out[key] = histogram
+    } else out[key] = value
   }
   return Object.keys(out).length === 0 ? undefined : out
 }

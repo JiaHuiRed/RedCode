@@ -8,7 +8,8 @@ import { useLanguage } from "./language"
 import { usePlatform } from "./platform"
 import { useServer } from "./server"
 import { SSE_MAX_RETRY_ATTEMPTS, sseLogLine } from "@/utils/sse-log"
-import { createEventBatch, isSupersededDelta } from "./global-sync/event-batch"
+import { createEventBatch, processBatch } from "./global-sync/event-batch"
+import { createFlushAggregator } from "./global-sync/flush-stats"
 import { guiDiagnostics } from "./gui-diagnostics"
 
 const isAbortError = (error: unknown) =>
@@ -59,6 +60,22 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
     // 261011 Red B1-b: 合并窗口状态抽到 event-batch（含 GUI-02 的到达序语义）；
     // 此文件只保留定时调度与 emitter 转发。
     const eventBatch = createEventBatch()
+    // 261011 Red B0.1: 高频 sse.flush 聚合（审计 ZW-01/08）——1s 窗口求和 + 慢批（≥50ms）单独留样
+    const flushStats = createFlushAggregator({
+      emit: (aggregate) => guiDiagnostics.record("sse.flush", { detail: aggregate }),
+      emitSlow: (sample) =>
+        guiDiagnostics.record("sse.flush", {
+          duration: sample.duration,
+          detail: {
+            slow: true,
+            received: sample.received,
+            emitted: sample.emitted,
+            superseded: sample.superseded,
+            snapshots: sample.snapshots,
+            kinds: sample.kinds,
+          },
+        }),
+    })
     let timer: ReturnType<typeof setTimeout> | undefined
     let last = 0
 
@@ -69,24 +86,18 @@ export const { use: useGlobalSDK, provider: GlobalSDKProvider } = createSimpleCo
       const pulled = eventBatch.pull()
       if (!pulled) return
 
-      // 261011 Red B0: sse.flush 取证——批大小与转发耗时（诊断默认关闭，record 是无操作）
+      // 261011 Red B0.1: 统计必须在 done() 前取真值——done 复用并清空 pulled.events
+      // 所指的同一数组（事后读 length 恒为 0，21d0f715 的错误教训）。
       const started = performance.now()
       last = Date.now()
+      let stats: ReturnType<typeof processBatch> | undefined
       batch(() => {
-        for (const event of pulled.events) {
-          if (isSupersededDelta(event, pulled.snapshots)) continue
-          emitter.emit(event.directory, event.payload)
-        }
+        stats = processBatch(pulled, (event) => emitter.emit(event.directory, event.payload))
       })
+      const duration = performance.now() - started
+      const snapshots = pulled.snapshots?.size ?? 0
       eventBatch.done()
-      // 261011 Red B0 修订：空批（空闲心跳）不记——真机实测空批约 9 条/秒，2000 条环形缓冲
-      // 6 分钟即被冲光（droppedRecords 1302），注入故障等低频证据反被淘汰；有事件才有信息量。
-      if (pulled.events.length > 0 || (pulled.snapshots?.size ?? 0) > 0) {
-        guiDiagnostics.record("sse.flush", {
-          duration: performance.now() - started,
-          detail: { events: pulled.events.length, snapshots: pulled.snapshots?.size ?? 0 },
-        })
-      }
+      if (stats) flushStats.push({ ...stats, duration, snapshots })
     }
 
     const schedule = () => {
