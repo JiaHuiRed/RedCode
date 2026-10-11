@@ -50,8 +50,8 @@ const MCP_RESOURCE_ATTACHMENT_MIMES = new Set(["application/pdf", "image/gif", "
 //
 // 超限不报错（与 read.ts 同）：附件不内联，output 说明情况，模型可以换别的方式取。
 // 260920 Red Explore capability 的权威来源是 TaskTool 写下的 canonical record。
-// Storage 不可见或 record 缺失时退回 profile 白名单（explore 仅 read/search）——
-// 上限相同、不扩大权限，也不会因为一次读盘失败把子代理整个锁死。
+// Storage 不可见或 record 缺失时退回 profile 白名单（explore read/search/shell，261011 起
+// 含 shell 以放行 bash 工具）——上限相同、不扩大权限，也不会因为一次读盘失败把子代理整个锁死。
 const exploreCapabilities = Effect.fn("SessionTools.exploreCapabilities")(function* (sessionID: SessionID) {
   const fallback = capabilitySet(profileCapabilitySet("explore"))
   const storage = yield* Effect.serviceOption(Storage.Service)

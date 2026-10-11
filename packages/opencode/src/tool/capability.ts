@@ -13,7 +13,11 @@ export type ChildCapability = (typeof ChildCapability)[keyof typeof ChildCapabil
 export type ChildProfile = "explore" | "execute"
 
 const profileCapabilities: Record<ChildProfile, ReadonlySet<ChildCapability>> = {
-  explore: new Set(["read", "search"]),
+  // 261011 Red explore 含 shell：bash 工具靠 capabilitySet 注入工具表（session/tools.ts），
+  // 这里不给 shell，explore.md 的 git 只读白名单写得再全也到不了模型——B1 落地时只通了
+  // md 白名单与 permission guard 两层，capability 层漏加即假门票二犯（443c92b1 一犯）。
+  // 命令面仍由白名单 + guard 收口，本层只是粗粒度开关。
+  explore: new Set(["read", "search", "shell"]),
   execute: new Set(["read", "search", "write", "shell"]),
 }
 

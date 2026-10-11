@@ -14,19 +14,21 @@ describe("child capability policy", () => {
     const parent = capabilitySet(["read", "search", "write", "shell", "task"])
     const requested = capabilitySet(["read", "search", "write", "shell"])
 
-    expect([...effectiveCapabilities({ parent, profile: "explore", requested })]).toEqual(["read", "search"])
+    expect([...effectiveCapabilities({ parent, profile: "explore", requested })]).toEqual(["read", "search", "shell"])
   })
 
-  test("explore cannot acquire mutation, shell, or nested delegation", () => {
+  test("explore cannot acquire mutation or nested delegation", () => {
     const capabilities = effectiveCapabilities({
       parent: capabilitySet(["read", "search", "write", "shell", "task", "commit", "push"]),
       profile: "explore",
       requested: capabilitySet(["read", "write", "shell", "task", "commit", "push"]),
     })
 
-    for (const capability of ["write", "shell", "task", "commit", "push"] as ChildCapability[]) {
+    for (const capability of ["write", "task", "commit", "push"] as ChildCapability[]) {
       expect(isCapabilityAllowed(capabilities, capability)).toBe(false)
     }
+    // 261011 Red explore 含 shell（bash 进工具表），命令面由 md 白名单收口，本层只做粗粒度开关
+    expect(isCapabilityAllowed(capabilities, "shell")).toBe(true)
     expect(isCapabilityAllowed(capabilities, "read")).toBe(true)
   })
 
@@ -68,7 +70,8 @@ describe("child capability policy", () => {
     expect(capabilityForTool("jcodemunch_search_text")).toBe("search")
     expect(capabilityForTool("mcp__unknown__click")).toBeUndefined()
     expect(capabilityDenied("explore", "grep")).toBeUndefined()
-    expect(capabilityDenied("explore", "bash")).toContain("not available")
+    // 261011 Red bash（shell capability）进 explore 集合后 profile 层放行；命令面白名单在 permission 层
+    expect(capabilityDenied("explore", "bash")).toBeUndefined()
     expect(capabilityDenied("explore", "mcp__unknown__click")).toContain("not available")
   })
 
