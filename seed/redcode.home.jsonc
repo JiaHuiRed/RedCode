@@ -133,7 +133,9 @@
     "prune": false,
     "native": {
       "enabled": true,
-      "trigger_tokens": 250000,
+      // 261011 Red 兜底线 250k→360k：250k 常在中途打断任务，日常改由输入框按钮主动压缩，
+      // 这个值只作最后保险（忘记点时的机械兜底）。
+      "trigger_tokens": 360000,
       "target_tokens": 130000,
       "reminder_tokens": 220000,
       "soft_ratio": 0.72,
