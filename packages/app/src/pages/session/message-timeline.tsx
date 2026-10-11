@@ -372,8 +372,9 @@ export function MessageTimeline(props: {
     const started = performance.now()
     const id = sessionID()
     const messages = id ? (sync.data.message[id] ?? emptyMessages) : emptyMessages
-    // 261011 Red B0: 消息数组身份变化频率 + 耗时（流式期 recompute 风暴的观测点；关闭时无操作）
-    guiDiagnostics.record("timeline.recompute", {
+    // 261011 Red B0.1: 只测「取消息数组」本身（ZW-02 由 recompute 改名，避免仪表误导）；
+    // 真正的行构建与合并分别在 group-build / merge 计时。关闭时 record 无操作。
+    guiDiagnostics.record("timeline.message-read", {
       name: "sessionMessages",
       duration: performance.now() - started,
       detail: { messages: messages.length },
@@ -541,6 +542,9 @@ export function MessageTimeline(props: {
       (userMessage, indexAccessor) => {
         return createMemo((previous: TimelineRow.TimelineRow[] | undefined) => {
           const active = isActiveMessage(userMessage.id)
+          // 261011 Red B0.1: 单条 user message 的真实行构建耗时（ZW-02 归位）——含
+          // constructMessageRows 与 reuseTimelineRows；关闭诊断时不算时、不记录。
+          const started = guiDiagnostics.enabled() ? performance.now() : undefined
           const rows = Timeline.constructMessageRows(
             userMessage,
             getMsgParts,
@@ -551,16 +555,33 @@ export function MessageTimeline(props: {
             active,
           )
 
-          return reuseTimelineRows(previous, rows)
+          const merged = reuseTimelineRows(previous, rows)
+          if (started !== undefined) {
+            guiDiagnostics.record("timeline.group-build", {
+              name: "user-message",
+              duration: performance.now() - started,
+              detail: { rows: merged.length },
+            })
+          }
+          return merged
         })
       },
     ),
   )
 
   const timelineRows = createMemo((previous: TimelineRow.TimelineRow[] | undefined) => {
+    // 261011 Red B0.1: 最终行合并（flatMap + 复用）的真实耗时（ZW-02 归位）
+    const started = guiDiagnostics.enabled() ? performance.now() : undefined
     const rows = messageRowMemos().flatMap((memo) => memo())
-    if (rows.length === 0) return rows
-    return reuseTimelineRows(previous, [...rows, new TimelineRow.BottomSpacer()])
+    const merged = rows.length === 0 ? rows : reuseTimelineRows(previous, [...rows, new TimelineRow.BottomSpacer()])
+    if (started !== undefined) {
+      guiDiagnostics.record("timeline.merge", {
+        name: "rows",
+        duration: performance.now() - started,
+        detail: { rows: merged.length },
+      })
+    }
+    return merged
   })
   const timelineRowKeys = createMemo(() => timelineRows().map(TimelineRow.key), [] as string[], { equals: sameKeys })
   const virtualCache = createMemo(() => timelineCache.read(sessionKey(), timelineRowKeys(), listWidth()))

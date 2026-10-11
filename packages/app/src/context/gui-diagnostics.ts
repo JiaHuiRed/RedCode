@@ -18,7 +18,11 @@ export const GUI_DIAGNOSTIC_TYPES = [
   "ui.session.transition",
   "sse.flush",
   "sync.bootstrap",
-  "timeline.recompute",
+  // 261011 Red B0.1: timeline.recompute 改名 message-read（其只测取消息数组）；
+  // group-build/merge 是真实的行构建与合并计时（审计 ZW-02）。
+  "timeline.message-read",
+  "timeline.group-build",
+  "timeline.merge",
   "timeline.measure",
   "renderer.longtask",
   "error.boundary",
