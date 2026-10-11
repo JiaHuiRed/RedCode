@@ -285,6 +285,8 @@ export const dict = {
   "prompt.delivery.steer": "今すぐ送信",
   "prompt.toast.pasteUnsupported.title": "サポートされていない添付ファイル",
   "prompt.toast.pasteUnsupported.description": "画像、PDF、またはテキストファイルのみ添付できます。",
+  "prompt.toast.archiveNeedsDesktop.title": "圧縮ファイルはデスクトップ版で送信してください",
+  "prompt.toast.archiveNeedsDesktop.description": "ブラウザからはディスクに書き込めないため、RedCode デスクトップ版をご利用ください。",
   "prompt.toast.modelAgentRequired.title": "エージェントとモデルを選択",
   "prompt.toast.modelAgentRequired.description": "プロンプトを送信する前にエージェントとモデルを選択してください。",
   "prompt.toast.worktreeCreateFailed.title": "ワークツリーの作成に失敗しました",

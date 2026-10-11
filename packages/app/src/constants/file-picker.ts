@@ -3,6 +3,16 @@ export const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "im
 export const ACCEPTED_FILE_TYPES = [
   ...ACCEPTED_IMAGE_TYPES,
   "application/pdf",
+  // 261011 Red 压缩包附件：不作二进制 part 进模型，走磁盘路径 + 稳定文本占位；
+  // mime 与扩展名双判在 files.ts（Windows 资源管理器常报 x-zip-compressed 这类带前缀的 mime）。
+  "application/zip",
+  "application/x-zip-compressed",
+  "application/x-7z-compressed",
+  "application/vnd.rar",
+  "application/x-rar-compressed",
+  "application/x-tar",
+  "application/gzip",
+  "application/x-gzip",
   "text/*",
   "application/json",
   "application/ld+json",
@@ -11,6 +21,7 @@ export const ACCEPTED_FILE_TYPES = [
   "application/x-yaml",
   "application/xml",
   "application/yaml",
+  ".7z",
   ".c",
   ".cc",
   ".cjs",
@@ -23,6 +34,7 @@ export const ACCEPTED_FILE_TYPES = [
   ".go",
   ".gql",
   ".graphql",
+  ".gz",
   ".h",
   ".hh",
   ".hpp",
@@ -39,12 +51,15 @@ export const ACCEPTED_FILE_TYPES = [
   ".mjs",
   ".mts",
   ".py",
+  ".rar",
   ".rb",
   ".rs",
   ".sass",
   ".scss",
   ".sh",
   ".sql",
+  ".tar",
+  ".tgz",
   ".toml",
   ".ts",
   ".tsx",
@@ -52,6 +67,7 @@ export const ACCEPTED_FILE_TYPES = [
   ".xml",
   ".yaml",
   ".yml",
+  ".zip",
   ".zsh",
 ]
 
@@ -68,6 +84,14 @@ const MIME_EXT = new Map([
   ["application/x-yaml", "yaml"],
   ["application/xml", "xml"],
   ["application/yaml", "yaml"],
+  ["application/zip", "zip"],
+  ["application/x-zip-compressed", "zip"],
+  ["application/x-7z-compressed", "7z"],
+  ["application/vnd.rar", "rar"],
+  ["application/x-rar-compressed", "rar"],
+  ["application/x-tar", "tar"],
+  ["application/gzip", "gz"],
+  ["application/x-gzip", "gz"],
 ])
 
 const TEXT_EXT = ["txt", "text", "md", "markdown", "log", "csv"]

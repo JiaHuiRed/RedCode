@@ -6,7 +6,7 @@ import { useLanguage } from "@/context/language"
 import { uuid } from "@/utils/uuid"
 import { getCursorPosition } from "./editor-dom"
 import { attachmentFits } from "./attachment-budget"
-import { attachmentMime } from "./files"
+import { attachmentMime, isArchiveFile, extName } from "./files"
 import { normalizePaste, pasteMode } from "./paste"
 
 function dataUrl(file: File, mime: string) {
@@ -55,6 +55,15 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     })
   }
 
+  // 261011 Red 压缩包只能在桌面端用：它不作 base64 dataUrl（既不进 localStorage 也不进请求体，
+  // 那是 OOM 风险面），只以磁盘路径存在，而落盘依赖 writeAttachment IPC——浏览器端没有。
+  const warnArchiveNeedsDesktop = () => {
+    showToast({
+      title: language.t("prompt.toast.archiveNeedsDesktop.title"),
+      description: language.t("prompt.toast.archiveNeedsDesktop.description"),
+    })
+  }
+
   // 260913 Red 正在读盘的附件先占额度：只看 prompt.current() 的话，同时粘贴的两个大文件
   // 互相看不见，会双双通过检查。key 取会话目录，跨会话不共享额度。
   const pendingBudget = new Map<string, { bytes: number; count: number }>()
@@ -76,20 +85,32 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
       return false
     }
 
+    // 261011 Red 压缩包分支：只落盘、不读内容。dataUrl 完全跳过（readAsDataURL 会把
+    // 几十 MB 的包整个 base64 化，正是内存问题的形状）；没有落盘通道就拒绝，绝不静默降级
+    // 成空 url 的坏 part。
+    const archive = isArchiveFile(file)
+    if (archive && !(input.sessionDirectory && input.writeAttachment)) {
+      if (toast) warnArchiveNeedsDesktop()
+      return false
+    }
+
     const editor = input.editor()
     if (!editor) return false
 
     const pending = budgetFor(key)
     pendingBudget.set(key, { bytes: pending.bytes + file.size, count: pending.count + 1 })
     try {
-      const url = await dataUrl(file, mime)
-      if (!url) return false
+      const url = archive ? "" : await dataUrl(file, mime)
+      if (!archive && !url) return false
 
       // 260629 Red: 落盘到 .attachments/，让 build-request-parts 走 file:// URL 而非 base64 dataUrl
       let attachmentPath: string | undefined
       if (input.sessionDirectory && input.writeAttachment) {
-        const ext = mime.split("/")[1]?.split("+")[0] || "bin"
-        const filename = `${uuid()}.${ext}`
+        // 261011 Red 压缩包用原始扩展名（归一化 mime 的子路径如 x-zip-compressed 当扩展名太丑），
+        // 图片/PDF 维持既有的 mime 推导。
+        const filename = archive
+          ? `${uuid()}.${extName(file.name) || "zip"}`
+          : `${uuid()}.${mime.split("/")[1]?.split("+")[0] || "bin"}`
         attachmentPath = await input.writeAttachment(
           input.sessionDirectory,
           filename,

@@ -319,6 +319,8 @@ export const dict = {
 
   "prompt.toast.pasteUnsupported.title": "Unsupported attachment",
   "prompt.toast.pasteUnsupported.description": "Only images, PDFs, or text files can be attached here.",
+  "prompt.toast.archiveNeedsDesktop.title": "Archives require the desktop app",
+  "prompt.toast.archiveNeedsDesktop.description": "Archives cannot be written to disk from the browser — use the RedCode desktop app.",
   "prompt.toast.modelAgentRequired.title": "Select an agent and model",
   "prompt.toast.modelAgentRequired.description": "Choose an agent and model before sending a prompt.",
   "prompt.toast.worktreeCreateFailed.title": "Failed to create worktree",

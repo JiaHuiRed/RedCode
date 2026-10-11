@@ -20,16 +20,59 @@ const TEXT_MIMES = new Set([
   "application/yaml",
 ])
 
+// 261011 Red 压缩包：mime 与扩展名双判。Windows 资源管理器/浏览器对同一格式报的 mime 不一
+// （zip 有 application/zip 和 x-zip-compressed 两种），只看 mime 会漏；只看扩展名又会被
+// 改了后缀的假压缩包骗过——两者命中其一即认。
+const ARCHIVE_MIMES = new Set([
+  "application/zip",
+  "application/x-zip-compressed",
+  "application/x-7z-compressed",
+  "application/vnd.rar",
+  "application/x-rar-compressed",
+  "application/x-tar",
+  "application/gzip",
+  "application/x-gzip",
+])
+const ARCHIVE_EXTS = new Set(["zip", "7z", "rar", "tar", "gz", "tgz"])
+
 const SAMPLE = 4096
 
 function kind(type: string) {
   return type.split(";", 1)[0]?.trim().toLowerCase() ?? ""
 }
 
-function ext(name: string) {
+export function extName(name: string) {
   const idx = name.lastIndexOf(".")
   if (idx === -1) return ""
   return name.slice(idx + 1).toLowerCase()
+}
+
+const ext = extName
+
+// 261011 Red 压缩包判定与规范 mime：attachmentMime 放行、attachments 落盘分支、
+// toast 文案共用这一个判定入口，避免多处各写一套集合后漂移。
+export function isArchiveFile(file: { name: string; type: string }) {
+  return ARCHIVE_MIMES.has(kind(file.type)) || ARCHIVE_EXTS.has(extName(file.name))
+}
+
+function archiveMime(file: { name: string; type: string }) {
+  const type = kind(file.type)
+  if (ARCHIVE_MIMES.has(type)) return type
+  switch (extName(file.name)) {
+    case "zip":
+      return "application/zip"
+    case "7z":
+      return "application/x-7z-compressed"
+    case "rar":
+      return "application/vnd.rar"
+    case "tar":
+      return "application/x-tar"
+    case "gz":
+    case "tgz":
+      return "application/gzip"
+    default:
+      return type || "application/octet-stream"
+  }
 }
 
 function textMime(type: string) {
@@ -54,6 +97,9 @@ export async function attachmentMime(file: File) {
   const type = kind(file.type)
   if (IMAGE_MIMES.has(type)) return type
   if (type === "application/pdf") return type
+  // 261011 Red 压缩包放行：不做文本嗅探（内容是二进制，textBytes 必拒），
+  // mime 归一化后交给 attachments 的落盘分支。
+  if (ARCHIVE_MIMES.has(type) || ARCHIVE_EXTS.has(ext(file.name))) return archiveMime(file)
 
   const suffix = ext(file.name)
   const fallback = IMAGE_EXTS.get(suffix) ?? (suffix === "pdf" ? "application/pdf" : undefined)

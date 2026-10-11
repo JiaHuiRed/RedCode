@@ -10,6 +10,9 @@
 
 ### [Unreleased]
 
+- **GUI 输入框支持压缩包附件**（`packages/app/src/{constants/file-picker.ts,components/prompt-input/{files,attachments,submit}.ts,src/i18n/{zh,en,ja}.ts}`、`packages/opencode/src/provider/transform.ts`）：此前 zip/7z/rar/tar/gz 一律被前端分类器当二进制拒收。现压缩包只在桌面端收——落盘到 `.attachments/`（原始扩展名、沿用现有预算），**绝不作 base64 dataUrl**（不进 localStorage 也不进请求体，规避 OOM 风险面），发送走既有 path 优先链生成 `file://` part；浏览器端无落盘通道时明确 toast 拒绝，不静默降级。服务端把 `file://` 压缩包 part 换成稳定文本占位（含磁盘路径，uuid 固定逐字节一致，前缀缓存安全）——原样透传会被 AI SDK 对非 pdf 的 `application/*` 直接 throw 掉整个请求。mime 与扩展名双判（Windows 资源管理器常报 `x-zip-compressed` 变体）；不自动解压，模型按占位文本里的路径用子代理按需读。测试：app 附件/请求构建 26 pass、opencode transform 244 pass（新增压缩包占位与未知 mime 不扩大面用例）、双包 typecheck 绿。模型可见四问：① 无附件会话零变化；有压缩包时 user 消息内多一段占位文本（路径固定）；② token 增量仅为该占位文本；③ 占位逐字节稳定，缓存从该消息起正常延伸；④ 无新增注入项。
+- **GUI 压缩摘要默认折叠**（`packages/ui/src/components/{message-part.tsx,message-part.css}`）：压缩产物（`summary=true` 的 assistant 消息）此前与普通回复同构全量铺开，几百行文件清单直接糊满聊天区。现对齐思考链折叠模式：默认收起一行「会话已压缩 · 211,595 → 194,059 · 模型 · 耗时」，点击展开全文；token 收益取自同消息 compaction part（`tokens_before/after`），数据不全时整段隐藏。纯展示层。模型可见四问：① 无提示词/工具 schema 改动；② token 零增量；③ 前缀缓存不受影响；④ 无新增注入项。
+
 - **原生压缩预算与预警颜色调整**：默认压后目标由 160k 降到 130k，自动触发仍为 250k；新增可配置 `compaction.native.soft_ratio` / `prune_ratio`（默认 0.72 / 0.88），默认分别到 180k 变黄、220k 变橙、250k 变红并触发压缩。小窗口仍按可用触发值同比缩放，旧压缩路径的分档与原生开关不变；原生模式的橙色仅为预警，不执行旧 prune 裁剪。无新增提示词或工具描述，固定前缀与缓存布局不变；预算改变后压缩结果的长度可能变化。同步 SDK/OpenAPI 配置契约与边界回归。
 - **默认播种配置切换为原生 compaction**：seed 模板显式开启原生自动压缩（250k 触发、130k 目标、180k/220k 预警），关闭旧 prune，不再使用 400k legacy threshold。本机共享配置同步切换，本地层移除 DCP 插件加载项；不删除插件文件、旧消息或 DCP 状态。已有配置采用用户值优先合并，其他安装须同步开启 native 并移除本地 DCP 项；新进程生效，运行中的会话不热切换。模型侧 `compress` 已退役，历史回读工具保留。决策与互斥边界：`docs/notes/implemented/feature/2026-10-10-native-compaction.md`。
 

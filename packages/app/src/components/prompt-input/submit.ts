@@ -15,6 +15,7 @@ import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { setSessionHandoff } from "@/pages/session/handoff"
 import { Identifier } from "@/utils/id"
+import { encodeFilePath } from "@/context/file/path"
 import { Worktree as WorktreeState } from "@/utils/worktree"
 import { buildRequestParts } from "./build-request-parts"
 import { setCursorPosition } from "./editor-dom"
@@ -94,7 +95,8 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
           id: Identifier.ascending("part"),
           type: "file" as const,
           mime: attachment.mime,
-          url: attachment.dataUrl,
+          // 261011 Red 压缩包没有 dataUrl（只落盘），path 优先与 buildRequestParts 同口径
+          url: attachment.path ? `file://${encodeFilePath(attachment.path)}` : attachment.dataUrl,
           filename: attachment.filename,
         })),
       })
@@ -560,7 +562,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
               id: Identifier.ascending("part"),
               type: "file" as const,
               mime: attachment.mime,
-              url: attachment.dataUrl,
+              url: attachment.path ? `file://${encodeFilePath(attachment.path)}` : attachment.dataUrl,
               filename: attachment.filename,
             })),
           })

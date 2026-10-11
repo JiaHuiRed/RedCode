@@ -19,6 +19,20 @@ function mimeToModality(mime: string): Modality | undefined {
   return undefined
 }
 
+// 261011 Red 压缩包 mime 集合：与 GUI 侧 files.ts 的 ARCHIVE_MIMES 同口径（两侧无共享包，
+// 改任一侧必须同步另一侧）。AI SDK 对非 pdf 的 application/* file part 会直接 throw
+// UnsupportedFunctionalityError，unsupportedParts 里要抢在它之前换成文本占位。
+const ARCHIVE_MIMES = new Set([
+  "application/zip",
+  "application/x-zip-compressed",
+  "application/x-7z-compressed",
+  "application/vnd.rar",
+  "application/x-rar-compressed",
+  "application/x-tar",
+  "application/gzip",
+  "application/x-gzip",
+])
+
 // 输出预算的**下限**（模型目录没声明 output 时的兜底），不是上限。
 export const OUTPUT_TOKEN_MAX = 32_000
 // 260824 cc 输出上限改为按模型目录推导，不再手工累加特例。
@@ -603,7 +617,27 @@ function unsupportedParts(msgs: ModelMessage[], model: Provider.Model): ModelMes
         part.type === "image" ? String((part as unknown as Record<string, unknown>).mimeType || "") : part.mediaType
       const filename = part.type === "file" ? part.filename : undefined
       const modality = mimeToModality(mime)
-      if (!modality) return part
+      if (!modality) {
+        // 261011 Red 压缩包占位：GUI 侧只落盘不作 base64（OOM 风险面），file:// URL 走
+        // part.data（AI SDK FilePart 无 url 字段，savePartToTemp 同款取法）。原样 return part
+        // 会被 AI SDK throw 掉整个请求，这里换成稳定文本——路径由落盘时的 uuid 固定，
+        // 逐轮逐字节一致，前缀缓存安全。其他未知 mime 维持原行为（不扩大面）。
+        const rawData = part.type === "file" && typeof part.data === "string" ? part.data : ""
+        if (part.type === "file" && ARCHIVE_MIMES.has(mime) && rawData.startsWith("file://")) {
+          let diskPath = rawData.slice("file://".length)
+          try {
+            diskPath = decodeURIComponent(diskPath)
+          } catch {
+            // file:// URL 由 encodeFilePath 生成，正常必可解码；解不了就原样给模型
+          }
+          const name = filename ? `"${filename}"` : "archive"
+          return {
+            type: "text" as const,
+            text: `ERROR: Cannot read ${name} (archive attachments are not sent inline). The file is on disk at ${diskPath} — dispatch a subagent with shell access to list or extract it.`,
+          }
+        }
+        return part
+      }
       if (model.capabilities.input[modality]) return part
 
       const name = filename ? `"${filename}"` : modality

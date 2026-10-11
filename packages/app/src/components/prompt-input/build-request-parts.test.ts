@@ -92,6 +92,36 @@ describe("buildRequestParts", () => {
     expect(files.map((part) => (part.type === "file" ? part.filename : ""))).toEqual(["a.png", "b.pdf"])
   })
 
+  // 261011 Red 压缩包只落盘不作 base64：path 存在时必须走 file:// URL，
+  // 空 dataUrl 绝不能漏进请求体。
+  test("prefers the disk path over an empty dataUrl for archive attachments", () => {
+    const result = buildRequestParts({
+      prompt: [],
+      context: [],
+      images: [
+        {
+          type: "image",
+          id: "arc_1",
+          filename: "bundle.zip",
+          mime: "application/zip",
+          dataUrl: "",
+          path: "C:/repo/.attachments/arc_abc.zip",
+        },
+      ],
+      text: "inspect this",
+      messageID: "msg_arc",
+      sessionID: "ses_arc",
+      sessionDirectory: "C:/repo",
+    })
+
+    const archive = result.requestParts.find(
+      (part) => part.type === "file" && part.filename === "bundle.zip",
+    )
+    expect(archive).toBeDefined()
+    expect(archive?.type === "file" && archive.url).toBe("file:///C:/repo/.attachments/arc_abc.zip")
+    expect(result.requestParts.some((part) => part.type === "file" && part.url === "")).toBe(false)
+  })
+
   test("deduplicates context files when prompt already includes same path", () => {
     const prompt: Prompt = [{ type: "file", path: "src/foo.ts", content: "@src/foo.ts", start: 0, end: 11 }]
 

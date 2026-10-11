@@ -1633,6 +1633,85 @@ describe("ProviderTransform.message - empty image handling", () => {
   })
 })
 
+// 261011 Red 压缩包占位：AI SDK 对非 pdf 的 application/* file part 会 throw
+// UnsupportedFunctionalityError，GUI 侧只落盘（file:// URL 进 data），服务端换成稳定文本占位。
+describe("ProviderTransform.message - archive attachment placeholder", () => {
+  const mockModel = {
+    id: "zhipuai/glm-5.3-flash",
+    providerID: "zhipuai",
+    api: { id: "glm-5.3-flash", url: "https://api.zhipuai.cn", npm: "@ai-sdk/openai-compatible" },
+    name: "GLM 5.3 Flash",
+    capabilities: {
+      temperature: true,
+      reasoning: false,
+      attachment: true,
+      toolcall: true,
+      input: { text: true, audio: false, image: false, video: false, pdf: false },
+      output: { text: true, audio: false, image: false, video: false, pdf: false },
+      interleaved: false,
+    },
+    cost: { input: 0.001, output: 0.003, cache: { read: 0.0001, write: 0.001 } },
+    limit: { context: 1000000, output: 8192 },
+    status: "active",
+    options: {},
+    headers: {},
+  } as any
+
+  test("replaces a file:// archive part with a stable placeholder containing the disk path", () => {
+    const msgs = [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "inspect this bundle" },
+          {
+            type: "file",
+            data: "file:///C:/repo/.attachments/arc_abc.zip",
+            mediaType: "application/zip",
+            filename: "bundle.zip",
+          },
+        ],
+      },
+    ] as any[]
+
+    const result = ProviderTransform.message(msgs, mockModel, {})
+
+    expect(result).toHaveLength(1)
+    expect(result[0].content).toHaveLength(2)
+    expect(result[0].content[0]).toEqual({ type: "text", text: "inspect this bundle" })
+    const placeholder = result[0].content[1] as { type: string; text: string }
+    expect(placeholder.type).toBe("text")
+    expect(placeholder.text).toContain('"bundle.zip"')
+    expect(placeholder.text).toContain("C:/repo/.attachments/arc_abc.zip")
+    expect(placeholder.text.startsWith("ERROR: Cannot read")).toBe(true)
+  })
+
+  test("leaves non-archive unknown-mime file parts unchanged", () => {
+    const msgs = [
+      {
+        role: "user",
+        content: [
+          {
+            type: "file",
+            data: "file:///C:/repo/blob.dat",
+            mediaType: "application/octet-stream",
+            filename: "blob.dat",
+          },
+        ],
+      },
+    ] as any[]
+
+    const result = ProviderTransform.message(msgs, mockModel, {})
+
+    expect(result[0].content).toHaveLength(1)
+    expect(result[0].content[0]).toEqual({
+      type: "file",
+      data: "file:///C:/repo/blob.dat",
+      mediaType: "application/octet-stream",
+      filename: "blob.dat",
+    })
+  })
+})
+
 describe("ProviderTransform.message - anthropic empty content filtering", () => {
   const anthropicModel = {
     id: "anthropic/claude-3-5-sonnet",

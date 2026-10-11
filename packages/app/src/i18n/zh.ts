@@ -334,6 +334,8 @@ export const dict = {
   "prompt.delivery.steer": "本条立即送达",
   "prompt.toast.pasteUnsupported.title": "不支持的附件",
   "prompt.toast.pasteUnsupported.description": "此处仅能附加图片、PDF 或文本文件。",
+  "prompt.toast.archiveNeedsDesktop.title": "压缩包需要在桌面端发送",
+  "prompt.toast.archiveNeedsDesktop.description": "浏览器端无法将压缩包写入磁盘，请使用桌面版 RedCode。",
   "prompt.toast.modelAgentRequired.title": "请选择智能体和模型",
   "prompt.toast.modelAgentRequired.description": "发送提示前请先选择智能体和模型。",
   "prompt.toast.worktreeCreateFailed.title": "创建工作树失败",
