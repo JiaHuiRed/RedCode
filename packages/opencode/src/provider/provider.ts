@@ -1242,7 +1242,8 @@ function modelSuggestions(provider: Info | undefined, modelID: ModelID, enableEx
 // 启动事故：models.dev 刷新 TimeoutError + MCP github 连续 server unavailable）。每个调用点
 // 10s 小死线：超时跳过该步并留 warn，其余 provider 照常可用；另有 30s 整体兜底（见 list）。
 const INIT_STEP_TIMEOUT = "10 seconds"
-const withinInitStep =
+// 261011 Red B1.1（审计 ZW-09）：导出以便单测死线契约（超时跳过/值透传/错误不吞）
+export const withinInitStep =
   (step: string) =>
   <A, E, R>(self: Effect.Effect<A, E, R>) =>
     self.pipe(
