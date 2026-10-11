@@ -145,6 +145,22 @@ describe("隐私脱敏", () => {
     expect(maskText("plain text stays")).toBe("plain text stays")
   })
 
+  test("正斜杠盘符、任意根 POSIX 路径与 UNC 均被遮蔽（ZW-04 矩阵）", () => {
+    expect(maskText("C:/Users/bob/secret.txt")).toBe("<path>")
+    expect(maskText("C:/Work/private/file.ts")).toBe("<path>")
+    expect(maskText("/data/private/credential")).toBe("<path>")
+    expect(maskText("open (\\\\server\\share\\secret.txt) now")).toBe("open (<path>) now")
+    // 单段路由不可误伤：
+    expect(maskText("GET /doc 200")).toBe("GET /doc 200")
+    expect(maskText("GET /tui 200")).toBe("GET /tui 200")
+    expect(maskText("GET /session 200")).toBe("GET /session 200")
+  })
+
+  test("URL query 凭据只遮值、保留键名", () => {
+    expect(maskText("GET /x?token=abc123&other=1")).toBe("GET /x?token=<redacted>&other=1")
+    expect(maskText("url ?access_token=xyz&page=2")).toBe("url ?access_token=<redacted>&page=2")
+  })
+
   test("maskText 截断长文本", () => {
     const out = maskText("a".repeat(400), 300)
     expect(out.length).toBe(301)
@@ -157,6 +173,15 @@ describe("隐私脱敏", () => {
     expect(hashId("dev")).toMatch(/^[0-9a-f]{8}$/)
     expect(anonKey("D:\\secret\\path")).toMatch(/^anon-[0-9a-f]{8}$/)
     expect(anonKey("D:\\secret\\path")).not.toContain("secret")
+  })
+
+  test("anonKey 随每次录制的 salt 变化（防跨导出枚举比对）", () => {
+    const g = createGuiDiagnostics()
+    g.start()
+    const first = anonKey("D:\\same\\dir")
+    g.stop()
+    g.start()
+    expect(anonKey("D:\\same\\dir")).not.toBe(first)
   })
 
   test("detail 一律过脱敏与数值规整", () => {

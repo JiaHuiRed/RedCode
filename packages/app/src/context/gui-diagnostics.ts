@@ -6,7 +6,10 @@
 //   诊断自己不能变成内存泄漏。
 // - **只读**：不改变任何同步/渲染行为；停止录制即完全退出。
 // - **隐私（§11.2）**：严禁记录提示词/回复/工具参数/密钥/凭据/完整路径；会话与目录一律
-//   匿名 key（hashId/anonKey），一切字符串过 `maskText` 遮蔽绝对路径与 token 形态。
+//   匿名 key（hashId/anonKey，含每录制随机 salt），一切字符串过 `maskText` 统一 scrub。
+//   detail 值约定：数字/布尔/枚举名/匿名 key；自由文本仅限错误消息（确有必要）。
+//   已知形态（盘符直反斜杠、任意根 POSIX、UNC、query 凭据、token 形态）有矩阵测试覆盖；
+//   不承诺对任意输入的零泄露（正则限界），导出前请人工预览。
 // - 事件时间用 `performance.now()`（单调）；longtask 观察不满足时优雅降级。
 //
 // 本模块故意不依赖 Solid/上下文：可被普通函数（global-sdk flush、server-sync 队列）直接调用，
@@ -74,7 +77,8 @@ export type GuiDiagnosticsExport = {
 
 export const GUI_DIAGNOSTICS_DEFAULT_LIMITS = { maxRecords: 2000, maxBytes: 512 * 1024 } as const
 
-// FNV-1a：只为匿名 key 取稳定短 id（跨导出可对照，不可逆推原文）；不做安全哈希用途。
+// FNV-1a：仅为匿名 key 取稳定短标签——非安全哈希（32 位、候选值可枚举比对、会碰撞），
+// 不承诺不可逆；anonKey 另加每录制随机 salt，导出样本无法脱离 salt 复现映射。
 export function hashId(value: string): string {
   let h = 0x811c9dc5
   for (let i = 0; i < value.length; i++) {
@@ -84,14 +88,24 @@ export function hashId(value: string): string {
   return (h >>> 0).toString(16).padStart(8, "0")
 }
 
-export const anonKey = (value: string) => `anon-${hashId(value)}`
+let anonSalt = ""
+const randomSalt = () => {
+  const source = globalThis.crypto
+  if (!source?.getRandomValues) return Math.random().toString(36).slice(2, 18)
+  return Array.from(source.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, "0")).join("")
+}
+export const anonKey = (value: string) => `anon-${hashId(anonSalt + value)}`
 
 // 遮蔽规则（宁可多吃字符，不可漏）：目标是让「完整路径 / 凭据」永远不会出现在导出里。
 // Windows/UNC 路径允许含空格——错误消息里的路径常带空格，只到行尾或常见闭合符为止。
+// 261011 Red B0.1（审计 ZW-04）：盘符正反斜杠都遮（此前 C:/... 只剩 C:<path>）；POSIX 从
+// 白名单前缀放开为任意 ≥2 段绝对路径（/data/private/... 此前整条残留），单段路由
+// （/doc、/tui、/session）不误伤；新增 URL query 凭据只遮值、保留键名。
 const MASK_RULES: [RegExp, string][] = [
-  [/[A-Za-z]:\\[^\n"'`<>|)]*/g, "<path>"],
+  [/[A-Za-z]:[\\/][^\n"'`<>|)]*/g, "<path>"],
   [/\\\\[^\n"'`<>|)]*/g, "<path>"],
-  [/(^|[\s("'`=:])\/(?:Users|home|root|var|tmp|opt|mnt|Volumes|workspace|projects?)[^\n"'`)]*/g, "$1<path>"],
+  [/(^|[\s("'`=:])\/(?:[^\n"'`)]+\/)+[^\n"'`)]*/g, "$1<path>"],
+  [/([?&](?:token|access_token|api_key|apikey|secret|password)=)[^\s&"'`]*/gi, "$1<redacted>"],
   [/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer <redacted>"],
   [/sk-[A-Za-z0-9._-]{8,}/g, "<redacted>"],
   [/gh[pousr]_[A-Za-z0-9]{8,}/g, "<redacted>"],
@@ -229,6 +243,8 @@ export function createGuiDiagnostics(options: GuiDiagnosticsOptions = {}): GuiDi
 
   const start = () => {
     if (on) return
+    // 261011 Red B0.1: 每次录制换 salt——anonKey 不可跨录制对照（审计 ZW-04）
+    anonSalt = randomSalt()
     // 新一次录制从空缓冲开始：避免两次录制的 span 混在一起
     for (let i = 0; i < maxRecords; i++) slots[i] = undefined
     head = 0
