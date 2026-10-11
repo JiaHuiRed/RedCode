@@ -160,6 +160,34 @@ function selectAzureLanguageModel(sdk: any, modelID: string, useChat: boolean) {
 }
 
 function custom(dep: CustomDep): Record<string, CustomLoader> {
+  // 261011 Red: Zen 免费额度门禁——免费模型免登录可见，付费模型要有 key。fork 的目录把
+  // 上游 opencode 更名成 redcode（RedCode Zen），loader 键却一直只注册在 opencode 上，
+  // 两半对不上：redcode 从未拿到这条语义（provider.test.ts 两条 paid 用例自 d6d579c4
+  // 导入起就没对上）。按 input.id 泛化后双注册，opencode 侧保持上游行为不变。
+  const zen = Effect.fnUntraced(function* (input: Info) {
+    const env = yield* dep.env()
+    const hasKey = iife(() => {
+      if (input.env.some((item) => env[item])) return true
+      return false
+    })
+    const ok =
+      hasKey ||
+      Boolean(yield* dep.auth(input.id)) ||
+      Boolean((yield* dep.config()).provider?.[input.id]?.options?.apiKey)
+
+    if (!ok) {
+      for (const [key, value] of Object.entries(input.models)) {
+        if (value.cost.input === 0) continue
+        delete input.models[key]
+      }
+    }
+
+    return {
+      autoload: Object.keys(input.models).length > 0,
+      options: ok ? {} : { apiKey: "public" },
+    }
+  })
+
   return {
     anthropic: () =>
       Effect.succeed({
@@ -170,29 +198,8 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
           },
         },
       }),
-    opencode: Effect.fnUntraced(function* (input: Info) {
-      const env = yield* dep.env()
-      const hasKey = iife(() => {
-        if (input.env.some((item) => env[item])) return true
-        return false
-      })
-      const ok =
-        hasKey ||
-        Boolean(yield* dep.auth(input.id)) ||
-        Boolean((yield* dep.config()).provider?.["opencode"]?.options?.apiKey)
-
-      if (!ok) {
-        for (const [key, value] of Object.entries(input.models)) {
-          if (value.cost.input === 0) continue
-          delete input.models[key]
-        }
-      }
-
-      return {
-        autoload: Object.keys(input.models).length > 0,
-        options: ok ? {} : { apiKey: "public" },
-      }
-    }),
+    opencode: zen,
+    redcode: zen,
     openai: () =>
       Effect.succeed({
         autoload: false,
@@ -447,6 +454,10 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
           headers: {
             "HTTP-Referer": "https://redcode.dev/",
             "X-Title": "redcode",
+            // 261011 Red: NVIDIA hosted 端点按调用方归属计费的来源头；d6d579c4 初始导入
+            //   里是 "RedCode"，被后续上游同步吞掉（两条 billing 用例跟着挂到现在）。显式
+            //   配置的同名头仍优先（custom loader 合并早于 config 再合并）。
+            "X-BILLING-INVOKE-ORIGIN": "RedCode",
           },
         },
       }),
