@@ -72,30 +72,31 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   // 不是同一个分母 —— step-3.7-flash 上 usable≈224k、窗口 256k，soft 落在显示的 52%，
   // 于是"圈黄了但数字才 52%"，颜色与数字对不上。
   //
-  // 取两者中更严重的一档：窗口占用负责「跟着涨」，引擎档位负责「真要压缩了别瞒着」。
-  // 仍只有三级：v2 的语义色只有 success/warning/danger/info，没有橙色的 state token
-  // （有 --v2-orange-* 调色板，但那是原始色阶、不分亮暗，直接用会在暗色主题下发错），
-  // 为一个装饰功能新增一对设计 token 不划算，所以 soft 与 prune 合并成 warning。
-  const TIER_STROKE = [undefined, "var(--v2-state-fg-warning)", "var(--v2-state-fg-danger)"] as const
+  // 261011 Red 再改：分档从「窗口占用 60/80% + 引擎档位取重」换成**绝对 token 值**并升四级
+  //（见下方 TIER_*）——200 多 k 就漂橙天天扎眼，哥哥拍板 220/280/320k 三条界线。
+  // 既有教训保留：v2 语义色没有橙色 state token，--v2-orange-* 是原始色阶不分亮暗，
+  // 所以橙用 warning→danger 的 color-mix，跟随两个 state 色自动适配主题。
+  // 261011 Red 档位改绝对 token 值（与 TUI 侧栏 barColor 同口径）：<220k 常态、220-280k 黄、
+  // 280-320k 橙、≥320k 红。不再按 usage% 与引擎 level 的比例线取重——360k 兜底下 soft=259k，
+  // 200 多 k 就漂色与 TUI 一样扎眼。橙没有独立 state token，用 warning→danger 的 color-mix
+  //（本文件下方条底槽同款混色写法，不引新 token）。
+  const TIER_ORANGE = "color-mix(in srgb, var(--v2-state-fg-warning) 50%, var(--v2-state-fg-danger))"
+  const TIER_STROKE = [undefined, "var(--v2-state-fg-warning)", TIER_ORANGE, "var(--v2-state-fg-danger)"] as const
   // 260829 cc 条用的分档色。与圈共用 strokeTier()，但**常态档不同**：圈在常态刻意不上色
   // （「没事发生时圈就该是平时的样子」，见上），而条的职责是把占比画出来，没有填充色就
-  // 什么都看不到，所以常态给 info 蓝。警戒两档与圈完全一致。
-  const TIER_BAR = ["var(--v2-state-fg-info)", "var(--v2-state-fg-warning)", "var(--v2-state-fg-danger)"] as const
-  const usageTier = (usage: number | null) => {
-    if (usage === null) return 0
-    if (usage >= 80) return 2
-    if (usage >= 60) return 1
-    return 0
-  }
-  const levelTier = (level: string | undefined) => {
-    if (level === "compact") return 2
-    if (level === "prune" || level === "soft") return 1
-    return 0
-  }
+  // 什么都看不到，所以常态给 info 蓝。警戒各档与圈完全一致。
+  const TIER_BAR = [
+    "var(--v2-state-fg-info)",
+    "var(--v2-state-fg-warning)",
+    TIER_ORANGE,
+    "var(--v2-state-fg-danger)",
+  ] as const
   const strokeTier = () => {
-    const ctx = context()
-    if (!ctx) return 0
-    return Math.max(usageTier(ctx.usage), levelTier(ctx.level))
+    const window = context()?.window
+    if ((window ?? 0) >= 320_000) return 3
+    if ((window ?? 0) >= 280_000) return 2
+    if ((window ?? 0) >= 220_000) return 1
+    return 0
   }
 
   const circle = () => (

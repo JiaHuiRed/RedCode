@@ -72,25 +72,21 @@ export function bar(percent: number): { filled: string; rest: string } {
   return { filled: "█".repeat(filled), rest: "░".repeat(BAR_WIDTH - filled) }
 }
 
-// 260819 cc 颜色由**引擎判定的档位**驱动，不是百分比。
-//
-// 为什么不按百分比：档位是相对 ceiling() = min(硬顶, usable) 算的，而进度条的分母是
-// 模型标称的 context window，两者不是一个数。以 step-3.7-flash 为例 context=256k、
-// usable≈224k，三条线落在 134k/179k/224k，换算成进度条就是 52%/70%/88% —— 按 60/85
-// 上色会比引擎实际动手慢半拍（soft 早在 52% 就过了，prune 在 70% 就已在裁工具输出）。
-// 拿它当「要不要手动 compress」的依据会误判。
-//
-// ceiling 需要 maxOutputTokens(model) 那张按模型家族匹配的表，在 TUI 侧复刻等于两处
-// 维护、加一个模型漏一处颜色就悄悄偏，所以让服务端算好经 tokens 一起发过来。
-const LEVEL_COLOR: Record<string, string> = {
-  ok: "#66bb6a", // 绿：引擎不会动手
-  soft: "#ffb300", // 黄：只记一条提示，刻意不动前缀
-  prune: "#ff9100", // 橙：开始裁陈旧工具输出（本地改写，不花钱）
-  compact: "#ff5252", // 红：真正的摘要压缩，重写前缀 + 一次模型调用
+// 261011 Red 显示档位改绝对 token 值（哥哥拍板）：<220k 绿、220-280k 黄、280-320k 橙、
+// ≥320k 红。不再由引擎 level 的比例线驱动——360k 兜底下 soft=259k/prune=317k，
+// 200 多 k 就漂橙天天扎眼，颜色是给自己看的心率表，分档听用户的。
+const LEVEL_COLOR = {
+  ok: "#66bb6a", // 绿：<220k
+  soft: "#ffb300", // 黄：220-280k
+  prune: "#ff9100", // 橙：280-320k
+  compact: "#ff5252", // 红：≥320k
 }
 
-export function barColor(level: string | undefined): string {
-  return LEVEL_COLOR[level ?? "ok"] ?? LEVEL_COLOR.ok
+export function barColor(context: number | null | undefined): string {
+  if ((context ?? 0) >= 320_000) return LEVEL_COLOR.compact
+  if ((context ?? 0) >= 280_000) return LEVEL_COLOR.prune
+  if ((context ?? 0) >= 220_000) return LEVEL_COLOR.soft
+  return LEVEL_COLOR.ok
 }
 
 // 261010 Red 上下文取主会话请求；会话累计用量则始终包括摘要调用。
@@ -286,12 +282,12 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
       >
         <text fg={theme()?.textMuted}>
           {"  "}
-          <span style={{ fg: barColor(state().level) }}>{compact(state().context!)}</span> / {compact(state().limit!)} ·{" "}
-          <span style={{ fg: barColor(state().level) }}>{percentLabel()}</span>
+          <span style={{ fg: barColor(state().context) }}>{compact(state().context!)}</span> / {compact(state().limit!)} ·{" "}
+          <span style={{ fg: barColor(state().context) }}>{percentLabel()}</span>
         </text>
         <text>
           {"  "}
-          <span style={{ fg: barColor(state().level) }}>{bar(state().percent ?? 0).filled}</span>
+          <span style={{ fg: barColor(state().context) }}>{bar(state().percent ?? 0).filled}</span>
           <span style={{ fg: theme()?.textMuted }}>{bar(state().percent ?? 0).rest}</span>
         </text>
       </Show>

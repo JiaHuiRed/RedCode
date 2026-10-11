@@ -52,6 +52,8 @@ import { DialogSoul } from "@tui/component/dialog-soul"
 import { DialogModel } from "@tui/component/dialog-model"
 import { DialogVariant } from "@tui/component/dialog-variant"
 import { DialogAlert } from "../../ui/dialog-alert"
+// 261011 Red 主动压缩键复用侧栏 context 的口径（compact 数字格式 / 档位色 / 最后一条主请求）。
+import { barColor, compact, contextSource } from "../../feature-plugins/sidebar/context"
 import { useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv"
 import { createFadeIn } from "../../util/signal"
@@ -420,6 +422,30 @@ export function Prompt(props: PromptProps) {
     if (!messages) return undefined
     return messages.findLast((m): m is UserMessage => m.role === "user")
   })
+
+  // 261011 Red 主动压缩键（footer 行，推理档右侧）：显示当前上下文与档位色，点击出确认窗
+  // 再执行。误触保护——第一次点击只弹窗（带当前数字），确认才走 session.compact 命令；
+  // 引擎自动兜底线已抬到 360k，日常压缩由这个键手动发起。
+  const compactInfo = createMemo(() => {
+    const messages = props.sessionID ? sync.data.message[props.sessionID] : undefined
+    if (!messages) return undefined
+    const last = contextSource(messages)
+    const context = last?.tokens.context
+    if (!context) return undefined
+    return { context, label: compact(context), detail: context.toLocaleString(), color: RGBA.fromHex(barColor(context)) }
+  })
+
+  const openCompactConfirm = () => {
+    const info = compactInfo()
+    if (!info) return
+    dialog.replace(() => (
+      <DialogAlert
+        title="精简会话"
+        message={`当前上下文 ${info.detail} —— 确认立即压缩？`}
+        onConfirm={() => keymap.dispatchCommand("session.compact")}
+      />
+    ))
+  }
 
   // Initialize agent/model/variant from last user message when session changes
   let syncedSessionID: string | undefined
@@ -1754,6 +1780,15 @@ export function Prompt(props: PromptProps) {
                                 <span style={{ fg: fadeColor(theme.warning, variantMetaAlpha()), bold: true }}>
                                   {local.model.variant.current()}
                                 </span>
+                              </text>
+                            </box>
+                          </Show>
+                          {/* 261011 Red 主动压缩键：点击弹确认窗（带当前上下文），确认才压缩。 */}
+                          <Show when={compactInfo()}>
+                            <text fg={fadeColor(theme.textMuted, variantMetaAlpha())}>·</text>
+                            <box onMouseUp={openCompactConfirm}>
+                              <text fg={fadeColor(compactInfo()!.color, variantMetaAlpha())}>
+                                {compactInfo()!.label}
                               </text>
                             </box>
                           </Show>

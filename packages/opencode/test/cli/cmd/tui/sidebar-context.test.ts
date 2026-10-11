@@ -31,17 +31,18 @@ describe("sidebar context window 显示", () => {
     expect([...bar(-5).filled].length).toBe(0)
   })
 
-  // 260819 cc 颜色改由引擎档位驱动，不再是百分比门槛：档位相对 ceiling()=min(硬顶,usable)
-  // 算，而进度条分母是标称 context window，两者不是一个数（step-3.7-flash 上三条线换算成
-  // 进度条是 52%/70%/88%，按 60/85 上色会比引擎实际动手慢半拍）。
-  test("barColor 四档各不相同", () => {
-    const colors = ["ok", "soft", "prune", "compact"].map(barColor)
+  // 261011 Red 显示档位改绝对 token 值：<220k 绿、220-280k 黄、280-320k 橙、≥320k 红。
+  test("barColor 四档按绝对 token 值分档", () => {
+    const colors = [100_000, 240_000, 300_000, 350_000].map(barColor)
     expect(new Set(colors).size).toBe(4)
+    expect(barColor(219_999)).toBe(barColor(0))
+    expect(barColor(220_000)).not.toBe(barColor(0))
+    expect(barColor(319_999)).not.toBe(barColor(320_000))
   })
 
-  test("档位缺失（历史消息没有该字段）回落到 ok 的颜色，不报错", () => {
-    expect(barColor(undefined)).toBe(barColor("ok"))
-    expect(barColor("不认识的档位")).toBe(barColor("ok"))
+  test("上下文缺失（历史消息没有该字段）回落到 ok 的颜色，不报错", () => {
+    expect(barColor(undefined)).toBe(barColor(0))
+    expect(barColor(null)).toBe(barColor(0))
   })
 })
 

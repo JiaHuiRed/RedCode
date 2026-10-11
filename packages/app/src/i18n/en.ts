@@ -314,6 +314,9 @@ export const dict = {
   "prompt.attachment.remove": "Remove attachment",
   "prompt.action.send": "Send",
   "prompt.action.stop": "Stop",
+  "prompt.compact.run": "Compact",
+  "prompt.compact.confirm": "Context window {{window}} / {{limit}}. Compact this session now?",
+  "prompt.compact.tooltip": "Compact session (currently {{window}} / {{limit}})",
   "prompt.delivery.queue": "Queue this",
   "prompt.delivery.steer": "Deliver now",
 
