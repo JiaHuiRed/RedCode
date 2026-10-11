@@ -163,12 +163,20 @@ export function createGuiDiagnostics(options: GuiDiagnosticsOptions = {}): GuiDi
   const maxRecords = Math.max(1, options.maxRecords ?? GUI_DIAGNOSTICS_DEFAULT_LIMITS.maxRecords)
   const maxBytes = Math.max(1, options.maxBytes ?? GUI_DIAGNOSTICS_DEFAULT_LIMITS.maxBytes)
   const now = options.now ?? (() => (typeof performance !== "undefined" ? performance.now() : Date.now()))
+  // 261011 Red B0.1: maxBytes 按真实 UTF-8 字节计（此前用 JSON 字符串的 UTF-16 码元数，CJK 低估）
+  const encoder = new TextEncoder()
 
   type Entry = GuiDiagnosticRecord & { size: number }
   const slots: (Entry | undefined)[] = new Array(maxRecords)
+  // 261011 Red B0.1（审计 ZW-08）：失败证据（outcome=error）不进主环，单独进高优先级槽——
+  // 高频洪峰不会把异常挤出导出（真机 3302→1302 淘汰曾吞掉故障注入证据）。容量为主环的
+  // 10%（至少 1 条），超容量按 FIFO 顶旧；单条大小受 maskText 截断约束，槽占用有界。
+  const errorSlots: Entry[] = []
+  const errorMax = Math.max(1, Math.min(maxRecords, Math.floor(maxRecords / 10)))
   let head = 0
   let size = 0
   let bytes = 0
+  let errorBytes = 0
   let total = 0
   let droppedRecords = 0
   let droppedBytes = 0
@@ -190,9 +198,22 @@ export function createGuiDiagnostics(options: GuiDiagnosticsOptions = {}): GuiDi
   }
 
   const push = (record: GuiDiagnosticRecord) => {
-    // 近似字节：JSON 字符数（CJK 会低估，作为上界约束足够，不为精确再引入编码开销）
-    const entry: Entry = { ...record, size: JSON.stringify(record).length }
+    // 261011 Red B0.1: 真实 UTF-8 字节（此前按 UTF-16 码元近似，CJK 低估约三分之一）
+    const entry: Entry = { ...record, size: encoder.encode(JSON.stringify(record)).length }
     total += 1
+    if (record.outcome === "error") {
+      errorSlots.push(entry)
+      errorBytes += entry.size
+      if (errorSlots.length > errorMax) {
+        const evicted = errorSlots.shift()
+        if (evicted) {
+          errorBytes -= evicted.size
+          droppedRecords += 1
+          droppedBytes += evicted.size
+        }
+      }
+      return
+    }
     if (size === maxRecords) evictOldest()
     slots[(head + size) % maxRecords] = entry
     size += 1
@@ -208,7 +229,12 @@ export function createGuiDiagnostics(options: GuiDiagnosticsOptions = {}): GuiDi
       const { size: _size, ...record } = entry
       out.push(record)
     }
-    return out
+    for (const entry of errorSlots) {
+      const { size: _size, ...record } = entry
+      out.push(record)
+    }
+    // 两段各自时间升序，合并后统一排序（导出/预览一次性成本）
+    return out.sort((a, b) => a.at - b.at)
   }
 
   const record = (type: GuiDiagnosticType, input: GuiDiagnosticsRecordInput = {}) => {
@@ -250,6 +276,8 @@ export function createGuiDiagnostics(options: GuiDiagnosticsOptions = {}): GuiDi
     head = 0
     size = 0
     bytes = 0
+    errorSlots.length = 0
+    errorBytes = 0
     total = 0
     droppedRecords = 0
     droppedBytes = 0
@@ -303,7 +331,7 @@ export function createGuiDiagnostics(options: GuiDiagnosticsOptions = {}): GuiDi
       },
       span: { startedAt, endedAt, ms: Math.round(Math.max(0, endedAt - startedAt)) },
       limits: { maxRecords, maxBytes },
-      counts: { total, kept: size, droppedRecords, droppedBytes, bytes },
+        counts: { total, kept: list.length, droppedRecords, droppedBytes, bytes: bytes + errorBytes },
       summary: { byType, byOutcome, durations },
       records: list,
     }
@@ -311,7 +339,7 @@ export function createGuiDiagnostics(options: GuiDiagnosticsOptions = {}): GuiDi
 
   return {
     enabled: () => on,
-    count: () => size,
+    count: () => size + errorSlots.length,
     start,
     stop,
     record,

@@ -35,10 +35,11 @@ describe("gui-diagnostics 生命周期", () => {
     expect(names(g)).toEqual(["flush-1", "flush-2"])
   })
 
-  test("重新 start 清空上一次录制的缓冲", () => {
+  test("重新 start 清空上一次录制的缓冲（含异常槽）", () => {
     const g = createGuiDiagnostics()
     g.start()
     g.record("ui.popover", { name: "a" })
+    g.record("sync.bootstrap", { name: "parked", outcome: "error" })
     g.stop()
     g.start()
     expect(g.count()).toBe(0)
@@ -77,6 +78,38 @@ describe("有界环形缓冲", () => {
     g.record("timeline.measure", { name: "huge", detail: { blob: "y".repeat(200) } })
     g.record("timeline.measure", { name: "after" })
     expect(names(g)).toEqual(["after"])
+  })
+
+  test("高频洪峰不淘汰异常（异常高优先级槽，ZW-08）", () => {
+    const g = createGuiDiagnostics({ maxRecords: 10 })
+    g.start()
+    g.record("sync.bootstrap", { name: "parked", outcome: "error", detail: { dir: "anon-x" } })
+    for (let i = 0; i < 50; i++) g.record("sse.flush", { name: `f${i}` })
+    const list = recordsOf(g)
+    // 异常不被 50 条洪峰冲走，且仍在时间序首位
+    expect(list[0]).toMatchObject({ name: "parked" })
+    expect(list.filter((r) => r.name === "parked")).toHaveLength(1)
+    // 主环保留最近 10 条非异常；总保留 = 10 + 1
+    expect(names(g).slice(1)).toEqual(["f40", "f41", "f42", "f43", "f44", "f45", "f46", "f47", "f48", "f49"])
+    expect(g.payload().counts).toMatchObject({ total: 51, kept: 11, droppedRecords: 40 })
+  })
+
+  test("异常槽自身有界：超过容量按 FIFO 顶旧", () => {
+    const g = createGuiDiagnostics({ maxRecords: 10 })
+    g.start()
+    g.record("sync.bootstrap", { name: "e1", outcome: "error" })
+    g.record("sync.bootstrap", { name: "e2", outcome: "error" })
+    expect(names(g)).toEqual(["e2"])
+    expect(g.payload().counts.droppedRecords).toBe(1)
+  })
+
+  test("maxBytes 以真实 UTF-8 字节计（CJK 不再被低估）", () => {
+    const g = createGuiDiagnostics({ maxRecords: 100, maxBytes: 1000 })
+    g.start()
+    for (let i = 0; i < 3; i++) g.record("ui.input", { name: `c${i}`, detail: { blob: "中".repeat(100) } })
+    // 每条 UTF-8 ≈ 365 字节（UTF-16 只有 ≈165）：三条超 1000，淘汰最旧一条
+    expect(names(g)).toEqual(["c1", "c2"])
+    expect(g.payload().counts.droppedBytes).toBeGreaterThan(300)
   })
 })
 
