@@ -269,7 +269,10 @@ export function createGuiDiagnostics(options: GuiDiagnosticsOptions = {}): GuiDi
     return {
       schema: "redcode.gui-diagnostics/v1",
       generatedAt: new Date().toISOString(),
-      page: { ...(meta.version ? { version: meta.version } : {}), ...(meta.platform ? { platform: meta.platform } : {}) },
+      page: {
+        ...(meta.version ? { version: meta.version } : {}),
+        ...(meta.platform ? { platform: meta.platform } : {}),
+      },
       span: { startedAt, endedAt, ms: Math.round(Math.max(0, endedAt - startedAt)) },
       limits: { maxRecords, maxBytes },
       counts: { total, kept: size, droppedRecords, droppedBytes, bytes },

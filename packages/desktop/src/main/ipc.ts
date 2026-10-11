@@ -98,7 +98,10 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("install-update", () => deps.installUpdate())
   ipcMain.handle("set-background-color", (_event: IpcMainInvokeEvent, color: string) => deps.setBackgroundColor(color))
   ipcMain.handle("export-debug-logs", () => deps.exportDebugLogs())
-  ipcMain.handle("save-gui-diagnostics", (_event: IpcMainInvokeEvent, payload: string) => deps.saveGuiDiagnostics(payload) ?? null)
+  ipcMain.handle(
+    "save-gui-diagnostics",
+    (_event: IpcMainInvokeEvent, payload: string) => deps.saveGuiDiagnostics(payload) ?? null,
+  )
   ipcMain.handle("record-fatal-renderer-error", (_event: IpcMainInvokeEvent, error: FatalRendererError) =>
     deps.recordFatalRendererError(error),
   )

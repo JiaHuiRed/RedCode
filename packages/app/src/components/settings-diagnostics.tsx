@@ -78,11 +78,7 @@ export const SettingsDiagnostics: Component = () => {
             <Button variant="ghost" onClick={toggle}>
               {recording() ? language.t("settings.diagnostics.stop") : language.t("settings.diagnostics.start")}
             </Button>
-            <Button
-              variant="ghost"
-              disabled={count() === 0}
-              onClick={() => setPreview((value) => !value)}
-            >
+            <Button variant="ghost" disabled={count() === 0} onClick={() => setPreview((value) => !value)}>
               {preview() ? language.t("settings.diagnostics.preview.hide") : language.t("settings.diagnostics.preview")}
             </Button>
             <Button disabled={count() === 0} onClick={() => void exportNow()}>
