@@ -3,7 +3,7 @@ import { canDisposeDirectory, pickDirectoriesToEvict } from "./global-sync/evict
 import { estimateRootSessionTotal, loadRootSessionsWithFallback } from "./global-sync/session-load"
 
 describe("pickDirectoriesToEvict", () => {
-  test("keeps pinned stores and evicts idle stores", () => {
+  test("keeps pinned and recently used stores, evicts idle stores", () => {
     const now = 5_000
     const picks = pickDirectoriesToEvict({
       stores: ["a", "b", "c", "d"],
@@ -14,12 +14,42 @@ describe("pickDirectoriesToEvict", () => {
         ["d", { lastAccessAt: 3_000 }],
       ]),
       pins: new Set(["a"]),
-      max: 2,
       ttl: 1_500,
       now,
     })
 
-    expect(picks).toEqual(["d", "c"])
+    expect(picks).toEqual(["d"])
+  })
+
+  test("does not force-evict recently used stores beyond the old max（防淘-建死循环）", () => {
+    const picks = pickDirectoriesToEvict({
+      stores: ["a", "b", "c"],
+      state: new Map([
+        ["a", { lastAccessAt: 4_900 }],
+        ["b", { lastAccessAt: 4_800 }],
+        ["c", { lastAccessAt: 4_700 }],
+      ]),
+      pins: new Set(),
+      ttl: 1_500,
+      now: 5_000,
+    })
+
+    expect(picks).toEqual([])
+  })
+
+  test("evicts idle stores regardless of store count", () => {
+    const picks = pickDirectoriesToEvict({
+      stores: ["a", "b"],
+      state: new Map([
+        ["a", { lastAccessAt: 1_000 }],
+        ["b", { lastAccessAt: 2_000 }],
+      ]),
+      pins: new Set(),
+      ttl: 1_500,
+      now: 5_000,
+    })
+
+    expect(picks).toEqual(["a", "b"])
   })
 })
 

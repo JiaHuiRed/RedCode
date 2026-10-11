@@ -1,8 +1,6 @@
 import type { DisposeCheck, EvictPlan } from "./types"
 
 export function pickDirectoriesToEvict(input: EvictPlan) {
-  const overflow = Math.max(0, input.stores.length - input.max)
-  let pendingOverflow = overflow
   const sorted = input.stores
     .filter((dir) => !input.pins.has(dir))
     .slice()
@@ -18,10 +16,14 @@ export function pickDirectoriesToEvict(input: EvictPlan) {
     // 之后会话列表与消息请求全部 Failed to fetch（GUI 三症状：历史会话空白、工作区会话
     // 加载失败、卡片闪动）。无记录的目录不参与淘汰，等它真正被 mark/pin 过再按 idle 处理。
     if (last === undefined) continue
-    const idle = input.now - last >= input.ttl
-    if (!idle && pendingOverflow <= 0) continue
+    // 261011 Red: 删掉 overflow 补淘活跃目录的路径。首页 Kanban 对全部项目建 store，
+    // 项目数恒超目录上限，淘活跃目录会被视图立即重建——store 淘-建死循环，且每轮对
+    // 同批目录重发 /instance/dispose（261011 现场：13 个目录每 200ms 一轮，打满
+    // renderer→sidecar 的 HTTP/1.1 6 槽，全站请求 Failed to fetch）。活跃目录的
+    // 「硬上限」本就不可执行（执行 = 空转），收敛改由 idle TTL 承担：闲置满 ttl
+    // 的目录照旧回收，不再有第二个淘汰来源。
+    if (input.now - last < input.ttl) continue
     output.push(dir)
-    if (pendingOverflow > 0) pendingOverflow -= 1
   }
   return output
 }

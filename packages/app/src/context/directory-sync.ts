@@ -243,9 +243,10 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
   // 260921 Red 审计回信 P2：消息分页的并发请求改成 join（原先静默丢弃，见 loadMessages）。
   const inflightMessagePages = new Map<string, Promise<void>>()
   const optimistic = new Map<string, Map<string, OptimisticItem>>()
-  // 261009 Red 30→10：与 MAX_DIR_STORES 对齐。这是内存乘数（每目录 40 会话缓存 +
-  // sidecar 每目录一整套 InstanceState/MCP 树），单项目用户用不满 30 个目录，
-  // 多项目来回切 10 个 LRU 也够。
+  // 261009 Red 30→10：消息去重 seen 集的内存乘数（每目录 40 会话缓存 + sidecar
+  // 每目录一整套 InstanceState/MCP 树），单项目用户用不满 30 个目录，多项目来回
+  // 切 10 个 LRU 也够。261011 Red：child-store 的目录数硬上限已退场（见
+  // global-sync/types.ts 注释），这里保留 10 作为数据层 seen 集的 LRU 目标。
   const maxDirs = 10
   const seen = new Map<string, Set<string>>()
   const changeJournals = new Map<string, ReturnType<typeof createSessionChangeJournal>>()

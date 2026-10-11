@@ -122,7 +122,6 @@ export type EvictPlan = {
   stores: string[]
   state: Map<string, DirState>
   pins: Set<string>
-  max: number
   ttl: number
   now: number
 }
@@ -147,10 +146,11 @@ export type RootLoadResult = {
   limited: boolean
 }
 
-// 261009 Red 30→10：目录 store 的乘数太大（renderer 每目录 40 会话缓存，sidecar
-// 每目录一整套 InstanceState，MCP 每目录一整套 stdio server——代码注释实测 10×6=60
-// 进程）。单项目用户用不满 30，多项目来回切 10 个 LRU 也够。
-export const MAX_DIR_STORES = 10
+// 261011 Red 目录数硬上限退场（261009 曾调 30→10 控内存乘数）：活跃目录的硬性
+// 淘汰不可执行——首页 Kanban 对全部项目建 store，淘了立即被视图重建，纯空转且
+// 每轮重发 /instance/dispose（261011 现场见 eviction.ts）。收敛改由 idle TTL
+// （DIR_IDLE_TTL_MS，闲置回收 + dispose）承担，乘数同理受控：活跃目录虽可多于
+// 10 个，但每个 store 自身有界（session 64 / 消息窗口 400 条）。
 export const DIR_IDLE_TTL_MS = 20 * 60 * 1000
 export const SESSION_RECENT_WINDOW = 4 * 60 * 60 * 1000
 export const SESSION_RECENT_LIMIT = 50

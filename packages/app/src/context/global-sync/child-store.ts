@@ -4,7 +4,6 @@ import { Persist, persisted } from "@/utils/persist"
 import type { VcsInfo } from "@redcode-ai/sdk/v2/client"
 import {
   DIR_IDLE_TTL_MS,
-  MAX_DIR_STORES,
   type ChildOptions,
   type DirState,
   type IconCache,
@@ -141,7 +140,6 @@ export function createChildStoreManager(input: {
       stores,
       state: lifecycle,
       pins: new Set(stores.filter(pinned)),
-      max: MAX_DIR_STORES,
       ttl: DIR_IDLE_TTL_MS,
       now: Date.now(),
     }).filter((directory) => directory !== skip)
