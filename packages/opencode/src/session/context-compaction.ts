@@ -10,6 +10,7 @@ import { ContextCompactionTable as Table } from "./context-compaction.sql"
 export interface Limits {
   summaryMaxTokens: number
   summaryMaxBytes: number
+  retainedMaxTokens: number
   activeMaxTokens: number
   activeMaxBytes: number
   maxRanges: number
@@ -162,7 +163,12 @@ message.parts.some((part) =>
             throw new Error("Compression block view is stale")
           consumed.push(old)
           sources.push(...old.sourceMessageIDs)
-          protectedRecords.push(...old.protectedRecords)
+          // 261012 Red 保护记录收敛出口（对齐 codex 有界重建，对照见
+          // docs/notes/proposed/architecture/2026-10-12-codex-compaction-design-comparison.md 借鉴项 #1/#2）：
+          // 旧块记录不再机械全量继承——按预算携带（用户原文优先、同类内最新优先、整条保留或
+          // 丢弃），超限的旧记录退到账本可经 block:<id> 读回。没有出口时 protectedRecords
+          // 单调膨胀（实测 41→100 条 / 25,932→82,454 字符），把每次压缩的回收需求越吃越高。
+          protectedRecords.push(...carryProtected(old.protectedRecords, input.limits))
           Object.assign(sourceHashes, old.sourceHashes)
           // 261012 Red 死路径清理：`condensedSummaries` 覆盖分支与 `Missing nested block
           // marker` 抛出都不可达（需 mode !== "auto" 的调用方，已不存在），已移除。保留下方
@@ -350,6 +356,23 @@ function protect(message: MessageV2.WithParts, limits: Limits): ProtectedRecord[
       return [{ messageID: message.info.id, partID: part.id, role: message.info.role, kind: "tool", tool: part.tool, text: part.state.output }]
     return []
   })
+}
+
+// 261012 Red 携带预算：用户原文优先（逐字承诺的核心），同类内最新优先（messageID 单调递增，
+// 795 天回绕前字典序即时间序），整条保留或整条丢弃——不截半条，与 codex retained outputs
+// 同语义。被丢弃的记录仍在被消费旧块的账本行里，read/search 可读回。
+function carryProtected(records: ProtectedRecord[], limits: Limits): ProtectedRecord[] {
+  const ordered = records.toSorted((a, b) =>
+    a.kind === b.kind ? (a.messageID < b.messageID ? 1 : -1) : a.kind === "user" ? -1 : 1)
+  const carried: ProtectedRecord[] = []
+  let budget = limits.retainedMaxTokens
+  for (const record of ordered) {
+    const cost = Token.estimate(record.text)
+    if (cost > budget) break
+    budget -= cost
+    carried.push(record)
+  }
+  return carried
 }
 
 function endpoint(messages: MessageV2.WithParts[], blocks: Block[], ref: string) {

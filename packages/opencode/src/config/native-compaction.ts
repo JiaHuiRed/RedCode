@@ -62,6 +62,11 @@ const Fields = Schema.Struct({
   summary_max_tokens: Schema.optional(
     bounded(1_000_000, "Maximum tokens of one compaction summary (default: 16000; maximum: 1000000)"),
   ),
+  // 261012 Red 保护记录收敛出口（对齐 codex 有界重建，COMPACT_USER_MESSAGE_MAX_TOKENS 同位）：
+  // 新块继承旧块保护记录时按预算携带，超限的旧记录退到账本可经 block:<id> 读回。
+  retained_max_tokens: Schema.optional(
+    bounded(MAX_TOKENS, "Maximum tokens of inherited protected records carried into a new compaction block (default: 20000; maximum: 10000000)"),
+  ),
   summary_max_bytes: Schema.optional(
     bounded(MAX_BODY_BYTES, "Maximum bytes of one compaction summary (default: 98304; maximum: 67108864)"),
   ),
@@ -130,6 +135,7 @@ export type Spec = {
   readonly pruneRatio: number
   readonly summaryMaxTokens: number
   readonly summaryMaxBytes: number
+  readonly retainedMaxTokens: number
   readonly activeMaxTokens: number
   readonly activeMaxBytes: number
   readonly maxRanges: number
@@ -161,6 +167,7 @@ export function resolve(value?: Info, usableTokens?: number): Spec {
     pruneRatio: cfg.prune_ratio ?? 0.9,
     summaryMaxTokens: cfg.summary_max_tokens ?? 16_000,
     summaryMaxBytes: cfg.summary_max_bytes ?? 98_304,
+    retainedMaxTokens: cfg.retained_max_tokens ?? 20_000,
     activeMaxTokens: cfg.active_max_tokens ?? 80_000,
     activeMaxBytes: cfg.active_max_bytes ?? 524_288,
     maxRanges: cfg.max_ranges ?? 8,

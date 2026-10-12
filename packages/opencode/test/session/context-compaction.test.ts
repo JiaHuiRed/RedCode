@@ -10,7 +10,7 @@ import { testEffect } from "../lib/effect"
 
 const it = testEffect(Layer.mergeAll(Session.defaultLayer, CrossSpawnSpawner.defaultLayer))
 const limits: ContextCompaction.Limits = {
-  summaryMaxTokens: 16000, summaryMaxBytes: 98304, activeMaxTokens: 80000, activeMaxBytes: 524288,
+  summaryMaxTokens: 16000, summaryMaxBytes: 98304, retainedMaxTokens: 20000, activeMaxTokens: 80000, activeMaxBytes: 524288,
   maxRanges: 8, maxBlocks: 128, maxMessages: 4096, readMaxTokens: 2048, readMaxBytes: 8192,
   searchScanBytes: 4194304, searchMaxResults: 10, protectUserMessages: true,
   protectedTools: ["skill", "task", "todowrite"],
@@ -59,6 +59,54 @@ describe("native compression ledger", () => {
     expect(yield* f.session.messages({ sessionID: f.chat.id })).toEqual(f.messages)
     ContextCompaction.deactivate(f.chat.id, blocks[0]!.id)
     expect(ContextCompaction.project(f.messages, ContextCompaction.list(f.chat.id))).toEqual(f.messages)
+  }))
+
+  // 261012 Red 保护记录收敛出口：新块继承旧块记录按预算携带（用户原文优先、最新优先、
+  // 整条保留或丢弃），超限记录退到账本可读回——protectedRecords 不再单调膨胀。
+  it.instance("bounds inherited protected records and keeps dropped ones readable in the ledger", () => Effect.gen(function* () {
+    const f = yield* fixture()
+    const tight: ContextCompaction.Limits = { ...limits, retainedMaxTokens: 1 }
+    const first = ContextCompaction.commit({
+      sessionID: f.chat.id, messages: f.messages, limits: tight, mode: "auto", requestID: "carry-1",
+      ranges: [{ startId: f.user.id, endId: f.assistant.id, summary: "First window." }],
+    })
+    expect(first[0]!.protectedRecords.map((record) => record.text)).toContain("Never push.")
+    const taskOut = yield* f.session.updateMessage({
+      id: MessageID.ascending(), sessionID: f.chat.id, parentID: f.last.id, role: "assistant",
+      agent: "build", mode: "build", modelID: "test", providerID: "test",
+      path: { cwd: ".", root: "." }, time: { created: 4 }, finish: "end_turn", cost: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    } as MessageV2.Assistant)
+    yield* f.session.updatePart({
+      id: PartID.ascending(), messageID: taskOut.id, sessionID: f.chat.id,
+      type: "tool", tool: "task", callID: "call_carry",
+      state: { status: "completed", input: {}, output: "TASK EVIDENCE OUTPUT", title: "task", metadata: {}, time: { start: 1, end: 2 } },
+    })
+    // 大块可压正文，保证 block2 的提交过「保护后仍有正收益」守卫（真实历史远大于此）。
+    yield* f.session.updatePart({
+      id: PartID.ascending(), messageID: taskOut.id, sessionID: f.chat.id,
+      type: "text", text: "Filler evidence. ".repeat(2000),
+    })
+    const user2 = yield* f.session.updateMessage({ ...f.user, id: MessageID.ascending(), time: { created: 5 } })
+    yield* f.session.updatePart({
+      id: PartID.ascending(), messageID: user2.id, sessionID: f.chat.id,
+      type: "text", text: "Second window request.",
+    })
+    const messages = yield* f.session.messages({ sessionID: f.chat.id })
+    // commit 入参必须是投影后视图（生产路径经 NativeRuntime.project）——原始消息里
+    // 锚点没有 prt_context_ 渲染件，stale 守卫会正确拒绝。
+    const view = ContextCompaction.project(messages, ContextCompaction.list(f.chat.id))
+    const second = ContextCompaction.commit({
+      sessionID: f.chat.id, messages: view, limits: tight, mode: "auto", requestID: "carry-2",
+      ranges: [{ startId: f.user.id, endId: taskOut.id, summary: "Second window." }],
+    })
+    const texts = second[0]!.protectedRecords.map((record) => record.text)
+    expect(texts).not.toContain("Never push.")
+    expect(texts).toContain("TASK EVIDENCE OUTPUT")
+    const projected = ContextCompaction.project(messages, ContextCompaction.list(f.chat.id))
+    expect(JSON.stringify(projected)).not.toContain("Never push.")
+    expect(JSON.stringify(projected)).toContain("Second window request.")
+    expect(ContextCompaction.search(f.chat.id, "Never push.", tight).results.length).toBeGreaterThan(0)
   }))
 
   it.instance("rejects an invalid batch before changing any projection", () => Effect.gen(function* () {

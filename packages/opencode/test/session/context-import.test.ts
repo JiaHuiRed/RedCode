@@ -11,7 +11,7 @@ import { testEffect } from "../lib/effect"
 
 const it = testEffect(Layer.mergeAll(Session.defaultLayer, CrossSpawnSpawner.defaultLayer))
 const limits: ContextCompaction.Limits = {
-  summaryMaxTokens: 16000, summaryMaxBytes: 98304, activeMaxTokens: 80000, activeMaxBytes: 524288,
+  summaryMaxTokens: 16000, summaryMaxBytes: 98304, retainedMaxTokens: 20000, activeMaxTokens: 80000, activeMaxBytes: 524288,
   maxRanges: 8, maxBlocks: 128, maxMessages: 4096, readMaxTokens: 2048, readMaxBytes: 8192,
   searchScanBytes: 4194304, searchMaxResults: 10, protectUserMessages: true,
   protectedTools: ["skill", "task", "todowrite"],
