@@ -47,7 +47,7 @@ export interface Block {
   anchorID: MessageID
   summary: string
   protectedRecords: ProtectedRecord[]
-  mode: "model" | "auto" | "import"
+  mode: "auto" | "import"
   active: boolean
   disabledByUser: boolean
   consumedBy?: string
@@ -64,11 +64,13 @@ export interface CommitInput {
   limits: Limits
   mode: Block["mode"]
   requestID: string
-  condensedSummaries?: Record<string, string>
 }
 
-// 261010 Red 两种摘要生产者共用此提交边界；原始 message/part 一律不改。
-// 决策：docs/notes/implemented/feature/2026-10-10-native-compaction.md。
+// 261012 Red 死路径清理：`mode` 的 `"model"` 取值与 `condensedSummaries` 已移除——
+// 模型侧 compress 工具在 0.12.5 退役后，生产调用方只剩 compaction.ts（`"auto"`）与
+// context-import.ts（`"import"`，该模块本身仅测试调用），非 auto 分支全部不可达。
+// 清查依据：docs/notes/proposed/architecture/2026-10-12-codex-compaction-design-comparison.md。
+// 原始 message/part 一律不改。决策：docs/notes/implemented/feature/2026-10-10-native-compaction.md。
 export function list(sessionID: SessionID): Block[] {
   return Database.use((db) => db.select().from(Table)
     .where(and(eq(Table.session_id, sessionID), eq(Table.active, true)))
@@ -132,7 +134,6 @@ message.parts.some((part) =>
     const latestUser = realUsers.toSorted((a, b) => MessageV2.compareTime(b.info, a.info))[0]?.info.id
     const occupied = new Set<string>()
     const newBlocks: Block[] = []
-    const usedOverrides = new Set<string>()
     for (const range of input.ranges) {
       const start = endpoint(input.messages, active, range.startId)
       const end = endpoint(input.messages, active, range.endId)
@@ -163,20 +164,11 @@ message.parts.some((part) =>
           sources.push(...old.sourceMessageIDs)
           protectedRecords.push(...old.protectedRecords)
           Object.assign(sourceHashes, old.sourceHashes)
+          // 261012 Red 死路径清理：`condensedSummaries` 覆盖分支与 `Missing nested block
+          // marker` 抛出都不可达（需 mode !== "auto" 的调用方，已不存在），已移除。保留下方
+          // 标记替换：自动摘要的输入是旧块的 render 正文，模型若回吐块标记则换成旧摘要正文。
           const marker = `{{block:${old.id}}}`
-          const replacement = input.condensedSummaries?.[old.id]
-          if (replacement !== undefined) {
-            checkSummary(replacement, input.limits)
-            usedOverrides.add(old.id)
-            summary = summary.includes(marker)
-              ? summary.replaceAll(marker, replacement)
-              : `${summary}\n\n${replacement}`
-          } else {
-            if (!summary.includes(marker) && input.mode !== "auto")
-              throw new Error(`Missing nested block marker ${marker}`)
-            // 自动摘要的输入已包含旧块正文；只替换正文，保护记录仍机械继承。
-            if (summary.includes(marker)) summary = summary.replaceAll(marker, old.summary)
-          }
+          if (summary.includes(marker)) summary = summary.replaceAll(marker, old.summary)
           continue
         }
         const raw = getRaw(input.sessionID, message.info.id)
@@ -199,8 +191,6 @@ message.parts.some((part) =>
       if (Token.estimate(render(block)) >= before) throw new Error("Compression has no positive savings after protection")
       newBlocks.push(block)
     }
-    if (Object.keys(input.condensedSummaries ?? {}).some((id) => !usedOverrides.has(id)))
-      throw new Error("Condensed summary references an unselected block")
     const consumed = new Set(newBlocks.flatMap((block) => block.consumedBlockIDs))
     const next = [...active.filter((block) => !consumed.has(block.id)), ...newBlocks]
     checkActive(next, input.limits)

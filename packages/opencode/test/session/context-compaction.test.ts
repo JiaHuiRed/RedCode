@@ -46,7 +46,7 @@ describe("native compression ledger", () => {
   it.instance("protects exact user text, preserves raw history and idempotently commits", () => Effect.gen(function* () {
     const f = yield* fixture()
     const input = {
-      sessionID: f.chat.id, messages: f.messages, limits, mode: "model" as const, requestID: "request-1",
+      sessionID: f.chat.id, messages: f.messages, limits, mode: "auto" as const, requestID: "request-1",
       ranges: [{ startId: f.user.id, endId: f.assistant.id, summary: "Investigation finished." }],
     }
     const blocks = ContextCompaction.commit(input)
@@ -64,7 +64,7 @@ describe("native compression ledger", () => {
   it.instance("rejects an invalid batch before changing any projection", () => Effect.gen(function* () {
     const f = yield* fixture()
     expect(() => ContextCompaction.commit({
-      sessionID: f.chat.id, messages: f.messages, limits, mode: "model", requestID: "invalid",
+      sessionID: f.chat.id, messages: f.messages, limits, mode: "auto", requestID: "invalid",
       ranges: [
         { startId: f.user.id, endId: f.assistant.id, summary: "Finished." },
         { startId: f.assistant.id, endId: f.last.id, summary: "Overlapping and current." },
@@ -91,7 +91,7 @@ describe("native compression ledger", () => {
     yield* f.session.updatePart({ ...part, text: "Changed evidence." })
     expect(() => ContextCompaction.commit({
       sessionID: f.chat.id, messages: snapshot, ranges: [{ startId: f.user.id, endId: f.assistant.id, summary: "Done." }],
-      limits, mode: "model", requestID: "stale",
+      limits, mode: "auto", requestID: "stale",
     })).toThrow("stale")
     expect(ContextCompaction.list(f.chat.id)).toEqual([])
   }))
