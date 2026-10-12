@@ -14,7 +14,7 @@ import { useSync } from "@/context/sync"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useProviders } from "@/hooks/use-providers"
-import { getSessionContextMetrics } from "@/components/session/session-context-metrics"
+import { contextUsageTier, getSessionContextMetrics } from "@/components/session/session-context-metrics"
 import { createSessionContextFormatter } from "@/components/session/session-context-format"
 import { useSessionLayout } from "@/pages/session/session-layout"
 
@@ -52,9 +52,8 @@ interface SessionContextUsageProps {
   placement?: TooltipProps["placement"]
 }
 
-// 261011 Red 档位绝对 token 值（与 TUI 侧栏 barColor 同口径）：<220k 绿、220-280k 黄、
-// 280-320k 橙、≥320k 红——200 多 k 就漂橙天天扎眼，哥哥拍板三条界线；不再按 usage% 与
-// 引擎 level 的比例线取重（360k 兜底下 soft=259k）。v2 语义色没有橙色 state token
+// 261012 Red 档位绝对 token 值（与 TUI 侧栏 barColor 同口径）：<320k 绿、320-360k 黄、
+// 360-400k 橙、≥400k 红。v2 语义色没有橙色 state token
 //（--v2-orange-* 是原始色阶不分亮暗），橙用 warning→danger 的 color-mix 自动适配主题。
 const TIER_ORANGE = "color-mix(in srgb, var(--v2-state-fg-warning) 50%, var(--v2-state-fg-danger))"
 const TIER_STROKE = [undefined, "var(--v2-state-fg-warning)", TIER_ORANGE, "var(--v2-state-fg-danger)"] as const
@@ -135,18 +134,8 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   // 任何新机制：progress-circle.css 本来就是 var(--progress-circle-progress, …) 的可覆盖
   // 写法，调用方传 style 即可，共享组件一行不用改。
   //
-  // 260822 cc 改成**跟着上下文窗口占用**走，与 tooltip 第一行的百分比同一个口径。之前只按
-  // 引擎档位（level）上色，而 level 的分母是 ceiling（usable 扣掉输出预留、再被
-  // compaction.threshold 封顶，见 overflow.ts:48-56），与这里显示的 window / limit.context
-  // 不是同一个分母——step-3.7-flash 上 usable≈224k、窗口 256k，soft 落在显示的 52%，于是
-  // "圈黄了但数字才 52%"，颜色与数字对不上。
-  const strokeTier = () => {
-    const window = context()?.window
-    if ((window ?? 0) >= 320_000) return 3
-    if ((window ?? 0) >= 280_000) return 2
-    if ((window ?? 0) >= 220_000) return 1
-    return 0
-  }
+  // 260822 cc 颜色按上下文绝对量分档，与 TUI 相同，不依赖各模型窗口比例。
+  const strokeTier = () => contextUsageTier(context()?.window)
 
   const circle = () => (
     <div class="flex items-center justify-center">

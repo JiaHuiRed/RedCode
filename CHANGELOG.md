@@ -8,6 +8,14 @@
 
 ---
 
+### [未发布]
+
+- **合成通知继承会话当前推理档位**（`packages/opencode/src/session/prompt.ts`）：后台任务完成等 noReply 注入的合成 user 消息此前不传 variant，`createUserMessage` 只认显式传参与 agent 配置两档来源，用户在会话中手动选择的 variant（存 session 表）被静默丢弃——下一请求 reasoning effort 从 high 回落 medium，GPT 前缀缓存随参数段整体作废（实测 146k 输入全 miss，request-evidence parameters sha high→medium 吻合）。现补第三优先级「会话当前选择」：显式传参 > agent 配置 > 会话当前 variant，且仅当模型与会话当前一致时才继承，避免把档位挂到别的模型上。模型可见四问：① 无提示词/工具改动，恢复的是请求参数的用户选择值（effort 不再静默回落）；② 固定前缀零增量；③ 修复后参数段稳定，缓存不再因档位漂移作废；④ 无新增注入项。验证：prompt + codex 测试 83 pass / 0 fail、typecheck 绿。
+- **openai oauth 路径补齐 Codex 官方亲和协议**（`packages/opencode/src/session/llm/request.ts`、`src/plugin/codex.ts`）：对齐官方 harness（codex-rs `client.rs`）——① 补标准 `session-id`（与请求体 prompt_cache_key 同源，子代理继承父会话键域）与 `thread-id` 头（ChatGPT 后端从 session-id 头派生缓存亲和；原 hook 里的 `session_id` 下划线头网关不认、从未生效，已删）；② 新增 `x-codex-turn-state` 粘性路由令牌的捕获与同 turn 回传（OnceLock 语义只存 turn 首个响应的 token，跨 turn 查不到即天然不发，宁缺勿错；512 条上限防久驻累积），载体键 `x-redcode-turn` 取 user 消息 ID——同一 turn 所有 step 不变、跨 turn 更换即令牌自动失效。命中目标是「参数未变却整轮全 miss」的服务端路由漂移（日志实证：客户端四段指纹全同、read=0 且 write=0、下轮自愈）。模型可见四问：① 仅传输层头变化，请求体与提示词零改动；② 固定前缀零增量；③ 缓存布局不受影响，预期减少服务端路由漂移导致的整轮 miss；④ 无新增注入项。验证：codex 插件测试全绿、typecheck 绿；命中率收益待真机会话观察。
+- **日志时间戳输出本地时区**（`packages/core/src/util/log.ts`）：日志行与日志文件名此前用 `toISOString`（UTC），全程北京时间的排查每次都要 +8 换算，当日即因误读多绕两轮。现统一输出本地时区，保留 ISO 形状（文件名 glob 与字符串排序不变）。纯日志展示层，不进模型上下文。
+- **新增配置遮蔽审计工具**（`script/check-config-shadowing.ts`、根 `package.json` 的 `check:config-shadowing`）：配置多层合并（local 遮蔽 jsonc）曾让 `redcode.local.jsonc` 残留的 250k 压过 jsonc 新改的 360k，引擎按旧值触发压缩。工具把 local/jsonc/seed 三层扁平化全键对比，列出全部遮蔽点供人工裁决（本机 venv 路径等合法覆盖与遗留冲突只能人来判）。`bun run check:config-shadowing`。
+- **压缩摘要改用 Step 5 Preview，400k 兜底、120k 压后目标，预警颜色同步后移**（`seed/redcode.home.jsonc`、本机 `redcode.jsonc` / `redcode.local.jsonc`）：compaction agent 从 GLM-5.3-Flash high 切到 Step 5 Preview medium；自动兜底触发线从 360k 提至 400k，低于 GPT-6.1 Sol 已验证的 500k 默认甜点位并留 100k 余量；压后目标从共享配置 130k、本机覆盖 100k 统一到 120k；TUI/GUI 统一为 320k 黄、360k 橙、400k 红，native 默认比例同步为 0.8/0.9。当前运行中的进程不热加载配置，重启后生效。
+
 ### [0.12.6] - 2026-10-11
 
 - **explore 子代理获得受限 bash：git 只读子命令白名单**（`packages/opencode/src/agent/definition/{explore,execute}.md`、`src/tool/task.ts`、`test/agent/agent.test.ts`）：explore 此前完全无 bash（运行层 guard 硬 deny；260929 曾试过只加白名单，被 guard 在 findLast 末位掀翻成"假门票"后撤下），git 历史考古（log/blame/show/churn）只能写进报告让调用方代跑。本次 guard 与白名单**同批摘/加**：白名单收口为 `git log/show/diff/blame/rev-parse/ls-files/branch` 七个只读 pattern，未命中即 deny（含 `git push`/`git commit`）；分隔符与 `$(...)` 的安全由 tree-sitter 按命令节点拆分独立授权结构性保证（既有 shell 测试已覆盖）。同时补索引陈旧刷新指引（`indexed_at` 早于会话日期先增量重建再查）、execute.md 补 worktree 隔离场景说明（隔离内写不了主仓、回传不含合并、发现任务不符立即停止）。模型可见四问：① explore 工具表新增 bash（七个 pattern），提示词多处改写；② 固定前缀约 +120 token；③ 前缀从工具表起失效一次属预期；④ 新增内容皆有界。验证：agent/task 测试 71 pass（新增白名单 14 断言）、shell 110 pass、typecheck 绿。决策与批次：`docs/agent-dispatch-plan.md` D4/B1。

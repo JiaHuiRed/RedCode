@@ -50,6 +50,13 @@ type Context = {
   firstChunkMs: number | null
 }
 
+export function contextUsageTier(window: number | undefined): 0 | 1 | 2 | 3 {
+  if ((window ?? 0) >= 400_000) return 3
+  if ((window ?? 0) >= 360_000) return 2
+  if ((window ?? 0) >= 320_000) return 1
+  return 0
+}
+
 type Metrics = {
   totalCost: number
   // 260615 Red: "CNY" when session uses DeepSeek/Xiaomi (official RMB pricing), "USD" otherwise

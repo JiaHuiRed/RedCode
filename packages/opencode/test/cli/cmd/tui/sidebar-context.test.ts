@@ -31,13 +31,20 @@ describe("sidebar context window 显示", () => {
     expect([...bar(-5).filled].length).toBe(0)
   })
 
-  // 261011 Red 显示档位改绝对 token 值：<220k 绿、220-280k 黄、280-320k 橙、≥320k 红。
-  test("barColor 四档按绝对 token 值分档", () => {
-    const colors = [100_000, 240_000, 300_000, 350_000].map(barColor)
+  // 261012 Red 颜色档位与 400k 兜底对齐：<320k 绿、320-360k 黄、360-400k 橙、≥400k 红。
+  test("barColor 四档按 400k 兜底分档", () => {
+    const colors = [100_000, 340_000, 380_000, 410_000].map(barColor)
     expect(new Set(colors).size).toBe(4)
-    expect(barColor(219_999)).toBe(barColor(0))
-    expect(barColor(220_000)).not.toBe(barColor(0))
-    expect(barColor(319_999)).not.toBe(barColor(320_000))
+    const green = barColor(0)
+    const yellow = barColor(320_000)
+    const orange = barColor(360_000)
+    const red = barColor(400_000)
+    expect(barColor(319_999)).toBe(green)
+    expect(barColor(320_000)).toBe(yellow)
+    expect(barColor(359_999)).toBe(yellow)
+    expect(barColor(360_000)).toBe(orange)
+    expect(barColor(399_999)).toBe(orange)
+    expect(barColor(400_000)).toBe(red)
   })
 
   test("上下文缺失（历史消息没有该字段）回落到 ok 的颜色，不报错", () => {

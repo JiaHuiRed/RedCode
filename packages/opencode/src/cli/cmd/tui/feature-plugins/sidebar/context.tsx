@@ -72,20 +72,18 @@ export function bar(percent: number): { filled: string; rest: string } {
   return { filled: "█".repeat(filled), rest: "░".repeat(BAR_WIDTH - filled) }
 }
 
-// 261011 Red 显示档位改绝对 token 值（哥哥拍板）：<220k 绿、220-280k 黄、280-320k 橙、
-// ≥320k 红。不再由引擎 level 的比例线驱动——360k 兜底下 soft=259k/prune=317k，
-// 200 多 k 就漂橙天天扎眼，颜色是给自己看的心率表，分档听用户的。
+// 261012 Red 颜色档位与 400k 兜底对齐：<320k 绿、320-360k 黄、360-400k 橙、≥400k 红。
 const LEVEL_COLOR = {
-  ok: "#66bb6a", // 绿：<220k
-  soft: "#ffb300", // 黄：220-280k
-  prune: "#ff9100", // 橙：280-320k
-  compact: "#ff5252", // 红：≥320k
+  ok: "#66bb6a", // 绿：<320k
+  soft: "#ffb300", // 黄：320-360k
+  prune: "#ff9100", // 橙：360-400k
+  compact: "#ff5252", // 红：≥400k
 }
 
 export function barColor(context: number | null | undefined): string {
-  if ((context ?? 0) >= 320_000) return LEVEL_COLOR.compact
-  if ((context ?? 0) >= 280_000) return LEVEL_COLOR.prune
-  if ((context ?? 0) >= 220_000) return LEVEL_COLOR.soft
+  if ((context ?? 0) >= 400_000) return LEVEL_COLOR.compact
+  if ((context ?? 0) >= 360_000) return LEVEL_COLOR.prune
+  if ((context ?? 0) >= 320_000) return LEVEL_COLOR.soft
   return LEVEL_COLOR.ok
 }
 

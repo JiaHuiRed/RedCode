@@ -43,8 +43,8 @@ describe("NativeCompaction.resolve 默认值", () => {
       triggerTokens: 250_000,
       targetTokens: 130_000,
       reminderTokens: 220_000,
-      softRatio: 0.72,
-      pruneRatio: 0.88,
+      softRatio: 0.8,
+      pruneRatio: 0.9,
       summaryMaxTokens: 16_000,
       summaryMaxBytes: 98_304,
       activeMaxTokens: 80_000,
@@ -236,12 +236,12 @@ describe("overflow native 触发点", () => {
     expect(isOverflow({ cfg: legacy, tokens: tokens(999_999), model: unknownWindow })).toBe(false)
   })
 
-  test("native 在 180k/220k/250k 分档，只有 250k 触发压缩", () => {
+  test("native 默认在 200k/225k/250k 分档，只有 250k 触发压缩", () => {
     const cfg = nativeCfg({ enabled: true })
-    expect(level({ cfg, tokens: tokens(179_999), model: big })).toBe("ok")
-    expect(level({ cfg, tokens: tokens(180_000), model: big })).toBe("soft")
-    expect(level({ cfg, tokens: tokens(219_999), model: big })).toBe("soft")
-    expect(level({ cfg, tokens: tokens(220_000), model: big })).toBe("prune")
+    expect(level({ cfg, tokens: tokens(199_999), model: big })).toBe("ok")
+    expect(level({ cfg, tokens: tokens(200_000), model: big })).toBe("soft")
+    expect(level({ cfg, tokens: tokens(224_999), model: big })).toBe("soft")
+    expect(level({ cfg, tokens: tokens(225_000), model: big })).toBe("prune")
     expect(level({ cfg, tokens: tokens(249_999), model: big })).toBe("prune")
     expect(level({ cfg, tokens: tokens(250_000), model: big })).toBe("compact")
     expect(isOverflow({ cfg, tokens: tokens(220_000), model: big })).toBe(false)

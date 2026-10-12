@@ -1,6 +1,20 @@
 import { describe, expect, test } from "bun:test"
 import type { Message, Part } from "@redcode-ai/sdk/v2/client"
-import { findLastCompaction, getSessionContextMetrics } from "./session-context-metrics"
+import { contextUsageTier, findLastCompaction, getSessionContextMetrics } from "./session-context-metrics"
+
+describe("contextUsageTier", () => {
+  test.each([
+    [undefined, 0],
+    [319_999, 0],
+    [320_000, 1],
+    [359_999, 1],
+    [360_000, 2],
+    [399_999, 2],
+    [400_000, 3],
+  ] as const)("maps %s tokens to tier %s", (window, expected) => {
+    expect(contextUsageTier(window)).toBe(expected)
+  })
+})
 
 const assistant = (
   id: string,

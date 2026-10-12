@@ -50,13 +50,13 @@ const Fields = Schema.Struct({
   soft_ratio: Schema.optional(
     Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 })).annotate({
       description:
-        "Soft context warning as a fraction of the native trigger (default: 0.72; 180000 at a 250000 trigger)",
+        "Soft context warning as a fraction of the native trigger (default: 0.8; 200000 at a 250000 trigger)",
     }),
   ),
   prune_ratio: Schema.optional(
     Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 })).annotate({
       description:
-        "Prune context warning as a fraction of the native trigger (default: 0.88; 220000 at a 250000 trigger); native mode does not run legacy pruning",
+        "Prune context warning as a fraction of the native trigger (default: 0.9; 225000 at a 250000 trigger); native mode does not run legacy pruning",
     }),
   ),
   summary_max_tokens: Schema.optional(
@@ -111,8 +111,8 @@ const orderedBudget = Schema.makeFilter<Schema.Schema.Type<typeof Fields>>((data
   const reminder = data.reminder_tokens ?? REMINDER_DEFAULT
   if (target > reminder) return `target_tokens (${target}) must not exceed reminder_tokens (${reminder})`
   if (reminder > trigger) return `reminder_tokens (${reminder}) must not exceed trigger_tokens (${trigger})`
-  const soft = data.soft_ratio ?? 0.72
-  const prune = data.prune_ratio ?? 0.88
+  const soft = data.soft_ratio ?? 0.8
+  const prune = data.prune_ratio ?? 0.9
   if (!(0 < soft && soft < prune && prune < 1))
     return `context warning ratios must satisfy 0 < soft_ratio (${soft}) < prune_ratio (${prune}) < 1`
   return undefined
@@ -157,8 +157,8 @@ export function resolve(value?: Info, usableTokens?: number): Spec {
     triggerTokens: cfg.trigger_tokens ?? TRIGGER_DEFAULT,
     targetTokens: cfg.target_tokens ?? TARGET_DEFAULT,
     reminderTokens: cfg.reminder_tokens ?? REMINDER_DEFAULT,
-    softRatio: cfg.soft_ratio ?? 0.72,
-    pruneRatio: cfg.prune_ratio ?? 0.88,
+    softRatio: cfg.soft_ratio ?? 0.8,
+    pruneRatio: cfg.prune_ratio ?? 0.9,
     summaryMaxTokens: cfg.summary_max_tokens ?? 16_000,
     summaryMaxBytes: cfg.summary_max_bytes ?? 98_304,
     activeMaxTokens: cfg.active_max_tokens ?? 80_000,
