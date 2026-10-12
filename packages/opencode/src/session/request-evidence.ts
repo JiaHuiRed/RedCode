@@ -7,8 +7,11 @@ import { MAX_SESSIONS, SESSION_TTL_MS, sessionEvictor } from "@/util/session-evi
 import { ConfigRequestEvidence } from "@/config/request-evidence"
 
 const log = Log.create({ service: "request-evidence" })
+// 261012 Red 中间件与 native 只强制 capture；transport 与 providerUsage 是按观察器
+// 实现装配的可选钩子，capture-only 的测试替身因此保持可用。
+type ScopedObserver = Pick<Observer, "capture"> & Partial<Pick<Observer, "transport" | "providerUsage">>
 const transportScope = new AsyncLocalStorage<{
-  observer: Pick<Observer, "capture"> & Partial<Pick<Observer, "transport">>
+  observer: ScopedObserver
   requestID: string
   actualCapture?: CaptureObservation
 }>()
@@ -122,6 +125,33 @@ export type Observer = {
   capture(body: unknown, source?: "adapter" | "transport"): CaptureObservation
   event(event: LLMEvent): EventObservation | undefined
   transport(input: TransportInput, requestID: string): TransportObservation
+  // 261012 Red AI SDK finish 事件的原始 vendor usage（归一化之前）经中间件旁路观察；
+  // 保持可选，capture-only 的替身与 native 路径无需实现。
+  providerUsage?(observation: ProviderUsageObservation): void
+}
+
+// 261012 Red finish 事件里原始 vendor usage 的白名单投影。@ai-sdk/openai 的 Responses
+// converter 用 `cached_tokens ?? 0` 把「字段缺失」与「显式 0」归一成同一个 0，下游
+// LLMAISDK.usage 再也分不开；只有归一化之前的原始 usage 能给出显式在场判定。
+// 原始对象本身从不入日志——只收下列有限数值标量（字段数上界 = 白名单长度 9）。
+const PROVIDER_USAGE_FIELDS = [
+  "input_tokens",
+  "output_tokens",
+  "total_tokens",
+  "input_tokens_details.cached_tokens",
+  "input_tokens_details.cache_write_tokens",
+  "input_tokens_details.orchestration_input_tokens",
+  "input_tokens_details.orchestration_input_cached_tokens",
+  "output_tokens_details.reasoning_tokens",
+  "output_tokens_details.orchestration_output_tokens",
+] as const
+
+const CACHED_TOKENS_FIELD = "input_tokens_details.cached_tokens"
+
+export type ProviderUsageObservation = {
+  readonly requestID: string
+  readonly cachedTokens: "reported" | "reported-zero" | "missing"
+  readonly fields: Readonly<Record<string, number>>
 }
 
 export type TransportInput = {
@@ -130,6 +160,9 @@ export type TransportInput = {
   readonly responseRequestID?: string
   readonly status?: number
   readonly body?: unknown
+  // 261012 Red 可选路由指纹来源：最终生效的请求头与响应 turn-state 令牌。
+  readonly headers?: Headers | Readonly<Record<string, unknown>>
+  readonly turnState?: string
 }
 
 export type TransportObservation = {
@@ -138,6 +171,8 @@ export type TransportObservation = {
   readonly endpointHash: string
   readonly responseRequestHash?: string
   readonly status?: number
+  readonly headerHashes?: Readonly<Record<string, string>>
+  readonly turnStateHash?: string
 }
 
 type RecordValue = Record<string, unknown>
@@ -382,6 +417,55 @@ function usageFields(usage: Usage | undefined): Readonly<Record<string, number>>
   return Object.keys(fields).length > 0 ? fields : undefined
 }
 
+// 261012 Red 路由指纹白名单：只对这 4 个传输层头做 identity() HMAC，authorization /
+// cookie 等 opaque 头永不在列；值原文从不入日志，超限值直接跳过。
+const ROUTE_HEADERS = ["session-id", "thread-id", "x-redcode-turn", "x-codex-turn-state"] as const
+const ROUTE_VALUE_MAX_BYTES = 1024
+
+function headerEntries(headers: TransportInput["headers"]): ReadonlyArray<readonly [string, unknown]> {
+  if (headers instanceof Headers) return [...headers.entries()]
+  if (isRecord(headers)) return Object.entries(headers)
+  return []
+}
+
+function routeHashes(input: TransportInput): Pick<TransportObservation, "headerHashes" | "turnStateHash"> {
+  const entries = headerEntries(input.headers)
+  const headerHashes = ROUTE_HEADERS.reduce<Record<string, string>>((result, name) => {
+    const value = entries.find(([key]) => key.toLowerCase() === name)?.[1]
+    const text = typeof value === "string" ? value : value == null ? undefined : String(value)
+    // 261012 Red 体积校验：超限头值不入指纹，防病态响应把 HMAC 输入放大。
+    if (text !== undefined && Buffer.byteLength(text, "utf8") <= ROUTE_VALUE_MAX_BYTES) result[name] = identity(text)
+    return result
+  }, {})
+  const turnState = input.turnState
+  const turnStateHash =
+    typeof turnState === "string" && Buffer.byteLength(turnState, "utf8") <= ROUTE_VALUE_MAX_BYTES
+      ? identity(turnState)
+      : undefined
+  return {
+    ...(Object.keys(headerHashes).length > 0 ? { headerHashes } : {}),
+    ...(turnStateHash === undefined ? {} : { turnStateHash }),
+  }
+}
+
+// 261012 Red finish part 的原始 vendor usage 投影：只走白名单路径、只收有限数值。
+function providerUsage(usage: unknown, requestID: string): ProviderUsageObservation {
+  const raw = isRecord(usage) ? usage.raw : undefined
+  const fields = PROVIDER_USAGE_FIELDS.reduce<Record<string, number>>((result, field) => {
+    const value = field
+      .split(".")
+      .reduce<unknown>((cursor, key) => (isRecord(cursor) ? cursor[key] : undefined), raw)
+    if (typeof value === "number" && Number.isFinite(value)) result[field] = value
+    return result
+  }, {})
+  const cached = fields[CACHED_TOKENS_FIELD]
+  return {
+    requestID,
+    cachedTokens: cached === undefined ? "missing" : cached === 0 ? "reported-zero" : "reported",
+    fields,
+  }
+}
+
 // 261004 Red 收窄返回类型，status 才能作为可判别字段（usage 变体没有 status）。
 type CompressionObservation = Extract<EventObservation, { type: "compression" }>
 
@@ -606,16 +690,20 @@ export function create(context: Context, limits = ConfigRequestEvidence.resolve(
         endpointHash: identity(input.endpoint),
         ...(input.responseRequestID === undefined ? {} : { responseRequestHash: identity(input.responseRequestID) }),
         ...(input.status === undefined ? {} : { status: input.status }),
+        ...routeHashes(input),
       }
       record("request.transport", { sessionID, modelKey, runtime, ...observation })
       return observation
+    },
+    providerUsage(observation) {
+      record("request.provider-usage", { ...common(), ...observation })
     },
   }
   return observer
 }
 
 // 261007 Red 只传播诊断关联号，不加 HTTP header，也不修改 SDK 参数或实际 body。
-export function withRequest<T>(observer: Pick<Observer, "capture"> & Partial<Pick<Observer, "transport">>, work: () => T): T {
+export function withRequest<T>(observer: ScopedObserver, work: () => T): T {
   return transportScope.run({ observer, requestID: crypto.randomUUID() }, work)
 }
 
@@ -634,18 +722,46 @@ export function observeTransport(input: TransportInput): TransportObservation | 
   }
 }
 
-export function middleware(observer: Pick<Observer, "capture"> & Partial<Pick<Observer, "transport">>) {
+// 261012 Red 只依赖 finish part 的判别字段与 usage.raw，不引入 @ai-sdk/provider 类型依赖
+// （LanguageModelV3/V4 的 finish usage 形状一致，中间件对两种 spec 都生效）。
+type StreamPart = { readonly type: string }
+type FinishPart = { readonly type: "finish"; readonly usage?: unknown }
+
+export function middleware(observer: ScopedObserver) {
   return {
     specificationVersion: "v3" as const,
     async wrapStream<T>({ doStream }: { readonly doStream: () => PromiseLike<T> }): Promise<T> {
       return withRequest(observer, async () => {
         const result = await doStream()
+        // 261012 Red requestID 在 wrapStream 当刻定影：流的消费发生在 ALS 之外，
+        // 关联号必须先于流对象存活下来。
+        const scoped = transportScope.getStore()
+        const requestID = scoped?.observer === observer ? scoped.requestID : undefined
         try {
           observer.capture((result as { request?: { body?: unknown } }).request?.body)
         } catch {
           // 261004 Red Evidence logging is best-effort and must not fail the provider stream.
         }
-        return result
+        // 261012 Red 原始 vendor usage 在 AI SDK 归一化（cached_tokens ?? 0）之前旁路观察：
+        // 旁路 transform 逐 part 原样透传——不缓冲、不改 parts、不动 token 语义，
+        // 错误/取消/背压经 pipeThrough 原样传播。
+        const stream = (result as { stream?: ReadableStream<StreamPart> }).stream
+        if (!requestID || !observer.providerUsage || !stream) return result
+        const observed = stream.pipeThrough(
+          new TransformStream<StreamPart, StreamPart>({
+            transform(part, controller) {
+              if (part.type === "finish") {
+                try {
+                  observer.providerUsage?.(providerUsage((part as FinishPart).usage, requestID))
+                } catch {
+                  // 261012 Red 观察失败不得改变流内容或中止传输。
+                }
+              }
+              controller.enqueue(part)
+            },
+          }),
+        )
+        return { ...(result as object), stream: observed } as unknown as T
       })
     },
   }

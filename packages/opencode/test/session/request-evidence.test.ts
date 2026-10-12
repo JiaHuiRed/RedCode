@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { LLMEvent, ToolResultValue, Usage } from "@redcode-ai/llm"
 import { LLMClient, RequestExecutor, WebSocketExecutor } from "@redcode-ai/llm/route"
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
+import { createOpenAI } from "@ai-sdk/openai"
 import { jsonSchema, streamText, tool, wrapLanguageModel } from "ai"
 import { Effect, Layer, Schema, Stream } from "effect"
 import crypto from "node:crypto"
@@ -71,6 +72,10 @@ const chatBody = (history = "first turn", system = "private system", tools: unkn
   ],
   tools,
 })
+
+// 261012 Red 中间件旁路 seam 的测试替身：LanguageModelV3/V4 的 finish part 共享同一形状，
+// 只取判别字段与 usage，其余字段由 fixture 自带。
+type FixturePart = { readonly type: string } & Record<string, unknown>
 
 describe("session.request-evidence", () => {
   test("validates file-backed diagnostic caps and resolves bounded defaults", () => {
@@ -517,6 +522,281 @@ describe("session.request-evidence", () => {
         { role: "user", content: "hello" },
       ],
     })
+    RequestEvidence.reset()
+  })
+
+  test("observes raw provider usage before normalization, separating cached zero from missing", async () => {
+    RequestEvidence.reset()
+    const observed: RequestEvidence.ProviderUsageObservation[] = []
+    const captures: ReturnType<ReturnType<typeof RequestEvidence.create>["capture"]>[] = []
+    const observer = RequestEvidence.create(context())
+    // 261012 Red 直接 patch 真观察器而不是传包装替身：withRequest 的作用域按对象同一性
+    // 认领 capture，替身会让 capture 退回随机 UUID，requestID 关联就测不出来。
+    const capture = observer.capture.bind(observer)
+    observer.capture = (body, source) => {
+      const observation = capture(body, source)
+      captures.push(observation)
+      return observation
+    }
+    observer.providerUsage = (observation) => observed.push(observation)
+    const middleware = RequestEvidence.middleware(observer)
+    const consume = async (usage: unknown) => {
+      const stream = new ReadableStream<FixturePart>({
+        start(controller) {
+          controller.enqueue({ type: "text-delta", id: "text-1", delta: "ok" })
+          controller.enqueue({ type: "finish", finishReason: "stop", usage })
+          controller.close()
+        },
+      })
+      const result = await middleware.wrapStream({
+        doStream: async () => ({ request: { body: JSON.stringify(chatBody()) }, stream }),
+      })
+      const reader = (result as { stream: ReadableStream<FixturePart> }).stream.getReader()
+      while (!(await reader.read()).done) {
+        // 261012 Red Consume the stream so the finish seam runs.
+      }
+      return observed.at(-1)
+    }
+
+    const hit = await consume({
+      inputTokens: { total: 282_000, noCache: 12_000, cacheRead: 270_000, cacheWrite: 0 },
+      outputTokens: { total: 900, text: 600, reasoning: 300 },
+      raw: {
+        input_tokens: 282_000,
+        output_tokens: 900,
+        total_tokens: 282_900,
+        input_tokens_details: {
+          cached_tokens: 270_000,
+          cache_write_tokens: 0,
+          orchestration_input_tokens: 12,
+          orchestration_input_cached_tokens: 120_000,
+        },
+        output_tokens_details: { reasoning_tokens: 300, orchestration_output_tokens: 600 },
+        secret_marker: "do-not-log",
+      },
+    })
+    expect(hit).toMatchObject({
+      cachedTokens: "reported",
+      fields: {
+        input_tokens: 282_000,
+        output_tokens: 900,
+        total_tokens: 282_900,
+        "input_tokens_details.cached_tokens": 270_000,
+        "input_tokens_details.cache_write_tokens": 0,
+        "input_tokens_details.orchestration_input_tokens": 12,
+        "input_tokens_details.orchestration_input_cached_tokens": 120_000,
+        "output_tokens_details.reasoning_tokens": 300,
+        "output_tokens_details.orchestration_output_tokens": 600,
+      },
+    })
+    expect(Object.keys(hit?.fields ?? {})).toHaveLength(9)
+
+    // 261012 Red 现场形态：提供商真的报了 0（converter 的 `?? 0` 之后与 miss 同形）。
+    const zero = await consume({
+      inputTokens: { total: 282_000, noCache: 282_000, cacheRead: 0, cacheWrite: undefined },
+      outputTokens: { total: 900, text: 900, reasoning: 0 },
+      raw: { input_tokens: 282_000, output_tokens: 900, input_tokens_details: { cached_tokens: 0 } },
+    })
+    expect(zero?.cachedTokens).toBe("reported-zero")
+    expect(zero?.fields["input_tokens_details.cached_tokens"]).toBe(0)
+
+    const missing = await consume({
+      inputTokens: { total: 282_000, noCache: 282_000, cacheRead: 0, cacheWrite: undefined },
+      outputTokens: { total: 900, text: 900, reasoning: 0 },
+      raw: { input_tokens: 282_000, output_tokens: 900 },
+    })
+    expect(missing?.cachedTokens).toBe("missing")
+    expect(missing?.fields).not.toHaveProperty("input_tokens_details.cached_tokens")
+
+    const noRaw = await consume({
+      inputTokens: { total: 282_000, noCache: 282_000, cacheRead: 0, cacheWrite: undefined },
+      outputTokens: { total: 900, text: 900, reasoning: 0 },
+    })
+    expect(noRaw).toMatchObject({ cachedTokens: "missing", fields: {} })
+
+    const invalid = await consume({
+      raw: { input_tokens: "282000", input_tokens_details: { cached_tokens: Number.NaN }, output_tokens: 900 },
+    })
+    expect(invalid?.fields).toEqual({ output_tokens: 900 })
+    expect(invalid?.cachedTokens).toBe("missing")
+
+    for (const observation of observed) {
+      expect(observation.requestID).toMatch(/^[0-9a-f-]{36}$/)
+      expect(JSON.stringify(observation)).not.toContain("do-not-log")
+      expect(JSON.stringify(observation)).not.toContain("secret_marker")
+    }
+    expect(observed[0]?.requestID).toBe(captures[0]?.requestID)
+    RequestEvidence.reset()
+  })
+
+  test("passes stream parts through untouched and propagates cancellation without buffering", async () => {
+    RequestEvidence.reset()
+    const observer = RequestEvidence.create(context())
+    const observed: RequestEvidence.ProviderUsageObservation[] = []
+    const middleware = RequestEvidence.middleware({
+      capture: (body) => observer.capture(body),
+      providerUsage: (observation) => observed.push(observation),
+    })
+    let cancelled = false
+    const start = { type: "text-start", id: "text-1" }
+    const delta = { type: "text-delta", id: "text-1", delta: "ok" }
+    const source = new ReadableStream<{ type: string }>({
+      start(controller) {
+        controller.enqueue(start)
+        controller.enqueue(delta)
+        // 261012 Red 第三个 part 永不入队：取消必须原地传播，transform 不得补齐或缓冲。
+      },
+      cancel() {
+        cancelled = true
+      },
+    })
+    const result = await middleware.wrapStream({
+      doStream: async () => ({ request: { body: "{}" }, stream: source }),
+    })
+    const reader = (result as { stream: ReadableStream<{ type: string }> }).stream.getReader()
+    const first = await reader.read()
+    expect(first.done).toBe(false)
+    expect(first.value).toBe(start)
+    const second = await reader.read()
+    expect(second.done).toBe(false)
+    expect(second.value).toBe(delta)
+    await reader.cancel()
+    // 261012 Red Bun 的 pipeThrough 在 cancel 兑现后的若干微任务才把取消传播到源流。
+    for (let tick = 0; tick < 50 && !cancelled; tick++) await Promise.resolve()
+    expect(cancelled).toBe(true)
+    expect(observed).toHaveLength(0)
+    RequestEvidence.reset()
+  })
+
+  test("observes Responses-shaped raw usage through the real OpenAI converter", async () => {
+    RequestEvidence.reset()
+    const observed: RequestEvidence.ProviderUsageObservation[] = []
+    const observer = RequestEvidence.create(context())
+    const fakeFetch = Object.assign(
+      async (_input: Parameters<typeof fetch>[0], _init: Parameters<typeof fetch>[1]) =>
+        new Response(
+          [
+            `data: ${JSON.stringify({ type: "response.created", response: { id: "resp_fixture", created_at: 1_790_000_000, model: "gpt-5-mini" } })}`,
+            "",
+            `data: ${JSON.stringify({ type: "response.output_text.delta", item_id: "msg_fixture", output_index: 0, content_index: 0, delta: "ok" })}`,
+            "",
+            `data: ${JSON.stringify({
+              type: "response.completed",
+              response: {
+                id: "resp_fixture",
+                usage: {
+                  input_tokens: 282_000,
+                  output_tokens: 900,
+                  total_tokens: 282_900,
+                  input_tokens_details: { cached_tokens: 0 },
+                  output_tokens_details: { reasoning_tokens: 300 },
+                },
+              },
+            })}`,
+            "",
+            "",
+          ].join("\n"),
+          { headers: { "Content-Type": "text/event-stream" } },
+        ),
+      { preconnect: () => undefined },
+    ) satisfies typeof fetch
+    const openai = createOpenAI({ apiKey: "test-key", fetch: fakeFetch })
+    const languageModel = wrapLanguageModel({
+      model: openai.responses("gpt-5-mini"),
+      middleware: [
+        RequestEvidence.middleware({
+          capture: (body) => observer.capture(body),
+          providerUsage: (observation) => observed.push(observation),
+        }),
+      ],
+    })
+    const result = streamText({
+      model: languageModel,
+      messages: [{ role: "user", content: "hello" }],
+    })
+    const deltas: string[] = []
+    for await (const part of result.fullStream) {
+      if (part.type === "text-delta") deltas.push(part.text)
+    }
+
+    expect(deltas).toEqual(["ok"])
+    expect(await result.totalUsage).toMatchObject({ inputTokens: 282_000, outputTokens: 900 })
+    expect(observed).toHaveLength(1)
+    expect(observed[0]).toMatchObject({
+      cachedTokens: "reported-zero",
+      fields: {
+        input_tokens: 282_000,
+        output_tokens: 900,
+        total_tokens: 282_900,
+        "input_tokens_details.cached_tokens": 0,
+        "output_tokens_details.reasoning_tokens": 300,
+      },
+    })
+    RequestEvidence.reset()
+  })
+
+  test("fingerprints allowlisted route headers and turn state without exposing plaintext", async () => {
+    RequestEvidence.reset()
+    const observer = RequestEvidence.create(context())
+    const endpoint = "https://chatgpt.com/backend-api/codex/responses"
+    const headers = new Headers({
+      authorization: "Bearer super-secret-token",
+      cookie: "session=super-secret-cookie",
+      "ChatGPT-Account-Id": "private-account-id",
+      "session-id": "ses_route_fingerprint",
+      "thread-id": "thr_route_fingerprint",
+      "x-redcode-turn": "msg_turn_fingerprint",
+      "x-codex-turn-state": "request-turn-state-token",
+    })
+    const observed = await RequestEvidence.withRequest(observer, () =>
+      RequestEvidence.observeTransport({
+        accountID: "private-route-account",
+        endpoint,
+        headers,
+        turnState: "response-turn-state-token",
+      }),
+    )
+    expect(observed?.headerHashes).toEqual({
+      "session-id": expect.any(String),
+      "thread-id": expect.any(String),
+      "x-redcode-turn": expect.any(String),
+      "x-codex-turn-state": expect.any(String),
+    })
+    expect(Object.keys(observed?.headerHashes ?? {})).toHaveLength(4)
+    expect(new Set(Object.values(observed?.headerHashes ?? {})).size).toBe(4)
+    expect(observed?.turnStateHash).toMatch(/^[0-9a-f]{64}$/)
+    for (const observation of [observed]) {
+      const serialized = JSON.stringify(observation)
+      for (const plaintext of [
+        "super-secret-token",
+        "super-secret-cookie",
+        "private-account-id",
+        "ses_route_fingerprint",
+        "thr_route_fingerprint",
+        "msg_turn_fingerprint",
+        "request-turn-state-token",
+        "response-turn-state-token",
+      ]) {
+        expect(serialized).not.toContain(plaintext)
+      }
+    }
+    RequestEvidence.reset()
+  })
+
+  test("skips oversized or absent route header values", async () => {
+    RequestEvidence.reset()
+    const observer = RequestEvidence.create(context())
+    const oversized = "x".repeat(2048)
+    const observed = await RequestEvidence.withRequest(observer, () =>
+      RequestEvidence.observeTransport({
+        endpoint: "https://fixture.invalid/route",
+        headers: { "session-id": oversized, "x-redcode-turn": "msg_ok" },
+        turnState: oversized,
+      }),
+    )
+    expect(observed?.headerHashes).toEqual({ "x-redcode-turn": expect.any(String) })
+    expect(observed?.turnStateHash).toBeUndefined()
+    expect(JSON.stringify(observed)).not.toContain(oversized)
     RequestEvidence.reset()
   })
 

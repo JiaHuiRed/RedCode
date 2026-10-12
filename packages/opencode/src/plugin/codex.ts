@@ -530,7 +530,14 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
             }
 
             // 261007 Red 在最终认证与 URL 重写后记录匿名路由；不改请求、header 或缓存键。
-            RequestEvidence.observeTransport({ accountID: authWithAccount.accountId, endpoint: url.href, body: init?.body })
+            // 261012 Red 附带最终生效的请求头做路由指纹（只哈希白名单 4 项，不含认证头原文）；
+            // 同 turn 首响应/跨 turn 语义不变——这里只观察，不回写、不新发 header。
+            RequestEvidence.observeTransport({
+              accountID: authWithAccount.accountId,
+              endpoint: url.href,
+              body: init?.body,
+              headers,
+            })
             const response = await fetchWithProxy(url, {
               ...init,
               headers,
@@ -548,6 +555,8 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
               endpoint: url.href,
               status: response.status,
               responseRequestID: response.headers.get("x-request-id") ?? undefined,
+              // 261012 Red 响应下发的 turn-state 令牌只入匿名指纹，token 原文从不落日志。
+              turnState: turnToken ?? undefined,
             })
 
             // 260831 cc 顺手记下套餐额度：Codex 后端把用量窗口放在**响应头**里
