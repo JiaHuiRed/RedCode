@@ -693,7 +693,22 @@ export const layer = Layer.effect(
               .getModel(model.providerID, model.modelID)
               .pipe(Effect.catchIf(Provider.ModelNotFoundError.isInstance, () => Effect.succeed(undefined)))
           : undefined
-      const variant = input.variant ?? (ag.variant && full?.variants?.[ag.variant] ? ag.variant : undefined)
+      // 261012 Red 合成消息（后台任务通知等 noReply 注入）不传 model/variant，原逻辑只认
+      // input.variant 与 ag.variant，用户在会话里手动选的 variant（存 session 表 model 列）
+      // 被静默丢弃 → 下轮请求 reasoning effort 从 high 回落 medium，GPT 前缀缓存随参数
+      // 变化整体作废（实测 146k 输入全 miss，request-evidence parameters sha high→medium 吻合）。
+      // 补第三优先级：显式传参 > agent 配置 > 会话当前选择；仅当模型与会话当前一致时才继承，
+      // 避免把 variant 挂到别的模型上。
+      const sessionVariant =
+        current?.model &&
+        current.model.providerID === model.providerID &&
+        current.model.id === model.modelID &&
+        current.model.variant &&
+        current.model.variant !== "default"
+          ? current.model.variant
+          : undefined
+      const variant =
+        input.variant ?? (ag.variant && full?.variants?.[ag.variant] ? ag.variant : undefined) ?? sessionVariant
 
       const info: MessageV2.User = {
         id: input.messageID ?? MessageID.ascending(),

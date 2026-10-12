@@ -40,6 +40,13 @@ const ALLOWED_MODELS = new Set([
  "gpt-6.1-sol",
 ])
 
+// 261012 Red x-codex-turn-state 粘性路由令牌（对齐 Codex 官方 harness，codex-rs/core/src/client.rs:289）：
+// 服务器在 turn 首个响应头下发，同 turn 内后续请求原样回传，让同 turn 的多个 step 落到
+// 已持有该前缀的服务端实例。键取请求头 x-redcode-turn（user 消息 ID，turn 内不变、跨 turn
+// 更换），跨 turn 查不到即天然不发——契约要求跨 turn 必须不发，宁缺勿错。OnceLock 语义：
+// 只存 turn 内第一个响应的 token，后续响应不覆盖。上限兜底防久驻进程累积。
+const TURN_STATE_MAX = 512
+const turnStates = new Map<string, string>()
 interface PkceCodes {
   verifier: string
   challenge: string
@@ -515,12 +522,27 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
                 ? new URL(codexApiEndpoint)
                 : parsed
 
+            // 261012 Red 同 turn 粘性路由：有令牌则回传（契约见顶部 TURN_STATE_MAX 注释）。
+            const turnKey = headers.get("x-redcode-turn")
+            if (turnKey) {
+              const token = turnStates.get(turnKey)
+              if (token) headers.set("x-codex-turn-state", token)
+            }
+
             // 261007 Red 在最终认证与 URL 重写后记录匿名路由；不改请求、header 或缓存键。
             RequestEvidence.observeTransport({ accountID: authWithAccount.accountId, endpoint: url.href, body: init?.body })
             const response = await fetchWithProxy(url, {
               ...init,
               headers,
             })
+            const turnToken = response.headers.get("x-codex-turn-state")
+            if (turnKey && turnToken && !turnStates.has(turnKey)) {
+              if (turnStates.size >= TURN_STATE_MAX) {
+                const oldest = turnStates.keys().next().value
+                if (oldest !== undefined) turnStates.delete(oldest)
+              }
+              turnStates.set(turnKey, turnToken)
+            }
             RequestEvidence.observeTransport({
               accountID: authWithAccount.accountId,
               endpoint: url.href,
@@ -667,7 +689,8 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
       if (input.model.providerID !== "openai") return
       output.headers.originator = "redcode"
       output.headers["User-Agent"] = `opencode/${InstallationVersion} (${os.platform()} ${os.release()}; ${os.arch()})`
-      output.headers.session_id = input.sessionID
+      // 261012 Red 原 session_id（下划线）头网关层不认、从未生效；标准 session-id 头已由
+      // llm/request.ts 在 oauth 路径发出（与 prompt_cache_key 同源），这里不再重复。
     },
     "chat.params": async (input, output) => {
       if (input.model.providerID !== "openai") return
