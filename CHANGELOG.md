@@ -8,7 +8,7 @@
 
 ---
 
-### [未发布]
+### [0.12.7] - 2026-10-12
 
 - **合成通知继承会话当前推理档位**（`packages/opencode/src/session/prompt.ts`）：后台任务完成等 noReply 注入的合成 user 消息此前不传 variant，`createUserMessage` 只认显式传参与 agent 配置两档来源，用户在会话中手动选择的 variant（存 session 表）被静默丢弃——下一请求 reasoning effort 从 high 回落 medium，GPT 前缀缓存随参数段整体作废（实测 146k 输入全 miss，request-evidence parameters sha high→medium 吻合）。现补第三优先级「会话当前选择」：显式传参 > agent 配置 > 会话当前 variant，且仅当模型与会话当前一致时才继承，避免把档位挂到别的模型上。模型可见四问：① 无提示词/工具改动，恢复的是请求参数的用户选择值（effort 不再静默回落）；② 固定前缀零增量；③ 修复后参数段稳定，缓存不再因档位漂移作废；④ 无新增注入项。验证：prompt + codex 测试 83 pass / 0 fail、typecheck 绿。
 - **openai oauth 路径补齐 Codex 官方亲和协议**（`packages/opencode/src/session/llm/request.ts`、`src/plugin/codex.ts`）：对齐官方 harness（codex-rs `client.rs`）——① 补标准 `session-id`（与请求体 prompt_cache_key 同源，子代理继承父会话键域）与 `thread-id` 头（ChatGPT 后端从 session-id 头派生缓存亲和；原 hook 里的 `session_id` 下划线头网关不认、从未生效，已删）；② 新增 `x-codex-turn-state` 粘性路由令牌的捕获与同 turn 回传（OnceLock 语义只存 turn 首个响应的 token，跨 turn 查不到即天然不发，宁缺勿错；512 条上限防久驻累积），载体键 `x-redcode-turn` 取 user 消息 ID——同一 turn 所有 step 不变、跨 turn 更换即令牌自动失效。命中目标是「参数未变却整轮全 miss」的服务端路由漂移（日志实证：客户端四段指纹全同、read=0 且 write=0、下轮自愈）。模型可见四问：① 仅传输层头变化，请求体与提示词零改动；② 固定前缀零增量；③ 缓存布局不受影响，预期减少服务端路由漂移导致的整轮 miss；④ 无新增注入项。验证：codex 插件测试全绿、typecheck 绿；命中率收益待真机会话观察。
