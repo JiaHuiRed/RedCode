@@ -111,6 +111,17 @@ describe("native context boundary", () => {
       .toEqual(plan.segment)
   })
 
+  // 261012 Red 保护记录计入 total 却永不进入 released（回归笔记根因链第 2 条：锚点
+  // retained 逐轮变大，required 越吃越够到）。口径扣除后需求只对能让步的内容提：
+  // 30 条 × 400 = 12,000 估值的保留量按 100,000/30,000 归一为 40,000，required 从
+  // 76,000 降到 36,000，选段随之从 23 条（上一测试）收缩到 18 条。
+  test("required excludes retained content that can never be released", () => {
+    const history = [message, ...Array.from({ length: 28 }, () => assistant), latest]
+    const plan = planAutomatic(history, 40000, 16000, () => 1000, () => 400, 100000)
+    expect(plan.required).toBe(36_000)
+    expect(plan.segment).toHaveLength(18)
+  })
+
   test.each(["pending", "running"] as const)("automatic selection skips %s tools", (status) => {
     const blocked: MessageV2.WithParts = {
       ...assistant,

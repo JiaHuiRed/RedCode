@@ -85,7 +85,15 @@ export function planAutomatic(
   const measured = messages.reduce((total, message) => total + measure(message), 0)
   const total = currentTokens > 0 ? currentTokens : measured
   const scale = currentTokens > 0 && measured > 0 ? total / measured : 1
-  const required = Math.max(summaryMaxTokens, total - targetTokens + summaryMaxTokens)
+  // 261012 Red required 口径扣除（拟修 C 收尾）：保护记录（锚点继承的 protectedRecords
+  // 与各消息受保护正文）计入 total 却永不进入 released——同一份内容既算进 total 又不算进
+  // released，required 越吃越够到（回归笔记实证四：锚点 retained 逐轮变大）。它们不产生
+  // 回收量，需求只应对真正能让步的内容提：算 required 时按同单位先从 total 里扣除。
+  // 出处：docs/notes/proposed/bug-fix/2026-10-12-native-compaction-under-reduction.md
+  // 拟修 C；docs/notes/proposed/architecture/2026-10-12-codex-compaction-design-comparison.md
+  // 借鉴项 #2（codex 保留量独立预算，compact_remote_v2.rs:73）。
+  const floor = messages.reduce((sum, message) => sum + retained(message), 0) * scale
+  const required = Math.max(summaryMaxTokens, total - floor - targetTokens + summaryMaxTokens)
   let released = 0
   let segmentStart = start
   let bestReleased = 0

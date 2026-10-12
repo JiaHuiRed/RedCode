@@ -135,7 +135,7 @@ DeepSeek 中位 **0**——压缩后的**下一个请求就已经 ≥90%**，历
 
 ## 决策
 
-**已确认是回归，但暂不落地修复**（本次只出诊断）。根因链如下，修复需按此顺序决策：
+**已确认是回归**（诊断当时只出结论；A/C/D 已随后落地，逐条状态见下方拟修）。根因链如下，修复需按此顺序决策：
 
 1. **`selectAutomatic` 达不到 `required` 时静默降级。** `native-context.ts:80` 算出
    `required = max(summaryMaxTokens, total - targetTokens + summaryMaxTokens)`；`:100` 命中即返回；但循环走完仍不够时，`:102-103` 直接 `return messages.slice(bestStart, bestEnd + 1)`——**best-effort，不报错、不告警、不回执**。这就是双峰的来源。同文件 `commit` 侧只有 `context-compaction.ts:199` 的 `if (Token.estimate(render(block)) >= before) throw "no positive savings"` 兜底——**它只要求「有一点点收益」，不要求「达到 target」**，所以压掉 15k 也算成功提交。
@@ -148,7 +148,7 @@ DeepSeek 中位 **0**——压缩后的**下一个请求就已经 ≥90%**，历
 
 - **A. 让降级可见。** `selectAutomatic` 在 best-effort 返回时把 `released < required` 带出来，由 `compaction.ts:475-490` 走既有的失败记录路径（`Native compaction was not committed`），或至少在回执里标注。当前「压了等于没压」伪装成成功，是这个问题潜伏两天没被发现的直接原因。**已落地**：`4d1234c1`（`planAutomatic` 返回 required/released + `native compaction shortfall` 日志）。
 - **B. 锚点前移。** 新块 `anchorID` 取「上一个被消费块的 `sourceMessageIDs` 末尾之后的第一条被选消息」，让块链有界；否则保护记录与 `sourceMessageIDs` 都是无界的。
-- **C. 保护记录参与收敛。** 已继承的保护记录在下一轮要么按 `condensedSummaries` 的既有机制收束，要么在算 `required` 时从 `total` 里扣除（它们本来就不产生回收量）。**部分落地**：`context-compaction.ts` `carryProtected()`——继承记录按 `retained_max_tokens`（默认 20k，对齐 codex `COMPACT_USER_MESSAGE_MAX_TOKENS`）预算携带，用户原文优先、最新优先、整条保留或丢弃，超限退账本读回（对照笔记借鉴项 #1/#2 的账本保留版）；`required` 口径的扣除仍未做。
+- **C. 保护记录参与收敛。** 已继承的保护记录在下一轮要么按 `condensedSummaries` 的既有机制收束，要么在算 `required` 时从 `total` 里扣除（它们本来就不产生回收量）。**已落地**：前半 `context-compaction.ts` `carryProtected()`（`4b8560ad`）——继承记录按 `retained_max_tokens`（默认 20k，对齐 codex `COMPACT_USER_MESSAGE_MAX_TOKENS`）预算携带，用户原文优先、最新优先、整条保留或丢弃，超限退账本读回（对照笔记借鉴项 #1/#2 的账本保留版）；后半 `native-context.ts` `planAutomatic` 的 `required` 口径扣除（工作区改动，尚未提交）——保留量按实报锚点的归一比例折算到与 `total` 同单位，先从 `total` 里扣除再算 `required`，`max(summaryMaxTokens, …)` 垫底不变；`retained` 缺省为 0 时与旧行为逐字节一致。
 - **D. 兜底触发线不要低于「一次压缩能退回的量」。** 压不动 + 低触发线 = 风暴；两者的乘积才是伤害。当前 400k 触发 / 120k 目标是安全的，但**不要为了省 token 把触发线调低**——在 A/B/C 落地前，调低触发线会直接把 GLM/Step 也拖进风暴。
 - **E. 恢复代价按 provider 记账（实证五）。** 若将来要做"压缩值不值"的判定（例如自动 vs 手动、触发线自适应），判据必须带 provider 维度：DeepSeek 的压缩几乎免费，GPT 的压缩每次两轮全价。用统一的"压缩成本 ≈ 若干 token"参数会系统性低估 GPT、高估 DeepSeek。
 
@@ -168,4 +168,4 @@ DeepSeek 中位 **0**——压缩后的**下一个请求就已经 ≥90%**，历
 - **样本量限制**：原生代只有 13 次 GPT 压缩事件 / 2 天（DCP 代 411 次 / 127 天）；GLM native 代 2 次、DeepSeek native 代 0 次。**聚合口径不可比，单次代价口径与分布形状可比**——结论以后者为准。原生代聚合还混入了 `0dc25392`（10-12 11:15）之前的 variant 抖动 bug，见 `2026-10-12-gpt-6.1-sol-cache-instability.md`。
 - **配置层牵连**：`redcode.local.jsonc` 会遮蔽 `redcode.jsonc` 同名键，当日 `250k` 照样触发才暴露（本地层注释已记）。压缩类配置改完必须核对**生效值**而非源文件值。
 - **与既有 note 的关系**：`implemented/feature/2026-08-17-compaction-cache-miss-cost.md` 记录的是 legacy compaction 的「2 次全灭 ≈22.6 万 → 优化到 ~10 万」；本次实测原生恢复轮中位全价缺失 149k，**原生当前不在那个优化水平上**，该 note 的结论不能直接套用到原生路径。
-- 回链：`native-context.ts:80/100/102-103`、`context-compaction.ts:84/164/186/199/346-349`、`compaction.ts:471-490`、`config/native-compaction.ts:68-73/174`。
+- 回链：`native-context.ts:80/94/108/118-119`（`:94` 为 required 口径扣除所在行）、`context-compaction.ts:84/164/186/199/346-349`、`compaction.ts:471-490`、`config/native-compaction.ts:68-73/174`。
