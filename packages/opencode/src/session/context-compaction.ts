@@ -6,6 +6,9 @@ import { MessageV2 } from "./message-v2"
 import { MessageTable } from "./session.sql"
 import { MessageID, PartID, type SessionID } from "./schema"
 import { ContextCompactionTable as Table } from "./context-compaction.sql"
+import * as Log from "@redcode-ai/core/util/log"
+
+const log = Log.create({ service: "session.context-compaction" })
 
 export interface Limits {
   summaryMaxTokens: number
@@ -135,6 +138,7 @@ message.parts.some((part) =>
     const latestUser = realUsers.toSorted((a, b) => MessageV2.compareTime(b.info, a.info))[0]?.info.id
     const occupied = new Set<string>()
     const newBlocks: Block[] = []
+    const beforeTokens: number[] = []
     for (const range of input.ranges) {
       const start = endpoint(input.messages, active, range.startId)
       const end = endpoint(input.messages, active, range.endId)
@@ -168,7 +172,6 @@ message.parts.some((part) =>
           // 旧块记录不再机械全量继承——按预算携带（用户原文优先、同类内最新优先、整条保留或
           // 丢弃），超限的旧记录退到账本可经 block:<id> 读回。没有出口时 protectedRecords
           // 单调膨胀（实测 41→100 条 / 25,932→82,454 字符），把每次压缩的回收需求越吃越高。
-          protectedRecords.push(...carryProtected(old.protectedRecords, input.limits))
           Object.assign(sourceHashes, old.sourceHashes)
           // 261012 Red 死路径清理：`condensedSummaries` 覆盖分支与 `Missing nested block
           // marker` 抛出都不可达（需 mode !== "auto" 的调用方，已不存在），已移除。保留下方
@@ -189,16 +192,25 @@ message.parts.some((part) =>
         id: randomUUID(), sessionID: input.sessionID,
         sourceMessageIDs: [...new Set(sources)], consumedBlockIDs: consumed.map((old) => old.id),
         anchorID: selected[0]!.info.id, summary,
-        protectedRecords: [...new Map(protectedRecords.map((record) => [`${record.messageID}:${record.partID}`, record])).values()],
+        protectedRecords: [...new Map([
+          ...carryProtected(consumed.flatMap((old) => old.protectedRecords), input.limits, sources),
+          ...protectedRecords,
+        ].map((record) => [`${record.messageID}:${record.partID}`, record])).values()],
         mode: input.mode, active: true, disabledByUser: false, topic: range.topic ?? "",
         committedAt: Date.now(), requestID: input.requestID, sourceHashes,
       }
-      const before = Token.estimate(selected.map(content).join("\n"))
-      if (Token.estimate(render(block)) >= before) throw new Error("Compression has no positive savings after protection")
+      beforeTokens.push(Token.estimate(selected.map(content).join("\n")))
       newBlocks.push(block)
     }
     const consumed = new Set(newBlocks.flatMap((block) => block.consumedBlockIDs))
-    const next = [...active.filter((block) => !consumed.has(block.id)), ...newBlocks]
+    const untouched = active.filter((block) => !consumed.has(block.id))
+    const protectedCount = newBlocks.reduce((total, block) => total + block.protectedRecords.length, 0)
+    if (input.mode === "auto") fitActive(newBlocks, untouched, input.messages, input.limits)
+    for (const [index, block] of newBlocks.entries()) {
+      if (Token.estimate(render(block)) >= beforeTokens[index]!)
+        throw new Error("Compression has no positive savings after protection")
+    }
+    const next = [...untouched, ...newBlocks]
     checkActive(next, input.limits)
     for (const block of newBlocks) {
       db.insert(Table).values({
@@ -211,6 +223,12 @@ message.parts.some((part) =>
           .where(and(eq(Table.id, id), eq(Table.session_id, input.sessionID))).run()
       }
     }
+    const omitted = protectedCount - newBlocks.reduce((total, block) => total + block.protectedRecords.length, 0)
+    if (omitted) log.warn("native compaction protection reduced to active budget", {
+      sessionID: input.sessionID, omittedRecords: omitted, blocks: newBlocks.length,
+      activeTokens: Token.estimate(next.map(render).join("\n")),
+      activeBytes: Buffer.byteLength(next.map(render).join("\n")),
+    })
     return newBlocks
   })
 }
@@ -338,9 +356,10 @@ export function content(message: MessageV2.WithParts): string {
   }).join("\n")
 }
 
-// 261010 Red 自动选段先扣除机械保留正文；已有块沿用其原始保护记录，不把它们算作可回收。
+// 261012 Red 选段与提交共用实际携带策略，不把退到账本的旧记录继续算作不可回收。
 export function retainedTokens(message: MessageV2.WithParts, blocks: Block[], limits: Limits): number {
-  const records = blocks.find((block) => block.anchorID === message.info.id)?.protectedRecords ?? protect(message, limits)
+  const old = blocks.find((block) => block.anchorID === message.info.id)
+  const records = old ? carryProtected(old.protectedRecords, limits, old.sourceMessageIDs) : protect(message, limits)
   return Token.estimate(records.map(renderProtected).join("\n\n"))
 }
 
@@ -358,21 +377,57 @@ function protect(message: MessageV2.WithParts, limits: Limits): ProtectedRecord[
   })
 }
 
-// 261012 Red 携带预算：用户原文优先（逐字承诺的核心），同类内最新优先（messageID 单调递增，
-// 795 天回绕前字典序即时间序），整条保留或整条丢弃——不截半条，与 codex retained outputs
-// 同语义。被丢弃的记录仍在被消费旧块的账本行里，read/search 可读回。
-function carryProtected(records: ProtectedRecord[], limits: Limits): ProtectedRecord[] {
-  const ordered = records.toSorted((a, b) =>
-    a.kind === b.kind ? (a.messageID < b.messageID ? 1 : -1) : a.kind === "user" ? -1 : 1)
+// 261012 Red 来源标签和分隔符也占预算；同轮消费多个旧块共享一笔携带预算。
+// 过大记录跳过而非结束，原文仍可回读。决策：docs/notes/implemented/feature/2026-10-10-native-compaction.md。
+function carryProtected(records: ProtectedRecord[], limits: Limits, sources: readonly MessageID[]): ProtectedRecord[] {
+  const ordered = prioritizeProtected(records, sources)
   const carried: ProtectedRecord[] = []
-  let budget = limits.retainedMaxTokens
+  let characters = 0
   for (const record of ordered) {
-    const cost = Token.estimate(record.text)
-    if (cost > budget) break
-    budget -= cost
+    const size = renderProtected(record).length + 2
+    if (Math.ceil((characters + size) / Token.CHARS_PER_TOKEN) > limits.retainedMaxTokens) continue
+    characters += size
     carried.push(record)
   }
   return carried
+}
+
+function prioritizeProtected(records: ProtectedRecord[], sources: readonly MessageID[]): ProtectedRecord[] {
+  // 261012 Red 按原始来源顺序取最近记录，不拿可能回绕的 messageID 字典序当时间。
+  const order = new Map(sources.map((id, index) => [id, index]))
+  return records.map((record, index) => ({ record, index })).toSorted((a, b) =>
+    a.record.kind === b.record.kind
+      ? (order.get(b.record.messageID) ?? -1) - (order.get(a.record.messageID) ?? -1) || b.index - a.index
+      : a.record.kind === "user" ? -1 : 1,
+  ).map((entry) => entry.record)
+}
+
+// 261012 Red 只收束本次新块的保护正文，不改摘要或未消费的旧块；摘要本身装不下仍显式失败。
+// 原始 message/part 和旧块不删，退投影的证据可经 context_read/context_search 回读。
+// 决策：docs/notes/implemented/feature/2026-10-10-native-compaction.md。
+function fitActive(blocks: Block[], untouched: Block[], messages: MessageV2.WithParts[], limits: Limits) {
+  const text = [...untouched, ...blocks].map(render).join("\n")
+  if (Token.estimate(text) <= limits.activeMaxTokens && Buffer.byteLength(text) <= limits.activeMaxBytes) return
+  const records = blocks.flatMap((block) => block.protectedRecords.map((record) => ({ block, record })))
+  const owners = new Map(records.map((entry) => [entry.record, entry.block]))
+  const positions = new Map(messages.map((message, index) => [message.info.id, index]))
+  const sources = blocks.toSorted((a, b) => positions.get(a.anchorID)! - positions.get(b.anchorID)!)
+    .flatMap((block) => block.sourceMessageIDs)
+  for (const block of blocks) block.protectedRecords = []
+  const base = [...untouched, ...blocks]
+  checkActive(base, limits)
+  const empty = base.map(render).join("\n")
+  let characters = empty.length
+  let bytes = Buffer.byteLength(empty)
+  for (const record of prioritizeProtected(records.map((entry) => entry.record), sources)) {
+    const addition = `\n\n${renderProtected(record)}`
+    const nextCharacters = characters + addition.length
+    const nextBytes = bytes + Buffer.byteLength(addition)
+    if (Math.round(nextCharacters / Token.CHARS_PER_TOKEN) > limits.activeMaxTokens || nextBytes > limits.activeMaxBytes) continue
+    characters = nextCharacters
+    bytes = nextBytes
+    owners.get(record)!.protectedRecords.push(record)
+  }
 }
 
 function endpoint(messages: MessageV2.WithParts[], blocks: Block[], ref: string) {

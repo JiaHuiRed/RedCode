@@ -6,6 +6,8 @@ import { createOpenAI } from "@ai-sdk/openai"
 import { jsonSchema, streamText, tool, wrapLanguageModel } from "ai"
 import { Effect, Layer, Schema, Stream } from "effect"
 import crypto from "node:crypto"
+import path from "node:path"
+import { spawnSync } from "node:child_process"
 import type { Provider } from "@/provider/provider"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { OAUTH_DUMMY_KEY } from "@/auth"
@@ -14,6 +16,7 @@ import { ConfigRequestEvidence } from "@/config/request-evidence"
 import { Config } from "@/config/config"
 import { LLMNativeRuntime } from "@/session/llm/native-runtime"
 import { testEffect } from "../lib/effect"
+import { tmpdir } from "../fixture/fixture"
 
 const model: Provider.Model = {
   id: ModelID.make("gpt-5-mini"),
@@ -78,6 +81,56 @@ const chatBody = (history = "first turn", system = "private system", tools: unkn
 type FixturePart = { readonly type: string } & Record<string, unknown>
 
 describe("session.request-evidence", () => {
+  // 261012 Red 与 GUI 相同的 WARN 门槛，验证真实文件而非只检查观察器返回值。
+  test("persists prefix, usage tri-state and route evidence under the GUI WARN threshold", async () => {
+    await using tmp = await tmpdir()
+    const script = path.join(tmp.path, "evidence-warn.ts")
+    await Bun.write(script, `
+      import * as Log from ${JSON.stringify(new URL("../../../core/src/util/log.ts", import.meta.url).href)}
+      import * as Evidence from ${JSON.stringify(new URL("../../src/session/request-evidence.ts", import.meta.url).href)}
+      await Log.init({ print: false, level: "WARN" })
+      Log.create({ service: "ordinary" }).info("ordinary-info-must-remain-filtered")
+      const observer = Evidence.create({ sessionID: "ses_warn_fixture", modelKey: "openai/gpt-fixture", runtime: "ai-sdk" })
+      const capture = observer.capture({
+        model: "gpt-fixture", instructions: "private-fixture-prompt",
+        input: [{ role: "user", content: "private-fixture-user" }], tools: [],
+      })
+      observer.transport({
+        endpoint: "https://fixture.invalid/private-route", accountID: "private-fixture-account",
+        headers: { authorization: "private-fixture-auth", "session-id": "private-fixture-session",
+          "x-codex-turn-state": "private-fixture-turn" },
+        turnState: "private-fixture-response-turn",
+      }, capture.requestID)
+      for (const cachedTokens of ["reported", "reported-zero", "missing"]) {
+        observer.providerUsage({
+          requestID: capture.requestID, cachedTokens,
+          fields: { input_tokens: 300000,
+            ...(cachedTokens === "missing" ? {} : { "input_tokens_details.cached_tokens": cachedTokens === "reported" ? 299000 : 0 }) },
+        })
+      }
+      console.log(Log.file())
+    `)
+    const child = spawnSync(process.execPath, [script], {
+      cwd: process.cwd(),
+      env: { ...process.env, REDCODE_TEST_HOME: path.join(tmp.path, "home") },
+      encoding: "utf8", timeout: 30000, maxBuffer: 1024 * 1024,
+    })
+    expect(child.error).toBeUndefined()
+    expect(child.status).toBe(0)
+    expect(child.stdout.trim().startsWith(tmp.path + path.sep)).toBe(true)
+    const persisted = await Bun.file(child.stdout.trim()).text()
+    for (const name of ["request.prefix", "request.transport", "request.provider-usage"]) {
+      expect(persisted).toContain(name)
+    }
+    for (const status of ["reported", "reported-zero", "missing"]) {
+      expect(persisted).toContain(`cachedTokens=${status}`)
+    }
+    expect(persisted).toContain("headerHashes=")
+    expect(persisted).toContain("turnStateHash=")
+    expect(persisted).not.toContain("ordinary-info-must-remain-filtered")
+    expect(persisted).not.toContain("private-fixture")
+  })
+
   test("validates file-backed diagnostic caps and resolves bounded defaults", () => {
     expect(ConfigRequestEvidence.resolve()).toEqual({
       maxBodyBytes: 16 * 1024 * 1024,

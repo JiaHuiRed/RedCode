@@ -186,7 +186,8 @@ const evictor = sessionEvictor({
 
 function record(message: string, fields: Record<string, unknown>) {
   try {
-    log.info(message, fields)
+    // 261012 Red GUI sidecar 默认 WARN；有界脱敏取证必须在该门槛下落盘，不提升全局日志级别。
+    log.warn(message, fields)
   } catch {
     // 261004 Red Log sink failures must not change provider request or stream behavior.
   }
