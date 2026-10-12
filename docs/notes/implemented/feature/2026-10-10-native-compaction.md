@@ -10,7 +10,7 @@
 - **legacy compaction**（兜底）：引擎确定性摘要，但摘要把媒体剥掉、工具输出截到 2000 字符，整段历史一刀切，细粒度证据全靠摘要模型转述。
 - **Codex 的机制**（调研结论）：opaque 服务端压缩项不可审计不可移植，但其检查点持久化、待处理输入安全、模型窗口预算检查、"继承的上下文 ≠ 授权"值得吸收。
 
-用户决策：把三者好的部分整合进原生 compaction，消掉插件这份维护。压缩钉在 ~250k（用户确认：250k 档位下长任务缓存命中率仍能回到 98%+，比携带超量上下文便宜；超 300k 有注意力稀释的顾虑，未作为硬定律编码）。
+用户决策：把三者好的部分整合进原生 compaction，消掉插件这份维护。初版压缩钉在约 250k（用户确认：当时长任务缓存命中率仍能回到 98%+；超 300k 有注意力稀释的顾虑）。2026-10-12 根据 1M 窗口模型的实际使用，将兜底线调整为 400k、压后目标统一为 120k；当前值见文末更新。
 
 ## 决策
 
@@ -18,8 +18,8 @@
 
 - **持久化账本** `session/context-compaction.sql.ts`（表 `context_compaction_block`，data JSON 存 Block）+ `session/context-compaction.ts`（同步内核：`commit`/`list`/`project`/`render`/`deactivate`/`invalidate`/`clone`/`read`/`search`）。原始 message/part 记录零改动——投影是查询期视图，摘要永远"历史交接、非新授权"，`deactivate`/`context_restore` 可完整回退。
 - **模型生产者**：内建工具 `compress`/`context_read`/`context_search`/`context_restore`（`tool/context.ts`），沿用 DCP 的选段+保护语义（用户原文、受保护工具输出机械保留，`{{block:<id>}}` 嵌套拼接或 `condensedSummaries` 显式收束），回执走 `metadata.nativeCompression`，与既有 `request-evidence.ts` 的 DCP 回执同管道记账。
-- **引擎生产者**：`compaction.ts` 的 `processNative`——预采样选段（保护最新真实用户请求）、专职压缩模型生成摘要、走同一个 `commit`；失败/取消不落投影。自动触发的重试豁免防循环（见后果）。
-- **预算**：`config/native-compaction.ts`，`compaction.native.enabled` 默认 false——不打开时 legacy 路径逐字节不变。`trigger 250k / target 160k / reminder 220k`，小窗口按配置比例夹取；`overflow.ts` 的 `ceiling`/`isOverflow` native 打开时改看 trigger，legacy threshold 退位不叠加。
+- **引擎生产者**：`compaction.ts` 的 `processNative`——预采样选段（保护最新真实用户请求）、使用触发压缩的用户轮次模型与 variant 生成摘要、走同一个 `commit`；失败/取消不落投影。自动触发的重试豁免防循环（见后果）。
+- **预算**：`config/native-compaction.ts`，`compaction.native.enabled` 默认 false——不打开时 legacy 路径逐字节不变。当前 `trigger 400k / target 120k / reminder 220k`，小窗口按配置比例夹取；`overflow.ts` 的 `ceiling`/`isOverflow` native 打开时改看 trigger，legacy threshold 退位不叠加。预警比例为 0.8/0.9，TUI/GUI 档位统一为 320k 黄、360k 橙、400k 红。
 - **缓存结算**：账本修订版（活跃块 ID 的 sha256）挂在 `msgPin.nativeRevision`，修订变化时结算一次 msgPin/modelMsgs——不是每轮重置。压缩后第一次请求缓存命中率下降是正常成本（用户确认），长任务趋势收益为正。
 - **互斥**：native 与 DCP 不能同管一个会话（`assertExclusive` 检查插件工具名冲突）；旧 DCP 状态用 `session/context-import.ts` 显式导入（严格校验当前持久化格式、活跃块、端点可证实，歧义/缺源/超预算全拒绝，幂等按内容指纹）。
 - **生命周期**：fork 只整块克隆（源全被映射才拷），revert 删除消息前 `invalidate` 失效引用块。
@@ -50,7 +50,7 @@
 - TUI 上下文、模型与速率从非摘要主请求取数，摘要成功/失败都不替换它；会话累计用量继续统计全部 assistant，只有摘要时也不漏记其成本。625 显示不是丢失整段历史的证据。
 - 现场只读回放：旧会话 586 条原始消息、274 条可见消息，新选择器选 144 条、估算可回收 150689 token；未选择 pending/running 工具或最新真实用户请求。当前诊断会话同样验证失败记录仍能被守卫读取。回放只以只读 SQLite 连接读取数据，不调用引擎数据库 Client、不写投影。
 - 验证覆盖 `native-context.test.ts`、`context-compaction.test.ts`、`native-compaction-budget.test.ts`、`compaction.test.ts`、`prompt.test.ts`、`sidebar-context.test.ts`、`transcript.test.ts`；按完整文件路径和 `--timeout 30000` 运行，类型检查走包脚本。并行初跑时既有 250ms 取消计时断言实测 278ms，串行重跑通过，未修改计时阈值。tsgo 崩溃时由既有脚本回退 TypeScript 5.9.3。
-- 部署边界：本机 `redcode.local.jsonc` 已恢复 250000/160000/220000，DCP 继续停用；seed 没有 native 临时数字，无需把本机覆盖层复制进模板。用户当前已改为 `bun run dev` 启动，不应再把该进程称为旧 exe。该 dev 命令不带 watch，编辑不会热替换已加载模块；无需重编 exe，但仍需重启 dev 才能应用后续源码修改。真实 provider 上的压缩后续跑仍需新进程验收，不以只读回放替代。
+- 部署边界（初始配置）：本机 `redcode.local.jsonc` 当时使用 250000/160000/220000，DCP 继续停用；后续配置更新见文末 2026-10-12 记录。`bun run dev` 不带 watch，编辑不会热替换已加载模块；需重启 dev 才能应用源码与配置修改。真实 provider 上的压缩后续跑仍需新进程验收，不以只读回放替代。
 - 后续截图里的提醒来自引擎保存的 `synthetic: true` 文本 part（metadata 为 `native_context_nudge.revision`），不是模型复述。用户消息和导出已经过滤 synthetic，助手 `TextPart` 渲染及复制路径却没有过滤。现共用 `isVisibleTextPart`，隐藏模型内部提醒并保留未标记 synthetic 的真实引用文字；不删除数据库 part、不改变模型输入或持久化日志。
 
 模型可见四问：
@@ -68,3 +68,21 @@
 - 「逼近提醒」（`[Context notice, not a user request] … Use compress…`）随工具退役停止生成：它是给模型的手动压缩指引，没有对象就只剩干扰；`message-v2` 对旧会话遗留的提醒 part 在出站副本剥离（判据 `synthetic && metadata.native_context_nudge`），原文、账本指纹、TUI 过滤与导出行为不变。
 - 模型可见四问：① 工具表少 compress、旧提醒不再入模，context_* 三工具 schema 不变；② native 开启固定前缀 −275 token、关闭 0；③ 均在新进程生效，工具区前缀失效一次属预期，账本 revision 不因此变化；④ 无新增注入项，净删除。
 - 顺带修正 `test/session/message-v2.test.ts` 存量断言：RejectedError 文案改为 "The question was dismissed" 时测试未跟更（git show HEAD 证实红灯先于本批存在），按现文案对齐。
+
+## 2026-10-12 更新：压缩继承主模型与预算线调整
+
+### 问题
+
+固定 Step 5 摘要模型会把一次压缩切到另一供应商/额度通道，增加等待与额度不足的风险；而用户希望当前上下文由当前主力模型直接处理。
+
+### 决策
+
+legacy 与 native 压缩都从触发压缩的父 user 消息读取 provider/model。`SessionCompaction.create` 保留 user model variant，native 与 legacy 摘要记录同一 variant。`agent.compaction.model/variant` 不再参与模型选择，live 与 seed 配置移除固定 Step 5 覆盖。当前预算为 trigger 400000、target 120000、reminder 220000；TUI/GUI 预警线为 320k/360k/400k，native 比例 0.8/0.9。
+
+### 备选与否决理由
+
+- **继续使用独立 Step 摘要模型**：否决——用户明确希望避免等待与额度分流，并由处理当前上下文的主力模型完成摘要。
+
+### 后果
+
+压缩成本与耗时由当前主力模型承担；同一会话的模型与 variant 保持一致。压缩配置和代码修改都需重启引擎生效。`test/session/compaction.test.ts` 71 pass，opencode typecheck 通过。

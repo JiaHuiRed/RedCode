@@ -292,12 +292,7 @@
   },
   // 260930 Red 子代理定 GPT-6 Luna；261003 explore 收敛 stepfun-step-plan（Step Plan 套餐通道），261007 同步进模板；execute 推理档 high。
   "agent": {
-    // 261011 Red 压缩用便宜快模型：内建 compaction agent 不带 model 会回落主会话模型
-    // （旗舰跑压缩又慢又烧额度）。压缩输入已去媒体并截断工具输出，中档模型可胜任。
-    "compaction": {
-      "model": "stepfun-step-plan/step-5-preview",
-      "variant": "medium"
-    },
+    // 261012 Red 压缩模型与档位继承触发该轮主会话，不要固定 compaction.model/variant。
     "explore": {
       "model": "stepfun-step-plan/step-3.7-flash",
       "permission": {

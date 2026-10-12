@@ -6,6 +6,7 @@ import { Bus } from "../../src/bus"
 import { Config } from "@/config/config"
 import { Image } from "@/image/image"
 import { Agent } from "../../src/agent/agent"
+import { Auth } from "../../src/auth"
 import { LLM } from "../../src/session/llm"
 import { SessionCompaction, appendFileTags, collectFiles, parseFileTags } from "../../src/session/compaction"
 import { Token } from "@/util/token"
@@ -24,6 +25,7 @@ import * as SessionProcessorModule from "../../src/session/processor"
 import { Snapshot } from "../../src/snapshot"
 import { ProviderTest } from "../fake/provider"
 import { testEffect } from "../lib/effect"
+import { Skill } from "../../src/skill"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 import { TestConfig } from "../fixture/config"
 import { SyncEvent } from "@/sync"
@@ -89,7 +91,7 @@ function createModel(opts: {
 
 const wide = () => ProviderTest.fake({ model: createModel({ context: 100_000, output: 32_000 }) })
 
-function createUserMessage(sessionID: SessionID, text: string) {
+function createUserMessage(sessionID: SessionID, text: string, model: MessageV2.User["model"] = ref) {
   return Effect.gen(function* () {
     const ssn = yield* SessionNs.Service
     const msg = yield* ssn.updateMessage({
@@ -97,7 +99,7 @@ function createUserMessage(sessionID: SessionID, text: string) {
       role: "user",
       sessionID,
       agent: "build",
-      model: ref,
+      model,
       time: { created: Date.now() },
     })
     yield* ssn.updatePart({
@@ -219,10 +221,26 @@ function layer(result: "continue" | "compact") {
   )
 }
 
-function cfg(compaction?: Config.Info["compaction"]) {
+function cfg(compaction?: Config.Info["compaction"], agent?: Config.Info["agent"]) {
   const base = Schema.decodeUnknownSync(Config.Info)({}) as Config.Info
   return TestConfig.layer({
-    get: () => Effect.succeed({ ...base, compaction }),
+    get: () => Effect.succeed({ ...base, compaction, agent }),
+  })
+}
+
+function providerWithCompactionOverride() {
+  const model = createModel({ context: 100_000, output: 32_000 })
+  const configuredCompactionModel = {
+    ...createModel({ context: 100_000, output: 32_000 }),
+    id: ModelID.make("compaction-model"),
+  }
+  return ProviderTest.fake({
+    model,
+    getModel: Effect.fn("TestProvider.getModel")((providerID, modelID) =>
+      Effect.succeed(
+        providerID === model.providerID && modelID === configuredCompactionModel.id ? configuredCompactionModel : model,
+      ),
+    ),
   })
 }
 
@@ -264,6 +282,17 @@ function withCompaction(options?: CompactionProcessOptions) {
 function compactionProcessLayer(options?: CompactionProcessOptions) {
   const bus = Bus.layer
   const status = SessionStatus.layer.pipe(Layer.provide(bus))
+  const provider = options?.provider ?? wide()
+  const config = options?.config ?? Config.defaultLayer
+  const plugin = options?.plugin ?? Plugin.defaultLayer
+  const agent = Agent.layer.pipe(
+    Layer.provide(plugin),
+    Layer.provide(provider.layer),
+    Layer.provide(Auth.defaultLayer),
+    Layer.provide(config),
+    Layer.provide(Skill.defaultLayer),
+    Layer.provide(RuntimeFlags.layer({})),
+  )
   const processor = options?.llm
     ? SessionProcessorModule.SessionProcessor.layer.pipe(
         Layer.provide(summary),
@@ -274,15 +303,15 @@ function compactionProcessLayer(options?: CompactionProcessOptions) {
     : layer(options?.result ?? "continue")
   return Layer.mergeAll(SessionCompaction.layer.pipe(Layer.provide(processor)), processor, bus, status).pipe(
     Layer.provide(SessionNs.defaultLayer),
-    Layer.provide((options?.provider ?? wide()).layer),
+    Layer.provide(provider.layer),
     Layer.provide(Snapshot.defaultLayer),
     Layer.provide(options?.llm ?? LLM.defaultLayer),
     Layer.provide(Permission.defaultLayer),
-    Layer.provide(Agent.defaultLayer),
-    Layer.provide(options?.plugin ?? Plugin.defaultLayer),
+    Layer.provide(agent),
+    Layer.provide(plugin),
     Layer.provide(status),
     Layer.provide(bus),
-    Layer.provide(options?.config ?? Config.defaultLayer),
+    Layer.provide(config),
     Layer.provide(SyncEvent.defaultLayer),
     Layer.provide(RuntimeFlags.layer({})),
     Layer.provide(EventV2Bridge.defaultLayer),
@@ -786,31 +815,39 @@ describe("session.compaction.prune", () => {
 })
 
 describe("session.compaction.process", () => {
-  // 261010 Red 原生自动压缩在固定前缀大、历史小的现场只喂了第一条 user；验证真实摘要输入和提交。
-  itCompaction.instance("native summary includes completed work when history is below its target", () => {
+  itCompaction.instance("native compaction inherits the triggering model and variant", () => {
     const responses = llm()
     const inputs: LLM.StreamInput[] = []
     responses.push(reply("Logs checked; configuration restored; implementation remains.", (input) => inputs.push(input)))
+    const provider = providerWithCompactionOverride()
+    const selectedModel = { ...ref, variant: "high" }
     return Effect.gen(function* () {
       const ssn = yield* SessionNs.Service
       const ctx = yield* TestInstance
       const chat = yield* ssn.create({ title: "Native summary input" })
-      const first = yield* createUserMessage(chat.id, "Investigate compaction.")
+      const first = yield* createUserMessage(chat.id, "Investigate compaction.", selectedModel)
       const done = yield* createAssistantMessage(chat.id, first.id, ctx.directory)
       yield* ssn.updatePart({
         id: PartID.ascending(), messageID: done.id, sessionID: chat.id, type: "text",
         text: "Observed pending-tool error in logs. Restored configuration. ".repeat(500),
       })
-      const latest = yield* createUserMessage(chat.id, "Continue implementation.")
-      yield* SessionCompaction.use.create({ sessionID: chat.id, agent: "build", model: ref, auto: true })
+      const latest = yield* createUserMessage(chat.id, "Continue implementation.", selectedModel)
+      yield* SessionCompaction.use.create({ sessionID: chat.id, agent: "build", model: selectedModel, auto: true })
       const messages = yield* ssn.messages({ sessionID: chat.id })
       const parent = messages.at(-1)!
       expect(yield* SessionCompaction.use.process({
         parentID: parent.info.id, messages, sessionID: chat.id, auto: true,
       })).toBe("continue")
       expect(inputs).toHaveLength(1)
+      expect(inputs[0]?.model.id).toBe(ModelID.make("test-model"))
+      expect(inputs[0]?.user.model.variant).toBe("high")
       expect(JSON.stringify(inputs[0]?.messages)).toContain("Observed pending-tool error in logs.")
       expect(JSON.stringify(inputs[0]?.messages)).not.toContain("Continue implementation.")
+      const summary = (yield* ssn.messages({ sessionID: chat.id })).findLast(
+        (message) => message.info.role === "assistant" && message.info.summary,
+      )
+      expect(summary?.info.role === "assistant" && summary.info.modelID).toBe(ModelID.make("test-model"))
+      expect(summary?.info.role === "assistant" && summary.info.variant).toBe("high")
       const blocks = ContextCompaction.list(chat.id)
       expect(blocks).toHaveLength(1)
       expect(blocks[0]?.sourceMessageIDs).toContain(done.id)
@@ -820,10 +857,48 @@ describe("session.compaction.process", () => {
       )
     }).pipe(withCompaction({
       llm: responses.layer,
+      provider,
       config: cfg({ native: {
         enabled: true, trigger_tokens: 60000, target_tokens: 40000,
         reminder_tokens: 54000, summary_max_tokens: 1000,
-      } }),
+      } }, { compaction: { model: "test/compaction-model", variant: "medium" } }),
+    }))
+  })
+
+  itCompaction.instance("legacy compaction inherits the triggering model and variant", () => {
+    const responses = llm()
+    const inputs: LLM.StreamInput[] = []
+    responses.push(reply("Previous work retained.", (input) => inputs.push(input)))
+    const provider = providerWithCompactionOverride()
+    const selectedModel = { ...ref, variant: "high" }
+    return Effect.gen(function* () {
+      const ssn = yield* SessionNs.Service
+      const ctx = yield* TestInstance
+      const chat = yield* ssn.create({ title: "Legacy summary model" })
+      const first = yield* createUserMessage(chat.id, "Keep this completed work.", selectedModel)
+      const done = yield* createAssistantMessage(chat.id, first.id, ctx.directory)
+      yield* ssn.updatePart({
+        id: PartID.ascending(), messageID: done.id, sessionID: chat.id, type: "text",
+        text: "Completed implementation. ".repeat(500),
+      })
+      yield* createUserMessage(chat.id, "Continue the task.", selectedModel)
+      yield* SessionCompaction.use.create({ sessionID: chat.id, agent: "build", model: selectedModel, auto: false })
+      const messages = yield* ssn.messages({ sessionID: chat.id })
+      expect(yield* SessionCompaction.use.process({
+        parentID: messages.at(-1)!.info.id, messages, sessionID: chat.id, auto: false,
+      })).toBe("continue")
+      expect(inputs).toHaveLength(1)
+      expect(inputs[0]?.model.id).toBe(ModelID.make("test-model"))
+      expect(inputs[0]?.user.model.variant).toBe("high")
+      const summary = (yield* ssn.messages({ sessionID: chat.id })).findLast(
+        (message) => message.info.role === "assistant" && message.info.summary,
+      )
+      expect(summary?.info.role === "assistant" && summary.info.modelID).toBe(ModelID.make("test-model"))
+      expect(summary?.info.role === "assistant" && summary.info.variant).toBe("high")
+    }).pipe(withCompaction({
+      llm: responses.layer,
+      provider,
+      config: cfg(undefined, { compaction: { model: "test/compaction-model", variant: "medium" } }),
     }))
   })
 

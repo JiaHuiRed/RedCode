@@ -266,7 +266,7 @@ export interface Interface {
   readonly create: (input: {
     sessionID: SessionID
     agent: string
-    model: { providerID: ProviderID; modelID: ModelID }
+    model: MessageV2.User["model"]
     auto: boolean
     overflow?: boolean
   }) => Effect.Effect<void>
@@ -432,22 +432,27 @@ export const layer = Layer.effect(
       sessionID: SessionID
       auto: boolean
     }) {
-     const startedAt = Date.now()
-     const parent = input.messages.find((message) => message.info.id === input.parentID)
+      const startedAt = Date.now()
+      const parent = input.messages.find((message) => message.info.id === input.parentID)
       if (!parent || parent.info.role !== "user") throw new Error("Native compaction parent is missing")
       const cfg = yield* config.get()
       const agent = yield* agents.get("compaction")
       if (!agent) throw new Error("Built-in compaction agent is missing")
-      const originalModel = yield* provider.getModel(
-        agent.model?.providerID ?? parent.info.model.providerID,
-        agent.model?.modelID ?? parent.info.model.modelID,
-      ).pipe(Effect.orDie)
-      const spec = NativeCompaction.resolve(cfg.compaction?.native, usable({ cfg, model: originalModel }))
+      // 261012 Red Summaries must use the model and variant that produced the triggering turn.
+      const mainModel = yield* provider.getModel(parent.info.model.providerID, parent.info.model.modelID).pipe(
+        Effect.orDie,
+      )
+      const spec = NativeCompaction.resolve(cfg.compaction?.native, usable({ cfg, model: mainModel }))
       const view = NativeRuntime.project(input.sessionID, input.messages, spec)
       const model = {
-        ...originalModel,
-        limit: { ...originalModel.limit, output: originalModel.limit.output > 0
-          ? Math.min(originalModel.limit.output, spec.summaryMaxTokens) : spec.summaryMaxTokens },
+        ...mainModel,
+        limit: {
+          ...mainModel.limit,
+          output:
+            mainModel.limit.output > 0
+              ? Math.min(mainModel.limit.output, spec.summaryMaxTokens)
+              : spec.summaryMaxTokens,
+        },
       }
       const ctx = yield* InstanceState.context
       const msg: MessageV2.Assistant = {
@@ -455,7 +460,8 @@ export const layer = Layer.effect(
         sessionID: input.sessionID, mode: "compaction", agent: "compaction", summary: true,
         path: { cwd: ctx.directory, root: ctx.worktree }, cost: 0,
         tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-        modelID: model.id, providerID: model.providerID, time: { created: Date.now() },
+        modelID: model.id, providerID: model.providerID, variant: parent.info.model.variant,
+        time: { created: Date.now() },
       }
       yield* session.updateMessage(msg)
       const active = ContextCompaction.list(input.sessionID)
@@ -524,11 +530,11 @@ export const layer = Layer.effect(
            NativeContext.removeArtifacts(input.messages),
            ContextCompaction.list(input.sessionID).filter((block) => !newIDs.has(block.id)),
          ),
-         model: originalModel,
+          model: mainModel,
        }),
        tokens_after: yield* estimate({
          messages: ContextCompaction.project(NativeContext.removeArtifacts(input.messages), ContextCompaction.list(input.sessionID)),
-         model: originalModel,
+          model: mainModel,
        }),
       })
       if (input.auto) {
@@ -604,9 +610,10 @@ export const layer = Layer.effect(
       // compaction 是内建机件、恒存在，查不到说明不变量被破坏了，明着抛比让它在下面变成
       // `undefined.model` 的 TypeError 强。
       if (!agent) throw new Error("built-in compaction agent is missing")
-      const model = agent.model
-        ? yield* provider.getModel(agent.model.providerID, agent.model.modelID).pipe(Effect.orDie)
-        : yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID).pipe(Effect.orDie)
+      // 261012 Red Keep legacy and native compaction on the model selected for the triggering user turn.
+      const model = yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID).pipe(
+        Effect.orDie,
+      )
       const cfg = yield* config.get()
       const history = compactionPart && messages.at(-1)?.info.id === input.parentID ? messages.slice(0, -1) : messages
       // 260824 Red: tokensBefore 用 filterCompacted 折叠后的真实可见消息估算。注意 input.messages
@@ -883,7 +890,7 @@ export const layer = Layer.effect(
     const create = Effect.fn("SessionCompaction.create")(function* (input: {
       sessionID: SessionID
       agent: string
-      model: { providerID: ProviderID; modelID: ModelID }
+      model: MessageV2.User["model"]
       auto: boolean
       overflow?: boolean
     }) {
