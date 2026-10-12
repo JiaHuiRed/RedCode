@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import type { MessageV2 } from "../../src/session/message-v2"
-import { annotate, assertExclusive, summaryPrompt, selectAutomatic } from "../../src/session/native-context"
+import { annotate, assertExclusive, summaryPrompt, selectAutomatic, planAutomatic } from "../../src/session/native-context"
 
 const sessionID = SessionID.make("ses_native_context")
 const messageID = MessageID.make("msg_native_context")
@@ -98,6 +98,17 @@ describe("native context boundary", () => {
     expect(selectAutomatic(history, 40000, 16000, () => 1000)).toHaveLength(16)
     // 完整请求 100000：required=76000，按 100000/30000 归一后每条释放 3333，需 23 条
     expect(selectAutomatic(history, 40000, 16000, () => 1000, undefined, 100000)).toHaveLength(23)
+  })
+
+  // 261012 Red 现场形态（369,561→325,040 只放出 44k）：required 物理够不到时旧实现
+  // 静默返回弱选段、commit 照样「成功」。planAutomatic 必须把差多少带出来。
+  test("planAutomatic exposes shortfall when required is physically unreachable", () => {
+    const plan = planAutomatic([message, assistant, latest], 40000, 16000, () => 1000, undefined, 100000)
+    expect(plan.segment).toEqual([message, assistant])
+    expect(plan.required).toBe(76_000)
+    expect(plan.released).toBeLessThan(plan.required)
+    expect(selectAutomatic([message, assistant, latest], 40000, 16000, () => 1000, undefined, 100000))
+      .toEqual(plan.segment)
   })
 
   test.each(["pending", "running"] as const)("automatic selection skips %s tools", (status) => {

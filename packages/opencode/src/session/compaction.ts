@@ -473,10 +473,20 @@ export const layer = Layer.effect(
         ? lastAssistant.info.tokens.context ?? 0
         : 0
       const head = yield* Effect.try({
-        try: () => NativeContext.selectAutomatic(view, spec.targetTokens, spec.summaryMaxTokens,
-          (message) => Token.estimate(ContextCompaction.content(message)),
-          (message) => ContextCompaction.retainedTokens(message, active, spec),
-          currentTokens),
+        try: () => {
+          // 261012 Red 降级可见：回收量不够仍提交 best-effort（放弃压缩、硬顶到 provider
+          // 溢出更贵），但 required/released 必须进日志——「压了等于没压」伪装成成功，
+          // 让压缩风暴潜伏了两天（docs/notes/proposed/bug-fix/2026-10-12-native-compaction-under-reduction.md）。
+          const plan = NativeContext.planAutomatic(view, spec.targetTokens, spec.summaryMaxTokens,
+            (message) => Token.estimate(ContextCompaction.content(message)),
+            (message) => ContextCompaction.retainedTokens(message, active, spec),
+            currentTokens)
+          if (plan.released < plan.required) log.warn("native compaction shortfall", {
+            sessionID: input.sessionID, required: plan.required, released: Math.round(plan.released),
+            selected: plan.segment.length,
+          })
+          return plan.segment
+        },
         catch: (error) => new Error(`Native compaction was not committed: ${String(error)}`),
       }).pipe(Effect.catch((error) => Effect.gen(function* () {
         // 261010 Red 无可回收段同样落失败记录，不发模型请求、不抛出缺少回执的匿名异常。

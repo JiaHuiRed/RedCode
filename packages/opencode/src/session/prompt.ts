@@ -1922,8 +1922,27 @@ export const layer = Layer.effect(
         if (nativeSpec.enabled && !nativeAutoAttempted && !nativeFailed && nativeConfig.compaction?.auto !== false) {
           const budget = NativeCompaction.resolve(nativeConfig.compaction?.native,
             usableContext({ cfg: nativeConfig, model, outputTokenMax: flags.outputTokenMax }))
-          const plannedTokens = estimateModelMessages(outgoing, model) +
-            Token.estimate(system.join("\n")) + Token.estimate(JSON.stringify(sortedTools))
+          // 261012 Red 触发口径补实报锚点：整表 chars/4 粗估在长会话上偏高，现场实报
+          // 369,561 就触发了 400k 兜底线（15:19 finish=context-preflight 实证），提前触发
+          // 让用户多付一轮全价。最后一条非摘要 assistant 的实报 context 已含 system/tools，
+          // 精确；只对其后的新增 wire 输入粗估。无实报锚点（首个请求）退回整表粗估，
+          // 行为同旧。与 selectAutomatic 的 currentTokens 同一口径。
+          const lastReal = yield* sessions.findMessage(
+            sessionID,
+            (m) => m.info.role === "assistant" && !m.info.summary,
+          ).pipe(Effect.orDie)
+          // 261012 Red 收窄写在谓词外（Info union 在谓词内不做 discriminant 收窄）；
+          // 本轮占位 assistant 的 context 未回填时自然为 0，退回粗估旧口径。
+          const lastAssistant = Option.isSome(lastReal) ? lastReal.value : undefined
+          const lastRealTokens = lastAssistant?.info.role === "assistant" && !lastAssistant.info.summary
+            ? lastAssistant.info.tokens.context ?? 0
+            : 0
+          const wireLastAssistant = outgoing.findLastIndex((m) => m.role === "assistant")
+          const plannedTokens = lastRealTokens > 0
+            ? lastRealTokens +
+              estimateModelMessages(wireLastAssistant >= 0 ? outgoing.slice(wireLastAssistant + 1) : outgoing, model)
+            : estimateModelMessages(outgoing, model) +
+              Token.estimate(system.join("\n")) + Token.estimate(JSON.stringify(sortedTools))
           if (plannedTokens >= budget.triggerTokens) {
             // 261010 Red 在请求发出前处理新增输入/换小窗口，不等 provider 报溢出。
             nativeAutoAttempted = true

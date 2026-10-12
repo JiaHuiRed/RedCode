@@ -49,7 +49,15 @@ export function summaryPrompt(maxTokens: number) {
   ].join("\n")
 }
 
-export function selectAutomatic(
+export type AutomaticPlan = {
+  segment: MessageV2.WithParts[]
+  released: number
+  required: number
+}
+
+// 261012 Red 带统计的选段：released < required 时静默降级是压缩风暴的根因之一
+// （现场 369,561→325,040 只放出 44k 仍伪装成功），调用方必须能看到差多少。
+export function planAutomatic(
   messages: MessageV2.WithParts[],
   targetTokens: number,
   summaryMaxTokens: number,
@@ -60,7 +68,7 @@ export function selectAutomatic(
   // 历史粗估（旧行为）。粗估与实报之间的偏差用统一比例归一，保证 released 与 required
   // 同单位。
   currentTokens = 0,
-) {
+): AutomaticPlan {
   // 261010 Red latestUser 口径必须与 commit 的保护一致：排除 queued（排队输入还不是
   // 「当前请求」，不能作为压缩边界，否则 selected 会罩住 commit 眼里的 latestUser，
   // 整批被拒）。ignored 注入同理排除。
@@ -97,10 +105,23 @@ export function selectAutomatic(
       bestStart = segmentStart
       bestEnd = end
     }
-    if (released >= required) return messages.slice(bestStart, bestEnd + 1)
+    if (released >= required) {
+      return { segment: messages.slice(bestStart, bestEnd + 1), released, required }
+    }
   }
   if (bestStart < 0) throw new Error("No compressible closed history is available for automatic compaction")
-  return messages.slice(bestStart, bestEnd + 1)
+  return { segment: messages.slice(bestStart, bestEnd + 1), released: bestReleased, required }
+}
+
+export function selectAutomatic(
+  messages: MessageV2.WithParts[],
+  targetTokens: number,
+  summaryMaxTokens: number,
+  measure: (message: MessageV2.WithParts) => number,
+  retained: (message: MessageV2.WithParts) => number = () => 0,
+  currentTokens = 0,
+): MessageV2.WithParts[] {
+  return planAutomatic(messages, targetTokens, summaryMaxTokens, measure, retained, currentTokens).segment
 }
 
 export function removeArtifacts(messages: MessageV2.WithParts[]) {
