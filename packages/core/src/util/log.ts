@@ -69,7 +69,7 @@ export async function init(options: Options) {
   if (options.print) return
   logpath = path.join(
     Global.Path.log,
-    options.dev ? "dev.log" : new Date().toISOString().split(".")[0].replace(/:/g, "") + ".log",
+    options.dev ? "dev.log" : localTimestamp(new Date()).replace(/:/g, "") + ".log",
   )
   const runID = process.env.REDCODE_RUN_ID
   const shouldTruncate = !options.dev || !runID || process.env[initializedRunID] !== runID
@@ -109,6 +109,17 @@ function formatError(error: Error, depth = 0): string {
     : result
 }
 
+// 261012 Red 日志时间戳改本地时区：原先 toISOString 输出 UTC，哥哥全程北京时间，
+// 每次排查都要 +8 换算，当日就因把 UTC 当本地多绕了两轮。保留 ISO 形状（文件名 glob
+// `????-??-??T??????.log` 与字符串排序依赖它），只把时区换成本地。
+function localTimestamp(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  )
+}
+
 let last = Date.now()
 export function create(tags?: Record<string, any>) {
   tags = tags || {}
@@ -137,7 +148,7 @@ export function create(tags?: Record<string, any>) {
     const next = new Date()
     const diff = next.getTime() - last
     last = next.getTime()
-    return [next.toISOString().split(".")[0], "+" + diff + "ms", prefix, message].filter(Boolean).join(" ") + "\n"
+    return [localTimestamp(next), "+" + diff + "ms", prefix, message].filter(Boolean).join(" ") + "\n"
   }
   const result: Logger = {
     debug(message?: any, extra?: Record<string, any>) {
