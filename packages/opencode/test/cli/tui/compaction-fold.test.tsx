@@ -102,6 +102,17 @@ describe("TUI 压缩 checkpoint 折叠行", () => {
     })
   }
 
+  test("原因预览按 Unicode code point 截断，不切开代理对", async () => {
+    const reason = `${"a".repeat(99)}😀tail`
+    const frame = await render(compactionPart(12000), notCompacting, {
+      ...summaryMessage,
+      error: { name: "UnknownError", data: { message: reason } },
+    })
+    expect(frame).toContain("😀")
+    expect(frame).not.toContain("�")
+    expect(frame).toContain("…（展开查看）")
+  })
+
   test("inactive 的无终态摘要明确显示未完成", async () => {
     const frame = await render(compactionPart(12000), notCompacting, {
       ...summaryMessage,
@@ -109,6 +120,12 @@ describe("TUI 压缩 checkpoint 折叠行", () => {
     })
     expect(frame).toContain("Compaction 未完成")
     expect(frame).not.toContain("压缩中")
+  })
+
+  test("marker 已创建但 process 尚未开始时保持中性标签", async () => {
+    const frame = await render(compactionPart(12000), notCompacting, {})
+    expect(frame).toContain("Compaction")
+    expect(frame).not.toContain("Compaction 未完成")
   })
 
   test("新 marker 运行不把旧的未完成 marker 标为进行中", async () => {

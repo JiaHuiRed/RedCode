@@ -13,7 +13,7 @@ import { Plugin } from "@/plugin"
 import { Config } from "@/config/config"
 import { NotFoundError } from "@/storage/storage"
 import { ModelID, ProviderID } from "@/provider/schema"
-import { Effect, Exit, Layer, Context, Schema } from "effect"
+import { Cause, Effect, Exit, Layer, Context, Option, Schema } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { isOverflow as overflow, level as overflowLevel, usable, type Level } from "./overflow"
 import { serviceUse } from "@/effect/service-use"
@@ -596,11 +596,27 @@ export const layer = Layer.effect(
         return "continue" as const
       }).pipe(Effect.onExit((exit) => Effect.sync(() => {
         mark(phase)
+        const cause = Exit.isSuccess(exit) ? undefined : exit.cause
+        const error = cause ? Option.getOrUndefined(Cause.findErrorOption(cause)) : undefined
+        // 261013 Red 失败摘要阶段日志只记录类型 tag，不展开无界错误正文或堆栈。
+        const errorTag =
+          error && typeof error === "object" && "_tag" in error && typeof error._tag === "string"
+            ? error._tag
+            : error instanceof Error
+              ? error.name
+              : cause && Cause.hasInterrupts(cause)
+                ? "Interrupted"
+                : cause && Cause.hasDies(cause)
+                  ? "Defect"
+                  : cause
+                    ? "UnknownFailure"
+                    : undefined
         const sinceRequest = (at: number | undefined) =>
           at !== undefined && requestStartedAt !== undefined ? Math.max(0, Math.round(at - requestStartedAt)) : null
         log.warn("native compaction stages", {
           sessionID: input.sessionID, parentID: input.parentID, summaryMessageID,
           status: Exit.isSuccess(exit) ? exit.value : "failed-or-cancelled",
+          ...(errorTag ? { error: errorTag } : {}),
           queue_ms: Math.max(0, startedAt - userMessage.time.created),
           total_ms: Math.round(performance.now() - monotonicStart), stages_ms: stages,
           model_ms: {

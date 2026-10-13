@@ -1744,6 +1744,7 @@ export function UserMessage(props: {
     if (compactionError())
       return ` Compaction ${compactionError()!.name === "MessageAbortedError" ? "已取消" : "失败"}${caret}`
     if (compacting()) return ` Compaction 压缩中…${caret}`
+    if (!compactionMessage()) return ` Compaction ${caret}`
     return ` Compaction 未完成${caret}`
   })
 
@@ -1833,12 +1834,15 @@ export function UserMessage(props: {
           onMouseUp={() => setCompactionOpen((prev) => !prev)}
         />
         <Show when={compactionReason()}>
-          {(reason) => (
-            <text fg={theme.error}>
-              {reason().slice(0, 100)}
-              {reason().length > 100 ? "…（展开查看）" : ""}
-            </text>
-          )}
+          {(reason) => {
+            const characters = Array.from(reason())
+            return (
+              <text fg={theme.error}>
+                {characters.slice(0, 100).join("")}
+                {characters.length > 100 ? "…（展开查看）" : ""}
+              </text>
+            )
+          }}
         </Show>
         <Show when={compactionOpen()}>
           <box flexDirection="column" paddingLeft={2} paddingRight={2} paddingTop={1} gap={1} flexShrink={0}>
