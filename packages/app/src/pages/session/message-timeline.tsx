@@ -83,6 +83,7 @@ import {
   TimelineRow,
   TimelineRowMap,
 } from "./message-timeline.data"
+import type { CompactionState } from "./compaction-state"
 
 const emptyMessages: MessageType[] = []
 const emptyParts: PartType[] = []
@@ -395,6 +396,13 @@ export function MessageTimeline(props: {
     }
     return result
   })
+  // 261013 Red 最新 compaction marker：压缩 pending 判据要求「该 marker 是该会话最新的」，
+  // 与 TUI 同判据（不存在时间上更新的、带 compaction part 的 user 消息）。props.userMessages
+  // 即时间序，倒序取第一个带 marker 的。
+  const latestCompactionMarkerID = createMemo(
+    () =>
+      props.userMessages.findLast((message) => getMsgParts(message.id).some((part) => part.type === "compaction"))?.id,
+  )
   const pending = createMemo(() =>
     sessionMessages().findLast(
       (item): item is AssistantMessage => item.role === "assistant" && typeof item.time.completed !== "number",
@@ -553,6 +561,10 @@ export function MessageTimeline(props: {
             settings.general.showReasoningSummaries(),
             active ? sessionStatus().type : "idle",
             active,
+            // 261013 Red 压缩状态：thunk 保动态依赖（无 compaction 的轮次不读 session
+            // store，260903 cc 约定）；isLatestMarker 只依赖已有信号
+            () => info()?.time.compacting,
+            userMessage.id === latestCompactionMarkerID(),
           )
 
           const merged = reuseTimelineRows(previous, rows)
@@ -584,6 +596,21 @@ export function MessageTimeline(props: {
     return merged
   })
   const timelineRowKeys = createMemo(() => timelineRows().map(TimelineRow.key), [] as string[], { equals: sameKeys })
+  // 261013 Red 压缩失败/取消时 UserMessage 行要标「摘要草稿未提交」：UserMessage 行自身不带
+  // 压缩状态，从同一批行里按 userMessageID 取 compaction 分割线的 state（TUI 的对应逻辑画在
+  // 分割线展开区里，GUI 放到用户消息旁——失败的是「这一轮之前的压缩」，标记要挨着它）
+  const compactionStateByUserMessageID = createMemo(() => {
+    const result = new Map<string, CompactionState>()
+    for (const row of timelineRows()) {
+      if (row._tag !== "TurnDivider" || row.label !== "compaction" || !row.state) continue
+      result.set(row.userMessageID, row.state)
+    }
+    return result
+  })
+  const uncommittedDraft = (userMessageID: string) => {
+    const state = compactionStateByUserMessageID().get(userMessageID)
+    return state === "failed" || state === "canceled"
+  }
   const virtualCache = createMemo(() => timelineCache.read(sessionKey(), timelineRowKeys(), listWidth()))
   const messageRowIndex = createMemo(() => {
     const result = new Map<string, number>()
@@ -1175,7 +1202,10 @@ export function MessageTimeline(props: {
     props.onScheduleScrollState(event.currentTarget)
     props.onHistoryScroll()
     if (!props.hasScrollGesture()) return
-    if (props.hasNewer() && event.currentTarget.scrollHeight - event.currentTarget.clientHeight - event.currentTarget.scrollTop < 120)
+    if (
+      props.hasNewer() &&
+      event.currentTarget.scrollHeight - event.currentTarget.clientHeight - event.currentTarget.scrollTop < 120
+    )
       props.onNewerScroll()
     props.onUserScroll()
     props.onAutoScrollHandleScroll()
@@ -1581,6 +1611,82 @@ export function MessageTimeline(props: {
       </div>
     )
   }
+  // 261013 Red 压缩分割线四态渲染：state/tokens/reason 由 construct 时的 compaction-state.ts
+  // 判据填充（与 TUI routes/session/index.tsx 的 compactionTitle/compactionReason 逐字对齐）。
+  //   success      → label 直接是 token 对比
+  //   failed/取消  → 原因持久显示在分割线下（仿 Error 行），点击本地折叠展开全文
+  //   pending      → 压缩中文案 + Spinner
+  //   incomplete   → 未完成文案
+  function TimelineCompactionDivider(props: { row: Accessor<TimelineRowByTag<"TurnDivider">> }) {
+    const language = useLanguage()
+    const [store, setStore] = createStore({ expanded: false })
+    const state = () => props.row().state ?? "incomplete"
+    const failed = () => state() === "failed" || state() === "canceled"
+    const tokensLabel = () => {
+      const before = props.row().tokensBefore
+      const after = props.row().tokensAfter
+      if (before === undefined) return language.t("ui.messagePart.compaction")
+      if (after === undefined)
+        return language.t("ui.messagePart.compaction.tokensPending", { before: before.toLocaleString() })
+      return language.t("ui.messagePart.compaction.tokens", {
+        before: before.toLocaleString(),
+        after: after.toLocaleString(),
+      })
+    }
+    const label = () => {
+      if (state() === "success") return tokensLabel()
+      if (state() === "failed") return language.t("ui.messagePart.compaction.failed")
+      if (state() === "canceled") return language.t("ui.messagePart.compaction.canceled")
+      if (state() === "pending") return language.t("ui.messagePart.compaction.compacting")
+      if (!props.row().attemptStarted) return language.t("ui.messagePart.compaction")
+      return language.t("ui.messagePart.compaction.incomplete")
+    }
+
+    return (
+      <TimelineRowFrame row={props.row}>
+        <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
+          <div data-slot="session-turn-compaction" data-compaction-state={state()}>
+            <MessageDivider label={label()} />
+            <Show when={state() === "pending"}>
+              <div class="flex items-center gap-1.5 px-1 py-1 text-11-regular text-text-weak" role="status">
+                <Spinner class="size-3.5 shrink-0" />
+                <span>{language.t("ui.messagePart.compaction.compacting")}</span>
+              </div>
+            </Show>
+            <Show when={failed() && props.row().reason}>
+              {(reason) => (
+                // 持久显示 + 本地折叠：折叠态限两行，点开全文（TUI 折叠态截断 100 字符同款意图）
+                <div class="px-1 pt-1">
+                  <Card
+                    variant="error"
+                    class="error-card cursor-pointer"
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={store.expanded}
+                    onClick={() => setStore("expanded", (value) => !value)}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return
+                      event.preventDefault()
+                      setStore("expanded", (value) => !value)
+                    }}
+                  >
+                    <span
+                      classList={{
+                        "line-clamp-2 break-all": !store.expanded,
+                        "whitespace-pre-wrap break-words": store.expanded,
+                      }}
+                    >
+                      {reason()}
+                    </span>
+                  </Card>
+                </div>
+              )}
+            </Show>
+          </div>
+        </div>
+      </TimelineRowFrame>
+    )
+  }
 
   const renderTimelineRow = (row: Accessor<TimelineRow.TimelineRow>) => {
     const r = row()
@@ -1663,6 +1769,13 @@ export function MessageTimeline(props: {
                         </div>
                       )}
                     </Show>
+                    {/* 261013 Red 压缩失败/取消：摘要草稿未提交，与 steer 标注同区 */}
+                    <Show when={uncommittedDraft(userMessageRow().userMessageID)}>
+                      <div class="mt-1 flex w-full items-center gap-1.5 px-1 text-11-regular text-text-tertiary">
+                        <Icon name="warning" size="small" />
+                        <span>{language.t("ui.messagePart.compaction.uncommitted")}</span>
+                      </div>
+                    </Show>
                   </div>
                 </div>
               )}
@@ -1672,17 +1785,15 @@ export function MessageTimeline(props: {
       }
       case "TurnDivider": {
         const turnDividerRow = row as Accessor<TimelineRowByTag<"TurnDivider">>
+        // 261013 Red compaction 分割线走四态渲染，interrupted/truncated 保持原样
+        if (turnDividerRow().label === "compaction") return <TimelineCompactionDivider row={turnDividerRow} />
         return (
           <TimelineRowFrame row={turnDividerRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
               <div data-slot="session-turn-compaction">
                 <MessageDivider
                   label={language.t(
-                    turnDividerRow().label === "compaction"
-                      ? "ui.messagePart.compaction"
-                      : turnDividerRow().label === "truncated"
-                        ? "ui.message.truncated"
-                        : "ui.message.interrupted",
+                    turnDividerRow().label === "truncated" ? "ui.message.truncated" : "ui.message.interrupted",
                   )}
                 />
               </div>
@@ -1825,7 +1936,8 @@ export function MessageTimeline(props: {
         class="absolute left-1/2 -translate-x-1/2 bottom-6 z-[60] pointer-events-none transition-all duration-200 ease-out"
         classList={{
           "opacity-100 translate-y-0 scale-100": props.hasNewer() || (props.scroll.overflow && props.scroll.jump),
-          "opacity-0 translate-y-2 scale-95 pointer-events-none": !props.hasNewer() && (!props.scroll.overflow || !props.scroll.jump),
+          "opacity-0 translate-y-2 scale-95 pointer-events-none":
+            !props.hasNewer() && (!props.scroll.overflow || !props.scroll.jump),
         }}
       >
         <button

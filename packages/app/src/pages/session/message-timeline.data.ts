@@ -2,6 +2,7 @@ import { parseCommentNote, readCommentMetadata } from "@/utils/comment-note"
 import { AssistantMessage, Part, SessionStatus, SnapshotFileDiff, UserMessage } from "@redcode-ai/sdk/v2"
 import { groupParts, PartGroup, renderable } from "@redcode-ai/ui/message-part"
 import { Data, Equal } from "effect"
+import { resolveCompactionState, type CompactionState } from "./compaction-state"
 
 export type SummaryDiff = SnapshotFileDiff & { file: string }
 
@@ -18,6 +19,14 @@ export type TimelineRowMap = {
   TurnDivider: {
     userMessageID: string
     label: "compaction" | "interrupted" | "truncated"
+    // 261013 Red 压缩四态（success/failed/canceled/pending/incomplete），仅 label
+    //   "compaction" 的分割线有值；state/attemptStarted 参与 key()，否则 cacheReusable
+    //   命中旧行、状态变化时 fold 不刷新
+    state?: CompactionState
+    attemptStarted?: boolean
+    tokensBefore?: number
+    tokensAfter?: number
+    reason?: string
   }
   AssistantPart: {
     userMessageID: string
@@ -45,6 +54,11 @@ export namespace TimelineRow {
   export class TurnDivider extends Data.TaggedClass("TurnDivider")<{
     userMessageID: string
     label: "compaction" | "interrupted" | "truncated"
+    state?: CompactionState
+    attemptStarted?: boolean
+    tokensBefore?: number
+    tokensAfter?: number
+    reason?: string
   }> {}
   export class AssistantPart extends Data.TaggedClass("AssistantPart")<{
     userMessageID: string
@@ -101,7 +115,7 @@ export namespace TimelineRow {
       case "UserMessage":
         return `user-message:${row.userMessageID}`
       case "TurnDivider":
-        return `turn-divider:${row.userMessageID}:${row.label}`
+        return `turn-divider:${row.userMessageID}:${row.label}:${row.state ?? ""}:${row.attemptStarted ? "started" : ""}`
       case "AssistantPart":
         return `assistant-part:${row.userMessageID}:${row.group.key}`
       case "Thinking":
@@ -185,6 +199,11 @@ export namespace Timeline {
     showReasoning: boolean,
     status: SessionStatus["type"],
     isActive: boolean,
+    // 261013 Red 压缩状态输入。getSessionCompacting 是 thunk 而不是值：只有真的走到
+    // pending 判据（该轮有 compaction marker 且摘要未完成）才会调它，其余轮次不因此
+    // 登记 session store 依赖——260903 cc 把 status 改成只在活动轮读是同一个约定。
+    getSessionCompacting?: () => number | undefined,
+    isLatestMarker?: boolean,
   ) {
     const rows: TimelineRow.TimelineRow[] = []
 
@@ -237,10 +256,25 @@ export namespace Timeline {
     )
 
     if (compaction) {
+      // 261013 Red 压缩状态可见性：判据纯函数与 TUI 逐字对齐（compaction-state.ts），
+      // 只在已有 compaction part 时走，输入全部是现成值（userParts / assistantMessages），
+      // 不加全行扫描
+      const resolved = resolveCompactionState({
+        userMessageID: userMessage.id,
+        userParts,
+        assistantMessages,
+        sessionCompacting: getSessionCompacting?.(),
+        isLatestMarker: !!isLatestMarker,
+      })
       rows.push(
         new TimelineRow.TurnDivider({
           userMessageID: userMessage.id,
           label: "compaction",
+          state: resolved.state,
+          attemptStarted: resolved.attemptStarted,
+          tokensBefore: resolved.tokensBefore,
+          tokensAfter: resolved.tokensAfter,
+          reason: resolved.reason,
         }),
       )
     }

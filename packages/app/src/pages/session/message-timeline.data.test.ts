@@ -202,6 +202,20 @@ describe("TimelineRow.equals — 载重假设：结构比较而非引用比较",
   })
 })
 
+describe("TimelineRow.key — compaction state invalidates cached divider", () => {
+  const divider = (attemptStarted: boolean) =>
+    new TimelineRow.TurnDivider({
+      userMessageID: "u1",
+      label: "compaction",
+      state: "incomplete",
+      attemptStarted,
+    })
+
+  test("attemptStarted changes key while the state remains incomplete", () => {
+    expect(TimelineRow.key(divider(false))).not.toBe(TimelineRow.key(divider(true)))
+  })
+})
+
 // 260901 cc 这条钉的是**引用语义**，不是内容语义。TimelineRow.reuse 的价值全在
 // 「没变化时返回 previous 本身」这一点上：createMemo 默认按 === 比较，返回一个内容相同
 // 但引用不同的新数组，等于每 16ms 让下游（timelineRows / timelineRowKeys /

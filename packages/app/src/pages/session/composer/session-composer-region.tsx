@@ -9,6 +9,7 @@ import { useSync } from "@/context/sync"
 import { getSessionHandoff, setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionKey } from "@/pages/session/session-layout"
 import { SessionPermissionDock } from "@/pages/session/composer/session-permission-dock"
+import { SessionCompactingDock } from "@/pages/session/composer/session-compacting-dock"
 import { SessionQuestionDock } from "@/pages/session/composer/session-question-dock"
 import { SessionFollowupDock } from "@/pages/session/composer/session-followup-dock"
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
@@ -180,6 +181,16 @@ export function SessionComposerRegion(props: {
                   props.state.decide(response)
                 }}
               />
+            </div>
+          )}
+        </Show>
+
+        {/* 261013 Red 压缩中 dock：session.time.compacting 非空即压缩进行中（home-kanban.tsx
+            徽标同源读法），挂在 permission / followup dock 之间 */}
+        <Show when={info()?.time?.compacting}>
+          {(start) => (
+            <div class="pb-1">
+              <SessionCompactingDock start={start()} />
             </div>
           )}
         </Show>

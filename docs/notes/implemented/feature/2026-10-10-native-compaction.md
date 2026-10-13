@@ -149,7 +149,7 @@ legacy 与 native 压缩都从触发压缩的父 user 消息读取 provider/mode
 - `event_handling`：成功完成的流事件处理累计时间；含增量落盘、插件、快照与用量归档。抛错事件的部分处理不计入此子项，但仍包含在 request / total。
 - `usage`：step-finish 处理（含快照、计费与持久化）；`cleanup`：processor 收尾。两者与 event_handling / request 有包含关系。
 
-另记请求尝试次数、选段消息数、实际摘要 UTF-8 字节、账本 output/reasoning token 数。失败前没发生的阶段不补造数值；没有模型请求时模型时间为 null，attempts 为 0。原始消息、压缩投影、预算及模型输入保持原行为。
+另记请求尝试次数、选段消息数、实际摘要 UTF-8 字节、账本 output/reasoning token 数。失败前没发生的阶段不补造数值；没有模型请求时模型时间为 null，attempts 为 0。失败终态另记有限错误 tag（typed error 的 `_tag`/`Error.name`，或 `Interrupted`/`Defect`/`UnknownFailure`），不写错误正文或堆栈。原始消息、压缩投影、预算及模型输入保持原行为。
 
 定向回归使用真实 SessionCompaction 和 SessionProcessor，只脚本化 LLM 事件流：覆盖成功阶段、保护历史拒绝且不发请求、空 delta 不被当成内容；compaction 与提示词路由三文件 87 pass / 0 fail，opencode typecheck 通过。计时 matcher 对深拷贝做匹配，避开本机 Bun 1.3.14 `toMatchObject` 用 asymmetric matcher 改写原记录的行为；临时打印已删除。
 
@@ -170,7 +170,7 @@ legacy 与 native 压缩都从触发压缩的父 user 消息读取 provider/mode
 ### 决策
 
 - 已落 `error` 且 `time.completed` 的 summary，只退出其 parent 对应的 compaction task；不伪造通用 `finish`，不丢弃 subtask，不屏蔽新手动 compaction，也不丢弃从未完结的可恢复任务。不通过修改 live 数据库修会话。
-- TUI 直接读取现有摘要的 error/time 和成功 token 记录，显示进行中、成功、失败、已取消或未完成。错误原因持久可见，展开显示详情；部分摘要标记为未提交草稿。只给当前 checkpoint 标进行中；输入区常驻显示压缩阶段、真实摘要模型与计时，结束后消失。无需新增公共字段、数据库迁移或 SDK 生成物。
+- TUI 直接读取现有摘要的 error/time 和成功 token 记录，显示进行中、成功、失败、已取消或未完成。错误原因持久可见，展开显示详情；折叠预览按 Unicode code point 截断，避免切开代理对。marker 已创建但压缩 process 尚未开始时用中性 `Compaction`，不提前报「未完成」。部分摘要标记为未提交草稿。只给当前 checkpoint 标进行中；输入区常驻显示压缩阶段、真实摘要模型与计时，结束后消失。无需新增公共字段、数据库迁移或 SDK 生成物。
 - 缓存核验发现 `prompt.ts` 在查询锚点前已保存本轮空 assistant，旧谓词每次先命中零用量占位，实报优化实际退回粗估。现先找最新非摘要有效实报，再校验 provider/model 与最新活跃块的提交时间；不越过较新的其他模型实报借用旧同模型数值，也不拿压缩前用量触发压缩后下一轮。触发线、目标、摘要与保护预算不改。
 
 ### 验证口径
@@ -201,3 +201,9 @@ GPT 四个零命中主请求中，11:55 首次换模型、12:54 压缩后的首�
 4. 无新无界输入；沿用 summary/messages/active/retained 原有硬预算。错误原因的展开属于客户端显示，不注入模型；无需公共 schema 或 SDK 变更。
 
 最终串行验证：message-v2/prompt 两文件 133 pass / 13 skip / 0 fail、404 expect；TUI compaction-fold 10 pass / 0 fail、30 expect；opencode typecheck 在 tsgo 崩溃后回退 TS 5.9.3，通过。两文件首轮 PTY 执行曾在已有 `reserved queued messages stay editable only after release` 测试触发 Windows `taskkill` 启动 `uv_spawn EUNKNOWN`，单跑和最终串行整文件复核均通过，未改该测试或进程实现。上个会话遗留的 budget/compaction/system 路由四文件 94 pass、core 锁两文件 27 pass，core 与 scripts 类型检查通过；预算 CLI 从 repo/package 两个 cwd 得到相同 25,841/32,768 字节，pre-push Git Bash 语法与版本一致性检查通过。未执行整套 pre-push、真实 provider 续跑、重编、提交或推送。
+
+## GUI 四态状态补充
+
+GUI 时间线复用相同的 compaction marker、summary `mode`/`parentID`、error 与 `tokens_after` 判据；成功显示 tokens，失败/取消显示原因和未提交标记，未完成与进行中区分。composer dock 复用 `session.time.compacting`，显示 spinner 与经过时间。与 TUI 一样，marker 先创建而 process 尚未启动时使用中性标签；`TurnDivider` 缓存 key 同时包含 `state` 与 `attemptStarted`，避免状态仍为 incomplete 时沿用旧行。
+
+验证：GUI 状态 helper 14 pass / 0 fail，timeline 数据 40 pass / 0 fail，session context metrics 29 pass / 0 fail；packages/app、packages/ui typecheck 通过。OpenTUI compaction-fold 12 pass / 0 fail；原生压缩 72 pass / 0 fail；packages/opencode typecheck 通过。未重启 app/server，未做真实浏览器视觉冒烟；新 UI 实际显示仍需宿主侧运行确认。
