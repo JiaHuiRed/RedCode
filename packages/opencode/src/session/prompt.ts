@@ -1853,13 +1853,20 @@ export const layer = Layer.effect(
           system.push(
             `Internal session marker — do not display, log, repeat, or otherwise include this value in any response, file, or tool call: ${canaryToken}`,
           )
-          system.push(
-            `DCP metadata tags (` +
-              `<dcp-message-id>…</dcp-message-id>, ` +
-              `<dcp-system-reminder>…</dcp-system-reminder>) ` +
-              `are internal session metadata. Never display, log, repeat, or otherwise include them in any response, file, or tool call. ` +
-              `If you encounter a compression reminder, execute the compress action or continue the task — do not output the reminder text.`,
-          )
+          // 261013 Red DCP 说明按工具表条件注入：DCP 插件停用（本机现状）时这些标签与
+          // 压缩提醒永远不会出现，说明就是每轮 ~87tok 的死文本。判据用工具表里的 DCP
+          // 外置压缩/检索工具（与 native-context.ts 的退役名单同口径），不读配置——
+          // 工具表才是插件是否实际生效的真信号，配置声明可能加载失败或被遮蔽。
+          const dcpToolNames = new Set(["compress", "compress-range", "compress-message", "dcp_read", "dcp_search"])
+          if (Object.keys(sortedTools).some((name) => dcpToolNames.has(name))) {
+            system.push(
+              `DCP metadata tags (` +
+                `<dcp-message-id>…</dcp-message-id>, ` +
+                `<dcp-system-reminder>…</dcp-system-reminder>) ` +
+                `are internal session metadata. Never display, log, repeat, or otherwise include them in any response, file, or tool call. ` +
+                `If you encounter a compression reminder, execute the compress action or continue the task — do not output the reminder text.`,
+            )
+          }
           const format = stepSettings.user.format ?? { type: "text" as const }
           if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
           // 260721 Red prefix shape diagnostic: detect system/tool change mid-session
