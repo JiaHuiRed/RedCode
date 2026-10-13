@@ -133,6 +133,39 @@ describe("session.request-evidence", () => {
     expect(persisted).not.toContain("private-fixture")
   })
 
+  // 261013 Red 连续零命中预警落盘：冷启动首根不计、第 2 根 WARN 一次、命中清零、
+  // 小请求不计数也不清零。真实日志文件验证（与 GUI 相同的 WARN 门槛）。
+  test("warns once per cache-miss streak incident under the GUI WARN threshold", async () => {
+    await using tmp = await tmpdir()
+    const script = path.join(tmp.path, "evidence-streak.ts")
+    await Bun.write(script, `
+      import * as Log from ${JSON.stringify(new URL("../../../core/src/util/log.ts", import.meta.url).href)}
+      import * as Evidence from ${JSON.stringify(new URL("../../src/session/request-evidence.ts", import.meta.url).href)}
+      await Log.init({ print: false, level: "WARN" })
+      const observer = Evidence.create({ sessionID: "ses_streak_fixture", modelKey: "openai/gpt-fixture", runtime: "ai-sdk" })
+      const miss = (inputTokens) =>
+        observer.event({ type: "step-finish", usage: { inputTokens, cacheReadInputTokens: 0 } })
+      miss(300_000) // 冷启动首根：计数 1，不报警
+      miss(305_000) // streak 2 → WARN 一次
+      miss(310_000) // streak 3 → 不重复报警
+      observer.event({ type: "step-finish", usage: { inputTokens: 315_000, cacheReadInputTokens: 314_000 } }) // 命中 → 清零
+      miss(320_000) // 新事故 streak 1
+      miss(325_000) // streak 2 → 第二次 WARN
+      miss(5_000) // 小请求：不计数也不清零
+      console.log(Log.file())
+    `)
+    const child = spawnSync(process.execPath, [script], {
+      cwd: process.cwd(),
+      env: { ...process.env, REDCODE_TEST_HOME: path.join(tmp.path, "home") },
+      encoding: "utf8", timeout: 30000, maxBuffer: 1024 * 1024,
+    })
+    expect(child.error).toBeUndefined()
+    expect(child.status).toBe(0)
+    const persisted = await Bun.file(child.stdout.trim()).text()
+    expect(persisted.split("request.cache-miss-streak").length - 1).toBe(2)
+    expect(persisted).toContain("streak=2")
+  })
+
   test("validates file-backed diagnostic caps and resolves bounded defaults", () => {
     expect(ConfigRequestEvidence.resolve()).toEqual({
       maxBodyBytes: 16 * 1024 * 1024,

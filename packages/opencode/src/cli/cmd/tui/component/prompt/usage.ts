@@ -3,6 +3,7 @@
 // 拆分原因：Prompt 圈复杂度 396 的巨型组件，usage 是最独立的一块——不碰 input/store/渲染，
 // 零风险第一刀。行为零改动：memo 依赖（sessionID + sync.data.message + sync.data.session）原样搬移。
 import { createMemo } from "solid-js"
+import { cacheMissStreak, type CacheMissStreak } from "@redcode-ai/core/util/cache-streak"
 import type { useSync } from "../../context/sync"
 
 export interface PromptUsage {
@@ -12,6 +13,9 @@ export interface PromptUsage {
   stalled: boolean
   lifeHitPct?: number
   lifeMiss: number
+  // 261013 Red 连续零命中事故（口径同 core/util/cache-streak.ts）：与前两个「比率」量不同，
+  // 这是事件量 —— 出现即代表当前模型的前缀缓存疑似服务端事故，正在烧全价。
+  missStreak?: CacheMissStreak
 }
 
 export function usePromptUsage(
@@ -82,6 +86,11 @@ export function usePromptUsage(
     const lifeDenom = lifeRead + lifeMiss
     const lifeHitPct = lifeDenom > 0 && lifeRead > 0 ? Math.round((lifeRead / lifeDenom) * 10000) / 100 : undefined
 
-    return { cacheHitPct, cacheMissPct, turnHitPct, stalled, lifeHitPct, lifeMiss }
+    // 261013 Red 连续零命中事故检测：与上面 stalled（缓存停止延伸）互补 —— stalled 抓
+    // 「read 纹丝不动」的钉死形态，这里抓「整轮归零连烧全价」的事故形态（Sol 六连零命中
+    // 那次，read 每轮都在变，stalled 抓不到）。冷启动（首条/切模型/压缩后）在纯函数里排除。
+    const missStreak = cacheMissStreak(msg)
+
+    return { cacheHitPct, cacheMissPct, turnHitPct, stalled, lifeHitPct, lifeMiss, ...(missStreak ? { missStreak } : {}) }
   })
 }

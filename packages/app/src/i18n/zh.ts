@@ -465,6 +465,7 @@ export const dict = {
   "context.usage.window": "上下文窗口",
   "context.usage.firstToken": "首字延迟",
   "context.usage.decodeRate": "解码速率",
+  "context.usage.cacheStreak": "缓存未命中 ×{{streak}} · 已烧全价输入 {{tokens}}",
   "context.usage.usage": "使用率",
   "context.usage.clickToView": "点击查看上下文",
   "context.usage.view": "查看上下文用量",

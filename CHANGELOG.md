@@ -29,6 +29,7 @@
 - **修复 GUI 时间线初始化与压缩状态展示**（`packages/app/src/pages/session/message-timeline.tsx`、`message-timeline.data.ts`）：修复初始化顺序导致的会话页错误；压缩失败原因只在分隔线显示，普通历史轮不再因压缩 marker 变化重算。无新增运行时能力。
 - **补齐 TUI 测试 fixture 的 Soul label**（`packages/opencode/test/cli/tui/lib/transcript.tsx`）：模拟配置与当前 TUI 会话上下文对齐；仅测试 fixture 变更。
 - **补齐 session usage/outline HTTP API 覆盖**（`packages/opencode/test/server/httpapi-exercise/index.ts`）：新增 `/session/usage` 默认范围响应及 `/session/{sessionID}/outline` 种子轮次场景，不新增运行时功能或测试门禁。
+- **新增缓存归零事故预警**（`packages/core/src/util/cache-streak.ts`、`packages/opencode/src/session/request-evidence.ts`、TUI `component/prompt/{usage,index}.tsx`、GUI `components/session-context-usage.tsx`、`src/i18n/{zh,en,ja}.ts`）：现场取证（同会话 Sol 六连零命中、~512k 全价输入）显示逐请求 `reported-zero` 日志存在但无人聚合计数，用户只能在烧完之后翻日志。现按统一口径检测「冷启动边界（会话首条/切模型/压缩摘要，边界本身不计）之后连续 ≥2 轮实报 cacheRead=0 且 input>20k」：共享纯函数 `cacheMissStreak`（core，TUI/GUI 同源）；服务端在 request-evidence 的跨请求桶计数，事故起点打一条独立 `request.cache-miss-streak` WARN，每次事故只打点一次不刷屏；TUI 在 Cache 行追加 `⚠ miss×N` 标记，GUI 在上下文元件加 danger 徽标、悬浮给出累计全价输入。纯检测与展示，不改请求、路由或缓存行为；不做自动重试或自动压缩（mid-stream 重放双倍全价，处置留给用户）。模型可见四问：① 无提示词/工具 schema 改动；② 固定前缀零增量；③ 缓存布局不动；④ 无新增注入项。验证：core 9 pass、request-evidence 22 pass（含真实日志落盘回归：两次事故各 WARN 一次、命中清零、小请求不计数）、app 组件 5 pass + i18n parity 4 pass、core/opencode/app typecheck 绿。
 
 ### [0.12.8] - 2026-10-13
 

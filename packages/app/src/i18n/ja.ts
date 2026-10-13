@@ -403,6 +403,7 @@ export const dict = {
   "context.usage.window": "コンテキストウィンドウ",
   "context.usage.firstToken": "初トークン",
   "context.usage.decodeRate": "デコード",
+  "context.usage.cacheStreak": "キャッシュ未命中 ×{{streak}} · 約{{tokens}}が全額課金",
   "context.usage.usage": "使用量",
   "context.usage.clickToView": "クリックしてコンテキストを表示",
   "context.usage.view": "コンテキスト使用量を表示",

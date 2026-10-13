@@ -1,5 +1,6 @@
 import crypto from "crypto"
 import { AsyncLocalStorage } from "node:async_hooks"
+import { CACHE_STREAK_ALERT_TURNS, CACHE_STREAK_MIN_CONTEXT_TOKENS } from "@redcode-ai/core/util/cache-streak"
 import * as Log from "@redcode-ai/core/util/log"
 import { LLMEvent, type Usage } from "@redcode-ai/llm"
 import type { Provider } from "@/provider/provider"
@@ -74,6 +75,9 @@ type Fingerprint = {
 type Bucket = {
   fingerprint?: Fingerprint
   pending: Map<string, Compression>
+  // 261013 Red 连续零命中计数（口径见 core/util/cache-streak.ts）。桶按 会话×模型×runtime
+  // 键控且跨请求延续，冷启动边界由桶初始化与压缩重置天然覆盖。
+  missStreak?: number
 }
 
 export type CaptureObservation =
@@ -647,6 +651,9 @@ export function create(context: Context, limits = ConfigRequestEvidence.resolve(
             summaryTokensEstimated: observed.summaryTokensEstimated,
             netSavingsEstimated: observed.netSavingsEstimated,
           }
+          // 261013 Red 压缩后前缀重置，其后首根 miss 是合法冷启动：计数清零（口径同
+          // core/util/cache-streak.ts 的边界重置）。
+          bucket.missStreak = 0
         }
         record("request.compression", { ...common(), ...observed })
         return observed
@@ -674,6 +681,28 @@ export function create(context: Context, limits = ConfigRequestEvidence.resolve(
                 ...(cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens }),
               },
         ...(lastCompression ? { lastCompression } : {}),
+      }
+      // 261013 Red 连续零命中预警（口径同 core/util/cache-streak.ts）：同桶（会话×模型×
+      // runtime）内实报 cacheRead=0 且 inputTokens 超阈值的轮次连续 ≥2 → 独立 WARN 一次。
+      // 冷启动由桶初始化与压缩重置覆盖；命中清零；usage 缺失跳过。只在恰好到达报警线的
+      // 这一轮打点，长 streak 由逐请求 reported-zero 行延续，不刷屏。
+      if (usageStatus === "reported" && cacheReadInputTokens !== undefined) {
+        const streakBucket = buckets.get(id) ?? { pending: new Map<string, Compression>() }
+        buckets.set(id, streakBucket)
+        evictor.touch(id)
+        if (cacheReadInputTokens > 0) streakBucket.missStreak = 0
+        else {
+          const inputTokens = event.usage?.inputTokens ?? 0
+          if (inputTokens > CACHE_STREAK_MIN_CONTEXT_TOKENS) {
+            streakBucket.missStreak = (streakBucket.missStreak ?? 0) + 1
+            if (streakBucket.missStreak === CACHE_STREAK_ALERT_TURNS)
+              record("request.cache-miss-streak", {
+                ...common(),
+                streak: streakBucket.missStreak,
+                inputTokens,
+              })
+          }
+        }
       }
       record("request.usage", {
         ...common(),

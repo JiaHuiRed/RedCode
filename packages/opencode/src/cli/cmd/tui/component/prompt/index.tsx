@@ -1980,6 +1980,11 @@ export function Prompt(props: PromptProps) {
                           <Show when={item().stalled}>
                             <span style={{ fg: theme.error }}>{" stalled"}</span>
                           </Show>
+                          {/* 261013 Red 连续零命中事故：与 stalled（read 纹丝不动）不同形态 ——
+                              整轮归零连烧全价。出现即在事发中，给轮数让人能判断烧了多少。 */}
+                          <Show when={item().missStreak}>
+                            <span style={{ fg: theme.error }}>{` ⚠ miss×${item().missStreak!.streak}`}</span>
+                          </Show>
                           <span style={{ fg: theme.textMuted }}>{" · Conn "}</span>
                           <span style={{ fg: cacheTierColor(item().cacheHitPct) }}>{`${item().cacheHitPct}%`}</span>
                           <Show when={item().lifeHitPct !== undefined}>

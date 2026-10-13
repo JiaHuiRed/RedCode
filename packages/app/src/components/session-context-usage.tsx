@@ -14,6 +14,7 @@ import { useSync } from "@/context/sync"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useProviders } from "@/hooks/use-providers"
+import { cacheMissStreak } from "@redcode-ai/core/util/cache-streak"
 import { contextUsageTier, getSessionContextMetrics } from "@/components/session/session-context-metrics"
 import { createSessionContextFormatter } from "@/components/session/session-context-format"
 import { useSessionLayout } from "@/pages/session/session-layout"
@@ -128,6 +129,9 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   const messages = createMemo(() => (params.id ? (sync.data.message[params.id] ?? []) : []))
   const metrics = createMemo(() => getSessionContextMetrics(messages(), [...providers.all().values()]))
   const context = createMemo(() => metrics().context)
+  // 261013 Red 连续零命中事故（口径同 core/util/cache-streak.ts，冷启动已排除）：出现即代表
+  // 当前模型前缀缓存疑似服务端事故、正在烧全价。徽标给轮数，悬浮给累计全价输入。
+  const missStreak = createMemo(() => cacheMissStreak(messages()))
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
 
   // 260819 cc 进度圈上色是纯装饰——哥哥明确说不会严格照它决定压缩时机，所以不为它引入
@@ -239,6 +243,19 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
                 <span class="text-text-invert-base">{language.t("context.usage.decodeRate")}</span>
               </div>
             </Show>
+            {/* 261013 Red 事故行：只有 streak 活跃时出现，给轮数与累计全价输入。 */}
+            <Show when={missStreak()}>
+              {(streak) => (
+                <div class="flex items-center gap-2">
+                  <span class="text-text-invert-strong">
+                    {language.t("context.usage.cacheStreak", {
+                      streak: streak().streak,
+                      tokens: formatter().compact(streak().fullPriceTokens),
+                    })}
+                  </span>
+                </div>
+              )}
+            </Show>
           </>
         )}
       </Show>
@@ -258,6 +275,14 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
           aria-label={language.t("command.session.compact")}
         >
           {circle()}
+          {/* 261013 Red 事故徽标：danger 红 + 轮数，路过必见；详情在悬浮。 */}
+          <Show when={missStreak()}>
+            {(streak) => (
+              <span class="text-12-regular" style={{ color: "var(--v2-state-fg-danger)" }}>
+                ⚡{streak().streak}
+              </span>
+            )}
+          </Show>
           <Show when={valueLabel()}>
             <span
               class="text-12-regular"
