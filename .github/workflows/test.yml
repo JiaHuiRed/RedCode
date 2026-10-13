@@ -87,8 +87,9 @@ jobs:
       # `redcode generate` 的当前输出。这条生成路径曾指向不存在的 packages/redcode
       # 而静默失效，openapi.json 长期靠手改（见 script/generate.ts 注释）；260819
       # 修好了路径，但没有任何东西阻止它再烂一次——这一步就是那个东西。
-      # 只放 CI 不放 pre-push：要起完整 server 模块图，几十秒量级，而 pre-push 上的
-      # check-subprocess-timeout 是秒级文本扫描，代价不在一个量级。
+      # 261013 Red CI 与 pre-push 双份（pre-push 原版随工具描述预算批次接入）：
+      # 本地拦截省一轮 CI 往返，CI 兜 --no-verify 与并行会话合并；双份有意，别按
+      # 旧注释把 pre-push 那条当冗余删掉。
       - name: Run OpenAPI drift gate
         run: bun run check:openapi-drift
 
