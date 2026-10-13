@@ -27,4 +27,7 @@ bun run script/check-control-bytes.ts
 # 才在 CI 红。260828 一上午撞两次（webfetch.allow_private_hosts、image 的 max_pixels/
 # max_dimension），两次都是别的会话合并时才发现。脚本自己无副作用（见其头注释）。
 bun run check:openapi-drift
-bun typecheck
+# 261013 Red 全仓 typecheck 移出 pre-push：tsgo 崩溃回退 tsc 时是分钟级，每次 push 都付
+# 不划算；CI typecheck.yml 同一条全量兜底（防本地跳过钩子与并行会话合并）。留在 pre-push
+# 的是秒级扫描（超时不变量/工具描述预算/控制字节/openapi-drift），拦截成本近零。
+
