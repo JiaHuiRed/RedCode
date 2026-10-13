@@ -10,7 +10,7 @@ description: 记忆的写与剪——何时写、双写落笔格式、以及什�
 | **项目** | `<项目根>/.redcode/MEMORY.md` | 本项目的进度、坑、决策、关键路径   |
 | **全局** | `~/.redcode/MEMORY.md`        | 跨项目通用教训（过三道门禁才提拔） |
 
-机制主位在全局 `AGENTS.md`「记忆系统」节——双层叠加注入、索引化、注入面纪律、跨机同步、收工流程、三道门禁都在那里，本 skill 不重复，只管落笔与收拾。
+机制主位在本 skill——写侧落笔、编号、双写、剪枝、跨机恢复都在这里；全局 `AGENTS.md`「记忆系统」节只保留每轮需要的触发器（双层叠加注入、索引化、注入面纪律、收工流程），冲突时以本 skill 为准。
 
 > **260902 合并**：原 `memory-automation`（写）与 `consolidate-memory`（整理）合成一份。
 > 分开时写侧每轮强制注入、整理侧只在被叫到时才 load，结果是**只写不剪、注入面单调上涨**。
@@ -22,9 +22,11 @@ description: 记忆的写与剪——何时写、双写落笔格式、以及什�
 
 准备追加之前先量一下：
 
-```bash
-wc -c ~/.redcode/MEMORY.md        # 全局
-wc -c .redcode/MEMORY.md          # 项目（在项目根跑）
+```powershell
+# 量**字符**（UTF-16 码元）。⚠ wc -c 量的是字节：中文每字 3 字节虚高 60%+，
+# 261013 实测全局 MEMORY 12,744 字节只有 6,820 字符——按字节判线会误触发剪枝。
+(Get-Content -Raw ~/.redcode/MEMORY.md).Length    # 全局
+(Get-Content -Raw .redcode/MEMORY.md).Length      # 项目（在项目根跑）
 ```
 
 - **全局 > 12000 字符** → 先走下面第 5 节剪一轮，再写新条目
@@ -37,15 +39,17 @@ wc -c .redcode/MEMORY.md          # 项目（在项目根跑）
 
 ## 0.5 记忆写入五问（写之前逐条自问）
 
-权威版在全局 `AGENTS.md` 的「记忆写入五问」节（每轮注入，含判据与理由）；这里是落笔前的执行清单：
+权威版在此（全局 `AGENTS.md` 只留一行指针）；落笔前逐条过：
 
-1. 换个项目还成立吗？不成立 → **只写项目记忆**，别塞全局
-2. 忘了会再踩、且代价不便宜吗？一次试错就明白的、一 grep / `--help` 就知道的 → **不写**
-3. 规则面（AGENTS.md / soul / skill）或机制（hook / 权限）已覆盖吗？覆盖 → **不写**
-4. 是教训还是状态？进度、待办、某次实验的数字 → **状态，不进长期记忆**
-5. 这坑犯过几次了？复发 2 次 → 归正式分区、标注复发，并回答"机制上怎么拦"；3 次以上 → **必须机器门禁**，记忆只留指针
+1. **换个项目还成立吗？** 不成立 → 只写项目记忆，别塞全局。判据：把项目名/仓库名/文件路径从句子里抽掉，还读得通吗。
+2. **忘了会再踩、且代价不便宜吗？** 一次试错就明白的、一 grep 就查到的、`--help` 看一眼就知道的 → **不写**。
+3. **规则面或机制已经覆盖了吗？** AGENTS.md / soul / skill 里已有的**不写**（那些往往写得更细）；hook 与权限请求能拦的**不写**——记忆买不到额外安全，最终决定权在用户手里。
+4. **是教训，还是状态？** 进度、待办、某次实验的数字、正在做但还没结论的事 → **状态，不进长期记忆**（进度查 git，数据查日志）。
+5. **这坑犯过几次了？** 复发 2 次 → 归正式分区、标注复发，并回答"机制上怎么拦"（答不出也写明"待机制化"）；**3 次以上必须机器门禁**（启动校验 / CI / pre-commit 拦截），记忆只留指针——写了还犯的记录证明：**别指望任何注释、记忆或一次性提示能拦住惯犯**（案例：DCP 触发线键漏配五犯 → 启动对账；hashline 缩进两犯 → 落盘必 diff）。
 
 **答「不确定」默认不写**——宁可漏（下次再踩还能补），不可滥（每轮都在付）。
+
+与「模型可见改动的四问」同一种纪律：写之前先把**「这东西凭什么占固定前缀」**答清楚。
 
 ## 1. 过了五问，这几类立刻写，不等收尾
 
@@ -55,7 +59,7 @@ wc -c .redcode/MEMORY.md          # 项目（在项目根跑）
 
 ## 2. 双写动作（缺一不可）
 
-① MEMORY.md 加索引行：4-8 字主题 + 关键动作词，放对应分区；全局条目编号 = **当前最大号 + 1**（跨机会撞号，先 `rg -o "#[0-9]{1,3}" MEMORY.md | sort -n | tail -1` 看全局最大）
+① MEMORY.md 加索引行：4-8 字主题 + 关键动作词，放对应分区；全局条目编号 = **当前最大号 + 1**。查号口径（261011 修订）：**先 `bun ~/.redcode/scripts/next-memory-id.mjs` 查 db**——编号在 INSERT 时即占用，MEMORY.md 索引行滞后于库，同机并行会话已实测撞号；跨机再 fetch 私仓比对 origin 的 `memory/lessons-backup.*.md` 快照，取两者最大。只 grep MEMORY.md（本地或远端）都会漏（261011 #320 实证；旧版让 grep MEMORY.md 的命令已废）
 ② db 存全文：`sqlite_query` 对 `~/.redcode/supermemory.db` 执行
 `INSERT INTO memories (content, project, source) VALUES (全文, 'global'|项目名, 'manual')`
 ③ 核对：`bun ~/.redcode/scripts/check-memory-dualwrite.mjs`（私仓 pre-commit 也会拦，别 `--no-verify` 带病闯关）
@@ -183,6 +187,14 @@ bun ~/.redcode/scripts/export-memory-backup.mjs
 然后 `git pull --rebase`（`~/.redcode` 是私仓，可能有别处刚写的），add 改过的文件 + 快照，
 **不 `add -A`**。项目记忆跟项目自己的仓库走，不进 `~/.redcode`（项目的 `MEMORY-archive.md`
 在 `.redcode/` 下通常也被项目 gitignore，属本机文件）。
+
+### 5.9 新机器/重装后装一次钩子（每台机器各做一次）
+
+`.git/hooks` 不入仓，重装后 pre-commit 的双写校验与自动导快照会静默缺席：
+
+```bash
+cp ~/.redcode/scripts/hooks/pre-commit ~/.redcode/.git/hooks/pre-commit && chmod +x ~/.redcode/.git/hooks/pre-commit
+```
 
 ## 6. 索引层审计（260910 起）
 
