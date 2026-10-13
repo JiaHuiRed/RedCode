@@ -13,7 +13,7 @@ import { Plugin } from "@/plugin"
 import { Config } from "@/config/config"
 import { NotFoundError } from "@/storage/storage"
 import { ModelID, ProviderID } from "@/provider/schema"
-import { Effect, Layer, Context, Schema } from "effect"
+import { Effect, Exit, Layer, Context, Schema } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { isOverflow as overflow, level as overflowLevel, usable, type Level } from "./overflow"
 import { serviceUse } from "@/effect/service-use"
@@ -433,133 +433,188 @@ export const layer = Layer.effect(
       auto: boolean
     }) {
       const startedAt = Date.now()
+      // 261013 Red Log-only stage evidence; no model-visible or budget changes.
+      // Decision: docs/notes/implemented/feature/2026-10-10-native-compaction.md
+      const monotonicStart = performance.now()
+      const stages: Record<string, number> = {}
+      let checkpoint = monotonicStart
+      let phase = "setup"
+      let selected = 0
+      let requestStartedAt: number | undefined
+      let modelTiming: SessionProcessor.CompactionTiming | undefined
+      let summaryMessageID: MessageID | undefined
+      let summaryBytes: number | undefined
+      let usage: MessageV2.Assistant["tokens"] | undefined
+      const mark = (next: string) => {
+        const now = performance.now()
+        stages[phase] = Math.round(now - checkpoint)
+        checkpoint = now
+        phase = next
+      }
       const parent = input.messages.find((message) => message.info.id === input.parentID)
       if (!parent || parent.info.role !== "user") throw new Error("Native compaction parent is missing")
-      const cfg = yield* config.get()
-      const agent = yield* agents.get("compaction")
-      if (!agent) throw new Error("Built-in compaction agent is missing")
-      // 261012 Red Summaries must use the model and variant that produced the triggering turn.
-      const mainModel = yield* provider.getModel(parent.info.model.providerID, parent.info.model.modelID).pipe(
-        Effect.orDie,
-      )
-      const spec = NativeCompaction.resolve(cfg.compaction?.native, usable({ cfg, model: mainModel }))
-      const view = NativeRuntime.project(input.sessionID, input.messages, spec)
-      const model = {
-        ...mainModel,
-        limit: {
-          ...mainModel.limit,
-          output:
-            mainModel.limit.output > 0
-              ? Math.min(mainModel.limit.output, spec.summaryMaxTokens)
-              : spec.summaryMaxTokens,
-        },
-      }
-      const ctx = yield* InstanceState.context
-      const msg: MessageV2.Assistant = {
-        id: MessageID.ascending(), role: "assistant", parentID: input.parentID,
-        sessionID: input.sessionID, mode: "compaction", agent: "compaction", summary: true,
-        path: { cwd: ctx.directory, root: ctx.worktree }, cost: 0,
-        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-        modelID: model.id, providerID: model.providerID, variant: parent.info.model.variant,
-        time: { created: Date.now() },
-      }
-      yield* session.updateMessage(msg)
-      const active = ContextCompaction.list(input.sessionID)
-      // 261010 Red 选段锚点用 provider 实报的完整请求（触发口径），不是历史粗估——
-      // 现场 250k 实报被 171k 粗估顶替后，回收需求只剩 27k，7 条消息就提前收工。
-      // 实报缺失（首个请求/未回执）退回粗估，行为同旧。
-      const lastAssistant = view.findLast((message) => message.info.role === "assistant" && !message.info.summary)
-      const currentTokens = lastAssistant?.info.role === "assistant" && !lastAssistant.info.summary
-        ? lastAssistant.info.tokens.context ?? 0
-        : 0
-      const head = yield* Effect.try({
-        try: () => {
-          // 261012 Red 降级可见：回收量不够仍提交 best-effort（放弃压缩、硬顶到 provider
-          // 溢出更贵），但 required/released 必须进日志——「压了等于没压」伪装成成功，
-          // 让压缩风暴潜伏了两天（docs/notes/proposed/bug-fix/2026-10-12-native-compaction-under-reduction.md）。
-          const plan = NativeContext.planAutomatic(view, spec.targetTokens, spec.summaryMaxTokens,
-            (message) => Token.estimate(ContextCompaction.content(message)),
-            (message) => ContextCompaction.retainedTokens(message, active, spec),
-            currentTokens)
-          if (plan.released < plan.required) log.warn("native compaction shortfall", {
-            sessionID: input.sessionID, required: plan.required, released: Math.round(plan.released),
-            selected: plan.segment.length,
+      const userMessage = parent.info
+      return yield* Effect.gen(function* () {
+        const cfg = yield* config.get()
+        const agent = yield* agents.get("compaction")
+        if (!agent) throw new Error("Built-in compaction agent is missing")
+        // 261012 Red Summaries must use the model and variant that produced the triggering turn.
+        const mainModel = yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID).pipe(
+          Effect.orDie,
+        )
+        const spec = NativeCompaction.resolve(cfg.compaction?.native, usable({ cfg, model: mainModel }))
+        mark("projection")
+        const view = NativeRuntime.project(input.sessionID, input.messages, spec)
+        mark("selection")
+        const model = {
+          ...mainModel,
+          limit: {
+            ...mainModel.limit,
+            output:
+              mainModel.limit.output > 0
+                ? Math.min(mainModel.limit.output, spec.summaryMaxTokens)
+                : spec.summaryMaxTokens,
+          },
+        }
+        const ctx = yield* InstanceState.context
+        const msg: MessageV2.Assistant = {
+          id: MessageID.ascending(), role: "assistant", parentID: input.parentID,
+          sessionID: input.sessionID, mode: "compaction", agent: "compaction", summary: true,
+          path: { cwd: ctx.directory, root: ctx.worktree }, cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          modelID: model.id, providerID: model.providerID, variant: userMessage.model.variant,
+          time: { created: Date.now() },
+        }
+        summaryMessageID = msg.id
+        yield* session.updateMessage(msg)
+        const active = ContextCompaction.list(input.sessionID)
+        // 261010 Red 选段锚点用 provider 实报的完整请求（触发口径），不是历史粗估——
+        // 现场 250k 实报被 171k 粗估顶替后，回收需求只剩 27k，7 条消息就提前收工。
+        // 实报缺失（首个请求/未回执）退回粗估，行为同旧。
+        const lastAssistant = view.findLast((message) => message.info.role === "assistant" && !message.info.summary)
+        const currentTokens = lastAssistant?.info.role === "assistant" && !lastAssistant.info.summary
+          ? lastAssistant.info.tokens.context ?? 0
+          : 0
+        const head = yield* Effect.try({
+          try: () => {
+            // 261012 Red 降级可见：回收量不够仍提交 best-effort（放弃压缩、硬顶到 provider
+            // 溢出更贵），但 required/released 必须进日志——「压了等于没压」伪装成成功，
+            // 让压缩风暴潜伏了两天（docs/notes/proposed/bug-fix/2026-10-12-native-compaction-under-reduction.md）。
+            const plan = NativeContext.planAutomatic(view, spec.targetTokens, spec.summaryMaxTokens,
+              (message) => Token.estimate(ContextCompaction.content(message)),
+              (message) => ContextCompaction.retainedTokens(message, active, spec),
+              currentTokens)
+            if (plan.released < plan.required) log.warn("native compaction shortfall", {
+              sessionID: input.sessionID, required: plan.required, released: Math.round(plan.released),
+              selected: plan.segment.length,
+            })
+            return plan.segment
+          },
+          catch: (error) => new Error(`Native compaction was not committed: ${String(error)}`),
+        }).pipe(Effect.catch((error) => Effect.gen(function* () {
+          // 261010 Red 无可回收段同样落失败记录，不发模型请求、不抛出缺少回执的匿名异常。
+          const failure = new MessageV2.ContextOverflowError({ message: error.message }).toObject()
+          yield* session.updateMessage({
+            ...msg, finish: "error", time: { ...msg.time, completed: Date.now() },
+            error: failure,
           })
-          return plan.segment
-        },
-        catch: (error) => new Error(`Native compaction was not committed: ${String(error)}`),
-      }).pipe(Effect.catch((error) => Effect.gen(function* () {
-        // 261010 Red 无可回收段同样落失败记录，不发模型请求、不抛出缺少回执的匿名异常。
-        const failure = new MessageV2.ContextOverflowError({ message: error.message }).toObject()
-        yield* session.updateMessage({
-          ...msg, finish: "error", time: { ...msg.time, completed: Date.now() },
-          error: failure,
+          yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: failure })
+          return []
+        })))
+        selected = head.length
+        if (!head.length) return "stop" as const
+        mark("processor_setup")
+        const processor = yield* processors.create({ assistantMessage: msg, sessionID: input.sessionID, model })
+        modelTiming = processor.compactionTiming
+        mark("conversion")
+        const modelMessages = yield* MessageV2.toModelMessagesEffect(head, model, {
+          stripMedia: true, toolOutputMaxChars: TOOL_OUTPUT_MAX_CHARS,
         })
-        yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: failure })
-        return []
+        mark("request")
+        requestStartedAt = checkpoint
+        const result = yield* processor.process({
+          user: userMessage, agent, sessionID: input.sessionID, tools: {}, system: [],
+          messages: [...modelMessages, {
+            role: "user",
+            content: [{ type: "text", text: `${NativeContext.summaryPrompt(spec.summaryMaxTokens)}\n\n${SUMMARY_TEMPLATE}` }],
+          }], model,
+        })
+        if (result !== "continue" || processor.message.error) return "stop" as const
+        mark("commit")
+        const output = yield* MessageV2.get({ sessionID: input.sessionID, messageID: msg.id })
+        const summary = summaryText(output) ?? ""
+        summaryBytes = Buffer.byteLength(summary, "utf8")
+        if (output.info.role === "assistant") usage = output.info.tokens
+        const blocks = yield* Effect.try({
+          try: () => ContextCompaction.commit({
+            sessionID: input.sessionID, messages: view, limits: spec, mode: "auto",
+            requestID: `auto:${input.parentID}`,
+            ranges: [{ startId: head[0]!.info.id, endId: head.at(-1)!.info.id, summary }],
+          }),
+          catch: (error) => new Error(`Native compaction was not committed: ${String(error)}`),
+        }).pipe(Effect.catch((error) => Effect.gen(function* () {
+          processor.message.error = new MessageV2.ContextOverflowError({ message: error.message }).toObject()
+          yield* session.updateMessage(processor.message)
+          yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: processor.message.error })
+          return []
+        })))
+        if (!blocks.length) return "stop" as const
+        mark("metrics")
+        const newIDs = new Set(blocks.map((block) => block.id))
+        const marker = parent.parts.find((part) => part.type === "compaction")
+        if (marker && marker.type === "compaction") yield* session.updatePart({
+          // 261010 Red tokens_before 必须与 legacy 路径同口径：本次压缩前**已折叠**的可见
+          // 历史。此前传 view（刚投影完、尚未含本次摘要），与 tokens_after 差一次折叠，
+          // 实测 exe 上真实 100k→30k 显示成 50k→40k。list 按 committed_at 升序，新块在
+          // 末位，排除它才是"压缩前"。
+          ...marker, native: true, duration_ms: Date.now() - startedAt,
+          tokens_before: yield* estimate({
+            messages: ContextCompaction.project(
+              NativeContext.removeArtifacts(input.messages),
+              ContextCompaction.list(input.sessionID).filter((block) => !newIDs.has(block.id)),
+            ),
+            model: mainModel,
+          }),
+          tokens_after: yield* estimate({
+            messages: ContextCompaction.project(NativeContext.removeArtifacts(input.messages), ContextCompaction.list(input.sessionID)),
+            model: mainModel,
+          }),
+        })
+        mark("finalize")
+        if (input.auto) {
+          const followup = yield* session.updateMessage({
+            ...userMessage, id: MessageID.ascending(), time: { created: Date.now() },
+          })
+          yield* session.updatePart({
+            id: PartID.ascending(), messageID: followup.id, sessionID: input.sessionID,
+            type: "text", synthetic: true, metadata: { compaction_continue: true },
+            text: "[System notice] The conversation was compacted. This is not a user message or new authorization. Continue only unfinished work from the latest actual user request; do not repeat completed work. If the task is done, report the result.",
+          })
+        }
+        yield* bus.publish(Event.Compacted, { sessionID: input.sessionID })
+        yield* plugin.trigger("compact.post", { sessionID: input.sessionID }, {}).pipe(Effect.catch(() => Effect.void))
+        return "continue" as const
+      }).pipe(Effect.onExit((exit) => Effect.sync(() => {
+        mark(phase)
+        const sinceRequest = (at: number | undefined) =>
+          at !== undefined && requestStartedAt !== undefined ? Math.max(0, Math.round(at - requestStartedAt)) : null
+        log.warn("native compaction stages", {
+          sessionID: input.sessionID, parentID: input.parentID, summaryMessageID,
+          status: Exit.isSuccess(exit) ? exit.value : "failed-or-cancelled",
+          queue_ms: Math.max(0, startedAt - userMessage.time.created),
+          total_ms: Math.round(performance.now() - monotonicStart), stages_ms: stages,
+          model_ms: {
+            first_event: sinceRequest(modelTiming?.firstEventAt),
+            first_content: sinceRequest(modelTiming?.firstContentAt),
+            stream_complete: sinceRequest(modelTiming?.streamCompletedAt),
+            usage: modelTiming ? Math.round(modelTiming.usageMs) : null,
+            cleanup: modelTiming ? Math.round(modelTiming.cleanupMs) : null,
+            event_handling: modelTiming ? Math.round(modelTiming.eventHandlingMs) : null,
+          },
+          attempts: modelTiming?.attempts ?? 0, selected, summary_bytes: summaryBytes,
+          output_tokens: usage?.output, reasoning_tokens: usage?.reasoning,
+        })
       })))
-      if (!head.length) return "stop" as const
-      const processor = yield* processors.create({ assistantMessage: msg, sessionID: input.sessionID, model })
-      const modelMessages = yield* MessageV2.toModelMessagesEffect(head, model, {
-        stripMedia: true, toolOutputMaxChars: TOOL_OUTPUT_MAX_CHARS,
-      })
-      const result = yield* processor.process({
-        user: parent.info, agent, sessionID: input.sessionID, tools: {}, system: [],
-        messages: [...modelMessages, {
-          role: "user",
-          content: [{ type: "text", text: `${NativeContext.summaryPrompt(spec.summaryMaxTokens)}\n\n${SUMMARY_TEMPLATE}` }],
-        }], model,
-      })
-      if (result !== "continue" || processor.message.error) return "stop" as const
-      const output = yield* MessageV2.get({ sessionID: input.sessionID, messageID: msg.id })
-      const summary = summaryText(output) ?? ""
-      const blocks = yield* Effect.try({
-        try: () => ContextCompaction.commit({
-          sessionID: input.sessionID, messages: view, limits: spec, mode: "auto",
-          requestID: `auto:${input.parentID}`,
-          ranges: [{ startId: head[0]!.info.id, endId: head.at(-1)!.info.id, summary }],
-        }),
-        catch: (error) => new Error(`Native compaction was not committed: ${String(error)}`),
-      }).pipe(Effect.catch((error) => Effect.gen(function* () {
-        processor.message.error = new MessageV2.ContextOverflowError({ message: error.message }).toObject()
-        yield* session.updateMessage(processor.message)
-        yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: processor.message.error })
-        return []
-      })))
-     if (!blocks.length) return "stop" as const
-     const newIDs = new Set(blocks.map((block) => block.id))
-      const marker = parent.parts.find((part) => part.type === "compaction")
-      if (marker && marker.type === "compaction") yield* session.updatePart({
-       // 261010 Red tokens_before 必须与 legacy 路径同口径：本次压缩前**已折叠**的可见
-       // 历史。此前传 view（刚投影完、尚未含本次摘要），与 tokens_after 差一次折叠，
-       // 实测 exe 上真实 100k→30k 显示成 50k→40k。list 按 committed_at 升序，新块在
-       // 末位，排除它才是"压缩前"。
-       ...marker, native: true, duration_ms: Date.now() - startedAt,
-       tokens_before: yield* estimate({
-         messages: ContextCompaction.project(
-           NativeContext.removeArtifacts(input.messages),
-           ContextCompaction.list(input.sessionID).filter((block) => !newIDs.has(block.id)),
-         ),
-          model: mainModel,
-       }),
-       tokens_after: yield* estimate({
-         messages: ContextCompaction.project(NativeContext.removeArtifacts(input.messages), ContextCompaction.list(input.sessionID)),
-          model: mainModel,
-       }),
-      })
-      if (input.auto) {
-        const followup = yield* session.updateMessage({
-          ...parent.info, id: MessageID.ascending(), time: { created: Date.now() },
-        })
-        yield* session.updatePart({
-          id: PartID.ascending(), messageID: followup.id, sessionID: input.sessionID,
-          type: "text", synthetic: true, metadata: { compaction_continue: true },
-          text: "[System notice] The conversation was compacted. This is not a user message or new authorization. Continue only unfinished work from the latest actual user request; do not repeat completed work. If the task is done, report the result.",
-        })
-      }
-      yield* bus.publish(Event.Compacted, { sessionID: input.sessionID })
-      yield* plugin.trigger("compact.post", { sessionID: input.sessionID }, {}).pipe(Effect.catch(() => Effect.void))
-      return "continue" as const
     })
 
     const processCompactionInner = Effect.fn("SessionCompaction.process")(function* (input: {

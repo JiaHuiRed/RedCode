@@ -124,3 +124,80 @@ legacy 与 native 压缩都从触发压缩的父 user 消息读取 provider/mode
 2. 固定前缀增加 0 token；变量历史在预算收束时减少，没有新增注入文本。
 3. 成功提交仍通过新块 ID 更新 revision，从首个变化的历史位置起结算一次缓存；失败不改投影，不触碰未消费旧块或每轮固定前缀。
 4. 无新增预算字段或无界注入；沿用 `retained_max_tokens`、`active_max_tokens`、`active_max_bytes` 和原有摘要、消息、块数上限。默认 active 上限 80k token 仍是长任务证据的既有配置预算，不是本次新增的固定前缀。
+
+## 阶段耗时取证
+
+用户观察原生压缩比 DCP 等待更久。现场日志的一次 GLM 摘要从 11:51:02 的模型流到 11:53:14 的缓存结算约 132 秒；已有 `llm.ttft=6415ms` 是首个协议事件，不是首次非空内容。总耗时不能直接归因于模型或本地处理，因此先补观测，不换模型、不缩摘要预算、不改选段或工具输出裁剪。
+
+`processNative` 每次终态写一条 `native compaction stages` WARN，GUI 的 WARN 门槛也能落盘；只写固定数量的 ID、状态、毫秒与计数，不写提示词、摘要或认证内容。用单调时钟量阶段，异常或取消由 `Effect.onExit` 保留已观测记录，不新增持久化 schema 或 SDK 字段。
+
+| 字段 | 口径 |
+| --- | --- |
+| `queue_ms` | compaction user 标记创建到 processNative 进入；含调度及上游准备，不声称是精准的触发检测时间 |
+| `stages_ms.setup` / `projection` | 解析配置、agent/model；原生历史投影 |
+| `selection` | 摘要消息建档、账本读取与选段 |
+| `processor_setup` / `conversion` | processor 创建（含初始快照）；消息转模型输入 |
+| `request` | 整次 processor.process，含流事件处理、用量归档、重试等待与 cleanup |
+| `commit` | 摘要读取、校验与账本提交 |
+| `metrics` / `finalize` | 压前/压后估算及标记落盘；继续通知、事件与 compact.post |
+| `total_ms` | 原生处理入口到终态，包括旧 UI duration_ms 未覆盖的后续收尾；不改旧字段语义 |
+
+`model_ms` 是 request 阶段内的观测，**不能和主阶段重复相加**：
+
+- `first_event`：首个流事件；`first_content`：首次非空 text-delta 或 reasoning-delta，空 delta 和 start 事件不算；未观测到为 null。
+- `stream_complete`：finish 事件到达；包含逐事件本地处理，不当作纯供应商计算时长。
+- `event_handling`：成功完成的流事件处理累计时间；含增量落盘、插件、快照与用量归档。抛错事件的部分处理不计入此子项，但仍包含在 request / total。
+- `usage`：step-finish 处理（含快照、计费与持久化）；`cleanup`：processor 收尾。两者与 event_handling / request 有包含关系。
+
+另记请求尝试次数、选段消息数、实际摘要 UTF-8 字节、账本 output/reasoning token 数。失败前没发生的阶段不补造数值；没有模型请求时模型时间为 null，attempts 为 0。原始消息、压缩投影、预算及模型输入保持原行为。
+
+定向回归使用真实 SessionCompaction 和 SessionProcessor，只脚本化 LLM 事件流：覆盖成功阶段、保护历史拒绝且不发请求、空 delta 不被当成内容；compaction 与提示词路由三文件 87 pass / 0 fail，opencode typecheck 通过。计时 matcher 对深拷贝做匹配，避开本机 Bun 1.3.14 `toMatchObject` 用 asymmetric matcher 改写原记录的行为；临时打印已删除。
+
+模型可见四问：① 提示词、工具 schema 和输出协议不变；② 固定前缀增量 0；③ 不改变 KV 前缀或 revision 结算；④ 没有新增模型注入项，既有摘要、保护与 active 预算不变。日志字段数固定，无正文载荷。
+
+部署边界：源码需要重编重启。此次只建立计时反馈，不以隔离测试宣称实际压缩已提速，也不把本会话旧进程的请求算成本批验证。
+
+## 中断恢复与状态可见性
+
+### 现场证据
+
+会话 `ses_ffe5ecd1d1526ffeW9F9LdqzuXCGiw` 的 13:33 摘要在 13:39 因流静默 120 秒停止；随后 13:39 的 GPT 请求及 13:41、13:43 的 GLM 请求都仍是 compaction，而非正常助手回复。数据库保存了后三条用户消息、四条未提交的摘要终态；第一条为 `UnknownError`，后三条为 `MessageAbortedError`，均有 `time.completed`、无 `finish`。取消只说明终止结果，用户因看不到进展而主动取消，不能将其归为模型故障。
+
+这四次没有新块落入 `context_compaction_block`；此前 12:54 的块仍活跃，原始历史没有被删除。只读回放真实 `MessageV2.latest()`，修前仍返回旧 compaction task，修后为空；不是数据库死锁，也不是用户消息没保存。
+
+`latest()` 原先只用 provider `finish` 判断任务是否越过执行边界；中断摘要没有该字段，旧标记永远 pending。`nativeFailed` 仅挡新自动触发，挡不住旧任务调度。调度又用最新用户作为摘要 parent，导致新消息被用于重跑。TUI 隐藏 compaction assistant，分割线只用 session 级 `time.compacting` 和成功 token 数：失败后没有持久终态，重跑无独立可见反馈，旧成功横条也会被 session 标志覆盖。
+
+### 决策
+
+- 已落 `error` 且 `time.completed` 的 summary，只退出其 parent 对应的 compaction task；不伪造通用 `finish`，不丢弃 subtask，不屏蔽新手动 compaction，也不丢弃从未完结的可恢复任务。不通过修改 live 数据库修会话。
+- TUI 直接读取现有摘要的 error/time 和成功 token 记录，显示进行中、成功、失败、已取消或未完成。错误原因持久可见，展开显示详情；部分摘要标记为未提交草稿。只给当前 checkpoint 标进行中；输入区常驻显示压缩阶段、真实摘要模型与计时，结束后消失。无需新增公共字段、数据库迁移或 SDK 生成物。
+- 缓存核验发现 `prompt.ts` 在查询锚点前已保存本轮空 assistant，旧谓词每次先命中零用量占位，实报优化实际退回粗估。现先找最新非摘要有效实报，再校验 provider/model 与最新活跃块的提交时间；不越过较新的其他模型实报借用旧同模型数值，也不拿压缩前用量触发压缩后下一轮。触发线、目标、摘要与保护预算不改。
+
+### 验证口径
+
+失败用例先复现：两种无 finish 终态仍出现在 tasks；两条新用户消息返回 summary 而不是正常回复。修后覆盖终态错误与取消、新标记及其他 subtask 保留、未完成摘要可恢复；真实 SessionCompaction/SessionProcessor 与脚本化 HTTP LLM 走 provider error 和主动取消，确认终态落库、compacting 清除、下一条请求正常回复。额外覆盖零用量占位、切换模型又切回、真实账本提交后的用量代边界。
+
+OpenTUI 真组件渲染与鼠标点击覆盖失败/取消无 finish、原因持久显示及展开、草稿标签、未完成不误报运行中、新压缩不覆盖旧成功或未完成线，以及常驻指示随启动/结束变化。没有调用真实供应商、没有修改现场数据库；源码重编重启后的旧会话续跑仍是部署验收边界。
+
+### 上个会话缓存核验
+
+按数据库逐 assistant 消息统计非摘要主请求，缺用量不当零命中；分母为 `tokens.context`，不是仅未缓存的 `tokens.input`：
+
+| 主模型 | 有 context 的请求 | 累计 context | cache.read | 加权命中率 |
+| --- | ---: | ---: | ---: | ---: |
+| GLM-5.3-Flash | 195 | 31,509,913 | 31,234,880 | 99.127% |
+| GPT-6.1 Sol | 65 | 16,339,140 | 15,181,568 | 92.915% |
+
+摘要另计：GLM 成功摘要 101,773 输入、0 读取；GPT 成功摘要 111,234 输入、111,104 读取。未完整回执的失败/取消请求不能并入命中率。
+
+GPT 四个零命中主请求中，11:55 首次换模型、12:54 压缩后的首次主请求是预期冷启动；另有 11:56 与 12:55 的完整原始 usage 显式 `cached_tokens: 0`。12:55 这次日志证明 system/tools/parameters 不变、history append，不能归为 SDK 缺字段假零，也不能据此确定具体哪层服务端路由失效。
+
+`7ff5acb6` 的三态和 transport 取证在实跑日志中可见；`4d1234c1` 的触发锚点代码已装，但存在本次复现的占位遮蔽，不能用高合计命中率宣称该路径有效；`4b8560ad` 的保护携带代码在位，本会话没有 active-budget 降级 WARN，两次成功压缩本身不证明降级分支实跑过。压缩前后 343,299 → 222,380 的完整主请求输入说明历史确实减少，不等于任一单独优化的因果证明。
+
+模型可见四问：
+1. 提示词、工具描述/schema、摘要模板、正常请求输出协议不变；变量请求路由从旧摘要重跑恢复为用户正常轮，自动压缩的触发判断使用正确实报。TUI 文案只到客户端，不进入模型。
+2. 固定前缀增量 0；不新增模型注入项，不为高命中率改写上下文。
+3. 不新增缓存布局或逐轮重置；成功压缩仍按原 revision 结算，失败/取消不提交投影。正常续跑和避免错误触发改变请求发生时机，不承诺服务端命中率。
+4. 无新无界输入；沿用 summary/messages/active/retained 原有硬预算。错误原因的展开属于客户端显示，不注入模型；无需公共 schema 或 SDK 变更。
+
+最终串行验证：message-v2/prompt 两文件 133 pass / 13 skip / 0 fail、404 expect；TUI compaction-fold 10 pass / 0 fail、30 expect；opencode typecheck 在 tsgo 崩溃后回退 TS 5.9.3，通过。两文件首轮 PTY 执行曾在已有 `reserved queued messages stay editable only after release` 测试触发 Windows `taskkill` 启动 `uv_spawn EUNKNOWN`，单跑和最终串行整文件复核均通过，未改该测试或进程实现。上个会话遗留的 budget/compaction/system 路由四文件 94 pass、core 锁两文件 27 pass，core 与 scripts 类型检查通过；预算 CLI 从 repo/package 两个 cwd 得到相同 25,841/32,768 字节，pre-push Git Bash 语法与版本一致性检查通过。未执行整套 pre-push、真实 provider 续跑、重编、提交或推送。

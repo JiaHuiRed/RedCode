@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { APICallError } from "ai"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Schema } from "effect"
 import * as Stream from "effect/Stream"
@@ -816,6 +816,7 @@ describe("session.compaction.prune", () => {
 
 describe("session.compaction.process", () => {
   itCompaction.instance("native compaction inherits the triggering model and variant", () => {
+    const evidence = spyOn(Log.create({ service: "session.compaction" }), "warn")
     const responses = llm()
     const inputs: LLM.StreamInput[] = []
     responses.push(reply("Logs checked; configuration restored; implementation remains.", (input) => inputs.push(input)))
@@ -855,6 +856,38 @@ describe("session.compaction.process", () => {
       expect(ContextCompaction.getRaw(chat.id, done.id).parts).toEqual(
         messages.filter((message) => message.info.id === done.id).flatMap((message) => message.parts),
       )
+      const timing = evidence.mock.calls.find((call) => call[0] === "native compaction stages")?.[1]
+      expect(structuredClone(timing)).toMatchObject({
+        sessionID: chat.id,
+        status: "continue",
+        attempts: 1,
+        stages_ms: {
+          setup: expect.any(Number),
+          projection: expect.any(Number),
+          selection: expect.any(Number),
+          processor_setup: expect.any(Number),
+          conversion: expect.any(Number),
+          request: expect.any(Number),
+          commit: expect.any(Number),
+          metrics: expect.any(Number),
+          finalize: expect.any(Number),
+        },
+        model_ms: {
+          first_event: expect.any(Number),
+          first_content: expect.any(Number),
+          stream_complete: expect.any(Number),
+          usage: expect.any(Number),
+          cleanup: expect.any(Number),
+          event_handling: expect.any(Number),
+        },
+      })
+      expect(timing?.model_ms.first_content).toBeGreaterThanOrEqual(timing?.model_ms.first_event)
+      expect(timing?.model_ms.stream_complete).toBeGreaterThanOrEqual(timing?.model_ms.first_content)
+      expect(timing?.stages_ms.request).toBeGreaterThanOrEqual(timing?.model_ms.stream_complete)
+      expect(timing?.queue_ms).toBeGreaterThanOrEqual(0)
+      expect(timing?.summary_bytes).toBeGreaterThan(0)
+      expect(JSON.stringify(timing)).not.toContain("Logs checked; configuration restored")
+      expect(JSON.stringify(timing)).not.toContain("Observed pending-tool error")
     }).pipe(withCompaction({
       llm: responses.layer,
       provider,
@@ -955,6 +988,7 @@ describe("session.compaction.process", () => {
   })
 
   itCompaction.instance("native compaction rejects fully protected history without a model request", () => {
+    const evidence = spyOn(Log.create({ service: "session.compaction" }), "warn")
     const responses = llm()
     const inputs: LLM.StreamInput[] = []
     responses.push(reply("This summary must never be requested.", (input) => inputs.push(input)))
@@ -981,10 +1015,59 @@ describe("session.compaction.process", () => {
       )
       expect(summary?.info.role === "assistant" && summary.info.error?.name).toBe("ContextOverflowError")
       expect(ContextCompaction.getRaw(chat.id, messages[0]!.info.id)).toEqual(messages[0])
+      const timing = evidence.mock.calls.find((call) => call[0] === "native compaction stages")?.[1]
+      expect(timing).toMatchObject({
+        status: "stop",
+        attempts: 0,
+        selected: 0,
+        model_ms: { first_event: null, first_content: null, stream_complete: null },
+      })
+      expect(timing?.stages_ms.selection).toBeGreaterThanOrEqual(0)
+      expect(timing?.stages_ms.request).toBeUndefined()
       yield* Deferred.await(notified).pipe(Effect.timeout("500 millis"))
     }).pipe(withCompaction({
       llm: responses.layer,
       config: cfg({ native: { enabled: true } }),
+    }))
+  })
+
+  itCompaction.instance("native timing does not mistake start events or empty deltas for content", () => {
+    const evidence = spyOn(Log.create({ service: "session.compaction" }), "warn")
+    const responses = llm()
+    responses.push(Stream.make(
+      LLMEvent.textStart({ id: "empty" }),
+      LLMEvent.textDelta({ id: "empty", text: "" }),
+      LLMEvent.textEnd({ id: "empty" }),
+      LLMEvent.stepFinish({ index: 0, reason: "stop", usage: basicUsage() }),
+      LLMEvent.finish({ reason: "stop", usage: basicUsage() }),
+    ))
+    return Effect.gen(function* () {
+      const ssn = yield* SessionNs.Service
+      const ctx = yield* TestInstance
+      const chat = yield* ssn.create({ title: "Empty stream timing" })
+      const first = yield* createUserMessage(chat.id, "Keep the original request.")
+      const done = yield* createAssistantMessage(chat.id, first.id, ctx.directory)
+      yield* ssn.updatePart({
+        id: PartID.ascending(), messageID: done.id, sessionID: chat.id, type: "text",
+        text: "Completed work and evidence. ".repeat(500),
+      })
+      yield* createUserMessage(chat.id, "Continue implementation.")
+      yield* SessionCompaction.use.create({ sessionID: chat.id, agent: "build", model: ref, auto: false })
+      const messages = yield* ssn.messages({ sessionID: chat.id })
+      yield* SessionCompaction.use.process({
+        parentID: messages.at(-1)!.info.id, messages, sessionID: chat.id, auto: false,
+      })
+      const timing = evidence.mock.calls.find((call) => call[0] === "native compaction stages")?.[1]
+      expect(timing?.model_ms.first_event).toBeGreaterThanOrEqual(0)
+      expect(timing?.model_ms.first_content).toBeNull()
+      expect(timing?.model_ms.stream_complete).toBeGreaterThanOrEqual(timing?.model_ms.first_event)
+      expect(timing?.attempts).toBe(1)
+    }).pipe(withCompaction({
+      llm: responses.layer,
+      config: cfg({ native: {
+        enabled: true, trigger_tokens: 60000, target_tokens: 40000,
+        reminder_tokens: 54000, summary_max_tokens: 1000,
+      } }),
     }))
   })
 

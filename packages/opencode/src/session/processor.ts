@@ -44,8 +44,20 @@ const warnedMissingCurrency = new Set<string>()
 
 export type Result = "compact" | "stop" | "continue"
 
+// 261013 Red Diagnostic-only, monotonic timestamps; never part of persisted/model-visible messages.
+export interface CompactionTiming {
+  firstEventAt?: number
+  firstContentAt?: number
+  streamCompletedAt?: number
+  usageMs: number
+  cleanupMs: number
+  eventHandlingMs: number
+  attempts: number
+}
+
 export interface Handle {
   readonly message: MessageV2.Assistant
+  readonly compactionTiming?: CompactionTiming
   readonly stoppedByPermission?: boolean
   readonly updateToolCall: (
     toolCallID: string,
@@ -161,6 +173,9 @@ export const layer = Layer.effect(
       // may execute tools internally before emitting start-step events,
       // so capturing inside the event handler can be too late.
       const initialSnapshot = yield* snapshot.track()
+      const compactionTiming: CompactionTiming | undefined = input.assistantMessage.summary
+        ? { usageMs: 0, cleanupMs: 0, eventHandlingMs: 0, attempts: 0 }
+        : undefined
       const ctx: ProcessorContext = {
         assistantMessage: input.assistantMessage,
         sessionID: input.sessionID,
@@ -432,6 +447,17 @@ export const layer = Layer.effect(
         isRecord(value) ? value : ((name ? Freeform.normalizeInput(name, value) : undefined) ?? { value })
 
       const handleEvent = Effect.fnUntraced(function* (value: StreamEvent) {
+        // 261013 Red A start event is not a content token. Empty deltas must not stop the content timer.
+        if (compactionTiming) {
+          compactionTiming.firstEventAt ??= performance.now()
+          if (
+            compactionTiming.firstContentAt === undefined &&
+            (value.type === "text-delta" || value.type === "reasoning-delta") &&
+            value.text.length > 0
+          ) {
+            compactionTiming.firstContentAt = performance.now()
+          }
+        }
         // 260811 cc TTFT 埋点：记下第一个流式分片到达的时刻。放在 switch 之前，任何类型的
         // 首个事件都算数（reasoning-start 往往先于 text-start 到达）。只写一次，不被后续分片覆盖；
         // 重试不重置 created，所以重试场景下这里量到的是"用户视角的等待"（含前几次失败的耗时），
@@ -771,6 +797,7 @@ export const layer = Layer.effect(
             return
 
           case "step-finish": {
+            const usageStartedAt = compactionTiming ? performance.now() : undefined
             // 260903 cc 一次 add() 同时拿「完成快照」和「相对本 step 起点的补丁」。
             //   原先是 track() 与后面那句 patch(ctx.snapshot) 两次独立调用，各自跑一遍 add()，
             //   而两者之间工作树没有任何变化（中间只有内存记账和写会话库）。等价性推导与
@@ -863,6 +890,9 @@ export const layer = Layer.effect(
               isOverflow({ cfg: yield* config.get(), tokens: usage.tokens, model: ctx.model })
             ) {
               ctx.needsCompaction = true
+            }
+            if (compactionTiming && usageStartedAt !== undefined) {
+              compactionTiming.usageMs += performance.now() - usageStartedAt
             }
             return
           }
@@ -964,12 +994,14 @@ export const layer = Layer.effect(
             return
 
           case "finish":
+            if (compactionTiming) compactionTiming.streamCompletedAt = performance.now()
             if (value.routedVia) ctx.assistantMessage.routedVia = value.routedVia
             return
         }
       })
 
       const cleanup = Effect.fn("SessionProcessor.cleanup")(function* () {
+        const cleanupStartedAt = compactionTiming ? performance.now() : undefined
         if (ctx.snapshot) {
           const patch = yield* snapshot.patch(ctx.snapshot)
           if (patch.files.length) {
@@ -1027,6 +1059,9 @@ export const layer = Layer.effect(
         ctx.toolcalls = {}
         ctx.assistantMessage.time.completed = Date.now()
         yield* session.updateMessage(ctx.assistantMessage)
+        if (compactionTiming && cleanupStartedAt !== undefined) {
+          compactionTiming.cleanupMs += performance.now() - cleanupStartedAt
+        }
         // 260629 Red DO NOT clear canary here — clearing regenerates the token next turn,
         // mutating the system prompt suffix and breaking DeepSeek prefix cache every turn.
       })
@@ -1085,6 +1120,7 @@ export const layer = Layer.effect(
             // 260728 Red 重试会从头重跑，上一次打捞的结果一并作废
             ctx.salvaged = []
             yield* status.set(ctx.sessionID, { type: "busy" })
+            if (compactionTiming) compactionTiming.attempts++
             const stream = llm.stream(streamInput)
 
             yield* stream.pipe(
@@ -1094,7 +1130,11 @@ export const layer = Layer.effect(
                     responseReceived = true
                     yield* onResponse
                   }
+                  const handlingStartedAt = compactionTiming ? performance.now() : undefined
                   yield* handleEvent(event)
+                  if (compactionTiming && handlingStartedAt !== undefined) {
+                    compactionTiming.eventHandlingMs += performance.now() - handlingStartedAt
+                  }
                 }),
               ),
               Stream.takeUntil(() => ctx.needsCompaction || ctx.reasoningStallTripped),
@@ -1142,6 +1182,7 @@ export const layer = Layer.effect(
       })
 
       return {
+        compactionTiming,
         get message() {
           return ctx.assistantMessage
         },
