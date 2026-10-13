@@ -367,6 +367,8 @@ export function MessageTimeline(props: {
   // 恒为空且不会自愈。恢复可见/聚焦时若仍是 0，换一个新对象触发重建，让它重新 observe。
   const [timelineEpoch, setTimelineEpoch] = createSignal<object>({})
   const sessionID = createMemo(() => params.id)
+  // 261013 Red createMemo 会立即求值，parts accessor 必须先于读取它的 memo 初始化。
+  const getMsgParts = (msgId: string) => sync.data.part[msgId] ?? emptyParts
   // 260831 cc 顺序由 store 保证（见 directory-sync 的 byTime）。下面 lastUserMessageID 是
   //   从后往前扫数组找最后一条 user——它依赖的正是那个顺序。
   const sessionMessages = createMemo(() => {
@@ -505,7 +507,6 @@ export function MessageTimeline(props: {
     return sync.data.message[id] ?? emptyMessages
   })
   const parentTitle = createMemo(() => sessionTitle(parent()?.title) ?? language.t("command.session.new"))
-  const getMsgParts = (msgId: string) => sync.data.part[msgId] ?? emptyParts
   const childTaskDescription = createMemo(() => {
     const id = sessionID()
     if (!id) return
@@ -562,9 +563,9 @@ export function MessageTimeline(props: {
             active ? sessionStatus().type : "idle",
             active,
             // 261013 Red 压缩状态：thunk 保动态依赖（无 compaction 的轮次不读 session
-            // store，260903 cc 约定）；isLatestMarker 只依赖已有信号
+            // store 或最新 marker（260903 cc 约定），避免新 marker 使全部历史轮重算。
             () => info()?.time.compacting,
-            userMessage.id === latestCompactionMarkerID(),
+            () => userMessage.id === latestCompactionMarkerID(),
           )
 
           const merged = reuseTimelineRows(previous, rows)

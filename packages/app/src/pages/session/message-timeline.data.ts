@@ -203,7 +203,7 @@ export namespace Timeline {
     // pending 判据（该轮有 compaction marker 且摘要未完成）才会调它，其余轮次不因此
     // 登记 session store 依赖——260903 cc 把 status 改成只在活动轮读是同一个约定。
     getSessionCompacting?: () => number | undefined,
-    isLatestMarker?: boolean,
+    getIsLatestMarker?: () => boolean,
   ) {
     const rows: TimelineRow.TimelineRow[] = []
 
@@ -264,7 +264,7 @@ export namespace Timeline {
         userParts,
         assistantMessages,
         sessionCompacting: getSessionCompacting?.(),
-        isLatestMarker: !!isLatestMarker,
+        isLatestMarker: !!getIsLatestMarker?.(),
       })
       rows.push(
         new TimelineRow.TurnDivider({
@@ -376,8 +376,13 @@ export namespace Timeline {
       )
     }
 
-    if (error) {
-      const data = error.data?.message
+    // 261013 Red 摘要错误已在压缩分割线显示；保留 error 的等待守卫与普通回复错误。
+    const rowError = compaction
+      ? assistantMessages.find((m) => m.mode !== "compaction" && m.error && m.error.name !== "MessageAbortedError")
+          ?.error
+      : error
+    if (rowError) {
+      const data = rowError.data?.message
       rows.push(
         new TimelineRow.Error({
           userMessageID: userMessage.id,

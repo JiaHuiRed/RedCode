@@ -1,6 +1,7 @@
 // 260816 Yuqi：mock @redcode-ai/ui/message-part（tsx → solid-js），只测行生成逻辑。
 // 真实实现的纯函数部分等价：renderable 判空逻辑、groupParts 单 group 映射。
 import { describe, expect, mock, test } from "bun:test"
+import { createMemo, createRoot, createSignal } from "solid-js"
 
 mock.module("@redcode-ai/ui/message-part", () => {
   const renderable = (part: { type: string; text?: string }) => {
@@ -498,5 +499,91 @@ describe("TimelineCache.CacheTable — 行高缓存表", () => {
     expect(table.read("s1", keys, 800)).toBeUndefined()
     expect(table.read("s2", keys, 800)).toBe("cacheB")
     expect(table.read("s3", keys, 800)).toBe("cacheC")
+  })
+})
+
+// 261013 Red 压缩失败由分割线承载原因，不重复生成通用错误卡。
+describe("Timeline.constructMessageRows — 压缩错误面", () => {
+  const marker: Part = { id: "c1", messageID: "u1", sessionID: "s1", type: "compaction", auto: true }
+  const parts = (id: string) => (id === "u1" ? [marker] : [])
+  const summary = {
+    ...assistantMessage("a1", 2, "u1"),
+    mode: "compaction",
+    summary: true,
+    time: { created: 2, completed: 3 },
+    error: { name: "APIError", data: { message: "boom", isRetryable: false } },
+  } as AssistantMessage
+
+  test("失败原因保留在分割线，不出现第二张错误卡或等待占位", () => {
+    const rows = Timeline.constructMessageRows(userMessage("u1", 1), parts, [summary], 0, false, "busy", true)
+    expect(rows.find((row) => row._tag === "TurnDivider")).toMatchObject({ state: "failed", reason: "boom" })
+    expect(tags(rows)).not.toContain("Error")
+    expect(tags(rows)).not.toContain("Thinking")
+    expect(tags(rows)).not.toContain("AssistantPending")
+  })
+
+  test("压缩轮里的普通回复错误仍然显示", () => {
+    const failed = { ...summary, id: "a2", mode: "build", summary: false }
+    const rows = Timeline.constructMessageRows(userMessage("u1", 1), parts, [summary, failed], 0, false, "idle", false)
+    expect(rows.filter((row) => row._tag === "Error")).toHaveLength(1)
+  })
+
+  test("取消原因保留且不显示通用错误卡", () => {
+    const canceled = {
+      ...summary,
+      error: { name: "MessageAbortedError", data: { message: "canceled" } },
+    } as AssistantMessage
+    const rows = Timeline.constructMessageRows(userMessage("u1", 1), parts, [canceled], 0, false, "idle", false)
+    expect(rows.find((row) => row._tag === "TurnDivider")).toMatchObject({ state: "canceled", reason: "canceled" })
+    expect(tags(rows)).not.toContain("Error")
+  })
+})
+
+// 261013 Red 真实行构建放入 Solid memo：marker 变化不使普通历史轮重算。
+test("最新压缩 marker 变化只重算压缩轮，普通历史不订阅压缩状态", () => {
+  createRoot((dispose) => {
+    const [latest, setLatest] = createSignal("u1")
+    let historyBuilds = 0
+    let markerBuilds = 0
+    const history = createMemo(() => {
+      historyBuilds++
+      return Timeline.constructMessageRows(
+        userMessage("u0", 0),
+        () => [],
+        [],
+        0,
+        false,
+        "idle",
+        false,
+        () => {
+          throw new Error("ordinary history read session compaction")
+        },
+        () => latest() === "u0",
+      )
+    })
+    const marker = createMemo(() => {
+      markerBuilds++
+      return Timeline.constructMessageRows(
+        userMessage("u1", 1),
+        () => [{ id: "c1", messageID: "u1", sessionID: "s1", type: "compaction", auto: true }],
+        [],
+        1,
+        false,
+        "idle",
+        false,
+        () => 2,
+        () => latest() === "u1",
+      )
+    })
+    try {
+      expect([historyBuilds, markerBuilds]).toEqual([1, 1])
+      expect(marker().find((row) => row._tag === "TurnDivider")).toMatchObject({ state: "pending" })
+      setLatest("u2")
+      expect([historyBuilds, markerBuilds]).toEqual([1, 2])
+      expect(marker().find((row) => row._tag === "TurnDivider")).toMatchObject({ state: "incomplete" })
+      expect(tags(history())).toEqual(["UserMessage"])
+    } finally {
+      dispose()
+    }
   })
 })
