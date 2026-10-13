@@ -8,6 +8,12 @@
 
 ---
 
+### Unreleased
+
+- **修复 GUI 单测同进程 mock 污染**（`packages/app/src/pages/layout/notification-toasts.test.ts`、`components/file-tree.test.ts`、`components/prompt-input/submit.test.ts`、`context/{comments,terminal}.test.ts`、`pages/session/use-session-hash-scroll.test.ts`）：`notification-toasts.test.ts` 顶层 mock `solid-js` 只给 4 个导出，bun test 全量同进程跑时按加载顺序后到的测试文件链接到残缺 mock，链接期 `Export named 'createRoot' not found` 崩掉——CI unit 窗口 687 pass / 1 fail 连红一周余。bun 的 `mock.module` factory `original` 实参是 undefined，手工枚举导出面不可靠；现 6 处 mock 统一为静态 import 真模块展开、只覆盖各自需要的替身导出；notification-toasts 去掉 solid-js mock，改用真 `createRoot` + signal 驱动（行为性替换同样会泄漏：mock 同步版 createEffect 会改掉后续文件的响应式语义）。约定沉淀 `packages/app/AGENTS.md` Testing 节。验证：app 全量 692 pass / 0 fail（修复前本地稳定复现 687/1）、typecheck 绿。不涉模型可见面。
+- **修复 e2e 会话时间线冒烟**（`packages/app/e2e/utils/mock-server.ts`）：mock 对未匹配路径兜底返回 `{}`，261008 Soul V1A 在 timeline 加入 `soulList.data?.find` 后，`/soul` 列表吃到 `{}` 直接 TypeError 崩掉整个 session 页（错误边界 "Something went wrong"，`#redcode-session-actions button` 等 240s 超时），CI e2e 自 10-08 起连红；soul 修掉后露出同型第二层——`/session/{id}/changes` 未 mock，兜底 `{}` 未过 `validatePage` 形状校验产生 console.error 挂冒烟断言。现补 `/soul`（空数组）与 changes（合法空页 `{latest:-1, cursor:-1, oldest:null, changes:[]}`）。验证：本地 chromium 冒烟 1 passed（47s，含双会话导航与全量翻页滚动）。
+- **event 表补 `(aggregate_id, seq)` 复合索引**（`packages/opencode/src/sync/event.sql.ts`、`migration/20261013020011_event_aggregate_seq_idx`）：热读路径 `control-plane/workspace.ts:723-724` 按 `aggregate_id` 过滤 + `seq` 排序、httpapi `handlers/sync.ts:87` 复合过滤此前全表扫描。EXPLAIN QUERY PLAN 前后对照：`SCAN event` + `USE TEMP B-TREE FOR ORDER BY` → `SEARCH event USING INDEX event_aggregate_id_seq_idx (aggregate_id=?)`，排序直接吃索引。CREATE INDEX 无损迁移。
+
 ### [0.12.8] - 2026-10-13
 
 - **Codex 请求链路由隔离与模型路由提示**（`packages/opencode/src/session/llm/request.ts`、`src/plugin/codex.ts`、`src/session/request-evidence.ts`）：标题与主对话此前共用 user 消息 ID 作为 turn-state 存储键，标题先返回时会抢占主对话令牌；现用线程、用户轮次、agent、wire model 的 SHA-256 固定键隔离请求链，保留同链首响应令牌与跨轮不回传语义。OAuth Responses 请求按最终序列化正文的 `model` / 可选 `service_tier` 构造官方 `x-codex-routing-hint`，不猜档位、不改正文，错误 JSON 只记无正文的 WARN；匿名取证白名单补该头，仍只存有界 HMAC。真插件 + 本地 HTTP 回归覆盖标题/摘要隔离、同链令牌不覆盖、跨轮/线程/模型隔离、实际 wire 模型与 tier、字节正文透传和指纹脱敏。定向两文件 43 pass / 0 fail，typecheck 通过（tsgo 崩溃后既定 TS 回退成功）。这是客户端路由修复，不宣称已解决全部缓存归零或证明额度收益；须重编重启后观察。决策及模型可见四问见 [codex-routing-affinity](docs/notes/implemented/bug-fix/2026-10-13-codex-routing-affinity.md)。
