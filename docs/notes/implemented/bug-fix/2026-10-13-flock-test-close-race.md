@@ -1,6 +1,6 @@
 # CI 锁恢复测试：子进程 close 监听必须先于 kill
 
-状态:implemented（工作区修复，尚未提交；远端待新 SHA 验收）
+状态:implemented（已提交并推送：`916f44b9`；需核对该 SHA 的远端 CI 验收）
 
 ## 问题
 
@@ -29,6 +29,6 @@ run `38340578068` 首次在普通 flock 的崩溃恢复用例挂满 20 秒，重
 
 修复后 `bun test ./test/util/flock.test.ts ./test/util/effect-flock.test.ts --timeout 30000`：27 pass / 0 fail，core typecheck 通过。两个回归直接调用实际 helper，使用已关闭的真实子进程；原崩溃恢复与健康锁等待用例仍在两文件中运行。
 
-本机 Bun 1.3.14 的通过不替代 CI Windows/Bun 环境验收。旧 SHA 的 CI 仍红，本批尚未提交推送，不能声称全仓已绿。
+本机 Bun 1.3.14 的通过不替代 CI Windows/Bun 环境验收。旧 SHA 的 CI 仍红；修复已随 `916f44b9` 推送，需核对该 SHA 的 CI 结果，不能仅凭本地测试声称全仓已绿。
 
 模型可见面不变：本批仅测试脚手架与回归，无提示词、工具或运行时锁行为变更。

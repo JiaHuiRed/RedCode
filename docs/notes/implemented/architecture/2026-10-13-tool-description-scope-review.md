@@ -1,6 +1,6 @@
 # 工具描述散在 schema 里的代价审查：一条规则应该住在哪一层
 
-状态:implemented（源码预算门禁与 edit 格式引用落地；规则上提方案因模型覆盖回归已撤回，恢复原描述，见文末。尚未提交）
+状态:implemented（源码预算门禁与 edit 格式引用落地；规则上提方案因模型覆盖回归已撤回，恢复原描述，见文末。已提交：`9f708820`）
 
 ## 问题
 
@@ -124,7 +124,7 @@
 
 ## 32KiB 源码预算门禁
 
-用户确认采用显式常量 `MAX_TOOL_DESCRIPTION_BYTES = 32 * 1024`，即 **32,768 字节**。实现位于 `script/check-tool-description-budget.ts`；`bun run check:tool-description-budget` 接入 `.husky/pre-push`，在类型检查前失败即停止推送。
+用户确认采用显式常量 `MAX_TOOL_DESCRIPTION_BYTES = 32 * 1024`，即 **32,768 字节**。实现位于 `script/check-tool-description-budget.ts`；`bun run check:tool-description-budget` 接入 `.husky/pre-push`，扫描失败即停止推送；全仓类型检查现由 CI `typecheck.yml` 兜底。
 
 - **口径**：递归统计 `packages/opencode/src/tool/**/*.md` 的原始 UTF-8 字节，包含 `tool/shell/shell.md`；计换行，不把字符数或粗估 token 数当作字节数。
 - **边界**：等于上限通过，超过 1 字节也失败；扫描不到任何描述时失败，避免路径错误变成假绿。脚本路径锚定 `import.meta.dir`，不依赖调用目录。
