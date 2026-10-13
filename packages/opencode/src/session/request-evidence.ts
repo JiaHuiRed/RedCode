@@ -76,7 +76,8 @@ type Bucket = {
   fingerprint?: Fingerprint
   pending: Map<string, Compression>
   // 261013 Red 连续零命中计数（口径见 core/util/cache-streak.ts）。桶按 会话×模型×runtime
-  // 键控且跨请求延续，冷启动边界由桶初始化与压缩重置天然覆盖。
+  // 键控且跨请求延续。undefined 是「边界后等待首根」态：边界后的首根 miss 是合法冷启动，
+  // 置 0 跳过不计，之后连续计数 —— 与客户端的边界跳过同口径，服务端不会早一轮报警。
   missStreak?: number
 }
 
@@ -592,12 +593,18 @@ export function create(context: Context, limits = ConfigRequestEvidence.resolve(
       const afterCompression = [...bucket.pending.values()]
       bucket.pending.clear()
       bucket.fingerprint = current
+      const historyObservation = transition(previous?.history, current.history)
+      // 261013 Red 压缩/回卷边界：history 段被截短（rewind）或改写（rewrite）= 前缀重置，
+      // 旧 streak「前缀稳定却整轮 miss」的前提不再成立，置回 undefined 重新等待边界首根。
+      // 原生 Compaction 不走 compress 工具事件，这条是它唯一的重置信号。
+      if (historyObservation.change === "rewind" || historyObservation.change === "rewrite")
+        bucket.missStreak = undefined
       const observation: CaptureObservation = {
         status: "captured",
         requestID,
         system: transition(previous?.system, current.system),
         tools: transition(previous?.tools, current.tools),
-        history: transition(previous?.history, current.history),
+        history: historyObservation,
         parameters: transition(previous?.parameters, current.parameters),
         serialized: {
           ...current.serialized,
@@ -651,9 +658,9 @@ export function create(context: Context, limits = ConfigRequestEvidence.resolve(
             summaryTokensEstimated: observed.summaryTokensEstimated,
             netSavingsEstimated: observed.netSavingsEstimated,
           }
-          // 261013 Red 压缩后前缀重置，其后首根 miss 是合法冷启动：计数清零（口径同
-          // core/util/cache-streak.ts 的边界重置）。
-          bucket.missStreak = 0
+          // 261013 Red 压缩后前缀重置，其后首根 miss 是合法冷启动：回到边界等待态
+          // （undefined），口径同 core/util/cache-streak.ts 的边界跳过。
+          bucket.missStreak = undefined
         }
         record("request.compression", { ...common(), ...observed })
         return observed
@@ -683,8 +690,9 @@ export function create(context: Context, limits = ConfigRequestEvidence.resolve(
         ...(lastCompression ? { lastCompression } : {}),
       }
       // 261013 Red 连续零命中预警（口径同 core/util/cache-streak.ts）：同桶（会话×模型×
-      // runtime）内实报 cacheRead=0 且 inputTokens 超阈值的轮次连续 ≥2 → 独立 WARN 一次。
-      // 冷启动由桶初始化与压缩重置覆盖；命中清零；usage 缺失跳过。只在恰好到达报警线的
+      // runtime）内，边界后首根实报 cacheRead=0 的 miss 是合法冷启动（undefined → 0 跳过
+      // 不计），其后连续 ≥2 轮且 inputTokens 超阈值 → 独立 WARN 一次。命中清零回边界等待
+      // 态之后的正常计数；usage 缺失或小请求跳过（不计数也不清零）。只在恰好到达报警线的
       // 这一轮打点，长 streak 由逐请求 reported-zero 行延续，不刷屏。
       if (usageStatus === "reported" && cacheReadInputTokens !== undefined) {
         const streakBucket = buckets.get(id) ?? { pending: new Map<string, Compression>() }
@@ -694,13 +702,16 @@ export function create(context: Context, limits = ConfigRequestEvidence.resolve(
         else {
           const inputTokens = event.usage?.inputTokens ?? 0
           if (inputTokens > CACHE_STREAK_MIN_CONTEXT_TOKENS) {
-            streakBucket.missStreak = (streakBucket.missStreak ?? 0) + 1
-            if (streakBucket.missStreak === CACHE_STREAK_ALERT_TURNS)
-              record("request.cache-miss-streak", {
-                ...common(),
-                streak: streakBucket.missStreak,
-                inputTokens,
-              })
+            if (streakBucket.missStreak === undefined) streakBucket.missStreak = 0
+            else {
+              streakBucket.missStreak++
+              if (streakBucket.missStreak === CACHE_STREAK_ALERT_TURNS)
+                record("request.cache-miss-streak", {
+                  ...common(),
+                  streak: streakBucket.missStreak,
+                  inputTokens,
+                })
+            }
           }
         }
       }

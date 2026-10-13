@@ -133,8 +133,10 @@ describe("session.request-evidence", () => {
     expect(persisted).not.toContain("private-fixture")
   })
 
-  // 261013 Red 连续零命中预警落盘：冷启动首根不计、第 2 根 WARN 一次、命中清零、
-  // 小请求不计数也不清零。真实日志文件验证（与 GUI 相同的 WARN 门槛）。
+  // 261013 Red 连续零命中预警落盘：边界后首根不计（合法冷启动）、其后第 2 根 WARN 一次、
+  // 命中清零、小请求不计数也不清零、history 段被改写（压缩/回卷）后 streak 作废重等边界。
+  // 真实日志文件验证（与 GUI 相同的 WARN 门槛）。口径与 core/util/cache-streak.ts 一致：
+  // 同一异常服务端与客户端同轮报警，不会日志先响、UI 还没出徽标。
   test("warns once per cache-miss streak incident under the GUI WARN threshold", async () => {
     await using tmp = await tmpdir()
     const script = path.join(tmp.path, "evidence-streak.ts")
@@ -145,13 +147,22 @@ describe("session.request-evidence", () => {
       const observer = Evidence.create({ sessionID: "ses_streak_fixture", modelKey: "openai/gpt-fixture", runtime: "ai-sdk" })
       const miss = (inputTokens) =>
         observer.event({ type: "step-finish", usage: { inputTokens, cacheReadInputTokens: 0 } })
-      miss(300_000) // 冷启动首根：计数 1，不报警
-      miss(305_000) // streak 2 → WARN 一次
-      miss(310_000) // streak 3 → 不重复报警
-      observer.event({ type: "step-finish", usage: { inputTokens: 315_000, cacheReadInputTokens: 314_000 } }) // 命中 → 清零
-      miss(320_000) // 新事故 streak 1
+      miss(300_000) // 冷启动首根：undefined → 0 跳过，不报警
+      miss(305_000) // streak 1
+      miss(310_000) // streak 2 → WARN 一次
+      observer.event({ type: "step-finish", usage: { inputTokens: 315_000, cacheReadInputTokens: 314_000 } }) // 命中 → 0
+      miss(320_000) // streak 1
       miss(325_000) // streak 2 → 第二次 WARN
-      miss(5_000) // 小请求：不计数也不清零
+      miss(5_000) // 小请求：不计数也不清零（保持 2）
+      // —— history 段被改写（压缩/回卷的等效路径，不走 compress 工具事件）——
+      observer.capture({ model: "gpt-fixture", instructions: "private-fixture-prompt",
+        input: [{ role: "user", content: "pre-compaction-history" }], tools: [] })
+      miss(330_000) // 事故延续 streak 3，无新 WARN
+      observer.capture({ model: "gpt-fixture", instructions: "private-fixture-prompt",
+        input: [{ role: "user", content: "post-compaction-summary" }], tools: [] }) // rewrite → 边界等待态
+      miss(335_000) // 边界后首根 → 跳过，不报警
+      miss(340_000) // streak 1
+      miss(345_000) // streak 2 → 第三次 WARN
       console.log(Log.file())
     `)
     const child = spawnSync(process.execPath, [script], {
@@ -162,7 +173,7 @@ describe("session.request-evidence", () => {
     expect(child.error).toBeUndefined()
     expect(child.status).toBe(0)
     const persisted = await Bun.file(child.stdout.trim()).text()
-    expect(persisted.split("request.cache-miss-streak").length - 1).toBe(2)
+    expect(persisted.split("request.cache-miss-streak").length - 1).toBe(3)
     expect(persisted).toContain("streak=2")
   })
 

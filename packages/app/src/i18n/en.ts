@@ -471,7 +471,7 @@ export const dict = {
   "context.usage.firstToken": "First token",
 
   "context.usage.decodeRate": "Decode",
-  "context.usage.cacheStreak": "Cache miss ×{{streak}} · ~{{tokens}} billed at full price",
+  "context.usage.cacheStreak": "Cache miss ×{{streak}} · ~{{tokens}} uncached input",
   "context.usage.usage": "Usage",
   "context.usage.clickToView": "Click to view context",
   "context.usage.view": "View context usage",
