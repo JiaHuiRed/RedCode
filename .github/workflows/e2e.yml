@@ -1,9 +1,9 @@
 name: e2e
 
 # 261013 Red 从 test.yml 拆出：e2e 是全套 CI 里最大头（Playwright 30 分钟量级），
-# 而只有 packages/app、packages/desktop 变更才可能影响它。workflow 级 paths 过滤
-# 让 docs/session-core 等改动直接不触发，不再白烧 runner。unit/typecheck/secrets
-# 仍留在各自 workflow 全量跑，不受此过滤影响。
+# 而 app E2E 还依赖 packages/core、packages/sdk、packages/ui；这些共享包、
+# package manifest/lock 和 Bun setup action 变更也会影响测试。workflow 级 paths
+# 过滤让 docs/session-core 等无关改动不再白烧 runner。unit/typecheck/secrets 仍全量跑。
 on:
   push:
     branches:
@@ -11,11 +11,23 @@ on:
     paths:
       - "packages/app/**"
       - "packages/desktop/**"
+      - "packages/core/**"
+      - "packages/sdk/**"
+      - "packages/ui/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/actions/setup-bun/**"
       - ".github/workflows/e2e.yml"
   pull_request:
     paths:
       - "packages/app/**"
       - "packages/desktop/**"
+      - "packages/core/**"
+      - "packages/sdk/**"
+      - "packages/ui/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/actions/setup-bun/**"
       - ".github/workflows/e2e.yml"
   workflow_dispatch:
 
