@@ -145,3 +145,7 @@ start() 被连着调两次，**挡不住 stop() 之后再 start() 时旧循环�
   没人拦），此处同理：**新增 AbortController 的收尾路径忘了 abort 也没人拦**。
   仓里已有 `script/check-subprocess-timeout.ts` 这种源码级不变量闸门的先例，
   要做闸门的话按那个形状做。
+
+## 2026-10-13 更新：双流已合流，修法现状有变
+
+`2026-09-07-sse-single-stream.md` 把两条常驻 SSE 合为一条（保留 global-sdk 的连接，server-sdk 的 event API 整体代理过去）。因此本文「两个文件各一套」的 abort + generation 修法现在只活在 `packages/app/src/context/global-sdk.tsx:125-288`，`server-sdk.tsx` 不再维持自己的重连循环。对文首的连接池假设也有影响：常驻流从 2 条变 1 条，同 host 6 槽的占用少了三分之一。复发判法（DevTools Network 看 Stalled/Queueing vs Pending）不变。

@@ -280,7 +280,8 @@ export async function run() {
       try {
         const created = api.createProcessW(
           // 260913 Red 先按目标 cwd/PATH 解析可执行文件；批处理在同一个 Job 内由 cmd.exe 执行。
-          // PATH 解析历史：docs/notes/implemented/bug-fix/2026-09-08-windows-job-path-resolution.md
+         // PATH 解析历史（该 note 的 null 方案已被本次返工取代，261013 起 archived）：
+         // docs/notes/archived/bug-fix/2026-09-08-windows-job-path-resolution.md
           wide(invocation.executable),
           wide(invocation.commandLine),
           null,

@@ -1,6 +1,6 @@
 # 接入 DeepSeek V4.1 Flash 临时多模态别名
 
-状态:implemented
+状态:archived（261013 归档：该临时 beta 别名 0910 到期下线，模型已改正式名 `deepseek-flash`，本文「seed 新增独立模型卡」的核心决策被反转。现行权威：`implemented/feature/2026-09-10-deepseek-flash-rename.md`；旧别名仅按更名决策保留在计价表（`provider.ts` CNY_PRICING、`tiered-pricing.ts`）供历史会话记账）
 
 ## 问题
 

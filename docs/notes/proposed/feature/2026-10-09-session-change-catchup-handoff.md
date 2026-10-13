@@ -1,6 +1,6 @@
 # 会话补拉后续工作清单（261009）
 
-前置：功能主体已随 `b729cc3b` 落地（dev，未 push）。设计决策、成本数据与验证边界见
+前置：功能主体已随 `b729cc3b` 落地**并已 push**（origin/dev 含该提交）。设计决策、成本数据与验证边界见
 [implemented note](../../implemented/feature/2026-10-09-session-change-catchup.md)（下称「note」），
 本文件只列**没做完的事**和怎么接着做；条目完成后挪进 note 或删除。
 
@@ -14,6 +14,7 @@
   「未找到会话」，与真空态不可区分（261009 08:58 现场所见；renderer.log 三波
   instance-dispose 失败 + bootstrap DOMException 与之相关但根因未定）。修法两半：
   错误态可视化 + 保持 261002 已加的重试自愈（refetchOnMount 已生效，所以能自己恢复）。
+  **261013 更新**：重试自愈半边已随 `51f0758d` 修复；错误态可视化半边仍未闭。
 - **GUI 内存**：第一批无界点已钉（261009：分页合并封顶 400、目录乘数 30→10、dispose 日志可读化，见
   `docs/notes/implemented/bug-fix/2026-10-09-gui-memory-unbounded.md`）。剩余：V8 长跑堆不归还
   （日常状态拍 snapshot 对照，不复刻 5GB 现场）、sidecar per-dir InstanceState 无上限
@@ -24,8 +25,8 @@
 
 `D:\AI\KLX\opencode`（v2 @ `3884062`）：packages 从十来个拆到 30+（新增
 `core`/`server`/`protocol`/`schema`/`effect-drizzle-sqlite`/`effect-sqlite-node` 等），
-`packages/opencode/src/storage/` 只剩 `storage.ts`+`schema.ts`——存储层大概率整体搬进独立包，
-**未深入**。若本机没有该仓库需先 clone。
+`packages/opencode/src/storage/` 只剩 `storage.ts`+`schema.ts`——存储层大概率整体搬进独立包。
+**261013 更新：调研已推进，仅剩存储外子系统**（项目记忆在册）。若本机没有该仓库需先 clone。
 
 数据库静态审计（261008 附件）结论仍有效：不换底座，按波次 A→C 处理 DB-01~09；
 其中 DB-01（skipMigrations 伪造完成）与 DB-02（drizzle 硬编码个人路径）已修
@@ -33,7 +34,7 @@
 
 ## 3. 状态与验证命令
 
-- `b729cc3b` 未 push（推送前需人工确认）；live DB 未动；打包客户端（07:16 版）不含新代码。
+- `b729cc3b` 已 push（origin/dev）；live DB 未动；「打包客户端（07:16 版）不含新代码」已过期——打包状态用时复核。
 - 后端定向回归（`packages/opencode`）：
 
   ```bash

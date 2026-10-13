@@ -1,6 +1,6 @@
 # Windows Job runner 交给 PATH 解析裸 MCP 命令
 
-状态:implemented
+状态:archived（261013 归档：260913 已返工——改为先按目标 cwd/PATH 解析可执行文件、把解析后的绝对路径传给 `CreateProcessW`，本文「`lpApplicationName` 设 null」的决策与现行代码相反，且该返工没有覆盖 note。现行权威：`packages/opencode/src/util/windows-job-runner.ts:281-294` 与 `util/windows-command.ts` 的 260913 注释）
 
 ## 问题
 

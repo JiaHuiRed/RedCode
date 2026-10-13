@@ -34,3 +34,7 @@
 隔离基准使用 Bun 1.3.14，混合标题、段落、列表和表格，24 个追加快照、每组 3 轮取单 tick 中位数。约 189KB 文本的 `stream()` 预处理由 55.8ms 降至 15.2ms，独立复测 15.0ms；这是合成文本预处理的约 3.7 倍提速，未包含 HTML parse、sanitize 或 DOM，更不等同于整个 GUI 的 FPS 改善。较短文本的绝对收益小，计时受预热影响；回归门禁使用换行查找次数而非易抖动的耗时阈值。
 
 新增回归先在旧实现失败，再验证线性预算、精确分段边界、CRLF、嵌套列表/引用及表格的切片与渲染等价。整个 `stream()` 仍会每 tick tokenize 全文并修复分块；本次只消除行定位的平方成本，不宣称完整增量解析或解决未定因的刷新与白屏。
+
+## 2026-10-13 更新：载体文件已迁 packages/ui
+
+本文点名的 `components/markdown.tsx` 等文件现位于 `packages/ui/src/`（`markdown.tsx`、`context/marked.tsx`、`context/highlight-*.ts`、`context/shiki-theme.ts` 均在 ui 包；当时在 `packages/app/src/`）。分块 DOM 与 `topLevelStarts()` 线性化两个机制不变，以 ui 包现行代码为准。

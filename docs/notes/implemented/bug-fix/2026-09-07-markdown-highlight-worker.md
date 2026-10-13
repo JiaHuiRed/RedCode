@@ -23,3 +23,7 @@
 ## 后果
 
 代码块高亮不再占 UI 线程（首次出现某语言时 worker 内付一次懒加载）；输出 HTML 与改动前逐字节一致，缓存与样式零迁移。新增 2 个常驻 worker（与 pierre 的 2 个合计 4 个），各自按需懒加载 shiki 语言 chunk。已知代价：worker 内也各有一份 shiki 核心与已加载语言（内存换主线程）；跨进程序列化按块计，块本身 <10KB，量级可忽略。
+
+## 2026-10-13 更新：载体文件已迁 packages/ui
+
+本文点名的 `context/marked.tsx`、`context/highlight-worker.ts`、`context/highlight-pool.ts`、`context/shiki-theme.ts` 现位于 `packages/ui/src/context/`（当时在 `packages/app/src/`）。worker 池高亮与主线程兜底链机制不变，以 ui 包现行代码为准。

@@ -89,3 +89,7 @@
 `bun test test/session/system-prompt-routing.test.ts --timeout 30000` 通过：10 pass，0 fail。
 它验证 GPT 仍收到公共基线与 GPT Delta；这证明装配路径，不证明模型可见行为改善。真实
 Luna/Sol × Gsoul/Tsoul A/B 未执行，不能宣称语气变化已经行为验收。
+
+## 2026-10-13 更新：soul 注入机制已换（V2），GPT 声线决策不变
+
+第二轮「已核实 soul 注入链与模型无关（`session/instruction.ts` 按 client 选 Tsoul/Gsoul，GPT 与其他模型拿到相同 soul）」与第三轮四问 ③「`instruction.ts` 每个客户端只加载一份 soul（Desktop=Gsoul，其他=Tsoul）」均为 260928 快照。Soul System V2（`implemented/architecture/2026-10-07-soul-system-v2.md`）后 soul 按会话绑定注入（`session/prompt.ts` 经 `sessionSoul()` 按 `soul_version` 注入），`instruction.ts` 不再加载 soul，doctor 标注 "excluded from instruction budget"；人格姓名为 Karina / YuQi，Tsoul/Gsoul 已归档至 `souls/archive/`。本文的 GPT 声线决策——默认层首句目标、GPT Delta 人格要求、narrate 禁令收窄、reasoning/visible 解耦——不受影响。

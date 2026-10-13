@@ -38,3 +38,7 @@
 - `test/session/prompt.test.ts` + `test/session/instruction-echo.test.ts` 56 pass / 0 fail。核过全仓：没有测试钉这两段文本，改动不会撞既有断言。
 - 未做行为对照：这两条是提示词层改动，真实效果要在日常使用里看。上游的数字（+12% 深度、8.0 vs 8.3 步）是**他们在自己 harness 上**测的，不构成我们这边的实测证据。
 - 副作用一句：改提示词会让固定前缀变一次，前缀缓存需重建一轮，之后恢复。
+
+## 2026-10-13 更新：deepseek.md 已被 owner 分层重写
+
+`session/prompt/deepseek.md` 在 260924 提示词 owner 收敛（`implemented/architecture/2026-09-24-prompt-instruction-ownership.md`）后重写为 8 行 family delta，「验证失败先审假设」规则现存于该文件第 6 行（"When verification fails, re-check the assumption before adding another workaround for the same symptom."），本文「决策」第 2 条引的「别为了给已经开始的返工找理由而编造缺陷」半句不在 delta 里。锚 ① 的复杂度分派文本仍在 `session/prompt.ts` 的 flash 锚，P27 的「Pro 的慢是深度思考的代价」注释按原文保留。

@@ -115,3 +115,7 @@ timeout"）能进 `packages/sdk/openapi.json`，但**内层四个字段**的 des
 
 - `packages/opencode/src/session/instruction.ts` — `RETENTION` / `discover` / `budgetList`
 - `packages/opencode/src/config/config.ts` — `instruction_budget.max_total_bytes`
+
+## 2026-10-13 更新：soul 移出后 RETENTION 收敛为三项
+
+「做法 1」的 `RETENTION = { agents: 0, memory: 1, config: 2, soul: 3 }` 与「问题 A2」里含 soul 的注入次序（…→ soul → config instructions）均为 260929 快照。Soul System V2（`implemented/architecture/2026-10-07-soul-system-v2.md`）后 soul 不再经 `instruction.ts` 注入，现行 `session/instruction.ts:38` 为 `{ agents: 0, memory: 1, config: 2 }`；回归 `drops soul before AGENTS.md and MEMORY.md when the budget is tight` 随 soul 移出已失去对象（现行测试断言 soul 文件根本不在 `systemPaths()` 里）。优先级显式化、发现/投影分离、声明行硬上限三个机制不变。

@@ -1,6 +1,6 @@
 # 工具描述分层改动 · 第三方复核（未提交工作区）
 
-状态:proposed
+状态:已闭（261013 收口，保留为复核记录）。复核对象已提交（CHANGELOG「撤回工具规则上提，恢复原模型覆盖」）；§七.1 建议 B 已落实——emoji 与建文件纪律回到 `tool/edit.md`/`write.md`（模型无关载体），`default.md` 两句新增撤销；§五 的三处 DCP `compress` 死指令已清；§七.2 的 `write.md:7`/`read.md:9` 按建议 B 的原意留在 schema；§六 的 CHANGELOG 基数已随提交更正。本文不移至 archived/：CHANGELOG 现行段、`implemented/architecture/2026-10-13-tool-description-scope-review.md` 与 `proposed/architecture/2026-10-13-afternoon-batch-audit.md` 三处仍引用它。
 
 ## 问题
 

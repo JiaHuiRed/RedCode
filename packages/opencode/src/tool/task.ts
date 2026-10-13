@@ -398,7 +398,7 @@ export const TaskTool = Tool.define(
 
       // 260903 cc 等父会话空闲的上限。原来是无上限的 300ms 递归：会话若因别的原因永不 idle，
       // 它就永远等下去，而且**不留任何痕迹**——不超时、不报错、不记日志，与本仓冻结族
-      // （docs/notes/.../2026-09-03-sse-abort-on-stream-end.md）同一种气味。
+     // （docs/notes/implemented/bug-fix/2026-09-03-sse-abort-on-stream-end.md）同一种气味。
       // 超时**不丢结果**：inject() 已经先把合成结果落进会话了（noReply），这里等的只是
       // "自动替用户按下继续"这一步。所以超时的正确行为是放弃续跑 + 告诉用户结果已就绪，
       // 把静默挂起变成可见且可操作的状态。

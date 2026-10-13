@@ -35,3 +35,7 @@ RedCode 自己有一套更细的 token 体系（`packages/ui/src/styles/theme.cs
 - skill 159 行 / 6377 字节 → 218 行 / 9907 字节，**无字节上限**。skill body 不进固定前缀，tools schema 未变，**不触发 KV cache 前缀作废**；只在被 skill 工具加载的那一轮进对话流。
 - 零代码改动，无 typecheck 必要。验证：`bun test ./test/skill/skill.test.ts ./test/tool/skill.test.ts` 18 pass 0 fail（确认 frontmatter 仍可解析、skill 工具仍可取到内容）；seed 与 live 逐字节相同。
 - **未做**：100 处 `font-size` 字面量的收编、`--font-size-x-small` 的定义或删除。规则现在是文档而非门禁，识别签名是「新代码里出现 `font-size: Npx` 或引用一个 `theme.css` 里没有的 `--font-size-*`」。要做的时候先定义最小档（它已有隐含角色：菜单分组标签 / 条目描述 / 快捷键提示，即「弱元数据」），再逐包收编，别一次全改。
+
+## 2026-10-13 更新：skill 已重构为编号章节
+
+live `~/.redcode/skill/frontend-design/SKILL.md` 已重构为编号章节。本文「决策」点名的三节现为 `## 7. Typography`（字阶封闭集与最小档用途禁令）、语义色 token 用途禁令随 `## 8. Color and contrast` / `## 9. Shape and depth` 存放、`## 18. Enforcement`（门禁与识别签名）；硬约束内容本身未丢。「未做」的 100 处 `font-size` 字面量收编与 `--font-size-x-small` 定义仍有效，识别签名不变。

@@ -24,3 +24,7 @@
 保存成功的 UI 先展示已确认配置，后端失效事件随后带回完整定义。断流后重连同样刷新智能体查询。模型可见提示词、工具目录和固定前缀不变；下一次子代理请求按新配置选择模型和推理档。
 
 验证使用真实 QueryClient 和实际事件 reducer：两条新增用例修改前失败，修改后全文件 21 条通过，MCP 查询保持有效。app 类型检查和格式检查通过；live/seed JSONC 校验通过，源码 doctor 为 6 ok/3 warn/0 error。运行 API 确认两个工种配置，实际新派 explore 消息记录为 `openai/gpt-6-luna`、`xhigh`。未通过当前桌面进程点击验证源码修复，当前进程尚未加载修改后的 UI。
+
+## 2026-10-13 更新：默认模型/档位快照已变
+
+「决策」第 4 条与「后果」的验证记录（explore 与 execute 均设为 `openai/gpt-6-luna`、`xhigh`）是 260930 快照。现行 `seed/redcode.home.jsonc`：explore 为 `stepfun-step-plan/step-3.7-flash` + high（261003/261007 注释在案），execute 为 `openai/gpt-6-luna` + high。缓存失效机制（`global.disposed` / `server.connected` 独立失效智能体查询、不失效 MCP 查询）不变。

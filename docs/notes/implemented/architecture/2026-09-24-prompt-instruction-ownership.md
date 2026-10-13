@@ -57,3 +57,6 @@
 - instruction 超预算保留顺序重排为 `{ agents: 0, soul: 1, memory: 2, config: 3 }`（丢序 config → MEMORY → soul → AGENTS）。旧序 soul 最先丢，但它是身份核心、丢了无补救通道；MEMORY 是索引层、全文在召回库可查。本机五源合计已达默认预算约九成，此改在溢出时生效。
 - 模型可见四问：① 内容变化仅 default.md 与 runtime WORK RULES 各一处改写文本，注入结构不变；② 固定前缀 token 为两处单行改写的小幅增减（未做精确 tokenizer 计数）；③ 缓存从两处所在段起各失效一次，RETENTION 只改丢弃顺序、不改输出字节与注入顺序；④ 上限均为固定源码文本，无动态注入。
 - 验证：`instruction.test.ts` 先临时反置 RETENTION 验证新用例红（1 fail），恢复后 22 pass / 0 fail（62 expects）；TUI `bun run typecheck` exit 0。
+## 2026-10-13 更新：RETENTION 三项化，soul 移出 instruction 预算
+
+上文「2026-10-07 意图规则收窄与 soul 保留顺序」一节记录的 `RETENTION = { agents: 0, soul: 1, memory: 2, config: 3 }` 已失效。Soul System V2（`implemented/architecture/2026-10-07-soul-system-v2.md`）把 soul 改为会话绑定、经 `session/soul.ts` 独立注入，不再经过 `instruction.ts` 的来源预算；现行 `session/instruction.ts:38` 为 `RETENTION = { agents: 0, memory: 1, config: 2 }`，`cli/cmd/doctor.ts:92` 明示 soul "excluded from instruction budget"。本文 owner 分层、称呼截断（128 code point / 512 bytes）等结论不变。

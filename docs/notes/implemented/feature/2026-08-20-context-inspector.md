@@ -73,3 +73,7 @@ prompt-caches / prefix-shape 同一套），不再新增一处无界 Map。
   `dialog-status.tsx`），留作后续。
 - 未做：`/api/session/:id/context` 那个空壳端点没动。它的去留是独立决定——要么让它读旧 `message`
   表重建，要么删掉，都不该混在这次里。
+
+## 2026-10-13 更新：空壳端点已标记 DEPRECATED
+
+本文「未做」里挂起的 `/api/session/:id/context` 去留已有动作：`server/routes/instance/httpapi/groups/v2/session.ts:137` 将该端点标记 DEPRECATED 并指向 `GET /session/{sessionID}/context-inspect`——在「读旧表重建」与「删除」之间实际选了第三条路（保留但劝退）。后续若要物理删除，应把 DEPRECATED 声明一并收口。`context-inspect` 本体与 TUI `/context` 对话框「未做」项不变。

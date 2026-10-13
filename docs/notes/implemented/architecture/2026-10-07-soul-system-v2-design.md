@@ -14,6 +14,8 @@
 
 ---
 
+> **261013 注**：§0 起的「当前现状」描述（TUI = Tsoul.md = 柳智敏 / GUI = Gsoul.md = 宋雨琦 的硬绑定等）是 **2026-10-07 设计前快照**。落地后的现行实现以 `implemented/architecture/2026-10-07-soul-system-v2.md` 与代码为准；Tsoul/Gsoul 已归档至 `souls/archive/`，不再是身份来源。
+
 # 0. 为什么现在要做
 
 当前 RedCode 已经有 Soul，但实际上还不是一个真正的“人格系统”。

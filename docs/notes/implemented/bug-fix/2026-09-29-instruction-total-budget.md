@@ -63,3 +63,7 @@ soul 5.2K）合计 **56.4KiB，占 64KiB 预算 88%**。任何项目只要 AGENT
 
 - `packages/opencode/src/session/instruction.ts`（`truncateToBytes`、`system()` 的总量执行段）
 - `packages/opencode/test/session/instruction.test.ts`（`Instruction.system max_total_bytes`）
+
+## 2026-10-13 更新：来源枚举去 soul
+
+「问题」里本机五份注入（含 soul 5.2K）与「决策」里的来源次序（全局 AGENTS → 项目 AGENTS → 全局 MEMORY → 项目 MEMORY → soul → config instructions）为 260929 快照。Soul System V2 后 soul 独立注入（`session/soul.ts`），instruction 来源为全局 AGENTS → 项目 AGENTS → 全局 MEMORY → 项目 MEMORY → config instructions 五项，soul 不再其中。总量执行、单来源截断并标记、OVERRIDE 声明行三个机制不变，字节合计随实际配置变。

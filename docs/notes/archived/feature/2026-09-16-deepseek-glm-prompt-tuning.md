@@ -1,6 +1,6 @@
 # DeepSeek 与 GLM 提示词按 failure mode 收敛
 
-状态:implemented
+状态:archived（261013 归档：两份载体提示词已被 260924 owner 分层重写为 family delta（deepseek.md 8 行 / glm.md 6 行），本文点名的措辞与 token 表失效，语义并入新分层。现行权威：`implemented/architecture/2026-09-24-prompt-instruction-ownership.md`）
 
 ## 问题
 
