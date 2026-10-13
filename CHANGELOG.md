@@ -10,6 +10,8 @@
 
 ### [Unreleased] - 未发布
 
+- **Codex 请求链路由隔离与模型路由提示**（`packages/opencode/src/session/llm/request.ts`、`src/plugin/codex.ts`、`src/session/request-evidence.ts`）：标题与主对话此前共用 user 消息 ID 作为 turn-state 存储键，标题先返回时会抢占主对话令牌；现用线程、用户轮次、agent、wire model 的 SHA-256 固定键隔离请求链，保留同链首响应令牌与跨轮不回传语义。OAuth Responses 请求按最终序列化正文的 `model` / 可选 `service_tier` 构造官方 `x-codex-routing-hint`，不猜档位、不改正文，错误 JSON 只记无正文的 WARN；匿名取证白名单补该头，仍只存有界 HMAC。真插件 + 本地 HTTP 回归覆盖标题/摘要隔离、同链令牌不覆盖、跨轮/线程/模型隔离、实际 wire 模型与 tier、字节正文透传和指纹脱敏。定向两文件 43 pass / 0 fail，typecheck 通过（tsgo 崩溃后既定 TS 回退成功）。这是客户端路由修复，不宣称已解决全部缓存归零或证明额度收益；须重编重启后观察。决策及模型可见四问见 [codex-routing-affinity](docs/notes/implemented/bug-fix/2026-10-13-codex-routing-affinity.md)。
+
 - **发版后文档与契约同步**：补充版本提交后创建本地 annotated tag 的规则（`AGENTS.md`）；同步 OpenAPI 的 `retained_max_tokens` 字段；清理原生压缩账本不可达提交分支并归档 Codex/DCP 设计对照及定量审计笔记。以上均在 0.12.7 发布提交 `dc43990e` 之后，不计入已发布内容。
 
 - **压缩预算边界补充回归**（`packages/opencode/test/session/context-compaction.test.ts`）：新增 ID 字典序与时间顺序相反的继承携带测试、两段新历史共享全局 active token/UTF-8 byte 预算测试，覆盖用户/较新证据优先、原文回读、重复提交幂等。该文件 14 pass / 0 fail，typecheck 通过；仅测试改动，不改变运行时或请求前缀。

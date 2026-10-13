@@ -10,6 +10,7 @@ import {
   parseDefaultConnectionSettings,
   type IdTokenClaims,
 } from "../../src/plugin/codex"
+import { codexTurnKey } from "../../src/session/llm/request"
 
 function createTestJwt(payload: object): string {
   const header = Buffer.from(JSON.stringify({ alg: "none" })).toString("base64url")
@@ -257,6 +258,108 @@ describe("plugin.codex", () => {
       "gpt-6-luna",
     ])
  })
+
+  // 261013 Red 真插件 + 本地 HTTP：辅助请求不得抢占主对话的首响应路由令牌。
+  test("isolates sticky routing by thread, turn, agent and wire model", async () => {
+    const scope = {
+      sessionID: `ses_${crypto.randomUUID()}`,
+      userID: "msg_first",
+      agent: "redmind",
+      modelID: "gpt-6.1-sol",
+    }
+    expect(codexTurnKey({ ...scope })).toBe(codexTurnKey(scope))
+    const requests = [
+      { scope: { ...scope, agent: "title" }, token: "title-route", expected: null },
+      { scope, token: "main-route", expected: null },
+      { scope, token: "ignored-later-route", expected: "main-route" },
+      { scope: { ...scope, agent: "compaction" }, token: "summary-route", expected: null },
+      { scope, token: "ignored-again", expected: "main-route" },
+      { scope: { ...scope, userID: "msg_next" }, token: "next-turn-route", expected: null },
+      { scope: { ...scope, modelID: "gpt-6-luna" }, token: "other-model-route", expected: null },
+      { scope: { ...scope, sessionID: "ses_other" }, token: "other-thread-route", expected: null },
+    ]
+    const received: Array<string | null> = []
+    using server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(request) {
+        received.push(request.headers.get("x-codex-turn-state"))
+        return new Response("{}", {
+          headers: { "x-codex-turn-state": requests[received.length - 1]!.token },
+        })
+      },
+    })
+    const hooks = await CodexAuthPlugin({} as never, { codexApiEndpoint: server.url.href })
+    const loaded = await hooks.auth!.loader!(
+      async () => ({
+        type: "oauth",
+        access: "fixture-access",
+        refresh: "fixture-refresh",
+        expires: Date.now() + 60_000,
+      }),
+      {} as never,
+    )
+    for (const item of requests) {
+      const response = await loaded.fetch!("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: { "x-redcode-turn": codexTurnKey(item.scope) },
+        body: JSON.stringify({ model: item.scope.modelID, input: [] }),
+      })
+      await response.text()
+    }
+    expect(received).toEqual(requests.map((item) => item.expected))
+    expect(codexTurnKey(scope)).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  test("derives routing hints from the final wire model and optional service tier without changing the body", async () => {
+    const received: Array<{ body: string; hint: string | null }> = []
+    using server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(request) {
+        received.push({
+          body: await request.text(),
+          hint: request.headers.get("x-codex-routing-hint"),
+        })
+        return new Response("{}")
+      },
+    })
+    const hooks = await CodexAuthPlugin({} as never, { codexApiEndpoint: server.url.href })
+    const loaded = await hooks.auth!.loader!(
+      async () => ({
+        type: "oauth",
+        access: "fixture-access",
+        refresh: "fixture-refresh",
+        expires: Date.now() + 60_000,
+      }),
+      {} as never,
+    )
+    const requests = [
+      { body: JSON.stringify({ model: "gpt-6.1-sol", input: [] }), hint: "model=gpt-6.1-sol" },
+      {
+        body: JSON.stringify({ model: "gpt-6.1-sol", service_tier: "priority", input: [] }),
+        hint: "model=gpt-6.1-sol;tier=priority",
+      },
+      { body: JSON.stringify({ model: "gpt-6-luna", service_tier: null, input: [] }), hint: "model=gpt-6-luna" },
+      { body: "{invalid-json", hint: null },
+    ]
+    for (const item of requests) {
+      const response = await loaded.fetch!("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: { "x-codex-routing-hint": "model=stale-model;tier=stale-tier" },
+        body: item.body,
+      })
+      await response.text()
+    }
+    expect(received).toEqual(requests)
+    const bytes = JSON.stringify({ model: "gpt-6.1-sol", service_tier: "default", input: [] })
+    const response = await loaded.fetch!("https://api.openai.com/v1/responses", {
+      method: "POST",
+      body: new TextEncoder().encode(bytes),
+    })
+    await response.text()
+    expect(received.at(-1)).toEqual({ body: bytes, hint: "model=gpt-6.1-sol;tier=default" })
+  })
 
   test("deduplicates concurrent Codex token refreshes", async () => {
     let auth = {

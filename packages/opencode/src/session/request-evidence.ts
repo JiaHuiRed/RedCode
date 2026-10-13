@@ -418,9 +418,9 @@ function usageFields(usage: Usage | undefined): Readonly<Record<string, number>>
   return Object.keys(fields).length > 0 ? fields : undefined
 }
 
-// 261012 Red 路由指纹白名单：只对这 4 个传输层头做 identity() HMAC，authorization /
+// 261013 Red 路由指纹白名单补 routing-hint：只对这 5 个传输层头做 identity() HMAC，authorization /
 // cookie 等 opaque 头永不在列；值原文从不入日志，超限值直接跳过。
-const ROUTE_HEADERS = ["session-id", "thread-id", "x-redcode-turn", "x-codex-turn-state"] as const
+const ROUTE_HEADERS = ["session-id", "thread-id", "x-redcode-turn", "x-codex-turn-state", "x-codex-routing-hint"] as const
 const ROUTE_VALUE_MAX_BYTES = 1024
 
 function headerEntries(headers: TransportInput["headers"]): ReadonlyArray<readonly [string, unknown]> {

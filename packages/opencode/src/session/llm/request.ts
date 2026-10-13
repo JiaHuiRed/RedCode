@@ -12,6 +12,7 @@ import { Effect, Record } from "effect"
 import { jsonSchema, tool as aiTool, type ModelMessage, type Tool } from "ai"
 import type { Plugin } from "@/plugin"
 import { mergeDeep } from "remeda"
+import { createHash } from "node:crypto"
 
 const USER_AGENT = `opencode/${InstallationVersion}`
 
@@ -194,12 +195,17 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
             // ChatGPT codex 后端从标准 session-id 头派生缓存亲和，与请求体 prompt_cache_key
             // 同源（子代理用父会话 = 缓存键同域）；thread-id 标识具体线程。仅 oauth 路径发，
             // 别的网关不认识不必带。x-redcode-turn 是 turn-state 回传的载体键（见 plugin/codex.ts），
-            // user 消息 ID 在同一 turn 的所有 step 间不变，跨 turn 自然更换 = 粘性令牌自动失效。
+            // 261013 Red 同一 user 的标题/摘要是独立请求链；键按线程、turn、agent、wire model 隔离。
             ...(isOpenaiOauth
               ? {
                   "session-id": input.parentSessionID ?? input.sessionID,
                   "thread-id": input.sessionID,
-                  "x-redcode-turn": input.user.id,
+                  "x-redcode-turn": codexTurnKey({
+                    sessionID: input.sessionID,
+                    userID: input.user.id,
+                    agent: input.agent.name,
+                    modelID: input.model.api.id,
+                  }),
                 }
               : {}),
             "User-Agent": USER_AGENT,
@@ -209,6 +215,19 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     },
   }
 })
+
+export function codexTurnKey(input: {
+  readonly sessionID: string
+  readonly userID: string
+  readonly agent: string
+  readonly modelID: string
+}): string {
+  // 261013 Red 固定长度 ASCII 键，不将 agent 名称或模型名明文加进传输头。
+  // 决策：docs/notes/implemented/bug-fix/2026-10-13-codex-routing-affinity.md
+  return createHash("sha256")
+    .update(JSON.stringify([input.sessionID, input.userID, input.agent, input.modelID]))
+    .digest("hex")
+}
 
 function resolveTools(input: Pick<PrepareInput, "tools" | "agent" | "permission" | "user">) {
   const disabled = Permission.disabled(

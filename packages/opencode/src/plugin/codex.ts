@@ -42,7 +42,7 @@ const ALLOWED_MODELS = new Set([
 
 // 261012 Red x-codex-turn-state 粘性路由令牌（对齐 Codex 官方 harness，codex-rs/core/src/client.rs:289）：
 // 服务器在 turn 首个响应头下发，同 turn 内后续请求原样回传，让同 turn 的多个 step 落到
-// 已持有该前缀的服务端实例。键取请求头 x-redcode-turn（user 消息 ID，turn 内不变、跨 turn
+// 已持有该前缀的服务端实例。键取请求头 x-redcode-turn（请求链作用域，turn 内不变、跨 turn
 // 更换），跨 turn 查不到即天然不发——契约要求跨 turn 必须不发，宁缺勿错。OnceLock 语义：
 // 只存 turn 内第一个响应的 token，后续响应不覆盖。上限兜底防久驻进程累积。
 const TURN_STATE_MAX = 512
@@ -393,6 +393,27 @@ function waitForOAuthCallback(pkce: PkceCodes, state: string): Promise<TokenResp
   })
 }
 
+// 261013 Red 对齐官方 client.rs 的 model/tier 路由提示；只读最终请求，不改正文。
+function codexRoutingHint(body: BodyInit | null | undefined): string | undefined {
+  const text =
+    typeof body === "string" ? body : body instanceof Uint8Array ? new TextDecoder().decode(body) : undefined
+  if (text === undefined) return
+  let value: unknown
+  try {
+    value = JSON.parse(text)
+  } catch {
+    log.warn("codex routing hint unavailable", { reason: "invalid-json" })
+    return
+  }
+  if (typeof value !== "object" || value === null || !("model" in value) || typeof value.model !== "string") {
+    log.warn("codex routing hint unavailable", { reason: "missing-model" })
+    return
+  }
+  return "service_tier" in value && typeof value.service_tier === "string"
+    ? `model=${value.model};tier=${value.service_tier}`
+    : `model=${value.model}`
+}
+
 export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPluginOptions = {}): Promise<Hooks> {
   const issuer = options.issuer ?? ISSUER
   const codexApiEndpoint = options.codexApiEndpoint ?? CODEX_API_ENDPOINT
@@ -517,10 +538,19 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
               requestInput instanceof URL
                 ? requestInput
                 : new URL(typeof requestInput === "string" ? requestInput : requestInput.url)
-            const url =
-              parsed.pathname.includes("/v1/responses") || parsed.pathname.includes("/chat/completions")
-                ? new URL(codexApiEndpoint)
-                : parsed
+            const isResponses =
+              parsed.pathname.includes("/v1/responses") ||
+              parsed.pathname.includes("/chat/completions") ||
+              parsed.href === codexApiEndpoint
+            const url = isResponses ? new URL(codexApiEndpoint) : parsed
+
+            // 261013 Red 以最终 wire body 为准，不从 UI 模型或预转换 options 猜 tier。
+            // 决策：docs/notes/implemented/bug-fix/2026-10-13-codex-routing-affinity.md
+            if (isResponses) {
+              headers.delete("x-codex-routing-hint")
+              const hint = codexRoutingHint(init?.body)
+              if (hint) headers.set("x-codex-routing-hint", hint)
+            }
 
             // 261012 Red 同 turn 粘性路由：有令牌则回传（契约见顶部 TURN_STATE_MAX 注释）。
             const turnKey = headers.get("x-redcode-turn")
@@ -530,7 +560,7 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
             }
 
             // 261007 Red 在最终认证与 URL 重写后记录匿名路由；不改请求、header 或缓存键。
-            // 261012 Red 附带最终生效的请求头做路由指纹（只哈希白名单 4 项，不含认证头原文）；
+            // 261013 Red 附带最终生效的请求头做路由指纹（只哈希白名单 5 项，不含认证头原文）；
             // 同 turn 首响应/跨 turn 语义不变——这里只观察，不回写、不新发 header。
             RequestEvidence.observeTransport({
               accountID: authWithAccount.accountId,

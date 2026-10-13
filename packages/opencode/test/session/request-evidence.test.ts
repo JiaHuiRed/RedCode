@@ -98,7 +98,8 @@ describe("session.request-evidence", () => {
       observer.transport({
         endpoint: "https://fixture.invalid/private-route", accountID: "private-fixture-account",
         headers: { authorization: "private-fixture-auth", "session-id": "private-fixture-session",
-          "x-codex-turn-state": "private-fixture-turn" },
+          "x-codex-turn-state": "private-fixture-turn",
+          "x-codex-routing-hint": "model=private-fixture-model;tier=priority" },
         turnState: "private-fixture-response-turn",
       }, capture.requestID)
       for (const cachedTokens of ["reported", "reported-zero", "missing"]) {
@@ -126,6 +127,7 @@ describe("session.request-evidence", () => {
       expect(persisted).toContain(`cachedTokens=${status}`)
     }
     expect(persisted).toContain("headerHashes=")
+    expect(persisted).toContain("x-codex-routing-hint")
     expect(persisted).toContain("turnStateHash=")
     expect(persisted).not.toContain("ordinary-info-must-remain-filtered")
     expect(persisted).not.toContain("private-fixture")
@@ -800,6 +802,7 @@ describe("session.request-evidence", () => {
       "thread-id": "thr_route_fingerprint",
       "x-redcode-turn": "msg_turn_fingerprint",
       "x-codex-turn-state": "request-turn-state-token",
+      "x-codex-routing-hint": "model=private-route-model;tier=priority",
     })
     const observed = await RequestEvidence.withRequest(observer, () =>
       RequestEvidence.observeTransport({
@@ -814,9 +817,10 @@ describe("session.request-evidence", () => {
       "thread-id": expect.any(String),
       "x-redcode-turn": expect.any(String),
       "x-codex-turn-state": expect.any(String),
+      "x-codex-routing-hint": expect.any(String),
     })
-    expect(Object.keys(observed?.headerHashes ?? {})).toHaveLength(4)
-    expect(new Set(Object.values(observed?.headerHashes ?? {})).size).toBe(4)
+    expect(Object.keys(observed?.headerHashes ?? {})).toHaveLength(5)
+    expect(new Set(Object.values(observed?.headerHashes ?? {})).size).toBe(5)
     expect(observed?.turnStateHash).toMatch(/^[0-9a-f]{64}$/)
     for (const observation of [observed]) {
       const serialized = JSON.stringify(observation)
@@ -829,6 +833,7 @@ describe("session.request-evidence", () => {
         "msg_turn_fingerprint",
         "request-turn-state-token",
         "response-turn-state-token",
+        "private-route-model",
       ]) {
         expect(serialized).not.toContain(plaintext)
       }
@@ -843,7 +848,7 @@ describe("session.request-evidence", () => {
     const observed = await RequestEvidence.withRequest(observer, () =>
       RequestEvidence.observeTransport({
         endpoint: "https://fixture.invalid/route",
-        headers: { "session-id": oversized, "x-redcode-turn": "msg_ok" },
+        headers: { "session-id": oversized, "x-redcode-turn": "msg_ok", "x-codex-routing-hint": oversized },
         turnState: oversized,
       }),
     )
