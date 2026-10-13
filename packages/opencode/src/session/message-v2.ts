@@ -218,11 +218,11 @@ export const CompactionPart = Schema.Struct({
   native: Schema.optional(Schema.Boolean),
   overflow: Schema.optional(Schema.Boolean),
   tail_start_id: Schema.optional(MessageID),
- // 260813 Red compaction 前后 token 对比：process 完成后回填，UI 分割线展示
- tokens_before: Schema.optional(NonNegativeInt),
- tokens_after: Schema.optional(NonNegativeInt),
- // 261010 Red 本次压缩耗时（毫秒）：与 token 对比同批回填，分割线展示
- duration_ms: Schema.optional(NonNegativeInt),
+  // 260813 Red compaction 前后 token 对比：process 完成后回填，UI 分割线展示
+  tokens_before: Schema.optional(NonNegativeInt),
+  tokens_after: Schema.optional(NonNegativeInt),
+  // 261010 Red 本次压缩耗时（毫秒）：与 token 对比同批回填，分割线展示
+  duration_ms: Schema.optional(NonNegativeInt),
 }).annotate({ identifier: "CompactionPart" })
 export type CompactionPart = Types.DeepMutable<Schema.Schema.Type<typeof CompactionPart>>
 export const SubtaskPart = Schema.Struct({
@@ -267,9 +267,9 @@ export const StepFinishPart = Schema.Struct({
   reason: Schema.String,
   snapshot: Schema.optional(Schema.String),
   cost: Schema.Finite,
- // 260930 Red 记账时刻的币种定格（与 cost 同时写入，语义同 260816 的取价定格）：
- //  session 行按它把费用分进 cost_cny / cost_usd 桶。老消息无此字段，回填写 UNKNOWN→USD 并留日志。
- currency: Schema.optional(Schema.Literals(["USD", "CNY"])),
+  // 260930 Red 记账时刻的币种定格（与 cost 同时写入，语义同 260816 的取价定格）：
+  //  session 行按它把费用分进 cost_cny / cost_usd 桶。老消息无此字段，回填写 UNKNOWN→USD 并留日志。
+  currency: Schema.optional(Schema.Literals(["USD", "CNY"])),
   tokens: Schema.Struct({
     total: Schema.optional(Schema.Finite),
     // 260819 cc: 本次请求的提示词总量 = 这一刻的真实上下文大小。与 total 的区别要紧：
@@ -1447,16 +1447,23 @@ export function latest(msgs: WithParts[]) {
   let user: User | undefined
   let assistant: Assistant | undefined
   let finished: Assistant | undefined
+  // 261013 Red 流超时/取消没有 finish，但已落终态的摘要不能再抢占新用户轮。
+  const failedCompactions = new Set<MessageID>()
   for (const msg of msgs) {
     const info = msg.info
     if (info.role === "user" && (!user || compareTime(info, user) > 0)) user = info
     if (info.role === "assistant" && (!assistant || compareTime(info, assistant) > 0)) assistant = info
     if (info.role === "assistant" && info.finish && (!finished || compareTime(info, finished) > 0)) finished = info
+    if (info.role === "assistant" && info.summary && info.error && info.time.completed !== undefined)
+      failedCompactions.add(info.parentID)
   }
   const tasks = msgs.flatMap((m) =>
     finished && compareTime(m.info, finished) <= 0
       ? []
-      : m.parts.filter((p): p is CompactionPart | SubtaskPart => p.type === "compaction" || p.type === "subtask"),
+      : m.parts.filter(
+          (p): p is CompactionPart | SubtaskPart =>
+            p.type === "subtask" || (p.type === "compaction" && !failedCompactions.has(m.info.id)),
+        ),
   )
   return { user, assistant, finished, tasks }
 }

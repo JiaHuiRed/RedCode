@@ -163,23 +163,37 @@ describe("session.message-v2 stored parts", () => {
 describe("session.message-v2.toModelMessage", () => {
   test("omits retired native compress nudges without mutating stored history", async () => {
     const notice: MessageV2.TextPart = {
-      ...basePart("a1", "native-notice"), type: "text", synthetic: true,
+      ...basePart("a1", "native-notice"),
+      type: "text",
+      synthetic: true,
       text: "[Context notice, not a user request] Use compress for closed ranges.",
       metadata: { native_context_nudge: { revision: "old-revision" } },
     }
-    const input: MessageV2.WithParts[] = [{
-      info: assistantInfo("a1", "u1"),
-      parts: [{ ...basePart("a1", "reply"), type: "text", text: "Implementation verified." }, notice],
-    }]
+    const input: MessageV2.WithParts[] = [
+      {
+        info: assistantInfo("a1", "u1"),
+        parts: [{ ...basePart("a1", "reply"), type: "text", text: "Implementation verified." }, notice],
+      },
+    ]
     const before = structuredClone(input)
     const output = JSON.stringify(await MessageV2.toModelMessages(input, model))
     expect(output).toContain("Implementation verified.")
     expect(output).not.toContain("Use compress")
     expect(input).toEqual(before)
     expect(await MessageV2.toModelMessages([{ ...input[0]!, parts: [notice] }], model)).toEqual([])
-    expect(JSON.stringify(await MessageV2.toModelMessages([{
-      ...input[0]!, parts: [{ ...notice, synthetic: false }],
-    }], model))).toContain("Use compress")
+    expect(
+      JSON.stringify(
+        await MessageV2.toModelMessages(
+          [
+            {
+              ...input[0]!,
+              parts: [{ ...notice, synthetic: false }],
+            },
+          ],
+          model,
+        ),
+      ),
+    ).toContain("Use compress")
   })
 
   test("filters out messages with no parts", async () => {
@@ -1861,6 +1875,53 @@ describe("session.message-v2.latest", () => {
     expect(state.user?.id).toBe(NEW_COMPACTION_USER)
     expect(state.tasks).toHaveLength(1)
     expect(state.tasks[0]).toMatchObject({ type: "compaction", auto: true })
+  })
+
+  // 261013 Red 真实流中断会写 error/completed，但没有 provider finish。
+  for (const name of ["UnknownError", "MessageAbortedError"] as const) {
+    test(`a terminal ${name} summary retires only its own compaction task`, () => {
+      const failed: MessageV2.WithParts = {
+        info: {
+          ...assistantInfo(SUMMARY_ASSISTANT, COMPACTION_USER),
+          summary: true,
+          time: { created: 4, completed: 5 },
+          error: { name, data: { message: "Interrupted summary" } },
+        },
+        parts: [],
+      }
+      const unrelated: MessageV2.WithParts = {
+        info: { ...userInfo(NEW_COMPACTION_USER), time: { created: 6 } },
+        parts: [{ ...basePart(NEW_COMPACTION_USER, "fresh"), type: "compaction", auto: false }],
+      }
+      const pendingSubtask: MessageV2.SubtaskPart = {
+        ...basePart(COMPACTION_USER, "subtask"),
+        type: "subtask",
+        prompt: "pending work",
+        description: "pending work",
+        agent: "explore",
+      }
+      const state = MessageV2.latest([
+        {
+          ...compactionUser,
+          info: { ...compactionUser.info, time: { created: 3 } },
+          parts: [...compactionUser.parts, pendingSubtask],
+        },
+        failed,
+        unrelated,
+      ])
+      expect(state.tasks.map((part) => part.id)).toEqual([pendingSubtask.id, unrelated.parts[0]!.id])
+      expect(state.user?.id).toBe(NEW_COMPACTION_USER)
+      expect(state.finished).toBeUndefined()
+      expect("finish" in failed.info).toBe(false)
+    })
+  }
+
+  test("an unfinished summary does not discard a recoverable compaction task", () => {
+    const state = MessageV2.latest([
+      compactionUser,
+      { info: { ...assistantInfo(SUMMARY_ASSISTANT, COMPACTION_USER), summary: true }, parts: [] },
+    ])
+    expect(state.tasks.map((part) => part.id)).toEqual(compactionUser.parts.map((part) => part.id))
   })
 
   // 260903 cc filterCompacted 拆成两个入口：数组入参先排序（filterCompacted），

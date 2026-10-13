@@ -1544,6 +1544,7 @@ export function Session() {
                 </For>
               </scrollbox>
               <box flexShrink={0}>
+                <CompactingIndicator sessionID={route.sessionID} />
                 <Show when={permissions().length > 0}>
                   <PermissionPrompt request={permissions()[0]} />
                 </Show>
@@ -1669,16 +1670,40 @@ export function UserMessage(props: {
   // 即本条 user 消息）；"压缩中"以 session.time.compacting 判断 —— tokens 在 process
   // 末尾一次写入，之前读不到任何数字。260813 的折叠态 token 对比保留。
   const [compactionOpen, setCompactionOpen] = createSignal(false)
-  const compacting = createMemo(() => sync.session.get(props.message.sessionID)?.time.compacting !== undefined)
-  const compactionSummary = createMemo(() => {
+  // 261013 Red 终态来自持久化摘要，不让 session 级忙碌标志覆盖旧 checkpoint。
+  const compactionMessage = createMemo(() => {
     const part = compaction()
     if (!part || part.type !== "compaction") return undefined
-    const summaryMsg = (sync.data.message[props.message.sessionID] ?? []).findLast(
+    return (sync.data.message[props.message.sessionID] ?? []).findLast(
       (m): m is AssistantMessageInfo =>
         m.role === "assistant" &&
         (m as AssistantMessageInfo).mode === "compaction" &&
         (m as AssistantMessageInfo).parentID === props.message.id,
     )
+  })
+  const compactionError = createMemo(() => compactionMessage()?.error)
+  const compactionReason = createMemo(() => {
+    const error = compactionError()
+    if (!error) return undefined
+    return "message" in error.data && typeof error.data.message === "string" ? error.data.message : error.name
+  })
+  const compacting = createMemo(() => {
+    const start = sync.session.get(props.message.sessionID)?.time.compacting
+    if (start === undefined || compactionError()) return false
+    const part = compaction()
+    if (!part || (part as CompactionPart & { tokens_after?: number }).tokens_after !== undefined) return false
+    const newer = (sync.data.message[props.message.sessionID] ?? []).some(
+      (message) =>
+        message.role === "user" &&
+        cmpTime(message, props.message) > 0 &&
+        (sync.data.part[message.id] ?? []).some((part) => part.type === "compaction"),
+    )
+    if (newer) return false
+    const summary = compactionMessage()
+    return !summary || summary.time.completed === undefined || summary.time.created >= start
+  })
+  const compactionSummary = createMemo(() => {
+    const summaryMsg = compactionMessage()
     if (!summaryMsg) return undefined
     return (
       (sync.data.part[summaryMsg.id] ?? [])
@@ -1690,30 +1715,36 @@ export function UserMessage(props: {
   const compactionStats = createMemo(() => {
     const part = compaction()
     if (!part || part.type !== "compaction") return undefined
-   const withTokens = part as CompactionPart & { tokens_before?: number; tokens_after?: number; duration_ms?: number }
+    const withTokens = part as CompactionPart & { tokens_before?: number; tokens_after?: number; duration_ms?: number }
     if (withTokens.tokens_before === undefined) return undefined
-    if (withTokens.tokens_after === undefined) return `${withTokens.tokens_before.toLocaleString()} tokens · 压缩中…`
-   const freed =
-     withTokens.tokens_before > 0 ? Math.round((1 - withTokens.tokens_after / withTokens.tokens_before) * 100) : 0
-   const dur = withTokens.duration_ms !== undefined ? ` · 耗时 ${withTokens.duration_ms >= 1000 ? `${(withTokens.duration_ms / 1000).toFixed(1)}s` : `${withTokens.duration_ms}ms`}` : ""
-   return `${withTokens.tokens_before.toLocaleString()} → ${withTokens.tokens_after.toLocaleString()} tokens · 释放 ${freed}%${dur}`
+    if (withTokens.tokens_after === undefined)
+      return `${withTokens.tokens_before.toLocaleString()} tokens · ${compacting() ? "压缩中…" : "未提交"}`
+    const freed =
+      withTokens.tokens_before > 0 ? Math.round((1 - withTokens.tokens_after / withTokens.tokens_before) * 100) : 0
+    const dur =
+      withTokens.duration_ms !== undefined
+        ? ` · 耗时 ${withTokens.duration_ms >= 1000 ? `${(withTokens.duration_ms / 1000).toFixed(1)}s` : `${withTokens.duration_ms}ms`}`
+        : ""
+    return `${withTokens.tokens_before.toLocaleString()} → ${withTokens.tokens_after.toLocaleString()} tokens · 释放 ${freed}%${dur}`
   })
   // 260813 Red compaction 分割线带 token 对比：part 由后端 process 回填 tokens_before/after。
   // SDK 的 Part 类型是 OpenAPI 生成的（无这两个字段），这里用本地扩展接口断言读取。
   const compactionTitle = createMemo(() => {
     const part = compaction()
     if (!part || part.type !== "compaction") return " Compaction "
-   const withTokens = part as CompactionPart & { tokens_before?: number; tokens_after?: number; duration_ms?: number }
-   // 261010 Red 压缩耗时：duration_ms 由 compaction.ts 回填，分割线与详情同源
-   const fmtDuration = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`)
+    const withTokens = part as CompactionPart & { tokens_before?: number; tokens_after?: number; duration_ms?: number }
+    // 261010 Red 压缩耗时：duration_ms 由 compaction.ts 回填，分割线与详情同源
+    const fmtDuration = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`)
     const fmt = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : `${n}`)
     const caret = compactionOpen() ? " ▾ " : " ▸ "
+    if (withTokens.tokens_before !== undefined && withTokens.tokens_after !== undefined) {
+      const dur = withTokens.duration_ms !== undefined ? ` · ${fmtDuration(withTokens.duration_ms)}` : ""
+      return ` Compaction ${fmt(withTokens.tokens_before)} → ${fmt(withTokens.tokens_after)}${dur}${caret}`
+    }
+    if (compactionError())
+      return ` Compaction ${compactionError()!.name === "MessageAbortedError" ? "已取消" : "失败"}${caret}`
     if (compacting()) return ` Compaction 压缩中…${caret}`
-   if (withTokens.tokens_before !== undefined && withTokens.tokens_after !== undefined) {
-     const dur = withTokens.duration_ms !== undefined ? ` · ${fmtDuration(withTokens.duration_ms)}` : ""
-     return ` Compaction ${fmt(withTokens.tokens_before)} → ${fmt(withTokens.tokens_after)}${dur}${caret}`
-   }
-    return " Compaction "
+    return ` Compaction 未完成${caret}`
   })
 
   // 260821 Red 用户消息右对齐（聊天式左右对照）：气泡限宽 80% 终端宽，窄窗兜底 40 列。
@@ -1801,8 +1832,20 @@ export function UserMessage(props: {
           borderColor={theme.borderActive}
           onMouseUp={() => setCompactionOpen((prev) => !prev)}
         />
+        <Show when={compactionReason()}>
+          {(reason) => (
+            <text fg={theme.error}>
+              {reason().slice(0, 100)}
+              {reason().length > 100 ? "…（展开查看）" : ""}
+            </text>
+          )}
+        </Show>
         <Show when={compactionOpen()}>
           <box flexDirection="column" paddingLeft={2} paddingRight={2} paddingTop={1} gap={1} flexShrink={0}>
+            <Show when={compactionReason()}>{(reason) => <text fg={theme.error}>{reason()}</text>}</Show>
+            <Show when={compactionError() && compactionSummary()}>
+              <text fg={theme.textMuted}>未提交的摘要草稿</text>
+            </Show>
             <Show when={compactionSummary()}>
               <markdown
                 syntaxStyle={syntax()}
@@ -1828,7 +1871,38 @@ export function UserMessage(props: {
 // 之间的这段空窗，实时显示已等待秒数。DeepSeek high 档服务端 reasoning 可长达 1-2 分钟不吐字，
 // 这段既不计入 reasoning duration（part.time.start 从首个 reasoning delta 才起算）也无任何反馈，
 // 界面全静止看着像卡死——这里补上实时计时，让「漫长等待」可见。
-function WaitingForModel(props: { start: number }) {
+// 261013 Red 压缩摘要不进普通消息列表，输入区常驻显示当前尝试、模型与耗时。
+export function CompactingIndicator(props: { sessionID: string }) {
+  const sync = useSync()
+  const start = createMemo(() => sync.session.get(props.sessionID)?.time.compacting)
+  const summary = createMemo(() =>
+    (sync.data.message[props.sessionID] ?? []).findLast(
+      (message): message is AssistantMessageInfo =>
+        message.role === "assistant" &&
+        (message as AssistantMessageInfo).mode === "compaction" &&
+        start() !== undefined &&
+        message.time.created >= start()!,
+    ),
+  )
+  const label = createMemo(() => {
+    const message = summary()
+    const phase = message?.error
+      ? "结束处理中"
+      : message?.time.completed !== undefined
+        ? "校验与提交"
+        : message
+          ? "摘要处理中"
+          : "准备摘要"
+    return `压缩上下文 · ${phase}${message ? ` · ${message.providerID}/${message.modelID}` : ""}`
+  })
+  return (
+    <Show when={start() !== undefined}>
+      <WaitingForModel start={start()!} label={label()} />
+    </Show>
+  )
+}
+
+function WaitingForModel(props: { start: number; label?: string }) {
   const { theme } = useTheme()
   const [now, setNow] = createSignal(Date.now())
   const timer = setInterval(() => setNow(Date.now()), 1000)
@@ -1836,7 +1910,7 @@ function WaitingForModel(props: { start: number }) {
   const elapsed = createMemo(() => Locale.duration(Math.max(0, now() - props.start)))
   return (
     <box paddingLeft={3} marginTop={1} flexShrink={0}>
-      <Spinner color={theme.textMuted}>{"等待模型响应 · " + elapsed()}</Spinner>
+      <Spinner color={theme.textMuted}>{(props.label ?? "等待模型响应") + " · " + elapsed()}</Spinner>
     </box>
   )
 }

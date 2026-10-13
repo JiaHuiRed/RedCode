@@ -58,6 +58,8 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Snippet } from "@/session/snippet"
 import { Soul } from "@/soul"
+import { NativeCompaction } from "@/config/native-compaction"
+import * as ContextCompaction from "@/session/context-compaction"
 
 void Log.init({ print: false })
 
@@ -1045,11 +1047,18 @@ it.instance("does not retry failed native compaction on each new user message", 
     const chat = yield* sessions.create({ title: "Failed native compaction recovery" })
     const failed = yield* seed(chat.id, { finish: "stop" })
     yield* sessions.updatePart({
-      id: PartID.ascending(), sessionID: chat.id, messageID: failed.user.id,
-      type: "compaction", auto: true, native: true,
+      id: PartID.ascending(),
+      sessionID: chat.id,
+      messageID: failed.user.id,
+      type: "compaction",
+      auto: true,
+      native: true,
     })
     yield* sessions.updateMessage({
-      ...failed.assistant, summary: true, agent: "compaction", mode: "compaction",
+      ...failed.assistant,
+      summary: true,
+      agent: "compaction",
+      mode: "compaction",
       error: new MessageV2.ContextOverflowError({
         message: "Native compaction was not committed: Cannot compress queued input or pending tools",
       }).toObject(),
@@ -1057,7 +1066,10 @@ it.instance("does not retry failed native compaction on each new user message", 
     for (const text of ["continue after failure", "continue without retrying compaction"]) {
       yield* llm.text(`Response to ${text}`, { usage: { input: 10, output: 5 } })
       const result = yield* prompt.prompt({
-        sessionID: chat.id, agent: "build", model: ref, parts: [{ type: "text", text }],
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        parts: [{ type: "text", text }],
       })
       expect(result.parts.some((part) => part.type === "text" && part.text === `Response to ${text}`)).toBe(true)
     }
@@ -1065,9 +1077,220 @@ it.instance("does not retry failed native compaction on each new user message", 
     const messages = yield* sessions.messages({ sessionID: chat.id })
     expect(messages.filter((message) => message.info.role === "assistant" && message.info.summary)).toHaveLength(1)
     expect((yield* llm.inputs).every((input) => !JSON.stringify(input).includes("Summarize the supplied"))).toBe(true)
-    expect(messages.some((message) => message.parts.some((part) =>
-      part.type === "text" && part.metadata?.native_context_nudge,
-    ))).toBe(false)
+    expect(
+      messages.some((message) =>
+        message.parts.some((part) => part.type === "text" && part.metadata?.native_context_nudge),
+      ),
+    ).toBe(false)
+  }),
+)
+
+// 261013 Red 现场超时/取消摘要没有 finish；不能让旧 marker 抢走每条新消息。
+for (const name of ["UnknownError", "MessageAbortedError"] as const) {
+  it.instance(`replies after a native ${name} summary without a finish`, () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        compaction: { native: { enabled: true, trigger_tokens: 1, target_tokens: 1, reminder_tokens: 1 } },
+      }))
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Interrupted native compaction recovery" })
+      const failed = yield* seed(chat.id)
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        sessionID: chat.id,
+        messageID: failed.user.id,
+        type: "compaction",
+        auto: true,
+        native: true,
+      })
+      yield* sessions.updateMessage({
+        ...failed.assistant,
+        summary: true,
+        agent: "compaction",
+        mode: "compaction",
+        time: { ...failed.assistant.time, completed: Date.now() },
+        error: { name, data: { message: "Interrupted summary" } },
+      })
+      for (const text of ["continue after interruption", "continue after switching models"]) {
+        yield* llm.text(`Response to ${text}`, { usage: { input: 10, output: 5 } })
+        const result = yield* prompt.prompt({
+          sessionID: chat.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text }],
+        })
+        expect(result.info.role === "assistant" && result.info.summary).not.toBe(true)
+        expect(result.parts.some((part) => part.type === "text" && part.text === `Response to ${text}`)).toBe(true)
+      }
+      expect(yield* llm.calls).toBe(2)
+      expect((yield* llm.inputs).every((input) => !JSON.stringify(input).includes("Summarize the supplied"))).toBe(true)
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      expect(messages.filter((message) => message.info.role === "assistant" && message.info.summary)).toHaveLength(1)
+    }),
+  )
+}
+
+for (const cancelled of [false, true]) {
+  it.instance(`recovers after native compaction ${cancelled ? "cancellation" : "provider failure"}`, () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        compaction: { native: { enabled: true, trigger_tokens: 400000, target_tokens: 1000 } },
+      }))
+      const prompt = yield* SessionPrompt.Service
+      const compaction = yield* SessionCompaction.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Real interrupted compaction recovery" })
+      const history = yield* seed(chat.id, { finish: "stop" })
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        sessionID: chat.id,
+        messageID: history.assistant.id,
+        type: "text",
+        text: "Historical unprotected output. ".repeat(4000),
+      })
+      yield* user(chat.id, "Current uncompressed work")
+      yield* compaction.create({ sessionID: chat.id, agent: "build", model: ref, auto: false })
+      if (cancelled) yield* llm.push(reply().text("Partial uncommitted summary").hang())
+      if (!cancelled) yield* llm.error(400, { error: { message: "summary provider failure" } })
+      if (cancelled) {
+        const running = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+        yield* awaitWithTimeout(llm.wait(1), "native summary request did not start", "3 seconds")
+        yield* prompt.cancel(chat.id)
+        yield* Fiber.await(running)
+      }
+      if (!cancelled) yield* prompt.loop({ sessionID: chat.id })
+      const before = yield* sessions.messages({ sessionID: chat.id })
+      const summary = before.find((message) => message.info.role === "assistant" && message.info.summary)
+      if (!cancelled)
+        expect(
+          summary?.info.role === "assistant" &&
+            summary.info.error?.name === "APIError" &&
+            summary.info.error.data.message,
+        ).toContain("summary provider failure")
+      expect(summary?.info.role === "assistant" && summary.info.error?.name).toBe(
+        cancelled ? "MessageAbortedError" : "APIError",
+      )
+      expect(summary?.info.role === "assistant" && summary.info.finish).toBeUndefined()
+      expect(MessageV2.latest(before).tasks).toEqual([])
+      expect((yield* sessions.get(chat.id)).time.compacting).toBeUndefined()
+      yield* llm.text("Normal response after interrupted compaction")
+      const result = yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        parts: [{ type: "text", text: "continue actual work" }],
+      })
+      expect(result.info.role === "assistant" && result.info.summary).not.toBe(true)
+      expect(
+        result.parts.some(
+          (part) => part.type === "text" && part.text === "Normal response after interrupted compaction",
+        ),
+      ).toBe(true)
+      expect(yield* llm.calls).toBe(2)
+    }),
+  )
+}
+
+for (const sameModel of [true, false]) {
+  it.instance(
+    `native preflight ${sameModel ? "finds same-model usage behind its placeholder" : "does not reuse another model's usage"}`,
+    () =>
+      Effect.gen(function* () {
+        const { llm } = yield* useServerConfig((url) => ({
+          ...providerCfg(url),
+          compaction: { native: { enabled: true, trigger_tokens: 10000, target_tokens: 1000, reminder_tokens: 10000 } },
+        }))
+        const prompt = yield* SessionPrompt.Service
+        const sessions = yield* Session.Service
+        const chat = yield* sessions.create({ title: "Measured native preflight anchor" })
+        if (!sameModel) {
+          const earlier = yield* seed(chat.id, { finish: "tool-calls" })
+          yield* sessions.updateMessage({
+            ...earlier.assistant,
+            tokens: { ...earlier.assistant.tokens, context: 100, input: 100 },
+          })
+        }
+        const history = yield* seed(chat.id, { finish: "tool-calls" })
+        yield* sessions.updateMessage({
+          ...history.assistant,
+          tokens: { ...history.assistant.tokens, context: 100, input: 100 },
+          ...(sameModel
+            ? {}
+            : { modelID: ModelID.make("another-model"), providerID: ProviderID.make("another-provider") }),
+        })
+        yield* sessions.updatePart({
+          id: PartID.ascending(),
+          sessionID: chat.id,
+          messageID: history.assistant.id,
+          type: "text",
+          text: "Historical unprotected result. ".repeat(4000),
+        })
+        yield* llm.text("Response using measured usage", { usage: { input: 100, output: 5 } })
+        const result = yield* prompt.prompt({
+          sessionID: chat.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "new request" }],
+        })
+        const requests = (yield* llm.inputs).map((input) => JSON.stringify(input))
+        expect(requests.some((input) => input.includes("Summarize the supplied"))).toBe(!sameModel)
+        if (sameModel) {
+          expect(result.info.role === "assistant" && result.info.summary).not.toBe(true)
+          expect(
+            result.parts.some((part) => part.type === "text" && part.text === "Response using measured usage"),
+          ).toBe(true)
+          expect(yield* llm.calls).toBe(1)
+        }
+      }),
+  )
+}
+
+it.instance("native preflight does not reuse usage measured before a committed block", () =>
+  Effect.gen(function* () {
+    const native = { enabled: true, trigger_tokens: 10000, target_tokens: 1000, reminder_tokens: 10000 }
+    const { llm } = yield* useServerConfig((url) => ({ ...providerCfg(url), compaction: { native } }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Native usage generation boundary" })
+    const history = yield* seed(chat.id, { finish: "tool-calls" })
+    yield* sessions.updateMessage({
+      ...history.assistant,
+      tokens: { ...history.assistant.tokens, context: 1000000, input: 1000000 },
+    })
+    yield* sessions.updatePart({
+      id: PartID.ascending(),
+      sessionID: chat.id,
+      messageID: history.assistant.id,
+      type: "text",
+      text: "Completed historical work. ".repeat(4000),
+    })
+    yield* user(chat.id, "Current work remains outside the block")
+    const messages = yield* sessions.messages({ sessionID: chat.id })
+    const blocks = yield* Effect.sync(() =>
+      ContextCompaction.commit({
+        sessionID: chat.id,
+        messages,
+        limits: NativeCompaction.resolve(native),
+        mode: "auto",
+        requestID: "generation-boundary",
+        ranges: [{ startId: history.user.id, endId: history.assistant.id, summary: "Completed historical work." }],
+      }),
+    )
+    expect(blocks[0]!.committedAt).toBeGreaterThan(history.assistant.time.created)
+    yield* llm.text("Response after committed compaction", { usage: { input: 100, output: 5 } })
+    const result = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      model: ref,
+      parts: [{ type: "text", text: "continue current work" }],
+    })
+    expect(
+      result.parts.some((part) => part.type === "text" && part.text === "Response after committed compaction"),
+    ).toBe(true)
+    expect(yield* llm.calls).toBe(1)
   }),
 )
 
