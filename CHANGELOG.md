@@ -27,6 +27,8 @@
 - **修复 e2e 会话时间线冒烟**（`packages/app/e2e/utils/mock-server.ts`）：mock 对未匹配路径兜底返回 `{}`，261008 Soul V1A 在 timeline 加入 `soulList.data?.find` 后，`/soul` 列表吃到 `{}` 直接 TypeError 崩掉整个 session 页（错误边界 "Something went wrong"，`#redcode-session-actions button` 等 240s 超时），CI e2e 自 10-08 起连红；soul 修掉后露出同型第二层——`/session/{id}/changes` 未 mock，兜底 `{}` 未过 `validatePage` 形状校验产生 console.error 挂冒烟断言。现补 `/soul`（空数组）与 changes（合法空页 `{latest:-1, cursor:-1, oldest:null, changes:[]}`）。验证：本地 chromium 冒烟 1 passed（47s，含双会话导航与全量翻页滚动）。
 - **event 表补 `(aggregate_id, seq)` 复合索引**（`packages/opencode/src/sync/event.sql.ts`、`migration/20261013020011_event_aggregate_seq_idx`）：热读路径 `control-plane/workspace.ts:723-724` 按 `aggregate_id` 过滤 + `seq` 排序、httpapi `handlers/sync.ts:87` 复合过滤此前全表扫描。EXPLAIN QUERY PLAN 前后对照：`SCAN event` + `USE TEMP B-TREE FOR ORDER BY` → `SEARCH event USING INDEX event_aggregate_id_seq_idx (aggregate_id=?)`，排序直接吃索引。CREATE INDEX 无损迁移。
 - **修复 GUI 时间线初始化与压缩状态展示**（`packages/app/src/pages/session/message-timeline.tsx`、`message-timeline.data.ts`）：修复初始化顺序导致的会话页错误；压缩失败原因只在分隔线显示，普通历史轮不再因压缩 marker 变化重算。无新增运行时能力。
+- **补齐 TUI 测试 fixture 的 Soul label**（`packages/opencode/test/cli/tui/lib/transcript.tsx`）：模拟配置与当前 TUI 会话上下文对齐；仅测试 fixture 变更。
+- **补齐 session usage/outline HTTP API 覆盖**（`packages/opencode/test/server/httpapi-exercise/index.ts`）：新增 `/session/usage` 默认范围响应及 `/session/{sessionID}/outline` 种子轮次场景，不新增运行时功能或测试门禁。
 
 ### [0.12.8] - 2026-10-13
 

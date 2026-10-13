@@ -787,6 +787,18 @@ const scenarios: Scenario[] = [
     .get("/session/status", "session.status")
     .seeded((ctx) => ctx.session({ title: "Status session" }))
     .json(200, object),
+  http.protected.get("/session/usage", "session.usage").json(200, (body) => {
+    object(body)
+    check(body.range === "all", "usage should default to all project history")
+    check(typeof body.sessions === "number", "usage should include the session count")
+    check(typeof body.messages === "number", "usage should include the assistant message count")
+    object(body.tokens)
+    check(typeof body.tokens.input === "number", "usage should include input tokens")
+    check(typeof body.tokens.cacheRead === "number", "usage should include cache-read tokens")
+    array(body.daily)
+    array(body.models)
+    array(body.dailyByModel)
+  }),
   http.protected
     .post("/session", "session.create")
     .mutating()
@@ -997,6 +1009,31 @@ const scenarios: Scenario[] = [
           body.changes[0].kind === "session",
         "new session should include its committed creation marker",
       )
+    }),
+  http.protected
+    .get("/session/{sessionID}/outline", "session.outline")
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const session = yield* ctx.session({ title: "Outline session" })
+        const message = yield* ctx.message(session.id, { text: "outline prompt" })
+        return { session, message }
+      }),
+    )
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/outline", { sessionID: ctx.state.session.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body, ctx) => {
+      object(body)
+      check(body.sessionID === ctx.state.session.id, "outline should identify the requested session")
+      array(body.entries)
+      check(body.entries.length === 1, "outline should include one seeded user turn")
+      const entry = body.entries[0]
+      object(entry)
+      check(entry.messageID === ctx.state.message.info.id, "outline should anchor the turn to its user message")
+      check(entry.turn === 1, "outline should number the first turn as one")
+      check(entry.prompt === "outline prompt", "outline should include the user prompt preview")
+      check(entry.response === "", "outline should leave a turn response empty before an assistant reply")
     }),
   http.protected
     .get("/session/{sessionID}/goal", "session.goal")

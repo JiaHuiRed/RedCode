@@ -49,6 +49,7 @@ const theme = {
 const syntax = SyntaxStyle.fromTheme([])
 
 const local = {
+  soul: { label: (id?: string) => id },
   // agent.color 是函数（按 agent 名给色），不是常量 —— 第一版写成字符串，渲染当场就炸了。
   // 这正是这套 fake 的性质：缺字段/形状不对不会静默，会立刻报出来。
   //
