@@ -10,6 +10,9 @@ const emptyList = new Set([
   "/question",
   "/vcs/status",
   "/vcs/diff",
+  // 261013 Red soul 列表未 mock 时会吃到下方兜底的 {}，组件里 soulList.data?.find
+  // 对对象取 find 直接 TypeError 崩掉整个 session 页（CI e2e 261008 Soul V1A 起稳定红）。
+  "/soul",
 ])
 const emptyObject = new Set(["/global/config", "/config", "/provider/auth", "/mcp", "/session/status"])
 
@@ -69,6 +72,12 @@ export async function mockRedCodeServer(page: Page, config: MockServerConfig) {
     }
 
     if (/^\/session\/[^/]+\/(children|todo|diff)$/.test(path)) return json(route, [])
+
+    // 261013 Red changes 页有严格形状校验（validatePage：latest/cursor 必须为安全整数），
+    // 兜底的 {} 会触发 "invalid session changes page" console.error 挂掉冒烟断言。
+    if (/^\/session\/[^/]+\/changes$/.test(path)) {
+      return json(route, { latest: -1, cursor: -1, oldest: null, changes: [] })
+    }
 
     if (/^\/session\/[^/]+\/context-inspect$/.test(path)) {
       return json(route, {
