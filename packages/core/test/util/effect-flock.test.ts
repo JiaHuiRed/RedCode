@@ -1,5 +1,5 @@
-import { describe, expect } from "bun:test"
-import { spawn } from "child_process"
+import { describe, expect, test } from "bun:test"
+import { spawn, type ChildProcess } from "child_process"
 import fs from "fs/promises"
 import path from "path"
 import os from "os"
@@ -65,19 +65,43 @@ function spawnWorker(msg: Msg) {
   })
 }
 
-function stopWorker(proc: ReturnType<typeof spawnWorker>) {
+function waitClose(proc: ChildProcess) {
+  proc.stdout?.resume()
+  proc.stderr?.resume()
   if (proc.exitCode !== null || proc.signalCode !== null) return Promise.resolve()
+  return new Promise<void>((resolve, reject) => {
+    const onClose = () => {
+      clearTimeout(timer)
+      resolve()
+    }
+    const timer = setTimeout(() => {
+      proc.off("close", onClose)
+      reject(new Error("Worker did not close within 5000ms"))
+    }, 5_000)
+    proc.once("close", onClose)
+  })
+}
+
+function stopWorker(proc: ReturnType<typeof spawnWorker>) {
+  // 261013 Red close 不重放：监听必须早于 kill，stopWorker 返回后不能再补挂。
+  const closed = waitClose(proc)
+  if (proc.exitCode !== null || proc.signalCode !== null) return closed
   if (process.platform !== "win32" || !proc.pid) {
     proc.kill()
-    return Promise.resolve()
+    return closed
   }
-  return new Promise<void>((resolve) => {
-    const killProc = spawn("taskkill", ["/pid", String(proc.pid), "/T", "/F"])
-    killProc.on("close", () => {
+  const killed = new Promise<void>((resolve, reject) => {
+    const killProc = spawn("taskkill", ["/pid", String(proc.pid), "/T", "/F"], {
+      timeout: 5_000,
+      stdio: "ignore",
+    })
+    killProc.once("error", reject)
+    killProc.once("close", () => {
       proc.kill()
       resolve()
     })
   })
+  return Promise.all([closed, killed]).then(() => undefined)
 }
 
 async function waitForFile(file: string, timeout = 3_000) {
@@ -110,6 +134,18 @@ const testLayer = EffectFlock.layer.pipe(Layer.provide(testGlobal), Layer.provid
 // ---------------------------------------------------------------------------
 
 describe("util.effect-flock", () => {
+  test("waitClose resolves when the worker has already closed", async () => {
+    const proc = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" })
+    await new Promise<void>((resolve) => proc.once("close", () => resolve()))
+    await Promise.race([
+      waitClose(proc),
+      sleep(300).then(() => {
+        throw new Error("close event was missed after worker termination")
+      }),
+    ])
+    expect(proc.exitCode).toBe(0)
+  })
+
   const it = testEffect(testLayer)
 
   it.live(
@@ -363,7 +399,6 @@ describe("util.effect-flock", () => {
         try {
           await waitForFile(ready, 5_000)
           await stopWorker(proc)
-          await new Promise((resolve) => proc.on("close", resolve))
 
           // Backdate lock files so they're past STALE_MS (60s)
           const lockDir = lock(dir, "eflock:crash")
