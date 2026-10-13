@@ -1,0 +1,1 @@
+CREATE INDEX `event_aggregate_id_seq_idx` ON `event` (`aggregate_id`,`seq`);
