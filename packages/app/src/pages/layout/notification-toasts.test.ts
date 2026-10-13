@@ -1,10 +1,9 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
+import { createRoot, createSignal } from "solid-js"
 
 const toasts: Array<{ id: number; options: any }> = []
 const dismissed: number[] = []
 const disposers = new Set<() => void>()
-let activeCleanups: Array<() => void> | undefined
-let activeEffects: Array<() => void> | undefined
 let nextToastID = 0
 
 mock.module("@redcode-ai/ui/toast", () => ({
@@ -16,14 +15,6 @@ mock.module("@redcode-ai/ui/toast", () => ({
   toaster: {
     dismiss: (id: number) => dismissed.push(id),
   },
-}))
-mock.module("solid-js", () => ({
-  createEffect: (effect: () => void) => {
-    activeEffects?.push(effect)
-    effect()
-  },
-  onCleanup: (cleanup: () => void) => activeCleanups?.push(cleanup),
-  onMount: (effect: () => void) => effect(),
 }))
 
 const { createSDKNotificationToasts } = await import("./notification-toasts")
@@ -50,74 +41,65 @@ const asked = (sessionID: string, type = "question.asked", name = "/project", id
 
 const setup = (options: SetupOptions = {}) => {
   let dispatch: ((event: AskedEvent) => unknown) | undefined
-  let currentSession = options.currentSession ?? "active"
-  let directory = options.directory ?? "/project"
-  const cleanups: Array<() => void> = []
-  const effects: Array<() => void> = []
+  const [currentSession, setCurrentSession] = createSignal(options.currentSession ?? "active")
+  const [directory, setDirectory] = createSignal(options.directory ?? "/project")
   const navigations: string[] = []
   const notify = options.notify ?? (async () => false)
   let notifyCalls = 0
 
-  activeCleanups = cleanups
-  activeEffects = effects
-  createSDKNotificationToasts({
-    globalSDK: {
-      event: {
-        listen: (listener: (event: AskedEvent) => unknown) => {
-          dispatch = listener
-          return () => {
-            dispatch = undefined
-          }
+  // 261013 Red 真 solid-js 驱动：mock solid-js 是进程级行为替换，会泄漏到同进程后加载的
+  // 测试文件（CI 全量单测挂的根因），改用 createRoot + signal 由响应式系统原生重放 effect。
+  const dispose = createRoot((rootDispose) => {
+    createSDKNotificationToasts({
+      globalSDK: {
+        event: {
+          listen: (listener: (event: AskedEvent) => unknown) => {
+            dispatch = listener
+            return () => {
+              dispatch = undefined
+            }
+          },
         },
       },
-    },
-    language: { t: (key: string) => key, intl: () => "en" },
-    permission: { autoResponds: () => options.autoResponds ?? false },
-    settings: {
-      sounds: { permissionsEnabled: () => false, permissions: () => undefined },
-      notifications: {
-        permissions: () => options.permissionsEnabled ?? true,
-        agent: () => options.agentEnabled ?? true,
+      language: { t: (key: string) => key, intl: () => "en" },
+      permission: { autoResponds: () => options.autoResponds ?? false },
+      settings: {
+        sounds: { permissionsEnabled: () => false, permissions: () => undefined },
+        notifications: {
+          permissions: () => options.permissionsEnabled ?? true,
+          agent: () => options.agentEnabled ?? true,
+        },
       },
-    },
-    platform: {
-      notify: (title: string, description?: string, href?: string) => {
-        notifyCalls++
-        return notify(title, description, href)
+      platform: {
+        notify: (title: string, description?: string, href?: string) => {
+          notifyCalls++
+          return notify(title, description, href)
+        },
       },
-    },
-    params: {
-      get id() {
-        return currentSession
+      params: {
+        get id() {
+          return currentSession()
+        },
       },
-    },
-    currentDir: () => directory,
-    globalSync: {
-      child: () => [{ session: options.sessions ?? [{ id: "target", title: "Target" }] }],
-    },
-    navigate: (href: string) => navigations.push(href),
-    setBusy: () => {},
-  } as never)
-  activeCleanups = undefined
-  activeEffects = undefined
-
-  const dispose = () => {
-    disposers.delete(dispose)
-    for (const cleanup of cleanups) cleanup()
-  }
+      currentDir: () => directory(),
+      globalSync: {
+        child: () => [{ session: options.sessions ?? [{ id: "target", title: "Target" }] }],
+      },
+      navigate: (href: string) => navigations.push(href),
+      setBusy: () => {},
+    } as never)
+    return rootDispose
+  })
   disposers.add(dispose)
 
   return {
     emit: (event: AskedEvent) => dispatch?.(event),
-    dispose,
-    setCurrentSession: (sessionID: string) => {
-      currentSession = sessionID
-      for (const effect of effects) effect()
+    dispose: () => {
+      disposers.delete(dispose)
+      dispose()
     },
-    setDirectory: (value: string) => {
-      directory = value
-      for (const effect of effects) effect()
-    },
+    setCurrentSession,
+    setDirectory,
     navigations,
     notifyCalls: () => notifyCalls,
   }

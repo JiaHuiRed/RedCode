@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, mock, test } from "bun:test"
+import * as solidJsRouter from "@solidjs/router"
 import { createRoot, createSignal } from "solid-js"
 import { messageIdFromHash } from "./message-id-from-hash"
 
@@ -31,7 +32,10 @@ if (typeof globalThis.requestAnimationFrame !== "function") {
 let useSessionHashScroll!: typeof import("./use-session-hash-scroll").useSessionHashScroll
 
 beforeAll(async () => {
+  // 261013 Red 残缺 mock 会被同进程后加载的测试文件消费（261003、261012 两犯）；
+  // factory 的 original 实参是 undefined，必须静态 import 真模块展开。
   mock.module("@solidjs/router", () => ({
+    ...solidJsRouter,
     useLocation: () => ({ pathname: "/", search: "", hash: "" }),
     useNavigate: () => () => undefined,
   }))

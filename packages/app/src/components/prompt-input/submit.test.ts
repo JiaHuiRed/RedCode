@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
+import * as solidJsRouter from "@solidjs/router"
 import type { Prompt } from "@/context/prompt"
 
 let createPromptSubmit: typeof import("./submit").createPromptSubmit
@@ -85,11 +86,12 @@ const clientFor = (directory: string) => {
 beforeAll(async () => {
   const rootClient = clientFor("/repo/main")
 
+  // 261013 Red 不再手工枚举导出面（261003 漏 useLocation、261012 复发）；
+  // factory 的 original 实参是 undefined，必须静态 import 真模块展开。
   mock.module("@solidjs/router", () => ({
+    ...solidJsRouter,
     useNavigate: () => () => undefined,
     useParams: () => params,
-    // 261003 Red 必须含 useLocation：同进程里本文件先于其他测试文件 mock "@solidjs/router"，
-    // router 首次链接后其他文件的再注册不生效，后加载的 hook 会直接消费这一版 mock。
     useLocation: () => ({ pathname: "/", search: "", hash: "" }),
   }))
 
