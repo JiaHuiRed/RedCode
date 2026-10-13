@@ -100,3 +100,6 @@ packages/storybook/debug-storybook.log
 packages/desktop/日间壁纸.png
 packages/desktop/夜间壁纸.png
 packages/desktop/知微.png
+
+# 261012 Red WorkBuddy AI 助手的工作目录（审计临时脚本 / 会话记忆 / 产出，非源码）
+.workbuddy-ai/
