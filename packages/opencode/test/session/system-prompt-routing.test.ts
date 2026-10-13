@@ -25,9 +25,11 @@ describe("system prompt routing", () => {
     expect(provider(model("gpt-5.6-luna", "openai"))).toEqual([PROMPT_DEFAULT, PROMPT_GPT])
   })
 
-  test("GPT Delta 把 soul 声线定义为可见交付", () => {
+  // 261013 Red 当前 GPT Delta 继承公共提示词与 Soul，不再单独重复声线规则。
+  test("GPT Delta 继承公共交付契约与 soul", () => {
     expect(PROMPT_DEFAULT).toContain("First sentence responds to the user's actual intent.")
-    expect(PROMPT_GPT).toContain("The soul is part of the visible deliverable, not decoration.")
+    expect(PROMPT_DEFAULT).toContain("语气、称呼、详略由 soul（人格文件）决定")
+    expect(PROMPT_GPT).toContain("Use the common RedCode prompt, repository instructions, tool contracts, and soul.")
     expect(PROMPT_GPT).not.toContain("## Final answer")
   })
 

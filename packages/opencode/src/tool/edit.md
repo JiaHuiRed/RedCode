@@ -47,7 +47,7 @@ Rules:
 ### Mode 2: Classic (legacy) — use `filePath` + `oldString` + `newString`
 
 - You must use your `Read` tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file.
-- When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: line number + colon + space (e.g., `1: `). Everything after that space is the actual file content to match. Never include any part of the line number prefix in the oldString or newString.
+- When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix (format `<line>: <content>` — defined in the Read tool description). Everything after that space is the actual file content to match. Never include any part of the line number prefix in the oldString or newString.
 - ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
 - Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.
 - The edit will FAIL if `oldString` is not found in the file with an error "oldString not found in content". When this happens, the error includes a **fuzzy match suggestion** — the closest matching block found in the file, its similarity percentage, and a character-level diff. Use this feedback to re-read the file and adjust your oldString to match the actual content.
