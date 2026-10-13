@@ -5,6 +5,7 @@ import PROMPT_DEEPSEEK from "../../src/session/prompt/deepseek.md" with { type: 
 import PROMPT_GPT from "../../src/session/prompt/gpt.md" with { type: "text" }
 import PROMPT_STEP from "../../src/session/prompt/step.md" with { type: "text" }
 import PROMPT_HY from "../../src/session/prompt/hy.md" with { type: "text" }
+import PROMPT_QWEN from "../../src/session/prompt/qwen.md" with { type: "text" }
 import PROMPT_DEFAULT from "../../src/session/prompt/default.md" with { type: "text" }
 
 // 260827 cc 这一组钉的是同一类 bug：**模型换个名字接入，就被静默换掉一套待遇**。
@@ -41,6 +42,15 @@ describe("system prompt routing", () => {
     // 没有数字紧跟、或 hy 不在边界上的，一律落兜底
     for (const id of ["hyper-model", "why3-turbo", "physics-2"])
       expect(provider(model(id, "opencode-go"))).toEqual([PROMPT_DEFAULT])
+  })
+
+  // 261013 Red minimax.md / ollama.md 已删（不再用这两家）。删一条分支属于同一类改动——
+  // 「模型换个名字接入就被静默换掉一套待遇」的反向版本，所以这里把新落点钉住：
+  // minimax 与 ollama 上的非 qwen 模型落兜底，本地 qwen 仍走 qwen.md（该分支被保留）。
+  test("已删专属档的 minimax / ollama 落兜底，本地 qwen 不受影响", () => {
+    expect(provider(model("minimax-m2.5", "minimax"))).toEqual([PROMPT_DEFAULT])
+    expect(provider(model("llama3.2", "ollama"))).toEqual([PROMPT_DEFAULT])
+    expect(provider(model("qwen3.8", "ollama"))).toEqual([PROMPT_QWEN])
   })
 
   test("deepseek / Step 路由使用公共基线与专属 Delta", () => {

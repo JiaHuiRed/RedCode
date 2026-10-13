@@ -9,13 +9,11 @@ import PROMPT_GEMINI from "./prompt/gemini.md" with { type: "text" }
 import PROMPT_GPT from "./prompt/gpt.md" with { type: "text" }
 import PROMPT_KIMI from "./prompt/kimi.md" with { type: "text" }
 import PROMPT_MIMO from "./prompt/mimo.md" with { type: "text" }
-import PROMPT_MINIMAX from "./prompt/minimax.md" with { type: "text" }
 import PROMPT_TRINITY from "./prompt/trinity.md" with { type: "text" }
 import PROMPT_GLM from "./prompt/glm.md" with { type: "text" }
 import PROMPT_HY from "./prompt/hy.md" with { type: "text" }
 import PROMPT_GROK from "./prompt/grok.md" with { type: "text" }
 import PROMPT_STEP from "./prompt/step.md" with { type: "text" }
-import PROMPT_OLLAMA from "./prompt/ollama.md" with { type: "text" }
 import PROMPT_QWEN from "./prompt/qwen.md" with { type: "text" }
 import PROMPT_SENSENOVA from "./prompt/sensenova.md" with { type: "text" }
 import type { Provider } from "@/provider/provider"
@@ -71,15 +69,12 @@ export function provider(model: Provider.Model) {
   if (model.api.id.toLowerCase().includes("deepseek")) return withDefaultPrompt(PROMPT_DEEPSEEK)
   // 260922 Red MiMo v2.6 继承公共基线，mimo.md 只保留模型专属执行 Delta。
   if (model.api.id.toLowerCase().includes("mimo")) return withDefaultPrompt(PROMPT_MIMO)
-  // 260610 Red minimax(m3 及以后) 专属提示词 — 与 mimo(小米) 非同厂，独立成文件便于后续单独调优
-  if (model.api.id.toLowerCase().includes("minimax")) return [PROMPT_MINIMAX]
-  // 260818 Red 本地 Qwen3.8 27B（ollama）专属提示词 —— 必须放在 ollama 通用路由之前，
-  // 否则 providerID 命中 ollama 先短路。针对 Q3 量化能力上限 / ~15 tok/s / 32K 上下文适配。
+  // 261013 Red minimax.md 已删——哥哥确认不再用该模型。原先独立成文件是为了后续单独调优，
+  // 现在直接落兜底 default.md。不要再为它造专属档，除非有新的实测证据。
+  // 260818 Red 本地 Qwen3.8 27B（ollama）专属提示词。原先必须排在 ollama 通用路由之前，
+  // 261013 通用 ollama.md 已删（不再跑本地模型），这条现在是唯一的 ollama-provider 路由。
   if (model.providerID.toLowerCase().includes("ollama") && model.api.id.toLowerCase().includes("qwen"))
     return [PROMPT_QWEN]
-  // 260704 Red ollama 本地模型 — 精简提示词，适配有限上下文窗口
-  // providerID 含 ollama 或 model.id 含 ":latest"/":Xb" 等 ollama 命名特征
-  if (model.providerID.toLowerCase().includes("ollama")) return [PROMPT_OLLAMA]
   // 260625 Red GLM(智谱) + Qwen(通义) — 准一线，复用精炼档
   if (model.api.id.toLowerCase().includes("glm") || model.api.id.toLowerCase().includes("qwen"))
     return withDefaultPrompt(PROMPT_GLM)

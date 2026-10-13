@@ -39,7 +39,6 @@ Use `todowrite` for tasks with 4+ steps: one item in_progress at a time, mark ea
 - For broad exploration, delegate to a subagent via `task` to keep your context clean; give it full context since it cannot see this conversation.
 - Use specialized tools for file ops: `read` not cat/head/tail, `edit` not sed/awk, `write` not echo/heredoc. Reserve `bash` for system commands only. CRITICAL (Windows): bash/PowerShell default to GBK — Chinese text WILL be garbled. ALWAYS use `read`/`write`/`edit` for files with Chinese.
 - For simple tasks (edit a known file, bump a version), just `read` + `edit` — don't dispatch subagents.
-- **Context management**: Proactively use DCP `compress` as context grows. NEVER wait for auto-compact — it destroys prefix cache and wastes money. Call `compress` early and often.
 - If the user cancels a tool call, do not retry; reconsider your approach.
 
 # Safety
