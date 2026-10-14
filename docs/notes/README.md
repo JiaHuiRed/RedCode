@@ -17,7 +17,7 @@
    - `proposed/` —— 已想清楚未动手的方案。
    - `rejected/` —— 明确否掉的方案,**保留**——防止后来者(尤其是不同会话的 agent)重新提起已否决的路线。
    - `archived/` —— 被后续决策替代的历史。**冻结:永不编辑、永不引用为现行权威**。
-4. 按主题再分子目录:`architecture/` `feature/` `bug-fix/` `process/` `simplification/`。
+4. 按主题再分子目录(按需增删):`architecture/` `bug-fix/` `feature/` `process/` `refactor/` `simplification/` `testing/`。
 
 ## 模板
 

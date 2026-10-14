@@ -1,6 +1,6 @@
 # 并行系统收口路线图
 
-> 2026-08-19 定向：RedCode 从「快速加功能」转向「做减法、打磨已有代码」。本文件是这项工作的权威底本（模式同 `dsh-adoption-plan.md`、`tauri-migration-plan.md`），每项落地后更新状态。调研数据出自 0697ae5b 会话。
+> 2026-08-19 定向：RedCode 从「快速加功能」转向「做减法、打磨已有代码」。本文件是这项工作的权威底本（模式同 `dsh-adoption-plan.md`、`tauri-migration-plan.md`——后者已从仓库移除），每项落地后更新状态。调研数据出自 0697ae5b 会话。
 
 ## 为什么盯「并行系统」而不是「死代码」
 
@@ -90,14 +90,14 @@ tool-error-card / line-comment / basic-tool 各 0
 | 涉及文件                       | `session/processor.ts`、`session/prompt.ts`、`session/prompt/shell.ts`、`session/compaction.ts`、`cli/cmd/tui/plugin/internal.ts`、`effect/runtime-flags.ts` |
 | v2 会话实现                    | `src/v2/session.ts` 372 行                                                                                                                                   |
 | 投影层                         | `session/projectors.ts` + `projectors-next.ts` 合计 403 行                                                                                                   |
-| 规格文档                       | `specs/v2/`（api.ts、message-shape.md、notifications.md）+ `src/v2/provider-parity-checklist.md`                                                             |
+| 规格文档                       | `specs/v2/`（api.ts、message-shape.md、notifications.md）+ `src/v2/provider-parity-checklist.md`（已移除）                                                   |
 | 默认状态                       | **关**（`REDCODE_EXPERIMENTAL_EVENT_SYSTEM`）                                                                                                                |
 
 **代价不在行数，在那 23 个分支落在 `processor.ts` 与 `prompt.ts`** —— 全仓改动最频繁的两个文件。每次改这两处都要判断「双写那边跟不跟」，而绕过是零成本的，于是两边会悄悄不一致。
 
 **两条路**：
 
-- **排期打开** —— 需先跑通 `provider-parity-checklist.md`，把默认值翻正。
+- **排期打开** —— 需先跑通 `provider-parity-checklist.md`（已移除），把默认值翻正。
 - **摘掉双写退回单写** —— 删 23 个分支，`src/v2/` 与 `projectors-next.ts` 保留或移入 `specs/`，`specs/v2/` 全部保留备将来。
 
 **判决（2026-08-19，哥哥拍板「摘」）：摘掉双写，退回单写。** 执行记录：
@@ -194,7 +194,7 @@ prompt.ts publish Agent/ModelSwitched
 
 ## 同时进行的其他战线
 
-- **Tauri 迁移**（`tauri-migration-plan.md`，#1–#5 完成，下一步 #6）—— 那是**加法**。若确定转向打磨，建议先停，避免边清理边开新摊子。
+- **Tauri 迁移**（`tauri-migration-plan.md`，已从仓库移除；#1–#5 完成，下一步 #6）—— 那是**加法**。若确定转向打磨，建议先停，避免边清理边开新摊子。
 - **DSH 采纳**（`dsh-adoption-plan.md` 第二/三批）—— 逐项吸收，与本文件不冲突。
 
 ## 不属于本文件的减法

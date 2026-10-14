@@ -86,7 +86,7 @@
 
 # 项目指令
 
-- Commit scope（types 与前缀规则见全局 AGENTS.md）：`core` `redcode` `tui` `app` `desktop` `sdk` `plugin`
+- Commit scope（types 与前缀规则见全局 AGENTS.md；非穷举，按改动所在的包或领域取）：`core` `redcode` `tui` `app` `desktop` `ui` `sdk` `plugin` `seed` `notes` `agent` `skill` `mcp` `config` `prompt` `session` `tool` `provider` `script` `ci` `changelog` `version`
 - **重新生成 SDK 是两条命令，只跑第一条会漏掉 `packages/sdk/openapi.json`**：
 
   ```bash

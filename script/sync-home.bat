@@ -46,7 +46,7 @@ if errorlevel 1 exit /b 1
 if exist "seed\tool\sqlite.ts" copy /y "seed\tool\sqlite.ts" "%USERPROFILE%\.redcode\tool\sqlite.ts" >nul
 if errorlevel 1 exit /b 1
 
-rem 260828 no agent seeding on purpose: the three built-in subagents (explore/advise/execute) are
+rem 260828 no agent seeding on purpose: the two built-in subagents (explore/execute) are
 rem defined in packages/opencode/src/agent/definition/*.md and inlined at BUILD time. Seeding a
 rem byte-identical copy into ~/.redcode/agent/ would make ConfigAgent.load append the same flat
 rem whitelist AFTER the user's global permission - findLast then voids both that and the engine's

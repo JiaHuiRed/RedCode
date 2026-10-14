@@ -103,7 +103,7 @@ scout 的招牌能力是 `repo_clone` / `repo_overview`（把依赖仓 clone 进
 
 本文件上面写了姿态「结构里不带 model / prompt / timeoutMs 字段」、「唯一入口是内建 2 个」，第 4 步却写「**五个**角色写成 md」——五个必然含 redmind 与 plan。**定死：只有三个工种写 md，姿态保持内建。** 理由是 `Info.prompt` 的语义（见修正二）——姿态一旦有 md 正文，就会顶掉模型家族提示词。
 
-`PROMPT_PLAN` 也不能折进 `seed/agent/plan.md`：它走的是合成 user 消息 part（`session/reminders.ts:26-35`），与 `Info.prompt` 是两条通道。
+`PROMPT_PLAN` 也不能折进 `seed/agent/plan.md`（`seed/agent/` 目录已撤）：它走的是合成 user 消息 part（`session/reminders.ts:26-35`），与 `Info.prompt` 是两条通道。
 
 ### 修正二：prompt 搬进 md，不能做成「运行时读盘」
 

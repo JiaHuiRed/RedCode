@@ -40,10 +40,10 @@ See [MANUAL.md](MANUAL.md) for configuration, MCP servers and skills, and [AGENT
 Conventional Commits: `type(scope): summary`
 
 Types: `feat` `fix` `docs` `chore` `refactor` `test`
-Scopes: `core` `redcode` `tui` `app` `desktop` `sdk` `plugin`
+Scopes (non-exhaustive, by package or area of change): `core` `redcode` `tui` `app` `desktop` `ui` `sdk` `plugin` `seed` `notes` `agent` `skill` `mcp` `config` `prompt` `session` `tool` `provider` `script` `ci` `changelog` `version`
 
 Commits made by an AI agent use the active Soul's `commit_prefix` in brackets, falling back to `display_name`, `name`, then `AI`. The client does not determine the author; human commits have no prefix.
 
 ## CI
 
-Three workflows, all Windows-only: `test` (unit + e2e), `typecheck`, and `audit` (daily dependency vulnerability scan). Upstream opencode's distribution channels, docs site and community bots have been removed.
+Four workflows, all Windows-only: `test` (unit), `e2e` (Playwright), `typecheck`, and `audit` (daily dependency vulnerability scan). Upstream opencode's distribution channels, docs site and community bots have been removed.

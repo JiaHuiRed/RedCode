@@ -2,7 +2,7 @@
 
 > 2026-08-14 定向:主力模型即 DeepSeek,官方 harness([deepseek-harness](https://github.com/deepseek-ai/deepseek-harness),本地镜像 `E:\AI\deepseek-harness`)与 V4 系列协同设计——模型的 agent 后训练对着它调,它的机制反过来兜模型短板(如长程早停)。RedCode 不迁移、继续独立演进,但系统性吸收其设计,保留自身特色。
 >
-> 本文件是采纳工作的权威底本(模式同 `tauri-migration-plan.md`),每项落地后更新状态;来源审计详情见 810f2dad 会话(2026-08-14 两轮)。
+> 本文件是采纳工作的权威底本(模式同 `tauri-migration-plan.md`——该文件已从仓库移除),每项落地后更新状态;来源审计详情见 810f2dad 会话(2026-08-14 两轮)。
 
 ## 保留的特色(明确不搬)
 

@@ -181,6 +181,8 @@ $EDITOR ~/.redcode/souls/yuqi.md
 
 ### 3.3 本地模型（Ollama）
 
+> [2.1](#21-添加-ai-模型) 的 Ollama 示例用的是另一个模型，只为给出最小可抄的形状；这里换成 coder 模型，顺带演示 `temperature` / `tool_call` / `limit` 的完整写法。
+
 ```bash
 # 安装 Ollama
 # 下载模型
@@ -324,7 +326,7 @@ description: 擅长简洁分析与清晰解释
 
 ### 6.1 概述
 
-RedCode 内置自动化记忆系统（skill `memory-automation`），在启动/收工时自动运作，分两层：
+RedCode 内置自动化记忆系统（skill `memory`），在启动/收工时自动运作，分两层：
 
 - **项目级** `.redcode/MEMORY.md`——当前项目专有的进度、决策与踩坑
 - **全局级** `~/.redcode/MEMORY.md`——跨项目通用的历史教训
@@ -355,7 +357,7 @@ RedCode 内置自动化记忆系统（skill `memory-automation`），在启动/�
 
 ### 6.4 关闭记忆
 
-两条 MEMORY.md 由引擎**固定注入**（`session/instruction.ts` 的 systemPaths 硬编码路径），没有官方开关；移除 `instructions` 里的 `memory-automation` 只关闭该 skill 的自动化提示，记忆文件仍会注入。确实不想要的话：清空两份 MEMORY.md 内容，或改 `instruction.ts` 重新编译（不推荐）。
+两条 MEMORY.md 由引擎**固定注入**（`session/instruction.ts` 的 systemPaths 硬编码路径），没有官方开关。确实不想要的话：清空两份 MEMORY.md 内容，或改 `instruction.ts` 重新编译（不推荐）。
 
 ---
 
@@ -491,8 +493,7 @@ token、缓存读写与命中率、花费。
 | `/goal <目标>`     | 钉住会话目标，防止 AI 跑题（见 [8.1](#81-钉住的目标钉了之后在哪看)）                                |
 | `/goal clear`      | 清掉当前目标                                                                                        |
 | `/goal done`       | 标为完成，自动归档教训                                                                              |
-| `/tui-persona`     | 加载 TUI 灵魂人格                                                                                   |
-| `/gui-persona`     | 加载 GUI 灵魂人格                                                                                   |
+| `/soul [ID]`       | 打开 Soul 选择器，或按 ID 直接选择（TUI）；只影响后续新会话，见 [5.2](#52-选择-soul)                |
 | `/recall <关键词>` | 按关键词从记忆库（含 supermemory.db）语义召回历史教训                                               |
 | `/subtask <任务>`  | 派后台子任务，上下文隔离不污染当前会话                                                              |
 | `/commit`          | 按 conventional commit 格式提交代码                                                                 |
@@ -503,9 +504,10 @@ token、缓存读写与命中率、花费。
 | `/rmslop`          | 清理本分支引入的 AI 代码痕迹（多余注释/防御性代码等）                                               |
 | `/spellcheck`      | 检查改动的 Markdown 文件拼写和语法                                                                  |
 | `/ai-deps`         | 排查 AI SDK 依赖可升级的 minor/patch 版本                                                           |
+| `/lan`             | 打开或查看手机（局域网）远程访问入口                                                                |
 | `/busy-enter`      | 切换繁忙时消息送达：插话 ↔ 排队（TUI/GUI 均内置，立即生效，见 [7.3](#73-繁忙时消息送达busy_enter)） |
 
-命令文件位于 `seed/command/` 和 `~/.redcode/command/`，纯文本，可以自己添加或修改。
+命令文件位于 `seed/command/` 和 `~/.redcode/command/`，纯文本，可以自己添加或修改；`/soul` 与 `/busy-enter` 是引擎内置命令，不在命令文件里。
 
 ### 8.1 钉住的目标：钉了之后在哪看
 
@@ -534,21 +536,23 @@ Skill 是扩展 AI 行为的机制——本质上是注入给 AI 的指令文件
 
 ### 9.1 内置 Skill
 
-| Skill                 | 作用                                                                 | 触发词                     |
-| --------------------- | -------------------------------------------------------------------- | -------------------------- |
-| **memory-automation** | 自动化记忆系统（两层 MEMORY.md 注入 + 索引化双写 + 核对机制）        | "收工""保存记忆"           |
-| **ce-code-review**    | 结构化多维度代码审查                                                 | "帮我看看代码""review一下" |
-| **diagnose**          | 形式化 bug 诊断循环                                                  | "查bug""排查一下""debug"   |
-| **defensive-agent**   | 防止 AI 假阳性报告、无意义修改                                       | "小心点""别乱改"           |
-| **goal-automation**   | 检测大任务并建议钉住目标                                             | 自动检测                   |
-| **vision-autoagent**  | 模型不支持图片时，派多模态子代理读图（260807 起取代本地 Vision MCP） | 自动触发                   |
-| **frontend-design**   | 生成 macOS 风格的高质量前端界面，避免 AI 通用观感                    | "做个页面""写个组件"       |
-| **simplify**          | 检测过度工程，建议精简                                               | "太复杂了""精简一下"       |
-| **red-scribe**        | 按 Red 的写作风格输出                                                | "按我的风格写""red风格"    |
-| **yuqi-slop**         | 中文去 AI 味                                                         | "去AI味""褪AI味"           |
-| **stop-slop**         | 英文去 AI 味                                                         | "英文去AI味"               |
+| Skill                        | 作用                                                                     | 触发词                     |
+| ---------------------------- | ------------------------------------------------------------------------ | -------------------------- |
+| **memory**                   | 记忆的写与剪：双层 MEMORY.md 注入 + 索引化双写 + 剪枝阈值                | "整理记忆""记忆太长了"     |
+| **ce-code-review**           | 结构化多维度代码审查                                                     | "帮我看看代码""review一下" |
+| **diagnose**                 | 形式化 bug 诊断循环                                                      | "查bug""排查一下""debug"   |
+| **defensive-agent**          | 防止 AI 假阳性报告、无意义修改                                           | "小心点""别乱改"           |
+| **goal-automation**          | 检测大任务并建议钉住目标                                                 | 自动检测                   |
+| **vision-autoagent**         | 模型不支持图片时，派多模态子代理读图（260807 起取代本地 Vision MCP）     | 自动触发                   |
+| **frontend-design**          | 生成 macOS 风格的高质量前端界面，避免 AI 通用观感                        | "做个页面""写个组件"       |
+| **simplify**                 | 检测过度工程，建议精简                                                   | "太复杂了""精简一下"       |
+| **red-scribe**               | 按 Red 的写作风格输出                                                    | "按我的风格写""red风格"    |
+| **yuqi-slop**                | 中文去 AI 味                                                             | "去AI味""褪AI味"           |
+| **stop-slop**                | 英文去 AI 味                                                             | "英文去AI味"               |
+| **effect**                   | 在本仓编写与调试 Effect v4 代码（service / layer / Schema / 类型化错误） | 写或调 Effect 代码时       |
+| **harmonyos-android-compat** | Android 应用移植/验证到华为鸿蒙（HarmonyOS 6+、卓易通）                  | 鸿蒙移植与兼容验证时       |
 
-以上 11 个随仓库分发（`seed/skill/`），克隆即有，首次启动会播种到 `~/.redcode/skill/`。
+以上 13 个随仓库分发（`seed/skill/`），克隆即有，首次启动会播种到 `~/.redcode/skill/`。
 
 下面这些只存在于维护者本机的 `~/.redcode/skill/`，**不在仓库里**，克隆的人不会有——举例说明个人库可以怎么扩展（**不是全量清单**，个人库随维护者习惯持续增删）：
 
@@ -598,7 +602,7 @@ description: 我的编码规范。用户说"按规范来""检查规范"时触发
 ```
 仓库（公开）                   用户本地（私有）
 seed/                          ~/.redcode/
-├── skill/           ← 种子     ├── souls/{T,G}soul.md ← 你的人格（首启由内嵌模板播种）
+├── skill/           ← 种子     ├── souls/*.md         ← 你的人格（karina / yuqi，首启由内嵌模板播种）
 ├── command/         ← 种子     ├── MEMORY.md       ← 你的记忆
 ├── agents/          ← 种子     ├── memory/         ← 日志归档（只读）
 ├── scripts/         ← 种子     ├── skill/ command/ agent/

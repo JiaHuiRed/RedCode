@@ -2,7 +2,7 @@
 
 状态：审计后提案，未开始实现。
 
-外部审计意见已合并：`E:\dwonload\RedCode_Computer_Use_Proposal_Review.md`。
+外部审计意见已合并（原始 review 为维护者本机的外部文件，未随仓库分发）。
 
 本文用于审计 RedCode 是否适合接入 computer use，以及确定最小、可回放、可撤销边界清晰的实现路径。目标不是把鼠标点击能力直接塞进 agent loop，而是复用现有工具、权限、会话和附件链路。
 

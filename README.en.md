@@ -176,10 +176,16 @@ Listed in load order — **later entries override earlier ones**:
 
 Full guides live in **[MANUAL.md](MANUAL.md)** (written in Chinese), covering:
 
-1. Quick start · 2. First-time setup (model / name / AI persona) · 3. Model configuration (adapters / switching / local Ollama)
-2. MCP servers (enabling preconfigured ones) · 5. AI persona system · 6. Memory system (two layers: indexed `MEMORY.md` injection + `supermemory.db` full-text store)
-3. Configuration reference (layers / permission gating / custom MCP) · 8. Built-in commands · 9. Skill system
-4. Privacy and multi-machine sync — including the **machine-local override layer** that solves the "same config, two machines, endless back-and-forth" loop
+1. Quick start
+2. First-time setup (model / name / AI persona)
+3. Model configuration (adapters / switching / local Ollama)
+4. MCP servers (enabling preconfigured ones)
+5. AI persona system
+6. Memory system (two layers: indexed `MEMORY.md` injection + `supermemory.db` full-text store)
+7. Configuration reference (layers / permission gating / custom MCP)
+8. Built-in commands
+9. Skill system
+10. Privacy and multi-machine sync — including the **machine-local override layer** that solves the "same config, two machines, endless back-and-forth" loop
 
 ---
 

@@ -48,10 +48,10 @@ Conventional Commits：`type(scope): summary`
 | `refactor` | 重构          |
 | `test`     | 测试相关      |
 
-scope 常用：`core` `redcode` `tui` `app` `desktop` `sdk` `plugin`
+scope 常用（非穷举，按改动所在的包或领域取）：`core` `redcode` `tui` `app` `desktop` `ui` `sdk` `plugin` `seed` `notes` `agent` `skill` `mcp` `config` `prompt` `session` `tool` `provider` `script` `ci` `changelog` `version`
 
 AI 代理执行的 commit 在常规格式前加 active Soul 的 `[commit_prefix] `，依次回退到 `display_name`、`name`、`AI`，不由客户端决定署名；人类自己的 commit 不加。
 
 ## CI
 
-只跑三个 workflow，全部只在 Windows 上：`test`（unit + e2e）、`typecheck`、`audit`（每日依赖漏洞扫描）。上游 opencode 那套发行渠道、文档站和社区机器人已全部移除。
+只跑四个 workflow，全部只在 Windows 上：`test`（unit）、`e2e`（Playwright）、`typecheck`、`audit`（每日依赖漏洞扫描）。上游 opencode 那套发行渠道、文档站和社区机器人已全部移除。
