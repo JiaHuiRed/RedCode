@@ -1,5 +1,5 @@
 import { afterEach, describe, expect } from "bun:test"
-import { Effect, Layer } from "effect"
+import { Effect, Exit, Layer } from "effect"
 import { Agent } from "@/agent/agent"
 import { BackgroundJob } from "@/background/job"
 import { Bus } from "@/bus"
@@ -32,6 +32,78 @@ const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
 const it = testEffect(layer({ experimentalBackgroundSubagents: true }))
 
 describe("tool.task_status", () => {
+  for (const message of ["", "   ", "x".repeat(16_385)]) {
+    it.instance(`rejects invalid steer text (${message.length} characters)`, () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const parent = yield* sessions.create({})
+        const child = yield* sessions.create({ parentID: parent.id })
+        const def = yield* (yield* TaskStatusTool).init()
+        const exit = yield* def.execute(
+          { task_id: child.id, message },
+          {
+            sessionID: parent.id,
+            messageID: MessageID.ascending(),
+            agent: "build",
+            abort: new AbortController().signal,
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        ).pipe(Effect.exit)
+        expect(Exit.isFailure(exit)).toBe(true)
+      }),
+    )
+  }
+
+  it.instance("rejects steering an unrelated session", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const parent = yield* sessions.create({})
+      const unrelated = yield* sessions.create({})
+      const jobs = yield* BackgroundJob.Service
+      yield* jobs.start({ id: unrelated.id, type: "task", run: Effect.never })
+      const def = yield* (yield* TaskStatusTool).init()
+      const exit = yield* def.execute(
+        { task_id: unrelated.id, message: "new guidance" },
+        {
+          sessionID: parent.id,
+          messageID: MessageID.ascending(),
+          agent: "build",
+          abort: new AbortController().signal,
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      ).pipe(Effect.exit)
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect((yield* jobs.get(unrelated.id))?.status).toBe("running")
+      yield* jobs.cancel(unrelated.id)
+    }),
+  )
+
+  it.instance("rejects steering an idle child instead of starting a new task", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const parent = yield* sessions.create({})
+      const child = yield* sessions.create({ parentID: parent.id })
+      const def = yield* (yield* TaskStatusTool).init()
+      const exit = yield* def.execute(
+        { task_id: child.id, message: "do not restart" },
+        {
+          sessionID: parent.id,
+          messageID: MessageID.ascending(),
+          agent: "build",
+          abort: new AbortController().signal,
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      ).pipe(Effect.exit)
+      expect(Exit.isFailure(exit)).toBe(true)
+    }),
+  )
+
   it.instance("returns completed background job output", () =>
     Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service

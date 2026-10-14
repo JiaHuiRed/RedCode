@@ -3,11 +3,12 @@ import DESCRIPTION from "./task_status.md" with { type: "text" }
 import { BackgroundJob } from "@/background/job"
 import { Session } from "@/session/session"
 import { MessageV2 } from "@/session/message-v2"
-import { SessionID } from "@/session/schema"
+import { MessageID, SessionID } from "@/session/schema"
 import { SessionStatus } from "@/session/status"
 import { PositiveInt } from "@redcode-ai/core/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { Effect, Option, Schema } from "effect"
+import { Clock, Effect, Exit, Option, Schema } from "effect"
+import { steerTask } from "./task"
 
 const DEFAULT_TIMEOUT = 60_000
 const POLL_MS = 300
@@ -25,10 +26,21 @@ const Parameters = Schema.Struct({
   cancel: Schema.optional(Schema.Boolean).annotate({
     description: "When true, cancel the task and its nested background tasks before checking status",
   }),
+  // 261014 Red 单条控制输入的安全上限，不裁剪用户原文。
+  message: Schema.optional(Schema.String).annotate({
+    description: "Send plain-text guidance to your running child task without interrupting it. Cannot combine with wait, timeout_ms, or cancel. Maximum 16384 UTF-8 bytes.",
+  }),
 })
 
 type State = BackgroundJob.Status
 type InspectResult = { state: State; text: string }
+type StatusMetadata = {
+  task_id: SessionID
+  state: State
+  timed_out: boolean
+  message_id?: MessageID
+  delivery?: "queued" | "delivered"
+}
 
 function format(input: { taskID: SessionID; state: State; text: string }) {
   const tag = input.state === "completed" || input.state === "running" ? "task_result" : "task_error"
@@ -114,10 +126,51 @@ export const TaskStatusTool = Tool.define(
 
     const run = Effect.fn("TaskStatusTool.execute")(function* (
       params: Schema.Schema.Type<typeof Parameters>,
-      _ctx: Tool.Context,
+      ctx: Tool.Context,
     ) {
       if (!flags.experimentalBackgroundSubagents) {
         return yield* Effect.fail(new Error("task_status requires REDCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true"))
+      }
+
+      if (params.message !== undefined) {
+        const messageText = params.message
+        if (params.wait || params.cancel || params.timeout_ms !== undefined)
+          return yield* Effect.fail(new Error("Steering cannot be combined with wait, timeout_ms, or cancel"))
+        if (!params.message.trim() || Buffer.byteLength(params.message, "utf8") > 16_384)
+          return yield* Effect.fail(new Error("Steering message must be nonblank and at most 16384 UTF-8 bytes"))
+        const child = yield* sessions.get(params.task_id)
+        if (child.parentID !== ctx.sessionID || child.id === ctx.sessionID)
+          return yield* Effect.fail(new Error("Only the task's direct parent session may steer it"))
+        const job = yield* jobs.get(params.task_id)
+        if (job?.type !== "task" || job.status !== "running")
+          return yield* Effect.fail(new Error("Only a running child task can be steered"))
+        const sent = yield* Effect.try({
+          try: () => steerTask(params.task_id, ctx.sessionID, messageText, ctx.callID),
+          catch: (error) => error instanceof Error ? error : new Error("Task steering failed"),
+        })
+        const deadline = (yield* Clock.currentTimeMillis) + DEFAULT_TIMEOUT
+        // 261014 Red 回执以持久化消息为准；不等待模型完成，也不将排队谎报为已消费。
+        while (true) {
+          const message = yield* MessageV2.get({ sessionID: params.task_id, messageID: sent.messageID })
+            .pipe(Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)))
+          if (message?.info.role === "user") {
+            const delivery = message.info.delivery === "delivered" ? "delivered" : "queued"
+            const metadata: StatusMetadata = {
+              task_id: params.task_id, state: "running", timed_out: false, message_id: sent.messageID, delivery,
+            }
+            return {
+              title: "Task steering",
+              metadata,
+              output: `task_id: ${params.task_id}\nmessage_id: ${sent.messageID}\ndelivery: ${delivery}`,
+            }
+          }
+          const exit = sent.fiber.pollUnsafe()
+          if (exit && Exit.isFailure(exit))
+            return yield* Effect.fail(new Error("Task steering failed before the message was persisted"))
+          if ((yield* Clock.currentTimeMillis) >= deadline)
+            return yield* Effect.fail(new Error("Timed out waiting for task steering persistence"))
+          yield* Effect.sleep(`${POLL_MS} millis`)
+        }
       }
 
       const session = yield* sessions.get(params.task_id).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
@@ -179,7 +232,9 @@ export const TaskStatusTool = Tool.define(
     return {
       description: DESCRIPTION,
       parameters: Parameters,
-      execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
+      execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context): Effect.Effect<{
+        title: string; metadata: StatusMetadata; output: string
+      }> =>
         run(params, ctx).pipe(Effect.orDie),
     }
   }),

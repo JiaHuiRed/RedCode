@@ -14,7 +14,7 @@ import type { SessionPrompt } from "../session/prompt"
 import { SessionStatus } from "@/session/status"
 import { Config } from "@/config/config"
 import { TuiEvent } from "@/cli/cmd/tui/event"
-import { Cause, Clock, Effect, Exit, Option, Schema, Scope } from "effect"
+import { Cause, Clock, Effect, Exit, Fiber, Option, Schema, Scope } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Storage } from "@/storage/storage"
@@ -37,6 +37,78 @@ export interface TaskPromptOps {
     input: { name: string; startCommand?: string },
     run: Effect.Effect<A, E>,
   ): Effect.Effect<{ worktree: { name: string; directory: string; branch?: string }; result: A }, E>
+}
+
+type Steering = {
+  parentSessionID: SessionID
+  send: (message: string, callID?: string) => {
+    messageID: MessageID
+    fiber: Fiber.Fiber<MessageV2.WithParts, unknown>
+  }
+}
+
+const steering = new Map<SessionID, Steering>()
+
+// 261014 Red 控制通道只在任务执行期存在；捕获子任务的 InstanceRef/隔离边界，而非父实例。
+// 决策：docs/notes/implemented/feature/2026-10-14-subagent-steering.md
+export const runSteerableTask = (
+  input: { sessionID: SessionID; parentSessionID: SessionID; ops: TaskPromptOps; sessions: Session.Interface },
+  run: Effect.Effect<MessageV2.WithParts, unknown>,
+) => Effect.gen(function* () {
+  const bridge = yield* EffectBridge.make()
+  const pending: Array<Fiber.Fiber<MessageV2.WithParts, unknown>> = []
+  return yield* Effect.acquireUseRelease(
+    Effect.sync(() => {
+      steering.set(input.sessionID, {
+        parentSessionID: input.parentSessionID,
+        send(message, callID) {
+          const messageID = MessageID.ascending()
+          const fiber = bridge.fork(Effect.gen(function* () {
+            const latest = yield* input.sessions.findMessage(input.sessionID, (item) => item.info.role === "user")
+            if (Option.isNone(latest) || latest.value.info.role !== "user")
+              return yield* Effect.fail(new Error("Task has no active user message to steer"))
+            const user = latest.value.info
+            return yield* input.ops.prompt({
+              sessionID: input.sessionID,
+              messageID,
+              agent: user.agent,
+              model: user.model,
+              variant: user.model.variant,
+              delivery: "steer",
+              parts: [{
+                type: "text",
+                text: message,
+                metadata: { task_steer: { parent_session_id: input.parentSessionID, call_id: callID } },
+              }],
+            })
+          }))
+          pending.push(fiber)
+          return { messageID, fiber }
+        },
+      })
+    }),
+    () => Effect.gen(function* () {
+      let result = yield* run
+      // 261014 Red 收尾先关闭准入；已接受的投递等待原 runner 并复用既有收尾重试，不能丢回执。
+      steering.delete(input.sessionID)
+      for (const fiber of pending) {
+        const delivered = yield* Fiber.join(fiber)
+        if (MessageV2.compareTime(delivered.info, result.info) > 0) result = delivered
+      }
+      return result
+    }),
+    () => Effect.gen(function* () {
+      steering.delete(input.sessionID)
+      for (const fiber of pending) yield* Fiber.interrupt(fiber)
+    }),
+  )
+})
+
+export function steerTask(taskID: SessionID, parentSessionID: SessionID, message: string, callID?: string) {
+  const control = steering.get(taskID)
+  if (!control || control.parentSessionID !== parentSessionID)
+    throw new Error("Task is not accepting steering messages")
+  return control.send(message, callID)
 }
 
 const id = "task"
@@ -362,7 +434,9 @@ export const TaskTool = Tool.define(
           providerID: ProviderID
         }) {
           const parts = yield* ops.resolvePromptParts(params.prompt)
-          const result = yield* ops.prompt({
+          const result = yield* runSteerableTask(
+            { sessionID: nextSession.id, parentSessionID: ctx.sessionID, ops, sessions },
+            ops.prompt({
             messageID: MessageID.ascending(),
             sessionID: nextSession.id,
             model: {
@@ -376,7 +450,8 @@ export const TaskTool = Tool.define(
               ...Object.fromEntries((cfg.experimental?.primary_tools ?? []).map((item) => [item, false])),
             },
             parts,
-          })
+            }),
+          )
           const text = result.parts.findLast((item) => item.type === "text")?.text ?? ""
           yield* plugin
             .trigger(
