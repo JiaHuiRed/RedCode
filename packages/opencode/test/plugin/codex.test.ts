@@ -128,55 +128,65 @@ describe("plugin.codex", () => {
   })
 
   describe("parseDefaultConnectionSettings", () => {
-    // 260831 Red xxx：实测 blob（reg.exe 取回），flags=0x452 含 PROXY_TYPE_PROXY(0x2)，
-    // proxy server 以 ASCII 存于长度字段 0x0E=14 之后
-    test("extracts proxy from Windows blob", () => {
-      const hex =
-        "4600000052040000010000000E0000003132372E302E302E313A37383937B6000000" +
-        "6C6F63616C686F73743B3132372E2A3B3139322E3136382E2A3B31302E2A3B313732" +
-        "2E31362E2A3B3137322E31372E2A3B3137322E31382E2A3B3137322E31392E2A3B31" +
-        "37322E32302E2A3B3137322E32312E2A3B3137322E32322E2A3B3137322E32332E2A" +
-        "3B3137322E32342E2A3B3137322E32352E2A3B3137322E32362E2A3B3137322E3237" +
-        "2E2A3B3137322E32382E2A3B3137322E32392E2A3B3137322E33302E2A3B3137322E" +
-        "33312E2A3B3C6C6F63616C3E2800000066696C653A2F2F2F433A2F55736572732F41" +
-        "646D696E6973747261746F722F70726F78792E706163"
-      expect(parseDefaultConnectionSettings(hex)).toBe("http://127.0.0.1:7897")
+    // 261014 Red 语义钉死：offset 8 是 INTERNET_PER_CONN_FLAGS 位域，不是布尔 proxyEnable。
+    // WinINET API（InternetQueryOption）实测 + 写入方 RedClash（sysproxy-rs windows.rs set()
+    // 写 PROXY_TYPE_PROXY|PROXY_TYPE_DIRECT）双向印证：3=代理开着、1=仅 DIRECT（关）、5=PAC。
+    // 旧判据 `!== 1` 把开着的代理判成直连——家里无 HTTPS_PROXY 环境变量时 provider fetch
+    // 全裸连（OpenAI 超时），公司因 env 分支先命中而掩盖；TUN 只是透明拦截了那些直连。
+    // blob 布局：0x46 | counter | flags | proxyLen | proxy | bypassLen | bypass | pacLen | pac
+    const u32 = (value: number) => {
+      const bytes = Buffer.alloc(4)
+      bytes.writeUInt32LE(value)
+      return bytes
+    }
+    const buildBlob = (flags: number, proxy: string, bypass = "", pac = "") =>
+      Buffer.concat([
+        Buffer.from([0x46, 0, 0, 0, 0xce, 0x04, 0, 0]),
+        u32(flags),
+        u32(proxy.length),
+        Buffer.from(proxy, "latin1"),
+        u32(bypass.length),
+        Buffer.from(bypass, "latin1"),
+        u32(pac.length),
+        Buffer.from(pac, "latin1"),
+      ]).toString("hex")
+
+    // 家里实况复现：RedClash 开系统代理后 flags = DIRECT|PROXY = 3
+    test("extracts proxy when flags carry PROXY_TYPE bit (flags=3)", () => {
+      const blob = buildBlob(0x3, "127.0.0.1:7897", "localhost;127.*;192.168.*;10.*;172.16.*;<local>")
+      expect(parseDefaultConnectionSettings(blob)).toBe("http://127.0.0.1:7897")
     })
 
-    // 260902 Red 代理关闭时 proxyEnable=0（offset 8），与 flags 无关——权威开关
+    // 260831 实况 blob 的 flags 就是 1（仅 DIRECT）——那天「代理没生效」的调试现场，
+    // 旧实现却因 `!== 1` 恰好放行；按钉死的语义它代表代理关闭。
+    test("returns undefined when only DIRECT is set (flags=1)", () => {
+      const blob = buildBlob(0x1, "127.0.0.1:7897", "localhost;127.*;<local>")
+      expect(parseDefaultConnectionSettings(blob)).toBeUndefined()
+    })
+
+    // 260902 Red 代理关闭时 flags=0（offset 8），与 proxyServer 字段是否残留无关
     test("returns undefined when proxyEnable is off", () => {
-      const hex =
-        "4600000050040000000000000E0000003132372E302E302E313A37383937B6000000" +
-        "6C6F63616C686F73743B3132372E2A3B3C6C6F63616C3E2800000066696C653A2F2F" +
-        "2F433A2F55736572732F41646D696E6973747261746F722F70726F78792E706163"
-      expect(parseDefaultConnectionSettings(hex)).toBeUndefined()
+      const blob = buildBlob(0x0, "127.0.0.1:7897", "localhost;127.*;<local>")
+      expect(parseDefaultConnectionSettings(blob)).toBeUndefined()
     })
 
-    // 260902 Red 本机实况：Clash Verge PAC 模式 flags=0x464（0x4=AUTO_PROXY_URL）
-    // 不含 0x2（PROXY_TYPE_PROXY），但 proxyEnable=1 且 proxyServer 字段有值——
-    // 老判据（flags&0x2）会误杀，新判据以 proxyEnable 为准
-    test("extracts proxy without PROXY_TYPE flag (PAC mode, flags=0x464)", () => {
-      const hex =
-        "4600000064040000010000000E0000003132372E302E302E313A37383937B6000000" +
-        "6C6F63616C686F73743B3132372E2A3B3C6C6F63616C3E2800000066696C653A2F2F" +
-        "2F433A2F55736572732F41646D696E6973747261746F722F70726F78792E706163"
-      expect(parseDefaultConnectionSettings(hex)).toBe("http://127.0.0.1:7897")
+    // 260902 Red 本机实况：Clash Verge PAC 模式 flags=0x464 的 offset 4 计数器形态，
+    // 对应 offset 8 = DIRECT|AUTO_PROXY_URL = 5，不含 0x2（PROXY_TYPE）但 proxyServer
+    // 字段有值——仍要抽出代理，不能因缺 0x2 放弃。
+    test("extracts proxy without PROXY_TYPE flag (PAC mode, flags=5)", () => {
+      const blob = buildBlob(0x5, "127.0.0.1:7897", "localhost;127.*;<local>")
+      expect(parseDefaultConnectionSettings(blob)).toBe("http://127.0.0.1:7897")
     })
 
-    // 260902 Red PAC-only 兜底：proxyServer 字段为空、PAC 指向 file:// 时读文件取第一个 PROXY
+    // 260902 Red PAC-only 兜底：proxyServer 字段为空时（WinINET「使用安装脚本」模式），
+    // 读 blob 尾部的 file:// PAC，取第一个 PROXY host:port（本机 PAC 白名单都指向同一代理）。
+    // URI 网页版 PAC 无法在本地执行 JS，返回 undefined（与 Electron 行为差异，GUI 仍可走 Chromium）。
     test("falls back to file:// PAC when proxyServer field is empty", () => {
       const pacPath = join(tmpdir(), "redcode-pac-test.pac")
       const pacUrl = "file:///" + pacPath.replace(/\\/g, "/")
       writeFileSync(pacPath, 'function FindProxyForURL(url, host) { return "PROXY 127.0.0.1:7898; DIRECT" }')
       try {
-        const head = Buffer.alloc(20)
-        head.writeUInt32LE(0x46, 0)
-        head.writeUInt32LE(0x464, 4)
-        head.writeUInt32LE(1, 8)
-        const pacLen = Buffer.alloc(4)
-        pacLen.writeUInt32LE(pacUrl.length)
-        const blob = Buffer.concat([head, pacLen, Buffer.from(pacUrl)]).toString("hex")
-        expect(parseDefaultConnectionSettings(blob)).toBe("http://127.0.0.1:7898")
+        expect(parseDefaultConnectionSettings(buildBlob(0x5, "", "", pacUrl))).toBe("http://127.0.0.1:7898")
       } finally {
         rmSync(pacPath, { force: true })
       }

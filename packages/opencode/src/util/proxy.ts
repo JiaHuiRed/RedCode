@@ -13,14 +13,23 @@ export function proxyFromEnv(): string | undefined {
 
 // 260901 Red Windows 系统代理存于 WinINET 的 DefaultConnectionSettings blob，
 // 需要转成 HTTP(S)_PROXY 才能让 Bun/Node 的出站请求使用它。
-// 260902 Red 修正：flags 只是信息位而非硬判据——Clash Verge PAC 模式下
-// flags=0x464（0x4=AUTO_PROXY_URL）且不含 0x2（PROXY_TYPE），此时老实现
-// 直接返回 undefined；权威开关在 offset 8 的 proxyEnable，proxyServer 字段
-// 按长度字段(offset 12)解析，与 flags 值无关。
+// 260902 Red 修正：flags 只是信息位而非硬判据——PAC 模式下 flags 含 0x4
+// （AUTO_PROXY_URL）而不含 0x2（PROXY_TYPE），不能因缺 0x2 就放弃解析。
+// 261014 Red 再修正：offset 8 就是 INTERNET_PER_CONN_FLAGS 位域本身，不是什么布尔
+// proxyEnable——WinINET API 实测（InternetQueryOption）与写入方 RedClash
+// （sysproxy-rs/src/windows.rs set() 写 PROXY_TYPE_PROXY|PROXY_TYPE_DIRECT）双向印证：
+// 3=代理开着、1=仅 DIRECT（关）、5=PAC。旧判据 `!== 1` 把开着的代理（3）判成直连，
+// 家里无 HTTPS_PROXY 环境变量时 provider fetch 全裸连、OpenAI 超时；公司因 env 分支
+// 先命中而掩盖了这个 bug。TUN 能救场只是透明拦截了那些直连。
+const PROXY_TYPE_PROXY = 0x2
+const PROXY_TYPE_AUTO_PROXY_URL = 0x4
+
 export function parseDefaultConnectionSettings(hex: string): string | undefined {
   const bytes = Buffer.from(hex, "hex")
   if (bytes.length < 20) return undefined
-  if (bytes.readUInt32LE(8) !== 1) return undefined
+  // 只有 PROXY（0x2）或 PAC（0x4）有一位置起才算配了代理；纯 DIRECT（1）与
+  // AUTO_DETECT（0x8，WPAD 本地解不出）都按直连处理。
+  if ((bytes.readUInt32LE(8) & (PROXY_TYPE_PROXY | PROXY_TYPE_AUTO_PROXY_URL)) === 0) return undefined
   const proxyLen = bytes.readUInt32LE(12)
   const proxy = bytes.subarray(16, 16 + proxyLen).toString("latin1")
   const host = proxy.match(/^[a-zA-Z0-9.-]+:\d{2,5}$/)?.[0]
