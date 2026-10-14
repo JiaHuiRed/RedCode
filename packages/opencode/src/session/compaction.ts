@@ -1034,8 +1034,15 @@ function hasUnfinishedTurn(messages: MessageV2.WithParts[], parentID: MessageID)
   if (!assistant || MessageV2.compareTime(assistant, user) <= 0) return false
   if (assistant.error) return false
   if (!assistant.finish || ["tool-calls", "unknown"].includes(assistant.finish)) return true
+  // 261014 Red stop 分支只认「待回传」的本地工具：pending/running 才说明工具结果还没回来，
+  // completed/error 是已回传、模型主动收尾。把已回传的也算未完成会让手动压缩后凭空续跑一轮
+  // （原判据只查有没有本地工具记录，过宽；与 CHANGELOG/note 的「待回传工具」措辞不符）。
+  // 出处：docs/notes/implemented/bug-fix/2026-10-14-seven-commit-review.md
   return assistant.finish === "stop" && visible.find((message) => message.info.id === assistant.id)
-    ?.parts.some((part) => part.type === "tool" && !part.metadata?.providerExecuted) === true
+    ?.parts.some((part) =>
+      part.type === "tool" &&
+      !part.metadata?.providerExecuted &&
+      (part.state.status === "pending" || part.state.status === "running")) === true
 }
 
 export * as SessionCompaction from "./compaction"

@@ -856,6 +856,60 @@ describe("session.compaction.process", () => {
     }
   }
 
+  // 261014 Red stop 分支的真值表：待回传（pending/running）续跑，已回传（completed/error）
+  // 不续跑。此前判据只查「有没有本地工具记录」，已完成的工具也判成未完成。
+  for (const native of [false, true]) {
+    for (const status of ["completed", "running"] as const) {
+      itCompaction.instance(`${native ? "native" : "legacy"} manual compaction ${status === "running" ? "resumes a stopped turn awaiting a tool result" : "leaves a stopped turn with a returned tool idle"}`, () => {
+        const responses = llm()
+        responses.push(reply("Earlier completed work retained."))
+        return Effect.gen(function* () {
+          const ssn = yield* SessionNs.Service
+          const ctx = yield* TestInstance
+          const chat = yield* ssn.create({ title: "Stopped turn with a local tool" })
+          const first = yield* createUserMessage(chat.id, "Earlier work.")
+          const done = yield* createAssistantMessage(chat.id, first.id, ctx.directory)
+          yield* ssn.updatePart({
+            id: PartID.ascending(), messageID: done.id, sessionID: chat.id, type: "text",
+            text: "Earlier completed implementation. ".repeat(500),
+          })
+          const current = yield* createUserMessage(chat.id, "Keep implementing the active task.")
+          const latest = yield* createAssistantMessage(chat.id, current.id, ctx.directory)
+          yield* ssn.updateMessage({ ...latest, finish: "stop" })
+          yield* ssn.updatePart({
+            id: PartID.ascending(), messageID: latest.id, sessionID: chat.id, type: "tool",
+            callID: crypto.randomUUID(),
+            tool: "bash",
+            state: status === "running"
+              ? { status: "running", input: { command: "sleep 60" }, time: { start: Date.now() } }
+              : {
+                  status: "completed", input: { command: "echo done" }, output: "done",
+                  title: "bash", metadata: {}, time: { start: Date.now(), end: Date.now() },
+                },
+          })
+          yield* SessionCompaction.use.create({ sessionID: chat.id, agent: "build", model: ref, auto: false })
+          const messages = yield* ssn.messages({ sessionID: chat.id })
+          const marker = messages.at(-1)!
+          expect(yield* SessionCompaction.use.process({
+            parentID: marker.info.id, messages, sessionID: chat.id, auto: false,
+          })).toBe("continue")
+          const after = yield* ssn.messages({ sessionID: chat.id })
+          const followup = after.flatMap((message) => message.parts).filter(
+            (part) => part.type === "text" && part.synthetic && part.metadata?.compaction_continue,
+          )
+          expect(followup).toHaveLength(status === "running" ? 1 : 0)
+        }).pipe(withCompaction({
+          llm: responses.layer,
+          provider: wide(),
+          config: cfg({ native: {
+            enabled: native, trigger_tokens: 60000, target_tokens: 40000,
+            reminder_tokens: 54000, summary_max_tokens: 1000,
+          } }),
+        }))
+      })
+    }
+  }
+
   itCompaction.instance("native compaction inherits the triggering model and variant", () => {
     const evidence = spyOn(Log.create({ service: "session.compaction" }), "warn")
     const responses = llm()

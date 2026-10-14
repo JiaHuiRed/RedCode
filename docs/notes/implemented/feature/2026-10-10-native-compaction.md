@@ -214,6 +214,8 @@ GUI 时间线复用相同的 compaction marker、summary `mode`/`parentID`、err
 
 native 与 legacy 共用 `hasUnfinishedTurn()`：排除当前标记、旧压缩产物及未领取队列，按真实用户与普通 assistant 的时间、finish/error 和本地工具记录判断是否还有工作。成功压缩且原轮未完成时，复用现有有界 `compaction_continue` 通知；已完成或报错的原轮不凭空开工。失败、取消和未提交摘要仍不续跑，不改变取消、重试、选段及预算策略。
 
+261014 Red 收紧 `stop` 分支：只认**待回传**的本地工具（`pending`/`running`）。原判据只查「有没有未标记 `providerExecuted` 的本地工具记录」，`completed`/`error`（工具结果已回传、模型主动收尾）也会被判成未完成，从而在手动压缩后凭空续跑一轮。该组合在正常数据流不可达（含 tool part 的 assistant 其 `finish` 必为 `tool-calls`），属防御分支，但判据与「待回传」措辞不符。现按 `state.status` 区分，并补 `finish=stop` × `completed`/`running` 四态用例（completed 不续跑、running 续跑）。出处：[seven-commit-review](../bug-fix/2026-10-14-seven-commit-review.md)。
+
 回归先复现两个未完成轮次缺少通知；修后四个 native/legacy × 忙/闲用例通过。真实 HTTP fixture 另覆盖工具调用进行中排入手动压缩，确认两条路径均发出摘要后正常任务请求、返回普通助手答复，而非返回摘要作为最终答复。仅使用隔离数据库与本地服务。
 
 模型可见四问：① 通知原文和摘要模板不改，只把既有续跑通知用于忙时手动压缩；② 固定前缀增量 0，变量历史增加一条既有固定短通知；③ 成功提交仍按原 revision 从改写历史处结算，不新增逐轮重置；④ 通知长度固定，摘要、消息、active/retained 硬预算沿用既有配置。
