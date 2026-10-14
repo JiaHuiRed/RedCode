@@ -815,6 +815,47 @@ describe("session.compaction.prune", () => {
 })
 
 describe("session.compaction.process", () => {
+  for (const native of [false, true]) {
+    for (const unfinished of [false, true]) {
+      itCompaction.instance(`${native ? "native" : "legacy"} manual compaction ${unfinished ? "resumes unfinished work" : "leaves finished work idle"}`, () => {
+        const responses = llm()
+        responses.push(reply("Earlier completed work retained."))
+        return Effect.gen(function* () {
+          const ssn = yield* SessionNs.Service
+          const ctx = yield* TestInstance
+          const chat = yield* ssn.create({ title: "Manual compaction continuation" })
+          const first = yield* createUserMessage(chat.id, "Earlier work.")
+          const done = yield* createAssistantMessage(chat.id, first.id, ctx.directory)
+          yield* ssn.updatePart({
+            id: PartID.ascending(), messageID: done.id, sessionID: chat.id, type: "text",
+            text: "Earlier completed implementation. ".repeat(500),
+          })
+          const current = yield* createUserMessage(chat.id, "Keep implementing the active task.")
+          const latest = yield* createAssistantMessage(chat.id, current.id, ctx.directory)
+          yield* ssn.updateMessage({ ...latest, finish: unfinished ? "tool-calls" : "stop" })
+          yield* SessionCompaction.use.create({ sessionID: chat.id, agent: "build", model: ref, auto: false })
+          const messages = yield* ssn.messages({ sessionID: chat.id })
+          const marker = messages.at(-1)!
+          expect(yield* SessionCompaction.use.process({
+            parentID: marker.info.id, messages, sessionID: chat.id, auto: false,
+          })).toBe("continue")
+          const after = yield* ssn.messages({ sessionID: chat.id })
+          const followup = after.flatMap((message) => message.parts).filter(
+            (part) => part.type === "text" && part.synthetic && part.metadata?.compaction_continue,
+          )
+          expect(followup).toHaveLength(unfinished ? 1 : 0)
+        }).pipe(withCompaction({
+          llm: responses.layer,
+          provider: wide(),
+          config: cfg({ native: {
+            enabled: native, trigger_tokens: 60000, target_tokens: 40000,
+            reminder_tokens: 54000, summary_max_tokens: 1000,
+          } }),
+        }))
+      })
+    }
+  }
+
   itCompaction.instance("native compaction inherits the triggering model and variant", () => {
     const evidence = spyOn(Log.create({ service: "session.compaction" }), "warn")
     const responses = llm()

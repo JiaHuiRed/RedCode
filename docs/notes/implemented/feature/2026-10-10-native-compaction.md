@@ -207,3 +207,13 @@ GPT 四个零命中主请求中，11:55 首次换模型、12:54 压缩后的首�
 GUI 时间线复用相同的 compaction marker、summary `mode`/`parentID`、error 与 `tokens_after` 判据；成功显示 tokens，失败/取消显示原因和未提交标记，未完成与进行中区分。composer dock 复用 `session.time.compacting`，显示 spinner 与经过时间。与 TUI 一样，marker 先创建而 process 尚未启动时使用中性标签；`TurnDivider` 缓存 key 同时包含 `state` 与 `attemptStarted`，避免状态仍为 incomplete 时沿用旧行。
 
 验证：GUI 状态 helper 14 pass / 0 fail，timeline 数据 40 pass / 0 fail，session context metrics 29 pass / 0 fail；packages/app、packages/ui typecheck 通过。OpenTUI compaction-fold 12 pass / 0 fail；原生压缩 72 pass / 0 fail；packages/opencode typecheck 通过。未重启 app/server，未做真实浏览器视觉冒烟；新 UI 实际显示仍需宿主侧运行确认。
+
+## 忙时手动压缩后的续跑
+
+现场在主请求的工具检查尚未返回时创建 `auto: false` 标记。工具完成后摘要成功提交，日志返回 `status=continue`，下一次 loop 却把摘要的 `finish=stop` 当成原任务完成，立即退出。数据库中原主请求仍为 `tool-calls`，压缩没有失败，检查进程也没有被压缩终止。
+
+native 与 legacy 共用 `hasUnfinishedTurn()`：排除当前标记、旧压缩产物及未领取队列，按真实用户与普通 assistant 的时间、finish/error 和本地工具记录判断是否还有工作。成功压缩且原轮未完成时，复用现有有界 `compaction_continue` 通知；已完成或报错的原轮不凭空开工。失败、取消和未提交摘要仍不续跑，不改变取消、重试、选段及预算策略。
+
+回归先复现两个未完成轮次缺少通知；修后四个 native/legacy × 忙/闲用例通过。真实 HTTP fixture 另覆盖工具调用进行中排入手动压缩，确认两条路径均发出摘要后正常任务请求、返回普通助手答复，而非返回摘要作为最终答复。仅使用隔离数据库与本地服务。
+
+模型可见四问：① 通知原文和摘要模板不改，只把既有续跑通知用于忙时手动压缩；② 固定前缀增量 0，变量历史增加一条既有固定短通知；③ 成功提交仍按原 revision 从改写历史处结算，不新增逐轮重置；④ 通知长度固定，摘要、消息、active/retained 硬预算沿用既有配置。

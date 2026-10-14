@@ -581,7 +581,7 @@ export const layer = Layer.effect(
           }),
         })
         mark("finalize")
-        if (input.auto) {
+        if (input.auto || hasUnfinishedTurn(input.messages, input.parentID)) {
           const followup = yield* session.updateMessage({
             ...userMessage, id: MessageID.ascending(), time: { created: Date.now() },
           })
@@ -794,7 +794,7 @@ export const layer = Layer.effect(
         })
       }
 
-      if (result === "continue" && input.auto) {
+      if (result === "continue" && (input.auto || hasUnfinishedTurn(input.messages, input.parentID))) {
         if (replay) {
           const original = replay.info
           const replayMsg = yield* session.updateMessage({
@@ -1016,5 +1016,26 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(RuntimeFlags.defaultLayer),
   ),
 )
+
+// 261014 Red 手动压缩不是结束当前任务；已完成/报错的轮次仍保持空闲。
+// 决策：docs/notes/implemented/feature/2026-10-10-native-compaction.md
+function hasUnfinishedTurn(messages: MessageV2.WithParts[], parentID: MessageID) {
+  const visible = messages.filter((message) =>
+    message.info.id !== parentID &&
+    !message.parts.some((part) => part.type === "compaction") &&
+    !(message.info.role === "assistant" && message.info.summary) &&
+    !(message.info.role === "user" && message.info.delivery === "queued"),
+  )
+  const { user, assistant } = MessageV2.latest(visible)
+  if (!user) return false
+  // 261014 Red 只续跑「被压缩打断的在途轮次」：assistant 比 user 新且没跑完。
+  // user 更新于 assistant（问题还没被回答）不算——那是空闲会话的排队提问，
+  // 手动压缩不该替用户凭空开轮。
+  if (!assistant || MessageV2.compareTime(assistant, user) <= 0) return false
+  if (assistant.error) return false
+  if (!assistant.finish || ["tool-calls", "unknown"].includes(assistant.finish)) return true
+  return assistant.finish === "stop" && visible.find((message) => message.info.id === assistant.id)
+    ?.parts.some((part) => part.type === "tool" && !part.metadata?.providerExecuted) === true
+}
 
 export * as SessionCompaction from "./compaction"

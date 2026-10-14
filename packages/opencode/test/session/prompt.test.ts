@@ -1,7 +1,7 @@
 import { NodeFileSystem } from "@effect/platform-node"
 import { FetchHttpClient } from "effect/unstable/http"
 import { expect } from "bun:test"
-import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
+import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer, Option } from "effect"
 import * as Stream from "effect/Stream"
 import * as TestConsole from "effect/testing/TestConsole"
 import path from "path"
@@ -60,6 +60,9 @@ import { Snippet } from "@/session/snippet"
 import { Soul } from "@/soul"
 import { NativeCompaction } from "@/config/native-compaction"
 import * as ContextCompaction from "@/session/context-compaction"
+import { runSteerableTask, steerTask, type TaskPromptOps } from "@/tool/task"
+import { TaskStatusTool } from "@/tool/task_status"
+import { InstanceRef } from "@/effect/instance-ref"
 
 void Log.init({ print: false })
 
@@ -1475,6 +1478,135 @@ it.instance("marks explicitly steered messages delivered after the provider resp
     expect(JSON.stringify(hits[0].body)).toContain("steer now")
   }),
 )
+
+for (const native of [false, true]) {
+  it.instance(`${native ? "native" : "legacy"} manual compaction continues the running tool turn`, () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        compaction: {
+          native: {
+            enabled: native, trigger_tokens: 60000, target_tokens: 40000,
+            reminder_tokens: 54000, summary_max_tokens: 1000,
+          },
+        },
+      }))
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const compaction = yield* SessionCompaction.Service
+      const chat = yield* sessions.create({ title: "Manual compaction during a tool turn" })
+      const history = yield* seed(chat.id, { finish: "stop" })
+      yield* sessions.updatePart({
+        id: PartID.ascending(), messageID: history.assistant.id, sessionID: chat.id, type: "text",
+        text: "Completed historical work retained for reference. ".repeat(500),
+      })
+      const file = path.join(dir, "manual-compaction-read.txt")
+      yield* writeText(file, "current task evidence")
+      const held = defer<void>()
+      yield* llm.push(reply().wait(held.promise).tool("read", { filePath: file }).item())
+      yield* llm.text("Earlier work summarized; continue the current implementation.")
+      yield* llm.text("Current implementation continues.")
+      const run = yield* prompt.prompt({
+        sessionID: chat.id, agent: "build", model: ref,
+        parts: [{ type: "text", text: "Read the evidence and finish the implementation." }],
+      }).pipe(Effect.forkChild)
+      yield* llm.wait(1)
+      yield* compaction.create({ sessionID: chat.id, agent: "build", model: ref, auto: false })
+      held.resolve()
+      const result = yield* Fiber.join(run).pipe(Effect.timeout("10 seconds"))
+      expect(result.info.role === "assistant" && result.info.summary).not.toBe(true)
+      expect(result.parts.some((part) => part.type === "text" && part.text === "Current implementation continues.")).toBe(true)
+      expect(yield* llm.hits).toHaveLength(3)
+    }),
+  )
+}
+
+for (const isolated of [false, true]) {
+  for (const cancelled of [false, true]) {
+  it.instance(`task steering ${cancelled ? "cancels its delivery worker" : "survives a final-step race"}${isolated ? " in the child directory" : ""}`, () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const jobs = yield* BackgroundJob.Service
+      const parent = yield* sessions.create({})
+      const child = yield* sessions.create({ parentID: parent.id })
+      const instance = yield* InstanceRef
+      if (!instance) return yield* Effect.die("InstanceRef missing")
+      const directory = isolated ? path.join(dir, "child-directory") : dir
+      if (isolated) yield* writeConfig(directory, providerCfg(llm.url))
+      const ops: TaskPromptOps = {
+        cancel: prompt.cancel,
+        prompt: (input) => prompt.prompt(input).pipe(Effect.catch(Effect.die)),
+        loop: prompt.loop,
+        resolvePromptParts: prompt.resolvePromptParts,
+        runIsolated: () => Effect.die("unexpected isolation setup"),
+      }
+      const held = defer<void>()
+      yield* llm.hold("original answer", held.promise)
+      yield* llm.text("corrected answer")
+      yield* jobs.start({
+        id: child.id,
+        type: "task",
+        metadata: { parentSessionId: parent.id },
+        run: runSteerableTask(
+          { sessionID: child.id, parentSessionID: parent.id, ops, sessions },
+          ops.prompt({
+            sessionID: child.id, agent: "build", model: ref, variant: "high",
+            parts: [{ type: "text", text: "initial task" }],
+          }),
+        ).pipe(
+          Effect.map((result) => result.parts.findLast((part) => part.type === "text")?.text ?? ""),
+          Effect.provideService(InstanceRef, { ...instance, directory, worktree: directory }),
+        ),
+      })
+      yield* llm.wait(1)
+      const original = yield* sessions.findMessage(child.id, (item) => item.info.role === "user")
+      if (Option.isNone(original) || original.value.info.role !== "user")
+        return yield* Effect.die("Missing original task input")
+      const originalUser = original.value.info
+      const def = yield* TaskStatusTool.pipe(
+        Effect.flatMap((tool) => tool.init()),
+        Effect.provide(RuntimeFlags.layer({ experimentalBackgroundSubagents: true })),
+      )
+      const receipt = yield* def.execute(
+        { task_id: child.id, message: "focus on the corrected task" },
+        {
+          sessionID: parent.id, messageID: MessageID.ascending(), agent: "build",
+          abort: new AbortController().signal, messages: [],
+          metadata: () => Effect.void, ask: () => Effect.void,
+        },
+      )
+      expect(receipt.metadata.delivery).toBe("queued")
+      const messageID = receipt.metadata.message_id
+      if (!messageID) return yield* Effect.die("Missing steering receipt")
+      const persisted = yield* MessageV2.get({ sessionID: child.id, messageID })
+      expect(persisted.info).toMatchObject({
+        role: "user", agent: originalUser.agent, model: originalUser.model, delivery: "steer",
+      })
+      expect(persisted.parts).toHaveLength(1)
+      if (cancelled) {
+        yield* jobs.cancel(child.id)
+        expect((yield* jobs.get(child.id))?.status).toBe("cancelled")
+        expect(yield* llm.hits).toHaveLength(1)
+        expect(() => steerTask(child.id, parent.id, "must not restart")).toThrow("not accepting")
+        held.resolve()
+        return
+      }
+      held.resolve()
+      const completed = yield* jobs.wait({ id: child.id, timeout: 5_000 })
+      expect(completed.info?.status).toBe("completed")
+      expect(completed.info?.output).toBe("corrected answer")
+      expect(userDelivery(yield* MessageV2.get({ sessionID: child.id, messageID }))).toBe("delivered")
+      const hits = yield* llm.hits
+      expect(hits).toHaveLength(2)
+      expect(JSON.stringify(hits[1].body)).toContain("focus on the corrected task")
+      const answer = yield* sessions.findMessage(child.id, (item) => item.info.role === "assistant")
+      expect(Option.isSome(answer) && answer.value.info.role === "assistant" && answer.value.info.path.cwd).toBe(directory)
+    }),
+  )
+  }
+}
 
 it.instance("user permission rejection does not restart the queued turn", () =>
   Effect.gen(function* () {
