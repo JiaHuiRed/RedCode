@@ -9,6 +9,7 @@ import { MessageV2 } from "../../src/session/message-v2"
 import { ProviderID } from "../../src/provider/schema"
 import { SessionID } from "../../src/session/schema"
 import { SessionStatus } from "../../src/session/status"
+import { StreamIdleTimeoutError } from "../../src/session/llm"
 import { provideTmpdirInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
@@ -148,6 +149,38 @@ describe("session.retry.delay", () => {
         expect(yield* status.get(sessionID)).toMatchObject({
           type: "retry",
           attempt: SessionRetry.RETRY_MAX_ATTEMPTS,
+        })
+      }),
+    ),
+  )
+
+  it.live("policy classifies stream timeouts before message error normalization", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const sessionID = SessionID.make("session-retry-timeout-test")
+        const status = yield* SessionStatus.Service
+        const timeout = new StreamIdleTimeoutError(120_000)
+        expect(MessageV2.fromError(timeout, { providerID }).name).toBe("UnknownError")
+        const step = yield* Schedule.toStepWithMetadata(
+          SessionRetry.policy({
+            provider: retryProvider,
+            parse: (error) => MessageV2.fromError(error, { providerID }),
+            set: (info) =>
+              status.set(sessionID, {
+                type: "retry",
+                attempt: info.attempt,
+                message: info.message,
+                next: info.next,
+              }),
+          }),
+        )
+        const exit = yield* Effect.exit(step(timeout))
+
+        expect(exit._tag).toBe("Success")
+        expect(yield* status.get(sessionID)).toMatchObject({
+          type: "retry",
+          attempt: 1,
+          message: "响应流中断，正在重试",
         })
       }),
     ),

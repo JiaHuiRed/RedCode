@@ -70,16 +70,14 @@ export function delay(attempt: number, error?: MessageV2.APIError) {
   return cap(Math.min(RETRY_INITIAL_DELAY * Math.pow(RETRY_BACKOFF_FACTOR, attempt - 1), RETRY_MAX_DELAY_NO_HEADERS))
 }
 
-export function retryable(error: Err, provider: string) {
+export function retryable(error: unknown, provider: string) {
   // context overflow errors should not be retried
   if (MessageV2.ContextOverflowError.isInstance(error)) return undefined
-  // 260903 cc 传输层看门狗掐断的两类超时都可重试。
-  //   它们既不是 APIError、文案也不匹配下面任何一条限流模式，此前一律落到函数末尾的
-  //   `return undefined` = 直接 halt：用户等满 75 秒（或流中途静默 120 秒）之后看到的是
-  //   报错，而不是自动重试一次。而这两类恰恰是最该重试的——网关停摆通常换一次连接就好。
-  //   走 `_tag` 而不是 instanceof：这里拿到的 Err 已经过 Cause 归一化，跨模块的类实例
-  //   判等不可靠（同一个类经不同打包路径会有两份）。
-  const tag = (error as { _tag?: unknown })._tag
+  // 261014 Red 传输层看门狗掐断的两类超时都可重试。
+  //   先检查原始失败的 _tag：processor 随后会用 MessageV2.fromError 归一化它，
+  //   自定义 Error 会变成 UnknownError 并丢掉原 tag；若只检查归一化结果就会直接 halt。
+  //   其它 provider 错误仍在下面对归一化后的 MessageV2.APIError 判定。
+  const tag = error && typeof error === "object" ? (error as { _tag?: unknown })._tag : undefined
   if (tag === "FirstEventTimeoutError") return { message: "网关未响应，正在重试" }
   if (tag === "StreamIdleTimeoutError") return { message: "响应流中断，正在重试" }
   if (MessageV2.APIError.isInstance(error)) {
@@ -137,7 +135,8 @@ export function retryable(error: Err, provider: string) {
   }
 
   // Check for rate limit patterns in plain text error messages
-  const msg = isRecord(error.data) ? error.data.message : undefined
+  const data = (error as { data?: unknown } | undefined)?.data
+  const msg = isRecord(data) ? data.message : undefined
   if (typeof msg === "string") {
     const lower = msg.toLowerCase()
     if (
@@ -194,12 +193,12 @@ export function policy(opts: {
 }) {
   return Schedule.fromStepWithMetadata(
     Effect.succeed((meta: Schedule.InputMetadata<unknown>) => {
-      const error = opts.parse(meta.input)
-      const retry = retryable(error, opts.provider)
+      const parsed = opts.parse(meta.input)
+      const retry = retryable(meta.input, opts.provider) ?? retryable(parsed, opts.provider)
       if (!retry) return Cause.done(meta.attempt)
       if (meta.attempt > RETRY_MAX_ATTEMPTS) return Cause.done(meta.attempt)
       return Effect.gen(function* () {
-        const wait = delay(meta.attempt, MessageV2.APIError.isInstance(error) ? error : undefined)
+        const wait = delay(meta.attempt, MessageV2.APIError.isInstance(parsed) ? parsed : undefined)
         const now = yield* Clock.currentTimeMillis
         yield* opts.set({
           attempt: meta.attempt,
