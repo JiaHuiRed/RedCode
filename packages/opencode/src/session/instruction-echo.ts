@@ -28,7 +28,10 @@ export interface EchoResult {
 }
 
 // 260812 cc 流式拦截用：DCP reminder 泄露锚点（processor.ts text-delta 路径每段检查，
-// 命中即中断+剥离，防止 GUI 无限刷屏）。泄露是消息尾部复述循环，锚点出现=已泄露。
+// 命中即剥离+下发纠偏，防止 GUI 无限刷屏）。泄露是消息尾部复述循环，锚点出现=已泄露。
+// 261014 Red 纠偏改为「按锚点起点截断 + 立刻下发整条 part + 暂扣增量到闭合」：
+// 不再要求闭合 `]`（trip 时标记通常只到一半，旧剥离是空操作），也不再设 shouldBreak
+// （断流会连带砍掉紧随的工具调用）。见 cutAtLeakAnchor / releaseLeakHold。
 const LEAK_ANCHORS = [
   "compressible ranges",
   "This is a system reminder injected",
@@ -37,7 +40,7 @@ const LEAK_ANCHORS = [
   "CRITICAL WARNING: MAX CONTEXT LIMIT REACHED",
   "You are at or beyond the configured max context threshold",
 // 261010 Red native 压缩的历史引用标记：exe 实测整楼回复都是它（同一 msg ID 复述数十遍），
-// 模型把出站副本里的机读标记当成要输出的内容。锚点出现即已泄露，流式路径中断。
+// 模型把出站副本里的机读标记当成要输出的内容。锚点出现即已泄露，流式路径立即截断。
 "[History reference: ",
 ] as const
 const MAX_ANCHOR_LENGTH = Math.max(...LEAK_ANCHORS.map((anchor) => anchor.length))
@@ -63,7 +66,7 @@ export function hasLeakAnchor(text: string): boolean {
  * 240K 那档只从 763ms 降到 451ms —— 省掉的是比较，没省掉摊平。
  *
  * 等价性：能整段落在旧文本里的锚点，在它到达的那条 delta 上就已经命中了（命中即
- * `leakTripped` + `shouldBreak`，不会再有下一条）。所以每轮只需要看「结尾落在新 delta 里」
+ * `leakTripped` + 截断纠偏，不会再有下一条漏过）。所以每轮只需要看「结尾落在新 delta 里」
  * 的那些，它们最多从 delta 起点往前 `MAX_ANCHOR_LENGTH - 1` 个字符开始 —— 尾巴留这么长即可。
  * 四种切片粒度（1/5/24/100 字符）下与全文扫描的首次命中位置逐一比对过，完全一致。
  */
@@ -79,6 +82,43 @@ export class LeakAnchorScanner {
   reset() {
     this.tail = ""
   }
+}
+
+/**
+ * 261014 Red 泄露锚点在累积文本里的起始下标；未命中返回 -1。
+ *
+ * 与 {@link LeakAnchorScanner} 同一批锚点，但 scanner 只回答「有没有」——流式纠偏需要
+ * 知道「从哪切」：标记未闭合时 `detect()` 的正则（要求闭合 `]`）配不上，只能按锚点起点
+ * 硬切。取最早出现的那个：泄露是消息尾部的复述循环，真正的正文必然在锚点之前。
+ */
+export function leakAnchorStart(text: string): number {
+  let start = -1
+  for (const anchor of LEAK_ANCHORS) {
+    const at = text.indexOf(anchor)
+    if (at >= 0 && (start === -1 || at < start)) start = at
+  }
+  return start
+}
+
+/**
+ * 261014 Red 流式纠偏的截断：按锚点起点切开，不要求闭合 `]`。
+ * 返回保留的正文，以及从锚点起、要暂扣到闭合为止的缓冲。
+ * 锚点不在文本里（理论上不该发生，scanner 命中即意味着它在）退回 `detect()` 整段剥离，
+ * 不静默放行。
+ */
+export function cutAtLeakAnchor(text: string): { text: string; hold: string } {
+  const at = leakAnchorStart(text)
+  if (at < 0) return { text: detect(text).stripped, hold: "" }
+  return { text: text.slice(0, at), hold: text.slice(at) }
+}
+
+/**
+ * 261014 Red 暂扣缓冲闭合后放行：丢掉标记本体（含闭合 `]`），返回其余正文；
+ * 尚未闭合返回 undefined，调用方继续暂扣。
+ */
+export function releaseLeakHold(hold: string): string | undefined {
+  const close = hold.indexOf("]")
+  return close < 0 ? undefined : hold.slice(close + 1)
 }
 
 const EMPTY: string[] = []

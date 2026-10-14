@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { detect, hasLeakAnchor, LeakAnchorScanner } from "../../src/session/instruction-echo"
+import {
+  cutAtLeakAnchor,
+  detect,
+  hasLeakAnchor,
+  leakAnchorStart,
+  LeakAnchorScanner,
+  releaseLeakHold,
+} from "../../src/session/instruction-echo"
 
 describe("instruction-echo 快路径", () => {
   test("普通回答原样返回，不做逐行扫描", () => {
@@ -332,9 +339,77 @@ describe("LeakAnchorScanner 增量扫描", () => {
     expect(scan.feed("")).toBe(false)
     expect(new LeakAnchorScanner().feed(SHORT)).toBe(true)
   })
-test("native 引用标记锚点命中即断流（261010）", () => {
-const scan = new LeakAnchorScanner()
-expect(scan.feed("先正常回答一段。")).toBe(false)
-expect(scan.feed("[History reference: msg_001a123fb674001QkKme94oUzr5S]")).toBe(true)
+  test("native 引用标记锚点命中即被 scanner 发现（261014：命中后截断纠偏，不再断流）", () => {
+    const scan = new LeakAnchorScanner()
+    expect(scan.feed("先正常回答一段。")).toBe(false)
+    expect(scan.feed("[History reference: msg_001a123fb674001QkKme94oUzr5S]")).toBe(true)
+  })
 })
+
+// 261014 Red 流式纠偏三件套。现场：trip 命中时标记通常只到了一半（24 字符分片），
+// detect() 的正则要求闭合 `]`，实际一个字都没剥；已推送的 delta 又撤不回。
+describe("流式纠偏：按锚点起点截断 + 暂扣到闭合", () => {
+  const MARKER = "[History reference: msg_001a123fb674001QkKme94oUzr5S]"
+
+  test("leakAnchorStart 给出锚点下标，未命中返回 -1", () => {
+    expect(leakAnchorStart(`真正的回答。${MARKER}`)).toBe("真正的回答。".length)
+    expect(leakAnchorStart(MARKER)).toBe(0)
+    expect(leakAnchorStart("这里在讨论 history reference 机制，没有引擎标记形状")).toBe(-1)
+    expect(leakAnchorStart("")).toBe(-1)
+  })
+
+  test("多个锚点取最早那个", () => {
+    const t = `答。\n${MARKER}\ncompressible ranges`
+    expect(leakAnchorStart(t)).toBe("答。\n".length)
+  })
+
+  test("非 native 锚点同样定位（DCP 措辞也在同一张表里）", () => {
+    expect(leakAnchorStart("前面。Context is now large in absolute terms")).toBe("前面。".length)
+  })
+
+  test("未闭合的标记也切得掉：保留正文，锚点起进暂扣缓冲", () => {
+    const partial = "注册点清楚。写 _migrate_base_aliases[History reference: msg_"
+    const cut = cutAtLeakAnchor(partial)
+    expect(cut.text).toBe("注册点清楚。写 _migrate_base_aliases")
+    expect(cut.hold).toBe("[History reference: msg_")
+  })
+
+  test("同一 delta 里锚点后已有闭合与后续正文：截断 + 暂扣 + 放行一条龙", () => {
+    const cut = cutAtLeakAnchor(`答。${MARKER}还有后半句`)
+    expect(cut.text).toBe("答。")
+    expect(cut.hold).toBe(`${MARKER}还有后半句`)
+    expect(releaseLeakHold(cut.hold)).toBe("还有后半句")
+  })
+
+  test("锚点不在文本里时退回整段剥离，不静默放行", () => {
+    const cut = cutAtLeakAnchor("答。\n<system-reminder>\n内部指令\n</system-reminder>")
+    expect(cut.text).toBe("答。")
+    expect(cut.hold).toBe("")
+  })
+
+  test("releaseLeakHold：未闭合继续暂扣，闭合后丢掉标记本体", () => {
+    expect(releaseLeakHold("[History reference: msg_")).toBeUndefined()
+    expect(releaseLeakHold("[History reference: msg_001a")).toBeUndefined()
+    expect(releaseLeakHold(MARKER)).toBe("")
+    expect(releaseLeakHold(`${MARKER}\n下一段正文`)).toBe("\n下一段正文")
+    // 只认第一个 `]`：标记后面的正文里再有 `]` 不该被吃掉
+    expect(releaseLeakHold(`${MARKER}arr[0] = 1`)).toBe("arr[0] = 1")
+  })
+
+  test("成片复述：每个标记各切一次，正文不受伤", () => {
+    let text = "先说结论：已经修了。"
+    const holds: string[] = []
+    for (const chunk of [`${MARKER}`, `\n${MARKER}`, `\n${MARKER}\n收尾。`]) {
+      const cut = cutAtLeakAnchor(text + chunk)
+      text = cut.text
+      holds.push(cut.hold)
+      const released = releaseLeakHold(cut.hold)
+      if (released) text += released
+    }
+    expect(text).toContain("先说结论：已经修了。")
+    expect(text).toContain("收尾。")
+    expect(text).not.toContain("History reference")
+    expect(holds).toHaveLength(3)
+    expect(holds.every((hold) => hold.startsWith("[History reference: "))).toBe(true)
+  })
 })

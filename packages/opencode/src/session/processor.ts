@@ -111,6 +111,9 @@ interface ProcessorContext extends Input {
   leakTripped: boolean
   // 260903 cc 泄露锚点的增量扫描器（原先每条 delta 扫全文，O(n²)）
   leakScanner: InstructionEcho.LeakAnchorScanner
+  // 261014 Red 泄露标记暂扣缓冲：锚点命中后，从锚点起的增量暂扣到这里，等闭合 `]`
+  // 出现再放行（undefined = 不在暂扣态）。见 text-delta 分支。
+  leakHold: string | undefined
   // 260818 Red reasoning 流级 stall 检测：本 step 累积的 reasoning 字符数 +
   // 是否已产出过 text/tool（有产出即不算 stall）+ 是否已触发兜底
   reasoningChars: number
@@ -193,6 +196,7 @@ export const layer = Layer.effect(
         ngramTripped: false,
         leakTripped: false,
         leakScanner: new InstructionEcho.LeakAnchorScanner(),
+        leakHold: undefined,
         // 260818 Red reasoning 流级 stall 检测
         reasoningChars: 0,
         stepProduced: false,
@@ -903,6 +907,7 @@ export const layer = Layer.effect(
             ctx.ngramTripped = false
             ctx.leakTripped = false
             ctx.leakScanner.reset()
+            ctx.leakHold = undefined
             // 260818 Red 有正文产出了，reasoning stall 检测解除
             ctx.stepProduced = true
             if (!ctx.assistantMessage.summary) {
@@ -919,19 +924,49 @@ export const layer = Layer.effect(
             yield* session.updatePart(ctx.currentText)
             return
 
-          case "text-delta":
+          case "text-delta": {
             if (!ctx.currentText) return
-            ctx.currentText.text += value.text
+            let delta = value.text
+            // 261014 Red 泄露标记暂扣态：锚点已命中、标记还没闭合。此间的增量既不进正文
+            // 也不推客户端，攒到闭合 `]` 出现——丢掉标记本体、放行其余正文，并重新武装
+            // 扫描器（同一个 part 里可能出现第二个标记）。
+            if (ctx.leakHold !== undefined) {
+              const release = InstructionEcho.releaseLeakHold(ctx.leakHold + delta)
+              if (release === undefined) {
+                ctx.leakHold += delta
+                return
+              }
+              ctx.leakHold = undefined
+              ctx.leakTripped = false
+              ctx.leakScanner.reset()
+              delta = release
+              if (!delta) return
+            }
+            // 261014 Red 先扫描再落笔。原先先推 delta 再剥离，而已推送的增量撤不回
+            // （TUI/GUI 的 delta 都是纯追加），屏幕上的标记要挂到 text-end 才被整条
+            // 替换掉——GUI 实测约 2 秒。且剥离正则要求闭合 `]`，trip 时标记往往只到了一半，
+            // detect() 实际一个字都没剥。现在锚点命中的那条 delta 直接不推，按锚点起点
+            // 截断后的整条 part 立刻下发纠偏。
+            if (!ctx.leakTripped && ctx.leakScanner.feed(delta)) {
+              ctx.leakTripped = true
+              const cut = InstructionEcho.cutAtLeakAnchor(ctx.currentText.text + delta)
+              ctx.currentText.text = cut.text
+              ctx.leakHold = cut.hold
+              yield* session.updatePart(ctx.currentText)
+              slog.warn("leak.dcp-reminder", { sessionID: ctx.sessionID, textLen: ctx.currentText.text.length })
+              return
+            }
+            ctx.currentText.text += delta
             if (value.providerMetadata) ctx.currentText.metadata = value.providerMetadata
             yield* session.updatePartDelta({
               sessionID: ctx.currentText.sessionID,
               messageID: ctx.currentText.messageID,
               partID: ctx.currentText.id,
               field: "text",
-              delta: value.text,
+              delta,
             })
             // 260710 Red n-gram 重复检测：流式 delta 累积，发现重复立即中断
-            if (!ctx.ngramTripped && ctx.ngramDetector.feed(value.text)) {
+            if (!ctx.ngramTripped && ctx.ngramDetector.feed(delta)) {
               ctx.ngramTripped = true
               slog.warn("ngram.repeat", { sessionID: ctx.sessionID, textLen: ctx.currentText.text.length })
               yield* bus.publish(Session.Event.LoopDetected, {
@@ -942,19 +977,8 @@ export const layer = Layer.effect(
               ctx.currentText.text += "\n\n" + RECOVERY_PROMPTS.stop
               ctx.shouldBreak = true
             }
-            // 260812 cc DCP reminder 泄露流式拦截：累积文本出现泄露锚点立即中断+剥离。
-            // 泄露是消息尾部的复述循环（GUI 实测无限刷屏），发现即止损——已推送的 delta
-            // 无法撤回，但剥离后的文本会落库，且不再继续输出。ngram 拦不住它（复述并非
-            // 逐字重复，是同一段语义反复）。
-            // 260903 cc 改成增量扫描：原先每条 delta 都拿全文 includes 两次，是 O(n²)
-            //   （一整轮 240K 的回答实测 763ms）。等价性推导见 LeakAnchorScanner 的注释。
-            if (!ctx.leakTripped && ctx.leakScanner.feed(value.text)) {
-              ctx.leakTripped = true
-              slog.warn("leak.dcp-reminder", { sessionID: ctx.sessionID, textLen: ctx.currentText.text.length })
-              ctx.currentText.text = InstructionEcho.detect(ctx.currentText.text).stripped
-              ctx.shouldBreak = true
-            }
             return
+          }
 
           case "text-end":
             if (!ctx.currentText) return

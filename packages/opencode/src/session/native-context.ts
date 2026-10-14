@@ -9,9 +9,16 @@ import { PartID } from "./schema"
 // 决策：docs/notes/implemented/feature/2026-10-10-native-compaction.md。
 export function annotate(messages: MessageV2.WithParts[], maxMessages: number): MessageV2.WithParts[] {
   if (messages.length > maxMessages) throw new Error("Native context exceeds the configured message budget")
-  return messages.map((message) => {
+  // 261014 Red 不标注当前 user 轮（末条 user 消息）：它的引用没有消费方——压缩边界本就
+  // 保护它（planAutomatic 的 latestUser），而它恰恰是模型按格式续写的靶子（GUI 实测
+  // 整楼复述 `[History reference: msg_…]`，请求的最后一段内容正是它）。
+  // 诊断：docs/notes/implemented/bug-fix/2026-10-14-native-history-reference-echo.md。
+  // 历史消息的标记照旧——context_read/context_search 靠 msg ID 回读原文。
+  const last = messages.length - 1
+  return messages.map((message, index) => {
     if (message.info.role === "user" && message.info.delivery === "queued") return message
     if (message.parts.some((part) => part.id.startsWith("prt_context_"))) return message
+    if (index === last && message.info.role === "user") return message
     return {
       ...message,
       parts: [

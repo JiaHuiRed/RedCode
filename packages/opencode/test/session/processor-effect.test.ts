@@ -470,6 +470,104 @@ it.live("session.processor effect tests preserve text start time", () =>
         expect(text.time.start).toBeLessThan(text.time.end)
       }),
     { config: (url) => providerCfg(url) },
+  )
+)
+
+// 261014 Red 现场形态（GUI 实测）：正文尾部被模型复述出 `[History reference: msg_…]`，
+// 24 字符分片下 trip 命中时标记只到一半，旧剥离正则是空操作，屏幕上的标记挂到 text-end。
+// 纠偏改成「按锚点起点截断 + 立刻下发整条 part + 暂扣增量到闭合」。
+it.live("session.processor effect tests correct a leaked history reference mid-stream", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const gate = defer<void>()
+        const { processors, session, provider } = yield* boot()
+        const bus = yield* Bus.Service
+
+        // 客户端视角：delta 是纯追加，updated 是整条替换——纠偏只能靠后者
+        const deltas: string[] = []
+        const updates: string[] = []
+        const deltaEvents = yield* bus.subscribe(MessageV2.Event.PartDelta)
+        yield* Stream.runForEach(deltaEvents, (event) =>
+          Effect.sync(() => {
+            if (event.properties.field === "text") deltas.push(event.properties.delta)
+          }),
+        ).pipe(Effect.forkScoped)
+        const updateEvents = yield* bus.subscribe(MessageV2.Event.PartUpdated)
+        yield* Stream.runForEach(updateEvents, (event) => {
+          if (event.properties.part.type === "text") updates.push(event.properties.part.text)
+          return Effect.void
+        }).pipe(Effect.forkScoped)
+
+        const marker = "[History reference: msg_001a1390917e9001YSr6HTGtsVdg4a]"
+        yield* llm.push(
+          raw({
+            head: [
+              { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: { role: "assistant" } }] },
+              { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: { content: "先说结论：已经修了。" } }] },
+              // 半截标记：24 字符分片，锚点已完整但闭合 `]` 还没到
+              { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: { content: marker.slice(0, 24) } }] },
+            ],
+            wait: gate.promise,
+            tail: [
+              { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: { content: marker.slice(24) } }] },
+              { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: { content: "收尾一句。" } }] },
+              { id: "chatcmpl-test", object: "chat.completion.chunk", choices: [{ delta: {}, finish_reason: "stop" }] },
+            ],
+          }),
+        )
+
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "hi")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({
+          assistantMessage: msg,
+          sessionID: chat.id,
+          model: mdl,
+        })
+
+        const run = yield* handle
+          .process({
+            user: {
+              id: parent.id,
+              sessionID: chat.id,
+              role: "user",
+              time: parent.time,
+              agent: parent.agent,
+              model: { providerID: ref.providerID, modelID: ref.modelID },
+            } satisfies MessageV2.User,
+            sessionID: chat.id,
+            model: mdl,
+            agent: agent(),
+            system: [],
+            messages: [{ role: "user", content: "hi" }],
+            tools: {},
+          })
+          .pipe(Effect.forkChild)
+
+        // 半截标记处理完就该看到纠偏后的整条 part，不必等 text-end
+        yield* waitFor(
+          Effect.sync(() => (updates.includes("先说结论：已经修了。") ? true : undefined)),
+          "mid-stream correction never reached the client",
+        )
+        yield* Effect.sleep("20 millis")
+        gate.resolve()
+
+        yield* Fiber.await(run)
+        const text = MessageV2.parts(msg.id).find((part): part is MessageV2.TextPart => part.type === "text")
+
+        // 标记整体消失，正文与闭合后的后续文字都保住
+        expect(text?.text).toBe("先说结论：已经修了。收尾一句。")
+        expect(text?.text).not.toContain("History reference")
+        // 纠偏是流中间下发的（text-start 的空 part 之外还有一条）
+        expect(updates.length).toBeGreaterThan(1)
+        // 半截标记那条 delta 没有推给客户端——不会再闪一下
+        expect(deltas.join("")).not.toContain("History reference")
+        expect(deltas.join("")).toContain("先说结论：已经修了。")
+        expect(deltas.join("")).toContain("收尾一句。")
+      }),
+    { config: (url) => providerCfg(url) },
   ),
 )
 

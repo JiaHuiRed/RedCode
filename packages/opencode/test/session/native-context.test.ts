@@ -19,13 +19,52 @@ const message: MessageV2.WithParts = {
 }
 
 describe("native context boundary", () => {
+  const history: MessageV2.WithParts = {
+    ...message,
+    info: { ...message.info, id: MessageID.make("msg_history"), time: { created: 0 } },
+  }
+
   test("references are deterministic, bounded and do not change stored messages", () => {
     const before = structuredClone(message)
-    const first = annotate([message], 2)
-    expect(first[0]?.parts.at(-1)).toMatchObject({ synthetic: true, text: `[History reference: ${messageID}]` })
-    expect(annotate(first, 2)).toEqual(first)
+    const first = annotate([history, message], 3)
+    // 历史消息带引用；当前 user 轮（末条）原样返回，连对象引用都不换
+    expect(first[0]?.parts.at(-1)).toMatchObject({ synthetic: true, text: "[History reference: " + history.info.id + "]" })
+    expect(first[1]).toBe(message)
+    expect(annotate(first, 3)).toEqual(first)
     expect(message).toEqual(before)
     expect(() => annotate([message, message], 1)).toThrow("message budget")
+  })
+
+  // 261014 Red 当前 user 轮的引用没有消费方（压缩边界本就保护它），却是模型按格式
+  // 续写的靶子——GUI 实测整楼复述 `[History reference: msg_…]`，请求最后一段内容正是它。
+  // 诊断：docs/notes/implemented/bug-fix/2026-10-14-native-history-reference-echo.md
+  test("the current user turn carries no reference; history still does", () => {
+    const out = annotate([history, message], 3)
+    expect(out[0]?.parts.some((part) => part.type === "text" && part.synthetic)).toBe(true)
+    expect(out[1]?.parts.some((part) => part.type === "text" && part.synthetic)).toBe(false)
+    expect(out[1]).toBe(message)
+  })
+
+  test("a trailing assistant turn is still annotated", () => {
+    const assistant: MessageV2.WithParts = {
+      info: {
+        id: MessageID.make("msg_assistant"),
+        sessionID,
+        role: "assistant",
+        mode: "build",
+        agent: "build",
+        parentID: messageID,
+        modelID: ModelID.make("test"),
+        providerID: ProviderID.make("test"),
+        path: { cwd: "/tmp", root: "/tmp" },
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
+        time: { created: 2 },
+      },
+      parts: [{ id: PartID.make("prt_assistant"), sessionID, messageID: MessageID.make("msg_assistant"), type: "text", text: "Keep this exact." }],
+    }
+    const out = annotate([message, assistant], 3)
+    expect(out.at(-1)?.parts.at(-1)).toMatchObject({ synthetic: true, text: "[History reference: " + assistant.info.id + "]" })
   })
 
   test("queued user input remains untouched", () => {
