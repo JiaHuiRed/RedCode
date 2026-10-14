@@ -1,4 +1,5 @@
 import { FinishReason, LLMEvent, ProviderMetadata, ToolResultValue } from "@redcode-ai/llm"
+import { responsesIncompleteErrorMessage } from "@redcode-ai/llm/protocols/openai-responses"
 import { Effect, Schema } from "effect"
 import { type streamText } from "ai"
 import { errorMessage } from "@/util/error"
@@ -18,6 +19,11 @@ export function adapterState() {
     toolNames: {} as Record<string, string>,
     routedVia: undefined as string | undefined,
     routedViaPromise: undefined as Promise<void> | undefined,
+    // 261014 Red 终态未完成追踪：当前 step 是否已有实报 step-finish（llm.ts 的估算
+    // 守卫用，防双重记账）；以及最后一步的终态未完成 raw reason（finish 时消费，
+    // 追加 provider-error，与 native 协议同语义）。
+    sawStepFinish: false,
+    terminalIncomplete: undefined as string | undefined,
   }
 }
 
@@ -87,22 +93,37 @@ export function toLLMEvents(
       return Effect.succeed([])
 
     case "start-step":
-      return Effect.succeed([LLMEvent.stepStart({ index: state.step })])
+      return Effect.sync(() => {
+        // 261014 Red 新 step 开始：上一 step 的终态追踪作废（估算守卫按当前 step 判定）。
+        state.sawStepFinish = false
+        state.terminalIncomplete = undefined
+        return [LLMEvent.stepStart({ index: state.step })]
+      })
 
     case "finish-step":
-      return Effect.sync(() => [
-        LLMEvent.stepFinish({
-          index: state.step++,
-          reason: finishReason(event.finishReason),
-          usage: usage(event.usage),
-          providerMetadata: providerMetadata(event.providerMetadata),
-        }),
-      ])
+      return Effect.sync(() => {
+        // 261014 Red 终态未完成检测（value-scoped）：rawFinishReason 只有 OpenAI
+        // Responses 会发这两个字面量（chat=finish_reason、Anthropic=stop_reason、
+        // Gemini 大写枚举，均不撞）。AI SDK 接缝拿不到「这是 Responses API」的标记，
+        // 未知 reason 无法安全判定、交由 native 协议路径按事件类型精确识别；
+        // `interrupted` 不入——官方语义可续接，保持 unknown finish 自然续跑。
+        if (event.rawFinishReason === "max_output_tokens" || event.rawFinishReason === "content_filter")
+          state.terminalIncomplete = event.rawFinishReason
+        state.sawStepFinish = true
+        return [
+          LLMEvent.stepFinish({
+            index: state.step++,
+            reason: finishReason(event.finishReason),
+            usage: usage(event.usage),
+            providerMetadata: providerMetadata(event.providerMetadata),
+          }),
+        ]
+      })
 
     case "finish":
       return Effect.promise(async () => {
         await state.routedViaPromise
-        const events = [
+        const events: LLMEvent[] = [
           LLMEvent.finish({
             reason: finishReason(event.finishReason),
             usage: usage(event.totalUsage),
@@ -110,6 +131,10 @@ export function toLLMEvents(
             routedVia: state.routedVia,
           }),
         ]
+        // 261014 Red 终态未完成：finish（实报 usage 已记账、只此一次）之后补
+        // provider-error，会话层以可见错误收尾而不是把截断当成功。
+        if (state.terminalIncomplete)
+          events.push(LLMEvent.providerError({ message: responsesIncompleteErrorMessage(state.terminalIncomplete) }))
         // Reset so the adapter can be reused for a follow-up stream without leaking
         // counters or block IDs. adapterState() is the single source of truth for shape.
         Object.assign(state, adapterState())

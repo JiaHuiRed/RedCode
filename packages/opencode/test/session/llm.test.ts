@@ -195,6 +195,28 @@ describe("session.llm.routedVia", () => {
   })
 })
 
+describe("session.llm.estimatedFinishEvents", () => {
+  // 261014 Red 流断估算守卫：当前 step 已收到实报 step-finish 后，流再断也只传播失败，
+  // 不再补估算 step——否则实报之外多记一个幽灵 step 的估算输出（双重记账）。
+  test("estimates when the step has no real finish", () => {
+    const state = LLMAISDK.adapterState()
+    state.textBytes = 100
+    expect(LLM.estimatedFinishEvents(state)).toHaveLength(1)
+  })
+
+  test("skips the estimate after a real step-finish", () => {
+    const state = LLMAISDK.adapterState()
+    state.textBytes = 100
+    state.sawStepFinish = true
+    expect(LLM.estimatedFinishEvents(state)).toHaveLength(0)
+  })
+
+  test("emits nothing for a header-time failure", () => {
+    const state = LLMAISDK.adapterState()
+    expect(LLM.estimatedFinishEvents(state)).toHaveLength(0)
+  })
+})
+
 describe("session.llm.ai-sdk adapter", () => {
   type AISDKAdapterEvent = Parameters<typeof LLMAISDK.toLLMEvents>[1]
 
@@ -362,6 +384,80 @@ describe("session.llm.ai-sdk adapter", () => {
         uncheckedAdapterEvent({ type: "tool-approval-request" }),
       ]),
     ).toEqual([])
+  })
+
+  // 261014 Red 终态未完成（OpenAI Responses）：finish-step 记录 raw reason，
+  // finish（实报 usage 已在其中）之后补 provider-error；interrupted 可续接不报错。
+  test("surfaces terminal incomplete after the real usage", async () => {
+    const events = await adapt([
+      { type: "start" },
+      { type: "start-step", request: {}, warnings: [] },
+      {
+        type: "finish-step",
+        performance: {
+          responseTimeMs: 0, effectiveOutputTokensPerSecond: 0, outputTokensPerSecond: 0,
+          inputTokensPerSecond: 0, effectiveTotalTokensPerSecond: 0, stepTimeMs: 0,
+          toolExecutionMs: {}, timeToFirstOutputMs: 0,
+        },
+        response: { id: "resp-inc", timestamp: new Date(0), modelId: "gpt-test" },
+        finishReason: "length",
+        rawFinishReason: "max_output_tokens",
+        providerMetadata: { openai: { step: true } },
+        usage: {
+          inputTokens: 12, outputTokens: 7, totalTokens: 19,
+          inputTokenDetails: { noCacheTokens: 12, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          outputTokenDetails: { textTokens: 5, reasoningTokens: 2 },
+        },
+      },
+      {
+        type: "finish", finishReason: "length", rawFinishReason: "max_output_tokens",
+        totalUsage: {
+          inputTokens: 12, outputTokens: 7, totalTokens: 19,
+          inputTokenDetails: { noCacheTokens: 12, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          outputTokenDetails: { textTokens: 5, reasoningTokens: 2 },
+        },
+      },
+    ])
+    expect(events).toMatchObject([
+      { type: "step-start", index: 0 },
+      { type: "step-finish", index: 0, reason: "length", usage: { inputTokens: 12, outputTokens: 7 } },
+      { type: "finish", reason: "length", usage: { inputTokens: 12, outputTokens: 7 } },
+      { type: "provider-error", message: "OpenAI Responses response incomplete: max_output_tokens" },
+    ])
+  })
+
+  test("keeps interrupted incomplete continuable without a terminal error", async () => {
+    const events = await adapt([
+      { type: "start" },
+      { type: "start-step", request: {}, warnings: [] },
+      {
+        type: "finish-step",
+        performance: {
+          responseTimeMs: 0, effectiveOutputTokensPerSecond: 0, outputTokensPerSecond: 0,
+          inputTokensPerSecond: 0, effectiveTotalTokensPerSecond: 0, stepTimeMs: 0,
+          toolExecutionMs: {}, timeToFirstOutputMs: 0,
+        },
+        response: { id: "resp-int", timestamp: new Date(0), modelId: "gpt-test" },
+        finishReason: "other",
+        rawFinishReason: "interrupted",
+        providerMetadata: { openai: { step: true } },
+        usage: {
+          inputTokens: 3, outputTokens: 1, totalTokens: 4,
+          inputTokenDetails: { noCacheTokens: 3, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          outputTokenDetails: { textTokens: 1, reasoningTokens: 0 },
+        },
+      },
+      {
+        type: "finish", finishReason: "other", rawFinishReason: "interrupted",
+        totalUsage: {
+          inputTokens: 3, outputTokens: 1, totalTokens: 4,
+          inputTokenDetails: { noCacheTokens: 3, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          outputTokenDetails: { textTokens: 1, reasoningTokens: 0 },
+        },
+      },
+    ])
+    expect(events.some((event) => event.type === "provider-error")).toBe(false)
+    expect(events.at(-1)).toMatchObject({ type: "finish", reason: "unknown" })
   })
 
   test("preserves tool-error cause", async () => {

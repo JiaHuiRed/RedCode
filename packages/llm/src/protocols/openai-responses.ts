@@ -834,8 +834,45 @@ const onResponseFinish = (state: ParserState, event: OpenAIResponsesEvent): Step
           })
         : undefined,
   })
+  // 261014 Red `response.incomplete` 是终态未完成，不是成功完成：在 finish（实报 usage
+  // 已在此记账、只此一次）之后补一条 provider-error，让会话层以可见错误收尾，而不是把
+  // 截断当成功继续。例外：`interrupted`（官方语义可续接，保持 unknown finish 自然续跑）
+  // 与已完成工具调用的轮次（工具循环继续，不把已完成的调用变成错误）。
+  // 决策：docs/notes/implemented/bug-fix/2026-10-14-incomplete-response-accounting.md
+  if (
+    event.type === "response.incomplete" &&
+    !state.hasFunctionCall &&
+    classifyResponsesIncomplete(event.response?.incomplete_details?.reason) === "terminal"
+  )
+    events.push(
+      LLMEvent.providerError({
+        message: responsesIncompleteErrorMessage(event.response?.incomplete_details?.reason),
+      }),
+    )
   return [{ ...state, lifecycle }, events]
 }
+
+// 261014 Red incomplete 分类与有界文案：OpenAI 文档只列 `max_output_tokens` /
+// `content_filter`，官方 Codex 另有 `interrupted`（end_turn=false，可续接）。其余现有或
+// 未来 reason 一律按终态处理。会话层 AI SDK 适配器（session/llm/ai-sdk.ts）通过本文件
+// 的子路径导出复用同一分类，两条 runtime 语义一致。
+export type ResponsesIncompleteKind = "continuable" | "terminal"
+
+export const classifyResponsesIncomplete = (reason: string | null | undefined): ResponsesIncompleteKind =>
+  reason === "interrupted" ? "continuable" : "terminal"
+
+const INCOMPLETE_REASON_MAX = 64
+
+const boundedIncompleteReason = (reason: string | null | undefined): string => {
+  if (typeof reason !== "string") return "unspecified"
+  const trimmed = reason.trim().slice(0, INCOMPLETE_REASON_MAX)
+  if (!trimmed.length) return "unspecified"
+  // 只放行短标识符形态的 reason 码；异常内容折叠成固定标签，错误文案保持有界非秘密。
+  return /^[a-z0-9_-]+$/i.test(trimmed) ? trimmed : "unspecified"
+}
+
+export const responsesIncompleteErrorMessage = (reason: string | null | undefined): string =>
+  `OpenAI Responses response incomplete: ${boundedIncompleteReason(reason)}`
 
 // Build a single human-readable message from whatever the provider supplied.
 // When both code and message are present, prefix the code so consumers see

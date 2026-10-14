@@ -1007,13 +1007,104 @@ describe("OpenAI Responses route", () => {
     }),
   )
 
-  it.effect("assembles streamed function call input", () =>
-    Effect.gen(function* () {
-      const body = sseEvents(
-        {
-          type: "response.output_item.added",
-          item: { type: "function_call", id: "item_1", call_id: "call_1", name: "lookup", arguments: "" },
+// 261014 Red `response.incomplete` 是终态未完成：finish（实报 usage）之后必须补
+// provider-error，不能把截断伪装成成功；interrupted 保持可续接，工具轮不打断。
+const incompleteBody = (reason: string | null, extra: ReadonlyArray<unknown> = []) =>
+  sseEvents(
+    ...extra,
+    {
+      type: "response.incomplete",
+      response: {
+        id: "resp_inc",
+        incomplete_details: reason === null ? null : { reason },
+        usage: {
+          input_tokens: 12,
+          input_tokens_details: { cached_tokens: 4 },
+          output_tokens: 7,
+          output_tokens_details: { reasoning_tokens: 2 },
         },
+      },
+    },
+  )
+
+it.effect("surfaces terminal incomplete after the real usage", () =>
+  Effect.gen(function* () {
+    const response = yield* LLMClient.generate(request).pipe(
+      Effect.provide(fixedResponse(incompleteBody("max_output_tokens"))),
+    )
+    expect(response.events).toMatchObject([
+      { type: "step-start", index: 0 },
+      { type: "step-finish", reason: "length", usage: { inputTokens: 12, outputTokens: 7 } },
+      { type: "finish", reason: "length", usage: { inputTokens: 12, outputTokens: 7 } },
+      { type: "provider-error", message: "OpenAI Responses response incomplete: max_output_tokens" },
+    ])
+    // usage 留在 finish 上；provider-error 不带 usage，不会覆盖实报。
+    expect(response.usage).toMatchObject({ inputTokens: 12, outputTokens: 7 })
+  }),
+)
+
+it.effect("keeps interrupted incomplete continuable", () =>
+  Effect.gen(function* () {
+    const response = yield* LLMClient.generate(request).pipe(
+      Effect.provide(fixedResponse(incompleteBody("interrupted"))),
+    )
+    expect(response.events.at(-1)).toMatchObject({ type: "finish", reason: "unknown" })
+    expect(response.events.some((event) => event.type === "provider-error")).toBe(false)
+  }),
+)
+
+it.effect("bounds unknown incomplete reasons in the terminal error", () =>
+  Effect.gen(function* () {
+    const response = yield* LLMClient.generate(request).pipe(
+      Effect.provide(fixedResponse(incompleteBody("some new reason!"))),
+    )
+    expect(response.events.at(-1)).toMatchObject({
+      type: "provider-error",
+      message: "OpenAI Responses response incomplete: unspecified",
+    })
+  }),
+)
+
+it.effect("keeps a completed tool-call turn on the tool loop", () =>
+  Effect.gen(function* () {
+    const response = yield* LLMClient.generate(request).pipe(
+      Effect.provide(
+        fixedResponse(
+          incompleteBody("max_output_tokens", [
+            {
+              type: "response.output_item.added",
+              item: { type: "function_call", id: "item_1", call_id: "call_1", name: "lookup", arguments: "" },
+            },
+            { type: "response.function_call_arguments.delta", item_id: "item_1", delta: '{"query":"weather"}' },
+            {
+              type: "response.output_item.done",
+              item: {
+                type: "function_call",
+                id: "item_1",
+                call_id: "call_1",
+                name: "lookup",
+                arguments: '{"query":"weather"}',
+              },
+            },
+          ]),
+        ),
+      ),
+    )
+    expect(response.events.some((event) => event.type === "tool-call")).toBe(true)
+    expect(response.events.some((event) => event.type === "provider-error")).toBe(false)
+    // mapFinishReason 里 max_output_tokens 优先于工具调用（现有行为）；工具循环由
+    // 会话层最后 assistant 的 tool parts 兜底继续，这里只锁定「工具轮不报错」。
+    expect(response.events.at(-1)).toMatchObject({ type: "finish" })
+  }),
+)
+
+it.effect("assembles streamed function call input", () =>
+Effect.gen(function* () {
+const body = sseEvents(
+{
+type: "response.output_item.added",
+item: { type: "function_call", id: "item_1", call_id: "call_1", name: "lookup", arguments: "" },
+},
         { type: "response.function_call_arguments.delta", item_id: "item_1", delta: '{"query"' },
         { type: "response.function_call_arguments.delta", item_id: "item_1", delta: ':"weather"}' },
         {
