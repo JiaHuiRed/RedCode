@@ -227,6 +227,9 @@ it.instance("md-defined subagents carry their frontmatter", () =>
       expect(agent?.prompt?.startsWith("---")).toBe(false)
       expect(agent?.description).toBeTruthy()
     }
+    expect(execute?.prompt).toContain("证据足以满足需求后，选一个最小方案并冻结")
+    expect(execute?.prompt).toContain("没有新代码事实或验证失败，不重开已结束的取舍")
+    expect(execute?.prompt).toContain("检查完立即开始第一项可验证的修改")
     // model 是 branded 类型（ModelID / ProviderID），toBe/toEqual 会把参数收窄成 brand —— 拼成
     // 普通字符串再比，顺便和 md 里 `model:` 那一行的写法一模一样。
     const modelOf = (agent: Agent.Info | undefined) => `${agent?.model?.providerID}/${agent?.model?.modelID}`
