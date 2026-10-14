@@ -1,222 +1,58 @@
 # ⚡ RedCode
 
-<p align="center">
-  <img src="docs/assets/chi-portrait.webp" height="360" alt="RedCode 看板娘「赤」">
-</p>
+**RedCode 是一个支持多模型的 AI 编程 Agent，提供终端（TUI）与桌面（GUI）两种使用方式。**
 
-<p align="center"><sub><b>赤</b> — RedCode 的看板娘。两个 exe 的图标、GUI 的启动画面都是她。</sub></p>
+它可以理解和修改代码、执行命令、调用开发工具，并通过自然语言与你协作完成实际开发任务。
 
-> **中文母语的 AI 编程助手。** 终端（TUI）或桌面（GUI），说中文，接你惯用的任意供应商——OpenAI / Anthropic 兼容接口，云端 Coding Plan 与本地模型都行。
->
-> 基于 [opencode](https://github.com/anomalyco/opencode)（sst.dev）深度二次开发，侧重**前缀缓存优化、多模型适配、中文体验和稳定性**。
-
-[![版本](https://badgen.net/badge/版本/0.12.9/blue)](CHANGELOG.md)
-[![平台](https://badgen.net/badge/平台/Windows%2010%2F11/green)](https://github.com/JiaHuiRed/RedCode)
-[![TypeScript](https://badgen.net/badge/TypeScript/7.x/3178c6)](https://typescriptlang.org)
-[![Bun](https://badgen.net/badge/Bun/1.3.x/fb6e19)](https://bun.sh)
-[![许可证](https://badgen.net/badge/许可证/MIT/grey)](LICENSE)
-
----
-
-## ✨ 这是什么？
-
-AI 编程助手。**两个入口、同一引擎**——同一个服务端、同一份会话库、同一套配置，TUI 里开的会话在 GUI 里接着聊。
+基于 [OpenCode](https://github.com/anomalyco/opencode) 深度开发，面向中文使用习惯与个性化工作流持续优化。
 
 <p align="center">
-  <img src="docs/assets/screenshot.png" width="760" alt="RedCode TUI 截图">
+  <img src="docs/assets/chi-portrait.webp" height="300" alt="RedCode 看板娘「赤」">
 </p>
 
-|                             |                                                                                                                  |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| **TUI** `packages/opencode` | 终端界面，单文件 exe。无参数启动会先出工作区选择器（鼠标可点、滚轮可滚，也能手输任意目录）。侧边栏可插件化扩展。 |
-| **GUI** `packages/desktop`  | Electron 桌面窗口。首页带**用量看板**，会话内有 diff 审阅、文件预览（图片 / 音频 / PDF）、上下文用量页。         |
+<p align="center">
+  <img src="docs/assets/screenshot.png" width="760" alt="RedCode TUI 界面">
+</p>
 
-读代码、写代码、改 bug、跑命令。你说中文，它干活。
+## ❤️ Why RedCode?
 
----
+**自由选择模型。** 接入不同供应商的 Coding Plan、兼容 API 或本地模型，根据任务选择适合的模型，而不受限于单一服务。
 
-## 🧠 核心能力
+**让 AI 真正参与开发。** 文件编辑、终端执行、代码检索、MCP 工具和子代理共同组成完整的开发工作流。
 
-| 类别         | 内容                                                                                                             |
-| ------------ | ---------------------------------------------------------------------------------------------------------------- |
-| **代码理解** | jCodeMunch / TypeGraph 索引，跨文件跳转与影响面分析                                                              |
-| **动手**     | 文件读写编辑 · 终端执行 · Web 搜索 · 视觉分析（多模态模型直接识图，也可指定子代理代劳）                          |
-| **多供应商** | 任意 OpenAI / Anthropic 兼容接入——云端 Coding Plan、自建端点、本地模型（Ollama）均可，按角色分配不同模型         |
-| **上下文**   | 前缀缓存保鲜 · 自动压缩 · 上下文用量可视化                                                                       |
-| **组织**     | 会话管理 · 目标管理 · 双层记忆（工作区记进度与教训，长期记通用经验）· Skill 技能系统                             |
-| **代理**     | 两个子代理（explore 只读调研 · execute 读写执行）· Soul 人格（会话固定身份，TUI/GUI 均可选择，新增人格只加文件；GUI 支持详情与独立本地头像） |
-| **安全**     | 权限门控与防护环，三档姿态见下                                                                                   |
+**适合长期协作。** 通过会话管理、上下文压缩、前缀缓存管理和记忆系统，支持持续推进复杂任务。
 
-### 三档权限姿态
+**不只是一个没有个性的工具。** Soul 系统允许自定义 AI 伙伴的身份与交互风格，并在 TUI 和 GUI 中保持会话人格一致。
 
-输入框下拉那一栏就是权限轴，三档**只差权限**，不换提示词也不换模型：
-
-| 姿态           | 能做什么                                                            |
-| -------------- | ------------------------------------------------------------------- |
-| **Plan** 🟦    | 只读、只建议。`edit: deny`，所以它给得出方案但落不了地。            |
-| **RedMind** 🟥 | 默认档。动手，但破坏性操作、工作树之外的目录、`.env` 读取会先问你。 |
-| **Auto** 🟧    | 不打断，上面那些全部自动放行。只适合你已经确认安全的任务。          |
-
----
-
-## 🎯 相比上游做了什么
-
-- **前缀缓存保鲜**：多层缓存（msgPin → modelMsgs → tools → system）压低输入成本
-- **多供应商计价适配**：DeepSeek cache 计价阶梯，修复上游 `cacheReadInputTokens` 为 0 的漏报；Coding Plan 套餐额度（5 小时档、每周档、储备池）按所用供应商自动显示在 TUI 侧边栏和 GUI 上下文页
-- **用量看板**：首页直接看项目级总账——缓存命中环、会话/请求/产出 Token、活跃天数与连续天数、活动热力图、按模型分天的堆叠柱。数据走服务端聚合端点，不是前端把已加载的那批会话 reduce 一遍（那样只会得到「已加载部分」的和）
-- **中文体验**：完整中文文档、中文 UI，三语 i18n（zh / en / ja）
-- **多供应商接入**：OpenAI 兼容接口通吃自建与第三方端点，Anthropic 接口同样兼容；DeepSeek、GLM、Qwen、MiniMax、Zhipu 等各家 Coding Plan 开箱即用
-- **双层记忆系统**：工作区记忆沉淀当前项目的进度、决策与踩坑，长期记忆提炼跨项目通用教训——索引随会话注入、全文按需召回，换个会话仍接得上上下文
-- **多机同步**：机器本地覆盖层 `redcode.local.jsonc`，同步的配置只留机器无关内容
-- **稳定性专项**：0.10.0 起做过一轮桌面端性能定案——「慢」的主因是主进程的同步 I/O 而非渲染，逐条实测修完后启动到渲染层连上 7.28s → 5.71s，首屏 chunk 累计减 1.26MB，流式渲染每 tick 的重算量降到 1/16。细节全部记在 [CHANGELOG.md](CHANGELOG.md)
-
----
+**把控制权留给使用者。** Plan、RedMind、Auto 三种权限模式，按任务需要控制 AI 的执行范围。
 
 ## 🚀 快速开始
 
-前置要求：[Bun](https://bun.sh) 1.3+
+需要 Windows 10/11、Git 和 Bun 1.3+。
 
 ```bash
 git clone https://github.com/JiaHuiRed/RedCode.git
 cd RedCode
 bun install
 
-# 启动 TUI
+# 终端
 bun dev
 
-# 或启动桌面 GUI
-cd packages/desktop && bun run dev
+# 桌面
+bun run dev:desktop
 ```
 
-> 第一次启动自动创建 `~/.redcode/` 并播种默认模板，无需手动配置。
+首次启动后，配置你使用的模型供应商即可开始工作。
 
-### 编译
+更多安装、模型接入、权限与 Soul 配置说明见 [MANUAL.md](MANUAL.md)。
 
-> 也可直接双击一键 bat：TUI `packages/opencode/build.bat` / GUI `packages/desktop/build-and-package.bat`。
+## 📖 文档
 
-```bash
-# TUI 单文件 exe
-cd packages/opencode && bun run build
-
-# 桌面 GUI
-cd packages/desktop && bun run build && bun run package
-```
-
-> TUI 编译产物：`packages/opencode/dist/redcode-windows-x64/bin/redcode.exe`，可直接双击运行。
-
-### 📱 在手机上用
-
-```bash
-redcode web --hostname 0.0.0.0
-```
-
-同一局域网内用手机浏览器开终端里打印的 `Network access` 地址即可。**绑定到局域网时必须设密码**——没设的话启动会被直接拦下，不是打印一行警告就放行。
-
----
-
-## ⚙️ 配置
-
-### 配置文件位置
-
-按加载顺序列出——**后面的覆盖前面的**：
-
-| 位置                              | 用途                                                                                                          |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `~/.redcode/redcode.jsonc`        | 全局配置（跨项目）                                                                                            |
-| `~/.redcode/redcode.local.jsonc`  | 机器本地覆盖层——绝对路径、按显存挑的模型档位、只属于这台机器的 MCP。同步 `~/.redcode/` 时把它排除在版本控制外 |
-| `项目目录/redcode.jsonc`          | 项目级配置                                                                                                    |
-| `项目目录/.redcode/redcode.jsonc` | 项目级配置（`redcode.local.jsonc` 在这里同样生效，优先级规则一致）                                            |
-
-### 添加自定义 Provider
-
-```jsonc
-// redcode.jsonc
-{
-  "$schema": "https://redcode.dev/config.json",
-  "provider": {
-    "my-provider": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "My Provider",
-      "options": {
-        "baseURL": "https://api.example.com/v1",
-        "apiKey": "sk-xxx",
-      },
-      "models": {
-        "my-model": { "name": "My Model", "tool_call": true },
-      },
-    },
-  },
-  "model": "my-provider/my-model",
-}
-```
-
-### MCP 服务器
-
-```jsonc
-{
-  "mcp": {
-    "typegraph": {
-      "type": "local",
-      "command": ["npx", "tsx", "path/to/typegraph-mcp/server.ts"],
-      "environment": {
-        "TYPEGRAPH_PROJECT_ROOT": ".",
-        "TYPEGRAPH_TSCONFIG": "./tsconfig.json",
-      },
-      "enabled": true,
-    },
-    "jcodemunch": {
-      "type": "local",
-      "command": ["uvx", "jcodemunch-mcp"], // 或 pipx run jcodemunch-mcp / pip install jcodemunch-mcp
-      "enabled": true,
-    },
-  },
-}
-```
-
-预装服务器与 MCP 配置的完整指引见 [MANUAL.md](MANUAL.md) 第 4 章。
-
----
-
-## 📖 用户手册
-
-全部操作指南在 **[MANUAL.md](MANUAL.md)**，涵盖：
-
-1. 快速启动
-2. 首次设置（模型 / 称呼 / AI 人格）
-3. 配置模型（适配器 / 切换 / 本地 Ollama）
-4. MCP 服务器（预配置服务的启用）
-5. AI 人格系统
-6. 记忆系统（双层：`MEMORY.md` 索引注入 + `supermemory.db` 全文库）
-7. 配置详解（配置层次 / 权限门控 / 自定义 MCP）
-8. 内置命令
-9. Skill 技能系统
-10. 隐私与多机同步——含**机器本地覆盖层**，解决“同一份配置在两台机器上来回改”的死循环
-
----
-
-## 🛠 技术栈
-
-| 层       | 技术                   |
-| -------- | ---------------------- |
-| 运行时   | Bun                    |
-| 语言     | TypeScript             |
-| 终端 UI  | SolidJS (OpenTUI)      |
-| 桌面 GUI | Electron + SolidJS     |
-| AI SDK   | Vercel AI SDK          |
-| 数据库   | SQLite (Drizzle ORM)   |
-| 构建     | Turborepo（monorepo）  |
-| MCP      | TypeGraph + jCodeMunch |
-
----
-
-## 📋 更新日志
-
-见 [CHANGELOG.md](CHANGELOG.md)。
-
----
+- [用户手册](MANUAL.md) — 安装、配置与使用方法
+- [更新日志](CHANGELOG.md) — 版本变化与修复记录
 
 ## 💙 致谢
 
-- 原项目：[opencode](https://github.com/anomalyco/opencode)（sst.dev）
-- 代码检索能力由 [jcodemunch-mcp](https://github.com/jgravelle/jcodemunch-mcp) 提供驱动
-- 许可证：MIT
+RedCode 基于 [OpenCode](https://github.com/anomalyco/opencode) 开发，感谢原项目及相关开源社区的贡献。
+
+本项目采用 [MIT License](LICENSE)。
