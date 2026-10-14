@@ -69,6 +69,7 @@ import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
 import { SubagentFooter } from "./subagent-footer.tsx"
+import { contextSource } from "../../feature-plugins/sidebar/context"
 import parsers from "../../../../../../parsers-config.ts"
 import * as Clipboard from "../../util/clipboard"
 import { errorMessage } from "@/util/error"
@@ -1712,40 +1713,76 @@ export function UserMessage(props: {
         .trim() || undefined
     )
   })
+  const compactionContext = createMemo(() => {
+    const messages = sync.data.message[props.message.sessionID] ?? []
+    const markerIndex = messages.findIndex((message) => message.id === props.message.id)
+    if (markerIndex < 0) return undefined
+    const nextMarkerIndex = messages.findIndex(
+      (message, index) =>
+        index > markerIndex &&
+        message.role === "user" &&
+        (sync.data.part[message.id] ?? []).some((part) => part.type === "compaction"),
+    )
+    const end = nextMarkerIndex < 0 ? messages.length : nextMarkerIndex
+    const after = messages.slice(markerIndex + 1, end).find(
+      (message): message is AssistantMessageInfo =>
+        message.role === "assistant" &&
+        !message.summary &&
+        message.tokens.output > 0 &&
+        message.tokens.context !== undefined,
+    )
+    return {
+      before: contextSource(messages.slice(0, markerIndex))?.tokens.context,
+      after: after?.tokens.context,
+      superseded: nextMarkerIndex >= 0,
+    }
+  })
   const compactionStats = createMemo(() => {
     const part = compaction()
     if (!part || part.type !== "compaction") return undefined
-    const withTokens = part as CompactionPart & { tokens_before?: number; tokens_after?: number; duration_ms?: number }
-    if (withTokens.tokens_before === undefined) return undefined
-    if (withTokens.tokens_after === undefined)
-      return `${withTokens.tokens_before.toLocaleString()} tokens · ${compacting() ? "压缩中…" : "未提交"}`
-    const freed =
-      withTokens.tokens_before > 0 ? Math.round((1 - withTokens.tokens_after / withTokens.tokens_before) * 100) : 0
+    const duration = (part as CompactionPart & { duration_ms?: number }).duration_ms
     const dur =
-      withTokens.duration_ms !== undefined
-        ? ` · 耗时 ${withTokens.duration_ms >= 1000 ? `${(withTokens.duration_ms / 1000).toFixed(1)}s` : `${withTokens.duration_ms}ms`}`
+      duration !== undefined
+        ? ` · 耗时 ${duration >= 1000 ? `${(duration / 1000).toFixed(1)}s` : `${duration}ms`}`
         : ""
-    return `${withTokens.tokens_before.toLocaleString()} → ${withTokens.tokens_after.toLocaleString()} tokens · 释放 ${freed}%${dur}`
+    const context = compactionContext()
+    if (context?.before !== undefined && context.after !== undefined) {
+      const delta = context.before - context.after
+      const change = context.before > 0 ? Math.round((Math.abs(delta) / context.before) * 100) : 0
+      return `压前最近主请求 ${context.before.toLocaleString()} → 压后首个主请求 ${context.after.toLocaleString()} tokens · ${delta >= 0 ? "净减少" : "净增加"} ${change}%${dur}`
+    }
+    const state = context?.superseded
+      ? "本次未等到主请求实报，已被后续压缩取代"
+      : compactionError()
+        ? "未提交"
+        : compacting()
+          ? "压缩中…"
+          : "压后待主请求实报"
+    return context?.before !== undefined
+      ? `压前最近主请求实报 ${context.before.toLocaleString()} tokens · ${state}${dur}`
+      : `主请求上下文暂无实报 · ${state}${dur}`
   })
-  // 260813 Red compaction 分割线带 token 对比：part 由后端 process 回填 tokens_before/after。
-  // SDK 的 Part 类型是 OpenAPI 生成的（无这两个字段），这里用本地扩展接口断言读取。
+  // 261014 Red compaction 分割线显示主请求 usage 实报；估算字段不再冒充窗口值。
   const compactionTitle = createMemo(() => {
     const part = compaction()
     if (!part || part.type !== "compaction") return " Compaction "
-    const withTokens = part as CompactionPart & { tokens_before?: number; tokens_after?: number; duration_ms?: number }
-    // 261010 Red 压缩耗时：duration_ms 由 compaction.ts 回填，分割线与详情同源
+    const withTokens = part as CompactionPart & { duration_ms?: number }
     const fmtDuration = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`)
     const fmt = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : `${n}`)
     const caret = compactionOpen() ? " ▾ " : " ▸ "
-    if (withTokens.tokens_before !== undefined && withTokens.tokens_after !== undefined) {
-      const dur = withTokens.duration_ms !== undefined ? ` · ${fmtDuration(withTokens.duration_ms)}` : ""
-      return ` Compaction ${fmt(withTokens.tokens_before)} → ${fmt(withTokens.tokens_after)}${dur}${caret}`
-    }
+    const context = compactionContext()
+    const dur = withTokens.duration_ms !== undefined ? ` · ${fmtDuration(withTokens.duration_ms)}` : ""
     if (compactionError())
       return ` Compaction ${compactionError()!.name === "MessageAbortedError" ? "已取消" : "失败"}${caret}`
     if (compacting()) return ` Compaction 压缩中…${caret}`
-    if (!compactionMessage()) return ` Compaction ${caret}`
-    return ` Compaction 未完成${caret}`
+    const summary = compactionMessage()
+    if (!summary) return ` Compaction ${caret}`
+    if (summary.time.completed === undefined) return ` Compaction 未完成${caret}`
+    if (context?.before !== undefined && context.after !== undefined)
+      return ` Compaction ${fmt(context.before)} → ${fmt(context.after)}${dur}${caret}`
+    if (context?.superseded) return ` Compaction 已被后续压缩取代${caret}`
+    if (context?.before !== undefined) return ` Compaction ${fmt(context.before)} → 待实报${dur}${caret}`
+    return ` Compaction ${caret}`
   })
 
   // 260821 Red 用户消息右对齐（聊天式左右对照）：气泡限宽 80% 终端宽，窄窗兜底 40 列。

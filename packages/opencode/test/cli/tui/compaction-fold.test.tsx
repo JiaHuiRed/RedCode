@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 // 260911 Red 压缩 checkpoint 原位折叠行（参考 DSH ui-conversation）：折叠态带 caret 与
-// token 对比；点击分割线展开摘要与 token 估算；压缩中由 session.time.compacting 呈现。
+// 实报上下文对比；点击分割线展开摘要；压缩中由 session.time.compacting 呈现。
 // 本组渲染真实 UserMessage（含内部折叠交互），摘要消息走 sync.data 注入。
 import { afterEach, describe, expect, test } from "bun:test"
 import { CompactingIndicator, UserMessage } from "@tui/routes/session/index"
@@ -36,12 +36,40 @@ const summaryMessage = {
   system: [],
 }
 
+const message = {
+  id: "msg_user_compaction",
+  role: "user",
+  sessionID: "ses_snapshot",
+  time: { created: 1_756_000_000_000 },
+} as never
+
+const mainMessage = (id: string, created: number, context: number) => ({
+  id,
+  role: "assistant",
+  sessionID: "ses_snapshot",
+  parentID: "msg_user_compaction",
+  mode: "build",
+  agent: "build",
+  providerID: "test",
+  modelID: "test-model",
+  time: { created, completed: created + 1 },
+  tokens: { context, input: context, output: 1, reasoning: 0, cache: { read: 0, write: 0, miss: context } },
+})
+
 // 摘要消息与正文 parts 由 sync.data 注入；session.get 决定是否处于「压缩中」。
-const syncWith = (session: Record<string, unknown>, summary: Record<string, unknown> = summaryMessage) => ({
+const syncWith = (
+  session: Record<string, unknown>,
+  summary: Record<string, unknown> = summaryMessage,
+  messages: Record<string, unknown>[] = [message, summary],
+  parts: Record<string, unknown[]> = {},
+) => ({
   data: {
     config: { username: "你" },
-    message: { ses_snapshot: [summary] },
-    part: { msg_summary: [{ id: "prt_summary", type: "text", text: SUMMARY_TEXT, synthetic: false }] },
+    message: { ses_snapshot: messages },
+    part: {
+      msg_summary: [{ id: "prt_summary", type: "text", text: SUMMARY_TEXT, synthetic: false }],
+      ...parts,
+    },
     session: [],
     provider: [],
     mcp: {},
@@ -51,31 +79,62 @@ const syncWith = (session: Record<string, unknown>, summary: Record<string, unkn
   session,
 })
 
-const message = {
-  id: "msg_user_compaction",
-  role: "user",
-  sessionID: "ses_snapshot",
-  time: { created: 1_756_000_000_000 },
-} as never
-
 const notCompacting = { get: () => undefined }
 
 const render = (
   part: unknown,
   session: Record<string, unknown> = notCompacting,
   summary: Record<string, unknown> = summaryMessage,
+  messages: Record<string, unknown>[] = [message, summary],
+  parts: Record<string, unknown[]> = {},
 ) =>
   renderFrame(() => <UserMessage message={message} parts={[part] as never} onMouseUp={() => {}} index={0} />, {
     width: WIDTH,
     height: 12,
-    sync: syncWith(session, summary),
+    sync: syncWith(session, summary, messages, parts),
   })
 
 describe("TUI 压缩 checkpoint 折叠行", () => {
-  test("完成后的折叠行显示 token 对比与展开指示", async () => {
-    const frame = await render(compactionPart(12000, 3000))
-    expect(frame).toContain("Compaction 12k → 3k")
+  test("前后值取压缩前最近请求和压后首个主请求的实报，不显示本地估算", async () => {
+    const before = mainMessage("msg_before", 1, 368_080)
+    const after = mainMessage("msg_after", 3, 183_469)
+    const frame = await render(compactionPart(554_889, 444_276), notCompacting, summaryMessage, [
+      before,
+      message,
+      summaryMessage,
+      after,
+    ])
+    expect(frame).toContain("Compaction 368k → 183k")
+    expect(frame).not.toContain("554,889")
+    expect(frame).not.toContain("444,276")
     expect(frame).toContain("▸")
+  })
+
+  test("压后尚无主请求实报时明确显示待实报，而不展示估算值", async () => {
+    const before = mainMessage("msg_before", 1, 368_080)
+    const frame = await render(compactionPart(554_889, 444_276), notCompacting, summaryMessage, [
+      before,
+      message,
+      summaryMessage,
+    ])
+    expect(frame).toContain("Compaction 368k → 待实报")
+    expect(frame).not.toContain("554,889")
+    expect(frame).not.toContain("444,276")
+  })
+
+  test("后续压缩先发生时，不把它的结果冒充为本次压缩的压后实报", async () => {
+    const before = mainMessage("msg_before", 1, 368_080)
+    const next = { id: "msg_next_compaction", role: "user", sessionID: "ses_snapshot", time: { created: 4 } }
+    const frame = await render(
+      compactionPart(554_889, 444_276),
+      notCompacting,
+      summaryMessage,
+      [before, message, summaryMessage, next],
+      { [next.id]: [{ type: "compaction" }] },
+    )
+    expect(frame).toContain("已被后续压缩取代")
+    expect(frame).not.toContain("554,889")
+    expect(frame).not.toContain("444,276")
   })
 
   test("压缩中显示进行中文案", async () => {
@@ -84,8 +143,15 @@ describe("TUI 压缩 checkpoint 折叠行", () => {
   })
 
   test("已成功的 checkpoint 不被新压缩的 session 标志覆盖", async () => {
-    const frame = await render(compactionPart(12000, 3000), { get: () => ({ time: { compacting: 1 } }) })
-    expect(frame).toContain("Compaction 12k → 3k")
+    const before = mainMessage("msg_before", 1, 368_080)
+    const after = mainMessage("msg_after", 3, 183_469)
+    const frame = await render(
+      compactionPart(554_889, 444_276),
+      { get: () => ({ time: { compacting: 1 } }) },
+      summaryMessage,
+      [before, message, summaryMessage, after],
+    )
+    expect(frame).toContain("Compaction 368k → 183k")
     expect(frame).not.toContain("压缩中")
   })
 
@@ -212,27 +278,40 @@ describe("TUI 压缩 checkpoint 折叠行", () => {
     expect(frameText(app)).toContain("压缩上下文")
   })
 
-  test("点击分割线展开摘要与 token 估算", async () => {
+  test("点击分割线展开摘要与主请求实报上下文", async () => {
+    const beforeMessage = mainMessage("msg_before", 1, 368_080)
+    const afterMessage = mainMessage("msg_after", 3, 183_469)
     const app = await mountFrame(
       () => (
-        <UserMessage message={message} parts={[compactionPart(12000, 3000)] as never} onMouseUp={() => {}} index={0} />
+        <UserMessage
+          message={message}
+          parts={[compactionPart(554_889, 444_276)] as never}
+          onMouseUp={() => {}}
+          index={0}
+        />
       ),
-      { width: WIDTH, height: 12, sync: syncWith(notCompacting) },
+      {
+        width: WIDTH,
+        height: 12,
+        sync: syncWith(notCompacting, summaryMessage, [beforeMessage, message, summaryMessage, afterMessage]),
+      },
     )
 
     const before = frameText(app)
     expect(before).not.toContain(SUMMARY_TEXT)
     expect(before).toContain("▸")
 
-    const row = before.split("\n").findIndex((line) => line.includes("Compaction 12k → 3k"))
+    const row = before.split("\n").findIndex((line) => line.includes("Compaction 368k → 183k"))
     expect(row).toBeGreaterThanOrEqual(0)
     await app.mockMouse.click(Math.floor(WIDTH / 2), row)
     await app.renderOnce()
 
     const after = frameText(app)
     expect(after).toContain(SUMMARY_TEXT)
-    expect(after).toContain((12000).toLocaleString())
-    expect(after).toContain("释放 75%")
+    expect(after).toContain("压前最近主请求 368,080 → 压后首个主请求 183,469 tokens")
+    expect(after).toContain("净减少 50%")
+    expect(after).not.toContain("554,889")
+    expect(after).not.toContain("444,276")
     expect(after).toContain("▾")
   })
 })
