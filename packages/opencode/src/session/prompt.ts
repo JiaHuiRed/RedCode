@@ -2,6 +2,7 @@ import path from "path"
 import os from "os"
 import { SessionID, MessageID, PartID } from "./schema"
 import { MessageV2 } from "./message-v2"
+import { ImageTokens } from "./image-tokens"
 import { PromptCaches, settlePromptCaches, touchSession } from "./prompt-caches"
 import { ContextSnapshot } from "./context-snapshot"
 import { PrefixProbe } from "./prefix-probe"
@@ -959,6 +960,20 @@ export const layer = Layer.effect(
               // unsupportedParts 的内容哈希 temp 路径），不支持图片的模型分不清是同一张，
               // 会把两个路径都写进子代理 prompt 导致读图翻倍（实测 ses_00c1cb26affe）。
               // 文本文件（text/plain）分支保留回显，那里有实际语义。
+              // 261015 Red 读盘前的字节闸门（审计 A02）。这个分支是先把整个文件读进来再 base64
+              // （≈1.37× 常驻），此前没有任何尺寸检查；配合下方的 unbounded 并发，N 个附件就是
+              // N 份完整副本。超限一个字节都不读，只回一句可读说明 —— 文件仍在磁盘上。
+              const stat = yield* fsys.stat(filepath).pipe(Effect.orElseSucceed(() => undefined))
+              if (stat && ImageTokens.attachmentInlineBytesExceeded(stat.size)) {
+                log.warn("attachment over inline byte budget", { mime, bytes: stat.size })
+                return [
+                  ...(referenceContext ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }] : []),
+                  syntheticText(
+                    `Attachment not inlined: ${part.filename} is ${stat.size} bytes, over the inline budget of ` +
+                      `${ImageTokens.MAX_ATTACHMENT_BASE64_BYTES} base64 bytes. The file is still on disk.`,
+                  ),
+                ]
+              }
               return [
                 ...(referenceContext ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }] : []),
                 {
@@ -994,9 +1009,39 @@ export const layer = Layer.effect(
         return [{ ...part, messageID: info.id, sessionID: input.sessionID }]
       })
 
-      const resolvedParts = yield* Effect.forEach(input.parts, resolvePart, { concurrency: "unbounded" }).pipe(
-        Effect.map((x) => x.flat().map(assign)),
-      )
+      // 261015 Red 附件数量预算（审计 A02）。`input.parts` 此前是普通 Schema.Array、无数量上界，
+      // 而每个 file part 都可能走进上面那条「整文件读入 + base64」的分支，且并发是 unbounded。
+      // 这里按既有的 MAX_ATTACHMENTS 把超量附件挡在解析之外，并为**每一个**超量附件在原位置补一句
+      // 说明：不静默丢弃、不改变保留项的顺序，也不新增第二套限额常量（与工具侧共用同一条线）。
+      // 并发上限一并由此兜住 —— 最贵的那条路径只出现在 file part 上，数量封顶则并发封顶。
+      const attachmentBudget = ImageTokens.splitByAttachmentBudget(input.parts, (part) => part.type === "file")
+      const overBudget = new Set<PromptInput["parts"][number]>(attachmentBudget.overflow)
+      if (overBudget.size > 0)
+        log.warn("attachment count over budget", {
+          sessionID: input.sessionID,
+          overBudget: overBudget.size,
+          max: ImageTokens.MAX_ATTACHMENTS,
+        })
+      const resolvedParts = yield* Effect.forEach(
+        input.parts,
+        (part) =>
+          overBudget.has(part)
+            ? Effect.succeed([
+                syntheticText(
+                  `Attachment not inlined: ${
+                    part.type === "file" ? (part.filename ?? "unnamed file") : "file"
+                  } — a single message may inline at most ${ImageTokens.MAX_ATTACHMENTS} files. It is still on disk.`,
+                ),
+              ])
+            : resolvePart(part),
+        // 261015 Red 并发压到 8（家规：instruction.ts 读本地文件用 8、拉远端用 4）。
+        // 数量封顶后最坏峰值 ≈ 并发 × 单件常驻；单件常驻**实测** 2.33× 文件字节（原始 buffer 与
+        // base64 字符串同时在场，见 .redcode/temp/a02-probe.mjs 的 RSS 口径），字节闸门封在
+        // 3.75 MiB ⇒ 8 × 2.33 × 3.75MiB ≈ 70MiB，而 unbounded 时是 32 × 同值 ≈ 280MiB。
+        // **没有测墙钟耗时，因此不声称提速** —— 这里换的是峰值上界。
+        // Effect.forEach 保序不变，取消与上面那些逐 part 失败分支都不动。
+        { concurrency: 8 },
+      ).pipe(Effect.map((x) => x.flat().map(assign)))
 
       yield* plugin.trigger(
         "chat.message",

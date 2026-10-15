@@ -92,6 +92,44 @@ export const TOOL_RESULT_TOKEN_BUDGET = 14_000
 export const MAX_ATTACHMENT_BASE64_BYTES = 5 * 1024 * 1024
 export const MAX_ATTACHMENTS = 32
 
+/**
+ * 261015 Red 读盘前的附件字节闸门（审计 A02）。
+ *
+ * `MAX_ATTACHMENT_BASE64_BYTES` 管的是「**已经在内存里**的 base64 载荷」，而 prompt.ts 的二进制
+ * 附件分支是先把整个文件读进来再 base64 —— 上游没有任何尺寸检查，一个 500MB 的 .bin 就是约
+ * 1.9GB 瞬时内存，且当时还是 unbounded 并发。这里按 base64 长度公式（4*ceil(n/3)）反算原始字节
+ * 上限，取 3/4 的保守近似，让超限文件**一个字节都不读进内存**（与 `tool/read.ts` 的图片分支同形）。
+ * 边界附近的文件仍由 fitter 按同一常量裁决，两道闸门不互相矛盾。
+ */
+export function attachmentInlineBytesExceeded(bytes: number | bigint): boolean {
+  return Number(bytes) > Math.floor((MAX_ATTACHMENT_BASE64_BYTES * 3) / 4)
+}
+
+/**
+ * 261015 Red 按 `MAX_ATTACHMENTS` 把 parts 切成「内联」与「超量」两段，**保持原有顺序**。
+ *
+ * 超量部分刻意不静默丢弃：调用方要为每个超量附件补一句可读说明（审计 A02：给可见、可恢复的
+ * 失败说明，不破坏顺序、不丢失细节）。非附件（文本 / agent part）不计数也不参与限额 —— 它们的
+ * 解析是廉价的，卡它们只会误伤正常输入。
+ */
+export function splitByAttachmentBudget<T>(
+  parts: readonly T[],
+  isAttachment: (part: T) => boolean,
+  max = MAX_ATTACHMENTS,
+) {
+  let used = 0
+  const inline: T[] = []
+  const overflow: T[] = []
+  for (const part of parts) {
+    if (!isAttachment(part)) inline.push(part)
+    else if (used < max) {
+      used++
+      inline.push(part)
+    } else overflow.push(part)
+  }
+  return { inline, overflow }
+}
+
 // 附件全占满时仍给文本留的预览额度。附件不可拆，文本可以两头截，所以丢附件之前
 // 先把这段额度保住，否则一个纯图结果会把正文挤成空串，模型失去全部上下文。
 const TEXT_FLOOR = 400
