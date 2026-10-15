@@ -1148,8 +1148,10 @@ export const layer = Layer.effect(
               timer = null
               try {
                 await bridge.promise(reconcile())
-              } catch {
-                // 261015 Red 配置变更的 reconcile 失败被吞掉——用户改了 MCP 配置不会得到任何反馈（与 AGENTS.md「误配置要响」相悖，待定）
+              } catch (error) {
+                // 261015 Red 配置变更没落地必须响：静默吞掉会让「改了 MCP 配置却毫无反应」变成查不出来的
+                // 问题（AGENTS.md：误配置要响）。watch 经 1s 防抖，一次变更只报一条。
+                log.warn("MCP config change failed to reconcile", { path: cfgPath, error })
               }
             }, 1000)
           }

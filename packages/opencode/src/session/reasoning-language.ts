@@ -95,13 +95,20 @@ const MAX_ADDRESS_LENGTH = 128
 export function addressFrom(username: string | undefined): string | undefined {
   const name = username?.trim()
   if (!name) return undefined
-  try {
-    // 260803 Red username 兜底从系统用户名改为电脑名，判据同步排除 hostname
-    if (name === os.userInfo().username || name === os.hostname()) return undefined
-  } catch {
-    // 261015 Red os.userInfo() 在部分平台会抛（用户名非 UTF-8 等）；注意这个 try 同时罩着下面的 hostname 比较 → 抛错时那道判据一并被跳过
-  }
+  // 260803 Red username 兜底从系统用户名改为电脑名，判据同步排除 hostname
+  // 261015 Red 两道判据必须分开：os.userInfo() 在部分平台会抛（用户名非 UTF-8 等），旧写法把它
+  // 和 hostname 比较罩在同一个 try 里 —— 一抛就两道一起失效，电脑名会被当作"称呼偏好"注入
+  // （本文件上面已写明：比不注入更糟）。
+  if (name === os.hostname() || name === systemUsername()) return undefined
   return Array.from(name).slice(0, MAX_ADDRESS_LENGTH).join("")
+}
+
+function systemUsername(): string | undefined {
+  try {
+    return os.userInfo().username
+  } catch {
+    // 261015 Red 取不到系统用户名（平台不支持、用户名非 UTF-8）→ 这道判据失效，hostname 那道仍在
+  }
 }
 
 // 剥掉不代表"用户在用什么语言说话"的内容：RedCode 注入的包装块、粘贴的文件/代码。

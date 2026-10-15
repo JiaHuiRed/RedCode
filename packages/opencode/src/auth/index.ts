@@ -3,12 +3,34 @@ import { Effect, Layer, Record, Result, Schema, Context } from "effect"
 import { NonNegativeInt } from "@redcode-ai/core/schema"
 import { Global } from "@redcode-ai/core/global"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
+import * as Log from "@redcode-ai/core/util/log"
+
+const log = Log.create({ service: "auth" })
 
 export const OAUTH_DUMMY_KEY = "redcode-oauth-dummy-key"
 
 const file = path.join(Global.Path.data, "auth.json")
 
 const fail = (message: string) => (cause: unknown) => new AuthError({ message, cause })
+
+/**
+ * 261015 Red 解析 REDCODE_AUTH_CONTENT 覆盖值。
+ *
+ * 返回 undefined 表示「不是合法 JSON，别用它」，调用方据此回落到磁盘凭据。
+ * 放在 Effect 外的普通 helper 里有两层原因：① 本包明文禁止在 Effect.gen 内写 try/catch；
+ * ② all() 的契约是 `Record<string, Info>`，把解析留在 Effect 管道外才保得住那个推断类型
+ * （塞进管道会让成功类型塌成别的联合，连锁打崩 set/remove 里的索引访问）。
+ */
+function parseEnvAuthContent(content: string): Record<string, Info> | undefined {
+  try {
+    return JSON.parse(content) as Record<string, Info>
+  } catch {
+    // 261015 Red 非法 JSON 必须响：静默吞掉会让「设了 REDCODE_AUTH_CONTENT 却没生效」查不出来
+    // （AGENTS.md：误配置要响）。环境变量的内容本来就没经过校验，与改动前返回 JSON.parse 原值一致。
+    log.warn("REDCODE_AUTH_CONTENT is not valid JSON, falling back to stored credentials")
+    return undefined
+  }
+}
 
 export class Oauth extends Schema.Class<Oauth>("OAuth")({
   type: Schema.Literal("oauth"),
@@ -55,12 +77,10 @@ export const layer = Layer.effect(
     const decode = Schema.decodeUnknownOption(Info)
 
     const all = Effect.fn("Auth.all")(function* () {
-      if (process.env.REDCODE_AUTH_CONTENT) {
-        try {
-          return JSON.parse(process.env.REDCODE_AUTH_CONTENT)
-        } catch (err) {
-          // 261015 Red REDCODE_AUTH_CONTENT 不是合法 JSON → 静默回落到磁盘凭据（环境覆盖值坏掉时仍能用已登录的凭据）
-        }
+      const content = process.env.REDCODE_AUTH_CONTENT
+      if (content) {
+        const fromEnv = parseEnvAuthContent(content)
+        if (fromEnv !== undefined) return fromEnv
       }
 
       const data = (yield* fsys.readJson(file).pipe(Effect.orElseSucceed(() => ({})))) as Record<string, unknown>

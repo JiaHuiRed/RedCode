@@ -11,9 +11,12 @@
 // was invalidated → full re-prefill every turn (slow first token). Deriving the
 // token removes that instability while keeping the leak check intact.
 import { Global } from "@redcode-ai/core/global"
+import * as Log from "@redcode-ai/core/util/log"
 import { createHmac } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
+
+const log = Log.create({ service: "canary" })
 
 function randomHex(bytes: number): string {
   const buf = new Uint8Array(bytes)
@@ -41,8 +44,10 @@ function loadSecret(): string {
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true })
     fs.writeFileSync(file, secret, "utf8")
-  } catch {
-    // 261015 Red secret 写盘失败不影响本次运行（secret 仍在内存）；但下次启动会重新生成 → token 变化、该会话前缀缓存整体失效
+  } catch (error) {
+    // 261015 Red 落盘失败必须响：本次运行不受影响（secret 在内存里），但下次启动会重新生成 →
+    // token 变化 → 该会话前缀缓存整体失效（正是本模块 260708 要解决的问题）。
+    log.warn("canary secret 无法落盘：下次启动会换 token 并作废该会话前缀缓存", { file, error })
   }
   return secret
 }
