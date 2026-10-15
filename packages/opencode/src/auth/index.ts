@@ -1,5 +1,5 @@
 import path from "path"
-import { Effect, Layer, Record, Result, Schema, Context } from "effect"
+import { Effect, Layer, Option, Record, Result, Schema, Context } from "effect"
 import { NonNegativeInt } from "@redcode-ai/core/schema"
 import { Global } from "@redcode-ai/core/global"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
@@ -14,22 +14,43 @@ const file = path.join(Global.Path.data, "auth.json")
 const fail = (message: string) => (cause: unknown) => new AuthError({ message, cause })
 
 /**
- * 261015 Red 解析 REDCODE_AUTH_CONTENT 覆盖值。
+ * 261015 Red 解析 REDCODE_AUTH_CONTENT 覆盖值（审计 A07）。
  *
- * 返回 undefined 表示「不是合法 JSON，别用它」，调用方据此回落到磁盘凭据。
+ * 返回 undefined 表示「这份覆盖值不可用」，调用方据此回落到磁盘凭据。
  * 放在 Effect 外的普通 helper 里有两层原因：① 本包明文禁止在 Effect.gen 内写 try/catch；
  * ② all() 的契约是 `Record<string, Info>`，把解析留在 Effect 管道外才保得住那个推断类型
- * （塞进管道会让成功类型塌成别的联合，连锁打崩 set/remove 里的索引访问）。
+ * （塞进管道会让成功类型塌成别的联合，连带打崩 set/remove 里的索引访问）。
+ *
+ * 导出只为让测试直接驱动（纯函数、参数化，不动进程环境）——与文件路径共用同一个 Info 解码。
  */
-function parseEnvAuthContent(content: string): Record<string, Info> | undefined {
+export function parseEnvAuthContent(content: string): Record<string, Info> | undefined {
+  let parsed: unknown
   try {
-    return JSON.parse(content) as Record<string, Info>
+    parsed = JSON.parse(content)
   } catch {
-    // 261015 Red 非法 JSON 必须响：静默吞掉会让「设了 REDCODE_AUTH_CONTENT 却没生效」查不出来
-    // （AGENTS.md：误配置要响）。环境变量的内容本来就没经过校验，与改动前返回 JSON.parse 原值一致。
+    // 261015 Red 语法错必须响：静默吞掉会让「设了 REDCODE_AUTH_CONTENT 却没生效」查不出来
+    // （AGENTS.md：误配置要响）。
     log.warn("REDCODE_AUTH_CONTENT is not valid JSON, falling back to stored credentials")
     return undefined
   }
+  // 261015 Red 合法 JSON ≠ 合法凭据：顶层必须是普通对象、每项必须解得出 Oauth/Api/WellKnown。
+  // 此前直接 `as Record<string, Info>`，于是 `null` / `[]` / `0` / `{"openai":1}` 都被冒充成凭据
+  // 返回 —— `null` 那种还会让调用方的 `(...)[providerID]` 当场抛。任一项不合法就整体忽略这次覆盖
+  // （凭据不做半套应用），warn 只报键名：值里可能有密钥。
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    log.warn("REDCODE_AUTH_CONTENT rejected: expected a provider→credential object", { keys: authKeys(parsed) })
+    return undefined
+  }
+  const decoded = decodeAuthRecord(parsed)
+  if (Option.isSome(decoded)) return decoded.value
+  log.warn("REDCODE_AUTH_CONTENT rejected: provider entries must be valid credentials", { keys: authKeys(parsed) })
+  return undefined
+}
+
+/** warn 用的安全投影：只取顶层键名，不含任何值。 */
+function authKeys(value: unknown): string[] {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return []
+  return Object.keys(value).slice(0, 10)
 }
 
 export class Oauth extends Schema.Class<Oauth>("OAuth")({
@@ -55,6 +76,10 @@ export class WellKnown extends Schema.Class<WellKnown>("WellKnownAuth")({
 
 export const Info = Schema.Union([Oauth, Api, WellKnown]).annotate({ discriminator: "type", identifier: "Auth" })
 export type Info = Schema.Schema.Type<typeof Info>
+
+// 261015 Red 环境覆盖值与磁盘 auth.json 用**同一个**解码口径：值是 Schema 类实例，与文件路径
+// (`decode(value)`) 产出的形状一致，set() 写回磁盘时序列化行为也一致。
+const decodeAuthRecord = Schema.decodeUnknownOption(Schema.Record(Schema.String, Info))
 
 export class AuthError extends Schema.TaggedErrorClass<AuthError>()("AuthError", {
   message: Schema.String,

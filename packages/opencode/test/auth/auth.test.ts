@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
 import { Auth } from "../../src/auth"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
@@ -8,6 +8,45 @@ import { testEffect } from "../lib/effect"
 const node = CrossSpawnSpawner.defaultLayer
 
 const it = testEffect(Layer.mergeAll(Auth.defaultLayer, node))
+
+// 261015 Red 审计 A07：REDCODE_AUTH_CONTENT 的**结构**校验。此前只做 JSON.parse + as 断言，
+// 于是合法 JSON 里的 null / [] / 0 / {"openai":1} 都被冒充成 Record<string, Info> 返回 ——
+// `null` 那种还会让调用方的 (...)[providerID] 当场抛。这里直调纯函数，不动进程环境。
+describe("parseEnvAuthContent", () => {
+  test("合法覆盖值：api / wellknown / oauth 三种都能解出来", () => {
+    const out = Auth.parseEnvAuthContent(
+      JSON.stringify({
+        anthropic: { type: "api", key: "sk-test" },
+        "https://example.com": { type: "wellknown", key: "TOKEN", token: "abc" },
+        openai: { type: "oauth", refresh: "r", access: "a", expires: 0 },
+      }),
+    )
+    expect(Object.keys(out!)).toEqual(["anthropic", "https://example.com", "openai"])
+    expect(out!.anthropic?.type).toBe("api")
+  })
+
+  test("语法错误返回 undefined（回落磁盘凭据）", () => {
+    expect(Auth.parseEnvAuthContent("{not json")).toBeUndefined()
+  })
+
+  test("合法 JSON 但不是普通对象：一律拒绝", () => {
+    for (const bad of ["null", "[]", "0", '"str"', "true"]) {
+      expect(Auth.parseEnvAuthContent(bad)).toBeUndefined()
+    }
+  })
+
+  test("取值类型非法：整体拒绝，不做半套应用", () => {
+    expect(Auth.parseEnvAuthContent(JSON.stringify({ openai: 1 }))).toBeUndefined()
+    expect(Auth.parseEnvAuthContent(JSON.stringify({ openai: { type: "nope" } }))).toBeUndefined()
+    expect(
+      Auth.parseEnvAuthContent(JSON.stringify({ openai: { type: "api", key: "sk" }, bad: 1 })),
+    ).toBeUndefined()
+  })
+
+  test("空对象合法（等于不提供凭据）", () => {
+    expect(Auth.parseEnvAuthContent("{}")).toEqual({})
+  })
+})
 
 describe("Auth", () => {
   it.live("set normalizes trailing slashes in keys", () =>
