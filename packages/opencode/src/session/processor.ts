@@ -30,6 +30,8 @@ import { NgramDetector, RECOVERY_PROMPTS } from "./text-loop-detection"
 import * as XmlToolCall from "./xml-tool-call"
 import * as InstructionEcho from "./instruction-echo"
 import * as RepeatToolReminder from "./repeat-tool-reminder"
+import * as ToolFailureGuard from "./tool-failure-guard"
+import * as ConfigToolFailure from "@/config/tool-failure"
 
 const DOOM_LOOP_THRESHOLD = 3
 // 260818 Red reasoning 流级 stall 兜底：模型卡死在纯思考流里永不 finish
@@ -59,6 +61,8 @@ export interface Handle {
   readonly message: MessageV2.Assistant
   readonly compactionTiming?: CompactionTiming
   readonly stoppedByPermission?: boolean
+  readonly stoppedByToolFailure?: boolean
+  readonly guardToolCall?: (name: string, input: unknown) => Effect.Effect<void>
   readonly updateToolCall: (
     toolCallID: string,
     name: string,
@@ -101,6 +105,7 @@ interface ProcessorContext extends Input {
   shouldBreak: boolean
   snapshot: string | undefined
   blocked: boolean
+  toolFailureStopped: boolean
   needsCompaction: boolean
   currentText: MessageV2.TextPart | undefined
   reasoningMap: Record<string, MessageV2.ReasoningPart>
@@ -176,6 +181,7 @@ export const layer = Layer.effect(
       // may execute tools internally before emitting start-step events,
       // so capturing inside the event handler can be too late.
       const initialSnapshot = yield* snapshot.track()
+      const failureLimit = ConfigToolFailure.resolve((yield* config.get()).experimental?.repeated_tool_failure_limit)
       const compactionTiming: CompactionTiming | undefined = input.assistantMessage.summary
         ? { usageMs: 0, cleanupMs: 0, eventHandlingMs: 0, attempts: 0 }
         : undefined
@@ -187,6 +193,7 @@ export const layer = Layer.effect(
         shouldBreak: false,
         snapshot: initialSnapshot,
         blocked: false,
+        toolFailureStopped: false,
         needsCompaction: false,
         currentText: undefined,
         firstChunkAt: undefined,
@@ -319,12 +326,28 @@ export const layer = Layer.effect(
       const failToolCall = Effect.fn("SessionProcessor.failToolCall")(function* (toolCallID: string, error: unknown) {
         const match = yield* readToolCall(toolCallID)
         if (!match || match.part.state.status !== "running") return false
+        const inputSignature = ToolFailureGuard.inputSignature(match.part.tool, match.part.state.input)
+        const text = errorMessage(error)
+        const errorSignature = ToolFailureGuard.signature(text)
+        const blocked = text === ToolFailureGuard.BLOCKED
+        const count = blocked ? failureLimit : ToolFailureGuard.count({
+          sessionID: ctx.sessionID,
+          parentID: ctx.assistantMessage.parentID,
+          inputSignature,
+          errorSignature,
+        }) + 1
+        // 261015 Red 同一并行批可能在错误回传前全已启动，超预算后仍须封死下一次模型请求。
+        if (count > failureLimit) ctx.toolFailureStopped = true
+        const reminder = !blocked && count === failureLimit ? ToolFailureGuard.reminder(failureLimit) : undefined
         yield* session.updatePart({
           ...match.part,
           state: {
             status: "error",
             input: match.part.state.input,
-            error: errorMessage(error),
+            error: reminder ? `${text}\n\n${reminder}` : text,
+            metadata: {
+              failureGuard: { inputSignature, errorSignature, count, blocked },
+            },
             time: { start: match.part.state.time.start, end: Date.now() },
           },
         })
@@ -333,6 +356,22 @@ export const layer = Layer.effect(
         }
         yield* settleToolCall(toolCallID)
         return true
+      })
+
+      // 261015 Red 失败预算执行闸门：同轮同参同错累计到上限后，原样调用不再执行并结束本轮
+      // （不再发下一次模型请求）。决策与实测请求数见
+      // docs/notes/implemented/bug-fix/2026-10-15-tool-failure-budget.md
+      const guardToolCall = Effect.fn("SessionProcessor.guardToolCall")(function* (name: string, input: unknown) {
+        if (ctx.assistantMessage.summary) return
+        const count = ToolFailureGuard.count({
+          sessionID: ctx.sessionID,
+          parentID: ctx.assistantMessage.parentID,
+          inputSignature: ToolFailureGuard.inputSignature(name, input),
+        })
+        if (count < failureLimit) return
+        ctx.toolFailureStopped = true
+        slog.warn("tool.failure.budget", { tool: name, count, limit: failureLimit })
+        return yield* Effect.die(new Error(ToolFailureGuard.BLOCKED))
       })
 
       // 260728 Red 文本态工具调用打捞：认出 XML、从可见文本里摘掉、记到 ctx 上。
@@ -595,6 +634,16 @@ export const layer = Layer.effect(
             if (Canary.check(JSON.stringify(input), ctx.sessionID)) {
               slog.error("canary.leak", { sessionID: ctx.sessionID, source: "tool-call", tool: value.name })
               throw new Error("Session terminated: canary token leaked in tool call input")
+            }
+
+            // 261015 Red 失败预算由执行入口拦截，不能再弹 doom_loop 让确认动作重开同一死循环。
+            if (ToolFailureGuard.count({
+              sessionID: ctx.sessionID,
+              parentID: ctx.assistantMessage.parentID,
+              inputSignature: ToolFailureGuard.inputSignature(value.name, input),
+            }) >= failureLimit) {
+              ctx.toolFailureStopped = true
+              return
             }
 
             // 260806 Red 取样范围从「当前助手消息内部」改为「本会话最近的 tool 分片（跨消息）」。
@@ -1200,7 +1249,7 @@ export const layer = Layer.effect(
           // 260818 Red reasoning stall 兜底触发：思考已提升为正文、finish 已置 stop，
           // 与正常收尾同路径退出（runLoop 里 finish="stop" 会走正常 break 分支）
           if (ctx.reasoningStallTripped) return "stop"
-          if (ctx.blocked || ctx.assistantMessage.error) return "stop"
+          if (ctx.toolFailureStopped || ctx.blocked || ctx.assistantMessage.error) return "stop"
           return "continue"
         })
       })
@@ -1213,6 +1262,10 @@ export const layer = Layer.effect(
         get stoppedByPermission() {
           return ctx.blocked
         },
+        get stoppedByToolFailure() {
+          return ctx.toolFailureStopped
+        },
+        guardToolCall,
         get salvagedToolCalls() {
           return ctx.salvaged
         },

@@ -66,7 +66,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   agent: Agent.Info
   model: Provider.Model
   session: Session.Info
-  processor: Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall">
+  processor: Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall" | "guardToolCall">
   bypassAgentCheck: boolean
   messages: MessageV2.WithParts[]
   promptOps: TaskPromptOps
@@ -623,6 +623,22 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     tools[key] = item
   }
 
+  // 261015 Red Responses 默认会尝试 strict 归一化（可选参数可能被改成必填）；显式保留可选语义，
+  // 并统一覆盖内置/MCP/resource 三类执行入口。两条 runtime 与请求次数止损见
+  // docs/notes/implemented/bug-fix/2026-10-15-tool-failure-budget.md
+  for (const [name, item] of Object.entries(tools)) {
+    if (item.type !== "provider") item.strict ??= false
+    const execute = item.execute
+    if (!execute || !input.processor.guardToolCall) continue
+    const guard = input.processor.guardToolCall
+    tools[name] = {
+      ...item,
+      execute: async (args, options) => {
+        await run.promise(guard(name, Freeform.normalizeInput(name, args) ?? args))
+        return execute(args, options)
+      },
+    }
+  }
   return tools
 })
 

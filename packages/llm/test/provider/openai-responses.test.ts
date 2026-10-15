@@ -41,6 +41,35 @@ const expectToolOutput = (body: OpenAIResponses.OpenAIResponsesBody): OpenAITool
 }
 
 describe("OpenAI Responses route", () => {
+  it.effect("preserves optional tool arguments instead of implicit strict normalization", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<OpenAIResponses.OpenAIResponsesBody>(
+        LLM.updateRequest(request, {
+          tools: [{
+            name: "task_status",
+            description: "Inspect a task",
+            inputSchema: {
+              type: "object",
+              properties: { task_id: { type: "string" }, message: { type: "string" } },
+              required: ["task_id"],
+            },
+          }],
+        }),
+      )
+      expect(prepared.body.tools).toEqual([{
+        type: "function",
+        name: "task_status",
+        description: "Inspect a task",
+        strict: false,
+        parameters: {
+          type: "object",
+          properties: { task_id: { type: "string" }, message: { type: "string" } },
+          required: ["task_id"],
+        },
+      }])
+    }),
+  )
+
   it.effect("prepares OpenAI Responses target", () =>
     Effect.gen(function* () {
       const prepared = yield* LLMClient.prepare(request)

@@ -135,7 +135,12 @@ export const TaskStatusTool = Tool.define(
       if (params.message !== undefined) {
         const messageText = params.message
         if (params.wait || params.cancel || params.timeout_ms !== undefined)
-          return yield* Effect.fail(new Error("Steering cannot be combined with wait, timeout_ms, or cancel"))
+          return yield* Effect.fail(new Error(
+            'Steering cannot be combined with wait, timeout_ms, or cancel. ' +
+            'To inspect status, omit message entirely: {"task_id":"<task_id>","wait":false}. ' +
+            'To send guidance, omit wait, timeout_ms, and cancel: {"task_id":"<task_id>","message":"<guidance>"}. ' +
+            'An empty message is not an omitted field.',
+          ))
         if (!params.message.trim() || Buffer.byteLength(params.message, "utf8") > 16_384)
           return yield* Effect.fail(new Error("Steering message must be nonblank and at most 16384 UTF-8 bytes"))
         const child = yield* sessions.get(params.task_id)

@@ -305,4 +305,5 @@
     },
     "execute": { "model": "openai/gpt-6-luna", "variant": "high" },
   },
+  "experimental": { "repeated_tool_failure_limit": 2 },
 }

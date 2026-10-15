@@ -1443,6 +1443,10 @@ export type NativeCompactionConfig = {
    */
   summary_max_tokens?: number
   /**
+   * Maximum tokens of inherited protected records carried into a new compaction block (default: 20000; maximum: 10000000)
+   */
+  retained_max_tokens?: number
+  /**
    * Maximum bytes of one compaction summary (default: 98304; maximum: 67108864)
    */
   summary_max_bytes?: number
@@ -1501,6 +1505,15 @@ export type Config = {
    * Default shell to use for terminal and bash tool
    */
   shell?: string
+  /**
+   * Optional Windows dual-shell routing for the agent bash tool. Absent = use config.shell as before; user commands and PTY terminals are not affected
+   */
+  shellRouting?: {
+    /**
+     * Default shell for the agent bash tool on Windows: git-bash, powershell, or legacy (config.shell). Absent = legacy behavior
+     */
+    agentDefault?: "git-bash" | "powershell" | "legacy"
+  }
   /**
    * Log level
    */
@@ -1818,6 +1831,10 @@ export type Config = {
      * Continue the agent loop when a tool call is denied
      */
     continue_loop_on_deny?: boolean
+    /**
+     * Identical tool failures before one final correction opportunity (default: 2; maximum: 20).
+     */
+    repeated_tool_failure_limit?: number
     /**
      * Bounded, hash-only provider request diagnostics. Does not modify model requests or cache keys.
      */

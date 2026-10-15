@@ -261,6 +261,8 @@ const lowerTool = (tool: ToolDefinition): OpenAIResponsesTool => ({
   name: tool.name,
   description: tool.description,
   parameters: tool.inputSchema,
+  // 261015 Red 保留参数 schema 的可选语义，不让 Responses 默认 strict 归一化改成必填。
+  strict: false,
 })
 
 const lowerToolChoice = (toolChoice: NonNullable<LLMRequest["toolChoice"]>) =>

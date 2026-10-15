@@ -52,7 +52,7 @@ import { Reference } from "../../src/reference/reference"
 import { RepositoryCache } from "../../src/reference/repository-cache"
 import { TestInstance } from "../fixture/fixture"
 import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
-import { reply, TestLLMServer } from "../lib/llm-server"
+import { raw, reply, TestLLMServer } from "../lib/llm-server"
 import { SyncEvent } from "@/sync"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -1644,6 +1644,133 @@ it.instance("user permission rejection does not restart the queued turn", () =>
     expect(rejections).toBe(1)
     expect(yield* llm.calls).toBe(1)
     expect(yield* llm.pending).toBe(1)
+  }),
+)
+
+for (const { configuredLimit, interleave } of [undefined, 1, 3].flatMap((configuredLimit) =>
+  [false, true].map((interleave) => ({ configuredLimit, interleave })),
+)) {
+  const limit = configuredLimit ?? 2
+  it.instance(`repeated tool failures cap model requests (limit=${configuredLimit ?? "default"}, bookkeeping=${interleave})`, () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        agent: { redmind: { permission: { doom_loop: "allow" } } },
+        ...(configuredLimit === undefined ? {} : { experimental: { repeated_tool_failure_limit: configuredLimit } }),
+      }))
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const registry = yield* ToolRegistry.Service
+      const jobs = yield* BackgroundJob.Service
+      const { directory } = yield* TestInstance
+      const chat = yield* sessions.create({
+        title: "Repeated failure budget",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      const child = yield* sessions.create({ parentID: chat.id, title: "Independent background task" })
+      yield* jobs.start({
+        id: child.id,
+        type: "task",
+        metadata: { parentSessionId: chat.id },
+        run: Effect.never,
+      })
+      yield* Effect.addFinalizer(() => jobs.cancel(child.id))
+      const { read } = yield* registry.named()
+      const original = read.execute
+      let executions = 0
+      read.execute = (args, context) =>
+        Effect.gen(function* () {
+          executions++
+          return yield* original(args, context)
+        })
+      yield* Effect.addFinalizer(() => Effect.sync(() => void (read.execute = original)))
+      for (let i = 0; i <= limit; i++) {
+        yield* llm.tool("read", { filePath: path.join(directory, "missing.txt") })
+        if (interleave && i < limit) yield* llm.tool("todoread", {})
+      }
+      yield* llm.text("must not consume another model request")
+      const result = yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        parts: [{ type: "text", text: "read the file" }],
+      })
+      expect(yield* llm.calls).toBe(interleave ? 2 * limit + 1 : limit + 1)
+      expect(yield* llm.pending).toBe(1)
+      expect(executions).toBe(limit)
+      expect((yield* jobs.get(child.id))?.status).toBe("running")
+      expect(result.parts.some((part) => part.type === "text" && part.text.includes("重复失败"))).toBe(true)
+      const inputs = yield* llm.inputs
+      expect(JSON.stringify(inputs[interleave ? 2 * limit - 1 : limit])).toContain("Repeated tool failure")
+    }),
+  )
+}
+
+it.instance("repeated tool failures in one parallel batch do not trigger another model request", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const { directory } = yield* TestInstance
+    const chat = yield* sessions.create({
+      title: "Parallel failure budget",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    const missing = { filePath: path.join(directory, "missing.txt") }
+    const chunk = (delta: Record<string, unknown>, finish_reason: string | null = null) => ({
+      id: "parallel-fixture", object: "chat.completion.chunk", created: 0, model: "test-model",
+      choices: [{ index: 0, delta, finish_reason }],
+    })
+    yield* llm.push(raw({ chunks: [
+      chunk({ role: "assistant" }),
+      chunk({ tool_calls: Array.from({ length: 3 }, (_, index) => ({
+        index, id: `parallel_${index}`, type: "function",
+        function: { name: "read", arguments: JSON.stringify(missing) },
+      })) }),
+      chunk({}, "tool_calls"),
+    ] }))
+    yield* llm.text("must not consume a follow-up request")
+    const result = yield* prompt.prompt({
+      sessionID: chat.id, agent: "build", model: ref,
+      parts: [{ type: "text", text: "read the file" }],
+    })
+    expect(yield* llm.calls).toBe(1)
+    expect(yield* llm.pending).toBe(1)
+    expect(result.parts.some((part) => part.type === "text" && part.text.includes("重复失败"))).toBe(true)
+  }),
+)
+
+it.instance("repeated tool failure budget permits corrected arguments and a new user turn", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const { directory } = yield* TestInstance
+    const chat = yield* sessions.create({
+      title: "Corrected tool arguments",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    const missing = { filePath: path.join(directory, "missing.txt") }
+    const file = path.join(directory, "exists.txt")
+    yield* writeText(file, "successful correction")
+    yield* llm.tool("read", missing)
+    yield* llm.tool("read", missing)
+    yield* llm.tool("read", { filePath: file })
+    yield* llm.text("corrected")
+    const first = yield* prompt.prompt({
+      sessionID: chat.id, agent: "build", model: ref,
+      parts: [{ type: "text", text: "read a file" }],
+    })
+    expect(yield* llm.calls).toBe(4)
+    expect(first.parts.some((part) => part.type === "text" && part.text === "corrected")).toBe(true)
+    yield* llm.tool("read", missing)
+    yield* llm.text("new turn has its own budget")
+    const second = yield* prompt.prompt({
+      sessionID: chat.id, agent: "build", model: ref,
+      parts: [{ type: "text", text: "retry the missing file once" }],
+    })
+    expect(yield* llm.calls).toBe(6)
+    expect(second.parts.some((part) => part.type === "text" && part.text === "new turn has its own budget")).toBe(true)
   }),
 )
 

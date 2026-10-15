@@ -40,6 +40,7 @@ import { ConfigPlugin } from "./plugin"
 import { ConfigProvider } from "./provider"
 import { ConfigReference } from "./reference"
 import { ConfigRequestEvidence } from "./request-evidence"
+import * as ConfigToolFailure from "./tool-failure"
 import { ConfigServer } from "./server"
 import { ConfigSkills } from "./skills"
 import { ConfigVariable } from "./variable"
@@ -412,6 +413,7 @@ export const Info = Schema.Struct({
       continue_loop_on_deny: Schema.optional(Schema.Boolean).annotate({
         description: "Continue the agent loop when a tool call is denied",
       }),
+      repeated_tool_failure_limit: Schema.optional(ConfigToolFailure.Limit),
       requestEvidence: Schema.optional(ConfigRequestEvidence.Info).annotate({
         description: "Bounded, hash-only provider request diagnostics. Does not modify model requests or cache keys.",
       }),

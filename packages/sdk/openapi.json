@@ -16724,6 +16724,12 @@
                 "type": "boolean",
                 "description": "Continue the agent loop when a tool call is denied"
               },
+              "repeated_tool_failure_limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20,
+                "description": "Identical tool failures before one final correction opportunity (default: 2; maximum: 20)."
+              },
               "requestEvidence": {
                 "type": "object",
                 "properties": {

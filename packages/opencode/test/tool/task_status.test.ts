@@ -1,5 +1,5 @@
 import { afterEach, describe, expect } from "bun:test"
-import { Effect, Exit, Layer } from "effect"
+import { Cause, Effect, Exit, Layer } from "effect"
 import { Agent } from "@/agent/agent"
 import { BackgroundJob } from "@/background/job"
 import { Bus } from "@/bus"
@@ -32,6 +32,34 @@ const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
 const it = testEffect(layer({ experimentalBackgroundSubagents: true }))
 
 describe("tool.task_status", () => {
+  it.instance("conflicting full arguments explain how to omit inactive fields", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({})
+      const def = yield* (yield* TaskStatusTool).init()
+      const context = {
+        sessionID: chat.id,
+        messageID: MessageID.ascending(),
+        agent: "build",
+        abort: new AbortController().signal,
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      }
+      const exit = yield* def.execute(
+        { task_id: chat.id, wait: false, timeout_ms: 1000, cancel: false, message: "" },
+        context,
+      ).pipe(Effect.exit)
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        const text = Cause.pretty(exit.cause)
+        expect(text).toContain("omit message entirely")
+        expect(text).toContain("omit wait, timeout_ms, and cancel")
+      }
+      expect((yield* def.execute({ task_id: chat.id }, context)).title).toBe("Task status")
+    }),
+  )
+
   for (const message of ["", "   ", "x".repeat(16_385)]) {
     it.instance(`rejects invalid steer text (${message.length} characters)`, () =>
       Effect.gen(function* () {

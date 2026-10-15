@@ -1,7 +1,8 @@
 import { describe, expect } from "bun:test"
-import { Effect, Layer } from "effect"
+import { Effect, Exit, Layer } from "effect"
 import type { Client as MCPClient } from "@modelcontextprotocol/sdk/client/index.js"
-import type { ToolExecutionOptions } from "ai"
+import { generateText, type ToolExecutionOptions } from "ai"
+import { createOpenAI } from "@ai-sdk/openai"
 import { Agent } from "@/agent/agent"
 import { MCP } from "@/mcp"
 import { MessageV2 } from "@/session/message-v2"
@@ -160,6 +161,51 @@ function callTool(tools: Record<string, unknown>, name: string, args: unknown) {
 const recorder = (): Recorder => ({ reads: [], asks: [], afterArgs: [], resourceScopes: [] })
 
 describe("session.tools mcp resource tools", () => {
+  it.live("resource tools preserve optional fields and share the failure execution guard", () =>
+    Effect.gen(function* () {
+      const rec = recorder()
+      let guards = 0
+      const input = resolveInput()
+      const tools = yield* SessionTools.resolve({
+        ...input,
+        processor: {
+          ...input.processor,
+          guardToolCall: () => Effect.gen(function* () {
+            guards++
+            return yield* Effect.die(new Error("failure budget"))
+          }),
+        },
+      }).pipe(Effect.provide(layers(rec, {})))
+      expect(tools[READ].strict).toBe(false)
+      expect(tools[LIST].strict).toBe(false)
+      const exit = yield* callTool(tools, READ, { server: "A", uri: "foo://a" }).pipe(Effect.exit)
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(guards).toBe(1)
+      expect(rec.reads).toEqual([])
+      expect(rec.asks).toEqual([])
+      yield* Effect.promise(async () => {
+        let captured: Record<string, unknown> | undefined
+        const provider = createOpenAI({
+          apiKey: "offline-fixture",
+          fetch: Object.assign(async (_url: RequestInfo | URL, options?: RequestInit) => {
+            captured = JSON.parse(String(options?.body))
+            return new Response(JSON.stringify({ error: { message: "offline fixture" } }), { status: 400 })
+          }, { preconnect: () => undefined }),
+        })
+        await generateText({
+          model: provider.responses("gpt-6.1-sol"),
+          prompt: "offline fixture",
+          tools,
+          maxRetries: 0,
+        }).catch((error: unknown) => {
+          expect(String(error)).toContain("offline fixture")
+        })
+        expect(captured).toBeDefined()
+        expect((captured?.tools as Array<{ strict?: boolean }>).every((item) => item.strict === false)).toBe(true)
+      })
+    }),
+  )
+
   it.live(
     "read_mcp_resource executes against the hook-rewritten server and uri",
     () =>

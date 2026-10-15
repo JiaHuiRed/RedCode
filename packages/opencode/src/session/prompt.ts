@@ -2014,6 +2014,16 @@ export const layer = Layer.effect(
           // 260801 Red Goal token 记账：累计本步 tokens（无 goal 时无开销）
           usageTokens += handle.message.tokens?.total ?? 0
 
+          if (handle.stoppedByToolFailure) {
+            yield* state.markStopped(sessionID)
+            yield* appendNotice({
+              sessionID,
+              messageID: handle.message.id,
+              text: "[RedCode] 同一工具调用重复失败，已停止本轮自动续跑以避免继续消耗额度。会话记录和后台任务保留。",
+            })
+            return "break" as const
+          }
+
           if (structured !== undefined) {
             handle.message.structured = structured
             handle.message.finish = handle.message.finish ?? "stop"
