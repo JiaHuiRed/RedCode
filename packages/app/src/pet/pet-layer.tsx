@@ -2,7 +2,7 @@ import { Show, createEffect, createMemo, onCleanup, untrack } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { useSettings } from "@/context/settings"
 import { petState } from "./pet-store"
-import { resolvePet, type PetDisplay } from "./pet-state"
+import { DEFAULT_OUTFIT, outfitFor, resolvePet, type PetDisplay } from "./pet-state"
 import { advancePetPresentation, createPetPresentation } from "./pet-lines"
 import "./pet-layer.css"
 
@@ -59,6 +59,12 @@ export function PetLayer() {
   })
 
   const display = createMemo(() => resolvePet(petState(), view.now))
+  const outfit = createMemo(() => outfitFor(petState(), display().sessionID))
+  const sprite = createMemo(() =>
+    outfit() === DEFAULT_OUTFIT
+      ? PET_IMAGE[display().kind]
+      : PET_IMAGE[display().kind].replace("/pet/", `/pet/outfits/${encodeURIComponent(outfit())}/`),
+  )
 
   // 261006 Red reducer 记住姿态边沿，1s tick 只收过期台词/推进闲时动作，不反复抽词。
   createEffect(() => {
@@ -94,13 +100,14 @@ export function PetLayer() {
         </Show>
         <img
           class="pet-layer-sprite"
-          src={presentation.action === "coffee" ? COFFEE_IMAGE : PET_IMAGE[display().kind]}
+          src={presentation.action === "coffee" ? COFFEE_IMAGE : sprite()}
           alt=""
           draggable={false}
           onError={(e) => {
-            // 素材未就位时回落现有占位图；占位图本身缺失则隐藏，不让裂图常驻
+            // 261015 Red 装扮图 → 基础图 → 占位图；占位图也缺失则隐藏。
             const img = e.currentTarget
-            if (img.src.endsWith(PLACEHOLDER)) img.style.visibility = "hidden"
+            if (img.src.includes("/pet/outfits/")) img.src = PET_IMAGE[display().kind]
+            else if (img.src.endsWith(PLACEHOLDER)) img.style.visibility = "hidden"
             else img.src = PLACEHOLDER
           }}
         />

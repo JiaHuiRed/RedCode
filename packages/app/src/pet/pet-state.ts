@@ -1,8 +1,12 @@
 /**
  * Pet System 状态核心：真实引擎事件 → PetState 归一化。
  *
- * 事件源对照：E:\AI\dsh-pet\PET_EVENT_SOURCE_MAPPING.md（@8c7ee139 实测）。
- * 设计原则（REDCode_PET_SYSTEM_DESIGN.md #31）：Pet 不参与推理、不污染 Conversation、
+ * 事件源对照：docs/notes/implemented/feature/2026-10-06-pet-v02-presentation.md、
+ * docs/notes/implemented/feature/2026-10-01-pet-stream-heartbeat-winner.md。
+ * 装扮桥接：获胜 sessionID → 会话 model → providerID outfit（决策见
+ * docs/notes/implemented/feature/2026-10-15-pet-outfit-bridging.md）。
+ * 设计原则（`REDCode_PET_SYSTEM_DESIGN.md` #31——**该文档不在本仓**，注释所称路径在另一台机的
+ * `E:\AI\dsh-pet\`，本机未见；本地记录只有上面三篇 note）：Pet 不参与推理、不污染 Conversation、
  * 状态零持久化（进程内存态、重启归零）、终态必须超时回落（dsh-pet issue #59 教训）。
  *
  * 260929 Red 事件源换血：原订阅的 session.next.tool.* / reasoning.started /
@@ -37,6 +41,7 @@ export type PetState = {
    * 正常干完活的回合永远庆祝不了，只有被打断的回合才庆祝——判据本身就是反的。
    */
   worked: Record<string, boolean | undefined>
+  models: Record<string, { providerID: string; modelID: string } | undefined>
   flash: PetFlash | undefined
 }
 
@@ -59,13 +64,18 @@ export type PetDisplay = PetDisplayBase & {
 }
 
 export const FLASH_MS = 5_000
+export const DEFAULT_OUTFIT = "default"
 /** thinking/tool 型 entry 超时兜底：引擎事件链断了也能回落 idle（dsh-pet「永远卡在工作」教训）。 */
 export const STALE_MS = 90_000
 /** waiting/permission 是「等用户」，不超时；compacting 单独给更长上限。 */
 export const COMPACTING_STALE_MS = 180_000
 
 export function createPetState(): PetState {
-  return { sessions: {}, worked: {}, flash: undefined }
+  return { sessions: {}, worked: {}, models: {}, flash: undefined }
+}
+
+export function outfitFor(state: PetState, sessionID: string | undefined): string {
+  return (sessionID && state.models[sessionID]?.providerID) || DEFAULT_OUTFIT
 }
 
 export type PetEvent = { type: string; properties?: unknown }
@@ -90,6 +100,10 @@ type SessionProps = {
   sessionID?: string
   status?: { type?: string }
   part?: PetPart
+  info?: {
+    sessionID?: string
+    model?: { providerID: string; modelID: string }
+  }
 }
 
 function activityKind(activity: PetActivity): PetDisplay["kind"] {
@@ -163,6 +177,7 @@ function pruneStale(state: PetState, now: number): void {
     if (activity && entryExpired(activity, now)) {
       delete state.sessions[id]
       delete state.worked[id]
+      delete state.models[id]
     }
   }
 }
@@ -189,6 +204,11 @@ export function applyPetEvent(state: PetState, event: PetEvent, now: number): vo
   }
 
   switch (event.type) {
+    case "message.updated": {
+      const info = props.info
+      if (info?.sessionID && info.model?.providerID) state.models[info.sessionID] = info.model
+      return
+    }
     case "message.part.updated": {
       // 260929 Red 注意：sessionID 在 part 上而不是 properties 顶层，必须用 id 归属会话——
       // 用外层 setEntry（抓 props.sessionID）会整个静默跳过。
@@ -245,6 +265,7 @@ export function applyPetEvent(state: PetState, event: PetEvent, now: number): vo
       const status = props.status?.type
       if (status === "idle") {
         delete state.sessions[sessionID]
+        delete state.models[sessionID]
         if (state.worked[sessionID]) state.flash = { kind: "success", at: now }
         delete state.worked[sessionID]
         return
@@ -286,6 +307,7 @@ export function applyPetEvent(state: PetState, event: PetEvent, now: number): vo
       if (sessionID) {
         delete state.sessions[sessionID]
         delete state.worked[sessionID]
+        delete state.models[sessionID]
       }
       return
     }

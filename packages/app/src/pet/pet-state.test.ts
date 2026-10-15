@@ -1,5 +1,15 @@
 import { describe, expect, test } from "bun:test"
-import { applyPetEvent, classifyTool, createPetState, FLASH_MS, resolvePet, STALE_MS, type PetState } from "./pet-state"
+import {
+  applyPetEvent,
+  classifyTool,
+  createPetState,
+  DEFAULT_OUTFIT,
+  FLASH_MS,
+  outfitFor,
+  resolvePet,
+  STALE_MS,
+  type PetState,
+} from "./pet-state"
 
 const NOW = 1_000_000
 
@@ -34,6 +44,56 @@ describe("classifyTool", () => {
 })
 
 describe("applyPetEvent", () => {
+  test("message.updated records the session provider outfit", () => {
+    const state = createPetState()
+    feed(state, "message.updated", {
+      info: { sessionID: "s1", model: { providerID: "openai", modelID: "gpt-5" } },
+    })
+    expect(outfitFor(state, "s1")).toBe("openai")
+  })
+
+  test("missing model or sessionID uses the default outfit", () => {
+    const state = createPetState()
+    feed(state, "message.updated", { info: { sessionID: "s1" } })
+    feed(state, "message.updated", { info: { model: { providerID: "openai", modelID: "gpt-5" } } })
+    expect(outfitFor(state, "s1")).toBe(DEFAULT_OUTFIT)
+    expect(outfitFor(state, undefined)).toBe(DEFAULT_OUTFIT)
+  })
+
+  test("model outfit is cleared with idle, error, and stale activity", () => {
+    const state = createPetState()
+    const setModel = (sessionID: string) =>
+      feed(state, "message.updated", { info: { sessionID, model: { providerID: "openai", modelID: "gpt-5" } } })
+
+    setModel("idle")
+    feed(state, "session.status", { sessionID: "idle", status: { type: "idle" } })
+    expect(outfitFor(state, "idle")).toBe(DEFAULT_OUTFIT)
+
+    setModel("error")
+    feed(state, "session.error", { sessionID: "error" })
+    expect(outfitFor(state, "error")).toBe(DEFAULT_OUTFIT)
+
+    setModel("stale")
+    feed(state, "session.status", { sessionID: "stale", status: { type: "busy" } })
+    feed(state, "session.status", { sessionID: "other", status: { type: "busy" } }, NOW + STALE_MS + 1)
+    expect(outfitFor(state, "stale")).toBe(DEFAULT_OUTFIT)
+  })
+
+  test("winning permission session selects its own outfit", () => {
+    const state = createPetState()
+    feed(state, "message.updated", {
+      info: { sessionID: "session-a", model: { providerID: "provider-a", modelID: "model-a" } },
+    })
+    feed(state, "message.updated", {
+      info: { sessionID: "session-b", model: { providerID: "provider-b", modelID: "model-b" } },
+    })
+    tool(state, "session-b", "edit", "running")
+    feed(state, "permission.asked", { sessionID: "session-a" })
+    const display = resolvePet(state, NOW)
+    expect(display.sessionID).toBe("session-a")
+    expect(outfitFor(state, display.sessionID)).toBe("provider-a")
+  })
+
   test("status busy 兜底 thinking 并重置 worked；纯问答 idle 不庆祝", () => {
     const state = createPetState()
     feed(state, "session.status", { sessionID: "s1", status: { type: "busy" } })
