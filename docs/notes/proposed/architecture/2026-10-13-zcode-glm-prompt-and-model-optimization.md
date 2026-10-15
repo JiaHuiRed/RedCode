@@ -149,25 +149,23 @@ GLM-5.2 文档记录：**把 `openaiCompatible` 的 option set 复用到 Anthrop
 | 提示词语言 | 稳定段强制英文 | 中英混排（soul + 中文注释） |
 | 档位别名处理 | `values` 白名单（只列真实档位） | 白名单 + 注释说明"全摆出来是骗人的" |
 
-**RedCode 在参数适配上的成熟度不低**：`transform.ts:870-935` 同样做了版本门控（`glmVersion >= 5.02` 才给 `reasoning_effort`）、别名去重（`GLM_EFFORTS = ["none","high","max"]`，注释明写"5.2 的 7 个取值里有一半是别名……只暴露三档真实行为"）、以及"数据打底、硬编码表覆盖"（models.dev 数据只作兜底，实测特判优先）。**差别在载体，不在水平。**
+**RedCode 在参数适配上的成熟度不低**：`transform.ts` 按版本门控 `reasoning_effort`，GLM-5.2 用 `GLM_EFFORTS` 去重别名，GLM-5.3 单独使用官方档位 `GLM_5_3_EFFORTS`；通用模型仍由 models.dev 数据兜底，实测特判优先。**差别在载体，不在水平。**
 
-## 五、一处实质分歧（建议核实）
+## 五、GLM-5.3 档位分歧（已解决）
 
-同一个 `glm-5.3`，两仓给出的档位集合不同：
+RedCode 旧映射与 GLM-5.3 官方档位不一致；ZCode 自配置观察与官方文档一致：
 
-| | 档位集合 | 能否关思考 |
-| --- | --- | --- |
-| **RedCode**（`transform.ts:881` + `:911`） | `none` / `high` / `max` | 能（`none`） |
-| **ZCode**（`zcode-builtin.json:1025`） | `low` / `high` / `max` | **不能**（映射里 `type` 硬编码 `enabled`） |
+| 来源 | 档位集合 |
+| --- | --- |
+| **RedCode 旧映射**（`transform.ts`） | `none` / `high` / `max` |
+| **ZCode 自配置观察**（`zcode-builtin.json:1025`） | `low` / `high` / `max` |
+| **GLM-5.3 / 5.3-Flash 官方** | `low` / `high` / `max` |
 
-两个方向都对不上：**RedCode 有 `none` 而 ZCode 没有；RedCode 没有 `low` 而 ZCode 有。**
+### 决策（261015）
 
-RedCode 的 `none` 档来自对 GLM-**5.2** 的实测（5.2 的 ZCode 规则里确实有 `disabled`）；但 ZCode 对 **5.3** 收掉了这一档。因此两种可能：
+智谱[核心参数文档](https://docs.bigmodel.cn/cn/guide/start/concept-param)明确列出 GLM-5.3 与 GLM-5.3-Flash 的档位为 `low` / `high` / `max`；`medium` 只在 GLM-5.2 的别名规则中映射到 `high`，5.3 不支持 `none`。RedCode 按 5.3 精确版本发送这三档，GLM-5.2 保留 `none` / `high` / `max`。
 
-- **A**：GLM-5.3 确实不再支持禁用思考 → RedCode 给 5.3 暴露 `none` 是**错的**，用户选了可能被静默降级或报错。
-- **B**：GLM-5.3 仍支持、只是 ZCode 没暴露 → RedCode 缺 `low` 是漏项。
-
-`glmSupportsEffort` 只按版本号 `>= 5.02` 一刀切，**不区分 5.2 与 5.3**，所以这条分歧目前是被版本门控掩盖的。建议拿 5.3 实际发一次带 `reasoning_effort: "none"` 的请求，看是报错、静默降级、还是正常禁用——这决定 `GLM_EFFORTS` 是否要按小版本再分一层。
+映射单测覆盖两代档位及 `max` 的请求值；本次未对上游发送真实请求。
 
 ## 六、可参考项（候选，非优劣判断）
 

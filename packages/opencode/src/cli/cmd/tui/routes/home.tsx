@@ -1,5 +1,6 @@
 import { Prompt, type PromptRef } from "@tui/component/prompt"
 import { usePromptMaxWidth } from "@tui/component/prompt/width"
+import { DialogSoul } from "@tui/component/dialog-soul"
 import { createEffect, createSignal, onMount } from "solid-js"
 import { logoLarge } from "@/cli/logo"
 import { Logo } from "../component/logo"
@@ -7,6 +8,7 @@ import { Seal } from "../component/seal"
 import { Starfield } from "../component/starfield"
 import { useSync } from "../context/sync"
 import { Toast } from "../ui/toast"
+import { useDialog } from "../ui/dialog"
 import { useArgs } from "../context/args"
 import { useRouteData } from "@tui/context/route"
 import { usePromptRef } from "../context/prompt"
@@ -37,10 +39,16 @@ export function Home() {
   const [ref, setRef] = createSignal<PromptRef | undefined>()
   const args = useArgs()
   const local = useLocal()
+  const dialog = useDialog()
   const editor = useEditorContext()
   const promptMaxWidth = usePromptMaxWidth()
   let sent = false
   let attempting = false
+
+  const openSoul = async () => {
+    if (!(await local.soul.refresh())) return
+    dialog.replace(() => <DialogSoul />)
+  }
 
   onMount(() => {
     editor.clearSelection()
@@ -106,15 +114,19 @@ export function Home() {
           </box>
         </box>
         <box height={1} minHeight={0} flexShrink={1} />
-        <text>
-          Soul:{" "}
-          {local.soul.label(local.soul.saved() ?? local.soul.default()) ??
-            local.soul.saved() ??
-            local.soul.default() ??
-            "server default"}
-          {local.soul.saved() ? " · last selected" : " · server default"}
-          {local.soul.ready() && local.soul.saved() && !local.soul.current() ? " · unavailable; choose /soul" : ""}
-        </text>
+        <box onMouseUp={openSoul}>
+          <text>
+            Soul:{" "}
+            {local.soul.label(local.soul.saved() ?? local.soul.default()) ??
+              local.soul.saved() ??
+              local.soul.default() ??
+              "server default"}
+            {local.soul.saved() ? " · last selected" : " · server default"}
+            {local.soul.ready() && local.soul.saved() && !local.soul.current()
+              ? " · unavailable; choose /soul"
+              : ""}
+          </text>
+        </box>
         <box width="100%" flexDirection="row" alignItems="center" justifyContent="center" flexShrink={0}>
           <box width="100%" maxWidth={promptMaxWidth()} zIndex={1000} paddingTop={1} flexShrink={0}>
             <TuiPluginRuntime.Slot name="home_prompt" mode="replace" ref={bind}>

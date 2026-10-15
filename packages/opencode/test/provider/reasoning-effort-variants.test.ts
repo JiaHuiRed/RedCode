@@ -20,7 +20,17 @@ describe("GLM 推理强度变体", () => {
     expect(variantsOf("glm-5.2")).toEqual(["none", "high", "max"])
   })
 
-  test("别名不出现在档位里（low/medium 会被官方映射成 high，xhigh 映射成 max）", () => {
+  test("GLM-5.3 暴露官方 low/high/max，不暴露 none/medium", () => {
+    for (const id of ["glm-5.3", "glm-5.3-flash"]) {
+      expect(variantsOf(id)).toEqual(["low", "high", "max"])
+    }
+    const v = ProviderTransform.variants(glm("glm-5.3-flash"))
+    expect(v["max"]).toEqual({
+      reasoningEffort: "max",
+    })
+  })
+
+  test("GLM-5.2 不暴露行为别名（low/medium 映射成 high，xhigh 映射成 max）", () => {
     const v = variantsOf("glm-5.2")
     for (const alias of ["low", "medium", "xhigh", "minimal"]) expect(v).not.toContain(alias)
   })
@@ -42,8 +52,7 @@ describe("GLM 推理强度变体", () => {
     expect(variantsOf("glm-5v-turbo")).toEqual([])
   })
 
-  test("更高版本自动跟上，不需要再改代码", () => {
-    expect(variantsOf("glm-5.3")).toEqual(["none", "high", "max"])
+  test("未单独定义的更高版本继续沿用通用档位", () => {
     expect(variantsOf("glm-6")).toEqual(["none", "high", "max"])
   })
 

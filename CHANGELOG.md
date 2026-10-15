@@ -10,6 +10,7 @@
 
 ### Unreleased
 
+- **首页 Soul 状态可点击选择；修正 GLM-5.3 推理档位**（`tui/routes/home.tsx`、`provider/transform.ts`）：点击 Soul 状态即可打开现有灵魂选择器，不再必须输入 `/soul`；GLM-5.3 / 5.3-Flash 只展示并直传官方 `low` / `high` / `max`（不包含 `none` 或 `medium`），GLM-5.2 档位不变。推理档位测试 44 pass，opencode typecheck 通过。
 - **修复流式期可见 `[History reference: msg_…]` 标记，并停掉它的发生源**（`session/native-context.ts`、`session/processor.ts`、`session/instruction-echo.ts`）：GUI 实测助手正文尾部闪出引擎内部引用标记约 2 秒后自行消失。两层根因：① `annotate()` 给**每一条**出站消息追加标记，请求最后一段正是它——模型按格式续写出一个形状合法的新 ID；② 流式拦截在标记**不闭合**时命中，剥离正则要求闭合 `]`，`detect()` 实际一个字都没剥，而 delta 先推后剥、客户端只追加不纠偏。现按诊断建议落地 A + C：**A** 不再标注当前 user 轮（末条 user 消息原样返回，历史消息的引用保留——`context_read`/`context_search` 仍靠 msg ID 回读）；**C** 流式改为「先扫描再落笔」——锚点命中的那条 delta 不再推给客户端，按锚点起点截断（不要求闭合）后立刻 `session.updatePart` 下发整条 part，标记剩余增量暂扣到闭合 `]` 出现再放行并重新武装扫描器；同时删掉 trip 时的 `shouldBreak` 赋值（该位唯一读取点是权限拒绝分支，设它会把后续权限拒绝误判成 blocked，断流还会砍掉紧随的工具调用）。模型可见四问：① 出站请求每轮少一段合成文本（当前 user 轮的引用标记），其余注入不变；② 净减少约 30–60 tokens（一条标记）；③ 变短的是请求尾段，前缀不受影响，压缩后 revision 结算如旧；④ 无新增注入项，纠偏只在引擎与客户端之间。未做 B（prompt 层禁令）——按诊断计划视 A 的复述率再决定。验证：`instruction-echo` + `native-context` 56 pass / 0 fail（新增纠偏三件套单测 11 条、annotate 跳过末条 user 三条），`processor-effect` 新增端到端用例（24 字符分片注入半截标记）先红后绿——旧逻辑下「纠偏从未到达客户端」超时失败，新逻辑下终态正文干净且客户端 delta 全程不含标记，三文件 75 pass / 0 fail，opencode typecheck 绿。决策见 [native-history-reference-echo](docs/notes/implemented/bug-fix/2026-10-14-native-history-reference-echo.md)。
 
 ### [0.12.10] - 2026-10-14

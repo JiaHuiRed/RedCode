@@ -874,11 +874,14 @@ const WIDELY_SUPPORTED_EFFORTS = ["low", "medium", "high"]
 
 // 260729 Red GLM 的思考控制分两代（依据智谱官方「核心参数说明」）：
 //   · thinking.type —— GLM-4.5 及以上都有，二值 enabled/disabled，默认 enabled
-//   · reasoning_effort —— **仅 GLM-5.2 及以上支持**
-// 且 5.2 的 7 个取值里有一半是别名：none/minimal 都是放弃思考，low/medium 都映射成 high，
+//   · reasoning_effort —— GLM-5.2 及以上支持，各版本实际档位有差异
+// 5.2 的 7 个取值里有一半是别名：none/minimal 都是放弃思考，low/medium 都映射成 high，
 // xhigh 映射成 max。全摆出来是骗人的——用户选了 low 实际吃到的是 high。只暴露三档真实行为。
 // max 是官方默认值，所以不选任何变体时的行为就等于 max。
 const GLM_EFFORTS = ["none", "high", "max"]
+// 261015 Red GLM-5.3 / 5.3-Flash 官方档位为 low/high/max；不能继承 5.2 的 none 档。
+// 见 docs/notes/proposed/architecture/2026-10-13-zcode-glm-prompt-and-model-optimization.md §5。
+const GLM_5_3_EFFORTS = ["low", "high", "max"]
 
 // grok-4.5（xAI 官方文档）：reasoning_effort 取值 low/medium/high，默认 high，**无法禁用推理**，
 // 所以不给 none 档。另注：该文档说 presence_penalty / frequency_penalty / stop 不能与推理模型
@@ -906,12 +909,6 @@ function modelVersion(re: RegExp, ...ids: (string | undefined)[]): number | unde
 }
 
 const glmVersion = (...ids: (string | undefined)[]) => modelVersion(GLM_RE, ...ids)
-
-/** GLM-5.2 及以上才支持 reasoning_effort。注意 glm-5-turbo / glm-5v-turbo 都是 5.0，不算。 */
-function glmSupportsEffort(...ids: (string | undefined)[]): boolean {
-  const v = glmVersion(...ids)
-  return v !== undefined && v >= 5.02
-}
 
 const effortVariants = (efforts: string[]) =>
   Object.fromEntries(efforts.map((effort) => [effort, { reasoningEffort: effort }]))
@@ -1442,7 +1439,11 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
   // 260729 Red GLM 从排除表移出：reasoning_effort 在 GLM-5.2 起是官方支持的（见 GLM_EFFORTS
   // 上方注释）。5.1 及以下仍然只有 thinking 二值开关，没有"想多深"这个维度，继续不给变体。
   // 此前无差别排除整个 glm 家族，导致 5.2 明明支持却在页脚看不到任何档位。
-  if (id.includes("glm")) return glmSupportsEffort(id, model.api.id) ? effortVariants(GLM_EFFORTS) : {}
+  if (id.includes("glm")) {
+    const version = glmVersion(id, model.api.id)
+    if (version === undefined || version < 5.02) return {}
+    return effortVariants(version === 5.03 ? GLM_5_3_EFFORTS : GLM_EFFORTS)
+  }
 
   // 260729 Red kimi-k3 起支持 reasoning_effort（Moonshot 官方文档）。k2 系列只有思考开关，
   // 没有强度维度，继续排除 —— 所以按版本判定而不是整个 kimi 家族一刀切。
