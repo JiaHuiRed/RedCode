@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
 import { PINCH_ZOOM_ENABLED_KEY } from "./constants"
 import { resolveExternalURL } from "./external-url"
-import { exportDebugLogs, write as writeLog, writeCrashReport } from "./logging"
+import { exportDebugLogs, write as writeLog, writeCrashReport, writeResourceSnapshot } from "./logging"
 import { isTrustedRendererUrl, rendererHost, rendererProtocol } from "./renderer-url"
 import { getStore } from "./store"
 import { createUnresponsiveSampler } from "./unresponsive"
@@ -378,6 +378,7 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
   })
   win.webContents.on("render-process-gone", (_event, details) => {
     sampler.stopAndFlush()
+    writeResourceSnapshot("renderer-process-gone", name)
     writeLog(
       "window",
       "renderer process gone",
@@ -405,6 +406,7 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
   })
   win.on("unresponsive", () => {
     writeLog("window", "renderer unresponsive", { window: name, currentURL: win.webContents.getURL() }, "error")
+    writeResourceSnapshot("renderer-unresponsive", name)
     sampler.start()
     void show("RedCode is not responding", "You can relaunch the app, open the logs, or keep waiting.", true)
   })

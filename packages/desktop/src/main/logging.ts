@@ -5,15 +5,28 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, wri
 import { ZipWriter, BlobWriter, BlobReader } from "@zip.js/zip.js"
 import { dirname, join } from "node:path"
 import { homedir } from "node:os"
+import {
+  captureResourceSnapshot,
+  collectEvent2004,
+  collectSource,
+  CRASH_LOG_SCOPES,
+  MAX_EXPORT_FILE_SIZE,
+  MAX_EXPORT_FILES,
+  MAX_EXPORT_SCAN_ENTRIES,
+  MAX_EXPORT_TOTAL_BYTES,
+  readEntrySafely,
+  reserveBudget,
+  serverLogRoots,
+  uniqueArchiveName,
+} from "./debug-capture"
 
 const MAX_LOG_AGE_DAYS = 7
 const TAIL_LINES = 1000
-const EXPORT_WINDOW = 24 * 60 * 60 * 1000
-const MAX_EXPORT_FILE_SIZE = 50 * 1024 * 1024
 const NET_LOG_SIZE = 20 * 1024 * 1024
 
 let root = ""
 let run = ""
+let runStartedAt = new Date()
 let netLogPath: string | undefined
 
 let logger: MainLogger
@@ -57,8 +70,6 @@ export function initCrashReporter() {
 // 给弹窗展示——排查时不用再猜该看哪个文件（#184 Network Service 白屏那次靠进程创建时间
 // 倒推才发现该看 utility.log）。各段有 32KB 截断，报告整体有界。
 const CRASH_TAIL_CHARS = 32 * 1024
-const CRASH_LOG_SCOPES = ["main", "renderer", "server", "utility"] as const
-
 export function writeCrashReport(headline: string, detail: Record<string, unknown>): string | undefined {
   if (!root) return undefined
   try {
@@ -90,6 +101,11 @@ export function writeCrashReport(headline: string, detail: Record<string, unknow
   }
 }
 
+export function writeResourceSnapshot(reason: "renderer-unresponsive" | "renderer-process-gone", window: string) {
+  const snapshot = captureResourceSnapshot(app.getAppMetrics())
+  write("window", "renderer resource snapshot", { reason, window, ...snapshot }, "error")
+}
+
 function tailFile(path: string): string {
   try {
     if (!existsSync(path)) return "(not written this run)"
@@ -119,12 +135,49 @@ export async function exportDebugLogs() {
   const output = join(app.getPath("downloads"), `redcode-debug-${stamp()}.zip`)
   try {
     write("main", "exporting debug logs", { output })
-    await writeZip(output, [
-      { name: "manifest.json", data: Buffer.from(JSON.stringify(manifest(), null, 2)) },
-      ...collect(root, "desktop"),
-      ...serverLogRoots().flatMap((dir, i) => collect(dir, `server-${i + 1}`)),
-      ...collect(app.getPath("crashDumps"), "crashpad"),
-    ])
+    const budget = { files: 0, bytes: 0, visited: 0 }
+    const sources = [
+      collectSource(root, "desktop", budget),
+      ...getServerLogRoots().map((dir, i) => collectSource(dir, `server-${i + 1}`, budget)),
+      collectSource(app.getPath("crashDumps"), "crashpad", budget),
+    ]
+    const event2004 = await collectEvent2004(runStartedAt, new Date())
+    const eventSource = {
+      entries: [] as { name: string; data?: Buffer }[],
+      status: { path: "Windows System event log", included: 0, skipped: {} as Record<string, number>, event2004 },
+    }
+    if (event2004.status === "included") {
+      if (reserveBudget(budget, Buffer.byteLength(event2004.data))) {
+        eventSource.entries.push({
+          name: "windows-resource-exhaustion-events.json",
+          data: Buffer.from(event2004.data),
+        })
+        eventSource.status.included++
+      } else {
+        eventSource.status.skipped["export-budget-exceeded"] = 1
+      }
+    }
+    sources.push(eventSource)
+    await writeZip(output, sources, () =>
+      Buffer.from(
+        JSON.stringify(
+          {
+            ...manifest(),
+            collectionStatus: sources.map((source) => source.status),
+            exportBudget: {
+              maxFiles: MAX_EXPORT_FILES,
+              maxScannedEntries: MAX_EXPORT_SCAN_ENTRIES,
+              maxTotalBytes: MAX_EXPORT_TOTAL_BYTES,
+              maxFileBytes: MAX_EXPORT_FILE_SIZE,
+              selectedFiles: budget.files,
+              selectedBytes: budget.bytes,
+            },
+          },
+          null,
+          2,
+        ),
+      ),
+    )
     shell.showItemInFolder(output)
     return output
   } finally {
@@ -177,6 +230,7 @@ export function tail(): string {
 
 function initRunDirectory() {
   root = join(app.getPath("userData"), "logs")
+  runStartedAt = new Date()
   run = join(root, stamp())
   mkdirSync(run, { recursive: true })
 }
@@ -221,48 +275,64 @@ function manifest() {
     logs: root,
     currentRun: run,
     crashDumps: app.getPath("crashDumps"),
-    serverLogs: serverLogRoots(),
+    serverLogs: getServerLogRoots(),
     netLog: netLogPath,
   }
 }
 
-function serverLogRoots() {
-  const xdgData = process.env.XDG_DATA_HOME || join(homedir(), ".local", "share")
-  return [...new Set([join(xdgData, "redcode", "log"), join(app.getPath("userData"), "redcode", "log")])]
+function getServerLogRoots() {
+  return serverLogRoots(
+    // 261015 Red 对齐 core/global.ts 的路径协议；不跨 rootDir 加载带初始化副作用的核心模块。
+    join(process.env.REDCODE_TEST_HOME ?? homedir(), ".redcode", "data", "log"),
+    app.getPath("userData"),
+    join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "redcode", "log"),
+  )
 }
 
-type Entry = { name: string; path?: string; data?: Buffer }
-
-function collect(dir: string, prefix: string): Entry[] {
-  if (!existsSync(dir)) return []
-  const cutoff = Date.now() - EXPORT_WINDOW
-  const result: Entry[] = []
-  const walk = (current: string) => {
-    for (const entry of readdirSync(current)) {
-      const file = join(current, entry)
-      const info = statSync(file)
-      if (info.isDirectory()) {
-        walk(file)
+async function writeZip(
+  output: string,
+  sources: { entries: { name: string; path?: string; data?: Buffer }[]; status: { included: number; skipped: Record<string, number> } }[],
+  manifestData: () => Buffer,
+) {
+  const writer = new ZipWriter(new BlobWriter("application/zip"))
+  const used = new Set(["manifest.json"])
+  let writtenFiles = 0
+  let writtenBytes = 0
+  for (const source of sources) {
+    for (const entry of source.entries) {
+     // 261015 Red readEntrySafely 自己记账（included-- + skipped 原因），外层不再兜一层
+     // catch——重复递减会让 manifest 的计数比真实条目少。
+     const data = await readEntrySafely(entry, source.status)
+     if (!data) continue
+      if (
+        data.byteLength > MAX_EXPORT_FILE_SIZE ||
+        writtenFiles >= MAX_EXPORT_FILES ||
+        writtenBytes + data.byteLength > MAX_EXPORT_TOTAL_BYTES
+      ) {
+        source.status.included--
+        source.status.skipped["export-budget-exceeded"] = (source.status.skipped["export-budget-exceeded"] ?? 0) + 1
         continue
       }
-      if (info.mtimeMs < cutoff) continue
-      if (info.size > MAX_EXPORT_FILE_SIZE) continue
-      if (file.endsWith(".heapsnapshot")) continue
-      result.push({ name: join(prefix, file.slice(dir.length + 1)).replace(/\\/g, "/"), path: file })
+      try {
+        await writer.add(uniqueArchiveName(entry.name, used), new BlobReader(new Blob([new Uint8Array(data)])))
+        writtenFiles++
+        writtenBytes += data.byteLength
+      } catch (error) {
+        source.status.included--
+        const reason = `archive-add-failed: ${errorCode(error)}`
+        source.status.skipped[reason] = (source.status.skipped[reason] ?? 0) + 1
+      }
     }
   }
-  walk(dir)
-  return result
-}
-
-async function writeZip(output: string, entries: Entry[]) {
-  const writer = new ZipWriter(new BlobWriter("application/zip"))
-  for (const entry of entries) {
-    const data = entry.data ?? readFileSync(entry.path!)
-    await writer.add(entry.name, new BlobReader(new Blob([new Uint8Array(data)])))
-  }
+  await writer.add("manifest.json", new BlobReader(new Blob([new Uint8Array(manifestData())])))
   const zip = await writer.close()
   writeFileSync(output, Buffer.from(await zip.arrayBuffer()))
+}
+
+function errorCode(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+    ? error.code
+    : "unknown"
 }
 
 function initConsoleTransport() {
