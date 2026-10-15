@@ -1148,6 +1148,32 @@ export function sanitizeToolResultPairing(messages: ModelMessage[]) {
   return { messages: result, droppedIds }
 }
 
+// 261015 Red 把「固定前缀缓存」与「本次转换的后缀」拼成出站数组。
+// 此前这段内联在 prompt.ts 的 runLoopImpl 里（2500 行主循环），除了跑整条会话没有别的办法驱动，
+// 净化与拼接的**组合**因此一直没被测到 —— 而 261007 那次「净化刚丢掉、又被拼接拼回来」正出在这里
+// （审计 A01）。抽成纯函数后可直接喂反例。决策见
+// docs/notes/implemented/bug-fix/2026-10-15-tool-result-stitch-sanitize-order.md。
+//
+// 拼接口径：前缀钉死走缓存（前缀缓存优先），后缀必须取自**净化后**的数组。原实现后缀取自未净化的
+// 原始数组，于是净化在尾部丢掉的重复/孤儿 result 会被原样追加回去，出站数组重新违反配对协议。
+export function stitchModelMessages(
+  cached: ModelMessage[] | undefined,
+  raw: ModelMessage[],
+  sanitized: { messages: ModelMessage[]; droppedIds: string[] },
+): ModelMessage[] {
+  if (!cached || cached.length === 0) return sanitized.messages
+  // 261015 Red 缓存前缀有效性条件（审计 A01 要求 2）。prevLen 是缓存里**净化后**数组的长度，
+  // 拿它当边界的前提是「本轮净化的输出与输入逐条对应」—— 只有消息条数没变才成立：条数变了
+  // 说明有整条 tool message 被丢弃（一条 message 里的 result 全无效时整条不进结果），位置已经
+  // 移动，缓存下标不再对应当前数组。此时退回本次规范化结果，宁可这一轮重建前缀。
+  // 条数相同时位置必然对齐：同一代内 msgPin 钉死了旧消息的 parts，净化是纯函数，输出稳定。
+  if (raw.length !== sanitized.messages.length) return sanitized.messages
+  if (cached.length >= sanitized.messages.length) return sanitized.messages
+  // 后缀必须取自**净化后**的数组。原实现取自 raw，把净化成果在尾部撤销：整条重复/孤儿 result
+  // 被拼回来、或把已经在 message 内滤掉的 result 一起带回去 —— 出站数组重新违反配对协议。
+  return [...cached, ...sanitized.messages.slice(cached.length)]
+}
+
 // 260909 Red summarize/compact 只需要最后一条 user 消息的 agent。此前走
 // Session.messages 无 limit 全量翻页——compaction 恰恰发生在会话最长的时候，
 // 等于把几百 MB 级历史（含 base64 parts）整体拖进内存只为读一个字符串字段。

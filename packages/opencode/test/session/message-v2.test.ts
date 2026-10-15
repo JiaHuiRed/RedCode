@@ -2113,26 +2113,26 @@ describe("session.message-v2.compareTime id wrap-around", () => {
 })
 
 // 261007 Red steer 场景下重复 tool-result 被复制发出的 wire bug（DeepSeek 400）。
-describe("sanitizeToolResultPairing", () => {
-  const assistantCalling = (...ids: string[]): ModelMessage => ({
-    role: "assistant",
-    content: ids.map((toolCallId) => ({
-      type: "tool-call" as const,
-      toolCallId,
-      toolName: "bash",
-      input: {},
-    })),
-  })
-  const toolResults = (...ids: string[]): ModelMessage => ({
-    role: "tool",
-    content: ids.map((toolCallId) => ({
-      type: "tool-result" as const,
-      toolCallId,
-      toolName: "bash",
-      output: { type: "text" as const, value: "ok" },
-    })),
-  })
+const assistantCalling = (...ids: string[]): ModelMessage => ({
+  role: "assistant",
+  content: ids.map((toolCallId) => ({
+    type: "tool-call" as const,
+    toolCallId,
+    toolName: "bash",
+    input: {},
+  })),
+})
+const toolResults = (...ids: string[]): ModelMessage => ({
+  role: "tool",
+  content: ids.map((toolCallId) => ({
+    type: "tool-result" as const,
+    toolCallId,
+    toolName: "bash",
+    output: { type: "text" as const, value: "ok" },
+  })),
+})
 
+describe("sanitizeToolResultPairing", () => {
   test("drops duplicated tool-results when a single declaration is answered twice", () => {
     const messages = [assistantCalling("a", "b"), toolResults("a", "b"), toolResults("a", "b")]
     const out = MessageV2.sanitizeToolResultPairing(messages)
@@ -2173,5 +2173,87 @@ describe("sanitizeToolResultPairing", () => {
     const out = MessageV2.sanitizeToolResultPairing(messages)
     expect(out.messages).toHaveLength(4)
     expect(out.droppedIds).toEqual([])
+  })
+})
+
+// 261015 Red 审计 A01：净化与缓存拼接的**组合**。净化放在拼接之前，但后缀原本取自未净化的
+// 原始数组 —— 等于把净化刚丢掉的重复/孤儿 result 又拼回去，出站数组重新违反配对协议
+// （与 261007 那条 "Messages with role 'tool' must be a response to a preceding message with
+// 'tool_calls'" 同一形状）。这些用例用真实现驱动，不复刻一份净化逻辑。
+describe("stitchModelMessages", () => {
+  test("缓存命中且无丢弃时沿用缓存对象（前缀字节不变）", () => {
+    const first = [assistantCalling("a"), toolResults("a")]
+    const cached = MessageV2.sanitizeToolResultPairing(first).messages
+    const raw = [...first, { role: "assistant" as const, content: "next" }]
+    const sanitized = MessageV2.sanitizeToolResultPairing(raw)
+    const out = MessageV2.stitchModelMessages(cached, raw, sanitized)
+    expect(out).toHaveLength(3)
+    expect(out[0]).toBe(cached[0])
+    expect(out[1]).toBe(cached[1])
+    expect(out[2]).toBe(raw[2])
+  })
+
+  test("净化丢弃重复 result 时，不得从原始数组把它拼回来", () => {
+    const first = [assistantCalling("a"), toolResults("a")]
+    const cached = MessageV2.sanitizeToolResultPairing(first).messages
+    const raw = [...first, toolResults("a")] // 本轮转换多出一条重复 result
+    const sanitized = MessageV2.sanitizeToolResultPairing(raw)
+    expect(sanitized.messages).toHaveLength(2) // 净化本身是对的
+    const out = MessageV2.stitchModelMessages(cached, raw, sanitized)
+    expect(out).toHaveLength(2)
+    expect(out).toBe(sanitized.messages)
+  })
+
+  test("孤儿 result 整条被丢时同样不得拼回", () => {
+    const cached: ModelMessage[] = [{ role: "assistant", content: "hi" }]
+    const raw: ModelMessage[] = [{ role: "assistant" as const, content: "hi" }, toolResults("orphan")]
+    const sanitized = MessageV2.sanitizeToolResultPairing(raw)
+    expect(sanitized.messages).toHaveLength(1)
+    const out = MessageV2.stitchModelMessages(cached, raw, sanitized)
+    expect(out).toHaveLength(1)
+    expect(out).toBe(sanitized.messages)
+  })
+
+  test("单条 tool message 内混有合法与无效 result 时，只丢无效那条", () => {
+    const first = [assistantCalling("a")]
+    const cached = MessageV2.sanitizeToolResultPairing(first).messages
+    const raw = [...first, toolResults("a", "b")]
+    const sanitized = MessageV2.sanitizeToolResultPairing(raw)
+    expect(sanitized.droppedIds).toEqual(["b"])
+    const out = MessageV2.stitchModelMessages(cached, raw, sanitized)
+    expect(out).toHaveLength(2)
+    expect(out[1]).toBe(sanitized.messages[1])
+  })
+
+  test("同 ID 在后续 assistant 合法重声明时，合法配对不被丢弃", () => {
+    const first = [assistantCalling("a"), toolResults("a")]
+    const cached = MessageV2.sanitizeToolResultPairing(first).messages
+    const raw = [...first, assistantCalling("a"), toolResults("a")]
+    const sanitized = MessageV2.sanitizeToolResultPairing(raw)
+    expect(sanitized.droppedIds).toEqual([])
+    const out = MessageV2.stitchModelMessages(cached, raw, sanitized)
+    expect(out).toHaveLength(4)
+    expect(out[2]).toBe(raw[2])
+    expect(out[3]).toBe(raw[3])
+  })
+
+  test("没有缓存时原样返回本次规范化结果", () => {
+    const raw = [assistantCalling("a"), toolResults("a")]
+    const sanitized = MessageV2.sanitizeToolResultPairing(raw)
+    expect(MessageV2.stitchModelMessages(undefined, raw, sanitized)).toBe(sanitized.messages)
+  })
+
+  test("缓存比本次结果长（历史缩短）时不拼接", () => {
+    const cached: ModelMessage[] = [
+      { role: "assistant", content: "a" },
+      { role: "assistant", content: "b" },
+      { role: "assistant", content: "c" },
+    ]
+    const raw: ModelMessage[] = [
+      { role: "assistant" as const, content: "a" },
+      { role: "assistant" as const, content: "b" },
+    ]
+    const sanitized = MessageV2.sanitizeToolResultPairing(raw)
+    expect(MessageV2.stitchModelMessages(cached, raw, sanitized)).toBe(sanitized.messages)
   })
 })

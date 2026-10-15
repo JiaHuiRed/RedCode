@@ -1706,15 +1706,14 @@ export const layer = Layer.effect(
               ids: sanitized.droppedIds.slice(0, 5),
             })
           // 260621 Red cache final model messages for prefix stability.
-          let stabilizedMsgs = sanitized.messages
+          // 261015 Red 拼接抽到 MessageV2.stitchModelMessages：它在主循环里没有测试碰得到，
+          // 而 261007「净化被拼接撤销」的 bug 正出在这一段（审计 A01）。
           const sessionModelMsgs = _caches.modelMsgs.get(sessionID)
-          const cachedModelMsgs = sessionModelMsgs?.get(modelKey)
-          if (cachedModelMsgs) {
-            const prevLen = cachedModelMsgs.messages.length
-            if (prevLen > 0 && prevLen < modelMsgs.length) {
-              stabilizedMsgs = [...cachedModelMsgs.messages, ...modelMsgs.slice(prevLen)]
-            }
-          }
+          const stabilizedMsgs = MessageV2.stitchModelMessages(
+            sessionModelMsgs?.get(modelKey)?.messages,
+            modelMsgs,
+            sanitized,
+          )
           const modelMsgsCache = { sessionID, modelKey, messages: [...stabilizedMsgs] }
           if (sessionModelMsgs) sessionModelMsgs.set(modelKey, modelMsgsCache)
           else _caches.modelMsgs.set(sessionID, new Map([[modelKey, modelMsgsCache]]))
