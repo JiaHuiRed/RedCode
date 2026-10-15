@@ -124,7 +124,9 @@ export function reset() {
   try {
     fs.rmSync(logPath(), { force: true })
     fs.rmSync(logPath() + ".1", { force: true })
-  } catch {}
+  } catch {
+    // 261015 Red 测试钩子：日志文件可能从未写过 → 忽略删除失败
+  }
 }
 
 /** 测试钩子：当前驻留的 (会话,模型) 指纹条目数 */

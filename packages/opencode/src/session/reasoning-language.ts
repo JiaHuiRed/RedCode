@@ -98,7 +98,9 @@ export function addressFrom(username: string | undefined): string | undefined {
   try {
     // 260803 Red username 兜底从系统用户名改为电脑名，判据同步排除 hostname
     if (name === os.userInfo().username || name === os.hostname()) return undefined
-  } catch {}
+  } catch {
+    // 261015 Red os.userInfo() 在部分平台会抛（用户名非 UTF-8 等）；注意这个 try 同时罩着下面的 hostname 比较 → 抛错时那道判据一并被跳过
+  }
   return Array.from(name).slice(0, MAX_ADDRESS_LENGTH).join("")
 }
 

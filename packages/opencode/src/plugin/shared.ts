@@ -17,7 +17,9 @@ export function isDeprecatedPlugin(spec: string) {
 function parse(spec: string) {
   try {
     return npa(spec)
-  } catch {}
+  } catch {
+    // 261015 Red 不是 npm 规范的串（路径/URL/裸名）npa 会抛 → 返回 undefined，由调用方按裸名兜底
+  }
 }
 
 export function parsePluginSpecifier(spec: string) {

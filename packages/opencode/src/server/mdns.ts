@@ -36,7 +36,9 @@ export function publish(port: number, domain?: string) {
     if (bonjour) {
       try {
         bonjour.destroy()
-      } catch {}
+      } catch {
+        // 261015 Red 发布已失败，这里的 destroy 只是尽力回收句柄 → 失败也继续重置状态
+      }
     }
     bonjour = undefined
     currentPort = undefined

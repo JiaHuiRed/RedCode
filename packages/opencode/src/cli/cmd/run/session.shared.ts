@@ -37,7 +37,9 @@ function fileName(url: string, filename?: string) {
     if (name) {
       return decodeURIComponent(name)
     }
-  } catch {}
+  } catch {
+    // 261015 Red 不是合法 URL（普通路径/裸文件名）→ 原样返回
+  }
 
   return url
 }

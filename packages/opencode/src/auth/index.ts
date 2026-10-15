@@ -58,7 +58,9 @@ export const layer = Layer.effect(
       if (process.env.REDCODE_AUTH_CONTENT) {
         try {
           return JSON.parse(process.env.REDCODE_AUTH_CONTENT)
-        } catch (err) {}
+        } catch (err) {
+          // 261015 Red REDCODE_AUTH_CONTENT 不是合法 JSON → 静默回落到磁盘凭据（环境覆盖值坏掉时仍能用已登录的凭据）
+        }
       }
 
       const data = (yield* fsys.readJson(file).pipe(Effect.orElseSucceed(() => ({})))) as Record<string, unknown>

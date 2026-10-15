@@ -192,7 +192,9 @@ const uiRoute = HttpRouter.use((router) =>
               try {
                 require("fs").accessSync(distBin.replaceAll("/", "\\"))
                 return distBin
-              } catch {}
+              } catch {
+                // 261015 Red dev 产物 dist 下二进制不存在（未构建）→ 回落进程自身路径
+              }
               return (process.argv[0] || "redcode").replaceAll("\\", "/")
             })()
             const html = tuiTerminalHtml().split("__REDCODE_DIR__").join(cwd).split("__REDCODE_BIN__").join(bin)

@@ -59,7 +59,9 @@ function writeMcpToolsCache(serverName: string, tools: MCPToolDef[], instruction
       JSON.stringify({ tools, instructions, cachedAt: Date.now() }),
       "utf-8",
     )
-  } catch {}
+  } catch {
+    // 261015 Red 缓存写失败不影响本次会话：工具定义已在手上，下次启动重连会重建
+  }
 }
 
 /**
@@ -77,7 +79,9 @@ function readMcpInstructionsCache(serverName: string): string | undefined {
     const parsed = JSON.parse(raw)
     if (typeof parsed?.instructions === "string" && parsed.instructions.trim())
       return capInstructions(parsed.instructions)
-  } catch {}
+  } catch {
+    // 261015 Red 缓存缺失或 JSON 损坏 → 当作没有 instructions，返回 undefined
+  }
   return undefined
 }
 
@@ -130,7 +134,9 @@ function readMcpToolsCache(serverName: string): MCPToolDef[] | undefined {
     const raw = fs.readFileSync(mcpToolsCachePath(serverName), "utf-8")
     const parsed = JSON.parse(raw)
     if (Array.isArray(parsed?.tools)) return parsed.tools as MCPToolDef[]
-  } catch {}
+  } catch {
+    // 261015 Red 缓存缺失或 JSON 损坏 → 当作没有工具缓存，返回 undefined，走实时连接
+  }
   return undefined
 }
 
@@ -960,7 +966,9 @@ export const layer = Layer.effect(
         for (const dpid of pids) {
           try {
             process.kill(dpid, "SIGTERM")
-          } catch {}
+          } catch {
+            // 261015 Red 子进程可能已退出或权限不足 → 跳过该 pid，继续杀其余
+          }
         }
       },
       Effect.scoped,
@@ -1140,7 +1148,9 @@ export const layer = Layer.effect(
               timer = null
               try {
                 await bridge.promise(reconcile())
-              } catch {}
+              } catch {
+                // 261015 Red 配置变更的 reconcile 失败被吞掉——用户改了 MCP 配置不会得到任何反馈（与 AGENTS.md「误配置要响」相悖，待定）
+              }
             }, 1000)
           }
           const watcher = fs.watch(cfgPath, changeHandler)
@@ -1238,11 +1248,15 @@ export const layer = Layer.effect(
               if (pid) {
                 try {
                   await Effect.runPromise(killProcessTree(pid))
-                } catch {}
+                } catch {
+                  // 261015 Red 进程树可能已退出 → 杀失败也继续关 transport
+                }
               }
               try {
                 await originalClose()
-              } catch {}
+              } catch {
+                // 261015 Red transport 可能已关闭 → 关失败也当作清理完成
+              }
             }
           }
         }

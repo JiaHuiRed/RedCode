@@ -519,9 +519,13 @@ function sweepVisionTemp() {
       const filepath = join(dir, name)
       try {
         if (statSync(filepath).mtimeMs < cutoff) unlinkSync(filepath)
-      } catch {}
+      } catch {
+        // 261015 Red 单个文件可能在 readdir 与 stat 之间被删、或被占用 → 跳过它，不影响其余清理
+      }
     }
-  } catch {}
+  } catch {
+    // 261015 Red 临时目录整体不可读（无 tmpdir/权限）→ 放弃本次惰性清理；visionTempSwept 已置位，本进程不再重试
+  }
 }
 
 /** Save an unsupported media part to a temp file so a subagent can read it later. */

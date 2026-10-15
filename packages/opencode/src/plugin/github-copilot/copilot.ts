@@ -143,7 +143,9 @@ export async function CopilotAuthPlugin(input: PluginInput): Promise<Hooks> {
                     isAgent: !(last?.role === "user" && hasNonToolCalls) || imgMsg(last),
                   }
                 }
-              } catch {}
+              } catch {
+                // 261015 Red 视觉探测的启发式解析失败 → 保守当作非视觉、非 agent
+              }
               return { isVision: false, isAgent: false }
             })
 

@@ -1424,7 +1424,9 @@ export function Prompt(props: PromptProps) {
       if (raw.startsWith("file://")) {
         try {
           return fileURLToPath(raw)
-        } catch {}
+        } catch {
+          // 261015 Red 畸形 file:// URI → 回流到下面的裸路径分支
+        }
       }
       if (process.platform === "win32") return raw
       return raw.replace(/\\(.)/g, "$1")
@@ -1455,7 +1457,9 @@ export function Prompt(props: PromptProps) {
             return
           }
         }
-      } catch {}
+      } catch {
+        // 261015 Red 探测 mime / 读附件失败（文件不存在、无权限）→ 当作普通文本粘贴
+      }
     }
 
     const lineCount = (pastedContent.match(/\n/g)?.length ?? 0) + 1

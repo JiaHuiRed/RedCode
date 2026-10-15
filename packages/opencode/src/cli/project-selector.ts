@@ -141,7 +141,9 @@ export async function selectProjectInteractive(): Promise<string | undefined> {
     if (cleanupDone) return
     try {
       stdout.write("\x1b[?1000l\x1b[?1006l\x1b[?25h")
-    } catch {}
+    } catch {
+      // 261015 Red 退出路径上写终端：stdout 可能已关闭 → 忽略写失败，别让它盖住真正的退出原因
+    }
   }
   process.once("exit", restoreTerminal)
 
@@ -155,7 +157,9 @@ export async function selectProjectInteractive(): Promise<string | undefined> {
     if (renderedLines > 0) stdout.write("\x1b[" + renderedLines + "A\x1b[J")
     try {
       stdin.setRawMode(wasRaw)
-    } catch {}
+    } catch {
+      // 261015 Red stdin 可能已关闭/非 TTY → setRawMode 抛错忽略，终端此时已无可恢复的余地
+    }
     // Discard any bytes buffered during the selector's lifetime (stray
     // keystrokes, or a terminal capability-query reply in flight) so they
     // don't leak into the next stdin reader — the main TUI's own capability

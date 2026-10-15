@@ -34,12 +34,16 @@ function loadSecret(): string {
   try {
     const existing = fs.readFileSync(file, "utf8").trim()
     if (existing) return existing
-  } catch {}
+  } catch {
+    // 261015 Red 首次运行没有 secret 文件（或不可读）→ 走下面新生成
+  }
   const secret = randomHex(32)
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true })
     fs.writeFileSync(file, secret, "utf8")
-  } catch {}
+  } catch {
+    // 261015 Red secret 写盘失败不影响本次运行（secret 仍在内存）；但下次启动会重新生成 → token 变化、该会话前缀缓存整体失效
+  }
   return secret
 }
 

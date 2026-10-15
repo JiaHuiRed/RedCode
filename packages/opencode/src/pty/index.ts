@@ -131,11 +131,15 @@ export const layer = Layer.effect(
         } else {
           session.process.kill()
         }
-      } catch {}
+      } catch {
+        // 261015 Red 进程可能已退出或无权杀 → kill 抛错无意义，继续清理订阅者
+      }
       for (const [sub, ws] of session.subscribers.entries()) {
         try {
           if (sock(ws) === sub) ws.close()
-        } catch {}
+        } catch {
+          // 261015 Red 单个 socket 已关闭/已断开 → 跳过它，继续关其余订阅者
+        }
       }
       session.subscribers.clear()
     }
