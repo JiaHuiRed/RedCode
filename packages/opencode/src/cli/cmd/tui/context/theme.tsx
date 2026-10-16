@@ -124,6 +124,21 @@ export type Theme = TuiThemeCurrent & {
 }
 type ThemeColor = Exclude<keyof TuiThemeCurrent, "thinkingOpacity">
 type SyntaxStyleOverrides = Record<string, { italic?: boolean }>
+const READABLE_TEXT_COLORS = [
+  "text",
+  "markdownText",
+  "markdownHeading",
+  "markdownLink",
+  "markdownLinkText",
+  "markdownBlockQuote",
+  "markdownEmph",
+  "markdownStrong",
+  "markdownListItem",
+  "markdownListEnumeration",
+  "markdownImage",
+  "markdownImageText",
+] as const satisfies readonly ThemeColor[]
+const MIN_TEXT_CONTRAST = 4.5
 
 export function selectedForeground(theme: Theme, bg?: RGBA): RGBA {
   // If theme explicitly defines selectedListItemText, use it
@@ -385,6 +400,14 @@ export function resolveTheme(theme: ThemeJson, mode: "dark" | "light") {
         return [key, resolveColor(value as ColorValue)]
       }),
   ) as Partial<Record<ThemeColor, RGBA>>
+
+  const background = resolved.background
+  if (background?.a === 1) {
+    for (const key of READABLE_TEXT_COLORS) {
+      const color = resolved[key]
+      if (color) resolved[key] = readableForegroundColor(color, background)
+    }
+  }
 
   // Handle selectedListItemText separately since it's optional
   const hasSelectedListItemText = theme.theme.selectedListItemText !== undefined
@@ -692,6 +715,41 @@ export function tint(base: RGBA, overlay: RGBA, alpha: number): RGBA {
   return RGBA.fromInts(Math.round(r * 255), Math.round(g * 255), Math.round(b * 255))
 }
 
+function readableForegroundColor(preferred: RGBA, background: RGBA) {
+  if (
+    preferred.a !== 1 ||
+    background.a !== 1 ||
+    contrastRatio(preferred, background) >= MIN_TEXT_CONTRAST
+  ) {
+    return preferred
+  }
+
+  const black = RGBA.fromInts(0, 0, 0)
+  const white = RGBA.fromInts(255, 255, 255)
+  const endpoint =
+    contrastRatio(black, background) >= contrastRatio(white, background) ? black : white
+
+  for (let step = 1; step <= 255; step++) {
+    const candidate = tint(endpoint, preferred, step / 255)
+    if (contrastRatio(candidate, background) >= MIN_TEXT_CONTRAST) return candidate
+  }
+
+  return endpoint
+}
+
+function contrastRatio(foreground: RGBA, background: RGBA) {
+  const first = relativeLuminance(foreground)
+  const second = relativeLuminance(background)
+  return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05)
+}
+
+function relativeLuminance(color: RGBA) {
+  const linear = (channel: number) =>
+    channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+
+  return 0.2126 * linear(color.r) + 0.7152 * linear(color.g) + 0.0722 * linear(color.b)
+}
+
 export function generateSystem(colors: TerminalColors, mode: "dark" | "light"): ThemeJson {
   // 260603 Red isDark 必须在 fallbackBg/fallbackFg 之前声明，否则 Temporal Dead Zone 会 ReferenceError。
   const isDark = mode == "dark"
@@ -701,6 +759,7 @@ export function generateSystem(colors: TerminalColors, mode: "dark" | "light"): 
   const bg = RGBA.fromHex(colors.defaultBackground ?? colors.palette[0] ?? fallbackBg)
   const fg = RGBA.fromHex(colors.defaultForeground ?? colors.palette[7] ?? fallbackFg)
   const transparent = RGBA.fromValues(bg.r, bg.g, bg.b, 0)
+  const readable = (color: RGBA) => readableForegroundColor(color, bg)
 
   const col = (i: number) => {
     const value = colors.palette[i]
@@ -748,7 +807,7 @@ export function generateSystem(colors: TerminalColors, mode: "dark" | "light"): 
       info: ansiColors.cyan,
 
       // Text colors
-      text: fg,
+      text: readable(fg),
       textMuted,
       selectedListItemText: bg,
 
@@ -778,19 +837,19 @@ export function generateSystem(colors: TerminalColors, mode: "dark" | "light"): 
       diffRemovedLineNumberBg,
 
       // Markdown colors
-      markdownText: fg,
-      markdownHeading: fg,
-      markdownLink: ansiColors.blue,
-      markdownLinkText: ansiColors.cyan,
+      markdownText: readable(fg),
+      markdownHeading: readable(fg),
+      markdownLink: readable(ansiColors.blue),
+      markdownLinkText: readable(ansiColors.cyan),
       markdownCode: ansiColors.green,
-      markdownBlockQuote: ansiColors.yellow,
-      markdownEmph: ansiColors.yellow,
-      markdownStrong: fg,
+      markdownBlockQuote: readable(ansiColors.yellow),
+      markdownEmph: readable(ansiColors.yellow),
+      markdownStrong: readable(fg),
       markdownHorizontalRule: grays[7],
-      markdownListItem: ansiColors.blue,
-      markdownListEnumeration: ansiColors.cyan,
-      markdownImage: ansiColors.blue,
-      markdownImageText: ansiColors.cyan,
+      markdownListItem: readable(ansiColors.blue),
+      markdownListEnumeration: readable(ansiColors.cyan),
+      markdownImage: readable(ansiColors.blue),
+      markdownImageText: readable(ansiColors.cyan),
       markdownCodeBlock: fg,
 
       // Syntax colors

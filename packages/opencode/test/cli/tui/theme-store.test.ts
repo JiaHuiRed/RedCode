@@ -1,7 +1,36 @@
 import { expect, test } from "bun:test"
+import { RGBA, type TerminalColors } from "@opentui/core"
 
-const { DEFAULT_THEMES, allThemes, addTheme, hasTheme, resolveTheme } =
+const { DEFAULT_THEMES, allThemes, addTheme, generateSystem, hasTheme, resolveTheme } =
   await import("../../../src/cli/cmd/tui/context/theme")
+
+function terminalColors(input: Partial<TerminalColors> = {}): TerminalColors {
+  return {
+    palette: Array.from({ length: 256 }, (_, index) => input.palette?.[index] ?? "#eeeeee"),
+    defaultBackground: input.defaultBackground ?? "#ffffff",
+    defaultForeground: input.defaultForeground ?? "#eeeeee",
+    cursorColor: input.cursorColor ?? "#ff9e64",
+    mouseForeground: input.mouseForeground ?? null,
+    mouseBackground: input.mouseBackground ?? null,
+    tekForeground: input.tekForeground ?? null,
+    tekBackground: input.tekBackground ?? null,
+    highlightBackground: input.highlightBackground ?? "#444444",
+    highlightForeground: input.highlightForeground ?? "#ffffff",
+  }
+}
+
+function contrastRatio(foreground: RGBA, background: RGBA) {
+  const luminance = (color: RGBA) => {
+    const linear = (channel: number) =>
+      channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+
+    return 0.2126 * linear(color.r) + 0.7152 * linear(color.g) + 0.0722 * linear(color.b)
+  }
+  const first = luminance(foreground)
+  const second = luminance(background)
+
+  return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05)
+}
 
 test("addTheme writes into module theme store", () => {
   const name = `plugin-theme-${Date.now()}`
@@ -59,4 +88,58 @@ test("resolveTheme rejects circular color refs", () => {
   item.theme.primary = "one"
 
   expect(() => resolveTheme(item, "dark")).toThrow("Circular color reference")
+})
+
+test("resolveTheme keeps Markdown prose readable on light and dark surfaces", () => {
+  for (const input of [
+    { mode: "light" as const, background: "#ffffff", foreground: "#eeeeee" },
+    { mode: "dark" as const, background: "#111111", foreground: "#222222" },
+  ]) {
+    const item = structuredClone(DEFAULT_THEMES.opencode)
+    item.theme.background = input.background
+    item.theme.text = input.foreground
+    item.theme.markdownText = input.foreground
+    item.theme.markdownLink = input.foreground
+    item.theme.markdownCode = input.foreground
+
+    const theme = resolveTheme(item, input.mode)
+
+    expect(contrastRatio(theme.text, theme.background)).toBeGreaterThanOrEqual(4.5)
+    expect(contrastRatio(theme.markdownText, theme.background)).toBeGreaterThanOrEqual(4.5)
+    expect(contrastRatio(theme.markdownLink, theme.background)).toBeGreaterThanOrEqual(4.5)
+    expect(theme.markdownCode.toInts()).toEqual(RGBA.fromHex(input.foreground).toInts())
+  }
+})
+
+test("generateSystem keeps Markdown prose readable against the detected terminal background", () => {
+  const generated = generateSystem(
+    terminalColors({
+      palette: Array.from({ length: 256 }, () => "#eeeeee"),
+      defaultBackground: "#ffffff",
+      defaultForeground: "#eeeeee",
+    }),
+    "light",
+  )
+  const background = RGBA.fromHex("#ffffff")
+
+  for (const color of [
+    generated.theme.text,
+    generated.theme.markdownText,
+    generated.theme.markdownLink,
+    generated.theme.markdownBlockQuote,
+  ]) {
+    expect(color).toBeInstanceOf(RGBA)
+    if (!(color instanceof RGBA)) throw new Error("expected a generated RGBA color")
+    expect(contrastRatio(color, background)).toBeGreaterThanOrEqual(4.5)
+  }
+})
+
+test("resolveTheme leaves transparent-background Markdown colors to the terminal theme", () => {
+  const item = structuredClone(DEFAULT_THEMES.opencode)
+  item.theme.background = "transparent"
+  item.theme.markdownLink = "#eeeeee"
+
+  const theme = resolveTheme(item, "light")
+
+  expect(theme.markdownLink.toInts()).toEqual(RGBA.fromHex("#eeeeee").toInts())
 })
