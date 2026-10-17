@@ -316,6 +316,39 @@ describe("MessageV2.stream", () => {
     ),
   )
 
+  // 261017 Red 原生压缩把过滤下推到分页层：整页都被覆盖时不能当成流结束。
+  it.instance("keeps paging when a whole page is filtered out", () =>
+    withSession(({ sessionID }) =>
+      Effect.gen(function* () {
+        const ids = yield* fill(sessionID, 60)
+        const hidden = new Set(ids.slice(-50))
+
+        const items = Array.from(MessageV2.stream(sessionID, (info) => !hidden.has(info.id)))
+
+        expect(items.map((item) => item.info.id)).toEqual(ids.slice(0, 10).reverse())
+      }),
+    ),
+  )
+
+  // 261017 Red 过滤只影响返回项，不能影响游标推进：被跳过的消息同样占翻页位置。
+  it.instance("page keeps the cursor on the raw slice when filtering", () =>
+    withSession(({ sessionID }) =>
+      Effect.gen(function* () {
+        const ids = yield* fill(sessionID, 6)
+        const hidden = new Set([ids[4]])
+        const filter = (info: MessageV2.Info) => !hidden.has(info.id)
+
+        const first = yield* MessageV2.page({ sessionID, limit: 3, filter })
+        expect(first.items.map((item) => item.info.id)).toEqual([ids[3], ids[5]])
+        expect(first.more).toBe(true)
+
+        const second = yield* MessageV2.page({ sessionID, limit: 3, before: first.cursor!, filter })
+        expect(second.items.map((item) => item.info.id)).toEqual([ids[0], ids[1], ids[2]])
+        expect(second.more).toBe(false)
+      }),
+    ),
+  )
+
   it.instance("yields nothing for empty session", () =>
     withSession(({ sessionID }) =>
       Effect.gen(function* () {

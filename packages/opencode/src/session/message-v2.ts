@@ -1198,6 +1198,10 @@ export const page = Effect.fn("MessageV2.page")(function* (input: {
   before?: string
   after?: string
   direction?: "newer"
+  // 261017 Red 在读取分片之前按消息元数据过滤。原生压缩要跳过大量被覆盖的旧消息，
+  // 旧顺序是整页 hydrate 完再丢——长会话每轮都把已折叠的历史正文从库里读出来、
+  // 反序列化，再原地扔掉。过滤只依赖 message.data，不需要 part。
+  filter?: (info: Info) => boolean
 }) {
   const before = input.before ? cursor.decode(input.before) : undefined
   const after = input.after ? cursor.decode(input.after) : undefined
@@ -1231,9 +1235,12 @@ export const page = Effect.fn("MessageV2.page")(function* (input: {
 
   const more = rows.length > input.limit
   const slice = more ? rows.slice(0, input.limit) : rows
-  const items = hydrate(slice)
-  if (input.direction !== "newer") items.reverse()
+  // 261017 Red 游标必须取**原始** slice 的末行：被过滤的行同样占翻页位置，
+  // 若按过滤后的末行编码，下一页会跳过这些消息。
   const tail = slice.at(-1)
+  const selected = input.filter ? slice.filter((row) => input.filter!(info(row))) : slice
+  const items = hydrate(selected)
+  if (input.direction !== "newer") items.reverse()
   return {
     items,
     more,
@@ -1241,18 +1248,24 @@ export const page = Effect.fn("MessageV2.page")(function* (input: {
   }
 })
 
-export function* stream(sessionID: SessionID) {
+export function* stream(sessionID: SessionID, filter?: (info: Info) => boolean) {
   const size = 50
   let before: string | undefined
   while (true) {
     const next = Effect.runSync(
-      page({ sessionID, limit: size, before }).pipe(
+      page({ sessionID, limit: size, before, filter }).pipe(
         Effect.catchIf(NotFoundError.isInstance, () =>
           Effect.succeed({ items: [] as WithParts[], more: false, cursor: undefined }),
         ),
       ),
     )
-    if (next.items.length === 0) break
+    if (next.items.length === 0) {
+      // 261017 Red 过滤可能把整页都筛掉。只要还有更早的消息就继续翻页，
+      // 不能把「这一页没剩可见项」当成流结束。
+      if (!next.more || !next.cursor) break
+      before = next.cursor
+      continue
+    }
     for (let i = next.items.length - 1; i >= 0; i--) {
       yield next.items[i]
     }

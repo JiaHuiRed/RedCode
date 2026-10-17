@@ -22,8 +22,10 @@ export function history(sessionID: SessionID, spec: NativeCompaction.Spec) {
   const covered = new Set(blocks.flatMap((block) => block.sourceMessageIDs))
   function* visible() {
     let count = 0
-    for (const message of MessageV2.stream(sessionID)) {
-      if (covered.has(message.info.id) && !anchors.has(message.info.id)) continue
+    // 261017 Red 过滤下推到分页层：被覆盖的消息连 part 都不再读（旧顺序是整页 hydrate
+    // 完再 continue，长会话每轮都要把已折叠的正文从库里捞出来再扔掉）。
+    const wanted = (info: MessageV2.Info) => !covered.has(info.id) || anchors.has(info.id)
+    for (const message of MessageV2.stream(sessionID, wanted)) {
       if (++count > spec.maxMessages) throw new Error("Native history exceeds the configured message budget")
       yield message
     }
