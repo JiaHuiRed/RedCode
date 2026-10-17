@@ -9,7 +9,7 @@ import { Shell } from "../../src/shell/shell"
 import { ShellTool } from "../../src/tool/shell"
 import { Filesystem } from "@/util/filesystem"
 import { provideInstance, tmpdirScoped } from "../fixture/fixture"
-import type { Permission } from "../../src/permission"
+import { Permission } from "../../src/permission"
 import { Agent } from "../../src/agent/agent"
 import { Truncate } from "@/tool/truncate"
 import { SessionID, MessageID } from "../../src/session/schema"
@@ -60,7 +60,7 @@ const fail = Effect.fn("ShellToolTest.fail")(function* (
     const err = Cause.squash(exit.cause)
     return err instanceof Error ? err : new Error(String(err))
   }
-  throw new Error("expected command to fail")
+  throw new Error(`expected command to fail: ${args.command}`)
 })
 
 const ctx = {
@@ -162,6 +162,24 @@ const capture = (requests: Array<Omit<Permission.Request, "id" | "sessionID" | "
     }),
 })
 
+const exploreContext = Effect.fn("ShellToolTest.exploreContext")(function* () {
+  const agent = yield* (yield* Agent.Service).get("explore")
+  if (!agent) throw new Error("Explore agent not found")
+  return {
+    ...ctx,
+    agent: "explore",
+    ask: (request: Omit<Permission.Request, "id" | "sessionID" | "tool">) =>
+      Effect.sync(() => {
+        if (
+          request.patterns.some(
+            (pattern) => Permission.evaluate(request.permission, pattern, agent.permission).action !== "allow",
+          )
+        )
+          throw new Error(`Explore permission denied: ${request.permission}`)
+      }),
+  }
+})
+
 const mustTruncate = (result: {
   metadata: { truncated?: boolean; exit?: number | null } & Record<string, unknown>
   output: string
@@ -173,6 +191,156 @@ const mustTruncate = (result: {
 }
 
 describe("tool.shell", () => {
+  for (const item of shells.filter((item) => item.label !== "cmd")) {
+    it.live(`explore scoped Git queries use literal paths [${item.label}]`, () =>
+      withShell(
+        item,
+        Effect.gen(function* () {
+          const tmp = yield* tmpdirScoped({ git: true })
+          const directory = path.join(tmp, "仓库 space")
+          yield* Effect.promise(() => fs.mkdir(directory))
+          yield* runIn(
+            tmp,
+            Effect.gen(function* () {
+              const context = yield* exploreContext()
+              const repo = quote(directory.replaceAll("\\", "/"))
+              for (const command of [
+                `git -C ${repo} rev-parse --show-toplevel`,
+                `git -C ${repo} rev-parse HEAD`,
+                `git -C ${repo} rev-list --count HEAD`,
+                `git -C ${repo} rev-list --count --all`,
+                "git rev-list --count HEAD",
+                "git rev-list --count --all",
+              ]) {
+                const result = yield* run({ command, description: "Inspect Git identity or count" }, context)
+                expect(result.metadata.exit).toBe(0)
+                expect(result.output.trim()).not.toBe("")
+                if (command.includes("--count")) expect(result.output.trim()).toBe("1")
+              }
+              for (const command of [
+                "git log --oneline -1",
+                "git show --stat HEAD",
+                "git diff HEAD~0 HEAD",
+                "git branch -a",
+                "git ls-files --stage",
+              ]) {
+                expect(
+                  (yield* run({ command, description: "Preserve existing Git queries" }, context)).metadata.exit,
+                ).toBe(0)
+              }
+            }),
+          )
+        }),
+      ),
+    )
+
+    it.live(`explore rejects Git writes and shell composition [${item.label}]`, () =>
+      withShell(
+        item,
+        Effect.gen(function* () {
+          const tmp = yield* tmpdirScoped({ git: true })
+          yield* runIn(
+            tmp,
+            Effect.gen(function* () {
+              const context = yield* exploreContext()
+              const repo = quote(tmp.replaceAll("\\", "/"))
+              for (const command of [
+                "git log --output=forbidden.txt",
+                "git diff --output forbidden.txt",
+                "git diff --out=forbidden.txt",
+                "git show --out=forbidden.txt",
+                "git log > forbidden.txt",
+                "git rev-parse HEAD > forbidden.txt",
+                "git log --oneline; git show HEAD",
+                "git log --oneline && git show HEAD",
+                "git log --oneline | git show HEAD",
+                "git log $(git rev-parse HEAD)",
+                "git log `git rev-parse HEAD`",
+                `git -C ${repo} -c alias.inspect=status rev-parse HEAD`,
+                `git -C ${repo} --work-tree=. rev-parse HEAD`,
+                `git -C ${repo} -C . rev-parse HEAD`,
+                `git -C ${repo} rev-parse HEAD --git-dir`,
+                `git -C ${repo} rev-list --count HEAD --all`,
+                `git -C ${repo} rev-list --count HEAD --output=forbidden.txt`,
+                `git -C ${repo} branch --delete forbidden`,
+                `git -C ${repo} config core.pager forbidden`,
+                `git -C ${repo} commit -m forbidden`,
+                `git -C ${repo} push`,
+                `git -C "$(git rev-parse --show-toplevel)" rev-parse HEAD`,
+                "git -C * rev-parse HEAD",
+                "git -C --git-dir rev-parse HEAD",
+                ...(process.platform === "win32"
+                  ? ['git -C "C:relative" rev-parse HEAD', 'git -C "C:" rev-parse HEAD']
+                  : []),
+                "git rev-list --count HEAD --output forbidden.txt",
+                "git diff --ext-diff",
+                "git diff --textconv",
+                "git branch forbidden",
+                "git branch -Dforbidden",
+                "echo forbidden",
+              ]) {
+                const error = yield* fail({ command, description: "Reject unsafe Explore command" }, context)
+                expect(error.message).toContain("Explore")
+              }
+              expect(yield* Effect.promise(() => Bun.file(path.join(tmp, "forbidden.txt")).exists())).toBe(false)
+            }),
+          )
+        }),
+      ),
+    )
+
+    it.live(`explore checks the real Git directory before execution [${item.label}]`, () =>
+      withShell(
+        item,
+        Effect.gen(function* () {
+          const tmp = yield* tmpdirScoped()
+          const outside = yield* tmpdirScoped({ git: true })
+          const linked = path.join(tmp, "linked repo")
+          yield* Effect.promise(() => fs.symlink(outside, linked, process.platform === "win32" ? "junction" : "dir"))
+          yield* runIn(
+            tmp,
+            Effect.gen(function* () {
+              for (const directory of [outside, linked]) {
+                const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+                const error = yield* fail(
+                  {
+                    command: `git -C ${quote(directory.replaceAll("\\", "/"))} rev-parse HEAD`,
+                    description: "Inspect external Git repository",
+                  },
+                  { ...capture(requests, new Error("stop at path permission")), agent: "explore" },
+                )
+                expect(error.message).toBe("stop at path permission")
+                expect(requests[0]?.permission).toBe("external_directory")
+                expect(requests[0]?.patterns).toContain(glob(path.join(outside, "*")))
+              }
+            }),
+          )
+        }),
+      ),
+    )
+  }
+
+  if (cmdShell) {
+    it.live("explore rejects cmd rather than applying Bash parsing semantics", () =>
+      withShell(
+        cmdShell,
+        Effect.gen(function* () {
+          const tmp = yield* tmpdirScoped({ git: true })
+          yield* runIn(
+            tmp,
+            Effect.gen(function* () {
+              const error = yield* fail(
+                { command: "git rev-parse HEAD", description: "Reject unsupported Explore shell" },
+                yield* exploreContext(),
+              )
+              expect(error.message).toContain("require bash or PowerShell")
+            }),
+          )
+        }),
+      ),
+    )
+  }
+
   each("basic", () =>
     runIn(
       projectRoot,

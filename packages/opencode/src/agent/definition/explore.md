@@ -52,6 +52,12 @@ permission:
     "git rev-parse *": allow
     "git ls-files *": allow
     "git branch *": allow
+    "git -C * rev-parse HEAD": allow
+    "git -C * rev-parse --show-toplevel": allow
+    "git -C * rev-list --count HEAD": allow
+    "git -C * rev-list --count --all": allow
+    "git rev-list --count HEAD": allow
+    "git rev-list --count --all": allow
   grep: allow
   glob: allow
   list: allow

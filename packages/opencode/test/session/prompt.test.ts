@@ -46,6 +46,7 @@ import { Truncate } from "@/tool/truncate"
 import * as Log from "@redcode-ai/core/util/log"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 import * as Database from "../../src/storage/db"
+import { Storage } from "@/storage/storage"
 import { Ripgrep } from "../../src/file/ripgrep"
 import { Format } from "../../src/format"
 import { Reference } from "../../src/reference/reference"
@@ -185,6 +186,7 @@ const blockingProcessor = Layer.succeed(
 function makePrompt(input?: { processor?: "blocking" }) {
   const deps = Layer.mergeAll(
     Session.defaultLayer,
+    Storage.defaultLayer,
     Snapshot.defaultLayer,
     LLM.defaultLayer,
     Env.defaultLayer,
@@ -1913,6 +1915,62 @@ it.instance("loop continues when finish is stop but assistant has tool parts", (
       expect(result.info.finish).toBe("stop")
     }
   }),
+)
+
+it.instance(
+  "Explore child executes scoped Git and returns its result without acquiring shell writes",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        agent: { explore: { model: `${ref.providerID}/${ref.modelID}` } },
+      }))
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Explore Git smoke",
+        permission: [{ permission: "task", pattern: "explore", action: "allow" }],
+      })
+      yield* llm.tool("task", {
+        description: "inspect Git count",
+        prompt: "Inspect the repository commit count and return evidence.",
+        subagent_type: "explore",
+      })
+      yield* llm.tool("bash", {
+        command: `git -C "${dir.replaceAll("\\", "/")}" rev-list --count HEAD`,
+        shell: "bash",
+        description: "Count repository commits",
+      })
+      yield* llm.tool("bash", {
+        command: "git log --output=forbidden.txt",
+        shell: "bash",
+        description: "Reject output file creation",
+      })
+      yield* llm.text("child Git evidence returned")
+      yield* llm.text("parent reviewed child Git evidence")
+      yield* user(chat.id, "Inspect Git using an Explore child.")
+      const result = yield* prompt.loop({ sessionID: chat.id })
+      const parentMessages = yield* MessageV2.filterCompactedEffect(chat.id)
+      const task = parentMessages
+        .flatMap((message) => message.parts)
+        .find((part) => part.type === "tool" && part.tool === "task")
+      expect(task).toMatchObject({
+        state: { status: "completed", output: expect.stringContaining("child Git evidence returned") },
+      })
+      const child = (yield* sessions.children(chat.id))[0]
+      if (!child) throw new Error("Explore child was not created")
+      const childMessages = yield* MessageV2.filterCompactedEffect(child.id)
+      const tools = childMessages.flatMap((message) => message.parts.filter((part) => part.type === "tool"))
+      expect(tools).toHaveLength(2)
+      expect(tools[0]).toMatchObject({ tool: "bash", state: { status: "completed", metadata: { exit: 0 } } })
+      expect(tools[1]).toMatchObject({ tool: "bash", state: { status: "error" } })
+      expect(yield* (yield* AppFileSystem.Service).existsSafe(path.join(dir, "forbidden.txt"))).toBe(false)
+      expect(result.parts).toContainEqual(
+        expect.objectContaining({ type: "text", text: "parent reviewed child Git evidence" }),
+      )
+      expect(yield* llm.calls).toBe(5)
+    }),
+  { git: true },
 )
 
 it.instance("failed subtask preserves metadata on error tool state", () =>

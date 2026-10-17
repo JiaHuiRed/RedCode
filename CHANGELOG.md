@@ -17,6 +17,8 @@
 
 - **修复 explore 新任务遗漏 Shell 能力**（审计 SA-01）：canonical task record 改为复用运行时 profile，避免记录只有 `read/search`、读取端却优先按记录拒绝 Bash；仅新任务采用修复策略，旧记录不迁移，父会话拒绝和 Git 命令白名单继续生效。真实 TaskTool 创建 → SessionTools.resolve → Bash 执行链覆盖新记录、旧记录、缺失记录回退及父级拒绝。task/capability/task-runtime 三文件 35 pass，opencode typecheck 通过；无提示词或工具 schema 改动，固定前缀和 KV cache 布局不变，无新增注入项。
 
+- **Explore 支持受限的跨目录 Git 自证与提交计数**（审计 SA-02）：放行 `git -C <repo> rev-parse HEAD/--show-toplevel` 与 `rev-list --count HEAD/--all` 的精确形式，执行层额外校验单条字面量 argv 和真实路径；外部目录及符号链接不绕过路径授权。拒绝 Shell 拼接/重定向/替换、额外 Git 配置参数、输出文件 flags 与分支写操作，不影响其他 Agent。模型提示词正文与工具 schema 不变，固定前缀零增量，无缓存策略或 GUI 改动。五份定向文件 207 pass，最终跨 Shell 10 pass，离线真实子代理及邻近回传用例 3 pass，opencode typecheck 通过；未重编安装版。决策及验证边界见 [note](docs/notes/implemented/bug-fix/2026-10-17-explore-scoped-git-queries.md)。
+
 ### [0.12.11] - 2026-10-15
 
 - **清空 `packages/opencode` 的空白 catch，并修掉其中四处「真吞」**（`packages/opencode/src` 下 18 个文件、新测试 `session/reasoning-language.test.ts`）：AGENTS.md 早有规矩「空 catch 必须写清吞掉的是什么、为什么别的错误到不了这里」，本包一直有存量。全量枚举出 **28 处真正空白、无任何注释**的 catch，逐处读上下文分类后：25 处补上说明（进程已退出/无权杀、工具缓存读写失败、临时目录不可读、畸形 URL、stdin 已关闭、dev 产物未构建……），3 处刻意留白——说明已紧邻在 try 内或上方，再加就是重复注释。四处属「真吞」而非风格，单独提交改行为：**auth** 的 `REDCODE_AUTH_CONTENT` 非法 JSON 不再静默回落（顺带把解析移出 `Effect.gen`——本包禁在 Effect.gen 内写 try/catch，解析留在管道外才保住 `all()` 的 `Record<string, Info>` 推断类型）；**canary** 的 secret 落盘失败改为告警（原本失败会让下次启动换 token，整个会话前缀缓存作废，正是该模块 260708 要解决的问题）；**MCP** 配置变更 reconcile 失败改为告警（原本「改了配置零反馈」，与 AGENTS.md「误配置要响」相悖）；**reasoning-language** 把 `os.hostname()` 比较移出 `os.userInfo()` 的 try（原本 userInfo 一抛，电脑名就会被当成「称呼偏好」注入模型）。最后一条补了回归测试：`addressFrom` 增加可注入的系统用户名查询点 + 6 条用例，另跑一次性红测复刻修复前写法、断言如期失败（拿到本机 hostname）证明守卫有牙。模型可见四问：①–④ 全为零——只多出三条告警文本与代码注释，不改提示词/工具 schema/注入项。验证：`bun run typecheck` EXIT=0，新测试 6 pass / 0 fail。

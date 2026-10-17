@@ -257,6 +257,66 @@ function unquote(text: string) {
   return text
 }
 
+// 261017 Red 权限通配符不懂 argv；先验证单条字面量 Git 查询，再按原命令和真实路径授权。
+// 决策：docs/notes/implemented/bug-fix/2026-10-17-explore-scoped-git-queries.md
+function exploreGitDirectory(root: Node): string | undefined {
+  const reject = () => {
+    throw new Error("Explore only supports literal read-only Git queries without shell composition or output files.")
+  }
+  const nodes = commands(root)
+  if (
+    root.hasError ||
+    nodes.length !== 1 ||
+    nodes[0].text.trim() !== root.text.trim() ||
+    /[$`;&|<>\u0000-\u001f]/.test(root.text)
+  )
+    return reject()
+  const tokens = parts(nodes[0]).map((item) => {
+    const value = unquote(item.text)
+    if (
+      /['"]/.test(value) ||
+      (value === item.text && (/[\\*?[\]{}()]/.test(value) || value.startsWith("~"))) ||
+      (process.platform !== "win32" && item.text.startsWith('"') && value.includes("\\"))
+    )
+      return reject()
+    return value
+  })
+  if (tokens[0] !== "git") return reject()
+  const directory = tokens[1] === "-C" ? tokens[2] : undefined
+  if (tokens[1] === "-C" && (!directory || directory.startsWith("-"))) return reject()
+  if (directory && process.platform === "win32" && /^[a-z]:(?:[^/\\]|$)/i.test(directory)) return reject()
+  const args = tokens.slice(directory === undefined ? 1 : 3)
+  if (directory !== undefined || args[0] === "rev-list") {
+    if (!(
+      (args.length === 2 && args[0] === "rev-parse" && ["HEAD", "--show-toplevel"].includes(args[1])) ||
+      (args.length === 3 && args[0] === "rev-list" && args[1] === "--count" && ["HEAD", "--all"].includes(args[2]))
+    ))
+      return reject()
+    return directory
+  }
+  if (!["log", "show", "diff", "blame", "rev-parse", "ls-files", "branch"].includes(args[0])) return reject()
+  if (
+    args.some((arg) => {
+      const flag = arg.split("=")[0]
+      return (
+        arg.startsWith("-o") ||
+        (flag.length > 2 && ["--output", "--ext-diff", "--textconv"].some((unsafe) => unsafe.startsWith(flag)))
+      )
+    })
+  )
+    return reject()
+  if (
+    args[0] === "branch" &&
+    !args
+      .slice(1)
+      .every((arg) =>
+        ["-a", "-r", "-v", "-vv", "--all", "--remotes", "--verbose", "--show-current", "--list"].includes(arg),
+      )
+  )
+    return reject()
+  return undefined
+}
+
 function home(text: string) {
   if (text === "~") return os.homedir()
   if (text.startsWith("~/") || text.startsWith("~\\")) return path.join(os.homedir(), text.slice(2))
@@ -837,7 +897,16 @@ export const ShellTool = Tool.define(
                   const tree = yield* Effect.acquireRelease(parse(params.command, ps), (tree) =>
                     Effect.sync(() => tree.delete()),
                   )
+                  if (ctx.agent === "explore" && Shell.name(resolved) === "cmd")
+                    throw new Error("Explore Git queries require bash or PowerShell, not cmd.")
+                  const gitDirectory = ctx.agent === "explore" ? exploreGitDirectory(tree.rootNode) : undefined
                   const scan = yield* collect(tree.rootNode, cwd, ps, resolved, instanceCtx)
+                  if (gitDirectory !== undefined) {
+                    const directory = yield* fs
+                      .realPath(yield* resolvePath(gitDirectory, cwd, resolved))
+                      .pipe(Effect.orDie)
+                    if (!containsPath(directory, instanceCtx)) scan.dirs.add(directory)
+                  }
                   if (!containsPath(cwd, instanceCtx)) scan.dirs.add(cwd)
                   yield* ask(ctx, scan)
                 }),
