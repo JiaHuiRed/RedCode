@@ -228,6 +228,23 @@ describe("persist localStorage resilience", () => {
     expect(storage.events).toContain("remove:RedCode.other.evict:keep")
   })
 
+  // 261017 Red 回归：设置写入触发淘汰时，草稿是最大的键，旧实现会第一个就删它。
+  test("evicts disposable keys but never user input", () => {
+    const draft = persistTesting.localStorageWithPrefix("RedCode.ws")
+    draft.setItem("session:ses_1:prompt", '{"prompt":{"text":"hello"}}')
+
+    const disposable = persistTesting.localStorageWithPrefix("RedCode.cache")
+    disposable.setItem("blob", `"${"x".repeat(200)}"`)
+
+    const settings = persistTesting.localStorageWithPrefix("RedCode.quota.settings")
+    settings.setItem("value", '{"v":1}')
+
+    expect(storage.getItem("RedCode.ws:session:ses_1:prompt")).toBe('{"prompt":{"text":"hello"}}')
+    expect(storage.events).not.toContain("remove:RedCode.ws:session:ses_1:prompt")
+    // 可回收的键照旧让位，不是把整个淘汰机制一律关掉
+    expect(storage.getItem("RedCode.cache:blob")).toBeNull()
+  })
+
   test("keeps the previous value when a quota-failed write cannot free room", () => {
     const limited = new LimitedStorage()
     Object.defineProperty(globalThis, "localStorage", { value: limited, configurable: true })

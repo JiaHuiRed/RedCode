@@ -36,6 +36,16 @@ const fallback = new Map<string, boolean>()
 const CACHE_MAX_ENTRIES = 500
 const CACHE_MAX_BYTES = 8 * 1024 * 1024
 
+// 261017 Red 配额淘汰只允许回收可重建的数据。草稿、草稿图片、评论是用户自己敲进去的内容，
+// 被别的键在配额满时按大小删掉就再也拿不回来。prompt.tsx 的 evictOnQuota:false 只约束
+// 「它自己写失败时别删别人」，挡不住别人删它——而草稿键恰好符合通用淘汰条件。
+// 按完整键名的后缀判定：会话级/工作区级两种拼接都覆盖到。
+const PROTECTED_KEY_SUFFIXES = [":prompt", ":images.v1", ":comments"]
+
+function isProtectedKey(name: string) {
+  return PROTECTED_KEY_SUFFIXES.some((suffix) => name.endsWith(suffix))
+}
+
 /**
  * 桌面端落盘合并。
  *
@@ -198,6 +208,8 @@ function evict(storage: Storage, keep: string, value: string) {
     if (!name) continue
     if (!name.startsWith(LOCAL_PREFIX)) continue
     if (name === keep) continue
+    // 261017 Red 用户输入不进淘汰候选：宁可这次写入失败降级到内存，也不能删掉草稿。
+    if (isProtectedKey(name)) continue
     const stored = storage.getItem(name)
     items.push({ key: name, size: stored?.length ?? 0 })
   }
