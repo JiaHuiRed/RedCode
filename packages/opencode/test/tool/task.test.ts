@@ -1,5 +1,6 @@
 import { afterEach, describe, expect } from "bun:test"
 import { Cause, Effect, Exit, Fiber, Layer } from "effect"
+import * as Stream from "effect/Stream"
 import { Agent } from "../../src/agent/agent"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { BackgroundJob } from "@/background/job"
@@ -32,6 +33,8 @@ import { Todo } from "@/session/todo"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { Provider } from "@/provider/provider"
 import { TaskTool, type TaskPromptOps } from "../../src/tool/task"
+import { TaskStatusTool } from "../../src/tool/task_status"
+import { TuiEvent } from "@/cli/cmd/tui/event"
 import { Truncate } from "@/tool/truncate"
 import { ToolRegistry } from "@/tool/registry"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -113,7 +116,7 @@ const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
 
 const it = testEffect(layer())
 const explore = testEffect(Layer.mergeAll(layer(), Storage.defaultLayer))
-const background = testEffect(layer({ experimentalBackgroundSubagents: true }))
+const background = testEffect(Layer.mergeAll(layer({ experimentalBackgroundSubagents: true }), Storage.defaultLayer))
 // Description-content tests below assert on the task tool's subagent listing, not on
 // background mode — pin the flag off so they don't pay task_status's extra registry
 // init cost (was pushing them past the default per-test timeout once background mode
@@ -831,6 +834,105 @@ describe("tool.task", () => {
       expect(waited.info?.output).toBe("background done")
     }),
   )
+
+  for (const [subagent, outcome] of (["general", "explore"] as const).flatMap((subagent) =>
+    (["success", "failure", "cancelled-delivery"] as const).map((outcome) => [subagent, outcome] as const),
+  )) {
+    const childFails = outcome === "failure"
+    const cancelled = outcome === "cancelled-delivery"
+    background.instance(
+      cancelled
+        ? `background result delivery cancellation stays cancelled without a failure warning (${subagent})`
+        : `background result delivery failure is visible after child ${outcome} (${subagent})`,
+      () =>
+        Effect.gen(function* () {
+          const jobs = yield* BackgroundJob.Service
+          const bus = yield* Bus.Service
+          const toasts = yield* bus.subscribe(TuiEvent.ToastShow)
+          const { chat, assistant } = yield* seed()
+          const def = yield* (yield* TaskTool).init()
+          let writes = 0
+          let childRuns = 0
+          let resumes = 0
+          const promptOps: TaskPromptOps = {
+            ...stubOps(),
+            prompt: (input) => {
+              if (input.noReply)
+                return Effect.gen(function* () {
+                  writes++
+                  if (cancelled) return yield* Effect.interrupt
+                  return yield* Effect.die(new Error("injected parent write failure"))
+                })
+              childRuns++
+              return childFails
+                ? Effect.die(new Error("child execution failed"))
+                : Effect.succeed(reply(input, "recoverable child result"))
+            },
+            loop: () =>
+              Effect.sync(() => {
+                resumes++
+                return reply({ sessionID: chat.id, parts: [] }, "unexpected continuation")
+              }),
+          }
+          const context = {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          }
+          const result = yield* def.execute(
+            {
+              description: "inspect delivery",
+              prompt: "return evidence",
+              subagent_type: subagent,
+              background: true,
+            },
+            context,
+          )
+          const waited = yield* jobs.wait({ id: result.metadata.sessionId, timeout: 1_000 })
+          expect(waited.timedOut).toBe(false)
+          if (!cancelled) expect(waited.info?.error).toBe(childFails ? "child execution failed" : undefined)
+          expect(waited.info?.status).toBe(cancelled ? "cancelled" : childFails ? "error" : "completed")
+          const status = yield* (yield* TaskStatusTool).init()
+          const inspected = yield* status.execute({ task_id: result.metadata.sessionId, wait: false }, context)
+          if (!cancelled)
+            expect(inspected.output).toContain(childFails ? "child execution failed" : "recoverable child result")
+          expect(writes).toBe(1)
+          expect(childRuns).toBe(1)
+          expect(resumes).toBe(0)
+          if (subagent === "explore") {
+            const record = yield* (yield* Storage.Service).read<ChildTaskRecord>([
+              "task-runtime",
+              String(result.metadata.sessionId),
+            ])
+            expect(record.result?.status).toBe(cancelled ? "cancelled" : childFails ? "failed" : "ready_for_review")
+            if (!cancelled)
+              expect(record.result?.summary).toBe(childFails ? "child execution failed" : "recoverable child result")
+          }
+
+          // 261017 Red barrier 在 job 收尾后发布，按总线顺序收齐通知，不用 sleep 猜测回调时机。
+          yield* bus.publish(TuiEvent.ToastShow, {
+            title: "delivery-test-barrier",
+            message: "",
+            variant: "info",
+            duration: 1,
+          })
+          const notices = yield* Stream.runCollect(
+            toasts.pipe(Stream.takeUntil((event) => event.properties.title === "delivery-test-barrier")),
+          )
+          const warnings = notices.filter((event) => event.properties.variant === "warning")
+          expect(warnings).toHaveLength(cancelled ? 0 : 1)
+          if (!cancelled) {
+            expect(warnings[0].properties.message).toContain("could not be confirmed")
+            expect(warnings[0].properties.message).toContain(result.metadata.sessionId)
+          }
+        }),
+    )
+  }
 
   background.instance("background worktree tasks keep isolation inside the job", () =>
     Effect.gen(function* () {

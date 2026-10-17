@@ -560,6 +560,27 @@ export const TaskTool = Tool.define(
         yield* continueIfIdle({ userID: message.info.id, state })
       })
 
+      // 261017 Red 子任务执行状态与回传状态分开；回传失败保留原结果供 task_status 恢复，不重跑。
+      // 决策：docs/notes/implemented/bug-fix/2026-10-17-background-result-delivery-evidence.md
+      const deliverResult = (state: "completed" | "error", text: string) =>
+        inject(state, text).pipe(
+          Effect.catchCause((cause) => {
+            if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
+            log.warn("background task result delivery failed", {
+              sessionID: ctx.sessionID,
+              taskSessionID: nextSession.id,
+              state,
+            })
+            // 261017 Red 总线已销毁等通知失败只保留前面的持久日志，不覆盖子任务结果。
+            return bus.publish(TuiEvent.ToastShow, {
+              title: "Background task result delivery failed",
+              message: `Background result delivery could not be confirmed. Check the parent conversation first; if the result is missing, use task_status with task_id "${nextSession.id}" to recover it. Automatic continuation was not started.`,
+              variant: "warning",
+              duration: 8000,
+            }).pipe(Effect.ignoreCause)
+          }),
+        )
+
       const existing = yield* background.get(nextSession.id)
       if (existing?.status === "running") {
         return yield* Effect.fail(
@@ -588,7 +609,7 @@ export const TaskTool = Tool.define(
           title: params.description,
           metadata,
           run: backgroundRun.pipe(
-            Effect.tap((text) => inject("completed", text).pipe(Effect.ignore)),
+            Effect.tap((text) => deliverResult("completed", text)),
             Effect.catchCause((cause) =>
               (Cause.hasInterruptsOnly(cause)
                 ? persistResult({
@@ -601,8 +622,8 @@ export const TaskTool = Tool.define(
                     summary: errorText(Cause.squash(cause)),
                     termination: "normal",
                   }).pipe(
-                    Effect.andThen(inject("error", projectResult(errorText(Cause.squash(cause)))).pipe(Effect.ignore)),
-                    Effect.catch(() => inject("error", projectResult(errorText(Cause.squash(cause)))).pipe(Effect.ignore)),
+                    Effect.andThen(deliverResult("error", projectResult(errorText(Cause.squash(cause))))),
+                    Effect.catch(() => deliverResult("error", projectResult(errorText(Cause.squash(cause))))),
                   )
               ).pipe(Effect.andThen(Effect.failCause(cause))),
             ),

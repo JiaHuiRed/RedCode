@@ -1,9 +1,10 @@
 import { NodeFileSystem } from "@effect/platform-node"
 import { FetchHttpClient } from "effect/unstable/http"
 import { expect } from "bun:test"
-import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer, Option } from "effect"
+import { Cause, Clock, Deferred, Duration, Effect, Exit, Fiber, Layer, Option } from "effect"
 import * as Stream from "effect/Stream"
 import * as TestConsole from "effect/testing/TestConsole"
+import * as TestClock from "effect/testing/TestClock"
 import path from "path"
 import { fileURLToPath, pathToFileURL } from "url"
 import { NamedError } from "@redcode-ai/core/util/error"
@@ -61,7 +62,8 @@ import { Snippet } from "@/session/snippet"
 import { Soul } from "@/soul"
 import { NativeCompaction } from "@/config/native-compaction"
 import * as ContextCompaction from "@/session/context-compaction"
-import { runSteerableTask, steerTask, type TaskPromptOps } from "@/tool/task"
+import { runSteerableTask, steerTask, TaskTool, type TaskPromptOps } from "@/tool/task"
+import { TuiEvent } from "@/cli/cmd/tui/event"
 import { TaskStatusTool } from "@/tool/task_status"
 import { InstanceRef } from "@/effect/instance-ref"
 
@@ -1915,6 +1917,152 @@ it.instance("loop continues when finish is stop but assistant has tool parts", (
       expect(result.info.finish).toBe("stop")
     }
   }),
+)
+
+for (const childFails of [false, true]) {
+  it.instance(`background child ${childFails ? "failure" : "success"} is saved once before the busy parent resumes`, () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        agent: { explore: { model: `${ref.providerID}/${ref.modelID}` } },
+      }))
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const status = yield* SessionStatus.Service
+      const jobs = yield* BackgroundJob.Service
+      const chat = yield* sessions.create({ title: "Background result delivery" })
+      const { assistant } = yield* seed(chat.id, { finish: "stop" })
+      yield* status.set(chat.id, { type: "busy" })
+      const resumed = yield* Deferred.make<MessageV2.WithParts>()
+      let resumes = 0
+      const ops: TaskPromptOps = {
+        cancel: prompt.cancel,
+        resolvePromptParts: prompt.resolvePromptParts,
+        prompt: (input) => childFails && !input.noReply
+          ? Effect.die(new Error("injected child failure"))
+          : prompt.prompt(input).pipe(Effect.orDie),
+        loop: (input) => Effect.gen(function* () {
+          resumes++
+          const result = yield* prompt.loop(input)
+          yield* Deferred.succeed(resumed, result)
+          return result
+        }),
+        runIsolated: () => Effect.die("unexpected isolation in delivery test"),
+      }
+      if (!childFails) yield* llm.text("saved child evidence")
+      yield* llm.text("parent consumed background result")
+      const def = yield* (yield* TaskTool).init()
+      const result = yield* def.execute({
+        description: "inspect background delivery",
+        prompt: "Return evidence for the parent.",
+        subagent_type: "explore",
+        background: true,
+      }, {
+        sessionID: chat.id,
+        messageID: assistant.id,
+        agent: "build",
+        abort: new AbortController().signal,
+        extra: { promptOps: ops },
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      })
+      const waited = yield* jobs.wait({ id: result.metadata.sessionId })
+      expect(waited.info?.status).toBe(childFails ? "error" : "completed")
+      const deliveries = Effect.gen(function* () {
+        return (yield* MessageV2.filterCompactedEffect(chat.id)).flatMap((message) =>
+          message.parts.filter((part) => part.type === "text" && part.synthetic && part.text.includes(result.metadata.sessionId)),
+        )
+      })
+      expect(yield* deliveries).toHaveLength(1)
+      expect(JSON.stringify(yield* deliveries)).toContain(childFails ? "task_error" : "saved child evidence")
+      expect(resumes).toBe(0)
+      yield* status.set(chat.id, { type: "idle" })
+      yield* TestClock.adjust("300 millis")
+      yield* Deferred.await(resumed)
+      expect(resumes).toBe(1)
+      expect(yield* deliveries).toHaveLength(1)
+      expect(JSON.stringify((yield* llm.inputs).at(-1))).toContain(childFails ? "injected child failure" : "saved child evidence")
+    }).pipe(
+      Effect.provide(RuntimeFlags.layer({ experimentalBackgroundSubagents: true })),
+      Effect.provide(TestClock.layer()),
+    ),
+  )
+}
+
+it.instance("background result survives the busy-parent resume deadline and can be continued manually", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      agent: { explore: { model: `${ref.providerID}/${ref.modelID}` } },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const status = yield* SessionStatus.Service
+    const jobs = yield* BackgroundJob.Service
+    const bus = yield* Bus.Service
+    const toasts = yield* bus.subscribe(TuiEvent.ToastShow)
+    const chat = yield* sessions.create({ title: "Busy parent delivery deadline" })
+    const { assistant } = yield* seed(chat.id, { finish: "stop" })
+    yield* status.set(chat.id, { type: "busy" })
+    const clock = yield* Clock.Clock
+    let elapsed = 0
+    let resumes = 0
+    const ops: TaskPromptOps = {
+      cancel: prompt.cancel,
+      resolvePromptParts: prompt.resolvePromptParts,
+      prompt: (input) => prompt.prompt(input).pipe(Effect.orDie),
+      loop: (input) => Effect.gen(function* () {
+        resumes++
+        return yield* prompt.loop(input)
+      }),
+      runIsolated: () => Effect.die("unexpected isolation in delivery deadline test"),
+    }
+    yield* llm.text("deadline child evidence")
+    const def = yield* (yield* TaskTool).init()
+    const result = yield* def.execute({
+      description: "inspect busy parent delivery",
+      prompt: "Return evidence for the busy parent.",
+      subagent_type: "explore",
+      background: true,
+    }, {
+      sessionID: chat.id,
+      messageID: assistant.id,
+      agent: "build",
+      abort: new AbortController().signal,
+      extra: { promptOps: ops },
+      messages: [],
+      metadata: () => Effect.void,
+      ask: () => Effect.void,
+    }).pipe(Effect.provideService(Clock.Clock, {
+      ...clock,
+      currentTimeMillisUnsafe: () => clock.currentTimeMillisUnsafe() + elapsed,
+      currentTimeMillis: Effect.sync(() => clock.currentTimeMillisUnsafe() + elapsed),
+      currentTimeNanosUnsafe: () => clock.currentTimeNanosUnsafe() + BigInt(elapsed) * 1_000_000n,
+      currentTimeNanos: Effect.sync(() => clock.currentTimeNanosUnsafe() + BigInt(elapsed) * 1_000_000n),
+    }))
+    expect((yield* jobs.wait({ id: result.metadata.sessionId })).info?.status).toBe("completed")
+    // 261017 Red 墙钟跳过期限后只唤醒一个 tick，避免为测试循环执行六千次数据库轮询。
+    elapsed = 31 * 60_000
+    yield* TestClock.adjust("300 millis")
+    const notice = yield* Stream.runHead(toasts.pipe(Stream.filter((event) => event.properties.title === "Background task result waiting")))
+    expect(Option.isSome(notice)).toBe(true)
+    expect(resumes).toBe(0)
+    const deliveries = (yield* MessageV2.filterCompactedEffect(chat.id)).flatMap((message) =>
+      message.parts.filter((part) => part.type === "text" && part.synthetic && part.text.includes(result.metadata.sessionId)),
+    )
+    expect(deliveries).toHaveLength(1)
+    expect(JSON.stringify(deliveries)).toContain("deadline child evidence")
+    yield* status.set(chat.id, { type: "idle" })
+    yield* llm.text("manually recovered background evidence")
+    const continued = yield* prompt.loop({ sessionID: chat.id })
+    expect(continued.parts).toContainEqual(expect.objectContaining({ type: "text", text: "manually recovered background evidence" }))
+    expect(JSON.stringify((yield* llm.inputs).at(-1))).toContain("deadline child evidence")
+    expect(resumes).toBe(0)
+  }).pipe(
+    Effect.provide(RuntimeFlags.layer({ experimentalBackgroundSubagents: true })),
+    Effect.provide(TestClock.layer()),
+  ),
 )
 
 it.instance(
