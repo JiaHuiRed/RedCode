@@ -21,6 +21,7 @@
 - **用户消息显示已附加的文件**（`packages/ui/src/components/message-file.ts`）：桌面端从输入框附加的文件落盘后是 `file://` URL，而附件判定只认 `data:`、inline 判定要求 `source.text` 范围——两者都不满足，用户消息里只剩文本气泡，看上去像只发了一句话，实际附件已随请求发给模型。现在 `file://` 且无 source 范围的文件也归入附件并渲染为 chip（图标 + 文件名），有 `source.text` 的引用仍走 inline，避免正文引用重复渲染。验证：`message-file` 3 pass / 0 fail，ui typecheck EXIT=0。
 - **入库 `bun.lock` 并让 CI 冻结安装**：根目录锁文件此前被 `.gitignore` 忽略、CI 用普通 `bun install`，同一提交在不同时间会解析出不同依赖树；`ghostty-web` 还指向 GitHub `main`。现在锁文件入库、CI 改 `--frozen-lockfile`、`ghostty-web` 固定到 `6e24d040`，缓存键 `hashFiles('**/bun.lock')` 不再恒为空。验证：本机 `bun install --frozen-lockfile` 通过（2247 个包无变化）。
 - **原生压缩的可见性过滤下推到分页层**（`packages/opencode/src/session/message-v2.ts`、`native-context-runtime.ts`）：`NativeRuntime.history()` 原先对每页消息先 `hydrate()` 全部分片、再丢掉被压缩覆盖的项——长会话每轮都要把已折叠的历史正文读出来反序列化。现在 `page()/stream()` 支持在 hydrate 前按消息元数据过滤，覆盖集合判定下推；游标仍按原始分页推进、整页被过滤时继续翻页。模型可见内容不变。验证：`messages-pagination.test.ts` 54 pass / 0 fail（含整页过滤后继续翻页、过滤不跳消息两条），opencode typecheck EXIT=0。决策见 [note](docs/notes/implemented/architecture/2026-10-17-native-compaction-read-pushdown.md)。
+- **升级 MCP SDK 与 Vite**：`@modelcontextprotocol/sdk` 1.30.0 → 1.32.1，修复 OAuth 凭据可能被发往 MCP 服务器指定的其它授权服务器（条件是 HTTP OAuth 客户端 + 不可信/被篡改的 MCP 服务）；`vite` 7.1.4 → 7.3.7，7.3.5 起修复 Windows 路径导致的开发服务器文件访问限制绕过。SDK 1.31+ 新增的 `saveDiscoveryState`/`discoveryState` 是可选项，本项目 provider 未实现，`issuer` 属于发现状态而非 token 字段，无需迁移旧凭据。验证：opencode/app typecheck EXIT=0、`bun test test/mcp` 72 pass / 0 fail、`packages/app` vite build 成功。
 
 ### [0.12.12] - 2026-10-17
 
