@@ -1,5 +1,6 @@
 import { createConnection } from "net"
 import { createServer } from "http"
+import { createHash } from "node:crypto"
 import * as Log from "@redcode-ai/core/util/log"
 import { OAUTH_CALLBACK_PORT, OAUTH_CALLBACK_PATH, parseRedirectUri } from "./oauth-provider"
 
@@ -8,6 +9,9 @@ const log = Log.create({ service: "mcp.oauth-callback" })
 // Current callback server configuration (may differ from defaults if custom redirectUri is used)
 let currentPort = OAUTH_CALLBACK_PORT
 let currentPath = OAUTH_CALLBACK_PATH
+
+// 261017 Red 成功页自动关窗；CSP 用它的 hash 单独放行这一条内联脚本。
+const SUCCESS_SCRIPT = "setTimeout(() => window.close(), 2000)"
 
 const HTML_SUCCESS = `<!DOCTYPE html>
 <html>
@@ -25,9 +29,18 @@ const HTML_SUCCESS = `<!DOCTYPE html>
     <h1>Authorization Successful</h1>
     <p>You can close this window and return to RedCode.</p>
   </div>
-  <script>setTimeout(() => window.close(), 2000);</script>
+  <script>${SUCCESS_SCRIPT}</script>
 </body>
 </html>`
+
+// 261017 Red 回调页只渲染固定骨架，错误文本经过转义；CSP 是第二道防线：
+// 错误页完全禁用脚本，成功页只放行下面这段固定 script 的 hash。
+const ERROR_CSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"
+const SUCCESS_CSP = `${ERROR_CSP}; script-src 'sha256-${createHash("sha256").update(SUCCESS_SCRIPT).digest("base64")}'`
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
+}
 
 const HTML_ERROR = (error: string) => `<!DOCTYPE html>
 <html>
@@ -45,7 +58,7 @@ const HTML_ERROR = (error: string) => `<!DOCTYPE html>
   <div class="container">
     <h1>Authorization Failed</h1>
     <p>An error occurred during authorization.</p>
-    <div class="error">${error}</div>
+    <div class="error">${escapeHtml(error)}</div>
   </div>
 </body>
 </html>`
@@ -73,6 +86,11 @@ function cleanupStateIndex(oauthState: string) {
   }
 }
 
+function respond(res: import("http").ServerResponse, status: number, body: string, csp: string) {
+  res.writeHead(status, { "Content-Type": "text/html", "Content-Security-Policy": csp })
+  res.end(body)
+}
+
 function handleRequest(req: import("http").IncomingMessage, res: import("http").ServerResponse) {
   const url = new URL(req.url || "/", `http://localhost:${currentPort}`)
 
@@ -89,53 +107,44 @@ function handleRequest(req: import("http").IncomingMessage, res: import("http").
 
   log.info("received oauth callback", { hasCode: !!code, state, error })
 
-  // Enforce state parameter presence
   if (!state) {
-    const errorMsg = "Missing required state parameter - potential CSRF attack"
     log.error("oauth callback missing state parameter", { url: url.toString() })
-    res.writeHead(400, { "Content-Type": "text/html" })
-    res.end(HTML_ERROR(errorMsg))
+    respond(res, 400, HTML_ERROR("Missing required state parameter - potential CSRF attack"), ERROR_CSP)
+    return
+  }
+
+  // 261017 Red state 校验前移到所有分支之前。旧实现只要求 state 非空，错误分支于是能用
+  // 任意 state 拿到 200 并渲染页面——等于给外部可控的错误文本开了一个不需要授权流程
+  // 在途的入口。现在无效 state 一律 400，错误文本只在真正 pending 时展示。
+  if (!pendingAuths.has(state)) {
+    log.error("oauth callback with invalid state", { state, pendingStates: Array.from(pendingAuths.keys()) })
+    respond(res, 400, HTML_ERROR("Invalid or expired state parameter - potential CSRF attack"), ERROR_CSP)
     return
   }
 
   if (error) {
     const errorMsg = errorDescription || error
-    if (pendingAuths.has(state)) {
-      const pending = pendingAuths.get(state)!
-      clearTimeout(pending.timeout)
-      pendingAuths.delete(state)
-      cleanupStateIndex(state)
-      pending.reject(new Error(errorMsg))
-    }
-    res.writeHead(200, { "Content-Type": "text/html" })
-    res.end(HTML_ERROR(errorMsg))
+    const pending = pendingAuths.get(state)!
+    clearTimeout(pending.timeout)
+    pendingAuths.delete(state)
+    cleanupStateIndex(state)
+    pending.reject(new Error(errorMsg))
+    respond(res, 200, HTML_ERROR(errorMsg), ERROR_CSP)
     return
   }
 
   if (!code) {
-    res.writeHead(400, { "Content-Type": "text/html" })
-    res.end(HTML_ERROR("No authorization code provided"))
-    return
-  }
-
-  // Validate state parameter
-  if (!pendingAuths.has(state)) {
-    const errorMsg = "Invalid or expired state parameter - potential CSRF attack"
-    log.error("oauth callback with invalid state", { state, pendingStates: Array.from(pendingAuths.keys()) })
-    res.writeHead(400, { "Content-Type": "text/html" })
-    res.end(HTML_ERROR(errorMsg))
+    respond(res, 400, HTML_ERROR("No authorization code provided"), ERROR_CSP)
     return
   }
 
   const pending = pendingAuths.get(state)!
-
   clearTimeout(pending.timeout)
   pendingAuths.delete(state)
   cleanupStateIndex(state)
   pending.resolve(code)
 
-  res.writeHead(200, { "Content-Type": "text/html" })
-  res.end(HTML_SUCCESS)
+  respond(res, 200, HTML_SUCCESS, SUCCESS_CSP)
 }
 
 export async function ensureRunning(redirectUri?: string): Promise<void> {

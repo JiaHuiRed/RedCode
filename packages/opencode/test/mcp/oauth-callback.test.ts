@@ -63,6 +63,56 @@ describe("McpOAuthCallback.waitForCallback rejection safety", () => {
      () => "resolved",
      (err: Error) => err.message,
    )
-   expect(message).toBe("OAuth callback server stopped")
- })
+    expect(message).toBe("OAuth callback server stopped")
+  })
+})
+
+describe("McpOAuthCallback.handleRequest security", () => {
+  afterEach(async () => {
+    await McpOAuthCallback.stop()
+  })
+
+  const callback = (port: number, query: string) => fetch(`http://127.0.0.1:${port}/mcp/oauth/callback?${query}`)
+
+  test("rejects a callback whose state is not pending", async () => {
+    await McpOAuthCallback.ensureRunning("http://127.0.0.1:18001/mcp/oauth/callback")
+    const response = await callback(18001, "error=access_denied&error_description=leaked&state=not-pending")
+    expect(response.status).toBe(400)
+    expect(response.headers.get("content-security-policy")).toContain("default-src 'none'")
+    // 261017 Red 无效 state 时连错误文本都不渲染，避免变成任意文本的展示面
+    expect(await response.text()).not.toContain("leaked")
+  })
+
+  test("escapes error text but still rejects the pending auth", async () => {
+    await McpOAuthCallback.ensureRunning("http://127.0.0.1:18002/mcp/oauth/callback")
+    const pending = McpOAuthCallback.waitForCallback("state-esc")
+    const payload = "<script>alert(1)</script>"
+    const response = await callback(
+      18002,
+      `state=state-esc&error=invalid&error_description=${encodeURIComponent(payload)}`,
+    )
+    const body = await response.text()
+    expect(response.status).toBe(200)
+    expect(body).toContain("&lt;script&gt;")
+    expect(body).not.toContain("<script>alert")
+    expect(response.headers.get("content-security-policy")).toContain("default-src 'none'")
+    expect(await pending.then(() => "resolved", (err: Error) => err.message)).toBe(payload)
+  })
+
+  test("rejects a callback without state", async () => {
+    await McpOAuthCallback.ensureRunning("http://127.0.0.1:18003/mcp/oauth/callback")
+    const response = await callback(18003, "error=denied")
+    expect(response.status).toBe(400)
+  })
+
+  test("success page keeps the auto-close script allowed by its hash", async () => {
+    await McpOAuthCallback.ensureRunning("http://127.0.0.1:18004/mcp/oauth/callback")
+    const pending = McpOAuthCallback.waitForCallback("state-ok")
+    const response = await callback(18004, "state=state-ok&code=abc")
+    const body = await response.text()
+    expect(response.status).toBe(200)
+    expect(body).toContain("Authorization Successful")
+    expect(await pending).toBe("abc")
+    expect(response.headers.get("content-security-policy")).toMatch(/script-src 'sha256-/)
+  })
 })
