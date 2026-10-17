@@ -10,6 +10,8 @@
 
 ### Unreleased
 
+### [0.12.12] - 2026-10-17
+
 - **`run_code`：PTC 形态的工具呈现（实验，默认关闭）**：对齐 DeepSeek Harness 的 prompt-tool-calling 设计——模型只看到 `run_code` 和一份按**本次请求真正可见工具**生成的 TypeScript SDK，写一段程序一次调完多个工具；中间结果留在程序里，只有外层打印/返回值进对话，以此减少轮次与回传 token。执行放在 Bun 子进程（`\u001eRC\u001e` 协议帧与程序 stdout 分离），`ctx.abort` 与 120s 硬截止都会真杀进程；嵌套调用桥回同一张 AI SDK 工具表，因此 hook、explore capability、`ctx.ask` 权限与 truncate 全部照旧，且禁止自调用。SDK 按 id 排序保证字节稳定，硬顶 24,000 字符（超出只列 id，工具仍可调）；程序输出 64KB、单程序 64 次调度、stderr 8KB 同样有顶。**这不是沙箱**：子进程拥有用户文件权限，与 bash 同级，故需 `REDCODE_EXPERIMENTAL_RUN_CODE=1` 显式开启；关闭时工具表与固定前缀零变化。验证：`run-code.test.ts` 10 pass / 31 expects、`registry.test.ts` 2 pass（默认隐藏 + SDK 只含可见工具）、`capability.test.ts` 7 pass、opencode typecheck 通过。模型可见四问：① 仅开启时工具表 +1 并追加 SDK 文本；② SDK 有 24K 字符硬顶；③ 切换开关使工具表及其后前缀作废，默认关闭故现有会话不受影响；④ 四处硬上限均见上。决策见 [note](docs/notes/implemented/feature/2026-10-17-run-code-ptc-tool-presentation.md)。
 
 - **TUI 文本颜色按背景保障可读性**：system 主题按终端采样底色校正正文与 Markdown 语义色；自定义不透明底色下，低对比颜色向黑/白微调到 4.5:1，尽可能保留原色相。行内代码色和语法高亮色不变；透明自定义背景因实际底色未知而保留原色。浅/深色与 system palette 均有回归测试。
