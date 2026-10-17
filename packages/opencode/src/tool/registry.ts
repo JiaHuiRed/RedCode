@@ -66,6 +66,9 @@ import { ContextReadTool, ContextSearchTool, ContextRestoreTool } from "./contex
 import { assertExclusive } from "@/session/native-context"
 import { SnippetTool } from "./snippet"
 import { Snippet } from "@/session/snippet"
+import { RunCodeTool } from "./run-code"
+import { RunCodeSdk } from "./run-code-sdk"
+import { ToolJsonSchema } from "./json-schema"
 
 const log = Log.create({ service: "tool.registry" })
 
@@ -136,6 +139,7 @@ export const layer = Layer.effect(
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
     const snippet = yield* SnippetTool
+    const runCode = yield* RunCodeTool
     const contextRead = yield* ContextReadTool
     const contextSearch = yield* ContextSearchTool
     const contextRestore = yield* ContextRestoreTool
@@ -285,6 +289,7 @@ export const layer = Layer.effect(
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
           plan: Tool.init(plan),
+          run_code: Tool.init(runCode),
           context_read: Tool.init(contextRead),
           context_search: Tool.init(contextSearch),
           context_restore: Tool.init(contextRestore),
@@ -357,6 +362,7 @@ export const layer = Layer.effect(
             ...(flags.experimentalLspTool ? [tool.lsp] : []),
             ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
             searchToolsDef,
+            ...(flags.experimentalRunCode ? [tool.run_code] : []),
             ...(nativeEnabled ? [tool.context_read, tool.context_search, tool.context_restore] : []),
           ],
           task: tool.task,
@@ -452,6 +458,20 @@ export const layer = Layer.effect(
         return true
       })
 
+      // 261017 Red PTC：SDK 声明只包含本次请求真正可见的工具（已过权限与模型过滤），
+      // 模型因此不会看到调用不了的绑定。生成器按 id 排序，同一集合逐字节同前缀。
+      const runCodeSdk = filtered.some((entry) => entry.id === RunCodeTool.id)
+        ? RunCodeSdk.declaration(
+            filtered
+              .filter((entry) => entry.id !== RunCodeTool.id)
+              .map((entry) => ({
+                id: entry.id,
+                description: entry.description,
+                schema: ToolJsonSchema.fromTool(entry),
+              })),
+          )
+        : undefined
+
       const result = yield* Effect.forEach(
         filtered,
         Effect.fnUntraced(function* (tool: Tool.Def) {
@@ -470,6 +490,7 @@ export const layer = Layer.effect(
             id: tool.id,
             description: [
               output.description,
+              tool.id === RunCodeTool.id ? runCodeSdk : undefined,
               tool.id === TaskTool.id ? yield* describeTask(input.agent) : undefined,
               tool.id === SkillTool.id ? yield* describeSkill(input.agent) : undefined,
             ]

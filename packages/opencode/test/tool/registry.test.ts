@@ -124,6 +124,9 @@ const native = testEffect(Layer.mergeAll(registryLayer({ native: true }), node, 
 const scout = testEffect(
   Layer.mergeAll(registryLayer({ flags: { experimentalReference: true } }), node, Agent.defaultLayer),
 )
+const runCode = testEffect(
+  Layer.mergeAll(registryLayer({ flags: { experimentalRunCode: true } }), node, Agent.defaultLayer),
+)
 const background = testEffect(
   Layer.mergeAll(registryLayer({ flags: { experimentalBackgroundSubagents: true } }), node, Agent.defaultLayer),
 )
@@ -176,6 +179,40 @@ describe("tool.registry", () => {
 
       expect(ids).toContain("repo_clone")
       expect(ids).toContain("repo_overview")
+    }),
+  )
+
+  it.instance("hides run_code unless the PTC experiment is enabled", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const ids = yield* registry.ids()
+
+      expect(ids).not.toContain("run_code")
+    }),
+  )
+
+  runCode.instance("run_code carries an SDK declaration for exactly the visible tools", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agents = yield* Agent.Service
+      const build = yield* agents.get("build")
+      if (!build) throw new Error("build agent not found")
+      const tools = yield* registry.tools({
+        providerID: ProviderID.redcode,
+        modelID: ModelID.make("test"),
+        agent: build,
+      })
+      const code = tools.find((tool) => tool.id === "run_code")
+
+      expect(code).toBeDefined()
+      expect(code?.description).toContain("declare const tools: {")
+      // 绑定按 id 排序，且不能把 run_code 自己再声明一遍（嵌套自调用在执行期被拒）。
+      expect(code?.description).toContain("\n  bash(input:")
+      expect(code?.description).toContain("\n  read(input:")
+      expect(code?.description).not.toContain("\n  run_code(input:")
+      expect(code?.description.indexOf("\n  bash(input:")).toBeLessThan(
+        code?.description.indexOf("\n  read(input:") ?? -1,
+      )
     }),
   )
 

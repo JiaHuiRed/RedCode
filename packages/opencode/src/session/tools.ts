@@ -62,6 +62,37 @@ const exploreCapabilities = Effect.fn("SessionTools.exploreCapabilities")(functi
   )
 })
 
+// 261017 Red run_code 子调用的唯一入口：宿主把程序发来的名字/参数交回这张 AI SDK 工具表，
+// 于是所有闸门（before/pre 钩子、explore capability、ctx.ask 权限、truncate）都不用重写。
+export async function dispatchNestedTool(
+  tools: Record<string, AITool>,
+  name: string,
+  args: Record<string, unknown>,
+  parent: ToolExecutionOptions<Record<string, unknown>>,
+  toolCallId: string,
+): Promise<{ output: string; blocked: boolean }> {
+  if (name === "run_code") throw new Error("run_code cannot call itself")
+  const target = tools[name] as
+    | {
+        execute?: (
+          args: Record<string, unknown>,
+          options: ToolExecutionOptions<Record<string, unknown>>,
+        ) => Promise<unknown>
+      }
+    | undefined
+  if (typeof target?.execute !== "function") throw new Error(`Unknown tool: ${name}`)
+  const result = (await target.execute(args, {
+    toolCallId,
+    messages: parent.messages,
+    abortSignal: parent.abortSignal,
+    context: {},
+  })) as { output?: unknown; metadata?: { blocked?: unknown } } | undefined
+  return {
+    output: typeof result?.output === "string" ? result.output : "",
+    blocked: result?.metadata?.blocked === true,
+  }
+}
+
 export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   agent: Agent.Info
   model: Provider.Model
@@ -82,6 +113,15 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const truncate = yield* Truncate.Service
   const childCapabilities = input.agent.name === "explore" ? yield* exploreCapabilities(input.session.id) : undefined
 
+  // 261017 Red run_code 的嵌套调用桥：目标仍取同一张 AI SDK 工具表，因此 hook、
+  // capability、permission、truncate 全部照旧；程序只拿到 output 文本，中间结果不进对话。
+  let nestedSeq = 0
+  const dispatchRunCode = (
+    name: string,
+    args: Record<string, unknown>,
+    options: ToolExecutionOptions<Record<string, unknown>>,
+  ) => dispatchNestedTool(tools, name, args, options, `${options.toolCallId}:rc${++nestedSeq}`)
+
   const context = (
     name: string,
     args: Record<string, unknown>,
@@ -96,6 +136,12 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       bypassAgentCheck: input.bypassAgentCheck,
       promptOps: input.promptOps,
       goal: input.goal,
+      ...(name === "run_code"
+        ? {
+            runCodeDispatch: (child: string, childArgs: Record<string, unknown>) =>
+              dispatchRunCode(child, childArgs, options),
+          }
+        : {}),
     },
     agent: input.agent.name,
     messages: input.messages,

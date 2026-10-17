@@ -69,6 +69,9 @@ export class Service extends ConfigService.Service<Service>()("@redcode/RuntimeF
   // 就真等一天。默认钳到 10 分钟，特殊场景用该变量放宽。
   bashMaxTimeoutMs: positiveInteger("REDCODE_EXPERIMENTAL_BASH_MAX_TIMEOUT_MS"),
   experimentalNativeLlm: enabledByExperimental("REDCODE_EXPERIMENTAL_NATIVE_LLM"),
+  // 261017 Red PTC 形态（模型写程序调工具）默认关闭：它执行模型写的代码，属于新的执行面，
+  // 且子进程仍带用户文件权限。开关打开才注册 run_code，关闭时工具表与固定前缀零变化。
+  experimentalRunCode: enabledByExperimental("REDCODE_EXPERIMENTAL_RUN_CODE"),
   client: Config.string("REDCODE_CLIENT").pipe(Config.withDefault("cli")),
 }) {}
 
