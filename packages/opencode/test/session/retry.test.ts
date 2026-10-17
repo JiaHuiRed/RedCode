@@ -120,6 +120,42 @@ describe("session.retry.delay", () => {
     ),
   )
 
+  // 261017 Red 回归：工具一旦出现，重试会重放请求并让模型再发一次同样的调用，
+  // 非幂等操作（追加写、执行命令）就执行两遍。此时必须放弃自动重试。
+  it.live("policy stops retrying once a tool call has started", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const error = apiError({ "retry-after-ms": "0" })
+        const step = yield* Schedule.toStepWithMetadata(
+          SessionRetry.policy({
+            provider: retryProvider,
+            parse: Schema.decodeUnknownSync(MessageV2.APIError.Schema),
+            toolsStarted: () => true,
+            set: () => Effect.void,
+          }),
+        )
+        expect((yield* Effect.exit(step(error)))._tag).toBe("Failure")
+      }),
+    ),
+  )
+
+  it.live("policy still retries before any tool call appears", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const error = apiError({ "retry-after-ms": "0" })
+        const step = yield* Schedule.toStepWithMetadata(
+          SessionRetry.policy({
+            provider: retryProvider,
+            parse: Schema.decodeUnknownSync(MessageV2.APIError.Schema),
+            toolsStarted: () => false,
+            set: () => Effect.void,
+          }),
+        )
+        expect((yield* Effect.exit(step(error)))._tag).toBe("Success")
+      }),
+    ),
+  )
+
   // 260811 cc audit Y1：重试封顶——第 RETRY_MAX_ATTEMPTS+1 次失败不再排下一次等待
   it.live("policy gives up after RETRY_MAX_ATTEMPTS", () =>
     provideTmpdirInstance(() =>

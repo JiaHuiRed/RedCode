@@ -127,6 +127,10 @@ interface ProcessorContext extends Input {
   // 260728 Red 文本态工具调用打捞：本 step 注册的工具名（防误判）+ 打捞结果
   toolNames: ReadonlySet<string>
   salvaged: XmlToolCall.ParsedCall[]
+  // 261017 Red 本 step 是否已经产生过工具调用。AI SDK 会在 tool-call 事件之前就启动
+  // execute（见 updateToolCall 里的注释），所以只要 part 建出来就算"可能已有副作用"。
+  // 重试策略据此放弃自动重放，见 SessionRetry.policy 的 toolsStarted。
+  toolsStarted: boolean
   // 260811 cc TTFT：首个分片时刻。必须挂在 ctx 上而不是 assistantMessage.time 上——
   // 消息对象在事件之间会被替换成新对象，写在它上面的守卫会失效、导致重复记录（实测同一条
   // 消息打了 4 次、ms 递增，落库的是最后一次，把 TTFT 高估了几秒）。
@@ -211,6 +215,7 @@ export const layer = Layer.effect(
         // 260728 Red 文本态工具调用打捞
         toolNames: new Set<string>(),
         salvaged: [],
+        toolsStarted: false,
       }
       let aborted = false
       const slog = log.clone().tag("session.id", input.sessionID).tag("messageID", input.assistantMessage.id)
@@ -287,6 +292,7 @@ export const layer = Layer.effect(
           callID: toolCallID,
           state: { status: "pending", input: {}, raw: "" },
         } satisfies MessageV2.ToolPart)
+        ctx.toolsStarted = true
         ctx.toolcalls[toolCallID] = {
           done: yield* Deferred.make<void>(),
           partID: part.id,
@@ -450,6 +456,7 @@ export const layer = Layer.effect(
           state: { status: "pending", input: {}, raw: "" },
           metadata: input.providerExecuted ? { providerExecuted: true } : undefined,
         } satisfies MessageV2.ToolPart)
+        ctx.toolsStarted = true
         ctx.toolcalls[input.id] = {
           done: yield* Deferred.make<void>(),
           partID: part.id,
@@ -1169,6 +1176,7 @@ export const layer = Layer.effect(
         // <tool_call> 字样当成真调用摘掉
         ctx.toolNames = new Set(Object.keys(streamInput.tools ?? {}))
         ctx.salvaged = []
+        ctx.toolsStarted = false
 
         // 260625 Red 基线快照：进入本 step 前已存在的 part。重试时据此删掉失败那次新建的所有 part。
         // 一次 process() = 一个 step = 一条流（见 prompt.ts），断流必发生在 step-finish 之前，
@@ -1230,6 +1238,7 @@ export const layer = Layer.effect(
               SessionRetry.policy({
                 provider: input.model.providerID,
                 parse,
+                toolsStarted: () => ctx.toolsStarted,
                 set: (info) => {
                   return status.set(ctx.sessionID, {
                     type: "retry",

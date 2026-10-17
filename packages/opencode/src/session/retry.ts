@@ -190,12 +190,18 @@ export function policy(opts: {
   provider: string
   parse: (error: unknown) => Err
   set: (input: { attempt: number; message: string; action?: Retryable["action"]; next: number }) => Effect.Effect<void>
+  // 261017 Red 本轮已经出现工具调用时不再自动重试。重试会删掉本轮新建的 part 并重放
+  // 同一份请求，模型看不到刚才的调用结果、会再发一次同样的调用——对追加写/执行命令
+  // 这类非幂等操作就是执行两遍。工具尚未出现时的失败照旧重试。
+  // 决策见 docs/notes/implemented/bug-fix/2026-10-17-retry-after-tool-execution.md
+  toolsStarted?: () => boolean
 }) {
   return Schedule.fromStepWithMetadata(
     Effect.succeed((meta: Schedule.InputMetadata<unknown>) => {
       const parsed = opts.parse(meta.input)
       const retry = retryable(meta.input, opts.provider) ?? retryable(parsed, opts.provider)
       if (!retry) return Cause.done(meta.attempt)
+      if (opts.toolsStarted?.()) return Cause.done(meta.attempt)
       if (meta.attempt > RETRY_MAX_ATTEMPTS) return Cause.done(meta.attempt)
       return Effect.gen(function* () {
         const wait = delay(meta.attempt, MessageV2.APIError.isInstance(parsed) ? parsed : undefined)
