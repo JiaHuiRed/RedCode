@@ -3,6 +3,7 @@ import { Config } from "@/config/config"
 import { Effect } from "effect"
 import { UI } from "./ui"
 import { networkInterfaces } from "os"
+import { randomBytes } from "node:crypto"
 
 const options = {
   port: {
@@ -42,10 +43,20 @@ export function withNetworkOptions<T>(yargs: Argv<T>) {
 // 只有这四个字面量才是"只有本机连得上"。
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1", "[::1]"])
 
-// 260908 Red 局域网监听的缺省密码。源码是公开的，这个值挡的是同网段顺手蹭，
-// 不是定向攻击；真要私有就在环境变量里覆盖 REDCODE_SERVER_PASSWORD。
+// 261017 Red 取消公开的固定默认密码：旧值写在公开源码里，等于所有默认实例共享同一个
+// 凭据——知道它的人可以对任何开了局域网监听的机器创建 PTY 并执行命令，这已经不是
+// 「同网段顺手蹭」的量级。现在改成每次启动随机生成并打印到 stderr，重启即换；
+// 想固定就自己设 REDCODE_SERVER_PASSWORD。
 // 显式置空串视为"我知道我要关鉴权"，仍走下面的拒绝启动路径。
-const LAN_DEFAULT_PASSWORD = "RedCode0429"
+function generateLanPassword() {
+  return randomBytes(18).toString("base64url")
+}
+
+export function announceLanPassword(password: string) {
+  UI.println("")
+  UI.println(UI.Style.TEXT_WARNING_BOLD + "  局域网密码（本次启动随机生成）:", UI.Style.TEXT_NORMAL, password)
+  UI.println("  其他设备连接时输入这个密码；重启后会更换。想固定密码请先设置 REDCODE_SERVER_PASSWORD。")
+}
 
 /**
  * 局域网暴露的密码闸门。
@@ -54,9 +65,9 @@ const LAN_DEFAULT_PASSWORD = "RedCode0429"
  * 然后照常监听 —— 而 `redcode web` 的整个用途就是把机器开给局域网，于是同一个 Wi-Fi 下的
  * 任何设备都能拿到 shell 与全部源码，一行灰字提示挡不住任何人。
  *
- * 260908 Red "没设密码就拒绝启动"收紧为"没设密码就落到 LAN_DEFAULT_PASSWORD 兜底"
- * （见 resolveLanDefaultPassword）：每次开 0.0.0.0 都要手工设环境变量太劝退，而内置一个
- * 默认密码比裸奔强。gate 保留给显式置空串的场景。这里必须运行期读 process.env 而不是
+ * 261017 Red 兜底不再是写死的常量，而是随机生成并打印（见 resolveLanDefaultPassword）：
+ * 每次开 0.0.0.0 都要手工设环境变量太劝退，而随机密码比裸奔强，也不存在共享凭据。
+ * gate 保留给显式置空串的场景。这里必须运行期读 process.env 而不是
  * Flag —— Flag 是模块加载时的快照，兜底注入发生在命令执行期，读快照永远看不见。
  */
 export function assertPasswordForExposure(hostname: string) {
@@ -74,19 +85,25 @@ export function assertPasswordForExposure(hostname: string) {
   process.exit(1)
 }
 
-// 260908 Red 只对非回环绑定兜底：回环用法（本地脚本、SDK 直连 localhost）保持无鉴权，
+// 261017 Red 只对非回环绑定兜底：回环用法（本地脚本、SDK 直连 localhost）保持无鉴权，
 // 测试与桌面 sidecar（自带随机密码 env）都不经过这条路径。
+// 返回值只在本次真正生成了密码时非空，调用方据此决定是否告知用户。
 export function resolveLanDefaultPassword(hostname: string) {
   if (LOOPBACK.has(hostname)) return
   if (process.env["REDCODE_SERVER_PASSWORD"] !== undefined) return
-  process.env["REDCODE_SERVER_PASSWORD"] = LAN_DEFAULT_PASSWORD
+  const password = generateLanPassword()
+  process.env["REDCODE_SERVER_PASSWORD"] = password
+  return password
 }
 
 export const resolveNetworkOptions = Effect.fn("Cli.resolveNetworkOptions")(function* (args: NetworkOptions) {
   const config = yield* Config.Service.use((cfg) => cfg.getGlobal())
   const opts = resolveNetworkOptionsNoConfig(args, config)
-  resolveLanDefaultPassword(opts.hostname)
+  const lanPassword = resolveLanDefaultPassword(opts.hostname)
   assertPasswordForExposure(opts.hostname)
+  // 261017 Red 随机密码只存在于进程 env 里，不打出来用户就永远连不上——这是它取代固定
+  // 默认密码的前提。UI.println 走 stderr，不会污染 acp 的 stdout 协议。
+  if (lanPassword) announceLanPassword(lanPassword)
   return opts
 })
 

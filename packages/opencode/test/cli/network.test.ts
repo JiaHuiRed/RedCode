@@ -35,9 +35,22 @@ describe("cli.network", () => {
     expect(process.env[KEY]).toBeUndefined()
   })
 
-  test("injects the built-in password for exposed bindings", () => {
-    resolveLanDefaultPassword("0.0.0.0")
-    expect(process.env[KEY]).toBe("RedCode0429")
+  test("generates a random password for exposed bindings", () => {
+    const password = resolveLanDefaultPassword("0.0.0.0")
+    expect(password).toBeString()
+    expect(password!.length).toBeGreaterThanOrEqual(20)
+    // 261017 Red 回归护栏：公开源码里的固定值不能再被当成默认凭据
+    expect(password).not.toBe("RedCode0429")
+    expect(process.env[KEY]).toBe(password)
+  })
+
+  test("generates a different password for every run", () => {
+    const first = resolveLanDefaultPassword("0.0.0.0")
+    delete process.env[KEY]
+    const second = resolveLanDefaultPassword("0.0.0.0")
+    expect(first).toBeString()
+    expect(second).toBeString()
+    expect(first).not.toBe(second)
   })
 
   test("keeps an explicit password untouched", () => {
