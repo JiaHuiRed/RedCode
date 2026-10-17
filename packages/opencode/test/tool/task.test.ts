@@ -1,5 +1,5 @@
 import { afterEach, describe, expect } from "bun:test"
-import { Effect, Exit, Fiber, Layer } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { BackgroundJob } from "@/background/job"
@@ -18,6 +18,10 @@ import { RepositoryCache } from "@/reference/repository-cache"
 import { Ripgrep } from "@/file/ripgrep"
 import { Session } from "@/session/session"
 import { MessageV2 } from "../../src/session/message-v2"
+import { SessionTools } from "@/session/tools"
+import type { Goal } from "@/session/goal"
+import { MCP } from "@/mcp"
+import { Permission } from "@/permission"
 import type { SessionPrompt } from "../../src/session/prompt"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionRunState } from "@/session/run-state"
@@ -32,6 +36,7 @@ import { Truncate } from "@/tool/truncate"
 import { ToolRegistry } from "@/tool/registry"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Storage } from "@/storage/storage"
+import type { ChildTaskRecord } from "@/tool/task-runtime"
 import { disposeAllInstances } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
@@ -359,6 +364,119 @@ describe("tool.task", () => {
       expect(result.output).toContain("ready_for_review")
     }),
   )
+
+  for (const parentDenied of [false, true]) {
+    explore.instance(
+      `Explore canonical capabilities reach session tools${parentDenied ? " without overriding parent denial" : ""}`,
+      () =>
+        Effect.gen(function* () {
+          const sessions = yield* Session.Service
+          const storage = yield* Storage.Service
+          const agents = yield* Agent.Service
+          const { chat, assistant } = yield* seed()
+          if (parentDenied) {
+            yield* sessions.setPermission({
+              sessionID: chat.id,
+              permission: [{ permission: "bash", pattern: "*", action: "deny" }],
+            })
+          }
+          const def = yield* (yield* TaskTool).init()
+          const promptOps = stubOps()
+          yield* def.execute(
+            { description: "inspect git", prompt: "inspect repository identity", subagent_type: "explore" },
+            {
+              sessionID: chat.id,
+              messageID: assistant.id,
+              agent: "build",
+              abort: new AbortController().signal,
+              extra: { promptOps, bypassAgentCheck: true },
+              messages: [],
+              metadata: () => Effect.void,
+              ask: () => Effect.void,
+            },
+          )
+          const child = (yield* sessions.children(chat.id))[0]
+          const agent = yield* agents.get("explore")
+          if (!child || !agent) throw new Error("Explore child was not created")
+          const key = ["task-runtime", String(child.id)]
+          const record = yield* storage.read<ChildTaskRecord>(key)
+          expect(record.capabilities).toEqual(["read", "search", "shell"])
+
+          const model: Provider.Model = {
+            id: ref.modelID,
+            providerID: ref.providerID,
+            name: "Test",
+            api: { id: ref.modelID, url: "", npm: "@ai-sdk/anthropic" },
+            capabilities: {
+              temperature: true,
+              reasoning: false,
+              attachment: false,
+              toolcall: true,
+              interleaved: false,
+              input: { text: true, audio: false, image: false, video: false, pdf: false },
+              output: { text: true, audio: false, image: false, video: false, pdf: false },
+            },
+            cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+            limit: { context: 100_000, output: 32_000 },
+            status: "active",
+            options: {},
+            headers: {},
+            release_date: "",
+          }
+          const runBash = Effect.fnUntraced(
+            function* () {
+              const tools = yield* SessionTools.resolve({
+                agent,
+                model,
+                session: child,
+                processor: {
+                  message: assistant,
+                  updateToolCall: () => Effect.succeed(undefined),
+                  completeToolCall: () => Effect.void,
+                  guardToolCall: () => Effect.void,
+                },
+                bypassAgentCheck: false,
+                messages: [],
+                promptOps,
+                goal: {} as Goal.Interface,
+              })
+              const execute = tools.bash?.execute
+              if (!execute) throw new Error("Bash tool was not resolved")
+              return yield* Effect.promise(async () =>
+                execute(
+                  { command: "git rev-parse --show-toplevel", description: "Inspect repository identity" },
+                  { toolCallId: "git-query", abortSignal: new AbortController().signal, messages: [], context: {} },
+                ),
+              )
+            },
+            Effect.provide(
+              Layer.mergeAll(
+                Permission.defaultLayer,
+                Layer.mock(MCP.Service)({
+                  clients: () => Effect.succeed({}),
+                  tools: () => Effect.succeed({}),
+                }),
+              ),
+            ),
+          )
+          if (parentDenied) {
+            const exit = yield* runBash().pipe(Effect.exit)
+            expect(Exit.isFailure(exit)).toBe(true)
+            if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(Permission.DeniedError)
+            return
+          }
+          expect(yield* runBash()).toMatchObject({ metadata: { exit: 0 } })
+          // 261017 Red 旧记录仍收紧权限；记录缺失才回落 profile，不迁移旧任务。
+          yield* storage.update<ChildTaskRecord>(key, (record) => {
+            record.capabilities = ["read", "search"]
+          })
+          expect(yield* runBash()).toMatchObject({ metadata: { blocked: true, capability: "child-record" } })
+          yield* storage.remove(key)
+          expect(yield* runBash()).toMatchObject({ metadata: { exit: 0 } })
+        }),
+      { git: true },
+    )
+  }
 
   it.instance("execute asks by default and skips checks when bypassed", () =>
     Effect.gen(function* () {

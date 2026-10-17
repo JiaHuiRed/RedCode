@@ -18,6 +18,7 @@ import { Cause, Clock, Effect, Exit, Fiber, Option, Schema, Scope } from "effect
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Storage } from "@/storage/storage"
+import { profileCapabilitySet } from "./capability"
 import {
   boundedTaskText,
   compileExploreTaskPacket,
@@ -344,7 +345,8 @@ export const TaskTool = Tool.define(
               parentSessionID: ctx.sessionID,
               childSessionID: nextSession.id,
               packet: explorePacket,
-              capabilities: ["read", "search"],
+              // 261017 Red 与读取端 fallback 共用 profile；命令授权仍由继承权限与 Git 白名单裁决。
+              capabilities: [...profileCapabilitySet("explore")],
               profile: "explore",
               createdAt: Date.now(),
             }),
