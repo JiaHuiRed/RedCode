@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { dropSession, PromptCaches, settlePromptCaches, touchSession } from "../../src/session/prompt-caches"
+import { dropSession, overlayToolDefs, PromptCaches, settlePromptCaches, touchSession } from "../../src/session/prompt-caches"
 
 // 260811 cc audit R4: 分代结算的边界语义——只清目标会话的 msgPin/modelMsgs，
 // system/tools 与别的会话不受牵连。
@@ -171,5 +171,48 @@ describe("session.prompt-caches", () => {
       expect(PromptCaches.seen.size).toBe(2)
       expect(PromptCaches.system.has("ses_a")).toBe(true)
     })
+  })
+})
+
+describe("overlayToolDefs", () => {
+  test("pins static tool definitions from the first step", () => {
+    const tools: Record<string, { description?: unknown; inputSchema?: unknown }> = {
+      read: { description: "fresh read", inputSchema: { fresh: true } },
+    }
+    const cached = new Map([["read", { description: "pinned read", inputSchema: { pinned: true } }]])
+
+    overlayToolDefs(tools, cached)
+
+    expect(tools.read.description).toBe("pinned read")
+    expect(tools.read.inputSchema).toEqual({ pinned: true })
+  })
+
+  // 261017 Red 回归：同一会话先要 answer:number、再要 name:string，第二次仍必须看到本轮 schema。
+  test("keeps the current StructuredOutput schema from the request", () => {
+    const current = { type: "object", properties: { name: { type: "string" } } }
+    const tools: Record<string, { description?: unknown; inputSchema?: unknown }> = {
+      StructuredOutput: { description: "fresh", inputSchema: current },
+      read: { description: "fresh read", inputSchema: { fresh: true } },
+    }
+    const cached = new Map([
+      ["StructuredOutput", { description: "pinned", inputSchema: { type: "object", properties: { answer: { type: "number" } } } }],
+      ["read", { description: "pinned read", inputSchema: { pinned: true } }],
+    ])
+
+    overlayToolDefs(tools, cached)
+
+    expect(tools.StructuredOutput.inputSchema).toEqual(current)
+    // description 是静态字符串，仍然钉住
+    expect(tools.StructuredOutput.description).toBe("pinned")
+    // 普通工具的 schema 缓存行为不变
+    expect(tools.read.inputSchema).toEqual({ pinned: true })
+  })
+
+  test("is a no-op for a session without cached defs", () => {
+    const tools: Record<string, { description?: unknown; inputSchema?: unknown }> = {
+      read: { description: "d", inputSchema: { a: 1 } },
+    }
+    overlayToolDefs(tools, undefined)
+    expect(tools.read.inputSchema).toEqual({ a: 1 })
   })
 })

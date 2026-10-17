@@ -3,7 +3,7 @@ import os from "os"
 import { SessionID, MessageID, PartID } from "./schema"
 import { MessageV2 } from "./message-v2"
 import { ImageTokens } from "./image-tokens"
-import { PromptCaches, settlePromptCaches, touchSession } from "./prompt-caches"
+import { overlayToolDefs, PromptCaches, settlePromptCaches, touchSession } from "./prompt-caches"
 import { ContextSnapshot } from "./context-snapshot"
 import { PrefixProbe } from "./prefix-probe"
 import * as Log from "@redcode-ai/core/util/log"
@@ -1570,16 +1570,10 @@ export const layer = Layer.effect(
           // matching skill patterns, the Skill tool description changes → tool schema JSON mutates →
           // entire prefix cache breaks from the tool definitions onward (thousands of tokens).
           // Fix: pin descriptions + schemas from the first step, overlay on subsequent steps.
+          // 261017 Red StructuredOutput 除外——它的 schema 跟随本轮 format（见 overlayToolDefs）。
           const cachedTools = _caches.tools.get(sessionID)
-          if (cachedTools) {
-            for (const [k, t] of Object.entries(sortedTools)) {
-              const cached = cachedTools.defs.get(k)
-              if (cached) {
-                ;(t as any).description = cached.description
-                ;(t as any).inputSchema = cached.inputSchema
-              }
-            }
-          } else {
+          if (cachedTools) overlayToolDefs(sortedTools, cachedTools.defs)
+          else {
             const defs = new Map<string, { description: string; inputSchema: unknown }>()
             for (const [k, t] of Object.entries(sortedTools)) {
               defs.set(k, { description: (t as any).description, inputSchema: (t as any).inputSchema })

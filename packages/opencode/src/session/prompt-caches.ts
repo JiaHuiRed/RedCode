@@ -112,3 +112,24 @@ export function touchSession(sessionID: string, now = Date.now()) {
   if (evicted.length > 0) log.info("evicted", { sessions: evicted.length, live: evictor.size() })
   return evicted
 }
+
+// 261017 Red StructuredOutput 的 inputSchema 来自本轮请求的 format，不是静态工具定义：
+// 同一会话先要 answer:number 再要 name:string 时，用首轮缓存的 schema 覆盖新建的工具，
+// 模型会继续看到旧结构，执行器也会把旧结构当作本次成功结果。它的 description 仍是
+// 静态字符串，照常钉住，前缀缓存不受影响。
+const VOLATILE_TOOL_SCHEMAS = new Set(["StructuredOutput"])
+
+/** 用会话首轮的静态定义覆盖本轮重建的工具；schema 随请求变化的工具只钉 description。 */
+export function overlayToolDefs(
+  tools: Record<string, { description?: unknown; inputSchema?: unknown }>,
+  cached: Map<string, { description: string; inputSchema: unknown }> | undefined,
+) {
+  if (!cached) return
+  for (const [name, tool] of Object.entries(tools)) {
+    const def = cached.get(name)
+    if (!def) continue
+    tool.description = def.description
+    if (VOLATILE_TOOL_SCHEMAS.has(name)) continue
+    tool.inputSchema = def.inputSchema
+  }
+}
