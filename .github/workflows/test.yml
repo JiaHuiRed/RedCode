@@ -76,23 +76,6 @@ jobs:
         env:
           OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
 
-      # 260811 cc audit R13: 原条件 runner.os == 'Linux'，但 matrix 只剩 Windows——
-      # 三条 --fail-on-missing 门禁在 CI 里从未执行过（假门禁）。摘掉条件转正，
-      # 转正前本地 Windows 实跑：coverage 报出 2 条无场景路由已补齐，三模式全绿。
-      - name: Run HttpApi exerciser gates
-        working-directory: packages/opencode
-        run: bun run test:httpapi
-
-      # 260821 cc OpenAPI 生成物漂移闸门：packages/sdk/openapi.json 必须逐字节等于
-      # `redcode generate` 的当前输出。这条生成路径曾指向不存在的 packages/redcode
-      # 而静默失效，openapi.json 长期靠手改（见 script/generate.ts 注释）；260819
-      # 修好了路径，但没有任何东西阻止它再烂一次——这一步就是那个东西。
-      # 261013 Red CI 与 pre-push 双份（pre-push 原版随工具描述预算批次接入）：
-      # 本地拦截省一轮 CI 往返，CI 兜 --no-verify 与并行会话合并；双份有意，别按
-      # 旧注释把 pre-push 那条当冗余删掉。
-      - name: Run OpenAPI drift gate
-        run: bun run check:openapi-drift
-
       - name: Publish unit reports
         if: always()
         uses: mikepenz/action-junit-report@bccf2e31636835cf0874589931c4116687171386 # v6.4.0
@@ -112,6 +95,47 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
           path: packages/*/.artifacts/unit/junit.xml
+
+  # 261017 Red HttpApi 与 OpenAPI 两条门禁从 unit job 拆出来。原先它们排在 unit
+  # 之后，存量单测失败会让这两步根本不执行——结果被前面的失败遮住，看起来像
+  # "未运行"而不是"通过/失败"。拆成独立 job 后三者各自出结论，unit 基线修复
+  # 期间也能看到这两条的真实状态。
+  gates:
+    name: api and openapi gates
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      # 260811 cc audit R13: 原条件 runner.os == 'Linux'，但 matrix 只剩 Windows——
+      # 三条 --fail-on-missing 门禁在 CI 里从未执行过（假门禁）。摘掉条件转正，
+      # 转正前本地 Windows 实跑：coverage 报出 2 条无场景路由已补齐，三模式全绿。
+      - name: Run HttpApi exerciser gates
+        working-directory: packages/opencode
+        run: bun run test:httpapi
+
+      # 260821 cc OpenAPI 生成物漂移闸门：packages/sdk/openapi.json 必须逐字节等于
+      # `redcode generate` 的当前输出。这条生成路径曾指向不存在的 packages/redcode
+      # 而静默失效，openapi.json 长期靠手改（见 script/generate.ts 注释）；260819
+      # 修好了路径，但没有任何东西阻止它再烂一次——这一步就是那个东西。
+      # 261013 Red CI 与 pre-push 双份（pre-push 原版随工具描述预算批次接入）：
+      # 本地拦截省一轮 CI 往返，CI 兜 --no-verify 与并行会话合并；双份有意，别按
+      # 旧注释把 pre-push 那条当冗余删掉。
+      - name: Run OpenAPI drift gate
+        run: bun run check:openapi-drift
 
   # 261013 Red e2e job 拆至 .github/workflows/e2e.yml：CI 最大头（Playwright 30 分钟量级）
   # 只有 app/desktop 变更才需要跑，workflow 级 paths 过滤让 docs/session-core 改动不再触发。
