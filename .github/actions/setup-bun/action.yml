@@ -58,7 +58,9 @@ runs:
       # 261006 Karina 全 OS 统一默认 linker：#28147 已由 bun PR #33646 修复，Windows 的 bun
       # 已在上面钉到含修复的 1.4.2，不再需要 --linker hoisted；而保留 hoisted 会让
       # @hey-api/openapi-ts 吃到顶层 typescript 7 原生移植版把 sdk:build 挂掉。
-      run: bun install ${{ inputs.install-flags }}
+      # 261017 Red 锁文件已入库，CI 走冻结安装：依赖树必须与提交的可复现解析结果一致，
+      # 有漂移就当场失败，而不是装出一套和本地不同的依赖继续跑。
+      run: bun install --frozen-lockfile ${{ inputs.install-flags }}
       shell: bash
 
     - name: Save Bun dependencies
