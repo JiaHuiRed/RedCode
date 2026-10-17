@@ -8,7 +8,7 @@
 
 ---
 
-### Unreleased
+### [0.12.13] - 2026-10-17
 
 - **局域网监听改用每次启动随机生成的密码**（`packages/opencode/src/cli/network.ts`、`cli/cmd/run.ts`）：未设置 `REDCODE_SERVER_PASSWORD` 而绑定非回环地址时，旧实现自动注入写死在源码里的 `RedCode0429`，等于所有默认实例共享同一凭据；拿到它就能调 PTY 接口创建终端进程并执行任意命令。现改为每次启动随机生成 18 字节 base64url 密码，写入进程 env 供 ServerAuth 读取并打印到 stderr（`UI.println` 走 stderr，不污染 `acp` 的 stdout 协议），重启即换；显式设置环境变量（含置空串关闭鉴权的语义）不变。验证：`test/cli/network.test.ts` 7 pass / 0 fail，opencode typecheck EXIT=0；无提示词或工具 schema 改动。
 - **外部 UI 代理改用请求头白名单**（`packages/opencode/src/server/shared/ui.ts`）：没有内嵌 Web UI 时，`serveUIEffect` 原先把浏览器原始请求头交给共享的 `ProxyUtil.headers` 再转发到 `app.redcode.dev`，而该函数刻意保留 `Authorization` 与 `Cookie`——用 Basic 认证访问本地页面的用户，其本地服务器用户名密码会被送到公网上游。现在这一具体边界改走白名单（只放资源请求需要的 `accept` / `range` / `if-none-match` 等，`host` 固定为上游），`ProxyUtil.headers` 不动以免影响内部代理路径。验证：`httpapi-ui` + `proxy-util` 25 pass / 0 fail（含凭据不出站、资源头仍透传的用例），opencode typecheck EXIT=0。
