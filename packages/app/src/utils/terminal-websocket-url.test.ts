@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { terminalWebSocketURL } from "./terminal-websocket-url"
+import { isRetryableTicketError, terminalWebSocketURL, ticketStatusError } from "./terminal-websocket-url"
 
 describe("terminalWebSocketURL", () => {
   test("uses query auth without embedding credentials in websocket URL", () => {
@@ -48,5 +48,23 @@ describe("terminalWebSocketURL", () => {
 
     expect(url.protocol).toBe("wss:")
     expect(url.searchParams.get("auth_token")).toBe(btoa("redcode:secret"))
+  })
+})
+
+// 261017 Red 回归：票据失败要保留原终端。只有 403 属于配置错误，其余都该重连。
+describe("isRetryableTicketError", () => {
+  test("retries transient failures so the existing PTY survives", () => {
+    expect(isRetryableTicketError(ticketStatusError(500))).toBe(true)
+    expect(isRetryableTicketError(ticketStatusError(502))).toBe(true)
+    expect(isRetryableTicketError(new TypeError("fetch failed"))).toBe(true)
+  })
+
+  test("does not retry a rejected origin or CSRF check", () => {
+    expect(isRetryableTicketError(ticketStatusError(403))).toBe(false)
+  })
+
+  test("keeps the underlying message for the user", () => {
+    expect(ticketStatusError(403).message).toContain("origin or CSRF")
+    expect(ticketStatusError(503).message).toContain("503")
   })
 })

@@ -15,7 +15,7 @@ import { terminalFontFamily, useSettings } from "@/context/settings"
 import type { LocalPTY } from "@/context/terminal"
 import { disposeIfDisposable, getHoveredLinkText, setOptionIfSupported } from "@/utils/runtime-adapters"
 import { terminalWriter } from "@/utils/terminal-writer"
-import { terminalWebSocketURL } from "@/utils/terminal-websocket-url"
+import { isRetryableTicketError, terminalWebSocketURL, ticketStatusError } from "@/utils/terminal-websocket-url"
 
 const TOGGLE_TERMINAL_ID = "terminal.toggle"
 const DEFAULT_TOGGLE_TERMINAL_KEYBIND = "ctrl+`"
@@ -495,9 +495,7 @@ export const Terminal = (props: TerminalProps) => {
         if (!result) return
         if (result.response.status === 200 && result.data?.ticket) return result.data.ticket
         if (result.response.status === 404 || result.response.status === 405) return
-        if (result.response.status === 403)
-          throw new Error("PTY connect ticket rejected by origin or CSRF checks. Check the server CORS config.")
-        throw new Error(`PTY connect ticket failed with ${result.response.status}`)
+        throw ticketStatusError(result.response.status)
       }
 
       const retry = (err: unknown) => {
@@ -523,10 +521,17 @@ export const Terminal = (props: TerminalProps) => {
         if (disposed) return
         drop?.()
 
-        const ticket = await connectToken().catch((err) => {
-          fail(err)
-          return undefined
-        })
+        let ticket: string | undefined
+        try {
+          ticket = await connectToken()
+        } catch (err) {
+          // 261017 Red 取票据失败不等于终端没了：PTY 进程还在，id 与滚动缓冲都还有效。
+          // 可重试的错误（网络抖动、超时、5xx）走退避重连，retry 里会先 gone() 确认旧终端
+          // 是否真的退出；403 是 origin/CORS 配置错误，直接报给上层。
+          if (isRetryableTicketError(err)) retry(err)
+          else fail(err)
+          return
+        }
         if (once.value) return
         if (disposed) return
 
