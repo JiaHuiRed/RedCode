@@ -355,8 +355,24 @@ async function respawnSidecar(code: number) {
       () => false,
     )
     // 只有真过了健康检查才清零重试计数——否则"起来又死"会无限循环
-    if (healthy) respawnAttempts = 0
-    writeLog("utility", "sidecar respawned", { pid: listener.pid, healthy }, "warn")
+    if (healthy) {
+      respawnAttempts = 0
+      writeLog("utility", "sidecar respawned", { pid: listener.pid, healthy }, "warn")
+      return
+    }
+    // 261017 Red 进程活着但健康检查过不去。旧实现把 server 留在引用上：之后既等不到
+    // exit 事件（进程没死），也没有别的入口再调本函数，界面就永久断连。现在清掉引用、
+    // 停掉这个卡住的进程（onExit 看到 server 已空，不会重复 respawn），再走有界重试；
+    // respawnAttempts 不清零，连续失败会撞上上面的 giving up。
+    writeLog(
+      "utility",
+      "sidecar respawned but never healthy",
+      { pid: listener.pid, attempt: attempt + 1 },
+      "error",
+    )
+    await killSidecar()
+    if (quitting) return
+    void respawnSidecar(code)
   } catch (error) {
     writeLog("utility", "sidecar respawn failed", { error: String(error) }, "error")
     void respawnSidecar(code)
