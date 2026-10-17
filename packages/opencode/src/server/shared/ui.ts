@@ -4,7 +4,6 @@ import { HttpBody, HttpClient, HttpClientRequest, HttpServerRequest, HttpServerR
 import { createHash } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
-import { ProxyUtil } from "../proxy-util"
 
 let embeddedUIPromise: Promise<Record<string, string> | null> | undefined
 
@@ -59,6 +58,31 @@ function proxyResponseHeaders(headers: Record<string, string>) {
 
 export function upstreamURL(path: string) {
   return new URL(path, UI_UPSTREAM).toString()
+}
+
+// 261017 Red 外部 UI 代理只转发资源请求头。共享的 ProxyUtil.headers 刻意保留
+// Authorization/Cookie（middleware/proxy.ts 的内部转发依赖它们），但这里的目标是公网
+// app.redcode.dev——把本地服务器的 Basic 凭据和会话 Cookie 送出去没有任何收益。
+// 用白名单而不是黑名单：后续新增的请求头默认不外发。
+const UI_PROXY_HEADERS = new Set([
+  "accept",
+  "accept-language",
+  "content-length",
+  "content-type",
+  "if-modified-since",
+  "if-none-match",
+  "if-range",
+  "range",
+  "user-agent",
+])
+
+function upstreamHeaders(input: Record<string, string>) {
+  const out = new Headers()
+  for (const [key, value] of Object.entries(input)) {
+    if (UI_PROXY_HEADERS.has(key.toLowerCase())) out.set(key, value)
+  }
+  out.set("host", UI_UPSTREAM.host)
+  return out
 }
 
 export function embeddedUI(disableEmbeddedWebUi: boolean) {
@@ -117,7 +141,7 @@ export function serveUIEffect(
 
     const response = yield* services.client.execute(
       HttpClientRequest.make(request.method)(upstreamURL(reqPath), {
-        headers: ProxyUtil.headers(request.headers, { host: UI_UPSTREAM.host }),
+        headers: upstreamHeaders(request.headers),
         body: requestBody(request),
       }),
     )

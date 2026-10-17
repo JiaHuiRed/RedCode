@@ -205,6 +205,40 @@ describe("HttpApi UI fallback", () => {
     }),
   )
 
+  it.live("does not forward local credentials to the external UI upstream", () =>
+    Effect.gen(function* () {
+      const seen: { headers?: Record<string, string> } = {}
+
+      const response = yield* uiApp({
+        disableEmbeddedWebUi: true,
+        client: httpClient(
+          new Response("<html>redcode</html>", { headers: { "content-type": "text/html" } }),
+          (request) => {
+            seen.headers = request.headers
+          },
+        ),
+      }).request("/", {
+        headers: {
+          authorization: `Basic ${btoa("redcode:secret")}`,
+          cookie: "session=local-secret",
+          "x-redcode-directory": "/home/me/private",
+          accept: "text/html",
+          range: "bytes=0-99",
+        },
+      })
+
+      expect(response.status).toBe(200)
+      // 261017 Red 本地服务器的 Basic 凭据与 Cookie 不能出现在发往公网上游的请求里
+      expect(seen.headers?.["authorization"]).toBeUndefined()
+      expect(seen.headers?.["cookie"]).toBeUndefined()
+      expect(seen.headers?.["x-redcode-directory"]).toBeUndefined()
+      // 资源请求需要的头仍然透传
+      expect(seen.headers?.["accept"]).toBe("text/html")
+      expect(seen.headers?.["range"]).toBe("bytes=0-99")
+      expect(seen.headers?.["host"]).toBe("app.redcode.dev")
+    }),
+  )
+
   it.live("strips upstream transfer encoding headers from proxied assets", () =>
     Effect.gen(function* () {
       let proxiedUrl: string | undefined
