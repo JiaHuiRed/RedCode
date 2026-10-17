@@ -38,8 +38,8 @@ patches:
     file: packages/opencode/src/session/prompt.ts
     anchor: 'wantsFlashAnchor 三锚（deepseek + flash）'
     intent: 弱模型的 reasoning 行为矫正
-    review_after: 2027-03-01
-    status: '261007 收窄过判据（system.ts 有测试钉住）'
+    review_after: 2026-11-17
+    status: '261017 复核（V4.1 Flash-1017）：30 天 8.3 万条 assistant part 仅 1 例推理犹豫并自行绕行，未见漏检；锚 3 未改，待 1017 实跑 A/B 再评'
 
   - id: step-anchors
     file: packages/opencode/src/session/prompt.ts
