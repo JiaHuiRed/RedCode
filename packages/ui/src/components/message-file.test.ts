@@ -16,23 +16,23 @@ function file(part: Partial<FilePart> = {}): FilePart {
 }
 
 describe("message-file", () => {
-  test("treats data URLs as attachments", () => {
+  test("treats data URLs and dropped local files as attachments", () => {
     expect(attached(file({ url: "data:text/plain;base64,SGVsbG8=" }))).toBe(true)
-    expect(attached(file())).toBe(false)
+    // 261017 Red 桌面端拖进来的文件落盘为 file://、没有 source 范围，
+    // 旧判定让它既不算附件也不算 inline，用户消息里看不出发过文件。
+    expect(attached(file())).toBe(true)
   })
 
   test("treats only non-attachment source ranges as inline references", () => {
-    expect(
-      inline(
-        file({
-          source: {
-            type: "file",
-            path: "/repo/README.txt",
-            text: { value: "@README.txt", start: 0, end: 11 },
-          },
-        }),
-      ),
-    ).toBe(true)
+    const ref = file({
+      source: {
+        type: "file",
+        path: "/repo/README.txt",
+        text: { value: "@README.txt", start: 0, end: 11 },
+      },
+    })
+    expect(inline(ref)).toBe(true)
+    expect(attached(ref)).toBe(false)
 
     expect(
       inline(

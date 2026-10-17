@@ -18,6 +18,7 @@
 - **终端票据失败改为退避重连，不再新建 PTY**（`packages/app/src/components/terminal.tsx`、`utils/terminal-websocket-url.ts`）：取连接票据失败时旧实现直接 `fail()`，上层调 `clone()` → `pty.create()`，原终端里还在跑的任务失去界面入口、缓冲清空、旧进程继续占资源。现在网络错误 / 超时 / 5xx 走退避重连（先 `gone()` 确认旧 PTY 是否真退出，确认没了才失败），403 作为配置错误直接报给用户，404/405 保持无票据直连。验证：`test:one src/utils/terminal-websocket-url.test.ts` 6 pass / 0 fail，app typecheck EXIT=0。
 - **sidecar「活着但从未健康」可自愈**（`packages/desktop/src/main/index.ts`）：`respawnSidecar()` 在健康检查前就赋值 `server`，检查失败只写日志、不清引用不停进程，之后既等不到 exit 也没有入口再调，界面永久断连。现在失败时记 error 日志 → `killSidecar()` 清引用并停掉卡住的进程 → 未退出则再排有界重试；`respawnAttempts` 仍只在健康通过时清零，连续失败撞上既有上限。验证：desktop typecheck EXIT=0；依赖模块级 Electron 状态，未加自动化用例。
 - **工具已执行后不再自动重试断流请求**（`packages/opencode/src/session/retry.ts`、`session/processor.ts`）：重试会删除本 step 新建的全部 part 再重放原请求，而 AI SDK 在 `tool-call` 之前就启动 `execute`——工具可能已追加文件/执行命令，重放会让模型再发一次同样的调用，非幂等操作执行两遍。现在 `SessionRetry.policy` 接受 `toolsStarted` 判据：本 step 只要建出过 tool part 就停止自动重试，错误走 halt，已落库的工具记录保留；工具尚未出现时的失败照旧重试。模型可见影响：错误恢复路径变化，提示词与工具 schema 不变。验证：`test/session/retry.test.ts` 35 pass / 0 fail（含工具开始后不再重试、未开始时仍重试两条），opencode typecheck EXIT=0。决策见 [note](docs/notes/implemented/bug-fix/2026-10-17-retry-after-tool-execution.md)。
+- **用户消息显示已附加的文件**（`packages/ui/src/components/message-file.ts`）：桌面端从输入框附加的文件落盘后是 `file://` URL，而附件判定只认 `data:`、inline 判定要求 `source.text` 范围——两者都不满足，用户消息里只剩文本气泡，看上去像只发了一句话，实际附件已随请求发给模型。现在 `file://` 且无 source 范围的文件也归入附件并渲染为 chip（图标 + 文件名），有 `source.text` 的引用仍走 inline，避免正文引用重复渲染。验证：`message-file` 3 pass / 0 fail，ui typecheck EXIT=0。
 
 ### [0.12.12] - 2026-10-17
 
