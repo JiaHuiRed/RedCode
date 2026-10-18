@@ -106,3 +106,26 @@ stdout 在解帧前受字节上限约束，普通打印保留有界前缀，协�
 - 主线合跑 `run-code`、`registry`、原有 `soul` 三个测试文件：60 pass / 0 fail，216 assertions。
 - 独立终审无重大残余；极端 stderr 先输出超过 8 KiB 空白再输出有用错误时，前缀可能被判作空，
   导致缺少该 stderr 的截断提示。此诊断边界未在本轮继续扩展，不影响总字节上限。
+
+## 261018 只读姿态准入（第三方审计 RC-01）
+
+审计指出 `run_code` 与 `edit` 的权限不等价：程序内可直接调 `Bun.write` / `fs` 落盘，
+不经过 `edit` 的授权链，而 `edit` 全 deny 正是只读姿态表达「不改文件」的唯一方式。
+与 `bash` 的差别也在这里——shell 的破坏性命令有 `destructive` 检查兜着，程序内的写盘
+没有任何信号。
+
+结论与落实：
+
+- **explore 早已安全**：`definition/explore.md` 的 `"*": deny` 白名单没有 `run_code`，
+  既有测试 `keeps run_code unavailable to explore` 覆盖。
+- **plan 与只读自定义角色此前不设防**：`plan` 只 deny `edit`，`run_code` 落在 defaults 的
+  `"*": allow` 里。现在 `tool/registry.ts` 的工具过滤阶段加一条准入：
+  `Permission.evaluate("edit", "*", agent.permission).action === "deny"` 时不暴露 `run_code`。
+- **这不是沙箱**：它只保证受限角色看不到这个工具，程序本身仍以与 `shell` 相同的 OS 权限
+  运行。工具描述里已如实写明「same file permissions as the shell tool」，不宣称只读隔离。
+  要让受限角色真正安全地跑代码，需要 OS/容器级隔离，不在本轮范围。
+- **回归**：`test/tool/registry.test.ts` 新增两条（plan 不可见、追加 edit 全 deny 后不可见），
+  文件内 30 pass / 0 fail。
+
+待办（本轮未做）：判断是否需要把 `bash` 的 `destructive` 检查同样套到程序内的写盘操作——
+那属于执行环境设计，不是可见性守卫能解决的。

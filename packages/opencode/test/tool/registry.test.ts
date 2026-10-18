@@ -261,6 +261,45 @@ describe("tool.registry", () => {
     }),
   )
 
+  runCode.instance("keeps run_code unavailable to plan mode", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agents = yield* Agent.Service
+      const plan = yield* agents.get("plan")
+      if (!plan) throw new Error("plan agent not found")
+      const tools = yield* registry.tools({
+        providerID: ProviderID.redcode,
+        modelID: ModelID.make("test"),
+        agent: plan,
+      })
+      // plan 只 deny edit：程序内的 Bun.write 就是绕过它的那条路，所以 run_code 一起下架
+      expect(tools.some((tool) => tool.id === "run_code")).toBe(false)
+    }),
+  )
+
+  runCode.instance("keeps run_code unavailable to agents that deny edit", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agents = yield* Agent.Service
+      const build = yield* agents.get("build")
+      if (!build) throw new Error("build agent not found")
+      const model = { providerID: ProviderID.redcode, modelID: ModelID.make("test") }
+
+      // build 默认能拿到 run_code —— 先确认基线不是「本来就不可见」
+      const baseline = yield* registry.tools({ ...model, agent: build })
+      expect(baseline.some((tool) => tool.id === "run_code")).toBe(true)
+
+      // 261018 Red edit 全 deny = 只读姿态（plan 与只读自定义角色）：run_code 必须一起下架，
+      // 否则程序里的一句 Bun.write 就绕过了 edit 的授权链。
+      const readonly = {
+        ...build,
+        permission: [...build.permission, { permission: "edit", pattern: "*", action: "deny" as const }],
+      }
+      const tools = yield* registry.tools({ ...model, agent: readonly })
+      expect(tools.some((tool) => tool.id === "run_code")).toBe(false)
+    }),
+  )
+
   noBackground.instance("hides task_status unless experimental background subagents are enabled", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service

@@ -441,6 +441,17 @@ export const layer = Layer.effect(
       const filtered = candidates.filter((tool) => {
         if (deniedTools.has(tool.id)) return false
 
+        // 261018 Red run_code 与 edit 的权限不等价：程序里能直接调 Bun.write / fs 落盘，
+        // 不经过 edit 的授权链，而「edit 全 deny」正是只读姿态（plan 与只读自定义角色）
+        // 表达「不改文件」的唯一方式。与 shell 的差别也在这条：shell 的破坏性命令还有
+        // destructive 检查兜着，程序内的写盘连一个信号都没有。
+        // 注意这不是沙箱——它只保证受限角色看不到这个工具，程序本身仍以同等 OS 权限运行。
+        if (
+          tool.id === RunCodeTool.id &&
+          Permission.evaluate("edit", "*", input.agent.permission).action === "deny"
+        )
+          return false
+
         const explicit = modelTools?.[tool.id]
         if (explicit !== undefined) return explicit
 
