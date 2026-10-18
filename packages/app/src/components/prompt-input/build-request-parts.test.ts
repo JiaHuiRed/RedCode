@@ -114,12 +114,48 @@ describe("buildRequestParts", () => {
       sessionDirectory: "C:/repo",
     })
 
-    const archive = result.requestParts.find(
-      (part) => part.type === "file" && part.filename === "bundle.zip",
-    )
+    const archive = result.requestParts.find((part) => part.type === "file" && part.filename === "bundle.zip")
     expect(archive).toBeDefined()
     expect(archive?.type === "file" && archive.url).toBe("file:///C:/repo/.attachments/arc_abc.zip")
     expect(result.requestParts.some((part) => part.type === "file" && part.url === "")).toBe(false)
+  })
+
+  test("previews uploaded images with data URLs while sending their disk paths", () => {
+    const result = buildRequestParts({
+      prompt: [],
+      context: [],
+      images: [
+        {
+          type: "image",
+          id: "img_disk",
+          filename: "screen.png",
+          mime: "image/png",
+          dataUrl: "data:image/png;base64,AAA",
+          path: "C:/repo/.attachments/screen.png",
+        },
+        {
+          type: "image",
+          id: "pdf_disk",
+          filename: "report.pdf",
+          mime: "application/pdf",
+          dataUrl: "data:application/pdf;base64,BBB",
+          path: "C:/repo/.attachments/report.pdf",
+        },
+      ],
+      text: "",
+      messageID: "msg_preview",
+      sessionID: "ses_preview",
+      sessionDirectory: "C:/repo",
+    })
+
+    const request = result.requestParts[0]
+    const preview = result.optimisticParts[0]
+    expect(request?.type === "file" && request.url).toBe("file:///C:/repo/.attachments/screen.png")
+    expect(preview?.type === "file" && preview.url).toBe("data:image/png;base64,AAA")
+    expect(preview?.id).toBe(request?.id)
+    expect(result.optimisticParts[1]?.type === "file" && result.optimisticParts[1].url).toBe(
+      "file:///C:/repo/.attachments/report.pdf",
+    )
   })
 
   test("deduplicates context files when prompt already includes same path", () => {

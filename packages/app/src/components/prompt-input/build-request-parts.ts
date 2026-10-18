@@ -198,8 +198,20 @@ export function buildRequestParts(input: BuildRequestPartsInput) {
 
   requestParts.push(...files, ...context, ...agents, ...images)
 
+  // 261018 Red 请求仍用落盘路径；乐观预览不能让 Electron 从 HTTP 页面加载 file://。
+  const imagePreviews = new Map(
+    images.flatMap((part, index) => {
+      const preview = input.images[index]?.dataUrl
+      return part.mime.startsWith("image/") && preview?.startsWith("data:image/") ? [[part.id, preview] as const] : []
+    }),
+  )
+
   return {
     requestParts,
-    optimisticParts: requestParts.map((part) => toOptimisticPart(part, input.sessionID, input.messageID)),
+    optimisticParts: requestParts.map((part) => {
+      const optimistic = toOptimisticPart(part, input.sessionID, input.messageID)
+      const preview = imagePreviews.get(part.id)
+      return optimistic.type === "file" && preview ? { ...optimistic, url: preview } : optimistic
+    }),
   }
 }
