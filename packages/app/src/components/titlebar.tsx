@@ -1,4 +1,4 @@
-import { createEffect, createMemo, For, mapArray, Match, Show, startTransition, Switch, untrack } from "solid-js"
+import { createEffect, createMemo, For, Match, Show, startTransition, Switch, untrack } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { useLocation, useMatch, useNavigate, useParams } from "@solidjs/router"
 import { IconButton } from "@redcode-ai/ui/icon-button"
@@ -17,6 +17,7 @@ import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { WindowsAppMenu } from "./windows-app-menu"
 import { applyPath, backPath, forwardPath } from "./titlebar-history"
+import { createTitlebarTabs, type TitlebarTab } from "./titlebar-tabs"
 import { useServerSync } from "@/context/server-sync"
 import { decodeDirectory } from "@/pages/directory-layout"
 import { iife } from "@redcode-ai/core/util/iife"
@@ -182,10 +183,8 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
     return `/${base64Encode(project.worktree)}/session`
   }
 
-  type Tab = { dir: string; sessionId: string; href: string }
-
   const [tabsStore, tabsStoreActions] = iife(() => {
-    const [store, setStore] = createStore<Tab[]>(
+    const [store, setStore] = createStore<TitlebarTab[]>(
       iife(() => {
         if (!params.dir || !params.id) return []
         return [
@@ -199,7 +198,7 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
     )
 
     const actions = {
-      addTab: (tab: Tab) => {
+      addTab: (tab: TitlebarTab) => {
         setStore(
           produce((tabs) => {
             // 260710 Red 用 sessionId 去重（不只靠 href），避免同一会话从不同 dir 编码进入时产生重复标签
@@ -348,26 +347,11 @@ function V2TitlebarContent(props: { update?: TitlebarUpdate }) {
     })),
   ])
 
-  const tabsEnriched = iife(() => {
-    const base = mapArray(
-      () => tabsStore,
-      (tab) => {
-        // 260707 Red createDirSyncContext 内部走 child()（bootstrap:true + pinForOwner），
-        //   titlebar 对每个恢复的 tab 都建一份——每个 tab 目录都被强制整套 bootstrap 且
-        //   永久 pin 住（titlebar 常驻不销毁），是"打开即多目录内存/进程风暴"的真正源头之一。
-        //   这里只是要显示 title/status，peek 只读 store 即可，不需要话务/diff/todo 全套同步。
-        const [store] = globalSync.peek(tab.dir, { bootstrap: false })
-        const session = store.session.find((s) => s.id === tab.sessionId)
-        if (!session) return null
-        return {
-          ...tab,
-          info: session,
-          status: store.session_status[tab.sessionId]?.type,
-        }
-      },
-    )
-    return () => base().flatMap((s) => (s ? [s] : []))
-  })
+  // 260707 Red 用 peek 只读 title/status，不 bootstrap 也不 pin 全部 tab 目录。
+  const tabsEnriched = createTitlebarTabs(
+    () => tabsStore,
+    (tab) => globalSync.peek(tab.dir, { bootstrap: false })[0],
+  )
 
   return (
     <div
