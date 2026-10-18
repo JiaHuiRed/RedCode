@@ -15,8 +15,8 @@ DeepSeek Harness 的 PTC（prompt tool calling）形态给了另一条路：模�
 
 ## 决策
 
-- 新增工具 `run_code`，**默认不注册**：`REDCODE_EXPERIMENTAL_RUN_CODE=1`（或 `REDCODE_EXPERIMENTAL=1`）
-  才进工具表。关闭时工具表、固定前缀、KV 缓存布局全部零变化。
+- 新增工具 `run_code`，**默认不注册**：仅 `REDCODE_EXPERIMENTAL_RUN_CODE=1` 才进工具表，
+  `REDCODE_EXPERIMENTAL=1` 不再隐式开启此执行面。关闭时工具表、固定前缀、KV 缓存布局全部零变化。
 - SDK 由**本次请求真正可见的工具集合**生成（已过 agent 权限、model tools 开关、插件与 gate 过滤），
   所以模型不会看到调用不了的绑定。生成器按 id 排序：同一集合产出逐字节相同的声明。
 - 执行放在 Bun 子进程：协议帧前缀 `\u001eRC\u001e` 与程序 stdout 分开；只有程序打印/返回进结果。
@@ -25,7 +25,9 @@ DeepSeek Harness 的 PTC（prompt tool calling）形态给了另一条路：模�
   `tool.execute.before` / `tool.use.pre` / explore capability / `ctx.ask` 权限 / truncate 全部照旧；
   程序拿到的只是 output 文本，失败转成 `ToolCallError` 供程序 try/catch。
 - 禁止 `run_code` 自调用；单程序最多 64 次调度；整体硬截止 120s，`ctx.abort` 监听直接杀子进程。
-- 三处硬上限：SDK 24,000 字符（超出只列 id，工具仍可调）、程序输出 64KB、stderr 8KB。
+- SDK 整体（含代码围栏和省略说明）不超过 24,000 UTF-8 字节；程序输出整体不超过 64 KiB，
+  错误、超时、截断说明也占此预算。单个 stdout 协议帧与宿主 stdin 回包不超过 1 MiB；
+  不带换行的 stdout 也有界，控制帧超限明确失败而不是截断 JSON 后继续执行。
 
 ## 安全边界
 
@@ -35,13 +37,13 @@ PATH 上有 `bun`；找不到时工具返回明确错误而不是静默失败。
 
 ## 已知限制
 
-- 程序不能 `import`；要读文件用 `tools.read`，要跑命令用 `tools.bash`。
+- 工具描述要求通过 `tools` 调用，不把“No imports”当成安全隔离：Bun 子进程仍可直接访问运行时能力。
 - 嵌套调用不会在会话里生成独立的工具行：只有外层 `run_code` 一行，加上日志里的调度帧。
   权限询问仍会正常弹出（挂在父调用的 messageID 下）。
 - SDK 的类型只是提示，不参与校验；真实参数仍是 JSON 对象，由各工具自己的 schema 校验。
 - 只有 `native` 形态的模型才能用；本仓没有实现 Harness 那套 preset 级 native/ptc 切换。
 
-## 验证
+## 首次实现验证
 
 - `test/tool/run-code.test.ts`：SDK 声明（排序、必需/可选、枚举、数组、`$ref` 退化、字节上限）、
   真实子进程执行（两次派发且只回传 curated output、中间大结果不进结果、工具失败转 ToolCallError、
@@ -52,7 +54,55 @@ PATH 上有 `bun`；找不到时工具返回明确错误而不是静默失败。
 模型可见四问：
 
 1. **变了什么**：开关关闭时零变化；开启时工具表多一个 `run_code`，其 description 追加生成的 SDK 文本。
-2. **token 影响**：SDK 有 24,000 字符硬顶；开启后大致相当于把可见工具 schema 再呈现一遍（加两个参数项）。
+2. **token 影响**：SDK 整体有 24,000 UTF-8 字节硬顶；开启后大致相当于把可见工具 schema 再呈现一遍（加两个参数项）。
 3. **KV cache 影响**：切换开关会让工具表及其后的前缀作废；同一开关下，可见集合（权限/模型/插件）变化
    同样从该段起作废。默认关闭，现有会话不受影响。
-4. **注入上限**：SDK 24,000 字符、程序输出 64KB、调度 64 次、stderr 8KB——全部有硬顶，没有无界注入。
+4. **注入上限**：SDK 整体 24,000 UTF-8 字节、最终程序输出整体 64 KiB、调度 64 次、
+   协议帧与宿主回包各 1 MiB；超限控制帧导致明确失败并终止直接子进程。
+
+## 复审后的授权收紧
+
+原实现与原决策都允许全局实验开关启用 `run_code`，不是实现偏离设计；但用户开启其它实验，
+不应被视为同意新增当前用户权限的代码执行入口。因此改为专属 opt-in，专属开关为 false 时，
+全局实验开关也不能将其开启。Explore 的默认工具过滤与执行期 capability 拒绝保持不变。
+
+授权回归以隔离的 `ConfigProvider` 输入测试默认关闭、仅全局开启、全局开启加专属关闭、专属开启四态，
+并检查开启实验后 Explore 仍不见 `run_code`、capability 层仍拒绝它。此前两条全局开关用例失败，
+修复后这四态与三条 registry 边界共 7 项通过。
+
+## 输出与协议边界
+
+复审前用真实 `runProgram` 子进程复现：10 万字符 return 返回 100,000 字节，中文打印返回
+90,000 字节，4 万字符 console 加 4 万字符 return 返回 80,002 字节，三者 `truncated` 都为 false。
+根因是 console 按 UTF-16 字符裁切且漏报，return/error 绕过裁切，最终拼接没有统一预算。
+统一按 UTF-8 裁切后，截断标记也占 64 KiB 输出预算，不靠上层工具截断掩盖本模块的错误标识。
+
+stdout 在解帧前受字节上限约束，普通打印保留有界前缀，协议帧超限或畸形则失败并停止进程。
+宿主回包同时限制单帧与管道积压，不能靠回写巨型工具结果绕过入站限制。1 MiB 是协议安全边界，
+不是新的性能调节项；这仍不是 OS 沙箱，也不承诺终止模型自行创建的孙进程。
+
+`blocked:true` 与普通 rejected Promise 都让程序收到 `ToolCallError`；合法输出里出现“denied”
+不会被字符串匹配误判。预取消在创建临时目录或子进程前返回，创建期间的取消在异步边界再次检查。
+
+模型可见四问补充：
+
+1. **原文差异**：工具描述与参数 schema 不变；原先正常 resolve 的 blocked 调用改为
+   `ToolCallError`，原 `[run_code output truncated at 65536 bytes]` 改为预算内的
+   `[run_code output truncated]`，畸形/超限协议新增有界 `run_code protocol error: …`。
+2. **token 影响**：没有新增固定提示段；默认关闭仍为零。开启且 SDK 未超预算时维持原声明，
+   超预算时按真实字节省略声明，不能把减小字节数直接当成实测 token 收益。SDK 本身超过 1K token，
+   本次不新增第二份声明。
+3. **KV cache**：正常未超预算的 SDK 与工具描述不变；超预算工具集合的 SDK 变化从该工具段起重建。
+   仅开全局实验而没有专属授权的会话会移除工具，工具表及其后前缀因此改变一次；不改逐轮缓存机制。
+4. **硬上限**：沿用上述 UTF-8 总预算与协议限额。截断/诊断文本不在总预算之外追加，
+   子进程中间结果仍不回灌模型；不宣称 PTC 已有性能收益。
+
+复审后验证：
+
+- `run-code.test.ts` 新增回归首轮 12 pass / 5 fail；补齐协议、stderr 和 SDK 临界后，
+  23 pass / 0 fail、103 assertions。真实子进程覆盖超长 console/return/error、混合与中文/emoji、
+  跨 chunk、坏 JSON/非对象帧、超大帧/回包/积压、终止帧后不再派发、blocked 与预取消。
+- 坏帧与超限用例核对本次程序文件和临时目录已经删除；不把 finally 代码存在当作清理实测。
+- 主线合跑 `run-code`、`registry`、原有 `soul` 三个测试文件：60 pass / 0 fail，216 assertions。
+- 独立终审无重大残余；极端 stderr 先输出超过 8 KiB 空白再输出有用错误时，前缀可能被判作空，
+  导致缺少该 stderr 的截断提示。此诊断边界未在本轮继续扩展，不影响总字节上限。

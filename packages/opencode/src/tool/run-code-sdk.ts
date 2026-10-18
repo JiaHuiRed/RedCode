@@ -19,7 +19,6 @@ const IDENTIFIER = /^[A-Za-z_$][\w$]*$/
 // 工具表再翻一倍。超预算时只保留能完整放下的声明，剩下的退化成 id 列表——它们仍然可调，
 // 只是模型看不到签名，需要时用 search_tools 查。
 const SDK_BUDGET = 24_000
-const OMITTED_IDS = 20
 
 function literal(value: unknown): string {
   if (typeof value === "string") return JSON.stringify(value)
@@ -109,37 +108,58 @@ function callable(id: string, tool: VisibleTool): string {
  */
 export function declaration(tools: readonly VisibleTool[]): string {
   const sorted = [...tools].toSorted((a, b) => a.id.localeCompare(b.id))
-  const lines: string[] = []
-  const omitted: string[] = []
-  let used = 0
-  for (const tool of sorted) {
-    const text = summary(tool.description)
-    const block = [
-      ...(text === undefined ? [] : [`  /** ${text.replace(/\*\//g, "* /")} */`]),
-      `  ${callable(tool.id, tool)}`,
-    ]
-    const size = block.join("\n").length + 1
-    if (used + size > SDK_BUDGET) {
-      omitted.push(tool.id)
-      continue
-    }
-    lines.push(...block)
-    used += size
-  }
-  if (omitted.length > 0) {
-    lines.push(
-      `  // ${omitted.length} more visible tool(s) omitted from this declaration: ${omitted.slice(0, OMITTED_IDS).join(", ")}${omitted.length > OMITTED_IDS ? ", ..." : ""}`,
-    )
-  }
-  return [
+  const prefix = [
     "```ts",
     "// Program-only SDK bindings. These names are not directly callable tools.",
     "// Argument types are advisory; every call still needs a valid JSON object.",
     "declare const tools: {",
-    ...lines,
-    "}",
-    "```",
-  ].join("\n")
+  ]
+  const shellBytes = Buffer.byteLength([...prefix, "}", "```"].join("\n"), "utf8")
+  const blocks = sorted.map((tool) => {
+    const text = summary(tool.description)
+    const lines = [
+      ...(text === undefined ? [] : [`  /** ${text.replace(/\*\//g, "* /")} */`]),
+      `  ${callable(tool.id, tool)}`,
+    ]
+    return {
+      id: tool.id,
+      lines,
+      bytes: Buffer.byteLength(`${lines.join("\n")}\n`, "utf8"),
+    }
+  })
+  const fullBytes = shellBytes + blocks.reduce((total, block) => total + block.bytes, 0)
+  if (fullBytes <= SDK_BUDGET) return [...prefix, ...blocks.flatMap((block) => block.lines), "}", "```"].join("\n")
+
+  const footerReserve = Buffer.byteLength(
+    `  // ${sorted.length} more visible tool(s) omitted from this declaration: ...\n`,
+    "utf8",
+  )
+  const lines: string[] = []
+  const omitted: string[] = []
+  let used = 0
+  for (const block of blocks) {
+    if (shellBytes + used + block.bytes + footerReserve <= SDK_BUDGET) {
+      lines.push(...block.lines)
+      used += block.bytes
+      continue
+    }
+    omitted.push(block.id)
+  }
+  const footerHead = `  // ${omitted.length} more visible tool(s) omitted from this declaration:`
+  const listed: string[] = []
+  let listedBytes = 0
+  for (let index = 0; index < omitted.length; index++) {
+    const entry = JSON.stringify(omitted[index])
+    const entryBytes = Buffer.byteLength(entry, "utf8") + (listed.length > 0 ? 2 : 0)
+    const hasMore = index < omitted.length - 1
+    const suffixBytes = hasMore ? Buffer.byteLength(", ...", "utf8") : 0
+    const footerBytes = Buffer.byteLength(`${footerHead} `, "utf8") + listedBytes + entryBytes + suffixBytes + 1
+    if (shellBytes + used + footerBytes > SDK_BUDGET) break
+    listed.push(entry)
+    listedBytes += entryBytes
+  }
+  const footer = `${footerHead}${listed.length > 0 ? ` ${listed.join(", ")}` : ""}${listed.length < omitted.length ? ", ..." : ""}`
+  return [...prefix, ...lines, footer, "}", "```"].join("\n")
 }
 
 export * as RunCodeSdk from "./run-code-sdk"

@@ -2,7 +2,7 @@ import { afterEach, describe, expect } from "bun:test"
 import path from "path"
 import fs from "fs/promises"
 import { fileURLToPath, pathToFileURL } from "url"
-import { Effect, Layer, Result, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Result, Schema } from "effect"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 import { ToolRegistry } from "@/tool/registry"
 import { Tool } from "@/tool/tool"
@@ -35,12 +35,14 @@ import { ToolJsonSchema } from "@/tool/json-schema"
 import { MessageID, SessionID } from "@/session/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Snippet } from "@/session/snippet"
+import { capabilityDeniedForSet, profileCapabilitySet } from "@/tool/capability"
 
 const node = CrossSpawnSpawner.defaultLayer
-const configLayer = (native = false) => TestConfig.layer({
-  get: () => Effect.succeed(native ? { compaction: { native: { enabled: true } } } : {}),
-  directories: () => InstanceState.directory.pipe(Effect.map((dir) => [path.join(dir, ".redcode")])),
-})
+const configLayer = (native = false) =>
+  TestConfig.layer({
+    get: () => Effect.succeed(native ? { compaction: { native: { enabled: true } } } : {}),
+    directories: () => InstanceState.directory.pipe(Effect.map((dir) => [path.join(dir, ".redcode")])),
+  })
 
 type RegistryLayerOptions = {
   native?: boolean
@@ -144,13 +146,40 @@ afterEach(async () => {
 })
 
 describe("tool.registry", () => {
+  // 261018 Red 任意代码执行只认专属授权，不继承全局实验开关。
+  for (const scenario of [
+    { name: "defaults off", config: {}, enabled: false },
+    { name: "ignores the global experiment", config: { REDCODE_EXPERIMENTAL: true }, enabled: false },
+    {
+      name: "keeps an explicit opt-out",
+      config: { REDCODE_EXPERIMENTAL: true, REDCODE_EXPERIMENTAL_RUN_CODE: false },
+      enabled: false,
+    },
+    { name: "accepts dedicated opt-in", config: { REDCODE_EXPERIMENTAL_RUN_CODE: true }, enabled: true },
+  ]) {
+    testEffect(
+      RuntimeFlags.Service.defaultLayer.pipe(
+        Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(scenario.config))),
+        Layer.orDie,
+      ),
+    ).effect(`run_code authorization ${scenario.name}`, () =>
+      Effect.gen(function* () {
+        expect((yield* RuntimeFlags.Service).experimentalRunCode).toBe(scenario.enabled)
+      }),
+    )
+  }
+
   native.instance("native compaction keeps history tools but retires compress from model schemas", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
       const agents = yield* Agent.Service
       const build = yield* agents.get("build")
       if (!build) throw new Error("build agent not found")
-      const tools = yield* registry.tools({ providerID: ProviderID.redcode, modelID: ModelID.make("test"), agent: build })
+      const tools = yield* registry.tools({
+        providerID: ProviderID.redcode,
+        modelID: ModelID.make("test"),
+        agent: build,
+      })
       const compress = tools.find((tool) => tool.id === "compress")
       const ids = yield* registry.ids()
       for (const id of ["context_read", "context_search", "context_restore"]) {
@@ -213,6 +242,22 @@ describe("tool.registry", () => {
       expect(code?.description.indexOf("\n  bash(input:")).toBeLessThan(
         code?.description.indexOf("\n  read(input:") ?? -1,
       )
+    }),
+  )
+
+  runCode.instance("keeps run_code unavailable to explore even when the experiment is enabled", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agents = yield* Agent.Service
+      const explore = yield* agents.get("explore")
+      if (!explore) throw new Error("explore agent not found")
+      const tools = yield* registry.tools({
+        providerID: ProviderID.redcode,
+        modelID: ModelID.make("test"),
+        agent: explore,
+      })
+      expect(tools.some((tool) => tool.id === "run_code")).toBe(false)
+      expect(capabilityDeniedForSet(profileCapabilitySet("explore"), "run_code")).toContain("not available")
     }),
   )
 
@@ -703,7 +748,10 @@ describe("tool.registry", () => {
           agent: (yield* agents.defaultInfo()).name,
           abort: new AbortController().signal,
           messages: [],
-          metadata: (value) => Effect.sync(() => { updates.push(value) }),
+          metadata: (value) =>
+            Effect.sync(() => {
+              updates.push(value)
+            }),
           ask: () => Effect.void,
         } satisfies Tool.Context)
         expect(result.output).toBe("unchanged output")

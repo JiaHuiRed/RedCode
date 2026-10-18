@@ -20,6 +20,8 @@ import { InstanceState } from "@/effect/instance-state"
 // hook → capability → permission → truncate 链路，见 src/session/tools.ts。
 
 const FRAME = "\u001eRC\u001e"
+// 261018 Red 固定协议安全上限：stdout 帧与宿主 stdin 回写均为 1 MiB。
+const FRAME_LIMIT = 1024 * 1024
 const OUTPUT_LIMIT = 64 * 1024
 const STDERR_LIMIT = 8 * 1024
 const DISPATCH_LIMIT = 64
@@ -64,7 +66,7 @@ function prelude(code: string) {
     "  const id = String(++seq)",
     "  return new Promise((resolve, reject) => {",
     "    pending.set(id, { resolve, reject, name })",
-    "    process.stdout.write(FRAME + JSON.stringify({ type: 'call', id, name, args: args === undefined ? {} : args }) + '\\n')",
+    "    process.stdout.write('\\n' + FRAME + JSON.stringify({ type: 'call', id, name, args: args === undefined ? {} : args }) + '\\n')",
     "  })",
     "}",
     "let buffer = ''",
@@ -90,7 +92,7 @@ function prelude(code: string) {
     "globalThis.tools = new Proxy({}, { get: (_target, key) => (args) => callTool(String(key), args) })",
     "// 程序跑完后 stdin 仍开着，事件循环不会自己退出；显式 exit，先给 stdout 一次冲刷机会。",
     "function finish(frame, code) {",
-    "  process.stdout.write(FRAME + JSON.stringify(frame) + '\\n', () => process.exit(code))",
+    "  process.stdout.write('\\n' + FRAME + JSON.stringify(frame) + '\\n', () => process.exit(code))",
     "  setTimeout(() => process.exit(code), 250)",
     "}",
     "async function __main() {",
@@ -115,9 +117,24 @@ function runtime(): string | undefined {
 
 type Outcome = { output: string; calls: number; truncated: boolean; timedOut: boolean; unavailable?: string }
 
-function append(current: string, text: string) {
-  if (current.length >= OUTPUT_LIMIT) return { text: current, truncated: true }
-  return { text: current + text.slice(0, OUTPUT_LIMIT - current.length), truncated: false }
+function bytePrefix(text: string, limit: number) {
+  const bytes = Buffer.from(text, "utf8")
+  if (bytes.length <= limit) return text
+  let end = limit
+  while (end > 0) {
+    try {
+      return new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, end))
+    } catch {
+      // 261018 Red UTF-8 截断点最多落在四字节码点内，向前退至多 3 字节。
+      end--
+    }
+  }
+  return ""
+}
+
+function bounded(text: string, limit = OUTPUT_LIMIT) {
+  const clipped = bytePrefix(text, limit)
+  return { text: clipped, truncated: Buffer.byteLength(clipped, "utf8") < Buffer.byteLength(text, "utf8") }
 }
 
 export async function runProgram(input: {
@@ -127,6 +144,7 @@ export async function runProgram(input: {
   timeoutMs: number
   dispatch?: Dispatch
 }): Promise<Outcome> {
+  if (input.abort.aborted) return { output: "", calls: 0, truncated: false, timedOut: false }
   const binary = runtime()
   if (binary === undefined) {
     return {
@@ -150,140 +168,256 @@ export async function runProgram(input: {
   }
 
   const dir = await mkdtemp(path.join(tmpdir(), "redcode-run-code-"))
-  const file = path.join(dir, "program.ts")
-  await writeFile(file, prelude(input.code), "utf8")
-
-  const child: ChildProcess = spawn(binary, [file], {
-    cwd: input.directory,
-    stdio: "pipe",
-    windowsHide: true,
-  })
-
-  let printed = ""
-  let truncated = false
-  let returned: string | undefined
-  let failure: string | undefined
-  let stderr = ""
-  let calls = 0
-  let timedOut = false
-  let buffer = ""
-
-  const stdin = child.stdin
-  const stdout = child.stdout
-  const stderrStream = child.stderr
-  if (stdin === null || stdout === null || stderrStream === null) {
-    child.kill()
-    await rm(dir, { recursive: true, force: true })
-    return {
-      output: "",
-      calls: 0,
-      truncated: false,
-      timedOut: false,
-      unavailable: "run_code could not open pipes to its child process.",
+  try {
+    if (input.abort.aborted) {
+      return { output: "", calls: 0, truncated: false, timedOut: false }
     }
-  }
-
-  const kill = () => {
-    if (!child.killed) child.kill()
-  }
-  const deadline = setTimeout(() => {
-    timedOut = true
-    kill()
-  }, input.timeoutMs + 5_000)
-  input.abort.addEventListener("abort", kill)
-  stdin.on("error", () => {
-    // 子进程提前死亡时写管道会 EPIPE；真正的诊断由 exit 分支给出，这里只能吞掉。
-  })
-
-  const send = (frame: Record<string, unknown>) => {
-    if (stdin.writable) stdin.write(`${JSON.stringify(frame)}\n`)
-  }
-
-  const handle = (line: string) => {
-    let frame: Record<string, unknown>
-    try {
-      frame = JSON.parse(line) as Record<string, unknown>
-    } catch {
-      // 半行/坏行只会来自被截断的写入；协议帧都是单行 JSON，丢掉即可。
-      return
+    const file = path.join(dir, "program.ts")
+    await writeFile(file, prelude(input.code), "utf8")
+    if (input.abort.aborted) {
+      return { output: "", calls: 0, truncated: false, timedOut: false }
     }
-    if (frame.type === "return") {
-      returned = typeof frame.value === "string" ? frame.value : ""
-      return
-    }
-    if (frame.type === "error") {
-      failure = typeof frame.message === "string" ? frame.message : "program failed"
-      return
-    }
-    if (frame.type !== "call") return
-    const id = String(frame.id)
-    const name = String(frame.name)
-    const args = typeof frame.args === "object" && frame.args !== null ? (frame.args as Record<string, unknown>) : {}
-    if (++calls > DISPATCH_LIMIT) {
-      send({ id, ok: false, error: `run_code dispatched more than ${DISPATCH_LIMIT} tool calls` })
-      return
-    }
-    dispatch(name, args).then(
-      (result) => send({ id, ok: true, value: result.output }),
-      (error: unknown) => send({ id, ok: false, error: error instanceof Error ? error.message : String(error) }),
-    )
-  }
 
-  const drain = (chunk: string) => {
-    buffer += chunk
-    let index = buffer.indexOf("\n")
-    while (index >= 0) {
-      const line = buffer.slice(0, index)
-      buffer = buffer.slice(index + 1)
-      index = buffer.indexOf("\n")
-      const body = line.endsWith("\r") ? line.slice(0, -1) : line
-      if (!body.startsWith(FRAME)) {
-        const next = append(printed, `${body}\n`)
+    const child: ChildProcess = spawn(binary, [file], {
+      cwd: input.directory,
+      stdio: "pipe",
+      windowsHide: true,
+    })
+
+    let printed = ""
+    let truncated = false
+    let returned: string | undefined
+    let failure: string | undefined
+    let stderr = ""
+    let calls = 0
+    let timedOut = false
+    let stderrTruncated = false
+    let pendingReplyBytes = 0
+    let line = Buffer.alloc(0)
+    let droppingLine = false
+    let protocolError: string | undefined
+    let stopped = false
+    let terminal = false
+
+    const stdin = child.stdin
+    const stdout = child.stdout
+    const stderrStream = child.stderr
+    let backpressureBytes = 0
+    stdin?.on("drain", () => {
+      backpressureBytes = 0
+    })
+    if (stdin === null || stdout === null || stderrStream === null) {
+      child.kill()
+      return {
+        output: "",
+        calls: 0,
+        truncated: false,
+        timedOut: false,
+        unavailable: "run_code could not open pipes to its child process.",
+      }
+    }
+
+    const kill = () => {
+      stopped = true
+      if (!child.killed) child.kill()
+    }
+    const deadline = setTimeout(() => {
+      timedOut = true
+      kill()
+    }, input.timeoutMs + 5_000)
+    input.abort.addEventListener("abort", kill)
+    stdin.on("error", () => {
+      // 子进程提前死亡时写管道会 EPIPE；真正的诊断由 exit 分支给出，这里只能吞掉。
+    })
+
+    const failProtocol = (message: string) => {
+      if (protocolError !== undefined) return
+      protocolError = `run_code protocol error: ${message}`
+      kill()
+    }
+    const send = (frame: Record<string, unknown>) => {
+      if (stopped || terminal || input.abort.aborted || !stdin.writable) return
+      const text = `${JSON.stringify(frame)}\n`
+      if (Buffer.byteLength(text, "utf8") > FRAME_LIMIT) {
+        failProtocol("host reply frame exceeded 1 MiB")
+        return
+      }
+      const frameBytes = Buffer.byteLength(text, "utf8")
+      if (Math.max(stdin.writableLength, backpressureBytes, pendingReplyBytes) + frameBytes > FRAME_LIMIT) {
+        failProtocol("host reply pipe exceeded 1 MiB")
+        return
+      }
+      pendingReplyBytes += frameBytes
+      if (!stdin.write(text, () => (pendingReplyBytes -= frameBytes))) {
+        backpressureBytes = Math.max(backpressureBytes, stdin.writableLength)
+      }
+    }
+
+    const handle = (line: string) => {
+      if (terminal) return
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(line)
+      } catch {
+        failProtocol("malformed frame")
+        return
+      }
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        failProtocol("frame must be a JSON object")
+        return
+      }
+      const frame = parsed as Record<string, unknown>
+      if (frame.type === "return") {
+        if (typeof frame.value !== "string") {
+          failProtocol("return frame has an invalid value")
+          return
+        }
+        returned = frame.value
+        terminal = true
+        return
+      }
+      if (frame.type === "error") {
+        if (typeof frame.message !== "string") {
+          failProtocol("error frame has an invalid message")
+          return
+        }
+        failure = frame.message
+        terminal = true
+        return
+      }
+      if (frame.type !== "call") {
+        failProtocol("unknown frame type")
+        return
+      }
+      if (
+        typeof frame.id !== "string" ||
+        frame.id.length === 0 ||
+        typeof frame.name !== "string" ||
+        frame.name.length === 0 ||
+        typeof frame.args !== "object" ||
+        frame.args === null ||
+        Array.isArray(frame.args)
+      ) {
+        failProtocol("call frame has invalid fields")
+        return
+      }
+      const id = frame.id
+      const name = frame.name
+      const args = frame.args as Record<string, unknown>
+      if (++calls > DISPATCH_LIMIT) {
+        send({ id, ok: false, error: `run_code dispatched more than ${DISPATCH_LIMIT} tool calls` })
+        return
+      }
+      if (stopped || input.abort.aborted) return
+      dispatch(name, args).then(
+        (result) =>
+          send({ id, ok: !result.blocked, value: result.output, error: result.blocked ? result.output : undefined }),
+        (error: unknown) => send({ id, ok: false, error: error instanceof Error ? error.message : String(error) }),
+      )
+    }
+
+    const lineIsFrame = () => line.subarray(0, Buffer.byteLength(FRAME)).toString("utf8") === FRAME
+    const consumeLine = (part: Buffer, complete: boolean) => {
+      if (stopped) return
+      if (!droppingLine) {
+        const remaining = FRAME_LIMIT - line.length
+        if (part.length > remaining) {
+          line = Buffer.concat([line, part.subarray(0, Math.max(0, remaining))])
+          if (lineIsFrame()) {
+            failProtocol("stdout frame exceeded 1 MiB")
+            return
+          }
+          droppingLine = true
+          truncated = true
+        } else {
+          line = Buffer.concat([line, part])
+        }
+      }
+      if (!complete) return
+      const isFrame = lineIsFrame()
+      if (isFrame && droppingLine) {
+        failProtocol("stdout frame exceeded 1 MiB")
+        return
+      }
+      if (isFrame) {
+        const body = line.toString("utf8").replace(/\r$/, "").slice(FRAME.length)
+        handle(body)
+        if (protocolError !== undefined) return
+      } else {
+        const body = line.toString("utf8").replace(/\r$/, "")
+        const next = bounded(`${printed}${body}\n`)
         printed = next.text
         truncated ||= next.truncated
-        continue
       }
-      handle(body.slice(FRAME.length))
+      line = Buffer.alloc(0)
+      droppingLine = false
     }
-  }
+    const drain = (chunk: Buffer) => {
+      let start = 0
+      for (let index = 0; index < chunk.length; index++) {
+        if (chunk[index] !== 10) continue
+        consumeLine(chunk.subarray(start, index), true)
+        if (stopped) return
+        start = index + 1
+      }
+      if (start < chunk.length) consumeLine(chunk.subarray(start), false)
+    }
 
-  try {
-    await new Promise<void>((resolve) => {
-      stdout.setEncoding("utf8")
-      stdout.on("data", drain)
-      stderrStream.setEncoding("utf8")
-      stderrStream.on("data", (chunk: string) => {
-        if (stderr.length < STDERR_LIMIT) stderr += chunk.slice(0, STDERR_LIMIT - stderr.length)
+    try {
+      await new Promise<void>((resolve) => {
+        stdout.on("data", drain)
+        stderrStream.setEncoding("utf8")
+        stderrStream.on("data", (chunk: string) => {
+          const next = bounded(stderr + chunk, STDERR_LIMIT)
+          stderr = next.text
+          stderrTruncated ||= next.truncated
+        })
+        child.on("error", (error: Error) => {
+          stderr += `\n${error.message}`
+          resolve()
+        })
+        child.on("close", () => resolve())
       })
-      child.on("error", (error: Error) => {
-        stderr += `\n${error.message}`
-        resolve()
-      })
-      child.on("close", () => resolve())
-    })
+    } finally {
+      clearTimeout(deadline)
+      input.abort.removeEventListener("abort", kill)
+      kill()
+    }
+
+    if (!input.abort.aborted && !timedOut && protocolError === undefined && (line.length > 0 || droppingLine)) {
+      if (lineIsFrame()) failProtocol("incomplete frame")
+      else {
+        const next = bounded(`${printed}${line.toString("utf8")}`)
+        printed = next.text
+        truncated ||= next.truncated
+      }
+    }
+    const stderrOutput =
+      child.exitCode !== 0 && child.exitCode !== null && printed.length === 0 && returned === undefined && stderr.trim()
+        ? `Error: ${stderr.trim()}`
+        : undefined
+    const parts = [
+      protocolError,
+      timedOut ? "run_code hit its time limit; the program was stopped." : undefined,
+      failure === undefined ? undefined : `Error: ${failure}`,
+      printed.trim(),
+      returned?.trim(),
+      stderrOutput,
+    ].filter((item): item is string => item !== undefined && item.length > 0)
+    if (parts.length === 0 && !input.abort.aborted) parts.push("(run_code completed with no output)")
+    const text = parts.join("\n\n")
+    const clipped = bounded(text)
+    const wasTruncated = truncated || clipped.truncated || (stderrOutput !== undefined && stderrTruncated)
+    const marker = wasTruncated ? "\n\n[run_code output truncated]" : ""
+    const output = wasTruncated
+      ? `${bounded(text, OUTPUT_LIMIT - Buffer.byteLength(marker, "utf8")).text}${marker}`
+      : clipped.text
+    return { output, calls, truncated: wasTruncated, timedOut }
   } finally {
-    clearTimeout(deadline)
-    input.abort.removeEventListener("abort", kill)
-    kill()
     await rm(dir, { recursive: true, force: true }).catch(() => {
-      // 临时目录在系统 temp 下，清理失败不影响结果，留下也不会被再次读取。
+      // 261018 Red 清理失败不能覆盖原始执行错误；临时目录不会被再次读取。
     })
   }
-
-  if (timedOut) {
-    return { output: printed.trim(), calls, truncated, timedOut: true }
-  }
-  if (failure !== undefined) {
-    return { output: `Error: ${failure}`.trim(), calls, truncated, timedOut: false }
-  }
-  const parts = [printed.trim(), returned?.trim() ?? ""].filter((item) => item.length > 0)
-  // 取消/超时打断时程序本来就没产出，不要用"completed with no output"冒充正常空结果。
-  const text = parts.length > 0 ? parts.join("\n\n") : input.abort.aborted ? "" : "(run_code completed with no output)"
-  const withStderr =
-    child.exitCode !== 0 && child.exitCode !== null && parts.length === 0 && stderr.trim().length > 0
-      ? `Error: ${stderr.trim()}`
-      : text
-  return { output: withStderr, calls, truncated, timedOut: false }
 }
 
 export const RunCodeTool = Tool.define(
@@ -315,21 +449,15 @@ export const RunCodeTool = Tool.define(
               output: outcome.unavailable,
             }
           }
-          if (outcome.timedOut) {
-            return {
-              title: `run_code: ${params.description}`,
-              metadata: { calls: outcome.calls, timedOut: true, truncated: outcome.truncated, unavailable: false },
-              output: [outcome.output, "run_code hit its time limit; the program was stopped."]
-                .filter((item) => item.length > 0)
-                .join("\n\n"),
-            }
-          }
           return {
             title: `run_code: ${params.description}`,
-            metadata: { calls: outcome.calls, timedOut: false, truncated: outcome.truncated, unavailable: false },
-            output: outcome.truncated
-              ? `${outcome.output}\n\n[run_code output truncated at ${OUTPUT_LIMIT} bytes]`
-              : outcome.output,
+            metadata: {
+              calls: outcome.calls,
+              timedOut: outcome.timedOut,
+              truncated: outcome.truncated,
+              unavailable: false,
+            },
+            output: outcome.output,
           }
         }),
     }
