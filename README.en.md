@@ -6,7 +6,7 @@ It understands and edits code, runs commands, uses developer tools, and works wi
 
 Deeply developed from [OpenCode](https://github.com/anomalyco/opencode), RedCode is tailored to Chinese-language workflows and personalized collaboration.
 
-[![Version](https://badgen.net/badge/Version/0.12.13/blue)](CHANGELOG.md)
+[![Version](https://badgen.net/badge/Version/0.12.14/blue)](CHANGELOG.md)
 [![Platform](https://badgen.net/badge/Platform/Windows%2010%2F11/green)](https://github.com/JiaHuiRed/RedCode)
 [![TypeScript](https://badgen.net/badge/TypeScript/7.x/3178c6)](https://typescriptlang.org)
 [![Bun](https://badgen.net/badge/Bun/1.3.x/fb6e19)](https://bun.sh)
@@ -27,6 +27,8 @@ Deeply developed from [OpenCode](https://github.com/anomalyco/opencode), RedCode
 **Put AI to work on real development.** File editing, terminal commands, code search, MCP tools, and subagents come together in a complete development workflow.
 
 **Built for long-running collaboration.** Session management, context compaction, prefix-cache management, and memory help carry complex work forward.
+
+**Make every token count.** Optimize prompt prefixes, cache reuse, and context management across models and providers to reduce overhead and make long-running tasks more stable and cost-efficient.
 
 **More than a personality-free tool.** The Soul system lets you customize your AI partner's identity and interaction style, keeping that persona consistent across TUI and GUI sessions.
 
