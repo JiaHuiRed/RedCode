@@ -72,7 +72,12 @@ jobs:
             turbo-${{ runner.os }}-
 
       - name: Run unit tests
-        run: bun turbo test:ci
+        # 261017 Red 串行跑各包的 test:ci。此前 turbo 默认并行，opencode 的 1100+ 个
+        # 测试（真实服务器、子进程、文件 IO）与 app/ui/core 等包在 4 核 runner 上争抢
+        # CPU，最重的 prompt/processor 文件整批撞满 30s 超时（一次 run 里 86 个失败、
+        # unit job 跑了 64 分钟）。本地独占 CPU 时同样两个文件全部通过，bun 1.3.14 与
+        # CI 的 1.4.2 皆然；filewatcher 开关也已排除。
+        run: bun turbo test:ci --concurrency=1
         env:
           OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
 

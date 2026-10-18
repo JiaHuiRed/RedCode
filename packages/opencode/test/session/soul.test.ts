@@ -156,8 +156,12 @@ describe("session.soul", () => {
       )
       const service = yield* SessionNs.Service
       const parent = yield* service.create({ soul: "karina" }).pipe(Effect.provideService(Soul.directory, test.directory))
-      const stored = Database.use((db) => db.select().from(SoulVersionTable).get())
       expect(parent.soulBodyHash).toBeTruthy()
+      // 261017 Red 按本次创建的 hash 查，不能用无 where 的 .get()：测试库是进程级共享的，
+      // 前面任何创建过 soul session 的文件都会往这张表写行，.get() 可能拿到别人的记录。
+      const stored = Database.use((db) =>
+        db.select().from(SoulVersionTable).where(eq(SoulVersionTable.hash, parent.soulBodyHash!)).get(),
+      )
       expect(stored?.body).toContain("Original body V1")
 
       yield* Effect.promise(() =>
