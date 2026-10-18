@@ -100,3 +100,10 @@ packages/desktop/知微.png
 
 # 261012 Red WorkBuddy AI 助手的工作目录（审计临时脚本 / 会话记忆 / 产出，非源码）
 .workbuddy-ai/
+
+# 261018 Red 本地运行产物：长期挂在 GitHub Desktop 的 Changes 里，容易和真实改动混淆
+# node_modules 已由第 2 行全局忽略，这里不再重复
+packages/*/.redcode-temp/
+packages/opencode/.redcode-temp-typecheck.log
+packages/opencode/config.json
+plugins/*/bun.lock
