@@ -44,10 +44,21 @@ type PromptAttachmentsInput = {
 // 超过 10 MiB、Web 端没有落盘通道还是 mime 不支持，都统一提示「不支持」。
 export type AttachFailure = "size" | "unsupported" | "needs-desktop" | "read-failed"
 type AttachResult = { ok: true } | { ok: false; reason: AttachFailure }
+type AttachmentTarget = { scope: Scope | undefined; cursor: number | undefined }
 
 export function createPromptAttachments(input: PromptAttachmentsInput) {
-  const prompt = usePrompt()
-  const language = useLanguage()
+  return createPromptAttachmentsWithContext(input, usePrompt(), useLanguage())
+}
+
+export function createPromptAttachmentsWithContext(
+  input: PromptAttachmentsInput,
+  prompt: Pick<ReturnType<typeof usePrompt>, "current" | "cursor" | "set">,
+  language: Pick<ReturnType<typeof useLanguage>, "t">,
+) {
+  const captureTarget = (): AttachmentTarget => ({
+    scope: input.scope?.(),
+    cursor: prompt.cursor(),
+  })
 
   const warn = () => {
     showToast({
@@ -73,24 +84,25 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
   }
 
   // 260913 Red 正在读盘的附件先占额度：只看 prompt.current() 的话，同时粘贴的两个大文件
-  // 互相看不见，会双双通过检查。key 取会话目录，跨会话不共享额度。
+  // 互相看不见，会双双通过检查。pending 按 prompt scope 分桶，同项目的 A/B 会话不互占额度。
   // 261018 Red 合并成一条 PendingBudget：字节仍分两类，件数共享——见 attachment-budget.ts。
   const pendingBudget = new Map<string, PendingBudget>()
-  const budgetKey = () => input.sessionDirectory ?? "default"
+  // 261018 Red pending 是每个 prompt 的临时额度，不是整个项目共用；同目录的 A/B 会话也要隔离。
+  const budgetKey = (scope: Scope | undefined) =>
+    JSON.stringify([scope?.dir ?? input.sessionDirectory ?? "default", scope?.id ?? null])
   const budgetFor = (key: string): PendingBudget =>
     pendingBudget.get(key) ?? { inlineBytes: 0, archiveBytes: 0, count: 0 }
   const isArchivePart = (part: ImageAttachmentPart) => isArchiveFile({ name: part.filename ?? "", type: part.mime })
 
-  const add = async (file: File, toast = true): Promise<AttachResult> => {
-    // 261018 Red 发起时定格会话：读 MIME、FileReader、arrayBuffer、IPC 落盘全是 await，
-    // 完成时用户可能已经切到别的会话。此后所有读写都走这个 scope，不读「当前路由」。
-    const scope = input.scope?.()
+  const add = async (file: File, target: AttachmentTarget, toast = true): Promise<AttachResult> => {
+    // scope 与光标在入口处一起定格；读 MIME、FileReader、arrayBuffer、IPC 落盘全是 await，
+    // 完成时用户可能已经切到别的会话。此后所有读写都走发起时的 target。
     // 260913 Red 预算检查放在读内容和落盘之前：先读 10MB+ 再拒绝是白花的时间和内存。
     const archive = isArchiveFile(file)
-    const key = budgetKey()
+    const key = budgetKey(target.scope)
     // existing 是所有附件（含压缩包）：件数用它数，字节只取对应类别——否则先加入的
     // 36 MiB 压缩包会被算进 20 MiB 的内联线，让同一组附件因添加顺序而结果不同。
-    const existing = prompt.current(scope).filter((part): part is ImageAttachmentPart => part.type === "image")
+    const existing = prompt.current(target.scope).filter((part): part is ImageAttachmentPart => part.type === "image")
     const budget = presentBudget(existing, isArchivePart)
     const fits = archive
       ? archiveFits(file.size, budget.archives, budget.count, budgetFor(key))
@@ -154,8 +166,8 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
         size: file.size,
         path: attachmentPath,
       }
-      const cursor = prompt.cursor() ?? getCursorPosition(editor)
-      prompt.set([...prompt.current(scope), attachment], cursor, scope)
+      const cursor = target.cursor ?? getCursorPosition(editor)
+      prompt.set([...prompt.current(target.scope), attachment], cursor, target.scope)
       return { ok: true }
     } finally {
       // 260913 Red 预占之后的所有路径（含上面几个提前 return）都在这里释放，额度不会漏。
@@ -170,7 +182,7 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     }
   }
 
-  const addAttachment = async (file: File) => (await add(file)).ok
+  const addAttachment = async (file: File, target: AttachmentTarget) => (await add(file, target)).ok
 
   // 261018 Red 多文件失败时按「最有帮助的那条」提示，而不是一律说到底层的不支持：
   // 优先级按用户能据此调整动作的程度排（改小文件 > 换桌面端 > 换文件类型）。
@@ -186,20 +198,22 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     return warn()
   }
 
-  const addAttachments = async (files: File[], toast = true) => {
+  const addAttachmentsInScope = async (files: File[], target: AttachmentTarget, toast = true) => {
     let found = false
     let reason: AttachFailure | undefined
 
     for (const file of files) {
-      const result = await add(file, false)
+      const result = await add(file, target, false)
       if (result.ok) found = true
       else reason = pickReason(reason, result.reason)
     }
 
-    // 只弹一条：批量路径不连弹，部分成功时不打扰（成功的附件已经出现在输入框里）。
     if (!found && files.length > 0 && toast && reason) warnFailure(reason)
     return found
   }
+
+  const addAttachments = async (files: File[], toast = true) =>
+    addAttachmentsInScope(files, captureTarget(), toast)
 
   const removeAttachment = (id: string) => {
     const current = prompt.current()
@@ -211,6 +225,7 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     const clipboardData = event.clipboardData
     if (!clipboardData) return
 
+    const target = captureTarget()
     event.preventDefault()
     event.stopPropagation()
 
@@ -221,7 +236,7 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     })
 
     if (files.length > 0) {
-      await addAttachments(files)
+      await addAttachmentsInScope(files, target)
       return
     }
 
@@ -231,7 +246,7 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     if (input.readClipboardImage && !plainText) {
       const file = await input.readClipboardImage()
       if (file) {
-        await addAttachment(file)
+        await addAttachment(file, target)
         return
       }
     }

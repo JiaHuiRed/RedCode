@@ -8,6 +8,10 @@
 
 ---
 
+### [Unreleased]
+
+- **批量附件与原生剪贴板图片固定在同一会话**（`packages/app/src/components/prompt-input/attachments.ts`）：`addAttachments()` 原先逐文件 `await add()`，而每次 `add()` 都重新读取路由 scope；批处理中切换会话会把后续文件加到新会话。桌面原生剪贴板图片也在异步读取完成后才捕获 scope。现在批次入口和剪贴板处理入口都先捕获 prompt scope 与光标，再传给所有后续异步操作；pending 预算也按 prompt scope 分桶，不再让同目录的 A/B 会话互相占用在途额度。定向测试覆盖批量写盘与剪贴板读取挂起期间切会话；`attachments.test.ts` 14 pass，app typecheck 通过。未做真实 Electron 端到端验证。
+
 ### [0.12.14] - 2026-10-18
 
 - **TUI 出站请求恢复走系统代理**（`packages/opencode/src/util/proxy.ts`、`util/proxy-dispatcher.ts`、`index.ts`）：Bun 的 `fetch` 只在**进程启动瞬间**快照 `HTTP(S)_PROXY`，运行期写 `process.env` 不生效；而 Windows 系统代理是从 WinINET 注册表解析出来的，必然发生在启动之后。于是 TUI（Bun，只认启动时环境变量）在不带代理环境变量的进程里全部裸连，同一台机器上 GUI（Electron/Chromium 网络栈直读系统代理）却正常。修法两层：`fetchWithProxy()` 在 Bun 路径按请求显式传 `init.proxy`（实测这是 Bun 认的入口）；CLI middleware 里再装一层 `globalThis.fetch` 包装，使 webfetch、web 搜索、插件与 HTTP MCP 这些**直接调用 `fetch`** 的位置一并覆盖。路由谓词 `shouldProxy`（loopback 恒绕过、`NO_PROXY` 后缀/通配/端口匹配）从 dispatcher 移到 `proxy.ts`，与 Node 侧全局 dispatcher 共用同一判据，避免「隧道转发而调用方以为直连」；系统代理的注册表读取加进程内缓存——此前 `windowsSystemProxy()` 每次调用都 spawn 一次 `reg.exe`。验证：清空代理 env 的进程，`fetchWithProxy` 与包装后的裸 `fetch` 访问 `api.openai.com` 均返回 401（已到达上游）而非超时；装代理前后访问本地 `Bun.serve` 服务都是直达（loopback 未被代理）；`proxy-dispatcher.test.ts` 25 pass / 0 fail（含真 Node 子进程的隧道探针），opencode typecheck 通过。模型可见四问：①–④ 全为零（不涉及提示词、工具 schema 与注入项）。
