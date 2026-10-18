@@ -8,6 +8,14 @@
 
 ---
 
+### [Unreleased]
+
+- **输入框压缩包不再被 base64 预算误拦**：压缩包只落盘、不内联，却一直套用为 base64 常驻设定的 10 MiB/20 MiB 上限，36 MiB 的调试包这类正常用途会被直接拒收。现在前后端分流：前端给压缩包独立预算（单件 64 MiB、单条消息 128 MiB，数量仍共享 8 个；上限按落盘前一次性读入 + IPC 复制定），服务端 `file://` 压缩包直通、不读盘也不转 base64，交给 provider 层换成稳定路径占位。新增 4 MiB 压缩包回归：保留 `file://`、未出现 `not inlined`；app 附件套件 44 项、服务端附件/图片套件 117 项通过。
+- **截图附件预算与 GUI 上传上限对齐**：此前模型侧按原始 3.75 MiB 直接拒绝，而 GUI 允许 10 MiB/20 MiB，正常 3840×2088 截图（约 8 MiB）必被拒。现在 PNG 源按 10 MiB 单图、20 MiB 单条消息接纳，规范化后仍硬性不超过 5 MiB base64；PNG 头部像素预检（≤32 MP）改为始终执行——纯色大图 payload 可以很小、解码后却极大；预检后按「预检尺寸 + 1 字节」有界读取，文件在读取期间变大即拒绝，`stat` 失败则 fail-closed 不读。小图在缩放器不可用时仍回退原图（与旧行为一致），大图才拒绝。源预算、防绕过与正常化后预算均有回归；两个 package typecheck 通过。决策见 [attachment-inline-budget](docs/notes/implemented/bug-fix/2026-10-15-attachment-inline-budget.md)。
+- **补齐实验性 `run_code` 的执行护栏**：仅专属 `REDCODE_EXPERIMENTAL_RUN_CODE` 可开启，全局实验开关不再隐式授予代码执行入口；Explore 继续不可用。最终输出统一限为 64 KiB UTF-8（含错误、超时与截断说明），SDK 整体限为 24,000 UTF-8 字节；协议与宿主回包各限 1 MiB，解帧、写入前检查预算，坏帧明确失败并停止子进程。`blocked` 改为 `ToolCallError`，预取消不启动程序，临时文件覆盖启动失败清理。执行器、注册与原有 Soul 修正三文件合跑 60 项通过，独立终审无重大残余；未做真实模型性能 A/B。模型可见四问及残余诊断边界见 [run-code-ptc](docs/notes/implemented/feature/2026-10-17-run-code-ptc-tool-presentation.md)。
+- **当前会话标签即时更新**：标签栏不再把会话和状态捕获在一次性映射里；迟到加载、手工改名、同 ID 会话对象替换及忙闲状态变化均可在标签列表不变时更新，不再依赖关掉重开。保留只读 `peek`，不增加目录 pin 或重建聊天区。标题与历史两文件 6 项回归通过，app typecheck 通过。决策见 [live-session-title](docs/notes/implemented/bug-fix/2026-10-18-live-session-title.md)。
+- **图片发送中的预览不再直读 `file://`**：服务端请求仍使用原落盘路径，乐观消息改用已有 data URL 显示图片，避免 Electron 的 `Not allowed to load local resource`；普通文件与压缩包路径不变。请求构造测试先红后绿，15 项通过，app typecheck 通过。刷新后的持久图片由服务端摄入结果负责，本条不代表已修复白屏根因。
+
 ### [0.12.13] - 2026-10-17
 
 - **局域网监听改用每次启动随机生成的密码**（`packages/opencode/src/cli/network.ts`、`cli/cmd/run.ts`）：未设置 `REDCODE_SERVER_PASSWORD` 而绑定非回环地址时，旧实现自动注入写死在源码里的 `RedCode0429`，等于所有默认实例共享同一凭据；拿到它就能调 PTY 接口创建终端进程并执行任意命令。现改为每次启动随机生成 18 字节 base64url 密码，写入进程 env 供 ServerAuth 读取并打印到 stderr（`UI.println` 走 stderr，不污染 `acp` 的 stdout 协议），重启即换；显式设置环境变量（含置空串关闭鉴权的语义）不变。验证：`test/cli/network.test.ts` 7 pass / 0 fail，opencode typecheck EXIT=0；无提示词或工具 schema 改动。
