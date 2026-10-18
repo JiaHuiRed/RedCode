@@ -1,9 +1,13 @@
 import { expect, mock, test } from "bun:test"
+// 261018 Red 静态展开真模块：mock 是进程级替换，只提供 fetchWithProxy 会让同进程后加载的
+// 文件（如 proxy-dispatcher）拿到 undefined 的 shouldProxy。
+import * as proxyModule from "@/util/proxy"
 
 const pending = new Map<string, Array<(response: Response) => void>>()
 let calls = 0
 
 void mock.module("@/util/proxy", () => ({
+  ...proxyModule,
   fetchWithProxy: (_url: string, options: { headers?: HeadersInit }) => {
     const authorization = new Headers(options.headers).get("authorization") ?? ""
     calls += 1

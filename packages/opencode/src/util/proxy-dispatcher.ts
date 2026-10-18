@@ -1,6 +1,10 @@
 import { Agent, ProxyAgent, setGlobalDispatcher, getGlobalDispatcher, type Dispatcher } from "undici"
 import * as Log from "@redcode-ai/core/util/log"
-import { proxyFromEnv } from "./proxy"
+import { proxyFromEnv, shouldProxy, originOf } from "./proxy"
+
+// 261018 Red 路由谓词已移到 proxy.ts（Bun 侧 per-request proxy 与 Node 侧 dispatcher
+// 必须共用同一个判据）；这里保留同名导出，既有调用方与测试不用改导入路径。
+export { shouldProxy }
 
 const log = Log.create({ service: "proxy" })
 
@@ -28,8 +32,10 @@ const log = Log.create({ service: "proxy" })
  *   子进程在第一行之前就以 1 退出（上游在 Node 24.17 实测 `socks4://` / `ftp://` /
  *   畸形值均如此）——而本机 git 对 github 用的正是 `socks5h://`。子进程那层由
  *   `desktop/server.ts` 注 env 管，本模块不介入。
- * - **不动 Bun**。TUI 走 Bun，其 fetch 原生认代理环境变量；undici 的全局 dispatcher
- *   也不是 Bun fetch 会读的东西，装了等于空转。
+ * - **不动 Bun 的 dispatcher**（它不读 undici 的全局 dispatcher）。但 Bun 侧另有自己的坑：
+ *   `fetch` 只认**进程启动瞬间**的 `HTTP(S)_PROXY`，而 Windows 系统代理是启动后才从
+ *   WinINET 解析出来的——于是 Bun 这条路原先整条裸连（GUI 走 Chromium 网络栈反而不受影响）。
+ *   修法见下面的 Bun 分支：按请求注入 `init.proxy`，与 `fetchWithProxy()` 同一形态。
  *
  * **loopback 恒绕过**是硬性要求，不是优化：GUI 与 sidecar 之间、Ollama 这类本地
  * provider、以及全部本地测试服务器都在 loopback 上，代理它们会形成回环。
@@ -39,74 +45,38 @@ const log = Log.create({ service: "proxy" })
 
 /** 已安装的策略；重复调用是幂等的。 */
 let installed: { proxy: string; previous: Dispatcher } | undefined
+/** Bun 侧装的是 fetch 包装而不是 dispatcher，单独记一份以便卸载。 */
+let installedBunFetch: { previous: typeof fetch } | undefined
 
 /**
- * 解析 NO_PROXY。支持后缀匹配（`.example.com` 与 `example.com` 等价）、
- * 通配前缀（`192.168.*`）、`host:port`，以及 `*` 表示全部绕过。
- */
-function parseNoProxy(raw: string | undefined): string[] {
-  if (!raw) return []
-  return raw
-    .split(",")
-    .map((item) => item.trim().toLowerCase())
-    .filter(Boolean)
-}
-
-/**
- * loopback 判定。**同时认 `::1` 与 `[::1]`**：undici 自带的匹配器会把裸写的 `::1`
- * 读成「主机 `:` 端口 `1`」，从而永不豁免它（上游踩过）。这里自己判，不依赖它。
- */
-function isLoopback(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "")
-  if (host === "localhost" || host.endsWith(".localhost")) return true
-  if (host === "::1" || host === "0:0:0:0:0:0:0:1") return true
-  // 127.0.0.0/8 整段，不只是 127.0.0.1
-  if (/^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) return true
-  if (host === "0.0.0.0") return true
-  return false
-}
-
-function matchesNoProxy(hostname: string, port: string, entries: string[]): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "")
-  for (const entry of entries) {
-    if (entry === "*") return true
-    const [rawHost, rawPort] = entry.includes(":") && !entry.includes("::") ? entry.split(":") : [entry, undefined]
-    if (rawPort && rawPort !== port) continue
-    const target = (rawHost ?? "").replace(/^\[|\]$/g, "")
-    if (!target) continue
-    if (target.endsWith("*")) {
-      if (host.startsWith(target.slice(0, -1))) return true
-      continue
-    }
-    const bare = target.startsWith(".") ? target.slice(1) : target
-    if (host === bare || host.endsWith("." + bare)) return true
-  }
-  return false
-}
-
-/** 某个 origin 该不该走代理。dispatcher 与任何调用方都必须问这一个函数。 */
-export function shouldProxy(origin: string | URL, noProxy = process.env.NO_PROXY ?? process.env.no_proxy): boolean {
-  let url: URL
-  try {
-    url = typeof origin === "string" ? new URL(origin) : origin
-  } catch {
-    return false
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") return false
-  if (isLoopback(url.hostname)) return false
-  return !matchesNoProxy(url.hostname, url.port, parseNoProxy(noProxy))
-}
-
-/**
- * 装上全局 dispatcher。Bun 下是空操作；没有解析到代理时不装。
- * 返回卸载函数（还原上一个 dispatcher），测试用。
+ * 装上全局代理策略：Node 下换全局 dispatcher，Bun 下包装 `globalThis.fetch`。
+ * 没有解析到代理时不装。返回卸载函数，测试用。
  */
 export function installGlobalProxy(): (() => void) | undefined {
-  if (typeof Bun !== "undefined") return undefined
-  if (installed) return undefined
+  if (installed || installedBunFetch) return undefined
 
   const proxy = proxyFromEnv()
   if (!proxy) return undefined
+
+  if (typeof Bun !== "undefined") {
+    // 261018 Red Bun 没有全局 dispatcher，也没有「运行期重新读 env」的通道；包装 fetch
+    // 并在路由命中时注入 init.proxy 是唯一能一次覆盖全部调用点（webfetch / web 搜索 /
+    // 插件 / HTTP MCP）的形态。判据仍走 shouldProxy，loopback 与 NO_PROXY 照旧直连。
+    const previous = globalThis.fetch
+    const patched = ((input: RequestInfo | URL, init?: RequestInit) =>
+      shouldProxy(originOf(input))
+        ? previous(input, { ...init, proxy } as RequestInit & { proxy: string })
+        : previous(input, init)) as typeof fetch
+    globalThis.fetch = patched
+    installedBunFetch = { previous }
+    log.info("global proxy installed", { runtime: "bun", proxy: proxy.replace(/\/\/[^@]*@/, "//***@") })
+
+    return () => {
+      if (!installedBunFetch) return
+      globalThis.fetch = installedBunFetch.previous
+      installedBunFetch = undefined
+    }
+  }
 
   const previous = getGlobalDispatcher()
   // 按 origin 决定去向：走代理的给 ProxyAgent，绕过的给 undici 默认客户端。

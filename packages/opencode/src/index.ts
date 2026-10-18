@@ -124,6 +124,13 @@ const cli = yargs(args)
 
     Heap.start()
 
+    // 261018 Red 出站代理必须在任何请求发出之前装好：Bun 的 fetch 只认**启动瞬间**的
+    // HTTP(S)_PROXY，而 Windows 系统代理是启动之后才从 WinINET 解析出来的，于是 TUI
+    // 这条命令行路径此前整条裸连（GUI 走 Chromium 网络栈读系统代理，所以看起来「只有
+    // TUI 连不上」）。Node bundle 侧由 node.ts 的副作用导入装，这里补 Bun 这条路径。
+    const { installGlobalProxy } = await import("./util/proxy-dispatcher")
+    installGlobalProxy()
+
     process.env.AGENT = "1"
     process.env.REDCODE = "1"
     process.env.REDCODE_PID = String(process.pid)
