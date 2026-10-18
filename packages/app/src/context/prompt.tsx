@@ -378,8 +378,10 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
       dirty: (scope?: Scope) => pick(scope).dirty(),
       context: {
         items: () => session().context.items(),
-        add: (item: ContextItem) => session().context.add(item),
-        remove: (key: string) => session().context.remove(key),
+        // 261018 Red 支持按 scope 增删评论上下文：发送失败后的恢复是异步的，用户此时可能
+        // 已经切到别的会话，无 scope 版本会把 A 的评论恢复到当前路由 B 上。
+        add: (item: ContextItem, scope?: Scope) => pick(scope).context.add(item),
+        remove: (key: string, scope?: Scope) => pick(scope).context.remove(key),
         removeComment: (path: string, commentID: string) => session().context.removeComment(path, commentID),
         updateComment: (path: string, commentID: string, next: Partial<FileContextItem> & { comment?: string }) =>
           session().context.updateComment(path, commentID, next),

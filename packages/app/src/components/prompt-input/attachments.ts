@@ -1,11 +1,11 @@
 import { onMount } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { showToast } from "@redcode-ai/ui/toast"
-import { usePrompt, type ContentPart, type ImageAttachmentPart } from "@/context/prompt"
+import { usePrompt, type ContentPart, type ImageAttachmentPart, type Scope } from "@/context/prompt"
 import { useLanguage } from "@/context/language"
 import { uuid } from "@/utils/uuid"
 import { getCursorPosition } from "./editor-dom"
-import { attachmentFits, archiveFits } from "./attachment-budget"
+import { attachmentFits, archiveFits, presentBudget, type PendingBudget } from "./attachment-budget"
 import { attachmentMime, isArchiveFile, extName } from "./files"
 import { normalizePaste, pasteMode } from "./paste"
 
@@ -35,7 +35,15 @@ type PromptAttachmentsInput = {
   readClipboardImage?: () => Promise<File | null>
   writeAttachment?: (sessionDir: string, filename: string, data: Uint8Array) => Promise<string>
   sessionDirectory?: string
+  // 261018 Red 发起时的会话。附件要走 FileReader / arrayBuffer / IPC 落盘，完成时用户
+  // 可能已经切到别的会话；写入必须回到发起时那一份 prompt，而不是「当前路由」的。
+  scope?: () => Scope | undefined
 }
+
+// 261018 Red 拒绝原因结构化：批量入口原先只知道「一个都没成功」，于是不论真实原因是
+// 超过 10 MiB、Web 端没有落盘通道还是 mime 不支持，都统一提示「不支持」。
+export type AttachFailure = "size" | "unsupported" | "needs-desktop" | "read-failed"
+type AttachResult = { ok: true } | { ok: false; reason: AttachFailure }
 
 export function createPromptAttachments(input: PromptAttachmentsInput) {
   const prompt = usePrompt()
@@ -66,51 +74,61 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
 
   // 260913 Red 正在读盘的附件先占额度：只看 prompt.current() 的话，同时粘贴的两个大文件
   // 互相看不见，会双双通过检查。key 取会话目录，跨会话不共享额度。
-  const pendingBudget = new Map<string, { bytes: number; count: number }>()
-  // 261018 Red 压缩包与内联附件分开记账：同一条消息里大图和调试包不该互相挤额度。
-  const budgetKey = (kind: "inline" | "archive") => `${input.sessionDirectory ?? "default"}:${kind}`
-  const budgetFor = (key: string) => pendingBudget.get(key) ?? { bytes: 0, count: 0 }
+  // 261018 Red 合并成一条 PendingBudget：字节仍分两类，件数共享——见 attachment-budget.ts。
+  const pendingBudget = new Map<string, PendingBudget>()
+  const budgetKey = () => input.sessionDirectory ?? "default"
+  const budgetFor = (key: string): PendingBudget =>
+    pendingBudget.get(key) ?? { inlineBytes: 0, archiveBytes: 0, count: 0 }
+  const isArchivePart = (part: ImageAttachmentPart) => isArchiveFile({ name: part.filename ?? "", type: part.mime })
 
-  const add = async (file: File, toast = true) => {
+  const add = async (file: File, toast = true): Promise<AttachResult> => {
+    // 261018 Red 发起时定格会话：读 MIME、FileReader、arrayBuffer、IPC 落盘全是 await，
+    // 完成时用户可能已经切到别的会话。此后所有读写都走这个 scope，不读「当前路由」。
+    const scope = input.scope?.()
     // 260913 Red 预算检查放在读内容和落盘之前：先读 10MB+ 再拒绝是白花的时间和内存。
     const archive = isArchiveFile(file)
-    const key = budgetKey(archive ? "archive" : "inline")
-    const existing = prompt.current().filter((part): part is ImageAttachmentPart => part.type === "image")
+    const key = budgetKey()
+    // existing 是所有附件（含压缩包）：件数用它数，字节只取对应类别——否则先加入的
+    // 36 MiB 压缩包会被算进 20 MiB 的内联线，让同一组附件因添加顺序而结果不同。
+    const existing = prompt.current(scope).filter((part): part is ImageAttachmentPart => part.type === "image")
+    const budget = presentBudget(existing, isArchivePart)
     const fits = archive
-      ? archiveFits(
-          file.size,
-          existing,
-          existing.filter((part) => isArchiveFile({ name: part.filename ?? "", type: part.mime })),
-          budgetFor(key),
-        )
-      : attachmentFits(file.size, existing, budgetFor(key))
+      ? archiveFits(file.size, budget.archives, budget.count, budgetFor(key))
+      : attachmentFits(file.size, budget.inline, budget.count, budgetFor(key))
     if (!fits) {
       if (toast) warnSize()
-      return false
+      return { ok: false, reason: "size" }
     }
 
-    const mime = await attachmentMime(file)
-    if (!mime) {
-      if (toast) warn()
-      return false
-    }
-
-    // 261011 Red 压缩包分支：只落盘、不读内容。dataUrl 完全跳过（readAsDataURL 会把
-    // 几十 MB 的包整个 base64 化，正是内存问题的形状）；没有落盘通道就拒绝，绝不静默降级
-    // 成空 url 的坏 part。
-    if (archive && !(input.sessionDirectory && input.writeAttachment)) {
-      if (toast) warnArchiveNeedsDesktop()
-      return false
-    }
-
-    const editor = input.editor()
-    if (!editor) return false
-
-    const pending = budgetFor(key)
-    pendingBudget.set(key, { bytes: pending.bytes + file.size, count: pending.count + 1 })
+    // 261018 Red 预占必须在第一个 await 之前。预算检查与预占之间只要隔着一个 await，
+    // 并发的两次 add（拖放 + 粘贴是两条入口）就会各自读到同一份未占用额度，
+    // 双双通过 8 件上限——这正是跨类别计数修完之后剩下的那个窗口。
+    const reserved = budgetFor(key)
+    pendingBudget.set(key, {
+      inlineBytes: reserved.inlineBytes + (archive ? 0 : file.size),
+      archiveBytes: reserved.archiveBytes + (archive ? file.size : 0),
+      count: reserved.count + 1,
+    })
     try {
+      const mime = await attachmentMime(file)
+      if (!mime) {
+        if (toast) warn()
+        return { ok: false, reason: "unsupported" }
+      }
+
+      // 261011 Red 压缩包分支：只落盘、不读内容。dataUrl 完全跳过（readAsDataURL 会把
+      // 几十 MB 的包整个 base64 化，正是内存问题的形状）；没有落盘通道就拒绝，绝不静默降级
+      // 成空 url 的坏 part。
+      if (archive && !(input.sessionDirectory && input.writeAttachment)) {
+        if (toast) warnArchiveNeedsDesktop()
+        return { ok: false, reason: "needs-desktop" }
+      }
+
+      const editor = input.editor()
+      if (!editor) return { ok: false, reason: "read-failed" }
+
       const url = archive ? "" : await dataUrl(file, mime)
-      if (!archive && !url) return false
+      if (!archive && !url) return { ok: false, reason: "read-failed" }
 
       // 260629 Red: 落盘到 .attachments/，让 build-request-parts 走 file:// URL 而非 base64 dataUrl
       let attachmentPath: string | undefined
@@ -137,28 +155,49 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
         path: attachmentPath,
       }
       const cursor = prompt.cursor() ?? getCursorPosition(editor)
-      prompt.set([...prompt.current(), attachment], cursor)
-      return true
+      prompt.set([...prompt.current(scope), attachment], cursor, scope)
+      return { ok: true }
     } finally {
-      // 260913 Red 只在真的占过额度之后才释放；提前 return 的路径不会走到这里。
+      // 260913 Red 预占之后的所有路径（含上面几个提前 return）都在这里释放，额度不会漏。
       const now = budgetFor(key)
-      const next = { bytes: Math.max(0, now.bytes - file.size), count: Math.max(0, now.count - 1) }
-      if (next.bytes === 0 && next.count === 0) pendingBudget.delete(key)
+      const next: PendingBudget = {
+        inlineBytes: Math.max(0, now.inlineBytes - (archive ? 0 : file.size)),
+        archiveBytes: Math.max(0, now.archiveBytes - (archive ? file.size : 0)),
+        count: Math.max(0, now.count - 1),
+      }
+      if (next.inlineBytes === 0 && next.archiveBytes === 0 && next.count === 0) pendingBudget.delete(key)
       else pendingBudget.set(key, next)
     }
   }
 
-  const addAttachment = (file: File) => add(file)
+  const addAttachment = async (file: File) => (await add(file)).ok
+
+  // 261018 Red 多文件失败时按「最有帮助的那条」提示，而不是一律说到底层的不支持：
+  // 优先级按用户能据此调整动作的程度排（改小文件 > 换桌面端 > 换文件类型）。
+  const FAILURE_PRIORITY: AttachFailure[] = ["size", "needs-desktop", "unsupported", "read-failed"]
+  const pickReason = (current: AttachFailure | undefined, next: AttachFailure | undefined) => {
+    if (!current) return next
+    if (!next) return current
+    return FAILURE_PRIORITY.indexOf(current) <= FAILURE_PRIORITY.indexOf(next) ? current : next
+  }
+  const warnFailure = (reason: AttachFailure) => {
+    if (reason === "size") return warnSize()
+    if (reason === "needs-desktop") return warnArchiveNeedsDesktop()
+    return warn()
+  }
 
   const addAttachments = async (files: File[], toast = true) => {
     let found = false
+    let reason: AttachFailure | undefined
 
     for (const file of files) {
-      const ok = await add(file, false)
-      if (ok) found = true
+      const result = await add(file, false)
+      if (result.ok) found = true
+      else reason = pickReason(reason, result.reason)
     }
 
-    if (!found && files.length > 0 && toast) warn()
+    // 只弹一条：批量路径不连弹，部分成功时不打扰（成功的附件已经出现在输入框里）。
+    if (!found && files.length > 0 && toast && reason) warnFailure(reason)
     return found
   }
 

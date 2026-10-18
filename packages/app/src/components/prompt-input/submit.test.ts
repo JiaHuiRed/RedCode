@@ -29,6 +29,12 @@ const syncedDirectories: string[] = []
 const resetScopes: Array<{ dir: string; id?: string } | undefined> = []
 const setCalls: Array<{ scope?: { dir: string; id?: string } }> = []
 const toasts: string[] = []
+const contextAdds: Array<{ scope?: { dir: string; id?: string } }> = []
+const contextRemoves: Array<{ key: string; scope?: { dir: string; id?: string } }> = []
+let contextItems: Array<Record<string, unknown>> = []
+let promptFails = false
+let worktreeCreates = 0
+let worktreeGate: Promise<void> | undefined
 let createFails = false
 let dirtyValue = false
 let lastSoul = "karina"
@@ -70,6 +76,7 @@ const clientFor = (directory: string) => {
         delivery?: "queue" | "steer"
         parts?: Array<{ filename?: string }>
       }) => {
+        if (promptFails) throw new Error("synthetic send failure")
         if (input) sentPrompts.push(input)
         sentPromptFiles.push(...(input?.parts ?? []).flatMap((part) => (part.filename ? [part.filename] : [])))
         return { data: undefined }
@@ -78,7 +85,11 @@ const clientFor = (directory: string) => {
       abort: async () => ({ data: undefined }),
     },
     worktree: {
-      create: async () => ({ data: { directory: `${directory}/new` } }),
+      create: async () => {
+        worktreeCreates += 1
+        if (worktreeGate) await worktreeGate
+        return { data: { directory: `${directory}/new` } }
+      },
     },
   }
 }
@@ -144,9 +155,13 @@ beforeAll(async () => {
         setCalls.push({ scope })
       },
       context: {
-        add: () => undefined,
-        remove: () => undefined,
-        items: () => [],
+        add: (item: Record<string, unknown>, scope?: { dir: string; id?: string }) => {
+          contextAdds.push({ scope })
+        },
+        remove: (key: string, scope?: { dir: string; id?: string }) => {
+          contextRemoves.push({ key, scope })
+        },
+        items: () => contextItems,
       },
     }),
   }))
@@ -253,6 +268,12 @@ beforeEach(() => {
   resetScopes.length = 0
   setCalls.length = 0
   toasts.length = 0
+  contextAdds.length = 0
+  contextRemoves.length = 0
+  contextItems = []
+  promptFails = false
+  worktreeCreates = 0
+  worktreeGate = undefined
   createFails = false
   dirtyValue = false
   lastSoul = "karina"
@@ -601,5 +622,79 @@ describe("prompt submit worktree selection", () => {
 
     expect(setCalls).toEqual([])
     expect(toasts).toContain("prompt.toast.draftRestoreSkipped.title")
+  })
+
+  // 261018 Red PI-03：guard 原先在 session.create 之前、worktree.create 之后，
+  // 两次 Enter 会在 worktree 的 await 处交错，各建一个工作树后只创建一个会话。
+  test("creates one worktree when Enter is pressed twice during creation", async () => {
+    params = { dir: "/repo/main" }
+    selected = "create"
+    let release!: () => void
+    worktreeGate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+
+    const submit = createPromptSubmit({
+      info: () => undefined,
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      newSessionWorktree: () => selected,
+      onNewSessionWorktreeReset: () => undefined,
+    })
+
+    const event = { preventDefault: () => undefined } as unknown as Event
+    const first = submit.handleSubmit(event)
+    // 让第一次提交真正走到 worktree.create 的 await
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const second = submit.handleSubmit(event)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    release()
+
+    await Promise.all([first, second])
+
+    expect(worktreeCreates).toBe(1)
+    expect(createdSessions).toHaveLength(1)
+  })
+
+  // 261018 Red PI-02：评论的移除与恢复都必须钉在提交时的会话上。旧实现调无 scope 的
+  // prompt.context.add()，失败回调晚到时会把 A 的评论恢复到当前路由的 B。
+  test("restores comment context on the submitted session's scope", async () => {
+    params = { dir: "/repo/main", id: "session-1" }
+    promptFails = true
+    contextItems = [{ key: "c1", type: "file", path: "/repo/a.ts", comment: "why", commentID: "x1" }]
+
+    const submit = createPromptSubmit({
+      info: () => ({ id: "session-1" }),
+      imageAttachments: () => [],
+      commentCount: () => 1,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+    })
+
+    await submit.handleSubmit({ preventDefault: () => undefined } as unknown as Event)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    const scope = { dir: "/repo/main", id: "session-1" }
+    expect(contextRemoves).toEqual([{ key: "c1", scope }])
+    expect(contextAdds.map((item) => item.scope)).toEqual([scope])
+    expect(toasts).toContain("prompt.toast.promptSendFailed.title")
   })
 })

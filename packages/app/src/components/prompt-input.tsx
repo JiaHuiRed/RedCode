@@ -1106,6 +1106,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     readClipboardImage: platform.readClipboardImage,
     writeAttachment: platform.writeAttachment,
     sessionDirectory: sdk.directory,
+    // 261018 Red 附件读盘/落盘是异步的，完成时必须写回**发起时**的会话。这里用路由键
+    // （params.dir 已是 base64Encode 形态，与 prompt store 的缓存键同源）。
+    scope: () => (params.dir ? { dir: params.dir, id: params.id } : undefined),
   })
 
   const fileAttachmentInput = () => (

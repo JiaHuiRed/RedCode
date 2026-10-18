@@ -272,23 +272,29 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       .catch(() => {})
   }
 
-  const restoreCommentItems = (items: CommentItem[]) => {
+  // 261018 Red 评论的移除与恢复都必须钉在**提交时那个会话**上（与 restoreInput 同源）：
+  // sendFollowupDraft 失败是异步事件，用户可能已切到会话 B，无 scope 的实现会把 A 的
+  // 评论恢复到 B 的输入框里。scope 由调用方传入（提交时算好的 base64 路由键）。
+  const restoreCommentItems = (items: CommentItem[], scope: Scope) => {
     for (const item of items) {
-      prompt.context.add({
-        type: "file",
-        path: item.path,
-        selection: item.selection,
-        comment: item.comment,
-        commentID: item.commentID,
-        commentOrigin: item.commentOrigin,
-        preview: item.preview,
-      })
+      prompt.context.add(
+        {
+          type: "file",
+          path: item.path,
+          selection: item.selection,
+          comment: item.comment,
+          commentID: item.commentID,
+          commentOrigin: item.commentOrigin,
+          preview: item.preview,
+        },
+        scope,
+      )
     }
   }
 
-  const removeCommentItems = (items: { key: string }[]) => {
+  const removeCommentItems = (items: { key: string }[], scope: Scope) => {
     for (const item of items) {
-      prompt.context.remove(item.key)
+      prompt.context.remove(item.key, scope)
     }
   }
 
@@ -367,61 +373,68 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     let sessionDirectory = projectDirectory
     let client = sdk.client
 
-    if (isNewSession) {
-      if (worktreeSelection === "create") {
-        const createdWorktree = await client.worktree
-          .create({ directory: projectDirectory })
-          .then((x) => x.data)
-          .catch((err) => {
-            showToast({
-              title: language.t("prompt.toast.worktreeCreateFailed.title"),
-              description: errorMessage(err),
-            })
-            return undefined
-          })
-
-        if (!createdWorktree?.directory) {
-          showToast({
-            title: language.t("prompt.toast.worktreeCreateFailed.title"),
-            description: language.t("common.requestFailed"),
-          })
-          return
-        }
-        WorktreeState.pending(createdWorktree.directory)
-        sessionDirectory = createdWorktree.directory
-      }
-
-      if (worktreeSelection !== "main" && worktreeSelection !== "create") {
-        sessionDirectory = worktreeSelection
-      }
-
-      if (sessionDirectory !== projectDirectory) {
-        client = sdk.createClient({
-          directory: sessionDirectory,
-          throwOnError: true,
-        })
-        globalSync.child(sessionDirectory)
-      }
-
-      input.onNewSessionWorktreeReset?.()
-    }
-
-    // 261003 Red 新会话草稿清理提前到这里：session.create 往返期间（局域网可到秒级）用户
-    // 可能继续输入，清理若仍放在发送前，会把等待期间的新输入一并抹掉；且原实现对
-    // scope.dir 做 workspace reset，选 worktree 时清的是目标目录、用户实际输入的原目录
-    // 草稿永远清不掉，下次新建页就会「复活」。创建失败时在下方 !session 分支用快照恢复。
-    if (isNewSession && routeDir) prompt.reset({ dir: routeDir })
-
+    // 261018 Red 防重入必须早于 worktree.create：两次 Enter 会在它的 await 处交错，
+    // 各建一个 worktree 之后才被 session.create 的 guard 挡住，留下孤儿目录和重复的
+    // 工作区草稿清理。锁从第一个副作用起持有，worktree 与 session.create 同属创建窗口。
     let session = input.info()
-    if (!session && isNewSession) {
-      // 260909 Red 防重入：session.create 往返期间（局域网可到秒级）二次 Enter
-      // 会并发建出两个会话。只圈创建窗口——排队补消息的语义不受影响。
+    const needsSessionCreate = isNewSession && !session
+    if (needsSessionCreate) {
       if (creatingSession) {
         event.preventDefault()
         return
       }
       creatingSession = true
-      try {
+    }
+
+    try {
+      if (isNewSession) {
+        if (worktreeSelection === "create") {
+          const createdWorktree = await client.worktree
+            .create({ directory: projectDirectory })
+            .then((x) => x.data)
+            .catch((err) => {
+              showToast({
+                title: language.t("prompt.toast.worktreeCreateFailed.title"),
+                description: errorMessage(err),
+              })
+              return undefined
+            })
+
+          if (!createdWorktree?.directory) {
+            showToast({
+              title: language.t("prompt.toast.worktreeCreateFailed.title"),
+              description: language.t("common.requestFailed"),
+            })
+            return
+          }
+          WorktreeState.pending(createdWorktree.directory)
+          sessionDirectory = createdWorktree.directory
+        }
+
+        if (worktreeSelection !== "main" && worktreeSelection !== "create") {
+          sessionDirectory = worktreeSelection
+        }
+
+        if (sessionDirectory !== projectDirectory) {
+          client = sdk.createClient({
+            directory: sessionDirectory,
+            throwOnError: true,
+          })
+          globalSync.child(sessionDirectory)
+        }
+
+        input.onNewSessionWorktreeReset?.()
+      }
+
+      // 261003 Red 新会话草稿清理提前到这里：session.create 往返期间（局域网可到秒级）用户
+      // 可能继续输入，清理若仍放在发送前，会把等待期间的新输入一并抹掉；且原实现对
+      // scope.dir 做 workspace reset，选 worktree 时清的是目标目录、用户实际输入的原目录
+      // 草稿永远清不掉，下次新建页就会「复活」。创建失败时在下方 !session 分支用快照恢复。
+      if (isNewSession && routeDir) prompt.reset({ dir: routeDir })
+
+      if (!session && isNewSession) {
+        // 260909 Red 会话创建窗口（局域网可到秒级）二次 Enter 会并发建出两个会话。
+        // 排队补消息的语义不受影响——锁只在 needsSessionCreate 时成立。
         const soul = input.lastSoul?.()
         const created = await (
           soul
@@ -445,9 +458,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
           navigate(`/${base64Encode(sessionDirectory)}/session/${session.id}`)
         }
-      } finally {
-        creatingSession = false
       }
+    } finally {
+      // 任何提前 return（worktree 失败、创建失败）都从这里释放，锁不会漏。
+      if (needsSessionCreate) creatingSession = false
     }
     if (!session) {
       // 261003 Red 草稿已在创建前清空；创建失败必须把快照写回原目录，否则静默丢稿。
@@ -599,7 +613,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       })
     }
 
-    removeCommentItems(commentItems)
+    removeCommentItems(commentItems, scope)
     clearInput()
 
     const waitForWorktree = async () => {
@@ -616,7 +630,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           sync.set("session_status", session.id, { type: "idle" })
         }
         removeOptimisticMessage()
-        restoreCommentItems(commentItems)
+        restoreCommentItems(commentItems, scope)
         restoreInput()
       }
 
@@ -680,7 +694,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           description: errorMessage(err),
         })
         removeOptimisticMessage()
-        restoreCommentItems(commentItems)
+        restoreCommentItems(commentItems, scope)
         restoreInput()
         setSendError(errorMessage(err))
       })
