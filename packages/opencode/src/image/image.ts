@@ -22,6 +22,7 @@ const MAX_HEIGHT = 2000
 const MAX_PIXELS = MAX_WIDTH * MAX_HEIGHT
 const MAX_DIMENSION = 8192
 const AUTO_RESIZE = true
+const MAX_SOURCE_PIXELS = 32_000_000
 // 260822 cc 必须严格单调递减，否则后面的档位不可达。
 //
 // 候选数组的实际顺序是 [png, q80, q85, q70, q55, q40]，.find() 取第一个字节数达标的。
@@ -111,6 +112,30 @@ export function formatResizeNotice(report: ResizeReport): string {
   )
 }
 
+export function pngDimensions(bytes: Uint8Array) {
+  if (
+    bytes.byteLength < 24 ||
+    bytes[0] !== 0x89 ||
+    bytes[1] !== 0x50 ||
+    bytes[2] !== 0x4e ||
+    bytes[3] !== 0x47 ||
+    bytes[4] !== 0x0d ||
+    bytes[5] !== 0x0a ||
+    bytes[6] !== 0x1a ||
+    bytes[7] !== 0x0a ||
+    bytes[12] !== 0x49 ||
+    bytes[13] !== 0x48 ||
+    bytes[14] !== 0x44 ||
+    bytes[15] !== 0x52
+  )
+    return
+  const header = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const width = header.getUint32(16, false)
+  const height = header.getUint32(20, false)
+  if (!width || !height) return
+  return { width, height }
+}
+
 export interface Interface {
   readonly normalize: (
     input: MessageV2.FilePart,
@@ -152,11 +177,29 @@ export const layer = Layer.effect(
 
       const base64 = input.url.slice(input.url.indexOf(";base64,") + ";base64,".length)
       const bytes = Buffer.byteLength(base64, "utf8")
+      const source = Buffer.from(base64, "base64")
+      // 261018 Red PNG 头部像素预检不再按 payload 大小设门槛：纯色/低熵大图的 base64 可能
+      // 只有几百 KB，解码后却是数十万像素 × 4 字节。头部只读 24 字节，始终检查。
+      // 头部不可读时仍按原口径：只有本来就可能超限的图才当作解码失败。
+      if (input.mime === "image/png") {
+        const dimensions = pngDimensions(source)
+        if (dimensions === undefined) {
+          if (bytes > info.maxBase64Bytes) return yield* new DecodeError()
+        } else if (dimensions.width * dimensions.height > MAX_SOURCE_PIXELS)
+          return yield* new SizeError({
+            bytes,
+            max: info.maxBase64Bytes,
+            width: dimensions.width,
+            height: dimensions.height,
+            max_width: info.maxWidth,
+            max_height: info.maxHeight,
+          })
+      }
 
       const photon = yield* loadPhoton
 
       const decoded = yield* Effect.try({
-        try: () => photon.PhotonImage.new_from_byteslice(Buffer.from(base64, "base64")),
+        try: () => photon.PhotonImage.new_from_byteslice(source),
         catch: (error) => {
           log.warn("failed to decode image", { error })
           return new DecodeError()
@@ -244,6 +287,8 @@ export const layer = Layer.effect(
               to_mime: candidate.mime,
               from: `${originalWidth}x${originalHeight}`,
               to: `${size.width}x${size.height}`,
+              source_bytes: source.byteLength,
+              output_base64_bytes: candidate.bytes,
             })
             return {
               part: {

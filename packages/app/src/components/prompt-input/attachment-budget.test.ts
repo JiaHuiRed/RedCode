@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import {
+  MAX_ARCHIVE_BYTES,
   MAX_ATTACHMENT_BYTES,
-  MAX_PROMPT_ATTACHMENTS,
+  MAX_PROMPT_ARCHIVE_BYTES,
   MAX_PROMPT_ATTACHMENT_BYTES,
+  MAX_PROMPT_ATTACHMENTS,
+  archiveFits,
   attachmentBytes,
   attachmentFits,
 } from "./attachment-budget"
@@ -58,5 +61,35 @@ describe("attachmentFits", () => {
     const pending = { bytes: 0, count: 0 }
     expect(attachmentFits(10, parts, pending)).toBeFalse()
     expect(pending).toEqual({ bytes: 0, count: 0 })
+  })
+})
+
+// 261018 Red 压缩包独立预算：36 MiB 的调试包是正常用途，不应被 base64 的 10 MiB 单件线拦下。
+describe("archiveFits", () => {
+  const zip = 36 * 1024 * 1024
+  const none = { bytes: 0, count: 0 }
+
+  test("accepts a 36 MiB archive above the inline per-file ceiling", () => {
+    expect(zip).toBeGreaterThan(MAX_ATTACHMENT_BYTES)
+    expect(archiveFits(zip, [], [], none)).toBeTrue()
+  })
+
+  test("rejects an archive above its own ceiling", () => {
+    expect(archiveFits(MAX_ARCHIVE_BYTES + 1, [], [], none)).toBeFalse()
+  })
+
+  test("keeps archive bytes separate from the inline image total", () => {
+    const images = [part(MAX_PROMPT_ATTACHMENT_BYTES)]
+    expect(archiveFits(zip, images, [], none)).toBeTrue()
+  })
+
+  test("shares the attachment count ceiling", () => {
+    const images = Array.from({ length: MAX_PROMPT_ATTACHMENTS }, () => part(10))
+    expect(archiveFits(zip, images, [], none)).toBeFalse()
+  })
+
+  test("counts archives that are still being written", () => {
+    const pending = { bytes: MAX_PROMPT_ARCHIVE_BYTES, count: 0 }
+    expect(archiveFits(1, [], [], pending)).toBeFalse()
   })
 })

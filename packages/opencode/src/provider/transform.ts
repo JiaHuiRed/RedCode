@@ -22,7 +22,7 @@ function mimeToModality(mime: string): Modality | undefined {
 // 261011 Red 压缩包 mime 集合：与 GUI 侧 files.ts 的 ARCHIVE_MIMES 同口径（两侧无共享包，
 // 改任一侧必须同步另一侧）。AI SDK 对非 pdf 的 application/* file part 会直接 throw
 // UnsupportedFunctionalityError，unsupportedParts 里要抢在它之前换成文本占位。
-const ARCHIVE_MIMES = new Set([
+export const ARCHIVE_MIMES = new Set([
   "application/zip",
   "application/x-zip-compressed",
   "application/x-7z-compressed",

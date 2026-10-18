@@ -29,6 +29,36 @@ function part(mime: string, data: string) {
 }
 
 describe("Image", () => {
+  it.effect("rejects an oversized PNG pixel header before decoder allocation", () =>
+    Effect.gen(function* () {
+      const data = Buffer.alloc(4 * 1024 * 1024)
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(data)
+      data.writeUInt32BE(13, 8)
+      data.write("IHDR", 12)
+      data.writeUInt32BE(100_000, 16)
+      data.writeUInt32BE(100_000, 20)
+      const image = yield* Image.Service
+      const exit = yield* image.normalize(part("image/png", data.toString("base64"))).pipe(Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        const error = Cause.squash(exit.cause)
+        expect(error).toBeInstanceOf(Image.SizeError)
+      }
+    }),
+  )
+
+  it.effect("rejects a truncated large PNG header before decoder allocation", () =>
+    Effect.gen(function* () {
+      const data = Buffer.alloc(4 * 1024 * 1024)
+      const image = yield* Image.Service
+      const exit = yield* image.normalize(part("image/png", data.toString("base64"))).pipe(Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(Image.DecodeError)
+    }),
+  )
+
   it.effect("normalizes generated png and jpeg attachments", () =>
     Effect.gen(function* () {
       const photon = yield* Effect.promise(() => import("@silvia-odwyer/photon-node"))

@@ -17,6 +17,21 @@ describe("attachment inline budget", () => {
     const encoded = Buffer.alloc(cap).toString("base64").length
     expect(encoded).toBeLessThanOrEqual(ImageTokens.MAX_ATTACHMENT_BASE64_BYTES)
   })
+
+  test("大图片按输入顺序受单图 10 MiB 和消息总量 20 MiB 限制", () => {
+    const parts = ["first", "second", "third", "too-large"]
+    const plan = ImageTokens.splitByImageSourceBudget(
+      [
+        { part: parts[0], bytes: 7 * 1024 * 1024 },
+        { part: parts[1], bytes: 7 * 1024 * 1024 },
+        { part: parts[2], bytes: 7 * 1024 * 1024 },
+        { part: parts[3], bytes: 10 * 1024 * 1024 + 1 },
+      ],
+    )
+    expect([...plan.accepted]).toEqual(["first", "second"])
+    expect([...plan.overflow]).toEqual(["third", "too-large"])
+    expect(plan.total).toBe(14 * 1024 * 1024)
+  })
 })
 
 describe("splitByAttachmentBudget", () => {

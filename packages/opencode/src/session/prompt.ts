@@ -11,6 +11,7 @@ import { SessionRevert } from "./revert"
 import * as Session from "./session"
 import { Agent } from "../agent/agent"
 import { Provider } from "@/provider/provider"
+import { ARCHIVE_MIMES } from "@/provider/transform"
 import { ModelID, ProviderID } from "../provider/schema"
 import { type Tool as AITool, tool, jsonSchema, type ModelMessage } from "ai"
 import type { JSONSchema7 } from "@ai-sdk/provider"
@@ -180,6 +181,27 @@ export const layer = Layer.effect(
     const llm = yield* LLM.Service
     const references = yield* Reference.Service
     const events = yield* EventV2Bridge.Service
+
+    const readBoundedImage = Effect.fnUntraced(function* (filepath: string, maxBytes: number) {
+      return yield* Effect.scoped(
+        Effect.gen(function* () {
+          const file = yield* fsys.open(filepath, { flag: "r" })
+          const buffer = new Uint8Array(maxBytes)
+          let offset = 0
+          while (offset < maxBytes) {
+            const chunk = yield* file.readAlloc(Math.min(maxBytes - offset, 64 * 1024))
+            if (Option.isNone(chunk) || chunk.value.byteLength === 0) break
+            buffer.set(chunk.value, offset)
+            offset += chunk.value.byteLength
+          }
+          return buffer.subarray(0, offset)
+        }),
+      ).pipe(
+        // 261018 Red resolvePart 的契约不暴露 typed error；读取失败在这里转 defect，
+        // 与上面 fsys.readFile 分支的 catch(Effect.die) 同口径。
+        Effect.catch(Effect.die),
+      )
+    })
 
     /**
      * 260904 cc MCP 服务器自报用途说明拼成的提示词块。
@@ -841,6 +863,10 @@ export const layer = Layer.effect(
             case "file:": {
               log.info("file", { mime: part.mime })
               const filepath = fileURLToPath(part.url)
+              // 261018 Red 压缩包只落盘不内联：不读盘、不转 base64，保留 file:// 交给
+              // provider/transform 换成稳定的路径占位文本。走下面的通用二进制分支会先被
+              // 3.75 MiB 读盘闸门拒绝，或把整包 base64 化——两条都与落盘设计相反。
+              if (ARCHIVE_MIMES.has(part.mime)) return [{ ...part, messageID: info.id, sessionID: input.sessionID }]
               const referenceContext = yield* referenceContextFromFilePart(part, filepath)
               const mime = (yield* fsys.isDir(filepath)) ? "application/x-directory" : part.mime
 
@@ -963,15 +989,46 @@ export const layer = Layer.effect(
               // 261015 Red 读盘前的字节闸门（审计 A02）。这个分支是先把整个文件读进来再 base64
               // （≈1.37× 常驻），此前没有任何尺寸检查；配合下方的 unbounded 并发，N 个附件就是
               // N 份完整副本。超限一个字节都不读，只回一句可读说明 —— 文件仍在磁盘上。
-              const stat = yield* fsys.stat(filepath).pipe(Effect.orElseSucceed(() => undefined))
-              if (stat && ImageTokens.attachmentInlineBytesExceeded(stat.size)) {
+              const stat = mime.startsWith("image/")
+                ? undefined
+                : yield* fsys.stat(filepath).pipe(Effect.orElseSucceed(() => undefined))
+              if (stat && ImageTokens.attachmentInlineBytesExceeded(stat.size) && !mime.startsWith("image/")) {
                 log.warn("attachment over inline byte budget", { mime, bytes: stat.size })
                 return [
-                  ...(referenceContext ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }] : []),
+                  ...(referenceContext
+                    ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }]
+                    : []),
                   syntheticText(
                     `Attachment not inlined: ${part.filename} is ${stat.size} bytes, over the inline budget of ` +
                       `${ImageTokens.MAX_ATTACHMENT_BASE64_BYTES} base64 bytes. The file is still on disk.`,
                   ),
+                ]
+              }
+              const imageSourceSize = mime.startsWith("image/") ? imageSourceSizes.get(part) : undefined
+              if (mime.startsWith("image/") && imageSourceSize === undefined) {
+                log.warn("image attachment rejected before read", { mime, reason: "source size preflight failed" })
+                return [
+                  ...(referenceContext
+                    ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }]
+                    : []),
+                  syntheticText(`Image attachment not inlined: ${part.filename} source size could not be checked.`),
+                ]
+              }
+              const bytes =
+                imageSourceSize === undefined
+                  ? yield* fsys.readFile(filepath).pipe(Effect.catch(Effect.die))
+                  : yield* readBoundedImage(filepath, Math.min(imageSourceSize, ImageTokens.MAX_IMAGE_SOURCE_BYTES) + 1)
+              if (imageSourceSize !== undefined && bytes.byteLength > imageSourceSize) {
+                log.warn("image attachment changed after preflight", {
+                  mime,
+                  preflight_bytes: imageSourceSize,
+                  bytes_read: bytes.byteLength,
+                })
+                return [
+                  ...(referenceContext
+                    ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }]
+                    : []),
+                  syntheticText(`Image attachment not inlined: ${part.filename} changed size during reading.`),
                 ]
               }
               return [
@@ -981,9 +1038,7 @@ export const layer = Layer.effect(
                   messageID: info.id,
                   sessionID: input.sessionID,
                   type: "file",
-                  url:
-                    `data:${mime};base64,` +
-                    Buffer.from(yield* fsys.readFile(filepath).pipe(Effect.catch(Effect.die))).toString("base64"),
+                  url: `data:${mime};base64,${Buffer.from(bytes).toString("base64")}`,
                   mime,
                   filename: part.filename!,
                   source: part.source,
@@ -1022,6 +1077,58 @@ export const layer = Layer.effect(
           overBudget: overBudget.size,
           max: ImageTokens.MAX_ATTACHMENTS,
         })
+      const imageSources = yield* Effect.forEach(
+        input.parts,
+        (part) => {
+          if (part.type !== "file" || !part.mime.startsWith("image/") || !part.url.startsWith("file:"))
+            return Effect.succeed(undefined)
+          const filepath = fileURLToPath(part.url)
+          return fsys.stat(filepath).pipe(
+            Effect.exit,
+            Effect.map((stat) => ({
+              part,
+              bytes: Exit.isSuccess(stat) ? Number(stat.value.size) : undefined,
+            })),
+          )
+        },
+        { concurrency: 1 },
+      )
+      const knownImageSources = imageSources.flatMap((item) =>
+        item && item.bytes !== undefined ? [{ part: item.part, bytes: item.bytes }] : [],
+      )
+      const imageSourceSizes = new Map(knownImageSources.map((item) => [item.part, item.bytes]))
+      const sourcePlan = ImageTokens.splitByImageSourceBudget(knownImageSources)
+      const failedPreflight = new Set(
+        imageSources.flatMap((item) => (item?.bytes === undefined && item ? [item.part] : [])),
+      )
+      const oversizedNonPng = new Set(
+        knownImageSources
+          .filter(
+            (item) =>
+              item.bytes > Math.floor((ImageTokens.MAX_ATTACHMENT_BASE64_BYTES * 3) / 4) &&
+              item.part.mime !== "image/png",
+          )
+          .map((item) => item.part),
+      )
+      const rejectedImages = new Set<Extract<PromptInput["parts"][number], { type: "file" }>>([
+        ...sourcePlan.overflow,
+        ...oversizedNonPng,
+        ...failedPreflight,
+      ])
+      for (const part of rejectedImages) {
+        const source = imageSources.find((item) => item?.part === part)
+        log.warn("image attachment rejected before read", {
+          mime: part.type === "file" ? part.mime : undefined,
+          bytes: source?.bytes,
+          per_image_limit: ImageTokens.MAX_IMAGE_SOURCE_BYTES,
+          message_limit: ImageTokens.MAX_IMAGE_SOURCE_TOTAL_BYTES,
+          reason: failedPreflight.has(part)
+            ? "source size preflight failed"
+            : sourcePlan.overflow.has(part)
+              ? "source budget exceeded"
+              : "large source format is not preflighted",
+        })
+      }
       const resolvedParts = yield* Effect.forEach(
         input.parts,
         (part) =>
@@ -1033,7 +1140,21 @@ export const layer = Layer.effect(
                   } — a single message may inline at most ${ImageTokens.MAX_ATTACHMENTS} files. It is still on disk.`,
                 ),
               ])
-            : resolvePart(part),
+            : part.type === "file" && rejectedImages.has(part)
+              ? Effect.succeed([
+                  syntheticText(
+                    failedPreflight.has(part)
+                      ? `Image attachment not inlined: ${
+                          part.type === "file" ? (part.filename ?? "unnamed image") : "image"
+                        } — its source size could not be checked, so it was not read.`
+                      : `Image attachment not inlined: ${
+                          part.type === "file" ? (part.filename ?? "unnamed image") : "image"
+                        } — large image sources must be PNG and at most ${
+                          ImageTokens.MAX_IMAGE_SOURCE_BYTES / (1024 * 1024)
+                        } MiB each and ${ImageTokens.MAX_IMAGE_SOURCE_TOTAL_BYTES / (1024 * 1024)} MiB per message. The file is still on disk.`,
+                  ),
+                ])
+              : resolvePart(part),
         // 261015 Red 并发压到 8（家规：instruction.ts 读本地文件用 8、拉远端用 4）。
         // 数量封顶后最坏峰值 ≈ 并发 × 单件常驻；单件常驻**实测** 2.33× 文件字节（原始 buffer 与
         // base64 字符串同时在场，见 .redcode/temp/a02-probe.mjs 的 RSS 口径），字节闸门封在
@@ -1055,21 +1176,52 @@ export const layer = Layer.effect(
         { message: info, parts: resolvedParts },
       )
 
-      // 260822 cc normalize 现在返回 { part, resize? }。这里只取 part：用户手动附件被缩过时
-      // 也该告诉模型（同 processor.ts 的工具产出路径），但那要在 file part 旁插一条合成文本
-      // part，而 parts 会经 981 行 sessions.updatePart 持久化、还要过 TUI/GUI 两端渲染 ——
-      // 是独立一步。工具产出那条路（read/webfetch/MCP/plugin/task，webqa 截图走它）已覆盖。
-      const parts = yield* Effect.forEach(resolvedParts, (part) =>
-        part.type === "file" && part.mime.startsWith("image/")
-          ? image.normalize(part).pipe(
-              Effect.map((result) => result.part),
-              Effect.catchIf(
-                (error) => error instanceof Image.ResizerUnavailableError,
-                () => Effect.succeed(part),
-              ),
-            )
-          : Effect.succeed(part),
-      )
+      // 261018 Red 手动附件只在这处 normalize 一次；缩放报告和规范化 part 一并持久化，
+      // 让模型与会话重开后的图片视图都对应同一份数据。
+      const parts = yield* Effect.forEach(resolvedParts, (part) => {
+        if (part.type !== "file" || !part.mime.startsWith("image/")) return Effect.succeed([part])
+        const payload = part.url.slice(part.url.indexOf(";base64,") + ";base64,".length)
+        const sourceBytes = Buffer.from(payload, "base64").byteLength
+        const requiresResize = ImageTokens.attachmentInlineBytesExceeded(sourceBytes)
+        return image.normalize(part).pipe(
+          Effect.map((result) => {
+            const output = result.part.url.slice(result.part.url.indexOf(";base64,") + ";base64,".length)
+            const outputBytes = Buffer.byteLength(output, "utf8")
+            if (outputBytes > ImageTokens.MAX_ATTACHMENT_BASE64_BYTES) {
+              log.warn("normalized image exceeds attachment budget", {
+                mime: result.part.mime,
+                source_bytes: sourceBytes,
+                output_base64_bytes: outputBytes,
+                max_base64_bytes: ImageTokens.MAX_ATTACHMENT_BASE64_BYTES,
+              })
+              return [
+                assign(
+                  syntheticText("Image attachment not inlined: its normalized image exceeds the transport budget."),
+                ),
+              ]
+            }
+            return result.resize
+              ? [assign(syntheticText(Image.formatResizeNotice(result.resize))), result.part]
+              : [result.part]
+          }),
+          Effect.catchIf(
+            (error) =>
+              error instanceof Image.ResizerUnavailableError ||
+              (requiresResize && (error instanceof Image.SizeError || error instanceof Image.DecodeError)),
+            (error) =>
+              Effect.sync(() => {
+                if (!requiresResize) return [part]
+                log.warn("large image attachment could not be normalized", {
+                  mime: part.mime,
+                  source_bytes: sourceBytes,
+                  error: error._tag,
+                })
+                return [assign(syntheticText("Image attachment not inlined: it could not be safely normalized."))]
+              }),
+          ),
+          Effect.map((items) => items),
+        )
+      }).pipe(Effect.map((items) => items.flat()))
 
       const parsed = decodeMessageInfo(info, { errors: "all", propertyOrder: "original" })
       if (Exit.isFailure(parsed)) {

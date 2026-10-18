@@ -67,3 +67,28 @@ N 个附件就是 N 份完整副本。
   波动（项目记忆），未定位到失败用例，如实记下而不是当作已通过。
 - 模型可见四问：① 无提示词 / 工具 schema 改动；② token 无变化（正常路径内容相同）；③ 前缀不受影响；
   ④ **新增两条硬上限**（单件 3.75 MiB、单条消息 32 个文件附件）—— 这正是本项的目的。
+
+## 261018 修订：源预算与压缩包分流
+
+原闸门按「内联后 base64」设限，但它作用在**原始文件字节**上，于是出现两处错位：
+
+- **图片**：GUI 允许 10 MiB/20 MiB 上传，服务端在 3.75 MiB 处以「not inlined」直接拒绝；
+  3840×2088 的普通截图（约 8 MiB）必然命中。图片本就该进 `Image.normalize` 再判断预算，
+  不该在原始字节上套 base64 线。
+- **压缩包**：设计上只落盘、绝不作 base64（`files.ts` + `provider/transform` 的路径占位），
+  却同时被前端 10 MiB 预算和后端 3.75 MiB 闸门拒绝——两条线都为 base64 常驻而设，对它没有意义。
+
+修订后：
+
+- 图片走**源输入预算**（`MAX_IMAGE_SOURCE_BYTES` / `MAX_IMAGE_SOURCE_TOTAL_BYTES`），PNG 头部像素
+  ≤ 32 MP 预检始终执行（低熵大图 payload 小、解码大），预检后按「预检尺寸 + 1」有界读取，
+  读取期间变大即拒绝；`stat` 失败 fail-closed。规范化输出仍受 5 MiB base64 硬顶，且只 normalize
+  一次、结果与缩放说明一并持久化。非 PNG 大图不支持安全缩放，明确拒绝。
+- 压缩包在 `resolvePart` 的 `file:` 分支直通：不读盘、不 base64，保留 `file://` 给 provider 层
+  换占位；前端改用独立预算（单件 64 MiB、单条消息 128 MiB，数量共享），上限按一次性读入 + IPC
+  复制定，仍是有界值。
+- 备选否决：把压缩包也送进 `Image.normalize`（语义不符）、提高 base64 线到 10 MiB（会让图片常驻
+  翻倍）、对压缩包不设上限（`arrayBuffer` 一次性读入没有天花板）。
+- 验证：`prompt.test.ts` + `image.test.ts` + `attachment-budget.test.ts` 117 pass / 13 skip；
+  app 附件与标题套件 44 pass；新增压缩包直通回归 1 pass。未复现的真实场景：用户在 GUI 实际拖入
+  36 MiB 压缩包——前端预算与后端直通都有回归，但未跑 Electron 端到端。

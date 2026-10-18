@@ -91,6 +91,9 @@ export const TOOL_RESULT_TOKEN_BUDGET = 14_000
 // 260928 Red MCP limits do not cover plugin and replay paths, so the shared fitter enforces them too.
 export const MAX_ATTACHMENT_BASE64_BYTES = 5 * 1024 * 1024
 export const MAX_ATTACHMENTS = 32
+// 261018 Red GUI 图片附件限制为每张 10 MiB、每条消息总计 20 MiB。
+export const MAX_IMAGE_SOURCE_BYTES = 10 * 1024 * 1024
+export const MAX_IMAGE_SOURCE_TOTAL_BYTES = 20 * 1024 * 1024
 
 /**
  * 261015 Red 读盘前的附件字节闸门（审计 A02）。
@@ -103,6 +106,25 @@ export const MAX_ATTACHMENTS = 32
  */
 export function attachmentInlineBytesExceeded(bytes: number | bigint): boolean {
   return Number(bytes) > Math.floor((MAX_ATTACHMENT_BASE64_BYTES * 3) / 4)
+}
+
+export function splitByImageSourceBudget<T>(
+  items: readonly { part: T; bytes: number }[],
+  maxEach = MAX_IMAGE_SOURCE_BYTES,
+  maxTotal = MAX_IMAGE_SOURCE_TOTAL_BYTES,
+) {
+  let total = 0
+  const accepted = new Set<T>()
+  const overflow = new Set<T>()
+  for (const item of items) {
+    if (item.bytes > maxEach || total + item.bytes > maxTotal) {
+      overflow.add(item.part)
+      continue
+    }
+    total += item.bytes
+    accepted.add(item.part)
+  }
+  return { accepted, overflow, total }
 }
 
 /**

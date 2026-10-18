@@ -185,7 +185,12 @@ const blockingProcessor = Layer.succeed(
   }),
 )
 
-function makePrompt(input?: { processor?: "blocking" }) {
+function makePrompt(input?: {
+  processor?: "blocking"
+  image?: Layer.Layer<Image.Service>
+  filesystem?: Layer.Layer<AppFileSystem.Service>
+}) {
+  const filesystem = input?.filesystem ?? AppFileSystem.defaultLayer
   const deps = Layer.mergeAll(
     Session.defaultLayer,
     Storage.defaultLayer,
@@ -200,7 +205,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
     ProviderSvc.defaultLayer,
     lsp,
     mcp,
-    AppFileSystem.defaultLayer,
+    filesystem,
     BackgroundJob.defaultLayer,
     status,
     SyncEvent.defaultLayer,
@@ -225,12 +230,13 @@ function makePrompt(input?: { processor?: "blocking" }) {
     Layer.provideMerge(deps),
   )
   const trunc = Truncate.layer.pipe(Layer.provideMerge(deps))
+  const imageLayer = input?.image ?? Image.defaultLayer
   const proc =
     input?.processor === "blocking"
       ? blockingProcessor
       : SessionProcessor.layer.pipe(
           Layer.provide(summary),
-          Layer.provide(Image.defaultLayer),
+          Layer.provide(imageLayer),
           Layer.provide(RuntimeFlags.layer({})),
           Layer.provideMerge(deps),
         )
@@ -241,7 +247,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
   )
   return SessionPrompt.layer.pipe(
     Layer.provide(SessionRevert.defaultLayer),
-    Layer.provide(Image.defaultLayer),
+    Layer.provide(imageLayer),
     Layer.provide(Reference.defaultLayer),
     Layer.provide(summary),
     Layer.provideMerge(run),
@@ -258,17 +264,66 @@ function makePrompt(input?: { processor?: "blocking" }) {
   )
 }
 
-function makeHttp(input?: { processor?: "blocking" }) {
+function makeHttp(input?: {
+  processor?: "blocking"
+  image?: Layer.Layer<Image.Service>
+  filesystem?: Layer.Layer<AppFileSystem.Service>
+}) {
   return Layer.mergeAll(TestLLMServer.layer, makePrompt(input))
 }
 
-function makeHttpNoLLMServer(input?: { processor?: "blocking" }) {
+function makeHttpNoLLMServer(input?: {
+  processor?: "blocking"
+  image?: Layer.Layer<Image.Service>
+  filesystem?: Layer.Layer<AppFileSystem.Service>
+}) {
   return makePrompt(input)
 }
 
 const it = testEffect(makeHttp())
 const noLLMServer = testEffect(makeHttpNoLLMServer())
 const raceNoLLMServer = testEffect(makeHttpNoLLMServer({ processor: "blocking" }))
+const noResizerServer = testEffect(
+  makeHttpNoLLMServer({
+    image: Layer.mock(Image.Service, {
+      normalize: () => Effect.fail(new Image.ResizerUnavailableError()),
+    }),
+  }),
+)
+const overBudgetNormalizerServer = testEffect(
+  makeHttpNoLLMServer({
+    image: Layer.mock(Image.Service, {
+      normalize: (part) =>
+        Effect.succeed({
+          part: {
+            ...part,
+            url: `data:image/png;base64,${"A".repeat(5 * 1024 * 1024 + 1)}`,
+          },
+        }),
+    }),
+  }),
+)
+const imageReadProbe = {
+  path: "",
+  failFirstStat: false,
+  reportedSize: undefined as number | undefined,
+  statCalls: 0,
+  readBytes: 0,
+  readRequests: [] as number[],
+  normalized: [] as string[],
+}
+const boundedImageServer = testEffect(
+  makeHttpNoLLMServer({
+    filesystem: instrumentPromptFile(imageReadProbe),
+    image: Layer.mock(Image.Service, {
+      normalize: (part) =>
+        Effect.sync(() => {
+          imageReadProbe.normalized.push(part.filename ?? "unnamed")
+          return { part }
+        }),
+    }),
+  }),
+)
 const unix = process.platform !== "win32" ? it.instance : it.instance.skip
 const unixNoLLMServer = process.platform !== "win32" ? noLLMServer.instance : noLLMServer.instance.skip
 
@@ -317,6 +372,74 @@ function providerCfg(url: string) {
       },
     },
   }
+}
+
+function instrumentPromptFile(input: {
+  path: string
+  failFirstStat?: boolean
+  reportedSize?: number
+  statCalls: number
+  readBytes: number
+  readRequests: number[]
+}) {
+  return Layer.effect(
+    AppFileSystem.Service,
+    Effect.gen(function* () {
+      const fs = yield* AppFileSystem.Service
+      return AppFileSystem.Service.of({
+        ...fs,
+        stat: (filepath) => {
+          if (filepath !== input.path) return fs.stat(filepath)
+          input.statCalls++
+          if (input.failFirstStat && input.statCalls === 1)
+            // stat 的签名错误面是 PlatformError，测试只需要「这次 stat 没拿到尺寸」；
+            // 用 defect 表达同样会走 Exit 失败分支，且不必伪造 PlatformError 结构。
+            return Effect.die(new Error("stat failed"))
+          return fs
+            .stat(filepath)
+            .pipe(
+              Effect.map((info) =>
+                input.reportedSize === undefined
+                  ? info
+                  : { ...info, size: input.reportedSize as unknown as typeof info.size },
+              ),
+            )
+        },
+        readFile: (filepath) =>
+          fs.readFile(filepath).pipe(
+            Effect.tap((bytes) =>
+              Effect.sync(() => {
+                if (filepath === input.path) input.readBytes += bytes.byteLength
+              }),
+            ),
+          ),
+        open: (filepath, options) =>
+          fs.open(filepath, options).pipe(
+            Effect.map(
+              (file) =>
+                new Proxy(file, {
+                  get(target, property, receiver) {
+                    if (property === "readAlloc") {
+                      return (bytes: number) => {
+                        if (filepath === input.path) input.readRequests.push(bytes)
+                        return target.readAlloc(bytes).pipe(
+                          Effect.tap((chunk) =>
+                            Effect.sync(() => {
+                              if (filepath === input.path && Option.isSome(chunk))
+                                input.readBytes += chunk.value.byteLength
+                            }),
+                          ),
+                        )
+                      }
+                    }
+                    return Reflect.get(target, property, receiver)
+                  },
+                }) as typeof file,
+            ),
+          ),
+      })
+    }),
+  ).pipe(Layer.provide(AppFileSystem.defaultLayer))
 }
 
 // 260828 cc 老名字 general 经别名解析到 execute，而 execute 自带 model: opencode-go/glm-5.3-flash
@@ -1490,8 +1613,11 @@ for (const native of [false, true]) {
         ...providerCfg(url),
         compaction: {
           native: {
-            enabled: native, trigger_tokens: 60000, target_tokens: 40000,
-            reminder_tokens: 54000, summary_max_tokens: 1000,
+            enabled: native,
+            trigger_tokens: 60000,
+            target_tokens: 40000,
+            reminder_tokens: 54000,
+            summary_max_tokens: 1000,
           },
         },
       }))
@@ -1501,7 +1627,10 @@ for (const native of [false, true]) {
       const chat = yield* sessions.create({ title: "Manual compaction during a tool turn" })
       const history = yield* seed(chat.id, { finish: "stop" })
       yield* sessions.updatePart({
-        id: PartID.ascending(), messageID: history.assistant.id, sessionID: chat.id, type: "text",
+        id: PartID.ascending(),
+        messageID: history.assistant.id,
+        sessionID: chat.id,
+        type: "text",
         text: "Completed historical work retained for reference. ".repeat(500),
       })
       const file = path.join(dir, "manual-compaction-read.txt")
@@ -1510,16 +1639,22 @@ for (const native of [false, true]) {
       yield* llm.push(reply().wait(held.promise).tool("read", { filePath: file }).item())
       yield* llm.text("Earlier work summarized; continue the current implementation.")
       yield* llm.text("Current implementation continues.")
-      const run = yield* prompt.prompt({
-        sessionID: chat.id, agent: "build", model: ref,
-        parts: [{ type: "text", text: "Read the evidence and finish the implementation." }],
-      }).pipe(Effect.forkChild)
+      const run = yield* prompt
+        .prompt({
+          sessionID: chat.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "Read the evidence and finish the implementation." }],
+        })
+        .pipe(Effect.forkChild)
       yield* llm.wait(1)
       yield* compaction.create({ sessionID: chat.id, agent: "build", model: ref, auto: false })
       held.resolve()
       const result = yield* Fiber.join(run).pipe(Effect.timeout("10 seconds"))
       expect(result.info.role === "assistant" && result.info.summary).not.toBe(true)
-      expect(result.parts.some((part) => part.type === "text" && part.text === "Current implementation continues.")).toBe(true)
+      expect(
+        result.parts.some((part) => part.type === "text" && part.text === "Current implementation continues."),
+      ).toBe(true)
       expect(yield* llm.hits).toHaveLength(3)
     }),
   )
@@ -1527,88 +1662,102 @@ for (const native of [false, true]) {
 
 for (const isolated of [false, true]) {
   for (const cancelled of [false, true]) {
-  it.instance(`task steering ${cancelled ? "cancels its delivery worker" : "survives a final-step race"}${isolated ? " in the child directory" : ""}`, () =>
-    Effect.gen(function* () {
-      const { dir, llm } = yield* useServerConfig(providerCfg)
-      const prompt = yield* SessionPrompt.Service
-      const sessions = yield* Session.Service
-      const jobs = yield* BackgroundJob.Service
-      const parent = yield* sessions.create({})
-      const child = yield* sessions.create({ parentID: parent.id })
-      const instance = yield* InstanceRef
-      if (!instance) return yield* Effect.die("InstanceRef missing")
-      const directory = isolated ? path.join(dir, "child-directory") : dir
-      if (isolated) yield* writeConfig(directory, providerCfg(llm.url))
-      const ops: TaskPromptOps = {
-        cancel: prompt.cancel,
-        prompt: (input) => prompt.prompt(input).pipe(Effect.catch(Effect.die)),
-        loop: prompt.loop,
-        resolvePromptParts: prompt.resolvePromptParts,
-        runIsolated: () => Effect.die("unexpected isolation setup"),
-      }
-      const held = defer<void>()
-      yield* llm.hold("original answer", held.promise)
-      yield* llm.text("corrected answer")
-      yield* jobs.start({
-        id: child.id,
-        type: "task",
-        metadata: { parentSessionId: parent.id },
-        run: runSteerableTask(
-          { sessionID: child.id, parentSessionID: parent.id, ops, sessions },
-          ops.prompt({
-            sessionID: child.id, agent: "build", model: ref, variant: "high",
-            parts: [{ type: "text", text: "initial task" }],
-          }),
-        ).pipe(
-          Effect.map((result) => result.parts.findLast((part) => part.type === "text")?.text ?? ""),
-          Effect.provideService(InstanceRef, { ...instance, directory, worktree: directory }),
-        ),
-      })
-      yield* llm.wait(1)
-      const original = yield* sessions.findMessage(child.id, (item) => item.info.role === "user")
-      if (Option.isNone(original) || original.value.info.role !== "user")
-        return yield* Effect.die("Missing original task input")
-      const originalUser = original.value.info
-      const def = yield* TaskStatusTool.pipe(
-        Effect.flatMap((tool) => tool.init()),
-        Effect.provide(RuntimeFlags.layer({ experimentalBackgroundSubagents: true })),
-      )
-      const receipt = yield* def.execute(
-        { task_id: child.id, message: "focus on the corrected task" },
-        {
-          sessionID: parent.id, messageID: MessageID.ascending(), agent: "build",
-          abort: new AbortController().signal, messages: [],
-          metadata: () => Effect.void, ask: () => Effect.void,
-        },
-      )
-      expect(receipt.metadata.delivery).toBe("queued")
-      const messageID = receipt.metadata.message_id
-      if (!messageID) return yield* Effect.die("Missing steering receipt")
-      const persisted = yield* MessageV2.get({ sessionID: child.id, messageID })
-      expect(persisted.info).toMatchObject({
-        role: "user", agent: originalUser.agent, model: originalUser.model, delivery: "steer",
-      })
-      expect(persisted.parts).toHaveLength(1)
-      if (cancelled) {
-        yield* jobs.cancel(child.id)
-        expect((yield* jobs.get(child.id))?.status).toBe("cancelled")
-        expect(yield* llm.hits).toHaveLength(1)
-        expect(() => steerTask(child.id, parent.id, "must not restart")).toThrow("not accepting")
-        held.resolve()
-        return
-      }
-      held.resolve()
-      const completed = yield* jobs.wait({ id: child.id, timeout: 5_000 })
-      expect(completed.info?.status).toBe("completed")
-      expect(completed.info?.output).toBe("corrected answer")
-      expect(userDelivery(yield* MessageV2.get({ sessionID: child.id, messageID }))).toBe("delivered")
-      const hits = yield* llm.hits
-      expect(hits).toHaveLength(2)
-      expect(JSON.stringify(hits[1].body)).toContain("focus on the corrected task")
-      const answer = yield* sessions.findMessage(child.id, (item) => item.info.role === "assistant")
-      expect(Option.isSome(answer) && answer.value.info.role === "assistant" && answer.value.info.path.cwd).toBe(directory)
-    }),
-  )
+    it.instance(
+      `task steering ${cancelled ? "cancels its delivery worker" : "survives a final-step race"}${isolated ? " in the child directory" : ""}`,
+      () =>
+        Effect.gen(function* () {
+          const { dir, llm } = yield* useServerConfig(providerCfg)
+          const prompt = yield* SessionPrompt.Service
+          const sessions = yield* Session.Service
+          const jobs = yield* BackgroundJob.Service
+          const parent = yield* sessions.create({})
+          const child = yield* sessions.create({ parentID: parent.id })
+          const instance = yield* InstanceRef
+          if (!instance) return yield* Effect.die("InstanceRef missing")
+          const directory = isolated ? path.join(dir, "child-directory") : dir
+          if (isolated) yield* writeConfig(directory, providerCfg(llm.url))
+          const ops: TaskPromptOps = {
+            cancel: prompt.cancel,
+            prompt: (input) => prompt.prompt(input).pipe(Effect.catch(Effect.die)),
+            loop: prompt.loop,
+            resolvePromptParts: prompt.resolvePromptParts,
+            runIsolated: () => Effect.die("unexpected isolation setup"),
+          }
+          const held = defer<void>()
+          yield* llm.hold("original answer", held.promise)
+          yield* llm.text("corrected answer")
+          yield* jobs.start({
+            id: child.id,
+            type: "task",
+            metadata: { parentSessionId: parent.id },
+            run: runSteerableTask(
+              { sessionID: child.id, parentSessionID: parent.id, ops, sessions },
+              ops.prompt({
+                sessionID: child.id,
+                agent: "build",
+                model: ref,
+                variant: "high",
+                parts: [{ type: "text", text: "initial task" }],
+              }),
+            ).pipe(
+              Effect.map((result) => result.parts.findLast((part) => part.type === "text")?.text ?? ""),
+              Effect.provideService(InstanceRef, { ...instance, directory, worktree: directory }),
+            ),
+          })
+          yield* llm.wait(1)
+          const original = yield* sessions.findMessage(child.id, (item) => item.info.role === "user")
+          if (Option.isNone(original) || original.value.info.role !== "user")
+            return yield* Effect.die("Missing original task input")
+          const originalUser = original.value.info
+          const def = yield* TaskStatusTool.pipe(
+            Effect.flatMap((tool) => tool.init()),
+            Effect.provide(RuntimeFlags.layer({ experimentalBackgroundSubagents: true })),
+          )
+          const receipt = yield* def.execute(
+            { task_id: child.id, message: "focus on the corrected task" },
+            {
+              sessionID: parent.id,
+              messageID: MessageID.ascending(),
+              agent: "build",
+              abort: new AbortController().signal,
+              messages: [],
+              metadata: () => Effect.void,
+              ask: () => Effect.void,
+            },
+          )
+          expect(receipt.metadata.delivery).toBe("queued")
+          const messageID = receipt.metadata.message_id
+          if (!messageID) return yield* Effect.die("Missing steering receipt")
+          const persisted = yield* MessageV2.get({ sessionID: child.id, messageID })
+          expect(persisted.info).toMatchObject({
+            role: "user",
+            agent: originalUser.agent,
+            model: originalUser.model,
+            delivery: "steer",
+          })
+          expect(persisted.parts).toHaveLength(1)
+          if (cancelled) {
+            yield* jobs.cancel(child.id)
+            expect((yield* jobs.get(child.id))?.status).toBe("cancelled")
+            expect(yield* llm.hits).toHaveLength(1)
+            expect(() => steerTask(child.id, parent.id, "must not restart")).toThrow("not accepting")
+            held.resolve()
+            return
+          }
+          held.resolve()
+          const completed = yield* jobs.wait({ id: child.id, timeout: 5_000 })
+          expect(completed.info?.status).toBe("completed")
+          expect(completed.info?.output).toBe("corrected answer")
+          expect(userDelivery(yield* MessageV2.get({ sessionID: child.id, messageID }))).toBe("delivered")
+          const hits = yield* llm.hits
+          expect(hits).toHaveLength(2)
+          expect(JSON.stringify(hits[1].body)).toContain("focus on the corrected task")
+          const answer = yield* sessions.findMessage(child.id, (item) => item.info.role === "assistant")
+          expect(Option.isSome(answer) && answer.value.info.role === "assistant" && answer.value.info.path.cwd).toBe(
+            directory,
+          )
+        }),
+    )
   }
 }
 
@@ -1655,58 +1804,60 @@ for (const { configuredLimit, interleave } of [undefined, 1, 3].flatMap((configu
   [false, true].map((interleave) => ({ configuredLimit, interleave })),
 )) {
   const limit = configuredLimit ?? 2
-  it.instance(`repeated tool failures cap model requests (limit=${configuredLimit ?? "default"}, bookkeeping=${interleave})`, () =>
-    Effect.gen(function* () {
-      const { llm } = yield* useServerConfig((url) => ({
-        ...providerCfg(url),
-        agent: { redmind: { permission: { doom_loop: "allow" } } },
-        ...(configuredLimit === undefined ? {} : { experimental: { repeated_tool_failure_limit: configuredLimit } }),
-      }))
-      const prompt = yield* SessionPrompt.Service
-      const sessions = yield* Session.Service
-      const registry = yield* ToolRegistry.Service
-      const jobs = yield* BackgroundJob.Service
-      const { directory } = yield* TestInstance
-      const chat = yield* sessions.create({
-        title: "Repeated failure budget",
-        permission: [{ permission: "*", pattern: "*", action: "allow" }],
-      })
-      const child = yield* sessions.create({ parentID: chat.id, title: "Independent background task" })
-      yield* jobs.start({
-        id: child.id,
-        type: "task",
-        metadata: { parentSessionId: chat.id },
-        run: Effect.never,
-      })
-      yield* Effect.addFinalizer(() => jobs.cancel(child.id))
-      const { read } = yield* registry.named()
-      const original = read.execute
-      let executions = 0
-      read.execute = (args, context) =>
-        Effect.gen(function* () {
-          executions++
-          return yield* original(args, context)
+  it.instance(
+    `repeated tool failures cap model requests (limit=${configuredLimit ?? "default"}, bookkeeping=${interleave})`,
+    () =>
+      Effect.gen(function* () {
+        const { llm } = yield* useServerConfig((url) => ({
+          ...providerCfg(url),
+          agent: { redmind: { permission: { doom_loop: "allow" } } },
+          ...(configuredLimit === undefined ? {} : { experimental: { repeated_tool_failure_limit: configuredLimit } }),
+        }))
+        const prompt = yield* SessionPrompt.Service
+        const sessions = yield* Session.Service
+        const registry = yield* ToolRegistry.Service
+        const jobs = yield* BackgroundJob.Service
+        const { directory } = yield* TestInstance
+        const chat = yield* sessions.create({
+          title: "Repeated failure budget",
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
         })
-      yield* Effect.addFinalizer(() => Effect.sync(() => void (read.execute = original)))
-      for (let i = 0; i <= limit; i++) {
-        yield* llm.tool("read", { filePath: path.join(directory, "missing.txt") })
-        if (interleave && i < limit) yield* llm.tool("todoread", {})
-      }
-      yield* llm.text("must not consume another model request")
-      const result = yield* prompt.prompt({
-        sessionID: chat.id,
-        agent: "build",
-        model: ref,
-        parts: [{ type: "text", text: "read the file" }],
-      })
-      expect(yield* llm.calls).toBe(interleave ? 2 * limit + 1 : limit + 1)
-      expect(yield* llm.pending).toBe(1)
-      expect(executions).toBe(limit)
-      expect((yield* jobs.get(child.id))?.status).toBe("running")
-      expect(result.parts.some((part) => part.type === "text" && part.text.includes("重复失败"))).toBe(true)
-      const inputs = yield* llm.inputs
-      expect(JSON.stringify(inputs[interleave ? 2 * limit - 1 : limit])).toContain("Repeated tool failure")
-    }),
+        const child = yield* sessions.create({ parentID: chat.id, title: "Independent background task" })
+        yield* jobs.start({
+          id: child.id,
+          type: "task",
+          metadata: { parentSessionId: chat.id },
+          run: Effect.never,
+        })
+        yield* Effect.addFinalizer(() => jobs.cancel(child.id))
+        const { read } = yield* registry.named()
+        const original = read.execute
+        let executions = 0
+        read.execute = (args, context) =>
+          Effect.gen(function* () {
+            executions++
+            return yield* original(args, context)
+          })
+        yield* Effect.addFinalizer(() => Effect.sync(() => void (read.execute = original)))
+        for (let i = 0; i <= limit; i++) {
+          yield* llm.tool("read", { filePath: path.join(directory, "missing.txt") })
+          if (interleave && i < limit) yield* llm.tool("todoread", {})
+        }
+        yield* llm.text("must not consume another model request")
+        const result = yield* prompt.prompt({
+          sessionID: chat.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "read the file" }],
+        })
+        expect(yield* llm.calls).toBe(interleave ? 2 * limit + 1 : limit + 1)
+        expect(yield* llm.pending).toBe(1)
+        expect(executions).toBe(limit)
+        expect((yield* jobs.get(child.id))?.status).toBe("running")
+        expect(result.parts.some((part) => part.type === "text" && part.text.includes("重复失败"))).toBe(true)
+        const inputs = yield* llm.inputs
+        expect(JSON.stringify(inputs[interleave ? 2 * limit - 1 : limit])).toContain("Repeated tool failure")
+      }),
   )
 }
 
@@ -1722,20 +1873,33 @@ it.instance("repeated tool failures in one parallel batch do not trigger another
     })
     const missing = { filePath: path.join(directory, "missing.txt") }
     const chunk = (delta: Record<string, unknown>, finish_reason: string | null = null) => ({
-      id: "parallel-fixture", object: "chat.completion.chunk", created: 0, model: "test-model",
+      id: "parallel-fixture",
+      object: "chat.completion.chunk",
+      created: 0,
+      model: "test-model",
       choices: [{ index: 0, delta, finish_reason }],
     })
-    yield* llm.push(raw({ chunks: [
-      chunk({ role: "assistant" }),
-      chunk({ tool_calls: Array.from({ length: 3 }, (_, index) => ({
-        index, id: `parallel_${index}`, type: "function",
-        function: { name: "read", arguments: JSON.stringify(missing) },
-      })) }),
-      chunk({}, "tool_calls"),
-    ] }))
+    yield* llm.push(
+      raw({
+        chunks: [
+          chunk({ role: "assistant" }),
+          chunk({
+            tool_calls: Array.from({ length: 3 }, (_, index) => ({
+              index,
+              id: `parallel_${index}`,
+              type: "function",
+              function: { name: "read", arguments: JSON.stringify(missing) },
+            })),
+          }),
+          chunk({}, "tool_calls"),
+        ],
+      }),
+    )
     yield* llm.text("must not consume a follow-up request")
     const result = yield* prompt.prompt({
-      sessionID: chat.id, agent: "build", model: ref,
+      sessionID: chat.id,
+      agent: "build",
+      model: ref,
       parts: [{ type: "text", text: "read the file" }],
     })
     expect(yield* llm.calls).toBe(1)
@@ -1762,7 +1926,9 @@ it.instance("repeated tool failure budget permits corrected arguments and a new 
     yield* llm.tool("read", { filePath: file })
     yield* llm.text("corrected")
     const first = yield* prompt.prompt({
-      sessionID: chat.id, agent: "build", model: ref,
+      sessionID: chat.id,
+      agent: "build",
+      model: ref,
       parts: [{ type: "text", text: "read a file" }],
     })
     expect(yield* llm.calls).toBe(4)
@@ -1770,7 +1936,9 @@ it.instance("repeated tool failure budget permits corrected arguments and a new 
     yield* llm.tool("read", missing)
     yield* llm.text("new turn has its own budget")
     const second = yield* prompt.prompt({
-      sessionID: chat.id, agent: "build", model: ref,
+      sessionID: chat.id,
+      agent: "build",
+      model: ref,
       parts: [{ type: "text", text: "retry the missing file once" }],
     })
     expect(yield* llm.calls).toBe(6)
@@ -1920,73 +2088,84 @@ it.instance("loop continues when finish is stop but assistant has tool parts", (
 )
 
 for (const childFails of [false, true]) {
-  it.instance(`background child ${childFails ? "failure" : "success"} is saved once before the busy parent resumes`, () =>
-    Effect.gen(function* () {
-      const { llm } = yield* useServerConfig((url) => ({
-        ...providerCfg(url),
-        agent: { explore: { model: `${ref.providerID}/${ref.modelID}` } },
-      }))
-      const prompt = yield* SessionPrompt.Service
-      const sessions = yield* Session.Service
-      const status = yield* SessionStatus.Service
-      const jobs = yield* BackgroundJob.Service
-      const chat = yield* sessions.create({ title: "Background result delivery" })
-      const { assistant } = yield* seed(chat.id, { finish: "stop" })
-      yield* status.set(chat.id, { type: "busy" })
-      const resumed = yield* Deferred.make<MessageV2.WithParts>()
-      let resumes = 0
-      const ops: TaskPromptOps = {
-        cancel: prompt.cancel,
-        resolvePromptParts: prompt.resolvePromptParts,
-        prompt: (input) => childFails && !input.noReply
-          ? Effect.die(new Error("injected child failure"))
-          : prompt.prompt(input).pipe(Effect.orDie),
-        loop: (input) => Effect.gen(function* () {
-          resumes++
-          const result = yield* prompt.loop(input)
-          yield* Deferred.succeed(resumed, result)
-          return result
-        }),
-        runIsolated: () => Effect.die("unexpected isolation in delivery test"),
-      }
-      if (!childFails) yield* llm.text("saved child evidence")
-      yield* llm.text("parent consumed background result")
-      const def = yield* (yield* TaskTool).init()
-      const result = yield* def.execute({
-        description: "inspect background delivery",
-        prompt: "Return evidence for the parent.",
-        subagent_type: "explore",
-        background: true,
-      }, {
-        sessionID: chat.id,
-        messageID: assistant.id,
-        agent: "build",
-        abort: new AbortController().signal,
-        extra: { promptOps: ops },
-        messages: [],
-        metadata: () => Effect.void,
-        ask: () => Effect.void,
-      })
-      const waited = yield* jobs.wait({ id: result.metadata.sessionId })
-      expect(waited.info?.status).toBe(childFails ? "error" : "completed")
-      const deliveries = Effect.gen(function* () {
-        return (yield* MessageV2.filterCompactedEffect(chat.id)).flatMap((message) =>
-          message.parts.filter((part) => part.type === "text" && part.synthetic && part.text.includes(result.metadata.sessionId)),
+  it.instance(
+    `background child ${childFails ? "failure" : "success"} is saved once before the busy parent resumes`,
+    () =>
+      Effect.gen(function* () {
+        const { llm } = yield* useServerConfig((url) => ({
+          ...providerCfg(url),
+          agent: { explore: { model: `${ref.providerID}/${ref.modelID}` } },
+        }))
+        const prompt = yield* SessionPrompt.Service
+        const sessions = yield* Session.Service
+        const status = yield* SessionStatus.Service
+        const jobs = yield* BackgroundJob.Service
+        const chat = yield* sessions.create({ title: "Background result delivery" })
+        const { assistant } = yield* seed(chat.id, { finish: "stop" })
+        yield* status.set(chat.id, { type: "busy" })
+        const resumed = yield* Deferred.make<MessageV2.WithParts>()
+        let resumes = 0
+        const ops: TaskPromptOps = {
+          cancel: prompt.cancel,
+          resolvePromptParts: prompt.resolvePromptParts,
+          prompt: (input) =>
+            childFails && !input.noReply
+              ? Effect.die(new Error("injected child failure"))
+              : prompt.prompt(input).pipe(Effect.orDie),
+          loop: (input) =>
+            Effect.gen(function* () {
+              resumes++
+              const result = yield* prompt.loop(input)
+              yield* Deferred.succeed(resumed, result)
+              return result
+            }),
+          runIsolated: () => Effect.die("unexpected isolation in delivery test"),
+        }
+        if (!childFails) yield* llm.text("saved child evidence")
+        yield* llm.text("parent consumed background result")
+        const def = yield* (yield* TaskTool).init()
+        const result = yield* def.execute(
+          {
+            description: "inspect background delivery",
+            prompt: "Return evidence for the parent.",
+            subagent_type: "explore",
+            background: true,
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: ops },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
         )
-      })
-      expect(yield* deliveries).toHaveLength(1)
-      expect(JSON.stringify(yield* deliveries)).toContain(childFails ? "task_error" : "saved child evidence")
-      expect(resumes).toBe(0)
-      yield* status.set(chat.id, { type: "idle" })
-      yield* TestClock.adjust("300 millis")
-      yield* Deferred.await(resumed)
-      expect(resumes).toBe(1)
-      expect(yield* deliveries).toHaveLength(1)
-      expect(JSON.stringify((yield* llm.inputs).at(-1))).toContain(childFails ? "injected child failure" : "saved child evidence")
-    }).pipe(
-      Effect.provide(RuntimeFlags.layer({ experimentalBackgroundSubagents: true })),
-      Effect.provide(TestClock.layer()),
-    ),
+        const waited = yield* jobs.wait({ id: result.metadata.sessionId })
+        expect(waited.info?.status).toBe(childFails ? "error" : "completed")
+        const deliveries = Effect.gen(function* () {
+          return (yield* MessageV2.filterCompactedEffect(chat.id)).flatMap((message) =>
+            message.parts.filter(
+              (part) => part.type === "text" && part.synthetic && part.text.includes(result.metadata.sessionId),
+            ),
+          )
+        })
+        expect(yield* deliveries).toHaveLength(1)
+        expect(JSON.stringify(yield* deliveries)).toContain(childFails ? "task_error" : "saved child evidence")
+        expect(resumes).toBe(0)
+        yield* status.set(chat.id, { type: "idle" })
+        yield* TestClock.adjust("300 millis")
+        yield* Deferred.await(resumed)
+        expect(resumes).toBe(1)
+        expect(yield* deliveries).toHaveLength(1)
+        expect(JSON.stringify((yield* llm.inputs).at(-1))).toContain(
+          childFails ? "injected child failure" : "saved child evidence",
+        )
+      }).pipe(
+        Effect.provide(RuntimeFlags.layer({ experimentalBackgroundSubagents: true })),
+        Effect.provide(TestClock.layer()),
+      ),
   )
 }
 
@@ -2012,51 +2191,65 @@ it.instance("background result survives the busy-parent resume deadline and can 
       cancel: prompt.cancel,
       resolvePromptParts: prompt.resolvePromptParts,
       prompt: (input) => prompt.prompt(input).pipe(Effect.orDie),
-      loop: (input) => Effect.gen(function* () {
-        resumes++
-        return yield* prompt.loop(input)
-      }),
+      loop: (input) =>
+        Effect.gen(function* () {
+          resumes++
+          return yield* prompt.loop(input)
+        }),
       runIsolated: () => Effect.die("unexpected isolation in delivery deadline test"),
     }
     yield* llm.text("deadline child evidence")
     const def = yield* (yield* TaskTool).init()
-    const result = yield* def.execute({
-      description: "inspect busy parent delivery",
-      prompt: "Return evidence for the busy parent.",
-      subagent_type: "explore",
-      background: true,
-    }, {
-      sessionID: chat.id,
-      messageID: assistant.id,
-      agent: "build",
-      abort: new AbortController().signal,
-      extra: { promptOps: ops },
-      messages: [],
-      metadata: () => Effect.void,
-      ask: () => Effect.void,
-    }).pipe(Effect.provideService(Clock.Clock, {
-      ...clock,
-      currentTimeMillisUnsafe: () => clock.currentTimeMillisUnsafe() + elapsed,
-      currentTimeMillis: Effect.sync(() => clock.currentTimeMillisUnsafe() + elapsed),
-      currentTimeNanosUnsafe: () => clock.currentTimeNanosUnsafe() + BigInt(elapsed) * 1_000_000n,
-      currentTimeNanos: Effect.sync(() => clock.currentTimeNanosUnsafe() + BigInt(elapsed) * 1_000_000n),
-    }))
+    const result = yield* def
+      .execute(
+        {
+          description: "inspect busy parent delivery",
+          prompt: "Return evidence for the busy parent.",
+          subagent_type: "explore",
+          background: true,
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps: ops },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+      .pipe(
+        Effect.provideService(Clock.Clock, {
+          ...clock,
+          currentTimeMillisUnsafe: () => clock.currentTimeMillisUnsafe() + elapsed,
+          currentTimeMillis: Effect.sync(() => clock.currentTimeMillisUnsafe() + elapsed),
+          currentTimeNanosUnsafe: () => clock.currentTimeNanosUnsafe() + BigInt(elapsed) * 1_000_000n,
+          currentTimeNanos: Effect.sync(() => clock.currentTimeNanosUnsafe() + BigInt(elapsed) * 1_000_000n),
+        }),
+      )
     expect((yield* jobs.wait({ id: result.metadata.sessionId })).info?.status).toBe("completed")
     // 261017 Red 墙钟跳过期限后只唤醒一个 tick，避免为测试循环执行六千次数据库轮询。
     elapsed = 31 * 60_000
     yield* TestClock.adjust("300 millis")
-    const notice = yield* Stream.runHead(toasts.pipe(Stream.filter((event) => event.properties.title === "Background task result waiting")))
+    const notice = yield* Stream.runHead(
+      toasts.pipe(Stream.filter((event) => event.properties.title === "Background task result waiting")),
+    )
     expect(Option.isSome(notice)).toBe(true)
     expect(resumes).toBe(0)
     const deliveries = (yield* MessageV2.filterCompactedEffect(chat.id)).flatMap((message) =>
-      message.parts.filter((part) => part.type === "text" && part.synthetic && part.text.includes(result.metadata.sessionId)),
+      message.parts.filter(
+        (part) => part.type === "text" && part.synthetic && part.text.includes(result.metadata.sessionId),
+      ),
     )
     expect(deliveries).toHaveLength(1)
     expect(JSON.stringify(deliveries)).toContain("deadline child evidence")
     yield* status.set(chat.id, { type: "idle" })
     yield* llm.text("manually recovered background evidence")
     const continued = yield* prompt.loop({ sessionID: chat.id })
-    expect(continued.parts).toContainEqual(expect.objectContaining({ type: "text", text: "manually recovered background evidence" }))
+    expect(continued.parts).toContainEqual(
+      expect.objectContaining({ type: "text", text: "manually recovered background evidence" }),
+    )
     expect(JSON.stringify((yield* llm.inputs).at(-1))).toContain("deadline child evidence")
     expect(resumes).toBe(0)
   }).pipe(
@@ -3312,6 +3505,321 @@ noLLMServer.instance(
       )
       expect(hasFailure).toBe(true)
 
+      yield* sessions.remove(session.id)
+    }),
+  { config: cfg },
+)
+
+noLLMServer.instance(
+  "rejects an oversized binary attachment before reading its file bytes",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const binaryPath = path.join(dir, "large.bin")
+      const bytes = Buffer.alloc(4 * 1024 * 1024)
+      yield* Effect.promise(() => Bun.write(binaryPath, bytes))
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({})
+      const msg = yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "file", mime: "application/octet-stream", url: `file://${binaryPath}`, filename: "large.bin" }],
+      })
+      if (msg.info.role !== "user") throw new Error("expected user message")
+      expect(msg.parts.some((part) => part.type === "file" && part.filename === "large.bin")).toBe(false)
+      expect(
+        msg.parts.some(
+          (part) => part.type === "text" && part.synthetic && part.text.includes("over the inline budget"),
+        ),
+      ).toBe(true)
+      expect(Bun.file(binaryPath).size).toBe(bytes.byteLength)
+      yield* sessions.remove(session.id)
+    }),
+  { config: cfg },
+)
+
+boundedImageServer.instance(
+  "fails closed when the initial image preflight stat fails",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const imagePath = path.join(dir, "stat-failed.png")
+      const bytes = Buffer.alloc(10 * 1024 * 1024 + 1)
+      yield* Effect.promise(() => Bun.write(imagePath, bytes))
+      Object.assign(imageReadProbe, {
+        path: imagePath,
+        failFirstStat: true,
+        reportedSize: undefined,
+        statCalls: 0,
+        readBytes: 0,
+        readRequests: [],
+        normalized: [],
+      })
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({})
+      const msg = yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "file", mime: "image/png", url: `file://${imagePath}`, filename: "stat-failed.png" }],
+      })
+      if (msg.info.role !== "user") throw new Error("expected user message")
+      expect(imageReadProbe.statCalls).toBe(1)
+      expect(imageReadProbe.readBytes).toBe(0)
+      expect(imageReadProbe.normalized).toEqual([])
+      expect(msg.parts.some((part) => part.type === "file" && part.filename === "stat-failed.png")).toBe(false)
+      expect(
+        msg.parts.some((part) => part.type === "text" && part.synthetic && part.text.includes("could not be checked")),
+      ).toBe(true)
+      yield* sessions.remove(session.id)
+    }),
+  { config: cfg },
+)
+
+boundedImageServer.instance(
+  "bounds image reads to preflight size plus one when the file grows",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const imagePath = path.join(dir, "grown.png")
+      yield* Effect.promise(() => Bun.write(imagePath, Buffer.alloc(4 * 1024 * 1024)))
+      Object.assign(imageReadProbe, {
+        path: imagePath,
+        failFirstStat: false,
+        reportedSize: 16,
+        statCalls: 0,
+        readBytes: 0,
+        readRequests: [],
+        normalized: [],
+      })
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({})
+      const msg = yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "file", mime: "image/png", url: `file://${imagePath}`, filename: "grown.png" }],
+      })
+      if (msg.info.role !== "user") throw new Error("expected user message")
+      expect(imageReadProbe.readBytes).toBe(17)
+      expect(imageReadProbe.readRequests).toEqual([17])
+      expect(imageReadProbe.normalized).toEqual([])
+      expect(msg.parts.some((part) => part.type === "file" && part.filename === "grown.png")).toBe(false)
+      expect(
+        msg.parts.some(
+          (part) => part.type === "text" && part.synthetic && part.text.includes("changed size during reading"),
+        ),
+      ).toBe(true)
+      yield* sessions.remove(session.id)
+    }),
+  { config: cfg },
+)
+
+// 261018 Red 压缩包只落盘不内联：即使是 4 MiB（超过旧的非图片 3.75 MiB 读盘闸门）也必须保留
+// file:// part，交给 provider/transform 换成路径占位；任何 base64 内联都是设计外的内存放大。
+noLLMServer.instance(
+  "keeps an archive attachment on disk without reading or inlining it",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const archivePath = path.join(dir, "debug.zip")
+      const bytes = Buffer.alloc(4 * 1024 * 1024)
+      yield* Effect.promise(() => Bun.write(archivePath, bytes))
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({})
+      const msg = yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "file", mime: "application/zip", url: `file://${archivePath}`, filename: "debug.zip" }],
+      })
+      if (msg.info.role !== "user") throw new Error("expected user message")
+      const stored = yield* MessageV2.get({ sessionID: session.id, messageID: msg.info.id })
+      const saved = stored.parts.find((part) => part.type === "file" && part.filename === "debug.zip")
+      expect(saved?.type).toBe("file")
+      if (saved?.type !== "file") throw new Error("expected persisted archive part")
+      expect(saved.url.startsWith("file://")).toBe(true)
+      expect(Buffer.byteLength(saved.url)).toBeLessThan(bytes.byteLength / 4)
+      expect(
+        stored.parts.some(
+          (part) => part.type === "text" && part.synthetic && part.text.toLowerCase().includes("not inlined"),
+        ),
+      ).toBe(false)
+      yield* sessions.remove(session.id)
+    }),
+  { config: cfg },
+)
+
+noLLMServer.instance(
+  "normalizes a bounded oversized image attachment before persisting it",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const photon = yield* Effect.promise(() => import("@silvia-odwyer/photon-node"))
+      const side = 1_200
+      const pixels = new Uint8Array(side * side * 4)
+      let seed = 0x2545f491
+      for (let i = 0; i < pixels.length; i += 4) {
+        seed = (seed * 1664525 + 1013904223) >>> 0
+        pixels[i] = seed & 0xff
+        pixels[i + 1] = (seed >>> 8) & 0xff
+        pixels[i + 2] = (seed >>> 16) & 0xff
+        pixels[i + 3] = 255
+      }
+      const source = new photon.PhotonImage(pixels, side, side)
+      const imagePath = path.join(dir, "large.png")
+      const bytes = Buffer.from(source.get_bytes())
+      source.free()
+      yield* Effect.promise(() => Bun.write(imagePath, bytes))
+      expect(bytes.byteLength).toBeGreaterThan(3.75 * 1024 * 1024)
+      expect(bytes.byteLength).toBeLessThanOrEqual(10 * 1024 * 1024)
+
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({})
+      const msg = yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "file", mime: "image/png", url: `file://${imagePath}`, filename: "large.png" }],
+      })
+      if (msg.info.role !== "user") throw new Error("expected user message")
+      const stored = yield* MessageV2.get({ sessionID: session.id, messageID: msg.info.id })
+      const saved = stored.parts.find((part) => part.type === "file" && part.filename === "large.png")
+      expect(saved?.type).toBe("file")
+      if (saved?.type !== "file") throw new Error("expected persisted image part")
+      expect(saved.url.startsWith("data:image/")).toBe(true)
+      expect(Buffer.byteLength(saved.url.slice(saved.url.indexOf(";base64,") + 8))).toBeLessThanOrEqual(5 * 1024 * 1024)
+      expect(
+        stored.parts.some(
+          (part) => part.type === "text" && part.synthetic && part.text.includes("downscaled for transport"),
+        ),
+      ).toBe(true)
+      expect(Bun.file(imagePath).size).toBe(bytes.byteLength)
+      yield* sessions.remove(session.id)
+    }),
+  { config: cfg },
+)
+
+noLLMServer.instance(
+  "rejects an image over the source limit without persisting its bytes",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const imagePath = path.join(dir, "over-limit.png")
+      const bytes = Buffer.alloc(10 * 1024 * 1024 + 1)
+      yield* Effect.promise(() => Bun.write(imagePath, bytes))
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({})
+      const msg = yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "file", mime: "image/png", url: `file://${imagePath}`, filename: "over-limit.png" }],
+      })
+      if (msg.info.role !== "user") throw new Error("expected user message")
+      expect(msg.parts.some((part) => part.type === "file" && part.filename === "over-limit.png")).toBe(false)
+      expect(msg.parts.some((part) => part.type === "text" && part.synthetic && part.text.includes("10 MiB"))).toBe(
+        true,
+      )
+      expect(Bun.file(imagePath).size).toBe(bytes.byteLength)
+      yield* sessions.remove(session.id)
+    }),
+  { config: cfg },
+)
+
+noResizerServer.instance(
+  "keeps a small image on the original path when normalization is unavailable",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const photon = yield* Effect.promise(() => import("@silvia-odwyer/photon-node"))
+      const source = new photon.PhotonImage(new Uint8Array(64 * 64 * 4).fill(255), 64, 64)
+      const bytes = Buffer.from(source.get_bytes())
+      source.free()
+      const imagePath = path.join(dir, "small.png")
+      yield* Effect.promise(() => Bun.write(imagePath, bytes))
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({})
+      const msg = yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "file", mime: "image/png", url: `file://${imagePath}`, filename: "small.png" }],
+      })
+      if (msg.info.role !== "user") throw new Error("expected user message")
+      const stored = yield* MessageV2.get({ sessionID: session.id, messageID: msg.info.id })
+      const saved = stored.parts.find((part) => part.type === "file" && part.filename === "small.png")
+      expect(saved?.type).toBe("file")
+      if (saved?.type !== "file") throw new Error("expected the original small image to persist")
+      expect(saved.url).toBe(`data:image/png;base64,${bytes.toString("base64")}`)
+      yield* sessions.remove(session.id)
+    }),
+  { config: cfg },
+)
+
+noResizerServer.instance(
+  "does not fall back to the over-budget original when image normalization is unavailable",
+  () =>
+    Effect.gen(function* () {
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({})
+      const source = Buffer.alloc(4 * 1024 * 1024).toString("base64")
+      const msg = yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [
+          {
+            type: "file",
+            mime: "image/png",
+            url: `data:image/png;base64,${source}`,
+            filename: "unavailable.png",
+          },
+        ],
+      })
+      if (msg.info.role !== "user") throw new Error("expected user message")
+      const stored = yield* MessageV2.get({ sessionID: session.id, messageID: msg.info.id })
+      expect(stored.parts.some((part) => part.type === "file" && part.filename === "unavailable.png")).toBe(false)
+      expect(
+        stored.parts.some(
+          (part) => part.type === "text" && part.synthetic && part.text.includes("could not be safely normalized"),
+        ),
+      ).toBe(true)
+      yield* sessions.remove(session.id)
+    }),
+  { config: cfg },
+)
+
+overBudgetNormalizerServer.instance(
+  "rejects normalized image output above the fixed attachment budget",
+  () =>
+    Effect.gen(function* () {
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({})
+      const msg = yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "file", mime: "image/png", url: "data:image/png;base64,AA==", filename: "output.png" }],
+      })
+      if (msg.info.role !== "user") throw new Error("expected user message")
+      const stored = yield* MessageV2.get({ sessionID: session.id, messageID: msg.info.id })
+      expect(stored.parts.some((part) => part.type === "file" && part.filename === "output.png")).toBe(false)
+      expect(
+        stored.parts.some(
+          (part) => part.type === "text" && part.synthetic && part.text.includes("exceeds the transport budget"),
+        ),
+      ).toBe(true)
       yield* sessions.remove(session.id)
     }),
   { config: cfg },

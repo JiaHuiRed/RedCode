@@ -5,7 +5,7 @@ import { usePrompt, type ContentPart, type ImageAttachmentPart } from "@/context
 import { useLanguage } from "@/context/language"
 import { uuid } from "@/utils/uuid"
 import { getCursorPosition } from "./editor-dom"
-import { attachmentFits } from "./attachment-budget"
+import { attachmentFits, archiveFits } from "./attachment-budget"
 import { attachmentMime, isArchiveFile, extName } from "./files"
 import { normalizePaste, pasteMode } from "./paste"
 
@@ -67,14 +67,24 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
   // 260913 Red 正在读盘的附件先占额度：只看 prompt.current() 的话，同时粘贴的两个大文件
   // 互相看不见，会双双通过检查。key 取会话目录，跨会话不共享额度。
   const pendingBudget = new Map<string, { bytes: number; count: number }>()
-  const budgetKey = () => input.sessionDirectory ?? "default"
+  // 261018 Red 压缩包与内联附件分开记账：同一条消息里大图和调试包不该互相挤额度。
+  const budgetKey = (kind: "inline" | "archive") => `${input.sessionDirectory ?? "default"}:${kind}`
   const budgetFor = (key: string) => pendingBudget.get(key) ?? { bytes: 0, count: 0 }
 
   const add = async (file: File, toast = true) => {
     // 260913 Red 预算检查放在读内容和落盘之前：先读 10MB+ 再拒绝是白花的时间和内存。
-    const key = budgetKey()
+    const archive = isArchiveFile(file)
+    const key = budgetKey(archive ? "archive" : "inline")
     const existing = prompt.current().filter((part): part is ImageAttachmentPart => part.type === "image")
-    if (!attachmentFits(file.size, existing, budgetFor(key))) {
+    const fits = archive
+      ? archiveFits(
+          file.size,
+          existing,
+          existing.filter((part) => isArchiveFile({ name: part.filename ?? "", type: part.mime })),
+          budgetFor(key),
+        )
+      : attachmentFits(file.size, existing, budgetFor(key))
+    if (!fits) {
       if (toast) warnSize()
       return false
     }
@@ -88,7 +98,6 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     // 261011 Red 压缩包分支：只落盘、不读内容。dataUrl 完全跳过（readAsDataURL 会把
     // 几十 MB 的包整个 base64 化，正是内存问题的形状）；没有落盘通道就拒绝，绝不静默降级
     // 成空 url 的坏 part。
-    const archive = isArchiveFile(file)
     if (archive && !(input.sessionDirectory && input.writeAttachment)) {
       if (toast) warnArchiveNeedsDesktop()
       return false
