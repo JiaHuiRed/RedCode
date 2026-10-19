@@ -73,6 +73,7 @@ description: 记忆的写与剪——何时写、双写落笔格式、以及什�
 
 索引行只有主题、没有细节。要细节：先看最新 user 消息尾部有没有 memory-recall 的注入块，没有就 `/recall <关键词>`，或直接查库——
 `SELECT content FROM memories WHERE content LIKE '%关键词%'`（FTS 走 `memories_fts MATCH`，短词用 LIKE）。**别凭索引行猜。**
+召回短卡（261019 V4）：命中条目若引用 docs/notes，注入的是短卡（状态/来源版本/标题/来源路径）而非全文——要细节按来源 `read`，或直接查库。
 
 ## 4. 边界
 
@@ -183,6 +184,8 @@ bun ~/.redcode/scripts/export-memory-backup.mjs
 
 `memory/lessons-backup.<机器名>.md` 是**入库推送**的——全文的版本化（防篡改/写坏可回滚）与
 跨机可见全靠它；db 本身 gitignore，不导出快照，这次整理的全文变化就没有 git 历史。
+
+**提交前自检（261019 V4 探针，别靠记性）**：`bun ~/.redcode/scripts/memory-drift-check.mjs`——四信号：db 新于快照（要重跑 export）/ 快照未提交（本次 commit 带上）/ 领先 origin（要 push）/ 对端快照有本机缺条（先回填再提交）。pre-commit 自动导出只覆盖「staging MEMORY.md 的 commit」一条窄路，db-only 写入与其余静默环节全靠它响；插件会在每会话首轮把漂移提醒注入给主会话代理转告用户。
 
 然后 `git pull --rebase`（`~/.redcode` 是私仓，可能有别处刚写的），add 改过的文件 + 快照，
 **不 `add -A`**。项目记忆跟项目自己的仓库走，不进 `~/.redcode`（项目的 `MEMORY-archive.md`

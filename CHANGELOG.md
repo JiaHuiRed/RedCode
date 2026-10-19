@@ -10,6 +10,8 @@
 
 ### [Unreleased]
 
+- **Memory V4 批次 A/B：召回短卡、低信任包装与记忆库漂移探针**（`seed/scripts/memory-drift-check.mjs` 新增，`seed/scripts/{recall-memory,analyze-memory-recall-audit}.mjs`、`seed/command/recall.md` 修改；配套召回插件在私仓 `~/.redcode/plugin/memory-recall.js`）：记忆内容分层与按需读取落地。批次 A 项目级试点删除压缩/前缀缓存/召回三主题的 MEMORY 决策索引行（常驻面 5375→4476 字符），正文靠 db 召回与 docs/notes 路标恢复，三轮 headless 冒烟全对（含现行 400k/120k/220k 与 261010 旧值的区分）；批次 B 给召回插件上知识短卡——命中条目引用 docs/notes 且本机文件存在时注入「状态/来源版本/标题/路径」替代全文，缺源显式标注「本机来源不可用」并降级 db 全文，`MEMORY_RECALL_CARDS=0` 整体回退 V3，短卡整块 2 KiB 字节预算整条进出；注入块首与 `/recall` 的「硬约束」措辞收敛为「历史证据非授权」；audit 补 `recall-miss`/`recall-skip` 事件让漏召分母可测。另修两处召回质量缺陷：排名改「命中查询词最长长度 > 票数」（短窗口刷票的泛条目不再挤掉精确命中）、FTS 每查询样本 3→8 且 bm25 同分按 id 降序（多行同词时 LIMIT 3 等于抽签，"reminder" 被 `dcp-system-reminder` 类标签名刷屏，现行决策条目进不了候选）。漂移探针四信号（db 新于快照/快照未提交/领先 origin/对端快照有本机缺条）每会话首轮注入 ≤300 字节提醒、主会话代理转告用户；跨机对账用它实测出本机缺 67 条（账面只记 3 条），已全部回填、差集归零。验证：插件单测 audit/rotation/drift/cards 四分案全过；真机冒烟注入构成 `kinds=[full,card,full]`、答案含全部现行值；analyzer 在 1533 条真账分流正确。模型可见四问见 [memory-v4-batch-a-b](docs/notes/implemented/architecture/2026-10-19-memory-v4-batch-a-b.md)。
+
 - **批量附件与原生剪贴板图片固定在同一会话**（`packages/app/src/components/prompt-input/attachments.ts`）：`addAttachments()` 原先逐文件 `await add()`，而每次 `add()` 都重新读取路由 scope；批处理中切换会话会把后续文件加到新会话。桌面原生剪贴板图片也在异步读取完成后才捕获 scope。现在批次入口和剪贴板处理入口都先捕获 prompt scope 与光标，再传给所有后续异步操作；pending 预算也按 prompt scope 分桶，不再让同目录的 A/B 会话互相占用在途额度。定向测试覆盖批量写盘与剪贴板读取挂起期间切会话；`attachments.test.ts` 14 pass，app typecheck 通过。未做真实 Electron 端到端验证。
 
 ### [0.12.14] - 2026-10-18

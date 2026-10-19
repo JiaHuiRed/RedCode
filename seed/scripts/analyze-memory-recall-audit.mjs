@@ -20,13 +20,23 @@ if (args.includes("--help")) {
 }
 
 const audit = readJsonl(auditPath)
-const injected = audit.flatMap((event) => event.injected_ids ?? [])
-const tokens = audit.map((event) => Number(event.tokens) || 0)
+// 261019 Red 批次 B（V4）：插件开始写 type:"recall-miss"/"recall-skip"/"drift" 事件——
+// 无 type 的是 V3 兼容的召回注入事件。miss/skip 进召回指标的分母（此前无命中轮从审计
+// 消失，漏召率测不出来），drift 只计数不进召回指标。
+const recallEvents = audit.filter((event) => !event.type)
+const missEvents = audit.filter((event) => event.type === "recall-miss")
+const skipEvents = audit.filter((event) => event.type === "recall-skip")
+const driftEvents = audit.filter((event) => event.type === "drift")
+const injected = recallEvents.flatMap((event) => event.injected_ids ?? [])
+const tokens = recallEvents.map((event) => Number(event.tokens) || 0)
 
-console.log(`Audit events: ${audit.length}`)
-console.log(`Injected events: ${audit.filter((event) => (event.injected_ids ?? []).length > 0).length}`)
+console.log(`Audit events: ${audit.length} (recall ${recallEvents.length}, miss ${missEvents.length}, skip ${skipEvents.length}, drift ${driftEvents.length})`)
+console.log(`Injected events: ${recallEvents.filter((event) => (event.injected_ids ?? []).length > 0).length}`)
 console.log(`Injected memories: ${injected.length}`)
 console.log(`Injected tokens: p50 ${percentile(tokens, 0.5)}, p95 ${percentile(tokens, 0.95)}`)
+console.log(
+  `Turn coverage: ${ratio(recallEvents.filter((event) => (event.injected_ids ?? []).length > 0).length, recallEvents.length + missEvents.length + skipEvents.length)} (injected / injected+miss+skip)`,
+)
 
 if (!labelsPath) {
   console.log("No labels supplied; precision and recall are intentionally not inferred.")
@@ -34,7 +44,9 @@ if (!labelsPath) {
 }
 
 const labels = readJsonl(labelsPath)
-const events = new Map(audit.filter((event) => event.message_id).map((event) => [event.message_id, event]))
+// miss/skip 轮视作 0 注入的召回轮参与 precision/recall（事件优先取有注入的 recall 事件）
+const scoredEvents = [...recallEvents, ...missEvents, ...skipEvents]
+const events = new Map(scoredEvents.filter((event) => event.message_id).map((event) => [event.message_id, event]))
 const labelled = labels.filter((label) => events.has(label.message_id))
 const expected = labelled.flatMap((label) => label.expected_ids)
 const matched = labelled.flatMap((label) => {

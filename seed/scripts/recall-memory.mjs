@@ -80,7 +80,7 @@ function scopeSql(project, fts) {
     ? "FROM memories_fts f JOIN memories m ON m.id = f.rowid WHERE memories_fts MATCH ?"
     : "FROM memories m WHERE m.content LIKE ?"
   // 260913 Red 子串分支没有 join FTS 表，引用 bm25(memories_fts) 会直接报错；此分支按编号降序当新的优先。
-  const order = fts ? " ORDER BY bm25(memories_fts)" : " ORDER BY m.id DESC"
+  const order = fts ? " ORDER BY bm25(memories_fts), m.id DESC" : " ORDER BY m.id DESC"
   if (!project) return `SELECT m.id, m.content, m.project ${from}${order} LIMIT ?`
   return (
     `SELECT m.id, m.content, m.project ${from} AND (m.project = 'global' COLLATE NOCASE OR m.project = ? COLLATE NOCASE)` +
@@ -130,7 +130,7 @@ function packResults(header, ranked) {
   return parts.join("\n\n")
 }
 
-const HITS_PER_QUERY = 3
+const HITS_PER_QUERY = 8 // 261019 Red 3→8：多行同词时 LIMIT 3 是抽签，新条目（现行决策）会被旧条目挤出候选
 
 async function recall(d, userText, project) {
   const sentences = splitSentences(userText).slice(0, 6)
