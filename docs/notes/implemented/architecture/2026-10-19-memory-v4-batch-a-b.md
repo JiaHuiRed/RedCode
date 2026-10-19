@@ -22,6 +22,12 @@
 
 四信号：db 新于快照 / 快照未提交 / 领先 origin / 快照中有正文未逐字匹配。信号 4 表示两侧文本不同，不等于知识缺失：可能是修订、合并或重编号，须人工核对；差异不自动回填或清库，也不能靠 push 消除。无证据时状态为 unknown，CLI 不报 clean。每会话首轮由召回插件注入固定短提醒（主会话代理转告用户、子代理忽略），独立 `type:"drift"` 审计事件，脚本缺失或异常 fail-open。提醒不再拼接检查详情；详情保留在 CLI/audit，不进入提醒。全四信号最长提醒含 wrapper 实测 276 字节；任意 10k 字节详情仍恒定输出 276 字节。旧实现 4805 字节回归先红后绿；原通知定向测试子集 2 pass。动机：快照链路四步（export/commit/push/对端回填）此前全静默，pre-commit 自动导出只覆盖「staging MEMORY.md 的 commit」一条窄路。
 
+## Recall audit analyzer 修复
+
+按唯一 `message_id` 聚合成功事件的 `injected_ids` 集合：同一 message 的重复事件只计一个 turn；成功注入不再被后续 skip/miss 覆盖。V3 事件没有 `message_id` 时各自独立计数。原始 event/token 统计保留，drift 事件排除。
+
+验证：旧口径回归红为 Precision `n/a`（0/0）、coverage 57.1%；修复后目标测试 2 pass，四脚本合跑 18 pass / 0 fail / 52 expects，package typecheck EXIT=0（tsgo crash 后 fallback TS 5.9.3 通过）。这是有标签样本上的统计口径修复，不代表实测召回质量净收益。分析器只输出诊断，不新增 system 或模型可见文本。
+
 ## 模型可见四问
 
 1. **变了什么**：① 项目 MEMORY 删 5 行决策索引（新会话固定注入少约 900 字符）；② 召回注入块首改低信任表述；③ note 类命中改注短卡（约 110 字符）替代全文（数百至千余字符）；④ `/recall` 命令说明改措辞；⑤ 本轮将漂移提醒从拼接详情改为固定短语，详情留在 CLI/audit、不进入提醒。原文对照：召回插件与 `seed/command/recall.md` 的 diff；通知变化见本 note 漂移探针节。

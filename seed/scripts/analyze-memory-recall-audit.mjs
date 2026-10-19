@@ -29,13 +29,22 @@ const skipEvents = audit.filter((event) => event.type === "recall-skip")
 const driftEvents = audit.filter((event) => event.type === "drift")
 const injected = recallEvents.flatMap((event) => event.injected_ids ?? [])
 const tokens = recallEvents.map((event) => Number(event.tokens) || 0)
+// 261019 Red 按消息归并召回事件；旧版无 message_id 的事件保留为独立样本。
+const events = new Map()
+for (const event of [...recallEvents, ...missEvents, ...skipEvents]) {
+  const key = event.message_id ?? event
+  const aggregate = events.get(key) ?? { injected_ids: new Set() }
+  for (const id of event.injected_ids ?? []) aggregate.injected_ids.add(id)
+  events.set(key, aggregate)
+}
+const aggregatedEvents = [...events.values()]
 
 console.log(`Audit events: ${audit.length} (recall ${recallEvents.length}, miss ${missEvents.length}, skip ${skipEvents.length}, drift ${driftEvents.length})`)
 console.log(`Injected events: ${recallEvents.filter((event) => (event.injected_ids ?? []).length > 0).length}`)
 console.log(`Injected memories: ${injected.length}`)
 console.log(`Injected tokens: p50 ${percentile(tokens, 0.5)}, p95 ${percentile(tokens, 0.95)}`)
 console.log(
-  `Turn coverage: ${ratio(recallEvents.filter((event) => (event.injected_ids ?? []).length > 0).length, recallEvents.length + missEvents.length + skipEvents.length)} (injected / injected+miss+skip)`,
+  `Turn coverage: ${ratio(aggregatedEvents.filter((event) => event.injected_ids.size > 0).length, aggregatedEvents.length)} (injected / injected+miss+skip)`,
 )
 
 if (!labelsPath) {
@@ -44,18 +53,14 @@ if (!labelsPath) {
 }
 
 const labels = readJsonl(labelsPath)
-// miss/skip 轮视作 0 注入的召回轮参与 precision/recall（事件优先取有注入的 recall 事件）
-const scoredEvents = [...recallEvents, ...missEvents, ...skipEvents]
-const events = new Map(scoredEvents.filter((event) => event.message_id).map((event) => [event.message_id, event]))
 const labelled = labels.filter((label) => events.has(label.message_id))
 const expected = labelled.flatMap((label) => label.expected_ids)
 const matched = labelled.flatMap((label) => {
-  const injected = new Set(events.get(label.message_id).injected_ids ?? [])
-  return label.expected_ids.filter((id) => injected.has(id))
+  return label.expected_ids.filter((id) => events.get(label.message_id).injected_ids.has(id))
 })
-const predicted = labelled.flatMap((label) => events.get(label.message_id).injected_ids ?? [])
+const predicted = labelled.flatMap((label) => [...events.get(label.message_id).injected_ids])
 const noMemory = labelled.filter((label) => label.expected_ids.length === 0)
-const falsePositives = noMemory.filter((label) => (events.get(label.message_id).injected_ids ?? []).length > 0)
+const falsePositives = noMemory.filter((label) => events.get(label.message_id).injected_ids.size > 0)
 
 console.log(`Labelled events: ${labelled.length}/${labels.length}`)
 console.log(`Precision@injected: ${ratio(matched.length, predicted.length)} (${matched.length}/${predicted.length})`)

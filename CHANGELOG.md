@@ -11,6 +11,7 @@
 ### [Unreleased]
 
 - **漂移探针提醒固定硬上限**（`seed/scripts/memory-drift-check.mjs`）：将通知收敛为固定短信号，不再拼接检查详情；详情保留在 CLI/audit，不进入提醒。全四信号最长提醒（含 wrapper）实测 276 字节，任意 10k 字节详情仍输出固定 276 字节；旧实现 4805 字节回归先红后绿，新增隔离测试 8 pass。快照文本差异不等于知识缺失；unknown 不等于 clean，需人工核对，不能靠 push 消除差异。模型可见四问及 MEMORY 的 system 前缀/cache 成本更正见 [memory-v4-batch-a-b](docs/notes/implemented/architecture/2026-10-19-memory-v4-batch-a-b.md)。
+- **召回审计按消息聚合成功注入**（`seed/scripts/analyze-memory-recall-audit.mjs`）：按唯一 `message_id` 汇总 `injected_ids`，避免重复事件重复计 turn 或 success 被 skip/miss 覆盖；无 `message_id` 的 V3 事件仍各自计数，保留原始 event/token 统计并排除 drift。该修复校正有标签样本统计口径，不代表召回质量净收益，也不改变模型可见文本；细节与验证见 [memory-v4-batch-a-b](docs/notes/implemented/architecture/2026-10-19-memory-v4-batch-a-b.md)。
 
 ### [0.12.15] - 2026-10-19
 
