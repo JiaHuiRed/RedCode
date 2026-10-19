@@ -75,6 +75,14 @@ description: 记忆的写与剪——何时写、双写落笔格式、以及什�
 `SELECT content FROM memories WHERE content LIKE '%关键词%'`（FTS 走 `memories_fts MATCH`，短词用 LIKE）。**别凭索引行猜。**
 召回短卡（261019 V4）：命中条目若引用 docs/notes，注入的是短卡（状态/来源版本/标题/来源路径）而非全文——要细节按来源 `read`，或直接查库。
 
+## 3.5 项目进度与决策文档（261019 V4）
+
+进度/待办是**状态**不是记忆（0.5 第 4 问）——正文写 `<项目根>/.redcode/docs/<主题>.md`（本机私有；新项目由引擎播种该目录并带 README 约定），MEMORY 只留一行路标：「- **当前工作：<一句话>**；进度/待办 → `.redcode/docs/<主题>.md`」。
+
+- **样式**（参考 RedMon docs）：按主题一份、文件开头一行状态（进行中/已完成/已搁置 + 日期）、三段式（当前状态 → 已完成带验证结果 → 待办/受阻）；收工更新，续接沿路标读对应那份，不通读。
+- **项目仓有 `docs/` 时**：成体系的设计/决策写 `docs/notes/<implemented|proposed|rejected>/<类型>/YYYY-MM-DD-<slug>.md`（问题/决策/备选与否决/后果/回链）；权威正文在 note，MEMORY 与 db 不维护第二篇叙述。
+- **三个时刻**：创建=新任务开工或决策拍板时；读取=续接沿路标、召回短卡按来源指针；写入=收工/批次完成更新进度节、决策落地写 note 并回链。
+
 ## 4. 边界
 
 - 追加用 read + edit，**绝不用 `write`**（覆盖整个文件）、绝不用 `echo >>`（Windows 中文变 GBK，redline-guard 会拦）

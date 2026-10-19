@@ -36,6 +36,10 @@
 - analyzer 在 1533 条真账自检：recall 1532 / drift 1 分流正确，coverage 行落位。
 - 对账：回填 67 条后差集归零，#676–678/#72/#55 抽查在库，快照刷新至 237 条。
 
+## 播种升级（261019 晚，新项目默认带上 V4）
+
+`project/bootstrap.ts` 新项目播种：`.redcode/` 除 MEMORY 模板外新增 `.gitignore`（`*`，私有边界机制化、项目可加 `!` 例外）与 `docs/`（README 载约定：按主题一份/开头状态行/三段式/沿路标读取，不通读；样式参考 RedMon docs 的入口 README + 状态档位表 + REDCODE_CONTEXT 按任务加载实践）；MEMORY 模板补当前工作路标格式与 `docs/notes/` 指引（顺带修正已更名的 memory-automation skill 旧称）。全局侧配套：memory skill 3.5 节（项目进度与决策文档：创建/读取/写入三时刻，seed+home 双改）与全局 AGENTS.md 收工流程第 1 条（进度正文进 `.redcode/docs/`，MEMORY 只留路标）。仅影响新播种项目；本节四问：① 新项目 MEMORY 模板 +2 行；② 该项目固定前缀约 +55 token/轮（换取惯例在场）；③ 存量项目不重写、无前缀失效；④ 模板受 instruction 硬预算约束，README 不进注入面。
+
 ## 回链
 
 - 设计：`docs/notes/proposed/architecture/2026-10-19-memory-v4.md`

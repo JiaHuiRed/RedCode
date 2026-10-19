@@ -132,6 +132,10 @@ export const layer = Layer.effect(
         )
       }).pipe(Effect.catchCause(Effect.logWarning))
       // 260611 Red project-level .redcode/ auto-init with empty MEMORY.md
+      // 261019 Red Memory V4：播种时把「私有边界」从纪律变成机制——.redcode/ 自带 `*` .gitignore
+      //   （默认不入库，项目可自行加 `!` 例外），并建 .redcode/docs/ 承接私有进度；MEMORY 模板
+      //   带当前工作路标格式与 docs/notes 决策笔记指引（否则新项目拿不到这套惯例——它们只写在
+      //   RedCode 自己的工作区 AGENTS.md 里，别的工作区注入不到）。
       if (!Flag.REDCODE_DISABLE_PROJECT_CONFIG && projectRoot(ctx) !== Global.Path.home) {
         yield* Effect.gen(function* () {
           const root = projectRoot(ctx)
@@ -140,9 +144,15 @@ export const layer = Layer.effect(
           if (hasOpencode || hasRedcode) return
           const projectRedcode = path.join(root, ".redcode")
           yield* fs.ensureDir(projectRedcode)
+          yield* fs.writeFileString(path.join(projectRedcode, ".gitignore"), "*\n")
+          yield* fs.ensureDir(path.join(projectRedcode, "docs"))
+          yield* fs.writeFileString(
+            path.join(projectRedcode, "docs", "README.md"),
+            '# 私有进度文档\n\n本机私有的进度/待办/环境文档放这里（`.redcode/` 默认不入库）。项目记忆 MEMORY.md 的「当前工作」路标行指向本目录。\n\n约定：\n- **按主题一份文档**（如 `memory-v4.md`），文件开头一行状态（进行中/已完成/已搁置 + 日期）。\n- **三段式**：当前状态 → 已完成（带验证结果）→ 待办/受阻。收工时更新，不写流水账。\n- **读取时机**：新会话续接任务时沿 MEMORY 路标行来读对应那份，不通读本目录。\n- **公开决策**：项目仓若有 `docs/`，成体系的设计/决策写那里（`docs/notes/`：问题/决策/备选与否决/后果/回链）；本目录只放进度与私有备忘。\n',
+          )
           yield* fs.writeFileString(
             path.join(projectRedcode, "MEMORY.md"),
-            "# 项目记忆\n\n> 该项目特有的备忘与教训。通用教训请写入全局 `~/.redcode/MEMORY.md`。\n> **索引化（260825）**：正文只存索引行（4-8 字主题 + 关键动作词），完整全文双写入 `~/.redcode/supermemory.db`（project=项目名）——写索引必须同时入库，缺一不可；机制全文见全局 AGENTS.md「记忆系统」与 memory-automation skill。\n",
+            '# 项目记忆\n\n> 该项目特有的备忘与教训。通用教训请写入全局 `~/.redcode/MEMORY.md`。\n> **索引化（260825）**：正文只存索引行（4-8 字主题 + 关键动作词），完整全文双写入 `~/.redcode/supermemory.db`（project=项目名）——写索引必须同时入库，缺一不可；机制全文见全局 AGENTS.md「记忆系统」与 memory skill。\n> **当前工作路标（261019 V4）**：进行中的事在下方留一行「- **当前工作：<一句话>**；进度/待办 → `.redcode/docs/<主题>.md`」，进度正文写进 `.redcode/docs/`（本机私有，不入库）；项目仓若有 `docs/`，成体系的设计/决策写 `docs/notes/`（问题/决策/备选与否决/后果，写完在代码或 CHANGELOG 回链），MEMORY 只留结论与指针。\n',
           )
         }).pipe(Effect.catchCause(Effect.logWarning))
       }
