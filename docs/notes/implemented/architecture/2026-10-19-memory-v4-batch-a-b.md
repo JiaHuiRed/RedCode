@@ -2,7 +2,7 @@
 
 状态:implemented
 
-设计:[2026-10-19-memory-v4](../../proposed/architecture/2026-10-19-memory-v4.md)。本 note 记录批次 A（项目级试点）与批次 B（召回增强）的落地；批次 D 已执行。本轮限定抽查 #679/#680/#681 保留冲突两侧内容，#133/#140 也存在；独立 SQLite 核对确认这些条目、六条已删索引对应全文及 dualwrite #88 唯一全文均在。限定抽查未证实知识丢失；差异仍待人工核对，不自动回填/清库，不能靠 push 消除文本差异。
+设计:[2026-10-19-memory-v4](../../proposed/architecture/2026-10-19-memory-v4.md)。本 note 记录批次 A（项目级试点）与批次 B（召回增强）的落地；批次 D 已执行。本轮限定抽查 #679/#680/#681 保留冲突两侧内容，#133/#140 也存在；独立 SQLite 确认上述抽查全文及六条已删索引对应全文均在。双写脚本核对 88 个索引全部有唯一全文。限定抽查未证实知识丢失；差异仍待人工核对，不自动回填/清库，不能靠 push 消除文本差异。
 
 ## 批次 A：三主题试点（删索引行，正文走 db 召回 + note 路标）
 
@@ -27,6 +27,19 @@
 按唯一 `message_id` 聚合成功事件的 `injected_ids` 集合：同一 message 的重复事件只计一个 turn；成功注入不再被后续 skip/miss 覆盖。V3 事件没有 `message_id` 时各自独立计数。原始 event/token 统计保留，drift 事件排除。
 
 验证：旧口径回归红为 Precision `n/a`（0/0）、coverage 57.1%；修复后目标测试 2 pass，四脚本合跑 18 pass / 0 fail / 52 expects，package typecheck EXIT=0（tsgo crash 后 fallback TS 5.9.3 通过）。这是有标签样本上的统计口径修复，不代表实测召回质量净收益。分析器只输出诊断，不新增 system 或模型可见文本。
+
+## 本轮终审：短卡来源、预算与审计边界
+
+- 所有候选统一按最终 rendered 块的既有 `estimateTokens` 检查 turn/session budget；这是估算，不是精确 tokenizer。session-budget 早退也写 `recall-skip`，不查 DB。
+- 只要块含 card，完整块（wrapper、编号、标签及 escape 后）必须 ≤`MEMORY_RECALL_CARD_BLOCK_BYTES`，默认 2 KiB；纯全文 V3 仍走既有 token 预算，不套用 2 KiB 硬限。
+- 来源锚限于当前 workspace 物理 `docs/notes`：拒绝 `..`、文件 symlink 外逃及 `docs/notes` 根 junction 指向 `.redcode`；Windows 路径 API 接受 `Docs/Notes` 大小写别名。来源非法或缺失时只回退 DB 原文作为历史材料，不读取私有标题。
+- drift audit 保存 signals 详细证据；仅在 writeAudit 成功后追加 notice。写入失败不阻塞、不重试。
+
+验证：主仓四测试文件 18 pass / 0 fail / 52 expects；opencode typecheck pty exit 0（tsgo 崩溃后 fallback TS 5.9.3）；version consistency 通过。私仓 Node/Bun 主测试（含 audit-limit、drift、cards、v4-guards 子分支）、audit-rotation、drift-audit-blocked、直接 v4-guards 均通过，无 symlink skipped 输出；两文件 `node --check` 与双仓 `git diff --check` 通过。
+
+模型可见四问：① 正常 card 格式不变，越限块不注入，非法来源回退 DB 历史材料；② system 固定前缀变化为 0，user 注入按既有 token 估算预算，不等于费用；③ 只改变最新 user 消息尾段，不改变 system/cache 前缀；④ 完整含 card 块默认 ≤2 KiB（可配置），纯 full 走既有 turn/session token 预算，notice ≤276 字节。
+
+未做真实模型端到端质量或成本验收；fixture 通过不代表实效或净收益。
 
 ## 模型可见四问
 
