@@ -109,26 +109,26 @@ function signalAheadOfOrigin(repoRoot) {
   return n > 0 ? tripped(`本地领先 origin ${n} 个提交（快照要推过去才有跨机价值）`) : clean("与 origin 持平")
 }
 
-// 信号 4：快照（含对端）有本机缺的 global 条目 → 该回填。按内容比对（db 行 id 跨机不对齐，#N 编号在正文里）
+// 261019 Red 信号4：快照正文未逐字匹配只证明文本差异，修订/合并/重编号需人工核对，不自动回填；db 行 id 跨机不同
 async function signalSnapshotMissing(snapshotPaths, dbPath) {
   try {
     if (snapshotPaths.length === 0) return unknown("找不到快照文件")
     const d = await getDb(dbPath)
     const stmt = isBun ? d.query("SELECT content FROM memories WHERE project='global'") : d.prepare("SELECT content FROM memories WHERE project='global'")
-    const local = new Set(stmt.all().map((r) => String(r.content ?? "").trim()))
-    const missing = []
+    const local = new Set(stmt.all().map((r) => String(r.content ?? "").replace(/\r\n?/g, "\n").trim()))
+    const missing = new Map()
     for (const path of snapshotPaths) {
-      const text = readFileSync(path, "utf8")
+      const text = readFileSync(path, "utf8").replace(/\r\n?/g, "\n")
       const peer = path.includes(hostname()) ? "" : `（${path.split(/[\\/]/).pop()}）`
       for (const chunk of text.split(/\n---\n/)) {
         const header = chunk.match(/^## \[([^\]]+)\] id=\d+ project=(\S+)/m)
         if (!header || header[2] !== "global") continue
         const body = chunk.replace(/^## .*\n/m, "").replace(/<!-- created_at:[^>]*-->/, "").trim()
-        if (body && !local.has(body)) missing.push(`${peer}${body.split("\n")[0].slice(0, 50)}`)
+        if (body && !local.has(body)) missing.set(body, `${peer}${body.split("\n")[0].slice(0, 50)}`)
       }
     }
-    return missing.length
-      ? tripped(`快照有 ${missing.length} 条本机缺失，首条：${missing[0]}`)
+    return missing.size
+      ? tripped(`快照有 ${missing.size} 条正文未逐字匹配（可能修订/合并/重编号，需人工核对），首条：${missing.values().next().value}`)
       : clean("快照条目本机全有")
   } catch (e) {
     return unknown(String(e?.message ?? e))
@@ -148,17 +148,17 @@ export async function collectSignals() {
   return { snapshot: own, dbNewerThanSnapshot: dbNewer, snapshotDirty: dirty, aheadOfOrigin: ahead, snapshotMissingLocally: missing }
 }
 
-// ≤300 字节硬上限（V4 注入预算纪律）；子代理显式忽略，主会话代理转告用户，不代做 commit/push
+// 261019 Red 通知只用固定短语，避免不可信详情进入高权威提醒；完整字节预算含信封
 export function formatDriftNotice(signals) {
   const parts = []
-  if (signals.dbNewerThanSnapshot?.tripped) parts.push("db 有比快照新的 global 条目")
-  if (signals.snapshotDirty?.tripped) parts.push("快照有未提交改动")
-  if (signals.aheadOfOrigin?.tripped) parts.push(signals.aheadOfOrigin.detail)
-  if (signals.snapshotMissingLocally?.tripped) parts.push(signals.snapshotMissingLocally.detail)
+  if (signals.dbNewerThanSnapshot?.tripped) parts.push("库需导出")
+  if (signals.snapshotDirty?.tripped) parts.push("快照需提交")
+  if (signals.aheadOfOrigin?.tripped) parts.push("本地提交需推送")
+  if (signals.snapshotMissingLocally?.tripped) parts.push("快照正文待核对")
   if (parts.length === 0) return null
   return (
-    `\n\n<system-reminder>\n[memory-drift] 记忆库漂移：${parts.join("；")}。` +
-    "主会话代理请在回复中提醒用户：跑 scripts/memory-drift-check.mjs 看详情；快照改动需 commit+push 才跨机生效。子代理忽略本条。\n</system-reminder>"
+    `\n\n<system-reminder>\n[memory-drift] ${parts.join("；")}。` +
+    "主会话代理转告用户：运行 scripts/memory-drift-check.mjs 查详情；快照改动需 commit+push 跨机生效。子代理忽略。\n</system-reminder>"
   )
 }
 
@@ -173,6 +173,12 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
       const mark = s.tripped ? "[!] " : s.unknown ? "[?] " : "[ok] "
       console.log(`${mark}${name}: ${s.detail}`)
     }
-    console.log(formatDriftNotice(signals) ? "\n→ 有漂移，见 [!] 项。" : "\n→ 无漂移。")
+    console.log(
+      formatDriftNotice(signals)
+        ? "\n→ 有漂移，见 [!] 项。"
+        : Object.values(signals).slice(1).some((s) => s.unknown)
+          ? "\n→ 检查不完整，见 [?] 项。"
+          : "\n→ 无漂移。",
+    )
   }
 }
