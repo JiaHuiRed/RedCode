@@ -152,7 +152,7 @@ export const layer = Layer.effect(
           )
           yield* fs.writeFileString(
             path.join(projectRedcode, "MEMORY.md"),
-            '# 项目记忆\n\n> 该项目特有的备忘与教训。通用教训请写入全局 `~/.redcode/MEMORY.md`。\n> **索引化（260825）**：正文只存索引行（4-8 字主题 + 关键动作词），完整全文双写入 `~/.redcode/supermemory.db`（project=项目名）——写索引必须同时入库，缺一不可；机制全文见全局 AGENTS.md「记忆系统」与 memory skill。\n> **当前工作路标（261019 V4）**：进行中的事在下方留一行「- **当前工作：<一句话>**；进度/待办 → `.redcode/docs/<主题>.md`」，进度正文写进 `.redcode/docs/`（本机私有，不入库）；项目仓若有 `docs/`，成体系的设计/决策写 `docs/notes/`（问题/决策/备选与否决/后果，写完在代码或 CHANGELOG 回链），MEMORY 只留结论与指针。\n',
+            '# 项目记忆\n\n> 该项目特有的备忘与教训。通用教训请写入全局 `~/.redcode/MEMORY.md`。\n> **索引化（260825）**：正文只存索引行（4-8 字主题 + 关键动作词），完整全文双写入 `~/.redcode/supermemory.db`（project=项目名）——写索引必须同时入库，缺一不可；机制全文见全局 AGENTS.md「记忆系统」与 memory skill。\n> **当前工作路标（261019 V4）**：任务开工即在下方留一行「- **当前工作：<一句话>**；进度/待办 → `.redcode/docs/<主题>.md`」，进度正文随手写进指向的文档（本机私有，不入库，样式见 `.redcode/docs/README.md`）；项目仓若有 `docs/`，成体系的设计/决策写 `docs/notes/`（问题/决策/备选与否决/后果，写完在代码或 CHANGELOG 回链），MEMORY 只留结论与指针。\n',
           )
         }).pipe(Effect.catchCause(Effect.logWarning))
       }

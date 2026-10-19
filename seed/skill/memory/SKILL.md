@@ -59,6 +59,8 @@ description: 记忆的写与剪——何时写、双写落笔格式、以及什�
 
 ## 2. 双写动作（缺一不可）
 
+**写之前先看格式（V2→V3 的老规矩，写路径同样适用，别只在整理时才想起来）**：项目 MEMORY 还是 V2 全文段落式（无索引行结构）→ 先按 5.2 就地索引化（旧条目全文入库 + 正文改索引行），**再**写新条目；直接往全文式里塞索引行会养出半文半索引的混血，之后谁都不敢动。
+
 ① MEMORY.md 加索引行：4-8 字主题 + 关键动作词，放对应分区；全局条目编号 = **当前最大号 + 1**。查号口径（261011 修订）：**先 `bun ~/.redcode/scripts/next-memory-id.mjs` 查 db**——编号在 INSERT 时即占用，MEMORY.md 索引行滞后于库，同机并行会话已实测撞号；跨机再 fetch 私仓比对 origin 的 `memory/lessons-backup.*.md` 快照，取两者最大。只 grep MEMORY.md（本地或远端）都会漏（261011 #320 实证；旧版让 grep MEMORY.md 的命令已废）
 ② db 存全文：`sqlite_query` 对 `~/.redcode/supermemory.db` 执行
 `INSERT INTO memories (content, project, source) VALUES (全文, 'global'|项目名, 'manual')`
@@ -82,6 +84,7 @@ description: 记忆的写与剪——何时写、双写落笔格式、以及什�
 - **样式**（参考 RedMon docs）：按主题一份、文件开头一行状态（进行中/已完成/已搁置 + 日期）、三段式（当前状态 → 已完成带验证结果 → 待办/受阻）；收工更新，续接沿路标读对应那份，不通读。
 - **项目仓有 `docs/` 时**：成体系的设计/决策写 `docs/notes/<implemented|proposed|rejected>/<类型>/YYYY-MM-DD-<slug>.md`（问题/决策/备选与否决/后果/回链）；权威正文在 note，MEMORY 与 db 不维护第二篇叙述。
 - **三个时刻**：创建=新任务开工或决策拍板时；读取=续接沿路标、召回短卡按来源指针；写入=收工/批次完成更新进度节、决策落地写 note 并回链。
+- **旧工作区自愈**：`.redcode/` 已存在但没有 docs/、MEMORY 没路标行 → 首次按 V4 收工时顺手补齐（建 `.redcode/docs/` 写进度文档、MEMORY 加路标行），不等迁移任务；MEMORY 若还是全文式，先走第 2 节的索引化再动笔。
 
 ## 4. 边界
 
