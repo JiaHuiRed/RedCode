@@ -88,6 +88,12 @@ const api: ElectronAPI = {
   exportDebugLogs: () => ipcRenderer.invoke("export-debug-logs"),
   saveGuiDiagnostics: (payload: string) => ipcRenderer.invoke("save-gui-diagnostics", payload),
   recordFatalRendererError: (error) => ipcRenderer.invoke("record-fatal-renderer-error", error),
+  getMobileGatewayStatus: () => ipcRenderer.invoke("get-mobile-gateway-status"),
+  startMobileGateway: (host, directory, sessionID) =>
+    ipcRenderer.invoke("start-mobile-gateway", host, directory, sessionID),
+  refreshMobileGatewayPairingCode: () => ipcRenderer.invoke("refresh-mobile-gateway-pairing-code"),
+  stopMobileGateway: () => ipcRenderer.invoke("stop-mobile-gateway"),
+  revokeMobileGatewayDevice: (id) => ipcRenderer.invoke("revoke-mobile-gateway-device", id),
 }
 
 contextBridge.exposeInMainWorld("api", api)

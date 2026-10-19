@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, rmSync } from "node:fs"
 import * as http from "node:http"
 import { createServer } from "node:net"
 import { homedir, tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { isAbsolute, join, resolve } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event, ProcessMetric } from "electron"
 import { app, BrowserWindow, dialog, Menu, nativeTheme, shell, Tray } from "electron"
@@ -55,6 +55,12 @@ import {
 import { checkUpdate, checkForUpdates, installUpdate, setupAutoUpdater } from "./updater"
 import { createDeepLinkDelivery } from "./deep-link-delivery"
 import { ensureNotificationShortcut } from "./notification-shortcut"
+import {
+  createMobileGateway,
+  listMobileGatewayHosts,
+  mobileGatewaySessionInScope,
+  type MobileGatewayStartInfo,
+} from "./mobile-gateway"
 import { Cause, Deferred, Effect, Fiber } from "effect"
 
 const APP_NAMES: Record<string, string> = {
@@ -73,6 +79,10 @@ const jsCallStackFeature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
 let logger: ReturnType<typeof initLogging>
 let mainWindow: BrowserWindow | null = null
 let server: SidecarListener | null = null
+let mobileGateway: ReturnType<typeof createMobileGateway> | undefined
+let mobileGatewayInfo: MobileGatewayStartInfo | undefined
+let mobileGatewayStartGeneration = 0
+let mobileGatewayStarting = false
 // 260706 Red 排查 GUI 内存诊断：定期把 app.getAppMetrics() 按进程类型/PID 打到日志里，
 //   下次复现"打开对话飙到 7G"时能直接看是哪个真实进程（渲染/utility/GPU）在涨，而不是靠猜。
 let metricsInterval: NodeJS.Timeout | undefined
@@ -218,7 +228,17 @@ function setInitStep(step: InitStep) {
   initEmitter.emit("step", step)
 }
 
+async function stopMobileGateway() {
+  mobileGatewayStartGeneration++
+  mobileGatewayStarting = false
+  const current = mobileGateway
+  mobileGateway = undefined
+  mobileGatewayInfo = undefined
+  await current?.stop()
+}
+
 async function killSidecar() {
+  await stopMobileGateway()
   if (!server) return
   const current = server
   server = null
@@ -237,6 +257,76 @@ async function killSidecar() {
 let quitting = false
 let respawnAttempts = 0
 let sidecarSpawnCfg: { hostname: string; port: number; password: string; userDataPath: string } | undefined
+
+function getMobileGatewayStatus() {
+  return {
+    hosts: listMobileGatewayHosts(),
+    running: Boolean(mobileGateway),
+    info: mobileGatewayInfo ?? null,
+    devices: mobileGateway?.devices() ?? [],
+  }
+}
+
+async function startMobileGateway(host: string, directory: string, sessionID: string) {
+  if (mobileGateway) throw new Error("Stop the active mobile Gateway before changing its workspace")
+  if (mobileGatewayStarting) throw new Error("The mobile Gateway is already starting")
+  const generation = ++mobileGatewayStartGeneration
+  mobileGatewayStarting = true
+  const currentServer = server
+  const currentConfig = sidecarSpawnCfg
+  try {
+    if (!currentServer || !currentConfig) throw new Error("The GUI sidecar is not ready")
+    if (!listMobileGatewayHosts().some((item) => item.address === host))
+      throw new Error("Select a loopback or private network interface")
+    if (!isAbsolute(directory) || directory.includes("\0")) throw new Error("A valid project directory is required")
+    if (!/^ses_[A-Za-z0-9_-]{1,128}$/.test(sessionID)) throw new Error("Open a session before enabling mobile access")
+
+    const upstream = `http://${currentConfig.hostname}:${currentConfig.port}`
+    const response = await fetch(new URL(`/session/${sessionID}`, upstream), {
+      headers: {
+        authorization: `Basic ${Buffer.from(`redcode:${currentConfig.password}`).toString("base64")}`,
+        "x-redcode-directory": directory,
+      },
+      signal: AbortSignal.timeout(5_000),
+    })
+    if (!response.ok) {
+      await response.body?.cancel()
+      throw new Error("The selected session could not be verified in this project")
+    }
+    const session: unknown = await response.json().catch(() => undefined)
+    if (!mobileGatewaySessionInScope(session, sessionID, directory)) {
+      throw new Error("The selected session could not be verified in this project")
+    }
+    if (generation !== mobileGatewayStartGeneration || server !== currentServer || sidecarSpawnCfg !== currentConfig) {
+      throw new Error("The GUI sidecar changed while starting the mobile Gateway")
+    }
+
+    const gateway = createMobileGateway({
+      host,
+      sidecar: { url: upstream, username: "redcode", password: currentConfig.password },
+      scope: { directory, initialSessionID: sessionID },
+    })
+    const info = await gateway.start()
+    if (generation !== mobileGatewayStartGeneration || server !== currentServer || sidecarSpawnCfg !== currentConfig) {
+      await gateway.stop()
+      throw new Error("The GUI sidecar changed while starting the mobile Gateway")
+    }
+    mobileGateway = gateway
+    mobileGatewayInfo = info
+    logger.log("mobile gateway started", { host: info.host, port: info.port })
+    return info
+  } finally {
+    if (generation === mobileGatewayStartGeneration) mobileGatewayStarting = false
+  }
+}
+
+function refreshMobileGatewayPairingCode() {
+  const info = mobileGateway?.refreshPairingCode()
+  if (!info) throw new Error("The mobile Gateway is not running")
+  mobileGatewayInfo = info
+  return info
+}
+
 const RESPAWN_DELAYS_MS = [1000, 3000, 10000]
 
 // 260902 cc 时间窗闸门。原来只有 respawnAttempts 一个计数器，而它在**健康检查通过**时清零
@@ -621,6 +711,11 @@ const main = Effect.gen(function* () {
       const reportPath = writeCrashReport("fatal renderer error", { ...error })
       writeLog("renderer", "fatal renderer error", { ...error, reportPath }, "error")
     },
+    getMobileGatewayStatus: () => getMobileGatewayStatus(),
+    startMobileGateway: (host, directory, sessionID) => startMobileGateway(host, directory, sessionID),
+    refreshMobileGatewayPairingCode: async () => refreshMobileGatewayPairingCode(),
+    stopMobileGateway: () => stopMobileGateway(),
+    revokeMobileGatewayDevice: (id) => mobileGateway?.revoke(id) ?? false,
   })
 
   yield* Effect.promise(() => app.whenReady())

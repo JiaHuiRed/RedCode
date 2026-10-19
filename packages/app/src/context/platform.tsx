@@ -20,9 +20,28 @@ export type FatalRendererErrorLog = {
   os?: DesktopOS
 }
 
+export type MobileGatewayHost = { address: string; name: string }
+export type MobileGatewayDevice = { id: string; name: string; pairedAt: number }
+export type MobileGatewayStartInfo = {
+  url: string
+  host: string
+  port: number
+  pairingCode: string
+  pairingExpiresAt: number
+  fingerprint: string
+}
+export type MobileGatewayStatus = {
+  hosts: MobileGatewayHost[]
+  running: boolean
+  info: MobileGatewayStartInfo | null
+  devices: MobileGatewayDevice[]
+}
+
 export type Platform = {
   /** Platform discriminator */
   platform: PlatformName
+  /** Android WebView companion mode */
+  mobileCompanion?: boolean
 
   /** Desktop OS (Electron desktop only) */
   os?: DesktopOS
@@ -117,6 +136,13 @@ export type Platform = {
 
   /** Record a fatal renderer error in platform logs (desktop only) */
   recordFatalRendererError?(error: FatalRendererErrorLog): Promise<void>
+
+  /** Manage the explicitly enabled mobile companion Gateway (desktop only) */
+  getMobileGatewayStatus?(): Promise<MobileGatewayStatus>
+  startMobileGateway?(host: string, directory: string, sessionID: string): Promise<MobileGatewayStartInfo>
+  refreshMobileGatewayPairingCode?(): Promise<MobileGatewayStartInfo>
+  stopMobileGateway?(): Promise<void>
+  revokeMobileGatewayDevice?(id: string): Promise<boolean>
 }
 
 export const { use: usePlatform, provider: PlatformProvider } = createSimpleContext({

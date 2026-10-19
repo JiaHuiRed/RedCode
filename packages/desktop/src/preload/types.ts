@@ -1,5 +1,22 @@
 import type { DesktopMenuAction } from "@redcode-ai/app/desktop-menu"
 
+export type MobileGatewayHost = { address: string; name: string }
+export type MobileGatewayDevice = { id: string; name: string; pairedAt: number }
+export type MobileGatewayStartInfo = {
+  url: string
+  host: string
+  port: number
+  pairingCode: string
+  pairingExpiresAt: number
+  fingerprint: string
+}
+export type MobileGatewayStatus = {
+  hosts: MobileGatewayHost[]
+  running: boolean
+  info: MobileGatewayStartInfo | null
+  devices: MobileGatewayDevice[]
+}
+
 export type InitStep = { phase: "server_waiting" } | { phase: "sqlite_waiting" } | { phase: "done" }
 
 export type ServerReadyData = {
@@ -96,4 +113,9 @@ export type ElectronAPI = {
   exportDebugLogs: () => Promise<string>
   saveGuiDiagnostics: (payload: string) => Promise<string | null>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>
+  getMobileGatewayStatus: () => Promise<MobileGatewayStatus>
+  startMobileGateway: (host: string, directory: string, sessionID: string) => Promise<MobileGatewayStartInfo>
+  refreshMobileGatewayPairingCode: () => Promise<MobileGatewayStartInfo>
+  stopMobileGateway: () => Promise<void>
+  revokeMobileGatewayDevice: (id: string) => Promise<boolean>
 }

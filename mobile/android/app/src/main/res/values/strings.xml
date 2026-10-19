@@ -1,0 +1,21 @@
+<resources>
+  <string name="app_name">RedCode Mobile</string>
+  <string name="mobile_pair_title">Pair this device</string>
+  <string name="mobile_pair_description">Start Mobile Companion on the RedCode desktop and scan its pairing QR code. Camera access is requested only when you scan.</string>
+  <string name="mobile_scan_qr">Scan pairing QR</string>
+  <string name="mobile_scan_prompt">Scan the QR code shown in RedCode desktop settings</string>
+  <string name="mobile_manual_pairing">Enter details manually</string>
+  <string name="mobile_hide_manual_pairing">Hide manual setup</string>
+  <string name="mobile_invalid_pairing_qr">This is not a valid RedCode pairing QR code.</string>
+  <string name="mobile_gateway_address">Gateway address</string>
+  <string name="mobile_gateway_address_hint">https://localhost:port</string>
+  <string name="mobile_pairing_code">Pairing code</string>
+  <string name="mobile_pairing_code_hint">8 digits</string>
+  <string name="mobile_certificate_fingerprint">SHA-256 certificate fingerprint</string>
+  <string name="mobile_fingerprint_hint">64 hexadecimal characters</string>
+  <string name="mobile_pair">Pair</string>
+  <string name="mobile_pairing">Pairing…</string>
+  <string name="mobile_forget">Clear saved pairing</string>
+  <string name="mobile_desktop_revoked">Gateway stopped or device access was revoked. Pair again to reconnect.</string>
+  <string name="mobile_error">Could not connect</string>
+</resources>

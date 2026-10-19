@@ -13,6 +13,8 @@ import type {
   TitlebarTheme,
   WindowConfig,
   WslConfig,
+  MobileGatewayStartInfo,
+  MobileGatewayStatus,
 } from "../preload/types"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { isTrustedRendererUrl } from "./renderer-url"
@@ -46,6 +48,11 @@ type Deps = {
   exportDebugLogs: () => Promise<string>
   saveGuiDiagnostics: (payload: string) => string | undefined
   recordFatalRendererError: (error: FatalRendererError) => Promise<void> | void
+  getMobileGatewayStatus: () => MobileGatewayStatus
+  startMobileGateway: (host: string, directory: string, sessionID: string) => Promise<MobileGatewayStartInfo>
+  refreshMobileGatewayPairingCode: () => Promise<MobileGatewayStartInfo>
+  stopMobileGateway: () => Promise<void>
+  revokeMobileGatewayDevice: (id: string) => boolean
 }
 
 function assertTrustedIpcSender(event: Pick<IpcMainEvent | IpcMainInvokeEvent, "senderFrame">) {
@@ -104,6 +111,17 @@ export function registerIpcHandlers(deps: Deps) {
   )
   ipcMain.handle("record-fatal-renderer-error", (_event: IpcMainInvokeEvent, error: FatalRendererError) =>
     deps.recordFatalRendererError(error),
+  )
+  ipcMain.handle("get-mobile-gateway-status", () => deps.getMobileGatewayStatus())
+  ipcMain.handle(
+    "start-mobile-gateway",
+    (_event: IpcMainInvokeEvent, host: string, directory: string, sessionID: string) =>
+      deps.startMobileGateway(host, directory, sessionID),
+  )
+  ipcMain.handle("refresh-mobile-gateway-pairing-code", () => deps.refreshMobileGatewayPairingCode())
+  ipcMain.handle("stop-mobile-gateway", () => deps.stopMobileGateway())
+  ipcMain.handle("revoke-mobile-gateway-device", (_event: IpcMainInvokeEvent, id: string) =>
+    deps.revokeMobileGatewayDevice(id),
   )
   ipcMain.handle("store-get", (_event: IpcMainInvokeEvent, name: string, key: string) => {
     try {

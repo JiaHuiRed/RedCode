@@ -124,6 +124,7 @@ const clearAuthToken = () => {
 
 const platform: Platform = {
   platform: "web",
+  mobileCompanion: navigator.userAgent.includes("RedCodeMobileCompanion/"),
   version: pkg.version,
   openLink,
   back,

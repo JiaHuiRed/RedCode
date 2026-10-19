@@ -1,0 +1,21 @@
+<resources>
+  <string name="app_name">RedCode 移动接力</string>
+  <string name="mobile_pair_title">配对此设备</string>
+  <string name="mobile_pair_description">在 RedCode 桌面端开启移动接力，扫描设置页显示的配对二维码即可。只有点击扫码时才会申请相机权限。</string>
+  <string name="mobile_scan_qr">扫描配对二维码</string>
+  <string name="mobile_scan_prompt">扫描 RedCode 桌面设置中显示的二维码</string>
+  <string name="mobile_manual_pairing">手动输入配对信息</string>
+  <string name="mobile_hide_manual_pairing">收起手动设置</string>
+  <string name="mobile_invalid_pairing_qr">这不是有效的 RedCode 配对二维码。</string>
+  <string name="mobile_gateway_address">Gateway 地址</string>
+  <string name="mobile_gateway_address_hint">https://localhost:端口</string>
+  <string name="mobile_pairing_code">配对码</string>
+  <string name="mobile_pairing_code_hint">8 位数字</string>
+  <string name="mobile_certificate_fingerprint">SHA-256 证书指纹</string>
+  <string name="mobile_fingerprint_hint">64 位十六进制字符</string>
+  <string name="mobile_pair">配对</string>
+  <string name="mobile_pairing">正在配对…</string>
+  <string name="mobile_forget">清除本机配对信息</string>
+  <string name="mobile_desktop_revoked">Gateway 已停止或设备授权已撤销，请重新配对。</string>
+  <string name="mobile_error">连接失败</string>
+</resources>

@@ -2,7 +2,15 @@ export { AppBaseProviders, AppInterface } from "./app"
 export { ACCEPTED_FILE_EXTENSIONS, ACCEPTED_FILE_TYPES, filePickerFilters } from "./constants/file-picker"
 export { useCommand } from "./context/command"
 export { loadLocaleDict, normalizeLocale, type Locale } from "./context/language"
-export { type FatalRendererErrorLog, type Platform, PlatformProvider } from "./context/platform"
+export {
+  type FatalRendererErrorLog,
+  type MobileGatewayDevice,
+  type MobileGatewayHost,
+  type MobileGatewayStartInfo,
+  type MobileGatewayStatus,
+  type Platform,
+  PlatformProvider,
+} from "./context/platform"
 export { ServerConnection } from "./context/server"
 export { deepLinkEvent, isDeepLinkListenerReady, queuePendingDeepLinks } from "./pages/layout/deep-links"
 export { handleNotificationClick } from "./utils/notification-click"

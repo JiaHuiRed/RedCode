@@ -5,6 +5,7 @@ import { DockPrompt } from "@redcode-ai/ui/dock-prompt"
 import { Icon } from "@redcode-ai/ui/icon"
 import { Keybind } from "@redcode-ai/ui/keybind"
 import { useLanguage } from "@/context/language"
+import { usePlatform } from "@/context/platform"
 
 export function SessionPermissionDock(props: {
   request: PermissionRequest
@@ -12,6 +13,7 @@ export function SessionPermissionDock(props: {
   onDecide: (response: "once" | "always" | "reject") => void
 }) {
   const language = useLanguage()
+  const platform = usePlatform()
   const isMac = navigator.platform.includes("Mac")
   const modLabel = () => (isMac ? "⌘" : "Ctrl")
 
@@ -20,6 +22,7 @@ export function SessionPermissionDock(props: {
   // 用 window 级监听而非 DockPrompt onKeyDown：焦点可能在输入框（哥哥「正在打字时也能按」），
   // dock 内 onKeyDown 只在弹窗自身捕获，输入框内按键不会冒泡到
   onMount(() => {
+    if (platform.mobileCompanion) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (props.responding) return
       const mod = event.ctrlKey || event.metaKey
@@ -60,29 +63,43 @@ export function SessionPermissionDock(props: {
         </div>
       }
       footer={
-        <>
-          <div />
-          <div data-slot="permission-footer-actions">
-            <Button variant="ghost" size="normal" onClick={() => props.onDecide("reject")} disabled={props.responding}>
-              {language.t("ui.permission.deny")}
-              {/* 260811 Red 深色主题下 keybind 的浅底+描边太突兀，按钮内保持透明文字态 */}
-              <Keybind class="!shadow-none !bg-transparent">Esc</Keybind>
-            </Button>
-            <Button
-              variant="secondary"
-              size="normal"
-              onClick={() => props.onDecide("always")}
-              disabled={props.responding}
-            >
-              {language.t("ui.permission.allowAlways")}
-              <Keybind class="!shadow-none !bg-transparent">{modLabel()}+Shift+Enter</Keybind>
-            </Button>
-            <Button variant="primary" size="normal" onClick={() => props.onDecide("once")} disabled={props.responding}>
-              {language.t("ui.permission.allowOnce")}
-              <Keybind class="!shadow-none !bg-transparent">{modLabel()}+Enter</Keybind>
-            </Button>
-          </div>
-        </>
+        <Show
+          when={!platform.mobileCompanion}
+          fallback={
+            <div class="text-12-regular text-text-weak">
+              {language.t("settings.mobileGateway.permissionOnDesktop")}
+            </div>
+          }
+        >
+          <>
+            <div />
+            <div data-slot="permission-footer-actions">
+              <Button variant="ghost" size="normal" onClick={() => props.onDecide("reject")} disabled={props.responding}>
+                {language.t("ui.permission.deny")}
+                {/* 260811 Red 深色主题下 keybind 的浅底+描边太突兀，按钮内保持透明文字态 */}
+                <Keybind class="!shadow-none !bg-transparent">Esc</Keybind>
+              </Button>
+              <Button
+                variant="secondary"
+                size="normal"
+                onClick={() => props.onDecide("always")}
+                disabled={props.responding}
+              >
+                {language.t("ui.permission.allowAlways")}
+                <Keybind class="!shadow-none !bg-transparent">{modLabel()}+Shift+Enter</Keybind>
+              </Button>
+              <Button
+                variant="primary"
+                size="normal"
+                onClick={() => props.onDecide("once")}
+                disabled={props.responding}
+              >
+                {language.t("ui.permission.allowOnce")}
+                <Keybind class="!shadow-none !bg-transparent">{modLabel()}+Enter</Keybind>
+              </Button>
+            </div>
+          </>
+        </Show>
       }
     >
       <Show when={toolDescription()}>

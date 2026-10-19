@@ -31,6 +31,7 @@ import { decode64 } from "@/utils/base64"
 import { playSoundById, SOUND_OPTIONS } from "@/utils/sound"
 import { Link } from "./link"
 import { SettingsList, SettingsRow } from "./settings-list"
+import { SettingsMobileCompanion } from "./settings-mobile-companion"
 
 // 候选列表来自系统枚举，字体本机一定有，不存在回退到默认字体的误判
 const isMonospace = (font: string) => {
@@ -1215,6 +1216,8 @@ export const SettingsGeneral: Component = () => {
 
       <div class="flex flex-col gap-8 w-full">
         <GeneralSection />
+
+        <SettingsMobileCompanion directory={dir()} sessionID={params.id} />
 
         <AppearanceSection />
 

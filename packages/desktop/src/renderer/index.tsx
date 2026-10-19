@@ -228,6 +228,13 @@ const createPlatform = (): Platform => {
 
     recordFatalRendererError: (error) => window.api.recordFatalRendererError(error),
 
+    getMobileGatewayStatus: () => window.api.getMobileGatewayStatus(),
+    startMobileGateway: (host, directory, sessionID) =>
+      window.api.startMobileGateway(host, directory, sessionID),
+    refreshMobileGatewayPairingCode: () => window.api.refreshMobileGatewayPairingCode(),
+    stopMobileGateway: () => window.api.stopMobileGateway(),
+    revokeMobileGatewayDevice: (id) => window.api.revokeMobileGatewayDevice(id),
+
     restart: async () => {
       await window.api.killSidecar().catch(() => undefined)
       window.api.relaunch()
