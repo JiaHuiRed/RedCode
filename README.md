@@ -6,7 +6,7 @@
 
 基于 [OpenCode](https://github.com/anomalyco/opencode) 深度开发，面向中文使用习惯与个性化工作流持续优化。
 
-[![版本](https://badgen.net/badge/版本/0.12.14/blue)](CHANGELOG.md)
+[![版本](https://badgen.net/badge/版本/0.12.15/blue)](CHANGELOG.md)
 [![平台](https://badgen.net/badge/平台/Windows%2010%2F11/green)](https://github.com/JiaHuiRed/RedCode)
 [![TypeScript](https://badgen.net/badge/TypeScript/7.x/3178c6)](https://typescriptlang.org)
 [![Bun](https://badgen.net/badge/Bun/1.3.x/fb6e19)](https://bun.sh)

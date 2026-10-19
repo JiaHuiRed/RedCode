@@ -8,7 +8,7 @@
 
 ---
 
-### [Unreleased]
+### [0.12.15] - 2026-10-19
 
 - **新项目 `.redcode/` 播种升级（Memory V4）**（`packages/opencode/src/project/bootstrap.ts`）：新建项目时除 MEMORY.md 外一并播种 `.redcode/.gitignore`（`*`，私有边界由机制保证、项目可自行加 `!` 例外）与 `.redcode/docs/README.md`（私有进度约定：按主题一份、开头状态行、三段式，读取沿 MEMORY 路标不通读；样式参考 RedMon docs 的入口 README + 状态档位 + 按任务加载实践）；MEMORY 模板补「当前工作路标」格式与项目仓 `docs/notes/` 决策笔记指引，并修正模板中已合并更名的 `memory-automation skill` 旧称。仅影响新播种的项目（已有 `.redcode/` 不动）；模板为模型可见内容：新项目每轮固定前缀约 +55 token，换取惯例在场，模型可见四问见 [memory-v4-batch-a-b](docs/notes/implemented/architecture/2026-10-19-memory-v4-batch-a-b.md)。验证：opencode typecheck EXIT=0（tsgo 崩溃回退 TS 5.9.3 通过）；无既有 bootstrap 自动化用例，播种行为待真新项目首启验收。
 
