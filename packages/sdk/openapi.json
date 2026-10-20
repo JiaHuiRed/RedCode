@@ -16021,20 +16021,20 @@
           "trigger_tokens": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 10000000,
-            "description": "Token count that triggers native compaction, clamped to the model's usable window (default: 250000; maximum: 10000000)"
+            "maximum": 2000000,
+            "description": "Token count that triggers native compaction, clamped to the model's usable window (default: 250000; maximum: 2000000)"
           },
           "target_tokens": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 10000000,
-            "description": "Token count native compaction aims for after summarizing, scaled down with the trigger when the model window is smaller (default: 130000; maximum: 10000000)"
+            "maximum": 2000000,
+            "description": "Token count native compaction aims for after summarizing, scaled down with the trigger when the model window is smaller (default: 130000; maximum: 2000000)"
           },
           "reminder_tokens": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 10000000,
-            "description": "Token count at which the user is reminded to compact before the trigger fires, scaled down with the trigger when the model window is smaller (default: 220000; maximum: 10000000)"
+            "maximum": 2000000,
+            "description": "Token count at which the user is reminded to compact before the trigger fires, scaled down with the trigger when the model window is smaller (default: 220000; maximum: 2000000)"
           },
           "soft_ratio": {
             "anyOf": [
@@ -16091,8 +16091,8 @@
           "retained_max_tokens": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 10000000,
-            "description": "Maximum tokens of inherited protected records carried into a new compaction block (default: 20000; maximum: 10000000)"
+            "maximum": 2000000,
+            "description": "Maximum tokens of inherited protected records carried into a new compaction block (default: 20000; maximum: 2000000)"
           },
           "summary_max_bytes": {
             "type": "integer",
@@ -16103,8 +16103,8 @@
           "active_max_tokens": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 10000000,
-            "description": "Maximum tokens kept active per compaction range (default: 80000; maximum: 10000000)"
+            "maximum": 2000000,
+            "description": "Maximum tokens kept active per compaction range (default: 80000; maximum: 2000000)"
           },
           "active_max_bytes": {
             "type": "integer",
@@ -16754,6 +16754,25 @@
                 },
                 "additionalProperties": false,
                 "description": "Bounded, hash-only provider request diagnostics. Does not modify model requests or cache keys."
+              },
+              "reasoningStall": {
+                "type": "object",
+                "properties": {
+                  "idleMs": {
+                    "type": "integer",
+                    "minimum": 1000,
+                    "maximum": 1800000,
+                    "description": "Silence (ms) with no provider event before a reasoning-only turn is treated as stalled (default: 300000). Very low values cut normal long thinking."
+                  },
+                  "maxChars": {
+                    "type": "integer",
+                    "minimum": 10000,
+                    "maximum": 2000000,
+                    "description": "Backstop on reasoning characters accumulated in one step, for providers that stream forever (default: 200000)."
+                  }
+                },
+                "additionalProperties": false,
+                "description": "When a reasoning-only step is treated as stalled: silence before cutoff, plus a character backstop for providers that stream forever."
               },
               "mcp_timeout": {
                 "type": "integer",
