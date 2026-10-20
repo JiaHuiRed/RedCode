@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { validateCustomProvider } from "./dialog-custom-provider-form"
+import { configOverridesAuthKey, mergeProviderOptions, validateCustomProvider } from "./dialog-custom-provider-form"
 
 const t = (key: string) => key
 
@@ -76,5 +76,26 @@ describe("validateCustomProvider", () => {
       key: "provider.custom.error.duplicate",
       value: undefined,
     })
+  })
+
+  test("mergeProviderOptions strips stale config apiKey but keeps other fields", () => {
+    expect(
+      mergeProviderOptions(
+        { baseURL: "https://old.example.com", apiKey: "sk-stale", extra: 1 },
+        { baseURL: "https://new.example.com" },
+      ),
+    ).toEqual({ baseURL: "https://new.example.com", extra: 1 })
+    expect(mergeProviderOptions(undefined, { baseURL: "https://api.example.com" })).toEqual({
+      baseURL: "https://api.example.com",
+    })
+  })
+
+  test("configOverridesAuthKey flags config-layer keys shadowing an auth-saved key", () => {
+    expect(configOverridesAuthKey({ apiKey: "sk-stale" }, "sk-new")).toBe(true)
+    expect(configOverridesAuthKey({ apiKey: "sk-stale", baseURL: "https://x" }, "sk-new")).toBe(true)
+    expect(configOverridesAuthKey({ baseURL: "https://x" }, "sk-new")).toBe(false)
+    expect(configOverridesAuthKey(undefined, "sk-new")).toBe(false)
+    expect(configOverridesAuthKey({ apiKey: "" }, "sk-new")).toBe(false)
+    expect(configOverridesAuthKey({ apiKey: "sk-stale" }, undefined)).toBe(false)
   })
 })

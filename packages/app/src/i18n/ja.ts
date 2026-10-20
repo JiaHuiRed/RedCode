@@ -175,6 +175,8 @@ export const dict = {
   "provider.custom.field.apiKey.label": "APIキー",
   "provider.custom.field.apiKey.placeholder": "APIキー",
   "provider.custom.field.apiKey.description": "オプション。ヘッダーで認証を管理する場合は空のままにしてください。",
+  "provider.custom.save.shadowed.title": "設定ファイルのAPIキーが保存したキーを上書きします",
+  "provider.custom.save.shadowed.description": "{provider} のAPIキーは設定ファイルに残っており、エンジンは設定ファイル側を優先します。設定ファイルのapiKeyを削除してください。",
   "provider.custom.models.label": "モデル",
   "provider.custom.models.id.label": "ID",
   "provider.custom.models.id.placeholder": "model-id",

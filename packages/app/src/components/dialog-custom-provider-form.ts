@@ -151,6 +151,29 @@ export function validateCustomProvider(input: ValidateArgs) {
   }
 }
 
+// 261020 Red 写回 payload 的 options 合并必须剔除 config 层残留的字面量 apiKey：
+// key 只经 auth.set 落库，带进写回会把合并视图里的旧 key 复制进主配置，并在
+// provider.ts:1820 压制 auth 里刚存的新 key（表现：换新 key 后仍 401）。
+export function mergeProviderOptions(
+  existing: Record<string, unknown> | undefined,
+  formOptions: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged = { ...existing, ...formOptions }
+  delete merged.apiKey
+  return merged
+}
+
+// 261020 Red 轻方向告警判据：auth.set 落库后，配置层仍有 apiKey（字面量或 {env:}
+// 展开值）会在 provider.ts:1820 压制它——保存成功时调用方据此弹警告提示删配置层那份。
+export function configOverridesAuthKey(
+  existingOptions: Record<string, unknown> | undefined,
+  savedKey: string | undefined,
+): boolean {
+  if (!savedKey) return false
+  const configKey = existingOptions?.apiKey
+  return typeof configKey === "string" && configKey !== ""
+}
+
 let row = 0
 
 const nextRow = () => `row-${row++}`

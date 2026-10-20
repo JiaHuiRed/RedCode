@@ -220,6 +220,8 @@ export const dict = {
   "provider.custom.field.apiKey.label": "API 密钥",
   "provider.custom.field.apiKey.placeholder": "API 密钥",
   "provider.custom.field.apiKey.description": "可选。如果你通过请求头管理认证，可留空。",
+  "provider.custom.save.shadowed.title": "配置文件中的 API Key 会覆盖刚保存的",
+  "provider.custom.save.shadowed.description": "{provider} 在配置文件里仍有 API Key，引擎会优先用配置那份。建议删除配置文件里的 apiKey，改用这里保存的。",
   "provider.custom.models.label": "模型",
   "provider.custom.models.id.label": "ID",
   "provider.custom.models.id.placeholder": "model-id",

@@ -199,6 +199,8 @@ export const dict = {
   "provider.custom.field.apiKey.label": "API key",
   "provider.custom.field.apiKey.placeholder": "API key",
   "provider.custom.field.apiKey.description": "Optional. Leave empty if you manage auth via headers.",
+  "provider.custom.save.shadowed.title": "Config file API key overrides the saved one",
+  "provider.custom.save.shadowed.description": "{provider} still has an API key in the config file; the engine prefers it. Remove the apiKey from the config file and rely on the saved key.",
   "provider.custom.models.label": "Models",
   "provider.custom.models.id.label": "ID",
   "provider.custom.models.id.placeholder": "model-id",

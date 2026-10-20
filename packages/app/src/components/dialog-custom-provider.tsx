@@ -12,7 +12,7 @@ import { Link } from "@/components/link"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
-import { type FormState, headerRow, modelRow, validateCustomProvider } from "./dialog-custom-provider-form"
+import { type FormState, configOverridesAuthKey, headerRow, mergeProviderOptions, modelRow, validateCustomProvider } from "./dialog-custom-provider-form"
 import { DialogSelectProvider } from "./dialog-select-provider"
 
 type Props = {
@@ -174,13 +174,18 @@ export function DialogCustomProvider(props: Props) {
 
       // Merge with existing config to preserve extra fields (limits, flags, etc.)
       const existing = globalSync.data.config.provider?.[result.providerID]
+      // 261020 Red 轻方向告警：配置层残留 apiKey 会压制刚 auth.set 的 key（见
+      // configOverridesAuthKey），onSuccess 据此提示用户删配置层那份
+      const shadowedByConfig = configOverridesAuthKey(existing?.options, result.key)
 
       await globalSync.updateConfig({
         provider: {
           [result.providerID]: {
             ...existing,
             ...result.config,
-            options: { ...existing?.options, ...result.config.options },
+            // 261020 Red options 合并剔除 config 层残留字面量 apiKey（key 归 auth.set，
+            // 否则旧 key 复制进主配置并压制 auth 新 key，见 mergeProviderOptions 注释）
+            options: mergeProviderOptions(existing?.options, result.config.options),
             models: Object.fromEntries(
               Object.entries(result.config.models).map(([id, m]) => [id, { ...existing?.models?.[id], ...m }]),
             ),
@@ -188,9 +193,9 @@ export function DialogCustomProvider(props: Props) {
         },
         disabled_providers: nextDisabled,
       })
-      return result
+      return { result, shadowedByConfig }
     },
-    onSuccess: (result) => {
+    onSuccess: ({ result, shadowedByConfig }) => {
       dialog.close()
       showToast({
         variant: "success",
@@ -198,6 +203,13 @@ export function DialogCustomProvider(props: Props) {
         title: language.t("provider.connect.toast.connected.title", { provider: result.name }),
         description: language.t("provider.connect.toast.connected.description", { provider: result.name }),
       })
+      if (shadowedByConfig) {
+        showToast({
+          icon: "warning",
+          title: language.t("provider.custom.save.shadowed.title"),
+          description: language.t("provider.custom.save.shadowed.description", { provider: result.name }),
+        })
+      }
     },
     onError: (err) => {
       const message = err instanceof Error ? err.message : String(err)
