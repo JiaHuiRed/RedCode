@@ -25,6 +25,10 @@ describe("system prompt routing", () => {
     expect(provider(model("gpt-5.6-luna", "openai"))).toEqual([PROMPT_DEFAULT, PROMPT_GPT])
   })
 
+  test("已删除专属提示词的 Claude 系走默认提示词", () => {
+    expect(provider(model("claude-sonnet-4-5", "anthropic"))).toEqual([PROMPT_DEFAULT])
+  })
+
   // 261013 Red 当前 GPT Delta 继承公共提示词与 Soul，不再单独重复声线规则。
   test("GPT Delta 继承公共交付契约与 soul", () => {
     expect(PROMPT_DEFAULT).toContain("First sentence responds to the user's actual intent.")

@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test"
 import MarkdownIt from "markdown-it"
-import { stream } from "./markdown-stream"
+import { createMarkdownStream, stream } from "./markdown-stream"
 
 const md = new MarkdownIt()
 
@@ -179,5 +179,153 @@ describe("markdown stream —— 分段不变量", () => {
       expect(blocks.map((block) => block.raw).join("")).toBe(text)
       expect(blocks.map((block) => md.render(block.src)).join("")).toBe(md.render(text))
     }
+  })
+})
+
+describe("markdown stream —— 追加解析复用", () => {
+  test("只重解析未闭合代码围栏并保留后续闭合内容", () => {
+    const renderStream = createMarkdownStream()
+    const snapshots = [
+      "Intro\n\n```ts\nconst answer = 42",
+      "Intro\n\n```ts\nconst answer = 42\nconsole.log(answer)",
+      "Intro\n\n```ts\nconst answer = 42\nconsole.log(answer)\n```\n\nAfter fence",
+      "Intro\n\n```ts\nconst answer = 42\nconsole.log(answer)\n```\n\nAfter fence grows",
+    ]
+
+    for (const text of snapshots) {
+      const blocks = renderStream(text, true, "fenced_part")
+      expect(blocks.map((block) => block.raw).join("")).toBe(text)
+      expect(blocks.map((block) => md.render(block.src)).join("")).toBe(md.render(text))
+    }
+  })
+
+  test("完整的超大顶层列表作为稳定原子块复用", () => {
+    const list = Array.from({ length: 900 }, (_, i) => `- Item ${i}: stable markdown content`).join("\n")
+    const first = `${list}\n\nTail paragraph`
+    const second = `${first} grows`
+    const parseInputs: string[] = []
+    // 261020 Red 保存 parser 原函数，确保完整列表定型后只重新解析后续段落。
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const parse = MarkdownIt.prototype.parse
+    const spy = spyOn(MarkdownIt.prototype, "parse").mockImplementation(function (
+      this: MarkdownIt,
+      text: string,
+      env: Parameters<MarkdownIt["parse"]>[1],
+    ) {
+      parseInputs.push(text)
+      return parse.call(this, text, env)
+    })
+    const renderStream = createMarkdownStream()
+    let blocks: ReturnType<typeof stream> = []
+    try {
+      renderStream(first, true, "list_part")
+      blocks = renderStream(second, true, "list_part")
+    } finally {
+      spy.mockRestore()
+    }
+
+    expect(parseInputs).toEqual([first, "Tail paragraph grows"])
+    expect(blocks.map((block) => md.render(block.src)).join("")).toBe(md.render(second))
+  })
+
+  test("追加更新只解析不稳定后缀，且每个快照仍与整篇渲染等价", () => {
+    const section = (i: number) =>
+      `## Section ${i}\n\n${"Paragraph text with **bold** and `inline code`.\n".repeat(3)}\n- item A\n- item B`
+    const prefix = Array.from({ length: 60 }, (_, i) => section(i)).join("\n\n") + "\n\n"
+    const snapshots = Array.from(
+      { length: 12 },
+      (_, i) => `${prefix}Growing paragraph${" and more text".repeat(i + 1)}`,
+    )
+    const render = (blocks: ReturnType<typeof stream>) => blocks.map((block) => md.render(block.src)).join("")
+    const parseInputs: string[] = []
+    // 261020 Red 保存 parser 原函数，测追加路径实际交给 markdown-it 的字符量。
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const parse = MarkdownIt.prototype.parse
+    const spy = spyOn(MarkdownIt.prototype, "parse").mockImplementation(function (
+      this: MarkdownIt,
+      text: string,
+      env: Parameters<MarkdownIt["parse"]>[1],
+    ) {
+      parseInputs.push(text)
+      return parse.call(this, text, env)
+    })
+    const renderStream = createMarkdownStream()
+    const outputs: ReturnType<typeof stream>[] = []
+    try {
+      for (const text of snapshots) outputs.push(renderStream(text, true, "part_1"))
+    } finally {
+      spy.mockRestore()
+    }
+
+    const reparsedCharacters = parseInputs.reduce((total, text) => total + text.length, 0)
+    const fullParseCharacters = snapshots.reduce((total, text) => total + text.length, 0)
+    expect(parseInputs[0]).toBe(snapshots[0])
+    expect(parseInputs.at(-1)!.length).toBeLessThan(snapshots.at(-1)!.length / 2)
+    expect(reparsedCharacters).toBeLessThan(fullParseCharacters / 2)
+    for (const [i, blocks] of outputs.entries()) {
+      expect(blocks.map((block) => block.raw).join("")).toBe(snapshots[i])
+      expect(render(blocks)).toBe(md.render(snapshots[i]!))
+    }
+  })
+
+  test("迟到的引用定义回退到整块渲染，非追加更新完整重解析", () => {
+    const renderStream = createMarkdownStream()
+    const first = `${"Text [docs][ref].\n\n".repeat(300)}Tail`
+    const withReference = `${first}\n\n[ref]: https://example.com`
+    const rewritten = `${"## Rewritten\n\n".repeat(12)}New tail`
+    const newPart = `${rewritten} continued`
+    const parseInputs: string[] = []
+    const outputs: ReturnType<typeof stream>[] = []
+    // 261020 Red 保存 parser 原函数，区分引用定义回退与普通全文解析。
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const parse = MarkdownIt.prototype.parse
+    const spy = spyOn(MarkdownIt.prototype, "parse").mockImplementation(function (
+      this: MarkdownIt,
+      text: string,
+      env: Parameters<MarkdownIt["parse"]>[1],
+    ) {
+      parseInputs.push(text)
+      return parse.call(this, text, env)
+    })
+    try {
+      outputs.push(renderStream(first, true, "part_1"))
+      outputs.push(renderStream(withReference, true, "part_1"))
+      outputs.push(renderStream(rewritten, true, "part_1"))
+      outputs.push(renderStream(newPart, true, "part_2"))
+    } finally {
+      spy.mockRestore()
+    }
+
+    expect(parseInputs).toEqual([first, rewritten, newPart])
+    expect(outputs[1]!.map((block) => md.render(block.src)).join("")).toBe(md.render(withReference))
+  })
+
+  test("有缩进的迟到引用定义也使此前缀失效", () => {
+    const renderStream = createMarkdownStream()
+    const first = `${"See [docs][r].\n\n".repeat(300)}\`\`\`text\ncode`
+    const second = `${first}\n\`\`\`\n\n [r]: https://example.com\n\nAfter`
+    const parseInputs: string[] = []
+    // 261020 Red 保存 parser 原函数，确认缩进引用定义不会拆开前文链接。
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const parse = MarkdownIt.prototype.parse
+    const spy = spyOn(MarkdownIt.prototype, "parse").mockImplementation(function (
+      this: MarkdownIt,
+      text: string,
+      env: Parameters<MarkdownIt["parse"]>[1],
+    ) {
+      parseInputs.push(text)
+      return parse.call(this, text, env)
+    })
+    const outputs: ReturnType<typeof stream>[] = []
+    try {
+      outputs.push(renderStream(first, true, "reference_part"))
+      outputs.push(renderStream(second, true, "reference_part"))
+    } finally {
+      spy.mockRestore()
+    }
+
+    expect(parseInputs).toEqual([first])
+    expect(outputs[1]).toHaveLength(1)
+    expect(outputs[1]!.map((block) => md.render(block.src)).join("")).toBe(md.render(second))
   })
 })

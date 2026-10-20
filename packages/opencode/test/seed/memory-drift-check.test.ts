@@ -39,7 +39,9 @@ function snapshot(body: string, eol = "\n") {
 
 function addMemory(dbPath: string, content: string) {
   const db = new Database(dbPath)
-  db.query("INSERT INTO memories (project, content, updated_at) VALUES ('global', ?, '2026-10-19 00:00:00')").run(content)
+  db.query("INSERT INTO memories (project, content, updated_at) VALUES ('global', ?, '2026-10-19 00:00:00')").run(
+    content,
+  )
   db.close()
 }
 
@@ -66,7 +68,7 @@ describe("formatDriftNotice", () => {
     expect(Buffer.byteLength(notice!, "utf8")).toBeLessThanOrEqual(300)
     expect(notice).toContain("主会话代理")
     expect(notice).toContain("子代理忽略")
-    expect(notice).toContain("scripts/memory-drift-check.mjs")
+    expect(notice).toContain("bun ~/.redcode/scripts/memory-drift-check.mjs")
     expect(notice).toContain("commit+push")
     expect(notice).not.toContain("伪标签")
     expect(notice).not.toContain("标题")

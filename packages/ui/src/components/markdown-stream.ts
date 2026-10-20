@@ -10,7 +10,8 @@ export type Block = {
 const md = new MarkdownIt()
 
 function refs(text: string) {
-  return /^\[[^\]]+\]:\s+\S+/m.test(text) || /^\[\^[^\]]+\]:\s+/m.test(text)
+  // 261020 Red Definitions may be indented or nested; conservative false positives are safer than stale earlier links.
+  return /^[ \t]*.*\]:/m.test(text)
 }
 
 function open(raw: string) {
@@ -81,13 +82,11 @@ function topLevelStarts(tokens: ReturnType<typeof md.parse>, text: string) {
  */
 const CHUNK_BYTES = 4096
 
-export function stream(text: string, live: boolean) {
-  if (!live) return [{ raw: text, src: text, mode: "full" }] satisfies Block[]
-  // 260907 Red heal(text) 下沉到早退分支：分块主路径（下面的 for 循环）用的是 heal(chunk)，
-  // 此前这里每 tick 无条件对**全文**跑一次 remend，结果只在三个早退分支被用到——
-  // 长回答的主路径等于白付一份 O(全文) 的文本修复成本。
+type LiveParse = { blocks: Block[]; stable: number }
+
+function parseLive(text: string, checkRefs = true): LiveParse {
   // 引用式定义可以出现在正文任何位置并影响**前面**的链接，所以这种文本不能切。
-  if (refs(text)) return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
+  if (checkRefs && refs(text)) return { blocks: [{ raw: text, src: heal(text), mode: "live" }], stable: 0 }
   // 260802 Red: marked → markdown-it（marked 的 lexer 对长文本 O(n²)，换用线性 tokenize）
   // 未闭合 fence 的特征：markdown-it 不产生 fence_close，token 序列以 fence 结尾
   const tokens = md.parse(text, {})
@@ -96,12 +95,15 @@ export function stream(text: string, live: boolean) {
     const code = text.slice(lineStart(text, last.map?.[0] ?? 0))
     if (open(code)) {
       const head = text.slice(0, text.length - code.length)
-      if (!head) return [{ raw: code, src: code, mode: "live" }] satisfies Block[]
+      if (!head) return { blocks: [{ raw: code, src: code, mode: "live" }], stable: 0 }
       // 代码块不 heal —— heal 会去动代码里的字符
-      return [
-        { raw: head, src: heal(head), mode: "live" },
-        { raw: code, src: code, mode: "live" },
-      ] satisfies Block[]
+      return {
+        blocks: [
+          { raw: head, src: heal(head), mode: "live" },
+          { raw: code, src: code, mode: "live" },
+        ],
+        stable: 1,
+      }
     }
   }
 
@@ -122,12 +124,12 @@ export function stream(text: string, live: boolean) {
   // 重跑 innerHTML+morphdom，已定型前缀一个字节不动。见
   // docs/notes/implemented/bug-fix/2026-09-07-markdown-block-dom.md
   const starts = topLevelStarts(tokens, text)
-  if (starts.length < 2) return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
+  if (starts.length < 2) return { blocks: [{ raw: text, src: heal(text), mode: "live" }], stable: 0 }
 
   // 最后一个顶层块还在长，它是活跃尾块；它之前的都已经定型。
   const tailOffset = starts[starts.length - 1]
   if (tailOffset <= 0 || tailOffset >= text.length)
-    return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
+    return { blocks: [{ raw: text, src: heal(text), mode: "live" }], stable: 0 }
 
   const blocks: Block[] = []
   let cut = 0
@@ -142,5 +144,51 @@ export function stream(text: string, live: boolean) {
   if (settled) blocks.push({ raw: settled, src: heal(settled), mode: "live" })
   const tail = text.slice(tailOffset)
   blocks.push({ raw: tail, src: heal(tail), mode: "live" })
-  return blocks
+  // 261020 Red Keep a short settled chunk mutable for 4KB grouping; a larger atomic top-level block is stable.
+  return { blocks, stable: blocks.length - 1 - (settled && settled.length < CHUNK_BYTES ? 1 : 0) }
+}
+
+export function stream(text: string, live: boolean) {
+  if (!live) return [{ raw: text, src: text, mode: "full" }] satisfies Block[]
+  return parseLive(text).blocks
+}
+
+// 261020 Red Incremental tokenization and fallback boundaries: docs/notes/implemented/bug-fix/2026-09-07-markdown-block-dom.md
+export function createMarkdownStream() {
+  let cached:
+    | {
+        key: string | undefined
+        text: string
+        blocks: Block[]
+        prefixBlocks: Block[]
+        prefixLength: number
+      }
+    | undefined
+
+  return (text: string, live: boolean, key?: string) => {
+    if (!live) {
+      cached = undefined
+      return [{ raw: text, src: text, mode: "full" }] satisfies Block[]
+    }
+    if (refs(text)) {
+      cached = undefined
+      return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
+    }
+    if (cached && cached.key === key && cached.text === text) return cached.blocks
+
+    const previous = cached && cached.key === key && text.startsWith(cached.text) ? cached : undefined
+    const prefixBlocks = previous?.prefixBlocks ?? []
+    const prefixLength = previous?.prefixLength ?? 0
+    const parsed = parseLive(text.slice(prefixLength), false)
+    const blocks = prefixBlocks.concat(parsed.blocks)
+    const stableSuffix = parsed.blocks.slice(0, parsed.stable)
+    cached = {
+      key,
+      text,
+      blocks,
+      prefixBlocks: prefixBlocks.concat(stableSuffix),
+      prefixLength: prefixLength + stableSuffix.reduce((sum, block) => sum + block.raw.length, 0),
+    }
+    return blocks
+  }
 }

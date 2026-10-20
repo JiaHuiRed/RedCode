@@ -44,9 +44,7 @@ function findOwnSnapshot(repoRoot) {
   const dir = join(repoRoot, "memory")
   const exact = join(dir, `lessons-backup.${hostname()}.md`)
   if (existsSync(exact)) return exact
-  const all = existsSync(dir)
-    ? readdirSync(dir).filter((f) => /^lessons-backup\..+\.md$/.test(f))
-    : []
+  const all = existsSync(dir) ? readdirSync(dir).filter((f) => /^lessons-backup\..+\.md$/.test(f)) : []
   return all.length === 1 ? join(dir, all[0]) : null
 }
 
@@ -83,10 +81,14 @@ async function signalDbNewer(snapshotPath, dbPath) {
     const exported = text.match(/^> 导出时间：(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/m)?.[1]
     if (!exported) return unknown("快照缺「导出时间」行")
     const d = await getDb(dbPath)
-    const stmt = isBun ? d.query("SELECT max(updated_at) AS m FROM memories WHERE project='global'") : d.prepare("SELECT max(updated_at) AS m FROM memories WHERE project='global'")
+    const stmt = isBun
+      ? d.query("SELECT max(updated_at) AS m FROM memories WHERE project='global'")
+      : d.prepare("SELECT max(updated_at) AS m FROM memories WHERE project='global'")
     const latest = stmt.get()?.m
     if (!latest) return clean("global 库为空或无时间戳")
-    return latest > exported ? tripped(`db 最新 ${latest} > 快照导出 ${exported}，需重跑 export-memory-backup.mjs`) : clean(`db ${latest} ≤ 快照 ${exported}`)
+    return latest > exported
+      ? tripped(`db 最新 ${latest} > 快照导出 ${exported}，需重跑 export-memory-backup.mjs`)
+      : clean(`db ${latest} ≤ 快照 ${exported}`)
   } catch (e) {
     return unknown(String(e?.message ?? e))
   }
@@ -114,8 +116,16 @@ async function signalSnapshotMissing(snapshotPaths, dbPath) {
   try {
     if (snapshotPaths.length === 0) return unknown("找不到快照文件")
     const d = await getDb(dbPath)
-    const stmt = isBun ? d.query("SELECT content FROM memories WHERE project='global'") : d.prepare("SELECT content FROM memories WHERE project='global'")
-    const local = new Set(stmt.all().map((r) => String(r.content ?? "").replace(/\r\n?/g, "\n").trim()))
+    const stmt = isBun
+      ? d.query("SELECT content FROM memories WHERE project='global'")
+      : d.prepare("SELECT content FROM memories WHERE project='global'")
+    const local = new Set(
+      stmt.all().map((r) =>
+        String(r.content ?? "")
+          .replace(/\r\n?/g, "\n")
+          .trim(),
+      ),
+    )
     const missing = new Map()
     for (const path of snapshotPaths) {
       const text = readFileSync(path, "utf8").replace(/\r\n?/g, "\n")
@@ -123,12 +133,17 @@ async function signalSnapshotMissing(snapshotPaths, dbPath) {
       for (const chunk of text.split(/\n---\n/)) {
         const header = chunk.match(/^## \[([^\]]+)\] id=\d+ project=(\S+)/m)
         if (!header || header[2] !== "global") continue
-        const body = chunk.replace(/^## .*\n/m, "").replace(/<!-- created_at:[^>]*-->/, "").trim()
+        const body = chunk
+          .replace(/^## .*\n/m, "")
+          .replace(/<!-- created_at:[^>]*-->/, "")
+          .trim()
         if (body && !local.has(body)) missing.set(body, `${peer}${body.split("\n")[0].slice(0, 50)}`)
       }
     }
     return missing.size
-      ? tripped(`快照有 ${missing.size} 条正文未逐字匹配（可能修订/合并/重编号，需人工核对），首条：${missing.values().next().value}`)
+      ? tripped(
+          `快照有 ${missing.size} 条正文未逐字匹配（可能修订/合并/重编号，需人工核对），首条：${missing.values().next().value}`,
+        )
       : clean("快照条目本机全有")
   } catch (e) {
     return unknown(String(e?.message ?? e))
@@ -145,10 +160,17 @@ export async function collectSignals() {
     Promise.resolve(signalAheadOfOrigin(repoRoot)),
     signalSnapshotMissing(allSnapshots.length > 0 ? allSnapshots : own ? [own] : [], dbPath),
   ])
-  return { snapshot: own, dbNewerThanSnapshot: dbNewer, snapshotDirty: dirty, aheadOfOrigin: ahead, snapshotMissingLocally: missing }
+  return {
+    snapshot: own,
+    dbNewerThanSnapshot: dbNewer,
+    snapshotDirty: dirty,
+    aheadOfOrigin: ahead,
+    snapshotMissingLocally: missing,
+  }
 }
 
 // 261019 Red 通知只用固定短语，避免不可信详情进入高权威提醒；完整字节预算含信封
+// 261020 Red 命令指向 home 镜像；该脚本不会播种到每个工作区
 export function formatDriftNotice(signals) {
   const parts = []
   if (signals.dbNewerThanSnapshot?.tripped) parts.push("库需导出")
@@ -158,7 +180,7 @@ export function formatDriftNotice(signals) {
   if (parts.length === 0) return null
   return (
     `\n\n<system-reminder>\n[memory-drift] ${parts.join("；")}。` +
-    "主会话代理转告用户：运行 scripts/memory-drift-check.mjs 查详情；快照改动需 commit+push 跨机生效。子代理忽略。\n</system-reminder>"
+    "主会话代理转告用户：运行 `bun ~/.redcode/scripts/memory-drift-check.mjs` 查详情；快照改动需 commit+push 跨机生效。子代理忽略。\n</system-reminder>"
   )
 }
 
@@ -176,7 +198,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     console.log(
       formatDriftNotice(signals)
         ? "\n→ 有漂移，见 [!] 项。"
-        : Object.values(signals).slice(1).some((s) => s.unknown)
+        : Object.values(signals)
+              .slice(1)
+              .some((s) => s.unknown)
           ? "\n→ 检查不完整，见 [?] 项。"
           : "\n→ 无漂移。",
     )
