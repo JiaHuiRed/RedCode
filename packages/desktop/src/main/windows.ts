@@ -7,18 +7,13 @@ import type { TitlebarTheme } from "../preload/types"
 import { PINCH_ZOOM_ENABLED_KEY } from "./constants"
 import { resolveExternalURL } from "./external-url"
 import { exportDebugLogs, write as writeLog, writeCrashReport, writeResourceSnapshot } from "./logging"
+import { allowRendererPermissions } from "./renderer-permissions"
 import { isTrustedRendererUrl, rendererHost, rendererProtocol } from "./renderer-url"
 import { getStore } from "./store"
 import { createUnresponsiveSampler } from "./unresponsive"
 
 const root = dirname(fileURLToPath(import.meta.url))
 const rendererRoot = join(root, "../renderer")
-const clipboardWritePermission = "clipboard-sanitized-write"
-// 260907 ZCode Electron 44 clipboard W3C 化：read-clipboard-image 改走渲染层
-// navigator.clipboard.read()（读图需要 clipboard-read；此前只有 sanitize-write）
-const clipboardReadPermission = "clipboard-read"
-const notificationPermission = "notifications"
-const rendererPermissions = new Set([clipboardWritePermission, clipboardReadPermission, notificationPermission])
 const documentPolicyHeader = "Document-Policy"
 const jsCallStacksDocumentPolicy = "include-js-call-stacks-in-crash-reports"
 
@@ -156,7 +151,7 @@ export function createMainWindow() {
     },
   })
 
-  allowRendererPermissions(win)
+  allowRendererPermissions(win.webContents.session, () => BrowserWindow.getAllWindows())
   wireWindowRecovery(win, "main")
   wireNavigationPolicy(win)
 
@@ -212,7 +207,7 @@ export function createLoadingWindow() {
     },
   })
 
-  allowRendererPermissions(win)
+  allowRendererPermissions(win.webContents.session, () => BrowserWindow.getAllWindows())
   wireWindowRecovery(win, "loading")
 
   loadWindow(win, "loading.html")
@@ -363,7 +358,12 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
     })
     void show(
       "RedCode failed to load",
-      [`Window: ${name}`, `URL: ${validatedURL}`, `Error: ${errorCode} ${errorDescription}`, reportPath ? `诊断报告: ${reportPath}` : undefined]
+      [
+        `Window: ${name}`,
+        `URL: ${validatedURL}`,
+        `Error: ${errorCode} ${errorDescription}`,
+        reportPath ? `诊断报告: ${reportPath}` : undefined,
+      ]
         .filter(Boolean)
         .join("\n"),
       false,
@@ -439,21 +439,6 @@ function addDocumentPolicy(response: Response, file: string) {
   const headers = new Headers(response.headers)
   headers.set(documentPolicyHeader, jsCallStacksDocumentPolicy)
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
-}
-
-function allowRendererPermissions(win: BrowserWindow) {
-  win.webContents.session.setPermissionRequestHandler((webContents, permission, callback, details) => {
-    callback(
-      rendererPermissions.has(permission) &&
-        isTrustedRendererUrl(details.requestingUrl) &&
-        webContents.id === win.webContents.id,
-    )
-  })
-  win.webContents.session.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
-    if (!rendererPermissions.has(permission)) return false
-    if (webContents && webContents.id !== win.webContents.id) return false
-    return isTrustedRendererUrl(details.requestingUrl) || isTrustedRendererUrl(requestingOrigin)
-  })
 }
 
 // 260923 Red CORS 归 sidecar/server 所有：httpapi 的 global cors 中间件按 origin 白名单

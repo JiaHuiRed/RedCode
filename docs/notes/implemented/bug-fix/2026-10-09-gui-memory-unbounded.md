@@ -29,6 +29,12 @@ GUI 定向回归 55 pass / 0 fail（session-changes、reconnect、event-reducer�
 
 草稿集成时修掉四处浏览器态才暴露的问题：① replace 清理名单在 Solid `reconcile` 之后从活数组派生，已替换的 ID 找不到，80 个 parts 成孤儿——清理名单冻结在 reconcile 之前；② 空过滤数组不再跳过写入，权威清空替代保留旧值；③ `stagedHistory.token` 用 `{}` 进 store 会被代理，`finally` 的身份比对永远失配、冻结投影永不释放（browser 态单测红）——换 `Symbol`；④ `loadMore` 的 trimmed 清标记在并发 join 到更新页时会误清（方向盲），改由 prepend 任务内部按「最旧边界推进或 complete」自行清，`loadLatest` 显式等待在途页再取最新。另补齐 event-reducer shift 路径漏掉的 `part_text_accum_delta` 清理，与其余裁边路径对齐。
 
+## 孤儿清理标记按 store 隔离
+
+2026-10-20 复查发现，延迟全扫的模块级孤儿标记会被另一个目录的 `session.created/updated` 消费；首条 `message.updated` 又会在标记前早退，令孤儿消息缓存失去回收触发点。标记改为以 `Store<State>` 为键的 `WeakSet`，两条消息插入路径都记录；对应 store 清理后删除标记，目录淘汰后不额外持有其 store。
+
+回归覆盖首条消息及两目录交错事件序列。app 定向测试通过；typecheck 受本机缺少 `qrcode` 依赖阻塞。
+
 ## 边界
 
 不解决：V8 长跑堆不归还（需 snapshot 对照活对象 vs 空闲未归还）；sidecar per-dir InstanceState 无上限（capacity 默认 Infinity，缓存类服务待加预算或 LRU）；MCP server 跨目录共享化；事件队列上限。目录上限收紧后，频繁跨 >10 项目切换会付出 LRU 淘汰后重访重建的成本。

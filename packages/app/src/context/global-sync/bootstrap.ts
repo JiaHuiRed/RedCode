@@ -60,12 +60,6 @@ function errors(list: PromiseSettledResult<unknown>[]) {
   return list.filter((item): item is PromiseRejectedResult => item.status === "rejected").map((item) => item.reason)
 }
 
-const providerRev = new Map<string, number>()
-
-export function clearProviderRev(directory: string) {
-  providerRev.delete(directory)
-}
-
 function runAll(list: Array<() => Promise<unknown>>) {
   return Promise.allSettled(list.map((item) => item()))
 }
@@ -309,8 +303,6 @@ export async function bootstrapDirectory(input: {
     input.setStore("config", reconcile(input.global.config, { merge: false }))
   }
 
-  const rev = (providerRev.get(input.directory) ?? 0) + 1
-  providerRev.set(input.directory, rev)
   // 261004 Red 完成信号必须覆盖真实请求，否则队列限流、booting 去重与目录 pin 会提前失效。
   // 决策：docs/notes/implemented/bug-fix/2026-10-04-directory-bootstrap-lifecycle.md
   const slow = [

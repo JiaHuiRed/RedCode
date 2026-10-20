@@ -164,6 +164,65 @@ describe("applyGlobalEvent", () => {
 })
 
 describe("applyDirectoryEvent", () => {
+  test("cleans the first streamed message when its session is not in the local list", () => {
+    const sessionID = "ses_orphan_first"
+    const [store, setStore] = createStore(baseState())
+
+    applyDirectoryEvent({
+      event: { type: "message.updated", properties: { info: userMessage("msg_orphan_first", sessionID) } },
+      store,
+      setStore,
+      push() {},
+      directory: "/tmp/orphan-first",
+      loadLsp() {},
+    })
+    applyDirectoryEvent({
+      event: { type: "session.created", properties: { info: rootSession({ id: "ses_visible_first" }) } },
+      store,
+      setStore,
+      push() {},
+      directory: "/tmp/orphan-first",
+      loadLsp() {},
+    })
+
+    expect(store.message[sessionID]).toBeUndefined()
+  })
+
+  test("does not let another directory consume pending orphan cleanup", () => {
+    const sessionID = "ses_orphan_directory"
+    const [storeA, setStoreA] = createStore(baseState())
+    const [storeB, setStoreB] = createStore(baseState())
+
+    for (const id of ["msg_orphan_a", "msg_orphan_b"]) {
+      applyDirectoryEvent({
+        event: { type: "message.updated", properties: { info: userMessage(id, sessionID) } },
+        store: storeA,
+        setStore: setStoreA,
+        push() {},
+        directory: "/tmp/orphan-a",
+        loadLsp() {},
+      })
+    }
+    applyDirectoryEvent({
+      event: { type: "session.created", properties: { info: rootSession({ id: "ses_visible_b" }) } },
+      store: storeB,
+      setStore: setStoreB,
+      push() {},
+      directory: "/tmp/orphan-b",
+      loadLsp() {},
+    })
+    applyDirectoryEvent({
+      event: { type: "session.created", properties: { info: rootSession({ id: "ses_visible_a" }) } },
+      store: storeA,
+      setStore: setStoreA,
+      push() {},
+      directory: "/tmp/orphan-a",
+      loadLsp() {},
+    })
+
+    expect(storeA.message[sessionID]).toBeUndefined()
+  })
+
   test("inserts root sessions in sorted order and updates sessionTotal", () => {
     const [store, setStore] = createStore(
       baseState({

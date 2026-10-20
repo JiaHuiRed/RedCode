@@ -28,7 +28,6 @@ import { useServerSDK } from "./server-sdk"
 import {
   bootstrapDirectory,
   bootstrapGlobal,
-  clearProviderRev,
   loadAgentsQuery,
   loadGlobalConfigQuery,
   loadPathQuery,
@@ -359,7 +358,6 @@ export function createServerSyncContext() {
       queue.clear(key)
       sessionMeta.delete(key)
       sdkCache.delete(key)
-      clearProviderRev(key)
       clearSessionPrefetchDirectory(key)
       // 260706 Red 目录淘汰只清了客户端缓存，服务端 InstanceState(MCP/LSP/watcher 整套
       //   子进程)从没人告诉它可以关——常驻 GUI 碰过的每个目录都会永久攒一份子进程树。
