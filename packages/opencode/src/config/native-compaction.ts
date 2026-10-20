@@ -11,7 +11,11 @@ import { Schema } from "effect"
 //   数值  正、有限（Int）、有实用上界——上界是"明显是笔误"的拦截线，不是业务上限
 //   顺序  target <= reminder <= trigger，缺省值参与比较（只配 target 也会被拒）
 
-const MAX_TOKENS = 10_000_000
+// 261020 Red RC-09 收口：token 顶帽 10M → 2M。上界是笔误拦截线，10M 连
+// "trigger_tokens: 5000000" 这种真会让压缩永不触发的值都放得过；2M 取真实最大
+// 窗口（1M）的两倍，再大也只会被 resolve() 按模型 usable 夹掉。不从模型目录推导：
+// 目录里存在 99,999,999 这类脏条目，推出来的线比现在还松。
+const MAX_TOKENS = 2_000_000
 const MAX_BODY_BYTES = 64 * 1024 * 1024
 const MAX_ACTIVE_BYTES = 256 * 1024 * 1024
 const MAX_SCAN_BYTES = 1024 * 1024 * 1024
@@ -31,19 +35,19 @@ const Fields = Schema.Struct({
   trigger_tokens: Schema.optional(
     bounded(
       MAX_TOKENS,
-      "Token count that triggers native compaction, clamped to the model's usable window (default: 250000; maximum: 10000000)",
+      "Token count that triggers native compaction, clamped to the model's usable window (default: 250000; maximum: 2000000)",
     ),
   ),
   target_tokens: Schema.optional(
     bounded(
       MAX_TOKENS,
-      "Token count native compaction aims for after summarizing, scaled down with the trigger when the model window is smaller (default: 130000; maximum: 10000000)",
+      "Token count native compaction aims for after summarizing, scaled down with the trigger when the model window is smaller (default: 130000; maximum: 2000000)",
     ),
   ),
   reminder_tokens: Schema.optional(
     bounded(
       MAX_TOKENS,
-      "Token count at which the user is reminded to compact before the trigger fires, scaled down with the trigger when the model window is smaller (default: 220000; maximum: 10000000)",
+      "Token count at which the user is reminded to compact before the trigger fires, scaled down with the trigger when the model window is smaller (default: 220000; maximum: 2000000)",
     ),
   ),
   // 261010 Red 预警颜色只调整显示时机，不提前触发摘要；比例随模型可用窗口同步缩放。
@@ -65,13 +69,13 @@ const Fields = Schema.Struct({
   // 261012 Red 保护记录收敛出口（对齐 codex 有界重建，COMPACT_USER_MESSAGE_MAX_TOKENS 同位）：
   // 新块继承旧块保护记录时按预算携带，超限的旧记录退到账本可经 block:<id> 读回。
   retained_max_tokens: Schema.optional(
-    bounded(MAX_TOKENS, "Maximum tokens of inherited protected records carried into a new compaction block (default: 20000; maximum: 10000000)"),
+    bounded(MAX_TOKENS, "Maximum tokens of inherited protected records carried into a new compaction block (default: 20000; maximum: 2000000)"),
   ),
   summary_max_bytes: Schema.optional(
     bounded(MAX_BODY_BYTES, "Maximum bytes of one compaction summary (default: 98304; maximum: 67108864)"),
   ),
   active_max_tokens: Schema.optional(
-    bounded(MAX_TOKENS, "Maximum tokens kept active per compaction range (default: 80000; maximum: 10000000)"),
+    bounded(MAX_TOKENS, "Maximum tokens kept active per compaction range (default: 80000; maximum: 2000000)"),
   ),
   active_max_bytes: Schema.optional(
     bounded(MAX_ACTIVE_BYTES, "Maximum bytes kept active per compaction range (default: 524288; maximum: 268435456)"),

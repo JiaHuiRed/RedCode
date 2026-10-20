@@ -129,10 +129,11 @@ describe("配置校验", () => {
   })
 
   test("token 预算必须为正、有限、有上界", () => {
-    for (const bad of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 10_000_001]) {
+    // 261020 Red 顶帽 10M → 2M（真实最大窗口 1M 的两倍），见 RC-09 收口
+    for (const bad of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 2_000_001]) {
       expect(() => decode({ trigger_tokens: bad })).toThrow()
     }
-    expect(decode({ trigger_tokens: 10_000_000 }).trigger_tokens).toBe(10_000_000)
+    expect(decode({ trigger_tokens: 2_000_000 }).trigger_tokens).toBe(2_000_000)
   })
 
   test("计数字段有实用上界", () => {
