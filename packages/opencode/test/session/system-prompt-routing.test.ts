@@ -37,6 +37,13 @@ describe("system prompt routing", () => {
     expect(PROMPT_GPT).not.toContain("## Final answer")
   })
 
+ test("GPT Delta defaults to action without relaxing non-trivial verification", () => {
+   expect(PROMPT_GPT).toContain("Default to action")
+   expect(PROMPT_GPT).toContain("Add only what the result needs")
+   expect(PROMPT_GPT).toContain("Fix the defect on your path")
+   expect(PROMPT_GPT).toContain("Prefer the smallest complete change")
+ })
+
   // 260829 cc hy 的判据是 `hy` + 数字并带边界。写成 includes("hy") 会命中任何名字里
   // 带 hy 的模型，这一组就是钉住那条边界。
   test("Hy 系走 hy.md，两家 provider 的 id 形态都要命中", () => {

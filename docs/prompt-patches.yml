@@ -60,6 +60,13 @@ patches:
     review_after: 2027-03-01
     status: '261007 已删人格重复段（-1,751 chars），只留工具/API 差异'
 
+  - id: gpt-working-style
+    file: packages/opencode/src/session/prompt/gpt.md
+    anchor: 'GPT Working style — default to action / fix on path'
+    intent: GPT 过度工程与过度防御矫正
+    review_after: 2027-03-01
+    status: '261020 新增：常规任务直接改，只加有当前需要的机制，同路径缺陷顺手修'
+
   - id: vision-skill-fallback
     file: skill/vision-autoagent/SKILL.md
     anchor: '模型不支持图片时的兜底流程'
