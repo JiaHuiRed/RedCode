@@ -482,6 +482,34 @@ describe("session.llm.ai-sdk adapter", () => {
     })
   })
 
+  test("translates an unparsed tool call into an actionable error", async () => {
+    // 261020 Red repair 钩子把无法解析的 tool call 改投哨兵名；适配层必须把原工具名和
+    // 截断后的原因还给模型，而不是「unavailable tool 'invalid' + 全部可用工具」。
+    const reason = `Invalid input for tool fff_multi_grep: JSON parsing failed: Text: {"constraints": ${"x".repeat(600)}`
+    LLMAISDK.noteUnparsedToolCall("call_bad", "fff_multi_grep", reason)
+    const events = await adapt([
+      uncheckedAdapterEvent({ type: "tool-input-start", id: "call_bad", toolName: "fff_multi_grep" }),
+      uncheckedAdapterEvent({
+        type: "tool-error",
+        toolCallId: "call_bad",
+        toolName: LLMAISDK.INVALID_TOOL_CALL,
+        input: {},
+        error: new Error("Model tried to call unavailable tool 'invalid'. Available tools: bash, read, edit"),
+      }),
+    ])
+
+    const failure = events.find((event) => event.type === "tool-error")
+    if (failure?.type !== "tool-error") throw new Error("expected a tool-error event")
+    // 先取字符串再断言：toMatchObject 会把手里的 asymmetric matcher 写回被测对象。
+    const message = failure.message
+    expect(failure).toMatchObject({ type: "tool-error", id: "call_bad", name: "fff_multi_grep" })
+    expect(message).toContain("`fff_multi_grep`")
+    expect(message).toContain("could not be parsed")
+    expect(message).toContain("Re-send")
+    expect(message).not.toContain("Available tools")
+    expect(message.length).toBeLessThan(500)
+  })
+
   test("emits undefined usage when every AI SDK usage field is missing", async () => {
     // If every numeric field is undefined the translator should signal "no usage info"
     // by emitting undefined, not by polluting the event with usage: {}. Downstream cost

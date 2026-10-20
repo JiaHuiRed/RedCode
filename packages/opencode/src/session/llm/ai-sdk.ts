@@ -3,6 +3,28 @@ import { responsesIncompleteErrorMessage } from "@redcode-ai/llm/protocols/opena
 import { Effect, Schema } from "effect"
 import { type streamText } from "ai"
 import { errorMessage } from "@/util/error"
+// 261020 Red 参数解析失败的 tool call 不执行：llm.ts 的 repair 钩子把它改投这个哨兵工具名，
+// 让 AI SDK 停在 NoSuchToolError，而不是拿残参数去真跑工具。原生消息只回
+// 「unavailable tool 'invalid'」并把**整张可用工具表**塞回上下文——原工具名和真正原因全丢，
+// 模型无从修改（261020 mimo 因此连发 6 次同样的残废参数，每次都撞同一个无解报错）。
+// 适配层把哨兵调用翻译成一句话：原工具名 + 截断后的原因 + 该怎么重发。
+export const INVALID_TOOL_CALL = "invalid"
+const MAX_UNPARSED_REASON = 300
+const unparsedCalls = new Map<string, { tool: string; reason: string }>()
+
+export function noteUnparsedToolCall(id: string, tool: string, reason: string) {
+  // 只留最近 32 条未消费的记录：tool-error 缺席时不能无限攒。
+  const oldest = unparsedCalls.keys().next()
+  if (unparsedCalls.size >= 32 && !oldest.done) unparsedCalls.delete(oldest.value)
+  unparsedCalls.set(id, { tool, reason })
+}
+
+export function unparsedToolCallMessage(tool: string, reason: string) {
+  const text = reason.replace(/\s+/g, " ").trim()
+  const clipped = text.length > MAX_UNPARSED_REASON ? `${text.slice(0, MAX_UNPARSED_REASON)}…` : text
+  const detail = clipped ? ` Reason: ${clipped}` : ""
+  return `Tool call to \`${tool}\` was NOT executed: its arguments could not be parsed (usually truncated or malformed JSON).${detail} Re-send \`${tool}\` with complete JSON arguments.`
+}
 
 type Result = Awaited<ReturnType<typeof streamText>>
 type AISDKEvent = Result["fullStream"] extends AsyncIterable<infer T> ? T : never
@@ -272,13 +294,20 @@ export function toLLMEvents(
 
     case "tool-error":
       return Effect.sync(() => {
-        const name = state.toolNames[event.toolCallId] ?? ("toolName" in event ? event.toolName : "unknown")
+        // 261020 Red 哨兵调用（repair 钩子登记的未解析参数）换成可操作错误；原工具名优先取
+        // tool-input-start 记下的名字（repair 不覆盖它），其余错误保持原样。
+        const unparsed = unparsedCalls.get(event.toolCallId)
+        unparsedCalls.delete(event.toolCallId)
+        const name =
+          state.toolNames[event.toolCallId] ?? unparsed?.tool ?? ("toolName" in event ? event.toolName : "unknown")
         delete state.toolNames[event.toolCallId]
         return [
           LLMEvent.toolError({
             id: event.toolCallId,
             name,
-            message: errorMessage(event.error),
+            message: unparsed
+              ? unparsedToolCallMessage(unparsed.tool, unparsed.reason || errorMessage(event.error))
+              : errorMessage(event.error),
             error: event.error,
             providerMetadata: providerMetadata(event.providerMetadata),
           }),

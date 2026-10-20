@@ -338,20 +338,20 @@ const live: Layer.Layer<
                 toolName: lower,
               }
             }
+            // 261020 Red 参数解析失败：登记原因后改投哨兵工具名（不执行），由适配层翻译成
+            // 「原工具名 + 参数原因 + 该怎么重发」，见 LLMAISDK.unparsedToolCallMessage。
+            LLMAISDK.noteUnparsedToolCall(failed.toolCall.toolCallId, failed.toolCall.toolName, failed.error.message)
             return {
               ...failed.toolCall,
-              input: JSON.stringify({
-                tool: failed.toolCall.toolName,
-                error: failed.error.message,
-              }),
-              toolName: "invalid",
+              input: JSON.stringify({ tool: failed.toolCall.toolName }),
+              toolName: LLMAISDK.INVALID_TOOL_CALL,
             }
           },
           temperature: prepared.params.temperature,
           topP: prepared.params.topP,
           topK: prepared.params.topK,
           providerOptions: ProviderTransform.providerOptions(input.model, prepared.params.options),
-          activeTools: Object.keys(prepared.tools).filter((x) => x !== "invalid"),
+          activeTools: Object.keys(prepared.tools).filter((x) => x !== LLMAISDK.INVALID_TOOL_CALL),
           tools: prepared.tools,
           toolChoice: input.toolChoice,
           maxOutputTokens: prepared.params.maxOutputTokens,
