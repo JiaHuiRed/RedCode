@@ -78,9 +78,10 @@ const cfg = {
   },
 }
 
-function providerCfg(url: string) {
+function providerCfg(url: string, experimental?: Config.Info["experimental"]) {
   return {
     ...cfg,
+    ...(experimental ? { experimental } : {}),
     provider: {
       ...cfg.provider,
       test: {
@@ -281,10 +282,61 @@ for (const scenario of [
             expect(part?.state.status).toBe("completed")
             if (part?.state.status === "completed") expect(part.state.output).not.toContain("[System notice]")
           }
-        }),
-      { config: (url) => ({ ...providerCfg(url), agent: { redmind: { permission: { doom_loop: "ask" } } } }) },
-    ),
-  )
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)
+
+it.live("session.processor effect tests idle-cuts a silent reasoning stream", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+
+        // 261020 Red 主判据：供应商吐出一段思考后再也不吐新分片（hang = 永不发 done 哨兵），
+        // 静默超过 idleMs 即收尾——这是 max 推理档上「思考很久但其实没卡」的正面对照：
+        // 只要还在吐字就不该被掐，停止吐字才掐。
+        yield* llm.push(reply().reason("y".repeat(500)).hang())
+
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "idle")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({
+          assistantMessage: msg,
+          sessionID: chat.id,
+          model: mdl,
+        })
+
+        const value = yield* handle.process({
+          user: {
+            id: parent.id,
+            sessionID: chat.id,
+            role: "user",
+            time: parent.time,
+            agent: parent.agent,
+            model: { providerID: ref.providerID, modelID: ref.modelID },
+          } satisfies MessageV2.User,
+          sessionID: chat.id,
+          model: mdl,
+          agent: agent(),
+          system: [],
+          messages: [{ role: "user", content: "idle" }],
+          tools: {},
+        })
+
+        const parts = MessageV2.parts(msg.id)
+        const text = parts.find((part): part is MessageV2.TextPart => part.type === "text")
+        expect(value).toBe("stop")
+        expect(text?.text).toBe("y".repeat(500))
+        const stored = yield* MessageV2.get({ sessionID: chat.id, messageID: msg.id })
+        if (stored.info.role === "assistant") {
+          expect(stored.info.finish).toBe("stop")
+        }
+      }),
+    { config: (url) => providerCfg(url, { reasoningStall: { idleMs: 1_500 } }) },
+  ),
+)
 }
 
 // 261006 Red 静态规则把 doom_loop 压成 deny 时（explore 白名单 "*": deny 的真实形态），
@@ -1164,6 +1216,7 @@ it.live("session.processor effect tests stall-cuts a reasoning-only stream", () 
         // 260818 Red reasoning 流级 stall 兜底：只有超长思考、没有正文/工具，
         // step-finish 永不到达 —— 处理器应在阈值处中断，把思考提升为可见正文，
         // finish 置 "stop" 正常收尾，而不是让 turn 永远挂着。
+        // 261020 Red 字符量退居高额兜底（默认 200K），这里把配置压到 30001 仍测同一条路径。
         yield* llm.push(reply().reason("x".repeat(30001)).stop())
 
         const chat = yield* session.create({})
@@ -1207,6 +1260,7 @@ it.live("session.processor effect tests stall-cuts a reasoning-only stream", () 
           expect(stored.info.finish).toBe("stop")
         }
       }),
-    { config: (url) => providerCfg(url) },
+    // 261020 Red 字符量退居高额兜底（默认 200K），这里压到 30001 复测同一条路径
+    { config: (url) => providerCfg(url, { reasoningStall: { maxChars: 30_001 } }) },
   ),
 )

@@ -32,14 +32,17 @@ import * as InstructionEcho from "./instruction-echo"
 import * as RepeatToolReminder from "./repeat-tool-reminder"
 import * as ToolFailureGuard from "./tool-failure-guard"
 import * as ConfigToolFailure from "@/config/tool-failure"
+import { ConfigReasoningStall } from "@/config/reasoning-stall"
 
 const DOOM_LOOP_THRESHOLD = 3
 // 260818 Red reasoning 流级 stall 兜底：模型卡死在纯思考流里永不 finish
 // （step-3.7-flash 实测——正文/工具从未产出，step-finish 永不到达，runLoop 的
 // reasoningOnly 提升逻辑走不到，turn 永不结束，后续用户消息全部 QUEUED）。
-// 阈值：reasoning 累积 3 万字符仍无任何 text/tool 产出即判定卡死。正常思考
-// 极少超过此量（step-3.7-flash 实测约 3.5K 字符），3 万是约 8 倍余量。
-const REASONING_STALL_CHARS = 30000
+// 261020 Red 判据换代：主判据是「静默时长」（Stream.timeoutOrElse，配置
+// experimental.reasoningStall.idleMs）；字符量只作防无限流的高额兜底
+// （maxChars）。原先硬编码 30,000 字符会把 max 推理档的正常长思考当卡死掐断——
+// 261007–261020 实测 53 次，step-5/glm/deepseek 的正文分片精确停在 30,00x 字符。
+// 决策与证据：docs/notes/implemented/bug-fix/2026-08-18-reasoning-stall-safety-net.md
 const log = Log.create({ service: "session.processor" })
 // 260930 Red 未声明币种却报了的付费模型，每模型只 warn 一次（同进程内）。
 const warnedMissingCurrency = new Set<string>()
@@ -185,7 +188,10 @@ export const layer = Layer.effect(
       // may execute tools internally before emitting start-step events,
       // so capturing inside the event handler can be too late.
       const initialSnapshot = yield* snapshot.track()
-      const failureLimit = ConfigToolFailure.resolve((yield* config.get()).experimental?.repeated_tool_failure_limit)
+      const cfg = yield* config.get()
+      const failureLimit = ConfigToolFailure.resolve(cfg.experimental?.repeated_tool_failure_limit)
+      // 261020 Red 纯思考兜底阈值：静默时长 + 字符兜底，均由配置拥有方解析（见 config/reasoning-stall.ts）。
+      const stall = ConfigReasoningStall.resolve(cfg.experimental?.reasoningStall)
       const compactionTiming: CompactionTiming | undefined = input.assistantMessage.summary
         ? { usageMs: 0, cleanupMs: 0, eventHandlingMs: 0, attempts: 0 }
         : undefined
@@ -496,6 +502,43 @@ export const layer = Layer.effect(
       const toolInput = (value: unknown, name?: string): Record<string, any> =>
         isRecord(value) ? value : ((name ? Freeform.normalizeInput(name, value) : undefined) ?? { value })
 
+      // 261020 Red 纯思考兜底的统一出口：静默超时与字符兜底都走这里——把思考提升为可见
+      // 正文（用户至少看得到东西），置 finish="stop" 正常收尾（runLoop 下一轮读落库的
+      // finish 决定 break）。why: docs/notes/implemented/bug-fix/2026-08-18-reasoning-stall-safety-net.md
+      const promoteReasoning = Effect.fn("SessionProcessor.promoteReasoning")(function* (
+        reason: "idle" | "maxChars",
+      ) {
+        if (ctx.reasoningStallTripped) return
+        ctx.reasoningStallTripped = true
+        slog.warn("reasoning.stall", {
+          sessionID: ctx.sessionID,
+          reason,
+          chars: ctx.reasoningChars,
+          model: ctx.model.id,
+        })
+        // 先剥离注入指令复述（防 DCP reminder 之类的泄露跟着思考一起进正文），
+        // 再拼接提升为可见正文（与 runLoop 的 reasoningOnly.promoted 同款做法）
+        for (const p of Object.values(ctx.reasoningMap)) stripInstructionEcho(p, "reasoning")
+        const reasoningText = Object.values(ctx.reasoningMap)
+          .map((p) => p.text)
+          .join("\n\n")
+        const now = Date.now()
+        yield* session.updatePart({
+          id: PartID.ascending(),
+          messageID: ctx.assistantMessage.id,
+          sessionID: ctx.sessionID,
+          type: "text",
+          text: reasoningText,
+          time: { start: now, end: now },
+        })
+        // 收尾 reasoning part（设 end time、落库），与正常 step-finish 行为一致
+        yield* Effect.forEach(Object.keys(ctx.reasoningMap), finishReasoning)
+        ctx.assistantMessage.finish = "stop"
+        // 260818 Red finish 必须落库：runLoop 下一轮的 break 条件读
+        // lastAssistant.finish（prompt.ts），只改内存对象会导致死循环重发
+        yield* session.updateMessage(ctx.assistantMessage)
+      })
+
       const handleEvent = Effect.fnUntraced(function* (value: StreamEvent) {
         // 261013 Red A start event is not a content token. Empty deltas must not stop the content timer.
         if (compactionTiming) {
@@ -545,44 +588,11 @@ export const layer = Layer.effect(
               field: "text",
               delta: value.text,
             })
-            // 260818 Red reasoning 流级 stall 兜底：模型卡死在纯思考流里永不产出。
-            // step-finish 永不到达时 runLoop 的 reasoningOnly 提升逻辑（prompt.ts）
-            // 走不到 —— turn 永不结束，后续用户消息全部 QUEUED，只能手动中断。
-            // 这里在流内直接检测：本 step 已累积超过阈值字符的 reasoning 且从未
-            // 产出 text/tool，判定为卡死。处理：把思考提升为可见正文（用户至少
-            // 看得到东西，而不是对着一片空白等死），置 finish="stop" 正常收尾。
-            // why: docs/notes/implemented/bug-fix/2026-08-18-reasoning-stall-safety-net.md
+            // 261020 Red 纯思考兜底（两档，见文件头注释与 note）：主判据是静默时长
+            // （Stream.timeoutOrElse 处），这里只剩防无限流的字符兜底。
             if (!ctx.reasoningStallTripped && !ctx.stepProduced) {
               ctx.reasoningChars += value.text.length
-              if (ctx.reasoningChars >= REASONING_STALL_CHARS) {
-                ctx.reasoningStallTripped = true
-                slog.warn("reasoning.stall", {
-                  sessionID: ctx.sessionID,
-                  chars: ctx.reasoningChars,
-                  model: ctx.model.id,
-                })
-                // 先剥离注入指令复述（防 DCP reminder 之类的泄露跟着思考一起进正文），
-                // 再拼接提升为可见正文（与 runLoop 的 reasoningOnly.promoted 同款做法）
-                for (const p of Object.values(ctx.reasoningMap)) stripInstructionEcho(p, "reasoning")
-                const reasoningText = Object.values(ctx.reasoningMap)
-                  .map((p) => p.text)
-                  .join("\n\n")
-                const now = Date.now()
-                yield* session.updatePart({
-                  id: PartID.ascending(),
-                  messageID: ctx.assistantMessage.id,
-                  sessionID: ctx.sessionID,
-                  type: "text",
-                  text: reasoningText,
-                  time: { start: now, end: now },
-                })
-                // 收尾 reasoning part（设 end time、落库），与正常 step-finish 行为一致
-                yield* Effect.forEach(Object.keys(ctx.reasoningMap), finishReasoning)
-                ctx.assistantMessage.finish = "stop"
-                // 260818 Red finish 必须落库：runLoop 下一轮的 break 条件读
-                // lastAssistant.finish（prompt.ts），只改内存对象会导致死循环重发
-                yield* session.updateMessage(ctx.assistantMessage)
-              }
+              if (ctx.reasoningChars >= stall.maxChars) yield* promoteReasoning("maxChars")
             }
             return
 
@@ -1205,6 +1215,20 @@ export const layer = Layer.effect(
             const stream = llm.stream(streamInput)
 
             yield* stream.pipe(
+              // 261020 Red 静默兜底（主判据）：供应商在 idleMs 内不再吐任何分片，判定这一路流
+              // 已卡住。计时只覆盖「等上游下一个分片」的时间——tap 里执行工具时上游并未拉取，
+              // 长工具不会被误判成静默。有思考无正文 → 提升收尾；纯静默无思考 → 只结束流，
+              // 交给 prompt.ts 的 producedNothing 恢复链（260808）出可见说明。
+              Stream.timeoutOrElse({
+                duration: stall.idleMs,
+                orElse: () =>
+                  Stream.unwrap(
+                    Effect.gen(function* () {
+                      if (!ctx.stepProduced && ctx.reasoningChars > 0) yield* promoteReasoning("idle")
+                      return Stream.empty
+                    }),
+                  ),
+              }),
               Stream.tap((event) =>
                 Effect.gen(function* () {
                   if (onResponse && !responseReceived && isModelResponse(event)) {

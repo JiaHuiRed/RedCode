@@ -40,6 +40,7 @@ import { ConfigPlugin } from "./plugin"
 import { ConfigProvider } from "./provider"
 import { ConfigReference } from "./reference"
 import { ConfigRequestEvidence } from "./request-evidence"
+import { ConfigReasoningStall } from "./reasoning-stall"
 import * as ConfigToolFailure from "./tool-failure"
 import { ConfigServer } from "./server"
 import { ConfigSkills } from "./skills"
@@ -416,6 +417,10 @@ export const Info = Schema.Struct({
       repeated_tool_failure_limit: Schema.optional(ConfigToolFailure.Limit),
       requestEvidence: Schema.optional(ConfigRequestEvidence.Info).annotate({
         description: "Bounded, hash-only provider request diagnostics. Does not modify model requests or cache keys.",
+      }),
+      reasoningStall: Schema.optional(ConfigReasoningStall.Info).annotate({
+        description:
+          "When a reasoning-only step is treated as stalled: silence before cutoff, plus a character backstop for providers that stream forever.",
       }),
       mcp_timeout: Schema.optional(PositiveInt).annotate({
         description: "Timeout in milliseconds for model context protocol (MCP) requests",
