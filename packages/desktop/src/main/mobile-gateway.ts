@@ -555,7 +555,7 @@ async function handleRequest(context: RequestContext) {
   upstream.end(body)
 }
 
-function filterGlobalEvents(
+export function filterGlobalEvents(
   upstream: IncomingMessage,
   response: ServerResponse,
   directory: string,
@@ -565,47 +565,84 @@ function filterGlobalEvents(
 ) {
   const decoder = new StringDecoder("utf8")
   let pending = ""
+  let ended = false
+  let waitingForDrain = false
+  let closed = false
+  let tracked = true
+  const cleanup = () => {
+    if (!tracked) return
+    tracked = false
+    untrack()
+  }
+  const finish = () => {
+    if (!ended || waitingForDrain || closed) return
+    if (pending && eventInScope(pending, directory, access)) {
+      const frame = pending
+      pending = ""
+      if (!response.write(`${frame}\n\n`)) {
+        waitingForDrain = true
+        response.once("drain", onDrain)
+        return
+      }
+    } else {
+      pending = ""
+    }
+    response.end()
+    cleanup()
+  }
+  const onDrain = () => {
+    waitingForDrain = false
+    processPending()
+  }
+  const processPending = () => {
+    while (!closed && !waitingForDrain) {
+      const separator = /\r?\n\r?\n/.exec(pending)
+      if (!separator || separator.index === undefined) break
+      const frame = pending.slice(0, separator.index)
+      pending = pending.slice(separator.index + separator[0].length)
+      if (eventInScope(frame, directory, access) && !response.write(`${frame}\n\n`)) {
+        waitingForDrain = true
+        upstream.pause()
+        response.once("drain", onDrain)
+      }
+    }
+    if (!closed && !waitingForDrain && ended) finish()
+    if (!closed && !waitingForDrain && !ended) upstream.resume()
+  }
+  const overflow = () => {
+    upstream.destroy()
+    controller.abort()
+    cleanup()
+    closed = true
+    response.destroy()
+  }
   upstream.on("data", (chunk: Buffer) => {
     pending += decoder.write(chunk)
     if (pending.length > MAX_SSE_FRAME_BYTES) {
       // pending 是解码后的字符串，length 是 UTF-16 码元数——与字节上限有 ≤2 倍偏差，对
       // 防御目的等价。断连清理与 upstream error / response close 路径保持一致。
-      upstream.destroy()
-      controller.abort()
-      untrack()
-      response.destroy()
+      overflow()
       return
     }
-    while (true) {
-      const separator = /\r?\n\r?\n/.exec(pending)
-      if (!separator || separator.index === undefined) break
-      const frame = pending.slice(0, separator.index)
-      pending = pending.slice(separator.index + separator[0].length)
-      // 261021 Red 背压：write 返回 false 说明内核缓冲到高水位，暂停拉取上游、drain 后
-      // 恢复——pending 里已分帧但未写出的内容留到下一个 data 事件继续处理，慢客户端
-      // 不再把上游数据全量堆进网关内存。
-      if (eventInScope(frame, directory, access) && !response.write(`${frame}\n\n`)) {
-        upstream.pause()
-        response.once("drain", () => upstream.resume())
-        return
-      }
-    }
+    processPending()
   })
   upstream.once("end", () => {
     pending += decoder.end()
-    if (pending && eventInScope(pending, directory, access)) response.write(`${pending}\n\n`)
-    response.end()
-    untrack()
+    ended = true
+    processPending()
   })
   upstream.once("error", () => {
     controller.abort()
-    untrack()
+    closed = true
+    cleanup()
     response.destroy()
   })
   response.once("close", () => {
+    closed = true
+    response.off("drain", onDrain)
     upstream.destroy()
     controller.abort()
-    untrack()
+    cleanup()
   })
 }
 

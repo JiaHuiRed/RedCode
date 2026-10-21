@@ -25,9 +25,8 @@ export function fromTool(tool: Tool.Def): JSONSchema7 {
   return tool.jsonSchema ?? fromSchema(tool.parameters as Schema.Top)
 }
 
-// 261021 Red 模型幻觉参数的第一道闸：AI SDK 按 schema 解析输入时静默 strip 未知字段，
-// 模型看不到任何纠正信号就会以幻觉参数反复重试（redmind 实测：把要写的正文塞进 read 的
-// content 参数，连错 10 次烧 10 次全价请求）。这里对照 schema 顶层 properties 找出未知
+// 261021 Red 模型幻觉参数的第一道闸：AI SDK 会将原始参数传入工具 execute，额外字段随后
+// 才会被 Tool.define 的 Effect Schema 解码忽略。这里对照 schema 顶层 properties 找出未知
 // 顶层参数，调用方据此显式报错。schema 无 properties（freeform/MCP 动态 schema）时跳过。
 export function unknownArgumentKeys(schema: JSONSchema7, args: unknown): string[] {
   const properties = isRecord(schema) && isRecord(schema.properties) ? schema.properties : undefined

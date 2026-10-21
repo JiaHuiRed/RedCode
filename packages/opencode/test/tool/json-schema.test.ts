@@ -3,8 +3,8 @@ import { Schema } from "effect"
 import { ToolJsonSchema } from "@/tool/json-schema"
 
 // 261021 Red 幻觉参数第一道闸：unknownArgumentKeys 对照 schema 顶层 properties 找未知参数。
-// 场景还原：模型把要写的正文塞进 read 的 content 参数（schema 外），AI SDK 静默 strip 后
-// 模型得不到纠正信号，同错重试 10 次白烧额度——现在调用方据此在执行前显式报错。
+// 261021 Red unknownArgumentKeys 检查 SessionTools 送入 SDK 的原始参数；Effect Schema 解码
+// 仍会忽略额外字段，但它发生在校验之后，不能把未知参数误归因给 SDK 静默 strip。
 
 const readSchema = ToolJsonSchema.fromSchema(Schema.Struct({ filePath: Schema.String }))
 

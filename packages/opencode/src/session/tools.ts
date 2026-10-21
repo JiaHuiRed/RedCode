@@ -190,9 +190,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             { args },
           )
           args = beforeHook.args
-          // 261021 Red 幻觉参数第一道闸：未知顶层参数显式报错而不是被 AI SDK 静默 strip——
-          // 静默时模型得不到纠正信号，会带着幻觉参数反复重试白烧额度。报错走 throw，
-          // 与其他工具错误同链（tool part error → 失败预算计数）。
+          // 261021 Red 未知顶层参数必须在 Tool.define 的 Effect Schema 解码前显式报错：
+          // AI SDK 会把原始参数传到 execute，后续 Effect Schema 解码才会忽略额外字段。
+          // 报错走 throw，与其他工具错误同链（tool part error → 失败预算计数）。
           const unknownKeys = ToolJsonSchema.unknownArgumentKeys(ToolJsonSchema.fromTool(item), args)
           if (unknownKeys.length > 0) {
             // 参数名列表限长：极端幻觉载荷（几十个垃圾字段）不该把错误文本撑成无界注入。

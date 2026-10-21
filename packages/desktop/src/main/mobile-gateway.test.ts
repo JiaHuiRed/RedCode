@@ -1,10 +1,13 @@
 import { beforeAll, describe, expect, test } from "bun:test"
-import { createServer, type IncomingMessage } from "node:http"
+import { EventEmitter } from "node:events"
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
+import { PassThrough } from "node:stream"
 import { request as httpsRequest } from "node:https"
 import {
   createMobileGateway,
   createMobileGatewayAuth,
   createMobileGatewayTlsIdentity,
+  filterGlobalEvents,
   isSafeMobileGatewayHost,
   mobileGatewayRoute,
   mobileGatewaySessionInScope,
@@ -118,6 +121,159 @@ describe("mobile gateway boundary", () => {
 })
 
 describe("mobile gateway proxy", () => {
+  test("drain immediately writes every already-buffered complete SSE frame", () => {
+    const upstream = new EventEmitter() as EventEmitter & {
+      pause: () => void
+      resume: () => void
+      destroy: () => void
+      paused: number
+    }
+    upstream.paused = 0
+    upstream.pause = () => upstream.paused++
+    upstream.resume = () => {}
+    upstream.destroy = () => {}
+    const writes: string[] = []
+    const response = new EventEmitter() as EventEmitter & {
+      write: (chunk: string) => boolean
+      end: () => void
+      destroy: () => void
+      ends: number
+    }
+    response.ends = 0
+    response.write = (chunk) => {
+      writes.push(chunk)
+      return writes.length !== 1
+    }
+    response.end = () => response.ends++
+    response.destroy = () => {}
+    filterGlobalEvents(
+      upstream as IncomingMessage,
+      response as unknown as ServerResponse,
+      "C:\\work",
+      { sessions: new Set(), questions: new Set() },
+      new AbortController(),
+      () => {},
+    )
+    const frames = [1, 2, 3].map((id) =>
+      `data: ${JSON.stringify({ directory: "C:\\work", payload: { id } })}\n\n`,
+    )
+
+    upstream.emit("data", Buffer.from(frames.join("")))
+    expect(writes).toEqual([frames[0]])
+    expect(upstream.paused).toBe(1)
+
+    response.emit("drain")
+
+    expect(writes).toEqual(frames)
+    expect(response.ends).toBe(0)
+  })
+
+  test("end during backpressure waits for a repeated tail-frame drain", () => {
+    const upstream = new EventEmitter() as EventEmitter & {
+      pause: () => void
+      resume: () => void
+      destroy: () => void
+    }
+    upstream.pause = () => {}
+    upstream.resume = () => {}
+    upstream.destroy = () => {}
+    const writes: string[] = []
+    const response = new EventEmitter() as EventEmitter & {
+      write: (chunk: string) => boolean
+      end: () => void
+      destroy: () => void
+      ends: number
+    }
+    response.ends = 0
+    response.write = (chunk) => {
+      writes.push(chunk)
+      return writes.length !== 1 && writes.length !== 2
+    }
+    response.end = () => response.ends++
+    response.destroy = () => {}
+    filterGlobalEvents(
+      upstream as IncomingMessage,
+      response as unknown as ServerResponse,
+      "C:\\work",
+      { sessions: new Set(), questions: new Set() },
+      new AbortController(),
+      () => {},
+    )
+    const first = `data: ${JSON.stringify({ directory: "C:\\work", payload: { id: 1 } })}\n\n`
+    const tail = `data: ${JSON.stringify({ directory: "C:\\work", payload: { id: 2 } })}`
+
+    upstream.emit("data", Buffer.from(first + tail))
+    upstream.emit("end")
+    expect(writes).toEqual([first])
+    expect(response.ends).toBe(0)
+
+    response.emit("drain")
+    expect(writes).toEqual([first, `${tail}\n\n`])
+    expect(response.ends).toBe(0)
+
+    response.emit("drain")
+    expect(response.ends).toBe(1)
+  })
+
+  test("flushes queued SSE frames one at a time across backpressure and end", async () => {
+    const upstream = new PassThrough()
+    const response = new PassThrough({ highWaterMark: 1 })
+    const controller = new AbortController()
+    const output: Buffer[] = []
+    let writes = 0
+    response.on("data", (chunk: Buffer) => output.push(chunk))
+    const writable = response as unknown as ServerResponse
+    const write = writable.write.bind(writable)
+    writable.write = ((chunk: string) => {
+      const accepted = write(chunk)
+      if (++writes !== 1) return accepted
+      queueMicrotask(() => response.emit("drain"))
+      return false
+    }) as ServerResponse["write"]
+    let untracked = 0
+    const finished = new Promise<void>((resolve) => response.once("finish", resolve))
+    filterGlobalEvents(upstream as IncomingMessage, response as unknown as ServerResponse, "C:\\work", {
+      sessions: new Set(),
+      questions: new Set(),
+    }, controller, () => untracked++)
+
+    const frames = [1, 2, 3].map((id) =>
+      `data: ${JSON.stringify({ directory: "C:\\work", payload: { id } })}\n\n`,
+    )
+    upstream.end(frames.join(""))
+    await finished
+
+    expect(Buffer.concat(output).toString()).toBe(frames.join(""))
+    expect(writes).toBe(3)
+    expect(untracked).toBe(1)
+  })
+
+  test("cleans up tracking and upstream on response close or upstream error", async () => {
+    for (const cause of ["response-close", "upstream-error"] as const) {
+      const upstream = new PassThrough()
+      const response = new PassThrough()
+      const controller = new AbortController()
+      let untracked = 0
+      const closed = new Promise<void>((resolve) => response.once("close", resolve))
+      filterGlobalEvents(
+        upstream as IncomingMessage,
+        response as unknown as ServerResponse,
+        "C:\\work",
+        { sessions: new Set(), questions: new Set() },
+        controller,
+        () => untracked++,
+      )
+
+      if (cause === "response-close") response.destroy()
+      else upstream.emit("error", new Error("upstream failed"))
+      await closed
+
+      expect(upstream.destroyed).toBe(true)
+      expect(controller.signal.aborted).toBe(true)
+      expect(untracked).toBe(1)
+    }
+  })
+
   // 261021 Red CI 上 MSYS2 openssl 冷启动可超 5s（261020 CI 两次 test timed out，openssl
   // 被 SIGTERM 时 stdout 为空），而每个用例各起一次进程会把首次成本付两遍。这里共享一次
   // 预生成身份；30s 预算与 createMobileGatewayTlsIdentity 的外部进程超时一致。证书生成
