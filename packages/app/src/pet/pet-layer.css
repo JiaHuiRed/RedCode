@@ -1,32 +1,50 @@
-/* Pet Layer — 右下角常驻视觉层。
-   克制原则：idle 呼吸、working 微动、permission 急促提醒；prefers-reduced-motion 全关。 */
-
+/* 261021 Red V0.3：位置跟手、触摸反馈与图片呼吸分层，气泡不参与拖动包围盒。 */
 .pet-layer {
-  /* 视口 fixed + 显式偏移：absolute 挂 main 的 containing block 在桌面端实测未生效（赤落回视口最左，
-     压住侧边栏设置按钮）。left 400 = 侧边栏宽 ~240 + 余量，落在主区左下空白带（261001 Red 右移 80：
-     哥哥反馈原位太贴边）。260929 Red clamp 兜底：400px 是桌面实测值，窗口变窄/侧栏折叠时会把赤推出可视区
-     或压内容——max 保证右边至少留 140px（sprite 127 + 余量）；窄屏（侧栏大概率收起）改贴右下角。 */
   position: fixed;
-  left: clamp(12px, 400px, calc(100vw - 140px));
+  left: clamp(16px, 400px, calc(100vw - 176px));
   bottom: 24px;
   z-index: 40;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  /* 容器可交互：hover 关闭钮依赖容器 :hover；赤是「活物」本就允许点击，
-     包围盒（含透明区）挡下层点击是预期行为 */
+  width: 160px;
+  max-width: calc(100vw - 32px);
+  pointer-events: none;
+}
+
+.pet-layer-body {
+  display: block;
+  position: relative;
+  width: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 16px;
+  background: transparent;
+  color: inherit;
+  line-height: 0;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
   pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pet-layer-body:focus-visible,
+.pet-layer-close:focus-visible {
+  outline: 2px solid var(--v2-border-border-focus);
+  outline-offset: 4px;
+}
+
+.pet-layer-figure {
+  display: block;
+  transform-origin: 50% 85%;
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .pet-layer-sprite {
-  pointer-events: auto;
-  width: 127px;
+  display: block;
+  width: 100%;
   height: auto;
   user-select: none;
   -webkit-user-drag: none;
-  filter: drop-shadow(0 4px 12px rgb(0 0 0 / 25%));
-  cursor: default;
+  filter: drop-shadow(0 6px 12px rgb(0 0 0 / 18%));
   animation: pet-breathe 4s ease-in-out infinite;
 }
 
@@ -42,33 +60,181 @@
   animation: pet-shake 0.4s ease-in-out 2;
 }
 
+.pet-layer[data-touch="head"] .pet-layer-figure {
+  transform: rotate(calc(var(--pet-stroke, -0.6) * 3deg)) scale(1.025);
+}
+
+.pet-layer[data-touch="belly"] .pet-layer-figure {
+  transform: translateY(1px) rotate(calc(var(--pet-stroke, 0.4) * 2deg)) scale(1.035, 0.985);
+}
+
+.pet-layer[data-dragging="true"] .pet-layer-body {
+  cursor: grabbing;
+}
+
+.pet-layer[data-dragging="true"] .pet-layer-figure {
+  transform: rotate(2deg) scale(1.025);
+}
+
+.pet-layer[data-touch] .pet-layer-sprite,
+.pet-layer[data-dragging="true"] .pet-layer-sprite {
+  animation: none;
+}
+
+.pet-layer-affection {
+  position: absolute;
+  top: 10%;
+  left: 62%;
+  width: 24px;
+  height: 24px;
+  fill: #cf4b62;
+  stroke: var(--v2-background-bg-base);
+  stroke-width: 1.5px;
+  opacity: 0;
+  transform: translateY(4px) scale(0.85);
+  transition: opacity 160ms ease-out, transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  pointer-events: none;
+}
+
+.pet-layer[data-touch="belly"] .pet-layer-affection {
+  top: 44%;
+  left: 60%;
+}
+
+.pet-layer[data-touch] .pet-layer-affection {
+  opacity: 1;
+  transform: translateY(-3px) scale(1);
+}
+
 .pet-layer-bubble {
-  pointer-events: auto;
-  max-width: 180px;
-  padding: 6px 10px;
-  border-radius: 10px;
-  border-bottom-left-radius: 2px;
-  background: var(--surface-base, #1a1a1a);
-  color: var(--text-primary, #eee);
-  font-size: 12px;
-  line-height: 1.4;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
+  --pet-ink: #51202a;
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 44px);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 280px;
+  max-width: calc(100vw - 32px);
+  min-height: 156px;
+  padding: 28px;
+  border: 4px solid var(--pet-ink);
+  border-radius: 49% 51% 50% 47% / 50% 48% 52% 50%;
+  corner-shape: round;
+  background: #fff7f3;
+  color: #7d2c3f;
+  box-shadow: 0 4px 0 rgb(32 9 16 / 14%);
+  font-family: var(--font-family-sans);
+  text-align: center;
+  pointer-events: none;
+  transform-origin: 25% 100%;
+  transition: opacity 160ms ease-out, transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
+
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+.pet-layer-bubble::before,
+.pet-layer-bubble::after {
+  content: "";
+  position: absolute;
+  box-sizing: border-box;
+  border: 3px solid var(--pet-ink);
+  border-radius: 50%;
+  corner-shape: round;
+  background: inherit;
+}
+
+.pet-layer-bubble::before {
+  left: 48px;
+  bottom: -24px;
+  width: 22px;
+  height: 17px;
+}
+
+.pet-layer-bubble::after {
+  left: 78px;
+  bottom: -42px;
+  width: 14px;
+  height: 12px;
+}
+
+.pet-layer-bubble-label {
+  display: none;
+}
+
+.pet-layer-bubble-text {
+  font-size: var(--font-size-x-large);
+  font-weight: 700;
+  line-height: 1.45;
+  white-space: pre-line;
+  overflow-wrap: break-word;
+}
+
+.pet-layer[data-bubble-align="end"] .pet-layer-bubble {
+  left: auto;
+  right: 0;
+}
+
+.pet-layer[data-bubble-align="end"] .pet-layer-bubble::before {
+  left: auto;
+  right: 102px;
+}
+
+.pet-layer[data-bubble-align="end"] .pet-layer-bubble::after {
+  left: auto;
+  right: 80px;
+}
+
+.pet-layer[data-bubble-placement="below"] .pet-layer-bubble {
+  top: calc(100% + 44px);
+  bottom: auto;
+  transform-origin: 25% 0;
+}
+
+.pet-layer[data-bubble-placement="below"] .pet-layer-bubble::before {
+  top: -24px;
+  bottom: auto;
+}
+
+.pet-layer[data-bubble-placement="below"] .pet-layer-bubble::after {
+  top: -42px;
+  bottom: auto;
 }
 
 .pet-layer-close {
-  pointer-events: auto;
-  width: 18px;
-  height: 18px;
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 28px;
+  height: 28px;
   padding: 0;
-  border: none;
+  border: 1px solid var(--v2-border-border-base);
   border-radius: 50%;
   corner-shape: round;
-  background: rgb(0 0 0 / 55%);
-  color: #fff;
-  font-size: 12px;
-  line-height: 18px;
+  background: var(--surface-raised-stronger-non-alpha);
+  color: var(--v2-text-text-base);
+  box-shadow: var(--v2-elevation-raised);
+  font-size: var(--font-size-large);
+  line-height: 1;
   text-align: center;
+  opacity: 0;
+  pointer-events: none;
   cursor: pointer;
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
+}
+
+.pet-layer:hover .pet-layer-close,
+.pet-layer:focus-within .pet-layer-close {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.pet-layer-close:active {
+  transform: scale(0.96);
 }
 
 @keyframes pet-breathe {
@@ -121,13 +287,26 @@
   .pet-layer-sprite {
     animation: none;
   }
+  .pet-layer-figure,
+  .pet-layer-affection,
+  .pet-layer-bubble,
+  .pet-layer-close {
+    transition: none;
+    transform: none !important;
+  }
 }
 
+@media (pointer: coarse) {
+  .pet-layer-close {
+    width: 40px;
+    height: 40px;
+  }
+}
 
-/* 260929 Red 窄屏（Web/手机，侧栏收起）：贴右下角，不再依赖侧边栏宽度的左偏移 */
+/* 261021 Red 未主动挪位时沿用窄屏右下角；保存的位置由内联视口坐标接管。 */
 @media (max-width: 768px) {
- .pet-layer {
-   left: auto;
-   right: 16px;
- }
+  .pet-layer {
+    left: auto;
+    right: 16px;
+  }
 }

@@ -1021,7 +1021,7 @@ export const dict = {
     "Display the animated progress bar at the top of the session when the agent is working",
   "settings.general.row.petEnabled.title": "Show desktop pet",
   "settings.general.row.petEnabled.description":
-    "Show Chi (chibi) at the bottom-left of the main content area. You can turn it back on here anytime",
+    "Show Chi: stroke her head or belly with the pointer, or drag to reposition. You can turn her back on here anytime",
   "settings.general.row.pinchZoom.title": "Pinch to zoom",
   "settings.general.row.pinchZoom.description": "Allow trackpad pinch and Ctrl-scroll gestures to zoom",
 

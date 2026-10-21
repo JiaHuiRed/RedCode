@@ -2,15 +2,62 @@ import { describe, expect, it } from "bun:test"
 import type { PetDisplay } from "./pet-state"
 import {
   advancePetPresentation,
+  clampPetPosition,
+  clampPetPixels,
   createPetPresentation,
   IDLE_ACTION_LINES,
   LINES,
   pickLine,
+  petPositionFromOffset,
+  petBubblePlacement,
+  petStroke,
+  petTouchIsExpired,
+  resolvePetPosition,
+  petTouchAt,
+  petTouchResponse,
   resolvePetBehavior,
   shouldChatter,
 } from "./pet-lines"
 
 describe("pet-lines", () => {
+  it("maps touch points to the visual head and belly hitboxes only", () => {
+    expect(petTouchAt(0.43, 0.25)).toBe("head")
+    expect(petTouchAt(0.43, 0.53)).toBe("belly")
+    expect(petTouchAt(0.1, 0.1)).toBeUndefined()
+    expect(petTouchAt(0.43, 0.4)).toBeUndefined()
+  })
+
+  it("limits touch responses by cooldown and never replaces important reminders", () => {
+    const behavior = resolvePetBehavior()
+    expect(petTouchResponse("idle", undefined, 10_000, behavior, "head")?.until).toBe(14_500)
+    expect(petTouchResponse("idle", 9_000, 10_000, behavior, "belly")).toBeUndefined()
+    for (const kind of ["permission", "waiting", "success", "error"] as const)
+      expect(petTouchResponse(kind, undefined, 10_000, behavior, "head")).toBeUndefined()
+  })
+
+  it("normalizes and clamps pet positions to the viewport", () => {
+    expect(petPositionFromOffset(400, 200, 1_000, 500)).toEqual({ x: 0.4, y: 0.4 })
+    expect(clampPetPosition({ x: 0.9, y: 0.95 }, 160, 100, 1_000, 500)).toEqual({ x: 0.84, y: 0.8 })
+    expect(clampPetPosition({ x: -1, y: 2 }, 160, 100, 1_000, 500)).toEqual({ x: 0, y: 0.8 })
+  })
+
+  it("clamps measured pixel positions and places bubbles from measured dimensions", () => {
+    expect(clampPetPixels(900, 450, 160, 100, 1_000, 500)).toEqual({ left: 840, top: 400 })
+    expect(clampPetPixels(-20, -10, 160, 100, 1_000, 500)).toEqual({ left: 0, top: 0 })
+    expect(petBubblePlacement(0, 0, 160, 1_000, 280, 116)).toEqual({ placement: "below", align: "start" })
+    expect(petBubblePlacement(700, 760, 160, 1_000, 280, 116)).toEqual({ placement: "above", align: "end" })
+    expect(petTouchIsExpired(4_500, 4_499)).toBe(false)
+    expect(petTouchIsExpired(4_500, 4_500)).toBe(true)
+    expect(petStroke(500, 1_000)).toBe(1)
+    expect(petStroke(-500, 1_000)).toBe(-1)
+  })
+
+  it("keeps legacy missing position as default and rejects malformed positions", () => {
+    expect(resolvePetPosition(undefined)).toBeUndefined()
+    expect(resolvePetPosition({ x: 0.2, y: 1 })).toEqual({ x: 0.2, y: 1 })
+    for (const value of [null, [], {}, { x: NaN, y: 0.2 }, { x: 0, y: Infinity }, { x: -0.1, y: 0.2 }, { x: 0.2, y: 1.1 }])
+      expect(() => resolvePetPosition(value)).toThrow("general.petPosition")
+  })
   // 全部展示姿态与闲时动作都必须有非空台词池——漏池会让 pickLine 返回 undefined
   const KINDS: PetDisplay["kind"][] = [
     "idle",
@@ -194,6 +241,8 @@ describe("pet presentation", () => {
 describe("pet behavior settings", () => {
   it("fills missing legacy settings and honors overrides", () => {
     expect(resolvePetBehavior().idleIntervalMs).toBe(25_000)
+    expect(resolvePetBehavior().touchCooldownMs).toBe(1_800)
+    expect(resolvePetBehavior().touchResponseMs).toBe(4_500)
     expect(resolvePetBehavior({ coffeeChance: 0, idleIntervalMs: 10_000 })).toMatchObject({
       coffeeChance: 0, idleIntervalMs: 10_000,
     })
@@ -204,6 +253,8 @@ describe("pet behavior settings", () => {
       expect(() => resolvePetBehavior({ idleActionChance: value })).toThrow("general.petBehavior.idleActionChance")
     for (const value of [0, -1, 999, Infinity, 86_400_001])
       expect(() => resolvePetBehavior({ idleIntervalMs: value })).toThrow("general.petBehavior.idleIntervalMs")
+    for (const value of [0, 999, Infinity, 86_400_001])
+      expect(() => resolvePetBehavior({ touchCooldownMs: value })).toThrow("general.petBehavior.touchCooldownMs")
   })
 
   it("rejects malformed persisted objects and misspelled fields", () => {

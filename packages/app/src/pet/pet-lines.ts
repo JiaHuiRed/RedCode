@@ -39,6 +39,8 @@ export type PetBehavior = {
   idleActionChance: number
   idleActionMs: number
   coffeeChance: number
+  touchCooldownMs: number
+  touchResponseMs: number
 }
 
 // 261006 Red settings.v3 的 general.petBehavior 可覆写；默认值由设置拥有方显式解析。
@@ -53,6 +55,8 @@ export function resolvePetBehavior(input: Partial<PetBehavior> = {}): PetBehavio
     idleActionChance: 0.4,
     idleActionMs: 5_000,
     coffeeChance: 0.5,
+    touchCooldownMs: 1_800,
+    touchResponseMs: 4_500,
   }
   for (const key of Object.keys(input))
     if (!Object.hasOwn(defaults, key)) throw new Error(`Invalid general.petBehavior.${key}: unknown field`)
@@ -64,6 +68,68 @@ export function resolvePetBehavior(input: Partial<PetBehavior> = {}): PetBehavio
       throw new Error(`Invalid general.petBehavior.${key}: ${value}`)
   }
   return result
+}
+
+export type PetTouch = "head" | "belly"
+
+export function petTouchCanStart(kind: PetDisplay["kind"], lastTouchAt: number | undefined, now: number, behavior: PetBehavior) {
+  return !["permission", "waiting", "success", "error"].includes(kind) &&
+    (lastTouchAt === undefined || now - lastTouchAt >= behavior.touchCooldownMs)
+}
+
+export function petTouchIsExpired(until: number | undefined, now: number) {
+  return until !== undefined && now >= until
+}
+
+export function petBubblePlacement(top: number, left: number, rootWidth: number, viewportWidth: number, bubbleWidth: number, bubbleHeight: number) {
+  return {
+    placement: top < bubbleHeight + 44 + 16 ? "below" as const : "above" as const,
+    align: left + rootWidth > viewportWidth - bubbleWidth - 16 ? "end" as const : "start" as const,
+  }
+}
+
+export function clampPetPixels(left: number, top: number, width: number, height: number, viewportWidth: number, viewportHeight: number) {
+  return {
+    left: Math.max(0, Math.min(left, viewportWidth - width)),
+    top: Math.max(0, Math.min(top, viewportHeight - height)),
+  }
+}
+
+export function petStroke(dx: number, width: number) {
+  if (width <= 0) return 0
+  return Math.max(-1, Math.min(1, dx / (width / 2)))
+}
+
+export function resolvePetPosition(input: unknown): { x: number; y: number } | undefined {
+  if (input === undefined) return undefined
+  if (!input || typeof input !== "object" || Array.isArray(input))
+    throw new Error("Invalid general.petPosition: expected normalized coordinates")
+  const { x, y } = input as Record<string, unknown>
+  if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1)
+    throw new Error("Invalid general.petPosition: coordinates must be finite values in [0,1]")
+  return { x, y }
+}
+
+export function petTouchAt(x: number, y: number): PetTouch | undefined {
+  if (x >= 0.24 && x <= 0.64 && y >= 0.18 && y <= 0.34) return "head"
+  if (x >= 0.32 && x <= 0.62 && y >= 0.47 && y <= 0.61) return "belly"
+}
+
+export function clampPetPosition(position: { x: number; y: number }, width: number, height: number, viewportWidth: number, viewportHeight: number) {
+  return {
+    x: Math.max(0, Math.min(1, position.x, Math.max(0, viewportWidth - width) / viewportWidth)),
+    y: Math.max(0, Math.min(1, position.y, Math.max(0, viewportHeight - height) / viewportHeight)),
+  }
+}
+
+export function petPositionFromOffset(x: number, y: number, viewportWidth: number, viewportHeight: number) {
+  return { x: Math.max(0, Math.min(1, x / viewportWidth)), y: Math.max(0, Math.min(1, y / viewportHeight)) }
+}
+
+export function petTouchResponse(kind: PetDisplay["kind"], lastTouchAt: number | undefined, now: number, behavior: PetBehavior, touch: PetTouch) {
+  if (!petTouchCanStart(kind, lastTouchAt, now, behavior)) return undefined
+  const lines = touch === "head" ? ["摸摸头…", "嗯，舒服～"] : ["肚肚也可以摸", "被发现啦～"]
+  return { text: lines[now % lines.length]!, until: now + behavior.touchResponseMs }
 }
 
 /**

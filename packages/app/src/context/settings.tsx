@@ -2,7 +2,7 @@ import { createStore, reconcile } from "solid-js/store"
 import { createEffect, createMemo, untrack } from "solid-js"
 import { createSimpleContext } from "@redcode-ai/ui/context"
 import { Persist, persisted } from "@/utils/persist"
-import { resolvePetBehavior, type PetBehavior } from "@/pet/pet-lines"
+import { resolvePetBehavior, resolvePetPosition, type PetBehavior } from "@/pet/pet-lines"
 
 export interface NotificationSettings {
   agent: boolean
@@ -42,6 +42,7 @@ export interface Settings {
     // 后整层消失且全仓没有第二个入口能开回来（第三方审计项）。挪进 settings.v3 后设置页可管。
     petEnabled: boolean
     petBehavior: PetBehavior
+    petPosition?: { x: number; y: number }
   }
   updates: {
     startup: boolean
@@ -343,6 +344,12 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         petBehavior: createMemo(() => resolvePetBehavior(store.general?.petBehavior)),
         setPetBehavior(value: Partial<PetBehavior>) {
           setStore("general", "petBehavior", resolvePetBehavior({ ...store.general?.petBehavior, ...value }))
+        },
+        petPosition: createMemo(() => resolvePetPosition(store.general?.petPosition)),
+        setPetPosition(value: { x: number; y: number } | undefined) {
+          const position = resolvePetPosition(value)
+          if (position) setStore("general", "petPosition", position)
+          else setStore("general", "petPosition", undefined)
         },
       },
       updates: {
