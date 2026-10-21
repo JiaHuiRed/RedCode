@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { beforeAll, describe, expect, test } from "bun:test"
 import { createServer, type IncomingMessage } from "node:http"
 import { request as httpsRequest } from "node:https"
 import {
@@ -8,6 +8,7 @@ import {
   isSafeMobileGatewayHost,
   mobileGatewayRoute,
   mobileGatewaySessionInScope,
+  type MobileGatewayTlsIdentity,
 } from "./mobile-gateway"
 
 describe("mobile gateway authentication", () => {
@@ -117,6 +118,15 @@ describe("mobile gateway boundary", () => {
 })
 
 describe("mobile gateway proxy", () => {
+  // 261021 Red CI 上 MSYS2 openssl 冷启动可超 5s（261020 CI 两次 test timed out，openssl
+  // 被 SIGTERM 时 stdout 为空），而每个用例各起一次进程会把首次成本付两遍。这里共享一次
+  // 预生成身份；30s 预算与 createMobileGatewayTlsIdentity 的外部进程超时一致。证书生成
+  // 本身的正确性仍由生产路径的指纹 pin 与配对码断言覆盖。
+  let tls: MobileGatewayTlsIdentity
+  beforeAll(async () => {
+    tls = await createMobileGatewayTlsIdentity("127.0.0.1")
+  }, 30_000)
+
   test("pairs a device and proxies only scoped session calls with sidecar credentials", async () => {
     let captured:
       | {
@@ -197,7 +207,6 @@ describe("mobile gateway proxy", () => {
     })
     await listen(sidecar)
 
-    const tls = await createMobileGatewayTlsIdentity("127.0.0.1")
     const gateway = createMobileGateway({
       host: "127.0.0.1",
       sidecar: {
@@ -405,7 +414,6 @@ describe("mobile gateway proxy", () => {
     })
     await listen(sidecar)
 
-    const tls = await createMobileGatewayTlsIdentity("127.0.0.1")
     const gateway = createMobileGateway({
       host: "127.0.0.1",
       sidecar: {
