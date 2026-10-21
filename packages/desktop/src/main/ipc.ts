@@ -41,6 +41,7 @@ type Deps = {
   checkAppExists: (appName: string) => Promise<boolean> | boolean
   listFonts: () => Promise<string[]>
   wslPath: (path: string, mode: "windows" | "linux" | null) => Promise<string>
+  wslPaths: (paths: string[], mode: "windows" | "linux" | null) => Promise<string[]>
   resolveAppPath: (appName: string) => Promise<string | null>
   loadingWindowComplete: () => void
   runUpdater: (alertOnFail: boolean) => Promise<void> | void
@@ -102,6 +103,9 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("list-fonts", () => deps.listFonts())
   ipcMain.handle("wsl-path", (_event: IpcMainInvokeEvent, path: string, mode: "windows" | "linux" | null) =>
     deps.wslPath(path, mode),
+  )
+  ipcMain.handle("wsl-paths", (_event: IpcMainInvokeEvent, paths: string[], mode: "windows" | "linux" | null) =>
+    deps.wslPaths(paths, mode),
   )
   ipcMain.handle("resolve-app-path", (_event: IpcMainInvokeEvent, appName: string) => deps.resolveAppPath(appName))
   ipcMain.on("loading-window-complete", () => deps.loadingWindowComplete())

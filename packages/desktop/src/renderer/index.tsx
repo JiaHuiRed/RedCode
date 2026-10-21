@@ -102,9 +102,17 @@ const createPlatform = (): Platform => {
   const handleWslPicker = async <T extends string | string[]>(result: T | null): Promise<T | null> => {
     if (!result || !(await isWslEnabled())) return result
     if (Array.isArray(result)) {
-      return Promise.all(result.map((path) => window.api.wslPath(path, "linux").catch(() => path))) as any
+      // 261021 Red 审计 RC21-07：多选合并成一次 WSL 调用（原来每个路径各一次冷启动）。
+      //   失败时保留原路径：选择器本身已经成功，路径只是没转换成 Linux 形式。
+      return window.api.wslPaths(result, "linux").catch((error) => {
+        console.warn("wsl path conversion failed", error)
+        return result
+      }) as any
     }
-    return window.api.wslPath(result, "linux").catch(() => result) as any
+    return window.api.wslPath(result, "linux").catch((error) => {
+      console.warn("wsl path conversion failed", error)
+      return result
+    }) as any
   }
 
   const runDesktopMenuAction: Platform["runDesktopMenuAction"] = (action) => {

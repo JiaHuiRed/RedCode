@@ -62,6 +62,8 @@ export type ElectronAPI = {
   checkAppExists: (appName: string) => Promise<boolean>
   listFonts: () => Promise<string[]>
   wslPath: (path: string, mode: "windows" | "linux" | null) => Promise<string>
+  // 261021 Red 审计 RC21-07：多选路径合并成一次 WSL 调用（避免 N 次冷启动）。
+  wslPaths: (paths: string[], mode: "windows" | "linux" | null) => Promise<string[]>
   resolveAppPath: (appName: string) => Promise<string | null>
   storeGet: (name: string, key: string) => Promise<string | null>
   storeSet: (name: string, key: string, value: string) => Promise<void>

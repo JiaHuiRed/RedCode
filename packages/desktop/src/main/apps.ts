@@ -1,9 +1,15 @@
-import { execFile, execFileSync } from "node:child_process"
+import { execFile } from "node:child_process"
 import { access, readFile, readdir } from "node:fs/promises"
 import { dirname, extname, join } from "node:path"
 import util from "node:util"
 
 const execFilePromise = util.promisify(execFile)
+
+// 261021 Red 审计 RC21-07：wslpath 以前用 execFileSync，由主进程 IPC 直接调用 —— WSL 冷启动
+// 或挂起期间整个主进程事件循环被阻塞，所有窗口操作与 IPC 一起排队。改成异步执行 + 显式超时；
+// 超时不是「失败就算了」：WSL 挂起时子进程可能永远不返回，超时是唯一的出口。
+// 取舍见 docs/notes/implemented/bug-fix/2026-10-21-wsl-async-path.md。
+const WSL_PATH_TIMEOUT_MS = 5_000
 
 const exists = (path: string) =>
   access(path)
@@ -21,24 +27,91 @@ export function resolveAppPath(appName: string) {
   return resolveWindowsAppPath(appName)
 }
 
-export function wslPath(path: string, mode: "windows" | "linux" | null): string {
-  if (process.platform !== "win32") return path
+/** 跑一次 wsl 并交出 stdout。抽成依赖是为了让超时、批量合并与错误信息可以被测试钉住。 */
+export type WslExec = (args: string[]) => Promise<string>
 
-  const flag = mode === "windows" ? "-w" : "-u"
-  try {
-    if (path.startsWith("~")) {
-      const suffix = path.slice(1)
-      const cmd = `wslpath ${flag} "$HOME${suffix.replace(/"/g, '\\"')}"`
-      const output = execFileSync("wsl", ["-e", "sh", "-lc", cmd])
-      return output.toString().trim()
-    }
+const defaultWslExec: WslExec = (args) =>
+  execFilePromise("wsl", args, { timeout: WSL_PATH_TIMEOUT_MS, windowsHide: true }).then((result) =>
+    result.stdout.toString(),
+  )
 
-    const output = execFileSync("wsl", ["-e", "wslpath", flag, path])
-    return output.toString().trim()
-  } catch (error) {
-    throw new Error(`Failed to run wslpath: ${String(error)}`, { cause: error })
+export function createWslPath(options: { exec?: WslExec; platform?: NodeJS.Platform; timeoutMs?: number } = {}) {
+  const exec = options.exec ?? defaultWslExec
+  const platform = options.platform ?? process.platform
+  const timeoutMs = options.timeoutMs ?? WSL_PATH_TIMEOUT_MS
+
+  // 错误信息要能指导下一步：只说 "failed" 等于让用户去猜 WSL 有没有起来。
+  const fail = (error: unknown) => {
+    const detail = error instanceof Error ? error.message : String(error)
+    return new Error(
+      `WSL path conversion failed after ${timeoutMs}ms: ${detail}. ` +
+        `Check that WSL is installed and running (wsl -l -v), then try again.`,
+      { cause: error },
+    )
   }
+
+  const path = async (value: string, mode: "windows" | "linux" | null) => {
+    if (platform !== "win32") return value
+    const flag = mode === "windows" ? "-w" : "-u"
+    try {
+      // `~` 必须由远端 shell 展开：直接交给 wslpath 会当成字面量目录名。
+      if (value.startsWith("~")) {
+        const suffix = value.slice(1)
+        const output = await exec(["-e", "sh", "-lc", `wslpath ${flag} "$HOME${suffix.replace(/"/g, '\\"')}"`])
+        return output.trim()
+      }
+      return (await exec(["-e", "wslpath", flag, value])).trim()
+    } catch (error) {
+      throw fail(error)
+    }
+  }
+
+  /**
+   * 一次 WSL 调用转换多条路径。多选文件原来对每个路径各发一次 IPC，各自都是一次 WSL
+   * 冷启动；串行也只是把 N 次冷启动排成队，合并成一段 shell 循环才真的只起一次进程。
+   * `~` 开头的仍走单条路径（需要远端 shell 展开）。
+   */
+  const paths = async (values: string[], mode: "windows" | "linux" | null) => {
+    if (platform !== "win32") return values
+    if (!values.length) return []
+    const flag = mode === "windows" ? "-w" : "-u"
+    const positions = values.map((value, position) => ({ value, position }))
+    const tildes = positions.filter((item) => item.value.startsWith("~"))
+    const literals = positions.filter((item) => !item.value.startsWith("~"))
+    const result: string[] = Array.from({ length: values.length })
+    if (literals.length) {
+      try {
+        const output = await exec([
+          "-e",
+          "sh",
+          "-lc",
+          `for p in "$@"; do wslpath ${flag} "$p"; done`,
+          "redcode",
+          ...literals.map((item) => item.value),
+        ])
+        const lines = output.split(/\r?\n/).filter((line) => line.length > 0)
+        // 行数对不上说明有路径没转换成功：宁可整体失败，也不要把结果错位配给别的路径。
+        if (lines.length !== literals.length) {
+          throw new Error(`expected ${literals.length} converted paths, got ${lines.length}`)
+        }
+        literals.forEach((item, offset) => {
+          result[item.position] = lines[offset]!
+        })
+      } catch (error) {
+        throw fail(error)
+      }
+    }
+    for (const item of tildes) result[item.position] = await path(item.value, mode)
+    return result
+  }
+
+  return { path, paths }
 }
+
+const wsl = createWslPath()
+
+export const wslPath = wsl.path
+export const wslPathMany = wsl.paths
 
 async function checkMacosApp(appName: string) {
   const locations = [`/Applications/${appName}.app`, `/System/Applications/${appName}.app`]

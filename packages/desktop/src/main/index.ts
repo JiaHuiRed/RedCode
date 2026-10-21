@@ -13,7 +13,7 @@ import { app, BrowserWindow, dialog, Menu, nativeTheme, shell, Tray } from "elec
 import contextMenu from "electron-context-menu"
 import { CHANNEL, QUIT_CONFIRM_DISABLED_KEY, UPDATER_ENABLED } from "./constants"
 import type { InitStep, ServerReadyData, SqliteMigrationProgress, WslConfig } from "../preload/types"
-import { checkAppExists, resolveAppPath, wslPath } from "./apps"
+import { checkAppExists, resolveAppPath, wslPath, wslPathMany } from "./apps"
 import { listFonts } from "./fonts"
 import {
   broadcastSidecarState,
@@ -664,6 +664,8 @@ const main = Effect.gen(function* () {
     checkAppExists: (appName) => checkAppExists(appName),
     listFonts: () => listFonts(),
     wslPath: async (path, mode) => wslPath(path, mode),
+    // 261021 Red 审计 RC21-07：多选时合并成一次 WSL 调用，不再对每个路径各冷启动一次。
+    wslPaths: async (paths, mode) => wslPathMany(paths, mode),
     resolveAppPath: async (appName) => resolveAppPath(appName),
     loadingWindowComplete: () => Deferred.doneUnsafe(loadingComplete, Effect.void),
     runUpdater: async (alertOnFail) => checkForUpdates(alertOnFail, killSidecar),

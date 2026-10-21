@@ -22,6 +22,7 @@ const api: ElectronAPI = {
   checkAppExists: (appName) => ipcRenderer.invoke("check-app-exists", appName),
   listFonts: () => ipcRenderer.invoke("list-fonts"),
   wslPath: (path, mode) => ipcRenderer.invoke("wsl-path", path, mode),
+  wslPaths: (paths, mode) => ipcRenderer.invoke("wsl-paths", paths, mode),
   resolveAppPath: (appName) => ipcRenderer.invoke("resolve-app-path", appName),
   storeGet: (name, key) => ipcRenderer.invoke("store-get", name, key),
   storeSet: (name, key, value) => ipcRenderer.invoke("store-set", name, key, value),
