@@ -1,6 +1,6 @@
 # Memory V4 批次 A/B：内容分层试点、召回短卡与漂移探针
 
-状态:implemented
+状态:implemented（漂移探针部分 261021 停用，见 §漂移探针 首行）
 
 设计:[2026-10-19-memory-v4](../../proposed/architecture/2026-10-19-memory-v4.md)。本 note 记录批次 A（项目级试点）与批次 B（召回增强）的落地；批次 D 已执行。本轮限定抽查 #679/#680/#681 保留冲突两侧内容，#133/#140 也存在；独立 SQLite 确认上述抽查全文及六条已删索引对应全文均在。双写脚本核对 88 个索引全部有唯一全文。限定抽查未证实知识丢失；差异仍待人工核对，不自动回填/清库，不能靠 push 消除文本差异。
 
@@ -19,6 +19,8 @@
 5. **候选采样修复**：FTS 每查询 LIMIT 3→8、bm25 同分按 id 降序，LIKE 兜底 1→3。实测病因："reminder" 被 `dcp-system-reminder`/`userReminderText` 类标签名子串刷屏，LIMIT 3 等于抽签——票数 3 的「压缩继承主模型」（含 trigger/target/reminder 全部数字）被票数 1 的旧标签条目挤出候选，模型只能答半截。
 
 ## 漂移探针（seed/scripts/memory-drift-check.mjs + 插件接线）
+
+**261021 停用**：长期记忆改为本机维护（两台机各自独立，私仓只放 soul / skill / plugin / 配置），跨机快照链路整体退场——`memory-drift-check.mjs` 与其测试删除、召回插件的探针接线摘掉、pre-commit 不再导出快照、`MEMORY.md` 与 `memory/` 进 `.gitignore`。恢复点改为本机滚动备份（`export-memory-backup.mjs` → `~/.redcode/backup/memory/`，保留 7 份）。下列设计保留作历史记录。
 
 四信号：db 新于快照 / 快照未提交 / 领先 origin / 快照中有正文未逐字匹配。信号 4 表示两侧文本不同，不等于知识缺失：可能是修订、合并或重编号，须人工核对；差异不自动回填或清库，也不能靠 push 消除。无证据时状态为 unknown，CLI 不报 clean。每会话首轮由召回插件注入固定短提醒（主会话代理转告用户、子代理忽略），独立 `type:"drift"` 审计事件，脚本缺失或异常 fail-open。提醒不再拼接检查详情；详情保留在 CLI/audit，不进入提醒。全四信号最长提醒含 wrapper 实测 276 字节；任意 10k 字节详情仍恒定输出 276 字节。旧实现 4805 字节回归先红后绿；原通知定向测试子集 2 pass。动机：快照链路四步（export/commit/push/对端回填）此前全静默，pre-commit 自动导出只覆盖「staging MEMORY.md 的 commit」一条窄路。
 

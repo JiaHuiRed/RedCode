@@ -1,26 +1,25 @@
 // 260815 重建：原 export-memory-backup.mjs 丢失，按 lessons-backup.Lin.md 格式重写
-// 260911 过滤：入库快照只装**该跨机共享**的项目（默认 global）。此前是整库导出，与被共享范围
-//   无关的工作项目也一并进了私仓——共享面本该只有跨项目通用的经验教训。全库另导一份到
-//   memory/local-backup.<host>.md（.gitignore 内，仅本机防 db 写坏，不入库）。
-//   环境变量 REDCODE_BACKUP_PROJECTS 可扩展入库项目（逗号分隔，默认 "global"）。
+// 260911 过滤：入库快照只装**该跨机共享**的项目（默认 global）
+// 261021 Red 由「跨机快照」改为「本机滚动备份」。长期记忆不再跨机同步（两台机各自独立维护），
+//   快照链路的唯一用途只剩「db 被写坏/误删时的本机恢复源」，于是落点从随仓的
+//   memory/lessons-backup.<host>.md 改成 ~/.redcode/backup/memory/ 下按日期滚动的副本：
+//   每天一份（同日重跑覆盖）、保留最近 7 份、不进 git。入仓载荷只剩 soul / skill / plugin / 配置。
 // 用法：bun ~/.redcode/scripts/export-memory-backup.mjs
 import { Database } from "bun:sqlite"
+import { mkdirSync, readdirSync, unlinkSync } from "node:fs"
 import { hostname, homedir } from "node:os"
 import { join } from "node:path"
+
+const KEEP = 7
 
 const db = new Database(join(homedir(), ".redcode", "supermemory.db"), { readonly: true })
 const rows = db.query("SELECT id, content, project, source, created_at FROM memories ORDER BY id").all()
 
-const sharedProjects = (process.env.REDCODE_BACKUP_PROJECTS ?? "global")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean)
-const shared = rows.filter((row) => sharedProjects.includes(row.project))
-
 const host = hostname()
 const now = new Date()
 const pad = (n) => String(n).padStart(2, "0")
-const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
+const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+const dateStr = `${stamp} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
 
 const render = (title, note, list) => {
   const head = [`# ${title}（${host}）`, "", `> ${note}`, `> 导出时间：${dateStr}`, "", "---", ""]
@@ -37,28 +36,27 @@ const render = (title, note, list) => {
   return [...head, ...body].join("\n")
 }
 
-const dir = join(homedir(), ".redcode", "memory")
-const sharedPath = join(dir, `lessons-backup.${host}.md`)
-const localPath = join(dir, `local-backup.${host}.md`)
+const dir = join(homedir(), ".redcode", "backup", "memory")
+mkdirSync(dir, { recursive: true })
+const target = join(dir, `memory-${stamp}.md`)
 
 await Bun.write(
-  sharedPath,
+  target,
   render(
-    "跨机共享记忆备份",
-    `由本机 supermemory.db 导出，仅含 ${sharedProjects.join(" / ")}，共 ${shared.length} 条。**本文件入库推送**——` +
-      "跨机共享的唯一通路（db 本身 gitignore），按机器分文件名不冲突。重建方式：逐条 INSERT 回 memories 表" +
-      "（project/source 见每条标注），FTS 由触发器自动同步。",
-    shared,
-  ),
-)
-await Bun.write(
-  localPath,
-  render(
-    "本机全量记忆备份（不入库）",
-    `由本机 supermemory.db 导出，全库 ${rows.length} 条（含工作项目）。**本文件在 .gitignore 内、不推送**——` +
-      "只作 db 被写坏/篡改时的本机恢复源。需要跨机的项目请设 REDCODE_BACKUP_PROJECTS。",
+    "本机记忆滚动备份",
+    `由本机 supermemory.db 导出，全库 ${rows.length} 条。**不进 git、不跨机**——只作 db 写坏/误删时的` +
+      "本机恢复源，保留最近 " +
+      `${KEEP} 份。重建方式：逐条 INSERT 回 memories 表（project/source 见每条标注），FTS 由触发器自动同步。`,
     rows,
   ),
 )
-console.log(`shared ${shared.length} entries -> ${sharedPath}`)
-console.log(`local  ${rows.length} entries -> ${localPath}`)
+
+// 滚动清理：文件名带 ISO 日期，字典序即时间序
+const stale = readdirSync(dir)
+  .filter((name) => /^memory-\d{4}-\d{2}-\d{2}\.md$/.test(name))
+  .sort()
+  .slice(0, -KEEP)
+for (const name of stale) unlinkSync(join(dir, name))
+
+console.log(`backup ${rows.length} entries -> ${target}`)
+if (stale.length > 0) console.log(`pruned ${stale.length}: ${stale.join(", ")}`)

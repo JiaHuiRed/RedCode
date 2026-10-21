@@ -16,6 +16,7 @@
 - **`Todo.Info` 可选字段与 `Session.Info` 同口径**（`packages/opencode/src/session/todo.ts`）：可选字段不再携带 `undefined` 键，消费侧 null 与缺字段同 falsy，行为兼容。验证：`httpapi-exercise --mode effect --include session.todo` 1 pass / 0 fail。
 - **保存自定义供应商时不再把配置层旧 apiKey 复制回主配置**（`packages/app`）：避免保存动作把本地配置层里的旧密钥写回主配置，覆盖用户刚填的值。
 - **SDK 重新生成**（`packages/sdk`）：`openapi.json` 与生成代码同步 native compaction 顶帽与 `reasoningStall` 配置字段。
+- **长期记忆改为本机维护，跨机快照链路退场**（`seed/scripts/export-memory-backup.mjs`、`seed/scripts/hooks/pre-commit`、`seed/scripts/memory-drift-check.mjs` 删除、`seed/skill/memory/SKILL.md`）：两台机分开维护记忆后，「db→快照→commit→push→对端回填」这条链路只剩维护成本，每轮还要人工核对文本差异。现在 `MEMORY.md` 与 `memory/` 一律不进私仓（只同步 soul / skill / plugin / 配置），漂移探针、召回插件里的接线与对应测试一并删除，pre-commit 只保留双写校验；恢复点改成本机滚动备份 `~/.redcode/backup/memory/`（按日一份、同日覆盖、保留最近 7 份、永不推送）。编号只要求本机唯一，不再 fetch 对端快照比大小。双写纪律（索引行 ↔ db 全文）不变——它管的是本机内的一对账，与跨机无关。验证：召回插件单测 `memory-recall.test.mjs` pass，`export-memory-backup.mjs` 实跑导出 709 条、滚动清理生效，opencode typecheck 通过；历史决策的停用说明记在 [memory-v4-batch-a-b](docs/notes/implemented/architecture/2026-10-19-memory-v4-batch-a-b.md)。
 
 ### [0.12.16] - 2026-10-20
 

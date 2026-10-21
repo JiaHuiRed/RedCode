@@ -10,7 +10,7 @@ description: 记忆的写与剪——何时写、双写落笔格式、以及什�
 | **项目** | `<项目根>/.redcode/MEMORY.md` | 本项目的进度、坑、决策、关键路径   |
 | **全局** | `~/.redcode/MEMORY.md`        | 跨项目通用教训（过三道门禁才提拔） |
 
-机制主位在本 skill——写侧落笔、编号、双写、剪枝、跨机恢复都在这里；全局 `AGENTS.md`「记忆系统」节只保留每轮需要的触发器（双层叠加注入、索引化、注入面纪律、收工流程），冲突时以本 skill 为准。
+机制主位在本 skill——写侧落笔、编号、双写、剪枝、本机备份都在这里；全局 `AGENTS.md`「记忆系统」节只保留每轮需要的触发器（双层叠加注入、索引化、注入面纪律、收工流程），冲突时以本 skill 为准。
 
 > **260902 合并**：原 `memory-automation`（写）与 `consolidate-memory`（整理）合成一份。
 > 分开时写侧每轮强制注入、整理侧只在被叫到时才 load，结果是**只写不剪、注入面单调上涨**。
@@ -61,7 +61,7 @@ description: 记忆的写与剪——何时写、双写落笔格式、以及什�
 
 **写之前先看格式（V2→V3 的老规矩，写路径同样适用，别只在整理时才想起来）**：项目 MEMORY 还是 V2 全文段落式（无索引行结构）→ 先按 5.2 就地索引化（旧条目全文入库 + 正文改索引行），**再**写新条目；直接往全文式里塞索引行会养出半文半索引的混血，之后谁都不敢动。
 
-① MEMORY.md 加索引行：4-8 字主题 + 关键动作词，放对应分区；全局条目编号 = **当前最大号 + 1**。查号口径（261011 修订）：**先 `bun ~/.redcode/scripts/next-memory-id.mjs` 查 db**——编号在 INSERT 时即占用，MEMORY.md 索引行滞后于库，同机并行会话已实测撞号；跨机再 fetch 私仓比对 origin 的 `memory/lessons-backup.*.md` 快照，取两者最大。只 grep MEMORY.md（本地或远端）都会漏（261011 #320 实证；旧版让 grep MEMORY.md 的命令已废）
+① MEMORY.md 加索引行：4-8 字主题 + 关键动作词，放对应分区；全局条目编号 = **当前最大号 + 1**。查号口径（261021 修订）：**先 `bun ~/.redcode/scripts/next-memory-id.mjs` 查 db**——编号在 INSERT 时即占用，MEMORY.md 索引行滞后于库，同机并行会话已实测撞号；编号只要求**本机唯一**，不再 fetch 对端快照比大小（长期记忆已改为本机维护，两台机各自独立）。只 grep MEMORY.md 会漏（261011 #320 实证；旧版让 grep MEMORY.md 的命令已废）
 ② db 存全文：`sqlite_query` 对 `~/.redcode/supermemory.db` 执行
 `INSERT INTO memories (content, project, source) VALUES (全文, 'global'|项目名, 'manual')`
 ③ 核对：`bun ~/.redcode/scripts/check-memory-dualwrite.mjs`（私仓 pre-commit 也会拦，别 `--no-verify` 带病闯关）
@@ -185,30 +185,29 @@ description: 记忆的写与剪——何时写、双写落笔格式、以及什�
   用 `SELECT COUNT(*) ... WHERE project='<项目名>'` 前后对比核对
 - 字符数前后对比，确认真的压缩了——**并回到第 0 节的阈值确认已降到线下**
 
-### 5.8 导出快照 + 提交
+### 5.8 本机备份 + 提交
 
-**先重导备份快照**（整理动了库就必跑，一步都不能省）：
+整理动了库就跑一次滚动备份（本机恢复点，永不进仓）：
 
 ```bash
 bun ~/.redcode/scripts/export-memory-backup.mjs
 ```
 
-`memory/lessons-backup.<机器名>.md` 是**入库推送**的——全文的版本化（防篡改/写坏可回滚）与
-跨机可见全靠它；db 本身 gitignore，不导出快照，这次整理的全文变化就没有 git 历史。
+输出 `~/.redcode/backup/memory/memory-YYYY-MM-DD.md`——全库可读快照，同日重跑覆盖，保留最近 7 份（更早的自动删）。
 
-**提交前自检（261019 V4 探针，别靠记性）**：`bun ~/.redcode/scripts/memory-drift-check.mjs`——四信号：db 新于快照（要重跑 export）/ 快照未提交（本次 commit 带上）/ 领先 origin（要 push）/ 对端快照有本机缺条（先回填再提交）。pre-commit 自动导出只覆盖「staging MEMORY.md 的 commit」一条窄路，db-only 写入与其余静默环节全靠它响；插件会在每会话首轮把漂移提醒注入给主会话代理转告用户。
+**261021 起长期记忆只在本机维护**：`MEMORY.md` 与 `supermemory.db` 都不进 git，私仓只放 soul / skill / plugin / 配置这些影响实际体验的东西。所以 push 不再带记忆，也就没有「快照对账」「漂移探针」这两步了。
 
-然后 `git pull --rebase`（`~/.redcode` 是私仓，可能有别处刚写的），add 改过的文件 + 快照，
-**不 `add -A`**。项目记忆跟项目自己的仓库走，不进 `~/.redcode`（项目的 `MEMORY-archive.md`
-在 `.redcode/` 下通常也被项目 gitignore，属本机文件）。
+随后照常 `git pull --rebase`（`~/.redcode` 是私仓，可能有别处刚更新的 soul/skill），add 你这次改的**非记忆**文件，**不 `add -A`**。项目记忆跟项目自己的仓库走，不进 `~/.redcode`。
 
 ### 5.9 新机器/重装后装一次钩子（每台机器各做一次）
 
-`.git/hooks` 不入仓，重装后 pre-commit 的双写校验与自动导快照会静默缺席：
+`.git/hooks` 不入仓，重装后 pre-commit 的双写校验会静默缺席：
 
 ```bash
 cp ~/.redcode/scripts/hooks/pre-commit ~/.redcode/.git/hooks/pre-commit && chmod +x ~/.redcode/.git/hooks/pre-commit
 ```
+
+261021 起 `MEMORY.md` 已进 `.gitignore`，钩子的 staged 判断在多数提交里空转；双写核对改为收工时手动跑 `bun ~/.redcode/scripts/check-memory-dualwrite.mjs`（`add-memory.mjs` 写入时也保证）。
 
 ## 6. 索引层审计（260910 起）
 
@@ -236,7 +235,7 @@ cp ~/.redcode/scripts/hooks/pre-commit ~/.redcode/.git/hooks/pre-commit && chmod
 
 `YYMMDD.md` 每日日志与 `INDEX.md` 会话索引**不再写入**。退役原因（2026-07-29 实测）：它们不注入、要模型主动去读，而近 14 天 113 个会话里开局读过 `INDEX.md` 的只有 1 个（0.9%）；同期唯一的自动写入者是个低精度正则分类器（把"还有什么**可以**优化的"记成"被表扬"）。既没人读也写不准，且与项目记忆高度重复。
 
-保留可查。翻旧账：查库（`sqlite_query`）或 grep `memory/lessons-backup.<机器名>.md`（库的可读快照，入库推送，是全文版本化与跨机可见的唯一通路）；`/recall <关键词>` 命令走 `supermemory.db`——默认搜 global + 当前项目，`--all` 搜全库（260910 起，此前解析 MEMORY.md 的版本已随索引化失效）。**归档文件不在召回范围内**，`REDCODE_MEMORY` 不再指向它。
+保留可查。翻旧账：查库（`sqlite_query`）或读本机滚动备份 `~/.redcode/backup/memory/`（全库可读快照，保留 7 份、不跨机；更早的历史快照在 `backup/memory/history/`）；`/recall <关键词>` 命令走 `supermemory.db`——默认搜 global + 当前项目，`--all` 搜全库（260910 起，此前解析 MEMORY.md 的版本已随索引化失效）。**归档文件不在召回范围内**，`REDCODE_MEMORY` 不再指向它。
 
 ## 工具红线
 
