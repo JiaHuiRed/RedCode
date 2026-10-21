@@ -60,6 +60,43 @@ function compact(value: number) {
   return String(Math.round(value))
 }
 
+// 261022 Red 首页以「继续工作」为主体：默认折叠成一指标条，展开选择按用户持久化，
+//   刷新/切项目都不重置。localStorage 不可用时退回默认（折叠）。
+const USAGE_COLLAPSED_KEY = "redcode:home-usage-collapsed"
+
+function readUsageCollapsed() {
+  if (typeof localStorage === "undefined") return true
+  return localStorage.getItem(USAGE_COLLAPSED_KEY) !== "0"
+}
+
+function writeUsageCollapsed(collapsed: boolean) {
+  if (typeof localStorage === "undefined") return
+  localStorage.setItem(USAGE_COLLAPSED_KEY, collapsed ? "1" : "0")
+}
+
+// 261022 Red 服务端只出原始 cost（混合币种），折算口径原先只写在 HomeUsagePanelInner 里。
+//   折叠摘要要复用同一份，抽出来避免出现第三套汇率实现（另两处在 home-stats /
+//   session-context-metrics，别再抄一遍）。
+function sumCostCNY(data: Usage, currencyOf: (model: Usage["models"][number]) => string | undefined) {
+  return data.models.reduce(
+    (sum, model) => sum + (currencyOf(model) === "CNY" ? model.cost : model.cost * USD_TO_CNY),
+    0,
+  )
+}
+
+// 261022 Red 完整面板与折叠摘要共用一个 queryKey：solid-query 缓存让展开/收起不重复拉取。
+//   没选中项目时用占位 key 并 enabled:false —— 保持 options 形状恒定，分支返回两种不同
+//   形状会让 useQuery 的类型推断塌掉。
+function useUsageQuery(directory: () => string | undefined, range: () => Range) {
+  const options = useQueryOptions()
+  const key = createMemo(() => pathKey(directory() ?? ""))
+  return useQuery(() => ({
+    ...options.usage(key(), range()),
+    placeholderData: (previous) => previous,
+    enabled: !!directory(),
+  }))
+}
+
 function Segmented<T extends string>(props: {
   value: T
   options: readonly T[]
@@ -273,27 +310,75 @@ function HomeUsageError(props: { error: unknown; onRetry: () => void }) {
  * placeholderData 留在原位，避免首页从“有面板”退成一块空白。
  */
 export function HomeUsagePanel(props: { directory: string | undefined }) {
-  const language = useLanguage()
-  const [state, setState] = createStore({ collapsed: false })
+  const [state, setState] = createStore({ collapsed: readUsageCollapsed() })
+  function setCollapsed(collapsed: boolean) {
+    setState("collapsed", collapsed)
+    writeUsageCollapsed(collapsed)
+  }
   return (
     <Show
       when={!state.collapsed}
-      fallback={
-        <button
-          type="button"
-          class="flex min-h-9 w-full shrink-0 items-center justify-center rounded-pane border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 text-11-medium text-v2-text-text-muted shadow-[var(--v2-elevation-floating)] transition-colors hover:text-v2-text-text-base focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-v2-border-border-focus xl:min-h-[180px] xl:w-9"
-          onClick={() => setState("collapsed", false)}
-          aria-label={language.t("home.usage.expand")}
-          title={language.t("home.usage.expand")}
-        >
-          <span class="xl:[writing-mode:vertical-rl]">{language.t("home.usage.tab.overview")}</span>
-        </button>
-      }
+      fallback={<HomeUsageSummary directory={props.directory} onExpand={() => setCollapsed(false)} />}
     >
       <Suspense fallback={<HomeUsageSkeleton />}>
-        <HomeUsagePanelInner directory={props.directory} onCollapse={() => setState("collapsed", true)} />
+        <HomeUsagePanelInner directory={props.directory} onCollapse={() => setCollapsed(true)} />
       </Suspense>
     </Show>
+  )
+}
+
+/**
+ * 261022 Red 折叠形态：一行指标（花费 / 产出 / 会话）+ 展开入口。
+ *   与原「竖排文字窄条」的区别：既不占 620px，也不是没有信息的空壳；
+ *   数据与完整面板共用 useUsageQuery 的缓存，收起→展开不会再拉一次。
+ */
+function HomeUsageSummary(props: { directory: string | undefined; onExpand: () => void }) {
+  const language = useLanguage()
+  const providers = useProviders()
+  const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
+  const query = useUsageQuery(() => props.directory, () => "all")
+  const usage = () => (query.isLoading ? undefined : (query.data as Usage | undefined))
+  const cost = createMemo(() => {
+    const data = usage()
+    if (!data) return 0
+    const directory = providers.all()
+    return sumCostCNY(data, (model) => directory.get(model.providerID)?.models?.[model.modelID]?.cost?.currency)
+  })
+  const t = language.t
+  return (
+    <div
+      data-frost-surface="home-usage"
+      class="flex min-h-9 w-full shrink-0 flex-wrap items-center gap-x-4 gap-y-1 rounded-pane border border-v2-border-border-base bg-v2-background-bg-layer-01 px-3 py-1.5 text-11-regular shadow-[var(--v2-elevation-floating)]"
+    >
+      <Show when={usage()} fallback={<span class="text-v2-text-text-muted">{t("common.loading")}</span>}>
+        {(data) => (
+          <>
+            <span class="flex items-center gap-1.5">
+              <span class="text-v2-text-text-muted">{t("home.usage.summary.cost")}</span>
+              <span class="tabular-nums text-v2-text-text-base [font-weight:530]">{formatter().cost(cost(), "CNY")}</span>
+            </span>
+            <span class="flex items-center gap-1.5">
+              <span class="text-v2-text-text-muted">{t("home.usage.summary.output")}</span>
+              <span class="tabular-nums text-v2-text-text-base [font-weight:530]">
+                {compact(data().tokens.output + data().tokens.reasoning)}
+              </span>
+            </span>
+            <span class="flex items-center gap-1.5">
+              <span class="text-v2-text-text-muted">{t("home.usage.summary.sessions")}</span>
+              <span class="tabular-nums text-v2-text-text-base [font-weight:530]">{compact(data().sessions)}</span>
+            </span>
+          </>
+        )}
+      </Show>
+      <button
+        type="button"
+        class="ml-auto flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-11-medium text-v2-text-text-muted transition-colors hover:bg-v2-background-bg-layer-02 hover:text-v2-text-text-base focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-v2-border-border-focus"
+        onClick={props.onExpand}
+        aria-label={t("home.usage.expand")}
+      >
+        {t("home.usage.expand")}
+      </button>
+    </div>
   )
 }
 
@@ -301,19 +386,12 @@ function HomeUsagePanelInner(props: { directory: string | undefined; onCollapse:
   const language = useLanguage()
   const theme = useTheme()
   const providers = useProviders()
-  const options = useQueryOptions()
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
   const [tab, setTab] = createSignal<"overview" | "models">("overview")
   const [range, setRange] = createSignal<Range>("all")
 
-  // 没选中项目时用一个占位 key 并 enabled:false —— 保持 options 形状恒定，
-  // 分支返回两种不同形状会让 useQuery 的类型推断塌掉。
-  const key = createMemo(() => pathKey(props.directory ?? ""))
-  const query = useQuery(() => ({
-    ...options.usage(key(), range()),
-    placeholderData: (previous) => previous,
-    enabled: !!props.directory,
-  }))
+  // 260901 cc 没选中项目时用占位 key 并 enabled:false —— 形状恒定与类型推断见 useUsageQuery。
+  const query = useUsageQuery(() => props.directory, range)
 
   // 260901 cc **先判 isLoading 再读 data，不能直接读。**
   //   solid-query 在 pending 时读 .data 会挂起，而这个面板在常驻路径（首页）上，挂起会冒泡到
@@ -332,10 +410,7 @@ function HomeUsagePanelInner(props: { directory: string | undefined; onCollapse:
     const data = usage()
     if (!data) return 0
     const directory = providers.all()
-    return data.models.reduce((sum, model) => {
-      const quoted = directory.get(model.providerID)?.models?.[model.modelID]?.cost?.currency
-      return sum + (quoted === "CNY" ? model.cost : model.cost * USD_TO_CNY)
-    }, 0)
+    return sumCostCNY(data, (model) => directory.get(model.providerID)?.models?.[model.modelID]?.cost?.currency)
   })
   const slices = createMemo(() => (usage() ? topModels(usage()!.models) : []))
   const color = (slice: ModelSlice) => {

@@ -318,17 +318,18 @@ function HomeDesign() {
             placeholder={language.t("home.sessions.search.placeholder")}
             onInput={(value) => setState("search", value)}
           />
-          <Show when={state.view === "kanban"}>
-            <IconButtonV2
-              data-action="home-new-session-kanban"
-              variant="ghost-muted"
-              size="large"
-              icon={<IconV2 name="plus" />}
-              onClick={openNewSession}
-              aria-label={language.t("command.session.new")}
-              class="size-7"
-            />
-          </Show>
+          {/* 261022 Red 主操作常驻：原先只有 kanban 视图有个 + 图标，列表视图要靠分组标题
+              里那个 ghost 小按钮，层级太低。统一成一个带文字的 contrast 按钮，两种视图都可见。 */}
+          <ButtonV2
+            data-action="home-new-session"
+            variant="contrast"
+            size="normal"
+            icon="edit"
+            class="shrink-0"
+            onClick={openNewSession}
+          >
+            {language.t("command.session.new")}
+          </ButtonV2>
           {/* 260814 Red 已归档视图开关：打开后列表换成归档会话（单独请求，见 archivedLoad） */}
           <IconButtonV2
             data-action="home-toggle-archived"
@@ -363,16 +364,17 @@ function HomeDesign() {
             />
           </div>
         </div>
-        {/* 260901 cc 用量看板与会话看板**并排同高**。
-            改在这一层而不是塞进 HomeKanban：看板自己是个 flex 行（home-kanban.tsx:87），
-            但它只在 kanban 视图下渲染，塞进去列表视图就没有面板了；放外层两种视图都成立。
-            面板 self-start，只占自己那点高度；右侧内容区独立滚动。 */}
-        {/* 260901 cc 宽度分配：面板取固定宽，看板 flex-1 **吃满剩余**。
-            上一版给看板设了 max-w 封顶，结果最右边空出一大片死区（他圈出来了）——
-            封顶是错的手段：要让面板变宽就直接给面板宽度，别去限制看板。 */}
-        {/* 260920 Red Usage is secondary context; below xl it stacks above the primary Kanban
-            instead of squeezing the board into an unreadable narrow column. */}
-        <div class="mt-3 flex min-h-0 flex-1 flex-col gap-3 xl:flex-row">
+        {/* 260901 cc 用量看板与会话看板曾并排同高。改在这一层而不是塞进 HomeKanban：
+            看板自己是个 flex 行（home-kanban.tsx:87），但它只在 kanban 视图下渲染，
+            塞进去列表视图就没有面板了；放外层两种视图都成立。面板 self-start，只占自己那点高度。
+            260901 cc 宽度分配：面板取固定宽，看板 flex-1 **吃满剩余**。上一版给看板设了
+            max-w 封顶，结果最右边空出一大片死区——要让面板变宽就直接给面板宽度，别限制看板。
+            260920 Red Usage is secondary context; below xl it stacks above the primary Kanban
+            instead of squeezing the board into an unreadable narrow column.
+            261022 Red 改成常驻纵向：统计默认折叠成一行指标，会话区拿整宽。620px 并排只在
+            超宽屏成立，1366/1440 下会挤掉会话卡片的可读宽度
+            （见 docs/2026-10-22-experience-optimization.md EXP-03）。 */}
+        <div class="mt-3 flex min-h-0 flex-1 flex-col gap-3">
           <HomeUsagePanel directory={selectedProject()?.worktree} />
           <div class="flex min-w-0 flex-1 flex-col overflow-auto">
             <Show when={!sessionLoad.isLoading} fallback={<HomeSessionSkeleton label={language.t("common.loading")} />}>
@@ -695,7 +697,7 @@ function HomeSessionSearch(props: {
   const modKey = isMac ? "⌘" : "Ctrl"
   let inputRef: HTMLInputElement | undefined
   return (
-    <label class="ml-4 flex h-9 w-[calc(100%_-_48px)] sticky top-0 inset-x-0 items-center gap-2 rounded-[6px] bg-v2-background-bg-deep px-3 py-1 text-v2-icon-icon-muted transition-[background-color,box-shadow] duration-[120ms] ease-in-out focus-within:bg-v2-background-bg-base focus-within:shadow-[0_0_0_0.5px_var(--v2-border-border-focus),var(--v2-elevation-raised)]">
+    <label class="ml-4 flex h-9 min-w-0 flex-1 sticky top-0 inset-x-0 items-center gap-2 rounded-[6px] bg-v2-background-bg-deep px-3 py-1 text-v2-icon-icon-muted transition-[background-color,box-shadow] duration-[120ms] ease-in-out focus-within:bg-v2-background-bg-base focus-within:shadow-[0_0_0_0.5px_var(--v2-border-border-focus),var(--v2-elevation-raised)]">
       <IconV2 name="magnifying-glass" size="small" />
       <input
         ref={(el) => {
