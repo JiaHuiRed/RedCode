@@ -163,6 +163,41 @@ describe("LLM 流看门狗", () => {
     expect(ctrl.signal.aborted).toBe(true)
   })
 
+ // 261021 Red 纯思考静默的裁决权在外层 reasoningStall 兜底（processor 的
+ // Stream.timeoutOrElse → promoteReasoning 收尾），本层 idle 不开火——否则 120s 先到
+ // 走重试链把请求重发、思考全丢，外层兜底成死配置。
+ test("纯思考后静默：不属本层 idle 管辖，不开火", async () => {
+   const ctrl = new AbortController()
+   const src = Stream.concat(
+     Stream.fromIterable([
+       { type: "reasoning-start", id: "r-0" },
+       { type: "reasoning-delta", id: "r-0", text: "thinking" },
+     ]),
+     // 静默 700ms 远超 idle 阈值（400ms）：纯思考阶段豁免
+     Stream.fromEffect(Effect.as(Effect.sleep(Duration.millis(700)), { type: "reasoning-end", id: "r-0" })),
+   )
+   const out = await collect(src, ctrl)
+   expect(out._tag).toBe("Success")
+   expect(ctrl.signal.aborted).toBe(false)
+ })
+
+ // 反向：正文产出之后再静默，本层 idle 恢复计时（豁免不是永久免疫）
+ test("正文产出后网关静默：恢复 idle 计时并开火", async () => {
+   const ctrl = new AbortController()
+   const src = Stream.concat(
+     Stream.fromIterable([
+       { type: "reasoning-start", id: "r-0" },
+       { type: "reasoning-delta", id: "r-0", text: "thinking" },
+       { type: "text-delta", id: "t-0", text: "answer" },
+     ]),
+     Stream.fromEffect(Effect.as(Effect.sleep(Duration.seconds(30)), { type: "text-end", id: "t-0" })),
+   )
+   const out = await collect(src, ctrl)
+   expect(out._tag).toBe("Failure")
+   if (out._tag === "Failure") expect((out.failure as { _tag?: string })._tag).toBe("StreamIdleTimeoutError")
+   expect(ctrl.signal.aborted).toBe(true)
+ })
+
   test("两类超时都被 retryable 认成可重试", async () => {
     const { retryable } = await import("../../src/session/retry")
     expect(retryable(new FirstEventTimeoutError() as never, "test")).toBeTruthy()

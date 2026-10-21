@@ -492,6 +492,8 @@ export const FIRST_EVENT_TIMEOUT = Duration.seconds(75)
 
 // 首事件之后，两个事件之间允许的最大静默。推理模型在思考段可能长时间不吐字，
 // 所以给得比首事件更宽；它要挡的是"永远不再来"，不是"来得慢"。
+// 261021 Red 纯思考静默（已见 reasoning、尚无 text/tool 产出）不归这一档管——
+// 那段静默由 processor 外层的 reasoningStall.idleMs 兜底收尾，见 guardFirstEvent 内注释。
 export const IDLE_EVENT_TIMEOUT = Duration.seconds(120)
 
 // 看门狗自己的轮询粒度。5s 足够精确（相对上面两个阈值），且空转成本可忽略。
@@ -533,6 +535,10 @@ export function guardFirstEvent<S, E>(
         seen: false,
         pending: new Set<string>(),
         start: Date.now(),
+        // 261021 Red 与 processor 的 stepProduced 同口径：产出 = 正文或工具。纯思考阶段
+        //（reasoningSeen && !produced）的静默由外层 reasoningStall 兜底裁决。
+        reasoningSeen: false,
+        produced: false,
         inputs: new Map<
           string,
           {
@@ -605,6 +611,12 @@ export function guardFirstEvent<S, E>(
             //   被 abort（state.error="Tool execution aborted"）。只有全部工具都回来了
             //   （集合空）才重新开始计时。
             if (state.pending.size > 0) continue
+            // 261021 Red 纯思考静默不在这一层开火。推理模型思考中长时间不吐分片是常态
+            // （max 推理档实测静默远超 120s），120s idle 在此先开火会走重试链把整条请求
+            // 重发、思考全丢——processor 外层的 reasoningStall.idleMs（timeoutOrElse →
+            // promoteReasoning 收尾）永远轮不到，261020 的静默兜底成了死配置。让位后该
+            // 场景由外层唯一裁决；本层保留 first 档与非思考 idle 档。
+            if (state.reasoningSeen && !state.produced) continue
             const idle = Date.now() - state.last
             const limit = Duration.toMillis(state.seen ? limits.idle : limits.first)
             if (idle < limit) continue
@@ -645,6 +657,18 @@ export function guardFirstEvent<S, E>(
               //   在说话，不能证明本地工具已经跑完——并行工具场景下正是它把慢工具的豁免放跑了。
               const e = event as { type?: string; id?: string; name?: string; text?: string }
               const type = e?.type ?? ""
+              // 261021 Red 纯思考阶段标记：reasoning 见过、产出（正文/工具）未见过。
+              if (type === "reasoning-start" || type === "reasoning-delta" || type === "reasoning-end")
+                state.reasoningSeen = true
+              if (
+                type === "text-delta" ||
+                type === "text-end" ||
+                type === "tool-input-start" ||
+                type === "tool-call" ||
+                type === "tool-result" ||
+                type === "tool-error"
+              )
+                state.produced = true
               if (type === "tool-input-start" && e.id) {
                 state.inputs.set(e.id, {
                   tool: e.name ?? "unknown",
