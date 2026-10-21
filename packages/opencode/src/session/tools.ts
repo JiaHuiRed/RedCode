@@ -190,6 +190,19 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             { args },
           )
           args = beforeHook.args
+          // 261021 Red 幻觉参数第一道闸：未知顶层参数显式报错而不是被 AI SDK 静默 strip——
+          // 静默时模型得不到纠正信号，会带着幻觉参数反复重试白烧额度。报错走 throw，
+          // 与其他工具错误同链（tool part error → 失败预算计数）。
+          const unknownKeys = ToolJsonSchema.unknownArgumentKeys(ToolJsonSchema.fromTool(item), args)
+          if (unknownKeys.length > 0) {
+            // 参数名列表限长：极端幻觉载荷（几十个垃圾字段）不该把错误文本撑成无界注入。
+            const listed = unknownKeys.slice(0, 5).join(", ")
+            const more = unknownKeys.length > 5 ? ` (+${unknownKeys.length - 5} more)` : ""
+            throw new Error(
+              `Tool "${item.id}" received unknown argument(s): ${listed}${more}. ` +
+                "Remove the unknown arguments and call the tool again with only its documented parameters.",
+            )
+          }
           // 260920 Red policy must inspect the final arguments after plugin rewriting.
           const ctx = context(item.id, args, options)
           const preToolUse = yield* plugin.trigger(
