@@ -87,6 +87,9 @@ export function createDialogProviderOptions() {
   const { theme } = useTheme()
   const onboarded = useConnected()
 
+  // 261022 Red 目录是懒加载的：弹窗（含 DialogModel 底部入口）构建时兜底触发一次。
+  void sync.ensureProviderList()
+
   async function promptCustomProviderID(): Promise<string | undefined> {
     const value = await DialogPrompt.show(dialog, "Other", {
       placeholder: "Provider id",
@@ -222,7 +225,46 @@ export function createDialogProviderOptions() {
 }
 
 export function DialogProvider() {
+  const sync = useSync()
+  return (
+    <Show
+      when={sync.data.provider_next_status === "ready"}
+      fallback={<ProviderDirectoryFallback onRetry={() => void sync.ensureProviderList(true)} />}
+    >
+      <DialogProviderList />
+    </Show>
+  )
+}
+
+function DialogProviderList() {
   const options = createDialogProviderOptions()
+  return <DialogSelect title="连接 Provider" options={options()} />
+}
+
+// 261022 Red 目录改为后台加载后，弹窗不再天然有数据。直接给空数组会被读成
+//   「一个供应商都没有」，这里明写加载/失败两个状态，失败可重试。
+function ProviderDirectoryFallback(props: { onRetry: () => void }) {
+  const sync = useSync()
+  const options = createMemo(() => {
+    if (sync.data.provider_next_status === "error") {
+      return [
+        {
+          title: "供应商目录加载失败",
+          description: "按 Enter 重试",
+          value: "retry",
+          onSelect: () => props.onRetry(),
+        },
+      ]
+    }
+    return [
+      {
+        title: "正在加载供应商目录…",
+        description: "完成后自动显示",
+        value: "loading",
+        onSelect: () => undefined,
+      },
+    ]
+  })
   return <DialogSelect title="连接 Provider" options={options()} />
 }
 
@@ -390,7 +432,14 @@ function ApiMethod(props: ApiMethodProps) {
         })
         await sdk.client.instance.dispose()
         await sync.bootstrap()
-        if (props.custom && !sync.data.provider_next.all.some((provider) => provider.id === props.providerID)) {
+        // 261022 Red 目录懒加载：先等目录就位再判重，否则「还没回来」会被误判成「未配置」。
+        //   目录加载失败时 status 不是 ready，这时不弹这条提示（无法区分两种原因）。
+        if (props.custom) await sync.ensureProviderList()
+        if (
+          props.custom &&
+          sync.data.provider_next_status === "ready" &&
+          !sync.data.provider_next.all.some((provider) => provider.id === props.providerID)
+        ) {
           toast.show({
             variant: "info",
             message: `Saved credential for ${props.providerID}. Configure it in redcode.json to use it.`,

@@ -70,6 +70,8 @@ export const {
       provider: Provider[]
       provider_default: Record<string, string>
       provider_next: ProviderListResponse
+      // 261022 Red 目录是懒加载的：idle 未请求 / loading / ready / error 可重试。
+      provider_next_status: "idle" | "loading" | "ready" | "error"
       console_state: ConsoleState
       provider_auth: Record<string, ProviderAuthMethod[]>
       provider_quota: ProviderQuota[]
@@ -125,6 +127,7 @@ export const {
         default: {},
         connected: [],
       },
+      provider_next_status: "idle",
       console_state: emptyConsoleState,
       provider_auth: {},
       provider_quota: [],
@@ -507,6 +510,33 @@ export const {
     const exit = useExit()
     const args = useArgs()
 
+    // 261022 Red 全量供应商目录（provider.list）只服务「连接 Provider / 选择模型」弹窗，
+    //   普通聊天要的已连接模型来自 config.providers。原实现把它放进阻塞组，等于每次启动
+    //   都要等整个目录下载完才能进首屏，且它一失败就 throw 掉整条 bootstrap。
+    //   改为幂等懒加载：启动后台预取一次，弹窗打开时再兜一次；失败只把目录标成 error，
+    //   不影响聊天（弹窗里可重试）。
+    let providerListInFlight: Promise<void> | undefined
+    function ensureProviderList(force = false) {
+      if (force) providerListInFlight = undefined
+      if (providerListInFlight) return providerListInFlight
+      setStore("provider_next_status", "loading")
+      providerListInFlight = sdk.client.provider
+        .list({ workspace: project.workspace.current() }, { throwOnError: true })
+        .then((x) => {
+          batch(() => {
+            setStore("provider_next", reconcile(x.data!))
+            setStore("provider_next_status", "ready")
+          })
+        })
+        .catch((e) => {
+          // 只降级目录类弹窗；清掉 in-flight 让下次打开弹窗能重试。
+          providerListInFlight = undefined
+          setStore("provider_next_status", "error")
+          Log.Default.warn("tui provider.list failed", { error: e instanceof Error ? e.message : String(e) })
+        })
+      return providerListInFlight
+    }
+
     async function bootstrap(input: { fatal?: boolean } = {}) {
       const fatal = input.fatal ?? true
       const workspace = project.workspace.current()
@@ -515,7 +545,8 @@ export const {
 
       // blocking - include session.list when continuing a session
       const providersPromise = sdk.client.config.providers({ workspace }, { throwOnError: true })
-      const providerListPromise = sdk.client.provider.list({ workspace }, { throwOnError: true })
+      // 261022 Red 全量目录退出阻塞组（见 ensureProviderList）：后台预取，不 await。
+      void ensureProviderList(true)
       const consoleStatePromise = sdk.client.experimental.console
         .get({ workspace }, { throwOnError: true })
         .then((x) => x.data)
@@ -524,7 +555,6 @@ export const {
       const configPromise = sdk.client.config.get({ workspace }, { throwOnError: true })
       const blockingRequests: { name: string; promise: Promise<unknown> }[] = [
         { name: "config.providers", promise: providersPromise },
-        { name: "provider.list", promise: providerListPromise },
         { name: "app.agents", promise: agentsPromise },
         { name: "config.get", promise: configPromise },
         { name: "project.sync", promise: projectPromise },
@@ -541,7 +571,6 @@ export const {
         })
         .then(async () => {
           const providersResponse = providersPromise.then((x) => x.data!)
-          const providerListResponse = providerListPromise.then((x) => x.data!)
           const consoleStateResponse = consoleStatePromise
           const agentsResponse = agentsPromise.then((x) => x.data ?? [])
           const configResponse = configPromise.then((x) => x.data!)
@@ -549,23 +578,20 @@ export const {
 
           return Promise.all([
             providersResponse,
-            providerListResponse,
             consoleStateResponse,
             agentsResponse,
             configResponse,
             ...(sessionListResponse ? [sessionListResponse] : []),
           ]).then((responses) => {
             const providers = responses[0]
-            const providerList = responses[1]
-            const consoleState = responses[2]
-            const agents = responses[3]
-            const config = responses[4]
-            const sessions = responses[5]
+            const consoleState = responses[1]
+            const agents = responses[2]
+            const config = responses[3]
+            const sessions = responses[4]
 
             batch(() => {
               setStore("provider", reconcile(providers.providers))
               setStore("provider_default", reconcile(providers.default))
-              setStore("provider_next", reconcile(providerList))
               setStore("console_state", reconcile(consoleState))
               setStore("agent", reconcile(agents))
               setStore("config", reconcile(config))
@@ -767,6 +793,8 @@ export const {
         },
       },
       bootstrap,
+      // 261022 Red 供应商目录懒加载入口：弹窗打开时兜底触发（幂等）。
+      ensureProviderList,
     }
     return result
   },
