@@ -8,6 +8,9 @@ export const dict = {
   "desktop.dialog.chooseFile": "Choose a file",
   "desktop.dialog.saveFile": "Save file",
 
+  "desktop.sidecar.failed": "The server process stopped and automatic recovery gave up.",
+  "desktop.sidecar.retry": "Retry",
+
   "desktop.updater.checkFailed.title": "Update Check Failed",
   "desktop.updater.checkFailed.message": "Failed to check for updates",
   "desktop.updater.none.title": "No Update Available",

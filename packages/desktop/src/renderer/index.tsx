@@ -23,6 +23,7 @@ import { MemoryRouter } from "@solidjs/router"
 import { createEffect, createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { render } from "solid-js/web"
 import pkg from "../../package.json"
+import type { SidecarState } from "../preload/types"
 import { initI18n, t } from "./i18n"
 import { platformFetch } from "./fetch"
 import { notifyDesktop } from "./notifications"
@@ -229,8 +230,7 @@ const createPlatform = (): Platform => {
     recordFatalRendererError: (error) => window.api.recordFatalRendererError(error),
 
     getMobileGatewayStatus: () => window.api.getMobileGatewayStatus(),
-    startMobileGateway: (host, directory, sessionID) =>
-      window.api.startMobileGateway(host, directory, sessionID),
+    startMobileGateway: (host, directory, sessionID) => window.api.startMobileGateway(host, directory, sessionID),
     refreshMobileGatewayPairingCode: () => window.api.refreshMobileGatewayPairingCode(),
     stopMobileGateway: () => window.api.stopMobileGateway(),
     revokeMobileGatewayDevice: (id) => window.api.revokeMobileGatewayDevice(id),
@@ -326,6 +326,57 @@ listenForDeepLinks()
 const [networkServiceRestart, setNetworkServiceRestart] = createSignal(0)
 window.api.onNetworkServiceRestart(() => setNetworkServiceRestart((count) => count + 1))
 
+/**
+ * 261021 Red 审计 RC21-06：自动恢复放弃之后给一个明确的终态与显式重试入口。
+ * 恢复过程（recovering）不打扰用户 —— 只有 failed 才出现；reason 是主进程日志里同一份
+ * 技术性错误原文，不做翻译，方便直接贴进诊断。
+ */
+function SidecarStatusBar() {
+  const [state, setState] = createSignal<SidecarState>()
+  const [retrying, setRetrying] = createSignal(false)
+  onMount(() => {
+    const off = window.api.onSidecarState((next) => {
+      setState(next)
+      if (next.phase !== "failed") setRetrying(false)
+    })
+    onCleanup(off)
+  })
+
+  return (
+    <Show when={state()?.phase === "failed"}>
+      <div
+        class="fixed inset-x-0 top-0 z-50 flex items-center gap-3 px-4 py-2 text-white"
+        style={{ background: "#dc2626", "font-size": "12px", "box-shadow": "0 2px 8px rgba(0,0,0,.25)" }}
+      >
+        <span class="min-w-0 flex-1 truncate">
+          {t("desktop.sidecar.failed")}
+          <Show when={state()?.reason}>
+            <span style={{ opacity: 0.8, "margin-left": "8px" }}>{state()?.reason}</span>
+          </Show>
+        </span>
+        <button
+          type="button"
+          style={{
+            "flex-shrink": "0",
+            "border-radius": "6px",
+            background: "rgba(255,255,255,.2)",
+            padding: "2px 10px",
+            cursor: retrying() ? "progress" : "pointer",
+            opacity: retrying() ? 0.6 : 1,
+          }}
+          disabled={retrying()}
+          onClick={() => {
+            setRetrying(true)
+            void window.api.restartSidecar()
+          }}
+        >
+          {t("desktop.sidecar.retry")}
+        </button>
+      </div>
+    </Show>
+  )
+}
+
 render(() => {
   const platform = createPlatform()
   const [windowConfig] = createResource(() => window.api.getWindowConfig().catch(() => ({ updaterEnabled: false })))
@@ -405,6 +456,7 @@ render(() => {
   return (
     <PlatformProvider value={platform}>
       <AppBaseProviders locale={locale.latest}>
+        <SidecarStatusBar />
         {/* 260901 cc 这个 Show 原先没有 fallback。以前无所谓——窗口本来就建在 sidecar 就绪
             之后，第一次渲染时这五个条件早就全真了。现在主进程把建窗提到了等 sidecar 之前
             （main/index.ts 的 createMainWindow 那段），窗口会在 sidecar 还没好时就出现，

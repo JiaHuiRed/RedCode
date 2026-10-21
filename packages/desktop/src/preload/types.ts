@@ -1,4 +1,7 @@
 import type { DesktopMenuAction } from "@redcode-ai/app/desktop-menu"
+import type { SidecarState } from "../main/sidecar-supervisor"
+
+export type { SidecarState }
 
 export type MobileGatewayHost = { address: string; name: string }
 export type MobileGatewayDevice = { id: string; name: string; pairedAt: number }
@@ -73,6 +76,9 @@ export type ElectronAPI = {
   onDeepLink: (cb: (urls: string[]) => void) => () => void
   // 260916 Red Electron Network Service 崩溃通知（见 main/ipc.ts sendNetworkServiceRestart）
   onNetworkServiceRestart: (cb: () => void) => () => void
+  // 261021 Red 审计 RC21-06：sidecar 恢复状态；failed 时界面给终态与显式重试。
+  onSidecarState: (cb: (state: SidecarState) => void) => () => void
+  restartSidecar: () => Promise<void>
 
   openDirectoryPicker: (opts?: {
     multiple?: boolean

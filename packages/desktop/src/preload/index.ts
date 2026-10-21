@@ -51,6 +51,12 @@ const api: ElectronAPI = {
     ipcRenderer.on("network-service-restart", handler)
     return () => ipcRenderer.removeListener("network-service-restart", handler)
   },
+  onSidecarState: (cb) => {
+    const handler = (_: unknown, state: Parameters<typeof cb>[0]) => cb(state)
+    ipcRenderer.on("sidecar-state", handler)
+    return () => ipcRenderer.removeListener("sidecar-state", handler)
+  },
+  restartSidecar: () => ipcRenderer.invoke("restart-sidecar"),
 
   openDirectoryPicker: (opts) => ipcRenderer.invoke("open-directory-picker", opts),
   openFilePicker: (opts) => ipcRenderer.invoke("open-file-picker", opts),

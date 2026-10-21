@@ -8,6 +8,9 @@ export const dict = {
   "desktop.dialog.chooseFile": "ファイルを選択",
   "desktop.dialog.saveFile": "ファイルを保存",
 
+  "desktop.sidecar.failed": "サーバープロセスが停止し、自動復旧を断念しました。",
+  "desktop.sidecar.retry": "再試行",
+
   "desktop.updater.checkFailed.title": "アップデートの確認に失敗しました",
   "desktop.updater.checkFailed.message": "アップデートを確認できませんでした",
   "desktop.updater.none.title": "利用可能なアップデートはありません",

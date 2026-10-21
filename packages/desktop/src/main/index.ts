@@ -16,6 +16,7 @@ import type { InitStep, ServerReadyData, SqliteMigrationProgress, WslConfig } fr
 import { checkAppExists, resolveAppPath, wslPath } from "./apps"
 import { listFonts } from "./fonts"
 import {
+  broadcastSidecarState,
   registerIpcHandlers,
   sendDeepLinks,
   sendMenuCommand,
@@ -43,6 +44,7 @@ import {
 } from "./server"
 import { getStore } from "./store"
 import { killSidecarTreeSync } from "./sidecar-process"
+import { createSidecarSupervisor } from "./sidecar-supervisor"
 import { forgetSidecarTree, killOrphanChildren, rememberSidecarTree, sweepStaleSidecarTree } from "./sidecar-registry"
 import {
   createMainWindow,
@@ -237,7 +239,8 @@ async function stopMobileGateway() {
   await current?.stop()
 }
 
-async function killSidecar() {
+/** 只停进程，不碰 supervisor 的恢复判断 —— supervisor 自己的重试走这条。 */
+async function stopCurrentSidecar() {
   await stopMobileGateway()
   if (!server) return
   const current = server
@@ -248,15 +251,60 @@ async function killSidecar() {
   forgetSidecarTree()
 }
 
-// 260813 cc sidecar 猝死自愈。死因层出不穷（FILEWATCHER V8 崩已修一种；今晨又见
+async function killSidecar() {
+  // 261021 Red 审计 RC21-06：先告诉 supervisor「这是有意停」。否则进程的退出回调会被
+  //   当成猝死，用户点退出/切换时反而在身后把服务又拉起来。
+  supervisor.stop()
+  await stopCurrentSidecar()
+}
+
+// 260813 cc sidecar 猝死自愈：死因层出不穷（FILEWATCHER V8 崩已修一种；今晨又见
 // "事件循环静默排空 exit 0"），与其逐个追死因，不如保证"死了必复活"：同端口同密码
 // 重拉，渲染层 SSE 重连循环（server-sdk/global-sdk 自带退避重试）会自动接上——此前
 // onExit 只打一行日志，渲染层 Failed to fetch 无限刷屏永不自愈。
-// 判别"猝死 vs 有意停"：killSidecar() 先把 server 置 null 再 stop —— exit 事件到达时
-// server 仍指着死者 = 猝死；已是 null = 有意停，不复活。quitting 兜底退出窗口期。
+// 261021 Red 审计 RC21-06：推动恢复的只能有一处。旧实现里退出回调与健康失败各推一次重启，
+//   重启后已发 ready、未过健康检查就退出的那次故障会吃两个恢复预算。现在统一由
+//   sidecar-supervisor 持有代次、单任务与预算，这里只提供「怎么拉起、怎么停、怎么记日志」。
+//   见 docs/notes/implemented/bug-fix/2026-10-21-sidecar-supervisor.md。
 let quitting = false
-let respawnAttempts = 0
 let sidecarSpawnCfg: { hostname: string; port: number; password: string; userDataPath: string } | undefined
+let sidecarStartedAt: number | undefined
+// 首次启动独有的 spawn 参数（迁移状态与 sqlite 进度回调）；恢复启动只需要同端口同密码。
+let nextSpawnHook: { needsMigration: boolean; onSqliteProgress?: (progress: SqliteMigrationProgress) => void } = {
+  needsMigration: false,
+}
+
+const supervisor = createSidecarSupervisor({
+  spawn: async (onExit) => {
+    const cfg = sidecarSpawnCfg
+    if (!cfg) throw new Error("sidecar spawn requested before the server configuration is ready")
+    const hook = nextSpawnHook
+    nextSpawnHook = { needsMigration: false }
+    const { listener, health } = await spawnLocalServer(cfg.hostname, cfg.port, cfg.password, {
+      needsMigration: hook.needsMigration,
+      userDataPath: cfg.userDataPath,
+      onSqliteProgress: hook.onSqliteProgress,
+      onStdout: (message) => writeLog("server", "stdout", { message }),
+      onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
+      onExit: (code) => {
+        handleSidecarExit(code)
+        onExit(code)
+      },
+    })
+    server = listener
+    sidecarPid = listener.pid
+    sidecarStartedAt = Date.now()
+    hookSidecarCleanup()
+    rememberSidecarTree(process.pid, listener.pid)
+    return { pid: listener.pid, waitHealthy: () => health.waitUntilHealthy() }
+  },
+  kill: () => stopCurrentSidecar(),
+  delay: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  now: Date.now,
+  quitting: () => quitting,
+  log: (event, data, level) => writeLog("utility", event, data, level),
+  onState: (state) => broadcastSidecarState(state),
+})
 
 function getMobileGatewayStatus() {
   return {
@@ -327,34 +375,17 @@ function refreshMobileGatewayPairingCode() {
   return info
 }
 
-const RESPAWN_DELAYS_MS = [1000, 3000, 10000]
-
-// 260902 cc 时间窗闸门。原来只有 respawnAttempts 一个计数器，而它在**健康检查通过**时清零
-// （见下面 respawnSidecar 里那句）——问题是"过了健康检查"不等于"稳住了"。260828 15:58-15:59
-// 实测：70 秒内死三次，每次都健康起来、活约 33 秒又死，于是计数器每轮清零、attempt 恒为 1，
-// "giving up" 永远不触发，理论上可以无限拉尸体。
-// 所以再加一道与健康无关的闸：滑动窗口内重生次数超限就停手。孤立的偶发猝死照旧自愈
-// （一次死亡只占一个名额、10 分钟后自然过期），只有"起来又死"的循环会撞上限。
-const RESPAWN_WINDOW_MS = 10 * 60_000
-const RESPAWN_MAX_IN_WINDOW = 5
-let respawnTimes: number[] = []
-// 上一次 sidecar 起来的时刻——用来在退出日志里给出存活时长，
-// 一眼分清"孤立猝死"与"起来又死"（此前退出日志只有 code，两者长得一样）。
-let sidecarStartedAt: number | undefined
-
+/** 只负责退出后的日志与清理；推动恢复是 sidecar-supervisor 的事（按代次去重）。 */
 function handleSidecarExit(code: number) {
   const aliveMs = sidecarStartedAt === undefined ? undefined : Date.now() - sidecarStartedAt
   sidecarStartedAt = undefined
   writeLog("utility", "sidecar exited", { code, aliveMs }, "warn")
-  if (quitting || !server || !sidecarSpawnCfg) return
   // 260916 Red sidecar 死了，但它拉起的 MCP 子进程还活着（Windows 上没有 job object 兜底），
   //   接下来 respawn 会把新的一套拉起来，旧的就永远留成孤儿。趁还知道旧 PID，先清掉它的孩子。
   if (sidecarPid !== undefined) killOrphanChildren(sidecarPid)
-  server = null
   sidecarPid = undefined
-  void respawnSidecar(code)
+  server = null
 }
-
 
 // 260929 Red Windows 没有应用菜单（menu.ts 仅 darwin），close→hide 之后 X/Alt+F4 不再是
 // 退出入口，必须配套托盘（学 deepseek-harness 的 close-to-background + tray + quit
@@ -401,72 +432,6 @@ function showTray() {
     mainWindow?.show()
     mainWindow?.focus()
   })
-}
-async function respawnSidecar(code: number) {
-  const cfg = sidecarSpawnCfg
-  if (!cfg) return
-  const now = Date.now()
-  respawnTimes = respawnTimes.filter((t) => now - t < RESPAWN_WINDOW_MS)
-  respawnTimes.push(now)
-  if (respawnTimes.length > RESPAWN_MAX_IN_WINDOW) {
-    // 与健康检查无关的第二道闸：窗口内重生太频繁 = 起来又死，再拉也是拉尸体
-    writeLog(
-      "utility",
-      "sidecar respawn giving up (rate)",
-      { code, respawnsInWindow: respawnTimes.length, windowMs: RESPAWN_WINDOW_MS },
-      "error",
-    )
-    return
-  }
-  const attempt = respawnAttempts++
-  if (attempt >= RESPAWN_DELAYS_MS.length) {
-    // 连续三次都没活过健康检查，别无限拉尸体——留日志请人来看
-    writeLog("utility", "sidecar respawn giving up", { code, attempts: attempt }, "error")
-    return
-  }
-  const delayMs = RESPAWN_DELAYS_MS[attempt]
-  writeLog("utility", "sidecar respawn scheduled", { code, attempt: attempt + 1, delayMs }, "warn")
-  await new Promise((resolve) => setTimeout(resolve, delayMs))
-  if (quitting || server) return
-  try {
-    const { listener, health } = await spawnLocalServer(cfg.hostname, cfg.port, cfg.password, {
-      needsMigration: false,
-      userDataPath: cfg.userDataPath,
-      onStdout: (message) => writeLog("server", "stdout", { message }),
-      onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
-      onExit: handleSidecarExit,
-    })
-    server = listener
-    sidecarPid = listener.pid
-    sidecarStartedAt = Date.now()
-    rememberSidecarTree(process.pid, listener.pid)
-    const healthy = await health.waitUntilHealthy().then(
-      () => true,
-      () => false,
-    )
-    // 只有真过了健康检查才清零重试计数——否则"起来又死"会无限循环
-    if (healthy) {
-      respawnAttempts = 0
-      writeLog("utility", "sidecar respawned", { pid: listener.pid, healthy }, "warn")
-      return
-    }
-    // 261017 Red 进程活着但健康检查过不去。旧实现把 server 留在引用上：之后既等不到
-    // exit 事件（进程没死），也没有别的入口再调本函数，界面就永久断连。现在清掉引用、
-    // 停掉这个卡住的进程（onExit 看到 server 已空，不会重复 respawn），再走有界重试；
-    // respawnAttempts 不清零，连续失败会撞上上面的 giving up。
-    writeLog(
-      "utility",
-      "sidecar respawned but never healthy",
-      { pid: listener.pid, attempt: attempt + 1 },
-      "error",
-    )
-    await killSidecar()
-    if (quitting) return
-    void respawnSidecar(code)
-  } catch (error) {
-    writeLog("utility", "sidecar respawn failed", { error: String(error) }, "error")
-    void respawnSidecar(code)
-  }
 }
 
 function ensureLoopbackNoProxy() {
@@ -671,6 +636,7 @@ const main = Effect.gen(function* () {
 
   registerIpcHandlers({
     killSidecar: () => killSidecar(),
+    restartSidecar: () => supervisor.retry(),
     // 260901 cc 原先这里是「注册 listener → 立刻注销 → 立刻 resolve」，那套 init-step 协议
     //   等于是死的：窗口本来就建在 sidecar 就绪之后，第一次被调用时 initStep 早已是 done。
     //   现在窗口早于 sidecar 出现，这条才真正开始承担它本来的职责：把启动进度推给渲染层，
@@ -818,28 +784,15 @@ const main = Effect.gen(function* () {
     const tSpawn = performance.now()
     // 260813 cc 存一份 spawn 参数供猝死自愈重拉（同端口同密码，渲染层免感知）
     sidecarSpawnCfg = { hostname, port, password, userDataPath: app.getPath("userData") }
-    const { listener, health } = yield* Effect.promise(() =>
-      spawnLocalServer(hostname, port, password, {
-        needsMigration,
-        userDataPath: app.getPath("userData"),
-        onSqliteProgress: (progress) => initEmitter.emit("sqlite", progress),
-        onStdout: (message) => writeLog("server", "stdout", { message }),
-        onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
-        onExit: handleSidecarExit,
-      }),
-    )
-    server = listener
-    sidecarPid = listener.pid
-    sidecarStartedAt = Date.now()
-    hookSidecarCleanup()
-    rememberSidecarTree(process.pid, listener.pid)
-    logger.log("[timing] sidecar ready", { ms: Math.round(performance.now() - tSpawn) })
-
-    // 260916 Red only a confirmed health probe reaches the healthy log; timeout/exit
+    nextSpawnHook = {
+      needsMigration,
+      onSqliteProgress: (progress) => initEmitter.emit("sqlite", progress),
+    }
+    // 260916 Red only a confirmed health probe reaches the healthy state; timeout/exit
     // rejects startup and is handled by the loading-task failure path below.
     // See docs/notes/implemented/bug-fix/2026-09-16-sidecar-health-contract.md.
-    yield* Effect.promise(() => health.waitUntilHealthy())
-    logger.log("[timing] sidecar healthy", { ms: Math.round(performance.now() - tSpawn) })
+    yield* Effect.promise(() => supervisor.start())
+    logger.log("[timing] sidecar ready", { ms: Math.round(performance.now() - tSpawn) })
 
     logger.log("loading task finished")
   }).pipe(Effect.forkChild)
@@ -898,8 +851,8 @@ const main = Effect.gen(function* () {
   //
   // 260909 Red 启动失败必须响：原先 loadingTask 一失败（spawn 抛错/提前退出被打穿），
   // Fiber.await 把错误重新抛进 main，Effect.runFork 静默吞掉——serverReady 永不完成，
-  // 加载窗永远停在"正在启动服务器"；猝死自愈（handleSidecarExit）又因 server 未赋值
-  // 直接返回，没有任何出路。现在弹窗写明原因后干净退出，重启可清掉瞬时故障；
+  // 加载窗永远停在"正在启动服务器"；首次启动时 supervisor 还没拿到代次，退出回调
+  // 只留下日志、没有任何出路。现在弹窗写明原因后干净退出，重启可清掉瞬时故障；
   // serverReady 先 fail，渲染层的 awaitInitialization 拿到拒绝而不是干等。
   const loadExit = yield* Fiber.await(loadingTask).pipe(Effect.exit)
   if (loadExit._tag === "Failure") {

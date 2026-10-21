@@ -8,6 +8,9 @@ export const dict = {
   "desktop.dialog.chooseFile": "选择文件",
   "desktop.dialog.saveFile": "保存文件",
 
+  "desktop.sidecar.failed": "服务进程已停止，自动恢复已放弃。",
+  "desktop.sidecar.retry": "重试",
+
   "desktop.updater.checkFailed.title": "检查更新失败",
   "desktop.updater.checkFailed.message": "无法检查更新",
   "desktop.updater.none.title": "没有可用更新",

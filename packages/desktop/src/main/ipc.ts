@@ -19,6 +19,7 @@ import type {
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { isTrustedRendererUrl } from "./renderer-url"
 import { getStore } from "./store"
+import type { SidecarState } from "./sidecar-supervisor"
 import { getPinchZoomEnabled, openExternalURL, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
 
 const pickerFilters = (ext?: string[]) => {
@@ -28,6 +29,7 @@ const pickerFilters = (ext?: string[]) => {
 
 type Deps = {
   killSidecar: () => Promise<void> | void
+  restartSidecar: () => Promise<void> | void
   awaitInitialization: (sendStep: (step: InitStep) => void) => Promise<ServerReadyData>
   getWindowConfig: () => Promise<WindowConfig> | WindowConfig
   consumeInitialDeepLinks: () => Promise<string[]> | string[]
@@ -80,6 +82,9 @@ export function registerIpcHandlers(deps: Deps) {
   }
 
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
+  // 261021 Red 审计 RC21-06：自动恢复进入 failed 之后，界面上的显式重试走这条；
+  //   supervisor 保证不会因此产生第二个并行的恢复任务。
+  ipcMain.handle("restart-sidecar", () => deps.restartSidecar())
   ipcMain.handle("await-initialization", (event: IpcMainInvokeEvent) => {
     const send = (step: InitStep) => event.sender.send("init-step", step)
     return deps.awaitInitialization(send)
@@ -296,4 +301,10 @@ export function sendDeepLinks(win: BrowserWindow, urls: string[]) {
 //   崩溃本身只有主进程能感知（child-process-gone），所以在这里主动告诉渲染层立刻重建事件流。
 export function sendNetworkServiceRestart(win: BrowserWindow) {
   win.webContents.send("network-service-restart")
+}
+
+// 261021 Red 审计 RC21-06：恢复状态（starting / running / recovering / failed）发给所有窗口。
+//   failed 带原因，界面据此给终态与重试按钮；只传状态，不传环境或凭据。
+export function broadcastSidecarState(state: SidecarState) {
+  for (const win of BrowserWindow.getAllWindows()) win.webContents.send("sidecar-state", state)
 }
