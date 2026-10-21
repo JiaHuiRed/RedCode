@@ -338,15 +338,17 @@ export const layer = Layer.effect(
       const failToolCall = Effect.fn("SessionProcessor.failToolCall")(function* (toolCallID: string, error: unknown) {
         const match = yield* readToolCall(toolCallID)
         if (!match || match.part.state.status !== "running") return false
+        // 261021 Red 核心签名维度：参数无关字段抖动的同错重试不再重开失败预算（防红线绕过），
+        // inputSignature 保留用于诊断与 guardToolCall 的执行前精确拦截。
         const inputSignature = ToolFailureGuard.inputSignature(match.part.tool, match.part.state.input)
         const text = errorMessage(error)
         const errorSignature = ToolFailureGuard.signature(text)
+        const coreSignature = ToolFailureGuard.coreSignature(match.part.tool, text)
         const blocked = text === ToolFailureGuard.BLOCKED
         const count = blocked ? failureLimit : ToolFailureGuard.count({
           sessionID: ctx.sessionID,
           parentID: ctx.assistantMessage.parentID,
-          inputSignature,
-          errorSignature,
+          coreSignature,
         }) + 1
         // 261015 Red 同一并行批可能在错误回传前全已启动，超预算后仍须封死下一次模型请求。
         if (count > failureLimit) ctx.toolFailureStopped = true
@@ -358,7 +360,7 @@ export const layer = Layer.effect(
             input: match.part.state.input,
             error: reminder ? `${text}\n\n${reminder}` : text,
             metadata: {
-              failureGuard: { inputSignature, errorSignature, count, blocked },
+              failureGuard: { inputSignature, coreSignature, errorSignature, count, blocked },
             },
             time: { start: match.part.state.time.start, end: Date.now() },
           },
