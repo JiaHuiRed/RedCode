@@ -427,9 +427,9 @@ export const dict = {
   "context.quota.window.reserve": "Reserve window",
   "context.quota.resetsAt": "Resets at {{time}}",
   "context.quota.empty": "No quota captured yet — will appear after the next provider request",
-  "context.inspect.title": "Actual Composition",
+  "context.inspect.title": "Estimated Composition",
   "context.inspect.note":
-    "Measured from the request this session last sent — it includes the system prompt and tool schemas. Token counts are estimates: CJK is weighted 2x, and tool schemas are the least reliable of the three.",
+    "Measured from the request this session last sent — it includes the system prompt and tool schemas. Token counts are local estimates: CJK is weighted 2x, tool schemas are the least reliable of the three, and the authoritative total is what the model reports.",
   "context.inspect.empty": "Not available yet (shown after this session's next request).",
   "context.inspect.system": "System Prompt",
   "context.inspect.tools": "Tool Schemas",
@@ -437,7 +437,7 @@ export const dict = {
   "context.inspect.more": "+{{count}} more tools",
   "context.breakdown.title": "Context Breakdown",
   "context.breakdown.note":
-    'Approximate breakdown of input tokens. "Other" is almost entirely the system prompt and tool schemas — neither ever reaches the client, so only the real composition can show them.',
+    'Approximate breakdown of input tokens. "Other" is almost entirely the system prompt and tool schemas — neither ever reaches the client, so only the snapshot panel can show them.',
   "context.breakdown.system": "System",
   "context.breakdown.user": "User",
   "context.breakdown.assistant": "Assistant",
