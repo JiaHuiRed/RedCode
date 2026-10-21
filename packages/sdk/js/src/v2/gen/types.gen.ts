@@ -1425,15 +1425,15 @@ export type NativeCompactionConfig = {
    */
   enabled?: boolean
   /**
-   * Token count that triggers native compaction, clamped to the model's usable window (default: 250000; maximum: 10000000)
+   * Token count that triggers native compaction, clamped to the model's usable window (default: 250000; maximum: 2000000)
    */
   trigger_tokens?: number
   /**
-   * Token count native compaction aims for after summarizing, scaled down with the trigger when the model window is smaller (default: 130000; maximum: 10000000)
+   * Token count native compaction aims for after summarizing, scaled down with the trigger when the model window is smaller (default: 130000; maximum: 2000000)
    */
   target_tokens?: number
   /**
-   * Token count at which the user is reminded to compact before the trigger fires, scaled down with the trigger when the model window is smaller (default: 220000; maximum: 10000000)
+   * Token count at which the user is reminded to compact before the trigger fires, scaled down with the trigger when the model window is smaller (default: 220000; maximum: 2000000)
    */
   reminder_tokens?: number
   soft_ratio?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
@@ -1443,7 +1443,7 @@ export type NativeCompactionConfig = {
    */
   summary_max_tokens?: number
   /**
-   * Maximum tokens of inherited protected records carried into a new compaction block (default: 20000; maximum: 10000000)
+   * Maximum tokens of inherited protected records carried into a new compaction block (default: 20000; maximum: 2000000)
    */
   retained_max_tokens?: number
   /**
@@ -1451,7 +1451,7 @@ export type NativeCompactionConfig = {
    */
   summary_max_bytes?: number
   /**
-   * Maximum tokens kept active per compaction range (default: 80000; maximum: 10000000)
+   * Maximum tokens kept active per compaction range (default: 80000; maximum: 2000000)
    */
   active_max_tokens?: number
   /**
@@ -1608,27 +1608,6 @@ export type Config = {
    * Custom username to display in conversations instead of the machine hostname
    */
   username?: string
-  /**
-   * Backend for the image tool. Swapping providers is a config change, not a code change — the tool only assumes an OpenAI-shaped /images/generations and /images/edits.
-   */
-  image?: {
-    /**
-     * Auth entry to take the API key from, by provider id (e.g. 'step_plan'). Falls back to REDCODE_IMAGE_API_KEY when unset.
-     */
-    provider?: string
-    /**
-     * Base URL of an OpenAI-compatible image API. Generation posts to {baseURL}/images/generations, editing to {baseURL}/images/edits.
-     */
-    baseURL?: string
-    /**
-     * Model id used by the image tool
-     */
-    model?: string
-    /**
-     * Default output size, e.g. '1024x1024'. Backends accept different sets; a rejected value is reported as-is.
-     */
-    size?: string
-  }
   /**
    * How a message sent while the agent is busy reaches the model. 'steer' (default): injected into the running turn at the next step, so you can redirect work in flight. 'queue': hidden from the running turn and processed as the input of a fresh turn after the current one finishes.
    */
@@ -1851,6 +1830,19 @@ export type Config = {
        * Maximum pending compression receipts per diagnostic bucket (default: 16; maximum: 128).
        */
       maxPendingCompressions?: number
+    }
+    /**
+     * When a reasoning-only step is treated as stalled: silence before cutoff, plus a character backstop for providers that stream forever.
+     */
+    reasoningStall?: {
+      /**
+       * Silence (ms) with no provider event before a reasoning-only turn is treated as stalled (default: 300000). Very low values cut normal long thinking.
+       */
+      idleMs?: number
+      /**
+       * Backstop on reasoning characters accumulated in one step, for providers that stream forever (default: 200000).
+       */
+      maxChars?: number
     }
     /**
      * Timeout in milliseconds for model context protocol (MCP) requests

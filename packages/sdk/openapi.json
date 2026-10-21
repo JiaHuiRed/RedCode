@@ -16346,29 +16346,6 @@
             "type": "string",
             "description": "Custom username to display in conversations instead of the machine hostname"
           },
-          "image": {
-            "type": "object",
-            "properties": {
-              "provider": {
-                "type": "string",
-                "description": "Auth entry to take the API key from, by provider id (e.g. 'step_plan'). Falls back to REDCODE_IMAGE_API_KEY when unset."
-              },
-              "baseURL": {
-                "type": "string",
-                "description": "Base URL of an OpenAI-compatible image API. Generation posts to {baseURL}/images/generations, editing to {baseURL}/images/edits."
-              },
-              "model": {
-                "type": "string",
-                "description": "Model id used by the image tool"
-              },
-              "size": {
-                "type": "string",
-                "description": "Default output size, e.g. '1024x1024'. Backends accept different sets; a rejected value is reported as-is."
-              }
-            },
-            "additionalProperties": false,
-            "description": "Backend for the image tool. Swapping providers is a config change, not a code change — the tool only assumes an OpenAI-shaped /images/generations and /images/edits."
-          },
           "busy_enter": {
             "type": "string",
             "enum": ["steer", "queue"],
