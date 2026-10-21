@@ -851,6 +851,76 @@ describe("file/index Filesystem patterns", () => {
         }),
       { git: true },
     )
+
+    // 261021 Red 审计 RC21-05：基线（HEAD 版本）以前无上限读取，截断后若继续拿来 diff，
+    //   会生成一份「整文件新增」的假 diff —— 必须直接跳过。
+    it.instance(
+      "skips the diff when the committed baseline exceeds the text budget",
+      () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const filepath = path.join(test.directory, "huge.txt")
+          const huge = Array.from({ length: 60_000 }, (_, index) => `line ${index} ${"x".repeat(40)}`).join("\n")
+          yield* Effect.promise(() => fs.writeFile(filepath, huge, "utf-8"))
+          yield* gitAddAll(test.directory)
+          yield* gitCommit(test.directory, "add huge")
+          yield* Effect.promise(() => fs.writeFile(filepath, "short\n", "utf-8"))
+
+          const result = yield* read("huge.txt")
+          expect(result.type).toBe("text")
+          expect(result.content).toBe("short")
+          expect(result.diff).toBeUndefined()
+          expect(result.patch).toBeUndefined()
+        }),
+      { git: true },
+    )
+
+    // 261021 Red 审计 RC21-05 评估实测：5000 行整体重写时 Myers 要 18 秒同步 CPU。
+    //   现在 300ms 到点返回 undefined，宁可不给 diff 也不占住事件循环。
+    it.instance(
+      "skips the diff instead of blocking when the change set is too expensive",
+      () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const filepath = path.join(test.directory, "rewrite.txt")
+          const before = Array.from({ length: 6_000 }, (_, index) => `old ${index} ${"y".repeat(40)}`).join("\n")
+          const after = Array.from({ length: 6_000 }, (_, index) => `new ${index} ${"y".repeat(40)}`).join("\n")
+          yield* Effect.promise(() => fs.writeFile(filepath, before, "utf-8"))
+          yield* gitAddAll(test.directory)
+          yield* gitCommit(test.directory, "add rewrite")
+          yield* Effect.promise(() => fs.writeFile(filepath, after, "utf-8"))
+
+          const started = Date.now()
+          const result = yield* read("rewrite.txt")
+          expect(result.content.length).toBeGreaterThan(0)
+          expect(result.diff).toBeUndefined()
+          expect(result.patch).toBeUndefined()
+          expect(Date.now() - started).toBeLessThan(5_000)
+        }),
+      { git: true },
+    )
+
+    // 超时闸门不能误伤正常的大文件：两万行里改一行只要 7ms，完整上下文必须保留。
+    it.instance(
+      "keeps the full-context diff for a large file with a small change",
+      () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const filepath = path.join(test.directory, "large.txt")
+          const lines = Array.from({ length: 20_000 }, (_, index) => `line ${index} ${"z".repeat(40)}`)
+          yield* Effect.promise(() => fs.writeFile(filepath, lines.join("\n"), "utf-8"))
+          yield* gitAddAll(test.directory)
+          yield* gitCommit(test.directory, "add large")
+          lines[10_000] = "changed"
+          yield* Effect.promise(() => fs.writeFile(filepath, lines.join("\n"), "utf-8"))
+
+          const result = yield* read("large.txt")
+          expect(result.diff).toBeDefined()
+          expect(result.diff).toContain("line 0 ")
+          expect(result.patch!.hunks.length).toBe(1)
+        }),
+      { git: true },
+    )
   })
 
   describe("InstanceState isolation", () => {

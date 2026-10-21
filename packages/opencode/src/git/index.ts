@@ -97,6 +97,14 @@ export interface Interface {
   readonly hasHead: (cwd: string) => Effect.Effect<boolean>
   readonly mergeBase: (cwd: string, base: string, head?: string) => Effect.Effect<string | undefined>
   readonly show: (cwd: string, ref: string, file: string, prefix?: string) => Effect.Effect<string>
+  /** 与 show 同源，但可给输出上限；超限时 truncated=true，调用方不能把它当完整基线。 */
+  readonly showBounded: (
+    cwd: string,
+    ref: string,
+    file: string,
+    prefix?: string,
+    maxBytes?: number,
+  ) => Effect.Effect<{ text: string; truncated: boolean }>
   readonly status: (cwd: string) => Effect.Effect<Item[]>
   readonly diff: (cwd: string, ref: string) => Effect.Effect<Item[]>
   readonly stats: (cwd: string, ref: string) => Effect.Effect<Stat[]>
@@ -234,6 +242,22 @@ export const layer = Layer.effect(
       return result.text()
     })
 
+    // 261021 Red 审计 RC21-05：文件预览拿 HEAD 版本当 diff 基线时必须能知道「这份基线不完整」——
+    //   返回截断后的字符串会让调用方把它当全文，生成一份「整文件新增」的假 diff。
+    const showBounded = Effect.fn("Git.showBounded")(function* (
+      cwd: string,
+      ref: string,
+      file: string,
+      prefix = "",
+      maxBytes?: number,
+    ) {
+      const target = prefix ? `${prefix}${file}` : file
+      const result = yield* run(["show", `${ref}:${target}`], { cwd, maxOutputBytes: maxBytes })
+      if (result.exitCode !== 0) return { text: "", truncated: false }
+      if (result.stdout.includes(0)) return { text: "", truncated: false }
+      return { text: result.text(), truncated: result.truncated }
+    })
+
     const status = Effect.fn("Git.status")(function* (cwd: string) {
       return nuls(
         yield* text(["status", "--porcelain=v1", "--untracked-files=all", "--no-renames", "-z", "--", "."], {
@@ -356,6 +380,7 @@ export const layer = Layer.effect(
       hasHead,
       mergeBase,
       show,
+      showBounded,
       status,
       diff,
       stats,

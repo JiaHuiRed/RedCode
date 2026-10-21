@@ -294,6 +294,11 @@ const MAX_INLINE_BYTES = 20 * 1024 * 1024
 //   整段传过 HTTP。2 MiB 足够阅读定位；超出的正文按 truncated 标记返回前缀，不生成 diff。
 //   取舍见 docs/notes/implemented/bug-fix/2026-10-21-audit-rc21-batch.md。
 const MAX_TEXT_BYTES = 2 * 1024 * 1024
+// 261021 Red 审计 RC21-05 评估结论：context: Infinity 不是瓶颈（5 万行顺序改动 21ms），
+//   病态差异才是 —— 5000 行整体重写时 Myers 要跑 18 秒同步 CPU，整个 sidecar 停住。
+//   diff 8.x 的 timeout 到点直接返回 undefined，比按行数猜阈值准。300ms 给正常场景留十倍余量。
+//   见 docs/notes/implemented/bug-fix/2026-10-21-diff-budget.md。
+const MAX_DIFF_TIMEOUT_MS = 300
 const isImage = (mimeType: string) => mimeType.startsWith("image/")
 const getImageMimeType = (file: string) => mime[ext(file)] || "image/" + ext(file)
 
@@ -631,11 +636,24 @@ export const layer = Layer.effect(
           diff = yield* gitText(["-c", "core.fsmonitor=false", "diff", "--staged", "--", file])
         }
         if (diff.trim()) {
-          const original = yield* git.show(ctx.directory, "HEAD", file)
-          const patch = structuredPatch(file, file, original, content, "old", "new", {
+          // 261021 Red 审计 RC21-05：基线（HEAD 版本）以前是无上限读取 —— 工作区正文有 2 MiB
+          //   闸门，基线没有，一个大文件被大删改时会把整份 HEAD 读进内存再拿去 diff。
+          //   截断的基线不能当全文用，否则会生成一份「整文件新增」的假 diff，直接跳过。
+          const original = yield* git.showBounded(ctx.directory, "HEAD", file, "", MAX_TEXT_BYTES)
+          if (original.truncated) {
+            log.warn("diff.skipped", { file, reason: "baseline-too-large", limit: MAX_TEXT_BYTES })
+            return { type: "text" as const, content }
+          }
+          const patch = structuredPatch(file, file, original.text, content, "old", "new", {
             context: Infinity,
             ignoreWhitespace: true,
+            timeout: MAX_DIFF_TIMEOUT_MS,
           })
+          // timeout 到点会返回 undefined：宁可不给 diff，也不能让一次预览占住事件循环。
+          if (!patch) {
+            log.warn("diff.skipped", { file, reason: "timeout", timeout: MAX_DIFF_TIMEOUT_MS })
+            return { type: "text" as const, content }
+          }
           return { type: "text" as const, content, patch, diff: formatPatch(patch) }
         }
         return { type: "text" as const, content }
