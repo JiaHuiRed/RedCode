@@ -2174,6 +2174,17 @@ describe("sanitizeToolResultPairing", () => {
     expect(out.messages).toHaveLength(4)
     expect(out.droppedIds).toEqual([])
   })
+
+  // 261021 Red 中断（abort）后迟到的同一 callID 事件会在**同一条** assistant 消息里建出第二个
+  // tool part，出站就成了一条 assistant 带两个同 id 的 tool-call —— DeepSeek 直接 400
+  // "Duplicate value for 'tool_call_id' of … in message[N]"（ses_ffe5ea3f9fc6affeVuOAbr0ti96vsW 实证）。
+  test("drops duplicated tool-calls inside one assistant message", () => {
+    const out = MessageV2.sanitizeToolResultPairing([assistantCalling("a", "a", "b"), toolResults("a", "b")])
+    expect(out.messages).toHaveLength(2)
+    expect(out.messages[0]?.content).toHaveLength(2)
+    expect(out.droppedCallIds).toEqual(["a"])
+    expect(out.droppedIds).toEqual([])
+  })
 })
 
 // 261015 Red 审计 A01：净化与缓存拼接的**组合**。净化放在拼接之前，但后缀原本取自未净化的

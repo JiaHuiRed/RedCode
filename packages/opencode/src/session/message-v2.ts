@@ -1118,15 +1118,27 @@ export function sanitizeToolResultPairing(messages: ModelMessage[]) {
   const available = new Set<string>()
   const consumed = new Set<string>()
   const droppedIds: string[] = []
+  const droppedCallIds: string[] = []
   const result: ModelMessage[] = []
   for (const message of messages) {
     if (message.role === "assistant" && Array.isArray(message.content)) {
-      for (const part of message.content)
-        if (part.type === "tool-call") {
-          available.add(part.toolCallId)
-          consumed.delete(part.toolCallId)
+      // 261021 Red 声明侧同样要去重：中断后迟到的同一 callID 事件会在库里建出第二条 tool part
+      //（processor.ensureToolCall 当时只查内存），出站就成了一条 assistant 带两个同 id 的
+      // tool-call，DeepSeek 直接 400 "Duplicate value for 'tool_call_id' … in message[N]"
+      //（ses_ffe5ea3f9fc6affeVuOAbr0ti96vsW 实证）。同一消息内只认第一次声明。
+      const declared = new Set<string>()
+      const kept = message.content.filter((part) => {
+        if (part.type !== "tool-call") return true
+        if (declared.has(part.toolCallId)) {
+          droppedCallIds.push(part.toolCallId)
+          return false
         }
-      result.push(message)
+        declared.add(part.toolCallId)
+        available.add(part.toolCallId)
+        consumed.delete(part.toolCallId)
+        return true
+      })
+      result.push(kept.length === message.content.length ? message : { ...message, content: kept })
       continue
     }
     if (message.role === "tool" && Array.isArray(message.content)) {
@@ -1145,7 +1157,7 @@ export function sanitizeToolResultPairing(messages: ModelMessage[]) {
     }
     result.push(message)
   }
-  return { messages: result, droppedIds }
+  return { messages: result, droppedIds, droppedCallIds }
 }
 
 // 261015 Red 把「固定前缀缓存」与「本次转换的后缀」拼成出站数组。
@@ -1311,6 +1323,32 @@ export function recentToolParts(session_id: SessionID, limit: number, parentID?:
     out.push(item)
   }
   return out.reverse()
+}
+
+// 261021 Red 同一 assistant 消息内按 callID 回查 tool part。中断（abort）时 settleToolCall 会删掉
+// 内存里的 ctx.toolcalls 条目，迟到的同一 callID 事件随后走「新建」分支，落库出第二条同 callID 的
+// tool part ⇒ 出站 assistant.tool_calls 重复 ⇒ DeepSeek 400
+// "Duplicate value for 'tool_call_id' of … in message[N]"（ses_ffe5ea3f9fc6affeVuOAbr0ti96vsW 实证）。
+// 决策：docs/notes/implemented/bug-fix/2026-10-21-duplicate-tool-call-id.md
+export function findToolPartByCallID(messageID: MessageID, callID: string): ToolPart | undefined {
+  const row = Database.use((db) =>
+    db
+      .select({ part: PartTable })
+      .from(PartTable)
+      .where(
+        and(
+          eq(PartTable.message_id, messageID),
+          sql`json_extract(${PartTable.data}, '$.type') = 'tool'`,
+          sql`json_extract(${PartTable.data}, '$.callID') = ${callID}`,
+        ),
+      )
+      .orderBy(PartTable.id)
+      .limit(1)
+      .get(),
+  )
+  if (!row) return undefined
+  const item = part(row.part)
+  return item.type === "tool" ? item : undefined
 }
 
 export type SnapshotPartRow = {

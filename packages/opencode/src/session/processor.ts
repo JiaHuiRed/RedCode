@@ -101,6 +101,9 @@ type ToolCall = {
   sessionID: MessageV2.ToolPart["sessionID"]
   done: Deferred.Deferred<void>
   inputEnded: boolean
+  // 261021 Red 该 callID 的 part 已经终结（completed/error）后又被复用（中断后迟到的同一事件）：
+  // 后续事件只能读、不能再改状态，否则 part 会被推回 running 且永远等不到新的 result。
+  sealed?: boolean
 }
 
 interface ProcessorContext extends Input {
@@ -253,6 +256,28 @@ export const layer = Layer.effect(
         return { call, part }
       })
 
+      // 261021 Red 内存 miss 后先查库再建 part。中断（abort）时 settleToolCall 删掉了 ctx.toolcalls
+      // 条目，迟到的同一 callID 事件会被 updateToolCall / ensureToolCall 当成新调用，在**同一条**
+      // assistant 消息里建出第二条 tool part ⇒ 出站 assistant.tool_calls 重复 ⇒ DeepSeek 400
+      // "Duplicate value for 'tool_call_id' of … in message[N]"（ses_ffe5ea3f… 实证）。
+      // 命中则复用原 part；已终结的标 sealed，后续事件只读不改状态。
+      // 决策：docs/notes/implemented/bug-fix/2026-10-21-duplicate-tool-call-id.md
+      const adoptPersistedToolCall = Effect.fn("SessionProcessor.adoptPersistedToolCall")(function* (
+        toolCallID: string,
+      ) {
+        const part = MessageV2.findToolPartByCallID(ctx.assistantMessage.id, toolCallID)
+        if (!part) return undefined
+        ctx.toolcalls[toolCallID] = {
+          done: yield* Deferred.make<void>(),
+          partID: part.id,
+          messageID: part.messageID,
+          sessionID: part.sessionID,
+          inputEnded: true,
+          sealed: part.state.status === "completed" || part.state.status === "error",
+        }
+        return { call: ctx.toolcalls[toolCallID], part }
+      })
+
       const updateToolCall = Effect.fn("SessionProcessor.updateToolCall")(function* (
         toolCallID: string,
         name: string,
@@ -275,6 +300,9 @@ export const layer = Layer.effect(
         // 让 update 把 title/metadata 写进去；随后的 ensureToolCall 走 existing 分支。
         if (!match && !known) match = yield* adoptOrphanToolCall(toolCallID, name)
         if (!match) return undefined
+        // 261021 Red 已终结的 part 不接受状态回退：迟到事件重放会把它改回 running，
+        // 而对应的 result 早已被消费（completeToolCall 的 running 卫直接丢弃），part 会卡死。
+        if (match.call.sealed) return match.part
         const part = yield* session.updatePart(update(match.part))
         ctx.toolcalls[toolCallID] = {
           ...match.call,
@@ -289,6 +317,10 @@ export const layer = Layer.effect(
         toolCallID: string,
         name: string,
       ) {
+        // 261021 Red adopt 也是"新建 part"入口，同样必须先认库里已有的同 callID part，
+        // 否则 interrupted 之后迟到的事件会在同一条消息上写第二条（见 adoptPersistedToolCall）。
+        const persisted = yield* adoptPersistedToolCall(toolCallID)
+        if (persisted) return persisted
         const part = yield* session.updatePart({
           id: PartID.ascending(),
           messageID: ctx.assistantMessage.id,
@@ -454,6 +486,9 @@ export const layer = Layer.effect(
           }
           return { call: ctx.toolcalls[input.id], part }
         }
+        // 261021 Red 建新 part 之前先认库里已有的同 callID part（见 adoptPersistedToolCall）。
+        const persisted = yield* adoptPersistedToolCall(input.id)
+        if (persisted) return persisted
         const part = yield* session.updatePart({
           id: PartID.ascending(),
           messageID: ctx.assistantMessage.id,
