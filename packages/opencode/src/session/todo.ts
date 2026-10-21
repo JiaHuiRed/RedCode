@@ -1,5 +1,6 @@
 import { BusEvent } from "@/bus/bus-event"
 import { Bus } from "@/bus"
+import { optionalOmitUndefined } from "@redcode-ai/core/schema"
 import { SessionID } from "./schema"
 import { Effect, Layer, Context, Schema } from "effect"
 import { Database } from "@/storage/db"
@@ -9,12 +10,16 @@ import { TodoTable } from "./session.sql"
 
 export const Info = Schema.Struct({
   // 260710 Red 层级子任务：id/parent_id 可选，兼容旧的纯扁平列表调用方
-  id: Schema.optional(
+  // 261021 Red 两个字段与 Session.Info 同口径用 optionalOmitUndefined：裸 Schema.optional
+  // 在 HTTP 编码时把 undefined 写成显式 null（"id":null），GET /session/{id}/todo 的
+  // round-trip 与种子形状失配（session.todo 场景 CI + 本地一致失败）。消费侧 null 与
+  // 缺字段同 falsy，省略是既有 Session 契约的方向。
+  id: optionalOmitUndefined(
     Schema.String.annotate({
       description: "Stable id for this item, e.g. '1' or '2.1'. Needed to nest sub-tasks under it via parent_id.",
     }),
   ),
-  parent_id: Schema.optional(
+  parent_id: optionalOmitUndefined(
     Schema.String.annotate({ description: "id of the parent item, to nest this item as its sub-task." }),
   ),
   content: Schema.String.annotate({ description: "Brief description of the task" }),
