@@ -8,6 +8,15 @@
 
 ---
 
+### [0.12.17] - 2026-10-21
+
+- **中断后迟到事件不再建出重复 tool-call**（`packages/opencode/src/session/processor.ts`、`session/message-v2.ts`）：工具执行被中断后 `settleToolCall` 会删掉内存里的 `ctx.toolcalls` 条目，迟到的同一 callID 事件 `readToolCall` 只查内存、直接 miss，被 `adoptOrphanToolCall` / `ensureToolCall` 当成新调用，在**同一条** assistant 消息上建出第二个 tool part；出站转换逐 part 忠实，于是 `assistant.tool_calls` 出现两个同 id 声明，DeepSeek 400 `Duplicate value for 'tool_call_id' … in message[N]`（`ses_ffe5ea3f…` 实证，连续两轮被拒）。写入侧新增 `MessageV2.findToolPartByCallID` 与 `adoptPersistedToolCall`：两个「新建 part」入口在内存 miss 后先按（当前消息, callID）查库复用，已终结的记 `sealed`、`updateToolCall` 只读不改，避免把完成态推回 running 后卡死；发送侧 `sanitizeToolResultPairing` 补声明侧去重（同消息内同 id 只认第一次，丢弃的记 `droppedCallIds` 并告警），已污染的历史会话无需改库即可继续。正常路径行为不变：内存命中不触发查库、无重复声明时返回原对象引用。验证：`message-v2.test.ts` 71 pass（新增声明侧去重用例），opencode typecheck 通过；决策见 [2026-10-21-duplicate-tool-call-id](docs/notes/implemented/bug-fix/2026-10-21-duplicate-tool-call-id.md)。
+- **失败预算按核心签名计数，参数抖动不再绕过防线**（`packages/opencode/src/session/tool-failure-guard.ts`、`session/processor.ts`）：失败预算原先按精确 `inputSignature` 计数，模型把正文塞进读取类工具的参数反复重试时，无关/幻觉字段一抖动就重开预算——reminder 注入与停止续跑被一路绕过，实测一轮连错 10 次、每次 27 万 token 全价请求。现在按 `coreSignature`（同工具 + 同错误文本哈希）计数，`inputSignature` 保留用于诊断与执行前精确拦截。验证：`tool-failure-guard` 与 processor 相关用例通过，opencode typecheck 通过。
+- **手机网关 SSE 加单帧上限与写背压**（`packages/desktop/src/main/mobile-gateway.ts`）：单帧超过上限按 upstream error 路径清理断连；`write` 返回 false 时暂停上游、drain 后 resume，已分帧未写出的内容留在 pending 等下一个 data 事件继续。验证：mobile-gateway 8 pass / 0 fail，desktop typecheck 通过。
+- **`Todo.Info` 可选字段与 `Session.Info` 同口径**（`packages/opencode/src/session/todo.ts`）：可选字段不再携带 `undefined` 键，消费侧 null 与缺字段同 falsy，行为兼容。验证：`httpapi-exercise --mode effect --include session.todo` 1 pass / 0 fail。
+- **保存自定义供应商时不再把配置层旧 apiKey 复制回主配置**（`packages/app`）：避免保存动作把本地配置层里的旧密钥写回主配置，覆盖用户刚填的值。
+- **SDK 重新生成**（`packages/sdk`）：`openapi.json` 与生成代码同步 native compaction 顶帽与 `reasoningStall` 配置字段。
+
 ### [0.12.16] - 2026-10-20
 
 - **GPT 提示词默认改为行动优先**（`session/prompt/gpt.md`）：GPT delta 新增 `## Working style`：常规请求直接改、跑覆盖检查、报告，不把工作变成计划或风险评估；只加当前消费方、要求、已观察失败或项目惯例需要的 fallback / retry / validation / abstraction / test / doc；正在改的代码或行为路径上的真实缺陷顺手修并报告，无关缺陷只报告；验证跑覆盖改动的最窄检查，一次通过即可。非平凡、跨模块、高风险改动仍保留先复现的纪律。模型可见四问：①新增 4 条，仅 GPT 路由（`default.md + gpt.md`）可见；②固定前缀 +1,118 字符（约 +280 tokens），`default.md` 与其他路由零变化；③仅 GPT 会话从 `gpt.md` 起前缀作废一次；④`gpt.md` 是编译期固定文本，无新增注入项。验证：`system-prompt-routing` 14 pass / 0 fail。
