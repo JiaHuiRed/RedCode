@@ -58,6 +58,9 @@ export const Content = Schema.Struct({
   patch: Schema.optional(Patch),
   encoding: Schema.optional(Schema.Literal("base64")),
   mimeType: Schema.optional(Schema.String),
+  // 261021 Red 审计 RC21-05：文本超过 MAX_TEXT_BYTES 时只返回前缀，让消费方能区分
+  //   「文件就这么短」和「被预算截断」。
+  truncated: Schema.optional(Schema.Boolean),
 }).annotate({ identifier: "FileContent" })
 export type Content = DeepMutable<Schema.Schema.Type<typeof Content>>
 
@@ -283,10 +286,14 @@ const isBinaryByExtension = (file: string) => binary.has(ext(file))
 // 260831 cc 内联图片的字节上限。超过就按「二进制、不提供内容」返回，不做 base64。
 //   为什么是 20MB：哥哥判断「读不到那么大的图」，这是兜底不是常规门槛——设低了会误伤
 //   `read` 工具给多模态模型读图那条路（它和 GUI 查看器走的是同一个 File.read）。
-//   为什么在读完之后判而不是先 stat：AppFileSystem 接口上没有 stat/size，加一个要动服务
-//   定义与各实现。读完再判省不掉磁盘读，但省掉了 base64 的 33% 膨胀与整段 JSON 传输——
-//   贵的是后两者。真要连磁盘读一起省，那是另一件事（给接口补 stat）。
+// 261021 Red 审计 RC21-05：以前的三条媒体分支都先 readFile 全量读进来再判这个上限，限额
+//   管不住内存峰值。改成 stream + bytesToRead 一次有界读（见 readBounded），旧注释里
+//   「接口上没有 stat/size」的说法也已过时——FileSystem 一直有 stat 与带 bytesToRead 的 stream。
 const MAX_INLINE_BYTES = 20 * 1024 * 1024
+// 261021 Red 审计 RC21-05：文本分支以前没有单文件上限，超大 JSON / 日志会整份读进内存、
+//   整段传过 HTTP。2 MiB 足够阅读定位；超出的正文按 truncated 标记返回前缀，不生成 diff。
+//   取舍见 docs/notes/implemented/bug-fix/2026-10-21-audit-rc21-batch.md。
+const MAX_TEXT_BYTES = 2 * 1024 * 1024
 const isImage = (mimeType: string) => mimeType.startsWith("image/")
 const getImageMimeType = (file: string) => mime[ext(file)] || "image/" + ext(file)
 
@@ -512,6 +519,23 @@ export const layer = Layer.effect(
       })
     })
 
+    /**
+     * 261021 Red 审计 RC21-05：一次有界读取，最多 limit + 1 字节。
+     * - 不用 readFile：那会把整份文件读进内存，限额压不住峰值；
+     * - 不用 stat 预检：stat 之后文件还可能长大，bytesToRead 是读取那一刻的硬上限；
+     * - 多读 1 字节是为了区分「正好等于 limit」和「超过 limit」。
+     * 读失败沿用原来的语义：返回空字节串，调用方各自决定怎么降级。
+     */
+    const readBounded = (full: string, limit: number) =>
+      appFs.stream(full, { bytesToRead: limit + 1 }).pipe(
+        Stream.runFold(
+          () => [] as Uint8Array[],
+          (chunks, chunk) => (chunks.push(chunk), chunks),
+        ),
+        Effect.map((chunks) => Buffer.concat(chunks)),
+        Effect.catch(() => Effect.succeed(Buffer.alloc(0))),
+      )
+
     const read: Interface["read"] = Effect.fn("File.read")(function* (file: string) {
       using _ = log.time("read", { file })
       const ctx = yield* InstanceState.context
@@ -524,10 +548,10 @@ export const layer = Layer.effect(
       if (isImageByExtension(file)) {
         const exists = yield* appFs.existsSafe(full)
         if (exists) {
-          const bytes = yield* appFs.readFile(full).pipe(Effect.catch(() => Effect.succeed(new Uint8Array())))
+          const bytes = yield* readBounded(full, MAX_INLINE_BYTES)
           const mime = getImageMimeType(file)
           if (bytes.length > MAX_INLINE_BYTES) {
-            log.warn("read.tooLarge", { file, bytes: bytes.length, limit: MAX_INLINE_BYTES })
+            log.warn("read.tooLarge", { file, limit: MAX_INLINE_BYTES })
             return { type: "binary" as const, content: "", mimeType: mime }
           }
           return {
@@ -554,9 +578,9 @@ export const layer = Layer.effect(
       if (ext(file) === "pdf") {
         const exists = yield* appFs.existsSafe(full)
         if (!exists) return { type: "binary" as const, content: "" }
-        const bytes = yield* appFs.readFile(full).pipe(Effect.catch(() => Effect.succeed(new Uint8Array())))
+        const bytes = yield* readBounded(full, MAX_INLINE_BYTES)
         if (bytes.length > MAX_INLINE_BYTES) {
-          log.warn("read.tooLarge", { file, bytes: bytes.length, limit: MAX_INLINE_BYTES })
+          log.warn("read.tooLarge", { file, limit: MAX_INLINE_BYTES })
           return { type: "binary" as const, content: "", mimeType: "application/pdf" }
         }
         return {
@@ -580,9 +604,9 @@ export const layer = Layer.effect(
       if (encode && !isImage(mimeType)) return { type: "binary" as const, content: "", mimeType }
 
       if (encode) {
-        const bytes = yield* appFs.readFile(full).pipe(Effect.catch(() => Effect.succeed(new Uint8Array())))
+        const bytes = yield* readBounded(full, MAX_INLINE_BYTES)
         if (bytes.length > MAX_INLINE_BYTES) {
-          log.warn("read.tooLarge", { file, bytes: bytes.length, limit: MAX_INLINE_BYTES })
+          log.warn("read.tooLarge", { file, limit: MAX_INLINE_BYTES })
           return { type: "binary" as const, content: "", mimeType }
         }
         return {
@@ -593,10 +617,13 @@ export const layer = Layer.effect(
         }
       }
 
-      const content = yield* appFs.readFileString(full).pipe(
-        Effect.map((s) => s.trim()),
-        Effect.catch(() => Effect.succeed("")),
-      )
+      const bytes = yield* readBounded(full, MAX_TEXT_BYTES)
+      const truncated = bytes.length > MAX_TEXT_BYTES
+      const content = bytes.subarray(0, MAX_TEXT_BYTES).toString("utf8").trim()
+
+      // 261021 Red 审计 RC21-05：截断的正文不能当 diff 的基准 —— 一边是全文、一边是前缀，
+      //   对照不成立；而且 unstructured 的全量 diff 本身也可能把两倍正文再算一遍。
+      if (truncated) return { type: "text" as const, content, truncated: true }
 
       if (ctx.project.vcs === "git") {
         let diff = yield* gitText(["-c", "core.fsmonitor=false", "diff", "--", file])

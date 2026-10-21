@@ -122,6 +122,33 @@ describe("file/index Filesystem patterns", () => {
         expect(result.content).toBe("line1\nline2\nline3")
       }),
     )
+
+    // 261021 Red 审计 RC21-05：文本分支以前没有单文件上限，超大正文会整份读进内存、
+    //   整段传过 HTTP。现在按 MAX_TEXT_BYTES(2 MiB) 截断并显式标记。
+    it.instance("bounds oversized text and marks it truncated", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const size = 3 * 1024 * 1024
+        yield* Effect.promise(() => fs.writeFile(path.join(test.directory, "large.log"), "x".repeat(size), "utf-8"))
+
+        const result = yield* read("large.log")
+        expect(result.type).toBe("text")
+        expect(result.truncated).toBe(true)
+        expect(result.content).toHaveLength(2 * 1024 * 1024)
+      }),
+    )
+
+    it.instance("does not mark text at the budget boundary as truncated", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const text = "y".repeat(2 * 1024 * 1024)
+        yield* Effect.promise(() => fs.writeFile(path.join(test.directory, "edge.log"), text, "utf-8"))
+
+        const result = yield* read("edge.log")
+        expect(result.truncated).toBeUndefined()
+        expect(result.content).toHaveLength(2 * 1024 * 1024)
+      }),
+    )
   })
 
   describe("read() - binary content", () => {
