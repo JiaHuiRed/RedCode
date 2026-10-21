@@ -223,6 +223,42 @@ describe("applyDirectoryEvent", () => {
     expect(storeA.message[sessionID]).toBeUndefined()
   })
 
+ // 261021 Red RC-A05：孤儿洪泛且无 session 事件时的有界性。阈值内保持懒语义（等
+ // session 事件消费），超过阈值就地清理，任意时刻孤儿键数有上界。
+ test("keeps orphan inserts lazy below the cleanup threshold", () => {
+   const [store, setStore] = createStore(baseState())
+   const feed = (id: string, sessionID: string) =>
+     applyDirectoryEvent({
+       event: { type: "message.updated", properties: { info: userMessage(id, sessionID) } },
+       store,
+       setStore,
+       push() {},
+       directory: "/tmp/orphan-lazy",
+       loadLsp() {},
+     })
+   for (let i = 0; i < 32; i++) feed(`msg_lazy_${i}`, `ses_orphan_lazy_${i}`)
+
+   expect(Object.keys(store.message).filter((key) => key.startsWith("ses_orphan_lazy_"))).toHaveLength(32)
+ })
+
+ test("cleans orphan caches in place once inserts exceed the threshold", () => {
+   const [store, setStore] = createStore(baseState())
+   const feed = (id: string, sessionID: string) =>
+     applyDirectoryEvent({
+       event: { type: "message.updated", properties: { info: userMessage(id, sessionID) } },
+       store,
+       setStore,
+       push() {},
+       directory: "/tmp/orphan-flood",
+       loadLsp() {},
+     })
+   for (let i = 0; i < 70; i++) feed(`msg_flood_${i}`, `ses_orphan_flood_${i}`)
+
+   // 第 64 次插入触发就地清理（清掉此前积累），其后 6 次重新积累——键数远小于 70
+   const keys = Object.keys(store.message).filter((key) => key.startsWith("ses_orphan_flood_"))
+   expect(keys.length).toBeLessThanOrEqual(8)
+ })
+
   test("inserts root sessions in sorted order and updates sessionTotal", () => {
     const [store, setStore] = createStore(
       baseState({

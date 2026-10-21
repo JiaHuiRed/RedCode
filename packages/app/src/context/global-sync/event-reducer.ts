@@ -43,6 +43,14 @@ const lastDisposedRefresh = new Map<string, number>()
 // 261020 Red 回链：docs/notes/implemented/bug-fix/2026-10-09-gui-memory-unbounded.md
 const pendingOrphanCleanup = new WeakSet<Store<State>>()
 
+// 261021 Red RC-A05：孤儿清理此前只被 session.created/updated 消费——孤儿会话若只推
+// message/todo/status 等事件、不发会话事件，标记永远悬空，孤儿键随时间无界积累
+// （CI 审计 2026-10-21）。这里记孤儿插入次数，攒到阈值就地消费一次标记：频率上界 =
+// 每 64 次孤儿插入一次全扫；token delta 走「更新已有消息」分支不计数，不会按 delta
+// 付全扫成本。
+const orphanInserts = new WeakMap<Store<State>, number>()
+const ORPHAN_CLEANUP_THRESHOLD = 64
+
 export function applyGlobalEvent(input: {
   event: { type: string; properties?: unknown }
   project: Project[]
@@ -148,6 +156,20 @@ export function cleanupDroppedSessionCaches(
   )
 }
 
+// 261021 Red 孤儿插入打点（RC-A05）：标记 + 计数，攒够阈值就地清理。
+function markOrphanInsert(input: {
+  store: Store<State>
+  setStore: SetStoreFunction<State>
+  setSessionTodo?: (sessionID: string, todos: Todo[] | undefined) => void
+}) {
+  pendingOrphanCleanup.add(input.store)
+  const count = (orphanInserts.get(input.store) ?? 0) + 1
+  orphanInserts.set(input.store, count)
+  if (count < ORPHAN_CLEANUP_THRESHOLD) return
+  cleanupDroppedSessionCaches(input.store, input.setStore, input.store.session, input.setSessionTodo)
+  pendingOrphanCleanup.delete(input.store)
+  orphanInserts.set(input.store, 0)
+}
 export function applyDirectoryEvent(input: {
   event: { type: string; properties?: unknown }
   store: Store<State>
@@ -191,6 +213,7 @@ export function applyDirectoryEvent(input: {
       if (next.length !== trimmed.length || pendingOrphanCleanup.has(input.store)) {
         cleanupDroppedSessionCaches(input.store, input.setStore, trimmed, input.setSessionTodo)
         pendingOrphanCleanup.delete(input.store)
+        orphanInserts.delete(input.store)
       }
       if (!info.parentID) input.setStore("sessionTotal", (value) => value + 1)
       break
@@ -225,6 +248,7 @@ export function applyDirectoryEvent(input: {
       if (next.length !== trimmed.length || pendingOrphanCleanup.has(input.store)) {
         cleanupDroppedSessionCaches(input.store, input.setStore, trimmed, input.setSessionTodo)
         pendingOrphanCleanup.delete(input.store)
+        orphanInserts.delete(input.store)
       }
       break
     }
@@ -273,7 +297,7 @@ export function applyDirectoryEvent(input: {
       if (!messages) {
         input.setStore("message", info.sessionID, [info])
         if (!Binary.search(input.store.session, info.sessionID, (s) => s.id).found) {
-          pendingOrphanCleanup.add(input.store)
+          markOrphanInsert(input)
         }
         break
       }
@@ -302,10 +326,10 @@ export function applyDirectoryEvent(input: {
           draft.splice(insertAt, 0, info)
         }),
       )
-      // 260801 Red 0.7.12 懒化打点：session 已不在列表时插入消息 = 孤儿缓存产生，
-      //   标记后下次 session.created/updated 全扫清理（否则依赖无界增长的孤儿兜底）
+      // 260801 Red 0.7.12 懒化打点：session 已不在列表时插入消息 = 孤儿缓存产生。
+      //   261021 RC-A05：不再只依赖后续 session 事件消费，攒够阈值就地清理。
       if (!Binary.search(input.store.session, info.sessionID, (s) => s.id).found) {
-        pendingOrphanCleanup.add(input.store)
+        markOrphanInsert(input)
       }
       // 260801 Red 每会话消息上限：插入后超出即丢最旧消息 + 其 parts（仿 TUI sync.tsx:271-289）
       // 260904 cc 顺带标记 message_trimmed。上面那条注释说「历史可经 loadMore 随时回拉」——
