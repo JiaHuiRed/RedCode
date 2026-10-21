@@ -41,6 +41,7 @@ import { ConfigProvider } from "./provider"
 import { ConfigReference } from "./reference"
 import { ConfigRequestEvidence } from "./request-evidence"
 import { ConfigReasoningStall } from "./reasoning-stall"
+import { ConfigRetire } from "./retire"
 import * as ConfigToolFailure from "./tool-failure"
 import { ConfigServer } from "./server"
 import { ConfigSkills } from "./skills"
@@ -552,7 +553,11 @@ export const layer = Layer.effect(
         ),
       )
       const parsed = ConfigParse.jsonc(expanded, source)
-      const data = ConfigParse.schema(Info, normalizeLoadedConfig(parsed, source), source)
+      // 261021 Red 审计 RC21-01：退役键在 schema 校验之前从内存里拿掉。远程配置与
+      //   REDCODE_CONFIG_CONTENT 没有文件可改，只能走这条；落盘迁移见 migrateRetired。
+      const retired = ConfigRetire.strip(normalizeLoadedConfig(parsed, source))
+      if (retired.removed.length) log.warn("config.retired", { source, keys: ConfigRetire.describe(retired.removed) })
+      const data = ConfigParse.schema(Info, retired.data, source)
       if (!("path" in options)) return data
 
       yield* Effect.promise(() => resolveLoadedPlugins(data, options.path))
@@ -566,11 +571,41 @@ export const layer = Layer.effect(
       return data
     })
 
+    /**
+     * 261021 Red 审计 RC21-01：把登记过的退役键从配置文件里拿掉。
+     * - 备份只留最早一份（`<file>.bak-retired`）：来回改配置时别让好备份被后来那份盖掉；
+     * - 语法坏掉的文本不动，交给 ConfigParse.jsonc 给定位；
+     * - 写盘失败不阻塞启动 —— 返回迁移后的文本，内存剥离已经生效，下次启动再试。
+     */
+    const migrateRetired = Effect.fnUntraced(function* (filepath: string, text: string) {
+      const migration = ConfigRetire.migrateText(text)
+      if (!migration.removed.length) return text
+      const backup = `${filepath}.bak-retired`
+      if (!(yield* fs.existsSafe(backup))) {
+        yield* fs
+          .writeFileString(backup, text)
+          .pipe(
+            Effect.catch((error) =>
+              Effect.sync(() => log.warn("config.retired.backupFailed", { path: filepath, error: String(error) })),
+            ),
+          )
+      }
+      yield* fs
+        .writeFileStringAtomic(filepath, migration.text)
+        .pipe(
+          Effect.catch((error) =>
+            Effect.sync(() => log.warn("config.retired.writeFailed", { path: filepath, error: String(error) })),
+          ),
+        )
+      log.warn("config.retired.migrated", { path: filepath, keys: ConfigRetire.describe(migration.removed) })
+      return migration.text
+    })
+
     const loadFile = Effect.fnUntraced(function* (filepath: string, env?: Record<string, string>) {
       log.info("loading", { path: filepath })
       const text = yield* readConfigFile(filepath)
       if (!text) return {} as Info
-      return yield* loadConfig(text, { path: filepath }, env)
+      return yield* loadConfig(yield* migrateRetired(filepath, text), { path: filepath }, env)
     })
 
     const loadGlobal = Effect.fnUntraced(function* (env?: Record<string, string>) {

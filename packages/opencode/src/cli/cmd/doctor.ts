@@ -1,6 +1,7 @@
 import { Cause, Effect, Exit } from "effect"
 import { effectCmd, fail } from "../effect-cmd"
 import { Config } from "@/config/config"
+import { ConfigRetire } from "@/config/retire"
 import { Auth } from "@/auth"
 import { Plugin } from "@/plugin"
 import { MCP } from "@/mcp"
@@ -39,6 +40,38 @@ function groupStatus(checks: Check[]): Status {
 }
 
 const ICON: Record<Status, string> = { ok: "✓", warn: "!", error: "✗", skip: "-" }
+
+/**
+ * 261021 Red 审计 RC21-01：退役键迁移在配置加载时自动跑，这条只兜「写盘失败」与「又被写回」
+ * 的残留。只报键名与来源，不碰配置值 —— doctor 的输出经常被整段贴进 issue。
+ */
+function retiredCheck(worktree: string): Check {
+  const files = [
+    path.join(Global.Path.config, "redcode.jsonc"),
+    path.join(Global.Path.config, "redcode.json"),
+    path.join(Global.Path.config, "redcode.local.jsonc"),
+    path.join(Global.Path.config, "redcode.local.json"),
+    path.join(worktree, "redcode.jsonc"),
+    path.join(worktree, "redcode.json"),
+    path.join(worktree, ".redcode", "redcode.jsonc"),
+    path.join(worktree, ".redcode", "redcode.local.jsonc"),
+  ]
+  const hits = files.flatMap((file) => {
+    if (!fs.existsSync(file)) return []
+    const keys = ConfigRetire.scanText(fs.readFileSync(file, "utf8"))
+    if (!keys.length) return []
+    const source = file.startsWith(worktree)
+      ? path.relative(worktree, file).replaceAll("\\", "/")
+      : `global/${path.basename(file)}`
+    return [`${source}: ${keys.join(", ")}`]
+  })
+  if (!hits.length) return { name: "config-retired", status: "ok", detail: "no retired keys" }
+  return {
+    name: "config-retired",
+    status: "warn",
+    detail: `${hits.join("; ")} — remove them or make the file writable, then restart`,
+  }
+}
 
 /**
  * 把一个可能失败的 Effect 收成一条 Check。
@@ -217,6 +250,7 @@ export const DoctorCommand = effectCmd({
           status: instructionFiles.length > 0 ? "ok" : "warn",
           detail: instructionFiles.length > 0 ? instructionFiles.join(", ") : "no instruction files",
         },
+        retiredCheck(worktree),
       ],
     })
 

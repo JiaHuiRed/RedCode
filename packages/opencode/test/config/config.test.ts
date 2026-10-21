@@ -1,10 +1,11 @@
 import { test, expect, describe, afterEach, beforeEach } from "bun:test"
-import { Effect, Exit, Layer, Option } from "effect"
+import { Cause, Effect, Exit, Layer, Option } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/unstable/http"
 import { NodeFileSystem, NodePath } from "@effect/platform-node"
 import { Config } from "@/config/config"
 import { ConfigManaged } from "@/config/managed"
 import { ConfigParse } from "../../src/config/parse"
+import { ConfigRetire } from "../../src/config/retire"
 import { EffectFlock } from "@redcode-ai/core/util/effect-flock"
 
 import { InstanceRef } from "../../src/effect/instance-ref"
@@ -1361,6 +1362,74 @@ test("config parser preserves permission order while rejecting unknown top-level
     expect(error.data?.issues?.[0]).toMatchObject({ code: "unrecognized_keys", keys: ["invalid_field"], path: [] })
   }
 })
+
+// 261021 Red 审计 RC21-01：升级到移除某个键的版本时，旧配置里的残留不该把启动打死。
+// 真实故障：`image` 留在配置文件里 → ConfigInvalidError 同时拖垮 config.providers /
+// provider.list / app.agents / config.get 四个启动请求，TUI 致命退出。
+it.instance("migrates a retired key out of the config file", () =>
+  Effect.gen(function* () {
+    const test = yield* TestInstance
+    const file = path.join(test.directory, "redcode.jsonc")
+    yield* AppFileSystem.use.writeWithDirs(
+      file,
+      `{
+        // 用户注释必须留下
+        "$schema": "https://redcode.dev/config.json",
+        "model": "test/model",
+        "image": { "provider": "step_plan", "model": "step-image-edit-2" }
+      }`,
+    )
+
+    const config = yield* Config.use.get()
+    expect(config.model).toBe("test/model")
+    expect((config as Record<string, unknown>).image).toBeUndefined()
+
+    const migrated = yield* AppFileSystem.use.readFileString(file)
+    expect(migrated).not.toContain('"image"')
+    expect(migrated).toContain("// 用户注释必须留下")
+    expect(migrated).toContain('"model": "test/model"')
+
+    // 备份是迁移前的原文，供用户核对；只留一份，重复迁移不再产生新的。
+    const backup = yield* AppFileSystem.use.readFileString(`${file}.bak-retired`)
+    expect(backup).toContain('"image"')
+  }),
+)
+
+it.instance("retired key migration is idempotent", () =>
+  Effect.gen(function* () {
+    const test = yield* TestInstance
+    const file = path.join(test.directory, "redcode.jsonc")
+    yield* AppFileSystem.use.writeWithDirs(
+      file,
+      `{
+        "$schema": "https://redcode.dev/config.json",
+        "image": { "model": "gpt-image-1" }
+      }`,
+    )
+    yield* Config.use.get()
+
+    const first = yield* AppFileSystem.use.readFileString(file)
+    const again = ConfigRetire.migrateText(first)
+    expect(again.removed).toEqual([])
+    expect(again.text).toBe(first)
+  }),
+)
+
+// 守住建表边界：只有登记过的键会被迁移，别的未知键仍然明确报错（不泛化成静默丢弃）。
+it.instance("still rejects unknown keys that are not registered as retired", () =>
+  Effect.gen(function* () {
+    const test = yield* TestInstance
+    yield* writeConfigEffect(test.directory, {
+      $schema: "https://redcode.dev/config.json",
+      definitely_not_a_real_key: 1,
+    })
+    const exit = yield* Effect.exit(Config.use.get())
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      expect(String(Cause.squash(exit.cause))).toContain("definitely_not_a_real_key")
+    }
+  }),
+)
 
 // MCP config merging tests
 
