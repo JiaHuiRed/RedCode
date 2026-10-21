@@ -201,10 +201,16 @@ export function route(template: string, params: Record<string, string>) {
   )
 }
 
+// 261021 Red 本仓 Windows-only：/bin/sh 在 ConPTY 下 spawn 同步抛 "PTY spawn failed"
+//（bun-pty 实测），pty.create 场景因此 500（CI 与本地一致复现）。受控长驻命令按平台选，
+// ping 法 ≈ sleep 30；index.ts 的 pty.create 断言引用同一常量——验的是「服务端原样
+// 接受请求」，不是具体 shell。
+export const controlledPtyCommand = process.platform === "win32" ? "cmd.exe" : "/bin/sh"
+
 export function controlledPtyInput(title: string | undefined) {
   return {
-    command: "/bin/sh",
-    args: ["-c", "sleep 30"],
+    command: controlledPtyCommand,
+    args: controlledPtyCommand === "cmd.exe" ? ["/c", "ping -n 31 127.0.0.1 >nul"] : ["-c", "sleep 30"],
     ...(title ? { title } : {}),
   }
 }

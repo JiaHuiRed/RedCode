@@ -27,7 +27,7 @@ import { ContextSnapshot } from "../../../src/session/context-snapshot"
 import os from "os"
 import path from "path"
 import { array, boolean, check, isRecord, message, object, stable } from "./assertions"
-import { controlledPtyInput, http, route } from "./dsl"
+import { controlledPtyCommand, controlledPtyInput, http, route } from "./dsl"
 import {
   cleanupExercisePaths,
   exerciseConfigDirectory,
@@ -418,7 +418,7 @@ const scenarios: Scenario[] = [
       (body, ctx) => {
         object(body)
         check(body.title === "HTTP API PTY", "PTY create should return requested title")
-        check(body.command === "/bin/sh", "PTY create should use controlled shell command")
+        check(body.command === controlledPtyCommand, "PTY create should use controlled shell command")
         check(body.cwd === ctx.directory, "PTY create should default cwd to scenario directory")
       },
       "status",
@@ -809,7 +809,15 @@ const scenarios: Scenario[] = [
         object(body)
         check(body.title === "Created session", "created session should use requested title")
         check(body.directory === ctx.directory, "created session should use scenario directory")
-        check(body.soul === undefined, "empty registry should leave the session soul unset")
+        // 261021 Red 4ed93bc7 起 bootstrap 会向测试 home 播种模板 souls，且 Session.create
+        // 在 registry 非空时把默认 soul 固定到会话（人格归属固定在会话）。原断言
+        // 「soul === undefined」依赖真空 registry，在播种后永远为假——CI 与本地一致复现。
+        // 新契约：registry 非空时新会话必须携带默认 soul；真空 registry 的行为由
+        // souls 目录为空的前置条件保障，不在此场景钉死。
+        check(
+          typeof body.soul === "string" && body.soul.length > 0,
+          "seeded registry should pin the default soul on the new session",
+        )
       },
       "status",
     ),
