@@ -20,7 +20,12 @@ const it = testEffect(SessionNs.defaultLayer)
 //
 // 命中与否用**返回对象的引用**判定：命中返回同一个对象，重算必然是新对象。
 
-const assistant = Effect.fn("Test.assistant")(function* (sessionID: SessionID, created: number, output: number) {
+const assistant = Effect.fn("Test.assistant")(function* (
+  sessionID: SessionID,
+  created: number,
+  output: number,
+  cost = 1,
+) {
   const session = yield* SessionNs.Service
   const id = MessageID.ascending()
   yield* session.updateMessage({
@@ -33,10 +38,35 @@ const assistant = Effect.fn("Test.assistant")(function* (sessionID: SessionID, c
     modelID: "test-model",
     providerID: "test-provider",
     path: { cwd: "/", root: "/" },
-    cost: 1,
+    cost,
     tokens: { input: 10, output, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
   } as unknown as MessageV2.Info)
   return id
+})
+
+// 261021 Red 审计 RC21-04：同一 id 的原地更新走 projectors 的 onConflictDoUpdate，
+// 既不加行数也不动 time_created —— 指纹对它完全无感。
+const updateAssistant = Effect.fn("Test.updateAssistant")(function* (
+  id: MessageID,
+  sessionID: SessionID,
+  created: number,
+  output: number,
+  cost: number,
+) {
+  const session = yield* SessionNs.Service
+  yield* session.updateMessage({
+    id,
+    sessionID,
+    role: "assistant",
+    time: { created, completed: created + 10 },
+    agent: "test",
+    mode: "",
+    modelID: "test-model",
+    providerID: "test-provider",
+    path: { cwd: "/", root: "/" },
+    cost,
+    tokens: { input: 10, output, reasoning: 0, cache: { read: 0, write: 0, miss: 0 } },
+  } as unknown as MessageV2.Info)
 })
 
 const withSession = <A, E, R>(fn: (sessionID: SessionID) => Effect.Effect<A, E, R>) =>
@@ -148,6 +178,71 @@ describe("SessionUsage.aggregate 指纹短路", () => {
         ])
         expect(result.dailyByModel).toEqual([{ day, providerID: "test-provider", modelID: "test-model", output: 100 }])
         expect(result.peakHour).toBe(date.getHours())
+      }),
+    ),
+  )
+
+  // 261021 Red 审计 RC21-04：后台生成期间打开首页会缓存中间值，生成完成后（原地累计
+  // cost/tokens）再查必须拿到新账，不能等到项目出现下一条新消息。
+  it.instance("同一消息原地更新后不复用旧账", () =>
+    withSession((sessionID) =>
+      Effect.gen(function* () {
+        const project = yield* projectID
+        SessionUsage.invalidate()
+        const now = Date.now()
+        const id = yield* assistant(sessionID, now, 100)
+        const before = SessionUsage.aggregate({ projectID: project, range: "all", now })
+        expect(before.tokens.output).toBe(100)
+
+        yield* updateAssistant(id, sessionID, now, 500, 5)
+        const after = SessionUsage.aggregate({ projectID: project, range: "all", now })
+
+        expect(after).not.toBe(before)
+        expect(after.tokens.output).toBe(500)
+        expect(after.cost).toBe(5)
+        expect(after.messages).toBe(1)
+      }),
+    ),
+  )
+
+  it.instance("消息删除后重算", () =>
+    withSession((sessionID) =>
+      Effect.gen(function* () {
+        const project = yield* projectID
+        SessionUsage.invalidate()
+        const now = Date.now()
+        const id = yield* assistant(sessionID, now, 100)
+        const before = SessionUsage.aggregate({ projectID: project, range: "all", now })
+        expect(before.tokens.output).toBe(100)
+
+        const session = yield* SessionNs.Service
+        yield* session.removeMessage({ sessionID, messageID: id })
+        const after = SessionUsage.aggregate({ projectID: project, range: "all", now })
+
+        expect(after).not.toBe(before)
+        expect(after.tokens.output).toBe(0)
+        expect(after.messages).toBe(0)
+      }),
+    ),
+  )
+
+  // 261021 Red 审计 RC21-04：range="all" 的 currentStreak 依赖「今天」。没有新消息，
+  // 跨天也必须按新日期算 —— 指纹（行数 + 最大创建时间）看不出这一维。
+  it.instance("没有新消息但跨天后重算连续天数", () =>
+    withSession((sessionID) =>
+      Effect.gen(function* () {
+        const project = yield* projectID
+        SessionUsage.invalidate()
+        const now = Date.now()
+        yield* assistant(sessionID, now, 100)
+
+        const first = SessionUsage.aggregate({ projectID: project, range: "all", now })
+        expect(first.currentStreak).toBe(1)
+
+        const later = SessionUsage.aggregate({ projectID: project, range: "all", now: now + 3 * 86_400_000 })
+        expect(later).not.toBe(first)
+        expect(later.currentStreak).toBe(0)
+        expect(later.tokens.output).toBe(100)
       }),
     ),
   )

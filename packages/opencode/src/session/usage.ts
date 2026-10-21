@@ -20,6 +20,7 @@ import { and, eq, gte, sql } from "drizzle-orm"
 import { Schema } from "effect"
 import { MessageTable, SessionTable } from "./session.sql"
 import type { ProjectID } from "../project/schema"
+import type { SessionID } from "./schema"
 import type { Assistant } from "./message-v2"
 
 export const RangeSchema = Schema.Literals(["all", "30d", "7d"])
@@ -171,13 +172,31 @@ function fingerprint(projectID: ProjectID) {
 // 结果照样该变，指纹管不住这一维。而 "all" 正好是服务端的默认值（handlers/session.ts），
 // 也是最贵的那条（没有时间过滤 = 全表）。
 // 有界：一个进程同时开的项目数很小，16 个足够，超了按 LRU 淘汰。
+//
+// 261021 Red 审计 RC21-04：指纹只数行数与 max(time_created)，看不见原地更新
+//   （projectors 的 onConflictDoUpdate 只改 data），也看不见跨天。前者靠写入路径的
+//   invalidateSession，后者靠 today 进缓存键。
+// 取舍见 docs/notes/implemented/bug-fix/2026-10-21-audit-rc21-batch.md。
 const CACHE_LIMIT = 16
-const cache = new Map<ProjectID, { rows: number; latest: number; value: ReturnType<typeof compute> }>()
+const cache = new Map<ProjectID, { rows: number; latest: number; today: string; value: ReturnType<typeof compute> }>()
 
 /** 供测试与 revert 之类的写入路径手动作废；正常路径靠指纹自己失效。 */
 export function invalidate(projectID?: ProjectID) {
   if (projectID === undefined) cache.clear()
   else cache.delete(projectID)
+}
+
+/**
+ * 261021 Red 审计 RC21-04：消息原地更新（assistant 的 cost/tokens 累计）既不加行数也不动
+ *   time_created，指纹必然漏。投影器手里只有 sessionID，这里解析一次项目并作废。
+ *   没有缓存时直接返回 —— 流式期间每条消息都会走到这里，不值得为此查库。
+ */
+export function invalidateSession(sessionID: SessionID) {
+  if (cache.size === 0) return
+  const projectID = Database.use((db) =>
+    db.select({ projectID: SessionTable.project_id }).from(SessionTable).where(eq(SessionTable.id, sessionID)).get(),
+  )?.projectID
+  if (projectID) cache.delete(projectID as ProjectID)
 }
 
 export function aggregate(input: { projectID: ProjectID; range: Range; now: number }) {
@@ -186,8 +205,9 @@ export function aggregate(input: { projectID: ProjectID; range: Range; now: numb
   const print = fingerprint(input.projectID)
   const rows = Number(print?.rows ?? 0)
   const latest = Number(print?.latest ?? 0)
+  const today = localDay(input.now)
   const hit = cache.get(input.projectID)
-  if (hit && hit.rows === rows && hit.latest === latest) {
+  if (hit && hit.rows === rows && hit.latest === latest && hit.today === today) {
     // 命中顺带刷新 LRU 位置
     cache.delete(input.projectID)
     cache.set(input.projectID, hit)
@@ -196,7 +216,7 @@ export function aggregate(input: { projectID: ProjectID; range: Range; now: numb
 
   const value = compute(input)
   cache.delete(input.projectID)
-  cache.set(input.projectID, { rows, latest, value })
+  cache.set(input.projectID, { rows, latest, today, value })
   while (cache.size > CACHE_LIMIT) {
     for (const oldest of cache.keys()) {
       cache.delete(oldest)
