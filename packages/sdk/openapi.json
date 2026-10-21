@@ -17601,6 +17601,9 @@
           },
           "mimeType": {
             "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
           }
         },
         "required": ["type", "content"],
