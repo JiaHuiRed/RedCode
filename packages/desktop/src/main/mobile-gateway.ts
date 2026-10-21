@@ -19,6 +19,9 @@ const MAX_PAIRED_DEVICES = 8
 const MAX_PAIR_BODY_BYTES = 4 * 1024
 const MAX_REQUEST_BODY_BYTES = 1024 * 1024
 const MAX_SANITIZED_JSON_BYTES = 1024 * 1024
+// 261021 Red SSE 单帧上限：异常流长期不出现分隔符时 pending 会无界增长（JSON 路径有
+// MAX_SANITIZED_JSON_BYTES 兜底，SSE 此前没有对应约束）。超限即断开该连接。
+const MAX_SSE_FRAME_BYTES = 1024 * 1024
 const DEVICE_COOKIE = "rc_device"
 
 export type MobileGatewayScope = {
@@ -564,12 +567,28 @@ function filterGlobalEvents(
   let pending = ""
   upstream.on("data", (chunk: Buffer) => {
     pending += decoder.write(chunk)
+    if (pending.length > MAX_SSE_FRAME_BYTES) {
+      // pending 是解码后的字符串，length 是 UTF-16 码元数——与字节上限有 ≤2 倍偏差，对
+      // 防御目的等价。断连清理与 upstream error / response close 路径保持一致。
+      upstream.destroy()
+      controller.abort()
+      untrack()
+      response.destroy()
+      return
+    }
     while (true) {
       const separator = /\r?\n\r?\n/.exec(pending)
       if (!separator || separator.index === undefined) break
       const frame = pending.slice(0, separator.index)
       pending = pending.slice(separator.index + separator[0].length)
-      if (eventInScope(frame, directory, access)) response.write(`${frame}\n\n`)
+      // 261021 Red 背压：write 返回 false 说明内核缓冲到高水位，暂停拉取上游、drain 后
+      // 恢复——pending 里已分帧但未写出的内容留到下一个 data 事件继续处理，慢客户端
+      // 不再把上游数据全量堆进网关内存。
+      if (eventInScope(frame, directory, access) && !response.write(`${frame}\n\n`)) {
+        upstream.pause()
+        response.once("drain", () => upstream.resume())
+        return
+      }
     }
   })
   upstream.once("end", () => {
