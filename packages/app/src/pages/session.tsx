@@ -64,6 +64,8 @@ import { TerminalPanel } from "@/pages/session/terminal-panel"
 import { useSessionCommands } from "@/pages/session/use-session-commands"
 import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
 import { createSessionHistoryLoader } from "@/pages/session/session-history-loader"
+import { sessionOutlineKey } from "@/context/global-sync/bootstrap"
+import { directoryKey } from "@/context/global-sync/utils"
 import { createReviewDiffHelpers } from "@/pages/session/session-review-diff"
 import { createMessageNav } from "@/pages/session/session-message-nav"
 import { Identifier, compareTime } from "@/utils/id"
@@ -1251,6 +1253,17 @@ export default function Page() {
     newerBoundary: () => messages().at(-1)?.id,
     historyNewer,
     loadNewer: (sessionID) => sync.session.history.loadNewer(sessionID),
+    // 261021 Red 审计 RC21-02：窗口只是日志的一段后缀，目标落在窗口外时靠整份轮次目录
+    //   判断它在新的一方还是旧的一方。目录由 side panel 的查询拉取，这里只读同一份缓存，
+    //   不额外发请求。
+    targetOrder: () => {
+      const id = params.id
+      if (!id) return undefined
+      const entries = queryClient.getQueryData<{ messageID: string }[]>(
+        sessionOutlineKey(directoryKey(sdk.directory), id),
+      )
+      return entries?.map((entry) => entry.messageID)
+    },
     retainViewport: () => retainViewport(),
     onLoadError: () => showToast({ variant: "error", title: language.t("common.requestFailed") }),
     userScrolled: autoScroll.userScrolled,
@@ -1262,8 +1275,8 @@ export default function Page() {
    *
    * 260901 cc 两步都不能省。`revealMessage` 只认已渲染的行（它查的是 messageRowIndex），
    * 而目录覆盖的是**整份日志**，点到的那一轮很可能还没被加载 —— 直接 reveal 会静默无事发生。
-   * `loadThrough` 负责一路往前翻到它（含无进展保护与并发翻页的等待，见
-   * session-history-loader.ts），翻不到就明说，不退化成"落在最近的一条"。
+   * `loadThrough` 负责把目标翻进窗口（旧、新两个方向，按整份目录顺序选方向；含无进展
+   * 保护与并发翻页的等待，见 session-history-loader.ts），翻不到就明说，不退化成"落在最近的一条"。
    *
    * 滚动放在 rAF 里：prepend 刚插进来的行还没被 virtua 测量，同一拍里 scrollToIndex
    * 用的是估算尺寸（message-timeline.tsx:656 那条注释记的就是这个坑）。
@@ -1942,9 +1955,7 @@ export default function Page() {
                       onResumeScroll={resumeLatest}
                       setScrollRef={setScrollRef}
                       onScheduleScrollState={scheduleScrollState}
-                      onAutoScrollHandleScroll={() =>
-                        historyNewer() ? autoScroll.pause() : autoScroll.handleScroll()
-                      }
+                      onAutoScrollHandleScroll={() => (historyNewer() ? autoScroll.pause() : autoScroll.handleScroll())}
                       onMarkScrollGesture={markScrollGesture}
                       hasScrollGesture={hasScrollGesture}
                       onUserScroll={nav.markScroll}
@@ -1955,7 +1966,10 @@ export default function Page() {
                       onAutoScrollInteraction={autoScroll.handleInteraction}
                       shouldAnchorBottom={() =>
                         !historyNewer() &&
-                        !location.hash && !store.messageId && !ui.pendingMessage && !autoScroll.userScrolled()
+                        !location.hash &&
+                        !store.messageId &&
+                        !ui.pendingMessage &&
+                        !autoScroll.userScrolled()
                       }
                       centered={centered()}
                       setContentRef={(el) => {

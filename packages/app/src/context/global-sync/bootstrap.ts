@@ -245,9 +245,16 @@ export const loadUsageQuery = (directory: string, range: "all" | "30d" | "7d", s
  *   让目录永久冻结在会话打开那一刻的快照（轨道只列最早那两条）。现已接上，见
  *   docs/notes/implemented/bug-fix/2026-09-22-outline-event-invalidation.md
  */
+/**
+ * 261021 Red 审计 RC21-02：目标定位要从缓存读整份目录顺序判断方向，键在这里唯一定义，
+ *   避免 session.tsx / server-sync 的失效通道各抄一份（形状漂移会让跳转静默退回单向）。
+ */
+export const sessionOutlineKey = (directory: string, sessionID: string) =>
+  [directory, "sessionOutline", sessionID] as const
+
 export const loadSessionOutlineQuery = (directory: string, sessionID: string, sdk: OpencodeClient) =>
   queryOptions({
-    queryKey: [directory, "sessionOutline", sessionID] as const,
+    queryKey: sessionOutlineKey(directory, sessionID),
     queryFn: () => retry(() => sdk.session.outline({ sessionID }).then((x) => x.data?.entries ?? [])),
   })
 

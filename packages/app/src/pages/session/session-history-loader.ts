@@ -12,6 +12,12 @@ type SessionHistoryWindowInput = {
   newerBoundary?: () => string | undefined
   historyNewer?: () => boolean
   loadNewer?: (sessionID: string) => Promise<void>
+  /**
+   * 261021 Red 整份会话的用户消息 id，旧→新（轮次目录就是它）。
+   * 窗口只是日志的一个分页后缀，目标落在窗口外时只有这份顺序能判断它在哪一侧；
+   * 拿不到就退回「只向旧翻」的旧行为。
+   */
+  targetOrder?: () => string[] | undefined
   retainViewport?: () => () => void
   onLoadError?: () => void
   userScrolled: () => boolean
@@ -27,6 +33,10 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
   let stalled = false
   let newerStalled = false
   let newerPending: object | undefined
+  // 261021 Red 审计 RC21-03：会话归属不能只比 id —— A→B→A 时迟到的 A 请求会重新
+  //   落进 A 的状态。每次切换会话推进代次，写入停滞/错误/视口状态前统一校验
+  //   「同一个会话且同一代次」。
+  let generation = 0
 
   const [state, setState] = createStore({
     shift: false,
@@ -59,6 +69,9 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
     if (stalled && !force) return
     if (!input.historyMore() || input.historyLoading()) return
 
+    const gen = generation
+    // 261021 Red 发起时就绑定归属；之后每个写状态的出口都过这道闸。
+    const owned = () => input.sessionID() === id && generation === gen
     let boundary = input.boundary()
     let progress = false
 
@@ -69,7 +82,7 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
     try {
       while (true) {
         await input.loadMore(id)
-        if (input.sessionID() !== id) return
+        if (!owned()) return
 
         const nextBoundary = input.boundary()
         progress = nextBoundary !== boundary
@@ -83,8 +96,11 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
     } catch {
       // 260918 Red 拉历史失败（后端 4xx / 网络抖动）：以前错误冒成 uncaught promise 且不留任何状态，
       // 上层 fill() 被 loading 翻转重新唤醒 → 请求风暴。停手，等滚动或切会话再试。
+      // 261021 Red 迟到失败不得污染已切换的会话（审计 RC21-03）；当前会话真失败时要给可重试反馈。
+      if (!owned()) return
       stalled = true
       setState("shift", false)
+      input.onLoadError?.()
       return
     }
 
@@ -108,35 +124,42 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
     if (newerPending || input.historyLoading() || (newerStalled && !force)) return
     const token = {}
     newerPending = token
+    const gen = generation
+    const owned = () => input.sessionID() === id && generation === gen
     const boundary = input.newerBoundary?.()
     const restore = input.retainViewport?.()
     cancelShiftReset()
     setState("shift", true)
     try {
       await input.loadNewer(id)
-      if (input.sessionID() !== id) return
+      if (!owned()) return
       newerStalled = input.newerBoundary?.() === boundary && !!input.historyNewer?.()
       restore?.()
     } catch {
-      if (input.sessionID() !== id) return
+      if (!owned()) return
       newerStalled = true
       input.onLoadError?.()
     } finally {
       if (newerPending === token) newerPending = undefined
-      if (input.sessionID() === id) scheduleShiftReset()
+      if (owned()) scheduleShiftReset()
     }
   }
 
   /**
-   * 一路往前翻，直到目标用户消息进入已加载窗口。轮次导航栏点一条历史用的就是它。
+   * 把目标用户消息翻进已加载窗口 —— 轮次导航栏点一条用的就是它。
    *
    * 260901 cc 采自 DSH 的 `Session.loadThrough(seq)`（note: 2026-08-30-web-turn-rail-outline-jump）。
    * 上游按 seq 算页，本仓的分页游标是消息 id，判据换成「目标是否已在
    * visibleUserMessages 里」—— 目录的锚点就是 user 消息 id，两边天然对齐。
    *
+   * 261021 Red 审计 RC21-02：双向。窗口（400 条）两端都会裁边，只向旧翻的话，往前翻过一段
+   * 之后再点「较新的那一轮」永远够不到。方向由 `targetOrder`（整份目录顺序）里目标与窗口
+   * 最旧一条的位置关系决定；拿不到顺序、或判定方向翻不到，再试另一侧。
+   * 取舍与验收见 docs/notes/implemented/bug-fix/2026-10-21-audit-rc21-batch.md。
+   *
    * 三个终止条件缺一不可：
-   * ① `historyMore()` 为假 —— 历史翻到底了，目标不在这个会话里（或已被压缩掉）。
-    * ② **无进展**：翻了一页但最旧消息边界没变。这里**不当场放弃**，而是等一拍再试 ——
+   * ① 该方向没有更多页 —— 目标不在这一侧。
+   * ② **无进展**：翻了一页但边界没变。这里**不当场放弃**，而是等一拍再试 ——
    *    260921（d41ca4c2）起 `directory-sync` 的 `loadMessages`/`loadMore` 对并发调用是
    *    runInflight join，「pager 被占着导致请求被静默丢弃」已不存在；现在无进展通常
    *    意味着 `loadMore` 因 complete 或空页直接短路返回。连续 MAX_STALLS 次无进展
@@ -149,11 +172,54 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
   const MAX_STALLS = 8
   const STALL_WAIT_MS = 60
 
+  type Direction = "older" | "newer"
+
+  const hasMore = (direction: Direction) =>
+    direction === "older" ? input.historyMore() : !!(input.loadNewer && input.historyNewer?.())
+
+  const pageBoundary = (direction: Direction) => (direction === "older" ? input.boundary() : input.newerBoundary?.())
+
+  const loadPage = (id: string, direction: Direction) =>
+    direction === "older" ? input.loadMore(id) : input.loadNewer!(id)
+
+  /** 目标相对窗口最旧一条的位置；顺序缺失时返回 undefined，退回「只向旧翻」。 */
+  const directionOf = (messageID: string) => {
+    const order = input.targetOrder?.()
+    if (!order?.length) return undefined
+    const target = order.indexOf(messageID)
+    const oldest = input.visibleUserMessages()[0]?.id
+    const anchor = oldest === undefined ? -1 : order.indexOf(oldest)
+    if (target < 0 || anchor < 0) return undefined
+    return target < anchor ? ("older" as const) : ("newer" as const)
+  }
+
+  const walk = async (id: string, messageID: string, direction: Direction) => {
+    const arrived = () => input.visibleUserMessages().some((message) => message.id === messageID)
+    let boundary = pageBoundary(direction)
+    let stalls = 0
+    for (let page = 0; page < MAX_JUMP_PAGES; page++) {
+      if (arrived()) return true
+      if (!hasMore(direction)) return false
+
+      await loadPage(id, direction)
+      if (input.sessionID() !== id) return false
+
+      const nextBoundary = pageBoundary(direction)
+      if (nextBoundary !== boundary) {
+        boundary = nextBoundary
+        stalls = 0
+        continue
+      }
+      if (++stalls > MAX_STALLS) return false
+      await new Promise((resolve) => setTimeout(resolve, STALL_WAIT_MS))
+    }
+    return arrived()
+  }
+
   const loadThrough = async (messageID: string) => {
     const id = input.sessionID()
     if (!id) return false
-    const arrived = () => input.visibleUserMessages().some((message) => message.id === messageID)
-    if (arrived()) return true
+    if (input.visibleUserMessages().some((message) => message.id === messageID)) return true
 
     cancelShiftReset()
     setState("shift", true)
@@ -164,25 +230,10 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
     const token = Symbol()
     setState("stagedHistory", { sessionID: id, token, messages: input.visibleUserMessages() })
     try {
-      let boundary = input.boundary()
-      let stalls = 0
-      for (let page = 0; page < MAX_JUMP_PAGES; page++) {
-        if (arrived()) return true
-        if (!input.historyMore()) return false
-
-        await input.loadMore(id)
-        if (input.sessionID() !== id) return false
-
-        const nextBoundary = input.boundary()
-        if (nextBoundary !== boundary) {
-          boundary = nextBoundary
-          stalls = 0
-          continue
-        }
-        if (++stalls > MAX_STALLS) return false
-        await new Promise((resolve) => setTimeout(resolve, STALL_WAIT_MS))
-      }
-      return arrived()
+      const preferred = directionOf(messageID)
+      if (preferred !== "newer" && (await walk(id, messageID, "older"))) return true
+      if (preferred !== "older" && (await walk(id, messageID, "newer"))) return true
+      return false
     } catch {
       // 260918 Red 跳转途中拉页失败：当作"够不到"返回 false，别把 rejection 冒给 void 调用方变 uncaught。
       return false
@@ -206,6 +257,7 @@ export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
     on(
       input.sessionID,
       () => {
+        generation += 1
         cancelShiftReset()
         stalled = false
         newerStalled = false

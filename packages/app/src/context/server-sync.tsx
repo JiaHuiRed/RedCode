@@ -37,6 +37,7 @@ import {
   loadProvidersQuery,
   loadSessionOutlineQuery,
   loadUsageQuery,
+  sessionOutlineKey,
 } from "./global-sync/bootstrap"
 import { createChildStoreManager } from "./global-sync/child-store"
 import { applyDirectoryEvent, applyGlobalEvent, cleanupDroppedSessionCaches } from "./global-sync/event-reducer"
@@ -584,7 +585,7 @@ export function createServerSyncContext() {
       const info = (event.properties as { info?: { sessionID?: string; role?: string } }).info
       if (info?.role === "user" && info.sessionID) {
         void queryClient.invalidateQueries({
-          queryKey: [directoryKey(directory), "sessionOutline", info.sessionID],
+          queryKey: sessionOutlineKey(directoryKey(directory), info.sessionID),
         })
       }
     }
