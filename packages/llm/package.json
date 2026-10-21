@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "version": "0.12.17",
+  "version": "0.12.18",
   "name": "@redcode-ai/llm",
   "type": "module",
   "license": "MIT",
