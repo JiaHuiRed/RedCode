@@ -173,7 +173,11 @@ function PacedMarkdown(props: { text: string; cacheKey: string; streaming: boole
   //    DeepSeek/Step 快模型 200+ token/s 下中间层纯白跑），streaming 时直接渲染最新全文
   // 2) 间隔自适应：固定 120ms 在渲染耗时 >120ms 的文本上会"渲染追渲染"占死主线程
   //    （实测症状：UI 冻结 + 憋一大段后一次蹦出）。每轮提交后 rAF 探测渲染耗时，
-  //    间隔 = max(120, 耗时×1.5)，渲染越快越流畅、越慢越自动降频，永不占死。
+  //    间隔 = max(耗时×1.5, 下限)，渲染越快越流畅、越慢越自动降频，永不占死。
+  // 261022 Red 下限 120ms → 40ms：120ms 等于最多 8.3 次/秒，快模型连续输出时肉眼是
+  //   一截一截蹦。块级 DOM 增量（见 notes/implemented/bug-fix/2026-09-07-markdown-block-dom.md）
+  //   之后单次提交成本远低于旧版全文解析，40ms（上限 25 次/秒）在 60Hz 下不会连帧打架；
+  //   真正慢的内容仍由 renderMs×1.5 自动降频让出主线程。
   // 260705 原注释保留：each paced tick triggers a full parse + Shiki highlight + morphdom,
   // which becomes O(n²) as text grows. Throttle so the event loop stays responsive.
   const [mdText, setMdText] = createSignal(props.text)
@@ -189,7 +193,7 @@ function PacedMarkdown(props: { text: string; cacheKey: string; streaming: boole
       return
     }
     const now = performance.now()
-    const interval = Math.max(120, renderMs * 1.5)
+    const interval = Math.max(40, renderMs * 1.5)
     if (now - mdLast >= interval) {
       const start = now
       mdLast = now
