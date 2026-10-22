@@ -9,9 +9,9 @@ import { Glob } from "./util/glob"
 import { serviceUse } from "./effect/service-use"
 
 export namespace AppFileSystem {
-  export class FileSystemError extends Schema.TaggedErrorClass<FileSystemError>()("FileSystemError", {
+  export class FileSystemError extends Schema.TaggedError<FileSystemError>()("FileSystemError", {
     method: Schema.String,
-    cause: Schema.optional(Schema.Defect),
+    cause: Schema.optional(Schema.Defect()),
   }) {}
 
   export type Error = PlatformError | FileSystemError
@@ -21,7 +21,7 @@ export namespace AppFileSystem {
     readonly type: "file" | "directory" | "symlink" | "other"
   }
 
-  export interface Interface extends FileSystem.FileSystem {
+  export interface Interface extends Omit<FileSystem.FileSystem, "glob"> {
     readonly isDir: (path: string) => Effect.Effect<boolean>
     readonly isFile: (path: string) => Effect.Effect<boolean>
     readonly existsSafe: (path: string) => Effect.Effect<boolean>

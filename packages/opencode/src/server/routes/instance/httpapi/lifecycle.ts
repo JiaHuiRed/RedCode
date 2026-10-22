@@ -3,7 +3,7 @@ import type { InstanceContext } from "@/project/instance-context"
 import { InstanceStore } from "@/project/instance-store"
 import * as Log from "@redcode-ai/core/util/log"
 import { Effect } from "effect"
-import { HttpEffect, HttpMiddleware, HttpServerRequest } from "effect/unstable/http"
+import { HttpEffect, HttpMiddleware, HttpServerRequest } from "effect/http"
 
 const log = Log.create({ service: "server" })
 

@@ -2,7 +2,7 @@ import * as InstanceState from "@/effect/instance-state"
 import { File } from "@/file"
 import { Ripgrep } from "@/file/ripgrep"
 import { Effect } from "effect"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { InstanceHttpApi } from "../api"
 
 export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handlers) =>

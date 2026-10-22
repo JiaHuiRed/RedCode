@@ -1,6 +1,6 @@
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Effect, Stream } from "effect"
-import { HttpBody, HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { HttpBody, HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { createHash } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"

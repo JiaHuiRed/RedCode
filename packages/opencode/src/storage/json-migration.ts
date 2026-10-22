@@ -22,7 +22,7 @@ type Options = {
   progress?: (event: Progress) => void
 }
 
-export async function run(db: SQLiteBunDatabase<any, any> | NodeSQLiteDatabase<any, any>, options?: Options) {
+export async function run(db: SQLiteBunDatabase | NodeSQLiteDatabase, options?: Options) {
   const storageDir = path.join(Global.Path.data, "storage")
 
   if (!existsSync(storageDir)) {

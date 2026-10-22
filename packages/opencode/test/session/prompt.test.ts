@@ -1,5 +1,5 @@
 import { NodeFileSystem } from "@effect/platform-node"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { expect } from "bun:test"
 import { Cause, Clock, Deferred, Duration, Effect, Exit, Fiber, Layer, Option } from "effect"
 import * as Stream from "effect/Stream"

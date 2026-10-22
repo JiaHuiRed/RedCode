@@ -1015,33 +1015,33 @@ export function defaultModelIDs<T extends { models: Record<string, { id: string 
   return mapValues(providers, (item) => sort(Object.values(item.models))[0].id)
 }
 
-export class ModelNotFoundError extends Schema.TaggedErrorClass<ModelNotFoundError>()("ProviderModelNotFoundError", {
+export class ModelNotFoundError extends Schema.TaggedError<ModelNotFoundError>()("ProviderModelNotFoundError", {
   providerID: ProviderID,
   modelID: ModelID,
   suggestions: Schema.optional(Schema.Array(Schema.String)),
-  cause: Schema.optional(Schema.Defect),
+  cause: Schema.optional(Schema.Defect()),
 }) {
   static isInstance(input: unknown): input is ModelNotFoundError {
     return input instanceof ModelNotFoundError
   }
 }
 
-export class InitError extends Schema.TaggedErrorClass<InitError>()("ProviderInitError", {
+export class InitError extends Schema.TaggedError<InitError>()("ProviderInitError", {
   providerID: ProviderID,
-  cause: Schema.optional(Schema.Defect),
+  cause: Schema.optional(Schema.Defect()),
 }) {
   static isInstance(input: unknown): input is InitError {
     return input instanceof InitError
   }
 }
 
-export class NoProvidersError extends Schema.TaggedErrorClass<NoProvidersError>()("ProviderNoProvidersError", {}) {
+export class NoProvidersError extends Schema.TaggedError<NoProvidersError>()("ProviderNoProvidersError", {}) {
   static isInstance(input: unknown): input is NoProvidersError {
     return input instanceof NoProvidersError
   }
 }
 
-export class NoModelsError extends Schema.TaggedErrorClass<NoModelsError>()("ProviderNoModelsError", {
+export class NoModelsError extends Schema.TaggedError<NoModelsError>()("ProviderNoModelsError", {
   providerID: ProviderID,
 }) {
   static isInstance(input: unknown): input is NoModelsError {

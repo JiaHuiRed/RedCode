@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { HttpApi } from "effect/unstable/httpapi"
+import { HttpApi } from "effect/http-api"
 import { BusEvent } from "@/bus/bus-event"
 import { SyncEvent } from "@/sync"
 import { ConfigApi } from "./groups/config"

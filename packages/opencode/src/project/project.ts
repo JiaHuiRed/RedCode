@@ -14,7 +14,7 @@ import { Bus } from "@/bus"
 import { Command } from "@/command"
 import { InstanceState } from "@/effect/instance-state"
 import { Effect, Layer, Path, Scope, Context, Stream, Types, Schema } from "effect"
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
+import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { NodePath } from "@effect/platform-node"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
@@ -132,7 +132,7 @@ export const UpdatePayload = Schema.Struct({
 }).annotate({ identifier: "ProjectUpdateInput" })
 export type UpdatePayload = Types.DeepMutable<Schema.Schema.Type<typeof UpdatePayload>>
 
-export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Project.NotFoundError", {
+export class NotFoundError extends Schema.TaggedError<NotFoundError>()("Project.NotFoundError", {
   projectID: ProjectID,
 }) {}
 

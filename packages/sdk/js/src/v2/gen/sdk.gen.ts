@@ -17,7 +17,7 @@ import type {
   AuthSetResponses,
   CommandListErrors,
   CommandListResponses,
-  Config as Config3,
+  Config1,
   ConfigGetErrors,
   ConfigGetResponses,
   ConfigProvidersErrors,
@@ -25,10 +25,10 @@ import type {
   ConfigUpdateErrors,
   ConfigUpdateResponses,
   EventSubscribeResponses,
-  EventTuiCommandExecute2,
-  EventTuiPromptAppend2,
-  EventTuiSessionSelect2,
-  EventTuiToastShow2,
+  EventTuiCommandExecute,
+  EventTuiPromptAppend,
+  EventTuiSessionSelect,
+  EventTuiToastShow,
   ExperimentalConsoleGetErrors,
   ExperimentalConsoleGetResponses,
   ExperimentalConsoleListOrgsErrors,
@@ -130,7 +130,7 @@ import type {
   ProjectRemoveResponses,
   ProjectUpdateErrors,
   ProjectUpdateResponses,
-  Prompt,
+  PromptEncoded,
   ProviderAuthErrors,
   ProviderAuthResponses,
   ProviderListErrors,
@@ -546,11 +546,11 @@ export class Config extends HeyApiClient {
    */
   public update<ThrowOnError extends boolean = false>(
     parameters?: {
-      config?: Config3
+      config1?: Config1
     },
     options?: Options<never, ThrowOnError>,
   ) {
-    const params = buildClientParams([parameters], [{ args: [{ key: "config", map: "body" }] }])
+    const params = buildClientParams([parameters], [{ args: [{ key: "config1", map: "body" }] }])
     return (options?.client ?? this.client).patch<GlobalConfigUpdateResponses, GlobalConfigUpdateErrors, ThrowOnError>({
       url: "/global/config",
       ...options,
@@ -703,7 +703,7 @@ export class Config2 extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
-      config?: Config3
+      config1?: Config1
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -714,7 +714,7 @@ export class Config2 extends HeyApiClient {
           args: [
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
-            { key: "config", map: "body" },
+            { key: "config1", map: "body" },
           ],
         },
       ],
@@ -4815,7 +4815,7 @@ export class Session3 extends HeyApiClient {
       sessionID: string
       directory?: string
       workspace?: string
-      prompt?: Prompt
+      prompt?: PromptEncoded
       delivery?: SessionDelivery
     },
     options?: Options<never, ThrowOnError>,
@@ -5463,7 +5463,7 @@ export class Tui extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
-      body?: EventTuiPromptAppend2 | EventTuiCommandExecute2 | EventTuiToastShow2 | EventTuiSessionSelect2
+      body?: EventTuiPromptAppend | EventTuiCommandExecute | EventTuiToastShow | EventTuiSessionSelect
     },
     options?: Options<never, ThrowOnError>,
   ) {

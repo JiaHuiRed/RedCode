@@ -2,7 +2,7 @@ import { SessionMessage } from "@redcode-ai/core/session-message"
 import { SessionV2 } from "@/v2/session"
 import { Effect, Schema } from "effect"
 import * as DateTime from "effect/DateTime"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { InstanceHttpApi } from "../../api"
 import { InvalidCursorError, SessionNotFoundError, UnknownError } from "../../errors"
 

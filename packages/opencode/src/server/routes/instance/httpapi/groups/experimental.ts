@@ -5,7 +5,7 @@ import { Session } from "@/session/session"
 import { Worktree } from "@/worktree"
 import { NonNegativeInt } from "@redcode-ai/core/schema"
 import { Schema } from "effect"
-import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
 import {
@@ -78,7 +78,7 @@ const WorktreeErrorName = Schema.Union([
   Schema.Literal("WorktreeResetFailedError"),
   Schema.Literal("WorktreeListFailedError"),
 ])
-export class WorktreeApiError extends Schema.ErrorClass<WorktreeApiError>("WorktreeError")(
+export class WorktreeApiError extends Schema.Error<WorktreeApiError>("WorktreeError")(
   {
     name: WorktreeErrorName,
     data: Schema.Struct({ message: Schema.String }),
@@ -182,7 +182,6 @@ export const ExperimentalApi = HttpApi.make("experimental")
           }),
         ),
         HttpApiEndpoint.post("worktreeCreate", ExperimentalPaths.worktree, {
-          disableCodecs: true,
           query: WorkspaceRoutingQuery,
           payload: Schema.UndefinedOr(Worktree.CreateInput),
           success: described(Worktree.Info, "Worktree created"),

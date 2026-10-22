@@ -41,12 +41,13 @@ export function orderSelectedFields<TColumn extends Column>(
 ): SelectedFieldsOrdered {
   return Object.entries(fields).flatMap(([name, field]) => {
     const path = pathPrefix ? [...pathPrefix, name] : [name]
-    if (is(field, Column) || is(field, SQL) || is(field, SQL.Aliased) || is(field, Subquery)) {
-      return [{ path, field }] as SelectedFieldsOrdered
-    }
+    if (is(field, Column)) return [{ path, field, fieldType: "Column" }]
+    if (is(field, SQL)) return [{ path, field, fieldType: "SQL" }]
+    if (is(field, SQL.Aliased)) return [{ path, field, fieldType: "SQL.Aliased" }]
+    if (is(field, Subquery)) return [{ path, field, fieldType: "Subquery" }]
     if (is(field, Table)) return orderSelectedFields(getTableColumnsRuntime(field as SQLiteTable), path)
     return orderSelectedFields(field as Record<string, unknown>, path)
-  }) as SelectedFieldsOrdered
+  })
 }
 
 export function mapUpdateSet<TTable extends SQLiteTable>(table: TTable, values: SQLiteUpdateSetSource<TTable>) {

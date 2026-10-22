@@ -524,18 +524,18 @@ export const getUsage = (input: {
   return { cost, tokens, currency: input.model.cost?.currency }
 }
 
-export class BusyError extends Schema.TaggedErrorClass<BusyError>()("SessionBusyError", {
+export class BusyError extends Schema.TaggedError<BusyError>()("SessionBusyError", {
   sessionID: SessionID,
 }) {}
 
-export class InvalidSoul extends Schema.TaggedErrorClass<InvalidSoul>()("InvalidSoul", {
+export class InvalidSoul extends Schema.TaggedError<InvalidSoul>()("InvalidSoul", {
   soul: Schema.String,
   message: Schema.String,
 }) {}
 
 export type NotFound = NotFoundError
 
-export class QueuedMessageConflict extends Schema.TaggedErrorClass<QueuedMessageConflict>()("QueuedMessageConflict", {
+export class QueuedMessageConflict extends Schema.TaggedError<QueuedMessageConflict>()("QueuedMessageConflict", {
   messageID: MessageID,
 }) {}
 

@@ -11,7 +11,7 @@ import type { SelectedFields, SQLiteSelectJoinConfig } from "drizzle-orm/sqlite-
 import type { SQLiteUpdateConfig, SQLiteUpdateSetSource } from "drizzle-orm/sqlite-core/query-builders/update"
 import type { PreparedQueryConfig } from "drizzle-orm/sqlite-core/session"
 import { SQLiteTable } from "drizzle-orm/sqlite-core/table"
-import { extractUsedTable } from "drizzle-orm/sqlite-core/utils"
+import { usedTablesOf } from "drizzle-orm/used-tables"
 import { SQLiteViewBase } from "drizzle-orm/sqlite-core/view-base"
 import { Subquery } from "drizzle-orm/subquery"
 import { type DrizzleTypeError, type UpdateSet, type ValueOrArray } from "drizzle-orm/utils"
@@ -366,7 +366,7 @@ export class SQLiteEffectUpdateBase<
       undefined,
       {
         type: "update",
-        tables: extractUsedTable(this.config.table),
+        tables: () => usedTablesOf(this.config.table),
       },
     ) as SQLiteEffectUpdatePrepare<this, TEffectHKT>
   }

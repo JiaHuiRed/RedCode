@@ -3,8 +3,8 @@ import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Scope from "effect/Scope"
-import type { SqlClient } from "effect/unstable/sql/SqlClient"
-import type { SqlError } from "effect/unstable/sql/SqlError"
+import type { SqlClient } from "effect/sql/SqlClient"
+import type { SqlError } from "effect/sql/SqlError"
 import type { EffectCacheShape } from "drizzle-orm/cache/core/cache-effect"
 import type { WithCacheConfig } from "drizzle-orm/cache/core/types"
 import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors"
@@ -14,7 +14,8 @@ import { entityKind } from "drizzle-orm/entity"
 import type { AnyRelations } from "drizzle-orm/relations"
 import type { RelationalQueryMapperConfig } from "drizzle-orm/relations"
 import type { Query } from "drizzle-orm/sql/sql"
-import type { SQLiteAsyncDialect } from "drizzle-orm/sqlite-core/dialect"
+import type { QueryMetadata } from "drizzle-orm/cache/core/types"
+import type { SQLiteDialect } from "drizzle-orm/sqlite-core/dialect"
 import { SQLiteEffectPreparedQuery, SQLiteEffectSession } from "../sqlite-core/effect/session"
 import { SQLiteEffectTransaction } from "../sqlite-core/effect/db"
 import type { SelectedFieldsOrdered } from "drizzle-orm/sqlite-core/query-builders/select.types"
@@ -42,7 +43,7 @@ export class EffectSQLiteSession<TRelations extends AnyRelations> extends SQLite
 
   constructor(
     private client: SqlClient,
-    dialect: SQLiteAsyncDialect,
+    dialect: SQLiteDialect,
     protected relations: TRelations,
     private options: EffectSQLiteSessionOptions,
   ) {
@@ -54,10 +55,7 @@ export class EffectSQLiteSession<TRelations extends AnyRelations> extends SQLite
     fields: SelectedFieldsOrdered | undefined,
     executeMethod: SQLiteExecuteMethod,
     customResultMapper?: (rows: unknown[][], mapColumnValue?: (value: unknown) => unknown) => unknown,
-    queryMetadata?: {
-      type: "select" | "update" | "delete" | "insert"
-      tables: string[]
-    },
+    queryMetadata?: QueryMetadata,
     cacheConfig?: WithCacheConfig,
   ): SQLiteEffectPreparedQuery<T, EffectSQLiteQueryEffectHKT> {
     return new SQLiteEffectPreparedQuery<T, EffectSQLiteQueryEffectHKT>(

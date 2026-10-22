@@ -1,5 +1,5 @@
 import { Cause, Duration, Effect, Layer, Schedule, Schema, Semaphore, Context } from "effect"
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
+import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { formatPatch, structuredPatch } from "diff"
 import path from "path"
 import { AppProcess } from "@redcode-ai/core/process"
@@ -34,7 +34,7 @@ export type FileDiff = typeof FileDiff.Type
 // 已被清掉；此时 git 报 bad object、stdout 为空，diffFull 静默返回 []——上游 summarize 就把
 // session 的 additions/deletions/files 抹成 0，这就是「恢复老会话统计全归零」的根因。
 // 改成显式失败，让调用方分得清「这轮确实没改文件」和「快照没了」。
-export class DiffError extends Schema.TaggedErrorClass<DiffError>()("SnapshotDiffError", {
+export class DiffError extends Schema.TaggedError<DiffError>()("SnapshotDiffError", {
   from: Schema.String,
   to: Schema.String,
   exitCode: Schema.Number,

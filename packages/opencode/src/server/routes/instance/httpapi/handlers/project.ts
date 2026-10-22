@@ -2,7 +2,7 @@ import * as InstanceState from "@/effect/instance-state"
 import { Project } from "@/project/project"
 import { ProjectID } from "@/project/schema"
 import { Effect } from "effect"
-import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
+import { HttpApiBuilder, HttpApiError } from "effect/http-api"
 import { InstanceHttpApi } from "../api"
 import { markInstanceForReload } from "../lifecycle"
 

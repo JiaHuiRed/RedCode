@@ -11,9 +11,9 @@ import {
   PTY_CONNECT_TOKEN_HEADER_VALUE,
 } from "@/server/shared/pty-ticket"
 import { Effect } from "effect"
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
-import * as Socket from "effect/unstable/socket/Socket"
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { HttpApiBuilder, HttpApiError } from "effect/http-api"
+import * as Socket from "effect/socket/Socket"
 import { InstanceHttpApi } from "../api"
 import * as ApiError from "../errors"
 import { CursorQuery, Params, PtyPaths } from "../groups/pty"
@@ -114,16 +114,19 @@ export const ptyConnectRoute = HttpRouter.use((router) =>
             ? parsedCursor
             : undefined
         const socket = yield* Effect.orDie(request.upgrade)
-        const write = yield* socket.writer
+        const writer = yield* socket.writer
+        // 261022 Red: effect 4.0.5 移除 socket.runRaw，消费统一走 reader.pull 循环
         const closeAccepted = (event: Socket.CloseEvent) =>
-          socket
-            .runRaw(() => Effect.void, { onOpen: write(event).pipe(Effect.catch(() => Effect.void)) })
-            .pipe(
-              Effect.timeout("1 second"),
-              Effect.catchReason("SocketError", "SocketCloseError", () => Effect.void),
-              Effect.catch(() => Effect.void),
-            )
-        const registered = yield* WebSocketTracker.register(write(WebSocketTracker.SERVER_CLOSING_EVENT()))
+          Effect.gen(function* () {
+            const { pull } = yield* socket.reader
+            yield* writer.write(event).pipe(Effect.catch(() => Effect.void))
+            while (true) yield* pull
+          }).pipe(
+            Effect.timeout("1 second"),
+            Effect.catchReason("SocketError", "SocketCloseError", () => Effect.void),
+            Effect.catch(() => Effect.void),
+          )
+        const registered = yield* WebSocketTracker.register(writer.write(WebSocketTracker.SERVER_CLOSING_EVENT()))
         if (!registered) {
           yield* closeAccepted(WebSocketTracker.SERVER_CLOSING_EVENT())
           return HttpServerResponse.empty()
@@ -139,12 +142,12 @@ export const ptyConnectRoute = HttpRouter.use((router) =>
           },
           send: (data: string | Uint8Array | ArrayBuffer) => {
             if (closed) return
-            writeScoped(write(data instanceof ArrayBuffer ? new Uint8Array(data) : data))
+            writeScoped(writer.write(data instanceof ArrayBuffer ? new Uint8Array(data) : data))
           },
           close: (code?: number, reason?: string) => {
             if (closed) return
             closed = true
-            writeScoped(write(new Socket.CloseEvent(code, reason)))
+            writeScoped(writer.write(new Socket.CloseEvent(code, reason)))
           },
         }
         const handler = yield* pty.connect(params.ptyID, adapter, cursor)
@@ -159,18 +162,24 @@ export const ptyConnectRoute = HttpRouter.use((router) =>
         // and the message callback is registered. The client therefore can't fire
         // `open` and start sending until the listener is already wired. Don't move
         // `runRaw` ahead of `pty.connect` without re-introducing a buffer.
-        yield* socket
-          .runRaw((message) => handlePtyInput(handler, message))
-          .pipe(
-            Effect.catchReason("SocketError", "SocketCloseError", () => Effect.void),
-            Effect.ensuring(
-              Effect.sync(() => {
-                closed = true
-                handler.onClose()
-              }),
-            ),
-            Effect.orDie,
-          )
+        yield* Effect.gen(function* () {
+          const { pull } = yield* socket.reader
+          while (true) {
+            const batch = yield* pull
+            for (const message of batch) {
+              yield* handlePtyInput(handler, message)
+            }
+          }
+        }).pipe(
+          Effect.catchReason("SocketError", "SocketCloseError", () => Effect.void),
+          Effect.ensuring(
+            Effect.sync(() => {
+              closed = true
+              handler.onClose()
+            }),
+          ),
+          Effect.orDie,
+        )
         return HttpServerResponse.empty()
       }),
     )

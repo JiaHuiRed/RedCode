@@ -3,8 +3,8 @@ import { Location } from "@redcode-ai/core/location"
 import { LocationServiceMap } from "@redcode-ai/core/location-layer"
 import { PluginBoot } from "@redcode-ai/core/plugin/boot"
 import { Effect, Layer, Schema } from "effect"
-import { HttpServerRequest } from "effect/unstable/http"
-import { HttpApiMiddleware, OpenApi } from "effect/unstable/httpapi"
+import { HttpServerRequest } from "effect/http"
+import { HttpApiMiddleware, OpenApi } from "effect/http-api"
 
 export const LocationQuery = Schema.Struct({
   location: Schema.optional(

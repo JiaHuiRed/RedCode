@@ -3,7 +3,7 @@ import { Schema } from "effect"
 import { Identifier } from "@/id/id"
 import { withStatics } from "@redcode-ai/core/schema"
 
-const workspaceIdSchema = Schema.String.check(Schema.isStartsWith("wrk")).pipe(Schema.brand("WorkspaceID"))
+const workspaceIdSchema = Schema.String.check(Schema.isStartingWith("wrk")).pipe(Schema.brand("WorkspaceID"))
 
 export type WorkspaceID = typeof workspaceIdSchema.Type
 

@@ -2,7 +2,7 @@ import { WorkspaceID } from "@/control-plane/schema"
 import { WorkspaceRouteContext } from "../../middleware/workspace-routing"
 import { SessionV2 } from "@/v2/session"
 import { DateTime, Effect, Option, Schema } from "effect"
-import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
+import { HttpApiBuilder, HttpApiSchema } from "effect/http-api"
 import { InstanceHttpApi } from "../../api"
 import {
   InvalidCursorError,

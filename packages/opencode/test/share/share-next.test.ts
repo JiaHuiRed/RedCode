@@ -1,7 +1,7 @@
 import { NodeFileSystem } from "@effect/platform-node"
 import { beforeEach, describe, expect } from "bun:test"
 import { Effect, Exit, Layer, Option } from "effect"
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 
 import { AccessToken, AccountID, OrgID, RefreshToken } from "../../src/account/schema"
 import { Account } from "../../src/account/account"

@@ -1,7 +1,7 @@
 import { SessionID } from "@/session/schema"
 import { SessionMessage } from "@redcode-ai/core/session-message"
 import { Schema } from "effect"
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { InvalidCursorError, SessionNotFoundError, UnknownError } from "../../errors"
 import { V2Authorization } from "../../middleware/authorization"
 import { WorkspaceRoutingQueryFields } from "../../middleware/workspace-routing"

@@ -11,7 +11,7 @@ import type { SQLiteDeleteConfig } from "drizzle-orm/sqlite-core/query-builders/
 import type { SelectedFieldsFlat } from "drizzle-orm/sqlite-core/query-builders/select.types"
 import type { PreparedQueryConfig } from "drizzle-orm/sqlite-core/session"
 import { SQLiteTable } from "drizzle-orm/sqlite-core/table"
-import { extractUsedTable } from "drizzle-orm/sqlite-core/utils"
+import { usedTablesOf } from "drizzle-orm/used-tables"
 import type { Subquery } from "drizzle-orm/subquery"
 import { type DrizzleTypeError, type ValueOrArray } from "drizzle-orm/utils"
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core/columns/common"
@@ -225,7 +225,7 @@ export class SQLiteEffectDeleteBase<
       undefined,
       {
         type: "delete",
-        tables: extractUsedTable(this.config.table),
+        tables: () => usedTablesOf(this.config.table),
       },
     ) as SQLiteEffectDeletePrepare<this, TEffectHKT>
   }

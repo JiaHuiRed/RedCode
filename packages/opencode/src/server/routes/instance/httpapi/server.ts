@@ -1,5 +1,5 @@
 import { Config as EffectConfig, Context, Effect, Layer } from "effect"
-import { HttpApiBuilder, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiBuilder, OpenApi } from "effect/http-api"
 import {
   FetchHttpClient,
   HttpClient,
@@ -7,8 +7,8 @@ import {
   HttpRouter,
   HttpServer,
   HttpServerResponse,
-} from "effect/unstable/http"
-import * as Socket from "effect/unstable/socket/Socket"
+} from "effect/http"
+import * as Socket from "effect/socket/Socket"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Account } from "@/account/account"
 import { Agent } from "@/agent/agent"

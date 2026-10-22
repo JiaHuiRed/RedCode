@@ -1,6 +1,6 @@
 import { type SQLiteBunDatabase } from "drizzle-orm/bun-sqlite"
+import { type SQLiteBunTransaction } from "drizzle-orm/bun-sqlite/session"
 import { migrate } from "drizzle-orm/bun-sqlite/migrator"
-import { type SQLiteTransaction } from "drizzle-orm/sqlite-core"
 export * from "drizzle-orm"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { LocalContext } from "@/util/local-context"
@@ -39,9 +39,8 @@ export const getPath = (flags?: Pick<DatabaseFlags, "skipMigrations">) => {
   return getChannelPath()
 }
 
-export type Transaction = SQLiteTransaction<"sync", void>
-
 type Client = ReturnType<typeof init>
+export type Transaction = SQLiteBunTransaction<Client["_"]["relations"]>
 
 type Journal = { sql: string; timestamp: number; name: string }[]
 

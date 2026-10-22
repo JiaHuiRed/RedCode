@@ -21,7 +21,7 @@
 // 任何模块拉起 core/global 之前生效。ESM 只求值一次，下面那条具名 import 不会重复执行。
 import "./environment"
 import { Effect } from "effect"
-import { OpenApi } from "effect/unstable/httpapi"
+import { OpenApi } from "effect/http-api"
 import { TestLLMServer } from "../../lib/llm-server"
 import { ContextSnapshot } from "../../../src/session/context-snapshot"
 import os from "os"

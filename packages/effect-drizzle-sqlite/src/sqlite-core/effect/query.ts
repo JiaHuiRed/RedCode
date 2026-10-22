@@ -157,7 +157,7 @@ export class SQLiteEffectRelationalQuery<TResult, TEffectHKT extends QueryEffect
       tableConfig: this.tableConfig,
       queryConfig: this.config,
       mode: this.mode,
-      isNested: this.rowMode,
+      nested: this.rowMode,
       jsonb,
     })
 

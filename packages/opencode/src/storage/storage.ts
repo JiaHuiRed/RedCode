@@ -14,7 +14,7 @@ type Migration = (
   git: Git.Interface,
 ) => Effect.Effect<void, AppFileSystem.Error>
 
-export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("NotFoundError", {
+export class NotFoundError extends Schema.TaggedError<NotFoundError>()("NotFoundError", {
   message: Schema.String,
 }) {
   static isInstance(input: unknown): input is NotFoundError {
@@ -104,7 +104,7 @@ const MIGRATIONS: Migration[] = [
           cwd: full,
           absolute: true,
         })) {
-          const json = decodeRoot(yield* fs.readJson(msgFile), { onExcessProperty: "preserve" })
+          const json = decodeRoot(yield* fs.readJson(msgFile))
           const root = Option.isSome(json) ? json.value.path?.root : undefined
           if (!root) continue
           worktree = root
@@ -149,7 +149,7 @@ const MIGRATIONS: Migration[] = [
           const dest = path.join(dir, "session", projectID, path.basename(sessionFile))
           log.info("copying", { sessionFile, dest })
           const session = yield* fs.readJson(sessionFile)
-          const info = decodeSession(session, { onExcessProperty: "preserve" })
+          const info = decodeSession(session)
           yield* fs.writeWithDirs(dest, JSON.stringify(session, null, 2))
           if (Option.isNone(info)) continue
           log.info(`migrating messages for session ${info.value.id}`)
@@ -163,7 +163,7 @@ const MIGRATIONS: Migration[] = [
               dest: next,
             })
             const message = yield* fs.readJson(msgFile)
-            const item = decodeMessage(message, { onExcessProperty: "preserve" })
+            const item = decodeMessage(message)
             yield* fs.writeWithDirs(next, JSON.stringify(message, null, 2))
             if (Option.isNone(item)) continue
 
@@ -191,7 +191,7 @@ const MIGRATIONS: Migration[] = [
       absolute: true,
     })) {
       const raw = yield* fs.readJson(item)
-      const session = decodeSummary(raw, { onExcessProperty: "preserve" })
+      const session = decodeSummary(raw)
       if (Option.isNone(session)) continue
       const diffs = session.value.summary.diffs
       yield* fs.writeWithDirs(

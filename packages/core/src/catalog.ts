@@ -13,14 +13,14 @@ export type ProviderRecord = {
   models: Map<ModelV2.ID, ModelV2.Info>
 }
 
-export class ProviderNotFoundError extends Schema.TaggedErrorClass<ProviderNotFoundError>()(
+export class ProviderNotFoundError extends Schema.TaggedError<ProviderNotFoundError>()(
   "CatalogV2.ProviderNotFound",
   {
     providerID: ProviderV2.ID,
   },
 ) {}
 
-export class ModelNotFoundError extends Schema.TaggedErrorClass<ModelNotFoundError>()("CatalogV2.ModelNotFound", {
+export class ModelNotFoundError extends Schema.TaggedError<ModelNotFoundError>()("CatalogV2.ModelNotFound", {
   providerID: ProviderV2.ID,
   modelID: ModelV2.ID,
 }) {}

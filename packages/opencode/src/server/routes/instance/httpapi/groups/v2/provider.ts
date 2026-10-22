@@ -1,6 +1,6 @@
 import { ProviderV2 } from "@redcode-ai/core/provider"
 import { Schema } from "effect"
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { ProviderNotFoundError, ServiceUnavailableError } from "../../errors"
 import { V2Authorization } from "../../middleware/authorization"
 import { LocationQuery, locationQueryOpenApi, V2LocationMiddleware } from "./location"

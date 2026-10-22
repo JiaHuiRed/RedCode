@@ -1,7 +1,7 @@
 import { expect } from "bun:test"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Effect, Layer } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import path from "path"
 import { pathToFileURL } from "url"
 import { Agent } from "../../src/agent/agent"

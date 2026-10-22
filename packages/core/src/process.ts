@@ -1,10 +1,10 @@
 import { Context, Duration, Effect, Fiber, Layer, Schema, Stream } from "effect"
 import type { PlatformError } from "effect/PlatformError"
-import { ChildProcess } from "effect/unstable/process"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { ChildProcess } from "effect/process"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { CrossSpawnSpawner } from "./cross-spawn-spawner"
 
-export class AppProcessError extends Schema.TaggedErrorClass<AppProcessError>()("AppProcessError", {
+export class AppProcessError extends Schema.TaggedError<AppProcessError>()("AppProcessError", {
   command: Schema.String,
   exitCode: Schema.optional(Schema.Number),
   stderr: Schema.optional(Schema.String),
@@ -13,7 +13,7 @@ export class AppProcessError extends Schema.TaggedErrorClass<AppProcessError>()(
   // 读成干净成功。超时时 exitCode 缺席(我们不知道它是多少),只有 timedOut 为 true。
   // 决策与实证:docs/notes/implemented/bug-fix/2026-08-21-subprocess-timeout-git.md
   timedOut: Schema.optional(Schema.Boolean),
-  cause: Schema.optional(Schema.Defect),
+  cause: Schema.optional(Schema.Defect()),
 }) {}
 
 /** 这次失败是不是我们自己的超时砍的。调用方据此区分"命令说不"和"命令没说话"。 */

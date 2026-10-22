@@ -1,4 +1,4 @@
-import * as Sse from "effect/unstable/encoding/Sse"
+import * as Sse from "effect/encoding/Sse"
 
 /**
  * 260904 cc SSE 事件体的序列化，**按事件对象缓存**（黄档 A4 的服务端那一半）。

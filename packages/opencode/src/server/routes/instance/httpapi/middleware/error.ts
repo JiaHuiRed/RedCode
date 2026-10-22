@@ -1,7 +1,7 @@
 import { NamedError } from "@redcode-ai/core/util/error"
 import * as Log from "@redcode-ai/core/util/log"
 import { Cause, Effect } from "effect"
-import { HttpRouter, HttpServerError, HttpServerRespondable, HttpServerResponse } from "effect/unstable/http"
+import { HttpRouter, HttpServerError, HttpServerRespondable, HttpServerResponse } from "effect/http"
 
 const log = Log.create({ service: "server" })
 

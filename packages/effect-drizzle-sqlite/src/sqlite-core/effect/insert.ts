@@ -10,17 +10,18 @@ import type { SQLiteDialect } from "drizzle-orm/sqlite-core/dialect"
 import type { IndexColumn } from "drizzle-orm/sqlite-core/indexes"
 import type {
   SQLiteInsertConfig,
-  SQLiteInsertSelectQueryBuilder,
+  SQLiteInsertSelection,
   SQLiteInsertValue,
 } from "drizzle-orm/sqlite-core/query-builders/insert"
 import type { SelectedFieldsFlat } from "drizzle-orm/sqlite-core/query-builders/select.types"
 import type { PreparedQueryConfig } from "drizzle-orm/sqlite-core/session"
 import { SQLiteTable } from "drizzle-orm/sqlite-core/table"
-import { extractUsedTable } from "drizzle-orm/sqlite-core/utils"
+import { usedTablesOf } from "drizzle-orm/used-tables"
 import type { Subquery } from "drizzle-orm/subquery"
 import { type DrizzleTypeError, haveSameKeys } from "drizzle-orm/utils"
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core/columns/common"
 import { QueryBuilder } from "drizzle-orm/sqlite-core/query-builders/query-builder"
+import type { TypedQueryBuilder } from "drizzle-orm/query-builders/query-builder"
 import type { SQLiteUpdateSetSource } from "drizzle-orm/sqlite-core/query-builders/update"
 import { getTableColumnsRuntime, mapUpdateSet, orderSelectedFields } from "../../internal/drizzle-utils"
 import type { SQLiteEffectPreparedQuery, SQLiteEffectSession } from "./session"
@@ -166,20 +167,20 @@ export class SQLiteEffectInsertBuilder<
   }
 
   select(
-    selectQuery: (qb: QueryBuilder) => SQLiteInsertSelectQueryBuilder<TTable>,
+    selectQuery: (qb: QueryBuilder) => TypedQueryBuilder<SQLiteInsertSelection<TTable>>,
   ): SQLiteEffectInsertBase<TTable, TRunResult, undefined, false, never, TEffectHKT>
   select(
     selectQuery: (qb: QueryBuilder) => SQL,
   ): SQLiteEffectInsertBase<TTable, TRunResult, undefined, false, never, TEffectHKT>
   select(selectQuery: SQL): SQLiteEffectInsertBase<TTable, TRunResult, undefined, false, never, TEffectHKT>
   select(
-    selectQuery: SQLiteInsertSelectQueryBuilder<TTable>,
+    selectQuery: TypedQueryBuilder<SQLiteInsertSelection<TTable>>,
   ): SQLiteEffectInsertBase<TTable, TRunResult, undefined, false, never, TEffectHKT>
   select(
     selectQuery:
       | SQL
-      | SQLiteInsertSelectQueryBuilder<TTable>
-      | ((qb: QueryBuilder) => SQLiteInsertSelectQueryBuilder<TTable> | SQL),
+      | TypedQueryBuilder<SQLiteInsertSelection<TTable>>
+      | ((qb: QueryBuilder) => TypedQueryBuilder<SQLiteInsertSelection<TTable>> | SQL),
   ): SQLiteEffectInsertBase<TTable, TRunResult, undefined, false, never, TEffectHKT> {
     const select = typeof selectQuery === "function" ? selectQuery(new QueryBuilder()) : selectQuery
 
@@ -314,7 +315,7 @@ export class SQLiteEffectInsertBase<
       undefined,
       {
         type: "insert",
-        tables: extractUsedTable(this.config.table),
+        tables: () => usedTablesOf(this.config.table),
       },
     ) as SQLiteEffectInsertPrepare<this, TEffectHKT>
   }

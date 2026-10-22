@@ -3,7 +3,7 @@ import { SessionMessage } from "@redcode-ai/core/session-message"
 import { Prompt } from "@redcode-ai/core/session-prompt"
 import { SessionV2 } from "@/v2/session"
 import { Schema } from "effect"
-import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
 import {
   InvalidCursorError,
   InvalidRequestError,

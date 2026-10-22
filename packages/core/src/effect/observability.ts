@@ -1,6 +1,6 @@
 import { Effect, Layer, Logger } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
-import { OtlpLogger, OtlpSerialization } from "effect/unstable/observability"
+import { FetchHttpClient } from "effect/http"
+import { OtlpExporter, OtlpLogger, OtlpSerialization } from "effect/observability"
 import * as EffectLogger from "./logger"
 import { Flag } from "../flag/flag"
 import { InstallationChannel, InstallationVersion } from "../installation/version"
@@ -95,7 +95,7 @@ const traces = async () => {
   }))
 }
 
-export const layer = !base
+const signals = !base
   ? EffectLogger.layer
   : Layer.unwrap(
       Effect.gen(function* () {
@@ -103,5 +103,7 @@ export const layer = !base
         return Layer.mergeAll(trace, logs())
       }),
     )
+
+export const layer = signals.pipe(Layer.provideMerge(OtlpExporter.layerFlusher))
 
 export const Observability = { enabled, layer }

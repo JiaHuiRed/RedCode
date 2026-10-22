@@ -15,7 +15,7 @@ import { SQL } from "drizzle-orm/sql/sql"
 import type { ColumnsSelection, SQLWrapper } from "drizzle-orm/sql/sql"
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core/columns"
 import type { SQLiteDialect } from "drizzle-orm/sqlite-core/dialect"
-import { SQLiteSelectQueryBuilderBase } from "drizzle-orm/sqlite-core/query-builders/select"
+import { SQLiteSelectBase } from "drizzle-orm/sqlite-core/query-builders/select"
 import type {
   CreateSQLiteSelectFromBuilderMode,
   SelectedFields,
@@ -28,6 +28,7 @@ import { Subquery } from "drizzle-orm/subquery"
 import { type Assume, getTableColumns } from "drizzle-orm/utils"
 import { getViewSelectedFieldsRuntime, orderSelectedFields } from "../../internal/drizzle-utils"
 import type { SQLiteEffectPreparedQuery, SQLiteEffectSession } from "./session"
+import { usedTablesOf } from "drizzle-orm/used-tables"
 
 export type SQLiteEffectSelectPrepare<
   T extends AnySQLiteEffectSelect,
@@ -94,11 +95,11 @@ export class SQLiteEffectSelectBuilder<
         >,
         TEffectHKT
       >
-    : CreateSQLiteSelectFromBuilderMode<
-        TBuilderMode,
-        GetSelectTableName<TFrom>,
-        "async",
-        TRunResult,
+      : CreateSQLiteSelectFromBuilderMode<
+          TBuilderMode,
+          SQLiteEffectSelectHKT<TEffectHKT>,
+          GetSelectTableName<TFrom>,
+          TRunResult,
         TSelection extends undefined ? GetSelectTableSelection<TFrom> : TSelection,
         TSelection extends undefined ? "single" : "partial"
       > {
@@ -166,10 +167,9 @@ export interface SQLiteEffectSelectBase<
   TEffectHKT extends QueryEffectHKTBase = QueryEffectHKTBase,
 >
   extends
-    SQLiteSelectQueryBuilderBase<
+    SQLiteSelectBase<
       SQLiteEffectSelectHKT<TEffectHKT>,
       TTableName,
-      "async",
       TRunResult,
       TSelection,
       TSelectMode,
@@ -195,10 +195,9 @@ export class SQLiteEffectSelectBase<
   TSelectedFields extends ColumnsSelection = BuildSubquerySelection<TSelection, TNullabilityMap>,
   TEffectHKT extends QueryEffectHKTBase = QueryEffectHKTBase,
 >
-  extends SQLiteSelectQueryBuilderBase<
+  extends SQLiteSelectBase<
     SQLiteEffectSelectHKT<TEffectHKT>,
     TTableName,
-    "async",
     TRunResult,
     TSelection,
     TSelectMode,
@@ -217,7 +216,7 @@ export class SQLiteEffectSelectBase<
   }
 
   /** @internal */
-  getSQL(): SQL {
+  override getSQL(): SQL {
     return this.dialect.buildSelectQuery(this.effectConfig)
   }
 
@@ -234,7 +233,7 @@ export class SQLiteEffectSelectBase<
       undefined,
       {
         type: "select",
-        tables: [...this.usedTables],
+        tables: () => usedTablesOf(this.getSQL()),
       },
       this.cacheConfig,
     )
@@ -242,7 +241,7 @@ export class SQLiteEffectSelectBase<
     return query as ReturnType<this["prepare"]>
   }
 
-  $withCache(config?: { config?: CacheConfig; tag?: string; autoInvalidate?: boolean } | false) {
+  override $withCache(config?: { config?: CacheConfig; tag?: string; autoInvalidate?: boolean } | false) {
     this.cacheConfig =
       config === undefined
         ? { config: {}, enabled: true, autoInvalidate: true }

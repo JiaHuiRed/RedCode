@@ -26,7 +26,7 @@ import { ToolRegistry } from "@/tool/registry"
 import { MCP } from "../mcp"
 import { LSP } from "@/lsp/lsp"
 import { ulid } from "ulid"
-import { ChildProcessSpawner } from "effect/unstable/process"
+import { ChildProcessSpawner } from "effect/process"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 import * as Stream from "effect/Stream"
 import { Command } from "../command"
@@ -1223,7 +1223,7 @@ export const layer = Layer.effect(
         )
       }).pipe(Effect.map((items) => items.flat()))
 
-      const parsed = decodeMessageInfo(info, { errors: "all", propertyOrder: "original" })
+      const parsed = decodeMessageInfo(info, { errors: "all" })
       if (Exit.isFailure(parsed)) {
         log.error("invalid user message before save", {
           sessionID: input.sessionID,
@@ -1234,7 +1234,7 @@ export const layer = Layer.effect(
         })
       }
       parts.forEach((part, index) => {
-        const p = decodeMessagePart(part, { errors: "all", propertyOrder: "original" })
+        const p = decodeMessagePart(part, { errors: "all" })
         if (Exit.isSuccess(p)) return
         log.error("invalid user part before save", {
           sessionID: input.sessionID,

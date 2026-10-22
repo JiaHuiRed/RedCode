@@ -6,7 +6,7 @@ import { SqliteClient } from "@effect/sql-sqlite-bun"
 import { eq, sql } from "drizzle-orm"
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core"
 import { Effect } from "effect"
-import type { SqlClient as SqlClientService } from "effect/unstable/sql/SqlClient"
+import type { SqlClient as SqlClientService } from "effect/sql/SqlClient"
 import { EffectDrizzleSqlite } from "../src"
 
 const users = sqliteTable("users", {

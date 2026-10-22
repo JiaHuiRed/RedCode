@@ -1,7 +1,7 @@
 import path from "path"
 import os from "os"
 import { randomUUID } from "crypto"
-import { Context, Effect, Function, Layer, Option, Schedule, Schema } from "effect"
+import { Context, Duration, Effect, Function, Layer, Option, Schedule, Schema } from "effect"
 import type { FileSystem, Scope } from "effect"
 import type { PlatformError } from "effect/PlatformError"
 import { AppFileSystem } from "../filesystem"
@@ -13,17 +13,17 @@ export namespace EffectFlock {
   // Errors
   // ---------------------------------------------------------------------------
 
-  export class LockTimeoutError extends Schema.TaggedErrorClass<LockTimeoutError>()("LockTimeoutError", {
+  export class LockTimeoutError extends Schema.TaggedError<LockTimeoutError>()("LockTimeoutError", {
     key: Schema.String,
   }) {}
 
-  export class LockCompromisedError extends Schema.TaggedErrorClass<LockCompromisedError>()("LockCompromisedError", {
+  export class LockCompromisedError extends Schema.TaggedError<LockCompromisedError>()("LockCompromisedError", {
     detail: Schema.String,
   }) {}
 
-  class ReleaseError extends Schema.TaggedErrorClass<ReleaseError>()("ReleaseError", {
+  class ReleaseError extends Schema.TaggedError<ReleaseError>()("ReleaseError", {
     detail: Schema.String,
-    cause: Schema.optional(Schema.Defect),
+    cause: Schema.optional(Schema.Defect()),
   }) {
     override get message() {
       return this.detail
@@ -31,7 +31,7 @@ export namespace EffectFlock {
   }
 
   /** Internal: signals "lock is held, retry later". Never leaks to callers. */
-  class NotAcquired extends Schema.TaggedErrorClass<NotAcquired>()("NotAcquired", {}) {}
+  class NotAcquired extends Schema.TaggedError<NotAcquired>()("NotAcquired", {}) {}
 
   export type LockError = LockTimeoutError | LockCompromisedError
 
@@ -46,7 +46,9 @@ export namespace EffectFlock {
   const HEARTBEAT_MS = Math.max(100, Math.floor(STALE_MS / 3))
 
   const retrySchedule = Schedule.exponential(BASE_DELAY_MS, 1.7).pipe(
-    Schedule.either(Schedule.spaced(MAX_DELAY_MS)),
+    Schedule.modifyDelay(({ duration }) =>
+      Effect.succeed(Duration.min(duration, Duration.millis(MAX_DELAY_MS))),
+    ),
     Schedule.jittered,
     Schedule.while((meta) => meta.elapsed < TIMEOUT_MS),
   )

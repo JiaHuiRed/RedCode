@@ -1,14 +1,14 @@
 /* oxlint-disable */
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import { SqlClient } from "effect/unstable/sql/SqlClient"
+import { SqlClient } from "effect/sql/SqlClient"
 import { EffectCache } from "drizzle-orm/cache/core/cache-effect"
 import { EffectLogger } from "drizzle-orm/effect-core"
 import { entityKind } from "drizzle-orm/entity"
 import type { AnyRelations, EmptyRelations } from "drizzle-orm/relations"
-import { SQLiteAsyncDialect } from "drizzle-orm/sqlite-core/dialect"
+import { SQLiteDialect } from "drizzle-orm/sqlite-core/dialect"
 import { SQLiteEffectDatabase } from "../sqlite-core/effect/db"
-import type { DrizzleConfig } from "drizzle-orm/utils"
+import type { DrizzleSQLiteConfig } from "drizzle-orm/sqlite-core"
 import { jitCompatCheck } from "../internal/drizzle-utils"
 import { type EffectSQLiteQueryEffectHKT, type EffectSQLiteRunResult, EffectSQLiteSession } from "./session"
 
@@ -21,8 +21,8 @@ export class EffectSQLiteDatabase<TRelations extends AnyRelations = EmptyRelatio
 }
 
 export type EffectDrizzleSQLiteConfig<TRelations extends AnyRelations = EmptyRelations> = Omit<
-  DrizzleConfig<Record<string, never>, TRelations>,
-  "cache" | "logger" | "schema"
+  DrizzleSQLiteConfig<TRelations>,
+  "cache" | "logger"
 >
 
 export const DefaultServices = Layer.merge(EffectCache.Default, EffectLogger.Default)
@@ -53,7 +53,7 @@ export const make = Effect.fn("SQLiteDrizzle.make")(function* <TRelations extend
   const cache = yield* EffectCache
   const logger = yield* EffectLogger
 
-  const dialect = new SQLiteAsyncDialect()
+  const dialect = new SQLiteDialect()
   const relations = config.relations ?? ({} as TRelations)
   const session = new EffectSQLiteSession(client, dialect, relations, {
     logger,

@@ -1,7 +1,7 @@
 import { Auth } from "@/auth"
 import { ProviderID } from "@/provider/schema"
 import { Schema } from "effect"
-import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/http-api"
 import { described } from "./metadata"
 
 const AuthParams = Schema.Struct({

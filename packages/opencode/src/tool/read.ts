@@ -45,7 +45,7 @@ const MAX_PDF_BASE64_BYTES = 5 * 1024 * 1024
 const MAX_PDF_FILE_BYTES = Math.floor((MAX_PDF_BASE64_BYTES * 3) / 4)
 const mb = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 
-class ReadStop extends Schema.TaggedErrorClass<ReadStop>()("ReadStop", {}) {}
+class ReadStop extends Schema.TaggedError<ReadStop>()("ReadStop", {}) {}
 
 // --- 折叠重读 ---------------------------------------------------------------
 // 260827 cc 实测每周 928 次「同会话内重复 read 同一文件」，其中 902 次文件确实变了，

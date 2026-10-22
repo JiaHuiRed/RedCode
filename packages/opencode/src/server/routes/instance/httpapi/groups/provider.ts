@@ -3,7 +3,7 @@ import { Provider } from "@/provider/provider"
 import * as ProviderQuota from "@/provider/quota"
 import { ProviderID } from "@/provider/schema"
 import { Schema } from "effect"
-import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
 import { WorkspaceRoutingMiddleware, WorkspaceRoutingQuery } from "../middleware/workspace-routing"
@@ -18,7 +18,7 @@ const ProviderAuthErrorName = Schema.Union([
   Schema.Literal("ProviderAuthOauthCallbackFailed"),
   Schema.Literal("ProviderAuthValidationFailed"),
 ])
-export class ProviderAuthApiError extends Schema.ErrorClass<ProviderAuthApiError>("ProviderAuthError")(
+export class ProviderAuthApiError extends Schema.Error<ProviderAuthApiError>("ProviderAuthError")(
   {
     name: ProviderAuthErrorName,
     data: Schema.Struct({

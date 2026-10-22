@@ -1,7 +1,7 @@
 import { Soul } from "@/soul"
 import { resolveDefaultSoul } from "@/session/session"
 import { Effect } from "effect"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { InstanceHttpApi } from "../api"
 import { notFound } from "../errors"
 

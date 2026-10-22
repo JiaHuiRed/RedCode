@@ -15,8 +15,8 @@ export type DecodedCredentials = {
 }
 
 export class Config extends ConfigService.Service<Config>()("@redcode/ServerAuthConfig", {
-  password: EffectConfig.string("REDCODE_SERVER_PASSWORD").pipe(EffectConfig.option),
-  username: EffectConfig.string("REDCODE_SERVER_USERNAME").pipe(EffectConfig.withDefault("redcode")),
+  password: EffectConfig.String("REDCODE_SERVER_PASSWORD").pipe(EffectConfig.option),
+  username: EffectConfig.String("REDCODE_SERVER_USERNAME").pipe(EffectConfig.withDefault("redcode")),
 }) {}
 
 export type Info = Context.Service.Shape<typeof Config>

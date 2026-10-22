@@ -3,7 +3,7 @@ import { existsSync, realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect, Exit, Stream } from "effect"
-import { ChildProcess } from "effect/unstable/process"
+import { ChildProcess } from "effect/process"
 import { AppProcess } from "@redcode-ai/core/process"
 import { testEffect } from "../lib/effect"
 

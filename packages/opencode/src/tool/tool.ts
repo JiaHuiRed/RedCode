@@ -16,7 +16,7 @@ interface Metadata {
  * error class makes it matchable upstream, and its `message` getter produces
  * the model-facing prose that the AI SDK feeds back as the tool result.
  */
-export class InvalidArgumentsError extends Schema.TaggedErrorClass<InvalidArgumentsError>()(
+export class InvalidArgumentsError extends Schema.TaggedError<InvalidArgumentsError>()(
   "ToolInvalidArgumentsError",
   {
     tool: Schema.String,
@@ -34,7 +34,7 @@ export class InvalidArgumentsError extends Schema.TaggedErrorClass<InvalidArgume
 // 整轮不再被一个挂死的工具吊死。Effect fiber 中断是协作式的：不配合取消的底层操作
 // （如已 spawn 的子进程）超时后可能继续跑完，但模型侧已解锁——防挂死是目的，不是硬杀。
 // 260930 Red 取消作用域：docs/notes/implemented/bug-fix/2026-09-30-tool-deadline-abort-scope.md
-export class TimeoutError extends Schema.TaggedErrorClass<TimeoutError>()("ToolTimeoutError", {
+export class TimeoutError extends Schema.TaggedError<TimeoutError>()("ToolTimeoutError", {
   tool: Schema.String,
   ms: Schema.Number,
 }) {

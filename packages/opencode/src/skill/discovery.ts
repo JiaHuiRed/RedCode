@@ -1,6 +1,6 @@
 import { NodePath } from "@effect/platform-node"
 import { Effect, Layer, Path, Schema, Context } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { withTransientReadRetry } from "@/util/effect-http-client"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { Global } from "@redcode-ai/core/global"

@@ -1,7 +1,7 @@
 import { NodeFileSystem } from "@effect/platform-node"
 import { HttpRecorder } from "@redcode-ai/http-recorder"
 import { Layer } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import * as path from "node:path"
 import { fileURLToPath } from "node:url"
 import { LLMClient, RequestExecutor } from "../src/route"

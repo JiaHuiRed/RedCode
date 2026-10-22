@@ -4,7 +4,7 @@
 import { describe, expect } from "bun:test"
 import { Duration, Effect, Exit } from "effect"
 import * as TestClock from "effect/testing/TestClock"
-import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { makeRequestLogging, type SlowRequestRecord } from "@/server/server"
 import { it } from "../lib/effect"
 

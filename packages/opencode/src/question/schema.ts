@@ -3,7 +3,7 @@ import { Schema } from "effect"
 import { Identifier } from "@/id/id"
 import { Newtype } from "@redcode-ai/core/schema"
 
-export class QuestionID extends Newtype<QuestionID>()("QuestionID", Schema.String.check(Schema.isStartsWith("que"))) {
+export class QuestionID extends Newtype<QuestionID>()("QuestionID", Schema.String.check(Schema.isStartingWith("que"))) {
   static ascending(id?: string): QuestionID {
     return this.make(Identifier.ascending("question", id))
   }

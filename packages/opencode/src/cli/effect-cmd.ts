@@ -31,7 +31,7 @@ function findProjectRoot(startDir: string): string {
  * formatter in `src/cli/error.ts` (FormatError), so the existing top-level
  * catch + cleanup in `src/index.ts` runs normally.
  */
-export class CliError extends Schema.TaggedErrorClass<CliError>()("CliError", {
+export class CliError extends Schema.TaggedError<CliError>()("CliError", {
   message: Schema.String,
   exitCode: Schema.optional(Schema.Number),
 }) {}

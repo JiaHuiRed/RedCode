@@ -2,7 +2,7 @@
 import { Cause, Context, Effect, Exit, Latch } from "effect"
 import * as Stream from "effect/Stream"
 import { ulid } from "ulid"
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
+import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { SessionID, MessageID, PartID } from "../schema"
 import { ProviderID, ModelID } from "../../provider/schema"
 import { MessageV2 } from "../message-v2"

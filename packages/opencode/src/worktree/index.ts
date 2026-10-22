@@ -14,7 +14,7 @@ import { BusEvent } from "@/bus/bus-event"
 import { GlobalBus } from "@/bus/global"
 import { Git } from "@/git"
 import { DateTime, Duration, Effect, Exit, Layer, Option, Path, Schema, Scope, Context } from "effect"
-import { ChildProcess } from "effect/unstable/process"
+import { ChildProcess } from "effect/process"
 import { NodePath } from "@effect/platform-node"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { AppProcess } from "@redcode-ai/core/process"
@@ -69,37 +69,37 @@ export const ResetInput = Schema.Struct({
 }).annotate({ identifier: "WorktreeResetInput" })
 export type ResetInput = Schema.Schema.Type<typeof ResetInput>
 
-export class NotGitError extends Schema.TaggedErrorClass<NotGitError>()("WorktreeNotGitError", {
+export class NotGitError extends Schema.TaggedError<NotGitError>()("WorktreeNotGitError", {
   message: Schema.String,
 }) {}
 
-export class NameGenerationFailedError extends Schema.TaggedErrorClass<NameGenerationFailedError>()(
+export class NameGenerationFailedError extends Schema.TaggedError<NameGenerationFailedError>()(
   "WorktreeNameGenerationFailedError",
   {
     message: Schema.String,
   },
 ) {}
 
-export class CreateFailedError extends Schema.TaggedErrorClass<CreateFailedError>()("WorktreeCreateFailedError", {
+export class CreateFailedError extends Schema.TaggedError<CreateFailedError>()("WorktreeCreateFailedError", {
   message: Schema.String,
 }) {}
 
-export class StartCommandFailedError extends Schema.TaggedErrorClass<StartCommandFailedError>()(
+export class StartCommandFailedError extends Schema.TaggedError<StartCommandFailedError>()(
   "WorktreeStartCommandFailedError",
   {
     message: Schema.String,
   },
 ) {}
 
-export class RemoveFailedError extends Schema.TaggedErrorClass<RemoveFailedError>()("WorktreeRemoveFailedError", {
+export class RemoveFailedError extends Schema.TaggedError<RemoveFailedError>()("WorktreeRemoveFailedError", {
   message: Schema.String,
 }) {}
 
-export class ResetFailedError extends Schema.TaggedErrorClass<ResetFailedError>()("WorktreeResetFailedError", {
+export class ResetFailedError extends Schema.TaggedError<ResetFailedError>()("WorktreeResetFailedError", {
   message: Schema.String,
 }) {}
 
-export class ListFailedError extends Schema.TaggedErrorClass<ListFailedError>()("WorktreeListFailedError", {
+export class ListFailedError extends Schema.TaggedError<ListFailedError>()("WorktreeListFailedError", {
   message: Schema.String,
 }) {}
 

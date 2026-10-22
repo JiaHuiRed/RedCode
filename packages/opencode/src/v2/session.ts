@@ -61,18 +61,18 @@ export class Info extends Schema.Class<Info>("Session.Info")({
   */
 }) {}
 
-export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Session.NotFoundError", {
+export class NotFoundError extends Schema.TaggedError<NotFoundError>()("Session.NotFoundError", {
   sessionID: SessionID,
 }) {}
 
-export class OperationUnavailableError extends Schema.TaggedErrorClass<OperationUnavailableError>()(
+export class OperationUnavailableError extends Schema.TaggedError<OperationUnavailableError>()(
   "Session.OperationUnavailableError",
   {
     operation: Schema.Literals(["prompt", "compact", "wait"]),
   },
 ) {}
 
-export class MessageDecodeError extends Schema.TaggedErrorClass<MessageDecodeError>()("Session.MessageDecodeError", {
+export class MessageDecodeError extends Schema.TaggedError<MessageDecodeError>()("Session.MessageDecodeError", {
   sessionID: SessionID,
   messageID: SessionMessage.ID,
 }) {}

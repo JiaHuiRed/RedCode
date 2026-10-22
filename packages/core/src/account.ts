@@ -42,9 +42,9 @@ export class Info extends Schema.Class<Info>("AccountV2.Info")({
   credential: Credential,
 }) {}
 
-export class FileWriteError extends Schema.TaggedErrorClass<FileWriteError>()("AccountV2.FileWriteError", {
+export class FileWriteError extends Schema.TaggedError<FileWriteError>()("AccountV2.FileWriteError", {
   operation: Schema.Union([Schema.Literal("migrate"), Schema.Literal("write")]),
-  cause: Schema.Defect,
+  cause: Schema.Defect(),
 }) {}
 
 export type Error = FileWriteError

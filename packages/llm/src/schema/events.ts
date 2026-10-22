@@ -3,6 +3,11 @@ import { ContentBlockID, FinishReason, ProtocolID, ProviderMetadata, RouteID, To
 import { ModelSchema } from "./options"
 import { ToolResultValue } from "./messages"
 
+const withHelpers = <S extends object, H extends object>(schema: S, helpers: H): S & H => {
+  Object.defineProperties(schema, Object.getOwnPropertyDescriptors(helpers))
+  return schema as S & H
+}
+
 /**
  * Token usage reported by an LLM provider.
  *
@@ -173,7 +178,7 @@ export const ToolError = Schema.Struct({
   id: ToolCallID,
   name: Schema.String,
   message: Schema.String,
-  error: Schema.optional(Schema.Defect),
+  error: Schema.optional(Schema.Defect()),
   providerMetadata: Schema.optional(ProviderMetadata),
 }).annotate({ identifier: "LLM.Event.ToolError" })
 export type ToolError = Schema.Schema.Type<typeof ToolError>
@@ -236,7 +241,7 @@ const toolCallID = (value: ToolCallID | string) => ToolCallID.make(value)
  * Lets consumers write `events.filter(LLMEvent.is.toolCall)` instead of
  * `events.filter(LLMEvent.guards["tool-call"])`.
  */
-export const LLMEvent = Object.assign(llmEventTagged, {
+export const LLMEvent = withHelpers(llmEventTagged, {
   stepStart: StepStart.make,
   textStart: (input: WithID<TextStart, ContentBlockID>) => TextStart.make({ ...input, id: contentBlockID(input.id) }),
   textDelta: (input: WithID<TextDelta, ContentBlockID>) => TextDelta.make({ ...input, id: contentBlockID(input.id) }),

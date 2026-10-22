@@ -3,8 +3,8 @@ import "./init-projectors"
 import { NodeHttpServer } from "@effect/platform-node"
 import * as Log from "@redcode-ai/core/util/log"
 import { Clock, ConfigProvider, Context, Effect, Exit, Layer, Scope } from "effect"
-import { HttpMiddleware, HttpRouter, HttpServer, HttpServerRequest } from "effect/unstable/http"
-import { OpenApi } from "effect/unstable/httpapi"
+import { HttpMiddleware, HttpRouter, HttpServer, HttpServerRequest } from "effect/http"
+import { OpenApi } from "effect/http-api"
 import { createServer } from "node:http"
 import { MDNS } from "./mdns"
 import { HttpApiApp } from "./routes/instance/httpapi/server"
@@ -82,7 +82,7 @@ type ListenOptions = CorsOptions & {
   mdnsDomain?: string
 }
 type ListenerState = {
-  scope: Scope.Scope
+  scope: Scope.Closeable
   server: Context.Service.Shape<typeof HttpServer.HttpServer>
   http: ListenerServer
   websockets: WebSocketTracker.Interface
@@ -184,9 +184,10 @@ function startListener(opts: ListenOptions, port: number) {
 
 function tcpAddress(state: ListenerState) {
   return Effect.gen(function* () {
-    if (state.server.address._tag === "TcpAddress") return state.server.address
+    const address = state.server.address
+    if (address._tag === "InetAddressV4" || address._tag === "InetAddressV6") return address
     yield* Scope.close(state.scope, Exit.void).pipe(Effect.ignore)
-    return yield* Effect.die(new Error(`Unexpected HttpServer address tag: ${state.server.address._tag}`))
+    return yield* Effect.die(new Error(`Unexpected HttpServer address tag: ${address._tag}`))
   })
 }
 

@@ -9,8 +9,8 @@ import {
   HttpServer,
   HttpServerRequest,
   HttpServerResponse,
-} from "effect/unstable/http"
-import * as Socket from "effect/unstable/socket/Socket"
+} from "effect/http"
+import * as Socket from "effect/socket/Socket"
 import Http from "node:http"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
@@ -192,14 +192,21 @@ const listenRemoteWebSocket = () =>
 const echoWebSocket = (request: HttpServerRequest.HttpServerRequest) =>
   Effect.gen(function* () {
     const socket = yield* Effect.orDie(request.upgrade)
-    const write = yield* socket.writer
-    yield* socket
-      .runRaw((message) => write(`echo:${String(message)}`), {
-        onOpen: write(`protocol:${request.headers["sec-websocket-protocol"] ?? "none"}`).pipe(
-          Effect.catch(() => Effect.void),
-        ),
-      })
-      .pipe(Effect.catch(() => Effect.void))
+    const writer = yield* socket.writer
+    // 261022 Red: effect 4.0.5 移除 socket.runRaw，消费统一走 reader.pull 循环
+    const pump = Effect.gen(function* () {
+      const { pull } = yield* socket.reader
+      yield* writer
+        .write(`protocol:${request.headers["sec-websocket-protocol"] ?? "none"}`)
+        .pipe(Effect.catch(() => Effect.void))
+      while (true) {
+        const batch = yield* pull
+        for (const message of batch) {
+          yield* writer.write(`echo:${String(message)}`)
+        }
+      }
+    })
+    yield* pump.pipe(Effect.catch(() => Effect.void))
     return HttpServerResponse.empty()
   })
 
@@ -386,17 +393,25 @@ describe("HttpApi workspace routing middleware", () => {
 
       const socket = yield* Socket.makeWebSocket(
         `${(yield* serverUrl).replace(/^http/, "ws")}/probe?workspace=${workspace.id}`,
-        {
-          closeCodeIsError: () => false,
-          protocols: "chat",
-        },
+        { protocols: "chat" },
       )
       const messages = yield* Queue.unbounded<string>()
-      yield* socket.runRaw((message) => Queue.offer(messages, String(message))).pipe(Effect.forkScoped)
-      const write = yield* socket.writer
+      // 261022 Red: effect 4.0.5 移除 socket.runRaw，消费统一走 reader.pull 循环
+      yield* Effect.gen(function* () {
+        const { pull } = yield* socket.reader
+        while (true) {
+          const batch = yield* pull
+          for (const message of batch) {
+            yield* Queue.offer(messages, String(message))
+          }
+        }
+      })
+        .pipe(Effect.catch(() => Effect.void))
+        .pipe(Effect.forkScoped)
+      const writer = yield* socket.writer
 
       expect(yield* Queue.take(messages)).toBe("protocol:chat")
-      yield* write("hello")
+      yield* writer.write("hello")
       expect(yield* Queue.take(messages)).toBe("echo:hello")
     }),
   )

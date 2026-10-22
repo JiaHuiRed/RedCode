@@ -26,7 +26,7 @@ import { Effect, Context, Layer, Schema } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import * as Option from "effect/Option"
-import * as OtelTracer from "@effect/opentelemetry/Tracer"
+import * as OtelTracer from "@effect/opentelemetry/OtelTracer"
 import { type DeepMutable } from "@redcode-ai/core/schema"
 
 // 260828 cc 三个子代理工种的**唯一定义来源**是 src/agent/definition/*.md：frontmatter 给

@@ -100,15 +100,15 @@ See `specs/effect/migration.md` for the compact pattern reference and examples.
 
 - Use `Schema.Class` for multi-field data.
 - Use branded schemas (`Schema.brand`) for single-value types.
-- Use `Schema.TaggedErrorClass` for typed errors.
-- Use `Schema.Defect` instead of `unknown` for defect-like causes.
+- Use `Schema.TaggedError` for typed errors.
+- Use `Schema.Defect()` instead of `unknown` for defect-like causes.
 - Use `Schema.Literals(["a", "b"])` for unions of literals (plural), `Schema.Literal(1)` for single literals.
 - Use `Schema.NullOr(X)` for `X | null`; `Schema.optional(X)` for `X?`.
 - In `Effect.gen` / `Effect.fn`, prefer `yield* new MyError(...)` over `yield* Effect.fail(new MyError(...))` for direct early-failure branches.
 
 ## Error dispatch / recovery — v4 idioms
 
-- **`Effect.catchReasons(errorTag, cases, orElse?)`** — the v4-canonical way to dispatch on a `Schema.TaggedErrorClass` reason union. Each entry catches one reason `_tag`; the optional `orElse` handles unmatched reasons. NEVER write manual `if (cause.reason instanceof X)` ladders inside a `catch` block — the Effect pipeline gives you exhaustive, type-safe narrowing for free.
+- **`Effect.catchReasons(errorTag, cases, orElse?)`** — the v4-canonical way to dispatch on a `Schema.TaggedError` reason union. Each entry catches one reason `_tag`; the optional `orElse` handles unmatched reasons. NEVER write manual `if (cause.reason instanceof X)` ladders inside a `catch` block — the Effect pipeline gives you exhaustive, type-safe narrowing for free.
 - **`Effect.catchTag(tag, handler)`** — for a single tagged error (e.g. `Effect.catchTag("PlatformError", ...)` to fold a platform error into a service error).
 - **`Effect.catch`** (renamed from v3 `Effect.catchAll`) — for catch-all.
 - **`Effect.die(error)`** — promote a recovered value into a defect that `runPromise` re-throws unchanged. Used in `catchReasons` handlers when the programmatic contract still wants the legacy `Error` class on the throw.
@@ -130,7 +130,7 @@ See `specs/effect/migration.md` for the compact pattern reference and examples.
 - To make a service's `init()` non-blocking, fork `InstanceState.get(state)` at the `init()` call site (e.g. `Effect.forkIn(scope)`), not by forking work inside the `InstanceState.make` closure. Forking inside the closure leaves state incomplete for other methods that read it.
 - `src/project/bootstrap.ts` already wraps every service `init()` in `Effect.forkDetach`, so `init()` is fire-and-forget in production. Keep `init()` methods synchronous internally; the caller controls concurrency.
 
-## Effect v4 beta API
+## Effect v4 API
 
 - `Effect.fork` and `Effect.forkDaemon` do not exist. Use `Effect.forkIn(scope)` to fork a fiber into a specific scope.
 

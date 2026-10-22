@@ -81,9 +81,9 @@ export type Info = Schema.Schema.Type<typeof Info>
 // (`decode(value)`) 产出的形状一致，set() 写回磁盘时序列化行为也一致。
 const decodeAuthRecord = Schema.decodeUnknownOption(Schema.Record(Schema.String, Info))
 
-export class AuthError extends Schema.TaggedErrorClass<AuthError>()("AuthError", {
+export class AuthError extends Schema.TaggedError<AuthError>()("AuthError", {
   message: Schema.String,
-  cause: Schema.optional(Schema.Defect),
+  cause: Schema.optional(Schema.Defect()),
 }) {}
 
 export interface Interface {

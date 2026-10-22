@@ -2,7 +2,19 @@ import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
 import * as OpenAIChat from "../src/protocols/openai-chat"
 import * as OpenAIResponses from "../src/protocols/openai-responses"
-import { ContentPart, LLMEvent, LLMRequest, Model, ModelID, ProviderID, Usage } from "../src/schema"
+import {
+  ContentPart,
+  LLMEvent,
+  LLMRequest,
+  Model,
+  ModelID,
+  ProviderID,
+  SystemPart,
+  ToolCallPart,
+  ToolResultPart,
+  ToolResultValue,
+  Usage,
+} from "../src/schema"
 import { ProviderShared } from "../src/protocols/shared"
 
 const model = new Model({
@@ -55,6 +67,26 @@ describe("llm schema", () => {
   test("content part tagged union exposes guards", () => {
     expect(ContentPart.guards.text({ type: "text", text: "hi" })).toBe(true)
     expect(ContentPart.guards.media({ type: "text", text: "hi" })).toBe(false)
+  })
+
+  test("extended schemas retain helper methods and Schema operations", () => {
+    const system = SystemPart.make("hello")
+    expect(SystemPart.content(system)).toEqual([system])
+    expect(Schema.isSchema(SystemPart)).toBe(true)
+    expect(Schema.decodeUnknownSync(SystemPart)(system)).toEqual(system)
+
+    expect(ToolResultValue.is({ type: "text", value: "hello" })).toBe(true)
+    expect(ToolResultValue.is({ type: "unknown", value: "hello" })).toBe(false)
+    expect(ToolResultValue.make("hello")).toEqual({ type: "json", value: "hello" })
+    expect(ToolCallPart.make({ id: "call", name: "lookup", input: {} }).type).toBe("tool-call")
+    expect(
+      ToolResultPart.make({ id: "call", name: "lookup", result: "done" }).result,
+    ).toEqual({ type: "json", value: "done" })
+
+    const finish = LLMEvent.finish({ reason: "stop" })
+    expect(LLMEvent.is.finish(finish)).toBe(true)
+    expect(Schema.is(LLMEvent)(finish)).toBe(true)
+    expect(decodeLLMEvent(finish)).toEqual(finish)
   })
 })
 

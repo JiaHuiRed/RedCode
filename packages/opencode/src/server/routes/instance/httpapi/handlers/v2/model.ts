@@ -1,7 +1,7 @@
 import { Catalog } from "@redcode-ai/core/catalog"
 import { PluginBoot } from "@redcode-ai/core/plugin/boot"
 import { Effect } from "effect"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { InstanceHttpApi } from "../../api"
 import { ServiceUnavailableError } from "../../errors"
 

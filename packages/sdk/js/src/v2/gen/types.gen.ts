@@ -5,825 +5,120 @@ export type ClientOptions = {
 }
 
 export type Event =
-  | EventTuiPromptAppend
-  | EventTuiCommandExecute
+  | EventTuiPromptAppend1
+  | EventTuiCommandExecute1
   | EventTuiToastShow1
-  | EventTuiSessionSelect
-  | EventServerConnected
-  | EventGlobalDisposed
-  | EventServerInstanceDisposed
-  | EventFileEdited
-  | EventFileWatcherUpdated
-  | EventProviderQuotaUpdated
-  | EventLspClientDiagnostics
-  | EventLspUpdated
-  | EventMessagePartDelta
-  | EventPermissionAsked
-  | EventPermissionReplied
-  | EventSessionDiff
-  | EventSessionError
+  | EventTuiSessionSelect1
+  | EventServerConnected1
+  | EventGlobalDisposed1
+  | EventServerInstanceDisposed1
+  | EventFileEdited1
+  | EventFileWatcherUpdated1
+  | EventProviderQuotaUpdated1
+  | EventLspClientDiagnostics1
+  | EventLspUpdated1
+  | EventMessagePartDelta1
+  | EventPermissionAsked1
+  | EventPermissionReplied1
+  | EventSessionDiff1
+  | EventSessionError1
   | EventSessionLoopDetected1
-  | EventQuestionAsked
-  | EventQuestionReplied
-  | EventQuestionRejected
-  | EventTodoUpdated
-  | EventGoalUpdated
-  | EventSessionStatus
-  | EventSessionIdle
-  | EventSessionCompacted
-  | EventMcpToolsChanged
-  | EventMcpBrowserOpenFailed
-  | EventCommandExecuted
-  | EventProjectUpdated
-  | EventProjectRemoved
-  | EventWorktreeReady
-  | EventWorktreeFailed
-  | EventVcsBranchUpdated
-  | EventWorkspaceReady
-  | EventWorkspaceFailed
-  | EventWorkspaceStatus
-  | EventPtyCreated
-  | EventPtyUpdated
-  | EventPtyExited
-  | EventPtyDeleted
-  | EventInstallationUpdated
-  | EventInstallationUpdateAvailable
-  | EventMessageUpdated
-  | EventMessageRemoved
-  | EventMessagePartUpdated
-  | EventMessagePartRemoved
-  | EventSessionCreated
-  | EventSessionUpdated
-  | EventSessionDeleted
-  | EventSessionNextAgentSwitched
-  | EventSessionNextModelSwitched
-  | EventSessionNextPrompted
-  | EventSessionNextSynthetic
-  | EventSessionNextShellStarted
-  | EventSessionNextShellEnded
-  | EventSessionNextStepStarted
-  | EventSessionNextStepEnded
-  | EventSessionNextStepFailed
-  | EventSessionNextTextStarted
-  | EventSessionNextTextDelta
-  | EventSessionNextTextEnded
-  | EventSessionNextReasoningStarted
-  | EventSessionNextReasoningDelta
-  | EventSessionNextReasoningEnded
-  | EventSessionNextToolInputStarted
-  | EventSessionNextToolInputDelta
-  | EventSessionNextToolInputEnded
-  | EventSessionNextToolCalled
-  | EventSessionNextToolProgress
-  | EventSessionNextToolSuccess
-  | EventSessionNextToolFailed
-  | EventSessionNextRetried
-  | EventSessionNextCompactionStarted
-  | EventSessionNextCompactionDelta
-  | EventSessionNextCompactionEnded
-  | EventCatalogModelUpdated
-  | EventModelsDevRefreshed
-  | EventAccountAdded
-  | EventAccountRemoved
-  | EventAccountSwitched
+  | EventQuestionAsked1
+  | EventQuestionReplied1
+  | EventQuestionRejected1
+  | EventTodoUpdated1
+  | EventGoalUpdated1
+  | EventSessionStatus1
+  | EventSessionIdle1
+  | EventSessionCompacted1
+  | EventMcpToolsChanged1
+  | EventMcpBrowserOpenFailed1
+  | EventCommandExecuted1
+  | EventProjectUpdated1
+  | EventProjectRemoved1
+  | EventWorktreeReady1
+  | EventWorktreeFailed1
+  | EventVcsBranchUpdated1
+  | EventWorkspaceReady1
+  | EventWorkspaceFailed1
+  | EventWorkspaceStatus1
+  | EventPtyCreated1
+  | EventPtyUpdated1
+  | EventPtyExited1
+  | EventPtyDeleted1
+  | EventInstallationUpdated1
+  | EventInstallationUpdateAvailable1
+  | EventMessageUpdated1
+  | EventMessageRemoved1
+  | EventMessagePartUpdated1
+  | EventMessagePartRemoved1
+  | EventSessionCreated1
+  | EventSessionUpdated1
+  | EventSessionDeleted1
+  | EventSessionNextAgentSwitched2
+  | EventSessionNextModelSwitched2
+  | EventSessionNextPrompted2
+  | EventSessionNextSynthetic2
+  | EventSessionNextShellStarted2
+  | EventSessionNextShellEnded2
+  | EventSessionNextStepStarted2
+  | EventSessionNextStepEnded2
+  | EventSessionNextStepFailed2
+  | EventSessionNextTextStarted2
+  | EventSessionNextTextDelta2
+  | EventSessionNextTextEnded2
+  | EventSessionNextReasoningStarted2
+  | EventSessionNextReasoningDelta2
+  | EventSessionNextReasoningEnded2
+  | EventSessionNextToolInputStarted2
+  | EventSessionNextToolInputDelta2
+  | EventSessionNextToolInputEnded2
+  | EventSessionNextToolCalled2
+  | EventSessionNextToolProgress2
+  | EventSessionNextToolSuccess2
+  | EventSessionNextToolFailed2
+  | EventSessionNextRetried2
+  | EventSessionNextCompactionStarted2
+  | EventSessionNextCompactionDelta2
+  | EventSessionNextCompactionEnded2
+  | EventCatalogModelUpdated1
+  | EventSessionNextAgentSwitched3
+  | EventSessionNextModelSwitched3
+  | EventSessionNextPrompted3
+  | EventSessionNextSynthetic3
+  | EventSessionNextShellStarted3
+  | EventSessionNextShellEnded3
+  | EventSessionNextStepStarted3
+  | EventSessionNextStepEnded3
+  | EventSessionNextStepFailed3
+  | EventSessionNextTextStarted3
+  | EventSessionNextTextDelta3
+  | EventSessionNextTextEnded3
+  | EventSessionNextReasoningStarted3
+  | EventSessionNextReasoningDelta3
+  | EventSessionNextReasoningEnded3
+  | EventSessionNextToolInputStarted3
+  | EventSessionNextToolInputDelta3
+  | EventSessionNextToolInputEnded3
+  | EventSessionNextToolCalled3
+  | EventSessionNextToolProgress3
+  | EventSessionNextToolSuccess3
+  | EventSessionNextToolFailed3
+  | EventSessionNextRetried3
+  | EventSessionNextCompactionStarted3
+  | EventSessionNextCompactionDelta3
+  | EventSessionNextCompactionEnded3
+  | EventModelsDevRefreshed1
+  | EventAccountAdded1
+  | EventAccountRemoved1
+  | EventAccountSwitched1
 
-export type OAuth = {
-  type: "oauth"
-  refresh: string
-  access: string
-  expires: number
-  accountId?: string
-  enterpriseUrl?: string
-}
-
-export type ApiAuth = {
-  type: "api"
-  key: string
-  metadata?: {
-    [key: string]: string
-  }
-}
-
-export type WellKnownAuth = {
-  type: "wellknown"
-  key: string
-  token: string
-}
-
-export type Auth = OAuth | ApiAuth | WellKnownAuth
-
-export type EffectHttpApiErrorBadRequest = {
-  _tag: "BadRequest"
-}
-
-export type InvalidRequestError = {
-  _tag: "InvalidRequestError"
-  message: string
-  kind?: string
-  field?: string
-}
-
-export type EventTuiPromptAppend = {
-  id: string
-  type: "tui.prompt.append"
-  properties: {
-    text: string
-  }
-}
-
-export type EventTuiCommandExecute = {
-  id: string
-  type: "tui.command.execute"
-  properties: {
-    command:
-      | "session.list"
-      | "session.new"
-      | "session.share"
-      | "session.interrupt"
-      | "session.compact"
-      | "session.page.up"
-      | "session.page.down"
-      | "session.line.up"
-      | "session.line.down"
-      | "session.half.page.up"
-      | "session.half.page.down"
-      | "session.first"
-      | "session.last"
-      | "prompt.clear"
-      | "prompt.submit"
-      | "agent.cycle"
-      | string
-  }
-}
-
-export type EventTuiToastShow = {
-  id: string
-  type: "tui.toast.show"
-  properties: {
-    title?: string
-    message: string
-    variant: "info" | "success" | "warning" | "error"
-    duration?: number
-  }
-}
-
-export type EventTuiSessionSelect = {
-  id: string
-  type: "tui.session.select"
-  properties: {
-    /**
-     * Session ID to navigate to
-     */
-    sessionID: string
-  }
-}
-
-export type ProviderQuota = {
-  providerID: string
-  accountID?: string
-  capturedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  planType: string
-  activeLimit?: string
-  primary?: {
-    usedPercent: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    windowMinutes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    resetAfterSeconds: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    resetAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  }
-  secondary?: {
-    usedPercent: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    windowMinutes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    resetAfterSeconds: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    resetAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  }
-  reserveName?: string
-  reserve?: {
-    usedPercent: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    windowMinutes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    resetAfterSeconds: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    resetAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  }
-  credits?: {
-    balance: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    has: boolean
-    unlimited: boolean
-  }
-}
-
-export type PermissionRequest = {
-  id: string
-  sessionID: string
-  permission: string
-  patterns: Array<string>
-  metadata: {
-    [key: string]: unknown
-  }
-  always: Array<string>
-  tool?: {
-    messageID: string
-    callID: string
-  }
-}
-
-export type SnapshotFileDiff = {
-  file?: string
-  patch?: string
-  additions: number
-  deletions: number
-  status?: "added" | "deleted" | "modified"
-}
-
-export type ProviderAuthError = {
-  name: "ProviderAuthError"
-  data: {
-    providerID: string
-    message: string
-  }
-}
-
-export type UnknownError = {
-  name: "UnknownError"
-  data: {
-    message: string
-    ref?: string
-  }
-}
-
-export type MessageOutputLengthError = {
-  name: "MessageOutputLengthError"
-  data: {
-    [key: string]: unknown
-  }
-}
-
-export type MessageAbortedError = {
-  name: "MessageAbortedError"
-  data: {
-    message: string
-  }
-}
-
-export type StructuredOutputError = {
-  name: "StructuredOutputError"
-  data: {
-    message: string
-    retries: number
-  }
-}
-
-export type ContextOverflowError = {
-  name: "ContextOverflowError"
-  data: {
-    message: string
-    responseBody?: string
-  }
-}
-
-export type ContentFilterError = {
-  name: "ContentFilterError"
-  data: {
-    message: string
-  }
-}
-
-export type ApiError = {
-  name: "APIError"
-  data: {
-    message: string
-    statusCode?: number
-    isRetryable: boolean
-    responseHeaders?: {
-      [key: string]: string
-    }
-    responseBody?: string
-    metadata?: {
-      [key: string]: string
-    }
-  }
-}
-
-export type QuestionOption = {
-  /**
-   * Display text (1-5 words, concise)
-   */
-  label: string
-  /**
-   * Explanation of choice
-   */
-  description: string
-}
-
-export type QuestionInfo = {
-  /**
-   * Complete question
-   */
-  question: string
-  /**
-   * Very short label (max 30 chars)
-   */
-  header: string
-  /**
-   * Available choices
-   */
-  options: Array<QuestionOption>
-  /**
-   * Allow selecting multiple choices
-   */
-  multiple?: boolean
-  /**
-   * Allow typing a custom answer (default: true)
-   */
-  custom?: boolean
-}
-
-export type QuestionTool = {
-  messageID: string
-  callID: string
-}
-
-export type QuestionRequest = {
-  id: string
-  sessionID: string
-  /**
-   * Questions to ask
-   */
-  questions: Array<QuestionInfo>
-  tool?: QuestionTool
-}
-
-export type QuestionAnswer = Array<string>
-
-export type QuestionReplied = {
-  sessionID: string
-  requestID: string
-  answers: Array<QuestionAnswer>
-}
-
-export type QuestionRejected = {
-  sessionID: string
-  requestID: string
-}
-
-export type Todo = {
-  /**
-   * Stable id for this item, e.g. '1' or '2.1'. Needed to nest sub-tasks under it via parent_id.
-   */
-  id?: string
-  /**
-   * id of the parent item, to nest this item as its sub-task.
-   */
-  parent_id?: string
-  /**
-   * Brief description of the task
-   */
-  content: string
-  /**
-   * Current status of the task: pending, in_progress, completed, cancelled
-   */
-  status: string
-  /**
-   * Priority level of the task: high, medium, low
-   */
-  priority: string
-}
-
-export type Goal = {
-  /**
-   * The pinned session goal
-   */
+export type PromptEncoded = {
   text: string
-  status: "active" | "done" | "cleared" | "blocked" | "budget_limited"
-  tokens_used: number
-  turn_count: number
+  files?: Array<PromptFileAttachmentEncoded>
+  agents?: Array<PromptAgentAttachmentEncoded>
+  references?: Array<PromptReferenceAttachmentEncoded>
 }
-
-export type SessionStatus =
-  | {
-      type: "idle"
-    }
-  | {
-      type: "retry"
-      attempt: number
-      message: string
-      action?: {
-        reason: string
-        provider: string
-        title: string
-        message: string
-        label: string
-        link?: string
-      }
-      next: number
-    }
-  | {
-      type: "busy"
-    }
-
-export type Project = {
-  id: string
-  worktree: string
-  vcs?: "git"
-  name?: string
-  icon?: {
-    url?: string
-    override?: string
-    color?: string
-  }
-  commands?: {
-    /**
-     * Startup script to run when creating a new workspace (worktree)
-     */
-    start?: string
-  }
-  time: {
-    created: number
-    updated: number
-    initialized?: number
-  }
-  sandboxes: Array<string>
-}
-
-export type Pty = {
-  id: string
-  title: string
-  command: string
-  args: Array<string>
-  cwd: string
-  status: "running" | "exited"
-  pid: number
-}
-
-export type OutputFormatText = {
-  type: "text"
-}
-
-export type JsonSchema = {
-  [key: string]: unknown
-}
-
-export type OutputFormatJsonSchema = {
-  type: "json_schema"
-  schema: JsonSchema
-  retryCount?: number
-}
-
-export type OutputFormat = OutputFormatText | OutputFormatJsonSchema
-
-export type UserMessage = {
-  id: string
-  sessionID: string
-  role: "user"
-  time: {
-    created: number
-  }
-  delivery?: "queued" | "steer" | "delivered"
-  format?: OutputFormat
-  summary?: {
-    title?: string
-    body?: string
-    diffs: Array<SnapshotFileDiff>
-  }
-  agent: string
-  model: {
-    providerID: string
-    modelID: string
-    variant?: string
-  }
-  system?: string
-  tools?: {
-    [key: string]: boolean
-  }
-}
-
-export type AssistantMessage = {
-  id: string
-  sessionID: string
-  role: "assistant"
-  time: {
-    created: number
-    firstChunk?: number
-    completed?: number
-  }
-  error?:
-    | ProviderAuthError
-    | UnknownError
-    | MessageOutputLengthError
-    | MessageAbortedError
-    | StructuredOutputError
-    | ContextOverflowError
-    | ContentFilterError
-    | ApiError
-  parentID: string
-  modelID: string
-  providerID: string
-  mode: string
-  agent: string
-  path: {
-    cwd: string
-    root: string
-  }
-  summary?: boolean
-  cost: number
-  tokens: {
-    total?: number
-    context?: number
-    input: number
-    output: number
-    reasoning: number
-    cache: {
-      read: number
-      write: number
-      miss?: number
-    }
-  }
-  structured?: unknown
-  variant?: string
-  finish?: string
-  routedVia?: string
-  contextLevel?: "ok" | "soft" | "prune" | "compact"
-}
-
-export type Message = UserMessage | AssistantMessage
-
-export type TextPart = {
-  id: string
-  sessionID: string
-  messageID: string
-  type: "text"
-  text: string
-  synthetic?: boolean
-  ignored?: boolean
-  time?: {
-    start: number
-    end?: number
-  }
-  metadata?: {
-    [key: string]: unknown
-  }
-}
-
-export type SubtaskPart = {
-  id: string
-  sessionID: string
-  messageID: string
-  type: "subtask"
-  prompt: string
-  description: string
-  agent: string
-  model?: {
-    providerID: string
-    modelID: string
-  }
-  command?: string
-}
-
-export type ReasoningPart = {
-  id: string
-  sessionID: string
-  messageID: string
-  type: "reasoning"
-  text: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    start: number
-    end?: number
-  }
-}
-
-export type FilePartSourceText = {
-  value: string
-  start: number
-  end: number
-}
-
-export type FileSource = {
-  text: FilePartSourceText
-  type: "file"
-  path: string
-}
-
-export type Range = {
-  start: {
-    line: number
-    character: number
-  }
-  end: {
-    line: number
-    character: number
-  }
-}
-
-export type SymbolSource = {
-  text: FilePartSourceText
-  type: "symbol"
-  path: string
-  range: Range
-  name: string
-  kind: number
-}
-
-export type ResourceSource = {
-  text: FilePartSourceText
-  type: "resource"
-  clientName: string
-  uri: string
-}
-
-export type FilePartSource = FileSource | SymbolSource | ResourceSource
-
-export type FilePart = {
-  id: string
-  sessionID: string
-  messageID: string
-  type: "file"
-  mime: string
-  filename?: string
-  url: string
-  source?: FilePartSource
-}
-
-export type ToolStatePending = {
-  status: "pending"
-  input: {
-    [key: string]: unknown
-  }
-  raw: string
-}
-
-export type ToolStateRunning = {
-  status: "running"
-  input: {
-    [key: string]: unknown
-  }
-  title?: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    start: number
-  }
-}
-
-export type ToolStateCompleted = {
-  status: "completed"
-  input: {
-    [key: string]: unknown
-  }
-  output: string
-  title: string
-  metadata: {
-    [key: string]: unknown
-  }
-  time: {
-    start: number
-    end: number
-    compacted?: number
-  }
-  attachments?: Array<FilePart>
-}
-
-export type ToolStateError = {
-  status: "error"
-  input: {
-    [key: string]: unknown
-  }
-  error: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    start: number
-    end: number
-  }
-}
-
-export type ToolState = ToolStatePending | ToolStateRunning | ToolStateCompleted | ToolStateError
-
-export type ToolPart = {
-  id: string
-  sessionID: string
-  messageID: string
-  type: "tool"
-  callID: string
-  tool: string
-  state: ToolState
-  metadata?: {
-    [key: string]: unknown
-  }
-}
-
-export type StepStartPart = {
-  id: string
-  sessionID: string
-  messageID: string
-  type: "step-start"
-  snapshot?: string
-}
-
-export type StepFinishPart = {
-  id: string
-  sessionID: string
-  messageID: string
-  type: "step-finish"
-  reason: string
-  snapshot?: string
-  cost: number
-  currency?: "USD" | "CNY"
-  tokens: {
-    total?: number
-    context?: number
-    input: number
-    output: number
-    reasoning: number
-    cache: {
-      read: number
-      write: number
-      miss?: number
-    }
-  }
-}
-
-export type SnapshotPart = {
-  id: string
-  sessionID: string
-  messageID: string
-  type: "snapshot"
-  snapshot: string
-}
-
-export type PatchPart = {
-  id: string
-  sessionID: string
-  messageID: string
-  type: "patch"
-  hash: string
-  files: Array<string>
-}
-
-export type AgentPart = {
-  id: string
-  sessionID: string
-  messageID: string
-  type: "agent"
-  name: string
-  source?: {
-    value: string
-    start: number
-    end: number
-  }
-}
-
-export type RetryPart = {
-  id: string
-  sessionID: string
-  messageID: string
-  type: "retry"
-  attempt: number
-  error: ApiError
-  time: {
-    created: number
-  }
-}
-
-export type CompactionPart = {
-  id: string
-  sessionID: string
-  messageID: string
-  type: "compaction"
-  auto: boolean
-  native?: boolean
-  overflow?: boolean
-  tail_start_id?: string
-  tokens_before?: number
-  tokens_after?: number
-  duration_ms?: number
-}
-
-export type Part =
-  | TextPart
-  | SubtaskPart
-  | ReasoningPart
-  | FilePart
-  | ToolPart
-  | StepStartPart
-  | StepFinishPart
-  | SnapshotPart
-  | PatchPart
-  | AgentPart
-  | RetryPart
-  | CompactionPart
-
-export type PermissionAction = "allow" | "deny" | "ask"
-
-export type PermissionRule = {
-  permission: string
-  pattern: string
-  action: PermissionAction
-}
-
-export type PermissionRuleset = Array<PermissionRule>
 
 export type Session = {
   id: string
@@ -881,402 +176,1771 @@ export type Session = {
   }
 }
 
-export type Prompt = {
-  text: string
-  files?: Array<PromptFileAttachment>
-  agents?: Array<PromptAgentAttachment>
-  references?: Array<PromptReferenceAttachment>
+export type PermissionRuleset = Array<PermissionRule>
+
+export type PermissionRule = {
+  permission: string
+  pattern: string
+  action: PermissionAction
 }
 
-export type GlobalEvent = {
-  directory: string
-  project?: string
-  workspace?: string
-  payload:
-    | EventTuiPromptAppend
-    | EventTuiCommandExecute
-    | EventTuiToastShow
-    | EventTuiSessionSelect
-    | EventServerConnected
-    | EventGlobalDisposed
-    | EventServerInstanceDisposed
-    | EventFileEdited
-    | EventFileWatcherUpdated
-    | EventProviderQuotaUpdated
-    | EventLspClientDiagnostics
-    | EventLspUpdated
-    | EventMessagePartDelta
-    | EventPermissionAsked
-    | EventPermissionReplied
-    | EventSessionDiff
-    | EventSessionError
-    | EventSessionLoopDetected
-    | EventQuestionAsked
-    | EventQuestionReplied
-    | EventQuestionRejected
-    | EventTodoUpdated
-    | EventGoalUpdated
-    | EventSessionStatus
-    | EventSessionIdle
-    | EventSessionCompacted
-    | EventMcpToolsChanged
-    | EventMcpBrowserOpenFailed
-    | EventCommandExecuted
-    | EventProjectUpdated
-    | EventProjectRemoved
-    | EventWorktreeReady
-    | EventWorktreeFailed
-    | EventVcsBranchUpdated
-    | EventWorkspaceReady
-    | EventWorkspaceFailed
-    | EventWorkspaceStatus
-    | EventPtyCreated
-    | EventPtyUpdated
-    | EventPtyExited
-    | EventPtyDeleted
-    | EventInstallationUpdated
-    | EventInstallationUpdateAvailable
-    | EventMessageUpdated
-    | EventMessageRemoved
-    | EventMessagePartUpdated
-    | EventMessagePartRemoved
-    | EventSessionCreated
-    | EventSessionUpdated
-    | EventSessionDeleted
-    | EventSessionNextAgentSwitched
-    | EventSessionNextModelSwitched
-    | EventSessionNextPrompted
-    | EventSessionNextSynthetic
-    | EventSessionNextShellStarted
-    | EventSessionNextShellEnded
-    | EventSessionNextStepStarted
-    | EventSessionNextStepEnded
-    | EventSessionNextStepFailed
-    | EventSessionNextTextStarted
-    | EventSessionNextTextDelta
-    | EventSessionNextTextEnded
-    | EventSessionNextReasoningStarted
-    | EventSessionNextReasoningDelta
-    | EventSessionNextReasoningEnded
-    | EventSessionNextToolInputStarted
-    | EventSessionNextToolInputDelta
-    | EventSessionNextToolInputEnded
-    | EventSessionNextToolCalled
-    | EventSessionNextToolProgress
-    | EventSessionNextToolSuccess
-    | EventSessionNextToolFailed
-    | EventSessionNextRetried
-    | EventSessionNextCompactionStarted
-    | EventSessionNextCompactionDelta
-    | EventSessionNextCompactionEnded
-    | EventCatalogModelUpdated
-    | EventModelsDevRefreshed
-    | EventAccountAdded
-    | EventAccountRemoved
-    | EventAccountSwitched
-    | SyncEventMessageUpdated
-    | SyncEventMessageRemoved
-    | SyncEventMessagePartUpdated
-    | SyncEventMessagePartRemoved
-    | SyncEventSessionCreated
-    | SyncEventSessionUpdated
-    | SyncEventSessionDeleted
-    | SyncEventSessionNextAgentSwitched
-    | SyncEventSessionNextModelSwitched
-    | SyncEventSessionNextPrompted
-    | SyncEventSessionNextSynthetic
-    | SyncEventSessionNextShellStarted
-    | SyncEventSessionNextShellEnded
-    | SyncEventSessionNextStepStarted
-    | SyncEventSessionNextStepEnded
-    | SyncEventSessionNextStepFailed
-    | SyncEventSessionNextTextStarted
-    | SyncEventSessionNextTextDelta
-    | SyncEventSessionNextTextEnded
-    | SyncEventSessionNextReasoningStarted
-    | SyncEventSessionNextReasoningDelta
-    | SyncEventSessionNextReasoningEnded
-    | SyncEventSessionNextToolInputStarted
-    | SyncEventSessionNextToolInputDelta
-    | SyncEventSessionNextToolInputEnded
-    | SyncEventSessionNextToolCalled
-    | SyncEventSessionNextToolProgress
-    | SyncEventSessionNextToolSuccess
-    | SyncEventSessionNextToolFailed
-    | SyncEventSessionNextRetried
-    | SyncEventSessionNextCompactionStarted
-    | SyncEventSessionNextCompactionDelta
-    | SyncEventSessionNextCompactionEnded
+export type PermissionAction = "allow" | "deny" | "ask"
+
+export type SnapshotFileDiff = {
+  file?: string
+  patch?: string
+  additions: number
+  deletions: number
+  status?: "added" | "deleted" | "modified"
 }
 
-/**
- * Log level
- */
-export type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR"
+export type Part =
+  | TextPart
+  | SubtaskPart
+  | ReasoningPart
+  | FilePart
+  | ToolPart
+  | StepStartPart
+  | StepFinishPart
+  | SnapshotPart
+  | PatchPart
+  | AgentPart
+  | RetryPart
+  | CompactionPart
 
-/**
- * Server configuration for redcode serve and web commands
- */
-export type ServerConfig = {
-  /**
-   * Port to listen on
-   */
-  port?: number
-  /**
-   * Hostname to listen on
-   */
-  hostname?: string
-  /**
-   * Enable mDNS service discovery
-   */
-  mdns?: boolean
-  /**
-   * Custom domain name for mDNS service (default: redcode.local)
-   */
-  mdnsDomain?: string
-  /**
-   * Additional domains to allow for CORS
-   */
-  cors?: Array<string>
-  /**
-   * Global SSE buffer limits; overflow closes the stream for authoritative resync
-   */
-  sse?: {
-    /**
-     * Maximum buffered events per global SSE connection (default: 256)
-     */
-    max_events?: number
-    /**
-     * Maximum buffered UTF-8 event data bytes per global SSE connection (default: 8388608)
-     */
-    max_bytes?: number
+export type CompactionPart = {
+  id: string
+  sessionID: string
+  messageID: string
+  type: "compaction"
+  auto: boolean
+  native?: boolean
+  overflow?: boolean
+  tail_start_id?: string
+  tokens_before?: number
+  tokens_after?: number
+  duration_ms?: number
+}
+
+export type RetryPart = {
+  id: string
+  sessionID: string
+  messageID: string
+  type: "retry"
+  attempt: number
+  error: ApiError
+  time: {
+    created: number
   }
 }
 
-export type ReferenceConfigEntry =
-  | string
-  | {
-      /**
-       * Git repository URL, host/path reference, or GitHub owner/repo shorthand
-       */
-      repository: string
-      /**
-       * Branch or ref Scout should clone and inspect
-       */
-      branch?: string
+export type ApiError = {
+  name: "APIError"
+  data: {
+    message: string
+    statusCode?: number
+    isRetryable: boolean
+    responseHeaders?: {
+      [key: string]: string
     }
-  | {
-      /**
-       * Absolute path, ~/ path, or workspace-relative path to a local reference directory
-       */
-      path: string
+    responseBody?: string
+    metadata?: {
+      [key: string]: string
     }
-
-export type ReferenceConfig = {
-  [key: string]: ReferenceConfigEntry
+  }
 }
 
-export type PermissionActionConfig = "ask" | "allow" | "deny"
-
-export type PermissionObjectConfig = {
-  [key: string]: PermissionActionConfig
+export type AgentPart = {
+  id: string
+  sessionID: string
+  messageID: string
+  type: "agent"
+  name: string
+  source?: {
+    value: string
+    start: number
+    end: number
+  }
 }
 
-export type PermissionRuleConfig = PermissionActionConfig | PermissionObjectConfig
+export type PatchPart = {
+  id: string
+  sessionID: string
+  messageID: string
+  type: "patch"
+  hash: string
+  files: Array<string>
+}
 
-export type PermissionConfig =
-  | PermissionActionConfig
-  | {
-      read?: PermissionRuleConfig
-      edit?: PermissionRuleConfig
-      glob?: PermissionRuleConfig
-      grep?: PermissionRuleConfig
-      list?: PermissionRuleConfig
-      bash?: PermissionRuleConfig
-      task?: PermissionRuleConfig
-      external_directory?: PermissionRuleConfig
-      todowrite?: PermissionActionConfig
-      question?: PermissionActionConfig
-      webfetch?: PermissionActionConfig
-      websearch?: PermissionActionConfig
-      repo_clone?: PermissionRuleConfig
-      repo_overview?: PermissionRuleConfig
-      lsp?: PermissionRuleConfig
-      doom_loop?: PermissionActionConfig
-      skill?: PermissionRuleConfig
-      [key: string]: PermissionRuleConfig | PermissionActionConfig | undefined
+export type SnapshotPart = {
+  id: string
+  sessionID: string
+  messageID: string
+  type: "snapshot"
+  snapshot: string
+}
+
+export type StepFinishPart = {
+  id: string
+  sessionID: string
+  messageID: string
+  type: "step-finish"
+  reason: string
+  snapshot?: string
+  cost: number
+  currency?: "USD" | "CNY"
+  tokens: {
+    total?: number
+    context?: number
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+      miss?: number
     }
+  }
+}
 
-export type AgentConfig = {
-  model?: string
-  /**
-   * Default model variant for this agent (applies only when using the agent's configured model).
-   */
+export type StepStartPart = {
+  id: string
+  sessionID: string
+  messageID: string
+  type: "step-start"
+  snapshot?: string
+}
+
+export type ToolPart = {
+  id: string
+  sessionID: string
+  messageID: string
+  type: "tool"
+  callID: string
+  tool: string
+  state: ToolState
+  metadata?: {
+    [key: string]: unknown
+  }
+}
+
+export type ToolState = ToolStatePending | ToolStateRunning | ToolStateCompleted | ToolStateError
+
+export type ToolStateError = {
+  status: "error"
+  input: {
+    [key: string]: unknown
+  }
+  error: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    start: number
+    end: number
+  }
+}
+
+export type ToolStateCompleted = {
+  status: "completed"
+  input: {
+    [key: string]: unknown
+  }
+  output: string
+  title: string
+  metadata: {
+    [key: string]: unknown
+  }
+  time: {
+    start: number
+    end: number
+    compacted?: number
+  }
+  attachments?: Array<FilePart>
+}
+
+export type FilePart = {
+  id: string
+  sessionID: string
+  messageID: string
+  type: "file"
+  mime: string
+  filename?: string
+  url: string
+  source?: FilePartSource
+}
+
+export type FilePartSource = FileSource | SymbolSource | ResourceSource
+
+export type ResourceSource = {
+  text: FilePartSourceText
+  type: "resource"
+  clientName: string
+  uri: string
+}
+
+export type FilePartSourceText = {
+  value: string
+  start: number
+  end: number
+}
+
+export type SymbolSource = {
+  text: FilePartSourceText
+  type: "symbol"
+  path: string
+  range: Range
+  name: string
+  kind: number
+}
+
+export type Range = {
+  start: {
+    line: number
+    character: number
+  }
+  end: {
+    line: number
+    character: number
+  }
+}
+
+export type FileSource = {
+  text: FilePartSourceText
+  type: "file"
+  path: string
+}
+
+export type ToolStateRunning = {
+  status: "running"
+  input: {
+    [key: string]: unknown
+  }
+  title?: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    start: number
+  }
+}
+
+export type ToolStatePending = {
+  status: "pending"
+  input: {
+    [key: string]: unknown
+  }
+  raw: string
+}
+
+export type ReasoningPart = {
+  id: string
+  sessionID: string
+  messageID: string
+  type: "reasoning"
+  text: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    start: number
+    end?: number
+  }
+}
+
+export type SubtaskPart = {
+  id: string
+  sessionID: string
+  messageID: string
+  type: "subtask"
+  prompt: string
+  description: string
+  agent: string
+  model?: {
+    providerID: string
+    modelID: string
+  }
+  command?: string
+}
+
+export type TextPart = {
+  id: string
+  sessionID: string
+  messageID: string
+  type: "text"
+  text: string
+  synthetic?: boolean
+  ignored?: boolean
+  time?: {
+    start: number
+    end?: number
+  }
+  metadata?: {
+    [key: string]: unknown
+  }
+}
+
+export type Message = UserMessage | AssistantMessage
+
+export type AssistantMessage = {
+  id: string
+  sessionID: string
+  role: "assistant"
+  time: {
+    created: number
+    firstChunk?: number
+    completed?: number
+  }
+  error?:
+    | ProviderAuthError
+    | UnknownError
+    | MessageOutputLengthError
+    | MessageAbortedError
+    | StructuredOutputError
+    | ContextOverflowError
+    | ContentFilterError
+    | ApiError
+  parentID: string
+  modelID: string
+  providerID: string
+  mode: string
+  agent: string
+  path: {
+    cwd: string
+    root: string
+  }
+  summary?: boolean
+  cost: number
+  tokens: {
+    total?: number
+    context?: number
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+      miss?: number
+    }
+  }
+  structured?: unknown
   variant?: string
-  temperature?: number
-  top_p?: number
-  prompt?: string
-  /**
-   * @deprecated Use 'permission' field instead
-   */
+  finish?: string
+  routedVia?: string
+  contextLevel?: "ok" | "soft" | "prune" | "compact"
+}
+
+export type ContentFilterError = {
+  name: "ContentFilterError"
+  data: {
+    message: string
+  }
+}
+
+export type ContextOverflowError = {
+  name: "ContextOverflowError"
+  data: {
+    message: string
+    responseBody?: string
+  }
+}
+
+export type StructuredOutputError = {
+  name: "StructuredOutputError"
+  data: {
+    message: string
+    retries: number
+  }
+}
+
+export type MessageAbortedError = {
+  name: "MessageAbortedError"
+  data: {
+    message: string
+  }
+}
+
+export type MessageOutputLengthError = {
+  name: "MessageOutputLengthError"
+  data: unknown
+}
+
+export type UnknownError = {
+  name: "UnknownError"
+  data: {
+    message: string
+    ref?: string
+  }
+}
+
+export type ProviderAuthError = {
+  name: "ProviderAuthError"
+  data: {
+    providerID: string
+    message: string
+  }
+}
+
+export type UserMessage = {
+  id: string
+  sessionID: string
+  role: "user"
+  time: {
+    created: number
+  }
+  delivery?: "queued" | "steer" | "delivered"
+  format?: OutputFormat
+  summary?: {
+    title?: string
+    body?: string
+    diffs: Array<SnapshotFileDiff>
+  }
+  agent: string
+  model: {
+    providerID: string
+    modelID: string
+    variant?: string
+  }
+  system?: string
   tools?: {
     [key: string]: boolean
   }
-  disable?: boolean
-  /**
-   * Description of when to use the agent
-   */
-  description?: string
-  mode?: "subagent" | "primary" | "all"
-  /**
-   * Hide this subagent from the @ autocomplete menu (default: false, only applies to mode: subagent)
-   */
-  hidden?: boolean
-  options?: {
-    [key: string]: unknown
-  }
-  /**
-   * Hex color code (e.g., #FF5733) or theme color (e.g., primary)
-   */
-  color?: string | "primary" | "secondary" | "accent" | "success" | "warning" | "error" | "info"
-  /**
-   * Maximum number of agentic iterations before forcing text-only response
-   */
-  steps?: number
-  /**
-   * @deprecated Use 'steps' field instead.
-   */
-  maxSteps?: number
-  permission?: PermissionConfig
-  [key: string]:
-    | unknown
-    | string
-    | number
-    | {
-        [key: string]: boolean
-      }
-    | boolean
-    | "subagent"
-    | "primary"
-    | "all"
-    | {
-        [key: string]: unknown
-      }
-    | string
-    | "primary"
-    | "secondary"
-    | "accent"
-    | "success"
-    | "warning"
-    | "error"
-    | "info"
-    | number
-    | PermissionConfig
-    | undefined
 }
 
-export type ProviderConfig = {
-  api?: string
+export type OutputFormat = OutputFormatTextEncoded | OutputFormatJsonSchemaEncoded
+
+export type OutputFormatJsonSchemaEncoded = {
+  type: "json_schema"
+  schema: JsonSchema
+  retryCount?: number
+}
+
+export type JsonSchema = {
+  [key: string]: unknown
+}
+
+export type OutputFormatTextEncoded = {
+  type: "text"
+}
+
+export type Pty = {
+  id: string
+  title: string
+  command: string
+  args: Array<string>
+  cwd: string
+  status: "running" | "exited"
+  pid: number
+}
+
+export type Project = {
+  id: string
+  worktree: string
+  vcs?: "git"
   name?: string
-  env?: Array<string>
-  id?: string
-  npm?: string
-  whitelist?: Array<string>
-  blacklist?: Array<string>
-  options?: {
-    apiKey?: string
-    baseURL?: string
-    /**
-     * GitHub Enterprise URL for copilot authentication
-     */
-    enterpriseUrl?: string
-    /**
-     * Enable promptCacheKey for this provider (default false)
-     */
-    setCacheKey?: boolean
-    /**
-     * Timeout in milliseconds for requests to this provider. Default is 300000 (5 minutes). Set to false to disable timeout.
-     */
-    timeout?: number | false
-    /**
-     * Timeout in milliseconds between streamed SSE chunks for this provider. If no chunk arrives within this window, the request is aborted.
-     */
-    chunkTimeout?: number
-    [key: string]: unknown | string | boolean | number | false | number | undefined
+  icon?: {
+    url?: string
+    override?: string
+    color?: string
   }
-  models?: {
-    [key: string]: {
-      id?: string
-      name?: string
-      family?: string
-      release_date?: string
-      attachment?: boolean
-      reasoning?: boolean
-      reasoning_options?: unknown
-      temperature?: boolean
-      tool_call?: boolean
-      interleaved?:
-        | true
-        | {
-            field: "reasoning_content" | "reasoning_details"
-          }
-      cost?: {
-        input: number
-        output: number
-        /**
-         * Currency these prices are quoted in. "CNY" skips the USD→CNY conversion in cost display (TUI footer, TUI sidebar, GUI context panel, home stats). Custom CNY-priced providers declare this here — no source-code change needed.
-         */
-        currency?: "USD" | "CNY"
-        cache_read?: number
-        cache_write?: number
-        context_over_200k?: {
-          input: number
-          output: number
-          cache_read?: number
-          cache_write?: number
+  commands?: {
+    /**
+     * Startup script to run when creating a new workspace (worktree)
+     */
+    start?: string
+  }
+  time: {
+    created: number
+    updated: number
+    initialized?: number
+  }
+  sandboxes: Array<string>
+}
+
+export type SessionStatus =
+  | {
+      type: "idle"
+    }
+  | {
+      type: "retry"
+      attempt: number
+      message: string
+      action?: {
+        reason: string
+        provider: string
+        title: string
+        message: string
+        label: string
+        link?: string
+      }
+      next: number
+    }
+  | {
+      type: "busy"
+    }
+
+export type Goal = {
+  /**
+   * The pinned session goal
+   */
+  text: string
+  status: "active" | "done" | "cleared" | "blocked" | "budget_limited"
+  tokens_used: number
+  turn_count: number
+}
+
+export type Todo = {
+  /**
+   * Stable id for this item, e.g. '1' or '2.1'. Needed to nest sub-tasks under it via parent_id.
+   */
+  id?: string
+  /**
+   * id of the parent item, to nest this item as its sub-task.
+   */
+  parent_id?: string
+  /**
+   * Brief description of the task
+   */
+  content: string
+  /**
+   * Current status of the task: pending, in_progress, completed, cancelled
+   */
+  status: string
+  /**
+   * Priority level of the task: high, medium, low
+   */
+  priority: string
+}
+
+export type QuestionRejected = {
+  sessionID: string
+  requestID: string
+}
+
+export type QuestionReplied = {
+  sessionID: string
+  requestID: string
+  answers: Array<QuestionAnswer>
+}
+
+export type QuestionAnswer = Array<string>
+
+export type QuestionRequest = {
+  id: string
+  sessionID: string
+  /**
+   * Questions to ask
+   */
+  questions: Array<QuestionInfo>
+  tool?: QuestionTool
+}
+
+export type QuestionTool = {
+  messageID: string
+  callID: string
+}
+
+export type QuestionInfo = {
+  /**
+   * Complete question
+   */
+  question: string
+  /**
+   * Very short label (max 30 chars)
+   */
+  header: string
+  /**
+   * Available choices
+   */
+  options: Array<QuestionOption>
+  /**
+   * Allow selecting multiple choices
+   */
+  multiple?: boolean
+  /**
+   * Allow typing a custom answer (default: true)
+   */
+  custom?: boolean
+}
+
+export type QuestionOption = {
+  /**
+   * Display text (1-5 words, concise)
+   */
+  label: string
+  /**
+   * Explanation of choice
+   */
+  description: string
+}
+
+export type PermissionRequest = {
+  id: string
+  sessionID: string
+  permission: string
+  patterns: Array<string>
+  metadata: {
+    [key: string]: unknown
+  }
+  always: Array<string>
+  tool?: {
+    messageID: string
+    callID: string
+  }
+}
+
+export type ProviderQuota = {
+  providerID: string
+  accountID?: string
+  capturedAt: number | "Infinity" | "-Infinity" | "NaN"
+  planType: string
+  activeLimit?: string
+  primary?: {
+    usedPercent: number | "Infinity" | "-Infinity" | "NaN"
+    windowMinutes: number | "Infinity" | "-Infinity" | "NaN"
+    resetAfterSeconds: number | "Infinity" | "-Infinity" | "NaN"
+    resetAt: number | "Infinity" | "-Infinity" | "NaN"
+  }
+  secondary?: {
+    usedPercent: number | "Infinity" | "-Infinity" | "NaN"
+    windowMinutes: number | "Infinity" | "-Infinity" | "NaN"
+    resetAfterSeconds: number | "Infinity" | "-Infinity" | "NaN"
+    resetAt: number | "Infinity" | "-Infinity" | "NaN"
+  }
+  reserveName?: string
+  reserve?: {
+    usedPercent: number | "Infinity" | "-Infinity" | "NaN"
+    windowMinutes: number | "Infinity" | "-Infinity" | "NaN"
+    resetAfterSeconds: number | "Infinity" | "-Infinity" | "NaN"
+    resetAt: number | "Infinity" | "-Infinity" | "NaN"
+  }
+  credits?: {
+    balance: number | "Infinity" | "-Infinity" | "NaN"
+    has: boolean
+    unlimited: boolean
+  }
+}
+
+export type EffectHttpApiErrorNotFoundEncoded = {
+  _tag: "NotFound"
+}
+
+export type EffectHttpApiErrorForbiddenEncoded = {
+  _tag: "Forbidden"
+}
+
+export type InvalidRequestErrorEncoded = {
+  _tag: "InvalidRequestError"
+  message: string
+  kind?: string
+  field?: string
+}
+
+export type VcsApplyErrorEncoded = {
+  name: "VcsApplyError"
+  data: {
+    message: string
+    reason: "non-git" | "not-clean"
+  }
+}
+
+export type WorkspaceWarpErrorEncoded = {
+  name: "WorkspaceWarpError"
+  data: {
+    message: string
+  }
+}
+
+export type EffectHttpApiErrorBadRequestEncoded = {
+  _tag: "BadRequest"
+}
+
+export type Workspace = {
+  id: string
+  type: string
+  name: string
+  branch?: string | null
+  directory?: string | null
+  extra?: unknown | null
+  projectID: string
+  timeUsed: number | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type Workspace1 = {
+  id: string
+  type: string
+  name: string
+  branch?: string
+  directory?: string
+  extra?: unknown
+  projectID: string
+  timeUsed: number | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type NotFoundErrorEncoded = {
+  name: "NotFoundError"
+  data: {
+    message: string
+  }
+}
+
+export type EventTuiSessionSelect = {
+  type: "tui.session.select"
+  properties: {
+    /**
+     * Session ID to navigate to
+     */
+    sessionID: string
+  }
+}
+
+export type EventTuiToastShow = {
+  type: "tui.toast.show"
+  properties: {
+    title?: string
+    message: string
+    variant: "info" | "success" | "warning" | "error"
+    duration?: number
+  }
+}
+
+export type EventTuiCommandExecute = {
+  type: "tui.command.execute"
+  properties: {
+    command:
+      | "session.list"
+      | "session.new"
+      | "session.share"
+      | "session.interrupt"
+      | "session.compact"
+      | "session.page.up"
+      | "session.page.down"
+      | "session.line.up"
+      | "session.line.down"
+      | "session.half.page.up"
+      | "session.half.page.down"
+      | "session.first"
+      | "session.last"
+      | "prompt.clear"
+      | "prompt.submit"
+      | "agent.cycle"
+      | string
+  }
+}
+
+export type EventTuiPromptAppend = {
+  type: "tui.prompt.append"
+  properties: {
+    text: string
+  }
+}
+
+export type UnauthorizedErrorEncoded = {
+  _tag: "UnauthorizedError"
+  message: string
+}
+
+export type ServiceUnavailableErrorEncoded = {
+  _tag: "ServiceUnavailableError"
+  message: string
+  service?: string
+}
+
+export type ProviderNotFoundErrorEncoded = {
+  _tag: "ProviderNotFoundError"
+  providerID: string
+  message: string
+}
+
+export type UnknownErrorEncoded = {
+  _tag: "UnknownError"
+  message: string
+  ref?: string
+}
+
+export type SessionNotFoundErrorEncoded = {
+  _tag: "SessionNotFoundError"
+  sessionID: string
+  message: string
+}
+
+export type InvalidCursorErrorEncoded = {
+  _tag: "InvalidCursorError"
+  message: string
+}
+
+export type V2SessionMessagesResponse = {
+  items: Array<SessionMessage>
+  cursor: {
+    previous?: string
+    next?: string
+  }
+}
+
+export type V2SessionsResponse = {
+  items: Array<SessionInfoEncoded>
+  cursor: {
+    previous?: string
+    next?: string
+  }
+}
+
+export type Part1 =
+  | TextPart
+  | SubtaskPart
+  | ReasoningPart
+  | FilePart
+  | ToolPart
+  | StepStartPart
+  | StepFinishPart
+  | SnapshotPart
+  | PatchPart
+  | AgentPart
+  | RetryPart
+  | CompactionPart
+
+export type ConflictErrorEncoded = {
+  _tag: "ConflictError"
+  message: string
+  resource?: string
+}
+
+export type SessionBusyErrorEncoded = {
+  _tag: "SessionBusyError"
+  sessionID: string
+  message: string
+}
+
+export type PermissionNotFoundErrorEncoded = {
+  _tag: "PermissionNotFoundError"
+  requestID: string
+  message: string
+}
+
+export type Session8 = {
+  id: string
+  slug: string
+  projectID: string
+  workspaceID?: string
+  directory: string
+  path?: string
+  parentID?: string
+  summary?: {
+    additions: number
+    deletions: number
+    files: number
+    diffs?: Array<SnapshotFileDiff>
+  }
+  cost?: number
+  costCny?: number
+  costUsd?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+      miss?: number
+    }
+  }
+  share?: {
+    url: string
+  }
+  title: string
+  agent?: string
+  client?: string
+  soul?: string
+  soulBodyHash?: string
+  model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  version: string
+  time: {
+    created: number
+    updated: number
+    compacting?: number
+    archived?: number
+  }
+  permission?: PermissionRuleset
+  revert?: {
+    messageID: string
+    partID?: string
+    snapshot?: string
+    diff?: string
+  }
+}
+
+export type Session7 = {
+  id: string
+  slug: string
+  projectID: string
+  workspaceID?: string
+  directory: string
+  path?: string
+  parentID?: string
+  summary?: {
+    additions: number
+    deletions: number
+    files: number
+    diffs?: Array<SnapshotFileDiff>
+  }
+  cost?: number
+  costCny?: number
+  costUsd?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+      miss?: number
+    }
+  }
+  share?: {
+    url: string
+  }
+  title: string
+  agent?: string
+  client?: string
+  soul?: string
+  soulBodyHash?: string
+  model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  version: string
+  time: {
+    created: number
+    updated: number
+    compacting?: number
+    archived?: number
+  }
+  permission?: PermissionRuleset
+  revert?: {
+    messageID: string
+    partID?: string
+    snapshot?: string
+    diff?: string
+  }
+}
+
+export type SubtaskPartInput = {
+  id?: string
+  type: "subtask"
+  prompt: string
+  description: string
+  agent: string
+  model?: {
+    providerID: string
+    modelID: string
+  }
+  command?: string
+}
+
+export type AgentPartInput = {
+  id?: string
+  type: "agent"
+  name: string
+  source?: {
+    value: string
+    start: number
+    end: number
+  }
+}
+
+export type FilePartInput = {
+  id?: string
+  type: "file"
+  mime: string
+  filename?: string
+  url: string
+  source?: FilePartSource
+}
+
+export type TextPartInput = {
+  id?: string
+  type: "text"
+  text: string
+  synthetic?: boolean
+  ignored?: boolean
+  time?: {
+    start: number
+    end?: number
+  }
+  metadata?: {
+    [key: string]: unknown
+  }
+}
+
+export type EffectHttpApiErrorInternalServerErrorEncoded = {
+  _tag: "InternalServerError"
+}
+
+export type Session6 = {
+  id: string
+  slug: string
+  projectID: string
+  workspaceID?: string
+  directory: string
+  path?: string
+  parentID?: string
+  summary?: {
+    additions: number
+    deletions: number
+    files: number
+    diffs?: Array<SnapshotFileDiff>
+  }
+  cost?: number
+  costCny?: number
+  costUsd?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+      miss?: number
+    }
+  }
+  share?: {
+    url: string
+  }
+  title: string
+  agent?: string
+  client?: string
+  soul?: string
+  soulBodyHash?: string
+  model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  version: string
+  time: {
+    created: number
+    updated: number
+    compacting?: number
+    archived?: number
+  }
+  permission?: PermissionRuleset
+  revert?: {
+    messageID: string
+    partID?: string
+    snapshot?: string
+    diff?: string
+  }
+}
+
+export type Session5 = {
+  id: string
+  slug: string
+  projectID: string
+  workspaceID?: string
+  directory: string
+  path?: string
+  parentID?: string
+  summary?: {
+    additions: number
+    deletions: number
+    files: number
+    diffs?: Array<SnapshotFileDiff>
+  }
+  cost?: number
+  costCny?: number
+  costUsd?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+      miss?: number
+    }
+  }
+  share?: {
+    url: string
+  }
+  title: string
+  agent?: string
+  client?: string
+  soul?: string
+  soulBodyHash?: string
+  model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  version: string
+  time: {
+    created: number
+    updated: number
+    compacting?: number
+    archived?: number
+  }
+  permission?: PermissionRuleset
+  revert?: {
+    messageID: string
+    partID?: string
+    snapshot?: string
+    diff?: string
+  }
+}
+
+export type Session4 = {
+  id: string
+  slug: string
+  projectID: string
+  workspaceID?: string
+  directory: string
+  path?: string
+  parentID?: string
+  summary?: {
+    additions: number
+    deletions: number
+    files: number
+    diffs?: Array<SnapshotFileDiff>
+  }
+  cost?: number
+  costCny?: number
+  costUsd?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+      miss?: number
+    }
+  }
+  share?: {
+    url: string
+  }
+  title: string
+  agent?: string
+  client?: string
+  soul?: string
+  soulBodyHash?: string
+  model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  version: string
+  time: {
+    created: number
+    updated: number
+    compacting?: number
+    archived?: number
+  }
+  permission?: PermissionRuleset
+  revert?: {
+    messageID: string
+    partID?: string
+    snapshot?: string
+    diff?: string
+  }
+}
+
+export type Session3 = {
+  id: string
+  slug: string
+  projectID: string
+  workspaceID?: string
+  directory: string
+  path?: string
+  parentID?: string
+  summary?: {
+    additions: number
+    deletions: number
+    files: number
+    diffs?: Array<SnapshotFileDiff>
+  }
+  cost?: number
+  costCny?: number
+  costUsd?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+      miss?: number
+    }
+  }
+  share?: {
+    url: string
+  }
+  title: string
+  agent?: string
+  client?: string
+  soul?: string
+  soulBodyHash?: string
+  model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  version: string
+  time: {
+    created: number
+    updated: number
+    compacting?: number
+    archived?: number
+  }
+  permission?: PermissionRuleset
+  revert?: {
+    messageID: string
+    partID?: string
+    snapshot?: string
+    diff?: string
+  }
+}
+
+export type Session2 = {
+  id: string
+  slug: string
+  projectID: string
+  workspaceID?: string
+  directory: string
+  path?: string
+  parentID?: string
+  summary?: {
+    additions: number
+    deletions: number
+    files: number
+    diffs?: Array<SnapshotFileDiff>
+  }
+  cost?: number
+  costCny?: number
+  costUsd?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+      miss?: number
+    }
+  }
+  share?: {
+    url: string
+  }
+  title: string
+  agent?: string
+  client?: string
+  soul?: string
+  soulBodyHash?: string
+  model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  version: string
+  time: {
+    created: number
+    updated: number
+    compacting?: number
+    archived?: number
+  }
+  permission?: PermissionRuleset
+  revert?: {
+    messageID: string
+    partID?: string
+    snapshot?: string
+    diff?: string
+  }
+}
+
+export type ContextSnapshot = {
+  providerID: string
+  modelID: string
+  /**
+   * When this request was assembled
+   */
+  time: number
+  /**
+   * system + tools + messages
+   */
+  total: number
+  system: {
+    tokens: number
+    /**
+     * Trust level for this group's estimate: plain text, CJK weighting applies
+     */
+    confidence: "low" | "medium"
+    /**
+     * One entry per system-prompt block, largest first
+     */
+    segments: Array<ContextSegment>
+  }
+  tools: {
+    count: number
+    tokens: number
+    /**
+     * Trust level for this group's estimate: JSON schema, structural tokens dominate so CJK weighting barely applies
+     */
+    confidence: "low" | "medium"
+    /**
+     * Most expensive tool schemas, largest first
+     */
+    top: Array<ContextSegment>
+  }
+  messages: {
+    count: number
+    tokens: number
+    /**
+     * Trust level for this group's estimate: text weighted, images priced separately by provider rate
+     */
+    confidence: "low" | "medium"
+    /**
+     * Conversation tokens grouped by role, largest first
+     */
+    byRole: Array<ContextSegment>
+  }
+}
+
+export type ContextSegment = {
+  /**
+   * Human-readable name of this slice of the prompt
+   */
+  label: string
+  /**
+   * Estimated tokens (CJK-weighted, not chars / 4)
+   */
+  tokens: number
+}
+
+export type Goal1 = {
+  /**
+   * The pinned session goal
+   */
+  text: string
+  status: "active" | "done" | "cleared" | "blocked" | "budget_limited"
+  tokens_used: number
+  turn_count: number
+}
+
+export type Session1 = {
+  id: string
+  slug: string
+  projectID: string
+  workspaceID?: string
+  directory: string
+  path?: string
+  parentID?: string
+  summary?: {
+    additions: number
+    deletions: number
+    files: number
+    diffs?: Array<SnapshotFileDiff>
+  }
+  cost?: number
+  costCny?: number
+  costUsd?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+      miss?: number
+    }
+  }
+  share?: {
+    url: string
+  }
+  title: string
+  agent?: string
+  client?: string
+  soul?: string
+  soulBodyHash?: string
+  model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  version: string
+  time: {
+    created: number
+    updated: number
+    compacting?: number
+    archived?: number
+  }
+  permission?: PermissionRuleset
+  revert?: {
+    messageID: string
+    partID?: string
+    snapshot?: string
+    diff?: string
+  }
+}
+
+export type ProviderAuthErrorEncoded = {
+  name:
+    | "BadRequest"
+    | "ProviderAuthOauthMissing"
+    | "ProviderAuthOauthCodeMissing"
+    | "ProviderAuthOauthCallbackFailed"
+    | "ProviderAuthValidationFailed"
+  data: {
+    providerID?: string
+    field?: string
+    message?: string
+    kind?: string
+  }
+}
+
+export type ProviderAuthAuthorizationEncoded = {
+  url: string
+  method: "auto" | "code"
+  instructions: string
+}
+
+export type ProviderAuthMethodEncoded = {
+  type: "oauth" | "api"
+  label: string
+  prompts?: Array<
+    | {
+        type: "text"
+        key: string
+        message: string
+        placeholder?: string
+        when?: {
+          key: string
+          op: "eq" | "neq"
+          value: string
         }
       }
-      limit?: {
-        context: number
-        input?: number
-        output: number
-      }
-      modalities?: {
-        input: Array<"text" | "audio" | "image" | "video" | "pdf">
-        output: Array<"text" | "audio" | "image" | "video" | "pdf">
-      }
-      experimental?: boolean
-      status?: "alpha" | "beta" | "deprecated" | "active"
-      provider?: {
-        npm?: string
-        api?: string
-      }
-      options?: {
-        [key: string]: unknown
-      }
-      headers?: {
-        [key: string]: string
-      }
-      /**
-       * Explicitly enable/disable tools for this model (e.g. {"apply_patch": true, "edit": false}). Overrides the built-in model-family heuristic that picks apply_patch vs edit/write by model id. Keyed by the model's API id.
-       */
-      tools?: {
-        [key: string]: boolean
-      }
-      /**
-       * Variant-specific configuration
-       */
-      variants?: {
-        [key: string]: {
-          /**
-           * Disable this variant for the model
-           */
-          disabled?: boolean
-          [key: string]: unknown | boolean | undefined
+    | {
+        type: "select"
+        key: string
+        message: string
+        options: Array<{
+          label: string
+          value: string
+          hint?: string
+        }>
+        when?: {
+          key: string
+          op: "eq" | "neq"
+          value: string
         }
+      }
+  >
+}
+
+export type Provider = {
+  id: string
+  name: string
+  source: "env" | "config" | "custom" | "api"
+  env: Array<string>
+  key?: string
+  options: {
+    [key: string]: unknown
+  }
+  models: {
+    [key: string]: Model
+  }
+}
+
+export type Model = {
+  id: string
+  providerID: string
+  api: {
+    id: string
+    url: string
+    npm: string
+  }
+  name: string
+  family?: string
+  capabilities: {
+    temperature: boolean
+    reasoning: boolean
+    reasoningEfforts?: Array<string>
+    attachment: boolean
+    toolcall: boolean
+    input: {
+      text: boolean
+      audio: boolean
+      image: boolean
+      video: boolean
+      pdf: boolean
+    }
+    output: {
+      text: boolean
+      audio: boolean
+      image: boolean
+      video: boolean
+      pdf: boolean
+    }
+    interleaved:
+      | boolean
+      | {
+          field: "reasoning_content" | "reasoning_details"
+        }
+  }
+  cost: {
+    input: number
+    output: number
+    cache: {
+      read: number
+      write: number
+    }
+    currency?: "USD" | "CNY"
+    tiers?: Array<{
+      input: number
+      output: number
+      cache: {
+        read: number
+        write: number
+      }
+      tier: {
+        type: "context"
+        size: number
+      }
+    }>
+    experimentalOver200K?: {
+      input: number
+      output: number
+      cache: {
+        read: number
+        write: number
       }
     }
   }
+  limit: {
+    context: number
+    input?: number
+    output: number
+  }
+  status: "alpha" | "beta" | "deprecated" | "active"
+  options: {
+    [key: string]: unknown
+  }
+  headers: {
+    [key: string]: string
+  }
+  release_date: string
+  variants?: {
+    [key: string]: {
+      [key: string]: unknown
+    }
+  }
+  reasoningOptions?: unknown
+}
+
+export type QuestionNotFoundErrorEncoded = {
+  _tag: "QuestionNotFoundError"
+  requestID: string
+  message: string
+}
+
+export type Pty3 = {
+  id: string
+  title: string
+  command: string
+  args: Array<string>
+  cwd: string
+  status: "running" | "exited"
+  pid: number
+}
+
+export type Pty2 = {
+  id: string
+  title: string
+  command: string
+  args: Array<string>
+  cwd: string
+  status: "running" | "exited"
+  pid: number
+}
+
+export type Pty1 = {
+  id: string
+  title: string
+  command: string
+  args: Array<string>
+  cwd: string
+  status: "running" | "exited"
+  pid: number
+}
+
+export type Project3 = {
+  id: string
+  worktree: string
+  vcs?: "git"
+  name?: string
+  icon?: {
+    url?: string
+    override?: string
+    color?: string
+  }
+  commands?: {
+    /**
+     * Startup script to run when creating a new workspace (worktree)
+     */
+    start?: string
+  }
+  time: {
+    created: number
+    updated: number
+    initialized?: number
+  }
+  sandboxes: Array<string>
+}
+
+export type Project2 = {
+  id: string
+  worktree: string
+  vcs?: "git"
+  name?: string
+  icon?: {
+    url?: string
+    override?: string
+    color?: string
+  }
+  commands?: {
+    /**
+     * Startup script to run when creating a new workspace (worktree)
+     */
+    start?: string
+  }
+  time: {
+    created: number
+    updated: number
+    initialized?: number
+  }
+  sandboxes: Array<string>
+}
+
+export type Project1 = {
+  id: string
+  worktree: string
+  vcs?: "git"
+  name?: string
+  icon?: {
+    url?: string
+    override?: string
+    color?: string
+  }
+  commands?: {
+    /**
+     * Startup script to run when creating a new workspace (worktree)
+     */
+    start?: string
+  }
+  time: {
+    created: number
+    updated: number
+    initialized?: number
+  }
+  sandboxes: Array<string>
+}
+
+export type McpUnsupportedOAuthErrorEncoded = {
+  error: string
+}
+
+export type McpStatus2 =
+  McpStatusConnected | McpStatusDisabled | McpStatusFailed | McpStatusNeedsAuth | McpStatusNeedsClientRegistration
+
+export type McpStatusNeedsClientRegistration = {
+  status: "needs_client_registration"
+  error: string
+}
+
+export type McpStatusNeedsAuth = {
+  status: "needs_auth"
+}
+
+export type McpStatusFailed = {
+  status: "failed"
+  error: string
+}
+
+export type McpStatusDisabled = {
+  status: "disabled"
+}
+
+export type McpStatusConnected = {
+  status: "connected"
+}
+
+export type McpStatus1 =
+  McpStatusConnected | McpStatusDisabled | McpStatusFailed | McpStatusNeedsAuth | McpStatusNeedsClientRegistration
+
+export type McpStatus =
+  McpStatusConnected | McpStatusDisabled | McpStatusFailed | McpStatusNeedsAuth | McpStatusNeedsClientRegistration
+
+export type McpRemoteConfig = {
+  /**
+   * Type of MCP server connection
+   */
+  type: "remote"
+  /**
+   * URL of the remote MCP server
+   */
+  url: string
+  /**
+   * Enable or disable the MCP server on startup
+   */
+  enabled?: boolean
+  /**
+   * Headers to send with the request
+   */
+  headers?: {
+    [key: string]: string
+  }
+  /**
+   * OAuth authentication configuration for the MCP server. Set to false to disable OAuth auto-detection.
+   */
+  oauth?: McpOAuthConfig | false
+  /**
+   * Timeout in ms for MCP server requests. Defaults to 30000 (30 seconds) if not specified.
+   */
+  timeout?: number
+  /**
+   * Retry policy for tool calls. Use none for non-idempotent MCP actions.
+   */
+  retry?: "default" | "none"
+  /**
+   * Whitelist: only these tool names are injected into the prompt. Omit to expose all tools. Empty array hides every tool (server stays connected but contributes nothing).
+   */
+  tools?: Array<string>
+}
+
+export type McpOAuthConfig = {
+  /**
+   * OAuth client ID. If not provided, dynamic client registration (RFC 7591) will be attempted.
+   */
+  clientId?: string
+  /**
+   * OAuth client secret (if required by the authorization server)
+   */
+  clientSecret?: string
+  /**
+   * OAuth scopes to request during authorization
+   */
+  scope?: string
+  /**
+   * Port for the local OAuth callback server (default: 19876). Shorthand for redirectUri when only the port needs changing. Ignored if redirectUri is set.
+   */
+  callbackPort?: number
+  /**
+   * OAuth redirect URI (default: http://127.0.0.1:19876/mcp/oauth/callback).
+   */
+  redirectUri?: string
 }
 
 export type McpLocalConfig = {
@@ -1320,183 +1984,264 @@ export type McpLocalConfig = {
   tools?: Array<string>
 }
 
-export type McpOAuthConfig = {
-  /**
-   * OAuth client ID. If not provided, dynamic client registration (RFC 7591) will be attempted.
-   */
-  clientId?: string
-  /**
-   * OAuth client secret (if required by the authorization server)
-   */
-  clientSecret?: string
-  /**
-   * OAuth scopes to request during authorization
-   */
-  scope?: string
-  /**
-   * Port for the local OAuth callback server (default: 19876). Shorthand for redirectUri when only the port needs changing. Ignored if redirectUri is set.
-   */
-  callbackPort?: number
-  /**
-   * OAuth redirect URI (default: http://127.0.0.1:19876/mcp/oauth/callback).
-   */
-  redirectUri?: string
+export type FormatterStatus = {
+  name: string
+  extensions: Array<string>
+  enabled: boolean
 }
 
-export type McpRemoteConfig = {
-  /**
-   * Type of MCP server connection
-   */
-  type: "remote"
-  /**
-   * URL of the remote MCP server
-   */
-  url: string
-  /**
-   * Enable or disable the MCP server on startup
-   */
-  enabled?: boolean
-  /**
-   * Headers to send with the request
-   */
-  headers?: {
-    [key: string]: string
+export type LspStatus = {
+  id: string
+  name: string
+  root: string
+  status: "connected" | "error"
+}
+
+export type Agent = {
+  name: string
+  displayName?: string
+  description?: string
+  mode: "subagent" | "primary" | "all"
+  native?: boolean
+  hidden?: boolean
+  topP?: number
+  temperature?: number
+  color?: string
+  permission: PermissionRuleset
+  model?: {
+    modelID: string
+    providerID: string
   }
-  /**
-   * OAuth authentication configuration for the MCP server. Set to false to disable OAuth auto-detection.
-   */
-  oauth?: McpOAuthConfig | false
-  /**
-   * Timeout in ms for MCP server requests. Defaults to 30000 (30 seconds) if not specified.
-   */
-  timeout?: number
-  /**
-   * Retry policy for tool calls. Use none for non-idempotent MCP actions.
-   */
-  retry?: "default" | "none"
-  /**
-   * Whitelist: only these tool names are injected into the prompt. Omit to expose all tools. Empty array hides every tool (server stays connected but contributes nothing).
-   */
-  tools?: Array<string>
+  variant?: string
+  prompt?: string
+  options: {
+    [key: string]: unknown
+  }
+  steps?: number
 }
 
-/**
- * @deprecated Always uses stretch layout.
- */
-export type LayoutConfig = "auto" | "stretch"
-
-export type ImageAttachmentConfig = {
-  /**
-   * Resize images before sending them to the model when they exceed configured limits (default: true)
-   */
-  auto_resize?: boolean
-  /**
-   * @deprecated Scaling is driven by max_pixels; this now only contributes to the default pixel budget (max_width * max_height) when max_pixels is unset.
-   */
-  max_width?: number
-  /**
-   * @deprecated Scaling is driven by max_pixels; this now only contributes to the default pixel budget (max_width * max_height) when max_pixels is unset.
-   */
-  max_height?: number
-  /**
-   * Total pixel budget for an attached image (default: 4000000, i.e. 2000x2000). The raster is scaled proportionally to fit this budget, so an extreme aspect ratio such as a tall page screenshot keeps its short-edge resolution instead of being crushed by a per-side box.
-   */
-  max_pixels?: number
-  /**
-   * Hard per-side cap applied after the pixel budget (default: 8192). Guards against extreme single-axis sizes that providers reject.
-   */
-  max_dimension?: number
-  /**
-   * Maximum base64 payload bytes for an image attachment (default: 5242880)
-   */
-  max_base64_bytes?: number
+export type Command = {
+  name: string
+  description?: string
+  agent?: string
+  model?: string
+  source?: "command" | "mcp" | "skill"
+  template: string
+  subtask?: boolean
+  hints: Array<string>
 }
 
-export type AttachmentConfig = {
-  /**
-   * Image attachment configuration
-   */
-  image?: ImageAttachmentConfig
+export type VcsFileDiff = {
+  file: string
+  patch?: string
+  additions: number
+  deletions: number
+  status?: "added" | "deleted" | "modified"
 }
 
-export type NativeCompactionConfig = {
-  /**
-   * Enable the native compaction budget (default: false). While off, the legacy compaction.threshold / model-window path is unchanged.
-   */
-  enabled?: boolean
-  /**
-   * Token count that triggers native compaction, clamped to the model's usable window (default: 250000; maximum: 2000000)
-   */
-  trigger_tokens?: number
-  /**
-   * Token count native compaction aims for after summarizing, scaled down with the trigger when the model window is smaller (default: 130000; maximum: 2000000)
-   */
-  target_tokens?: number
-  /**
-   * Token count at which the user is reminded to compact before the trigger fires, scaled down with the trigger when the model window is smaller (default: 220000; maximum: 2000000)
-   */
-  reminder_tokens?: number
-  soft_ratio?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  prune_ratio?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  /**
-   * Maximum tokens of one compaction summary (default: 16000; maximum: 1000000)
-   */
-  summary_max_tokens?: number
-  /**
-   * Maximum tokens of inherited protected records carried into a new compaction block (default: 20000; maximum: 2000000)
-   */
-  retained_max_tokens?: number
-  /**
-   * Maximum bytes of one compaction summary (default: 98304; maximum: 67108864)
-   */
-  summary_max_bytes?: number
-  /**
-   * Maximum tokens kept active per compaction range (default: 80000; maximum: 2000000)
-   */
-  active_max_tokens?: number
-  /**
-   * Maximum bytes kept active per compaction range (default: 524288; maximum: 268435456)
-   */
-  active_max_bytes?: number
-  /**
-   * Maximum compaction ranges per session (default: 8; maximum: 1024)
-   */
-  max_ranges?: number
-  /**
-   * Maximum blocks scanned per compaction pass (default: 128; maximum: 16384)
-   */
-  max_blocks?: number
-  /**
-   * Maximum messages considered per compaction pass (default: 4096; maximum: 65536)
-   */
-  max_messages?: number
-  /**
-   * Maximum tokens read from one retained message (default: 2048; maximum: 1000000)
-   */
-  read_max_tokens?: number
-  /**
-   * Maximum bytes read from one retained message (default: 8192; maximum: 67108864)
-   */
-  read_max_bytes?: number
-  /**
-   * Maximum bytes scanned when searching retained history (default: 4194304; maximum: 1073741824)
-   */
-  search_scan_bytes?: number
-  /**
-   * Maximum results returned when searching retained history (default: 10; maximum: 1000)
-   */
-  search_max_results?: number
-  /**
-   * Keep user messages verbatim during native compaction (default: true)
-   */
-  protect_user_messages?: boolean
-  /**
-   * Tool names whose outputs native compaction never drops (default: [task, task_status, skill, todowrite, todoread])
-   */
-  protected_tools?: Array<string>
+export type VcsFileStatus = {
+  file: string
+  additions: number
+  deletions: number
+  status: "added" | "deleted" | "modified"
 }
 
-export type Config = {
+export type VcsInfo = {
+  branch?: string
+  default_branch?: string
+}
+
+export type Path = {
+  home: string
+  state: string
+  config: string
+  worktree: string
+  directory: string
+}
+
+export type File = {
+  path: string
+  added: number
+  removed: number
+  status: "added" | "deleted" | "modified"
+}
+
+export type FileContent = {
+  type: "text" | "binary"
+  content: string
+  diff?: string
+  patch?: {
+    oldFileName: string
+    newFileName: string
+    oldHeader?: string
+    newHeader?: string
+    hunks: Array<{
+      oldStart: number
+      oldLines: number
+      newStart: number
+      newLines: number
+      lines: Array<string>
+    }>
+    index?: string
+  }
+  encoding?: "base64"
+  mimeType?: string
+  truncated?: boolean
+}
+
+export type FileNode = {
+  name: string
+  path: string
+  absolute: string
+  type: "file" | "directory"
+  ignored: boolean
+}
+
+export type Symbol = {
+  name: string
+  kind: number
+  location: {
+    uri: string
+    range: Range
+  }
+}
+
+export type GenerateResponse = {
+  text: string
+}
+
+export type GeneratePayload = {
+  prompt: string
+  model?: {
+    providerID: string
+    modelID: string
+  }
+}
+
+export type McpResource = {
+  name: string
+  uri: string
+  description?: string
+  mimeType?: string
+  client: string
+}
+
+export type GlobalSession = {
+  id: string
+  slug: string
+  projectID: string
+  workspaceID?: string
+  directory: string
+  path?: string
+  parentID?: string
+  summary?: {
+    additions: number
+    deletions: number
+    files: number
+    diffs?: Array<SnapshotFileDiff>
+  }
+  cost?: number
+  costCny?: number
+  costUsd?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+      miss?: number
+    }
+  }
+  share?: {
+    url: string
+  }
+  title: string
+  agent?: string
+  client?: string
+  soul?: string
+  soulBodyHash?: string
+  model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  version: string
+  time: {
+    created: number
+    updated: number
+    compacting?: number
+    archived?: number
+  }
+  permission?: PermissionRuleset
+  revert?: {
+    messageID: string
+    partID?: string
+    snapshot?: string
+    diff?: string
+  }
+  project: ProjectSummary | null
+}
+
+export type ProjectSummary = {
+  id: string
+  name?: string
+  worktree: string
+}
+
+export type WorktreeErrorEncoded = {
+  name:
+    | "WorktreeNotGitError"
+    | "WorktreeNameGenerationFailedError"
+    | "WorktreeCreateFailedError"
+    | "WorktreeStartCommandFailedError"
+    | "WorktreeRemoveFailedError"
+    | "WorktreeResetFailedError"
+    | "WorktreeListFailedError"
+  data: {
+    message: string
+  }
+}
+
+export type WorktreeResetInput = {
+  directory: string
+}
+
+export type WorktreeRemoveInput = {
+  directory: string
+}
+
+export type Worktree = {
+  name: string
+  branch?: string
+  directory: string
+}
+
+export type WorktreeCreateInput = {
+  name?: string
+  /**
+   * Additional startup script to run after the project's start command
+   */
+  startCommand?: string
+}
+
+export type ToolIds = Array<string>
+
+export type ToolList = Array<ToolListItem>
+
+export type ToolListItem = {
+  id: string
+  description: string
+  parameters: unknown
+}
+
+export type ConsoleState = {
+  consoleManagedProviders: Array<string>
+  activeOrgName?: string
+  switchableOrgCount: number
+}
+
+export type Config4 = {
   /**
    * JSON schema reference for configuration validation
    */
@@ -1616,22 +2361,22 @@ export type Config = {
    * @deprecated Use `agent` field instead.
    */
   mode?: {
-    build?: AgentConfig
-    plan?: AgentConfig
-    [key: string]: AgentConfig | undefined
+    build?: AgentConfigEncoded
+    plan?: AgentConfigEncoded
+    [key: string]: AgentConfigEncoded | undefined
   }
   /**
    * Agent configuration, see https://redcode.dev/docs/agents
    */
   agent?: {
-    redmind?: AgentConfig
-    plan?: AgentConfig
-    explore?: AgentConfig
-    execute?: AgentConfig
-    title?: AgentConfig
-    summary?: AgentConfig
-    compaction?: AgentConfig
-    [key: string]: AgentConfig | undefined
+    redmind?: AgentConfigEncoded
+    plan?: AgentConfigEncoded
+    explore?: AgentConfigEncoded
+    execute?: AgentConfigEncoded
+    title?: AgentConfigEncoded
+    summary?: AgentConfigEncoded
+    compaction?: AgentConfigEncoded
+    [key: string]: AgentConfigEncoded | undefined
   }
   /**
    * Custom provider configurations and model overrides
@@ -1716,7 +2461,7 @@ export type Config = {
    * @deprecated Always uses stretch layout.
    */
   layout?: LayoutConfig
-  permission?: PermissionConfig
+  permission?: PermissionConfigEncoded
   tools?: {
     [key: string]: boolean
   }
@@ -1844,6 +2589,10 @@ export type Config = {
        */
       maxChars?: number
     }
+    toolInputGuard?: {
+      maxPendingCalls?: number
+      idleMs?: number
+    }
     /**
      * Timeout in milliseconds for model context protocol (MCP) requests
      */
@@ -1859,657 +2608,2031 @@ export type Config = {
   }
 }
 
-export type Model = {
-  id: string
-  providerID: string
-  api: {
-    id: string
-    url: string
-    npm: string
-  }
-  name: string
-  family?: string
-  capabilities: {
-    temperature: boolean
-    reasoning: boolean
-    reasoningEfforts?: Array<string>
-    attachment: boolean
-    toolcall: boolean
-    input: {
-      text: boolean
-      audio: boolean
-      image: boolean
-      video: boolean
-      pdf: boolean
+export type NativeCompactionConfig = {
+  /**
+   * Enable the native compaction budget (default: false). While off, the legacy compaction.threshold / model-window path is unchanged.
+   */
+  enabled?: boolean
+  /**
+   * Token count that triggers native compaction, clamped to the model's usable window (default: 250000; maximum: 2000000)
+   */
+  trigger_tokens?: number
+  /**
+   * Token count native compaction aims for after summarizing, scaled down with the trigger when the model window is smaller (default: 130000; maximum: 2000000)
+   */
+  target_tokens?: number
+  /**
+   * Token count at which the user is reminded to compact before the trigger fires, scaled down with the trigger when the model window is smaller (default: 220000; maximum: 2000000)
+   */
+  reminder_tokens?: number
+  soft_ratio?: number | "Infinity" | "-Infinity" | "NaN"
+  prune_ratio?: number | "Infinity" | "-Infinity" | "NaN"
+  /**
+   * Maximum tokens of one compaction summary (default: 16000; maximum: 1000000)
+   */
+  summary_max_tokens?: number
+  /**
+   * Maximum tokens of inherited protected records carried into a new compaction block (default: 20000; maximum: 2000000)
+   */
+  retained_max_tokens?: number
+  /**
+   * Maximum bytes of one compaction summary (default: 98304; maximum: 67108864)
+   */
+  summary_max_bytes?: number
+  /**
+   * Maximum tokens kept active per compaction range (default: 80000; maximum: 2000000)
+   */
+  active_max_tokens?: number
+  /**
+   * Maximum bytes kept active per compaction range (default: 524288; maximum: 268435456)
+   */
+  active_max_bytes?: number
+  /**
+   * Maximum compaction ranges per session (default: 8; maximum: 1024)
+   */
+  max_ranges?: number
+  /**
+   * Maximum blocks scanned per compaction pass (default: 128; maximum: 16384)
+   */
+  max_blocks?: number
+  /**
+   * Maximum messages considered per compaction pass (default: 4096; maximum: 65536)
+   */
+  max_messages?: number
+  /**
+   * Maximum tokens read from one retained message (default: 2048; maximum: 1000000)
+   */
+  read_max_tokens?: number
+  /**
+   * Maximum bytes read from one retained message (default: 8192; maximum: 67108864)
+   */
+  read_max_bytes?: number
+  /**
+   * Maximum bytes scanned when searching retained history (default: 4194304; maximum: 1073741824)
+   */
+  search_scan_bytes?: number
+  /**
+   * Maximum results returned when searching retained history (default: 10; maximum: 1000)
+   */
+  search_max_results?: number
+  /**
+   * Keep user messages verbatim during native compaction (default: true)
+   */
+  protect_user_messages?: boolean
+  /**
+   * Tool names whose outputs native compaction never drops (default: [task, task_status, skill, todowrite, todoread])
+   */
+  protected_tools?: Array<string>
+}
+
+export type AttachmentConfig = {
+  /**
+   * Image attachment configuration
+   */
+  image?: ImageAttachmentConfig
+}
+
+export type ImageAttachmentConfig = {
+  /**
+   * Resize images before sending them to the model when they exceed configured limits (default: true)
+   */
+  auto_resize?: boolean
+  /**
+   * @deprecated Scaling is driven by max_pixels; this now only contributes to the default pixel budget (max_width * max_height) when max_pixels is unset.
+   */
+  max_width?: number
+  /**
+   * @deprecated Scaling is driven by max_pixels; this now only contributes to the default pixel budget (max_width * max_height) when max_pixels is unset.
+   */
+  max_height?: number
+  /**
+   * Total pixel budget for an attached image (default: 4000000, i.e. 2000x2000). The raster is scaled proportionally to fit this budget, so an extreme aspect ratio such as a tall page screenshot keeps its short-edge resolution instead of being crushed by a per-side box.
+   */
+  max_pixels?: number
+  /**
+   * Hard per-side cap applied after the pixel budget (default: 8192). Guards against extreme single-axis sizes that providers reject.
+   */
+  max_dimension?: number
+  /**
+   * Maximum base64 payload bytes for an image attachment (default: 5242880)
+   */
+  max_base64_bytes?: number
+}
+
+export type PermissionConfigEncoded =
+  | PermissionActionConfig
+  | {
+      read?: PermissionRuleConfig
+      edit?: PermissionRuleConfig
+      glob?: PermissionRuleConfig
+      grep?: PermissionRuleConfig
+      list?: PermissionRuleConfig
+      bash?: PermissionRuleConfig
+      task?: PermissionRuleConfig
+      external_directory?: PermissionRuleConfig
+      todowrite?: PermissionActionConfig
+      question?: PermissionActionConfig
+      webfetch?: PermissionActionConfig
+      websearch?: PermissionActionConfig
+      repo_clone?: PermissionRuleConfig
+      repo_overview?: PermissionRuleConfig
+      lsp?: PermissionRuleConfig
+      doom_loop?: PermissionActionConfig
+      skill?: PermissionRuleConfig
+      [key: string]: PermissionRuleConfig | PermissionActionConfig | undefined
     }
-    output: {
-      text: boolean
-      audio: boolean
-      image: boolean
-      video: boolean
-      pdf: boolean
-    }
-    interleaved:
-      | boolean
-      | {
-          field: "reasoning_content" | "reasoning_details"
-        }
+
+export type PermissionRuleConfig = PermissionActionConfig | PermissionObjectConfig
+
+export type PermissionObjectConfig = {
+  [key: string]: PermissionActionConfig
+}
+
+export type PermissionActionConfig = "ask" | "allow" | "deny"
+
+/**
+ * @deprecated Always uses stretch layout.
+ */
+export type LayoutConfig = "auto" | "stretch"
+
+export type ProviderConfig = {
+  api?: string
+  name?: string
+  env?: Array<string>
+  id?: string
+  npm?: string
+  whitelist?: Array<string>
+  blacklist?: Array<string>
+  options?: {
+    apiKey?: string
+    baseURL?: string
+    /**
+     * GitHub Enterprise URL for copilot authentication
+     */
+    enterpriseUrl?: string
+    /**
+     * Enable promptCacheKey for this provider (default false)
+     */
+    setCacheKey?: boolean
+    /**
+     * Timeout in milliseconds for requests to this provider. Default is 300000 (5 minutes). Set to false to disable timeout.
+     */
+    timeout?: number | false
+    /**
+     * Timeout in milliseconds between streamed SSE chunks for this provider. If no chunk arrives within this window, the request is aborted.
+     */
+    chunkTimeout?: number
+    [key: string]: unknown | string | boolean | number | false | number | undefined
   }
-  cost: {
-    input: number
-    output: number
-    cache: {
-      read: number
-      write: number
-    }
-    currency?: "USD" | "CNY"
-    tiers?: Array<{
-      input: number
-      output: number
-      cache: {
-        read: number
-        write: number
-      }
-      tier: {
-        type: "context"
-        size: number
-      }
-    }>
-    experimentalOver200K?: {
-      input: number
-      output: number
-      cache: {
-        read: number
-        write: number
-      }
-    }
-  }
-  limit: {
-    context: number
-    input?: number
-    output: number
-  }
-  status: "alpha" | "beta" | "deprecated" | "active"
-  options: {
-    [key: string]: unknown
-  }
-  headers: {
-    [key: string]: string
-  }
-  release_date: string
-  variants?: {
+  models?: {
     [key: string]: {
-      [key: string]: unknown
+      id?: string
+      name?: string
+      family?: string
+      release_date?: string
+      attachment?: boolean
+      reasoning?: boolean
+      reasoning_options?: unknown
+      temperature?: boolean
+      tool_call?: boolean
+      interleaved?:
+        | true
+        | {
+            field: "reasoning_content" | "reasoning_details"
+          }
+      cost?: {
+        input: number
+        output: number
+        /**
+         * Currency these prices are quoted in. "CNY" skips the USD→CNY conversion in cost display (TUI footer, TUI sidebar, GUI context panel, home stats). Custom CNY-priced providers declare this here — no source-code change needed.
+         */
+        currency?: "USD" | "CNY"
+        cache_read?: number
+        cache_write?: number
+        context_over_200k?: {
+          input: number
+          output: number
+          cache_read?: number
+          cache_write?: number
+        }
+      }
+      limit?: {
+        context: number
+        input?: number
+        output: number
+      }
+      modalities?: {
+        input: Array<"text" | "audio" | "image" | "video" | "pdf">
+        output: Array<"text" | "audio" | "image" | "video" | "pdf">
+      }
+      experimental?: boolean
+      status?: "alpha" | "beta" | "deprecated" | "active"
+      provider?: {
+        npm?: string
+        api?: string
+      }
+      options?: {
+        [key: string]: unknown
+      }
+      headers?: {
+        [key: string]: string
+      }
+      /**
+       * Explicitly enable/disable tools for this model (e.g. {"apply_patch": true, "edit": false}). Overrides the built-in model-family heuristic that picks apply_patch vs edit/write by model id. Keyed by the model's API id.
+       */
+      tools?: {
+        [key: string]: boolean
+      }
+      /**
+       * Variant-specific configuration
+       */
+      variants?: {
+        [key: string]: {
+          /**
+           * Disable this variant for the model
+           */
+          disabled?: boolean
+          [key: string]: unknown | boolean | undefined
+        }
+      }
     }
   }
-  reasoningOptions?: unknown
 }
 
-export type Provider = {
-  id: string
-  name: string
-  source: "env" | "config" | "custom" | "api"
-  env: Array<string>
-  key?: string
-  options: {
-    [key: string]: unknown
-  }
-  models: {
-    [key: string]: Model
-  }
-}
-
-export type ConsoleState = {
-  consoleManagedProviders: Array<string>
-  activeOrgName?: string
-  switchableOrgCount: number
-}
-
-export type EffectHttpApiErrorInternalServerError = {
-  _tag: "InternalServerError"
-}
-
-export type ToolListItem = {
-  id: string
-  description: string
-  parameters: unknown
-}
-
-export type ToolList = Array<ToolListItem>
-
-export type ToolIds = Array<string>
-
-export type WorktreeError = {
-  name:
-    | "WorktreeNotGitError"
-    | "WorktreeNameGenerationFailedError"
-    | "WorktreeCreateFailedError"
-    | "WorktreeStartCommandFailedError"
-    | "WorktreeRemoveFailedError"
-    | "WorktreeResetFailedError"
-    | "WorktreeListFailedError"
-  data: {
-    message: string
-  }
-}
-
-export type WorktreeCreateInput = {
-  name?: string
-  /**
-   * Additional startup script to run after the project's start command
-   */
-  startCommand?: string
-}
-
-export type Worktree = {
-  name: string
-  branch?: string
-  directory: string
-}
-
-export type WorktreeRemoveInput = {
-  directory: string
-}
-
-export type WorktreeResetInput = {
-  directory: string
-}
-
-export type ProjectSummary = {
-  id: string
-  name?: string
-  worktree: string
-}
-
-export type GlobalSession = {
-  id: string
-  slug: string
-  projectID: string
-  workspaceID?: string
-  directory: string
-  path?: string
-  parentID?: string
-  summary?: {
-    additions: number
-    deletions: number
-    files: number
-    diffs?: Array<SnapshotFileDiff>
-  }
-  cost?: number
-  costCny?: number
-  costUsd?: number
-  tokens?: {
-    input: number
-    output: number
-    reasoning: number
-    cache: {
-      read: number
-      write: number
-      miss?: number
-    }
-  }
-  share?: {
-    url: string
-  }
-  title: string
-  agent?: string
-  client?: string
-  soul?: string
-  soulBodyHash?: string
-  model?: {
-    id: string
-    providerID: string
-    variant?: string
-  }
-  version: string
-  time: {
-    created: number
-    updated: number
-    compacting?: number
-    archived?: number
-  }
-  permission?: PermissionRuleset
-  revert?: {
-    messageID: string
-    partID?: string
-    snapshot?: string
-    diff?: string
-  }
-  project: ProjectSummary | null
-}
-
-export type McpResource = {
-  name: string
-  uri: string
-  description?: string
-  mimeType?: string
-  client: string
-}
-
-export type GeneratePayload = {
-  prompt: string
-  model?: {
-    providerID: string
-    modelID: string
-  }
-}
-
-export type GenerateResponse = {
-  text: string
-}
-
-export type Symbol = {
-  name: string
-  kind: number
-  location: {
-    uri: string
-    range: Range
-  }
-}
-
-export type FileNode = {
-  name: string
-  path: string
-  absolute: string
-  type: "file" | "directory"
-  ignored: boolean
-}
-
-export type FileContent = {
-  type: "text" | "binary"
-  content: string
-  diff?: string
-  patch?: {
-    oldFileName: string
-    newFileName: string
-    oldHeader?: string
-    newHeader?: string
-    hunks: Array<{
-      oldStart: number
-      oldLines: number
-      newStart: number
-      newLines: number
-      lines: Array<string>
-    }>
-    index?: string
-  }
-  encoding?: "base64"
-  mimeType?: string
-}
-
-export type File = {
-  path: string
-  added: number
-  removed: number
-  status: "added" | "deleted" | "modified"
-}
-
-export type Path = {
-  home: string
-  state: string
-  config: string
-  worktree: string
-  directory: string
-}
-
-export type VcsInfo = {
-  branch?: string
-  default_branch?: string
-}
-
-export type VcsFileStatus = {
-  file: string
-  additions: number
-  deletions: number
-  status: "added" | "deleted" | "modified"
-}
-
-export type VcsFileDiff = {
-  file: string
-  patch?: string
-  additions: number
-  deletions: number
-  status?: "added" | "deleted" | "modified"
-}
-
-export type VcsApplyError = {
-  name: "VcsApplyError"
-  data: {
-    message: string
-    reason: "non-git" | "not-clean"
-  }
-}
-
-export type Command = {
-  name: string
-  description?: string
-  agent?: string
+export type AgentConfigEncoded = {
   model?: string
-  source?: "command" | "mcp" | "skill"
-  template: string
-  subtask?: boolean
-  hints: Array<string>
-}
-
-export type Agent = {
-  name: string
-  displayName?: string
-  description?: string
-  mode: "subagent" | "primary" | "all"
-  native?: boolean
-  hidden?: boolean
-  topP?: number
-  temperature?: number
-  color?: string
-  permission: PermissionRuleset
-  model?: {
-    modelID: string
-    providerID: string
-  }
+  /**
+   * Default model variant for this agent (applies only when using the agent's configured model).
+   */
   variant?: string
+  temperature?: number
+  top_p?: number
   prompt?: string
-  options: {
+  /**
+   * @deprecated Use 'permission' field instead
+   */
+  tools?: {
+    [key: string]: boolean
+  }
+  disable?: boolean
+  /**
+   * Description of when to use the agent
+   */
+  description?: string
+  mode?: "subagent" | "primary" | "all"
+  /**
+   * Hide this subagent from the @ autocomplete menu (default: false, only applies to mode: subagent)
+   */
+  hidden?: boolean
+  options?: {
     [key: string]: unknown
   }
+  /**
+   * Hex color code (e.g., #FF5733) or theme color (e.g., primary)
+   */
+  color?: string | "primary" | "secondary" | "accent" | "success" | "warning" | "error" | "info"
+  /**
+   * Maximum number of agentic iterations before forcing text-only response
+   */
   steps?: number
+  /**
+   * @deprecated Use 'steps' field instead.
+   */
+  maxSteps?: number
+  permission?: PermissionConfigEncoded
+  [key: string]:
+    | unknown
+    | string
+    | number
+    | {
+        [key: string]: boolean
+      }
+    | boolean
+    | "subagent"
+    | "primary"
+    | "all"
+    | {
+        [key: string]: unknown
+      }
+    | string
+    | "primary"
+    | "secondary"
+    | "accent"
+    | "success"
+    | "warning"
+    | "error"
+    | "info"
+    | number
+    | PermissionConfigEncoded
+    | undefined
 }
 
-export type LspStatus = {
-  id: string
-  name: string
-  root: string
-  status: "connected" | "error"
+export type ReferenceConfig = {
+  [key: string]: ReferenceConfigEntry
 }
 
-export type FormatterStatus = {
-  name: string
-  extensions: Array<string>
-  enabled: boolean
-}
+export type ReferenceConfigEntry =
+  | string
+  | {
+      /**
+       * Git repository URL, host/path reference, or GitHub owner/repo shorthand
+       */
+      repository: string
+      /**
+       * Branch or ref Scout should clone and inspect
+       */
+      branch?: string
+    }
+  | {
+      /**
+       * Absolute path, ~/ path, or workspace-relative path to a local reference directory
+       */
+      path: string
+    }
 
-export type McpStatusConnected = {
-  status: "connected"
-}
-
-export type McpStatusDisabled = {
-  status: "disabled"
-}
-
-export type McpStatusFailed = {
-  status: "failed"
-  error: string
-}
-
-export type McpStatusNeedsAuth = {
-  status: "needs_auth"
-}
-
-export type McpStatusNeedsClientRegistration = {
-  status: "needs_client_registration"
-  error: string
-}
-
-export type McpStatus =
-  McpStatusConnected | McpStatusDisabled | McpStatusFailed | McpStatusNeedsAuth | McpStatusNeedsClientRegistration
-
-export type McpUnsupportedOAuthError = {
-  error: string
-}
-
-export type NotFoundError = {
-  name: "NotFoundError"
-  data: {
-    message: string
+/**
+ * Server configuration for redcode serve and web commands
+ */
+export type ServerConfig = {
+  /**
+   * Port to listen on
+   */
+  port?: number
+  /**
+   * Hostname to listen on
+   */
+  hostname?: string
+  /**
+   * Enable mDNS service discovery
+   */
+  mdns?: boolean
+  /**
+   * Custom domain name for mDNS service (default: redcode.local)
+   */
+  mdnsDomain?: string
+  /**
+   * Additional domains to allow for CORS
+   */
+  cors?: Array<string>
+  /**
+   * Global SSE buffer limits; overflow closes the stream for authoritative resync
+   */
+  sse?: {
+    /**
+     * Maximum buffered events per global SSE connection (default: 256)
+     */
+    max_events?: number
+    /**
+     * Maximum buffered UTF-8 event data bytes per global SSE connection (default: 8388608)
+     */
+    max_bytes?: number
   }
 }
 
-export type EffectHttpApiErrorForbidden = {
-  _tag: "Forbidden"
-}
+/**
+ * Log level
+ */
+export type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR"
 
-export type QuestionNotFoundError = {
-  _tag: "QuestionNotFoundError"
-  requestID: string
-  message: string
-}
-
-export type PermissionNotFoundError = {
-  _tag: "PermissionNotFoundError"
-  requestID: string
-  message: string
-}
-
-export type ProviderAuthMethod = {
-  type: "oauth" | "api"
-  label: string
-  prompts?: Array<
-    | {
-        type: "text"
-        key: string
-        message: string
-        placeholder?: string
-        when?: {
-          key: string
-          op: "eq" | "neq"
-          value: string
-        }
-      }
-    | {
-        type: "select"
-        key: string
-        message: string
-        options: Array<{
-          label: string
-          value: string
-          hint?: string
-        }>
-        when?: {
-          key: string
-          op: "eq" | "neq"
-          value: string
-        }
-      }
+export type Config1 = {
+  /**
+   * JSON schema reference for configuration validation
+   */
+  $schema?: string
+  /**
+   * Default shell to use for terminal and bash tool
+   */
+  shell?: string
+  /**
+   * Optional Windows dual-shell routing for the agent bash tool. Absent = use config.shell as before; user commands and PTY terminals are not affected
+   */
+  shellRouting?: {
+    /**
+     * Default shell for the agent bash tool on Windows: git-bash, powershell, or legacy (config.shell). Absent = legacy behavior
+     */
+    agentDefault?: "git-bash" | "powershell" | "legacy"
+  }
+  /**
+   * Log level
+   */
+  logLevel?: LogLevel
+  /**
+   * Server configuration for redcode serve and web commands
+   */
+  server?: ServerConfig
+  /**
+   * Command configuration, see https://redcode.dev/docs/commands
+   */
+  command?: {
+    [key: string]: {
+      template: string
+      description?: string
+      agent?: string
+      model?: string
+      subtask?: boolean
+    }
+  }
+  /**
+   * Additional skill folder paths
+   */
+  skills?: {
+    /**
+     * Additional paths to skill folders
+     */
+    paths?: Array<string>
+    /**
+     * URLs to fetch skills from (e.g., https://example.com/.well-known/skills/)
+     */
+    urls?: Array<string>
+  }
+  /**
+   * Named git or local directory references that can be mentioned as @alias or @alias/path
+   */
+  reference?: ReferenceConfig
+  watcher?: {
+    ignore?: Array<string>
+  }
+  /**
+   * Enable or disable snapshot tracking. When false, filesystem snapshots are not recorded and undoing or reverting will not undo/redo file changes. Defaults to true.
+   */
+  snapshot?: boolean
+  plugin?: Array<
+    | string
+    | [
+        string,
+        {
+          [key: string]: unknown
+        },
+      ]
   >
-}
-
-export type ProviderAuthAuthorization = {
-  url: string
-  method: "auto" | "code"
-  instructions: string
-}
-
-export type ProviderAuthError1 = {
-  name:
-    | "BadRequest"
-    | "ProviderAuthOauthMissing"
-    | "ProviderAuthOauthCodeMissing"
-    | "ProviderAuthOauthCallbackFailed"
-    | "ProviderAuthValidationFailed"
-  data: {
-    providerID?: string
-    field?: string
-    message?: string
-    kind?: string
-  }
-}
-
-export type ContextSegment = {
+  dcp?: unknown
   /**
-   * Human-readable name of this slice of the prompt
+   * Control sharing behavior:'manual' allows manual sharing via commands, 'auto' enables automatic sharing, 'disabled' disables all sharing
    */
-  label: string
+  share?: "manual" | "auto" | "disabled"
   /**
-   * Estimated tokens (CJK-weighted, not chars / 4)
+   * @deprecated Use 'share' field instead. Share newly created sessions automatically
    */
-  tokens: number
-}
-
-export type ContextSnapshot = {
-  providerID: string
-  modelID: string
+  autoshare?: boolean
   /**
-   * When this request was assembled
+   * Automatically update to the latest version. Set to true to auto-update, false to disable, or 'notify' to show update notifications
    */
-  time: number
+  autoupdate?: boolean | "notify"
   /**
-   * system + tools + messages
+   * Disable providers that are loaded automatically
    */
-  total: number
-  system: {
-    tokens: number
+  disabled_providers?: Array<string>
+  /**
+   * When set, ONLY these providers will be enabled. All other providers will be ignored
+   */
+  enabled_providers?: Array<string>
+  /**
+   * Model to use in the format of provider/model, eg anthropic/claude-2
+   */
+  model?: string
+  /**
+   * Small model to use for tasks like title generation in the format of provider/model
+   */
+  small_model?: string
+  /**
+   * Default agent to use when none is specified. Must be a primary agent. Falls back to 'redmind' if not set or if the specified agent is invalid.
+   */
+  default_agent?: string
+  /**
+   * Maximum subagent nesting depth. Defaults to 1, which prevents subagents from launching subagents.
+   */
+  subagent_depth?: number
+  /**
+   * Custom username to display in conversations instead of the machine hostname
+   */
+  username?: string
+  /**
+   * How a message sent while the agent is busy reaches the model. 'steer' (default): injected into the running turn at the next step, so you can redirect work in flight. 'queue': hidden from the running turn and processed as the input of a fresh turn after the current one finishes.
+   */
+  busy_enter?: "steer" | "queue"
+  /**
+   * @deprecated Use `agent` field instead.
+   */
+  mode?: {
+    build?: AgentConfigEncoded
+    plan?: AgentConfigEncoded
+    [key: string]: AgentConfigEncoded | undefined
+  }
+  /**
+   * Agent configuration, see https://redcode.dev/docs/agents
+   */
+  agent?: {
+    redmind?: AgentConfigEncoded
+    plan?: AgentConfigEncoded
+    explore?: AgentConfigEncoded
+    execute?: AgentConfigEncoded
+    title?: AgentConfigEncoded
+    summary?: AgentConfigEncoded
+    compaction?: AgentConfigEncoded
+    [key: string]: AgentConfigEncoded | undefined
+  }
+  /**
+   * Custom provider configurations and model overrides
+   */
+  provider?: {
+    [key: string]: ProviderConfig
+  }
+  /**
+   * MCP (Model Context Protocol) server configurations
+   */
+  mcp?: {
+    [key: string]:
+      | McpLocalConfig
+      | McpRemoteConfig
+      | {
+          enabled: boolean
+        }
+  }
+  /**
+   * Enable or configure formatters. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.
+   */
+  formatter?:
+    | boolean
+    | {
+        [key: string]: {
+          disabled?: boolean
+          command?: Array<string>
+          environment?: {
+            [key: string]: string
+          }
+          extensions?: Array<string>
+        }
+      }
+  /**
+   * Enable or configure LSP servers. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.
+   */
+  lsp?:
+    | boolean
+    | {
+        [key: string]:
+          | {
+              disabled: true
+            }
+          | {
+              command: Array<string>
+              extensions?: Array<string>
+              disabled?: boolean
+              env?: {
+                [key: string]: string
+              }
+              initialization?: {
+                [key: string]: unknown
+              }
+            }
+      }
+  /**
+   * Additional instruction files or patterns to include
+   */
+  instructions?: Array<string>
+  /**
+   * Instruction prefix budget and remote fetch timeout
+   */
+  instruction_budget?: {
     /**
-     * Trust level for this group's estimate: plain text, CJK weighting applies
+     * Maximum size of one instruction source. Sources larger than this are skipped instead of injected in full (default: 1048576)
      */
-    confidence: "low" | "medium"
+    max_source_bytes?: number
     /**
-     * One entry per system-prompt block, largest first
+     * Hard cap on the total instruction prefix. When exceeded, whole sources are dropped lowest-retention-first (soul, then config instructions, then MEMORY.md, then AGENTS.md) until the total fits - never a partial file. Dropped sources are named in a model-visible notice; a lone remaining source that still exceeds is truncated with a marker (default: 65536)
      */
-    segments: Array<ContextSegment>
-  }
-  tools: {
-    count: number
-    tokens: number
+    max_total_bytes?: number
     /**
-     * Trust level for this group's estimate: JSON schema, structural tokens dominate so CJK weighting barely applies
+     * Maximum total UTF-8 bytes of nearby instructions attached by one read tool result. Sources that do not fit are skipped in full (default: 32768)
      */
-    confidence: "low" | "medium"
+    max_resolved_bytes?: number
     /**
-     * Most expensive tool schemas, largest first
+     * Timeout for fetching a remote instruction URL, covering the response body as well as the request (default: 5000)
      */
-    top: Array<ContextSegment>
+    fetch_timeout_ms?: number
   }
-  messages: {
-    count: number
-    tokens: number
+  /**
+   * @deprecated Always uses stretch layout.
+   */
+  layout?: LayoutConfig
+  permission?: PermissionConfigEncoded
+  tools?: {
+    [key: string]: boolean
+  }
+  /**
+   * Attachment processing configuration, including image size limits and resizing behavior
+   */
+  attachment?: AttachmentConfig
+  enterprise?: {
     /**
-     * Trust level for this group's estimate: text weighted, images priced separately by provider rate
+     * Enterprise URL
      */
-    confidence: "low" | "medium"
+    url?: string
+  }
+  /**
+   * webfetch tool configuration
+   */
+  webfetch?: {
     /**
-     * Conversation tokens grouped by role, largest first
+     * Allow the webfetch tool to reach loopback, private, link-local and other non-public addresses (default: false). Leaving this off keeps a model-supplied URL from reaching your LAN or a cloud metadata endpoint; use a shell command when you genuinely need a local address.
      */
-    byRole: Array<ContextSegment>
+    allow_private_hosts?: boolean
+  }
+  /**
+   * Thresholds for truncating tool output. When output exceeds either limit, the full text is written to the truncation directory and a preview is returned.
+   */
+  tool_output?: {
+    /**
+     * Maximum lines of tool output before it is truncated and saved to disk (default: 2000)
+     */
+    max_lines?: number
+    /**
+     * Maximum bytes of tool output before it is truncated and saved to disk (default: 51200)
+     */
+    max_bytes?: number
+  }
+  compaction?: {
+    /**
+     * Enable automatic compaction when context is full (default: true)
+     */
+    auto?: boolean
+    /**
+     * Enable pruning of old tool outputs (default: false)
+     */
+    prune?: boolean
+    /**
+     * Number of recent user turns, including their following assistant/tool responses, to keep verbatim during compaction (default: 2)
+     */
+    tail_turns?: number
+    /**
+     * Maximum number of tokens from recent turns to preserve verbatim after compaction
+     */
+    preserve_recent_tokens?: number
+    /**
+     * Token buffer for compaction. Leaves enough window to avoid overflow during compaction.
+     */
+    reserved?: number
+    /**
+     * Hard token ceiling for compaction. When total tokens exceed this value, compaction triggers regardless of the model's declared context limit. Replaces DCP's auto-compress role. (default: none — uses model limit)
+     */
+    threshold?: number
+    /**
+     * Native compaction budget (trigger/target/reminder tokens, summary and retained-range caps, scan limits). Disabled by default; while off, the legacy threshold and model-window behavior is unchanged.
+     */
+    native?: NativeCompactionConfig
+  }
+  /**
+   * Bounds and retention for lightweight session change markers
+   */
+  session_changes?: {
+    enabled?: boolean
+    max_events_per_session?: number
+    max_total_events?: number
+    retention_ms?: number
+    page_size?: number
+  }
+  experimental?: {
+    disable_paste_summary?: boolean
+    /**
+     * Enable the batch tool
+     */
+    batch_tool?: boolean
+    /**
+     * Enable OpenTelemetry spans for AI SDK calls (using the 'experimental_telemetry' flag)
+     */
+    openTelemetry?: boolean
+    /**
+     * Tools that should only be available to primary agents.
+     */
+    primary_tools?: Array<string>
+    /**
+     * Continue the agent loop when a tool call is denied
+     */
+    continue_loop_on_deny?: boolean
+    /**
+     * Identical tool failures before one final correction opportunity (default: 2; maximum: 20).
+     */
+    repeated_tool_failure_limit?: number
+    /**
+     * Bounded, hash-only provider request diagnostics. Does not modify model requests or cache keys.
+     */
+    requestEvidence?: {
+      /**
+       * Maximum request body bytes hashed for diagnostics (default: 16777216; maximum: 67108864).
+       */
+      maxBodyBytes?: number
+      /**
+       * Maximum request messages or diagnostic section entries (default: 4096; maximum: 16384).
+       */
+      maxMessages?: number
+      /**
+       * Maximum pending compression receipts per diagnostic bucket (default: 16; maximum: 128).
+       */
+      maxPendingCompressions?: number
+    }
+    /**
+     * When a reasoning-only step is treated as stalled: silence before cutoff, plus a character backstop for providers that stream forever.
+     */
+    reasoningStall?: {
+      /**
+       * Silence (ms) with no provider event before a reasoning-only turn is treated as stalled (default: 300000). Very low values cut normal long thinking.
+       */
+      idleMs?: number
+      /**
+       * Backstop on reasoning characters accumulated in one step, for providers that stream forever (default: 200000).
+       */
+      maxChars?: number
+    }
+    toolInputGuard?: {
+      maxPendingCalls?: number
+      idleMs?: number
+    }
+    /**
+     * Timeout in milliseconds for model context protocol (MCP) requests
+     */
+    mcp_timeout?: number
+    /**
+     * Automatically continue the agent loop while a goal is active (default off)
+     */
+    goal_auto_continue?: boolean
+    /**
+     * Token budget for a goal before it is marked budget_limited
+     */
+    goal_token_budget?: number
   }
 }
 
-export type TextPartInput = {
-  id?: string
-  type: "text"
-  text: string
-  synthetic?: boolean
-  ignored?: boolean
-  time?: {
-    start: number
-    end?: number
+export type Config3 = {
+  /**
+   * JSON schema reference for configuration validation
+   */
+  $schema?: string
+  /**
+   * Default shell to use for terminal and bash tool
+   */
+  shell?: string
+  /**
+   * Optional Windows dual-shell routing for the agent bash tool. Absent = use config.shell as before; user commands and PTY terminals are not affected
+   */
+  shellRouting?: {
+    /**
+     * Default shell for the agent bash tool on Windows: git-bash, powershell, or legacy (config.shell). Absent = legacy behavior
+     */
+    agentDefault?: "git-bash" | "powershell" | "legacy"
   }
-  metadata?: {
-    [key: string]: unknown
+  /**
+   * Log level
+   */
+  logLevel?: LogLevel
+  /**
+   * Server configuration for redcode serve and web commands
+   */
+  server?: ServerConfig
+  /**
+   * Command configuration, see https://redcode.dev/docs/commands
+   */
+  command?: {
+    [key: string]: {
+      template: string
+      description?: string
+      agent?: string
+      model?: string
+      subtask?: boolean
+    }
+  }
+  /**
+   * Additional skill folder paths
+   */
+  skills?: {
+    /**
+     * Additional paths to skill folders
+     */
+    paths?: Array<string>
+    /**
+     * URLs to fetch skills from (e.g., https://example.com/.well-known/skills/)
+     */
+    urls?: Array<string>
+  }
+  /**
+   * Named git or local directory references that can be mentioned as @alias or @alias/path
+   */
+  reference?: ReferenceConfig
+  watcher?: {
+    ignore?: Array<string>
+  }
+  /**
+   * Enable or disable snapshot tracking. When false, filesystem snapshots are not recorded and undoing or reverting will not undo/redo file changes. Defaults to true.
+   */
+  snapshot?: boolean
+  plugin?: Array<
+    | string
+    | [
+        string,
+        {
+          [key: string]: unknown
+        },
+      ]
+  >
+  dcp?: unknown
+  /**
+   * Control sharing behavior:'manual' allows manual sharing via commands, 'auto' enables automatic sharing, 'disabled' disables all sharing
+   */
+  share?: "manual" | "auto" | "disabled"
+  /**
+   * @deprecated Use 'share' field instead. Share newly created sessions automatically
+   */
+  autoshare?: boolean
+  /**
+   * Automatically update to the latest version. Set to true to auto-update, false to disable, or 'notify' to show update notifications
+   */
+  autoupdate?: boolean | "notify"
+  /**
+   * Disable providers that are loaded automatically
+   */
+  disabled_providers?: Array<string>
+  /**
+   * When set, ONLY these providers will be enabled. All other providers will be ignored
+   */
+  enabled_providers?: Array<string>
+  /**
+   * Model to use in the format of provider/model, eg anthropic/claude-2
+   */
+  model?: string
+  /**
+   * Small model to use for tasks like title generation in the format of provider/model
+   */
+  small_model?: string
+  /**
+   * Default agent to use when none is specified. Must be a primary agent. Falls back to 'redmind' if not set or if the specified agent is invalid.
+   */
+  default_agent?: string
+  /**
+   * Maximum subagent nesting depth. Defaults to 1, which prevents subagents from launching subagents.
+   */
+  subagent_depth?: number
+  /**
+   * Custom username to display in conversations instead of the machine hostname
+   */
+  username?: string
+  /**
+   * How a message sent while the agent is busy reaches the model. 'steer' (default): injected into the running turn at the next step, so you can redirect work in flight. 'queue': hidden from the running turn and processed as the input of a fresh turn after the current one finishes.
+   */
+  busy_enter?: "steer" | "queue"
+  /**
+   * @deprecated Use `agent` field instead.
+   */
+  mode?: {
+    build?: AgentConfigEncoded
+    plan?: AgentConfigEncoded
+    [key: string]: AgentConfigEncoded | undefined
+  }
+  /**
+   * Agent configuration, see https://redcode.dev/docs/agents
+   */
+  agent?: {
+    redmind?: AgentConfigEncoded
+    plan?: AgentConfigEncoded
+    explore?: AgentConfigEncoded
+    execute?: AgentConfigEncoded
+    title?: AgentConfigEncoded
+    summary?: AgentConfigEncoded
+    compaction?: AgentConfigEncoded
+    [key: string]: AgentConfigEncoded | undefined
+  }
+  /**
+   * Custom provider configurations and model overrides
+   */
+  provider?: {
+    [key: string]: ProviderConfig
+  }
+  /**
+   * MCP (Model Context Protocol) server configurations
+   */
+  mcp?: {
+    [key: string]:
+      | McpLocalConfig
+      | McpRemoteConfig
+      | {
+          enabled: boolean
+        }
+  }
+  /**
+   * Enable or configure formatters. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.
+   */
+  formatter?:
+    | boolean
+    | {
+        [key: string]: {
+          disabled?: boolean
+          command?: Array<string>
+          environment?: {
+            [key: string]: string
+          }
+          extensions?: Array<string>
+        }
+      }
+  /**
+   * Enable or configure LSP servers. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.
+   */
+  lsp?:
+    | boolean
+    | {
+        [key: string]:
+          | {
+              disabled: true
+            }
+          | {
+              command: Array<string>
+              extensions?: Array<string>
+              disabled?: boolean
+              env?: {
+                [key: string]: string
+              }
+              initialization?: {
+                [key: string]: unknown
+              }
+            }
+      }
+  /**
+   * Additional instruction files or patterns to include
+   */
+  instructions?: Array<string>
+  /**
+   * Instruction prefix budget and remote fetch timeout
+   */
+  instruction_budget?: {
+    /**
+     * Maximum size of one instruction source. Sources larger than this are skipped instead of injected in full (default: 1048576)
+     */
+    max_source_bytes?: number
+    /**
+     * Hard cap on the total instruction prefix. When exceeded, whole sources are dropped lowest-retention-first (soul, then config instructions, then MEMORY.md, then AGENTS.md) until the total fits - never a partial file. Dropped sources are named in a model-visible notice; a lone remaining source that still exceeds is truncated with a marker (default: 65536)
+     */
+    max_total_bytes?: number
+    /**
+     * Maximum total UTF-8 bytes of nearby instructions attached by one read tool result. Sources that do not fit are skipped in full (default: 32768)
+     */
+    max_resolved_bytes?: number
+    /**
+     * Timeout for fetching a remote instruction URL, covering the response body as well as the request (default: 5000)
+     */
+    fetch_timeout_ms?: number
+  }
+  /**
+   * @deprecated Always uses stretch layout.
+   */
+  layout?: LayoutConfig
+  permission?: PermissionConfigEncoded
+  tools?: {
+    [key: string]: boolean
+  }
+  /**
+   * Attachment processing configuration, including image size limits and resizing behavior
+   */
+  attachment?: AttachmentConfig
+  enterprise?: {
+    /**
+     * Enterprise URL
+     */
+    url?: string
+  }
+  /**
+   * webfetch tool configuration
+   */
+  webfetch?: {
+    /**
+     * Allow the webfetch tool to reach loopback, private, link-local and other non-public addresses (default: false). Leaving this off keeps a model-supplied URL from reaching your LAN or a cloud metadata endpoint; use a shell command when you genuinely need a local address.
+     */
+    allow_private_hosts?: boolean
+  }
+  /**
+   * Thresholds for truncating tool output. When output exceeds either limit, the full text is written to the truncation directory and a preview is returned.
+   */
+  tool_output?: {
+    /**
+     * Maximum lines of tool output before it is truncated and saved to disk (default: 2000)
+     */
+    max_lines?: number
+    /**
+     * Maximum bytes of tool output before it is truncated and saved to disk (default: 51200)
+     */
+    max_bytes?: number
+  }
+  compaction?: {
+    /**
+     * Enable automatic compaction when context is full (default: true)
+     */
+    auto?: boolean
+    /**
+     * Enable pruning of old tool outputs (default: false)
+     */
+    prune?: boolean
+    /**
+     * Number of recent user turns, including their following assistant/tool responses, to keep verbatim during compaction (default: 2)
+     */
+    tail_turns?: number
+    /**
+     * Maximum number of tokens from recent turns to preserve verbatim after compaction
+     */
+    preserve_recent_tokens?: number
+    /**
+     * Token buffer for compaction. Leaves enough window to avoid overflow during compaction.
+     */
+    reserved?: number
+    /**
+     * Hard token ceiling for compaction. When total tokens exceed this value, compaction triggers regardless of the model's declared context limit. Replaces DCP's auto-compress role. (default: none — uses model limit)
+     */
+    threshold?: number
+    /**
+     * Native compaction budget (trigger/target/reminder tokens, summary and retained-range caps, scan limits). Disabled by default; while off, the legacy threshold and model-window behavior is unchanged.
+     */
+    native?: NativeCompactionConfig
+  }
+  /**
+   * Bounds and retention for lightweight session change markers
+   */
+  session_changes?: {
+    enabled?: boolean
+    max_events_per_session?: number
+    max_total_events?: number
+    retention_ms?: number
+    page_size?: number
+  }
+  experimental?: {
+    disable_paste_summary?: boolean
+    /**
+     * Enable the batch tool
+     */
+    batch_tool?: boolean
+    /**
+     * Enable OpenTelemetry spans for AI SDK calls (using the 'experimental_telemetry' flag)
+     */
+    openTelemetry?: boolean
+    /**
+     * Tools that should only be available to primary agents.
+     */
+    primary_tools?: Array<string>
+    /**
+     * Continue the agent loop when a tool call is denied
+     */
+    continue_loop_on_deny?: boolean
+    /**
+     * Identical tool failures before one final correction opportunity (default: 2; maximum: 20).
+     */
+    repeated_tool_failure_limit?: number
+    /**
+     * Bounded, hash-only provider request diagnostics. Does not modify model requests or cache keys.
+     */
+    requestEvidence?: {
+      /**
+       * Maximum request body bytes hashed for diagnostics (default: 16777216; maximum: 67108864).
+       */
+      maxBodyBytes?: number
+      /**
+       * Maximum request messages or diagnostic section entries (default: 4096; maximum: 16384).
+       */
+      maxMessages?: number
+      /**
+       * Maximum pending compression receipts per diagnostic bucket (default: 16; maximum: 128).
+       */
+      maxPendingCompressions?: number
+    }
+    /**
+     * When a reasoning-only step is treated as stalled: silence before cutoff, plus a character backstop for providers that stream forever.
+     */
+    reasoningStall?: {
+      /**
+       * Silence (ms) with no provider event before a reasoning-only turn is treated as stalled (default: 300000). Very low values cut normal long thinking.
+       */
+      idleMs?: number
+      /**
+       * Backstop on reasoning characters accumulated in one step, for providers that stream forever (default: 200000).
+       */
+      maxChars?: number
+    }
+    toolInputGuard?: {
+      maxPendingCalls?: number
+      idleMs?: number
+    }
+    /**
+     * Timeout in milliseconds for model context protocol (MCP) requests
+     */
+    mcp_timeout?: number
+    /**
+     * Automatically continue the agent loop while a goal is active (default off)
+     */
+    goal_auto_continue?: boolean
+    /**
+     * Token budget for a goal before it is marked budget_limited
+     */
+    goal_token_budget?: number
   }
 }
 
-export type FilePartInput = {
-  id?: string
-  type: "file"
-  mime: string
-  filename?: string
-  url: string
-  source?: FilePartSource
-}
-
-export type AgentPartInput = {
-  id?: string
-  type: "agent"
-  name: string
-  source?: {
-    value: string
-    start: number
-    end: number
+export type Config2 = {
+  /**
+   * JSON schema reference for configuration validation
+   */
+  $schema?: string
+  /**
+   * Default shell to use for terminal and bash tool
+   */
+  shell?: string
+  /**
+   * Optional Windows dual-shell routing for the agent bash tool. Absent = use config.shell as before; user commands and PTY terminals are not affected
+   */
+  shellRouting?: {
+    /**
+     * Default shell for the agent bash tool on Windows: git-bash, powershell, or legacy (config.shell). Absent = legacy behavior
+     */
+    agentDefault?: "git-bash" | "powershell" | "legacy"
+  }
+  /**
+   * Log level
+   */
+  logLevel?: LogLevel
+  /**
+   * Server configuration for redcode serve and web commands
+   */
+  server?: ServerConfig
+  /**
+   * Command configuration, see https://redcode.dev/docs/commands
+   */
+  command?: {
+    [key: string]: {
+      template: string
+      description?: string
+      agent?: string
+      model?: string
+      subtask?: boolean
+    }
+  }
+  /**
+   * Additional skill folder paths
+   */
+  skills?: {
+    /**
+     * Additional paths to skill folders
+     */
+    paths?: Array<string>
+    /**
+     * URLs to fetch skills from (e.g., https://example.com/.well-known/skills/)
+     */
+    urls?: Array<string>
+  }
+  /**
+   * Named git or local directory references that can be mentioned as @alias or @alias/path
+   */
+  reference?: ReferenceConfig
+  watcher?: {
+    ignore?: Array<string>
+  }
+  /**
+   * Enable or disable snapshot tracking. When false, filesystem snapshots are not recorded and undoing or reverting will not undo/redo file changes. Defaults to true.
+   */
+  snapshot?: boolean
+  plugin?: Array<
+    | string
+    | [
+        string,
+        {
+          [key: string]: unknown
+        },
+      ]
+  >
+  dcp?: unknown
+  /**
+   * Control sharing behavior:'manual' allows manual sharing via commands, 'auto' enables automatic sharing, 'disabled' disables all sharing
+   */
+  share?: "manual" | "auto" | "disabled"
+  /**
+   * @deprecated Use 'share' field instead. Share newly created sessions automatically
+   */
+  autoshare?: boolean
+  /**
+   * Automatically update to the latest version. Set to true to auto-update, false to disable, or 'notify' to show update notifications
+   */
+  autoupdate?: boolean | "notify"
+  /**
+   * Disable providers that are loaded automatically
+   */
+  disabled_providers?: Array<string>
+  /**
+   * When set, ONLY these providers will be enabled. All other providers will be ignored
+   */
+  enabled_providers?: Array<string>
+  /**
+   * Model to use in the format of provider/model, eg anthropic/claude-2
+   */
+  model?: string
+  /**
+   * Small model to use for tasks like title generation in the format of provider/model
+   */
+  small_model?: string
+  /**
+   * Default agent to use when none is specified. Must be a primary agent. Falls back to 'redmind' if not set or if the specified agent is invalid.
+   */
+  default_agent?: string
+  /**
+   * Maximum subagent nesting depth. Defaults to 1, which prevents subagents from launching subagents.
+   */
+  subagent_depth?: number
+  /**
+   * Custom username to display in conversations instead of the machine hostname
+   */
+  username?: string
+  /**
+   * How a message sent while the agent is busy reaches the model. 'steer' (default): injected into the running turn at the next step, so you can redirect work in flight. 'queue': hidden from the running turn and processed as the input of a fresh turn after the current one finishes.
+   */
+  busy_enter?: "steer" | "queue"
+  /**
+   * @deprecated Use `agent` field instead.
+   */
+  mode?: {
+    build?: AgentConfigEncoded
+    plan?: AgentConfigEncoded
+    [key: string]: AgentConfigEncoded | undefined
+  }
+  /**
+   * Agent configuration, see https://redcode.dev/docs/agents
+   */
+  agent?: {
+    redmind?: AgentConfigEncoded
+    plan?: AgentConfigEncoded
+    explore?: AgentConfigEncoded
+    execute?: AgentConfigEncoded
+    title?: AgentConfigEncoded
+    summary?: AgentConfigEncoded
+    compaction?: AgentConfigEncoded
+    [key: string]: AgentConfigEncoded | undefined
+  }
+  /**
+   * Custom provider configurations and model overrides
+   */
+  provider?: {
+    [key: string]: ProviderConfig
+  }
+  /**
+   * MCP (Model Context Protocol) server configurations
+   */
+  mcp?: {
+    [key: string]:
+      | McpLocalConfig
+      | McpRemoteConfig
+      | {
+          enabled: boolean
+        }
+  }
+  /**
+   * Enable or configure formatters. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.
+   */
+  formatter?:
+    | boolean
+    | {
+        [key: string]: {
+          disabled?: boolean
+          command?: Array<string>
+          environment?: {
+            [key: string]: string
+          }
+          extensions?: Array<string>
+        }
+      }
+  /**
+   * Enable or configure LSP servers. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.
+   */
+  lsp?:
+    | boolean
+    | {
+        [key: string]:
+          | {
+              disabled: true
+            }
+          | {
+              command: Array<string>
+              extensions?: Array<string>
+              disabled?: boolean
+              env?: {
+                [key: string]: string
+              }
+              initialization?: {
+                [key: string]: unknown
+              }
+            }
+      }
+  /**
+   * Additional instruction files or patterns to include
+   */
+  instructions?: Array<string>
+  /**
+   * Instruction prefix budget and remote fetch timeout
+   */
+  instruction_budget?: {
+    /**
+     * Maximum size of one instruction source. Sources larger than this are skipped instead of injected in full (default: 1048576)
+     */
+    max_source_bytes?: number
+    /**
+     * Hard cap on the total instruction prefix. When exceeded, whole sources are dropped lowest-retention-first (soul, then config instructions, then MEMORY.md, then AGENTS.md) until the total fits - never a partial file. Dropped sources are named in a model-visible notice; a lone remaining source that still exceeds is truncated with a marker (default: 65536)
+     */
+    max_total_bytes?: number
+    /**
+     * Maximum total UTF-8 bytes of nearby instructions attached by one read tool result. Sources that do not fit are skipped in full (default: 32768)
+     */
+    max_resolved_bytes?: number
+    /**
+     * Timeout for fetching a remote instruction URL, covering the response body as well as the request (default: 5000)
+     */
+    fetch_timeout_ms?: number
+  }
+  /**
+   * @deprecated Always uses stretch layout.
+   */
+  layout?: LayoutConfig
+  permission?: PermissionConfigEncoded
+  tools?: {
+    [key: string]: boolean
+  }
+  /**
+   * Attachment processing configuration, including image size limits and resizing behavior
+   */
+  attachment?: AttachmentConfig
+  enterprise?: {
+    /**
+     * Enterprise URL
+     */
+    url?: string
+  }
+  /**
+   * webfetch tool configuration
+   */
+  webfetch?: {
+    /**
+     * Allow the webfetch tool to reach loopback, private, link-local and other non-public addresses (default: false). Leaving this off keeps a model-supplied URL from reaching your LAN or a cloud metadata endpoint; use a shell command when you genuinely need a local address.
+     */
+    allow_private_hosts?: boolean
+  }
+  /**
+   * Thresholds for truncating tool output. When output exceeds either limit, the full text is written to the truncation directory and a preview is returned.
+   */
+  tool_output?: {
+    /**
+     * Maximum lines of tool output before it is truncated and saved to disk (default: 2000)
+     */
+    max_lines?: number
+    /**
+     * Maximum bytes of tool output before it is truncated and saved to disk (default: 51200)
+     */
+    max_bytes?: number
+  }
+  compaction?: {
+    /**
+     * Enable automatic compaction when context is full (default: true)
+     */
+    auto?: boolean
+    /**
+     * Enable pruning of old tool outputs (default: false)
+     */
+    prune?: boolean
+    /**
+     * Number of recent user turns, including their following assistant/tool responses, to keep verbatim during compaction (default: 2)
+     */
+    tail_turns?: number
+    /**
+     * Maximum number of tokens from recent turns to preserve verbatim after compaction
+     */
+    preserve_recent_tokens?: number
+    /**
+     * Token buffer for compaction. Leaves enough window to avoid overflow during compaction.
+     */
+    reserved?: number
+    /**
+     * Hard token ceiling for compaction. When total tokens exceed this value, compaction triggers regardless of the model's declared context limit. Replaces DCP's auto-compress role. (default: none — uses model limit)
+     */
+    threshold?: number
+    /**
+     * Native compaction budget (trigger/target/reminder tokens, summary and retained-range caps, scan limits). Disabled by default; while off, the legacy threshold and model-window behavior is unchanged.
+     */
+    native?: NativeCompactionConfig
+  }
+  /**
+   * Bounds and retention for lightweight session change markers
+   */
+  session_changes?: {
+    enabled?: boolean
+    max_events_per_session?: number
+    max_total_events?: number
+    retention_ms?: number
+    page_size?: number
+  }
+  experimental?: {
+    disable_paste_summary?: boolean
+    /**
+     * Enable the batch tool
+     */
+    batch_tool?: boolean
+    /**
+     * Enable OpenTelemetry spans for AI SDK calls (using the 'experimental_telemetry' flag)
+     */
+    openTelemetry?: boolean
+    /**
+     * Tools that should only be available to primary agents.
+     */
+    primary_tools?: Array<string>
+    /**
+     * Continue the agent loop when a tool call is denied
+     */
+    continue_loop_on_deny?: boolean
+    /**
+     * Identical tool failures before one final correction opportunity (default: 2; maximum: 20).
+     */
+    repeated_tool_failure_limit?: number
+    /**
+     * Bounded, hash-only provider request diagnostics. Does not modify model requests or cache keys.
+     */
+    requestEvidence?: {
+      /**
+       * Maximum request body bytes hashed for diagnostics (default: 16777216; maximum: 67108864).
+       */
+      maxBodyBytes?: number
+      /**
+       * Maximum request messages or diagnostic section entries (default: 4096; maximum: 16384).
+       */
+      maxMessages?: number
+      /**
+       * Maximum pending compression receipts per diagnostic bucket (default: 16; maximum: 128).
+       */
+      maxPendingCompressions?: number
+    }
+    /**
+     * When a reasoning-only step is treated as stalled: silence before cutoff, plus a character backstop for providers that stream forever.
+     */
+    reasoningStall?: {
+      /**
+       * Silence (ms) with no provider event before a reasoning-only turn is treated as stalled (default: 300000). Very low values cut normal long thinking.
+       */
+      idleMs?: number
+      /**
+       * Backstop on reasoning characters accumulated in one step, for providers that stream forever (default: 200000).
+       */
+      maxChars?: number
+    }
+    toolInputGuard?: {
+      maxPendingCalls?: number
+      idleMs?: number
+    }
+    /**
+     * Timeout in milliseconds for model context protocol (MCP) requests
+     */
+    mcp_timeout?: number
+    /**
+     * Automatically continue the agent loop while a goal is active (default off)
+     */
+    goal_auto_continue?: boolean
+    /**
+     * Token budget for a goal before it is marked budget_limited
+     */
+    goal_token_budget?: number
   }
 }
 
-export type SubtaskPartInput = {
-  id?: string
-  type: "subtask"
-  prompt: string
-  description: string
-  agent: string
-  model?: {
-    providerID: string
-    modelID: string
+export type Config = {
+  /**
+   * JSON schema reference for configuration validation
+   */
+  $schema?: string
+  /**
+   * Default shell to use for terminal and bash tool
+   */
+  shell?: string
+  /**
+   * Optional Windows dual-shell routing for the agent bash tool. Absent = use config.shell as before; user commands and PTY terminals are not affected
+   */
+  shellRouting?: {
+    /**
+     * Default shell for the agent bash tool on Windows: git-bash, powershell, or legacy (config.shell). Absent = legacy behavior
+     */
+    agentDefault?: "git-bash" | "powershell" | "legacy"
   }
-  command?: string
-}
-
-export type SessionBusyError = {
-  _tag: "SessionBusyError"
-  sessionID: string
-  message: string
-}
-
-export type ConflictError = {
-  _tag: "ConflictError"
-  message: string
-  resource?: string
-}
-
-export type V2SessionsResponse = {
-  items: Array<SessionInfo>
-  cursor: {
-    previous?: string
-    next?: string
+  /**
+   * Log level
+   */
+  logLevel?: LogLevel
+  /**
+   * Server configuration for redcode serve and web commands
+   */
+  server?: ServerConfig
+  /**
+   * Command configuration, see https://redcode.dev/docs/commands
+   */
+  command?: {
+    [key: string]: {
+      template: string
+      description?: string
+      agent?: string
+      model?: string
+      subtask?: boolean
+    }
+  }
+  /**
+   * Additional skill folder paths
+   */
+  skills?: {
+    /**
+     * Additional paths to skill folders
+     */
+    paths?: Array<string>
+    /**
+     * URLs to fetch skills from (e.g., https://example.com/.well-known/skills/)
+     */
+    urls?: Array<string>
+  }
+  /**
+   * Named git or local directory references that can be mentioned as @alias or @alias/path
+   */
+  reference?: ReferenceConfig
+  watcher?: {
+    ignore?: Array<string>
+  }
+  /**
+   * Enable or disable snapshot tracking. When false, filesystem snapshots are not recorded and undoing or reverting will not undo/redo file changes. Defaults to true.
+   */
+  snapshot?: boolean
+  plugin?: Array<
+    | string
+    | [
+        string,
+        {
+          [key: string]: unknown
+        },
+      ]
+  >
+  dcp?: unknown
+  /**
+   * Control sharing behavior:'manual' allows manual sharing via commands, 'auto' enables automatic sharing, 'disabled' disables all sharing
+   */
+  share?: "manual" | "auto" | "disabled"
+  /**
+   * @deprecated Use 'share' field instead. Share newly created sessions automatically
+   */
+  autoshare?: boolean
+  /**
+   * Automatically update to the latest version. Set to true to auto-update, false to disable, or 'notify' to show update notifications
+   */
+  autoupdate?: boolean | "notify"
+  /**
+   * Disable providers that are loaded automatically
+   */
+  disabled_providers?: Array<string>
+  /**
+   * When set, ONLY these providers will be enabled. All other providers will be ignored
+   */
+  enabled_providers?: Array<string>
+  /**
+   * Model to use in the format of provider/model, eg anthropic/claude-2
+   */
+  model?: string
+  /**
+   * Small model to use for tasks like title generation in the format of provider/model
+   */
+  small_model?: string
+  /**
+   * Default agent to use when none is specified. Must be a primary agent. Falls back to 'redmind' if not set or if the specified agent is invalid.
+   */
+  default_agent?: string
+  /**
+   * Maximum subagent nesting depth. Defaults to 1, which prevents subagents from launching subagents.
+   */
+  subagent_depth?: number
+  /**
+   * Custom username to display in conversations instead of the machine hostname
+   */
+  username?: string
+  /**
+   * How a message sent while the agent is busy reaches the model. 'steer' (default): injected into the running turn at the next step, so you can redirect work in flight. 'queue': hidden from the running turn and processed as the input of a fresh turn after the current one finishes.
+   */
+  busy_enter?: "steer" | "queue"
+  /**
+   * @deprecated Use `agent` field instead.
+   */
+  mode?: {
+    build?: AgentConfigEncoded
+    plan?: AgentConfigEncoded
+    [key: string]: AgentConfigEncoded | undefined
+  }
+  /**
+   * Agent configuration, see https://redcode.dev/docs/agents
+   */
+  agent?: {
+    redmind?: AgentConfigEncoded
+    plan?: AgentConfigEncoded
+    explore?: AgentConfigEncoded
+    execute?: AgentConfigEncoded
+    title?: AgentConfigEncoded
+    summary?: AgentConfigEncoded
+    compaction?: AgentConfigEncoded
+    [key: string]: AgentConfigEncoded | undefined
+  }
+  /**
+   * Custom provider configurations and model overrides
+   */
+  provider?: {
+    [key: string]: ProviderConfig
+  }
+  /**
+   * MCP (Model Context Protocol) server configurations
+   */
+  mcp?: {
+    [key: string]:
+      | McpLocalConfig
+      | McpRemoteConfig
+      | {
+          enabled: boolean
+        }
+  }
+  /**
+   * Enable or configure formatters. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.
+   */
+  formatter?:
+    | boolean
+    | {
+        [key: string]: {
+          disabled?: boolean
+          command?: Array<string>
+          environment?: {
+            [key: string]: string
+          }
+          extensions?: Array<string>
+        }
+      }
+  /**
+   * Enable or configure LSP servers. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.
+   */
+  lsp?:
+    | boolean
+    | {
+        [key: string]:
+          | {
+              disabled: true
+            }
+          | {
+              command: Array<string>
+              extensions?: Array<string>
+              disabled?: boolean
+              env?: {
+                [key: string]: string
+              }
+              initialization?: {
+                [key: string]: unknown
+              }
+            }
+      }
+  /**
+   * Additional instruction files or patterns to include
+   */
+  instructions?: Array<string>
+  /**
+   * Instruction prefix budget and remote fetch timeout
+   */
+  instruction_budget?: {
+    /**
+     * Maximum size of one instruction source. Sources larger than this are skipped instead of injected in full (default: 1048576)
+     */
+    max_source_bytes?: number
+    /**
+     * Hard cap on the total instruction prefix. When exceeded, whole sources are dropped lowest-retention-first (soul, then config instructions, then MEMORY.md, then AGENTS.md) until the total fits - never a partial file. Dropped sources are named in a model-visible notice; a lone remaining source that still exceeds is truncated with a marker (default: 65536)
+     */
+    max_total_bytes?: number
+    /**
+     * Maximum total UTF-8 bytes of nearby instructions attached by one read tool result. Sources that do not fit are skipped in full (default: 32768)
+     */
+    max_resolved_bytes?: number
+    /**
+     * Timeout for fetching a remote instruction URL, covering the response body as well as the request (default: 5000)
+     */
+    fetch_timeout_ms?: number
+  }
+  /**
+   * @deprecated Always uses stretch layout.
+   */
+  layout?: LayoutConfig
+  permission?: PermissionConfigEncoded
+  tools?: {
+    [key: string]: boolean
+  }
+  /**
+   * Attachment processing configuration, including image size limits and resizing behavior
+   */
+  attachment?: AttachmentConfig
+  enterprise?: {
+    /**
+     * Enterprise URL
+     */
+    url?: string
+  }
+  /**
+   * webfetch tool configuration
+   */
+  webfetch?: {
+    /**
+     * Allow the webfetch tool to reach loopback, private, link-local and other non-public addresses (default: false). Leaving this off keeps a model-supplied URL from reaching your LAN or a cloud metadata endpoint; use a shell command when you genuinely need a local address.
+     */
+    allow_private_hosts?: boolean
+  }
+  /**
+   * Thresholds for truncating tool output. When output exceeds either limit, the full text is written to the truncation directory and a preview is returned.
+   */
+  tool_output?: {
+    /**
+     * Maximum lines of tool output before it is truncated and saved to disk (default: 2000)
+     */
+    max_lines?: number
+    /**
+     * Maximum bytes of tool output before it is truncated and saved to disk (default: 51200)
+     */
+    max_bytes?: number
+  }
+  compaction?: {
+    /**
+     * Enable automatic compaction when context is full (default: true)
+     */
+    auto?: boolean
+    /**
+     * Enable pruning of old tool outputs (default: false)
+     */
+    prune?: boolean
+    /**
+     * Number of recent user turns, including their following assistant/tool responses, to keep verbatim during compaction (default: 2)
+     */
+    tail_turns?: number
+    /**
+     * Maximum number of tokens from recent turns to preserve verbatim after compaction
+     */
+    preserve_recent_tokens?: number
+    /**
+     * Token buffer for compaction. Leaves enough window to avoid overflow during compaction.
+     */
+    reserved?: number
+    /**
+     * Hard token ceiling for compaction. When total tokens exceed this value, compaction triggers regardless of the model's declared context limit. Replaces DCP's auto-compress role. (default: none — uses model limit)
+     */
+    threshold?: number
+    /**
+     * Native compaction budget (trigger/target/reminder tokens, summary and retained-range caps, scan limits). Disabled by default; while off, the legacy threshold and model-window behavior is unchanged.
+     */
+    native?: NativeCompactionConfig
+  }
+  /**
+   * Bounds and retention for lightweight session change markers
+   */
+  session_changes?: {
+    enabled?: boolean
+    max_events_per_session?: number
+    max_total_events?: number
+    retention_ms?: number
+    page_size?: number
+  }
+  experimental?: {
+    disable_paste_summary?: boolean
+    /**
+     * Enable the batch tool
+     */
+    batch_tool?: boolean
+    /**
+     * Enable OpenTelemetry spans for AI SDK calls (using the 'experimental_telemetry' flag)
+     */
+    openTelemetry?: boolean
+    /**
+     * Tools that should only be available to primary agents.
+     */
+    primary_tools?: Array<string>
+    /**
+     * Continue the agent loop when a tool call is denied
+     */
+    continue_loop_on_deny?: boolean
+    /**
+     * Identical tool failures before one final correction opportunity (default: 2; maximum: 20).
+     */
+    repeated_tool_failure_limit?: number
+    /**
+     * Bounded, hash-only provider request diagnostics. Does not modify model requests or cache keys.
+     */
+    requestEvidence?: {
+      /**
+       * Maximum request body bytes hashed for diagnostics (default: 16777216; maximum: 67108864).
+       */
+      maxBodyBytes?: number
+      /**
+       * Maximum request messages or diagnostic section entries (default: 4096; maximum: 16384).
+       */
+      maxMessages?: number
+      /**
+       * Maximum pending compression receipts per diagnostic bucket (default: 16; maximum: 128).
+       */
+      maxPendingCompressions?: number
+    }
+    /**
+     * When a reasoning-only step is treated as stalled: silence before cutoff, plus a character backstop for providers that stream forever.
+     */
+    reasoningStall?: {
+      /**
+       * Silence (ms) with no provider event before a reasoning-only turn is treated as stalled (default: 300000). Very low values cut normal long thinking.
+       */
+      idleMs?: number
+      /**
+       * Backstop on reasoning characters accumulated in one step, for providers that stream forever (default: 200000).
+       */
+      maxChars?: number
+    }
+    toolInputGuard?: {
+      maxPendingCalls?: number
+      idleMs?: number
+    }
+    /**
+     * Timeout in milliseconds for model context protocol (MCP) requests
+     */
+    mcp_timeout?: number
+    /**
+     * Automatically continue the agent loop while a goal is active (default off)
+     */
+    goal_auto_continue?: boolean
+    /**
+     * Token budget for a goal before it is marked budget_limited
+     */
+    goal_token_budget?: number
   }
 }
 
-export type InvalidCursorError = {
-  _tag: "InvalidCursorError"
-  message: string
+export type GlobalEvent = {
+  directory: string
+  project?: string
+  workspace?: string
+  payload:
+    | EventTuiPromptAppend2
+    | EventTuiCommandExecute2
+    | EventTuiToastShow2
+    | EventTuiSessionSelect2
+    | EventServerConnected
+    | EventGlobalDisposed
+    | EventServerInstanceDisposed
+    | EventFileEdited
+    | EventFileWatcherUpdated
+    | EventProviderQuotaUpdated
+    | EventLspClientDiagnostics
+    | EventLspUpdated
+    | EventMessagePartDelta
+    | EventPermissionAsked
+    | EventPermissionReplied
+    | EventSessionDiff
+    | EventSessionError
+    | EventSessionLoopDetected
+    | EventQuestionAsked
+    | EventQuestionReplied
+    | EventQuestionRejected
+    | EventTodoUpdated
+    | EventGoalUpdated
+    | EventSessionStatus
+    | EventSessionIdle
+    | EventSessionCompacted
+    | EventMcpToolsChanged
+    | EventMcpBrowserOpenFailed
+    | EventCommandExecuted
+    | EventProjectUpdated
+    | EventProjectRemoved
+    | EventWorktreeReady
+    | EventWorktreeFailed
+    | EventVcsBranchUpdated
+    | EventWorkspaceReady
+    | EventWorkspaceFailed
+    | EventWorkspaceStatus
+    | EventPtyCreated
+    | EventPtyUpdated
+    | EventPtyExited
+    | EventPtyDeleted
+    | EventInstallationUpdated
+    | EventInstallationUpdateAvailable
+    | EventMessageUpdated
+    | EventMessageRemoved
+    | EventMessagePartUpdated
+    | EventMessagePartRemoved
+    | EventSessionCreated
+    | EventSessionUpdated
+    | EventSessionDeleted
+    | EventSessionNextAgentSwitched
+    | EventSessionNextModelSwitched
+    | EventSessionNextPrompted
+    | EventSessionNextSynthetic
+    | EventSessionNextShellStarted
+    | EventSessionNextShellEnded
+    | EventSessionNextStepStarted
+    | EventSessionNextStepEnded
+    | EventSessionNextStepFailed
+    | EventSessionNextTextStarted
+    | EventSessionNextTextDelta
+    | EventSessionNextTextEnded
+    | EventSessionNextReasoningStarted
+    | EventSessionNextReasoningDelta
+    | EventSessionNextReasoningEnded
+    | EventSessionNextToolInputStarted
+    | EventSessionNextToolInputDelta
+    | EventSessionNextToolInputEnded
+    | EventSessionNextToolCalled
+    | EventSessionNextToolProgress
+    | EventSessionNextToolSuccess
+    | EventSessionNextToolFailed
+    | EventSessionNextRetried
+    | EventSessionNextCompactionStarted
+    | EventSessionNextCompactionDelta
+    | EventSessionNextCompactionEnded
+    | EventCatalogModelUpdated
+    | EventSessionNextAgentSwitched1
+    | EventSessionNextModelSwitched1
+    | EventSessionNextPrompted1
+    | EventSessionNextSynthetic1
+    | EventSessionNextShellStarted1
+    | EventSessionNextShellEnded1
+    | EventSessionNextStepStarted1
+    | EventSessionNextStepEnded1
+    | EventSessionNextStepFailed1
+    | EventSessionNextTextStarted1
+    | EventSessionNextTextDelta1
+    | EventSessionNextTextEnded1
+    | EventSessionNextReasoningStarted1
+    | EventSessionNextReasoningDelta1
+    | EventSessionNextReasoningEnded1
+    | EventSessionNextToolInputStarted1
+    | EventSessionNextToolInputDelta1
+    | EventSessionNextToolInputEnded1
+    | EventSessionNextToolCalled1
+    | EventSessionNextToolProgress1
+    | EventSessionNextToolSuccess1
+    | EventSessionNextToolFailed1
+    | EventSessionNextRetried1
+    | EventSessionNextCompactionStarted1
+    | EventSessionNextCompactionDelta1
+    | EventSessionNextCompactionEnded1
+    | EventModelsDevRefreshed
+    | EventAccountAdded
+    | EventAccountRemoved
+    | EventAccountSwitched
+    | SyncEventMessageUpdated
+    | SyncEventMessageRemoved
+    | SyncEventMessagePartUpdated
+    | SyncEventMessagePartRemoved
+    | SyncEventSessionCreated
+    | SyncEventSessionUpdated
+    | SyncEventSessionDeleted
+    | SyncEventSessionNextAgentSwitched
+    | SyncEventSessionNextModelSwitched
+    | SyncEventSessionNextPrompted
+    | SyncEventSessionNextSynthetic
+    | SyncEventSessionNextShellStarted
+    | SyncEventSessionNextShellEnded
+    | SyncEventSessionNextStepStarted
+    | SyncEventSessionNextStepEnded
+    | SyncEventSessionNextStepFailed
+    | SyncEventSessionNextTextStarted
+    | SyncEventSessionNextTextDelta
+    | SyncEventSessionNextTextEnded
+    | SyncEventSessionNextReasoningStarted
+    | SyncEventSessionNextReasoningDelta
+    | SyncEventSessionNextReasoningEnded
+    | SyncEventSessionNextToolInputStarted
+    | SyncEventSessionNextToolInputDelta
+    | SyncEventSessionNextToolInputEnded
+    | SyncEventSessionNextToolCalled
+    | SyncEventSessionNextToolProgress
+    | SyncEventSessionNextToolSuccess
+    | SyncEventSessionNextToolFailed
+    | SyncEventSessionNextRetried
+    | SyncEventSessionNextCompactionStarted
+    | SyncEventSessionNextCompactionDelta
+    | SyncEventSessionNextCompactionEnded
 }
 
-export type UnauthorizedError = {
-  _tag: "UnauthorizedError"
-  message: string
-}
-
-export type SessionNotFoundError = {
-  _tag: "SessionNotFoundError"
-  sessionID: string
-  message: string
-}
-
-export type ServiceUnavailableError = {
-  _tag: "ServiceUnavailableError"
-  message: string
-  service?: string
-}
-
-export type UnknownError1 = {
-  _tag: "UnknownError"
-  message: string
-  ref?: string
-}
-
-export type V2SessionMessagesResponse = {
-  items: Array<SessionMessage>
-  cursor: {
-    previous?: string
-    next?: string
-  }
-}
-
-export type ProviderNotFoundError = {
-  _tag: "ProviderNotFoundError"
-  providerID: string
-  message: string
-}
-
-export type EventTuiPromptAppend2 = {
-  type: "tui.prompt.append"
+export type EventTuiSessionSelect2 = {
+  id: string
+  type: "tui.session.select"
   properties: {
-    text: string
+    /**
+     * Session ID to navigate to
+     */
+    sessionID: string
+  }
+}
+
+export type EventTuiToastShow2 = {
+  id: string
+  type: "tui.toast.show"
+  properties: {
+    title?: string
+    message: string
+    variant: "info" | "success" | "warning" | "error"
+    duration?: number
   }
 }
 
 export type EventTuiCommandExecute2 = {
+  id: string
   type: "tui.command.execute"
   properties: {
     command:
@@ -2533,74 +4656,37 @@ export type EventTuiCommandExecute2 = {
   }
 }
 
-export type EventTuiToastShow2 = {
-  type: "tui.toast.show"
-  properties: {
-    title?: string
-    message: string
-    variant: "info" | "success" | "warning" | "error"
-    duration?: number
-  }
-}
-
-export type EventTuiSessionSelect2 = {
-  type: "tui.session.select"
-  properties: {
-    /**
-     * Session ID to navigate to
-     */
-    sessionID: string
-  }
-}
-
-export type Workspace = {
+export type EventTuiPromptAppend2 = {
   id: string
-  type: string
-  name: string
-  branch?: string | null
-  directory?: string | null
-  extra?: unknown | null
-  projectID: string
-  timeUsed: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-}
-
-export type WorkspaceWarpError = {
-  name: "WorkspaceWarpError"
-  data: {
-    message: string
+  type: "tui.prompt.append"
+  properties: {
+    text: string
   }
 }
 
-export type ProviderQuota1 = {
-  providerID: string
-  accountID?: string
-  capturedAt: number | "NaN" | "Infinity" | "-Infinity"
-  planType: string
-  activeLimit?: string
-  primary?: {
-    usedPercent: number | "NaN" | "Infinity" | "-Infinity"
-    windowMinutes: number | "NaN" | "Infinity" | "-Infinity"
-    resetAfterSeconds: number | "NaN" | "Infinity" | "-Infinity"
-    resetAt: number | "NaN" | "Infinity" | "-Infinity"
+export type Auth = OAuthEncoded | ApiAuthEncoded | WellKnownAuthEncoded
+
+export type WellKnownAuthEncoded = {
+  type: "wellknown"
+  key: string
+  token: string
+}
+
+export type ApiAuthEncoded = {
+  type: "api"
+  key: string
+  metadata?: {
+    [key: string]: string
   }
-  secondary?: {
-    usedPercent: number | "NaN" | "Infinity" | "-Infinity"
-    windowMinutes: number | "NaN" | "Infinity" | "-Infinity"
-    resetAfterSeconds: number | "NaN" | "Infinity" | "-Infinity"
-    resetAt: number | "NaN" | "Infinity" | "-Infinity"
-  }
-  reserveName?: string
-  reserve?: {
-    usedPercent: number | "NaN" | "Infinity" | "-Infinity"
-    windowMinutes: number | "NaN" | "Infinity" | "-Infinity"
-    resetAfterSeconds: number | "NaN" | "Infinity" | "-Infinity"
-    resetAt: number | "NaN" | "Infinity" | "-Infinity"
-  }
-  credits?: {
-    balance: number | "NaN" | "Infinity" | "-Infinity"
-    has: boolean
-    unlimited: boolean
-  }
+}
+
+export type OAuthEncoded = {
+  type: "oauth"
+  refresh: string
+  access: string
+  expires: number
+  accountId?: string
+  enterpriseUrl?: string
 }
 
 export type SyncEventMessageUpdated = {
@@ -2777,7 +4863,7 @@ export type SyncEventSessionNextPrompted = {
   data: {
     timestamp: number
     sessionID: string
-    prompt: Prompt
+    prompt: PromptEncoded
   }
 }
 
@@ -3035,7 +5121,7 @@ export type SyncEventSessionNextToolProgress = {
     structured: {
       [key: string]: unknown
     }
-    content: Array<ToolTextContent | ToolFileContent>
+    content: Array<ToolTextContentEncoded | ToolFileContentEncoded>
   }
 }
 
@@ -3052,7 +5138,7 @@ export type SyncEventSessionNextToolSuccess = {
     structured: {
       [key: string]: unknown
     }
-    content: Array<ToolTextContent | ToolFileContent>
+    content: Array<ToolTextContentEncoded | ToolFileContentEncoded>
     provider: {
       executed: boolean
       metadata?: {
@@ -3136,500 +5222,338 @@ export type SyncEventSessionNextCompactionEnded = {
   }
 }
 
-export type EventServerConnected = {
+export type SyncEventSessionNextCompactionEnded11 = {
+  type: "sync"
+  name: "session.next.compaction.ended.1"
   id: string
-  type: "server.connected"
-  properties: {
-    [key: string]: unknown
-  }
-}
-
-export type EventGlobalDisposed = {
-  id: string
-  type: "global.disposed"
-  properties: {
-    [key: string]: unknown
-  }
-}
-
-export type EventServerInstanceDisposed = {
-  id: string
-  type: "server.instance.disposed"
-  properties: {
-    directory: string
-  }
-}
-
-export type EventFileEdited = {
-  id: string
-  type: "file.edited"
-  properties: {
-    file: string
-  }
-}
-
-export type EventFileWatcherUpdated = {
-  id: string
-  type: "file.watcher.updated"
-  properties: {
-    file: string
-    event: "add" | "change" | "unlink"
-  }
-}
-
-export type EventProviderQuotaUpdated = {
-  id: string
-  type: "provider.quota.updated"
-  properties: ProviderQuota
-}
-
-export type EventLspClientDiagnostics = {
-  id: string
-  type: "lsp.client.diagnostics"
-  properties: {
-    serverID: string
-    path: string
-  }
-}
-
-export type EventLspUpdated = {
-  id: string
-  type: "lsp.updated"
-  properties: {
-    [key: string]: unknown
-  }
-}
-
-export type EventMessagePartDelta = {
-  id: string
-  type: "message.part.delta"
-  properties: {
-    sessionID: string
-    messageID: string
-    partID: string
-    field: string
-    delta: string
-  }
-}
-
-export type EventPermissionAsked = {
-  id: string
-  type: "permission.asked"
-  properties: PermissionRequest
-}
-
-export type EventPermissionReplied = {
-  id: string
-  type: "permission.replied"
-  properties: {
-    sessionID: string
-    requestID: string
-    reply: "once" | "always" | "reject"
-  }
-}
-
-export type EventSessionDiff = {
-  id: string
-  type: "session.diff"
-  properties: {
-    sessionID: string
-    diff: Array<SnapshotFileDiff>
-  }
-}
-
-export type EventSessionError = {
-  id: string
-  type: "session.error"
-  properties: {
-    sessionID?: string
-    error?:
-      | ProviderAuthError
-      | UnknownError
-      | MessageOutputLengthError
-      | MessageAbortedError
-      | StructuredOutputError
-      | ContextOverflowError
-      | ContentFilterError
-      | ApiError
-  }
-}
-
-export type EventSessionLoopDetected = {
-  id: string
-  type: "session.loop_detected"
-  properties: {
-    sessionID: string
-    type: "ngram" | "nudge" | "replan" | "stop"
-    textLen: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  }
-}
-
-export type EventQuestionAsked = {
-  id: string
-  type: "question.asked"
-  properties: QuestionRequest
-}
-
-export type EventQuestionReplied = {
-  id: string
-  type: "question.replied"
-  properties: QuestionReplied
-}
-
-export type EventQuestionRejected = {
-  id: string
-  type: "question.rejected"
-  properties: QuestionRejected
-}
-
-export type EventTodoUpdated = {
-  id: string
-  type: "todo.updated"
-  properties: {
-    sessionID: string
-    todos: Array<Todo>
-  }
-}
-
-export type EventGoalUpdated = {
-  id: string
-  type: "goal.updated"
-  properties: {
-    sessionID: string
-    goal?: Goal
-  }
-}
-
-export type EventSessionStatus = {
-  id: string
-  type: "session.status"
-  properties: {
-    sessionID: string
-    status: SessionStatus
-  }
-}
-
-export type EventSessionIdle = {
-  id: string
-  type: "session.idle"
-  properties: {
-    sessionID: string
-  }
-}
-
-export type EventSessionCompacted = {
-  id: string
-  type: "session.compacted"
-  properties: {
-    sessionID: string
-  }
-}
-
-export type EventMcpToolsChanged = {
-  id: string
-  type: "mcp.tools.changed"
-  properties: {
-    server: string
-  }
-}
-
-export type EventMcpBrowserOpenFailed = {
-  id: string
-  type: "mcp.browser.open.failed"
-  properties: {
-    mcpName: string
-    url: string
-  }
-}
-
-export type EventCommandExecuted = {
-  id: string
-  type: "command.executed"
-  properties: {
-    name: string
-    sessionID: string
-    arguments: string
-    messageID: string
-  }
-}
-
-export type EventProjectUpdated = {
-  id: string
-  type: "project.updated"
-  properties: Project
-}
-
-export type EventProjectRemoved = {
-  id: string
-  type: "project.removed"
-  properties: string
-}
-
-export type EventWorktreeReady = {
-  id: string
-  type: "worktree.ready"
-  properties: {
-    name: string
-    branch?: string
-  }
-}
-
-export type EventWorktreeFailed = {
-  id: string
-  type: "worktree.failed"
-  properties: {
-    message: string
-  }
-}
-
-export type EventVcsBranchUpdated = {
-  id: string
-  type: "vcs.branch.updated"
-  properties: {
-    branch?: string
-  }
-}
-
-export type EventWorkspaceReady = {
-  id: string
-  type: "workspace.ready"
-  properties: {
-    name: string
-  }
-}
-
-export type EventWorkspaceFailed = {
-  id: string
-  type: "workspace.failed"
-  properties: {
-    message: string
-  }
-}
-
-export type EventWorkspaceStatus = {
-  id: string
-  type: "workspace.status"
-  properties: {
-    workspaceID: string
-    status: "connected" | "connecting" | "disconnected" | "error"
-  }
-}
-
-export type EventPtyCreated = {
-  id: string
-  type: "pty.created"
-  properties: {
-    info: Pty
-  }
-}
-
-export type EventPtyUpdated = {
-  id: string
-  type: "pty.updated"
-  properties: {
-    info: Pty
-  }
-}
-
-export type EventPtyExited = {
-  id: string
-  type: "pty.exited"
-  properties: {
-    id: string
-    exitCode: number
-  }
-}
-
-export type EventPtyDeleted = {
-  id: string
-  type: "pty.deleted"
-  properties: {
-    id: string
-  }
-}
-
-export type EventInstallationUpdated = {
-  id: string
-  type: "installation.updated"
-  properties: {
-    version: string
-  }
-}
-
-export type EventInstallationUpdateAvailable = {
-  id: string
-  type: "installation.update-available"
-  properties: {
-    version: string
-  }
-}
-
-export type EventMessageUpdated = {
-  id: string
-  type: "message.updated"
-  properties: {
-    sessionID: string
-    info: Message
-  }
-}
-
-export type EventMessageRemoved = {
-  id: string
-  type: "message.removed"
-  properties: {
-    sessionID: string
-    messageID: string
-  }
-}
-
-export type EventMessagePartUpdated = {
-  id: string
-  type: "message.part.updated"
-  properties: {
-    sessionID: string
-    part: Part
-    time: number
-  }
-}
-
-export type EventMessagePartRemoved = {
-  id: string
-  type: "message.part.removed"
-  properties: {
-    sessionID: string
-    messageID: string
-    partID: string
-  }
-}
-
-export type EventSessionCreated = {
-  id: string
-  type: "session.created"
-  properties: {
-    sessionID: string
-    info: Session
-  }
-}
-
-export type EventSessionUpdated = {
-  id: string
-  type: "session.updated"
-  properties: {
-    sessionID: string
-    info: Session
-  }
-}
-
-export type EventSessionDeleted = {
-  id: string
-  type: "session.deleted"
-  properties: {
-    sessionID: string
-    info: Session
-  }
-}
-
-export type EventSessionNextAgentSwitched = {
-  id: string
-  type: "session.next.agent.switched"
-  properties: {
+  seq: number
+  aggregateID: "sessionID"
+  data: {
     timestamp: number
     sessionID: string
-    agent: string
+    text: string
+    include?: string
   }
 }
 
-export type EventSessionNextModelSwitched = {
+export type SyncEventSessionNextCompactionDelta11 = {
+  type: "sync"
+  name: "session.next.compaction.delta.1"
   id: string
-  type: "session.next.model.switched"
-  properties: {
-    timestamp: number
-    sessionID: string
-    model: {
-      id: string
-      providerID: string
-      variant: string
-    }
-  }
-}
-
-export type PromptSource = {
-  start: number
-  end: number
-  text: string
-}
-
-export type PromptFileAttachment = {
-  uri: string
-  mime: string
-  name?: string
-  description?: string
-  source?: PromptSource
-}
-
-export type PromptAgentAttachment = {
-  name: string
-  source?: PromptSource
-}
-
-export type PromptReferenceAttachment = {
-  name: string
-  kind: "local" | "git" | "invalid"
-  uri?: string
-  repository?: string
-  branch?: string
-  target?: string
-  targetUri?: string
-  problem?: string
-  source?: PromptSource
-}
-
-export type EventSessionNextPrompted = {
-  id: string
-  type: "session.next.prompted"
-  properties: {
-    timestamp: number
-    sessionID: string
-    prompt: Prompt
-  }
-}
-
-export type EventSessionNextSynthetic = {
-  id: string
-  type: "session.next.synthetic"
-  properties: {
+  seq: number
+  aggregateID: "sessionID"
+  data: {
     timestamp: number
     sessionID: string
     text: string
   }
 }
 
-export type EventSessionNextShellStarted = {
+export type SyncEventSessionNextCompactionStarted11 = {
+  type: "sync"
+  name: "session.next.compaction.started.1"
   id: string
-  type: "session.next.shell.started"
-  properties: {
+  seq: number
+  aggregateID: "sessionID"
+  data: {
     timestamp: number
     sessionID: string
-    callID: string
-    command: string
+    reason: "auto" | "manual"
   }
 }
 
-export type EventSessionNextShellEnded = {
+export type SyncEventSessionNextRetried11 = {
+  type: "sync"
+  name: "session.next.retried.1"
   id: string
-  type: "session.next.shell.ended"
-  properties: {
+  seq: number
+  aggregateID: "sessionID"
+  data: {
     timestamp: number
     sessionID: string
-    callID: string
-    output: string
+    attempt: number
+    error: SessionNextRetryError
   }
 }
 
-export type EventSessionNextStepStarted = {
+export type SessionNextRetryError = {
+  message: string
+  statusCode?: number
+  isRetryable: boolean
+  responseHeaders?: {
+    [key: string]: string
+  }
+  responseBody?: string
+  metadata?: {
+    [key: string]: string
+  }
+}
+
+export type SyncEventSessionNextToolFailed11 = {
+  type: "sync"
+  name: "session.next.tool.failed.1"
   id: string
-  type: "session.next.step.started"
-  properties: {
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    error: SessionErrorUnknown
+    provider: {
+      executed: boolean
+      metadata?: {
+        [key: string]: unknown
+      }
+    }
+  }
+}
+
+export type SessionErrorUnknown = {
+  type: "unknown"
+  message: string
+}
+
+export type SyncEventSessionNextToolSuccess11 = {
+  type: "sync"
+  name: "session.next.tool.success.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    structured: {
+      [key: string]: unknown
+    }
+    content: Array<ToolTextContentEncoded | ToolFileContentEncoded>
+    provider: {
+      executed: boolean
+      metadata?: {
+        [key: string]: unknown
+      }
+    }
+  }
+}
+
+export type ToolFileContentEncoded = {
+  type: "file"
+  uri: string
+  mime: string
+  name?: string
+}
+
+export type ToolTextContentEncoded = {
+  type: "text"
+  text: string
+}
+
+export type SyncEventSessionNextToolProgress11 = {
+  type: "sync"
+  name: "session.next.tool.progress.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    structured: {
+      [key: string]: unknown
+    }
+    content: Array<ToolTextContentEncoded | ToolFileContentEncoded>
+  }
+}
+
+export type SyncEventSessionNextToolCalled11 = {
+  type: "sync"
+  name: "session.next.tool.called.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    tool: string
+    input: {
+      [key: string]: unknown
+    }
+    provider: {
+      executed: boolean
+      metadata?: {
+        [key: string]: unknown
+      }
+    }
+  }
+}
+
+export type SyncEventSessionNextToolInputEnded11 = {
+  type: "sync"
+  name: "session.next.tool.input.ended.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    text: string
+  }
+}
+
+export type SyncEventSessionNextToolInputDelta11 = {
+  type: "sync"
+  name: "session.next.tool.input.delta.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    delta: string
+  }
+}
+
+export type SyncEventSessionNextToolInputStarted11 = {
+  type: "sync"
+  name: "session.next.tool.input.started.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    name: string
+  }
+}
+
+export type SyncEventSessionNextReasoningEnded11 = {
+  type: "sync"
+  name: "session.next.reasoning.ended.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    timestamp: number
+    sessionID: string
+    reasoningID: string
+    text: string
+  }
+}
+
+export type SyncEventSessionNextReasoningDelta11 = {
+  type: "sync"
+  name: "session.next.reasoning.delta.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    timestamp: number
+    sessionID: string
+    reasoningID: string
+    delta: string
+  }
+}
+
+export type SyncEventSessionNextReasoningStarted11 = {
+  type: "sync"
+  name: "session.next.reasoning.started.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    timestamp: number
+    sessionID: string
+    reasoningID: string
+  }
+}
+
+export type SyncEventSessionNextTextEnded11 = {
+  type: "sync"
+  name: "session.next.text.ended.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    timestamp: number
+    sessionID: string
+    text: string
+  }
+}
+
+export type SyncEventSessionNextTextDelta11 = {
+  type: "sync"
+  name: "session.next.text.delta.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    timestamp: number
+    sessionID: string
+    delta: string
+  }
+}
+
+export type SyncEventSessionNextTextStarted11 = {
+  type: "sync"
+  name: "session.next.text.started.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    timestamp: number
+    sessionID: string
+  }
+}
+
+export type SyncEventSessionNextStepFailed11 = {
+  type: "sync"
+  name: "session.next.step.failed.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    timestamp: number
+    sessionID: string
+    error: SessionErrorUnknown
+  }
+}
+
+export type SyncEventSessionNextStepEnded11 = {
+  type: "sync"
+  name: "session.next.step.ended.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    timestamp: number
+    sessionID: string
+    finish: string
+    cost: number
+    tokens: {
+      input: number
+      output: number
+      reasoning: number
+      cache: {
+        read: number
+        write: number
+      }
+    }
+    snapshot?: string
+  }
+}
+
+export type SyncEventSessionNextStepStarted11 = {
+  type: "sync"
+  name: "session.next.step.started.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
     timestamp: number
     sessionID: string
     agent: string
@@ -3642,7 +5566,530 @@ export type EventSessionNextStepStarted = {
   }
 }
 
-export type EventSessionNextStepEnded = {
+export type SyncEventSessionNextShellEnded11 = {
+  type: "sync"
+  name: "session.next.shell.ended.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    output: string
+  }
+}
+
+export type SyncEventSessionNextShellStarted11 = {
+  type: "sync"
+  name: "session.next.shell.started.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    command: string
+  }
+}
+
+export type SyncEventSessionNextSynthetic11 = {
+  type: "sync"
+  name: "session.next.synthetic.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    timestamp: number
+    sessionID: string
+    text: string
+  }
+}
+
+export type SyncEventSessionNextPrompted11 = {
+  type: "sync"
+  name: "session.next.prompted.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    timestamp: number
+    sessionID: string
+    prompt: PromptEncoded
+  }
+}
+
+export type PromptReferenceAttachmentEncoded = {
+  name: string
+  kind: "local" | "git" | "invalid"
+  uri?: string
+  repository?: string
+  branch?: string
+  target?: string
+  targetUri?: string
+  problem?: string
+  source?: PromptSourceEncoded
+}
+
+export type PromptSourceEncoded = {
+  start: number
+  end: number
+  text: string
+}
+
+export type PromptAgentAttachmentEncoded = {
+  name: string
+  source?: PromptSourceEncoded
+}
+
+export type PromptFileAttachmentEncoded = {
+  uri: string
+  mime: string
+  name?: string
+  description?: string
+  source?: PromptSourceEncoded
+}
+
+export type SyncEventSessionNextModelSwitched11 = {
+  type: "sync"
+  name: "session.next.model.switched.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    timestamp: number
+    sessionID: string
+    model: {
+      id: string
+      providerID: string
+      variant: string
+    }
+  }
+}
+
+export type SyncEventSessionNextAgentSwitched11 = {
+  type: "sync"
+  name: "session.next.agent.switched.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    timestamp: number
+    sessionID: string
+    agent: string
+  }
+}
+
+export type SyncEventSessionDeleted11 = {
+  type: "sync"
+  name: "session.deleted.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    sessionID: string
+    info: Session
+  }
+}
+
+export type SyncEventSessionUpdated11 = {
+  type: "sync"
+  name: "session.updated.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    sessionID: string
+    info: {
+      id?: string
+      slug?: string
+      projectID?: string
+      workspaceID?: string
+      directory?: string
+      path?: string
+      parentID?: string
+      summary?: {
+        additions: number
+        deletions: number
+        files: number
+        diffs?: Array<SnapshotFileDiff>
+      }
+      cost?: number
+      tokens?: {
+        input: number
+        output: number
+        reasoning: number
+        cache: {
+          read: number
+          write: number
+          miss?: number
+        }
+      }
+      share?: {
+        url?: string
+      }
+      title?: string
+      agent?: string
+      model?: {
+        id: string
+        providerID: string
+        variant?: string
+      }
+      version?: string
+      time?: {
+        created?: number
+        updated?: number
+        compacting?: number
+        archived?: number
+      }
+      permission?: PermissionRuleset
+      revert?: {
+        messageID: string
+        partID?: string
+        snapshot?: string
+        diff?: string
+      }
+    }
+  }
+}
+
+export type SyncEventSessionCreated11 = {
+  type: "sync"
+  name: "session.created.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    sessionID: string
+    info: Session
+  }
+}
+
+export type SyncEventMessagePartRemoved11 = {
+  type: "sync"
+  name: "message.part.removed.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    sessionID: string
+    messageID: string
+    partID: string
+  }
+}
+
+export type SyncEventMessagePartUpdated11 = {
+  type: "sync"
+  name: "message.part.updated.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    sessionID: string
+    part: Part
+    time: number
+  }
+}
+
+export type SyncEventMessageRemoved11 = {
+  type: "sync"
+  name: "message.removed.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    sessionID: string
+    messageID: string
+  }
+}
+
+export type SyncEventMessageUpdated11 = {
+  type: "sync"
+  name: "message.updated.1"
+  id: string
+  seq: number
+  aggregateID: "sessionID"
+  data: {
+    sessionID: string
+    info: Message
+  }
+}
+
+export type EventAccountSwitched1 = {
+  id: string
+  type: "account.switched"
+  properties: {
+    serviceID: string
+    from?: string
+    to?: string
+  }
+}
+
+export type EventAccountRemoved1 = {
+  id: string
+  type: "account.removed"
+  properties: {
+    account: AccountV2InfoEncoded
+  }
+}
+
+export type AccountV2InfoEncoded = {
+  id: string
+  serviceID: string
+  description: string
+  credential: AccountV2Credential
+}
+
+export type AccountV2Credential = AccountV2oAuthCredentialEncoded | AccountV2ApiKeyCredentialEncoded
+
+export type AccountV2ApiKeyCredentialEncoded = {
+  type: "api"
+  key: string
+  metadata?: {
+    [key: string]: string
+  }
+}
+
+export type AccountV2oAuthCredentialEncoded = {
+  type: "oauth"
+  refresh: string
+  access: string
+  expires: number
+}
+
+export type EventAccountAdded1 = {
+  id: string
+  type: "account.added"
+  properties: {
+    account: AccountV2InfoEncoded
+  }
+}
+
+export type EventModelsDevRefreshed1 = {
+  id: string
+  type: "models-dev.refreshed"
+  properties: unknown
+}
+
+export type EventSessionNextCompactionEnded3 = {
+  id: string
+  type: "session.next.compaction.ended"
+  properties: {
+    timestamp: number
+    sessionID: string
+    text: string
+    include?: string
+  }
+}
+
+export type EventSessionNextCompactionDelta3 = {
+  id: string
+  type: "session.next.compaction.delta"
+  properties: {
+    timestamp: number
+    sessionID: string
+    text: string
+  }
+}
+
+export type EventSessionNextCompactionStarted3 = {
+  id: string
+  type: "session.next.compaction.started"
+  properties: {
+    timestamp: number
+    sessionID: string
+    reason: "auto" | "manual"
+  }
+}
+
+export type EventSessionNextRetried3 = {
+  id: string
+  type: "session.next.retried"
+  properties: {
+    timestamp: number
+    sessionID: string
+    attempt: number
+    error: SessionNextRetryError
+  }
+}
+
+export type EventSessionNextToolFailed3 = {
+  id: string
+  type: "session.next.tool.failed"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    error: SessionErrorUnknown
+    provider: {
+      executed: boolean
+      metadata?: {
+        [key: string]: unknown
+      }
+    }
+  }
+}
+
+export type EventSessionNextToolSuccess3 = {
+  id: string
+  type: "session.next.tool.success"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    structured: {
+      [key: string]: unknown
+    }
+    content: Array<ToolTextContentEncoded | ToolFileContentEncoded>
+    provider: {
+      executed: boolean
+      metadata?: {
+        [key: string]: unknown
+      }
+    }
+  }
+}
+
+export type EventSessionNextToolProgress3 = {
+  id: string
+  type: "session.next.tool.progress"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    structured: {
+      [key: string]: unknown
+    }
+    content: Array<ToolTextContentEncoded | ToolFileContentEncoded>
+  }
+}
+
+export type EventSessionNextToolCalled3 = {
+  id: string
+  type: "session.next.tool.called"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    tool: string
+    input: {
+      [key: string]: unknown
+    }
+    provider: {
+      executed: boolean
+      metadata?: {
+        [key: string]: unknown
+      }
+    }
+  }
+}
+
+export type EventSessionNextToolInputEnded3 = {
+  id: string
+  type: "session.next.tool.input.ended"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    text: string
+  }
+}
+
+export type EventSessionNextToolInputDelta3 = {
+  id: string
+  type: "session.next.tool.input.delta"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    delta: string
+  }
+}
+
+export type EventSessionNextToolInputStarted3 = {
+  id: string
+  type: "session.next.tool.input.started"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    name: string
+  }
+}
+
+export type EventSessionNextReasoningEnded3 = {
+  id: string
+  type: "session.next.reasoning.ended"
+  properties: {
+    timestamp: number
+    sessionID: string
+    reasoningID: string
+    text: string
+  }
+}
+
+export type EventSessionNextReasoningDelta3 = {
+  id: string
+  type: "session.next.reasoning.delta"
+  properties: {
+    timestamp: number
+    sessionID: string
+    reasoningID: string
+    delta: string
+  }
+}
+
+export type EventSessionNextReasoningStarted3 = {
+  id: string
+  type: "session.next.reasoning.started"
+  properties: {
+    timestamp: number
+    sessionID: string
+    reasoningID: string
+  }
+}
+
+export type EventSessionNextTextEnded3 = {
+  id: string
+  type: "session.next.text.ended"
+  properties: {
+    timestamp: number
+    sessionID: string
+    text: string
+  }
+}
+
+export type EventSessionNextTextDelta3 = {
+  id: string
+  type: "session.next.text.delta"
+  properties: {
+    timestamp: number
+    sessionID: string
+    delta: string
+  }
+}
+
+export type EventSessionNextTextStarted3 = {
+  id: string
+  type: "session.next.text.started"
+  properties: {
+    timestamp: number
+    sessionID: string
+  }
+}
+
+export type EventSessionNextStepFailed3 = {
+  id: string
+  type: "session.next.step.failed"
+  properties: {
+    timestamp: number
+    sessionID: string
+    error: SessionErrorUnknown
+  }
+}
+
+export type EventSessionNextStepEnded3 = {
   id: string
   type: "session.next.step.ended"
   properties: {
@@ -3663,43 +6110,47 @@ export type EventSessionNextStepEnded = {
   }
 }
 
-export type SessionErrorUnknown = {
-  type: "unknown"
-  message: string
-}
-
-export type EventSessionNextStepFailed = {
+export type EventSessionNextStepStarted3 = {
   id: string
-  type: "session.next.step.failed"
+  type: "session.next.step.started"
   properties: {
     timestamp: number
     sessionID: string
-    error: SessionErrorUnknown
+    agent: string
+    model: {
+      id: string
+      providerID: string
+      variant: string
+    }
+    snapshot?: string
   }
 }
 
-export type EventSessionNextTextStarted = {
+export type EventSessionNextShellEnded3 = {
   id: string
-  type: "session.next.text.started"
+  type: "session.next.shell.ended"
   properties: {
     timestamp: number
     sessionID: string
+    callID: string
+    output: string
   }
 }
 
-export type EventSessionNextTextDelta = {
+export type EventSessionNextShellStarted3 = {
   id: string
-  type: "session.next.text.delta"
+  type: "session.next.shell.started"
   properties: {
     timestamp: number
     sessionID: string
-    delta: string
+    callID: string
+    command: string
   }
 }
 
-export type EventSessionNextTextEnded = {
+export type EventSessionNextSynthetic3 = {
   id: string
-  type: "session.next.text.ended"
+  type: "session.next.synthetic"
   properties: {
     timestamp: number
     sessionID: string
@@ -3707,210 +6158,49 @@ export type EventSessionNextTextEnded = {
   }
 }
 
-export type EventSessionNextReasoningStarted = {
+export type EventSessionNextPrompted3 = {
   id: string
-  type: "session.next.reasoning.started"
+  type: "session.next.prompted"
   properties: {
     timestamp: number
     sessionID: string
-    reasoningID: string
+    prompt: PromptEncoded
   }
 }
 
-export type EventSessionNextReasoningDelta = {
+export type EventSessionNextModelSwitched3 = {
   id: string
-  type: "session.next.reasoning.delta"
+  type: "session.next.model.switched"
   properties: {
     timestamp: number
     sessionID: string
-    reasoningID: string
-    delta: string
-  }
-}
-
-export type EventSessionNextReasoningEnded = {
-  id: string
-  type: "session.next.reasoning.ended"
-  properties: {
-    timestamp: number
-    sessionID: string
-    reasoningID: string
-    text: string
-  }
-}
-
-export type EventSessionNextToolInputStarted = {
-  id: string
-  type: "session.next.tool.input.started"
-  properties: {
-    timestamp: number
-    sessionID: string
-    callID: string
-    name: string
-  }
-}
-
-export type EventSessionNextToolInputDelta = {
-  id: string
-  type: "session.next.tool.input.delta"
-  properties: {
-    timestamp: number
-    sessionID: string
-    callID: string
-    delta: string
-  }
-}
-
-export type EventSessionNextToolInputEnded = {
-  id: string
-  type: "session.next.tool.input.ended"
-  properties: {
-    timestamp: number
-    sessionID: string
-    callID: string
-    text: string
-  }
-}
-
-export type EventSessionNextToolCalled = {
-  id: string
-  type: "session.next.tool.called"
-  properties: {
-    timestamp: number
-    sessionID: string
-    callID: string
-    tool: string
-    input: {
-      [key: string]: unknown
-    }
-    provider: {
-      executed: boolean
-      metadata?: {
-        [key: string]: unknown
-      }
+    model: {
+      id: string
+      providerID: string
+      variant: string
     }
   }
 }
 
-export type ToolTextContent = {
-  type: "text"
-  text: string
-}
-
-export type ToolFileContent = {
-  type: "file"
-  uri: string
-  mime: string
-  name?: string
-}
-
-export type EventSessionNextToolProgress = {
+export type EventSessionNextAgentSwitched3 = {
   id: string
-  type: "session.next.tool.progress"
+  type: "session.next.agent.switched"
   properties: {
     timestamp: number
     sessionID: string
-    callID: string
-    structured: {
-      [key: string]: unknown
-    }
-    content: Array<ToolTextContent | ToolFileContent>
+    agent: string
   }
 }
 
-export type EventSessionNextToolSuccess = {
+export type EventCatalogModelUpdated1 = {
   id: string
-  type: "session.next.tool.success"
+  type: "catalog.model.updated"
   properties: {
-    timestamp: number
-    sessionID: string
-    callID: string
-    structured: {
-      [key: string]: unknown
-    }
-    content: Array<ToolTextContent | ToolFileContent>
-    provider: {
-      executed: boolean
-      metadata?: {
-        [key: string]: unknown
-      }
-    }
+    model: ModelV2InfoEncoded
   }
 }
 
-export type EventSessionNextToolFailed = {
-  id: string
-  type: "session.next.tool.failed"
-  properties: {
-    timestamp: number
-    sessionID: string
-    callID: string
-    error: SessionErrorUnknown
-    provider: {
-      executed: boolean
-      metadata?: {
-        [key: string]: unknown
-      }
-    }
-  }
-}
-
-export type SessionNextRetryError = {
-  message: string
-  statusCode?: number
-  isRetryable: boolean
-  responseHeaders?: {
-    [key: string]: string
-  }
-  responseBody?: string
-  metadata?: {
-    [key: string]: string
-  }
-}
-
-export type EventSessionNextRetried = {
-  id: string
-  type: "session.next.retried"
-  properties: {
-    timestamp: number
-    sessionID: string
-    attempt: number
-    error: SessionNextRetryError
-  }
-}
-
-export type EventSessionNextCompactionStarted = {
-  id: string
-  type: "session.next.compaction.started"
-  properties: {
-    timestamp: number
-    sessionID: string
-    reason: "auto" | "manual"
-  }
-}
-
-export type EventSessionNextCompactionDelta = {
-  id: string
-  type: "session.next.compaction.delta"
-  properties: {
-    timestamp: number
-    sessionID: string
-    text: string
-  }
-}
-
-export type EventSessionNextCompactionEnded = {
-  id: string
-  type: "session.next.compaction.ended"
-  properties: {
-    timestamp: number
-    sessionID: string
-    text: string
-    include?: string
-  }
-}
-
-export type ModelV2Info = {
+export type ModelV2InfoEncoded = {
   id: string
   apiID: string
   providerID: string
@@ -3985,7 +6275,7 @@ export type ModelV2Info = {
     }
   }>
   time: {
-    released: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    released: number
   }
   cost: Array<{
     tier?: {
@@ -4008,308 +6298,769 @@ export type ModelV2Info = {
   }
 }
 
-export type EventCatalogModelUpdated = {
+export type EventSessionNextCompactionEnded2 = {
   id: string
-  type: "catalog.model.updated"
+  type: "session.next.compaction.ended"
   properties: {
-    model: ModelV2Info
+    timestamp: number
+    sessionID: string
+    text: string
+    include?: string
   }
 }
 
-export type EventModelsDevRefreshed = {
+export type EventSessionNextCompactionDelta2 = {
   id: string
-  type: "models-dev.refreshed"
+  type: "session.next.compaction.delta"
   properties: {
-    [key: string]: unknown
+    timestamp: number
+    sessionID: string
+    text: string
   }
 }
 
-export type AccountV2oAuthCredential = {
-  type: "oauth"
-  refresh: string
-  access: string
-  expires: number
-}
-
-export type AccountV2ApiKeyCredential = {
-  type: "api"
-  key: string
-  metadata?: {
-    [key: string]: string
-  }
-}
-
-export type AccountV2Credential = AccountV2oAuthCredential | AccountV2ApiKeyCredential
-
-export type AccountV2Info = {
+export type EventSessionNextCompactionStarted2 = {
   id: string
-  serviceID: string
-  description: string
-  credential: AccountV2Credential
-}
-
-export type EventAccountAdded = {
-  id: string
-  type: "account.added"
+  type: "session.next.compaction.started"
   properties: {
-    account: AccountV2Info
+    timestamp: number
+    sessionID: string
+    reason: "auto" | "manual"
   }
 }
 
-export type EventAccountRemoved = {
+export type EventSessionNextRetried2 = {
   id: string
-  type: "account.removed"
+  type: "session.next.retried"
   properties: {
-    account: AccountV2Info
+    timestamp: number
+    sessionID: string
+    attempt: number
+    error: SessionNextRetryError
   }
 }
 
-export type EventAccountSwitched = {
+export type EventSessionNextToolFailed2 = {
   id: string
-  type: "account.switched"
+  type: "session.next.tool.failed"
   properties: {
-    serviceID: string
-    from?: string
-    to?: string
-  }
-}
-
-export type SessionInfo = {
-  id: string
-  parentID?: string
-  projectID: string
-  workspaceID?: string
-  path?: string
-  agent?: string
-  model?: {
-    id: string
-    providerID: string
-    variant: string
-  }
-  cost: number
-  tokens: {
-    input: number
-    output: number
-    reasoning: number
-    cache: {
-      read: number
-      write: number
+    timestamp: number
+    sessionID: string
+    callID: string
+    error: SessionErrorUnknown
+    provider: {
+      executed: boolean
+      metadata?: {
+        [key: string]: unknown
+      }
     }
   }
-  time: {
-    created: number
-    updated: number
-    archived?: number
-  }
-  title: string
 }
 
-export type SessionDelivery = "immediate" | "deferred"
-
-export type SessionMessageAgentSwitched = {
+export type EventSessionNextToolSuccess2 = {
   id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    created: number
-  }
-  type: "agent-switched"
-  agent: string
-}
-
-export type SessionMessageModelSwitched = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    created: number
-  }
-  type: "model-switched"
-  model: {
-    id: string
-    providerID: string
-    variant: string
-  }
-}
-
-export type SessionMessageUser = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    created: number
-  }
-  text: string
-  files?: Array<PromptFileAttachment>
-  agents?: Array<PromptAgentAttachment>
-  references?: Array<PromptReferenceAttachment>
-  type: "user"
-}
-
-export type SessionMessageSynthetic = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    created: number
-  }
-  sessionID: string
-  text: string
-  type: "synthetic"
-}
-
-export type SessionMessageShell = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    created: number
-    completed?: number
-  }
-  type: "shell"
-  callID: string
-  command: string
-  output: string
-}
-
-export type SessionMessageAssistantText = {
-  type: "text"
-  text: string
-}
-
-export type SessionMessageAssistantReasoning = {
-  type: "reasoning"
-  id: string
-  text: string
-}
-
-export type SessionMessageToolStatePending = {
-  status: "pending"
-  input: string
-}
-
-export type SessionMessageToolStateRunning = {
-  status: "running"
-  input: {
-    [key: string]: unknown
-  }
-  structured: {
-    [key: string]: unknown
-  }
-  content: Array<ToolTextContent | ToolFileContent>
-}
-
-export type SessionMessageToolStateCompleted = {
-  status: "completed"
-  input: {
-    [key: string]: unknown
-  }
-  attachments?: Array<PromptFileAttachment>
-  content: Array<ToolTextContent | ToolFileContent>
-  structured: {
-    [key: string]: unknown
-  }
-}
-
-export type SessionMessageToolStateError = {
-  status: "error"
-  input: {
-    [key: string]: unknown
-  }
-  content: Array<ToolTextContent | ToolFileContent>
-  structured: {
-    [key: string]: unknown
-  }
-  error: SessionErrorUnknown
-}
-
-export type SessionMessageAssistantTool = {
-  type: "tool"
-  id: string
-  name: string
-  provider?: {
-    executed: boolean
-    metadata?: {
+  type: "session.next.tool.success"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    structured: {
       [key: string]: unknown
     }
-  }
-  state:
-    | SessionMessageToolStatePending
-    | SessionMessageToolStateRunning
-    | SessionMessageToolStateCompleted
-    | SessionMessageToolStateError
-  time: {
-    created: number
-    ran?: number
-    completed?: number
-    pruned?: number
-  }
-}
-
-export type SessionMessageAssistant = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    created: number
-    completed?: number
-  }
-  type: "assistant"
-  agent: string
-  model: {
-    id: string
-    providerID: string
-    variant: string
-  }
-  content: Array<SessionMessageAssistantText | SessionMessageAssistantReasoning | SessionMessageAssistantTool>
-  snapshot?: {
-    start?: string
-    end?: string
-  }
-  finish?: string
-  cost?: number
-  tokens?: {
-    input: number
-    output: number
-    reasoning: number
-    cache: {
-      read: number
-      write: number
+    content: Array<ToolTextContentEncoded | ToolFileContentEncoded>
+    provider: {
+      executed: boolean
+      metadata?: {
+        [key: string]: unknown
+      }
     }
   }
-  error?: SessionErrorUnknown
 }
 
-export type SessionMessageCompaction = {
-  type: "compaction"
-  reason: "auto" | "manual"
-  summary: string
-  include?: string
+export type EventSessionNextToolProgress2 = {
   id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    created: number
+  type: "session.next.tool.progress"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    structured: {
+      [key: string]: unknown
+    }
+    content: Array<ToolTextContentEncoded | ToolFileContentEncoded>
   }
 }
 
-export type SessionMessage =
-  | SessionMessageAgentSwitched
-  | SessionMessageModelSwitched
-  | SessionMessageUser
-  | SessionMessageSynthetic
-  | SessionMessageShell
-  | SessionMessageAssistant
-  | SessionMessageCompaction
+export type EventSessionNextToolCalled2 = {
+  id: string
+  type: "session.next.tool.called"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    tool: string
+    input: {
+      [key: string]: unknown
+    }
+    provider: {
+      executed: boolean
+      metadata?: {
+        [key: string]: unknown
+      }
+    }
+  }
+}
 
-export type ProviderV2Info = {
+export type EventSessionNextToolInputEnded2 = {
+  id: string
+  type: "session.next.tool.input.ended"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    text: string
+  }
+}
+
+export type EventSessionNextToolInputDelta2 = {
+  id: string
+  type: "session.next.tool.input.delta"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    delta: string
+  }
+}
+
+export type EventSessionNextToolInputStarted2 = {
+  id: string
+  type: "session.next.tool.input.started"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    name: string
+  }
+}
+
+export type EventSessionNextReasoningEnded2 = {
+  id: string
+  type: "session.next.reasoning.ended"
+  properties: {
+    timestamp: number
+    sessionID: string
+    reasoningID: string
+    text: string
+  }
+}
+
+export type EventSessionNextReasoningDelta2 = {
+  id: string
+  type: "session.next.reasoning.delta"
+  properties: {
+    timestamp: number
+    sessionID: string
+    reasoningID: string
+    delta: string
+  }
+}
+
+export type EventSessionNextReasoningStarted2 = {
+  id: string
+  type: "session.next.reasoning.started"
+  properties: {
+    timestamp: number
+    sessionID: string
+    reasoningID: string
+  }
+}
+
+export type EventSessionNextTextEnded2 = {
+  id: string
+  type: "session.next.text.ended"
+  properties: {
+    timestamp: number
+    sessionID: string
+    text: string
+  }
+}
+
+export type EventSessionNextTextDelta2 = {
+  id: string
+  type: "session.next.text.delta"
+  properties: {
+    timestamp: number
+    sessionID: string
+    delta: string
+  }
+}
+
+export type EventSessionNextTextStarted2 = {
+  id: string
+  type: "session.next.text.started"
+  properties: {
+    timestamp: number
+    sessionID: string
+  }
+}
+
+export type EventSessionNextStepFailed2 = {
+  id: string
+  type: "session.next.step.failed"
+  properties: {
+    timestamp: number
+    sessionID: string
+    error: SessionErrorUnknown
+  }
+}
+
+export type EventSessionNextStepEnded2 = {
+  id: string
+  type: "session.next.step.ended"
+  properties: {
+    timestamp: number
+    sessionID: string
+    finish: string
+    cost: number
+    tokens: {
+      input: number
+      output: number
+      reasoning: number
+      cache: {
+        read: number
+        write: number
+      }
+    }
+    snapshot?: string
+  }
+}
+
+export type EventSessionNextStepStarted2 = {
+  id: string
+  type: "session.next.step.started"
+  properties: {
+    timestamp: number
+    sessionID: string
+    agent: string
+    model: {
+      id: string
+      providerID: string
+      variant: string
+    }
+    snapshot?: string
+  }
+}
+
+export type EventSessionNextShellEnded2 = {
+  id: string
+  type: "session.next.shell.ended"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    output: string
+  }
+}
+
+export type EventSessionNextShellStarted2 = {
+  id: string
+  type: "session.next.shell.started"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    command: string
+  }
+}
+
+export type EventSessionNextSynthetic2 = {
+  id: string
+  type: "session.next.synthetic"
+  properties: {
+    timestamp: number
+    sessionID: string
+    text: string
+  }
+}
+
+export type EventSessionNextPrompted2 = {
+  id: string
+  type: "session.next.prompted"
+  properties: {
+    timestamp: number
+    sessionID: string
+    prompt: PromptEncoded
+  }
+}
+
+export type EventSessionNextModelSwitched2 = {
+  id: string
+  type: "session.next.model.switched"
+  properties: {
+    timestamp: number
+    sessionID: string
+    model: {
+      id: string
+      providerID: string
+      variant: string
+    }
+  }
+}
+
+export type EventSessionNextAgentSwitched2 = {
+  id: string
+  type: "session.next.agent.switched"
+  properties: {
+    timestamp: number
+    sessionID: string
+    agent: string
+  }
+}
+
+export type EventSessionDeleted1 = {
+  id: string
+  type: "session.deleted"
+  properties: {
+    sessionID: string
+    info: Session
+  }
+}
+
+export type EventSessionUpdated1 = {
+  id: string
+  type: "session.updated"
+  properties: {
+    sessionID: string
+    info: Session
+  }
+}
+
+export type EventSessionCreated1 = {
+  id: string
+  type: "session.created"
+  properties: {
+    sessionID: string
+    info: Session
+  }
+}
+
+export type EventMessagePartRemoved1 = {
+  id: string
+  type: "message.part.removed"
+  properties: {
+    sessionID: string
+    messageID: string
+    partID: string
+  }
+}
+
+export type EventMessagePartUpdated1 = {
+  id: string
+  type: "message.part.updated"
+  properties: {
+    sessionID: string
+    part: Part
+    time: number
+  }
+}
+
+export type EventMessageRemoved1 = {
+  id: string
+  type: "message.removed"
+  properties: {
+    sessionID: string
+    messageID: string
+  }
+}
+
+export type EventMessageUpdated1 = {
+  id: string
+  type: "message.updated"
+  properties: {
+    sessionID: string
+    info: Message
+  }
+}
+
+export type EventInstallationUpdateAvailable1 = {
+  id: string
+  type: "installation.update-available"
+  properties: {
+    version: string
+  }
+}
+
+export type EventInstallationUpdated1 = {
+  id: string
+  type: "installation.updated"
+  properties: {
+    version: string
+  }
+}
+
+export type EventPtyDeleted1 = {
+  id: string
+  type: "pty.deleted"
+  properties: {
+    id: string
+  }
+}
+
+export type EventPtyExited1 = {
+  id: string
+  type: "pty.exited"
+  properties: {
+    id: string
+    exitCode: number
+  }
+}
+
+export type EventPtyUpdated1 = {
+  id: string
+  type: "pty.updated"
+  properties: {
+    info: Pty
+  }
+}
+
+export type EventPtyCreated1 = {
+  id: string
+  type: "pty.created"
+  properties: {
+    info: Pty
+  }
+}
+
+export type EventWorkspaceStatus1 = {
+  id: string
+  type: "workspace.status"
+  properties: {
+    workspaceID: string
+    status: "connected" | "connecting" | "disconnected" | "error"
+  }
+}
+
+export type EventWorkspaceFailed1 = {
+  id: string
+  type: "workspace.failed"
+  properties: {
+    message: string
+  }
+}
+
+export type EventWorkspaceReady1 = {
+  id: string
+  type: "workspace.ready"
+  properties: {
+    name: string
+  }
+}
+
+export type EventVcsBranchUpdated1 = {
+  id: string
+  type: "vcs.branch.updated"
+  properties: {
+    branch?: string
+  }
+}
+
+export type EventWorktreeFailed1 = {
+  id: string
+  type: "worktree.failed"
+  properties: {
+    message: string
+  }
+}
+
+export type EventWorktreeReady1 = {
+  id: string
+  type: "worktree.ready"
+  properties: {
+    name: string
+    branch?: string
+  }
+}
+
+export type EventProjectRemoved1 = {
+  id: string
+  type: "project.removed"
+  properties: string
+}
+
+export type EventProjectUpdated1 = {
+  id: string
+  type: "project.updated"
+  properties: Project
+}
+
+export type EventCommandExecuted1 = {
+  id: string
+  type: "command.executed"
+  properties: {
+    name: string
+    sessionID: string
+    arguments: string
+    messageID: string
+  }
+}
+
+export type EventMcpBrowserOpenFailed1 = {
+  id: string
+  type: "mcp.browser.open.failed"
+  properties: {
+    mcpName: string
+    url: string
+  }
+}
+
+export type EventMcpToolsChanged1 = {
+  id: string
+  type: "mcp.tools.changed"
+  properties: {
+    server: string
+  }
+}
+
+export type EventSessionCompacted1 = {
+  id: string
+  type: "session.compacted"
+  properties: {
+    sessionID: string
+  }
+}
+
+export type EventSessionIdle1 = {
+  id: string
+  type: "session.idle"
+  properties: {
+    sessionID: string
+  }
+}
+
+export type EventSessionStatus1 = {
+  id: string
+  type: "session.status"
+  properties: {
+    sessionID: string
+    status: SessionStatus
+  }
+}
+
+export type EventGoalUpdated1 = {
+  id: string
+  type: "goal.updated"
+  properties: {
+    sessionID: string
+    goal?: Goal
+  }
+}
+
+export type EventTodoUpdated1 = {
+  id: string
+  type: "todo.updated"
+  properties: {
+    sessionID: string
+    todos: Array<Todo>
+  }
+}
+
+export type EventQuestionRejected1 = {
+  id: string
+  type: "question.rejected"
+  properties: QuestionRejected
+}
+
+export type EventQuestionReplied1 = {
+  id: string
+  type: "question.replied"
+  properties: QuestionReplied
+}
+
+export type EventQuestionAsked1 = {
+  id: string
+  type: "question.asked"
+  properties: QuestionRequest
+}
+
+export type EventSessionLoopDetected1 = {
+  id: string
+  type: "session.loop_detected"
+  properties: {
+    sessionID: string
+    type: "ngram" | "nudge" | "replan" | "stop"
+    textLen: number | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type EventSessionError1 = {
+  id: string
+  type: "session.error"
+  properties: {
+    sessionID?: string
+    error?:
+      | ProviderAuthError
+      | UnknownError
+      | MessageOutputLengthError
+      | MessageAbortedError
+      | StructuredOutputError
+      | ContextOverflowError
+      | ContentFilterError
+      | ApiError
+  }
+}
+
+export type EventSessionDiff1 = {
+  id: string
+  type: "session.diff"
+  properties: {
+    sessionID: string
+    diff: Array<SnapshotFileDiff>
+  }
+}
+
+export type EventPermissionReplied1 = {
+  id: string
+  type: "permission.replied"
+  properties: {
+    sessionID: string
+    requestID: string
+    reply: "once" | "always" | "reject"
+  }
+}
+
+export type EventPermissionAsked1 = {
+  id: string
+  type: "permission.asked"
+  properties: PermissionRequest
+}
+
+export type EventMessagePartDelta1 = {
+  id: string
+  type: "message.part.delta"
+  properties: {
+    sessionID: string
+    messageID: string
+    partID: string
+    field: string
+    delta: string
+  }
+}
+
+export type EventLspUpdated1 = {
+  id: string
+  type: "lsp.updated"
+  properties: unknown
+}
+
+export type EventLspClientDiagnostics1 = {
+  id: string
+  type: "lsp.client.diagnostics"
+  properties: {
+    serverID: string
+    path: string
+  }
+}
+
+export type EventProviderQuotaUpdated1 = {
+  id: string
+  type: "provider.quota.updated"
+  properties: ProviderQuota
+}
+
+export type EventFileWatcherUpdated1 = {
+  id: string
+  type: "file.watcher.updated"
+  properties: {
+    file: string
+    event: "add" | "change" | "unlink"
+  }
+}
+
+export type EventFileEdited1 = {
+  id: string
+  type: "file.edited"
+  properties: {
+    file: string
+  }
+}
+
+export type EventServerInstanceDisposed1 = {
+  id: string
+  type: "server.instance.disposed"
+  properties: {
+    directory: string
+  }
+}
+
+export type EventGlobalDisposed1 = {
+  id: string
+  type: "global.disposed"
+  properties: unknown
+}
+
+export type EventServerConnected1 = {
+  id: string
+  type: "server.connected"
+  properties: unknown
+}
+
+export type EventTuiSessionSelect1 = {
+  id: string
+  type: "tui.session.select"
+  properties: {
+    /**
+     * Session ID to navigate to
+     */
+    sessionID: string
+  }
+}
+
+export type EventTuiToastShow1 = {
+  id: string
+  type: "tui.toast.show"
+  properties: {
+    title?: string
+    message: string
+    variant: "info" | "success" | "warning" | "error"
+    duration?: number
+  }
+}
+
+export type EventTuiCommandExecute1 = {
+  id: string
+  type: "tui.command.execute"
+  properties: {
+    command:
+      | "session.list"
+      | "session.new"
+      | "session.share"
+      | "session.interrupt"
+      | "session.compact"
+      | "session.page.up"
+      | "session.page.down"
+      | "session.line.up"
+      | "session.line.down"
+      | "session.half.page.up"
+      | "session.half.page.down"
+      | "session.first"
+      | "session.last"
+      | "prompt.clear"
+      | "prompt.submit"
+      | "agent.cycle"
+      | string
+  }
+}
+
+export type EventTuiPromptAppend1 = {
+  id: string
+  type: "tui.prompt.append"
+  properties: {
+    text: string
+  }
+}
+
+export type ProviderV2InfoEncoded = {
   id: string
   name: string
   enabled:
@@ -4376,123 +7127,1308 @@ export type ProviderV2Info = {
   }
 }
 
-export type EventTuiToastShow1 = {
+export type SessionMessage =
+  | SessionMessageAgentSwitchedEncoded
+  | SessionMessageModelSwitchedEncoded
+  | SessionMessageUserEncoded
+  | SessionMessageSyntheticEncoded
+  | SessionMessageShellEncoded
+  | SessionMessageAssistantEncoded
+  | SessionMessageCompactionEncoded
+
+export type SessionMessageCompactionEncoded = {
+  type: "compaction"
+  reason: "auto" | "manual"
+  summary: string
+  include?: string
   id: string
-  type: "tui.toast.show"
-  properties: {
-    title?: string
-    message: string
-    variant: "info" | "success" | "warning" | "error"
-    duration?: number
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
   }
 }
 
-export type EventSessionLoopDetected1 = {
+export type SessionMessageAssistantEncoded = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+    completed?: number
+  }
+  type: "assistant"
+  agent: string
+  model: {
+    id: string
+    providerID: string
+    variant: string
+  }
+  content: Array<
+    SessionMessageAssistantTextEncoded | SessionMessageAssistantReasoningEncoded | SessionMessageAssistantToolEncoded
+  >
+  snapshot?: {
+    start?: string
+    end?: string
+  }
+  finish?: string
+  cost?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+    }
+  }
+  error?: SessionErrorUnknown
+}
+
+export type SessionMessageAssistantToolEncoded = {
+  type: "tool"
+  id: string
+  name: string
+  provider?: {
+    executed: boolean
+    metadata?: {
+      [key: string]: unknown
+    }
+  }
+  state:
+    | SessionMessageToolStatePendingEncoded
+    | SessionMessageToolStateRunningEncoded
+    | SessionMessageToolStateCompletedEncoded
+    | SessionMessageToolStateErrorEncoded
+  time: {
+    created: number
+    ran?: number
+    completed?: number
+    pruned?: number
+  }
+}
+
+export type SessionMessageToolStateErrorEncoded = {
+  status: "error"
+  input: {
+    [key: string]: unknown
+  }
+  content: Array<ToolTextContentEncoded | ToolFileContentEncoded>
+  structured: {
+    [key: string]: unknown
+  }
+  error: SessionErrorUnknown
+}
+
+export type SessionMessageToolStateCompletedEncoded = {
+  status: "completed"
+  input: {
+    [key: string]: unknown
+  }
+  attachments?: Array<PromptFileAttachmentEncoded>
+  content: Array<ToolTextContentEncoded | ToolFileContentEncoded>
+  structured: {
+    [key: string]: unknown
+  }
+}
+
+export type SessionMessageToolStateRunningEncoded = {
+  status: "running"
+  input: {
+    [key: string]: unknown
+  }
+  structured: {
+    [key: string]: unknown
+  }
+  content: Array<ToolTextContentEncoded | ToolFileContentEncoded>
+}
+
+export type SessionMessageToolStatePendingEncoded = {
+  status: "pending"
+  input: string
+}
+
+export type SessionMessageAssistantReasoningEncoded = {
+  type: "reasoning"
+  id: string
+  text: string
+}
+
+export type SessionMessageAssistantTextEncoded = {
+  type: "text"
+  text: string
+}
+
+export type SessionMessageShellEncoded = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+    completed?: number
+  }
+  type: "shell"
+  callID: string
+  command: string
+  output: string
+}
+
+export type SessionMessageSyntheticEncoded = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+  }
+  sessionID: string
+  text: string
+  type: "synthetic"
+}
+
+export type SessionMessageUserEncoded = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+  }
+  text: string
+  files?: Array<PromptFileAttachmentEncoded>
+  agents?: Array<PromptAgentAttachmentEncoded>
+  references?: Array<PromptReferenceAttachmentEncoded>
+  type: "user"
+}
+
+export type SessionMessageModelSwitchedEncoded = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+  }
+  type: "model-switched"
+  model: {
+    id: string
+    providerID: string
+    variant: string
+  }
+}
+
+export type SessionMessageAgentSwitchedEncoded = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+  }
+  type: "agent-switched"
+  agent: string
+}
+
+export type SessionDelivery = "immediate" | "deferred"
+
+export type SessionInfoEncoded = {
+  id: string
+  parentID?: string
+  projectID: string
+  workspaceID?: string
+  path?: string
+  agent?: string
+  model?: {
+    id: string
+    providerID: string
+    variant: string
+  }
+  cost: number
+  tokens: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+    }
+  }
+  time: {
+    created: number
+    updated: number
+    archived?: number
+  }
+  title: string
+}
+
+export type EventAccountSwitched = {
+  id: string
+  type: "account.switched"
+  properties: {
+    serviceID: string
+    from?: string
+    to?: string
+  }
+}
+
+export type EventAccountRemoved = {
+  id: string
+  type: "account.removed"
+  properties: {
+    account: AccountV2InfoEncoded
+  }
+}
+
+export type EventAccountAdded = {
+  id: string
+  type: "account.added"
+  properties: {
+    account: AccountV2InfoEncoded
+  }
+}
+
+export type EventModelsDevRefreshed = {
+  id: string
+  type: "models-dev.refreshed"
+  properties: unknown
+}
+
+export type EventSessionNextCompactionEnded1 = {
+  id: string
+  type: "session.next.compaction.ended"
+  properties: {
+    timestamp: number
+    sessionID: string
+    text: string
+    include?: string
+  }
+}
+
+export type EventSessionNextCompactionDelta1 = {
+  id: string
+  type: "session.next.compaction.delta"
+  properties: {
+    timestamp: number
+    sessionID: string
+    text: string
+  }
+}
+
+export type EventSessionNextCompactionStarted1 = {
+  id: string
+  type: "session.next.compaction.started"
+  properties: {
+    timestamp: number
+    sessionID: string
+    reason: "auto" | "manual"
+  }
+}
+
+export type EventSessionNextRetried1 = {
+  id: string
+  type: "session.next.retried"
+  properties: {
+    timestamp: number
+    sessionID: string
+    attempt: number
+    error: SessionNextRetryError
+  }
+}
+
+export type EventSessionNextToolFailed1 = {
+  id: string
+  type: "session.next.tool.failed"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    error: SessionErrorUnknown
+    provider: {
+      executed: boolean
+      metadata?: {
+        [key: string]: unknown
+      }
+    }
+  }
+}
+
+export type EventSessionNextToolSuccess1 = {
+  id: string
+  type: "session.next.tool.success"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    structured: {
+      [key: string]: unknown
+    }
+    content: Array<ToolTextContentEncoded | ToolFileContentEncoded>
+    provider: {
+      executed: boolean
+      metadata?: {
+        [key: string]: unknown
+      }
+    }
+  }
+}
+
+export type EventSessionNextToolProgress1 = {
+  id: string
+  type: "session.next.tool.progress"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    structured: {
+      [key: string]: unknown
+    }
+    content: Array<ToolTextContentEncoded | ToolFileContentEncoded>
+  }
+}
+
+export type EventSessionNextToolCalled1 = {
+  id: string
+  type: "session.next.tool.called"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    tool: string
+    input: {
+      [key: string]: unknown
+    }
+    provider: {
+      executed: boolean
+      metadata?: {
+        [key: string]: unknown
+      }
+    }
+  }
+}
+
+export type EventSessionNextToolInputEnded1 = {
+  id: string
+  type: "session.next.tool.input.ended"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    text: string
+  }
+}
+
+export type EventSessionNextToolInputDelta1 = {
+  id: string
+  type: "session.next.tool.input.delta"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    delta: string
+  }
+}
+
+export type EventSessionNextToolInputStarted1 = {
+  id: string
+  type: "session.next.tool.input.started"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    name: string
+  }
+}
+
+export type EventSessionNextReasoningEnded1 = {
+  id: string
+  type: "session.next.reasoning.ended"
+  properties: {
+    timestamp: number
+    sessionID: string
+    reasoningID: string
+    text: string
+  }
+}
+
+export type EventSessionNextReasoningDelta1 = {
+  id: string
+  type: "session.next.reasoning.delta"
+  properties: {
+    timestamp: number
+    sessionID: string
+    reasoningID: string
+    delta: string
+  }
+}
+
+export type EventSessionNextReasoningStarted1 = {
+  id: string
+  type: "session.next.reasoning.started"
+  properties: {
+    timestamp: number
+    sessionID: string
+    reasoningID: string
+  }
+}
+
+export type EventSessionNextTextEnded1 = {
+  id: string
+  type: "session.next.text.ended"
+  properties: {
+    timestamp: number
+    sessionID: string
+    text: string
+  }
+}
+
+export type EventSessionNextTextDelta1 = {
+  id: string
+  type: "session.next.text.delta"
+  properties: {
+    timestamp: number
+    sessionID: string
+    delta: string
+  }
+}
+
+export type EventSessionNextTextStarted1 = {
+  id: string
+  type: "session.next.text.started"
+  properties: {
+    timestamp: number
+    sessionID: string
+  }
+}
+
+export type EventSessionNextStepFailed1 = {
+  id: string
+  type: "session.next.step.failed"
+  properties: {
+    timestamp: number
+    sessionID: string
+    error: SessionErrorUnknown
+  }
+}
+
+export type EventSessionNextStepEnded1 = {
+  id: string
+  type: "session.next.step.ended"
+  properties: {
+    timestamp: number
+    sessionID: string
+    finish: string
+    cost: number
+    tokens: {
+      input: number
+      output: number
+      reasoning: number
+      cache: {
+        read: number
+        write: number
+      }
+    }
+    snapshot?: string
+  }
+}
+
+export type EventSessionNextStepStarted1 = {
+  id: string
+  type: "session.next.step.started"
+  properties: {
+    timestamp: number
+    sessionID: string
+    agent: string
+    model: {
+      id: string
+      providerID: string
+      variant: string
+    }
+    snapshot?: string
+  }
+}
+
+export type EventSessionNextShellEnded1 = {
+  id: string
+  type: "session.next.shell.ended"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    output: string
+  }
+}
+
+export type EventSessionNextShellStarted1 = {
+  id: string
+  type: "session.next.shell.started"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    command: string
+  }
+}
+
+export type EventSessionNextSynthetic1 = {
+  id: string
+  type: "session.next.synthetic"
+  properties: {
+    timestamp: number
+    sessionID: string
+    text: string
+  }
+}
+
+export type EventSessionNextPrompted1 = {
+  id: string
+  type: "session.next.prompted"
+  properties: {
+    timestamp: number
+    sessionID: string
+    prompt: PromptEncoded
+  }
+}
+
+export type EventSessionNextModelSwitched1 = {
+  id: string
+  type: "session.next.model.switched"
+  properties: {
+    timestamp: number
+    sessionID: string
+    model: {
+      id: string
+      providerID: string
+      variant: string
+    }
+  }
+}
+
+export type EventSessionNextAgentSwitched1 = {
+  id: string
+  type: "session.next.agent.switched"
+  properties: {
+    timestamp: number
+    sessionID: string
+    agent: string
+  }
+}
+
+export type EventCatalogModelUpdated = {
+  id: string
+  type: "catalog.model.updated"
+  properties: {
+    model: ModelV2InfoEncoded
+  }
+}
+
+export type EventSessionNextCompactionEnded = {
+  id: string
+  type: "session.next.compaction.ended"
+  properties: {
+    timestamp: number
+    sessionID: string
+    text: string
+    include?: string
+  }
+}
+
+export type EventSessionNextCompactionDelta = {
+  id: string
+  type: "session.next.compaction.delta"
+  properties: {
+    timestamp: number
+    sessionID: string
+    text: string
+  }
+}
+
+export type EventSessionNextCompactionStarted = {
+  id: string
+  type: "session.next.compaction.started"
+  properties: {
+    timestamp: number
+    sessionID: string
+    reason: "auto" | "manual"
+  }
+}
+
+export type EventSessionNextRetried = {
+  id: string
+  type: "session.next.retried"
+  properties: {
+    timestamp: number
+    sessionID: string
+    attempt: number
+    error: SessionNextRetryError
+  }
+}
+
+export type EventSessionNextToolFailed = {
+  id: string
+  type: "session.next.tool.failed"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    error: SessionErrorUnknown
+    provider: {
+      executed: boolean
+      metadata?: {
+        [key: string]: unknown
+      }
+    }
+  }
+}
+
+export type EventSessionNextToolSuccess = {
+  id: string
+  type: "session.next.tool.success"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    structured: {
+      [key: string]: unknown
+    }
+    content: Array<ToolTextContentEncoded | ToolFileContentEncoded>
+    provider: {
+      executed: boolean
+      metadata?: {
+        [key: string]: unknown
+      }
+    }
+  }
+}
+
+export type EventSessionNextToolProgress = {
+  id: string
+  type: "session.next.tool.progress"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    structured: {
+      [key: string]: unknown
+    }
+    content: Array<ToolTextContentEncoded | ToolFileContentEncoded>
+  }
+}
+
+export type EventSessionNextToolCalled = {
+  id: string
+  type: "session.next.tool.called"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    tool: string
+    input: {
+      [key: string]: unknown
+    }
+    provider: {
+      executed: boolean
+      metadata?: {
+        [key: string]: unknown
+      }
+    }
+  }
+}
+
+export type EventSessionNextToolInputEnded = {
+  id: string
+  type: "session.next.tool.input.ended"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    text: string
+  }
+}
+
+export type EventSessionNextToolInputDelta = {
+  id: string
+  type: "session.next.tool.input.delta"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    delta: string
+  }
+}
+
+export type EventSessionNextToolInputStarted = {
+  id: string
+  type: "session.next.tool.input.started"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    name: string
+  }
+}
+
+export type EventSessionNextReasoningEnded = {
+  id: string
+  type: "session.next.reasoning.ended"
+  properties: {
+    timestamp: number
+    sessionID: string
+    reasoningID: string
+    text: string
+  }
+}
+
+export type EventSessionNextReasoningDelta = {
+  id: string
+  type: "session.next.reasoning.delta"
+  properties: {
+    timestamp: number
+    sessionID: string
+    reasoningID: string
+    delta: string
+  }
+}
+
+export type EventSessionNextReasoningStarted = {
+  id: string
+  type: "session.next.reasoning.started"
+  properties: {
+    timestamp: number
+    sessionID: string
+    reasoningID: string
+  }
+}
+
+export type EventSessionNextTextEnded = {
+  id: string
+  type: "session.next.text.ended"
+  properties: {
+    timestamp: number
+    sessionID: string
+    text: string
+  }
+}
+
+export type EventSessionNextTextDelta = {
+  id: string
+  type: "session.next.text.delta"
+  properties: {
+    timestamp: number
+    sessionID: string
+    delta: string
+  }
+}
+
+export type EventSessionNextTextStarted = {
+  id: string
+  type: "session.next.text.started"
+  properties: {
+    timestamp: number
+    sessionID: string
+  }
+}
+
+export type EventSessionNextStepFailed = {
+  id: string
+  type: "session.next.step.failed"
+  properties: {
+    timestamp: number
+    sessionID: string
+    error: SessionErrorUnknown
+  }
+}
+
+export type EventSessionNextStepEnded = {
+  id: string
+  type: "session.next.step.ended"
+  properties: {
+    timestamp: number
+    sessionID: string
+    finish: string
+    cost: number
+    tokens: {
+      input: number
+      output: number
+      reasoning: number
+      cache: {
+        read: number
+        write: number
+      }
+    }
+    snapshot?: string
+  }
+}
+
+export type EventSessionNextStepStarted = {
+  id: string
+  type: "session.next.step.started"
+  properties: {
+    timestamp: number
+    sessionID: string
+    agent: string
+    model: {
+      id: string
+      providerID: string
+      variant: string
+    }
+    snapshot?: string
+  }
+}
+
+export type EventSessionNextShellEnded = {
+  id: string
+  type: "session.next.shell.ended"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    output: string
+  }
+}
+
+export type EventSessionNextShellStarted = {
+  id: string
+  type: "session.next.shell.started"
+  properties: {
+    timestamp: number
+    sessionID: string
+    callID: string
+    command: string
+  }
+}
+
+export type EventSessionNextSynthetic = {
+  id: string
+  type: "session.next.synthetic"
+  properties: {
+    timestamp: number
+    sessionID: string
+    text: string
+  }
+}
+
+export type EventSessionNextPrompted = {
+  id: string
+  type: "session.next.prompted"
+  properties: {
+    timestamp: number
+    sessionID: string
+    prompt: PromptEncoded
+  }
+}
+
+export type EventSessionNextModelSwitched = {
+  id: string
+  type: "session.next.model.switched"
+  properties: {
+    timestamp: number
+    sessionID: string
+    model: {
+      id: string
+      providerID: string
+      variant: string
+    }
+  }
+}
+
+export type EventSessionNextAgentSwitched = {
+  id: string
+  type: "session.next.agent.switched"
+  properties: {
+    timestamp: number
+    sessionID: string
+    agent: string
+  }
+}
+
+export type EventSessionDeleted = {
+  id: string
+  type: "session.deleted"
+  properties: {
+    sessionID: string
+    info: Session
+  }
+}
+
+export type EventSessionUpdated = {
+  id: string
+  type: "session.updated"
+  properties: {
+    sessionID: string
+    info: Session
+  }
+}
+
+export type EventSessionCreated = {
+  id: string
+  type: "session.created"
+  properties: {
+    sessionID: string
+    info: Session
+  }
+}
+
+export type EventMessagePartRemoved = {
+  id: string
+  type: "message.part.removed"
+  properties: {
+    sessionID: string
+    messageID: string
+    partID: string
+  }
+}
+
+export type EventMessagePartUpdated = {
+  id: string
+  type: "message.part.updated"
+  properties: {
+    sessionID: string
+    part: Part
+    time: number
+  }
+}
+
+export type EventMessageRemoved = {
+  id: string
+  type: "message.removed"
+  properties: {
+    sessionID: string
+    messageID: string
+  }
+}
+
+export type EventMessageUpdated = {
+  id: string
+  type: "message.updated"
+  properties: {
+    sessionID: string
+    info: Message
+  }
+}
+
+export type EventInstallationUpdateAvailable = {
+  id: string
+  type: "installation.update-available"
+  properties: {
+    version: string
+  }
+}
+
+export type EventInstallationUpdated = {
+  id: string
+  type: "installation.updated"
+  properties: {
+    version: string
+  }
+}
+
+export type EventPtyDeleted = {
+  id: string
+  type: "pty.deleted"
+  properties: {
+    id: string
+  }
+}
+
+export type EventPtyExited = {
+  id: string
+  type: "pty.exited"
+  properties: {
+    id: string
+    exitCode: number
+  }
+}
+
+export type EventPtyUpdated = {
+  id: string
+  type: "pty.updated"
+  properties: {
+    info: Pty
+  }
+}
+
+export type EventPtyCreated = {
+  id: string
+  type: "pty.created"
+  properties: {
+    info: Pty
+  }
+}
+
+export type EventWorkspaceStatus = {
+  id: string
+  type: "workspace.status"
+  properties: {
+    workspaceID: string
+    status: "connected" | "connecting" | "disconnected" | "error"
+  }
+}
+
+export type EventWorkspaceFailed = {
+  id: string
+  type: "workspace.failed"
+  properties: {
+    message: string
+  }
+}
+
+export type EventWorkspaceReady = {
+  id: string
+  type: "workspace.ready"
+  properties: {
+    name: string
+  }
+}
+
+export type EventVcsBranchUpdated = {
+  id: string
+  type: "vcs.branch.updated"
+  properties: {
+    branch?: string
+  }
+}
+
+export type EventWorktreeFailed = {
+  id: string
+  type: "worktree.failed"
+  properties: {
+    message: string
+  }
+}
+
+export type EventWorktreeReady = {
+  id: string
+  type: "worktree.ready"
+  properties: {
+    name: string
+    branch?: string
+  }
+}
+
+export type EventProjectRemoved = {
+  id: string
+  type: "project.removed"
+  properties: string
+}
+
+export type EventProjectUpdated = {
+  id: string
+  type: "project.updated"
+  properties: Project
+}
+
+export type EventCommandExecuted = {
+  id: string
+  type: "command.executed"
+  properties: {
+    name: string
+    sessionID: string
+    arguments: string
+    messageID: string
+  }
+}
+
+export type EventMcpBrowserOpenFailed = {
+  id: string
+  type: "mcp.browser.open.failed"
+  properties: {
+    mcpName: string
+    url: string
+  }
+}
+
+export type EventMcpToolsChanged = {
+  id: string
+  type: "mcp.tools.changed"
+  properties: {
+    server: string
+  }
+}
+
+export type EventSessionCompacted = {
+  id: string
+  type: "session.compacted"
+  properties: {
+    sessionID: string
+  }
+}
+
+export type EventSessionIdle = {
+  id: string
+  type: "session.idle"
+  properties: {
+    sessionID: string
+  }
+}
+
+export type EventSessionStatus = {
+  id: string
+  type: "session.status"
+  properties: {
+    sessionID: string
+    status: SessionStatus
+  }
+}
+
+export type EventGoalUpdated = {
+  id: string
+  type: "goal.updated"
+  properties: {
+    sessionID: string
+    goal?: Goal
+  }
+}
+
+export type EventTodoUpdated = {
+  id: string
+  type: "todo.updated"
+  properties: {
+    sessionID: string
+    todos: Array<Todo>
+  }
+}
+
+export type EventQuestionRejected = {
+  id: string
+  type: "question.rejected"
+  properties: QuestionRejected
+}
+
+export type EventQuestionReplied = {
+  id: string
+  type: "question.replied"
+  properties: QuestionReplied
+}
+
+export type EventQuestionAsked = {
+  id: string
+  type: "question.asked"
+  properties: QuestionRequest
+}
+
+export type EventSessionLoopDetected = {
   id: string
   type: "session.loop_detected"
   properties: {
     sessionID: string
     type: "ngram" | "nudge" | "replan" | "stop"
-    textLen: number | "NaN" | "Infinity" | "-Infinity"
+    textLen: number | "Infinity" | "-Infinity" | "NaN"
   }
 }
 
-export type ModelV2Info1 = {
+export type EventSessionError = {
   id: string
-  apiID: string
-  providerID: string
-  family?: string
-  name: string
-  endpoint:
-    | {
-        type: "unknown"
-      }
-    | {
-        type: "openai/responses"
-        url: string
-        websocket?: boolean
-      }
-    | {
-        type: "openai/completions"
-        url: string
-        reasoning?:
-          | {
-              type: "reasoning_content"
-            }
-          | {
-              type: "reasoning_details"
-            }
-      }
-    | {
-        type: "anthropic/messages"
-        url: string
-      }
-    | {
-        type: "aisdk"
-        package: string
-        url?: string
-      }
-  capabilities: {
-    tools: boolean
-    input: Array<string>
-    output: Array<string>
+  type: "session.error"
+  properties: {
+    sessionID?: string
+    error?:
+      | ProviderAuthError
+      | UnknownError
+      | MessageOutputLengthError
+      | MessageAbortedError
+      | StructuredOutputError
+      | ContextOverflowError
+      | ContentFilterError
+      | ApiError
   }
-  options: {
-    headers: {
-      [key: string]: string
-    }
-    body: {
-      [key: string]: unknown
-    }
-    aisdk: {
-      provider: {
-        [key: string]: unknown
-      }
-      request: {
-        [key: string]: unknown
-      }
-    }
-    variant?: string
+}
+
+export type EventSessionDiff = {
+  id: string
+  type: "session.diff"
+  properties: {
+    sessionID: string
+    diff: Array<SnapshotFileDiff>
   }
-  variants: Array<{
-    id: string
-    headers: {
-      [key: string]: string
-    }
-    body: {
-      [key: string]: unknown
-    }
-    aisdk: {
-      provider: {
-        [key: string]: unknown
-      }
-      request: {
-        [key: string]: unknown
-      }
-    }
-  }>
-  time: {
-    released: number | "NaN" | "Infinity" | "-Infinity"
+}
+
+export type EventPermissionReplied = {
+  id: string
+  type: "permission.replied"
+  properties: {
+    sessionID: string
+    requestID: string
+    reply: "once" | "always" | "reject"
   }
-  cost: Array<{
-    tier?: {
-      type: "context"
-      size: number
-    }
-    input: number
-    output: number
-    cache: {
-      read: number
-      write: number
-    }
-  }>
-  status: "alpha" | "beta" | "deprecated" | "active"
-  enabled: boolean
-  limit: {
-    context: number
-    input?: number
-    output: number
+}
+
+export type EventPermissionAsked = {
+  id: string
+  type: "permission.asked"
+  properties: PermissionRequest
+}
+
+export type EventMessagePartDelta = {
+  id: string
+  type: "message.part.delta"
+  properties: {
+    sessionID: string
+    messageID: string
+    partID: string
+    field: string
+    delta: string
   }
+}
+
+export type EventLspUpdated = {
+  id: string
+  type: "lsp.updated"
+  properties: unknown
+}
+
+export type EventLspClientDiagnostics = {
+  id: string
+  type: "lsp.client.diagnostics"
+  properties: {
+    serverID: string
+    path: string
+  }
+}
+
+export type EventProviderQuotaUpdated = {
+  id: string
+  type: "provider.quota.updated"
+  properties: ProviderQuota
+}
+
+export type EventFileWatcherUpdated = {
+  id: string
+  type: "file.watcher.updated"
+  properties: {
+    file: string
+    event: "add" | "change" | "unlink"
+  }
+}
+
+export type EventFileEdited = {
+  id: string
+  type: "file.edited"
+  properties: {
+    file: string
+  }
+}
+
+export type EventServerInstanceDisposed = {
+  id: string
+  type: "server.instance.disposed"
+  properties: {
+    directory: string
+  }
+}
+
+export type EventGlobalDisposed = {
+  id: string
+  type: "global.disposed"
+  properties: unknown
+}
+
+export type EventServerConnected = {
+  id: string
+  type: "server.connected"
+  properties: unknown
 }
 
 export type BadRequestError = {
@@ -4500,6 +8436,13 @@ export type BadRequestError = {
   data: {
     message: string
     kind?: "Params" | "Headers" | "Query" | "Body" | "Payload"
+  }
+}
+
+export type NotFoundError = {
+  name: "NotFoundError"
+  data: {
+    message: string
   }
 }
 
@@ -4516,7 +8459,7 @@ export type AuthRemoveErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
 }
 
 export type AuthRemoveError = AuthRemoveErrors[keyof AuthRemoveErrors]
@@ -4543,7 +8486,7 @@ export type AuthSetErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
 }
 
 export type AuthSetError = AuthSetErrors[keyof AuthSetErrors]
@@ -4590,7 +8533,7 @@ export type AppLogErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
 }
 
 export type AppLogError = AppLogErrors[keyof AppLogErrors]
@@ -4613,9 +8556,9 @@ export type GlobalHealthData = {
 
 export type GlobalHealthErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type GlobalHealthError = GlobalHealthErrors[keyof GlobalHealthErrors]
@@ -4641,9 +8584,9 @@ export type GlobalEventData = {
 
 export type GlobalEventErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type GlobalEventError = GlobalEventErrors[keyof GlobalEventErrors]
@@ -4666,9 +8609,9 @@ export type GlobalConfigGetData = {
 
 export type GlobalConfigGetErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type GlobalConfigGetError = GlobalConfigGetErrors[keyof GlobalConfigGetErrors]
@@ -4683,7 +8626,7 @@ export type GlobalConfigGetResponses = {
 export type GlobalConfigGetResponse = GlobalConfigGetResponses[keyof GlobalConfigGetResponses]
 
 export type GlobalConfigUpdateData = {
-  body?: Config
+  body?: Config1
   path?: never
   query?: never
   url: "/global/config"
@@ -4693,7 +8636,7 @@ export type GlobalConfigUpdateErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
 }
 
 export type GlobalConfigUpdateError = GlobalConfigUpdateErrors[keyof GlobalConfigUpdateErrors]
@@ -4702,7 +8645,7 @@ export type GlobalConfigUpdateResponses = {
   /**
    * Successfully updated global config
    */
-  200: Config
+  200: Config2
 }
 
 export type GlobalConfigUpdateResponse = GlobalConfigUpdateResponses[keyof GlobalConfigUpdateResponses]
@@ -4716,9 +8659,9 @@ export type GlobalDisposeData = {
 
 export type GlobalDisposeErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type GlobalDisposeError = GlobalDisposeErrors[keyof GlobalDisposeErrors]
@@ -4745,7 +8688,7 @@ export type GlobalUpgradeErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
 }
 
 export type GlobalUpgradeError = GlobalUpgradeErrors[keyof GlobalUpgradeErrors]
@@ -4798,9 +8741,9 @@ export type ConfigGetData = {
 
 export type ConfigGetErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type ConfigGetError = ConfigGetErrors[keyof ConfigGetErrors]
@@ -4809,13 +8752,13 @@ export type ConfigGetResponses = {
   /**
    * Get config info
    */
-  200: Config
+  200: Config3
 }
 
 export type ConfigGetResponse = ConfigGetResponses[keyof ConfigGetResponses]
 
 export type ConfigUpdateData = {
-  body?: Config
+  body?: Config1
   path?: never
   query?: {
     directory?: string
@@ -4828,7 +8771,7 @@ export type ConfigUpdateErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
 }
 
 export type ConfigUpdateError = ConfigUpdateErrors[keyof ConfigUpdateErrors]
@@ -4837,7 +8780,7 @@ export type ConfigUpdateResponses = {
   /**
    * Successfully updated config
    */
-  200: Config
+  200: Config4
 }
 
 export type ConfigUpdateResponse = ConfigUpdateResponses[keyof ConfigUpdateResponses]
@@ -4854,9 +8797,9 @@ export type ConfigProvidersData = {
 
 export type ConfigProvidersErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type ConfigProvidersError = ConfigProvidersErrors[keyof ConfigProvidersErrors]
@@ -4887,13 +8830,13 @@ export type ExperimentalConsoleGetData = {
 
 export type ExperimentalConsoleGetErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
   /**
    * InternalServerError
    */
-  500: EffectHttpApiErrorInternalServerError
+  500: EffectHttpApiErrorInternalServerErrorEncoded
 }
 
 export type ExperimentalConsoleGetError = ExperimentalConsoleGetErrors[keyof ExperimentalConsoleGetErrors]
@@ -4919,13 +8862,13 @@ export type ExperimentalConsoleListOrgsData = {
 
 export type ExperimentalConsoleListOrgsErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
   /**
    * InternalServerError
    */
-  500: EffectHttpApiErrorInternalServerError
+  500: EffectHttpApiErrorInternalServerErrorEncoded
 }
 
 export type ExperimentalConsoleListOrgsError =
@@ -4989,7 +8932,7 @@ export type ToolListErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
 }
 
 export type ToolListError = ToolListErrors[keyof ToolListErrors]
@@ -5017,7 +8960,7 @@ export type ToolIdsErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
 }
 
 export type ToolIdsError = ToolIdsErrors[keyof ToolIdsErrors]
@@ -5045,7 +8988,7 @@ export type WorktreeRemoveErrors = {
   /**
    * WorktreeError | InvalidRequestError
    */
-  400: WorktreeError | InvalidRequestError
+  400: WorktreeErrorEncoded | InvalidRequestErrorEncoded
 }
 
 export type WorktreeRemoveError = WorktreeRemoveErrors[keyof WorktreeRemoveErrors]
@@ -5073,7 +9016,7 @@ export type WorktreeListErrors = {
   /**
    * WorktreeError | InvalidRequestError
    */
-  400: WorktreeError | InvalidRequestError
+  400: WorktreeErrorEncoded | InvalidRequestErrorEncoded
 }
 
 export type WorktreeListError = WorktreeListErrors[keyof WorktreeListErrors]
@@ -5101,7 +9044,7 @@ export type WorktreeCreateErrors = {
   /**
    * WorktreeError | InvalidRequestError
    */
-  400: WorktreeError | InvalidRequestError
+  400: WorktreeErrorEncoded | InvalidRequestErrorEncoded
 }
 
 export type WorktreeCreateError = WorktreeCreateErrors[keyof WorktreeCreateErrors]
@@ -5129,7 +9072,7 @@ export type WorktreeResetErrors = {
   /**
    * WorktreeError | InvalidRequestError
    */
-  400: WorktreeError | InvalidRequestError
+  400: WorktreeErrorEncoded | InvalidRequestErrorEncoded
 }
 
 export type WorktreeResetError = WorktreeResetErrors[keyof WorktreeResetErrors]
@@ -5161,9 +9104,9 @@ export type ExperimentalSessionListData = {
 
 export type ExperimentalSessionListErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type ExperimentalSessionListError = ExperimentalSessionListErrors[keyof ExperimentalSessionListErrors]
@@ -5189,9 +9132,9 @@ export type ExperimentalResourceListData = {
 
 export type ExperimentalResourceListErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type ExperimentalResourceListError = ExperimentalResourceListErrors[keyof ExperimentalResourceListErrors]
@@ -5220,13 +9163,13 @@ export type ExperimentalGenerateData = {
 
 export type ExperimentalGenerateErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
   /**
    * InternalServerError
    */
-  500: EffectHttpApiErrorInternalServerError
+  500: EffectHttpApiErrorInternalServerErrorEncoded
 }
 
 export type ExperimentalGenerateError = ExperimentalGenerateErrors[keyof ExperimentalGenerateErrors]
@@ -5253,9 +9196,9 @@ export type FindTextData = {
 
 export type FindTextErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type FindTextError = FindTextErrors[keyof FindTextErrors]
@@ -5301,9 +9244,9 @@ export type FindFilesData = {
 
 export type FindFilesErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type FindFilesError = FindFilesErrors[keyof FindFilesErrors]
@@ -5330,9 +9273,9 @@ export type FindSymbolsData = {
 
 export type FindSymbolsErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type FindSymbolsError = FindSymbolsErrors[keyof FindSymbolsErrors]
@@ -5359,9 +9302,9 @@ export type FileListData = {
 
 export type FileListErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type FileListError = FileListErrors[keyof FileListErrors]
@@ -5388,9 +9331,9 @@ export type FileReadData = {
 
 export type FileReadErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type FileReadError = FileReadErrors[keyof FileReadErrors]
@@ -5416,9 +9359,9 @@ export type FileStatusData = {
 
 export type FileStatusErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type FileStatusError = FileStatusErrors[keyof FileStatusErrors]
@@ -5444,9 +9387,9 @@ export type InstanceDisposeData = {
 
 export type InstanceDisposeErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type InstanceDisposeError = InstanceDisposeErrors[keyof InstanceDisposeErrors]
@@ -5472,9 +9415,9 @@ export type PathGetData = {
 
 export type PathGetErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type PathGetError = PathGetErrors[keyof PathGetErrors]
@@ -5500,9 +9443,9 @@ export type VcsGetData = {
 
 export type VcsGetErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type VcsGetError = VcsGetErrors[keyof VcsGetErrors]
@@ -5528,9 +9471,9 @@ export type VcsStatusData = {
 
 export type VcsStatusErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type VcsStatusError = VcsStatusErrors[keyof VcsStatusErrors]
@@ -5557,9 +9500,9 @@ export type VcsDiffData = {
 
 export type VcsDiffErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type VcsDiffError = VcsDiffErrors[keyof VcsDiffErrors]
@@ -5585,9 +9528,9 @@ export type VcsDiffRawData = {
 
 export type VcsDiffRawErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type VcsDiffRawError = VcsDiffRawErrors[keyof VcsDiffRawErrors]
@@ -5617,10 +9560,10 @@ export type VcsApplyErrors = {
   /**
    * VcsApplyError | InvalidRequestError
    */
-  400: VcsApplyError | InvalidRequestError
+  400: VcsApplyErrorEncoded | InvalidRequestErrorEncoded
 }
 
-export type VcsApplyError2 = VcsApplyErrors[keyof VcsApplyErrors]
+export type VcsApplyError = VcsApplyErrors[keyof VcsApplyErrors]
 
 export type VcsApplyResponses = {
   /**
@@ -5645,9 +9588,9 @@ export type CommandListData = {
 
 export type CommandListErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type CommandListError = CommandListErrors[keyof CommandListErrors]
@@ -5673,9 +9616,9 @@ export type AppAgentsData = {
 
 export type AppAgentsErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type AppAgentsError = AppAgentsErrors[keyof AppAgentsErrors]
@@ -5701,9 +9644,9 @@ export type AppSkillsData = {
 
 export type AppSkillsErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type AppSkillsError = AppSkillsErrors[keyof AppSkillsErrors]
@@ -5735,9 +9678,9 @@ export type LspStatusData = {
 
 export type LspStatusErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type LspStatusError = LspStatusErrors[keyof LspStatusErrors]
@@ -5763,9 +9706,9 @@ export type FormatterStatusData = {
 
 export type FormatterStatusErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type FormatterStatusError = FormatterStatusErrors[keyof FormatterStatusErrors]
@@ -5791,9 +9734,9 @@ export type McpStatusData = {
 
 export type McpStatusErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type McpStatusError = McpStatusErrors[keyof McpStatusErrors]
@@ -5826,7 +9769,7 @@ export type McpAddErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
 }
 
 export type McpAddError = McpAddErrors[keyof McpAddErrors]
@@ -5856,9 +9799,9 @@ export type McpAuthRemoveData = {
 
 export type McpAuthRemoveErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
   /**
    * Not found
    */
@@ -5894,7 +9837,7 @@ export type McpAuthStartErrors = {
   /**
    * McpUnsupportedOAuthError | InvalidRequestError
    */
-  400: McpUnsupportedOAuthError | InvalidRequestError
+  400: McpUnsupportedOAuthErrorEncoded | InvalidRequestErrorEncoded
   /**
    * Not found
    */
@@ -5933,7 +9876,7 @@ export type McpAuthCallbackErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * Not found
    */
@@ -5946,7 +9889,7 @@ export type McpAuthCallbackResponses = {
   /**
    * OAuth authentication completed
    */
-  200: McpStatus
+  200: McpStatus1
 }
 
 export type McpAuthCallbackResponse = McpAuthCallbackResponses[keyof McpAuthCallbackResponses]
@@ -5967,7 +9910,7 @@ export type McpAuthAuthenticateErrors = {
   /**
    * McpUnsupportedOAuthError | InvalidRequestError
    */
-  400: McpUnsupportedOAuthError | InvalidRequestError
+  400: McpUnsupportedOAuthErrorEncoded | InvalidRequestErrorEncoded
   /**
    * Not found
    */
@@ -5980,7 +9923,7 @@ export type McpAuthAuthenticateResponses = {
   /**
    * OAuth authentication completed
    */
-  200: McpStatus
+  200: McpStatus2
 }
 
 export type McpAuthAuthenticateResponse = McpAuthAuthenticateResponses[keyof McpAuthAuthenticateResponses]
@@ -5999,9 +9942,9 @@ export type McpConnectData = {
 
 export type McpConnectErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type McpConnectError = McpConnectErrors[keyof McpConnectErrors]
@@ -6029,9 +9972,9 @@ export type McpDisconnectData = {
 
 export type McpDisconnectErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type McpDisconnectError = McpDisconnectErrors[keyof McpDisconnectErrors]
@@ -6057,9 +10000,9 @@ export type ProjectListData = {
 
 export type ProjectListErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type ProjectListError = ProjectListErrors[keyof ProjectListErrors]
@@ -6085,9 +10028,9 @@ export type ProjectCurrentData = {
 
 export type ProjectCurrentErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type ProjectCurrentError = ProjectCurrentErrors[keyof ProjectCurrentErrors]
@@ -6096,7 +10039,7 @@ export type ProjectCurrentResponses = {
   /**
    * Current project information
    */
-  200: Project
+  200: Project1
 }
 
 export type ProjectCurrentResponse = ProjectCurrentResponses[keyof ProjectCurrentResponses]
@@ -6113,9 +10056,9 @@ export type ProjectInitGitData = {
 
 export type ProjectInitGitErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type ProjectInitGitError = ProjectInitGitErrors[keyof ProjectInitGitErrors]
@@ -6124,7 +10067,7 @@ export type ProjectInitGitResponses = {
   /**
    * Project information after git initialization
    */
-  200: Project
+  200: Project2
 }
 
 export type ProjectInitGitResponse = ProjectInitGitResponses[keyof ProjectInitGitResponses]
@@ -6143,9 +10086,9 @@ export type ProjectRemoveData = {
 
 export type ProjectRemoveErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
   /**
    * Not found
    */
@@ -6190,7 +10133,7 @@ export type ProjectUpdateErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * Not found
    */
@@ -6203,7 +10146,7 @@ export type ProjectUpdateResponses = {
   /**
    * Updated project information
    */
-  200: Project
+  200: Project3
 }
 
 export type ProjectUpdateResponse = ProjectUpdateResponses[keyof ProjectUpdateResponses]
@@ -6220,9 +10163,9 @@ export type PtyShellsData = {
 
 export type PtyShellsErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type PtyShellsError = PtyShellsErrors[keyof PtyShellsErrors]
@@ -6252,9 +10195,9 @@ export type PtyListData = {
 
 export type PtyListErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type PtyListError = PtyListErrors[keyof PtyListErrors]
@@ -6290,7 +10233,7 @@ export type PtyCreateErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
 }
 
 export type PtyCreateError = PtyCreateErrors[keyof PtyCreateErrors]
@@ -6299,7 +10242,7 @@ export type PtyCreateResponses = {
   /**
    * Created session
    */
-  200: Pty
+  200: Pty1
 }
 
 export type PtyCreateResponse = PtyCreateResponses[keyof PtyCreateResponses]
@@ -6318,13 +10261,13 @@ export type PtyRemoveData = {
 
 export type PtyRemoveErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type PtyRemoveError = PtyRemoveErrors[keyof PtyRemoveErrors]
@@ -6352,13 +10295,13 @@ export type PtyGetData = {
 
 export type PtyGetErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type PtyGetError = PtyGetErrors[keyof PtyGetErrors]
@@ -6367,7 +10310,7 @@ export type PtyGetResponses = {
   /**
    * Session info
    */
-  200: Pty
+  200: Pty2
 }
 
 export type PtyGetResponse = PtyGetResponses[keyof PtyGetResponses]
@@ -6394,7 +10337,7 @@ export type PtyUpdateErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
 }
 
 export type PtyUpdateError = PtyUpdateErrors[keyof PtyUpdateErrors]
@@ -6403,7 +10346,7 @@ export type PtyUpdateResponses = {
   /**
    * Updated session
    */
-  200: Pty
+  200: Pty3
 }
 
 export type PtyUpdateResponse = PtyUpdateResponses[keyof PtyUpdateResponses]
@@ -6422,17 +10365,17 @@ export type PtyConnectTokenData = {
 
 export type PtyConnectTokenErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
   /**
    * Forbidden
    */
-  403: EffectHttpApiErrorForbidden
+  403: EffectHttpApiErrorForbiddenEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type PtyConnectTokenError = PtyConnectTokenErrors[keyof PtyConnectTokenErrors]
@@ -6461,9 +10404,9 @@ export type QuestionListData = {
 
 export type QuestionListErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type QuestionListError = QuestionListErrors[keyof QuestionListErrors]
@@ -6498,11 +10441,11 @@ export type QuestionReplyErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * QuestionNotFoundError
    */
-  404: QuestionNotFoundError
+  404: QuestionNotFoundErrorEncoded
 }
 
 export type QuestionReplyError = QuestionReplyErrors[keyof QuestionReplyErrors]
@@ -6532,11 +10475,11 @@ export type QuestionRejectErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * QuestionNotFoundError
    */
-  404: QuestionNotFoundError
+  404: QuestionNotFoundErrorEncoded
 }
 
 export type QuestionRejectError = QuestionRejectErrors[keyof QuestionRejectErrors]
@@ -6562,9 +10505,9 @@ export type PermissionListData = {
 
 export type PermissionListErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type PermissionListError = PermissionListErrors[keyof PermissionListErrors]
@@ -6597,11 +10540,11 @@ export type PermissionReplyErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * PermissionNotFoundError
    */
-  404: PermissionNotFoundError
+  404: PermissionNotFoundErrorEncoded
 }
 
 export type PermissionReplyError = PermissionReplyErrors[keyof PermissionReplyErrors]
@@ -6627,9 +10570,9 @@ export type ProviderListData = {
 
 export type ProviderListErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type ProviderListError = ProviderListErrors[keyof ProviderListErrors]
@@ -6661,9 +10604,9 @@ export type ProviderAuthData = {
 
 export type ProviderAuthErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type ProviderAuthError2 = ProviderAuthErrors[keyof ProviderAuthErrors]
@@ -6673,7 +10616,7 @@ export type ProviderAuthResponses = {
    * Provider auth methods
    */
   200: {
-    [key: string]: Array<ProviderAuthMethod>
+    [key: string]: Array<ProviderAuthMethodEncoded>
   }
 }
 
@@ -6691,9 +10634,9 @@ export type ProviderQuotaData = {
 
 export type ProviderQuotaErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type ProviderQuotaError = ProviderQuotaErrors[keyof ProviderQuotaErrors]
@@ -6734,7 +10677,7 @@ export type ProviderOauthAuthorizeErrors = {
   /**
    * ProviderAuthError | InvalidRequestError
    */
-  400: ProviderAuthError1 | InvalidRequestError
+  400: ProviderAuthErrorEncoded | InvalidRequestErrorEncoded
 }
 
 export type ProviderOauthAuthorizeError = ProviderOauthAuthorizeErrors[keyof ProviderOauthAuthorizeErrors]
@@ -6743,7 +10686,7 @@ export type ProviderOauthAuthorizeResponses = {
   /**
    * Authorization URL and method
    */
-  200: ProviderAuthAuthorization
+  200: ProviderAuthAuthorizationEncoded
 }
 
 export type ProviderOauthAuthorizeResponse = ProviderOauthAuthorizeResponses[keyof ProviderOauthAuthorizeResponses]
@@ -6773,7 +10716,7 @@ export type ProviderOauthCallbackErrors = {
   /**
    * ProviderAuthError | InvalidRequestError
    */
-  400: ProviderAuthError1 | InvalidRequestError
+  400: ProviderAuthErrorEncoded | InvalidRequestErrorEncoded
 }
 
 export type ProviderOauthCallbackError = ProviderOauthCallbackErrors[keyof ProviderOauthCallbackErrors]
@@ -6805,9 +10748,9 @@ export type SessionListData = {
 
 export type SessionListErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type SessionListError = SessionListErrors[keyof SessionListErrors]
@@ -6847,11 +10790,11 @@ export type SessionCreateErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type SessionCreateError = SessionCreateErrors[keyof SessionCreateErrors]
@@ -6860,7 +10803,7 @@ export type SessionCreateResponses = {
   /**
    * Successfully created session
    */
-  200: Session
+  200: Session2
 }
 
 export type SessionCreateResponse = SessionCreateResponses[keyof SessionCreateResponses]
@@ -6878,9 +10821,9 @@ export type SessionUsageData = {
 
 export type SessionUsageErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type SessionUsageError = SessionUsageErrors[keyof SessionUsageErrors]
@@ -6944,7 +10887,7 @@ export type SessionStatusErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
 }
 
 export type SessionStatusError = SessionStatusErrors[keyof SessionStatusErrors]
@@ -6976,11 +10919,11 @@ export type SessionDeleteErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type SessionDeleteError = SessionDeleteErrors[keyof SessionDeleteErrors]
@@ -7010,11 +10953,11 @@ export type SessionGetErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type SessionGetError = SessionGetErrors[keyof SessionGetErrors]
@@ -7023,7 +10966,7 @@ export type SessionGetResponses = {
   /**
    * Get session
    */
-  200: Session
+  200: Session1
 }
 
 export type SessionGetResponse = SessionGetResponses[keyof SessionGetResponses]
@@ -7051,11 +10994,11 @@ export type SessionUpdateErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type SessionUpdateError = SessionUpdateErrors[keyof SessionUpdateErrors]
@@ -7064,7 +11007,7 @@ export type SessionUpdateResponses = {
   /**
    * Successfully updated session
    */
-  200: Session
+  200: Session3
 }
 
 export type SessionUpdateResponse = SessionUpdateResponses[keyof SessionUpdateResponses]
@@ -7085,11 +11028,11 @@ export type SessionChildrenErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type SessionChildrenError = SessionChildrenErrors[keyof SessionChildrenErrors]
@@ -7119,11 +11062,11 @@ export type SessionTodoErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type SessionTodoError = SessionTodoErrors[keyof SessionTodoErrors]
@@ -7153,11 +11096,11 @@ export type SessionGoalErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type SessionGoalError = SessionGoalErrors[keyof SessionGoalErrors]
@@ -7166,7 +11109,7 @@ export type SessionGoalResponses = {
   /**
    * The pinned session goal
    */
-  200: Goal
+  200: Goal1
 }
 
 export type SessionGoalResponse = SessionGoalResponses[keyof SessionGoalResponses]
@@ -7187,11 +11130,11 @@ export type SessionContextInspectErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type SessionContextInspectError = SessionContextInspectErrors[keyof SessionContextInspectErrors]
@@ -7216,9 +11159,9 @@ export type SessionOutlineData = {
 
 export type SessionOutlineErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type SessionOutlineError = SessionOutlineErrors[keyof SessionOutlineErrors]
@@ -7259,9 +11202,9 @@ export type SessionDiffData = {
 
 export type SessionDiffErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type SessionDiffError = SessionDiffErrors[keyof SessionDiffErrors]
@@ -7294,11 +11237,11 @@ export type SessionMessagesErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type SessionMessagesError = SessionMessagesErrors[keyof SessionMessagesErrors]
@@ -7350,11 +11293,11 @@ export type SessionPromptErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type SessionPromptError = SessionPromptErrors[keyof SessionPromptErrors]
@@ -7388,11 +11331,11 @@ export type SessionChangesErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type SessionChangesError = SessionChangesErrors[keyof SessionChangesErrors]
@@ -7435,15 +11378,15 @@ export type SessionDeleteMessageErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
   /**
    * SessionBusyError
    */
-  409: SessionBusyError
+  409: SessionBusyErrorEncoded
 }
 
 export type SessionDeleteMessageError = SessionDeleteMessageErrors[keyof SessionDeleteMessageErrors]
@@ -7474,11 +11417,11 @@ export type SessionMessageErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type SessionMessageError = SessionMessageErrors[keyof SessionMessageErrors]
@@ -7513,11 +11456,11 @@ export type SessionForkErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type SessionForkError = SessionForkErrors[keyof SessionForkErrors]
@@ -7526,7 +11469,7 @@ export type SessionForkResponses = {
   /**
    * 200
    */
-  200: Session
+  200: Session4
 }
 
 export type SessionForkResponse = SessionForkResponses[keyof SessionForkResponses]
@@ -7547,7 +11490,7 @@ export type SessionAbortErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
 }
 
 export type SessionAbortError = SessionAbortErrors[keyof SessionAbortErrors]
@@ -7581,11 +11524,11 @@ export type SessionInitErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type SessionInitError = SessionInitErrors[keyof SessionInitErrors]
@@ -7613,17 +11556,17 @@ export type SessionUnshareData = {
 
 export type SessionUnshareErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
   /**
    * InternalServerError
    */
-  500: EffectHttpApiErrorInternalServerError
+  500: EffectHttpApiErrorInternalServerErrorEncoded
 }
 
 export type SessionUnshareError = SessionUnshareErrors[keyof SessionUnshareErrors]
@@ -7632,7 +11575,7 @@ export type SessionUnshareResponses = {
   /**
    * Successfully unshared session
    */
-  200: Session
+  200: Session6
 }
 
 export type SessionUnshareResponse = SessionUnshareResponses[keyof SessionUnshareResponses]
@@ -7651,17 +11594,17 @@ export type SessionShareData = {
 
 export type SessionShareErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
   /**
    * InternalServerError
    */
-  500: EffectHttpApiErrorInternalServerError
+  500: EffectHttpApiErrorInternalServerErrorEncoded
 }
 
 export type SessionShareError = SessionShareErrors[keyof SessionShareErrors]
@@ -7670,7 +11613,7 @@ export type SessionShareResponses = {
   /**
    * Successfully shared session
    */
-  200: Session
+  200: Session5
 }
 
 export type SessionShareResponse = SessionShareResponses[keyof SessionShareResponses]
@@ -7695,11 +11638,11 @@ export type SessionSummarizeErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type SessionSummarizeError = SessionSummarizeErrors[keyof SessionSummarizeErrors]
@@ -7728,7 +11671,7 @@ export type SessionTtsErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
 }
 
 export type SessionTtsError = SessionTtsErrors[keyof SessionTtsErrors]
@@ -7777,11 +11720,11 @@ export type SessionPromptAsyncErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type SessionPromptAsyncError = SessionPromptAsyncErrors[keyof SessionPromptAsyncErrors]
@@ -7826,11 +11769,11 @@ export type SessionCommandErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type SessionCommandError = SessionCommandErrors[keyof SessionCommandErrors]
@@ -7871,15 +11814,15 @@ export type SessionShellErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
   /**
    * SessionBusyError
    */
-  409: SessionBusyError
+  409: SessionBusyErrorEncoded
 }
 
 export type SessionShellError = SessionShellErrors[keyof SessionShellErrors]
@@ -7915,15 +11858,15 @@ export type SessionRevertErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
   /**
    * SessionBusyError
    */
-  409: SessionBusyError
+  409: SessionBusyErrorEncoded
 }
 
 export type SessionRevertError = SessionRevertErrors[keyof SessionRevertErrors]
@@ -7932,7 +11875,7 @@ export type SessionRevertResponses = {
   /**
    * Updated session
    */
-  200: Session
+  200: Session7
 }
 
 export type SessionRevertResponse = SessionRevertResponses[keyof SessionRevertResponses]
@@ -7953,15 +11896,15 @@ export type SessionUnrevertErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
   /**
    * SessionBusyError
    */
-  409: SessionBusyError
+  409: SessionBusyErrorEncoded
 }
 
 export type SessionUnrevertError = SessionUnrevertErrors[keyof SessionUnrevertErrors]
@@ -7970,7 +11913,7 @@ export type SessionUnrevertResponses = {
   /**
    * Updated session
    */
-  200: Session
+  200: Session8
 }
 
 export type SessionUnrevertResponse = SessionUnrevertResponses[keyof SessionUnrevertResponses]
@@ -7994,11 +11937,11 @@ export type PermissionRespondErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError | PermissionNotFoundError
    */
-  404: NotFoundError | PermissionNotFoundError
+  404: NotFoundErrorEncoded | PermissionNotFoundErrorEncoded
 }
 
 export type PermissionRespondError = PermissionRespondErrors[keyof PermissionRespondErrors]
@@ -8029,15 +11972,15 @@ export type SessionDeliverQueuedMessageErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
   /**
    * ConflictError
    */
-  409: ConflictError
+  409: ConflictErrorEncoded
 }
 
 export type SessionDeliverQueuedMessageError =
@@ -8070,15 +12013,15 @@ export type SessionCancelQueuedMessageErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
   /**
    * ConflictError
    */
-  409: ConflictError
+  409: ConflictErrorEncoded
 }
 
 export type SessionCancelQueuedMessageError = SessionCancelQueuedMessageErrors[keyof SessionCancelQueuedMessageErrors]
@@ -8112,15 +12055,15 @@ export type SessionEditQueuedMessageErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
   /**
    * ConflictError
    */
-  409: ConflictError
+  409: ConflictErrorEncoded
 }
 
 export type SessionEditQueuedMessageError = SessionEditQueuedMessageErrors[keyof SessionEditQueuedMessageErrors]
@@ -8156,11 +12099,11 @@ export type PartDeleteErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type PartDeleteError = PartDeleteErrors[keyof PartDeleteErrors]
@@ -8192,11 +12135,11 @@ export type PartUpdateErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type PartUpdateError = PartUpdateErrors[keyof PartUpdateErrors]
@@ -8205,7 +12148,7 @@ export type PartUpdateResponses = {
   /**
    * Successfully updated part
    */
-  200: Part
+  200: Part1
 }
 
 export type PartUpdateResponse = PartUpdateResponses[keyof PartUpdateResponses]
@@ -8219,9 +12162,9 @@ export type SoulListData = {
 
 export type SoulListErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type SoulListError = SoulListErrors[keyof SoulListErrors]
@@ -8253,13 +12196,13 @@ export type SoulGetData = {
 
 export type SoulGetErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type SoulGetError = SoulGetErrors[keyof SoulGetErrors]
@@ -8299,9 +12242,9 @@ export type SoulIssuesData = {
 
 export type SoulIssuesErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type SoulIssuesError = SoulIssuesErrors[keyof SoulIssuesErrors]
@@ -8329,9 +12272,9 @@ export type SoulDefaultData = {
 
 export type SoulDefaultErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type SoulDefaultError = SoulDefaultErrors[keyof SoulDefaultErrors]
@@ -8359,9 +12302,9 @@ export type SyncStartData = {
 
 export type SyncStartErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type SyncStartError = SyncStartErrors[keyof SyncStartErrors]
@@ -8400,7 +12343,7 @@ export type SyncReplayErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
 }
 
 export type SyncReplayError = SyncReplayErrors[keyof SyncReplayErrors]
@@ -8432,7 +12375,7 @@ export type SyncStealErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
 }
 
 export type SyncStealError = SyncStealErrors[keyof SyncStealErrors]
@@ -8464,7 +12407,7 @@ export type SyncHistoryListErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
 }
 
 export type SyncHistoryListError = SyncHistoryListErrors[keyof SyncHistoryListErrors]
@@ -8513,11 +12456,11 @@ export type V2SessionListErrors = {
   /**
    * InvalidCursorError | InvalidRequestError
    */
-  400: InvalidCursorError | InvalidRequestError
+  400: InvalidCursorErrorEncoded | InvalidRequestErrorEncoded
   /**
    * UnauthorizedError
    */
-  401: UnauthorizedError
+  401: UnauthorizedErrorEncoded
 }
 
 export type V2SessionListError = V2SessionListErrors[keyof V2SessionListErrors]
@@ -8533,7 +12476,7 @@ export type V2SessionListResponse = V2SessionListResponses[keyof V2SessionListRe
 
 export type V2SessionPromptData = {
   body?: {
-    prompt: Prompt
+    prompt: PromptEncoded
     delivery?: SessionDelivery
   }
   path: {
@@ -8550,19 +12493,19 @@ export type V2SessionPromptErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError
+  400: InvalidRequestErrorEncoded
   /**
    * UnauthorizedError
    */
-  401: UnauthorizedError
+  401: UnauthorizedErrorEncoded
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError
+  404: SessionNotFoundErrorEncoded
   /**
    * ServiceUnavailableError
    */
-  503: ServiceUnavailableError
+  503: ServiceUnavailableErrorEncoded
 }
 
 export type V2SessionPromptError = V2SessionPromptErrors[keyof V2SessionPromptErrors]
@@ -8592,19 +12535,19 @@ export type V2SessionCompactErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError
+  400: InvalidRequestErrorEncoded
   /**
    * UnauthorizedError
    */
-  401: UnauthorizedError
+  401: UnauthorizedErrorEncoded
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError
+  404: SessionNotFoundErrorEncoded
   /**
    * ServiceUnavailableError
    */
-  503: ServiceUnavailableError
+  503: ServiceUnavailableErrorEncoded
 }
 
 export type V2SessionCompactError = V2SessionCompactErrors[keyof V2SessionCompactErrors]
@@ -8634,19 +12577,19 @@ export type V2SessionWaitErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError
+  400: InvalidRequestErrorEncoded
   /**
    * UnauthorizedError
    */
-  401: UnauthorizedError
+  401: UnauthorizedErrorEncoded
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError
+  404: SessionNotFoundErrorEncoded
   /**
    * ServiceUnavailableError
    */
-  503: ServiceUnavailableError
+  503: ServiceUnavailableErrorEncoded
 }
 
 export type V2SessionWaitError = V2SessionWaitErrors[keyof V2SessionWaitErrors]
@@ -8676,19 +12619,19 @@ export type V2SessionContextErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError
+  400: InvalidRequestErrorEncoded
   /**
    * UnauthorizedError
    */
-  401: UnauthorizedError
+  401: UnauthorizedErrorEncoded
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError
+  404: SessionNotFoundErrorEncoded
   /**
    * UnknownError
    */
-  500: UnknownError1
+  500: UnknownErrorEncoded
 }
 
 export type V2SessionContextError = V2SessionContextErrors[keyof V2SessionContextErrors]
@@ -8727,19 +12670,19 @@ export type V2SessionMessagesErrors = {
   /**
    * InvalidCursorError | InvalidRequestError
    */
-  400: InvalidCursorError | InvalidRequestError
+  400: InvalidCursorErrorEncoded | InvalidRequestErrorEncoded
   /**
    * UnauthorizedError
    */
-  401: UnauthorizedError
+  401: UnauthorizedErrorEncoded
   /**
    * SessionNotFoundError
    */
-  404: SessionNotFoundError
+  404: SessionNotFoundErrorEncoded
   /**
    * UnknownError
    */
-  500: UnknownError1
+  500: UnknownErrorEncoded
 }
 
 export type V2SessionMessagesError = V2SessionMessagesErrors[keyof V2SessionMessagesErrors]
@@ -8769,15 +12712,15 @@ export type V2ModelListErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError
+  400: InvalidRequestErrorEncoded
   /**
    * UnauthorizedError
    */
-  401: UnauthorizedError
+  401: UnauthorizedErrorEncoded
   /**
    * ServiceUnavailableError
    */
-  503: ServiceUnavailableError
+  503: ServiceUnavailableErrorEncoded
 }
 
 export type V2ModelListError = V2ModelListErrors[keyof V2ModelListErrors]
@@ -8786,7 +12729,7 @@ export type V2ModelListResponses = {
   /**
    * Success
    */
-  200: Array<ModelV2Info>
+  200: Array<ModelV2InfoEncoded>
 }
 
 export type V2ModelListResponse = V2ModelListResponses[keyof V2ModelListResponses]
@@ -8807,15 +12750,15 @@ export type V2ProviderListErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError
+  400: InvalidRequestErrorEncoded
   /**
    * UnauthorizedError
    */
-  401: UnauthorizedError
+  401: UnauthorizedErrorEncoded
   /**
    * ServiceUnavailableError
    */
-  503: ServiceUnavailableError
+  503: ServiceUnavailableErrorEncoded
 }
 
 export type V2ProviderListError = V2ProviderListErrors[keyof V2ProviderListErrors]
@@ -8824,7 +12767,7 @@ export type V2ProviderListResponses = {
   /**
    * Success
    */
-  200: Array<ProviderV2Info>
+  200: Array<ProviderV2InfoEncoded>
 }
 
 export type V2ProviderListResponse = V2ProviderListResponses[keyof V2ProviderListResponses]
@@ -8847,19 +12790,19 @@ export type V2ProviderGetErrors = {
   /**
    * InvalidRequestError
    */
-  400: InvalidRequestError
+  400: InvalidRequestErrorEncoded
   /**
    * UnauthorizedError
    */
-  401: UnauthorizedError
+  401: UnauthorizedErrorEncoded
   /**
    * ProviderNotFoundError
    */
-  404: ProviderNotFoundError
+  404: ProviderNotFoundErrorEncoded
   /**
    * ServiceUnavailableError
    */
-  503: ServiceUnavailableError
+  503: ServiceUnavailableErrorEncoded
 }
 
 export type V2ProviderGetError = V2ProviderGetErrors[keyof V2ProviderGetErrors]
@@ -8868,7 +12811,7 @@ export type V2ProviderGetResponses = {
   /**
    * ProviderV2.Info
    */
-  200: ProviderV2Info
+  200: ProviderV2InfoEncoded
 }
 
 export type V2ProviderGetResponse = V2ProviderGetResponses[keyof V2ProviderGetResponses]
@@ -8889,7 +12832,7 @@ export type TuiAppendPromptErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
 }
 
 export type TuiAppendPromptError = TuiAppendPromptErrors[keyof TuiAppendPromptErrors]
@@ -8915,9 +12858,9 @@ export type TuiOpenHelpData = {
 
 export type TuiOpenHelpErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type TuiOpenHelpError = TuiOpenHelpErrors[keyof TuiOpenHelpErrors]
@@ -8943,9 +12886,9 @@ export type TuiOpenSessionsData = {
 
 export type TuiOpenSessionsErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type TuiOpenSessionsError = TuiOpenSessionsErrors[keyof TuiOpenSessionsErrors]
@@ -8971,9 +12914,9 @@ export type TuiOpenThemesData = {
 
 export type TuiOpenThemesErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type TuiOpenThemesError = TuiOpenThemesErrors[keyof TuiOpenThemesErrors]
@@ -8999,9 +12942,9 @@ export type TuiOpenModelsData = {
 
 export type TuiOpenModelsErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type TuiOpenModelsError = TuiOpenModelsErrors[keyof TuiOpenModelsErrors]
@@ -9027,9 +12970,9 @@ export type TuiSubmitPromptData = {
 
 export type TuiSubmitPromptErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type TuiSubmitPromptError = TuiSubmitPromptErrors[keyof TuiSubmitPromptErrors]
@@ -9055,9 +12998,9 @@ export type TuiClearPromptData = {
 
 export type TuiClearPromptErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type TuiClearPromptError = TuiClearPromptErrors[keyof TuiClearPromptErrors]
@@ -9087,7 +13030,7 @@ export type TuiExecuteCommandErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
 }
 
 export type TuiExecuteCommandError = TuiExecuteCommandErrors[keyof TuiExecuteCommandErrors]
@@ -9118,9 +13061,9 @@ export type TuiShowToastData = {
 
 export type TuiShowToastErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type TuiShowToastError = TuiShowToastErrors[keyof TuiShowToastErrors]
@@ -9135,7 +13078,7 @@ export type TuiShowToastResponses = {
 export type TuiShowToastResponse = TuiShowToastResponses[keyof TuiShowToastResponses]
 
 export type TuiPublishData = {
-  body?: EventTuiPromptAppend2 | EventTuiCommandExecute2 | EventTuiToastShow2 | EventTuiSessionSelect2
+  body?: EventTuiPromptAppend | EventTuiCommandExecute | EventTuiToastShow | EventTuiSessionSelect
   path?: never
   query?: {
     directory?: string
@@ -9148,7 +13091,7 @@ export type TuiPublishErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
 }
 
 export type TuiPublishError = TuiPublishErrors[keyof TuiPublishErrors]
@@ -9181,11 +13124,11 @@ export type TuiSelectSessionErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
   /**
    * NotFoundError
    */
-  404: NotFoundError
+  404: NotFoundErrorEncoded
 }
 
 export type TuiSelectSessionError = TuiSelectSessionErrors[keyof TuiSelectSessionErrors]
@@ -9211,9 +13154,9 @@ export type TuiControlNextData = {
 
 export type TuiControlNextErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type TuiControlNextError = TuiControlNextErrors[keyof TuiControlNextErrors]
@@ -9242,9 +13185,9 @@ export type TuiControlResponseData = {
 
 export type TuiControlResponseErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type TuiControlResponseError = TuiControlResponseErrors[keyof TuiControlResponseErrors]
@@ -9270,9 +13213,9 @@ export type ExperimentalWorkspaceAdapterListData = {
 
 export type ExperimentalWorkspaceAdapterListErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type ExperimentalWorkspaceAdapterListError =
@@ -9304,9 +13247,9 @@ export type ExperimentalWorkspaceListData = {
 
 export type ExperimentalWorkspaceListErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type ExperimentalWorkspaceListError = ExperimentalWorkspaceListErrors[keyof ExperimentalWorkspaceListErrors]
@@ -9340,7 +13283,7 @@ export type ExperimentalWorkspaceCreateErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
 }
 
 export type ExperimentalWorkspaceCreateError =
@@ -9350,7 +13293,7 @@ export type ExperimentalWorkspaceCreateResponses = {
   /**
    * Workspace created
    */
-  200: Workspace
+  200: Workspace1
 }
 
 export type ExperimentalWorkspaceCreateResponse =
@@ -9368,9 +13311,9 @@ export type ExperimentalWorkspaceSyncListData = {
 
 export type ExperimentalWorkspaceSyncListErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type ExperimentalWorkspaceSyncListError =
@@ -9398,9 +13341,9 @@ export type ExperimentalWorkspaceStatusData = {
 
 export type ExperimentalWorkspaceStatusErrors = {
   /**
-   * Bad request
+   * InvalidRequestError
    */
-  400: BadRequestError
+  400: InvalidRequestErrorEncoded
 }
 
 export type ExperimentalWorkspaceStatusError =
@@ -9435,7 +13378,7 @@ export type ExperimentalWorkspaceRemoveErrors = {
   /**
    * BadRequest | InvalidRequestError
    */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  400: EffectHttpApiErrorBadRequestEncoded | InvalidRequestErrorEncoded
 }
 
 export type ExperimentalWorkspaceRemoveError =
@@ -9469,7 +13412,7 @@ export type ExperimentalWorkspaceWarpErrors = {
   /**
    * WorkspaceWarpError | VcsApplyError | InvalidRequestError
    */
-  400: WorkspaceWarpError | VcsApplyError | InvalidRequestError
+  400: WorkspaceWarpErrorEncoded | VcsApplyErrorEncoded | InvalidRequestErrorEncoded
 }
 
 export type ExperimentalWorkspaceWarpError = ExperimentalWorkspaceWarpErrors[keyof ExperimentalWorkspaceWarpErrors]
@@ -9500,7 +13443,7 @@ export type PtyConnectErrors = {
   /**
    * Forbidden
    */
-  403: EffectHttpApiErrorForbidden
+  403: EffectHttpApiErrorForbiddenEncoded
   /**
    * Not found
    */

@@ -1,7 +1,7 @@
 import { deflate, gzip } from "node:zlib"
 import { promisify } from "node:util"
 import { Effect } from "effect"
-import { HttpBody, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { HttpBody, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 
 const gzipAsync = promisify(gzip)
 const deflateAsync = promisify(deflate)

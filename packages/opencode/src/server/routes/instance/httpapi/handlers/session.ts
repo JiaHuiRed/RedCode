@@ -25,8 +25,8 @@ import { InstanceState } from "@/effect/instance-state"
 import { NamedError } from "@redcode-ai/core/util/error"
 import { Cause, Effect, Option, Schema, Scope } from "effect"
 import * as Stream from "effect/Stream"
-import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { HttpApiBuilder, HttpApiError, HttpApiSchema } from "effect/unstable/httpapi"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { HttpApiBuilder, HttpApiError, HttpApiSchema } from "effect/http-api"
 import { InstanceHttpApi } from "../api"
 import {
   CommandPayload,

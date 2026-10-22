@@ -2,7 +2,7 @@ import { Auth } from "@/auth"
 import { ProviderID } from "@/provider/schema"
 import * as Log from "@redcode-ai/core/util/log"
 import { Effect } from "effect"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/http-api"
 import { RootHttpApi } from "../api"
 import { LogInput } from "../groups/control"
 

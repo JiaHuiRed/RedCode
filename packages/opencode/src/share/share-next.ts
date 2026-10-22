@@ -1,7 +1,7 @@
 import type * as SDK from "@redcode-ai/sdk/v2"
 import { serviceUse } from "@/effect/service-use"
 import { Effect, Exit, Layer, Option, Schema, Scope, Context, Stream } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { Account } from "@/account/account"
 import { Bus } from "@/bus"
 import { InstanceState } from "@/effect/instance-state"

@@ -5,7 +5,7 @@ import { Newtype } from "@redcode-ai/core/schema"
 
 export class PermissionID extends Newtype<PermissionID>()(
   "PermissionID",
-  Schema.String.check(Schema.isStartsWith("per")),
+  Schema.String.check(Schema.isStartingWith("per")),
 ) {
   static ascending(id?: string): PermissionID {
     return this.make(Identifier.ascending("permission", id))

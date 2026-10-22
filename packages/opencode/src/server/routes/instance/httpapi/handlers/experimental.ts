@@ -11,8 +11,8 @@ import { ToolRegistry } from "@/tool/registry"
 import { Worktree } from "@/worktree"
 import { generateText } from "ai"
 import { Effect, Option } from "effect"
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
-import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
+import * as HttpServerResponse from "effect/http/HttpServerResponse"
+import { HttpApiBuilder, HttpApiError } from "effect/http-api"
 import { InstanceHttpApi } from "../api"
 import {
   ConsoleSwitchPayload,

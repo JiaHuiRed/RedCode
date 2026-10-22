@@ -27,16 +27,16 @@ export const Info = Schema.Struct({
 }).annotate({ identifier: "AgentV2.Info" })
 export type Info = typeof Info.Type
 
-export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("AgentV2.NotFound", {
+export class NotFoundError extends Schema.TaggedError<NotFoundError>()("AgentV2.NotFound", {
   agent: ID,
 }) {}
 
-export class InvalidDefaultError extends Schema.TaggedErrorClass<InvalidDefaultError>()("AgentV2.InvalidDefault", {
+export class InvalidDefaultError extends Schema.TaggedError<InvalidDefaultError>()("AgentV2.InvalidDefault", {
   agent: ID,
   reason: Schema.Literals(["missing", "subagent", "hidden"]),
 }) {}
 
-export class NoDefaultError extends Schema.TaggedErrorClass<NoDefaultError>()("AgentV2.NoDefault", {}) {}
+export class NoDefaultError extends Schema.TaggedError<NoDefaultError>()("AgentV2.NoDefault", {}) {}
 
 export interface Interface {
   readonly get: (agent: ID) => Effect.Effect<Info, NotFoundError>

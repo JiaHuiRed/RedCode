@@ -106,7 +106,7 @@ export const Event = {
   Rejected: BusEvent.define("question.rejected", Rejected),
 }
 
-export class RejectedError extends Schema.TaggedErrorClass<RejectedError>()("QuestionRejectedError", {}) {
+export class RejectedError extends Schema.TaggedError<RejectedError>()("QuestionRejectedError", {}) {
   override get message() {
     // 261009 Red 措辞中性：reject 是用户拒绝，instance 淘汰是系统拆除——统一文案
     // 不向模型断言「是谁」 dismiss 的，两边都真。
@@ -114,7 +114,7 @@ export class RejectedError extends Schema.TaggedErrorClass<RejectedError>()("Que
   }
 }
 
-export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Question.NotFoundError", {
+export class NotFoundError extends Schema.TaggedError<NotFoundError>()("Question.NotFoundError", {
   requestID: QuestionID,
 }) {}
 

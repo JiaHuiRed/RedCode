@@ -1,6 +1,6 @@
 import { AppProcess } from "@redcode-ai/core/process"
 import { Duration, Effect, Layer, Context, Stream } from "effect"
-import { ChildProcess } from "effect/unstable/process"
+import { ChildProcess } from "effect/process"
 import { join } from "node:path"
 import * as Log from "@redcode-ai/core/util/log"
 

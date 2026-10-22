@@ -1,5 +1,5 @@
 import { Cause, Effect, Queue, Schema, Stream } from "effect"
-import type * as Sse from "effect/unstable/encoding/Sse"
+import type * as Sse from "effect/encoding/Sse"
 import { GlobalBus, type GlobalEvent } from "@/bus/global"
 import { Bus } from "@/bus"
 import type { ConfigServer } from "@/config/server"
@@ -8,7 +8,7 @@ import { eventData } from "./sse-encode"
 
 const log = Log.create({ service: "server" })
 
-export class GlobalEventStreamError extends Schema.TaggedErrorClass<GlobalEventStreamError>()("GlobalEventStreamError", {
+export class GlobalEventStreamError extends Schema.TaggedError<GlobalEventStreamError>()("GlobalEventStreamError", {
   reason: Schema.Literals(["events", "bytes", "encoding"]),
   maxEvents: Schema.Number,
   maxBytes: Schema.Number,

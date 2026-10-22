@@ -3,7 +3,7 @@ import { Schema } from "effect"
 import { Identifier } from "@/id/id"
 import { withStatics } from "@redcode-ai/core/schema"
 
-const ptyIdSchema = Schema.String.check(Schema.isStartsWith("pty")).pipe(Schema.brand("PtyID"))
+const ptyIdSchema = Schema.String.check(Schema.isStartingWith("pty")).pipe(Schema.brand("PtyID"))
 
 export type PtyID = typeof ptyIdSchema.Type
 

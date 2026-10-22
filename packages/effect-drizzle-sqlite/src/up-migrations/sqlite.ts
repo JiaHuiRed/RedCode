@@ -1,21 +1,16 @@
 /* oxlint-disable */
-import type { TablesRelationalConfig } from "drizzle-orm/_relations"
 import type { MigrationMeta } from "drizzle-orm/migrator"
-import type { AnyRelations } from "drizzle-orm/relations"
+import type { TablesRelationalConfig } from "drizzle-orm/relations"
 import { type SQL, sql } from "drizzle-orm/sql/sql"
-import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core"
-import type { SQLiteSession } from "drizzle-orm/sqlite-core/session"
+import type { SQLiteAsyncDatabase } from "drizzle-orm/sqlite-core/async/db"
+import type { SQLiteAsyncSession } from "drizzle-orm/sqlite-core/async/session"
 import { GET_VERSION_FOR, MIGRATIONS_TABLE_VERSIONS, type UpgradeResult } from "./utils"
 
 /** @internal */
 export type SQLiteMigrationTableRow = { id: number | null; hash: string; created_at: number }
 
-type AsyncSQLiteDatabaseWithSession = BaseSQLiteDatabase<"async", unknown, Record<string, unknown>> & {
-  session: {
-    all<T>(query: SQL): Promise<T[]>
-  }
-  transaction<T>(transaction: (tx: { run(query: SQL): Promise<unknown> }) => Promise<T>): Promise<T>
-}
+type AsyncSQLiteDatabaseWithSession = SQLiteAsyncDatabase<"async", unknown, TablesRelationalConfig>
+type SyncSQLiteSession = SQLiteAsyncSession<"sync", unknown, TablesRelationalConfig>
 
 type SQLiteMigrationBackfillEntry = {
   name: string
@@ -122,17 +117,17 @@ export function buildSQLiteMigrationBackfillStatements(
  */
 export function upgradeSyncIfNeeded(
   migrationsTable: string,
-  session: SQLiteSession<"sync", unknown, Record<string, unknown>, AnyRelations, TablesRelationalConfig>,
+  session: SyncSQLiteSession,
   localMigrations: MigrationMeta[],
 ): UpgradeResult {
-  const tableExists = session.all(sql`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ${migrationsTable}`)
+  const tableExists = session.objects(sql`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ${migrationsTable}`)
 
   if (tableExists.length === 0) {
     return { newDb: true }
   }
 
   // Table exists, check table shape
-  const rows = session.all<{ column_name: string }>(
+  const rows = session.objects<{ column_name: string }>(
     sql`SELECT name as column_name FROM pragma_table_info(${migrationsTable})`,
   )
 
@@ -153,7 +148,7 @@ const upgradeSyncFunctions: Record<
   number,
   (
     migrationsTable: string,
-    session: SQLiteSession<"sync", unknown, Record<string, unknown>, AnyRelations, TablesRelationalConfig>,
+    session: SyncSQLiteSession,
     localMigrations: MigrationMeta[],
   ) => void
 > = {
@@ -168,7 +163,7 @@ const upgradeSyncFunctions: Record<
    */
   0: (migrationsTable, session, localMigrations) => {
     const table = sql`${sql.identifier(migrationsTable)}`
-    const dbRows = session.all<SQLiteMigrationTableRow>(sql`SELECT id, hash, created_at FROM ${table} ORDER BY id ASC`)
+    const dbRows = session.objects<SQLiteMigrationTableRow>(sql`SELECT id, hash, created_at FROM ${table} ORDER BY id ASC`)
     const statements = buildSQLiteMigrationBackfillStatements(
       migrationsTable,
       prepareSQLiteMigrationBackfill(dbRows, localMigrations),
@@ -194,7 +189,7 @@ export async function upgradeAsyncIfNeeded(
   localMigrations: MigrationMeta[],
 ): Promise<UpgradeResult> {
   // Check if the table exists at all
-  const tableExists = await db.session.all(
+  const tableExists = await db._.session.objects(
     sql`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ${migrationsTable}`,
   )
 
@@ -202,7 +197,7 @@ export async function upgradeAsyncIfNeeded(
     return { newDb: true }
   }
 
-  const rows = await db.session.all<{ column_name: string }>(
+  const rows = await db._.session.objects<{ column_name: string }>(
     sql`SELECT name as column_name FROM pragma_table_info(${migrationsTable})`,
   )
 
@@ -234,7 +229,7 @@ const upgradeAsyncFunctions: Record<
    */
   0: async (migrationsTable, db, localMigrations) => {
     const table = sql`${sql.identifier(migrationsTable)}`
-    const dbRows = await db.session.all<SQLiteMigrationTableRow>(
+    const dbRows = await db._.session.objects<SQLiteMigrationTableRow>(
       sql`SELECT id, hash, created_at FROM ${table} ORDER BY id ASC`,
     )
     const statements = buildSQLiteMigrationBackfillStatements(

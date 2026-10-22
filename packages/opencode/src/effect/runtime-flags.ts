@@ -1,10 +1,10 @@
 import { Config, ConfigProvider, Context, Effect, Layer } from "effect"
 import { ConfigService } from "@/effect/config-service"
 
-const bool = (name: string) => Config.boolean(name).pipe(Config.withDefault(false))
-const boolDefaultTrue = (name: string) => Config.boolean(name).pipe(Config.withDefault(true))
+const bool = (name: string) => Config.Boolean(name).pipe(Config.withDefault(false))
+const boolDefaultTrue = (name: string) => Config.Boolean(name).pipe(Config.withDefault(true))
 const positiveInteger = (name: string) =>
-  Config.number(name).pipe(
+  Config.Number(name).pipe(
     Config.map((value) => (Number.isInteger(value) && value > 0 ? value : undefined)),
     Config.orElse(() => Config.succeed(undefined)),
   )
@@ -73,7 +73,7 @@ export class Service extends ConfigService.Service<Service>()("@redcode/RuntimeF
   // 且子进程仍带用户文件权限。261018 Red 只认专属授权，全局 experimental 不启用执行面；
   // 关闭时工具表与固定前缀零变化，见 docs/notes/implemented/feature/2026-10-17-run-code-ptc-tool-presentation.md。
   experimentalRunCode: bool("REDCODE_EXPERIMENTAL_RUN_CODE"),
-  client: Config.string("REDCODE_CLIENT").pipe(Config.withDefault("cli")),
+  client: Config.String("REDCODE_CLIENT").pipe(Config.withDefault("cli")),
 }) {}
 
 export type Info = Context.Service.Shape<typeof Service>

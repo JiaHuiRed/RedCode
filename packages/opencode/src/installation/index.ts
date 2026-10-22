@@ -1,9 +1,9 @@
 import { Duration, Effect, Layer, Schema, Context, Stream } from "effect"
 import { serviceUse } from "@/effect/service-use"
-import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { withTransientReadRetry } from "@/util/effect-http-client"
 import { errorMessage } from "@/util/error"
-import { ChildProcess } from "effect/unstable/process"
+import { ChildProcess } from "effect/process"
 import { AppProcess } from "@redcode-ai/core/process"
 import path from "path"
 import { BusEvent } from "@/bus/bus-event"
@@ -72,7 +72,7 @@ export function isLocal() {
   return InstallationChannel === "local"
 }
 
-export class UpgradeFailedError extends Schema.TaggedErrorClass<UpgradeFailedError>()("UpgradeFailedError", {
+export class UpgradeFailedError extends Schema.TaggedError<UpgradeFailedError>()("UpgradeFailedError", {
   stderr: Schema.String,
 }) {}
 

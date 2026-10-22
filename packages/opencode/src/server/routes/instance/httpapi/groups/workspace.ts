@@ -1,7 +1,7 @@
 import { Workspace } from "@/control-plane/workspace"
 import { WorkspaceAdapterEntry } from "@/control-plane/types"
 import { Schema, Struct } from "effect"
-import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
+import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api"
 import { ApiVcsApplyError } from "./instance"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
@@ -16,7 +16,7 @@ export const WarpPayload = Schema.Struct({
   copyChanges: Workspace.SessionWarpInput.fields.copyChanges,
 })
 
-export class ApiWorkspaceWarpError extends Schema.ErrorClass<ApiWorkspaceWarpError>("WorkspaceWarpError")(
+export class ApiWorkspaceWarpError extends Schema.Error<ApiWorkspaceWarpError>("WorkspaceWarpError")(
   {
     name: Schema.Literal("WorkspaceWarpError"),
     data: Schema.Struct({

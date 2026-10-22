@@ -8,8 +8,8 @@ export interface Runner<A, E = never> {
   readonly cancel: Effect.Effect<void>
 }
 
-export class Cancelled extends Schema.TaggedErrorClass<Cancelled>()("RunnerCancelled", {}) {}
-export class Busy extends Schema.TaggedErrorClass<Busy>()("RunnerBusy", {}) {}
+export class Cancelled extends Schema.TaggedError<Cancelled>()("RunnerCancelled", {}) {}
+export class Busy extends Schema.TaggedError<Busy>()("RunnerBusy", {}) {}
 
 interface RunHandle<A, E> {
   id: number

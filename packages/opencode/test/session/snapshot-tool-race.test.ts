@@ -13,7 +13,7 @@
  */
 import { expect } from "bun:test"
 import { Effect, Layer } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import fs from "fs/promises"
 import path from "path"
 import { Session } from "@/session/session"

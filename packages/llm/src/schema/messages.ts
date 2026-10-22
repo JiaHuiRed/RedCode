@@ -3,6 +3,11 @@ import { JsonSchema, MessageRole, ProviderMetadata } from "./ids"
 import { CacheHint, CachePolicy, GenerationOptions, HttpOptions, ModelSchema, ProviderOptions } from "./options"
 import { isRecord } from "../utils/record"
 
+const withHelpers = <S extends object, H extends object>(schema: S, helpers: H): S & H => {
+  Object.defineProperties(schema, Object.getOwnPropertyDescriptors(helpers))
+  return schema as S & H
+}
+
 const systemPartSchema = Schema.Struct({
   type: Schema.Literal("text"),
   text: Schema.String,
@@ -13,7 +18,7 @@ export type SystemPart = Schema.Schema.Type<typeof systemPartSchema>
 
 const makeSystemPart = (text: string): SystemPart => ({ type: "text", text })
 
-export const SystemPart = Object.assign(systemPartSchema, {
+export const SystemPart = withHelpers(systemPartSchema, {
   make: makeSystemPart,
   content: (input?: string | SystemPart | ReadonlyArray<SystemPart>) => {
     if (input === undefined) return []
@@ -56,7 +61,7 @@ const isToolResultValue = (value: unknown): value is ToolResultValue =>
   (value.type === "text" || value.type === "json" || value.type === "error" || value.type === "content") &&
   "value" in value
 
-export const ToolResultValue = Object.assign(
+export const ToolResultValue = withHelpers(
   Schema.Union([
     Schema.Struct({
       type: Schema.Literal("json"),
@@ -86,7 +91,7 @@ export const ToolResultValue = Object.assign(
 )
 export type ToolResultValue = Schema.Schema.Type<typeof ToolResultValue>
 
-export const ToolCallPart = Object.assign(
+export const ToolCallPart = withHelpers(
   Schema.Struct({
     type: Schema.Literal("tool-call"),
     id: Schema.String,
@@ -102,7 +107,7 @@ export const ToolCallPart = Object.assign(
 )
 export type ToolCallPart = Schema.Schema.Type<typeof ToolCallPart>
 
-export const ToolResultPart = Object.assign(
+export const ToolResultPart = withHelpers(
   Schema.Struct({
     type: Schema.Literal("tool-result"),
     id: Schema.String,
