@@ -108,6 +108,7 @@
     // chrome-devtools MCP 挪到本地层 redcode.local.jsonc（260811 cc）：命令是
     // npm 全局安装的绝对路径（C:/Users/<用户名>/AppData/Roaming/npm/...），换机
     // 必 ENOENT，与 DCP 插件路径同一类"因机而异"的值。配置样例见该文件。
+    // 261022 Red 本地默认 enabled:false，日常网页操作用 WebQA，需要 DevTools 时手动开启。
     "github": {
       "type": "remote",
       "url": "https://api.githubcopilot.com/mcp/",

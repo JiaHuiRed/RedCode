@@ -10,6 +10,7 @@
 
 ### [Unreleased]
 
+- **Chrome DevTools 改为本机按需启用**：本地配置默认关闭，日常网页操作保留 WebQA，需要调试时手动开启；seed 仅同步说明，不携带机器专属命令。新进程已验证 `disabled`，预计少注入 29 项工具、约 5.6k 估算 tokens；已有进程不自动重建前缀，无新增注入项。
 - **GUI 幽灵队列清理**：消息移除、权威同步及取消成功时同时清理可见消息与乐观副本，防止已发送或已取消的消息重新出现在排队区。取消返回 404 时清理本地残留，409 / 5xx / 网络失败继续保留并报错；异步回调固定原目录与会话。队列回归 30 pass，app 类型检查与生产构建通过，Electron 真机验收待重编。决策见 [busy-enter-steer-or-queue](docs/notes/implemented/feature/2026-08-14-busy-enter-steer-or-queue.md)。
 - **快照索引锁冲突提前降级**：在昂贵扫描前检查 Git 索引锁，`track` / `finish` / `patch` 沿既有边界跳过本步快照；索引更新与写树失败不再生成成功基线或空 hash。保留 Git 锁、不后台化基线捕获；锁回归 8 个断言通过，三条热路径约 15ms，不代表端到端实测提速。决策见 [snapshot-lock-bounded-degrade](docs/notes/implemented/bug-fix/2026-09-07-snapshot-lock-bounded-degrade.md)。
 - **SDK 公开契约恢复稳定**：修复 Effect 升级后 `Encoded` / `_N` 组件名泄漏，恢复授权类型与配置更新的 `config` 参数；同形组件去重、异形错误保留独立结构，输出长度错误的 `data` 恢复对象契约。同步重生成 SDK 与 OpenAPI，契约测试 20 pass，app / opencode 类型检查通过。决策见 [sdk-contract-gate](docs/notes/implemented/process/2026-10-09-sdk-contract-gate.md)。
