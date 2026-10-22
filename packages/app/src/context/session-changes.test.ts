@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import {
   catchUpSessionChanges,
+  cancelQueuedMessage,
   createSessionChangeJournal,
   fetchRetainedMessageWindow,
   listenForGlobalReconnect,
@@ -26,6 +27,51 @@ const marker = (seq: number, messageID: string): SessionChangesPage["changes"][n
   seq,
   kind: "message",
   messageID,
+})
+
+describe("queued message cancellation", () => {
+  for (const status of [200, 404]) {
+    test(`clears the local queued copy after HTTP ${status}`, async () => {
+      let removed = 0
+      const client = createOpencodeClient({
+        baseUrl: "http://localhost",
+        fetch: Object.assign(
+          async () =>
+            new Response(
+              JSON.stringify(status === 200 ? true : { name: "NotFoundError", data: { message: "missing" } }),
+              {
+                status,
+                headers: { "content-type": "application/json" },
+              },
+            ),
+          { preconnect() {} },
+        ),
+      })
+      await cancelQueuedMessage({ client, sessionID: "s", messageID: "m", remove: () => removed++ })
+      expect(removed).toBe(1)
+    })
+  }
+
+  for (const status of [409, 500]) {
+    test(`keeps the local queued copy after HTTP ${status}`, async () => {
+      let removed = 0
+      const client = createOpencodeClient({
+        baseUrl: "http://localhost",
+        fetch: Object.assign(
+          async () =>
+            new Response(JSON.stringify({ name: "ConflictError", data: { message: "failed" } }), {
+              status,
+              headers: { "content-type": "application/json" },
+            }),
+          { preconnect() {} },
+        ),
+      })
+      await expect(
+        cancelQueuedMessage({ client, sessionID: "s", messageID: "m", remove: () => removed++ }),
+      ).rejects.toBeDefined()
+      expect(removed).toBe(0)
+    })
+  }
 })
 
 describe("session change journal", () => {

@@ -62,3 +62,13 @@ config 顶层保留 `busy_enter: "steer" | "queue"`(默认 steer=原行为,一�
 2. 固定前缀增量为 0；每次请求的历史按实际领取或 promote 的消息变化。
 3. system/tools 前缀不动；排队消息插入历史时沿用 `modelMsgs` 重建，从历史插入点后的缓存不能保证复用。
 4. 无新增提示词或工具输出注入项；补回消息沿用既有消息处理与上下文预算路径。新增队列日志仅存有界 session/message ID，不存正文。
+
+## GUI 乐观队列残留（261022）
+
+现场出现已发送内容仍挂在 dock、取消返回 `Message not found`。按截图 ID 的时间前缀查询本机 message 表未命中，因此该 dock 项不是服务端仍在排队的消息，不能把取消失败当成它仍然存在的证据。
+
+GUI 原先只在部分拉页确认路径清除独立的 optimistic Map；SSE `message.removed` 和权威增量 catch-up 可以删掉可见 store，却留下乐观副本，后续 `mergeOptimisticPage` 又把它插回。现在当前会话收到删除事件、catch-up 确认消息存在或删除时同步清理乐观表。取消成功也立即清理，不依赖后续 SSE；仅取消接口的 HTTP 404 视为服务端已经不存在，清理同一项本地副本。409、5xx、网络失败仍保留并报错，不把已领取消息误报为取消成功。异步回调固定提交时的目录、sessionID 与 messageID。
+
+实现：`packages/app/src/context/{session-changes,directory-sync}.ts`、`pages/session.tsx`。真实 SDK + 受控 HTTP 回归覆盖 200/404 清理、409/500 保留，连同既有乐观消息测试 30 pass。Web UI 生产构建通过；随后修复 SDK 公开契约漂移并重生成，app typecheck 最终通过（见 `2026-10-09-sdk-contract-gate.md`）。未在运行中的 Electron 实例验证，修复不会热替换已有 exe。
+
+模型可见四问：不修改提示词、工具定义或输出；固定前缀零变化；system/tools 的 KV cache 不动；无新增注入项。这里只修客户端同步，不修改消息送达的服务端状态机。

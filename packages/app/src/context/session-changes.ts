@@ -1,4 +1,4 @@
-import type { Message, Part } from "@redcode-ai/sdk/v2/client"
+import type { Message, OpencodeClient, Part } from "@redcode-ai/sdk/v2/client"
 import { compareTime } from "@/utils/id"
 
 // 261009 Red: See docs/notes/implemented/feature/2026-10-09-session-change-catchup.md.
@@ -143,6 +143,22 @@ export const isSessionChangeNotFound = (error: unknown) => {
     "status" in error.cause &&
     error.cause.status === 404
   )
+}
+
+// 261022 Red 队列项已不存在时清掉本地乐观副本；其他失败保留，不能误删仍在排队的消息。
+// 决策：docs/notes/implemented/feature/2026-08-14-busy-enter-steer-or-queue.md
+export async function cancelQueuedMessage(input: {
+  client: OpencodeClient
+  sessionID: string
+  messageID: string
+  remove: () => void
+}) {
+  const result = await input.client.session.cancelQueuedMessage(
+    { sessionID: input.sessionID, messageID: input.messageID },
+    { throwOnError: false },
+  )
+  if (result.error && result.response.status !== 404) throw result.error
+  input.remove()
 }
 
 function validatePage(page: SessionChangesPage) {

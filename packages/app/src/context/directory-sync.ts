@@ -854,6 +854,8 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
                 : updated.messages
               batch(() => {
                 for (const [messageID, parts] of updated.parts) {
+                  // 261022 Red 权威增量已确认消息存在或删除，不再让旧乐观副本在下次拉页时复活。
+                  clearOptimistic(directory, sessionID, messageID)
                   if (meta.newer[key] && !retainedBefore.has(messageID)) continue
                   for (const part of [...(store.part[messageID] ?? []), ...(parts ?? [])]) {
                     setStore("part_text_accum_delta", part.id, undefined!)

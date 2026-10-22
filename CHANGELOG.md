@@ -10,6 +10,7 @@
 
 ### [Unreleased]
 
+- **GUI 幽灵队列清理**：消息移除、权威同步及取消成功时同时清理可见消息与乐观副本，防止已发送或已取消的消息重新出现在排队区。取消返回 404 时清理本地残留，409 / 5xx / 网络失败继续保留并报错；异步回调固定原目录与会话。队列回归 30 pass，app 类型检查与生产构建通过，Electron 真机验收待重编。决策见 [busy-enter-steer-or-queue](docs/notes/implemented/feature/2026-08-14-busy-enter-steer-or-queue.md)。
 - **快照索引锁冲突提前降级**：在昂贵扫描前检查 Git 索引锁，`track` / `finish` / `patch` 沿既有边界跳过本步快照；索引更新与写树失败不再生成成功基线或空 hash。保留 Git 锁、不后台化基线捕获；锁回归 8 个断言通过，三条热路径约 15ms，不代表端到端实测提速。决策见 [snapshot-lock-bounded-degrade](docs/notes/implemented/bug-fix/2026-09-07-snapshot-lock-bounded-degrade.md)。
 - **SDK 公开契约恢复稳定**：修复 Effect 升级后 `Encoded` / `_N` 组件名泄漏，恢复授权类型与配置更新的 `config` 参数；同形组件去重、异形错误保留独立结构，输出长度错误的 `data` 恢复对象契约。同步重生成 SDK 与 OpenAPI，契约测试 20 pass，app / opencode 类型检查通过。决策见 [sdk-contract-gate](docs/notes/implemented/process/2026-10-09-sdk-contract-gate.md)。
 - **GLM 工具输入流保护**（`packages/opencode/src/config/tool-input-guard.ts`、`session/llm.ts`、`session/retry.ts`、`config/config.ts`）：单条 assistant 响应在 `tool-call` 到达前反复发起新的 `tool-input-start` 会把会话推进无界挂起（261022 实测：一条响应 384 个不同 callID 的未完成调用，全部未执行，直到用户手动中断）。新增 `experimental.toolInputGuard`（默认 `maxPendingCalls=64`、`idleMs=120000`，范围 1–4096 / 1000–1800000）：未完成输入计数、同 ID 去重、非空 delta 才算进展，超预算或长时间无进展立即以 `ToolInputGuardError` 终止且不自动重试。验证：llm-idle-guard / tool-input-guard / instance-registry / instance / retry 5 文件 64 pass / 127 expects；1000 个 start 在预算点停止下传。模型可见四问：①不改任何进上下文的文本，仅在异常流时提前终止；②固定前缀零增减；③不动 KV cache；④新配置项为校验过的数值字段，无注入项。决策见 [tool-input-stream-guard](docs/notes/implemented/bug-fix/2026-10-22-tool-input-stream-guard.md)。

@@ -65,6 +65,7 @@ import { useSessionCommands } from "@/pages/session/use-session-commands"
 import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
 import { createSessionHistoryLoader } from "@/pages/session/session-history-loader"
 import { sessionOutlineKey } from "@/context/global-sync/bootstrap"
+import { cancelQueuedMessage } from "@/context/session-changes"
 import { directoryKey } from "@/context/global-sync/utils"
 import { createReviewDiffHelpers } from "@/pages/session/session-review-diff"
 import { createMessageNav } from "@/pages/session/session-message-nav"
@@ -706,6 +707,10 @@ export default function Page() {
                 ? detail.properties.sessionID
                 : undefined
       if (sessionID !== id) return
+      if (detail.type === "message.removed") {
+        // 261022 Red SSE 删消息也要清乐观表，否则下一次拉页会把已取消队列项重新合入。
+        sync.session.optimistic.remove({ directory, sessionID: id, messageID: detail.properties.messageID })
+      }
       sync.session.invalidateChanges(id)
       // 261009 Red: Bound streaming-race retries; the idle event finishes catch-up.
       if (catchingUp && invalidations < 3) reconnect.request()
@@ -1513,6 +1518,7 @@ export default function Page() {
   const cancelFollowup = (id: string) => {
     const sessionID = params.id
     if (!sessionID) return Promise.resolve(false)
+    const directory = sdk.directory
     const item = followupDock().find((entry) => entry.id === id)
     if (item?.source === "legacy") {
       setFollowup("items", sessionID, (items) => (items ?? []).filter((entry) => entry.id !== id))
@@ -1520,7 +1526,12 @@ export default function Page() {
       return Promise.resolve(true)
     }
     return runQueuedAction(id, () =>
-      sdk.client.session.cancelQueuedMessage({ sessionID, messageID: id }, { throwOnError: true }),
+      cancelQueuedMessage({
+        client: sdk.client,
+        sessionID,
+        messageID: id,
+        remove: () => sync.session.optimistic.remove({ directory, sessionID, messageID: id }),
+      }),
     )
   }
 
