@@ -50,7 +50,7 @@
     "@types/bun": "catalog:",
     "@types/node": "catalog:",
     "@valibot/to-json-schema": "1.6.0",
-    "electron": "44.2.0",
+    "electron": "44.9.3",
     "electron-builder": "^26",
     "electron-vite": "^5",
     "solid-js": "catalog:",
