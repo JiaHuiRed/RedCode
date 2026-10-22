@@ -66,6 +66,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 INSTALL_DIR=$HOME/.redcode/bin
+binary_name=redcode
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) binary_name=redcode.exe ;;
+esac
 mkdir -p "$INSTALL_DIR"
 
 # If --binary is provided, skip all download/detection logic
@@ -340,15 +344,15 @@ download_and_install() {
         unzip -q "$tmp_dir/$filename" -d "$tmp_dir"
     fi
 
-    mv "$tmp_dir/redcode" "$INSTALL_DIR"
-    chmod 755 "${INSTALL_DIR}/redcode"
+    mv "$tmp_dir/$binary_name" "$INSTALL_DIR"
+    chmod 755 "${INSTALL_DIR}/$binary_name"
     rm -rf "$tmp_dir"
 }
 
 install_from_binary() {
     print_message info "\n${MUTED}Installing ${NC}redcode ${MUTED}from: ${NC}$binary_path"
-    cp "$binary_path" "${INSTALL_DIR}/redcode"
-    chmod 755 "${INSTALL_DIR}/redcode"
+    cp "$binary_path" "${INSTALL_DIR}/$binary_name"
+    chmod 755 "${INSTALL_DIR}/$binary_name"
 }
 
 if [ -n "$binary_path" ]; then
@@ -450,11 +454,11 @@ echo -e "${MUTED}█__█ █__█ █^^^ █__█ ${NC}█___ █__█ █__█
 echo -e "${MUTED}▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀~~▀ ${NC}▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀"
 echo -e ""
 echo -e ""
-echo -e "${MUTED}RedCode includes free models, to start:${NC}"
+echo -e "${MUTED}To get started:${NC}"
 echo -e ""
 echo -e "cd <project>  ${MUTED}# Open directory${NC}"
 echo -e "redcode       ${MUTED}# Run command${NC}"
 echo -e ""
-echo -e "${MUTED}For more information visit ${NC}https://opencode.ai/docs"
+echo -e "${MUTED}For more information visit ${NC}https://github.com/JiaHuiRed/RedCode"
 echo -e ""
 echo -e ""

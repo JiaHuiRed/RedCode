@@ -107,3 +107,6 @@ packages/*/.redcode-temp/
 packages/opencode/.redcode-temp-typecheck.log
 packages/opencode/config.json
 plugins/*/bun.lock
+
+# 261022 Red SST 资源声明由本机生成，不再保留已下线 SaaS 的历史资源快照。
+sst-env.d.ts
