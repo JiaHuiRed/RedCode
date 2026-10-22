@@ -2,6 +2,8 @@ import { afterEach, expect } from "bun:test"
 import { $ } from "bun"
 import { CrossSpawnSpawner } from "@redcode-ai/core/cross-spawn-spawner"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
+import { Global } from "@redcode-ai/core/global"
+import { Hash } from "@redcode-ai/core/util/hash"
 import fs from "fs/promises"
 import path from "path"
 import { Effect, Fiber, Layer } from "effect"
@@ -93,6 +95,35 @@ const withGitConfigGlobal = <A, E, R>(config: string, self: Effect.Effect<A, E, 
         else delete process.env.GIT_CONFIG_GLOBAL
       }),
   )
+
+it.instance(
+  "skips tracking while the snapshot index is locked",
+  Effect.gen(function* () {
+    const tmp = yield* bootstrap()
+    const snapshot = yield* Snapshot.Service
+    const before = yield* snapshot.track()
+    expect(before).toBeTruthy()
+    const snapshotRoot = path.join(Global.Path.data, "snapshot")
+    const projects = yield* Effect.promise(() => fs.readdir(snapshotRoot))
+    const gitdir = path.join(snapshotRoot, projects[0]!, Hash.fast(tmp.path))
+    const indexLock = path.join(gitdir, "index.lock")
+    yield* write(indexLock, "")
+
+    const started = performance.now()
+    expect(yield* snapshot.track()).toBeUndefined()
+    expect(yield* snapshot.finish(before)).toEqual({ hash: undefined, patch: undefined })
+    expect(yield* snapshot.patch(before!)).toEqual({ hash: before!, files: [] })
+    const elapsed = performance.now() - started
+    console.info(`locked snapshot track/finish/patch: ${elapsed.toFixed(1)}ms`)
+    expect(elapsed).toBeLessThan(1000)
+    expect(yield* exists(indexLock)).toBe(true)
+
+    yield* Effect.promise(() => fs.rm(indexLock, { force: true }))
+    expect(yield* exists(indexLock)).toBe(false)
+    expect(yield* snapshot.track()).toBeTruthy()
+  }),
+  { git: true },
+)
 
 it.instance(
   "tracks deleted files correctly",

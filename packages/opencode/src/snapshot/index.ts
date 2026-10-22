@@ -162,8 +162,8 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
           })
 
           const drop = Effect.fnUntraced(function* (files: string[]) {
-            if (!files.length) return
-            yield* git(
+            if (!files.length) return true
+            const result = yield* git(
               [
                 ...cfg,
                 ...args(["rm", "--cached", "-f", "--ignore-unmatch", "--pathspec-from-file=-", "--pathspec-file-nul"]),
@@ -173,10 +173,13 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                 stdin: feedPathspec(files),
               },
             )
+            if (result.code === 0) return true
+            log.warn("failed to remove ignored snapshot files", { exitCode: result.code, stderr: result.stderr })
+            return false
           })
 
           const stage = Effect.fnUntraced(function* (files: string[]) {
-            if (!files.length) return
+            if (!files.length) return true
             const result = yield* git(
               [...cfg, ...args(["add", "--all", "--sparse", "--pathspec-from-file=-", "--pathspec-file-nul"])],
               {
@@ -184,16 +187,24 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                 stdin: feedPathspec(files),
               },
             )
-            if (result.code === 0) return
-            log.warn("failed to add snapshot files", {
-              exitCode: result.code,
-              stderr: result.stderr,
-            })
+            if (result.code !== 0) {
+              log.warn("failed to add snapshot files", { exitCode: result.code, stderr: result.stderr })
+              return false
+            }
+            return true
           })
 
           const exists = (file: string) => fs.exists(file).pipe(Effect.orDie)
           const read = (file: string) => fs.readFileString(file).pipe(Effect.catch(() => Effect.succeed("")))
           const remove = (file: string) => fs.remove(file).pipe(Effect.catch(() => Effect.void))
+          const indexAvailable = Effect.fnUntraced(function* (op: string) {
+            if (!(yield* exists(path.join(state.gitdir, "index.lock")))) return true
+            log.warn("snapshot index is locked — skipping op, session continues without snapshot", {
+              op,
+              gitdir: state.gitdir,
+            })
+            return false
+          })
           // 260904 Red 进程内信号量之外再加跨进程目录锁，避免多个 RedCode 进程同时写同一快照。
           // 只恢复 Flock 自身的崩溃锁，不碰 Git 的 index.lock；决策见：
           // docs/notes/implemented/bug-fix/2026-09-04-isolated-subagent-startup.md
@@ -293,13 +304,13 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                 otherCode: other.code,
                 otherStderr: other.stderr,
               })
-              return
+              return false
             }
 
             const tracked = diff.text.split("\0").filter(Boolean)
             const untracked = other.text.split("\0").filter(Boolean)
             const all = Array.from(new Set([...tracked, ...untracked]))
-            if (!all.length) return
+            if (!all.length) return true
 
             // Resolve source-repo ignore rules against the exact candidate set.
             // --no-index keeps this pattern-based even when a path is already tracked.
@@ -309,11 +320,11 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
             if (ignored.size > 0) {
               const ignoredFiles = Array.from(ignored)
               log.info("removing gitignored files from snapshot", { count: ignoredFiles.length })
-              yield* drop(ignoredFiles)
+              if (!(yield* drop(ignoredFiles))) return false
             }
 
             const allow = all.filter((item) => !ignored.has(item))
-            if (!allow.length) return
+            if (!allow.length) return true
 
             const large = new Set(
               (yield* Effect.all(
@@ -335,7 +346,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
             const block = new Set(untracked.filter((item) => large.has(item)))
             yield* sync(Array.from(block))
             // Stage only the allowed candidate paths so snapshot updates stay scoped.
-            yield* stage(allow.filter((item) => !block.has(item)))
+            return yield* stage(allow.filter((item) => !block.has(item)))
           })
 
           const cleanup = Effect.fnUntraced(function* () {
@@ -376,6 +387,10 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
           const writeTree = Effect.fnUntraced(function* () {
             const result = yield* git(args(["write-tree"]), { cwd: state.directory })
             const hash = result.text.trim()
+            if (result.code !== 0 || !hash) {
+              log.warn("failed to write snapshot tree", { exitCode: result.code, stderr: result.stderr })
+              return
+            }
             log.info("tracking", { hash, cwd: state.directory, git: state.gitdir })
             return hash
           })
@@ -416,8 +431,9 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
             return yield* lockedSkip(
               "track",
               Effect.gen(function* () {
+                if (!(yield* indexAvailable("track"))) return
                 yield* ensureRepo()
-                yield* add()
+                if (!(yield* add())) return
                 return yield* writeTree()
               }),
             )
@@ -444,9 +460,11 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
             const out = yield* lockedSkip(
               "finish",
               Effect.gen(function* () {
+                if (!(yield* indexAvailable("finish"))) return
                 yield* ensureRepo()
-                yield* add()
+                if (!(yield* add())) return
                 const hash = yield* writeTree()
+                if (!hash) return
                 if (from === undefined) return { hash, patch: undefined }
                 return { hash, patch: yield* diffCached(from) }
               }),
@@ -459,7 +477,8 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
             const out = yield* lockedSkip(
               "patch",
               Effect.gen(function* () {
-                yield* add()
+                if (!(yield* indexAvailable("patch"))) return
+                if (!(yield* add())) return
                 return yield* diffCached(hash)
               }),
             )
