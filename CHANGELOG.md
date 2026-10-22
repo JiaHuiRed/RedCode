@@ -10,6 +10,12 @@
 
 ### [Unreleased]
 
+- **GLM 工具输入流保护**（`packages/opencode/src/config/tool-input-guard.ts`、`session/llm.ts`、`session/retry.ts`、`config/config.ts`）：单条 assistant 响应在 `tool-call` 到达前反复发起新的 `tool-input-start` 会把会话推进无界挂起（261022 实测：一条响应 384 个不同 callID 的未完成调用，全部未执行，直到用户手动中断）。新增 `experimental.toolInputGuard`（默认 `maxPendingCalls=64`、`idleMs=120000`，范围 1–4096 / 1000–1800000）：未完成输入计数、同 ID 去重、非空 delta 才算进展，超预算或长时间无进展立即以 `ToolInputGuardError` 终止且不自动重试。验证：llm-idle-guard / tool-input-guard / instance-registry / instance / retry 5 文件 64 pass / 127 expects；1000 个 start 在预算点停止下传。模型可见四问：①不改任何进上下文的文本，仅在异常流时提前终止；②固定前缀零增减；③不动 KV cache；④新配置项为校验过的数值字段，无注入项。决策见 [tool-input-stream-guard](docs/notes/implemented/bug-fix/2026-10-22-tool-input-stream-guard.md)。
+- **实例释放计时器立即清理**（`packages/opencode/src/effect/instance-registry.ts`）：`disposeInstance` 的 `Promise.race` 超时分支不清理计时器，进程退出被拖满 5 秒。保存句柄 finally 清除后真实空 disposer 进程退出 5.08s → 0.07s；registry 与 instance 集成测试 10 pass。
+- **Effect 4.0.5 / Drizzle rc.5 依赖批次（部分完成）**：全家 Effect `4.0.0-beta.66` → `4.0.5`，Drizzle `rc.2` → `rc.5`；`packages/llm`、`http-recorder`、`packages/opencode` typecheck 全部通过（opencode 含测试全量 exit 0）。API 映射与 Storybook 钉版决策见 [effect-stable-dependency-batch](docs/notes/proposed/process/2026-10-22-effect-stable-dependency-batch.md)。**已知未收口**：`packages/effect-drizzle-sqlite` 在 rc.5 下 3/6 测试失败，根因已定位——rc.5 的 `buildInsertQuery` 对缺省自增主键列改为显式补 `null`，且 vendored 适配层把 Param 对象直接留在 params（`NOT NULL constraint failed` + `params: [object Object]`），修复待下批。
+- **安全依赖升级与 audit 降额**：dompurify 3.4.17、markdown-it 14.3.3、solid-js 1.9.17、http-cache-semantics 4.3.0、seroval 1.6.12、tar 7.5.22（overrides）、Storybook 核心+官方 addons 10.6.3（Solid adapter 保持 10.1.1 + docgen 专用 TS 5.9.3，10.7.2 有 docgen OOM）。`bun audit` 234 → 188 条（残余 2 critical 在 web/astro 链，imageService passthrough 缓解，另批处理）。UI markdown-stream 21 pass、Storybook build exit 0 且浏览器实测渲染正常。
+- **退役 Nix/SST 旧声明，安装入口修 Windows 路径**：删除失修的 `flake.nix`/`flake.lock`/`nix/**`、16 个 `sst-env.d.ts`（.gitignore 增补）与无引用的 `screenshot-uk.png`；`install` 脚本 Windows 目标改 `redcode.exe` 并修正下载链接，离线回归 5 pass。决策见 [retire-nix-and-sst-declarations](docs/notes/implemented/architecture/2026-10-22-retire-nix-and-sst-declarations.md)。
+
 ### [0.12.18] - 2026-10-22
 
 - **桌宠 V0.3：抚摸回应、拖动挪位与漫画气泡**（`packages/app/src/pet/`）：鼠标在额头、腹部移动时有不同的本地回应和触摸反馈；按住拖动可挪位并记住位置，支持方向键移动和 Home 归位。宠物适度放大，台词改为暖白底、酒红粗描边与深红文字的椭圆心声气泡，使用 20px 默认正文与两个思考圈，不再随小图缩成细小提示；气泡根据窗口边界换边。权限、提问和终态提醒优先，不调用模型、不改会话或请求缓存。决策见 [pet-v02-presentation 的 V0.3 更新](docs/notes/implemented/feature/2026-10-06-pet-v02-presentation.md)。
