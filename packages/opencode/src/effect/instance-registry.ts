@@ -13,12 +13,17 @@ const DISPOSE_TIMEOUT_MS = 5_000
 export async function disposeInstance(directory: string) {
   const disposerList = [...disposers]
   if (disposerList.length === 0) return
+  let timeout: ReturnType<typeof setTimeout> | undefined
   try {
     await Promise.race([
       Promise.allSettled(disposerList.map((disposer) => disposer(directory))),
-      new Promise<void>((resolve) => setTimeout(() => resolve(), DISPOSE_TIMEOUT_MS)),
+      new Promise<void>((resolve) => {
+        timeout = setTimeout(resolve, DISPOSE_TIMEOUT_MS)
+      }),
     ])
   } catch (error) {
     console.error("[dispose] error", error)
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout)
   }
 }
