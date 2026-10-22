@@ -30,7 +30,7 @@ import { tallySessionStatus } from "@/utils/session-status"
 import { pickGreetingKey } from "@/utils/greeting"
 import { sessionPermissionRequest } from "@/pages/session/composer/session-request-tree"
 import { HomeKanban } from "@/pages/home-kanban"
-import { HomeUsagePanel } from "@/pages/home-usage"
+import { HomeUsagePanel, readHomeUsageCollapsed } from "@/pages/home-usage"
 
 // 260710 Red 上游从 15 提到 64，修复"只显示 5 个会话"
 const HOME_SESSION_LIMIT = 64
@@ -73,6 +73,7 @@ function HomeDesign() {
     project: undefined as string | undefined,
     view: "kanban" as "list" | "kanban",
     archived: false,
+    usageCollapsed: readHomeUsageCollapsed(),
   })
   let searchInputRef: HTMLInputElement | undefined
 
@@ -371,11 +372,13 @@ function HomeDesign() {
             max-w 封顶，结果最右边空出一大片死区——要让面板变宽就直接给面板宽度，别限制看板。
             260920 Red Usage is secondary context; below xl it stacks above the primary Kanban
             instead of squeezing the board into an unreadable narrow column.
-            261022 Red 改成常驻纵向：统计默认折叠成一行指标，会话区拿整宽。620px 并排只在
-            超宽屏成立，1366/1440 下会挤掉会话卡片的可读宽度
-            （见 docs/2026-10-22-experience-optimization.md EXP-03）。 */}
-        <div class="mt-3 flex min-h-0 flex-1 flex-col gap-3">
-          <HomeUsagePanel directory={selectedProject()?.worktree} />
+            261022 Red 折叠摘要按内容收缩；展开时仅 2xl 并排，1366/1440 继续堆叠，避免挤压卡片。 */}
+        <div class={`mt-3 flex min-h-0 flex-1 flex-col gap-3 ${!state.usageCollapsed ? "2xl:flex-row" : ""}`}>
+          <HomeUsagePanel
+            directory={selectedProject()?.worktree}
+            collapsed={state.usageCollapsed}
+            onCollapsedChange={(collapsed) => setState("usageCollapsed", collapsed)}
+          />
           <div class="flex min-w-0 flex-1 flex-col overflow-auto">
             <Show when={!sessionLoad.isLoading} fallback={<HomeSessionSkeleton label={language.t("common.loading")} />}>
               <Show

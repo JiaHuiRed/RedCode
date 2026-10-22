@@ -15,7 +15,6 @@
  * 文字一律用 v2 text token，**不用系列色**——系列色只出现在色块上，标签旁边配色块来带身份。
  */
 import { createMemo, createSignal, For, Show, Suspense } from "solid-js"
-import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
 import { Tooltip } from "@redcode-ai/ui/tooltip"
 import { useTheme } from "@redcode-ai/ui/theme"
@@ -64,7 +63,7 @@ function compact(value: number) {
 //   刷新/切项目都不重置。localStorage 不可用时退回默认（折叠）。
 const USAGE_COLLAPSED_KEY = "redcode:home-usage-collapsed"
 
-function readUsageCollapsed() {
+export function readHomeUsageCollapsed() {
   if (typeof localStorage === "undefined") return true
   return localStorage.getItem(USAGE_COLLAPSED_KEY) !== "0"
 }
@@ -309,15 +308,18 @@ function HomeUsageError(props: { error: unknown; onRetry: () => void }) {
  * 入口同时兜住挂起与空数据：切项目时保留稳定骨架，已有数据则由 solid-query 的
  * placeholderData 留在原位，避免首页从“有面板”退成一块空白。
  */
-export function HomeUsagePanel(props: { directory: string | undefined }) {
-  const [state, setState] = createStore({ collapsed: readUsageCollapsed() })
+export function HomeUsagePanel(props: {
+  directory: string | undefined
+  collapsed: boolean
+  onCollapsedChange: (collapsed: boolean) => void
+}) {
   function setCollapsed(collapsed: boolean) {
-    setState("collapsed", collapsed)
+    props.onCollapsedChange(collapsed)
     writeUsageCollapsed(collapsed)
   }
   return (
     <Show
-      when={!state.collapsed}
+      when={!props.collapsed}
       fallback={<HomeUsageSummary directory={props.directory} onExpand={() => setCollapsed(false)} />}
     >
       <Suspense fallback={<HomeUsageSkeleton />}>
@@ -348,7 +350,7 @@ function HomeUsageSummary(props: { directory: string | undefined; onExpand: () =
   return (
     <div
       data-frost-surface="home-usage"
-      class="flex min-h-9 w-full shrink-0 flex-wrap items-center gap-x-4 gap-y-1 rounded-pane border border-v2-border-border-base bg-v2-background-bg-layer-01 px-3 py-1.5 text-11-regular shadow-[var(--v2-elevation-floating)]"
+      class="flex min-h-9 w-fit max-w-full shrink-0 flex-wrap items-center gap-x-4 gap-y-1 rounded-pane border border-v2-border-border-base bg-v2-background-bg-layer-01 px-3 py-1.5 text-11-regular shadow-[var(--v2-elevation-floating)]"
     >
       <Show when={usage()} fallback={<span class="text-v2-text-text-muted">{t("common.loading")}</span>}>
         {(data) => (
