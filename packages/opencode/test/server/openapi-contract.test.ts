@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, test } from "bun:test"
 import path from "path"
 import { fileURLToPath } from "url"
 import { formatSdkSource, generateSdk } from "../../../sdk/js/script/codegen"
+import { createOpencodeClient } from "@redcode-ai/sdk/v2/client"
 import { tmpdir } from "../fixture/fixture"
 
 const specFile = fileURLToPath(new URL("../../../sdk/openapi.json", import.meta.url))
@@ -60,6 +61,29 @@ describe("API / OpenAPI / generated SDK contract", () => {
   test("all generated SDK files match the committed spec, including field types and SSE patch", () => {
     expect(expected.size).toBeGreaterThan(10)
     expect(differences(expected, actual)).toEqual([])
+  })
+
+  test("both generated config updates send the config argument as the JSON body", async () => {
+    const sent: Array<{ path: string; body: unknown }> = []
+    const client = createOpencodeClient({
+      baseUrl: "http://localhost",
+      fetch: Object.assign(
+        async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+          const request = new Request(input, init)
+          const body: unknown = await request.json()
+          sent.push({ path: new URL(request.url).pathname, body })
+          return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } })
+        },
+        { preconnect() {} },
+      ),
+    })
+    const config = { model: "sdk-contract-test" }
+    await client.config.update({ config }, { throwOnError: true })
+    await client.global.config.update({ config }, { throwOnError: true })
+    expect(sent).toEqual([
+      { path: "/config", body: config },
+      { path: "/global/config", body: config },
+    ])
   })
 
   test("the gate detects field-only drift even when endpoint and schema names are unchanged", () => {

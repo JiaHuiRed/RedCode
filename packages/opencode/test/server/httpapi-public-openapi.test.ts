@@ -16,6 +16,7 @@ type OpenApiResponse = {
 type OpenApiOperation = {
   readonly responses?: Record<string, OpenApiResponse>
   readonly security?: unknown
+  readonly requestBody?: { readonly content?: Record<string, { readonly schema?: OpenApiSchema }> }
 }
 type OpenApiPathItem = Partial<Record<Method, OpenApiOperation>>
 type OpenApiSpec = {
@@ -51,6 +52,40 @@ function isBuiltInEndpointError(name: string) {
 }
 
 describe("PublicApi OpenAPI v2 errors", () => {
+  test("keeps provider authorization component names stable for SDK consumers", () => {
+    const schemas = (OpenApi.fromApi(PublicApi) as OpenApiSpec).components?.schemas
+    expect(schemas?.ProviderAuthMethod).toBeDefined()
+    expect(schemas?.ProviderAuthAuthorization).toBeDefined()
+    expect(schemas?.ProviderAuthMethodEncoded).toBeUndefined()
+    expect(schemas?.ProviderAuthAuthorizationEncoded).toBeUndefined()
+  })
+
+  test("uses the canonical config component for both update request bodies", () => {
+    const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
+    for (const route of ["/config", "/global/config"]) {
+      expect(spec.paths[route]?.patch?.requestBody?.content?.["application/json"]?.schema?.$ref).toBe(
+        "#/components/schemas/Config",
+      )
+    }
+    expect(Object.keys(spec.components?.schemas ?? {}).filter((name) => /^Config_?\d+$/.test(name))).toEqual([])
+  })
+
+  test("preserves the object payload of output-length errors", () => {
+    const schemas = (OpenApi.fromApi(PublicApi) as OpenApiSpec).components?.schemas
+    expect(schemas?.MessageOutputLengthError?.properties?.data?.type).toBe("object")
+  })
+
+  test("keeps distinct legacy and v2 unknown-error payloads separate", () => {
+    const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
+    const name = componentName(
+      responseRef(spec.paths["/api/session/{sessionID}/context"]?.get?.responses?.["500"]) ?? "",
+    )
+    expect(name).toMatch(/^UnknownError\d+$/)
+    expect(spec.components?.schemas?.UnknownError?.properties?.data).toBeDefined()
+    expect(spec.components?.schemas?.[name]?.properties?._tag).toBeDefined()
+    expect(spec.components?.schemas?.[name]?.properties?.data).toBeUndefined()
+  })
+
   test("preserves the genuinely nullable oldest session-change cursor", () => {
     const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
     const schema =

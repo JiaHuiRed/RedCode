@@ -17,7 +17,7 @@ import type {
   AuthSetResponses,
   CommandListErrors,
   CommandListResponses,
-  Config1,
+  Config as Config3,
   ConfigGetErrors,
   ConfigGetResponses,
   ConfigProvidersErrors,
@@ -130,7 +130,7 @@ import type {
   ProjectRemoveResponses,
   ProjectUpdateErrors,
   ProjectUpdateResponses,
-  PromptEncoded,
+  Prompt,
   ProviderAuthErrors,
   ProviderAuthResponses,
   ProviderListErrors,
@@ -546,11 +546,11 @@ export class Config extends HeyApiClient {
    */
   public update<ThrowOnError extends boolean = false>(
     parameters?: {
-      config1?: Config1
+      config?: Config3
     },
     options?: Options<never, ThrowOnError>,
   ) {
-    const params = buildClientParams([parameters], [{ args: [{ key: "config1", map: "body" }] }])
+    const params = buildClientParams([parameters], [{ args: [{ key: "config", map: "body" }] }])
     return (options?.client ?? this.client).patch<GlobalConfigUpdateResponses, GlobalConfigUpdateErrors, ThrowOnError>({
       url: "/global/config",
       ...options,
@@ -703,7 +703,7 @@ export class Config2 extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
-      config1?: Config1
+      config?: Config3
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -714,7 +714,7 @@ export class Config2 extends HeyApiClient {
           args: [
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
-            { key: "config1", map: "body" },
+            { key: "config", map: "body" },
           ],
         },
       ],
@@ -4815,7 +4815,7 @@ export class Session3 extends HeyApiClient {
       sessionID: string
       directory?: string
       workspace?: string
-      prompt?: PromptEncoded
+      prompt?: Prompt
       delivery?: SessionDelivery
     },
     options?: Options<never, ThrowOnError>,

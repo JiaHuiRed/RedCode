@@ -42,3 +42,13 @@
 - 沿用既有 generator `instance` 弃用提示，不顺手升级依赖。
 - 不验证服务端每个 handler 的运行时行为，也不改变 HTTP 契约、数据库、配置或模型前缀。
 - 后续改 API 仍需两条正式生成命令；只更新 spec 或只重编 SDK，门禁都会拒绝。
+
+## Effect 投影命名兼容回归（261022）
+
+三份产物相互一致不等于消费方契约稳定。Effect 升级后，重复组件从 `Name1` 改为 `Name_1`，encoded 投影又带上 `Encoded` 后缀；既有兼容层没有识别，SDK 的授权类型消失，配置更新从 `config` 变成 `config1`，实际 HTTP body 并没有增加这一层字段。另有空 Struct 的 JSON Schema `{}` 被生成器解释成 `unknown`，原有 `MessageOutputLengthError.data` 对象契约随之丢失。
+
+修复仍在 `server/routes/instance/httpapi/public.ts`，不改生成器、构建配置或十几个调用方：兼容 `_N` 去重后缀、恢复 encoded 投影的公开名称，只有结构相同才合并。同名异形的 v2 `_tag/message` 错误与旧版 `name/data` 错误必须分配独立数字后缀，不能为了类型检查通过而混成一份；空错误 data 恢复公开 object 契约。随后同步重生成 SDK 与 committed spec。
+
+新增四个 PublicApi 回归覆盖授权名称、两个 config body 的 canonical ref、空错误 data、异形 UnknownError 保留；连同既有测试共 14 pass。SDK 契约新增真实客户端受控 fetch，验证 `client.config.update({config})` 与 `client.global.config.update({config})` 实际发出的 JSON body，共 6 pass。两组共 20 pass；app / opencode typecheck 与 SDK 构建内 tsc 均通过。
+
+模型可见四问：不改提示词、工具定义或输出；固定 system/tools 前缀零变化；KV cache 不动；无新增上下文注入项。这是 SDK 类型与 API 文档兼容修复，不改变请求体、错误字段或服务端处理逻辑。

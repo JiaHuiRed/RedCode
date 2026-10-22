@@ -227,7 +227,7 @@ function collapseDuplicateComponents(spec: OpenApiSpec) {
   const schemas = spec.components?.schemas
   if (!schemas) return
   for (const name of Object.keys(schemas)) {
-    const base = name.replace(/\d+$/, "")
+    const base = name.replace(/_?\d+$/, "")
     if (base === name || !schemas[base]) continue
     if (stableSchema(schemas[name], schemas) !== stableSchema(schemas[base], schemas)) continue
     rewriteRefs(spec, name, base)
@@ -239,24 +239,28 @@ function normalizeComponentNames(spec: OpenApiSpec) {
   const schemas = spec.components?.schemas
   if (!schemas) return
   for (const name of Object.keys(schemas)) {
-    const next = componentTypeName(name)
+    let next = componentTypeName(name)
     if (next === name) continue
-    if (schemas[next]) {
-      if (stableSchema(schemas[name], schemas) === stableSchema(schemas[next], schemas)) {
-        rewriteRefs(spec, name, next)
-        delete schemas[name]
+    if (schemas[next] && stableSchema(schemas[name], schemas) !== stableSchema(schemas[next], schemas)) {
+      const base = next
+      let suffix = 1
+      while (schemas[next] && stableSchema(schemas[name], schemas) !== stableSchema(schemas[next], schemas)) {
+        next = `${base}${suffix++}`
       }
-      continue
     }
-    schemas[next] = schemas[name]
+    schemas[next] ??= schemas[name]
     rewriteRefs(spec, name, next)
     delete schemas[name]
   }
 }
 
 function componentTypeName(name: string) {
-  if (!name.includes(".")) return name
-  return name
+  // 261022 Red Effect 的 encoded 投影与 _N 去重后缀不能泄漏为 SDK API 改名。
+  // 同名但不同形状的投影仍由 normalizeComponentNames 的冲突检查保留。
+  // 决策：docs/notes/implemented/process/2026-10-09-sdk-contract-gate.md
+  const stable = name.replace(/Encoded(?=(?:_?\d+)?$)/, "")
+  if (!stable.includes(".")) return stable
+  return stable
     .split(".")
     .filter((part) => !/^\d+$/.test(part))
     .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
@@ -266,6 +270,9 @@ function componentTypeName(name: string) {
 function applyLegacySchemaOverrides(spec: OpenApiSpec) {
   const schemas = spec.components?.schemas
   if (!schemas) return
+  if (schemas.MessageOutputLengthError?.properties) {
+    schemas.MessageOutputLengthError.properties.data = { type: "object", additionalProperties: {} }
+  }
   if (schemas.AgentConfig) schemas.AgentConfig.additionalProperties = {}
   if (schemas.Command?.properties?.template) schemas.Command.properties.template = { type: "string" }
   if (schemas.Workspace?.properties) {
@@ -333,7 +340,7 @@ function canonicalizeSchema(input: unknown, schemas: Record<string, OpenApiSchem
 
 function canonicalRef(ref: string, schemas: Record<string, OpenApiSchema>) {
   const name = ref.replace("#/components/schemas/", "")
-  const base = name.replace(/\d+$/, "")
+  const base = name.replace(/_?\d+$/, "")
   if (base !== name && schemas[base]) return `#/components/schemas/${base}`
   return ref
 }
