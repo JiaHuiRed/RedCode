@@ -1,8 +1,10 @@
 import type { TuiPlugin, TuiPluginApi } from "@redcode-ai/plugin/tui"
 import { USD_TO_CNY } from "@redcode-ai/core/currency"
 import type { InternalTuiPlugin } from "../../plugin/internal"
-import { createMemo, Match, Show, Switch } from "solid-js"
+import { createMemo, createResource, Match, onCleanup, Show, Switch } from "solid-js"
 import { Global } from "@redcode-ai/core/global"
+import { useEvent } from "@tui/context/event"
+import { useSDK } from "@tui/context/sdk"
 import { useSync } from "@tui/context/sync"
 
 const id = "internal:home-footer"
@@ -59,40 +61,30 @@ function Mcp(props: { api: TuiPluginApi }) {
   )
 }
 
-// 260701 Red 跨 session 花费/缓存命中率统计条。session.cost/tokens 在落库时已经
-// denormalize 好了（session.ts），这里直接对 sync.data.session 做本地 reduce，不产生新请求
+// 261022 Red 会话列表只返回近期/有限条目，累计计费改读和 GUI 相同的全项目聚合
 function Stats(props: { api: TuiPluginApi }) {
   const theme = () => props.api.theme.current
   const sync = useSync()
-  const stats = createMemo(() => {
-    // 币种以 model.cost.currency 为准 —— provider.ts 套 CNY_PRICING 时写的就是这个字段。
-    // 查不到（provider 未加载、模型已下架）时按"不折算"处理：多乘一次 6.76 会把 ¥7.50
-    // 显示成 ¥50.73，这种虚高比少算更唬人，宁可少算。
-    // currency 是可选字段（provider.ts:904），models.dev 来的报价没有它 —— 只有我们套
-    // CNY_PRICING 时才写 "CNY"。所以判定是 `=== "CNY"` 才不折算，其余按美元折。
-    const isCny = (model?: { providerID?: string; modelID?: string }) => {
-      if (!model?.providerID || !model?.modelID) return true
-      const entry = sync.data.provider.find((p) => p.id === model.providerID)?.models[model.modelID]
-      if (!entry) return true
-      return (entry.cost as { currency?: string } | undefined)?.currency === "CNY"
-    }
+  const sdk = useSDK()
+  const event = useEvent()
+  const [usage, { refetch }] = createResource(async () => {
+    const result = await sdk.client.session.usage({ range: "all" })
+    return result.data
+  })
+  onCleanup(event.on("session.updated", () => void refetch()))
 
-    let costCNY = 0
-    let read = 0
-    let miss = 0
-    let write = 0
-    for (const s of sync.data.session) {
-      const cost = s.cost ?? 0
-      costCNY += isCny(s.model) ? cost : cost * USD_TO_CNY
-      const t = s.tokens
-      if (!t) continue
-      read += t.cache.read ?? 0
-      write += t.cache.write ?? 0
-      miss += t.cache.miss ?? t.input ?? 0
-    }
-    const denom = read + (miss || write)
-    const hitPct = denom > 0 && read > 0 ? Math.round((read / denom) * 100) : null
-    return { costCNY, hitPct, count: sync.data.session.length }
+  const stats = createMemo(() => {
+    const data = usage()
+    if (!data) return { costCNY: 0, hitPct: null, count: 0 }
+
+    const costCNY = data.models.reduce((sum, model) => {
+      const cost = sync.data.provider.find((p) => p.id === model.providerID)?.models[model.modelID]
+        ?.cost as { currency?: string } | undefined
+      return sum + (cost?.currency === "CNY" ? model.cost : model.cost * USD_TO_CNY)
+    }, 0)
+    const denominator = data.tokens.cacheRead + data.tokens.cacheWrite + data.tokens.input
+    const hitPct = denominator > 0 ? Math.round((data.tokens.cacheRead / denominator) * 100) : null
+    return { costCNY, hitPct, count: data.sessions }
   })
 
   return (
