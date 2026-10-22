@@ -78,6 +78,7 @@ export function retryable(error: unknown, provider: string) {
   //   自定义 Error 会变成 UnknownError 并丢掉原 tag；若只检查归一化结果就会直接 halt。
   //   其它 provider 错误仍在下面对归一化后的 MessageV2.APIError 判定。
   const tag = error && typeof error === "object" ? (error as { _tag?: unknown })._tag : undefined
+  if (tag === "ToolInputGuardError") return undefined
   if (tag === "FirstEventTimeoutError") return { message: "网关未响应，正在重试" }
   if (tag === "StreamIdleTimeoutError") return { message: "响应流中断，正在重试" }
   if (MessageV2.APIError.isInstance(error)) {

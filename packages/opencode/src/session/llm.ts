@@ -13,6 +13,7 @@ import { GitLabWorkflowLanguageModel } from "gitlab-ai-provider"
 import { ProviderTransform } from "@/provider/transform"
 import { Config } from "@/config/config"
 import { ConfigRequestEvidence } from "@/config/request-evidence"
+import { ConfigToolInputGuard } from "@/config/tool-input-guard"
 import type { Agent } from "@/agent/agent"
 import type { MessageV2 } from "./message-v2"
 import { Plugin } from "@/plugin"
@@ -25,7 +26,7 @@ import { Auth } from "@/auth"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import * as Option from "effect/Option"
-import * as OtelTracer from "@effect/opentelemetry/Tracer"
+import * as OtelTracer from "@effect/opentelemetry/OtelTracer"
 import { LLMAISDK } from "./llm/ai-sdk"
 import { LLMNativeRuntime } from "./llm/native-runtime"
 import { LLMRequestPrep } from "./llm/request"
@@ -114,6 +115,7 @@ const live: Layer.Layer<
         ],
         { concurrency: "unbounded" },
       )
+      const toolInputGuard = ConfigToolInputGuard.resolve(cfg.experimental?.toolInputGuard)
 
       const tResolveEnd = performance.now()
       // 260727 Red 每次请求记录 resolve/prep 耗时到日志，排查 LLM 延迟时区分本地管线与服务端耗时
@@ -251,12 +253,15 @@ const live: Layer.Layer<
       // either returns a ready LLMEvent stream or a concrete fallback reason.
       const evidenceLimits = ConfigRequestEvidence.resolve(cfg.experimental?.requestEvidence)
       if (flags.experimentalNativeLlm) {
-        const requestEvidence = RequestEvidence.create({
-          sessionID: input.sessionID,
-          modelKey: `${input.model.providerID}/${input.model.id}`,
-          runtime: "native",
-          model: input.model,
-        }, evidenceLimits)
+        const requestEvidence = RequestEvidence.create(
+          {
+            sessionID: input.sessionID,
+            modelKey: `${input.model.providerID}/${input.model.id}`,
+            runtime: "native",
+            model: input.model,
+          },
+          evidenceLimits,
+        )
         const native = LLMNativeRuntime.stream({
           model: input.model,
           provider: item,
@@ -285,10 +290,9 @@ const live: Layer.Layer<
           )
           return {
             type: "native" as const,
-            stream: native.stream.pipe(
-              Stream.tap((event) => Effect.sync(() => requestEvidence.event(event))),
-            ),
+            stream: native.stream.pipe(Stream.tap((event) => Effect.sync(() => requestEvidence.event(event)))),
             evidence: requestEvidence,
+            toolInputGuard,
           }
         }
         yield* Effect.logInfo("llm runtime selected").pipe(
@@ -309,12 +313,15 @@ const live: Layer.Layer<
           "llm.model": input.model.id,
         }),
       )
-      const requestEvidence = RequestEvidence.create({
-        sessionID: input.sessionID,
-        modelKey: `${input.model.providerID}/${input.model.id}`,
-        runtime: "ai-sdk",
-        model: input.model,
-      }, evidenceLimits)
+      const requestEvidence = RequestEvidence.create(
+        {
+          sessionID: input.sessionID,
+          modelKey: `${input.model.providerID}/${input.model.id}`,
+          runtime: "ai-sdk",
+          model: input.model,
+        },
+        evidenceLimits,
+      )
       // Default runtime path: AI SDK owns provider execution and tool dispatch;
       // LLMAISDK.toLLMEvents below normalizes fullStream parts for the processor.
       // 260803 Red DeepSeek 截断续写：max_tokens 撞顶（finish_reason=length）时，
@@ -399,6 +406,7 @@ const live: Layer.Layer<
         type: "ai-sdk" as const,
         result: withContinuation(streamOnce, prepared.messages, input.model),
         evidence: requestEvidence,
+        toolInputGuard,
       }
     })
 
@@ -413,7 +421,8 @@ const live: Layer.Layer<
 
             const result = yield* run({ ...input, abort: ctrl.signal })
 
-            if (result.type === "native") return guardFirstEvent(result.stream, ctrl)
+            const guardLimits = { toolInput: result.toolInputGuard }
+            if (result.type === "native") return guardFirstEvent(result.stream, ctrl, undefined, guardLimits)
 
             // Adapter seam: both runtimes expose the same LLMEvent stream. Native
             // already returns one; AI SDK streams are converted here.
@@ -447,6 +456,8 @@ const live: Layer.Layer<
                 Stream.tap((event) => Effect.sync(() => result.evidence.event(event))),
               ),
               ctrl,
+              undefined,
+              guardLimits,
             )
           }),
         ),
@@ -515,6 +526,25 @@ export class StreamIdleTimeoutError extends Error {
   }
 }
 
+export class ToolInputGuardError extends Error {
+  readonly _tag = "ToolInputGuardError"
+  constructor(
+    readonly reason: "idle" | "budget",
+    readonly id: string,
+    readonly tool: string,
+    readonly pendingCalls: number,
+    readonly limit: number,
+    readonly elapsedMs: number,
+  ) {
+    super(
+      reason === "idle"
+        ? `工具 ${tool} (${id}) 参数流 ${Math.round(elapsedMs / 1000)} 秒无进展，已中断`
+        : `未完成的工具输入数 ${pendingCalls} 超过上限 ${limit}，已中断`,
+    )
+    this.name = "ToolInputGuardError"
+  }
+}
+
 // 260916 Red 导出 + 阈值注入：测试直接跑真实现（毫秒级用例），不再在测试里复刻第二份
 // shadow 实现——260916 的并行工具误杀恰恰因为"复刻版没跟上实现"（复刻版从来没有
 // local 逻辑）而在测试里隐形。复刻即漂移源，改掉。
@@ -527,7 +557,8 @@ export function guardFirstEvent<S, E>(
     idle: IDLE_EVENT_TIMEOUT,
     tick: WATCHDOG_TICK,
   },
-): Stream.Stream<S, E | FirstEventTimeoutError | StreamIdleTimeoutError> {
+  options: { toolInput?: { idleMs: number; maxPendingCalls: number } } = {},
+): Stream.Stream<S, E | FirstEventTimeoutError | StreamIdleTimeoutError | ToolInputGuardError> {
   return Stream.unwrap(
     Effect.gen(function* () {
       const state = {
@@ -542,9 +573,11 @@ export function guardFirstEvent<S, E>(
         inputs: new Map<
           string,
           {
+            id: string
             tool: string
             start: number
             lastDelta: number
+            lastProgress: number
             lastReport: number
             chars: number
             chunks: number
@@ -552,20 +585,27 @@ export function guardFirstEvent<S, E>(
           }
         >(),
       }
-      const timeoutSignal = yield* Deferred.make<never, FirstEventTimeoutError | StreamIdleTimeoutError>()
+      const timeoutSignal = yield* Deferred.make<
+        never,
+        FirstEventTimeoutError | StreamIdleTimeoutError | ToolInputGuardError
+      >()
       // 260924 Red 参数 delta 不落库；只记长度与耗时，断流时留下证据但不泄露工具参数。
       yield* Effect.addFinalizer(() =>
         Effect.forEach(
           state.inputs.values(),
           (input) =>
-            Effect.logWarning("llm.tool-input unfinished", {
-              tool: input.tool,
-              chars: input.chars,
-              chunks: input.chunks,
-              elapsedMs: Date.now() - input.start,
-              sinceLastDeltaMs: Date.now() - input.lastDelta,
-              inputEnded: input.ended,
-            }),
+            Effect.logWarning(
+              "llm.tool-input unfinished",
+              JSON.stringify({
+                id: input.id,
+                tool: input.tool,
+                chars: input.chars,
+                chunks: input.chunks,
+                elapsedMs: Date.now() - input.start,
+                sinceLastDeltaMs: Date.now() - input.lastDelta,
+                inputEnded: input.ended,
+              }),
+            ),
           { discard: true },
         ),
       )
@@ -582,18 +622,49 @@ export function guardFirstEvent<S, E>(
           while (true) {
             yield* Effect.sleep(limits.tick)
             const now = Date.now()
+            if (options.toolInput) {
+              for (const input of state.inputs.values()) {
+                if (now - input.lastProgress < options.toolInput.idleMs) continue
+                const error = new ToolInputGuardError(
+                  "idle",
+                  input.id,
+                  input.tool,
+                  state.inputs.size,
+                  options.toolInput.idleMs,
+                  now - input.lastProgress,
+                )
+                ctrl.abort()
+                yield* Effect.logWarning(
+                  "llm.tool-input guard fired",
+                  JSON.stringify({
+                    reason: error.reason,
+                    id: error.id,
+                    tool: error.tool,
+                    pendingCalls: error.pendingCalls,
+                    limit: error.limit,
+                    elapsedMs: error.elapsedMs,
+                  }),
+                )
+                yield* Deferred.fail(timeoutSignal, error)
+                return
+              }
+            }
             // 260924 Red 流持续吐参数时不会触发 idle 看门狗；按既有 idle 周期留下非正文进度。
             for (const input of state.inputs.values()) {
               if (now - input.lastReport < Duration.toMillis(limits.idle)) continue
               input.lastReport = now
-              yield* Effect.logInfo("llm.tool-input progress", {
-                tool: input.tool,
-                chars: input.chars,
-                chunks: input.chunks,
-                elapsedMs: now - input.start,
-                sinceLastDeltaMs: now - input.lastDelta,
-                inputEnded: input.ended,
-              })
+              yield* Effect.logInfo(
+                "llm.tool-input progress",
+                JSON.stringify({
+                  id: input.id,
+                  tool: input.tool,
+                  chars: input.chars,
+                  chunks: input.chunks,
+                  elapsedMs: now - input.start,
+                  sinceLastDeltaMs: now - input.lastDelta,
+                  inputEnded: input.ended,
+                }),
+              )
             }
             // 260904 cc **本地在干活时不计时。** AI SDK 的工具执行跑在流内部：
             //   `tool-call` 之后到 `tool-result` 之前，流上一个事件都不会来。那段时间
@@ -626,12 +697,15 @@ export function guardFirstEvent<S, E>(
             // 会话第一条 llm.stream 的启动时刻（125 秒），可那个会话 33 条 message 全程健康、
             // 每条都有 completed——单看 idle 无法区分"看门狗活过了自己的流"和"provider 真的
             // 静默"。streamAgeMs 远大于它守护的那条流的时长时，答案就明确了。
-            yield* Effect.logWarning("llm.stream idle watchdog fired", {
-              idleMs: idle,
-              streamAgeMs: Date.now() - state.start,
-              seen: state.seen,
-              pendingTools: state.pending.size,
-            })
+            yield* Effect.logWarning(
+              "llm.stream idle watchdog fired",
+              JSON.stringify({
+                idleMs: idle,
+                streamAgeMs: Date.now() - state.start,
+                seen: state.seen,
+                pendingTools: state.pending.size,
+              }),
+            )
             yield* Deferred.fail(
               timeoutSignal,
               state.seen ? new StreamIdleTimeoutError(idle) : new FirstEventTimeoutError(),
@@ -670,22 +744,53 @@ export function guardFirstEvent<S, E>(
               )
                 state.produced = true
               if (type === "tool-input-start" && e.id) {
-                state.inputs.set(e.id, {
-                  tool: e.name ?? "unknown",
-                  start: now,
-                  lastDelta: now,
-                  lastReport: now,
-                  chars: 0,
-                  chunks: 0,
-                  ended: false,
-                })
+                if (!state.inputs.has(e.id)) {
+                  state.inputs.set(e.id, {
+                    id: e.id,
+                    tool: e.name ?? "unknown",
+                    start: now,
+                    lastDelta: now,
+                    lastProgress: now,
+                    lastReport: now,
+                    chars: 0,
+                    chunks: 0,
+                    ended: false,
+                  })
+                  if (options.toolInput && state.inputs.size > options.toolInput.maxPendingCalls) {
+                    const error = new ToolInputGuardError(
+                      "budget",
+                      e.id,
+                      e.name ?? "unknown",
+                      state.inputs.size,
+                      options.toolInput.maxPendingCalls,
+                      0,
+                    )
+                    ctrl.abort()
+                    yield* Effect.logWarning(
+                      "llm.tool-input guard fired",
+                      JSON.stringify({
+                        reason: error.reason,
+                        id: error.id,
+                        tool: error.tool,
+                        pendingCalls: error.pendingCalls,
+                        limit: error.limit,
+                        elapsedMs: error.elapsedMs,
+                      }),
+                    )
+                    return yield* Effect.fail(error)
+                  }
+                }
               }
               if (type === "tool-input-delta" && e.id) {
                 const input = state.inputs.get(e.id)
                 if (input) {
-                  input.chars += e.text?.length ?? 0
+                  const deltaLength = e.text?.length ?? 0
+                  input.chars += deltaLength
                   input.chunks++
-                  input.lastDelta = now
+                  if (deltaLength > 0) {
+                    input.lastDelta = now
+                    input.lastProgress = now
+                  }
                 }
               }
               if (type === "tool-input-end" && e.id) {
@@ -695,12 +800,16 @@ export function guardFirstEvent<S, E>(
               if (type === "tool-call" && e.id) {
                 const input = state.inputs.get(e.id)
                 if (input) {
-                  yield* Effect.logInfo("llm.tool-input complete", {
-                    tool: input.tool,
-                    chars: input.chars,
-                    chunks: input.chunks,
-                    elapsedMs: now - input.start,
-                  })
+                  yield* Effect.logInfo(
+                    "llm.tool-input complete",
+                    JSON.stringify({
+                      id: input.id,
+                      tool: input.tool,
+                      chars: input.chars,
+                      chunks: input.chunks,
+                      elapsedMs: now - input.start,
+                    }),
+                  )
                   state.inputs.delete(e.id)
                 }
                 state.pending.add(e.id)

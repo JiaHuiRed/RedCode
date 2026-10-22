@@ -9,7 +9,12 @@
 // 跟上实现（复刻版从来没有 local 逻辑）而在测试里隐形——复刻即漂移源，不再复刻。
 import { describe, expect, test } from "bun:test"
 import { Effect, Duration, Logger, Stream } from "effect"
-import { FirstEventTimeoutError, StreamIdleTimeoutError, guardFirstEvent } from "../../src/session/llm"
+import {
+  FirstEventTimeoutError,
+  StreamIdleTimeoutError,
+  ToolInputGuardError,
+  guardFirstEvent,
+} from "../../src/session/llm"
 
 const OPTS = { first: Duration.millis(300), idle: Duration.millis(400), tick: Duration.millis(25) }
 
@@ -163,45 +168,131 @@ describe("LLM 流看门狗", () => {
     expect(ctrl.signal.aborted).toBe(true)
   })
 
- // 261021 Red 纯思考静默的裁决权在外层 reasoningStall 兜底（processor 的
- // Stream.timeoutOrElse → promoteReasoning 收尾），本层 idle 不开火——否则 120s 先到
- // 走重试链把请求重发、思考全丢，外层兜底成死配置。
- test("纯思考后静默：不属本层 idle 管辖，不开火", async () => {
-   const ctrl = new AbortController()
-   const src = Stream.concat(
-     Stream.fromIterable([
-       { type: "reasoning-start", id: "r-0" },
-       { type: "reasoning-delta", id: "r-0", text: "thinking" },
-     ]),
-     // 静默 700ms 远超 idle 阈值（400ms）：纯思考阶段豁免
-     Stream.fromEffect(Effect.as(Effect.sleep(Duration.millis(700)), { type: "reasoning-end", id: "r-0" })),
-   )
-   const out = await collect(src, ctrl)
-   expect(out._tag).toBe("Success")
-   expect(ctrl.signal.aborted).toBe(false)
- })
+  // 261021 Red 纯思考静默的裁决权在外层 reasoningStall 兜底（processor 的
+  // Stream.timeoutOrElse → promoteReasoning 收尾），本层 idle 不开火——否则 120s 先到
+  // 走重试链把请求重发、思考全丢，外层兜底成死配置。
+  test("纯思考后静默：不属本层 idle 管辖，不开火", async () => {
+    const ctrl = new AbortController()
+    const src = Stream.concat(
+      Stream.fromIterable([
+        { type: "reasoning-start", id: "r-0" },
+        { type: "reasoning-delta", id: "r-0", text: "thinking" },
+      ]),
+      // 静默 700ms 远超 idle 阈值（400ms）：纯思考阶段豁免
+      Stream.fromEffect(Effect.as(Effect.sleep(Duration.millis(700)), { type: "reasoning-end", id: "r-0" })),
+    )
+    const out = await collect(src, ctrl)
+    expect(out._tag).toBe("Success")
+    expect(ctrl.signal.aborted).toBe(false)
+  })
 
- // 反向：正文产出之后再静默，本层 idle 恢复计时（豁免不是永久免疫）
- test("正文产出后网关静默：恢复 idle 计时并开火", async () => {
-   const ctrl = new AbortController()
-   const src = Stream.concat(
-     Stream.fromIterable([
-       { type: "reasoning-start", id: "r-0" },
-       { type: "reasoning-delta", id: "r-0", text: "thinking" },
-       { type: "text-delta", id: "t-0", text: "answer" },
-     ]),
-     Stream.fromEffect(Effect.as(Effect.sleep(Duration.seconds(30)), { type: "text-end", id: "t-0" })),
-   )
-   const out = await collect(src, ctrl)
-   expect(out._tag).toBe("Failure")
-   if (out._tag === "Failure") expect((out.failure as { _tag?: string })._tag).toBe("StreamIdleTimeoutError")
-   expect(ctrl.signal.aborted).toBe(true)
- })
+  // 反向：正文产出之后再静默，本层 idle 恢复计时（豁免不是永久免疫）
+  test("正文产出后网关静默：恢复 idle 计时并开火", async () => {
+    const ctrl = new AbortController()
+    const src = Stream.concat(
+      Stream.fromIterable([
+        { type: "reasoning-start", id: "r-0" },
+        { type: "reasoning-delta", id: "r-0", text: "thinking" },
+        { type: "text-delta", id: "t-0", text: "answer" },
+      ]),
+      Stream.fromEffect(Effect.as(Effect.sleep(Duration.seconds(30)), { type: "text-end", id: "t-0" })),
+    )
+    const out = await collect(src, ctrl)
+    expect(out._tag).toBe("Failure")
+    if (out._tag === "Failure") expect((out.failure as { _tag?: string })._tag).toBe("StreamIdleTimeoutError")
+    expect(ctrl.signal.aborted).toBe(true)
+  })
 
   test("两类超时都被 retryable 认成可重试", async () => {
     const { retryable } = await import("../../src/session/retry")
     expect(retryable(new FirstEventTimeoutError() as never, "test")).toBeTruthy()
     expect(retryable(new StreamIdleTimeoutError(120000) as never, "test")).toBeTruthy()
+  })
+
+  test("新 input start 不会刷新旧 input 的 idle 时间", async () => {
+    const ctrl = new AbortController()
+    const src = Stream.concat(
+      Stream.fromIterable([{ type: "tool-input-start", id: "old", name: "grep" }]),
+      Stream.fromIterable(Array.from({ length: 20 }, (_, index) => index)).pipe(
+        Stream.mapEffect((index) =>
+          Effect.as(Effect.sleep(Duration.millis(20)), { type: "tool-input-start", id: `new-${index}`, name: "read" }),
+        ),
+      ),
+    )
+    const out = await Stream.runCollect(
+      guardFirstEvent(src, ctrl, OPTS, { toolInput: { idleMs: 100, maxPendingCalls: 64 } }),
+    ).pipe(Effect.scoped, Effect.result, Effect.runPromise)
+    expect(out._tag).toBe("Failure")
+    if (out._tag === "Failure") expect((out.failure as { _tag?: string })._tag).toBe("ToolInputGuardError")
+    expect(ctrl.signal.aborted).toBe(true)
+  })
+
+  test("超过 pending input 预算失败且错误不自动重试", async () => {
+    const ctrl = new AbortController()
+    const src = Stream.fromIterable([
+      { type: "tool-input-start", id: "1", name: "grep" },
+      { type: "tool-input-start", id: "2", name: "read" },
+      { type: "tool-input-start", id: "3", name: "write" },
+    ])
+    const out = await Stream.runCollect(
+      guardFirstEvent(src, ctrl, OPTS, { toolInput: { idleMs: 100, maxPendingCalls: 2 } }),
+    ).pipe(Effect.scoped, Effect.result, Effect.runPromise)
+    expect(out._tag).toBe("Failure")
+    if (out._tag === "Failure") expect((out.failure as { _tag?: string })._tag).toBe("ToolInputGuardError")
+    expect(ctrl.signal.aborted).toBe(true)
+    const { retryable } = await import("../../src/session/retry")
+    expect(retryable(new ToolInputGuardError("budget", "3", "write", 3, 2, 0), "test")).toBeUndefined()
+    expect(retryable(new ToolInputGuardError("idle", "1", "grep", 1, 1000, 1000), "test")).toBeUndefined()
+  })
+
+  test("密集的 1000 个 start 在超预算点停止消费和下传", async () => {
+    const ctrl = new AbortController()
+    const consumed: string[] = []
+    const forwarded: string[] = []
+    const src = Stream.fromIterable(
+      Array.from({ length: 1000 }, (_, index) => ({
+        type: "tool-input-start",
+        id: `call-${index}`,
+        name: "grep",
+      })),
+    ).pipe(Stream.tap((event) => Effect.sync(() => consumed.push(event.id))))
+    const out = await Stream.runCollect(
+      guardFirstEvent(src, ctrl, OPTS, { toolInput: { idleMs: 100, maxPendingCalls: 2 } }).pipe(
+        Stream.tap((event) => Effect.sync(() => forwarded.push(event.id))),
+      ),
+    ).pipe(Effect.scoped, Effect.result, Effect.runPromise)
+    expect(out._tag).toBe("Failure")
+    expect(consumed.length).toBe(3)
+    expect(forwarded.length).toBe(2)
+    expect(ctrl.signal.aborted).toBe(true)
+  })
+
+  test("同 id 重复 start 去重，并行输入和持续参数进展正常完成", async () => {
+    const ctrl = new AbortController()
+    const events = [
+      { type: "tool-input-start", id: "one", name: "grep" },
+      { type: "tool-input-start", id: "one", name: "grep" },
+      { type: "tool-input-start", id: "two", name: "read" },
+      ...Array.from({ length: 12 }, (_, index) => ({
+        type: "tool-input-delta",
+        id: index % 2 === 0 ? "one" : "two",
+        text: "x",
+      })),
+      { type: "tool-call", id: "one" },
+      { type: "tool-call", id: "two" },
+      { type: "tool-result", id: "one" },
+      { type: "tool-result", id: "two" },
+    ]
+    const src = Stream.fromIterable(events).pipe(
+      Stream.mapEffect((event) =>
+        Effect.as(Effect.sleep(event.type === "tool-input-delta" ? Duration.millis(50) : Duration.zero), event),
+      ),
+    )
+    const out = await Stream.runCollect(
+      guardFirstEvent(src, ctrl, OPTS, { toolInput: { idleMs: 150, maxPendingCalls: 2 } }),
+    ).pipe(Effect.scoped, Effect.result, Effect.runPromise)
+    expect(out._tag).toBe("Success")
+    expect(ctrl.signal.aborted).toBe(false)
   })
 
   // 260916 Red 看门狗必须随自己的流一起结束。真实事故：explore 子代理 05:36:58 创建的

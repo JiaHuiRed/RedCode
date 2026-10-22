@@ -19,7 +19,7 @@ import type { ConsoleState } from "./console-state"
 import { AppFileSystem } from "@redcode-ai/core/filesystem"
 import { InstanceState } from "@/effect/instance-state"
 import { Cause, Context, Duration, Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { EffectFlock } from "@redcode-ai/core/util/effect-flock"
 import { containsPath, type InstanceContext } from "../project/instance-context"
 import { NonNegativeInt, PositiveInt, type DeepMutable } from "@redcode-ai/core/schema"
@@ -41,6 +41,7 @@ import { ConfigProvider } from "./provider"
 import { ConfigReference } from "./reference"
 import { ConfigRequestEvidence } from "./request-evidence"
 import { ConfigReasoningStall } from "./reasoning-stall"
+import { ConfigToolInputGuard } from "./tool-input-guard"
 import { ConfigRetire } from "./retire"
 import * as ConfigToolFailure from "./tool-failure"
 import { ConfigServer } from "./server"
@@ -403,6 +404,7 @@ export const Info = Schema.Struct({
         description:
           "When a reasoning-only step is treated as stalled: silence before cutoff, plus a character backstop for providers that stream forever.",
       }),
+      toolInputGuard: Schema.optional(ConfigToolInputGuard.Info),
       mcp_timeout: Schema.optional(PositiveInt).annotate({
         description: "Timeout in milliseconds for model context protocol (MCP) requests",
       }),
