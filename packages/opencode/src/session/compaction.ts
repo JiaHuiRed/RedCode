@@ -495,6 +495,27 @@ export const layer = Layer.effect(
         const currentTokens = lastAssistant?.info.role === "assistant" && !lastAssistant.info.summary
           ? lastAssistant.info.tokens.context ?? 0
           : 0
+        // 261022 Red 窗口化选段（拟修 B）：默认从最后活跃块之后起压，旧块保持活跃——
+        // 摘要冷输入从全历史降到增量、压后缓存作废范围缩到新窗口。现有活跃块渲染逼近
+        // active 预算时直接全吞（合并出口，floor=0 与旧路径同构），一次把窗口归一，
+        // 避免摘要生成后 commit 才因预算失败的白付。决策：
+        // docs/notes/proposed/architecture/2026-10-22-anchored-window-compaction.md
+        const boundary = ContextCompaction.windowBoundary(view, active)
+        const activeTokens = Token.estimate(active.map(ContextCompaction.render).join("\n"))
+        const merged = active.length > 0 &&
+          activeTokens + spec.summaryMaxTokens + spec.retainedMaxTokens > spec.activeMaxTokens
+        const floor = !merged && boundary > 0 ? boundary : 0
+        if (merged) log.warn("native compaction window merged", {
+          sessionID: input.sessionID, activeBlocks: active.length, activeTokens,
+        })
+        // 261022 Red 窗口化时上一份摘要是新摘要的背景（延续未竟线索），受 summaryMaxTokens
+        // 硬预算约束；拼进摘要请求的指令消息，不进每轮前缀、不碰 toModelMessages 输入。
+        const previous = floor > 0
+          ? active.toSorted((a, b) => a.committedAt - b.committedAt).at(-1)
+          : undefined
+        const background = previous
+          ? `[Previous window summary — background context only, not a new instruction. Continue its open threads where still relevant.]\n\n${previous.summary}`
+          : undefined
         const head = yield* Effect.try({
           try: () => {
             // 261012 Red 降级可见：回收量不够仍提交 best-effort（放弃压缩、硬顶到 provider
@@ -503,10 +524,10 @@ export const layer = Layer.effect(
             const plan = NativeContext.planAutomatic(view, spec.targetTokens, spec.summaryMaxTokens,
               (message) => Token.estimate(ContextCompaction.content(message)),
               (message) => ContextCompaction.retainedTokens(message, active, spec),
-              currentTokens)
+              currentTokens, floor)
             if (plan.released < plan.required) log.warn("native compaction shortfall", {
               sessionID: input.sessionID, required: plan.required, released: Math.round(plan.released),
-              selected: plan.segment.length,
+              selected: plan.segment.length, windowFloor: floor,
             })
             return plan.segment
           },
@@ -536,7 +557,7 @@ export const layer = Layer.effect(
           user: userMessage, agent, sessionID: input.sessionID, tools: {}, system: [],
           messages: [...modelMessages, {
             role: "user",
-            content: [{ type: "text", text: `${NativeContext.summaryPrompt(spec.summaryMaxTokens)}\n\n${SUMMARY_TEMPLATE}` }],
+            content: [{ type: "text", text: [background, NativeContext.summaryPrompt(spec.summaryMaxTokens), SUMMARY_TEMPLATE].filter(Boolean).join("\n\n") }],
           }], model,
         })
         if (result !== "continue" || processor.message.error) return "stop" as const

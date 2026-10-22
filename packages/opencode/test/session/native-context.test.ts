@@ -193,4 +193,38 @@ describe("native context boundary", () => {
     expect(() => selectAutomatic([message, latest], 40000, 16000, () => 1000, () => 1000))
       .toThrow("No compressible closed history")
   })
+
+  // 261022 Red 窗口边界（拟修 B）：选段起点下移到最后活跃块之后，锚点不再恒为会话
+  // 首条消息——每次压缩不再从头重写历史（摘要冷输入与压后缓存全灭的结构性根源）。
+  // 决策：docs/notes/proposed/architecture/2026-10-22-anchored-window-compaction.md
+  describe("windowed selection", () => {
+    const second: MessageV2.WithParts = {
+      ...message, info: { ...message.info, id: MessageID.make("msg_second"), time: { created: 2 } },
+    }
+
+    test("selection starts after the window floor instead of the first message", () => {
+      expect(selectAutomatic([message, second, assistant, latest], 40000, 16000, () => 1000, undefined, 0, 2))
+        .toEqual([assistant])
+    })
+
+    test("an unusable floor falls back to the full-history selection", () => {
+      expect(selectAutomatic([message, assistant, latest], 40000, 16000, () => 1000, undefined, 0, 99))
+        .toEqual([message, assistant])
+    })
+
+    test("the requirement stays on the full request while only the window is released", () => {
+      const plan = planAutomatic(
+        [message, assistant, { ...assistant, info: { ...assistant.info, id: MessageID.make("msg_assistant_2") } }, latest],
+        40000, 16000, () => 1000, undefined, 100000, 1,
+      )
+      expect(plan.required).toBe(76_000)
+      expect(plan.segment).toHaveLength(2)
+      expect(plan.released).toBeLessThan(plan.required)
+    })
+
+    test("floor=0 preserves the legacy full-history selection", () => {
+      expect(selectAutomatic([message, assistant, latest], 40000, 16000, () => 1000, undefined, 0, 0))
+        .toEqual(selectAutomatic([message, assistant, latest], 40000, 16000, () => 1000))
+    })
+  })
 })

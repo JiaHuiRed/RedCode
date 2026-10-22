@@ -75,6 +75,11 @@ export function planAutomatic(
   // 历史粗估（旧行为）。粗估与实报之间的偏差用统一比例归一，保证 released 与 required
   // 同单位。
   currentTokens = 0,
+  // 261022 Red 窗口边界（拟修 B）：选段起点下界 = 最后活跃块在投影视图中的末尾。
+  // 0 = 全吞旧行为；边界越过可压段（latestUser 保护 / 消息末尾）时自动回退全吞。
+  // 每次压缩不再从会话首条消息改写历史——摘要冷输入与压后缓存全灭的结构性根源。
+  // 决策：docs/notes/proposed/architecture/2026-10-22-anchored-window-compaction.md
+  startFloor = 0,
 ): AutomaticPlan {
   // 261010 Red latestUser 口径必须与 commit 的保护一致：排除 queued（排队输入还不是
   // 「当前请求」，不能作为压缩边界，否则 selected 会罩住 commit 眼里的 latestUser，
@@ -84,9 +89,10 @@ export function planAutomatic(
     message.info.delivery !== "queued" &&
     message.parts.some((part) => part.type === "text" ? !part.synthetic && !part.ignored : part.type === "file"),
   )
-  const start = latestUser > 0 ? 0 : latestUser + 1
+  const baseStart = latestUser > 0 ? 0 : latestUser + 1
   const last = latestUser > 0 ? latestUser - 1 : messages.length - 3
-  if (last < start) throw new Error("No closed history is available for automatic compaction")
+  if (last < baseStart) throw new Error("No closed history is available for automatic compaction")
+  const start = startFloor > baseStart && startFloor <= last ? startFloor : baseStart
   // 261010 Red 固定前缀超预算时历史回收需求可能为负，不能因此只摘第一条 user。
   // 保护正文不算回收量；queued / 未完工具切断候选段，绝不交给模型再等 commit 拒收。
   const measured = messages.reduce((total, message) => total + measure(message), 0)
@@ -135,8 +141,9 @@ export function selectAutomatic(
   measure: (message: MessageV2.WithParts) => number,
   retained: (message: MessageV2.WithParts) => number = () => 0,
   currentTokens = 0,
+  startFloor = 0,
 ): MessageV2.WithParts[] {
-  return planAutomatic(messages, targetTokens, summaryMaxTokens, measure, retained, currentTokens).segment
+  return planAutomatic(messages, targetTokens, summaryMaxTokens, measure, retained, currentTokens, startFloor).segment
 }
 
 export function removeArtifacts(messages: MessageV2.WithParts[]) {

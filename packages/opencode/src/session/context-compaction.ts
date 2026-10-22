@@ -115,6 +115,20 @@ export function project(messages: MessageV2.WithParts[], blocks: Block[]): Messa
   })
 }
 
+// 261022 Red 窗口边界（拟修 B）：投影视图里最后一个活跃锚点之后即下一段可压历史。
+// 输入必须是投影后视图（生产路径 = NativeRuntime.project 的输出）——原始消息序里
+// sources 大多被投影移除，位置对不上。无活跃块时为 0（全吞）。决策：
+// docs/notes/proposed/architecture/2026-10-22-anchored-window-compaction.md
+export function windowBoundary(messages: MessageV2.WithParts[], blocks: Block[]): number {
+  if (!blocks.length) return 0
+  const anchors = new Set(blocks.map((block) => block.anchorID))
+  let last = -1
+  for (let index = 0; index < messages.length; index++) {
+    if (anchors.has(messages[index]!.info.id)) last = index
+  }
+  return last + 1
+}
+
 export function commit(input: CommitInput): Block[] {
   return Database.transaction((db) => {
     const prior = db.select().from(Table)

@@ -418,4 +418,19 @@ describe("native compression ledger", () => {
     })).toThrow("stale")
     expect(ContextCompaction.list(f.chat.id)).toEqual([])
   }))
+
+  // 261022 Red 窗口边界（拟修 B）：投影视图里最后一个活跃锚点之后才是下一段可压历史。
+  // 决策：docs/notes/proposed/architecture/2026-10-22-anchored-window-compaction.md
+  it.instance("marks the first message after the last active anchor as the window boundary", () => Effect.gen(function* () {
+    const f = yield* fixture()
+    expect(ContextCompaction.windowBoundary(f.messages, [])).toBe(0)
+    const block = ContextCompaction.commit({
+      sessionID: f.chat.id, messages: f.messages, limits, mode: "auto", requestID: "boundary-first",
+      ranges: [{ startId: f.user.id, endId: f.assistant.id, summary: "Earlier work." }],
+    })[0]!
+    const view = ContextCompaction.project(f.messages, ContextCompaction.list(f.chat.id))
+    // 投影视图 = [锚点渲染, last]：边界落在渲染之后，原始消息序不参与计算
+    expect(ContextCompaction.windowBoundary(view, [block])).toBe(1)
+    expect(ContextCompaction.windowBoundary(view, [])).toBe(0)
+  }))
 })
