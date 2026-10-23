@@ -19,3 +19,13 @@ test("schemas without properties and non-object args skip the check", () => {
   expect(ToolJsonSchema.unknownArgumentKeys(readSchema, "not-an-object")).toEqual([])
   expect(ToolJsonSchema.unknownArgumentKeys(readSchema, null)).toEqual([])
 })
+
+// 261023 Red Effect 4.0.5 把空 Struct 编码成 {not:{type:"null"}}（顶层无 type），
+// 严格网关（Step / GPT-6 Luna）拒整单请求。根节点必须兜底成对象 schema。
+test("empty Struct root falls back to an object schema", () => {
+  expect(ToolJsonSchema.fromSchema(Schema.Struct({}))).toEqual({
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    type: "object",
+    properties: {},
+  })
+})

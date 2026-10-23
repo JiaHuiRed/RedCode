@@ -17,8 +17,19 @@ export function fromSchema(schema: Schema.Top): JSONSchema7 {
   })
   const inlined = dropDefinitionsIfResolved(inlineLocalReferences(result))
   if (!isJsonSchema(inlined)) throw new Error("tool JSON Schema helper produced a non-schema value")
-  cache.set(schema, inlined)
-  return inlined
+  // 261023 Red Effect 4.0.5 把空 Struct 的编码从 anyOf[object,array]（normalize 的
+  // isEmptyStructUnion 分支能兜成 object）改成了 {not:{type:"null"}}（任意非 null 值），
+  // 顶层不再有 type——严格网关直接拒整单请求（`schema must be a JSON Schema of
+  // 'type: "object"', got 'type: "None"'`，Step / GPT-6 Luna 实证，ses_ffe5e999）。
+  // 工具参数在传输层永远是对象：根节点没有任何 schema 意图键时兜底补对象定义。
+  if (!isRecord(inlined) || hasSchemaIntent(inlined)) {
+    cache.set(schema, inlined)
+    return inlined
+  }
+  const { not: _, ...rest } = inlined
+  const withRoot: JSONSchema7 = { ...rest, type: "object", properties: {} }
+  cache.set(schema, withRoot)
+  return withRoot
 }
 
 export function fromTool(tool: Tool.Def): JSONSchema7 {
@@ -99,6 +110,25 @@ function normalize(value: unknown, options: { stripNull?: boolean } = {}): unkno
 
 function isRecord(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+// 顶层 schema 意图键：出现任一即认为根已经是明确的 schema 定义。故意不含 not——
+// Effect 4.0.5 的「任意值」编码 {not:{type:"null"}} 只带 not，正是要被兜底成对象的形态。
+const SCHEMA_INTENT_KEYS: readonly string[] = [
+  "type",
+  "properties",
+  "items",
+  "anyOf",
+  "oneOf",
+  "allOf",
+  "$ref",
+  "enum",
+  "const",
+  "prefixItems",
+]
+
+function hasSchemaIntent(schema: JsonObject): boolean {
+  return SCHEMA_INTENT_KEYS.some((key) => key in schema)
 }
 
 function isJsonSchema(value: unknown): value is JSONSchema7 {

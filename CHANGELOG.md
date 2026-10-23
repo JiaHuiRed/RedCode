@@ -8,6 +8,10 @@
 
 ---
 
+### [Unreleased]
+
+- **修复 Effect 4.0.5 空 Struct 编码导致的工具 schema 拒单**（`packages/opencode/src/tool/json-schema.ts`）：4.0.5 把空 `Schema.Struct({})` 的 JSON Schema 编码从 `anyOf[object,array]` 改成 `{not:{type:"null"}}`，顶层不再有 `type`——`todoread` / `plan` / `goal` done+clear 四个无参工具发到严格网关即被拒整单（`schema must be a JSON Schema of 'type: "object"', got 'type: "None"'`，Step / GPT-6 Luna 实证；261022 批次未跑 `parameters.test.ts` 守门测试）。`fromSchema` 在根节点没有任何 schema 意图键时兜底补对象定义（工具参数在传输层永远是对象）；补空 Struct 回归测试，`plan` 快照随修复复活。同批升级还伴生三类编码回归（`.check()` 约束静默丢弃、`additionalProperties` 松动、optional 内层 annotate 的 description 丢失），移交 Effect 编码审计批。验证：探针确认空 Struct 产出规范对象 schema；tool 三测试文件 90 pass（余 2 失败为存量债，stash 对照实证先于本改动）；opencode typecheck exit 0。决策见 [effect405-tool-schema-encoding](docs/notes/implemented/bug-fix/2026-10-23-effect405-tool-schema-encoding.md)。
+
 ### [0.12.19] - 2026-10-23
 
 - **依赖层统一 solid-js 单一实例，插件示例改走 api.keymap**（`packages/opencode/package.json`、`bun.lock`、`seed/plugins/tui-smoke.tsx`、`test/cli/tui/plugin-loader.test.ts`）：`packages/opencode` 的 solid-js 从 catalog 摘出钉 1.9.14，与 bun.lock 给 `@opentui/keymap` / `@opentui/solid` 单独解析的版本对齐——TUI 源码与两个 @opentui 包现在是同一实例（`.bun/solid-js@1.9.14` 单一路径），双实例并置消除；app / ui 仍走 catalog 1.9.17（独立构建目标，运行时不共享）。lock 变更 20 行、2009 installs no changes、无连带升级。安装时用 `bun install --minimum-release-age=0` 覆盖 bunfig 的 3 天策略：drizzle rc.5 / electron 44.9.3 / storybook 10.6.3 等 261022 批次版本仍在最小发布年龄窗口内，版本均已被 lock 钉死并经上批验证，未改 bunfig。插件侧 `tui-smoke.tsx` 不再 import `@opentui/keymap/solid` 的 `useBindings` / `useKeymapSelector`（双实例下这两个 hook 的 context 必炸），layer 改插件 init 时 `api.keymap.registerLayer` 常驻 + `enabled` 函数门控（按键时求值，语义与原 enabled accessor 等价），shortcuts 降级渲染期计算；plugin-loader fixture 同步删除 `has_keymap_solid` 探测与断言（extras 入口的 `has_create_binding_lookup` 已覆盖包解析性）。验证：dev 正常渲染；keymap / dialog / diff / plugin-loader 27 pass 0 fail；opencode typecheck exit 0；tui-smoke Transpiler 语法通过。决策见 [solid-dual-instance-keymap-context](docs/notes/implemented/bug-fix/2026-10-23-solid-dual-instance-keymap-context.md)。
