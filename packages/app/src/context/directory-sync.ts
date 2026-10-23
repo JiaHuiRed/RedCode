@@ -3,16 +3,15 @@ import { createStore, produce, reconcile } from "solid-js/store"
 import { Binary } from "@redcode-ai/core/util/binary"
 import { retry } from "@redcode-ai/core/util/retry"
 import {
-  clearSessionPrefetch,
   getSessionPrefetch,
   getSessionPrefetchPromise,
   setSessionPrefetch,
 } from "./global-sync/session-prefetch"
-import { useServerSync, type ServerSyncContext } from "./server-sync"
+import type { ServerSyncContext } from "./server-sync"
 import { trackForegroundMessageLoad } from "./foreground-loads"
 import { fetchMessageGap } from "./reconnect"
 import type { Message, OpencodeClient, Part } from "@redcode-ai/sdk/v2/client"
-import { SESSION_CACHE_LIMIT, dropSessionCaches, pickSessionCacheEvictions } from "./global-sync/session-cache"
+import { SESSION_CACHE_LIMIT } from "./global-sync/session-cache"
 import { diffs as list, message as clean } from "@/utils/diffs"
 import { compareTime } from "@/utils/id"
 import { pathKey } from "@/utils/path-key"
@@ -24,11 +23,9 @@ import {
   reconcileChangedMessages,
   removedMessageIDs,
 } from "./session-changes"
-import { useQueryClient } from "@tanstack/solid-query"
 import {
   HELD_MESSAGES_PER_SESSION,
   capMessageWindow,
-  clearMessageWindow,
   messageWindowLimit,
   setMessageWindowNewerGap,
 } from "./message-window"
@@ -46,7 +43,7 @@ function sortParts(parts: Part[]) {
   return [...reasoning, ...sorted.filter((part) => part.type !== "reasoning")]
 }
 
-function runInflight(map: Map<string, Promise<void>>, key: string, task: () => Promise<void>) {
+function runInflight<T>(map: Map<string, Promise<T>>, key: string, task: () => Promise<T>) {
   const pending = map.get(key)
   if (pending) return pending
   const promise = task().finally(() => {
@@ -217,10 +214,13 @@ function setOptimisticRemove(setStore: (...args: unknown[]) => void, input: Opti
   })
 }
 
-export const createDirSyncContext = (client: OpencodeClient, directory: string) => {
-  const globalSync: ServerSyncContext = useServerSync()
-  const queryClient = useQueryClient()
-
+export const createDirSyncContext = (
+  client: OpencodeClient,
+  rawDirectory: string,
+  globalSync: ServerSyncContext,
+  queryClient: ReturnType<typeof import("@tanstack/solid-query").useQueryClient>,
+) => {
+  const directory = pathKey(rawDirectory)
   type Child = ReturnType<(typeof globalSync)["child"]>
   type Setter = Child[1]
 
@@ -237,18 +237,16 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
   const initialMessagePageSize = 40
   const historyMessagePageSize = 80
   const inflight = new Map<string, Promise<void>>()
+  const inflightCatchups = new Map<
+    string,
+    ReturnType<ReturnType<typeof createSessionChangeJournal>["catchup"]>
+  >()
   const inflightDiff = new Map<string, Promise<void>>()
   const inflightTodo = new Map<string, Promise<void>>()
   const inflightGoal = new Map<string, Promise<void>>()
   // 260921 Red 审计回信 P2：消息分页的并发请求改成 join（原先静默丢弃，见 loadMessages）。
   const inflightMessagePages = new Map<string, Promise<void>>()
   const optimistic = new Map<string, Map<string, OptimisticItem>>()
-  // 261009 Red 30→10：消息去重 seen 集的内存乘数（每目录 40 会话缓存 + sidecar
-  // 每目录一整套 InstanceState/MCP 树），单项目用户用不满 30 个目录，多项目来回
-  // 切 10 个 LRU 也够。261011 Red：child-store 的目录数硬上限已退场（见
-  // global-sync/types.ts 注释），这里保留 10 作为数据层 seen 集的 LRU 目标。
-  const maxDirs = 10
-  const seen = new Map<string, Set<string>>()
   const changeJournals = new Map<string, ReturnType<typeof createSessionChangeJournal>>()
   const [meta, setMeta] = createStore({
     limit: {} as Record<string, number>,
@@ -257,6 +255,9 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
     newer: {} as Record<string, boolean>,
     loading: {} as Record<string, boolean>,
   })
+  let catchupSession!: (sessionID: string, active: () => boolean) => ReturnType<
+    ReturnType<typeof createSessionChangeJournal>["catchup"]
+  >
 
   const getSession = (sessionID: string) => {
     const store = current()[0]
@@ -307,26 +308,6 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
     ...(optimistic.get(keyFor(directory, sessionID))?.values() ?? []),
   ]
 
-  const seenFor = (directory: string) => {
-    const existing = seen.get(directory)
-    if (existing) {
-      seen.delete(directory)
-      seen.set(directory, existing)
-      return existing
-    }
-    const created = new Set<string>()
-    seen.set(directory, created)
-    while (seen.size > maxDirs) {
-      const first = seen.keys().next().value
-      if (!first) break
-      const stale = [...(seen.get(first) ?? [])]
-      seen.delete(first)
-      const [, setStore] = globalSync.child(first, { bootstrap: false })
-      evict(first, setStore, stale)
-    }
-    return created
-  }
-
   const clearMeta = (directory: string, sessionIDs: string[]) => {
     if (sessionIDs.length === 0) return
     for (const sessionID of sessionIDs) {
@@ -347,28 +328,15 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
     )
   }
 
-  const evict = (directory: string, setStore: Setter, sessionIDs: string[]) => {
+  const evict = (directory: string, sessionIDs: string[]) => {
     if (sessionIDs.length === 0) return
-    clearSessionPrefetch(directory, sessionIDs)
-    for (const sessionID of sessionIDs) {
-      globalSync.todo.set(sessionID, undefined)
-      clearMessageWindow(directory, sessionID)
-    }
-    setStore(
-      produce((draft) => {
-        dropSessionCaches(draft, sessionIDs)
-      }),
-    )
+    globalSync.sessionCache.evict(directory, sessionIDs)
     clearMeta(directory, sessionIDs)
   }
 
-  const touch = (directory: string, setStore: Setter, sessionID: string) => {
-    const stale = pickSessionCacheEvictions({
-      seen: seenFor(directory),
-      keep: sessionID,
-      limit: SESSION_CACHE_LIMIT,
-    })
-    evict(directory, setStore, stale)
+  const touch = (directory: string, sessionID: string) => {
+    const stale = globalSync.sessionCache.foreground(directory, sessionID)
+    evict(directory, stale)
   }
 
   const fetchMessages = async (input: {
@@ -399,7 +367,7 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
     }
   }
 
-  const tracked = (directory: string, sessionID: string) => seen.get(directory)?.has(sessionID) ?? false
+  const tracked = (directory: string, sessionID: string) => globalSync.sessionCache.hasForeground(directory, sessionID)
 
   const loadMessages = async (input: {
     directory: string
@@ -516,7 +484,7 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
     })
   }
 
-  return {
+  const context = {
     get data() {
       return current()[0]
     },
@@ -583,7 +551,7 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
         const [store, setStore] = globalSync.child(directory)
         const key = keyFor(directory, sessionID)
 
-        touch(directory, setStore, sessionID)
+        touch(directory, sessionID)
 
         const seeded = getSessionPrefetch(directory, sessionID)
         // 260829 cc 回填条件从「meta.limit 缺失」放宽成「meta.limit 比 prefetch 记的浅」。
@@ -603,6 +571,22 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
           })
         }
 
+        const hasSession = Binary.search(store.session, sessionID, (s) => s.id).found
+        const cached = store.message[sessionID] !== undefined && meta.limit[key] !== undefined
+        if (cached && hasSession && !opts?.force) return
+
+        if (changeJournals.get(key)?.cursor() === undefined) {
+          await catchupSession(sessionID, () => true)
+        }
+
+        if (
+          !opts?.force &&
+          store.message[sessionID] !== undefined &&
+          meta.limit[key] !== undefined &&
+          Binary.search(store.session, sessionID, (s) => s.id).found
+        )
+          return
+
         return runInflight(inflight, key, async () => {
           const pending = getSessionPrefetchPromise(directory, sessionID)
           if (pending) {
@@ -619,10 +603,6 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
               })
             }
           }
-
-          const hasSession = Binary.search(store.session, sessionID, (s) => s.id).found
-          const cached = store.message[sessionID] !== undefined && meta.limit[key] !== undefined
-          if (cached && hasSession && !opts?.force) return
 
           // 260830 Red 首次加载直接拉 200 条（对齐 layout/prefetch.ts 的 prefetchChunk）：
           // 原首屏只拉 40 条，随后 prefetch 异步合并全量会让行数 40→148 跳变，
@@ -671,7 +651,7 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
       async catchup(sessionID: string, active: () => boolean) {
         const key = keyFor(directory, sessionID)
         const [, setStore] = globalSync.child(directory, { bootstrap: false })
-        touch(directory, setStore, sessionID)
+        touch(directory, sessionID)
         const isCurrent = () => active() && tracked(directory, sessionID)
         let journal = changeJournals.get(key)
         if (!journal) {
@@ -890,14 +870,14 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
           changeJournals.set(key, journal)
           if (changeJournals.size > SESSION_CACHE_LIMIT) changeJournals.delete(changeJournals.keys().next().value!)
         }
-        return journal.catchup(isCurrent)
+        return runInflight(inflightCatchups, key, () => journal!.catchup(isCurrent))
       },
       invalidateChanges(sessionID: string) {
         changeJournals.get(keyFor(directory, sessionID))?.invalidate()
       },
       async diff(sessionID: string, opts?: { force?: boolean }) {
         const [store, setStore] = globalSync.child(directory)
-        touch(directory, setStore, sessionID)
+        touch(directory, sessionID)
         if (store.session_diff[sessionID] !== undefined && !opts?.force) return
 
         const key = keyFor(directory, sessionID)
@@ -914,7 +894,7 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
       },
       async todo(sessionID: string, opts?: { force?: boolean }) {
         const [store, setStore] = globalSync.child(directory)
-        touch(directory, setStore, sessionID)
+        touch(directory, sessionID)
         const existing = store.todo[sessionID]
         const cached = globalSync.data.session_todo[sessionID]
         if (existing !== undefined) {
@@ -943,7 +923,7 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
       // 跟着 evict/trim 走的东西。没钉目标时服务端 404，按「没有」写回，不是错误。
       async goal(sessionID: string) {
         const [, setStore] = globalSync.child(directory)
-        touch(directory, setStore, sessionID)
+        touch(directory, sessionID)
         const key = keyFor(directory, sessionID)
         return runInflight(inflightGoal, key, () =>
           client.session
@@ -980,7 +960,7 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
         },
         async loadMore(sessionID: string, count?: number) {
           const [, setStore] = globalSync.child(directory)
-          touch(directory, setStore, sessionID)
+          touch(directory, sessionID)
           const key = keyFor(directory, sessionID)
           const step = count ?? historyMessagePageSize
           // 260921 Red 审计回信 P2：原先这里和 loadMessages 各有一道 `if (meta.loading[key]) return`，
@@ -1008,7 +988,7 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
         },
         async loadNewer(sessionID: string, count?: number) {
           const [store, setStore] = globalSync.child(directory)
-          touch(directory, setStore, sessionID)
+          touch(directory, sessionID)
           const newest = store.message[sessionID]?.at(-1)
           if (!newest || !meta.newer[keyFor(directory, sessionID)]) return
           await loadMessages({
@@ -1028,7 +1008,7 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
             await inflightMessagePages.get(key)?.catch(() => undefined)
           }
           const [, setStore] = globalSync.child(directory)
-          touch(directory, setStore, sessionID)
+          touch(directory, sessionID)
           await loadMessages({
             directory,
             client,
@@ -1040,9 +1020,8 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
         },
       },
       evict(sessionID: string, _directory = directory) {
-        const [, setStore] = globalSync.child(_directory)
-        seenFor(_directory).delete(sessionID)
-        evict(_directory, setStore, [sessionID])
+        globalSync.sessionCache.forget(_directory, sessionID)
+        evict(_directory, [sessionID])
       },
       fetch: async (count = 10) => {
         const [store, setStore] = globalSync.child(directory)
@@ -1072,4 +1051,6 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
       return current()[0].path.directory
     },
   }
+  catchupSession = context.session.catchup
+  return context
 }

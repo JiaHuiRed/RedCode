@@ -1,9 +1,8 @@
 import { batch, createEffect, untrack } from "solid-js"
-import { produce, reconcile } from "solid-js/store"
+import { reconcile } from "solid-js/store"
 import type { Message, Session } from "@redcode-ai/sdk/v2/client"
 import { retry } from "@redcode-ai/core/util/retry"
 import {
-  clearSessionPrefetch,
   clearSessionPrefetchInflight,
   getSessionPrefetch,
   isSessionPrefetchCurrent,
@@ -11,9 +10,8 @@ import {
   setSessionPrefetch,
   shouldSkipSessionPrefetch,
 } from "@/context/global-sync/session-prefetch"
-import { dropSessionCaches, pickSessionCacheEvictions } from "@/context/global-sync/session-cache"
 import { foregroundMessageLoads } from "@/context/foreground-loads"
-import { pathKey } from "@/utils/path-key"
+import { pathKey, type PathKey } from "@/utils/path-key"
 
 type PrefetchQueue = {
   inflight: Set<string>
@@ -31,7 +29,7 @@ export function createPrefetch(deps: {
   globalSDK: ReturnType<typeof import("@/context/global-sdk").useGlobalSDK>
   route: () => unknown
 }) {
-  const { visibleSessionDirs, currentDir, sessionId, sessions, globalSync, globalSDK, route } = deps
+  const { visibleSessionDirs, sessionId, sessions, globalSync, globalSDK, route } = deps
 
   // 260907 ZCode 预取降载（GUI 性能审计问题 6）：chunk 从 200 降到 40。
   // 预取的职责是「点开秒有内容」——40 条足够首屏 paint，且载荷与前台刷新页同量级；
@@ -44,38 +42,11 @@ export function createPrefetch(deps: {
   const prefetchPendingLimit = 10
   const span = 4
   const prefetchToken = { value: 0 }
-  const prefetchQueues = new Map<string, PrefetchQueue>()
+  // 261023 Red 队列与可见集都以 pathKey 归一化目录为键，与 sessionCache 账本同一口径，
+  // 预取 revision 的写/查/清不再因目录别名（斜杠/尾分隔符）错位。
+  const prefetchQueues = new Map<PathKey, PrefetchQueue>()
   const PUMP_YIELD_MS = 250
   let pumpYieldTimer: ReturnType<typeof setTimeout> | undefined
-
-  const PREFETCH_MAX_SESSIONS_PER_DIR = 10
-  const prefetchedByDir = new Map<string, Set<string>>()
-
-  const lruFor = (directory: string) => {
-    const existing = prefetchedByDir.get(directory)
-    if (existing) return existing
-    const created = new Set<string>()
-    prefetchedByDir.set(directory, created)
-    return created
-  }
-
-  const markPrefetched = (directory: string, sessionID: string) => {
-    const lru = lruFor(directory)
-    return pickSessionCacheEvictions({
-      seen: lru,
-      keep: sessionID,
-      limit: PREFETCH_MAX_SESSIONS_PER_DIR,
-      preserve: sessionId() && pathKey(directory) === pathKey(currentDir()) ? [sessionId()!] : undefined,
-    })
-  }
-
-  createEffect(() => {
-    const active = new Set(visibleSessionDirs())
-    for (const directory of prefetchedByDir.keys()) {
-      if (active.has(directory)) continue
-      prefetchedByDir.delete(directory)
-    }
-  })
 
   createEffect(() => {
     route()
@@ -87,7 +58,7 @@ export function createPrefetch(deps: {
   })
 
   createEffect(() => {
-    const visible = new Set(visibleSessionDirs())
+    const visible = new Set(visibleSessionDirs().map(pathKey))
     for (const [directory, q] of prefetchQueues) {
       if (visible.has(directory)) continue
       q.pending.length = 0
@@ -96,7 +67,7 @@ export function createPrefetch(deps: {
     }
   })
 
-  const queueFor = (directory: string) => {
+  const queueFor = (directory: PathKey) => {
     const existing = prefetchQueues.get(directory)
     if (existing) return existing
 
@@ -150,7 +121,7 @@ export function createPrefetch(deps: {
             const items = (messages.data ?? []).filter((x: any) => !!x?.info?.id)
             const next = items.map((x: any) => x.info).filter((m: any): m is Message => !!m?.id)
             const sorted = mergeByID([], next)
-            const stale = markPrefetched(directory, sessionID)
+            const stale = globalSync.sessionCache.prefetch(directory, sessionID)
             const cursor = messages.response.headers.get("x-next-cursor") ?? undefined
             const meta = {
               limit: sorted.length,
@@ -159,12 +130,7 @@ export function createPrefetch(deps: {
               at: Date.now(),
             }
 
-            if (stale.length > 0) {
-              clearSessionPrefetch(directory, stale)
-              for (const id of stale) {
-                globalSync.todo.set(id, undefined)
-              }
-            }
+            if (stale.length > 0) globalSync.sessionCache.evict(directory, stale)
 
             const current = store.message[sessionID] ?? []
             const merged = mergeByID(
@@ -175,14 +141,6 @@ export function createPrefetch(deps: {
             if (!isSessionPrefetchCurrent(directory, sessionID, rev)) return
 
             batch(() => {
-              if (stale.length > 0) {
-                setStore(
-                  produce((draft: any) => {
-                    dropSessionCaches(draft, stale)
-                  }),
-                )
-              }
-
               setStore("message", sessionID, reconcile(merged, { key: "id" }))
 
               for (const message of items) {
@@ -206,7 +164,7 @@ export function createPrefetch(deps: {
     })
   }
 
-  const pumpPrefetch = (directory: string) => {
+  const pumpPrefetch = (directory: PathKey) => {
     const q = queueFor(directory)
     if (q.running >= prefetchConcurrency) return
 
@@ -239,8 +197,8 @@ export function createPrefetch(deps: {
   }
 
   const prefetchSession = (session: Session, priority: "high" | "low" = "low") => {
-    const directory = session.directory
-    if (!directory) return
+    if (!session.directory) return
+    const directory = pathKey(session.directory)
 
     const [store] = globalSync.child(directory, { bootstrap: false })
     const cached = untrack(() => {
@@ -265,9 +223,7 @@ export function createPrefetch(deps: {
       return
     }
 
-    const lru = lruFor(directory)
-    const known = lru.has(session.id)
-    if (!known && lru.size >= PREFETCH_MAX_SESSIONS_PER_DIR && priority !== "high") return
+    if (!globalSync.sessionCache.canPrefetch(directory, session.id) && priority !== "high") return
 
     if (priority === "high") q.pending.unshift(session.id)
     if (priority !== "high") q.pending.push(session.id)

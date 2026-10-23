@@ -42,7 +42,7 @@ import {
 import { createChildStoreManager } from "./global-sync/child-store"
 import { applyDirectoryEvent, applyGlobalEvent, cleanupDroppedSessionCaches } from "./global-sync/event-reducer"
 import { feedPetEvent } from "@/pet/pet-store"
-import { clearSessionPrefetchDirectory } from "./global-sync/session-prefetch"
+import { clearSessionPrefetch, clearSessionPrefetchDirectory } from "./global-sync/session-prefetch"
 import { estimateRootSessionTotal, loadRootSessionsWithFallback } from "./global-sync/session-load"
 import { trimSessions } from "./global-sync/session-trim"
 import type { ProjectMeta } from "./global-sync/types"
@@ -59,6 +59,8 @@ import { createDirSyncContext } from "./directory-sync"
 import { anonKey, guiDiagnostics } from "./gui-diagnostics"
 import { createSimpleContext, NormalizedProviderListResponse } from "@redcode-ai/ui/context"
 import { createRefCountMap } from "@/utils/refcount"
+import { createSessionCacheLedger, dropSessionCaches } from "./global-sync/session-cache"
+import { clearMessageWindow } from "./message-window"
 
 type GlobalStore = {
   ready: boolean
@@ -125,6 +127,7 @@ export function createServerSyncContext() {
   const booting = new Map<string, Promise<void>>()
   const sessionLoads = new Map<string, Promise<void>>()
   const sessionMeta = new Map<string, { limit: number }>()
+  const sessionCacheLedger = createSessionCacheLedger(directoryKey)
 
   const sdkFor = (directory: string) => {
     const key = directoryKey(directory)
@@ -360,6 +363,7 @@ export function createServerSyncContext() {
       sessionMeta.delete(key)
       sdkCache.delete(key)
       clearSessionPrefetchDirectory(key)
+      sessionCacheLedger.forgetDirectory(key)
       // 260706 Red 目录淘汰只清了客户端缓存，服务端 InstanceState(MCP/LSP/watcher 整套
       //   子进程)从没人告诉它可以关——常驻 GUI 碰过的每个目录都会永久攒一份子进程树。
       //   这里补调现成的 /instance/dispose，忽略失败（实例可能已经不在了）。
@@ -373,6 +377,41 @@ export function createServerSyncContext() {
       provider: globalStore.provider,
     },
   })
+
+  const evictSessionCachePayloads = (directory: string, sessionIDs: Iterable<string>) => {
+    const key = directoryKey(directory)
+    const ids = [...sessionIDs]
+    if (ids.length === 0) return
+    clearSessionPrefetch(key, ids)
+    for (const sessionID of ids) {
+      setSessionTodo(sessionID, undefined)
+      clearMessageWindow(key, sessionID)
+    }
+    const child = children.children[key]
+    if (child) child[1](produce((draft) => dropSessionCaches(draft, ids)))
+  }
+
+  const sessionCache = {
+    prefetch(directory: string, sessionID: string) {
+      return sessionCacheLedger.prefetch(directoryKey(directory), sessionID)
+    },
+    canPrefetch(directory: string, sessionID: string) {
+      return sessionCacheLedger.canPrefetch(directoryKey(directory), sessionID)
+    },
+    hasForeground(directory: string, sessionID: string) {
+      return sessionCacheLedger.hasForeground(directoryKey(directory), sessionID)
+    },
+    foreground(directory: string, sessionID: string) {
+      return sessionCacheLedger.foreground(directoryKey(directory), sessionID)
+    },
+    forget(directory: string, sessionID: string) {
+      sessionCacheLedger.forget(directoryKey(directory), sessionID)
+    },
+    forgetDirectory(directory: string) {
+      sessionCacheLedger.forgetDirectory(directoryKey(directory))
+    },
+    evict: evictSessionCachePayloads,
+  }
 
   async function loadSessions(directory: string) {
     const key = directoryKey(directory)
@@ -658,6 +697,8 @@ export function createServerSyncContext() {
     },
     child: children.child,
     peek: children.peek,
+    sessionCache,
+    queryClient,
     queryOptions: queryOptionsApi,
     // 需要「未连接的厂商」的界面（连接对话框、popular 列表、设置页）在挂载时调一次。
     // 空闲预取通常已经跑过了，这句是覆盖「刚启动就点开连接对话框」那个窗口。
@@ -680,7 +721,7 @@ export const { use: useServerSync, provider: ServerSyncProvider } = createSimple
     return {
       ...sync,
       createDirSyncContext: createRefCountMap((dir) =>
-        createDirSyncContext(serverSDK.createClient({ directory: dir, throwOnError: true }), dir),
+        createDirSyncContext(serverSDK.createClient({ directory: dir, throwOnError: true }), dir, sync, sync.queryClient),
       ),
     }
   },

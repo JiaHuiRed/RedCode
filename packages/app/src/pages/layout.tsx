@@ -30,7 +30,6 @@ import { createStore, produce, reconcile } from "solid-js/store"
 import { showToast, Toast, toaster } from "@redcode-ai/ui/toast"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { clearWorkspaceTerminals, getTerminalServerScope } from "@/context/terminal"
-import { dropSessionCaches, pickSessionCacheEvictions } from "@/context/global-sync/session-cache"
 import {
   clearSessionPrefetchInflight,
   clearSessionPrefetch,
