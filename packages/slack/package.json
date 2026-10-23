@@ -1,6 +1,6 @@
 {
   "name": "@redcode-ai/slack",
-  "version": "0.12.18",
+  "version": "0.12.19",
   "type": "module",
   "license": "MIT",
   "scripts": {
