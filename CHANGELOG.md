@@ -10,6 +10,8 @@
 
 ### [Unreleased]
 
+- **压缩参数随长会话审计校准**（`seed/redcode.home.jsonc` 模板）：26 个长会话 60 次干净压缩事件实测（触发水位中位 343k、重建中位 149k、R/C 0.43、单次冷开销 262k、回本 14.7 请求、压缩开销约占长会话成本 10%）——手动甜点位 340–360k，400k 兜底合理，早于 300k 回本恶化 50%。模板 `target_tokens` 120k→110k 试降观察（压后起步更轻），TUI/GUI 颜色线随甜点位校准：320k 黄→340k（`soft_ratio` 0.85）、360k 橙→370k（`prune_ratio` 0.925）、400k 红不变。live 与 local 层同步（`soft_ratio`/`prune_ratio` local 未显式配置不涉遮蔽）。验证：三份配置 jsonc 解析全绿；doctor config ok；配置缓存永久，重启进程生效。
+
 - **修复 Effect 4.0.5 空 Struct 编码导致的工具 schema 拒单**（`packages/opencode/src/tool/json-schema.ts`、`test/tool/parameters.test.ts`）：4.0.5 把空 `Schema.Struct({})` 的 JSON Schema 编码从 `anyOf[object,array]` 改成 `{not:{type:"null"}}`，顶层不再有 `type`——`todoread` / `plan` / `goal` done+clear 四个无参工具发到严格网关即被拒整单（`schema must be a JSON Schema of 'type: "object"', got 'type: "None"'`，Step / GPT-6 Luna 实证；261022 批次未跑 `parameters.test.ts` 守门测试）。`fromSchema` 在根节点没有任何 schema 意图键时兜底补对象定义（工具参数在传输层永远是对象）；补空 Struct 回归测试，`plan` 快照随修复复活。同批完成 4.0.5 编码审计：`.check()` 约束不再编入 wire（仅 context.ts 一处受影响，运行时解码兜底，测试改钉现状）、bash 快照再生（补 shell 字段欠账）、勘误一处探针误报（description 实际无丢失）。验证：探针确认空 Struct 产出规范对象 schema；parameters / json-schema 测试全绿；opencode typecheck exit 0。决策见 [effect405-tool-schema-encoding](docs/notes/implemented/bug-fix/2026-10-23-effect405-tool-schema-encoding.md)。
 
 ### [0.12.19] - 2026-10-23
