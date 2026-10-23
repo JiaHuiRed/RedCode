@@ -1,12 +1,22 @@
-import { type CliRenderer } from "@opentui/core"
+import { type CliRenderer, type KeyEvent, type Renderable } from "@opentui/core"
 import * as addons from "@opentui/keymap/addons/opentui"
-import { stringifyKeyStroke } from "@opentui/keymap"
+import { type Keymap, stringifyKeyStroke } from "@opentui/keymap"
 import {
   formatCommandBindings as formatCommandBindingsExtra,
   formatKeySequence as formatKeySequenceExtra,
 } from "@opentui/keymap/extras"
-import { KeymapProvider, useKeymap, useKeymapSelector, useBindings } from "@opentui/keymap/solid"
-import { createMemo, type Accessor } from "solid-js"
+import type { UseBindingsLayer } from "@opentui/keymap/solid"
+import {
+  createContext,
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  onMount,
+  useContext,
+  type Accessor,
+  type ParentProps,
+} from "solid-js"
 import type { TuiConfig } from "./config/tui"
 import { useTuiConfig } from "./context/tui-config"
 import { TuiKeybind } from "./config/keybind"
@@ -17,12 +27,86 @@ export const COMMAND_PALETTE_COMMAND = "command.palette.show"
 
 const OPENCODE_MODE_KEY = "opencode.mode"
 
-export const OpencodeKeymapProvider = KeymapProvider
-export const useOpencodeKeymap = useKeymap
+export type OpenTuiKeymap = Keymap<Renderable, KeyEvent>
 
-export { useBindings, useKeymapSelector }
+// 261023 Red keymap 0.5.7 的 solid 入口在 bun.lock 里单独解析到 solid-js@1.9.14，
+// 而 TUI 源码跑在 catalog 的 1.9.17——两个实例的 context 栈互不相通，
+// KeymapProvider 压的值 useKeymap 读不到（"Keymap not found"，dev 与
+// dialog-soul / keymap-enabled-lazy 测试均复现）。改为在 TUI 侧自建 context，
+// 下面三个 hook 按 keymap 0.5.7 src/solid/index.ts 的行为复刻，只把「取 keymap」
+// 那一步换成本 context。依赖树统一 solid-js 单版本后可直接回退成 re-export。
+const KeymapContext = createContext<OpenTuiKeymap>()
 
-export type OpenTuiKeymap = ReturnType<typeof useKeymap>
+export function OpencodeKeymapProvider(props: ParentProps<{ keymap: OpenTuiKeymap }>) {
+  return <KeymapContext.Provider value={props.keymap}>{props.children}</KeymapContext.Provider>
+}
+
+export function useOpencodeKeymap() {
+  const keymap = useContext(KeymapContext)
+  if (!keymap) throw new Error("Keymap not found. Wrap the tree in <OpencodeKeymapProvider>.")
+  return keymap
+}
+
+function useKeymapStateVersion(keymap: OpenTuiKeymap) {
+  const [version, setVersion] = createSignal(0)
+  let dispose: (() => void) | undefined
+  onMount(() => {
+    dispose = keymap.on("state", () => setVersion((value) => value + 1))
+    setVersion((value) => value + 1)
+  })
+  onCleanup(() => {
+    dispose?.()
+  })
+  return version
+}
+
+export function useKeymapSelector<T>(selector: (keymap: OpenTuiKeymap) => T): Accessor<T> {
+  const keymap = useOpencodeKeymap()
+  const version = useKeymapStateVersion(keymap)
+  return createMemo((previous) => {
+    version()
+    try {
+      return selector(keymap)
+    } catch (error) {
+      if (
+        previous !== undefined &&
+        error instanceof Error &&
+        error.message === "Cannot use a keymap after its host was destroyed"
+      ) {
+        return previous
+      }
+      throw error
+    }
+  })
+}
+
+export function useBindings<TRenderable extends Renderable = Renderable>(
+  createLayer: () => UseBindingsLayer<TRenderable>,
+) {
+  const keymap = useOpencodeKeymap()
+  createEffect(() => {
+    const layer = createLayer()
+    const hasExplicitTarget = layer.target !== undefined
+    const explicitTarget = layer.target?.() ?? undefined
+    const nextTargetMode = layer.targetMode ?? (hasExplicitTarget ? "focus-within" : undefined)
+    const { target: _target, targetMode: _targetMode, ...baseLayer } = layer
+    if (!nextTargetMode) {
+      const dispose = keymap.registerLayer({ ...baseLayer })
+      onCleanup(() => {
+        dispose()
+      })
+      return
+    }
+    if (!hasExplicitTarget) {
+      throw new Error("useBindings local bindings need a target accessor")
+    }
+    if (!explicitTarget) return
+    const dispose = keymap.registerLayer({ ...baseLayer, target: explicitTarget, targetMode: nextTargetMode })
+    onCleanup(() => {
+      dispose()
+    })
+  })
+}
 type OpencodeModeStack = ReturnType<typeof createOpencodeModeStack>
 type CommandSlashEntry = {
   display: string
