@@ -606,6 +606,14 @@ export function filterGlobalEvents(
         response.once("drain", onDrain)
       }
     }
+    // 261023 Red 先排空完整帧再查残余。旧顺序在 data 里「先查后排」：上游单个 chunk
+    // 含大量合法小帧时，pending 一超限整条连接就被误判为超大单帧断开。排空后剩下的
+    // 只是不完整尾帧，那才是真正的单帧体积；waitingForDrain 时 upstream 已 pause，
+    // pending 不会再增长，故跳过。三个调用点（data / end / onDrain）由此统一受益。
+    if (!closed && !waitingForDrain && pending.length > MAX_SSE_FRAME_BYTES) {
+      overflow()
+      return
+    }
     if (!closed && !waitingForDrain && ended) finish()
     if (!closed && !waitingForDrain && !ended) upstream.resume()
   }
@@ -618,12 +626,8 @@ export function filterGlobalEvents(
   }
   upstream.on("data", (chunk: Buffer) => {
     pending += decoder.write(chunk)
-    if (pending.length > MAX_SSE_FRAME_BYTES) {
-      // pending 是解码后的字符串，length 是 UTF-16 码元数——与字节上限有 ≤2 倍偏差，对
-      // 防御目的等价。断连清理与 upstream error / response close 路径保持一致。
-      overflow()
-      return
-    }
+    // 261023 Red 尺寸检查已挪进 processPending 末尾（先排空完整帧再查残余），
+    // 这里不再先查——否则单个大 chunk 里的合法小帧会被误判为超大单帧。
     processPending()
   })
   upstream.once("end", () => {

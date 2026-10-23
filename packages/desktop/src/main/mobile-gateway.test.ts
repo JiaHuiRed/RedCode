@@ -168,6 +168,73 @@ describe("mobile gateway proxy", () => {
     expect(response.ends).toBe(0)
   })
 
+  // 261023 Red SSE 单帧上限的顺序回归：尺寸检查必须发生在排空完整帧之后。
+  // 旧顺序在 data 里「先查后排」，上游单个 chunk 含大量合法小帧时整条连接被误断。
+  const sseMocks = () => {
+    const upstream = new EventEmitter() as EventEmitter & {
+      pause: () => void
+      resume: () => void
+      destroy: () => void
+      paused: number
+    }
+    upstream.paused = 0
+    upstream.pause = () => upstream.paused++
+    upstream.resume = () => {}
+    const state = { upstreamDestroyed: false, responseDestroyed: false, ends: 0 }
+    upstream.destroy = () => {
+      state.upstreamDestroyed = true
+    }
+    const writes: string[] = []
+    const response = new EventEmitter() as EventEmitter & {
+      write: (chunk: string) => boolean
+      end: () => void
+      destroy: () => void
+    }
+    response.write = (chunk) => {
+      writes.push(chunk)
+      return true
+    }
+    response.end = () => state.ends++
+    response.destroy = () => {
+      state.responseDestroyed = true
+    }
+    filterGlobalEvents(
+      upstream as IncomingMessage,
+      response as unknown as ServerResponse,
+      "C:\\work",
+      { sessions: new Set(), questions: new Set() },
+      new AbortController(),
+      () => {},
+    )
+    return { upstream, writes, state }
+  }
+
+  test("one large chunk of many small SSE frames is drained, not disconnected", () => {
+    const { upstream, writes, state } = sseMocks()
+    // 每帧约 1KB，1100 帧 ≈ 1.15MB —— 单个 chunk 就超过 MAX_SSE_FRAME_BYTES
+    const frames = Array.from({ length: 1100 }, (_, id) =>
+      `data: ${JSON.stringify({ directory: "C:\\work", payload: { id, pad: "x".repeat(1000) } })}\n\n`,
+    )
+
+    upstream.emit("data", Buffer.from(frames.join("")))
+
+    expect(state.upstreamDestroyed).toBe(false)
+    expect(state.responseDestroyed).toBe(false)
+    expect(writes).toEqual(frames)
+  })
+
+  test("an unterminated SSE frame larger than the cap still disconnects", () => {
+    const { upstream, writes, state } = sseMocks()
+    // 没有结尾分隔符：排空后残余就是它本身，仍应触发单帧上限
+    const huge = `data: ${JSON.stringify({ directory: "C:\\work", payload: { pad: "x".repeat(1024 * 1024 + 16) } })}`
+
+    upstream.emit("data", Buffer.from(huge))
+
+    expect(state.upstreamDestroyed).toBe(true)
+    expect(state.responseDestroyed).toBe(true)
+    expect(writes).toEqual([])
+  })
+
   test("end during backpressure waits for a repeated tail-frame drain", () => {
     const upstream = new EventEmitter() as EventEmitter & {
       pause: () => void
