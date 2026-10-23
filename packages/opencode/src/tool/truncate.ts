@@ -46,6 +46,30 @@ export interface ResultOutput<T extends Attachment = Attachment> {
   }
 }
 
+/**
+ * 261023 Red 按工具点名恢复旋钮（借鉴 Step-Code `step/tool-profile.ts:205-223` 的
+ * STEP_TRUNCATION_HINTS）。通用提示只说「用 Grep 搜全文」，对刚被 grep 截断的模型是循环
+ * 指令——它需要的是「把 pattern 收窄」。每个条目只写该工具自己的收窄参数；未收录的工具
+ * 回落通用提示，行为不变。
+ */
+const RECOVERY_KNOBS: Readonly<Record<string, string>> = {
+  read: "Call read again with a narrower offset/limit window.",
+  grep: "Narrow the pattern, add an include filter, or search a narrower path, then call grep again.",
+  glob: "Narrow the glob pattern or path, then call glob again.",
+  ast_grep: "Narrow the pattern or path, then call ast_grep again.",
+  bash: "Narrow the command output (for example with head/tail or a redirect), then run it again.",
+  webfetch: "Fetch a narrower URL, or reduce the response with the format option.",
+  websearch: "Use a more specific query, then call websearch again.",
+}
+
+/** 截断提示：先点名本工具的收窄旋钮（若有），再给通用的落盘恢复路径。 */
+function recoveryHint(tool: string | undefined, agent?: Agent.Info) {
+  const knob = tool === undefined ? undefined : RECOVERY_KNOBS[tool]
+  const recovery = hasTaskTool(agent)
+    ? "Use the Task tool to have explore agent process this file with Grep and Read (with offset/limit). Do NOT read the full file yourself - delegate to save context."
+    : "Use Grep to search the full content or Read with offset/limit to view specific sections."
+  return knob === undefined ? recovery : `${knob}\n${recovery}`
+}
 function hasTaskTool(agent?: Agent.Info) {
   if (!agent?.permission) return false
   return evaluate("task", "*", agent.permission).action !== "deny"
@@ -65,11 +89,11 @@ export interface Interface {
    *
    * 260923 Red 决策记录：docs/notes/implemented/feature/2026-09-23-tool-result-token-budget.md
    */
-  readonly result: (
-    input: { output: string; attachments?: Attachment[]; outputPath?: string },
-    options?: { model?: { providerID: string } },
-    agent?: Agent.Info,
-  ) => Effect.Effect<ResultOutput>
+ readonly result: (
+   input: { output: string; attachments?: Attachment[]; outputPath?: string },
+   options?: { model?: { providerID: string }; tool?: string },
+   agent?: Agent.Info,
+ ) => Effect.Effect<ResultOutput>
   /**
    * Resolved truncation limits: values from `tool_output` in redcode config, or MAX_LINES / MAX_BYTES if unset.
    */
@@ -187,7 +211,7 @@ export const layer = Layer.effect(
 
     const result = Effect.fn("Truncate.result")(function* (
       input: { output: string; attachments?: Attachment[]; outputPath?: string },
-      options: { model?: { providerID: string } } = {},
+      options: { model?: { providerID: string }; tool?: string } = {},
       agent?: Agent.Info,
     ) {
       const attachments = input.attachments ?? []
@@ -208,9 +232,7 @@ export const layer = Layer.effect(
           : undefined,
       ].filter((line): line is string => line !== undefined)
 
-      const hint = hasTaskTool(agent)
-        ? "Use the Task tool to have explore agent process this file with Grep and Read (with offset/limit). Do NOT read the full file yourself - delegate to save context."
-        : "Use Grep to search the full content or Read with offset/limit to view specific sections."
+      const hint = recoveryHint(options.tool, agent)
       const notice = `The tool call succeeded but the output was truncated to fit the model-visible token budget. ${saved.join(" ")}\n${hint}`
 
       // notice 本身也进模型上下文，带着它重新 fit 一遍，别让提示把总账顶过线

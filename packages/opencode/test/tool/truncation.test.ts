@@ -446,6 +446,51 @@ describe("Truncate", () => {
         expect(yield* fsys.readFileString(outputPath)).toBe(full)
       }),
     )
+    // 261023 Red 截断提示按工具点名收窄参数（借鉴 Step-Code STEP_TRUNCATION_HINTS）：
+    // grep 被截断时，通用提示「用 Grep 搜全文」是循环指令，模型需要的是「把 pattern 收窄」。
+    it.live("names the truncated tool's own narrowing knobs", () =>
+      Effect.gen(function* () {
+        const svc = yield* Truncate.Service
+        const result = yield* svc.result(
+          { output: "x".repeat(80_000) },
+          { model: { providerID: "deepseek" }, tool: "grep" },
+        )
+
+        expect(result.metadata.truncated).toBe(true)
+        expect(result.output).toContain("Narrow the pattern")
+        expect(result.output).toContain("model-visible token budget")
+      }),
+    )
+
+    it.live("falls back to the generic hint for tools without knobs", () =>
+      Effect.gen(function* () {
+        const svc = yield* Truncate.Service
+        const result = yield* svc.result(
+          { output: "x".repeat(80_000) },
+          { model: { providerID: "deepseek" }, tool: "some_future_tool" },
+        )
+
+        expect(result.metadata.truncated).toBe(true)
+        expect(result.output).not.toContain("Narrow the")
+        expect(result.output).toContain("Use Grep to search the full content")
+      }),
+    )
+
+    it.live("keeps the knob alongside Task delegation when the agent may delegate", () =>
+      Effect.gen(function* () {
+        const svc = yield* Truncate.Service
+        const agent = { permission: [{ permission: "task", pattern: "*", action: "allow" as const }] }
+        const result = yield* svc.result(
+          { output: "x".repeat(80_000) },
+          { model: { providerID: "deepseek" }, tool: "read" },
+          agent as any,
+        )
+
+        expect(result.metadata.truncated).toBe(true)
+        expect(result.output).toContain("narrower offset/limit")
+        expect(result.output).toContain("Task tool")
+      }),
+    )
   })
 
   describe("cleanup", () => {

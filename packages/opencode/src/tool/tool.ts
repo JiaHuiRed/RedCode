@@ -171,7 +171,7 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
               attachments: result.attachments,
               ...(typeof result.metadata.outputPath === "string" ? { outputPath: result.metadata.outputPath } : {}),
             },
-            { model: ctx.extra?.model as { providerID: string } | undefined },
+            { model: ctx.extra?.model as { providerID: string } | undefined, tool: id },
             agent,
           )
           return {
