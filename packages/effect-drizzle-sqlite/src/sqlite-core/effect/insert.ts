@@ -5,7 +5,7 @@ import { entityKind, is } from "drizzle-orm/entity"
 import type { SelectResultFields } from "drizzle-orm/query-builders/select.types"
 import type { RunnableQuery } from "drizzle-orm/runnable-query"
 import type { Query, SQLWrapper } from "drizzle-orm/sql/sql"
-import { Param, SQL, sql } from "drizzle-orm/sql/sql"
+import { SQL, sql } from "drizzle-orm/sql/sql"
 import type { SQLiteDialect } from "drizzle-orm/sqlite-core/dialect"
 import type { IndexColumn } from "drizzle-orm/sqlite-core/indexes"
 import type {
@@ -153,12 +153,14 @@ export class SQLiteEffectInsertBuilder<
     if (values.length === 0) {
       throw new Error("values() must be called with at least one value")
     }
+    // 261023 Red 不要在这里预包 Param。上游 InsertBuilder.values() 把值原样交给
+    // dialect（sqlite-core/query-builders/insert.js:30），由 buildInsertQuery 的
+    // ValueRows 统一包装；提前包一层会被二次包装，sqlToQuery 只剥一层，params 里
+    // 留下 Param 对象本身，驱动绑不动 → EffectDrizzleQueryError。
     const mappedValues = values.map((entry) => {
-      const result: Record<string, Param | SQL> = {}
-      const cols = getTableColumnsRuntime(this.table)
+      const result: Record<string, unknown> = {}
       for (const colKey of Object.keys(entry)) {
-        const colValue = entry[colKey as keyof typeof entry]
-        result[colKey] = is(colValue, SQL) ? colValue : new Param(colValue, cols[colKey])
+        result[colKey] = entry[colKey as keyof typeof entry]
       }
       return result
     })
