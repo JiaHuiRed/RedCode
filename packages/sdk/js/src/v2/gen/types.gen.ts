@@ -633,9 +633,11 @@ export type SessionStatus =
         link?: string
       }
       next: number
+      since?: number
     }
   | {
       type: "busy"
+      since?: number
     }
 
 export type Goal = {
@@ -2080,6 +2082,15 @@ export type Config = {
     toolInputGuard?: {
       maxPendingCalls?: number
       idleMs?: number
+    }
+    /**
+     * Warn when a background child task sits in one busy/retry segment past this duration; never aborts on its own.
+     */
+    childStall?: {
+      /**
+       * Warn (never abort) when a child task stays in the same busy/retry segment longer than this many milliseconds (default: 360000).
+       */
+      warnMs?: number
     }
     /**
      * Timeout in milliseconds for model context protocol (MCP) requests

@@ -14005,6 +14005,11 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              "since": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
               }
             },
             "required": ["type", "attempt", "message", "next"],
@@ -14016,6 +14021,11 @@
               "type": {
                 "type": "string",
                 "enum": ["busy"]
+              },
+              "since": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
               }
             },
             "required": ["type"],
@@ -17405,6 +17415,19 @@
                   }
                 },
                 "additionalProperties": false
+              },
+              "childStall": {
+                "type": "object",
+                "properties": {
+                  "warnMs": {
+                    "type": "integer",
+                    "minimum": 30000,
+                    "maximum": 3600000,
+                    "description": "Warn (never abort) when a child task stays in the same busy/retry segment longer than this many milliseconds (default: 360000)."
+                  }
+                },
+                "additionalProperties": false,
+                "description": "Warn when a background child task sits in one busy/retry segment past this duration; never aborts on its own."
               },
               "mcp_timeout": {
                 "type": "integer",

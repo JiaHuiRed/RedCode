@@ -10,6 +10,8 @@
 
 ### [Unreleased]
 
+- **SDK 重新生成**（`packages/sdk`）：`openapi.json` 与 `sdk/js/src/v2/gen` 同步本批两个新字段——`SessionStatus.retry/busy` 的可选 `since`（状态段起点，卡死警告的时长判据）与 `Config.experimental.childStall.warnMs`（默认 360000）。pre-push 的 openapi-drift 自检拦截后两条生成命令均已执行，逐字节一致（759901 字符）。
+
 - **子代理卡死改为可见警告，cancel 归位残留状态**（`packages/opencode/src/session/status.ts`、`background/job.ts`、`tool/task_status.ts`、`config/child-stall.ts`）：模型额度耗尽后重试循环（无 retry-after 头每次挂满 75s 首事件超时，有头单次放行最长 10 分钟）让子代理任务 running 长达 27 分钟，`task_status` 只回 "Task is still running."，主对话无从判断该不该取消、只能盲目轮询。现在 busy/retry 状态带段起点 `since`（打点收在 `SessionStatus.set`，同类型重写保留起点，写入点零改动）；`task_status` 在 retry 段带出 `attempt N/10` 与原因，同一状态段超过 `experimental.childStall.warnMs`（默认 6 分钟）追加警告——只警告不终止，长工具/长推理也可能触发，判断权留给主对话。`cancelTree` 返回已取消任务 id，cancel 后把 fiber 中断跑不到收尾的残留 busy/retry 归位 idle，TUI 的"等待模型响应"spinner 不再永久旋转（任务表已 cancelled 而界面仍在转，261023 实证）。模型可见四问：①`task_status.md` 加一句警告说明，工具输出在超限时多一段固定格式警告；②描述 +1 句约 60 tokens（仅加载该工具的会话）；③tools 段的 task_status 描述变更使该段起前缀作废一次；④警告文本固定有界，无新注入面。验证：opencode typecheck 通过（tsgo 崩溃回退 TS 5.9.3），task_status 13 pass / task 26 pass / task-runtime 8 pass。决策见 [child-task-stall-warning](docs/notes/implemented/bug-fix/2026-10-23-child-task-stall-warning.md)。
 
 - **压缩参数随长会话审计校准**（`seed/redcode.home.jsonc` 模板）：26 个长会话 60 次干净压缩事件实测（触发水位中位 343k、重建中位 149k、R/C 0.43、单次冷开销 262k、回本 14.7 请求、压缩开销约占长会话成本 10%）——手动甜点位 340–360k，400k 兜底合理，早于 300k 回本恶化 50%。模板 `target_tokens` 120k→110k 试降观察（压后起步更轻），TUI/GUI 颜色线随甜点位校准：320k 黄→340k（`soft_ratio` 0.85）、360k 橙→370k（`prune_ratio` 0.925）、400k 红不变。live 与 local 层同步（`soft_ratio`/`prune_ratio` local 未显式配置不涉遮蔽）。验证：三份配置 jsonc 解析全绿；doctor config ok；配置缓存永久，重启进程生效。
