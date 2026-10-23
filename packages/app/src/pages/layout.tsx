@@ -1196,8 +1196,12 @@ export default function Layout(props: ParentProps) {
         {/* ⑤ 光标辉光。必须是 main 的直接子元素：z-index:-1 只在同一个层叠上下文里才
             落在「父背景之上、父内容之下」那一层，塞进 props.children 里就被内容裹住了。 */}
         <div data-spotlight-glow aria-hidden="true" />
-        {/* 260929 Red Pet 挂在 main 内（contain-strict 使其成为定位基准）：视口 fixed 会落进侧边栏，
-            右下角与 dev DebugBar 重叠——哥哥圈定主内容区左下角。 */}
+        {/* 260929 Red Pet 挂在 main 内，但 pet-layer 的 <Portal> 没给挂载目标（solid-js/web
+             默认挂 document.body），所以 .pet-layer 实际是 body 的直接子元素——main 的
+             contain-strict 管不到它，CSS 的 left/bottom 全是**视口**坐标，不是 main 内坐标。
+             早先注释写的「contain-strict 使其成为定位基准」不成立，别照那句推理停靠位置。
+             右下角与 dev DebugBar 重叠，故默认停主内容区左缘。261023 审计 P1-1：该浮层
+             160×~233px 且 pointer-events:auto，会压住其下的可交互内容。 */}
         <PetLayer />
         <Show when={!autoselecting.loading} fallback={<div class="size-full" />}>
           {props.children}
