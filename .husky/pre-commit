@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+# 261023 Red OpenAPI 生成物漂移早发现：改了 schema 忘了重跑生成物，原来只能等
+# pre-push（推送时）或 CI 才红，每次都要补一个 fixup commit、打乱提交节奏
+# （260828 一上午撞两次；9-01 以来 openapi.json 被 8 个 commit 动过、其中 6 个
+# 是重新生成类）。这里把拦截点提前到 commit：staged 改动触及 schema 源
+# （packages/opencode/src）、生成物（packages/sdk）或检查脚本本身时才跑 drift
+# 自检（实测 ~8s），其余 commit 零成本跳过。
+# 修复命令（两条，缺一不可）：bun ./packages/sdk/js/script/build.ts && bun run gen:openapi
+if git diff --cached --name-only | grep -qE '^(packages/opencode/src/|packages/sdk/|script/check-openapi-drift\.ts|script/generate\.ts)'; then
+  bun run check:openapi-drift
+fi

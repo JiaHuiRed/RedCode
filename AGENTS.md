@@ -41,6 +41,7 @@
 **跑的检查必须匹配改动面，永远不要默认跑全量测试套件。**（事故：想验一个测试却跑了全量 `bun test`，测试套件洗掉 live 配置——见 `docs/notes/`）
 
 - 行为改动 → 只跑对应的测试文件（带路径过滤），**必须带包脚本的超时 `--timeout 30000`**——裸 `bun test <file>` 是默认 5 秒，session 套件会大面积假超时（判定指纹：失败耗时齐刷刷贴着超时值＝命令用错，不是回归）
+- 改了进 OpenAPI 的 schema 出口（`packages/opencode/src/config/*.ts`、`session/status.ts` 等 `Schema.Struct`）→ **commit 前跑 `bun run check:openapi-drift`**（~8s，不一致就跑两条生成命令：`bun ./packages/sdk/js/script/build.ts` + `bun run gen:openapi`）。pre-commit 钩子也会拦，但钩子是兜底、不是不跑的理由——推送时才发现就要补 fixup commit（9-01 以来已发生 6 次）
 - 提示词/模型可见内容改动 → 对照该模型的实际会话验证
 - 文档/版本号改动 → `check-version-consistency.ts`
 - 构建路径改动 → 该 package 的 build
