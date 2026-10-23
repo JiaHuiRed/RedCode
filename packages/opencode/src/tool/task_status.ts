@@ -5,6 +5,9 @@ import { Session } from "@/session/session"
 import { MessageV2 } from "@/session/message-v2"
 import { MessageID, SessionID } from "@/session/schema"
 import { SessionStatus } from "@/session/status"
+import { RETRY_MAX_ATTEMPTS } from "@/session/retry"
+import { ConfigChildStall } from "@/config/child-stall"
+import { Config } from "@/config/config"
 import { PositiveInt } from "@redcode-ai/core/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Clock, Effect, Exit, Option, Schema } from "effect"
@@ -54,6 +57,26 @@ function errorText(error: NonNullable<MessageV2.Assistant["error"]>) {
   return error.name
 }
 
+// 261023 Red 子代理状态段超限警告：同一 busy/retry 段停留超过 warnMs 就在输出里附加
+// 提醒，绝不据此终止——超长工具、长推理、权限等待也会触发，判断权留给主对话。
+// 实测背景（261023）：模型额度耗尽后重试循环让任务 running 长达 27 分钟，
+// 主线只会看到 "Task is still running."。导出为纯函数供测试直调。
+export function stallWarning(
+  status: { type: "busy" | "retry"; since?: number },
+  now: number,
+  warnMs: number,
+): string | undefined {
+  if (status.since === undefined) return undefined
+  const held = now - status.since
+  if (held < warnMs) return undefined
+  const minutes = Math.max(1, Math.round(held / 60_000))
+  return (
+    `Warning: this task has been in "${status.type}" for ~${minutes} min without reaching a terminal state. ` +
+    `Long tool calls or extended reasoning can look like this; if the child model may be stuck (quota or rate limit), ` +
+    `consider task_status with cancel: true.`
+  )
+}
+
 function inspectMessage(message: MessageV2.WithParts): InspectResult | undefined {
   if (message.info.role !== "assistant") return
   const text = message.parts.findLast((part) => part.type === "text")?.text ?? ""
@@ -71,30 +94,38 @@ export const TaskStatusTool = Tool.define(
     const status = yield* SessionStatus.Service
     const flags = yield* RuntimeFlags.Service
 
-    const inspect: (taskID: SessionID) => Effect.Effect<InspectResult> = Effect.fn("TaskStatusTool.inspect")(function* (
-      taskID: SessionID,
-    ) {
+    const inspect: (taskID: SessionID, warnMs: number) => Effect.Effect<InspectResult> = Effect.fn(
+      "TaskStatusTool.inspect",
+    )(function* (taskID: SessionID, warnMs: number) {
       const job = yield* jobs.get(taskID)
       if (job) {
-        return {
-          state: job.status,
-          text:
-            job.output ??
-            job.error ??
-            (job.status === "running"
-              ? "Task is still running."
-              : job.status === "cancelled"
-                ? "Task was cancelled."
-                : ""),
+        let text =
+          job.output ??
+          job.error ??
+          (job.status === "running"
+            ? "Task is still running."
+            : job.status === "cancelled"
+              ? "Task was cancelled."
+              : "")
+        if (job.status === "running") {
+          const current = yield* status.get(taskID)
+          if (current.type === "busy" || current.type === "retry") {
+            const warning = stallWarning(current, yield* Clock.currentTimeMillis, warnMs)
+            if (warning) text = `${text}\n\n${warning}`
+          }
         }
+        return { state: job.status, text }
       }
 
       const current = yield* status.get(taskID)
       if (current.type === "busy" || current.type === "retry") {
-        return {
-          state: "running",
-          text: current.type === "retry" ? `Task is retrying: ${current.message}` : "Task is still running.",
-        }
+        let text =
+          current.type === "retry"
+            ? `Task is retrying (attempt ${current.attempt}/${RETRY_MAX_ATTEMPTS}): ${current.message}`
+            : "Task is still running."
+        const warning = stallWarning(current, yield* Clock.currentTimeMillis, warnMs)
+        if (warning) text += `\n\n${warning}`
+        return { state: "running", text }
       }
 
       const latestAssistant = yield* sessions
@@ -113,14 +144,15 @@ export const TaskStatusTool = Tool.define(
     const waitForTerminal: (
       taskID: SessionID,
       timeout: number,
+      warnMs: number,
     ) => Effect.Effect<{ result: InspectResult; timedOut: boolean }> = Effect.fn("TaskStatusTool.waitForTerminal")(
-      function* (taskID: SessionID, timeout: number) {
-        const result = yield* inspect(taskID)
+      function* (taskID: SessionID, timeout: number, warnMs: number) {
+        const result = yield* inspect(taskID, warnMs)
         if (result.state !== "running") return { result, timedOut: false }
         if (timeout <= 0) return { result, timedOut: true }
         const sleep = Math.min(POLL_MS, timeout)
         yield* Effect.sleep(`${sleep} millis`)
-        return yield* waitForTerminal(taskID, timeout - sleep)
+        return yield* waitForTerminal(taskID, timeout - sleep, warnMs)
       },
     )
 
@@ -131,6 +163,11 @@ export const TaskStatusTool = Tool.define(
       if (!flags.experimentalBackgroundSubagents) {
         return yield* Effect.fail(new Error("task_status requires REDCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true"))
       }
+
+      // 261023 Red 每次调用读取阈值（与 processor 读 reasoningStall 同惯例）：配置可运行期变更，
+      // 解析含范围校验（30s–1h），默认 6 分钟。
+      const config = yield* Config.Service
+      const warnMs = ConfigChildStall.resolve((yield* config.get()).experimental?.childStall).warnMs
 
       if (params.message !== undefined) {
         const messageText = params.message
@@ -195,7 +232,16 @@ export const TaskStatusTool = Tool.define(
         }
       }
 
-      if (params.cancel) yield* jobs.cancelTree(params.task_id)
+      if (params.cancel) {
+        const cancelledIDs = yield* jobs.cancelTree(params.task_id)
+        // 261023 Red fiber 中断跑不到 processor 收尾的 status.set(idle)，状态表会残留
+        // busy/retry——TUI 的等待指示器读的就是它，于是任务表 cancelled 了、spinner 还在转
+        // （261023 实证）。cancel 后把已取消任务（job id 即 session id）的遗留状态归位。
+        for (const id of cancelledIDs) {
+          const sessionID = id as SessionID
+          if ((yield* status.get(sessionID)).type !== "idle") yield* status.set(sessionID, { type: "idle" })
+        }
+      }
 
       const waited =
         params.wait === true
@@ -213,8 +259,8 @@ export const TaskStatusTool = Tool.define(
             timedOut: waited.timedOut,
           }
         : params.wait === true
-          ? yield* waitForTerminal(params.task_id, params.timeout_ms ?? DEFAULT_TIMEOUT)
-          : { result: yield* inspect(params.task_id), timedOut: false }
+          ? yield* waitForTerminal(params.task_id, params.timeout_ms ?? DEFAULT_TIMEOUT, warnMs)
+          : { result: yield* inspect(params.task_id, warnMs), timedOut: false }
       const text = inspected.timedOut
         ? `Timed out after ${params.timeout_ms ?? DEFAULT_TIMEOUT}ms while waiting for task completion.`
         : inspected.result.text
@@ -240,7 +286,9 @@ export const TaskStatusTool = Tool.define(
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context): Effect.Effect<{
         title: string; metadata: StatusMetadata; output: string
       }> =>
-        run(params, ctx).pipe(Effect.orDie),
+        // Config 依赖在此收口：registry 为工具提供 Config.defaultLayer，这里的 provide 让
+        // execute 的 R 归零（memoMap 缓存 layer，不重复构建）。
+        run(params, ctx).pipe(Effect.provide(Config.defaultLayer), Effect.orDie),
     }
   }),
 )

@@ -56,7 +56,7 @@ export interface Interface {
   readonly start: (input: StartInput) => Effect.Effect<Info>
   readonly wait: (input: WaitInput) => Effect.Effect<WaitResult>
   readonly cancel: (id: string) => Effect.Effect<Info | undefined>
-  readonly cancelTree: (id: string) => Effect.Effect<void>
+  readonly cancelTree: (id: string) => Effect.Effect<string[]>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@redcode/BackgroundJob") {}
@@ -250,6 +250,10 @@ export const layer = Layer.effect(
         )
         batch = (yield* list()).filter(matches)
       }
+      // 261023 Red 返回被取消的任务 id（即 session id），让调用方（task_status 的 cancel）
+      // 能把对应 session 遗留的 busy/retry 状态归位——fiber 中断不会跑 processor 收尾的
+      // status.set(idle)，状态表残留会让 TUI 的等待指示器永久旋转。
+      return [...cancelled]
     })
 
     return Service.of({ list, get, start, wait, cancel, cancelTree })

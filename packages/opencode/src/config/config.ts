@@ -42,6 +42,7 @@ import { ConfigReference } from "./reference"
 import { ConfigRequestEvidence } from "./request-evidence"
 import { ConfigReasoningStall } from "./reasoning-stall"
 import { ConfigToolInputGuard } from "./tool-input-guard"
+import { ConfigChildStall } from "./child-stall"
 import { ConfigRetire } from "./retire"
 import * as ConfigToolFailure from "./tool-failure"
 import { ConfigServer } from "./server"
@@ -405,6 +406,10 @@ export const Info = Schema.Struct({
           "When a reasoning-only step is treated as stalled: silence before cutoff, plus a character backstop for providers that stream forever.",
       }),
       toolInputGuard: Schema.optional(ConfigToolInputGuard.Info),
+      childStall: Schema.optional(ConfigChildStall.Info).annotate({
+        description:
+          "Warn when a background child task sits in one busy/retry segment past this duration; never aborts on its own.",
+      }),
       mcp_timeout: Schema.optional(PositiveInt).annotate({
         description: "Timeout in milliseconds for model context protocol (MCP) requests",
       }),
