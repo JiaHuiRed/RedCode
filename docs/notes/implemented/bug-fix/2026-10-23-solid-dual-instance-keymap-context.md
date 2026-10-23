@@ -43,6 +43,6 @@ solid 的 context 是模块级全局栈，两份实例各一套：keymap 的 `Ke
 ## 后果
 
 - 复刻代码与上游 `src/solid/index.ts` 存在漂移风险：**升级 @opentui/keymap 时必须对一遍那两个文件**，行为有变就同步复刻。代码注释里已写明来源与回退条件。
-- 依赖层双实例仍在（catalog 1.9.17 vs @opentui 包内 1.9.14）。代码层修复后 TUI 的关键路径已不经过 keymap 包的 context，但 `@opentui/solid` 的渲染器（1.9.14）与 TUI 源码（1.9.17）仍是两套响应式系统并置。统一方案（opencode 包把 solid-js 从 catalog 摘出钉 1.9.14 对齐 @opentui，或 overrides 拉 1.9.17）需要 bun install 重解 lock，留待单独批次。
+- 依赖层已统一（261023 同批落地）：`packages/opencode` 的 solid-js 从 catalog 摘出钉 1.9.14，与 `@opentui/keymap` / `@opentui/solid` 包内解析对齐，TUI 源码与两个 @opentui 包现在是同一实例（`.bun/solid-js@1.9.14` 单一路径）；app / ui 仍走 catalog 1.9.17，独立构建目标、运行时不共享。代价：TUI 用的 solid 停在 1.9.14（seroval ~1.5.4），拿不到 1.9.15–1.9.17 的修复；@opentui 官方声明支持新版 solid 后可改走根 overrides 拉 1.9.17。安装时因 bunfig `minimumReleaseAge=259200` 拦截 261022 批次的新发布版本（drizzle rc.5 / electron 44.9.3 / storybook 10.6.3），本次用 `bun install --minimum-release-age=0` 临时覆盖，未改 bunfig——这些版本已被 lock 钉死且经上批验证。
 - 插件生态同类风险：直接 import `@opentui/keymap/solid` 的 useBindings / useKeymapSelector 的插件，渲染在 TUI 树里时踩同一个坑。seed 示例 `tui-smoke.tsx` 已改为走 `api.keymap.registerLayer`（enabled 函数形式）+ 渲染期计算 shortcuts。
 - 识别签名（复发时对指纹）：`Keymap not found. Wrap the tree in <KeymapProvider>.`；`useBindings` 注册次数远低于期望；`node_modules/.bun` 下同时存在多个 solid-js@ 目录且 opencode 与 @opentui 包内链的不是同一份。另注意 bun 的堆栈对预编译包路径/sourcemap 拼接会失真（报 `src/src/solid/index.ts`、源码行号偏移），定位以复现为准，别信堆栈行号。

@@ -152,7 +152,7 @@
     "partial-json": "0.1.7",
     "remeda": "catalog:",
     "semver": "^7.6.3",
-    "solid-js": "catalog:",
+    "solid-js": "1.9.14",
     "strip-ansi": "7.1.2",
     "tree-sitter-bash": "0.25.0",
     "tree-sitter-powershell": "0.25.10",
