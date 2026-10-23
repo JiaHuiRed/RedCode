@@ -10,7 +10,7 @@
 
 ### [Unreleased]
 
-- **修复 Effect 4.0.5 空 Struct 编码导致的工具 schema 拒单**（`packages/opencode/src/tool/json-schema.ts`）：4.0.5 把空 `Schema.Struct({})` 的 JSON Schema 编码从 `anyOf[object,array]` 改成 `{not:{type:"null"}}`，顶层不再有 `type`——`todoread` / `plan` / `goal` done+clear 四个无参工具发到严格网关即被拒整单（`schema must be a JSON Schema of 'type: "object"', got 'type: "None"'`，Step / GPT-6 Luna 实证；261022 批次未跑 `parameters.test.ts` 守门测试）。`fromSchema` 在根节点没有任何 schema 意图键时兜底补对象定义（工具参数在传输层永远是对象）；补空 Struct 回归测试，`plan` 快照随修复复活。同批升级还伴生三类编码回归（`.check()` 约束静默丢弃、`additionalProperties` 松动、optional 内层 annotate 的 description 丢失），移交 Effect 编码审计批。验证：探针确认空 Struct 产出规范对象 schema；tool 三测试文件 90 pass（余 2 失败为存量债，stash 对照实证先于本改动）；opencode typecheck exit 0。决策见 [effect405-tool-schema-encoding](docs/notes/implemented/bug-fix/2026-10-23-effect405-tool-schema-encoding.md)。
+- **修复 Effect 4.0.5 空 Struct 编码导致的工具 schema 拒单**（`packages/opencode/src/tool/json-schema.ts`、`test/tool/parameters.test.ts`）：4.0.5 把空 `Schema.Struct({})` 的 JSON Schema 编码从 `anyOf[object,array]` 改成 `{not:{type:"null"}}`，顶层不再有 `type`——`todoread` / `plan` / `goal` done+clear 四个无参工具发到严格网关即被拒整单（`schema must be a JSON Schema of 'type: "object"', got 'type: "None"'`，Step / GPT-6 Luna 实证；261022 批次未跑 `parameters.test.ts` 守门测试）。`fromSchema` 在根节点没有任何 schema 意图键时兜底补对象定义（工具参数在传输层永远是对象）；补空 Struct 回归测试，`plan` 快照随修复复活。同批完成 4.0.5 编码审计：`.check()` 约束不再编入 wire（仅 context.ts 一处受影响，运行时解码兜底，测试改钉现状）、bash 快照再生（补 shell 字段欠账）、勘误一处探针误报（description 实际无丢失）。验证：探针确认空 Struct 产出规范对象 schema；parameters / json-schema 测试全绿；opencode typecheck exit 0。决策见 [effect405-tool-schema-encoding](docs/notes/implemented/bug-fix/2026-10-23-effect405-tool-schema-encoding.md)。
 
 ### [0.12.19] - 2026-10-23
 

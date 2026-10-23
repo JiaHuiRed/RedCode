@@ -27,13 +27,14 @@ Invalid schema for function 'todoread': schema must be a JSON Schema of
 - **逐工具加 `jsonSchema` override**：散，每个新无参工具都会再踩。
 - **在 `ProviderTransform.schema` 按模型修**：出口不唯一，遗漏面大。
 
-## 后果与移交（Effect 编码审计批，未修）
+## 后果与审计结论（261023 同批收口）
 
 同一次升级还改变了其他编码，已用探针逐一实证（beta 与 4.0.5 各跑一遍对照）：
 
-1. **`.check()` 约束静默丢弃**：双 pattern 约束的 wire schema 只剩 `{"type":"string"}`，约束对模型不可见（beta 编码为 `allOf:[{pattern},...]`）。守门测试 `keeps repeated allOf constraints` 挂因。
-2. **`additionalProperties` 从 `false` 松成 `true`**：wire 不再声明严格性（执行层 `unknownArgumentKeys` 与 Effect 解码仍兜底，模型侧影响小）。
-3. **`annotate` 套在 `optional` 内层的 description 丢失**：todos 的 id/parent_id 字段说明对模型不可见（外层构造的工具如 edit 完好）。改构造（annotate 移外层）可绕。
-4. **bash 快照欠再生**：shell 字段加入后没重跑守门测试，快照缺该字段（与本升级无关的存量债）。
+1. **`.check()` 约束不再编入 wire schema**：beta 编为 `allOf:[{pattern},...]`，4.0.5 默认整个丢弃（官方出口 `generateDescriptions: true` 只产 prose 描述，机器约束不回来）。LLM 可见工具仅 `context.ts` 的 offset ≥ 0 一处受影响；运行时解码仍拒绝非法输入（InvalidArgumentsError → 模型自纠），代价是最多一轮重试。已在 parameters.test.ts 钉住现状（测试更名「4.0.5 check constraints are absent from wire」）。
+2. **`additionalProperties` 从 `false` 松成 `true`**：normalize 删除 `true` 后 wire 不声明严格性，与现存快照一致，无行动；执行层 `unknownArgumentKeys` 与 Effect 解码兜底。
+3. **bash 快照欠再生**：shell 字段加入后没重跑守门测试。已再生并逐行 review——仅 shell 字段补入 + timeout 的无效负下界（`minimum: -MAX_SAFE_INTEGER`，被 exclusiveMinimum: 0 覆盖）消失。
 
-修复前 stash 对照实证：bash / plan / allOf 三处失败中，plan 由本修复复活，其余两处先前已存在。识别签名：网关报 `got 'type: "None"'`；无参工具调用整轮被拒；`parameters.test.ts` 是这类回归的守门栅栏，升级 Effect 后必须跑。
+~~description 丢失~~ **勘误**：初版探针复刻 todo 构造时漏了 annotate，把「没有」误判成「丢失」；忠实复刻验证 raw 与输出均保留全部字段说明，无此问题。
+
+识别签名：网关报 `got 'type: "None"'`；无参工具调用整轮被拒；`parameters.test.ts` 是这类回归的守门栅栏，升级 Effect 后必须跑。

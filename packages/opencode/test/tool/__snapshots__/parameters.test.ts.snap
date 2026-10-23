@@ -28,11 +28,19 @@ exports[`tool parameters JSON Schema (wire shape) bash 1`] = `
       "description": "Describe the command in 5-10 words, e.g. 'Runs focused unit tests'.",
       "type": "string",
     },
+    "shell": {
+      "description": "Shell to run the command with. 'default' or omitted uses this tool's configured shell. 'bash' and 'powershell' explicitly pick Git Bash or PowerShell 7+ on Windows; ignored on other platforms.",
+      "enum": [
+        "default",
+        "bash",
+        "powershell",
+      ],
+      "type": "string",
+    },
     "timeout": {
       "description": "Optional timeout in milliseconds (values above 600000 are clamped to 600000)",
       "exclusiveMinimum": 0,
       "maximum": 9007199254740991,
-      "minimum": -9007199254740991,
       "type": "integer",
     },
     "workdir": {

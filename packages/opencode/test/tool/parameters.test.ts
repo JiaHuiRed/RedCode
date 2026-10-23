@@ -69,12 +69,15 @@ describe("tool parameters", () => {
       })
     })
 
-    test("keeps repeated allOf constraints instead of dropping duplicates", () => {
-      expect(
-        toJsonSchema(
-          Schema.Struct({ value: Schema.String.check(Schema.isPattern(/^a/)).check(Schema.isPattern(/z$/)) }),
-        ),
-      ).toMatchObject({ properties: { value: { allOf: [{ pattern: "^a" }, { pattern: "z$" }] } } })
+    // 261023 Red Effect 4.0.5 起 .check() 约束不再编入 wire schema（beta 时代是
+    // allOf:[{pattern},...]），模型看不到约束。运行时解码仍会拒绝非法输入
+    // （InvalidArgumentsError → 模型自纠），这里钉住现状让后续升级自觉。
+    test("4.0.5 check constraints are absent from wire (decoder still enforces)", () => {
+      const schema = toJsonSchema(
+        Schema.Struct({ value: Schema.String.check(Schema.isPattern(/^a/)).check(Schema.isPattern(/z$/)) }),
+      )
+      expect(schema.properties?.value).toEqual({ type: "string" })
+      expect(schema.properties?.value).not.toHaveProperty("allOf")
     })
 
     test("bounds bare integer fields to safe integer range", () => {
