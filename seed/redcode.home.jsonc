@@ -109,14 +109,9 @@
     // npm 全局安装的绝对路径（C:/Users/<用户名>/AppData/Roaming/npm/...），换机
     // 必 ENOENT，与 DCP 插件路径同一类"因机而异"的值。配置样例见该文件。
     // 261022 Red 本地默认 enabled:false，日常网页操作用 WebQA，需要 DevTools 时手动开启。
-    "github": {
-      "type": "remote",
-      "url": "https://api.githubcopilot.com/mcp/",
-      "headers": { "X-MCP-Toolsets": "default,actions" },
-      "description": "GitHub 官方 MCP（github/github-mcp-server 远程托管）——PR/issue/仓库/用户 + CI Actions 工具集。首次连接走 OAuth 浏览器授权，无需 PAT。工具集用 X-MCP-Toolsets 控制（default,actions），避免全量 60+ 工具撑爆前缀。",
-      "timeout": 60000,
-      "enabled": true,
-    },
+    // 261024 Red github MCP 移除：读侧能力（PR/review 评论/CI/diff/issue/list）由原生
+    //   github 工具承担（packages/opencode/src/tool/github.ts，薄封装已认证的 gh CLI，
+    //   输出有界、无 OAuth 流程）。官方 MCP 的 60+ 工具集对前缀不友好；写侧用 gh 命令行。
   },
   // 260822 cc 清空 ollama-cloud：残留，不禁用它也不会加载 —— 它需要 OLLAMA_API_KEY
   // 且 auth.json 里无条目，而 provider.ts 里根本没有 ollama 的自动发现代码。实测清空后

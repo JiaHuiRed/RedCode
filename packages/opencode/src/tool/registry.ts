@@ -30,6 +30,7 @@ import { RepoCloneTool } from "./repo_clone"
 import { RepoOverviewTool } from "./repo_overview"
 import { AstGrepTool } from "./ast_grep"
 import { GitTool } from "./git"
+import { GitHubTool } from "./github"
 import { EnvTool } from "./env"
 import { RepositoryCache } from "@/reference/repository-cache"
 import * as Log from "@redcode-ai/core/util/log"
@@ -133,6 +134,7 @@ export const layer = Layer.effect(
     const greptool = yield* GrepTool
   const astGreptool = yield* AstGrepTool
   const gittool = yield* GitTool
+  const githubtool = yield* GitHubTool
     const envtool = yield* EnvTool
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
@@ -266,6 +268,7 @@ export const layer = Layer.effect(
           grep: Tool.init(greptool),
           ast_grep: Tool.init(astGreptool),
           git: Tool.init(gittool),
+          github: Tool.init(githubtool),
           env: Tool.init(envtool),
           edit: Tool.init(edit),
           write: Tool.init(writetool),
