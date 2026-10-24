@@ -48,6 +48,31 @@ export const selectedEffortIndex = (steps: readonly string[], current?: string) 
  */
 const STEP = 0.01
 
+/**
+ * 261024 Red 光点（sparkle）布点：x/y 是胶囊内的百分比位置，s 是相对滑杆高度的尺寸，
+ * o 是基础不透明度，d 是满档闪烁的相位错峰（负延迟直接落在动画中段）。显隐阈值在
+ * 渲染时取 x + 6%：光点亮起的那一刻填充刚好追上它，不会浮在未填充的轨道上。
+ */
+const SPARKLES = [
+  { x: 14, y: 30, s: 0.18, o: 0.75, d: -0.2 },
+  { x: 25, y: 62, s: 0.24, o: 0.9, d: -1.1 },
+  { x: 34, y: 24, s: 0.15, o: 0.6, d: -0.7 },
+  { x: 46, y: 55, s: 0.26, o: 0.95, d: -1.6 },
+  { x: 57, y: 30, s: 0.17, o: 0.7, d: -0.45 },
+  { x: 67, y: 62, s: 0.22, o: 0.85, d: -1.3 },
+  { x: 78, y: 34, s: 0.16, o: 0.65, d: -0.9 },
+  { x: 87, y: 55, s: 0.24, o: 0.9, d: -0.55 },
+]
+
+const sparkleStyle = (spark: (typeof SPARKLES)[number]) => ({
+  "--spark-x": `${spark.x}%`,
+  "--spark-y": `${spark.y}%`,
+  "--spark-s": `${spark.s}`,
+  "--spark-o": `${spark.o}`,
+  "--spark-t": `${(spark.x / 100 + 0.06).toFixed(2)}`,
+  "--spark-d": `${spark.d}s`,
+})
+
 export function EffortSliderV2(props: EffortSliderV2Props) {
   const [local] = splitProps(props, [
     "steps",
@@ -71,6 +96,8 @@ export function EffortSliderV2(props: EffortSliderV2Props) {
   const text = (value: string) => (local.label ? local.label(value) : value)
   /** 拖动中标签跟最近的一档走，不然读数会是 2.37 这种不存在的值。 */
   const nearest = () => local.steps[Math.round(position())] ?? local.current ?? ""
+  /** 261024 Red 档位在全程里的位置（0..1），驱动渐变揭示与光点显隐。 */
+  const progress = () => position() / last()
 
   const commit = (raw: number) => {
     const index = Math.max(0, Math.min(last(), Math.round(raw)))
@@ -131,8 +158,9 @@ export function EffortSliderV2(props: EffortSliderV2Props) {
           data-slot="effort-slider-v2"
           data-dragging={drag() !== undefined ? "" : undefined}
           data-unselected={hasSelection() ? undefined : ""}
+          data-max={hasSelection() && position() >= last() ? "" : undefined}
           class={local.class}
-          style={local.style}
+          style={{ ...local.style, "--effort-progress": progress() }}
           aria-label={local.title}
           minValue={0}
           maxValue={last()}
@@ -146,9 +174,14 @@ export function EffortSliderV2(props: EffortSliderV2Props) {
             commit(next[0] ?? 0)
           }}
         >
-          {/* 260930 Red 填充单独贴满胶囊，避免内缩 Track 留白；只裁剪填充，不裁剪圆形滑块。 */}
+          {/* 260930 Red 填充单独贴满胶囊，避免内缩 Track 留白；只裁剪填充，不裁剪圆形滑块。
+              261024 Red 填充改为固定多段渐变 + clip-path 揭示：原先 scaleX 会把渐变一起压扁，
+              揭示式才是「低档只见绿，每升一档多展开一截蓝/紫」的递进观感。光点随档位浮现。 */}
           <div data-slot="effort-slider-v2-fill-clip" aria-hidden="true">
-            <div data-slot="effort-slider-v2-fill" style={{ transform: `scaleX(${position() / last()})` }} />
+            <div data-slot="effort-slider-v2-fill" />
+            <div data-slot="effort-slider-v2-sparkles" aria-hidden="true">
+              <For each={SPARKLES}>{(spark) => <span style={sparkleStyle(spark)} />}</For>
+            </div>
           </div>
           <Kobalte.Track data-slot="effort-slider-v2-track">
             {/* 刻度只是视觉提示，不接事件——点击/拖拽全部由 Track 处理，

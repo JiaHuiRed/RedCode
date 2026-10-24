@@ -1,5 +1,6 @@
-/* 260930 Red 推理强度滑杆：柔和胶囊轨道、主题色填充、独立圆形滑块。
-   填充贴齐胶囊，Track 仍内缩半个滑块；拖动跟手、键盘整档切换的逻辑不变。 */
+/* 260930 Red 推理强度滑杆：柔和胶囊轨道、渐变填充、独立圆形滑块。
+   261024 Red 填充改成固定的绿→蓝→紫多段渐变，按档位从左往右揭开——低档只见纯绿，
+   每升一档多展开一截蓝/紫，满档整体带辉光、光点浮现并闪烁。档位越高越炫。 */
 
 /* 胶囊画在根元素上，Track 是内缩后的那条看不见的轨。
    Track 内缩半个滑块：Kobalte 按 Track 宽度定位滑块，滑到 0%/100% 时滑块中心正好落在
@@ -36,6 +37,9 @@
   height: 100%;
 }
 
+/* 261024 Red 填充 = 固定多段渐变 + clip-path 揭示。渐变画在整个胶囊坐标系上不被压扁，
+   揭示右缘 = 半滑块 + 进度 ×（胶囊宽 − 滑块），与滑块中心对齐（即旧 scaleX 方案的几何）。
+   不能用 scaleX 揭示：transform 连背景一起缩放，渐变会被压扁而不是展开。 */
 [data-slot="effort-slider-v2-fill-clip"] {
   position: absolute;
   inset: 0;
@@ -44,29 +48,69 @@
   pointer-events: none;
 }
 
-[data-slot="effort-slider-v2-fill-clip"]::before,
 [data-slot="effort-slider-v2-fill"] {
-  height: 100%;
-  background:
-    linear-gradient(180deg, var(--v2-alpha-light-14), var(--v2-alpha-light-0)), var(--v2-background-bg-accent);
-}
-
-/* 260930 Red 左端补齐半个滑块，活动填充与 Track 同宽，末端始终对齐滑块中心。 */
-[data-slot="effort-slider-v2-fill-clip"]::before {
-  content: "";
   position: absolute;
-  width: calc(var(--_thumb) / 2);
-}
-
-[data-slot="effort-slider-v2-fill"] {
-  margin-left: calc(var(--_thumb) / 2);
-  width: calc(100% - var(--_thumb));
-  transform-origin: left center;
-  transition: transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
+  inset: 0;
+  background:
+    linear-gradient(180deg, var(--v2-alpha-light-14), var(--v2-alpha-light-0)),
+    linear-gradient(90deg, var(--v2-green-600) 0%, var(--v2-blue-500) 50%, var(--v2-purple-500) 100%);
+  clip-path: inset(
+    0 calc((1 - var(--effort-progress, 0)) * (100% - var(--_thumb)) + var(--_thumb) / 2) 0 0
+  );
+  transform: translateZ(0);
+  transition: clip-path 140ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 [data-slot="effort-slider-v2"][data-unselected] [data-slot="effort-slider-v2-fill-clip"] {
   opacity: 0;
+}
+
+/* 261024 Red 光点：随档位逐个浮现（阈值 --spark-t 由 tsx 按 x + 6% 给出），
+   满档（data-max）以错峰相位缓慢闪烁。浮在渐变上，白色带柔光晕。 */
+[data-slot="effort-slider-v2-sparkles"] {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+[data-slot="effort-slider-v2-sparkles"] span {
+  position: absolute;
+  left: var(--spark-x);
+  top: var(--spark-y);
+  width: calc(var(--effort-slider-v2-height, 12px) * var(--spark-s));
+  height: calc(var(--effort-slider-v2-height, 12px) * var(--spark-s));
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  corner-shape: round;
+  background: var(--v2-grey-100);
+  box-shadow: 0 0 calc(var(--effort-slider-v2-height, 12px) * 0.4) var(--v2-alpha-light-40);
+  opacity: calc(clamp(0, (var(--effort-progress, 0) - var(--spark-t)) * 8, 1) * var(--spark-o));
+  transition: opacity 140ms ease-out;
+}
+
+@keyframes effort-slider-v2-twinkle {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: var(--spark-o);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(0.65);
+    opacity: calc(var(--spark-o) * 0.3);
+  }
+}
+
+[data-slot="effort-slider-v2"][data-max] [data-slot="effort-slider-v2-sparkles"] span {
+  animation: effort-slider-v2-twinkle 1.8s ease-in-out infinite;
+  animation-delay: var(--spark-d);
+}
+
+/* 261024 Red 满档辉光：胶囊与填充一起泛一层蓝紫光晕，最高档可辨识。 */
+[data-slot="effort-slider-v2"][data-max] {
+  box-shadow:
+    0 0 14px color-mix(in srgb, var(--v2-blue-500) 35%, transparent),
+    0 0 28px color-mix(in srgb, var(--v2-purple-500) 25%, transparent),
+    var(--v2-elevation-switch-off);
 }
 
 [data-slot="effort-slider-v2-ticks"] {
@@ -172,8 +216,14 @@
   [data-slot="effort-slider-v2-fill"],
   [data-slot="effort-slider-v2-thumb"],
   [data-slot="effort-slider-v2-ticks"] span,
+  [data-slot="effort-slider-v2-sparkles"] span,
   [data-slot="effort-slider-v2-single"] {
     transition: none;
+  }
+
+  /* 261024 Red 光点闪烁一并关掉：opacity 定格在进度门控的静态值。 */
+  [data-slot="effort-slider-v2"][data-max] [data-slot="effort-slider-v2-sparkles"] span {
+    animation: none;
   }
 }
 
@@ -208,7 +258,8 @@
   transition: none;
 }
 
-[data-slot="effort-slider-v2"][data-dragging] [data-slot="effort-slider-v2-ticks"] span {
+[data-slot="effort-slider-v2"][data-dragging] [data-slot="effort-slider-v2-ticks"] span,
+[data-slot="effort-slider-v2"][data-dragging] [data-slot="effort-slider-v2-sparkles"] span {
   transition: none;
 }
 
