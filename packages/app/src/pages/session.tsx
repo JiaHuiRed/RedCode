@@ -75,7 +75,7 @@ import { diffs as list } from "@/utils/diffs"
 import { Persist, persisted } from "@/utils/persist"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { same } from "@/utils/same"
-import { formatServerError } from "@/utils/server-errors"
+import { notifyServerError } from "@/utils/notify-error"
 import { useUsageExceededDialogs } from "./session/usage-exceeded-dialogs"
 import { FileOpenProvider } from "@redcode-ai/ui/context/file"
 
@@ -490,11 +490,7 @@ export default function Page() {
       upsert(x.data)
     },
     onError: (err) => {
-      showToast({
-        variant: "error",
-        title: language.t("common.requestFailed"),
-        description: formatServerError(err, language.t),
-      })
+      notifyServerError(language.t, err)
     },
   }))
 
@@ -1380,11 +1376,7 @@ export default function Page() {
   }
 
   const fail = (err: unknown) => {
-    showToast({
-      variant: "error",
-      title: language.t("common.requestFailed"),
-      description: formatServerError(err, language.t),
-    })
+    notifyServerError(language.t, err)
   }
 
   const merge = (next: NonNullable<ReturnType<typeof info>>) =>

@@ -15,7 +15,7 @@ import { useSDK } from "@/context/sdk"
 import { normalizeServerUrl, ServerConnection, useServer } from "@/context/server"
 import { useSync } from "@/context/sync"
 import { useCheckServerHealth, type ServerHealth } from "@/utils/server-health"
-import { formatServerError } from "@/utils/server-errors"
+import { notifyServerError } from "@/utils/notify-error"
 import { useQueryOptions } from "@/context/server-sync"
 import { pathKey } from "@/utils/path-key"
 
@@ -174,11 +174,7 @@ const useMcpToggleMutation = () => {
     // 同 dialog-select-mcp：原始路径必须过 pathKey，与写入侧 queryKey 对齐
     onSuccess: () => queryClient.refetchQueries(queryOptions.mcp(pathKey(sync.directory))),
     onError: (err) => {
-      showToast({
-        variant: "error",
-        title: language.t("common.requestFailed"),
-        description: formatServerError(err, language.t),
-      })
+      notifyServerError(language.t, err)
     },
   }))
 }
@@ -218,11 +214,7 @@ export function SessionStatusTab(props: { shown: Accessor<boolean> }) {
   const navigate = useNavigate()
 
   const fail = (err: unknown) => {
-    showToast({
-      variant: "error",
-      title: language.t("common.requestFailed"),
-      description: formatServerError(err, language.t),
-    })
+    notifyServerError(language.t, err)
   }
 
   let dialogRun = 0

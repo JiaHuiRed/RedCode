@@ -16,7 +16,7 @@ export type ProviderModelNotFoundError = {
   }
 }
 
-type Translator = (key: string, vars?: Record<string, string | number>) => string
+export type Translator = (key: string, vars?: Record<string, string | number>) => string
 
 function tr(translator: Translator | undefined, key: string, text: string, vars?: Record<string, string | number>) {
   if (!translator) return text
