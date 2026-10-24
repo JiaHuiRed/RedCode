@@ -979,6 +979,12 @@ export const toUIMessages = Effect.fn("Message.toUIMessages")(function* (
         if (part.type === "text") {
           // 261010 Red compress 已退役；旧提醒只从模型出站副本剥离，保留原文与账本指纹。
           if (part.synthetic && part.metadata?.native_context_nudge !== undefined) continue
+          // 261024 Red RC-A03 跨模型回放跳过空 text：无签名思考轮的 text("") 在推理剥离后
+          //   成为唯一的非 step-start part，占位符判定会误判「还有内容」；而它上 wire 后
+          //   又被 AI SDK 滤掉——assistant 轮消失、相邻 user 消息、anthropic 协议拒收。
+          //   补 " " 分隔符的动机（保住签名推理的位置）在跨模型剥离后不复存在，直接跳过，
+          //   让占位符路径自然接管。
+          if (differentModel && part.text === "") continue
           const text = part.text === "" && hasSignedReasoning ? " " : part.text
           assistantMessage.parts.push({
             type: "text",
