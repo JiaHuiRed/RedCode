@@ -37,8 +37,12 @@ describe("system prompt routing", () => {
     expect(PROMPT_GPT).not.toContain("## Final answer")
   })
 
+ // 261024 Red Working style 重写后的锚句：交付=变更不是报告、禁自行降级、禁免责废话。
+ // 这三条是 GPT 系「审计 30 分钟不动手 + 宇宙免责声明」教训的断言化，措辞微调别弄丢。
  test("GPT Delta defaults to action without relaxing non-trivial verification", () => {
-   expect(PROMPT_GPT).toContain("Default to action")
+   expect(PROMPT_GPT).toContain("The deliverable is the change, not a report")
+   expect(PROMPT_GPT).toContain("Never self-downgrade the round")
+   expect(PROMPT_GPT).toContain("No disclaimer filler")
    expect(PROMPT_GPT).toContain("Add only what the result needs")
    expect(PROMPT_GPT).toContain("Fix the defect on your path")
    expect(PROMPT_GPT).toContain("Prefer the smallest complete change")
