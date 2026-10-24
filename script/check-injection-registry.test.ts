@@ -82,6 +82,27 @@ test("RC-A05 部分暂存假通过：工作区修好但 index 是坏的，必须
   expect(runGate().exitCode).toBe(0)
 })
 
+test("RC-A05 反向假通过：登记表暂存新锚点、源码只改工作区不暂存，必须红", async () => {
+  // ① 暂存新登记表（锚点指向 NEW_ANCHOR）
+  await writeFile(
+    path.join(fixtureRoot, "docs", "injection-registry.jsonc"),
+    GOOD_REGISTRY.replace("TOKEN_ANCHOR", "NEW_ANCHOR"),
+  )
+  git(["add", "docs/injection-registry.jsonc"])
+  // ② 源码加了 NEW_ANCHOR 但**不暂存**——contentFor 若回退读工作区就会假通过，
+  //    提交后锚点失效（index 登记表 × 工作区源码 的错配组合）
+  await writeFile(path.join(fixtureRoot, "src", "prompt.ts"), PROMPT.replace("TOKEN_ANCHOR", "NEW_ANCHOR"))
+
+  const r = runGate()
+  expect(r.exitCode).toBe(1)
+  expect(r.stdout.toString()).toContain("锚点失效")
+
+  // 复位
+  git(["checkout", "-q", "HEAD", "--", "docs/injection-registry.jsonc"])
+  git(["checkout", "-q", "HEAD", "--", "src/prompt.ts"])
+  expect(runGate().exitCode).toBe(0)
+})
+
 test("staged 删除登记面文件时红，不留静默缺口", async () => {
   git(["rm", "-q", "src/prompt.ts"])
   const r = runGate()

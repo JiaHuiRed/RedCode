@@ -52,7 +52,7 @@ function fail(lines: string[]): never {
 
 function loadRegistry(): Row[] {
   const text = contentFor(REGISTRY)
-  if (text === undefined) fail([`${REGISTRY} 读取失败（staged 删除或工作区缺失）`])
+  if (text === undefined) fail([`${REGISTRY} 不在待提交快照（index）中——staged 删除或从未 add`])
   // 261024 Red RC-A01 ParseError[] 才是 parse 的签名；unknown[] 在 CI typecheck 直接红
   const errors: ParseError[] = []
   const parsed = parse(text, errors, { allowTrailingComma: true }) as { items?: Row[] } | undefined
@@ -60,23 +60,13 @@ function loadRegistry(): Row[] {
   return parsed.items
 }
 
-// 261024 Red RC-A05 门禁必须看到「将要提交的内容」：staged 文件读 git index 版本，
-// 否则「暂存坏版本→工作区修好→忘了重新 add」的场景里，门禁验的是修好的工作区、
-// 提交进去的却是坏版本。未 staged 的文件读工作区（与提交树一致的前提是不存在未暂存改动）。
-const stagedFiles = new Set(
-  Bun.spawnSync(["git", "diff", "--cached", "--name-only"], { cwd: root }).stdout.toString().split(/\r?\n/),
-)
-
+// 261024 Red RC-A05 复验补刀：统一从 git index 读。index 就是待提交的完整快照——
+// 按 stagedFiles 切来源有反向漏洞：暂存新登记表（新锚点）+ 源码只改工作区不暂存，
+// 门禁拿「index 登记表 × 工作区源码」假通过，提交后锚点失效。不在 index 的文件
+// （未跟踪/被 staged 删除）同样不进提交树，一律按不存在处理，不留工作区后门。
 function contentFor(path: string): string | undefined {
-  if (stagedFiles.has(path)) {
-    const shown = Bun.spawnSync(["git", "show", `:${path}`], { cwd: root })
-    return shown.exitCode === 0 ? shown.stdout.toString() : undefined // exit≠0 = staged 删除
-  }
-  try {
-    return readFileSync(join(root, path), "utf8")
-  } catch {
-    return undefined
-  }
+  const shown = Bun.spawnSync(["git", "show", `:${path}`], { cwd: root })
+  return shown.exitCode === 0 ? shown.stdout.toString() : undefined
 }
 
 // --- 默认模式：登记表静态校验 ---
