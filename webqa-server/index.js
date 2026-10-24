@@ -32,6 +32,11 @@
 //   - describe 全面改写为「观察优先」纪律：observe（纯文本，便宜）→ aria-ref 定位 →
 //     waitFor / 再 observe 验证效果 → 只有需要视觉判断时才 screenshot。
 //
+// 261024 Red v1.4.0：新增 drag（move→down→move(steps)→up 真实鼠标拖拽）。合成
+//   PointerEvent 不建立活动指针，setPointerCapture 组件（如 ResizeHandle）会抛
+//   NotFoundError 且测不出真实拖拽；drag 走 CDP 真输入管道，指针捕获语义全真。
+//   起终点坐标同 clickAt 口径：视口内 CSS 像素，从截图上量。
+//
 // 261019 Red v1.3.0（公司日常高频使用下的内存/提效优化，工具名与参数保持兼容）：
 //   - playwright 延迟加载：顶层 import 实测 50→113MiB RSS（+63MiB），没在用浏览器的
 //     会话不该付这份常驻；首次调用再解析，模块缺失仍会在调用点报原错误；
@@ -94,7 +99,7 @@ cleanupStale()
 let shotSeq = 0
 const nextShotPath = () => path.join(OUT_DIR, `shot-${process.pid}-${++shotSeq}.png`)
 
-const server = new McpServer({ name: "webqa", version: "1.3.0" })
+const server = new McpServer({ name: "webqa", version: "1.4.0" })
 
 // ---- 单例浏览器/页面：跨 interact 调用保留状态（per-session 进程，无并发共享） ----
 let browser = null
@@ -212,6 +217,7 @@ const stepSchema = z.object({
     "fill",
     "type",
     "press",
+    "drag",
     "screenshot",
     "resize",
     "wait",
@@ -238,8 +244,16 @@ const stepSchema = z.object({
   x: z
     .number()
     .optional()
-    .describe("clickAt/scroll 的视口内 CSS 像素横坐标（截图左上角为原点，1 截图像素 = 1 CSS 像素）"),
-  y: z.number().optional().describe("clickAt/scroll 的视口内 CSS 像素纵坐标"),
+    .describe("clickAt/scroll/drag 的视口内 CSS 像素横坐标（截图左上角为原点，1 截图像素 = 1 CSS 像素）"),
+  y: z.number().optional().describe("clickAt/scroll/drag 的视口内 CSS 像素纵坐标"),
+  x2: z.number().optional().describe("drag 的终点横坐标"),
+  y2: z.number().optional().describe("drag 的终点纵坐标"),
+  steps: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe("drag 的 move 插值步数（默认 12），模拟真实拖拽速度"),
   deltaX: z.number().optional().describe("scroll 横向滚轮量，正=右"),
   deltaY: z.number().optional().describe("scroll 纵向滚轮量，正=下"),
   button: z.enum(["left", "right", "middle"]).optional().describe("clickAt 的鼠标键，默认 left"),
@@ -337,6 +351,19 @@ async function runSteps(steps) {
             await p.keyboard.press(s.value)
             results.push({ action: "press", ok: true, url: p.url() })
             break
+          case "drag": {
+            // 261024 Red RC-A04 真实输入管道：合成 PointerEvent 不建立活动指针，
+            // ResizeHandle 这类 setPointerCapture 组件会抛 NotFoundError，测的也是假链路。
+            // mouse.move→down→move(steps)→up 走 CDP 真输入，capture/hover/焦点语义全真。
+            if (s.x === undefined || s.y === undefined || s.x2 === undefined || s.y2 === undefined)
+              throw new Error("drag 需要 x/y（起点）与 x2/y2（终点）")
+            await p.mouse.move(s.x, s.y)
+            await p.mouse.down()
+            await p.mouse.move(s.x2, s.y2, { steps: s.steps ?? 12 })
+            await p.mouse.up()
+            results.push({ action: "drag", x: s.x, y: s.y, x2: s.x2, y2: s.y2, ok: true, url: p.url() })
+            break
+          }
           case "screenshot": {
             const out = s.path ?? nextShotPath()
             if (s.selector) {

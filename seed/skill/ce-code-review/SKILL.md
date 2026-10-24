@@ -54,7 +54,7 @@ description: 结构化代码审查——多维度审、severity 门控、去重�
 
 **Always-on（每次审查）**：
 - `ce-correctness-reviewer` — 正确性：逻辑错误、边界情况、错误处理
-- `ce-testing-reviewer` — 测试覆盖：缺失测试、断言质量、边界覆盖
+- `ce-testing-reviewer` — 测试覆盖：缺失测试、断言质量、边界覆盖。具体、可复现的缺失回归断言（有明确行为风险与触发组合）是有效 finding；泛化的「覆盖率不够」建议不算
 - `ce-maintainability-reviewer` — 可维护性：复杂度、命名、结构
 - `ce-project-standards-reviewer` — 项目规范：代码风格、约定、模式一致性
 - `ce-agent-native-reviewer` — AI 生成代码特征：过度抽象、防御性过度、模板化模式
@@ -97,7 +97,7 @@ Synthesis 拥有最终路由权。人格提供的路由元数据是输入，不�
 
 | 模式 | 场景 | 行为 |
 |------|------|------|
-| **交互模式**（默认） | 直接用户调用 | Markdown 报告；审查应用安全、已验证的修复，提交为孤立的 `fix(review):` commit（tree 干净时）或留给你的 commit（tree 脏时）。永不 push |
+| **交互模式**（默认） | 直接用户调用 | Markdown 报告；审查应用安全、已验证的修复，提交为孤立的 `fix(review):` commit（tree 干净时）或留给你的 commit（tree 脏时）。永不 push；commit 前置条件见「权限优先级」 |
 | **`mode:agent`** | 程序化调用 | 一个 JSON 对象；仅报告——审查不修改任何东西，调用方应用 findings |
 
 ### 4. Confidence-gated synthesis pipeline
@@ -174,7 +174,7 @@ git diff origin/HEAD...HEAD
 - 输出 Markdown 报告
 - 对 `gated_auto` 且 confidence ≥ 80 的 finding，询问用户是否应用
 - 用户确认后，用 `edit` 应用修复
-- 所有修复验证通过后，可选提交 `fix(review):` commit
+- 所有修复验证通过后，若用户或主工作流已授权 commit，提交 `fix(review):` commit；未授权则停在报告，修复留给调用方收尾
 
 **`mode:agent`**：
 - 输出一个 JSON 对象，调用方处理
@@ -185,7 +185,7 @@ git diff origin/HEAD...HEAD
 
 ### 交互模式（Markdown）
 
-```markdown
+````markdown
 # Code Review Report
 
 **Scope**: feat/auth → origin/main (47 files, +1203 -89)
@@ -228,7 +228,7 @@ git diff origin/HEAD...HEAD
 2 findings require manual action:
 - [P1] RBAC permission matrix not documented (manual)
 - [P2] Rate limiting missing on auth endpoint (advisory)
-```
+````
 
 ### `mode:agent`（JSON）
 
@@ -304,6 +304,18 @@ git diff origin/HEAD...HEAD
 ## Quick-review 短路
 
 用户说 "quick"、"fast"、"light" 时，跳过完整 pipeline，直接用轻量审查（git diff + 常见问题扫描）。`mode:agent` 始终运行完整 pipeline。
+
+---
+
+## 权限优先级
+
+作为子 skill 被上层工作流（如 tdd-flow）编排时：
+
+**用户明确授权 > 主工作流约束 > 本 skill 默认行为**
+
+- 本 skill **不得扩大**上层工作流授予的权限：主工作流要求「未经用户明确要求不 commit」时，交互模式的 `fix(review):` commit 同样禁止——修复应用后停在报告，由主工作流按自己的收尾清单统一处理
+- 是否应用修复由当前任务授权决定；是否提交必须符合用户明确要求或主工作流的显式授权
+- 直接由用户调用（无上层工作流）时按本 skill 默认行为执行
 
 ---
 
