@@ -4,6 +4,12 @@
 @import "tailwindcss/utilities.css" layer(utilities) source("../../../../");
 @import "./utilities.css";
 
+/* 261024 Red Tailwind 默认 dark: 走系统 prefers-color-scheme 媒体查询，而应用的主题
+   切换走 html 上的 data-color-scheme——应用内切到深色主题时 dark: 类不跟随（静默失效，
+   已在 titlebar/message-timeline 的 Seal 红上实际发生）。把变体对齐到应用主题；
+   deepblue 与 dark 同为深色档（theme.css 里 color-scheme: dark）。 */
+@custom-variant dark (&:where([data-color-scheme="dark"] *, [data-color-scheme="deepblue"] *));
+
 @import "../index.css";
 
 @theme {
