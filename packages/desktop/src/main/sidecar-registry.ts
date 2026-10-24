@@ -1,7 +1,8 @@
-import { execFileSync } from "node:child_process"
+import { execFile } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { promisify } from "node:util"
 
 // 260916 Red sidecar 拉起的 MCP 子进程在 Windows 上没有 job object 兜底（那套绑定依赖
 //   bun:ffi，GUI 的 sidecar 是 node bundle，用不了），所以父进程一死它们就成孤儿。
@@ -37,29 +38,38 @@ function alive(pid: number) {
   }
 }
 
-function powershell(script: string) {
-  return execFileSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
+// 261024 Red PowerShell/taskkill 全部异步化：同步版 execFileSync 最坏 3×10s + taskkill
+//   10s，跑在 whenReady 之后的串行路径上会把主进程事件循环整个冻结、推迟建窗。失败语义
+//   逐条保留：单步失败降级为「本次漏清」，残留下次异常恢复还会被扫到，宁可漏清不误杀。
+const execFileP = promisify(execFile)
+
+function powershell(script: string): Promise<string> {
+  return execFileP("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
     encoding: "utf8",
     windowsHide: true,
     timeout: 10_000,
-  })
+  }).then((result) => result.stdout)
 }
 
 // PID 会被系统复用，动手杀树前必须确认这个号还是我们的 sidecar、而不是巧合撞号的别的进程。
-function looksLikeSidecar(pid: number) {
+async function looksLikeSidecar(pid: number) {
   try {
-    return powershell(`(Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}").CommandLine`).includes("sidecar")
+    return (await powershell(`(Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}").CommandLine`)).includes(
+      "sidecar",
+    )
   } catch {
     // 拿不到命令行就不猜：宁可漏清一次（下一个会话启动时还在，会再被扫到），也不误杀别的进程。
     return false
   }
 }
 
-function childrenOf(parentPid: number): number[] {
+async function childrenOf(parentPid: number): Promise<number[]> {
   try {
-    const out = powershell(
-      `Get-CimInstance Win32_Process -Filter "ParentProcessId = ${parentPid}"` +
-        ` | Select-Object -ExpandProperty ProcessId | ConvertTo-Json -Compress`,
+    const out = (
+      await powershell(
+        `Get-CimInstance Win32_Process -Filter "ParentProcessId = ${parentPid}"` +
+          ` | Select-Object -ExpandProperty ProcessId | ConvertTo-Json -Compress`,
+      )
     ).trim()
     const parsed: unknown = JSON.parse(out || "null")
     // 单个子进程时 ConvertTo-Json 给的是标量而不是数组。
@@ -72,11 +82,10 @@ function childrenOf(parentPid: number): number[] {
   }
 }
 
-function killTree(pid: number) {
+async function killTree(pid: number) {
   try {
     // /T 连孙子一起杀：MCP server 自己也可能再拉子进程（uv/python/node 包装层）。
-    execFileSync("taskkill", ["/F", "/T", "/PID", String(pid)], {
-      stdio: "ignore",
+    await execFileP("taskkill", ["/F", "/T", "/PID", String(pid)], {
       windowsHide: true,
       timeout: 10_000,
     })
@@ -87,8 +96,8 @@ function killTree(pid: number) {
 
 // sidecar 已经死了但它的孩子还活着时用这个：taskkill /T 对已退出的父进程无效，
 // 只能按 ParentProcessId 反查一代孩子，再各自按树杀。
-export function killOrphanChildren(parentPid: number) {
-  for (const pid of childrenOf(parentPid)) killTree(pid)
+export async function killOrphanChildren(parentPid: number) {
+  for (const pid of await childrenOf(parentPid)) await killTree(pid)
 }
 
 export function rememberSidecarTree(appPid: number, sidecarPid: number | undefined) {
@@ -110,16 +119,27 @@ export function forgetSidecarTree() {
   }
 }
 
-export function sweepStaleSidecarTree() {
+async function sweepStaleSidecarTree() {
   const tree = read()
   if (!tree) return
   // 记录里的那个 GUI 还活着，说明是另一个实例（多开）在用它，不归本次启动清。
   if (alive(tree.appPid)) return
   if (alive(tree.sidecarPid)) {
     // 确认是我们的 sidecar 才动手；不对就什么都不做，避免误伤撞号的进程。
-    if (looksLikeSidecar(tree.sidecarPid)) killTree(tree.sidecarPid)
+    if (await looksLikeSidecar(tree.sidecarPid)) await killTree(tree.sidecarPid)
   } else {
-    killOrphanChildren(tree.sidecarPid)
+    await killOrphanChildren(tree.sidecarPid)
   }
   forgetSidecarTree()
+}
+
+// 261024 Red 启动清扫的唯一入口：whenReady 后立刻起跑（不挡建窗），sidecar spawn 前由
+//   调用方 await——「清完旧树才起新 sidecar」的先后是硬约束，但等待不该串在建窗前面。
+//   每次进程生命周期只跑一次；空 catch 是有意的降级：单步失败已在内部逐条吞掉，能走到
+//   这里的只有意外抛错，吞掉等价于「本次不清」，与同步版单步失败的语义一致。
+let sweepInFlight: Promise<void> | undefined
+
+export function beginStaleSidecarSweep(): Promise<void> {
+  sweepInFlight ??= sweepStaleSidecarTree().catch(() => {})
+  return sweepInFlight
 }

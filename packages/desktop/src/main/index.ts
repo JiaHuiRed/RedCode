@@ -45,7 +45,7 @@ import {
 import { getStore } from "./store"
 import { killSidecarTreeSync } from "./sidecar-process"
 import { createSidecarSupervisor } from "./sidecar-supervisor"
-import { forgetSidecarTree, killOrphanChildren, rememberSidecarTree, sweepStaleSidecarTree } from "./sidecar-registry"
+import { beginStaleSidecarSweep, forgetSidecarTree, killOrphanChildren, rememberSidecarTree } from "./sidecar-registry"
 import {
   createMainWindow,
   iconPath,
@@ -382,7 +382,9 @@ function handleSidecarExit(code: number) {
   writeLog("utility", "sidecar exited", { code, aliveMs }, "warn")
   // 260916 Red sidecar 死了，但它拉起的 MCP 子进程还活着（Windows 上没有 job object 兜底），
   //   接下来 respawn 会把新的一套拉起来，旧的就永远留成孤儿。趁还知道旧 PID，先清掉它的孩子。
-  if (sidecarPid !== undefined) killOrphanChildren(sidecarPid)
+  //   261024 Red 清扫已异步化：fire-and-forget，退出回调里不再同步跑 PowerShell 冻结主进程；
+  //   旧孩子与新 spawn 是不同 PID 树，并发清理没有资源争抢。
+  if (sidecarPid !== undefined) void killOrphanChildren(sidecarPid)
   sidecarPid = undefined
   server = null
 }
@@ -693,7 +695,10 @@ const main = Effect.gen(function* () {
 
   // 260916 Red 上一次会话如果是崩溃或被强杀退出的，它的 sidecar 树还留在系统里——
   //   这种退出跑不到任何 cleanup 钩子，只能在下次启动、拉起新 sidecar 之前清一遍。
-  sweepStaleSidecarTree()
+  //   261024 Red 改为异步起跑：PowerShell 最坏 3×10s + taskkill 10s，同步跑会把主进程
+  //   冻结在建窗之前（异常恢复路径上每次必撞）。「清完旧树才起新 sidecar」的先后关系
+  //   不放在这里兑现，而是由下方 loadingTask 在 spawn 前显式 await 这条 promise。
+  const staleSidecarSweep = beginStaleSidecarSweep()
 
   // 260903 cc 只有打包版才登记 `redcode://`。
   //   `setAsDefaultProtocolClient` 不传 path/args 时默认用 `process.execPath` + 空参数，
@@ -780,6 +785,11 @@ const main = Effect.gen(function* () {
 
     ensureLoopbackNoProxy()
     useEnvProxy()
+
+    // 261024 Red spawn 前等启动清扫落地：旧进程清理与新 sidecar 的先后是硬约束，不能为
+    //   提速让新旧进程争抢同一棵进程树。清扫 promise 不会 reject（内部已逐条降级），
+    //   Effect.promise 的 defect 通道在这里不可达。
+    yield* Effect.promise(() => staleSidecarSweep)
 
     logger.log("spawning sidecar", { url })
     // 260608 Red 启动计时：spawn→ready、ready→healthy 各占多久，定位首页"加载中"瓶颈，测完即删
