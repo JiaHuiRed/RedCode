@@ -489,6 +489,10 @@ render(() => {
               defaultServer={defaultServer.latest ?? ServerConnection.Key.make("sidecar")}
               servers={servers()}
               router={MemoryRouter}
+              // 261024 Red 复用主进程的就绪确认：上面 <Show> 等的 awaitInitialization 只在
+              //   serverReady（sidecar 已 healthy）后 resolve，渲染层不必再做 10s blocking
+              //   宽限轮询，从 background 起步——保留单次连接确认与 ConnectionError 重试。
+              initialCheckMode="background"
             >
               <Inner />
             </AppInterface>

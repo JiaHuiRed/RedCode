@@ -12,7 +12,6 @@ import { ThemeProvider } from "@redcode-ai/ui/theme/context"
 import { MetaProvider } from "@solidjs/meta"
 import { type BaseRouterProps, Navigate, Route, Router } from "@solidjs/router"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
-import { Effect } from "effect"
 import {
   type Component,
   createMemo,
@@ -48,6 +47,7 @@ import Layout from "@/pages/layout"
 import { DiagnosticErrorBoundary } from "./components/diagnostic-error-boundary"
 import { ErrorPage, formatError } from "./pages/error"
 import { useCheckServerHealth } from "./utils/server-health"
+import { awaitStartupHealth } from "./utils/startup-health"
 
 const HomeRoute = lazy(() => import("@/pages/home"))
 const Session = lazy(() => import("@/pages/session"))
@@ -227,32 +227,37 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
   )
 }
 
-function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
+function ConnectionGate(
+  props: ParentProps<{ disableHealthCheck?: boolean; initialCheckMode?: "blocking" | "background" }>,
+) {
   const server = useServer()
   const checkServerHealth = useCheckServerHealth()
 
-  const [checkMode, setCheckMode] = createSignal<"blocking" | "background">("blocking")
+  // 261024 Red initialCheckMode：desktop 场景主进程 serverReady（sidecar 已 healthy）之后
+  //   awaitInitialization 才 resolve，渲染层从 "background" 起步——只做一次连接确认、
+  //   失败走 ConnectionError 的 1s 重试，不再重复主进程已经做完的 10s 宽限轮询。
+  const [checkMode, setCheckMode] = createSignal<"blocking" | "background">(props.initialCheckMode ?? "blocking")
 
   // performs repeated health check with a grace period for
   // non-http connections, otherwise fails instantly
-  const [startupHealthCheck, healthCheckActions] = createResource(() =>
-    props.disableHealthCheck
-      ? true
-      : Effect.gen(function* () {
-          if (!server.current) return true
-          const { http, type } = server.current
-
-          while (true) {
-            const res = yield* Effect.promise(() => checkServerHealth(http))
-            if (res.healthy) return true
-            if (checkMode() === "background" || type === "http") return false
-          }
-        }).pipe(
-          Effect.timeoutOrElse({ duration: "10 seconds", orElse: () => Effect.succeed(false) }),
-          Effect.ensuring(Effect.sync(() => setCheckMode("background"))),
-          Effect.runPromise,
-        ),
-  )
+  // 261024 Red 轮询循环抽到 awaitStartupHealth：补上原先缺失的轮询间隔——healthy:false
+  //   被 server-health 的 750ms 结果缓存原样回喂时，while(true) 会以微任务速度空转；
+  //   循环语义（http 快速判负 / background 切换 / 预算）见该函数注释。
+  const [startupHealthCheck, healthCheckActions] = createResource(async () => {
+    if (props.disableHealthCheck) return true
+    try {
+      if (!server.current) return true
+      const { http, type } = server.current
+      return await awaitStartupHealth({
+        check: () => checkServerHealth(http),
+        connectionType: type,
+        shouldBackground: () => checkMode() === "background",
+      })
+    } finally {
+      // 对齐原 Effect.ensuring：无论结果如何，结算后闸门都切到 background。
+      setCheckMode("background")
+    }
+  })
 
   return (
     <Suspense
@@ -355,6 +360,8 @@ export function AppInterface(props: {
   servers?: Array<ServerConnection.Any>
   router?: Component<BaseRouterProps>
   disableHealthCheck?: boolean
+  /** 261024 Red 桌面壳传 "background"：主进程已确认 sidecar 就绪，渲染层只做单次确认。 */
+  initialCheckMode?: "blocking" | "background"
 }) {
   return (
     <ServerProvider
@@ -362,7 +369,7 @@ export function AppInterface(props: {
       disableHealthCheck={props.disableHealthCheck}
       servers={props.servers}
     >
-      <ConnectionGate disableHealthCheck={props.disableHealthCheck}>
+      <ConnectionGate disableHealthCheck={props.disableHealthCheck} initialCheckMode={props.initialCheckMode}>
         <ServerKey>
           <GlobalSDKProvider>
             <ServerSDKProvider>
