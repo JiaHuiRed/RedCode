@@ -111,4 +111,42 @@ describe("awaitStartupHealth", () => {
     expect(calls).toBe(3)
     expect(clock.sleeps).toEqual([500, 500])
   })
+
+  test("each probe carries the remaining budget as its own request timeout", async () => {
+    const clock = fakeClock()
+    const timeouts: Array<number | undefined> = []
+    await awaitStartupHealth({
+      ...base,
+      timeoutMs: 1200,
+      now: clock.now,
+      sleep: clock.sleep,
+      check: (opts) => {
+        timeouts.push(opts?.timeoutMs)
+        return Promise.resolve({ healthy: false })
+      },
+    })
+    // 261024 Red 单轮探测也受总预算约束：t=0 拿满 1200，t=500 剩 700，t=1000 剩 200。
+    expect(timeouts).toEqual([1200, 700, 200])
+  })
+
+  test("a hanging first probe ends at the budget, not at its own 30s default", async () => {
+    const clock = fakeClock()
+    let calls = 0
+    const result = await awaitStartupHealth({
+      ...base,
+      timeoutMs: 1000,
+      intervalMs: 500,
+      now: clock.now,
+      sleep: clock.sleep,
+      // 模拟无响应服务器：请求挂到本轮超时（= 剩余预算）才以 unhealthy 落地。
+      check: (opts) => {
+        calls += 1
+        return clock.sleep(opts?.timeoutMs ?? 0).then(() => ({ healthy: false }))
+      },
+    })
+    expect(result).toBe(false)
+    // 首轮探测按剩余预算 1000ms 自灭，下一轮已无预算——总耗时就是预算线本身。
+    expect(calls).toBe(1)
+    expect(clock.now()).toBe(1000)
+  })
 })

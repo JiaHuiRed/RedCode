@@ -105,13 +105,15 @@ export function useCheckServerHealth() {
   const platform = usePlatform()
   const fetcher = platform.fetch ?? globalThis.fetch
 
-  return (http: ServerConnection.HttpBase) => {
+  // 261024 Red opts 透传：启动闸门把每轮剩余预算当单轮请求超时传下来。并发下不同超时
+  //   的调用共享首飞的缓存 promise——去重优先于精确超时，超时在这里只是上限不是承诺。
+  return (http: ServerConnection.HttpBase, opts?: CheckServerHealthOptions) => {
     const key = cacheKey(http)
     const now = Date.now()
     prune(now)
     const hit = healthCache.get(key)
     if (hit && hit.fetch === fetcher && (!hit.done || now - hit.at < cacheMs)) return hit.promise
-    const promise = checkServerHealth(http, fetcher).finally(() => {
+    const promise = checkServerHealth(http, fetcher, opts).finally(() => {
       const next = healthCache.get(key)
       if (!next || next.promise !== promise) return
       next.done = true

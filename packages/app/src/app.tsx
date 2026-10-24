@@ -249,7 +249,7 @@ function ConnectionGate(
       if (!server.current) return true
       const { http, type } = server.current
       return await awaitStartupHealth({
-        check: () => checkServerHealth(http),
+        check: (opts) => checkServerHealth(http, opts),
         connectionType: type,
         shouldBackground: () => checkMode() === "background",
       })
