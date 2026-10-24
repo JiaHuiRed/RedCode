@@ -10,7 +10,7 @@
 
 ### [Unreleased]
 
-- **explore 子代理跨工程 Git 查询放行（权限第三次迭代：派发模型演进，闸假设过期）**（`tool/shell.ts`、`agent/definition/explore.md`）：RedMind 跨工程派发 explore 后自然 git 查询必经 `-C <目标仓库>`，而 261017 的 -C 分支还是「仓库自证 4 条」窄桩——实证 RedMon 会话 3 连拒（`git -C <repo> log --oneline -20` 等字面只读命令）、重复失败熔断停跑。现在 -C 分支复用与无 -C 相同的七子命令只读清单 + 原 flag 禁令（新增 --no-index）；rev-list 仍限 --count；`git status` 刻意不放行（刷新 .git/index，破零写入例）。信任边界不降：实例上下文内 = 裸 git 同一边界，上下文外走既有 external_directory 授权（explore 默认 deny）。拒绝文案补静态允许形状（零指导 = 盲试撞熔断）。实现教训：扩容分支重审每条 return 路径——结尾 `return undefined` 在旧窄桩下恰好正确、扩容后让 external_directory 授权整体失效，回归测试当场抓住。模型可见四问：①拒绝文案换固定带形状短句、合规查询放行 ②固定前缀零增减、retry 净减 ③explore 权限规则变化限于该 agent 会话一次 ④文案 ~300 字符有界不回显命令。决策演进见 [explore-scoped-git-queries](docs/notes/implemented/bug-fix/2026-10-17-explore-scoped-git-queries.md)。验证：shell 120/120、typecheck 0 错。
+- **explore 子代理跨工程 Git 查询放行（权限第三次迭代：派发模型演进，闸假设过期）**（`tool/shell.ts`、`agent/definition/explore.md`）：RedMind 跨工程派发 explore 后自然 git 查询必经 `-C <目标仓库>`，而 261017 的 -C 分支还是「仓库自证 4 条」窄桩——实证 RedMon 会话 3 连拒（`git -C <repo> log --oneline -20` 等字面只读命令）、重复失败熔断停跑。现在 -C 分支复用与无 -C 相同的七子命令只读清单 + 原 flag 禁令（新增 --no-index）；rev-list 仍限 --count；`git status` 经用户裁定放行（写面仅 .git/index stat cache，git 内部缓存）。信任边界不降：实例上下文内 = 裸 git 同一边界，上下文外走既有 external_directory 授权（explore 默认 deny）。拒绝文案补静态允许形状（零指导 = 盲试撞熔断）。实现教训：扩容分支重审每条 return 路径——结尾 `return undefined` 在旧窄桩下恰好正确、扩容后让 external_directory 授权整体失效，回归测试当场抓住。模型可见四问：①拒绝文案换固定带形状短句、合规查询放行 ②固定前缀零增减、retry 净减 ③explore 权限规则变化限于该 agent 会话一次 ④文案 ~300 字符有界不回显命令。决策演进见 [explore-scoped-git-queries](docs/notes/implemented/bug-fix/2026-10-17-explore-scoped-git-queries.md)。验证：shell 120/120、typecheck 0 错。
 
 ### [0.13.0] - 2026-10-24
 

@@ -229,6 +229,10 @@ describe("tool.shell", () => {
                 `git -C ${repo} diff HEAD~0 HEAD`,
                 `git -C ${repo} show --stat HEAD`,
                 `git -C ${repo} rev-parse HEAD --git-dir`,
+                // 261025 Red status 放行（写 .git/index stat cache 属 git 内部缓存，裁定接受）
+                "git status --short",
+                `git -C ${repo} status --short`,
+                `git -C ${repo} status`,
               ]) {
                 expect(
                   (yield* run({ command, description: "Preserve existing Git queries" }, context)).metadata.exit,
@@ -266,9 +270,7 @@ describe("tool.shell", () => {
                 `git -C ${repo} --work-tree=. rev-parse HEAD`,
                 `git -C ${repo} -C . rev-parse HEAD`,
                 `git -C ${repo} rev-list --count HEAD --all`,
-                // 261024 Red status 刻意不放行（刷新 .git/index stat cache，破零写入例）；
-                //   --no-index 让 diff 读仓库外任意文件对，越 external_directory 边界
-                `git -C ${repo} status --short`,
+                // 261025 Red --no-index 让 diff 读仓库外任意文件对，越 external_directory 边界
                 `git -C ${repo} diff --no-index`,
                 `git -C ${repo} log --oneline -20 > forbidden.txt`,
                 `git -C ${repo} rev-list --count HEAD --output=forbidden.txt`,

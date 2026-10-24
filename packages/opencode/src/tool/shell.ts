@@ -264,7 +264,7 @@ function exploreGitDirectory(root: Node): string | undefined {
     // 261024 Red 文案带允许形状：上次 RedMon 实证零指导 = 盲试 3 次 → 重复失败熔断。
     //   固定短句、不回显命令，四问上限口径不变。
     throw new Error(
-      "Explore only supports literal read-only Git queries: git log/show/diff/blame/rev-parse/ls-files/branch, with or without `git -C <dir>` (rev-list only `--count HEAD|--all`; git status is not available). No shell composition, redirection, globs, --output/--no-index, or aliases.",
+      "Explore only supports literal read-only Git queries: git log/show/diff/blame/rev-parse/ls-files/branch, with or without `git -C <dir>` (rev-list only `--count HEAD|--all`). No shell composition, redirection, globs, --output/--no-index, or aliases.",
     )
   }
   const nodes = commands(root)
@@ -299,7 +299,10 @@ function exploreGitDirectory(root: Node): string | undefined {
     if (!(args.length === 3 && args[1] === "--count" && ["HEAD", "--all"].includes(args[2]))) return reject()
     return directory
   }
-  if (!["log", "show", "diff", "blame", "rev-parse", "ls-files", "branch"].includes(args[0])) return reject()
+  // 261025 Red status 放行（用户裁定）：只写 .git/index stat cache（git 内部缓存，非工作区），
+  //   与只读子代理的实际威胁模型（不碰工作区、不碰远端）不冲突；纯读组合替代的教学成本更高。
+  if (!["log", "show", "diff", "status", "blame", "rev-parse", "ls-files", "branch"].includes(args[0]))
+    return reject()
   if (
     args.some((arg) => {
       const flag = arg.split("=")[0]

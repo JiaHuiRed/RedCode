@@ -65,3 +65,11 @@ external_directory 授权整体失效（回归测试当场抓住，是 AGENTS.md
 3. explore.md 权限规则变化影响 agent 配置注入段（该段随 agent 定义走），KV 影响限于加载
    explore 定义的会话一次。
 4. 拒绝文案固定约 300 字符有界，不回显命令与路径；无新增注入项。
+
+## 裁定（261025）：git status 放行
+
+用户拍板：status 的唯一写面是刷新 `.git/index` stat cache（git 内部缓存，非工作区、非远端），
+与只读子代理的实际威胁模型不冲突；纯读组合（diff --name-only / ls-files）替代的教学成本更高。
+status 进八子命令清单（与 --short/--porcelain 等 flag 同受 flag 禁令兜底），YAML 加
+`git status *` 与 `git -C * status *`（git arity=2，一条规则同时覆盖裸命令与带 flag 形态）。
+探索性验证留给真机首用。
