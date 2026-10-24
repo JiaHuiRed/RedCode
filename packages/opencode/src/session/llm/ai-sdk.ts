@@ -3,6 +3,7 @@ import { responsesIncompleteErrorMessage } from "@redcode-ai/llm/protocols/opena
 import { Effect, Schema } from "effect"
 import { type streamText } from "ai"
 import { errorMessage } from "@/util/error"
+import { ThinkTagScanner } from "./think-split"
 // 261020 Red 参数解析失败的 tool call 不执行：llm.ts 的 repair 钩子把它改投这个哨兵工具名，
 // 让 AI SDK 停在 NoSuchToolError，而不是拿残参数去真跑工具。原生消息只回
 // 「unavailable tool 'invalid'」并把**整张可用工具表**塞回上下文——原工具名和真正原因全丢，
@@ -46,6 +47,12 @@ export function adapterState() {
     // 追加 provider-error，与 native 协议同语义）。
     sawStepFinish: false,
     terminalIncomplete: undefined as string | undefined,
+    // 261024 Red 内联 <think> 拆分器（step-5-preview 实测：推理以 <think>…</think> 内联在
+    // content 通道输出，协议层只认 reasoning_content，漏进正文）。text-delta 逐段喂它；
+    // thinkPartID 是拆分器自己开的推理块 id——与原生 reasoning-* 事件（reasoning_content
+    // 通道）各自独立，两者不会同时开启。
+    think: new ThinkTagScanner(),
+    thinkPartID: undefined as string | undefined,
   }
 }
 
@@ -119,7 +126,16 @@ export function toLLMEvents(
         // 261014 Red 新 step 开始：上一 step 的终态追踪作废（估算守卫按当前 step 判定）。
         state.sawStepFinish = false
         state.terminalIncomplete = undefined
-        return [LLMEvent.stepStart({ index: state.step })]
+        const events: LLMEvent[] = []
+        // 261024 Red think 状态不跨 step：上一 step 未收口的内联推理块在此收口，
+        // 拆分器复位（各 step 是独立补全，<think> 开闭不会跨 step 配对）。
+        if (state.thinkPartID !== undefined) {
+          events.push(LLMEvent.reasoningEnd({ id: state.thinkPartID }))
+          state.thinkPartID = undefined
+        }
+        state.think = new ThinkTagScanner()
+        events.push(LLMEvent.stepStart({ index: state.step }))
+        return events
       })
 
     case "finish-step":
@@ -145,14 +161,37 @@ export function toLLMEvents(
     case "finish":
       return Effect.promise(async () => {
         await state.routedViaPromise
-        const events: LLMEvent[] = [
+        const events: LLMEvent[] = []
+        // 261024 Red 流结束先收尾 think 拆分器：悬挂尾窗按状态放行，未闭合的内联
+        // 推理块在 finish 上补 reasoningEnd——TUI/GUI 的思考块不能悬着不收口。
+        const split = state.think.flush()
+        if (split.reasoning) {
+          if (state.thinkPartID === undefined) {
+            state.thinkPartID = currentReasoningID(state, undefined)
+            events.push(LLMEvent.reasoningStart({ id: state.thinkPartID }))
+          }
+          events.push(LLMEvent.reasoningDelta({ id: state.thinkPartID, text: split.reasoning }))
+        }
+        if (state.thinkPartID !== undefined) {
+          events.push(LLMEvent.reasoningEnd({ id: state.thinkPartID }))
+          state.thinkPartID = undefined
+        }
+        if (split.text) {
+          // 正常流里 finish 前必有 text-end（已 flush 过），这里只剩 currentTextID
+          // 未定义的残尾形态——独立小 part 呈现，避免丢字。
+          const id = state.currentTextID ?? currentTextID(state, undefined)
+          if (state.currentTextID === undefined) events.push(LLMEvent.textStart({ id }))
+          events.push(LLMEvent.textDelta({ id, text: split.text }))
+          if (state.currentTextID === undefined) events.push(LLMEvent.textEnd({ id }))
+        }
+        events.push(
           LLMEvent.finish({
             reason: finishReason(event.finishReason),
             usage: usage(event.totalUsage),
             providerMetadata: "providerMetadata" in event ? providerMetadata(event.providerMetadata) : undefined,
             routedVia: state.routedVia,
           }),
-        ]
+        )
         // 261014 Red 终态未完成：finish（实报 usage 已记账、只此一次）之后补
         // provider-error，会话层以可见错误收尾而不是把截断当成功。
         if (state.terminalIncomplete)
@@ -176,26 +215,64 @@ export function toLLMEvents(
 
     case "text-delta":
       return Effect.sync(() => {
-        state.textBytes += byteLength(event.text)
-        return [
-          LLMEvent.textDelta({
-            id: currentTextID(state, event.id),
-            text: event.text,
-            providerMetadata: providerMetadata(event.providerMetadata),
-          }),
-        ]
+        const events: LLMEvent[] = []
+        // 261024 Red content 通道过 think 拆分器：内联 <think> 段落转为推理事件。
+        const split = state.think.feed(event.text)
+        if (split.reasoning) {
+          if (state.thinkPartID === undefined) {
+            state.thinkPartID = currentReasoningID(state, undefined)
+            events.push(LLMEvent.reasoningStart({ id: state.thinkPartID }))
+          }
+          state.reasoningBytes += byteLength(split.reasoning)
+          events.push(LLMEvent.reasoningDelta({ id: state.thinkPartID, text: split.reasoning }))
+        }
+        if (split.text) {
+          if (state.thinkPartID !== undefined) {
+            events.push(LLMEvent.reasoningEnd({ id: state.thinkPartID }))
+            state.thinkPartID = undefined
+          }
+          state.textBytes += byteLength(split.text)
+          events.push(
+            LLMEvent.textDelta({
+              id: currentTextID(state, event.id),
+              text: split.text,
+              providerMetadata: providerMetadata(event.providerMetadata),
+            }),
+          )
+        }
+        return events
       })
 
     case "text-end":
       return Effect.sync(() => {
         const id = currentTextID(state, event.id)
+        const events: LLMEvent[] = []
+        // 261024 Red part 收尾先放行拆分器悬挂尾窗（文本进当前 part；推理挂到
+        // think 块上——跨 part 的内联思考合法，块保持开启等后续 part 或 finish 收口）。
+        const split = state.think.flush()
+        if (split.reasoning) {
+          if (state.thinkPartID === undefined) {
+            state.thinkPartID = currentReasoningID(state, undefined)
+            events.push(LLMEvent.reasoningStart({ id: state.thinkPartID }))
+          }
+          state.reasoningBytes += byteLength(split.reasoning)
+          events.push(LLMEvent.reasoningDelta({ id: state.thinkPartID, text: split.reasoning }))
+        } else if (split.text) {
+          if (state.thinkPartID !== undefined) {
+            events.push(LLMEvent.reasoningEnd({ id: state.thinkPartID }))
+            state.thinkPartID = undefined
+          }
+          state.textBytes += byteLength(split.text)
+          events.push(LLMEvent.textDelta({ id, text: split.text }))
+        }
         state.currentTextID = undefined
-        return [
+        events.push(
           LLMEvent.textEnd({
             id,
             providerMetadata: providerMetadata(event.providerMetadata),
           }),
-        ]
+        )
+        return events
       })
 
     case "reasoning-start":

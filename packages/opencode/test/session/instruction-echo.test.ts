@@ -93,6 +93,34 @@ expect(r.kinds).toContain("native-context-notice")
 expect(r.stripped).toBe("这是真正的回答。")
 })
 
+// 261024 Red 压缩块头的新模仿形（step-5-preview 实测 ses_ffe5e979…）：模型把
+// context-compaction 块渲染头 "[Historical context summary. …]" + "sources: msg_a .. msg_b"
+// 压缩改写成 "[Historical context summary: msg_…]" 拼在回复尾部——上下文里从不出现
+// 冒号+单 ID 的混合形。
+test("[Historical context summary: msg_…] 模仿形 —— 剥掉，保留真正的回答", () => {
+const t = [
+"qingmu 222 全过（含捕捉救援流程）。补文档并提交：",
+"[Historical context summary: msg_001a16c245de001NMA2rRZ4Hf2GxVv]",
+].join("\n")
+const r = detect(t)
+expect(r.kinds).toContain("native-compaction-summary")
+expect(r.stripped).toBe("qingmu 222 全过（含捕捉救援流程）。补文档并提交：")
+})
+
+test("★不误切：正文讨论 historical context summary（无引擎标记形状）不动", () => {
+const t = "这个 Historical context summary 的渲染格式可以再收敛一点，模型会模仿。"
+expect(detect(t).kinds).toEqual([])
+})
+
+test("流式：模仿形未闭合时按锚点起点截断，闭合 ] 后放行", () => {
+const t = "补文档并提交：[Historical context summary: msg_001a16c245de001NMA2rRZ4Hf2GxVv]"
+const cut = cutAtLeakAnchor(t + " 尾巴")
+expect(cut.text).toBe("补文档并提交：")
+const released = releaseLeakHold(cut.hold)
+expect(released).toBe(" 尾巴")
+expect(leakAnchorStart("正文 [Historical context summary")).toBeGreaterThanOrEqual(0)
+})
+
 test("★不误切：用户正常讨论 history reference 机制、没有引擎标记形状时不动", () => {
 const t = "这个 history reference 机制会把旧消息 ID 暴露给模型，我觉得可以换个写法。"
 expect(detect(t).kinds).toEqual([])
