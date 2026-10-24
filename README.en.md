@@ -6,7 +6,7 @@ It understands and edits code, runs commands, uses developer tools, and works wi
 
 Deeply developed from [OpenCode](https://github.com/anomalyco/opencode), RedCode is tailored to Chinese-language workflows and personalized collaboration.
 
-[![Version](https://badgen.net/badge/Version/0.12.19/blue)](CHANGELOG.md)
+[![Version](https://badgen.net/badge/Version/0.12.20/blue)](CHANGELOG.md)
 [![Platform](https://badgen.net/badge/Platform/Windows%2010%2F11/green)](https://github.com/JiaHuiRed/RedCode)
 [![TypeScript](https://badgen.net/badge/TypeScript/7.x/3178c6)](https://typescriptlang.org)
 [![Bun](https://badgen.net/badge/Bun/1.3.x/fb6e19)](https://bun.sh)
