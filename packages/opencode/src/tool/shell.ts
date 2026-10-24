@@ -261,7 +261,11 @@ function unquote(text: string) {
 // 决策：docs/notes/implemented/bug-fix/2026-10-17-explore-scoped-git-queries.md
 function exploreGitDirectory(root: Node): string | undefined {
   const reject = () => {
-    throw new Error("Explore only supports literal read-only Git queries without shell composition or output files.")
+    // 261024 Red 文案带允许形状：上次 RedMon 实证零指导 = 盲试 3 次 → 重复失败熔断。
+    //   固定短句、不回显命令，四问上限口径不变。
+    throw new Error(
+      "Explore only supports literal read-only Git queries: git log/show/diff/blame/rev-parse/ls-files/branch, with or without `git -C <dir>` (rev-list only `--count HEAD|--all`; git status is not available). No shell composition, redirection, globs, --output/--no-index, or aliases.",
+    )
   }
   const nodes = commands(root)
   if (
@@ -286,12 +290,13 @@ function exploreGitDirectory(root: Node): string | undefined {
   if (tokens[1] === "-C" && (!directory || directory.startsWith("-"))) return reject()
   if (directory && process.platform === "win32" && /^[a-z]:(?:[^/\\]|$)/i.test(directory)) return reject()
   const args = tokens.slice(directory === undefined ? 1 : 3)
-  if (directory !== undefined || args[0] === "rev-list") {
-    if (!(
-      (args.length === 2 && args[0] === "rev-parse" && ["HEAD", "--show-toplevel"].includes(args[1])) ||
-      (args.length === 3 && args[0] === "rev-list" && args[1] === "--count" && ["HEAD", "--all"].includes(args[2]))
-    ))
-      return reject()
+  // 261024 Red 跨工程派发演进：-C 分支从「仓库自证 4 条」扩到与无 -C 同一条只读清单。
+  //   explore 被派到目标仓库后自然 git 查询必经 -C，旧窄桩让每条合规查询撞墙到熔断
+  //   （实证 RedMon 会话 3 连拒：log --oneline / status --short）。信任边界不变：目录
+  //   解析真实路径后，实例上下文内 = 裸 git 同一既有边界（git 配置/alias 在内，见
+  //   2026-10-17 note）；上下文外仍由 caller 分流走 external_directory 授权（explore 默认 deny）。
+  if (args[0] === "rev-list") {
+    if (!(args.length === 3 && args[1] === "--count" && ["HEAD", "--all"].includes(args[2]))) return reject()
     return directory
   }
   if (!["log", "show", "diff", "blame", "rev-parse", "ls-files", "branch"].includes(args[0])) return reject()
@@ -300,7 +305,8 @@ function exploreGitDirectory(root: Node): string | undefined {
       const flag = arg.split("=")[0]
       return (
         arg.startsWith("-o") ||
-        (flag.length > 2 && ["--output", "--ext-diff", "--textconv"].some((unsafe) => unsafe.startsWith(flag)))
+        (flag.length > 2 &&
+          ["--output", "--ext-diff", "--textconv", "--no-index"].some((unsafe) => unsafe.startsWith(flag)))
       )
     })
   )
@@ -314,7 +320,10 @@ function exploreGitDirectory(root: Node): string | undefined {
       )
   )
     return reject()
-  return undefined
+  // 261024 Red 返回目录而非 undefined：无 -C 时本就是 undefined 行为不变；-C 时交给
+  //   caller 做 realPath + external_directory 分流（旧窄桩下七子命令路径对 -C 不可达，
+  //   return undefined 恰好正确——扩容后这里是外部目录授权的唯一入口）。
+  return directory
 }
 
 function home(text: string) {

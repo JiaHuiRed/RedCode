@@ -223,6 +223,12 @@ describe("tool.shell", () => {
                 "git diff HEAD~0 HEAD",
                 "git branch -a",
                 "git ls-files --stage",
+                // 261024 Red -C 并入同一条只读清单：跨工程派发的自然查询（RedMon 实证 3 连拒）
+                `git -C ${repo} log --oneline -20`,
+                `git -C ${repo} log --oneline -1`,
+                `git -C ${repo} diff HEAD~0 HEAD`,
+                `git -C ${repo} show --stat HEAD`,
+                `git -C ${repo} rev-parse HEAD --git-dir`,
               ]) {
                 expect(
                   (yield* run({ command, description: "Preserve existing Git queries" }, context)).metadata.exit,
@@ -259,8 +265,12 @@ describe("tool.shell", () => {
                 `git -C ${repo} -c alias.inspect=status rev-parse HEAD`,
                 `git -C ${repo} --work-tree=. rev-parse HEAD`,
                 `git -C ${repo} -C . rev-parse HEAD`,
-                `git -C ${repo} rev-parse HEAD --git-dir`,
                 `git -C ${repo} rev-list --count HEAD --all`,
+                // 261024 Red status 刻意不放行（刷新 .git/index stat cache，破零写入例）；
+                //   --no-index 让 diff 读仓库外任意文件对，越 external_directory 边界
+                `git -C ${repo} status --short`,
+                `git -C ${repo} diff --no-index`,
+                `git -C ${repo} log --oneline -20 > forbidden.txt`,
                 `git -C ${repo} rev-list --count HEAD --output=forbidden.txt`,
                 `git -C ${repo} branch --delete forbidden`,
                 `git -C ${repo} config core.pager forbidden`,

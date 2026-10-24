@@ -56,6 +56,16 @@ permission:
     "git -C * rev-parse --show-toplevel": allow
     "git -C * rev-list --count HEAD": allow
     "git -C * rev-list --count --all": allow
+    # 261024 Red -C 并入同一条只读清单（与 shell.ts 执行层闸同步）：跨工程派发后自然 git
+    # 查询必经 -C。规则故意粗粒度（* 跨参数）——精确形状由执行层闸背书（单命令、无拼接/
+    # 重定向/通配、禁 --output/--no-index/ext-diff/textconv，status 不放行）；两层缺一则废。
+    "git -C * log *": allow
+    "git -C * show *": allow
+    "git -C * diff *": allow
+    "git -C * blame *": allow
+    "git -C * rev-parse *": allow
+    "git -C * ls-files *": allow
+    "git -C * branch *": allow
     "git rev-list --count HEAD": allow
     "git rev-list --count --all": allow
   grep: allow

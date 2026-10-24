@@ -36,3 +36,32 @@ SA-01 修复了新任务 canonical record 漏掉 `shell`，但 Explore 的 Git �
 2. 固定前缀 token 增量为零；正常工具结果按实际查询产生，不宣称缓存收益。
 3. 工具表原已包含 Bash，固定前缀布局不变；无历史复制、路由或缓存策略改动。
 4. 无新增动态注入项；新增拒绝文案均为固定短句，不回显命令或路径，不引入无界上下文。
+
+## 演进（261024）：-C 并入同一条只读清单
+
+派发模型变了：RedMind 把 explore 派到**别的工程目录**（实证 F:\Pokemon\RedMon 会话 3 连拒：
+`git -C <repo> log --oneline -20` / `status --short`），自然 git 查询必经 -C，而 -C 分支还是
+「仓库自证 4 条」窄桩——那是 explore 只在启动目录干活时代的假设，子代理权限第三次「派发先变、闸后追」。
+
+决策：-C 分支复用与无 -C 相同的七子命令只读清单（log/show/diff/blame/rev-parse/ls-files/branch）+
+原 flag 禁令（--output/-o/ext-diff/textconv，新增 --no-index 防 diff 读仓库外文件对）；rev-list 仍限
+`--count HEAD|--all`。信任边界不降：-C 目录解析真实路径后，实例上下文内 = 裸 git 同一既有边界
+（git 配置/alias 本就在内）；上下文外由 caller 走 external_directory 授权（explore 默认 deny）。
+
+实现教训：**扩容分支必须重审函数的每条 return 路径**——七子命令路径的结尾 `return undefined`
+在旧窄桩下对 -C 不可达、恰好正确；扩容后它是 -C 的主返回路，不改成 `return directory` 会让
+external_directory 授权整体失效（回归测试当场抓住，是 AGENTS.md「改函数家族先数同形状兄弟」
+的 return 版）。explore.md 的 bash 白名单同步加粗粒度 `git -C * <sub> *` 规则（* 跨参数由执行层
+闸背书，两层缺一则废）；拒绝文案补静态形状说明（RedMon 实证零指导 = 盲试 3 次撞重复失败熔断）。
+
+验证：shell 测试 120/120（新增 -C log/diff/show/rev-parse --git-dir 正例、-C status/--no-index/
+重定向负例）、opencode typecheck 0 错。`git status` 仍不放行（刷新 .git/index stat cache，破
+零写入例，留给用户裁定）。
+
+模型可见四问：
+
+1. 拒绝文案换成带允许形状的固定短句（旧文案零指导导致盲试熔断）；合规查询从「必拒」变「放行」。
+2. 固定前缀 token 增量为零；被拒会话的 retry 净减（一次自愈代替三次盲试 + 熔断）。
+3. explore.md 权限规则变化影响 agent 配置注入段（该段随 agent 定义走），KV 影响限于加载
+   explore 定义的会话一次。
+4. 拒绝文案固定约 300 字符有界，不回显命令与路径；无新增注入项。
