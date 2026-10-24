@@ -14,12 +14,17 @@
 //
 // 决策与边界见 docs/notes/implemented/process/2026-10-24-injection-registry-gate.md
 import { readFileSync } from "fs"
-import { join, dirname } from "path"
+import { join, dirname, resolve } from "path"
 import { fileURLToPath } from "url"
-import { parse } from "jsonc-parser"
+import { parse, type ParseError } from "jsonc-parser"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const root = join(__dirname, "..")
+// 261024 Red RC-A05 测试钩子：仅 NODE_ENV=test（bun test 默认置位）允许把 root 指到
+// 临时 git 仓库做部分暂存负测试；真实钩子环境不受影响。
+const root =
+  process.env.NODE_ENV === "test" && process.env.RC_GATE_TEST_ROOT
+    ? resolve(process.env.RC_GATE_TEST_ROOT)
+    : join(__dirname, "..")
 
 const REGISTRY = "docs/injection-registry.jsonc"
 const PROMPT_TS = "packages/opencode/src/session/prompt.ts"
@@ -46,11 +51,32 @@ function fail(lines: string[]): never {
 }
 
 function loadRegistry(): Row[] {
-  const text = readFileSync(join(root, REGISTRY), "utf8")
-  const errors: unknown[] = []
+  const text = contentFor(REGISTRY)
+  if (text === undefined) fail([`${REGISTRY} 读取失败（staged 删除或工作区缺失）`])
+  // 261024 Red RC-A01 ParseError[] 才是 parse 的签名；unknown[] 在 CI typecheck 直接红
+  const errors: ParseError[] = []
   const parsed = parse(text, errors, { allowTrailingComma: true }) as { items?: Row[] } | undefined
   if (errors.length > 0 || !parsed?.items || !Array.isArray(parsed.items)) fail([`${REGISTRY} 解析失败`])
   return parsed.items
+}
+
+// 261024 Red RC-A05 门禁必须看到「将要提交的内容」：staged 文件读 git index 版本，
+// 否则「暂存坏版本→工作区修好→忘了重新 add」的场景里，门禁验的是修好的工作区、
+// 提交进去的却是坏版本。未 staged 的文件读工作区（与提交树一致的前提是不存在未暂存改动）。
+const stagedFiles = new Set(
+  Bun.spawnSync(["git", "diff", "--cached", "--name-only"], { cwd: root }).stdout.toString().split(/\r?\n/),
+)
+
+function contentFor(path: string): string | undefined {
+  if (stagedFiles.has(path)) {
+    const shown = Bun.spawnSync(["git", "show", `:${path}`], { cwd: root })
+    return shown.exitCode === 0 ? shown.stdout.toString() : undefined // exit≠0 = staged 删除
+  }
+  try {
+    return readFileSync(join(root, path), "utf8")
+  } catch {
+    return undefined
+  }
 }
 
 // --- 默认模式：登记表静态校验 ---
@@ -68,11 +94,9 @@ function validate() {
     if (seen.has(row.id)) problems.push(`${head} id 重复`)
     seen.add(row.id)
     if (!CHANNELS.has(row.channel)) problems.push(`${head} channel 非法：${row.channel}`)
-    // ① 锚点有效
-    let source: string
-    try {
-      source = readFileSync(join(root, row.file), "utf8")
-    } catch {
+    // ① 锚点有效（staged 文件验 index 版本，防「工作区修好、暂存还是坏的」假通过）
+    const source = contentFor(row.file)
+    if (source === undefined) {
       problems.push(`${head} file 不存在：${row.file}`)
       continue
     }
@@ -80,7 +104,9 @@ function validate() {
   }
 
   // ② prompt.ts 的 system.push 回链双向核对
-  const promptLines = readFileSync(join(root, PROMPT_TS), "utf8").split(/\r?\n/)
+  const promptText = contentFor(PROMPT_TS)
+  if (promptText === undefined) fail([`${PROMPT_TS} 读取失败（staged 删除或工作区缺失）——登记面文件不能没有它`])
+  const promptLines = promptText.split(/\r?\n/)
   const backlinks = new Set<string>()
   promptLines.forEach((line, i) => {
     if (!/\bsystem\.push\(/.test(line)) return
