@@ -8,8 +8,7 @@ import { LocalProvider } from "@/context/local"
 import { SDKProvider } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { useSettings } from "@/context/settings"
-import { decode64 } from "@/utils/base64"
-import { Schema } from "effect"
+import { decodeDirectory, type ProjectDirString } from "@/utils/project-dir"
 
 function DirectoryDataProvider(props: ParentProps<{ directory: string }>) {
   const location = useLocation()
@@ -46,15 +45,6 @@ function DirectoryDataProvider(props: ParentProps<{ directory: string }>) {
       <LocalProvider>{props.children}</LocalProvider>
     </DataProvider>
   )
-}
-
-export const ProjectDirString = Schema.String.pipe(Schema.brand("ProjectDirString"))
-export type ProjectDirString = Schema.Schema.Type<typeof ProjectDirString>
-
-export function decodeDirectory(dir: string): ProjectDirString | undefined {
-  const decoded = decode64(dir)
-  if (!decoded) return
-  return ProjectDirString.make(decoded)
 }
 
 export default function Layout(props: ParentProps) {

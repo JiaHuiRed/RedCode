@@ -1,6 +1,6 @@
 // 260605 Red Extract keyboard handler from session.tsx
 
-import { shouldFocusTerminalOnKeyDown, focusTerminalById } from "@/pages/session/helpers"
+import { focusTerminalById, shouldFocusTerminalOnKeyDown } from "@/utils/terminal-focus"
 
 export type SessionKeyboardInput = {
   isDialogActive: () => boolean

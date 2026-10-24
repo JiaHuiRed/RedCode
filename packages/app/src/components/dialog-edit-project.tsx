@@ -12,7 +12,7 @@ import { type LocalProject, getAvatarColors } from "@/context/layout"
 import { getFilename } from "@redcode-ai/core/util/path"
 import { Avatar } from "@redcode-ai/ui/avatar"
 import { useLanguage } from "@/context/language"
-import { getProjectAvatarSource } from "@/pages/layout/helpers"
+import { getProjectAvatarSource } from "@/utils/session-helpers"
 
 const AVATAR_COLOR_KEYS = ["pink", "mint", "orange", "purple", "cyan", "lime"] as const
 

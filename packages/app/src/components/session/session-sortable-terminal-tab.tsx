@@ -9,7 +9,7 @@ import { Icon } from "@redcode-ai/ui/icon"
 import { isDefaultTitle as isDefaultTerminalTitle } from "@/context/terminal-title"
 import { useTerminal, type LocalPTY } from "@/context/terminal"
 import { useLanguage } from "@/context/language"
-import { focusTerminalById } from "@/pages/session/helpers"
+import { focusTerminalById } from "@/utils/terminal-focus"
 
 export function SortableTerminalTab(props: { terminal: LocalPTY; onClose?: () => void }): JSX.Element {
   const terminal = useTerminal()

@@ -20,19 +20,14 @@ import { clampWorkbenchFloat, useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
-import { decodeDirectory } from "@/pages/directory-layout"
+import { decodeDirectory } from "@/utils/project-dir"
 import { createFileTabListSync } from "@/pages/session/file-tab-scroll"
 import { FileTabContent } from "@/pages/session/file-tabs"
-import {
-  createOpenSessionFileTab,
-  createSessionTabs,
-  getTabReorderIndex,
-  SYSTEM_TABS,
-  type Sizing,
-  type SystemTab,
-} from "@/pages/session/helpers"
-import { setSessionHandoff } from "@/pages/session/handoff"
-import { useSessionLayout } from "@/pages/session/session-layout"
+import { SYSTEM_TABS, type SystemTab } from "@/context/layout"
+import { createSessionTabs } from "@/context/session-layout"
+import { createOpenSessionFileTab, getTabReorderIndex, type Sizing } from "@/pages/session/helpers"
+import { setSessionHandoff } from "@/utils/session-handoff"
+import { useSessionLayout } from "@/context/session-layout"
 
 const SessionStatusTab = lazy(() =>
   import("@/components/session/session-status-tab").then((module) => ({ default: module.SessionStatusTab })),

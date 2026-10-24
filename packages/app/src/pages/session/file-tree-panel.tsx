@@ -14,7 +14,7 @@ import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
 import { decode64 } from "@/utils/base64"
 import { createOpenSessionFileTab, type Sizing } from "./helpers"
-import { useSessionLayout } from "./session-layout"
+import { useSessionLayout } from "@/context/session-layout"
 
 type RenderDiff = (SnapshotFileDiff & { file: string }) | VcsFileDiff
 

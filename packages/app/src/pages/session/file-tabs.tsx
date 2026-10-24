@@ -16,9 +16,9 @@ import { selectionFromLines, useFile, type FileSelection, type SelectedLineRange
 import { useComments } from "@/context/comments"
 import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
-import { getSessionHandoff } from "@/pages/session/handoff"
-import { useSessionLayout } from "@/pages/session/session-layout"
-import { createSessionTabs } from "@/pages/session/helpers"
+import { getSessionHandoff } from "@/utils/session-handoff"
+import { useSessionLayout } from "@/context/session-layout"
+import { createSessionTabs } from "@/context/session-layout"
 
 function FileCommentMenu(props: {
   moreLabel: string

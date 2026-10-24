@@ -47,8 +47,8 @@ import { usePermission } from "@/context/permission"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { usePlatform } from "@/context/platform"
-import { useSessionLayout } from "@/pages/session/session-layout"
-import { createSessionTabs } from "@/pages/session/helpers"
+import { useSessionLayout } from "@/context/session-layout"
+import { createSessionTabs } from "@/context/session-layout"
 import {
   createTextFragment,
   getCursorPosition,

@@ -16,9 +16,10 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useTerminal } from "@/context/terminal"
 import { terminalTabLabel } from "@/pages/session/terminal-label"
-import { createSizing, focusTerminalById } from "@/pages/session/helpers"
-import { getTerminalHandoff, setTerminalHandoff } from "@/pages/session/handoff"
-import { useSessionLayout } from "@/pages/session/session-layout"
+import { createSizing } from "@/pages/session/helpers"
+import { focusTerminalById } from "@/utils/terminal-focus"
+import { getTerminalHandoff, setTerminalHandoff } from "@/utils/session-handoff"
+import { useSessionLayout } from "@/context/session-layout"
 
 export function TerminalPanel() {
   const delays = [120, 240]

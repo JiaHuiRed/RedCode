@@ -48,7 +48,7 @@ import { trackSpotlight } from "@/utils/spotlight"
 import { createAim } from "@/utils/aim"
 import { setNavigate } from "@/utils/notification-click"
 import { Worktree as WorktreeState } from "@/utils/worktree"
-import { setSessionHandoff } from "@/pages/session/handoff"
+import { setSessionHandoff } from "@/utils/session-handoff"
 import { createPrefetch } from "./layout/prefetch"
 import { createSDKNotificationToasts } from "./layout/notification-toasts"
 import { PetLayer } from "@/pet/pet-layer"
@@ -67,7 +67,7 @@ import {
   errorMessage,
   latestRootSession,
   sortedRootSessions,
-} from "./layout/helpers"
+} from "@/utils/session-helpers"
 import { colorSchemeKey, colorSchemeOrder } from "./layout/theme-constants"
 import { runUpdateAndRestart } from "./layout/update"
 import {

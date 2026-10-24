@@ -1,15 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { createMemo, createRoot } from "solid-js"
-import { createStore } from "solid-js/store"
-import {
-  SYSTEM_TABS,
-  createOpenReviewFile,
-  createOpenSessionFileTab,
-  createSessionTabs,
-  focusTerminalById,
-  getTabReorderIndex,
-  shouldFocusTerminalOnKeyDown,
-} from "./helpers"
+import { createOpenReviewFile, createOpenSessionFileTab, getTabReorderIndex } from "./helpers"
+
+// 261024 Red focusTerminalById / shouldFocusTerminalOnKeyDown 随实现迁到
+// @/utils/terminal-focus.test.ts；createSessionTabs / SYSTEM_TABS 迁到
+// @/context/session-layout.test.ts。本文件只测留在 pages 层的胶水。
 
 describe("createOpenReviewFile", () => {
   test("opens and loads selected review file", () => {
@@ -62,52 +56,6 @@ describe("createOpenSessionFileTab", () => {
   })
 })
 
-describe("focusTerminalById", () => {
-  test("focuses textarea when present", () => {
-    document.body.innerHTML = `<div id="terminal-wrapper-one"><div data-component="terminal"><textarea></textarea></div></div>`
-
-    const focused = focusTerminalById("one")
-
-    expect(focused).toBe(true)
-    expect(document.activeElement?.tagName).toBe("TEXTAREA")
-  })
-
-  test("falls back to terminal element focus", () => {
-    document.body.innerHTML = `<div id="terminal-wrapper-two"><div data-component="terminal" tabindex="0"></div></div>`
-    const terminal = document.querySelector('[data-component="terminal"]') as HTMLElement
-    let pointerDown = false
-    terminal.addEventListener("pointerdown", () => {
-      pointerDown = true
-    })
-
-    const focused = focusTerminalById("two")
-
-    expect(focused).toBe(true)
-    expect(document.activeElement).toBe(terminal)
-    expect(pointerDown).toBe(true)
-  })
-})
-
-describe("shouldFocusTerminalOnKeyDown", () => {
-  test("skips pure modifier keys", () => {
-    expect(shouldFocusTerminalOnKeyDown(new KeyboardEvent("keydown", { key: "Meta", metaKey: true }))).toBe(false)
-    expect(shouldFocusTerminalOnKeyDown(new KeyboardEvent("keydown", { key: "Control", ctrlKey: true }))).toBe(false)
-    expect(shouldFocusTerminalOnKeyDown(new KeyboardEvent("keydown", { key: "Alt", altKey: true }))).toBe(false)
-    expect(shouldFocusTerminalOnKeyDown(new KeyboardEvent("keydown", { key: "Shift", shiftKey: true }))).toBe(false)
-  })
-
-  test("skips shortcut key combos", () => {
-    expect(shouldFocusTerminalOnKeyDown(new KeyboardEvent("keydown", { key: "c", metaKey: true }))).toBe(false)
-    expect(shouldFocusTerminalOnKeyDown(new KeyboardEvent("keydown", { key: "c", ctrlKey: true }))).toBe(false)
-    expect(shouldFocusTerminalOnKeyDown(new KeyboardEvent("keydown", { key: "ArrowLeft", altKey: true }))).toBe(false)
-  })
-
-  test("keeps plain typing focused on terminal", () => {
-    expect(shouldFocusTerminalOnKeyDown(new KeyboardEvent("keydown", { key: "a" }))).toBe(true)
-    expect(shouldFocusTerminalOnKeyDown(new KeyboardEvent("keydown", { key: "A", shiftKey: true }))).toBe(true)
-  })
-})
-
 describe("getTabReorderIndex", () => {
   test("returns target index for valid drag reorder", () => {
     expect(getTabReorderIndex(["a", "b", "c"], "a", "c")).toBe(2)
@@ -115,145 +63,5 @@ describe("getTabReorderIndex", () => {
 
   test("returns undefined for unknown droppable id", () => {
     expect(getTabReorderIndex(["a", "b", "c"], "a", "missing")).toBeUndefined()
-  })
-})
-
-describe("SYSTEM_TABS", () => {
-  test("pins the five fixed tabs", () => {
-    expect([...SYSTEM_TABS].sort()).toEqual(["context", "outline", "plan", "review", "status"])
-  })
-
-  // 260923 Red C5：strip 按这个顺序渲染（审查 | 上下文 | 轮次 | 计划 | 状态）。
-  // Set 本身保序，所以顺序也是契约的一部分，别让人随手改乱。
-  test("keeps the documented strip order", () => {
-    expect([...SYSTEM_TABS]).toEqual(["review", "context", "outline", "plan", "status"])
-  })
-})
-
-describe("createSessionTabs", () => {
-  test("normalizes the effective file tab", () => {
-    createRoot((dispose) => {
-      const [state] = createStore({
-        active: undefined as string | undefined,
-        all: ["file://src/a.ts", "context"],
-      })
-      const tabs = createMemo(() => ({ active: () => state.active, all: () => state.all }))
-      const result = createSessionTabs({
-        tabs,
-        pathFromTab: (tab) => (tab.startsWith("file://") ? tab.slice("file://".length) : undefined),
-        normalizeTab: (tab) => (tab.startsWith("file://") ? `norm:${tab.slice("file://".length)}` : tab),
-      })
-
-      expect(result.activeTab()).toBe("norm:src/a.ts")
-      expect(result.activeFileTab()).toBe("norm:src/a.ts")
-      expect(result.closableTab()).toBe("norm:src/a.ts")
-      dispose()
-    })
-  })
-
-  test("prefers context and review fallbacks when no file tab is active", () => {
-    createRoot((dispose) => {
-      const [state] = createStore({
-        active: undefined as string | undefined,
-        all: ["context"],
-      })
-      const tabs = createMemo(() => ({ active: () => state.active, all: () => state.all }))
-      const result = createSessionTabs({
-        tabs,
-        pathFromTab: () => undefined,
-        normalizeTab: (tab) => tab,
-        review: () => true,
-        hasReview: () => true,
-      })
-
-      expect(result.activeTab()).toBe("context")
-      // 260923 Red C4：Context 成为固定 system tab 后也不再可关闭（此前是唯一例外）
-      expect(result.closableTab()).toBeUndefined()
-      dispose()
-    })
-
-    createRoot((dispose) => {
-      const [state] = createStore({
-        active: undefined as string | undefined,
-        all: [],
-      })
-      const tabs = createMemo(() => ({ active: () => state.active, all: () => state.all }))
-      const result = createSessionTabs({
-        tabs,
-        pathFromTab: () => undefined,
-        normalizeTab: (tab) => tab,
-        review: () => true,
-        hasReview: () => true,
-      })
-
-      expect(result.activeTab()).toBe("review")
-      expect(result.activeFileTab()).toBeUndefined()
-      expect(result.closableTab()).toBeUndefined()
-      dispose()
-    })
-  })
-
-  test("keeps status active as the fifth fixed tab", () => {
-    createRoot((dispose) => {
-      const [state] = createStore({
-        active: "status",
-        all: ["status", "context"],
-      })
-      const tabs = createMemo(() => ({ active: () => state.active, all: () => state.all }))
-      const result = createSessionTabs({
-        tabs,
-        pathFromTab: () => undefined,
-        normalizeTab: (tab) => tab,
-      })
-
-      expect(result.activeTab()).toBe("status")
-      expect(result.activeFileTab()).toBeUndefined()
-      expect(result.closableTab()).toBeUndefined()
-      dispose()
-    })
-  })
-
-  // 260923 Red C2：五个固定 system tab 都不进 openedTabs（此前 outline 漏网，会被当成
-  // 文件标签渲染进 SortableProvider——可拖拽、可关闭，且 strip 上出现两份标签）。
-  test("keeps every system tab out of openedTabs", () => {
-    createRoot((dispose) => {
-      const [state] = createStore({
-        active: "outline" as string | undefined,
-        all: ["context", "review", "outline", "plan", "status", "file://src/a.ts"],
-      })
-      const tabs = createMemo(() => ({ active: () => state.active, all: () => state.all }))
-      const result = createSessionTabs({
-        tabs,
-        pathFromTab: (tab) => (tab.startsWith("file://") ? tab.slice("file://".length) : undefined),
-        normalizeTab: (tab) => tab,
-        review: () => true,
-        hasReview: () => true,
-      })
-
-      expect(result.openedTabs()).toEqual(["file://src/a.ts"])
-      expect(result.activeTab()).toBe("outline")
-      expect(result.activeFileTab()).toBeUndefined()
-      expect(result.closableTab()).toBeUndefined()
-      dispose()
-    })
-  })
-
-  test("normalizes an old session whose stored tabs still contain outline", () => {
-    createRoot((dispose) => {
-      const [state] = createStore({
-        active: "outline" as string | undefined,
-        all: ["outline", "context"],
-      })
-      const tabs = createMemo(() => ({ active: () => state.active, all: () => state.all }))
-      const result = createSessionTabs({
-        tabs,
-        pathFromTab: () => undefined,
-        normalizeTab: (tab) => tab,
-      })
-
-      expect(result.openedTabs()).toEqual([])
-      expect(result.activeTab()).toBe("outline")
-      dispose()
-    })
   })
 })

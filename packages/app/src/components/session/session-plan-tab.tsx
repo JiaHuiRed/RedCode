@@ -4,7 +4,7 @@ import { Icon } from "@redcode-ai/ui/icon"
 import { ScrollView } from "@redcode-ai/ui/scroll-view"
 import { useLanguage } from "@/context/language"
 import { useSync } from "@/context/sync"
-import { useSessionLayout } from "@/pages/session/session-layout"
+import { useSessionLayout } from "@/context/session-layout"
 
 const emptyTodos: Todo[] = []
 

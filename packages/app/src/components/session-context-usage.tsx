@@ -17,7 +17,7 @@ import { useProviders } from "@/hooks/use-providers"
 import { cacheMissStreak } from "@redcode-ai/core/util/cache-streak"
 import { contextUsageTier, getSessionContextMetrics } from "@/components/session/session-context-metrics"
 import { createSessionContextFormatter } from "@/components/session/session-context-format"
-import { useSessionLayout } from "@/pages/session/session-layout"
+import { useSessionLayout } from "@/context/session-layout"
 
 export type CompactSubmitInput = { sessionID: string; modelID: string; providerID: string }
 

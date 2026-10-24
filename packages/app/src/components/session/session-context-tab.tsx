@@ -16,7 +16,7 @@ import { ScrollView } from "@redcode-ai/ui/scroll-view"
 import type { Message, Part, ProviderQuota, UserMessage } from "@redcode-ai/sdk/v2/client"
 import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
-import { useSessionLayout } from "@/pages/session/session-layout"
+import { useSessionLayout } from "@/context/session-layout"
 import {
   useSessionContextSummaries,
   quotaColor,

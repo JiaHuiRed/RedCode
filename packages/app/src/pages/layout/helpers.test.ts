@@ -18,7 +18,7 @@ import {
   errorMessage,
   hasProjectPermissions,
   latestRootSession,
-} from "./helpers"
+} from "@/utils/session-helpers"
 import { pathKey } from "@/utils/path-key"
 
 const session = (input: Partial<Session> & Pick<Session, "id" | "directory">) =>
