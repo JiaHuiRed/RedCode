@@ -269,6 +269,12 @@ async function killSidecar() {
 let quitting = false
 let sidecarSpawnCfg: { hostname: string; port: number; password: string; userDataPath: string } | undefined
 let sidecarStartedAt: number | undefined
+// 261024 Red 异常退出后的孤儿清理闸：handleSidecarExit 记账，spawn 前置等待。旧同步版
+//   在退出回调里 execSync 清完才放行恢复；异步化时改成 void fire-and-forget，丢掉了
+//   「清完旧树再拉新树」的先后——下一代 sidecar 可能带着上代还没杀完的 MCP 孤儿一起起
+//   （单例端口/文件锁撞车，冷启动 sweep-then-spawn 防的就是这类）。链式追加：连续异常
+//   退出时，所有代的清理都完成才允许再 spawn；冷启动路径这里是已 resolve 的空链，零等待。
+let orphanCleanup: Promise<void> = Promise.resolve()
 // 首次启动独有的 spawn 参数（迁移状态与 sqlite 进度回调）；恢复启动只需要同端口同密码。
 let nextSpawnHook: { needsMigration: boolean; onSqliteProgress?: (progress: SqliteMigrationProgress) => void } = {
   needsMigration: false,
@@ -278,6 +284,9 @@ const supervisor = createSidecarSupervisor({
   spawn: async (onExit) => {
     const cfg = sidecarSpawnCfg
     if (!cfg) throw new Error("sidecar spawn requested before the server configuration is ready")
+    // 261024 Red 上代孤儿清完才起新进程——与冷启动 sweep-then-spawn 同一条先后硬约束。
+    //   killOrphanChildren 内部逐步吞错，这里不会因单步清扫失败而卡住恢复。
+    await orphanCleanup
     const hook = nextSpawnHook
     nextSpawnHook = { needsMigration: false }
     const { listener, health } = await spawnLocalServer(cfg.hostname, cfg.port, cfg.password, {
@@ -382,9 +391,12 @@ function handleSidecarExit(code: number) {
   writeLog("utility", "sidecar exited", { code, aliveMs }, "warn")
   // 260916 Red sidecar 死了，但它拉起的 MCP 子进程还活着（Windows 上没有 job object 兜底），
   //   接下来 respawn 会把新的一套拉起来，旧的就永远留成孤儿。趁还知道旧 PID，先清掉它的孩子。
-  //   261024 Red 清扫已异步化：fire-and-forget，退出回调里不再同步跑 PowerShell 冻结主进程；
-  //   旧孩子与新 spawn 是不同 PID 树，并发清理没有资源争抢。
-  if (sidecarPid !== undefined) void killOrphanChildren(sidecarPid)
+  //   261024 Red 清扫异步化后不再 fire-and-forget：记进 orphanCleanup 链，下一次 spawn
+  //   （恢复/手动重试都走同一入口）会先等它完成，恢复「清完旧树再拉新树」的先后。
+  if (sidecarPid !== undefined) {
+    const pid = sidecarPid
+    orphanCleanup = orphanCleanup.then(() => killOrphanChildren(pid)).catch(() => undefined)
+  }
   sidecarPid = undefined
   server = null
 }
