@@ -1,6 +1,8 @@
 [data-component="resize-handle"] {
   position: absolute;
   z-index: 10;
+  /* 261024 Red pointer events 拖拽必需：不然触摸拖把手会触发滚动/手势，拖不动。 */
+  touch-action: none;
 
   &::after {
     content: "";
@@ -13,6 +15,12 @@
   &:hover::after,
   &:active::after {
     opacity: 1;
+  }
+
+  /* 261024 Red 键盘可聚焦了（role=separator + tabindex），焦点态要有可见轮廓。 */
+  &:focus-visible {
+    outline: 2px solid var(--border-focus);
+    outline-offset: 1px;
   }
 
   &[data-direction="horizontal"] {
