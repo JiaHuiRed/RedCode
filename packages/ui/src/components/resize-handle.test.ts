@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { keyboardResizeSize, pointerResizeSize } from "./resize-handle"
+import { keyboardResizeSize, pointerResizeRaw, pointerResizeSize } from "./resize-handle"
 
 // 261024 Red 把手换算逻辑的纯函数单测：edge/invert 的方向语义、夹紧、键盘映射。
-// 组件里 rAF 合帧与 pointer capture 是 DOM 行为，不在这里覆盖。
+// 组件里 rAF 合帧与 pointer capture 是 DOM 行为，不在这里覆盖；折叠手势以
+// pointerResizeRaw（未夹紧）与 pointerResizeSize（夹紧）的分离钉死判定依据。
 
 const base = { direction: "horizontal", edge: "end", start: 100, startSize: 300, min: 220, max: 480 } as const
 
@@ -35,17 +36,48 @@ describe("pointerResizeSize", () => {
   })
 })
 
+describe("pointerResizeRaw（折叠判定的未夹紧值）", () => {
+  test("past min it keeps following the pointer instead of clamping", () => {
+    expect(pointerResizeRaw({ ...base, pos: -1000 })).toBe(-800)
+    expect(pointerResizeSize({ ...base, pos: -1000 })).toBe(220)
+  })
+
+  test("terminal-panel shape: dragging past the threshold collapses on raw, not on clamped", () => {
+    // terminal-panel 实参：vertical / 默认 start 边 / min=100 / collapseThreshold=50。
+    // 261024 Red 回归锚点：ae87bde6 曾拿夹紧值判定，50 < 100 恒不成立，折叠手势被无声消除。
+    const terminal = { direction: "vertical" as const, edge: "start" as const, start: 200, startSize: 300 }
+    const dragged = pointerResizeRaw({ ...terminal, pos: 480 })
+    expect(dragged).toBe(20)
+    expect(dragged).toBeLessThan(50)
+    expect(pointerResizeSize({ ...terminal, pos: 480, min: 100, max: 400 })).toBe(100)
+  })
+})
+
 describe("keyboardResizeSize", () => {
-  test("horizontal handle maps to left/right arrows", () => {
+  test("horizontal end-edge handle maps to left/right arrows", () => {
     expect(keyboardResizeSize({ ...base, key: "ArrowRight", size: 300 })).toBe(316)
     expect(keyboardResizeSize({ ...base, key: "ArrowLeft", size: 300 })).toBe(284)
     expect(keyboardResizeSize({ ...base, key: "ArrowDown", size: 300 })).toBeUndefined()
   })
 
-  test("vertical handle maps to up/down arrows", () => {
+  test("start-edge keyboard matches the drag direction", () => {
+    // session-side-panel 形状（edge="start"）：向右拖是收窄，ArrowRight 同样收窄。
+    const startEdge = { ...base, edge: "start" as const }
+    expect(keyboardResizeSize({ ...startEdge, key: "ArrowRight", size: 300 })).toBe(284)
+    expect(keyboardResizeSize({ ...startEdge, key: "ArrowLeft", size: 300 })).toBe(316)
+  })
+
+  test("invert flips the keyboard mapping once", () => {
+    expect(keyboardResizeSize({ ...base, invert: true, key: "ArrowRight", size: 300 })).toBe(284)
+  })
+
+  test("vertical default edge is start: ArrowDown shrinks like dragging down", () => {
+    // terminal-panel 不传 edge → 默认 start：向下拖收窄，ArrowDown 同为收窄；
+    // 显式 end 边才与旧映射一致（ArrowDown 变宽）。
     const vertical = { direction: "vertical" as const, min: 100, max: 400 }
-    expect(keyboardResizeSize({ ...vertical, key: "ArrowDown", size: 150 })).toBe(166)
-    expect(keyboardResizeSize({ ...vertical, key: "ArrowUp", size: 150 })).toBe(134)
+    expect(keyboardResizeSize({ ...vertical, key: "ArrowDown", size: 150 })).toBe(134)
+    expect(keyboardResizeSize({ ...vertical, key: "ArrowUp", size: 150 })).toBe(166)
+    expect(keyboardResizeSize({ ...vertical, edge: "end", key: "ArrowDown", size: 150 })).toBe(166)
   })
 
   test("Home/End jump to the bounds, clamped keys stay inside", () => {

@@ -15,20 +15,24 @@ export interface ResizeHandleProps extends Omit<JSX.HTMLAttributes<HTMLDivElemen
 /** 261024 Red 键盘微调步长：方向键一次挪 16px，Home/End 到两端。 */
 const KEYBOARD_STEP = 16
 
+/** 261024 Red 组件语义里的默认边：vertical=「start」（顶栏下沿的分隔条），horizontal=「end」。 */
+function defaultEdge(direction: "horizontal" | "vertical", edge?: "start" | "end"): "start" | "end" {
+  return edge ?? (direction === "vertical" ? "start" : "end")
+}
+
 /**
- * 261024 Red 拖拽位移 → 面板尺寸的纯换算，组件与单测共用：
- * edge 决定跟随方向（start 侧把手向"内"拖是变大），invert 再整体翻转一次，最后夹进 [min, max]。
+ * 261024 Red 拖拽位移 → 面板尺寸的**未夹紧**原始值：edge 决定跟随方向（start 侧把手向"内"
+ * 拖是变大），invert 再整体翻转一次。折叠判定必须用它——夹紧值恒 ≥ min，terminal-panel
+ * 传 min=100 / collapseThreshold=50，拿夹紧值比阈值手势恒不触发（ae87bde6 复审发现）。
  */
-export function pointerResizeSize(input: {
+export function pointerResizeRaw(input: {
   direction: "horizontal" | "vertical"
   edge: "start" | "end"
   invert?: boolean
   start: number
   startSize: number
   pos: number
-  min: number
-  max: number
-}) {
+}): number {
   const raw = input.pos - input.start
   const delta =
     input.direction === "vertical"
@@ -39,31 +43,45 @@ export function pointerResizeSize(input: {
         ? -raw
         : raw
   const signed = input.invert ? -delta : delta
-  return Math.min(input.max, Math.max(input.min, input.startSize + signed))
+  return input.startSize + signed
 }
 
-/** 261024 Red 键盘等价物：horizontal 用左右键、vertical 用上下键增减，Home/End 到两端；其余键返回 undefined。 */
+/** 261024 Red 传给 onResize 的夹紧值：raw 限进 [min, max]。 */
+export function pointerResizeSize(
+  input: Parameters<typeof pointerResizeRaw>[0] & { min: number; max: number },
+): number {
+  return Math.min(input.max, Math.max(input.min, pointerResizeRaw(input)))
+}
+
+/**
+ * 261024 Red 键盘等价物：方向键把分隔条沿屏幕方向挪一格，再过与拖拽**同一套** edge/invert
+ * 换算——ArrowRight/Down 恒等于"向屏幕正方向拖"，start 侧就是收窄（session-side-panel 的
+ * edge="start" 在旧映射下键盘与拖拽方向相反）。Home/End 到两端；其余键返回 undefined。
+ */
 export function keyboardResizeSize(input: {
   direction: "horizontal" | "vertical"
   key: string
   size: number
   min: number
   max: number
+  edge?: "start" | "end"
+  invert?: boolean
 }): number | undefined {
+  if (input.key === "Home") return input.min
+  if (input.key === "End") return input.max
   const grow = input.direction === "horizontal" ? "ArrowRight" : "ArrowDown"
   const shrink = input.direction === "horizontal" ? "ArrowLeft" : "ArrowUp"
-  const raw =
-    input.key === grow
-      ? input.size + KEYBOARD_STEP
-      : input.key === shrink
-        ? input.size - KEYBOARD_STEP
-        : input.key === "Home"
-          ? input.min
-          : input.key === "End"
-            ? input.max
-            : undefined
-  if (raw === undefined) return undefined
-  return Math.min(input.max, Math.max(input.min, raw))
+  if (input.key !== grow && input.key !== shrink) return undefined
+  return pointerResizeSize({
+    direction: input.direction,
+    edge: defaultEdge(input.direction, input.edge),
+    invert: input.invert,
+    start: 0,
+    startSize: input.size,
+    pos: input.key === grow ? KEYBOARD_STEP : -KEYBOARD_STEP,
+    min: input.min,
+    max: input.max,
+  })
 }
 
 export function ResizeHandle(props: ResizeHandleProps) {
@@ -106,12 +124,24 @@ export function ResizeHandle(props: ResizeHandleProps) {
       max: local.max,
     })
 
+  // 261024 Red 折叠判定走未夹紧值：sizeAt 恒 ≥ min，collapseThreshold < min 的调用方
+  //   （terminal-panel 50 < 100）拿夹紧值比永远不成立，拖拽折叠手势曾因此被无声消除。
+  const sizeRaw = (state: NonNullable<typeof drag>, pos: number) =>
+    pointerResizeRaw({
+      direction: local.direction,
+      edge: state.edge,
+      invert: local.invert,
+      start: state.start,
+      startSize: state.startSize,
+      pos,
+    })
+
   const handlePointerDown = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
     // 只认主键：原 mouse 版连右键/中键按下也会进入拖拽。
     if (event.button !== 0) return
     event.preventDefault()
     drag = {
-      edge: local.edge ?? (local.direction === "vertical" ? "start" : "end"),
+      edge: defaultEdge(local.direction, local.edge),
       start: local.direction === "horizontal" ? event.clientX : event.clientY,
       startSize: local.size,
     }
@@ -146,7 +176,7 @@ export function ResizeHandle(props: ResizeHandleProps) {
     document.body.style.userSelect = ""
     document.body.style.overflow = ""
     const threshold = local.collapseThreshold ?? 0
-    if (local.onCollapse && threshold > 0 && sizeAt(state, state.lastPos ?? state.start) < threshold) {
+    if (local.onCollapse && threshold > 0 && sizeRaw(state, state.lastPos ?? state.start) < threshold) {
       local.onCollapse()
     }
   }
@@ -158,6 +188,8 @@ export function ResizeHandle(props: ResizeHandleProps) {
       size: local.size,
       min: local.min,
       max: local.max,
+      edge: defaultEdge(local.direction, local.edge),
+      invert: local.invert,
     })
     if (next === undefined) return
     event.preventDefault()
@@ -170,7 +202,7 @@ export function ResizeHandle(props: ResizeHandleProps) {
       {...rest}
       data-component="resize-handle"
       data-direction={local.direction}
-      data-edge={local.edge ?? (local.direction === "vertical" ? "start" : "end")}
+      data-edge={defaultEdge(local.direction, local.edge)}
       // 261024 Red 键盘入口：可聚焦 separator + 方向键/Home/End。注意 ARIA 的 orientation
       //   描述的是分隔线本身的走向：横向拖拽的把手是一条竖线 → orientation="vertical"，
       //   与 keyboardResizeSize 的左右键映射一致。
