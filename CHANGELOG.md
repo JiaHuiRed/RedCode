@@ -8,24 +8,26 @@
 
 ---
 
-### [0.12.20] - 2026-10-24
+### [0.13.0] - 2026-10-24
 
-- **修复 GUI「无法重新加载」弹窗：/command 响应在边界落地 MCP 懒模板**（`packages/opencode/src/command/template.ts`、`server/routes/instance/httpapi/handlers/instance.ts`）：MCP prompt 注册成的命令其 template 是懒 Promise（getPrompt 慢/失败/服务器下线时恒挂起），Effect 4.0.5 起（0edd8e54）HTTP 响应体过 JSON codec 校验把 Promise 拒成 `Expected JSON value at [14]["template"]`——命令数组里 12 个全局 .md + init/review 内置占 [0..13]，首个 MCP prompt 命令恰好落 [14]，与 GUI 报错逐字吻合；/command 整条 400 后 bootstrap slow 组每个项目弹一条「无法重新加载」，且因 MCP 连接与 Command init 的竞态而时有时无。修复在 getCommand 边界把 template 落地成字符串（OpenAPI 契约本就声明 string）：字符串直通、已决取值、拒绝/2s 预算兜底 ""（`resolveTemplate` 抽独立模块配 4 条单测）；提交路径 session/prompt.ts 仍直接 await 原始 Promise 不受影响。端到端复现：临时 stdio MCP server 暴露 prompt，fresh 实例 /command 返回 200 且 [14] 模板为已落地字符串。模型可见四问：①改动仅在 HTTP 响应序列化，不进模型上下文；②③固定前缀零增减；④无新注入项。验证：opencode typecheck 通过；template 测试 4/4；真实引擎端到端 200。另记：探针发现 /app/agents、/app/skills 裸请求 500 空响应体（无 schema rejection 日志），疑似独立缺陷待查。
-- **GUI 体检批次（性能 / token / 分层）**（`packages/app`、`packages/ui`、`packages/desktop`）：四路审计后按 P1/P2 落地——① sidecar 异常恢复清扫异步化：崩溃/强杀后下次启动在建窗前同步跑最多 3 次 PowerShell（各 10s 超时）冻结主进程，改 `beginStaleSidecarSweep()` 异步起跑、「清完旧树才起新 sidecar」由 loadingTask spawn 前 await 兑现（desktop typecheck + sidecar 测试 10/10）。② 失效 token 修复：text-11-regular×46、text-13-*×17、text-16-regular 等 66 处死字号类补齐定义（新增 `--font-size-x-small: 11px`），v2 theme 三套 scheme 块补 icon 状态色四槽（success/warning/danger/info → state-fg），新增 font-utilities 守门测试防死类复发；text-12-* 渲染 13px 的历史命名错位未动（改小影响全局布局，待评估）。③ ResizeHandle 拖拽 rAF 合帧（原每 pointermove 直灌 onResize → 整列 relayout）+ 松手提交最终尺寸 + pointer capture + 键盘入口（role=separator、方向键 16px/次、Home/End），换算抽纯函数配 9 条单测。④ ConnectionGate blocking 轮询补 500ms 间隔（原 while(true) 无节奏，healthy:false 被 750ms 缓存回喂时空转），desktop 场景传 `initialCheckMode="background"` 复用主进程就绪确认，轮询循环抽 `awaitStartupHealth` 配 5 条单测。⑤ `dark:` 变体经 `@custom-variant` 对齐 `data-color-scheme`（原走系统媒体查询，应用内切深色时 Seal 红不变色），desktop 构建产物选择器逐字核对。⑥ components→pages 全部 15 处反向依赖清零：useSessionLayout/createSessionTabs 上移 `context/session-layout.ts`，terminal-focus/handoff/project-dir/layout-helpers 各归 utils 层，测试随实现迁移 21/21。⑦ 错误 toast 三元组收敛 `notifyServerError`（4 处 canonical 调用点；审计所记 24 处含大量异构变体，强行套抽象属过度设计，异构站点保留）。⑧ Bundle 实测（当前版本构建）：renderer main chunk 2.25MB 静态含 oniguruma/textmate/shiki/pierre 高亮子系统（`ui/src/context/marked.tsx:6` 对 @pierre/diffs 主入口的静态 import 所致，history 344KB 归因需按新构建重估），session 1.4MB、ghostty-web 1.4MB lazy 正常；emacs-lisp/cpp/wolfram 等语言 chunk 在 worker 与主包双份（各 764/612/260KB），拆 marked.tsx 静态依赖与 manualChunks 待下批。涉及滚动与拖拽路径的改动（ResizeHandle）按回归底线需 GUI 实测五件套，未验收前不建议重编发布。模型可见四问：全批均为 UI/HTTP 层改动，不触及提示词、工具 schema 与注入面，固定前缀零增减。
-- **推理强度滑条档位渐变揭示与光点动效**（`packages/ui/src/v2/components/effort-slider-v2.*`）：参照 ZCode 观感——填充从单色 accent 改为固定绿→蓝→紫三段渐变按档位从左往右揭开（低档纯绿，每升一档多展开一截），揭示机制从 scaleX 换 clip-path（scaleX 会把渐变一起压扁），揭示边缘几何与原方案一致（拖动跟手、松手 140ms 吸附不变）；满档泛蓝紫辉光、8 颗光点按阈值逐个亮起错峰闪烁，`prefers-reduced-motion` 全关。颜色全取现有 v2 token，无新增字面量；模型可见面无触及。验证：ui typecheck + effort-slider 单测 3/3。
-
-### [Unreleased]
-
-- **历史图片驱逐：多模态会话 read 账单削减**（`session/message-v2.ts`、`config/config.ts`、`session/prompt.ts`）：本月审计（近 30 天 3.09B，cache.read 占 96%、miss 仅 3-7%——前缀战线已守住，账单是命中的重读）定位图片为第一大单项：大户会话 15 张用户截图 28MB + read 读图附件单条 3.5-4.3MB（工具输出 130MB 占历史 81%），对多模态模型每轮重放。回放时从尾部保留最近 5 张图（`experimental.mediaEviction.keepRecent`），更早的用户附件换 `[Historical image removed: <文件名>]` 占位符、工具附件丢弃并在输出补一行说明（防模型重读旧图反烧）；**结算于冷缓存序列化点**（会话启动/续接、模型切换、压缩边界），轮中不重估不主动 bust——一张图重读走缓存价，提前 bust 是全量 miss，不回本；历史原文不动库。判据数字：截图密集类会话 read 理论削减 40-60%，纯代码会话零影响。模型可见四问：①重建点起窗口外旧图消失、原位一行占位符，窗口内与文本逐字节不变，关闭态与改动前逐字节一致 ②固定前缀零增减，每轮净省窗口外图片的 vision token ③仅结算点一次前缀重写（重建本就发生处），轮中零影响 ④窗口硬顶 5 张 + 占位符有界。验证：message-v2 77/77（新增 4 条）、typecheck 零错、OpenAPI/SDK 重生（760831 字符 drift 过）；真机会话削减量待实测复跑 `token-audit-oct.mjs` 对照。决策见 [media-eviction](docs/notes/implemented/feature/2026-10-24-media-eviction.md)。同批审计另证：prune 自 261010 切原生压缩后未重启（三会话运行时 0 标记），重启与结算解耦为下批候选。
+- **综合审计收尾：9 项发现对照源码核实后全部落地**（用户审计报告 RC-A01~A09）：① 注入门禁修复 CI 阻塞的 `ParseError[]` 类型错（上轮 typecheck 失败根因），并把校验对象从工作区改为 git index 快照——staged 文件读 `git show :path`，杜绝「暂存坏版本→工作区修好→忘了重新 add」的假通过；新增部分暂存负测试 3/3（`script/check-injection-registry.test.ts`，`RC_GATE_TEST_ROOT` 仅测试态生效）。② github 工具 `Bun.spawnSync`→异步 `Bun.spawn`：同步子进程在 gh 撞上慢网络/认证挂起时会冻结整个后端事件循环 30s、并发请求一起死；stdout/stderr 并发有界读取（512KB/64KB 收满即 cancel——**输出上限不等于读取上限**，50KB 的 diff 上限不代表收集过程只占 50KB），超时 kill，主动截断引发的子进程 EPIPE 按截断上报不按错误；bin/timeout 可注入，测试用 `bun -e` 自证不碰真 gh（16/16）。③ 跨模型推理剥离空文本边界：`step-start + text("") + reasoning` 的旧模型轮，推理剥离后空 text 阻挡占位符判定、上 wire 又被 AI SDK 滤掉——assistant 轮消失、相邻 user 消息、anthropic 协议拒收；跨模型回放跳过空 text（补 `" "` 分隔符的动机随签名推理剥离而消失），占位符路径接管，新增边界测试（78/78）。④ webqa v1.3.0→v1.4.0 新增 `drag` 动作（CDP 真实鼠标管道 move→down→move(steps)→up）：合成 PointerEvent 不建立活动指针，ResizeHandle 的 `setPointerCapture` 会抛 NotFoundError，测的是假链路；gui-regression 五件套第 5 件改 drag（坐标从截图量），第 3 件 IME 重写——`el.value +=` 不触发 input 事件、SolidJS 受控输入看不见，改原生 setter + input 事件落地、Enter 走 `press` 真实键盘提交，判定补「恰好 +1 / 文本相等 / 输入框复位」。⑤ ce-code-review 交互模式示例外层围栏恢复四反引号（三反引号被内部 ```ts 提前闭合，Suggested Fix/Applied/Residual 段脱离结构），全 seed+home 扫描无其他嵌套残留。⑥ 新增「权限优先级」段：用户明确授权 > 主工作流约束 > 子 skill 默认行为，编排下 ce-code-review 不 commit（修复后停在报告，收尾统一走主工作流），tdd-flow 关系段同步。⑦ FP 过滤第 10 条区分泛化覆盖率建议（过滤）与具体可复现缺失回归断言（保留），置信度闸消歧（=3/4 降级 note、≤2/4 丢弃）。⑧ media-eviction note 判据数字段标注「理论估算未经实测」，验证节补 6 项缓存生命周期待验清单。⑨ home 层复核：已删 6 个旧 skill 无残留目录、无跨文件引用。home 层 ce-code-review / tdd-flow / gui-regression / redcode.jsonc 均已同步。
+- **Skill 整合 23→17，净删约 1.7K 行**（seed+home 双层）：写作三合一进 `red-scribe`（14 条硬规则表 + 英文去 AI 味 3 条 + 场景模板 + 收尾 checklist，RedCode 是 code 特化 harness、写作调用本就极少）；`defensive-agent` 并入 `tdd-flow`（11 种 FP 过滤、置信度闸四问、首次编辑前调查三问）；`fewer-permission-prompts` 并入 `config-edit`（权限降噪节：destructive 键机制、findLast 回退锚、尾随 " *" 陷阱、never-allow 清单）；`new-project` 按 RedCode 现架构重写（AGENTS.md 边界原则、docs/notes 带回链、`.redcode` 引擎播种非手搭）；删除 `species-design` / `vision-autoagent`（主力皆多模态）等未用项与 `red-scribe/references/style-profile.md` 孤儿。跨 skill 引用扫描零断链。
+- **历史图片驱逐：多模态会话 read 账单削减**（`session/message-v2.ts`、`config/config.ts`、`session/prompt.ts`）：本月审计（近 30 天 3.09B，cache.read 占 96%、miss 仅 3-7%——前缀战线已守住，账单是命中的重读）定位图片为第一大单项：大户会话 15 张用户截图 28MB + read 读图附件单条 3.5-4.3MB（工具输出 130MB 占历史 81%），对多模态模型每轮重放。回放时从尾部保留最近 5 张图（`experimental.mediaEviction.keepRecent`），更早的用户附件换 `[Historical image removed: <文件名>]` 占位符、工具附件丢弃并在输出补一行说明（防模型重读旧图反烧）；**结算于冷缓存序列化点**（会话启动/续接、模型切换、压缩边界），轮中不重估不主动 bust——一张图重读走缓存价，提前 bust 是全量 miss，不回本；历史原文不动库。判据数字：截图密集类会话 read 理论削减 40-60%（**估算值，实测口径见 note 待验清单**），纯代码会话零影响。模型可见四问：①重建点起窗口外旧图消失、原位一行占位符，窗口内与文本逐字节不变，关闭态与改动前逐字节一致 ②固定前缀零增减，每轮净省窗口外图片的 vision token ③仅结算点一次前缀重写（重建本就发生处），轮中零影响 ④窗口硬顶 5 张 + 占位符有界。验证：message-v2 77/77（新增 4 条）、typecheck 零错、OpenAPI/SDK 重生（760831 字符 drift 过）；真机会话削减量待实测复跑 `token-audit-oct.mjs` 对照。决策见 [media-eviction](docs/notes/implemented/feature/2026-10-24-media-eviction.md)。同批审计另证：prune 自 261010 切原生压缩后未重启（三会话运行时 0 标记），重启与结算解耦为下批候选。
 - **原生 github 工具（读侧）落地，官方 GitHub MCP 退役**（`packages/opencode/src/tool/github.ts`、`tool/github.md`、`tool/registry.ts`）：薄封装已认证的 gh CLI——`pr`（元数据+描述）、`pr_reviews`（顶层 reviews + 内联评论映射成 `path:line` 锚点）、`pr_checks`（CI 状态，gh 非零退出码但有输出仍视为成功）、`pr_diff`（补丁）、`issue`（含评论）、`list`（PR/issue 列表）。零 token 管理（复用 gh 认证）、零 OAuth 流程、输出全有界（diff ≤50KB、正文 4K、评论 1.2K×30 条）；子进程 30s 显式超时。测试抓到一个真 bug：`capBytes` 按 `slice` 截中文 diff 切完仍是 3 倍字节，改 Buffer 按字节边界截——AGENTS.md「字节 vs 字符」教训的重演，测试钉死。验证：纯函数 10/10、typecheck exit 0、描述预算 26276/32768、subprocess-timeout 9 处全声明、真 gh 冒烟（已登录 JiaHuiRed、`pr list`/`repo view` 命令形状实测通过，RedCode 无 open PR 故返回空数组属预期）。配置侧按「下线键全层 grep」红线清了 seed 模板与 live 同步层两处 github MCP 条目（local 层本就没有），引擎 schema 无此键；写侧操作仍走 gh 命令行（shell 工具）。模型可见四问：①新增工具定义进 tools 段（description ~570 字节 + 6 参数注解，预算检查过）；②加载该工具的会话前缀 +约 800 token（全部工具描述总额仍在 32KB 预算内）；③tools 段变化使会话首个 tools 前缀作废一次（部署后首轮）；④工具输出逐面上限已声明（diff 50KB/正文 4K/评论 1.2K/错误 400 字符）。
 - **gui-regression skill：五件套从人工验收变 agent 实测**（`seed/skill/gui-regression/SKILL.md`，已装本机）：审计发现 webqa（本仓 `webqa-server/`，Playwright headless）已具备全部驱动原语（含 `eval` = page.evaluate，IME 组合事件与 pointer 序列靠它派发），不引入新 MCP。起栈一条命令（`packages/app` `bun run dev` = 引擎 serve 4097 + vite 5173）；五件套逐件给出 webqa 操作序列与通过判定（长会话切换/连续流式/IME 组合输入 compositionstart→update→end 序列/历史分页 scrollTop=0 触发/面板拖拽 PointerEvent 序列含折叠阈值判定）；附加键盘方向（ArrowRight=start 边收窄，492d6a82 锚）、命令面板无「无法重新加载」toast（c953631a 锚）、思考块无字面 `</think>`（e549e758 锚）三个回归锚场景；纪律：每步先装 window error 收集器、失败必带截图+console 证据、收尾清 4097/5173。同批登记表补 `skill-bodies` 行（skill 正文触发时注入，上限=文件大小，已申报宽上限）。模型可见四问：①新增 skill 触发时注入其正文（仅命中 gui-regression 的会话可见，~1.6K token）②固定前缀零增减（skill 清单行已存在）③KV cache 不动 ④上限=skill 文件大小，登记表已申报。**有效性未实测**：选择器（如 `[data-component='chat-input']`）与操作序列以下一个 GUI 批次收尾的首次真实使用为准修正。决策见 [injection-registry-gate](docs/notes/implemented/process/2026-10-24-injection-registry-gate.md) 同批节。
 - **模型可见四问升级为机器门禁：注入登记表**（`docs/injection-registry.jsonc`、`script/check-injection-registry.ts`、`.husky/{pre-commit,commit-msg}`）：24 个注入项入账（prompt.ts 全部 11 个 system.push + 6 个组装源 + 7 个输出侧/回放面），三个不变量机检——①锚点有效（match 子串必须仍能在源文件找到，注入代码改名/搬移而登记表没跟上 → commit 当场红）；②回链双向一一（prompt.ts 每个 system.push 上方 3 行内必须有 `// injection-registry: <id>` 注释，新增注入忘了登记直接被拦，负测试实证会红）；③cap 必须声明（具体字节或 bounded-by:<机制>，「没有上限就是缺陷」成为断言；active-goal 的 goal 文本、mcp-guide 等宽上限诚实入账）。commit-msg 钩子：staged 触及登记文件时 message 必须含「四问」——机器拦「忘了问」，语义半靠人答。模型可见四问（本批自身）：回链注释与登记表不进模型上下文，注入内容零变化、固定前缀零增减、KV cache 不动、无新增注入项。决策见 [injection-registry-gate](docs/notes/implemented/process/2026-10-24-injection-registry-gate.md)。
 - **换模型回放：跨模型推理从降级 text 改为整段剥离**（`packages/opencode/src/session/message-v2.ts`）：吸收自 ZCode 官方 harness 学习批（`reasoning-history-normalization.ts`）的唯一真空白。原行为是上游继承的「推理 part → text part 原文保留」，推理重的会话一切模型就把全部思考散文（实测一会长会话 572 个 reasoning part）以正文灌给新模型，量级几十 K token，且新模型会把过程性思考当结论读。现在 `differentModel` 分支整段剥离，结论已在 text 完整保留；纯思考轮剥空后补 `[Thinking removed]` 占位符，消息条数与 user/assistant 交替和降级版逐条一致（anthropic 协议拒收交替违规）。同批逐项核对其余 ZCode 普适机制，RedCode 均已有对应实现（微压缩=prune 档、空回复重试、实报驱动压缩、system 会话缓存、date 尾部化、显式缓存断点），对照表见 note。模型可见四问：①仅换模型轮次的输入变化（旧推理消失、占位符 18 字符），同模型会话逐字节不变；②固定前缀零增减，换模型轮次净减旧推理总量；③切模型本就换前缀桶，无额外作废；④无新增注入项，剥离是严格减法。验证：message-v2 73/73（新增剥离/占位符 2 条、更新旧期望 1 条）、prompt-caches + prompt-eval-cases 30/30、typecheck exit 0；真机换模型输入量对比待实测。决策见 [cross-model-reasoning-strip](docs/notes/implemented/feature/2026-10-24-cross-model-reasoning-strip.md)。
 - **审计收尾五项**（GUI 复审反馈对照落地）：① ResizeHandle 折叠判定改回**未夹紧值**——ae87bde6 误用夹紧后的 sizeAt（恒 ≥ min），terminal-panel 的 collapseThreshold=50 < min=100 恒不成立，「拖到阈值下松手折叠」手势被无声消除；拆出 `pointerResizeRaw`（未夹紧）/ `pointerResizeSize`（夹紧）双函数，折叠判定走 raw，配 terminal 形状的回归锚点测试。② 键盘方向对齐拖拽：keyboardResizeSize 原先只看 direction 不看 edge，session 侧栏（edge="start"）ArrowRight 与拖拽方向相反；现在方向键过与拖拽同一套 edge/invert 换算（ArrowRight/Down 恒等于向屏幕正方向拖），vertical 默认 start 边同步修正（terminal 的 ArrowDown=收窄，与向下拖一致）。③ 字号守门测试扫描跳过注释（等长空白替换保行号）：注释里提旧类名（如 text-10-regular）不再误报、真实 usage 仍拦，补两条回归测试。④ 启动健康闸门单轮探测也受总预算约束：每轮把剩余预算作为该轮请求超时传给 check（checkServerHealth 原生支持 timeoutMs），首个悬挂请求不再以 30s 默认超时把 10s 预算拖成 30s；useCheckServerHealth 透传 opts（并发不同超时共享首飞缓存 promise，去重优先于精确超时）。⑤ sidecar 异常退出后的孤儿清理不再 fire-and-forget：记进 `orphanCleanup` 链、spawn（恢复/手动重试同一入口）前置等待，恢复异步化时丢掉的「清完旧树再拉新树」先后。验证：ui 16/16（resize-handle 13 + font-utilities 3）、app 13/13（startup-health 8 + server-health 5）、desktop typecheck + sidecar-supervisor 7/7；折叠手势与键盘方向的实际手感属 GUI 实测五件套范围。
 - **修复换 step-5-preview 后思考链变正文 + 压缩块头标记被模仿进回复尾**（`packages/opencode/src/session/llm/think-split.ts`、`session/llm/ai-sdk.ts`、`session/instruction-echo.ts`）：两类同源病（模型把「给它看的」当「要输出的」），261014 修过 `[History reference: …]` 形状（c3bfebfa），换模型后以新形状复发。① step-5-preview 会把推理以 `<think>…</think>` 内联在 content 通道输出，而协议层只认 `reasoning_content` 字段——整段推理连同字面 `</think>` 漏进正文（落库实证：text part = 推理 prose + `</think>` + 正文，无开标签）。新增 `ThinkTagScanner` 把 content 增量流拆成 text/reasoning 两路接进 ai-sdk 适配层：开标签后合成推理 part（与原生 reasoning_content 通道独立 id）、闭标签回文本路、孤立闭标签只丢标签、悬挂标签前缀扣到下一段再判、finish 补收口、状态不跨 step；不吐 think 标签的模型除 ≤7 字符延迟外零影响。② 压缩块渲染头 `[Historical context summary. …]` + `sources: msg_a .. msg_b` 被模型压缩模仿成 `[Historical context summary: msg_…]` 拼在回复尾——上下文从不出现这个混合形。锚点表/剥离正则/快路径三处加新形状，261014 的流式纠偏机制原样接管。决策见 [inline-think-and-compaction-marker-echo](docs/notes/implemented/bug-fix/2026-10-24-inline-think-and-compaction-marker-echo.md)。验证：think-split 8 条 + instruction-echo 新增 3 条 51/51 过；test/session 既有失败 4 条（录制夹具）带不带本批改动失败集合一致，非本批引入；真实 step 流的端到端待 GUI 实测。模型可见四问：①不改注入文本（标记本体保留，provenance 是 context_read 回读依据）；②固定前缀零增减；③KV cache 不动；④无新增注入项，两处均为输出侧分流/剥离。
-- **SDK 重新生成**（`packages/sdk`）：`openapi.json` 与 `sdk/js/src/v2/gen` 同步本批两个新字段——`SessionStatus.retry/busy` 的可选 `since`（状态段起点，卡死警告的时长判据）与 `Config.experimental.childStall.warnMs`（默认 360000）。pre-push 的 openapi-drift 自检拦截后两条生成命令均已执行，逐字节一致（759901 字符）。
+### [0.12.20] - 2026-10-24
+
+- **修复 GUI「无法重新加载」弹窗：/command 响应在边界落地 MCP 懒模板**（`packages/opencode/src/command/template.ts`、`server/routes/instance/httpapi/handlers/instance.ts`）：MCP prompt 注册成的命令其 template 是懒 Promise（getPrompt 慢/失败/服务器下线时恒挂起），Effect 4.0.5 起（0edd8e54）HTTP 响应体过 JSON codec 校验把 Promise 拒成 `Expected JSON value at [14]["template"]`——命令数组里 12 个全局 .md + init/review 内置占 [0..13]，首个 MCP prompt 命令恰好落 [14]，与 GUI 报错逐字吻合；/command 整条 400 后 bootstrap slow 组每个项目弹一条「无法重新加载」，且因 MCP 连接与 Command init 的竞态而时有时无。修复在 getCommand 边界把 template 落地成字符串（OpenAPI 契约本就声明 string）：字符串直通、已决取值、拒绝/2s 预算兜底 ""（`resolveTemplate` 抽独立模块配 4 条单测）；提交路径 session/prompt.ts 仍直接 await 原始 Promise 不受影响。端到端复现：临时 stdio MCP server 暴露 prompt，fresh 实例 /command 返回 200 且 [14] 模板为已落地字符串。模型可见四问：①改动仅在 HTTP 响应序列化，不进模型上下文；②③固定前缀零增减；④无新注入项。验证：opencode typecheck 通过；template 测试 4/4；真实引擎端到端 200。另记：探针发现 /app/agents、/app/skills 裸请求 500 空响应体（无 schema rejection 日志），疑似独立缺陷待查。
+- **GUI 体检批次（性能 / token / 分层）**（`packages/app`、`packages/ui`、`packages/desktop`）：四路审计后按 P1/P2 落地——① sidecar 异常恢复清扫异步化：崩溃/强杀后下次启动在建窗前同步跑最多 3 次 PowerShell（各 10s 超时）冻结主进程，改 `beginStaleSidecarSweep()` 异步起跑、「清完旧树才起新 sidecar」由 loadingTask spawn 前 await 兑现（desktop typecheck + sidecar 测试 10/10）。② 失效 token 修复：text-11-regular×46、text-13-*×17、text-16-regular 等 66 处死字号类补齐定义（新增 `--font-size-x-small: 11px`），v2 theme 三套 scheme 块补 icon 状态色四槽（success/warning/danger/info → state-fg），新增 font-utilities 守门测试防死类复发；text-12-* 渲染 13px 的历史命名错位未动（改小影响全局布局，待评估）。③ ResizeHandle 拖拽 rAF 合帧（原每 pointermove 直灌 onResize → 整列 relayout）+ 松手提交最终尺寸 + pointer capture + 键盘入口（role=separator、方向键 16px/次、Home/End），换算抽纯函数配 9 条单测。④ ConnectionGate blocking 轮询补 500ms 间隔（原 while(true) 无节奏，healthy:false 被 750ms 缓存回喂时空转），desktop 场景传 `initialCheckMode="background"` 复用主进程就绪确认，轮询循环抽 `awaitStartupHealth` 配 5 条单测。⑤ `dark:` 变体经 `@custom-variant` 对齐 `data-color-scheme`（原走系统媒体查询，应用内切深色时 Seal 红不变色），desktop 构建产物选择器逐字核对。⑥ components→pages 全部 15 处反向依赖清零：useSessionLayout/createSessionTabs 上移 `context/session-layout.ts`，terminal-focus/handoff/project-dir/layout-helpers 各归 utils 层，测试随实现迁移 21/21。⑦ 错误 toast 三元组收敛 `notifyServerError`（4 处 canonical 调用点；审计所记 24 处含大量异构变体，强行套抽象属过度设计，异构站点保留）。⑧ Bundle 实测（当前版本构建）：renderer main chunk 2.25MB 静态含 oniguruma/textmate/shiki/pierre 高亮子系统（`ui/src/context/marked.tsx:6` 对 @pierre/diffs 主入口的静态 import 所致，history 344KB 归因需按新构建重估），session 1.4MB、ghostty-web 1.4MB lazy 正常；emacs-lisp/cpp/wolfram 等语言 chunk 在 worker 与主包双份（各 764/612/260KB），拆 marked.tsx 静态依赖与 manualChunks 待下批。涉及滚动与拖拽路径的改动（ResizeHandle）按回归底线需 GUI 实测五件套，未验收前不建议重编发布。模型可见四问：全批均为 UI/HTTP 层改动，不触及提示词、工具 schema 与注入面，固定前缀零增减。
+- **推理强度滑条档位渐变揭示与光点动效**（`packages/ui/src/v2/components/effort-slider-v2.*`）：参照 ZCode 观感——填充从单色 accent 改为固定绿→蓝→紫三段渐变按档位从左往右揭开（低档纯绿，每升一档多展开一截），揭示机制从 scaleX 换 clip-path（scaleX 会把渐变一起压扁），揭示边缘几何与原方案一致（拖动跟手、松手 140ms 吸附不变）；满档泛蓝紫辉光、8 颗光点按阈值逐个亮起错峰闪烁，`prefers-reduced-motion` 全关。颜色全取现有 v2 token，无新增字面量；模型可见面无触及。验证：ui typecheck + effort-slider 单测 3/3。
+
 
 - **子代理卡死改为可见警告，cancel 归位残留状态**（`packages/opencode/src/session/status.ts`、`background/job.ts`、`tool/task_status.ts`、`config/child-stall.ts`）：模型额度耗尽后重试循环（无 retry-after 头每次挂满 75s 首事件超时，有头单次放行最长 10 分钟）让子代理任务 running 长达 27 分钟，`task_status` 只回 "Task is still running."，主对话无从判断该不该取消、只能盲目轮询。现在 busy/retry 状态带段起点 `since`（打点收在 `SessionStatus.set`，同类型重写保留起点，写入点零改动）；`task_status` 在 retry 段带出 `attempt N/10` 与原因，同一状态段超过 `experimental.childStall.warnMs`（默认 6 分钟）追加警告——只警告不终止，长工具/长推理也可能触发，判断权留给主对话。`cancelTree` 返回已取消任务 id，cancel 后把 fiber 中断跑不到收尾的残留 busy/retry 归位 idle，TUI 的"等待模型响应"spinner 不再永久旋转（任务表已 cancelled 而界面仍在转，261023 实证）。模型可见四问：①`task_status.md` 加一句警告说明，工具输出在超限时多一段固定格式警告；②描述 +1 句约 60 tokens（仅加载该工具的会话）；③tools 段的 task_status 描述变更使该段起前缀作废一次；④警告文本固定有界，无新注入面。验证：opencode typecheck 通过（tsgo 崩溃回退 TS 5.9.3），task_status 13 pass / task 26 pass / task-runtime 8 pass。决策见 [child-task-stall-warning](docs/notes/implemented/bug-fix/2026-10-23-child-task-stall-warning.md)。
+- **SDK 重新生成**（`packages/sdk`）：`openapi.json` 与 `sdk/js/src/v2/gen` 同步本批两个新字段——`SessionStatus.retry/busy` 的可选 `since`（状态段起点，卡死警告的时长判据）与 `Config.experimental.childStall.warnMs`（默认 360000）。pre-push 的 openapi-drift 自检拦截后两条生成命令均已执行，逐字节一致（759901 字符）。
 
 - **压缩参数随长会话审计校准**（`seed/redcode.home.jsonc` 模板）：26 个长会话 60 次干净压缩事件实测（触发水位中位 343k、重建中位 149k、R/C 0.43、单次冷开销 262k、回本 14.7 请求、压缩开销约占长会话成本 10%）——手动甜点位 340–360k，400k 兜底合理，早于 300k 回本恶化 50%。模板 `target_tokens` 120k→110k 试降观察（压后起步更轻），TUI/GUI 颜色线随甜点位校准：320k 黄→340k（`soft_ratio` 0.85）、360k 橙→370k（`prune_ratio` 0.925）、400k 红不变。live 与 local 层同步（`soft_ratio`/`prune_ratio` local 未显式配置不涉遮蔽）。验证：三份配置 jsonc 解析全绿；doctor config ok；配置缓存永久，重启进程生效。
 
@@ -33,6 +35,8 @@
 
 - **GUI 会话缓存与首次初始化统一管理**（`packages/app`）：预取和前台同步共用与消息 Store 同生命周期的缓存账本及清理入口，移除页面级私有 LRU，避免离开目录再返回后消息和 parts 越积越多；保留预取 10 会话、前台 40 会话和 400 条阅读窗口。冷启动将「读取水位、加载快照、确认水位」合成一次初始化，避免首次同步与 checkpoint 重复读取完整消息页，不以跳过一致性快照换请求数。不改滚动、IME 或 Electron 行为，实际 GUI 交互与 GB 级内存收益未验收。决策见 [gui-session-cache-initialization-owner](docs/notes/implemented/architecture/2026-10-23-gui-session-cache-initialization-owner.md)。
 
+
+- **0.12.20 期间并入的协作修复与杂务（补录）**：YuQi 四条——desktop SSE 单帧上限改为先排空再查残余（`a944e905`）、桌宠让位阈值对齐首页栅格断点（`189be809`）、effect-drizzle-sqlite 插入参数双层包装修复（`4f09bc23`）、输出截断提示按工具点名收窄参数面（`7837a2b6`）；Wonyoung 两条——OpenAPI 漂移自检从 pre-push 提前到 commit 时拦截（`6485326c`）、合并版 frontend-design skill 同步 seed（`b0b8fb4e`）。（升版时漏记，按 2b448157..6875fcb6 边界补录）
 ### [0.12.19] - 2026-10-23
 
 - **依赖层统一 solid-js 单一实例，插件示例改走 api.keymap**（`packages/opencode/package.json`、`bun.lock`、`seed/plugins/tui-smoke.tsx`、`test/cli/tui/plugin-loader.test.ts`）：`packages/opencode` 的 solid-js 从 catalog 摘出钉 1.9.14，与 bun.lock 给 `@opentui/keymap` / `@opentui/solid` 单独解析的版本对齐——TUI 源码与两个 @opentui 包现在是同一实例（`.bun/solid-js@1.9.14` 单一路径），双实例并置消除；app / ui 仍走 catalog 1.9.17（独立构建目标，运行时不共享）。lock 变更 20 行、2009 installs no changes、无连带升级。安装时用 `bun install --minimum-release-age=0` 覆盖 bunfig 的 3 天策略：drizzle rc.5 / electron 44.9.3 / storybook 10.6.3 等 261022 批次版本仍在最小发布年龄窗口内，版本均已被 lock 钉死并经上批验证，未改 bunfig。插件侧 `tui-smoke.tsx` 不再 import `@opentui/keymap/solid` 的 `useBindings` / `useKeymapSelector`（双实例下这两个 hook 的 context 必炸），layer 改插件 init 时 `api.keymap.registerLayer` 常驻 + `enabled` 函数门控（按键时求值，语义与原 enabled accessor 等价），shortcuts 降级渲染期计算；plugin-loader fixture 同步删除 `has_keymap_solid` 探测与断言（extras 入口的 `has_create_binding_lookup` 已覆盖包解析性）。验证：dev 正常渲染；keymap / dialog / diff / plugin-loader 27 pass 0 fail；opencode typecheck exit 0；tui-smoke Transpiler 语法通过。决策见 [solid-dual-instance-keymap-context](docs/notes/implemented/bug-fix/2026-10-23-solid-dual-instance-keymap-context.md)。
@@ -2115,15 +2119,24 @@
 
 ---
 
-### [0.8.16] - 2026-08-14（版本线合并）
+### [0.8.16] - 2026-08-11
 
-> 维护方式调整：TUI 与 GUI 不再分线，全仓统一单一版本号。GUI 从 0.7.20 跳版对齐 0.8.16（纯版本号变更，无功能改动）；内部包（`@redcode-ai/*`、sdk、vscode 扩展）的 fork 遗留版本号 1.15.x 一并对齐，该字段仅作标签（互引均为 `workspace:*`），Sentry release 与 GUI 自报版本自此跟随真实版本。README 徽章合并为单一"版本"徽章，`check-version-consistency.ts` 改为单线校验。
+> 审计收尾日：msgPin 与 prune 停战（compact 边界分代结算，缓存优先）；HttpApi 假门禁转正并当场修掉门禁自己的冷启动竞速缺陷；两个静默失效的依赖补丁分道处置；apply_patch 补写前守卫；edit 锁表止漏；read 跨盘路径岔修复。
+
+#### 修复
+
+- **msgPin 与 prune 停战——compact 边界分代结算**（`session/prompt.ts`、新增 `session/prompt-caches.ts`）：overflow 三档的 prune(0.8) 给陈旧工具输出打 compacted 标记，而 msgPin 每轮用首次快照把旧消息钉回去——标记永远到不了模型可见的 prompt，三档实际只剩两档，每次都掉进最贵的全量摘要；"prune 释放够了就跳过 summarize"吃的还是虚报释放量。缓存优先落分代结算：平时 prune 只记账（标记入库、prompt 仍钉死快照、日志改口 `context.prune.marked` 不再谎报），compact 边界（缓存反正要重建）`settlePromptCaches` 丢弃 msgPin/modelMsgs——prune 标记与 DCP 累积改写一并生效、快照双份内存同步释放；跳过 summarize 的判断从此诚实。配套开启 `compaction.prune`（此前开关未开 = prune 档"配置关 + 被钉"双重空转）。
+- **HttpApi 门禁转正 + 探测冷启动竞速**（`.github/workflows/test.yml`、`test/server/httpapi-exercise/`）：门禁 `if: runner.os == 'Linux'` 但 matrix 只剩 Windows，三条 `--fail-on-missing` 从未执行。转正时 coverage 报出 2 条无场景路由（`DELETE /project/{projectID}`、`POST /session/tts`）补齐；auth 模式首跑即暴露存量缺陷——/event 与 /pty/connect 无凭据探测稳定 500，定位为探测 1s 竞速对"裸路由链冷首请求"太紧（instanceRouterLayer 惰性构建超 1s 被 abort 打成空 500，其余 148 条都走已暖链），放宽 10s；runner 断言失败附响应体。本地三模式 150 场景全绿。
+- **apply_patch 补"写前已读"守卫**（`tool/apply_patch.ts`）：gpt 系模型的写路径此前裸奔。断言全放校验阶段——任一文件过期整个 patch 一字不落盘（all-or-nothing）；update/delete/add-撞已有文件三径全覆盖，写后统一刷新 FileTime。
+- **edit 文件锁表引用计数**（`tool/edit.ts`）：原 locks Map 只增不减，长驻 server 每编辑一个新文件永久泄漏一个 Semaphore。改 acquireUseRelease + 引用计数，最后使用者释放时删条目（不能"用完即删"——第二等待者仍挂旧信号量时第三者新建会失去互斥）；`fileLockCount()` 供测试断言回收归零。
+- **read 修 Windows 盘符缺失路径跨盘岔**（`tool/read.ts`）：`/users/foo` 这类"根相对"路径 `isAbsolute` 判 true 跳过实例目录锚定，被按进程 cwd 的盘解析——仓库在 E 盘必 File not found，CI runner 的 C 盘 cwd 掩盖多年（read.test 的 Windows 归一化用例因此常年本地红）。现锚定实例目录所在盘，UNC 不受影响。
+- **两个静默失效的依赖补丁分道处置**（`patches/`）：patchedDependencies 声明的 `solid-js@1.9.10`/`@npmcli/agent@4.0.0` 与实装 1.9.14/4.0.2 对不上，bun 静默不应用。solid-js 退役（实证 1.9.13+ 上游已逐字合入 #2046 transition 修复）；@npmcli/agent 对 4.0.2 重制（上游仍未修 `get proxy()` 返回 URL 对象，该包经 make-fetch-happen 服务 npm 拉取链路，代理环境刚需）。
+
+#### 变更
+
+- **chrome-devtools MCP 路径拆到本地层**（`seed/redcode.home.jsonc`）：命令是 npm 全局安装的绝对路径（含用户名/盘符），换机必 ENOENT——与 DCP 插件路径同类"因机而异"值，下沉 `redcode.local.jsonc`；同批的 github MCP 是远程 URL 机器无关，留在模板。
 
 ---
-
----
-
-## TUI
 
 ### [0.8.16] - 2026-08-11
 
@@ -2749,206 +2762,293 @@
 - **`TodoItem` 组件支持 `depth`**（`component/todo-item.tsx`）：新增可选 `depth` prop 控制缩进。
 - **plugin SDK `TuiSidebarTodoItem` 补字段**（`plugin/src/tui.ts`）：追加 `id`/`parent_id`，插件可读取层级信息。
 
-### [0.7.20] - 2026-07-09
+### [0.7.20] - 2026-08-13
 
-> Snippet 系统接入——read 工具自动提取符号并注册 snippet，支持按 snippet ID 精准重读代码片段。
-
-#### 新增
-
-- **Snippet 系统完整接入**（`read.ts`、`session/snippet.ts`、`tool/snippet.ts`）：read 工具读取 TS/JS/Python/Go/Rust 文件时，用正则提取顶层符号（函数/类/接口/类型等），注册为 snippet 并在输出末尾附 `<snippets>` 索引。模型可用 `snippet` 工具按 ID 精准重读某个函数/类，不必重读整个文件，省上下文窗口。灵感来自 deepcode-cli 的 snippet 编辑系统。
-- **snippet 工具增强**：去掉无用的 `filePath` 参数；输出带行号前缀和 `[path#TAG]` header，可直接配合 edit hashline 格式使用。
-- **snippet service 修复**：`get()` 改为跨所有 messageID 搜索（原按 messageID 分桶，read 和 snippet 工具的 messageID 不同导致永远查不到）。
-
-### [0.7.19] - 2026-07-09
-
-> 修复 snapshot Myers diff 冻死事件循环（采样分析器实测 59s），清理排查探针。
+> sidecar 猝死自愈：死了必留遗言、死了自动复活。GUI 断连不再需要重启整个应用——260813 上午实证 sidecar 静默 exit 0 后渲染层 `Failed to fetch` 无限刷屏、永不恢复，这次从两头堵死。
 
 #### 修复
 
-- **[核心] snapshot structuredPatch 冻死事件循环**（`snapshot/index.ts`）：`patch()` 调用 diff 库的 `structuredPatch`（Myers O(ND) 差分），对大文件或病态编辑距离无护栏，采样分析器实测单次调用卡 59s（6274/6278 samples）冻死主线程，流式 delta 在冻结期间缓冲、解冻后 burst 涌出——即敏敏"等几十秒→整段话一瞬间刷出"的根因。加 256KB 大小护栏（超限跳过全量 patch）+ 2s timeout 兜底，验证 blockedMs 从 49398~70962ms → 消失。
-- **清理 TEMP 诊断探针**（`provider.ts`、`llm.ts`、`message-v2.ts`）：删除 260709 排查用的事件循环卡顿探针、JSC 采样分析器、fetch 计时、transformParams 计时、toModelMessages 计时。
-
-### [0.7.18] - 2026-07-08
-
-> TUI 消息列表 windowing——长会话（400+ 消息）输入不再卡顿，清理 DIAG 探针。
-
-#### 修复
-
-- **[核心] TUI 消息列表无虚拟化，长会话输入卡顿**（`routes/session/index.tsx`）：`<For each={messages()}>` 全量挂载全部消息（如 422 条），每条内含 tool/reasoning/text part 全部建成 opentui renderable，opentui 每次按键触发 yoga `calculateLayout` O(总节点) 全树布局，数百节点时每次敲字重算→输入回显延迟 1 秒+。改为消息级 windowing：默认只渲染最近 50 条消息（`MSG_WINDOW_DEFAULT=50`），滚动到顶部自动加载更多（`MSG_WINDOW_STEP=50`），Ctrl+Home 展开全部。屏外消息不进 yoga 树、不建组件——同时省下布局+组件+绘制开销。所有导航（Page Up/Half Page Up/Previous Message/Timeline/Fork/Jump to Last User Message）均适配 windowing，自动展开窗口定位目标消息。切换会话时重置窗口大小。
-- **清理 DIAG 探针**（`provider.ts`、`llm.ts`）：删除 260708 排查用的临时 fetch begin/headers 计时日志和 transformParams 计时日志。
-
-### [0.7.16] - 2026-07-07
-
-> 修复 LSP 的 tsserver 无内存上限、大 TS monorepo 下涨到 2.5G+ 吃掉 GUI 绝大部分内存。
-
-#### 修复
-
-- **[核心] TypeScript LSP 的 tsserver 无内存上限**（`lsp/server.ts`）：排查"小宋跑任务吃 2.5G 内存"时按父进程树实测，真凶既不是 Electron（renderer 仅 ~530MB）也不是 sidecar 本体（仅 ~276MB），而是 RedCode 内置 LSP 启动的 `typescript-language-server` 再 fork 出的 `tsserver.js`——它默认没有 `--max-old-space-size` 上限，在本仓这种大 TS monorepo 上把整个类型图加载进内存后一路涨到 2508MB，被任务管理器显示成一个"独立"的 Node.js JavaScript Runtime，之前一直被误判为 sidecar/消息缓存。给 `Typescript.spawn` 的 `initializationOptions` 加 `maxTsServerMemory: 2048`，typescript-language-server 会将其转成 tsserver 的 `--max-old-space-size` 并在超限时自动重启 tsserver，内存不再无限增长。
-
-### [0.7.17] - 2026-07-07
-
-> 修复 `redcode doctor` 一次性命令在 Windows 下无法退出 + StepFun `step-3.7-flash` 价格显示为 USD 而非官方 CNY。
-
-#### 修复
-
-- **`redcode doctor` 因 `InstanceRef` 缺失而 die**（`instance-state.ts`）：`doctor` 命令使用 `instance: false` 避免 full bootstrap，但 `Config.Service` 内部走 `InstanceState.make` 时需要 `InstanceRef`，没有时直接 die 导致进程挂起。新增 `fallbackContext()` 函数在 `InstanceRef` 缺失时合成 minimal `InstanceContext`，`doctor` 现在无需 project instance 即可正常运行。
-- **StepFun `step-3.7-flash` 价格显示为 USD 数值而非官方 CNY**（`provider.ts`）：models.dev 返回的是 USD 价格（input $0.2/M, output $1.15/M），但 UI 侧对 `stepfun` provider 未做 CNY 转换，导致价格被当成人民币显示。给 `CNY_PRICING` 添加 StepFun 官方 CNY 定价（input ¥1.35/M, output ¥8.1/M, cache_read ¥0.27/M），同时在 sidebar `CNY_PROVIDERS` 中加入 `stepfun`。
-
-### [0.7.15] - 2026-07-07
-
-> 新增 `redcode doctor` 诊断命令 + 修复 Windows 下 MCP stdio 子进程导致进程无法退出。
-
-#### 新增
-
-- **`redcode doctor` 诊断命令**（`src/cli/cmd/doctor.ts`、`src/index.ts`）：新增 `doctor` 子命令，对 TUI 运行环境做 6 项快速自检（version / config / providers / plugins / mcp / database），`--json` 可输出机器可读结果。命令注册在 CLI 入口，`instance: false` 已移除，走正常 project instance 上下文。
-
-#### 修复
-
-- **Windows 下 MCP stdio 子进程阻塞进程退出**（`src/mcp/index.ts`）：Windows 上 `StdioClientTransport.close()` 等待的 `close` 事件在 console 子进程场景下可能永远不触发，导致 `redcode doctor` 等一次性命令执行后进程挂起不退出。在 `win32` 平台对 `StdioClientTransport` 的 `close()` 做 override，先 `killProcessTree(pid)` 强制清理子进程树，再调用原始 close。
-- **dispose 无超时保护可无限挂起**（`src/effect/instance-registry.ts`）：`disposeInstance()` 原来直接 `Promise.allSettled` 跑完所有 disposers，任一个卡住就会让整个命令 hang 住。新增 5 秒 `Promise.race` 超时，超时后直接返回，防止单点 disposer 拖垮整个退出流程。
-
-### [0.7.14] - 2026-07-07
-
-> 修复 DeepSeek 计费金额偏低 + 缓存命中率虚高（99% 显示 vs 官方结算 ~96%）。
-
-#### 修复
-
-- **[核心] DeepSeek/Xiaomi 官方 CNY 定价只在 `config.provider` 声明时才生效**（`provider.ts`）：CNY 价格表 patch 原来写在"用 config 扩展 models.dev 数据库"的循环里，只对 `redcode.jsonc` 里手写声明过的 provider 生效——纯靠 `auth login` 自动发现（不在 config 声明）的 DeepSeek 完全没打上官方 CNY 价目，直接落回 models.dev 的默认 USD 量级价格（`cache.write:0`），而 UI 侧一直假设"deepseek/xiaomi 的 cost 已经是 CNY"直接显示，导致实际花费被严重低估。改为对 models.dev 数据库无条件 patch，不再依赖用户是否在 config 里声明该 provider。
-- **缓存命中率公式 `sumMiss || sumWrite || sumInput` 的"三选一"掩盖了实际未命中量**（`prompt/index.tsx`、`sidebar/context.tsx`）：DeepSeek 的真实 miss/新鲜 token 有时会因为 SDK 响应用的是哪个原始 metadata 字段，被 `session.ts` 的缓存上限兜底逻辑错记进 `cache.write` 而非 `cache.miss`（`tokens.cache.miss` 按构造恒等于 `tokens.input`，与 `write` 从不重叠计数），旧公式用 `||` 优先取 `sumMiss`，正好选中了被"抽空"的那个残缺值，命中率虚高到 99%。改为 `sumRead + sumMiss + sumWrite` 直接求和，不再二选一漏记。
-
-### [0.7.13] - 2026-07-07
-
-> 补全 sidecar Event Loop 阻塞的最后一个死角：`toUIMessages` 循环内部本身没有让出点。
-
-#### 修复
-
-- **`toUIMessages()` 同步遍历全部历史消息、循环内部零让出**（`message-v2.ts`）：0.7.12 的 `yieldNow` 只加在循环外（`toModelMessagesEffect` 调用前后、msgPin 里），拦不住 `toUIMessages` 这个 `for (const msg of input)` 循环本身——长会话下它一次性同步跑完（含 `truncateToolOutput` 等重活），Event Loop 仍被这一段独占，心跳/健康检查照样被堵。将 `toUIMessages` 从普通同步函数改为 `Effect.fn` 生成器，循环内每处理 10 条消息 `yield* Effect.yieldNow`，让批处理中途也能喘气；同步更新唯一调用点 `toModelMessagesEffect` 改为 `yield*`。
-
-### [0.7.12] - 2026-07-06
-
-> Sidecar Event Loop 阻塞导致 GUI 断连 + 状态灯误报 Healthy + 输出一阵一阵慢。
-
-#### 修复
-
-- **Sidecar Event Loop 被同步操作长时间阻塞**（`message-v2.ts`、`prompt.ts`）：Agent 每步之间，`toModelMessagesEffect` 同步遍历历史消息、`structuredClone(msg.parts)` 深拷贝、`JSON.stringify(msgs)` token 估算连续执行，Event Loop 被阻塞 2–10s。期间 `Stream.tick("10 seconds")` 心跳发不出 → SSE 超时 abort（30s→90s 后仍可被堵超 30s 的步打断）、`/global/health` 健康检查 3s 超时→粉红 dot、AI 输出事件堆积→输出卡顿。在 `toUIMessages()` 后和 msgPin 循环每 10 条消息加 `yield* Effect.yieldNow`，让 Event Loop 在同步批处理间喘口气，处理积压的心跳和健康检查。
-
-### [0.7.11] - 2026-07-06
-
-> 修复 GUI 成本显示偏低（tokens 覆盖 + 子代理成本未汇总）+ 前缀缓存命中率无法收敛到 97%+。
-
-#### 修复
-
-- **message tokens 覆盖 bug**（`processor.ts`）：多 step assistant 消息的 `tokens` 字段用 `=` 覆盖而非 `+=` 累加，导致只保留最后一个 step 的数据。GUI 上下文面板据此汇总的缓存命中率被严重低估。改为与 `cost` 一致的逐字段累加。
-- **子代理成本未汇总**（`session-context-tab.tsx`、`session-context-usage.tsx`）：Task 工具创建的子 session LLM 成本未纳入父 session 面板"总成本"显示，导致金额偏低数倍。新增 `childCost` memo 遍历子 session 消息汇总。
-- **MCP 工具描述缓存/连接不一致**（`mcp/index.ts`）：`convertMcpToolCached` 曾追加 `[cached — not connected]` 后缀，MCP 服务器重连时描述变化打断前缀缓存。改为与 `convertMcpTool` 字节级一致，断线提示挪到 `execute()` 抛错。
-- **工具定义未缓存致前缀缓存命中率上不去**（`prompt.ts`）：`describeSkill()` 每步调 `Glob.scan()` 扫磁盘、`describeTask()` 每步读 agent 列表，是 system/messages/tools 三大前缀组件中唯一未做 per-session 缓存的。build agent 创建文件匹配 skill path 模式时 Skill 工具描述变化 → 工具 schema JSON 变化 → 整个前缀缓存失效。新增 `_caches.tools` 第一步缓存所有工具 description + inputSchema，后续步骤用缓存覆盖。
-
-### [0.7.10] - 2026-07-05
-
-> 修复 DeepSeek 成本少报（miss 部分按 cache_hit 计费）。
-
-#### 修复
-
-- **DeepSeek cache miss 计费少报**：`ai-sdk.ts` 未从 `raw` 提取 `prompt_cache_miss_tokens`，`cacheWriteInputTokens` 始终为 0。同时 `getUsage` 的 cap 未考虑 cache write 部分，当 `prompt_cache_hit_tokens > prompt_tokens` 时多余部分被 cap 吃掉，本应按 ¥1/M 计费的 miss 部分被按 ¥0.02/M 计费。双修：ai-sdk.ts 补充 miss tokens 提取（`deepSeekCacheWrite`）；session.ts cap 改用 `inputTokens - cacheWriteInputTokens` 为基准。
-
-### [0.7.9] - 2026-07-05
-
-> 修复 DeepSeek V4 Flash 成本少报（~7x 低估）。
-
-#### 修复
-
-- **DeepSeek V4 Flash 成本计算少报**：`getUsage()` 中 `adjustedInputTokens = inputTokens - cacheReadInputTokens`，DeepSeek 返回 `cached_tokens > prompt_tokens`（比例 1.5x–20x），导致非缓存 input 未被计费，仅输出计费。将 `cacheReadInputTokens` cap 在 `inputTokens` 范围内（`session.ts:418`），同时修正 `ai-sdk.ts` 中 DeepSeek `prompt_cache_hit_tokens` 解析。
+- **sidecar 静默蒸发不再死无对证**（`packages/desktop/src/main/sidecar.ts`）：实证死法是 exit code 0 干净退出，`uncaughtException`/`unhandledRejection`/`catch` 三条 `exit(1)` 路径全空、crash log 一行不留，主进程只看到 `sidecar exited { code: 0 }`。根因土壤在保活写法——`start()` 里 `await new Promise(() => {})` **不产生 active handle**，真正撑住进程的是 listener 的 listen socket；listener 一旦被意外关闭，事件循环排空，Node 自然 exit 0。新增 `beforeExit` 钩子：只在自然排空时触发（`process.exit()` 不触发，故合法 `stop()` 与 `exit(1)` 均不误报），落 crash log 记录 `listener` 存活状态 + `getActiveResourcesInfo()`，并 postMessage 通知主进程。
+- **sidecar 猝死自动重拉**（`packages/desktop/src/main/index.ts`）：此前 `onExit` 只写一行日志，渲染层 SSE 重连循环（`app/src/context/{global,server}-sdk.tsx` 自带退避重试）敲不到人，只能刷 `Failed to fetch` 到用户手动重启。新增 `handleSidecarExit`/`respawnSidecar`——用启动时留存的**同 hostname/port/password** 重拉，auth 与 URL 不变，渲染层无需改动即自动接上；退避 1s/3s/10s 三次封顶，未通过健康检查不清零重试计数（防「起来又死」无限拉尸体），封顶后留 error 日志。猝死判别靠 `killSidecar()` 先置 `server = null` 再 `stop()`——exit 到达时 `server` 仍指向死者才算猝死；`before-quit`/`will-quit`/`relaunch`/信号四处置 `quitting` 标志兜底退出窗口期。
 
 ---
 
-### [0.7.8] - 2026-07-05
+### [0.7.19] - 2026-08-12
 
-> 修复 `@opentui/keymap` 双份类型冲突 + 首页项目分区选择器。
-
-#### 修复
-
-- **`@opentui/keymap` PKG 重复导致 TS 类型错误**：`@opencode-ai/plugin` 内置的 `@opentui/keymap` 与 TUI 依赖的版本虽文件全等，但 Bun content-addressable 存储为不同 hash（`0d7da94b` vs `77dde1de`），TypeScript 视为不同类型，`#private` 字段不兼容报错。将两个 junction 统一指向 `77dde1de`（`node_modules/.bun/`）。
+> 首页侧边栏毛玻璃满铺透壁纸（底色掺淡蓝，与助手气泡同色系）；用户气泡底色改粉色系磨砂（设聊天壁纸时不再是纯深灰）；流式文字渲染砍掉 24ms 打字机层改自适应节流（快模型不再白跑中间层、慢渲染自动降频不占死主线程）；主界面缓存命中率显示保留两位小数。
 
 #### 新增
 
-- **首页项目分区选择器**：TUI 首页新增交互式 workspace 选择器，展示项目/分区列表，支持快速切换工作区（`project-selector.ts`、`api.tsx`、`command-shim.ts`、`thread.ts`）。
+- **首页侧边栏毛玻璃满铺**（`home.tsx`、`index.css`）：主界面壁纸铺底时侧边栏改半透明 `color-mix(layer-01 55%)` + blur(18px) 透出壁纸，与聊天界面同款配方；根容器去掉 `pl-2/pb-2` 让侧边栏贴左贴底满铺（原 8px 缝隙露出壁纸边），底部快捷键条自行补留白。底色随后掺淡蓝（`rgba(168,180,240)` 30%，与 assistant 气泡同色系），dark 下由纯深灰 `#242424` 变深蓝灰。
+- **用户气泡底色改粉色系磨砂**（`index.css`）：聊天壁纸下气泡底原被毛玻璃规则覆盖成纯 `surface-base` 深灰黑——改嵌套 color-mix（内层 30% 粉 + 70% 深灰，外层 55% 透明保磨砂），dark 下呈深粉紫灰 `≈#403239`，与粉色边框/柔光统一。
+- **缓存命中率显示保留两位小数**（`home-stats.tsx`）：环形图与文字两处由 `Math.round` 整数改 `toFixed(2)`，数据层本就两位精度。
+
+#### 优化
+
+- **流式文字渲染砍打字机层 + 自适应节流**（`message-part.tsx`）：删 24ms 打字机 reveal（本地小模型已弃用，5080 50+ token/s 追不上，DeepSeek/Step 200+ token/s 下中间层纯白跑）；节流间隔 300ms → 每轮提交后 rAF 探测渲染耗时，间隔 = `max(120, 耗时×1.5)`——固定间隔小于单次全量渲染（parse+sanitize+innerHTML 替换）时"渲染追渲染"占死主线程（UI 冻结 + 憋大段一次蹦出），自适应保证每轮渲染后都有喘息。
+
+---
+
+### [0.7.18] - 2026-08-11
+
+> 思考过程实时计时（分辨供应商慢 vs 界面卡）；流式期间跳过 Shiki 高亮结束补全（长代码块不再掉帧）；权限弹窗三键键盘快捷键（Ctrl+Enter 允许一次 / Ctrl+Shift+Enter 始终允许 / Esc 拒绝）；首页侧边栏延伸到底、浅色面板化与动态 AI tips；深色主题下快捷键标签透明化。
+
+#### 新增
+
+- **思考过程实时计时**（`message-timeline.tsx`、`message-timeline.data.ts`、`message-part.tsx`）：思考中动画行右侧 1s 实时秒表（起点 = reasoning part 的 `time.start`，取不到回退行创建时刻，等首 token 的排队时间也算），推理内容块右上角总耗时标签（`time.end - time.start`）。数据层零改动——后端 processor 本就写 `ReasoningPart.time.start/end`；计时格式与 TUI 状态栏同款（`12ms`/`12.3s`/`1m 23s`）。
+- **权限弹窗键盘快捷键**（`session-permission-dock.tsx`）：window 级 keydown——Ctrl/Cmd+Enter 允许一次、Ctrl/Cmd+Shift+Enter 始终允许、Esc 拒绝；响应中忽略防连按，打字中也能触发（焦点在输入框不冒泡到弹窗，故用全局监听）；按钮旁加 Keybind 提示（Esc / Ctrl+Shift+Enter / Ctrl+Enter，mac 下显示 ⌘）。
+- **首页动态 AI tips**（`home.tsx`、`/experimental/generate` 端点）：底部 tips 不再固定随机——每 20 分钟用当前模型生成一条（≤25 字中文俏皮话），请求失败静默回落本地 50+ 条静态库。
+- **首页侧边栏延伸到底 + 浅色面板**（`home.tsx`）：侧边栏 `row-span-full` 贯通窗口底；底色 layer-02 → layer-01（grey-300 → grey-200 微白，五主题协调，等价会话文件树面板），恢复细边框分隔。
+
+#### 优化
+
+- **流式期间跳过 Shiki 代码高亮**（`marked.tsx`、`markdown.tsx`）：流式时每 300ms 全量 markdown→Shiki→morphdom 是长代码块掉帧主因——流式期间 `highlightCodeBlocks(skip)` 只出单色文本，`streaming` 翻 false 后一次性补全高亮；最终显示与之前完全一致。
+
+#### 修复
+
+- **深色主题下快捷键标签突兀**（`session-permission-dock.tsx`、`keybind.css`）：v1 Keybind 的 `surface-base` 半透明底 + 白描边在深色 dock 上成亮斑——按钮内改 `!shadow-none !bg-transparent` 只留文字；思考计时标签同样去掉 `bg-background-stronger` 底色，与气泡同透明。
+
+---
+
+### [0.7.16] - 2026-08-09
+
+> 上下文面板可选中复制；输入 token 零值误导配色与缓存标签歧义两处数据展示修正；首页侧栏底色与主区区分。
+
+#### 新增
+
+- **上下文面板支持选取复制**（`packages/app/src/components/session/session-context-tab.tsx`）：整窗 `select-none` 下，统计值（含会话 ID）与 system prompt 文本块显式 `select-text`——此前会话 ID 无法选中复制，出问题时没法快速对位到具体会话。
+
+#### 修复
+
+- **输入 token 零值误导色**（`session-context-tab.tsx`）：浅色主题下 `--syntax-string` 是橙红，输入 token 为 0 时数值像报错；零值改回中性色（`--text-strong`），非零才用强调色。
+- **缓存标签补读/写说明**（`packages/app/src/i18n/en.ts`、`zh.ts`）：en/zh 的 Cache Hit 标签不带单位说明，`452,224 / 101,643 (81.65%)` 两个数字含义不明（其余 16 语言本就带读/写说明）；对齐为 `Cache Tokens (read/write)` / `缓存令牌（读/写）`。
+
+#### 优化
+
+- **首页侧栏底色与主区区分**（`packages/app/src/pages/home.tsx`）：侧栏与主区同为纯白、仅靠 1px 分割线区分；侧栏补 `layer-02` 底色（浅色主题 #EEEEEE），保留分割线，导航区与内容区一眼可分。
+
+---
+
+### [0.7.17] - 2026-08-10
+
+> 语种裁剪 18 → 中/日/英三语（净 -1.6 万行，ja 缺口一次补平，parity 全键集把关）；v2 组件库 262 处 token 死引用整批修复（焦点环/浮层背景复活）；首页提示条脱离硬编码荧光绿。
+
+#### 变更
+
+- **语种裁剪 18 → 中/日/英三语**（`packages/app/src/i18n/`、`packages/ui/src/i18n/`、`context/language.tsx`）：其余 15 语维护成本高且长期漏翻（每语相对 en 缺 84 key，日/德/法用户首屏整片回退英文），整体下架——app 与 ui 两层各删 15 个语言文件，净 -16320 行。Locale 类型/加载器/浏览器语言探测收缩到三语；历史配置里的 zht 在 normalizeLocale 优雅降级到 zh（zh-Hant 浏览器探测同落简中），其余已下架语种回退 en。存量缺口一次补平：app/ja 补 83 键（home 全屏、计划页、审查空态、TTS 与桌面设置行）、ui/zh 补 6 键、ui/ja 补 8 键；三语词典同步清掉已下架语种的 language.\* 标签键。`parity.test` 从"手挑 2 个键"升级为全键集 diff（en 基准，zh/ja 缺键或孤儿键都红，app/ui 两层一起管），漏翻从此挡在 CI。
+
+#### 修复
+
+- **v2 组件库 262 处 CSS 变量缺 `--v2-` 前缀**（`packages/ui/src/v2/components/`，22 个文件）：token 定义是 `--v2-text-text-base` 一族，组件里却写着无前缀的 `var(--text-text-base)`——全是死引用：outline 的 undefined var 无 fallback 直接失效（checkbox/radio/switch/select/input/textarea/segmented-control 焦点环全灭，真实 input 是 clip 隐藏元素，全局兜底救不回）、tooltip/menu/toast 背景透明穿底、muted/faint 文案层级消失。桌面端暂只用了前缀正确的 4 个组件所以未爆，Storybook 里这批组件此前就是坏的。脚本化整批改写（改前验证零局部定义冲突、改后验证零残留）；新增 `token-refs.test` 钉死"定义过的 token 禁止无前缀引用"，进 ui 包既有 bun test 链路防复发。
+- **首页 tips/快捷键条硬编码荧光绿**（`packages/app/src/pages/home.tsx`）：`#4ade80` 带 60%/80% alpha 直写 style，浅色三主题（light/cream/green）下与近白底对比度约 1.5:1 基本不可读。改 `text-v2-state-fg-success` 语义 token（明 green-800/暗 green-500，两侧主题都有定义），绿色系人格化味道保留且随主题走；快捷键行补 flex-wrap，窄窗从溢出裁切变正常换行。
+
+---
+
+### [0.7.15] - 2026-08-07
+
+> 桌面端依赖链随 TUI 0.8.13 的 AI SDK v7 整族迁移升级——TypeScript 7.0.2 正式版（退役 tsgo 预览包）、低风险依赖批量升级、全仓 UTF-8 BOM 清理。
+
+#### 变更
+
+- **TypeScript 7.0.2 正式版**：退役 tsgo 预览包，typegraph-mcp 兼容 TS7。
+- **依赖批量升级**：低风险补丁/次版本批量升级，AI SDK v7 生态对齐（21 包 61 导入点随 TUI 0.8.13 迁移）。
+- **全仓 UTF-8 BOM 清理**（`packages/app`、`packages/desktop`）：1036 个被跟踪文件去除 BOM，消除跨平台差异。
+
+#### 修复
+
+- **GUI sidecar 周期性崩溃根治**（`packages/desktop/src/main/server.ts`）：移除 `REDCODE_EXPERIMENTAL_FILEWATCHER: "true"` 环境注入——@parcel/watcher-win32-x64 原生模块在 sidecar 常驻文件监听下触发 V8 Invalid handle abort（异常码 0x9E44，JS 层 uncaughtException 拦不住），表现为 GUI 运行约 20 分钟后 sidecar 退出、界面全面 Failed to fetch；TUI 从不加载 watcher（flag 默认 false）故从未崩溃。副作用：GUI 失去文件监听（experimental 功能，影响小）。
+- **输入框 agent / 模型下拉渲染空修复**（`packages/ui/src/components/select.tsx`）：Kobalte Select 运行时契约要求 `value` 为数组（`value.map()` 无条件调用）、`onChange` 收到匹配 option 数组——原实现传单值，打开下拉时 selectedKeys 求值抛 TypeError 致下拉空、无法选择。修复 = value 包数组（空值传 undefined）+ onChange 取 `[0]`。涉及 agentControl（RedMind/build/plan 切换）与 variantControl（模型档位）全部 Select 调用点，对外语义不变。
+
+---
+
+### [0.7.14] - 2026-08-05
+
+> 上下文面板补上会话 ID 与单次缓存命中率——出问题的会话一眼锁定，缓存被钉死时两轮内现形；顺带把面板 18 个字段的颜色全部重排，消除 6 对同色字段。
+
+#### 新增
+
+- **会话 ID 字段**（`packages/app/src/components/session/session-context-tab.tsx`）：`context.stats.sessionID` 插在「会话」「消息数」之间，显示完整 `ses_xxx` 长串——TUI 状态栏早就有，GUI 此前一直缺，出问题时没法快速对位到具体会话。
+- **单次缓存命中率字段**（`session-context-metrics.ts`、`session-context-tab.tsx`）：`turnHitPct` 取最近一轮请求的 read/(read+miss+write)，插在 Cache Hit（累计值）右侧，两者刚好看齐。缓存被钉死时单次值两轮内就掉到 60~80%，累计值却还没动——这正是 0.8.11 排查时验证过的诊断窗口。判据对齐 TUI 4d596f3：连续 ≥2 轮 read 持平且未命中 >3k 判定 `stalled`，此时字段显示 `xx% · 缓存未延伸` 并标红。
+
+#### 优化
+
+- **上下文面板字段配色重排**（`session-context-tab.tsx`）：原 18 字段有 6 对同色（model/output 都粉、usage/reasoning 都黄、totalTokens/userMessages 都绿、limit/assistantMessages 都黄绿、inputTokens/lastActivity 都青绿、provider/cacheTokens 都青），暗色主题下几乎看不出区分。逐字段分配 `--syntax-*` token，相邻（网格横向/纵向）互不撞色，避开 `--syntax-constant` 与 `--syntax-info` 暗色同值（#93e9f6）的坑。
+
+---
+
+### [0.7.13] - 2026-08-02
+
+> 渲染热路径从 marked 换 markdown-it——marked 的 lexer/parse 在长文本上是 O(n²) 退化（50KB 纯文本 462ms），markdown-it 线性扩展到 1.2ms（489x），流式长输出每 tick 数百 ms 的卡顿根因被拔掉。
+
+#### 性能
+
+- **markdown 解析器 marked → markdown-it 14**（`packages/ui/`）：marked 在 10KB→50KB 纯文本上 lexer+parse 从 25ms 劣化到 462ms（5x 文本 → 18x 时间，O(n²)），叠加流式渲染每 tick 全量 parse+sanitize（`markdown-stream.ts` 每 tick `marked.lexer(全文)`），长输出下正是 3000 万 token 级会话卡顿的根因。换 markdown-it 14.3.0：50KB 混合文本 parse 5.1ms（96x）、流式 30 tick 10ms vs 2439ms（244x），线性扩展无 O(n²)。改动：`context/marked.tsx` 重写 init（`html:true` + `linkify:true` + taskLists 插件补偿 checkbox + link_open renderer 定制 external-link，四种数学语法 `$`/`$$`/`\\(`/`\\[` 全兼容）；`markdown-stream.ts` 换 `md.parse()` tokenize（未闭合 fence 判断改为 token 序列以 `fence` 结尾 + `fence.map[0]` 行号精确切片，行为与旧版一致，4 测试全过）；`useMarked().parse` 接口不变，`markdown.tsx` 零改动。全量回归：ui typecheck + 21 测试 pass、app/desktop typecheck pass；性能复测流式 60 tick 最终 50KB = 126ms（2.1ms/tick）vs 旧 marked 理论 35s（279x），分块拼接与全量渲染输出一致。
+
+---
+
+### [0.7.12] - 2026-08-01
+
+> 流式渲染与缓存清理两条热路径继续瘦身——版本指纹不再每次全量拼接，缓存清理不再每次全量扫描。
+
+#### 修复
+
+- **流式版本指纹改增量缓存，消灭每 16ms 全量字符串拼接**（`packages/app/src/pages/session/message-timeline.tsx`）：`activeAssistantContentVersion` 原是每次 delta 都把 active 消息的全部 parts（含工具输出）拼成一个大指纹字符串（O(轮次文本)），长输出下随 flush 频率累积 O(n²) 分配。改为增量版本号——per-part 签名 `Map` 比对，只有签名变化的 part 才重算并递增版本号，未变 part 仅 `Map.get` 比较；消费方（auto-scroll 的 `on` 依赖）只比较值变化、不读内容，语义不变。缓存超 1000 条才做一次清理（删除不在当前活跃集合的签名），正常路径零额外分配。
+- **缓存清理懒化：无裁剪无孤儿时 O(1) 短路**（`packages/app/src/context/global-sync/event-reducer.ts`）：`cleanupDroppedSessionCaches` 原先每次 `session.created`/`session.updated` 都全量扫描 6 类 store 键 + 全部 parts（40-session 缓存 × 千条消息 = 数万条目/事件），为的是兜底清理被 trim 出列表的会话残留缓存。现在调用点先用 trim 前后长度差判断是否真发生裁剪，另加 `pendingOrphanSessions` 打点——`message.updated` 插入时若 session 已不在列表（被 trim 会话的消息事件仍在推送）就标记；两条件都不成立则直接跳过全扫，成立才走原逻辑并清空打点。孤儿兜底语义不变（测试覆盖 part-only orphan 场景）。
+
+---
+
+### [0.7.11] - 2026-08-01
+
+> 长会话卡顿两个结构性根因修复（每 delta 双写字符串累加、无消息上限）+ 任务栏闪烁提醒。
+
+#### 修复
+
+- **每 delta 单次写入，消灭 O(n²) 字符串累加**（`packages/app/src/context/global-sync/event-reducer.ts`）：`message.part.delta` 同时写 `part_text_accum_delta` 和 `part[].text` 两份拷贝，每次 delta 都 O(当前全文) 复制，长流式输出（三千万 token 级会话）下总成本 O(n²)。TUI 对照（`packages/opencode/src/cli/cmd/tui/context/sync.tsx:327-343`）只写一份；`readPartText`（`packages/ui/src/components/message-part-text.ts`）在 accum 缺失时本就 fallback `part.text`，删掉 accum 写入行为不变。
+- **每会话消息上限 100 条**（同上文件 `message.updated` case）：GUI store 无界保留全部消息+parts，超长会话使内存与全量扫描（`messageAgentColor`、`cleanupDroppedSessionCaches`）无界增长。仿 TUI 的 100 条 shift（`sync.tsx:271-289`）丢最旧消息及其 parts；历史消息靠 `directory-sync` 的 cursor 分页（`loadMore`）随时回拉，截断只影响内存缓存，不影响滚动查看。
+
+#### 新增
+
+- **任务栏闪烁提醒**（`packages/desktop/` 五处链路）：仿 TUI `attention.bell` 的微信式提醒——`platform.notify` 失焦触发时 `window.api.flashFrame(true)`（`renderer/index.tsx`），经 preload `flash-frame` 通道（`preload/index.ts`、`preload/types.ts`）到 main 进程 `BrowserWindow.fromWebContents` + `isFocused()` 守卫（`main/ipc.ts`），窗口聚焦自动停闪（`main/windows.ts`）；Tauri shim noop 占位（`renderer/tauri-api-shim.ts`）。桌面端所有通知（turn-complete/error/permission/question）汇聚于 `platform.notify` 一处生效。
+
+---
+
+### [0.7.10] - 2026-07-31
+
+> 输入框补上主 agent 切换控件 —— 此前 GUI 只能停在 build，plan / redmind 在界面上选不到。
+
+#### 新增
+
+- **输入框主 agent 切换控件**（`packages/app/src/components/prompt-input.tsx`）：工具栏此前只渲染 `modelControl()` 和 `variantControl()` 两个控件，没有任何切换主 agent 的入口，于是永远停在 `local.agent.list()[0]`（`build`）。底层其实早就是通的——`local.agent` 的 `list`/`current`/`set` 在 `@` 提及子代理时就在用，`agent.cycle` / `agent.cycle.reverse` 命令也早就注册了（`use-session-commands.tsx`，有快捷键、命令面板里能调），i18n 的 `command.agent.cycle` 各语言齐全，缺的只是这个可见控件。照 `variantControl` 的结构补一个 `agentControl`，放在模型控件左边，`list().length > 1` 才显示，tooltip 复用已有的命令与快捷键。顺带说明：用户反馈的"`/agent` 没效果"是同一件事的另一面——`agent.cycle` 是命令面板的命令 id，不是输入框里的斜杠命令，在输入框打 `/agent` 本来就不会触发。
+
+---
+
+> GUI 的 agent 切换下拉把 redmind 显示成 "Redmind"——TUI 侧 0.8.x 已用 displayName 修正，web 渲染层漏了，这次统一走 `displayName ?? name`。
+
+#### 修复
+
+- **agent 下拉与 @ 提及显示名修正**（`packages/app/src/components/prompt-input.tsx`）：GUI 输入框的 agent 切换控件下拉 `options`/`current` 直接渲染 `agent.name`（id 全小写 "redmind"），叠上 `capitalize` CSS 首字母大写后显示成 "Redmind"，与 TUI 已修正的 `displayName: "RedMind"` 不一致。修法：Select 改为传 agent 对象数组（SDK `Agent` 类型本就带 `displayName?`），`value={(a) => a.name}` 用 id 做键、`label={(a) => a.displayName ?? a.name}` 做显示名，`onSelect` 收到对象后取 `item.name` 回写；@ 自动补全的 `display` 同样改 `displayName ?? name`（`name` 字段仍用于匹配与插入，保持 id 小写）。build/plan 等无 displayName 的 agent 显示不变（capitalize 继续负责首字母大写）。
+
+### [0.7.9] - 2026-07-23
+
+> Electron → Tauri 迁移正式开工——可行性/体积/首屏握手时序此前已在原型里验证完毕，今天新增第一批真实（非原型、非 stub）代码。
+
+#### 新增
+
+- **Tauri 迁移骨架 + sidecar 首屏握手**（`packages/desktop/src-tauri/`）：新增真实 Tauri 项目骨架（`Cargo.toml`/`tauri.conf.json`/`capabilities`），实现 `await_initialization`/`get_default_server_url` 两个 command——前者真实拉起编译好的 sidecar exe、解析 stdout 拿到监听地址后才 resolve（不是猜时序的桩），后者老实返回 `null`。用真实 0.7.34 sidecar exe 端到端验证过：真实 URL、真实随机密码鉴权（curl 验证无认证 401/正确密码 200/错误密码 401）。目前是独立于现有 Electron 应用的并行基础设施，尚未接入实际打包/开发流程，不影响当前已发布 Electron 版的行为。
+- **sidecar 环境注入**：随机 `REDCODE_SERVER_PASSWORD`/`REDCODE_SERVER_USERNAME`、loopback `NO_PROXY`/`no_proxy` 合并，spawn 时通过 `.env()` 注入子进程。
+
+#### 诊断
+
+- **系统证书/env 代理这块没法从 Tauri 侧移植**：Electron sidecar 的 `useSystemCertificates()`/`useEnvProxy()` 是进程内 Node API 调用（`tls.setDefaultCACertificates`/`http.setGlobalProxyFromEnv`），只有"进程内 fork JS 文件"这种执行模式能调；Tauri sidecar 是独立编译的 exe，Rust 侧没有等价的进程内钩子，编译版 CLI 自身的 `serve` 启动流程也从没调用过等价逻辑——这是裸跑 CLI 本来就有的缺口，不是 Tauri 迁移引入的新问题，真要修得改 CLI 自己的启动引导，留待以后。
+- **打包后 `$REDCODE_ROOT` 本地 MCP 解析，Electron 现在也有同样的坑**：迁移设计文档原以为"Electron dist 产物已经在 sidecar 旁边放了 package.json"就够，实测 `electron-builder.config.ts` 的 `files`/`extraResources` 根本没把 `plugins/`、`.opencode/search-server/` 等本地 MCP 实际依赖的文件打进安装包——这几个 `$REDCODE_ROOT` 相关本地 MCP 在真实装好的 Electron 版里现在也连不上，只是一直没人在真装好的环境里跑 `redcode mcp list` 验证过，没暴露。开发模式下（`src-tauri/` 本身嵌在 monorepo 目录树里，向上 5 层必然能找到仓库根）没有这个问题，已用 `redcode mcp list` 实测全部 `$REDCODE_ROOT` 相关 MCP 显示 connected 确认。
+
+### [0.7.8] - 2026-07-19
+
+- **版本发布**：GUI 版本升级至 `0.7.8`，同步更新版本徽章与发布记录。
+
+#### 修复
+
+- **点击 Status tab 不丢失 Context tab**（`packages/app/src/pages/session/helpers.ts`）：`activeTab()` memo 没有兜底处理非文件标签（`status`、`plan` 等）。当 `tabs().active() === "status"` 时，path 检查失败直接回退到 `openedTabs()[0]`，导致 tab 被切到文件标签、context 面板隐藏。修法：在 path 检查之后加 `if (active && active !== "review") return active`，对所有非文件标签直接返回原值。同时删掉了此前逐条硬编码的 `"status"`/`"plan"` 分支，统一为泛化兜底。
+
+### [0.7.7] - 2026-07-17
+
+> 打包体积瘦身——语言包只留中英文、effect/drizzle-orm 不再原始打包，安装目录 500M → 405M；顺带查清楚主 exe 232M 是原装 Electron 本身的体积，不是能优化的地方。
+
+#### 优化
+
+- **语言包裁剪**（`electron-builder.config.ts`）：Electron 默认把 Chromium 支持的全部 55 种 UI 语言 `.pak` 打进包，RedCode 是中文母语产品用不上这么多。加 `electronLanguages: ["zh-CN", "en-US"]`，实测 48M → 1.2M。
+- **effect/drizzle-orm 不再原始打包**（`electron.vite.config.ts`、`package.json`）：这两个纯 JS 包（无原生绑定）之前被 electron-vite 默认外部化，没走 Rollup tree-shake，整个 node_modules 源码原样塞进 `app.asar`。排除掉外部化名单让它们正常打包压缩，并从 `dependencies` 挪到 `devDependencies`（打包后已不需要以 node_modules 形式随包分发）。实测 `app.asar` 139M → 90M。完整走了一遍 `electron-builder --win` 打包 + 实际启动验证：sidecar（用 drizzle-orm）、主进程（用 effect）均正常初始化，`server ready` 收尾无异常。
+- 以上两项合计：`dist/win` 500M → **405M**（-19%）。
+
+#### 诊断
+
+- **主 exe 232M 排查——不是 RedCode 的问题**：把 electron-builder 缓存里的原版 Electron 42.4.1 zip 解出来直接对比，官方原装 `electron.exe` 就是 232,313,344 字节，RedCode 打包后的 `RedCode Dev.exe` 是 232,421,376 字节——只差 108KB（图标/版本信息资源），RedCode 自己的代码资源一点没往这个文件里加。这个体积是 Electron 42.x 把 Chromium/V8 引擎主体直接编进主 exe（而非拆成独立 dll）决定的，不是配置能调的，唯一杠杆是换更小的 Electron 大版本——不建议为这十几 MB 去动它。
+
+### [0.7.6] - 2026-07-17
+
+> 补记两笔已经上线但一直没进版本号的改动：智谱/阶跃 CNY 计价显示、聊天渲染的 dompurify 安全修复。
+
+#### 修复
+
+- **CNY 计价遗漏智谱/阶跃**（`session-context-metrics.ts`）：`CNY_PROVIDERS` 只登记了 `deepseek`/`xiaomi`/`opencode-go`，通过 `stepfun`/`zhipuai` 接入的模型费用按 USD 价目误折算，费用显示偏差。加入这两个 provider（同步的 TUI 侧 `home/footer.tsx` 改动已经在更早的 TUI 版本里，这次只补 GUI 这一半）。
+
+#### 安全
+
+- **`dompurify` XSS 系列漏洞修复**（`packages/ui`，TUI 0.7.26 已记录）：`packages/ui` 是 app/desktop 共用的组件库，`markdown.tsx` 里 LLM 回复/reasoning 内容经 `DOMPurify.sanitize()` 渲染进聊天界面——GUI 侧同样吃这个补丁，`3.3.1 → 3.4.12`，之前只记在了 TUI 变更里，这次补上 GUI 记录。
+
+### [0.7.5] - 2026-07-15
+
+> Session Context 面板配色优化 + 部分数据提示——统计项颜色区分度不足、会话历史懒加载导致数字可能不完整两处体验问题。
+
+#### 优化
+
+- **Context 统计面板配色**（`session-context-tab.tsx`）：16 项统计里此前大量复用同一 `--syntax-*` token（4 项同色、3 项同色，另 4 项无色），视觉上难以区分。改为按固定顺序分配 8 种 token，同色的两处在网格里横向、纵向（含窄边栏塌成单列时）都不相邻，标题类字段（会话名/创建时间）保留中性色。
+
+#### 修复
+
+- **Context 统计可能只反映部分已加载消息**（`session-context-tab.tsx`、`i18n/{en,zh,zht}.ts`）：会话消息懒加载（`directory-sync.ts` 初始只拉 40 条，滚动加载更多每次 +80 条），但"总 token / Cache Hit"等统计是对 `sync.data.message` 当前已加载的部分求和，刚打开长会话时数字会明显偏低且命中率失真，且面板上没有任何提示。检测到 `sync.session.history.more(id)` 为真时，在统计区顶部显示"仅统计已加载 N 条消息，向上滚动加载完整历史后更准确"提示，不强制自动补全加载（避免长会话卡顿）。
+
+### [0.7.4] - 2026-07-12
+
+> 已连接自定义 provider 支持编辑——ovh/ollama 等 config/custom 源提供商可自行修改模型/endpoint，无需找 agent。
+
+#### 新增
+
+- **已连接自定义 provider 编辑**（`dialog-custom-provider.tsx`、`dialog-custom-provider-form.ts`、`settings-providers.tsx`）：`settings-providers.tsx` 对 `source=config/custom` 的已连接提供商显示"编辑"按钮，点击打开 `DialogCustomProvider` 并以 `editProviderID` prop 进入编辑模式。表单预填现有配置（models/headers/baseURL/name/apiKey），providerID 字段禁用防改。保存时合并现有模型配置保留 limits/flags/capabilities 等额外字段，不覆盖未涉及的属性，实现无损编辑。
+
+#### 变更
+
+- **本地模型 qwen3.5 context 修正**（`redcode.home.jsonc`）：qwen3.5:9b-q8_0 的 context 限制从 262144 下调为 163840，匹配模型实际支持的最大上下文窗口。
+
+### [0.7.3] - 2026-07-10
+
+> Todo 层级子任务 GUI 侧适配——composer 待办面板按层级缩进渲染。
+
+#### 新增
+
+- **Todo 层级子任务缩进渲染**（`session-todo-dock.tsx`）：随引擎侧新增的 `id`/`parent_id` 层级字段，composer 待办面板按 `parent_id` 链条计算缩进层级显示子任务，防环/防越界兜底深度上限 5 层。
+
+### [0.7.2] - 2026-07-10
+
+> 首页随机 Tips + 快捷键栏增强 + 标签去重 bug 修复。
+
+#### 新增
+
+- **首页随机 Tips**（`home.tsx`）：快捷键栏上方每次加载随机展示一条提示（操作技巧/编程智慧/名人名言，50 条），类似 RedClaw 启动提示。
+
+#### 优化
+
+- **快捷键栏增强**（`home.tsx`）：补充至 10 个常用快捷键（+切换项目/打开项目/切换主题/归档会话），去掉边框改为纯文本，字体放大 ~150%。
+
+#### 修复
+
+- **标签重复 bug**（`titlebar.tsx`）：`addTab` 去重从 `href` 改为 `sessionId`，同一会话从不同目录编码进入不再产生重复标签。
+
+### [0.7.1] - 2026-07-10
+
+> 首页体验微调 — 看板卡片显示日期 + 空闲列两列网格 + 快捷键栏壁纸可见度。
+
+#### 优化
+
+- **看板卡片显示日期**（`home-kanban.tsx`）：每张卡片右下角标注会话日期（今天/昨天/MM-DD），不用猜会话是哪天的。
+- **空闲列两列网格**（`home-kanban.tsx`）：会话超过 6 个时自动切为两列网格布局，充分利用右侧空间。移除 `max-w-[320px]` 列宽限制。
+- **快捷键提示条颜色加深**（`home.tsx`）：`text-faint` → `text-muted`、`border-base` → `border-strong`，壁纸场景下清晰可读。
+
+### [0.7.0] - 2026-07-10
+
+> GUI 0.7 里程碑 — 引擎侧文本重复检测 + MiMo 100K output + 首页体验增强。
+
+#### 新增
+
+- **文本重复检测与恢复**（引擎层，GUI/TUI 共享）：双层防护防模型跑飞——N-gram 单步检测（流式 delta 滑动窗口，同一 80 字符模式出现 3 次中断）+ LoopRecoveryTracker 跨步检测（Dice bigram 相似度 ≥0.85 渐进干预：nudge→replan→stop）。GUI 弹 toast 通知用户。
+- **MiMo 输出上限 100K**（引擎层）：`transform.ts` 检测 model ID 含 `mimo` 时自动使用 `MIMO_OUTPUT_TOKEN_MAX = 100,000`（标准 32K），释放 MiMo-V2.5 等模型的长输出能力。
+- **首页会话数 64 条**：`HOME_SESSION_LIMIT` 从 15 提升到 64，一屏看到更多历史会话。
+- **打开文件管理器**：项目右键菜单新增「在文件管理器中打开」，快速跳转项目目录。
+- **首页会话归档**：会话列表和看板右键菜单新增「归档会话」，直接从首页管理会话生命周期。
 
 #### 移除
 
-- **NVIDIA BILLING-INVOKE-ORIGIN header**：去掉 `provider.ts` 中发送给 NVIDIA 的 `X-BILLING-INVOKE-ORIGIN: RedCode` 头，该头导致第三方托管模型（如 `z-ai/glm-5.2`）返回 404。
-
-### [0.7.7] - 2026-07-04
-
-> 提示词文件 .txt→.md 格式升级 + 新增 ollama 本地模型专属提示词。
-
-#### 重构
-
-- **提示词外置格式升级**：全部 50 个 `.txt` 提示词文件重命名为 `.md`（Bun 原生支持），提升可读性与 diff 体验，26 个 `.ts` 导入路径同步更新。
-
-#### 新增
-
-- **ollama 本地模型提示词**：新增 `prompt/ollama.md`，针对 GLM-4.7-Flash / Qwen3.6 等本地模型设计 harness 式提示词——保留全部工具（DCP compress、MCP 代码智能、子代理）同时加装反幻觉规则、分步思考、工具优先级排序与大文件阅读指引。`system.ts` 按 `providerID` 匹配 ollama，路由优先于 GLM/Qwen 通用档。
-
-### [0.7.6] - 2026-07-04
-
-> 修复删除 session 报 404、GUI 卡在"思考中"不恢复。
-
-#### 修复
-
-- **删除 session 404**：`session.remove()` 先 `get(sessionID)` 校验存在性，级联删除子 session 或重复删除时若目标已不存在会抛 `NotFoundError` → HTTP 404。改为 `catchTag("NotFoundError")` 静默返回，已删即成功（`session/session.ts`）。
-- **GUI "思考中"永久卡住**：`session_status` 仅在 bootstrap 时轮询一次，之后完全依赖 WebSocket 事件推送。网络抖动或事件丢失会导致 busy→idle 转换永远不到达前端，表现为模型已完成但界面一直显示"思考中"。新增 5 秒间隔轮询 fallback：仅当存在 busy session 时才发请求，idle 时零开销（`global-sync.tsx`）。
-
-### [0.7.5] - 2026-07-03
-
-> `redcode web` 根路径改为 xterm.js + PTY 的 TUI web 终端，手机浏览器可直接操作 RedCode TUI。
-
-#### 新增
-
-- **TUI Web Terminal**：`redcode web` 的 `GET /` 不再代理 GUI web app，改为返回内联 HTML 页面（`tui-terminal.html`），用 xterm.js (CDN) + 现有 PTY WebSocket 直接在浏览器中 spawn 并操作 `redcode.exe` TUI 实例。支持窗口自适应 resize、移动端防双击缩放。其他路径仍 fallback 到原有 GUI 代理。
-- **`tuiTerminalHtml()` + `TUI_CSP`**：`ui.ts` 新增 TUI HTML 模板读取函数和专用 CSP 策略（允许 jsdelivr CDN）。服务端用 `split().join()` 注入 `__REDCODE_DIR__` 和 `__REDCODE_BIN__` 占位符，避免 Windows 反斜杠被 `String.replace()` 吞掉。
-
-### [0.7.4] - 2026-07-02
-
-> 输入框下方空白区加常用快捷键滚动提示。
-
-#### 新增
-
-- **`ShortcutsTicker` 常用快捷键跑马灯**：输入框下方状态栏原本 Cache hit 左侧一大片空白，现改为循环滚动展示 `新会话/会话列表/切换模型/MCP 状态/切换主题/帮助` 的实际快捷键，遵守 `animations_enabled` 开关（关闭动画时降级为静态一行）（`component/prompt/shortcuts-ticker.tsx`）。
-
-### [0.7.3] - 2026-07-01
-
-> 新增 `todoread` 工具，支持 compress 后重新读取 todo 状态，避免丢失上下文后重复已完成工作。
-
-#### 新增
-
-- **`todoread` 只读工具**：从 SQLite 持久化读回当前会话的 todo 列表，返回完整状态 + 摘要行（`N total · M done · A active · P pending`）。权限复用 `todowrite` 通道。在 `compress` 后调用可恢复已完成/待办认知，不再因摘要遗漏而重复已做完的步骤。
-
-### [0.7.2] - 2026-07-01
-
-> 修复隔离 worktree 子代理用完不释放实例，导致子进程/内存持续累积（GUI 长驻 sidecar 尤其明显）。
-
-#### 修复
-
-- **隔离 worktree 子代理泄漏 `InstanceStore` 实例**：`session/prompt.ts` 的 `runIsolated`（`task` 工具 `isolation:"worktree"` 用）创建隔离 worktree 的 `InstanceContext` 后，任务跑完从未释放，而 `InstanceStore` 缓存 `capacity: Infinity`，只能靠显式 dispose 清理——每次隔离子代理都会在内存里永久累积一份该 worktree 的 LSP server 等子进程。TUI 因 server 进程随每次 CLI 调用重启，泄漏会随会话结束自然清空；GUI 的 sidecar 是 Electron 整个 app 生命周期只起一个长驻进程，泄漏无限累积，表现为任务管理器里两三百个子进程、内存持续升高。修复：`runIsolated` 用 `Effect.ensuring` 包裹任务执行，无论成功/失败/中断都调用 `InstanceStore.dispose(ctx)` 释放隔离实例（`session/prompt.ts`）。
-
-### [0.7.1] - 2026-07-01
-
-> 0.7.0 首页美化的后续微调：footer 文案改英文、Logo idle 扫光调到肉眼可见并改为蓝色调。
-
-#### 修复
-
-- **footer 统计条文案**：`缓存 xx%` 改成 `cache hit xx%`（`feature-plugins/home/footer.tsx`）。
-- **首页 Logo 启用 idle 扫光**：`buildIdleState`/`shimmerConfig` 这套呼吸扫光此前从未被启用过（`<Logo />` 一直不带 `idle`），首页加 `idle` 后发现幅度是给点击 burst 余韵设计的，常驻场景太淡——放大 `haloAmp`/`ambientAmp`/`primaryMix`，并把高光目标色从纯白 `PEAK` 换成偏白的饱和 `primary` 蓝（`idlePeak`），扫光经过时读出的是明显蓝色而不是泛白。同时把 idle 态 tick 频率从 60fps 降到静止时约 14fps（点击 burst/ring 特效仍满帧率），避免首页常驻页面拖 CPU（`component/logo.tsx`）。
-
-### [0.7.0] - 2026-07-01
-
-> 首页视觉美化：去掉一部分上游 opencode 观感，加了三处点缀——星空背景、footer 统计条、提示语呼吸点。
-
-#### 新增
-
-- **首页星空背景**：新增 `component/starfield.tsx` + `starfield-render.ts`，基于 `FrameBufferRenderable` 铺一层稀疏光点，位置/字符/闪烁相位由坐标哈希确定性生成，挂在 Logo 后面（`routes/home.tsx`）。手动低频 `requestRender`（~700ms 一次）代替常驻 60fps `live` 循环，呼应 Logo 组件默认不空闲动画、省 CPU/电量的既有设计取向。
-- **首页 footer 统计条**：`home_footer` 插件（`feature-plugins/home/footer.tsx`）新增花费 + 缓存命中率，跨 session 聚合 `sync.data.session` 的 `cost`/`tokens`（落库时已 denormalize，纯本地 reduce，无新请求）。
-- **提示语呼吸点**：`home_bottom` 的提示语前缀圆点（`feature-plugins/home/tips-view.tsx`）加低频呼吸色变，用 `tint()` 在 `background`/`warning` 间插值。
+- **Horizon MCP** 从默认配置中移除。
 
 ### [0.6.43] - 2026-07-01
 
@@ -3092,556 +3192,459 @@
 
 ---
 
-### [0.6.29] - 2026-06-25
+### [0.6.29] - 2026-07-09
 
-> 修复人格自我误认（GUI 被说成 TUI）与多模态误判：基础提示词写死 "CLI agent" 让模型把界面认错，env 又缺客户端事实。
-
-#### 修复
-
-- **提示词去 CLI 化**：13 个 `prompt/*.txt` 开头 `interactive CLI agent/tool` 统一改为 `interactive code agent`，消除"敏敏 TUI / 小宋 GUI 都不涉及 CLI"的语义偏差。
-- **env 注入客户端类型**：`<env>` 块新增 `Client: RedCode Desktop GUI / Terminal TUI`（取 `flags.client`），给模型权威的客户端事实，避免把 GUI 误判成 TUI（`session/system.ts`）。
-
----
-
-### [0.6.28] - 2026-06-25
-
-> 修复流式重试时的 part 重复：断流重试会从头重跑，旧的失败 part 未清理导致消息里 text/reasoning/tool/step 重复。
-
-#### 修复
-
-- **流式重试 part 清理**：进入每个 step 前快照已有 part，重试时删掉失败那次新建的全部 part，并丢弃在途追踪（`currentText`/`reasoningMap`/`toolcalls`），避免重复内容落库（`session/processor.ts`）。
-
----
-
-### [0.6.27] - 2026-06-25
-
-> 修复 PTY 子进程泄漏（Windows 僵尸进程）+ sync-home 配置覆盖问题。
-
-#### 修复
-
-- **PTY 子进程泄漏**：Windows 上 PTY teardown 改用 `taskkill /T` 杀整棵进程树，防止 shell 子进程（node/python 等）残留成僵尸占满内存（`pty/index.ts`）。
-- **sync-home 配置覆盖**：`sync-home.bat` 不再盲目 `copy /y` 覆盖 `~/.redcode/redcode.jsonc`，改为 JSONC 感知的深度合并——用户已有 key 保留，模板新增 key 自动补入（新增 `script/merge-home-config.ts`）。
-
----
-
-### [0.6.26] - 2026-06-24
-
-> 接入 Horizon MCP（AI 日报 pipeline），同步配置到 home 文件，更新 ai-daily skill。
-
-#### 新增
-
-- **Horizon MCP 配置**：在 `.opencode/redcode.home.jsonc` 和 `~/.redcode/redcode.jsonc` 添加 `horizon` MCP server 配置，调用本地 `D:\AI\Red\Horizon\src\mcp\server.py` 提供 `hz_run_pipeline` 等工具。
-- **MCP resource template listing**（上游 `c6cc13e`）：新增 `resourceTemplates` 接口，支持发现 MCP server 的参数化资源模板。
-- **ai-daily skill 升级**：skill 触发后自动调用 Horizon MCP 运行完整 pipeline（fetch → score → filter → enrich → summarize），替代原有 webfetch/web_search 聚合方式。
-
----
-
-### [0.6.25] - 2026-06-24
-
-> 移植上游 4 项 bugfix：快照子目录路径、MCP 结构化错误、skill 路径格式、OAuth 安全加固。
-
-#### 修复
-
-- **快照子目录路径**（上游 `dcf7b4e`）：`git add`/`git rm` 的 `--pathspec-from-file` 输入加 `:(top,literal)` 前缀，子目录下路径正确相对 worktree root 解析（`snapshot/index.ts`）。
-- **MCP 结构化错误保留**（上游 `c17b955`）：`toolResultText` 对 `content` 类型提取纯文本而非 JSON dump 整个结构，模型能直接读到错误信息（`llm/protocols/shared.ts`）。
-- **Skill 路径格式**（上游 `246d40d`）：skill base directory 由 `file://` URL 改为文件系统路径，避免 Windows 上 `file:///D:/...` 格式让模型困惑（`tool/skill.ts`）。
-- **OAuth 回调绑定**（上游 `af31e97`）：MCP OAuth callback server 显式绑定 `127.0.0.1`，防止意外监听所有网络接口（`mcp/oauth-callback.ts`）。
-
----
-
-### [0.6.24] - 2026-06-24
-
-> 修复流式输出阻塞 + Windows 僵尸子进程泄漏。
-
-#### 修复
-
-- **AI SDK 流式输出阻塞**：`result.result.response` 实际在整个流完成后才 resolve（非 HTTP 头阶段），`await` 它会阻塞 `fullStream` 消费，网络异常时直接触发 `NoOutputGeneratedError`。改为 fire-and-forget 异步捕获 `X-Routed-Via`，不阻塞流（`packages/opencode/src/session/llm.ts`）。
-- **Windows 僵尸子进程**：`cross-spawn-spawner.ts` 在 Windows 上直接 `return Effect.void` 跳过了非零退出码的子进程树清理，导致 `Start-Process`/`cmd /c start` 等启动的子进程变僵尸、内存持续增长。移除 Windows 提前返回，统一走 kill group 逻辑（`packages/core/src/cross-spawn-spawner.ts`）。
-
----
-
-### [0.6.23] - 2026-06-23
-
-> 系统提示词统一升级：deepseek/glm/mimo/minimax 全面增强，新增 Step 路由。融合 CC 最佳实践。
-
-#### 变更
-
-- **系统提示词全面增强**：以 deepseek.txt 为基准，融合 Claude Code 最佳实践，统一升级 6 个模型提示词（deepseek/glm/mimo/minimax/step）。新增"探索性问题不动手"、"如实汇报结果"规则；mimo/minimax 补齐 FIX SIBLINGS / THINK ARCHITECTURALLY / SURFACE TRADE-OFFS 三条规则。
-- **Step 路由新建**：新增 `step.txt` + `system.ts` 路由（匹配 `step-`），Step 3.7 Flash 不再走旧 opencode default 提示词。
-
-### [0.6.22] - 2026-06-23
-
-> 补全 DeepSeek prefix cache 稳定性修复（MCP 工具排序 + tool key 排序 + system-reminder 注入时序）；AGENTS.md 新增纠正行为规范与注释格式规范；`/recall` 语义搜索增强。
-
-#### 修复
-
-- **MCP 工具顺序非确定性**：`Effect.forEach` 并发查询多个 MCP server 导致 tool 插入顺序随响应时序变化，破坏 prefix cache。改为顺序执行（`packages/opencode/src/mcp/index.ts`）。
-- **Tool key 序列化顺序不稳定**：内建工具与 MCP 工具混合后 key 顺序不固定。resolve 后按 key 字母排序，保证 JSON 序列化 bytes 稳定（`packages/opencode/src/session/prompt.ts`）。
-- **system-reminder 注入被 msgPin 缓存覆盖**：step>1 时对 user message parts 的 `<system-reminder>` 包裹在 msgPin 之前执行，缓存恢复后包裹丢失。改为在 modelMsgs 稳定化之后作为独立 user message 追加，不污染缓存前缀（`packages/opencode/src/session/prompt.ts`）。
-- **注释格式不合规**：4 处 `// 260614 fix:` 缺 `Red` 标签、1 处 `// 260610 CC` 统一修正为 `// YYMMDD Red` 格式。
-
-#### 变更
-
-- **AGENTS.md**：新增"被纠正 → 先动手再开口"规则（被用户纠正后下一条回复必须以行动开头）+ 注释格式规范 `// YYMMDD Red xxx`。
-
-#### 新增
-
-- **`/recall` 语义搜索**：双路召回——关键词打分 + Ollama embedding cosine similarity 加权融合。有 Ollama 时自动启用语义路（`nomic-embed-text`），无 Ollama 时静默降级为纯关键词。支持 `--index` 预计算 embedding 缓存，MEMORY.md 变更后自动重建（`.opencode/scripts/recall-memory.mjs`）。
-
----
-
-### [0.6.21] - 2026-06-22
-
-> 修复 DeepSeek prefix cache 命中率随对话增长持续下降的问题，新增 LAN 访问支持。
-
-#### 修复
-
-- **DeepSeek prefix cache 命中率 cliff-drop**：DCP compaction 后 `cache_read` 从 139K 骤降到 52K 且持续冻结。根因是每次 turn 生成 model messages 时 DCP transform 和 AI SDK 转换链引入微小非确定性，导致 prefix bytes 逐轮变化。修复分两层——① 将 `toModelMessagesEffect` 的 `UIMessage[]` 构建抽成同步纯函数 `toUIMessages()`，消除 `Effect.fnUntraced` 内部的调度非确定性；② 新增 `_caches.modelMsgs` 缓存层，每轮发完 model messages 后快照，下一轮用缓存版本替换旧消息前缀，保证发往模型的 bytes 完全一致（`packages/opencode/src/session/message-v2.ts`、`packages/opencode/src/session/prompt.ts`）。
-
-#### 新增
-
-- **LAN 访问支持**：`redcode run` 新增 `--hostname` 参数，设 `0.0.0.0` 可监听所有网口，手机/平板可浏览器直连做临时 GUI（`packages/opencode/src/cli/cmd/run.ts`）。
-
-#### 重构
-
-- **`toModelMessagesEffect` 拆分**：同步纯函数 `toUIMessages()` 输出 `{ messages: UIMessage[], tools }`，使转换步骤可独立复用和测试（`packages/opencode/src/session/message-v2.ts`）。
-- **build.bat 清理**：移除无效的 `full` 分支参数解析逻辑（`packages/opencode/build.bat`）。
-
----
-
-### [0.6.20] - 2026-06-22
-
-> X-Routed-Via 路由溯源 + build.bat 不再清空自定义 provider 配置。
-
-#### 新增
-
-- **X-Routed-Via 路由溯源**：捕获 LLM 响应头中的 `_routed_via` 字段（FreeLLMAPI 路由标识），存入 `Finish` 事件并在会话页脚显示路由来源（`packages/opencode/src/session/llm.ts`、`packages/opencode/src/cli/cmd/run/footer.view.tsx`）。
-
-#### 修复
-
-- **build.bat 不再清空自定义 provider 配置**：`build.bat` 会调 `sync-home.bat` 用仓库模板覆盖 `~/.redcode/redcode.jsonc`，导致 FreeLLMAPI 等自定义 provider 每次重编后丢失。修复方法：把 FreeLLMAPI 和 Step Plan provider 配置写入 `.opencode/redcode.home.jsonc` 模板，重编后不再丢失（`.opencode/redcode.home.jsonc`）。
-
-#### 配置
-
-- **阶跃星辰 Step Plan 接入**：新增两个 provider 配置到 `~/.redcode/redcode.jsonc`——`step-plan`（普通 API `api.stepfun.com/v1`，走余额）和 `stepfun`（Plan 模式 `api.stepfun.com/step_plan/v1`），模型 `step-3.7-flash`，用用户自有 key 鉴权。FreeLLMAPI 路由中已有的免费 `stepfun-step-3.7-flash` 保持不变（`~/.redcode/redcode.jsonc`）。
-
----
-
-### [0.6.19] - 2026-06-25
-
-> GLM/Qwen 提示词路由 + DCP compress 优先级 + build.bat 跳过 WebUI 重打包。
-
-#### 新增
-
-- **GLM/Qwen 提示词路由**：新增 `glm.txt` 强模型提示词（含 sibling-check/架构思维/trade-off 三条额外要求），`system.ts` 匹配 `glm`/`qwen` model ID 路由到精炼档，不再走 default 兜底（`packages/opencode/src/session/system.ts`、`packages/opencode/src/session/prompt/glm.txt`）。
-
-#### 优化
-
-- **DCP compress 优先级写入提示词**：deepseek/mimo/minimax 三个主力提示词新增"主动用 DCP compress，不等系统 auto-compact"指引，减少 compaction 触发导致的前缀缓存 miss（`packages/opencode/src/session/prompt/{deepseek,mimo,minimax}.txt`）。
-- **build.bat 默认跳过 WebUI 嵌入**：日常编译用 `build.bat`（跳过 SPA 打包），需要完整嵌入时用 `build.bat full`，编译速度大幅提升（`packages/opencode/build.bat`）。
-
----
-
-### [0.6.18] - 2026-06-22
-
-> 新增 memory-auto-capture 插件 — 自动捕获被批评/被表扬/项目决策到每日日志。
-
-#### 新增
-
-- **memory-auto-capture 插件**：监听 `chat.message` 和 `experimental.session.compacting` 钩子，检测到用户批评、表扬、决策或要求记住时，自动追加到 `~/.redcode/memory/YYMMDD.md`，解决 agent 选择性遗忘问题（`~/.redcode/plugin/memory-auto-capture.ts`）。
-
----
-
-### [0.6.17] - 2026-06-21
-
-> Web UI 启动时从 API 种子项目列表，嵌入式 UI dev 模式加载修复。
-
-#### 修复
-
-- **Web UI 首次加载无项目**：手机/浏览器首次打开 Web UI 时，`server.projects.list()` 为空（无 localStorage 种子），页面只显示空白 loading。新增 `createEffect` 在启动时从 `globalSync.data.project` API 数据中写入项目列表，判断 `worktree.includes("redcode-test")` 跳过测试项目，做到首次加载立即可看（`packages/app/src/context/layout.tsx`）。
-- **嵌入式 UI dev 模式 500 错误**：`serveUIEffect` 使用 bare import `import("redcode-web-ui.gen.ts")`，bun 从调用方模块目录（`src/server/shared/`）解析不到 gen 文件，退到 upstream proxy `https://app.redcode.dev` 又不可达，全请求返回 500。改为 bare import 失败后 fallback 到 CWD 相对路径加载，dev 模式下恢复正常（`packages/opencode/src/server/shared/ui.ts`）。
-
----
-
-### [0.6.16] - 2026-06-20
-
-> MCP 工具列表缓存优先加载 — 启动时立即可用，不等待 MCP server 就绪。
-
-#### 优化
-
-- **MCP 工具列表磁盘缓存**：MCP server 启动成功后，工具定义持久化到磁盘缓存。后续启动时若 server 未就绪或连接失败，自动回退到缓存工具定义，保证启动后立即可用（`packages/opencode/src/mcp/index.ts`）。
-
----
-
-### [0.6.15] - 2026-06-20
-
-> bun compile 模块重复实例化致前缀缓存失效修复 + MCP 孤儿进程泄漏修复。
-
-#### 修复
-
-- **DeepSeek 前缀缓存 bun compile 退化**：`bun compile --single` 下 `prompt.ts` 模块可能被实例化多次，导致模块级 `let` 缓存变量（`_systemCache`、`_chatCtxCache`、`_msgPinCache`）多副本不同步，系统提示词每轮字节级变化，前缀缓存命中率从 98% 骤降至 ~50%。迁移至 `globalThis.__rc_prompt_caches` 容器，绕过 bun compile 模块隔离，前缀在 session 内保持字节一致（`packages/opencode/src/session/prompt.ts`）。
-- **MCP 孤儿进程泄漏（Windows）**：`connectLocal()` spawn 子进程后若连接失败，`transport.close()` → `process.kill()` 在 Windows 编译 exe 下不可靠，子进程成孤儿持续占锁/端口。`reconcile()` 热加载 1s 防抖看到失败重试 spawn 新进程，多次 config 写入 → 8+ 副本同时运行。修复：connect 前捕获 `transport.pid`，catch 分支调 `killProcessTree` 杀整棵树；新增 `creating` Set 防重入守卫（`packages/opencode/src/mcp/index.ts`）。
-
----
-
-### [0.6.14] - 2026-06-18
-
-> DCP 消息钉住 — 阻止 DCP 累积修改破坏 DeepSeek 前缀缓存。
-
-#### 修复
-
-- **DCP 累积修改致前缀缓存命中率下降**：DCP 的 `experimental.chat.messages.transform` 每轮对旧消息做累积修改（工具输出裁剪 `prune` 增量增长、压缩提示 `nudge` 锚点漂移、消息 ID 标签 `priority` 随裁剪变化），导致 DeepSeek 前缀从修改点起整段缓存 miss。经济账：裁剪省 ~$0.0005/轮，缓存 miss 多花 ~$0.01/轮，损失是收益的 20 倍。新增 `_msgPinCache`：DCP 转换后按 `msg.info.id` 缓存每条消息的 `parts`，后续轮次直接恢复缓存版本，前缀在整个 session 内保持字节一致。切换 session 自动清空（`packages/opencode/src/session/prompt.ts`）。
-
----
-
-### [0.6.13] - 2026-06-18
-
-> DeepSeek 前缀缓存退化修复 — \_systemCache / \_chatCtxCache 重建，命中率从 70% 恢复到 98%。
-
-#### 修复
-
-- **DeepSeek 前缀缓存退化**：Commit 7ee58bfcb 新增的 `_systemCache` / `_chatCtxCache` 缓存层被工作树回退约 30 行变更，导致 `instruction.system()` 每轮重读磁盘、`groupChatContext()` 每轮重查数据库，DeepSeek 前缀缓存命中率从 95%+ 骤降至 60-70%。通过 `git checkout HEAD` 恢复缓存逻辑；`groupChatContext()` 接受 sessionID 作为缓存键（`packages/opencode/src/session/prompt.ts`）。
-
-#### 优化
-
-- **依赖安全升级**：root catalog（solid-js 1.9.10→1.9.13、zod 4.1.8→4.4.3、ai 6.0.168→6.0.208）、opencode（immer 11.1.4→11.1.8、glob 13.0.5→13.0.6、@opentelemetry/api 1.9.0→1.9.1、@modelcontextprotocol/sdk 1.27.1→1.29.0）、desktop（electron 42.2.0→42.4.1），typecheck 全部通过。
-
----
-
-### [0.6.12] - 2026-06-17
-
-> LLM 依赖循环修复 — 提取 route 工具函数消除 packages/llm 菱形依赖。
-
-#### 重构
-
-- **LLM route 工具函数提取**：将 `route/client.ts` 中 `eventError`、`encodeJson`、`validateWith` 三个工具函数提取到 `route/errors.ts`，切断 client→protocols/shared 反向导入路径，消除 `packages/llm/src` 内 14 文件菱形依赖循环（`packages/llm/src/route/errors.ts`、`packages/llm/src/route/client.ts`）。
-
----
-
-### [0.6.11] - 2026-06-16
-
-> 缓存 miss 颜色显示 + type 级联修复。
-
-#### 新增
-
-- **缓存 miss 颜色显示**：miss 率 ≤20% 绿色（正常），≤50% 黄色（警告），>50% 红色（偏高）；与 cache hit 颜色阈值对称反转，miss 越低颜色越安全（`tui/component/prompt/index.tsx`）。
-
-#### 修复
-
-- **cache miss 字段缺失导致 typecheck 级联失败**：`types.gen.ts` 新增 `miss` 字段后，所有未含 `miss` 的 cache 类型定义报 TS 错误。根治：在核心 Schema (`message-v2.ts`) 的 `Assistant` 和 `StepFinishPart` cache 定义中补充 `miss: Schema.Finite`，确保所有派生类型自动包含 `miss`；同步修正 6 个 fixture/token 默认对象及 9 个测试文件中的对应类型（`session/message-v2.ts`、`session/prompt.ts`、`session/compaction.ts`、`cli/cmd/debug/agent.ts`、`cli/cmd/stats.ts`）。
-
----
-
-### [0.6.10] - 2026-06-16
-
-> 文档大扫除 + skill 触发词优化 + bump-version skill。
-
-#### 修复
-
-- **MANUAL.md 多处过时**：Browser MCP 标记已禁用；灵魂文件描述改为"自动注入+命令可选"；skill 表从 6 个扩充到 12 个并加触发词列；自定义 skill 说明改为 frontmatter 自动发现（不再需要注册 instructions）（`MANUAL.md`）。
-- **README.en.md 过时**：Browser MCP 标记已禁用；配置路径从 `.opencode/opencode.jsonc` 改为 `.redcode/redcode.jsonc`（`README.en.md`）。
-- **AGENTS.md 引用不存在的 skill**：`skill/auto-validate/SKILL.md` 已删除，改为内联说明（`AGENTS.md`）。
-- **vision-autoagent 缺 frontmatter**：公开仓模板补 name + description，否则引擎无法发现（`.opencode/skill/vision-autoagent/SKILL.md`）。
-
-#### 变更
-
-- **Skill 触发词口语化**：所有 skill 的 description 加入中文口语触发短语（"帮我看看代码""查bug""太复杂了""小心点"等）；stop-slop/yuqi-slop 消歧为英文/中文分流。
-- **新增 bump-version skill**："升版""bump""更新版本"触发，自动化 package.json→README 双语徽章→CHANGELOG→commit 全链（`~/.redcode/skill/bump-version/SKILL.md`）。
-
----
-
-### [0.6.9] - 2026-06-16
-
-> session 记录 client 字段 + Karina 主题配色优化。
-
-#### 修复
-
-- **Office 群聊会话分类误判**：`isTuiSession()` 原用 `directory.includes("redcode")` 判断，项目路径 `D:\AI\RedCode` 恒匹配导致所有会话都归 TUI。根治：session 创建时写入 `client` 字段（`flags.client`：desktop=GUI，cli=TUI），前端优先读 client 精确分类；老会话无 client 走标题前缀 `[宋雨琦]`/`[GUI]` fallback（`session/session.ts`、`session/session.sql.ts`、`app/pages/chat/index.tsx`、migration `20260616065539_session_client`）。
+> 首页布局优化 + 快捷键提示条。
 
 #### 改进
 
-- **Karina 主题配色**：新增柳智敏应援色（品红 `#8d0079`、黄色 `#efd500`），标题→金色、链接→青色、链接文字→蓝色、行内代码→绿色、代码块语法高亮→多色、列表序号→品红。清理 opentui 不支持的条目（斜体/加粗/引用/列表项文字无 TextMate scope，设为基底白色避免误导）（`theme/karina.json`）。
-- **缓存命中率显示精确到两位小数**：TUI 输入框下方 `Cache hit 98.50% · miss 1.50%` 从一位改为两位小数（`tui/component/prompt/index.tsx`）。
+- **首页左栏底部吸底**：缓存命中率环 + 设置按钮固定在左栏最下方（`mt-auto`），项目列表占据剩余空间自适应高度，不再被中部"堵塞"
+- **首页底部快捷键提示条**：展示 6 个常用快捷键（搜索/新会话/切换会话/文件树/设置/命令面板），帮用户发现功能
+- **首页 grid 布局优化**：`grid-rows-[1fr_auto]` 让快捷键条贴底显示，减少底部空白
 
----
+#### 杂项
 
-### [0.6.8] - 2026-06-16
+- 删除未使用的 `RedCode.bat` 启动脚本
 
-> 写入侧乱码护栏 — write/edit 写入前检测私用区字符/替换符，拦住"把文件写成乱码"。
+### [0.6.28] - 2026-07-07
+
+> 输入框历史前缀 ghost 补全（fish/zsh-autosuggestions 风格）。
+
+#### 新增
+
+- **输入框 ghost 联想补全**（`prompt-input.tsx`、`prompt-input/editor-dom.ts`、新增 `prompt-input/suggestion.ts`）：正常模式下从最近历史里找第一条「纯文本、以当前输入为前缀、且更长」的记录，把超出部分作为灰字 ghost 内联显示在光标之后；`→`/`End`/`Tab` 接受，继续输入即刷新/清除。ghost 是不可编辑节点，光标长度记 0、不进 DOM 解析、不进提交，不影响 @ 文件/子代理 pill、换行、历史导航与 IME。
+
+### [0.6.27] - 2026-07-07
+
+> 同步引擎 tsserver 内存上限修复（实测为小宋内存主要来源），desktop 重新打包生效。
 
 #### 修复
 
-- **写入乱码护栏**：新增 `Bom.detectGarbled()`，统计私用区字符(PUA E000–F8FF)/Unicode 替换符(U+FFFD)——这是 GBK 错解 UTF-8 的乱码标志，正常文本几乎不含。write 写入前、edit 三个写入点（普通×2 + hashline）全检测，超保守阈值（FFFD 占比 >0.5% 或 PUA >30 个且占比 >2%）即拒绝写入并报错引导"用 read 重读 UTF-8 原文，勿写回乱码"。根治"用错误编码读取后把乱码写回固化文件"这类事故（SKILL.md 曾被写成 72 个 PUA）；不误伤正常文本/少量 Nerd Font 图标（`util/bom.ts`、`tool/write.ts`、`tool/edit.ts`）。
+- **tsserver 无内存上限致小宋跑任务吃 2.5G+ 内存**（引擎 `lsp/server.ts`，随 desktop 重打包生效）：内存实测真凶是 LSP 启动的 tsserver（非 Electron 框架、非 sidecar 本体、非消息缓存）。引擎侧已加 `maxTsServerMemory: 2048` 上限（详见 TUI 0.7.16），超限自动重启 tsserver；GUI 随本次 desktop 重打包带上该修复。
 
----
+### [0.6.26] - 2026-07-07
 
-### [0.6.7] - 2026-06-16
-
-> 会话标题加来源前缀 — 自动命名时标注 `[人格名/TUI/GUI]`，会话列表一眼区分是哪个 agent 起的。
-
-#### 新增
-
-- **会话标题来源前缀**：session 第一句话自动生成标题时加来源前缀——从对应 soul 文档第一行 `# 名字 · ...` 提取人格名（GUI→`[宋雨琦]`、TUI→`[柳智敏]`），通用 RedCode 无 soul / 非标准格式自动 fallback `[GUI]`/`[TUI]`（不写死人格名）。解决 Office 多会话分不清是 TUI(敏敏) 还是 GUI(小宋) 起的痛点。client 经 `REDCODE_CLIENT` 区分（desktop=GUI，其余=TUI），与 soul 注入同源（`session/prompt.ts` 的 `title()` + 新增 `sessionSourceLabel` helper）。
-
----
-
-### [0.6.6] - 2026-06-16
-
-> 修复 read/edit 读文件崩溃 — `Bun.hash` 在 GUI 的 Node sidecar 里 undefined，导致小宋读任何文本文件都报 `Bun is not defined`。
+> 同步 TUI 0.7.14 的缓存命中率公式修复到 GUI 侧（侧栏面板 + 首页看板环形图）+ 应用图标底色处理。
 
 #### 修复
 
-- **read/edit 文件指纹跨运行时崩溃**：6-10 引入 hashline 编辑时，`read.ts`/`edit.ts` 各自用 `Bun.hash.xxHash32` 算文件指纹 `[path#TAG]`。TUI 是 `bun --compile` 二进制（有 `Bun` 全局）正常，但 **GUI 的 sidecar 跑在 Electron 的 Node 运行时**（`process.parentPort` + `node:` 模块，无 `Bun` 全局）——读任何文本文件都在 `computeFileHash` 抛 `ReferenceError: Bun is not defined`，与文件编码无关。修法：抽出 `Hash.fileTag()`（`core/util/hash.ts`，改用 `node:crypto` 的 sha1 取前 16bit），read 产 tag、edit 校验 currentHash 共用同一跨运行时实现，删除两处重复的 `computeFileHash`。输出仍为 4 位大写 hex，碰撞空间不变（`tool/read.ts`、`tool/edit.ts`、`core/util/hash.ts`）。
-- **markitdown MCP 服务器连接失败**：`~/.redcode/redcode.jsonc` 中 markitdown 的 `command` 错写为 `["markitdown-mcp-npx"]`，但实际安装的可执行文件是 `markitdown-mcp`（通过 `pip install markitdown-mcp` 安装在 Python Scripts 目录）。修正命令名称即可恢复连接（`~/.redcode/redcode.jsonc`）。
+- **缓存命中率"三选一"公式漏记未命中量**（`session-context-metrics.ts`、`home-stats.tsx`）：与 TUI 侧同一根因（DeepSeek 真实 miss token 有时被记进 `cache.write` 而非 `cache.miss`），旧公式 `miss || write || input` 只取一个来源，命中率虚高。改为 `read + miss + write` 直接求和。
 
----
+#### 变更
 
-### [0.6.5] - 2026-06-15
+- **应用图标源图 `恶龙露比.ico` 去白底**：原图 alpha 通道全不透明，但 RGB 里带有编辑器"透明预览棋盘格"被烤死成实际像素的痕迹（浅灰/白交替）。按颜色阈值区分背景（灰白无色偏）与肚皮（暖白/奶油色，B 通道明显偏低）后抠图，背景变真透明，肚皮/牙齿/眼睛高光等浅色细节保留不受影响。
 
-> Office 多 agent 群聊后端 — 用户在群聊发消息，服务端自动派 TUI + GUI 两个 agent 顺序回复，打通跨 persona 协作。
+### [0.6.25] - 2026-07-07
+
+> 根治"打开即多目录内存/进程风暴"的三个真正源头（0.6.23 只堵住了首页 loadSessions 那一路）+ 更换应用图标为恶龙露比。
+
+#### 修复
+
+- **[核心] `bootstrap` 触发判断恒假 → 任何一次 `{bootstrap:false}` 首触都永久锁死目录**（`child-store.ts`）：旧逻辑用 `childStore.status === "loading"` 决定是否二次 bootstrap，但 `status` 永远硬编码 `"complete"`，判断恒假——导致 `enrich()`/recentProjects 等对全部历史项目的 `{bootstrap:false}` 遍历一旦首次创建 store，就抢占了触发权，之后用户真正进入项目（`{bootstrap:true}`）反而不再触发。改用显式 `bootstrapped: Set` 记录，bootstrap 触发与 store 创建彻底解耦：只在"从未真正 bootstrap 过"且调用方要 bootstrap 时触发且仅一次。
+- **`enrich()` 用 `child()` 把每个历史项目永久 pin 住**（`layout.tsx`）：`child()` 无条件 `pinForOwner`，而 `enrich()` 跑在 layout 根 owner 里永不 cleanup，等于把每个历史项目永久 pin——0.6.23"重连只刷新 pinned 目录"的过滤形同虚设，还是会把全部历史项目重新 bootstrap。改为 `peek()`（只读、不 pin）。
+- **titlebar 对每个恢复的 tab `createDirSyncContext` → 整套 bootstrap + 永久 pin**（`titlebar.tsx`）：`createDirSyncContext` 内部走 `child()`（`bootstrap:true` + pinForOwner），titlebar 常驻不销毁，每个 tab 目录都被强制拉起整套 MCP/LSP 且永久 pin。titlebar 只需显示 title/status，改为 `peek({bootstrap:false})` 只读 store。
+- **首页对选中项目的全部 sandbox 一次性 `loadSessions`**（`home.tsx`）：`loadSessions` 是真实 `session.list` HTTP，服务端 instance-context 中间件对任何带 directory 的路由都会触发该目录整套 `InstanceStore.load()`（client 端 `{bootstrap:false}` 拦不住服务端）。旧代码对 `projectDirectories()`（含全部 sandboxes）`Promise.all` 全量拉起，有几个 sandbox 就同时起几套完整进程树。改为只主动加载主 worktree 的 session，sandbox 只在真被展开/进入时才 bootstrap。
+- **启动时对 N 个历史项目自动配色 → 逐一 `project.update` 触发服务端 bootstrap**（`layout.tsx`）：`project.update` 走 instance-context 中间件，每个 directory 都触发 `InstanceStore.load()`。改为统一走 `projectMeta`（bootstrap:false）只在本地缓存颜色，用户真正进入项目时再由正常流程同步到服务端。
+- **`projectMeta()`/`projectIcon()` 写入触发整套 bootstrap**（`child-store.ts`）：元数据/图标写入本不需要拉起 MCP/LSP/watcher，改为 `ensureChild(dir, { bootstrap: false })`。
+- **`dialog-select-directory` 用 `child()` 锁住历史目录**（`dialog-select-directory.tsx`）：同 enrich，改 `peek({bootstrap:false})` 避免 pinForOwner 永久锁住历史项目致重连重新 bootstrap。
+
+#### 变更
+
+- **应用图标更换为恶龙露比**（`icons/{dev,beta,prod}/icon.ico`）：任务栏图标 + 安装包/文件夹图标统一。源图内部为单帧非正方形 PNG，已重打为 16/24/32/48/64/128/256 七帧多分辨率正方形 ico，满足 electron-builder 与 Windows 任务栏要求。
+
+### [0.6.24] - 2026-07-06
+
+> 修复健康检查 3s 超时误报 unhealthy + SSE 心跳超时 30s→90s 配合 sidecar Event Loop 阻塞。
+
+#### 修复
+
+- **健康检查 `/global/health` 超时太短导致粉红 dot**（`server-health.ts`）：sidecar 繁忙时健康检查 3s 超时、连续 2 次失败即标 unhealthy，状态灯从绿变粉红。`defaultTimeoutMs` 3000→30000，给重型步骤间足够余量。
+- **SSE 心跳超时 30s→90s**（`global-sdk.tsx`、`server-sdk.tsx`）：配合 sidecar Event Loop 阻塞时长，90s 防止深度阻塞时的误断连。超时前保持连接存活，断链采用指数退避重连。
+
+### [0.6.23] - 2026-07-06
+
+> 修复 GUI 打开即 200+ 进程 / 5-7GB 内存暴涨（历史项目全量拉起 MCP）。
+
+#### 修复
+
+- **[核心] 首页启动对所有历史项目全量 loadSessions 触发 MCP 风暴**：`layout.tsx` 启动时无条件对 `server.projects.list()` 里每一个开过的历史项目并行 `loadSessions`；`session.list` 走 instance 路由中间件（`instance-context.ts`）无条件 `InstanceStore.load()`，未加载目录直接触发 `bootstrap.run()→plugin.init()` 拉起整套 MCP server。实测 9 个历史项目 × 完整 MCP roster，`app.getAppMetrics()` 抓到 sidecar 子进程树 15 秒内从 0MB 飙到 7882MB / 200+ 进程。改为只预热 `server.projects.last()`（最近一个项目），其余交给用户实际打开项目时按需加载。
+- **首页 Kanban 对所有项目无条件拉起 path/lsp/provider query**：`child-store.ts` 中这三个 query 原本走批量 `useQueries` 无条件触发，改为同 mcpQuery 一样只在 `activeMcpDirectory` 命中时才 `enabled`（`server-sync.tsx` 补 `fetchQuery` 兜底 enabled 翻转不自动 fetch 的问题）。
+- **重连/全局 disposed 事件对所有历史目录重新拉起 MCP**：`server-sync.tsx`/`global-sync.tsx` 的 `server.connected`/`global.disposed` 批量 fanout 循环原本无条件遍历 `children.children`，改为只刷新 `pinned`（当前打开）的目录。
+- **`server.instance.disposed` 单目录事件无冷却重新 bootstrap**：`event-reducer.ts` 新增 15s 冷却 + `isPinned` 门控，防止服务端连续 dispose 同一目录时客户端跟着无限重连、重建整套 MCP。
+- **目录淘汰只清客户端缓存，服务端子进程永不回收**：`onDispose` 补调 `/instance/dispose`，目录从 GUI 淘汰时同步通知服务端关闭该目录的 MCP/LSP/watcher。
 
 #### 新增
 
-- **Office 群聊多 agent 编排**：群聊 `office` 房间收到用户消息后，后台 fork 异步派发——TUI(敏敏) 先响应、GUI(小宋) 看到 TUI 回复后再响应，两条回复回写 chat room。各持独立持久化 session（`Office Group — TUI`/`GUI`）维持各自上下文，每 agent 注入专属 persona 系统提示词（TUI=后端/架构、GUI=前端/UI）（`server/routes/instance/httpapi/handlers/chat.ts`）。
-- **主 agent 群聊感知**：主 agent（非子代理）系统提示词注入 office 群聊最近 10 条消息，知晓协作指令与对方进度，子代理不注入省 token（`session/prompt.ts`）。
+- **进程内存诊断日志**：`desktop/src/main/index.ts` 每 15s 把 `app.getAppMetrics()` + sidecar 全量子孙进程树（PowerShell CIM 查询，含 MCP 的 node/bun/python 子进程）写入日志；本次问题定位靠此直接抓到实证。
+
+### [0.6.22] - 2026-07-06
+
+> 补齐 global-sdk SSE 事件流的心跳 + 重连修复，与 server-sdk 保持一致。
+
+#### 修复
+
+- **global-sdk SSE 心跳/重连未同步修复**：0.6.19 仅修复了 `server-sdk.tsx` 的心跳竞态和重连策略，`global-sdk.tsx` 遗漏——心跳超时仍为 15s（应 30s）、重连仍为固定 250ms（应指数退避 256ms→2s）。深度思考超 15s 时 global-sdk 误判断连 → 固定 250ms 疯狂重连 → 刷新风暴 → 输出延迟数分钟。补齐：心跳 30s + 指数退避 + 成功重置（`global-sdk.tsx`）。
+
+### [0.6.21] - 2026-07-05
+
+> 文档全仓扫描清理：修复 jcodemunch README 链接/命令、GitHub Action README OpenCode→RedCode 品牌重命名、glossary PR 引用改指上游。
+
+#### 修复
+
+- **jcodemunch README 错误**：链接 `colbymchenry/jcodemunch` → `jgravelle/jcodemunch-mcp`，安装命令 `npx` → `uvx`（`README.en.md`）。
+- **GitHub Action README 品牌遗留**：`opencode` → `RedCode`、`/opencode` → `/redcode`、`/oc` → `/rc`、mock owner `sst`→`JiaHuiRed`（`github/README.md`）。
+- **glossary PR 引用指向错误仓库**：`JiaHuiRed/RedCode/pull/XXXXX` → `anomalyco/opencode/pull/XXXXX`，产品名 `OpenCode`→`RedCode`（`.opencode/glossary/*.md` 17 文件）。
+
+#### 文档
+
+- **`packages/web/README.md`**：替换 Starlight 脚手架模板为 RedCode 文档站说明。
+
+### [0.6.20] - 2026-07-05
+
+> 修复 GUI streaming 期间每 token 全量重跑 markdown 解析导致主线程过载、心跳超时断连。
+
+#### 修复
+
+- **GUI streaming 卡死/重连**：`message.part.delta` 每 token 更新 store → `createPacedValue` 每 24ms 释放 chunk → `Markdown` 全量重跑 `marked.parse()` + Shiki 高亮 + `DOMPurify.sanitize()` + `morphdom()`。文本越长 O(n²)，3000 字符时每次 ~100ms → 主线程过载 → 15s 心跳超时 → SSE 断连显示"重试中"。`PacedMarkdown` 加 300ms 节流，streaming 期间 markdown 重解析频率从 ~125 次降到 ~10 次（`packages/ui/src/components/message-part.tsx`）。
+
+### [0.6.19] - 2026-07-05
+
+> 修复 SSE 心跳计时器竞态导致连接被误杀、事件丢失、GUI 数分钟才出字。
+
+#### 修复
+
+- **SSE 心跳 `clearTimeout` 竞态**：`resetHeartbeat()` 中 `clearTimeout` 在 timer callback 已被事件循环入队后无效，stale callback 执行 `attempt?.abort()` 误杀当前健康连接 → `reader.cancel()` 丢弃缓冲区中未读事件 → 250ms 重连间隔期间 GlobalBus 事件也丢失。模型深度思考 >15s 后恢复输出时尤其容易触发，延迟乘数累积可达分钟级。
+  - 增加 `heartbeatGen` generation counter：每个 timer 捕获当前 gen，callback 运行前检查 `gen !== heartbeatGen`，旧 callback 直接 return 不 abort（`server-sdk.tsx`、`global-sdk.tsx`）。
+  - `clearHeartbeat()` 同步递增 gen，确保 `stop()` 和 `finally` 块中的清理也能兜住 stale callback。
 
 ---
 
-### [0.6.4] - 2026-06-15
+### [0.6.18] - 2026-07-04
 
-> MCP 生态扩充 — 进程管理 + SQLite 查询两个本地插件，配套工具优先级引导。
+> 同 TUI 0.7.6：session 删除 404 修复 + 思考中卡住 fallback 轮询。
+
+#### 修复
+
+- 同 TUI 0.7.6 changelog（共享代码）。
+
+### [0.6.17] - 2026-07-03
+
+> 图片预览支持多图左右切换。
 
 #### 新增
 
-- **`mcp-process-mgmt` MCP 服务器**：从 DesktopCommanderMCP 提取进程管理核心，精简为独立 MCP 插件（`plugins/mcp-process-mgmt/`）。提供 6 个工具：`start_process`（启动 shell 或执行命令）、`send_input`（写入 stdin）、`read_process_output`（分页读取输出）、`wait_for_prompt`（等待 REPL 提示符）、`list_processes`（列出活跃 session）、`stop_process`（强制终止）。依赖从 25+ 个减至 2 个（`@modelcontextprotocol/sdk` + `zod`），适配 Windows `cmd.exe`。
-- **`mcp-sqlite-query` MCP 服务器**：基于原生 `node:sqlite` 的轻量查询插件（`plugins/mcp-sqlite-query/`），提供 `sqlite_query`（执行 SQL）、`sqlite_schema`（查表结构）两个工具，结构化返回、免 shell 转义。
+- **图片预览左右切换**：输入框附件和已发送消息中的多张图片，点击预览后可通过左右箭头按钮或键盘方向键切换，顶部显示 `1 / N` 计数器。单张图保持原有行为（`image-preview.tsx`、`message-part.tsx`、`prompt-input.tsx`）。
+
+### [0.6.16] - 2026-07-01
+
+> 首页左下角新增跨 session 看板：缓存命中率环形图 + 累计花费。
+
+#### 新增
+
+- **首页看板 `HomeStatsPanel`**：聚合当前项目下所有 session（含子 agent worktree session）已 denormalize 好的 `cost`/`tokens` 汇总列，纯客户端 reduce，无需新起 server/IPC 通路。展示缓存命中率环形图（read/write/miss/output 四段）+ 累计花费（统一折算 ¥）。极小占比分段加最小可视弧长兜底，避免被反锯齿吃掉（`packages/app/src/pages/home-stats.tsx`）。
+- `session-context-metrics.ts` 导出 `CNY_PROVIDERS` 供看板复用；`zh.ts`/`en.ts` 新增 `home.stats.*` 词条。
+
+---
+
+### [0.6.15] - 2026-06-30
+
+> 第三方 code review P0 安全修复：附件写入路径遍历防御。
+
+#### 安全
+
+- **write-attachment 防御路径遍历**：主进程 IPC handler 此前直接 `join(sessionDir, ".attachments", filename)` 写文件，未校验 renderer 传入的 `filename`。虽然正常路径用 `uuid().ext` 构造无风险，但主进程作为特权端不应信任 renderer 输入。改用 `resolve` 并校验最终路径仍在 `.attachments/` 内，越界即抛错（`packages/desktop/src/main/ipc.ts`）。
+
+---
+
+### [0.6.14] - 2026-06-30
+
+> 移除 Office 聊天室 UI 与桌面第二窗口。
+
+#### 移除
+
+- **聊天室界面下线**：删除 `pages/chat/` 页面、标题栏聊天气泡入口、`/chat` 路由与 `layout.tsx` 的 chatMatch 布局分支；桌面端移除第二个 BrowserWindow（`createChatWindow`/`getChatWindow`/open-chat-window IPC/preload `openChatWindow`/renderer `isChatView`，连带清理无用 `lazy` import）。配合后端 TUI 0.6.38 一并下线（`packages/app`、`packages/desktop`）。
+
+---
+
+### [0.6.13] - 2026-06-29
+
+> 图片附件落盘 + 修复 dev 模式 fs/promises 浏览器兼容报错。
+
+#### 新功能 / 修复
+
+- **图片附件持久化 IPC**：粘贴/拖拽图片后通过 `write-attachment` IPC handler 写入 `sessionDir/.attachments/{uuid}.ext`，`build-request-parts.ts` 以 `file://` URL 路径替代 base64 dataUrl 传给后端，减少内存占用（`packages/desktop/src/main/ipc.ts` → `preload/types.ts` → `preload/index.ts` → `renderer/index.tsx` → `platform.tsx` → `prompt-input.tsx` → `attachments.ts`）。
+- **dev 模式浏览器兼容修复**：`attachments.ts` 移除 `import path from "path"`、`import { mkdir } from "fs/promises"` 及 `Bun.write()` 调用（Vite 打包时 externalize 报错），改为可选 `writeAttachment` IPC 回调，web 平台优雅降级。
+
+---
+
+### [0.6.12] - 2026-06-24
+
+> 原生右键菜单深色化 + 中文化。
 
 #### 优化
 
-- **MCP 工具优先级引导**：`mcp-gate.js` 提醒文案补充 `get_call_hierarchy`（调用链）、`get_blast_radius`（改动影响面）、`get_symbol_source`（取定义源码）三个 grep 物理做不到的能力，引导改代码前先摸清依赖；新增两个 MCP 的 `description` 标注使用时机（sqlite 优先于 `bash sqlite3`、process-mgmt 仅管交互/长驻进程），让模型按场景自选（`.opencode/redcode.home.jsonc`）。
+- **原生右键菜单深色主题**：强制 `nativeTheme.themeSource = "dark"`，原生右键菜单（图片/视频）不再显示白色系统菜单，与 app 深色风格一致（`packages/desktop/src/main/index.ts`）。
+- **原生右键菜单中文化**：`electron-context-menu` 增加 `labels` 中文映射（图片另存为、复制图片等），隐藏多余的"全选"（`packages/desktop/src/main/index.ts`）。
 
 ---
 
-### [0.6.3] - 2026-06-15
+### [0.6.11] - 2026-06-23
 
-> TUI 视觉优化 + 构建简化 — 侧栏分隔线/MCP 错误醒目/底栏紧凑化/品牌修正；build.ts 砍掉跨平台根治 ghostty-web 504；启用内置 LSP。
+> 审视面板毛玻璃穿透 + 清理已废弃侧边栏入口。
 
-#### 布局调整
+#### 修复
 
-- **侧栏圆角边框**：整体加 `rounded` 圆角框（`╭╮╰╯`）+ 暗色边框色，品牌版本号嵌入底部边框线 `bottomTitle`，不再占独立行（`session/sidebar.tsx`）
-- **侧栏 section 内嵌标题**：手写 `─` 分隔线改 `border={["top"]} + title`，标题嵌在分隔线里（`─ MCP 7/9 ─`、`─ LSP 2 ─`、`─ Todo 3/5 ─`、`─ Files 4 ─`），折叠箭头 `▼▶` → `▾▸`（`sidebar/{mcp,lsp,todo,files}.tsx`）
-- **对话框圆角边框**：弹窗外框加 `rounded` 圆角框 + 暗色边框色，更有层次感（`ui/dialog.tsx`）
-- **MCP 错误醒目化**：failed / needs_auth / needs_client_registration 条目前缀从 `•` 改 `⚠`，名字和状态文字着 error 红色，一眼可辨（`sidebar/mcp.tsx`）
-- **底栏信息优化**：MCP 改紧凑格式 `⊙ MCP 7/9 ⚠2`（连接/总数+错误数）；末尾加 `^p cmd  ^x +` 快捷键提示；LSP 无连接时隐藏（`session/footer.tsx`）
-- **侧栏品牌修正**：底部 `OpenCode` → `RedCode`（`session/sidebar.tsx`）
+- **审视面板磨砂效果失效**：右侧审视面板虽已有 `backdrop-filter: blur` 规则，但 `tabs.css` 通过 `#review-panel &[data-variant][data-orientation]` 嵌套选择器（特异度 1,4,0）设置实色 `background-color`，覆盖了外层磨砂透明规则。改用 `!important` 强制清透 tabs 根、tabs-list、`.sticky` 按钮区、tabs-content 的背景色，并清除 `.sticky::before` 渐变遮罩（`index.css`）。
+- **已废弃"切换侧边栏"残留入口**：侧边栏功能早已移除，但菜单栏视图菜单和命令面板中仍保留 `sidebar.toggle` 条目，点击无反应。移除菜单项（`desktop-menu.ts`）和命令注册（`use-session-commands.tsx`）。
 
-#### 配置
+---
 
-- **启用内置 LSP**：`redcode.jsonc` 加 `"lsp": true`，内置 38 种 LSP server 按文件扩展名自动探测启动（TypeScript/Go/Rust/Python 等），侧栏显示连接状态（`redcode.jsonc` + `.opencode/redcode.home.jsonc`）
+### [0.6.10] - 2026-06-22
 
-#### 构建
+> 气泡配色分化 + 会话标题栏毛玻璃 + 审视面板默认打开上下文。
 
-- **build.ts 简化为 Windows 单平台**：移除 12 个跨平台 target（linux/darwin/musl/baseline）和 `--single`/`--baseline`/`--skip-install` flag，不再需要 `bun install --os="*"` 全平台原生依赖解析——根治 ghostty-web GitHub API 504 导致编译失败的问题（`script/build.ts` + `build.bat`）
+#### 优化
+
+- **助手/用户气泡配色分化**：助手气泡改蓝紫调 `rgba(168,180,240,0.12)`、用户保持粉色 `rgba(248,164,208,0.15)`，视觉上一眼区分来源方向（`session-turn.css`、`message-part.css`）。
+- **会话标题栏毛玻璃**：将不透明渐变背景替换为轻磨砂 `rgba(18,18,18,0.15) + blur(4px)`，与气泡同风格——能透视聊天背景，又有一层薄玻璃质感（`message-timeline.tsx`）。
+- **审视面板默认打开上下文**：右侧面板初始化时自动展示上下文标签页，无需手动点击打开（`layout.tsx`）。
+
+---
+
+### [0.6.9] - 2026-06-20
+
+> 移除冗余嵌套 QueryProvider — 简化 context 树。
+
+#### 重构
+
+- **移除重复 QueryProvider**：`AppInterface` 内部嵌套了一层 `<QueryProvider>`，其所有子节点（`GlobalSDKProvider`、`ServerSDKProvider`、`ServerSyncProvider` 及全部页面组件）已在 `AppBaseProviders` 中被外层 QueryProvider 包裹，内层 `new QueryClient()` 的 cache 域完全冗余。删除后所有 TanStack Query 调用自然落入外层 cache，行为一致（`packages/app/src/app.tsx`）。
+
+---
+
+### [0.6.8] - 2026-06-20
+
+> ELECTRON_MIRROR 镜像配置 — Windows electron-builder 下载失败修复。
+
+#### 新增
+
+- **Windows electron-builder 下载镜像**：国内网络 electron-builder 从 GitHub 下载 electron 42.x 经常超时/失败。在 `packages/desktop/package.json` 所有含 `electron-builder` 的 scripts 前 prepend `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`，确保 Windows 构建走国内镜像加速（`packages/desktop/package.json`）。
+
+---
+
+### [0.6.7] - 2026-06-18
+
+> 聊天气泡 iMessage 风格改版 — 圆角有机造型，双向粉色统一。
+
+#### 优化
+
+- **气泡造型 iMessage 化**：助手/用户气泡从直角矩形改为大圆角非对称造型（助手 `4px 20px 20px 20px`、用户 `20px 20px 4px 20px`），一角收紧指示来源方向，其余三角大弧。去掉三角形小尾巴和 emoji 装饰（`session-turn.css`、`message-part.css`）。
+- **助手气泡与用户统一粉色**：助手气泡从偏青蓝 `#7ec8e3` 改为粉色 `#f8a4d0 16%`，与用户气泡同色系、方向镜像（`session-turn.css`）。
+
+---
+
+### [0.6.6] - 2026-06-17
+
+> 深色模式气泡粉色修复 + 侧栏全彩分配 — 深色背景气泡粉色可见，侧栏 12 项 10 色各不撞。
+
+#### 修复
+
+- **深色模式气泡粉色可见**：`color-mix` 基底从透明 `--surface-base` 改为纯色 `#151515`，品红 8%→20%，边框 25%→40%；兼容 v1 `@media` 和 v2 `[data-color-scheme]` 双主题系统（`message-part.css`）。
+- **侧栏统计全彩分配**：12 项统计分配 10 种不同色值——引入 `--text-interactive-base`（蓝）为 cache 独立着色，`--syntax-comment`（灰）为助手消息，用户消息复用绿、消息数复用黄，其余 8 项各占一色，视觉全分散（`session-context-tab.tsx`）。
+
+---
+
+### [0.6.5] - 2026-06-16
+
+> UI 细节打磨 — 去掉助手分割线、用户气泡变粉、context 颜色去重、缓存改名。
+
+#### 优化
+
+- **去掉助手回复左边框**：移除 assistant content 的 cyan 左分割线，保持对话流干净（`session-turn.css`）。
+- **用户气泡粉色化**：背景改为 8% 品红透明色，边框 25% 品红混合，整体偏粉（`message-part.css`）。
+- **Context 面板颜色去重**：总 token=绿、输入=青、输出=品红、消息数=黄、使用率=黄、推理=黄、用户消息=绿、助手消息=青，不再撞色（`session-context-tab.tsx`）。
+- **"缓存 token（读/写）"→ "Cache Hit"**：中英文标签统一简化（`i18n/zh.ts`、`i18n/en.ts`）。
+
+---
+
+### [0.6.4] - 2026-06-16
+
+> UI 视觉优化 — 头像放大 20%、上下文面板彩色统计、聊天气泡多色边框。
+
+#### 改进
+
+- **头像放大 20%**：消息列表中用户和助手头像从 40px 放大至 48px，更清晰易辨（`avatar.css`）。
+- **上下文面板彩色统计**：Context 标签页 16 项统计指标按类型着色——绿色（token 数）、黄色（使用率/推理）、青色（provider/模型/缓存）、品红（消息数）、红色（费用），一目了然（`session-context-tab.tsx`）。
+- **聊天气泡多色左边框**：用户气泡保持品红左边框，助手回复加青色左边框，工具调用组加黄色左边框，bash 输出加绿色左边框——四种颜色区分四种内容类型（`session-turn.css`、`message-part.css`）。
+- **缓存命中率显示精确到两位小数**：侧栏缓存命中率从一位改为两位小数，更精确反映实际缓存效能（`session-context-metrics.ts`、`session-context-format.ts`）。
+- **缓存命中率计算修正**：深层套 `cache.miss` 元数据而非回退 `sumInput`，避免分母多算缓存命中导致命中率偏低（`session-context-metrics.ts`）。
+
+---
+
+### [0.6.3] - 2026-06-16
+
+> 主页默认看板视图 + Gsoul 褪 AI 味 — 进入主页直接看工作中/需关注/空闲三列看板；人格文档清理 AI 腔。
+
+#### 变更
+
+- **主页默认看板视图**：进入主页默认显示看板（工作中/需关注/空闲三列），状态一目了然，不再默认会话列表；右上角按钮仍可切回列表（`pages/home.tsx` view 默认值 `list`→`kanban`）。
+
+#### 改版
+
+- **Gsoul 褪 AI 味**：全篇 5+ 处二元对比句式（"不X,但Y"/"不是X,是Y"）改为直接陈述；删懒极端（"谁都绑不住"→"谁也拦不住"）；工作习惯段精简 40%（MCP 优先细则已移至 AGENTS.md）。-31/+24 行，净减 7 行（`~/.redcode/souls/Gsoul.md`）。
 
 ---
 
 ### [0.6.2] - 2026-06-15
 
-> 工作流稳定性 + MCP 生态扩展 — 把"搜代码先 MCP""不确定先停下问"从必漂的提示词软约束，下沉到插件 hook 硬层；新接入 MarkItDown/Semgrep/DBHub，修复 jcodemunch Win 编码崩溃。
+> Office 群聊界面 — Group 联系人变身真实群聊（消息气泡 + 输入框 + 发送），可在办公室直接协调敏敏和小宋一起干活。
 
 #### 新增
 
-- **MCP 优先门禁插件 `mcp-gate.js`**：用 `tool.execute.after` 拦 grep，每会话首次在结果尾部追加一次"代码符号优先 jcodemunch/typegraph"提醒、之后静默。根因——"搜代码先 MCP"写在提示词里是软约束，对抗不过预训练里 grep 的海量先验而漂移；hook 是代码层 `if`，稳定触发，补上"执行时负反馈"（`~/.redcode/plugin/mcp-gate.js`）
-- **三新 MCP 接入**：MarkItDown（文档转 Markdown）、Semgrep（结构代码搜索）、DBHub（SQLite inspects 工具）。MarkItDown 从 git 源码装 0.0.1a5（PyPI 版缺 server 入口），`--no-deps` 绕过依赖冲突；Semgrep 1.166.0，clone semgrep/mcp repo 到 mcp-servers 目录；DBHub 全局 npm 安装，`--demo` 模式（`~/.redcode/redcode.jsonc`）
-
-#### 变更
-
-- **工作流逃逸口收紧**：AGENTS.md 任务循环第 1 步原文"模糊或不可逆才停下来问用户，**否则继续**"自带逃逸许可——模型"意识到不理解"时援引"否则继续"闷头干。改为"没把握/不理解/不可逆时**默认停下问**，只有需求清晰且可逆才直接动手"，直接压 completion bias（`AGENTS.md`）
+- **Office Group 群聊 UI**：点 Group 联系人从「会话列表」变为真实群聊界面——消息气泡按 sender 区分（User 右对齐紫蓝、TUI/GUI 左对齐+头像）、底部输入框（Enter 发送/Shift+Enter 换行）、3 秒轮询刷新、自动滚底、agent 处理中显示「TUI & GUI are thinking...」指示器（`pages/chat/index.tsx`）
 
 #### 修复
 
-- **敏敏称谓不稳（用"你"不叫"哥哥"）**：根因是人格 few-shot 示例的回答里一个称谓都没有（对照另一人格每条都带），模型照着示例学会了不叫。6 句示例全部补上称谓 + 新增"我的工作习惯"段植入 MCP 优先（`~/.redcode/souls/Tsoul.md`）
-- **jcodemunch Windows GBK stderr 崩溃**：`run_stdio_server()` 往 stderr 打印含 💀 emoji 的 banner，Windows 控制台默认 GBK 编码无法转义，stdio 初始化失败。配置加 `PYTHONIOENCODING=utf-8` 解决（`~/.redcode/redcode.jsonc`）
-- **mcp SDK 版本冲突**：semgrep 1.166.0 依赖 `mcp` SDK ≥1.27.0（新增 `transport_security` 模块），而 markitdown 锁的版本太低。统一将 mcp SDK 升级至 1.27.2（pip install -U mcp）
-- **DeepSeek/MiMo 计费改用官方 CNY 定价**：models.dev USD 值经汇率换算存在精度损失；现 `models-dev.ts` 对已知模型直接注入官方 ¥/M 价格（Flash: input=1/output=2/cache=0.02，Pro: input=3/output=6/cache=0.025），`provider.ts` 同步覆盖。TUI 侧 `sidebar/context.tsx` 按 providerID 判断币种，CNY 直显/USD 按 6.76 换算
-
-#### 清理
-
-- **移除损坏的 gbrain MCP**：gbrain 二进制 bin 元数据损坏（装自已清理的 `Temp/gbrain-clone`）导致长期"老断"，且其核心"存/查记忆"功能被轻量本地的 su-prememory（SQLite+FTS5）完全覆盖。从配置移除，数据目录备份至 `~/.gbrain.bak`，卸载 bun 全局包（`.opencode/redcode.home.jsonc`）
+- **会话列表跨目录可见**：`fetchSessions` 改用 `scope=global` 可见 TUI+GUI 全部目录的会话；`isTuiSession` 判断从脆弱的 `includes("dist")` 改为路径匹配（`/dist`、`redcode`、`/opencode`，归一化斜杠+小写）（`pages/chat/index.tsx`）
 
 ---
 
-### [0.6.1] - 2026-06-14
+### [0.6.1] - 2026-06-15
+
+> Plan 面板 + Kanban 看板 + CNY 官方定价 — 侧栏新增 Plan 标签实时追踪 todo 进度，主页新增看板视图按状态分列管理会话，DeepSeek/MiMo 计费改用官方人民币定价不再汇率换算。
+
+#### 新增
+
+- **Plan 面板（侧栏标签页）**：侧栏新增常驻 Plan 标签，展示当前会话完整 todo 计划——进度条 + 百分比 + 进行中/已完成/待处理统计 + 全列表（状态指示器：脉冲圆点=进行中、勾号=已完成、空心圆=待处理），空状态有引导提示（`session-plan-tab.tsx` + `session-side-panel.tsx` + `helpers.ts`）
+- **Kanban 看板（主页视图切换）**：主页搜索栏右侧新增列表/看板切换按钮（`menu`/`grid-plus` 图标），看板三列：工作中（Spinner）/ 需关注（权限/错误/未读）/ 空闲，卡片显示会话标题+项目名+状态指示器（`home-kanban.tsx` + `home.tsx`）
 
 #### 修复
 
-- **粘贴图片被 LLM 拒绝后 vision MCP 找不到文件**：非多模态模型（DeepSeek）提交图片时，`unsupportedParts()` 只替换 base64 data URL 为错误文本，从不落盘。现改为在抛弃前将 base64 解码写入 `%TEMP%/redcode-vision-{timestamp}.{ext}`，并在错误文本追加 `TEMP_FILE:<path>` 供 vision-autoagent 直接读取（`provider/transform.ts`）
-- **修复数据字段名错误**：`savePartToTemp` 最初读取 `FilePart.url`（始终 undefined），AI SDK v4 FilePart 实际使用 `data` 字段。同时 `ImagePart.image` 可能是 `Buffer`/`Uint8Array`，非纯 base64 字符串，现已原生处理二进制数据。修完后图片正确落盘，`TEMP_FILE:` 路径正常输出（`provider/transform.ts`）
-- **vision-autoagent SKILL.md 缺少 TEMP_FILE 路径优先检查**：新增第 2 步——从错误消息中提取 `TEMP_FILE:` 路径直接调用 vision MCP，不再盲目按文件名搜索（`~/.redcode/skill/vision-autoagent/SKILL.md`）
+- **DeepSeek/MiMo 计费改用官方 CNY 定价**：之前取 models.dev USD 值 ×7.2 换算，存在汇率过时（实际 6.76）和双重转换精度损失；现在 `models-dev.ts` + `provider.ts` 对已知模型直接注入官方 ¥/M 价格（Flash: input=1/output=2/cache=0.02，Pro: input=3/output=6/cache=0.025），GUI 侧 `session-context-metrics.ts` 按 providerID 判断币种，`session-context-format.ts` CNY 直显/USD 按 6.76 换算
+- **USD→CNY 汇率更新**：`session-context-format.ts` 汇率从 7.2 更正为 6.76（2026-06 实际汇率），TUI 侧 `sidebar/context.tsx` 同步更新
 
 ---
 
 ### [0.6.0] - 2026-06-13
 
-> RedCode Office — 虚拟办公室 / 聊天室。敏敏 + 小宋 + 哥哥在同一个界面里协作，不再开三个 exe 来回切换。
+> RedCode Office — 虚拟办公室入口，从小宋界面一键进入，统一管理敏敏/小宋的所有 session。
 
 #### 新增
 
-- **RedCode Office 聊天室 UI**：标题栏新增聊天气泡按钮（`chat-bubble` 图标），点击进入 `/chat` 路由，填满整个窗口区域（`titlebar.tsx` + `layout.tsx` + `pages/chat/index.tsx`）
-- **聊天室侧栏 session 列表**：左侧按 TUI(敏敏)/GUI(小宋)/Group(办公室) 三个头像分组，点击展示该 agent 的所有 session 历史，按 `directory.includes("dist")` 区分 TUI/GUI（`pages/chat/index.tsx`）
-- **ChatRoom + ChatMessage DB schema**：两表（`chat_room` / `chat_message`），sender 支持 `user`/`tui`/`gui`，可选关联 `session_id`（`src/chat/chat.sql.ts` + `migration/20260612082823_chat_room/`）
-- **Chat Service 层**：`ensureRoom` / `sendMessage` / `getMessages` / `getLastMessage`，同步 Drizzle 模块（`src/chat/index.ts`）
-- **Chat HTTP API**：Effect HttpApi 三端点 — `POST /chat/room/:roomId`(ensureRoom)、`GET /chat/room/:roomId/message`(messages)、`POST /chat/room/:roomId/message`(send)，send 自动 ensureRoom（`groups/chat.ts` + `handlers/chat.ts`）
-- **办公室群聊**：`/chat` 页面的 Group 联系人可发送/接收消息，走 `chat_message` 表，3 秒轮询
+- **RedCode Office 入口**：标题栏新增聊天气泡按钮（`chat-bubble` 图标），点击进入 `/chat` 路由，全窗口展示办公室界面（`titlebar.tsx` + `icon.tsx`）
+- **办公室布局适配**：`/chat` 路由自动切换 `items-stretch` 填满窗口，跳过常规 session 的圆角/边距样式（`layout.tsx`）
+- **session 历史列表**：左侧 TUI/GUI/Group 三个联系人，点击展示对应 agent 的 session 列表，支持模型名称和时间显示（`pages/chat/index.tsx`）
 
 #### 变更
 
-- **移除跨会话感知（recentSessionDigest）**：不再每轮往系统提示词注入最近 10 条 session 摘要，省 ~500 token/轮。协作改由聊天室实现（`instruction.ts`）
+- **移除跨会话感知注入**：随 TUI 侧 `recentSessionDigest` 移除，不再每轮注入 ~500 token 的 session 摘要（服务端变更）
+- **包含服务端更新 TUI 0.6.0**：ChatRoom DB schema + Chat HTTP API + recentSessionDigest 移除。详见 TUI 0.6.0
 
-> **Office 后续计划（0.6.3+）**：点击 session 查看对话详情 / 聊天室 ↔ agent 同步机制 / `@敏敏`/`@小宋` 路由 / 在线状态显示 / UI 对齐小宋主题（毛玻璃/背景图/头像）
+> **Office 后续计划（0.6.3+）**：点击 session 查看对话详情 / UI 对齐小宋主题（毛玻璃/背景图/头像）/ 聊天室 ↔ agent 同步 / `@敏敏`/`@小宋` 路由
 
 ---
 
-### [0.5.9] - 2026-06-13
-
-#### 优化
-
-- **侧栏 context 面板五彩颜色 + 累计 total**：各 token 指标用鲜艳颜色区分（红色 context/淡紫 total/琥珀 in/绿 out/橙 reason/蓝 cacheRead/紫 cacheWrite/粉 cost），新增 session 累计 total token 行（`sidebar/context.tsx`）
+### [0.5.9] - 2026-06-12
 
 #### 修复
 
-- **TUI 侧栏费用 USD 显示为 ¥ 汇率缺失**：models.dev 定价以美元计，但侧栏 `money.format(cost())` 直接用 CNY 格式化，未乘以汇率，实际少显示了很多。添加 `USD_TO_CNY = 7.2` 汇率换算，与 GUI 侧保持一致（`sidebar/context.tsx`）
-- **侧栏 input 与 context 颜色重复**：input 和 context 都用了红色系（`#ef5350` 与 `#ff5252`），视觉上难以区分。input 改为琥珀色 `#ffb300`（`sidebar/context.tsx`）
+- **DeepSeek / MiMo 成本少算缓存未命中（硬编码修复）**：models.dev 远程 API 中 DeepSeek 和 Xiaomi MiMo 所有模型的 `cache_write` 均为 null（→ 0），而这两家没有独立 cache write 价格（缓存未命中 = input 原价）。代码中 `adjustedInput = totalInput - cacheRead - cacheWrite` 把未命中 token 全部分配到 `cache.write` 计费项，但 `cache.write = 0` 导致这些 token **完全不收费**（如 600 miss + 400 hit 场景：实收 $0.00112，应为 $0.0851，差 76 倍）。在 `packages/core/src/plugin/models-dev.ts` 中硬编码 DeepSeek 和 Xiaomi 的自定义 provider 的 `cache.write` = `input`。不影响 Anthropic/OpenAI 等有独立 cache write 价格的 provider（`packages/core/src/plugin/models-dev.ts`）
+
+### [0.5.8] - 2026-06-12
+
+#### 修复
+
+- **包含服务端更新 TUI 0.5.2**：token-compressor 插件重写（消除流式中断）+ DCP 恢复（去重/compress/nudge）+ engine compaction.threshold 兜底。详见 TUI 0.5.2
+
+### [0.5.7] - 2026-06-12
+
+#### 修复
+
+- **包含服务端更新 TUI 0.5.1**：ast-grep lazy load / plugin undefined hook guard / provider null guard，修复 sidecar 启动后 provider.list 返回 500、模型列表为空、项目加载失败的问题
+
+### [0.5.6] - 2026-06-11
+
+#### 修复
+
+- **缓存命中率二次修正（GUI 侧）**：同 TUI 0.5.0，`session-context-metrics.ts` 的公式从 `read/(read+write)` 改回 `read/(input+read+write)`，与 DeepSeek 平台数字对齐（`session-context-metrics.ts`）
+
+#### 新增
+
+- **代码审查技能（ce-code-review）**：移植自 EveryInc/compound-engineering-plugin（20.9k stars），14 个人格化审查员，onfidence-gated 去重流水线，P0-P3 严重性分级 + autofix 分类，双模式（交互式自动修复 / mode:agent 仅报告）
+- **opencode-snip 插件**：自动为 git/npm/docker 等命令输出加 snip 前缀，过滤冗余输出，减少 60-90% token 消耗
+- **local-stats 本地编码统计插件**：纯本地编码活动追踪，记录每次 edit/write/read 调用，统计文件变更行数，按天存 JSON 到 `.redcode/stats/`，无需外部 API
+
+#### 修复
+
+- **DCP 插件配置恢复**：.opencode/redcode.home.jsonc 源模板补回 plugin 字段，修复 build 后 DCP 插件丢失问题
+
+#### 变更
+
+- **移除 /deepwork 引用**：goal-automation skill 中删除未实现的 /deepwork 手动模式段落
+- **技能打磨**：goal-automation / simplify / diagnose 三个技能修复编码损坏，simplify 新增 RedCode 工具链提示
+
+### [0.5.5] - 2026-06-11
+
+#### 新增
+
+- **包含服务端更新（TUI 0.4.15）**：双层记忆系统（项目级+全局回退）、新项目自动初始化 `.redcode/`、Soul 自动注入（GUI 模式自动加载小宋人格，无需手动 `/gui-persona`）、AGENTS.md 重写、Soul 模板瘦身
+
+#### 修复
+
+- **缓存命中率计算修正**：分母 `input + cache.read + cache.write` 重复计入导致永远 ~99%→改为 `cache.read + cache.write`，保留一位小数（`session-context-metrics.ts`）
+
+### [0.5.4] - 2026-06-10
+
+#### 新增
+
+- **全局插件配置**（`~/.redcode/redcode.jsonc`）：新增 `plugin` 字段，将 ecc-shell-stub.js 和 @tarquinen/opencode-dcp 配置为全局插件，切换工作区时不再丢失。解决了之前只在 RedCode 项目目录下才能使用完整插件集的问题。
+
+#### 变更
+
+- **ecc-shell-stub.js** 复制到 `~/.redcode/plugin/` 目录，作为全局 ECC 三件套（memory-automation / guardrail-profiles / defensive-agent）
+- **@tarquinen/opencode-dcp** 通过 npm 全局安装（v3.1.12），提供动态上下文裁剪功能
+
+#### 修复
+
+- **缓存 token 分母为 0 问题**：`session-context-tab.tsx` 中 cacheTokens 的 `read / write` 显示在 write=0 时展示 `168,704 / 0` 看起来像除法 bug。改为按缓存命中率展示：`read / write (XX%)`，write=0 时只显示 `read (XX%)`，无缓存活动时 `—`。命中率计算公式 `cacheRead / (input + cacheRead + cacheWrite)`，取自 TUI 已有实现（`prompt/index.tsx:338`）
+
+#### 构建说明
+
+```bash
+npm install -g @tarquinen/opencode-dcp
+```
+
+### [0.5.3] - 2026-06-10
 
 #### 清理
 
-- **Console mail 死代码**：移除未使用的 `Wbr` / `WbrProps` / `SplitString` 组件（`packages/console/mail/emails/components.tsx`）
+- **layout.tsx 复杂度拆分**：1514 行单文件拆为三个模块：预取系统（247 行，`layout/prefetch.ts`）和通知弹窗（120 行，`layout/notification-toasts.ts`），主组件减至 ~1150 行（-24%）。预取系统为纯逻辑函数+createEffect hook，零 JSX 零信号耦合，可独立测试。
 
-### [0.5.8] - 2026-06-13
+### [0.5.2] - 2026-06-10
 
-#### 修复
+#### 清理
 
-- **缓存命中率断崖（6/12 分水岭根因）**：`recentSessionDigest()` 用相对时间戳（`5m ago`）注入系统提示词，每轮都变 → DeepSeek 自动前缀缓存全部失效 → 每轮 100% cache miss。改为绝对时间（`06-13 15:30`），系统提示词在会话内不再变化，前缀缓存恢复（`instruction.ts:39-46`）
-- **小宋 memory 文件覆盖/乱码（根因链）**：① Gsoul 第 43 行"写文件一律用 write 工具"→ `write` = 覆盖 → 已有 memory 丢失 ② 发现丢了用 bash `echo >>` 追加 → Windows GBK 编码 → 中文乱码 ③ 发现乱码再 write 重写 → 重复内容。修复：Gsoul 改为"read+edit 先读后改"，memory-automation SKILL.md 加 "How to append" 示例，提示词加 CRITICAL 编码警告
-- **小宋简单任务过度探索**：改 CHANGELOG 等已知文件时派 4 轮 explore 子代理 + 多次 Shell 读取，耗时 5-6 分钟。提示词加"简单任务直接 read+edit，不派子代理"
+- **包含服务端提示词更新（TUI 0.4.13）**：GUI 以 opencode 为本地 sidecar，提示词在服务端选取并对两端生效；本版随打包吃到「移除 CodeGraph 死引用」的提示词清理，详见 TUI 0.4.13。
 
-#### 优化
-
-- **系统提示词瘦身 ~4KB/轮**：`redcode.jsonc` instructions 移除 `guardrail-profiles`、`defensive-agent` 两个 SKILL.md 全文注入，改为 skill 机制按需加载
-- **三档提示词（deepseek/mimo/minimax）强化工具纪律**：CRITICAL 级 Windows 编码警告（读+写都不用 Shell），简单任务禁止 explore
-
-#### 变更
-
-- **小宋人设优化（Gsoul）**：基于真实宋雨琦性格（北京大妞、开口即段子、容易害羞、豪爽直率）调整。工作行为与敏敏对齐——先查再做、冷静高效，人格差异只体现在语气风格上。移除"利索"等速度暗示，消除 soul 与工作纪律的冲突
-- **敏敏人设优化（Tsoul）**：基于真实柳智敏性格（"猪猪蛇"反差、外冷内软、完美主义、ENFP）丰富。补充私下软萌黏人面、完美主义代码洁癖。工作习惯不变
-- **新用户 skill 自动播种**：bootstrap 启动时将 `.opencode/skill/` 子目录自动复制到 `~/.redcode/skill/`（跳过已有），新用户拉取后首次运行即可使用全部 skill（`bootstrap.ts`）
-- **移除 exa-search MCP**：与 web-search 功能冗余，且极少使用。直接删除配置节约启动 token（~600 tokens/turn）（`~/.redcode/redcode.jsonc`、`.opencode/redcode.home.jsonc`）
-- **新增 hot-trends skill**：`看热点` 触发，聚合 GitHub Trending（webfetch 爬取）+ B站排行（agent-reach_search_bilibili）+ 抖音热榜（web-search）。agent-reach 保留用于按需查询（`~/.redcode/skill/hot-trends/SKILL.md`）
-
-### [0.5.7] - 2026-06-14
-
-#### 修复
-
-- **缓存命中率 100% bug**：opencode-go 代理不返回 DeepSeek `promptCacheMissTokens` 元数据，导致 `read / (read + 0)` = 100%。改为 miss/write 均为 0 时，用 `input`（实际输入 token）做分母兜底（context.tsx、prompt/index.tsx、subagent-footer.tsx、session-data.ts、session-context-metrics.ts）
-- **`cache.write` 始终为 0**：DeepSeek 走 `@ai-sdk/openai-compatible` 时 `prompt_cache_miss_tokens` 不会被映射到 AI SDK 字段，`metadata.deepseek.promptCacheMissTokens` 始终 undefined。改为通过 `adjustedInputTokens`（AI SDK 报告的缓存调整前输入）推算 miss token，确保 cache 数据完整性与持久化（`session.ts` `getUsage()`）
-- **TextNodeRenderable 裸 number 渲染崩溃（全面修复）**：OpenTUI `<text>` 只接受 string，多处直接渲染 number 导致致命错误。全面审计 TUI 所有 tsx 文件，共 16 处全部改为模板字符串。涉及：底栏 cacheHitPct/mcp count、侧边栏 messageCount/mcp on/bad、session-v2 numResults/questions count/grep count/matches count、dialog-status MCP/LSP/formatter/plugin count、footer permissions/lsp/mcp length、index reverted/diagnostic/webSearch numResults、subagent-footer index/total、diff-viewer files count（`prompt/index.tsx`、`sidebar/context.tsx`、`sidebar/mcp.tsx`、`session-v2.tsx`、`dialog-status.tsx`、`routes/session/footer.tsx`、`routes/session/index.tsx`、`routes/session/subagent-footer.tsx`、`feature-plugins/home/footer.tsx`、`diff-viewer.tsx`）
-- **FFF MCP 配置缺失**：0.5.6 全局目录整合后，`~/.redcode/redcode.jsonc` 的 MCP 段未包含 fff，TUI 找不到该服务器。补回 `~/.redcode/redcode.jsonc` `mcp.fff` 定义（本地 exe，cwd `$REDCODE_ROOT`，60s timeout）
-- **默认主题被 getCustomThemes 错误覆盖为 opencode**：`init()` 中 `getCustomThemes()` 扫描已不存在的 `~/.config/redcode/themes/` 目录后抛错，catch 将其强制设为 `"opencode"`，覆盖了 store 默认的 `"karina"`。改为 fallback 到 `"karina"`（`theme.tsx` catch handler）
-
-#### 变更
-
-- **侧边栏缓存百分比移至底栏**：侧边栏 `cache X,XXX,XXX (98.5%)` 因 row 宽不足换行，去掉百分比显示，仅保留 token 数字。百分比移到底栏 color-coded 显示（≥80 绿 / ≥50 黄 / ≥20 灰 / <20 红），一眼判断缓存效率（`sidebar/context.tsx`、`prompt/index.tsx`）
-
-### [0.5.6] - 2026-06-13
-
-#### 变更
-
-- **全局目录统一到 `~/.redcode/`**：废弃 XDG 散落的 4 个目录（`~/.config/redcode`、`~/.local/share/redcode`、`~/.local/state/redcode`、`~/.cache/redcode`），全部收归 `~/.redcode/` 下子目录（`data/`=数据库+auth+log、`state/`=会话状态、`cache/`=bin 缓存）。config 直接用 `~/.redcode/` 根目录（已有 redcode.jsonc/souls/skill）。移除 `xdg-basedir` 依赖，不再依赖 XDG 规范。一个目录管所有，private git 统一跟踪（`packages/core/src/global.ts`）
-
-### [0.5.5] - 2026-06-13
-
-#### 修复
-
-- **TUI 侧边栏 Orphan text 崩溃**：`sidebar/context.tsx:136` cacheHit 命中率显示的 `<span>` 裸放在 `<box>` 下，没被 `<text>` 包裹。当 cacheHit 不为 null 时 Ink/SolidJS TUI 抛 Orphan text error 致命崩溃。给 `<span>` 外套 `<text>` 修复。感谢小宋发现并修好 😏
-
-### [0.5.4] - 2026-06-12
-
-#### 修复
-
-- **缓存命中率分母修正（input 不应计入分母）**：0.5.3 引入的全会话聚合缓存率中，分母使用了 `input + read + write`。但 input tokens 是未命中缓存的 fresh 输入，不应算入 cache 有效请求总数。修正为 `read + write`，使缓存命中率与 API 后台显示的数值一致（如 `read=100K, write=50K, input=200K`，之前算得 `28.6%`，修正后 `66.7%`）。涉及 TUI 侧边栏、底栏、子代理 footer 三处（`sidebar/context.tsx`、`prompt/index.tsx`、`subagent-footer.tsx`）+ GUI 指标面板（`session-context-metrics.ts`）+ CLI run data（`session-data.ts`）
-- **插件 `~` 路径扩展**：`isPathPluginSpec` 和 `resolvePathPluginTarget` 支持 `~`/`~/` 开头的文件路径，自动展开为用户的 home 目录（`src/plugin/shared.ts`）
-
-#### 新增
-
-- **侧边栏缓存命中率区间颜色**：`< 50%` 红色（`error`）、`50%~80%` 黄色（`warning`）、`>= 80%` 绿色（`success`），一眼判断缓存效率（`sidebar/context.tsx`）
-- **默认主题改为 Karina**：程序首次启动时自动加载 Karina 主题（深蓝钢色调），而非之前的默认 opencode 主题（`theme.tsx`）
-- **侧边栏 Context 面板全面上色**：provider 用 `secondary`、model 用 `primary`、input/output 分 cyan/green 区分、reasoning 用橙色醒目标识、cache read/write 分色显示、费用用 `primary` 高亮、agent 名用 `accent`。告别全灰扁平，花花绿绿一眼可读（`sidebar/context.tsx`）
-
-### [0.5.3] - 2026-06-12
-
-#### 新增
-
-- **跨会话感知（cross-session awareness）**：新会话启动时自动注入最近 24 小时内的其他会话摘要（标题、persona、统计），让敏敏/小宋互相知道对方做了什么，避免重复修改同一文件。查询共享 SQLite DB，按 `directory` 字段自动识别 TUI（敏敏）vs GUI（小宋）身份。每条格式 `[Xm ago] [小宋/GUI] 标题 (+N/-N, M files)`（`src/session/instruction.ts` `recentSessionDigest()`）
-- **缓存命中率改为全会话聚合**：之前只取最后一条 assistant 消息的缓存率（≈99%），与 DeepSeek/MiMo 后台显示的 ~95% 不符。改为遍历全部 assistant 消息求和 `read/(input+read+write)`，结果与后台一致。影响 TUI 侧边栏、底栏、子代理 footer 三处显示（`sidebar/context.tsx`、`prompt/index.tsx`、`subagent-footer.tsx`）+ GUI 指标面板（`session-context-metrics.ts`）
-- **anti-deferral 规则**：系统提示词（deepseek/mimo/minimax 三档）+ AGENTS.md 红线 + souls 人格文件均加入禁止"先放着/回头处理"规则，杜绝 code agent 询问是否搁置问题的行为。soul 文件同步删除"要不要…还是…"模板，强化"发现问题就修、做不到直说"（`prompt/{deepseek,mimo,minimax}.txt`、`AGENTS.md`、`.opencode/agents/{Gsoul,Tsoul}.md`）
-
-#### 修复
-
-- **跨会话感知 persona 判断逻辑修正**：cc 原始实现 `directory.includes("dist") ? "小宋/GUI" : "敏敏/TUI"` 逻辑反了——TUI 从 `packages/opencode/dist/...` 启动，应标记为敏敏。修正为 `directory.includes("dist") ? "敏敏/TUI" : "小宋/GUI"`（`src/session/instruction.ts`）
-- **跨会话感知时间戳单位不匹配（毫秒/秒）**：`recentSessionDigest()` 两处使用 `Date.now() / 1000`（秒）与 DB 中毫秒级 `time_updated` 比对和计算，导致（1）24h 过滤器对毫秒级 `gte` 永远为 true 形同虚设，（2）`ago` 显示为巨量负数（如 `-29657816216m ago`）。修正为统一使用毫秒：cutoff 加 `* 1000`，`ago` 计算先除 `1000` 再除 `60`（`src/session/instruction.ts`）
-
-#### 配置
-
-- **DCP + token-compressor 共存确认**：验证两插件 hook 层完全不重叠（DCP: `messages.transform`/`system.transform`/compress 工具；TC: `tool.execute.after`），效果叠加无冲突。DCP 管去重/压缩/nudge，TC 管精细规则截断（`redcode.jsonc`）
-
-### [0.5.2] - 2026-06-12
-
-#### 修复
-
-- **token-compressor 插件导致流式中断**：小宋写的 `token-compressor.js` 插件（意图替代 DCP）在 `experimental.chat.messages.transform` hook 中有致命 bug——`lastUserMessageTurn` 永远为 0，导致 `messagesSinceLastUser = turnCount` 无限增长，15 轮后每次请求注入畸形 `{role: "system"}` 消息，API 调用挂起。根因→状态变量从未被更新（`~/.redcode/plugin/token-compressor.js`）
-- **DCP 移除后 compaction 永不触发**：DCP 被注释掉后，引擎 compaction 依赖 `model.limit.context`（现代模型 100 万+），197K token 也不触发压缩。根因→无兜底阈值（`src/session/overflow.ts`）
-
-#### 新增
-
-- **engine compaction.threshold 配置**：config schema 新增 `compaction.threshold` 字段（NonNegativeInt），当 token 总量超过该值时强制触发 compaction，不依赖模型声明的 context limit。设为 150K，作为 DCP 之外的引擎级兜底（`src/config/config.ts` + `src/session/overflow.ts`）
-- **token-compressor 插件重写（基于 TokenJuice）**：完全重写为仅用 `tool.execute.after` hook 的安全插件，不碰消息管道。移植 openhuman/TokenJuice 的 14 条规则（git/cargo/tsc/npm/bun/docker/find/ls/grep + 通用兜底），支持 skip/keep/head/tail/failHead/failTail/counters/onEmpty。pass-through 安全：<512 字节不压、压缩率 >95% 不替换（`~/.redcode/plugin/token-compressor.js`）
-
-#### 配置
-
-- **DCP 插件恢复**：`@tarquinen/opencode-dcp` 重新启用（v3.1.12），与 token-compressor 分工——DCP 管去重/compress 工具/nudge（`messages.transform` 层），token-compressor 管精细规则截断（`tool.execute.after` 层），两者不同 hook 层互不冲突（`redcode.jsonc`）
-
-### [0.5.1] - 2026-06-12
-
-#### 修复
-
-- **ast-grep native binding 启动崩溃**：`import("@ast-grep/napi")` 在 Tool.init 阶段立即执行，bun compile 后的单文件二进制找不到 native module → 服务端 fatal crash（TUI 闪退 / GUI sidecar 500）。改为 lazy load：init 时只创建 getter，首次调用 ast_grep 工具时才 import，单例缓存后续复用（`src/tool/ast_grep.ts`）
-- **plugin undefined hook → provider 500**：`snip.js` 导出裸函数 `toolExecuteBefore`（不是 Plugin factory），被 `getLegacyPlugins` 当 factory 调用后返回 undefined，push 进 hooks 数组。后续 `provider.ts` / `plugin/index.ts` 遍历 hooks 时在 undefined 上访问 `.provider` / `.auth` / `.config` 属性直接 TypeError 500。修法→`applyPlugin()` 对 `server()` / legacy factory 返回值做 null guard，undefined 不入 hooks（`src/plugin/index.ts`）
-- **provider 遍历 null guard**：`provider.ts:1258` 的 `for (const hook of plugins)` 增加 `if (!hook) continue` 防御，即使 hooks 数组混入 undefined 也不崩（`src/provider/provider.ts`）
-
-#### 配置
-
-- **移除不存在的 npm plugin 声明**：`redcode.home.jsonc` 中 `"plugin": ["@tarquinen/opencode-dcp", "opencode-snip"]` 两个包未安装到 node_modules，plugin loader 加载失败后产生空 hook 触发上述 provider crash。注释掉声明（`.opencode/redcode.home.jsonc`）
-- **compaction 参数适配 100 万 token 窗口**：`preserve_recent_tokens` 从 2K-8K 调至 64K，`reserved` 从 20K 调至 50K，`tail_turns` 从 2 调至 3。减少频繁压缩，长对话体验更流畅（`~/.redcode/redcode.jsonc`）
+### [0.5.1] - 2026-06-10
 
 #### 改进
 
-- **编辑后自动验证（auto-validate skill）**：借鉴 RedsWhale 的 LSP post-edit 钩子，新建 `auto-validate` skill——每次 edit 源代码文件后立即触发 typecheck/test，形成紧密反馈循环，不用等到任务结束。AGENTS.md 工作方式章节同步更新（`~/.redcode/skill/auto-validate/SKILL.md` + `AGENTS.md`）
+- **Edit 工具模糊搜索反馈**：`oldString` 精确匹配失败时，自动用 Levenshtein 滑动窗口搜索最接近的匹配块，返回相似度百分比、匹配文本、行号和字符级 diff，帮助 LLM 快速定位并修正 oldString（`packages/opencode/src/tool/edit.ts` 新增 `fuzzyFindBestMatch` / `similarityRatio` / `charDiff`，`edit.txt` 提示词同步更新）
 
-### [0.5.0] - 2026-06-11
+### [0.5.0] - 2026-06-10
 
 #### 新增
 
-- **`git` 工具**：新增内置 git 工具，封装 Git.Service 为 LLM 可用的结构化 git 操作——支持 `status`（工作树状态）、`diff`（差异对比）、`log`（提交历史）、`show`（历史文件内容）、`branch`（分支信息）、`stash_list`（暂存列表）。返回格式化输出，比 shell 执行 git 更易解析（`src/tool/git.ts` + `git.txt`）
-- **`env` 工具**：新增内置 env 工具，提供环境信息检索——支持 `platform`（OS/版本/架构）、`paths`（关键路径）、`memory`（内存/磁盘）、`cpu`（内核/型号），以及按名称查询特定环境变量。用于调试环境问题、确认工具可用性、检查系统配置（`src/tool/env.ts` + `env.txt`）
-- **工具 descriptions 升级为"pushy"风格**：为 `ast_grep`、`webfetch`、`skill` 等工具增加更明确的使用时机指引（OMP 风格），告诉模型"什么时候用这个、什么时候用别的"，减少错误触发
+- **全界面毛玻璃质感**：原仅作用于聊天气泡/输入框的毛玻璃（背景图局限在聊天面板），升级为整窗磨砂。背景图从聊天面板（`session.tsx`）上移到根布局（`layout.tsx`）整窗铺底，根 `<div>` 按当前视图背景图打 `data-app-frost` 标记；标题栏（`titlebar.tsx` header）与主卡片（`layout.tsx` main）加 `data-frost-surface` 改半透明材质 + `backdrop-filter: blur(18px)` 透出并模糊整窗壁纸；内部各栏（文件栏 `#file-tree-panel`、审查栏 `#review-panel`、聊天栏）去实色底，统一显露主卡片这层磨砂材质，形成全界面一致的磨砂玻璃观感。标题栏/主卡片加 `relative z-[1]` 压在背景图（`absolute z-0`）之上。未设背景图时 `data-app-frost` 不触发，维持原实色界面（`index.css` 新增 `[data-app-frost]` 规则，不入 @layer 以越过 Tailwind utilities 覆盖 `bg-*`）
+- **主界面/聊天背景图分离**：新增独立的「主界面背景图」设置（`settings.appearance.homeBackground`），与聊天背景图分开管理，设置页（`settings-general.tsx`）并排放「Home Background / Chat Background」两个上传项。整窗背景按视图分流（`layout.tsx` 的 `appBackground()`）：进会话（`params.id`）用聊天背景图，首页/无会话用主界面背景图——解决主界面满屏壁纸在公司场景尴尬的问题，可单独把主界面背景留空或换中性图
+- **修复·会话页毛玻璃失效**：会话页根容器（`session.tsx`）原写死 `bg-background-base` 实色，盖住主卡片磨砂层，进会话后毛玻璃消失；改为设了聊天背景图时去实色底（`classList` 条件化），露出整窗壁纸；同步把审查栏标签条 `bg-background-stronger` 也纳入去底清单
+- **状态弹层下沉为审查面板标签页（方案 A）**：标题栏服务器/MCP/LSP/插件状态弹层移入右侧审查面板，变成常驻「状态」标签页。标题栏保留健康圆点作指示器，点击直接打开右侧面板的状态标签（`titlebar.tsx` 的 `openStatusTab` 经 `useLayout()` + sessionKey 打开并激活 `status` 标签）；首页/无会话时回退为原弹层（`status-popover.tsx` 用响应式 `<Show>` 在按钮态/弹层态间切换）。`StatusPopoverBody` 抽出 `fill` 入参以适配面板宽度（去弹层专用阴影/圆角）；`status` 标签在 `helpers.ts` 排除于文件标签之外、`activeTab` memo 特判常驻；新增 i18n `session.tab.status`（状态/Status/狀態）
 
-#### 变更
+#### 布局调整
 
-- **Tree-sitter 解析器新增 PowerShell 支持**：`tree-sitter-powershell` 已加入依赖，shell 工具可正确解析 PowerShell 命令的路径参数
-
-#### 修复
-
-- **缓存命中率二次修正**：0.4.15 的修法有误——DeepSeek API 只有"命中/未命中"两档，未命中 token 由 AI SDK 放入 `tokens.input`（调整后非缓存输入），`cache.write` 对 DeepSeek 始终为 0，导致改后公式 `read/(read+0)` 仍约等于 100%。正确公式为 `read/(input+read+write)`，分母恒等于全部 prompt token（命中+未命中），无论未命中 token 落在哪个桶均成立。结果现与 DeepSeek 开放平台显示一致（如 95.8%），而非永远 99-100%（`sidebar/context.tsx`、`prompt/index.tsx`、`subagent-footer.tsx`、`session-data.ts`）
+- **毛玻璃满贴标题栏（去"镶嵌感"）**：设了背景图时主卡片（`layout.tsx` main）去掉 `m-2`/圆角/阴影外框，磨砂层满贴标题栏边到边，不再像「在主界面里镶嵌进去的一块玻璃」；未设背景图时维持原卡片样式
+- **会话页亮暗互换（两侧暗、中间亮）**：原文件栏/审查栏全透显得过亮、聊天区 `0.62` 暗罩显得过暗，层次割裂。改为文件栏 `#file-tree-panel`、审查栏 `#review-panel` 走更深的磨砂底（`bg-deep 72%` + `blur(18px)`）当暗色外壳——审查栏因此也有了可见的磨砂变化（不再「没变化」）；聊天区暗罩从 `rgba(0,0,0,0.62)` 降到 `0.3`（`session.tsx`），成为更亮的焦点区（`index.css` `[data-app-frost]` 规则、`session.tsx` 遮罩）
+- **首页项目栏分割线**：首页项目栏 `<aside>`（`home.tsx`）加 `lg:border-r`，与右侧会话列表区之间划出竖向分割线，视觉层次更清晰
 
 ### [0.4.16] - 2026-06-11
 
@@ -3761,339 +3764,297 @@
 
 - **`.gitattributes` 钉死行尾**：统一 LF/CRLF 规则 + 一次性归一，避免跨机器行尾漂移
 
-### [0.4.7] - 2026-06-08
-
-#### 改进
-
-- **消息前缀动态化**：用户消息和助手消息的前缀从硬编码改为从配置文件读取
-  - 用户名：从 `~/.redcode/USER.md` 的 `称呼：` 字段读取，默认 `User`
-  - Agent 名：从 `~/.redcode/souls/Tsoul.md` 的第一行标题读取，默认 `Assistant`
-  - Agent 配置新增 `displayName` 字段，支持自定义显示名
-- **工具图标升级**：替换朴素 ASCII 图标为更有辨识度的 Unicode 符号
-  - Shell: `$` → `⌘`
-  - Write/Edit: `←` → ``
-  - Read/Question/Skill: `→` → `◉`
-  - Glob/Grep: `✱` → ``
-  - WebFetch/ApplyPatch: `%` → `⊡`
-  - Task: `│` → `⬡`
-  - WebSearch: `◈` → `◎`
-- **消息分隔线**：长对话中消息之间添加 `· · ·` 分隔，提升可读性
-
-### [0.4.6] - 2026-06-07
+### [0.4.7] - 2026-06-10
 
 #### 新增
 
-#### 文档
+- **包含服务端更新**：随 sidecar 吃到 TUI 0.4.10 的服务端能力——`task` 工具 `isolation:"worktree"` 子代理隔离（子代理在独立 git worktree 中运行，文件改动不触碰父工作区）+ worktree 分支前缀品牌归一 `opencode/`→`redcode/`。GUI 侧无界面改动，重新 build+package 后 sidecar 即生效
 
-- **MANUAL.md 大幅更新**：MCP 章节从 4+2 个服务器升级为 4 类表格化呈现
+### [0.4.6] - 2026-06-09
 
-### [0.4.5] - 2026-06-07
+#### 修复
 
-#### 新增
+- **对话页右上角 MCP 状态恒"未配置 MCPs"（根治·读取端）**：TUI 同引擎同配置可见 9 个 MCP 全连，GUI 对话页却永远"未配置"。病根在 `@tanstack/solid-query` 的 `useQueries` 批量 observer——其中一条 query 的 `enabled` 在运行时 `false→true` 翻转时，既不自动 fetch（observer 卡在 `status=pending, fetchStatus=idle`），也不把外部 `fetchQuery` 灌入的缓存暴露给 SolidJS store 的 getter，导致 `sync.data.mcp` 恒读成 `{}`。先前在 `server-sync.tsx` 加 `queryClient.fetchQuery` 主动预热缓存只修了触发端，读取端仍被同一 bug 卡住。**根治**：把 MCP 这条从 `useQueries` 批量里单拎出来成独立 `useQuery`，独立 observer 的 reactive `enabled` 翻转能正确触发并反应缓存；仍只连"当前进入的项目"，首页其它项目不连，N×M spawn 风暴防护不变（`child-store.ts` 拆 `useQuery`、`server-sync.tsx` 缓存预热 effect 保留兜底、`titlebar.tsx`/`session.tsx` 用 `routeDir`/`decodeDirectory` 把 statusDir 与 activeMcpDir 对齐到同一项目 store）
+- **MCP 子进程泄漏致渲染进程 OOM 白屏（第一段·杀树机制）**：sidecar spawn 的 MCP 孙进程不在任何 job 里，sidecar 一旦被掐死就成孤儿，堆积打满 Windows commit charge（如 38.8/40.8GB）→ 渲染进程报 `oom`（exitCode -536870904）间歇白屏。引擎侧 `mcp/index.ts` 的 `killProcessTree`（`taskkill /F /T`）本身没错，但三条路径让它没机会跑：① dev 热重启（electron-vite 掐主进程，`before-quit`/`will-quit` 不触发、优雅 stop 来不及）② stop 超时回退 `child.kill()` 只杀 sidecar 不级联 ③ sidecar `process.exit(1)` 崩溃 finalizer 不跑。**主进程兜底按 sidecar PID 杀整树**：`server.ts` 导出 `killSidecarTree`/`killSidecarTreeSync`（Windows `taskkill /F /T /PID`，趁 sidecar 还活着才杀得动孙进程），stop 超时回退与启动失败回退改杀整树；`index.ts` 记 `sidecarPid` 并装 `process.on('exit'/'SIGINT'/'SIGTERM')` 同步兜底（覆盖 dev 热重启——electron-vite 发的是 SIGTERM/SIGINT 能捕获）。覆盖 dev 重启/退出/超时/崩溃全路径，纯 SIGKILL 除外（需 Windows Job Object，未引原生依赖）。**注**：此段只解决“何时、对谁发杀树指令”，实测仅杀得动 `["node",…]` 直起的 MCP（browsermcp/web-search）；`npx` 包装的仍漏，见下段
+- **MCP 子进程泄漏（第二段·npx 包装脱离·实测确认并修）**：实测开关一轮 GUI 后，直起 node 的 MCP 全清，`npx tsx`/`npx -y @…` 的留 11 个孤儿（node+tsserver）。根因 = Windows 上 cross-spawn 给 npx 套 `cmd /c` shim，shim 启完真 node 立即退出 → 真正的 node 子树**脱离** `client.transport.pid`（PPID 指向已死的 wrapper），既不在 sidecar 进程树内、也不被按 transport.pid 的 `taskkill /T` 命中。**修法 = MCP 命令改 node 直起插件本地 tsx**：typegraph 由 `["npx","tsx","./plugins/typegraph-mcp/server.ts"]` 改为 `["node","./plugins/typegraph-mcp/node_modules/tsx/dist/cli.mjs","./plugins/typegraph-mcp/server.ts"]`，transport.pid 落在活的、sidecar 直属的 node 上，`taskkill /F /T` 贯穿整树（node cli.mjs → node tsx server.ts → tsserver.js）。`.opencode/redcode.home.jsonc` + `~/.redcode/redcode.jsonc` 两处同改。**实测验证**：启动→连接→优雅关闭，node 24→0，零孤儿
+- **typegraph-mcp 精简 14→3 工具 + 删 codegraph（服务端配置/插件）**：jcodemunch 已覆盖导航与图查询（references/cycles/coupling/blast-radius），typegraph 唯一不可替代的是 tsserver 类型精度，故只保留 `ts_definition`/`ts_type_info`/`ts_module_exports`，移除其余 11 工具 + oxc 图子系统（`server.ts` 删 `buildGraph`/`startWatcher`/`graph-queries` 引用，改 `createResolver`-only + 极简 `fs.watch` 调 `reloadOpenFile`/`closeFile` 保 tsserver 新鲜）。codegraph（早被 jcodemunch 完全覆盖、此前误留 `enabled:true` 仍在 spawn 泄漏）整块删除。两处配置同改，typecheck 通过
 
-- **Agent Reach — 统一搜索 MCP**：新增 `plugins/agent-reach-mcp/`，内置 6 个搜索工具覆盖 3 大平台
-  - `search_github` / `get_github_repo` — 搜仓库、搜 Issue、看详情（通过 `gh` CLI）
-  - `search_bilibili` / `get_bilibili_video` — 搜 B站视频、提取字幕（B站 API + yt-dlp）
-  - `get_douyin_video` — 解析抖音视频信息（通过 yt-dlp Douyin extractor）
-  - `doctor` — 一条命令检查各工具可用性
-- **Exa 语义搜索 MCP**：接入 Exa AI 语义搜索引擎（`type: "remote"`，`https://mcp.exa.ai/mcp`），免费 1000 次/月，覆盖 web search + web fetch
-- **MCP disabledTools 配置**：`ConfigMCP.Local` 新增 `disabledTools` 字段，可在配置层面屏蔽指定 MCP 服务器的多余工具，无需改 RedCode 源码
-  - 应用于 codegraph：隐藏 7 个被 jCodeMunch 替代的冗余工具，仅暴露 `codegraph_explore`
-- **Supermmemory 本地记忆插件**：`plugins/mcp-su-prememory-local/` — 纯本地 SQLite+FTS5 语义记忆 MCP，三种工具（`memory` 记/忘、`recall` 搜、`stats` 统计），数据存 `~/.redcode/supermemory.db`
-- **Diagnose 技能**：`.opencode/skill/diagnose/SKILL.md` — 结构化 bug 诊断工作流（重现 → 缩小范围 → 定位根因 → 修复 → 验证），适配自 @mattpocock/skills
+#### 布局调整
 
-#### 安装/配置
+- **聊天背景遮罩加深 0.4→0.62**：实测 `rgba(0,0,0,0.4)` 仍偏亮压不住文字，加深半透明遮罩保证对话可读（`session.tsx`）
 
-- **Agent Reach 依赖安装**（各平台首次使用前需执行）：
-  - B站/抖音：`uv tool install yt-dlp`（视频信息提取）
-  - GitHub：`gh` CLI 预装，`gh auth login` 后可用
-
-### [0.4.4] - 2026-06-07
+### [0.4.5] - 2026-06-08
 
 #### 新增
 
-- **MCP 全局配置化**：`ConfigMCP.Local` 新增 `cwd` 字段（支持 `~/` 和 `$REDCODE_ROOT` 占位符展开）；`mcp/index.ts` 新增 `findRedcodeRoot()` 从 exe 路径自动定位 RedCode 安装根目录；6 个 MCP 服务器定义从项目级配置（`opencode.jsonc` / `redcode.jsonc`）移至全局 `~/.redcode/redcode.jsonc`。现在在任何项目目录启动 RedCode 均可自动加载 MCP 工具，不依赖项目 `.opencode/` 目录
-- **Session 全局 scope**：`Session.list()` 支持 `scope: "global"` 列出所有项目的会话（不限于当前项目）；HTTP API (`GET /session?scope=global`) 及 SDK 类型同步更新；会话目录过滤默认关闭（`session_directory_filter_enabled` 默认值 `true` → `false`），新用户开箱即见跨项目会话列表
-- **技能指令全局化**：6 个共享技能指令从项目配置（`opencode.jsonc` / `redcode.jsonc`）移至全局 `~/.redcode/redcode.jsonc`，使用 `~/.redcode/skill/...` 路径，跨项目目录自动加载。之前仅在 RedCode 项目内可用的技能（memory-automation、guardrail-profiles、defensive-agent、goal-automation、simplify、vision-autoagent）现在任意项目目录均生效。同时也补上了之前漏掉的 `simplify` 技能注入
+- **微信风聊天背景图**：设置页「外观」新增「Chat Background」行，可上传图片（PNG/JPEG/WebP/GIF）作为聊天窗口背景，全局生效、所有会话共用。复用头像的 `FileReader`→dataURL→持久化设置模式，存入 `settings.v3` 的 `appearance.chatBackground`。渲染层在 `session.tsx` 聊天面板容器内加一层 `absolute inset-0 z-0` 背景层（`bg-cover bg-center`），消息内容 `z-[1]` 自然浮于其上；消息气泡保留自身底色，背景图在气泡间隙透出，呈微信聊天背景效果（`context/settings.tsx` 增字段+getter/setter、`settings-general.tsx` 上传 UI、`session.tsx` 背景层、`MessageTimeline` 滚动容器本就透明无需改）
 
-#### 改进
+#### 修复
 
-- **记忆自动化规则强化**：扩展 SKILL.md 中的硬触发器（批评/夸奖/个人信息/项目决策 → 自动记日志），提升自动提取的可靠性
+- **仓鼠加载动画浅色主题被洗白**：`message-timeline.tsx` 的 `TimelineThinkingRow` 原用 `mix-blend-mode: screen` + 深色盒衬底显示仓鼠 PNG，在浅色/护眼配色下 screen 混合把图洗成近乎全白不可见。`hamster.png` 本就是透明底 RGBA（colortype 6），深色盒与混合模式纯属多余。改法：去掉外层深色盒与 `mix-blend-mode`，透明 PNG 直接平铺，任意主题下均正常显示（`message-timeline.tsx:159`）
+
+#### 清理
+
+- **删除 V2 三栏重构遗留的 V1 侧边栏死代码**：`04a5a1045`（6 月 2 日）将布局从 V1 单栏 rail-sidebar 重构为 V2「文件树｜聊天｜审查」三栏后，丢弃了 V1 侧边栏渲染但留下大量从不挂载的脚手架。本次彻底清理：删除 5 个孤儿文件（`layout/sidebar-{shell,project,workspace,items}.tsx` + `layout/inline-editor.tsx`）；`layout.tsx` 移除级联死代码约 886 行（`SidebarPanel`、workspace/project 两个 context、项目 rail 拖拽 handler、`rename{Session,Project,Workspace}`、`removeProject`、`showEditProjectDialog`、`delete|resetWorkspace`、`DialogDelete|ResetWorkspace`、`closeProject`、`workspaceName`、`workspaceLabel`、`hoverProjectData`、peek 悬停机制、`providers`/`location`/`isBusy`/`sortNow`/`side`/`panel` 等未用声明）。合计净删约 2300 行。`layout.tsx` 内 `return` 前加 `260608` 回滚注释，列明全部删除项，便于按提交回退。typecheck 全绿、`oxlint` 无未用变量
+- **公开库个人痕迹清理（续）**：配合「公开库通用化、个人配置迁私有库」的双仓方向，扫掉 `.opencode/skill/diagnose` 与 `vision-autoagent` 两个技能提示词里残留的「哥哥」→「用户」（沿用 souls/persona 早先通用化的同款先例）。公开库现状：souls 为通用人格（非特定人设）、memory 为空、skill/command 无个人称呼——新人克隆即得干净可用的完整项目，零个人痕迹；个人 souls、记忆、画像、每日日记统归私有 `RedCode-private` 仓，两台机器经其 `pull/push` 同步。CHANGELOG 历史条目内出现的旧称呼按「客观记录」原则保留不改
+
+### [0.4.4] - 2026-06-06
+
+#### 新增
+
+- **错误兜底 P1 — Retry UI**：提交消息失败时，composer 底部显示错误横幅（包含可读错误信息 + Retry 按钮 + 关闭按钮）。用户编辑输入或发送成功时自动清除。`restoreInput()` 已在 0.4.2 确保输入文本保留，此版在保留基础上增加可视化反馈和重试入口（`prompt-input/submit.ts` + `prompt-input.tsx`）
+- **Session 标签状态指示器**：标题栏会话标签页新增状态指示点——`busy` 时显示黄色脉冲点、`retry` 时显示红色点。通过 `sync.data.session_status` 驱动，实时的会话运行状态一目了然（`titlebar.tsx`）
 
 ### [0.4.3] - 2026-06-06
 
 #### 新增
 
-- **条件技能（paths frontmatter）**：SKILL.md 支持 `paths` 字段声明 glob 模式（如 `"src/**/*.py"`）。设定了路径的技能只在当前项目目录匹配时才注入系统上下文，避免无关技能膨胀 prompt。`Skill.available()` 新增 `directory` 参数，`forDirectory()` 内部使用 `Glob.scan` 做路径匹配
-- **search_tools 工具**：新增 `/search_tools` 工具，允许 LLM 按名称或描述搜索可用工具。端口自 claude-code 的 SearchExtraToolsTool 模式。所有内建/MCP/插件工具均可搜索
-- **buildTool 简化工场**：`Tool.build()` 工厂函数，为零服务依赖的简单工具提供更简洁的创建方式，安全默认值，支持 3 行创建一个工具
+- **三款新配色方案**：护眼绿（Eye Green）、米黄（Cream）、深蓝（Deep Blue）三种全新配色方案，与主题完全独立。原 ColorScheme 类型从 `"light" | "dark" | "system"` 扩展为 6 种，`data-color-scheme` 属性驱动 CSS 变量覆盖。亮色变体（cream/green）复用 light 主题变体，深色变体（deepblue）复用 dark 主题变体，各配色独立覆盖背景/文字/图标色值。**v2 主题系统（composer / 新组件）+ 老主题系统（文件树/聊天/审查面板）双套令牌均覆盖**——后者在 `packages/ui/src/styles/theme.css` 内增加对应 `[data-color-scheme="..."]` 块，盖过 OS 自动 dark 切换，避免主面板仍是白底。设置页「外观→配色方案」下拉菜单可选用。涉及 5 个核心文件（`context.tsx` 类型 + resolveMode / 两份 `theme.css` 色值 / `theme-constants.ts` / `settings-general.tsx` 选项 / i18n 中文英文繁体翻译）
 
-#### 重构
+#### 优化
 
-- **Shell cancel race 修复**：从 upstream 移植 `run-state.ts` `cancel()` 中缺失的 `busy` 检查，避免 shell 取消时的竞态条件
-
-#### 技术债
-
-- **Effect v4 类型适配**：`Tool.build()` 需要 `as Effect.Effect<DefWithoutID>` 断言以保持泛型参数推断；搜索工具使用 `InstanceState.get(state)` 而非 `ToolRegistry.Service` 避免层内循环依赖
-
----
+- **ResizeHandle 可见化**：拖拽分割条新增 `background: var(--border-weaker-base)`，hover 时不再透明不可见（`resize-handle.css`）
+- **标题栏底部视觉分隔**：标题栏新增 `border-b border-border-weaker-base`，与内容区建立层次（`titlebar.tsx`）
+- **消息轮次淡入动画**：`@keyframes turn-fade-in` 动画让每条消息从 `opacity: 0 translateY(4px)` 淡入（`session-turn.css`）
 
 ### [0.4.2] - 2026-06-06
 
 #### 修复
 
-- **"请选择智能体和模型"误弹 toast 根治（第 6 次复发）**：`bootstrap.ts` 新增 `agent_ready` 信号 + 5s 超时兜底；`local.tsx` 统一就绪 gate 收敛三路异步信号；`submit.ts` 轮询等最多 5s 而非静默丢提交；`use-providers.ts` `ready()` 不要求 `connected.length > 0`
-
-#### 功能
-
-- **Vision AutoAgent 技能**：DeepSeek 不支持多模态时自动调用 vision MCP (`qwen3-vl:8b`) 分析用户发送的图片，前端只回"分析中..."，不报错、不多耗 token。新建 `.opencode/skill/vision-autoagent/SKILL.md`，`redcode.jsonc` 统一注册所有 skill 至 `instructions` 段
-
-#### 重构
-
-- **双仓分离 — 隐私重构**：灵魂文件 (Tsoul.md/Gsoul.md)、工作记忆 (MEMORY.md)、每日日志 (memory/)、个人命令 (Karina.md/son.md) 全部从仓库移出。仓库仅保留通用模板，实际数据存 `~/.redcode/`。修改涉及：
-  - `.opencode/agents/` → 空白模板，不再含个人人格
-  - `.opencode/MEMORY.md` → 格式模板，清空个人内容
-  - `.opencode/command/` → 重命名为 tui-persona/gui-persona，路径指向 `~/.redcode/souls/`
-  - `AGENTS.md` / `README.md` / packages `AGENTS.md` → 抹掉所有个人身份名
-  - `CHANGELOG.md` / 配置文件 → 清除 `D:\AI\`、`D:\AI\KLX\` 等硬编码路径
-  - `script/sync-home.bat` → 停止同步个人文件，只同步 skill/插件
-  - `skill/memory-automation` / `*` → `哥哥` → `用户`，路径改为 `~/.redcode/`
-  - 全身搜索已确认无个人名/路径/称呼残留
-
-#### 新增
-
-- **启动时自动播种 `~/.redcode/`**：`InstanceBootstrap.run` 中新增 `ensureDir` + 模板复制逻辑。首次启动自动创建 `~/.redcode/{memory,souls}/`，从 `.opencode/agents/` 复制 Tsoul.md/Gsoul.md/USER.template.md/MEMORY.md，已存在的文件不被覆盖。TUI、GUI sidecar、打包 exe 均走同一路径
-
-#### 文档
-
-- **README 精简 + MANUAL.md 用户手册**：README 仅保留核心介绍和快速开始链接；MANUAL.md 从新人视角编写 420 行完整操作指南，覆盖模型配置、MCP 安装、人格系统、记忆系统、权限控制、Skill 扩展、多机同步
+- **bootstrapDirectory 未执行导致输入框卡死（#3）**：`child-store.ts` 的 `status` 硬编码 `"complete"`，`child()` 中 `status === "loading"` 的 bootstrap 触发条件永不为真；`"server.connected"` 事件路径可能在 GUI 启动时跳过（空 `children` 或 `recent` 守卫）。`agent_ready` 永远 `false` → 统一就绪 gate 卡死 → 输入框无法发送。修复：在 `ensureChild()` 新建 child store 后直接调用 `onBootstrap(directory)`，不依赖事件或 status 检查（`child-store.ts:274-277`）
+- **"请选择智能体和模型" 误弹 toast（第 6 次复发 · 根治）**：彻底定位结构性病根并收敛。submit 依赖 providers / models / **agent** 三个异步信号，但 agent 列表由 `bootstrap.ts` 的 **slow 批次** fire-and-forget 填充、**从无就绪标志**（不像 provider 有 `provider_ready`），导致 `agent: []` 空窗期内 `agent.current()` 兜底失败返回 null → 弹 toast。历次修复（0.3.16 加 submit ready、0.3.17 加 child-store fallback、0.4.1 改 `||→&&`）都只补当时暴露的那条腿，agent 这条从未被挡，故每逢单数版本改 render 路径（扰动 SolidJS 挂载时序、放大 race window）必复发。**根治三步**：① `types.ts`/`child-store.ts` 新增 `agent_ready` 字段，`bootstrap.ts` 在 agent 加载完成的 `.then` 里置真；② `local.tsx` 新增统一就绪 gate `ready() = providers.ready() && model.ready() && sync.data.agent_ready`，三信号收敛到一处，将来新增异步依赖只在此补条件、不再散落漏挡；③ `submit.ts` 改用 `local.ready()`，加载中静默返回（该 toast 历次误弹的唯一根因），仅当 gate 通过仍为 null（真·无 provider 配置）才提示。删除 submit 中已无用的 `useProviders` 依赖
 
 ### [0.4.1] - 2026-06-05
 
+#### 新增
+
+- **用户/助手头像系统**：`settings.tsx` 新增 `userProfile` + `assistantProfile` 字段（各含 `avatar` + `displayName`），支持 base64 图片上传。用户消息气泡旁显示自定义头像（`message-part.tsx`），助手消息显示可配置头像（`message-timeline.tsx`）。`avatar.tsx` 新增 `medium` 尺寸（2.5rem），聊天头像统一使用
+- **用户消息气泡美化**：气泡内边距 8px → 10px 上下/14px 左右，圆角 6px → 10px 10px 4px 10px（右下角更锐），新增 `body-row` 弹性容器 avatar 与内容并排（`message-part.css`）
+- **设置页用户资料 + 助手头像区**：`settings-general.tsx` `ProfileSection` 包含显示名输入框、用户头像上传/预览/移除；新增 `Assistant Avatar` 区，支持助手头像独立上传
+- **web-search Google 兜底**：DuckDuckGo + Yahoo 后新增 Google 搜索 fallback，系统代理自动补 `http://` 前缀
+
 #### 修复
 
-- **web-search MCP 系统代理探测**：`search-server/index.ts` 的 `fetchHtml` 之前直接调 PowerShell `Invoke-WebRequest` 不传 `-Proxy`，系统代理关了就直连超时；新增 `getSystemProxy()` 读注册表 `Internet Settings` 的 `ProxyEnable`/`ProxyServer`，代理开启时提取地址显式传给 `-Proxy` 参数，启动时探测一次缓存（`.opencode/search-server/index.ts:25-56`）
-- **Compaction 静默化**：之前压缩摘要的完整文本会渲染进对话滚动区，干扰阅读；过滤掉 `mode === "compaction"` 的 assistant 消息，三处同步修改（`pending` memo / `lastAssistant` memo / render Match 条件），标题栏 `—— Compaction ——` 保持不变（`routes/session/index.tsx:204,208,1213`）
+- **"请选择智能体和模型" 误弹 toast**（第 5 次复发）：`providers.ready()` 用 `||` 判断 `all.size > 0 || connected.length > 0`，数据加载初期 `all` 先到即返回 true，但 `connected` 还空时 `defaultModel()` 返回 null，导致 submit guard 误判并弹 toast。改为 `&&`，要求 `all` 和 `connected` 都加载完才算 ready。**规律**：单数版本（0.3.16→0.3.17→0.4.1）每次改 `submit.ts` / `message-timeline.tsx` 等渲染路径时触发，修改渲染/消息组件后必须走完整数据流验证（`use-providers.ts:36`）
+- **思考中仓鼠浅色模式黑标**：`/hamster.png` 透明 PNG 在浅色主题下黑色锯齿边缘可见。包裹 `background: var(--surface-base)` 容器 + `mix-blend-mode: screen` 消除黑色边缘（`message-timeline.tsx:171-178`）
 
 #### 优化
 
-- **doom_loop 循环检测扩展**：原判定仅覆盖「同一工具连续 3 次」；新增 `CYCLE_WINDOW = 6` 窗口，检测 A→B→A→B（周期 2）和 A→B→C→A→B→C（周期 3）交替模式，解决 MiMo 等模型在 agentic 任务中反复横跳却绕过阈值的问题（`session/processor.ts:427-458`）
+- **`session.tsx` 拆分**：1667 行 `Page()` 函数抽出 4 个独立模块——`session-history-loader.ts`（历史加载）、`session-review-diff.ts`（Review diff 滚动）、`session-message-nav.ts`（消息导航/光标）、`session-keyboard.ts`（键盘快捷键）。主文件 1623 行，各模块面向入参不耦合闭包
+- **avatar 组件新增 medium 尺寸**：2.5rem（40px），聊天头像专用，小号 2 倍
 
 ### [0.4.0] - 2026-06-04
 
 #### 新增
 
-- **ECC 启发三件套**：借鉴 ECC（Everything Claude Code）的设计理念，新增三个共享 skill：
-  - **`memory-automation`** — 自动化记忆环：SessionStart 自动注入最近 3 天日志教训、PreCompact 保存状态到 `.session-last.json`、Stop 时自动提取教训更新长期库（`.opencode/skill/memory-automation/SKILL.md`）
-  - **`guardrail-profiles`** — 三档控制：`ECC_PROFILE=minimal|standard|strict` 环境变量切换，不改配置文件；minimal 少确认快干活、strict 每步都问（`.opencode/skill/guardrail-profiles/SKILL.md`）
-  - **`defensive-agent`** — Agent 防御性设计：11 种 FP 不报、4/4 confidence gate、首次编辑不熟文件强制调查引用和依赖（`.opencode/skill/defensive-agent/SKILL.md`）
-- **ecc-shell-stub v2**：注入 `ECC_PROFILE`/`ECC_MEMORY_RECENT`/`ECC_MEMORY_LONG` 到 `shell.env`，`permission.ask` 按 profile 区分放行策略
-- **Tsoul 人格内化防御模式**：新增"防御模式""怎么改不熟的文件""Guardrail 怎么跑"小节
-- **HOOKS.md**：定义 RedCode 的生命周期约定（SessionStart/PreCompact/Stop），plugin 自动 + agent 手动分工
+- **目标自动化（goal-automation）**：本版本立项，TUI/GUI 两端共享
+  - **`/goal` 斜杠命令**（`.opencode/command/goal.md`，`sync-home.bat` 同步到 `~/.redcode/command/`）：用户在 TUI 或 GUI 里 `/goal <text>` 钉住当前会话目标，agent 围着目标转、不会跑题；`/goal clear` 清掉、`/goal done` 标完成。命令 YAML `model: kimi-k2.5` 轻量模型执行
+  - **`goal-automation` skill**（`.opencode/skill/goal-automation/SKILL.md`）：agent 看到大任务时主动建议一次，**不自动钉**——主动权在用户手上。触发条件（3+ 轮、跨多文件、含修/实现/重构等词、出现 done 标志，三选二即建议），不刷屏、不在 flow 时打断
+  - **`opencode.jsonc` 挂载**：instructions 数组新增 `./.opencode/skill/goal-automation/SKILL.md`，TUI/GUI 两端自动加载
+  - **GUI 人格内化**：Gsoul.md 加协作模式段，承认 /goal /deepwork + goal-automation，主动权归用户
+- **GUI 承认 ECC 启发三件套**：Gsoul.md 加"ECC 启发三件套"段——`memory-automation` / `guardrail-profiles` / `defensive-agent` 走自动挂载机制，GUI 同享，不需额外配置
 
-- **DCP 插件集成**：安装 `@tarquinen/opencode-dcp`（动态上下文裁剪），自动压缩旧对话、去重工具调用、裁剪错误输入，节省 token
-- **`opencode.jsonc` + `redcode.jsonc` 自动加载**：两个配置文件同步添加 `plugin` + `instructions`，启动即生效
+#### 推迟到 0.4.1
 
-- **`web-search` 极简 MCP server**：受 FreeWeb 启发，只保留 `web_search` 一个工具（`.opencode/search-server/index.ts`，165 行），DuckDuckGo HTML 搜索 + Yahoo 兜底，零 API key；依赖仅 `@modelcontextprotocol/sdk` 一个包，启动 ~1s；Windows 系统代理自动透传（走 PowerShell `Invoke-WebRequest`）
+- **GUI 端 `/goal` chip 顶部指示器**：原计划在 Titlebar 加 chip 让用户可见当前钉住的目标。砍掉原因：数据流未设计清楚（layout.tsx 跨层读 chat 状态、OpenCode command 系统不顺、IPC 改造成本大），为假想需求硬写不划算。0.4.1 补，先想清楚数据流（备选：command 系统改造 / 新建 cross-layer store / 走 plugin 通道）
+
+#### 变更
+
+- 版本号升级 0.3.17 → 0.4.0
 
 ### [0.3.17] - 2026-06-04
 
-#### 新增
+#### 修复
 
-- **DeepSeek / MiMo 专属系统提示词**：`session/system.ts` 的 `provider()` 新增 `deepseek`/`mimo` 子串匹配，分别返回 `prompt/deepseek.txt`、`prompt/mimo.txt`；主用的 DeepSeek V4 与小米 MiMo-V2.5 不再走 default 提示词
-- **人格触发命令**：`.opencode/command/{gui-persona,tui-persona}.md`，对话里一条命令即加载 GUI/TUI 人格，比手打"你是X"更快；命令仅向上下文注入文字、不替换模型提示词（`request.ts` 的 `agent.prompt` 会顶掉 deepseek/mimo 提示词，故不做成 agent）。**修复**：命令此前从未被引擎加载——`config/paths.ts` 只扫 `.redcode` 目录，命令却放在 `.opencode/command/`；`script/sync-home.bat` 之前同步了 skill 却漏了 command。现补同步 `.opencode/command` → `~/.redcode/command`（真镜像：先删后拷），重启后命令真正生效
+- **标题栏版本号写死漂移**：`index.html` 标题栏徽章原本硬编码 `v0.3.16`，每次升级要手动改、极易漏改 → 编译出的 exe 显示旧版本。改为占位符 `v__RC_VERSION__`，`electron.vite.config.ts` 新增 `redcode:inject-version` 插件（`transformIndexHtml`），build/dev 时从 `package.json` 自动注入。GUI 自此与 TUI 一致：`package.json` 为唯一版本来源
+- **桌面通知图标请求死域名**：`index.tsx` `notify()` 的通知图标硬连 `https://redcode.dev/favicon-96x96-v3.png`，该域名未注册 → 每次弹通知 DNS 解析失败、控制台刷 `ERR_NAME_NOT_RESOLVED`。改为基于 `document.baseURI` 解析本地打包图标，不再发外网请求
+- **思考中仓鼠 emoji 跨平台渲染**：Win10 渲染正常（Segoe UI Emoji 多色渐变），Win11 渲染为 Fluent 扁平纯色块。将 🐹 emoji 替换为本地仓鼠图片（`/hamster.png`），彻底消除系统 emoji 字体差异
 
-#### 工作流
+#### 构建说明
 
-- **全局配置目录迁移 `.redcode` → `~/.redcode`**：从旧位置迁到用户 home 目录。引擎 `config/paths.ts` 的 `directories()` 无条件扫描 `home/.redcode`，不管项目在哪个盘都自动发现，彻底解决跨盘/跨机器路径问题；`build.bat` 同步目标改为 `%USERPROFILE%\.redcode`
-- **全局记忆/画像机制化注入**：`~/.redcode/redcode.jsonc` 的 `instructions` 由 `session/instruction.ts` 引擎侧读取并在 `:137` 展开 `~/`，每个项目启动自动注入 `MEMORY.md`/`USER.md`，消除旧的"靠 AGENTS.md 喊话读 MEMORY"行为链脆弱点
+- `check-version-consistency.ts` 标题栏徽章检测兼容 `__RC_VERSION__` 占位符（视为恒一致，因构建期自动同步）
 
-#### 文档
-
-- **AGENTS.md 重构**：根 AGENTS.md 身份触发段补充人格命令与自动注入说明；`packages/{opencode,desktop}/AGENTS.md` 顶部加 breadcrumb（本包=TUI/GUI、对应人格），进子目录读文件时自动叠加强化身份
-
-### [0.3.16] - 2026-06-03
-
-#### 重构
-
-- **语义颜色分层**：在 47 个扁平颜色属性之上新增 `theme.colors` 语义层，按 text/surface/border/status/diff/markdown/syntax 8 组分群。旧属性完全兼容，新代码可用 `colors.text.body`、`colors.surface.panel`、`colors.status.error` 等语义路径访问
-- **Theme 类型导出**：`Theme` 类型从 `theme.tsx` 导出，`SharedSyntaxTheme` 收敛为类型断言，减少重复类型定义
+### [0.3.16] - 2026-06-04
 
 #### 修复
 
-- **llm 模块循环依赖**：`schema/options.ts` → `route/client.ts` → `schema/index.ts` → `schema/options.ts` 的 17 文件循环依赖降至 3 文件（transport barrel 循环，可接受）。移除 `schema/options.ts` 对 `route/client.ts` 的反向导入，改用本地类型定义
-- **theme-store 测试**：`DEFAULT_THEMES.redcode` 修正为 `DEFAULT_THEMES.opencode`，恢复 4 个损坏的单元测试
-- **system 主题 isDark 时序**：`generateSystem` 中 `isDark` 声明移至 `fallbackBg`/`fallbackFg` 之前，修复 Temporal Dead Zone 导致的 ReferenceError
-- **palette 回退兜底**：`generateSystem` 中 `palette[0]`/`palette[7]` 可能为 undefined，补充 `#1a1b26`/`#ffffff` 硬编码回退色值
-- **Proxy 类型安全**：`theme.tsx` 中 Proxy getter 移除 `@ts-expect-error`，改用 `keyof Theme` 类型断言
-- **resolveTheme 过滤补全**：`backgroundMessage` 加入初始过滤列表，避免重复解析
+- **`build-and-package.bat` 同步目标遗留**：打包脚本仍往旧目录同步 souls/MEMORY/AGENTS，导致配置迁移到 C 盘后两处残留。改为 `%USERPROFILE%\.redcode`，与 TUI `build.bat` 对齐
+
+#### 变更
+
+- **同步全局配置目录迁移**：GUI 以 opencode 为 sidecar，随服务端一并吃到 `~/.redcode` 迁移与全局记忆机制化注入
+- 版本号升级 0.3.15 → 0.3.16
 
 ### [0.3.15] - 2026-06-03
 
 #### 新增
 
-- **MCP 懒加载**：启动时不连接 MCP server，第一次调用该 MCP 的 tool 时才按需连接，减少冷启动等待
-- **MCP pending 状态**：侧边栏 MCP 面板显示"Waiting…"等待状态，启动时一目了然
+- **ECC 插件状态指示器**：标题栏版本号旁显示绿色 `ECC` 标签，一眼确认插件已加载
+- **压缩策略优化**：`experimental.session.compacting` 扩展 prompt，保留任务进度、错误信息、测试结果等关键上下文
 
-#### 工作流
+#### 修复
 
-- **删除文件单独授权**：`apply_patch` 中 `type: "delete"` 的操作需额外弹窗确认，不再是编辑权限附带的
-- **灵魂文件进仓库**：`Gsoul.md` / `Tsoul.md` 从上级目录移入 `.opencode/agents/`，git 跟踪推送，换机自动同步
-- **全局 workspace（`.redcode/`）**：在项目上级创建全局共享目录，包含 AGENTS.md、MEMORY.md、USER.md、souls 等，所有项目共享身份与记忆，不再每项目重复搭建
-- **`build.bat` 版本自检**：编译前自动跑 `check-version-consistency.ts`，版本不一致时阻止编译并提示
-- **权限范围扩展**：`containsPath` 增加上级目录检查，信任与项目同级的兄弟项目
+- **审视面板拖拽方向反了**：ResizeHandle 新增 `invert` 属性，左移审视变宽、右移变窄
 
----
+#### 变更
+
+- 版本号升级 0.3.14 → 0.3.15
 
 ### [0.3.14] - 2026-06-03
 
 #### 新增
 
-- **MCP 配置热重载**：文件 watch `redcode.jsonc`，检测到 MCP 配置变更后自动添加/删除/重连服务器，无需重启 TUI
-- **MCP 工具调用进度推送**：耗时较长的 MCP 工具调用（如 browser 截图）实时显示进度状态，避免无响应感
-
----
-
-### [0.3.13] - 2026-06-03
-
-#### 新增
-
-- **消息视觉区分**：用户消息添加 `> ` 前缀（agent 色加粗），AI 消息添加 ✦ 前缀（accent 色）
-- **语义色 `backgroundMessage`**：用户消息背景色独立于面板色，后续主题可单独定制
-
-#### 修复
-
-- **Browser MCP 端口冲突**：server 启动时自动检测 9001 端口，被僵尸进程占用时自动 kill 旧进程并重试
-
----
-
-### [0.3.12] - 2026-06-03
-
-#### 新增
-
-- **MCP 健康监控**：每 30s 检查所有 connected 的 MCP server，连续 3 次失败标记断开并自动尝试重连
-- **MCP 工具调用失败自动重连**：tool call 报错时自动尝试 reconnect 并重试（最多 3 次）
-- **MCP Transport 日志**：记录实际使用的 transport 类型（stdio/SSE/HTTP），便于排查
-
----
-
-### [0.3.11] - 2026-06-03
-
-#### 修复
-
-- **MCP 进程树泄漏（Windows）**：`descendants` 在 Win32 直接返回空数组，导致每次 TUI 退出时子进程（codegraph/typegraph/npx 链）变成僵尸堆积。改为 `taskkill /F /T /PID` 一次杀整棵树，Unix 保持原逻辑
-- **Browser MCP 断连**：server `socket.on("close")` 无条件置 `ws = null`，导致新连接被旧 socket 的 close 事件覆盖破坏。改为 `if (ws === socket)` 条件判断
-- **exe MCP 路径解析**：编译后的 exe 运行时 `cwd` 是 bin/ 目录，相对路径（`./browsermcp-server/index.js`）解析失败。新增 `findProjectRoot`，从 exe 所在目录向上查找 `redcode.jsonc` 或 `.git`，确保 MCP 命令路径正确解析
-- **滚动条默认值迁移**：kv 存储中旧的 `scrollbar_visible: false` 会覆盖新默认值。新增一次性版本迁移（`kv_version`），首次启动时自动升级为 `true`
+- **ECC Plugin 集成**：`.opencode/plugins/ecc-shell-stub.js` 自动加载，提供以下功能：
+  - `shell.env` — 注入 ECC 环境变量
+  - `tool.execute.after` — 自动跟踪文件变更
+  - `experimental.session.compacting` — 上下文压缩时保留关键上下文
+  - `permission.ask` — 自动放行读/格式化/测试等安全操作
+  - `changed-files` tool — 查看当前会话改过的文件
+  - `git-summary` tool — 一条命令返回分支/状态/log/diff
 
 #### 变更
 
-- **滚动条默认开启**：消息区域右侧滚动条默认显示，支持鼠标点击轨道跳转和拖拽滑块滚动。可通过 `session.toggle.scrollbar` 命令或 `/mcps` 切换
-- **Browser MCP 扩展 v1.0.3**：改用 `chrome.alarms` 保活（每 24s 触发），替代不可靠的 `setTimeout`，解决 Manifest V3 service worker 休眠后断连
-
-#### 配置
-
-- `redcode.jsonc` 新增 browsermcp 配置
-- `.opencode/opencode.jsonc` 新增 browsermcp 配置
-
-#### 新增
-
-- **Browser MCP 集成**：新增浏览器自动化 MCP 服务器，支持导航、截图、点击、输入、获取页面内容等操作，可让 AI 直接操控主人的浏览器
-- **jCodeMunch MCP 集成**：新增结构化代码检索服务器（60+ 工具），支持精确符号获取、死代码检测、影响评估、编辑安全预检、AST 模式匹配等，比 grep 省 95% token
-- **TypeGraph MCP 集成**：TypeScript 语义导航服务器（14 个工具），支持类型解析、调用链追踪、barrel 文件穿透、循环依赖检测
-
-#### Browser MCP 使用方式
-
-1. 安装 Chrome 扩展：
-   - 打开 `chrome://extensions/`
-   - 开启"开发者模式"
-   - 点"加载已解压的扩展程序" → 选择项目内的 `browsermcp-extension` 目录（相对路径，跨电脑/盘符通用）
-2. 点击扩展图标 → Connect（图标显示绿色 "ON" 表示连接成功）
-3. 重启 TUI 生效
-
-可用工具：`browser_navigate`、`browser_go_back`、`browser_go_forward`、`browser_snapshot`、`browser_click`、`browser_type`、`browser_hover`、`browser_select_option`、`browser_press_key`、`browser_wait`、`browser_screenshot`、`browser_get_console_logs`
-
----
-
-### [0.3.9] - 2026-06-02
-
-#### 新增
-
-- **Prompt 栏点击切换**：Agent 名称、模型名称、推理强度标签支持鼠标点击，直接弹出对应选择列表（DialogAgent/DialogModel/DialogVariant）
-- **用户可配置快捷键**：`tui.json` / `tui.jsonc` 已完整支持 `keybinds` 字段覆盖默认快捷键，支持全局（`~/.config/redcode/tui.json`）、项目级、`.redcode/` 目录级配置，逐级合并覆盖
-
----
-
-### [0.3.8] - 2026-06-02
-
-#### 新增
-
-- 动态终端标题：session 忙碌时标签栏显示 `▶` 前缀，空闲恢复；多 tab 终端一目了然
-- 统一清理注册表：`CleanupRegistry` 集中管理所有退出清理（keymap、console 劫持、plugin runtime、audio），避免散落 `finally` 导致泄漏
+- 版本号升级 0.3.13 → 0.3.14
 
 #### 修复
 
-- **构建流程修复**：Windows 上 `rm -rf` 因文件锁定失败不再中断编译，用 `try/catch` 安全跳过
-- **版本号硬编码**：预览版不再生成 `0.0.0-dev-<timestamp>`，改用 `package.json` 中的真实版本号
-- **Console 污染 TUI 渲染**：`console.log/warn/error` 在 TUI 启动后被劫持转入环形缓冲区（500 条），退出时还原，避免第三方库日志乱入终端
+- **审视面板拖拽方向反了**：ResizeHandle `edge` 默认 `"end"` 导致拖拽方向与直觉相反。改为 `edge="start"`，左移变宽、右移变窄
+- **browsermcp-server 端口冲突无法恢复**：ESM 模块内使用 `require("child_process")` 导致端口被占时 kill 逻辑报错。改为顶层 `import` 修复
+
+#### 工作流
+
+- **版本一致性自检脚本**：新增 `script/check-version-consistency.ts`，编译前自动扫描 package.json/README/CHANGELOG/标题栏版本号是否对齐
+- **build-and-package.bat 自动检查**：编译前跑版本自检 + 自动同步灵魂文件到上级目录供其他项目使用
+- **全局 workspace（`.redcode/`）**：AGENTS.md/MEMORY.md/USER.md/souls 移至全局目录，所有项目共享身份与记忆，build bat 自动同步
+
+### [0.3.13] - 2026-06-02
+
+#### 修复
+
+- **仓鼠位置修复**：将 🐹 从 flex `ml-auto`（最右）移到 TextShimmer"思考中"之后。当 AI 产生 reasoning heading（如 markdown 标题）时，`TextReveal` 展开不再把仓鼠推到右侧角落
+
+#### 重构
+
+- **抽取 `UpdateAvailableToast`**：将文件末尾的 32 行子组件移到 `components/update-available-toast.tsx`，零行为变化
+- **抽取主题常量**：`colorSchemeOrder` / `colorSchemeKey` 纯常量从 `layout.tsx` 抽到 `pages/layout/theme-constants.ts`
+
+#### 布局调整
+
+- **FileTree → 最左、Review → 最右**：新布局为三栏：`[FileTree] [Chat] [Review]`
+  - `FileTreePanel` 从 `SessionSidePanel` 内部分离为独立组件 `pages/session/file-tree-panel.tsx`
+  - `session.tsx` 主 flex 容器改为：`<FileTreePanel />` → `<ChatPanel />` → `<SessionSidePanel />`
+- **删除 V1 sidebar fallback**：`layout.tsx` V1 旧设计（152 行无引用代码）移除，`USE_NEW_DESIGN` 常量删除
+- **删除 `sidebar.toggle` 命令**：V2 设计下 Sidebar 永不显示，对应 Cmd+B 命令移除
+
+### [0.3.12] - 2026-06-02
+
+#### 新增
+
+- **思考中仓鼠动画**：在 AI 思考状态行的右侧加 🐹 emoji，左右小跑 + 上下跳动，1.2s 循环（与左侧 Mona 猫猫 gif 配合，更可爱）
+- **Sidebar 展开/折叠过渡动画**：`sidebar-shell.tsx` 的 panel 容器加 `transition-opacity duration-150`，展开/折叠时内容平滑淡入淡出
+- **Cmd+1 ~ Cmd+9 切项目快捷键（V2 设计补全）**：`layout.tsx` 移除 `!USE_NEW_DESIGN` 条件限制，V2 设计也支持 `Cmd+1` ~ `Cmd+9` 切换项目；修复 title bug 用 i18n `command.project.index`
+- **Cmd+T 切下一个会话 / Cmd+Shift+T 切上一个会话**：在 `use-session-commands.tsx` 添加 `session.next` / `session.previous` 命令，按当前 project 内的 root session 排序（recent 在前）切到下一个/上一个
+
+#### 优化
+
+- **Sidebar 列表 hover 体验**：原本 hover 时只显示 archive 按钮；现在 archive 按钮的 `transition-[width,opacity]` 过渡更平滑
 
 ---
+
+### [0.3.11] - 2026-06-02
+
+#### 新增
+
+- **设计系统 token**：CSS 变量化同心圆角（`--radius-xs/sm/md/lg/xl/2xl`）、分层阴影 5 级（`--shadow-xs/sm/md/lg/xl`，每级双层偏移），全局统一
+- **文字排版优化**：`h1-h4` 启用 `text-wrap: balance`，段落启用 `text-wrap: pretty`，标题更整齐，段落不孤字
+- **统一 focus 指示器**：所有可聚焦元素通过 `:focus-visible` 显示 2px outline + 2px offset，键盘可访问性提升
+- **Sidebar 折疉态项目指示器增强**：通知红点放大到 8px、加 ring 描边、permission/error 状态加 `animate-pulse` 脉冲动画；unseen 数量徽章（>1 显示数字，>9 显示 "9+"）；working spinner 加 ring 描边
+
+---
+
+### [0.3.9] - 2026-06-01
+
+#### 新增
+
+- **图标重制**：`gen-icon.py` 从 `Red.ico` 源图生成全尺寸图标，支持 16~1024px 多分辨率 ICO，修复文件资源管理器/任务栏图标模糊问题
+- 图标渠道同步：dev/beta/prod 三渠道 `icon.ico` 统一使用 `Red.ico`
+
+---
+
+### [0.3.8] - 2026-06-01
+
+#### 新增
+
+- TypeGraph MCP 集成：新增 `typegraph-mcp` 代码语义导航服务器（14 个工具），支持类型解析、调用链追踪、影响分析、循环依赖检测等，与现有 CodeGraph 互补
+
+#### 修复
+
+- 会话模型/智能体选择修复：`submit.ts` 将 ready 检查移到取值之前，同时检查 `providers.ready()` 和 `models.ready()`，避免 provider 已加载但 localStorage 持久化数据未就绪时误弹"请选择智能体和模型"toast
+- Windows 打包签名挂起：`electron-builder.config.ts` 的 `afterAllArtifactBuild` 改用 `fs.cp` + `fs.rm` 替换不可靠的 `fs.rename`；本地打包改用 PowerShell 自签名证书，不再因 signtool.exe 挂起
 
 ### [0.3.7] - 2026-06-01
 
 #### 新增
 
-- 记忆系统：新增每日日志 + 定期审视机制，被纠正时自动写入 `memory/YYMMDD.md`，收工时摘要合并到 MEMORY.md，确保教训跨会话持久
+- TTS 朗读配置面板：设置 → 通用新增「文字转语音」区块，支持独立配置 MiMo TTS `sk-` 前缀 API Key、音色选择（冰糖 / 茉莉 / 苏打 / 白桦 / 英文四种）、以及朗读功能总开关；朗读按钮仅在开关开启时显示
 
 #### 修复
 
-- **构建流程纠正**：TUI exe 编译改用 `bun run build -- --single`（`script/build.ts`），替代之前手拼 `bun build --compile` 的错误方式
+- TTS 调用逻辑修正：原实现调用不存在的本地路由 `/session/tts`（必然静默失败），现改为渲染进程直接请求 `https://api.xiaomimimo.com/v1/chat/completions`，使用 MiMo v2.5 TTS 模型，base64 WAV 响应直接通过浏览器 Audio API 播放
+- 标题栏版本号动态化：版本徽章从硬编码字符串改为读取 `window.api.appVersion`（由 preload 注入 `npm_package_version`），后续只需改 `package.json` 版本号，标题栏自动同步
+- 侧边栏项目自动置顶：当前活跃项目调用 `touch()` 时自动移到侧边栏列表顶部，不再保持静态创建顺序
+- compaction 消息加载方向修正：`MessageV2.page` 新增 `after` 参数；compacted 会话初始加载从「summary 之前的旧消息」（原逻辑反向）修正为「summary 及之后的新消息」，避免加载大量 pre-compaction 历史导致渲染器 OOM
+- 新建会话 provider 检测再修正：`global-sync.tsx` 将 `global.provider` 从初始化时的静态快照改为惰性 getter，确保 child-store 响应式 getter 运行时读取的是实时 `globalStore.provider` 而非启动时 global query 尚未完成的 EMPTY 快照；修复了项目级 provider 查询完成而全局查询尚未结束时 fallback 判断失效、导致"需要配置 provider"弹窗的竞态问题
 
----
-
-### [0.3.6] - 2026-06-01
+### [0.3.6] - 2026-05-30
 
 #### 新增
 
-- 侧边栏 Context 区块充实：显示 provider 名、模型名、token 明细（输入/输出/推理/缓存）、消息数、agent 名、创建时间和最后活动时间；未知上下文上限显示 `?`，超过 200% 显示 `⚠` 警告
-- Loading 动画替换：左下角蓝色方块 Knight Rider 动画改为 🐲🔥 喷火龙呼吸动画
-- 右键粘贴：主输入框和对话框输入框支持右键粘贴剪贴板内容
+- 消息朗读按钮：AI 回复气泡旁新增 🔊 按钮，点击调用 MiMo TTS API（限时免费 `mimo-v2-tts`）朗读回复内容；利用已有的 `notification.tsx` + `sound.ts` 音频基础设施，TTS 音频通过浏览器 `Audio` API 播放；复用现有 provider 配置体系接入 TTS 模型，无需额外 API key
 
-### [0.3.5] - 2026-05-31
-
-#### 新增
-
-- prompt 输入框自适应 & 可配置高度：合并上游实现，文本框行数根据内容自动伸缩，支持用户配置最小/最大行数
+### [0.3.5] - 2026-05-29
 
 #### 修复
 
-- 行内 tool 行换行对齐：提取 `InlineToolRow` 组件，图标与文字使用 flex 布局，换行后文字正确对齐
+- 大会话导致渲染器 OOM/卡死：compacted 会话的消息查询只返回 compaction summary 之后的消息（`packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts`），避免 GUI 加载大量旧消息导致渲染器内存溢出或无响应
+- 初始消息加载量减半：`initialMessagePageSize` 从 80 降至 40，`historyMessagePageSize` 从 200 降至 80，降低首次渲染压力
+- 新建项目/provider查询失败时回退到全局 provider：`child-store.ts` 补充 `!projectData` 判断，当项目级 provider 查询返回 `undefined`/`null` 时自动回退到全局已连接 providers，避免要求重新配置
+- 中文 i18n 适配：`zh.ts` 补全 24 条缺失翻译（project 切换、设置页面、错误页等），修复 `layout.tsx` 中 "Export logs" 硬编码英文（TUI 同步生效）
 
-### [0.3.4] - 2026-05-31
-
-#### 新增
-
-- Shell Mode：空提示框按 `!` 进入 Shell 模式，直接运行系统命令（通过 `session.shell` 而非发送消息），命令完成后自动退出 Shell 模式
-- Session Switcher：新增 `$session.list` 命令和 `/sessions` 斜杠命令，打开会话切换对话框，支持按项目/状态过滤、消息预览和 diff 摘要
-
-#### 修复
-
-- Diff Viewer 改进：合并上游空白状态展示、交互优化、设计重设计等修复；修复文件树中已审查文件的勾选标记 Unicode 乱码
-- 测试文件 import 路径修正：`diff-viewer.test.tsx` 中 `@opencode-ai` → `@redcode-ai`
-
-### [0.3.3] - 2026-05-31
-
-#### 修复
-
-- compacted 会话 HTTP API 消息过滤：消息分页查询自动跳过 compaction summary 之前的旧消息，避免 GUI 加载大量旧消息导致 OOM/卡死。同时在 `packages/opencode` 侧生效，TUI 和 GUI 共享同一服务端
-- 测试用例 import 补全：`db.test.ts` 补全 `it` 的 `bun:test` import，修复测试运行时引用错误
-
-### [0.3.2] - 2026-05-30
+### [0.3.4] - 2026-05-29
 
 #### 变更
 
-- 统一数据库路径：移除 channel 分库逻辑（`redcode-dev.db` / `redcode-beta.db` 等），所有渠道统一使用 `redcode.db` 主库；删除 `disableChannelDb` 运行时标志
-- 斜杠命令中文化：`/compact`→压缩会话、`/connect`→连接供应商、`/copy`→复制会话记录、`/export`→导出会话记录、`/fork`→分叉会话、`/init`→初始化 AGENTS.md、`/review`→审查变更
+- 包含服务端更新：统一数据库路径、CodeGraph MCP 代码知识图谱集成、斜杠命令中文化、provider 错误处理改进、shell/message-v2 修复
+
+### [0.3.3] - 2026-05-29
+
+#### 修复
+
+- 新建会话重复弹出"选择智能体和模型"：`child-store.ts` 项目级 provider 查询 fallback 条件扩展，当 `connected` 为空但全局有已连接 providers 时自动回退，避免每次新建会话都要求重新配置
+- 会话右键重命名菜单缺失：`sidebar-items.tsx` 手动 `onContextMenu` 实现替换为 Kobalte `ContextMenu` 组件，使用 Portal 渲染避免 overflow 裁剪
+- GUI 图标白底：`yayi_256x256.ico` 用 sharp `unflatten` 去除白色背景，重新打包 ico/png 资源
+- DeepSeek 模型变体下拉框不显示：`transform.ts` 移除 DeepSeek 排除列表，`@ai-sdk/openai-compatible` 类型模型绕过 `reasoning` 能力检查
+
+### [0.3.2] - 2026-05-28
+
+#### 新增
+
+- 项目右键删除：首页 (`home.tsx`) 项目列表新增 `ContextMenu`，右键单个项目可删除；旧侧边栏 (`sidebar-project.tsx`) 项目图标右键菜单同样新增"删除"；旧侧边栏展开后项目头部三点 `DropdownMenu` 也补充"删除"项
+- 项目删除后端 API：`Project.remove` Effect 服务方法 + DELETE `/project/:projectID` HTTP 路由 + `Event.Removed` 全局事件广播；SDK (`sdk.gen.ts`) 新增 `project.remove` 客户端方法；前端 `event-reducer.ts` 监听 `project.removed` 自动从列表移除
+- 会话归档右键菜单：`sidebar-items.tsx` 会话项右键菜单加入"归档"选项
+- 侧边栏底部收起按钮：`sidebar-shell.tsx` 加 `onToggleSidebar` prop，左侧 rail 设置按钮上方新增侧边栏切换按钮（旧设计 / prod channel 生效）
+
+#### 修复
+
+- 原生右键菜单拦截 HTML 菜单：`main/index.ts` 的 `electron-context-menu` 加 `shouldShowMenu`，限定只在图片/视频上触发，避免压制 Kobalte `ContextMenu` 不出现
+- 任务栏 / 标题栏图标糊化：`scripts/gen-icon.py` 移除 `GaussianBlur(radius=1.0)`，红环改用 `ellipse(width=ring_w)` 单次抗锯齿描边，小尺寸（≤32 / ≤64）超采样倍率提升至 16x / 8x，重新生成全套 PNG/ICO
+- 标题栏版本徽章：`packages/desktop/src/renderer/index.html` 顶部交通灯旁版本徽章更新为 `v0.3.2`
+- DeepSeek 费用按 CNY 计价（3d3b0ce）
+
+#### 变更
+
+- TUI 与 GUI 版本号解耦：`packages/opencode/script/build-node.ts` 不再从 `packages/desktop/package.json` 读取版本，改读 opencode 自己的 `package.json`；TUI 现可独立递增版本号，互不影响
 
 ### [0.3.1] - 2026-05-28
 
@@ -4112,7 +4073,7 @@
 
 ---
 
-## GUI
+## 共同历史
 
 ### [0.7.20] - 2026-08-13
 

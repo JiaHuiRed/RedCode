@@ -70,7 +70,7 @@
   2. 其余 `@redcode-ai/*` 包、`packages/sdk/js` 的 `version` — 同号跟升（互引均为 `workspace:*`，该字段仅作标签；Sentry release 与 GUI `Platform.version` 读 `packages/app` 的号）
   3. `README.md` — 中文版"版本"徽章更新
   4. `README.en.md` — **英文版 Version 徽章同步更新**
-  5. `CHANGELOG.md` — 新条目写在顶部说明之下（合并线区域），**不再**写进 `## TUI`/`## GUI` 历史段
+  5. `CHANGELOG.md` — 新条目写在顶部说明之下（合并线区域），**不再**写进 `## TUI`/`## GUI` 历史段。**升版 = 收编，不是另起一段**：把 `[Unreleased]` 整段改名成新版本号（保持它在最顶），并跑 `git log <上一版 bump 提交>..HEAD --oneline` 逐条对照——每个提交要么有条目、要么明确并入某条，漏了就补。0.12.20 踩过两连坑：在 `[Unreleased]` 上方插新段（段序反了、旧段悬空），且 5 条 0.12.20 树里的条目没被收编、6 条提交完全没进任何版本段，直到 0.13.0 才补录
   6. 标题栏徽章 — 自动注入（`packages/desktop/package.json` → `__RC_VERSION__` 占位符），无需手改
   7. 自检脚本 — `script/check-version-consistency.ts`，build.bat 编译前校验（含全仓同号断言）
   8. README 正文 — 本次改动有**特色级变化**（新能力、定位变化）时中英两版同步更新；纯 bump 不动正文（README 是让别人了解项目特色的，不是版本号挂件）
