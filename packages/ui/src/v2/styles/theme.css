@@ -30,6 +30,13 @@
     --v2-icon-icon-accent: var(--v2-blue-600);
     --v2-icon-icon-accent-hover: var(--v2-blue-700);
 
+    /* 261024 Red 补 icon 状态色四槽：home.tsx 等处曾引用不存在的 --v2-icon-icon-info/warning，
+       颜色回落继承值；统一映射到同主题的 state-fg 作单一来源，各 scheme 块各补一份。 */
+    --v2-icon-icon-success: var(--v2-state-fg-success);
+    --v2-icon-icon-warning: var(--v2-state-fg-warning);
+    --v2-icon-icon-danger: var(--v2-state-fg-danger);
+    --v2-icon-icon-info: var(--v2-state-fg-info);
+
     /* ── Border ── */
     --v2-border-border-muted: var(--v2-alpha-dark-8);
     --v2-border-border-base: var(--v2-alpha-dark-10);
@@ -227,6 +234,11 @@
     --v2-icon-icon-accent: var(--v2-blue-600);
     --v2-icon-icon-accent-hover: var(--v2-blue-700);
 
+    --v2-icon-icon-success: var(--v2-state-fg-success);
+    --v2-icon-icon-warning: var(--v2-state-fg-warning);
+    --v2-icon-icon-danger: var(--v2-state-fg-danger);
+    --v2-icon-icon-info: var(--v2-state-fg-info);
+
     --v2-border-border-muted: var(--v2-alpha-dark-8);
     --v2-border-border-base: var(--v2-alpha-dark-10);
     --v2-border-border-strong: var(--v2-alpha-dark-20);
@@ -365,6 +377,11 @@
     --v2-icon-icon-contrast: var(--v2-grey-200);
     --v2-icon-icon-accent: var(--v2-blue-400);
     --v2-icon-icon-accent-hover: var(--v2-blue-300);
+
+    --v2-icon-icon-success: var(--v2-state-fg-success);
+    --v2-icon-icon-warning: var(--v2-state-fg-warning);
+    --v2-icon-icon-danger: var(--v2-state-fg-danger);
+    --v2-icon-icon-info: var(--v2-state-fg-info);
 
     --v2-border-border-muted: var(--v2-alpha-light-8);
     --v2-border-border-base: var(--v2-alpha-light-10);

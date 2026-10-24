@@ -5,6 +5,9 @@
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --font-family-mono--font-feature-settings: normal;
 
+  /* 261024 Red 补最小字号档：index.css 桌面菜单键位、text-11-* 工具类都引用它，
+     此前无定义导致回落继承值。11px 是现有设计里实际在用的最小档。 */
+  --font-size-x-small: 11px;
   --font-size-small: 13px;
   --font-size-base: 14px;
   --font-size-large: 16px;

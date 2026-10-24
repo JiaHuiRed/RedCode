@@ -53,7 +53,9 @@ export const PromptImageAttachments: Component<PromptImageAttachmentsProps> = (p
                   <Icon name="close" class="size-3.5 text-text-weak" />
                 </button>
                 <div class={nameClass}>
-                  <span class="text-10-regular text-white truncate block">{attachment.filename}</span>
+                  {/* 261024 Red 原先的 10px 档类从未定义过（死类，字号一直回落继承值），
+                      改用现在存在的最小档 text-11，不再新增 10px 档位。 */}
+                  <span class="text-11-regular text-white truncate block">{attachment.filename}</span>
                 </div>
               </div>
             </Tooltip>

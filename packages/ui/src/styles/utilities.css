@@ -43,6 +43,28 @@
   text-align: left;
 }
 
+/* 261024 Red 补齐被使用却从未定义的字号类（text-11-*×48、text-13-*×17、
+   text-16-regular×1）：此前这些类是死类，文字回落继承值而非设计的字号档。
+   命名对齐实际渲染：13 = --font-size-small(13px)，11 = --font-size-x-small(11px)。
+   text-12-* 渲染 13px 的历史命名错位不在本批改动（改小会动全局布局，需单独评估）。 */
+.text-11-regular {
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-x-small);
+  font-style: normal;
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-large);
+  letter-spacing: var(--letter-spacing-normal);
+}
+
+.text-11-medium {
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-x-small);
+  font-style: normal;
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-large);
+  letter-spacing: var(--letter-spacing-normal);
+}
+
 .text-12-regular {
   font-family: var(--font-family-sans);
   font-size: var(--font-size-small);
@@ -68,6 +90,24 @@
   font-style: normal;
   font-weight: var(--font-weight-regular);
   line-height: var(--line-height-large); /* 166.667% */
+  letter-spacing: var(--letter-spacing-normal);
+}
+
+.text-13-regular {
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-small);
+  font-style: normal;
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-large);
+  letter-spacing: var(--letter-spacing-normal);
+}
+
+.text-13-medium {
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-small);
+  font-style: normal;
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-large);
   letter-spacing: var(--letter-spacing-normal);
 }
 
@@ -97,6 +137,15 @@
   font-weight: var(--font-weight-regular);
   line-height: var(--line-height-large); /* 171.429% */
   letter-spacing: var(--letter-spacing-normal);
+}
+
+.text-16-regular {
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-large);
+  font-style: normal;
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-x-large);
+  letter-spacing: var(--letter-spacing-tight);
 }
 
 .text-16-medium {
