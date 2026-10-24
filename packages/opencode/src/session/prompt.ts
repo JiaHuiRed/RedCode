@@ -1921,6 +1921,7 @@ export const layer = Layer.effect(
           // section runs fresh every turn (unlike env/instructions/skills, which are cached per
           // session), so only this small tail invalidates the provider's prefix cache once a day
           // instead of everything from <env> onward.
+          // injection-registry: date-per-turn
           system.push(`Today's date: ${new Date().toDateString()}`)
           // 260728 Red expanded rule 3 with concrete forbidden phrases (Chinese+English).
           // User caught another agent telling him "go rest" after hours of no progress — that phrasing
@@ -1929,6 +1930,7 @@ export const layer = Layer.effect(
           // docs/notes/implemented/architecture/2026-09-24-prompt-instruction-ownership.md.
           // 261007 Red 本段与相邻锚块（flash/step）是时效性补丁：新增或改动须登记
           // docs/prompt-patches.yml（固定前缀审计 §18-19），到期复核存废。
+          // injection-registry: work-rules
           system.push(
             `▸ WORK RULES (CORE — must obey, never violate):
   1. DO NOT INVENT CODE FACTS — inspect only an unknown path, API, or behavior that matters to the requested change.
@@ -1942,6 +1944,7 @@ export const layer = Layer.effect(
             (model.providerID === "stepfun" || model.id.toLowerCase().includes("step")) &&
             !model.id.toLowerCase().includes("step-5")
           ) {
+            // injection-registry: anchor-compress-step
             system.push(
               `▸ CONTEXT COMPRESSION (MUST follow when receiving  warnings):
   1. When you see "MAX CONTEXT LIMIT REACHED" or similar context warnings, you MUST call the compress tool immediately.
@@ -1976,6 +1979,7 @@ export const layer = Layer.effect(
           // 260827 cc 判据移到 system.ts 的 wantsFlashAnchor（有测试钉住），并从
           // 「含 flash 且不含 step」收窄到「含 deepseek 且含 flash」——对齐这条锚的证据来源。
           if (!noAnchors && SystemPrompt.wantsFlashAnchor(model.id)) {
+            // injection-registry: anchor-discipline-flash
             system.push(
               `▸ REASONING DISCIPLINE (flash 系列):
   1. Match reasoning depth to the task. A simple, well-specified task converges in one pass — do not manufacture deliberation for it. A complex or ambiguous one earns real depth before you commit. Either way each reasoning block ends with a decision or an information need — no open-ended rumination.
@@ -1992,6 +1996,7 @@ export const layer = Layer.effect(
           // ② 反空转锚：不重发相同工具+相同输入（空转检测的提示词侧防线）
           // ③ 一致锚：时强时弱=思考长度波动大，稳定节奏优先于单次超常发挥
           if (!noAnchors && SystemPrompt.wantsStepAnchor(model.id, model.providerID)) {
+            // injection-registry: anchor-discipline-step
             system.push(
               `▸ REASONING DISCIPLINE (step 系列):
   1. Think, then act — each reasoning block ends with a concrete next action or a decision. Never extend reasoning just to keep thinking; when you have a plan, execute it.
@@ -2003,6 +2008,7 @@ export const layer = Layer.effect(
           // 260921 Red GPT 审计 P0-1：原三条（immediately/liberally/append-not-write）与
           // 全局 AGENTS.md「记忆写入五问：不确定默认不写」正面冲突——同一行为两个 owner。
           // 记忆政策的唯一 owner 是注入的 AGENTS.md，引擎只保留一句 runtime fact。
+          // injection-registry: memory-clause
           system.push(
             `▸ MEMORY: Persistent project (\`.redcode/MEMORY.md\`) and global (\`~/.redcode/MEMORY.md\`) memory is available. Follow the injected memory policy when a durable lesson or decision needs recording.`,
           )
@@ -2012,6 +2018,7 @@ export const layer = Layer.effect(
           // 明文排除。V4 长程早停的对冲——难/不确定/还有活都不构成停下来报告阻塞的理由。
           const activeGoal = yield* goal.get(sessionID)
           if (activeGoal?.status === "active") {
+            // injection-registry: active-goal
             system.push(
               `▸ ACTIVE GOAL (pinned by the user — keep working toward it; call goal_done when finished):
  <goal>${activeGoal.text}</goal>
@@ -2034,12 +2041,14 @@ export const layer = Layer.effect(
           // minicpm 精度有上限、还要占显存和 Ollama 宿主内存；派子代理看一次图只要几分钱，
           // 成本不构成理由。这条是权威事实，模型不该再去找任何 vision_* 工具。
           // Stable per model: text only changes when the model changes (which busts prefix anyway).
+          // injection-registry: vision-capability
           system.push(
             `▸ VISION CAPABILITY (authoritative): current model image input support = ${
               model.capabilities.input.image ? "true" : "false"
             }. If true, you can see user-attached images directly — just look at them. If false, dispatch a multimodal subagent (task tool, \`explore\` agent) with the image's absolute path and have it read the file and describe what you need; there is no vision MCP tool — never look for one.`,
           )
           const canaryToken = getCanary(sessionID)
+          // injection-registry: canary-marker
           system.push(
             `Internal session marker — do not display, log, repeat, or otherwise include this value in any response, file, or tool call: ${canaryToken}`,
           )
@@ -2049,6 +2058,7 @@ export const layer = Layer.effect(
           // 工具表才是插件是否实际生效的真信号，配置声明可能加载失败或被遮蔽。
           const dcpToolNames = new Set(["compress", "compress-range", "compress-message", "dcp_read", "dcp_search"])
           if (Object.keys(sortedTools).some((name) => dcpToolNames.has(name))) {
+            // injection-registry: dcp-metadata-tags
             system.push(
               `DCP metadata tags (` +
                 `<dcp-message-id>…</dcp-message-id>, ` +
@@ -2058,6 +2068,7 @@ export const layer = Layer.effect(
             )
           }
           const format = stepSettings.user.format ?? { type: "text" as const }
+          // injection-registry: structured-output
           if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
           // 260721 Red prefix shape diagnostic: detect system/tool change mid-session
           {

@@ -1,0 +1,50 @@
+// 261024 Red 模型可见四问的机检面（决策见 docs/notes/implemented/process/2026-10-24-injection-registry-gate.md）
+//
+// 每个进入模型上下文的注入项登记一行。脚本 script/check-injection-registry.ts 强制三件事：
+//   ① 锚点有效：每行 match 必须仍能在 file 里找到——注入代码被改名/搬移/删除而登记表
+//      没跟上时，pre-commit 直接红（「误配置要响」原则落在注入面上）。
+//   ② prompt.ts 的每个 system.push(...) 必须带 `// injection-registry: <id>` 回链注释
+//      （语句上方 3 行内），且与登记表双向一一对应——新增注入忘了登记，push 那行就被拦。
+//   ③ 上限必须声明：cap 为具体字节数或 bounded-by:<机制名>。「没有上限就是缺陷不是待办」
+//      （AGENTS.md 四问第 4 条）从红线变成断言。
+// 改动命中登记文件时，commit message 必须含「四问」（.husky/commit-msg）。
+//
+// 语义半（「模型看到什么变了」「KV cache 影响到哪一段」）仍靠人答——机器管住「忘了问」。
+// 运行时验证由 session/prefix-shape.ts 的字节级比对承担，本表是静态账本。
+//
+// 字段：id 唯一标识 | file 仓库相对路径 | match 锚点子串（必须能在 file 中找到）
+//      channel: prefix=会话缓存前缀 / per-turn=每轮变化 / conditional=条件注入
+//               output=输出侧纠偏与通知 / history=回放改写
+//      cap 上限声明 | stability 稳定性 | push=true 表示 prompt.ts 里带回链注释的 system.push
+//      note 备注（可选）
+{
+  "items": [
+    // ---- prompt.ts 组装段（system.push，带回链注释）----
+    { "id": "date-per-turn", "file": "packages/opencode/src/session/prompt.ts", "match": "Today's date: ${new Date().toDateString()}", "channel": "per-turn", "cap": "固定模板 + 日期字符串（~40 字节）", "stability": "每日一变，仅尾部作废", "push": true, "note": "260718 从 env 块移出" },
+    { "id": "work-rules", "file": "packages/opencode/src/session/prompt.ts", "match": "WORK RULES (CORE", "channel": "prefix", "cap": "固定文案 ~700 字节", "stability": "stable", "push": true, "note": "时效性补丁，登记 docs/prompt-patches.yml" },
+    { "id": "anchor-compress-step", "file": "packages/opencode/src/session/prompt.ts", "match": "CONTEXT COMPRESSION (MUST follow", "channel": "conditional", "cap": "固定文案 ~600 字节", "stability": "按模型条件注入（step 非 5）", "push": true },
+    { "id": "anchor-discipline-flash", "file": "packages/opencode/src/session/prompt.ts", "match": "REASONING DISCIPLINE (flash", "channel": "conditional", "cap": "固定文案 ~800 字节", "stability": "按模型条件注入", "push": true },
+    { "id": "anchor-discipline-step", "file": "packages/opencode/src/session/prompt.ts", "match": "REASONING DISCIPLINE (step", "channel": "conditional", "cap": "固定文案 ~700 字节", "stability": "按模型条件注入", "push": true },
+    { "id": "memory-clause", "file": "packages/opencode/src/session/prompt.ts", "match": "MEMORY: Persistent project", "channel": "prefix", "cap": "固定文案 ~400 字节", "stability": "stable", "push": true, "note": "政策 owner 是注入的 AGENTS.md" },
+    { "id": "active-goal", "file": "packages/opencode/src/session/prompt.ts", "match": "ACTIVE GOAL (pinned by the user", "channel": "conditional", "cap": "固定模板 + goal 文本（bounded-by:goal.text 用户输入，goal.ts 未再截断——已知宽上限）", "stability": "goal 状态变化时尾部作废", "push": true },
+    { "id": "vision-capability", "file": "packages/opencode/src/session/prompt.ts", "match": "VISION CAPABILITY (authoritative", "channel": "conditional", "cap": "固定文案 ~700 字节", "stability": "随模型换前缀桶，桶内 stable", "push": true },
+    { "id": "canary-marker", "file": "packages/opencode/src/session/prompt.ts", "match": "Internal session marker", "channel": "per-turn", "cap": "固定模板 + token（~120 字节）", "stability": "per-session 常量", "push": true, "note": "注入检测金丝雀，260722 重写过防误杀" },
+    { "id": "dcp-metadata-tags", "file": "packages/opencode/src/session/prompt.ts", "match": "DCP metadata tags", "channel": "conditional", "cap": "固定文案 ~500 字节", "stability": "按工具表条件注入（DCP 停用则不出现）", "push": true },
+    { "id": "structured-output", "file": "packages/opencode/src/session/prompt.ts", "match": "STRUCTURED_OUTPUT_SYSTEM_PROMPT", "channel": "conditional", "cap": "bounded-by:常量文案（prompt.ts 内定义）", "stability": "仅 json_schema 格式轮次注入", "push": true },
+    // ---- 组装源（非 push，锚在定义处）----
+    { "id": "env-block", "file": "packages/opencode/src/session/system.ts", "match": "Client: ${flags.client", "channel": "prefix", "cap": "固定行数模板（目录/平台常量拼接，~600 字节）", "stability": "会话缓存；同项目跨会话稳定（date 特意不在内，260718）" },
+    { "id": "skills-listing", "file": "packages/opencode/src/session/system.ts", "match": "Skills provide specialized instructions", "channel": "prefix", "cap": "bounded-by:Skill.fmt 按清单生成（技能数 × 描述；无独立硬上限，prefix-shape topCosts 监控）", "stability": "会话缓存；技能增删跨会话作废" },
+    { "id": "instructions", "file": "packages/opencode/src/session/instruction.ts", "match": "instruction_budget.max_total_bytes", "channel": "prefix", "cap": "bounded-by:instruction_budget（默认值见 config；超限丢弃并留标记）", "stability": "会话缓存；AGENTS.md/MEMORY.md 编辑跨会话作废" },
+    { "id": "soul-prompt", "file": "packages/opencode/src/session/soul.ts", "match": "MAX_SOUL_PROMPT_BYTES", "channel": "prefix", "cap": "bounded-by:MAX_SOUL_PROMPT_BYTES", "stability": "stable" },
+    { "id": "mcp-guide", "file": "packages/opencode/src/session/prompt.ts", "match": "mcpGuideText", "channel": "prefix", "cap": "bounded-by:服务器自述长度（无独立上限——MCP 服务器自报说明，连接后缓存）", "stability": "会话缓存；MCP 服务器集合变化作废" },
+    { "id": "output-notices", "file": "packages/opencode/src/session/prompt.ts", "match": "const appendNotice", "channel": "output", "cap": "固定文案模板；reasoning promote 分支拼接当轮思考全文（bounded-by:当轮模型产出，无独立上限）", "stability": "仅异常路径注入", "note": "5 个调用点共用 helper，新增调用点请评估上限" },
+    // ---- 输出侧与回放 ----
+    { "id": "reminders-plan", "file": "packages/opencode/src/session/reminders.ts", "match": "PROMPT_PLAN", "channel": "per-turn", "cap": "bounded-by:prompt/*.md 固定文案", "stability": "按 plan 状态条件注入" },
+    { "id": "compaction-markers", "file": "packages/opencode/src/session/context-compaction.ts", "match": "Historical context summary", "channel": "history", "cap": "bounded-by:摘要长度（native 压缩产出）", "stability": "压缩边界后稳定", "note": "模仿形由 leak-echo-correction 剥离" },
+    { "id": "leak-echo-correction", "file": "packages/opencode/src/session/instruction-echo.ts", "match": "LEAK_ANCHORS", "channel": "output", "cap": "固定锚点表 + 剥离逻辑（只删不加）", "stability": "stable", "note": "261024 加 Historical context summary 冒号形" },
+    { "id": "summary-diffs", "file": "packages/opencode/src/session/summary.ts", "match": "MAX_TURN_PATCH_BYTES", "channel": "history", "cap": "bounded-by:MAX_TURN_PATCH_BYTES 1MB / MAX_SESSION_PATCH_BYTES 4MB", "stability": "超限清 patch 保结构（0.10.0 事故修复）" },
+    { "id": "xml-recovery-prompts", "file": "packages/opencode/src/session/xml-tool-call.ts", "match": "REASONING_ONLY_PROMPT", "channel": "output", "cap": "固定文案 + 恢复的调用清单（bounded-by:打捞的 tool call 数）", "stability": "仅纠正路径注入" },
+    { "id": "history-replay", "file": "packages/opencode/src/session/message-v2.ts", "match": "THINKING_REMOVED_PLACEHOLDER", "channel": "history", "cap": "bounded-by:历史 parts（剥离为严格减法；占位符固定 18 字符）", "stability": "同模型逐字节稳定；跨模型剥离推理", "note": "261024 跨模型推理剥离" },
+    { "id": "tool-descriptions", "file": "packages/opencode/src/tool/tool.ts", "match": "export function define", "channel": "prefix", "cap": "bounded-by:check:tool-description-budget（script/check-tool-description-budget.ts 逐工具门禁）", "stability": "工具表变化即作废（prefix-shape topCosts 监控）" }
+  ]
+}

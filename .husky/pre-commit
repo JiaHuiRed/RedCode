@@ -10,3 +10,9 @@ set -e
 if git diff --cached --name-only | grep -qE '^(packages/opencode/src/|packages/sdk/|script/check-openapi-drift\.ts|script/generate\.ts)'; then
   bun run check:openapi-drift
 fi
+
+# 261024 Red 注入登记表自检：登记项锚点失效（注入代码改名/搬移/删除而登记表没跟上）
+# 或 system.push 缺回链时，commit 当场红。staged 触及登记面时才跑（瞬时）。
+if git diff --cached --name-only | grep -qE '^(docs/injection-registry\.jsonc|script/check-injection-registry\.ts|packages/opencode/src/(session|tool)/)'; then
+  bun run check:injection-registry
+fi

@@ -19,6 +19,7 @@
     "check:control-bytes": "bun run script/check-control-bytes.ts",
     "check:config-shadowing": "bun run script/check-config-shadowing.ts",
     "check:openapi-drift": "bun run script/check-openapi-drift.ts",
+    "check:injection-registry": "bun run script/check-injection-registry.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "gen:openapi": "bun run --cwd packages/opencode --conditions=browser src/index.ts generate > packages/sdk/openapi.json",

@@ -1,0 +1,6 @@
+#!/bin/sh
+set -e
+# 261024 Red 模型可见四问门禁：staged 改动触及注入登记表的文件时，commit message
+# 必须含「四问」并逐条回答（改了什么/token 增减/KV cache 影响/上限）。语义半靠人答，
+# 机器只拦「忘了问」。登记面文件清单由脚本从 docs/injection-registry.jsonc 现读。
+exec bun run check:injection-registry --commit-msg "$1"
