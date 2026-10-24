@@ -38,6 +38,9 @@ interface FetchDecompressionError extends Error {
 }
 
 export const SYNTHETIC_ATTACHMENT_PROMPT = "Attached media from tool result:"
+// 261024 Red 跨模型剥离推理后，纯思考轮 assistant 的占位文本——保住 user/assistant
+//   交替，同时告诉新模型「这里有段被移除的思考」而不是凭空少一轮。
+export const THINKING_REMOVED_PLACEHOLDER = "[Thinking removed]"
 
 // 260923 Red 工具结果被模型侧 token 预算裁掉时给模型的短标记。它自己走 fitToolResult
 // 的 notice 入账，占的是同一笔预算，不会把总账顶过线。
@@ -1030,20 +1033,23 @@ export const toUIMessages = Effect.fn("Message.toUIMessages")(function* (
             })
         }
         if (part.type === "reasoning") {
-          if (differentModel) {
-            if (part.text.trim().length > 0)
-              assistantMessage.parts.push({
-                type: "text",
-                text: part.text,
-              })
-            continue
-          }
+          // 261024 Red 换模型回放：推理段直接剥离，不再降级成 text 整段塞给新模型。
+          //   降级是上游继承行为而非刻意决策：推理重的会话一切模型就注入几十 K 思考
+          //   散文，新模型还会把过程文本当结论读。结论已在 text 部分完整保留；官方
+          //   harness（ZCode removeCrossModelReasoning）同判：跨模型推理整段丢弃。
+          if (differentModel) continue
           assistantMessage.parts.push({
             type: "reasoning",
             text: part.text,
             providerMetadata: part.metadata,
           })
         }
+      }
+      // 261024 Red 剥离可能把 assistant 剥到只剩 step-start（纯思考轮）：补占位符而不是
+      //   让消息消失——convertToModelMessages 会滤掉只剩 step-start 的消息，消失会造成
+      //   相邻 user 消息，anthropic 协议拒收交替违规。
+      if (differentModel && !assistantMessage.parts.some((part) => part.type !== "step-start")) {
+        assistantMessage.parts.push({ type: "text", text: THINKING_REMOVED_PLACEHOLDER })
       }
       if (assistantMessage.parts.length > 0) {
         result.push(assistantMessage)

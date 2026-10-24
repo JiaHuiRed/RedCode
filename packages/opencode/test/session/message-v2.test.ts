@@ -271,6 +271,61 @@ describe("session.message-v2.toModelMessage", () => {
     ])
   })
 
+  test("strips cross-model reasoning instead of demoting it to text", async () => {
+    const userID = "m-xmodel-user"
+    const assistantID = "m-xmodel-assistant"
+    const oldModel = { providerID: ProviderID.make("glm"), modelID: ModelID.make("glm-5") }
+
+    const input: MessageV2.WithParts[] = [
+      {
+        info: { ...userInfo(userID), model: oldModel },
+        parts: [{ ...basePart(userID, "p1"), type: "text", text: "task" }] as MessageV2.Part[],
+      },
+      {
+        info: assistantInfo(assistantID, userID, undefined, oldModel),
+        parts: [
+          {
+            ...basePart(assistantID, "p1"),
+            type: "reasoning",
+            text: "long thinking prose that must not reach the new model as text",
+            time: { start: 0 },
+          },
+          { ...basePart(assistantID, "p2"), type: "text", text: "answer" },
+        ] as MessageV2.Part[],
+      },
+    ]
+
+    expect(await MessageV2.toModelMessages(input, model)).toStrictEqual([
+      { role: "user", content: [{ type: "text", text: "task" }] },
+      { role: "assistant", content: [{ type: "text", text: "answer" }] },
+    ])
+  })
+
+  test("keeps a placeholder when cross-model stripping empties an assistant turn", async () => {
+    const userID = "m-xmodel2-user"
+    const assistantID = "m-xmodel2-assistant"
+    const oldModel = { providerID: ProviderID.make("glm"), modelID: ModelID.make("glm-5") }
+
+    const input: MessageV2.WithParts[] = [
+      {
+        info: { ...userInfo(userID), model: oldModel },
+        parts: [{ ...basePart(userID, "p1"), type: "text", text: "task" }] as MessageV2.Part[],
+      },
+      {
+        info: assistantInfo(assistantID, userID, undefined, oldModel),
+        parts: [
+          { ...basePart(assistantID, "p1"), type: "step-start" },
+          { ...basePart(assistantID, "p2"), type: "reasoning", text: "thinking only", time: { start: 0 } },
+        ] as MessageV2.Part[],
+      },
+    ]
+
+    expect(await MessageV2.toModelMessages(input, model)).toStrictEqual([
+      { role: "user", content: [{ type: "text", text: "task" }] },
+      { role: "assistant", content: [{ type: "text", text: "[Thinking removed]" }] },
+    ])
+  })
+
   test("filters out messages with only ignored parts", async () => {
     const messageID = "m-user"
 
@@ -769,7 +824,7 @@ describe("session.message-v2.toModelMessage", () => {
     ])
   })
 
-  test("omits provider metadata when assistant model differs", async () => {
+  test("omits provider metadata and strips reasoning when assistant model differs", async () => {
     const userID = "m-user"
     const assistantID = "m-assistant"
 
@@ -828,7 +883,7 @@ describe("session.message-v2.toModelMessage", () => {
         role: "assistant",
         content: [
           { type: "text", text: "done" },
-          { type: "text", text: "thinking" },
+          // 261024 Red 跨模型推理从「降级成 text」改为整段剥离（见 message-v2.ts 注释）。
           {
             type: "tool-call",
             toolCallId: "call-1",
