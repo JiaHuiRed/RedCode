@@ -10,6 +10,7 @@
 
 ### [Unreleased]
 
+- **交付与交互契约不再只覆盖 GPT**（`session/system.ts`、`prompt/working-style.md`）：所有默认模型路由统一追加同一份工作契约，使用既有流程、按改动验证、完成已要求的产物与素材，不以核查报告替代实现；正文和复盘沿用 Soul 称呼，不用套话和认错故事替代动作。GPT 移除重复工作法与固定三项报告限制。未采用「编辑器」特例或事实纠正同义禁令，不把提示词声称为强制执行器。真实模型验证器修复丢弃 assistant 正文的回放缺口，支持选择实际推理档位：GPT 默认/high 两场景均完成实际修改与一次验证；Step 实现和称呼通过，但进度场景仍有套话，未宣称全部解决。四问与证据边界见 [prompt-instruction-ownership](docs/notes/implemented/architecture/2026-09-24-prompt-instruction-ownership.md#2026-10-25-交付契约覆盖全部默认模型路由)。静态回归 33 pass、typecheck 通过。
 - **explore 子代理跨工程 Git 查询放行（权限第三次迭代：派发模型演进，闸假设过期）**（`tool/shell.ts`、`agent/definition/explore.md`）：RedMind 跨工程派发 explore 后自然 git 查询必经 `-C <目标仓库>`，而 261017 的 -C 分支还是「仓库自证 4 条」窄桩——实证 RedMon 会话 3 连拒（`git -C <repo> log --oneline -20` 等字面只读命令）、重复失败熔断停跑。现在 -C 分支复用与无 -C 相同的七子命令只读清单 + 原 flag 禁令（新增 --no-index）；rev-list 仍限 --count；`git status` 经用户裁定放行（写面仅 .git/index stat cache，git 内部缓存）。信任边界不降：实例上下文内 = 裸 git 同一边界，上下文外走既有 external_directory 授权（explore 默认 deny）。拒绝文案补静态允许形状（零指导 = 盲试撞熔断）。实现教训：扩容分支重审每条 return 路径——结尾 `return undefined` 在旧窄桩下恰好正确、扩容后让 external_directory 授权整体失效，回归测试当场抓住。模型可见四问：①拒绝文案换固定带形状短句、合规查询放行 ②固定前缀零增减、retry 净减 ③explore 权限规则变化限于该 agent 会话一次 ④文案 ~300 字符有界不回显命令。决策演进见 [explore-scoped-git-queries](docs/notes/implemented/bug-fix/2026-10-17-explore-scoped-git-queries.md)。验证：shell 120/120、typecheck 0 错。
 
 ### [0.13.0] - 2026-10-24

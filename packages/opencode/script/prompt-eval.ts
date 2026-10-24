@@ -17,6 +17,7 @@ const args = parseArgs({
   options: {
     list: { type: "boolean" },
     models: { type: "string" },
+    variant: { type: "string" },
     cases: { type: "string" },
     snapshot: { type: "string" },
     output: { type: "string" },
@@ -200,6 +201,7 @@ const sourcePaths = [
   "session/prompt/glm.md",
   "session/prompt/deepseek.md",
   "session/prompt/step.md",
+  "session/prompt/working-style.md",
   "tool/task.md",
 ]
 if (args.snapshot && Bun.file(args.snapshot).size > 1048576) throw new Error("Frozen snapshot exceeds 1 MiB")
@@ -428,6 +430,7 @@ const program = Effect.gen(function* () {
       ProviderID.make(key.slice(0, slash)),
       ModelID.make(key.slice(slash + 1)),
     )
+    if (args.variant && !Object.hasOwn(model.variants ?? {}, args.variant)) throw new Error("Unknown model variant")
     const family = /gpt/i.test(model.api.id)
       ? "gpt"
       : /glm/i.test(model.api.id)
@@ -435,7 +438,11 @@ const program = Effect.gen(function* () {
         : /deepseek/i.test(model.api.id)
           ? "deepseek"
           : "step"
-    const prompt = [sources["session/prompt/default.md"], sources[`session/prompt/${family}.md`]].join("\n\n")
+    const prompt = [
+      sources["session/prompt/default.md"],
+      sources[`session/prompt/${family}.md`],
+      sources["session/prompt/working-style.md"],
+    ].join("\n\n")
     for (const scenario of cases.filter((item) => selectedCases.includes(item.id))) {
       const virtual = virtualProject(scenario)
       const sessionID = SessionID.make(`ses_prompt_eval_${process.pid}_${label}_${scenario.id}`)
@@ -453,7 +460,11 @@ const program = Effect.gen(function* () {
         role: "user",
         time: { created: 0 },
         agent: agent.name,
-        model: { providerID: model.providerID, modelID: model.id },
+        model: {
+          providerID: model.providerID,
+          modelID: model.id,
+          ...(args.variant ? { variant: args.variant } : {}),
+        },
       } satisfies MessageV2.User
       const messages: ModelMessage[] = [
         ...(scenario.history ? [{ role: "user" as const, content: scenario.history }] : []),
@@ -477,6 +488,7 @@ const program = Effect.gen(function* () {
           const request = JSON.stringify({
             label,
             model: key,
+            variant: args.variant,
             case: scenario.id,
             round,
             system: [prompt, ...system],
@@ -510,7 +522,8 @@ const program = Effect.gen(function* () {
                 Effect.timeout(limits.timeout),
               ),
           )
-          text += LLMResponse.text({ events })
+          const responseText = LLMResponse.text({ events })
+          text += responseText
           usage.push(...events.filter(LLMEvent.is.stepFinish).map((event) => event.usage))
           const invocations = events.filter(LLMEvent.is.toolCall)
           if (!invocations.length) {
@@ -519,12 +532,15 @@ const program = Effect.gen(function* () {
           }
           messages.push({
             role: "assistant",
-            content: invocations.map((call) => ({
-              type: "tool-call",
-              toolCallId: call.id,
-              toolName: call.name,
-              input: call.input,
-            })),
+            content: [
+              ...(responseText ? [{ type: "text" as const, text: responseText }] : []),
+              ...invocations.map((call) => ({
+                type: "tool-call" as const,
+                toolCallId: call.id,
+                toolName: call.name,
+                input: call.input,
+              })),
+            ],
           })
           messages.push({
             role: "tool",
@@ -556,6 +572,7 @@ const program = Effect.gen(function* () {
       const result = {
         label,
         model: key,
+        variant: args.variant,
         case: scenario.id,
         elapsedMs: Math.round(performance.now() - started),
         errors: error
@@ -586,6 +603,7 @@ const program = Effect.gen(function* () {
       const encoded = JSON.stringify(result)
       if (Buffer.byteLength(encoded) > 1048576) throw new Error("Eval result exceeds 1 MiB")
       yield* Effect.promise(() => fs.appendFile(path.join(output, `${label}.jsonl`), encoded + "\n"))
+      if (result.errors.length) process.exitCode = 1
       yield* Console.log(
         JSON.stringify({
           label: result.label,

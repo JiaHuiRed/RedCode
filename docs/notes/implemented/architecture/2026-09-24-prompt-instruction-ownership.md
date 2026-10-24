@@ -60,3 +60,58 @@
 ## 2026-10-13 更新：RETENTION 三项化，soul 移出 instruction 预算
 
 上文「2026-10-07 意图规则收窄与 soul 保留顺序」一节记录的 `RETENTION = { agents: 0, soul: 1, memory: 2, config: 3 }` 已失效。Soul System V2（`implemented/architecture/2026-10-07-soul-system-v2.md`）把 soul 改为会话绑定、经 `session/soul.ts` 独立注入，不再经过 `instruction.ts` 的来源预算；现行 `session/instruction.ts:38` 为 `RETENTION = { agents: 0, memory: 1, config: 2 }`，`cli/cmd/doctor.ts:92` 明示 soul "excluded from instruction budget"。本文 owner 分层、称呼截断（128 code point / 512 bytes）等结论不变。
+
+## 2026-10-25 交付契约覆盖全部默认模型路由
+
+### 证据与决策
+
+`32cdee56` 把「交付不能降级为核查」「不造无依据的护栏」「最小完整变更」放在 GPT Delta，
+同一段真实会话后半程却换到了 Step。核查替代交付、绕过既有工作流另造逐项探针、失败后
+反复换启动方式、把可执行工作交回维护者，以及复盘时丢掉 Soul 称呼，不能只给 GPT 修。
+原先的固定三项报告要求也不应覆盖 Soul 和实际问题所需的回答形状。
+
+- `working-style.md` 拥有这组跨模型交付与交互契约，`system.ts:provider` 在现有各模型提示词
+  **末尾追加一次**。14 个代表路由（含独立档、本地 Qwen、sensenova 和未知模型）检查同一入口。
+  不重写其它家族的旧档；显式自定义 `agent.prompt` 仍按原契约替代默认模型提示词。
+- GPT Delta 移除通用 Working style，只保留工具和编辑差异；公共段规定使用现有工作流、
+  验证匹配改动、完成已要求的产物与依赖素材、长任务后台执行、进程操作先自证归属。
+- 交互遵循 Soul 的称呼，覆盖正文和复盘；受批评时回答尚未解决的实际问题并执行，
+  不用判定维护者「说得对」或编造认错故事代替修复。没有硬编码具体人格称呼。
+- **不把提示词当强制执行器。** 「编辑器」特例和「必须同步撤回旧推测」的追加句已撤回。
+  当场纠正已经没被遵守，再抄成更强烈的禁令不是机制修复；本批没有实现自然语言事实真伪门禁，
+  也没有自动改写输出、额外裁判模型或后台重试。
+
+### 验证与边界
+
+- 路由回归先红后绿；`system-prompt-routing` + 既有 eval oracle 共 33 pass，包级 typecheck 通过。
+- 真实模型探针沿用 `script/prompt-eval.ts` 的隔离虚拟文件与工具，不接触真实仓库或设备。
+  两个场景分别是「受批评后直接完成改动」和「纠正错误说法、回答进度后继续实现」，
+  同时检查实际改动、一次既有 verify、称呼及套话。输入、工具表、请求和结果均落盘；
+  本机载体为 `.redcode/temp/interaction-eval-{gpt,step}-261025/`。
+- 验证器原来只回放 tool-call，丢掉同轮 assistant 正文，导致后续模型看不见已经给过的说明。
+  已补回正文；修改前的重复解释样本不能当作生产模型重复行为的可靠结论。
+  验证器新增 `--variant`，可按真实会话的 high 档复测，选择值必须在该模型 variants 中存在。
+  判定失败同时设置非零退出码，不再只在 JSON 里写 errors、终端却返回成功。
+- 修正回放后，GPT 默认档与 high 档的两个场景均实际修改并验证通过，未触发称呼/套话检查。
+  Step 两档都完成改动、只运行一次 verify，并使用 Soul 称呼，但进度场景仍出现一次套话，
+  **因此不能宣称跨模型交互已全部修好**。同义禁令不再叠加，这项保留为实测限制。
+- 原会话最后一次压缩早于后续争议和纠正，不能指称纠正被该摘要吞掉。持久化请求日志只有
+  指纹而非完整 wire 正文；数据库时间顺序和当前组装代码不足以证明那次逐字送达，
+  因此不把「模型当时一定收到」或「引擎丢消息」写成已确认根因。
+
+### 模型可见四问
+
+1. **看到什么变了**：旧 GPT 独有 `The deliverable is the change, not a report` 等七条通用工作法
+   移入公共段并按上述行为重写；删除 `A completion report contains exactly three things`，
+   改为 `Concision must not erase the soul or omit a material limitation`。非 GPT 默认路由新增
+   同一份交付契约，不复制各家完整提示词；语言、人格名字和称呼仍取 Soul。
+2. **token 影响**：共享文件 3,538 UTF-8 bytes，`Token.estimateReporting` 估算 883 tokens；
+   GPT 文件 2,944→780 bytes，合并共享段后固定前缀净增约 347 tokens；其它默认路由净增约
+   883 tokens（拼接取整可差 1）。均为估算，不是供应商 tokenizer 实测。
+3. **KV cache 影响**：非 GPT 在原模型提示词末尾追加，从新增段开始到其后 environment、
+   instructions、Soul 等请求尾部需重新建一次缓存；原模型提示词字节不改。GPT 因移除旧
+   Working style，从 GPT Delta 的该节起变化。不是「只多 883 token、不影响后续前缀」。
+   tools、历史消息和轮中缓存结算机制不改。
+4. **硬上限**：新增段是固定源码文件 3,538 bytes，不拼接运行时输入，已登记
+   `delivery-interaction-contract`；低于单项 1K 估算 token 点名线。eval 原有请求 1 MiB、
+   会话 512 KiB、响应字节和轮数上限保持，新增 variant 也记入请求日志。

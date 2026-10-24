@@ -15,6 +15,7 @@ import PROMPT_GROK from "./prompt/grok.md" with { type: "text" }
 import PROMPT_STEP from "./prompt/step.md" with { type: "text" }
 import PROMPT_QWEN from "./prompt/qwen.md" with { type: "text" }
 import PROMPT_SENSENOVA from "./prompt/sensenova.md" with { type: "text" }
+import PROMPT_WORKING_STYLE from "./prompt/working-style.md" with { type: "text" }
 import type { Provider } from "@/provider/provider"
 import type { Agent } from "@/agent/agent"
 import { Permission } from "@/permission"
@@ -51,6 +52,13 @@ export const wantsStepAnchor = (modelID: string, providerID: string) =>
 const withDefaultPrompt = (prompt: string) => [PROMPT_DEFAULT, prompt]
 
 export function provider(model: Provider.Model) {
+  // 261025 Red 通用交付契约追加到所有路由，不再只修 GPT；独立档保留原前缀。
+  // injection-registry: delivery-interaction-contract
+  // docs/notes/implemented/architecture/2026-09-24-prompt-instruction-ownership.md
+  return [...modelPrompts(model), PROMPT_WORKING_STYLE]
+}
+
+function modelPrompts(model: Provider.Model) {
   if (experimentNoModelPrompt()) return [PROMPT_DEFAULT]
   // 260902 cc beast.md（gpt-4 / o1 / o3 专属档）已删：哥哥判定不会再拿上上代模型干活。
   // gpt-4* 含 "gpt"，落下面的 gpt.md（在维护的那份）；o1/o3 落 default.md。
